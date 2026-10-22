@@ -80,7 +80,7 @@ npm run test-re-disasm          # guest suite: 54/54 on [:jvm-kir :js :wasm]
 npm run test-re-disasm-native   # -> PASS (main returned 1)
 ```
 
-`test-re-disasm-native` (also wired into `.github/workflows/test.yml`) runs
+The historical `test-re-disasm-native` driver (its old CI workflow is retired) runs
 `re_disasm/build-native.mjs`, which compiles `disasm.kotoba` to the
 host-native kexe target (`aarch64-macos-kotoba-v1` here, `--jvm-free`),
 extracts `main`'s machine code, builds the reviewed C loader
