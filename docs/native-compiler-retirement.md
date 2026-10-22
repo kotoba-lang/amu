@@ -14,8 +14,8 @@ environment variable, or report success for `--help`/`--version`. These are
 temporary refusal entrypoints, not the native compiler implementation.
 
 The compiler is the measured Embench lineage pinned in
-[`seed/compiler-core.json`](../seed/compiler-core.json), with all sixteen
-`seed/MANIFEST` sources unchanged. Canonical Kotoba compiler/runtime ports,
+[`seed/compiler-core.json`](../seed/compiler-core.json), with the historical measured sources
+retained and the current FS2 successor pinned separately. Canonical Kotoba compiler/runtime ports,
 input/refusal corpora, dependency pins, adoption receipts and historical
 Embench measurements remain available. Browser JavaScript runtime output and
 C benchmark comparators are separate from the removed compiler host.
@@ -36,13 +36,20 @@ compiler. `deps.edn` and its existing lock retain dependency provenance,
 including historical alias metadata; they no longer select an installed
 hosted compiler implementation in this repository.
 
-Native admission remains open: materialize the independent initial compiler
-from the measured core and canonical runtime, perform complete native
-self-rebuild/fixed-point checks, run all nineteen Embench workloads, and
-exercise public dotted-ID/legacy-alias import and CLI behavior through the
-same compiler. Until then #1428 remains draft and is not admitted to main.
-Removal of the old compiler is not a native execution result. No Actions or
-branch-protection setting changes are part of this retirement.
+A loaderless native bootstrap and measured-core self-rebuild now exist.
+The current all-native chain freshly compiled, packaged and ran all nineteen
+Embench correctness workloads, without the earlier IR calculator. See
+[native-compiler-bootstrap-progress.md](native-compiler-bootstrap-progress.md)
+for exact identities and the remaining gates.
+
+Public admission remains open: the current core emits the historical raw
+AAPCS64 KSEED format, not the complete public target/profile/artifact surface.
+Locked dotted-ID/alias imports, default Kototama output, complete canonical
+compiler/CLI dependency ports, owner main/lock/CID integration and whole
+refusal/authority/resource/cleanup/controller qualification are required.
+Until those gates pass #1428 stays draft, the temporary public launchers still
+refuse, and no main merge is performed. No Actions or branch-protection
+setting changes are part of this retirement.
 
 The separately held Git `scripts/merge-guard.mjs` and its existing workflow
 remain unchanged. This repository-maintenance check is not a compiler host;

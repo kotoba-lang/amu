@@ -195,6 +195,14 @@
               (= t 5) (string=? (record-get [:ref :form/r] a :s) (record-get [:ref :form/r] b :s))
               (= t 10) (f64-eq (f64-from-bits (record-get [:ref :form/r] a :n))
                                (f64-from-bits (record-get [:ref :form/r] b :n)))
+              (= t 11)
+              (let [x (record-get [:ref :form/r] a :data)
+                    y (record-get [:ref :form/r] b :data)]
+                (and (= (bytes-count x) (bytes-count y))
+                  (loop [index 0]
+                    (if (= index (bytes-count x)) true
+                      (if (= (bytes-at x index) (bytes-at y index))
+                        (recur (+ index 1)) false)))))
               (= t 8) (form-set-eq (kids-of a) (kids-of b))
               (= t 9) (form-map-eq (kids-of a) (kids-of b))
               :else (form-ordered-eq (kids-of a) (kids-of b))))))

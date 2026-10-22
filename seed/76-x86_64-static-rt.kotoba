@@ -25,7 +25,7 @@
 ;; 160 report 168 fuel0 176 metered 184 cwd 192 cwd-len 200 scratch 208 path
 ;; 216 budget 224 value-trap 232 io-buffer 240 command 248 alt-stack
 ;; 256 conj 264 conj-tail 272 conj-copy 280 copied-words 288 string-copied-bytes
-;; 296 arena-use flag 320..359 payload arguments
+;; 296 arena-use flag 320..359 payload arguments 360 datoms 368 datom-used
 (defn- kxrt-g [] :i64 (+ (kxrt-ctx) 1024))
 (defn- kxrt-gl [k :i64] :i64 (kxrt-load64 (+ (kxrt-g) k)))
 (defn- kxrt-gs [k :i64 v :i64] :i64 (kxrt-store64 (+ (kxrt-g) k) v))
@@ -123,6 +123,7 @@
       2 (kxrt-w b (kxrt-w b (kxrt-w b i 0x613a20736c6c6563 8) 0x65763a20616e6572 8) 0xa7d73726f7463 7)
       3 (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b i 0x613a20736c6c6563 8) 0x65763a20616e6572 8) 0x6574692d726f7463 8) 0xa7d736d 4)
       4 (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b i 0x613a207365747962 8) 0x74733a20616e6572 8) 0x6f6f702d676e6972 8) 0xa7d6c 3)
+      5 (kxrt-w b (kxrt-w b (kxrt-w b i 0x613a20736c6c6563 8) 0x676b3a20616e6572 8) 0xa7d68706172 6)
       (kxrt-w b i 0xa7d6c657566 6))))
 (defn- kxrt-value-name [b :i64 i :i64 r :i64] :i64
   (case r
@@ -464,6 +465,47 @@
             (kxrt-bytes-raw (kxrt-saddr r) (kxrt-ps r)))
         :else (kxrt-fail)))
 
+;; ---- bounded v11 KGraph (4096 append-only datoms) ----
+;; Point lookup is last-write-wins; missing is INT64_MIN. Entity enumeration
+;; preserves first assertion order and de-duplicates by (attribute, entity).
+(defn- kxrt-kg-at [i :i64] :i64 (+ (kxrt-gl 360) (* i 24)))
+(defn- kxrt-kg-check [c :i64] :i64
+  (if (or (not= c (kxrt-ctx)) (not= (kxrt-load64 c) 11)) (kxrt-fail) 1))
+(defn- kxrt-slot-80 [c :i64 e :i64 a :i64 v :i64] :i64
+  (let [valid (kxrt-kg-check c) used (kxrt-gl 368)]
+    (if (>= used 4096) (kxrt-budget 5)
+      (let [p (kxrt-kg-at used) x (kxrt-store64 p e)
+            y (kxrt-store64 (+ p 8) a) z (kxrt-store64 (+ p 16) v)
+            w (kxrt-gs 368 (+ used 1))] 1))))
+(defn- kxrt-slot-88 [c :i64 e :i64 a :i64] :i64
+  (let [valid (kxrt-kg-check c)]
+    (loop [i (kxrt-gl 368)]
+      (if (= i 0) -9223372036854775808
+        (let [p (kxrt-kg-at (- i 1))]
+          (if (and (= (kxrt-load64 p) e) (= (kxrt-load64 (+ p 8)) a))
+            (kxrt-load64 (+ p 16)) (recur (- i 1))))))))
+(defn- kxrt-kg-seen [upto :i64 e :i64 a :i64] :bool
+  (loop [i 0]
+    (if (= i upto) false
+      (let [p (kxrt-kg-at i)]
+        (if (and (= (kxrt-load64 p) e) (= (kxrt-load64 (+ p 8)) a)) true (recur (+ i 1)))))))
+(defn- kxrt-slot-96 [c :i64 a :i64] :i64
+  (let [valid (kxrt-kg-check c)]
+    (loop [i 0 count 0]
+      (if (= i (kxrt-gl 368)) count
+        (let [p (kxrt-kg-at i) fresh (and (= (kxrt-load64 (+ p 8)) a)
+                                                    (not (kxrt-kg-seen i (kxrt-load64 p) a)))]
+          (recur (+ i 1) (+ count (if fresh 1 0))))))))
+(defn- kxrt-slot-104 [c :i64 a :i64 index :i64] :i64
+  (let [valid (kxrt-kg-check c)]
+    (if (< index 0) (kxrt-fail)
+      (loop [i 0 count 0]
+        (if (= i (kxrt-gl 368)) (kxrt-fail)
+          (let [p (kxrt-kg-at i) e (kxrt-load64 p)
+                fresh (and (= (kxrt-load64 (+ p 8)) a) (not (kxrt-kg-seen i e a)))]
+            (if (and fresh (= count index)) e
+              (recur (+ i 1) (+ count (if fresh 1 0))))))))))
+
 ;; ---- context slots (C ABI: rdi = context) ----
 (defn- kxrt-slot-48 [c :i64 id :i64 v :i64] :i64 (if (kxrt-admitted? id) (+ v 1) (kxrt-fail)))
 (defn- kxrt-slot-56 [c :i64 a :i64 b :i64] :i64 (kxrt-pair-new a b))
@@ -669,6 +711,7 @@
         m4 (kxrt-gs 56 (kxrt-map (* KXRT-ITEMS 8))) m5 (kxrt-gs 96 (kxrt-map 65536))
         m6 (kxrt-gs 200 (kxrt-map 16384)) m7 (kxrt-gs 208 (kxrt-map 8192))
         m8 (kxrt-gs 120 (kxrt-map 4096)) m9 (kxrt-gs 136 (kxrt-map 4096)) m10 (kxrt-gs 184 (kxrt-map 4096))
+        kg (kxrt-gs 360 (kxrt-map (* 4096 24)))
         m11 (kxrt-gs 232 (kxrt-map KXRT-VALUE-MAX)) fd (kxrt-gs 112 -1)
         cw (kxrt-syscall 79 (kxrt-gl 184) 4096 0 0 0 0)
         cl (kxrt-gs 192 (if (and (> cw 1) (= (kxrt-load8 (kxrt-gl 184)) 47)) (kxrt-cstrlen (kxrt-gl 184)) 0))
