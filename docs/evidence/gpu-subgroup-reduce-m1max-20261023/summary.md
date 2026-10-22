@@ -1,4 +1,4 @@
-# JUN-58: :baseline vs :subgroup-reduce on Apple M1 Max -- the first hardware comparison of the emitted arms
+# JUN-58: :baseline vs :subgroup-reduce on Apple M1 Max -- the MSL arm's first hardware run
 
 - device: Apple M1 Max
 - reported subgroup size ([[threads_per_simdgroup]]): 32
@@ -63,6 +63,36 @@ run 6: verify op=max arm=variant max_abs_vs_ref=0 max_abs_vs_other=0 bit_exact_v
 run 6: verify op=min arm=baseline max_abs_vs_ref=0 max_abs_vs_other=0 bit_exact_vs_ref=1 bit_exact_vs_other=1 ok=1
 run 6: verify op=min arm=variant max_abs_vs_ref=0 max_abs_vs_other=0 bit_exact_vs_ref=1 bit_exact_vs_other=1 ok=1
 ```
+
+## Prior art (corrected 2026-10-23, same tick): this is NOT the first comparison
+
+The first hardware comparison of the two reduce arms ran 2026-10-19 through
+wire-42 / MoltenVK on the GLSL arm: PR #1347 (ba1fcced -- W=256 :sum, the
+variant costs ~20-27% more time per dispatch) and PR #1348 (677fa1cf --
+W-sweep 32..256, variant never faster, penalty grows with W). S = 32 was
+measured the same day through the Vulkan side (PR #1343, eef57e63 --
+gl_SubgroupSize at W=64). All three are merged ancestors of this chain.
+What is NEW in this run, and only this:
+
+1. the MSL arm's first hardware EXECUTION (it was COMPILED-only before --
+   the chain's MSL evidence of the same date says so);
+2. a CROSS-ROUTE REPLICATION: the MSL arm on the native Metal route
+   reproduces the GLSL arm's MoltenVK finding at W=256 (paired ratio
+   1.216-1.223 here vs 1.29-1.32x there -- different load shape and timer,
+   so the numbers are not comparable cell-by-cell; the sign and magnitude
+   class agree);
+3. the :max/:min operators (the prior campaign ran :sum only), with the
+   bit-exact rule-2 read-back verification;
+4. the Metal-native [[threads_per_simdgroup]] = 32 reading -- a DIFFERENT
+   channel from eef57e63's Vulkan-side probe; it confirms S = 32 on the
+   native binding, it is not the first S = 32 fact.
+
+This evidence's commit (009c86ef) claimed "first" twice in its message and
+once in this file's title; those claims are superseded by this correction.
+Named, not hidden: the chain's ADR-0356 row prose ("no Apple device has run
+the variant") conflicts with ba1fcced/677fa1cf having run and timed the
+GLSL arm on 2026-10-19 -- the row prose predates this correction and is out
+of scope for this measurement tick; it needs its own reconciliation.
 
 ## What this is, and what it is not
 

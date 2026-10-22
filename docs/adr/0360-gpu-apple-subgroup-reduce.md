@@ -157,8 +157,17 @@ Implemented the same date (code + tests in
 `kotoba.compiler.accelerator-variants`, evidence in
 `docs/evidence/gpu-apple-msl-route-20261023/`).
 
-## Amendment (2026-10-23, the first hardware comparison of the two arms --
-measurement recorded, every lock unchanged)
+## Amendment (2026-10-23, the MSL arm's first hardware run -- measurement
+recorded, every lock unchanged)
+
+PRIOR ART (corrected same tick): the first hardware comparison of the two
+reduce arms is NOT this one -- PR #1347/#1348 (ba1fcced, 677fa1cf, merged
+2026-10-19, wire-42/MoltenVK, GLSL arm) measured the variant slower than
+baseline at W = 256 (~20-27% more time) and never faster over W = 32..256
+with the penalty growing with W; PR #1343 (eef57e63) measured S = 32
+through the Vulkan side the same day. What is NEW here is the MSL arm's
+first hardware EXECUTION (it was COMPILED-only) and its CROSS-ROUTE
+REPLICATION of that finding on the native Metal route.
 
 One MEASUREMENT landed with this tick (evidence
 `docs/evidence/gpu-subgroup-reduce-m1max-20261023/`): the emitted
@@ -179,8 +188,10 @@ the arms and against the double CPU reference -- rule 2's ordinary-value-
 domain claim is now OBSERVED on hardware for these inputs -- and :sum
 differs by at most 3.05e-5 across partials (the low-bit movement rule 2
 permits). The device's reported subgroup size (the runtime
-`[[threads_per_simdgroup]]` binding) is MEASURED **32**: the first measured
-subgroup-size fact for this device class. It says nothing about MoltenVK's
+`[[threads_per_simdgroup]]` binding) is MEASURED **32**: the Metal-native
+channel's reading, confirming eef57e63's Vulkan-side S = 32 -- not a first
+(a same-tick correction; the commit message of 009c86ef said "first" and
+is superseded). It says nothing about MoltenVK's
 `VkPhysicalDeviceSubgroupProperties` -- ADR-0362's unverified clause stands
 for the Vulkan route.
 

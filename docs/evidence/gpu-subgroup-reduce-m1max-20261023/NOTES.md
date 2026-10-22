@@ -1,4 +1,4 @@
-# The first hardware comparison of the :subgroup-reduce MSL arm vs :baseline (JUN-58)
+# The MSL arm's first hardware run: :baseline vs :subgroup-reduce on Apple M1 Max (JUN-58)
 
 Tick: amu-gpu chain (bot/amu-gpu-chain). Tracking: JUN-58 (the Apple vendor
 row), parent JUN-55. One row of work: one MEASUREMENT -- the interleaved
@@ -10,11 +10,12 @@ baseline-vs-variant reduce comparison on the only vendor this host has
 - Device: **Apple M1 Max** (32 cores, Metal 4), macOS. The tested device's
   reported subgroup size, read from the runtime
   `[[threads_per_simdgroup]]` binding by the probe instrument: **32**. This
-  is the first MEASURED subgroup-size fact for this device class; ADR-0362's
-  "Apple's SIMD-group width is 32 per the Metal feature-set tables ... is
-  UNVERIFIED here" stays true for the MoltenVK/Vulkan struct it describes --
-  this run measured the Metal-native binding, not
-  `VkPhysicalDeviceSubgroupProperties`.
+  is the Metal-NATIVE channel's reading -- it confirms PR #1343's S = 32
+  (eef57e63, measured 2026-10-19 through the Vulkan side at W = 64), it is
+  NOT the first measured S = 32 fact (this tick's commit message said
+  "first"; that claim is corrected here and in summary.md). ADR-0362's
+  "whether MoltenVK fills the struct to that value is UNVERIFIED" stays
+  true for the provider-startup struct read it describes.
 - Shaders: the emitter's own bytes, both arms, three operators, W = 256 (the
   measured Apple workgroup row, ADR-0358) -- `accelerator/lower` with
   `:msl-v1` x {:baseline, :subgroup-reduce}, written by
