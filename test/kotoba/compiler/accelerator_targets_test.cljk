@@ -63,12 +63,38 @@
     (is (= :msl-v1 (:target apple)))
     (is (= :unknown (:vendor unknown)))
     (is (= :wgsl-v1 (:target unknown)))
-    (testing "every answer is marked unmeasured until hardware says otherwise"
+    (testing "a measured row answers :measured? true, a provisional row false"
+      (is (true? (:measured? nvidia)))
+      (is (true? (:measured? apple)))
+      (is (false? (:measured? unknown))))
+    (testing "every answer carries its basis"
       (doseq [decision [nvidia apple unknown]]
-        (is (false? (:measured? decision)))
         (is (string? (:basis decision)))))
+    (testing "the measured flag is scoped to the measured device (uB5G, ADR-0358)"
+      (is (false? (:measured? (targets/recommend {:vendor "Apple M3" :name "Apple M3"})))
+          "a named device that is not the measured one keeps the row flag out")
+      (is (true? (:measured? (targets/recommend {:vendor "Apple M1 Max" :name "M1 Max"}))))
+      (is (false? (:measured? (targets/recommend {:vendor-id 4318 :api :cuda :max-workgroup-x 512})))
+          "an INFO-derived limit probe never transfers the row flag"))
     (testing "same descriptor in, same map out"
       (is (= nvidia (targets/recommend {:vendor-id 4318 :api :cuda}))))))
+
+(deftest device-class-maps-the-loader-vocabulary
+  (testing "the five DEVCLASS words of tools/kexe_gpu_vulkan.c map losslessly"
+    (is (= :discrete-gpu (targets/device-class "discrete")))
+    (is (= :integrated-gpu (targets/device-class "integrated")))
+    (is (= :virtual-gpu (targets/device-class "virtual")))
+    (is (= :cpu (targets/device-class "cpu")))
+    (is (= :other (targets/device-class "other"))))
+  (testing "every answer is a member of device-classes"
+    (doseq [token ["discrete" "integrated" "virtual" "cpu" "other"]]
+      (is (contains? targets/device-classes (targets/device-class token)))))
+  (testing "a token the loader cannot emit answers :unknown, never a wrong class"
+    (doseq [token [nil "" "Discrete" "discrete-gpu" " integrated" "gpu" 42 :discrete]]
+      (is (= :unknown (targets/device-class token))
+          (str token " must not become a specific class"))))
+  (testing "same token in, same class out"
+    (is (= (targets/device-class "integrated") (targets/device-class "integrated")))))
 
 (deftest info-answers-parse-into-measured-device-facts
   (testing "the recorded 2026-10-18 M1 Max INFO answer (wire 42) parses"

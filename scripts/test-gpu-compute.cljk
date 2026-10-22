@@ -6,7 +6,9 @@
 ;;
 ;; Three outcomes, three exit codes -- the run that could not measure never
 ;; reads as the run that measured and passed:
-;;   0  the probe answered "<device>|<api>|<maxWgX>|<unified>|<class>"
+;;   0  the probe answered "<device>|<api>|<maxWgX>|<unified>" (the shipped
+;;      four-field INFO shape; the device class rides the separate DEVCLASS
+;;      request -- scripts/test-gpu-devclass.cljk covers it)
 ;;   1  it ran and the answer was wrong, or the guest trapped
 ;;   3  could not run here: no Vulkan headers/loader, or macOS without
 ;;      MoltenVK, or the amu compile itself refused -- printed by name
@@ -59,12 +61,13 @@
   (when-not hex (fail! (str "probe did not answer a string (exit " status "): " (subs (str out err) 0 (min 400 (count (str out err)))))))
   (let [answer (.toString (js/Buffer.from hex "hex") "utf8")
         fields (str/split answer #"\|")]
-    (when-not (= 5 (count fields)) (fail! (str "INFO answer has " (count fields) " fields, not 5: " answer)))
+    (when-not (= 4 (count fields)) (fail! (str "INFO answer has " (count fields) " fields, not 4: " answer)))
     (when (str/blank? (first fields)) (fail! "INFO answered an empty device name"))
-    ;; The class field must be one of the five words tools/kexe_gpu_vulkan.c
-    ;; emits for VkPhysicalDeviceType (device-class in
-    ;; kotoba.compiler.accelerator-targets is the same vocabulary).
-    (when-not (contains? #{"discrete" "integrated" "virtual" "cpu" "other"} (nth fields 4))
-      (fail! (str "INFO answered an unknown device class: " (nth fields 4))))
+    ;; The device class is NOT a fifth INFO field: the shipped surface is the
+    ;; separate DEVCLASS request (tools/kexe_gpu_vulkan.c), probed by
+    ;; scripts/test-gpu-devclass.cljk. The fifth-field shape was superseded
+    ;; (owner-directed, merge 740caee4) and this harness was still reading it
+    ;; (measured 2026-10-22: the loader answered the four fields and this
+    ;; script failed with "INFO answer has 4 fields, not 5").
     (println (str "GPU-COMPUTE\tOK\t" answer "\t" target))
     (js/process.exit 0)))

@@ -59,9 +59,15 @@ Rules:
   rows that carry hardware evidence.
 - An unmeasured row is labeled unmeasured in the code and here, so a reader
   can tell a design default from a tuning result without trusting prose.
-- Reporting landed before branching (2026-10-19): the wire-42 INFO answer
-  carries a fifth field, the VkPhysicalDeviceType as one word
-  (discrete|integrated|virtual|cpu|other, `tools/kexe_gpu_vulkan.c`), and
-  `device-class` maps that word into `device-classes`. The v1 table still
+- Reporting landed before branching (2026-10-19; shape settled 2026-10-22):
+  the loader reports device class as its own wire-42 request, `DEVCLASS` ->
+  one word (discrete|integrated|virtual|cpu|other -- the chosen device's
+  VkPhysicalDeviceType as a stable token, `tools/kexe_gpu_vulkan.c`), and
+  `device-class` maps that word into `device-classes` (total: a word outside
+  the loader's five answers :unknown). The earlier fifth-INFO-field shape is
+  superseded (owner-directed merge 740caee4): the INFO answer is exactly the
+  four fields `<device>|<api>|<maxWgX>|<unified>`, and the harnesses read it
+  that way (`scripts/test-gpu-compute.cljk` for INFO,
+  `scripts/test-gpu-devclass.cljk` for DEVCLASS). The v1 table still
   does not branch on device class; when a row needs the branch, it lands
   with the measurement that justifies it (JUN-57..60).

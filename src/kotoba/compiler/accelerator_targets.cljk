@@ -11,7 +11,7 @@
   The functions are TOTAL. An unknown vendor or api answers the documented
   fallback instead of throwing -- dispatch time is where a refusal costs the
   most, and a portable default is honest about what it is."
-  {:kotoba/export [classify-vendor default-target device-classes name-vendor-fragments recommend target-for vendor-ids vendors workgroup-default workgroup-defaults]}
+  {:kotoba/export [classify-vendor default-target device-class device-classes name-vendor-fragments recommend target-for vendor-ids vendors workgroup-default workgroup-defaults]}
   (:require [kotoba.lang.text :as str]
             #?(:cljs [kotoba.kir.cljs-i64 :as i64])))
 
@@ -21,10 +21,34 @@
   #{:nvidia :apple :intel :arm :amd :unknown})
 
 (def device-classes
-  "Reserved. The v1 table does not branch on device class yet; when a row
-  needs it (discrete vs integrated memory behavior), it lands with the
-  measurement that justifies the branch."
-  #{:discrete-gpu :integrated-gpu :unknown})
+  "The device-class vocabulary: one keyword per word of the wire-42 DEVCLASS
+  answer (tools/kexe_gpu_vulkan.c reports the chosen device's
+  VkPhysicalDeviceType as discrete|integrated|virtual|cpu|other), plus
+  :unknown for anything that is not one of those words. Reserved: the v1
+  table does not branch on device class yet; when a row needs it (discrete vs
+  integrated memory behavior), it lands with the measurement that justifies
+  the branch."
+  #{:discrete-gpu :integrated-gpu :virtual-gpu :cpu :other :unknown})
+
+(def ^:private device-class-tokens
+  "The DEVCLASS wire words -> device-classes keywords. The loader emits
+  exactly these five lower-case words, so the map is the whole vocabulary and
+  nothing is case-folded: a word the loader cannot emit is not a class fact."
+  {"discrete" :discrete-gpu
+   "integrated" :integrated-gpu
+   "virtual" :virtual-gpu
+   "cpu" :cpu
+   "other" :other})
+
+(defn device-class
+  "Map one wire-42 DEVCLASS token into `device-classes`. TOTAL: a token
+  outside the loader's five words (nil, blank, a case variant, a keyword)
+  answers :unknown -- a non-fact must not become a specific class. Lossless
+  in the other direction: every loader word keeps its own class. `recommend`
+  does not branch on this; it is the reporting half of device class for the
+  dispatch layers that will (JUN-57..60)."
+  [token]
+  (get device-class-tokens token :unknown))
 
 (def vendor-ids
   "PCI vendor ids, as VkPhysicalDeviceProperties.vendorID reports them and as
@@ -132,7 +156,8 @@
   "Parse one wire-42 INFO answer -- \"<device>|<api>|<maxWgX>|<unified>\" as
   tools/kexe_gpu_vulkan.c answers it (deviceName, apiVersion major.minor.patch,
   limits.maxComputeWorkGroupSize[0], deviceType==INTEGRATED_GPU) -- into a
-  device descriptor for `recommend`:
+  device descriptor for `recommend`. The device class is NOT in this answer:
+  it rides the separate DEVCLASS request, and `device-class` maps its word:
   {:vendor <deviceName> :api :vulkan :api-version <string>
    :max-workgroup-x <int> :unified-memory? <bool> :measured? true}.
 
