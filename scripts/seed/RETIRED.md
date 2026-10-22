@@ -27,7 +27,7 @@ cover before its property counts as qualified again.
 | check-adjacent-fuel-reload.py, check-mask-direct-source.py, check-nonzero-guard-charge.py, check-positive-quotient.py, check-positive-quotient-proof.py, check-prepaid-fuel-reuse.py, check-sequential-scan.py, check-twoarg-comparisons.py | adopted 41-a64gen optimizations (oracles, fuel, arena counters) | replaced: restored under the same names; `--selfbuild-output` is now a `selfhost-bootstrap.py` output and every compile/guest call goes through its C-free aarch64 runner (results, traps, fuel and the runner's arena record raw-identical OFF/ON; the removed loader's region counters are 0) |
 | check-bounded-lookup.py | adopted 41-a64gen bounded lookup | replaced: restored under the same name on the C-free aarch64 runner (as the row above) |
 | verify-loader-fuzz.py | fuzz coverage of the C loader's parser | retired with the loader |
-| verify-preserved-integration.py, test-preserved-verification.py | frozen-source integration through the C loader | refused: re-run through the aarch64 runner |
+| verify-preserved-integration.py, test-preserved-verification.py | frozen-source integration through the C loader | replaced: restored under the same names; `--bootstrap` takes a `selfhost-bootstrap.py` output and every call goes through its C-free aarch64 runner (arm64 Linux) |
 | test-x86_64-build-pins.py | orchestration fault injection of build-x86_64-linux.py | retired with that script |
 | check-native-source-recovery.sh | native source recovery through the loader | refused: re-run through the aarch64 runner |
 
