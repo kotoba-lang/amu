@@ -1,6 +1,6 @@
 (ns kotoba.compiler.text-bytes-core
   "Canonical Kotoba text and byte primitives for the compiler."
-  {:kotoba/export [byte-at bytes-from-ints bytes-length concat-bytes empty-bytes index-of-byte slice-bytes utf8-bytes utf8-length utf8-text]})
+  {:kotoba/export [byte-at bytes-from-ints bytes-length concat-bytes empty-bytes index-of-byte slice-bytes utf8-bytes utf8-length utf8-text utf8-valid?]})
 
 (defn utf8-length [text :string] :i64
   (string-byte-length text))
@@ -34,3 +34,33 @@
     (cond (>= i (bytes-count bytes)) -1
           (= b (bytes-at bytes i)) i
           :else (recur (inc i)))))
+
+;; UTF-8 well-formedness (RFC 3629), ported from text_bytes.cljk's :kotoba
+;; reading. The facade maps utf8-text-lossy here too: Kotoba has no lossy
+;; decoder, so the Kotoba reading of "lossy" is the strict decode.
+(defn- utf8-continuation? [b :i64] :bool
+  (= 128 (bit-and b 192)))
+
+(defn utf8-valid? [bytes :bytes] :bool
+  (let [n (bytes-count bytes)]
+    (loop [i 0]
+      (if (>= i n)
+        true
+        (let [b0 (bytes-at bytes i)]
+          (cond
+            (< b0 128) (recur (+ i 1))
+            (or (< b0 194) (> b0 244)) false
+            (>= (+ i 1) n) false
+            :else
+            (let [b1 (bytes-at bytes (+ i 1))
+                  k (if (< b0 224) 1 (if (< b0 240) 2 3))]
+              (if (or (not (utf8-continuation? b1))
+                      (and (= b0 224) (< b1 160))
+                      (and (= b0 240) (< b1 144))
+                      (and (= b0 237) (>= b1 160))
+                      (and (= b0 244) (>= b1 144))
+                      (>= (+ i k) n)
+                      (and (>= k 2) (not (utf8-continuation? (bytes-at bytes (+ i 2)))))
+                      (and (>= k 3) (not (utf8-continuation? (bytes-at bytes (+ i 3))))))
+                false
+                (recur (+ i (+ k 1)))))))))))
