@@ -28,6 +28,8 @@ jobs:
         run: python3 scripts/seed/selfhost-bootstrap.py --output "$RUNNER_TEMP/boot"
       - name: Static launcher (--format launcher, ADR 0371 step 4; arm64, native)
         run: python3 scripts/seed/check-static-launcher.py --compiler "$RUNNER_TEMP/boot/S3.elf" --output "$RUNNER_TEMP/launcher"
+      - name: Guest code cannot reach the runtime by name (JUN-325)
+        run: python3 scripts/seed/check-runtime-boundary.py --compiler "$RUNNER_TEMP/boot/S3.elf" --output "$RUNNER_TEMP/boundary"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: bootstrap-arm64
@@ -36,7 +38,18 @@ jobs:
             ${{ runner.temp }}/boot/S-x86_64.elf
             ${{ runner.temp }}/boot/R-x86_64.elf
             ${{ runner.temp }}/boot/selfhost-unity.kotoba
-            ${{ runner.temp }}/launcher/static-launcher.json
+          if-no-files-found: error
+      # separate artifacts: another path in the one above would move its root
+      # (the qualify job expects boot/ at the top)
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: static-launcher-arm64
+          path: ${{ runner.temp }}/launcher/static-launcher.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: runtime-boundary-arm64
+          path: ${{ runner.temp }}/boundary/runtime-boundary.json
           if-no-files-found: error
   qualify-x86_64:
     needs: bootstrap-arm64

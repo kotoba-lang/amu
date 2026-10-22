@@ -99,9 +99,12 @@ appended after the guest (and its r6b library) and compiled by the same
 frontend and runtime-profile backend. Absolute header cells, static builds
 only: 197 = byte offset of the runtime text (0 = not a static build), 198 =
 first intrinsic FN, 199 = `kxrt-start`, 200..255 = FN whose absolute address
-fills context word slot/8 (slots 48..440). Functions whose symbol starts at or
-after cell 197 are runtime functions: no OP-FUEL code, scalar SIR only, and
-never called directly by guest functions (E7101). Calls to the eight
+fills context word slot/8 (slots 48..440). Functions whose definition (the
+first token of the def form) is at or after cell 197 are runtime functions:
+no OP-FUEL code, scalar SIR only, and never called directly by guest functions
+(E7101). Naming a runtime function in the guest does not change that; until
+2026-10-22 the test used the symbol's first appearance, and a guest that named
+an intrinsic (kxrt-syscall, kxrt-store64, ...) got it inline (JUN-325). Calls to the eight
 `kxrt-` intrinsic stubs (load64, store64, load8, store8, syscall, ctx,
 call-main, trap) are replaced by inline code.
 
