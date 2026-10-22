@@ -43,3 +43,7 @@ exercise public dotted-ID/legacy-alias import and CLI behavior through the
 same compiler. Until then #1428 remains draft and is not admitted to main.
 Removal of the old compiler is not a native execution result. No Actions or
 branch-protection setting changes are part of this retirement.
+
+The separately held Git `scripts/merge-guard.mjs` and its existing workflow
+remain unchanged. This repository-maintenance check is not a compiler host;
+removing the Node compiler does not authorize removing that safety guard.
