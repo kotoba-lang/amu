@@ -1,20 +1,22 @@
 (ns kotoba.compiler.accelerator-variants
   "Total, deterministic per-vendor kernel variant selection for the ADR-0002
-  accelerator KIR (ADR-0356; JUN-57 NVIDIA slice, JUN-58/59/60 follow).
-
-  UNMEASURED, all of it. Nothing in this repository has executed a
-  warp-shuffle reduction: the runtime :gpu/compute (wire 42) executes through
-  Vulkan only (tools/kexe_gpu_vulkan.c) and the CUDA emitter has no execution
-  path. Every answer here is a design choice marked :measured? false, and no
-  caller may report one as optimization evidence until a hardware measurement
-  replaces its basis.
+  accelerator KIR (ADR-0356; the NVIDIA row is JUN-57, the Intel and ARM
+  rows are JUN-59/JUN-60 and share one subgroup-size-parametric emission).
+  UNMEASURED, all of it. Nothing in this repository has executed a variant
+  reduction on the vendor hardware its rows name: the wire-42 (:gpu/compute)
+  execution path has no producer today -- the C loader brokers were removed
+  (main 36479076) and the replacement is ADR 0371's GPU provider process,
+  not implemented. Every answer here is a design choice marked
+  :measured? false, and no caller may report one as optimization evidence
+  until a hardware measurement replaces its basis.
 
   The functions are TOTAL, like the dispatch table in
   kotoba.compiler.accelerator-targets: a vendor or kernel shape outside the
   table answers :baseline, never a throw. Selection time is the wrong place
   to refuse -- a portable kernel that runs is worth more than an error."
   {:kotoba/export [select-variant variant-bases variants]}
-  (:require [kotoba.compiler.accelerator :as accelerator]))
+  (:require [kotoba.compiler.accelerator :as accelerator]
+            [kotoba.compiler.accelerator-subgroup-reduce :as subgroup-reduce]))
 
 (def variants
   "Every variant selection may answer. Backed by the emitter's admitted set --
@@ -25,6 +27,24 @@
   "The smallest workgroup the shuffle variant admits: one full NVIDIA warp.
   Below this the variant would need partial-warp masking and gets :baseline."
   32)
+
+(def ^:private route-names
+  "One emission route under the two names callers may hold for it: the api
+  name and the emitter target name. ADR-0359 decision 3 is why :vulkan and
+  :glsl-v1 name one route (the api :vulkan opens compiled SPIR-V and the
+  only source-to-SPIR-V path this repository owns is glslang from GLSL);
+  :cuda and :cuda-v1 are the CUDA route's two spellings the same way. The
+  sets are disjoint, so at most one route answers per target keyword and
+  the lookup is order-independent."
+  {:cuda-v1 #{:cuda :cuda-v1}
+   :glsl-v1 #{:vulkan :glsl-v1}})
+
+(defn- emitter-route
+  "The emission route a target keyword names, or nil when it names none.
+  TOTAL: an unknown or absent target answers nil and selection then falls
+  back to :baseline rather than guessing an emitter."
+  [target]
+  (some (fn [[route names]] (when (contains? names target) route)) route-names))
 
 (def variant-bases
   "Why each variant exists. Design rationale, not measurement evidence."
@@ -38,45 +58,121 @@
     that removing the barrier cascade wins on NVIDIA hardware. It replaces no
     workgroup row and changes no reduction semantics: the same elements are
     grouped in a different order (f32 :sum may differ in the low bits;
-    :max/:min are order-independent)."})
+    :max/:min are order-independent)."
+   :subgroup-reduce
+   "Intel (JUN-59, ADR-0356) and ARM (JUN-60, ADR-0357) subgroup reduce: an
+    intra-subgroup fold whose width is queried at RUNTIME (gl_SubgroupSize)
+    and never baked in -- Intel subgroup size is device-chosen among 8/16/32
+    and Mali's spans 4..32, so a baked width would be wrong somewhere. The
+    fold needs no barriers and no shared memory; one write barrier plus a
+    cross-subgroup tree over the W/S partials replaces the baseline
+    log2(W)-stage cascade (4/3/2 stages at W = 128 for S = 8/16/32 against
+    the baseline's 7 -- stage arithmetic, not a speed claim). The design
+    assumption (UNMEASURED) is that removing most of the barrier cascade
+    wins on Intel and Mali hardware; no hardware here has said so. It
+    replaces no workgroup row. Semantics, scoped as ADR-0357 P1 requires:
+    the reduction groups the same admitted elements as the :baseline tree
+    in a different order -- f32 :sum agrees with the baseline to low bits on
+    well-conditioned inputs, and on cancellation-sensitive inputs the
+    divergence is NOT confined to the low bits and stays an UNMEASURED
+    divergence regime from the baseline; :max/:min are order-independent
+    within the ordinary-value domain only (no NaN payloads, no negative
+    zeros -- ADR-0356 rule 2)."})
 
 (defn select-variant
-  "The kernel variant for a (vendor, kir) pair. TOTAL and deterministic: the
-  same pair answers the same map, forever. :warp-shuffle-reduce is answered
-  exactly for NVIDIA reduction kernels whose workgroup reaches a full warp;
-  everything else -- other vendors, elementwise kernels, sub-warp
-  workgroups, unknown vendors, malformed kernels -- answers :baseline.
+  "The kernel variant for a (vendor, kir) pair, optionally scoped to the
+  emission `target` and the `device` descriptor the dispatch layers carry.
+  TOTAL and deterministic: the same arguments answer the same map, forever.
 
-  Every answer carries :measured? false. That flag is the honesty lock: it
-  flips only when hardware measurement (JUN-57 for NVIDIA) replaces the
-  basis text."
+  The rows (ADR-0356 as amended by ADR-0357; every answer carries
+  :measured? false):
+
+  - :warp-shuffle-reduce -- NVIDIA reduction kernels over :sum/:max/:min
+    whose workgroup reaches one full warp, on the CUDA route (:cuda or
+    :cuda-v1), on a device confirming compute capability 7.0+ (rule 6: the
+    sm_70+ floor in variant-bases is a real requirement; a descriptor that
+    does not confirm it answers :baseline, fail closed).
+
+  - :subgroup-reduce -- Intel (JUN-59) and ARM (JUN-60) reduction kernels
+    over :sum/:max/:min with a workgroup of at least one subgroup floor
+    (the emission's own predicate, kotoba.compiler.accelerator-subgroup-
+    reduce/applicable?), on the Vulkan route (:vulkan or :glsl-v1), under
+    ADR-0356 rule 6 and ADR-0357's capability precondition: the device
+    descriptor must report, for the compute stage, the subgroup operations
+    the fold needs (:subgroup-ops containing :basic and :shuffle-relative)
+    and a subgroup size (:subgroup-size) that DIVIDES the workgroup -- which
+    also refuses a subgroup larger than the workgroup, as rule 6 demands.
+    The reported width is taken as the device gives it (8/16/32 on Intel,
+    4..32 on Mali); the emission is parametric over it. The descriptor keys
+    are the contract this table consumes and their producer is the wire-42
+    INFO/DEVCLASS answer of the (today unimplemented) ADR-0371 GPU
+    provider; a descriptor that reports none of them fails closed to
+    :baseline.
+
+  Everything else answers :baseline: other vendors (including :amd, which
+  has no designed row), other targets, ewise kernels, sub-minimum
+  workgroups, a malformed kernel (the COMPLETE KIR is validated first --
+  shape checks alone would admit W=300 and worse), a device that confirms
+  no capability, or no device at all.
+
+  :measured? is the honesty lock and is false on every answer: it flips
+  only when hardware measurement (JUN-57 on NVIDIA, JUN-59 on Intel, JUN-60
+  on Mali) replaces the basis text of the row it stands on. No report may
+  cite an answer here as optimization evidence until then."
   ([vendor kir] (select-variant vendor kir nil nil))
   ([vendor kir target] (select-variant vendor kir target nil))
   ([vendor kir target device]
-  ;; ADR-0356 rule 3 (emission admission first): the variant is admitted
-  ;; only for the emitter that can emit it -- CUDA only for
-  ;; :warp-shuffle-reduce. A Vulkan/WebGPU target answers :baseline.
-  ;; ADR-0356 rule 6 (device capability): the sm_70+ floor in variant-bases
-  ;; is a real requirement; a descriptor that does not confirm compute
-  ;; capability 7.0+ answers :baseline (fail closed, no guessing).
-  (let [cap-ok? (let [cc (:compute-capability (or device {}))]
-                  (cond
-                    (nil? cc) false
-                    (number? cc) (>= cc 7.0)
-                    :else false))
-        ;; rule: validate the COMPLETE KIR first (a malformed kernel never
-        ;; selects a variant -- shape checks alone admit W=300 and worse).
-        valid-kir? (try (accelerator/validate! kir) true (catch :default _ false))
-        variant (if (and (= :nvidia vendor)
-                         (= :cuda target)
-                         valid-kir?
-                         cap-ok?
-                         (= :reduce (:kernel/op kir))
-                         (contains? #{:sum :max :min} (:kernel/operator kir))
-                         (let [wg (:kernel/workgroup-size kir)]
-                           (and (int? wg) (>= wg min-warp-shuffle-workgroup))))
-                  :warp-shuffle-reduce
-                  :baseline)]
-    {:variant variant
-     :measured? false
-     :basis (get variant-bases variant)})))
+   ;; ADR-0356 rule 3 (emission admission first): the variant is admitted
+   ;; only for the route whose emitter can emit it -- CUDA only for
+   ;; :warp-shuffle-reduce, the Vulkan/GLSL route only for
+   ;; :subgroup-reduce. A route the emitter refuses answers :baseline.
+   (let [route (emitter-route target)
+         dev (or device {})
+         ;; rule: validate the COMPLETE KIR first (a malformed kernel never
+         ;; selects a variant).
+         valid-kir? (try (accelerator/validate! kir) true (catch :default _ false))
+         ;; ADR-0356 rule 6 (device capability): the NVIDIA row's sm_70+
+         ;; floor is a real requirement; a descriptor that does not confirm
+         ;; compute capability 7.0+ answers :baseline (fail closed, no
+         ;; guessing).
+         cuda-cap-ok? (let [cc (:compute-capability dev)]
+                        (and (number? cc) (>= cc 7.0)))
+         ;; ADR-0356 rule 6 and ADR-0357's ARM gate: the fold needs the
+         ;; basic and shuffle-relative subgroup ops in the compute stage
+         ;; (what the emission's two GL_KHR_shader_subgroup_* extensions
+         ;; name) and a subgroup size that divides the workgroup. Every
+         ;; missing or malformed fact fails closed to :baseline -- a
+         ;; descriptor that reports no capability is not a refusal, it is an
+         ;; absence of evidence, and the portable variant is the answer.
+         subgroup-cap-ok?
+         (let [s (:subgroup-size dev)
+               ops (:subgroup-ops dev)
+               wg (:kernel/workgroup-size kir)]
+           (and (int? s) (pos? s)
+                (set? ops)
+                (contains? ops :basic)
+                (contains? ops :shuffle-relative)
+                (int? wg) (pos? wg)
+                (zero? (mod wg s))))
+         variant (cond
+                   (and (= :nvidia vendor)
+                        (= :cuda-v1 route)
+                        valid-kir?
+                        cuda-cap-ok?
+                        (= :reduce (:kernel/op kir))
+                        (contains? #{:sum :max :min} (:kernel/operator kir))
+                        (let [wg (:kernel/workgroup-size kir)]
+                          (and (int? wg) (>= wg min-warp-shuffle-workgroup))))
+                   :warp-shuffle-reduce
+
+                   (and (contains? #{:intel :arm} vendor)
+                        (= :glsl-v1 route)
+                        valid-kir?
+                        subgroup-cap-ok?
+                        (subgroup-reduce/applicable? kir))
+                   :subgroup-reduce
+
+                   :else :baseline)]
+     {:variant variant
+      :measured? false
+      :basis (get variant-bases variant)})))

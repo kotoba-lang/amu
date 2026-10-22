@@ -6,10 +6,13 @@
   into kotoba.compiler.accelerator's plumbing (ADR-0359 decision 1):
   `lower` answers this text for the (:glsl-v1, :subgroup-reduce) pair, so
   compile-kernel seals it and verify-artifact! re-lowers it like any other
-  emission. NOT selectable: `select-variant`
-  (kotoba.compiler.accelerator-variants, the design home of the row) answers
-  :baseline for every :subgroup-reduce shape until the JUN-59/60 selection
-  rows land -- ADR-0359 creates no selection row. Nothing here is measured,
+  emission. SELECTABLE since the JUN-59/JUN-60 selection rows landed in
+  `kotoba.compiler.accelerator-variants` (the design home of the rows):
+  `select-variant` answers :subgroup-reduce for the Intel and ARM rows under
+  ADR-0356 rule 3 (this emission is the only one that admits the variant)
+  and rule 6 / ADR-0357's capability precondition (a device descriptor that
+  reports the fold's subgroup ops and a subgroup size dividing the
+  workgroup; anything else fails closed to :baseline). Nothing here is measured,
   and nothing here may be reported as optimization evidence: `basis` carries
   :measured? false and that flag flips only when an interleaved
   baseline-vs-variant comparison on an Intel device (JUN-59's measurement
@@ -24,8 +27,12 @@
   memory; one write barrier plus a short cross-subgroup tree over the
   gl_NumSubgroups partials replaces the baseline tree's log2(W) cascade.
   The reduction groups the same admitted elements as the :baseline tree in a
-  different order -- f32 :sum may differ in the low bits; :max/:min are
-  order-independent.
+  different order -- f32 :sum agrees with the baseline to low bits on
+  well-conditioned inputs, and on cancellation-sensitive inputs the
+  divergence is NOT confined to the low bits and stays an UNMEASURED
+  divergence regime from the baseline (ADR-0357 P1, option b); :max/:min
+  are order-independent within the ordinary-value domain only (no NaN
+  payloads, no negative zeros -- ADR-0356 rule 2).
 
   Safety condition (checked by the tests): a Vulkan subgroup size is a power
   of two, so for every KIR-admitted W (powers of two in [32, 1024]) every
@@ -36,9 +43,12 @@
   gl_NumSubgroups <= W always.
 
   The ABI edge: the KIR's `n` is :runtime-u32, a uniform in the WGSL
-  emission. The wire-42 (:gpu/compute) path binds storage buffers only
-  (tools/kexe_gpu_vulkan.c: \"PIPELINE <spv> <bindings>, storage buffers
-  0..n-1\"), so this emission carries `n` in a read-only storage buffer at
+  emission. The wire-42 (:gpu/compute) path binds storage buffers only (the
+  loader-era command contract behind the removed C loader,
+  tools/kexe_gpu_vulkan.c before main 36479076 removed it; the command
+  survives in the sealed SPIR-V build step,
+  kotoba.compiler.accelerator-spirv-compile), so this emission carries `n`
+  in a read-only storage buffer at
   binding 2. Same value, same bounds semantics; the buffer-vs-uniform
   distinction is a WGSL-ism the GLSL path has no word for."
   {:kotoba/export [applicable? basis emit-glsl min-workgroup-size]}

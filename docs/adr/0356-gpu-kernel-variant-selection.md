@@ -74,8 +74,25 @@ and binding on every future row):
 |---------|--------|-------|-------|-------------|
 | `:baseline` | all | all | implemented (main; ADR-0002 emitters) | the only variant with an execution path today |
 | `:warp-shuffle-reduce` | nvidia | reduce, W >= 32 | implemented in flight (PR #1331, open and unmerged at this date); CUDA emission only | UNMEASURED: no NVIDIA hardware, and the CUDA emitter has no execution path in this repo |
-| `:subgroup-reduce` | intel | reduce, W >= 32 | **accepted design only (this ADR)**; nothing implemented | UNMEASURED: no Intel hardware |
-| (ARM row) | arm | -- | **proposed**: neither designed nor implemented here | -- |
+| `:subgroup-reduce` | intel | reduce, W >= 32 | **implemented** 2026-10-22 (this ADR's design, on ADR-0359's admitted emission and sealed build step; selection row in `kotoba.compiler.accelerator-variants` under rules 3 + 6) | UNMEASURED: no Intel hardware |
+| `:subgroup-reduce` | arm | reduce, W >= 32 | **implemented** 2026-10-22 (the row is DESIGNED in ADR-0357, the ARM decision of record; same emission and selection row as the Intel row) | UNMEASURED: no Mali hardware |
+
+**Amendment (2026-10-22, the JUN-59/JUN-60 selection rows land).** The
+execution-path honesty condition (a) below has landed in full: the
+Vulkan-side emission is admitted for `:subgroup-reduce` (ADR-0359 decision
+1) and the GLSL -> SPIR-V compilation step exists as the sealed build step
+(ADR-0359 decision 2, `kotoba.compiler.accelerator-spirv-compile`). The
+selection rows therefore exist in code now: `select-variant` answers
+`:subgroup-reduce` for `:intel` and `:arm` under rule 3 and rule 6 -- the
+device descriptor must report the fold's subgroup operations
+(`:subgroup-ops` containing `:basic` and `:shuffle-relative`, the two
+extensions the emission names) and a subgroup size (`:subgroup-size`) that
+divides `W`; every other answer, including a descriptor that reports no
+capability at all, fails closed to `:baseline`. (b) is unchanged: no Intel
+or Mali device has run the variant, both rows stay UNMEASURED, and their
+measurement contracts stand as written. The NVIDIA row is selected under
+either of its route's names (`:cuda`, `:cuda-v1`), the same one-route rule
+ADR-0359 decision 3 established for `:vulkan` / `:glsl-v1`.
 
 ## Intel `:subgroup-reduce` (JUN-59) -- the design
 

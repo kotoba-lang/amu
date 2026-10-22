@@ -1,5 +1,6 @@
 (ns kotoba.compiler.accelerator-variants-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.accelerator :as accelerator]
             [kotoba.compiler.accelerator-variants :as variants]))
 
@@ -49,3 +50,111 @@
           apple (:variant (variants/select-variant :apple kir))]
       (is (= (accelerator/lower kir :cuda-v1)
              (accelerator/lower kir :cuda-v1 apple))))))
+
+(deftest subgroup-reduce-rows-select-under-their-gates
+  ;; JUN-59 (Intel, ADR-0356) and JUN-60 (ARM, ADR-0357) selection rows:
+  ;; :subgroup-reduce is answered for a reduce over :sum/:max/:min with
+  ;; W >= 32, on the Vulkan route under either of its two names, on a device
+  ;; descriptor that reports the fold's subgroup ops and a subgroup size
+  ;; that divides W (ADR-0356 rule 6 / ADR-0357's capability precondition).
+  (doseq [vendor [:intel :arm]
+          wg [32 64 128 256 512 1024]
+          operator [:sum :max :min]
+          target [:vulkan :glsl-v1]
+          s [4 8 16 32]]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator) "_f32")
+                                  :reduce operator {:workgroup-size wg})
+          device {:subgroup-size s :subgroup-ops #{:basic :shuffle-relative}}
+          answer (variants/select-variant vendor kir target device)]
+      (is (= :subgroup-reduce (:variant answer)))
+      (is (false? (:measured? answer)))
+      (is (string? (:basis answer)))))
+  (testing "the reported subgroup width is taken as the device gives it"
+    (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 1024})]
+      (is (= :subgroup-reduce
+             (:variant (variants/select-variant
+                        :arm kir :vulkan
+                        {:subgroup-size 4 :subgroup-ops #{:basic :shuffle-relative}}))))
+      (is (= :subgroup-reduce
+             (:variant (variants/select-variant
+                        :intel kir :glsl-v1
+                        {:subgroup-size 32
+                         :subgroup-ops #{:basic :shuffle-relative :arithmetic}}))))))
+  (testing "same arguments in, same map out"
+    (let [kir (accelerator/kernel "reduce_max_f32" :reduce :max {:workgroup-size 128})
+          device {:subgroup-size 16 :subgroup-ops #{:basic :shuffle-relative}}]
+      (is (= (variants/select-variant :intel kir :vulkan device)
+             (variants/select-variant :intel kir :vulkan device))))))
+
+(deftest subgroup-reduce-selection-fails-closed-off-its-gates
+  ;; Every missing or malformed fact answers :baseline -- an absence of
+  ;; evidence is not a refusal, and the portable variant is the answer.
+  (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
+        ewise (accelerator/kernel "ewise_add_f32" :ewise :add {:workgroup-size 256})
+        sub-min (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 16})
+        malformed (assoc kir :kernel/dtype :f64)
+        capable {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}]
+    (testing "a device that confirms no subgroup capability"
+      (doseq [device [nil
+                      {}
+                      {:subgroup-size 32}
+                      {:subgroup-ops #{:basic :shuffle-relative}}
+                      {:subgroup-size 32 :subgroup-ops #{:basic}}
+                      {:subgroup-size 32 :subgroup-ops #{:shuffle-relative}}
+                      {:subgroup-size 32 :subgroup-ops :all}
+                      ;; On this JS/SCI host 32.0 IS 32 (one IEEE double),
+                      ;; so the malformed-number case must use a value that
+                      ;; is a number but not an integer.
+                      {:subgroup-size 32.5 :subgroup-ops #{:basic :shuffle-relative}}
+                      {:subgroup-size 0 :subgroup-ops #{:basic :shuffle-relative}}
+                      ;; rule 6: a subgroup size that does not divide W --
+                      ;; which includes one larger than W -- answers
+                      ;; :baseline.
+                      {:subgroup-size 24 :subgroup-ops #{:basic :shuffle-relative}}
+                      {:subgroup-size 512 :subgroup-ops #{:basic :shuffle-relative}}]]
+        (doseq [vendor [:intel :arm] target [:vulkan :glsl-v1]]
+          (is (= :baseline
+                 (:variant (variants/select-variant vendor kir target device)))
+              (str "device " (pr-str device) " must fail closed")))))
+    (testing "a target outside the Vulkan route"
+      (doseq [target [:cuda :cuda-v1 :wgsl-v1 :msl-v1 :webgpu nil]]
+        (is (= :baseline (:variant (variants/select-variant :intel kir target capable))))
+        (is (= :baseline (:variant (variants/select-variant :arm kir target capable))))))
+    (testing "a vendor outside the two designed rows"
+      (doseq [vendor [:nvidia :apple :amd :unknown :qualcomm]]
+        (is (= :baseline (:variant (variants/select-variant vendor kir :vulkan capable))))))
+    (testing "a shape outside the emission's row"
+      (is (= :baseline (:variant (variants/select-variant :intel ewise :vulkan capable))))
+      (is (= :baseline (:variant (variants/select-variant :arm sub-min :vulkan capable))))
+      (is (= :baseline (:variant (variants/select-variant :intel malformed :vulkan capable))))
+      (is (= :baseline (:variant (variants/select-variant :intel {} :vulkan capable))))
+      (is (= :baseline (:variant (variants/select-variant :intel nil :vulkan capable)))))))
+
+(deftest the-selected-subgroup-reduce-variant-lowers-seals-and-verifies
+  ;; Rule 3 end to end: what the table selects is exactly what the emitter
+  ;; admits, and the sealed artifact re-lowers byte-identically.
+  (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 128})
+        device {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}
+        selected (:variant (variants/select-variant :arm kir :vulkan device))
+        compiled (accelerator/compile-kernel kir :glsl-v1 selected)]
+    (is (= :subgroup-reduce selected))
+    (is (= :subgroup-reduce (:variant compiled)))
+    (is (str/includes? (:code compiled) "gl_SubgroupSize"))
+    (is (nil? (re-find #"\bd\s*=\s*\d+u" (:code compiled)))
+        "a baked fold width leaked into the selected emission")
+    (is (= compiled (accelerator/verify-artifact! compiled)))))
+
+(deftest each-route-selects-under-either-of-its-names
+  ;; ADR-0359 decision 3: :vulkan and :glsl-v1 name one route, and :cuda /
+  ;; :cuda-v1 are the CUDA route's two spellings the same way. A caller
+  ;; holding target-for's api answer and a caller holding lower's emitter
+  ;; target select the same variant.
+  (let [reduce-kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
+        capable {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}]
+    (doseq [target [:cuda :cuda-v1]]
+      (is (= :warp-shuffle-reduce
+             (:variant (variants/select-variant :nvidia reduce-kir target
+                                                {:compute-capability 7.0})))))
+    (doseq [vendor [:intel :arm] target [:vulkan :glsl-v1]]
+      (is (= :subgroup-reduce
+             (:variant (variants/select-variant vendor reduce-kir target capable)))))))
