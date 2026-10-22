@@ -838,12 +838,12 @@
 ;; the catalogue name of capability wire w
 (defn- drv-r5b-wname [w :i64] :string
   (case w 3 ":hash/sha256" 7 ":clock/now" 33 ":env/read" 34 ":fs/browse" 35 ":fs/app-data" 37 ":io/write" 38 ":cli/args"
-        39 ":io/write-error" 41 ":io/read" (mem-u2dec w)))
+        39 ":io/write-error" 41 ":io/read" 42 ":gpu/compute" (mem-u2dec w)))
 ;; the wire of a capability name (with ':'), -1 when none
 (defn- drv-r5b-wire [s :string] :i64
   (cond (string=? s ":hash/sha256") 3 (string=? s ":clock/now") 7 (string=? s ":env/read") 33 (string=? s ":fs/browse") 34
         (string=? s ":fs/app-data") 35 (string=? s ":fs/app-data-bytes") 35 (string=? s ":io/write") 37 (string=? s ":cli/args") 38
-        (string=? s ":io/write-error") 39 (string=? s ":io/read") 41 :else -1))
+        (string=? s ":io/write-error") 39 (string=? s ":io/read") 41 (string=? s ":gpu/compute") 42 :else -1))
 ;; the items of mask m (bit 47 = :state first, then the wires in ascending order), each wrapped by pre/post, as #{..}. R5B rung
 ;; proof (a handler written in the language): the text is the state of handler drv-acc, whose put APPENDS (it was a loop
 ;; accumulator); drv-r5b-items is stateful and self-recursive
