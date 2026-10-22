@@ -5,8 +5,9 @@
   under test is the orchestration the ADR specifies: refuse an unverified
   source before any process runs, attribute the tool or refuse, seal what
   the tool actually produced, write the loader cache from the sealed bytes,
-  and fail closed on a cache that no longer matches. Nothing in this file is
-  a measurement."
+  fail closed on a cache that no longer matches, and answer the dispatch
+  side's wire command only after those checks (pipeline-command). Nothing
+  in this file is a measurement."
   (:require [clojure.test :refer [deftest is testing]]
             [kotoba.io :as kio]
             [kotoba.artifact.core :as artifact]
@@ -17,6 +18,11 @@
 (defn- ewise-source []
   (accelerator/compile-kernel
    (accelerator/kernel "ewise_add_f32" :ewise :add {:workgroup-size 256})
+   :glsl-v1))
+
+(defn- reduce-source []
+  (accelerator/compile-kernel
+   (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 128})
    :glsl-v1))
 
 (def ^:private fake-spv
@@ -127,3 +133,45 @@
       (is (= ["glslangValidator" "-V" "--target-env" "vulkan1.1" "-S" "comp"
               "kernel.comp" "-o" "kernel.spv"]
              (:argv a))))))
+
+(deftest the-pipeline-command-is-gated-by-the-dispatch-side-checks
+  (let [calls (atom [])
+        {sealed :artifact} (compile/compile-spirv!
+                            (ewise-source) {:run (fake-runner calls {})})
+        dir (kio/temp-dir "amu-spirv-dispatch-")
+        out (kio/file dir "kernel.spv")]
+    (try
+      (compile/write-loader-cache! sealed out)
+      (testing "the wire-42 command carries the SEALED bindings count (ewise = 4),
+                not caller text"
+        (is (= (str "PIPELINE " (str out) " 4")
+               (compile/pipeline-command sealed out))))
+      (testing "a cache that no longer matches the seal answers NO command --
+                a refusal, never a dispatch"
+        (kio/write-bytes out (assoc fake-spv 8 0x00))
+        (is (thrown-with-msg? Exception #"loader cache hash mismatch"
+                              (compile/pipeline-command sealed out))))
+      (testing "a payload whose seal no longer covers it is refused before any
+                command exists (the arity cannot drift from the compiled kernel)"
+        (compile/write-loader-cache! sealed out)
+        (is (thrown-with-msg? Exception #"invalid accelerator SPIR-V artifact envelope"
+                              (compile/pipeline-command (assoc sealed :bindings 3) out))))
+      (finally
+        (kio/delete-if-exists out)
+        (kio/delete-if-exists dir)))))
+
+(deftest the-command-bindings-come-from-the-kir-op-in-the-seal
+  (let [calls (atom [])
+        sealed (:artifact (compile/compile-spirv!
+                           (reduce-source) {:run (fake-runner calls {})}))
+        dir (kio/temp-dir "amu-spirv-dispatch-")
+        out (kio/file dir "reduce.spv")]
+    (try
+      (compile/write-loader-cache! sealed out)
+      (testing "a :reduce kernel binds x, parts, n (3) -- derived at seal time"
+        (is (= 3 (:bindings sealed)))
+        (is (= (str "PIPELINE " (str out) " 3")
+               (compile/pipeline-command sealed out))))
+      (finally
+        (kio/delete-if-exists out)
+        (kio/delete-if-exists dir)))))

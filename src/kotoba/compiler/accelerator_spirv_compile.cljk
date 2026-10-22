@@ -26,12 +26,18 @@
   report, 2026-10-22). This is provenance machinery, not measurement:
   nothing here touches a :measured? flag or a workgroup row.
 
+  The dispatch side of the seal is `pipeline-command`: the wire-42
+  `PIPELINE <spv> <bindings>` command, answered only after the sealed
+  artifact verifies AND verify-loader-cache! accepts the file the loader
+  will open, with the bindings count read from the sealed payload rather
+  than caller text.
+
   UNIMPLEMENTED, named so no prose upgrades it: the measurement harnesses
   consuming compiler-sealed artifacts (they keep their own glslang
-  invocations for now), and the dispatch-side call of verify-loader-cache!
-  before a wire-42 dispatch."
+  invocations and hand-written PIPELINE lines for now -- migrating them
+  means calling `pipeline-command` over a sealed artifact)."
   {:kotoba/export [compile-argv compile-spirv! default-runner
-                   verify-loader-cache! write-loader-cache!]}
+                   pipeline-command verify-loader-cache! write-loader-cache!]}
   (:require [kotoba.io :as kio]
             [kotoba.compiler.accelerator :as accelerator]
             [kotoba.compiler.accelerator-spirv :as spirv]
@@ -146,3 +152,26 @@
   (kio/write-bytes output (:spirv-bytes spv-artifact))
   (verify-loader-cache! spv-artifact output)
   (str output))
+
+(defn pipeline-command
+  "The dispatch side of the seal (ADR-0359 decision 2): the wire-42
+  `PIPELINE <spv> <bindings>` command, answered ONLY after the sealed
+  artifact passes its own integrity-plus-provenance verification AND
+  verify-loader-cache! accepts the exact file the loader will open.
+
+  The bindings count is read from the sealed payload -- derived from the
+  KIR op at seal time (kotoba.compiler.accelerator-spirv/bindings-count)
+  -- never from caller text, so the loader call cannot name a different
+  arity than the kernel was compiled for; a payload whose seal no longer
+  covers it is refused before any command exists. A cache that does not
+  match the sealed `:spirv-sha256` answers no command at all: the dispatch
+  cannot be named, so it cannot be sent.
+
+  This is THE dispatch-side call of verify-loader-cache! in the repository.
+  The measurement harnesses still hand-write their PIPELINE lines over
+  their own glslang outputs (the remaining harness-consumption item);
+  migrating them means calling this over a compiler-sealed artifact."
+  [spv-artifact spv-path]
+  (spirv/verify-spirv-artifact! spv-artifact)
+  (verify-loader-cache! spv-artifact spv-path)
+  (str "PIPELINE " (str spv-path) " " (:bindings spv-artifact)))

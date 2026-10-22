@@ -11,10 +11,16 @@
   CLI routes, the tool-identity recording, and the loader-cache file written
   from the sealed bytes with the pre-dispatch hash check). The sealed record
   is written beside the cache as `<file.spv>.edn` (the surface named where
-  the record lands). STILL UNIMPLEMENTED: the measurement harnesses
-  consuming compiler-sealed artifacts (they keep their own glslang
-  invocations), and the dispatch-side call of verify-loader-cache!. The
-  default runner's process spawn against real glslangValidator is exercised
+  the record lands). The DISPATCH-SIDE call of verify-loader-cache! is
+  IMPLEMENTED (2026-10-22): `pipeline-command` answers the wire-42
+  `PIPELINE <spv> <bindings>` command only after the sealed artifact passes
+  its own integrity-plus-provenance verification AND verify-loader-cache!
+  accepts the file the loader will open, with the bindings count read from
+  the sealed payload rather than caller text (tests in
+  accelerator-spirv-compile-test). STILL UNIMPLEMENTED: the measurement
+  harnesses consuming compiler-sealed artifacts (they keep their own
+  glslang invocations and hand-written PIPELINE lines for now).
+  The default runner's process spawn against real glslangValidator is exercised
   by hand on this host, not by the suite (the suite drives the seam with a
   fake runner). UNMEASURED where a measurement is owed.
 - Date: 2026-10-22
