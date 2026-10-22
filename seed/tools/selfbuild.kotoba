@@ -193,7 +193,8 @@
             e (string-index-of-from text "\"" b)]
         (if (< e 0) "" (string-substring text b e))))))
 
-;; "<coordinate>\t<repo-name>\t<sha>\t<1 when :paths holds "src">" per :lock/entries entry, in lock order
+;; "<coordinate>\t<repo-name>\t<sha>\t<the first :paths root>" per :lock/entries entry, in lock order (R6AW48: the
+;; root is the :paths element quoted in the lock -- "src" or e.g. "lib/kotoba.io/src"; "" skips the entry)
 (defn- lock-entries [text :string] :string
   (loop [p 0 acc ""]
     (let [i (string-index-of-from text ":coordinate \"" p)]
@@ -210,7 +211,9 @@
               u0 (if (= (ends-with url "/") 1) (string-substring url 0 (- (string-length url) 1)) url)
               u1 (string-substring u0 (+ (last-of u0 "/") 1) (string-length u0))
               name (if (= (ends-with u1 ".git") 1) (string-substring u1 0 (- (string-length u1) 4)) u1)
-              src (if (>= (string-index-of-from paths "\"src\"" 0) 0) "1" "0")]
+              qb (string-index-of-from paths "\"" 0)
+              qe (if (< qb 0) -1 (string-index-of-from paths "\"" (+ qb 1)))
+              src (if (or (< qb 0) (< qe 0)) "" (string-substring paths (+ qb 1) qe))]
           (recur (+ i 1) (if (or (string=? coord "") (not (= (string-length sha) 40)))
                            acc
                            (string-concat acc (c6 coord "\t" name "\t" sha (c3 "\t" src "\n"))))))))))
@@ -246,13 +249,14 @@
                 sha (tab-field e 2)
                 clone (clone-of repos gitlibs name sha)]
             (cond (string=? clone "") (c5 "!" coord " " (short sha 8) ": no local clone has the commit (--repos / --gitlibs)")
-                  (string=? (tab-field e 3) "0") (recur (+ k 1) roots prov)
-                  (= (git-ok clone (c3 "cat-file\t-e\t" sha ":src")) 0) (recur (+ k 1) roots prov)
+                  (string=? (tab-field e 3) "") (recur (+ k 1) roots prov)
+                  (= (git-ok clone (c3 "cat-file\t-e\t" sha (string-concat ":" (tab-field e 3)))) 0) (recur (+ k 1) roots prov)
                   :else
                   (let [dest (c3 W "/cp/" name)
                         z (l/mkdirs R dest)
-                        r (restore clone sha dest "src")
-                        tree (git-out clone (c3 "rev-parse\t" sha ":src"))
+                        root (tab-field e 3)
+                        r (restore clone sha dest root)
+                        tree (git-out clone (c3 "rev-parse\t" sha (string-concat ":" root)))
                         kg (git-ok clone (c3 "cat-file\t-e\t" sha ":kotoba"))
                         rk (if (= kg 1) (restore clone sha dest "kotoba") "")
                         ktree (if (= kg 1) (git-out clone (c3 "rev-parse\t" sha ":kotoba")) "")]
@@ -260,11 +264,11 @@
                           (and (= kg 1) (not (string=? rk ""))) (c4 "!" coord ": " rk)
                           :else
                           (recur (+ k 1)
-                                 (if (= kg 1) (c5 roots dest "/kotoba\n" dest "/src\n") (c3 roots dest "/src\n"))
+                                 (if (= kg 1) (c5 roots dest "/kotoba\n" dest (string-concat (string-concat "/" root) "\n")) (c5 roots dest "/" root "\n"))
                                  (string-concat
                                   (string-concat
                                    prov
-                                   (c6 "root " coord " " sha (c4 " src tree " tree " clone " clone) (c3 " -> " dest "/src\n")))
+                                   (c6 "root " coord " " sha (c4 " src tree " tree " clone " clone) (c5 " -> " dest "/" root "\n")))
                                   (if (= kg 1)
                                     (c6 "root " coord " " sha (c4 " kotoba tree " ktree " clone " clone) (c3 " -> " dest "/kotoba\n"))
                                     ""))))))))))))
