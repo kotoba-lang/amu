@@ -5,31 +5,39 @@
 ;; native_cli (list-project-modules -> resolve-locked-project), while the
 ;; unpinned build-order listing stays on the seed builder main. Routing the
 ;; locked form to seed/main trapped (SIGILL) in its lock-unaware option parser.
+;; Locked build requests must refuse before entering that same lock-unaware
+;; builder. This guard does not implement locked compilation or qualify an image.
 (ns kotoba.compiler.selfhost-cli
   {:kotoba/export [main]}
-  (:require [kotoba.compiler.native-cli :as ncli] [seed :as seed])
-  (:capabilities #{:cli/args}))
+  (:require [kotoba.compiler.native-cli :as ncli]
+            [kotoba.compiler.selfhost-route :as route]
+            [seed :as seed])
+  (:capabilities #{:cli/args :io/write-error}))
 
 (defn- cli-arg [index :i64] :string
   (typed-cap-call :cli/args :string :string (string-from-i64 index)))
 
-(defn- lock-option? [index :i64 argc :i64] :bool
-  (if (>= index argc)
-    false
-    (let [argument (cli-arg index)]
-      (if (or (string=? argument "--module-lock") (string=? argument "--blocks"))
-        true
-        (lock-option? (+ index 1) argc)))))
+(defn- command-arguments [argc :i64] [:list :string]
+  (loop [index 1 arguments (typed-list-new [:list :string])]
+    (if (>= index argc)
+      arguments
+      (recur (+ index 1)
+             (typed-list-conj [:list :string] arguments (cli-arg index))))))
 
 (defn main [] :i64
   (let [command (typed-cap-call :cli/args :string :string "0")
         argc-text (typed-cap-call :cli/args :string :string "")
         argc-result (parse-long argc-text)
         argc (option-value-of [:option :i64] argc-result 0)
-        modules-locked? (and (string=? command "modules") (lock-option? 1 argc))]
-    (if (or (string=? command "compile-kir") (string=? command "compile")
-            (string=? command "link")
-            (and (string=? command "modules") (not modules-locked?))
-            (string=? command "extract-native"))
+        selected (route/dispatch command (command-arguments argc))]
+    (cond
+      (= selected :unsupported-locked-builder)
+      (do
+        (typed-cap-call :io/write-error :string :string
+          "kotoba: E-SELFHOST-LOCKED-BUILD: seed builder does not support --module-lock/--blocks; refusing without an unpinned fallback\n")
+        65)
+
+      (= selected :seed-builder)
       (seed/main)
-      (ncli/main))))
+
+      :else (ncli/main))))
