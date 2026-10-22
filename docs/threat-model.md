@@ -1,5 +1,17 @@
 # Threat model
 
+## Native migration and current CDCI status (2026-10-22)
+
+The test/browser/fuzz/x86-seed workflows and Node/KBB workflow checker are
+retired as documented in [native CDCI retirement](native-cdci-retirement.md).
+Descriptions below of C-loader/JVM/NBB mechanisms and historical suites are
+migration inventory, not current native qualification. The security invariants
+and complete positive/refusal/resource corpus remain obligations of the
+Kotoba / Amu selfhost replacement. Its controller and two native gates are
+unqualified. The required merge-guard is a separate temporary approval hold.
+
+## Invariants and historical implementation inventory
+
 Assume an adaptive autonomous attacker can generate unlimited malformed source,
 artifacts, policies, and inputs; observe failures; exploit parser differentials;
 exhaust CPU and memory; and attempt confused-deputy and supply-chain attacks.
@@ -242,8 +254,8 @@ entry point. Empty is zero and non-empty lists are pair chains; projection from
 empty or forged tails reaches the same checked handle trap. Expansion occurs
 before admission budgets, and a single list form is limited to 128 items.
 
-The C loader's parser and valid execution path run under ASan and UBSan on both
-host platforms in CI. Decimal parsing resets and checks `errno` for every
+The retired C-loader workflow declared ASan and UBSan coverage for its parser
+and valid execution path on both host platforms. Decimal parsing resets and checks `errno` for every
 `strtoul`, `strtoull`, and `strtoll`, so values outside the declared unsigned or
 i64 domains are rejected instead of silently saturating. The malformed corpus
 also covers missing arguments, empty numbers, invalid ISAs, capability IDs and
@@ -253,32 +265,32 @@ fatal.
 The sanitizer build uses the compile-time-only `KEXE_SANITIZER_TEST` profile on
 Linux to omit seccomp, because sanitizer runtimes require syscalls outside the
 production allowlist. No runtime environment variable can disable seccomp in a
-production loader. The ordinary conformance job separately compiles without
-that macro and requires the filesystem `SIGSYS` probe to be denied.
+production loader. The historical ordinary conformance job declared a build
+without that macro and required the filesystem `SIGSYS` probe to be denied.
 
 `tools/kexe_parser_fuzz.c` includes the production parser translation unit, so
-the fuzz target cannot drift into a separate reimplementation. Linux CI runs
+the historical fuzz target shares that implementation. The retired Linux job declared
 libFuzzer with ASan/UBSan and a persistent seed corpus over capability lists,
-strict unsigned decimal values, arity values, and signed i64 values. macOS uses
+strict unsigned decimal values, arity values, and signed i64 values. The macOS job declared
 the same entry point with a deterministic xorshift driver under ASan/UBSan
 because its Xcode toolchain advertises but does not ship the libFuzzer runtime.
-Both modes run 20,000 cases per job; Linux additionally evolves inputs from
+Both retired modes declared 20,000 cases per job; Linux also evolved inputs from
 coverage feedback.
 
-The weekly and manually dispatched `long-fuzz` workflow uses libFuzzer's wall
-time limit rather than a fixed run count. Its temporary working corpus is copied
-out on every exit, and GitHub Actions uploads it together with libFuzzer crash,
-timeout, and leak artifacts even for failed runs. Artifacts are retained for 30
-days. Promoting useful evolved inputs into the reviewed repository corpus is a
-deliberate human change; CI never commits unreviewed bytes automatically.
+The weekly and manually dispatched `long-fuzz` workflow is retired. It declared
+libFuzzer wall-time limits, corpus/crash/timeout/leak uploads even on failure
+and 30-day retention. Complete committed corpus and historical source
+provenance remain; no current artifact availability or native coverage is
+inferred. Promoting untrusted evolved inputs still requires deliberate review;
+the replacement must not commit unreviewed bytes automatically.
 
 `review-fuzz-corpus.cljs` runs under pinned NBB and treats downloaded artifacts as hostile. It rejects
 symlinks, non-regular files, unknown named seeds, inputs over 1024 bytes, more
 than 10,000 files, and aggregate content over 1 MiB. Dry-run is the default
 review path. Explicit `--apply` first replays the entire imported corpus through
 the sanitized harness, deduplicates against all existing seed contents, and
-stores new inputs under their SHA-256 names. A CI self-test exercises filename,
-symlink, size, and empty-corpus rejection.
+stores new inputs under their SHA-256 names. The historical self-test contains
+filename, symlink, size and empty-corpus rejection cases; native replay is open.
 
 Linux fuzz runs parse libFuzzer's terminal `DONE` record into a machine-readable
 `:kotoba.fuzz-coverage/v1` artifact. Edge coverage, feature count, and corpus
