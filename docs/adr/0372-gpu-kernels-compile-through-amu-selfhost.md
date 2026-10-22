@@ -2,8 +2,9 @@
 
 Date: 2026-10-22
 Status: Proposed. Owner direction 2026-10-22: GPU compilation goes through
-selfhost as well. Step 1 (the encoder, the checker and the first kernel) is
-implemented; nothing else is.
+selfhost as well. Step 1 (the encoder, the checker and the first kernel)
+and most of step 2 (the reductions and the glslang cross-check) are
+implemented; the vendor rows of step 2 and steps 3–5 are not.
 Tracking: AWAI-79 (parent AWAI-35). Related: ADR 0001 Phase 5, ADR 0002,
 ADRs 0355–0358, ADR 0371 (the execution route), AWAI-5 (the inference kernel DSL).
 
@@ -146,8 +147,19 @@ a follow-up to ADR 0371.
    pinned root, runs it as a static image that writes the `.spv` files, and
    then runs `spirv-val` and `spirv-dis` as oracles on the host.
 2. **KIR v1 reduce, the vendor rows and the checker against glslang.**
-   * The workgroup reduce, the subgroup reduce, and the workgroup-sweep FMA
-     kernel behind ADR 0358.
+   * **Done: the workgroup reductions** (sum, max and min) on the wire-42
+     layout (x, parts and n as bindings 0..2). They use a shared array, an
+     `OpPhi` stride loop with a barrier per step, and `GLSL.std.450`
+     FMax/FMin. The identities are f32 bit patterns.
+   * **Done: the checker against glslang.** It accepts glslang's modules of
+     `tools/gpu_kernel_refs/*.comp`. A module written by `spv-write` reads
+     back (`spv-read`) word for word.
+   * **Receipts.** In `docs/evidence/gpu-kernel-spirv-20261022/`:
+     * 14 modules, all valid under `spirv-val`;
+     * byte-identical from the aarch64 and the x86_64 tool images.
+   * **Remaining:**
+     * the subgroup reduce;
+     * the workgroup-sweep FMA kernel behind ADR 0358.
    * The `accelerator_targets` and `accelerator_variants` rows of Decision 4,
      on the W3 port.
    * Running the Kotoba checker over glslang's modules, as an oracle.

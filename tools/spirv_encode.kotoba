@@ -1,4 +1,4 @@
-(ns spirv-encode (:export [spv-new spv-count spv-word spv-write spv-token-free?]))
+(ns spirv-encode (:export [spv-new spv-count spv-word spv-write spv-read]))
 
 ;; SPIR-V binary encoder (ADR 0372 step 1). Kernel generators build a module
 ;; with these functions; spirv_check.kotoba checks it; spv-write writes the
@@ -40,6 +40,8 @@
   (spv-put (spv-put (spv-put (spv-put (spv-head M op 5) a) b) c) d))
 (defn- spv-i5 [M :vector-i64 op :i64 a :i64 b :i64 c :i64 d :i64 e :i64] :vector-i64
   (spv-put (spv-put (spv-put (spv-put (spv-put (spv-head M op 6) a) b) c) d) e))
+(defn- spv-i6 [M :vector-i64 op :i64 a :i64 b :i64 c :i64 d :i64 e :i64 f :i64] :vector-i64
+  (spv-put (spv-put (spv-put (spv-put (spv-put (spv-put (spv-head M op 7) a) b) c) d) e) f))
 
 ;; ---------------------------------------------------------------------
 ;; Literal strings: the bytes, a NUL, then NUL padding to a word boundary,
@@ -119,3 +121,19 @@
     (if (not (spv-token-free? T3 (+ plen 9) (+ plen 9 n))) -1
       (let [r (typed-cap-call :fs/app-data-bytes :bytes :bytes (bytes-from-vector-i64 T3))]
         (bytes-count r)))))
+
+;; the module in the file at path (inside the granted :fs/app-data scope), as
+;; a module vector; a file whose size is not a multiple of 4 gives an empty one
+(defn spv-read [path :string] :vector-i64
+  (let [plen (string-length path)
+        P (loop [i 0 V (vector-alloc plen)] (if (>= i plen) V (recur (inc i) (vector-assoc! V i (string-code-point-at path i)))))
+        B (vector-i64-from-bytes (typed-cap-call :fs/app-data-bytes :bytes :bytes (bytes-from-vector-i64 P)))
+        nb (vector-count B)
+        nw (if (= (rem nb 4) 0) (quot nb 4) 0)]
+    (loop [k 0 M (vector-assoc! (vector-alloc (+ nw 1)) 0 nw)]
+      (if (>= k nw) M
+        (let [at (* 4 k)
+              w (bit-or (vector-at B at)
+                        (bit-or (i64-shift-left (vector-at B (+ at 1)) 8)
+                                (bit-or (i64-shift-left (vector-at B (+ at 2)) 16) (i64-shift-left (vector-at B (+ at 3)) 24))))]
+          (recur (inc k) (vector-assoc! M (+ k 1) w)))))))

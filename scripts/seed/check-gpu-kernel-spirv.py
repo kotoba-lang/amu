@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""GPU kernels as SPIR-V from Kotoba, through the loaderless compiler (ADR 0372 step 1).
+"""GPU kernels as SPIR-V from Kotoba, through the loaderless compiler (ADR 0372 steps 1-2).
+
+Phase "refs" (a host with glslangValidator): glslang compiles the hand-written
+oracle kernels tools/gpu_kernel_refs/*.comp into OUT/refs/ref-*.spv. The
+build phase puts them into the scope, and the Kotoba checker must accept
+them: a structural check of modules that Amu did not write.
 
 Phase "build" (Linux): one unit is built from the test's ns line, then
 tools/spirv_encode.kotoba, tools/spirv_check.kotoba and
@@ -24,6 +29,7 @@ Python only orchestrates processes and hashes. Examples:
     python3 REPO/scripts/seed/check-gpu-kernel-spirv.py build \
     --compiler REPO/seed/bootstrap/aarch64-linux-static-root.elf --output OUT
   python3 scripts/seed/check-gpu-kernel-spirv.py oracle --output OUT
+(run "refs --output OUT" on the host first.)
 """
 import argparse
 import hashlib
@@ -63,11 +69,32 @@ def units():
     return counted, unit, unit.replace("(def CONTROL 0)", "(def CONTROL 1)")
 
 
+REFS = ROOT / "tools/gpu_kernel_refs"
+
+
+def refs(output):
+    glslang = shutil.which("glslangValidator")
+    assert glslang, "glslangValidator is needed for the refs phase (oracle input only)"
+    out = output / "refs"
+    out.mkdir(parents=True, exist_ok=False)
+    rows = {}
+    for comp in sorted(REFS.glob("*.comp")):
+        spv = out / ("ref-" + comp.stem + ".spv")
+        r = subprocess.run([glslang, "-V", "--target-env", "vulkan1.1", str(comp), "-o", str(spv)], capture_output=True, text=True)
+        assert r.returncode == 0, (comp.name, r.stdout, r.stderr)
+        rows[spv.name] = dict(source=pin(comp), module=pin(spv))
+    version = subprocess.run([glslang, "--version"], capture_output=True, text=True).stdout.splitlines()[0]
+    (out / "refs.json").write_text(json.dumps(dict(tool=version, host=[platform.system(), platform.machine()], modules=rows,
+                                                   note="oracle input only; not part of the product route"), indent=2) + "\n")
+    print("REFS", len(rows), "glslang modules", flush=True)
+
+
 def build(compiler, output, target, seccomp_if_available=False):
     assert platform.system() == "Linux", "run the build phase on Linux"
-    output.mkdir(parents=True, exist_ok=False)
+    refs_dir = output / "refs"
+    assert (refs_dir / "refs.json").exists(), "run the refs phase first (on a host with glslangValidator)"
     art = output / "artifacts"
-    art.mkdir()
+    art.mkdir(exist_ok=False)
     counted, unit, control = units()
     producer = art / "compiler.elf"
     producer.write_bytes(compiler.read_bytes())
@@ -75,6 +102,8 @@ def build(compiler, output, target, seccomp_if_available=False):
 
     def build_and_run(name, source, scope):
         scope.mkdir()
+        for ref in refs_dir.glob("ref-*.spv"):
+            shutil.copy(ref, scope / ref.name)
         src, elf = art / (name + ".kotoba"), art / (name + ".elf")
         src.write_text(source)
         c = subprocess.run([str(producer), "compile", str(src), "--target", target, "--output", str(elf), "--format", "static"],
@@ -105,13 +134,14 @@ def build(compiler, output, target, seccomp_if_available=False):
     assert cases == counted and failed == 0 and not fails, u
     k, cases, failed, fails = build_and_run("kernel-control", control, output / "spv-control")
     assert cases == counted and failed == 1 and len(fails) == 1 and fails[0].startswith("FAIL label inside an open block"), fails
-    modules = {p.name: pin(p) for p in sorted(spv.glob("*.spv"))}
-    assert len(modules) == 8 and all(m["bytes"] == 1004 for m in modules.values()), modules
+    modules = {p.name: pin(p) for p in sorted(spv.glob("kir1-*.spv"))}
+    sizes = {"ewise": 1004, "reduce-sum": 1740, "reduce-max": 1748, "reduce-min": 1748}
+    assert len(modules) == 14 and all(m["bytes"] == next(v for k, v in sizes.items() if k in n) for n, m in modules.items()), modules
     report = dict(status="PASS_GPU_KERNEL_SPIRV_BUILD", target=target, compiler=pin(compiler),
                   host=[platform.system(), platform.machine(), platform.release()],
                   imageSeccomp="if-available" if seccomp_if_available else "required",
                   sources={p: pin(ROOT / p) for p in [*MODULES, TEST]}, casesCounted=counted, runs=[u, k],
-                  modules=modules, cCompilerOrLoader=False)
+                  modules=modules, glslangReferences=json.loads((refs_dir / "refs.json").read_text()), cCompilerOrLoader=False)
     (output / "gpu-kernel-spirv.json").write_text(json.dumps(report, indent=2) + "\n")
     print(report["status"], target, counted, "cases", len(modules), "modules", flush=True)
 
@@ -141,14 +171,16 @@ def oracle(output):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("phase", choices=["build", "oracle"])
+    parser.add_argument("phase", choices=["refs", "build", "oracle"])
     parser.add_argument("--compiler", type=Path, help="build: an Amu-produced static compiler (the pinned root or S3.elf)")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--target", choices=["aarch64-linux", "x86_64-linux"], default="aarch64-linux")
     parser.add_argument("--seccomp-if-available", action="store_true",
                         help="build: run the tool image with KEXE_SECCOMP=if-available (qemu-user has no seccomp); recorded")
     args = parser.parse_args()
-    if args.phase == "build":
+    if args.phase == "refs":
+        refs(args.output.resolve())
+    elif args.phase == "build":
         assert args.compiler, "--compiler is required for the build phase"
         build(args.compiler.resolve(), args.output.resolve(), args.target, args.seccomp_if_available)
     else:
