@@ -1,6 +1,6 @@
 ;; Native seed extension: x86_64-aiueos-kernel-v1 kernel OBJECT route.
 ;; Assemble after 71-x86_64-runtime, before the entry module (72/73). The
-;; adopted 16-module closure, bootstrap and launcher are unchanged.
+;; historical bootstrap pins are unchanged; this candidate is unqualified.
 ;;
 ;; Emits the linkable aiueos kernel object ABI that aiueos's fail-closed
 ;; `os/aiueos/scripts/verify-kotoba-kernel-object.py` validates: ELF64
@@ -34,7 +34,7 @@
       (xg-bytes 0x08ec8348 4) (xg-rel 0xe8 1 1 entry)
       (xg-bytes 0x08c48348 4) (xg-byte 0xc3)))
 
-;; Admission. The scalar profile is the x86_64-linux profile 0 subset with a
+;; Admission. Profile2 retains the original integer-only subset, with a
 ;; different export rule: exactly one exported defn, any name, at most five
 ;; scalar parameters, scalar result. `main` carries no special meaning.
 (defn- xo-check-fns [M :vector-i64 S :string f :i64] :vector-i64
@@ -102,7 +102,7 @@
                   (if (= (io-exists out) 1) 0 (drv-fail0 E-WRITE))))))
 
 (defn- xo-build [M :vector-i64 S :string fuel :i64] :vector-i64
-  (let [admitted (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 2 fuel) (xg-set 4 0) (xo-check-fns S 1) (xg-check-sir 1))]
+  (let [admitted (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 2 fuel) (xg-set 4 2) (xo-check-fns S 1) (xg-check-sir 1))]
     (cond (not= (vector-at admitted MM-ERR) 0) admitted
           (= (xg-get admitted 1) 0) (xg-err admitted 7102 0)
           (not= (vector-at admitted MM-CAPS) 0) (xg-err admitted 7101 OP-CAP)
