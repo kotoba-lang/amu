@@ -2,23 +2,61 @@
   "schema": "amu.seed.static-root.v1",
   "image": {
     "bytes": 1294848,
-    "sha256": "cb0a7d02089de33d9d2e0509f2e070f48bb6f335568f4f4aa89c4b9af702a8a6"
+    "sha256": "04d99135398359c01bc8a6209e249a3aace5769e113109818464c6a216af098a"
   },
   "target": "aarch64-linux",
   "format": "static",
   "sourceManifest": "seed/X86_64-LINUX-SELFHOST-MANIFEST",
   "sourceUnity": {
-    "bytes": 778613,
-    "sha256": "7a3f6bb9eca8d50a5cdb910a0ea82a60145474d552f3413dbf35377c48933bc2"
+    "bytes": 778966,
+    "sha256": "56b19f4e106cb936ff3a052be9f8e69f6e8e457775836b1729b3a986256d1e45"
   },
-  "sourceCommitBase": "07e326c8388b9892ca7c857fdd5b2bb58581d289",
+  "sourceCommitBase": "f79b753ac5a3facac655e3ade9c73679fbb2b4f0",
   "producedBy": {
-    "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 and S2 built S3 = this image (S2 = S3; S1 differs because the previous root embeds the previous aarch64 runtime). Re-pinned because this source changes the runtime text embedded in every image: the wire-42 :gpu/compute transport of ADR 0371 step 2, on top of #1475.",
+    "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation). The closure moves to the static profile (seed/00-ns-static.kotoba: M of 24248320 words) and the runtime to 2^25-item vectors and a 2^28-item arena. A compiler embeds its own runtime text in what it builds, so the previous root's runtime cannot allocate the wider M: the previous root built S1n from this source with the previous capacities (seed/00-ns.kotoba), S1n built S2n (the new runtime), S2n built S3w from this source, S3w built S4w = this image and S4w built S5w (S3w = S4w = S5w).",
     "date": "2026-10-22",
-    "previousRoot": "27440856b717877a91387f9a55be7149bacf93f0d31fa82ee1b06f567b370786"
+    "previousRoot": "cb0a7d02089de33d9d2e0509f2e070f48bb6f335568f4f4aa89c4b9af702a8a6",
+    "chain": {
+      "S1n": {
+        "bytes": 1294848,
+        "sha256": "67a9f4cd23166b551b9cc348d9902103bb40efa555188226d09596c2e9134e01"
+      },
+      "S2n": {
+        "bytes": 1294848,
+        "sha256": "7735c896eff212a2993d4fd8ec5c134a3ea56150c5a186bd7c9937064d07deb6"
+      },
+      "S3w": {
+        "bytes": 1294848,
+        "sha256": "04d99135398359c01bc8a6209e249a3aace5769e113109818464c6a216af098a"
+      },
+      "S4w": {
+        "bytes": 1294848,
+        "sha256": "04d99135398359c01bc8a6209e249a3aace5769e113109818464c6a216af098a"
+      },
+      "S5w": {
+        "bytes": 1294848,
+        "sha256": "04d99135398359c01bc8a6209e249a3aace5769e113109818464c6a216af098a"
+      }
+    }
   },
   "verification": "scripts/seed/selfhost-bootstrap.py on arm64 Linux: root -> S1 = S2 = S3 = root natively, without any C compiler or loader",
   "history": [
+    {
+      "image": {
+        "bytes": 1294848,
+        "sha256": "cb0a7d02089de33d9d2e0509f2e070f48bb6f335568f4f4aa89c4b9af702a8a6"
+      },
+      "sourceUnity": {
+        "bytes": 778613,
+        "sha256": "7a3f6bb9eca8d50a5cdb910a0ea82a60145474d552f3413dbf35377c48933bc2"
+      },
+      "sourceCommitBase": "07e326c8388b9892ca7c857fdd5b2bb58581d289",
+      "producedBy": {
+        "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 and S2 built S3 = this image (S2 = S3; S1 differs because the previous root embeds the previous aarch64 runtime). Re-pinned because this source changes the runtime text embedded in every image: the wire-42 :gpu/compute transport of ADR 0371 step 2, on top of #1475.",
+        "date": "2026-10-22",
+        "previousRoot": "27440856b717877a91387f9a55be7149bacf93f0d31fa82ee1b06f567b370786"
+      }
+    },
     {
       "image": {
         "bytes": 1278464,

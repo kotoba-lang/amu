@@ -6,8 +6,10 @@ Starts from the pinned Amu-produced aarch64-linux-static compiler
 
 1. the Linux selfhost closure rebuilt by the root, then S1 = S2 = S3;
 2. S3's aarch64 runner, x86_64 static compiler and x86_64 KX64V1 runner;
-3. the pinned adopted AArch64 compiler (seed/bootstrap/adopted-20261012.bin)
-   run by the aarch64 runner: G1 = G2 = G3 = the adoption receipt's image;
+3. the adopted compiler core (ADR 0370) from source: S3 builds it as a static
+   image C0 (seed/CORE-STATIC-MANIFEST), C0 compiles seed/MANIFEST to G1, and
+   G1, G2 run by the aarch64 runner give G2, G3: G1 = G2 = G3 = the adoption
+   receipt's image. The historical C-loader-built payload is not used;
 4. the runtime case suite (seed/static-cases.json) as static images;
 5. the runtime hardening: seccomp enforced, cpu / wall / stack limits;
 6. runtime capabilities: wire 3 :hash/sha256 (FIPS vectors, granted and
@@ -33,10 +35,13 @@ SELFHOST = "seed/X86_64-LINUX-SELFHOST-MANIFEST"
 ADOPTED = "seed/MANIFEST"
 ROOT_IMAGE = "seed/bootstrap/aarch64-linux-static-root.elf"
 ROOT_RECEIPT = "seed/bootstrap/aarch64-linux-static-root.json"
-ADOPTED_BIN = "seed/bootstrap/adopted-20261012.bin"
+CORE_STATIC = "seed/CORE-STATIC-MANIFEST"
+NS, NS_STATIC = "seed/00-ns.kotoba", "seed/00-ns-static.kotoba"
 ADOPTION = "seed/adoption-20261017.json"
 RUNNER_SRC = "seed/x86_64-kx64-runner.kotoba"
 CASES = "seed/static-cases.json"
+# 00-ns-static is 00-ns with the static profile's capacities (seed/MEMORY-MAP).
+STATIC_CAPACITIES = re.compile(rb"\(def MM-(WORDS|(CODE|FIX|LITB|OUT)-CAP|(FIX|LIT|LITB|EXP|OUT|HEAP)-BASE|HEAP-END) [0-9]+\)")
 # The adopted compiler was qualified on a host whose main stack is 8 MiB; the
 # runtime's default (1 MiB, the old loader's limit) is too small for it.
 ADOPTED_STACK = "8388608"
@@ -108,21 +113,30 @@ def main(out):
         x86_64Compiler=compile_(S, source, out / "S-x86_64.elf", "x86_64-linux", "static", "S-x86_64"),
         x86_64Runner=compile_(S, out / "runner.kotoba", out / "R-x86_64.elf", "x86_64-linux", "kx64-runner", "R-x86_64"))
 
-    # 3. the pinned adopted AArch64 compiler through the aarch64 runner
+    # 3. the adopted compiler core from source: C0 (static, from S3) -> G1,
+    # then G1 and G2 through the aarch64 runner
     adoption = json.loads((ROOT / ADOPTION).read_text())
-    assert pin(ROOT / ADOPTED_BIN)["sha256"] == adoption["bootstrapSHA256"]
     adopted_src = out / "adopted-unity.kotoba"
     adopted_pins = unity(ADOPTED, adopted_src)
     assert pin(adopted_src)["sha256"] == adoption["sourceUnitySHA256"], "adopted source drift"
-    payload = out / "adopted-20261012.bin"
-    payload.write_bytes((ROOT / ADOPTED_BIN).read_bytes())
+    ns, ns_static = ((ROOT / p).read_bytes() for p in (NS, NS_STATIC))
+    strip = lambda b: STATIC_CAPACITIES.sub(b"", b"".join(l for l in b.splitlines(True) if not l.startswith(b";; seed/00-ns-static")
+                                                         and not l.startswith(b";; CORE-STATIC") and not l.startswith(b";; (CODE, FIX")))
+    assert strip(ns) == strip(ns_static), "00-ns-static differs from 00-ns beyond the static capacities"
+    core_static_src = out / "core-static-unity.kotoba"
+    core_static_pins = unity(CORE_STATIC, core_static_src)
+    senv = dict(scope, KEXE_STACK_BYTES=ADOPTED_STACK)
+    run.run("C0", [S, "compile", core_static_src, "--target", "aarch64-linux", "--output", out / "C0.elf", "--format", "static"], senv)
+    (out / "C0.elf").chmod(0o755)
+    c0 = pin(out / "C0.elf")
     renv = dict(scope, KEXE_COMMAND="1", KEXE_STACK_BYTES=ADOPTED_STACK)
     adopted_gens = []
+    payload = None
     for g in (1, 2, 3):
-        prefix = [out / "R-aarch64.elf", payload, 0, 0, "aarch64", "35,37,38,39", "--"]
+        prefix, env = ([out / "C0.elf"], senv) if g == 1 else ([out / "R-aarch64.elf", payload, 0, 0, "aarch64", "35,37,38,39", "--"], renv)
         container, native = out / f"G{g}.kseed", out / f"G{g}.bin"
-        run.run(f"G{g}-compile", prefix + ["compile", adopted_src, "--target", "aarch64-macos", "--output", container], renv)
-        run.run(f"G{g}-extract", prefix + ["extract-native", container, "--symbol", "main", "--output", native], renv)
+        run.run(f"G{g}-compile", prefix + ["compile", adopted_src, "--target", "aarch64-macos", "--output", container], env)
+        run.run(f"G{g}-extract", prefix + ["extract-native", container, "--symbol", "main", "--output", native], env)
         assert pin(native)["sha256"] == adoption["nativeImageSHA256"], "adopted fixed point mismatch"
         adopted_gens.append(dict(generation=g, native=pin(native), container=pin(container)))
         payload = native
@@ -195,7 +209,7 @@ def main(out):
     report = dict(status="PASS_LOADERLESS_SELFHOST_BOOTSTRAP", capabilities=capabilities, host=[platform.system(), platform.machine(), platform.release()],
                   root=dict(image=pin(ROOT / ROOT_IMAGE), receipt=root_receipt), sourceGraph=source_pins,
                   generations=gens, rootReproduces=root_reproduces, built=built,
-                  adopted=dict(sourceGraph=adopted_pins, runnerStackBytes=int(ADOPTED_STACK), generations=adopted_gens,
+                  adopted=dict(sourceGraph=adopted_pins, coreStatic=dict(sourceGraph=core_static_pins, image=c0), runnerStackBytes=int(ADOPTED_STACK), generations=adopted_gens,
                                expectedNativeImage=adoption["nativeImageSHA256"]),
                   cases=results, hardening=hardening,
                   cCompilerOrLoader=False, JVMNodeOrGraalFallback=False, emulation=False)
