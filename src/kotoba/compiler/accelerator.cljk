@@ -189,7 +189,12 @@
   ;; :baseline by definition, and re-lowering must still match exactly.
   (let [variant (if (contains? compiled :variant) (:variant compiled) :baseline)
         _ (when-not (contains? #{:baseline :warp-shuffle-reduce :subgroup-reduce} variant)
-            (throw (ex-info "accelerator artifact carries an unsupported variant label"
+            ;; One concept, one refusal phrase: `lower` refuses an unknown
+            ;; variant as "unsupported kernel variant", and the artifact
+            ;; verifier refuses an unknown :variant label with the same
+            ;; vocabulary plus its own context (test pin:
+            ;; variant-artifacts-seal-and-verify).
+            (throw (ex-info "accelerator artifact carries an unsupported kernel variant"
                             {:variant variant})))
         expected-code (lower (:kir compiled) (:target compiled) variant)]
     (when-not (and (= (:kir-sha256 compiled) (artifact/sha256 (:kir compiled)))
