@@ -1,0 +1,470 @@
+(ns gpu-compute-protocol (:export [constant verb-code check-request refusal-name answer-for]))
+
+;; :gpu/compute (wire 42) protocol v1: the request grammar, its bounds, the
+;; order rules and the refusal names (ADR 0371, step 1). This file is the
+;; protocol's reference. The removed C broker (tools/kexe_gpu_vulkan.c,
+;; `git show 36479076^:tools/kexe_gpu_vulkan.c`) is provenance only.
+;;
+;; The guest runtime (seed/76, seed/77) and the GPU provider both follow it:
+;; the runtime frames requests and answers, the provider executes verbs. Every
+;; decision -- which kernel, which shape, what to sample -- stays in the
+;; guest; nothing here chooses work.
+;;
+;; A unit that uses this table prepends its own `(ns ... (:export [main]))`
+;; and drops this file's first line, as seed/MANIFEST units do; a static image
+;; exports `main` alone. scripts/seed/check-gpu-compute-protocol.py builds the
+;; test unit that way.
+;;
+;; Wire format, both directions: a u32 little-endian byte length, then the
+;; bytes. A request is one ASCII line; tokens are separated by one or more
+;; spaces (byte 32), and no other byte separates. An answer is decimal, hex,
+;; "1", or a refusal: "!" + refusal name + " " + text, for example
+;; "!gpu/while-recording MAP while recording (BEGIN open): finish with SUBMIT first".
+;; A guest that only tests the first byte for "!" still works.
+;;
+;; Verbs (answer after the arrow):
+;;   INFO                          -> "<device>|<api>|<maxWgX>|<unified>"
+;;   DEVCLASS                      -> discrete|integrated|virtual|cpu|other
+;;   ALLOC <bytes>                 -> buffer handle
+;;   MAP <path> <offset> <length>  -> buffer handle (path: a granted artifact)
+;;   WRITE <handle> <offset> <hex> -> "1"
+;;   WRITEDEC <handle> <offset> <u32,u32,...> -> the word count
+;;   READ <handle> <offset> <length>          -> lowercase hex
+;;   PIPELINE <spv-path> <bindings>           -> pipeline handle
+;;   BEGIN                         -> "1"
+;;   BEGINK <slot>                 -> "1"
+;;   DISPATCH <pipeline> <x> <y> <z> <handle>...   -> "1" while recording, else ns
+;;   DISPATCHC <pipeline> <x> <y> <z> <handle>...  -> as DISPATCH, no barrier before
+;;   SUBMIT                        -> nanoseconds, submit to fence, host clock
+;;   REPLAY <slot>                 -> nanoseconds
+;;   DROP <slot>, ZERO <handle>, FREE <handle>     -> "1"
+;;
+;; Handles are the lowest free slot counting from 1, buffers and pipelines
+;; separately. Generated guests hard-code them, so a provider must keep this.
+;;
+;; check-request decides what a request line alone decides: grammar, static
+;; bounds and the order rule. The first failing check names the refusal, in
+;; this order: empty, length, field count, verb, arity, order, fields. The
+;; provider decides the rest (handle liveness, tables full, kept slots,
+;; artifacts, device) and answers with the names from refusal 19 on.
+;;
+;; Differences from the C broker, each a defect it had:
+;; * Numbers are decimal digits only. C's strtoull also took "+5" and "-1".
+;; * Every verb has an exact field count. C ignored extra fields after INFO,
+;;   DEVCLASS, BEGIN and SUBMIT, and dropped fields past its 32nd silently.
+;; * A WRITEDEC list has no empty item; C accepted a trailing comma.
+;; * FREE is refused while recording; C could free a buffer the open command
+;;   buffer binds.
+;; * Workgroup counts must fit in a u32; C truncated them.
+;; * A READ must fit the answer bound (constant 7); C sent a frame the guest
+;;   could not hold.
+
+;; ---------------------------------------------------------------------
+;; Constants. The index is the public ABI; append, never renumber.
+
+(defn constant [k]
+  (cond
+    ;; buffer table size; buffer handles are 1..4095
+    (= k 0) 4096
+    ;; pipeline table size; pipeline handles are 1..127
+    (= k 1) 128
+    ;; storage-buffer bindings per pipeline, and handles per DISPATCH
+    (= k 2) 16
+    ;; dispatches recorded into one command buffer
+    (= k 3) 2048
+    ;; kept command buffers; slots are 0..7
+    (= k 4) 8
+    ;; fields in the longest request: DISPATCH with 16 handles
+    (= k 5) 21
+    ;; request bytes: one runtime value (seed/76 KXRT-VALUE-MAX)
+    (= k 6) 8388608
+    ;; answer bytes: one runtime value, the same bound
+    (= k 7) 8388608
+    ;; READ bytes: its hex answer is twice as long
+    (= k 8) 4194304
+    ;; SPIR-V module bytes, a multiple of 4
+    (= k 9) 16777216
+    ;; frame header bytes (u32 little-endian length)
+    (= k 10) 4
+    ;; the largest u32
+    (= k 11) 4294967295
+    ;; the first handle
+    (= k 12) 1
+    ;; default fence timeout per submit, seconds (the grant may lower it)
+    (= k 13) 60
+    ;; fields of the INFO answer
+    (= k 14) 4
+    ;; the first refusal the provider, not check-request, answers
+    (= k 15) 19
+    ;; the last refusal index
+    (= k 16) 34
+    :else -1))
+
+(defn- i64-max [] (+ (* 2 (- (i64-shift-left 1 62) 1)) 1))
+
+;; ---------------------------------------------------------------------
+;; Verbs.
+
+(defn verb-code [s :string] :i64
+  (cond
+    (string=? s "INFO") 1
+    (string=? s "DEVCLASS") 2
+    (string=? s "ALLOC") 3
+    (string=? s "MAP") 4
+    (string=? s "WRITE") 5
+    (string=? s "WRITEDEC") 6
+    (string=? s "READ") 7
+    (string=? s "PIPELINE") 8
+    (string=? s "BEGIN") 9
+    (string=? s "BEGINK") 10
+    (string=? s "DISPATCH") 11
+    (string=? s "DISPATCHC") 12
+    (string=? s "SUBMIT") 13
+    (string=? s "REPLAY") 14
+    (string=? s "DROP") 15
+    (string=? s "ZERO") 16
+    (string=? s "FREE") 17
+    :else 0))
+
+(defn- verb-name [v] :string
+  (cond
+    (= v 1) "INFO"
+    (= v 2) "DEVCLASS"
+    (= v 3) "ALLOC"
+    (= v 4) "MAP"
+    (= v 5) "WRITE"
+    (= v 6) "WRITEDEC"
+    (= v 7) "READ"
+    (= v 8) "PIPELINE"
+    (= v 9) "BEGIN"
+    (= v 10) "BEGINK"
+    (= v 11) "DISPATCH"
+    (= v 12) "DISPATCHC"
+    (= v 13) "SUBMIT"
+    (= v 14) "REPLAY"
+    (= v 15) "DROP"
+    (= v 16) "ZERO"
+    (= v 17) "FREE"
+    :else ""))
+
+(defn- usage [v] :string
+  (cond
+    (= v 3) "ALLOC <bytes>"
+    (= v 4) "MAP <path> <offset> <length>"
+    (= v 5) "WRITE <handle> <offset> <hex>"
+    (= v 6) "WRITEDEC <handle> <offset> <u32,...>"
+    (= v 7) "READ <handle> <offset> <length>"
+    (= v 8) "PIPELINE <spv-path> <bindings>"
+    (= v 10) "BEGINK <slot 0..7>"
+    (= v 11) "DISPATCH <pipeline> <x> <y> <z> <handle>..."
+    (= v 12) "DISPATCHC <pipeline> <x> <y> <z> <handle>..."
+    (= v 14) "REPLAY <slot 0..7>"
+    (= v 15) "DROP <slot 0..7>"
+    (= v 16) "ZERO <handle>"
+    (= v 17) "FREE <handle>"
+    :else (verb-name v)))
+
+;; ---------------------------------------------------------------------
+;; Refusals. The index is the public ABI; append, never renumber.
+;; 1..18 come from check-request; 19..34 from the provider.
+
+(defn refusal-name [r] :string
+  (cond
+    (= r 1) "gpu/empty-request"
+    (= r 2) "gpu/unknown-verb"
+    (= r 3) "gpu/request-too-long"
+    (= r 4) "gpu/too-many-fields"
+    (= r 5) "gpu/arity"
+    (= r 6) "gpu/not-a-number"
+    (= r 7) "gpu/zero-length"
+    (= r 8) "gpu/slot-range"
+    (= r 9) "gpu/bindings-range"
+    (= r 10) "gpu/workgroup-range"
+    (= r 11) "gpu/no-such-buffer"
+    (= r 12) "gpu/no-such-pipeline"
+    (= r 13) "gpu/hex-length"
+    (= r 14) "gpu/hex-digit"
+    (= r 15) "gpu/u32-list"
+    (= r 16) "gpu/read-too-long"
+    (= r 17) "gpu/while-recording"
+    (= r 18) "gpu/not-recording"
+    (= r 19) "gpu/buffer-table-full"
+    (= r 20) "gpu/pipeline-table-full"
+    (= r 21) "gpu/dispatch-limit"
+    (= r 22) "gpu/past-buffer"
+    (= r 23) "gpu/slot-kept"
+    (= r 24) "gpu/slot-empty"
+    (= r 25) "gpu/kept-without-dispatch"
+    (= r 26) "gpu/buffer-bound-in-kept"
+    (= r 27) "gpu/binding-mismatch"
+    (= r 28) "gpu/artifact-not-granted"
+    (= r 29) "gpu/artifact-digest-mismatch"
+    (= r 30) "gpu/not-spirv"
+    (= r 31) "gpu/device-bytes-cap"
+    (= r 32) "gpu/device-error"
+    (= r 33) "gpu/device-lost"
+    (= r 34) "gpu/fence-timeout"
+    :else ""))
+
+;; The text after the name. Where the C broker had a reason, the text keeps
+;; its words, so logs stay comparable.
+(defn- refusal-text [r v] :string
+  (cond
+    (= r 1) "empty request"
+    (= r 2) "unknown :gpu/compute request"
+    (= r 3) "request longer than one runtime value"
+    (= r 4) "more fields than any request has"
+    (= r 5) (usage v)
+    (= r 6) (usage v)
+    (= r 7) (usage v)
+    (= r 8) (usage v)
+    (= r 9) "PIPELINE bindings must be 1..16"
+    (= r 10) (string-concat (verb-name v) ": workgroup count is not a u32")
+    (= r 11) (string-concat (verb-name v) ": no such buffer")
+    (= r 12) (string-concat (verb-name v) ": no such pipeline")
+    (= r 13) (string-concat (verb-name v) " hex length")
+    (= r 14) (string-concat (verb-name v) " hex digit")
+    (= r 15) (string-concat (verb-name v) ": not a comma-separated u32 list")
+    (= r 16) "READ longer than the answer can carry"
+    (= r 17) (string-concat (verb-name v) " while recording (BEGIN open): finish with SUBMIT first")
+    (= r 18) "SUBMIT without BEGIN"
+    (= r 19) "buffer table full (4096)"
+    (= r 20) "pipeline table full"
+    (= r 21) "more than 2048 dispatches in one command buffer"
+    (= r 22) (string-concat (verb-name v) " past the buffer")
+    (= r 23) "BEGINK: slot is kept (DROP it first)"
+    (= r 24) (string-concat (verb-name v) ": slot holds no kept command buffer")
+    (= r 25) "SUBMIT: kept command buffer holds no dispatch"
+    (= r 26) "FREE: buffer is bound in a kept command buffer (DROP it first)"
+    (= r 27) "DISPATCH: handle count != pipeline bindings"
+    (= r 28) (string-concat (verb-name v) ": path is not in the granted artifact table")
+    (= r 29) (string-concat (verb-name v) ": artifact digest does not match the grant")
+    (= r 30) "PIPELINE: not a SPIR-V module"
+    (= r 31) (string-concat (verb-name v) ": over the granted device bytes")
+    (= r 32) (string-concat (verb-name v) ": device error")
+    (= r 33) "device lost; the provider ends the session"
+    (= r 34) "fence timeout; the provider ends the session"
+    :else ""))
+
+;; 1 when the provider ends the session after answering this refusal.
+(defn- refusal-ends-session? [r] :bool
+  (or (= r 33) (= r 34)))
+
+;; ---------------------------------------------------------------------
+;; Fields.
+
+(defn- space? [c] :bool (= c 32))
+
+(defn- field-count [s :string] :i64
+  (let [n (string-length s)]
+    (loop [i 0 k 0 in false]
+      (if (>= i n) k
+        (cond (space? (string-code-point-at s i)) (recur (inc i) k false)
+              in (recur (inc i) k true)
+              :else (recur (inc i) (inc k) true))))))
+
+;; Field `want` (0 is the verb), or "" past the last.
+(defn- field-at [s :string want :i64] :string
+  (let [n (string-length s)]
+    (loop [i 0 k -1 start 0 in false]
+      (cond (>= i n) (if (and in (= k want)) (string-substring s start n) "")
+            (space? (string-code-point-at s i))
+              (if (and in (= k want)) (string-substring s start i) (recur (inc i) k start false))
+            in (recur (inc i) k start true)
+            :else (recur (inc i) (inc k) i true)))))
+
+;; A decimal of digits only, as an i64; -1 when it is not one or overflows.
+(defn- parse-decimal [s :string] :i64
+  (let [n (string-length s) top (i64-max)]
+    (if (= n 0) -1
+      (loop [i 0 v 0]
+        (if (>= i n) v
+          (let [d (- (string-code-point-at s i) 48)]
+            (cond (< d 0) -1
+                  (> d 9) -1
+                  (> v (quot (- top d) 10)) -1
+                  :else (recur (inc i) (+ (* v 10) d)))))))))
+
+(defn- hex-nibble [b]
+  (cond
+    (< b 48) -1
+    (<= b 57) (- b 48)
+    (< b 65) -1
+    (<= b 70) (- b 55)
+    (< b 97) -1
+    (<= b 102) (- b 87)
+    :else -1))
+
+;; 0 admitted, 13 odd length, 14 a byte that is not a hex digit.
+(defn- hex-refusal [s :string] :i64
+  (let [n (string-length s)]
+    (if (= (rem n 2) 1) 13
+      (loop [i 0]
+        (cond (>= i n) 0
+              (< (hex-nibble (string-code-point-at s i)) 0) 14
+              :else (recur (inc i)))))))
+
+;; 0 admitted, 15 otherwise: one or more u32 decimals joined by single commas.
+(defn- u32-list-refusal [s :string] :i64
+  (let [n (string-length s) top (constant 11)]
+    (loop [i 0 v 0 digits 0]
+      (if (>= i n)
+        (if (= digits 0) 15 0)
+        (let [c (string-code-point-at s i)]
+          (cond (= c 44) (if (= digits 0) 15 (recur (inc i) 0 0))
+                (< c 48) 15
+                (> c 57) 15
+                :else (let [w (+ (* v 10) (- c 48))]
+                        (if (> w top) 15 (recur (inc i) w (inc digits))))))))))
+
+(defn- number-refusal [s :string] :i64
+  (if (< (parse-decimal s) 0) 6 0))
+
+;; 0 admitted, 6 not a number, 11 outside 1..(constant 0)-1.
+(defn- buffer-refusal [s :string] :i64
+  (let [h (parse-decimal s)]
+    (cond (< h 0) 6
+          (< h (constant 12)) 11
+          (>= h (constant 0)) 11
+          :else 0)))
+
+;; 0 admitted, 6 not a number, 8 outside 0..(constant 4)-1.
+(defn- slot-refusal [s :string] :i64
+  (let [k (parse-decimal s)]
+    (cond (< k 0) 6
+          (>= k (constant 4)) 8
+          :else 0)))
+
+;; 0 admitted, 6 not a number, 10 above a u32.
+(defn- workgroup-refusal [s :string] :i64
+  (let [x (parse-decimal s)]
+    (cond (< x 0) 6
+          (> x (constant 11)) 10
+          :else 0)))
+
+;; The first nonzero of two refusals.
+(defn- first-of [a b] (if (> a 0) a b))
+
+;; ---------------------------------------------------------------------
+;; The checks, in order.
+
+(defn- arity-ok? [v n] :bool
+  (cond
+    (or (= v 1) (= v 2) (= v 9) (= v 13)) (= n 1)
+    (= v 3) (= n 2)
+    (or (= v 4) (= v 5) (= v 6) (= v 7)) (= n 4)
+    (= v 8) (= n 3)
+    (or (= v 10) (= v 14) (= v 15) (= v 16) (= v 17)) (= n 2)
+    (or (= v 11) (= v 12)) (and (>= n 6) (<= n (+ 5 (constant 2))))
+    :else false))
+
+;; recording: 1 between BEGIN/BEGINK and SUBMIT, else 0.
+(defn- order-refusal [v recording] :i64
+  (cond
+    (and (= recording 1)
+         (or (= v 4) (= v 5) (= v 6) (= v 7) (= v 9) (= v 10)
+             (= v 14) (= v 15) (= v 16) (= v 17))) 17
+    (and (= recording 0) (= v 13)) 18
+    :else 0))
+
+;; Handles of a DISPATCH, fields 5..n-1.
+(defn- dispatch-handles-refusal [s :string n :i64] :i64
+  (loop [i 5]
+    (if (>= i n) 0
+      (let [r (buffer-refusal (field-at s i))]
+        (if (> r 0) r (recur (inc i)))))))
+
+(defn- dispatch-refusal [s :string n :i64] :i64
+  (let [p (parse-decimal (field-at s 1))]
+    (cond (< p 0) 6
+          (< p (constant 12)) 12
+          (>= p (constant 1)) 12
+          :else (first-of (workgroup-refusal (field-at s 2))
+                  (first-of (workgroup-refusal (field-at s 3))
+                    (first-of (workgroup-refusal (field-at s 4))
+                      (dispatch-handles-refusal s n)))))))
+
+(defn- fields-refusal [s :string v :i64 n :i64] :i64
+  (cond
+    (= v 3) (let [b (parse-decimal (field-at s 1))]
+              (cond (< b 0) 6 (= b 0) 7 :else 0))
+    (= v 4) (let [o (parse-decimal (field-at s 2)) l (parse-decimal (field-at s 3))]
+              (cond (< o 0) 6 (< l 0) 6 (= l 0) 7 :else 0))
+    (= v 5) (first-of (buffer-refusal (field-at s 1))
+              (first-of (number-refusal (field-at s 2)) (hex-refusal (field-at s 3))))
+    (= v 6) (first-of (buffer-refusal (field-at s 1))
+              (first-of (number-refusal (field-at s 2)) (u32-list-refusal (field-at s 3))))
+    (= v 7) (first-of (buffer-refusal (field-at s 1))
+              (first-of (number-refusal (field-at s 2))
+                (let [l (parse-decimal (field-at s 3))]
+                  (cond (< l 0) 6 (> l (constant 8)) 16 :else 0))))
+    (= v 8) (let [b (parse-decimal (field-at s 2))]
+              (cond (< b 0) 6 (< b 1) 9 (> b (constant 2)) 9 :else 0))
+    (or (= v 10) (= v 14) (= v 15)) (slot-refusal (field-at s 1))
+    (or (= v 11) (= v 12)) (dispatch-refusal s n)
+    (or (= v 16) (= v 17)) (buffer-refusal (field-at s 1))
+    :else 0))
+
+;; 0 when the line is a well-formed request in this state, else the index of
+;; its refusal. recording: 1 between BEGIN/BEGINK and SUBMIT, else 0.
+(defn check-request [s :string recording :i64] :i64
+  (let [len (string-length s)]
+    (cond
+      (> len (constant 6)) 3
+      :else
+        (let [n (field-count s)]
+          (cond
+            (= n 0) 1
+            (> n (constant 5)) 4
+            :else
+              (let [v (verb-code (field-at s 0))]
+                (cond
+                  (= v 0) 2
+                  (not (arity-ok? v n)) 5
+                  :else (first-of (order-refusal v recording) (fields-refusal s v n)))))))))
+
+;; ---------------------------------------------------------------------
+;; Answers.
+
+(defn- answer-refusal [r v] :string
+  (string-concat "!" (string-concat (refusal-name r) (string-concat " " (refusal-text r v)))))
+
+;; A provider refusal with a detail, e.g. the Vulkan result name.
+(defn- answer-refusal-detail [r v detail :string] :string
+  (string-concat (answer-refusal r v) (string-concat ": " detail)))
+
+;; "" when the line is a well-formed request in this state, else its refusal
+;; answer.
+(defn answer-for [s :string recording :i64] :string
+  (let [r (check-request s recording)]
+    (if (= r 0) ""
+      (answer-refusal r (if (< r 3) 0 (verb-code (field-at s 0)))))))
+
+(defn- answer-ok [] :string "1")
+
+(defn- answer-decimal [x] :string (string-from-i64 x))
+
+(defn- refused? [a :string] :bool
+  (and (> (string-length a) 0) (= (string-code-point-at a 0) 33)))
+
+;; The refusal index an answer carries: 0 not a refusal, -1 a refusal
+;; without a known name (the C broker's bare "!reason").
+(defn- answer-refusal-index [a :string] :i64
+  (if (not (refused? a)) 0
+    (let [n (string-length a)
+          end (loop [i 1] (cond (>= i n) n (space? (string-code-point-at a i)) i :else (recur (inc i))))
+          name (string-substring a 1 end)]
+      (loop [r 1]
+        (cond (> r (constant 16)) -1
+              (string=? (refusal-name r) name) r
+              :else (recur (inc r)))))))
+
+;; DEVCLASS answers, by VkPhysicalDeviceType order: 1 discrete .. 5 other.
+(defn- devclass-name [k] :string
+  (cond
+    (= k 1) "discrete"
+    (= k 2) "integrated"
+    (= k 3) "virtual"
+    (= k 4) "cpu"
+    (= k 5) "other"
+    :else ""))

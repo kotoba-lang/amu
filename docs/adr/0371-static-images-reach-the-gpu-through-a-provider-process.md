@@ -1,10 +1,10 @@
 # ADR 0371: Static images reach the GPU through a separate provider process
 
 Date: 2026-10-22
-Status: Proposed. Needs an owner decision on the platform boundary (Decision 1)
-and a security-integration sign-off before wire 42 is admitted. Nothing here is
-implemented.
-Tracking: JUN-285 (this ADR). Related: JUN-109 (wire 42 admission), JUN-282
+Status: Decision 1 (the platform boundary) accepted by the owner on 2026-10-22.
+The rest is Proposed. Wire 42 is not admitted until security integration signs
+off (Decision 7). Step 1 (the protocol table) is implemented; nothing else is.
+Tracking: JUN-285 (this ADR), JUN-291 (step 1). Related: JUN-109 (wire 42 admission), JUN-282
 (`amu run` on static images), JUN-283, AWAI-12 (murakumo inference on Amu
 selfhost).
 
@@ -116,8 +116,9 @@ artifact class may load them: the GPU provider (Decision 3). The provider:
 * never runs in CDCI;
 * is never accepted for `:aiueos-c-free-bare-metal-v1`.
 
-**This is the decision that needs the owner.** `docs/selfhost-priority.md` has
-no platform boundary today. Without one, no GPU route exists on any fleet host.
+**Accepted by the owner on 2026-10-22.** Before this, `docs/selfhost-priority.md`
+had no platform boundary, and without one no GPU route existed on any fleet
+host. That document now states the boundary and points here.
 
 ### 2. Three processes, one direction of authority
 
@@ -157,9 +158,9 @@ The framing, verb set, handle numbering, `!` refusal prefix and the meaning of
 `gen_decode_tokens_guest`, murakumo's `:kotoba-native` engine) need no change,
 and the evidence stays comparable.
 
-The protocol's reference moves from C into Kotoba: one `.kotoba` decision table
-holds the grammar, bounds and refusal names. Both the provider and the runtime
-tests use it.
+The protocol's reference moves from C into Kotoba: one `.kotoba` decision table,
+`tools/gpu_compute_protocol.kotoba`, holds the grammar, bounds and refusal
+names. Both the provider and the runtime tests use it.
 
 Only the broker's defects change:
 
@@ -364,7 +365,7 @@ Every other GPU number is a bootstrap reference.
 
 ## Open questions for the owner
 
-1. Is the platform boundary in Decision 1 accepted?
+1. ~~Is the platform boundary in Decision 1 accepted?~~ Accepted 2026-10-22.
 2. Will security integration sign off on admitting wire 42, and on the
    artifact table replacing guest-named paths?
 3. Does provider confinement (Landlock plus seccomp after device creation) hold
@@ -377,9 +378,26 @@ Every other GPU number is a bootstrap reference.
 
 Each step is its own PR, in this order:
 
-1. **Protocol table.** Wire-42 v1 as a Kotoba decision table: grammar, bounds
-   and refusal names, with host-free parse and format tests. Update the
-   catalog comment.
+1. **Protocol table.** Done (JUN-291).
+   * **Table.** `tools/gpu_compute_protocol.kotoba` holds the grammar, the
+     bounds, the order rule and 34 named refusals. Its header lists where it
+     is stricter than the C broker.
+   * **Tests.** `tools/gpu_compute_protocol_test.kotoba` has 107 cases and
+     needs no GPU.
+   * **Check.** `scripts/seed/check-gpu-compute-protocol.py` builds the unit,
+     compiles it with the pinned root and runs it as a static image. A control
+     build with one wrong expectation must fail exactly one case.
+   * **Receipts.** `docs/evidence/gpu-compute-protocol-20261022/`: aarch64-linux
+     native, and x86_64-linux under qemu-user.
+   * **Not done: the `:gpu/compute` comment in the capability catalog** still
+     describes the C broker.
+     * The catalog's authority is kotoba-lang/kotoba-lang.
+     * amu's copy has already drifted from it.
+     * `src/kotoba/compiler/embedded_resources.cljk` embeds amu's copy through
+       a CLJK generator.
+
+     Change the comment upstream first, then resync amu's copy and the
+     embedded copy.
 2. **Guest runtime.** `KEXE_CAP_RESOURCES_42`, the fd checks, the transport in
    `seed/76` and `seed/77`, and the seccomp read rule. Test against a scripted
    fake provider; this needs no GPU and runs in CDCI.
