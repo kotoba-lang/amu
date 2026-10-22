@@ -54,18 +54,18 @@
 ;; superproject adr-2609251400 C3. The handler decision code a static image
 ;; with effects carries is this compiler's compilation of two sources in THIS
 ;; tree, held as sealed artifacts in `kotoba.compiler.linux-static-handlers`
-;; (scripts/gen-linux-static-handlers.cljk writes it; --check recompiles and
-;; compares, and refuses unless the C1 module's bytes equal the ones
-;; tools/kexe_loader.c embeds). What this suite can say cheaply is that the
-;; generated namespace was made from the sources as they are now: an edit to
-;; either .kotoba that was not regenerated turns this red.
+;; (a historical hosted cache, not current native qualification). The old
+;; Node/KBB generator and C embedding/equality condition are retired. This
+;; legacy assertion still exposes stale cache/source provenance; it does not
+;; establish native rebuild or current artifact admission. Native replacement
+;; and the full corpus remain open in docs/native-decision-host-retirement.md.
 #?(:cljs
    (deftest the-handler-decisions-were-generated-from-these-sources
      (doseq [[k path] [[:decisions "tools/kexe_loader_decisions.kotoba"]
                        [:handlers "tools/linux_static_handlers.kotoba"]]]
        (let [digest (-> (.createHash crypto "sha256") (.update (fs/readFileSync path)) (.digest "hex"))]
          (is (= digest (get static-handlers/source-sha256 k))
-             (str path " changed since scripts/gen-linux-static-handlers.cljk last ran"))))
+             (str path " differs from the historical hosted cache; native artifacts must be rebuilt and admitted"))))
      (doseq [isa [:aarch64 :x86_64] k [:decisions :handlers]]
        (is (string? (get-in static-handlers/artifact-texts [isa k])) (str isa " " k)))))
 

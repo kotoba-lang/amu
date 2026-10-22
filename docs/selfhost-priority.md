@@ -82,7 +82,14 @@ The migration proceeds through these gates:
    runtime qualification and any live cutover separately; this document does
    not authorize stopping existing services or a production cutover.
 
-Tracking: JUN-200 (loaderless bootstrap), JUN-202 (native selfbuild inputs and
+The C1/C3 Node/KBB generators, C-loader differential drivers, npm entrypoints
+and their two old CI steps are retired in
+[native decision host retirement](native-decision-host-retirement.md).
+The complete Kotoba decisions/names/boundary source and historical corpus
+provenance remain. Their actual native artifact and corpus qualification is
+still open; retiring an old route does not certify its replacement.
+
+Tracking: AWAI-66 (loaderless bootstrap), AWAI-43 (native selfbuild inputs and
 fixed point), JUN-199 (product entry), KOT-13 (Kotoba core), JUN-198 (Kotoba
 CLI/build) and JUN-162 (the two-gate native CDCI controller).
 
