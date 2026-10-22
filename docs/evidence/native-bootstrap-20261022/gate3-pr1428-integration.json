@@ -1,0 +1,16 @@
+{
+  "schema": "amu.gate3.pr1428-integration.v1",
+  "date": "2026-10-22",
+  "merged": {"main": "d13c486e1283fad5b6d634555876f4b232ebbabf", "pr1428Head": "588a96a4f01997f6f457a2f4434868aa0862879b", "result": "0fb68cb62103d60c43a06d41994e0a90da484bf5"},
+  "mergeNotes": "Only conflicts: accelerator.cljk, accelerator_targets.cljk, kexe_indexes.cljk (deleted here, ported concurrently on main). Main's versions kept; their removal needs separate review. PR #1428 merged without conflicts.",
+  "script": "scripts/seed/selfhost-bootstrap.py (aarch64 podman VM, python:3.12-alpine)",
+  "runs": [
+    {"input": "origin/main d13c486e", "result": "PASS S2=S3 cb0a7d02089de33d"},
+    {"input": "checkpoint 608136e5 (pre-merge)", "result": "FAIL S2 SIGILL (exit 120)", "cause": "product FS2 02-io compiled by the FS1 root runtime; known mixed-protocol input"},
+    {"input": "PR #1428 head 588a96a4 alone", "result": "FAIL S2 SIGTRAP (exit 120)", "cause": "arises upstream of this merge"},
+    {"input": "merged 0fb68cb6", "result": "FAIL S2 SIGILL (exit 120)"},
+    {"input": "merged 0fb68cb6 with origin/main seed/02-io (FS1)", "result": "FAIL S1 SIGILL (exit 120)"}
+  ],
+  "conclusion": "Gate 3 is not complete. The product loaderless script does not reproduce S2=S3 for the merged input; PR #1428 alone also fails it. The explicit FS1 bootstrap-snapshot recipe (current-main-bootstrap-kg.json) has not been rerun for the new quote-reader/FARM delta.",
+  "publicCompilerQualified": false
+}
