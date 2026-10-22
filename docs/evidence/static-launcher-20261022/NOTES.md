@@ -10,7 +10,8 @@ stdout, waits with a wall-time kill and writes one EDN receipt line
 
 * `aarch64-linux.json`: `scripts/seed/check-static-launcher.py` on arm64 Linux
   (podman machine, applehv, native kernel; no emulation), with the re-pinned
-  root as `--compiler` and the previous root `cb0a7d02…` as `--previous-root`.
+  root as `--compiler` and the previous root `f19ab1c4…` (step 3) as
+  `--previous-root`.
 * `x86_64-linux.json`: the same check on a native x86_64 kernel, from the
   `qualify-x86_64` job of `selfhost-native.yml` (run through
   `check-x86_64-native.py` with the self-built x86_64 compiler X2).
@@ -44,9 +45,10 @@ stdout, waits with a wall-time kill and writes one EDN receipt line
 * The provider in these runs is a python3 script. It is test scaffolding for
   the descriptors and the protocol, not the product provider (ADR 0371 steps
   5 and 6), and its hash in the receipt is python3's.
-* The guest that calls wire 42 is built by the test-only compiler of
-  `check-gpu-runtime-transport.py` (wire 42 admitted in memory), because the
-  product checker does not admit wire 42 until step 3 (#1477) is signed off.
+* The guest that calls wire 42 is built by the product compiler, which admits
+  wire 42 since step 3 (#1477, signed off 2026-10-22). Before that the script
+  used the test-only compiler of `check-gpu-runtime-transport.py`; it still
+  falls back to that only when the compiler under test refuses wire 42.
 * Through binfmt_misc, `execveat` of a close-on-exec memfd fails with ENOENT,
   so the launcher cannot start an image of another ISA under emulation. The
   x86_64 receipt comes from a native kernel for that reason.

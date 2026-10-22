@@ -143,8 +143,9 @@ answer is read from ANSWER into the string pool (at most 8 MiB, else a value
 trap). An answer that starts with `!` is a refusal: one line
 `KEXE_TRAP {:kind :capability :wire 42 :refusal :NAME}` on stderr (NAME = its
 first field, at most 64 bytes of [a-z0-9/-], else `unnamed`), then a trap.
-End of file, EPIPE or a short read also trap (exit 120). The checker does not
-admit wire 42 yet (E2115); ADR 0371 step 3 admits it.
+End of file, EPIPE or a short read also trap (exit 120). The checker admits
+wire 42 as `:string :string` only (ADR 0371 step 3,
+`seed/adoption-20261022.json`); other shapes stay E2115.
 
 ### KX64V1 runner (`--format kx64-runner`)
 
