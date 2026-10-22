@@ -1,0 +1,34 @@
+{
+  "schema": "amu.gate3.adoption-20261022-requalification.v1",
+  "date": "2026-10-22",
+  "command": "podman run --platform linux/arm64 python:3.12-alpine python3 scripts/seed/selfhost-bootstrap.py (branch tree, all pins enforced)",
+  "branchHeadBase": "45956365",
+  "result": "PASS_LOADERLESS_SELFHOST_BOOTSTRAP",
+  "selfhost": {
+    "S2EqualsS3": "be60c6cd2d05b2b3",
+    "rootReproduces": false,
+    "note": "S1 differs from the pinned root image because the frontend changed; the script reports 'root differs (re-pin to S3)'. The root image seed/bootstrap/aarch64-linux-static-root.elf was NOT re-pinned."
+  },
+  "adopted": {
+    "receipt": "seed/adoption-20261022.json",
+    "manifest": "seed/ADOPTED-MANIFEST",
+    "G1EqualsG2EqualsG3": true,
+    "nativeImageSHA256": "fe01d4d2e895c503daf888c41e003916cbcd75f577af57ceb80616b675bdffe9",
+    "runtimeCases": 24,
+    "hardeningProbes": "pass"
+  },
+  "successorPinsRefreshed": [
+    "seed/00-ns.kotoba",
+    "seed/10-lex.kotoba",
+    "seed/11-read.kotoba",
+    "seed/20-names.kotoba",
+    "seed/21-check.kotoba",
+    "seed/90-drv.kotoba"
+  ],
+  "notRun": [
+    "Embench timing and 19-workload correctness for the new image",
+    "policy/safety qualifications bound to the old image",
+    "FS2 successor build (needs an FS2-capable root)",
+    "native KG 4096/4097 and quote-form observations"
+  ]
+}
