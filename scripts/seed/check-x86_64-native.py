@@ -15,6 +15,7 @@ emulation. Records, natively:
    through R-x86_64 (G1 = G2 = G3);
 5. the scalar ELF suite, the aiueos object checks, the static launcher
    (check-static-launcher.py: --format launcher, ADR 0371 step 4) and the
+   runtime boundary (check-runtime-boundary.py, JUN-325) and the
    platform-linked image (check-platform-linked.py: libc-only images run on
    this host's glibc, owner decision 2026-10-22; ADR 0371 step 5) with X2.
 """
@@ -131,7 +132,7 @@ def main(boot, out):
     # 5. scalar ELF suite, aiueos object checks and the static launcher with X2
     suites = {}
     for script, args in [("check-x86_64-scalar.py", []), ("check-x86_64-aiueos-object.py", []), ("check-static-launcher.py", []),
-                         ("check-platform-linked.py", ["all"])]:
+                         ("check-runtime-boundary.py", []), ("check-platform-linked.py", ["all"])]:
         dst = out / script.replace(".py", "")
         r = subprocess.run([sys.executable, str(ROOT / "scripts/seed" / script), "--compiler", str(X), "--output", str(dst), *args],
                            capture_output=True, timeout=3600)
