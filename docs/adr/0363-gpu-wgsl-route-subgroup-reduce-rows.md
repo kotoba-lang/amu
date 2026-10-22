@@ -108,4 +108,7 @@ route" is stale for both.)
   remains not designed (ADR-0360 said so and this ADR does not design
   it).
 - `:amd`, `:unknown`, `:qualcomm` and any other vendor keep answering
-  `:baseline` on every route.
+  `:baseline` on every route. (SUPERSEDED 2026-10-23 as to `:amd` by
+  ADR-0364: `:amd` answers `:subgroup-reduce` on the Vulkan and WGSL
+  routes; `:unknown`, `:qualcomm` and every other vendor keep answering
+  `:baseline` on every route.)

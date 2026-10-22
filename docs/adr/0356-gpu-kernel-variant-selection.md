@@ -379,3 +379,19 @@ optimization evidence, and `:measured? false` is part of every answer.
   designed it.
 - The provisional workgroup rows of ADR-0355 are untouched by this ADR and
   remain `:measured? false` on their own axis.
+
+**Amendment (2026-10-23, the AMD row joins the table -- ADR-0364).**
+`:amd` (JUN-84 / AWAI-40) is the fifth classified vendor to ride the
+shared `:subgroup-reduce` emission, on the Vulkan route (`:vulkan` /
+`:glsl-v1`, RADV) and on the WGSL route (`:webgpu` / `:wgsl-v1`, the
+`:amd` vendor-default target -- the ADR-0363 rationale applied), under
+the same rule 3 + rule 6 gate, fail closed included. This supersedes
+"other vendors (including :amd, which has no designed row)" wherever it
+stood: `:unknown`, `:qualcomm` and every unclassified name keep answering
+`:baseline` everywhere. AMD's wave32/wave64 duality (AWAI-40 scope
+item 1) is answered by the emission's runtime width query and rule 6's
+`S | W` gate, not by selection; no AMD-native arm is designed (RDNA ISA
+instructions are the driver compiler's concern -- ADR-0364 records the
+reason). Implemented with tests; UNMEASURED like every other row -- no
+AMD hardware has run this variant and `:measured?` stays `false` on every
+answer.
