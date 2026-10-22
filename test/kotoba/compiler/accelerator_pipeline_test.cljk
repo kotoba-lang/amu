@@ -1,5 +1,6 @@
 (ns kotoba.compiler.accelerator-pipeline-test
   (:require [clojure.test :refer [deftest is testing]]
+            [clojure.string :as str]
             [kotoba.compiler.accelerator :as accelerator]
             [kotoba.compiler.accelerator-targets :as targets]
             [kotoba.compiler.accelerator-pipeline :as pipeline]))
@@ -74,3 +75,64 @@
     (is (thrown? js/Error (pipeline/compile-spec
                             (assoc spec :kernel/operator :sum)
                             {:vendor-id 4318})))))
+
+;; JUN-56's dispatch seam: the variant rows reach the sealed artifact.
+(def reduce-spec
+  {:kernel/name "reduce_sum_f32" :kernel/op :reduce :kernel/operator :sum
+   :kernel/workgroup-size 128})
+
+(deftest variant-selection-reaches-the-artifact
+  (testing "rule-6 subgroup facts select :subgroup-reduce and the artifact carries it"
+    (let [device {:vendor-id 32902 :subgroup-size 16
+                  :subgroup-ops #{:basic :shuffle-relative}}
+          {:keys [artifact dispatch]} (pipeline/compile-spec reduce-spec device)]
+      (is (= :subgroup-reduce (:variant dispatch)))
+      (is (= :subgroup-reduce (:variant artifact)))
+      (is (false? (:variant-measured? dispatch)))
+      (is (str/includes? (:code artifact) "subgroupShuffleDown"))
+      (is (= artifact (accelerator/verify-artifact! artifact)))))
+  (testing "an absent rule-6 fact fails closed to :baseline, never a guess"
+    (let [{:keys [artifact dispatch]} (pipeline/compile-spec reduce-spec {:vendor-id 32902})]
+      (is (= :baseline (:variant dispatch)))
+      (is (= :baseline (:variant artifact)))
+      (is (not (str/includes? (:code artifact) "subgroupShuffleDown")))))
+  (testing "a malformed subgroup fact fails closed too (all-or-nothing)"
+    (let [{:keys [artifact dispatch]}
+          (pipeline/compile-spec reduce-spec
+                                 {:vendor-id 32902 :subgroup-size 16
+                                  :subgroup-ops #{:basic}})]
+      (is (= :baseline (:variant dispatch)))
+      (is (not (str/includes? (:code artifact) "subgroupShuffleDown"))))))
+
+(deftest cuda-ladder-reaches-the-artifact
+  (testing "a confirmed sm_70+ takes the warp row (the ladder's first rung)"
+    (let [{:keys [artifact dispatch]}
+          (pipeline/compile-spec reduce-spec {:vendor-id 4318 :compute-capability 7.5})]
+      (is (= :warp-shuffle-reduce (:variant dispatch)))
+      (is (= :warp-shuffle-reduce (:variant artifact)))
+      (is (false? (:variant-measured? dispatch)))
+      (is (str/includes? (:code artifact) "__shfl_down_sync(0xffffffffu"))))
+  (testing "a confirmed capability below 7.0 fails closed to :baseline"
+    (let [{:keys [artifact dispatch]}
+          (pipeline/compile-spec reduce-spec
+                                 {:vendor-id 4318 :compute-capability 6.0
+                                  :subgroup-size 32
+                                  :subgroup-ops #{:basic :shuffle-relative}})]
+      (is (= :baseline (:variant dispatch)))
+      (is (not (str/includes? (:code artifact) "warpSize")))))
+  (testing "no capability but rule-6 facts: the parametric fold's second rung"
+    (let [{:keys [artifact dispatch]}
+          (pipeline/compile-spec reduce-spec
+                                 {:vendor-id 4318 :subgroup-size 32
+                                  :subgroup-ops #{:basic :shuffle-relative}})]
+      (is (= :subgroup-reduce (:variant dispatch)))
+      (is (str/includes? (:code artifact) "warpSize")))))
+
+(deftest variant-selection-is-deterministic-and-ewise-stays-baseline
+  (let [device {:vendor-id 32902 :subgroup-size 16
+                :subgroup-ops #{:basic :shuffle-relative}}]
+    (testing "same SPEC and DEVICE in, byte-identical artifact out"
+      (is (= (:artifact (pipeline/compile-spec reduce-spec device))
+             (:artifact (pipeline/compile-spec reduce-spec device)))))
+    (testing "the rows are :reduce rows: an ewise kernel keeps :baseline"
+      (is (= :baseline (:variant (:dispatch (pipeline/compile-spec spec device))))))))

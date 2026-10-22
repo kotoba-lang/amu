@@ -292,6 +292,8 @@
     ;; SPEC.edn + --device DEVICE.edn -> one sealed GPU artifact through
     ;; vendor dispatch. The workgroup row is the provisional dispatch default
     ;; (ADR-0355) unless SPEC names one; the printed :measured? says which.
+    ;; The kernel variant rides the same dispatch (ADR-0356's rows, JUN-56's
+    ;; seam) and is printed with its own :variant-measured? lock.
     (let [spec (bounded-edn/read-file
                  (or (second args)
                      (throw (ex-info "gpu-compile needs SPEC.edn" {:phase :usage}))))
@@ -308,6 +310,8 @@
                         :workgroup-size (:workgroup-size dispatch)
                         :workgroup-source (:workgroup-source dispatch)
                         :measured? (:measured? dispatch)
+                        :variant (:variant dispatch)
+                        :variant-measured? (:variant-measured? dispatch)
                         :kir-sha256 (:kir-sha256 artifact)
                         :code-sha256 (:code-sha256 artifact)
                         :output output})))
