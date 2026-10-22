@@ -1,0 +1,194 @@
+(ns gpu-compute-protocol-test (:export [main]))
+
+;; Tests for tools/gpu_compute_protocol.kotoba. No GPU, no provider: they
+;; check the grammar, bounds, order rule and answers that the table alone
+;; decides. scripts/seed/check-gpu-compute-protocol.py builds the unit (this
+;; ns line, then the table without its ns line, then the rest of this file),
+;; compiles it with an Amu-produced static compiler and runs the image.
+;;
+;; main answers the number of failed cases and prints one FAIL line for each.
+;; CASES is the number of expect calls below; the script counts them in this
+;; source and refuses a run whose CASES line differs, so a deleted case
+;; cannot pass silently. CONTROL 1 swaps one expected answer for a wrong one;
+;; the script builds that variant too and requires exactly one failure.
+;;
+;; Not reachable from here: refusal 3 (request-too-long). A runtime value
+;; cannot exceed constant 6, so only a frame can; the runtime and provider
+;; check frames (ADR 0371 steps 2 and 6).
+
+(def CASES 107)
+(def CONTROL 0)
+
+(defn- say [s :string] :i64
+  (let [x (typed-cap-call :io/write :string :string (string-concat s "\n"))] 0))
+
+(defn- fail [what :string got :string want :string] :i64
+  (let [x (say (string-concat "FAIL " (string-concat what (string-concat " => " (string-concat got (string-concat " ; want " want))))))] 1))
+
+;; The answer for a request line in a recording state: "" admitted.
+(defn- expect [line :string recording :i64 want :string] :i64
+  (let [got (answer-for line recording)]
+    (if (string=? got want) 0 (fail line got want))))
+
+(defn- expect-i64 [what :string got :i64 want :i64] :i64
+  (if (= got want) 0 (fail what (string-from-i64 got) (string-from-i64 want))))
+
+(defn- expect-str [what :string got :string want :string] :i64
+  (if (string=? got want) 0 (fail what got want)))
+
+;; ---------------------------------------------------------------------
+;; Admitted requests: every verb, and each bound at its edge.
+
+(defn- admitted [] :i64
+  (+ (expect "INFO" 0 "")
+     (expect "DEVCLASS" 0 "")
+     (expect "ALLOC 4096" 0 "")
+     (expect "MAP /models/q.gguf 0 531068480" 0 "")
+     (expect "WRITE 1 0 00ff10Ab" 0 "")
+     (expect "WRITEDEC 2 0 760,6511,314" 0 "")
+     (expect "READ 3 16 4194304" 0 "")
+     (expect "PIPELINE /spv/kdot.spv 16" 0 "")
+     (expect "BEGIN" 0 "")
+     (expect "BEGINK 7" 0 "")
+     (expect "DISPATCH 3 64 1 1 2 5" 1 "")
+     (expect "DISPATCHC 127 4294967295 1 1 4095" 0 "")
+     (expect "SUBMIT" 1 "")
+     (expect "REPLAY 0" 0 "")
+     (expect "DROP 0" 0 "")
+     (expect "ZERO 1" 0 "")
+     (expect "FREE 4095" 0 "")
+     (expect "  ALLOC   8  " 0 "")
+     (expect "PIPELINE p 1" 1 "")
+     (expect "INFO" 1 "")
+     (expect "DISPATCH 1 1 1 1 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16" 0 "")
+     (expect "ALLOC 9223372036854775807" 0 "")
+     (expect "WRITEDEC 1 0 4294967295" 0 "")
+     (expect "WRITEDEC 1 0 0" 0 "")))
+
+;; ---------------------------------------------------------------------
+;; Refusals that check-request names; each literal is pinned.
+
+(defn- shape-refusals [] :i64
+  (+ (expect "" 0 "!gpu/empty-request empty request")
+     (expect "   " 0 "!gpu/empty-request empty request")
+     (expect "FROB 1" 0 "!gpu/unknown-verb unknown :gpu/compute request")
+     (expect "alloc 8" 0 "!gpu/unknown-verb unknown :gpu/compute request")
+     (expect "ALLOC\t8" 0 "!gpu/unknown-verb unknown :gpu/compute request")
+     (expect "DISPATCH 1 1 1 1 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17" 0
+             "!gpu/too-many-fields more fields than any request has")
+     (expect "INFO extra" 0 "!gpu/arity INFO")
+     (expect "BEGIN 1" 0 "!gpu/arity BEGIN")
+     (expect "SUBMIT now" 1 "!gpu/arity SUBMIT")
+     (expect "ALLOC" 0 "!gpu/arity ALLOC <bytes>")
+     (expect "MAP /m 0" 0 "!gpu/arity MAP <path> <offset> <length>")
+     (expect "DISPATCH 1 1 1 1" 0 "!gpu/arity DISPATCH <pipeline> <x> <y> <z> <handle>...")))
+
+(defn- number-refusals [] :i64
+  (+ (expect "ALLOC 0" 0 (if (= CONTROL 1) "!gpu/zero-length WRONG" "!gpu/zero-length ALLOC <bytes>"))
+     (expect "ALLOC -1" 0 "!gpu/not-a-number ALLOC <bytes>")
+     (expect "ALLOC +5" 0 "!gpu/not-a-number ALLOC <bytes>")
+     (expect "ALLOC 9223372036854775808" 0 "!gpu/not-a-number ALLOC <bytes>")
+     (expect "ALLOC 12x" 0 "!gpu/not-a-number ALLOC <bytes>")
+     (expect "MAP /m 0 0" 0 "!gpu/zero-length MAP <path> <offset> <length>")
+     (expect "MAP /m x 8" 0 "!gpu/not-a-number MAP <path> <offset> <length>")
+     (expect "READ 1 x 8" 0 "!gpu/not-a-number READ <handle> <offset> <length>")
+     (expect "READ 1 0 4194305" 0 "!gpu/read-too-long READ longer than the answer can carry")
+     (expect "PIPELINE p 0" 0 "!gpu/bindings-range PIPELINE bindings must be 1..16")
+     (expect "PIPELINE p 17" 0 "!gpu/bindings-range PIPELINE bindings must be 1..16")
+     (expect "PIPELINE p x" 0 "!gpu/not-a-number PIPELINE <spv-path> <bindings>")
+     (expect "BEGINK 8" 0 "!gpu/slot-range BEGINK <slot 0..7>")
+     (expect "REPLAY x" 0 "!gpu/not-a-number REPLAY <slot 0..7>")
+     (expect "DROP 8" 0 "!gpu/slot-range DROP <slot 0..7>")))
+
+(defn- payload-refusals [] :i64
+  (+ (expect "WRITE 1 0 abc" 0 "!gpu/hex-length WRITE hex length")
+     (expect "WRITE 1 0 zz" 0 "!gpu/hex-digit WRITE hex digit")
+     (expect "WRITE 1 0 0g" 0 "!gpu/hex-digit WRITE hex digit")
+     (expect "WRITE 1 x 00" 0 "!gpu/not-a-number WRITE <handle> <offset> <hex>")
+     (expect "WRITEDEC 1 0 1,,2" 0 "!gpu/u32-list WRITEDEC: not a comma-separated u32 list")
+     (expect "WRITEDEC 1 0 1,2," 0 "!gpu/u32-list WRITEDEC: not a comma-separated u32 list")
+     (expect "WRITEDEC 1 0 ,1" 0 "!gpu/u32-list WRITEDEC: not a comma-separated u32 list")
+     (expect "WRITEDEC 1 0 4294967296" 0 "!gpu/u32-list WRITEDEC: not a comma-separated u32 list")
+     (expect "WRITEDEC 1 0 -1" 0 "!gpu/u32-list WRITEDEC: not a comma-separated u32 list")))
+
+(defn- handle-refusals [] :i64
+  (+ (expect "WRITE 0 0 00" 0 "!gpu/no-such-buffer WRITE: no such buffer")
+     (expect "WRITE 4096 0 00" 0 "!gpu/no-such-buffer WRITE: no such buffer")
+     (expect "FREE x" 0 "!gpu/not-a-number FREE <handle>")
+     (expect "ZERO 0" 0 "!gpu/no-such-buffer ZERO: no such buffer")
+     (expect "DISPATCH 0 1 1 1 1" 0 "!gpu/no-such-pipeline DISPATCH: no such pipeline")
+     (expect "DISPATCH 128 1 1 1 1" 0 "!gpu/no-such-pipeline DISPATCH: no such pipeline")
+     (expect "DISPATCH x 1 1 1 1" 0 "!gpu/not-a-number DISPATCH <pipeline> <x> <y> <z> <handle>...")
+     (expect "DISPATCHC 1 4294967296 1 1 1" 0 "!gpu/workgroup-range DISPATCHC: workgroup count is not a u32")
+     (expect "DISPATCH 1 1 1 4294967296 1" 0 "!gpu/workgroup-range DISPATCH: workgroup count is not a u32")
+     (expect "DISPATCH 1 1 1 1 0" 0 "!gpu/no-such-buffer DISPATCH: no such buffer")
+     (expect "DISPATCH 1 1 1 1 1 4096" 0 "!gpu/no-such-buffer DISPATCH: no such buffer")))
+
+;; The order rule, and that it is checked before the fields.
+(defn- order-refusals [] :i64
+  (+ (expect "MAP /m 0 8" 1 "!gpu/while-recording MAP while recording (BEGIN open): finish with SUBMIT first")
+     (expect "WRITE 1 0 00" 1 "!gpu/while-recording WRITE while recording (BEGIN open): finish with SUBMIT first")
+     (expect "WRITEDEC 1 0 1" 1 "!gpu/while-recording WRITEDEC while recording (BEGIN open): finish with SUBMIT first")
+     (expect "READ 1 0 8" 1 "!gpu/while-recording READ while recording (BEGIN open): finish with SUBMIT first")
+     (expect "BEGIN" 1 "!gpu/while-recording BEGIN while recording (BEGIN open): finish with SUBMIT first")
+     (expect "BEGINK 0" 1 "!gpu/while-recording BEGINK while recording (BEGIN open): finish with SUBMIT first")
+     (expect "REPLAY 0" 1 "!gpu/while-recording REPLAY while recording (BEGIN open): finish with SUBMIT first")
+     (expect "DROP 0" 1 "!gpu/while-recording DROP while recording (BEGIN open): finish with SUBMIT first")
+     (expect "ZERO 1" 1 "!gpu/while-recording ZERO while recording (BEGIN open): finish with SUBMIT first")
+     (expect "FREE 1" 1 "!gpu/while-recording FREE while recording (BEGIN open): finish with SUBMIT first")
+     (expect "SUBMIT" 0 "!gpu/not-recording SUBMIT without BEGIN")
+     (expect "MAP /m 0 0" 1 "!gpu/while-recording MAP while recording (BEGIN open): finish with SUBMIT first")))
+
+;; ---------------------------------------------------------------------
+;; The tables themselves and the answer helpers.
+
+;; Every refusal index 1..(constant 16) has a name, and its answer carries the
+;; same index back. A duplicated name would come back as the earlier index.
+(defn- refusal-round-trip [] :i64
+  (loop [r 1 bad 0]
+    (if (> r (constant 16)) bad
+      (let [a (answer-refusal r 3)
+            ok (and (> (string-length (refusal-name r)) 4) (= (answer-refusal-index a) r))]
+        (recur (inc r) (if ok bad (+ bad (fail (string-concat "refusal " (string-from-i64 r)) a "its own index"))))))))
+
+(defn- verb-round-trip [] :i64
+  (loop [v 1 bad 0]
+    (if (> v 17) bad
+      (recur (inc v) (if (= (verb-code (verb-name v)) v) bad (+ bad (fail (string-concat "verb " (string-from-i64 v)) (verb-name v) "its own code")))))))
+
+(defn- tables [] :i64
+  (+ (expect-i64 "refusal names round-trip" (refusal-round-trip) 0)
+     (expect-i64 "verb names round-trip" (verb-round-trip) 0)
+     (expect-str "no refusal past the last" (refusal-name (+ (constant 16) 1)) "")
+     (expect-str "no verb 18" (verb-name 18) "")
+     (expect-i64 "unknown verb code" (verb-code "info") 0)
+     (expect-i64 "first provider refusal" (constant 15) 19)
+     (expect-str "first provider refusal name" (refusal-name (constant 15)) "gpu/buffer-table-full")
+     (expect-i64 "last check-request refusal" (check-request "SUBMIT" 0) (- (constant 15) 1))
+     (expect-i64 "READ bound is half the answer bound" (* 2 (constant 8)) (constant 7))
+     (expect-i64 "unknown constant" (constant 99) -1)
+     (expect-str "devclass 1" (devclass-name 1) "discrete")
+     (expect-str "devclass 5" (devclass-name 5) "other")
+     (expect-str "devclass 6" (devclass-name 6) "")))
+
+(defn- answers [] :i64
+  (+ (expect-i64 "a decimal answer is not a refusal" (answer-refusal-index (answer-decimal 1234)) 0)
+     (expect-str "decimal answer" (answer-decimal 1234) "1234")
+     (expect-str "ok answer" (answer-ok) "1")
+     (expect-i64 "the C broker's bare refusal" (answer-refusal-index "!MAP short read") -1)
+     (expect-i64 "an empty answer" (answer-refusal-index "") 0)
+     (expect-i64 "a name alone" (answer-refusal-index "!gpu/device-lost") 33)
+     (expect-str "device error detail"
+                 (answer-refusal-detail 32 13 "vkQueueSubmit: VK_ERROR_OUT_OF_DEVICE_MEMORY")
+                 "!gpu/device-error SUBMIT: device error: vkQueueSubmit: VK_ERROR_OUT_OF_DEVICE_MEMORY")
+     (expect-str "artifact refusal" (answer-refusal 28 4) "!gpu/artifact-not-granted MAP: path is not in the granted artifact table")
+     (expect-i64 "device lost ends the session" (if (refusal-ends-session? 33) 1 0) 1)
+     (expect-i64 "fence timeout ends the session" (if (refusal-ends-session? 34) 1 0) 1)
+     (expect-i64 "device error does not" (if (refusal-ends-session? 32) 1 0) 0)))
+
+(defn main [] :i64
+  (let [failed (+ (admitted) (shape-refusals) (number-refusals) (payload-refusals)
+                  (handle-refusals) (order-refusals) (tables) (answers))
+        x (say (string-concat "CASES " (string-from-i64 CASES)))
+        y (say (string-concat "FAILED " (string-from-i64 failed)))]
+    failed))

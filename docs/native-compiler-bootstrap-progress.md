@@ -5,6 +5,9 @@ Linux experiment, without a C/JVM/Node compiler or C loader in those native
 executions. Public entrypoints still refuse with exit 69: this experiment
 does not yet qualify the complete product or build closure.
 
+The [completion gauge](native-compiler-completion-gates.md) covers all remaining
+acceptance gates through main verification, tracking completion and cleanup.
+
 ## Actual native results
 
 - The native experiment recompiled all sixteen adopted core modules to the
@@ -98,3 +101,47 @@ final admitted toolchain before main merge. The source-owner whole-port and
 lock work tracked in AWAI-48 (including native #204 and Amu #1437/#1450) is
 not made complete by these bootstrap results. No main merge, Actions setting,
 protection setting, service or unrelated WIP has changed.
+
+## Public CLI dependency check
+
+The immutable lock-routing draft #1450 at
+`2277724f0ec6aa3482c1f076c6981bb0e0c2fd6e` compiled and ran its entire
+72-decision pure dispatch fixture natively (exit 0). This is not integrated
+locked-build success. A canonical-only whole CLI source audit reaches E6002
+at `native_frontend.kotoba`: `kotoba.sema` is missing. The inspected owning
+sema head has no tracked canonical `.kotoba` source; its CLJK WIP remains
+preserved. That owner-port/lock work must be completed rather than silently
+selecting hosted readings or an unpinned public fallback. Receipts are
+`lock-route-1450-native.json` and `public-cli-source-blocker.json`.
+
+## Current-main candidate integration
+
+The candidate includes main `b9918746f696105ca2e6438d72ee639b72208e3a`
+through a normal merge. SHA-256, multiple filesystem roots and GPU transport
+source changes are retained with the bounded KG extension; retired hosted
+resources and the upstream-retired Node merge guard are not restored.
+
+The explicit owning-main FS1 bootstrap snapshot plus KG runtime reproduces
+S2 = S3 at 1,303,040 bytes, SHA-256
+`a070daa9655197ae35668bb86382dac897b74c722aecf264e96bb35d2f8b7692`.
+S1 differs because the embedded runtime changes at the first transition.
+The native-generated runner passed KG point lookup and 4096 datoms; 4097
+refused with the helper's signal exit 120 and `budget/cells` KG diagnostic.
+That helper refusal is distinct from the public native-packager fixture's
+exit 72 evidence above. No new x86 execution or whole-product qualification
+is claimed. Exact inputs, generations and observations are in
+`current-main-bootstrap-kg.json`.
+
+The first staged input mistakenly mixed mandatory product FS2 IO with the
+FS1 bootstrap runtime. Its generated S1 refused filesystem calls with
+SIGILL/exit 120. That input and failure are preserved in the receipt and do
+not count as a fixed point. The corrected input is an explicit bootstrap
+snapshot, not a product FS1 fallback. Product `seed/MANIFEST` successor pins
+are unchanged by this merge.
+
+A fresh fetch before push found additional quote-reader and FARM commits on
+PR #1428 at `588a96a4f01997f6f457a2f4434868aa0862879b`. This checkpoint
+preserves the tested core pins on a separate task branch. The concurrent
+changes are not overwritten; their review, integration and renewed native
+qualification remain part of completion gate 3. This local main integration
+is not a completed update of the current PR head.

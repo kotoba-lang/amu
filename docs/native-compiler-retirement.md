@@ -51,6 +51,6 @@ Until those gates pass #1428 stays draft, the temporary public launchers still
 refuse, and no main merge is performed. No Actions or branch-protection
 setting changes are part of this retirement.
 
-The separately held Git `scripts/merge-guard.mjs` and its existing workflow
-remain unchanged. This repository-maintenance check is not a compiler host;
-removing the Node compiler does not authorize removing that safety guard.
+The upstream repository-maintenance guard was retired separately in main
+PR #1439. This compiler candidate preserves that upstream history; it does
+not restore the old Node guard or treat its removal as compiler qualification.

@@ -8,10 +8,18 @@ Frontend, lowering, optimization and backend behavior grow from that core.
 ## Current compiler availability
 
 **The C/JVM/Node compiler implementations and their build/launch routes have
-been removed in this candidate. An independent native compiler has not yet
-been qualified.** `bin/amu`, `bin/kotoba` and `bin/kotoba-compiler` currently
-report unavailability and exit 69, including for help/version requests. They
-do not fall back to NBB/KBB, Node, Java/Graal or a C loader.
+been removed in this candidate. A loaderless bootstrap compiler, measured-core
+self-rebuild and native FS2 packager now execute successfully.** Fresh native
+Embench correctness is 19/19; this is not a new timing score or full public
+compiler qualification. Exact identities and limits are recorded in
+[native bootstrap progress](docs/native-compiler-bootstrap-progress.md).
+The [completion gauge](docs/native-compiler-completion-gates.md) tracks all
+acceptance gates through merged main verification and cleanup.
+
+`bin/amu`, `bin/kotoba` and `bin/kotoba-compiler` still report unavailability
+with exit 69 until the complete public target/profile, locked import and CLI
+closure is qualified. They do not fall back to NBB/KBB, Node, Java/Graal or a
+C loader.
 
 See [hosted compiler retirement](docs/native-compiler-retirement.md) for the
 complete file inventory, source recovery and pending native admission gates.
