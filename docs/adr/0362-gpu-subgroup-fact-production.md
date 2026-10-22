@@ -2,10 +2,11 @@
 
 - Status: accepted as design. The protocol-table entries (decision 1's verb
   code, decision 2's field count, decision 3's refusal) are IMPLEMENTED
-  (2026-10-23, amendment below). The producer's answer and the consumer
-  parser remain unimplemented and land with the ADR 0371 GPU provider
-  track. Nothing is measured; no `:measured?` flag moves and no workgroup
-  row is touched.
+  (2026-10-23, amendment below). The consumer parser (decision 4) is
+  IMPLEMENTED (2026-10-23, slice-3 amendment below). The producer's answer
+  remains unimplemented and lands with the ADR 0371 GPU provider track.
+  Nothing is measured; no `:measured?` flag moves and no workgroup row is
+  touched.
 - Date: 2026-10-23
 - Tracking: JUN-56 (the dispatch contract). Parent JUN-55. Serves the
   variant rows JUN-57 (ADR-0361), JUN-58 (ADR-0360), JUN-59 (ADR-0356)
@@ -130,4 +131,23 @@ table's own tests extended (114 cases, both targets green,
 `docs/evidence/gpu-compute-protocol-subgroup-20261023/`). Slices 2 (the
 provider's answer) and 3 (the consumer parser) remain unimplemented, so no
 rule-6 fact has a producer yet and the fail-closed behavior above is
+unchanged. No measurement, no `:measured?` move, no workgroup row touched.
+
+## Amendment 2026-10-23 (slice 3): the consumer parser landed
+
+`kotoba.compiler.accelerator-targets/device-from-subgroup` parses the answer
+(`<size>|<ops>`) into the two descriptor keys rule 6 already consumes
+(`:subgroup-size` a positive integer, `:subgroup-ops` a keyword set), in
+both readings (the W3 `:kotoba` arm and the host arm). All-or-nothing per
+decision 4: every named failure trigger answers nil (an absent fact). Two
+points decision 4 left open are pinned by the implementation: the `<ops>`
+tokens are read by the wire's own token rule (runs of non-space bytes
+separated by one or more spaces -- byte 32 the request grammar's only
+separator -- so a separator-only field is also zero tokens), and a
+duplicate token is the same set fact and collapses. Tests cover the
+contracts and the decision-4 seam end to end (the parser's answer feeds
+`select-variant` rule 6; missing facts fail closed to `:baseline`); see
+`docs/evidence/gpu-subgroup-consumer-parser-20261023/`. Slice 2 (the
+provider's answer) remains unimplemented: no live wire feeds the parser,
+no rule-6 fact has a producer, and the fail-closed behavior above is
 unchanged. No measurement, no `:measured?` move, no workgroup row touched.

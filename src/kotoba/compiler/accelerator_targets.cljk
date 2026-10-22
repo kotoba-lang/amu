@@ -461,6 +461,149 @@
              :max-workgroup-x wg
              :unified-memory? (= unified "1")
              :measured? true})))))))
+;; the SUBGROUP answer (ADR-0362 decision 2): "<size>|<ops>", exactly two
+;; '|'-separated fields -- the wire-42 answer whose producer is the ADR 0371
+;; provider track (unimplemented; no live wire feeds it today). The
+;; vocabulary is the eight Vulkan 1.1 core VkSubgroupFeatureFlagBits names,
+;; lower-cased, mapped 1:1 to keywords with the hyphen preserved (the
+;; device-class-tokens idiom). The table is the whole vocabulary: a token
+;; outside it is unknown and, all-or-nothing, fails the whole answer.
+#?(:kotoba
+   (defn- sg-tokens-doc [] :document
+     (document-list (document-string "basic") (document-string "vote") (document-string "arithmetic")
+                    (document-string "ballot") (document-string "shuffle") (document-string "shuffle-relative")
+                    (document-string "clustered") (document-string "quad")))
+   :default
+(def ^:private subgroup-op-tokens
+  "The SUBGROUP answer's <ops> vocabulary (ADR-0362 decision 2): the eight
+  Vulkan 1.1 core VkSubgroupFeatureFlagBits names, lower-cased, mapped 1:1 to
+  keywords with the hyphen preserved (shuffle-relative -> :shuffle-relative).
+  The map is the whole vocabulary: a token outside it is an unknown token and,
+  with decision 4's all-or-nothing rule, fails the WHOLE answer to an absent
+  fact."
+  {"basic" :basic
+   "vote" :vote
+   "arithmetic" :arithmetic
+   "ballot" :ballot
+   "shuffle" :shuffle
+   "shuffle-relative" :shuffle-relative
+   "clustered" :clustered
+   "quad" :quad}))
+#?(:kotoba
+   (defn- sg-keywords-doc [] :document
+     (document-list (document-keyword :basic) (document-keyword :vote) (document-keyword :arithmetic)
+                    (document-keyword :ballot) (document-keyword :shuffle) (document-keyword :shuffle-relative)
+                    (document-keyword :clustered) (document-keyword :quad))))
+#?(:kotoba
+   (defn- sg-keyword [token :string i :i64] :document
+     (if (>= i 8)
+       (document-null)
+       (let [tx (option-value-of [:option :document] (document-list-at (sg-tokens-doc) i) (document-null))
+             word (option-value-of [:option :string] (document-string-value tx) "")]
+         (if (= token word)
+           (option-value-of [:option :document] (document-list-at (sg-keywords-doc) i) (document-null))
+           (sg-keyword token (+ i 1)))))))
+;; the <size> field: decimal digits only as an i64, -1 for an empty field, a
+;; non-digit or a value past i64 (the protocol table's parse-decimal
+;; contract).
+#?(:kotoba
+   (defn- sg-size [s :string] :i64
+     (let [n (string-byte-length s)]
+       (if (= n 0) -1 (sg-size-walk s 0 n 0)))))
+#?(:kotoba
+   (defn- sg-size-walk [s :string i :i64 n :i64 acc :i64] :i64
+     (if (>= i n)
+       acc
+       (let [d (- (string-code-point-at s i) 48)]
+         (cond (< d 0) -1
+               (> d 9) -1
+               (> acc (quot (- 9223372036854775807 d) 10)) -1
+               :else (sg-size-walk s (+ i 1) n (+ (* acc 10) d)))))))
+;; the <ops> field's tokens are the wire's tokens: runs of non-space bytes
+;; separated by one or more spaces (byte 32), no other byte separates (the
+;; request grammar's rule), so a separator-only field is also zero tokens.
+#?(:kotoba
+   (defn- sg-token-end [s :string i :i64 n :i64] :i64
+     (if (>= i n)
+       n
+       (if (= (string-code-point-at s i) 32) i (sg-token-end s (+ i 1) n)))))
+#?(:kotoba
+   (defn- sg-member? [acc :document kw :document k :i64 n :i64] :bool
+     (cond (>= k n) false
+           (document-equal? (option-value-of [:option :document] (document-list-at acc k) (document-null)) kw) true
+           :else (sg-member? acc kw (+ k 1) n))))
+#?(:kotoba
+   (defn- sg-ops [field :string] :document
+     (sg-ops-walk field 0 (string-byte-length field) (document-vector))))
+#?(:kotoba
+   (defn- sg-ops-walk [s :string i :i64 n :i64 acc :document] :document
+     (cond (>= i n) acc
+           (= (string-code-point-at s i) 32) (sg-ops-walk s (+ i 1) n acc)
+           :else (let [j (sg-token-end s i n)
+                       kw (sg-keyword (string-substring s i j) 0)]
+                   (if (none? kw)
+                     (document-null)
+                     (if (sg-member? acc kw 0 (document-count acc))
+                       (sg-ops-walk s j n acc)
+                       (sg-ops-walk s j n (document-vector-conj acc kw))))))))
+;; exactly two fields: the index of the single '|', -1 for none, -2 for more.
+#?(:kotoba
+   (defn- sg-pipe [s :string i :i64 n :i64 at :i64] :i64
+     (cond (>= i n) at
+           (= (string-code-point-at s i) 124) (if (< at 0) (sg-pipe s (+ i 1) n i) -2)
+           :else (sg-pipe s (+ i 1) n at))))
+#?(:kotoba
+   (defn device-from-subgroup [answer :document] :document
+     (if (not (= (document-kind answer) :string))
+       (document-null)
+       (let [s (option-value-of [:option :string] (document-string-value answer) "")
+             n (string-byte-length s)
+             p (sg-pipe s 0 n -1)]
+         (if (< p 0)
+           (document-null)
+           (let [size (sg-size (string-substring s 0 p))
+                 ops (sg-ops (string-substring s (+ p 1) n))]
+             (if (and (< 0 size) (not (none? ops)))
+               (document-map (document-keyword :subgroup-size) (document-i64 size)
+                             (document-keyword :subgroup-ops) ops)
+               (document-null)))))))
+   :default
+(defn device-from-subgroup
+  "Parse one wire-42 SUBGROUP answer -- \"<size>|<ops>\", exactly two
+  '|'-separated fields (ADR-0362 decision 2) -- into the two descriptor keys
+  rule 6 (ADR-0356) already consumes (decision 4):
+  {:subgroup-size <positive int> :subgroup-ops #{<keywords>}}. The producer of
+  this answer (the ADR 0371 GPU provider's SUBGROUP reply) does not exist
+  yet, so no live wire feeds this function today.
+
+  <size> is decimal digits only, a positive integer. <ops> is zero or more
+  tokens from `subgroup-op-tokens`, read by the wire's token rule (runs of
+  non-space bytes separated by one or more spaces -- byte 32 is the only
+  separator, the request grammar's rule -- so a separator-only field is also
+  zero tokens). An EMPTY <ops> is a FACT (\"no subgroup operations in
+  compute\"), not a refusal. The answer names a set: a duplicate token is the
+  same fact and collapses.
+
+  TOTAL and all-or-nothing (decision 4): a non-string answer, a field count
+  other than 2, an empty or non-digit <size>, a zero size, a size past the
+  i64 range, or an unknown token makes the WHOLE answer nil -- an absent
+  fact, which rule 6 answers :baseline with. A partially trusted answer must
+  not select a variant."
+  [answer]
+  (when (string? answer)
+    (let [fields (str/split answer #"\|" -1)]
+      (when (= 2 (count fields))
+        (let [[size-text ops-text] fields
+              size (when (re-matches #"[0-9]+" size-text) (parse-long size-text))
+              ops (reduce (fn [acc token]
+                            (if-let [kw (get subgroup-op-tokens token)]
+                              (conj acc kw)
+                              (reduced nil)))
+                          #{}
+                          (remove #(= "" %) (str/split ops-text #" +" -1)))]
+          (when (and size (pos? size) ops)
+            {:subgroup-size size
+             :subgroup-ops ops})))))))
 #?(:kotoba
    (defn recommend [device :document] :document
      (let [vendor (classify-vendor device)

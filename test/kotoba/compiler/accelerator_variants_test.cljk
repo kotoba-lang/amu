@@ -2,6 +2,7 @@
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.accelerator :as accelerator]
+            [kotoba.compiler.accelerator-targets :as targets]
             [kotoba.compiler.accelerator-variants :as variants]))
 
 (deftest selection-is-total-deterministic-and-unmeasured
@@ -216,3 +217,36 @@
                           {:compute-capability 7.0}))))))
     (doseq [target [:msl-v1 :metal :webgpu :wgsl-v1]]
       (is (= :baseline (:variant (variants/select-variant :nvidia kir target capable)))))))
+
+(deftest rule-6-reads-the-facts-the-subgroup-answer-parses
+  ;; ADR-0362 decision 4, end to end at the seam it names: the consumer
+  ;; parser's answer is exactly the descriptor rule 6 consumes, and every
+  ;; absent or malformed answer fails closed to :baseline. The parser's
+  ;; producer (slice 2, the ADR 0371 provider's SUBGROUP reply) does not
+  ;; exist yet -- the strings here are parser inputs, not wire readings, and
+  ;; nothing here is a measurement.
+  (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})]
+    (is (= :subgroup-reduce
+           (:variant (variants/select-variant
+                      :apple kir :vulkan
+                      (targets/device-from-subgroup "32|basic shuffle-relative")))))
+    (is (= :subgroup-reduce
+           (:variant (variants/select-variant
+                      :intel kir :glsl-v1
+                      (targets/device-from-subgroup "8|basic shuffle-relative shuffle"))))
+        "a parsed fact set larger than the fold's two ops still selects")
+    (is (= :baseline
+           (:variant (variants/select-variant
+                      :apple kir :vulkan
+                      (targets/device-from-subgroup "32|basic"))))
+        "a fact missing :shuffle-relative fails closed")
+    (is (= :baseline
+           (:variant (variants/select-variant
+                      :apple kir :vulkan
+                      (targets/device-from-subgroup "24|basic shuffle-relative"))))
+        "a subgroup size that does not divide the workgroup fails closed")
+    (is (= :baseline
+           (:variant (variants/select-variant
+                      :apple kir :vulkan
+                      (targets/device-from-subgroup "no|such answer"))))
+        "a malformed answer is an absent fact, and an absent fact is :baseline")))
