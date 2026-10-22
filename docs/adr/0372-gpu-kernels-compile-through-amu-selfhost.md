@@ -103,18 +103,19 @@ output exists only as an oracle renderer.
    the decode argmax chain against the f64 oracle) run through the ADR 0371
    provider, once steps 3–6 exist.
 
-### 4. Vendor tables move to Kotoba
+### 4. The vendor tables continue on the Kotoba port
 
-`tools/gpu_targets.kotoba` takes over the vendor → target mapping, the
-workgroup and subgroup rows with their `measured?` flags, and the variant
-selection. It also fixes three defects in the CLJK copy:
+The CLJK-to-Kotoba port program already gives
+`src/kotoba/compiler/accelerator_targets.cljk` a `:kotoba` reading
+(amu #1478, W3). That reading compiles on the seed module route and matches
+the host reading byte for byte. This ADR builds on that port, without a
+second copy. What remains:
 
-* the Vulkan route maps to a SPIR-V target, not WGSL;
-* `measured?` is read per row, not only for a device named "m1 max";
-* the docstrings say what is measured.
-
-The CLJK modules stay as oracles until the Kotoba copy reaches parity, then
-they are retired.
+* make the Kotoba reading the canonical source;
+* route Vulkan to the SPIR-V target this ADR adds, instead of WGSL;
+* read `measured?` per row, instead of only for a device named "m1 max";
+* make the docstrings say what is measured;
+* port `accelerator_variants` the same way.
 
 ### 5. The provider must enable what modules declare
 
@@ -144,9 +145,12 @@ a follow-up to ADR 0371.
    `scripts/seed/check-gpu-kernel-spirv.py` builds the test unit with the
    pinned root, runs it as a static image that writes the `.spv` files, and
    then runs `spirv-val` and `spirv-dis` as oracles on the host.
-2. **KIR v1 reduce and the vendor tables.** The workgroup reduce, the
-   subgroup reduce, the workgroup-sweep FMA kernel behind ADR 0358, and
-   `tools/gpu_targets.kotoba`.
+2. **KIR v1 reduce, the vendor rows and the checker against glslang.**
+   * The workgroup reduce, the subgroup reduce, and the workgroup-sweep FMA
+     kernel behind ADR 0358.
+   * The `accelerator_targets` and `accelerator_variants` rows of Decision 4,
+     on the W3 port.
+   * Running the Kotoba checker over glslang's modules, as an oracle.
 3. **KIR v2 and the inference kernels, B70/ANV first:**
    * the nex_ops decode set;
    * `attn_copy_dense`;
