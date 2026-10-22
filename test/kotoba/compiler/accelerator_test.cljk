@@ -1,6 +1,8 @@
 (ns kotoba.compiler.accelerator-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.accelerator :as accelerator]
+            [kotoba.compiler.accelerator-subgroup-reduce :as sg]
             [kotoba.artifact.core :as artifact]))
 
 (deftest typed-kir-lowers-deterministically-to-wgsl-and-cuda
@@ -107,3 +109,101 @@
       (let [tampered (artifact/seal (assoc compiled :variant :turbo))]
         (is (thrown-with-msg? Exception #"unsupported kernel variant"
                               (accelerator/verify-artifact! tampered)))))))
+
+(deftest glsl-v1-baseline-lowers-deterministically
+  ;; ADR-0359 decision 1: :glsl-v1 is a fourth emission target. This is the
+  ;; SOURCE text contract only -- the GLSL -> SPIR-V compilation is a
+  ;; separate sealed build step (decision 2, accepted design, not yet
+  ;; implemented). UNMEASURED as an optimization claim: nothing here is a
+  ;; tuning result.
+  (is (contains? accelerator/targets :glsl-v1))
+  (let [ewise (accelerator/kernel "ewise_add_f32" :ewise :add {:workgroup-size 256})
+        ew (accelerator/compile-kernel ewise :glsl-v1)
+        reduce-kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 128})
+        rd (accelerator/compile-kernel reduce-kir :glsl-v1)]
+    (testing "the seal regime covers the GLSL arm like any other emission"
+      (is (= ew (accelerator/verify-artifact! ew)))
+      (is (= rd (accelerator/verify-artifact! rd)))
+      (is (= ew (accelerator/compile-kernel ewise :glsl-v1))))
+    (testing "the KIR hash is target-independent"
+      (is (= (:kir-sha256 ew) (:kir-sha256 (accelerator/compile-kernel ewise :wgsl-v1)))))
+    (testing "GLSL 450 compute, entry main; the kernel name does not appear"
+      (is (str/starts-with? (:code ew) "#version 450\n"))
+      (is (str/includes? (:code ew) "layout(local_size_x = 256) in;"))
+      (is (str/includes? (:code ew) "void main()"))
+      (is (nil? (re-find #"ewise_add_f32" (:code ew)))))
+    (testing "wire-42 ABI: storage buffers only -- n rides a readonly SSBO"
+      (is (str/includes? (:code ew)
+                         "layout(set = 0, binding = 2, std430) writeonly buffer Z { float z[]; };"))
+      (is (str/includes? (:code ew)
+                         "layout(set = 0, binding = 3, std430) readonly buffer N { uint n; };"))
+      (is (str/includes? (:code rd)
+                         "layout(set = 0, binding = 1, std430) writeonly buffer Parts { float parts[]; };"))
+      (is (str/includes? (:code rd)
+                         "layout(set = 0, binding = 2, std430) readonly buffer N { uint n; };"))
+      (is (nil? (re-find #"uniform" (:code ew)))))
+    (testing "the tree reduce carries its barrier cascade and per-workgroup partial"
+      (is (str/includes? (:code rd) "barrier();"))
+      (is (str/includes? (:code rd) "parts[gl_WorkGroupID.x] = scratch[0]")))
+    (testing "emission is deterministic across calls"
+      (is (= (:code rd) (accelerator/lower reduce-kir :glsl-v1))))))
+
+(deftest glsl-v1-subgroup-reduce-routes-to-the-arm-emitter
+  ;; ADR-0359 decision 1: `lower` admits :glsl-v1 for :subgroup-reduce,
+  ;; routed to the existing emit-glsl -- so the seal regime covers that
+  ;; emission like any other. Before this admission NO :subgroup-reduce
+  ;; artifact could verify at all: the verifier's vocabulary named the
+  ;; variant and `lower` refused it ("unsupported kernel variant").
+  (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
+        routed (accelerator/lower kir :glsl-v1 :subgroup-reduce)
+        compiled (accelerator/compile-kernel kir :glsl-v1 :subgroup-reduce)]
+    (testing "the routed bytes ARE the arm emitter's bytes"
+      (is (= (sg/emit-glsl kir) routed)))
+    (testing "a :subgroup-reduce artifact seals and verifies"
+      (is (= :subgroup-reduce (:variant compiled)))
+      (is (= compiled (accelerator/verify-artifact! compiled)))
+      (is (= compiled (accelerator/compile-kernel kir :glsl-v1 :subgroup-reduce))))
+    (testing "relabeling baseline GLSL bytes as the variant fails closed"
+      (let [tampered (artifact/seal (assoc (accelerator/compile-kernel kir :glsl-v1)
+                                           :variant :subgroup-reduce))]
+        (is (thrown-with-msg? Exception #"regeneration mismatch"
+                              (accelerator/verify-artifact! tampered)))))))
+
+(deftest glsl-variants-refuse-where-not-applicable
+  (let [reduce-kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
+        ewise-kir (accelerator/kernel "ewise_add_f32" :ewise :add {:workgroup-size 256})
+        subwarp-kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 16})]
+    (testing "the GLSL arm admits no CUDA variant"
+      (is (thrown-with-msg? Exception #"kernel variant not applicable"
+                            (accelerator/lower reduce-kir :glsl-v1 :warp-shuffle-reduce))))
+    (testing "the CUDA arm admits no Vulkan variant -- never silently baseline"
+      (is (thrown-with-msg? Exception #"kernel variant not applicable"
+                            (accelerator/lower reduce-kir :cuda-v1 :subgroup-reduce))))
+    (testing "the WGSL and MSL arms admit it either"
+      (is (thrown-with-msg? Exception #"kernel variant not applicable"
+                            (accelerator/lower reduce-kir :wgsl-v1 :subgroup-reduce)))
+      (is (thrown-with-msg? Exception #"kernel variant not applicable"
+                            (accelerator/lower reduce-kir :msl-v1 :subgroup-reduce))))
+    (testing "the variant's own applicability row refuses ewise and sub-warp"
+      (is (thrown-with-msg? Exception #"kernel variant not applicable"
+                            (accelerator/lower ewise-kir :glsl-v1 :subgroup-reduce)))
+      (is (thrown-with-msg? Exception #"kernel variant not applicable"
+                            (accelerator/lower subwarp-kir :glsl-v1 :subgroup-reduce))))))
+
+(deftest glsl-variants-share-one-operator-meaning
+  ;; One GLSL arm, one meaning per operator: the baseline tree and the
+  ;; subgroup fold carry the same combine and the same identity, including
+  ;; the INFINITE extrema neutrals (a finite bound is corrupted by a
+  ;; legitimate +-Inf input in the padded lanes).
+  (doseq [[operator combine identity-text]
+          [[:sum "a+b" "0.0"]
+           [:max "max(a,b)" "uintBitsToFloat(0xFF800000u)"]
+           [:min "min(a,b)" "uintBitsToFloat(0x7F800000u)"]]]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
+                                  {:workgroup-size 128})
+          baseline (accelerator/lower kir :glsl-v1 :baseline)
+          variant (accelerator/lower kir :glsl-v1 :subgroup-reduce)]
+      (is (str/includes? baseline (str "float combine(float a, float b) { return " combine "; }")))
+      (is (str/includes? variant (str "float combine(float a, float b) { return " combine "; }")))
+      (is (str/includes? baseline (str "scratch[lid] = i < n ? x[i] : " identity-text ";")))
+      (is (str/includes? variant (str "float v = i < n ? x[i] : " identity-text ";"))))))

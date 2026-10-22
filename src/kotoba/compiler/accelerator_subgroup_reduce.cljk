@@ -2,15 +2,19 @@
   "The Vulkan/GLSL arm of the :subgroup-reduce kernel variant (ADR-0356,
   JUN-59; ADR-0357's ARM row reuses this same emission).
 
-  STATE, exactly: the EMISSION is implemented here with tests. It is NOT
-  admitted into kotoba.compiler.accelerator's variant plumbing and NOT
-  selectable -- `select-variant` (kotoba.compiler.accelerator-variants, the
-  design home of the row) is in flight in PR #1331 and this row composes
-  with it in a follow-up. Nothing here is measured, and nothing here may be
-  reported as optimization evidence: `basis` carries :measured? false and
-  that flag flips only when an interleaved baseline-vs-variant comparison on
-  an Intel device (JUN-59's measurement contract) replaces the basis text.
-  On ARM the same rule holds with a Mali device (ADR-0357).
+  STATE, exactly: the EMISSION is implemented here with tests and ADMITTED
+  into kotoba.compiler.accelerator's plumbing (ADR-0359 decision 1):
+  `lower` answers this text for the (:glsl-v1, :subgroup-reduce) pair, so
+  compile-kernel seals it and verify-artifact! re-lowers it like any other
+  emission. NOT selectable: `select-variant`
+  (kotoba.compiler.accelerator-variants, the design home of the row) answers
+  :baseline for every :subgroup-reduce shape until the JUN-59/60 selection
+  rows land -- ADR-0359 creates no selection row. Nothing here is measured,
+  and nothing here may be reported as optimization evidence: `basis` carries
+  :measured? false and that flag flips only when an interleaved
+  baseline-vs-variant comparison on an Intel device (JUN-59's measurement
+  contract) replaces the basis text. On ARM the same rule holds with a Mali
+  device (ADR-0357).
 
   What the emission is (ADR-0356's Intel row, to its letter): a reduce
   kernel whose intra-subgroup fold queries the subgroup size at RUNTIME
@@ -38,7 +42,7 @@
   binding 2. Same value, same bounds semantics; the buffer-vs-uniform
   distinction is a WGSL-ism the GLSL path has no word for."
   {:kotoba/export [applicable? basis emit-glsl min-workgroup-size]}
-  (:require [kotoba.compiler.accelerator :as accelerator]))
+  (:require [kotoba.compiler.accelerator-kir :as kir]))
 
 (def min-workgroup-size
   "The smallest workgroup this variant admits: one full NVIDIA warp-sized
@@ -76,7 +80,7 @@
          (and (int? wg)
               (pos? wg)
               (zero? (bit-and wg (dec wg)))
-              (<= wg accelerator/max-workgroup-size)
+              (<= wg kir/max-workgroup-size)
               (>= wg min-workgroup-size)))))
 
 (def ^:private identity-value
@@ -102,7 +106,7 @@
   forever. The entry point is `main` (the wire-42 PIPELINE op enters
   \"main\"); the kernel's :kernel/name deliberately does not appear."
   [kir]
-  (accelerator/validate! kir)
+  (kir/validate! kir)
   (when-not (applicable? kir)
     (throw (ex-info "kernel variant not applicable"
                     {:variant :subgroup-reduce

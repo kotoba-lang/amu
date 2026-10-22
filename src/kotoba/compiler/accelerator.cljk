@@ -1,63 +1,65 @@
 (ns kotoba.compiler.accelerator
-  "Typed, bounded accelerator KIR and deterministic WGSL/CUDA lowering."
+  "Typed, bounded accelerator KIR and deterministic WGSL/CUDA/MSL/GLSL
+  lowering."
   {:kotoba/export [artifact-format compile-kernel dtypes ewise-operators kernel kernel-variants kir-format lower max-static-elements max-workgroup-size reduction-operators targets validate! validation-errors verify-artifact!]}
-  (:require [kotoba.artifact.core :as artifact]))
+  (:require [kotoba.artifact.core :as artifact]
+            [kotoba.compiler.accelerator-kir :as kir]
+            [kotoba.compiler.accelerator-subgroup-reduce :as subgroup-reduce]))
 
-(def kir-format :kotoba.accelerator-kir/v1)
+;; The KIR model and its validation live in the leaf
+;; kotoba.compiler.accelerator-kir so the Vulkan/GLSL arm can validate and
+;; emit without requiring this namespace back (a require cycle); the ADR-0002
+;; surface keeps answering the same names from here.
+(def kir-format kir/kir-format)
+(def dtypes kir/dtypes)
+(def ewise-operators kir/ewise-operators)
+(def reduction-operators kir/reduction-operators)
+(def max-workgroup-size kir/max-workgroup-size)
+(def max-static-elements kir/max-static-elements)
+(def kernel kir/kernel)
+(def validation-errors kir/validation-errors)
+(def validate! kir/validate!)
+
 (def artifact-format :kotoba.gpu-artifact/v1)
-(def targets #{:wgsl-v1 :cuda-v1 :msl-v1})
+(def targets
+  "The emission targets this compiler admits (ADR-0002 as amended by
+  ADR-0359 decision 1): three shading languages plus :glsl-v1, the GLSL 450
+  compute arm the Vulkan wire-42 path compiles. A target is a SOURCE text
+  contract; the SPIR-V compilation is a separate sealed build step."
+  #{:wgsl-v1 :cuda-v1 :msl-v1 :glsl-v1})
 (def kernel-variants
   "The emitted-code variants this compiler admits. :baseline is the ADR-0002
   v1 emission, byte-identical before and after variants existed;
   :warp-shuffle-reduce is the NVIDIA reduction variant (ADR-0356), UNMEASURED
   and with no execution path -- the runtime :gpu/compute (wire 42) runs
-  Vulkan only. A variant is a different grouping of the same admitted
-  reduction, never a different meaning."
-  #{:baseline :warp-shuffle-reduce})
-(def dtypes #{:f32})
-(def ewise-operators #{:add :sub :mul :div})
-(def reduction-operators #{:sum :max :min})
-(def max-workgroup-size 1024)
-(def max-static-elements 1073741824)
-
-(defn kernel
-  [name op operator {:keys [workgroup-size] :or {workgroup-size 256}}]
-  {:format kir-format :kernel/name name :kernel/op op :kernel/operator operator
-   :kernel/dtype :f32 :kernel/index-type :u32 :kernel/workgroup-size workgroup-size
-   :kernel/bounds {:elements :runtime-u32 :max-elements max-static-elements}
-   :kernel/effects #{:gpu/storage-read :gpu/storage-write}})
-
-(defn validation-errors [kir]
-  (vec
-   (keep identity
-         [(when-not (= kir-format (:format kir)) {:error :invalid-format})
-          (when-not (and (string? (:kernel/name kir))
-                         (re-matches #"[A-Za-z_][A-Za-z0-9_]*" (:kernel/name kir)))
-            {:error :invalid-kernel-name})
-          (when-not (#{:ewise :reduce} (:kernel/op kir)) {:error :invalid-kernel-op})
-          (when-not (case (:kernel/op kir)
-                      :ewise (ewise-operators (:kernel/operator kir))
-                      :reduce (reduction-operators (:kernel/operator kir)) false)
-            {:error :invalid-operator :operator (:kernel/operator kir)})
-          (when-not (dtypes (:kernel/dtype kir)) {:error :invalid-dtype})
-          (when-not (= :u32 (:kernel/index-type kir)) {:error :invalid-index-type})
-          (when-not (and (pos-int? (:kernel/workgroup-size kir))
-                         (zero? (bit-and (:kernel/workgroup-size kir)
-                                         (dec (:kernel/workgroup-size kir))))
-                         (<= (:kernel/workgroup-size kir) max-workgroup-size))
-            {:error :invalid-workgroup-size})
-          (when-not (= {:elements :runtime-u32 :max-elements max-static-elements}
-                       (:kernel/bounds kir)) {:error :invalid-resource-bounds})
-          (when-not (= #{:gpu/storage-read :gpu/storage-write} (:kernel/effects kir))
-            {:error :invalid-effects})])))
-
-(defn validate! [kir]
-  (let [errors (validation-errors kir)]
-    (when (seq errors) (throw (ex-info "invalid accelerator KIR" {:errors errors}))) kir))
+  Vulkan only. :subgroup-reduce is the Vulkan/GLSL reduction variant
+  (ADR-0356's Intel row; ADR-0357's ARM row reuses it), emitted by
+  kotoba.compiler.accelerator-subgroup-reduce and UNMEASURED as an
+  optimization claim -- its emission has executed on Apple M1 Max hardware
+  through wire 42 (a TOOLCHAIN fact of what compiles and runs, not
+  optimization evidence). A variant is a different grouping of the same
+  admitted reduction, never a different meaning. Admission is per target: a
+  variant the target's emitter does not admit is refused, never silently
+  answered as :baseline."
+  #{:baseline :warp-shuffle-reduce :subgroup-reduce})
 
 (def ^:private expression
   {:add ["x[i] + y[i]" "x[i] + y[i]"] :sub ["x[i] - y[i]" "x[i] - y[i]"]
    :mul ["x[i] * y[i]" "x[i] * y[i]"] :div ["x[i] / y[i]" "x[i] / y[i]"]})
+
+(def ^:private glsl-identity
+  ;; The padded lanes (i >= n) fold the identity. For extrema the identity
+  ;; must be the INFINITE neutral: a finite bound is corrupted by an input
+  ;; that legitimately contains +Inf (:min) or -Inf (:max). GLSL has no
+  ;; infinity literal; uintBitsToFloat of the IEEE-754 sign/exponent bits is
+  ;; exact. These are kotoba.compiler.accelerator-subgroup-reduce's values:
+  ;; one GLSL arm, one meaning per operator, across both variants.
+  {:sum "0.0"
+   :max "uintBitsToFloat(0xFF800000u)"
+   :min "uintBitsToFloat(0x7F800000u)"})
+
+(def ^:private glsl-combine
+  {:sum "a+b" :max "max(a,b)" :min "min(a,b)"})
 
 (defn- emit-wgsl [kir]
   (let [wg (:kernel/workgroup-size kir) op (:kernel/op kir) operator (:kernel/operator kir)]
@@ -113,6 +115,11 @@
                            (and (int? wg) (>= wg 32))))))
       (throw (ex-info "kernel variant not applicable"
                       {:variant variant :op op :workgroup-size (:kernel/workgroup-size kir)})))
+    (when-not (contains? #{:baseline :warp-shuffle-reduce} variant)
+      ;; :subgroup-reduce is the Vulkan/GLSL arm; the CUDA emitter does not
+      ;; admit it. Rule 3: a variant the target's emitter does not admit is
+      ;; refused here, never silently answered as :baseline.
+      (throw (ex-info "kernel variant not applicable" {:variant variant :target :cuda-v1})))
     (case op
       :ewise
       (str "extern \"C\" __global__ void " name "(const float* x,const float* y,float* z,unsigned int n){\n"
@@ -148,6 +155,57 @@
              " for(uint d=width/2;d>0;d>>=1){if(l<d){float a=s[l],b=s[l+d];s[l]=" combine ";}threadgroup_barrier(mem_flags::mem_threadgroup);}\n"
              " if(l==0)parts[g]=s[0];\n}\n")))))
 
+(defn- emit-glsl-baseline
+  "The :glsl-v1 :baseline emission: GLSL 450 compute over the ADR-0002
+  baseline shapes (elementwise and the workgroup tree reduction) for the
+  Vulkan arm. UNMEASURED as an optimization claim -- this is the portable
+  baseline, byte-identical before and after any variant existed. ABI: the
+  wire-42 (:gpu/compute) path binds storage buffers only
+  (tools/kexe_gpu_vulkan.c), so `n` rides a read-only storage buffer exactly
+  where the WGSL arm uses a uniform -- the same choice
+  kotoba.compiler.accelerator-subgroup-reduce/emit-glsl made for the same
+  reason -- and the reduce bindings (x 0, parts 1, n 2) are emit-glsl's, so
+  both variants of one reduction bind the same buffers. Entry point is
+  `main` (the wire-42 PIPELINE op enters \"main\"); :kernel/name does not
+  appear, as in the WGSL arm. The extrema identities are the INFINITE
+  neutrals shared with emit-glsl (see glsl-identity): one GLSL arm, one
+  meaning per operator."
+  [kir]
+  (let [wg (:kernel/workgroup-size kir) op (:kernel/op kir) operator (:kernel/operator kir)]
+    (case op
+      :ewise
+      (str "#version 450\n"
+           "layout(local_size_x = " wg ") in;\n"
+           "layout(set = 0, binding = 0, std430) readonly buffer X { float x[]; };\n"
+           "layout(set = 0, binding = 1, std430) readonly buffer Y { float y[]; };\n"
+           "layout(set = 0, binding = 2, std430) writeonly buffer Z { float z[]; };\n"
+           "layout(set = 0, binding = 3, std430) readonly buffer N { uint n; };\n"
+           "void main() {\n"
+           "  uint i = gl_GlobalInvocationID.x;\n"
+           "  if (i < n) { z[i] = " (first (expression operator)) "; }\n"
+           "}\n")
+      :reduce
+      (let [identity (glsl-identity operator)
+            combine (glsl-combine operator)]
+        (str "#version 450\n"
+             "layout(local_size_x = " wg ") in;\n"
+             "layout(set = 0, binding = 0, std430) readonly buffer X { float x[]; };\n"
+             "layout(set = 0, binding = 1, std430) writeonly buffer Parts { float parts[]; };\n"
+             "layout(set = 0, binding = 2, std430) readonly buffer N { uint n; };\n"
+             "shared float scratch[" wg "];\n"
+             "float combine(float a, float b) { return " combine "; }\n"
+             "void main() {\n"
+             "  uint i = gl_GlobalInvocationID.x;\n"
+             "  uint lid = gl_LocalInvocationID.x;\n"
+             "  scratch[lid] = i < n ? x[i] : " identity ";\n"
+             "  barrier();\n"
+             "  for (uint d = " (/ wg 2) "u; d > 0u; d >>= 1u) {\n"
+             "    if (lid < d) { scratch[lid] = combine(scratch[lid], scratch[lid + d]); }\n"
+             "    barrier();\n"
+             "  }\n"
+             "  if (lid == 0u) { parts[gl_WorkGroupID.x] = scratch[0]; }\n"
+             "}\n")))))
+
 (defn lower
   "Lower one validated KIR to `target`'s source text. `variant` defaults to
   :baseline, the byte-identical ADR-0002 emission. A non-baseline variant is
@@ -167,7 +225,11 @@
      :msl-v1 (do (when-not (= :baseline variant)
                    (throw (ex-info "kernel variant not applicable" {:variant variant :target target})))
                  (emit-msl kir))
-     :cuda-v1 (emit-cuda kir variant))))
+     :cuda-v1 (emit-cuda kir variant)
+     :glsl-v1 (case variant
+                :baseline (emit-glsl-baseline kir)
+                :subgroup-reduce (subgroup-reduce/emit-glsl kir)
+                (throw (ex-info "kernel variant not applicable" {:variant variant :target target}))))))
 
 (defn compile-kernel
   ([kir target] (compile-kernel kir target :baseline))
@@ -188,12 +250,14 @@
   ;; A sealed artifact that predates variants carries no :variant; that is
   ;; :baseline by definition, and re-lowering must still match exactly.
   (let [variant (if (contains? compiled :variant) (:variant compiled) :baseline)
-        _ (when-not (contains? #{:baseline :warp-shuffle-reduce :subgroup-reduce} variant)
+        _ (when-not (contains? kernel-variants variant)
             ;; One concept, one refusal phrase: `lower` refuses an unknown
             ;; variant as "unsupported kernel variant", and the artifact
             ;; verifier refuses an unknown :variant label with the same
             ;; vocabulary plus its own context (test pin:
-            ;; variant-artifacts-seal-and-verify).
+            ;; variant-artifacts-seal-and-verify). The vocabulary is
+            ;; `kernel-variants` itself (ADR-0359 decision 1): the verifier
+            ;; and `lower`'s admission converge on the same set.
             (throw (ex-info "accelerator artifact carries an unsupported kernel variant"
                             {:variant variant})))
         expected-code (lower (:kir compiled) (:target compiled) variant)]
