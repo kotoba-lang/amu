@@ -215,7 +215,11 @@ is `bootstrap/aarch64-linux-static-root.elf` (receipt
 `aarch64-linux-static` compiler. On arm64 Linux,
 `scripts/seed/selfhost-bootstrap.py` rebuilds the Linux selfhost closure from
 it (S1 = S2 = S3 = root), builds the aarch64/x86_64 runners and the x86_64
-compiler, runs the pinned `bootstrap/adopted-20261012.bin` through the aarch64
-runner to the adoption fixed point (G1 = G2 = G3), checks the runtime cases
+compiler, then builds the adopted compiler core (ADR 0370) from source: S3
+compiles `CORE-STATIC-MANIFEST` (the core with the static-profile namespace
+`00-ns-static.kotoba`) to a static image C0, C0 compiles `MANIFEST` to G1,
+and the aarch64 runner takes G1 and G2 to G2 and G3: G1 = G2 = G3 = the
+adoption fixed point. `bootstrap/adopted-20261012.bin` is no longer an input
+of any build. It then checks the runtime cases
 against `static-cases.json`, and probes seccomp and the resource limits.
 Receipt: `../docs/evidence/selfhost-bootstrap-aarch64-20261022/`.

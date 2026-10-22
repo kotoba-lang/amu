@@ -1,0 +1,1142 @@
+[
+ {
+  "name": "S1",
+  "argv": [
+   "BOOT/root.elf",
+   "compile",
+   "BOOT/selfhost-unity.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "BOOT/S1.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT"
+  },
+  "exit": 0
+ },
+ {
+  "name": "S2",
+  "argv": [
+   "BOOT/S1.elf",
+   "compile",
+   "BOOT/selfhost-unity.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "BOOT/S2.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT"
+  },
+  "exit": 0
+ },
+ {
+  "name": "S3",
+  "argv": [
+   "BOOT/S2.elf",
+   "compile",
+   "BOOT/selfhost-unity.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "BOOT/S3.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT"
+  },
+  "exit": 0
+ },
+ {
+  "name": "R-aarch64",
+  "argv": [
+   "BOOT/S3.elf",
+   "compile",
+   "BOOT/runner.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "BOOT/R-aarch64.elf",
+   "--format",
+   "runner"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT"
+  },
+  "exit": 0
+ },
+ {
+  "name": "S-x86_64",
+  "argv": [
+   "BOOT/S3.elf",
+   "compile",
+   "BOOT/selfhost-unity.kotoba",
+   "--target",
+   "x86_64-linux",
+   "--output",
+   "BOOT/S-x86_64.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT"
+  },
+  "exit": 0
+ },
+ {
+  "name": "R-x86_64",
+  "argv": [
+   "BOOT/S3.elf",
+   "compile",
+   "BOOT/runner.kotoba",
+   "--target",
+   "x86_64-linux",
+   "--output",
+   "BOOT/R-x86_64.elf",
+   "--format",
+   "kx64-runner"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT"
+  },
+  "exit": 0
+ },
+ {
+  "name": "C0",
+  "argv": [
+   "BOOT/S3.elf",
+   "compile",
+   "BOOT/core-static-unity.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "BOOT/C0.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "G1-compile",
+  "argv": [
+   "BOOT/C0.elf",
+   "compile",
+   "BOOT/adopted-unity.kotoba",
+   "--target",
+   "aarch64-macos",
+   "--output",
+   "BOOT/G1.kseed"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "G1-extract",
+  "argv": [
+   "BOOT/C0.elf",
+   "extract-native",
+   "BOOT/G1.kseed",
+   "--symbol",
+   "main",
+   "--output",
+   "BOOT/G1.bin"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "G2-compile",
+  "argv": [
+   "BOOT/R-aarch64.elf",
+   "BOOT/G1.bin",
+   "0",
+   "0",
+   "aarch64",
+   "35,37,38,39",
+   "--",
+   "compile",
+   "BOOT/adopted-unity.kotoba",
+   "--target",
+   "aarch64-macos",
+   "--output",
+   "BOOT/G2.kseed"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT",
+   "KEXE_COMMAND": "1",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "G2-extract",
+  "argv": [
+   "BOOT/R-aarch64.elf",
+   "BOOT/G1.bin",
+   "0",
+   "0",
+   "aarch64",
+   "35,37,38,39",
+   "--",
+   "extract-native",
+   "BOOT/G2.kseed",
+   "--symbol",
+   "main",
+   "--output",
+   "BOOT/G2.bin"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT",
+   "KEXE_COMMAND": "1",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "G3-compile",
+  "argv": [
+   "BOOT/R-aarch64.elf",
+   "BOOT/G2.bin",
+   "0",
+   "0",
+   "aarch64",
+   "35,37,38,39",
+   "--",
+   "compile",
+   "BOOT/adopted-unity.kotoba",
+   "--target",
+   "aarch64-macos",
+   "--output",
+   "BOOT/G3.kseed"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT",
+   "KEXE_COMMAND": "1",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "G3-extract",
+  "argv": [
+   "BOOT/R-aarch64.elf",
+   "BOOT/G2.bin",
+   "0",
+   "0",
+   "aarch64",
+   "35,37,38,39",
+   "--",
+   "extract-native",
+   "BOOT/G3.kseed",
+   "--symbol",
+   "main",
+   "--output",
+   "BOOT/G3.bin"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT",
+   "KEXE_COMMAND": "1",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-literal-compile",
+  "argv": [
+   "BOOT/S3.elf",
+   "compile",
+   "BOOT/case-string-literal.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "BOOT/case-string-literal.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-literal",
+  "argv": [
+   "BOOT/case-string-literal.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-concat-compile",
+  "argv": [
+   "BOOT/S3.elf",
+   "compile",
+   "BOOT/case-string-concat.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "BOOT/case-string-concat.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-concat",
+  "argv": [
+   "BOOT/case-string-concat.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-view-compile",
+  "argv": [
+   "BOOT/S3.elf",
+   "compile",
+   "BOOT/case-string-view.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "BOOT/case-string-view.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-view",
+  "argv": [
+   "BOOT/case-string-view.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-unicode-compile",
+  "argv": [
+   "BOOT/S3.elf",
+   "compile",
+   "BOOT/case-string-unicode.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "BOOT/case-string-unicode.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-unicode",
+  "argv": [
+   "BOOT/case-string-unicode.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-empty-nul-compile",
+  "argv": [
+   "BOOT/S3.elf",
+   "compile",
+   "BOOT/case-string-empty-nul.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "BOOT/case-string-empty-nul.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-empty-nul",
+  "argv": [
+   "BOOT/case-string-empty-nul.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-search-compile",
+  "argv": [
+   "BOOT/S3.elf",
+   "compile",
+   "BOOT/case-string-search.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "BOOT/case-string-search.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-search",
+  "argv": [
+   "BOOT/case-string-search.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-call-compile",
+  "argv": [
+   "BOOT/S3.elf",
+   "compile",
+   "BOOT/case-string-call.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "BOOT/case-string-call.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-call",
+  "argv": [
+   "BOOT/case-string-call.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-literal-compile",
+  "argv": [
+   "BOOT/S3.elf",
+   "compile",
+   "BOOT/case-vector-literal.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "BOOT/case-vector-literal.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-literal",
+  "argv": [
+   "BOOT/case-vector-literal.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-dynamic-compile",
+  "argv": [
+   "BOOT/S3.elf",
+   "compile",
+   "BOOT/case-vector-dynamic.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "BOOT/case-vector-dynamic.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-dynamic",
+  "argv": [
+   "BOOT/case-vector-dynamic.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-persistent-compile",
+  "argv": [
+   "BOOT/S3.elf",
+   "compile",
+   "BOOT/case-vector-persistent.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "BOOT/case-vector-persistent.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-persistent",
+  "argv": [
+   "BOOT/case-vector-persistent.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-mutate-compile",
+  "argv": [
+   "BOOT/S3.elf",
+   "compile",
+   "BOOT/case-vector-mutate.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "BOOT/case-vector-mutate.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-mutate",
+  "argv": [
+   "BOOT/case-vector-mutate.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-drop-conj-compile",
+  "argv": [
+   "BOOT/S3.elf",
+   "compile",
+   "BOOT/case-vector-drop-conj.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "BOOT/case-vector-drop-conj.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-drop-conj",
+  "argv": [
+   "BOOT/case-vector-drop-conj.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-pooled-compile",
+  "argv": [
+   "BOOT/S3.elf",
+   "compile",
+   "BOOT/case-vector-pooled.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "BOOT/case-vector-pooled.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-pooled",
+  "argv": [
+   "BOOT/case-vector-pooled.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-negative-compile",
+  "argv": [
+   "BOOT/S3.elf",
+   "compile",
+   "BOOT/case-vector-negative.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "BOOT/case-vector-negative.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-negative",
+  "argv": [
+   "BOOT/case-vector-negative.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 120
+ },
+ {
+  "name": "case-vector-oob-compile",
+  "argv": [
+   "BOOT/S3.elf",
+   "compile",
+   "BOOT/case-vector-oob.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "BOOT/case-vector-oob.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-oob",
+  "argv": [
+   "BOOT/case-vector-oob.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 120
+ },
+ {
+  "name": "case-string-oob-compile",
+  "argv": [
+   "BOOT/S3.elf",
+   "compile",
+   "BOOT/case-string-oob.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "BOOT/case-string-oob.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-oob",
+  "argv": [
+   "BOOT/case-string-oob.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 120
+ },
+ {
+  "name": "case-string-boundary-compile",
+  "argv": [
+   "BOOT/S3.elf",
+   "compile",
+   "BOOT/case-string-boundary.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "BOOT/case-string-boundary.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-boundary",
+  "argv": [
+   "BOOT/case-string-boundary.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 120
+ },
+ {
+  "name": "case-wide-args-compile",
+  "argv": [
+   "BOOT/S3.elf",
+   "compile",
+   "BOOT/case-wide-args.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "BOOT/case-wide-args.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-wide-args",
+  "argv": [
+   "BOOT/case-wide-args.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-closure-compile",
+  "argv": [
+   "BOOT/S3.elf",
+   "compile",
+   "BOOT/case-closure.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "BOOT/case-closure.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-closure",
+  "argv": [
+   "BOOT/case-closure.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-closure-env-compile",
+  "argv": [
+   "BOOT/S3.elf",
+   "compile",
+   "BOOT/case-closure-env.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "BOOT/case-closure-env.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-closure-env",
+  "argv": [
+   "BOOT/case-closure-env.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-state-results-compile",
+  "argv": [
+   "BOOT/S3.elf",
+   "compile",
+   "BOOT/case-state-results.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "BOOT/case-state-results.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-state-results",
+  "argv": [
+   "BOOT/case-state-results.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-bytes-roundtrip-compile",
+  "argv": [
+   "BOOT/S3.elf",
+   "compile",
+   "BOOT/case-bytes-roundtrip.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "BOOT/case-bytes-roundtrip.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-bytes-roundtrip",
+  "argv": [
+   "BOOT/case-bytes-roundtrip.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-capability-denied-compile",
+  "argv": [
+   "BOOT/S3.elf",
+   "compile",
+   "BOOT/case-capability-denied.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "BOOT/case-capability-denied.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-capability-denied",
+  "argv": [
+   "BOOT/case-capability-denied.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 120
+ },
+ {
+  "name": "case-mutual-tail-compile",
+  "argv": [
+   "BOOT/S3.elf",
+   "compile",
+   "BOOT/case-mutual-tail.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "BOOT/case-mutual-tail.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-mutual-tail",
+  "argv": [
+   "BOOT/case-mutual-tail.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "probe-value-compile",
+  "argv": [
+   "BOOT/S3.elf",
+   "compile",
+   "BOOT/probe-value.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "BOOT/probe-value.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT"
+  },
+  "exit": 0
+ },
+ {
+  "name": "probe-spin-compile",
+  "argv": [
+   "BOOT/S3.elf",
+   "compile",
+   "BOOT/probe-spin.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "BOOT/probe-spin.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT"
+  },
+  "exit": 0
+ },
+ {
+  "name": "probe-deep-compile",
+  "argv": [
+   "BOOT/S3.elf",
+   "compile",
+   "BOOT/probe-deep.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "BOOT/probe-deep.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT"
+  },
+  "exit": 0
+ },
+ {
+  "name": "probe-seccomp-default",
+  "argv": [
+   "BOOT/probe-value.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1"
+  },
+  "exit": 0
+ },
+ {
+  "name": "probe-sandbox-probe",
+  "argv": [
+   "BOOT/probe-value.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_SANDBOX_PROBE": "1"
+  },
+  "exit": 120
+ },
+ {
+  "name": "probe-cpu",
+  "argv": [
+   "BOOT/probe-spin.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_CPU_SECONDS": "1"
+  },
+  "exit": 120
+ },
+ {
+  "name": "probe-wall",
+  "argv": [
+   "BOOT/probe-spin.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_WALL_SECONDS": "3"
+  },
+  "exit": 120
+ },
+ {
+  "name": "probe-stack",
+  "argv": [
+   "BOOT/probe-deep.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1"
+  },
+  "exit": 120
+ },
+ {
+  "name": "cap-compile",
+  "argv": [
+   "BOOT/S3.elf",
+   "compile",
+   "BOOT/cap-b/hash.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "BOOT/cap-b/hash.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT/cap-missing:BOOT/cap-a:BOOT/cap-b"
+  },
+  "exit": 0
+ },
+ {
+  "name": "cap-hash-granted",
+  "argv": [
+   "BOOT/cap-b/hash.elf"
+  ],
+  "env": {
+   "KEXE_ALLOW": "3"
+  },
+  "exit": 7
+ },
+ {
+  "name": "cap-hash-refused",
+  "argv": [
+   "BOOT/cap-b/hash.elf"
+  ],
+  "env": {
+   "KEXE_ALLOW": "37"
+  },
+  "exit": 120
+ },
+ {
+  "name": "cap-outside-roots",
+  "argv": [
+   "BOOT/S3.elf",
+   "compile",
+   "BOOT/cap-b/hash.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "BOOT/cap-a/x.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "BOOT/cap-a"
+  },
+  "exit": 1
+ }
+]
