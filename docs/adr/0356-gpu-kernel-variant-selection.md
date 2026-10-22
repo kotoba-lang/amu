@@ -146,9 +146,11 @@ ride one additive wire-42 request `SUBGROUP` answering `<size>|<ops>`
 (compute-stage subgroup width; the Vulkan 1.1 core
 `VkSubgroupFeatureFlagBits` tokens, `basic` and `shuffle-relative` being
 the two the fold needs), with the named refusal `gpu/no-compute-subgroups`
-treated exactly like an absent fact. Design only -- the producer, the
-protocol-table entries and the consumer parser are unimplemented slices,
-and every row here keeps failing closed to `:baseline` without the facts.
+treated exactly like an absent fact. The protocol-table entries landed
+2026-10-23 (verb SUBGROUP = 18, answer fields = 2, refusal index 35;
+ADR-0362's amendment); the producer's answer and the consumer parser
+remain unimplemented slices, and every row here keeps failing closed to
+`:baseline` without the facts.
 
 ## Intel `:subgroup-reduce` (JUN-59) -- the design
 

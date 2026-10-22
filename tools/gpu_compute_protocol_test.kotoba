@@ -16,7 +16,7 @@
 ;; cannot exceed constant 6, so only a frame can; the runtime and provider
 ;; check frames (ADR 0371 steps 2 and 6).
 
-(def CASES 107)
+(def CASES 114)
 (def CONTROL 0)
 
 (defn- say [s :string] :i64
@@ -58,6 +58,8 @@
      (expect "ZERO 1" 0 "")
      (expect "FREE 4095" 0 "")
      (expect "  ALLOC   8  " 0 "")
+     (expect "SUBGROUP" 0 "")
+     (expect "SUBGROUP" 1 "")
      (expect "PIPELINE p 1" 1 "")
      (expect "INFO" 1 "")
      (expect "DISPATCH 1 1 1 1 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16" 0 "")
@@ -77,6 +79,7 @@
      (expect "DISPATCH 1 1 1 1 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17" 0
              "!gpu/too-many-fields more fields than any request has")
      (expect "INFO extra" 0 "!gpu/arity INFO")
+     (expect "SUBGROUP extra" 0 "!gpu/arity SUBGROUP")
      (expect "BEGIN 1" 0 "!gpu/arity BEGIN")
      (expect "SUBMIT now" 1 "!gpu/arity SUBMIT")
      (expect "ALLOC" 0 "!gpu/arity ALLOC <bytes>")
@@ -153,16 +156,19 @@
 
 (defn- verb-round-trip [] :i64
   (loop [v 1 bad 0]
-    (if (> v 17) bad
+    (if (> v 18) bad
       (recur (inc v) (if (= (verb-code (verb-name v)) v) bad (+ bad (fail (string-concat "verb " (string-from-i64 v)) (verb-name v) "its own code")))))))
 
 (defn- tables [] :i64
   (+ (expect-i64 "refusal names round-trip" (refusal-round-trip) 0)
      (expect-i64 "verb names round-trip" (verb-round-trip) 0)
      (expect-str "no refusal past the last" (refusal-name (+ (constant 16) 1)) "")
-     (expect-str "no verb 18" (verb-name 18) "")
+     (expect-str "no verb 19" (verb-name 19) "")
      (expect-i64 "unknown verb code" (verb-code "info") 0)
      (expect-i64 "first provider refusal" (constant 15) 19)
+     (expect-i64 "last refusal index" (constant 16) 35)
+     (expect-i64 "SUBGROUP answer field count" (constant 17) 2)
+     (expect-str "no-compute-subgroups name" (refusal-name 35) "gpu/no-compute-subgroups")
      (expect-str "first provider refusal name" (refusal-name (constant 15)) "gpu/buffer-table-full")
      (expect-i64 "last check-request refusal" (check-request "SUBMIT" 0) (- (constant 15) 1))
      (expect-i64 "READ bound is half the answer bound" (* 2 (constant 8)) (constant 7))
@@ -182,6 +188,8 @@
                  (answer-refusal-detail 32 13 "vkQueueSubmit: VK_ERROR_OUT_OF_DEVICE_MEMORY")
                  "!gpu/device-error SUBMIT: device error: vkQueueSubmit: VK_ERROR_OUT_OF_DEVICE_MEMORY")
      (expect-str "artifact refusal" (answer-refusal 28 4) "!gpu/artifact-not-granted MAP: path is not in the granted artifact table")
+     (expect-str "no compute subgroups refusal" (answer-refusal 35 18)
+                 "!gpu/no-compute-subgroups SUBGROUP: the provider reports no compute-stage subgroups")
      (expect-i64 "device lost ends the session" (if (refusal-ends-session? 33) 1 0) 1)
      (expect-i64 "fence timeout ends the session" (if (refusal-ends-session? 34) 1 0) 1)
      (expect-i64 "device error does not" (if (refusal-ends-session? 32) 1 0) 0)))

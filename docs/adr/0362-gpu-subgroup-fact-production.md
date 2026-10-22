@@ -1,9 +1,11 @@
 # ADR-0362 -- The rule-6 facts get a producer: one additive wire-42 request, `SUBGROUP`
 
-- Status: accepted as design. NOTHING is implemented: the producer lands
-  with the ADR 0371 GPU provider track, and the protocol-table entries and
-  the consumer parser are separate slices. Nothing is measured; no
-  `:measured?` flag moves and no workgroup row is touched.
+- Status: accepted as design. The protocol-table entries (decision 1's verb
+  code, decision 2's field count, decision 3's refusal) are IMPLEMENTED
+  (2026-10-23, amendment below). The producer's answer and the consumer
+  parser remain unimplemented and land with the ADR 0371 GPU provider
+  track. Nothing is measured; no `:measured?` flag moves and no workgroup
+  row is touched.
 - Date: 2026-10-23
 - Tracking: JUN-56 (the dispatch contract). Parent JUN-55. Serves the
   variant rows JUN-57 (ADR-0361), JUN-58 (ADR-0360), JUN-59 (ADR-0356)
@@ -118,3 +120,14 @@ the per-vendor measurement contracts of ADR-0357/0360/0361), the
 workgroup rows of ADR-0355/0358 keep their labels untouched, and the
 JUN-58 measurement remains blocked on the ADR 0371 provider for its own
 reasons (wire 42 has no route today).
+
+## Amendment 2026-10-23: slice 1 landed (the protocol-table entries)
+
+`tools/gpu_compute_protocol.kotoba` now carries the SUBGROUP verb (code 18),
+the answer field count (constant 17 = 2) and the refusal
+`gpu/no-compute-subgroups` (index 35, appended; constant 16 = 35), with the
+table's own tests extended (114 cases, both targets green,
+`docs/evidence/gpu-compute-protocol-subgroup-20261023/`). Slices 2 (the
+provider's answer) and 3 (the consumer parser) remain unimplemented, so no
+rule-6 fact has a producer yet and the fail-closed behavior above is
+unchanged. No measurement, no `:measured?` move, no workgroup row touched.
