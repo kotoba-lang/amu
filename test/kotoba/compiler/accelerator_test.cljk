@@ -179,9 +179,12 @@
     (testing "the CUDA arm admits no Vulkan variant -- never silently baseline"
       (is (thrown-with-msg? Exception #"kernel variant not applicable"
                             (accelerator/lower reduce-kir :cuda-v1 :subgroup-reduce))))
-    (testing "the MSL arm admits no subgroup variant either (still :baseline only)"
+    (testing "the MSL arm carries the variant since 2026-10-23 (rule 3: the arm's own emission is admitted)"
+      (is (string? (accelerator/lower reduce-kir :msl-v1 :subgroup-reduce)))
       (is (thrown-with-msg? Exception #"kernel variant not applicable"
-                            (accelerator/lower reduce-kir :msl-v1 :subgroup-reduce))))
+                            (accelerator/lower ewise-kir :msl-v1 :subgroup-reduce)))
+      (is (thrown-with-msg? Exception #"kernel variant not applicable"
+                            (accelerator/lower subwarp-kir :msl-v1 :subgroup-reduce))))
     (testing "the WGSL arm carries the variant since 2026-10-23 (rule 3: the arm's own emission is admitted)"
       (is (string? (accelerator/lower reduce-kir :wgsl-v1 :subgroup-reduce)))
       (is (thrown-with-msg? Exception #"kernel variant not applicable"
@@ -215,7 +218,7 @@
 (deftest every-arm-shares-one-operator-meaning
   ;; One meaning per operator across EVERY emission arm (review P2,
   ;; completed 2026-10-22): the reduce identity is the IEEE-754 INFINITE
-  ;; neutral in all four targets and in both reduce variants. A finite bound
+  ;; neutral in all four targets and in every reduce variant. A finite bound
   ;; is corrupted by a legitimate +-Inf input in the padded lanes (an
   ;; all-(-Inf) :max reduction answered -FLT_MAX), and the same KIR must
   ;; answer the same reduce wherever it is emitted -- ADR-0356 rule 2's
@@ -246,7 +249,9 @@
                [(accelerator/lower kir :glsl-v1 :subgroup-reduce)
                 "float v = i < n ? x[i] : " (:glsl ids) ";"]
                [(accelerator/lower kir :wgsl-v1 :subgroup-reduce)
-                "var v:f32=select(" (:wgsl ids) ",x[i],i<n.value);"]]]
+                "var v:f32=select(" (:wgsl ids) ",x[i],i<n.value);"]
+               [(accelerator/lower kir :msl-v1 :subgroup-reduce)
+                "float v = i < n ? x[i] : " (:msl ids) ";"]]]
         (is (str/includes? code (str prefix id suffix)))
         (is (not (str/includes? code "3.402823466")))))))
 
@@ -264,6 +269,7 @@
                               [:cuda-v1 :baseline]
                               [:cuda-v1 :warp-shuffle-reduce]
                               [:msl-v1 :baseline]
+                              [:msl-v1 :subgroup-reduce]
                               [:glsl-v1 :baseline]
                               [:glsl-v1 :subgroup-reduce]]]
       (let [code (accelerator/lower reduce-kir target variant)]
@@ -271,7 +277,6 @@
             (str target " " variant " lowers to non-empty text"))))
     (doseq [[target variant] [[:wgsl-v1 :warp-shuffle-reduce]
                               [:msl-v1 :warp-shuffle-reduce]
-                              [:msl-v1 :subgroup-reduce]
                               [:cuda-v1 :subgroup-reduce]
                               [:glsl-v1 :warp-shuffle-reduce]]]
       (is (thrown-with-msg? Exception #"kernel variant not applicable"

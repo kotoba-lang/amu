@@ -89,8 +89,11 @@ whose scope its own ADR set.
   `:subgroup-reduce` artifact seals and verifies exactly as the `:glsl-v1`
   one does.
 - The MSL route is untouched: `:msl-v1` / `:metal` keep answering
-  `:baseline` everywhere (rule 3 -- the MSL emitter admits `:baseline`
-  only). A Metal simdgroup row remains not designed (ADR-0360 said so and
-  this ADR does not design it).
+  `:baseline` everywhere (then rule 3 -- the MSL emitter admits
+  `:baseline` only; SUPERSEDED 2026-10-23 as to that CAUSE: the MSL arm
+  landed and the emitter now admits `:subgroup-reduce`, ADR-0356's MSL-arm
+  amendment -- the MSL route keeps answering `:baseline` because the
+  Apple row's scope is the Vulkan route). A Metal simdgroup row remains
+  not designed (ADR-0360 said so and this ADR does not design it).
 - `:amd`, `:unknown`, `:qualcomm` and any other vendor keep answering
   `:baseline` on every route.

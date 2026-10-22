@@ -193,6 +193,60 @@ UNMEASURED, `:measured? false` on every answer, no workgroup row touched,
 and both routes still fail closed to `:baseline` without the rule-6 facts
 whose producer (ADR-0362) is still unimplemented.
 
+**Amendment (2026-10-23, the MSL arm of the shared emission lands).** The
+subgroup-size-parametric emission gains its MSL arm
+(`kotoba.compiler.accelerator-subgroup-reduce/emit-msl`), and `lower`
+admits it for the (:msl-v1, :subgroup-reduce) pair in both readings --
+rule 3's "emission admission first" now holds on the MSL path too, and
+this supersedes the JUN-58 amendment's clause "the MSL emitter admits
+`:baseline`, so rule 3 keeps `:msl-v1` at `:baseline`" (and ADR-0360's /
+ADR-0363's same-cause clauses): the MSL route keeps answering `:baseline`
+NOT because the emitter refuses the variant but because the Apple row's
+selection scope is the Vulkan route, and extending it is the separate
+per-vendor decision below. The arm is the same fold to its letter in Metal
+spellings -- `[[threads_per_simdgroup]]` (the runtime size query; the
+spec's alias of `thread_execution_width`),
+`[[thread_index_in_simdgroup]]` / `[[simdgroup_index_in_threadgroup]]` /
+`[[simdgroups_per_threadgroup]]` (P2's subgroup-ID partials, never lid
+arithmetic), `simd_shuffle_down` (the shuffle loop stays the fold; a
+`simd_sum`/`simd_max`/`simd_min` rewrite would regroup and is not this
+arm), `threadgroup_barrier(mem_flags::mem_threadgroup)`, `as_type<float>`
+infinite neutrals (one meaning per operator with the MSL baseline arm's
+`msl-identity`). Spellings verified against the Apple Metal Shading
+Language Specification and "Porting your Metal code to Apple silicon"
+(fetched 2026-10-23): vendor documentation, not a measurement. One
+arm-level deviation FORCED by the language and compiler-verified: Metal
+refuses a kernel named `main` ("kernel function cannot be called 'main'",
+Apple metal 32023.883), so this arm's entry is the kernel's :kernel/name
+-- the ADR-0002 MSL family's own entry contract -- and the variant
+family's name-free `main` convention does not extend to Metal. The
+partials array is an in-kernel `threadgroup float partials[W]` (the WGSL
+arm's fixed-array choice), not the MSL baseline's `[[threadgroup(0)]]`
+pointer; the buffer bindings (x 0, parts 1, n 2) are the MSL family's,
+unchanged.
+
+COMPILED, still UNMEASURED: all eighteen emitted sources (W in
+{32,64,128,256,512,1024} x {sum,max,min}, the whole admitted row) compile
+to AIR under the Apple Metal compiler (metal 32023.883) on this host --
+a TOOLCHAIN fact of what compiles, in
+`docs/evidence/gpu-subgroup-reduce-msl-20261023/` (the emitted sources,
+the compile transcript, and the scoped/full gate logs). This is the
+first arm of the variant with any compiler verification at all (the
+GLSL arm has executed, the CUDA/WGSL arms remain uncompiled text
+contracts). No Metal execution path exists in this repository (the
+brokers died with the C loader; ADR 0371's provider is the replacement
+track), so nothing has executed this arm, no `:measured?` flag moves and
+no workgroup row is touched.
+
+The selection rows do NOT move: `select-variant` answers `:subgroup-reduce`
+for `:apple` only on the Vulkan route, and a capable Apple device on
+`:msl-v1` / `:metal` still answers `:baseline` (the variants tests pin
+this). Extending Apple's row to the MSL route (and whether the rule-6
+facts there come from the same wire-42 SUBGROUP request ADR-0362
+designed, given a Metal-native descriptor would report SIMD-group facts
+directly) is a SEPARATE per-vendor design decision (JUN-58's own),
+proposed here and decided nowhere.
+
 ## Intel `:subgroup-reduce` (JUN-59) -- the design
 
 **Rationale (a design assumption, not a measurement).** The baseline tree

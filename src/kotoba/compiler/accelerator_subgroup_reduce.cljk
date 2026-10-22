@@ -70,8 +70,34 @@
   rides `var<uniform> n: N` at binding 2 -- the WGSL family's own choice
   (every WGSL emission binds it there); the GLSL arm's storage-buffer n is
   a wire-42 artifact with no WGSL word. P1 (option b scoping) and P2
+  (subgroup IDs, never lid arithmetic) bind this arm unchanged.
+
+  THE MSL ARM (`emit-msl`, landed 2026-10-23) is the same fold in Metal
+  spellings: `[[threads_per_simdgroup]]` (Metal 2.2+; the spec's alias of
+  `thread_execution_width`) is the runtime size query,
+  `[[thread_index_in_simdgroup]]` / `[[simdgroup_index_in_threadgroup]]` /
+  `[[simdgroups_per_threadgroup]]` the subgroup geometry,
+  `simd_shuffle_down` the fold's shuffle,
+  `threadgroup_barrier(mem_flags::mem_threadgroup)` the write barrier, and
+  `as_type<float>` the IEEE-754 infinite neutrals. Spellings verified
+  against the Apple Metal Shading Language Specification and Apple's
+  Porting your Metal code to Apple silicon (fetched 2026-10-23) -- vendor
+  documentation, not a measurement. One arm-level deviation FORCED by the
+  language: Metal refuses a kernel named main (kernel function cannot be
+  called main), so this arm's entry is the kernel's :kernel/name -- the
+  ADR-0002 MSL family's own entry contract (emit-msl's) -- and the variant
+  family's name-free `main` convention does not extend to Metal. That fact
+  is not folklore here: the emitted source COMPILES on this host under the
+  Apple Metal compiler (metal 32023.883, toolchain fact of what compiles;
+  docs/evidence/gpu-subgroup-reduce-msl-20261023/), still UNMEASURED as an
+  optimization claim, and no Metal execution path exists (the brokers died
+  with the C loader). The KIR's n rides `constant uint& n [[buffer(2)]]`
+  and the partials array is an in-kernel `threadgroup float partials[W]`
+  (the WGSL arm's fixed-workgroup-array choice), not the baseline MSL
+  reduce's `[[threadgroup(0)]]` pointer -- the buffer bindings (x 0, parts
+  1, n 2) are the MSL family's, unchanged. P1 (option b scoping) and P2
   (subgroup IDs, never lid arithmetic) bind this arm unchanged."
-  {:kotoba/export [applicable? basis emit-glsl emit-wgsl min-workgroup-size]}
+  {:kotoba/export [applicable? basis emit-glsl emit-wgsl emit-msl min-workgroup-size]}
   (:require [kotoba.compiler.accelerator-kir :as kir]))
 
 (def min-workgroup-size
@@ -259,4 +285,78 @@
          ;; is uniform -- every invocation of the workgroup reaches it.
          "  for(var e:u32=nsg/2u;e>0u;e=e>>1u){if(sg==0u){for(var lid:u32=sgid;lid<e;lid=lid+sgsize){partials[lid]=combine(partials[lid],partials[lid+e]);}}workgroupBarrier();}\n"
          "  if(sg==0u&&sgid==0u){parts[wid.x]=partials[0];}\n"
+         "}\n")))
+
+(def ^:private identity-value-msl
+  ;; The same INFINITE neutrals as identity-value, in MSL: no infinity
+  ;; literal exists there either, as_type of the IEEE-754 bits is exact --
+  ;; byte-identical to accelerator.cljk's msl-identity (one meaning per
+  ;; operator in every arm).
+  {:sum "0.0f"
+   :max "as_type<float>(0xFF800000u)"
+   :min "as_type<float>(0x7F800000u)"})
+
+(def ^:private combine-expression-msl
+  {:sum "a+b" :max "max(a,b)" :min "min(a,b)"})
+
+(defn emit-msl
+  "The :subgroup-reduce MSL compute shader for one validated KIR. The same
+  fold as emit-glsl to its letter, in Metal spellings (the ns docstring's
+  MSL arm paragraph is the state of record). Total on the row, fail-closed
+  off it -- a kernel that `applicable?` refuses is refused here too
+  (ex-info \"kernel variant not applicable\"), for the same reason as
+  emit-glsl. Deterministic: the same KIR lowers to the same bytes, forever.
+  The entry point is the kernel's :kernel/name -- the ADR-0002 MSL
+  family's own entry contract, because Metal REFUSES a kernel named
+  `main` (compiler-verified; see the ns docstring) -- and unlike the
+  GLSL/WGSL arms the name therefore appears in the source."
+  [kir]
+  (kir/validate! kir)
+  (when-not (applicable? kir)
+    (throw (ex-info "kernel variant not applicable"
+                    {:variant :subgroup-reduce
+                     :op (:kernel/op kir)
+                     :operator (:kernel/operator kir)
+                     :workgroup-size (:kernel/workgroup-size kir)})))
+  (let [wg (:kernel/workgroup-size kir)
+        name (:kernel/name kir)
+        operator (:kernel/operator kir)
+        identity (identity-value-msl operator)
+        combine (combine-expression-msl operator)]
+    (str "#include <metal_stdlib>\n"
+         "using namespace metal;\n"
+         "float combine(float a, float b) { return " combine "; }\n"
+         "kernel void " name "(device const float* x [[buffer(0)]], device float* parts [[buffer(1)]], constant uint& n [[buffer(2)]], uint i [[thread_position_in_grid]], uint sgid [[thread_index_in_simdgroup]], uint sg [[simdgroup_index_in_threadgroup]], uint sgsize [[threads_per_simdgroup]], uint nsg [[simdgroups_per_threadgroup]], uint width [[threads_per_threadgroup]], uint g [[threadgroup_position_in_grid]]) {\n"
+         "  threadgroup float partials[" wg "];\n"
+         "  float v = i < n ? x[i] : " identity ";\n"
+         ;; The fold width is the ACTIVE width of this SIMD-group, exactly
+         ;; as in emit-glsl: a Metal SIMD-group size is a power of two, so
+         ;; every SIMD-group is full or the single first partial one, and
+         ;; min(sgsize, width) is exactly the number of active lanes. The
+         ;; guard drops the shuffle's indeterminate out-of-range read
+         ;; instead of folding it in (simd_shuffle_down does not wrap: the
+         ;; lower delta lanes keep their data and upper-lane reads are
+         ;; indeterminate).
+         "  uint fold = min(sgsize, width);\n"
+         "  for (uint d = fold / 2u; d > 0u; d >>= 1u) {\n"
+         "    float s = simd_shuffle_down(v, d);\n"
+         "    if (sgid + d < fold) { v = combine(v, s); }\n"
+         "  }\n"
+         "  if (sgid == 0u) { partials[sg] = v; }\n"
+         "  threadgroup_barrier(mem_flags::mem_threadgroup);\n"
+         ;; The same strided cross-subgroup tree as emit-glsl (P2: the
+         ;; partial index is the SUBGROUP index, never lid arithmetic) over
+         ;; nsg partials; nsg is 1 or a power of two (width and the
+         ;; SIMD-group size are), so the halving tree is exact. The barrier
+         ;; per stage is uniform -- every thread of the threadgroup reaches
+         ;; it.
+         "  for (uint d = nsg / 2u; d > 0u; d >>= 1u) {\n"
+         "    if (sg == 0u) {\n"
+         "      for (uint lid = sgid; lid < d; lid += sgsize) {\n"
+         "        partials[lid] = combine(partials[lid], partials[lid + d]);\n"
+         "      }\n"
+         "    }\n"
+         "    threadgroup_barrier(mem_flags::mem_threadgroup);\n"
+         "  }\n"
+         "  if (sg == 0u && sgid == 0u) { parts[g] = partials[0]; }\n"
          "}\n")))

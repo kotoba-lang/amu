@@ -187,8 +187,12 @@
 (deftest the-apple-row-rides-the-vulkan-route-only
   ;; ADR-0360 (JUN-58): Apple's row is the shared subgroup-size-parametric
   ;; emission on the Vulkan route (MoltenVK is Apple's only execution route
-  ;; here). The MSL emitter admits :baseline only (ADR-0002), so a capable
-  ;; Apple device on :msl-v1 (or :metal) still answers :baseline (rule 3).
+  ;; here). Since 2026-10-23 the MSL emitter ADMITS :subgroup-reduce (the
+  ;; MSL arm of the emission landed), so the reason the MSL route answers
+  ;; :baseline is no longer rule 3 but the row's own scope: extending
+  ;; Apple's row to :msl-v1/:metal is a separate per-vendor decision
+  ;; (JUN-58), and until it lands a capable Apple device on :msl-v1 (or
+  ;; :metal) still answers :baseline.
   (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
         capable {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}
         answer (variants/select-variant :apple kir :vulkan capable)]

@@ -243,3 +243,106 @@
     (is (thrown-with-msg? Exception #"invalid accelerator KIR"
                           (sg/emit-wgsl (assoc reduce-sum :kernel/dtype :f64))))
     (is (= (sg/emit-wgsl reduce-sum) (sg/emit-wgsl reduce-sum)))))
+
+;; ---------------------------------------------------------------------------
+;; The MSL arm (emit-msl, landed 2026-10-23). The same fold to its letter,
+;; in Metal spellings. The spellings are pinned to the Apple Metal Shading
+;; Language Specification and Apple's "Porting your Metal code to Apple
+;; silicon" (fetched 2026-10-23), and -- unlike the WGSL arm -- this arm
+;; also COMPILES under the Apple Metal compiler on this host (a toolchain
+;; fact recorded in
+;; docs/evidence/gpu-subgroup-reduce-msl-20261023/, not a measurement).
+;; Metal refuses a kernel named `main`, so the entry point is the kernel's
+;; own name (the ADR-0002 MSL family's contract) -- the one deviation from
+;; the variant family's name-free `main` convention, compiler-verified.
+
+(deftest msl-emission-queries-the-subgroup-size-at-runtime
+  ;; ADR-0356's letter, MSL arm: the fold step is a function of
+  ;; threads_per_simdgroup (the runtime SIMD-group size; the spec's alias of
+  ;; thread_execution_width) and no literal width may appear as a fold loop
+  ;; bound.
+  (doseq [w [32 64 128 256 512 1024] operator [:sum :max :min]]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
+                                  {:workgroup-size w})
+          code (sg/emit-msl kir)]
+      (is (str/includes? code "#include <metal_stdlib>"))
+      (is (str/includes? code "uint sgsize [[threads_per_simdgroup]]"))
+      (is (str/includes? code "uint fold = min(sgsize, width);"))
+      (is (str/includes? code "for (uint d = fold / 2u; d > 0u; d >>= 1u)"))
+      (is (nil? (re-find #"\bd\s*=\s*\d+u" code))
+          (str "a baked fold width leaked into W=" w " " (name operator))))))
+
+(deftest msl-each-operator-carries-its-combine-and-identity
+  (doseq [[operator combine identity-text]
+          [[:sum "a+b" "0.0f"]
+           ;; The same INFINITE neutrals as every other arm (accelerator-
+           ;; test's every-arm-shares-one-operator-meaning): MSL has no
+           ;; infinity literal, as_type of the IEEE-754 bits is exact.
+           [:max "max(a,b)" "as_type<float>(0xFF800000u)"]
+           [:min "min(a,b)" "as_type<float>(0x7F800000u)"]]]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
+                                  {:workgroup-size 128})
+          code (sg/emit-msl kir)]
+      (is (str/includes? code (str "float combine(float a, float b) { return " combine "; }")))
+      (is (str/includes? code (str "float v = i < n ? x[i] : " identity-text ";"))))))
+
+(deftest msl-cites-the-spec-spellings-only
+  ;; Spec pins (Apple MSL Specification + "Porting your Metal code to Apple
+  ;; silicon", fetched 2026-10-23): the runtime size query is the
+  ;; threads_per_simdgroup attribute; the subgroup geometry is
+  ;; thread_index_in_simdgroup / simdgroup_index_in_threadgroup /
+  ;; simdgroups_per_threadgroup; the fold's shuffle is simd_shuffle_down.
+  ;; GLSL/WGSL spellings must not leak in, and the fold must stay the
+  ;; shuffle loop -- a simd_sum/simd_max/simd_min rewrite would be a
+  ;; different grouping of the same elements and is not this arm.
+  (let [kir (accelerator/kernel "reduce_sum" :reduce :sum {:workgroup-size 256})
+        code (sg/emit-msl kir)]
+    (is (str/includes? code "uint sgid [[thread_index_in_simdgroup]]"))
+    (is (str/includes? code "uint sg [[simdgroup_index_in_threadgroup]]"))
+    (is (str/includes? code "uint nsg [[simdgroups_per_threadgroup]]"))
+    (is (str/includes? code "float s = simd_shuffle_down(v, d);"))
+    (is (str/includes? code "threadgroup_barrier(mem_flags::mem_threadgroup);"))
+    (is (nil? (re-find #"simd_sum|simd_max|simd_min" code))
+        "the shuffle-loop fold was rewritten as a one-call simd reduce")
+    (is (nil? (re-find #"gl_Subgroup|gl_WorkGroup|gl_GlobalInvocation|gl_NumSubgroups|subgroup_size|subgroupShuffleDown" code))
+        "a GLSL or WGSL spelling leaked into MSL output")))
+
+(deftest msl-cross-subgroup-fold-covers-every-partial
+  ;; ADR-0357 P2, MSL arm: the partial index is the SIMD-group index and
+  ;; the cross-subgroup stage strides subgroup 0's lanes by
+  ;; threads_per_simdgroup, so every pair is combined regardless of the
+  ;; (S, nsub) shape.
+  (doseq [w [32 64 128 256 512 1024]]
+    (let [code (sg/emit-msl (accelerator/kernel "reduce_sum" :reduce :sum
+                                                {:workgroup-size w}))]
+      (is (str/includes? code
+                         "for (uint lid = sgid; lid < d; lid += sgsize)"))
+      (is (str/includes? code "partials[sg] = v;"))
+      (is (nil? (re-find #"uint lid = 0u" code))
+          "the partial index fell back to lid arithmetic"))))
+
+(deftest msl-workgroup-shape-mirrors-the-kir
+  (let [kir (accelerator/kernel "reduce_sum" :reduce :sum {:workgroup-size 128})
+        code (sg/emit-msl kir)]
+    (is (str/includes? code "threadgroup float partials[128];"))
+    (is (str/includes? code "uint i [[thread_position_in_grid]]"))
+    (is (str/includes? code "parts[g] = partials[0];"))
+    ;; n rides the MSL family's own constant buffer at binding 2, and the
+    ;; buffer bindings (x 0, parts 1, n 2) are the ADR-0002 MSL family's.
+    (is (str/includes? code "constant uint& n [[buffer(2)]]"))
+    ;; Metal refuses a kernel named main ("kernel function cannot be called
+    ;; 'main'", Apple metal 32023.883) -- the one deviation from the
+    ;; variant family's name-free entry convention, so the kernel's name IS
+    ;; the entry here, exactly as the baseline MSL arm emits it.
+    (is (str/includes? code "kernel void reduce_sum("))
+    (is (nil? (re-find #"kernel void main\(" code))
+        "the wire-42 'main' entry convention leaked into MSL output")))
+
+(deftest msl-emission-refuses-off-its-row-and-is-deterministic
+  (let [ewise (accelerator/kernel "k" :ewise :add {:workgroup-size 128})
+        reduce-sum (accelerator/kernel "k" :reduce :sum {:workgroup-size 128})]
+    (is (thrown-with-msg? Exception #"kernel variant not applicable"
+                          (sg/emit-msl ewise)))
+    (is (thrown-with-msg? Exception #"invalid accelerator KIR"
+                          (sg/emit-msl (assoc reduce-sum :kernel/dtype :f64))))
+    (is (= (sg/emit-msl reduce-sum) (sg/emit-msl reduce-sum)))))

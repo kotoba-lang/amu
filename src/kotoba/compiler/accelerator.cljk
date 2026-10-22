@@ -181,6 +181,9 @@
 ;; the WGSL arm of the same emission (subgroup-reduce's emit-wgsl), same idiom.
 #?(:kotoba
    (defn- subgroup-emit-wgsl [kir :document] :string (subgroup-reduce/emit-wgsl kir)))
+;; the MSL arm of the same emission (subgroup-reduce's emit-msl), same idiom.
+#?(:kotoba
+   (defn- subgroup-emit-msl [kir :document] :string (subgroup-reduce/emit-msl kir)))
 ;; the artifact seal check (kotoba.artifact.core's valid-seal?)
 #?(:kotoba
    (defn- artifact-valid-seal? [v :document] :bool (artifact/valid-seal? v)))
@@ -215,8 +218,9 @@
   Vulkan only. :subgroup-reduce is the subgroup reduction variant
   (ADR-0356's Intel row; ADR-0357's ARM row reuses it), emitted by
   kotoba.compiler.accelerator-subgroup-reduce on the Vulkan/GLSL arm and,
-  since 2026-10-23, on a WGSL arm (UNCOMPILED on this host: no WGSL
-  compiler or validator exists here; its text contracts are test-pinned).
+  since 2026-10-23, on a WGSL arm and an MSL arm (UNCOMPILED WGSL: no WGSL
+  compiler or validator exists on the testing host; the MSL arm compiles
+  under the Apple Metal compiler -- a toolchain fact, not a measurement).
   UNMEASURED as an
   optimization claim -- its GLSL emission has executed on Apple M1 Max hardware
   through wire 42 (a TOOLCHAIN fact of what compiles and runs, not
@@ -615,9 +619,11 @@
                    (if (document-equal? (document-keyword variant) (document-keyword :subgroup-reduce))
                      (subgroup-emit-wgsl kir)
                      (throw (ex-info "kernel variant not applicable" {:variant variant :target target}))))
-                 (if (not (document-equal? (document-keyword variant) (document-keyword :baseline)))
-                   (throw (ex-info "kernel variant not applicable" {:variant variant :target target}))
-                   (emit-msl kir)))))))))
+                 (if (document-equal? (document-keyword variant) (document-keyword :baseline))
+                   (emit-msl kir)
+                   (if (document-equal? (document-keyword variant) (document-keyword :subgroup-reduce))
+                     (subgroup-emit-msl kir)
+                     (throw (ex-info "kernel variant not applicable" {:variant variant :target target})))))))))))
    :default
 (defn lower
   "Lower one validated KIR to `target`'s source text. `variant` defaults to
@@ -636,9 +642,10 @@
                 :baseline (emit-wgsl kir)
                 :subgroup-reduce (subgroup-reduce/emit-wgsl kir)
                 (throw (ex-info "kernel variant not applicable" {:variant variant :target target})))
-     :msl-v1 (do (when-not (= :baseline variant)
-                   (throw (ex-info "kernel variant not applicable" {:variant variant :target target})))
-                 (emit-msl kir))
+     :msl-v1 (case variant
+               :baseline (emit-msl kir)
+               :subgroup-reduce (subgroup-reduce/emit-msl kir)
+               (throw (ex-info "kernel variant not applicable" {:variant variant :target target})))
      :cuda-v1 (emit-cuda kir variant)
      :glsl-v1 (case variant
                 :baseline (emit-glsl-baseline kir)

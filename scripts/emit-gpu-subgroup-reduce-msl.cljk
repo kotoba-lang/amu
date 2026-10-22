@@ -1,0 +1,38 @@
+#!/usr/bin/env kbb
+;; EMIT the :subgroup-reduce MSL arm's source for the JUN-58 compile
+;; evidence, straight from the emitter (never hand-written):
+;;
+;;   kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+;;     scripts/emit-gpu-subgroup-reduce-msl.cljk
+;;
+;; Writes docs/evidence/gpu-subgroup-reduce-msl-20261023/shaders/
+;; subgroup-reduce-w<W>-<operator>.emitted.metal for W in
+;; {32, 64, 128, 256, 512, 1024} and operator in {sum, max, min} -- the
+;; whole admitted row. Each file is then compiled to AIR by the Apple
+;; Metal compiler (the exact xcrun invocations are in that directory's
+;; NOTES.md; the transcript is compile-log.txt). That is a TOOLCHAIN fact
+;; of what compiles, not a measurement: no Metal execution path exists in
+;; this repository and no timing or speedup is claimed or implied.
+;;
+;; Deterministic: same emitter, same bytes. If a run of this script
+;; changes a file, the emitter changed.
+
+(ns emit-gpu-subgroup-reduce-msl
+  (:require [kotoba.compiler.accelerator :as accelerator]
+            [kotoba.compiler.accelerator-subgroup-reduce :as sg]))
+
+(def widths [32 64 128 256 512 1024])
+(def operators [:sum :max :min])
+
+(defn -main [& _]
+  (doseq [w widths
+          operator operators]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
+                                  {:workgroup-size w})
+          code (sg/emit-msl kir)
+          path (str "docs/evidence/gpu-subgroup-reduce-msl-20261023/shaders/"
+                    "subgroup-reduce-w" w "-" (name operator) ".emitted.metal")]
+      (spit path code)
+      (println "WROTE" path (count code) "bytes"))))
+
+(-main)

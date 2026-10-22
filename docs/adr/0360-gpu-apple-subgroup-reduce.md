@@ -35,7 +35,12 @@ loader brokers, and ADR 0371's provider plan), and JUN-58's measurement
 path is MoltenVK. The MSL emitter admits `:baseline` only (ADR-0002), so
 ADR-0356 rule 3 keeps the MSL route at `:baseline`; a Metal simdgroup row
 on the MSL route is NOT designed here and nothing in this ADR should be
-read as designing it. The measurement this row waits on runs GLSL ->
+read as designing it. (SUPERSEDED 2026-10-23 as to the CAUSE, not the
+conclusion: the MSL arm of the shared emission landed and the MSL emitter
+now admits `:subgroup-reduce` (ADR-0356's MSL-arm amendment); the MSL
+route still answers `:baseline` because this ADR scopes the row to the
+Vulkan route, and a Metal simdgroup row is still not designed here.) The
+measurement this row waits on runs GLSL ->
 SPIR-V through glslang (ADR-0359 decision 2's sealed build step) on
 MoltenVK.
 
