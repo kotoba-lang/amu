@@ -154,3 +154,92 @@
           path (str "test/fixtures/gpu/subgroup-reduce-w" w "-sum.emitted.glsl")]
       (is (= (sg/emit-glsl kir) (slurp path))
           (str path " is stale -- run scripts/regen-gpu-subgroup-reduce-fixtures.cljk")))))
+
+;; ---------------------------------------------------------------------------
+;; The WGSL arm (emit-wgsl, landed 2026-10-23). The same fold to its letter,
+;; in WGSL spellings. UNCOMPILED on this host (no WGSL compiler or validator
+;; exists here) -- these text contracts are the whole verification, and the
+;; spellings are pinned to the W3C WGSL spec and the merged gpuweb subgroups
+;; proposal (vendor documentation, fetched 2026-10-23), not to a compiler.
+
+(deftest wgsl-emission-queries-the-subgroup-size-at-runtime
+  ;; ADR-0356's letter, WGSL arm: the fold step is a function of
+  ;; subgroup_size and no literal width may appear as a fold loop bound.
+  (doseq [w [32 64 128 256 512 1024] operator [:sum :max :min]]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
+                                  {:workgroup-size w})
+          code (sg/emit-wgsl kir)]
+      (is (str/includes? code "enable subgroups;"))
+      (is (str/includes? code "@builtin(subgroup_size)"))
+      (is (str/includes? code (str "let fold=min(sgsize," w "u);")))
+      (is (str/includes? code "for(var d:u32=fold/2u;d>0u;d=d>>1u)"))
+      (is (nil? (re-find #"\bd\s*=\s*\d+u" code))
+          (str "a baked fold width leaked into W=" w " " (name operator))))))
+
+(deftest wgsl-each-operator-carries-its-combine-and-identity
+  (doseq [[operator combine identity-text]
+          [[:sum "a+b" "0.0"]
+           ;; The same INFINITE neutrals as every other arm (accelerator-
+           ;; test's every-arm-shares-one-operator-meaning): WGSL has no
+           ;; infinity literal, bitcast of the IEEE-754 bits is exact.
+           [:max "max(a,b)" "bitcast<f32>(0xFF800000u)"]
+           [:min "min(a,b)" "bitcast<f32>(0x7F800000u)"]]]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
+                                  {:workgroup-size 128})
+          code (sg/emit-wgsl kir)]
+      (is (str/includes? code (str "fn combine(a:f32,b:f32)->f32{return " combine ";}")))
+      (is (str/includes? code (str "var v:f32=select(" identity-text ",x[i],i<n.value);"))))))
+
+(deftest wgsl-cites-the-spec-spellings-only
+  ;; Spec pins (W3C WGSL + the merged gpuweb subgroups proposal, fetched
+  ;; 2026-10-23): `subgroups` is an ENABLE extension; `subgroup_id` and
+  ;; `num_subgroups` are a LANGUAGE extension -- automatically available
+  ;; where supported, and NOT enable-able (`enable subgroup_id;` would be a
+  ;; shader-creation error). GLSL/SPIR-V spellings must not leak in.
+  (let [kir (accelerator/kernel "reduce_sum" :reduce :sum {:workgroup-size 256})
+        code (sg/emit-wgsl kir)]
+    (is (str/includes? code "enable subgroups;\n"))
+    (is (nil? (re-find #"enable [^\n]*subgroup_id" code))
+        "the subgroup_id LANGUAGE extension was emitted as an enable directive")
+    (is (str/includes? code "@builtin(subgroup_invocation_id)"))
+    (is (str/includes? code "@builtin(subgroup_id)"))
+    (is (str/includes? code "@builtin(num_subgroups)"))
+    (is (nil? (re-find #"gl_Subgroup|gl_WorkGroup|gl_GlobalInvocation|gl_NumSubgroups" code))
+        "a GLSL builtin spelling leaked into WGSL output")))
+
+(deftest wgsl-cross-subgroup-fold-covers-every-partial
+  ;; ADR-0357 P2, WGSL arm: the partial index is subgroup_id and the
+  ;; cross-subgroup stage strides subgroup 0's lanes by subgroup_size, so
+  ;; every pair is combined regardless of the (S, nsub) shape.
+  (doseq [w [32 64 128 256 512 1024]]
+    (let [code (sg/emit-wgsl (accelerator/kernel "reduce_sum" :reduce :sum
+                                                 {:workgroup-size w}))]
+      (is (str/includes? code
+                         "for(var lid:u32=sgid;lid<e;lid=lid+sgsize)"))
+      (is (str/includes? code "partials[sg]=v;"))
+      (is (nil? (re-find #"lid:u32=0u" code))
+          "the partial index fell back to lid arithmetic"))))
+
+(deftest wgsl-workgroup-shape-mirrors-the-kir
+  (let [kir (accelerator/kernel "reduce_sum" :reduce :sum {:workgroup-size 128})
+        code (sg/emit-wgsl kir)]
+    (is (str/includes? code "@workgroup_size(128)"))
+    (is (str/includes? code "var<workgroup> partials: array<f32, 128>;"))
+    (is (str/includes? code "let i=gid.x;"))
+    (is (str/includes? code "parts[wid.x]=partials[0];"))
+    ;; n rides a uniform at binding 2 -- the WGSL family's own choice (every
+    ;; WGSL emission binds it there); the GLSL arm's storage n is a
+    ;; wire-42 artifact.
+    (is (str/includes? code "@group(0) @binding(2) var<uniform> n: N;"))
+    ;; entry point is main and the kernel's name is deliberately absent.
+    (is (str/includes? code "fn main("))
+    (is (nil? (re-find #"reduce_sum" code)))))
+
+(deftest wgsl-emission-refuses-off-its-row-and-is-deterministic
+  (let [ewise (accelerator/kernel "k" :ewise :add {:workgroup-size 128})
+        reduce-sum (accelerator/kernel "k" :reduce :sum {:workgroup-size 128})]
+    (is (thrown-with-msg? Exception #"kernel variant not applicable"
+                          (sg/emit-wgsl ewise)))
+    (is (thrown-with-msg? Exception #"invalid accelerator KIR"
+                          (sg/emit-wgsl (assoc reduce-sum :kernel/dtype :f64))))
+    (is (= (sg/emit-wgsl reduce-sum) (sg/emit-wgsl reduce-sum)))))

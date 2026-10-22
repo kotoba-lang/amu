@@ -149,8 +149,38 @@ the two the fold needs), with the named refusal `gpu/no-compute-subgroups`
 treated exactly like an absent fact. The protocol-table entries landed
 2026-10-23 (verb SUBGROUP = 18, answer fields = 2, refusal index 35;
 ADR-0362's amendment); the producer's answer and the consumer parser
-remain unimplemented slices, and every row here keeps failing closed to
-`:baseline` without the facts.
+landed later the same day (ADR-0362's slice-3 and slice-2 amendments) --
+the provider's Vulkan read and wire reply remain unimplemented (the ADR
+0371 track), so no live wire carries the facts and every row here keeps
+failing closed to `:baseline` without them.
+
+**Amendment (2026-10-23, the WGSL arm of the shared emission lands).** The
+subgroup-size-parametric emission gains its WGSL arm
+(`kotoba.compiler.accelerator-subgroup-reduce/emit-wgsl`), and `lower`
+admits it for the (:wgsl-v1, :subgroup-reduce) pair in both readings --
+rule 3's "emission admission first" now holds on the WGSL path exactly as
+the Vulkan-side arm established it for :glsl-v1 on 2026-10-22. The design
+basis is this file's Intel-row letter ("It queries the subgroup size at
+runtime (`gl_SubgroupSize` / the WGSL subgroup builtin)") and rule 6's own
+sentence ("the WGSL path treats subgroups as the optional feature they
+are"): the arm queries `subgroup_size` at runtime and bakes no width, and
+it depends on the `subgroups` ENABLE extension plus the `subgroup_id`
+LANGUAGE extension (`subgroup_id` / `num_subgroups` are not enable-able --
+that spelling is a shader-creation error; verified against the W3C WGSL
+spec and the merged gpuweb subgroups proposal, fetched 2026-10-23: vendor
+documentation, not a measurement). Per ADR-0357 P2's last sentence, a
+language surface without those builtins answers `:baseline`. **The
+selection rows do NOT move**: `select-variant` still answers
+`:subgroup-reduce` only on the Vulkan route (:vulkan / :glsl-v1).
+Extending the Intel/ARM rows to :wgsl-v1 (and whether the Apple/NVIDIA
+rows follow -- their ADRs scope them to the Vulkan route) is a SEPARATE
+design decision, proposed here and decided nowhere: until it lands, a
+:wgsl-v1 dispatch answers :baseline from selection even though the
+emission can now carry the variant. UNCOMPILED and UNMEASURED: no WGSL
+compiler or validator exists on the testing host (the text contracts are
+test-pinned -- the same regime as the CUDA arm, which has no nvcc), and
+no WebGPU execution path exists. No `:measured?` flag moves and no
+workgroup row is touched.
 
 ## Intel `:subgroup-reduce` (JUN-59) -- the design
 

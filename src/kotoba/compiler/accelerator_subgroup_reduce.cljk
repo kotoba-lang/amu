@@ -53,8 +53,25 @@
   kotoba.compiler.accelerator-spirv-compile), so this emission carries `n`
   in a read-only storage buffer at
   binding 2. Same value, same bounds semantics; the buffer-vs-uniform
-  distinction is a WGSL-ism the GLSL path has no word for."
-  {:kotoba/export [applicable? basis emit-glsl min-workgroup-size]}
+  distinction is a WGSL-ism the GLSL path has no word for.
+
+  THE WGSL ARM (`emit-wgsl`, landed 2026-10-23) is the same fold in WGSL
+  spellings: `enable subgroups;` (the only enable directive -- `subgroup_id`
+  and `num_subgroups` are a WGSL LANGUAGE extension, automatically available
+  where the implementation supports it, and `enable subgroup_id;` is a
+  shader-creation error), `subgroup_size` / `subgroup_invocation_id` /
+  `subgroup_id` / `num_subgroups` builtins, `subgroupShuffleDown` for the
+  fold. Spellings verified against the W3C WGSL spec and the merged gpuweb
+  subgroups proposal (fetched 2026-10-23) -- vendor documentation, not a
+  measurement. UNCOMPILED here: no WGSL compiler or validator exists on
+  this host (the CUDA arm is in the same regime -- no nvcc), so the text
+  contracts the tests pin are the whole verification, and nothing has
+  executed this arm (no WebGPU execution path exists). The n of the KIR
+  rides `var<uniform> n: N` at binding 2 -- the WGSL family's own choice
+  (every WGSL emission binds it there); the GLSL arm's storage-buffer n is
+  a wire-42 artifact with no WGSL word. P1 (option b scoping) and P2
+  (subgroup IDs, never lid arithmetic) bind this arm unchanged."
+  {:kotoba/export [applicable? basis emit-glsl emit-wgsl min-workgroup-size]}
   (:require [kotoba.compiler.accelerator-kir :as kir]))
 
 (def min-workgroup-size
@@ -175,4 +192,71 @@
          "    barrier();\n"
          "  }\n"
          "  if (gl_SubgroupID == 0u && gl_SubgroupInvocationID == 0u) { parts[gl_WorkGroupID.x] = partials[0]; }\n"
+         "}\n")))
+
+(def ^:private identity-value-wgsl
+  ;; The same INFINITE neutrals as identity-value, in WGSL: no infinity
+  ;; literal exists there either, bitcast of the IEEE-754 bits is exact --
+  ;; byte-identical to accelerator.cljk's wgsl-identity (one meaning per
+  ;; operator in every arm).
+  {:sum "0.0"
+   :max "bitcast<f32>(0xFF800000u)"
+   :min "bitcast<f32>(0x7F800000u)"})
+
+(def ^:private combine-expression-wgsl
+  {:sum "a+b" :max "max(a,b)" :min "min(a,b)"})
+
+(defn emit-wgsl
+  "The :subgroup-reduce WGSL compute shader for one validated KIR. The same
+  fold as emit-glsl to its letter, in WGSL spellings (the ns docstring's
+  WGSL arm paragraph is the state of record). Total on the row, fail-closed
+  off it -- a kernel that `applicable?` refuses is refused here too
+  (ex-info \"kernel variant not applicable\"), for the same reason as
+  emit-glsl. Deterministic: the same KIR lowers to the same bytes, forever.
+  The entry point is `main` and :kernel/name deliberately does not appear,
+  as in every other emission arm."
+  [kir]
+  (kir/validate! kir)
+  (when-not (applicable? kir)
+    (throw (ex-info "kernel variant not applicable"
+                    {:variant :subgroup-reduce
+                     :op (:kernel/op kir)
+                     :operator (:kernel/operator kir)
+                     :workgroup-size (:kernel/workgroup-size kir)})))
+  (let [wg (:kernel/workgroup-size kir)
+        operator (:kernel/operator kir)
+        identity (identity-value-wgsl operator)
+        combine (combine-expression-wgsl operator)]
+    (str "enable subgroups;\n"
+         "struct N { value: u32 };\n"
+         "@group(0) @binding(0) var<storage,read> x: array<f32>;\n"
+         "@group(0) @binding(1) var<storage,read_write> parts: array<f32>;\n"
+         "@group(0) @binding(2) var<uniform> n: N;\n"
+         "var<workgroup> partials: array<f32, " wg ">;\n"
+         "fn combine(a:f32,b:f32)->f32{return " combine ";}\n"
+         "@compute @workgroup_size(" wg ") fn main(@builtin(global_invocation_id) gid:vec3<u32>,"
+         "@builtin(workgroup_id) wid:vec3<u32>,"
+         "@builtin(subgroup_invocation_id) sgid:u32,"
+         "@builtin(subgroup_size) sgsize:u32,"
+         "@builtin(subgroup_id) sg:u32,"
+         "@builtin(num_subgroups) nsg:u32){\n"
+         "  let i=gid.x; var v:f32=select(" identity ",x[i],i<n.value);\n"
+         ;; The fold width is the ACTIVE width of this subgroup, exactly as
+         ;; in emit-glsl: a subgroup size is a power of two, so every
+         ;; subgroup is full or the single first partial one, and
+         ;; min(sgsize, W) is exactly the number of active lanes. The guard
+         ;; drops the shuffle's indeterminate out-of-range read instead of
+         ;; folding it in (WGSL: an indeterminate value is returned for an
+         ;; inactive or out-of-range source invocation).
+         "  let fold=min(sgsize," wg "u);\n"
+         "  for(var d:u32=fold/2u;d>0u;d=d>>1u){let s=subgroupShuffleDown(v,d);if(sgid+d<fold){v=combine(v,s);}}\n"
+         "  if(sgid==0u){partials[sg]=v;}\n"
+         "  workgroupBarrier();\n"
+         ;; The same strided cross-subgroup tree as emit-glsl (P2: the
+         ;; partial index is the SUBGROUP ID, never lid arithmetic) over
+         ;; nsg partials; nsg is 1 or a power of two (W and the subgroup
+         ;; size are), so the halving tree is exact. The barrier per stage
+         ;; is uniform -- every invocation of the workgroup reaches it.
+         "  for(var e:u32=nsg/2u;e>0u;e=e>>1u){if(sg==0u){for(var lid:u32=sgid;lid<e;lid=lid+sgsize){partials[lid]=combine(partials[lid],partials[lid+e]);}}workgroupBarrier();}\n"
+         "  if(sg==0u&&sgid==0u){parts[wid.x]=partials[0];}\n"
          "}\n")))

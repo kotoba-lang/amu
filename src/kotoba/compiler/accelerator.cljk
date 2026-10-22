@@ -178,6 +178,9 @@
 ;; call in the same idiom as artifact-sha256 above.
 #?(:kotoba
    (defn- subgroup-emit-glsl [kir :document] :string (subgroup-reduce/emit-glsl kir)))
+;; the WGSL arm of the same emission (subgroup-reduce's emit-wgsl), same idiom.
+#?(:kotoba
+   (defn- subgroup-emit-wgsl [kir :document] :string (subgroup-reduce/emit-wgsl kir)))
 ;; the artifact seal check (kotoba.artifact.core's valid-seal?)
 #?(:kotoba
    (defn- artifact-valid-seal? [v :document] :bool (artifact/valid-seal? v)))
@@ -209,10 +212,13 @@
   v1 emission, byte-identical before and after variants existed;
   :warp-shuffle-reduce is the NVIDIA reduction variant (ADR-0356), UNMEASURED
   and with no execution path -- the runtime :gpu/compute (wire 42) runs
-  Vulkan only. :subgroup-reduce is the Vulkan/GLSL reduction variant
+  Vulkan only. :subgroup-reduce is the subgroup reduction variant
   (ADR-0356's Intel row; ADR-0357's ARM row reuses it), emitted by
-  kotoba.compiler.accelerator-subgroup-reduce and UNMEASURED as an
-  optimization claim -- its emission has executed on Apple M1 Max hardware
+  kotoba.compiler.accelerator-subgroup-reduce on the Vulkan/GLSL arm and,
+  since 2026-10-23, on a WGSL arm (UNCOMPILED on this host: no WGSL
+  compiler or validator exists here; its text contracts are test-pinned).
+  UNMEASURED as an
+  optimization claim -- its GLSL emission has executed on Apple M1 Max hardware
   through wire 42 (a TOOLCHAIN fact of what compiles and runs, not
   optimization evidence). A variant is a different grouping of the same
   admitted reduction, never a different meaning. Admission is per target: a
@@ -603,10 +609,14 @@
                  (if (document-equal? (document-keyword variant) (document-keyword :subgroup-reduce))
                    (subgroup-emit-glsl kir)
                    (throw (ex-info "kernel variant not applicable" {:variant variant :target target}))))
-               (if (not (document-equal? (document-keyword variant) (document-keyword :baseline)))
-                 (throw (ex-info "kernel variant not applicable" {:variant variant :target target}))
-                 (if (document-equal? (document-keyword target) (document-keyword :wgsl-v1))
+               (if (document-equal? (document-keyword target) (document-keyword :wgsl-v1))
+                 (if (document-equal? (document-keyword variant) (document-keyword :baseline))
                    (emit-wgsl kir)
+                   (if (document-equal? (document-keyword variant) (document-keyword :subgroup-reduce))
+                     (subgroup-emit-wgsl kir)
+                     (throw (ex-info "kernel variant not applicable" {:variant variant :target target}))))
+                 (if (not (document-equal? (document-keyword variant) (document-keyword :baseline)))
+                   (throw (ex-info "kernel variant not applicable" {:variant variant :target target}))
                    (emit-msl kir)))))))))
    :default
 (defn lower
@@ -622,9 +632,10 @@
    (when-not (kernel-variants variant)
      (throw (ex-info "unsupported kernel variant" {:variant variant :supported kernel-variants})))
    (case target
-     :wgsl-v1 (do (when-not (= :baseline variant)
-                    (throw (ex-info "kernel variant not applicable" {:variant variant :target target})))
-                  (emit-wgsl kir))
+     :wgsl-v1 (case variant
+                :baseline (emit-wgsl kir)
+                :subgroup-reduce (subgroup-reduce/emit-wgsl kir)
+                (throw (ex-info "kernel variant not applicable" {:variant variant :target target})))
      :msl-v1 (do (when-not (= :baseline variant)
                    (throw (ex-info "kernel variant not applicable" {:variant variant :target target})))
                  (emit-msl kir))
