@@ -1,144 +1,77 @@
 # Agent rules
 
+## Hosted compiler removal status
+
+- The C/JVM/Node compiler implementations and build/launch routes are removed
+  in this candidate. Public entrypoints currently refuse with exit 69; no
+  independent native compiler is qualified yet. Do not reinstall NBB/KBB,
+  restore a C loader, or infer success from the refusal wrappers.
+- See `docs/native-compiler-retirement.md` and the hash/blob inventory under
+  `docs/retirement/` for source recovery and pending native execution gates.
+
 ## Selfhost is the top priority
 
-- The Amu compiler must become a native executable produced by Amu, with no
-  JVM, GraalVM or Node.js needed to build it. This outranks features, new
-  targets and benchmark publication. Details: `docs/selfhost-priority.md`.
-- Only a selfhost-built compiler is selfhost evidence. GraalVM Native Image,
-  JVM and Node/nbb builds are bootstrap references; label their numbers so.
-- Do not add a JVM, GraalVM or Node fallback to make a selfhost stage pass.
+- Use canonical `.kotoba` source and an Amu-built native compiler for the
+  compiler, CLI, build graph, packaging and operational tooling. This outranks
+  features, new targets and benchmark publication. Details:
+  `docs/selfhost-priority.md` (owner decision 2026-10-22).
+- Remove CLJK/CLJC/CLJS, NBB, KBB, Clojure, Java/JVM, GraalVM, Node.js and
+  C compiler/loader/runtime dependencies from that closure. CLJK is not a
+  retained final syntax-sugar surface. C-loader pinning is not acceptance.
+- Only a compiler built and rebuilt by Amu selfhost qualifies. Historical
+  hosted builds and C-loader receipts remain labelled historical evidence;
+  they do not qualify the replacement route.
+- Do not add a legacy host, C loader or hosted packaging fallback.
   Unreachable files stay on the scoreboard as refused, with the reason.
 - Compiler benchmarks (Embench etc.) are published as selfhost results only
   when taken with a selfhost-built compiler on a quiet host.
 
-## The product does not depend on nbb, Node or the JVM
+## The measured Embench compiler is the compiler core
 
-Decision 2026-10-01: nbb, Node, the JVM and GraalVM are bootstrap references
-only. The end state is `amu` built by `amu`, running `check`, `refactor`,
-`compile` and `kotoba ...` with no node/nbb/JVM process. Inventory:
-`scripts/selfhost-wall/bootstrap-boundary.sh`, snapshot
-`docs/selfhost-bootstrap-boundary-20261001.md`. Removal plan: stage S6 of
-`docs/selfhost-core-rewrite-plan-20260930.md`.
+- Extend the adopted `seed/MANIFEST` compiler lineage for Amu selfhost and
+  the public `amu` / `kotoba` compiler. Preserve its frontend, lowering,
+  optimization and backend behavior while growing the complete command and
+  build closure. Do not replace it with an independently implemented core
+  or make it an optional benchmark-only backend.
+- `seed/compiler-core.json` pins the measured M104 baseline and the adopted
+  M105 source lineage. ADR 0370 defines the integration and review order.
+  Review and merge this lineage before unrelated feature work.
+- Preserve the full 19-workload corpus, exact result/fuel/arena/refusal
+  behavior and source/artifact provenance. A successor needs complete
+  self-rebuild and conformance evidence before replacing the admitted core;
+  a new score needs fresh measurements of that exact compiler.
+- Historical C-loader results remain historical. This core decision does
+  not relax the native-only build/execution contract above or qualify the
+  public CLI, a new runtime, or CDCI through source inspection alone.
 
-- New code on the product path (anything a user's `amu`/`kotoba` run reaches:
-  `src/`, `bin/`, entry points) is Kotoba (`.cljk`/`.kotoba`) with a `:kotoba`
-  reading that passes `amu check`. Never nbb-, Node- or JVM-only code.
-- Host-only code (`node:*`, `js/*`, `java.*`, `:import`, nbb APIs) lives behind
-  `#?(:cljs ...)`/`#?(:clj ...)` and only in files flagged as bootstrap tooling
-  (`;; bootstrap-tooling` in the first five lines) or under `scripts/`,
-  `test/`, `bench/`, `tools/`. A product file gets a `:kotoba` reading, not a
-  bigger host arm. `#?(:kotoba nil ...)` and named refusals are debt: list
-  them, do not add them to make a count rise.
-- A PR or commit that adds an nbb/Node/JVM dependency to the product path is
-  refused. Run `scripts/selfhost-wall/bootstrap-boundary.sh` before and after;
-  the PRODUCT counts must not grow. Wall harness and differential scripts may
-  stay nbb/Python until the self-built compiler exists.
-- 100% means: the `amu` binary built by `amu` itself runs the full check,
-  refactor and compile on its own sources with zero node/JVM/nbb processes,
-  verified by `scripts/selfhost-wall/no-host-processes.sh -- <command>`
-  (strace/dtruss execve trace; no tracer is a fail, not a pass).
+## Q9 compiler routes must use Kotoba / Amu selfhost only
 
-## No Rust dependency
-
-- The `kotoba`/`amu` CLI is Kotoba (.cljk/.kotoba) running on the nbb launcher (bootstrap only)
-  or the native amu route. No Rust binary, crate, `cargo` build, Rust host
-  adapter or Rust parity target may be required to build, test, run or release
-  anything. CI must not `cargo install`; fetch prebuilt release binaries.
-- Rust appears only as a benchmark competitor (`bench/runtime-comparison`,
-  `scripts/runtime-comparison.mjs`, optional `rustc`, never in the core gate)
-  and in historical ADRs. Do not turn either into a requirement.
-
-## Refactoring is AST-based by default
-
-- Rule-shaped changes (a pattern at many sites, a rename, a module split, a
-  selfhost-wall rewrite) use `amu refactor` (`plan`, then `apply`, then
-  `verify`), not sed or hand text edits. A hand edit is the exception; say why
-  when you use one, and turn a repeated hand edit into a rule.
-- The tool is nbb/Kotoba only (no Python, no JVM), fails closed, and is a
-  bootstrap reference until it passes `amu check` on the project route.
-  Decision: `docs/adr/0357-ast-based-refactoring-is-the-default.md`.
-
-## Language semantics are target-independent
-
-- wasm32 is one build target of the Amu native compiler, not the definition of
-  the language. Do not cap, narrow or defer a language or stdlib feature
-  because wasm32 cannot lower it yet. Specify the semantics, check them
-  against the KIR interpreter, and let each target either lower the feature or
-  refuse it by name (exit 65, recorded in `lang/surface-status.edn`).
-- A limit is kept only if it bounds a resource or protects an invariant. Remove
-  a limit that only records what one backend could do. Details:
-  `docs/adr/0354-language-semantics-are-target-independent.md`.
-- This never relaxes the shared safety pipeline, fail-closed behaviour, or the
-  no-JVM/GraalVM/Node-fallback rules.
-
-## Q9 compiler routes must be JVM-free
-
-- Q9 callers use `bin/amu check ... --jvm-free` and
-  `bin/amu compile ... --jvm-free`. An omitted `--target` selects the
+- Q9 callers use the qualified Amu selfhost-built entrypoint for `check`
+  and `compile`. A Node/nbb `bin/amu` is not that entrypoint, and
+  `--jvm-free` alone does not establish selfhost or exclude Node/NBB/C.
+  An omitted `--target` selects the
   engine-neutral Kototama program target; `AMU_TARGET` or an explicit
   `--target` selects another backend. Browser / Worker / WASI builds name
   `wasm32-browser` / `wasm32-wasi` explicitly.
-- `--jvm-free` must never invoke `java`, `javac`, `clojure`, `clj`,
-  `resolveWithJvm`, a Clojure main namespace or another JVM launcher.
+- The build and execution closure must not invoke NBB, KBB, Node, Java,
+  Clojure/JVM, GraalVM, a C compiler or C loader, including through wrappers,
+  `resolveWithJvm`, compatibility adapters or packaging helpers.
 - Missing/stale dependency locks, unsupported commands/targets and project
   linker gaps fail closed. Do not silently remove `--source-path`, ignore a
-  module lock or fall back to the JVM to make a component compile.
-- New Q9 compiler/test routes use nbb/CLJS, Node, native or Wasm. Existing JVM
-  suites are compatibility diagnostics and are not Q9 acceptance evidence.
-- Preserve tests that shadow forbidden JVM executables and verify that no
-  marker was written on both unsupported-route and lock-failure paths.
+  module lock or fall back to a legacy host to make a component compile.
+- New Q9 compiler/test routes are authored in Kotoba, built by Amu selfhost,
+  and executed as qualified native artifacts or selfhost-produced Wasm in
+  the declared host. JavaScript/Wasm output does not authorize a Node/NBB
+  compiler host. CDCI is limited to Amu selfhost and Kotoba native as
+  loaderless `x86_64-linux-static` ELF artifacts.
+- Preserve the positive/refusal and lock-failure corpus while migrating it
+  to the native route. Record forbidden-process traces, compiler generations,
+  source/lock pins, artifact hashes and actual execution results. Missing
+  native functionality stays blocked; source admission alone is not a pass.
 
-## Refactor with `amu refactor`, not by hand
 
-- Mechanical source changes (porting a form shape, renaming, splitting a
-  namespace, moving a definition, any edit of the same shape in more than one
-  place) go through the AST-based CLI, never through hand text edits, sed,
-  regex or ad-hoc scripts. Use `amu refactor` (`kotoba refactor` in
-  `kotoba-lang`; same subcommands, same EDN, format `:kotoba.refactor/v1`).
-  It runs on nbb/Kotoba only: no Python, no JVM (fail closed).
-- The loop is `plan -> apply --check -> verify`:
-  1. `amu refactor list-rules`, then `amu refactor plan <rule> <paths>`
-     (dry run: actionable / human counts and a unified diff). `:human`
-     findings are not applied; they are the hand work that remains.
-  2. `amu refactor apply <rule> <paths> --check`, then `apply` without
-     `--check`. Rules are offset-preserving: comments, whitespace and every
-     untouched byte survive, and the host (JVM/nbb) arm is kept byte-for-byte
-     as `:default` of a one-form `#?(:kotoba NEW :default OLD)`.
-  3. `amu refactor verify`: the differential. It runs the project's test set
-     before and after and compares per-test outcomes. Any test whose outcome
-     changed, or any new refusal, blocks the change.
-- Hand text edits are only for a change no rule covers. Then either write the
-  rule (below) or record in the commit message why this change is one-off.
-  If you made the same hand edit twice, it was a rule.
-- To add a rule: implement a rule map `{:id :find}` in the refactor rule
-  library (`src/kotoba/compiler/refactor/rules/`, registered in
-  `refactor/rules.cljk`), where `:find` takes `{:src :nodes :opts}` and
-  returns findings `{:status :auto|:human :reason :edits}`. Add a fixture and a
-  test (host equivalence by evaluation where the rule claims it), register it
-  so `list-rules` shows it, and give refusals a stable code. A rule that cannot
-  prove host equivalence reports `:human`, not `:auto`.
-- The commit message carries the evidence: the rule id, the `plan` counts
-  (actionable / human / ported), and the `verify` result (tests compared,
-  changed outcomes = 0). A refactor commit without them is incomplete.
-- Differential discipline: never "fix" a test or loosen a check to make
-  `verify` pass; compare before and after on the same test set and the same
-  revision otherwise. Failures that existed before stay failures, and are
-  listed, not hidden.
-- Parallelising a large module: `amu refactor graph <path>` (dependency graph
-  EDN, SCCs, dynamic vars) -> choose or generate a partition ->
-  `amu refactor split <path> --partition p.edn --out dir` (byte-identical
-  round trip, facade keeps the old namespace) -> one agent per module, each
-  using the loop above on its own module -> `verify` on the recombined whole.
-  Agents commit path-specific and never touch another module's files.
-- `amu refactor` also has `partition` (a pass-ownership module partition, the
-  input of `split`) and exits 1 when `apply --check` has pending changes or
-  `verify` finds a differing outcome. The old prototypes
-  (`scripts/selfhost-codemod/`, `scripts/selfhost-split/`) are superseded.
+## Shared agent rule
 
-## Claude 向け追記（旧 CLAUDE.md より統合）
-
-Selfhost (an Amu-built compiler, no JVM, GraalVM or
-Node.js) is the top priority; see `docs/selfhost-priority.md`. For Q9, Amu is used only with the fail-closed
-`--jvm-free` path. Never invoke or add a Clojure/JVM fallback to satisfy a
-whole-component build; an unsupported route remains blocked.
+These rules apply to every agent. Migrate and qualify whole components,
+including their launch/build/packaging dependencies. Keep historical
+measurements distinct from current qualification and preserve unrelated WIP.

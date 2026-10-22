@@ -1,0 +1,19 @@
+(ns document-bytes-bootstrap (:export [main]))
+
+;; The packager needs byte-node access. This fixture checks raw bytes and
+;; canonical EDN spelling; it does not qualify the full document digest/reader.
+(defn main [] :i64
+  (let [raw (bytes-from-vector-i64 [0 255 16])
+        value (document-bytes raw)
+        decoded (option-value-of [:option :bytes] (document-bytes-value value) (bytes-empty))
+        nested (document-map :data value :empty (document-bytes (bytes-empty)))
+        text (document-edn-print nested)
+        read-back (document-edn-read text)
+        field (option-value-of [:option :document] (document-get read-back :data) (document-null))
+        again (option-value-of [:option :bytes] (document-bytes-value field) (bytes-empty))]
+    (if (and (= (document-kind value) :bytes)
+             (= (bytes-count decoded) 3)
+             (= (bytes-at decoded 0) 0) (= (bytes-at decoded 1) 255) (= (bytes-at decoded 2) 16)
+             (= (bytes-count again) 3) (= (bytes-at again 1) 255)
+             (not (option-some?-of [:option :bytes] (document-bytes-value (document-string "00ff10"))))
+             (string=? (document-edn-print value) "#kotoba/bytes \"00ff10\"")) 0 1)))

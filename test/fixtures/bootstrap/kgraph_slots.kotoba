@@ -1,0 +1,11 @@
+;; Direct checks of the existing v11 intrinsics used by generated keyword code.
+;; No capabilities, fake provider, KGraph size increase or C loader is involved.
+(ns bootstrap.kgraph-slots (:export [main]))
+(defn main [] :i64
+  (let [missing (__r6-kgget 1 2)
+        a (__r6-kgput 1 2 10)
+        b (__r6-kgput 1 3 20)
+        c (__r6-kgput 1 2 30)]
+    (if (and (= missing -9223372036854775808) (= a 1) (= b 1) (= c 1)
+             (= (__r6-kgget 1 2) 30) (= (__r6-kgget 1 3) 20)
+             (= (__r6-kgget 2 2) -9223372036854775808)) 0 1)))

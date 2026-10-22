@@ -1121,6 +1121,26 @@
       (assert (re-find #"host regex literal" message) message)
       (assert (not (re-find #"admitted exported import" message)) message))))
 
+(check "a-host-class-call-is-refused-as-host-interop-not-as-an-import"
+  (fn []
+    ;; issue #785: a head whose namespace names a host class (js, goog, an
+    ;; uppercase class segment -- Math, java.lang.Math) is host interop; a
+    ;; lowercase namespace that names no import keeps the import sentence.
+    (doseq [[op host?] [["Math/abs" true] ["js/parseInt" true] ["goog/isDef" true]
+                        ["java.lang.Math/abs" true]
+                        ["other/thing" false] ["other.lib/thing" false]]]
+      (let [message (refusal-message
+                     #(project/link-source
+                       {'plain "(ns plain (:export [one])) (defn one [] :i64 1)"
+                        'root (str "(ns root (:require [plain :as p]) (:export [main]))\n(defn main [] :i64 (+ (p/one) ("
+                                   op " 40)))")}
+                       'root))
+            want (if host?
+                   (str "host interop call is not admitted: " op)
+                   (str "qualified call is not an admitted exported import: " op))]
+        (assert (and (string? message) (.includes message want))
+                (str op ": " (pr-str message)))))))
+
 ;; ---------------------------------------------------------------------------
 ;; Variadic defn across the linker (kotoba-sema 9d72b4cd, 2026-09-12).
 ;;

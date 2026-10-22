@@ -461,14 +461,17 @@
       (out-err M E-OUT-FULL cs)
       (out-parse (out-copy-in M V 0 cs (+ MM-OUT-BASE 1)) (+ MM-OUT-BASE 1) n sym))))
 
-;; Requests of at most out-wchunk data bytes, built in ONE reused vector where possible: the loader never reclaims a vector
-;; (KEXE_VECTOR_ITEMS), so a request vector per piece would cost as many items as the data. R = "<path><token tw>" + m slots.
+;; Requests hold at most out-wchunk data bytes in a reused destination.
+;; The FS2 header length is independent of write/append form and payload.
 (def out-wchunk 262144)
+(defn- out-rq-size [path :string] :i64 (+ (string-byte-length path) 7))
 (defn- out-rq-new [path :string tw :i64 m :i64] :vector-i64
-  (io-bput-tok (io-bput-str (vector-alloc (+ (string-length path) (+ (io-tokn tw) m))) path 0 (string-length path) 0) (string-length path) tw))
-;; send R (its data R[d .. d+m), R exactly d+m long): one request, or, when the data spells a loader token, 02-io's cut pieces
+  (let [header (string-to-utf8 (io-frame (if (= tw 0) "B" "C") path ""))
+        n (bytes-count header)]
+    (loop [i 0 R (vector-alloc (+ n m))]
+      (if (= i n) R (recur (+ i 1) (vector-assoc! R i (bytes-at header i)))))))
 (defn- out-rq-send [R :vector-i64 path :string tw :i64 d :i64 m :i64] :i64
-  (if (= (io-cut R d (+ d m)) (+ d m)) (io-bsend R) (io-pieces R path d (+ d m) tw)))
+  (io-bsend R))
 
 ;; out-write-v V path a n -> n : V[a .. a+n) (low 8 bits per item) to the file path as raw bytes: the first piece written
 ;; ("WRITE"), the rest appended; each request stays far below the loader's 8 MiB bytes value (io-write-bytes sends the whole
@@ -478,7 +481,7 @@
     (loop [i a tw 0]
       (let [e (if (< (+ i out-wchunk) (+ a n)) (+ i out-wchunk) (+ a n))
             m (- e i)
-            d (+ (string-length path) (io-tokn tw))
+            d (out-rq-size path)
             R (if (and (= tw 1) (= m out-wchunk)) RF (out-rq-new path tw m))
             z (out-rq-send (io-bput-words R V i e (- d i)) path tw d m)]
         (if (>= e (+ a n)) n (recur e 1))))))

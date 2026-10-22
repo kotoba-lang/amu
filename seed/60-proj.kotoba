@@ -1388,7 +1388,7 @@
             w2 (loop [a 0] (if (>= a n) 0 (let [e (pj-min n (+ a out-wchunk)) x (io-write-hex (pj-unpack L T 0 a e) 0 (- e a))] (recur e))))]
         (+ hb n))
       (let [w (io-write-bytes M out (+ MM-OUT-BASE 1) hb)
-            d (+ (string-length out) (io-tokn 1))
+            d (out-rq-size out)
             RF (if (> n out-wchunk) (out-rq-new out 1 out-wchunk) (vector-alloc 1))
             w2 (loop [a 0]
                  (if (>= a n) 0
