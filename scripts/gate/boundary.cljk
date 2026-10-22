@@ -1,0 +1,255 @@
+(ns scripts.gate.boundary
+  "S5 of the selfhost gate: the PRODUCT host-dependency inventory that
+  scripts/selfhost-wall/bootstrap-boundary.sh produced (deleted in 15626731 by
+  JUN-243 with no port; its last text is `git show 15626731^:scripts/selfhost-wall/bootstrap-boundary.sh`).
+  This is a transcription of its classification rules and its awk
+  S-expression scanner, quirks included, so that the counts stay comparable
+  with docs/selfhost-bootstrap-boundary-20261001.md. Pure: text in, counts
+  out; the host driver reads the files.
+
+  Also the .sh ratchet: the size of the `native-gates` allowlist of
+  scripts/check-workflows.cljk and the number of .sh files.")
+
+(defn- host-token? [t]
+  (boolean
+   (or (re-find #"^\"node:" t)
+       (re-find #"^\"(fs|path|os|child_process|crypto|url|util|process)\"$" t)
+       (re-find #"^js/" t)
+       (re-find #"^java\." t)
+       (re-find #"^clojure\.java" t)
+       (re-find #"^nbb\.core" t)
+       (= t ":import"))))
+
+(defn scan-text
+  "The awk scanner of bootstrap-boundary.sh over one file's text:
+  {:unguarded n :guarded n :kotoba-nil n :kotoba-arms n :host-arms n}."
+  [text]
+  (let [n (count text)
+        st (volatile! {:depth 0 :frames [] :uh 0 :gh 0 :kn 0 :ka 0 :ha 0})
+        guarded? (fn [frames] (boolean (some (fn [f] (and (not= "" (:fb f)) (not= ":kotoba" (:fb f)))) frames)))
+        atom-done
+        (fn [tok]
+          (when (and (not= "" tok) (not (re-find #"^#\?" tok)))
+            (let [{:keys [depth frames]} @st]
+              (when (host-token? tok)
+                (if (guarded? frames) (vswap! st update :gh inc) (vswap! st update :uh inc)))
+              (when (and (seq frames) (= depth (:fd (peek frames))))
+                (let [f (peek frames)
+                      f (if (even? (:fn f))
+                          (do (cond (= tok ":kotoba") (vswap! st update :ka inc)
+                                    (re-find #"^:(cljs|clj|default|cljr)$" tok) (vswap! st update :ha inc))
+                              (assoc f :fb tok :kw (if (= tok ":kotoba") 1 (:kw f))))
+                          (if (= 1 (:kw f))
+                            (do (when (= tok "nil") (vswap! st update :kn inc))
+                                (assoc f :kw 0))
+                            f))
+                      f (update f :fn inc)]
+                  (vswap! st assoc :frames (conj (pop (:frames @st)) f)))))))]
+    (loop [i 0 tok "" instr false esc false]
+      (if (>= i n)
+        (atom-done tok)
+        (let [c (.charAt text i)]
+          (cond
+            instr
+            (let [tok (str tok c)]
+              (cond esc (recur (inc i) tok true false)
+                    (= c "\\") (recur (inc i) tok true true)
+                    (= c "\"") (do (atom-done tok) (recur (inc i) "" false false))
+                    :else (recur (inc i) tok true false)))
+
+            (= c ";")
+            (do (atom-done tok)
+                ;; the awk loop leaves i on the char before the newline and its for-loop steps past it
+                (recur (inc (loop [j i] (if (and (< (inc j) n) (not= "\n" (.charAt text (inc j)))) (recur (inc j)) j)))
+                       "" false false))
+            (= c "\"") (do (atom-done tok) (recur (inc i) c true false))
+            (= c "\\") (recur (+ i 2) (str tok c (if (< (inc i) n) (.charAt text (inc i)) "")) false false)
+            (re-find #"[ \t\r\n,]" c) (do (atom-done tok) (recur (inc i) "" false false))
+            (re-find #"[\(\[\{]" c)
+            (let [_ (atom-done tok)
+                  isrc (and (= c "(")
+                            (or (and (>= i 2) (= "#?" (subs text (- i 2) i)))
+                                (and (>= i 3) (= "#?@" (subs text (- i 3) i)))))]
+              (vswap! st update :depth inc)
+              (when isrc
+                (vswap! st update :frames conj {:fd (:depth @st) :fn 0 :fb "" :kw 0}))
+              (recur (inc i) "" false false))
+            (re-find #"[\)\]\}]" c)
+            (do (atom-done tok)
+                (let [{:keys [depth frames]} @st]
+                  (when (and (seq frames) (= depth (:fd (peek frames))))
+                    (vswap! st update :frames pop)))
+                (vswap! st update :depth dec)
+                (let [{:keys [depth frames]} @st]
+                  (when (and (seq frames) (= depth (:fd (peek frames))))
+                    (let [f (peek frames)
+                          f (if (and (odd? (:fn f)) (= 1 (:kw f))) (assoc f :kw 0) f)]
+                      (vswap! st assoc :frames (conj (pop frames) (update f :fn inc))))))
+                (recur (inc i) "" false false))
+            :else (recur (inc i) (str tok c) false false)))))
+    (let [{:keys [uh gh kn ka ha]} @st]
+      {:unguarded uh :guarded gh :kotoba-nil kn :kotoba-arms ka :host-arms ha})))
+
+(defn flagged? [text]
+  (boolean (some #(.includes % ";; bootstrap-tooling") (take 5 (.split text "\n")))))
+
+(def product-launchers #{"amu" "amu.cmd" "kotoba" "kotoba-compiler"})
+
+(defn launcher-row
+  "bin/<name> -> {:class :dep}, the launcher classification."
+  [file-name text]
+  (let [first-line (first (.split text "\n"))
+        dep (cond (.includes first-line "nbb") "nbb(shebang)"
+                  (.includes first-line "node") "node(shebang)"
+                  :else "")
+        dep (if (re-find #"require\(\"node:|spawnSync|nbb" text) (str dep (when (seq dep) "+") "host-calls") dep)
+        dep (if (re-find #"python3|graal|native-image" text) (str dep (when (seq dep) "+") "python/graal") dep)]
+    {:path (str "bin/" file-name)
+     :class (if (and (contains? product-launchers file-name) (not (flagged? text))) "PRODUCT" "BOOTSTRAP-TOOL")
+     :dep (if (seq dep) dep "(delegates)")}))
+
+(defn entry-kind [path]
+  (cond (re-find #"^src/kotoba/compiler/nbb/.*_cli\.cljk$" path) "nbb entry (nbb/*_cli)"
+        (= path "src/kotoba/compiler/nbb/cli.cljk") "nbb entry (nbb/*_cli)"
+        (re-find #"_cli\.cljk$" path) "cli entry (non-nbb twin or shared)"
+        :else nil))
+
+(defn audit-rows
+  "HOLLOW / PARTIAL rows of docs/selfhost-real-vs-hollow-20261001.md that name
+  this repository (wt-A-amu-measure): [{:class :path}] with src/ paths."
+  [doc-text]
+  (vec (for [line (.split (or doc-text "") "\n")
+             :when (re-find #"^\| `" line)
+             :when (re-find #"\| (HOLLOW|PARTIAL)" line)
+             :let [fields (.split line "|")
+                   file (.trim (.replace (aget fields 1) (js/RegExp. "`" "g") ""))
+                   cls (first (.split (.trim (aget fields 2)) " "))
+                   idx (.indexOf file " : ")
+                   repo (if (neg? idx) file (subs file 0 idx))
+                   ns-part (if (neg? idx) file (subs file (+ idx 3)))]
+             :when (= repo "wt-A-amu-measure")]
+         {:audit cls :path (str "src/" ns-part)})))
+
+(defn inventory
+  "The counts of bootstrap-boundary.sh. `src` is [{:path :text}] for every
+  src/**/*.{cljk,kotoba,cljc,cljs}; `bins` is [{:name :text}] for bin/*;
+  `audit` the audit doc's rows whose path exists, each with its file text."
+  [src bins audit]
+  (let [scanned (vec (for [{:keys [path text]} src]
+                       (merge {:path path :flagged (flagged? text)} (scan-text text))))
+        launchers (mapv (fn [{:keys [name text]}] (launcher-row name text)) bins)
+        entries (vec (for [s scanned :let [k (entry-kind (:path s))] :when k]
+                       {:path (:path s) :class (if (:flagged s) "BOOTSTRAP-TOOL" "PRODUCT") :kind k
+                        :kotoba-arm (pos? (:kotoba-arms s))}))
+        hollow-doc (vec (for [{:keys [path text]} audit]
+                          {:path path :class (if (flagged? text) "BOOTSTRAP-TOOL" "PRODUCT")}))
+        hollow-calc (vec (for [s scanned
+                               :when (or (pos? (:kotoba-nil s))
+                                         (and (zero? (:kotoba-arms s)) (pos? (+ (:guarded s) (:unguarded s)))))
+                               :when (not (:flagged s))]
+                           {:path (:path s) :class "PRODUCT"}))
+        host-only (vec (for [s scanned :when (pos? (:unguarded s))]
+                         {:path (:path s) :class (if (:flagged s) "BOOTSTRAP-TOOL" "PRODUCT")
+                          :tokens (:unguarded s)}))
+        union (into (sorted-set)
+                    (for [r (concat hollow-doc hollow-calc host-only entries)
+                          :when (= "PRODUCT" (:class r))
+                          :when (re-find #"^src/" (:path r))]
+                      (:path r)))
+        prod (fn [rows] (count (filter #(= "PRODUCT" (:class %)) rows)))
+        launchers-product (prod launchers)]
+    {:metrics {:product-total (+ launchers-product (count union))
+               :product-launchers launchers-product
+               :product-src-union (count union)
+               :product-nbb-entries (prod entries)
+               :product-hollow-computed (count hollow-calc)
+               :product-host-token-files (prod host-only)
+               :kotoba-nil-forms (reduce + 0 (map :kotoba-nil scanned))
+               :unguarded-host-tokens (reduce + 0 (map :unguarded scanned))}
+     ;; the audit rows come from a static document (docs/selfhost-real-vs-hollow-20261001.md): reported, not
+     ;; ratcheted, so that adding or restoring the document is not a PRODUCT growth (they stay in the union, as in the .sh)
+     :info {:product-hollow-audit (count hollow-doc)
+            :src-files (count scanned)
+            :src-files-with-kotoba-arm (count (filter #(pos? (:kotoba-arms %)) scanned))
+            :guarded-host-tokens (reduce + 0 (map :guarded scanned))}
+     :detail {:launchers launchers
+              :product-src-union (vec union)}}))
+
+(defn- host-literal? [tok]
+  (boolean
+   (or (re-find #"^#\"" tok)                 ; regex literal
+       (= tok "#js")                         ; #js tagged literal
+       (re-find #"^\\" tok)                  ; char literal
+       (re-find #"^js/" tok)                 ; host global
+       (re-find #"^\.[A-Za-z\-]" tok)        ; (.method x) / (.-field x)
+       (= tok "..")
+       (re-find #"^(java|javax|goog)\." tok)
+       (re-find #"^clojure\.java" tok)
+       (re-find #"^\"node:" tok))))
+
+(defn kotoba-arm-host-literals
+  "G0: host literals read by the Kotoba reader inside a `#?(:kotoba ...)` arm:
+  regex, #js, char literals, js/ globals, .method interop, java./goog.
+  names and node: requires. A token counts when every enclosing reader
+  conditional is in the value position of its :kotoba key. Answers
+  {:count n :samples [up to 5 \"offset:token\"]}."
+  [text]
+  (let [n (count text)
+        st (volatile! {:depth 0 :frames [] :count 0 :samples []})
+        in-arm? (fn [frames] (and (seq frames) (every? (fn [f] (and (= ":kotoba" (:fb f)) (odd? (:fn f)))) frames)))
+        hit! (fn [i tok] (vswap! st (fn [s] (-> s (update :count inc)
+                                                (update :samples #(if (< (count %) 5) (conj % (str i ":" tok)) %))))))
+        atom-done
+        (fn [i tok]
+          (when (and (not= "" tok) (not (re-find #"^#\?" tok)))
+            (let [{:keys [depth frames]} @st]
+              (when (and (in-arm? frames) (host-literal? tok)) (hit! i tok))
+              (when (and (seq frames) (= depth (:fd (peek frames))))
+                (let [f (peek frames)
+                      f (if (even? (:fn f)) (assoc f :fb tok) f)]
+                  (vswap! st assoc :frames (conj (pop frames) (update f :fn inc))))))))]
+    (loop [i 0 tok "" instr false esc false]
+      (if (>= i n)
+        (atom-done i tok)
+        (let [c (.charAt text i)]
+          (cond
+            instr
+            (let [tok (str tok c)]
+              (cond esc (recur (inc i) tok true false)
+                    (= c "\\") (recur (inc i) tok true true)
+                    (= c "\"") (do (atom-done i tok) (recur (inc i) "" false false))
+                    :else (recur (inc i) tok true false)))
+            (= c ";")
+            (do (atom-done i tok)
+                (recur (loop [j i] (if (and (< j n) (not= "\n" (.charAt text j))) (recur (inc j)) j)) "" false false))
+            ;; `#"` opens a regex literal: the string token keeps its `#`
+            (= c "\"") (if (= tok "#")
+                         (recur (inc i) "#\"" true false)
+                         (do (atom-done i tok) (recur (inc i) c true false)))
+            (= c "\\") (recur (+ i 2) (str tok c (if (< (inc i) n) (.charAt text (inc i)) "")) false false)
+            (re-find #"[ \t\r\n,]" c) (do (atom-done i tok) (recur (inc i) "" false false))
+            (re-find #"[\(\[\{]" c)
+            (let [isrc (and (= c "(") (or (= tok "#?") (= tok "#?@")))]
+              (atom-done i tok)
+              (vswap! st update :depth inc)
+              (when isrc (vswap! st update :frames conj {:fd (:depth @st) :fn 0 :fb ""}))
+              (recur (inc i) "" false false))
+            (re-find #"[\)\]\}]" c)
+            (do (atom-done i tok)
+                (let [{:keys [depth frames]} @st]
+                  (when (and (seq frames) (= depth (:fd (peek frames))))
+                    (vswap! st update :frames pop)))
+                (vswap! st update :depth dec)
+                (let [{:keys [depth frames]} @st]
+                  (when (and (seq frames) (= depth (:fd (peek frames))))
+                    (vswap! st assoc :frames (conj (pop frames) (update (peek frames) :fn inc)))))
+                (recur (inc i) "" false false))
+            :else (recur (inc i) (str tok c) false false)))))
+    (select-keys @st [:count :samples])))
+
+(defn native-gates-allowlist
+  "The entries of the `native-gates #{...}` set of scripts/check-workflows.cljk,
+  or nil when the set cannot be found (the driver then fails closed)."
+  [text]
+  (when-let [m (re-find #"native-gates\s+#\{([^}]*)\}" (or text ""))]
+    (vec (map second (re-seq #"\"([^\"]+\.sh)\"" (second m))))))
