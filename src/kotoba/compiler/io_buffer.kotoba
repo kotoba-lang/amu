@@ -2,7 +2,7 @@
 (ns kotoba.compiler.io-buffer
   {:kotoba/export [empty-buffer from-bytes from-string from-chunks append-chunk concat-buffers
                    byte-count chunk-count chunk-at start-cursor next-byte as-text text-buffer
-                   start-text-cursor next-code-point drop-prefix]}
+                   start-text-cursor next-code-point drop-prefix validated-buffer]}
   (:schemas
    {:io.buffer/value [:record :io.buffer/value [[:chunks [:list :bytes]] [:size :i64]]]
     :io.buffer/text [:record :io.buffer/text [[:value [:ref :io.buffer/value]]]]
@@ -44,6 +44,8 @@
       (if (= (byte-count (result-value-of [:result [:ref :io.buffer/value] :document] built (empty-buffer)))
              (byte-count value)) built
         (result-err-of [:result [:ref :io.buffer/value] :document] (error :buffer/size-mismatch 0))))))
+(defn validated-buffer [value [:ref :io.buffer/value]] [:result [:ref :io.buffer/value] :document]
+  (checked value))
 (defn append-chunk [value [:ref :io.buffer/value] bytes :bytes] [:result [:ref :io.buffer/value] :document]
   (let [valid (checked value)]
     (if (not (result-ok?-of [:result [:ref :io.buffer/value] :document] valid)) valid

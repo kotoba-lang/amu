@@ -1,6 +1,6 @@
 ;; Complete native filesystem framing. Provider acknowledgement is mandatory.
 (ns kotoba.compiler.filesystem-wire
-  {:kotoba/export [request request-bytes answer answer-bytes answer-chunks entries]}
+  {:kotoba/export [request request-bytes request-chunks request-staged answer answer-bytes answer-chunks entries]}
   (:require [kotoba.compiler.io-buffer :as buffer]))
 
 (defn- failure [message :string] :document
@@ -8,15 +8,15 @@
                 (document-keyword :message) (document-string message)))
 (defn- form-letter [form :i64] :string
   (case form 0 "A" 1 "B" 2 "C" 3 "D" 4 "E" 5 "F" 6 "G" 7 "H"
-    8 "I" 9 "J" 10 "K" 11 "L" 12 "M" 13 "N" 14 "O" 15 "P" ""))
+    8 "I" 9 "J" 10 "K" 11 "L" 12 "M" 13 "N" 14 "O" 15 "P" 16 "Q" ""))
 (defn- tail-form? [form :i64] :bool
-  (or (= form 1) (= form 2) (= form 4) (= form 7) (= form 11) (= form 13)))
+  (or (= form 1) (= form 2) (= form 4) (= form 7) (= form 11) (= form 13) (= form 16)))
 
 (defn request [form :i64 path :string tail :string] [:result :string :document]
   "All sixteen app-data forms; browse uses form 0 and an empty tail.
   Only NUL is excluded from a nonempty path, as in the native path domain."
   (cond
-    (or (< form 0) (> form 15))
+    (or (< form 0) (> form 16))
     (result-err-of [:result :string :document] (failure "unknown filesystem form"))
     (or (= (string-byte-length path) 0) (>= (string-find-byte path 0 0) 0))
     (result-err-of [:result :string :document] (failure "filesystem path is empty or holds NUL"))
@@ -39,6 +39,40 @@
           (result-error-of [:result :string :document] header (document-null)))
         (result-ok-of [:result :bytes :document]
           (bytes-concat (string-to-utf8 (result-value-of [:result :string :document] header "")) tail))))))
+
+(defn- framed-chunks [header [:result :string :document] payload [:ref :io.buffer/value]] [:result [:list :bytes] :document]
+    (let [valid (buffer/validated-buffer payload)]
+      (cond
+        (not (result-ok?-of [:result :string :document] header))
+        (result-err-of [:result [:list :bytes] :document] (result-error-of [:result :string :document] header (document-null)))
+        (not (result-ok?-of [:result [:ref :io.buffer/value] :document] valid))
+        (result-err-of [:result [:list :bytes] :document]
+          (result-error-of [:result [:ref :io.buffer/value] :document] valid (document-null)))
+        :else
+        (let [bytes (string-to-utf8 (result-value-of [:result :string :document] header ""))
+              value (result-value-of [:result [:ref :io.buffer/value] :document] valid (buffer/empty-buffer))]
+          (if (> (buffer/byte-count value) (- 9223372036854775807 (bytes-count bytes)))
+            (result-err-of [:result [:list :bytes] :document] (failure "segmented filesystem request exceeds i64 size"))
+            (loop [index 0 out (typed-list-conj [:list :bytes] (typed-list-new [:list :bytes]) bytes)]
+              (if (= index (buffer/chunk-count value)) (result-ok-of [:result [:list :bytes] :document] out)
+                (let [chunk (buffer/chunk-at value index)]
+                  (if (not (option-some?-of [:option :bytes] chunk))
+                    (result-err-of [:result [:list :bytes] :document] (failure "malformed segmented filesystem payload"))
+                    (recur (+ index 1)
+                      (typed-list-conj [:list :bytes] out (option-value-of [:option :bytes] chunk (bytes-empty)))))))))))))
+
+(defn request-chunks [form :i64 path :string payload [:ref :io.buffer/value]] [:result [:list :bytes] :document]
+  (if (not (or (= form 1) (= form 2)))
+    (result-err-of [:result [:list :bytes] :document] (failure "segmented filesystem request requires write or append"))
+    (framed-chunks (request form path "") payload)))
+(defn- octal [mode :i64] :string
+  (loop [n mode digits ""]
+    (if (< n 8) (string-concat (string-from-i64 n) digits)
+      (recur (quot n 8) (string-concat (string-from-i64 (- n (* 8 (quot n 8)))) digits)))))
+(defn request-staged [path :string mode :i64 payload [:ref :io.buffer/value]] [:result [:list :bytes] :document]
+  (if (or (< mode 0) (> mode 511))
+    (result-err-of [:result [:list :bytes] :document] (failure "staged filesystem mode exceeds permission bits"))
+    (framed-chunks (request 16 path (string-concat (octal mode) "\u0000")) payload)))
 
 (defn- acknowledged-bytes? [response :bytes] :bool
   (if (< (bytes-count response) 5) false

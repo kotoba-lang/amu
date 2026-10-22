@@ -1,6 +1,7 @@
 ;; Canonical filesystem capability boundary, only with acknowledged FS2 frames.
 (ns kotoba.compiler.filesystem
-  {:kotoba/export [app-data browse read-bytes read-range read-chunks read-range-chunks write-bytes! append-bytes!]}
+  {:kotoba/export [app-data browse read-bytes read-range read-chunks read-range-chunks
+                   write-bytes! append-bytes! write-chunks! append-chunks! stage-member!]}
   (:require [kotoba.compiler.filesystem-wire :as wire]
             [kotoba.compiler.io-buffer :as buffer])
   (:capabilities #{:fs/app-data :fs/browse}))
@@ -80,3 +81,35 @@
     (result-err-of [:result [:ref :io.buffer/value] :document]
       (fs-error "filesystem range requires nonnegative offset and length" path))
     (read-data-chunks 4 path (string-concat (string-from-i64 offset) (string-concat ":" (string-from-i64 length))))))
+
+(defn- write-data-chunks [form :i64 path :string payload [:ref :io.buffer/value]] [:result [:ref :io.buffer/value] :document]
+  (let [request (wire/request-chunks form path payload)]
+    (if (not (result-ok?-of [:result [:list :bytes] :document] request))
+      (result-err-of [:result [:ref :io.buffer/value] :document]
+        (result-error-of [:result [:list :bytes] :document] request (document-null)))
+      (wire/answer-chunks (typed-cap-call :fs/app-data [:list :bytes] [:list :bytes]
+                            (result-value-of [:result [:list :bytes] :document] request (typed-list-new [:list :bytes])))))))
+(defn write-chunks! [path :string payload [:ref :io.buffer/value]] [:result [:ref :io.buffer/value] :document]
+  (write-data-chunks 1 path payload))
+(defn append-chunks! [path :string payload [:ref :io.buffer/value]] [:result [:ref :io.buffer/value] :document]
+  (write-data-chunks 2 path payload))
+
+(defn stage-member! [path :string mode :i64 payload [:ref :io.buffer/value]] [:result :bool :document]
+  (let [request (wire/request-staged path mode payload)]
+    (if (not (result-ok?-of [:result [:list :bytes] :document] request))
+      (result-err-of [:result :bool :document] (result-error-of [:result [:list :bytes] :document] request (document-null)))
+      (let [answer (wire/answer-chunks (typed-cap-call :fs/app-data [:list :bytes] [:list :bytes]
+                                       (result-value-of [:result [:list :bytes] :document] request (typed-list-new [:list :bytes]))))]
+        (if (not (result-ok?-of [:result [:ref :io.buffer/value] :document] answer))
+          (result-err-of [:result :bool :document]
+            (result-error-of [:result [:ref :io.buffer/value] :document] answer (document-null)))
+          (let [value (result-value-of [:result [:ref :io.buffer/value] :document] answer (buffer/empty-buffer))
+                first (buffer/chunk-at value 0)]
+            (if (not (and (= (buffer/byte-count value) 1) (= (buffer/chunk-count value) 1)
+                          (option-some?-of [:option :bytes] first)))
+              (result-err-of [:result :bool :document] (fs-error "output member staging did not succeed" path))
+              (let [bytes (option-value-of [:option :bytes] first (bytes-empty))]
+                (if (= (bytes-count bytes) 1)
+                  (if (= (bytes-at bytes 0) 49) (result-ok-of [:result :bool :document] true)
+                    (result-err-of [:result :bool :document] (fs-error "output member staging did not succeed" path)))
+                  (result-err-of [:result :bool :document] (fs-error "malformed output member staging answer" path)))))))))))

@@ -116,7 +116,8 @@
       (= 1 (has present 14)) 15
       :else 0)))
 
-;; op 2: the forms this image answers: every one of the sixteen. A form
+;; op 2: the original sixteen forms plus proposed FS2-only stage-member (16).
+;; The latter is reachable only under kind 11, never a legacy token. A form
 ;; answered 0 here traps BY NAME (:slot/unimplemented naming the form); none
 ;; does since APPEND, RANGE and CHMOD landed (C3, second half). APPEND is
 ;; written through at each call where the loader buffers consecutive appends
@@ -124,7 +125,7 @@
 (defn- form-implemented [form]
   (cond
     (< form 0) 0
-    (> form 15) 0
+    (> form 16) 0
     :else 1))
 
 ;; op 17: how many occurrences of its token a form admits. The loader's
@@ -595,22 +596,24 @@
 (defn- scope-absent-answer [form]
   (cond
     (< form 0) -1
-    (> form 15) -1
+    (> form 16) -1
     (or (= form 3) (= form 7) (= form 8) (= form 9)
-        (= form 10) (= form 11) (= form 12)) 1
+        (= form 10) (= form 11) (= form 12) (= form 16)) 1
     :else 0))
 
 ;; op 49: the typed fs/app-data contract constrains the form before path
 ;; access. Raw calls require FS2 in the mechanism, never legacy token parsing.
-;; 1 = old string/string surface; 8 = bytes/bytes write or append;
-;; 9 = string/bytes and 10 = string/list<bytes> read or range. No other form
+;; 1 = old string/string surface; 8 = raw write or append;
+;; 11 = segmented write/append or exclusive mode-before-data stage-member;
+;; 9 = string/bytes and 10 = string/list<bytes> read or range. No other original form
 ;; gains a raw-byte meaning; one provider operation retains one descriptor.
 (defn- typed-fs-form-admitted [kind form]
   (cond
     (< form 0) 0
-    (> form 15) 0
-    (= kind 1) 1
+    (> form 16) 0
+    (= kind 1) (if (< form 16) 1 0)
     (= kind 8) (if (or (= form 1) (= form 2)) 1 0)
+    (= kind 11) (if (or (= form 1) (= form 2) (= form 16)) 1 0)
     (or (= kind 9) (= kind 10)) (if (or (= form 0) (= form 4)) 1 0)
     :else 0))
 
