@@ -2,8 +2,14 @@
 
 - Status: decisions 1 and 3 are IMPLEMENTED (2026-10-22; code + tests in
   kotoba.compiler.accelerator{,-kir,-targets,-subgroup-reduce} and their
-  tests). Decision 2 (sealed SPIR-V build step) is accepted design only --
-  nothing of it is implemented. UNMEASURED where a measurement is owed.
+  tests). Decision 2's PURE HALF is IMPLEMENTED (2026-10-22; code + tests in
+  kotoba.compiler.accelerator-spirv{,-test}: payload construction, sealing,
+  and integrity-plus-provenance verification of the
+  :kotoba.gpu-spirv-artifact/v1 format). Decision 2's HOST HALF -- the
+  `amu gpu-spirv-compile` entry point, the loader-cache file written from the
+  sealed bytes, the harnesses consuming sealed artifacts -- is accepted
+  design only and nothing of it is implemented. UNMEASURED where a
+  measurement is owed.
 - Date: 2026-10-22
 - Tracking: closes ADR-0356's execution-path honesty gap "(a)" on paper.
   The Intel row (JUN-59) and the ARM row (JUN-60) both block on (a); parent

@@ -1,0 +1,159 @@
+(ns kotoba.compiler.accelerator-spirv-test
+  "ADR-0359 decision 2's pure half: the sealed SPIR-V build-step artifact.
+  The known-answer vectors are what make `bytes-sha256` a raw-bytes SHA-256
+  rather than an opinion -- FIPS 180-4's own examples pinned here. Nothing
+  in this file is a measurement; it is provenance machinery."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.artifact.core :as artifact]
+            [kotoba.compiler.accelerator :as accelerator]
+            [kotoba.compiler.accelerator-spirv :as spirv]))
+
+(defn- ewise-source []
+  (accelerator/compile-kernel
+   (accelerator/kernel "ewise_add_f32" :ewise :add {:workgroup-size 256})
+   :glsl-v1))
+
+(defn- reduce-source []
+  (accelerator/compile-kernel
+   (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 128})
+   :glsl-v1))
+
+;; A plausible SPIR-V prefix (magic 0x07230203 little-endian, version word)
+;; plus a few payload bytes -- the tests care about the bytes as octets, not
+;; about disassembling them.
+(def ^:private fake-spv
+  [0x03 0x02 0x23 0x07 0x00 0x00 0x01 0x00 0xde 0xad 0xbe 0xef])
+
+(def ^:private glslang-tool
+  (spirv/tool-identity
+   "glslang"
+   "GlslangValidator version 11.16.0"
+   ["glslang" "-V" "--target-env" "vulkan1.1" "-S" "comp" "kernel.comp" "-o" "kernel.spv"]))
+
+(deftest bytes-sha256-is-sha256-over-the-exact-bytes
+  (testing "FIPS 180-4 known-answer vectors"
+    (is (= "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+           (spirv/bytes-sha256 [])))
+    (is (= "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+           (spirv/bytes-sha256 [97 98 99]))))
+  (testing "it is a digest of the bytes, not of EDN text of a byte vector"
+    (is (not= (artifact/sha256 [97 98 99]) (spirv/bytes-sha256 [97 98 99]))))
+  (testing "one flipped byte is one different digest"
+    (is (not= (spirv/bytes-sha256 fake-spv)
+              (spirv/bytes-sha256 (assoc fake-spv 8 0x00))))))
+
+(deftest spirv-artifact-binds-provenance-bytes-and-tool
+  (let [source (ewise-source)
+        sealed (spirv/seal-spirv-artifact source fake-spv glslang-tool)]
+    (testing "the format and the seal"
+      (is (= :kotoba.gpu-spirv-artifact/v1 (:format sealed)))
+      (is (artifact/valid-seal? sealed)))
+    (testing "the provenance chain and regeneration key are bound"
+      (is (= (:kir-sha256 source) (:kir-sha256 sealed)))
+      (is (= (:code-sha256 source) (:code-sha256 sealed)))
+      (is (= :glsl-v1 (:target sealed)))
+      (is (= :baseline (:variant sealed)))
+      (is (= source (:source-artifact sealed))))
+    (testing "the bytes ride inline in deterministic encoding and hash to the seal"
+      (is (= fake-spv (:spirv-bytes sealed)))
+      (is (= (spirv/bytes-sha256 fake-spv) (:spirv-sha256 sealed))))
+    (testing "the tool identity is recorded verbatim"
+      (is (= glslang-tool (:tool sealed))))
+    (testing "the bindings count is derived from the KIR op and recorded"
+      (is (= 4 (:bindings sealed))))
+    (testing "sealing is deterministic"
+      (is (= sealed (spirv/seal-spirv-artifact source fake-spv glslang-tool))))
+    (testing "verification answers the :provenance claim and returns cleanly"
+      (is (= {:claim :provenance} (spirv/verify-spirv-artifact! sealed))))
+    (testing "a reduce source binds 3 bindings and its concrete variant"
+      (let [rd (spirv/seal-spirv-artifact (reduce-source) fake-spv glslang-tool)]
+        (is (= 3 (:bindings rd)))
+        (is (= :baseline (:variant rd)))
+        (is (= {:claim :provenance} (spirv/verify-spirv-artifact! rd))))
+      (let [sg-source (accelerator/compile-kernel
+                       (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 128})
+                       :glsl-v1 :subgroup-reduce)
+            sg (spirv/seal-spirv-artifact sg-source fake-spv glslang-tool)]
+        (is (= :subgroup-reduce (:variant sg)))
+        (is (= {:claim :provenance} (spirv/verify-spirv-artifact! sg)))))))
+
+(deftest rebuild-claim-upgrades-on-byte-equality-only
+  (let [source (ewise-source)
+        sealed (spirv/seal-spirv-artifact source fake-spv glslang-tool)]
+    (testing "byte-equal rebuilt bytes upgrade the claim"
+      (is (= {:claim :verified-by-rebuild}
+             (spirv/verify-spirv-artifact! sealed {:rebuilt-bytes fake-spv}))))
+    (testing "byte inequality is a refusal, never a silent :provenance"
+      (is (thrown-with-msg? Exception #"rebuild mismatch"
+                            (spirv/verify-spirv-artifact!
+                             sealed {:rebuilt-bytes (assoc fake-spv 8 0x00)}))))
+    (testing "no rebuilt bytes: the claim stays provenance and is labeled so"
+      (is (= {:claim :provenance} (spirv/verify-spirv-artifact! sealed {}))))))
+
+(deftest no-tool-identity-no-seal
+  (let [source (ewise-source)]
+    (testing "the constructor refuses an unattributable record"
+      (is (thrown-with-msg? Exception #"refused, not sealed"
+                            (spirv/tool-identity "" "some version" ["glslang"])))
+      (is (thrown-with-msg? Exception #"refused, not sealed"
+                            (spirv/tool-identity "glslang" "" ["glslang"])))
+      (is (thrown-with-msg? Exception #"refused, not sealed"
+                            (spirv/tool-identity "glslang" "v1" [])))
+      (is (thrown-with-msg? Exception #"refused, not sealed"
+                            (spirv/tool-identity "glslang" "v1" ["glslang" 3]))))
+    (testing "the seal refuses without a tool identity"
+      (is (thrown-with-msg? Exception #"refused, not sealed"
+                            (spirv/seal-spirv-artifact source fake-spv nil)))
+      (is (thrown-with-msg? Exception #"refused, not sealed"
+                            (spirv/seal-spirv-artifact source fake-spv
+                                                       {:name "glslang"}))))
+    (testing "verification refuses an artifact whose tool identity is gone"
+      (let [stripped (artifact/seal (dissoc (spirv/seal-spirv-artifact
+                                             source fake-spv glslang-tool)
+                                            :tool))]
+        (is (thrown-with-msg? Exception #"no well-formed tool identity"
+                              (spirv/verify-spirv-artifact! stripped)))))))
+
+(deftest bytes-integrity-fails-closed
+  (let [source (ewise-source)
+        sealed (spirv/seal-spirv-artifact source fake-spv glslang-tool)]
+    (testing "the seal refuses bytes that are not octets"
+      (is (thrown-with-msg? Exception #"invalid SPIR-V bytes"
+                            (spirv/seal-spirv-artifact source [0 256] glslang-tool)))
+      (is (thrown-with-msg? Exception #"invalid SPIR-V bytes"
+                            (spirv/seal-spirv-artifact source [0 -1] glslang-tool)))
+      (is (thrown-with-msg? Exception #"invalid SPIR-V bytes"
+                            (spirv/seal-spirv-artifact source "MZ" glslang-tool))))
+    (testing "bytes that no longer hash to the sealed digest are refused"
+      (let [swapped (artifact/seal (assoc sealed :spirv-bytes
+                                          (assoc fake-spv 8 0x00)))]
+        (is (thrown-with-msg? Exception #"bytes hash mismatch"
+                              (spirv/verify-spirv-artifact! swapped)))))
+    (testing "a resealed envelope over non-octet bytes is refused"
+      (let [bad (artifact/seal (assoc sealed :spirv-bytes [0 256]))]
+        (is (thrown-with-msg? Exception #"bytes hash mismatch"
+                              (spirv/verify-spirv-artifact! bad)))))))
+
+(deftest provenance-binding-fails-closed
+  (let [source (ewise-source)
+        sealed (spirv/seal-spirv-artifact source fake-spv glslang-tool)]
+    (testing "a bound field that disagrees with the source artifact is refused"
+      (doseq [tamper [{:kir-sha256 (apply str (repeat 64 "0"))}
+                      {:code-sha256 (apply str (repeat 64 "0"))}
+                      {:target :wgsl-v1}
+                      {:variant :subgroup-reduce}
+                      {:bindings 3}]]
+        (is (thrown-with-msg? Exception #"provenance mismatch"
+                              (spirv/verify-spirv-artifact!
+                               (artifact/seal (merge sealed tamper)))))))
+    (testing "the embedded source artifact is hostile-re-lowered, unchanged"
+      (let [tampered-source (artifact/seal (assoc source :code "void main(){}"))
+            over-it (spirv/seal-spirv-artifact source fake-spv glslang-tool)
+            spliced (artifact/seal (assoc over-it :source-artifact tampered-source))]
+        (is (thrown-with-msg? Exception #"regeneration mismatch"
+                              (spirv/verify-spirv-artifact! spliced)))))
+    (testing "the seal refuses to build over an unverified source artifact"
+      (let [tampered-source (artifact/seal (assoc source :code "void main(){}"))]
+        (is (thrown-with-msg? Exception #"regeneration mismatch"
+                              (spirv/seal-spirv-artifact tampered-source fake-spv
+                                                         glslang-tool)))))))
