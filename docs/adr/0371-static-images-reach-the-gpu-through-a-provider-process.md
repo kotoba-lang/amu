@@ -3,8 +3,9 @@
 Date: 2026-10-22
 Status: Decision 1 (the platform boundary) accepted by the owner on 2026-10-22.
 The rest is Proposed. Wire 42 is not admitted until security integration signs
-off (Decision 7). Step 1 (the protocol table) is implemented; nothing else is.
-Tracking: JUN-285 (this ADR), JUN-291 (step 1). Related: JUN-109 (wire 42 admission), JUN-282
+off (Decision 7). Steps 1 (the protocol table) and 2 (the runtime transport)
+are implemented; nothing else is.
+Tracking: JUN-285 (this ADR), JUN-291 (step 1), JUN-294 (step 2). Related: JUN-109 (wire 42 admission), JUN-282
 (`amu run` on static images), JUN-283, AWAI-12 (murakumo inference on Amu
 selfhost).
 
@@ -171,8 +172,9 @@ Only the broker's defects change:
   refused by name. Guests that pass the same paths keep working; the grant
   decides which files.
 * **Named refusals.** An answer is `!<code> <text>`. The guest runtime still
-  traps (exit 120), and the structured report carries the code. Codes live in
-  the decision table.
+  traps (exit 120). Before the trap it writes one stderr line that names the
+  refusal: `KEXE_TRAP {:kind :capability :wire 42 :refusal :<code>}`. Codes
+  live in the decision table.
 * **Byte cap.** The grant bounds the total device bytes (`ALLOC` plus `MAP`).
   A request over the cap is refused, not attempted.
 * **Answer bound.** An answer never exceeds the runtime's value bound
@@ -191,7 +193,7 @@ Only the broker's defects change:
 * **New knob.** `KEXE_CAP_RESOURCES_42=<request-fd>,<answer-fd>`, named like
   `KEXE_CAP_RESOURCES_35`. Before the sandbox, `fstat` checks both:
   * each must be a FIFO or a socket;
-  * each must be fd 3 or higher.
+  * each must be fd 3..1023, and the two must differ.
 
   If wire 42 is in `KEXE_ALLOW` and the knob is missing or invalid, the image
   exits 2. It fails closed.
@@ -202,6 +204,9 @@ Only the broker's defects change:
   set. Nothing else is added.
 * **Memory.** Answers are interned into the string pool, which is already
   mapped. RLIMIT_AS does not change.
+* **SIGPIPE.** When wire 42 is granted, the runtime ignores SIGPIPE. A provider
+  that is gone then gives EPIPE, and the call traps (exit 120) instead of the
+  process dying of a signal.
 
 ### 5. The provider
 
@@ -272,8 +277,7 @@ admitted earlier wires. It changes:
 * `seed/00-ns` and `seed/20-names`, through their generators;
 * `seed/21-check`: `ck-wire-kw`, `ck-wire-ok`, the shapes and `ck-r6b-capkw`;
 * `seed/30-lower`: `lw-wire`;
-* `seed/90-drv`: the policy names;
-* the static runtimes `seed/76` and `seed/77`.
+* `seed/90-drv`: the policy names.
 
 These files are hash-pinned. The round needs:
 
@@ -282,6 +286,28 @@ These files are hash-pinned. The round needs:
 * a new adoption receipt;
 * a new static root receipt;
 * the security-integration sign-off.
+
+**Which pin each step moves.** Two closures pin the seed, and they share the
+frontend (`00-ns`, `20-names`, `21-check`, `30-lower`):
+
+| closure | pinned by | holds |
+| --- | --- | --- |
+| `seed/MANIFEST` (adopted) | `seed/adoption-20261017.json`, `seed/compiler-core.json` | the frontend, `90-drv` and the adopted backend; not `76`/`77` |
+| `seed/X86_64-LINUX-SELFHOST-MANIFEST` | `seed/bootstrap/aarch64-linux-static-root.json` | the frontend, the static backends and the runtimes `76`/`77` |
+
+`scripts/seed/selfhost-bootstrap.py` fails on "adopted source drift" when the
+`seed/MANIFEST` unity changes, and only records `rootReproduces` for the
+static root.
+
+* **Step 2 changes only `seed/76` and `seed/77`.** They are the runtime text
+  embedded in every static image, and only the Linux selfhost closure holds
+  them. So step 2 needs a C-free root re-pin and no adoption round:
+  1. The old root builds S1.
+  2. S2 = S3.
+  3. S3 becomes the root.
+  4. A second run shows root = S1 = S2 = S3.
+* **Step 3 changes the shared frontend.** It moves both pins: a new adoption
+  receipt with the conformance evidence of ADR 0370, and another root re-pin.
 
 ### 8. Platforms, in order
 
@@ -399,9 +425,23 @@ Each step is its own PR, in this order:
      * The string in `src/kotoba/compiler/embedded_resources.cljk` was
        rewritten to equal that file byte-for-byte, without running the CLJK
        generator.
-2. **Guest runtime.** `KEXE_CAP_RESOURCES_42`, the fd checks, the transport in
-   `seed/76` and `seed/77`, and the seccomp read rule. Test against a scripted
-   fake provider; this needs no GPU and runs in CDCI.
+2. **Guest runtime.** Done (JUN-294).
+   * **Runtime.** `seed/76` and `seed/77` have `KEXE_CAP_RESOURCES_42`, the fd
+     checks, the framed transport, named refusal lines, ignored SIGPIPE and
+     the seccomp read rule. Nothing in them is active unless wire 42 is in
+     `KEXE_ALLOW`.
+   * **Contract.** `seed/X86_64-LINUX-ABI` states all of it.
+   * **Root.** Re-pinned C-free to `cb0a7d02…`. The previous root `27440856…`
+     is kept in the receipt's history.
+   * **Check.** `scripts/seed/check-gpu-runtime-transport.py` covers 10
+     start-up cases with the product compiler, which still refuses wire 42
+     (E2115). It then builds a test-only compiler, with wire 42 admitted in
+     memory and never adopted, and runs 8 transport cases against a scripted
+     provider.
+   * **Seccomp control.** One case uses a compiler whose read rule names
+     another fd; its guest must die of SIGSYS. It runs where the kernel
+     enforces seccomp.
+   * **Receipts.** `docs/evidence/gpu-runtime-transport-20261022/`.
 3. **Seed adoption round** admitting wire 42, with its receipts (JUN-109).
 4. **Launcher** (JUN-282): spawn, pipes, wall time, the GPU grant and the
    joined receipt.
