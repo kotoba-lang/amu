@@ -1,0 +1,66 @@
+;; Complete pure process/spawn wire codec. Provider authority stays separate.
+(ns kotoba.compiler.process-wire
+  {:kotoba/export [answer-exit answer-out request]}
+  (:require [kotoba.compiler.decimal-text :as decimal-text]))
+
+(defn- spawn-error [message :string] :document
+  (document-map (document-keyword :phase) (document-keyword :spawn)
+                (document-keyword :message) (document-string message)))
+
+(defn- arguments-document [program :string args [:list :string]] :document
+  (loop [index 0 out (document-vector (document-string program))]
+    (if (>= index (vector-count args))
+      out
+      (recur (+ index 1)
+             (document-vector-conj out
+               (document-string (typed-list-nth [:list :string] args index)))))))
+
+(defn- argument-has-separator? [program :string args [:list :string]] :bool
+  (if (>= (string-index-of program "ARG_SEP") 0)
+    true
+    (loop [index 0]
+      (if (>= index (vector-count args))
+        false
+        (if (>= (string-index-of (typed-list-nth [:list :string] args index) "ARG_SEP") 0)
+          true
+          (recur (+ index 1)))))))
+
+(defn request [program :string args [:list :string]] [:result :string :document]
+  "Encode PROGRAM and every argument in order; reject a token within any part."
+  (if (argument-has-separator? program args)
+    (result-err-of [:result :string :document]
+      (document-map (document-keyword :phase) (document-keyword :spawn)
+                    (document-keyword :message)
+                    (document-string "process/spawn argument holds the ARG_SEP token")
+                    (document-keyword :arguments) (arguments-document program args)))
+    (result-ok-of [:result :string :document]
+      (loop [index 0 out program]
+        (if (>= index (vector-count args))
+          out
+          (recur (+ index 1)
+                 (string-concat out
+                   (string-concat "ARG_SEP" (typed-list-nth [:list :string] args index)))))))))
+
+(defn answer-exit [answer :string] [:result :i64 :document]
+  "Read the first exit line with the complete canonical decimal-text contract."
+  (let [newline (string-index-of answer "\n")]
+    (if (< newline 0)
+      (result-err-of [:result :i64 :document]
+        (spawn-error "process/spawn answer has no exit line"))
+      (let [line (string-substring answer 0 newline)]
+        (if (decimal-text/decimal? line)
+          (result-ok-of [:result :i64 :document] (decimal-text/parse line))
+          (result-err-of [:result :i64 :document]
+            (document-map (document-keyword :phase) (document-keyword :spawn)
+                          (document-keyword :message)
+                          (document-string "process/spawn exit line is not a decimal")
+                          (document-keyword :line) (document-string line))))))))
+
+(defn answer-out [answer :string] [:result :string :document]
+  "Return all text after the first newline, without trimming or parsing exit."
+  (let [newline (string-index-of answer "\n")]
+    (if (< newline 0)
+      (result-err-of [:result :string :document]
+        (spawn-error "process/spawn answer has no exit line"))
+      (result-ok-of [:result :string :document]
+        (string-substring answer (+ newline 1) (string-byte-length answer))))))
