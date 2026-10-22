@@ -1,3 +1,6 @@
+;; Historical hosted implementation input; not the accepted native compiler
+;; IO route or a required gate. Canonical FS2 byte codec/capability source now
+;; exists, but this complete IO namespace and all callers remain unported.
 (ns kotoba.compiler.nbb.io
   "Minimal Node-`fs`-based file I/O for the nbb-native compile/check path
   (`bin/amu`'s Wasm and ordinary-native fast paths). This is a primary compiler
@@ -14,8 +17,10 @@
   WRITE + CHMOD + WRITE for a 0600-before-any-byte member, FSYNC, RENAME,
   and FSYNC of the directory. The order and the refusals are this module's;
   the handler makes one host call per request. The binary reads and writes
-  use the proposed `:bytes` payload of the same wire (`fs/app-data-bytes`),
-  which Kotoba's typed-cap-call cannot name yet."
+  use this historical adapter's `fs/app-data-bytes`. Canonical FS2 source
+  now spells bytes/bytes and string/bytes typed calls on the same wire;
+  full canonical GMIR/lowering/provider/artifact admission is still open.
+  The adapter is not a required fallback or native qualification receipt."
   {:kotoba/export [max-artifact-bytes read-artifact-text-file read-bounded-bytes-file read-text-file write-bytes! write-set! write-text!]}
   (:require [kotoba.compiler.decimal-text :as decimal-text]
             [kotoba.compiler.posix-path :as posix-path]

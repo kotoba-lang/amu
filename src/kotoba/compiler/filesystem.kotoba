@@ -1,6 +1,6 @@
 ;; Canonical filesystem capability boundary, only with acknowledged FS2 frames.
 (ns kotoba.compiler.filesystem
-  {:kotoba/export [app-data browse]}
+  {:kotoba/export [app-data browse read-bytes read-range write-bytes! append-bytes!]}
   (:require [kotoba.compiler.filesystem-wire :as wire])
   (:capabilities #{:fs/app-data :fs/browse}))
 
@@ -19,3 +19,48 @@
         (result-error-of [:result :string :document] request (document-null)))
       (wire/entries (typed-cap-call :fs/browse :string :string
                       (result-value-of [:result :string :document] request ""))))))
+
+(defn- fs-error [message :string path :string] :document
+  (document-map (document-keyword :phase) (document-keyword :fs)
+                (document-keyword :message) (document-string message)
+                (document-keyword :path) (document-string path)))
+
+(defn- read-data [form :i64 path :string tail :string] [:result :bytes :document]
+  (let [request (wire/request form path tail)]
+    (if (not (result-ok?-of [:result :string :document] request))
+      (result-err-of [:result :bytes :document]
+        (result-error-of [:result :string :document] request (document-null)))
+      (wire/answer-bytes (typed-cap-call :fs/app-data :string :bytes
+                           (result-value-of [:result :string :document] request ""))))))
+
+(defn read-bytes
+  "Read the complete provider answer as bytes, under its declared value budget.
+  An absent path and an empty file share the catalog's empty answer."
+  [path :string] [:result :bytes :document]
+  (read-data 0 path ""))
+
+(defn read-range
+  "Read a no-follow regular-file window using the existing offset:length tail.
+  Provider window/resource failures remain terminal; no truncated success."
+  [path :string offset :i64 length :i64] [:result :bytes :document]
+  (if (or (< offset 0) (< length 0))
+    (result-err-of [:result :bytes :document] (fs-error "filesystem range requires nonnegative offset and length" path))
+    (read-data 4 path
+      (string-concat (string-from-i64 offset) (string-concat ":" (string-from-i64 length))))))
+
+(defn- write-data [form :i64 path :string bytes :bytes] [:result :bytes :document]
+  (let [request (wire/request-bytes form path bytes)]
+    (if (not (result-ok?-of [:result :bytes :document] request))
+      (result-err-of [:result :bytes :document]
+        (result-error-of [:result :bytes :document] request (document-null)))
+      (wire/answer-bytes (typed-cap-call :fs/app-data :bytes :bytes
+                           (result-value-of [:result :bytes :document] request (bytes-empty)))))))
+
+(defn write-bytes!
+  "Write a raw byte value; return the acknowledged provider payload unchanged.
+  This primitive alone does not establish atomic publication or durability."
+  [path :string bytes :bytes] [:result :bytes :document]
+  (write-data 1 path bytes))
+
+(defn append-bytes! [path :string bytes :bytes] [:result :bytes :document]
+  (write-data 2 path bytes))
