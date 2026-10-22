@@ -1,0 +1,67 @@
+{
+  "schema": "amu.gate3.adoption-repin-proposal.v1",
+  "date": "2026-10-22",
+  "status": "Measured on an FS1 bootstrap snapshot; NOT applied to seed/adoption-20261017.json.",
+  "snapshot": "origin/main d13c486e + PR #1428 588a96a4 seed/00-ns,10-lex,11-read,20-names,21-check + KG runtimes 76/77 from 0fb68cb6 (02-io and 50-out remain main's FS1 versions)",
+  "run": "scripts/seed/selfhost-bootstrap.py on aarch64 podman with the two adopted pin asserts printed instead of enforced (scratch edit, not committed)",
+  "result": {
+    "S2EqualsS3": "be60c6cd2d05b2b3",
+    "rootReproduces": false,
+    "adoptedG1G2G3Equal": true,
+    "runtimeCases": 24,
+    "hardeningProbes": "pass"
+  },
+  "adopted": {
+    "sourceUnity": {
+      "old": "a6906f3b48825aeca44607de5bd4c67305e2ef8bc9ac4cbef3074236f4b2ae0d",
+      "new": "05e54585fb9c0111067633694f880eb9554cdc45aa66c3f8a643202caa32d134",
+      "bytes": 2799932
+    },
+    "nativeImage": {
+      "old": "b10e381344a1f5a8b82cac981c0011bd20ecbcc4b48dd5f5dce97364c74e8a00",
+      "new": "fe01d4d2e895c503daf888c41e003916cbcd75f577af57ceb80616b675bdffe9",
+      "bytes": 2567080
+    },
+    "container": {
+      "sha256": "2bdf8064bcecc05ae53f72ab4c8acd641f01a4003ab1bbe61b1544aacc91421b",
+      "bytes": 2567107
+    },
+    "changedSourceFiles": [
+      {
+        "path": "seed/00-ns.kotoba",
+        "oldSHA256": "8d0c0a62a8feda3007d9f7f2140173bb3f724b17e8cee1bdeca2b0a805cb3475",
+        "newSHA256": "96fe1cbbf277ed46aa7ff6256fed9a841b56b3a8c9f8b7465bcb6e95f81f6e6f",
+        "newBytes": 14769
+      },
+      {
+        "path": "seed/10-lex.kotoba",
+        "oldSHA256": "a8b8128b9e00564f3d86a81b9c69e692efa0114a3cd0083e401cda8577086d6b",
+        "newSHA256": "614d0a3a27857bf0cd4c0612bacd56d94572e5526ccacbb8e1cc09adbea2dd39",
+        "newBytes": 25995
+      },
+      {
+        "path": "seed/11-read.kotoba",
+        "oldSHA256": "89fd65139a4502f96c87807db80d4cbaa15913ea75788eb3b647dcc9556e0392",
+        "newSHA256": "d70d97988f32b6f2004def94f0862725ae8f738672bb4442071680f68c520b87",
+        "newBytes": 11283
+      },
+      {
+        "path": "seed/20-names.kotoba",
+        "oldSHA256": "fbd708ae321b3520d4d592955ab2ad1bf0378e962eab69964ddc8dd9f6a68e3f",
+        "newSHA256": "0b847a81f75fd5a08fe0b321ef9e47bde7763fdeac065fbd994c7adbd83f4f10",
+        "newBytes": 39032
+      },
+      {
+        "path": "seed/21-check.kotoba",
+        "oldSHA256": "4228b2afeb923ea0cf5dd6e07205b03716ff830cbea340b1b231eef38dd9ba2f",
+        "newSHA256": "60b997a9e2a90c4cc772376873d28e822ac62a4c36caceb74d11879540c02f77",
+        "newBytes": 398153
+      }
+    ]
+  },
+  "whyNotApplied": [
+    "The task branch seed/02-io and seed/50-out are FS2; seed/MANIFEST includes both, so these pins do not match its tree, and the FS2 sources cannot run on the FS1 root.",
+    "The 2026-10-17 receipt carries Embench/performance and safety qualifications bound to the old native image b10e3813...; editing it in place would attach them to a different image."
+  ],
+  "next": "Decide whether the adopted lineage keeps FS1 02-io/50-out with FS2 only in the successor, then write a new dated adoption receipt and point the script at it."
+}
