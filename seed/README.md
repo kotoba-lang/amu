@@ -200,3 +200,16 @@ specific to the m104 compiler and its pinned images. See
 [`docs/evidence/same-algo-m105-20261016/`](../docs/evidence/same-algo-m105-20261016/),
 the historical receipt at `adoption-20261012.json`, and the current receipt at
 `adoption-20261017.json`.
+
+## Loaderless bootstrap (2026-10-22)
+
+The C loader is no longer needed to build or rebuild anything here. The root
+is `bootstrap/aarch64-linux-static-root.elf` (receipt
+`bootstrap/aarch64-linux-static-root.json`), an Amu-produced
+`aarch64-linux-static` compiler. On arm64 Linux,
+`scripts/seed/selfhost-bootstrap.py` rebuilds the Linux selfhost closure from
+it (S1 = S2 = S3 = root), builds the aarch64/x86_64 runners and the x86_64
+compiler, runs the pinned `bootstrap/adopted-20261012.bin` through the aarch64
+runner to the adoption fixed point (G1 = G2 = G3), checks the runtime cases
+against `static-cases.json`, and probes seccomp and the resource limits.
+Receipt: `../docs/evidence/selfhost-bootstrap-aarch64-20261022/`.

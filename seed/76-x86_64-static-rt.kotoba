@@ -45,6 +45,8 @@
         (cond (= w -4) (recur i)
               (<= w 0) 0
               :else (recur (+ i w)))))))
+(defn- kxrt-open-path [p :i64 flags :i64 mode :i64] :i64 (kxrt-syscall 2 p flags mode 0 0 0))
+(defn- kxrt-alarm [s :i64] :i64 (kxrt-syscall 37 s 0 0 0 0 0))
 (defn- kxrt-close [fd :i64] :i64 (kxrt-syscall 3 fd 0 0 0 0 0))
 
 ;; ---- bytes ----
@@ -489,35 +491,36 @@
     (if (< (kxrt-syscall 160 res p 0 0 0 0) 0) (kxrt-die) 0)))
 (defn- kxrt-env-seconds [s :i64] :i64
   (if (= s 0) 0 (let [v (kxrt-parse s (kxrt-cstrlen s))] (if (or (<= v 0) (> v 86400)) (kxrt-exit 2) v))))
-;; Pre-touch the stack (RLIMIT_AS forbids later growth), then: core 0, cpu
-;; (KEXE_CPU_SECONDS, soft s / hard s+1), address space 64 MiB, stack 1 MiB,
-;; and alarm(wall-1) for KEXE_WALL_SECONDS. No budget given = no cpu/wall limit.
+;; Stack budget: KEXE_STACK_BYTES (1 MiB, the loader's limit, when absent;
+;; at most 256 MiB). RLIMIT_STACK is set to it first, the stack is pre-touched
+;; (RLIMIT_AS forbids later growth), then: core 0, cpu (KEXE_CPU_SECONDS, soft
+;; s / hard s+1), address space 64 MiB, and alarm(wall-1) for KEXE_WALL_SECONDS.
+;; No cpu/wall budget given = no cpu/wall limit.
+(defn- kxrt-stack-bytes [s :i64] :i64
+  (if (= s 0) 1048576
+    (let [v (kxrt-parse s (kxrt-cstrlen s))] (if (or (< v 65536) (> v 268435456)) (kxrt-exit 2) v))))
 (defn- kxrt-limits [sp :i64] :i64
-  (let [t (loop [k 1] (if (> k 240) 0 (let [z (kxrt-load8 (- sp (* k 4096)))] (recur (inc k)))))
+  (let [stack (kxrt-stack-bytes (kxrt-env 0x4154535f4558454b 0x53455459425f4b43 0x3d 17))
+        s (kxrt-rlimit 3 stack)
+        t (loop [k 1] (if (> (* k 4096) (- stack 65536)) 0 (let [z (kxrt-load8 (- sp (* k 4096)))] (recur (inc k)))))
         cpu (kxrt-env-seconds (kxrt-env 0x5550435f4558454b 0x53444e4f4345535f 0x3d 17))
         wall (kxrt-env-seconds (kxrt-env 0x4c41575f4558454b 0x444e4f4345535f4c 0x3d53 18))
         a (kxrt-rlimit 4 0)
         b (if (> cpu 0) (let [p (+ (kxrt-gl 200) 12288) x (kxrt-store64 p cpu) y (kxrt-store64 (+ p 8) (inc cpu))]
                           (if (< (kxrt-syscall 160 0 p 0 0 0 0) 0) (kxrt-die) 0)) 0)
-        c (kxrt-rlimit 9 67108864)
-        d (kxrt-rlimit 3 1048576)]
-    (if (> wall 0) (kxrt-syscall 37 (if (> wall 1) (dec wall) 1) 0 0 0 0 0) 0)))
+        c (kxrt-rlimit 9 67108864)]
+    (if (> wall 0) (kxrt-alarm (if (> wall 1) (dec wall) 1)) 0)))
 ;; classic BPF: code | jt<<16 | jf<<24 | k<<32
 (defn- kxrt-bpf [p :i64 i :i64 code :i64 jt :i64 jf :i64 k :i64] :i64
   (let [z (kxrt-store64 (+ p (* 8 i)) (bit-or code (bit-or (i64-shift-left jt 16) (bit-or (i64-shift-left jf 24) (i64-shift-left k 32)))))] (inc i)))
 (defn- kxrt-allow-nr [p :i64 i :i64 nr :i64] :i64 (kxrt-bpf p (kxrt-bpf p i 21 0 1 nr) 6 0 0 2147418112))
 (defn- kxrt-allow-base [p :i64 i :i64] :i64
-  (-> i (kxrt-allow-nr-at p 1) (kxrt-allow-nr-at p 60) (kxrt-allow-nr-at p 231) (kxrt-allow-nr-at p 15)
-      (kxrt-allow-nr-at p 14) (kxrt-allow-nr-at p 39) (kxrt-allow-nr-at p 186) (kxrt-allow-nr-at p 234)
-      (kxrt-allow-nr-at p 11) (kxrt-allow-nr-at p 12) (kxrt-allow-nr-at p 228)))
+  (-> i (kxrt-allow-nr-at p 1) (kxrt-allow-nr-at p 60) (kxrt-allow-nr-at p 231) (kxrt-allow-nr-at p 15) (kxrt-allow-nr-at p 14) (kxrt-allow-nr-at p 39) (kxrt-allow-nr-at p 186) (kxrt-allow-nr-at p 234) (kxrt-allow-nr-at p 11) (kxrt-allow-nr-at p 12) (kxrt-allow-nr-at p 228)))
 (defn- kxrt-allow-nr-at [i :i64 p :i64 nr :i64] :i64 (kxrt-allow-nr p i nr))
 (defn- kxrt-allow-fs [p :i64 i :i64] :i64
-  (-> i (kxrt-allow-nr-at p 0) (kxrt-allow-nr-at p 2) (kxrt-allow-nr-at p 257) (kxrt-allow-nr-at p 437)
-      (kxrt-allow-nr-at p 3) (kxrt-allow-nr-at p 8) (kxrt-allow-nr-at p 17) (kxrt-allow-nr-at p 5)
-      (kxrt-allow-nr-at p 262) (kxrt-allow-nr-at p 21) (kxrt-allow-nr-at p 439)))
+  (-> i (kxrt-allow-nr-at p 0) (kxrt-allow-nr-at p 2) (kxrt-allow-nr-at p 257) (kxrt-allow-nr-at p 437) (kxrt-allow-nr-at p 3) (kxrt-allow-nr-at p 8) (kxrt-allow-nr-at p 17) (kxrt-allow-nr-at p 5) (kxrt-allow-nr-at p 262) (kxrt-allow-nr-at p 21) (kxrt-allow-nr-at p 439)))
 (defn- kxrt-allow-scope [p :i64 i :i64] :i64
-  (-> i (kxrt-allow-nr-at p 258) (kxrt-allow-nr-at p 263) (kxrt-allow-nr-at p 264) (kxrt-allow-nr-at p 91)
-      (kxrt-allow-nr-at p 74) (kxrt-allow-nr-at p 318)))
+  (-> i (kxrt-allow-nr-at p 258) (kxrt-allow-nr-at p 263) (kxrt-allow-nr-at p 264) (kxrt-allow-nr-at p 91) (kxrt-allow-nr-at p 74) (kxrt-allow-nr-at p 318)))
 ;; Wrong arch: kill. Base set always; the fs set and the :fs/app-data extras
 ;; only with an open scope 35 that is granted. Everything else: SIGSYS (trap).
 ;; A kernel without seccomp fails closed unless KEXE_SECCOMP=if-available.
@@ -570,7 +573,7 @@
     (let [n (kxrt-cstrlen s) m (if (and (> n 0) (= (kxrt-load8 s) 47)) (kxrt-path s n) -1)]
       (if (< m 0) 0
         (let [r (kxrt-gl 136) z (kxrt-copy r (kxrt-gl 208) (inc m)) y (kxrt-gs 144 m)
-              fd (kxrt-syscall 2 r 2686976 0 0 0 0)]
+              fd (kxrt-open-path r 2686976 0)]
           (if (< fd 0) (kxrt-gs 144 0) (kxrt-gs 152 fd)))))))
 (defn- kxrt-signal [sig :i64 act :i64] :i64 (kxrt-syscall 13 sig act 0 8 0 0))
 (defn- kxrt-report [r :i64] :i64
@@ -584,14 +587,14 @@
 ;;     result line; the payload is mapped read+execute and entered as
 ;;     fn(0,0,0,0,0, context) at PAYLOAD+OFFSET.
 (defn- kxrt-usage [code :i64] :i64
-  (let [b (kxrt-gl 200) z (kxrt-err-text b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b 0 0x6e75722d6578656b 8) 0x617375203a72656e 8) 0x4c594150203a6567 8) 0x5346464f2044414f 8) 0x3638782030205445 8) 0x4f4c4c412034365f 8) 0x5241202d2d5b2057 8) 0xa5d5347 4))] (kxrt-exit code)))
+  (let [b (kxrt-gl 200) z (kxrt-err-text b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b 0 0x6e75722d6578656b 8) 0x617375203a72656e 8) 0x4c594150203a6567 8) 0x5346464f2044414f 8) 0x4153492030205445 8) 0x5b20574f4c4c4120 8) 0x5d53475241202d2d 8) 0xa 1))] (kxrt-exit code)))
 (defn- kxrt-arg [i :i64] :i64 (kxrt-load64 (+ (kxrt-gl 80) (* 8 i))))
 (defn- kxrt-cstr= [s :i64 w0 :i64 w1 :i64 n :i64] :bool (and (= (kxrt-cstrlen s) n) (kxrt-tok-at s w0 w1 n)))
 ;; loader argv: the first -- ends it; returns its argc (incl. argv[0])
 (defn- kxrt-split [argc :i64] :i64
   (loop [i 1] (cond (>= i argc) argc (kxrt-cstr= (kxrt-arg i) 0x2d2d 0 2) i :else (recur (inc i)))))
 (defn- kxrt-load-payload [path :i64] :i64
-  (let [fd (kxrt-syscall 2 path 524288 0 0 0 0) st (+ (kxrt-gl 200) 8192)]
+  (let [fd (kxrt-open-path path 524288 0) st (+ (kxrt-gl 200) 8192)]
     (if (< fd 0) (kxrt-usage 1)
       (let [f (kxrt-syscall 5 fd st 0 0 0 0) n (kxrt-load64 (+ st 48))]
         (if (or (< f 0) (<= n 0)) (kxrt-usage 2)
