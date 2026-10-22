@@ -16,7 +16,7 @@ def main():
  E=ROOT/'docs/evidence/fuel-register-reuse-20261014';F=ROOT/'seed/tests/prepaid-fuel-reuse';L=O/'R-aarch64.elf';S=D/'controls.kotoba';shutil.copy2(F/'controls.kotoba',S);P={'OFF':E/'previous-bootstrap.bin','ON':O/'G3.bin','AUDITED':AUDITED}
  assert sha(P['OFF'])=='e918a3d56f79671494991a65ed4762336ef3704afad130b10d8fcee710d936ec'
  assert sha(P['AUDITED'])==AUDITED_SHA256
- assert sha(P['ON'])==json.loads((ROOT/'seed/adoption-20261017.json').read_text())['nativeImageSHA256']
+ assert sha(P['ON'])==json.loads((ROOT/'seed/adoption-20261022.json').read_text())['nativeImageSHA256']
  pins={p:sha(p)for p in[L,S,F/'cases.json',*P.values(),E/'native-gate.py',E/'source-pool.py',E/'index-proof-v3.py',E/'scratch-effects.py',E/'trusted-loader-abi.c']};env={k:v for k,v in os.environ.items()if not k.startswith('KEXE_')};env.update(KEXE_COMMAND='1',KEXE_STACK_BYTES='8388608',KEXE_CAP_RESOURCES_35=str(D),KEXE_FUEL='off',KEXE_VECTORS='4194304',KEXE_VECTOR_ITEMS='134217728',KEXE_STRING_POOL='268435456',KEXE_PAIRS='16777216',KEXE_CPU_SECONDS='1800',KEXE_WALL_SECONDS='1800',TMPDIR=str(D));calls=[]
  def run(tag,args,e):
   z=subprocess.run(list(map(str,args)),cwd=D,env=e,capture_output=True,timeout=1800);(raw/(tag+'.stdout')).write_bytes(z.stdout);(raw/(tag+'.stderr')).write_bytes(z.stderr);calls.append(dict(tag=tag,exit=z.returncode));(D/'calls.json').write_text(json.dumps(calls,indent=2)+'\n');assert all(sha(p)==h for p,h in pins.items()),('INPUT_MUTATION',tag);return z.returncode,z.stdout,z.stderr

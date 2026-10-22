@@ -41,7 +41,7 @@ def main(boot, out):
     cases = json.loads((FIXTURE / "cases.json").read_text())
     assert len(cases) == 54
     assert sha(FIXTURE / "controls.kotoba") == structure["sourceSHA256"] and sha(FIXTURE / "cases.json") == structure["casesSHA256"]
-    adoption = json.loads((ROOT / "seed/adoption-20261017.json").read_text())
+    adoption = json.loads((ROOT / "seed/adoption-20261022.json").read_text())
     runner = out / "R-aarch64.elf"
     shutil.copy2(boot / "R-aarch64.elf", runner)
     runner.chmod(0o755)

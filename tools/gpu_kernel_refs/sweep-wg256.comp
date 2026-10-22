@@ -1,0 +1,13 @@
+// Oracle input only (ADR 0372): glslangValidator compiles this on a developer
+// host, and tools/spirv_check.kotoba must accept the module glslang writes.
+// scripts/gpu-workgroup-sweep/gen-wg-shaders.py's template at LocalSize 256,
+// the kernel gpu_kernel_kir1.kotoba's kir1-sweep emits.
+#version 450
+layout(local_size_x = 256) in;
+layout(set = 0, binding = 0) buffer O { float outp[]; };
+void main() {
+  uint gid = gl_GlobalInvocationID.x;
+  float x = float(gid) + 1.0;
+  for (int k = 0; k < 256; k++) { x = fma(x, 1.0000001, 1.0000001); }
+  outp[gid] = x;
+}

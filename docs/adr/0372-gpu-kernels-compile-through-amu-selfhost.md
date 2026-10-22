@@ -3,8 +3,9 @@
 Date: 2026-10-22
 Status: Proposed. Owner direction 2026-10-22: GPU compilation goes through
 selfhost as well. Step 1 (the encoder, the checker and the first kernel)
-and most of step 2 (the reductions and the glslang cross-check) are
-implemented; the vendor rows of step 2 and steps 3–5 are not.
+and the kernels of step 2 (the workgroup and subgroup reductions, the
+ADR 0358 sweep kernel and the glslang cross-check) are implemented; the
+vendor rows of step 2 and steps 3–5 are not.
 Tracking: AWAI-79 (parent AWAI-35). Related: ADR 0001 Phase 5, ADR 0002,
 ADRs 0355–0358, ADR 0371 (the execution route), AWAI-5 (the inference kernel DSL).
 
@@ -154,15 +155,29 @@ a follow-up to ADR 0371.
    * **Done: the checker against glslang.** It accepts glslang's modules of
      `tools/gpu_kernel_refs/*.comp`. A module written by `spv-write` reads
      back (`spv-read`) word for word.
+   * **Done: the workgroup-sweep kernel of ADR 0358** (`kir1-sweep`). It is
+     the kernel of `scripts/gpu-workgroup-sweep/gen-wg-shaders.py`: 256
+     `GLSL.std.450` Fma per invocation, with LocalSize 32..1024 as the only
+     difference between the six modules. The constant 1.0000001 is the f32
+     `0x3f800001`, as in glslang's module.
+   * **Done: the subgroup reductions** (`kir1-subgroup-reduce`: sum, max and
+     min). Each subgroup folds with `OpGroupNonUniformFAdd`, `FMax` or `FMin`
+     (Reduce). Its first invocation stores the result per `SubgroupId`. After
+     a barrier, invocation 0 folds the `NumSubgroups` partials in order. The
+     modules declare `GroupNonUniform` and `GroupNonUniformArithmetic`.
+     Running them needs Vulkan 1.1 subgroup arithmetic in compute: a
+     provider check, ADR 0371 step 6.
+   * **Done: the Kotoba checker accepts glslang's modules** of all four
+     references in `tools/gpu_kernel_refs/`. That includes the sweep and the
+     subgroup sum, so the checker covers modules that Amu did not write.
    * **Receipts.** In `docs/evidence/gpu-kernel-spirv-20261022/`:
-     * 14 modules, all valid under `spirv-val`;
-     * byte-identical from the aarch64 and the x86_64 tool images.
-   * **Remaining:**
-     * the subgroup reduce;
-     * the workgroup-sweep FMA kernel behind ADR 0358.
-   * The `accelerator_targets` and `accelerator_variants` rows of Decision 4,
-     on the W3 port.
-   * Running the Kotoba checker over glslang's modules, as an oracle.
+     * 23 modules, all valid under `spirv-val --target-env vulkan1.1`;
+     * byte-identical from the aarch64 and the x86_64 tool images;
+     * 75 Kotoba cases, plus the control.
+   * **Remaining:** the `accelerator_targets` and `accelerator_variants` rows
+     of Decision 4, on the W3 port. They wait for the CLJK-to-Kotoba port of
+     those files (#1478, #1481), so that the two efforts do not edit the same
+     files.
 3. **KIR v2 and the inference kernels, B70/ANV first:**
    * the nex_ops decode set;
    * `attn_copy_dense`;

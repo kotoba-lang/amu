@@ -2,10 +2,10 @@
 
 Date: 2026-10-22
 Status: Decision 1 (the platform boundary) accepted by the owner on 2026-10-22.
-The rest is Proposed. Wire 42 is not admitted until security integration signs
-off (Decision 7). Steps 1 (the protocol table), 2 (the runtime transport) and
-4 (the launcher) are implemented. Step 3 (the admission round) is built in
-#1477 and waits for that sign-off. Nothing else is implemented.
+The rest is Proposed. Steps 1 (the protocol table), 2 (the runtime transport),
+3 (wire 42 admission) and 4 (the launcher) are implemented. The owner signed
+off the admission (Decision 7, open question 2) on 2026-10-22. Nothing else is
+implemented.
 Tracking: JUN-285 (this ADR), JUN-291 (step 1), JUN-294 (step 2), JUN-313 (step 4). Related: JUN-109 (wire 42 admission), JUN-282
 (`amu run` on static images), JUN-283, AWAI-12 (murakumo inference on Amu
 selfhost).
@@ -296,6 +296,7 @@ admitted earlier wires. It changes:
 * `seed/00-ns` and `seed/20-names`, through their generators;
 * `seed/21-check`: `ck-wire-kw`, `ck-wire-ok`, the shapes and `ck-r6b-capkw`;
 * `seed/30-lower`: `lw-wire`;
+* `seed/60-proj`: `pj-r5b-wire`, so a module may declare the capability;
 * `seed/90-drv`: the policy names.
 
 These files are hash-pinned. The round needs:
@@ -412,8 +413,9 @@ Every other GPU number is a bootstrap reference.
 ## Open questions for the owner
 
 1. ~~Is the platform boundary in Decision 1 accepted?~~ Accepted 2026-10-22.
-2. Will security integration sign off on admitting wire 42, and on the
-   artifact table replacing guest-named paths?
+2. ~~Will security integration sign off on admitting wire 42, and on the
+   artifact table replacing guest-named paths?~~ Signed off by the owner
+   on 2026-10-22 (`seed/security-integration-20261022.json`).
 3. Does provider confinement (Landlock plus seccomp after device creation) hold
    on Mesa and L4T?
 4. Do GPU guests need compile-time policy narrowing (E2170), on top of the
@@ -461,7 +463,19 @@ Each step is its own PR, in this order:
      another fd; its guest must die of SIGSYS. It runs where the kernel
      enforces seccomp.
    * **Receipts.** `docs/evidence/gpu-runtime-transport-20261022/`.
-3. **Seed adoption round** admitting wire 42, with its receipts (JUN-109).
+3. **Seed adoption round** admitting wire 42. Done (JUN-109), signed off by
+   the owner on 2026-10-22.
+   * **Fixed point.** The new adopted image G1 = G2 = G3 = `9deed950…` is
+     recorded in `seed/adoption-20261022.json`. It was built C-free with
+     `scripts/seed/adoption-candidate.py`.
+   * **Root.** Re-pinned to `f19ab1c4…`.
+   * **Checks.** `scripts/seed/check-wire42-admission.py`; receipts are in
+     `docs/evidence/wire42-admission-20261022/`. Codegen is unchanged: all 19
+     workload images are exact, and the nine controls and certified-54 pass.
+   * **Sign-off record.** `seed/security-integration-20261022.json`: approved
+     by the owner on 2026-10-22.
+   * **Known defect.** JUN-309: under the C-free runner, the adopted compiler
+     traps instead of naming E2115. It predates this round.
 4. **Launcher.** Done (JUN-313). It is narrower than `amu run` (JUN-282): it
    signs nothing, since the trust plane (M3) does not exist yet.
    * **Format.** `--format launcher` on both static targets sets context word

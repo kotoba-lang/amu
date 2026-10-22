@@ -14,7 +14,7 @@
 ;; CASES equals the expect calls below (the script counts them). CONTROL 1
 ;; makes exactly one expectation wrong; the script requires one failure then.
 
-(def CASES 50)
+(def CASES 75)
 (def CONTROL 0)
 
 (defn- say [s :string] :i64
@@ -37,6 +37,28 @@
   (let [n (vector-at M 0) C (vector-alloc (+ n 1))
         C1 (loop [i 0 V C] (if (> i n) V (recur (inc i) (vector-assoc! V i (vector-at M i)))))]
     (vector-assoc! C1 0 c)))
+
+;; the number of words in which A and B differ (same word count assumed)
+(defn- diff-words [A :vector-i64 B :vector-i64] :i64
+  (loop [i 1 d 0] (if (> i (vector-at A 0)) d (recur (inc i) (if (= (vector-at A i) (vector-at B i)) d (inc d))))))
+
+;; 1 when an instruction of the module has opcode op
+(defn- has-op? [M :vector-i64 op :i64] :i64
+  (loop [k 5]
+    (if (>= k (spv-count M)) 0
+      (let [w (spv-word M k)]
+        (cond (= (bit-and w 65535) op) 1
+              (= (u64-shift-right w 16) 0) 0
+              :else (recur (+ k (u64-shift-right w 16))))))))
+
+;; the value word of the OpConstant whose result id is id, or -1
+(defn- const-of [M :vector-i64 id :i64] :i64
+  (loop [k 5]
+    (if (>= k (spv-count M)) -1
+      (let [w (spv-word M k) wc (u64-shift-right w 16)]
+        (cond (= wc 0) -1
+              (and (= (bit-and w 65535) 43) (= (spv-word M (+ k 2)) id)) (spv-word M (+ k 3))
+              :else (recur (+ k wc)))))))
 
 (defn- same-words? [A :vector-i64 B :vector-i64] :bool
   (and (= (vector-at A 0) (vector-at B 0))
@@ -138,8 +160,59 @@
        (expect "glslang reduce-sum is read" (if (> (spv-count g2) 5) 1 0) 1)
        (expect "glslang reduce-sum passes the checker" (spc-check g2) 0))))
 
+;; ---------------------------------------------------------------------
+;; The ADR 0358 workgroup-sweep kernel and the subgroup reductions (step 2).
+
+(defn- sweeps [] :i64
+  (loop [wg 32 bad 0]
+    (if (> wg 1024) bad
+      (let [M (kir1-sweep wg) p (string-concat "kir1-sweep-wg" (string-concat (string-from-i64 wg) ".spv"))]
+        (recur (* wg 2)
+               (+ bad (+ (expect p (spc-check M) 0)
+                         (expect (string-concat "write " p) (spv-write M p) 856))))))))
+
+(defn- sweep-shape [] :i64
+  (let [a (kir1-sweep 32) b (kir1-sweep 1024)]
+    (+ (expect "sweep bound" (spv-word a 3) 38)
+       (expect "sweep sizes differ in one word" (diff-words a b) 1)
+       (expect "that word is LocalSize x (word 25)" (spv-word b 25) 1024)
+       (expect "the FMA constant 1.0000001 is f32 0x3f800001 (id 20)" (const-of a 20) 1065353217)
+       (expect "the loop body calls GLSL.std.450 (OpExtInst)" (has-op? a 12) 1)
+       (expect "the loop counts to 256 (id 18)" (const-of a 18) 256)
+       (expect "sweep workgroup 3" (kir1-sweep-error 3) 2)
+       (expect "sweep invalid gives an empty module" (spv-count (kir1-sweep 0)) 0))))
+
+(defn- subgroups [] :i64
+  (loop [r 1 bad 0]
+    (if (> r 3) bad
+      (let [M (kir1-subgroup-reduce r 256)
+            p (string-concat "kir1-subgroup-" (string-concat (kir1-reducer-name r) "-wg256.spv"))]
+        (recur (inc r)
+               (+ bad (+ (expect p (spc-check M) 0)
+                         (expect (string-concat "write " p) (spv-write M p) (if (= r 1) 1896 1904)))))))))
+
+(defn- subgroup-shape [] :i64
+  (let [s (kir1-subgroup-reduce 1 256) x (kir1-subgroup-reduce 2 256) n (kir1-subgroup-reduce 3 256)]
+    (+ (expect "subgroup bound" (spv-word s 3) 78)
+       (expect "Capability GroupNonUniform (word 8)" (spv-word s 8) 61)
+       (expect "Capability GroupNonUniformArithmetic (word 10)" (spv-word s 10) 63)
+       (expect "sum uses OpGroupNonUniformFAdd" (has-op? s 350) 1)
+       (expect "max uses OpGroupNonUniformFMax" (has-op? x 358) 1)
+       (expect "min uses OpGroupNonUniformFMin" (has-op? n 355) 1)
+       (expect "sum does not use FMax" (has-op? s 358) 0)
+       (expect "subgroup reducer 4" (spv-count (kir1-subgroup-reduce 4 256)) 0)
+       (expect "same subgroup module twice" (if (same-words? x (kir1-subgroup-reduce 2 256)) 1 0) 1))))
+
+(defn- step2-refs [] :i64
+  (let [g1 (spv-read "ref-sweep-wg256.spv") g2 (spv-read "ref-subgroup-reduce-sum.spv")]
+    (+ (expect "glslang sweep is read" (if (> (spv-count g1) 5) 1 0) 1)
+       (expect "glslang sweep passes the checker" (spc-check g1) 0)
+       (expect "glslang subgroup sum is read" (if (> (spv-count g2) 5) 1 0) 1)
+       (expect "glslang subgroup sum passes the checker" (spc-check g2) 0))))
+
 (defn main [] :i64
-  (let [failed (+ (module-shape) (written) (invalid-parameters) (refusals) (reductions) (reduction-shape) (read-back))
+  (let [failed (+ (module-shape) (written) (invalid-parameters) (refusals) (reductions) (reduction-shape) (read-back)
+                  (sweeps) (sweep-shape) (subgroups) (subgroup-shape) (step2-refs))
         x (say (string-concat "CASES " (string-from-i64 CASES)))
         y (say (string-concat "FAILED " (string-from-i64 failed)))]
     failed))
