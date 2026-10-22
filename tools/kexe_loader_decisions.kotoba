@@ -166,12 +166,16 @@
 ;;
 ;; Typed kinds: 1 string, 2 option-i64, 3 result-i64, 4 clock-v1,
 ;; 5 dataspace-v1, 6 ui-commit-v1, 7 ui-event-v1.
+;; Native proposal: 8 bytes-v1 (bytes/bytes), 9 string-bytes-v1
+;; (string/bytes). These are whole-contract discriminators, not primitive
+;; type tags. Only fs/app-data wire 35 owns the two raw-byte contracts.
 (defn- cap-provider [id kind]
   (cond
     (= kind 4) (if (= id 7) 1 -1)
     (= kind 5) (if (= id 24) 2 0)
     (= kind 6) (if (= id 9) 3 0)
     (= kind 7) (if (= id 10) 4 0)
+    (or (= kind 8) (= kind 9)) (if (= id 35) 5 -1)
     (= kind 1) (cond (= id 35) 5
                      (= id 34) 6
                      (= id 39) 7
@@ -192,7 +196,8 @@
                      :else 0)
     :else 0))
 
-;; A typed call's two kinds must be the same kind.
+;; Both metadata words name the same full request/result contract. A contract
+;; may itself have different request/result types (e.g. string/bytes, kind 9).
 (defn- typed-kinds-admitted [request-kind result-kind]
   (if (= request-kind result-kind) 1 0))
 
