@@ -431,7 +431,7 @@ Each step is its own PR, in this order:
      the seccomp read rule. Nothing in them is active unless wire 42 is in
      `KEXE_ALLOW`.
    * **Contract.** `seed/X86_64-LINUX-ABI` states all of it.
-   * **Root.** Re-pinned C-free to `de4b9511…`. The previous root `8256bfd8…`
+   * **Root.** Re-pinned C-free to `7597850a…`. The previous root `f4a2a53e…`
      is kept in the receipt's history.
    * **Check.** `scripts/seed/check-gpu-runtime-transport.py` covers 10
      start-up cases with the product compiler, which still refuses wire 42

@@ -3,7 +3,7 @@
 * `cfree-kernel-object.json` — **current**: re-measured after the JUN-294
   root re-pin (ADR 0371 step 2: the wire-42 transport in `seed/76`/`77`
   changes the runtime text embedded in every image). Producer:
-  `selfhost-bootstrap.py` with root = S1 = S2 = S3 = `de4b951174f5`; gate:
+  `selfhost-bootstrap.py` with root = S1 = S2 = S3 = `7597850aaeaa`; gate:
   `check-x86_64-aiueos-object-cfree.py` (qemu-user). PASS, 8 objects + 30
   refusals. The eight kernel objects are byte-identical to the
   `root8256bfd8` measurement; `S-x86_64.elf` and `R-x86_64.elf` changed.
