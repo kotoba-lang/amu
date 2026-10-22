@@ -1,0 +1,34 @@
+(ns scripts.test-gpu-metal-broker
+  "The wire-42 Metal broker's request verbs (tools/kexe_gpu_metal.m), driven
+  directly by tools/test_kexe_gpu_metal.m: the review findings of amu #1404
+  held to their behavior. macOS with a Metal device only; elsewhere it is
+  skipped BY NAME. Run twice: plain, and under Metal shader validation
+  (MTL_SHADER_VALIDATION=1), where an out-of-bounds kernel read is caught.
+
+    node bin/kbb --backend sci scripts/test-gpu-metal-broker.cljk"
+  (:require [scripts.lib :as lib]
+            ["node:fs" :as fs]
+            ["node:os" :as os]))
+
+(if (not= "darwin" (.platform os))
+  (println "SKIP test-gpu-metal-broker -- not macOS (Metal)")
+  (let [work (lib/temp-dir "gpu-metal-broker-")
+        binary (lib/join work "test")
+        tools (lib/join lib/root "tools")]
+    (try
+      (let [built (lib/run "cc" ["-x" "objective-c" "-fobjc-arc" "-O2" "-Wall" "-Wextra" "-Werror"
+                                 "-Wno-deprecated-declarations" "-Wno-unused-function"
+                                 (str "-I" tools) (lib/join tools "test_kexe_gpu_metal.m")
+                                 "-framework" "Metal" "-framework" "Foundation" "-o" binary]
+                           {:allow-failure? true})]
+        (when-not (zero? (:status built))
+          (throw (js/Error. (str "test-gpu-metal-broker: build failed\n" (:stderr built)))))
+        (doseq [[label env] [["plain" {"TMPDIR" work}]
+                             ["shader-validation" {"TMPDIR" work "MTL_DEBUG_LAYER" "1"
+                                                   "MTL_SHADER_VALIDATION" "1"}]]]
+          (let [r (lib/run binary [tools] {:env env :allow-failure? true})]
+            (print (:stdout r))
+            (when-not (zero? (:status r))
+              (throw (js/Error. (str "test-gpu-metal-broker: " label " run failed"))))))
+        (println "test-gpu-metal-broker: passed"))
+      (finally (.rmSync fs work #js {:recursive true :force true})))))

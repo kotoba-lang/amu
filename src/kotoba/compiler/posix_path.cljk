@@ -22,7 +22,8 @@
   inside a UTF-8 sequence (a Kotoba string refuses such an offset by name).
   Run under the KIR reference interpreter and under nbb against node:path:
   test/nbb/host_abilities.cljk."
-  {:kotoba/export [basename dirname join normalize]})
+  {:kotoba/export [basename dirname join normalize]}
+  (:require #?(:kotoba [kotoba.compiler.posix-path-core :as posix-core])))
 
 ;; ---- leaves: the only host-specific lines, one per primitive ----
 
@@ -81,27 +82,29 @@
 (defn basename
   "The last segment of P, trailing slashes ignored; \"\" for \"\" and \"/\"."
   [#?@(:kotoba [p :string] :default [p])] #?@(:kotoba [:string])
-  (let [segs (segments p)
-        k (count segs)]
-    (if (= 0 k)
-      ""
-      (cut p (nth segs (- k 2)) (nth segs (- k 1))))))
+  #?(:kotoba (posix-core/basename p)
+     :default (let [segs (segments p)
+                    k (count segs)]
+                (if (= 0 k)
+                  ""
+                  (cut p (nth segs (- k 2)) (nth segs (- k 1)))))))
 
 (defn dirname
   "Everything before the slash that precedes the last segment of P: \".\"
   when there is none, \"/\" for a root child, \"//\" for the one node:path
   spelling of that."
   [#?@(:kotoba [p :string] :default [p])] #?@(:kotoba [:string])
-  (if (= 0 (len p))
-    "."
-    (let [root? (slash-first? p)
-          segs (segments p)
-          k (count segs)
-          end (if (= 0 k) -1 (- (nth segs (- k 2)) 1))]
-      (cond
-        (< end 1) (if root? "/" ".")
-        (and root? (= end 1)) "//"
-        :else (cut p 0 end)))))
+  #?(:kotoba (posix-core/dirname p)
+     :default (if (= 0 (len p))
+                "."
+                (let [root? (slash-first? p)
+                      segs (segments p)
+                      k (count segs)
+                      end (if (= 0 k) -1 (- (nth segs (- k 2)) 1))]
+                  (cond
+                    (< end 1) (if root? "/" ".")
+                    (and root? (= end 1)) "//"
+                    :else (cut p 0 end))))))
 
 (defn- dot-segment? [p start end]
   (and (= 1 (- end start)) (dot-at? p start)))
@@ -151,27 +154,29 @@
   "node:path posix normalize: resolve `.` / `..`, collapse repeated slashes,
   keep one trailing slash if P had one; \".\" for \"\"."
   [#?@(:kotoba [p :string] :default [p])] #?@(:kotoba [:string])
-  (if (= 0 (len p))
-    "."
-    (let [absolute? (slash-first? p)
-          trailing? (slash-last? p)
-          body (spell p (resolved-segments p (not absolute?)))
-          spelled (cond
-                    (and (= 0 (len body)) absolute?) ""
-                    (= 0 (len body)) (if trailing? "./" ".")
-                    trailing? (cat2 body "/")
-                    :else body)]
-      (cond
-        (and absolute? (= 0 (len spelled))) "/"
-        absolute? (cat2 "/" spelled)
-        :else spelled))))
+  #?(:kotoba (posix-core/normalize p)
+     :default (if (= 0 (len p))
+                "."
+                (let [absolute? (slash-first? p)
+                      trailing? (slash-last? p)
+                      body (spell p (resolved-segments p (not absolute?)))
+                      spelled (cond
+                                (and (= 0 (len body)) absolute?) ""
+                                (= 0 (len body)) (if trailing? "./" ".")
+                                trailing? (cat2 body "/")
+                                :else body)]
+                  (cond
+                    (and absolute? (= 0 (len spelled))) "/"
+                    absolute? (cat2 "/" spelled)
+                    :else spelled)))))
 
 (defn join
   "node:path posix join of A and B: the non-empty parts joined by `/`, then
   normalized; \".\" when both are empty."
   [#?@(:kotoba [a :string b :string] :default [a b])] #?@(:kotoba [:string])
-  (let [joined (cond (and (= 0 (len a)) (= 0 (len b))) ""
-                     (= 0 (len a)) b
-                     (= 0 (len b)) a
-                     :else (cat2 (cat2 a "/") b))]
-    (if (= 0 (len joined)) "." (normalize joined))))
+  #?(:kotoba (posix-core/join a b)
+     :default (let [joined (cond (and (= 0 (len a)) (= 0 (len b))) ""
+                                  (= 0 (len a)) b
+                                  (= 0 (len b)) a
+                                  :else (cat2 (cat2 a "/") b))]
+                (if (= 0 (len joined)) "." (normalize joined)))))

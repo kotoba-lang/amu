@@ -1,34 +1,23 @@
 (ns kexe-loader-boundary
   {:kotoba/export [boundary-constant boundary-decide]})
 
-;; The POSIX kexe loader's EXPORT BOUNDARY CODEC decisions, as Kotoba
-;; (superproject adr-2609242330 / adr-2609251400: a native export may take and
-;; return typed values -- :vector-i64, :bytes, [:option :string] -- that the
-;; loader builds from a typed wire form and decodes back out of the arena).
+;; Canonical typed native export-boundary decisions (superproject
+;; adr-2609242330 / adr-2609251400). Keep both public exports and the full
+;; token/kind/refusal/budget domain: vector-i64, bytes, option-string and the
+;; existing scalar/aggregate forms. A bare word cannot become a handle.
 ;;
-;; tools/kexe_loader.c keeps the MECHANISM: it splits a wire token into its
-;; prefix and payload, parses decimals and hex, copies bytes into the arena,
-;; and walks a result's cells. Every RULE is here and nowhere else: which
-;; token a declared slot admits (a bare word in a handle slot is a forged
-;; handle), how large one leaf may be, what a token costs against the
-;; boundary traversal budget and when that budget is exhausted, whether a
-;; caller-named budget is admissible, and whether a decoded bytes item is a
-;; byte. The loader maps this module's machine code read+execute and calls
-;; `boundary-decide` through the native kexe ABI with a private context, as
-;; it calls tools/kexe_loader_decisions.kotoba (C1) -- so a boundary
-;; decision costs the guest no fuel and no cell.
+;; Native argument/result mechanisms must preserve complete decimal/hex
+;; decoding, arena/result traversal, leaf and traversal budgets, value bounds
+;; and named refusals. Those mechanisms and whole export integration remain
+;; unfinished until admitted and qualified through Amu selfhost. This module
+;; alone is not that implementation or a successful codec gate.
 ;;
-;; A module of its own, not more ops in C1's `decide`: the Linux static image
-;; embeds C1's bytes verbatim (scripts/gen-linux-static-handlers.cljk refuses
-;; to write when they differ), and a static image has no export boundary --
-;; its prelude calls an arity-0 entry and a packaged command is arity 0 too.
-;; Putting the codec here leaves C1's bytes, and the static image, unchanged.
-;;
-;; `boundary-constant` answers are evaluated natively by
-;; scripts/gen-loader-decisions.cljk and written into the generated region
-;; as #defines (array bounds and the report need them as data). They agree
-;; with kotoba-lang lang/limits.edn :language/boundary and :language/value,
-;; which list these #defines as copies.
+;; Keep the boundary component separate from C1: the current static command
+;; entry is arity zero. Historical C embeddings and their comparison drivers
+;; no longer supply a required implementation, pin or equality prerequisite.
+;; Constants agree with kotoba-lang lang/limits.edn :language/boundary and
+;; :language/value; historical #defines are labelled copies, not authority.
+;; See docs/native-decision-host-retirement.md for corpus provenance.
 
 ;; ---------------------------------------------------------------------
 ;; The wire forms (the C recognises the prefix; the kind numbers are this

@@ -1,43 +1,28 @@
 (ns kexe-loader-decisions
   {:kotoba/export [constant cap-admitted decide]})
 
-;; The POSIX kexe loader's DECISIONS, as Kotoba (superproject
-;; adr-2609251400 C1). tools/kexe_loader.c keeps the mechanism -- mmap,
-;; fork, signals, the sandbox, the syscalls -- and consumes what is decided
-;; here in one of two ways, and never re-implements it:
+;; Canonical native C1 decisions (superproject adr-2609251400 C1).
+;; Keep every public export, decision operation and constant index. The
+;; historical filename is not a dependency on a C loader or generated header.
 ;;
-;;   (a) DATA. `constant` here, and `trap-line`, `value-trap-name` and
-;;       `result-type-name` in kexe_loader_names.kotoba, are evaluated once,
-;;       natively, by
-;;       scripts/gen-loader-decisions.cljk, and their answers are written
-;;       into the generated region of tools/kexe_loader.c (between the
-;;       KEXE-DECISIONS-GENERATED markers). The C indexes those tables and
-;;       interprets nothing. Data, because the C needs these at COMPILE time
-;;       (array sizes of the shared mapping) or inside a signal handler.
+;; The complete component must be compiled by Amu selfhost for the image's
+;; ISA. The native packager admits its real sealed artifact, checks its
+;; exports/ABI/source identity and places it beside the guest. Calls use a
+;; separate private context and spend no guest fuel or arena cell.
 ;;
-;;   (b) CODE. `cap-admitted` and `decide` are compiled by amu for aarch64
-;;       and x86_64, and the machine code is embedded in the same generated
-;;       region. The loader maps it read+execute next to the guest (the same
-;;       W^X mapping it gives the guest) and CALLS it through the native
-;;       kexe ABI whenever it has to decide: is this capability granted,
-;;       which provider answers this wire id, is this budget admissible, is
-;;       this path inside the scope. Code, because these are predicates over
-;;       run-time inputs.
+;; `constant` and kexe_loader_names.kotoba remain owning data. Native plans
+;; consume the matching admitted profile/contract data; source declarations
+;; alone do not prove a complete evaluator, writer or executable artifact.
 ;;
-;; The region is inside kexe_loader.c on purpose: artifact's native loader
-;; source identity hashes that ONE file, so a decision that moved to a
-;; header would change the loader without changing its identity.
-;;
-;; Every function here is i64 -> i64 (or -> :string for the data tables):
-;; the loader calls (b) with a private context, never the guest's, so a
-;; decision costs the guest no fuel and no arena cell.
-;;
-;; Values agree with kotoba-lang lang/limits.edn: the generated #defines
-;; keep the spellings amu's value_bounds_agreement_test reads.
+;; The Node/KBB generators, C embedding/equality prerequisite and comparison
+;; drivers are retired. Historical C arrays, checksums and observations are
+;; provenance only; they cannot qualify new decisions or a selfhost compiler.
+;; See docs/native-decision-host-retirement.md for the exact retired graph,
+;; corpus provenance and remaining native acceptance.
 
 ;; ---------------------------------------------------------------------
-;; (a) constants. The index is the generator's; the NAME it becomes in C
-;; is in scripts/gen-loader-decisions.cljk next to the same index.
+;; Constants. Indices retain their existing public ABI. The owning limits
+;; remain kotoba-lang lang/limits.edn; a historical C macro is not authority.
 
 (defn constant [k]
   (cond
@@ -144,7 +129,7 @@
 ;; Which provider answers a typed capability call, given a granted wire id
 ;; and the typed kind the call carries (request kind = result kind). The
 ;; wire ids are kotoba-lang lang/capability-catalog.edn :compiler-wire-id.
-;; The C switches on the answer and calls the provider; it knows no id.
+;; The native mechanism switches on the answer and calls the provider.
 ;;
 ;;   -1 refused (a clock-v1 record on any id but :clock/now)
 ;;    0 none of its own: tools/linux_static_handlers.kotoba op 0 then

@@ -1,0 +1,59 @@
+#!/bin/sh
+# NOTE (repo rule): kept as run-sweep-1837.sh.txt because the repository workflow-lint
+# refuses POSIX shell execution files; run with sh <this file>.
+# W=64 TILE-CROSSING BISECTION, PHASE 4 (JUN-58, tick 20261019-1837):
+# grid D (lanes 2,078,720) to measure tile=29 -- the last unmeasured
+# interior point of the W=64 25..31 band -- with same-session anchors.
+#
+# Grid D choice: lanes 2,078,720 = 64 * lcm(29,28,32) * 5 (0.88% below
+# 2^21). It is the nearest lane count to 2^21 at which tiles 28, 29 and 32
+# all tile the stream at W=64: 2,078,720/64 = 32,480 = 2^4 * 5 * 11 * 37,
+# divisible by 28 (1160 wg), 29 (1120 wg) and 32 (1015 wg). PR #1371 left
+# 26/27/29 UNMEASURED; 26 and 27 need factors 13 / 3^3 and stay unmeasured
+# at every grid used so far.
+#
+# Cells (W=64 throughout):
+#   d29        -- NEW: the tile=29 point (L=1856, wg=1120)
+#   d28 d32    -- grid-D anchors (the win/loss pair measured at grid C)
+#   cc28 cc30  -- grid-C cals: the exact PR #1371 c28 (clean -8,454.4) and
+#                 c30 (PARITY, clean +179.2) cells at lanes 2,150,400
+#
+# Scalar separation this grid gives, all within one session:
+#   d28 vs cc28: per-workgroup L identical (1792), wg 1160 vs 1200
+#   d29 vs cc30: workgroup count identical (1120), L 1856 vs 1920
+#
+# 3 cycles, order rotated (forward, reversed, rotated). Idempotent: a cell
+# whose log exists is skipped.
+set -e
+TAB=$(printf '\t')
+cd "$(dirname "$0")/../../../.."
+EV=docs/evidence/gpu/tilecross-w64-t29-gridd-20261019
+mkdir -p "$EV"
+
+run() { # cycle cell W lanes chunks
+  log="$EV/run-$1-$2.log"
+  if [ -f "$log" ] && grep -q "RESULT${TAB}verified=true" "$log"; then echo "skip $log"; return 0; fi
+  echo "run $log"
+  (date; uptime; time kbb --backend sci scripts/test-gpu-subgroup-reduce-chunksweep.cljk "$3" "$4" "$5") > "$log" 2>&1
+  grep -q "RESULT	verified=true" "$log" || { echo "UNVERIFIED $log"; exit 1; }
+}
+
+# cycle 1: forward
+run 1 d28 64 2078720 28
+run 1 d29 64 2078720 29
+run 1 d32 64 2078720 32
+run 1 cc28 64 2150400 28
+run 1 cc30 64 2150400 30
+# cycle 2: reversed
+run 2 cc30 64 2150400 30
+run 2 cc28 64 2150400 28
+run 2 d32 64 2078720 32
+run 2 d29 64 2078720 29
+run 2 d28 64 2078720 28
+# cycle 3: rotated
+run 3 d29 64 2078720 29
+run 3 d32 64 2078720 32
+run 3 cc28 64 2150400 28
+run 3 cc30 64 2150400 30
+run 3 d28 64 2078720 28
+echo SWEEP-COMPLETE
