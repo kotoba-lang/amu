@@ -1,0 +1,462 @@
+;; Kotoba-native project metadata and source-graph resolver. It deliberately
+;; returns typed Kotoba data rather than Clojure forms or host exceptions.
+(ns kotoba.compiler.native-project
+  {:kotoba/export [decode-source-packet make-source make-source-formatted module-info resolve-graph-packet]}
+  (:require [kotoba.compiler.kotoba-reader :as reader]
+            [kotoba.form :as form])
+  (:schemas {:native.project/module-info
+             [:record :native.project/module-info
+              [[:namespace :string]
+               [:requires [:list :string]]
+               [:err :string]]]
+             :native.project/source
+             [:record :native.project/source
+              [[:namespace :string] [:text :string] [:surface :bool]]]
+             :native.project/graph
+             [:record :native.project/graph
+              [[:modules [:list [:ref :native.project/source]]]
+               [:order [:list :string]]
+               [:err :string]]]
+             :native.project/scan
+             [:record :native.project/scan
+              [[:requires [:list :string]] [:err :string]]]
+             :native.project/indexed-source
+             [:record :native.project/indexed-source
+              [[:source [:ref :native.project/source]]
+               [:requires [:list :string]]]]
+             :native.project/index
+             [:record :native.project/index
+              [[:entries [:list [:ref :native.project/indexed-source]]]
+               [:names [:list :string]]
+               [:err :string]]]
+             :native.project/walk
+             [:record :native.project/walk
+              [[:names [:list :string]] [:edges :i64] [:err :string]]]
+             :native.project/packet
+             [:record :native.project/packet
+              [[:sources [:list [:ref :native.project/source]]]
+               [:err :string]]]}))
+
+(def max-project-modules 256)
+(def max-project-dependency-edges 256)
+(def max-project-source-bytes 8388608)
+(def max-project-packet-bytes 8519680)
+
+(defn- empty-requires [] [:list :string]
+  (typed-list-new [:list :string]))
+
+(defn- module-info-result [namespace :string requires [:list :string] error :string]
+  [:ref :native.project/module-info]
+  (record-new [:ref :native.project/module-info] namespace requires error))
+
+(defn make-source [namespace :string text :string] [:ref :native.project/source]
+  (record-new [:ref :native.project/source] namespace text false))
+
+(defn make-source-formatted [namespace :string text :string surface? :bool]
+  [:ref :native.project/source]
+  (record-new [:ref :native.project/source] namespace text surface?))
+
+(defn- graph-result [modules [:list [:ref :native.project/source]]
+                     order [:list :string] error :string]
+  [:ref :native.project/graph]
+  (record-new [:ref :native.project/graph] modules order error))
+
+(defn- indexed-source-result [source [:ref :native.project/source]
+                              requires [:list :string]]
+  [:ref :native.project/indexed-source]
+  (record-new [:ref :native.project/indexed-source] source requires))
+
+(defn- index-result [entries [:list [:ref :native.project/indexed-source]]
+                     names [:list :string] error :string]
+  [:ref :native.project/index]
+  (record-new [:ref :native.project/index] entries names error))
+
+(defn- walk-result [names [:list :string] edges :i64 error :string]
+  [:ref :native.project/walk]
+  (record-new [:ref :native.project/walk] names edges error))
+
+(defn- packet-result [sources [:list [:ref :native.project/source]] error :string]
+  [:ref :native.project/packet]
+  (record-new [:ref :native.project/packet] sources error))
+
+(defn- scan-result [requires [:list :string] error :string]
+  [:ref :native.project/scan]
+  (record-new [:ref :native.project/scan] requires error))
+
+(defn- valid-namespace? [namespace :string] :bool
+  (and (not (string=? namespace ""))
+       (= (string-index-of namespace "/") -1)
+       (= (string-index-of namespace "\n") -1)
+       (= (string-index-of namespace "..") -1)
+       (not (string=? (string-substring namespace 0 1) "."))
+       (not (string=? (string-substring namespace
+                                        (- (string-length namespace) 1)
+                                        (string-length namespace))
+                      "."))))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+(defn- require-clause? [clause [:ref :form/r]] :bool
+  (and (form/is-seq? clause)
+       (> (form/count-of clause) 0)
+       (form/is-keyword? (form/nth-of clause 0))
+       (= (form/keyword-value (form/nth-of clause 0)) :require)))
+
+(defn- parse-require-specs [clause [:ref :form/r]] [:ref :native.project/scan]
+  (loop [index 1 requires (empty-requires)]
+    (if (>= index (form/count-of clause))
+      (scan-result requires "")
+      (let [spec (form/nth-of clause index)]
+        (if (or (not (form/is-vec? spec)) (= (form/count-of spec) 0))
+          (scan-result requires "require entries must be vectors beginning with a namespace symbol")
+          (let [name-form (form/nth-of spec 0)]
+            (if (not (form/is-symbol? name-form))
+              (scan-result requires "required namespace must be a symbol")
+              (let [name (form/symbol-value name-form)]
+                (if (not (valid-namespace? name))
+                  (scan-result requires "required namespace must be a simple symbol")
+                  (recur (+ index 1) (typed-list-conj [:list :string] requires name)))))))))))
+
+(defn- scan-header [ns-form [:ref :form/r]] [:ref :native.project/scan]
+  (loop [index 2 requires (empty-requires) saw-require false]
+    (if (>= index (form/count-of ns-form))
+      (scan-result requires "")
+      (let [clause (form/nth-of ns-form index)]
+        (if (require-clause? clause)
+          (if saw-require
+            (scan-result requires "namespace has more than one :require clause")
+            (let [parsed (parse-require-specs clause)
+                  error (record-get [:ref :native.project/scan] parsed :err)]
+              (if (not (string=? error ""))
+                (scan-result requires error)
+                (let [found (record-get [:ref :native.project/scan] parsed :requires)
+                      merged (loop [i 0 out requires]
+                               (if (>= i (vector-count found))
+                                 out
+                                 (recur (+ i 1)
+                                        (typed-list-conj [:list :string] out
+                                                        (typed-list-nth [:list :string] found i)))))]
+                  (recur (+ index 1) merged true)))))
+          (recur (+ index 1) requires saw-require))))))
+
+(defn module-info [source :string] [:ref :native.project/module-info]
+  "Read one Kotoba module header and return its namespace and direct requires.
+
+  This metadata stage parses only the leading namespace form. The later
+  semantic pass validates the complete module source."
+  (let [parsed (reader/read-first-form-bounded source 512 1048576)
+        reader-error (record-get [:ref :kotoba.reader/out] parsed :err)]
+    (if (not (string=? reader-error ""))
+      (module-info-result "" (empty-requires) reader-error)
+      (let [forms (record-get [:ref :kotoba.reader/out] parsed :forms)]
+        (if (not= (vector-count forms) 1)
+          (module-info-result "" (empty-requires) "source must start with a namespace form")
+          (let [form-value (typed-list-nth [:list [:ref :form/r]] forms 0)]
+            (if (or (not (form/is-seq? form-value))
+                    (< (form/count-of form-value) 2)
+                    (not (form/is-symbol? (form/nth-of form-value 0)))
+                    (not (string=? (form/symbol-value (form/nth-of form-value 0)) "ns")))
+              (module-info-result "" (empty-requires) "source must start with a namespace form")
+              (let [name-form (form/nth-of form-value 1)]
+                (if (not (form/is-symbol? name-form))
+                  (module-info-result "" (empty-requires) "namespace name must be a symbol")
+                  (let [name (form/symbol-value name-form)
+                        scan (scan-header form-value)
+                        scan-error (record-get [:ref :native.project/scan] scan :err)]
+                    (if (not (valid-namespace? name))
+                      (module-info-result name (empty-requires) "namespace name must be a simple symbol")
+                      (module-info-result
+                       name
+                       (record-get [:ref :native.project/scan] scan :requires)
+                       scan-error))))))))))))
+
+(defn- name-in? [names [:list :string] name :string] :bool
+  (loop [index 0]
+    (if (>= index (vector-count names))
+      false
+      (if (string=? (typed-list-nth [:list :string] names index) name)
+        true
+        (recur (+ index 1))))))
+
+(defn- indexed-source-by-name
+  [entries [:list [:ref :native.project/indexed-source]] name :string]
+  [:ref :native.project/indexed-source]
+  (loop [index 0]
+    (if (>= index (vector-count entries))
+      (indexed-source-result (make-source "" "") (empty-requires))
+      (let [entry (typed-list-nth [:list [:ref :native.project/indexed-source]]
+                                  entries index)
+            source (record-get [:ref :native.project/indexed-source] entry :source)]
+        (if (string=? (record-get [:ref :native.project/source] source :namespace) name)
+          entry
+          (recur (+ index 1)))))))
+
+(defn- validate-sources [sources [:list [:ref :native.project/source]]]
+  [:ref :native.project/index]
+  (if (or (= (vector-count sources) 0)
+          (> (vector-count sources) max-project-modules))
+    (index-result (typed-list-new [:list [:ref :native.project/indexed-source]])
+                  (empty-requires) "project source count is empty or exceeds the module limit")
+    (loop [index 0
+           entries (typed-list-new [:list [:ref :native.project/indexed-source]])
+           names (empty-requires)
+           total-bytes 0]
+      (if (>= index (vector-count sources))
+        (index-result entries names "")
+        (let [source (typed-list-nth [:list [:ref :native.project/source]] sources index)
+              declared (record-get [:ref :native.project/source] source :namespace)
+              text (record-get [:ref :native.project/source] source :text)
+              parsed (module-info text)
+              actual (record-get [:ref :native.project/module-info] parsed :namespace)
+              error (record-get [:ref :native.project/module-info] parsed :err)
+              requires (record-get [:ref :native.project/module-info] parsed :requires)
+              bytes (+ total-bytes (string-byte-length text))]
+          (cond
+            (not (string=? error ""))
+            (index-result entries names (string-concat "module header: " error))
+
+            (not (string=? declared actual))
+            (index-result
+             entries names
+             (string-concat "source namespace does not match its supplied key: " declared))
+
+            (name-in? names declared)
+            (index-result entries names (string-concat "duplicate module namespace: " declared))
+
+            (> bytes max-project-source-bytes)
+            (index-result entries names "project source bytes exceed limit")
+
+            :else
+            (recur (+ index 1)
+                   (typed-list-conj [:list [:ref :native.project/indexed-source]]
+                                   entries (indexed-source-result source requires))
+                   (typed-list-conj [:list :string] names declared)
+                   bytes)))))))
+
+(defn- append-names [target [:list :string] additions [:list :string]]
+  [:list :string]
+  (loop [index 0 out target]
+    (if (>= index (vector-count additions))
+      out
+      (recur (+ index 1)
+             (typed-list-conj [:list :string] out
+                             (typed-list-nth [:list :string] additions index))))))
+
+(defn- discover
+  [entries [:list [:ref :native.project/indexed-source]] root :string]
+  [:ref :native.project/walk]
+  (let [root-entry (indexed-source-by-name entries root)
+        root-source (record-get [:ref :native.project/indexed-source] root-entry :source)]
+    (if (string=? (record-get [:ref :native.project/source] root-source :namespace) "")
+      (walk-result (empty-requires) 0 (string-concat "project root is not supplied: " root))
+      (loop [pending (typed-list-conj [:list :string] (empty-requires) root)
+             cursor 0 seen (empty-requires) edges 0]
+        (if (>= cursor (vector-count pending))
+          (walk-result seen edges "")
+          (let [name (typed-list-nth [:list :string] pending cursor)]
+            (if (name-in? seen name)
+              (recur pending (+ cursor 1) seen edges)
+              (let [entry (indexed-source-by-name entries name)
+                    source (record-get [:ref :native.project/indexed-source] entry :source)
+                    source-name (record-get [:ref :native.project/source] source :namespace)]
+                (if (string=? source-name "")
+                  (walk-result seen edges
+                               (string-concat "required module is not supplied: " name))
+                  (let [requires (record-get [:ref :native.project/indexed-source]
+                                             entry :requires)
+                        next-edges (+ edges (vector-count requires))]
+                    (cond
+                      (> next-edges max-project-dependency-edges)
+                      (walk-result seen edges "project dependency edges exceed limit")
+
+                      :else
+                      (recur (append-names pending requires)
+                             (+ cursor 1)
+                             (typed-list-conj [:list :string] seen name)
+                             next-edges))))))))))))
+
+(defn- dependencies-ready? [entries [:list [:ref :native.project/indexed-source]]
+                            name :string ordered [:list :string]] :bool
+  (let [entry (indexed-source-by-name entries name)
+        requires (record-get [:ref :native.project/indexed-source] entry :requires)]
+    (loop [index 0]
+      (if (>= index (vector-count requires))
+        true
+        (if (name-in? ordered (typed-list-nth [:list :string] requires index))
+          (recur (+ index 1))
+          false)))))
+
+(defn- first-ready [entries [:list [:ref :native.project/indexed-source]]
+                    remaining [:list :string] ordered [:list :string]] :string
+  (loop [index 0]
+    (if (>= index (vector-count remaining))
+      ""
+      (let [name (typed-list-nth [:list :string] remaining index)]
+        (if (dependencies-ready? entries name ordered)
+          name
+          (recur (+ index 1)))))))
+
+(defn- remove-name [names [:list :string] removed :string] [:list :string]
+  (loop [index 0 out (empty-requires)]
+    (if (>= index (vector-count names))
+      out
+      (let [name (typed-list-nth [:list :string] names index)]
+        (recur (+ index 1)
+               (if (string=? name removed)
+                 out
+                 (typed-list-conj [:list :string] out name)))))))
+
+(defn- topological-order [entries [:list [:ref :native.project/indexed-source]]
+                          names [:list :string]] [:ref :native.project/walk]
+  (loop [remaining names ordered (empty-requires)]
+    (if (= (vector-count remaining) 0)
+      (walk-result ordered 0 "")
+      (let [name (first-ready entries remaining ordered)]
+        (if (string=? name "")
+          (walk-result ordered 0 "cyclic module dependency rejected")
+          (recur (remove-name remaining name)
+                 (typed-list-conj [:list :string] ordered name)))))))
+
+(defn- sources-in-order [entries [:list [:ref :native.project/indexed-source]]
+                         order [:list :string]] [:list [:ref :native.project/source]]
+  (loop [index 0 modules (typed-list-new [:list [:ref :native.project/source]])]
+    (if (>= index (vector-count order))
+      modules
+      (let [name (typed-list-nth [:list :string] order index)
+            entry (indexed-source-by-name entries name)]
+        (recur (+ index 1)
+               (typed-list-conj
+                [:list [:ref :native.project/source]] modules
+                (record-get [:ref :native.project/indexed-source] entry :source)))))))
+
+(defn- resolve-graph [sources [:list [:ref :native.project/source]] root :string]
+  [:ref :native.project/graph]
+  "Resolve a closed set of explicit namespace/source pairs into dependency order.
+
+  This validates that every supplied file declares its key, the input set has
+  unique names and stays within bounds, every reachable require is supplied,
+  the edge limit is respected, and the reachable graph is acyclic. It does not
+  rewrite import calls or perform project semantic linking."
+  (let [validated (validate-sources sources)
+        validation-error (record-get [:ref :native.project/index] validated :err)
+        entries (record-get [:ref :native.project/index] validated :entries)]
+    (if (not (string=? validation-error ""))
+      (graph-result (typed-list-new [:list [:ref :native.project/source]])
+                    (empty-requires) validation-error)
+      (let [walk (discover entries root)
+            reachable (record-get [:ref :native.project/walk] walk :names)
+            discover-error (record-get [:ref :native.project/walk] walk :err)]
+        (if (not (string=? discover-error ""))
+          (graph-result (typed-list-new [:list [:ref :native.project/source]])
+                        (empty-requires) discover-error)
+          (let [ordered (topological-order entries reachable)
+                order (record-get [:ref :native.project/walk] ordered :names)
+                order-error (record-get [:ref :native.project/walk] ordered :err)]
+            (if (not (string=? order-error ""))
+              (graph-result (typed-list-new [:list [:ref :native.project/source]])
+                            (empty-requires) order-error)
+              (graph-result (sources-in-order entries order) order ""))))))))
+
+(defn decode-source-packet [packet :string] [:ref :native.project/packet]
+  (let [length (string-byte-length packet)
+        empty (typed-list-new [:list [:ref :native.project/source]])]
+    (if (> length max-project-packet-bytes)
+      (packet-result empty "encoded project source bytes exceed limit")
+      (loop [offset 0 count 0 sources empty]
+        (cond
+          (= offset length) (packet-result sources "")
+          (>= count max-project-modules)
+          (packet-result sources "encoded project module count exceeds limit")
+          :else
+          (let [surface-end (string-index-of-from packet "\n" offset)]
+            (if (or (< surface-end 0) (= surface-end offset))
+              (packet-result sources "malformed project source packet format flag")
+              (let [surface-text (string-substring packet offset surface-end)
+                    surface? (string=? surface-text "1")
+                    name-len-start (+ surface-end 1)
+                    name-end (string-index-of-from packet "\n" name-len-start)]
+                (if (or (< name-end 0) (= name-end name-len-start)
+                        (not (or surface? (string=? surface-text "0"))))
+                  (packet-result sources "malformed project source packet namespace length")
+                  (let [source-len-start (+ name-end 1)
+                        source-len-end (string-index-of-from packet "\n" source-len-start)]
+                    (if (< source-len-end 0)
+                      (packet-result sources "malformed project source packet source length")
+                      (let [name-length (parse-long (string-substring packet name-len-start name-end))
+                            source-length (parse-long
+                                           (string-substring packet source-len-start source-len-end))]
+                        (if (or (not (option-some?-of [:option :i64] name-length))
+                                (not (option-some?-of [:option :i64] source-length)))
+                          (packet-result sources "project source packet lengths must be decimal integers")
+                          (let [name-size (option-value-of [:option :i64] name-length 0)
+                                source-size (option-value-of [:option :i64] source-length 0)]
+                            (cond
+                              (or (<= name-size 0) (> name-size 256))
+                              (packet-result sources "project source packet namespace length is invalid")
+
+                              (or (<= source-size 0) (> source-size max-project-source-bytes))
+                              (packet-result sources "project source packet source length is invalid")
+
+                              :else
+                              (let [name-start (+ source-len-end 1)
+                                    source-start (+ name-start name-size)
+                                    next-offset (+ source-start source-size)]
+                                (if (> next-offset length)
+                                  (packet-result sources "project source packet frame is truncated")
+                                  (recur next-offset
+                                         (+ count 1)
+                                         (typed-list-conj
+                                          [:list [:ref :native.project/source]]
+                                          sources
+                                          (make-source-formatted
+                                           (string-substring packet name-start source-start)
+                                           (string-substring packet source-start next-offset)
+                                           surface?)))))))))))))))))
+  )))
+
+(defn resolve-graph-packet [packet :string root :string]
+  [:ref :native.project/graph]
+  "Resolve a length-framed string packet into the closed source graph.
+
+  Each frame is a surface flag (`1` for `.cljk`, `0` for `.kotoba`), newline,
+  namespace-byte-length, newline, source-byte-length, newline, namespace bytes,
+  then source bytes. Lengths are decimal. This string boundary is exportable by
+  Seed; resolve-graph remains an internal typed-list helper."
+  (let [decoded (decode-source-packet packet)
+        error (record-get [:ref :native.project/packet] decoded :err)]
+    (if (not (string=? error ""))
+      (graph-result (typed-list-new [:list [:ref :native.project/source]])
+                    (empty-requires) error)
+      (resolve-graph (record-get [:ref :native.project/packet] decoded :sources) root))))

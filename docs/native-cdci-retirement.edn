@@ -1,0 +1,46 @@
+{:format :amu.native-cdci-retirement/v1
+ :source-base "ff6b4743c3729430048184d98b43c3829da4bb62"
+ :tracking-workspace "Kotoba Labs"
+ :tracking-issue "AWAI-66"
+ :codex-thread "01a15eb9-ef0b-73f3-a095-1a1af90d3a21"
+ :final-gate-roles [:amu-selfhost :kotoba-native]
+ :controller-and-gate-target :x86_64-linux-static
+ :retired-workflows
+ [{:path ".github/workflows/test.yml"
+   :blob "204f009effd73a182185776ed58417b700c91185"
+   :lines 313 :name "test"
+   :jobs ["source-custody" "policy-native-correctness" "loader-source-bound-fuzz"
+          "adopted-seed-source" "adopted-seed-native" "nbb-engine-configuration"
+          "windows-arm64" "android-ndk" "server-kind" "test" "execution-v2"]}
+  {:path ".github/workflows/browser-matrix.yml"
+   :blob "80089f0877e257cd7342b4ff03d910d1382d430d"
+   :lines 67 :name "browser-matrix" :jobs ["browser-matrix" "safari"]}
+  {:path ".github/workflows/fuzz.yml"
+   :blob "e4f1e5ea4baa58d0b28b27b6e0db04f2b8a0bf7b"
+   :lines 45 :name "long-fuzz" :jobs ["native-parser"]
+   :schedule "17 3 * * 1" :manual-dispatch? true}
+  {:path ".github/workflows/seed-x86_64-linux.yml"
+   :blob "60f409124076e71b1534b6fe2cfce4854cb0ebb3"
+   :lines 107 :name "native-seed-x86_64-linux"
+   :jobs ["native-runtime-prepare" "linux-native-selfhost"
+          "native-cross-compile" "linux-execution"]}]
+ :retired-declared-jobs 18
+ :retired-workflow-lines 532
+ :retired-checker
+ {:path "scripts/check-workflows.cljk"
+  :blob "e96bf2f14cdc35c8b39100f347d13f0b26fa568b" :lines 84
+  :npm-entry "check-workflows"}
+ :retained-hold
+ {:path ".github/workflows/merge-guard.yml"
+  :blob "e9d5e86c4c540cd384e33612bb5911590bf13314"
+  :required-context "merge-guard" :app-id 15368 :strict? false
+  :retirement-pr "https://github.com/kotoba-lang/amu/pull/1439"
+  :status :exact-human-approval-pending}
+ :native-controller-qualified? false
+ :native-gates-qualified? false
+ :native-self-rebuild-qualified? false
+ :native-corpus-qualified? false
+ :tests-added-or-run? false
+ :implementation-executed? false
+ :protection-changed? false
+ :live-service-or-production-changed? false}

@@ -30,6 +30,38 @@
 (def max-project-expression-nodes 200000)
 (def max-project-literals 65536)
 (def max-project-string-literal-bytes (* 1024 1024))
+
+#?(:kotoba
+   (defn- project-max-functions [] :i64
+     (sema/max-functions))
+   :default
+   (defn- project-max-functions [] sema/max-functions))
+
+#?(:kotoba
+   (defn- project-max-namespace-capabilities [] :i64
+     (sema/max-namespace-capabilities))
+   :default
+   (defn- project-max-namespace-capabilities [] sema/max-namespace-capabilities))
+
+#?(:kotoba
+   (defn- project-max-namespace-docstring-chars [] :i64
+     (sema/max-namespace-docstring-chars))
+   :default
+   (defn- project-max-namespace-docstring-chars [] sema/max-namespace-docstring-chars))
+
+#?(:kotoba
+   (defn- project-read-forms [source :string] [:list [:ref :form/r]]
+     (let [parsed (sema/read-forms-result source)
+           error (record-get [:ref :kotoba.reader/out] parsed :err)
+           at (record-get [:ref :kotoba.reader/out] parsed :at)]
+       (if (= (string-byte-length error) 0)
+         (record-get [:ref :kotoba.reader/out] parsed :forms)
+         (throw (sema/read-error
+                 (string-concat error
+                                (string-concat " at byte " (string-from-i64 at))))))))
+   :default
+   (defn- project-read-forms [source] (sema/read-forms source)))
+
 ;; A template's `(:params [...])` and an importer's `:with {...}` are both
 ;; bounded by this. Eight is a ceiling, not a target: no template in the
 ;; workspace declares more than one, and the bound exists so the clause is not
@@ -301,10 +333,63 @@
           (reject! "namespace clause :refer-clojure repeats an option" data))
         (doseq [[k names] pairs]
           (when-not (and (vector? names)
-                         (<= (count names) sema/max-functions)
+                         (<= (count names) (project-max-functions))
                          (every? simple-symbol? names))
             (reject! (str "namespace clause :refer-clojure " (pr-str k) " takes a bounded vector of simple symbols")
                      data)))))))
+
+(defn- text-length [#?@(:kotoba [s :string] :default [s])] #?@(:kotoba [:i64])
+  #?(:kotoba (string-byte-length s) :default (count s)))
+
+(defn- text-code-point-at [#?@(:kotoba [s :string i :i64] :default [s i])] #?@(:kotoba [:i64])
+  #?(:kotoba (string-code-point-at s i)
+     :clj (.codePointAt ^String s (int i))
+     :cljs (.codePointAt s i)))
+
+(defn- text-offset-width [#?@(:kotoba [point :i64] :default [point])] #?@(:kotoba [:i64])
+  #?(:kotoba (if (< point 128) 1
+                 (if (< point 2048) 2
+                     (if (< point 65536) 3 4)))
+     :default (if (< point 65536) 1 2)))
+
+(defn- text-cut [#?@(:kotoba [s :string start :i64 end :i64] :default [s start end])] #?@(:kotoba [:string])
+  #?(:kotoba (string-substring s start end) :default (subs s start end)))
+
+(defn- text-concat [#?@(:kotoba [a :string b :string] :default [a b])] #?@(:kotoba [:string])
+  #?(:kotoba (string-concat a b) :default (str a b)))
+
+(defn- starts-with-at? [#?@(:kotoba [s :string offset :i64 prefix :string] :default [s offset prefix])] #?@(:kotoba [:bool])
+  (let [end (+ offset (text-length prefix))]
+    (and (>= offset 0)
+         (<= end (text-length s))
+         (= prefix (text-cut s offset end)))))
+
+(defn- ascii-digit? [#?@(:kotoba [point :i64] :default [point])] #?@(:kotoba [:bool])
+  (and (>= point 48) (<= point 57)))
+
+(defn- digits-end [#?@(:kotoba [s :string start :i64] :default [s start])] #?@(:kotoba [:i64])
+  (let [n (text-length s)]
+    (loop [i start]
+      (if (and (< i n) (ascii-digit? (text-code-point-at s i)))
+        (recur (+ i (text-offset-width (text-code-point-at s i))))
+        (if (> i start) i -1)))))
+
+(defn- ascii-alphanumeric? [#?@(:kotoba [point :i64] :default [point])] #?@(:kotoba [:bool])
+  (or (and (>= point 48) (<= point 57))
+      (and (>= point 65) (<= point 90))
+      (and (>= point 97) (<= point 122))))
+
+(defn- alias-safe-name [#?@(:kotoba [s :string] :default [s])] #?@(:kotoba [:string])
+  (let [n (text-length s)]
+    (loop [i 0 result ""]
+      (if (>= i n)
+        result
+        (let [point (text-code-point-at s i)
+              width (text-offset-width point)
+              piece (if (ascii-alphanumeric? point)
+                      (text-cut s i (+ i width))
+                      "_")]
+          (recur (+ i width) (text-concat result piece)))))))
 
 (defn- synthetic-refer-alias
   "The alias a `[m :refer [...]]` spec gets when the author gave none. It
@@ -312,7 +397,7 @@
   are the linker's), and it is derived from the namespace so two specs of one
   namespace do not collide with each other."
   [namespace-symbol]
-  (symbol (str "kotoba_refer__" (str/replace (str namespace-symbol) #"[^A-Za-z0-9]" "_"))))
+  (symbol (text-concat "kotoba_refer__" (alias-safe-name (str namespace-symbol)))))
 
 (defn- parse-require-spec!
   "One require spec -> `{:namespace :alias :refer? :with? :spec?}`.
@@ -369,8 +454,47 @@
                        {:namespace module-name :spec spec})))
           (cond-> {:namespace required
                    :alias (if has-alias? alias (synthetic-refer-alias required))}
+            ;; The ORIGIN of the alias, not its spelling: an authored alias
+            ;; may legally equal the synthetic one, and later merging must be
+            ;; able to tell the two apart (review P2, 2026-10-19).
+            has-alias? (assoc :as? true)
             has-refer? (assoc :refer (vec refer))
             has-with? (assoc :with with :spec spec)))))))
+
+(defn- merge-same-instantiation-requires
+  "Two :require lines for ONE instantiation are one module spelled in two
+  lines: `[m :as a]` beside `[m :refer [f]]` is `[m :as a :refer [f]]`, and
+  the template design the duplicate check protects (two BINDINGS of one
+  template are two modules) already separates those by instantiation-key.
+  Specs merge here ONLY when the merge is unambiguous: the :refer sets are
+  disjoint and at most one spec carries an authored alias. Anything else is
+  left as two specs so the checks below refuse it exactly as before -- the
+  same name referred from two specs (a name reached two ways), two authored
+  aliases for one module (one module, one spelling), and the plain duplicate
+  all keep their existing refusals. The reduction carries a key -> index map
+  so a large header stays linear (review P1, 2026-10-19)."
+  [module-name requires]
+  (let [overlap? (fn [a b] (seq (filter (set (:refer a [])) (:refer b []))))
+        real-alias? (fn [r] (contains? r :as?))]
+    (first
+     (reduce
+      (fn [[acc index] req]
+        (let [key (instantiation-key (:namespace req) (:with req))
+              idx (get index key)]
+          (if (and idx
+                   (let [prior (nth acc idx)]
+                     (and (not (overlap? prior req))
+                          (not (and (real-alias? prior) (real-alias? req))))))
+            (let [prior (nth acc idx)]
+              [(assoc acc idx (cond-> prior
+                                (and (not (real-alias? prior)) (real-alias? req))
+                                (assoc :alias (:alias req) :as? true)
+                                (or (:refer prior) (:refer req))
+                                (assoc :refer (vec (distinct (concat (:refer prior []) (:refer req [])))))))
+               index])
+            [(conj acc req) (assoc index key (count acc))])))
+      [[] {}]
+      requires))))
 
 (defn- module-definition-names
   "Top-level names this module defines: `defn` / `defn-` / `def` and the
@@ -380,7 +504,7 @@
   (into #{}
         (keep (fn [form]
                 (when (and (seq? form)
-                           (contains? '#{defn defn- def defrecord defprotocol defmulti defmethod} (first form))
+                           (contains? (quote #{defn defn- def defrecord defprotocol defmulti defmethod}) (first form))
                            (symbol? (second form)))
                   (second form))))
         forms))
@@ -409,7 +533,7 @@
   [forms]
   (->> forms
        (keep (fn [form]
-               (when (and (seq? form) (= 'defn (first form))
+               (when (and (seq? form) (= (quote defn) (first form))
                           (simple-symbol? (second form))
                           (not (:private (meta (second form)))))
                  (with-meta (second form) nil))))
@@ -446,7 +570,8 @@
   that pair by name (identical definitions are fine, and are what a shared
   schema looks like when two modules spell it the same way)."
   [forms]
-  (let [ns-forms (filter #(and (seq? %) (= 'ns (first %))) forms)]
+  (let [ns-forms (filter (fn [amu_project_lambda_1_arg_1]
+                             (and (seq? amu_project_lambda_1_arg_1) (= (quote ns) (first amu_project_lambda_1_arg_1)))) forms)]
     (when-not (= 1 (count ns-forms))
       (reject! "project module requires exactly one namespace" {:count (count ns-forms)}))
     (let [[_ name & raw-clauses] (first ns-forms)
@@ -467,7 +592,7 @@
                                [nil clauses])]
       (when-not (and (simple-symbol? name) (not (str/blank? (str name))))
         (reject! "invalid project namespace" {:namespace name}))
-      (when (and docstring (> (count docstring) sema/max-namespace-docstring-chars))
+      (when (and docstring (> (count docstring) (project-max-namespace-docstring-chars)))
         (reject! "namespace docstring exceeds admission limit" {:namespace name}))
       (when-let [stray (first (filter map? clauses))]
         (reject! "namespace attr-map must follow the docstring: (ns NAME DOCSTRING? ATTR-MAP? CLAUSE ...)"
@@ -476,10 +601,16 @@
       ;; counts toward nothing below and appears at most once.
       (validate-refer-clojure-clauses! name (filter refer-clojure-clause? clauses))
       (loop [remaining (if attr-map
-                         (sema/namespace-attr-map->clauses
-                          attr-map (remove refer-clojure-clause? clauses)
-                          (fn [message data code]
-                            (reject! message {:namespace name :attr-map data :code code})))
+                         #?(:kotoba
+                            (record-get [:ref :fe/namespace-attr-clauses]
+                                        (sema/namespace-attr-map-clauses
+                                         attr-map (remove refer-clojure-clause? clauses))
+                                        :clauses)
+                            :default
+                            (sema/namespace-attr-map->clauses
+                             attr-map (remove refer-clojure-clause? clauses)
+                             (fn [message data code]
+                               (reject! message {:namespace name :attr-map data :code code}))))
                          (remove refer-clojure-clause? clauses))
              exports nil requires [] capabilities nil schemas nil params nil]
         (if-let [clause (first remaining)]
@@ -491,8 +622,9 @@
             (and (seq? clause) (= :capabilities (first clause)) (= 2 (count clause))
                  (set? (second clause)) (nil? capabilities))
             (let [declared (second clause)]
-              (when (or (> (count declared) sema/max-namespace-capabilities)
-                        (not-every? #(and (keyword? %) (namespace %)) declared))
+              (when (or (> (count declared) (project-max-namespace-capabilities))
+                        (not-every? (fn [amu_project_lambda_2_arg_1]
+                                        (and (keyword? amu_project_lambda_2_arg_1) (namespace amu_project_lambda_2_arg_1))) declared))
                 (reject! "namespace :capabilities must be a bounded set of namespaced keywords"
                          {:namespace name :capabilities declared}))
               (recur (next remaining) exports requires declared schemas params))
@@ -515,7 +647,8 @@
                    (validate-template-params! name (second clause)))
 
             (and (seq? clause) (= :require (first clause)))
-            (let [parsed (mapv #(parse-require-spec! name %) (rest clause))]
+            (let [parsed (mapv (fn [amu_project_lambda_3_arg_1]
+                                   (parse-require-spec! name amu_project_lambda_3_arg_1)) (rest clause))]
               (recur (next remaining) exports (into requires parsed) capabilities schemas params))
 
             ;; A clause head this loop knows and REFUSES is named, so a
@@ -539,7 +672,13 @@
                                        (assoc :with (validate-binding! name spec with (:names params)))
                                        (dissoc :spec))
                                    require))
-                               requires)]
+                               requires)
+                ;; One instantiation may be spelled across two :require
+                ;; lines (:as on one, :refer on the other); merge before the
+                ;; duplicate checks see them (issue #785 wall: 8 rows of
+                ;; "duplicate imported namespace" in the selfhost scoreboard
+                ;; came from kotoba.abi.component spelling exactly this).
+                requires (merge-same-instantiation-requires name requires)]
             ;; ADR 0353 floor 1 (amends ADR 0005): with no `:export` the
             ;; export vector IS the module's public `defn`s, in source order.
             ;; The set is still exact and closed -- only its spelling moved
@@ -597,6 +736,23 @@
         (reject! "modules declare the same schema name with different definitions"
                  {:schema schema :modules [a b]})))))
 
+(defn- merge-schema-tables
+  "Merge schema tables while preserving the linker's closed-name rule.
+
+  Template instantiations can substitute different concrete field types into
+  the same source-level schema name, so checking only the uninstantiated
+  source tables is not sufficient."
+  [tables]
+  (reduce (fn [merged table]
+            (reduce-kv (fn [merged schema definition]
+                         (when (and (contains? merged schema)
+                                    (not= definition (get merged schema)))
+                           (reject! "modules declare the same schema name with different definitions"
+                                    {:schema schema}))
+                         (assoc merged schema definition))
+                       merged (or table {})))
+          {} tables))
+
 ;; The clauses only the linker reads. `:require` has always been stripped
 ;; here; `:params` joins it because, by the time a template reaches the
 ;; frontend, every parameter it named has been substituted away and the
@@ -615,14 +771,14 @@
   (if-not exports-derived?
     forms
     (mapv (fn [form]
-            (if (and (seq? form) (= 'ns (first form)))
+            (if (and (seq? form) (= (quote ns) (first form)))
               (apply list (concat form [(list :export exports)]))
               form))
           forms)))
 
 (defn- without-requires [forms]
   (mapv (fn [form]
-          (if (and (seq? form) (= 'ns (first form)))
+          (if (and (seq? form) (= (quote ns) (first form)))
             (let [[op name & clauses] form]
               (list* op name
                      (keep (fn [clause]
@@ -637,6 +793,41 @@
                                  (when (seq m) m))
                                :else clause))
                            clauses)))
+            form))
+        forms))
+
+(defn- with-schema-table
+  "Give module analysis the schemas declared by its dependencies too.
+
+  An imported signature can refer to a provider's record or variant schema.
+  The importing source should not have to repeat that declaration merely so
+  the linker's temporary stub can be type checked."
+  [forms schemas]
+  (mapv (fn [form]
+          (if (and (seq? form) (= (quote ns) (first form)))
+            (let [[op name & raw-clauses] form
+                  [docstring clauses] (if (string? (first raw-clauses))
+                                        [(first raw-clauses) (next raw-clauses)]
+                                        [nil raw-clauses])
+                  [attr-map clauses] (if (map? (first clauses))
+                                       [(first clauses) (next clauses)]
+                                       [nil clauses])
+                  clauses (if attr-map
+                            #?(:kotoba
+                               (record-get [:ref :fe/namespace-attr-clauses]
+                                           (sema/namespace-attr-map-clauses attr-map clauses)
+                                           :clauses)
+                               :default
+                               (sema/namespace-attr-map->clauses
+                                attr-map clauses
+                                (fn [message data _code]
+                                  (reject! message {:namespace name :attr-map data}))))
+                            clauses)
+                  clauses (remove (fn [amu_project_lambda_4_arg_1]
+                                      (and (seq? amu_project_lambda_4_arg_1) (= :schemas (first amu_project_lambda_4_arg_1)))) clauses)
+                  clauses (cond-> (vec clauses)
+                            (seq schemas) (conj (list :schemas schemas)))]
+              (list* op name (concat (when docstring [docstring]) clauses)))
             form))
         forms))
 
@@ -695,43 +886,74 @@
        params
        (vec (mapcat vector params source-types))))))
 
-(defn- stub-value [type]
+(defn- stub-value
+  ([type] (stub-value type {} #{}))
+  ([type schemas] (stub-value type schemas #{}))
+  ([type schemas resolving]
   (cond
     (= type :i64) 0
-    (= type :f64) '(f64-from-bits 0)
-    (= type :f32) '(f32-from-bits 0)
+    (= type :f64) (quote (f64-from-bits 0))
+    (= type :f32) (quote (f32-from-bits 0))
     (= type :string) ""
     (= type :keyword) :kotoba.stub/value
-    (= type :symbol) '(symbol "kotoba.stub/value")
+    (= type :symbol) (quote (symbol "kotoba.stub/value"))
     (= type :map) {}
     (= type :bool) false
-    (= type :bytes) '(bytes-empty)
-    (= type :document) '(document-null)
-    (= type :option-i64) '(option-none)
-    (= type :result-i64) '(result-ok 0)
-    (= type :vector-i64) '(vector-i64)
-    (= type :vector-f64) '(vector-f64)
-    (= type :string-index) '(string-index)
-    (= type :disjoint-set-i64) '(disjoint-set-i64)
+    (= type :bytes) (quote (bytes-empty))
+    (= type :document) (quote (document-null))
+    (= type :option-i64) (quote (option-none))
+    (= type :result-i64) (quote (result-ok 0))
+    (= type :vector-i64) (quote (vector-i64))
+    (= type :vector-f64) (quote (vector-f64))
+    (= type :string-index) (quote (string-index))
+    (= type :disjoint-set-i64) (quote (disjoint-set-i64))
     (and (vector? type) (= :result (first type)))
-    (list 'result-ok-of type (stub-value (second type)))
+    (list (quote result-ok-of) type (stub-value (second type) schemas resolving))
     (and (vector? type) (= :option (first type)))
-    (list 'option-none-of type)
+    (list (quote option-none-of) type)
     (and (vector? type) (= :list (first type)))
-    (list 'typed-list-new type)
+    (list (quote typed-list-new) type)
     (and (vector? type) (= :variant (first type)))
-    (let [[tag payload-type] (first (nth type 2))]
-      (list 'variant-new type tag (stub-value payload-type)))
+    (let [[tag payload-type] (first (nth type 2))
+          schema-name (second type)]
+      (list (quote variant-new) type tag
+            (stub-value payload-type schemas (conj resolving schema-name))))
     (and (vector? type) (= :vector (first type)))
-    (list* 'hetero-vector type (map stub-value (second type)))
+    (list* (quote hetero-vector) type
+           (map (fn [amu_project_lambda_5_arg_1]
+                    (stub-value amu_project_lambda_5_arg_1 schemas resolving)) (second type)))
     (and (vector? type) (= :set (first type)))
-    (list 'typed-set type)
+    (list (quote typed-set) type)
     (and (vector? type) (= :map (first type)))
-    (list 'typed-map-new type)
+    (list (quote typed-map-new) type)
     (and (vector? type) (= :record (first type)))
-    (list* 'record type (map (comp stub-value second) (nth type 2)))
+    (let [schema-name (second type)]
+      (list* (quote record-new) type
+             (map (fn [[_ field-type]]
+                    (stub-value field-type schemas (conj resolving schema-name)))
+                  (nth type 2))))
+    (and (vector? type) (= :ref (first type)))
+    (let [schema-name (second type)
+          descriptor (get schemas schema-name)]
+      (when (or (not descriptor) (contains? resolving schema-name))
+        (reject! "project import result type has no closed stub value"
+                 {:type type :schema schema-name}))
+      (case (first descriptor)
+        :record
+        (list* (quote record-new) type
+               (map (fn [[_ field-type]]
+                      (stub-value field-type schemas (conj resolving schema-name)))
+                    (nth descriptor 2)))
+
+        :variant
+        (let [[tag payload-type] (first (nth descriptor 2))]
+          (list (quote variant-new) type tag
+                (stub-value payload-type schemas (conj resolving schema-name))))
+
+        (reject! "project import result type has no closed stub value"
+                 {:type type :schema schema-name})))
     :else (reject! "project import result type has no closed stub value"
-                   {:type type})))
+                   {:type type}))))
 
 (defn- clause-params [{:keys [params param-types callable-param-contracts]}]
   (typed-params params param-types callable-param-contracts))
@@ -760,14 +982,19 @@
                   (list (clause-params clause) (clause-result clause) (body-of clause)))
                 clauses))))
 
-(defn- stub-body [{:keys [result callable-result-contract]}]
+(defn- stub-body [stub {:keys [params callable-result-contract]}]
   (if callable-result-contract
     ;; The stub exists only for isolated type/effect analysis and is
     ;; removed before linking. Its explicit result contract supplies
     ;; the closure refinement without inventing a lambda ID/helper that
     ;; could be mistaken for executable project code.
     0
-    (stub-value result)))
+    ;; A signature-only import must not manufacture a default value of its
+    ;; result type. Recursive records may have no finite default, and an
+    ;; internal typed call is not a foreign-value ABI. This self-call checks
+    ;; exactly the declared signature and is removed with the stub before
+    ;; emission; no recursive trampoline survives in the executable graph.
+    (list* stub params)))
 
 (defn- stub-form
   "The import stub an importing module analyses in place of a dependency.
@@ -775,8 +1002,8 @@
   A multi-arity export needs a multi-arity stub, or the importing module can
   call it at exactly one arity: the stub is what its own call resolution sees,
   and the frontend rejects `no matching multi-arity clause` for the others."
-  [stub clauses]
-  (arity-declaration 'defn- stub clauses stub-body))
+  [stub clauses _schemas]
+  (arity-declaration (quote defn-) stub clauses (fn [clause] (stub-body stub clause))))
 
 (defn- capability-operation?
   "True for a friendly capability operation such as `clock/now`.
@@ -792,7 +1019,8 @@
   always wins over a capability of the same name; a project can never have a
   capability silently displace a module it asked for."
   [op]
-  (contains? sema/capability-registry
+  (contains? #?(:kotoba (sema/capability-registry)
+                :default sema/capability-registry)
              (keyword (namespace op) (name op))))
 
 (defn- resugar-capability-calls
@@ -818,7 +1046,7 @@
           walked (map resugar-capability-calls form)
           operation (:source-operation m)]
       (with-meta
-        (if (and operation (= 'typed-cap-call (first form)))
+        (if (and operation (= (quote typed-cap-call) (first form)))
           ;; (typed-cap-call <id> <request> <result> & args) -> (ns/name & args)
           (apply list (symbol (namespace operation) (name operation)) (drop 4 walked))
           (apply list walked))
@@ -829,11 +1057,25 @@
                            (meta form))
     :else form))
 
+;; Whether NS-PART (a qualified call's namespace) names a host class: `js`,
+;; `goog`, or a class -- the segment after the last `.` begins with an ASCII
+;; uppercase letter (`Math`, `MessageDigest`, `java.lang.Math`). Kotoba
+;; namespaces are lowercase by convention, so an uppercase class segment is
+;; not an import that failed to resolve. No regex: this module is compiled
+;; by Kotoba itself, whose reader refuses a host regex literal.
+(defn- host-class-namespace? [ns-part]
+  (let [dot (str/last-index-of ns-part ".")
+        segment (if (some? dot) (subs ns-part (inc dot)) ns-part)]
+    (or (= "js" ns-part)
+        (= "goog" ns-part)
+        (and (< 0 (count segment))
+             (str/includes? "ABCDEFGHIJKLMNOPQRSTUVWXYZ" (subs segment 0 1))))))
+
 (defn- rewrite-import-calls [form imported]
   (cond
     (seq? form)
     (let [[op & args] form
-          op' (if (and (symbol? op) (namespace op))
+          rewritten-op (if (and (symbol? op) (namespace op))
                 (or (get imported op)
                     ;; `clojure.core/merge` is the bare head `merge` spelled
                     ;; fully (coll.cljk does this 17 times to dodge a local);
@@ -845,7 +1087,7 @@
                     ;; frontend's job, and it runs identically on linked source.
                     (when (capability-operation? op) op)
                     ;; Also left as written: the reader's TAGGED forms --
-                    ;; `#"pat"` reads as `(kotoba.reader/regex "pat")`, `#js`
+                    ;; a regex literal reads as `(kotoba.reader/regex "pat")`, `#js`
                     ;; as `(kotoba.reader/js ...)`, a 9+ element set as
                     ;; `(kotoba.reader/set [...])` -- which the frontend refuses
                     ;; BY NAME (`:kotoba.error/host-regex-literal` and kin).
@@ -860,10 +1102,24 @@
                     ;; the message, and a module with forty qualified calls
                     ;; gave its reader no way to find the one refused
                     ;; (measured 2026-10-09 on kotoba-lang/text).
-                    (reject! (str "qualified call is not an admitted exported import: " op) {:call op}))
+                    ;;
+                    ;; 2026-10-20 (issue #785): a head whose namespace NAMES
+                    ;; A HOST CLASS -- `js`, `goog`, or a class like `Math` /
+                    ;; `MessageDigest` / `java.lang.Math` -- is host interop,
+                    ;; not an import that failed to resolve, and the sentence
+                    ;; must say so (it was measured misfiring as `qualified
+                    ;; call is not an admitted exported import: Math/abs` for
+                    ;; a module whose imports all resolved).
+                    (if (host-class-namespace? (namespace op))
+                      (reject! (str "host interop call is not admitted: " op
+                                    " (a Java / JS class is outside the language)")
+                               {:call op :host-interop true})
+                      (reject! (str "qualified call is not an admitted exported import: " op) {:call op})))
                 op)]
-      (list* op' (map #(rewrite-import-calls % imported) args)))
-    (vector? form) (mapv #(rewrite-import-calls % imported) form)
+      (list* rewritten-op (map (fn [amu_project_lambda_6_arg_1]
+                          (rewrite-import-calls amu_project_lambda_6_arg_1 imported)) args)))
+    (vector? form) (mapv (fn [amu_project_lambda_7_arg_1]
+                             (rewrite-import-calls amu_project_lambda_7_arg_1 imported)) form)
     (map? form) (into (empty form)
                       (map (fn [[k v]] [(rewrite-import-calls k imported)
                                        (rewrite-import-calls v imported)]))
@@ -873,19 +1129,35 @@
 (defn- rewrite-calls [form names]
   (cond
     (seq? form) (let [[op & args] form]
-                  (list* (get names op op) (map #(rewrite-calls % names) args)))
-    (vector? form) (mapv #(rewrite-calls % names) form)
+                  (list* (get names op op) (map (fn [amu_project_lambda_8_arg_1]
+                                                    (rewrite-calls amu_project_lambda_8_arg_1 names)) args)))
+    (vector? form) (mapv (fn [amu_project_lambda_9_arg_1]
+                             (rewrite-calls amu_project_lambda_9_arg_1 names)) form)
     (map? form) (into (empty form)
                       (map (fn [[k v]] [(rewrite-calls k names) (rewrite-calls v names)]))
                       form)
     :else form))
 
+(defn- arity-suffix? [#?@(:kotoba [s :string start :i64] :default [s start])] #?@(:kotoba [:bool])
+  (and (= (- (text-length s) start) 7)
+       (starts-with-at? s start "$arity")
+       (let [digit (text-code-point-at s (+ start 6))]
+         (and (>= digit 48) (<= digit 52)))))
+
 (defn- invoke-dispatcher-name? [name]
   (and (symbol? name)
-       (boolean (re-matches #"__kotoba_invoke(?:_.+)?\$arity[0-4]" (str name)))))
+       (let [s (str name)
+             prefix "__kotoba_invoke"
+             prefix-length (text-length prefix)
+             suffix-start (- (text-length s) 7)]
+         (and (starts-with-at? s 0 prefix)
+              (or (arity-suffix? s prefix-length)
+                  (and (> suffix-start (inc prefix-length))
+                       (= 95 (text-code-point-at s prefix-length))
+                       (arity-suffix? s suffix-start)))))))
 
 (defn- closure-apply-name? [name]
-  (= '__kotoba_closure_apply name))
+  (= (quote __kotoba_closure_apply) name))
 
 ;; A `loop` desugars to a `__kotoba_loop_N` helper, and that NAME is the whole
 ;; contract by which a recur stays a loop: the KIR interpreter
@@ -907,12 +1179,16 @@
 (defn- loop-helper-name? [name]
   (and (symbol? name)
        (nil? (namespace name))
-       (boolean (re-matches #"__kotoba_loop_\d+" (str name)))))
+       (let [s (str name)
+             prefix "__kotoba_loop_"
+             prefix-length (text-length prefix)]
+         (and (starts-with-at? s 0 prefix)
+              (= (text-length s) (digits-end s prefix-length))))))
 
 (defn- linked-local-name [module-index function-index name]
   (if (loop-helper-name? name)
     (symbol (str "__kotoba_loop_" (+ linked-loop-helper-base
-                                     (* module-index sema/max-functions)
+                                     (* module-index (project-max-functions))
                                      function-index)))
     (symbol (str "kotoba_module__" module-index "__" function-index))))
 
@@ -920,13 +1196,24 @@
   "The module index a linked local NAME (a string or symbol) came from, or nil
   for a name the linker did not mint (an export wrapper, a dispatcher)."
   [name]
-  (let [name (str name)]
-    (if-let [[_ m] (re-matches #"kotoba_module__(\d+)__\d+" name)]
-      (parse-long m)
-      (when-let [[_ n] (re-matches #"__kotoba_loop_(\d+)" name)]
-        (let [n (parse-long n)]
+  (let [name (str name)
+        module-prefix "kotoba_module__"
+        module-start (text-length module-prefix)
+        module-end (digits-end name module-start)
+        module-suffix-start (+ module-end 2)
+        loop-prefix "__kotoba_loop_"
+        loop-start (text-length loop-prefix)
+        loop-end (digits-end name loop-start)]
+    (if (and (starts-with-at? name 0 module-prefix)
+             (> module-end module-start)
+             (starts-with-at? name module-end "__")
+             (= (text-length name) (digits-end name module-suffix-start)))
+      (parse-long (text-cut name module-start module-end))
+      (when (and (starts-with-at? name 0 loop-prefix)
+                 (= (text-length name) loop-end))
+        (let [n (parse-long (text-cut name loop-start loop-end))]
           (when (>= n linked-loop-helper-base)
-            (quot (- n linked-loop-helper-base) sema/max-functions)))))))
+            (quot (- n linked-loop-helper-base) (project-max-functions))))))))
 
 ;; `source-text` emits the linked module graph as text the reader has to read
 ;; back, so anything it prints unreadably breaks linking rather than merely
@@ -966,14 +1253,16 @@
 ;; Measured 2026-09-09; the round trip is one line in nbb.
 (defn- source-text [forms]
   (binding [*print-namespace-maps* false]
-    (str (str/join "\n" (map #(pr-str #?(:clj % :cljs (readable-integers %))) forms))
+    (str (str/join "\n" (map (fn [amu_project_lambda_10_arg_1]
+                                 (pr-str #?(:clj amu_project_lambda_10_arg_1 :cljs (readable-integers amu_project_lambda_10_arg_1)))) forms))
          "\n")))
 
 ;; `symbol?` first: on nbb an integer leaf can be a js BigInt, and looking one
 ;; up in a set hashes it, which throws (`Cannot create property 'closure_uid_…'
 ;; on bigint`). Measured 2026-09-30: a let binding's `1` crashed the link.
 (defn- definition-symbols [form names]
-  (into #{} (filter #(and (symbol? %) (contains? names %))) (tree-seq coll? seq form)))
+  (into #{} (filter (fn [amu_project_lambda_11_arg_1]
+                        (and (symbol? amu_project_lambda_11_arg_1) (contains? names amu_project_lambda_11_arg_1)))) (tree-seq coll? seq form)))
 
 (defn- admit-definition-closures!
   "Bound each definition by the transitive definition graph it can call.
@@ -1050,7 +1339,8 @@
   [form needle]
   (or (= form needle)
       (and (coll? form)
-           (first-truthy #(form-contains? % needle)
+           (first-truthy (fn [amu_project_lambda_12_arg_1]
+                             (form-contains? amu_project_lambda_12_arg_1 needle))
                  (if (map? form) (concat (keys form) (vals form)) (seq form))))))
 
 (defn- top-level-index
@@ -1121,7 +1411,7 @@
   (into {}
         (keep (fn [form]
                 (when (and (seq? form)
-                           (contains? #{'defn 'defn-} (first form))
+                           (contains? #{(quote defn) (quote defn-)} (first form))
                            (symbol? (second form))
                            (number? (:line (meta form))))
                   [(second form) (:line (meta form))])))
@@ -1144,10 +1434,11 @@
   [form binding]
   (cond
     (and (symbol? form) (contains? binding form)) (get binding form)
-    (vector? form) (keep-meta form (mapv #(substitute-in-type % binding) form))
+    (vector? form) (keep-meta form (mapv (fn [amu_project_lambda_13_arg_1]
+                                             (substitute-in-type amu_project_lambda_13_arg_1 binding)) form))
     :else form))
 
-(declare substitute-form)
+#?(:kotoba nil :default (declare substitute-form))
 
 (defn- substitute-parameter-vector
   "The per-item scan the frontend's `typed-param-parts` performs, extended by
@@ -1183,13 +1474,14 @@
   parameter symbol there is the result type (the frontend would otherwise
   read it as the body and the body as a surplus form)."
   [[params & tail] binding module]
-  (let [params' (substitute-parameter-vector params binding module)
-        [result tail'] (if (and (symbol? (first tail)) (contains? binding (first tail)))
+  (let [substituted-params (substitute-parameter-vector params binding module)
+        [result substituted-tail] (if (and (symbol? (first tail)) (contains? binding (first tail)))
                          [(get binding (first tail)) (rest tail)]
                          [nil tail])]
-    (concat [params']
+    (concat [substituted-params]
             (when result [result])
-            (map #(substitute-form % binding module) tail'))))
+            (map (fn [amu_project_lambda_14_arg_1]
+                     (substitute-form amu_project_lambda_14_arg_1 binding module)) substituted-tail))))
 
 (defn- substitute-declaration
   "A `defn`/`defn-`: single-arity or a list of arity clauses, with an optional
@@ -1219,13 +1511,13 @@
 
     (seq? form)
     (cond
-      (contains? #{'defn 'defn-} (first form))
+      (contains? #{(quote defn) (quote defn-)} (first form))
       (substitute-declaration form binding module)
 
       ;; The header itself: only the `:with` maps of its require specs are
       ;; type positions (a template forwarding its own parameter). `:params`
       ;; names the symbols by design and is left for `without-requires`.
-      (= 'ns (first form))
+      (= (quote ns) (first form))
       (keep-meta form
                  (apply list
                         (map (fn [clause]
@@ -1248,9 +1540,11 @@
                              form)))
 
       :else
-      (keep-meta form (apply list (map #(substitute-form % binding module) form))))
+      (keep-meta form (apply list (map (fn [amu_project_lambda_15_arg_1]
+                                           (substitute-form amu_project_lambda_15_arg_1 binding module)) form))))
 
-    (vector? form) (keep-meta form (mapv #(substitute-form % binding module) form))
+    (vector? form) (keep-meta form (mapv (fn [amu_project_lambda_16_arg_1]
+                                             (substitute-form amu_project_lambda_16_arg_1 binding module)) form))
     (map? form) (keep-meta form (into {} (map (fn [[k v]] [(substitute-form k binding module)
                                                            (substitute-form v binding module)]))
                                       form))
@@ -1259,7 +1553,7 @@
 (def ^:private binding-form-heads
   "Forms whose second item is a binding vector of `pattern expr` pairs, each
   pattern in scope for the expressions after it and for the body."
-  '#{let loop for doseq dotimes when-let if-let when-some if-some when-first binding})
+  (quote #{let loop for doseq dotimes when-let if-let when-some if-some when-first binding}))
 
 (defn- pattern-symbols [pattern]
   (into #{} (filter symbol?) (tree-seq coll? seq pattern)))
@@ -1291,8 +1585,8 @@
                     :else (do (check expr bound)
                               (recur (nnext pairs) (into bound (pattern-symbols pattern)))))))))
           (check-clause [[params & tail] bound]
-            (let [bound' (into bound (pattern-symbols params))]
-              (doseq [x tail] (check x bound'))))
+            (let [bound-next (into bound (pattern-symbols params))]
+              (doseq [x tail] (check x bound-next))))
           (check [form bound]
             (cond
               (symbol? form)
@@ -1302,13 +1596,13 @@
               (seq? form)
               (let [[op & args] form]
                 (cond
-                  (= 'ns op) nil
+                  (= (quote ns) op) nil
 
                   (contains? binding-form-heads op)
-                  (let [bound' (check-bindings (first args) bound)]
-                    (doseq [x (rest args)] (check x bound')))
+                  (let [bound-next (check-bindings (first args) bound)]
+                    (doseq [x (rest args)] (check x bound-next)))
 
-                  (= 'fn op)
+                  (= (quote fn) op)
                   (if (vector? (first args))
                     (check-clause args bound)
                     (doseq [clause args]
@@ -1318,12 +1612,12 @@
 
                   ;; `(catch [error-type] binder handler)`: the binder is the
                   ;; last-but-one item, whether or not a type precedes it.
-                  (= 'catch op)
+                  (= (quote catch) op)
                   (let [binder (last (butlast args))]
                     (doseq [x (drop-last 2 args)] (check x bound))
                     (check (last args) (into bound (pattern-symbols binder))))
 
-                  (contains? #{'defn 'defn-} op)
+                  (contains? #{(quote defn) (quote defn-)} op)
                   (let [declaration (cond-> (rest args) (string? (second args)) rest)]
                     (if (vector? (first declaration))
                       (check-clause declaration bound)
@@ -1363,16 +1657,17 @@
                 (let [[pattern expr] pairs]
                   (cond
                     (= :let pattern)
-                    (let [[v bound'] (bindings expr bound f)]
-                      (recur (nnext pairs) bound' (conj out pattern v)))
+                    (let [[v bound-next] (bindings expr bound f)]
+                      (recur (nnext pairs) bound-next (conj out pattern v)))
                     (keyword? pattern)
                     (recur (nnext pairs) bound (conj out pattern (f expr bound)))
                     :else
                     (recur (nnext pairs) (into bound (pattern-symbols pattern))
                            (conj out pattern (f expr bound))))))))
           (clause [[params & tail] bound f]
-            (let [bound' (into bound (pattern-symbols params))]
-              (list* params (map #(f % bound') tail))))
+            (let [bound-next (into bound (pattern-symbols params))]
+              (list* params (map (fn [amu_project_lambda_17_arg_1]
+                                     (f amu_project_lambda_17_arg_1 bound-next)) tail))))
           (rewrite [form bound]
             (cond
               (symbol? form)
@@ -1383,13 +1678,14 @@
               (seq? form)
               (let [[op & args] form]
                 (cond
-                  (or (= 'ns op) (= 'quote op)) form
+                  (or (= (quote ns) op) (= (quote quote) op)) form
 
                   (contains? binding-form-heads op)
-                  (let [[v bound'] (bindings (first args) bound rewrite)]
-                    (keep-meta form (list* op v (map #(rewrite % bound') (rest args)))))
+                  (let [[v bound-next] (bindings (first args) bound rewrite)]
+                    (keep-meta form (list* op v (map (fn [amu_project_lambda_18_arg_1]
+                                                         (rewrite amu_project_lambda_18_arg_1 bound-next)) (rest args)))))
 
-                  (= 'fn op)
+                  (= (quote fn) op)
                   (if (vector? (first args))
                     (keep-meta form (list* op (clause args bound rewrite)))
                     (keep-meta form (list* op (map (fn [c]
@@ -1398,13 +1694,14 @@
                                                        (rewrite c bound)))
                                                    args))))
 
-                  (= 'catch op)
+                  (= (quote catch) op)
                   (let [binder (last (butlast args))
-                        bound' (into bound (pattern-symbols binder))]
-                    (keep-meta form (list* op (concat (map #(rewrite % bound) (drop-last 2 args))
-                                                      [binder (rewrite (last args) bound')]))))
+                        bound-next (into bound (pattern-symbols binder))]
+                    (keep-meta form (list* op (concat (map (fn [amu_project_lambda_19_arg_1]
+                                                               (rewrite amu_project_lambda_19_arg_1 bound)) (drop-last 2 args))
+                                                      [binder (rewrite (last args) bound-next)]))))
 
-                  (contains? #{'defn 'defn-} op)
+                  (contains? #{(quote defn) (quote defn-)} op)
                   (let [[name & declaration] args
                         [docstring declaration] (if (string? (first declaration))
                                                   [(first declaration) (rest declaration)]
@@ -1419,17 +1716,21 @@
                     (keep-meta form (list* op name (concat (when docstring [docstring]) rebuilt))))
 
                   :else
-                  (keep-meta form (apply list (map #(rewrite % bound) form)))))
+                  (keep-meta form (apply list (map (fn [amu_project_lambda_20_arg_1]
+                                                       (rewrite amu_project_lambda_20_arg_1 bound)) form)))))
 
-              (vector? form) (keep-meta form (mapv #(rewrite % bound) form))
+              (vector? form) (keep-meta form (mapv (fn [amu_project_lambda_21_arg_1]
+                                                       (rewrite amu_project_lambda_21_arg_1 bound)) form))
               (map? form) (keep-meta form (into (empty form)
                                                 (map (fn [[k v]] [(rewrite k bound) (rewrite v bound)]))
                                                 form))
-              (set? form) (keep-meta form (into (empty form) (map #(rewrite % bound)) form))
+              (set? form) (keep-meta form (into (empty form) (map (fn [amu_project_lambda_22_arg_1]
+                                                                      (rewrite amu_project_lambda_22_arg_1 bound))) form))
               :else form))]
     (if (empty? table)
       forms
-      (mapv #(rewrite % #{}) forms))))
+      (mapv (fn [amu_project_lambda_23_arg_1]
+                (rewrite amu_project_lambda_23_arg_1 #{})) forms))))
 
 (defn- check-referred-exports!
   "Every referred name must be an export of the module it is referred from."
@@ -1450,7 +1751,8 @@
   frontend is handed rather than only at what it answers."
   [forms binding module]
   (let [binding (into (sorted-map) binding)
-        substituted (mapv #(substitute-form % binding module) forms)]
+        substituted (mapv (fn [amu_project_lambda_24_arg_1]
+                              (substitute-form amu_project_lambda_24_arg_1 binding module)) forms)]
     (check-no-loose-parameters! substituted binding module)
     substituted))
 
@@ -1459,7 +1761,14 @@
   is non-nil, in which case `forms` are already the substituted forms and
   `info` was re-read from them (so a forwarded `:with` is concrete here)."
   [forms info dependencies module-index binding]
-  (let [available
+  (let [dependency-modules
+        (mapv (fn [{dep-name :namespace with :with}]
+                (get dependencies (instantiation-key dep-name with)))
+              (:requires info))
+        schemas (merge-schema-tables
+                 (cons (or (:schemas info) {})
+                       (map :schemas dependency-modules)))
+        available
         (into {}
               (mapcat (fn [{dep-name :namespace alias :alias with :with}]
                         (let [dependency (get dependencies (instantiation-key dep-name with))]
@@ -1484,16 +1793,22 @@
                            stub-pairs)
         stub-source-names (into #{} (map second) stub-pairs)
         _ (check-referred-exports! info dependencies)
-        rewritten (mapv #(rewrite-import-calls % import->stub)
-                        (rewrite-referred-symbols (with-derived-export (without-requires forms) info)
-                                                  (referred-alias-table (:requires info))))
-        augmented (into rewritten (map (fn [[_ stub clauses]] (stub-form stub clauses)) stub-pairs))
+        rewritten (with-schema-table
+                   (mapv (fn [amu_project_lambda_25_arg_1]
+                             (rewrite-import-calls amu_project_lambda_25_arg_1 import->stub))
+                         (rewrite-referred-symbols
+                          (with-derived-export (without-requires forms) info)
+                          (referred-alias-table (:requires info))))
+                   schemas)
+        augmented (into rewritten
+                        (map (fn [[_ stub clauses]] (stub-form stub clauses schemas))
+                             stub-pairs))
         ;; Lambda IDs are artifact data. Give every source module a disjoint
         ;; range so the project-level dispatcher can route a closure back to
         ;; the module whose lifted helper owns that ID.
         hir (try
               (sema/analyze (source-text augmented)
-                            {:lambda-id-base (* module-index sema/max-functions)})
+                            {:lambda-id-base (* module-index (project-max-functions))})
               (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
                 (throw (attribute-module-error error (:namespace info) forms augmented binding))))
         defn-lines (definition-lines forms)
@@ -1502,9 +1817,11 @@
         ;; with generated names. Filtering on `:name` would leave those in
         ;; `locals`, where they would be emitted into the linked source as
         ;; real functions returning a stub value.
-        stub-functions (filter #(contains? stub-source-names (source-name-of %))
+        stub-functions (filter (fn [amu_project_lambda_26_arg_1]
+                                   (contains? stub-source-names (source-name-of amu_project_lambda_26_arg_1)))
                                (:functions hir))
-        locals (vec (remove #(contains? stub-source-names (source-name-of %))
+        locals (vec (remove (fn [amu_project_lambda_27_arg_1]
+                                (contains? stub-source-names (source-name-of amu_project_lambda_27_arg_1)))
                             (:functions hir)))
         stub->target
         (into {}
@@ -1579,10 +1896,11 @@
                        (when-not (seq clauses)
                          (reject! "export does not name a declared function"
                                   {:module (:namespace info) :export export}))
-                       [export (mapv #(interface-of % (get local-names (:name %)))
+                       [export (mapv (fn [amu_project_lambda_28_arg_1]
+                                         (interface-of amu_project_lambda_28_arg_1 (get local-names (:name amu_project_lambda_28_arg_1))))
                                      clauses)])))
               (:exports info))]
-    {:namespace (:namespace info) :requires (:requires info)
+    {:namespace (:namespace info) :requires (:requires info) :schemas schemas
      :functions functions :interface interface}))
 
 (defn- wrapper-form
@@ -1595,16 +1913,16 @@
   function produces -- the two routes agree on the artifact's export surface
   rather than one of them being unable to describe it."
   [[export clauses]]
-  (arity-declaration 'defn export clauses
+  (arity-declaration (quote defn) export clauses
                      (fn [{:keys [linked-name params]}] (list* linked-name params))))
 
-(defn- typed-trap [result-type]
+(defn- typed-trap [result-type schemas]
   (if (= :bool result-type)
-    '(= (quot 1 0) 0)
-    (let [default (stub-value result-type)]
-      (list 'if '(= (quot 1 0) 0) default default))))
+    (quote (= (quot 1 0) 0))
+    (let [default (stub-value result-type schemas)]
+      (list (quote if) (quote (= (quot 1 0) 0)) default default))))
 
-(defn- project-dispatchers [functions]
+(defn- project-dispatchers [functions schemas]
   (let [dispatchers (group-by :project-dispatcher
                               (filter :project-dispatcher functions))
         routed
@@ -1615,14 +1933,14 @@
                  body
                  (reduce
                   (fn [fallback {:keys [name project-module-index]}]
-                    (let [lower (* project-module-index sema/max-functions)
-                          upper (+ lower sema/max-functions)
-                          id (list 'pair-first closure)]
-                      (list 'if
-                            (list 'and (list '> id lower) (list '<= id upper))
+                    (let [lower (* project-module-index (project-max-functions))
+                          upper (+ lower (project-max-functions))
+                          id (list (quote pair-first) closure)]
+                      (list (quote if)
+                            (list (quote and) (list (quote >) id lower) (list (quote <=) id upper))
                             (list* name params)
                             fallback)))
-                  (typed-trap result)
+                  (typed-trap result schemas)
                   (reverse (sort-by :project-module-index entries)))]
              {:name dispatcher-name :params params :param-types param-types
               :result result :effects #{} :body body}))
@@ -1631,12 +1949,26 @@
     (cond-> routed
       closure-apply
       (conj (-> closure-apply
-                (assoc :name '__kotoba_closure_apply)
+                (assoc :name (quote __kotoba_closure_apply))
                 (dissoc :project-closure-apply?))))))
 
+(defn- direct-exports
+  "Coalesce a single-clause root export with its implementation. This is
+  link-time name binding, not an ABI or authority crossing. Keep wrappers for
+  multi-arity exports and names that could capture an existing local."
+  [functions exports]
+  (let [used (set (mapcat #(tree-seq coll? seq
+                                   [(:name %) (:params %) (:body %)]) functions))]
+    (into {} (keep (fn [[export clauses]]
+                     (when (and (= 1 (count clauses)) (not (contains? used export)))
+                       [(:linked-name (first clauses)) export]))) exports)))
+
 (defn link-source
-  "Link a closed namespace->source map into one bounded source unit."
-  [sources root]
+  "Link a closed namespace->source map into one bounded source unit.
+  Native callers select :direct-exports? to avoid a forwarding call at the
+  root. Module imports already resolve to direct typed calls in this unit."
+  ([sources root] (link-source sources root {}))
+  ([sources root {:keys [direct-exports?]}]
   (when-not (and (map? sources) (pos? (count sources))
                  (<= (count sources) max-project-modules))
     (reject! "project source map is empty or exceeds module limit"
@@ -1653,7 +1985,7 @@
                   :literal-bytes (volatile! 0)}
         parsed (into {}
                      (map (fn [[declared source]]
-                            (let [forms (sema/read-forms source)
+                            (let [forms (project-read-forms source)
                                   _ (admit-project-forms! forms counters)
                                   ;; A header refusal is this module's, not
                                   ;; the root's (see project-files).
@@ -1695,18 +2027,21 @@
                 (let [info (:info (get parsed dependency))
                       params (:params info)
                       defaults (:param-defaults info)]
-                  (if (and (some? params) (every? #(contains? defaults %) params))
+                  (if (and (some? params) (every? (fn [amu_project_lambda_29_arg_1]
+                                                      (contains? defaults amu_project_lambda_29_arg_1)) params))
                     (assoc require :with (into (sorted-map) defaults))
                     require))))
             (with-default-bindings [info]
-              (update info :requires #(mapv default-binding %)))
+              (update info :requires (fn [amu_project_lambda_30_arg_1]
+                                         (mapv default-binding amu_project_lambda_30_arg_1))))
             (instantiate [name binding]
               (let [{:keys [forms info]} (get parsed name)
                     params (:params info)
                     defaults (:param-defaults info)]
                 (cond
                   (and (some? params) (nil? binding))
-                  (let [undefaulted (vec (remove #(contains? defaults %) params))]
+                  (let [undefaulted (vec (remove (fn [amu_project_lambda_31_arg_1]
+                                                     (contains? defaults amu_project_lambda_31_arg_1)) params))]
                     (reject! (str "template module " name " declares (:params " (pr-str params)
                                   ") and needs an instantiation: require it with :with "
                                   (pr-str (into {} (map (fn [p] [p (symbol (str "<type>"))])) params))
@@ -1736,8 +2071,8 @@
                     ;; Substituted forms, then the header re-read from them so
                     ;; a forwarded `:with {elem elem}` is concrete by the time
                     ;; the requirement below is resolved.
-                    (let [forms' (instantiate-forms forms binding name)]
-                      {:forms forms' :info (with-default-bindings (module-info forms'))}))
+                    (let [instantiated-forms (instantiate-forms forms binding name)]
+                      {:forms instantiated-forms :info (with-default-bindings (module-info instantiated-forms))}))
 
                   :else {:forms forms :info (with-default-bindings info)})))
             (visit [key depth]
@@ -1768,8 +2103,13 @@
                   (vswap! visiting disj name))))]
       (visit root 1))
     (let [root-module (get @linked root)
-          module-functions (vec (mapcat #(get-in @linked [% :functions]) @order))
-          functions (into module-functions (project-dispatchers module-functions))
+          module-functions (vec (mapcat (fn [amu_project_lambda_32_arg_1]
+                                            (get-in @linked [amu_project_lambda_32_arg_1 :functions])) @order))
+          module-schemas (merge-schema-tables
+                          (map (fn [amu_project_lambda_33_arg_1]
+                                   (get-in @linked [amu_project_lambda_33_arg_1 :schemas])) @order))
+          linked-functions (into module-functions
+                                 (project-dispatchers module-functions module-schemas))
           ;; Clauses, not export names. `max-project-exports` bounds the
           ;; exported FUNCTION surface, and a multi-arity export is several
           ;; functions -- the artifact carries `twice$arity$1` and
@@ -1781,10 +2121,20 @@
                                         (reduce + (map count (vals (get-in @linked [module :interface])))))
                                       @order))
           exports (sort-by (comp str key) (:interface root-module))
-          wrappers (mapv wrapper-form exports)
+          direct (when direct-exports? (direct-exports linked-functions exports))
+          functions (if (seq direct)
+                      (mapv (fn [function]
+                              (-> function
+                                  (update :name #(get direct % %))
+                                  (update :body rewrite-calls direct)))
+                            linked-functions)
+                      linked-functions)
+          direct-names (set (vals direct))
+          wrapped-exports (remove #(contains? direct-names (first %)) exports)
+          wrappers (mapv wrapper-form wrapped-exports)
           ;; Same reason: one multi-arity wrapper form is several functions
           ;; against `max-project-functions`.
-          wrapper-function-count (reduce + (map (comp count val) exports))
+          wrapper-function-count (reduce + (map (comp count val) wrapped-exports))
           function-count (+ (count functions) wrapper-function-count)
           ;; The linked namespace deliberately carries NO `:capabilities`
           ;; clause even when its modules declared one. That clause is a
@@ -1813,14 +2163,12 @@
           ;; outside the closed namespace table". Taking the union is safe
           ;; because `reject-schema-collisions!` has already refused any name
           ;; two modules define differently.
-          merged-schemas (reduce (fn [acc module]
-                                   (merge acc (get-in parsed [module :info :schemas])))
-                                 {} (module-namespaces @order))
+          merged-schemas module-schemas
           definition-forms
           (into
            (mapv (fn [{:keys [name params param-types result body
                               callable-param-contracts callable-result-contract]}]
-                   (list 'defn- name
+                   (list (if (contains? direct-names name) (quote defn) (quote defn-)) name
                          (typed-params params param-types callable-param-contracts)
                          (or callable-result-contract result)
                          body))
@@ -1835,9 +2183,9 @@
           linked-source
           (source-text
            (into [(if (seq merged-schemas)
-                    (list 'ns root (list :export (vec (map first exports)))
+                    (list (quote ns) root (list :export (vec (map first exports)))
                           (list :schemas merged-schemas))
-                    (list 'ns root (list :export (vec (map first exports)))))]
+                    (list (quote ns) root (list :export (vec (map first exports)))))]
                  definition-forms))
           ;; source-text emits exactly one form per line, and the `ns` form is
           ;; line 1, so an emitted function's linked line is its index + 2.
@@ -1870,7 +2218,7 @@
       {:source
        linked-source
        :root root :module-order @order :modules (set @order)
-       :source-map source-map})))
+       :source-map source-map}))))
 
 (defn source-position
   "Translate a line in the linked source back to the module that wrote it.
@@ -1898,7 +2246,7 @@
   (let [entry (or (when-let [line (get-in data [:span :line])]
                     (source-position source-map line))
                   (when (contains? data :form)
-                    (when-let [index (top-level-index (sema/read-forms linked-source) data)]
+                    (when-let [index (top-level-index (project-read-forms linked-source) data)]
                       (source-position source-map (inc index)))))]
     (when entry
       {:module (:module entry) :line (:source-line entry)})))

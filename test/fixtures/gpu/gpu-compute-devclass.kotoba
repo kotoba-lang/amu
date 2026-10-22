@@ -1,0 +1,6 @@
+(ns gpu.probe (:export [devclass]))
+;; :gpu/compute (wire 42) device-class probe: the loader's DEVCLASS token
+;; "discrete|integrated|virtual|cpu|other" -- VkPhysicalDeviceType of the
+;; chosen device as a stable fact (tools/kexe_gpu_vulkan.c). Root ADR-2609182400 C.
+(defn devclass [] :string
+  (typed-cap-call :gpu/compute :string :string "DEVCLASS"))

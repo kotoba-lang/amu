@@ -268,6 +268,76 @@
                 "package-aiueos-boot" image "--payload" big-payload
                 "--output" (lib/join directory "never.efi"))
 
+      ;; package-aiueos-disk-image: the bootloader must be an x86-64 PE32+
+      ;; EFI application (not merely MZ), disk and receipt destinations must
+      ;; be distinct, and the receipt is JSON under a .json name.
+      (let [disk (lib/join directory "desktop.img")
+            result (ok! "package-aiueos-disk-image" "package-aiueos-disk-image" efi
+                        "--output" disk)
+            value (stdout-edn result)
+            receipt-path (str disk ".receipt.json")
+            receipt (js/JSON.parse (lib/read-text receipt-path))]
+        (report! (and (:ok value) (= receipt-path (:receipt value)))
+                 "the default receipt path is the output plus .receipt.json"
+                 (pr-str value))
+        (report! (and (some? (aget receipt "disk")) (string? (aget receipt "disk" "sha256")))
+                 "the default receipt parses as JSON and binds the disk digest"
+                 (lib/read-text receipt-path)))
+      (refused! "an input colliding with the disk is refused" 64 "must be distinct"
+                "package-aiueos-disk-image" efi "--output" efi)
+      (let [dos (lib/join directory "dos.exe")]
+        (.writeFileSync fs dos (js/Buffer.concat
+                                #js [(js/Buffer.from #js [0x4d 0x5a])
+                                     (js/Buffer.alloc 126 0)]))
+        (refused! "a DOS MZ stub is not a bootloader" 65
+                  "bootloader is not PE32+"
+                  "package-aiueos-disk-image" dos
+                  "--output" (lib/join directory "never.img")))
+      (let [arm (js/Buffer.from (.readFileSync fs efi))
+            arm-path (lib/join directory "bootaa64.EFI")]
+        (.writeUInt16LE arm 0xaa64 (+ (.readUInt32LE arm 0x3c) 4))
+        (.writeFileSync fs arm-path arm)
+        (refused! "an ARM64 UEFI binary is not an x86-64 bootloader" 65
+                  "bootloader is not x86-64"
+                  "package-aiueos-disk-image" arm-path
+                  "--output" (lib/join directory "never.img")))
+
+    ;; --selfhost-desktop promises the desktop profile (no GDT/TSS, no ISR
+    ;; runtime): it must select the desktop packager -- different bytes from
+    ;; the base kernel image -- and refuse a source that exports interrupt
+    ;; entries (kotoba-native's package-kernel-desktop is fail-closed there).
+    (let [base-image (lib/join directory "kernel-base.elf")
+          desktop-image (lib/join directory "kernel-desktop.elf")
+          isr-source (lib/join directory "isr.kotoba")]
+      ;; The entry body's SysV signature is four arguments (vector, error
+      ;; code, rip, rsp -- `kernel.kotoba`'s `aiueos-isr-6 [vector rip cs
+      ;; flags]` form): kotoba-sema admits an entry only at arity 4
+      ;; (`:kotoba.error/interrupt-entry-signature` otherwise, measured), so a
+      ;; 0-arg fixture would be refused before the packager ever sees it and
+      ;; the desktop refusal below would go unmeasured.
+      (lib/write-text! isr-source
+                       (str "(ns kernel-isr (:export [main aiueos-isr-32]))\n"
+                            "(defn main [] :i64 0)\n"
+                            "(defn aiueos-isr-32 [vector error-code rip rsp] :i64 1)\n"))
+      (ok! "compile the x86-64 kernel image" "compile"
+           (lib/join lib/root "examples" "i64-semantics.kotoba")
+           "--target" "x86_64-aiueos-kernel-v1" "--artifact" "image"
+           "--output" base-image)
+      (ok! "compile the x86-64 kernel image with --selfhost-desktop" "compile"
+           (lib/join lib/root "examples" "i64-semantics.kotoba")
+           "--target" "x86_64-aiueos-kernel-v1" "--artifact" "image"
+           "--selfhost-desktop" "--output" desktop-image)
+      (report! (and (.existsSync fs desktop-image)
+                    (not (.equals (.readFileSync fs base-image)
+                                  (.readFileSync fs desktop-image))))
+               "--selfhost-desktop produces the desktop image, not the base image" "")
+      (refused! "the desktop profile refuses kernel interrupt entries" 65
+                "does not admit kernel interrupt entries"
+                "compile" isr-source "--target" "x86_64-aiueos-kernel-v1"
+                "--artifact" "image" "--selfhost-desktop"
+                "--output" (lib/join directory "never.elf")))
+
+
       ;; --resident is not implemented and must not be acknowledged
       (refused! "package-aiueos-boot refuses --resident" 64
                 "--resident is not implemented"

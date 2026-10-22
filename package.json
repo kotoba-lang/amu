@@ -2,7 +2,7 @@
   "name": "amu-tooling",
   "private": true,
   "devDependencies": {
-    "@playwright/test": "1.64.0",
+    "@playwright/test": "1.64.1",
     "nbb": "git+https://github.com/kotoba-lang/org-babashka-nbb.git#829f0ba11016e925001d80e51f12848c4ad58112"
   },
   "scripts": {
@@ -21,6 +21,9 @@
     "test-nbb-trust": "node bin/kbb --backend sci --classpath . scripts/test-nbb-trust.cljk",
     "test-nbb-test": "node bin/kbb --backend sci --classpath . scripts/test-nbb-test.cljk",
     "test-nbb-test-manifest": "node bin/kbb --backend sci --classpath . scripts/test-nbb-test-manifest.cljk",
+    "test-re-disasm": "node bin/amu test re_disasm/disasm.kotoba --fuel 5000000 && node bin/amu test re_disasm/x86disasm.kotoba --fuel 5000000",
+    "test-re-disasm-cli": "node re_disasm/cli-smoke.mjs",
+    "test-re-disasm-native": "node re_disasm/build-native.mjs",
     "test-nbb-run": "node bin/kbb --backend sci --classpath . scripts/test-nbb-run.cljk",
     "jvm-route-topology": "node bin/kbb --backend sci --classpath . scripts/jvm-route-topology.cljk --probe --output docs/jvm-route-topology.edn",
     "test-nbb-classpath": "node bin/kbb --backend sci --classpath src test/nbb/classpath.cljk",
@@ -50,12 +53,6 @@
     "test-postalloc-scheduling-benchmark": "node scripts/test-postalloc-scheduling-benchmark.mjs",
     "test-clean-clone-cli": "node bin/kbb --backend sci scripts/test-clean-clone-cli.cljk",
     "test-jdk-free-native": "node bin/kbb --backend sci scripts/jdk-free-native-conformance.cljk",
-    "_comment-loader-warnings": "The loader is compiled by CI with -Wall -Wextra -Werror and by hand, locally, without them. A gcc-only -Wstringop-overflow error reached main-blocking CI that way; this target is the same command, so the difference between a local build and the one that gates a merge is one npm run rather than a memory.",
-    "gen-loader-decisions": "node bin/kbb --backend sci --classpath . scripts/gen-loader-decisions.cljk",
-    "test-loader-decisions": "node bin/kbb --backend sci --classpath . scripts/test-loader-decisions.cljk",
-    "test-loader-decisions-static": "node bin/kbb --backend sci --classpath . scripts/test-loader-decisions.cljk --static",
-    "test-export-boundary-codec": "node bin/kbb --backend sci --classpath . scripts/test-export-boundary-codec.cljk",
-    "test-loader-warnings": "cc -std=c11 -O2 -Wall -Wextra -Werror tools/kexe_loader.c -o /tmp/kexe-loader-warncheck && echo loader compiles clean under the flags CI uses",
     "test-gpu-compute": "kbb --backend sci scripts/test-gpu-compute.cljk",
     "lock-classpath": "node bin/kbb --backend sci scripts/lock-classpath.cljk",
     "test-nbb-clock-transport": "node bin/kbb --backend sci --classpath . scripts/test-nbb-clock-transport.cljk",
@@ -72,7 +69,6 @@
     "fuzz": "node bin/kbb --backend sci scripts/fuzz-native.cljk",
     "review-fuzz": "node bin/kbb --backend sci scripts/review-fuzz-corpus.cljk",
     "test-review-fuzz": "node bin/kbb --backend sci scripts/test-review-fuzz-corpus.cljk",
-    "check-workflows": "node bin/kbb --backend sci scripts/check-workflows.cljk",
     "test-browser-host": "node bin/kbb --backend sci scripts/test-browser-host.cljk",
     "test-typed-value-conformance": "node bin/kbb --backend sci --classpath . scripts/test-typed-value-conformance.cljk",
     "test-browser-host-typed-ops": "node bin/kbb --backend sci scripts/test-browser-host-typed-ops.cljk",
@@ -94,10 +90,12 @@
     "test-nbb-llm-transport": "node bin/kbb --backend sci --classpath . scripts/test-nbb-llm-transport.cljk",
     "test-nbb-storage-transport": "node bin/kbb --backend sci --classpath . scripts/test-nbb-storage-transport.cljk",
     "test-nbb-js": "node bin/kbb --backend sci test/nbb/js_parity.cljk",
-    "test-loader-file-scope": "node bin/kbb --backend sci scripts/test-loader-file-scope.cljk"
+    "test-loader-file-scope": "node bin/kbb --backend sci scripts/test-loader-file-scope.cljk",
+    "test-loader-http-scope": "node bin/kbb --backend sci scripts/test-loader-http-scope.cljk",
+    "test-gpu-metal-broker": "node bin/kbb --backend sci --classpath . scripts/test-gpu-metal-broker.cljk"
   },
   "optionalDependencies": {
-    "workerd": "1.20261008.1"
+    "workerd": "1.20261016.1"
   },
   "dependencies": {
     "@noble/hashes": "2.4.0"

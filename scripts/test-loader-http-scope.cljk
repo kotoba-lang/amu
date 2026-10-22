@@ -1,0 +1,162 @@
+(ns scripts.test-loader-http-scope
+  "Execute native wire 4 (:http/post) through the kexe loader's host helper,
+  and hold the three review findings of amu #1427 to their behavior:
+
+    origin grant  a URL whose origin KEXE_CAP_RESOURCES_4 does not name, a
+                  non-https scheme, a userinfo spelling and a port the grant
+                  does not name are each refused BY NAME in the guest, and the
+                  helper never sees the request; a launch with no grant starts
+                  no helper and the call traps; a malformed grant refuses the
+                  launch
+    descriptors   a non-CLOEXEC descriptor numbered 300 in the loader's
+                  caller is closed in the helper (the old 3..255 loop left it)
+    termination   a helper that ignores SIGTERM is SIGKILLed after the grace
+                  period: the loader returns, and the helper is gone
+
+  The helper is a framing echo (8-byte little-endian length, both ways) that
+  logs what it saw; the guest returns the answer's byte length.
+
+    node bin/kbb --backend sci scripts/test-loader-http-scope.cljk"
+  (:require ["node:fs" :as fs] ["node:os" :as os]
+            ["node:path" :as path] ["node:child_process" :as cp]))
+
+(def helper-source
+  "import os, signal, struct, sys, time
+mode = os.environ.get('HELPER_MODE', 'echo')
+log = os.environ['HELPER_LOG']
+if mode == 'ignore-term':
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+with open(log + '.pid', 'w') as f:
+    f.write(str(os.getpid()))
+def state(fd):
+    try:
+        os.fstat(fd)
+        return 'open'
+    except OSError:
+        return 'closed'
+header = sys.stdin.buffer.read(8)
+if len(header) == 8:
+    (n,) = struct.unpack('<Q', header)
+    request = sys.stdin.buffer.read(n)
+    with open(log, 'wb') as f:
+        f.write(('fd300=' + state(300) + '\\norigins=' +
+                 os.environ.get('KEXE_HTTP_ALLOWED_ORIGINS', '<unset>') + '\\n').encode())
+        f.write(request)
+    sys.stdout.buffer.write(struct.pack('<Q', len(request)) + request)
+    sys.stdout.buffer.flush()
+if mode == 'ignore-term':
+    while True:
+        time.sleep(60)
+")
+
+(defn trap [reason]
+  (str "KEXE_TRAP {:kind :capability :capability :http/post :reason :http/" reason "}\n"))
+
+(def body "\ncontent-type: text/plain\n\nBODY-LINE")
+
+;; [name url grant helper-mode expectation]
+(def cases
+  [["granted" "https://api.example.test/submit" "https://api.example.test" "echo"
+    {:ok "fd300=closed\norigins=https://api.example.test\n"}]
+   ["normalized" "https://api.Example.TEST:443/x?y=1" "https://API.example.test:443,https://other.test:8443" "echo"
+    {:ok "fd300=closed\norigins=https://api.example.test,https://other.test:8443\n"}]
+   ["other-origin" "https://evil.example.test/submit" "https://api.example.test" "echo"
+    {:refused "origin-not-granted"}]
+   ["other-port" "https://api.example.test:8443/submit" "https://api.example.test" "echo"
+    {:refused "origin-not-granted"}]
+   ["http-scheme" "http://api.example.test/submit" "https://api.example.test" "echo"
+    {:refused "malformed-url"}]
+   ["userinfo" "https://api.example.test@evil.test/submit" "https://api.example.test" "echo"
+    {:refused "malformed-url"}]
+   ["no-grant" "https://api.example.test/submit" nil "echo"
+    {:trapped true}]
+   ["malformed-grant" "https://api.example.test/submit" "https://api.example.test/path" "echo"
+    {:launch-refused true}]
+   ["ignore-term" "https://api.example.test/submit" "https://api.example.test" "ignore-term"
+    {:ok "fd300=closed\norigins=https://api.example.test\n" :bounded true}]])
+
+(defn alive? [pid]
+  (try (.kill js/process pid 0) true (catch :default _ false)))
+
+(let [tmp (.mkdtempSync fs (.join path (.tmpdir os) "amu-http-scope-"))
+      root (.realpathSync fs tmp)
+      isa (if (= "arm64" (.arch os)) "aarch64" "x86_64")
+      loader (.join path root "loader")
+      helper (.join path root "helper.py")
+      policy (.join path root "policy.edn")
+      held (.join path root "held")
+      run (fn [command args env]
+            (.spawnSync cp command (clj->js args)
+                        #js {:encoding "utf8" :timeout 60000
+                             :env (js/Object.assign #js {} js/process.env (clj->js env))}))
+      failures (atom 0)]
+  (try
+    (.writeFileSync fs helper helper-source)
+    (.writeFileSync fs held "held")
+    (.writeFileSync fs policy (pr-str {:allow #{[:cap/call 4]}}))
+    (let [built (run "cc" ["tools/kexe_loader.c" "-std=c11" "-O2" "-Wall" "-Wextra" "-Werror" "-o" loader] {})]
+      (when-not (= 0 (.-status built))
+        (throw (ex-info "http-scope loader build failed" {:stderr (.-stderr built)}))))
+    (doseq [[name url grant mode want] cases]
+      (let [request (str url body)
+            source (.join path root (str name ".kotoba"))
+            artifact (.join path root (str name ".kexe"))
+            raw (.join path root (str name ".bin"))
+            log (.join path root (str name ".log"))]
+        (.writeFileSync fs source
+                        (str "(ns http." name " (:export [main]))\n"
+                             "(defn main [] :i64 (string-byte-length (typed-cap-call :http/post :string :string \""
+                             request "\")))\n"))
+        (let [compiled (run js/process.execPath ["bin/amu" "compile" source "--target" isa "--jvm-free" "--policy" policy "--output" artifact] {})]
+          (when-not (= 0 (.-status compiled))
+            (throw (ex-info "http-scope guest compilation failed" {:case name :stdout (.-stdout compiled) :stderr (.-stderr compiled)}))))
+        (let [extracted (run js/process.execPath ["bin/amu" "extract-native" artifact "--symbol" "main" "--output" raw] {})
+              offset (second (re-find #":offset (\d+)" (str (.-stdout extracted))))
+              _ (when-not offset (throw (ex-info "http-scope extraction failed" {:case name :stdout (.-stdout extracted)})))
+              env (cond-> {"KEXE_HTTP_CMD" (str "python3 " helper) "HELPER_MODE" mode "HELPER_LOG" log
+                           "KEXE_FUEL" "4096"}
+                    grant (assoc "KEXE_CAP_RESOURCES_4" grant))
+              started (.now js/Date)
+              ;; descriptor 300 is opened WITHOUT close-on-exec in the
+              ;; loader's caller: the helper must not inherit it
+              result (run "bash" ["-c" "exec 300<\"$0\"; exec \"$@\"" held loader raw offset "0" isa "4"] env)
+              elapsed (- (.now js/Date) started)
+              status (.-status result)
+              stdout (str (.-stdout result))
+              stderr (str (.-stderr result))
+              logged (when (.existsSync fs log) (.readFileSync fs log "utf8"))
+              pid-file (str log ".pid")
+              pid (when (.existsSync fs pid-file) (js/parseInt (.readFileSync fs pid-file "utf8") 10))
+              ok? (cond
+                    (:ok want)
+                    (and (= 0 status)
+                         (= (str (count request)) (.trim stdout))
+                         (= (str (:ok want) request) logged)
+                         (or (not (:bounded want))
+                             (and (< elapsed 15000) pid (not (alive? pid)))))
+                    (:refused want)
+                    (and (= 126 status)
+                         (= (trap (:refused want)) stderr)
+                         (nil? logged))
+                    ;; no grant: no helper starts, the call traps as a
+                    ;; call with no helper always has, and nothing leaves
+                    (:trapped want)
+                    (and (= 120 status)
+                         (.includes stderr ":SIGILL")
+                         (nil? logged)
+                         (nil? pid))
+                    (:launch-refused want)
+                    (and (= 2 status)
+                         (= "kexe-loader: malformed :http/post grant (KEXE_CAP_RESOURCES_4: comma-separated https://<host>[:<port>] origins)\n"
+                            stderr)
+                         (nil? pid)))]
+          (when (and pid (alive? pid)) (try (.kill js/process pid "SIGKILL") (catch :default _ nil)))
+          (if ok?
+            (println "PASS native http scope" name (str "(" elapsed " ms)"))
+            (do (swap! failures inc)
+                (println "FAIL native http scope" name
+                         (pr-str {:status status :stdout stdout :stderr stderr :logged logged
+                                  :elapsed elapsed :pid pid :alive (and pid (alive? pid))})))))))
+    (finally (.rmSync fs tmp #js {:recursive true :force true})))
+  (println (count cases) "cases," @failures "failed")
+  (when (pos? @failures) (.exit js/process 1)))

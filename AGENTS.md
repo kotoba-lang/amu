@@ -2,37 +2,67 @@
 
 ## Selfhost is the top priority
 
-- The Amu compiler must become a native executable produced by Amu, with no
-  JVM, GraalVM or Node.js needed to build it. This outranks features, new
-  targets and benchmark publication. Details: `docs/selfhost-priority.md`.
-- Only a selfhost-built compiler is selfhost evidence. GraalVM Native Image,
-  JVM and Node/nbb builds are bootstrap references; label their numbers so.
-- Do not add a JVM, GraalVM or Node fallback to make a selfhost stage pass.
+- Use canonical `.kotoba` source and an Amu-built native compiler for the
+  compiler, CLI, build graph, packaging and operational tooling. This outranks
+  features, new targets and benchmark publication. Details:
+  `docs/selfhost-priority.md` (owner decision 2026-10-22).
+- Remove CLJK/CLJC/CLJS, NBB, KBB, Clojure, Java/JVM, GraalVM, Node.js and
+  C compiler/loader/runtime dependencies from that closure. CLJK is not a
+  retained final syntax-sugar surface. C-loader pinning is not acceptance.
+- Only a compiler built and rebuilt by Amu selfhost qualifies. Historical
+  hosted builds and C-loader receipts remain labelled historical evidence;
+  they do not qualify the replacement route.
+- Do not add a legacy host, C loader or hosted packaging fallback.
   Unreachable files stay on the scoreboard as refused, with the reason.
 - Compiler benchmarks (Embench etc.) are published as selfhost results only
   when taken with a selfhost-built compiler on a quiet host.
 
-## Q9 compiler routes must be JVM-free
+## The measured Embench compiler is the compiler core
 
-- Q9 callers use `bin/amu check ... --jvm-free` and
-  `bin/amu compile ... --jvm-free`. An omitted `--target` selects the
+- Extend the adopted `seed/MANIFEST` compiler lineage for Amu selfhost and
+  the public `amu` / `kotoba` compiler. Preserve its frontend, lowering,
+  optimization and backend behavior while growing the complete command and
+  build closure. Do not replace it with an independently implemented core
+  or make it an optional benchmark-only backend.
+- `seed/compiler-core.json` pins the measured M104 baseline and the adopted
+  M105 source lineage. ADR 0370 defines the integration and review order.
+  Review and merge this lineage before unrelated feature work.
+- Preserve the full 19-workload corpus, exact result/fuel/arena/refusal
+  behavior and source/artifact provenance. A successor needs complete
+  self-rebuild and conformance evidence before replacing the admitted core;
+  a new score needs fresh measurements of that exact compiler.
+- Historical C-loader results remain historical. This core decision does
+  not relax the native-only build/execution contract above or qualify the
+  public CLI, a new runtime, or CDCI through source inspection alone.
+
+## Q9 compiler routes must use Kotoba / Amu selfhost only
+
+- Q9 callers use the qualified Amu selfhost-built entrypoint for `check`
+  and `compile`. A Node/nbb `bin/amu` is not that entrypoint, and
+  `--jvm-free` alone does not establish selfhost or exclude Node/NBB/C.
+  An omitted `--target` selects the
   engine-neutral Kototama program target; `AMU_TARGET` or an explicit
   `--target` selects another backend. Browser / Worker / WASI builds name
   `wasm32-browser` / `wasm32-wasi` explicitly.
-- `--jvm-free` must never invoke `java`, `javac`, `clojure`, `clj`,
-  `resolveWithJvm`, a Clojure main namespace or another JVM launcher.
+- The build and execution closure must not invoke NBB, KBB, Node, Java,
+  Clojure/JVM, GraalVM, a C compiler or C loader, including through wrappers,
+  `resolveWithJvm`, compatibility adapters or packaging helpers.
 - Missing/stale dependency locks, unsupported commands/targets and project
   linker gaps fail closed. Do not silently remove `--source-path`, ignore a
-  module lock or fall back to the JVM to make a component compile.
-- New Q9 compiler/test routes use nbb/CLJS, Node, native or Wasm. Existing JVM
-  suites are compatibility diagnostics and are not Q9 acceptance evidence.
-- Preserve tests that shadow forbidden JVM executables and verify that no
-  marker was written on both unsupported-route and lock-failure paths.
+  module lock or fall back to a legacy host to make a component compile.
+- New Q9 compiler/test routes are authored in Kotoba, built by Amu selfhost,
+  and executed as qualified native artifacts or selfhost-produced Wasm in
+  the declared host. JavaScript/Wasm output does not authorize a Node/NBB
+  compiler host. CDCI is limited to Amu selfhost and Kotoba native as
+  loaderless `x86_64-linux-static` ELF artifacts.
+- Preserve the positive/refusal and lock-failure corpus while migrating it
+  to the native route. Record forbidden-process traces, compiler generations,
+  source/lock pins, artifact hashes and actual execution results. Missing
+  native functionality stays blocked; source admission alone is not a pass.
 
 
-## Claude 向け追記（旧 CLAUDE.md より統合）
+## Shared agent rule
 
-Selfhost (an Amu-built compiler, no JVM, GraalVM or
-Node.js) is the top priority; see `docs/selfhost-priority.md`. For Q9, Amu is used only with the fail-closed
-`--jvm-free` path. Never invoke or add a Clojure/JVM fallback to satisfy a
-whole-component build; an unsupported route remains blocked.
+These rules apply to every agent. Migrate and qualify whole components,
+including their launch/build/packaging dependencies. Keep historical
+measurements distinct from current qualification and preserve unrelated WIP.

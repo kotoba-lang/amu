@@ -6,10 +6,21 @@ language. The repository is `kotoba-lang/amu`; the name evokes Japanese
 cloth.
 
 > **Selfhost is the top priority.** The Amu compiler is to be a native
-> executable produced by Amu itself, built with no JVM, no GraalVM and no
-> Node.js. Only a selfhost-built compiler counts as selfhost evidence; a
-> GraalVM- or Node-hosted build is a bootstrap reference and is labelled so.
+> executable produced and rebuilt by Amu itself from canonical `.kotoba`,
+> without CLJK/CLJC/CLJS, NBB, KBB, Clojure, Java/JVM, GraalVM, Node.js, or a
+> C compiler/loader/runtime in the build and execution closure. Retaining
+> CLJK as final syntax sugar and pinning a C loader are superseded conditions.
+> Only the qualified selfhost route counts as current selfhost/Q9 evidence;
+> existing hosted builds and C-loader receipts are historical references.
+> This is the migration contract, not a claim that those dependencies have
+> already been removed. CDCI covers only Amu selfhost and Kotoba native.
 > See [docs/selfhost-priority.md](docs/selfhost-priority.md).
+
+The four legacy test/browser/fuzz/x86-seed GitHub workflows and their Node/KBB
+workflow checker are retired. [CDCI retirement and current gaps](docs/native-cdci-retirement.md)
+records the complete old job inventory. Only the separately held required
+merge-guard remains temporarily; the native controller and two native gates
+are still unqualified. Removing old jobs does not certify their replacements.
 
 ## Lisp machine architecture
 
@@ -493,10 +504,15 @@ WGSL, CUDA C or Metal Shading Language. Sealed GPU artifacts bind KIR/code hashe
 re-lowered during verification, including against attacker-resealed code. This
 is the shared GPU compiler contract consumed by `kotoba-lang/num`; see
 ADR-0002.
-`.kotoba`, `.cljk` (CLJ-shaped Kotoba), and `.cljc` (portable common source)
-are admitted source-discovery extensions. All three enter the exact same closed
-Kotoba reader, type/effect admission and selected backend; none enables the JVM,
-the full Clojure/ClojureScript reader, reader conditionals, or ambient host APIs.
+`.kotoba` is the canonical source format and final authoring surface. The
+current discovery implementation also admits bounded `.cljk` and `.cljc`
+inputs; these readers, sources and host adapters are migration inventory to
+port and retire. Their continued presence is not an acceptance requirement
+to retain CLJK syntax sugar. Preserve recorded semantic identity, Definition
+CIDs and named refusals during the migration. A suffix alone proves neither
+pure-core admission nor selfhost execution. None authorizes ambient host APIs
+or unrestricted macros. See the current
+[migration contract](docs/selfhost-priority.md).
 
 ```text
 source -> inert reader -> typed/effect HIR -> SSA-like KIR
@@ -1567,7 +1583,7 @@ together with its descendants. Toolchain builds allow 30 seconds and 1 MiB per
 stream; admitted execution allows 5 seconds and 64 KiB per stream in addition
 to the loader's internal three-second supervisor deadline.
 
-Security mutation fuzzing runs in every CI job with a recorded seed. It mutates
+The historical hosted security mutation suite mutates
 sealed native artifacts (including attacker-resealed KIR/code/ABI fields),
 Ed25519 envelopes, and executor receipts, requiring every case to fail closed.
 A failure can be replayed locally:
@@ -1576,22 +1592,22 @@ A failure can be replayed locally:
 KOTOBA_FUZZ_SEED=5426643073673934426 KOTOBA_FUZZ_CASES=1000 kbb -M:test
 ```
 
-The C loader is also compiled with AddressSanitizer and UndefinedBehaviorSanitizer
-in every Linux and macOS CI job. The sanitizer gate executes verified native
+The retired C-loader jobs declared AddressSanitizer and UndefinedBehaviorSanitizer
+coverage on Linux and macOS. The historical sanitizer driver executes native
 code and a malformed CLI corpus covering empty, overflowing, invalid ISA,
 capability, arity, and i64 inputs.
 
 The same production parser implementation is compiled into a fuzz harness.
-Linux CI performs 20,000 libFuzzer coverage-guided runs from a committed seed
-corpus with ASan/UBSan enabled. macOS CI runs 20,000 deterministic sanitized
+The retired Linux workflow declared 20,000 libFuzzer coverage-guided runs from a committed seed
+corpus with ASan/UBSan enabled. The macOS workflow declared 20,000 deterministic sanitized
 mutations of the identical harness because the current Xcode image does not
 ship its libFuzzer runtime.
 
-A separate `long-fuzz` workflow runs the Linux coverage-guided harness for five
-minutes every Monday and can be started manually with a custom duration. It
-uploads the evolved corpus plus any `crash-*`, `timeout-*`, or `leak-*` inputs
-for 30 days even when fuzzing fails, so findings remain reproducible rather than
-being lost with the runner.
+The retired `long-fuzz` workflow declared a five-minute Monday run and a
+manual duration override, with evolved/crash/timeout/leak artifact upload and
+30-day retention. That schedule/manual workflow is removed. These historical
+drivers, recorded observations and committed inputs remain migration inventory;
+their native corpus replacement is still open.
 
 Downloaded corpus artifacts are reviewed in dry-run mode before promotion:
 
@@ -1605,14 +1621,16 @@ enforces aggregate limits, rejects untrusted filenames, deduplicates by content
 SHA-256, and reruns the sanitized fuzz harness before copying new inputs under
 canonical SHA-256 names.
 
-All repository build, conformance, sanitizer, fuzz, and corpus-review
-orchestration is implemented in NBB/ClojureScript. No POSIX shell script is a
-project execution boundary.
-CI uses an exact Node 24 runtime and Clojure CLI version. Every third-party
-GitHub Action is pinned to a full commit SHA; an NBB workflow lint gate rejects
-mutable tags, unpinned toolchains, and reintroduced `.sh` execution files.
-GitHub also requires action SHA pins at the repository boundary. The exact
-Actions permissions and app-bound, strict `main` checks are versioned in
+The historical NBB/ClojureScript build/conformance/sanitizer/fuzz/corpus-review
+orchestration is not the required native closure. Its old workflow checker
+required Node and the removed job names themselves; that checker and npm entry
+are retired. Native replacements must preserve pinned tool/artifact identities,
+bounded authority, the full corpus and named refusals through Amu selfhost.
+They remain unqualified; no green replacement or reduced smoke gate is installed.
+The separate required merge-guard/protection retirement still awaits its exact
+approval. [The retirement record](docs/native-cdci-retirement.md) distinguishes
+removed jobs, historical evidence and remaining native work. Governance policy
+history is versioned in
 [`docs/adr/0249-version-github-merge-governance.edn`](docs/adr/0249-version-github-merge-governance.edn).
 An administrator can audit the live settings without exposing administration
 access to CI:
@@ -1626,17 +1644,17 @@ current enforcement. See
 [`ADR 0249`](docs/adr/0249-version-github-merge-governance.md) for the recovery
 rule and blocked-canary evidence.
 
-Linux libFuzzer emits `:kotoba.fuzz-coverage/v1` summaries containing edge
-coverage, feature count, and corpus count. CI compares them with the reviewed
-architecture-specific baseline in `fuzz/baselines/native-parser.edn`. Baseline
-v2 is bound to the raw
+The historical Linux libFuzzer driver emits `:kotoba.fuzz-coverage/v1` summaries
+containing edge coverage, feature count, and corpus count. The retired CI
+declared comparison with the architecture-specific baseline in
+`fuzz/baselines/native-parser.edn`. Historical baseline v2 is bound to the raw
 loader-source SHA-256, so a C change cannot silently reuse stale coverage
-expectations. Linux runs use the fixed libFuzzer seed `424242`; current minimums
+expectations. Its recorded Linux seed is `424242`; historical minimums
 are x64 cov 60/features 100/corpus 20 and Arm64 cov 60/features 100/corpus 18.
 The separate corpus floors account for deterministic architecture-dependent
 instrumentation and minimization without weakening either coverage threshold.
 
-The managed compiler boundary also runs 600 deterministic frontend mutations:
+The historical managed compiler driver declares 600 deterministic frontend mutations:
 300 edits of a valid structured program and 300 raw grammar inputs. Any accepted
 source must produce identical KIR across Wasm, x86-64, and AArch64,
 byte-reproducible Wasm, and verifier-admitted native artifacts. Rejections must

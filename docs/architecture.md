@@ -334,7 +334,10 @@ each exact source SHA-256, and the canonical module graph digest. See ADR 0005.
 The public JVM CLI exposes the same linker as
 `compile <root> --source-path <directory>`. It resolves only the root's
 transitive closure, maps namespace segments to directories and hyphens to
-underscores, and selects `.kotoba`, then `.cljk`, then `.cljc`. Every dependency
+underscores, and selects canonical `.kotoba`, then Kotoba surface syntax
+`.cljk` (with bounded Clojure-inspired shorthand), then portable-common
+`.cljc`. `.cljk` is not ClojureScript source and its suffix selects no host
+runtime. Every dependency
 real path must remain below the explicit directory and its declared namespace
 must match the requested namespace; symlink escape and path substitution fail
 closed. The explicitly selected root may live beside the source directory
@@ -400,10 +403,13 @@ One versioned EDN conformance corpus now owns positive and negative vectors for
 generic options, parametric results, closed variants, heterogeneous vectors,
 typed sets and nominal records. Reference
 and restricted Web execute that same data today. Future Wasm qualification must
-consume it directly and produce the same values or trap classes. `.cljk`
-changes source discovery only; it does not introduce a JVM runtime or a second
-typed-value ABI. The shared corpus now executes on reference, restricted Web,
-and Wasm.
+consume it directly and produce the same values or trap classes. `.cljk` is
+Kotoba's surface syntax with bounded Clojure-inspired shorthand and desugars
+into the shared Kotoba core before this typed-value pipeline; it is independent
+of the `cljs` host/backend and does not introduce a JVM runtime or a second
+typed-value ABI. The strict pure-core-only `.kotoba` profile is not yet
+enforced, so the extension alone is not proof that a file uses only core
+forms. The shared corpus now executes on reference, restricted Web, and Wasm.
 Wasm typed-value qualification uses a distinct, versioned `kotoba.typed`
 custom section. Version 1 encodes bounded descriptors and literals as canonical
 binary data rather than executable host text. The browser/Kototama host rejects
