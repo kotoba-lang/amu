@@ -192,3 +192,14 @@ frontend files and the adopted bootstrap unchanged.
 Remaining target work includes project linking, sealed artifact integration,
 float semantics and a fresh19-program comparison on x86_64 Linux.
 AArch64 benchmark results are not x86_64 results.
+
+## Loaderless static image (2026-10-22)
+
+`--format static` (Linux selfhost closure, seed modules 75/76) links the
+guest with a runtime written in Kotoba into one `x86_64-linux-static` ELF; no
+C loader runs it. The selfhost compiler built this way rebuilds itself
+byte-identically on Linux x86-64 (S1=S2=S3) and agrees with the loader-run
+compiler on `kx64-v1` output; the one bootstrap step (S1) still goes through
+the pinned loader. Design, limits and receipts:
+[`native-seed-c-free-runner-static-image-20261022.md`](native-seed-c-free-runner-static-image-20261022.md),
+`scripts/seed/check-x86_64-static.py`.
