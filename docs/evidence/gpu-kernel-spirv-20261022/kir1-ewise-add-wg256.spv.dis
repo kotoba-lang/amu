@@ -1,0 +1,70 @@
+; SPIR-V
+; Version: 1.3
+; Generator: Khronos; 0
+; Bound: 38
+; Schema: 0
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %1 "main" %8
+               OpExecutionMode %1 LocalSize 256 1 1
+               OpDecorate %8 BuiltIn GlobalInvocationId
+               OpDecorate %9 ArrayStride 4
+               OpDecorate %10 Block
+               OpMemberDecorate %10 0 Offset 0
+               OpMemberDecorate %10 0 NonWritable
+               OpDecorate %14 Block
+               OpMemberDecorate %14 0 Offset 0
+               OpDecorate %17 Block
+               OpMemberDecorate %17 0 Offset 0
+               OpMemberDecorate %17 0 NonWritable
+               OpDecorate %12 DescriptorSet 0
+               OpDecorate %12 Binding 0
+               OpDecorate %13 DescriptorSet 0
+               OpDecorate %13 Binding 1
+               OpDecorate %16 DescriptorSet 0
+               OpDecorate %16 Binding 2
+               OpDecorate %19 DescriptorSet 0
+               OpDecorate %19 Binding 3
+          %2 = OpTypeVoid
+          %3 = OpTypeFunction %2
+          %4 = OpTypeInt 32 0
+          %5 = OpTypeFloat 32
+          %6 = OpTypeVector %4 3
+          %7 = OpTypePointer Input %6
+          %8 = OpVariable %7 Input
+          %9 = OpTypeRuntimeArray %5
+         %10 = OpTypeStruct %9
+         %11 = OpTypePointer StorageBuffer %10
+         %12 = OpVariable %11 StorageBuffer
+         %13 = OpVariable %11 StorageBuffer
+         %14 = OpTypeStruct %9
+         %15 = OpTypePointer StorageBuffer %14
+         %16 = OpVariable %15 StorageBuffer
+         %17 = OpTypeStruct %4
+         %18 = OpTypePointer StorageBuffer %17
+         %19 = OpVariable %18 StorageBuffer
+         %20 = OpTypePointer StorageBuffer %5
+         %21 = OpTypePointer StorageBuffer %4
+         %22 = OpConstant %4 0
+         %23 = OpTypeBool
+          %1 = OpFunction %2 None %3
+         %24 = OpLabel
+         %25 = OpLoad %6 %8
+         %26 = OpCompositeExtract %4 %25 0
+         %27 = OpAccessChain %21 %19 %22
+         %28 = OpLoad %4 %27
+         %29 = OpULessThan %23 %26 %28
+               OpSelectionMerge %31 None
+               OpBranchConditional %29 %30 %31
+         %30 = OpLabel
+         %32 = OpAccessChain %20 %12 %22 %26
+         %33 = OpLoad %5 %32
+         %34 = OpAccessChain %20 %13 %22 %26
+         %35 = OpLoad %5 %34
+         %36 = OpFAdd %5 %33 %35
+         %37 = OpAccessChain %20 %16 %22 %26
+               OpStore %37 %36
+               OpBranch %31
+         %31 = OpLabel
+               OpReturn
+               OpFunctionEnd

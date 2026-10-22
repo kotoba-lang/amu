@@ -1,0 +1,146 @@
+(ns spirv-check (:export [spc-check spc-name]))
+
+;; Structural SPIR-V checker (ADR 0372 step 1): a subset of spirv-val, written
+;; in Kotoba so the selfhost route can check a module without a C++ tool. The
+;; kernel tools check what they emit, and the GPU provider (ADR 0371) refuses
+;; a PIPELINE whose module fails here (gpu/not-spirv).
+;;
+;; Input: a module vector as built by spirv_encode.kotoba (M[0] = word count,
+;; word k = M[k + 1]). spc-check answers 0, or the index of the first problem;
+;; spc-name names it. The checks:
+;; * header: magic, version 1.0..1.6, schema 0, bound 1..4194304;
+;; * every instruction's word count is at least 1 and inside the module;
+;; * the logical layout order of sections;
+;; * every result id is below the bound and defined once;
+;; * functions do not nest and end; every block starts with OpLabel and ends
+;;   with a terminator; a merge instruction comes right before its branch;
+;; * one OpMemoryModel, a capability, an entry point whose function exists,
+;;   and the Shader capability for a GLCompute entry point.
+;; Opcodes outside the classified set are refused (unknown-opcode): the
+;; subset grows with the kernels. Types and operands are not checked:
+;; spirv-val stays the oracle for that, at test time only.
+
+(defn spc-name [r :i64] :string
+  (cond
+    (= r 1) "spirv/short"
+    (= r 2) "spirv/magic"
+    (= r 3) "spirv/version"
+    (= r 4) "spirv/schema"
+    (= r 5) "spirv/bound"
+    (= r 6) "spirv/word-count"
+    (= r 7) "spirv/section-order"
+    (= r 8) "spirv/memory-model-count"
+    (= r 9) "spirv/no-capability"
+    (= r 10) "spirv/no-entry-point"
+    (= r 11) "spirv/id-out-of-bound"
+    (= r 12) "spirv/id-redefined"
+    (= r 13) "spirv/function-nesting"
+    (= r 14) "spirv/block-without-label"
+    (= r 15) "spirv/block-without-terminator"
+    (= r 16) "spirv/merge-not-before-branch"
+    (= r 17) "spirv/entry-point-function-missing"
+    (= r 18) "spirv/shader-capability-missing"
+    (= r 19) "spirv/unknown-opcode"
+    :else ""))
+
+(defn- spc-w [M :vector-i64 k :i64] :i64 (vector-at M (+ k 1)))
+
+;; Section rank of an opcode (logical layout), 0 for OpLine/OpNoLine (allowed
+;; anywhere), -1 for an opcode outside the classified set:
+;; 1 capability, 2 extension, 3 ext-inst import, 4 memory model, 5 entry
+;; point, 6 execution mode, 7 debug, 8 annotation, 9 type/constant/global,
+;; 10 function body.
+(defn- spc-rank [op :i64] :i64
+  (cond
+    (= op 17) 1
+    (= op 10) 2
+    (= op 11) 3
+    (= op 14) 4
+    (= op 15) 5
+    (or (= op 16) (= op 331)) 6
+    (or (and (>= op 2) (<= op 7)) (= op 330)) 7
+    (or (and (>= op 71) (<= op 75)) (= op 332)) 8
+    (or (and (>= op 19) (<= op 39)) (and (>= op 41) (<= op 46)) (and (>= op 48) (<= op 52)) (= op 1) (= op 59)) 9
+    (or (= op 8) (= op 317)) 0
+    (or (= op 12) (and (>= op 54) (<= op 57)) (and (>= op 61) (<= op 70)) (and (>= op 77) (<= op 83))
+        (and (>= op 109) (<= op 124)) (and (>= op 126) (<= op 152)) (and (>= op 154) (<= op 191))
+        (and (>= op 194) (<= op 205)) (= op 224) (= op 225) (and (>= op 245) (<= op 255))
+        (and (>= op 333) (<= op 366)) (and (>= op 4450) (<= op 4452))) 10
+    :else -1))
+
+;; Which operand word holds the result id: 1, 2, or 0 for none.
+(defn- spc-result-at [op :i64] :i64
+  (cond
+    (or (= op 7) (= op 11) (and (>= op 19) (<= op 38)) (= op 73) (= op 248)) 1
+    (or (= op 1) (= op 12) (and (>= op 41) (<= op 46)) (and (>= op 48) (<= op 52))
+        (= op 54) (= op 55) (= op 57) (= op 59) (= op 61) (and (>= op 65) (<= op 70))
+        (and (>= op 77) (<= op 83)) (and (>= op 109) (<= op 124)) (and (>= op 126) (<= op 152))
+        (and (>= op 154) (<= op 191)) (and (>= op 194) (<= op 205)) (= op 245)
+        (and (>= op 333) (<= op 366)) (and (>= op 4450) (<= op 4452))) 2
+    :else 0))
+
+(defn- spc-terminator? [op :i64] :bool (and (>= op 249) (<= op 255)))
+(defn- spc-branch? [op :i64] :bool (or (= op 249) (= op 250) (= op 251)))
+
+(defn- spc-header [M :vector-i64 n :i64] :i64
+  (let [v (if (>= n 5) (spc-w M 1) 0)]
+    (cond
+      (< n 5) 1
+      (not= (spc-w M 0) 0x07230203) 2
+      ;; 0 | major | minor | 0: major 1, minor 0..6
+      (not= (bit-and v 0xff0000ff) 0) 3
+      (not= (bit-and (u64-shift-right v 16) 255) 1) 3
+      (> (bit-and (u64-shift-right v 8) 255) 6) 3
+      (not= (spc-w M 4) 0) 4
+      (< (spc-w M 3) 1) 5
+      (> (spc-w M 3) 4194304) 5
+      :else 0)))
+
+;; 0 when M is a structurally valid module, else the index of the first problem
+(defn spc-check [M :vector-i64] :i64
+  (let [n (vector-at M 0) h (spc-header M n)]
+    (if (> h 0) h
+      (let [bound (spc-w M 3) D (vector-alloc bound)]
+        ;; D[id]: 0 undefined, 1 defined, 2 defined by OpFunction
+        (loop [i 5 rank 1 infn false inblock false merge false mm 0 caps 0 shader false eps 0 epmodel -1 epfn 0 D D]
+          (if (>= i n)
+            (cond infn 13
+                  (not= mm 1) 8
+                  (= caps 0) 9
+                  (= eps 0) 10
+                  (or (<= epfn 0) (>= epfn bound) (not= (vector-at D epfn) 2)) 17
+                  (and (= epmodel 5) (not shader)) 18
+                  :else 0)
+            (let [w (spc-w M i) wc (u64-shift-right w 16) op (bit-and w 65535) r (spc-rank op)
+                  ra (spc-result-at op)
+                  id (if (and (> ra 0) (< ra wc)) (spc-w M (+ i ra)) 0)]
+              (cond
+                (= wc 0) 6
+                (> (+ i wc) n) 6
+                (< r 0) 19
+                (and merge (not (spc-branch? op))) 16
+                ;; section order: outside functions the rank never decreases;
+                ;; inside one only body opcodes (and OpVariable, OpUndef) appear
+                (and (not infn) (> r 0) (< r rank)) 7
+                (and infn (> r 0) (< r 10) (not= op 59) (not= op 1)) 7
+                (and (> ra 0) (or (<= id 0) (>= id bound))) 11
+                (and (> ra 0) (> (vector-at D id) 0)) 12
+                (and (= op 54) infn) 13
+                (and (= op 56) (not infn)) 13
+                (and (= op 56) inblock) 15
+                (and (= op 248) inblock) 15
+                (and infn (not inblock) (not= op 248) (not= op 55) (not= op 56) (> r 0)) 14
+                :else
+                (let [D1 (if (> ra 0) (vector-assoc! D id (if (= op 54) 2 1)) D)]
+                  (recur (+ i wc)
+                         (if (and (not infn) (> r 0)) (if (= op 54) 10 r) rank)
+                         (cond (= op 54) true (= op 56) false :else infn)
+                         (cond (= op 248) true (spc-terminator? op) false :else inblock)
+                         (or (= op 246) (= op 247))
+                         (if (= op 14) (inc mm) mm)
+                         (if (= op 17) (inc caps) caps)
+                         (or shader (and (= op 17) (= (spc-w M (+ i 1)) 1)))
+                         (if (= op 15) (inc eps) eps)
+                         (if (and (= op 15) (= eps 0)) (spc-w M (+ i 1)) epmodel)
+                         (if (and (= op 15) (= eps 0)) (spc-w M (+ i 2)) epfn)
+                         D1))))))))))

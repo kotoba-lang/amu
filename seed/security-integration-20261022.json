@@ -1,0 +1,28 @@
+{
+  "round": "wire42-gpu-compute-admission",
+  "adr": "docs/adr/0371-static-images-reach-the-gpu-through-a-provider-process.md",
+  "adoptionReceipt": "seed/adoption-20261022.json",
+  "previousAdoptionReceipt": "seed/adoption-20261017.json",
+  "optimizationModuleUnchanged": true,
+  "onlyCompilerSourceDelta": "wire 42 :gpu/compute admitted as typed-cap-call :string :string: seed/HEADS, 00-ns, 20-names, 21-check (ck-wire-kw, ck-wire-ok, ck-kw-wire, ck-r6b-capkw), 30-lower (lw-wire), 60-proj (pj-r5b-wire), 90-drv (diagnostic names). No change in 40/41/42/50 (code generation).",
+  "admittedShape": "(typed-cap-call :gpu/compute :string :string request), the friendly (gpu/compute request) and the integer wire 42; nothing else",
+  "stillRefused": [
+    "wire 42 with :bytes :bytes or :string :bytes",
+    "every other unadmitted wire (E2115)",
+    "explicit or bare --policy (E2170)"
+  ],
+  "all19WorkloadImagesExact": true,
+  "nineA64genControlsAndCertified54Exact": true,
+  "policyRefusals": 34,
+  "noPolicySmokeResult": 42,
+  "newPerformanceMeasurements": 0,
+  "runtimeTransport": "wire 42 carries frames only (ADR 0371 step 2, #1473); the provider and launcher are not built yet",
+  "knownDefect": "JUN-309: under the C-free runner the adopted compiler fails closed with a SIGILL trap instead of naming E2115 for an unadmitted capability (before and after this round)",
+  "evidence": "docs/evidence/wire42-admission-20261022/",
+  "signOff": {
+    "status": "approved",
+    "approver": "jun784 (owner)",
+    "date": "2026-10-22",
+    "question": "ADR 0371 open question 2: admit wire 42 (a grant that may run compute on the host's GPU through the provider and read back what it computed), with MAP/PIPELINE paths resolved only through the launcher's digest-pinned artifact table"
+  }
+}

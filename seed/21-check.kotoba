@@ -2084,6 +2084,7 @@
                 35 (if (= (nm-head-of M q) KW-BYTES) KW-FS-APP-DATA-BYTES KW-FS-APP-DATA)
                 37 KW-IO-WRITE 38 KW-CLI-ARGS 39 KW-IO-WRITE-ERROR
                 20 KW-PROCESS-SPAWN 23 KW-ENTROPY-DRAW   ; R6B
+                42 KW-GPU-COMPUTE   ; ADR 0371
                 0)))
 (defn- ck-wire-ok [k :i64] :i64
   (cond (= k KW-FS-APP-DATA) 1 (= k KW-CLI-ARGS) 1 (= k KW-IO-WRITE-ERROR) 1 (= k KW-IO-WRITE) 1
@@ -2091,6 +2092,7 @@
         ;; R4B: wires 3 33 34 41 (:string :string)
         (= k KW-HASH-SHA256) 1 (= k KW-ENV-READ) 1 (= k KW-FS-BROWSE) 1 (= k KW-IO-READ) 1
         (= k KW-PROCESS-SPAWN) 1 (= k KW-ENTROPY-DRAW) 1   ; R6B: wires 20 23 (:string :string)
+        (= k KW-GPU-COMPUTE) 1   ; ADR 0371: wire 42 (:string :string)
         :else 0))
 
 ;; the request/result type of the shape, 0 when the shape is not one of seed/HEADS :cap-shapes
@@ -4148,6 +4150,7 @@
     KW-HASH-SHA256 3 KW-CLOCK-NOW 7 KW-ENV-READ 33 KW-FS-BROWSE 34 (KW-FS-APP-DATA KW-FS-APP-DATA-BYTES) 35 KW-IO-WRITE 37
     KW-CLI-ARGS 38 KW-IO-WRITE-ERROR 39 KW-IO-READ 41
     KW-PROCESS-SPAWN 20 KW-ENTROPY-DRAW 23   ; R6B
+    KW-GPU-COMPUTE 42   ; ADR 0371
     -1))
 (defn- ck-wire-bit [w :i64] :i64 (if (and (>= w 0) (< w 47)) (i64-shift-left 1 w) 0))
 ;; FN f calls capability wire w: its FN2-CAPS and the module's mask
@@ -4973,13 +4976,13 @@
 
 ;; R6B: a friendly capability call (ns/op x) of the catalogue (ck-r6b-capwire; lang/capability-catalog.edn :elaboration:
 ;; source arity 1, request from the argument, result from the context) -> (typed-cap-call :ns/op :string R x), R = :bytes for
-;; fs/app-data-bytes and :string otherwise. Admitted wires: 3 20 23 33 34 35 37 38 39 41; any other catalogue name is E2115
+;; fs/app-data-bytes and :string otherwise. Admitted wires: 3 20 23 33 34 35 37 38 39 41 42; any other catalogue name is E2115
 ;; at its head (named, never guessed).
 (defn- ck-r6b-capkw [w :i64 hh :i64] :i64
   (case w
     3 KW-HASH-SHA256 20 KW-PROCESS-SPAWN 23 KW-ENTROPY-DRAW 33 KW-ENV-READ 34 KW-FS-BROWSE
     35 (if (= hh ck-r6b-h-fs-app-data-bytes) KW-FS-APP-DATA-BYTES KW-FS-APP-DATA)
-    37 KW-IO-WRITE 38 KW-CLI-ARGS 39 KW-IO-WRITE-ERROR 41 KW-IO-READ
+    37 KW-IO-WRITE 38 KW-CLI-ARGS 39 KW-IO-WRITE-ERROR 41 KW-IO-READ 42 KW-GPU-COMPUTE
     0))
 (defn- ck-r6b-cap [M :vector-i64 n :i64] :vector-i64
   (let [h (nm-first M n)

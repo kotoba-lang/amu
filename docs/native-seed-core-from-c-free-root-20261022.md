@@ -3,9 +3,8 @@
 [ADR 0370](adr/0370-embench-measured-compiler-core.md) makes the 16-module
 `seed/MANIFEST` core the compiler to grow. Its condition 3 asks for a
 C/JVM/Node-free initial compiler from that lineage. Until this change, the
-loaderless bootstrap reached the core's recorded fixed point
-(`b10e3813…8a00`) only by running `seed/bootstrap/adopted-20261012.bin`
-through the aarch64 runner. That payload was produced under the removed C
+loaderless bootstrap reached the core's recorded fixed point only by running
+`seed/bootstrap/adopted-20261012.bin` through the aarch64 runner. That payload was produced under the removed C
 loader. The bootstrap now derives the core from source.
 
 ## Route
@@ -20,11 +19,14 @@ loader. The bootstrap now derives the core from source.
    `main`. The result is G1.
 3. G1 and then G2 compile the same source through `R-aarch64.elf`, giving G2
    and G3.
-4. The script requires G1 = G2 = G3 = `adoption-20261017.json`
-   `nativeImageSHA256`.
+4. The script requires G1 = G2 = G3 = `adoption-20261022.json`
+   `nativeImageSHA256`. The first run (on adoption-20261017) reproduced
+   `b10e3813…8a00`. After the wire-42 adoption round, it reproduced
+   `9deed950…`.
 
 `adopted-20261012.bin` is no longer an input. C0 compiles the core in about
-32 minutes on an arm64 Linux VM, because C0's code is unoptimized. The core
+32 minutes on an Apple-silicon arm64 Linux VM and over an hour on a hosted
+arm64 runner, because C0's code is unoptimized. The core
 payload it produces is the optimized one.
 
 ## Capacities
@@ -59,9 +61,10 @@ runtime (seeds 76 and 77) changes:
 
 A compiler embeds its own runtime text in every image it builds. The previous
 root's runtime therefore cannot allocate the wider M. The new root
-`04d99135…098a` was produced C-free as follows; the receipt records each hash:
+`98d4bcb7…b774` was produced C-free as follows; the receipt records each hash:
 
-1. The previous root built S1n from this source with the old capacities.
+1. The previous root (`f19ab1c4…`) built S1n from this source with the old
+   capacities.
 2. S1n built S2n, which carries the new runtime.
 3. S2n built S3w from this source.
 4. The chain reached S3w = S4w = S5w = the new root.

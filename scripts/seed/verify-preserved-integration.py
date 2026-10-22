@@ -41,7 +41,7 @@ def main():
  frozen='workspace/held-compiler-cli30-bounded-balanced-byte-tree-token-capacity-picojpeg-fixedpoint6-source-v4-20261012-next/run-outputs/G4.bin'
  original19='workspace/held-compiler-cli30-bounded-balanced-byte-tree-token-capacity-picojpeg-g4-original19-compile38-source-v4-20261012-next/run-outputs/'
  with tarfile.open(archive) as t:
-  receipt=json.loads((ROOT/'seed/adoption-20261017.json').read_text()) if a.main else None
+  receipt=json.loads((ROOT/'seed/adoption-20261022.json').read_text()) if a.main else None
   bootstrap=host/'historical-producer.bin';bootstrap.write_bytes((ROOT/receipt['bootstrapPath']).read_bytes() if a.main else t.extractfile(frozen).read())
   if not a.main:assert sha(bootstrap)==cp['fixed_point']['native_sha256']
   original_report=json.loads(t.extractfile(original19+'report.json').read())
@@ -51,7 +51,7 @@ def main():
   for name,m in source_members.items():
    (art/(name+'.kotoba')).write_bytes(t.extractfile(m).read());expected[name]=hashlib.sha256(t.extractfile(original19+name+'.bin').read()).hexdigest()
  if a.main:
-  receipt=json.loads((ROOT/'seed/adoption-20261017.json').read_text())
+  receipt=json.loads((ROOT/'seed/adoption-20261022.json').read_text())
   if 'policyNativeGoldenPath' in receipt:
    golden=(ROOT/receipt['policyNativeGoldenPath']).resolve();golden_archive=(ROOT/receipt['policyNativeGoldenArchivePath']).resolve()
    assert golden.is_relative_to(ROOT.resolve()) and golden_archive.is_relative_to(ROOT.resolve())
@@ -71,12 +71,13 @@ def main():
   evidence=receipt['currentAll19Evidence']
   pinned={}
   for name,row in evidence.items():
-   if name=='sourceCommit':continue
+   if not isinstance(row,dict):continue
    path=(ROOT/row['path']).resolve();assert path.is_relative_to(ROOT.resolve()) and sha(path)==row['sha256']
    pinned[name]=json.loads(path.read_text())
   build=pinned['buildReport'];images_by_name=pinned['images'];exactness=pinned['exactness']
-  assert build['sourceCommit']==evidence['sourceCommit']==receipt['sourceCommit']
-  assert build['chain']['G1']==receipt['nativeImageSHA256']==build['chain']['Gstar']
+  # the all-19 evidence names the compiler that built it; a later round's compiler must reproduce its images (below)
+  assert build['sourceCommit']==evidence['sourceCommit']==evidence.get('producerSourceCommit',receipt['sourceCommit'])
+  assert build['chain']['G1']==evidence.get('producerNativeSHA256',receipt['nativeImageSHA256'])==build['chain']['Gstar']
   assert exactness['status']=='PASS' and exactness['workloads']==len(expected)==19
   current={name:row['native']['sha256'] for name,row in images_by_name.items()}
   exact={row['workload']:row['imageSHA256'] for row in exactness['rows'] if row['exact']}
@@ -100,6 +101,7 @@ def main():
   run(prefix+['extract-native',container,'--symbol','main','--output',image],f'G{n}-extract')
   gens.append({'generation':n,'bytes':image.stat().st_size,'sha256':sha(image),'containerSHA256':sha(container)});producer=image
  assert len({g['sha256'] for g in gens})==1 and len({g['containerSHA256'] for g in gens})==1,'fixed point mismatch'
+ if a.main:assert gens[0]['sha256']==receipt['nativeImageSHA256'],'adopted image differs from the receipt'
  prefix=[loader,producer,'0','0','aarch64','35,37,38,39','--']
  smoke=art/'smoke.kotoba';smoke.write_text('(ns smoke (:export [main]))\n(defn main [] :i64 42)\n')
  policies=['{:allow #{}}','{:allow #{} :deny #{[:cap/call 37]}}','{:allow #{}} ; [:cap/call 37]','{:allow #{[:cap/call 37]}}','not-edn','{:deny #{[:cap/call 37]}}','{:allow #{[:cap/call 999]}}']

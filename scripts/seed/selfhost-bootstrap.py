@@ -37,7 +37,7 @@ ROOT_IMAGE = "seed/bootstrap/aarch64-linux-static-root.elf"
 ROOT_RECEIPT = "seed/bootstrap/aarch64-linux-static-root.json"
 CORE_STATIC = "seed/CORE-STATIC-MANIFEST"
 NS, NS_STATIC = "seed/00-ns.kotoba", "seed/00-ns-static.kotoba"
-ADOPTION = "seed/adoption-20261017.json"
+ADOPTION = "seed/adoption-20261022.json"
 RUNNER_SRC = "seed/x86_64-kx64-runner.kotoba"
 CASES = "seed/static-cases.json"
 # 00-ns-static is 00-ns with the static profile's capacities (seed/MEMORY-MAP).

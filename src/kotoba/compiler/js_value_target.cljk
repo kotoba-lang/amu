@@ -1,8 +1,157 @@
+#?(:kotoba
+   (ns kotoba.compiler.js-value-target
+     "Qualify the opaque JS ABI from semantic type positions, not inert names."
+     (:require [kotoba.form :as form] [kotoba.kir.target :as target-profile]
+               [kotoba.script.js-value :as js-value]))
+   :default
 (ns kotoba.compiler.js-value-target
   "Qualify the opaque JS ABI from semantic type positions, not inert names."
-  (:require [kotoba.kir.target :as target-profile]
-            [kotoba.script.js-value :as js-value]))
+  (:require [kotoba.form :as form] [kotoba.kir.target :as target-profile]
+            [kotoba.script.js-value :as js-value])))
 
+;; R6QW3: the Kotoba reading (W3: the scan refused this module E2104 at `=` over keywords).
+;; Two data models meet here: the HIR maps are :document and the bodies are :form records
+;; (kotoba.form's API). The guest `=` compares i64/bool only; the head membership is over the
+;; form's SYMBOL SPELLING (form/symbol-value -> :string) against the typed-heads name set.
+;; The oracle's typed-heads is a quoted map literal whose contains? checks its keys (the
+;; value-position heads are unreachable); the guest keeps the documented intent -- the full
+;; head-name set -- the only spec-admissible spelling (a quoted map cannot hold symbol
+;; values). The form->document bridge feeds js-value/contains-type? [:document]. Both deps
+;; (kotoba.script.js-value, kotoba.kir.target) are :ok. The host reading is byte-for-byte.
+#?(:kotoba
+   (defn- dgk [d :document k :keyword] :document
+     (option-value-of [:option :document] (document-get d k) (document-null))))
+#?(:kotoba
+   (defn- seq-doc? [d :document] :bool
+     (or (= (document-kind d) :list) (= (document-kind d) :vector))))
+#?(:kotoba
+   (defn- desc-js? [descriptor :document] :bool
+     (cond (jsv-contains? descriptor) true
+           (and (seq-doc? descriptor)
+                (= 2 (document-count descriptor))
+                (document-equal? (option-value-of [:option :document] (document-list-at descriptor 0) (document-null))
+                                 (document-keyword :fn)))
+           (desc-clauses descriptor 1 (document-count descriptor))
+           :else false)))
+#?(:kotoba
+   (defn- desc-clauses [d :document i :i64 n :i64] :bool
+     (if (>= i n)
+       false
+       (let [clause (option-value-of [:option :document] (document-list-at d i) (document-null))]
+         (if (and (seq-doc? clause) (<= 2 (document-count clause)))
+           (if (or (desc-js? (option-value-of [:option :document] (document-list-at clause 0) (document-null)))
+                   (desc-js? (option-value-of [:option :document] (document-list-at clause 1) (document-null))))
+             true
+             (desc-clauses d (+ i 1) n))
+           (desc-clauses d (+ i 1) n))))))
+#?(:kotoba
+   (defn- desc-any? [l :document i :i64 n :i64] :bool
+     (if (>= i n)
+       false
+       (if (desc-js? (option-value-of [:option :document] (document-list-at l i) (document-null)))
+         true
+         (desc-any? l (+ i 1) n)))))
+;; the form walk of body-uses-js? (the host's pending-stack loop over forms)
+#?(:kotoba
+   (defn- body-js? [body :document] :bool
+     (form-walk (form/from-document body))))
+#?(:kotoba
+   (defn- form-walk [form [:ref :form/r]] :bool
+     (if (form/is-seq? form)
+       (let [op (form/first-of form)
+             t1 (if (form-eq-str? op "typed-cap-call")
+                  (two-desc form)
+                  (if (typed-head? op)
+                    (one-desc form)
+                    (no-desc)))]
+         (if (desc-any? t1 0 (document-count t1))
+           true
+           (kids-any? form 1 (form/count-of form))))
+       false)))
+#?(:kotoba
+   (defn- typed-head? [op [:ref :form/r]] :bool
+     (if (form/is-symbol? op)
+       (typed-set-contains [:set :string] (typed-heads) (form/symbol-value op))
+       false)))
+#?(:kotoba
+   (defn- form-eq-str? [op [:ref :form/r] s :string] :bool
+     (and (form/is-symbol? op) (string=? (form/symbol-value op) s))))
+;; the descriptor collections of the form walk (the host's (nth form n nil) shape)
+#?(:kotoba
+   (defn- two-desc [form [:ref :form/r]] :document
+     (document-list (form-kid-desc form 2) (form-kid-desc form 3))))
+#?(:kotoba
+   (defn- one-desc [form [:ref :form/r]] :document
+     (document-list (form-kid-desc form 1))))
+#?(:kotoba
+   (defn- no-desc [] :document (document-list)))
+;; the n-th kid as a descriptor document -- the form->document bridge (recursive)
+#?(:kotoba
+   (defn- form-kid-desc [form [:ref :form/r] i :i64] :document
+     (form->doc (form/nth-of form i))))
+#?(:kotoba
+   (defn- form->doc [form [:ref :form/r]] :document
+     (cond (form/is-vec? form) (kids->vec form 0 (form/count-of form))
+           (form/is-seq? form) (kids->vec form 0 (form/count-of form))
+           (form/is-keyword? form) (document-keyword (form/keyword-value form))
+           (form/is-int? form) (document-i64 (form/int-value form))
+           (form/is-string? form) (document-string (form/string-value form))
+           (form/is-symbol? form) (document-string (form/symbol-value form))
+           :else (document-null))))
+#?(:kotoba
+   (defn- kids->vec [form [:ref :form/r] i :i64 n :i64] :document
+     (if (>= i n)
+       (document-vector)
+       (document-vector-conj (kids->vec form (+ i 1) n)
+                             (form->doc (form/nth-of form i))))))
+;; the form kids walk (the host's pending-stack over the form kids)
+#?(:kotoba
+   (defn- kids-any? [parent [:ref :form/r] i :i64 n :i64] :bool
+     (if (>= i n)
+       false
+       (if (form-walk (form/nth-of parent i))
+         true
+         (kids-any? parent (+ i 1) n)))))
+;; the js-value module's contains-type? (kotoba.script.js-value)
+#?(:kotoba
+   (defn- jsv-contains? [d :document] :bool (js-value/contains-type? d)))
+
+;; the vals/param walks of uses-js-values? (the host's some over vals/functions)
+#?(:kotoba
+   (defn- vals-doc [m :document] :document
+     (if (map-doc? m) (vals-w m 0 (document-count m) (document-vector)) (document-list))))
+#?(:kotoba
+   (defn- vals-w [m :document i :i64 n :i64 acc :document] :document
+     (if (>= i n)
+       acc
+       (vals-w m (+ i 1) n
+               (document-vector-conj acc (option-value-of [:option :document] (document-list-at (option-value-of [:option :document] (document-map-entry-at m i) (document-null)) 1) (document-null)))))))
+#?(:kotoba
+   (defn- map-doc? [d :document] :bool (= (document-kind d) :map)))
+#?(:kotoba
+   (defn- fns-js? [fns :document i :i64 n :i64] :bool
+     (if (>= i n)
+       false
+       (let [f (option-value-of [:option :document] (document-list-at fns i) (document-null))]
+         (if (or (desc-any? (dgk f :param-types) 0 (document-count (dgk f :param-types)))
+                 (desc-js? (dgk f :result))
+                 (desc-any? (vals-doc (dgk f :callable-param-contracts)) 0 (document-count (vals-doc (dgk f :callable-param-contracts))))
+                 (desc-js? (dgk f :callable-result-contract))
+                 (body-js? (dgk f :body)))
+           true
+           (fns-js? fns (+ i 1) n))))))
+
+#?(:kotoba
+   (defn typed-heads [] [:set :string]
+     (typed-set-new [:set :string] "option-some-of" "option-none-of" "option-some?-of" "option-value-of" "option-match"
+                    "result-ok-of" "result-err-of" "result-ok?-of" "result-value-of" "result-error-of" "result-match-of"
+                    "variant-new" "variant-match" "record-new" "record-get" "record-assoc" "record-equal"
+                    "typed-list-new" "typed-list-nth" "typed-list-conj"
+                    "hetero-vector-new" "hetero-vector-count" "hetero-vector-at" "hetero-vector-assoc" "hetero-vector-equal"
+                    "typed-set-new" "typed-set-count" "typed-set-contains" "typed-set-conj" "typed-set-disj" "typed-set-equal" "typed-set-nth"
+                    "typed-map-new" "typed-map-count" "typed-map-contains" "typed-map-get" "typed-map-entry-at"
+                    "typed-map-assoc" "typed-map-dissoc" "typed-map-equal" "typed-map-keys" "typed-map-vals"))
+   :default
 (def ^:private typed-heads
   '#{option-some-of option-none-of option-some?-of option-value-of option-match
      result-ok-of result-err-of result-ok?-of result-value-of result-error-of result-match-of
@@ -11,8 +160,11 @@
      hetero-vector-new hetero-vector-count hetero-vector-at hetero-vector-assoc hetero-vector-equal
      typed-set-new typed-set-count typed-set-contains typed-set-conj typed-set-disj typed-set-equal typed-set-nth
      typed-map-new typed-map-count typed-map-contains typed-map-get typed-map-entry-at
-     typed-map-assoc typed-map-dissoc typed-map-equal typed-map-keys typed-map-vals})
-
+     typed-map-assoc typed-map-dissoc typed-map-equal typed-map-keys typed-map-vals}))
+#?(:kotoba
+   (defn- descriptor-uses-js? [descriptor :document] :bool
+     (desc-js? descriptor))
+   :default
 (defn- descriptor-uses-js? [descriptor]
   (or (js-value/contains-type? descriptor)
       ;; Callable contracts retain argument/result types after closure erasure.
@@ -21,8 +173,11 @@
                    (and (vector? clause)
                         (some descriptor-uses-js?
                               (conj (first clause) (second clause)))))
-                 (rest descriptor)))))
-
+                 (rest descriptor))))))
+#?(:kotoba
+   (defn- body-uses-js? [body :document] :bool
+     (body-js? body))
+   :default
 (defn- body-uses-js? [body]
   (loop [pending [body]]
     (if (empty? pending)
@@ -36,8 +191,12 @@
         (if (some descriptor-uses-js? types)
           true
           (recur (if (or (seq? form) (vector? form))
-                   (into remaining form) remaining)))))))
-
+                   (into remaining form) remaining))))))))
+#?(:kotoba
+   (defn uses-js-values? [hir :document] :bool
+     (or (desc-any? (vals-doc (dgk hir :schemas)) 0 (document-count (vals-doc (dgk hir :schemas))))
+         (fns-js? (dgk hir :functions) 0 (document-count (dgk hir :functions)))))
+   :default
 (defn uses-js-values? [hir]
   (boolean
    (or (some descriptor-uses-js? (vals (:schemas hir)))
@@ -47,8 +206,16 @@
                    (some descriptor-uses-js? (vals (:callable-param-contracts function)))
                    (descriptor-uses-js? (:callable-result-contract function))
                    (body-uses-js? (:body function))))
-             (:functions hir)))))
-
+             (:functions hir))))))
+#?(:kotoba
+   (defn- reject-outside-js-target! [op [:ref :form/r] profile :keyword] :bool
+     (if (and (typed-head? op)
+              (document-equal? (document-keyword (option-value-of [:option :keyword] (target-profile/backend profile) :none))
+                               (document-keyword :kotoba)))
+       true
+       (throw (ex-info "typed capability call outside kotoba/js target"
+                       {:phase :value :trap :js-target :op (form/symbol-value op)}))))
+   :default
 (defn reject-outside-js-target! [target hir]
   (let [backend (target-profile/backend target)]
     (when (and (uses-js-values? hir)
@@ -57,4 +224,4 @@
                       {:phase :target :target target :backend backend
                        :kotoba.error/code :kotoba.error/js-value-target
                        :value-type :js-value}))))
-  hir)
+  hir))
