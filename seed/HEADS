@@ -79,8 +79,9 @@
   [:c TK-INT 7 "integer: -?[0-9]+ ; the value must fit i64 (no wrapping of literals);
                 -9223372036854775808 is legal, 9223372036854775808 is not (E1004). No 0x, no N/M suffix, no ratio"]
   [:c TK-STR 8 "string: \"...\" with escapes \\n \\t \\\\ \\\" only (E1003 otherwise); decoded bytes go to LIT/LITB"]
-  [:c TK-SYM 9 "symbol: a maximal run of [A-Za-z0-9*+!_?<>=/.-] that is not an
-                integer. Spans like `-` and `->` are symbols"]
+  [:c TK-SYM 9 "symbol: a maximal run of [A-Za-z0-9*+!_?<>=/.-&$] that is not an
+                integer. Spans like `-` and `->` are symbols; `$` is a symbol byte (R6Q: the
+                munged operation names of guest-grammar :quoted, e.g. 'kotoba$string-index-find)"]
   [:c TK-KW 10 "keyword: ':' followed by symbol chars; the span includes the ':' (e.g. :i64 :fs/app-data)"]
   [:c TK-HASH-BRACE 11 "R3: '#{' (a set literal opens; closed by '}')"]
   [:c TK-AT 12 "R5B: '@' (11-read reads @x as (deref x): a list whose head symbol is the '@' token, spelled HD-DEREF)"]

@@ -9,7 +9,7 @@
 ;; R0/R1: the source had to be ASCII. R3 (agent R3, 2026-10-03, minimal delimited change marked R3 below; seed/HEADS
 ;; :tokens): a string literal or a comment may hold any UTF-8 text; a byte >= 128 anywhere else is E1002 at that byte. Whitespace: space tab LF CR ','. Comment: ';'
 ;; to end of line. TK-INT is -?[0-9]+ that fits i64 (-9223372036854775808 legal, 9223372036854775808 not).
-;; TK-SYM is a maximal run of [A-Za-z0-9*+!_?<>=/.-] that is not an integer. TK-KW is ':' + such a run (the
+;; TK-SYM is a maximal run of [A-Za-z0-9*+!_?<>=/.-&$] that is not an integer. TK-KW is ':' + such a run (the
 ;; span includes ':'; a lone ':' is E1005). Every other byte (# ^ ` ~ @ \ ' | % & $ ...) is E1005 with the
 ;; one-byte span. TK-STR spans both quotes and decodes \n \t \\ \" into LITB (other escapes: E1003, span = the
 ;; backslash and the next byte); a raw newline inside a string is kept as a byte.
@@ -46,7 +46,10 @@
   (or (lx-range? c 97 122) (lx-range? c 65 90) (lx-range? c 48 57)
       (= c 42) (= c 43) (= c 33) (= c 95) (= c 63) (= c 60) (= c 62) (= c 61) (= c 47) (= c 46) (= c 45)
       ;; R4 (agent R4, minimal delimited change): `&` is a symbol byte (the rest marker of [p & rest], seed/HEADS HD-AMP)
-      (= c 38)))
+      (= c 38)
+      ;; R6Q: `$` is a symbol byte -- the munged operation names the guest-grammar :quoted spec itself
+      ;; cites ('kotoba$string-index-find) and the deterministic $arityN names its lowering describes.
+      (= c 36)))
 
 ;; a byte that starts a string, keyword, integer or symbol
 (defn- lx-multi? [c :i64] :bool (or (= c 34) (= c 58) (lx-symch? c)))
