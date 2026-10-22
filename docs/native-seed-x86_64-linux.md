@@ -1,5 +1,11 @@
 # Native seed cross-compilation to x86_64 Linux
 
+> **2026-10-22: the trusted C loader was removed.** Instructions below that build
+> or run it (clang, `kexe-loader`, `scripts/seed/build-*.py`, `check-*.py`) are
+> historical and no longer runnable; see `scripts/seed/RETIRED.md`. The current
+> route is `scripts/seed/selfhost-bootstrap.py` on arm64 Linux.
+
+
 The optional seed closure adds native x86-64 code generation for standalone
 scalar programs and context-v11 runtime programs. An Amu-produced compiler
 reads Kotoba, shares the adopted
