@@ -122,20 +122,23 @@ something is not yet qualified is an implementation gap rather than a reason
 for that target to carry a different IR.
 
 The existing `kotoba.compiler.*` namespaces, `kotoba-compiler/1` wire marker,
-and `bin/kotoba` launcher remain compatibility APIs. New automation should use
-the `io.github.kotoba-lang/amu` dependency coordinate and the plain-Node
-`bin/amu` front; `bin/kotoba-compiler` delegates to it.
+and `bin/kotoba` launcher remain compatibility APIs. The dependency coordinate
+is `io.github.kotoba-lang/amu`. Current `bin/amu` is a Node migration input;
+the qualified Amu-selfhost-built product entry is tracked by JUN-199.
+New automation must use that qualified native route. Its absence is an open
+implementation/qualification gap, without a hosted fallback.
 
-That primary Node front resolves its pinned source closure from
-`deps-lock.edn`, bound to the exact `deps.edn` digest. Amu CI checks the lock
-hermetically and compiles/executes a representative native artifact with JVM
-executables removed from `PATH`; every dependency pin change must regenerate
-the lock with `kbb --backend sci scripts/lock-classpath.cljk`.
+The retained `deps-lock.edn` source closure is bound to the exact raw
+`deps.edn` digest, with version/pin/path/alias failures refused. The obsolete
+KBB/JDK lock generator is retired. Root artifact pin cleanup uses a reviewed
+manifest-equivalent update; this is not an Amu-generated lock or native
+qualification receipt. Complete Kotoba/native lock generation and resolution
+remain open under JUN-202. There is no legacy authoring exception to Q9.
 A fresh cache fetches the exact locked commit if ordinary full-history clone
 omits it from advertised history. An unavailable commit remains a fetch error;
 resolution never substitutes a branch tip or changes the pin.
 
-Primary Wasm and ordinary-native compilation are policy-bound as well:
+Historical hosted Wasm and ordinary-native compilation are policy-bound:
 `:budgets :fuel` controls the emitted Wasm module or sealed native fuel ABI
 rather than admission alone, and every compile publishes the same sealed
 `:kotoba.provenance/v1` sidecar as the JVM compatibility path.

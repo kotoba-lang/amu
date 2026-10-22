@@ -1,0 +1,149 @@
+;; Complete native filesystem framing. Provider acknowledgement is mandatory.
+(ns kotoba.compiler.filesystem-wire
+  {:kotoba/export [request request-bytes request-chunks request-staged request-managed answer answer-bytes answer-chunks entries]}
+  (:require [kotoba.compiler.io-buffer :as buffer]))
+
+(defn- failure [message :string] :document
+  (document-map (document-keyword :phase) (document-keyword :fs)
+                (document-keyword :message) (document-string message)))
+(defn- form-letter [form :i64] :string
+  (case form 0 "A" 1 "B" 2 "C" 3 "D" 4 "E" 5 "F" 6 "G" 7 "H"
+    8 "I" 9 "J" 10 "K" 11 "L" 12 "M" 13 "N" 14 "O" 15 "P" 16 "Q" 17 "R" 18 "S" ""))
+(defn- tail-form? [form :i64] :bool
+  (or (= form 1) (= form 2) (= form 4) (= form 7) (= form 11) (= form 13) (= form 16)))
+
+(defn request [form :i64 path :string tail :string] [:result :string :document]
+  "The sixteen original forms and proposed Q/R/S managed-output forms.
+  Browse uses form 0 and an empty tail.
+  Only NUL is excluded from a nonempty path, as in the native path domain."
+  (cond
+    (or (< form 0) (> form 18))
+    (result-err-of [:result :string :document] (failure "unknown filesystem form"))
+    (or (= (string-byte-length path) 0) (>= (string-find-byte path 0 0) 0))
+    (result-err-of [:result :string :document] (failure "filesystem path is empty or holds NUL"))
+    (and (not (tail-form? form)) (not= tail ""))
+    (result-err-of [:result :string :document] (failure "filesystem form does not accept a tail"))
+    :else (result-ok-of [:result :string :document]
+            (string-concat "\u0000FS2\u0000"
+              (string-concat (form-letter form)
+                (string-concat path (string-concat "\u0000" tail)))))))
+
+(defn request-bytes
+  "Raw write/append: encode only the header/path, then append the byte tail.
+  The existing per-value bytes budget applies to the entire framed request."
+  [form :i64 path :string tail :bytes] [:result :bytes :document]
+  (if (not (or (= form 1) (= form 2)))
+    (result-err-of [:result :bytes :document] (failure "raw filesystem request requires write or append"))
+    (let [header (request form path "")]
+      (if (not (result-ok?-of [:result :string :document] header))
+        (result-err-of [:result :bytes :document]
+          (result-error-of [:result :string :document] header (document-null)))
+        (result-ok-of [:result :bytes :document]
+          (bytes-concat (string-to-utf8 (result-value-of [:result :string :document] header "")) tail))))))
+
+(defn- framed-chunks [header [:result :string :document] payload [:ref :io.buffer/value]] [:result [:list :bytes] :document]
+    (let [valid (buffer/validated-buffer payload)]
+      (cond
+        (not (result-ok?-of [:result :string :document] header))
+        (result-err-of [:result [:list :bytes] :document] (result-error-of [:result :string :document] header (document-null)))
+        (not (result-ok?-of [:result [:ref :io.buffer/value] :document] valid))
+        (result-err-of [:result [:list :bytes] :document]
+          (result-error-of [:result [:ref :io.buffer/value] :document] valid (document-null)))
+        :else
+        (let [bytes (string-to-utf8 (result-value-of [:result :string :document] header ""))
+              value (result-value-of [:result [:ref :io.buffer/value] :document] valid (buffer/empty-buffer))]
+          (if (> (buffer/byte-count value) (- 9223372036854775807 (bytes-count bytes)))
+            (result-err-of [:result [:list :bytes] :document] (failure "segmented filesystem request exceeds i64 size"))
+            (loop [index 0 out (typed-list-conj [:list :bytes] (typed-list-new [:list :bytes]) bytes)]
+              (if (= index (buffer/chunk-count value)) (result-ok-of [:result [:list :bytes] :document] out)
+                (let [chunk (buffer/chunk-at value index)]
+                  (if (not (option-some?-of [:option :bytes] chunk))
+                    (result-err-of [:result [:list :bytes] :document] (failure "malformed segmented filesystem payload"))
+                    (recur (+ index 1)
+                      (typed-list-conj [:list :bytes] out (option-value-of [:option :bytes] chunk (bytes-empty)))))))))))))
+
+(defn request-chunks [form :i64 path :string payload [:ref :io.buffer/value]] [:result [:list :bytes] :document]
+  (if (not (or (= form 1) (= form 2)))
+    (result-err-of [:result [:list :bytes] :document] (failure "segmented filesystem request requires write or append"))
+    (framed-chunks (request form path "") payload)))
+(defn- octal [mode :i64] :string
+  (loop [n mode digits ""]
+    (if (< n 8) (string-concat (string-from-i64 n) digits)
+      (recur (quot n 8) (string-concat (string-from-i64 (- n (* 8 (quot n 8)))) digits)))))
+(defn request-staged [path :string mode :i64 payload [:ref :io.buffer/value]] [:result [:list :bytes] :document]
+  (if (or (< mode 0) (> mode 511))
+    (result-err-of [:result [:list :bytes] :document] (failure "staged filesystem mode exceeds permission bits"))
+    (framed-chunks (request 16 path (string-concat (octal mode) "\u0000")) payload)))
+
+(defn request-managed [form :i64 path :string] [:result [:list :bytes] :document]
+  (if (not (or (= form 17) (= form 18)))
+    (result-err-of [:result [:list :bytes] :document] (failure "managed filesystem request requires begin or discard"))
+    (framed-chunks (request form path "") (buffer/empty-buffer))))
+
+(defn- acknowledged-bytes? [response :bytes] :bool
+  (if (< (bytes-count response) 5) false
+    (and (= (bytes-at response 0) 0) (= (bytes-at response 1) 70)
+         (= (bytes-at response 2) 83) (= (bytes-at response 3) 50) (= (bytes-at response 4) 0))))
+
+(defn- acknowledged? [response :string] :bool
+  (acknowledged-bytes? (string-to-utf8 response)))
+
+(defn answer [response :string] [:result :string :document]
+  "Remove the required version acknowledgement, including for absent/empty data."
+  (if (acknowledged? response)
+    (result-ok-of [:result :string :document]
+      (string-substring response 5 (string-byte-length response)))
+    (result-err-of [:result :string :document]
+      (failure "filesystem provider did not acknowledge FS2"))))
+
+(defn answer-bytes
+  "Require and remove all five acknowledgement bytes without decoding payload.
+  An absent/empty answer still carries the acknowledgement; no old fallback."
+  [response :bytes] [:result :bytes :document]
+  (if (acknowledged-bytes? response)
+    (result-ok-of [:result :bytes :document] (bytes-slice response 5 (bytes-count response)))
+    (result-err-of [:result :bytes :document]
+      (failure "filesystem provider did not acknowledge FS2"))))
+
+(defn answer-chunks [response [:list :bytes]] [:result [:ref :io.buffer/value] :document]
+  (let [built (buffer/from-chunks response)]
+    (if (not (result-ok?-of [:result [:ref :io.buffer/value] :document] built)) built
+      (loop [chunk-index 0 within 0 marker-index 0]
+        (cond
+          (= marker-index 5)
+          (buffer/drop-prefix (result-value-of [:result [:ref :io.buffer/value] :document] built (buffer/empty-buffer)) 5)
+          (>= chunk-index (vector-count response))
+          (result-err-of [:result [:ref :io.buffer/value] :document] (failure "filesystem provider did not acknowledge FS2"))
+          :else
+          (let [chunk (typed-list-nth [:list :bytes] response chunk-index) n (bytes-count chunk)]
+            (if (= within n) (recur (+ chunk-index 1) 0 marker-index)
+              (if (not= (bytes-at chunk within) (case marker-index 0 0 1 70 2 83 3 50 0))
+                (result-err-of [:result [:ref :io.buffer/value] :document] (failure "filesystem provider did not acknowledge FS2"))
+                (recur chunk-index (+ within 1) (+ marker-index 1))))))))))
+
+(defn entries [response :string] [:result [:list :string] :document]
+  "Decode complete name/NUL/0-or-1/NUL records; names retain TAB, LF and tokens."
+  (let [decoded (answer response)]
+    (if (not (result-ok?-of [:result :string :document] decoded))
+      (result-err-of [:result [:list :string] :document]
+        (result-error-of [:result :string :document] decoded (document-null)))
+      (let [text (result-value-of [:result :string :document] decoded "")
+            size (string-byte-length text)]
+        (loop [from 0 out (typed-list-new [:list :string])]
+          (if (= from size)
+            (result-ok-of [:result [:list :string] :document] out)
+            (let [end (string-find-byte text 0 from)]
+              (if (or (<= end from) (>= end (- size 2)))
+                (result-err-of [:result [:list :string] :document]
+                  (failure "malformed FS2 directory record"))
+                (let [name (string-substring text from end)
+                      flag (bytes-at (string-to-utf8 text) (+ end 1))]
+                  (cond
+                    (or (= name ".") (= name "..") (>= (string-find-byte name 47 0) 0))
+                    (result-err-of [:result [:list :string] :document]
+                      (failure "invalid FS2 directory entry name"))
+                    (or (not (or (= flag 48) (= flag 49)))
+                        (not= (string-find-byte text 0 (+ end 2)) (+ end 2)))
+                    (result-err-of [:result [:list :string] :document]
+                      (failure "malformed FS2 directory kind or terminator"))
+                    :else (recur (+ end 3) (typed-list-conj [:list :string] out name))))))))))))

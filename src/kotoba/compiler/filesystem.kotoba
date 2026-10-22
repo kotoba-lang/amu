@@ -1,0 +1,141 @@
+;; Canonical filesystem capability boundary, only with acknowledged FS2 frames.
+(ns kotoba.compiler.filesystem
+  {:kotoba/export [app-data browse read-bytes read-range read-chunks read-range-chunks
+                   write-bytes! append-bytes! write-chunks! append-chunks! stage-member!
+                   begin-output-set! discard-output-set!]}
+  (:require [kotoba.compiler.filesystem-wire :as wire]
+            [kotoba.compiler.io-buffer :as buffer])
+  (:capabilities #{:fs/app-data :fs/browse}))
+
+(defn app-data [form :i64 path :string tail :string] [:result :string :document]
+  (let [request (wire/request form path tail)]
+    (if (not (result-ok?-of [:result :string :document] request))
+      (result-err-of [:result :string :document]
+        (result-error-of [:result :string :document] request (document-null)))
+      (wire/answer (typed-cap-call :fs/app-data :string :string
+                     (result-value-of [:result :string :document] request ""))))))
+
+(defn browse [path :string] [:result [:list :string] :document]
+  (let [request (wire/request 0 path "")]
+    (if (not (result-ok?-of [:result :string :document] request))
+      (result-err-of [:result [:list :string] :document]
+        (result-error-of [:result :string :document] request (document-null)))
+      (wire/entries (typed-cap-call :fs/browse :string :string
+                      (result-value-of [:result :string :document] request ""))))))
+
+(defn- fs-error [message :string path :string] :document
+  (document-map (document-keyword :phase) (document-keyword :fs)
+                (document-keyword :message) (document-string message)
+                (document-keyword :path) (document-string path)))
+
+(defn- read-data [form :i64 path :string tail :string] [:result :bytes :document]
+  (let [request (wire/request form path tail)]
+    (if (not (result-ok?-of [:result :string :document] request))
+      (result-err-of [:result :bytes :document]
+        (result-error-of [:result :string :document] request (document-null)))
+      (wire/answer-bytes (typed-cap-call :fs/app-data :string :bytes
+                           (result-value-of [:result :string :document] request ""))))))
+
+(defn read-bytes
+  "Read the complete provider answer as bytes, under its declared value budget.
+  An absent path and an empty file share the catalog's empty answer."
+  [path :string] [:result :bytes :document]
+  (read-data 0 path ""))
+
+(defn read-range
+  "Read a no-follow regular-file window using the existing offset:length tail.
+  Provider window/resource failures remain terminal; no truncated success."
+  [path :string offset :i64 length :i64] [:result :bytes :document]
+  (if (or (< offset 0) (< length 0))
+    (result-err-of [:result :bytes :document] (fs-error "filesystem range requires nonnegative offset and length" path))
+    (read-data 4 path
+      (string-concat (string-from-i64 offset) (string-concat ":" (string-from-i64 length))))))
+
+(defn- write-data [form :i64 path :string bytes :bytes] [:result :bytes :document]
+  (let [request (wire/request-bytes form path bytes)]
+    (if (not (result-ok?-of [:result :bytes :document] request))
+      (result-err-of [:result :bytes :document]
+        (result-error-of [:result :bytes :document] request (document-null)))
+      (wire/answer-bytes (typed-cap-call :fs/app-data :bytes :bytes
+                           (result-value-of [:result :bytes :document] request (bytes-empty)))))))
+
+(defn write-bytes!
+  "Write a raw byte value; return the acknowledged provider payload unchanged.
+  This primitive alone does not establish atomic publication or durability."
+  [path :string bytes :bytes] [:result :bytes :document]
+  (write-data 1 path bytes))
+
+(defn append-bytes! [path :string bytes :bytes] [:result :bytes :document]
+  (write-data 2 path bytes))
+
+(defn- read-data-chunks [form :i64 path :string tail :string] [:result [:ref :io.buffer/value] :document]
+  (let [request (wire/request form path tail)]
+    (if (not (result-ok?-of [:result :string :document] request))
+      (result-err-of [:result [:ref :io.buffer/value] :document]
+        (result-error-of [:result :string :document] request (document-null)))
+      (wire/answer-chunks (typed-cap-call :fs/app-data :string [:list :bytes]
+                            (result-value-of [:result :string :document] request ""))))))
+(defn read-chunks [path :string] [:result [:ref :io.buffer/value] :document]
+  (read-data-chunks 0 path ""))
+(defn read-range-chunks [path :string offset :i64 length :i64] [:result [:ref :io.buffer/value] :document]
+  (if (or (< offset 0) (< length 0))
+    (result-err-of [:result [:ref :io.buffer/value] :document]
+      (fs-error "filesystem range requires nonnegative offset and length" path))
+    (read-data-chunks 4 path (string-concat (string-from-i64 offset) (string-concat ":" (string-from-i64 length))))))
+
+(defn- write-data-chunks [form :i64 path :string payload [:ref :io.buffer/value]] [:result [:ref :io.buffer/value] :document]
+  (let [request (wire/request-chunks form path payload)]
+    (if (not (result-ok?-of [:result [:list :bytes] :document] request))
+      (result-err-of [:result [:ref :io.buffer/value] :document]
+        (result-error-of [:result [:list :bytes] :document] request (document-null)))
+      (wire/answer-chunks (typed-cap-call :fs/app-data [:list :bytes] [:list :bytes]
+                            (result-value-of [:result [:list :bytes] :document] request (typed-list-new [:list :bytes])))))))
+(defn write-chunks! [path :string payload [:ref :io.buffer/value]] [:result [:ref :io.buffer/value] :document]
+  (write-data-chunks 1 path payload))
+(defn append-chunks! [path :string payload [:ref :io.buffer/value]] [:result [:ref :io.buffer/value] :document]
+  (write-data-chunks 2 path payload))
+
+(defn- managed-data [request [:result [:list :bytes] :document]] [:result [:ref :io.buffer/value] :document]
+  (if (not (result-ok?-of [:result [:list :bytes] :document] request))
+    (result-err-of [:result [:ref :io.buffer/value] :document]
+      (result-error-of [:result [:list :bytes] :document] request (document-null)))
+    (wire/answer-chunks (typed-cap-call :fs/app-data [:list :bytes] [:list :bytes]
+                         (result-value-of [:result [:list :bytes] :document] request (typed-list-new [:list :bytes]))))))
+(defn- boolean-mutation [answer [:result [:ref :io.buffer/value] :document] path :string message :string] [:result :bool :document]
+  (if (not (result-ok?-of [:result [:ref :io.buffer/value] :document] answer))
+    (result-err-of [:result :bool :document]
+      (result-error-of [:result [:ref :io.buffer/value] :document] answer (document-null)))
+    (let [value (result-value-of [:result [:ref :io.buffer/value] :document] answer (buffer/empty-buffer))
+          first (buffer/chunk-at value 0)]
+      (if (not (and (= (buffer/byte-count value) 1) (= (buffer/chunk-count value) 1)
+                    (option-some?-of [:option :bytes] first)))
+        (result-err-of [:result :bool :document] (fs-error message path))
+        (let [bytes (option-value-of [:option :bytes] first (bytes-empty))]
+          (if (= (bytes-count bytes) 1)
+            (if (= (bytes-at bytes 0) 49) (result-ok-of [:result :bool :document] true)
+              (result-err-of [:result :bool :document] (fs-error message path)))
+            (result-err-of [:result :bool :document] (fs-error "malformed managed filesystem answer" path))))))))
+(defn stage-member! [path :string mode :i64 payload [:ref :io.buffer/value]] [:result :bool :document]
+  (boolean-mutation (managed-data (wire/request-staged path mode payload)) path "output member staging did not succeed"))
+(defn begin-output-set! [parent :string] [:result :string :document]
+  (let [answer (managed-data (wire/request-managed 17 parent))]
+    (if (not (result-ok?-of [:result [:ref :io.buffer/value] :document] answer))
+      (result-err-of [:result :string :document]
+        (result-error-of [:result [:ref :io.buffer/value] :document] answer (document-null)))
+      (let [value (result-value-of [:result [:ref :io.buffer/value] :document] answer (buffer/empty-buffer))
+            size (buffer/byte-count value)]
+        ;; A managed path is <=4095 bytes, not an oversized file-value flatten.
+        (if (or (< size 1) (> size 4095))
+          (result-err-of [:result :string :document] (fs-error "output staging directory could not be created" parent))
+          (loop [index 0 bytes (bytes-empty)]
+            (if (= index (buffer/chunk-count value))
+              (let [text (string-from-utf8 bytes)]
+                (if (or (not= (string-find-byte text 47 0) 0) (>= (string-find-byte text 0 0) 0))
+                  (result-err-of [:result :string :document] (fs-error "malformed output staging directory" parent))
+                  (result-ok-of [:result :string :document] text)))
+              (let [chunk (buffer/chunk-at value index)]
+                (if (not (option-some?-of [:option :bytes] chunk))
+                  (result-err-of [:result :string :document] (fs-error "malformed output staging directory" parent))
+                  (recur (+ index 1) (bytes-concat bytes (option-value-of [:option :bytes] chunk (bytes-empty)))))))))))))
+(defn discard-output-set! [directory :string] [:result :bool :document]
+  (boolean-mutation (managed-data (wire/request-managed 18 directory)) directory "output staging cleanup did not complete"))
