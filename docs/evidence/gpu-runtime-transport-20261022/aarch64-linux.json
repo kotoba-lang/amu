@@ -1,0 +1,249 @@
+{
+  "status": "PASS_GPU_RUNTIME_TRANSPORT",
+  "target": "aarch64-linux",
+  "compiler": {
+    "bytes": 1257984,
+    "sha256": "de4b951174f51eced8c745cfbb48ee845b89d51944004efa6ea2a5515ddf7a48"
+  },
+  "host": [
+    "Linux",
+    "aarch64",
+    "6.15.10-200.fc42.aarch64"
+  ],
+  "executionNative": true,
+  "imageSeccomp": "required",
+  "checkerRefusesWire42": true,
+  "knob": [
+    {
+      "name": "no-knob",
+      "allow": "37,42",
+      "knob": null,
+      "fds": "pipes",
+      "exit": 2
+    },
+    {
+      "name": "one-fd",
+      "allow": "37,42",
+      "knob": "{req}",
+      "fds": "pipes",
+      "exit": 2
+    },
+    {
+      "name": "not-a-number",
+      "allow": "37,42",
+      "knob": "{req},x",
+      "fds": "pipes",
+      "exit": 2
+    },
+    {
+      "name": "fd-below-3",
+      "allow": "37,42",
+      "knob": "2,{ans}",
+      "fds": "pipes",
+      "exit": 2
+    },
+    {
+      "name": "fd-above-1023",
+      "allow": "37,42",
+      "knob": "1024,{ans}",
+      "fds": "pipes",
+      "exit": 2
+    },
+    {
+      "name": "same-fd",
+      "allow": "37,42",
+      "knob": "{req},{req}",
+      "fds": "pipes",
+      "exit": 2
+    },
+    {
+      "name": "closed-fds",
+      "allow": "37,42",
+      "knob": "{req},{ans}",
+      "fds": "closed",
+      "exit": 2
+    },
+    {
+      "name": "regular-files",
+      "allow": "37,42",
+      "knob": "{req},{ans}",
+      "fds": "files",
+      "exit": 2
+    },
+    {
+      "name": "valid-pipes",
+      "allow": "37,42",
+      "knob": "{req},{ans}",
+      "fds": "pipes",
+      "exit": 0
+    },
+    {
+      "name": "not-granted-ignored",
+      "allow": "37",
+      "knob": "x",
+      "fds": "pipes",
+      "exit": 0
+    }
+  ],
+  "transport": [
+    {
+      "name": "round-trip",
+      "exit": 0,
+      "requests": 4,
+      "image": {
+        "bytes": 111104,
+        "sha256": "79f49f43ac11f370f496498427399b4930a604608d8dbcc09b78d061a8991716"
+      }
+    },
+    {
+      "name": "four-mib-answer",
+      "exit": 0,
+      "requests": 1,
+      "image": {
+        "bytes": 111104,
+        "sha256": "a83a1a87f8c830693ab5c3fb5650b885134fe2acccc5464cefa436ab7b7ac41d"
+      }
+    },
+    {
+      "name": "named-refusal",
+      "exit": 120,
+      "requests": 1,
+      "image": {
+        "bytes": 111104,
+        "sha256": "a83a1a87f8c830693ab5c3fb5650b885134fe2acccc5464cefa436ab7b7ac41d"
+      }
+    },
+    {
+      "name": "bare-refusal",
+      "exit": 120,
+      "requests": 1,
+      "image": {
+        "bytes": 111104,
+        "sha256": "a83a1a87f8c830693ab5c3fb5650b885134fe2acccc5464cefa436ab7b7ac41d"
+      }
+    },
+    {
+      "name": "provider-eof",
+      "exit": 120,
+      "requests": 1,
+      "image": {
+        "bytes": 111104,
+        "sha256": "a83a1a87f8c830693ab5c3fb5650b885134fe2acccc5464cefa436ab7b7ac41d"
+      }
+    },
+    {
+      "name": "request-pipe-closed",
+      "exit": 120,
+      "requests": 0,
+      "image": {
+        "bytes": 111104,
+        "sha256": "a83a1a87f8c830693ab5c3fb5650b885134fe2acccc5464cefa436ab7b7ac41d"
+      }
+    },
+    {
+      "name": "oversize-answer",
+      "exit": 120,
+      "requests": 1,
+      "image": {
+        "bytes": 111104,
+        "sha256": "a83a1a87f8c830693ab5c3fb5650b885134fe2acccc5464cefa436ab7b7ac41d"
+      }
+    },
+    {
+      "name": "control-wrong-read-fd",
+      "exit": 120,
+      "requests": 1,
+      "image": {
+        "bytes": 111104,
+        "sha256": "ba32497d81c67f9accf49130db1c22d39f064dd1d5e82176ad47e5c5cbd484be"
+      }
+    }
+  ],
+  "testOnlyCompilers": {
+    "admission": "in-memory ADMISSION patch of the selfhost unity; never written to seed/ or adopted",
+    "wire42": {
+      "bytes": 1257984,
+      "sha256": "95401d9eb6b6ccdb515dda24a4ac19d29764f2e4e0023a6f67d0059a55551599"
+    },
+    "controlWrongReadFd": {
+      "bytes": 1257984,
+      "sha256": "580112dbf438f6c9888bb700333b022cdf34037bdc212d5e549d809da7d7ba89"
+    }
+  },
+  "unity": {
+    "seed/X86_64-LINUX-SELFHOST-MANIFEST": {
+      "bytes": 503,
+      "sha256": "297e4bea88c34ac7cae6f566c736401f8f9e9689a9123fd29323ccd622be48c9"
+    },
+    "seed/00-ns.kotoba": {
+      "bytes": 14534,
+      "sha256": "8d0c0a62a8feda3007d9f7f2140173bb3f724b17e8cee1bdeca2b0a805cb3475"
+    },
+    "seed/01-mem.kotoba": {
+      "bytes": 15304,
+      "sha256": "79bb1d1154857efc70bee464161abfce37ec6b90e55af7bbef386ab96ca131c9"
+    },
+    "seed/02-io.kotoba": {
+      "bytes": 10931,
+      "sha256": "268ae7a0d450deb0b7981b85f7e6895b08b4af828f1f57cb96cf2eb29777c4ea"
+    },
+    "seed/10-lex.kotoba": {
+      "bytes": 24829,
+      "sha256": "a8b8128b9e00564f3d86a81b9c69e692efa0114a3cd0083e401cda8577086d6b"
+    },
+    "seed/11-read.kotoba": {
+      "bytes": 9176,
+      "sha256": "89fd65139a4502f96c87807db80d4cbaa15913ea75788eb3b647dcc9556e0392"
+    },
+    "seed/20-names.kotoba": {
+      "bytes": 38896,
+      "sha256": "fbd708ae321b3520d4d592955ab2ad1bf0378e962eab69964ddc8dd9f6a68e3f"
+    },
+    "seed/21-check.kotoba": {
+      "bytes": 380847,
+      "sha256": "4228b2afeb923ea0cf5dd6e07205b03716ff830cbea340b1b231eef38dd9ba2f"
+    },
+    "seed/30-lower.kotoba": {
+      "bytes": 87768,
+      "sha256": "0dc46637dff1c4a645d8bfa73cf18469913b32ca90ce236c1a76ce89a8fff20e"
+    },
+    "seed/50-out.kotoba": {
+      "bytes": 21354,
+      "sha256": "1cf17b348bda09d73d721856705a52db05131b88f80d017e1fe9b9a92c066955"
+    },
+    "seed/70-x86_64-linux.kotoba": {
+      "bytes": 19198,
+      "sha256": "82f14d94d4d9b1f8c71a65de463b784b78b34ade93e5bb630148b5bde2dbebe7"
+    },
+    "seed/71-x86_64-runtime.kotoba": {
+      "bytes": 5382,
+      "sha256": "15f2c4f8b8f0a2a46ccd8fbb4c7f621e17a385b680e0d6878d258a9c9e6cc14c"
+    },
+    "seed/75-x86_64-static.kotoba": {
+      "bytes": 8845,
+      "sha256": "e2f260bae95b873fb5b18c4f47324429cff1acf969d4a39ba4386da76fcfe2c9"
+    },
+    "seed/76-x86_64-static-rt.kotoba": {
+      "bytes": 50175,
+      "sha256": "956c3b88994cee73afaad1c2f95961a3a6a033a783e84806bea981a775c9b6db"
+    },
+    "seed/77-aarch64-static-rt.kotoba": {
+      "bytes": 50291,
+      "sha256": "7591749d928e7b3e8fe445c904aed0f83a241380e7366985e87bc3b78d1f65ba"
+    },
+    "seed/80-aarch64-linux.kotoba": {
+      "bytes": 15299,
+      "sha256": "5551cbd401e994d54b2206b622749473e70a170a7a2d19b82613f539f61fbdc0"
+    },
+    "seed/74-x86_64-aiueos-object.kotoba": {
+      "bytes": 8402,
+      "sha256": "9c3b16530f722e9a86249d17be3d5d55e1306be759be76c21df8cfac1d5db4d8"
+    },
+    "seed/73-x86-linux-entry.kotoba": {
+      "bytes": 1175,
+      "sha256": "499022e15adce90748a6a545230e3ca922a6a49cf0f9cd986807a59d93b36b6b"
+    }
+  },
+  "cCompilerOrLoader": false,
+  "notCovered": []
+}

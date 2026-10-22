@@ -25,7 +25,7 @@
 ;; 160 report 168 fuel0 176 metered 184 cwd 192 cwd-len 200 scratch 208 path
 ;; 216 budget 224 value-trap 232 io-buffer 240 command 248 alt-stack
 ;; 256 conj 264 conj-tail 272 conj-copy 280 copied-words 288 string-copied-bytes
-;; 296 arena-use flag 320..359 payload arguments
+;; 296 arena-use flag 304 gpu-request-fd 312 gpu-answer-fd 320..359 payload arguments
 (defn- kxrt-g [] :i64 (+ (kxrt-ctx) 1024))
 (defn- kxrt-gl [k :i64] :i64 (kxrt-load64 (+ (kxrt-g) k)))
 (defn- kxrt-gs [k :i64 v :i64] :i64 (kxrt-store64 (+ (kxrt-g) k) v))
@@ -47,6 +47,14 @@
         (cond (= w -4) (recur i)
               (<= w 0) 0
               :else (recur (+ i w)))))))
+;; exactly n bytes from fd into a; 0 on end of file or error
+(defn- kxrt-read-all [fd :i64 a :i64 n :i64] :i64
+  (loop [i 0]
+    (if (>= i n) 1
+      (let [r (kxrt-syscall 0 fd (+ a i) (- n i) 0 0 0)]
+        (cond (= r -4) (recur i)
+              (<= r 0) 0
+              :else (recur (+ i r)))))))
 (defn- kxrt-open-path [p :i64 flags :i64 mode :i64] :i64 (kxrt-syscall 2 p flags mode 0 0 0))
 (defn- kxrt-alarm [s :i64] :i64 (kxrt-syscall 37 s 0 0 0 0 0))
 (defn- kxrt-close [fd :i64] :i64 (kxrt-syscall 3 fd 0 0 0 0 0))
@@ -344,7 +352,7 @@
       (let [a (kxrt-vbytes h) r (kxrt-utf8 a n)]
         (if (> r 0) (kxrt-value r) (kxrt-mark (kxrt-intern a n)))))))
 
-;; ---- capabilities: wires 35 :fs/app-data, 37 :io/write, 38 :cli/args, 39 :io/write-error ----
+;; ---- capabilities: wires 35 :fs/app-data, 37 :io/write, 38 :cli/args, 39 :io/write-error, 42 :gpu/compute ----
 (defn- kxrt-admitted? [id :i64] :bool
   (and (>= id 0) (< id 256)
        (= (bit-and (u64-shift-right (kxrt-load64 (+ (kxrt-ctx) 16 (* 8 (quot id 64)))) (- id (* 64 (quot id 64)))) 1) 1)))
@@ -450,12 +458,62 @@
           ;; RANGE, STAT, ... are not provided by this runtime: refused.
           (kxrt-fs-other? a n) (kxrt-fail)
           :else (let [z (kxrt-sink-close)] (kxrt-fs-read a n)))))
+
+;; ---- wire 42 :gpu/compute: a transport to the GPU provider (ADR 0371) ----
+;; The provider is another process. The launcher passes two inherited fds,
+;; KEXE_CAP_RESOURCES_42=REQUEST,ANSWER (checked at start, kxrt-gpu-fds). A
+;; frame is a u32 little-endian length, then the bytes, both ways; the grammar
+;; is tools/gpu_compute_protocol.kotoba. The runtime only carries frames: an
+;; answer that starts with ! is a refusal, reported by name, then a trap.
+(defn- kxrt-name-byte? [c :i64] :bool
+  (or (and (>= c 97) (<= c 122)) (and (>= c 48) (<= c 57)) (= c 47) (= c 45)))
+;; KEXE_TRAP {:kind :capability :wire 42 :refusal :NAME} on stderr, then trap.
+;; NAME is the refusal's first field, at most 64 bytes of [a-z0-9/-].
+(defn- kxrt-gpu-refused [a :i64 n :i64] :i64
+  (let [b (kxrt-gl 200)
+        i (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b 0 0x4152545f4558454b 8) 0x646e696b3a7b2050 8) 0x6962617061633a20 8) 0x69773a207974696c 8) 0x723a203234206572 8) 0x3a206c6173756665 8)
+        m (loop [k 1] (cond (>= k n) k (> k 64) k (kxrt-name-byte? (kxrt-load8 (+ a k))) (recur (inc k)) :else k))
+        j (if (> m 1) (let [z (kxrt-copy (+ b i) (+ a 1) (dec m))] (+ i (dec m))) (kxrt-w b i 0x64656d616e6e75 7))
+        z (kxrt-flush) y (kxrt-err-text b (kxrt-w b j 0xa7d 2))]
+    (kxrt-fail)))
+(defn- kxrt-gpu [h :i64] :i64
+  (let [rq (kxrt-gl 304) an (kxrt-gl 312) a (kxrt-saddr h) n (kxrt-ps h) b (kxrt-gl 200)
+        f (if (or (< rq 3) (< an 3)) (kxrt-fail) 0)
+        s (if (and (= (kxrt-write-all rq b (kxrt-w b 0 n 4)) 1) (= (kxrt-write-all rq a n) 1)) 1 (kxrt-fail))
+        g (if (= (kxrt-read-all an b 4) 1) 1 (kxrt-fail))
+        m (bit-or (kxrt-load8 b) (bit-or (i64-shift-left (kxrt-load8 (+ b 1)) 8)
+                                         (bit-or (i64-shift-left (kxrt-load8 (+ b 2)) 16) (i64-shift-left (kxrt-load8 (+ b 3)) 24))))
+        u (kxrt-gl 32) p (+ (kxrt-gl 24) u)]
+    (cond (> m KXRT-VALUE-MAX) (kxrt-value 8)
+          (> m (- KXRT-POOL u)) (kxrt-budget 4)
+          (= (kxrt-read-all an p m) 0) (kxrt-fail)
+          (and (> m 0) (= (kxrt-load8 p) 33)) (kxrt-gpu-refused p m)
+          :else (let [w (kxrt-gs 32 (+ u m))] (kxrt-pair-new (- -1 u) m)))))
+;; S_IFIFO or S_IFSOCK (st_mode at offset 24 of struct stat)
+(defn- kxrt-fd-pipe? [fd :i64] :bool
+  (let [st (+ (kxrt-gl 200) 8192) f (kxrt-syscall 5 fd st 0 0 0 0) k (bit-and (kxrt-load64 (+ st 24)) 61440)]
+    (and (= f 0) (or (= k 4096) (= k 49152)))))
+;; At start, when wire 42 is granted: KEXE_CAP_RESOURCES_42=REQUEST,ANSWER,
+;; two different inherited fds 3..1023, each a FIFO or a socket. Missing or
+;; invalid exits 2. SIGPIPE is ignored, so a provider that is gone gives EPIPE,
+;; and the call traps instead of the process dying of a signal.
+(defn- kxrt-gpu-fds [s :i64] :i64
+  (if (not (kxrt-admitted? 42)) 0
+    (let [n (if (= s 0) 0 (kxrt-cstrlen s))
+          c (loop [i 0] (cond (>= i n) -1 (= (kxrt-load8 (+ s i)) 44) i :else (recur (inc i))))
+          rq (if (< c 0) -1 (kxrt-parse s c))
+          an (if (< c 0) -1 (kxrt-parse (+ s c 1) (- n (inc c))))]
+      (if (or (< rq 3) (< an 3) (> rq 1023) (> an 1023) (= rq an) (not (kxrt-fd-pipe? rq)) (not (kxrt-fd-pipe? an)))
+        (kxrt-exit 2)
+        (let [x (kxrt-gs 304 rq) y (kxrt-gs 312 an) act (+ (kxrt-gl 200) 8192)
+              a0 (kxrt-store64 act 1) a1 (kxrt-store64 (+ act 8) 0) a2 (kxrt-store64 (+ act 16) 0) a3 (kxrt-store64 (+ act 24) 0)]
+          (if (< (kxrt-signal 13 act) 0) (kxrt-die) 0))))))
 (defn- kxrt-typed-cap-call [id :i64 rk :i64 sk :i64 req :i64] :i64
   (cond (not (kxrt-admitted? id)) (kxrt-fail)
         (not= rk sk) (kxrt-fail)
         (= rk 1)
           (let [v (kxrt-valid req)
-                r (case id 35 (kxrt-fs req) 37 (kxrt-io-write req) 38 (kxrt-args req) 39 (kxrt-io-error req) (kxrt-fail))]
+                r (case id 35 (kxrt-fs req) 37 (kxrt-io-write req) 38 (kxrt-args req) 39 (kxrt-io-error req) 42 (kxrt-gpu req) (kxrt-fail))]
             (kxrt-valid r))
         (and (= rk 8) (= id 35))
           (let [n (kxrt-vlen req)
@@ -527,8 +585,13 @@
   (-> i (kxrt-allow-nr-at p 0) (kxrt-allow-nr-at p 2) (kxrt-allow-nr-at p 257) (kxrt-allow-nr-at p 437) (kxrt-allow-nr-at p 3) (kxrt-allow-nr-at p 8) (kxrt-allow-nr-at p 17) (kxrt-allow-nr-at p 5) (kxrt-allow-nr-at p 262) (kxrt-allow-nr-at p 21) (kxrt-allow-nr-at p 439)))
 (defn- kxrt-allow-scope [p :i64 i :i64] :i64
   (-> i (kxrt-allow-nr-at p 258) (kxrt-allow-nr-at p 263) (kxrt-allow-nr-at p 264) (kxrt-allow-nr-at p 91) (kxrt-allow-nr-at p 74) (kxrt-allow-nr-at p 318)))
+;; read (0) only when args[0] (low word at offset 16) is fd; then the
+;; syscall number is loaded back for the rules after it
+(defn- kxrt-allow-read-fd [p :i64 i :i64 fd :i64] :i64
+  (kxrt-bpf p (kxrt-bpf p (kxrt-bpf p (kxrt-bpf p (kxrt-bpf p i 21 0 4 0) 32 0 0 16) 21 0 1 fd) 6 0 0 2147418112) 32 0 0 0))
 ;; Wrong arch: kill. Base set always; the fs set and the :fs/app-data extras
-;; only with an open scope 35 that is granted. Everything else: SIGSYS (trap).
+;; only with an open scope 35 that is granted; read on the GPU answer fd only
+;; with wire 42 granted (kxrt-gpu-fds). Everything else: SIGSYS (trap).
 ;; A kernel without seccomp fails closed unless KEXE_SECCOMP=if-available.
 (defn- kxrt-sandbox [] :i64
   (let [p (+ (kxrt-gl 200) 12352) prog (+ (kxrt-gl 200) 12304)
@@ -536,7 +599,8 @@
         fs (and (> (kxrt-gl 144) 0) (kxrt-admitted? 35))
         i1 (kxrt-allow-base p i0)
         i2 (if fs (kxrt-allow-scope p (kxrt-allow-fs p i1)) i1)
-        n (kxrt-bpf p i2 6 0 0 196608)
+        i3 (if (> (kxrt-gl 312) 2) (kxrt-allow-read-fd p i2 (kxrt-gl 312)) i2)
+        n (kxrt-bpf p i3 6 0 0 196608)
         a (kxrt-store64 prog n) b (kxrt-store64 (+ prog 8) p)]
     (if (< (kxrt-syscall 157 38 1 0 0 0 0) 0) (kxrt-die)
       (let [r (kxrt-syscall 317 1 0 prog 0 0 0)]
@@ -685,6 +749,7 @@
         f1 (kxrt-store64 (+ ctx 8) (kxrt-gl 168))
         rp (kxrt-gs 160 (if (= (kxrt-env 0x5254535f4558454b 0x5f44455255544355 0x3d54524f504552 23) 0) 0 1))
         sc (kxrt-scope (kxrt-env 0x5041435f4558454b 0x4352554f5345525f 0x3d35335f5345 22))
+        gk (kxrt-gpu-fds (kxrt-env 0x5041435f4558454b 0x4352554f5345525f 0x3d32345f5345 22))
         ;; struct sigaction: handler, SA_RESTORER|SA_RESETHAND, restorer, mask
         act (+ (kxrt-gl 200) 8192)
         alt (kxrt-gs 248 (kxrt-map 65536)) ss (+ act 64)

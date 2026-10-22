@@ -117,20 +117,31 @@ context), closes the append sink, flushes stdout and exits with
 `KEXE_STRUCTURED_REPORT` is set. Environment read: `KEXE_ALLOW` (default
 35,37,38,39; `-` = none), `KEXE_FUEL`, `KEXE_STRUCTURED_REPORT`,
 `KEXE_CAP_RESOURCES_35` (one absolute root; opens use openat2
-RESOLVE_BENEATH|RESOLVE_NO_MAGICLINKS), `KEXE_CPU_SECONDS`, `KEXE_WALL_SECONDS`,
-`KEXE_SECCOMP`. Before the guest runs: an alternate signal stack (64 KiB,
+RESOLVE_BENEATH|RESOLVE_NO_MAGICLINKS), `KEXE_CAP_RESOURCES_42` (read only when
+wire 42 is granted: REQUEST,ANSWER, two different inherited fds 3..1023, each a
+FIFO or a socket; missing or invalid exits 2; SIGPIPE is then ignored),
+`KEXE_CPU_SECONDS`, `KEXE_WALL_SECONDS`, `KEXE_SECCOMP`. Before the guest runs: an alternate signal stack (64 KiB,
 SA_ONSTACK) and SIGALRM/SIGXCPU/SIGSYS handlers; 960 KiB of stack pre-touched,
 then RLIMIT_CORE 0, RLIMIT_CPU (only when `KEXE_CPU_SECONDS` is given; soft s,
 hard s+1), RLIMIT_AS 64 MiB, RLIMIT_STACK 1 MiB, alarm(wall-1) for
 `KEXE_WALL_SECONDS`; then the loader's seccomp filter: wrong arch kills, the
 11-call base set always, the 11-call fs set and the 6 `:fs/app-data` calls only
-with an open, granted scope 35, everything else SIGSYS (exit 120). A kernel
+with an open, granted scope 35, `read` with args[0] = the ANSWER fd only with
+wire 42 granted, everything else SIGSYS (exit 120). A kernel
 without seccomp fails closed (exit 1) unless `KEXE_SECCOMP=if-available`.
 `KEXE_SANDBOX_PROBE` issues one filtered call after installation (diagnostic).
 Not provided: wire-35 forms other than READ/EXISTS/WRITE/APPEND (refused),
-wires other than 35/37/38/39 (refused), the loader's default 1 s cpu / 3 s wall
+wires other than 35/37/38/39/42 (refused), the loader's default 1 s cpu / 3 s wall
 budgets (no budget unless given), growth regions (pool/item layout differs;
 values are equal), the arena fields of the structured line.
+Wire 42 (`:gpu/compute`, ADR 0371) is a transport only: the request string is
+written to REQUEST as a u32 little-endian length and the bytes, and one framed
+answer is read from ANSWER into the string pool (at most 8 MiB, else a value
+trap). An answer that starts with `!` is a refusal: one line
+`KEXE_TRAP {:kind :capability :wire 42 :refusal :NAME}` on stderr (NAME = its
+first field, at most 64 bytes of [a-z0-9/-], else `unnamed`), then a trap.
+End of file, EPIPE or a short read also trap (exit 120). The checker does not
+admit wire 42 yet (E2115); ADR 0371 step 3 admits it.
 
 ### KX64V1 runner (`--format kx64-runner`)
 

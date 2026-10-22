@@ -7,30 +7,46 @@
   ],
   "root": {
     "image": {
-      "bytes": 1241600,
-      "sha256": "8256bfd8462c2014bf1864f154e88aa7cbb16eda7754aaabf8bf2303dcfc8dc7"
+      "bytes": 1257984,
+      "sha256": "de4b951174f51eced8c745cfbb48ee845b89d51944004efa6ea2a5515ddf7a48"
     },
     "receipt": {
       "schema": "amu.seed.static-root.v1",
       "image": {
-        "bytes": 1241600,
-        "sha256": "8256bfd8462c2014bf1864f154e88aa7cbb16eda7754aaabf8bf2303dcfc8dc7"
+        "bytes": 1257984,
+        "sha256": "de4b951174f51eced8c745cfbb48ee845b89d51944004efa6ea2a5515ddf7a48"
       },
       "target": "aarch64-linux",
       "format": "static",
       "sourceManifest": "seed/X86_64-LINUX-SELFHOST-MANIFEST",
       "sourceUnity": {
-        "bytes": 753610,
-        "sha256": "bcffd3d734102833f9fee01a904c769567af53d74eddd41d7f3fc2494d1b1f96"
+        "bytes": 762423,
+        "sha256": "dd13eea831316e3817236a77c041d9b8c3faa190ac1b1ffeaba822fd9a152dbf"
       },
-      "sourceCommitBase": "70ab19b659e73f72108d63497d3b3ff869f7d4b2",
+      "sourceCommitBase": "e4e1ea52661cebe38507a828cf563945bc73dcf5",
       "producedBy": {
-        "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 and S2 built S3 = this image (S1 = S2 = S3). Re-pinned because this source changes the runtime text embedded in every image.",
+        "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 and S2 built S3 = this image (S2 = S3; S1 differs because the previous root embeds the previous aarch64 runtime). Re-pinned because this source changes the runtime text embedded in every image: the wire-42 :gpu/compute transport of ADR 0371 step 2.",
         "date": "2026-10-22",
-        "previousRoot": "d4548c6b8c9f1fc0f7b8e22c1e36e8dd191f0516df0eb6a3e5f494bf742df5f4"
+        "previousRoot": "8256bfd8462c2014bf1864f154e88aa7cbb16eda7754aaabf8bf2303dcfc8dc7"
       },
       "verification": "scripts/seed/selfhost-bootstrap.py on arm64 Linux: root -> S1 = S2 = S3 = root natively, without any C compiler or loader",
       "history": [
+        {
+          "image": {
+            "bytes": 1241600,
+            "sha256": "8256bfd8462c2014bf1864f154e88aa7cbb16eda7754aaabf8bf2303dcfc8dc7"
+          },
+          "sourceUnity": {
+            "bytes": 753610,
+            "sha256": "bcffd3d734102833f9fee01a904c769567af53d74eddd41d7f3fc2494d1b1f96"
+          },
+          "sourceCommitBase": "70ab19b659e73f72108d63497d3b3ff869f7d4b2",
+          "producedBy": {
+            "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 and S2 built S3 = this image (S1 = S2 = S3). Re-pinned because this source changes the runtime text embedded in every image.",
+            "date": "2026-10-22",
+            "previousRoot": "d4548c6b8c9f1fc0f7b8e22c1e36e8dd191f0516df0eb6a3e5f494bf742df5f4"
+          }
+        },
         {
           "image": {
             "bytes": 1225216,
@@ -110,12 +126,12 @@
       "sha256": "e2f260bae95b873fb5b18c4f47324429cff1acf969d4a39ba4386da76fcfe2c9"
     },
     "seed/76-x86_64-static-rt.kotoba": {
-      "bytes": 45770,
-      "sha256": "b3082a60963509329a532fcd5de0b536786f054300aafd5671a42d56f58e50c8"
+      "bytes": 50175,
+      "sha256": "956c3b88994cee73afaad1c2f95961a3a6a033a783e84806bea981a775c9b6db"
     },
     "seed/77-aarch64-static-rt.kotoba": {
-      "bytes": 45883,
-      "sha256": "f5d4c2bec304e2b32fa8cc8fd8b8efa03a59c6c87dbc723aec5927359e18301b"
+      "bytes": 50291,
+      "sha256": "7591749d928e7b3e8fe445c904aed0f83a241380e7366985e87bc3b78d1f65ba"
     },
     "seed/80-aarch64-linux.kotoba": {
       "bytes": 15299,
@@ -135,40 +151,40 @@
       "name": "S1",
       "producedBy": "root.elf",
       "pin": {
-        "bytes": 1241600,
-        "sha256": "8256bfd8462c2014bf1864f154e88aa7cbb16eda7754aaabf8bf2303dcfc8dc7"
+        "bytes": 1257984,
+        "sha256": "de4b951174f51eced8c745cfbb48ee845b89d51944004efa6ea2a5515ddf7a48"
       }
     },
     {
       "name": "S2",
       "producedBy": "S1.elf",
       "pin": {
-        "bytes": 1241600,
-        "sha256": "8256bfd8462c2014bf1864f154e88aa7cbb16eda7754aaabf8bf2303dcfc8dc7"
+        "bytes": 1257984,
+        "sha256": "de4b951174f51eced8c745cfbb48ee845b89d51944004efa6ea2a5515ddf7a48"
       }
     },
     {
       "name": "S3",
       "producedBy": "S2.elf",
       "pin": {
-        "bytes": 1241600,
-        "sha256": "8256bfd8462c2014bf1864f154e88aa7cbb16eda7754aaabf8bf2303dcfc8dc7"
+        "bytes": 1257984,
+        "sha256": "de4b951174f51eced8c745cfbb48ee845b89d51944004efa6ea2a5515ddf7a48"
       }
     }
   ],
   "rootReproduces": true,
   "built": {
     "aarch64Runner": {
-      "bytes": 98816,
-      "sha256": "855bc4785242bd3a02faba8decb2e8a50f0bc10a5ecfe0f177867119d7ee7de0"
+      "bytes": 107008,
+      "sha256": "885b859815565d7b49065c57fee45f0df497558597c4bf79614958386e62b65c"
     },
     "x86_64Compiler": {
-      "bytes": 1532416,
-      "sha256": "f74fd09b36332c13774dae00f531944752c929c1b2e07905d951f95374993e3a"
+      "bytes": 1548800,
+      "sha256": "298283390386d4f2c2d093e2ca4d0a8103eca91cdef3b99b8577157cf9bb8b05"
     },
     "x86_64Runner": {
-      "bytes": 123392,
-      "sha256": "f99256ebac894357d7ba57e6e6f7f3ada60ff6c2bd1af85e7a31b5bb2db3d26d"
+      "bytes": 131584,
+      "sha256": "d057b9811d0f29cfada0260803e1508e6e8e4080bac0164f07618d0be1965fb0"
     }
   },
   "adopted": {
