@@ -1,0 +1,113 @@
+(ns gpu-kernel-kir1 (:export [kir1-ewise kir1-ewise-error kir1-operator-name]))
+
+;; KIR v1 (ADR 0002) elementwise f32 kernels as SPIR-V 1.3 (ADR 0372 step 1).
+;; Uses spirv_encode.kotoba. The binding layout is the wire-42 one (ADR 0371,
+;; tools/gpu_compute_protocol.kotoba PIPELINE): every binding is a storage
+;; buffer, set 0, bindings 0..3:
+;;   0 x: f32[] read   1 y: f32[] read   2 z: f32[] write   3 n: u32 read
+;; and z[i] = x[i] <op> y[i] for i = GlobalInvocationId.x < n. The WGSL
+;; emitter of the hosted pipeline passes n as a uniform; wire 42 binds storage
+;; buffers only, so here it is a one-word storage buffer.
+;;
+;; Ids are fixed (below), there is no debug information, and the same
+;; operator and workgroup size always give the same words.
+
+;; operator: 1 add, 2 sub, 3 mul, 4 div
+(defn kir1-operator-name [o :i64] :string
+  (cond (= o 1) "add" (= o 2) "sub" (= o 3) "mul" (= o 4) "div" :else ""))
+
+(defn- kir1-opcode [o :i64] :i64
+  (cond (= o 1) 129 (= o 2) 131 (= o 3) 133 (= o 4) 136 :else 0))
+
+;; 0 admitted, 1 unknown operator, 2 workgroup size not a power of two in 1..1024
+(defn kir1-ewise-error [o :i64 wg :i64] :i64
+  (cond (= (kir1-opcode o) 0) 1
+        (< wg 1) 2
+        (> wg 1024) 2
+        (not= (bit-and wg (- wg 1)) 0) 2
+        :else 0))
+
+;; Ids. 1 main, 2 void, 3 fn type, 4 uint, 5 float, 6 v3uint, 7 ptr Input
+;; v3uint, 8 gid, 9 float[], 10 struct ro, 11 ptr ro, 12 x, 13 y, 14 struct rw,
+;; 15 ptr rw, 16 z, 17 struct n, 18 ptr n, 19 n, 20 ptr float, 21 ptr uint,
+;; 22 uint 0, 23 bool, 24 entry label, 25 gid value, 26 i, 27 n ptr, 28 n
+;; value, 29 i < n, 30 then label, 31 merge label, 32..37 the body.
+(def KIR1-BOUND 38)
+
+;; binding variable v gets DescriptorSet 0, Binding b
+(defn- kir1-bind [M :vector-i64 v :i64 b :i64] :vector-i64
+  (spv-i3 (spv-i3 M 71 v 34 0) 71 v 33 b))
+
+(defn- kir1-annotations [M :vector-i64] :vector-i64
+  (-> M
+      (spv-i3 71 8 11 28)                 ; gid BuiltIn GlobalInvocationId
+      (spv-i3 71 9 6 4)                   ; float[] ArrayStride 4
+      (spv-i2 71 10 2)                    ; struct ro Block
+      (spv-i4 72 10 0 35 0)               ; member 0 Offset 0
+      (spv-i3 72 10 0 24)                 ; member 0 NonWritable
+      (spv-i2 71 14 2)                    ; struct rw Block
+      (spv-i4 72 14 0 35 0)
+      (spv-i2 71 17 2)                    ; struct n Block
+      (spv-i4 72 17 0 35 0)
+      (spv-i3 72 17 0 24)
+      (kir1-bind 12 0) (kir1-bind 13 1) (kir1-bind 16 2) (kir1-bind 19 3)))
+
+(defn- kir1-types [M :vector-i64] :vector-i64
+  (-> M
+      (spv-i1 19 2)                       ; void
+      (spv-i2 33 3 2)                     ; fn type: void ()
+      (spv-i3 21 4 32 0)                  ; uint = int 32 unsigned
+      (spv-i2 22 5 32)                    ; float 32
+      (spv-i3 23 6 4 3)                   ; v3uint
+      (spv-i3 32 7 1 6)                   ; ptr Input v3uint
+      (spv-i3 59 7 8 1)                   ; gid: Input variable
+      (spv-i2 29 9 5)                     ; float[] (runtime array)
+      (spv-i2 30 10 9)                    ; struct ro {float[]}
+      (spv-i3 32 11 12 10)                ; ptr StorageBuffer struct ro
+      (spv-i3 59 11 12 12)                ; x
+      (spv-i3 59 11 13 12)                ; y
+      (spv-i2 30 14 9)                    ; struct rw {float[]}
+      (spv-i3 32 15 12 14)
+      (spv-i3 59 15 16 12)                ; z
+      (spv-i2 30 17 4)                    ; struct n {uint}
+      (spv-i3 32 18 12 17)
+      (spv-i3 59 18 19 12)                ; n
+      (spv-i3 32 20 12 5)                 ; ptr StorageBuffer float
+      (spv-i3 32 21 12 4)                 ; ptr StorageBuffer uint
+      (spv-i3 43 4 22 0)                  ; uint 0
+      (spv-i1 20 23)))                    ; bool
+
+(defn- kir1-body [M :vector-i64 o :i64] :vector-i64
+  (-> M
+      (spv-i4 54 2 1 0 3)                 ; main = OpFunction void None fn type
+      (spv-i1 248 24)
+      (spv-i3 61 6 25 8)                  ; gid value
+      (spv-i4 81 4 26 25 0)               ; i = gid.x
+      (spv-i4 65 21 27 19 22)             ; &n.value
+      (spv-i3 61 4 28 27)
+      (spv-i4 176 23 29 26 28)            ; i < n
+      (spv-i2 247 31 0)                   ; SelectionMerge merge None
+      (spv-i3 250 29 30 31)
+      (spv-i1 248 30)
+      (spv-i5 65 20 32 12 22 26)          ; &x[i]
+      (spv-i3 61 5 33 32)
+      (spv-i5 65 20 34 13 22 26)          ; &y[i]
+      (spv-i3 61 5 35 34)
+      (spv-i4 (kir1-opcode o) 5 36 33 35) ; x[i] <op> y[i]
+      (spv-i5 65 20 37 16 22 26)          ; &z[i]
+      (spv-i2 62 37 36)                   ; store
+      (spv-i1 249 31)
+      (spv-i1 248 31)
+      (spv-i0 253)                        ; return
+      (spv-i0 56)))                       ; function end
+
+;; the module, or an empty one when (kir1-ewise-error o wg) is not 0
+(defn kir1-ewise [o :i64 wg :i64] :vector-i64
+  (if (> (kir1-ewise-error o wg) 0) (spv-new 0)
+    (let [M0 (spv-header (spv-new 256) SPV-VERSION-1-3)
+          M1 (spv-i1 M0 17 1)                       ; Capability Shader
+          M2 (spv-i2 M1 14 0 1)                     ; MemoryModel Logical GLSL450
+          M3 (spv-put (spv-put-str (spv-put (spv-put (spv-head M2 15 6) 5) 1) "main") 8) ; EntryPoint GLCompute main "main" gid
+          M4 (spv-i5 M3 16 1 17 wg 1 1)             ; ExecutionMode main LocalSize wg 1 1
+          M5 (kir1-body (kir1-types (kir1-annotations M4)) o)]
+      (spv-finish M5 KIR1-BOUND))))
