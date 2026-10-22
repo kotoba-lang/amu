@@ -1,5 +1,10 @@
 # Native static SHA-256 decision route
 
+Later [scope-absence work](linux-static-native-scope-absence.md) adds owning
+op 48 while retaining every earlier operation. The original 52-function
+snapshot and digest below describe the hash milestone, not the current full
+decision source or its qualification.
+
 Tracking: [JUN-201](https://linear.app/kotobalabs/issue/JUN-201),
 [JUN-200](https://linear.app/kotobalabs/issue/JUN-200), Kotoba Labs.
 

@@ -248,6 +248,8 @@
 ;; loader opens beneath the scope root the same way since amu #1137
 ;; (2026-09-25); before, it followed such a symlink. ENOSYS (38) -- a kernel before 5.6
 ;; without openat2 -- traps: there is no unconfined fallback.
+;; This is a kernel refusal of an already scoped request. A path denied by
+;; C1 spelling admission is answered through op 48 before any target open.
 (defn- errno-outcome [form stage errno]
   (cond
     (= errno 0) 3
@@ -582,6 +584,20 @@
     (= source 4) (cond (= code 1) 5 (= code 2) 6 (= code 3) 7 :else -1)
     :else -1))
 
+;; op 48: the absent answer of an out-of-scope fs/app-data path, after C1
+;; scope denial and before any target open/stat/mutation. The catalog requires
+;; absence without a trap or existence leak. 1 = the boolean answer "0";
+;; 0 = an empty data answer. -1 = unknown form, never a successful fallback.
+;; All sixteen forms are retained. Real request/resource/provider refusals
+;; remain terminal; these results do not authorize any filesystem operation.
+(defn- scope-absent-answer [form]
+  (cond
+    (< form 0) -1
+    (> form 15) -1
+    (or (= form 3) (= form 7) (= form 8) (= form 9)
+        (= form 10) (= form 11) (= form 12)) 1
+    :else 0))
+
 (defn decide [op a b c d]
   (cond
     (= op 0) (handler-for a b)
@@ -632,4 +648,5 @@
     (= op 45) (spawn-grant-counts a b c d)
     (= op 46) (refused-exit)
     (= op 47) (spawn-refusal-index a b)
+    (= op 48) (scope-absent-answer a)
     :else -1))

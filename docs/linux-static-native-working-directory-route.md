@@ -1,5 +1,10 @@
 # Native working-directory route
 
+Later [scope-absence work](linux-static-native-scope-absence.md) adds owning
+op 48 and an updated C1 scope operation. The earlier 52-function/48-operation
+snapshot and digest below are cwd milestone provenance, not the current full
+decision source or its qualification.
+
 Tracking: [JUN-236](https://linear.app/kotobalabs/issue/JUN-236),
 [JUN-201](https://linear.app/kotobalabs/issue/JUN-201), Kotoba Labs.
 

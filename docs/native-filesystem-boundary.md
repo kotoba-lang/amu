@@ -65,8 +65,10 @@ See its `docs/linux-static-filesystem-framing.md` for the exact protocol.
 
 ## Remaining acceptance
 
-The provider candidate's path-failure handling still needs reconciliation
-with the catalog's out-of-scope absence rule beyond EXISTS. Confinement,
+The paired [scope-absence decision](linux-static-native-scope-absence.md) and
+native mechanism now cover all sixteen forms, including both rename paths;
+their newly compiled matching decision artifact and runtime behavior remain
+unqualified. Confinement,
 descriptor/race/resource/refusal behavior, whole caller integration and
 legacy decoder retirement are open; do not select a forbidden host fallback.
 String I/O is not arbitrary raw-byte I/O/digest. That capability/helper work,
