@@ -164,7 +164,8 @@ Generated code uses only x0..x17, x29, x30 and sp, so runtime functions are
 AAPCS64-callable from a foreign payload. Fixups are MM-FIX kinds 11..17
 (imm26 FN/LABEL, imm19 LABEL, absolute FN/data/literal as movz+3 movk,
 code-relative literal). Entry: `mov x0, sp; bl kxrt-start; brk #0`. Traps are
-`brk #0` (SIGTRAP, exit 120). The runtime (77) is generated from the same
+`brk #0` (SIGTRAP, exit 120) for guest traps; the runtime's own refusals (the trap
+intrinsic) are `udf #0` (SIGILL), as the loader's helpers raised SIGILL. The runtime (77) is generated from the same
 template as 76: syscall numbers, openat for open, setitimer for alarm, O_
 flags, AUDIT_ARCH_AARCH64 and the aarch64 allow-lists differ. The runner
 format takes `PAYLOAD OFFSET 0 aarch64 ALLOW [-- ARGS]` and enters the payload
