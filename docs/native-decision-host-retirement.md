@@ -25,9 +25,12 @@ It does not implement or qualify the remaining native closure.
    source headers and legacy cache documentation. Preserve the complete
    decision/name/boundary forms, public exports, indices and exact strings.
 
-The small legacy cache assertion still reports stale provenance. It is not a
-replacement native gate. Its assertion logic and expected values remain;
-only its obsolete repair instruction changes.
+The hosted cache/source-SHA assertion is also retired, including its two
+unused imports. Even a comment edit changes a raw source SHA and makes that
+assertion demand the deleted generator. It cannot remain an acceptance
+condition or be repaired by relabelling old artifact source hashes. The full
+assertion is recorded by immutable source/blob provenance. Current sealed
+artifact identity and native qualification remain required and open.
 
 ## Complete historical corpus remains identifiable
 
