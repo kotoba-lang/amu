@@ -34,7 +34,7 @@ ADOPTED = "seed/MANIFEST"
 ROOT_IMAGE = "seed/bootstrap/aarch64-linux-static-root.elf"
 ROOT_RECEIPT = "seed/bootstrap/aarch64-linux-static-root.json"
 ADOPTED_BIN = "seed/bootstrap/adopted-20261012.bin"
-ADOPTION = "seed/adoption-20261017.json"
+ADOPTION = "seed/adoption-20261022.json"
 RUNNER_SRC = "seed/x86_64-kx64-runner.kotoba"
 CASES = "seed/static-cases.json"
 # The adopted compiler was qualified on a host whose main stack is 8 MiB; the

@@ -10,14 +10,12 @@ little-endian length and the bytes. Two parts:
    wire 42 granted in KEXE_ALLOW, a missing or invalid knob must exit 2: no
    knob, one fd, not a number, fd < 3, fd > 1023, the same fd twice, a closed
    fd, a regular file. Valid pipes run; a knob without the grant is ignored.
-   The checker must still refuse wire 42 (E2115): this step admits nothing.
+   The checker admits wire 42 (ADR 0371 step 3), so --compiler compiles a
+   guest that calls it.
 
-2. The transport end to end. The checker does not admit wire 42 yet (that is
-   ADR 0371 step 3, after the security sign-off), so this part builds a
-   TEST-ONLY compiler: the Linux selfhost closure with wire 42 admitted in
-   memory (ADMISSION below; never written to seed/, never adopted). Its
-   guests run against a scripted provider in this script, which replays
-   fixed answers and checks every request byte. Cases: answers round-trip,
+2. The transport end to end, with guests from --compiler. They run against
+   a scripted provider in this script, which replays fixed answers and checks
+   every request byte. Cases: answers round-trip,
    including an empty frame and a 4 MiB answer; a named refusal and a bare one
    trap with a KEXE_TRAP line; end of file, a closed request pipe (SIGPIPE
    is ignored, so EPIPE traps), and an answer frame over 8 MiB all trap
@@ -44,19 +42,6 @@ ROOT = Path(__file__).resolve().parents[2]
 SELFHOST = "seed/X86_64-LINUX-SELFHOST-MANIFEST"
 FUEL = "100000000"
 
-# Test-only admission of wire 42 for part 2, applied to the unity text in
-# memory. ADR 0371 step 3 admits it for real, with an adoption round.
-ADMISSION = [
-    ("(def KW-F64 41)\n", "(def KW-F64 41)\n(def KW-GPU-COMPUTE 42)\n"),
-    ("(def WIRE-ENTROPY-DRAW 23)\n", "(def WIRE-ENTROPY-DRAW 23)\n(def WIRE-GPU-COMPUTE 42)\n"),
-    ("                20 KW-PROCESS-SPAWN 23 KW-ENTROPY-DRAW   ; R6B\n                0)))",
-     "                20 KW-PROCESS-SPAWN 23 KW-ENTROPY-DRAW   ; R6B\n                42 KW-GPU-COMPUTE\n                0)))"),
-    ("        (= k KW-PROCESS-SPAWN) 1 (= k KW-ENTROPY-DRAW) 1   ; R6B: wires 20 23 (:string :string)\n",
-     "        (= k KW-PROCESS-SPAWN) 1 (= k KW-ENTROPY-DRAW) 1   ; R6B: wires 20 23 (:string :string)\n        (= k KW-GPU-COMPUTE) 1\n"),
-    ("    KW-PROCESS-SPAWN 20 KW-ENTROPY-DRAW 23   ; R6B\n    -1))",
-     "    KW-PROCESS-SPAWN 20 KW-ENTROPY-DRAW 23   ; R6B\n    KW-GPU-COMPUTE 42\n    -1))"),
-    ("    KW-ENTROPY-DRAW WIRE-ENTROPY-DRAW\n    0))", "    KW-ENTROPY-DRAW WIRE-ENTROPY-DRAW\n    KW-GPU-COMPUTE WIRE-GPU-COMPUTE\n    0))"),
-]
 # The control: the read rule names another fd, in both runtimes.
 WRONG_READ_FD = ("(kxrt-allow-read-fd p i2 (kxrt-gl 312))", "(kxrt-allow-read-fd p i2 (+ (kxrt-gl 312) 100))", 2)
 
@@ -175,8 +160,7 @@ def main(compiler, output, target, seccomp_if_available=False):
 
     # ---- part 1: the start-up check, with the compiler under test ----
     plain, _ = compile_(producer, "plain", PLAIN, target)
-    _, refused = compile_(producer, "checker-refuses-42", ONE, target, success=False)
-    assert refused.returncode != 0 and b"E2115" in refused.stderr and not (art / "checker-refuses-42.elf").exists(), refused
+    compile_(producer, "checker-admits-42", ONE, target)
     regular = art / "regular.txt"
     regular.write_text("not a pipe\n")
     knob_rows = []
@@ -220,9 +204,8 @@ def main(compiler, output, target, seccomp_if_available=False):
 
     # ---- part 2: the transport, through a test-only compiler ----
     text, unity_pins = unity_text()
-    admitted = patched(text, ADMISSION)
-    control = patched(admitted, [WRONG_READ_FD])
-    test_compiler, _ = compile_(producer, "test-compiler-wire42", admitted, "aarch64-linux")
+    control = patched(text, [WRONG_READ_FD])
+    test_compiler = producer
     control_compiler, _ = compile_(producer, "control-compiler-wrong-read-fd", control, "aarch64-linux")
 
     def e2e(name, prod, source, script, mode="replay", want_exit=0, stdout_has=(), stderr_has=()):
@@ -270,9 +253,8 @@ def main(compiler, output, target, seccomp_if_available=False):
                   host=[platform.system(), platform.machine(), platform.release()],
                   executionNative=target.split("-")[0] == {"arm64": "aarch64", "AMD64": "x86_64"}.get(platform.machine(), platform.machine()),
                   imageSeccomp="if-available" if seccomp_if_available else "required",
-                  checkerRefusesWire42=True, knob=knob_rows, transport=rows,
-                  testOnlyCompilers={"admission": "in-memory ADMISSION patch of the selfhost unity; never written to seed/ or adopted",
-                                     "wire42": pin(test_compiler), "controlWrongReadFd": pin(control_compiler)},
+                  checkerAdmitsWire42=True, knob=knob_rows, transport=rows,
+                  testOnlyCompilers={"controlWrongReadFd": pin(control_compiler)},
                   unity=unity_pins, cCompilerOrLoader=False,
                   notCovered=[] if enforced else ["control-wrong-read-fd: this kernel does not enforce seccomp (KEXE_SECCOMP=if-available)"])
     (output / "gpu-runtime-transport.json").write_text(json.dumps(report, indent=2) + "\n")

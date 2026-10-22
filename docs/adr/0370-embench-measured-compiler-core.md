@@ -45,6 +45,16 @@ identities and the sixteen adopted source-file hashes.
   `b10e381344a1f5a8b82cac981c0011bd20ecbcc4b48dd5f5dce97364c74e8a00`.
   The checked-in historical bootstrap is separately pinned as `6b158aa8...`;
   it must not be mistaken for that later fixed-point payload.
+- **2026-10-22, wire 42 admission round (ADR 0371 step 3).** It changes only
+  the capability admission: HEADS, 00-ns, 20-names, 21-check, 30-lower, 60-proj
+  and 90-drv. No code-generation module changes.
+  - The unity is now `37e4794d…` and G1 = G2 = G3 = `9deed950…`
+    (`seed/adoption-20261022.json`, built C-free).
+  - The new compiler reproduces all 19 current workload images exactly, and
+    passes the nine a64gen controls and certified-54
+    (`docs/evidence/wire42-admission-20261022/`).
+  - The measured lineage above is unchanged in substance. No new timing was
+    taken.
 
 M105 is the implementation descendant to extend, not a reason to attribute
 the M104 timing to a different binary. M93's `0.7999` includes substitution
