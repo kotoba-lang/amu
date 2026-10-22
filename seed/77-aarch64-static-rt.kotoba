@@ -25,6 +25,7 @@
 ;; 216 budget 224 value-trap 232 io-buffer 240 command 248 alt-stack
 ;; 256 conj 264 conj-tail 272 conj-copy 280 copied-words 288 string-copied-bytes
 ;; 296 arena-use flag 320..359 payload arguments
+;; 400.. root lengths (16) 528.. root fds (16) 656 root count 664 matched root fd
 (defn- kxrt-g [] :i64 (+ (kxrt-ctx) 1024))
 (defn- kxrt-gl [k :i64] :i64 (kxrt-load64 (+ (kxrt-g) k)))
 (defn- kxrt-gs [k :i64 v :i64] :i64 (kxrt-store64 (+ (kxrt-g) k) v))
@@ -389,19 +390,27 @@
             m1 (if (= m 0) (let [z (kxrt-store8 d 47)] 1) m)]
         (if (>= m1 4096) -1 (let [z (kxrt-store8 (+ d m1) 0)] m1))))))
 ;; scope admission: offset of the remainder inside the path buffer, or -1
-(defn- kxrt-admit [m :i64] :i64
-  (let [d (kxrt-gl 208) r (kxrt-gl 136) rn (kxrt-gl 144)]
-    (cond (or (= rn 0) (< m 0)) -1
-          (= rn 1) 1
+;; scope admission over the KEXE_CAP_RESOURCES_35 roots in order (the first
+;; root that is the path or a directory prefix of it): offset of the remainder
+;; inside the path buffer, or -1; the matched root's fd goes to G+664
+(defn- kxrt-admit-root [m :i64 i :i64] :i64
+  (let [d (kxrt-gl 208) r (+ (kxrt-gl 136) (* 4096 i)) rn (kxrt-gl (+ 400 (* 8 i)))]
+    (cond (= rn 1) 1
           (and (>= m rn) (kxrt-same d r rn) (or (= m rn) (= (kxrt-load8 (+ d rn)) 47))) (if (= m rn) m (inc rn))
           :else -1)))
+(defn- kxrt-admit [m :i64] :i64
+  (if (< m 0) -1
+    (loop [i 0]
+      (if (>= i (kxrt-gl 656)) -1
+        (let [k (kxrt-admit-root m i)]
+          (if (< k 0) (recur (inc i)) (let [z (kxrt-gs 664 (kxrt-gl (+ 528 (* 8 i))))] k)))))))
 ;; openat2(root, rest, {flags, mode, RESOLVE_BENEATH|RESOLVE_NO_MAGICLINKS}); fd or negative
 (defn- kxrt-open [m :i64 flags :i64 mode :i64] :i64
   (let [k (kxrt-admit m) d (kxrt-gl 208) how (+ (kxrt-gl 200) 4096)]
     (if (< k 0) -1
       (let [rest (if (>= k m) (let [z (kxrt-store8 (+ d m 1) 46) y (kxrt-store8 (+ d m 2) 0)] (+ d m 1)) (+ d k))
             x (kxrt-store64 how flags) y (kxrt-store64 (+ how 8) mode) z (kxrt-store64 (+ how 16) 10)]
-        (kxrt-syscall 437 (kxrt-gl 152) rest how 24 0 0)))))
+        (kxrt-syscall 437 (kxrt-gl 664) rest how 24 0 0)))))
 (defn- kxrt-sink-close [] :i64
   (let [fd (kxrt-gl 112)] (if (< fd 0) 1 (let [z (kxrt-gs 112 -1) y (kxrt-gs 128 0)] (if (= (kxrt-close fd) 0) 1 (kxrt-fail))))))
 (defn- kxrt-fs-exists [a :i64 n :i64] :i64
@@ -458,7 +467,7 @@
         (not= rk sk) (kxrt-fail)
         (= rk 1)
           (let [v (kxrt-valid req)
-                r (case id 35 (kxrt-fs req) 37 (kxrt-io-write req) 38 (kxrt-args req) 39 (kxrt-io-error req) (kxrt-fail))]
+                r (case id 3 (kxrt-sha256 req) 35 (kxrt-fs req) 37 (kxrt-io-write req) 38 (kxrt-args req) 39 (kxrt-io-error req) (kxrt-fail))]
             (kxrt-valid r))
         (and (= rk 8) (= id 35))
           (let [n (kxrt-vlen req)
@@ -466,6 +475,60 @@
                 r (kxrt-fs t)]
             (kxrt-bytes-raw (kxrt-saddr r) (kxrt-ps r)))
         :else (kxrt-fail)))
+
+;; ---- wire 3 :hash/sha256 (FIPS 180-4): the request bytes' digest as 64 lowercase hex ----
+;; scratch at S+13312: h[8] words, w[64] words, the padded tail (128 bytes), hex (64 bytes)
+(defn- kxrt-u32 [x :i64] :i64 (bit-and x 4294967295))
+(defn- kxrt-rotr [x :i64 n :i64] :i64 (kxrt-u32 (bit-or (u64-shift-right x n) (i64-shift-left x (- 32 n)))))
+(defn- kxrt-sha-k [i :i64] :i64 (case i 0 1116352408 1 1899447441 2 3049323471 3 3921009573 4 961987163 5 1508970993 6 2453635748 7 2870763221 8 3624381080 9 310598401 10 607225278 11 1426881987 12 1925078388 13 2162078206 14 2614888103 15 3248222580 16 3835390401 17 4022224774 18 264347078 19 604807628 20 770255983 21 1249150122 22 1555081692 23 1996064986 24 2554220882 25 2821834349 26 2952996808 27 3210313671 28 3336571891 29 3584528711 30 113926993 31 338241895 32 666307205 33 773529912 34 1294757372 35 1396182291 36 1695183700 37 1986661051 38 2177026350 39 2456956037 40 2730485921 41 2820302411 42 3259730800 43 3345764771 44 3516065817 45 3600352804 46 4094571909 47 275423344 48 430227734 49 506948616 50 659060556 51 883997877 52 958139571 53 1322822218 54 1537002063 55 1747873779 56 1955562222 57 2024104815 58 2227730452 59 2361852424 60 2428436474 61 2756734187 62 3204031479 3329325298))
+(defn- kxrt-sha-h0 [i :i64] :i64 (case i 0 1779033703 1 3144134277 2 1013904242 3 2773480762 4 1359893119 5 2600822924 6 528734635 1541459225))
+(defn- kxrt-be32 [p :i64] :i64
+  (bit-or (i64-shift-left (kxrt-load8 p) 24) (bit-or (i64-shift-left (kxrt-load8 (+ p 1)) 16)
+          (bit-or (i64-shift-left (kxrt-load8 (+ p 2)) 8) (kxrt-load8 (+ p 3))))))
+(defn- kxrt-sha-block [h :i64 w :i64 blk :i64] :i64
+  (let [a (loop [i 0] (if (= i 16) 0 (let [z (kxrt-store64 (+ w (* 8 i)) (kxrt-be32 (+ blk (* 4 i))))] (recur (inc i)))))
+        b (loop [i 16]
+            (if (= i 64) 0
+              (let [w15 (kxrt-load64 (+ w (* 8 (- i 15)))) w2 (kxrt-load64 (+ w (* 8 (- i 2))))
+                    s0 (bit-xor (kxrt-rotr w15 7) (bit-xor (kxrt-rotr w15 18) (u64-shift-right w15 3)))
+                    s1 (bit-xor (kxrt-rotr w2 17) (bit-xor (kxrt-rotr w2 19) (u64-shift-right w2 10)))
+                    z (kxrt-store64 (+ w (* 8 i)) (kxrt-u32 (+ (kxrt-load64 (+ w (* 8 (- i 16)))) s0 (kxrt-load64 (+ w (* 8 (- i 7)))) s1)))]
+                (recur (inc i)))))]
+    (loop [i 0 va (kxrt-load64 h) vb (kxrt-load64 (+ h 8)) vc (kxrt-load64 (+ h 16)) vd (kxrt-load64 (+ h 24))
+           ve (kxrt-load64 (+ h 32)) vf (kxrt-load64 (+ h 40)) vg (kxrt-load64 (+ h 48)) vh (kxrt-load64 (+ h 56))]
+      (if (= i 64)
+        (let [z0 (kxrt-store64 h (kxrt-u32 (+ (kxrt-load64 h) va))) z1 (kxrt-store64 (+ h 8) (kxrt-u32 (+ (kxrt-load64 (+ h 8)) vb)))
+              z2 (kxrt-store64 (+ h 16) (kxrt-u32 (+ (kxrt-load64 (+ h 16)) vc))) z3 (kxrt-store64 (+ h 24) (kxrt-u32 (+ (kxrt-load64 (+ h 24)) vd)))
+              z4 (kxrt-store64 (+ h 32) (kxrt-u32 (+ (kxrt-load64 (+ h 32)) ve))) z5 (kxrt-store64 (+ h 40) (kxrt-u32 (+ (kxrt-load64 (+ h 40)) vf)))
+              z6 (kxrt-store64 (+ h 48) (kxrt-u32 (+ (kxrt-load64 (+ h 48)) vg)))]
+          (kxrt-store64 (+ h 56) (kxrt-u32 (+ (kxrt-load64 (+ h 56)) vh))))
+        (let [t1 (kxrt-u32 (+ vh (bit-xor (kxrt-rotr ve 6) (bit-xor (kxrt-rotr ve 11) (kxrt-rotr ve 25)))
+                              (bit-xor (bit-and ve vf) (bit-and (kxrt-u32 (bit-not ve)) vg)) (kxrt-sha-k i) (kxrt-load64 (+ w (* 8 i)))))
+              t2 (kxrt-u32 (+ (bit-xor (kxrt-rotr va 2) (bit-xor (kxrt-rotr va 13) (kxrt-rotr va 22)))
+                              (bit-xor (bit-and va vb) (bit-xor (bit-and va vc) (bit-and vb vc)))))]
+          (recur (inc i) (kxrt-u32 (+ t1 t2)) va vb vc (kxrt-u32 (+ vd t1)) ve vf vg))))))
+(defn- kxrt-sha256 [req :i64] :i64
+  (let [v (kxrt-valid req) a (kxrt-saddr req) n (kxrt-ps req) s (+ (kxrt-gl 200) 13312)
+        h s w (+ s 64) tail (+ s 576) hex (+ s 704)
+        z (loop [i 0] (if (= i 8) 0 (let [y (kxrt-store64 (+ h (* 8 i)) (kxrt-sha-h0 i))] (recur (inc i)))))
+        done (loop [d 0] (if (> (+ d 64) n) d (let [y (kxrt-sha-block h w (+ a d))] (recur (+ d 64)))))
+        rest (- n done)
+        c (kxrt-copy tail (+ a done) rest)
+        p (kxrt-store8 (+ tail rest) 128)
+        padded (if (<= (inc rest) 56) 64 128)
+        zz (loop [i (inc rest)] (if (>= i padded) 0 (let [y (kxrt-store8 (+ tail i) 0)] (recur (inc i)))))
+        bits (* n 8)
+        lb (loop [i 0] (if (= i 8) 0 (let [y (kxrt-store8 (+ tail (- padded 1 i)) (bit-and (u64-shift-right bits (* 8 i)) 255))] (recur (inc i)))))
+        b1 (kxrt-sha-block h w tail)
+        b2 (if (= padded 128) (kxrt-sha-block h w (+ tail 64)) 0)
+        hx (loop [i 0]
+             (if (= i 32) 0
+               (let [word (kxrt-load64 (+ h (* 8 (quot i 4)))) byte (bit-and (u64-shift-right word (* 8 (- 3 (- i (* 4 (quot i 4)))))) 255)
+                     hi (u64-shift-right byte 4) lo (bit-and byte 15)
+                     y1 (kxrt-store8 (+ hex (* 2 i)) (if (< hi 10) (+ 48 hi) (+ 87 hi)))
+                     y2 (kxrt-store8 (+ hex (inc (* 2 i))) (if (< lo 10) (+ 48 lo) (+ 87 lo)))]
+                 (recur (inc i)))))]
+    (kxrt-intern hex 64)))
 
 ;; ---- context slots (C ABI: rdi = context) ----
 (defn- kxrt-slot-48 [c :i64 id :i64 v :i64] :i64 (if (kxrt-admitted? id) (+ v 1) (kxrt-fail)))
@@ -536,7 +599,7 @@
 (defn- kxrt-sandbox [] :i64
   (let [p (+ (kxrt-gl 200) 12352) prog (+ (kxrt-gl 200) 12304)
         i0 (kxrt-bpf p (kxrt-bpf p (kxrt-bpf p (kxrt-bpf p 0 32 0 0 4) 21 1 0 3221225655) 6 0 0 2147483648) 32 0 0 0)
-        fs (and (> (kxrt-gl 144) 0) (kxrt-admitted? 35))
+        fs (and (> (kxrt-gl 656) 0) (kxrt-admitted? 35))
         i1 (kxrt-allow-base p i0)
         i2 (if fs (kxrt-allow-scope p (kxrt-allow-fs p i1)) i1)
         n (kxrt-bpf p i2 6 0 0 196608)
@@ -619,13 +682,23 @@
             (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b 0 0x616f6c2d6578656b 8) 0x58454b203a726564 8) 0x65204c4555465f45 8) 0x7420736465656378 8) 0x6d6978616d206568 8) 0x6567647562206d75 8) 0x3931373030392074 8) 0x3930343734353239 8) 0x33355e3228203139 8) 0xa29312d 4))
         z (kxrt-err-text b n)]
     (kxrt-exit 2)))
+;; KEXE_CAP_RESOURCES_35: colon-separated absolute roots (at most 16), each
+;; normalized and opened O_PATH; entries that are empty, relative or cannot be
+;; opened are dropped, as the loader dropped unresolvable entries
+(defn- kxrt-scope-add [a :i64 n :i64] :i64
+  (let [m (if (and (> n 0) (= (kxrt-load8 a) 47)) (kxrt-path a n) -1) c (kxrt-gl 656)]
+    (if (or (< m 0) (>= c 16)) 0
+      (let [r (+ (kxrt-gl 136) (* 4096 c)) z (kxrt-copy r (kxrt-gl 208) (inc m))
+            fd (kxrt-open-path r 2637824 0)]
+        (if (< fd 0) 0
+          (let [y1 (kxrt-gs (+ 400 (* 8 c)) m) y2 (kxrt-gs (+ 528 (* 8 c)) fd)] (kxrt-gs 656 (inc c))))))))
 (defn- kxrt-scope [s :i64] :i64
   (if (= s 0) 0
-    (let [n (kxrt-cstrlen s) m (if (and (> n 0) (= (kxrt-load8 s) 47)) (kxrt-path s n) -1)]
-      (if (< m 0) 0
-        (let [r (kxrt-gl 136) z (kxrt-copy r (kxrt-gl 208) (inc m)) y (kxrt-gs 144 m)
-              fd (kxrt-open-path r 2637824 0)]
-          (if (< fd 0) (kxrt-gs 144 0) (kxrt-gs 152 fd)))))))
+    (let [n (kxrt-cstrlen s)]
+      (loop [i 0 st 0]
+        (cond (= i n) (kxrt-scope-add (+ s st) (- n st))
+              (= (kxrt-load8 (+ s i)) 58) (let [z (kxrt-scope-add (+ s st) (- i st))] (recur (inc i) (inc i)))
+              :else (recur (inc i) st))))))
 (defn- kxrt-signal [sig :i64 act :i64] :i64 (kxrt-syscall 134 sig act 0 8 0 0))
 (defn- kxrt-report [r :i64] :i64
   (let [b (kxrt-gl 200)
@@ -693,7 +766,7 @@
         m2 (kxrt-gs 24 (kxrt-map KXRT-POOL)) m3 (kxrt-gs 40 (kxrt-map (* KXRT-VECTORS 16)))
         m4 (kxrt-gs 56 (kxrt-map (* KXRT-ITEMS 8))) m5 (kxrt-gs 96 (kxrt-map 65536))
         m6 (kxrt-gs 200 (kxrt-map 16384)) m7 (kxrt-gs 208 (kxrt-map 8192))
-        m8 (kxrt-gs 120 (kxrt-map 4096)) m9 (kxrt-gs 136 (kxrt-map 4096)) m10 (kxrt-gs 184 (kxrt-map 4096))
+        m8 (kxrt-gs 120 (kxrt-map 4096)) m9 (kxrt-gs 136 (kxrt-map 65536)) m10 (kxrt-gs 184 (kxrt-map 4096))
         m11 (kxrt-gs 232 (kxrt-map KXRT-VALUE-MAX)) fd (kxrt-gs 112 -1)
         cw (kxrt-syscall 17 (kxrt-gl 184) 4096 0 0 0 0)
         cl (kxrt-gs 192 (if (and (> cw 1) (= (kxrt-load8 (kxrt-gl 184)) 47)) (kxrt-cstrlen (kxrt-gl 184)) 0))

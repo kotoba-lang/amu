@@ -29,7 +29,7 @@ cover before its property counts as qualified again.
 | verify-loader-fuzz.py | fuzz coverage of the C loader's parser | retired with the loader |
 | verify-preserved-integration.py, test-preserved-verification.py | frozen-source integration through the C loader | refused: re-run through the aarch64 runner |
 | test-x86_64-build-pins.py | orchestration fault injection of build-x86_64-linux.py | retired with that script |
-| check-native-source-recovery.sh | native source recovery through the loader | refused: re-run through the aarch64 runner |
+| check-native-source-recovery.sh | native source recovery through the loader | refused: its fixture uses the full product language (records, schemas, kotoba.form) and needs a native project compiler (`modules`, `link`, `--emit-module`) that is not produced C-free yet (AWAI-43 / AWAI-64). The runtime side it needed (wire 3, multiple scope roots) is in place |
 
 The embench reproduction under `bench/embench/reproduce-20261015/` also built
 the removed loader; it remains a historical record and is not runnable.

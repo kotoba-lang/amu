@@ -9,7 +9,9 @@ Starts from the pinned Amu-produced aarch64-linux-static compiler
 3. the pinned adopted AArch64 compiler (seed/bootstrap/adopted-20261012.bin)
    run by the aarch64 runner: G1 = G2 = G3 = the adoption receipt's image;
 4. the runtime case suite (seed/static-cases.json) as static images;
-5. the runtime hardening: seccomp enforced, cpu / wall / stack limits.
+5. the runtime hardening: seccomp enforced, cpu / wall / stack limits;
+6. runtime capabilities: wire 3 :hash/sha256 (FIPS vectors, granted and
+   refused) and a source found under the second of several scope roots.
 
 Python only orchestrates processes and hashes. Run it on arm64 Linux, for
 example: podman run --platform linux/arm64 -v REPO:REPO -v OUT:OUT
@@ -17,6 +19,7 @@ python:3.12-alpine python3 REPO/scripts/seed/selfhost-bootstrap.py --output OUT
 """
 import argparse
 import hashlib
+import shutil
 import json
 import platform
 import re
@@ -166,7 +169,30 @@ def main(out):
     assert hardening["wallSeconds3"]["exit"] == 120 and "SIGALRM" in hardening["wallSeconds3"]["stderr"]
     assert hardening["stack1MiB"]["exit"] == 120 and "SIGSEGV" in hardening["stack1MiB"]["stderr"]
 
-    report = dict(status="PASS_LOADERLESS_SELFHOST_BOOTSTRAP", host=[platform.system(), platform.machine(), platform.release()],
+    # 6. capabilities: wire 3 and multiple KEXE_CAP_RESOURCES_35 roots
+    roots = [out / "cap-missing", out / "cap-a", out / "cap-b"]
+    for r in roots[1:]:
+        r.mkdir()
+    vectors = {"abc": None, "": None, "x" * 200: None}
+    body = "\n".join(f'(if (string=? (typed-cap-call :hash/sha256 :string :string "{t}") "{hashlib.sha256(t.encode()).hexdigest()}") {1 << i} 0)'
+                     for i, t in enumerate(vectors))
+    (roots[2] / "hash.kotoba").write_text(f"(ns hash-check (:export [main]))\n(defn main [] :i64 (+ {body}))\n")
+    cap_env = {"KEXE_CAP_RESOURCES_35": ":".join(map(str, roots))}
+    run.run("cap-compile", [S, "compile", roots[2] / "hash.kotoba", "--target", "aarch64-linux", "--output", roots[2] / "hash.elf",
+                            "--format", "static"], cap_env)
+    (roots[2] / "hash.elf").chmod(0o755)
+    granted = run.run("cap-hash-granted", [roots[2] / "hash.elf"], {"KEXE_ALLOW": "3"}, success=False)
+    refused = run.run("cap-hash-refused", [roots[2] / "hash.elf"], {"KEXE_ALLOW": "37"}, success=False)
+    outside = run.run("cap-outside-roots", [S, "compile", roots[2] / "hash.kotoba", "--target", "aarch64-linux",
+                                            "--output", roots[1] / "x.elf", "--format", "static"],
+                      {"KEXE_CAP_RESOURCES_35": str(roots[1])}, success=False)
+    assert granted.returncode == 7, ("sha256 vectors", granted.returncode)
+    assert refused.returncode == 120 and b"SIGILL" in refused.stderr
+    assert outside.returncode != 0 and not (roots[1] / "x.elf").exists()
+    capabilities = dict(sha256Vectors=len(vectors), granted=granted.returncode, refused=refused.returncode,
+                        scopeRoots=len(roots), sourceUnderRoot=3, outsideRootsExit=outside.returncode)
+
+    report = dict(status="PASS_LOADERLESS_SELFHOST_BOOTSTRAP", capabilities=capabilities, host=[platform.system(), platform.machine(), platform.release()],
                   root=dict(image=pin(ROOT / ROOT_IMAGE), receipt=root_receipt), sourceGraph=source_pins,
                   generations=gens, rootReproduces=root_reproduces, built=built,
                   adopted=dict(sourceGraph=adopted_pins, runnerStackBytes=int(ADOPTED_STACK), generations=adopted_gens,
