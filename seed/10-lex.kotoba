@@ -119,9 +119,13 @@
   (loop [j i]
     (if (>= j (string-length S)) j (if (= (lx-ch S j) 10) j (recur (+ j (lx-cpw (lx-ch S j))))))))
 
+;; R6F: a symbol or keyword may END in primes (k', k''): the quote token is only a FORM PREFIX
+;; (the c=39 dispatch runs before the symbol scan), so the CONTINUATION accepts 39 and the start
+;; does not -- `k'` is the symbol "k'" and `'x` is (quote x).
+(defn- lx-symcont? [c :i64] :bool (or (lx-symch? c) (= c 39)))
 (defn- lx-word-end [S :string i :i64] :i64
   (loop [j i]
-    (if (< j (string-length S)) (if (lx-symch? (lx-ch S j)) (recur (+ j 1)) j) j)))
+    (if (< j (string-length S)) (if (lx-symcont? (lx-ch S j)) (recur (+ j 1)) j) j)))
 
 ;; Seed-0 has no boolean literals (seed/HEADS): true/false are comparisons of constants
 (defn- lx-true [] :bool (= 0 0))
