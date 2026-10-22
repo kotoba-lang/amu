@@ -1,7 +1,9 @@
 (ns kotoba.compiler.accelerator-variants
   "Total, deterministic per-vendor kernel variant selection for the ADR-0002
   accelerator KIR (ADR-0356; the NVIDIA row is JUN-57, the Intel and ARM
-  rows are JUN-59/JUN-60 and share one subgroup-size-parametric emission).
+  rows are JUN-59/JUN-60 and share one subgroup-size-parametric emission,
+  and the Apple row JUN-58 (ADR-0360) shares that same emission on the
+  Vulkan route -- MoltenVK is Apple's only route here).
   UNMEASURED, all of it. Nothing in this repository has executed a variant
   reduction on the vendor hardware its rows name: the wire-42 (:gpu/compute)
   execution path has no producer today -- the C loader brokers were removed
@@ -60,16 +62,18 @@
     grouped in a different order (f32 :sum may differ in the low bits;
     :max/:min are order-independent)."
    :subgroup-reduce
-   "Intel (JUN-59, ADR-0356) and ARM (JUN-60, ADR-0357) subgroup reduce: an
+   "Intel (JUN-59, ADR-0356), ARM (JUN-60, ADR-0357) and Apple (JUN-58,
+    ADR-0360) subgroup reduce: an
     intra-subgroup fold whose width is queried at RUNTIME (gl_SubgroupSize)
-    and never baked in -- Intel subgroup size is device-chosen among 8/16/32
-    and Mali's spans 4..32, so a baked width would be wrong somewhere. The
+    and never baked in -- Intel subgroup size is device-chosen among
+    8/16/32, Mali's spans 4..32 and Apple's SIMD-group is 32, so a baked
+    width would be wrong somewhere. The
     fold needs no barriers and no shared memory; one write barrier plus a
     cross-subgroup tree over the W/S partials replaces the baseline
     log2(W)-stage cascade (4/3/2 stages at W = 128 for S = 8/16/32 against
     the baseline's 7 -- stage arithmetic, not a speed claim). The design
     assumption (UNMEASURED) is that removing most of the barrier cascade
-    wins on Intel and Mali hardware; no hardware here has said so. It
+    wins on Intel, Mali and Apple hardware; no hardware here has said so. It
     replaces no workgroup row. Semantics, scoped as ADR-0357 P1 requires:
     the reduction groups the same admitted elements as the :baseline tree
     in a different order -- f32 :sum agrees with the baseline to low bits on
@@ -93,7 +97,8 @@
     sm_70+ floor in variant-bases is a real requirement; a descriptor that
     does not confirm it answers :baseline, fail closed).
 
-  - :subgroup-reduce -- Intel (JUN-59) and ARM (JUN-60) reduction kernels
+  - :subgroup-reduce -- Intel (JUN-59), ARM (JUN-60) and Apple (JUN-58,
+    ADR-0360) reduction kernels
     over :sum/:max/:min with a workgroup of at least one subgroup floor
     (the emission's own predicate, kotoba.compiler.accelerator-subgroup-
     reduce/applicable?), on the Vulkan route (:vulkan or :glsl-v1), under
@@ -103,10 +108,13 @@
     and a subgroup size (:subgroup-size) that DIVIDES the workgroup -- which
     also refuses a subgroup larger than the workgroup, as rule 6 demands.
     The reported width is taken as the device gives it (8/16/32 on Intel,
-    4..32 on Mali); the emission is parametric over it. The descriptor keys
-    are the contract this table consumes and their producer is the wire-42
-    INFO/DEVCLASS answer of the (today unimplemented) ADR-0371 GPU
-    provider; a descriptor that reports none of them fails closed to
+    4..32 on Mali, 32 on Apple's SIMD-groups); the emission is parametric
+    over it. The descriptor keys are the contract this table consumes and
+    their producer DOES NOT EXIST YET: the wire-42 answers of the (today
+    unimplemented) ADR-0371 GPU provider carry no subgroup facts (INFO is
+    four fields, DEVCLASS one class word), so a probe or provider extension
+    must report them -- the gap is named in ADR-0360 and the rows fail
+    closed without them: a descriptor that reports none of them answers
     :baseline.
 
   Everything else answers :baseline: other vendors (including :amd, which
@@ -117,7 +125,8 @@
 
   :measured? is the honesty lock and is false on every answer: it flips
   only when hardware measurement (JUN-57 on NVIDIA, JUN-59 on Intel, JUN-60
-  on Mali) replaces the basis text of the row it stands on. No report may
+  on Mali, JUN-58 on Apple) replaces the basis text of the row it stands
+  on. No report may
   cite an answer here as optimization evidence until then."
   ([vendor kir] (select-variant vendor kir nil nil))
   ([vendor kir target] (select-variant vendor kir target nil))
@@ -165,7 +174,7 @@
                           (and (int? wg) (>= wg min-warp-shuffle-workgroup))))
                    :warp-shuffle-reduce
 
-                   (and (contains? #{:intel :arm} vendor)
+                   (and (contains? #{:intel :arm :apple} vendor)
                         (= :glsl-v1 route)
                         valid-kir?
                         subgroup-cap-ok?

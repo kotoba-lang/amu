@@ -76,6 +76,7 @@ and binding on every future row):
 | `:warp-shuffle-reduce` | nvidia | reduce, W >= 32 | implemented in flight (PR #1331, open and unmerged at this date); CUDA emission only | UNMEASURED: no NVIDIA hardware, and the CUDA emitter has no execution path in this repo |
 | `:subgroup-reduce` | intel | reduce, W >= 32 | **implemented** 2026-10-22 (this ADR's design, on ADR-0359's admitted emission and sealed build step; selection row in `kotoba.compiler.accelerator-variants` under rules 3 + 6) | UNMEASURED: no Intel hardware |
 | `:subgroup-reduce` | arm | reduce, W >= 32 | **implemented** 2026-10-22 (the row is DESIGNED in ADR-0357, the ARM decision of record; same emission and selection row as the Intel row) | UNMEASURED: no Mali hardware |
+| `:subgroup-reduce` | apple | reduce, W >= 32 | **implemented** 2026-10-23 (the row is DESIGNED in ADR-0360, the Apple decision of record; same emission and selection row as the Intel row, Vulkan route only) | UNMEASURED: no Apple device has run the variant |
 
 **Amendment (2026-10-22, the JUN-59/JUN-60 selection rows land).** The
 execution-path honesty condition (a) below has landed in full: the
@@ -108,6 +109,18 @@ as_type<float>), pinned by `every-arm-shares-one-operator-meaning` in
 accelerator-test (which also asserts the finite bound appears in no arm's
 bytes). The NaN / negative-zero regime is UNCHANGED: still excluded from
 rule 2's claim and still UNMEASURED.
+
+**Amendment (2026-10-23, the JUN-58 selection row lands).** ADR-0360 adds
+the Apple row: the same `:subgroup-reduce` emission and the same selection
+gate (rules 3 + 6), on the Vulkan route only -- the MSL emitter admits
+`:baseline`, so rule 3 keeps `:msl-v1` at `:baseline` and a Metal simdgroup
+row on the MSL route is not designed here. The row is implemented; it is
+UNMEASURED and its measurement contract is ADR-0360's. ADR-0360 also names
+the open contract gap the rule-6 rows share: the descriptor facts
+(`:subgroup-size`, `:subgroup-ops`) have no producer in the wire-42 plan
+(`INFO` is four fields, `DEVCLASS` one class word), so every rule-6 row
+today selects only for a descriptor a future probe or provider fills in,
+and fails closed to `:baseline` without them.
 
 ## Intel `:subgroup-reduce` (JUN-59) -- the design
 
