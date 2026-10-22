@@ -357,7 +357,8 @@ Every other GPU number is a bootstrap reference.
   pointing here:
   * ADR 0355, ADR 0356, both ADR 0357s, ADR 0358;
   * `docs/native-aot-baseline.md`;
-  * the `:gpu/compute` comment in `resources/kotoba/lang/capability-catalog.edn`;
+  * the `:gpu/compute` comment in `resources/kotoba/lang/capability-catalog.edn`
+    (done: JUN-293, rewritten rather than given a dated note);
   * the `accelerator*` source comments.
 
   This is a follow-up; this change only adds the refused entry in
@@ -389,15 +390,15 @@ Each step is its own PR, in this order:
      build with one wrong expectation must fail exactly one case.
    * **Receipts.** `docs/evidence/gpu-compute-protocol-20261022/`: aarch64-linux
      native, and x86_64-linux under qemu-user.
-   * **Not done: the `:gpu/compute` comment in the capability catalog** still
-     describes the C broker.
-     * The catalog's authority is kotoba-lang/kotoba-lang.
-     * amu's copy has already drifted from it.
-     * `src/kotoba/compiler/embedded_resources.cljk` embeds amu's copy through
-       a CLJK generator.
-
-     Change the comment upstream first, then resync amu's copy and the
-     embedded copy.
+   * **The `:gpu/compute` comment in the capability catalog** follows this
+     ADR since JUN-293 (2026-10-22):
+     * kotoba-lang/kotoba-lang#808 changed the authority's comment.
+     * amu's `resources/kotoba/lang/capability-catalog.edn` was then resynced
+       to the authority's bytes, which also closed its earlier drift (the
+       `:fs/app-data :confinement` entry).
+     * The string in `src/kotoba/compiler/embedded_resources.cljk` was
+       rewritten to equal that file byte-for-byte, without running the CLJK
+       generator.
 2. **Guest runtime.** `KEXE_CAP_RESOURCES_42`, the fd checks, the transport in
    `seed/76` and `seed/77`, and the seccomp read rule. Test against a scripted
    fake provider; this needs no GPU and runs in CDCI.
