@@ -1,0 +1,8 @@
+(ns bootstrap.kgraph-boundary (:export [main]))
+(defn main [] :i64
+  (loop [index 0]
+    (if (= index 4096)
+      (if (and (= (__r6-kgget 4095 1) 4095)
+               (= (__r6-kgget 4096 1) -9223372036854775808)) 0 1)
+      (let [asserted (__r6-kgput index 1 index)]
+        (if (= asserted 1) (recur (+ index 1)) 1)))))

@@ -1,0 +1,16 @@
+(ns bootstrap.form-bytes
+  (:require [kotoba.form :as form])
+  (:export [main]))
+
+;; Regression: bytes nodes have no child forms, so comparing only children
+;; incorrectly considered all byte payloads equal, including inside maps.
+(defn main [] :i64
+  (let [a (form/bytes-form (bytes-from-vector-i64 [0 255 16]))
+        same (form/bytes-form (bytes-from-vector-i64 [0 255 16]))
+        changed (form/bytes-form (bytes-from-vector-i64 [0 254 16]))
+        shorter (form/bytes-form (bytes-from-vector-i64 [0 255]))
+        key (form/keyword-form :code)
+        left (form/form-map (form/two-forms key a))
+        right (form/form-map (form/two-forms key changed))]
+    (if (and (form/eq a same) (not (form/eq a changed))
+             (not (form/eq a shorter)) (not (form/eq left right))) 0 1)))
