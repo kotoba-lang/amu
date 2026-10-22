@@ -2,10 +2,9 @@
 
 Date: 2026-10-22
 Status: Decision 1 (the platform boundary) accepted by the owner on 2026-10-22.
-The rest is Proposed. Steps 1 (the protocol table) and 2 (the runtime transport)
-are merged. Step 3 (wire 42 admission) is built and measured, and waits for the
-security-integration sign-off (Decision 7) before it merges. Nothing else is
-implemented.
+The rest is Proposed. Steps 1 (the protocol table), 2 (the runtime transport)
+and 3 (wire 42 admission) are merged. The owner signed off the admission
+(Decision 7, open question 2) on 2026-10-22. Nothing else is implemented.
 Tracking: JUN-285 (this ADR), JUN-291 (step 1), JUN-294 (step 2). Related: JUN-109 (wire 42 admission), JUN-282
 (`amu run` on static images), JUN-283, AWAI-12 (murakumo inference on Amu
 selfhost).
@@ -395,8 +394,9 @@ Every other GPU number is a bootstrap reference.
 ## Open questions for the owner
 
 1. ~~Is the platform boundary in Decision 1 accepted?~~ Accepted 2026-10-22.
-2. Will security integration sign off on admitting wire 42, and on the
-   artifact table replacing guest-named paths?
+2. ~~Will security integration sign off on admitting wire 42, and on the
+   artifact table replacing guest-named paths?~~ Signed off by the owner
+   on 2026-10-22 (`seed/security-integration-20261022.json`).
 3. Does provider confinement (Landlock plus seccomp after device creation) hold
    on Mesa and L4T?
 4. Do GPU guests need compile-time policy narrowing (E2170), on top of the
@@ -444,8 +444,8 @@ Each step is its own PR, in this order:
      another fd; its guest must die of SIGSYS. It runs where the kernel
      enforces seccomp.
    * **Receipts.** `docs/evidence/gpu-runtime-transport-20261022/`.
-3. **Seed adoption round** admitting wire 42 (JUN-109). Built and measured;
-   it merges after the sign-off.
+3. **Seed adoption round** admitting wire 42. Done (JUN-109), signed off by
+   the owner on 2026-10-22.
    * **Fixed point.** The new adopted image G1 = G2 = G3 = `9deed950…` is
      recorded in `seed/adoption-20261022.json`. It was built C-free with
      `scripts/seed/adoption-candidate.py`.
@@ -453,7 +453,8 @@ Each step is its own PR, in this order:
    * **Checks.** `scripts/seed/check-wire42-admission.py`; receipts are in
      `docs/evidence/wire42-admission-20261022/`. Codegen is unchanged: all 19
      workload images are exact, and the nine controls and certified-54 pass.
-   * **Sign-off record.** `seed/security-integration-20261022.json` (pending).
+   * **Sign-off record.** `seed/security-integration-20261022.json`: approved
+     by the owner on 2026-10-22.
    * **Known defect.** JUN-309: under the C-free runner, the adopted compiler
      traps instead of naming E2115. It predates this round.
 4. **Launcher** (JUN-282): spawn, pipes, wall time, the GPU grant and the

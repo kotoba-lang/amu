@@ -1,7 +1,7 @@
 # Wire 42 :gpu/compute admission round (ADR 0371 step 3), 2026-10-22
 
-Status: measured and passing. **Not merged** until the security-integration sign-off
-(`seed/security-integration-20261022.json`, `signOff.status` = pending).
+Status: measured and passing. The security-integration sign-off was approved by the
+owner on 2026-10-22 (`seed/security-integration-20261022.json`).
 
 Host: arm64 Linux, podman machine (applehv) on macOS arm64. x86_64 rows ran
 under qemu-user binfmt with `KEXE_SECCOMP=if-available`. No C compiler or loader.
