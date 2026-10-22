@@ -34,6 +34,14 @@ emission targets are `:msl-v1` and `:cuda-v1` (`accelerator-targets`,
 that this row would light up, and each already carries a route-scoped row
 whose scope its own ADR set.
 
+(SUPERSEDED 2026-10-23 as to both rows' scope, twice over: the ADR-0360
+amendment extends Apple's row to the MSL route, and the ADR-0361
+same-day amendment extends NVIDIA's row to the CUDA route as that
+ladder's second rung under `:warp-shuffle-reduce`'s precedence. The WGSL
+conclusion is unchanged -- `:apple` and `:nvidia` keep answering
+`:baseline` on the WGSL route -- but "their ADRs scope them to the Vulkan
+route" is stale for both.)
+
 ## Rationale
 
 1. **Rule 3 is satisfied, and rule 3 is the ordering rule, not a ban.** The

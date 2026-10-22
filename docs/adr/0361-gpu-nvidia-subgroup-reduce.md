@@ -2,7 +2,9 @@
 
 - Status: accepted as design. The selection row is implemented 2026-10-23
   (code + tests in `kotoba.compiler.accelerator-variants`); the row is
-  UNMEASURED.
+  UNMEASURED. The same-day amendment below extends the row to the CUDA
+  route (second rung under `:warp-shuffle-reduce`), also implemented with
+  tests, also UNMEASURED.
 - Date: 2026-10-23
 - Tracking: JUN-57 (NVIDIA). Parent JUN-55. One vendor per decision, the
   rule ADR-0356 set and ADR-0357 (ARM) and ADR-0360 (Apple) followed.
@@ -139,3 +141,53 @@ CUDA-route row should ever answer `:subgroup-reduce` (and what that would
 mean against `:warp-shuffle-reduce`'s baked-warp fold) is a separate
 per-vendor decision, proposed here and decided nowhere. No `:measured?`
 flag moves and no workgroup row is touched.
+
+(SUPERSEDED, same day, by the amendment below: the CUDA-route question is
+decided and the row now rides the CUDA route as the ladder's second
+rung.)
+
+## Amendment (2026-10-23: the CUDA-route selection question is DECIDED)
+
+The CUDA-arm amendment's "proposed here and decided nowhere" question --
+whether the CUDA-route row should ever answer `:subgroup-reduce`, and what
+that would mean against `:warp-shuffle-reduce`'s baked-warp fold -- is
+decided here (JUN-57's own decision; one vendor per decision), in two
+parts.
+
+**Part 1: the row extends, as the SECOND rung of a deterministic CUDA
+ladder.** `select-variant` answers `:subgroup-reduce` for `:nvidia` on the
+CUDA route (`:cuda` / `:cuda-v1`) under the SAME rules 3 + 6 gate as the
+Vulkan route -- fail closed included, the sm_70+ reported-capability
+floor included -- but `:warp-shuffle-reduce` keeps precedence there: its
+gate (a CONFIRMED compute capability 7.0+ and `W >= 32`) is checked first
+in the table's `cond` and every answer it gives today is unchanged. The
+ladder for an NVIDIA reduce kernel on the CUDA route is total and
+deterministic: `:warp-shuffle-reduce` -> `:subgroup-reduce` ->
+`:baseline`. The extension therefore answers exactly one corner the warp
+row leaves open: a descriptor that reports the rule-6 subgroup facts and
+NO compute capability gets the parametric fold instead of `:baseline` --
+the same treatment the Vulkan row already gives an absent capability (the
+reported subgroup facts are the capability evidence). Everything else is
+unchanged: a reported capability below 7.0, or a malformed one, still
+fails closed to `:baseline` on both rungs.
+
+**Part 2: what the rung means against the baked-warp fold.** The two
+rungs spell the same fold: the CUDA arm of the emission is the warp fold
+with the width queried at runtime (`warpSize`) instead of the baked 32 --
+the same `__shfl_down_sync` loop, the same out-of-range guard, the same
+cross-warp tree. So the ladder changes no reduction semantics (ADR-0357
+P1's `:sum` association scope binds both rungs): which rung answers is a
+capability-evidence question, not an algorithmic one.
+
+Rule 3 holds on both rungs (the CUDA emitter has admitted
+`:subgroup-reduce` since the same day's CUDA-arm amendment, and
+`:warp-shuffle-reduce` since the row first existed). The rule-6 facts are
+the same descriptor keys as on every route (ADR-0360's fact-contract
+decision binds unchanged: `:subgroup-size` / `:subgroup-ops` are this
+table's capability vocabulary); ADR-0362's wire-42 `SUBGROUP` request
+stays the Vulkan route's producer, and a CUDA-native probe would fill the
+same keys from the device's warp facts directly -- no key, request or
+producer is invented here. UNCOMPILED and UNMEASURED (no nvcc on the
+testing host, the CUDA emitter has no execution path in this repository,
+nothing has run on NVIDIA hardware); every answer keeps `:measured?
+false`, and no workgroup row is touched.

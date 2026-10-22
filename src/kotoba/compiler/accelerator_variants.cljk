@@ -7,7 +7,10 @@
   emission on the Vulkan route -- MoltenVK is Apple's only EXECUTION route
   there, and NVIDIA's CUDA row has no execution path in this repository).
   The Apple row also rides the MSL route since ADR-0356's and ADR-0360's
-  2026-10-23 amendments (JUN-58's own decision).
+  2026-10-23 amendments (JUN-58's own decision), and the NVIDIA row rides
+  the CUDA route since ADR-0361's same-day amendment (JUN-57's own
+  decision) -- as the SECOND rung of that route's ladder, under
+  :warp-shuffle-reduce's precedence.
   UNMEASURED, all of it. Nothing in this repository has executed a variant
   reduction on the vendor hardware its rows name: the wire-42 (:gpu/compute)
   execution path has no producer today -- the C loader brokers were removed
@@ -71,8 +74,9 @@
     :max/:min are order-independent)."
    :subgroup-reduce
    "Intel (JUN-59, ADR-0356), ARM (JUN-60, ADR-0357), Apple (JUN-58,
-    ADR-0360) and NVIDIA on the Vulkan route (JUN-57, ADR-0361) subgroup
-    reduce: an
+    ADR-0360) and NVIDIA (JUN-57, ADR-0361 -- the Vulkan route, and the
+    CUDA route as the ladder's second rung under :warp-shuffle-reduce's
+    precedence) subgroup reduce: an
     intra-subgroup fold whose width is queried at RUNTIME (gl_SubgroupSize)
     and never baked in -- Intel subgroup size is device-chosen among
     8/16/32, Mali's spans 4..32 and Apple's SIMD-group is 32, so a baked
@@ -114,12 +118,23 @@
     (the emission's own predicate, kotoba.compiler.accelerator-subgroup-
     reduce/applicable?), on the Vulkan route (:vulkan or :glsl-v1) for all
     four vendors, for Intel and ARM ONLY (ADR-0363) on the WGSL route
-    (:webgpu or :wgsl-v1 -- the vendor-default target for both), and for
+    (:webgpu or :wgsl-v1 -- the vendor-default target for both), for
     Apple ONLY (ADR-0360's 2026-10-23 amendment, JUN-58's own decision) on
-    the MSL route (:metal or :msl-v1 -- Apple's vendor-default target);
-    NVIDIA stays Vulkan-route-only outside its decided CUDA row (extending
-    the CUDA route to :subgroup-reduce is a separate per-vendor decision,
-    undecided), under
+    the MSL route (:metal or :msl-v1 -- Apple's vendor-default target),
+    and for NVIDIA (ADR-0361's same-day amendment, JUN-57's own decision)
+    on the CUDA route (:cuda or :cuda-v1) as the SECOND rung of that
+    route's ladder: :warp-shuffle-reduce is checked first and keeps
+    precedence whenever its gate holds (a CONFIRMED compute capability
+    7.0+ and W >= 32) -- every answer it gives is unchanged -- and this
+    row answers only where the warp row's gate does not reach: a
+    descriptor that reports the rule-6 subgroup facts and NO compute
+    capability gets the parametric fold instead of :baseline (the same
+    treatment the Vulkan row already gives an absent capability). The
+    ladder is total and deterministic: :warp-shuffle-reduce ->
+    :subgroup-reduce -> :baseline. The two rungs spell the same fold (the
+    CUDA arm queries the width at runtime as warpSize where the warp row
+    bakes 32), so the choice changes no reduction semantics -- it is a
+    capability-evidence question, not an algorithmic one. Under
     ADR-0356 rule 6 and ADR-0357's capability precondition: the device
     descriptor must report, for the compute stage, the subgroup operations
     the fold needs (:subgroup-ops containing :basic and :shuffle-relative)
@@ -225,10 +240,24 @@
                             ;; own decision): the MSL route (:metal /
                             ;; :msl-v1) carries the Apple row, under the
                             ;; same rules 3 + 6 gate as the Vulkan route.
-                            ;; NVIDIA's CUDA-route question is a separate
-                            ;; per-vendor decision, still undecided.
                             (and (= :msl-v1 route)
-                                 (= :apple vendor)))
+                                 (= :apple vendor))
+                            ;; ADR-0361's same-day amendment (JUN-57's own
+                            ;; decision): the CUDA route (:cuda /
+                            ;; :cuda-v1) carries the NVIDIA row as the
+                            ;; SECOND rung of that route's ladder. The
+                            ;; :warp-shuffle-reduce branch above is checked
+                            ;; FIRST in this cond and keeps precedence
+                            ;; whenever its gate holds (a CONFIRMED compute
+                            ;; capability 7.0+ and W >= 32) -- every answer
+                            ;; it gives is unchanged; this rung answers
+                            ;; only where the warp row's gate does not
+                            ;; reach (a descriptor reporting the rule-6
+                            ;; subgroup facts and NO compute capability),
+                            ;; under the same rules 3 + 6 gate, fail closed
+                            ;; included.
+                            (and (= :cuda-v1 route)
+                                 (= :nvidia vendor)))
                         valid-kir?
                         subgroup-cap-ok?
                         ;; ADR-0361: NVIDIA's row carries the CUDA row's

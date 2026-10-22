@@ -293,6 +293,24 @@ CUDA-arm paragraph above stays UNDECIDED -- one vendor per decision.
 Everything stays UNMEASURED: no `:measured?` flag moves and no workgroup
 row is touched.
 
+**Amendment (2026-10-23, the NVIDIA CUDA-route selection question is
+DECIDED).** ADR-0361's same-day amendment supersedes the CUDA-arm
+paragraph's "proposed here and decided nowhere" clause (and the
+Apple-decision amendment's "stays UNDECIDED" sentence above): the CUDA
+route (`:cuda` / `:cuda-v1`) now carries NVIDIA's `:subgroup-reduce` row
+as the SECOND rung of that route's ladder -- `:warp-shuffle-reduce` (the
+CUDA-native row) keeps precedence whenever its gate holds (a CONFIRMED
+compute capability 7.0+ and `W >= 32`), and the parametric fold answers
+only where the warp row's gate does not reach (rule-6 subgroup facts
+reported, NO compute capability). The ladder is total and deterministic:
+`:warp-shuffle-reduce` -> `:subgroup-reduce` -> `:baseline`, and the
+extension answers exactly one corner the warp row leaves open. The two
+rungs spell the same fold (runtime `warpSize` vs the baked 32), so no
+reduction semantics change with the choice. Implemented with tests;
+UNCOMPILED and UNMEASURED (no nvcc, no NVIDIA execution path, nothing run
+on NVIDIA hardware), `:measured? false` on every answer, no workgroup row
+touched.
+
 ## Intel `:subgroup-reduce` (JUN-59) -- the design
 
 **Rationale (a design assumption, not a measurement).** The baseline tree

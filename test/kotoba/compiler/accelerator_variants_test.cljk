@@ -119,12 +119,13 @@
           (is (= :baseline
                  (:variant (variants/select-variant vendor kir target device)))
               (str "device " (pr-str device) " must fail closed")))))
-    (testing "a target outside the rows' routes (ADR-0363 moved the WGSL route in for Intel/ARM; the ADR-0360 amendment moved the MSL route in for Apple)"
+    (testing "a target outside the rows' routes (ADR-0363 moved the WGSL route in for Intel/ARM; the ADR-0360 amendment moved the MSL route in for Apple; the ADR-0361 amendment moved the CUDA route in for NVIDIA -- its second rung)"
       (doseq [target [:cuda :cuda-v1 nil]]
         (is (= :baseline (:variant (variants/select-variant :intel kir target capable))))
         (is (= :baseline (:variant (variants/select-variant :arm kir target capable))))
-        (is (= :baseline (:variant (variants/select-variant :apple kir target capable))))
-        (is (= :baseline (:variant (variants/select-variant :nvidia kir target capable)))))
+        (is (= :baseline (:variant (variants/select-variant :apple kir target capable)))))
+      (is (= :baseline (:variant (variants/select-variant :nvidia kir nil capable)))
+          "an absent target names no route, for NVIDIA too")
       ;; The MSL route carries the Apple row only (the ADR-0360 amendment).
       (doseq [target [:msl-v1 :metal]]
         (is (= :baseline (:variant (variants/select-variant :intel kir target capable))))
@@ -183,6 +184,12 @@
       (is (= :warp-shuffle-reduce
              (:variant (variants/select-variant :nvidia reduce-kir target
                                                 {:compute-capability 7.0})))))
+    ;; ADR-0361's amendment: the CUDA route's second rung selects under
+    ;; both CUDA spellings too (the warp row above keeps precedence on the
+    ;; same kernel when its gate holds).
+    (doseq [target [:cuda :cuda-v1]]
+      (is (= :subgroup-reduce
+             (:variant (variants/select-variant :nvidia reduce-kir target capable)))))
     (doseq [vendor [:intel :arm :apple :nvidia] target [:vulkan :glsl-v1]]
       (is (= :subgroup-reduce
              (:variant (variants/select-variant vendor reduce-kir target capable)))))
@@ -240,17 +247,20 @@
         (is (not (str/includes? (:code compiled) "kernel void main")))
         (is (= compiled (accelerator/verify-artifact! compiled)))))))
 
-(deftest the-nvidia-row-rides-the-vulkan-route-only
-  ;; ADR-0361 (JUN-57): NVIDIA's row on the Vulkan route is the shared
-  ;; subgroup-size-parametric emission (the warp's 32 is queried at runtime
-  ;; like every other width, never baked), and it carries the CUDA row's
-  ;; sm_70+ floor fail-closed on a REPORTED compute capability. The CUDA
-  ;; route keeps :warp-shuffle-reduce -- its own decided row; since
-  ;; 2026-10-23 the CUDA emitter ADMITS :subgroup-reduce too (the CUDA arm
-  ;; of the emission landed), so the reason the CUDA route keeps
-  ;; :warp-shuffle-reduce is the row's own scope, not rule 3: extending
-  ;; NVIDIA's CUDA-route row is a separate per-vendor decision, undecided
-  ;; -- and every target outside the Vulkan route answers :baseline.
+(deftest the-nvidia-row-rides-the-vulkan-and-cuda-routes
+  ;; ADR-0361 (JUN-57) as amended 2026-10-23 (JUN-57's own decision): the
+  ;; NVIDIA row is the shared subgroup-size-parametric emission on the
+  ;; Vulkan route (the warp's 32 is queried at runtime like every other
+  ;; width, never baked), carrying the CUDA row's sm_70+ floor fail-closed
+  ;; on a REPORTED compute capability -- and, since the same-day
+  ;; amendment, on the CUDA route as the SECOND rung of that route's
+  ;; ladder: :warp-shuffle-reduce (the CUDA-native row) is checked first
+  ;; and keeps precedence whenever its gate holds; the parametric fold
+  ;; answers only where the warp row's gate does not reach -- a descriptor
+  ;; reporting the rule-6 subgroup facts and NO compute capability. The
+  ;; two rungs spell the same fold (runtime warpSize vs the baked 32), so
+  ;; the ladder changes no reduction semantics. The MSL and WGSL routes do
+  ;; not carry NVIDIA. Everything is UNMEASURED (:measured? false).
   (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
         capable {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}
         answer (variants/select-variant :nvidia kir :vulkan capable)]
@@ -263,14 +273,56 @@
                (:variant (variants/select-variant
                           :nvidia kir target
                           (assoc capable :compute-capability 7.0)))))))
-    (testing "the CUDA route keeps its own row on the same kernel"
+    (testing "the CUDA route's ladder: rung 1 keeps precedence, rung 2 is the amendment"
+      ;; rung 1, unchanged: a CONFIRMED capability answers the warp row.
       (doseq [target [:cuda :cuda-v1]]
         (is (= :warp-shuffle-reduce
                (:variant (variants/select-variant
                           :nvidia kir target
-                          {:compute-capability 7.0}))))))
+                          {:compute-capability 7.0})))))
+      ;; rung 1 keeps precedence where BOTH gates hold on the same kernel.
+      (doseq [target [:cuda :cuda-v1]]
+        (is (= :warp-shuffle-reduce
+               (:variant (variants/select-variant
+                          :nvidia kir target
+                          (assoc capable :compute-capability 7.0))))))
+      ;; rung 2, the extension: rule-6 facts reported, NO compute
+      ;; capability -- the parametric fold, not :baseline.
+      (doseq [target [:cuda :cuda-v1]]
+        (let [second-rung (variants/select-variant :nvidia kir target capable)]
+          (is (= :subgroup-reduce (:variant second-rung)))
+          (is (false? (:measured? second-rung)))
+          (is (str/includes? (:basis second-rung) "ADR-0361")))))
+    (testing "the same rule-6 gate fails closed on the CUDA route"
+      (doseq [device [nil
+                      {}
+                      {:subgroup-size 32}
+                      {:subgroup-ops #{:basic :shuffle-relative}}
+                      {:subgroup-size 32 :subgroup-ops #{:basic}}
+                      {:subgroup-size 32 :subgroup-ops #{:shuffle-relative}}
+                      {:subgroup-size 24 :subgroup-ops #{:basic :shuffle-relative}}
+                      ;; a REPORTED capability binds the sm_70+ floor on
+                      ;; both rungs: below the floor or malformed fails
+                      ;; closed to :baseline.
+                      (assoc capable :compute-capability 6.0)
+                      (assoc capable :compute-capability "7.0")]
+              target [:cuda :cuda-v1]]
+        (is (= :baseline (:variant (variants/select-variant :nvidia kir target device)))
+            (str "device " (pr-str device) " must fail closed on the CUDA route"))))
     (doseq [target [:msl-v1 :metal :webgpu :wgsl-v1]]
-      (is (= :baseline (:variant (variants/select-variant :nvidia kir target capable)))))))
+      (is (= :baseline (:variant (variants/select-variant :nvidia kir target capable)))))
+    (testing "rule 3 end to end: the second rung lowers, seals and verifies on :cuda-v1"
+      (let [selected (:variant (variants/select-variant :nvidia kir :cuda-v1 capable))
+            compiled (accelerator/compile-kernel kir :cuda-v1 selected)]
+        (is (= :subgroup-reduce selected))
+        (is (= :subgroup-reduce (:variant compiled)))
+        (is (str/includes? (:code compiled) "unsigned int sgsize = warpSize;"))
+        (is (str/includes? (:code compiled) "__activemask()"))
+        (is (str/includes? (:code compiled) "__shfl_down_sync(mask, v, d, fold)"))
+        (is (nil? (re-find #"\bd = \d+u" (:code compiled)))
+            "a baked fold width leaked into the CUDA emission")
+        (is (str/includes? (:code compiled) "extern \"C\" __global__ void reduce_sum_f32("))
+        (is (= compiled (accelerator/verify-artifact! compiled)))))))
 
 (deftest the-wgsl-route-carries-the-intel-and-arm-rows
   ;; ADR-0363 (JUN-59, JUN-60): the WGSL route -- :webgpu (api) and
@@ -354,6 +406,11 @@
                       :apple kir :msl-v1
                       (targets/device-from-subgroup "32|basic shuffle-relative"))))
         "the descriptor keys are the route-agnostic contract: the same parsed facts select on the MSL route")
+    (is (= :subgroup-reduce
+           (:variant (variants/select-variant
+                      :nvidia kir :cuda-v1
+                      (targets/device-from-subgroup "32|basic shuffle-relative"))))
+        "and the same parsed facts select NVIDIA's CUDA-route second rung (no compute capability in a SUBGROUP answer -- the warp row's gate does not reach)")
     (is (= :subgroup-reduce
            (:variant (variants/select-variant
                       :intel kir :glsl-v1
