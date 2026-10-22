@@ -1115,6 +1115,20 @@
                            (meta form))
     :else form))
 
+;; Whether NS-PART (a qualified call's namespace) names a host class: `js`,
+;; `goog`, or a class -- the segment after the last `.` begins with an ASCII
+;; uppercase letter (`Math`, `MessageDigest`, `java.lang.Math`). Kotoba
+;; namespaces are lowercase by convention, so an uppercase class segment is
+;; not an import that failed to resolve. No regex: this module is compiled
+;; by Kotoba itself, whose reader refuses a host regex literal.
+(defn- host-class-namespace? [ns-part]
+  (let [dot (str/last-index-of ns-part ".")
+        segment (if (some? dot) (subs ns-part (inc dot)) ns-part)]
+    (or (= "js" ns-part)
+        (= "goog" ns-part)
+        (and (< 0 (count segment))
+             (str/includes? "ABCDEFGHIJKLMNOPQRSTUVWXYZ" (subs segment 0 1))))))
+
 (defn- rewrite-import-calls [form imported]
   (cond
     (seq? form)
@@ -1146,7 +1160,19 @@
                     ;; the message, and a module with forty qualified calls
                     ;; gave its reader no way to find the one refused
                     ;; (measured 2026-10-09 on kotoba-lang/text).
-                    (reject! (str "qualified call is not an admitted exported import: " op) {:call op}))
+                    ;;
+                    ;; 2026-10-20 (issue #785): a head whose namespace NAMES
+                    ;; A HOST CLASS -- `js`, `goog`, or a class like `Math` /
+                    ;; `MessageDigest` / `java.lang.Math` -- is host interop,
+                    ;; not an import that failed to resolve, and the sentence
+                    ;; must say so (it was measured misfiring as `qualified
+                    ;; call is not an admitted exported import: Math/abs` for
+                    ;; a module whose imports all resolved).
+                    (if (host-class-namespace? (namespace op))
+                      (reject! (str "host interop call is not admitted: " op
+                                    " (a Java / JS class is outside the language)")
+                               {:call op :host-interop true})
+                      (reject! (str "qualified call is not an admitted exported import: " op) {:call op})))
                 op)]
       (list* rewritten-op (map (fn [amu_project_lambda_6_arg_1]
                           (rewrite-import-calls amu_project_lambda_6_arg_1 imported)) args)))

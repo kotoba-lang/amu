@@ -21,7 +21,7 @@
   "End the process with STATUS after the current event-loop turn, so a write
   queued in this turn is flushed first."
   [status]
-  (js/setImmediate #(.exit js/process status)))
+  (js/setImmediate (fn [] (.exit js/process status))))
 
 (defn on-stdin-data!
   "Call F with each chunk (a byte buffer) that arrives on standard input."
