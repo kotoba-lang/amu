@@ -751,7 +751,15 @@
         invT (kb-fdiv B (kb-f32 B F-ONE) (k2-pm B V 4))
         s0 (kb-imul B w u4096) s1 (kb-umin B n (kb-iadd B s0 u4096))
         parts (kb-udiv B (kb-iadd B n (kb-u32 B 4095)) u4096)
-        pos (kb-select B tu (kb-fne B (k2-pm B V 7) f0) (kb-bitcast B tu (k2-ld B V 3 u0)) u0)
+        ;; pos = (P.p1 != 0) ? floatBitsToUint(c[0]) : 0, the load in an if (the
+        ;; GLSL reads c[0] only then); only sample_topp and sample_final have it
+        pos (if (or (= op 26) (= op 31))
+              (let [vp (kb-var B tu) a (kb-store B vp u0)
+                    g (kb-if B (kb-fne B (k2-pm B V 7) f0))
+                    b (kb-store B vp (kb-bitcast B tu (k2-ld B V 3 u0)))
+                    z (kb-end-if B)]
+                (kb-load B tu vp))
+              0)
         seed (kb-bitcast B tu (k2-pm B V 6))
         body
         (cond
@@ -1929,8 +1937,14 @@
           ;; the default variant returns before the row and token
           g0 (if (= kind 23) (k2-return-if B (kb-uge B t (kb-imul B blocks (ku B 8)))) 0)
           row (kb-builtin-at B 26 1)
-          tok (kb-load B tu (kb-at B I tu (kb-iadd B (kb-select B tu (kb-ine B (kb-meta-at B P tu 2) u0) (kb-load B tu (kb-at B Pos tu u0)) (kb-meta-at B P tu 1))
-                                                    row)))
+          ;; tok = ids[((P.dyn != 0) ? pos[0] : P.slot) + row]; pos[0] is read only
+          ;; when dyn != 0, so its load stays in an if
+          vslot (kb-var B tu)
+          s0 (kb-store B vslot (kb-meta-at B P tu 1))
+          s1 (kb-if B (kb-ine B (kb-meta-at B P tu 2) u0))
+          s2 (kb-store B vslot (kb-load B tu (kb-at B Pos tu u0)))
+          s3 (kb-end-if B)
+          tok (kb-load B tu (kb-at B I tu (kb-iadd B (kb-load B tu vslot) row)))
           orow (kb-imul B row cols)
           body
           (cond

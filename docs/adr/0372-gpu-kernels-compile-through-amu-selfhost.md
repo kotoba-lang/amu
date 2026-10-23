@@ -272,10 +272,19 @@ a follow-up to ADR 0371.
      * a shared scalar, as a one-element shared array;
      * a descending scan with `break`.
 
-     On gad, each resident op is exact. sample_topp is byte-identical to
-     glslang's module. So is the whole 63-dispatch chain (n = 10000:
-     part, probs, 30 bisection rounds, final), down to the pick and the
-     token-buffer write.
+     On gad:
+     * every op is byte-identical to glslang's module, including the whole
+       63-dispatch chain (n = 10000: part, probs, 30 bisection rounds,
+       final), down to the pick and the token-buffer write;
+     * the resident ops other than quant_q8 are exact. quant_q8 matches
+       glslang's module, but RADV computes its scale as `m * (1/127)`, so it
+       is not exact against a correctly rounded division;
+     * sample_topp also ran at a static position and inside the prompt,
+       where the token buffer stays untouched.
+
+     `c[0]` and embed's `pos[0]` are read only under their guards, as in the
+     GLSL. The top-of-range pick (`target >= total`) was checked by reading
+     only.
    * **Done: deltanet and embed.**
      * `deltanet_step` (inference at 9aab2b1).
      * `deltanet_fused` (at ee9ebc5), decode variant. It has 512
@@ -286,8 +295,9 @@ a follow-up to ADR 0371.
        B32 variants keep the `+ m` of 0.0, because `-0.0 + 0.0` is `+0.0`.
 
      On gad each is byte-identical to glslang's module. deltanet_step is
-     within 4.1e-6 of f64; deltanet_fused was run at a fresh position and
-     with history (ring, state and output); the Q8 embedding is exact.
+     within 4.1e-6 of f64; deltanet_fused was run at a fresh position, with
+     history, and on row 1 (ring, state and output); the Q8 embedding is
+     exact.
 
      Receipts (with the rest of nex_ops' decode ops):
      `docs/evidence/gpu-kernel-kir2-dn-20261023/`.

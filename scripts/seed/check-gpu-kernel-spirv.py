@@ -90,7 +90,7 @@ SUITES = {
                  count=23, control="FAIL label inside an open block", refs=True),
     "kir2": dict(modules=[*ENCODE_CHECK, "tools/gpu_kernel_kir2.kotoba", "tools/gpu_kernels_v2.kotoba"],
                  test="tools/gpu_kernel_kir2_test.kotoba", receipt="gpu-kernel-kir2.json", prefix="kir2-",
-                 sizes={"ewise": 1096, "attn-copy-dense": 6488, **{"kir2-nex-" + op + ".spv": n for op, n in zip(NEX_OPS, [3440, 3468, 3516, 1992, 2660, 2452, 2396, 2140, 2704, 1872, 1968, 3088, 3476, 1652, 3988, 5964, 5356, 3604, 4052, 3252, 1780, 2172, 1720, 1732, 1752, 9816, 4656, 4152, 3828, 3268, 6120])},
+                 sizes={"ewise": 1096, "attn-copy-dense": 6488, **{"kir2-nex-" + op + ".spv": n for op, n in zip(NEX_OPS, [3440, 3468, 3516, 1992, 2660, 2452, 2396, 2140, 2704, 1872, 1968, 3088, 3476, 1652, 3988, 5964, 5356, 3604, 4052, 3252, 1780, 2172, 1720, 1732, 1752, 9916, 4504, 4000, 3676, 3116, 6220])},
                         "kir2-dot-rows.spv": 2448, "kir2-kdot-f32-r1.spv": 28776,
                         "kir2-kdot-f32-r8.spv": 25056, "kir2-kdot-f32-r8-rows4.spv": 25056,
                         "kir2-kdot-f32-r8-rows16.spv": 25072, "kir2-kdot-f32-r8-rows32.spv": 25072,
@@ -98,8 +98,8 @@ SUITES = {
                         "kir2-kdot-i8-x8r4.spv": 23028, "kir2-kdot-i8-x8r8.spv": 23028,
                         "kir2-kdot-x8r16.spv": 26028, "kir2-kdot-x8r32.spv": 26028, "kir2-kdot-i8-x8r16.spv": 23028, "kir2-kdot-i8-x8r32.spv": 23028,
                         "kir2-deltanet-step.spv": 3728, "kir2-deltanet-fused.spv": 13724,
-                        **{f"kir2-embed-{n}.spv": b for n, b in (("iq4xs", 4164), ("q8", 2956), ("b32-2", 3128), ("b32-3", 3320),
-                                                                  ("b32-6", 4216), ("b32-7", 4376), ("ptq1", 4164))}},
+                        **{f"kir2-embed-{n}.spv": b for n, b in (("iq4xs", 4264), ("q8", 3056), ("b32-2", 3228), ("b32-3", 3420),
+                                                                  ("b32-6", 4316), ("b32-7", 4476), ("ptq1", 4264))}},
                  count=63, control="FAIL attn: variables", refs=True),
 }
 FUEL = 100000000
@@ -499,6 +499,14 @@ def nex_cases():
                                                                      p0=struct.unpack("<f", struct.pack("<I", 0x1234567))[0], p1=1.0),
                       bufs=bufs(a=[x * 4.0 for x in lcg(1000, 131)], b=bytes(32), c=struct.pack("<I", 4) + bytes(12), i=bytes(16)),
                       groups=(1, 1, 1)))
+    # no token-buffer write: a static position (p1 == 0, pos = 0), and inside
+    # the prompt (pos + 1 < aux2); ids starts all ones, so a pick of 0 shows
+    for label, p1, aux2 in (("static position", 0.0, 2), ("inside the prompt", 1.0, 10)):
+        cases.append(dict(name="sample_topp " + label, op="sample_topp",
+                          meta=meta(n=1000, aux=3, aux2=aux2, eps=0.8, scale=0.9, p0=struct.unpack("<f", struct.pack("<I", 0x1234567))[0], p1=p1),
+                          bufs=bufs(a=[x * 4.0 for x in lcg(1000, 131)], b=bytes(32), c=struct.pack("<I", 4) + bytes(12), i=b"\xff" * 16),
+                          groups=(1, 1, 1),
+                          check=lambda o: 0 if (o[2] == bytes(32) and struct.unpack("<4I", o[6])[3] < 1000) else 1))
     return cases
 
 
@@ -688,10 +696,17 @@ def deltanet_embed_cases():
     # embed: two token rows of a 6-token vocabulary at cols 512, the slot from
     # Meta (and once from pos[0]); Q8 also exactly against a dequant
     ids = struct.pack("<4I", 5, 2, 4, 0)
+    # deltanet_fused on row 1 at position 6 (even: ring slot 0, with history)
+    fm = struct.pack("<6I2f", H, K, V, KH, voff, n, 1e-6, 1 / math.sqrt(K))
+    cases.append(dict(name="deltanet_fused row 1 position 6", pair="dnf",
+                      bufs=[fm, f32(lcg(2 * n, 150)), f32(lcg(4 * n, 101)), f32(lcg(6 * n, 151)), f32(lcg(2 * H, 152)), f32(lcg(2 * H, 153)),
+                            f32(lcg(H, 105)), f32([-abs(x) for x in lcg(H, 106)]), f32(lcg(H * K * V, 154)), f32(lcg(V, 108)),
+                            f32(lcg(2 * H * V, 155)), bytes(4 * 2 * H * V), struct.pack("<4I", 6, 1, 0, 0)],
+                      compare=[3, 8, 11], groups=(H, 1, 1), check=None))
     for kind, name in EMBED_KINDS.items():
         per_token = {23: 2 * 136, 8: 16 * 34, 2: 16 * 18, 3: 16 * 20, 6: 16 * 22, 7: 16 * 24, 143: 4 * 28}[kind]
         w = kdot_weights(12, 6 * per_token + (-6 * per_token % 4) + 4, 110 + kind)
-        for dyn in ((0, 1) if kind == 23 else (0,)):
+        for dyn in ((0, 1) if kind in (23, 8) else (0,)):
             em = struct.pack("<4I", 512, 1, dyn, 0)
             pos = struct.pack("<4I", 2, 0, 0, 0)
 
@@ -876,6 +891,7 @@ def gpu(output, suite, provider_out):
             outs[m] = {b: read(hs[b], len(c["bufs"][b])) for b in (2, 4, 5, 6)}
         ref, v2 = outs.values()
         assert ref == v2, (c["name"], [b for b in ref if ref[b] != v2[b]], "differs from glslang's module")
+        assert any(v2[b] != c["bufs"][b] for b in (2, 4, 5, 6)), (c["name"], "nothing written")
         err = c["check"](v2) if "check" in c else None
         assert err is None or err < 1e-4, (c["name"], err)
         rows["nex " + c["name"]] = dict(op=c["op"], groups=list(c["groups"]), identical=True, check=err,
@@ -936,6 +952,8 @@ def gpu(output, suite, provider_out):
             cgp.expect(s, f"DISPATCH {pipes[w + '-nex-' + op + '.spv']} {groups} 1 1 " + " ".join(map(str, hs)), re.compile(r"^\d+$"))
         chain[w] = {b: read(hs[b], len(cb[b])) for b in (2, 4, 5, 6)}
     assert chain["ref"] == chain["v2"], ("the sampler chain differs from glslang's modules", [b for b in chain["ref"] if chain["ref"][b] != chain["v2"][b]])
+    # the chain wrote its scratch (the partials, lo and hi, the masses) and p_i
+    assert chain["v2"][4] != cb[4] and chain["v2"][5] != cb[5], "the sampler chain wrote nothing"
     pick = struct.unpack("<I", chain["v2"][6][20:24])[0]
     assert pick < 10000 and chain["v2"][2][40:44] == struct.pack("<I", pick), ("the chain's pick", pick)
     rows["nex sampler chain"] = dict(n=10000, dispatches=len(steps), identical=True, pick=pick,
