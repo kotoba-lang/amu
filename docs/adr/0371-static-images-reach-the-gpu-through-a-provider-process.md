@@ -618,7 +618,22 @@ Each step is its own PR, in this order:
       `scripts/seed/check-gpu-provider.py` runs scripted sessions under qemu
       or natively, and natively the provider under the launcher with a
       wire-42 guest.
-   3. The Vulkan device layer, qualified on a GPU host.
+   3. **The Vulkan device layer.** In progress.
+      `tools/gpu_device_vulkan.kotoba` reaches Vulkan through
+      `vkGetInstanceProcAddr` and `kxrt-p-ccall` alone, with every struct
+      laid out byte by byte (offsets measured from the Vulkan 1.3.239
+      headers, as an oracle only). It keeps the C broker's choices where
+      answers depend on them: the device, the INFO fields, device-local
+      buffers behind a 64 MiB staging buffer, the barrier before every
+      DISPATCH after the first, the submit timing, and the teardown order.
+      First run on gad (Radeon 8060S, RADV, Vulkan 1.4.318): INFO, DEVCLASS,
+      transfers, a 70 MiB MAP across staging chunks, and KIR v1 kernels
+      (ADR 0372) for `z = x + y` and per-workgroup sums. They ran at once,
+      in a recording whose second dispatch reads the first's output, in a
+      kept command buffer that was replayed, and with DISPATCHC. All results
+      were exact in f32 and matched byte for byte, at 30-50 us per submit.
+      The dot and kdot fixtures and the decode argmax chain need the KIR v2
+      kernels of ADR 0372 step 3, so this step's acceptance waits on them.
    4. Confinement after device creation, and the launcher's fixed provider
       environment.
    5. ADR and documentation.
