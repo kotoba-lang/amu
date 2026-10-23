@@ -288,6 +288,9 @@ a follow-up to ADR 0371.
      On gad each is byte-identical to glslang's module. deltanet_step is
      within 4.1e-6 of f64; deltanet_fused was run at a fresh position and
      with history (ring, state and output); the Q8 embedding is exact.
+
+     Receipts (with the rest of nex_ops' decode ops):
+     `docs/evidence/gpu-kernel-kir2-dn-20261023/`.
    * the BATCH, BPREFILL and BIAS variants of nex_ops, deltanet and embed;
    * `attn_copy_dense` on B70/ANV;
    * **Done: the dot and kdot fixtures' kernels.**
