@@ -241,18 +241,20 @@ a follow-up to ADR 0371.
      * early return and `continue`;
      * `memoryBarrierBuffer`.
 
-     A load that a condition guards stays in an if: the output gate's
-     `s[gi]`, softmax_topk's `a[row n + t]`, and rope's `h / P.rows`.
+     A load that a condition guards stays in an if: `ids[0]` (read only
+     when `P.p1 != 0`), the output gate's `s[gi]` and softmax_topk's
+     `a[row n + t]`. So does rope's division `h / P.rows`.
 
      Results:
      * the suite has 45 Kotoba cases;
      * all 28 modules are `spirv-val` valid;
      * the Kotoba checker accepts glslang's 19 modules.
 
-     On gad (RADV), 24 cases ran glslang's module and the KIR v2 module on the
+     On gad (RADV), 32 cases ran glslang's module and the KIR v2 module on the
      same inputs, and every writable binding is byte-identical:
      * copy_at, add, add_bias, pos_incr and both argmax stages are exact,
-       ties at the maximum included;
+       ties at the maximum included, and the token-buffer write keeps its
+       guard (`pos + 1 >= P.aux2`, and only when `P.p1 != 0`);
      * softmax_topk picks the same experts as f64;
      * rmsnorm, f32_matvec and the top-k weights are within 3e-6 of f64.
 

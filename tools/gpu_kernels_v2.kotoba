@@ -224,6 +224,17 @@
         b (kb-store B v (kb-flog B (kb-fadd B (kb-f32 B F-ONE) (kb-fexp B x))))
         z (kb-end-if B)]
     (kb-load B (kb-tf32 B) v)))
+;; (P.p1 != 0) ? dyn_pos() <op> : other, dyn_pos() = ids[0]. The GLSL reads
+;; ids[0] only when P.p1 != 0, so its load stays in the if (into a variable).
+;; how: 0 ids[0], 1 ids[0] + 1, 2 ids[0] * mul.
+(defn- k2-if-dyn [B :vector-i64 V :vector-i64 how :i64 mul :i64 other :i64] :i64
+  (let [tu (kb-tu32 B) v (kb-var B tu)
+        a (kb-store B v other)
+        g (kb-if B (kb-fne B (k2-pm B V 7) (kb-f32 B 0)))
+        d (k2-ld B V 6 (kb-u32 B 0))
+        x (kb-store B v (case how 0 d 1 (kb-iadd B d (kb-u32 B 1)) (kb-imul B d mul)))
+        z (kb-end-if B)]
+    (kb-load B tu v)))
 ;; if (c) return;
 (defn- k2-return-if [B :vector-i64 c :i64] :i64
   (let [g (kb-if B c) r (kb-return B)] (kb-end-if B)))
@@ -312,7 +323,7 @@
                 (k2-st B V 4 (kb-iadd B (k2-pm B V 2) i) (k2-sigmoid B (k2-ld B V 5 i))))
             ;; off = (P.p1 != 0) ? dyn_pos() * aux2 : aux2; o[off + i] = a[i]
             8 (let [aux2 (k2-pm B V 3)
-                    off (kb-select B tu (kb-fne B (k2-pm B V 7) f0) (kb-imul B (k2-ld B V 6 (kb-u32 B 0)) aux2) aux2)]
+                    off (k2-if-dyn B V 2 aux2 aux2)]
                 (k2-st B V 4 (kb-iadd B off i) (k2-ld B V 1 i)))
             ;; o[i] = a[i] + b[i]
             10 (k2-st B V 4 i (kb-fadd B (k2-ld B V 1 i) (k2-ld B V 2 i)))
@@ -393,7 +404,7 @@
         c3 (kb-end-if B)
         norm (kb-fne B (k2-pm B V 6) f0)
         pair (kb-select B tu norm (kb-shr B i u1) (kb-select B tu (kb-uge B i hlf) (kb-isub B i hlf) i))
-        pos (kb-select B tu (kb-fne B (k2-pm B V 7) f0) (k2-ld B V 6 u0) (k2-pm B V 3))
+        pos (k2-if-dyn B V 0 0 (k2-pm B V 3))
         d0 (kb-store B vth (kb-fmul B (kb-u2f B (kb-iadd B pos tokrow))
                                     (kb-fpow B (k2-pm B V 5) (kb-fdiv B (kb-fmul B (kb-f32 B F-MINUS-TWO) (kb-u2f B pair)) (kb-u2f B nrot)))))
         d1 (kb-if B (kb-fne B (k2-pm B V 4) f0))
@@ -422,7 +433,7 @@
         u0 (kb-u32 B 0) u1 (kb-u32 B 1) u2 (kb-u32 B 2) u256 (kb-u32 B 256) f0 (kb-f32 B 0)
         h (kb-builtin-at B 26 0) row (kb-builtin-at B 26 1) t (kb-builtin-at B 27 0)
         d (k2-pm B V 0)
-        T (kb-iadd B (kb-select B tu (kb-fne B (k2-pm B V 7) f0) (kb-iadd B (k2-ld B V 6 u0) u1) (k2-pm B V 2)) row)
+        T (kb-iadd B (k2-if-dyn B V 1 0 (k2-pm B V 2)) row)
         aux2 (k2-pm B V 3)
         hkv (kb-udiv B h (kb-udiv B (k2-pm B V 1) aux2))
         qoff (kb-imul B (kb-imul B row (k2-pm B V 1)) d)

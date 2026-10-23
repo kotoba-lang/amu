@@ -14,7 +14,8 @@ them too.
     the oracle phase (spirv-val and spirv-dis) ran on the developer host
     (macOS, arm64).
   * The build phase ran on arm64 Linux (podman machine, native), with the
-    pinned root (`bd025475…`) as `--compiler` and an aarch64 tool image.
+    pinned root (`bd025475…`, main before #1528) as `--compiler` and an
+    aarch64 tool image.
 * `x86_64-linux.json`: the same with an x86_64 tool image, run under
   qemu-user on arm64 Linux (`--seccomp-if-available`, recorded).
 * `gad-radv.json`: the aarch64 receipt with the `gpu` phase added.
@@ -35,27 +36,40 @@ them too.
     an empty module.
 * **Oracles**: all 28 modules are valid under `spirv-val --target-env
   vulkan1.1`; the aarch64 and the x86_64 tool images write the same bytes.
-* **GPU** (`gad-radv.json`): 24 nex cases. In each, glslang's module and the
+* **GPU** (`gad-radv.json`): 32 nex cases. In each, glslang's module and the
   KIR v2 module ran on the same inputs (24-bit values from a fixed LCG, exact
   in f32; the receipt records the digests of the inputs and outputs), and
   every writable binding (B, O, S, I) is byte-identical. The cases:
   * rmsnorm (a row stride, and contiguous), l2norm (scale 0 and 0.5),
     gated_rmsnorm, add_rmsnorm;
   * silu_mul, conv1d_step (the state shift), gate_decay and gate_decay2
-    (softplus on both arms), copy_at (dynamic and static position),
-    weighted_sum, add, add_bias, pos_incr;
+    (softplus on both arms; rows, aux and aux2 all different), copy_at
+    (dynamic and static position), weighted_sum, add, add_bias, pos_incr;
   * f32_matvec (64 rows x 1024, two input rows);
-  * rope_neox (NEOX pairs at the dynamic position with a copied tail; NORMAL
-    pairs at P.aux2, two heads per token, with rope_freqs);
-  * attn_decode (the interleaved output gate at the dynamic position with
-    GQA; dense with P.aux and two rows, where the gate's buffer is a stub);
-  * softmax_topk (two tokens over 128 experts, top 8);
-  * argmax_partial and argmax_final (ties at the maximum inside a workgroup,
-    across workgroups and between partials; the token-buffer write).
+  * rope_neox:
+    * NEOX at the dynamic position with a copied tail;
+    * NORMAL at P.aux2, two heads per token, with rope_freqs;
+    * NEOX at the dynamic position, two heads per token, with rope_freqs and
+      a tail;
+    * NORMAL with a tail;
+  * attn_decode:
+    * the interleaved output gate at the dynamic position with GQA, on one
+      row and on two;
+    * the plain gate with P.aux and two rows;
+    * dense, where the gate's buffer is a stub;
+  * softmax_topk (two tokens over 128 experts, top 8; and top 4 of 200);
+  * argmax_partial and argmax_final:
+    * ties at the maximum inside a workgroup, across workgroups and between
+      partials;
+    * the token-buffer write at the prompt's end (`pos + 1 == aux2`);
+    * no write inside the prompt or with a static position.
 
   Beyond the byte identity:
   * copy_at, add, add_bias, pos_incr and both argmax stages are exact;
   * softmax_topk picks the same experts as an f64 reference;
+  * dyn_pos() (`ids[0]`) is read only when `P.p1 != 0`, as in the GLSL. A
+    review found it read through `OpSelect` in copy_at, rope_neox and
+    attn_decode, and that was fixed.
   * rmsnorm, f32_matvec and the top-k weights are within 3e-6 of f64.
 
 glslang and the f64 references are test oracles only; neither is in the
