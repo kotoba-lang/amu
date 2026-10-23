@@ -526,11 +526,11 @@ Each step is its own PR, in this order:
    * **Not under emulation.** Through binfmt_misc, `execveat` of a
      close-on-exec memfd fails (ENOENT), so an image of another ISA cannot be
      started that way. x86_64 is qualified on a native kernel.
-   * **Root.** Re-pinned C-free to `b4352834…`, on top of main's
-     `1739f52f…` (native TCP/spawn, #1511), which stays in the receipt's
-     history. No adoption round was needed. The previous root built S1 equal
-     to S2 and S3, since the runtime embedded in static images did not
-     change. The launcher's globals sit at G+16384..16679, clear of the
+   * **Root.** Re-pinned C-free to F `710b6ae6…`, on top of main's F
+     `61ee2d38…` (the combined compiler as the root, #1514), which stays in
+     the receipt's history. No adoption round was needed: the previous F
+     compiled FULL-MANIFEST from this source to F1, and F1 rebuilt itself
+     (F2 = F1). The launcher's globals sit at G+16384..16679, clear of the
      runtime's own (G+0..751 and TCP/spawn's G+2048..2104). Main's boundary corpus
      (`check-runtime-boundary.py`) covers `--format launcher` on both
      targets.
