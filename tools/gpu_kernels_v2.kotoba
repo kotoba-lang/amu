@@ -846,12 +846,13 @@
                  (vector-assoc! 3 (kb-var B tu)) (vector-assoc! 4 vk))
         u0 (kb-u32 B 0) u1 (kb-u32 B 1) u256 (kb-u32 B 256) u4096 (kb-u32 B 4096) f0 (kb-f32 B 0) fhalf (kb-f32 B 0x3F000000)
         t (kb-builtin-at B 27 0) w (kb-builtin-at B 26 0) n (k2-pm B V 0)
-        invT (kb-fdiv B (kb-f32 B F-ONE) (if batch? (k2-ld B V 2 sb4) (k2-pm B V 4)))
+        ;; 1 / T (BATCH: the row's T, read only by the ops that use it)
+        invT (cond (and batch? (>= op 29)) 0
+                   batch? (kb-fdiv B (kb-f32 B F-ONE) (k2-ld B V 2 sb4))
+                   :else (kb-fdiv B (kb-f32 B F-ONE) (k2-pm B V 4)))
         lb (if batch? (kb-imul B srow n) 0)
         ob (if batch? (kb-imul B srow (kb-u32 B 256)) 0)
         ib (if batch? (kb-imul B srow (kb-u32 B 64)) 0)
-        ;; the row's top_p (sample_bisect_step) and seed (sample_final)
-        topp (if (and batch? (= op 30)) (k2-ld B V 2 (kb-iadd B sb4 (kb-u32 B 1))) 0)
         s0 (kb-imul B w u4096) s1 (kb-umin B n (kb-iadd B s0 u4096))
         parts (kb-udiv B (kb-iadd B n (kb-u32 B 4095)) u4096)
         ;; pos = (P.p1 != 0) ? floatBitsToUint(c[0]) : 0, the load in an if (the
@@ -953,7 +954,8 @@
                 a1 (k2-acc B vacc (k2-ld B V 4 (kb-iadd B (k2-offc B ob 124) k)))
                 e1 (k2-end-for B vk u1)
                 mid (kb-fmul B fhalf (kb-fadd B (k2-ld B V 4 (k2-offc B ob 122)) (k2-ld B V 4 (k2-offc B ob 123))))
-                h (kb-if B (kb-fge B (kb-load B tf vacc) (if batch? topp (k2-pm B V 5))))
+                ;; top_p: P.scale, or the row's b[row 4 + 1] (BATCH), read under t == 0
+                h (kb-if B (kb-fge B (kb-load B tf vacc) (if batch? (k2-ld B V 2 (kb-iadd B sb4 (kb-u32 B 1))) (k2-pm B V 5))))
                 h1 (k2-st B V 4 (k2-offc B ob 122) mid) h2 (kb-else B) h3 (k2-st B V 4 (k2-offc B ob 123) mid) h4 (kb-end-if B)]
             (kb-end-if B))
           :else
@@ -961,7 +963,8 @@
     (kb-module B 256 1 1)))
 
 ;; the module of op in variant v (0 decode, 1 -DBATCH, 2 -DBPREFILL, 4 -DBIAS,
-;; 5 -DBATCH -DBIAS); an empty one for an op or variant nex_ops.comp lacks
+;; 5 -DBATCH -DBIAS); an empty one where the defines leave nex_ops.comp's op
+;; as in decode (use v 0 for it) or for another op
 (defn kir2-nex-variant [op :i64 v :i64] :vector-i64
   (cond (= v 0) (kir2-nex-op op)
         (and (= op 8) (or (= v 1) (= v 2))) (k2-nex-ewise 8 v)

@@ -90,8 +90,8 @@ NEX_VARIANTS = [("copy_at", "batch", "BATCH"), ("copy_at", "bprefill", "BPREFILL
                 *[(op, "batch", "BATCH") for op in ("sample_part", "sample_probs", "sample_bisect_part", "sample_bisect_step",
                                                     "sample_final")]]
 NEX_VARIANT_NAMES = [op + "-" + suffix for op, suffix, _ in NEX_VARIANTS]
-NEX_VARIANT_SIZES = [2208, 2044, 1688, 3720, 4188, 3920, 5828, 5888, 3792, 4184, 2084, 2444, 1792, 1840, 1960, 4776, 4332, 3948,
-                     3416, 5836]
+NEX_VARIANT_SIZES = [2208, 2044, 1688, 3720, 4188, 3920, 5828, 5888, 3792, 4184, 2084, 2444, 1792, 1840, 1960, 4776, 4332, 3872,
+                     3340, 5760]
 # modules, test, the receipt, the written modules' prefix and their sizes by
 # name part, the control's one failure, and whether glslang refs go in
 SUITES = {
@@ -338,7 +338,9 @@ def nex_bufs(**kw):
 
 
 def near(got, want):
-    return max(abs(g - w) for g, w in zip(from_f32(got), want))
+    """the largest |got - want|; inf when any is NaN (max would drop it)"""
+    errs = [abs(g - w) for g, w in zip(from_f32(got), want)]
+    return math.inf if any(math.isnan(e) for e in errs) else max(errs)
 
 
 def nex_cases():
@@ -576,13 +578,14 @@ def nex_variant_cases():
     """The BATCH, BPREFILL and BIAS variants, as nex_cases (op is the
     variant's name)."""
     meta, bufs, cases = nex_meta, nex_bufs, []
-    # copy_at BATCH: row r's n values to o[r aux + ids[r] aux2]; BPREFILL: n
-    # values (3 positions) into sequence ids[1]'s 4096-position slice at ids[0]
+    # copy_at BATCH: row r's n values to o[r aux + ids[r] aux2] (aux2 != n, so
+    # neither stride stands in for the other); BPREFILL: n values (3
+    # positions) into sequence ids[1]'s 4096-position slice at ids[0]
     xb = lcg(600, 140)
     want = [0.0] * 3600
     for row, pos in ((0, 2), (1, 4)):
-        want[row * 1800 + pos * 300:row * 1800 + pos * 300 + 300] = xb[row * 300:row * 300 + 300]
-    cases.append(dict(name="copy_at batch", op="copy_at-batch", meta=meta(n=300, aux=1800, aux2=300),
+        want[row * 1800 + pos * 320:row * 1800 + pos * 320 + 300] = xb[row * 300:row * 300 + 300]
+    cases.append(dict(name="copy_at batch", op="copy_at-batch", meta=meta(n=300, aux=1800, aux2=320),
                       bufs=bufs(a=xb, o=bytes(4 * 3600), i=struct.pack("<4I", 2, 4, 0, 0)), groups=(2, 2, 1),
                       check=lambda o, w=f32(want): 0 if o[4] == w else 1))
     xp = lcg(48, 141)
@@ -608,18 +611,21 @@ def nex_variant_cases():
                       check=lambda o: near(o[4], rope_ref(ra, 64, 48, 4, lambda h: (3, 20)[h // 2], 500000.0, True, fr, rc))))
     # attn_decode BATCH: sequences at positions 5 and 9, each over its own
     # 4096-position cache slice, the interleaved gate; BPREFILL: two query
-    # rows of sequence 1 from base 4 (T = 5, 6), the plain gate
-    d, slice_ = 16, 4096 * 16
+    # rows of sequence 1 from base 4 (T = 5, 6), the plain gate. 4 heads on 2
+    # kv heads, so hkv and the slice's aux2 factor both show.
+    d, H, KVH = 16, 4, 2
+    slice_ = 4096 * KVH * d
     kc, vc = lcg(2 * slice_, 144), lcg(2 * slice_, 145)
-    qa, gs = lcg(64, 146), lcg(128, 147)
-    cases.append(dict(name="attn_decode batch", op="attn_decode-batch", meta=meta(n=d, rows=2, aux2=1, eps=-1.0, scale=0.25),
-                      bufs=bufs(a=qa, b=kc, c=vc, o=bytes(256), s=gs, i=struct.pack("<4I", 5, 9, 0, 0)), groups=(2, 2, 1),
-                      check=lambda o: near(o[4], attn_rows_ref(qa, kc, vc, gs, d, 2, 1, [(0, 6, 0), (1, 10, slice_)], 0.25,
-                                                               lambda r, h, i: r * 2 * 2 * d + (h * 2 + 1) * d + i))))
-    cases.append(dict(name="attn_decode bprefill", op="attn_decode-bprefill", meta=meta(n=d, rows=2, aux2=1, eps=1e-6, scale=0.25),
-                      bufs=bufs(a=qa, b=kc, c=vc, o=bytes(256), s=gs[:64], i=struct.pack("<4I", 4, 1, 0, 0)), groups=(2, 2, 1),
-                      check=lambda o: near(o[4], attn_rows_ref(qa, kc, vc, gs, d, 2, 1, [(0, 5, slice_), (1, 6, slice_)], 0.25,
-                                                               lambda r, h, i: r * 2 * d + h * d + i))))
+    qa, gs = lcg(2 * H * d, 146), lcg(2 * H * 2 * d, 147)
+    cases.append(dict(name="attn_decode batch", op="attn_decode-batch", meta=meta(n=d, rows=H, aux2=KVH, eps=-1.0, scale=0.25),
+                      bufs=bufs(a=qa, b=kc, c=vc, o=bytes(4 * 2 * H * d), s=gs, i=struct.pack("<4I", 5, 9, 0, 0)), groups=(H, 2, 1),
+                      check=lambda o: near(o[4], attn_rows_ref(qa, kc, vc, gs, d, H, KVH, [(0, 6, 0), (1, 10, slice_)], 0.25,
+                                                               lambda r, h, i: r * H * 2 * d + (h * 2 + 1) * d + i))))
+    cases.append(dict(name="attn_decode bprefill", op="attn_decode-bprefill", meta=meta(n=d, rows=H, aux2=KVH, eps=1e-6, scale=0.25),
+                      bufs=bufs(a=qa, b=kc, c=vc, o=bytes(4 * 2 * H * d), s=gs[:2 * H * d], i=struct.pack("<4I", 4, 1, 0, 0)),
+                      groups=(H, 2, 1),
+                      check=lambda o: near(o[4], attn_rows_ref(qa, kc, vc, gs, d, H, KVH, [(0, 5, slice_), (1, 6, slice_)], 0.25,
+                                                               lambda r, h, i: r * H * d + h * d + i))))
     # argmax BATCH: two rows of 5000 logits (two partials a row), a tie across
     # row 0's partials and one inside row 1's first; then the final picks of
     # two rows (a tie in row 0), with p1 == 0 (no token-buffer write)
@@ -646,21 +652,28 @@ def nex_variant_cases():
                      and o[2] == bytes(32)) else 1
     cases.append(dict(name="argmax_final batch", op="argmax_final-batch", meta=meta(aux=3),
                       bufs=bufs(b=bytes(32), o=bytes(512), s=sp, i=ip), groups=(1, 2, 1), check=final_b))
-    # ctl BATCH: three rows, row 0's flag rewinds it; BPREFILL into sequence 1,
-    # without and with the flag; rowsel o = [base, seq]
+    # -DBATCH keeps argmax_final's token-buffer write (c[0] the position): one
+    # row with p1 != 0 writes b[6]
+    cases.append(dict(name="argmax_final batch token buffer", op="argmax_final-batch", meta=meta(aux=3, p1=1.0),
+                      bufs=bufs(b=bytes(32), c=struct.pack("<I", 5) + bytes(12), o=bytes(512), s=sp, i=ip), groups=(1, 1, 1),
+                      check=lambda o: 0 if (struct.unpack("<128I", o[6])[3] == 4200
+                                            and o[2] == bytes(24) + struct.pack("<I", 4200) + bytes(4)) else 1))
+    # ctl BATCH: three rows, row 0's flag rewinds it; BPREFILL into sequence 2
+    # (its base is ids[2], not ids[1]), without and with the flag; rowsel o =
+    # [base, seq]
     toks = struct.pack("<3I", 11, 22, 33)
     cases.append(dict(name="ctl batch", op="ctl-batch", meta=meta(n=3, aux=16),
                       bufs=bufs(b=bytes(192), c=toks + struct.pack("<3I", 1, 0, 0), i=struct.pack("<4I", 4, 6, 2, 0)), groups=(1, 1, 1),
                       check=lambda o: 0 if (o[6] == struct.pack("<4I", 0, 6, 2, 0) and o[2] == (
                           struct.pack("<I", 11) + bytes(60) + bytes(24) + struct.pack("<I", 22) + bytes(36) + bytes(8)
                           + struct.pack("<I", 33) + bytes(52))) else 1))
-    for flag, base in ((0, 6), (1, 0)):
+    for flag, base in ((0, 2), (1, 0)):
         cases.append(dict(name=f"ctl bprefill flag {flag}", op="ctl-bprefill", meta=meta(n=3, aux=16),
-                          bufs=bufs(b=bytes(128), c=toks + struct.pack("<3I", 1, flag, 0), i=struct.pack("<4I", 4, 6, 2, 0)),
+                          bufs=bufs(b=bytes(192), c=toks + struct.pack("<3I", 2, flag, 0), i=struct.pack("<4I", 4, 6, 2, 0)),
                           groups=(1, 1, 1),
-                          check=lambda o, f=flag, b=base: 0 if (o[6] == struct.pack("<4I", 4, 0 if f else 6, 2, 0)
-                                                                and o[2] == bytes(64 + 4 * b) + toks + bytes(64 - 4 * b - 12)
-                                                                and o[4] == struct.pack("<4I", b, 1, 0, 0)) else 1))
+                          check=lambda o, f=flag, b=base: 0 if (o[6] == struct.pack("<4I", 4, 6, 0 if f else 2, 0)
+                                                                and o[2] == bytes(4 * (32 + b)) + toks + bytes(192 - 4 * (32 + b) - 12)
+                                                                and o[4] == struct.pack("<4I", b, 2, 0, 0)) else 1))
     cases.append(dict(name="pos_add bprefill", op="pos_add-bprefill", meta=meta(n=5),
                       bufs=bufs(a=struct.pack("<2I", 30, 2) + bytes(8), i=struct.pack("<4I", 1, 2, 3, 4)), groups=(1, 1, 1),
                       check=lambda o: 0 if o[6] == struct.pack("<4I", 1, 2, 8, 4) else 1))
@@ -912,12 +925,13 @@ def deltanet_embed_variant_cases():
     cases.append(dnf("deltanet_fused bprefill fresh", "dnf-bprefill", 3, 2, (H, 1, 1), (0, 0, 1, 0)))
     # embed: a token buffer of two sequences, rows of 4 (pad1); BATCH rows at
     # positions 2 and 1 (tokens 4 and 3); BPREFILL two positions of sequence 1
-    # from base 1 (tokens 3 and 0). Q8 also exactly against a dequant.
+    # from base 0 (tokens 1 and 3; base and sequence swapped would give 2 and
+    # 4). Q8 also exactly against a dequant.
     ids = struct.pack("<8I", 5, 2, 4, 0, 1, 3, 0, 5)
     for kind, name in EMBED_KINDS.items():
         per_token = {23: 2 * 136, 8: 16 * 34, 2: 16 * 18, 3: 16 * 20, 6: 16 * 22, 7: 16 * 24, 143: 4 * 28}[kind]
         w = kdot_weights(12, 6 * per_token + (-6 * per_token % 4) + 4, 110 + kind)
-        for v, pos, toks in (("batch", (2, 1, 0, 0), (4, 3)), ("bprefill", (1, 1, 0, 0), (3, 0))):
+        for v, pos, toks in (("batch", (2, 1, 0, 0), (4, 3)), ("bprefill", (0, 1, 0, 0), (1, 3))):
             def q8_check(o, w=w, toks=toks):
                 want = []
                 for tok in toks:
