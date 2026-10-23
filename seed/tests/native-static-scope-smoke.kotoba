@@ -1,0 +1,13 @@
+;; Static backend smoke: its declared profile admits one i64 export, no f64.
+;; The full scope suite remains separate and runs through the measured core.
+(ns seed.static-scope-smoke (:export [main]))
+(defn main [] :i64
+  (let [outer (vector-assoc! (vector-alloc 2) 0 247)
+        result (loop [index 0]
+                 (if (= index 600000) 0
+                   (if (arena-scope
+                         (let [values (vector-assoc! (vector-alloc 64) 0 index)
+                               text (string-concat "scope-" "temporary")]
+                           (and (= (vector-at values 0) index) (= (string-length text) 15))))
+                     (recur (inc index)) 1)))]
+    (if (and (= result 0) (= (vector-at outer 0) 247)) 0 1)))
