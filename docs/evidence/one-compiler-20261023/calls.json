@@ -1,0 +1,1403 @@
+[
+ {
+  "name": "Kw",
+  "argv": [
+   "OUT/P-aarch64.elf",
+   "compile",
+   "OUT/core-static.kotoba",
+   "--target",
+   "aarch64-macos",
+   "--output",
+   "OUT/Kw.kseed"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "Pw-pack",
+  "argv": [
+   "OUT/S3.elf",
+   "compile",
+   "OUT/runner.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/Pw.elf",
+   "--format",
+   "packed",
+   "--payload",
+   "OUT/Kw.kseed"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "K2",
+  "argv": [
+   "OUT/Pw.elf",
+   "compile",
+   "OUT/core-static.kotoba",
+   "--target",
+   "aarch64-macos",
+   "--output",
+   "OUT/K2.kseed"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "F1",
+  "argv": [
+   "OUT/Pw.elf",
+   "compile",
+   "OUT/full.kotoba",
+   "--target",
+   "aarch64-macos",
+   "--output",
+   "OUT/F1.kseed"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "F1-pack",
+  "argv": [
+   "OUT/S3.elf",
+   "compile",
+   "OUT/runner.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/F1.elf",
+   "--format",
+   "packed",
+   "--payload",
+   "OUT/F1.kseed"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "F2",
+  "argv": [
+   "OUT/F1.elf",
+   "compile",
+   "OUT/full.kotoba",
+   "--target",
+   "aarch64-macos",
+   "--output",
+   "OUT/F2.kseed"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "F2-pack",
+  "argv": [
+   "OUT/F1.elf",
+   "compile",
+   "OUT/runner.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/F2.elf",
+   "--format",
+   "packed",
+   "--payload",
+   "OUT/F2.kseed"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "F3",
+  "argv": [
+   "OUT/F2.elf",
+   "compile",
+   "OUT/full.kotoba",
+   "--target",
+   "aarch64-macos",
+   "--output",
+   "OUT/F3.kseed"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "A",
+  "argv": [
+   "OUT/F2.elf",
+   "compile",
+   "OUT/adopted.kotoba",
+   "--target",
+   "aarch64-macos",
+   "--output",
+   "OUT/A.kseed"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "A-extract",
+  "argv": [
+   "OUT/F2.elf",
+   "extract-native",
+   "OUT/A.kseed",
+   "--symbol",
+   "main",
+   "--output",
+   "OUT/A.bin"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-literal-S3",
+  "argv": [
+   "OUT/S3.elf",
+   "compile",
+   "OUT/case-string-literal.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-string-literal-S3.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-literal-F",
+  "argv": [
+   "OUT/F2.elf",
+   "compile",
+   "OUT/case-string-literal.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-string-literal-F.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-literal",
+  "argv": [
+   "OUT/case-string-literal-F.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-concat-S3",
+  "argv": [
+   "OUT/S3.elf",
+   "compile",
+   "OUT/case-string-concat.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-string-concat-S3.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-concat-F",
+  "argv": [
+   "OUT/F2.elf",
+   "compile",
+   "OUT/case-string-concat.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-string-concat-F.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-concat",
+  "argv": [
+   "OUT/case-string-concat-F.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-view-S3",
+  "argv": [
+   "OUT/S3.elf",
+   "compile",
+   "OUT/case-string-view.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-string-view-S3.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-view-F",
+  "argv": [
+   "OUT/F2.elf",
+   "compile",
+   "OUT/case-string-view.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-string-view-F.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-view",
+  "argv": [
+   "OUT/case-string-view-F.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-unicode-S3",
+  "argv": [
+   "OUT/S3.elf",
+   "compile",
+   "OUT/case-string-unicode.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-string-unicode-S3.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-unicode-F",
+  "argv": [
+   "OUT/F2.elf",
+   "compile",
+   "OUT/case-string-unicode.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-string-unicode-F.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-unicode",
+  "argv": [
+   "OUT/case-string-unicode-F.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-empty-nul-S3",
+  "argv": [
+   "OUT/S3.elf",
+   "compile",
+   "OUT/case-string-empty-nul.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-string-empty-nul-S3.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-empty-nul-F",
+  "argv": [
+   "OUT/F2.elf",
+   "compile",
+   "OUT/case-string-empty-nul.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-string-empty-nul-F.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-empty-nul",
+  "argv": [
+   "OUT/case-string-empty-nul-F.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-search-S3",
+  "argv": [
+   "OUT/S3.elf",
+   "compile",
+   "OUT/case-string-search.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-string-search-S3.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-search-F",
+  "argv": [
+   "OUT/F2.elf",
+   "compile",
+   "OUT/case-string-search.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-string-search-F.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-search",
+  "argv": [
+   "OUT/case-string-search-F.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-call-S3",
+  "argv": [
+   "OUT/S3.elf",
+   "compile",
+   "OUT/case-string-call.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-string-call-S3.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-call-F",
+  "argv": [
+   "OUT/F2.elf",
+   "compile",
+   "OUT/case-string-call.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-string-call-F.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-call",
+  "argv": [
+   "OUT/case-string-call-F.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-literal-S3",
+  "argv": [
+   "OUT/S3.elf",
+   "compile",
+   "OUT/case-vector-literal.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-vector-literal-S3.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-literal-F",
+  "argv": [
+   "OUT/F2.elf",
+   "compile",
+   "OUT/case-vector-literal.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-vector-literal-F.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-literal",
+  "argv": [
+   "OUT/case-vector-literal-F.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-dynamic-S3",
+  "argv": [
+   "OUT/S3.elf",
+   "compile",
+   "OUT/case-vector-dynamic.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-vector-dynamic-S3.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-dynamic-F",
+  "argv": [
+   "OUT/F2.elf",
+   "compile",
+   "OUT/case-vector-dynamic.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-vector-dynamic-F.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-dynamic",
+  "argv": [
+   "OUT/case-vector-dynamic-F.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-persistent-S3",
+  "argv": [
+   "OUT/S3.elf",
+   "compile",
+   "OUT/case-vector-persistent.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-vector-persistent-S3.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-persistent-F",
+  "argv": [
+   "OUT/F2.elf",
+   "compile",
+   "OUT/case-vector-persistent.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-vector-persistent-F.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-persistent",
+  "argv": [
+   "OUT/case-vector-persistent-F.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-mutate-S3",
+  "argv": [
+   "OUT/S3.elf",
+   "compile",
+   "OUT/case-vector-mutate.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-vector-mutate-S3.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-mutate-F",
+  "argv": [
+   "OUT/F2.elf",
+   "compile",
+   "OUT/case-vector-mutate.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-vector-mutate-F.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-mutate",
+  "argv": [
+   "OUT/case-vector-mutate-F.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-drop-conj-S3",
+  "argv": [
+   "OUT/S3.elf",
+   "compile",
+   "OUT/case-vector-drop-conj.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-vector-drop-conj-S3.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-drop-conj-F",
+  "argv": [
+   "OUT/F2.elf",
+   "compile",
+   "OUT/case-vector-drop-conj.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-vector-drop-conj-F.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-drop-conj",
+  "argv": [
+   "OUT/case-vector-drop-conj-F.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-pooled-S3",
+  "argv": [
+   "OUT/S3.elf",
+   "compile",
+   "OUT/case-vector-pooled.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-vector-pooled-S3.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-pooled-F",
+  "argv": [
+   "OUT/F2.elf",
+   "compile",
+   "OUT/case-vector-pooled.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-vector-pooled-F.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-pooled",
+  "argv": [
+   "OUT/case-vector-pooled-F.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-negative-S3",
+  "argv": [
+   "OUT/S3.elf",
+   "compile",
+   "OUT/case-vector-negative.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-vector-negative-S3.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-negative-F",
+  "argv": [
+   "OUT/F2.elf",
+   "compile",
+   "OUT/case-vector-negative.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-vector-negative-F.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-negative",
+  "argv": [
+   "OUT/case-vector-negative-F.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 120
+ },
+ {
+  "name": "case-vector-oob-S3",
+  "argv": [
+   "OUT/S3.elf",
+   "compile",
+   "OUT/case-vector-oob.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-vector-oob-S3.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-oob-F",
+  "argv": [
+   "OUT/F2.elf",
+   "compile",
+   "OUT/case-vector-oob.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-vector-oob-F.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-vector-oob",
+  "argv": [
+   "OUT/case-vector-oob-F.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 120
+ },
+ {
+  "name": "case-string-oob-S3",
+  "argv": [
+   "OUT/S3.elf",
+   "compile",
+   "OUT/case-string-oob.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-string-oob-S3.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-oob-F",
+  "argv": [
+   "OUT/F2.elf",
+   "compile",
+   "OUT/case-string-oob.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-string-oob-F.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-oob",
+  "argv": [
+   "OUT/case-string-oob-F.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 120
+ },
+ {
+  "name": "case-string-boundary-S3",
+  "argv": [
+   "OUT/S3.elf",
+   "compile",
+   "OUT/case-string-boundary.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-string-boundary-S3.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-boundary-F",
+  "argv": [
+   "OUT/F2.elf",
+   "compile",
+   "OUT/case-string-boundary.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-string-boundary-F.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-string-boundary",
+  "argv": [
+   "OUT/case-string-boundary-F.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 120
+ },
+ {
+  "name": "case-wide-args-S3",
+  "argv": [
+   "OUT/S3.elf",
+   "compile",
+   "OUT/case-wide-args.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-wide-args-S3.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-wide-args-F",
+  "argv": [
+   "OUT/F2.elf",
+   "compile",
+   "OUT/case-wide-args.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-wide-args-F.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-wide-args",
+  "argv": [
+   "OUT/case-wide-args-F.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-closure-S3",
+  "argv": [
+   "OUT/S3.elf",
+   "compile",
+   "OUT/case-closure.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-closure-S3.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-closure-F",
+  "argv": [
+   "OUT/F2.elf",
+   "compile",
+   "OUT/case-closure.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-closure-F.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-closure",
+  "argv": [
+   "OUT/case-closure-F.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-closure-env-S3",
+  "argv": [
+   "OUT/S3.elf",
+   "compile",
+   "OUT/case-closure-env.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-closure-env-S3.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-closure-env-F",
+  "argv": [
+   "OUT/F2.elf",
+   "compile",
+   "OUT/case-closure-env.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-closure-env-F.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-closure-env",
+  "argv": [
+   "OUT/case-closure-env-F.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-state-results-S3",
+  "argv": [
+   "OUT/S3.elf",
+   "compile",
+   "OUT/case-state-results.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-state-results-S3.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-state-results-F",
+  "argv": [
+   "OUT/F2.elf",
+   "compile",
+   "OUT/case-state-results.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-state-results-F.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-state-results",
+  "argv": [
+   "OUT/case-state-results-F.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-bytes-roundtrip-S3",
+  "argv": [
+   "OUT/S3.elf",
+   "compile",
+   "OUT/case-bytes-roundtrip.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-bytes-roundtrip-S3.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-bytes-roundtrip-F",
+  "argv": [
+   "OUT/F2.elf",
+   "compile",
+   "OUT/case-bytes-roundtrip.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-bytes-roundtrip-F.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-bytes-roundtrip",
+  "argv": [
+   "OUT/case-bytes-roundtrip-F.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-capability-denied-S3",
+  "argv": [
+   "OUT/S3.elf",
+   "compile",
+   "OUT/case-capability-denied.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-capability-denied-S3.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-capability-denied-F",
+  "argv": [
+   "OUT/F2.elf",
+   "compile",
+   "OUT/case-capability-denied.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-capability-denied-F.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-capability-denied",
+  "argv": [
+   "OUT/case-capability-denied-F.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 120
+ },
+ {
+  "name": "case-mutual-tail-S3",
+  "argv": [
+   "OUT/S3.elf",
+   "compile",
+   "OUT/case-mutual-tail.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-mutual-tail-S3.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-mutual-tail-F",
+  "argv": [
+   "OUT/F2.elf",
+   "compile",
+   "OUT/case-mutual-tail.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "OUT/case-mutual-tail-F.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ },
+ {
+  "name": "case-mutual-tail",
+  "argv": [
+   "OUT/case-mutual-tail-F.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0
+ },
+ {
+  "name": "x86-compiler",
+  "argv": [
+   "OUT/F2.elf",
+   "compile",
+   "OUT/selfhost.kotoba",
+   "--target",
+   "x86_64-linux",
+   "--output",
+   "OUT/X-F.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "OUT",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0
+ }
+]
