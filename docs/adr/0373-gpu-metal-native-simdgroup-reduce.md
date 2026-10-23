@@ -51,7 +51,9 @@
   step 3 measurement STARTED (the W = 256, W = 512, W = 1024,
   W = 128, W = 64 and W = 32 cells
   measured and
-  flipped 2026-10-23/24; the remaining cells -- shape 2, cross-day
+  flipped 2026-10-23/24, and shape 2 measured and flipped at W = 256
+  -- the shape-2 series' anchor -- 2026-10-24; the remaining cells --
+  shape 2 at the five widths but W = 256, cross-day
   replication -- OPEN)]. Every answer this row
   carries outside the six flip cells is UNMEASURED
   (`:measured? false`, rule 4's lock) until a hardware measurement
@@ -280,6 +282,33 @@ ladder is pinned by `the-msl-ladder-selects-simdgroup-reduce-first` and
    measured 32). The class's last `:baseline` cell is gone with this
    slice. Slice record:
    `docs/evidence/gpu/simdgroup-reduce-flip-w32-20261024.txt`.]
+   [UPDATE 2026-10-24, the SHAPE-2 W = 256 FLIP SLICE (the shape-2
+   series' anchor cell, measured and flipped 2026-10-24): the shape-2
+   measurement of THIS variant at W = 256, n = 2^20
+   (`docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w256`) ran
+   the byte-identical protocol (the padded-lane tail gone -- n = 2^20 is
+   a clean multiple of every W in [32, 1024]) and measured it FASTER
+   than `:baseline` again (paired median ratios 0.794/0.811/0.812 for
+   `:sum`/`:max`/`:min`, claim-protocol rule 2 REGIME-INVARIANT FASTER,
+   18/18 per-run ratios below 1.0 -- within ~1-2 ratio points of the
+   shape-1 anchor's 0.790/0.800/0.799, so the W = 256 win is not a
+   padded-tail artifact of the ground shape). The sign contrast with
+   `:subgroup-reduce` holds at this shape in its stronger form (one-sided
+   slower at this cell in both its shape-2 records, 1.227/1.223/1.220
+   and the re-sweep 1.226/1.225/1.225). The flip contract's keys hold at
+   this second shape of the W = 256 cell, and the cell's
+   `:measured-cell` record now names BOTH measured shapes
+   (`:shapes [1000003 1048576]`) and both records in `:evidence`. The
+   flip is code in `select-variant`
+   (`apple-simdgroup-measured-shapes` keyed per W -- W = 256
+   `[1000003 1048576]`, the other five widths `[1000003]` unchanged --
+   `apple-simdgroup-measured-evidence`'s W = 256 entry gaining the
+   shape-2 record). WHAT THIS SLICE DOES NOT LICENSE: shape 2 at the
+   five widths but W = 256 stays UNMEASURED (the shape-2 series'
+   remaining cells); no `:measured?` flag moves (the W = 256 answer was
+   already MEASURED at the ground shape); no workgroup row
+   (ADR-0355/0358) moves. Slice record:
+   `docs/evidence/gpu/simdgroup-reduce-flip-shape2-w256-20261024.txt`.]
 2. **The MSL ladder (the ADR-0361 CUDA-ladder idiom).** Outside the
    carved-out class, an Apple MSL descriptor that reports the fold's
    facts (rule 6, below) answers `:simdgroup-reduce` -- the vendor-native
@@ -547,7 +576,13 @@ cell, ratios 0.775/0.789/0.789) answers `:simdgroup-reduce` with
 (2026-10-24) moved ONE more
 flag the same way: the W = 64 cell (the W-sweep's fifth measured
 cell, ratios 0.719/0.728/0.729) answers `:simdgroup-reduce` with
-`:measured? true` and its OWN record. ACCEPTED
+`:measured? true` and its OWN record. THE SHAPE-2 W = 256 FLIP SLICE
+(2026-10-24) moved NO flag but ONE record: the W = 256 cell's
+`:measured-cell` record now names BOTH measured shapes
+(`:shapes [1000003 1048576]`, the shape-2 anchor's runs named in its
+`:evidence`) -- the shape-2 measurement (0.794/0.811/0.812, rule 2
+REGIME-INVARIANT FASTER, 18/18) extends the flip contract to the second
+shape of that cell, and to that cell only. ACCEPTED
 DESIGN ONLY: any wording above that governs this variant's OTHER future
 measurement cells (the flip contract as applied to `:simdgroup-reduce` --
 only the W = 64, W = 128, W = 256, W = 512 and W = 1024 cells have
@@ -567,7 +602,9 @@ measured and
 flipped 2026-10-23/24,
 faster than `:baseline` at those cells, see the step-3 and W-sweep
 records); every other
-W of this variant (32); shape 2 for this variant;
+W of this variant (32); shape 2 for this variant at every width but
+W = 256 (its W = 256 shape-2 flip landed 2026-10-24 -- the anchor is
+measured and flipped at both measured shapes);
 `simd_sum`'s association order as a spec-text claim (the spec was NOT
 re-read this tick -- the P1 scope does not depend on it); every Apple
 device but this M1 Max for any variant; the GLSL arm of
@@ -639,8 +676,10 @@ outside this diff. No green full suite is claimed.
    contract -- this VARIANT's own cells keyed by name fragment, reported
    subgroup size, route, channel, W set and shapes -- one cell set at a
    time. Until it lands no `:measured?` flag moves.
-3. (step 3) Measure the remaining cells (W = 32, shape
-   2, cross-day replication) under the same claim protocol.
+3. (step 3) Measure the remaining cells (shape
+   2 at W = 32/64/128/512/1024 -- the shape-2 series' remaining cells,
+   its W = 256 anchor measured and flipped 2026-10-24 -- and cross-day
+   replication) under the same claim protocol.
 4. Cross-day replication of the existing `:subgroup-reduce` cells (needs a
    later-day cron tick).
 5. The GLSL arm of `:subgroup-reduce` stays blocked on ADR 0371's provider

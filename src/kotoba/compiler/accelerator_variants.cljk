@@ -306,32 +306,47 @@
   series' second through sixth cells). These six are every width the row
   admits (a power of two in [32, 1024]): the class's W band is measured
   end to end, so at the measured reported width NO admitted width keeps
-  the carve-out. What stays UNMEASURED is everything else -- shape 2,
+  the carve-out. What stays UNMEASURED is everything else -- shape 2 at
+  every width but W = 256 (the shape-2 series has measured one cell),
   every other Apple device, every other vendor, cross-day replication --
   and no width outside this set answers at all (the row refuses it at
   selection)."
   #{32 64 128 256 512 1024})
 
 (def ^:private apple-simdgroup-measured-shapes
-  "The element counts this variant's contract-satisfying cells ran:
-  n = 1,000,003 (the flip contract's ground shape) ONLY, at each flipped
-  W (32, 64, 128, 256, 512, 1024). Shape 2
-  (n = 2^20) is UNMEASURED for this variant at every cell. The selection
-  answer cannot vary with n, and the record's :shapes names the measured
-  shape so no claim extends past it."
-  [1000003])
+  "The element counts this variant's contract-satisfying cells ran, keyed
+  by workgroup width: n = 1,000,003 (the flip contract's ground shape) at
+  every flipped W (32, 64, 128, 256, 512, 1024), and -- at W = 256 ONLY
+  -- also shape 2, n = 2^20 (the shape-2 series' anchor cell,
+  docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w256, paired
+  median ratios 0.794/0.811/0.812, rule 2 REGIME-INVARIANT FASTER,
+  18/18 -- the shape-2 flip of the W = 256 cell, 2026-10-24). Shape 2 at
+  the other five widths is UNMEASURED for this variant (the shape-2
+  series' remaining cells). The selection answer cannot vary with n, and
+  the record's :shapes names the measured shapes so no claim extends past
+  them."
+  {256 [1000003 1048576]
+   512 [1000003]
+   1024 [1000003]
+   128 [1000003]
+   64 [1000003]
+   32 [1000003]})
 
 (def ^:private apple-simdgroup-measured-evidence
   "The evidence directory of each flipped cell's contract-satisfying
   runs, keyed by workgroup width -- each flip cell's :measured-cell
   record names ITS OWN runs (the :subgroup-reduce runs say nothing about
   this variant, uB5G, reverse reading): W = 256 -> the step-3
-  native-Metal measurement of :baseline vs :simdgroup-reduce; W = 512,
+  native-Metal measurement of :baseline vs :simdgroup-reduce AND the
+  shape-2 anchor's own record
+  (docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w256, the
+  shape-2 flip's basis); W = 512,
   W = 1024, W = 128, W = 64 and
   W = 32 -> the W-sweep series' second through sixth cells
   (summary.md,
   run-log.txt, compile-log.txt, shaders/ in each)."
-  {256 ["docs/evidence/gpu-simdgroup-reduce-m1max-20261023"]
+  {256 ["docs/evidence/gpu-simdgroup-reduce-m1max-20261023"
+        "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w256"]
    512 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512"]
    1024 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w1024"]
    128 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w128"]
@@ -380,11 +395,26 @@
   advantage is monotone across it in these records (0.65 -> 0.72 ->
   0.78 -> 0.79 -> 0.82 -> 0.84 with W -- data on one host, not a fitted
   trend and not a claim about any unmeasured W or any other shape).
-  WHAT THE NUMBERS DO NOT LICENSE: shape 2
-  (n = 2^20) and every shape beyond n = 1000003 are UNMEASURED at these
-  cells (selection cannot vary with n; the record's :shapes names the
-  measured shape); the GLSL arm, every other Apple device, every other
-  vendor and cross-day replication are UNMEASURED. Read-back: 36/36
+  SHAPE-2 FLIP OF THE W = 256 CELL (the shape-2 series' anchor,
+  2026-10-24, apple-simdgroup-shape2-flip-note): the same byte-identical
+  protocol re-ran W = 256 at shape 2, n = 2^20 (a clean multiple of every
+  W in [32, 1024] -- no padded-lane tail) and measured THIS variant
+  faster again (paired median ratios 0.794/0.811/0.812 for
+  :sum/:max/:min, rule 2 REGIME-INVARIANT FASTER, 18/18 per-run ratios
+  below 1.0 -- within ~1-2 ratio points of the shape-1 anchor's
+  0.790/0.800/0.799, so the W = 256 win is not a padded-tail artifact of
+  the ground shape). The sign contrast with the shuffle ladder holds at
+  this shape in its stronger form (:subgroup-reduce one-sided slower at
+  this cell in both its shape-2 records, 1.227/1.223/1.220 and the
+  re-sweep 1.226/1.225/1.225). The W = 256 flip cell's :shapes is now
+  [1000003 1048576] and its :evidence names this record too.
+  WHAT THE NUMBERS DO NOT LICENSE: shape 2 (n = 2^20) is still
+  UNMEASURED at the five widths but W = 256 (the shape-2 series'
+  remaining cells), and every shape beyond the two measured ones is
+  UNMEASURED at every cell (selection cannot vary with n; the record's
+  :shapes names the measured shapes so no claim extends past them); the
+  GLSL arm, every other Apple device, every other vendor and cross-day
+  replication are UNMEASURED. Read-back: 36/36
   ok=1 per cell, :max/:min bit-exact vs the CPU reference and between
   arms, :sum 3.05e-05 between arms at W = 256 and W = 512, 6.10e-05
   at W = 1024, 1.53e-05 at W = 128, 3.81e-06 at W = 64 and 1.91e-06
@@ -396,6 +426,8 @@
   not a claim):
   per-operator level names stay operator-scoped. Evidence:
   docs/evidence/gpu-simdgroup-reduce-m1max-20261023 (W = 256),
+  docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w256
+  (W = 256, shape 2 -- the shape-2 flip's own record),
   docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512 (W = 512),
   docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w1024 (W = 1024),
   docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w128 (W = 128),
@@ -900,7 +932,8 @@
             :route :msl-v1
             :workgroup-size (:kernel/workgroup-size kir)
             :operators #{:sum :max :min}
-            :shapes apple-simdgroup-measured-shapes
+            :shapes (get apple-simdgroup-measured-shapes
+                         (:kernel/workgroup-size kir))
             :evidence (get apple-simdgroup-measured-evidence
                            (:kernel/workgroup-size kir))})
          measured-cell
