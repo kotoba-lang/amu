@@ -840,6 +840,53 @@
           "sha256": "8ac88b7b480886de424d060106c87b9e7381a51433169437dfdb2b084fa3e7ae"
         }
       }
+    },
+    {
+      "schema": "amu.seed.static-root.v1",
+      "image": {
+        "bytes": 3219968,
+        "sha256": "6a2b4de4f2bc35dae6c4a2ac77fdaf019066b1dff73a28b9ae482a433cb58f71"
+      },
+      "target": "aarch64-linux",
+      "format": "packed",
+      "sourceManifest": "seed/FULL-MANIFEST",
+      "sourceUnity": {
+        "bytes": 3214083,
+        "sha256": "b4fd4ee42e50ba4c7aebd1f191a1fb16b90b98c190a3fa4524795df8e143e3c0"
+      },
+      "sourceCommitBase": "151913fe311ca76680a1fbde8220f4864a034917",
+      "producedBy": {
+        "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt itself to F2 (same container 001293d2, new runtime wrapper: F1 was packed by the previous runtime); F2 rebuilt itself to F3 = F2 (= this image). Re-pinned because this source merges ADR 0373 gap a (#1528: a private helper's parameter is no longer a rooted kernel-memory base) with the RANGE window (io-slice, JUN-19) and the multi-wrapper runtime sources on merge 151913fe; the rebuild chain converges to the fixed point within three generations (scripts/seed/selfhost-bootstrap.py reports root differs (re-pin to F3)).",
+        "date": "2026-10-24",
+        "previousRoot": "04ae0fa8f5fb966983d2ca4a9d8ecaf5ac41ce9a58c9474bd239c1c8e78829b3",
+        "chain": {
+          "F1.kseed": {
+            "bytes": 2989459,
+            "sha256": "001293d2a4221573a4e6c0802f0aef02d1c1613d494ae77ff02b424fd4a623a9"
+          },
+          "F1.elf": {
+            "bytes": 3215872,
+            "sha256": "4c4efb40e66a777321b18db86a3d3a2349d9b6049647bd7f2031d7341a4b161e"
+          },
+          "F2.kseed": {
+            "bytes": 2989459,
+            "sha256": "001293d2a4221573a4e6c0802f0aef02d1c1613d494ae77ff02b424fd4a623a9"
+          },
+          "F2.elf": {
+            "bytes": 3219968,
+            "sha256": "6a2b4de4f2bc35dae6c4a2ac77fdaf019066b1dff73a28b9ae482a433cb58f71"
+          },
+          "F3.kseed": {
+            "bytes": 2989459,
+            "sha256": "001293d2a4221573a4e6c0802f0aef02d1c1613d494ae77ff02b424fd4a623a9"
+          },
+          "F3.elf": {
+            "bytes": 3219968,
+            "sha256": "6a2b4de4f2bc35dae6c4a2ac77fdaf019066b1dff73a28b9ae482a433cb58f71"
+          }
+        }
+      },
+      "verification": "scripts/seed/selfhost-bootstrap.py --tier pr on arm64 Linux (python:3.12-alpine) from this root (F1 = root): the core route, the runtime boundary corpus, the 24 runtime cases and hardening pass and the rebuild reproduces this root (rootReproduces); scripts/seed/check-kernel-memory.py --cases gives PASS_KERNEL_MEMORY_ADMISSION 16 cases with F1. CI re-runs the tier from this root (F -> F' = root)."
     }
   ],
   "sourceCommit": "74fe989a0c8a541f265b9619133b4b090b90d50a"
