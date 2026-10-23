@@ -629,7 +629,7 @@
 (defn- kxrt-fs [h :i64] :i64
   (let [a (kxrt-saddr h) n (kxrt-ps h)
         wi (kxrt-find a n 0x45535f4554495257 0x50 9) ai (kxrt-find a n 0x535f444e45505041 0x5045 10) ei (kxrt-find a n 0x535f535453495845 0x5045 10)
-        ri (kxrt-find a n 0x45535f45474e4152 0x50 9)
+        ri (kxrt-find a n 0x45535f45474e4152 0x50 9) rni (kxrt-find a n 0x535f454d414e4552 0x5045 10) fi (kxrt-find a n 0x45535f434e595346 0x50 9)
         append (and (>= ai 0) (or (< wi 0) (< ai wi)))]
     (cond append (if (= (kxrt-count2 a n 0x535f444e45505041 0x5045 10) 1) (kxrt-fs-write a n ai 10 true) (kxrt-fail))
           (>= wi 0) (let [z (kxrt-sink-close)]
@@ -637,10 +637,46 @@
           (>= ei 0) (let [z (kxrt-sink-close)] (kxrt-fs-exists a ei))
           (>= ri 0) (let [z (kxrt-sink-close)]
                       (if (= (kxrt-count2 a n 0x45535f45474e4152 0x50 9) 1) (kxrt-fs-range a n ri) (kxrt-fail)))
+          ;; JUN-359: RENAME_SEP and FSYNC_SEP, so a file can be replaced durably
+          ;; (WRITE a temporary, FSYNC it, RENAME it over the file, FSYNC the
+          ;; directory)
+          (>= rni 0) (let [z (kxrt-sink-close)]
+                      (if (= (kxrt-count2 a n 0x535f454d414e4552 0x5045 10) 1) (kxrt-fs-rename a n rni) (kxrt-fail)))
+          (>= fi 0) (let [z (kxrt-sink-close)] (if (= (+ fi 9) n) (kxrt-fs-fsync a fi) (kxrt-fail)))
           ;; STAT, MTIME, ... are not provided by this runtime: refused.
           (kxrt-fs-other? a n) (kxrt-fail)
           :else (let [z (kxrt-sink-close)] (kxrt-fs-read a n)))))
 
+;; FSYNC_SEP: fsync(2) of the file or directory at <path>, opened beneath the
+;; scope: 1 once it returned, 0 when it cannot be opened or the flush fails
+(defn- kxrt-fs-fsync [a :i64 i :i64] :i64
+  (let [m (kxrt-path a i) fd (if (< m 0) -1 (kxrt-open m 655360 0))]
+    (if (< fd 0) (kxrt-intern-dec 0)
+      (let [r (kxrt-syscall 74 fd 0 0 0 0 0) z (kxrt-close fd)] (kxrt-intern-dec (if (= r 0) 1 0))))))
+;; the parent of the normalized path in the path buffer [0, m), opened beneath
+;; the scope as a directory, with the last component copied to b as a C string;
+;; the fd, or -1 when there is no such component or it is too long
+(defn- kxrt-fs-parent [m :i64 b :i64] :i64
+  (let [d (kxrt-gl 208)
+        j (loop [j (dec m)] (cond (< j 0) -1 (= (kxrt-load8 (+ d j)) 47) j :else (recur (dec j))))
+        bn (- m (inc j))]
+    (cond (or (< j 0) (< bn 1) (> bn 255)) -1
+          (and (= bn 1) (= (kxrt-load8 (+ d j 1)) 46)) -1
+          (and (= bn 2) (= (kxrt-load8 (+ d j 1)) 46) (= (kxrt-load8 (+ d j 2)) 46)) -1
+          :else (let [c (kxrt-copy b (+ d j 1) bn) z (kxrt-store8 (+ b bn) 0)
+                      pm (if (= j 0) 1 j) y (kxrt-store8 (+ d pm) 0)]
+                  (kxrt-open pm 720896 0)))))
+;; RENAME_SEP: <from>RENAME_SEP<to>, both inside the scope. Each parent is
+;; opened beneath the scope and renameat(2) moves the last component, so no
+;; component of either path is followed out of the scope: 1 once it
+;; returned, 0 otherwise
+(defn- kxrt-fs-rename [a :i64 n :i64 i :i64] :i64
+  (let [s (kxrt-gl 200) b1 (+ s 9216) b2 (+ s 9472)
+        f1 (let [m (kxrt-path a i)] (if (< m 0) -1 (kxrt-fs-parent m b1)))
+        f2 (if (< f1 0) -1 (let [m (kxrt-path (+ a i 10) (- n (+ i 10)))] (if (< m 0) -1 (kxrt-fs-parent m b2))))
+        r (if (< f2 0) -1 (kxrt-syscall 264 f1 b1 f2 b2 0 0))
+        z1 (if (>= f1 0) (kxrt-close f1) 0) z2 (if (>= f2 0) (kxrt-close f2) 0)]
+    (kxrt-intern-dec (if (= r 0) 1 0))))
 ;; ---- wire 42 :gpu/compute: a transport to the GPU provider (ADR 0371) ----
 ;; The provider is another process. The launcher passes two inherited fds,
 ;; KEXE_CAP_RESOURCES_42=REQUEST,ANSWER (checked at start, kxrt-gpu-fds). A
@@ -1263,20 +1299,36 @@
         (if (= i want) true
           (let [w (if (< i 8) lo hi) shift (* 8 (if (< i 8) i (- i 8)))]
             (if (= (kxrt-load8 (+ p i)) (bit-and (u64-shift-right w shift) 255)) (recur (inc i)) false)))))))
+(defn- kxrt-clock-read [wall :bool] :i64
+  (let [mono (not wall) s (+ (kxrt-gl 200) 15360)]
+    (let [r (loop [attempt 0] (let [v (kxrt-syscall 228 (if wall 0 1) s 0 0 0 0)] (if (= v -4) (if (< attempt 1024) (recur (inc attempt)) (kxrt-fail)) v)))
+          sec (kxrt-load64 s) ns (kxrt-load64 (+ s 8))
+          scale (if wall 1000 1000000000) part (if wall (quot ns 1000000) ns)]
+      (if (or (< r 0) (< sec 0) (< ns 0) (>= ns 1000000000)
+              (> sec (quot (- 9223372036854775807 part) scale))) (kxrt-fail)
+        (let [ticks (+ (* sec scale) part)]
+          (if (and mono (< ticks (kxrt-gl 752))) (kxrt-fail)
+            (let [saved (if mono (kxrt-gs 752 ticks) 0) out (+ s 64) n (kxrt-dec out ticks)]
+              (kxrt-intern out n))))))))
+;; JUN-360: clock_nanosleep(CLOCK_MONOTONIC) for ms milliseconds, through EINTR
+(defn- kxrt-sleep [ms :i64] :i64
+  (let [t (+ (kxrt-gl 200) 15360 128) r (+ t 16)
+        a (kxrt-store64 t (quot ms 1000)) b (kxrt-store64 (+ t 8) (* 1000000 (- ms (* 1000 (quot ms 1000)))))]
+    (loop [k 0]
+      (let [v (kxrt-syscall 230 1 0 t r 0 0)]
+        (cond (= v 0) 0
+              (and (= v -4) (< k 1024)) (let [x (kxrt-store64 t (kxrt-load64 r)) y (kxrt-store64 (+ t 8) (kxrt-load64 (+ r 8)))] (recur (inc k)))
+              :else (kxrt-fail))))))
+;; wall -> epoch ms; monotonic -> nondecreasing ns; sleep <ms> (0..60000)
+;; sleeps on the monotonic clock, then answers as monotonic
 (defn- kxrt-clock [req :i64] :i64
-  (let [wall (kxrt-request= req 0x6c6c6177 0 4)
-        mono (kxrt-request= req 0x696e6f746f6e6f6d 0x63 9)
-        s (+ (kxrt-gl 200) 15360)]
-    (if (not (or wall mono)) (kxrt-fail)
-      (let [r (loop [attempt 0] (let [v (kxrt-syscall 228 (if wall 0 1) s 0 0 0 0)] (if (= v -4) (if (< attempt 1024) (recur (inc attempt)) (kxrt-fail)) v)))
-            sec (kxrt-load64 s) ns (kxrt-load64 (+ s 8))
-            scale (if wall 1000 1000000000) part (if wall (quot ns 1000000) ns)]
-        (if (or (< r 0) (< sec 0) (< ns 0) (>= ns 1000000000)
-                (> sec (quot (- 9223372036854775807 part) scale))) (kxrt-fail)
-          (let [ticks (+ (* sec scale) part)]
-            (if (and mono (< ticks (kxrt-gl 752))) (kxrt-fail)
-              (let [saved (if mono (kxrt-gs 752 ticks) 0) out (+ s 64) n (kxrt-dec out ticks)]
-                (kxrt-intern out n)))))))))
+  (let [a (kxrt-saddr req) n (kxrt-ps req)
+        sl (and (> n 6) (<= n 11) (kxrt-tok-at a 0x207065656c73 0 6))
+        ms (if sl (kxrt-parse (+ a 6) (- n 6)) -1)]
+    (cond (kxrt-request= req 0x6c6c6177 0 4) (kxrt-clock-read true)
+          (kxrt-request= req 0x696e6f746f6e6f6d 0x63 9) (kxrt-clock-read false)
+          (and sl (>= ms 0) (<= ms 60000)) (let [z (kxrt-sleep ms)] (kxrt-clock-read false))
+          :else (kxrt-fail))))
 (defn- kxrt-entropy-unavailable [] :i64
   (let [b (kxrt-gl 200) n (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b 0 0x4152545f4558454b 8) 0x646e696b3a7b2050 8) 0x6962617061633a20 8) 0x61633a207974696c 8) 0x7974696c69626170 8) 0x706f72746e653a20 8) 0x3a20776172642f79 8) 0x3a206e6f73616572 8) 0x2f79706f72746e65 8) 0x616c696176616e75 8) 0xa7d656c62 5) f (kxrt-flush) e (kxrt-err-text b n)]
     (kxrt-exit 126)))
@@ -1453,7 +1505,8 @@
 ;; only with an open scope 35 that is granted; read on the GPU answer fd only
 ;; with wire 42 granted (kxrt-gpu-fds); the net set only with one of wires
 ;; 43..47 granted; read on the spawn helper's answer fd only with wire 20
-;; granted (kxrt-spawn-start); read on fd 0 only with wire 41 granted.
+;; granted (kxrt-spawn-start); read on fd 0 only with wire 41 granted;
+;; clock_nanosleep only with wire 7 granted.
 ;; Everything else: SIGSYS (trap).
 ;; A kernel without seccomp fails closed unless KEXE_SECCOMP=if-available.
 (defn- kxrt-sandbox [] :i64
@@ -1467,7 +1520,8 @@
         i5 (if (> (kxrt-gl 2096) 2) (kxrt-allow-read-fd p i4 (kxrt-gl 2096)) i4)
         i6 (if (kxrt-admitted? 23) (kxrt-allow-nr p i5 318) i5)
         i7 (if (kxrt-admitted? 41) (kxrt-allow-read-fd p i6 0) i6)
-        n (kxrt-bpf p i7 6 0 0 196608)
+        i8 (if (kxrt-admitted? 7) (kxrt-allow-nr p i7 230) i7)
+        n (kxrt-bpf p i8 6 0 0 196608)
         a (kxrt-store64 prog n) b (kxrt-store64 (+ prog 8) p)]
     (if (< (kxrt-syscall 157 38 1 0 0 0 0) 0) (kxrt-die)
       (let [r (kxrt-syscall 317 1 0 prog 0 0 0)]

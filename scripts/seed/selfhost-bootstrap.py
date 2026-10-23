@@ -16,7 +16,7 @@ pr    1. F rebuilds itself: FULL-MANIFEST -> container, packed -> F' (= root,
          diagnostic with a source span is named (E2101), not a trap;
       4. the runtime boundary corpus, the runtime cases
          (seed/static-cases.json), hardening and capabilities, all with F;
-      5. the runtime cases and two probes as wasm32-browser modules (JUN-353),
+      5. the runtime cases and three probes as wasm32-browser modules (JUN-353),
          run in headless Chromium (scripts/seed/check-wasm32-browser.py) when
          one is installed; the float cases are refused. Without a browser the
          modules are compiled and pinned, and the qualify-x86_64 job runs them.
@@ -175,14 +175,18 @@ def main(out, tier, reuse=None, store=None):
             assert int(re.search(rb":result (-?[0-9]+)", r.stdout)[1]) == case["result"]
         results.append(dict(name=case["name"], **observed))
 
-    # 5. JUN-353: the same cases, and two probes, as wasm32-browser modules
+    # 5. JUN-353: the same cases, and three probes, as wasm32-browser modules
     wasm_dir = out / "wasm32"
     wasm_dir.mkdir()
     for case in json.loads((ROOT / CASES).read_text())["cases"]:
         compile_(F, out / f"case-{case['name']}.kotoba", wasm_dir / f"case-{case['name']}.wasm", "wasm32-browser", None,
                  f"case-{case['name']}-wasm32", scope)
     wasm_probes = {"spin": "(defn main [] :i64 (loop [i 0] (if (< i 0) i (recur (inc i)))))",
-                   "deep": "(defn- f [n :i64] :i64 (if (= n 0) 0 (+ 1 (f (dec n)))))\n(defn main [] :i64 (f 100000000))"}
+                   "deep": "(defn- f [n :i64] :i64 (if (= n 0) 0 (+ 1 (f (dec n)))))\n(defn main [] :i64 (f 100000000))",
+                   # the entry ABI (Phase 3): argument 0 names a page-supplied file, echoed to stdout
+                   "entry": "(defn main [] :i64 (let [p (typed-cap-call :cli/args :string :string \"0\")\n"
+                            "  s (typed-cap-call :fs/app-data :string :string p) w (typed-cap-call :io/write :string :string s)]\n"
+                            "  (string-length s)))"}
     for name, body in wasm_probes.items():
         src = out / f"wasm-probe-{name}.kotoba"
         src.write_text(f"(ns probe-{name} (:export [main]))\n{body}\n")
