@@ -1,0 +1,21 @@
+;; Whole v11 keyword-graph semantics, including the original 4096-datom bound.
+(ns seed.native-kgraph (:export [main full-main overflow-main]))
+(defn main [] :i64
+  (let [missing (__r6-kgget 1001 7) a (__r6-kgput 1001 7 10)
+        b (__r6-kgput 1002 7 20) c (__r6-kgput 1001 8 30)
+        scoped (arena-scope (__r6-kgput 1001 7 40))]
+    (if (and (= missing -9223372036854775808) (= a 1) (= b 1) (= c 1) (= scoped 1)
+             (= (__r6-kgget 1001 7) 40) (= (__r6-kgget 1002 7) 20)
+             (= (__r6-kgget 1001 8) 30) (= (__r6-kgget 1002 8) -9223372036854775808)) 0 1)))
+(defn- fill [] :i64
+  (loop [index 0]
+    (if (= index 4096) 0
+      (if (= (__r6-kgput index 17 (+ index 23)) 1) (recur (inc index)) 1))))
+(defn full-main [] :i64
+  (let [result (fill)]
+    (loop [index 0]
+      (cond (not= result 0) 1 (= index 4096) 0
+            (not= (__r6-kgget index 17) (+ index 23)) 2
+            :else (recur (inc index))))))
+(defn overflow-main [] :i64
+  (let [result (fill)] (__r6-kgput 0 17 100)))

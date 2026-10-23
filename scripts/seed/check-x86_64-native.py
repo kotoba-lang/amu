@@ -73,6 +73,10 @@ def main(boot, out):
     assert s_cross == x2 == x3, "x86_64 static fixed point"
     X = out / "X2.elf"
 
+    run("runtime-boundary", [sys.executable, ROOT / "scripts/seed/check-runtime-boundary.py",
+                             "--compiler", X, "--output", out / "runtime-boundary"], {})
+    runtime_boundary = json.loads((out / "runtime-boundary/runtime-boundary.json").read_text())
+
     # 2. runtime cases
     results = []
     for case in json.loads((ROOT / "seed/static-cases.json").read_text())["cases"]:
@@ -162,6 +166,7 @@ def main(boot, out):
     report = dict(status="PASS_NATIVE_X86_64_LOADERLESS", host=[platform.system(), platform.machine(), platform.release()],
                   nativeX86_64Kernel=True, emulation=False, cCompilerOrLoader=False,
                   compiler=dict(crossBuiltOnArm64=s_cross, X2=x2, X3=x3), cases=results, hardening=hardening,
+                  runtimeBoundary=runtime_boundary,
                   kx64Runner=dict(runner=pin(out / "R-x86_64.elf"), generations=gens), suites=suites, coreOnX86_64=core_x86,
                   bootstrapReceipt=json.loads((boot / "selfhost-bootstrap.json").read_text())["root"]["image"])
     (out / "x86_64-native.json").write_text(json.dumps(report, indent=2) + "\n")

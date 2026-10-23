@@ -24673,8 +24673,9 @@
 (defn- t2-mcd? [M :vector-i64 g :i64] :bool
   (or (<= g 0) (>= g MM-FN-CAP) (>= g (vector-at M MM-FN-N)) (not= (t2-g M (+ t2-a-mcd g)) 0)))
 ;; ---- least vector lengths (whole program, semantic) ----
-;; Seed-compiled code never frees a vector (arena-scope is a plain do) and no operation shortens one in place (drop,
-;; assoc and conj make new handles or grow), so a vector at least n long stays so. PMIN[f][k] (k < 4): the least length
+;; No operation shortens a live vector in place (drop, assoc and conj make
+;; new handles or grow). Scalar arena-scope results cannot carry a released
+;; handle out. A live vector at least n long stays so. PMIN[f][k] (k < 4): the least length
 ;; of parameter k over every call of the private function f (0 unknown); RMIN[f]: of its result. Greatest fixpoint from
 ;; "no call seen" over the SIR: a call argument's length comes from its temp's definition in the straight run before
 ;; the call (no LABEL between): LGET of a slot (the least over the slot's parameter value and every LSET into it),

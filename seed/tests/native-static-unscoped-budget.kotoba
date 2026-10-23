@@ -1,0 +1,8 @@
+;; The unchanged static profile has 4,194,304 vector handles. No scope release:
+;; the 5,000,000th allocation must remain unreachable because the arena refuses.
+(ns seed.static-unscoped-budget (:export [main]))
+(defn main [] :i64
+  (loop [index 0]
+    (if (= index 5000000) 0
+      (let [values (vector-alloc 1)]
+        (if (= (vector-at values 0) 0) (recur (inc index)) 1)))))
