@@ -15,8 +15,15 @@ the selfhost compiler.
   * The provider under the static launcher, answering a static guest's
     wire-42 session, needs a native kernel. It runs in the `qualify-x86_64`
     CI job, through `check-x86_64-native.py`'s ADR0371 list, in every tier.
+* `gad-radv.json`: the same script's `gpu` phase, with the Vulkan layer
+  (`tools/gpu_device_vulkan.kotoba`).
+  * It ran on gad: x86_64, Linux 7.0, Radeon 8060S Graphics (RADV GFX1151),
+    Vulkan 1.4.318.
+  * The build phase ran on arm64 Linux.
+  * By the owner's decision of 2026-10-22, libvulkan runs on GPU hosts only.
+    The provider ran from a temporary directory that was removed afterwards.
 
-## What the receipt shows
+## What the fake-device receipt shows
 
 * **23 sessions**, each with fd 3 the grant and fd 4 the report:
   * every verb, with its exact answer;
@@ -43,7 +50,45 @@ the selfhost compiler.
 * **Report**: the image digest in each report equals the image's SHA-256,
   and `:needed` lists the image's DT_NEEDED names (`["libc.so.6"]`).
 
+## What the gad receipt shows
+
+* **INFO** is `Radeon 8060S Graphics (RADV GFX1151)|1.4.318|1024|1`, and
+  **DEVCLASS** is `integrated`. Among RADV and lavapipe, the device choice
+  took the integrated GPU, as the C broker did.
+* **Transfers.** WRITE, WRITEDEC, READ and ZERO go through the staging buffer.
+  A MAP of 70 MiB spans more than one 64 MiB staging chunk. It was read back
+  at the start, across the chunk edge and at the end. The MAP took 5.4 s,
+  which includes the provider's own SHA-256 of the file.
+* **Kernels.** These are KIR v1 modules written by Amu (ADR 0372), not glslang.
+  * `z = x + y` for n = 1000 ran:
+    * at once;
+    * in a recording whose second dispatch reads the first's output (the
+      barrier);
+    * in a kept command buffer, submitted and then replayed;
+    * as two independent DISPATCHC.
+  * Per-workgroup sums of 1..1000.
+  * Every value is exact in f32, so each READ is compared byte for byte.
+* **Vulkan's rules where the protocol is wider**:
+  * an unaligned WRITE and READ (copies are widened to 4-byte spans, and a
+    write reads the span's other bytes first);
+  * ZERO of a 3-byte buffer (buffers are a multiple of 4 bytes, so the
+    whole-size fill covers every byte);
+  * a workgroup count over the device's limit, refused as
+    `gpu/device-error`, after which the session goes on.
+* **Submits** took 30-50 us each, measured on the host clock.
+* **Report** (fd 4): device, 59 served, 1 refused, `:eof`, the image's
+  SHA-256, its DT_NEEDED names and the kernel release.
+
 ## Limits
 
-* The fake layer has no GPU: a dispatch does nothing. The Vulkan layer is the
-  next step, and it runs on GPU hosts only.
+* The fake layer has no GPU: a dispatch does nothing.
+* The dot and kdot fixtures and the decode guest's argmax chain are the
+  step's acceptance. They need the KIR v2 inference kernels (ADR 0372 step 3),
+  which do not exist yet.
+* Not covered here:
+  * confinement after device creation;
+  * the libvulkan/ICD paths and digests in the report;
+  * the driver properties;
+  * shaderFloat16 and integer dot product enablement;
+  * B70 (ANV);
+  * the launcher on a GPU host.

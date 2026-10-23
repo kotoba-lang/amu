@@ -1,0 +1,419 @@
+(ns gpu-device-vulkan (:export [main]))
+
+;; The Vulkan device layer of the GPU provider (ADR 0371 step 6). A unit that
+;; uses it drops this ns line (tools/gpu_provider.kotoba). It reaches Vulkan
+;; only through vkGetInstanceProcAddr (kxrt-p-vkgipa, import 1, libvulkan.so.1)
+;; and kxrt-p-ccall; every other entry point is resolved through it, and every
+;; struct is laid out here byte by byte for x86_64 (offsets from the Vulkan
+;; 1.3.239 headers, measured with offsetof as an oracle only).
+;;
+;; It follows the removed C broker (`git show 36479076^:tools/kexe_gpu_vulkan.c`)
+;; where the protocol's answers depend on it:
+;; * the device: the grant's index, else the first with a compute queue,
+;;   a discrete GPU first, then an integrated one;
+;; * INFO "<deviceName>|<major.minor.patch>|<maxComputeWorkGroupSize[0]>|
+;;   <1 for an integrated GPU, else 0>"; DEVCLASS from VkPhysicalDeviceType;
+;; * buffers in device-local memory (any type when none is device-local);
+;;   WRITE, WRITEDEC, READ and MAP go through a 64 MiB host-visible, coherent
+;;   staging buffer, a chunk at a time; ZERO is vkCmdFillBuffer;
+;; * where Vulkan needs more than the broker gave: a buffer is created a
+;;   multiple of 4 bytes long, so ZERO's whole-size fill covers every byte and
+;;   copies can be widened to 4-byte aligned spans (a write reads the span's
+;;   other bytes first); every command buffer starts with a memory barrier
+;;   (all earlier writes to all later accesses), and a transfer ends with one
+;;   to host reads; a dispatch over the device's maxComputeWorkGroupCount is
+;;   a device error; after device lost or a fence timeout teardown is skipped
+;;   (it could wait on the hung device forever) and process exit reclaims it;
+;; * a DISPATCH after the first in a command buffer is preceded by a compute
+;;   to compute barrier (shader write to shader read and write); DISPATCHC has
+;;   none;
+;; * a submit's nanoseconds are the host clock from before vkResetFences to
+;;   after vkWaitForFences;
+;; * teardown waits for the device idle, then destroys pipelines, buffers,
+;;   the staging buffer, pools, the fence, the command pool, the device and the
+;;   instance, in that order (a live device at exit crashed one driver).
+;;
+;; Command buffers: kept slots 0..7, 8 the one-shot recording, 9 transfers;
+;; each recording slot has a descriptor pool of 2048 sets, reset at BEGIN.
+
+(def V-INSTANCE 0)
+(def V-PHYS 8)
+(def V-DEVICE 16)
+(def V-QUEUE 24)
+(def V-QFAMILY 32)
+(def V-CPOOL 40)
+(def V-FENCE 48)
+(def V-STAGING 56)
+(def V-STAGING-MAP 72)
+(def V-REC 80)
+(def V-RECORDED 88)
+(def V-READY 96)
+(def V-FN 256)
+(def V-ARGV 768)
+(def V-PROPS 1024)
+(def V-DRIVER 2048)
+(def V-MEMPROPS 3072)
+(def V-T 4096)
+(def V-NAMES 12288)
+(def V-CBS 16384)
+(def V-DPOOLS 16512)
+(def V-PDEVS 16640)
+(def V-QFAMS 16768)
+(def V-DINFO 17408)
+(def V-DWRITE 17920)
+(def V-BUFS 32768)
+(def V-PIPES 163840)
+(def V-BYTES 172032)
+(def STAGING 67108864)
+
+;; the entry points, by index: 0..8 resolved with the instance, 10..50 with
+;; the device
+(defn- vk-fn-name [i :i64] :string
+  (case i
+    0 "vkCreateInstance" 1 "vkEnumeratePhysicalDevices" 2 "vkGetPhysicalDeviceProperties"
+    3 "vkGetPhysicalDeviceProperties2" 4 "vkGetPhysicalDeviceMemoryProperties"
+    5 "vkGetPhysicalDeviceQueueFamilyProperties" 6 "vkCreateDevice" 7 "vkGetDeviceProcAddr" 8 "vkDestroyInstance"
+    10 "vkGetDeviceQueue" 11 "vkDestroyDevice" 12 "vkCreateBuffer" 13 "vkDestroyBuffer"
+    14 "vkGetBufferMemoryRequirements" 15 "vkAllocateMemory" 16 "vkFreeMemory" 17 "vkBindBufferMemory"
+    18 "vkMapMemory" 19 "vkUnmapMemory" 20 "vkCreateShaderModule" 21 "vkDestroyShaderModule"
+    22 "vkCreateDescriptorSetLayout" 23 "vkDestroyDescriptorSetLayout" 24 "vkCreatePipelineLayout"
+    25 "vkDestroyPipelineLayout" 26 "vkCreateComputePipelines" 27 "vkDestroyPipeline"
+    28 "vkCreateDescriptorPool" 29 "vkDestroyDescriptorPool" 30 "vkResetDescriptorPool"
+    31 "vkAllocateDescriptorSets" 32 "vkUpdateDescriptorSets" 33 "vkCreateCommandPool"
+    34 "vkDestroyCommandPool" 35 "vkAllocateCommandBuffers" 36 "vkBeginCommandBuffer"
+    37 "vkEndCommandBuffer" 38 "vkResetCommandBuffer" 39 "vkCmdBindPipeline" 40 "vkCmdBindDescriptorSets"
+    41 "vkCmdDispatch" 42 "vkCmdPipelineBarrier" 43 "vkCmdCopyBuffer" 44 "vkCmdFillBuffer"
+    45 "vkQueueSubmit" 46 "vkCreateFence" 47 "vkDestroyFence" 48 "vkWaitForFences" 49 "vkResetFences"
+    50 "vkDeviceWaitIdle"
+    ""))
+
+(defn- vk-state [s :i64] :i64 (kxrt-p-load64 (+ s S-DEV)))
+(defn- vg [v :i64 k :i64] :i64 (kxrt-p-load64 (+ v k)))
+(defn- w64 [a :i64 x :i64] :i64 (kxrt-p-store64 a x))
+(defn- w32 [a :i64 x :i64] :i64 (put-u32 a x))
+(defn- r32 [a :i64] :i64 (bit-and (kxrt-p-load64 a) 4294967295))
+(defn- vk-zero [a :i64 n :i64] :i64 (loop [i 0] (if (>= i n) 0 (let [z (kxrt-p-store64 (+ a i) 0)] (recur (+ i 8))))))
+(defn- vk-cstr [a :i64 t :string] :i64 (let [z (copy-path a t)] a))
+;; VkResult, a 32-bit int
+(defn- vr [r :i64] :i64 (let [x (bit-and r 4294967295)] (if (>= x 2147483648) (- x 4294967296) x)))
+;; n bytes, 8 at a time
+(defn- vk-copy [dst :i64 src :i64 n :i64] :i64
+  (let [w (bit-and n -8)
+        a (loop [i 0] (if (>= i w) 0 (let [z (kxrt-p-store64 (+ dst i) (kxrt-p-load64 (+ src i)))] (recur (+ i 8)))))]
+    (loop [i w] (if (>= i n) n (let [z (kxrt-p-store8 (+ dst i) (kxrt-p-load8 (+ src i)))] (recur (inc i)))))))
+
+;; entry point f with six or ten arguments (System V; extra ones are ignored)
+(defn- vk6 [v :i64 f :i64 a :i64 b :i64 c :i64 d :i64 e :i64 g :i64] :i64
+  (let [p (+ v V-ARGV)
+        x0 (w64 p a) x1 (w64 (+ p 8) b) x2 (w64 (+ p 16) c) x3 (w64 (+ p 24) d) x4 (w64 (+ p 32) e) x5 (w64 (+ p 40) g)]
+    (kxrt-p-ccall (vg v (+ V-FN (* 8 f))) p)))
+(defn- vk10 [v :i64 f :i64 a :i64 b :i64 c :i64 d :i64 e :i64 g :i64 h :i64 i :i64 j :i64 k :i64] :i64
+  (let [p (+ v V-ARGV)
+        x0 (w64 p a) x1 (w64 (+ p 8) b) x2 (w64 (+ p 16) c) x3 (w64 (+ p 24) d) x4 (w64 (+ p 32) e) x5 (w64 (+ p 40) g)
+        x6 (w64 (+ p 48) h) x7 (w64 (+ p 56) i) x8 (w64 (+ p 64) j) x9 (w64 (+ p 72) k)]
+    (kxrt-p-ccall (vg v (+ V-FN (* 8 f))) p)))
+
+;; resolve entry points lo..hi with gpa (vkGetInstanceProcAddr or
+;; vkGetDeviceProcAddr) on handle: 0, or -1 when one is missing
+(defn- vk-resolve [v :i64 gpa :i64 handle :i64 lo :i64 hi :i64] :i64
+  (loop [i lo missing 0]
+    (if (> i hi) (if (= missing 0) 0 -1)
+      (let [n (vk-fn-name i)
+            r (if (= (string-length n) 0) 0
+                (let [nm (vk-cstr (+ v V-NAMES) n) p (+ v V-ARGV) a (w64 p handle) b (w64 (+ p 8) nm)
+                      fp (kxrt-p-ccall gpa p) z (w64 (+ v V-FN (* 8 i)) fp)]
+                  ;; vkGetPhysicalDeviceProperties2 is Vulkan 1.1: optional
+                  (if (and (= fp 0) (not= i 3)) 1 0)))]
+        (recur (inc i) (+ missing r))))))
+
+(defn- vk-instance [v :i64] :i64
+  (let [gi (kxrt-p-vkgipa) t (+ v V-T) app t ici (+ t 64)
+        r0 (vk-resolve v gi 0 0 0)
+        z (vk-zero t 256) nm (vk-cstr (+ v V-NAMES 2048) "kotoba gpu provider")
+        a0 (w32 app 0) a1 (w64 (+ app 16) nm) a2 (w32 (+ app 44) 4206592)
+        i0 (w32 ici 1) i1 (w64 (+ ici 24) app)]
+    (cond (or (= gi 0) (< r0 0)) -1
+          (not= (vr (vk6 v 0 ici 0 (+ v V-INSTANCE) 0 0 0)) 0) -1
+          :else (vk-resolve v gi (vg v V-INSTANCE) 1 8))))
+
+;; the first queue family of pd with VK_QUEUE_COMPUTE_BIT, or -1
+(defn- vk-compute-family [v :i64 pd :i64] :i64
+  (let [t (+ v V-T) a (w32 t 0) b (vk6 v 5 pd t 0 0 0 0)
+        n (min2 (r32 t) 16) c (w32 t n) d (vk6 v 5 pd t (+ v V-QFAMS) 0 0 0)]
+    (loop [q 0] (cond (>= q n) -1 (not= (bit-and (r32 (+ v V-QFAMS (* 24 q))) 2) 0) q :else (recur (inc q))))))
+
+;; the device: index, or (-1) the best by type; 0, or -19 when there is none
+(defn- vk-choose [v :i64 index :i64] :i64
+  (let [t (+ v V-T) inst (vg v V-INSTANCE) props (+ v V-PROPS 16)
+        a (w32 t 0) b (vk6 v 1 inst t 0 0 0 0) n (min2 (r32 t) 16) c (w32 t n)
+        d (if (> n 0) (vk6 v 1 inst t (+ v V-PDEVS) 0 0 0) 0)
+        best (loop [k 0 score -1 chosen -1 fam -1]
+               (if (>= k n) (if (< chosen 0) -1 (let [x (w64 (+ v V-PHYS) (vg v (+ V-PDEVS (* 8 chosen)))) y (w64 (+ v V-QFAMILY) fam)] chosen))
+                 (let [pd (vg v (+ V-PDEVS (* 8 k))) f (vk-compute-family v pd) p (vk6 v 2 pd props 0 0 0 0)
+                       ty (r32 (+ props 16))
+                       sc (cond (< f 0) -1 (>= index 0) (if (= k index) 10 -1) (= ty 2) 3 (= ty 1) 2 :else 1)]
+                   (if (> sc score) (recur (inc k) sc k f) (recur (inc k) score chosen fam)))))]
+    (if (< best 0) -19
+      (let [pd (vg v V-PHYS) p (vk6 v 2 pd props 0 0 0 0)
+            ;; driver properties need a Vulkan 1.2 device
+            q (if (and (>= (r32 props) 4202496) (not= (vg v (+ V-FN 24)) 0))
+                (let [x (vk-zero (+ v V-PROPS) 16) y (w32 (+ v V-PROPS) 1000059001) z (w64 (+ v V-PROPS 8) (+ v V-DRIVER))
+                      e (vk-zero (+ v V-DRIVER) 544) f (w32 (+ v V-DRIVER) 1000196000)]
+                  (vk6 v 3 pd (+ v V-PROPS) 0 0 0 0))
+                0)
+            m (vk6 v 4 pd (+ v V-MEMPROPS) 0 0 0 0)]
+        0))))
+
+(defn- vk-device [v :i64] :i64
+  (let [t (+ v V-T) z (vk-zero t 256)
+        a0 (w32 t 2) a1 (w32 (+ t 20) (vg v V-QFAMILY)) a2 (w32 (+ t 24) 1) a3 (w64 (+ t 32) (+ t 192)) a4 (w32 (+ t 192) 1065353216)
+        d0 (w32 (+ t 64) 3) d1 (w32 (+ t 84) 1) d2 (w64 (+ t 88) t)]
+    (cond (not= (vr (vk6 v 6 (vg v V-PHYS) (+ t 64) 0 (+ v V-DEVICE) 0 0)) 0) -1
+          (< (vk-resolve v (vg v (+ V-FN 56)) (vg v V-DEVICE) 10 50) 0) -1
+          :else (let [q (vk6 v 10 (vg v V-DEVICE) (vg v V-QFAMILY) 0 (+ v V-QUEUE) 0 0)] 0))))
+
+;; the first memory type allowed by bits that has the flags want, or -1
+(defn- vk-memory-type [v :i64 bits :i64 want :i64] :i64
+  (let [n (r32 (+ v V-MEMPROPS))]
+    (loop [i 0]
+      (cond (>= i n) -1
+            (and (not= (bit-and bits (i64-shift-left 1 i)) 0)
+                 (= (bit-and (r32 (+ v V-MEMPROPS 4 (* 8 i))) want) want)) i
+            :else (recur (inc i))))))
+;; a buffer of size bytes with its memory bound: buffer at out, memory at
+;; out+8; 0, or -1
+(defn- vk-make-buffer [v :i64 size :i64 usage :i64 want :i64 out :i64] :i64
+  (let [t (+ v V-T) dev (vg v V-DEVICE) z (vk-zero t 192)
+        a (w32 t 12) b (w64 (+ t 24) size) c (w32 (+ t 32) usage)]
+    (if (not= (vr (vk6 v 12 dev t 0 out 0 0)) 0) -1
+      (let [buf (kxrt-p-load64 out) q (vk6 v 14 dev buf (+ t 64) 0 0 0)
+            bits (r32 (+ t 80)) t1 (vk-memory-type v bits want) ty (if (< t1 0) (vk-memory-type v bits 0) t1)
+            m0 (w32 (+ t 128) 5) m1 (w64 (+ t 144) (kxrt-p-load64 (+ t 64))) m2 (w32 (+ t 152) ty)]
+        (cond (< ty 0) (let [x (vk6 v 13 dev buf 0 0 0 0)] -1)
+              (not= (vr (vk6 v 15 dev (+ t 128) 0 (+ out 8) 0 0)) 0) (let [x (vk6 v 13 dev buf 0 0 0 0)] -1)
+              (not= (vr (vk6 v 17 dev buf (kxrt-p-load64 (+ out 8)) 0 0 0)) 0)
+                (let [x (vk6 v 13 dev buf 0 0 0 0) y (vk6 v 16 dev (kxrt-p-load64 (+ out 8)) 0 0 0 0)] -1)
+              :else 0)))))
+
+(defn- vk-objects [v :i64] :i64
+  (let [t (+ v V-T) dev (vg v V-DEVICE)
+        z0 (vk-zero t 128) c0 (w32 t 39) c1 (w32 (+ t 16) 2) c2 (w32 (+ t 20) (vg v V-QFAMILY))
+        r0 (vr (vk6 v 33 dev t 0 (+ v V-CPOOL) 0 0))
+        z1 (vk-zero t 128) b0 (w32 t 40) b1 (w64 (+ t 16) (vg v V-CPOOL)) b2 (w32 (+ t 28) 10)
+        r1 (if (= r0 0) (vr (vk6 v 35 dev t (+ v V-CBS) 0 0 0)) -1)
+        z2 (vk-zero t 128) f0 (w32 t 8)
+        r2 (if (= r1 0) (vr (vk6 v 46 dev t 0 (+ v V-FENCE) 0 0)) -1)
+        r3 (if (not= r2 0) -1
+             (loop [k 0]
+               (if (= k 9) 0
+                 (let [z (vk-zero t 128) p0 (w32 (+ t 64) 7) p1 (w32 (+ t 68) 32768)
+                       a0 (w32 t 33) a1 (w32 (+ t 20) 2048) a2 (w32 (+ t 24) 1) a3 (w64 (+ t 32) (+ t 64))]
+                   (if (not= (vr (vk6 v 28 dev t 0 (+ v V-DPOOLS (* 8 k)) 0 0)) 0) -1 (recur (inc k)))))))
+        r4 (if (not= r3 0) -1 (vk-make-buffer v STAGING 3 6 (+ v V-STAGING)))
+        r5 (if (not= r4 0) -1 (vr (vk6 v 18 dev (vg v (+ V-STAGING 8)) 0 STAGING 0 (+ v V-STAGING-MAP))))]
+    (if (not= r5 0) -1 (let [x (w64 (+ v V-READY) 1)] 0))))
+
+(defn- dev-open [s :i64 index :i64] :i64
+  (let [v (kxrt-p-alloc V-BYTES)]
+    (if (< v 0) v
+      (let [z (kxrt-p-store64 (+ s S-DEV) v)
+            a (vk-instance v)
+            b (if (< a 0) a (vk-choose v index))
+            c (if (< b 0) b (vk-device v))]
+        (if (< c 0) c (vk-objects v))))))
+
+;; ---------------------------------------------------------------------
+;; Submits.
+
+;; submit the command buffer at cba and wait: nanoseconds, or -33 device lost,
+;; -34 fence timeout, -32 another error
+(defn- vk-submit-wait [v :i64 cba :i64 timeout :i64] :i64
+  (let [t (+ v V-T) dev (vg v V-DEVICE) t0 (kxrt-p-clock-ns)
+        r0 (vr (vk6 v 49 dev 1 (+ v V-FENCE) 0 0 0))
+        z (vk-zero t 72) a (w32 t 4) b (w32 (+ t 40) 1) c (w64 (+ t 48) cba)
+        r1 (vr (vk6 v 45 (vg v V-QUEUE) 1 t (vg v V-FENCE) 0 0))
+        r2 (if (= r1 0) (vr (vk6 v 48 dev 1 (+ v V-FENCE) 1 timeout 0)) r1)
+        t1 (kxrt-p-clock-ns)]
+    (cond (or (= r1 -4) (= r2 -4)) -33 (= r2 2) -34 (or (not= r0 0) (not= r2 0)) -32 :else (- t1 t0))))
+;; a memory barrier in cb from every write in src stages to dst accesses in
+;; dst stages (VkMemoryBarrier at V-T+768)
+(defn- vk-barrier [v :i64 cb :i64 src :i64 dst :i64 dst-access :i64] :i64
+  (let [m (+ v V-T 768) z (vk-zero m 24) a (w32 m 46) b (w32 (+ m 16) 65536) c (w32 (+ m 20) dst-access)]
+    (vk10 v 42 cb src dst 0 1 m 0 0 0 0)))
+;; at the start of every command buffer: all earlier writes (an earlier
+;; submit's transfer or dispatch) to all later reads and writes
+(defn- vk-barrier-in [v :i64 cb :i64] :i64 (vk-barrier v cb 65536 65536 98304))
+;; the transfer command buffer (9), reset and begun for one submit
+(defn- vk-once [v :i64] :i64
+  (let [t (+ v V-T) cb (vg v (+ V-CBS 72)) r (vk6 v 38 cb 0 0 0 0 0)
+        z (vk-zero t 32) a (w32 t 42) b (w32 (+ t 16) 1)
+        g (vr (vk6 v 36 cb t 0 0 0 0))]
+    (if (not= g 0) g (let [x (vk-barrier-in v cb)] 0))))
+;; ends with the writes made visible to host reads (the staging buffer)
+(defn- vk-once-submit [s :i64 v :i64] :i64
+  (let [cb (vg v (+ V-CBS 72)) h (vk-barrier v cb 65536 16384 8192)]
+    (if (not= (vr (vk6 v 37 cb 0 0 0 0 0)) 0) -32 (vk-submit-wait v (+ v V-CBS 72) (kxrt-p-load64 (+ s S-TIMEOUT))))))
+;; copy m bytes between the staging buffer and buffer b: up 1 staging -> b
+(defn- vk-transfer [s :i64 v :i64 b :i64 off :i64 m :i64 up :i64] :i64
+  (if (not= (vk-once v) 0) -32
+    (let [t (+ v V-T 512) z (vk-zero t 24)
+          a (w64 t (if (= up 1) 0 off)) c (w64 (+ t 8) (if (= up 1) off 0)) d (w64 (+ t 16) m)
+          st (vg v V-STAGING)
+          x (vk6 v 43 (vg v (+ V-CBS 72)) (if (= up 1) st b) (if (= up 1) b st) 1 t 0)]
+      (vk-once-submit s v))))
+
+;; ---------------------------------------------------------------------
+;; Buffers. A buffer id is its row: 0 live, 8 VkBuffer, 16 VkDeviceMemory,
+;; 24 size. The VkBuffer is the size rounded up to 4 bytes.
+
+(defn- floor4 [x :i64] :i64 (bit-and x -4))
+(defn- ceil4 [x :i64] :i64 (bit-and (+ x 3) -4))
+(defn- dev-alloc [s :i64 n :i64] :i64
+  (let [v (vk-state s)
+        row (loop [k 0] (cond (>= k 4096) -1 (= (vg v (+ V-BUFS (* 32 k))) 0) (+ v V-BUFS (* 32 k)) :else (recur (inc k))))]
+    (cond (< row 0) -1
+          (< (vk-make-buffer v (ceil4 n) 35 1 (+ row 8)) 0) -1
+          :else (let [a (w64 (+ row 24) n) b (w64 row 1)] row))))
+(defn- dev-free [s :i64 id :i64 n :i64] :i64
+  (let [v (vk-state s) dev (vg v V-DEVICE)
+        a (vk6 v 13 dev (kxrt-p-load64 (+ id 8)) 0 0 0 0) b (vk6 v 16 dev (kxrt-p-load64 (+ id 16)) 0 0 0 0)]
+    (w64 id 0)))
+(defn- dev-zero [s :i64 id :i64 n :i64] :i64
+  (let [v (vk-state s)]
+    (if (not= (vk-once v) 0) -32
+      (let [x (vk6 v 44 (vg v (+ V-CBS 72)) (kxrt-p-load64 (+ id 8)) 0 -1 0 0)
+            r (vk-once-submit s v)]
+        (if (< r 0) r 0)))))
+;; n bytes from src to the buffer at off, through the 4-byte aligned span
+;; around them a staging chunk at a time; where the bytes do not cover a
+;; chunk of the span, the chunk is read first so its other bytes stay
+(defn- dev-write [s :i64 id :i64 off :i64 src :i64 n :i64] :i64
+  (let [v (vk-state s) b (kxrt-p-load64 (+ id 8)) sm (vg v V-STAGING-MAP) a1 (ceil4 (+ off n))]
+    (loop [p (floor4 off)]
+      (if (>= p a1) 0
+        (let [q (min2 a1 (+ p STAGING)) lo (if (> off p) off p) hi (min2 (+ off n) q)
+              r0 (if (or (< p off) (> q (+ off n))) (vk-transfer s v b p (- q p) 0) 0)
+              c (if (< r0 0) 0 (vk-copy (+ sm (- lo p)) (+ src (- lo off)) (- hi lo)))
+              r (if (< r0 0) r0 (vk-transfer s v b p (- q p) 1))]
+          (if (< r 0) r (recur q)))))))
+;; n bytes of the buffer at off to dst, through the aligned span around them
+(defn- dev-read [s :i64 id :i64 off :i64 dst :i64 n :i64] :i64
+  (let [v (vk-state s) b (kxrt-p-load64 (+ id 8)) sm (vg v V-STAGING-MAP) a1 (ceil4 (+ off n))]
+    (loop [p (floor4 off)]
+      (if (>= p a1) 0
+        (let [q (min2 a1 (+ p STAGING)) lo (if (> off p) off p) hi (min2 (+ off n) q)
+              r (vk-transfer s v b p (- q p) 0)]
+          (if (< r 0) r (let [c (vk-copy (+ dst (- lo off)) (+ sm (- lo p)) (- hi lo))] (recur q))))))))
+
+;; ---------------------------------------------------------------------
+;; Pipelines. A pipeline id is its row: 0 live, 8 VkShaderModule, 16
+;; VkDescriptorSetLayout, 24 VkPipelineLayout, 32 VkPipeline, 40 bindings.
+
+(defn- vk-pipe-destroy [v :i64 row :i64] :i64
+  (let [dev (vg v V-DEVICE)
+        a (if (not= (vg row 32) 0) (vk6 v 27 dev (vg row 32) 0 0 0 0) 0)
+        b (if (not= (vg row 24) 0) (vk6 v 25 dev (vg row 24) 0 0 0 0) 0)
+        c (if (not= (vg row 16) 0) (vk6 v 23 dev (vg row 16) 0 0 0 0) 0)
+        d (if (not= (vg row 8) 0) (vk6 v 21 dev (vg row 8) 0 0 0 0) 0)]
+    (vk-zero row 64)))
+(defn- dev-pipeline [s :i64 code :i64 n :i64 bindings :i64] :i64
+  (let [v (vk-state s) t (+ v V-T) dev (vg v V-DEVICE)
+        row (loop [k 0] (cond (>= k 128) -1 (= (vg v (+ V-PIPES (* 64 k))) 0) (+ v V-PIPES (* 64 k)) :else (recur (inc k))))]
+    (if (< row 0) -1
+      (let [z (vk-zero row 64) y (vk-zero t 1024)
+            m0 (w32 t 16) m1 (w64 (+ t 24) n) m2 (w64 (+ t 32) code)
+            r0 (vr (vk6 v 20 dev t 0 (+ row 8) 0 0))
+            b (loop [i 0] (if (= i bindings) 0
+                            (let [e (+ t 256 (* 24 i)) a0 (w32 e i) a1 (w32 (+ e 4) 7) a2 (w32 (+ e 8) 1) a3 (w32 (+ e 12) 32)]
+                              (recur (inc i)))))
+            l0 (w32 (+ t 128) 32) l1 (w32 (+ t 148) bindings) l2 (w64 (+ t 152) (+ t 256))
+            r1 (if (= r0 0) (vr (vk6 v 22 dev (+ t 128) 0 (+ row 16) 0 0)) -1)
+            p0 (w32 (+ t 192) 30) p1 (w32 (+ t 212) 1) p2 (w64 (+ t 216) (+ row 16))
+            r2 (if (= r1 0) (vr (vk6 v 24 dev (+ t 192) 0 (+ row 24) 0 0)) -1)
+            nm (vk-cstr (+ t 960) "main")
+            c0 (w32 (+ t 640) 29) c1 (w32 (+ t 664) 18) c2 (w32 (+ t 684) 32) c3 (w64 (+ t 688) (vg row 8))
+            c4 (w64 (+ t 696) nm) c5 (w64 (+ t 712) (vg row 24)) c6 (w32 (+ t 728) 4294967295)
+            r3 (if (= r2 0) (vr (vk6 v 26 dev 0 1 (+ t 640) 0 (+ row 32))) -1)]
+        (if (not= r3 0) (let [x (vk-pipe-destroy v row)] -1)
+          (let [a (w64 (+ row 40) bindings) b1 (w64 row 1)] row))))))
+
+;; ---------------------------------------------------------------------
+;; Recording.
+
+(defn- rec-index [slot :i64] :i64 (if (< slot 0) 8 slot))
+(defn- dev-begin [s :i64 slot :i64] :i64
+  (let [v (vk-state s) t (+ v V-T) k (rec-index slot) cb (vg v (+ V-CBS (* 8 k)))
+        a (w64 (+ v V-REC) k) b (w64 (+ v V-RECORDED) 0)
+        r0 (vk6 v 38 cb 0 0 0 0 0) r1 (vk6 v 30 (vg v V-DEVICE) (vg v (+ V-DPOOLS (* 8 k))) 0 0 0 0)
+        z (vk-zero t 32) c (w32 t 42) d (w32 (+ t 16) (if (< slot 0) 1 0))]
+    (if (not= (vr (vk6 v 36 cb t 0 0 0 0)) 0) -1 (let [x (vk-barrier-in v cb)] 0))))
+(defn- dev-dispatch [s :i64 pipe :i64 x :i64 y :i64 z :i64 ids :i64 nids :i64 barrier :i64] :i64
+  (let [v (vk-state s) t (+ v V-T) dev (vg v V-DEVICE) k (vg v V-REC) cb (vg v (+ V-CBS (* 8 k)))
+        lim (+ v V-PROPS 16 516)
+        q (vk-zero t 128) a0 (w32 t 34) a1 (w64 (+ t 16) (vg v (+ V-DPOOLS (* 8 k)))) a2 (w32 (+ t 24) 1) a3 (w64 (+ t 32) (+ pipe 16))]
+    ;; maxComputeWorkGroupCount
+    (if (or (> x (r32 lim)) (> y (r32 (+ lim 4))) (> z (r32 (+ lim 8)))
+            (not= (vr (vk6 v 31 dev t (+ t 64) 0 0 0)) 0)) -1
+      (let [dset (vg t 64)
+            w (loop [i 0]
+                (if (= i nids) 0
+                  (let [info (+ v V-DINFO (* 24 i)) wr (+ v V-DWRITE (* 64 i))
+                        b0 (w64 info (kxrt-p-load64 (+ (kxrt-p-load64 (+ ids (* 8 i))) 8))) b1 (w64 (+ info 8) 0) b2 (w64 (+ info 16) -1)
+                        e (vk-zero wr 64) c0 (w32 wr 35) c1 (w64 (+ wr 16) dset) c2 (w32 (+ wr 24) i) c3 (w32 (+ wr 32) 1)
+                        c4 (w32 (+ wr 36) 7) c5 (w64 (+ wr 48) info)]
+                    (recur (inc i)))))
+            u (vk6 v 32 dev nids (+ v V-DWRITE) 0 0 0)
+            br (if (and (= barrier 1) (> (vg v V-RECORDED) 0))
+                 (let [m (+ t 128) e (vk-zero m 24) f0 (w32 m 46) f1 (w32 (+ m 16) 64) f2 (w32 (+ m 20) 96)]
+                   (vk10 v 42 cb 2048 2048 0 1 m 0 0 0 0))
+                 0)
+            bp (vk6 v 39 cb 1 (vg pipe 32) 0 0 0)
+            bd (vk10 v 40 cb 1 (vg pipe 24) 0 1 (+ t 64) 0 0 0 0)
+            d (vk6 v 41 cb x y z 0 0)]
+        (let [n (w64 (+ v V-RECORDED) (inc (vg v V-RECORDED)))] 0)))))
+(defn- dev-submit [s :i64 slot :i64 timeout :i64] :i64
+  (let [v (vk-state s) k (rec-index slot)]
+    (if (not= (vr (vk6 v 37 (vg v (+ V-CBS (* 8 k))) 0 0 0 0 0)) 0) -32
+      (vk-submit-wait v (+ v V-CBS (* 8 k)) timeout))))
+(defn- dev-replay [s :i64 slot :i64 timeout :i64] :i64
+  (let [v (vk-state s)] (vk-submit-wait v (+ v V-CBS (* 8 slot)) timeout)))
+(defn- dev-drop [s :i64 slot :i64] :i64
+  (let [v (vk-state s) r0 (vk6 v 38 (vg v (+ V-CBS (* 8 slot))) 0 0 0 0 0)
+        r1 (vk6 v 30 (vg v V-DEVICE) (vg v (+ V-DPOOLS (* 8 slot))) 0 0 0 0)] 0))
+
+;; ---------------------------------------------------------------------
+;; Facts and teardown.
+
+;; the NUL-ended name at a (at most n bytes), bytes over 127 as ?
+(defn- ascii-at [a :i64 n :i64] :string
+  (string-from-utf8 (bytes-from-vector-i64
+    (loop [i 0 out []]
+      (let [c (if (< i n) (kxrt-p-load8 (+ a i)) 0)]
+        (if (= c 0) out (recur (inc i) (conj out (if (> c 127) 63 c)))))))))
+(defn- dev-name [s :i64] :string
+  (let [v (vk-state s)] (if (or (= v 0) (= (vg v V-PHYS) 0)) "none" (ascii-at (+ v V-PROPS 16 20) 256))))
+(defn- dev-info [s :i64] :string
+  (let [v (vk-state s) p (+ v V-PROPS 16) api (r32 p)
+        ver (string-concat (string-from-i64 (u64-shift-right api 22))
+              (string-concat "." (string-concat (string-from-i64 (bit-and (u64-shift-right api 12) 1023))
+                (string-concat "." (string-from-i64 (bit-and api 4095))))))]
+    (string-concat (dev-name s) (string-concat "|" (string-concat ver (string-concat "|"
+      (string-concat (string-from-i64 (r32 (+ p 532))) (string-concat "|" (if (= (r32 (+ p 16)) 1) "1" "0")))))))))
+;; VkPhysicalDeviceType to the protocol's DEVCLASS index
+(defn- dev-devclass [s :i64] :i64
+  (let [t (r32 (+ (vk-state s) V-PROPS 16 16))] (case t 2 1 1 2 3 3 4 4 5)))
+(defn- dev-close [s :i64] :i64
+  (let [v (vk-state s) e (kxrt-p-load64 (+ s S-END))]
+    (if (or (= v 0) (not= (vg v V-READY) 1) (= e 3) (= e 4)) 0
+      (let [dev (vg v V-DEVICE)
+            w (vk6 v 50 dev 0 0 0 0 0)
+            p (loop [k 0] (if (= k 128) 0 (let [row (+ v V-PIPES (* 64 k)) x (if (= (vg row 0) 1) (vk-pipe-destroy v row) 0)] (recur (inc k)))))
+            b (loop [k 0] (if (= k 4096) 0 (let [row (+ v V-BUFS (* 32 k)) x (if (= (vg row 0) 1) (dev-free s row 0) 0)] (recur (inc k)))))
+            u (vk6 v 19 dev (vg v (+ V-STAGING 8)) 0 0 0 0)
+            sb (vk6 v 13 dev (vg v V-STAGING) 0 0 0 0) sm (vk6 v 16 dev (vg v (+ V-STAGING 8)) 0 0 0 0)
+            dp (loop [k 0] (if (= k 9) 0 (let [x (vk6 v 29 dev (vg v (+ V-DPOOLS (* 8 k))) 0 0 0 0)] (recur (inc k)))))
+            f (vk6 v 47 dev (vg v V-FENCE) 0 0 0 0)
+            c (vk6 v 34 dev (vg v V-CPOOL) 0 0 0 0)
+            d (vk6 v 11 dev 0 0 0 0 0)
+            i (vk6 v 8 (vg v V-INSTANCE) 0 0 0 0 0)]
+        (w64 (+ v V-READY) 0)))))
