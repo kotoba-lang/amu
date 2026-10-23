@@ -318,9 +318,11 @@
     (loop [i 0] (if (= i n) n (let [c (string-code-point-at a i) z (kxrt-p-store8 (+ b i) (if (< c 128) c 63))] (recur (inc i)))))))
 (defn- put-decimal [s :i64 v :i64] :i64 (put-answer s (string-from-i64 v)))
 (defn- field-number [line :string k :i64] :i64 (parse-decimal (field-at line k)))
+;; a device layer's failure as a refusal: device lost and fence timeout end
+;; the session, anything else is a device error
+(defn- dev-error [r :i64] :i64 (if (or (= r -33) (= r -34)) r -32))
 ;; nanoseconds from a submit, or its refusal
-(defn- submit-answer [s :i64 r :i64] :i64
-  (cond (>= r 0) (put-decimal s r) (or (= r -33) (= r -34)) r :else -32))
+(defn- submit-answer [s :i64 r :i64] :i64 (if (>= r 0) (put-decimal s r) (dev-error r)))
 
 (defn- do-alloc [s :i64 line :string] :i64
   (let [n (field-number line 1) h (free-handle (sg s S-BUF) 48 (constant 0))]
@@ -338,8 +340,9 @@
               (> n (- (sg s S-CAP) (sg s S-USED))) -31
               :else (let [d (dev-alloc s n)]
                       (if (<= d 0) -32
-                        (if (< (dev-load s d 0 (kxrt-p-load64 (+ e 40)) off n) 0) (let [f (dev-free s d n)] -32)
-                          (let [x (buf-set s h n d)] (put-decimal s h))))))))))
+                        (let [r (dev-load s d 0 (kxrt-p-load64 (+ e 40)) off n)]
+                          (if (< r 0) (let [f (dev-free s d n)] (dev-error r))
+                            (let [x (buf-set s h n d)] (put-decimal s h)))))))))))
 
 (defn- do-write [s :i64 line :string] :i64
   (let [h (field-number line 1) off (field-number line 2) hx (field-at line 3) n (quot (string-length hx) 2)]
@@ -357,7 +360,7 @@
                                       (recur (inc i)))))
                               w (dev-write s (buf-dev s h) (+ off k) c m)]
                           (if (< w 0) w (recur (+ k m))))))]
-              (if (< r 0) -32 (put-answer s "1"))))))
+              (if (< r 0) (dev-error r) (put-answer s "1"))))))
 
 (defn- commas [a :string] :i64
   (let [n (string-length a)] (loop [i 0 k 0] (if (= i n) k (recur (inc i) (if (= (string-code-point-at a i) 44) (inc k) k))))))
@@ -375,8 +378,7 @@
   (let [h (field-number line 1) off (field-number line 2) a (field-at line 3) words (inc (commas a))]
     (cond (not (buf-live? s h)) -11
           (> off (- (buf-size s h) (* 4 words))) -22
-          (< (writedec-run s (buf-dev s h) off a) 0) -32
-          :else (put-decimal s words))))
+          :else (let [r (writedec-run s (buf-dev s h) off a)] (if (< r 0) (dev-error r) (put-decimal s words))))))
 
 (defn- do-read [s :i64 line :string] :i64
   (let [h (field-number line 1) off (field-number line 2) n (field-number line 3)]
@@ -388,7 +390,7 @@
                       (if (>= k n) 0
                         (let [m (min2 CHUNK (- n k)) w (dev-read s (buf-dev s h) (+ off k) c m)]
                           (if (< w 0) w (let [x (hex-out (+ b (* 2 k)) c m)] (recur (+ k m)))))))]
-              (if (< r 0) -32 (* 2 n))))))
+              (if (< r 0) (dev-error r) (* 2 n))))))
 
 (defn- do-pipeline [s :i64 line :string] :i64
   (let [k (art-find s (field-at line 1) 2) bindings (field-number line 2)
@@ -470,9 +472,8 @@
          (if (not (kept? s k)) -24
            (let [d (dev-drop s k) z (kxrt-p-store64 (kept-entry s k) 0) c (clear-kept s k)] (put-answer s "1"))))
     16 (let [h (field-number line 1)]
-         (cond (not (buf-live? s h)) -11
-               (< (dev-zero s (buf-dev s h) (buf-size s h)) 0) -32
-               :else (put-answer s "1")))
+         (if (not (buf-live? s h)) -11
+           (let [r (dev-zero s (buf-dev s h) (buf-size s h))] (if (< r 0) (dev-error r) (put-answer s "1")))))
     17 (do-free s (field-number line 1))
     -2))
 
