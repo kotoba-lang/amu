@@ -13,7 +13,7 @@
 ;; CASES equals the expect calls below (the script counts them). CONTROL 1
 ;; makes exactly one expectation wrong; the script requires one failure then.
 
-(def CASES 98)
+(def CASES 110)
 (def CONTROL 0)
 
 (defn- say [s :string] :i64
@@ -185,7 +185,11 @@
        ;; r8's nine tensor-type arms
        (expect "kdot r8: nine dot products" (count-op k8 148) 9)
        (expect "kdot r8: the same words twice" (diff-words k8 (kir2-kdot-f32-r8 8)) 0)
-       (expect "kdot r8: rows 5 gives an empty module" (spv-count (kir2-kdot-f32-r8 5)) 0))))
+       (expect "kdot r8: rows 5 gives an empty module" (spv-count (kir2-kdot-f32-r8 5)) 0)
+       (expect "write kir2-kdot-f32-r8-rows16.spv" (let [m (kir2-kdot-f32-r8 16)] (- (spv-write m "kir2-kdot-f32-r8-rows16.spv") (* 4 (spv-count m)))) 0)
+       (expect "write kir2-kdot-f32-r8-rows32.spv" (let [m (kir2-kdot-f32-r8 32)] (- (spv-write m "kir2-kdot-f32-r8-rows32.spv") (* 4 (spv-count m)))) 0)
+       (expect "glslang kdot_f32_r8 -DROWS=16 passes the checker" (spc-check (spv-read "ref-kdot-f32-r8-rows16.spv")) 0)
+       (expect "glslang kdot_f32_r8 -DROWS=32 passes the checker" (spc-check (spv-read "ref-kdot-f32-r8-rows32.spv")) 0))))
 
 ;; kdot_x8r8 on the x8 mapping (R 8, and 4: kdot_x8r4)
 (defn- dots-x8 [] :i64
@@ -201,7 +205,11 @@
        ;; two dots in each of the six arms (Q4_K and Q5_K share one), as in
        ;; glslang's module
        (expect "kdot x8: twelve dot products" (count-op k8 148) 12)
-       (expect "kdot x8: rows 5 gives an empty module" (spv-count (kir2-kdot-x8 5)) 0))))
+       (expect "kdot x8: rows 5 gives an empty module" (spv-count (kir2-kdot-x8 5)) 0)
+       (expect "write kir2-kdot-x8r16.spv" (let [m (kir2-kdot-x8 16)] (- (spv-write m "kir2-kdot-x8r16.spv") (* 4 (spv-count m)))) 0)
+       (expect "write kir2-kdot-x8r32.spv" (let [m (kir2-kdot-x8 32)] (- (spv-write m "kir2-kdot-x8r32.spv") (* 4 (spv-count m)))) 0)
+       (expect "glslang kdot_x8r8 -DROWS=16 passes the checker" (spc-check (spv-read "ref-kdot-x8r8-rows16.spv")) 0)
+       (expect "glslang kdot_x8r8 -DROWS=32 passes the checker" (spc-check (spv-read "ref-kdot-x8r8-rows32.spv")) 0))))
 
 ;; kdot_i8_x8r4: int8 activations and the packed integer dot product (R 4,
 ;; and 8 as glslang's -DROWS=8)
@@ -219,7 +227,11 @@
        ;; Shader, DotProduct and DotProductInput4x8BitPacked
        (expect "kdot i8: three capabilities" (count-op k4 17) 3)
        (expect "kdot i8: the integer dot product extension" (count-op k4 10) 1)
-       (expect "kdot i8: rows 5 gives an empty module" (spv-count (kir2-kdot-i8-x8 5)) 0))))
+       (expect "kdot i8: rows 5 gives an empty module" (spv-count (kir2-kdot-i8-x8 5)) 0)
+       (expect "write kir2-kdot-i8-x8r16.spv" (let [m (kir2-kdot-i8-x8 16)] (- (spv-write m "kir2-kdot-i8-x8r16.spv") (* 4 (spv-count m)))) 0)
+       (expect "write kir2-kdot-i8-x8r32.spv" (let [m (kir2-kdot-i8-x8 32)] (- (spv-write m "kir2-kdot-i8-x8r32.spv") (* 4 (spv-count m)))) 0)
+       (expect "glslang kdot_i8_x8r4 -DROWS=16 passes the checker" (spc-check (spv-read "ref-kdot-i8-x8r4-rows16.spv")) 0)
+       (expect "glslang kdot_i8_x8r4 -DROWS=32 passes the checker" (spc-check (spv-read "ref-kdot-i8-x8r4-rows32.spv")) 0))))
 
 ;; deltanet and embed
 (defn- embed-name [k :i64] :string

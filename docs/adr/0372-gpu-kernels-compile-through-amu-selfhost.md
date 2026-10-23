@@ -309,21 +309,26 @@ a follow-up to ADR 0371.
 
      On gad (RADV), with random weights for every type, glslang's module and
      the KIR v2 module are byte-identical on:
-     * two positions;
-     * two experts;
-     * a workgroup past the rows;
-     * a tail group for the 32-value types.
+     * two positions on two experts that differ from the positions;
+     * a workgroup past the rows and a position past the positions;
+     * a tail group for the 32-value types;
+     * the prefill-MoE and shared-input rows (`pad0`, `pad1`,
+       `input_per_expert`).
 
-     F16, BF16 and Q8_0 are within 6.3e-7 (relative) of an f64 dequant.
+     F16, BF16 and Q8_0 are within 2.5e-06 (relative) of an f64 dequant.
      `dot_rows` is byte-identical too, and within 2.4e-6 of f64.
 
      `kdot_f32_r8`, from inference at f57ea5e, has R rows per workgroup (the
      GLSL's `-DROWS`, a generator parameter), with `acc[R]` and `mins[R]` in
      Function arrays and r8's ten tensor types. It shares r1's helpers
      (a flag drops BF16, PQ2_0 and PTQ1_0). On gad it is byte-identical to
-     glslang's module for every r8 type with 8 rows, and for two types with
-     `-DROWS=4`. That run had 20 rows, so the last workgroup was partial,
-     plus a workgroup past them.
+     glslang's module for:
+     * every r8 type with 8 rows;
+     * two types with `-DROWS=4`;
+     * one each with 16 and with 32.
+
+     The rows were 22, or 40 for R = 32, so the last workgroup is partial for
+     every R.
 
      Receipts: `docs/evidence/gpu-kernel-kir2-kdot-20261023/`.
    * **Done: the x8 kdot kernels** (inference at b1e85d0). On the x8
@@ -342,14 +347,20 @@ a follow-up to ADR 0371.
      The builder's `kb-sdot4x8` marks the module, and `kb-module` declares
      these.
 
-     On gad (RADV), each is byte-identical to glslang's module:
-     * every x8 tensor type with 8 rows per workgroup, and two types with 4;
-     * every type of the int8 kernel with 4 rows, and two types with 8.
+     On gad (RADV), each is byte-identical to glslang's module. The runs
+     used 16 blocks, so every block slot takes two, and positions on experts
+     that differ from them:
+     * x8: every tensor type with 8 rows per workgroup, two with 4 and one
+       with 16, plus the prefill-MoE and shared-input rows;
+     * int8: every type with 4 rows, two with 8 and one with 16, plus the
+       same rows.
 
-     The int8 run's provider reported `:shader-integer-dot-product` enabled,
-     and the gate requires it. That provider was built from the
-     device-features branch, since no provider on main enables the feature
-     yet. Receipts: `docs/evidence/gpu-kernel-kir2-x8-20261023/`.
+     A probe session reads the provider's features first. The int8 kernel
+     runs only where `:shader-integer-dot-product` is enabled, and is
+     recorded as skipped elsewhere. For these receipts the provider came
+     from the device-features branch (#1534), since no provider on main
+     enables the feature yet; with this tree's own provider, every other
+     case passes. Receipts: `docs/evidence/gpu-kernel-kir2-x8-20261023/`.
    * then the nvgpu-h2 kernels for Xavier.
 4. **Execution.** Through the ADR 0371 provider, with numeric and speed gates
    against the hand-written kernels.
