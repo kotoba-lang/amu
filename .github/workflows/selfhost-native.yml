@@ -5,10 +5,10 @@ name: selfhost-native
 # Python only orchestrates processes and hashes.
 #
 # Pushes to main, the daily schedule and manual runs execute the full chain
-# with no reuse, and record C0's compile of the core (G1) by its content key.
-# Pull requests may reuse that one result when its key matches exactly
-# (scripts/seed/selfhost-bootstrap.py --reuse); everything else, including G2,
-# G3 through the runner, runs every time.
+# with no reuse, and record the slow core compiles (C0 -> G1 on arm64) by their
+# content keys. Pull requests may reuse such a result only when its key matches
+# exactly (scripts/seed/content_reuse.py); everything else, including G2, G3
+# through the runner, runs every time.
 on:
   workflow_dispatch:
   schedule:
@@ -41,7 +41,7 @@ jobs:
           persist-credentials: false
       - name: Reuse lookup key (sources, root image, script)
         id: reuse
-        run: echo "key=selfhost-g1-${{ runner.arch }}-$(python3 scripts/seed/selfhost-bootstrap.py --reuse-lookup-key)" >> "$GITHUB_OUTPUT"
+        run: echo "key=selfhost-reuse-${{ runner.arch }}-$(python3 scripts/seed/content_reuse.py --lookup-key)" >> "$GITHUB_OUTPUT"
       - name: Restore content-addressed results (pull requests only)
         id: restore
         if: github.event_name == 'pull_request'
@@ -94,8 +94,26 @@ jobs:
         with:
           name: bootstrap-arm64
           path: ${{ runner.temp }}/boot
+      - name: Reuse lookup key (sources, root image, scripts)
+        id: reuse
+        run: echo "key=selfhost-reuse-${{ runner.arch }}-$(python3 scripts/seed/content_reuse.py --lookup-key)" >> "$GITHUB_OUTPUT"
+      - name: Restore content-addressed results (pull requests only)
+        id: restore
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/reuse
+          key: ${{ steps.reuse.outputs.key }}
       - name: Native x86_64 qualification (no loader, no emulation)
-        run: python3 scripts/seed/check-x86_64-native.py --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/x86"
+        env:
+          MODE: ${{ github.event_name == 'pull_request' && '--reuse' || '--store' }}
+        run: python3 scripts/seed/check-x86_64-native.py --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/x86" "$MODE" "$RUNNER_TEMP/reuse"
+      - name: Save content-addressed results
+        if: success() && steps.restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/reuse
+          key: ${{ steps.reuse.outputs.key }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
