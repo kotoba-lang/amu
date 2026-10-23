@@ -29,7 +29,7 @@ the selfhost compiler.
   (C-free) started the confined Vulkan provider, with the launcher's fixed
   provider environment, and a static guest (`gad-launcher-guest.kotoba`)
   that runs ALLOC, WRITE, READ and DEVCLASS over wire 42.
-  * All three were built by the pinned root F `436ec726…`: the launcher
+  * All three were built by the pinned root F `69b2f696…`: the launcher
     `98c44d51…`, the guest `d391d271…` and the provider `bf7092d6…`.
   * The provider's environment is not in this receipt (the Vulkan provider
     does not report it). `check-static-launcher.py`'s scripted provider
@@ -111,7 +111,7 @@ the selfhost compiler.
 * The verdict is `:ok`, and the guest exits 0 with result 0.
 * The provider served 4 requests and refused none. It was confined (Landlock ABI 8, seal `:ok`), and its report names the driver and the libraries.
 * The receipt pins the launcher, guest, provider and grant digests. The provider's image digest in its own report equals the launcher's.
-* The whole run took 7.0 s, most of it the provider hashing its libraries before confinement.
+* The whole run took 6.7 s, most of it the provider hashing its libraries before confinement.
 
 ## Limits
 
