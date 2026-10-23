@@ -3,10 +3,10 @@
 Date: 2026-10-22
 Status: Decision 1 (the platform boundary) accepted by the owner on 2026-10-22.
 The rest is Proposed. Steps 1 (the protocol table), 2 (the runtime transport),
-3 (wire 42 admission) and 4 (the launcher) are implemented. The owner signed
-off the admission (Decision 7, open question 2) on 2026-10-22. Nothing else is
-implemented.
-Tracking: JUN-285 (this ADR), JUN-291 (step 1), JUN-294 (step 2), JUN-313 (step 4). Related: JUN-109 (wire 42 admission), JUN-282
+3 (wire 42 admission), 4 (the launcher) and 5 (the platform-linked writer,
+x86_64) are implemented. The owner signed off the admission (Decision 7, open
+question 2) on 2026-10-22. Nothing else is implemented.
+Tracking: JUN-285 (this ADR), JUN-291 (step 1), JUN-294 (step 2), JUN-313 (step 4), JUN-322 (step 5). Related: JUN-109 (wire 42 admission), JUN-282
 (`amu run` on static images), JUN-283, AWAI-12 (murakumo inference on Amu
 selfhost).
 
@@ -224,7 +224,10 @@ Only the broker's defects change:
   * GOT relocations, bound now (`BIND_NOW`, RELRO).
 
   It also needs a typed C-ABI import declaration. Pointers are `:i64`, and
-  Vulkan structs are laid out byte by byte in Kotoba.
+  Vulkan structs are laid out byte by byte in Kotoba. (Step 5 has no import
+  syntax yet. The import table is fixed in the writer, and the program reaches
+  C through the `kxrt-p-` platform API, so no frontend change and no adoption
+  round were needed; amended 2026-10-22.)
 * **Import allowlist.** The compiler checks it:
   * `libc.so.6`: `__libc_start_main` only. The provider's own I/O uses raw
     syscalls.
@@ -535,8 +538,56 @@ Each step is its own PR, in this order:
      (`check-runtime-boundary.py`) covers `--format launcher` on both
      targets.
    * **Receipts.** `docs/evidence/static-launcher-20261022/`.
-5. **Platform-linked ELF writer** and C-ABI imports, x86_64 SysV, with the
-   import allowlist.
+5. **Platform-linked ELF writer.** Done for x86_64 (JUN-322).
+   * **Format.** `--format platform-linked` sets context word 408 = 3, on
+     x86_64-linux only. `seed/73` dispatches it and `seed/78` writes it. The
+     image is ET_EXEC with these program headers, in order:
+     * PT_PHDR, PT_INTERP (`/lib64/ld-linux-x86-64.so.2`);
+     * the static image's RX segment;
+     * an RW segment holding the dynamic section, a RELRO page with the GOT,
+       and then the context;
+     * PT_DYNAMIC, PT_GNU_RELRO and a non-executable stack.
+
+     Relocations are GLOB_DAT only, bound at load (`DF_BIND_NOW`,
+     `DF_1_NOW`). There is no PLT, no lazy binding and no text relocation.
+     Static, runner and launcher images keep their bytes.
+   * **Imports.** A fixed table, so nothing else can be imported:
+     * `libc.so.6` `__libc_start_main`, always;
+     * `libvulkan.so.1` `vkGetInstanceProcAddr`, only when the program calls
+       `kxrt-p-vkgipa`.
+   * **Start.** `_start` calls `__libc_start_main`. That calls the runtime's
+     `kxrt-start(argc, argv, envp)`, which runs `main` and returns, so libc
+     exits. There are no signal handlers, limits or seccomp: the provider
+     confines itself after device creation (Decision 5, step 6).
+   * **Calling C.** Intrinsic 9, `kxrt-ccall fp argv`, does a SysV call with
+     14 argument words: 6 registers and 8 stack words, with `al = 0` for
+     varargs.
+   * **Platform API.** The program may call the runtime's `kxrt-p-`
+     functions: `ccall`, `vkgipa`, `got-slot`, `alloc`, loads and stores, and
+     raw `read`/`write`. Any other runtime function is E7101. Those calls are
+     checked by name. This relies on the runtime/guest boundary fix of
+     JUN-325.
+   * **Check.** `scripts/seed/check-platform-linked.py`:
+     * the structure, parsed from the bytes, against the allowlist;
+     * the allowlist check's own negative control: an image from a test-only
+       compiler whose import 1 is `snprintf`;
+     * refusals, and byte identity of the other formats;
+     * on glibc: hello, arguments, `snprintf` through `kxrt-ccall` with 14
+       arguments, and the RELRO control (SIGSEGV on a GOT write);
+     * on a native kernel, a Kotoba provider skeleton: a platform-linked
+       program, started by the launcher, that answers a wire-42 guest's
+       `INFO`.
+   * **Where it runs.** The native x86_64 CI job runs the libc-only images
+     (owner decision, 2026-10-22). The libvulkan image is checked for
+     structure only; its probe runs on GPU hosts only.
+   * **Not yet.** Step 6 decides two things. One is how the provider hands
+     strings to and from the platform API (today: bytes in memory from
+     `kxrt-p-alloc`). The other is what the provider's environment holds.
+   * **Root.** Re-pinned C-free to F `094590b6…` on top of step 4's F
+     `710b6ae6…`. No adoption round was needed. The combined compiler F
+     (seed/FULL-MANIFEST) lists seed/78-x86_64-platform, and
+     seed/78-full-entry dispatches the format as seed/73 does.
+   * **Receipts.** `docs/evidence/platform-linked-20261023/`.
 6. **Vulkan provider** in Kotoba on x86_64-linux. Qualify it on B70 or gad
    with:
    * `INFO` and `DEVCLASS`;

@@ -282,6 +282,43 @@ line, 10..11 stdout bytes and SHA-256, 12 provider given, 13 provider SHA-256,
 another ISA cannot be started through binfmt_misc (execveat of a
 close-on-exec fd: ENOENT).
 
+### Platform-linked image (`--format platform-linked`, seed module 78)
+
+Context word 408 = 3 (ADR 0371 step 5), x86_64-linux only, dispatched by
+seed/73 (and by seed/78-full-entry in the combined compiler F); only the GPU
+provider is built this way. The runtime text is
+`xs-rt-core` followed by `xs-rt-pstart`. The image is ELF64 ET_EXEC for the
+host's dynamic linker, with 7 program headers in this order: PT_PHDR (64, 392
+bytes), PT_INTERP (`/lib64/ld-linux-x86-64.so.2` at 456), LOAD RX [0, 4096 +
+code) as in the static image, LOAD RW at D (page after the code) with filesz
+4096 + 512 and memsz 4096 + 65536, PT_DYNAMIC at D, PT_GNU_RELRO [D, D +
+4096), PT_GNU_STACK RW. After the program headers: a hash table with one
+empty bucket (nchain = the symbol count), the symbols (GLOBAL FUNC, undefined),
+the strings, and the relocations. At D: the dynamic section (NEEDED per
+library, HASH, STRTAB, SYMTAB, STRSZ, SYMENT, RELA, RELASZ, RELAENT, FLAGS =
+DF_BIND_NOW, FLAGS_1 = DF_1_NOW, NULL). The GOT is at D + 2048 (8 bytes per
+import), and D + 4096 is the context (cell 195), so the static fixups and the
+context image are unchanged. Imports are a fixed table: 0
+`__libc_start_main` (libc.so.6) always; 1 `vkGetInstanceProcAddr`
+(libvulkan.so.1) only when the program calls `kxrt-p-vkgipa` (cell 204).
+R_X86_64_GLOB_DAT relocations only. Entry `_start`: `xor ebp,ebp; mov
+r9,rdx; pop rsi; mov rdx,rsp; and rsp,-16; push rax; push rsp; xor r8d,r8d;
+xor ecx,ecx; lea rdi,[kxrt-start]; lea rax,[context]; call [rax-2048]; ud2`,
+that is `__libc_start_main(kxrt-start, argc, argv, 0, 0, rtld_fini,
+stack_end)`. `kxrt-start(argc, argv, envp)` maps the arenas, fills the v11
+context, reads `KEXE_ALLOW`, `KEXE_FUEL`, `KEXE_STRUCTURED_REPORT`,
+`KEXE_CAP_RESOURCES_35` and `KEXE_ARENA_USE` as a static image does, calls
+`main`, flushes, and returns `result & 0xff` (or 0 after the structured
+line) to libc, which exits. There are no signal handlers, limits or seccomp:
+a runtime refusal is an unhandled SIGILL. Intrinsic 9, `kxrt-ccall fp argv`
+(cell 200, mode 3 only), loads rdi rsi rdx rcx r8 r9 from argv[0..5] and
+copies argv[6..13] to [rsp..rsp+64) (the frame's outgoing area). It then sets
+eax = 0, calls fp and reloads r9 = context. The program may call the
+runtime's `kxrt-p-` functions: `ccall`, `vkgipa` (GOT[1]), `got-slot` (the
+address of GOT[0..1]), `alloc` (anonymous RW mmap), `load8`/`store8`/
+`load64`/`store64`, and raw `read`/`write`. seed/78 checks these calls by
+name; any other runtime function is E7101.
+
 ## aarch64-linux-static (seed modules 77, 80)
 
 `compile SOURCE --target aarch64-linux --output NEW --format static|runner|launcher`
