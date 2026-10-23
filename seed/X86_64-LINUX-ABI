@@ -126,6 +126,10 @@ FIFO or a socket; missing or invalid exits 2; SIGPIPE is then ignored),
 43..47 is granted: the listen and the dial scope, each comma-separated exact
 `<a>.<b>.<c>.<d>:<port>` IPv4 addresses, at most 16; absent or empty grants
 nothing; malformed exits 2),
+`KEXE_CAP_RESOURCES_20`, `KEXE_SPAWN_ENV` and `KEXE_SPAWN_PATH_LOOKUP` (read only
+when wire 20 is granted: colon-separated canonical absolute programs, 1..16
+distinct; colon-separated variable names, 0..16; lookup 1 or 0; malformed exits
+2, an absent or empty program list grants nothing),
 `KEXE_CPU_SECONDS`, `KEXE_WALL_SECONDS`, `KEXE_SECCOMP`. Before the guest runs: an alternate signal stack (64 KiB,
 SA_ONSTACK) and SIGALRM/SIGXCPU/SIGSYS handlers; 960 KiB of stack pre-touched,
 then RLIMIT_CORE 0, RLIMIT_CPU (only when `KEXE_CPU_SECONDS` is given; soft s,
@@ -136,11 +140,12 @@ with an open, granted scope 35, `read` with args[0] = the ANSWER fd only with
 wire 42 granted, the net set (`socket` only as socket(AF_INET,
 SOCK_STREAM|SOCK_NONBLOCK|SOCK_CLOEXEC, 0), then setsockopt, getsockopt, bind,
 listen, connect, accept4, sendto, recvfrom, ppoll and close) only with one of
-wires 43..47 granted, everything else SIGSYS (exit 120). A kernel
+wires 43..47 granted, `read` on the spawn helper's answer fd only with wire 20
+granted, everything else SIGSYS (exit 120). A kernel
 without seccomp fails closed (exit 1) unless `KEXE_SECCOMP=if-available`.
 `KEXE_SANDBOX_PROBE` issues one filtered call after installation (diagnostic).
 Not provided: wire-35 forms other than READ/EXISTS/WRITE/APPEND (refused),
-wires other than 3/35/37/38/39/42/43..47 (refused; wire 3 is :hash/sha256, the
+wires other than 3/20/35/37/38/39/42/43..47 (refused; wire 3 is :hash/sha256, the
 request bytes' FIPS 180-4 digest as 64 lowercase hex characters), the loader's default 1 s cpu / 3 s wall
 budgets (no budget unless given), growth regions (pool/item layout differs;
 values are equal), the arena fields of the structured line.
@@ -176,6 +181,27 @@ net wire is granted and `socket` only in the one form above. The checker does
 not admit wires 43..47 yet (E2115): that is a frontend change with an
 adoption round (ADR 0371 §7). `scripts/seed/check-net-runtime.py` qualifies
 the wires through a test-only admission.
+Wire 20 (`:process/spawn`, Linear JUN-292) runs programs through a helper that
+`kxrt-start` forks before the limits and the filter when the wire is granted: a
+child of the sandboxed process would inherit both. The helper keeps its own
+copy of the grant, decides every request (`tools/linux_static_handlers.kotoba`
+ops 33..42) and runs no guest code; the guest frames a request on one pipe and
+reads one answer on another (a u32 little-endian length, then a kind byte: A an
+answer, R a refusal index, M a malformed request). Request:
+`<program>[ARG_SEP<arg>]...`; a path must equal a granted program, a bare name
+is found among the granted programs' last segments only with lookup, `$PATH`
+is never read; the guest's spelling is argv[0], the granted spelling is
+executed; at most 32 arguments and 4096 bytes of argv. The child: stdin at end
+of file, stdout captured (at most 16384 bytes), stderr the image's own,
+descriptors 3 and up closed across execve, PR_SET_NO_NEW_PRIVS, the first
+scope-35 root as its working directory, only the granted variables, the
+host's limits (not the image's), a 10 s deadline (SIGKILL). Answer
+`<exit>\n<stdout>`, -1 when a signal ended the child. Refusals by name, exit
+126: `argv-budget` `program-not-granted` `path-lookup-denied` `output-budget`
+`timeout` `exec-failed` `isolation-unavailable` `setup-failed`. A NUL byte, an
+empty program, a request over 65536 bytes or a helper that is gone trap (exit
+120). The checker admits wire 20; `scripts/seed/check-spawn-runtime.py`
+qualifies it.
 
 ### KX64V1 runner (`--format kx64-runner`)
 

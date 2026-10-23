@@ -1,24 +1,40 @@
 {
   "schema": "amu.seed.static-root.v1",
   "image": {
-    "bytes": 1360384,
-    "sha256": "b2f96378dbf90bc3f950e111fba5b203761045fc100f05fd8210d005da95e9cf"
+    "bytes": 1430016,
+    "sha256": "48994a9dbf6498a4ae8377478ba44a3d3f3b76c4d03614f9f9198305293ae378"
   },
   "target": "aarch64-linux",
   "format": "static",
   "sourceManifest": "seed/X86_64-LINUX-SELFHOST-MANIFEST",
   "sourceUnity": {
-    "bytes": 810906,
-    "sha256": "fbadb8ab506fe216f97266f9bbacbb1269cd694c8f20ec89a4a9a633523a17c0"
+    "bytes": 847044,
+    "sha256": "3d1d3162789902ec818618f56042e9a0caae5c023c49f411c761b292c9ab748b"
   },
-  "sourceCommitBase": "1585cb488ea9a0b4f87c1fd319ea71fa3ceb09a0",
+  "sourceCommitBase": "65489b88c11950a7b0b72a2cf3b95ac4e2f28ad9",
   "producedBy": {
-    "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 and S2 built S3 = this image (S2 = S3; S1 differs because the previous root embeds the previous aarch64 runtime). Re-pinned because this source changes the runtime text embedded in every image: native TCP wires 43..47 (:net/listen :net/accept :net/dial :net/read :net/write, Linear JUN-292).",
+    "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 and S2 built S3 = this image (S2 = S3; S1 differs because the previous root embeds the previous aarch64 runtime). Re-pinned because this source changes the runtime text embedded in every image: wire 20 :process/spawn through a helper forked before the sandbox (Linear JUN-292), on top of the native TCP wires 43..47.",
     "date": "2026-10-23",
-    "previousRoot": "98d4bcb7cd4ca331c292873a6d76b836cd34455b967575ae52af5bb3507ab774"
+    "previousRoot": "b2f96378dbf90bc3f950e111fba5b203761045fc100f05fd8210d005da95e9cf"
   },
   "verification": "scripts/seed/selfhost-bootstrap.py on arm64 Linux: root -> S1 = S2 = S3 = root natively, without any C compiler or loader",
   "history": [
+    {
+      "image": {
+        "bytes": 1360384,
+        "sha256": "b2f96378dbf90bc3f950e111fba5b203761045fc100f05fd8210d005da95e9cf"
+      },
+      "sourceUnity": {
+        "bytes": 810906,
+        "sha256": "fbadb8ab506fe216f97266f9bbacbb1269cd694c8f20ec89a4a9a633523a17c0"
+      },
+      "sourceCommitBase": "1585cb488ea9a0b4f87c1fd319ea71fa3ceb09a0",
+      "producedBy": {
+        "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 and S2 built S3 = this image (S2 = S3; S1 differs because the previous root embeds the previous aarch64 runtime). Re-pinned because this source changes the runtime text embedded in every image: native TCP wires 43..47 (:net/listen :net/accept :net/dial :net/read :net/write, Linear JUN-292).",
+        "date": "2026-10-23",
+        "previousRoot": "98d4bcb7cd4ca331c292873a6d76b836cd34455b967575ae52af5bb3507ab774"
+      }
+    },
     {
       "image": {
         "bytes": 1294848,

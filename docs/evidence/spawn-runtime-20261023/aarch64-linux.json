@@ -1,0 +1,459 @@
+{
+  "status": "PASS_SPAWN_RUNTIME",
+  "target": "aarch64-linux",
+  "compiler": {
+    "bytes": 1430016,
+    "sha256": "48994a9dbf6498a4ae8377478ba44a3d3f3b76c4d03614f9f9198305293ae378"
+  },
+  "host": [
+    "Linux",
+    "aarch64",
+    "6.15.10-200.fc42.aarch64"
+  ],
+  "executionNative": true,
+  "imageSeccomp": "required",
+  "grant": "/bin/echo:/bin/sh:/bin/cat:/bin/ls:/usr/bin/env:/bin/pwd:/bin/sleep:/nonexistent/program",
+  "knob": [
+    {
+      "name": "relative-program",
+      "programs": "bin/echo",
+      "names": null,
+      "lookup": null,
+      "allow": "20,37",
+      "exit": 2
+    },
+    {
+      "name": "root-alone",
+      "programs": "/",
+      "names": null,
+      "lookup": null,
+      "allow": "20,37",
+      "exit": 2
+    },
+    {
+      "name": "empty-segment",
+      "programs": "/bin//echo",
+      "names": null,
+      "lookup": null,
+      "allow": "20,37",
+      "exit": 2
+    },
+    {
+      "name": "dot-segment",
+      "programs": "/bin/./echo",
+      "names": null,
+      "lookup": null,
+      "allow": "20,37",
+      "exit": 2
+    },
+    {
+      "name": "dotdot-segment",
+      "programs": "/bin/../echo",
+      "names": null,
+      "lookup": null,
+      "allow": "20,37",
+      "exit": 2
+    },
+    {
+      "name": "trailing-slash",
+      "programs": "/bin/echo/",
+      "names": null,
+      "lookup": null,
+      "allow": "20,37",
+      "exit": 2
+    },
+    {
+      "name": "empty-entry",
+      "programs": "/bin/echo::/bin/sh",
+      "names": null,
+      "lookup": null,
+      "allow": "20,37",
+      "exit": 2
+    },
+    {
+      "name": "duplicate",
+      "programs": "/bin/echo:/bin/echo",
+      "names": null,
+      "lookup": null,
+      "allow": "20,37",
+      "exit": 2
+    },
+    {
+      "name": "seventeen-programs",
+      "programs": "/p/0:/p/1:/p/2:/p/3:/p/4:/p/5:/p/6:/p/7:/p/8:/p/9:/p/10:/p/11:/p/12:/p/13:/p/14:/p/15:/p/16",
+      "names": null,
+      "lookup": null,
+      "allow": "20,37",
+      "exit": 2
+    },
+    {
+      "name": "name-with-equals",
+      "programs": "/bin/echo",
+      "names": "A=B",
+      "lookup": null,
+      "allow": "20,37",
+      "exit": 2
+    },
+    {
+      "name": "empty-name",
+      "programs": "/bin/echo",
+      "names": "A::B",
+      "lookup": null,
+      "allow": "20,37",
+      "exit": 2
+    },
+    {
+      "name": "seventeen-names",
+      "programs": "/bin/echo",
+      "names": "N0:N1:N2:N3:N4:N5:N6:N7:N8:N9:N10:N11:N12:N13:N14:N15:N16",
+      "lookup": null,
+      "allow": "20,37",
+      "exit": 2
+    },
+    {
+      "name": "lookup-two",
+      "programs": "/bin/echo",
+      "names": null,
+      "lookup": "2",
+      "allow": "20,37",
+      "exit": 2
+    },
+    {
+      "name": "lookup-same-base",
+      "programs": "/bin/echo:/usr/bin/echo",
+      "names": null,
+      "lookup": "1",
+      "allow": "20,37",
+      "exit": 2
+    },
+    {
+      "name": "valid",
+      "programs": "/bin/echo:/bin/sh",
+      "names": "FOO",
+      "lookup": "0",
+      "allow": "20,37",
+      "exit": 0
+    },
+    {
+      "name": "sixteen-programs",
+      "programs": "/p/0:/p/1:/p/2:/p/3:/p/4:/p/5:/p/6:/p/7:/p/8:/p/9:/p/10:/p/11:/p/12:/p/13:/p/14:/p/15",
+      "names": null,
+      "lookup": null,
+      "allow": "20,37",
+      "exit": 0
+    },
+    {
+      "name": "absent",
+      "programs": null,
+      "names": null,
+      "lookup": null,
+      "allow": "20,37",
+      "exit": 0
+    },
+    {
+      "name": "not-granted-ignored",
+      "programs": "x",
+      "names": "=",
+      "lookup": "9",
+      "allow": "37",
+      "exit": 0
+    }
+  ],
+  "wire": [
+    {
+      "name": "arguments-and-exit",
+      "exit": 0,
+      "stdout": "0\nhello world\n3\n-1\n{:status :ok :result 7 :fuel {:initial 100000000 :remaining 99999993}}\n",
+      "stderr": "",
+      "image": {
+        "bytes": 197120,
+        "sha256": "166da8f074ce6006bb5e7f4c211667cc1be14c58b26cf68189020dfad2e4becb"
+      }
+    },
+    {
+      "name": "stdin-at-eof",
+      "exit": 0,
+      "stdout": "0\n{:status :ok :result 7 :fuel {:initial 100000000 :remaining 99999997}}\n",
+      "stderr": "",
+      "image": {
+        "bytes": 197120,
+        "sha256": "9740f7f7615a978877499bebdf373c3b47ec91a8bcd9acd9a2cf9b6b70ae02e9"
+      }
+    },
+    {
+      "name": "only-granted-variables",
+      "exit": 0,
+      "stdout": "0\nFOO=bar\n{:status :ok :result 7 :fuel {:initial 100000000 :remaining 99999997}}\n",
+      "stderr": "",
+      "image": {
+        "bytes": 197120,
+        "sha256": "acd6c9b390d068ccaea5aa011a85b904a52b9cf56616b539edb321b17c1be3f3"
+      }
+    },
+    {
+      "name": "only-stdio-open",
+      "exit": 0,
+      "stdout": "0\n0\n1\n2\n3\n{:status :ok :result 7 :fuel {:initial 100000000 :remaining 99999997}}\n",
+      "stderr": "",
+      "image": {
+        "bytes": 197120,
+        "sha256": "d87e47a6c7c099226039e064cbbb3fdf5e61e940b7f046e9945f02cb60207bfb"
+      }
+    },
+    {
+      "name": "no-new-privs",
+      "exit": 0,
+      "stdout": "0\nNoNewPrivs:\t1\n{:status :ok :result 7 :fuel {:initial 100000000 :remaining 99999997}}\n",
+      "stderr": "",
+      "image": {
+        "bytes": 197120,
+        "sha256": "494c35aa606d57de5c2a497962d64c40c291487a59ce26818b1364775e8bb5ab"
+      }
+    },
+    {
+      "name": "no-address-space-limit",
+      "exit": 0,
+      "stdout": "0\nunlimited\n{:status :ok :result 7 :fuel {:initial 100000000 :remaining 99999997}}\n",
+      "stderr": "",
+      "image": {
+        "bytes": 197120,
+        "sha256": "6ea3026b5ec1937bd86bcc68fac9c61b4a482db26224d50a75638b1510f166c4"
+      }
+    },
+    {
+      "name": "scope-root-directory",
+      "exit": 0,
+      "stdout": "0\nOUT/scope\n{:status :ok :result 7 :fuel {:initial 100000000 :remaining 99999997}}\n",
+      "stderr": "",
+      "image": {
+        "bytes": 197120,
+        "sha256": "7f38998f041365765768f5a5e589250951c645acbc51c841793ced0638c91f1a"
+      }
+    },
+    {
+      "name": "lookup-by-name",
+      "exit": 0,
+      "stdout": "0\nhi\n{:status :ok :result 7 :fuel {:initial 100000000 :remaining 99999997}}\n",
+      "stderr": "",
+      "image": {
+        "bytes": 197120,
+        "sha256": "5dcbe202d1a1a3f4edf4289fc6c674366837f51b187c0f49f5a1873b9332d321"
+      }
+    },
+    {
+      "name": "program-not-granted",
+      "exit": 126,
+      "stdout": "",
+      "stderr": "KEXE_TRAP {:kind :capability :capability :process/spawn :reason :spawn/program-not-granted}\n",
+      "image": {
+        "bytes": 197120,
+        "sha256": "81510a3e744c62e95c3f7027723a855af3ac2dcc0141262d491acbbba0266bf1"
+      }
+    },
+    {
+      "name": "path-lookup-denied",
+      "exit": 126,
+      "stdout": "",
+      "stderr": "KEXE_TRAP {:kind :capability :capability :process/spawn :reason :spawn/path-lookup-denied}\n",
+      "image": {
+        "bytes": 197120,
+        "sha256": "5dcbe202d1a1a3f4edf4289fc6c674366837f51b187c0f49f5a1873b9332d321"
+      }
+    },
+    {
+      "name": "lookup-name-not-granted",
+      "exit": 126,
+      "stdout": "",
+      "stderr": "KEXE_TRAP {:kind :capability :capability :process/spawn :reason :spawn/program-not-granted}\n",
+      "image": {
+        "bytes": 197120,
+        "sha256": "3e6ca0828bb59a9f3c801477257186ca5cce08da7acf392fd933f954588cddb9"
+      }
+    },
+    {
+      "name": "argv-budget",
+      "exit": 126,
+      "stdout": "",
+      "stderr": "KEXE_TRAP {:kind :capability :capability :process/spawn :reason :spawn/argv-budget}\n",
+      "image": {
+        "bytes": 197120,
+        "sha256": "242db672c9181412ac5bd45a659c5aaf416ca2dbc072af4b66e20753b2d37d1e"
+      }
+    },
+    {
+      "name": "argv-bytes-budget",
+      "exit": 126,
+      "stdout": "",
+      "stderr": "KEXE_TRAP {:kind :capability :capability :process/spawn :reason :spawn/argv-budget}\n",
+      "image": {
+        "bytes": 197120,
+        "sha256": "ca7c747ec912c00a84f519b906e46c38e35e4baede4588c085d5d889d00f2182"
+      }
+    },
+    {
+      "name": "output-budget",
+      "exit": 126,
+      "stdout": "",
+      "stderr": "KEXE_TRAP {:kind :capability :capability :process/spawn :reason :spawn/output-budget}\n",
+      "image": {
+        "bytes": 197120,
+        "sha256": "b6ac645e8ea0f9b52598326595b32a466cfc2384aa50be9636ca7a3706e53dff"
+      }
+    },
+    {
+      "name": "timeout",
+      "exit": 126,
+      "stdout": "",
+      "stderr": "KEXE_TRAP {:kind :capability :capability :process/spawn :reason :spawn/timeout}\n",
+      "image": {
+        "bytes": 197120,
+        "sha256": "660cb095f721c514934688aec58d5b1833d58f6e0666c0bd9bbcc19bf2a1ee34"
+      }
+    },
+    {
+      "name": "exec-failed",
+      "exit": 126,
+      "stdout": "",
+      "stderr": "KEXE_TRAP {:kind :capability :capability :process/spawn :reason :spawn/exec-failed}\n",
+      "image": {
+        "bytes": 197120,
+        "sha256": "8e81e0e0617ea68f7466452ef659dc443cd1b2859af3752c6710e69636c540eb"
+      }
+    },
+    {
+      "name": "no-programs-granted",
+      "exit": 126,
+      "stdout": "",
+      "stderr": "KEXE_TRAP {:kind :capability :capability :process/spawn :reason :spawn/program-not-granted}\n",
+      "image": {
+        "bytes": 197120,
+        "sha256": "83c1a98d17a61a069b4867cdfb6bf8ddb62ad4a2ebd87d2d721c055bce68d1aa"
+      }
+    },
+    {
+      "name": "empty-program",
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 100000000 :remaining 99999998}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n",
+      "image": {
+        "bytes": 197120,
+        "sha256": "fbb59153747ccab735b931a589cffd2523aa942390f30884a948be1bcf93120f"
+      }
+    },
+    {
+      "name": "request-over-65536",
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 100000000 :remaining 99999981}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n",
+      "image": {
+        "bytes": 197120,
+        "sha256": "caffd453715335063b169c9dc5180b0c3e811f3393a9f848b3687bed602d926e"
+      }
+    },
+    {
+      "name": "wire-not-granted",
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 100000000 :remaining 99999998}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n",
+      "image": {
+        "bytes": 197120,
+        "sha256": "83c1a98d17a61a069b4867cdfb6bf8ddb62ad4a2ebd87d2d721c055bce68d1aa"
+      }
+    },
+    {
+      "name": "control-no-read-rule",
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 100000000 :remaining 99999998}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGSYS}\n",
+      "image": {
+        "bytes": 197120,
+        "sha256": "b95696fb251364c3767acdb089edbd6ae61438ec3418a953cb82d8bcad7a4269"
+      }
+    }
+  ],
+  "controlCompiler": {
+    "mutation": "no read rule for the helper's answer fd, in both runtimes",
+    "pin": {
+      "bytes": 1430016,
+      "sha256": "bf1edd285d3ef99d46c7a8035fa23cd1466ed554614e9bd0a555f006c83e800f"
+    }
+  },
+  "unity": {
+    "seed/X86_64-LINUX-SELFHOST-MANIFEST": {
+      "bytes": 510,
+      "sha256": "af651c4d855723a633d3b94c4fc6393e5c6c6e53ac7e58186e0ec3228e8625b0"
+    },
+    "seed/00-ns-static.kotoba": {
+      "bytes": 14937,
+      "sha256": "a1b4360121914820be63dd8ce9d58f83a291ff5f3f9d5ed6ca06c60469035a3b"
+    },
+    "seed/01-mem.kotoba": {
+      "bytes": 15304,
+      "sha256": "79bb1d1154857efc70bee464161abfce37ec6b90e55af7bbef386ab96ca131c9"
+    },
+    "seed/02-io.kotoba": {
+      "bytes": 10931,
+      "sha256": "268ae7a0d450deb0b7981b85f7e6895b08b4af828f1f57cb96cf2eb29777c4ea"
+    },
+    "seed/10-lex.kotoba": {
+      "bytes": 24829,
+      "sha256": "a8b8128b9e00564f3d86a81b9c69e692efa0114a3cd0083e401cda8577086d6b"
+    },
+    "seed/11-read.kotoba": {
+      "bytes": 9176,
+      "sha256": "89fd65139a4502f96c87807db80d4cbaa15913ea75788eb3b647dcc9556e0392"
+    },
+    "seed/20-names.kotoba": {
+      "bytes": 38998,
+      "sha256": "fe067b8e507d6f7321a36f48a2a3d26a8874089caf00ac4ac5371c0d197ccde8"
+    },
+    "seed/21-check.kotoba": {
+      "bytes": 381021,
+      "sha256": "a42b412a1aed44f9ce24db7a0f7fdec3a242b8b36e3502062bf37fcecfd62081"
+    },
+    "seed/30-lower.kotoba": {
+      "bytes": 87820,
+      "sha256": "42c85dc4c8afa5b82633dd73f61df9bb0f03da6b93c28c7ae2e85008edb980d7"
+    },
+    "seed/50-out.kotoba": {
+      "bytes": 21354,
+      "sha256": "1cf17b348bda09d73d721856705a52db05131b88f80d017e1fe9b9a92c066955"
+    },
+    "seed/70-x86_64-linux.kotoba": {
+      "bytes": 19198,
+      "sha256": "82f14d94d4d9b1f8c71a65de463b784b78b34ade93e5bb630148b5bde2dbebe7"
+    },
+    "seed/71-x86_64-runtime.kotoba": {
+      "bytes": 5382,
+      "sha256": "15f2c4f8b8f0a2a46ccd8fbb4c7f621e17a385b680e0d6878d258a9c9e6cc14c"
+    },
+    "seed/75-x86_64-static.kotoba": {
+      "bytes": 8845,
+      "sha256": "e2f260bae95b873fb5b18c4f47324429cff1acf969d4a39ba4386da76fcfe2c9"
+    },
+    "seed/76-x86_64-static-rt.kotoba": {
+      "bytes": 92041,
+      "sha256": "9f456add650036920662408efc46a6a12ea236d539d6fec77836ae75fcbcc95f"
+    },
+    "seed/77-aarch64-static-rt.kotoba": {
+      "bytes": 92173,
+      "sha256": "96a9e5af82dd29dcd3fcf44c4f3567b0d579dfd1883da24ae5d89ea3bbf7115a"
+    },
+    "seed/80-aarch64-linux.kotoba": {
+      "bytes": 15441,
+      "sha256": "508dd6769a2e8e9fd3c99bd5fe4c15c7a5bfd70a67b4451847f9cee547c58a1a"
+    },
+    "seed/74-x86_64-aiueos-object.kotoba": {
+      "bytes": 8402,
+      "sha256": "9c3b16530f722e9a86249d17be3d5d55e1306be759be76c21df8cfac1d5db4d8"
+    },
+    "seed/73-x86-linux-entry.kotoba": {
+      "bytes": 1175,
+      "sha256": "499022e15adce90748a6a545230e3ca922a6a49cf0f9cd986807a59d93b36b6b"
+    }
+  },
+  "cCompilerOrLoader": false,
+  "notCovered": [
+    "spawn/isolation-unavailable and spawn/setup-failed: no case drives close_range, prctl, dup3 or fchdir to fail"
+  ]
+}

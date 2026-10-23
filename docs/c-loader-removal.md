@@ -67,8 +67,10 @@ supervisor as its only provider. The static runtime now answers the five
 wires in the image's own process, with the same decisions and refusal names
 (`seed/X86_64-LINUX-ABI`; `scripts/seed/check-net-runtime.py`, Linear
 JUN-292). The checker still refuses them (E2115) until a frontend admission
-with an adoption round. `:process/spawn` (wire 20) has no handler in the
-static runtime yet: a granted call traps (exit 120).
+with an adoption round. `:process/spawn` (wire 20) had the supervisor too.
+The static runtime now runs programs through a helper forked before its
+limits and seccomp filter, with the same decisions and refusal names
+(`scripts/seed/check-spawn-runtime.py`).
 
 These still exist but executed programs through kotoba-native's loader
 executor. They now fail when it tries to build the removed source, and stay
