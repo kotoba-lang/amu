@@ -254,7 +254,32 @@ a follow-up to ADR 0371.
      params, pos_add, pos_seed, pos_incr2, quant_q8), and the BATCH,
      BPREFILL and BIAS variants;
    * `attn_copy_dense` on B70/ANV;
-   * `kdot_f32_r1`, `kdot_x8r4`, `kdot_f32_r8` and `kdot_i8_x8r4`;
+   * **Done: the dot and kdot fixtures' kernels.**
+     * `dot_rows`, from inference at 0f5824c.
+     * `kdot_f32_r1`, from inference at c7ea9a9. This is the ggml quantized
+       dot with f32 activations. Every tensor type is in one module, as in
+       the GLSL: Q4_K, Q5_K, Q6_K, IQ4_XS, Q8_0, Q4_0, F16, BF16, PQ2_0,
+       PTQ1_0, Q4_1, Q5_0 and Q5_1. Each GLSL helper is a Kotoba function
+       that writes its code inline.
+
+     The builder gained vectors: construction, `OpDot`, signed conversion,
+     `unpackHalf2x16` and `bitfieldExtract`. The second word of
+     `weight_u32_at`, and the q4/q5 and pq2/ptq1 picks, are guarded loads,
+     so they stay in an if. `spirv-val` caught integer subtractions typed
+     u32 that build ivec4s; the Kotoba checker does not check types.
+
+     On gad (RADV), with random weights for every type, glslang's module and
+     the KIR v2 module are byte-identical on:
+     * two positions;
+     * two experts;
+     * a workgroup past the rows;
+     * a tail group for the 32-value types.
+
+     F16, BF16 and Q8_0 are within 6.3e-7 (relative) of an f64 dequant.
+     `dot_rows` is byte-identical too, and within 2.4e-6 of f64.
+
+     Receipts: `docs/evidence/gpu-kernel-kir2-kdot-20261023/`.
+   * `kdot_x8r4`, `kdot_f32_r8` and `kdot_i8_x8r4`;
    * deltanet and embed;
    * then the nvgpu-h2 kernels for Xavier.
 4. **Execution.** Through the ADR 0371 provider, with numeric and speed gates
