@@ -1,37 +1,37 @@
 {
   "schema": "amu.seed.static-root.v1",
   "image": {
-    "bytes": 3129856,
-    "sha256": "d1410bc589c511c7dc7dd66d8ddaf93f0cc6fc09ad04df1fa4c71b7e6676b276"
+    "bytes": 3142144,
+    "sha256": "50e6de8ac722ea3ab678f0bcd107d286a7979a3a47c14dd60d32bdf6b2d601a3"
   },
   "target": "aarch64-linux",
   "format": "packed",
   "sourceManifest": "seed/FULL-MANIFEST",
   "sourceUnity": {
-    "bytes": 3142615,
-    "sha256": "c94d399a05a4f692188d87d8c7ff01ed2cbadaad604d5f73d7cd77adf4942b29"
+    "bytes": 3149603,
+    "sha256": "5bea9219b71d5895eaf5bfdd80467c0625e058286a990a89ff71346820a2b628"
   },
-  "sourceCommitBase": "b09d9635cf13b48d52dfea4ad62951bb22d8545e",
+  "sourceCommitBase": "2246f2fbeb578f05785849e4def836a428241872",
   "producedBy": {
-    "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt and packed itself to F2 = F1 (= this image). Re-pinned because this source gives the launcher's provider a fixed environment (ADR 0371 step 6): MESA_SHADER_CACHE_DISABLE=true and VK_LOADER_LAYERS_DISABLE=~all~ in the launcher runtime text of seed/76 and seed/77.",
+    "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt and packed itself to F2 = F1 (= this image). Re-pinned because this source merges main's native clock and entropy providers (#1518, root 8385ac69) with the launcher's fixed provider environment (ADR 0371 step 6): MESA_SHADER_CACHE_DISABLE=true and VK_LOADER_LAYERS_DISABLE=~all~ in the launcher runtime text of seed/76 and seed/77.",
     "date": "2026-10-23",
-    "previousRoot": "c35a54ead02aaee8e3240a611b54d8a5fe821c7007d80dc70c94b053d6c8dec2",
+    "previousRoot": "8385ac6926d578c16128053e397af8015124e3e6d5db05a8ef7dcbc2501c8cca",
     "chain": {
       "F1.kseed": {
-        "bytes": 2920827,
-        "sha256": "8a8a28bf82ce15fc589997cd76348cec8d93e3c2fab1bd4cd03485220f1bdf94"
+        "bytes": 2927787,
+        "sha256": "45c5a9b5ddf5dcad2d4274fecfa486b468db4e6e8d5d46871259d3811e506256"
       },
       "F1.elf": {
-        "bytes": 3129856,
-        "sha256": "d1410bc589c511c7dc7dd66d8ddaf93f0cc6fc09ad04df1fa4c71b7e6676b276"
+        "bytes": 3142144,
+        "sha256": "50e6de8ac722ea3ab678f0bcd107d286a7979a3a47c14dd60d32bdf6b2d601a3"
       },
       "F2.kseed": {
-        "bytes": 2920827,
-        "sha256": "8a8a28bf82ce15fc589997cd76348cec8d93e3c2fab1bd4cd03485220f1bdf94"
+        "bytes": 2927787,
+        "sha256": "45c5a9b5ddf5dcad2d4274fecfa486b468db4e6e8d5d46871259d3811e506256"
       },
       "F2.elf": {
-        "bytes": 3129856,
-        "sha256": "d1410bc589c511c7dc7dd66d8ddaf93f0cc6fc09ad04df1fa4c71b7e6676b276"
+        "bytes": 3142144,
+        "sha256": "50e6de8ac722ea3ab678f0bcd107d286a7979a3a47c14dd60d32bdf6b2d601a3"
       }
     }
   },
@@ -39,9 +39,48 @@
   "history": [
     {
       "image": {
+        "bytes": 3142144,
+        "sha256": "8385ac6926d578c16128053e397af8015124e3e6d5db05a8ef7dcbc2501c8cca"
+      },
+      "sourceUnity": {
+        "bytes": 3148027,
+        "sha256": "b5745a227a2ee8072fe690c0dea5c9cbcc0129c949565953ed6ada08fa37c217"
+      },
+      "sourceCommitBase": "0f364ba059196fd326c478fcf0a8de95dcf454d8",
+      "producedBy": {
+        "how": "Native arm64 Linux, no C compiler or loader, no emulation: reviewed clock/entropy F2 compiles the final combined source retaining main b5026e2d GPU platform API to J1; J1 rebuilds J2, with identical containers and packed images. Core and arm64 runtime are byte-identical to the full19/runtime/refusal reviewed round.",
+        "date": "2026-10-23",
+        "previousRoot": "8ad2aeaa36012c0ebf5fc1e073acf4073cb18e48451e3297c4301af16d0a8b21",
+        "previousRootEvidence": "docs/evidence/native-clock-entropy-20261023/merge-review.json",
+        "chain": {
+          "J1.kseed": {
+            "bytes": 2926211,
+            "sha256": "1c66ab5431be793b4d6b6422ff4ca7c0514df6d382709779c562e399be2a0eca"
+          },
+          "J1.elf": {
+            "bytes": 3142144,
+            "sha256": "8385ac6926d578c16128053e397af8015124e3e6d5db05a8ef7dcbc2501c8cca"
+          },
+          "J2.kseed": {
+            "bytes": 2926211,
+            "sha256": "1c66ab5431be793b4d6b6422ff4ca7c0514df6d382709779c562e399be2a0eca"
+          },
+          "J2.elf": {
+            "bytes": 3142144,
+            "sha256": "8385ac6926d578c16128053e397af8015124e3e6d5db05a8ef7dcbc2501c8cca"
+          }
+        }
+      }
+    },
+    {
+      "schema": "amu.seed.static-root.v1",
+      "image": {
         "bytes": 3125760,
         "sha256": "c35a54ead02aaee8e3240a611b54d8a5fe821c7007d80dc70c94b053d6c8dec2"
       },
+      "target": "aarch64-linux",
+      "format": "packed",
+      "sourceManifest": "seed/FULL-MANIFEST",
       "sourceUnity": {
         "bytes": 3141039,
         "sha256": "cd27f909d4f1d100f28da0ba326d1870cd18609c5dac17d70c8bd66f1210b26c"

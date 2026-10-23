@@ -16,53 +16,58 @@
   ],
   "root": {
     "image": {
-      "bytes": 3129856,
-      "sha256": "d1410bc589c511c7dc7dd66d8ddaf93f0cc6fc09ad04df1fa4c71b7e6676b276"
+      "bytes": 3142144,
+      "sha256": "8385ac6926d578c16128053e397af8015124e3e6d5db05a8ef7dcbc2501c8cca"
     },
     "receipt": {
       "schema": "amu.seed.static-root.v1",
       "image": {
-        "bytes": 3129856,
-        "sha256": "d1410bc589c511c7dc7dd66d8ddaf93f0cc6fc09ad04df1fa4c71b7e6676b276"
+        "bytes": 3142144,
+        "sha256": "8385ac6926d578c16128053e397af8015124e3e6d5db05a8ef7dcbc2501c8cca"
       },
       "target": "aarch64-linux",
       "format": "packed",
       "sourceManifest": "seed/FULL-MANIFEST",
       "sourceUnity": {
-        "bytes": 3142615,
-        "sha256": "c94d399a05a4f692188d87d8c7ff01ed2cbadaad604d5f73d7cd77adf4942b29"
+        "bytes": 3148027,
+        "sha256": "b5745a227a2ee8072fe690c0dea5c9cbcc0129c949565953ed6ada08fa37c217"
       },
-      "sourceCommitBase": "b09d9635cf13b48d52dfea4ad62951bb22d8545e",
+      "sourceCommitBase": "0f364ba059196fd326c478fcf0a8de95dcf454d8",
       "producedBy": {
-        "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt and packed itself to F2 = F1 (= this image). Re-pinned because this source gives the launcher's provider a fixed environment (ADR 0371 step 6): MESA_SHADER_CACHE_DISABLE=true and VK_LOADER_LAYERS_DISABLE=~all~ in the launcher runtime text of seed/76 and seed/77.",
+        "how": "Native arm64 Linux, no C compiler or loader, no emulation: reviewed clock/entropy F2 compiles the final combined source retaining main b5026e2d GPU platform API to J1; J1 rebuilds J2, with identical containers and packed images. Core and arm64 runtime are byte-identical to the full19/runtime/refusal reviewed round.",
         "date": "2026-10-23",
-        "previousRoot": "c35a54ead02aaee8e3240a611b54d8a5fe821c7007d80dc70c94b053d6c8dec2",
+        "previousRoot": "8ad2aeaa36012c0ebf5fc1e073acf4073cb18e48451e3297c4301af16d0a8b21",
+        "previousRootEvidence": "docs/evidence/native-clock-entropy-20261023/merge-review.json",
         "chain": {
-          "F1.kseed": {
-            "bytes": 2920827,
-            "sha256": "8a8a28bf82ce15fc589997cd76348cec8d93e3c2fab1bd4cd03485220f1bdf94"
+          "J1.kseed": {
+            "bytes": 2926211,
+            "sha256": "1c66ab5431be793b4d6b6422ff4ca7c0514df6d382709779c562e399be2a0eca"
           },
-          "F1.elf": {
-            "bytes": 3129856,
-            "sha256": "d1410bc589c511c7dc7dd66d8ddaf93f0cc6fc09ad04df1fa4c71b7e6676b276"
+          "J1.elf": {
+            "bytes": 3142144,
+            "sha256": "8385ac6926d578c16128053e397af8015124e3e6d5db05a8ef7dcbc2501c8cca"
           },
-          "F2.kseed": {
-            "bytes": 2920827,
-            "sha256": "8a8a28bf82ce15fc589997cd76348cec8d93e3c2fab1bd4cd03485220f1bdf94"
+          "J2.kseed": {
+            "bytes": 2926211,
+            "sha256": "1c66ab5431be793b4d6b6422ff4ca7c0514df6d382709779c562e399be2a0eca"
           },
-          "F2.elf": {
-            "bytes": 3129856,
-            "sha256": "d1410bc589c511c7dc7dd66d8ddaf93f0cc6fc09ad04df1fa4c71b7e6676b276"
+          "J2.elf": {
+            "bytes": 3142144,
+            "sha256": "8385ac6926d578c16128053e397af8015124e3e6d5db05a8ef7dcbc2501c8cca"
           }
         }
       },
-      "verification": "scripts/seed/selfhost-bootstrap.py --tier pr on arm64 Linux: F1 = F2 from the previous root, F1's core route gives the adoption image, the runtime boundary corpus, the 24 cases and hardening; check-static-launcher.py with F1 (the scripted provider reports its environment). CI re-runs the tier from this root (F -> F' = root).",
+      "verification": "Native J1=J2 payload and image; preserved byte-identical core/arm64 runtime and its full19 correctness, 24 result/trap/fuel cases, 175 refusals, five hardening and 12 provider negatives. See merge-review.json. Hosted CI/native x86 execution readback separate; no public CLI/native CDCI qualification.",
       "history": [
         {
+          "schema": "amu.seed.static-root.v1",
           "image": {
             "bytes": 3125760,
             "sha256": "c35a54ead02aaee8e3240a611b54d8a5fe821c7007d80dc70c94b053d6c8dec2"
           },
+          "target": "aarch64-linux",
+          "format": "packed",
+          "sourceManifest": "seed/FULL-MANIFEST",
           "sourceUnity": {
             "bytes": 3141039,
             "sha256": "cd27f909d4f1d100f28da0ba326d1870cd18609c5dac17d70c8bd66f1210b26c"
@@ -501,12 +506,12 @@
         "sha256": "660bac926a904112dad5265e80b26a354632805122d8c46e5aa7860d2859cded"
       },
       "seed/21-check.kotoba": {
-        "bytes": 381669,
-        "sha256": "581fabf21fb8a5e495b1be993f23586db6659cbcbca1321682cda801a5464703"
+        "bytes": 381742,
+        "sha256": "30f90d5873f3b9ce482a3efbe1a11d014450fb7039265038ad80de8ad593ca23"
       },
       "seed/30-lower.kotoba": {
-        "bytes": 88233,
-        "sha256": "c1a1a7c4bf5e4374d25901041204f38893a84dd5c2febeb539efa93d9316daea"
+        "bytes": 88252,
+        "sha256": "8311440010b5a6ae5ca30127c269714756710b31085cbe669bcf6dcba259f4bf"
       },
       "seed/40-a64enc.kotoba": {
         "bytes": 13003,
@@ -549,12 +554,12 @@
         "sha256": "c2a660cb71dfaa12580ce2926591b54ea9faf19d791810861c414434d7591bea"
       },
       "seed/76-x86_64-static-rt.kotoba": {
-        "bytes": 140316,
-        "sha256": "c23424bd9948f04ddfe0496134aafd656bf89c93b45d17af2fe2e18087a70b82"
+        "bytes": 143764,
+        "sha256": "f4ab809628c8602e07784469718da26a1040071368e80a0ab6ded90a8c7e9a77"
       },
       "seed/77-aarch64-static-rt.kotoba": {
-        "bytes": 130737,
-        "sha256": "46de035a0c6e822cc7f4bbb005d3671b3df473d5d373a46bcecfbcac9977c73d"
+        "bytes": 134185,
+        "sha256": "880a545520dd6c04d0154a575e915fb1e8d122d6d57846ecde8acf82155d029b"
       },
       "seed/78-x86_64-platform.kotoba": {
         "bytes": 10690,
@@ -603,12 +608,12 @@
         "sha256": "660bac926a904112dad5265e80b26a354632805122d8c46e5aa7860d2859cded"
       },
       "seed/21-check.kotoba": {
-        "bytes": 381669,
-        "sha256": "581fabf21fb8a5e495b1be993f23586db6659cbcbca1321682cda801a5464703"
+        "bytes": 381742,
+        "sha256": "30f90d5873f3b9ce482a3efbe1a11d014450fb7039265038ad80de8ad593ca23"
       },
       "seed/30-lower.kotoba": {
-        "bytes": 88233,
-        "sha256": "c1a1a7c4bf5e4374d25901041204f38893a84dd5c2febeb539efa93d9316daea"
+        "bytes": 88252,
+        "sha256": "8311440010b5a6ae5ca30127c269714756710b31085cbe669bcf6dcba259f4bf"
       },
       "seed/50-out.kotoba": {
         "bytes": 21354,
@@ -627,12 +632,12 @@
         "sha256": "c2a660cb71dfaa12580ce2926591b54ea9faf19d791810861c414434d7591bea"
       },
       "seed/76-x86_64-static-rt.kotoba": {
-        "bytes": 140316,
-        "sha256": "c23424bd9948f04ddfe0496134aafd656bf89c93b45d17af2fe2e18087a70b82"
+        "bytes": 143764,
+        "sha256": "f4ab809628c8602e07784469718da26a1040071368e80a0ab6ded90a8c7e9a77"
       },
       "seed/77-aarch64-static-rt.kotoba": {
-        "bytes": 130737,
-        "sha256": "46de035a0c6e822cc7f4bbb005d3671b3df473d5d373a46bcecfbcac9977c73d"
+        "bytes": 134185,
+        "sha256": "880a545520dd6c04d0154a575e915fb1e8d122d6d57846ecde8acf82155d029b"
       },
       "seed/78-x86_64-platform.kotoba": {
         "bytes": 10690,
@@ -656,28 +661,39 @@
     {
       "name": "F1",
       "container": {
-        "bytes": 2920827,
-        "sha256": "8a8a28bf82ce15fc589997cd76348cec8d93e3c2fab1bd4cd03485220f1bdf94"
+        "bytes": 2927787,
+        "sha256": "45c5a9b5ddf5dcad2d4274fecfa486b468db4e6e8d5d46871259d3811e506256"
       },
       "image": {
-        "bytes": 3129856,
-        "sha256": "d1410bc589c511c7dc7dd66d8ddaf93f0cc6fc09ad04df1fa4c71b7e6676b276"
+        "bytes": 3142144,
+        "sha256": "50e6de8ac722ea3ab678f0bcd107d286a7979a3a47c14dd60d32bdf6b2d601a3"
+      }
+    },
+    {
+      "name": "F2",
+      "container": {
+        "bytes": 2927787,
+        "sha256": "45c5a9b5ddf5dcad2d4274fecfa486b468db4e6e8d5d46871259d3811e506256"
+      },
+      "image": {
+        "bytes": 3142144,
+        "sha256": "50e6de8ac722ea3ab678f0bcd107d286a7979a3a47c14dd60d32bdf6b2d601a3"
       }
     }
   ],
-  "rootReproduces": true,
+  "rootReproduces": false,
   "built": {
     "aarch64Runner": {
-      "bytes": 205312,
-      "sha256": "798d7bf788fcd457f8ce91ef1e387908cc66d212879a93cc4c3d0edf98aaffc8"
+      "bytes": 213504,
+      "sha256": "6452d61d973a47ab6932b26821356f06359230ff0d6fbe64ddb9c02268ea144f"
     },
     "x86_64Compiler": {
-      "bytes": 1880576,
-      "sha256": "e88e0a1b21df10b2b7d2fe4203b029af92905f1ca0b9fa56d8864bcacd4fba94"
+      "bytes": 1896960,
+      "sha256": "94ebd596efbafb4d45c4a8d9f795bd84147af6edcdeaebe7182d0bf5fe4870fd"
     },
     "x86_64Runner": {
-      "bytes": 254464,
-      "sha256": "d54646a78f1746a7180a07d3ba23cc3c07e6bf918cc20501a7b56eb9780abc50"
+      "bytes": 262656,
+      "sha256": "a0b10091e07f9314b4a112c7e936a48f48c7e47b8d03850d29dba9844216b8c4"
     }
   },
   "adopted": {
@@ -719,12 +735,12 @@
         "sha256": "660bac926a904112dad5265e80b26a354632805122d8c46e5aa7860d2859cded"
       },
       "seed/21-check.kotoba": {
-        "bytes": 381669,
-        "sha256": "581fabf21fb8a5e495b1be993f23586db6659cbcbca1321682cda801a5464703"
+        "bytes": 381742,
+        "sha256": "30f90d5873f3b9ce482a3efbe1a11d014450fb7039265038ad80de8ad593ca23"
       },
       "seed/30-lower.kotoba": {
-        "bytes": 88233,
-        "sha256": "c1a1a7c4bf5e4374d25901041204f38893a84dd5c2febeb539efa93d9316daea"
+        "bytes": 88252,
+        "sha256": "8311440010b5a6ae5ca30127c269714756710b31085cbe669bcf6dcba259f4bf"
       },
       "seed/40-a64enc.kotoba": {
         "bytes": 13003,
@@ -765,12 +781,12 @@
         "generation": 1,
         "producedBy": "F",
         "native": {
-          "bytes": 2573448,
-          "sha256": "d88720e6d6cf9be9cf3f82a5719d9bc885440b7833fdbdc6590f2e787f90dd9f"
+          "bytes": 2573512,
+          "sha256": "3fae63e29ef7043a61e9b71dae06d20c42f0f112a33affde6e34087f09977000"
         },
         "container": {
-          "bytes": 2573475,
-          "sha256": "466f24c9493c77c7f214ccec41b16595b9fd809d9550ff19d4c9434b670a873d"
+          "bytes": 2573539,
+          "sha256": "620e7db9bb62ebc054e7493048b5fea84dfdf6497d278907db13a847fe1bb25d"
         }
       }
     ],
@@ -779,7 +795,7 @@
       "exit": 1,
       "stderr": "seed-aarch64-linux: E7105 the packed payload's main must take no arguments"
     },
-    "expectedNativeImage": "d88720e6d6cf9be9cf3f82a5719d9bc885440b7833fdbdc6590f2e787f90dd9f"
+    "expectedNativeImage": "3fae63e29ef7043a61e9b71dae06d20c42f0f112a33affde6e34087f09977000"
   },
   "diagnostic": {
     "exit": 1,
@@ -934,8 +950,8 @@
   "runtimeBoundary": {
     "status": "PASS_RUNTIME_BOUNDARY",
     "compiler": {
-      "bytes": 3129856,
-      "sha256": "d1410bc589c511c7dc7dd66d8ddaf93f0cc6fc09ad04df1fa4c71b7e6676b276"
+      "bytes": 3142144,
+      "sha256": "50e6de8ac722ea3ab678f0bcd107d286a7979a3a47c14dd60d32bdf6b2d601a3"
     },
     "previousRoot": null,
     "host": [
@@ -2000,8 +2016,8 @@
         "target": "aarch64-linux",
         "format": "static",
         "image": {
-          "bytes": 205312,
-          "sha256": "dd0bccd7f9b1920be2ad267665dfb688c66b929c183f6265c050f1899ad0bf86"
+          "bytes": 213504,
+          "sha256": "53edcd102ced9b3b7f4b06ef03ba40ef361a3429eb6a399eb4a1b366cbe8901e"
         },
         "sameBytes": null
       },
@@ -2009,8 +2025,8 @@
         "target": "aarch64-linux",
         "format": "runner",
         "image": {
-          "bytes": 205312,
-          "sha256": "153df876b4cac863c4fb6a3ff7d20374f5ddfdf72c17523b21596f6bb6949ab0"
+          "bytes": 213504,
+          "sha256": "ffe0c0e48c2e226ff58c4363b1d65fefab322dc9e567b1ecd24d19711e87bea6"
         },
         "sameBytes": null
       },
@@ -2018,8 +2034,8 @@
         "target": "aarch64-linux",
         "format": "launcher",
         "image": {
-          "bytes": 258560,
-          "sha256": "03e660f470704c91d58be1a03aafa1407190b347a3e8f87c5c135297dbe9b331"
+          "bytes": 262656,
+          "sha256": "0a6c916de03e57aa910a0771daf7ce76e59a4ae3c92e7066d97cccb9cfc1b38a"
         },
         "sameBytes": null
       },
@@ -2027,8 +2043,8 @@
         "target": "x86_64-linux",
         "format": "static",
         "image": {
-          "bytes": 254464,
-          "sha256": "4a3f5378f60b6eaaad50e360b3a224413d80abc5b27ee09e614ca5f1240c92c6"
+          "bytes": 262656,
+          "sha256": "888d4863a4111cb35308823cc6941c0277ff93b22e7345d6991466c03ca280e1"
         },
         "sameBytes": null
       },
@@ -2036,8 +2052,8 @@
         "target": "x86_64-linux",
         "format": "kx64-runner",
         "image": {
-          "bytes": 254464,
-          "sha256": "8fe0716cf292b57b62c33c3ea7493bc0484c45f37d9d25dbe4fbf93c4b8fa8bf"
+          "bytes": 262656,
+          "sha256": "a50f23a4b7736e63ff05ffa56dd62a74340d9ede5b04e28f14c2e517f48359e1"
         },
         "sameBytes": null
       },
@@ -2045,8 +2061,8 @@
         "target": "x86_64-linux",
         "format": "launcher",
         "image": {
-          "bytes": 320000,
-          "sha256": "dda9dc88242a26b96040d72c097d92417e9099dfd3ca4001bd6ec685befd4f8b"
+          "bytes": 328192,
+          "sha256": "1eea05f5071d4e69a0b25cf55a1dc65204da1ed7708594ce85760404120c8a09"
         },
         "sameBytes": null
       },
@@ -2054,8 +2070,8 @@
         "target": "aarch64-linux",
         "format": "packed",
         "image": {
-          "bytes": 2781696,
-          "sha256": "8683a99bfd4759ac5e58bf467f20d3d85eec2f1476df9d000fb251c52f5baae3"
+          "bytes": 2789888,
+          "sha256": "315758f70bbf11c30608e44fd2f3af90d27d0e2234e7949e20b8db285d30003b"
         },
         "sameBytes": null
       }
@@ -2184,8 +2200,8 @@
       }
     ],
     "payload": {
-      "bytes": 2573475,
-      "sha256": "466f24c9493c77c7f214ccec41b16595b9fd809d9550ff19d4c9434b670a873d"
+      "bytes": 2573539,
+      "sha256": "620e7db9bb62ebc054e7493048b5fea84dfdf6497d278907db13a847fe1bb25d"
     },
     "cCompilerOrLoader": false,
     "JVMNodeOrGraalFallback": false,
@@ -2194,62 +2210,72 @@
   "steps": [
     {
       "name": "F1-compile",
-      "seconds": 191.3,
+      "seconds": 98.3,
       "ran": true
     },
     {
       "name": "F1-pack",
-      "seconds": 3.6,
+      "seconds": 1.4,
+      "ran": true
+    },
+    {
+      "name": "F2-compile",
+      "seconds": 97.3,
+      "ran": true
+    },
+    {
+      "name": "F2-pack",
+      "seconds": 1.6,
       "ran": true
     },
     {
       "name": "R-aarch64",
-      "seconds": 1.1,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "S-x86_64",
-      "seconds": 12.5,
+      "seconds": 6.0,
       "ran": true
     },
     {
       "name": "R-x86_64",
-      "seconds": 1.0,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "G1-compile",
-      "seconds": 190.4,
+      "seconds": 92.2,
       "ran": true
     },
     {
       "name": "G1-extract",
-      "seconds": 1.9,
-      "ran": true
-    },
-    {
-      "name": "arity1-compile",
-      "seconds": 0.7,
-      "ran": true
-    },
-    {
-      "name": "arity1-pack",
-      "seconds": 0.6,
-      "ran": true
-    },
-    {
-      "name": "diagnostic-span",
       "seconds": 0.9,
       "ran": true
     },
     {
+      "name": "arity1-compile",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "arity1-pack",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "diagnostic-span",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
       "name": "runtime-boundary",
-      "seconds": 125.1,
+      "seconds": 85.9,
       "ran": true
     },
     {
       "name": "case-string-literal-compile",
-      "seconds": 0.6,
+      "seconds": 0.4,
       "ran": true
     },
     {
@@ -2259,7 +2285,7 @@
     },
     {
       "name": "case-string-concat-compile",
-      "seconds": 0.5,
+      "seconds": 0.4,
       "ran": true
     },
     {
@@ -2269,7 +2295,7 @@
     },
     {
       "name": "case-string-view-compile",
-      "seconds": 0.6,
+      "seconds": 0.4,
       "ran": true
     },
     {
@@ -2279,7 +2305,7 @@
     },
     {
       "name": "case-string-unicode-compile",
-      "seconds": 0.6,
+      "seconds": 0.4,
       "ran": true
     },
     {
@@ -2289,7 +2315,7 @@
     },
     {
       "name": "case-string-empty-nul-compile",
-      "seconds": 0.5,
+      "seconds": 0.4,
       "ran": true
     },
     {
@@ -2299,7 +2325,7 @@
     },
     {
       "name": "case-string-search-compile",
-      "seconds": 0.7,
+      "seconds": 0.4,
       "ran": true
     },
     {
@@ -2309,7 +2335,7 @@
     },
     {
       "name": "case-string-call-compile",
-      "seconds": 1.0,
+      "seconds": 0.4,
       "ran": true
     },
     {
@@ -2319,7 +2345,7 @@
     },
     {
       "name": "case-vector-literal-compile",
-      "seconds": 0.8,
+      "seconds": 0.4,
       "ran": true
     },
     {
@@ -2329,7 +2355,7 @@
     },
     {
       "name": "case-vector-dynamic-compile",
-      "seconds": 0.7,
+      "seconds": 0.4,
       "ran": true
     },
     {
@@ -2339,7 +2365,7 @@
     },
     {
       "name": "case-vector-persistent-compile",
-      "seconds": 0.7,
+      "seconds": 0.4,
       "ran": true
     },
     {
@@ -2349,7 +2375,7 @@
     },
     {
       "name": "case-vector-mutate-compile",
-      "seconds": 0.6,
+      "seconds": 0.4,
       "ran": true
     },
     {
@@ -2359,7 +2385,7 @@
     },
     {
       "name": "case-vector-drop-conj-compile",
-      "seconds": 0.7,
+      "seconds": 0.4,
       "ran": true
     },
     {
@@ -2369,7 +2395,7 @@
     },
     {
       "name": "case-vector-pooled-compile",
-      "seconds": 0.7,
+      "seconds": 0.4,
       "ran": true
     },
     {
@@ -2379,7 +2405,7 @@
     },
     {
       "name": "case-vector-negative-compile",
-      "seconds": 0.5,
+      "seconds": 0.4,
       "ran": true
     },
     {
@@ -2389,7 +2415,7 @@
     },
     {
       "name": "case-vector-oob-compile",
-      "seconds": 0.5,
+      "seconds": 0.4,
       "ran": true
     },
     {
@@ -2399,7 +2425,7 @@
     },
     {
       "name": "case-string-oob-compile",
-      "seconds": 0.5,
+      "seconds": 0.4,
       "ran": true
     },
     {
@@ -2409,7 +2435,7 @@
     },
     {
       "name": "case-string-boundary-compile",
-      "seconds": 0.5,
+      "seconds": 0.4,
       "ran": true
     },
     {
@@ -2419,7 +2445,7 @@
     },
     {
       "name": "case-wide-args-compile",
-      "seconds": 0.5,
+      "seconds": 0.4,
       "ran": true
     },
     {
@@ -2429,7 +2455,7 @@
     },
     {
       "name": "case-closure-compile",
-      "seconds": 0.5,
+      "seconds": 0.4,
       "ran": true
     },
     {
@@ -2439,7 +2465,7 @@
     },
     {
       "name": "case-closure-env-compile",
-      "seconds": 0.5,
+      "seconds": 0.4,
       "ran": true
     },
     {
@@ -2449,7 +2475,7 @@
     },
     {
       "name": "case-state-results-compile",
-      "seconds": 0.5,
+      "seconds": 0.4,
       "ran": true
     },
     {
@@ -2459,7 +2485,7 @@
     },
     {
       "name": "case-bytes-roundtrip-compile",
-      "seconds": 0.5,
+      "seconds": 0.4,
       "ran": true
     },
     {
@@ -2489,7 +2515,7 @@
     },
     {
       "name": "probe-value-compile",
-      "seconds": 0.5,
+      "seconds": 0.4,
       "ran": true
     },
     {
