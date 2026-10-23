@@ -36,7 +36,8 @@ the selfhost compiler.
     reports it, and the static-launcher receipts check its exact value.
 
 * `gad-radv-features.json`: the `gpu` phase with the device features enabled
-  (step 6, ADR 0372 Decision 5).
+  (step 6, ADR 0372 Decision 5). The provider was built by the pinned root F
+  `69b2f696…`.
 
 ## What the fake-device receipt shows
 
@@ -113,7 +114,7 @@ the selfhost compiler.
 
 * RADV supports all eight features the layer asks for: `storageBuffer16BitAccess`, `storageBuffer8BitAccess`, `shaderFloat16`, `shaderInt8`, `synchronization2`, `shaderIntegerDotProduct`, `subgroupSizeControl` and `computeFullSubgroups`. The layer enables all of them, and the report lists them.
 * With synchronization2 the barrier between dispatches is `vkCmdPipelineBarrier2`. The recording whose second dispatch reads the first's output still gives the exact result.
-* All 59 requests pass confined, at 40-59 us per submit.
+* All 59 requests pass confined, at 34-56 us per submit.
 
 ## What the launcher receipt shows
 
