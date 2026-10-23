@@ -1,0 +1,145 @@
+{
+  "status": "PASS_GPU_PROVIDER_VULKAN",
+  "compiler": {
+    "bytes": 1561088,
+    "sha256": "8fec4056dbb7e8e1b77b054a45d78b0314451e15e2338a6a6e1c2486154b396d"
+  },
+  "host": [
+    "Linux",
+    "aarch64",
+    "6.15.10-200.fc42.aarch64"
+  ],
+  "sources": {
+    "tools/gpu_provider.kotoba": {
+      "bytes": 30108,
+      "sha256": "05ca40dccacf2aa93aac8a222b62542383505a6b87bcc8c231609838f5cf5022"
+    },
+    "tools/gpu_compute_protocol.kotoba": {
+      "bytes": 18021,
+      "sha256": "131e531c453e4ad490c030ec704f49a10a97ee12bb9ea91e787d9053a8631884"
+    },
+    "tools/gpu_device_fake.kotoba": {
+      "bytes": 2928,
+      "sha256": "b552f5585f451f52fef65d198cc703348b3d4d5ade979518cee600fcf7a69d19"
+    },
+    "tools/gpu_device_vulkan.kotoba": {
+      "bytes": 22257,
+      "sha256": "284aa4c00755891436130814cfd95cf85710c3dce45476eca6f864832231a561"
+    },
+    "tools/spirv_encode.kotoba": {
+      "bytes": 6820,
+      "sha256": "8cd7c07844a5d8c4166fd9320eab79322b726c96c5bfb616153fc83d3b19a2c6"
+    },
+    "tools/gpu_kernel_kir1.kotoba": {
+      "bytes": 21745,
+      "sha256": "dbeb0c3532d95d4f50b89ca9a67f2352a93f6d0938584306152c91c413b268a5"
+    }
+  },
+  "images": {
+    "provider-fake": "artifacts/provider-fake.elf",
+    "guest": "artifacts/guest.elf",
+    "launcher": "artifacts/launcher.elf",
+    "provider-vulkan": "artifacts/provider-vulkan.elf",
+    "kernels": "artifacts/kernels.elf"
+  },
+  "modules": {
+    "add.spv": {
+      "bytes": 1004,
+      "sha256": "4d919a56e7476b17f64d46d647423761c7c4fa51f6e578009afcca0812fd68f9"
+    },
+    "sum.spv": {
+      "bytes": 1740,
+      "sha256": "5da0fe30be6f92101cbf6853eafd0fd3b5c54dde25eadf168c800b7c004cb3f6"
+    }
+  },
+  "calls": [
+    {
+      "name": "provider-fake",
+      "format": "platform-linked",
+      "exit": 0,
+      "stdout": "{:ok true, :target :x86_64-linux, :format :platform-linked, :code-bytes 381762, :bytes 393728, :libvulkan false}"
+    },
+    {
+      "name": "guest",
+      "format": "static",
+      "exit": 0,
+      "stdout": "{:ok true, :target :x86_64-linux, :format :static, :code-bytes 248447, :bytes 254464}"
+    },
+    {
+      "name": "launcher",
+      "format": "launcher",
+      "exit": 0,
+      "stdout": "{:ok true, :target :x86_64-linux, :format :launcher, :code-bytes 323057, :bytes 328192}"
+    },
+    {
+      "name": "provider-vulkan",
+      "format": "platform-linked",
+      "exit": 0,
+      "stdout": "{:ok true, :target :x86_64-linux, :format :platform-linked, :code-bytes 454130, :bytes 463360, :libvulkan true}"
+    },
+    {
+      "name": "kernels",
+      "format": "static",
+      "exit": 0,
+      "stdout": "{:ok true, :target :aarch64-linux, :format :static, :code-bytes 255632, :bytes 262656}"
+    }
+  ],
+  "cCompilerOrLoader": false,
+  "gpu": {
+    "host": [
+      "Linux",
+      "x86_64",
+      "7.0.0-38-generic"
+    ],
+    "node": "gad",
+    "rows": {
+      "info": "Radeon 8060S Graphics (RADV GFX1151)|1.4.318|1024|1",
+      "devclass": "integrated",
+      "map-70MiB-seconds": 5.419,
+      "report": "{:provider :kotoba.gpu-provider/v1 :device \"Radeon 8060S Graphics (RADV GFX1151)\" :served 48 :refused 0 :end :eof :image \"2c3c97647702777a6fa0d2adaf8163decaf28d929f6a417290d905b3c2bf23d1\" :kernel \"7.0.0-38-generic\"}",
+      "submitNanoseconds": [
+        40138,
+        31708,
+        33778,
+        43338,
+        45148,
+        50118
+      ],
+      "requests": 48
+    },
+    "log": [
+      [
+        "INFO",
+        "Radeon 8060S Graphics (RADV GFX1151)|1.4.318|1024|1"
+      ],
+      [
+        "DEVCLASS",
+        "integrated"
+      ],
+      [
+        "ALLOC 4096",
+        "1"
+      ],
+      [
+        "WRITE 1 0 3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7238560bb58cc43a57769c874b2f386d3a0e1fb298ebb71",
+        "1"
+      ],
+      [
+        "READ 1 0 4096",
+        "3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7238560bb58cc43a57769c874b2f386d3a0e1fb298ebb7186c8227f91e4de0db274df24118c74ef2bd72c6ecf863bb3a664cd4af045857d2843fd34618fd05d5c944a785e"
+      ],
+      [
+        "READ 1 100 7",
+        "eea2062a4b276f"
+      ],
+      [
+        "WRITEDEC 1 8 1,2,3",
+        "3"
+      ],
+      [
+        "READ 1 8 12",
+        "010000000200000003000000"
+      ]
+    ]
+  }
+}
