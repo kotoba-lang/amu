@@ -1,8 +1,8 @@
 {
   "status": "PASS_PLATFORM_LINKED_BUILD_AND_RUN",
   "compiler": {
-    "bytes": 3121664,
-    "sha256": "094590b650b0293b33e3aaf7113f3cadb5461573a5f974cc6a875d4260df11fb"
+    "bytes": 3125760,
+    "sha256": "c35a54ead02aaee8e3240a611b54d8a5fe821c7007d80dc70c94b053d6c8dec2"
   },
   "host": [
     "Linux",
@@ -19,8 +19,8 @@
       "sha256": "c2a660cb71dfaa12580ce2926591b54ea9faf19d791810861c414434d7591bea"
     },
     "seed/76-x86_64-static-rt.kotoba": {
-      "bytes": 133303,
-      "sha256": "a4ec62c4dfb8cbab94e217345b018c8d7628455bc82c906506724e2e47e86184"
+      "bytes": 139528,
+      "sha256": "0add684bc3ee609544591c91adaa77fd6e64212e5be621261688ba1590932c25"
     }
   },
   "images": {
@@ -29,7 +29,10 @@
     "relro": "artifacts/relro.elf",
     "provider": "artifacts/provider.elf",
     "vk": "artifacts/vk.elf",
+    "api": "artifacts/api.elf",
+    "sigpipe": "artifacts/sigpipe.elf",
     "abi": "artifacts/abi.elf",
+    "confine": "artifacts/confine.elf",
     "launcher": "artifacts/launcher.elf",
     "gpu-guest": "artifacts/gpu-guest.elf"
   },
@@ -37,8 +40,8 @@
     "structure": {
       "hello": {
         "image": {
-          "bytes": 254464,
-          "sha256": "4462ff03f762afa16d6168c1f014ddf12184ea6a273aa9e85e7d9e1e7af9a1bb"
+          "bytes": 266752,
+          "sha256": "93192cc8d3916037e5e349f9c636ca82a7e6aa52f68a603569faaadae5151768"
         },
         "needed": [
           "libc.so.6"
@@ -49,8 +52,8 @@
       },
       "args": {
         "image": {
-          "bytes": 254464,
-          "sha256": "73efaab6a9c2fd2d8a5067155854ea711d043e099bbe28b2df42be3b3697ffb9"
+          "bytes": 266752,
+          "sha256": "adf57a8e792546f49b22fafb89a7282427f54c04044d90f9cb1a24dfc52100a5"
         },
         "needed": [
           "libc.so.6"
@@ -61,8 +64,8 @@
       },
       "relro": {
         "image": {
-          "bytes": 254464,
-          "sha256": "3d19793e198447e895480b8956074563a3e84a8d80b5898acc62f6dca65a534d"
+          "bytes": 266752,
+          "sha256": "fa353ccb4c44e907dd86f6b136d9c8e4dc4bbf3ac56d21fe9d8d42e1318e74ab"
         },
         "needed": [
           "libc.so.6"
@@ -73,8 +76,8 @@
       },
       "provider": {
         "image": {
-          "bytes": 258560,
-          "sha256": "3549fe44d012771f726b4be8c3f3b31141ef80de3b9a24a8c8b36ebb8e2213fd"
+          "bytes": 274944,
+          "sha256": "3183cdfb03359ff41a14f31e9bbd8acfe43c09813144dadf6c1b8038596d7802"
         },
         "needed": [
           "libc.so.6"
@@ -85,8 +88,8 @@
       },
       "vk": {
         "image": {
-          "bytes": 254464,
-          "sha256": "7c0b65381e90d6d9174b7b2029ec7cc1a318e9c08712df0c5e5337bf590fcf43"
+          "bytes": 266752,
+          "sha256": "f3793bb0b484b9c00e4b58b141822af6d520b77bdcb7c0313690747a5a3fd50b"
         },
         "needed": [
           "libc.so.6",
@@ -97,10 +100,34 @@
           "vkGetInstanceProcAddr"
         ]
       },
+      "api": {
+        "image": {
+          "bytes": 283136,
+          "sha256": "aeb5890b4904fd1caa60746142f1d2453f705d58862152e1c6a28efad8b84268"
+        },
+        "needed": [
+          "libc.so.6"
+        ],
+        "imports": [
+          "__libc_start_main"
+        ]
+      },
+      "sigpipe": {
+        "image": {
+          "bytes": 270848,
+          "sha256": "a804e6a86afcb72de27d5febd1e33d0b1d5be07831025ee7ee973fe8f36fc50d"
+        },
+        "needed": [
+          "libc.so.6"
+        ],
+        "imports": [
+          "__libc_start_main"
+        ]
+      },
       "abi": {
         "image": {
-          "bytes": 254464,
-          "sha256": "7498d193b95d9f4826f9c75b0865862d148c66590db75e879953891f29a48189"
+          "bytes": 270848,
+          "sha256": "f4d932069d609e7fdd264c8455cbe447d257b713257a842d734e5f263f454702"
         },
         "needed": [
           "libc.so.6"
@@ -111,6 +138,21 @@
         ],
         "testOnlyCompiler": "import 1 replaced by libc snprintf in memory; never written to seed/",
         "allowlistRefuses": true
+      },
+      "confine": {
+        "image": {
+          "bytes": 283136,
+          "sha256": "9c0512712a27004a5dbb6b3e43f515f814be3d34077aaa0904480c1c785e1e6f"
+        },
+        "needed": [
+          "libc.so.6"
+        ],
+        "imports": [
+          "__libc_start_main",
+          "syscall"
+        ],
+        "testOnlyCompiler": "import 1 replaced by libc syscall in memory; never written to seed/",
+        "allowlistRefuses": true
       }
     },
     "refusals": {
@@ -120,8 +162,8 @@
     },
     "unchangedFormats": {
       "previousRoot": {
-        "bytes": 3105280,
-        "sha256": "710b6ae6e7b2887dee317f3cfe0e25c176166ddae9005409c5345311a36d20ae"
+        "bytes": 3121664,
+        "sha256": "094590b650b0293b33e3aaf7113f3cadb5461573a5f974cc6a875d4260df11fb"
       },
       "sameBytes": {
         "x86_64-linux-static": {
@@ -145,7 +187,7 @@
           "sha256": "8d1dfe2d4f3ea9ef45d8c727aa96ec6d6fdc65893670b3a20cc85ee900af8bbb"
         }
       },
-      "previousRootRefusesFormat": true
+      "previousRootRefusesFormat": false
     }
   },
   "calls": [
@@ -180,6 +222,18 @@
       "exit": 0
     },
     {
+      "name": "api",
+      "format": "platform-linked",
+      "target": "x86_64-linux",
+      "exit": 0
+    },
+    {
+      "name": "sigpipe",
+      "format": "platform-linked",
+      "target": "x86_64-linux",
+      "exit": 0
+    },
+    {
       "name": "test-compiler-snprintf",
       "format": "static",
       "target": "aarch64-linux",
@@ -187,6 +241,18 @@
     },
     {
       "name": "abi",
+      "format": "platform-linked",
+      "target": "x86_64-linux",
+      "exit": 0
+    },
+    {
+      "name": "test-compiler-syscall",
+      "format": "static",
+      "target": "aarch64-linux",
+      "exit": 0
+    },
+    {
+      "name": "confine",
       "format": "platform-linked",
       "target": "x86_64-linux",
       "exit": 0
@@ -285,7 +351,7 @@
       "name": "previous-refuses",
       "format": "platform-linked",
       "target": "x86_64-linux",
-      "exit": 2
+      "exit": 0
     }
   ],
   "cCompilerOrLoader": false,
@@ -318,10 +384,24 @@
         "exit": -11,
         "stdout": ""
       },
-      "ldd-hello": "linux-vdso.so.1 (0x0000ffff8606d000)\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x0000ffff8498c000)\n\t/lib64/ld-linux-x86-64.so.2 (0x0000555555556000)"
+      "api": {
+        "exit": 0,
+        "stdout": "ha 128 32 d2742f1f4ac6bb7ca2b239ee18402ba8b3f9f8e652d2a72973c2b9ba11c08cf6\nsha 129 32 307f8fc2c1622b92762e818d39a185d4d667ad49a4b07ceae1f4afa008a93ec4\nsha 130 32 4d5e47a2e8510a314576c238f6ff19d389d3ef3aaaca8b2e530263a5d15741da\nuname 0 Linux 6.15.10-200.fc42.aarch64 x86_64  \nlandlock-path-missing -2\n",
+        "checked": "clock, open/fsize/pread/close and SHA-256 of a 100000-byte file at once and streamed (24 blocks calls of 4096, then finish), a blocks call of 100 bytes -EINVAL, unmap, SHA-256 at lengths 0..130 (hashlib), uname (os.uname), Landlock rule on a missing path -ENOENT"
+      },
+      "sigpipe-default": {
+        "exit": -13,
+        "meaning": "SIGPIPE"
+      },
+      "sigpipe-ignore": {
+        "exit": 32,
+        "meaning": "write returned -EPIPE"
+      },
+      "ldd-hello": "linux-vdso.so.1 (0x0000ffff9e922000)\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x0000ffff9da0e000)\n\t/lib64/ld-linux-x86-64.so.2 (0x0000555555556000)"
     },
     "notRun": [
       "provider skeleton under the launcher: binfmt_misc cannot start a close-on-exec memfd image (native kernels only)",
+      "confinement (Landlock, seal): qemu-user would apply the guest's filter to itself (native kernels only)",
       "the libvulkan image: GPU hosts only (owner decision 2026-10-22)"
     ]
   }

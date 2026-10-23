@@ -96,3 +96,9 @@ The native-only entry refuses `--format platform-linked` with E2. The
 optional provider backend source and corpus are retained, but libc/dynamic-
 loader execution is excluded from mandatory native CDCI. The static
 launcher, complete core, all24 native cases and hardening remain required.
+
+The linked GPU-provider fake-device/Vulkan/libc qualifications are also
+excluded from mandatory native CDCI: they require the refused C-linked
+format. Their source and corpus remain preserved, and provider qualification
+is blocked until an Amu/Kotoba-native route exists. Do not mark those
+excluded checks passed through the two bounded native compiler roles.

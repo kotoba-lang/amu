@@ -17,7 +17,8 @@ emulation. Records, natively:
 6. in every tier, ADR 0371's checks that need a native x86_64 kernel, with
    X2 (ADR0371 below): the static launcher (check-static-launcher.py,
    --format launcher, step 4). C-linked provider execution is outside the
-   native-only CDCI contract; its source/corpus remains separate.
+   native-only CDCI contract, including linked GPU-provider qualification;
+   their source/corpus remains preserved and qualification stays blocked.
 
 --reuse DIR / --store DIR: content-addressed reuse as in selfhost-bootstrap.py
 (scripts/seed/content_reuse.py). Only calls made through reuse.run_cached may

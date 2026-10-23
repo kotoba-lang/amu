@@ -35,6 +35,7 @@
 ;; 672 scope marks 680 depth 688 region-map 696 rows 704 region-used
 ;; 712 conj-region 720 reserved-words 728 scope-releases 736 graph 744 graph-used
 ;; 16384..16679 --format launcher only (the launcher text, ADR 0371 step 4): keep clear
+;; 16704 --format platform-linked only (the platform scratch page): keep clear
 (defn- kxrt-g [] :i64 (+ (kxrt-ctx) 1024))
 (defn- kxrt-gl [k :i64] :i64 (kxrt-load64 (+ (kxrt-g) k)))
 (defn- kxrt-gs [k :i64 v :i64] :i64 (kxrt-store64 (+ (kxrt-g) k) v))
@@ -2023,6 +2024,99 @@
 (defn- kxrt-p-store64 [a :i64 v :i64] :i64 (kxrt-store64 a v))
 (defn- kxrt-p-read [fd :i64 a :i64 n :i64] :i64 (kxrt-syscall 0 fd a n 0 0 0))
 (defn- kxrt-p-write [fd :i64 a :i64 n :i64] :i64 (kxrt-syscall 1 fd a n 0 0 0))
+;; For the GPU provider (ADR 0371 step 6): each wraps fixed syscalls, and a
+;; failure returns -errno; there is no generic syscall. Paths are NUL-ended
+;; strings in memory. The scratch page is G+16704 (16 KiB, mapped by kxrt-start).
+(defn- kxrt-plat-scratch [] :i64 (kxrt-gl 16704))
+;; CLOCK_MONOTONIC in nanoseconds
+(defn- kxrt-p-clock-ns [] :i64
+  (let [t (kxrt-plat-scratch) r (kxrt-syscall 228 1 t 0 0 0 0)]
+    (if (< r 0) r (+ (* (kxrt-load64 t) 1000000000) (kxrt-load64 (+ t 8))))))
+;; SIGPIPE to SIG_IGN, so a write to a closed pipe returns -EPIPE
+(defn- kxrt-p-ignore-sigpipe [] :i64
+  (let [a (kxrt-plat-scratch) h (kxrt-store64 a 1) f (kxrt-store64 (+ a 8) 0)
+        r (kxrt-store64 (+ a 16) 0) m (kxrt-store64 (+ a 24) 0)]
+    (kxrt-syscall 13 13 a 0 8 0 0)))
+;; read-only files: openat(AT_FDCWD, path, O_RDONLY|O_CLOEXEC), pread64,
+;; the size from fstat, close
+(defn- kxrt-p-open-ro [path :i64] :i64 (kxrt-syscall 257 -100 path 524288 0 0 0))
+(defn- kxrt-p-pread [fd :i64 a :i64 n :i64 off :i64] :i64 (kxrt-syscall 17 fd a n off 0 0))
+(defn- kxrt-p-fsize [fd :i64] :i64
+  (let [st (kxrt-plat-scratch) r (kxrt-syscall 5 fd st 0 0 0 0)] (if (< r 0) r (kxrt-load64 (+ st 48)))))
+(defn- kxrt-p-close [fd :i64] :i64 (kxrt-syscall 3 fd 0 0 0 0 0))
+;; munmap, for memory from kxrt-p-alloc
+(defn- kxrt-p-unmap [a :i64 n :i64] :i64 (kxrt-syscall 11 a n 0 0 0 0))
+;; struct utsname (6 fields of 65 bytes) at a
+(defn- kxrt-p-uname [a :i64] :i64 (kxrt-syscall 63 a 0 0 0 0 0))
+;; SHA-256 (FIPS 180-4), streamed: st is 64 bytes of the program's memory (the
+;; 8 state words). start; blocks over whole 64-byte blocks (n a multiple of
+;; 64); finish with the last n bytes and the total length, writing the 32-byte
+;; digest to out. sha256 is the three at once.
+(defn- kxrt-p-sha256-start [st :i64] :i64
+  (loop [i 0] (if (= i 8) 0 (let [y (kxrt-store64 (+ st (* 8 i)) (kxrt-sha-h0 i))] (recur (inc i))))))
+(defn- kxrt-p-sha256-blocks [st :i64 a :i64 n :i64] :i64
+  (if (or (< n 0) (not= (bit-and n 63) 0)) -22
+    (let [w (+ (kxrt-plat-scratch) 1024)]
+      (loop [d 0] (if (>= d n) n (let [y (kxrt-sha-block st w (+ a d))] (recur (+ d 64))))))))
+(defn- kxrt-p-sha256-finish [st :i64 a :i64 n :i64 total :i64 out :i64] :i64
+  (if (or (< n 0) (< total n)) -22
+    (let [w (+ (kxrt-plat-scratch) 1024) tail (+ (kxrt-plat-scratch) 1536)
+          done (bit-and n -64)
+          b0 (kxrt-p-sha256-blocks st a done)
+          rest (- n done)
+          c (loop [i 0] (if (= i rest) 0 (let [y (kxrt-store8 (+ tail i) (kxrt-load8 (+ a done i)))] (recur (inc i)))))
+          p (kxrt-store8 (+ tail rest) 128)
+          padded (if (<= (inc rest) 56) 64 128)
+          zz (loop [i (inc rest)] (if (>= i padded) 0 (let [y (kxrt-store8 (+ tail i) 0)] (recur (inc i)))))
+          bits (* total 8)
+          lb (loop [i 0] (if (= i 8) 0 (let [y (kxrt-store8 (+ tail (- padded 1 i)) (bit-and (u64-shift-right bits (* 8 i)) 255))] (recur (inc i)))))
+          b1 (kxrt-sha-block st w tail)
+          b2 (if (= padded 128) (kxrt-sha-block st w (+ tail 64)) 0)]
+      (loop [i 0]
+        (if (= i 32) 32
+          (let [word (kxrt-load64 (+ st (* 8 (quot i 4))))
+                y (kxrt-store8 (+ out i) (bit-and (u64-shift-right word (* 8 (- 3 (- i (* 4 (quot i 4)))))) 255))]
+            (recur (inc i))))))))
+(defn- kxrt-p-sha256 [a :i64 n :i64 out :i64] :i64
+  (let [st (+ (kxrt-plat-scratch) 2048) z (kxrt-p-sha256-start st)] (kxrt-p-sha256-finish st a n n out)))
+;; Landlock. It restricts the calling thread and the threads it creates
+;; afterwards; threads started before restrict keep their access.
+(defn- kxrt-p-landlock-abi [] :i64 (kxrt-syscall 444 0 0 1 0 0 0))
+(defn- kxrt-p-landlock-ruleset [fs-access :i64] :i64
+  (let [a (kxrt-plat-scratch) z (kxrt-store64 a fs-access)] (kxrt-syscall 444 a 8 0 0 0 0)))
+;; a path-beneath rule: path opened O_PATH|O_CLOEXEC, then closed
+(defn- kxrt-p-landlock-path [ruleset :i64 path :i64 access :i64] :i64
+  (let [fd (kxrt-syscall 257 -100 path 2621440 0 0 0)]
+    (if (< fd 0) fd
+      (let [a (kxrt-plat-scratch) x (kxrt-store64 a access) y (kxrt-store64 (+ a 8) fd)
+            r (kxrt-syscall 445 ruleset 1 a 0 0 0) c (kxrt-p-close fd)] r))))
+;; no_new_privs, then landlock_restrict_self; the ruleset fd is closed
+(defn- kxrt-p-landlock-restrict [ruleset :i64] :i64
+  (let [n (kxrt-syscall 157 38 1 0 0 0 0)
+        r (if (< n 0) n (kxrt-syscall 446 ruleset 0 0 0 0 0)) c (kxrt-p-close ruleset)] r))
+;; The seal (ADR 0371 Decision 5): another arch or an x32 number kills the
+;; process; execve, execveat, fork, vfork, socket other than AF_UNIX, and clone
+;; without CLONE_THREAD fail with EPERM; clone3 fails with ENOSYS (libc then
+;; uses clone); everything else is allowed. no_new_privs first, then
+;; SECCOMP_SET_MODE_FILTER with TSYNC: 0, or the id of a thread that could not
+;; be synchronized, or -errno.
+(defn- kxrt-seal-deny [p :i64 i :i64 nr :i64 ret :i64] :i64 (kxrt-bpf p (kxrt-bpf p i 21 0 1 nr) 6 0 0 ret))
+;; nr with args[0] (low word, offset 16) tested by jump code op against k:
+;; allowed when the test holds, else EPERM
+(defn- kxrt-seal-arg0 [p :i64 i :i64 nr :i64 op :i64 k :i64] :i64
+  (kxrt-bpf p (kxrt-bpf p (kxrt-bpf p (kxrt-bpf p (kxrt-bpf p i 21 0 4 nr) 32 0 0 16) op 0 1 k) 6 0 0 2147418112) 6 0 0 327681))
+(defn- kxrt-p-seal [] :i64
+  (let [prog (kxrt-plat-scratch) p (+ prog 64)
+        i0 (kxrt-bpf p (kxrt-bpf p (kxrt-bpf p (kxrt-bpf p 0 32 0 0 4) 21 1 0 3221225534) 6 0 0 2147483648) 32 0 0 0)
+        i1 (kxrt-bpf p (kxrt-bpf p i0 53 0 1 1073741824) 6 0 0 2147483648)
+        i2 (-> i1 (kxrt-seal-deny-at p 59 327681) (kxrt-seal-deny-at p 322 327681) (kxrt-seal-deny-at p 57 327681)
+               (kxrt-seal-deny-at p 58 327681) (kxrt-seal-deny-at p 435 327718))
+        i3 (kxrt-seal-arg0 p (kxrt-seal-arg0 p i2 41 21 1) 56 69 65536)
+        n (kxrt-bpf p i3 6 0 0 2147418112)
+        a (kxrt-store64 prog n) b (kxrt-store64 (+ prog 8) p)
+        s (kxrt-syscall 157 38 1 0 0 0 0)]
+    (if (< s 0) s (kxrt-syscall 317 1 1 prog 0 0 0))))
+(defn- kxrt-seal-deny-at [i :i64 p :i64 nr :i64 ret :i64] :i64 (kxrt-seal-deny p i nr ret))
 (defn- kxrt-start [argc :i64 argv :i64 envp :i64] :i64
   (let [ctx (kxrt-ctx)
         a (kxrt-gs 72 (if (> argc 0) (dec argc) 0)) b (kxrt-gs 80 (+ argv 8)) c (kxrt-gs 88 envp)
@@ -2034,6 +2128,7 @@
         m11 (kxrt-gs 232 (kxrt-map KXRT-VALUE-MAX)) fd (kxrt-gs 112 -1)
         m12 (kxrt-gs 672 (kxrt-map 16384)) m13 (kxrt-gs 688 (kxrt-map (* 8 KXRT-VECTORS)))
         m14 (kxrt-gs 696 (kxrt-map (* 16 KXRT-VECTORS))) m15 (kxrt-gs 736 (kxrt-map 98304))
+        m16 (kxrt-gs 16704 (kxrt-map 16384))
         cw (kxrt-syscall 79 (kxrt-gl 184) 4096 0 0 0 0)
         cl (kxrt-gs 192 (if (and (> cw 1) (= (kxrt-load8 (kxrt-gl 184)) 47)) (kxrt-cstrlen (kxrt-gl 184)) 0))
         v (kxrt-store64 ctx 11)
