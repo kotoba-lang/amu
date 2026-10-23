@@ -62,7 +62,9 @@ tool orchestration are not a qualified native CDCI controller.
 
 ## Integrated merge review
 
-The PR is integrated with main `b09d9635` and retains its launcher/platform runtime.
+The first review integrated main `b09d9635`; the final merge also retains main
+`b5026e2d` and its GPU provider platform API. The18 core modules and ARM runtime
+are unchanged between these two reviewed rounds.
 The full compiler payload is F1=F2=F3; stable new wrappers F2=F3. The complete18
 core rebuilds G1=G2=G3. All19 native images match the existing golden images,
 and all19 native `bench-verify(1)` calls pass. The24 runtime cases retain exact
@@ -71,8 +73,9 @@ The clock/entropy positive gates, nine malformed inputs, two missing grants
 and getrandom ENOSYS are rerun on the integrated runtime. No entropy is logged.
 
 `seed/compiler-core.json`, the new adoption receipt and the bootstrap receipt
-now describe this source. The pinned root is the stable F2 image, whose F3
-rebuild is byte-identical. `merge-review.json` records the chain and results.
+now describe this source. The first reviewed F2 root rebuilds F3 byte-identically. The final combined
+compiler J1, including the latest main platform API, rebuilds identical J2;
+J1 is the pinned root. `merge-review.json` records the chain and results.
 This does not rerun the full C0 deep-provenance tier or qualify project/arena
 coverage beyond the unchanged native golden corpus and listed runtime cases.
 
