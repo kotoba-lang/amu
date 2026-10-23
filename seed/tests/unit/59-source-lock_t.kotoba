@@ -1,0 +1,30 @@
+;; deps: 03-source-sha256 59-source-lock
+(defn- t-file [hash :string path :string] :string (string-concat "file " (string-concat hash (string-concat " " (string-concat path "\n")))))
+(defn- t-abc [] :string "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+(defn- t-lock [] :string
+  (string-concat "KSL1\nentry /scope/main.kotoba\nroot /scope/src\nroot /scope/test\n"
+                 (t-file (t-abc) "/scope/main.kotoba")))
+(defn- seed-main [] :i64
+  (let [text (t-lock)]
+    (cond (not (ksl-valid? text)) 1
+          (not (string=? (ksl-entry text) "/scope/main.kotoba")) 2
+          (not= (ksl-root-count text) 2) 3
+          (not (string=? (ksl-root text 1) "/scope/test")) 4
+          (not= (ksl-file-count text) 1) 5
+          (not (ksl-check-bytes? text "/scope/main.kotoba" [97 98 99])) 6
+          (ksl-check-bytes? text "/scope/main.kotoba" [97 98 100]) 7
+          (ksl-check-bytes? text "/scope/missing.kotoba" [97 98 99]) 8
+          (ksl-valid? (string-concat text (t-file (t-abc) "/scope/main.kotoba"))) 9
+          (ksl-valid? (string-concat text (t-file (t-abc) "/scope/a.kotoba"))) 10
+          (ksl-valid? (string-concat text "root /scope/late\n")) 11
+          (ksl-valid? (string-concat "KSL1\nentry /scope/main.kotoba\nroot /scope\nroot /scope\n" (t-file (t-abc) "/scope/main.kotoba"))) 12
+          (ksl-valid? (string-concat "KSL1\nentry /scope/main.kotoba\n" (t-file (t-abc) "/scope/../main.kotoba"))) 13
+          (ksl-valid? (string-concat "KSL1\nentry /scope/main.kotoba\n" (t-file (t-abc) "/scope/main.cljk"))) 14
+          (ksl-valid? "KSL1\nentry /scope/main.kotoba\n") 15
+          (ksl-valid? "") 16
+          (ksl-path? "/scope//main.kotoba") 17
+          (ksl-path? "/scope/./main.kotoba") 18
+          (ksl-path? "relative.kotoba") 19
+          (not (ksl-path? "/scope/a b.kotoba")) 20
+          (ksl-valid? (string-substring text 0 (- (string-length text) 1))) 21
+          :else 0)))
