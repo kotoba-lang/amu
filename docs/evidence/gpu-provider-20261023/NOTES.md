@@ -91,8 +91,11 @@ the selfhost compiler.
   identical results. This includes the 70 MiB MAP, opened after Landlock
   through its rule. The report adds:
   * the driver, `radv Mesa 25.2.8-0ubuntu0.24.04.2`;
-  * the mapped libraries with their SHA-256: the loader
-    `libvulkan.so.1.3.275` and the ICD libraries the loader opened.
+  * with their SHA-256, the loader and the driver libraries (paths naming
+    libvulkan, nvidia or libGLX_, which covers NVIDIA's `libGLX_nvidia`): the
+    loader `libvulkan.so.1.3.275` and the eight ICD libraries it opened;
+  * every mapped shared library by path (43 on gad);
+  * the image's DT_NEEDED names, `["libc.so.6" "libvulkan.so.1"]`.
 
 ## Limits
 

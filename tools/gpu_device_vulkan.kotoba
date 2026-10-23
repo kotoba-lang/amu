@@ -391,38 +391,45 @@
     (loop [i 0 out []]
       (let [c (if (< i n) (kxrt-p-load8 (+ a i)) 0)]
         (if (= c 0) out (recur (inc i) (conj out (if (or (> c 126) (= c 34) (= c 92)) 63 c)))))))))
-;; the mapped files whose path names libvulkan (the loader and the drivers), from
-;; /proc/self/maps, each with its SHA-256, as EDN maps; read before the
-;; provider confines itself
+;; From /proc/self/maps, read before the provider confines itself: every
+;; mapped shared library (:mapped, paths), and with its SHA-256 (:libraries)
+;; each that can be the loader or a driver: a path naming libvulkan (the
+;; loader, Mesa's ICDs), nvidia or libGLX_ (NVIDIA's ICD is libGLX_nvidia).
+;; t within the bytes [a, e)
+(defn- vk-has? [a :i64 e :i64 t :string] :bool
+  (let [n (string-length t)] (loop [j a] (cond (> (+ j n) e) false (bytes-are? j t) true :else (recur (inc j))))))
+(defn- vk-library-item [s :i64 a :i64 n :i64] :string
+  (let [path (ascii-at a n) q (sg s S-PATH) x (copy-bytes q a n) z (kxrt-p-store8 (+ q n) 0)
+        f (kxrt-p-open-ro q) size (if (< f 0) -1 (kxrt-p-fsize f))
+        d (if (< size 0) -1 (file-digest s f size 0)) y (if (< f 0) 0 (kxrt-p-close f))
+        h (sg s S-CHUNK) hx (if (< d 0) "unknown" (let [t (hex-out h (+ s S-DIGEST) 32)] (string-at h 64)))]
+    (string-concat "{:path " (string-concat (quoted-ascii path) (string-concat " :sha256 " (string-concat (quoted-ascii hx) "}"))))))
+(defn- vk-join [out :string item :string] :string (if (= (string-length out) 0) item (string-concat out (string-concat " " item))))
 (defn- vk-libraries [s :i64] :string
   (let [b (sg s S-ANS) w (copy-path (sg s S-PATH) "/proc/self/maps") fd (kxrt-p-open-ro (sg s S-PATH))
         n (if (< fd 0) 0 (read-full fd b (constant 7))) c (if (< fd 0) 0 (kxrt-p-close fd))]
-    (loop [i 0 out "" prev -1 plen 0]
-      (if (>= i n) out
+    (loop [i 0 libs "" mapped "" prev -1 plen 0]
+      (if (>= i n) (string-concat ":libraries [" (string-concat libs (string-concat "] :mapped [" (string-concat mapped "]"))))
         (let [e (loop [j i] (if (or (>= j n) (= (kxrt-p-load8 (+ b j)) 10)) j (recur (inc j))))
               ps (loop [j i] (cond (>= j e) -1 (= (kxrt-p-load8 (+ b j)) 47) j :else (recur (inc j))))
               pl (if (< ps 0) 0 (- e ps))
-              vk (and (> pl 0) (loop [j ps] (cond (> (+ j 9) e) false
-                                                 (bytes-are? (+ b j) "libvulkan") true
-                                                 :else (recur (inc j)))))
-              same (and (= pl plen) (>= prev 0) (loop [j 0] (cond (= j pl) true (= (kxrt-p-load8 (+ b ps j)) (kxrt-p-load8 (+ b prev j))) (recur (inc j)) :else false)))]
-          (if (and vk (not same))
-            (let [path (ascii-at (+ b ps) pl) q (sg s S-PATH) x (copy-bytes q (+ b ps) pl) z (kxrt-p-store8 (+ q pl) 0)
-                  f (kxrt-p-open-ro q) size (if (< f 0) -1 (kxrt-p-fsize f))
-                  d (if (< size 0) -1 (file-digest s f size)) y (if (< f 0) 0 (kxrt-p-close f))
-                  h (sg s S-CHUNK) hx (if (< d 0) "unknown" (let [t (hex-out h (+ s S-DIGEST) 32)] (string-at h 64)))
-                  item (string-concat "{:path " (string-concat (quoted-ascii path) (string-concat " :sha256 " (string-concat (quoted-ascii hx) "}"))))]
-              (recur (inc e) (if (= (string-length out) 0) item (string-concat out (string-concat " " item))) ps pl))
-            (recur (inc e) out (if (> pl 0) ps prev) (if (> pl 0) pl plen))))))))
+              same (and (= pl plen) (>= prev 0) (bytes-equal? (+ b ps) (+ b prev) pl))
+              so (and (> pl 0) (not same) (vk-has? (+ b ps) (+ b e) ".so"))
+              driver (and so (or (vk-has? (+ b ps) (+ b e) "libvulkan") (vk-has? (+ b ps) (+ b e) "nvidia") (vk-has? (+ b ps) (+ b e) "libGLX_")))]
+          (recur (inc e)
+                 (if driver (vk-join libs (vk-library-item s (+ b ps) pl)) libs)
+                 (if so (vk-join mapped (quoted-ascii (ascii-at (+ b ps) pl))) mapped)
+                 (if (> pl 0) ps prev) (if (> pl 0) pl plen)))))))
 (defn- bytes-are? [a :i64 t :string] :bool
   (let [n (string-length t)] (loop [i 0] (cond (= i n) true (= (kxrt-p-load8 (+ a i)) (string-code-point-at t i)) (recur (inc i)) :else false))))
 ;; the report's facts about the layer: the driver (VkPhysicalDeviceDriverProperties
-;; when the device is Vulkan 1.2) and the Vulkan libraries mapped
+;; when the device is Vulkan 1.2), the loader and driver libraries with their
+;; digests, and every mapped library
 (defn- dev-facts [s :i64] :string
   (let [v (vk-state s) d (+ v V-DRIVER)
         drv (if (= (r32 d) 1000196000) (string-concat (ascii-at (+ d 20) 256) (string-concat " " (ascii-at (+ d 276) 256))) "unknown")]
     (string-concat "{:layer :vulkan :driver " (string-concat (quoted-ascii drv)
-      (string-concat " :libraries [" (string-concat (vk-libraries s) "]}"))))))
+      (string-concat " " (string-concat (vk-libraries s) "}"))))))
 (defn- dev-name [s :i64] :string
   (let [v (vk-state s)] (if (or (= v 0) (= (vg v V-PHYS) 0)) "none" (ascii-at (+ v V-PROPS 16 20) 256))))
 (defn- dev-info [s :i64] :string
