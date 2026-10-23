@@ -22,12 +22,18 @@ on:
     paths:
       - "seed/**"
       - "scripts/seed/**"
+      - "tools/gpu_*.kotoba"
+      - "tools/spirv_*.kotoba"
+      - "tools/static_launcher*.kotoba"
       - ".github/workflows/selfhost-native.yml"
   pull_request:
     branches: [main]
     paths:
       - "seed/**"
       - "scripts/seed/**"
+      - "tools/gpu_*.kotoba"
+      - "tools/spirv_*.kotoba"
+      - "tools/static_launcher*.kotoba"
       - ".github/workflows/selfhost-native.yml"
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -92,6 +98,7 @@ jobs:
             ${{ runner.temp }}/x86/x86_64-native.json
             ${{ runner.temp }}/x86/check-static-launcher/static-launcher.json
             ${{ runner.temp }}/x86/check-platform-linked/platform-linked.json
+            ${{ runner.temp }}/x86/check-gpu-provider/gpu-provider.json
             ${{ runner.temp }}/x86/runtime-boundary/runtime-boundary.json
             ${{ runner.temp }}/x86/runtime-boundary/calls.json
             ${{ runner.temp }}/x86/raw

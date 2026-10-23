@@ -1,0 +1,655 @@
+(ns gpu-provider (:export [main]))
+
+;; The GPU provider (ADR 0371 Decision 5, step 6). It serves :gpu/compute
+;; (wire 42) protocol v1 for one guest, as tools/gpu_compute_protocol.kotoba
+;; defines it, on a device layer. It is a platform-linked image (seed/78) and
+;; reaches the host only through the kxrt-p- platform API.
+;;
+;; The unit (scripts/seed/check-gpu-provider.py builds it): this ns line, the
+;; protocol table without its ns line, a device layer without its ns line
+;; (tools/gpu_device_fake.kotoba; the Vulkan layer is the next step), then the
+;; rest of this file.
+;;
+;; Descriptors, as the static launcher sets them (ADR 0371 step 4): 0 requests,
+;; 1 answers, 2 stderr, 3 the grant (read to its end), 4 the report (one EDN
+;; line at exit). Frames both ways: a u32 little-endian length, then the bytes.
+;; Never use wire 37 (:io/write) here: it writes to fd 1, the answers.
+;;
+;; Memory: every value that outlives one request is in memory from
+;; kxrt-p-alloc. Each request is served inside arena-scope, which reclaims the
+;; strings and vectors it made.
+;;
+;; The grant is one EDN map in a strict subset: whitespace and commas between
+;; tokens, keywords, decimal integers, and strings of printable ASCII without
+;; a quote or a backslash.
+;;   {:wires #{42} :artifacts [{:path "P" :sha256 "64 lowercase hex digits"
+;;     :kind :model} ...] :device-bytes N :submit-timeout-seconds 60 :device 0}
+;; :wires (holding 42), :artifacts and :device-bytes are required; the timeout
+;; (1..60) defaults to 60 s, protocol constant 13. Without :device the layer
+;; picks (-1: the first device with a compute queue, a discrete GPU first). Another
+;; key, a repeated key or a malformed value refuses the grant: the provider
+;; then serves nothing, reports :grant-refused and exits 2.
+;;
+;; check-request decides what a line alone decides; this file decides the rest
+;; and answers refusals 19 on. MAP reads :model artifacts and PIPELINE :spirv
+;; ones; an artifact's digest is checked against the grant before its first
+;; use, and only verified bytes reach the device: a :spirv module is kept in
+;; memory as it was hashed, and for a :model the SHA-256 of each CHUNK-byte
+;; piece is recorded while the file is hashed, and each piece a MAP reads is
+;; checked against it (a file changed since is refused as digest mismatch). A
+;; request that is not ASCII is refused as gpu/unknown-verb (the protocol's
+;; requests are ASCII lines). Refusals 33 (device lost) and 34 (fence timeout)
+;; end the session, wherever a device layer reports them.
+;;
+;; Exit status: 0 after end of file on fd 0 at a frame boundary, 2 grant
+;; refused, 3 no device, 4 no memory, 1 otherwise (a truncated frame too).
+
+;; ---------------------------------------------------------------------
+;; State: one page, words at these offsets.
+
+(def S-RECORDING 0)
+(def S-SLOT 8)
+(def S-DISPATCHES 16)
+(def S-EPOCH 24)
+(def S-USED 32)
+(def S-CAP 40)
+(def S-TIMEOUT 48)
+(def S-DEVICE 56)
+(def S-SERVED 64)
+(def S-REFUSED 72)
+(def S-END 80)
+(def S-REQ 88)
+(def S-ANS 96)
+(def S-GRANT 104)
+(def S-NART 112)
+(def S-ART 120)
+(def S-BUF 128)
+(def S-PIPE 136)
+(def S-KEPT 144)
+(def S-CHUNK 152)
+(def S-PATH 160)
+(def S-IDS 168)
+(def S-GRANT-N 176)
+(def S-DEV 184)
+(def S-WIRE42 192)
+(def S-T0 200)
+(def S-T1 208)
+(def S-ERRPOS 216)
+(def S-LAST 224)
+(def S-SHA 256)
+(def S-DIGEST 320)
+
+(def GRANT-MAX 1048576)
+(def ARTIFACTS 256)
+(def CHUNK 1048576)
+;; table rows: artifacts 64 bytes (0 path offset, 8 path length, 16 digest
+;; offset, 24 kind 1 model 2 spirv 3 msl, 32 check 0 not yet 1 ok 2 digest
+;; mismatch 3 unreadable, 40 fd, 48 size, 56 the piece digests of a :model or
+;; the verified bytes of a :spirv); buffers 48 (0 live, 8 size, 16
+;; device id, 24 kept-slot mask, 32 last recording); pipelines 32 (0 live,
+;; 8 bindings, 16 device id); kept slots 16 (0 kept, 8 dispatches)
+
+(defn- sg [s :i64 k :i64] :i64 (kxrt-p-load64 (+ s k)))
+(defn- ss [s :i64 k :i64 v :i64] :i64 (let [z (kxrt-p-store64 (+ s k) v)] v))
+(defn- min2 [a :i64 b :i64] :i64 (if (< a b) a b))
+(defn- u32-at [a :i64] :i64
+  (bit-or (kxrt-p-load8 a) (bit-or (i64-shift-left (kxrt-p-load8 (+ a 1)) 8)
+    (bit-or (i64-shift-left (kxrt-p-load8 (+ a 2)) 16) (i64-shift-left (kxrt-p-load8 (+ a 3)) 24)))))
+(defn- put-u32 [a :i64 v :i64] :i64
+  (let [b0 (kxrt-p-store8 a (bit-and v 255)) b1 (kxrt-p-store8 (+ a 1) (bit-and (u64-shift-right v 8) 255))
+        b2 (kxrt-p-store8 (+ a 2) (bit-and (u64-shift-right v 16) 255))
+        b3 (kxrt-p-store8 (+ a 3) (bit-and (u64-shift-right v 24) 255))] 4))
+(defn- copy-bytes [dst :i64 src :i64 n :i64] :i64
+  (loop [i 0] (if (>= i n) n (let [z (kxrt-p-store8 (+ dst i) (kxrt-p-load8 (+ src i)))] (recur (inc i))))))
+
+;; n bytes from fd, fewer only at end of file or on an error
+(defn- read-full [fd :i64 a :i64 n :i64] :i64
+  (loop [k 0] (if (>= k n) k (let [r (kxrt-p-read fd (+ a k) (- n k))] (if (<= r 0) k (recur (+ k r)))))))
+(defn- read-at [fd :i64 a :i64 n :i64 off :i64] :i64
+  (loop [k 0] (if (>= k n) k (let [r (kxrt-p-pread fd (+ a k) (- n k) (+ off k))] (if (<= r 0) k (recur (+ k r)))))))
+;; 0, or -1 when the reader is gone (SIGPIPE is ignored: -EPIPE)
+(defn- write-all [fd :i64 a :i64 n :i64] :i64
+  (loop [k 0] (if (>= k n) 0 (let [r (kxrt-p-write fd (+ a k) (- n k))] (if (<= r 0) -1 (recur (+ k r)))))))
+
+;; the string of n ASCII bytes at a
+(defn- string-at [a :i64 n :i64] :string
+  (string-from-utf8 (bytes-from-vector-i64
+    (loop [i 0 v (vector-alloc n)] (if (= i n) v (recur (inc i) (vector-assoc! v i (kxrt-p-load8 (+ a i)))))))))
+;; a NUL-ended string at a, at most n bytes, as ASCII: another byte as ?
+(defn- cstr-at [a :i64 n :i64] :string
+  (string-from-utf8 (bytes-from-vector-i64
+    (loop [i 0 v []]
+      (let [c (if (< i n) (kxrt-p-load8 (+ a i)) 0)]
+        (if (= c 0) v (recur (inc i) (conj v (if (or (< c 32) (> c 126)) 63 c)))))))))
+(defn- hex-digit [x :i64] :i64 (if (< x 10) (+ 48 x) (+ 87 x)))
+;; 2n hex digits for n bytes at src, written at dst
+(defn- hex-out [dst :i64 src :i64 n :i64] :i64
+  (loop [i 0]
+    (if (= i n) (* 2 n)
+      (let [v (kxrt-p-load8 (+ src i)) a (kxrt-p-store8 (+ dst (* 2 i)) (hex-digit (u64-shift-right v 4)))
+            b (kxrt-p-store8 (+ dst (inc (* 2 i))) (hex-digit (bit-and v 15)))]
+        (recur (inc i))))))
+
+;; ---------------------------------------------------------------------
+;; The grant.
+
+;; byte i of the grant, or -1 past its end
+(defn- gb [s :i64 i :i64] :i64
+  (if (or (< i 0) (>= i (sg s S-GRANT-N))) -1 (kxrt-p-load8 (+ (sg s S-GRANT) i))))
+(defn- gws? [c :i64] :bool (or (= c 32) (= c 9) (= c 10) (= c 13) (= c 44)))
+(defn- gdelim? [c :i64] :bool (or (gws? c) (= c 125) (= c 93) (= c -1)))
+(defn- gskip [s :i64 i :i64] :i64 (loop [j i] (if (gws? (gb s j)) (recur (inc j)) j)))
+(defn- gfail [s :i64 i :i64] :i64 (let [z (ss s S-ERRPOS i)] -1))
+;; the keyword :text at i, followed by a delimiter
+(defn- gkw? [s :i64 i :i64 text :string] :bool
+  (let [n (string-length text)]
+    (and (= (gb s i) 58)
+         (loop [k 0] (cond (= k n) true (= (gb s (+ i 1 k)) (string-code-point-at text k)) (recur (inc k)) :else false))
+         (gdelim? (gb s (+ i 1 n))))))
+;; a decimal at i: its end, the value in S-T0; -1 if none
+(defn- gint [s :i64 i :i64] :i64
+  (loop [j i v 0]
+    (let [c (gb s j)]
+      (if (and (>= c 48) (<= c 57))
+        (if (> v 99999999999999999) -1 (recur (inc j) (+ (* v 10) (- c 48))))
+        (if (and (> j i) (gdelim? c)) (let [z (ss s S-T0 v)] j) -1)))))
+;; an integer in lo..hi at i, stored at key k: its end, or -1
+(defn- gnum [s :i64 i :i64 k :i64 lo :i64 hi :i64 scale :i64] :i64
+  (let [e (gint s i)]
+    (if (or (< e 0) (< (sg s S-T0) lo) (> (sg s S-T0) hi)) -1 (let [z (ss s k (* scale (sg s S-T0)))] e))))
+;; a string at i: its end, its offset and length in S-T0 and S-T1; -1 if none
+(defn- gstr [s :i64 i :i64] :i64
+  (if (not= (gb s i) 34) -1
+    (loop [j (inc i)]
+      (let [c (gb s j)]
+        (cond (= c 34) (if (gdelim? (gb s (inc j))) (let [a (ss s S-T0 (inc i)) b (ss s S-T1 (- j (inc i)))] (inc j)) -1)
+              (or (< c 32) (> c 126) (= c 92)) -1
+              :else (recur (inc j)))))))
+(defn- ghex64? [s :i64 off :i64 n :i64] :bool
+  (and (= n 64)
+       (loop [i 0]
+         (let [c (gb s (+ off i))]
+           (cond (= i 64) true
+                 (or (and (>= c 48) (<= c 57)) (and (>= c 97) (<= c 102))) (recur (inc i))
+                 :else false)))))
+;; #{...} of integers at i; S-WIRE42 = 1 when 42 is in it
+(defn- gwires [s :i64 i :i64] :i64
+  (if (not (and (= (gb s i) 35) (= (gb s (inc i)) 123))) -1
+    (loop [j (gskip s (+ i 2))]
+      (if (= (gb s j) 125) (inc j)
+        (let [e (gint s j)]
+          (if (< e 0) -1 (let [w (if (= (sg s S-T0) 42) (ss s S-WIRE42 1) 0)] (recur (gskip s e)))))))))
+(defn- art-entry [s :i64 k :i64] :i64 (+ (sg s S-ART) (* 64 k)))
+(defn- kind-length [k :i64] :i64 (case k 1 5 2 5 3 3 0))
+;; one {:path :sha256 :kind} map at i, appended to the table: its end, or -1
+(defn- gartifact [s :i64 i :i64] :i64
+  (let [k (sg s S-NART) e (art-entry s k)]
+    (if (or (>= k ARTIFACTS) (not= (gb s i) 123)) -1
+      (loop [j (gskip s (inc i)) seen 0]
+        (cond (= (gb s j) 125)
+                (if (= seen 7) (let [n (ss s S-NART (inc k)) f (kxrt-p-store64 (+ e 40) -1)] (inc j)) -1)
+              (gkw? s j "path")
+                (let [v (if (= (bit-and seen 1) 0) (gstr s (gskip s (+ j 5))) -1)]
+                  (if (or (< v 0) (= (sg s S-T1) 0) (>= (sg s S-T1) 4096)) -1
+                    (let [a (kxrt-p-store64 e (sg s S-T0)) b (kxrt-p-store64 (+ e 8) (sg s S-T1))]
+                      (recur (gskip s v) (bit-or seen 1)))))
+              (gkw? s j "sha256")
+                (let [v (if (= (bit-and seen 2) 0) (gstr s (gskip s (+ j 7))) -1)]
+                  (if (or (< v 0) (not (ghex64? s (sg s S-T0) (sg s S-T1)))) -1
+                    (let [a (kxrt-p-store64 (+ e 16) (sg s S-T0))] (recur (gskip s v) (bit-or seen 2)))))
+              (gkw? s j "kind")
+                (let [v (gskip s (+ j 5))
+                      kind (cond (not= (bit-and seen 4) 0) 0 (gkw? s v "model") 1 (gkw? s v "spirv") 2 (gkw? s v "msl") 3 :else 0)]
+                  (if (= kind 0) -1
+                    (let [a (kxrt-p-store64 (+ e 24) kind)] (recur (gskip s (+ v 1 (kind-length kind))) (bit-or seen 4)))))
+              :else -1)))))
+(defn- gartifacts [s :i64 i :i64] :i64
+  (if (not= (gb s i) 91) -1
+    (loop [j (gskip s (inc i))]
+      (if (= (gb s j) 93) (inc j)
+        (let [e (gartifact s j)] (if (< e 0) -1 (recur (gskip s e))))))))
+(defn- gkey [s :i64 j :i64] :i64
+  (cond (gkw? s j "wires") 1 (gkw? s j "artifacts") 2 (gkw? s j "device-bytes") 4
+        (gkw? s j "submit-timeout-seconds") 8 (gkw? s j "device") 16 :else 0))
+(defn- gvalue [s :i64 j :i64 b :i64] :i64
+  (case b
+    1 (gwires s (gskip s (+ j 6)))
+    2 (gartifacts s (gskip s (+ j 10)))
+    4 (gnum s (gskip s (+ j 13)) S-CAP 0 4611686018427387903 1)
+    8 (gnum s (gskip s (+ j 23)) S-TIMEOUT 1 (constant 13) 1000000000)
+    16 (gnum s (gskip s (+ j 7)) S-DEVICE 0 255 1)
+    -1))
+;; 0 when the grant parses, else -1 with S-ERRPOS the byte it stopped at
+(defn- parse-grant [s :i64] :i64
+  (let [i (gskip s 0)]
+    (if (not= (gb s i) 123) (gfail s i)
+      (loop [j (gskip s (inc i)) seen 0]
+        (if (= (gb s j) 125)
+          (cond (not= (gb s (gskip s (inc j))) -1) (gfail s (gskip s (inc j)))
+                (not= (bit-and seen 7) 7) (gfail s j)
+                (= (sg s S-WIRE42) 0) (gfail s j)
+                :else 0)
+          (let [b (gkey s j) e (if (or (= b 0) (not= (bit-and seen b) 0)) -1 (gvalue s j b))]
+            (if (< e 0) (gfail s j) (recur (gskip s e) (bit-or seen b)))))))))
+;; the grant from fd 3, to its end: its length, or -1 when it is longer than
+;; GRANT-MAX or fd 3 cannot be read
+(defn- read-grant [s :i64] :i64
+  (let [g (sg s S-GRANT)
+        n (loop [k 0] (if (> k GRANT-MAX) k (let [r (kxrt-p-read 3 (+ g k) (- (+ GRANT-MAX 1) k))] (cond (= r 0) k (< r 0) -1 :else (recur (+ k r))))))]
+    (if (or (< n 0) (> n GRANT-MAX)) -1 (ss s S-GRANT-N n))))
+
+;; ---------------------------------------------------------------------
+;; Artifacts.
+
+;; the artifact of kind whose path equals the field, or -1
+(defn- art-find [s :i64 path :string kind :i64] :i64
+  (let [n (string-length path) g (sg s S-GRANT)]
+    (loop [k 0]
+      (if (>= k (sg s S-NART)) -1
+        (let [e (art-entry s k)
+              same (and (= (kxrt-p-load64 (+ e 24)) kind) (= (kxrt-p-load64 (+ e 8)) n)
+                        (loop [i 0] (cond (= i n) true
+                                          (= (kxrt-p-load8 (+ g (kxrt-p-load64 e) i)) (string-code-point-at path i)) (recur (inc i))
+                                          :else false)))]
+          (if same k (recur (inc k))))))))
+;; the SHA-256 of size bytes of fd at S-DIGEST, and unless table is 0 the
+;; SHA-256 of each CHUNK-byte piece at table + 32 * piece: 32, or -1 when it
+;; is short
+(defn- file-digest [s :i64 fd :i64 size :i64 table :i64] :i64
+  (let [st (+ s S-SHA) c (sg s S-CHUNK) z (kxrt-p-sha256-start st)]
+    (loop [k 0]
+      (let [m (min2 CHUNK (- size k)) r (read-at fd c m k)
+            t (if (or (= table 0) (< r m) (= m 0)) 0 (kxrt-p-sha256 c m (+ table (* 32 (quot k CHUNK)))))]
+        (cond (< r m) -1
+              (< m CHUNK) (kxrt-p-sha256-finish st c m size (+ s S-DIGEST))
+              :else (let [b (kxrt-p-sha256-blocks st c m)] (recur (+ k m))))))))
+(defn- bytes-equal? [a :i64 b :i64 n :i64] :bool
+  (loop [i 0] (cond (= i n) true (= (kxrt-p-load8 (+ a i)) (kxrt-p-load8 (+ b i))) (recur (inc i)) :else false)))
+(defn- digest-is? [s :i64 hex :i64] :bool
+  (loop [i 0]
+    (if (= i 32) true
+      (let [v (kxrt-p-load8 (+ s S-DIGEST i))]
+        (if (and (= (kxrt-p-load8 (+ hex (* 2 i))) (hex-digit (u64-shift-right v 4)))
+                 (= (kxrt-p-load8 (+ hex (inc (* 2 i)))) (hex-digit (bit-and v 15))))
+          (recur (inc i)) false)))))
+;; open and check row e: 0, 28 unreadable, 29 digest mismatch. A :spirv module
+;; that PIPELINE may take is read into memory and those bytes are hashed and
+;; kept; anything else is hashed from the file with its piece digests.
+(defn- art-verify [s :i64 e :i64] :i64
+  (let [p (sg s S-PATH) g (sg s S-GRANT) n (kxrt-p-load64 (+ e 8))
+        c (copy-bytes p (+ g (kxrt-p-load64 e)) n) z (kxrt-p-store8 (+ p n) 0)
+        fd (kxrt-p-open-ro p) size (if (< fd 0) -1 (kxrt-p-fsize fd))
+        spirv (= (kxrt-p-load64 (+ e 24)) 2)
+        keep (and spirv (> size 0) (<= size (constant 9)))
+        mem (if keep (kxrt-p-alloc size) 0)
+        table (if (or spirv (< size 0)) 0 (kxrt-p-alloc (* 32 (inc (quot size CHUNK)))))
+        d (cond (< size 0) -1
+                keep (if (or (< mem 0) (< (read-at fd mem size 0) size)) -1 (kxrt-p-sha256 mem size (+ s S-DIGEST)))
+                (< table 0) -1
+                :else (file-digest s fd size table))]
+    (cond (< fd 0) 28
+          (< d 0) (let [x (kxrt-p-close fd)] 28)
+          (not (digest-is? s (+ g (kxrt-p-load64 (+ e 16))))) (let [x (kxrt-p-close fd)] 29)
+          :else (let [a (kxrt-p-store64 (+ e 40) fd) b (kxrt-p-store64 (+ e 48) size) q (kxrt-p-store64 (+ e 56) (if keep mem table))] 0))))
+;; n bytes from offset off of :model row e into device buffer d. Each piece
+;; the range touches is read once into memory and checked against its digest
+;; from the verification, and only those bytes are written: 0, 29 when a
+;; piece differs (the file changed), or the device layer's failure.
+(defn- map-verified [s :i64 e :i64 d :i64 off :i64 n :i64] :i64
+  (let [fd (kxrt-p-load64 (+ e 40)) size (kxrt-p-load64 (+ e 48)) table (kxrt-p-load64 (+ e 56)) c (sg s S-CHUNK)]
+    (loop [k (quot off CHUNK)]
+      (let [base (* k CHUNK)]
+        (if (>= base (+ off n)) 0
+          (let [m (min2 CHUNK (- size base))
+                ok (and (= (read-at fd c m base) m) (>= (kxrt-p-sha256 c m (+ s S-DIGEST)) 0)
+                        (bytes-equal? (+ s S-DIGEST) (+ table (* 32 k)) 32))]
+            (if (not ok) 29
+              (let [lo (if (> off base) off base) hi (min2 (+ off n) (+ base m))
+                    w (dev-write s d (- lo off) (+ c (- lo base)) (- hi lo))]
+                (if (< w 0) w (recur (inc k)))))))))))
+;; 0 when artifact k may be used, else its refusal; checked once
+(defn- art-check [s :i64 k :i64] :i64
+  (let [e (art-entry s k) st (kxrt-p-load64 (+ e 32))]
+    (cond (= st 1) 0 (= st 2) 29 (= st 3) 28
+          :else (let [r (art-verify s e) z (kxrt-p-store64 (+ e 32) (case r 0 1 29 2 3))] r))))
+
+;; ---------------------------------------------------------------------
+;; Tables.
+
+(defn- buf-entry [s :i64 h :i64] :i64 (+ (sg s S-BUF) (* 48 h)))
+(defn- buf-live? [s :i64 h :i64] :bool
+  (and (>= h (constant 12)) (< h (constant 0)) (= (kxrt-p-load64 (buf-entry s h)) 1)))
+(defn- buf-size [s :i64 h :i64] :i64 (kxrt-p-load64 (+ (buf-entry s h) 8)))
+(defn- buf-dev [s :i64 h :i64] :i64 (kxrt-p-load64 (+ (buf-entry s h) 16)))
+(defn- pipe-entry [s :i64 p :i64] :i64 (+ (sg s S-PIPE) (* 32 p)))
+(defn- pipe-live? [s :i64 p :i64] :bool
+  (and (>= p (constant 12)) (< p (constant 1)) (= (kxrt-p-load64 (pipe-entry s p)) 1)))
+(defn- kept-entry [s :i64 k :i64] :i64 (+ (sg s S-KEPT) (* 16 k)))
+(defn- kept? [s :i64 k :i64] :bool (= (kxrt-p-load64 (kept-entry s k)) 1))
+;; the lowest free handle from 1 in a table of n rows, or 0
+(defn- free-handle [base :i64 width :i64 n :i64] :i64
+  (loop [h 1] (cond (>= h n) 0 (= (kxrt-p-load64 (+ base (* width h))) 0) h :else (recur (inc h)))))
+(defn- buf-set [s :i64 h :i64 n :i64 d :i64] :i64
+  (let [e (buf-entry s h) a (kxrt-p-store64 (+ e 8) n) b (kxrt-p-store64 (+ e 16) d)
+        c (kxrt-p-store64 (+ e 24) 0) f (kxrt-p-store64 (+ e 32) 0) g (kxrt-p-store64 e 1)]
+    (ss s S-USED (+ (sg s S-USED) n))))
+;; buffers bound in the recording that SUBMIT keeps in slot k
+(defn- mark-kept [s :i64 k :i64] :i64
+  (loop [h 1]
+    (if (>= h (constant 0)) 0
+      (let [e (buf-entry s h)
+            z (if (and (= (kxrt-p-load64 e) 1) (= (kxrt-p-load64 (+ e 32)) (sg s S-EPOCH)))
+                (kxrt-p-store64 (+ e 24) (bit-or (kxrt-p-load64 (+ e 24)) (i64-shift-left 1 k))) 0)]
+        (recur (inc h))))))
+(defn- clear-kept [s :i64 k :i64] :i64
+  (loop [h 1]
+    (if (>= h (constant 0)) 0
+      (let [e (buf-entry s h) z (kxrt-p-store64 (+ e 24) (bit-and (kxrt-p-load64 (+ e 24)) (bit-not (i64-shift-left 1 k))))]
+        (recur (inc h))))))
+
+;; ---------------------------------------------------------------------
+;; Verbs. Each writes its answer at ANS+4 and returns its length, or returns
+;; minus a refusal index.
+
+(defn- put-answer [s :i64 a :string] :i64
+  (let [n (string-length a) b (+ (sg s S-ANS) 4)]
+    (loop [i 0] (if (= i n) n (let [c (string-code-point-at a i) z (kxrt-p-store8 (+ b i) (if (< c 128) c 63))] (recur (inc i)))))))
+(defn- put-decimal [s :i64 v :i64] :i64 (put-answer s (string-from-i64 v)))
+(defn- field-number [line :string k :i64] :i64 (parse-decimal (field-at line k)))
+;; a device layer's failure as a refusal: device lost and fence timeout end
+;; the session, anything else is a device error
+(defn- dev-error [r :i64] :i64 (if (or (= r -33) (= r -34)) r -32))
+;; nanoseconds from a submit, or its refusal
+(defn- submit-answer [s :i64 r :i64] :i64 (if (>= r 0) (put-decimal s r) (dev-error r)))
+
+(defn- do-alloc [s :i64 line :string] :i64
+  (let [n (field-number line 1) h (free-handle (sg s S-BUF) 48 (constant 0))]
+    (cond (= h 0) -19
+          (> n (- (sg s S-CAP) (sg s S-USED))) -31
+          :else (let [d (dev-alloc s n)] (if (<= d 0) (dev-error d) (let [x (buf-set s h n d)] (put-decimal s h)))))))
+
+(defn- do-map [s :i64 line :string] :i64
+  (let [k (art-find s (field-at line 1) 1) off (field-number line 2) n (field-number line 3)
+        c (if (< k 0) 28 (art-check s k))]
+    (if (> c 0) (- 0 c)
+      (let [e (art-entry s k) h (free-handle (sg s S-BUF) 48 (constant 0))]
+        (cond (> off (- (kxrt-p-load64 (+ e 48)) n)) -22
+              (= h 0) -19
+              (> n (- (sg s S-CAP) (sg s S-USED))) -31
+              :else (let [d (dev-alloc s n)]
+                      (if (<= d 0) (dev-error d)
+                        (let [r (map-verified s e d off n)]
+                          (cond (= r 29) (let [f (dev-free s d n) m (kxrt-p-store64 (+ e 32) 2)] -29)
+                                (< r 0) (let [f (dev-free s d n)] (dev-error r))
+                                :else (let [x (buf-set s h n d)] (put-decimal s h)))))))))))
+
+(defn- do-write [s :i64 line :string] :i64
+  (let [h (field-number line 1) off (field-number line 2) hx (field-at line 3) n (quot (string-length hx) 2)]
+    (cond (not (buf-live? s h)) -11
+          (> off (- (buf-size s h) n)) -22
+          :else
+            (let [c (sg s S-CHUNK)
+                  r (loop [k 0]
+                      (if (>= k n) 0
+                        (let [m (min2 CHUNK (- n k))
+                              d (loop [i 0]
+                                  (if (= i m) 0
+                                    (let [j (* 2 (+ k i))
+                                          z (kxrt-p-store8 (+ c i) (+ (* 16 (hex-nibble (string-code-point-at hx j))) (hex-nibble (string-code-point-at hx (inc j)))))]
+                                      (recur (inc i)))))
+                              w (dev-write s (buf-dev s h) (+ off k) c m)]
+                          (if (< w 0) w (recur (+ k m))))))]
+              (if (< r 0) (dev-error r) (put-answer s "1"))))))
+
+(defn- commas [a :string] :i64
+  (let [n (string-length a)] (loop [i 0 k 0] (if (= i n) k (recur (inc i) (if (= (string-code-point-at a i) 44) (inc k) k))))))
+;; the u32 list as little-endian words at off, a chunk at a time
+(defn- writedec-run [s :i64 d :i64 off :i64 a :string] :i64
+  (let [n (string-length a) c (sg s S-CHUNK)]
+    (loop [i 0 v 0 p 0 done 0]
+      (cond (>= i n) (let [q (put-u32 (+ c p) v)] (dev-write s d (+ off done) c (+ p 4)))
+            (= (string-code-point-at a i) 44)
+              (let [q (put-u32 (+ c p) v) p2 (+ p 4)]
+                (if (< p2 CHUNK) (recur (inc i) 0 p2 done)
+                  (let [w (dev-write s d (+ off done) c p2)] (if (< w 0) w (recur (inc i) 0 0 (+ done p2))))))
+            :else (recur (inc i) (+ (* v 10) (- (string-code-point-at a i) 48)) p done)))))
+(defn- do-writedec [s :i64 line :string] :i64
+  (let [h (field-number line 1) off (field-number line 2) a (field-at line 3) words (inc (commas a))]
+    (cond (not (buf-live? s h)) -11
+          (> off (- (buf-size s h) (* 4 words))) -22
+          :else (let [r (writedec-run s (buf-dev s h) off a)] (if (< r 0) (dev-error r) (put-decimal s words))))))
+
+(defn- do-read [s :i64 line :string] :i64
+  (let [h (field-number line 1) off (field-number line 2) n (field-number line 3)]
+    (cond (not (buf-live? s h)) -11
+          (> off (- (buf-size s h) n)) -22
+          :else
+            (let [b (+ (sg s S-ANS) 4) c (sg s S-CHUNK)
+                  r (loop [k 0]
+                      (if (>= k n) 0
+                        (let [m (min2 CHUNK (- n k)) w (dev-read s (buf-dev s h) (+ off k) c m)]
+                          (if (< w 0) w (let [x (hex-out (+ b (* 2 k)) c m)] (recur (+ k m)))))))]
+              (if (< r 0) (dev-error r) (* 2 n))))))
+
+(defn- do-pipeline [s :i64 line :string] :i64
+  (let [k (art-find s (field-at line 1) 2) bindings (field-number line 2)
+        c (if (< k 0) 28 (art-check s k))]
+    (if (> c 0) (- 0 c)
+      (let [e (art-entry s k) n (kxrt-p-load64 (+ e 48)) p (free-handle (sg s S-PIPE) 32 (constant 1))]
+        (cond (or (< n 20) (> n (constant 9)) (not= (rem n 4) 0)) -30
+              (= p 0) -20
+              ;; the bytes verified and kept at the first use
+              (not= (u32-at (kxrt-p-load64 (+ e 56))) 119734787) -30
+              :else
+                (let [v (dev-pipeline s (kxrt-p-load64 (+ e 56)) n bindings)]
+                  (if (<= v 0) (dev-error v)
+                    (let [q (pipe-entry s p) a (kxrt-p-store64 (+ q 8) bindings) b (kxrt-p-store64 (+ q 16) v)
+                          g (kxrt-p-store64 q 1)]
+                      (put-decimal s p)))))))))
+
+;; the recording state changes only once the device has begun
+(defn- start-recording [s :i64 slot :i64] :i64
+  (let [r (dev-begin s slot)]
+    (if (< r 0) (dev-error r)
+      (let [a (ss s S-RECORDING 1) b (ss s S-SLOT slot) c (ss s S-DISPATCHES 0) d (ss s S-EPOCH (inc (sg s S-EPOCH)))]
+        (put-answer s "1")))))
+
+;; DISPATCH (barrier 1) and DISPATCHC (0): recorded while recording, else
+;; submitted at once (nanoseconds)
+(defn- do-dispatch [s :i64 line :string barrier :i64] :i64
+  (let [p (field-number line 1) nh (- (field-count line) 5) ids (sg s S-IDS)
+        bad (loop [i 0] (cond (= i nh) false (buf-live? s (field-number line (+ 5 i))) (recur (inc i)) :else true))]
+    (cond (not (pipe-live? s p)) -12
+          (not= nh (kxrt-p-load64 (+ (pipe-entry s p) 8))) -27
+          bad -11
+          (and (= (sg s S-RECORDING) 1) (>= (sg s S-DISPATCHES) (constant 3))) -21
+          :else
+            (let [f (loop [i 0] (if (= i nh) 0 (let [z (kxrt-p-store64 (+ ids (* 8 i)) (buf-dev s (field-number line (+ 5 i))))] (recur (inc i)))))
+                  pd (kxrt-p-load64 (+ (pipe-entry s p) 16))
+                  x (field-number line 2) y (field-number line 3) z (field-number line 4)]
+              (if (= (sg s S-RECORDING) 1)
+                (let [r (dev-dispatch s pd x y z ids nh barrier)]
+                 (if (< r 0) (dev-error r)
+                  (let [m (loop [i 0] (if (= i nh) 0 (let [q (kxrt-p-store64 (+ (buf-entry s (field-number line (+ 5 i))) 32) (sg s S-EPOCH))] (recur (inc i)))))
+                        d (ss s S-DISPATCHES (inc (sg s S-DISPATCHES)))]
+                    (put-answer s "1"))))
+                (let [b (dev-begin s -1) r (if (< b 0) b (dev-dispatch s pd x y z ids nh barrier))]
+                  (if (< r 0) (dev-error r) (submit-answer s (dev-submit s -1 (sg s S-TIMEOUT))))))))))
+
+(defn- do-submit [s :i64] :i64
+  (let [slot (sg s S-SLOT) n (sg s S-DISPATCHES) a (ss s S-RECORDING 0)]
+    ;; an empty kept recording is closed on the device before the refusal
+    (if (and (>= slot 0) (= n 0)) (let [x (dev-drop s slot)] -25)
+      (let [r (dev-submit s slot (sg s S-TIMEOUT))]
+        (if (and (>= slot 0) (>= r 0))
+          (let [k (kept-entry s slot) x (kxrt-p-store64 (+ k 8) n) y (kxrt-p-store64 k 1) z (mark-kept s slot)]
+            (put-decimal s r))
+          (submit-answer s r))))))
+
+(defn- do-free [s :i64 h :i64] :i64
+  (cond (not (buf-live? s h)) -11
+        (not= (kxrt-p-load64 (+ (buf-entry s h) 24)) 0) -26
+        :else (let [n (buf-size s h) f (dev-free s (buf-dev s h) n) z (kxrt-p-store64 (buf-entry s h) 0)
+                    u (ss s S-USED (- (sg s S-USED) n))]
+                (put-answer s "1"))))
+
+(defn- execute [s :i64 line :string v :i64] :i64
+  (case v
+    1 (put-answer s (dev-info s))
+    2 (put-answer s (devclass-name (dev-devclass s)))
+    3 (do-alloc s line)
+    4 (do-map s line)
+    5 (do-write s line)
+    6 (do-writedec s line)
+    7 (do-read s line)
+    8 (do-pipeline s line)
+    9 (start-recording s -1)
+    10 (let [k (field-number line 1)] (if (kept? s k) -23 (start-recording s k)))
+    11 (do-dispatch s line 1)
+    12 (do-dispatch s line 0)
+    13 (do-submit s)
+    14 (let [k (field-number line 1)] (if (kept? s k) (submit-answer s (dev-replay s k (sg s S-TIMEOUT))) -24))
+    15 (let [k (field-number line 1)]
+         (if (not (kept? s k)) -24
+           (let [d (dev-drop s k) z (kxrt-p-store64 (kept-entry s k) 0) c (clear-kept s k)] (put-answer s "1"))))
+    16 (let [h (field-number line 1)]
+         (if (not (buf-live? s h)) -11
+           (let [r (dev-zero s (buf-dev s h) (buf-size s h))] (if (< r 0) (dev-error r) (put-answer s "1")))))
+    17 (do-free s (field-number line 1))
+    -2))
+
+;; ---------------------------------------------------------------------
+;; Frames and the session.
+
+;; the answer of m bytes at ANS+4 as a frame: kind, or -1 when fd 1 is gone
+(defn- frame [s :i64 m :i64 kind :i64] :i64
+  (let [a (sg s S-ANS) h (put-u32 a m)] (if (< (write-all 1 a (+ m 4)) 0) -1 kind)))
+;; answer refusal r: 1, 2 when it ends the session, -1 when fd 1 is gone
+(defn- refuse [s :i64 r :i64 v :i64] :i64
+  (let [m (put-answer s (answer-refusal r v)) c (ss s S-REFUSED (inc (sg s S-REFUSED))) l (ss s S-LAST r)]
+    (frame s m (if (or (= r 33) (= r 34)) 2 1))))
+;; the request of n bytes at REQ+8
+(defn- serve [s :i64 n :i64] :i64
+  (let [a (+ (sg s S-REQ) 8)
+        ascii (loop [i 0] (cond (= i n) true (>= (kxrt-p-load8 (+ a i)) 128) false :else (recur (inc i))))]
+    (if (not ascii) (refuse s 2 0)
+      (let [line (string-at a n) rec (sg s S-RECORDING) r (check-request line rec)]
+        (if (> r 0) (refuse s r (if (< r 3) 0 (verb-code (field-at line 0))))
+          (let [v (verb-code (field-at line 0)) m (execute s line v)]
+            (if (>= m 0) (frame s m 0) (refuse s (- 0 m) v))))))))
+;; end codes: 1 end of file at a frame boundary, 2 request too long, 3 device
+;; lost, 4 fence timeout, 5 answers not written, 6 grant refused, 7 no device,
+;; 8 confinement failed, 9 a truncated frame
+(defn- session [s :i64] :i64
+  (loop [k 0]
+    (let [q (sg s S-REQ) h (read-full 0 q 4)]
+      (cond (= h 0) (ss s S-END 1)
+            (< h 4) (ss s S-END 9)
+            :else
+        (let [n (u32-at q)]
+          (if (> n (constant 6))
+            (let [w (arena-scope (refuse s 3 0))] (ss s S-END 2))
+            (if (< (read-full 0 (+ q 8) n) n) (ss s S-END 9)
+              (let [r (arena-scope (serve s n)) c (ss s S-SERVED (inc (sg s S-SERVED)))]
+                (cond (< r 0) (ss s S-END 5)
+                      (= r 2) (ss s S-END (if (= (sg s S-LAST) 33) 3 4))
+                      :else (recur (inc k)))))))))))
+
+;; ---------------------------------------------------------------------
+;; The report and main.
+
+(defn- end-name [c :i64] :string
+  (case c 1 ":eof" 2 ":request-too-long" 3 ":device-lost" 4 ":fence-timeout" 5 ":answers-not-written"
+          6 ":grant-refused" 7 ":no-device" 8 ":confinement-failed" 9 ":truncated-request" ":unknown"))
+;; an EDN string of an ASCII string (cstr-at and the layers give ASCII): a
+;; quote and a backslash escaped, a control byte as ?
+(defn- quoted-ascii [a :string] :string
+  (let [n (string-length a)]
+    (string-concat "\"" (string-concat (string-from-utf8 (bytes-from-vector-i64
+      (loop [i 0 v []]
+        (if (= i n) v
+          (let [c (string-code-point-at a i)]
+            (recur (inc i) (cond (or (= c 34) (= c 92)) (conj (conj v 92) c) (or (< c 32) (> c 126)) (conj v 63) :else (conj v c)))))))) "\""))))
+;; the SHA-256 of /proc/self/exe as hex, or "unknown"
+(defn- image-digest [s :i64] :string
+  (let [p (sg s S-PATH) w (copy-path p "/proc/self/exe") fd (kxrt-p-open-ro p)
+        size (if (< fd 0) -1 (kxrt-p-fsize fd))
+        d (if (< size 0) -1 (file-digest s fd size 0)) c (if (< fd 0) 0 (kxrt-p-close fd))
+        h (sg s S-CHUNK)]
+    (if (< d 0) "unknown" (let [x (hex-out h (+ s S-DIGEST) 32)] (string-at h 64)))))
+(defn- copy-path [p :i64 a :string] :i64
+  (let [n (string-length a)
+        z (loop [i 0] (if (= i n) 0 (let [y (kxrt-p-store8 (+ p i) (string-code-point-at a i))] (recur (inc i)))))]
+    (kxrt-p-store8 (+ p n) 0)))
+(defn- kernel-release [s :i64] :string
+  (let [u (sg s S-CHUNK)] (if (= (kxrt-p-uname u) 0) (cstr-at (+ u 130) 65) "unknown")))
+;; the file offset of virtual address va in the image whose program headers
+;; (phnum of 56 bytes) are at ph, or -1
+(defn- elf-offset [ph :i64 phnum :i64 va :i64] :i64
+  (loop [i 0]
+    (if (>= i phnum) -1
+      (let [h (+ ph (* 56 i)) v (kxrt-p-load64 (+ h 16))]
+        (if (and (= (bit-and (kxrt-p-load64 h) 4294967295) 1) (>= va v) (< va (+ v (kxrt-p-load64 (+ h 32)))))
+          (+ (- va v) (kxrt-p-load64 (+ h 8))) (recur (inc i)))))))
+;; the DT_NEEDED names of /proc/self/exe as an EDN vector, or nil: what the
+;; host's dynamic linker loaded for this image (ADR 0371 Decision 5)
+(defn- elf-needed [s :i64] :string
+  (let [p (sg s S-PATH) w (copy-path p "/proc/self/exe") fd (kxrt-p-open-ro p) b (sg s S-CHUNK)
+        ph (+ b 64) dy (+ b 8192) st (+ b 16384)
+        h (if (< fd 0) 0 (read-at fd b 64 0))
+        phnum (if (= h 64) (bit-and (kxrt-p-load64 (+ b 56)) 65535) 0)
+        r (if (and (> phnum 0) (< phnum 64)) (read-at fd ph (* 56 phnum) (kxrt-p-load64 (+ b 32))) 0)
+        dyn (loop [i 0] (cond (>= i phnum) -1 (= (bit-and (kxrt-p-load64 (+ ph (* 56 i))) 4294967295) 2) (+ ph (* 56 i)) :else (recur (inc i))))
+        dn (if (< dyn 0) 0 (min2 (kxrt-p-load64 (+ dyn 32)) 4096))
+        r2 (if (< dyn 0) 0 (read-at fd dy dn (kxrt-p-load64 (+ dyn 8))))
+        stva (loop [i 0] (cond (>= (* 16 (inc i)) (+ dn 1)) -1 (= (kxrt-p-load64 (+ dy (* 16 i))) 5) (kxrt-p-load64 (+ dy (* 16 i) 8)) :else (recur (inc i))))
+        stoff (if (< stva 0) -1 (elf-offset ph phnum stva))
+        names (if (< stoff 0) "nil"
+                (loop [i 0 out ""]
+                  (if (>= (* 16 (inc i)) (+ dn 1)) (string-concat "[" (string-concat out "]"))
+                    (if (= (kxrt-p-load64 (+ dy (* 16 i))) 1)
+                      (let [g (read-at fd st 256 (+ stoff (kxrt-p-load64 (+ dy (* 16 i) 8))))
+                            q (quoted-ascii (cstr-at st (min2 g 255)))]
+                        (recur (inc i) (if (= (string-length out) 0) q (string-concat out (string-concat " " q)))))
+                      (recur (inc i) out)))))
+        c (if (< fd 0) 0 (kxrt-p-close fd))]
+    names))
+(defn- report [s :i64 image :string needed :string] :i64
+  (let [a (string-concat "{:provider :kotoba.gpu-provider/v1 :device " (quoted-ascii (dev-name s)))
+        b (string-concat a (string-concat " :served " (string-from-i64 (sg s S-SERVED))))
+        c (string-concat b (string-concat " :refused " (string-from-i64 (sg s S-REFUSED))))
+        d (string-concat c (string-concat " :end " (end-name (sg s S-END))))
+        e (if (= (sg s S-END) 6) (string-concat d (string-concat " :grant-error-at " (string-from-i64 (sg s S-ERRPOS)))) d)
+        f (string-concat e (string-concat " :image " (string-concat (quoted-ascii image) (string-concat " :needed " needed))))
+        g (string-concat f (string-concat " :kernel " (string-concat (quoted-ascii (kernel-release s)) "}\n")))
+        p (sg s S-ANS) n (string-length g)
+        z (loop [i 0] (if (= i n) 0 (let [y (kxrt-p-store8 (+ p i) (string-code-point-at g i))] (recur (inc i)))))]
+    (write-all 4 p n)))
+
+;; the state page and the buffers, or -1
+(defn- setup [] :i64
+  (let [s (kxrt-p-alloc 4096)]
+    (if (< s 0) -1
+      (let [a (ss s S-REQ (kxrt-p-alloc (+ (constant 6) 8)))
+            b (ss s S-ANS (kxrt-p-alloc (+ (constant 7) 8)))
+            c (ss s S-GRANT (kxrt-p-alloc (+ GRANT-MAX 1)))
+            d (ss s S-ART (kxrt-p-alloc (* 64 ARTIFACTS)))
+            e (ss s S-BUF (kxrt-p-alloc (* 48 (constant 0))))
+            f (ss s S-PIPE (kxrt-p-alloc (* 32 (constant 1))))
+            g (ss s S-KEPT (kxrt-p-alloc (* 16 (constant 4))))
+            h (ss s S-CHUNK (kxrt-p-alloc CHUNK))
+            i (ss s S-PATH (kxrt-p-alloc 8192))
+            j (ss s S-IDS (kxrt-p-alloc (* 8 (constant 2))))
+            t (ss s S-TIMEOUT (* (constant 13) 1000000000))
+            l (ss s S-SLOT -1) dv (ss s S-DEVICE -1)]
+        (if (or (< a 0) (< b 0) (< c 0) (< d 0) (< e 0) (< f 0) (< g 0) (< h 0) (< i 0) (< j 0)) -1 s)))))
+
+(defn main [] :i64
+  (let [s (setup)]
+    (if (< s 0) 4
+      (let [ig (kxrt-p-ignore-sigpipe)
+            image (image-digest s) needed (elf-needed s)
+            ok (if (< (read-grant s) 0) (gfail s -1) (parse-grant s))]
+        (if (< ok 0) (let [e (ss s S-END 6) r (report s image needed)] 2)
+          (if (< (dev-open s (sg s S-DEVICE)) 0) (let [e (ss s S-END 7) r (report s image needed)] 3)
+            (let [c (session s) x (dev-close s) r (report s image needed)] (if (= c 1) 0 1))))))))
