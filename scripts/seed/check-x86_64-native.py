@@ -150,7 +150,6 @@ def main(boot, out, tier="main", reuse_dir=None, store_dir=None):
     # core targets aarch64-macos) to the adoption image (~17 min natively)
     core_x86 = None
     if tier == "full":
-        import time
         adoption = json.loads((ROOT / json.loads((ROOT / "seed/compiler-core.json").read_text())["adoptionReceipt"]).read_text())
 
         def unity_of(manifest, dst):
