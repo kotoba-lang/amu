@@ -26,6 +26,17 @@ jobs:
           persist-credentials: false
       - name: Loaderless bootstrap from the pinned root (arm64, native)
         run: python3 scripts/seed/selfhost-bootstrap.py --output "$RUNNER_TEMP/boot"
+      - name: Combined compiler (core + Linux targets) from the bootstrap (arm64, native)
+        run: python3 scripts/seed/check-one-compiler.py --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/one"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: one-compiler-receipt
+          path: |
+            ${{ runner.temp }}/one/one-compiler.json
+            ${{ runner.temp }}/one/calls.json
+            ${{ runner.temp }}/one/F2.elf
+          if-no-files-found: warn
       - name: Static launcher (--format launcher, ADR 0371 step 4; arm64, native)
         run: python3 scripts/seed/check-static-launcher.py --compiler "$RUNNER_TEMP/boot/S3.elf" --output "$RUNNER_TEMP/launcher"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
