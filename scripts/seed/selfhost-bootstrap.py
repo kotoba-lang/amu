@@ -65,7 +65,7 @@ CASES = "seed/static-cases.json"
 FLOAT_CASES = "seed/float-cases.json"
 WASM_CHECK = "scripts/seed/check-wasm32-browser.py"
 # 00-ns-static is 00-ns with the static profile's capacities (seed/MEMORY-MAP).
-STATIC_CAPACITIES = re.compile(rb"\(def MM-(WORDS|(CODE|FIX|LITB|OUT)-CAP|(FIX|LIT|LITB|EXP|OUT|HEAP)-BASE|HEAP-END) [0-9]+\)")
+STATIC_CAPACITIES = re.compile(rb"\(def MM-(WORDS|(TOK|CODE|FIX|LITB|OUT)-CAP|(NODE|SYM|HASH|FN|SCOPE|SIR|LABEL|CODE|FIX|LIT|LITB|EXP|OUT|HEAP)-BASE|HEAP-END) [0-9]+\)")
 # The adopted compiler was qualified on a host whose main stack is 8 MiB; the
 # runtime's default (1 MiB, the old loader's limit) is too small for it.
 ADOPTED_STACK = "8388608"
@@ -77,9 +77,36 @@ def unity(manifest, dst):
     return {p: pin(ROOT / p) for p in [manifest, *paths]}
 
 
+def static_capacity_layout():
+    normal, static = ((ROOT / p).read_bytes() for p in (NS, NS_STATIC))
+    constants = lambda b: {k.decode(): int(v) for k, v in re.findall(rb"\(def (MM-[A-Z0-9-]+) ([0-9]+)\)", b)}
+    a, b = constants(normal), constants(static)
+    assert a.keys() == b.keys()
+    overrides = dict(TOK=786432, CODE=2097152, FIX=262144, LITB=1048576, OUT=12582912)
+    regions = "TOK NODE SYM HASH FN SCOPE SIR LABEL CODE FIX LIT LITB EXP OUT".split()
+    for name in regions:
+        assert b[f"MM-{name}-W"] == a[f"MM-{name}-W"]
+        assert b[f"MM-{name}-CAP"] == overrides.get(name, a[f"MM-{name}-CAP"])
+    for layout in (a, b):
+        next_base = 256
+        for name in regions:
+            assert layout[f"MM-{name}-BASE"] == next_base, (name, "overlap or gap")
+            next_base += layout[f"MM-{name}-W"] * layout[f"MM-{name}-CAP"]
+        assert layout["MM-HEAP-BASE"] == next_base
+        assert layout["MM-HEAP-END"] == layout["MM-WORDS"] < 2**25
+    assert a["MM-HEAP-END"] - a["MM-HEAP-BASE"] == b["MM-HEAP-END"] - b["MM-HEAP-BASE"], "heap changed"
+    strip = lambda raw: STATIC_CAPACITIES.sub(b"", b"".join(line for line in raw.splitlines(True)
+        if not line.startswith((b";; seed/00-ns-static", b";; CORE-STATIC", b";; (CODE, FIX", b";; (TOK, CODE, FIX"))))
+    assert strip(normal) == strip(static), "static source differs beyond checked capacities"
+    return dict(words=b["MM-WORDS"], tokenCapacity=b["MM-TOK-CAP"],
+                literalBytes=b["MM-LITB-CAP"], outputBytes=b["MM-OUT-CAP"],
+                heapWords=b["MM-HEAP-END"]-b["MM-HEAP-BASE"])
+
+
 def main(out, tier, reuse=None, store=None):
     assert platform.system() == "Linux" and platform.machine() in ("aarch64", "arm64"), "run on arm64 Linux"
     level = TIERS.index(tier)
+    static_profile = static_capacity_layout()
     out.mkdir(parents=True, exist_ok=False)
     run = Runs(out, reuse, store)
     scope = {"KEXE_CAP_RESOURCES_35": str(out)}
@@ -280,7 +307,7 @@ def main(out, tier, reuse=None, store=None):
     if level >= 2:
         ns, ns_static = ((ROOT / p).read_bytes() for p in (NS, NS_STATIC))
         strip = lambda b: STATIC_CAPACITIES.sub(b"", b"".join(l for l in b.splitlines(True) if not l.startswith(b";; seed/00-ns-static")
-                                                             and not l.startswith(b";; CORE-STATIC") and not l.startswith(b";; (CODE, FIX")))
+                                                             and not l.startswith(b";; CORE-STATIC") and not l.startswith((b";; (CODE, FIX", b";; (TOK, CODE, FIX"))))
         assert strip(ns) == strip(ns_static), "00-ns-static differs from 00-ns beyond the static capacities"
         S = out / "S.elf"
         core_static_src = out / "core-static-unity.kotoba"
@@ -302,7 +329,7 @@ def main(out, tier, reuse=None, store=None):
         provenance = dict(coreStatic=dict(sourceGraph=core_static_pins, C0=c0), core=pin(out / "C0-core.bin"),
                           Kw=pin(out / "Kw.kseed"), Pw=pw, F=pin(out / "Pw-F.kseed"))
 
-    report = dict(status="PASS_LOADERLESS_SELFHOST_BOOTSTRAP", tier=tier, capabilities=capabilities,
+    report = dict(status="PASS_LOADERLESS_SELFHOST_BOOTSTRAP", tier=tier, capabilities=capabilities, staticProfile=static_profile,
                   host=[platform.system(), platform.machine(), platform.release()],
                   root=dict(image=pin(ROOT / ROOT_IMAGE), receipt=root_receipt),
                   sourceGraph=dict(full=full_pins, selfhost=source_pins), generations=gens, rootReproduces=root_reproduces,

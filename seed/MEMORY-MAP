@@ -115,13 +115,16 @@
   [:c MM-OUT-BASE 11735296] [:c MM-OUT-W 1] [:c MM-OUT-CAP 3145728]
   [:c MM-HEAP-BASE 14881024] [:c MM-HEAP-END 16646144]
 ;; Static profile (2026-10-22, JUN-29 / M2): seed/00-ns-static.kotoba, used by the loaderless static closures, is this
-;; block with MM-CODE-CAP 2097152, MM-FIX-CAP 262144, MM-LITB-CAP 1048576 and MM-OUT-CAP 12582912 (every later base, MM-HEAP-END
-;; and MM-WORDS shifted by 12320768; MM-WORDS 28966912, heap size unchanged). The stack-machine static
+;; block with MM-TOK-CAP 786432, MM-CODE-CAP 2097152, MM-FIX-CAP 262144, MM-LITB-CAP 1048576 and MM-OUT-CAP 12582912 (every later base, MM-HEAP-END
+;; and MM-WORDS shifted by 12845056; MM-WORDS 29491200, heap size unchanged). The stack-machine static
 ;; emitter turns the complete core into a native static image beyond the AArch64 core's 3 MiB OUT.
 ;; 2026-10-23: complete26 plus adopted TCP/spawn needs 8,433,664 bytes before context;
 ;; the old 8 MiB OUT refused E7104. 12 MiB OUT preserves all modules and existing checks. The core (seed/MANIFEST) keeps
 ;; this block, so its payload identity is unchanged. The static runtime's per-vector limit is 2^25 items (KXRT-VECTOR-MAX).
-;; LITB growth (2026-10-23, JUN-353): the combined compiler (seed/FULL-MANIFEST) reached 523 KiB of literal bytes and
+;; TOK growth (2026-10-23): full29 x86 generation after the kernel helper guard reached E101 region1
+;; at 655360 tokens. The static profile raises TOK by131072 entries and shifts every later region by524288 words.
+;; MM-WORDS29491200 stays below2^25; table widths, normal core, heap size, grants, results and fuel remain unchanged.
+;; Historical LITB growth (2026-10-23, JUN-353): the combined compiler (seed/FULL-MANIFEST) reached 523 KiB of literal bytes and
 ;; vector-literal tables (lowering adds the tables to the same region); MM-LITB-CAP 1048576 (+524288), every later base,
 ;; MM-HEAP-END and MM-WORDS +524288 (MM-WORDS 24772608, heap size unchanged).
 
