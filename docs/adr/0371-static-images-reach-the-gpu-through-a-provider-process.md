@@ -612,8 +612,11 @@ Each step is its own PR, in this order:
       `:artifacts` of `{:path :sha256 :kind}`, `:device-bytes`, and
       optionally `:submit-timeout-seconds` 1..60 and `:device`; anything else
       refuses the grant), the artifact table with digests checked before
-      first use, the handle tables, the recording state, refusals 19 on, and
-      a report line on fd 4. Each request is served inside `arena-scope`;
+      first use (only verified bytes reach the device: a SPIR-V module is
+      kept as hashed, and each 1 MiB piece of a model that a MAP reads is
+      checked against its digest from the verification), the handle tables,
+      the recording state, refusals 19 on, and a report line on fd 4 (with
+      the image's digest and DT_NEEDED names). Each request is served inside `arena-scope`;
       state that outlives it is in platform memory.
       `tools/gpu_device_fake.kotoba` is a device layer without a GPU (host
       memory; faults for the session-ending refusals).
@@ -628,6 +631,12 @@ Each step is its own PR, in this order:
       answers depend on them: the device, the INFO fields, device-local
       buffers behind a 64 MiB staging buffer, the barrier before every
       DISPATCH after the first, the submit timing, and the teardown order.
+      It also follows Vulkan's rules where the broker relied on drivers.
+      Buffers are a multiple of 4 bytes long, and copies are widened to
+      aligned spans. Every command buffer opens with a memory barrier, and
+      transfers close with one to host reads. Dispatch counts are checked
+      against the device's limits. Teardown is skipped after device lost or a
+      fence timeout.
       First run on gad (Radeon 8060S, RADV, Vulkan 1.4.318): INFO, DEVCLASS,
       transfers, a 70 MiB MAP across staging chunks, and KIR v1 kernels
       (ADR 0372) for `z = x + y` and per-workgroup sums. They ran at once,

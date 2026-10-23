@@ -28,7 +28,7 @@ the selfhost compiler.
 
 ## What the fake-device receipt shows
 
-* **19 sessions**, each with fd 3 the grant and fd 4 the report:
+* **23 sessions**, each with fd 3 the grant and fd 4 the report:
   * every verb, with its exact answer;
   * the provider's refusals (19 on), and the table's refusals passed
     through;
@@ -38,13 +38,20 @@ the selfhost compiler.
   * a frame over one runtime value;
   * the buffer table (4096), the pipeline table (128) and the dispatch limit
     (2048), at their bounds;
-  * answers that cannot be written.
+  * answers that cannot be written;
+  * ordinary device errors (the fake layer's non-terminal faults): refused
+    as `gpu/device-error`, and the session goes on;
+  * an artifact changed on disk after its verification: MAP refuses it as a
+    digest mismatch, while PIPELINE keeps using the module bytes it verified;
+  * truncated frames (a short header, a short payload), which end the
+    session as `:truncated-request`, not as a clean end of file.
 * **Grants**: one well-formed grant, and 11 refused ones (another key, a
   repeated key, no wire 42, a missing key, a short digest, a backslash, a
   timeout of 61, trailing bytes, an unknown kind, an empty grant, no fd 3).
   With a refused grant the provider serves nothing and exits 2. A device the
   layer lacks exits 3.
-* **Report**: the image digest in each report equals the image's SHA-256.
+* **Report**: the image digest in each report equals the image's SHA-256,
+  and `:needed` lists the image's DT_NEEDED names (`["libc.so.6"]`).
 * **Confinement.** Under qemu-user the grants say `:confinement :if-available`,
   and the reports show Landlock and the seal as `:unavailable`. The default,
   `:required`, fails closed there: no request is served, the report says
@@ -69,16 +76,23 @@ the selfhost compiler.
     * as two independent DISPATCHC.
   * Per-workgroup sums of 1..1000.
   * Every value is exact in f32, so each READ is compared byte for byte.
+* **Vulkan's rules where the protocol is wider**:
+  * an unaligned WRITE and READ (copies are widened to 4-byte spans, and a
+    write reads the span's other bytes first);
+  * ZERO of a 3-byte buffer (buffers are a multiple of 4 bytes, so the
+    whole-size fill covers every byte);
+  * a workgroup count over the device's limit, refused as
+    `gpu/device-error`, after which the session goes on.
 * **Submits** took 30-50 us each, measured on the host clock.
-* **Report** (fd 4): device, 48 served, 0 refused, `:eof`, the image's
-  SHA-256 and the kernel release.
-* **Confined** (`gad-radv-confined.json`): RADV ran the same 48 requests after
+* **Report** (fd 4): device, 59 served, 1 refused, `:eof`, the image's
+  SHA-256, its DT_NEEDED names and the kernel release.
+* **Confined** (`gad-radv-confined.json`): RADV ran the same requests after
   Landlock (ABI 8; read access to the three artifacts only) and the seal, with
   identical results. This includes the 70 MiB MAP, opened after Landlock
   through its rule. The report adds:
   * the driver, `radv Mesa 25.2.8-0ubuntu0.24.04.2`;
-  * the mapped libvulkan libraries with their SHA-256: the loader
-    `libvulkan.so.1.3.275` and the eight ICD libraries the loader opened.
+  * the mapped libraries with their SHA-256: the loader
+    `libvulkan.so.1.3.275` and the ICD libraries the loader opened.
 
 ## Limits
 
