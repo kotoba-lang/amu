@@ -577,19 +577,31 @@
                     x (io-out (string-concat (pj-p L P1 (pj-mf L m pj-mf-name)) (string-concat " " (string-concat (pj-p L P1 (pj-mf L m pj-mf-path)) "\n"))))]
                 (recur (+ i 1))))))))))
 
-(defn- drv-pj-run [S :string path :string mode :i64 out :string] :i64
-  (let [M (lx-run (mem-set (mem-set (mem-new) MM-QUIET (if (= mode 3) 1 0)) MM-SRC-LEN (string-length S)) S)   ; R6L: mode 3 = 1, quiet
+(defn- drv-single-lock? [source :string path :string] :bool
+  (let [argument (drv-pj-lock-arg 1 (io-argc) -1)]
+    (and (>= argument 0) (= (io-exists (io-arg argument)) 1)
+         (let [text (drv-pj-lock-text (io-read-bytes (io-arg argument)))]
+           (and (drv-pj-lock-digest? text) (ksl-valid? text) (string=? (ksl-entry text) path)
+                (= (ksl-root-count text) 0) (= (ksl-file-count text) 1)
+                (string=? (ksl-hash text path) (sh-text source)))))))
+;; A pin alone must not change a plain unity into a project/interface build.
+;; Verify the exact cached source, then use the same frontend/lowering path.
+;; Imported modules and every declared source root retain the project route.
+(defn- drv-pj-run [original :string path :string mode :i64 out :string] :i64
+  (let [S (string-concat original (ck-r6b-lib original))
+        M (lx-run (mem-set (mem-set (mem-new) MM-QUIET (if (= mode 3) 1 0)) MM-SRC-LEN (string-length S)) S)   ; R6L: mode 3 = 1, quiet
         M1 (if (= (vector-at M MM-ERR) 0) (rd-run M S) M)]
     (if (= (drv-pj-has 1 (io-argc) "--emit-module") 1)
       (if (= (drv-pj-has 1 (io-argc) "--source-lock") 1) (drv-fail0 E-PROJ-UNPINNED) (drv-pj-emitmod M1 path out))
-    (if (and (= (vector-at M1 MM-ERR) 0) (or (= (drv-pj-has 1 (io-argc) "--source-lock") 1)
-        (= (drv-pj-has 1 (io-argc) "--source-path") 1) (= (pj-needed M1 S) 1)))
+    (if (and (= (vector-at M1 MM-ERR) 0)
+             (or (= (drv-pj-has 1 (io-argc) "--source-path") 1) (= (pj-needed M1 S) 1)))
       (drv-pj-compile M1 path mode out)
-      (drv-c2 M1 S path mode out)))))
+      (if (and (= (drv-pj-has 1 (io-argc) "--source-lock") 1) (not (drv-single-lock? original path)))
+        (drv-fail0 E-PROJ-UNPINNED) (drv-c2 M1 S path mode out))))))
 ;; ==== END R5A project route ===========================================================================================
 
 (defn- drv-run [path :string mode :i64 out :string] :i64
-  (if (= (io-exists path) 1) (let [S0 (drv-read path)] (drv-pj-run (string-concat S0 (ck-r6b-lib S0)) path mode out)) (drv-fail0 E-READ)))   ; R6B: + the source library
+  (if (= (io-exists path) 1) (drv-pj-run (drv-read path) path mode out) (drv-fail0 E-READ)))
 ;; R6L (FOLD, CMD request): compile src into the kseed file out with the flags of argv (--policy, --source-path ..), status 0 /
 ;; 1 (refusal printed) / 2, WITHOUT the ok line; seed.main of the split exports it (gen-split.py) for amu's compile command.
 (defn- drv-compile-file [src :string out :string] :i64 (drv-run src 3 out))

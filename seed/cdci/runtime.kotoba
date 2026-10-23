@@ -37,7 +37,10 @@
     (kxrt-syscall 60 2 0 0 0 0 0)))
 (defn- kc-close [fd :i64] :i64 (if (< (kxrt-syscall 3 fd 0 0 0 0 0) 0) (kc-fail 1007) 0))
 (defn- kc-readfd [fd :i64 limit :i64] :i64
-  (let [p (+ (kc-g) 131072)]
+  (let [stat (+ (kc-g) 5120) observed (kxrt-syscall 5 fd stat 0 0 0 0)
+        regular (if (or (< observed 0) (not= (bit-and (kxrt-load64 (+ stat 24)) 61440) 32768)) (kc-fail 1003) 0)
+        size (kxrt-load64 (+ stat 48)) bounded (if (or (< size 0) (> size limit)) (kc-fail 1004) 0)
+        mode (kc-set 104 (bit-and (kxrt-load64 (+ stat 24)) 511)) p (+ (kc-g) 131072)]
     (loop [n 0]
       (let [r (kxrt-syscall 0 fd (+ p n) (if (< (+ 1 (- limit n)) 65536) (+ 1 (- limit n)) 65536) 0 0 0)]
         (cond (= r -4) (recur n) (< r 0) (kc-fail 1003) (= r 0) n
@@ -55,18 +58,28 @@
                         (not (and (= (- i start) 1) (= (kxrt-load8 (+ p start)) 46)))
                         (not (and (= (- i start) 2) (= (kxrt-load8 (+ p start)) 46) (= (kxrt-load8 (+ p start 1)) 46)))
                         (if (= c 0) true (recur (+ i 1) (+ i 1))))
+                   ;; Wire35 control delimiters must never become part of a
+                   ;; compiler input/output path, including in the root.
+                   (and (= c 95) (<= (+ i 4) n) (= (kxrt-load8 (+ p i 1)) 83)
+                        (= (kxrt-load8 (+ p i 2)) 69) (= (kxrt-load8 (+ p i 3)) 80)) false
                    (or (and (>= c 48) (<= c 57)) (and (>= c 65) (<= c 90))
                        (and (>= c 97) (<= c 122)) (= c 46) (= c 45) (= c 95)) (recur (+ i 1) start)
                    :else false))))))
 (defn- kc-line [i :i64] :i64 (kxrt-load64 (+ (kc-g) 110592 (* i 8))))
 (defn- kc-open [p :i64 flags :i64 mode :i64] :i64
-  (let [how (+ (kc-g) 1024) a (kxrt-store64 how flags) b (kxrt-store64 (+ how 8) mode)
+  (let [how (+ (kc-g) 1024) a (kxrt-store64 how (bit-or flags 2048)) b (kxrt-store64 (+ how 8) mode)
         c (kxrt-store64 (+ how 16) 14)]
     (kxrt-syscall 437 (kc-get 8) p how 24 0 0)))
 (defn- kc-absolute-open [p :i64 flags :i64] :i64
-  (let [how (+ (kc-g) 1024) a (kxrt-store64 how flags) b (kxrt-store64 (+ how 8) 0)
+  (let [how (+ (kc-g) 1024) a (kxrt-store64 how (bit-or flags 2048)) b (kxrt-store64 (+ how 8) 0)
         c (kxrt-store64 (+ how 16) 6)]
     (kxrt-syscall 437 -100 p how 24 0 0)))
+(defn- kc-private-root [fd :i64] :i64
+  (let [stat (+ (kc-g) 5120) r (kxrt-syscall 5 fd stat 0 0 0 0)
+        uid (kxrt-syscall 107 0 0 0 0 0 0)]
+    (if (or (< r 0) (not= (bit-and (kxrt-load64 (+ stat 24)) 511) 448)
+            (not= (u64-shift-right (kxrt-load64 (+ stat 24)) 32) uid))
+      (kc-fail 1008) (kc-set 8 fd))))
 (defn- kc-file [p :i64] :i64
   (let [fd (kc-open p 655360 0)]
     (if (< fd 0) (kc-fail 1003) (let [n (kc-readfd fd 16777216) c (kc-close fd)] n))))
@@ -141,7 +154,7 @@
 ;; descriptor, avoiding a path lookup or mutable executable after its hash check.
 (defn- kc-image [path :i64 expected :i64] :i64
   (let [n (kc-pin path expected) p (+ (kc-g) 131072)]
-    (if (not (kc-elf? p n)) (kc-fail 2002)
+    (if (or (= (bit-and (kc-get 104) 64) 0) (not (kc-elf? p n))) (kc-fail 2002)
       (let [name (+ (kc-g) 2032) z (kxrt-store8 name 0) fd (kxrt-syscall 319 name 19 0 0 0 0)]
         (if (< fd 0) (kc-fail 2003)
           (if (or (< (kc-write fd p n) 0) (< (kxrt-syscall 72 fd 1033 15 0 0 0) 0))
@@ -175,9 +188,12 @@
         parent (kxrt-syscall 110 0 0 0 0 0 0)
         priv (kxrt-syscall 157 38 1 0 0 0 0)
         fds (kxrt-syscall 436 3 4294967295 4 0 0 0)
+        nullfd (kxrt-syscall 257 -100 (kc-token 31) 655360 0 0 0)
+        input (kxrt-syscall 33 nullfd 0 0 0 0 0) inputflags (kxrt-syscall 72 0 2 0 0 0 0)
         o (kxrt-syscall 33 out 1 0 0 0 0) e (kxrt-syscall 33 err 2 0 0 0 0)
         a (kc-limit 0 limit) b (kc-limit 1 16777216) c (kc-limit 4 0)]
-    (if (or (< death 0) (not= parent (kc-get 32)) (< priv 0) (< fds 0) (< o 0) (< e 0)) (kc-fail 3001)
+    (if (or (< death 0) (not= parent (kc-get 32)) (< priv 0) (< fds 0) (< nullfd 0)
+            (< input 0) (< inputflags 0) (< o 0) (< e 0)) (kc-fail 3001)
       (let [r (kxrt-syscall 322 image (+ (kc-g) 2032) argv (+ (kc-g) 9000) 4096 0)] (kc-fail 3002)))))
 (defn- kc-job [image :i64 argv :i64 out :i64 err :i64 limit :i64 expected-exit :i64] :i64
   (let [start (kc-now) child (kxrt-syscall 57 0 0 0 0 0 0)]
@@ -209,8 +225,8 @@
         w6_8 (kc-word (+ (kc-g) 2440) 0x7272 2)
         w7_0 (kc-word (+ (kc-g) 2496) 0x732e61626f746f6b 8)
         w7_8 (kc-word (+ (kc-g) 2504) 0x74756f6474 5)
-        w8_0 (kc-word (+ (kc-g) 1105920) 0x732e61626f746f6b 8)
-        w8_8 (kc-word (+ (kc-g) 1105928) 0x7272656474 5)
+        w8_0 (kc-word (+ (kc-g) 2560) 0x732e61626f746f6b 8)
+        w8_8 (kc-word (+ (kc-g) 2568) 0x7272656474 5)
         w9_0 (kc-word (+ (kc-g) 2624) 0x6365722e69636463 8)
         w9_8 (kc-word (+ (kc-g) 2632) 0x74706965 4)
         w10_0 (kc-word (+ (kc-g) 2688) 0x65732f636f72702f 8)
@@ -237,6 +253,8 @@
         w29_0 (kc-word (+ (kc-g) 3904) 0x746e650a314c534b 8)
         w29_8 (kc-word (+ (kc-g) 3912) 0x207972 3)
         w30_0 (kc-word (+ (kc-g) 3968) 0x20656c69660a 6)
+        null0 (kc-word (+ (kc-g) 4032) 0x6c756e2f7665642f 8)
+        null1 (kc-word (+ (kc-g) 4040) 0x6c 1)
         end 0] 0))
 (defn- kc-token [i :i64] :i64 (+ (kc-g) 2048 (* i 64)))
 (defn- kc-prepare-env [mode :i64] :i64

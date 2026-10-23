@@ -657,7 +657,7 @@
             header (if (and (= (kc-len (kc-line 0) 8) 7) (kc-equal (kc-line 0) (kc-token 23) 7)
                             (kc-path? (kc-line 1) true) (kc-hex? (kc-line 2)) (= (kg-line-value 3) 24)) 0 (kc-fail 4002))
             root (kc-absolute-open (kc-line 1) 720896)
-            rooted (if (< root 0) (kc-fail 1003) (kc-set 8 root))
+            rooted (if (< root 0) (kc-fail 1003) (kc-private-root root))
             self (kxrt-syscall 257 -100 (kc-token 10) 524288 0 0 0) selfok (if (< self 0) (kc-fail 1003) 0)
             selfn (kc-readfd self 16777216) selfclose (kc-close self)
             selfpin (if (kc-equal (kc-sha (+ base 131072) selfn) (kc-line 2) 64) 0 (kc-fail 2001))

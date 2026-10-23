@@ -36,6 +36,7 @@ jobs:
             ${{ runner.temp }}/one/one-compiler.json
             ${{ runner.temp }}/one/calls.json
             ${{ runner.temp }}/one/F2.elf
+            ${{ runner.temp }}/one/F-x86_64.elf
           if-no-files-found: warn
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -62,6 +63,14 @@ jobs:
           path: ${{ runner.temp }}/boot
       - name: Native x86_64 qualification (no loader, no emulation)
         run: python3 scripts/seed/check-x86_64-native.py --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/x86"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: one-compiler-receipt
+          path: ${{ runner.temp }}/one
+      - name: Complete native x86 compiler fixed point and CDCI images
+        run: python3 scripts/seed/check-complete-x86.py --compiler "$RUNNER_TEMP/one/F-x86_64.elf" --arm-proof "$RUNNER_TEMP/one/one-compiler.json" --output "$RUNNER_TEMP/complete"
+      - name: Kotoba native controller (Amu selfhost and complete24 Kotoba gate)
+        run: python3 scripts/seed/check-native-cdci.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/native-cdci"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
@@ -71,4 +80,11 @@ jobs:
             ${{ runner.temp }}/x86/runtime-boundary/runtime-boundary.json
             ${{ runner.temp }}/x86/runtime-boundary/calls.json
             ${{ runner.temp }}/x86/raw
+            ${{ runner.temp }}/complete/complete-x86.json
+            ${{ runner.temp }}/complete/calls.json
+            ${{ runner.temp }}/native-cdci/native-cdci.json
+            ${{ runner.temp }}/native-cdci/calls.json
+            ${{ runner.temp }}/native-cdci/raw
+            ${{ runner.temp }}/native-cdci/positive/cdci.receipt
+            ${{ runner.temp }}/native-cdci/positive/kotoba-gate.receipt
           if-no-files-found: warn

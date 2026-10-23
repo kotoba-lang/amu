@@ -133,10 +133,16 @@ def main(boot, out):
         shutil.copy2(original, copied)
         cdci_sources[name] = pin(original)
     cdci_images = {}
+    amu_gate = out / "cdci-amu-selfhost.elf"
+    run("build-amu-selfhost-gate", [F, "compile", out / "core-static.kotoba", "--target", "x86_64-linux", "--output", amu_gate, "--format", "static"], env)
+    policy = json.loads((ROOT / "seed/cdci/policy.json").read_text())
+    assert pin(amu_gate)["sha256"] == policy["amuSelfhostGateSHA256"]
+    cdci_images["amu-selfhost"] = pin(amu_gate)
     for role, source in (("controller", "controller.kotoba"), ("kotoba-native", "kotoba-gate.kotoba")):
         dst = out / ("cdci-" + role + ".elf")
         run("cdci-build-" + role, [F, "cdci-build", role, out / "cdci-entry.kotoba", out / "cdci-runtime.kotoba", out / ("cdci-" + source), dst], env)
         cdci_images[role] = pin(dst)
+    assert cdci_images["kotoba-native"]["sha256"] == policy["kotobaNativeGateSHA256"]
 
     # Public entry refusals are measured, including large diagnostics (JUN-334).
     good = out / "public-good.kotoba"

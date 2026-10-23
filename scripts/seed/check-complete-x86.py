@@ -78,6 +78,14 @@ def main(compiler, arm_proof, out):
     F = previous
 
     roles = {}
+    core_source = out / "core-static.kotoba"
+    core_paths = [s for s in (ROOT / "seed/CORE-STATIC-MANIFEST").read_text().splitlines() if s and not s.startswith("#")]
+    core_source.write_bytes(b"".join((ROOT / p).read_bytes() + b"\n" for p in core_paths))
+    amu_gate = out / "cdci-amu-selfhost.elf"
+    run("build-amu-selfhost", [F, "compile", core_source, "--target", "x86_64-linux", "--output", amu_gate, "--format", "static"])
+    amu_gate.chmod(0o755)
+    roles["amu-selfhost"] = static_elf(amu_gate)
+    assert pin(amu_gate) == proof["cdci"]["images"]["amu-selfhost"]
     for name in ("entry.kotoba", "runtime.kotoba", "controller.kotoba", "kotoba-gate.kotoba"):
         dst = out / ("cdci-" + name)
         shutil.copy2(ROOT / "seed/cdci" / name, dst)
@@ -97,6 +105,7 @@ def main(compiler, arm_proof, out):
         src.write_text(case["source"])
         dst = out / ("case-" + case["name"] + ".elf")
         run("compile-case-" + case["name"], [F, "compile", src, "--target", "x86_64-linux", "--output", dst, "--format", "static"])
+        dst.chmod(0o755)
         ledger.append(dict(name=case["name"], source=pin(src), image=static_elf(dst),
                            result=case["result"], reference=case["reference"]))
 
