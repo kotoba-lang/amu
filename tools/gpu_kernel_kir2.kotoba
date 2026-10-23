@@ -276,6 +276,16 @@
 (defn kb-fabs [B :vector-i64 a :i64] :i64 (kb-ext1 B (kb-tf32 B) 4 a))
 (defn kb-fround [B :vector-i64 a :i64] :i64 (kb-ext1 B (kb-tf32 B) 1 a))
 (defn kb-umin [B :vector-i64 a :i64 b :i64] :i64 (kb-ext2 B (kb-tu32 B) 38 a b))
+;; vectors: n-component construction, the dot product, int(v) per component
+;; to float, unpackHalf2x16 (a vec2 of the two halves of a u32), and
+;; bitfieldExtract(int, offset, count) with the sign extended
+(defn kb-construct2 [B :vector-i64 t :i64 a :i64 b :i64] :i64 (kb-op2 B 80 t a b))
+(defn kb-construct4 [B :vector-i64 t :i64 a :i64 b :i64 c :i64 d :i64] :i64
+  (let [id (kb-id B) x (kb-i6 B 6 80 t id a b c d)] id))
+(defn kb-fdot [B :vector-i64 a :i64 b :i64] :i64 (kb-op2 B 148 (kb-tf32 B) a b))
+(defn kb-s2f [B :vector-i64 t :i64 a :i64] :i64 (kb-op1 B 111 t a))
+(defn kb-unpack-half2 [B :vector-i64 a :i64] :i64 (kb-ext1 B (kb-tvec B (kb-tf32 B) 2) 62 a))
+(defn kb-sbfe [B :vector-i64 base :i64 offset :i64 count :i64] :i64 (kb-op3 B 202 (kb-ti32 B) base offset count))
 
 ;; ---------------------------------------------------------------------
 ;; Control. Labels clear the terminated flag; a branch, break, continue or
