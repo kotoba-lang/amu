@@ -818,3 +818,65 @@ measurement.
 
 Record: `docs/evidence/gpu/rule3-autowire-20261023.txt` (this slice ran
 no hardware measurement).
+
+## Amendment 2026-10-23 (pair-level classification): rule 1's rule at
+pair granularity
+
+The row the auto-wire amendment's state paragraph named ("pair-level
+classification (the op-order cell's within-run ramping needs per-pair
+levels -- `analyze-oporder.py` remains the manual instrument)") lands
+now. A run's clock can ramp mid-run, so run-level classification is
+blind to within-run regime changes; `scripts/gpu_regime_classify.py`
+gains the pair-level machinery (`parse_run_log_pairs` /
+`pair_level_classification` / `render_pair_level_section`, CLI `--pairs
+<run-log.txt>`): the individual pairs of a driver run-log are clustered
+by the pair's baseline gpu-ns under rule 1's OWN rule, unchanged --
+GAP-1.15 single-linkage -- and each level publishes its pair count,
+baseline range, median pair ratio and sides. Incomplete pairs (an arm
+missing) are named and excluded, never silently dropped.
+
+Decided and pinned (the GAP-1.15 ethos): the manual instrument's hand
+buckets (`analyze-oporder.py`: slow > 80k, middle 40k..80k, fast <=
+40k) are NOT reused by the machine -- only the granularity changes, not
+the rule or the constant. The rule-2 machine runs at pair granularity
+too but is published as an ANALOGUE only: the section's own text says
+"it is not rule 2" -- rule 2's verdicts stay run-level over per-run
+ratios, no rule-2 verdict is amended, and the analogue cannot choose a
+variant. `via` names the publication path (rule 3's honesty rule).
+
+The machine-vs-manual comparison over the committed op-order run-log
+(360 complete pairs = 6 runs x 3 ops x 20) is pinned in --self-test on
+both sides: for every manual bucket row the two instruments agree
+exactly on pair population and 3dp median (8 rows, parsed from
+analyze-oporder.txt, not transcribed), AND the manual buckets pool what
+the machine splits -- fast is one machine plateau per op (35708..36250
+max @ 1.029, 35708..37167 min @ 1.018, 35583..36958 sum @ 1.018), while
+middle splits into 2 and slow into 2..5 machine levels, including an
+~88k plateau (gap 1.21 to the ~107k plateau) the hand buckets pooled
+into slow and the single-pair glitch spikes (0.295..0.784) that become
+their own levels instead of hiding inside it. The finer classification
+does not move the cell's published regime story: fast = variant slower
+~1.02, the ~88k and ~107k plateaus = variant faster ~0.92 both sides of
+the split. The pair-level sign analogue is regime-scoped
+(within-regime, single pairs spike both ways) for all three ops -- NOT
+a rule-2 verdict.
+
+State, precisely: rules 1, 2 and 3's harness-side publication plus
+pair-level classification is IMPLEMENTED (code + tests). Tests (real
+output): `python3 scripts/gpu_regime_classify.py --self-test` = 1019
+assertions, 0 failed (the previous 916 plus 103 pair-level fixtures --
+unit parse/boundary/sign-analogue/rendering pins over synthetic logs,
+corpus pins over the op-order record: the 360/0 pair population, the
+machine level structure (lo/hi/count/median per level), the
+sign-analogue pins, the 8 machine-equals-manual bucket relations and
+the pool/split divergence);
+`python3 scripts/gpu-subgroup-reduce-metal-measure.py --self-test` = 7
+assertions, 0 failed. Scoped GPU gate: 88 tests / 7122 assertions,
+unchanged (no .cljk in this diff). Full suite RED AT BASE
+(`Could not find namespace: kotoba.form`), outside this diff.
+UNIMPLEMENTED, unchanged and named: cross-operator level identity.
+No `:measured?` flag, workgroup row, flip gate or answer moves (rule 4,
+untouched). This slice ran no hardware measurement.
+
+Record: `docs/evidence/gpu/pair-level-classification-20261023.txt`
+(this slice ran no hardware measurement).

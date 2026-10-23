@@ -52,10 +52,13 @@ WHAT THIS MODULE DOES NOT DO (named so nothing is silently upgraded):
     clock level" is a prose inference this harness cannot verify. The
     rule-2 cell row is therefore only an admissibility roll-up over
     pooled per-run ratios -- it carries no cross-operator regime structure.
-  - Pair-level classification (a run's clock can ramp mid-run; the
-    op-order cell's analyze-oporder.py buckets individual pairs) is NOT
-    here. This is run-level classification over baseline per-run medians,
-    which is what rule 1 asks a record to publish.
+  - Rule 1/2 themselves are RUN-level (per-run baseline medians, per-run
+    ratios), which is what rule 1 asks a record to publish. Pair-level
+    classification (a run's clock can ramp mid-run) is its own section
+    (parse_run_log_pairs / pair_level_classification /
+    render_pair_level_section, CLI --pairs): the SAME GAP-1.15 rule at
+    pair granularity, plus the rule-2 machine applied to pairs as a
+    published ANALOGUE only -- no rule-2 verdict is amended by it.
 
 RULE 2 (sign classification), mechanised:
 
@@ -139,12 +142,18 @@ CLI:
         print the claim-protocol rule-3 section: the regime-matched
         comparison of two measurement records (first = the historical
         cell the claim is drawn against)
+    python3 scripts/gpu_regime_classify.py --pairs <run-log.txt>
+        print the pair-level regime classification (rule 1's GAP-1.15
+        rule at pair granularity, plus the rule-2 machine as an
+        ANALOGUE) from the driver's raw run log
     python3 scripts/gpu_regime_classify.py --self-test
         unit fixtures + a regression pass over every committed summary.md
         under docs/evidence/ (pinned manual classifications must
         reproduce; cluster invariants must hold; rule-3 pins reproduce
         the closing-cell prose where it decided, and the machine's
-        divergence is pinned where it decides alone)
+        divergence is pinned where it decides alone; pair-level pins
+        over the op-order cell's committed run-log, machine vs the
+        manual instrument's buckets)
 
 The measurement driver (scripts/gpu-subgroup-reduce-metal-measure.py)
 imports render_section() and appends the section to every summary.md it
@@ -153,6 +162,7 @@ writes.
 
 import pathlib
 import re
+import statistics
 import sys
 
 GAP_MAX = 1.15
@@ -805,6 +815,163 @@ def append_comparison_section(hist_text, hist_label, new_text, new_label,
         load_comparison_cell(new_text, new_label),
         gap_max, via=via)
     return new_text.rstrip("\n") + "\n\n" + section + "\n"
+
+
+# ----------------------------------------------- pair-level machinery
+
+def parse_run_log_pairs(text):
+    """Parse the raw pair samples out of a measurement driver run-log.txt.
+
+    Returns (pairs, incomplete):
+      pairs:      {(run, op, pair): {"baseline": float, "variant": float,
+                                     "order": str}} -- both arms seen;
+      incomplete: same shape, one arm missing. Incomplete pairs are
+                  NAMED by this function and never silently dropped: a
+                  ramping clock that loses an arm is data about the run,
+                  not noise to be deleted.
+
+    Run indices come from the '===== fresh-process run N =====' headers
+    (1-based, as the driver writes them); pair indices are the log's own.
+    """
+    pairs = {}
+    run = 0
+    for line in text.splitlines():
+        m = re.match(r"===== fresh-process run (\d+) =====", line)
+        if m:
+            run = int(m.group(1))
+            continue
+        m = re.match(r"sample op=(\w+) pair=(\d+) order=(\S) arm=(\w+) "
+                     r"gpu_ns=([\d.]+)", line)
+        if m:
+            op, p, order, arm, gpu = m.groups()
+            key = (run, op, int(p))
+            rec = pairs.setdefault(key, {"order": order})
+            if arm in rec:
+                raise ValueError(f"duplicate arm {arm!r} for pair {key}")
+            rec[arm] = float(gpu)
+    complete, incomplete = {}, {}
+    for key, rec in sorted(pairs.items()):
+        if "baseline" in rec and "variant" in rec:
+            complete[key] = rec
+        else:
+            incomplete[key] = rec
+    return complete, incomplete
+
+
+def pair_level_classification(pairs, gap_max=GAP_MAX):
+    """Pair-level regime classification: rule 1's rule at pair granularity.
+
+    pairs: {key: {"baseline": float, "variant": float}} with key an opaque
+           sortable (run, op, pair) tuple -- complete pairs only.
+    Returns {op: {"levels": [level, ...],        (fastest first; each
+                  "ratios": {key: variant/baseline},
+                  "sign": sign_classification() over the pairs}}
+
+    The clustering rule is rule 1's OWN rule, unchanged: GAP-1.15
+    single-linkage, applied to the individual pairs' baseline gpu-ns per
+    operator instead of to per-run baseline medians. This is the named
+    gap (a run's clock can ramp mid-run: the op-order cell's within-run
+    ramping needs per-pair levels). NOT rule 2: rule 2's verdicts stay
+    run-level over per-run ratios; the "sign" field here is the rule-2
+    machine applied at pair granularity, published as an ANALOGUE only --
+    it never replaces or amends a rule-2 verdict, and it cannot choose a
+    variant. Cross-operator level identity is NOT asserted here either.
+    """
+    if not pairs:
+        raise ValueError("no complete pairs to classify")
+    by_op = {}
+    for (run, op, p), rec in pairs.items():
+        by_op.setdefault(op, {})[(run, p)] = rec
+    out = {}
+    for op in sorted(by_op):
+        recs = by_op[op]
+        baselines = {k: r["baseline"] for k, r in recs.items()}
+        ratios = {k: r["variant"] / r["baseline"] for k, r in recs.items()}
+        levels = level_clusters(baselines, gap_max)
+        out[op] = {"levels": levels, "ratios": ratios,
+                   "sign": sign_classification(ratios, levels)}
+    return out
+
+
+def render_pair_level_section(pairs, incomplete=None, gap_max=GAP_MAX,
+                              via=None):
+    """The pair-level classification section for a measurement record.
+
+    pairs: complete pairs as returned by parse_run_log_pairs
+    incomplete: the parser's named incomplete pairs (published, not hidden)
+    Returns markdown (no trailing newline).
+    """
+    if incomplete is None:
+        incomplete = {}
+    cls = pair_level_classification(pairs, gap_max)
+    lines = []
+    lines.append("## Pair-level regime classification (rule 1's rule at "
+                 "pair granularity)")
+    lines.append("")
+    lines.append("Published by " + (via or "scripts/gpu_regime_classify.py "
+                                    "--pairs") + ": A run's clock can ramp "
+                 "mid-run, so run-level classification is blind to "
+                 "within-run regime changes: this section classifies the "
+                 "individual pairs instead. The clustering rule is rule 1's "
+                 "OWN rule, unchanged -- GAP-1.15 single-linkage -- applied "
+                 "to the pairs' baseline gpu-ns per operator (pair "
+                 "granularity instead of per-run medians). The harness "
+                 "reads no GPU clock; a level is one observed baseline "
+                 "plateau. Cross-operator level identity is NOT asserted.")
+    lines.append("")
+    lines.append("What this section is NOT: it is not rule 2. Rule 2's "
+                 "verdicts stay run-level over per-run ratios; the sides "
+                 "column is the rule-2 machine applied at pair granularity, "
+                 "published as an ANALOGUE for the regime question only -- "
+                 "it never amends a rule-2 verdict and cannot choose a "
+                 "variant. No `:measured?` flag, workgroup row, flip gate "
+                 "or selection answer moves.")
+    lines.append("")
+    lines.append("| operator | level | pairs | baseline gpu-ns range | "
+                 "median pair ratio | sides |")
+    lines.append("|---|---|---|---|---|---|")
+    for op in sorted(cls):
+        lvls = cls[op]["levels"]
+        n = len(lvls)
+        for i, lv in enumerate(lvls, start=1):
+            tag = _level_tag(i, n)
+            rng = (f"{lv['lo']:.0f}" if lv["lo"] == lv["hi"]
+                   else f"{lv['lo']:.0f}..{lv['hi']:.0f}")
+            ratios = [cls[op]["ratios"][k] for k in lv["runs"]]
+            med = statistics.median(ratios)
+            sides = {ratio_side(r) for r in ratios}
+            side_txt = (f"{sum(1 for r in ratios if r > 1.0)}/"
+                        f"{len(ratios)} slower")
+            if "faster" in sides:
+                side_txt += (f", {sum(1 for r in ratios if r < 1.0)}/"
+                             f"{len(ratios)} faster")
+            if "even" in sides:
+                side_txt += (f", {sum(1 for r in ratios if r == 1.0)}/"
+                             f"{len(ratios)} at 1.0")
+            lines.append(f"| {op} | {tag} | {len(ratios)} | {rng} | "
+                         f"{med:.3f} | {side_txt} |")
+    lines.append("")
+    for op in sorted(cls):
+        c = cls[op]["sign"]
+        n = sum(c["counts"].values())
+        if c["verdict"] == "regime-invariant":
+            verdict = (f"pair-level analogue for {op}: regime-invariant, "
+                       f"{c['side']} ({n}/{n} {c['side']})")
+        else:
+            verdict = (f"pair-level analogue for {op}: regime-scoped "
+                       f"({c['counts']['slower']} slower, "
+                       f"{c['counts']['faster']} faster"
+                       + (f", {c['counts']['even']} at 1.0"
+                          if c["counts"]["even"] else "")
+                       + f"; straddle {c['straddle']})")
+        lines.append(verdict + ".")
+    if incomplete:
+        keys = ", ".join(f"run {r} {op} pair {p}"
+                         for (r, op, p) in sorted(incomplete))
+        lines.append("")
+        lines.append(f"Incomplete pairs, named and excluded "
+                     f"({len(incomplete)}): {keys}.")
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------- tests
@@ -1477,6 +1644,198 @@ def _self_test_rule3_autowire(stats, corpus_root):
             "an appended record stays loadable as a comparison cell", stats)
 
 
+def _self_test_pair_level_unit(stats):
+    # -- parse_run_log_pairs: complete / incomplete / duplicate arm
+    log = ("===== fresh-process run 1 =====\n"
+           "device=X\n"
+           "sample op=sum pair=0 order=A arm=baseline gpu_ns=1000.0 host_ns=2000\n"
+           "sample op=sum pair=0 order=A arm=variant gpu_ns=900.0 host_ns=1900\n"
+           "sample op=sum pair=1 order=B arm=variant gpu_ns=1150.0 host_ns=2100\n"
+           "===== fresh-process run 2 =====\n"
+           "sample op=sum pair=0 order=B arm=variant gpu_ns=1010.0 host_ns=2010\n"
+           "sample op=sum pair=0 order=B arm=baseline gpu_ns=1111.0 host_ns=2111\n")
+    complete, incomplete = parse_run_log_pairs(log)
+    _expect(set(complete) == {(1, "sum", 0), (2, "sum", 0)},
+            "complete pairs keyed (run, op, pair)", stats)
+    _expect(set(incomplete) == {(1, "sum", 1)},
+            "incomplete pairs are NAMED, not dropped", stats)
+    _expect(complete[(1, "sum", 0)]["order"] == "A"
+            and complete[(1, "sum", 0)]["baseline"] == 1000.0
+            and complete[(1, "sum", 0)]["variant"] == 900.0,
+            "arms and order parsed", stats)
+    try:
+        parse_run_log_pairs(
+            "===== fresh-process run 1 =====\n"
+            "sample op=sum pair=0 order=A arm=baseline gpu_ns=1.0 host_ns=1\n"
+            "sample op=sum pair=0 order=A arm=baseline gpu_ns=2.0 host_ns=2\n")
+        raise AssertionError("duplicate arm must raise")
+    except ValueError:
+        stats["passed"] += 1
+
+    # -- pair_level_classification refuses an empty pair set
+    try:
+        pair_level_classification({})
+        raise AssertionError("empty pairs must raise")
+    except ValueError:
+        stats["passed"] += 1
+
+    # -- clustering at pair granularity is rule 1's rule: GAP-1.15 boundary
+    mk = lambda k, b, v: {k: {"baseline": b, "variant": v}}
+    pairs = {}
+    pairs.update(mk((1, "sum", 0), 1000.0, 900.0))
+    pairs.update(mk((1, "sum", 1), 1150.0, 1035.0))     # 1.150 -> merges
+    cls = pair_level_classification(pairs)
+    _expect(len(cls["sum"]["levels"]) == 1,
+            "pair baselines at exactly 1.15x merge (<= rule)", stats)
+    pairs = {}
+    pairs.update(mk((1, "sum", 0), 1000.0, 900.0))
+    pairs.update(mk((1, "sum", 1), 1150.1, 1035.0))     # 1.1501 -> splits
+    cls = pair_level_classification(pairs)
+    _expect(len(cls["sum"]["levels"]) == 2
+            and cls["sum"]["levels"][1]["runs"] == [(1, 1)],
+            "pair baselines just over 1.15x split", stats)
+    _expect(cls["sum"]["ratios"][(1, 0)] == 0.9,
+            "pair ratio is variant/baseline", stats)
+
+    # -- the rule-2 machine at pair granularity, as an analogue
+    pairs = {}
+    pairs.update(mk((1, "sum", 0), 1000.0, 900.0))
+    pairs.update(mk((1, "sum", 1), 1005.0, 950.0))
+    cls = pair_level_classification(pairs)
+    _expect(cls["sum"]["sign"]["verdict"] == "regime-invariant"
+            and cls["sum"]["sign"]["side"] == "faster",
+            "all-faster pairs: regime-invariant faster", stats)
+    pairs.update(mk((1, "sum", 2), 1010.0, 1010.0 * 1.02))
+    cls = pair_level_classification(pairs)
+    _expect(cls["sum"]["sign"]["verdict"] == "regime-scoped"
+            and cls["sum"]["sign"]["straddle"] == "within-regime",
+            "both sides inside one pair level: within-regime straddle",
+            stats)
+    pairs = {}
+    pairs.update(mk((1, "sum", 0), 1000.0, 900.0))      # fast level, faster
+    pairs.update(mk((1, "sum", 1), 1300.0, 1300.0 * 1.02))  # slow, slower
+    cls = pair_level_classification(pairs)
+    _expect(cls["sum"]["sign"]["verdict"] == "regime-scoped"
+            and cls["sum"]["sign"]["straddle"] == "by-regime",
+            "each pair level one-sided, levels disagree: by-regime",
+            stats)
+
+    # -- rendering: the section never claims rule 2, names incomplete pairs
+    sec = render_pair_level_section(
+        {(1, "sum", 0): {"baseline": 1000.0, "variant": 900.0, "order": "A"}},
+        {(1, "sum", 1): {"variant": 1150.0, "order": "B"}})
+    _expect("it is not rule 2" in sec and "ANALOGUE" in sec,
+            "the section names what it is not", stats)
+    _expect("Incomplete pairs, named and excluded (1): run 1 sum pair 1"
+            in sec, "incomplete pairs are published", stats)
+    sec_via = render_pair_level_section(
+        {(1, "sum", 0): {"baseline": 1000.0, "variant": 900.0, "order": "A"}},
+        via="pair-level-test")
+    _expect(sec_via.splitlines()[2].startswith("Published by pair-level-test: "),
+            "via names the publication path that actually published", stats)
+
+
+def _self_test_pair_level_corpus(stats, corpus_root):
+    """Pair-level pins over the op-order cell's committed run-log: the
+    machine's level structure, and its relation to the manual
+    instrument's committed buckets (analyze-oporder.txt) -- where they
+    agree and where the machine decides alone. Divergence is pinned, not
+    bent away."""
+    cell = corpus_root / "gpu-subgroup-reduce-m1max-oporder-20261023"
+    pairs, incomplete = parse_run_log_pairs(
+        (cell / "w32-sum-last" / "run-log.txt").read_text())
+    _expect(len(pairs) == 360 and not incomplete,
+            "op-order corpus: 360 complete pairs (6 runs x 3 ops x 20), "
+            "0 incomplete", stats)
+    cls = pair_level_classification(pairs)
+
+    # the machine's level structure, pinned over the real corpus
+    # (lo, hi, pairs, median pair ratio at 3dp) per level, fastest first
+    pinned = {
+        "max": [(35708, 36250, 7, 1.029), (88125, 88917, 5, 0.919),
+                (107625, 111125, 104, 0.917), (128000, 128000, 1, 0.784),
+                (204250, 204250, 1, 0.491), (293625, 330375, 2, 0.321)],
+        "min": [(35708, 37167, 20, 1.018), (45708, 46125, 5, 0.960),
+                (58500, 59875, 9, 1.009), (107208, 111167, 85, 0.920),
+                (327417, 327417, 1, 0.306)],
+        "sum": [(35583, 36958, 24, 1.018), (45375, 59417, 34, 0.934),
+                (68625, 68625, 1, 0.836), (88417, 89625, 5, 0.906),
+                (107458, 110708, 54, 0.920), (173708, 173708, 1, 0.295),
+                (225250, 225250, 1, 0.444)],
+    }
+    for op, rows in pinned.items():
+        levels = cls[op]["levels"]
+        _expect(len(levels) == len(rows),
+                f"{op}: machine level count pinned ({len(rows)})", stats)
+        for lv, (lo, hi, cnt, med) in zip(levels, rows):
+            _expect(lv["lo"] == lo and lv["hi"] == hi,
+                    f"{op}: level range {lo}..{hi} pinned", stats)
+            _expect(len(lv["runs"]) == cnt,
+                    f"{op}: level {lo}..{hi} pair count {cnt} pinned",
+                    stats)
+            got = statistics.median([cls[op]["ratios"][k]
+                                     for k in lv["runs"]])
+            _expect(round(got, 3) == med,
+                    f"{op}: level {lo}..{hi} median {med} pinned", stats)
+
+    # the rule-2 analogue at pair granularity, pinned (and explicitly NOT
+    # a rule-2 verdict: all three ops are regime-scoped at pair level
+    # because single pairs spike both ways, which the per-level medians
+    # carry regardless)
+    sign_pins = {"max": ((7, 113, 0), "within-regime"),
+                 "min": ((22, 97, 1), "within-regime"),
+                 "sum": ((20, 99, 1), "within-regime")}
+    for op, (counts, straddle) in sign_pins.items():
+        c = cls[op]["sign"]
+        _expect(c["verdict"] == "regime-scoped" and c["straddle"] == straddle,
+                f"{op}: pair-level analogue verdict/straddle pinned", stats)
+        _expect((c["counts"]["slower"], c["counts"]["faster"],
+                 c["counts"]["even"]) == counts,
+                f"{op}: pair-level analogue side counts pinned {counts}",
+                stats)
+
+    # the manual instrument's committed buckets, parsed from its own
+    # committed output -- the two instruments must agree on the pair
+    # population and the median wherever the manual bucket is defined
+    manual = {}
+    for line in (cell / "analyze-oporder.txt").read_text().splitlines():
+        m = re.match(r"\| (\w+) \| (\w+) \| (\d+) \| ([\d.]+)\.\.([\d.]+) "
+                     r"\| ([\d.]+) \|", line)
+        if m:
+            op, bucket, cnt, _lo, _hi, med = m.groups()
+            manual[(op, bucket)] = (int(cnt), float(med))
+    _expect(len(manual) == 8, "manual instrument: 8 bucket rows parsed "
+            "(3 ops x 3 buckets minus max/middle empty)", stats)
+
+    def in_bucket(bucket, b):
+        return ((b > 80000) if bucket == "slow"
+                else (40000 < b <= 80000) if bucket == "middle"
+                else (0 < b <= 40000))
+
+    for (op, bucket), (cnt, med) in sorted(manual.items()):
+        sel = [(k, r) for k, r in pairs.items()
+               if k[1] == op and in_bucket(bucket, r["baseline"])]
+        _expect(len(sel) == cnt,
+                f"{op}/{bucket}: machine pair population == manual count "
+                f"({cnt})", stats)
+        got = statistics.median([cls[op]["ratios"][(k[0], k[2])]
+                                 for k, _ in sel]) if sel else None
+        _expect(got is not None and round(got, 3) == med,
+                f"{op}/{bucket}: machine median == the manual instrument's "
+                f"committed median ({med})", stats)
+        lv_in = [l for l in cls[op]["levels"]
+                 if all(in_bucket(bucket, l["medians"][k]) for k in l["runs"])]
+        if bucket == "fast" and sel:
+            _expect(len(lv_in) == 1,
+                    f"{op}/fast: one machine level (the manual fast bucket "
+                    f"is a machine plateau)", stats)
+        if bucket in ("slow", "middle") and sel:
+            _expect(len(lv_in) >= 2,
+                    f"{op}/{bucket}: the manual bucket POOLS what the "
+                    f"machine splits ({len(lv_in)} levels) -- divergence "
+                    f"pinned, not bent away", stats)
+
+
 def main():
     args = sys.argv[1:]
     if args == ["--self-test"]:
@@ -1487,7 +1846,14 @@ def main():
         _self_test_rule3_unit(stats)
         _self_test_rule3_corpus(stats, ROOT / "docs" / "evidence")
         _self_test_rule3_autowire(stats, ROOT / "docs" / "evidence")
+        _self_test_pair_level_unit(stats)
+        _self_test_pair_level_corpus(stats, ROOT / "docs" / "evidence")
         print(f"TOTAL: {stats['passed']} assertions passed, 0 failed")
+        return
+    if len(args) == 2 and args[0] == "--pairs":
+        complete, incomplete = parse_run_log_pairs(
+            pathlib.Path(args[1]).read_text())
+        print(render_pair_level_section(complete, incomplete))
         return
     if len(args) == 3 and args[0] == "--compare":
         hist = load_comparison_cell(pathlib.Path(args[1]).read_text(),
