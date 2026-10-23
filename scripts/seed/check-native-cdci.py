@@ -35,6 +35,16 @@ def receipt(path, header):
     return dict(sha256=sha(raw), bodySHA256=digest.decode(), bytes=len(raw))
 
 
+def process_running(pid):
+    # A child can disappear between existence and read; disappearance is the
+    # expected cleanup result. Permission/malformed-state errors still fail.
+    try:
+        state = Path(f"/proc/{pid}/stat").read_text().split(") ", 1)[1][0]
+    except (FileNotFoundError, ProcessLookupError):
+        return False
+    return state != "Z"
+
+
 def main(complete, out):
     assert platform.system() == "Linux" and platform.machine() == "x86_64"
     proof = json.loads((complete / "complete-x86.json").read_text())
@@ -170,8 +180,9 @@ def main(complete, out):
             if p.poll() is None: p.kill()
             p.wait(timeout=10)
         deadline = time.monotonic() + 10
+        running = children
         while time.monotonic() < deadline:
-            running = [pid for pid in children if Path(f"/proc/{pid}/stat").exists() and Path(f"/proc/{pid}/stat").read_text().split(") ", 1)[1][0] != "Z"]
+            running = [pid for pid in children if process_running(pid)]
             if not running: break
             time.sleep(0.05)
         assert not running, ("compiler child survived controller death", running)
@@ -183,6 +194,7 @@ def main(complete, out):
     controller_receipt = receipt(root / "cdci.receipt", b"KCDCI-R1")
     receipt(root / "kotoba-gate.receipt", b"KCGATE-R1")
     report = dict(status="PASS_NATIVE_KOTOBA_CDCI", host=[platform.system(), platform.machine(), platform.release()],
+                  observerSourceSHA256=pin(Path(__file__)),
                   controller=proof["cdci"]["controller"], compiler=proof["generations"][0],
                   policy=policy, controllerReceipt=controller_receipt, gateReceipt=gate_receipt,
                   manifestSHA256=pin(manifest), coreOutputSHA256=pin(root / "rebuilt.kseed"),
