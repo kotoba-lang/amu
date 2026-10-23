@@ -7,7 +7,10 @@ runs on this host and writes x86_64 images.
 
 Phase "build" (any Linux):
 * images: hello, arguments, the platform API (alloc, load, store, ccall), a
-  GOT write (the RELRO control), and a program that calls kxrt-p-vkgipa;
+  GOT write (the RELRO control), a program that calls kxrt-p-vkgipa, and the
+  provider's API (step 6: clock, files, SHA-256, uname, SIGPIPE, Landlock,
+  seal); the confinement image is built by a second test-only compiler whose
+  import 1 is libc's syscall, to reach the calls the seal denies;
 * structure, parsed from the bytes: the 7 program headers in order, the
   interpreter, W^X, the dynamic section's exact tag set (no PLT, TEXTREL,
   DEBUG, RPATH, INIT or FINI), DF_BIND_NOW and DF_1_NOW, NEEDED and the
@@ -26,11 +29,19 @@ Phase "build" (any Linux):
 Phase "run" (x86_64 Linux with glibc's /lib64/ld-linux-x86-64.so.2; native,
 or emulated by qemu-user): hello (exit 7, and the structured line), the
 arguments, snprintf through kxrt-p-ccall with 14 arguments (6 registers and
-8 stack words, varargs), and the RELRO control (SIGSEGV). On a native kernel
-also a provider skeleton: a platform-linked Kotoba program that answers INFO
-on fds 0/1 and reports on fd 4, started by the static launcher with a guest
-that calls wire 42. (Through binfmt_misc the launcher cannot start an image:
-execveat of a close-on-exec memfd, ENOENT.)
+8 stack words, varargs), the RELRO control (SIGSEGV), the provider's API
+(SHA-256 at lengths 0..130 and of a file against hashlib, uname against
+os.uname, the clock, -ENOENT and -EINVAL refusals) and SIGPIPE (killed by
+default; -EPIPE once ignored). On a native kernel also:
+* a provider skeleton: a platform-linked Kotoba program that answers INFO on
+  fds 0/1 and reports on fd 4, started by the static launcher with a guest
+  that calls wire 42 (through binfmt_misc the launcher cannot start an image:
+  execveat of a close-on-exec memfd, ENOENT);
+* confinement: Landlock read access beneath one directory (the other is
+  -EACCES), then the seal (Decision 5): execve, fork, clone without
+  CLONE_THREAD, clone3 and an AF_INET socket fail, an AF_UNIX socket and uname
+  work, and an x32 call dies of SIGSYS. qemu-user would apply the guest's
+  filter to itself, so this runs natively only.
 
 The libvulkan image is never executed here: the owner decided (2026-10-22)
 that the libvulkan probe runs on GPU hosts only. libc-only images may run in
@@ -42,6 +53,7 @@ the native x86_64 CI job. Python only orchestrates processes and parses bytes.
 import argparse
 import hashlib
 import json
+import os
 import platform
 import shutil
 import struct
@@ -60,6 +72,9 @@ TEST_ONLY = [
      '(defn- xp-import-name [k :i64] :string (case k 0 "__libc_start_main" 1 "snprintf" ""))'),
     ("(defn- xp-import-lib [k :i64] :i64 (case k 0 0 1 1 -1))", "(defn- xp-import-lib [k :i64] :i64 (case k 0 0 1 0 -1))"),
 ]
+# the same, with libc's syscall as import 1: the confinement image reaches the
+# calls the seal denies
+TEST_ONLY_SYSCALL = [(TEST_ONLY[0][0], TEST_ONLY[0][0].replace('"vkGetInstanceProcAddr"', '"syscall"')), TEST_ONLY[1]]
 API = ('(defn- put-str [a :i64 s :string] :i64\n'
        '  (let [n (string-length s)\n'
        '        z (loop [i 0] (if (= i n) 0 (let [w (kxrt-p-store8 (+ a i) (string-code-point-at s i))] (recur (inc i)))))]\n'
@@ -68,6 +83,13 @@ API = ('(defn- put-str [a :i64 s :string] :i64\n'
        '  (string-from-utf8 (bytes-from-vector-i64\n'
        '    (loop [i 0 v []] (let [c (kxrt-p-load8 (+ a i))] (if (= c 0) v (recur (inc i) (conj v c))))))))\n'
        '(defn- say [s :string] :i64 (let [w (typed-cap-call :io/write :string :string (string-concat s "\\n"))] 0))\n')
+HELPERS = ('(defn- arg [i :string] :string (typed-cap-call :cli/args :string :string i))\n'
+           '(defn- words [a :string b :string c :string d :string] :string\n'
+           '  (string-concat a (string-concat " " (string-concat b (string-concat " " (string-concat c (string-concat " " d)))))))\n'
+           '(defn- hex-digit [x :i64] :i64 (if (< x 10) (+ 48 x) (+ 87 x)))\n'
+           '(defn- hex [a :i64 n :i64] :string\n'
+           '  (string-from-utf8 (bytes-from-vector-i64\n'
+           '    (loop [i 0 v []] (if (= i n) v (let [x (kxrt-p-load8 (+ a i))] (recur (inc i) (conj (conj v (hex-digit (quot x 16))) (hex-digit (bit-and x 15))))))))))\n')
 GUESTS = {
     "hello": '(ns g (:export [main]))\n(defn main [] :i64 (let [w (typed-cap-call :io/write :string :string "hello\\n")] 7))\n',
     "args": ('(ns g (:export [main]))\n(defn- arg [i :string] :string (typed-cap-call :cli/args :string :string i))\n'
@@ -108,6 +130,72 @@ GUESTS = {
                  '        r (put-str out (string-concat "served " (string-from-i64 served)))]\n'
                  '    (bit-and (kxrt-p-write 4 out (+ 7 (string-length (string-from-i64 served)))) 0)))\n'),
     "gpu-guest": '(ns g (:export [main]))\n(defn main [] :i64 (string-length (typed-cap-call 42 :string :string "INFO")))\n',
+    # the provider's API (ADR 0371 step 6): clock, read-only files, SHA-256 over
+    # memory at lengths 0..130, uname, and two refusals. ARG0 a file, ARG1 a missing path.
+    "api": ('(ns g (:export [main]))\n' + API + HELPERS +
+            '(defn main [] :i64\n'
+            '  (let [m (kxrt-p-alloc 1048576) path (+ m 4096) dig (+ m 8192) data (+ m 65536)\n'
+            '        t1 (kxrt-p-clock-ns) t2 (kxrt-p-clock-ns)\n'
+            '        s0 (say (string-concat "clock " (if (and (> t1 0) (>= t2 t1)) "ok" "bad")))\n'
+            '        p (put-str path (arg "0")) fd (kxrt-p-open-ro path) n (kxrt-p-fsize fd)\n'
+            '        r (kxrt-p-pread fd data n 0) c (kxrt-p-close fd) h (kxrt-p-sha256 data n dig)\n'
+            '        s1 (say (words "file" (string-from-i64 n) (string-from-i64 r) (hex dig 32)))\n'
+            '        st (+ m 12288) a0 (kxrt-p-sha256-start st)\n'
+            '        a1 (loop [k 0] (if (= k 24) 0 (let [y (kxrt-p-sha256-blocks st (+ data (* k 4096)) 4096)] (recur (inc k)))))\n'
+            '        a2 (kxrt-p-sha256-finish st (+ data 98304) (- n 98304) n dig)\n'
+            '        s7 (say (words "stream" (string-from-i64 a2) (hex dig 32) (string-from-i64 (kxrt-p-sha256-blocks st data 100))))\n'
+            '        um (kxrt-p-alloc 8192)\n'
+            '        s8 (say (string-concat "unmap " (string-from-i64 (kxrt-p-unmap um 8192))))\n'
+            '        q (put-str path (arg "1"))\n'
+            '        s2 (say (string-concat "missing " (string-from-i64 (kxrt-p-open-ro path))))\n'
+            '        f (loop [i 0] (if (= i 200) 0 (let [w (kxrt-p-store8 (+ data i) (bit-and (+ (* i 7) 3) 255))] (recur (inc i)))))\n'
+            '        s3 (loop [k 0] (if (> k 130) 0 (let [h2 (kxrt-p-sha256 data k dig) w (say (words "sha" (string-from-i64 k) (string-from-i64 h2) (hex dig 32)))] (recur (inc k)))))\n'
+            '        u (kxrt-p-uname m)\n'
+            '        s4 (say (words "uname" (string-from-i64 u) (cstr m) (words (cstr (+ m 130)) (cstr (+ m 260)) "" "")))\n'
+            '        s6 (say (string-concat "landlock-path-missing " (string-from-i64 (kxrt-p-landlock-path -1 path 4))))]\n'
+            '    0))\n'),
+    # ARG0 "ignore" or "default"; fd 1 is a pipe whose reader is closed
+    "sigpipe": ('(ns g (:export [main]))\n' + API + HELPERS +
+                '(defn main [] :i64\n'
+                '  (let [ig (if (string=? (arg "0") "ignore") (kxrt-p-ignore-sigpipe) 0)\n'
+                '        m (kxrt-p-alloc 4096) z (kxrt-p-store8 m 120) r (kxrt-p-write 1 m 1)]\n'
+                '    (cond (not= ig 0) 99 (< r 0) (- 0 r) :else 100)))\n'),
+    # Landlock (read beneath ARG1 only), then the seal. Built by the test-only
+    # compiler whose import 1 is libc's syscall(nr, ...): sys calls it. ARG0
+    # "x32" makes an x32 call after the seal. Lines go out unbuffered.
+    "confine": ('(ns g (:export [main]))\n' + API + HELPERS +
+                '(defn- out [b :i64 s :string] :i64 (let [z (put-str b (string-concat s "\\n"))] (kxrt-p-write 1 b (inc (string-length s)))))\n'
+                '(defn- sys [v :i64 nr :i64 a :i64 c :i64 d :i64] :i64\n'
+                '  (let [x (kxrt-p-store64 v nr) y (kxrt-p-store64 (+ v 8) a) z (kxrt-p-store64 (+ v 16) c) w (kxrt-p-store64 (+ v 24) d)\n'
+                '        e (loop [k 4] (if (= k 14) 0 (let [q (kxrt-p-store64 (+ v (* 8 k)) 0)] (recur (inc k)))))]\n'
+                '    (kxrt-p-ccall (kxrt-p-vkgipa) v)))\n'
+                '(defn- ok [x :i64] :string (if (>= x 0) "ok" (string-from-i64 x)))\n'
+                '(defn main [] :i64\n'
+                '  (let [m (kxrt-p-alloc 65536) b (+ m 49152) pa (+ m 4096) fa (+ m 12288) fb (+ m 16384) v (+ m 32768) bin (+ m 20480)\n'
+                '        z1 (put-str pa (arg "1")) z2 (put-str fa (string-concat (arg "1") "/f")) z3 (put-str fb (string-concat (arg "2") "/f"))\n'
+                '        z4 (put-str bin "/bin/true")\n'
+                '        abi (kxrt-p-landlock-abi)\n'
+                '        o0 (out b (string-concat "abi " (string-from-i64 abi)))\n'
+                '        ll (if (< abi 1) 0\n'
+                '             (let [rs (kxrt-p-landlock-ruleset 12)\n'
+                '                   o1 (out b (string-concat "ruleset " (ok rs)))\n'
+                '                   o2 (out b (string-concat "rule " (string-from-i64 (kxrt-p-landlock-path rs pa 12))))\n'
+                '                   o3 (out b (string-concat "restrict " (string-from-i64 (kxrt-p-landlock-restrict rs))))\n'
+                '                   o4 (out b (string-concat "a " (ok (kxrt-p-open-ro fa))))]\n'
+                '               (out b (string-concat "b " (ok (kxrt-p-open-ro fb))))))\n'
+                '        o5 (out b (string-concat "inet-before " (ok (sys v 41 2 1 0))))\n'
+                '        s (kxrt-p-seal)\n'
+                '        o6 (out b (string-concat "sealed " (string-from-i64 s)))\n'
+                '        o7 (out b (string-concat "inet " (ok (sys v 41 2 1 0))))\n'
+                '        o8 (out b (string-concat "unix " (ok (sys v 41 1 1 0))))\n'
+                '        o9 (out b (string-concat "fork " (ok (sys v 57 0 0 0))))\n'
+                '        o10 (out b (string-concat "clone " (ok (sys v 56 17 0 0))))\n'
+                '        o11 (out b (string-concat "clone3 " (ok (sys v 435 0 0 0))))\n'
+                '        o12 (out b (string-concat "execve " (ok (sys v 59 bin 0 0))))\n'
+                '        o13 (out b (string-concat "uname " (ok (kxrt-p-uname m))))\n'
+                '        x (if (string=? (arg "0") "x32") (sys v 1073741863 0 0 0) 0)\n'
+                '        o14 (out b "after")]\n'
+                '    0))\n'),
 }
 PROVIDER_ANSWER = b"Kotoba platform-linked provider|none|0|0"
 
@@ -207,7 +295,8 @@ def build(compiler, output, previous_root):
     rows = dict(structure={}, refusals={})
     images = {}
     for name, imports in (("hello", ["__libc_start_main"]), ("args", ["__libc_start_main"]), ("relro", ["__libc_start_main"]),
-                          ("provider", ["__libc_start_main"]), ("vk", ["__libc_start_main", "vkGetInstanceProcAddr"])):
+                          ("provider", ["__libc_start_main"]), ("vk", ["__libc_start_main", "vkGetInstanceProcAddr"]),
+                          ("api", ["__libc_start_main"]), ("sigpipe", ["__libc_start_main"])):
         img, z = compile_(producer, name, GUESTS[name])
         e = structure(img, imports)
         assert allowlisted(e) and (b":libvulkan true" in z.stdout) == ("vkGetInstanceProcAddr" in imports), (name, z.stdout)
@@ -215,17 +304,28 @@ def build(compiler, output, previous_root):
         rows["structure"][name] = dict(image=pin(img), needed=e["needed"], imports=imports)
     # the ABI image: a test-only compiler whose import 1 is libc's snprintf
     paths = [p for p in (ROOT / SELFHOST).read_text().splitlines() if p and not p.startswith("#")]
-    unity = "".join((ROOT / p).read_text() + "\n" for p in paths)
-    for old, new in TEST_ONLY:
-        assert unity.count(old) == 1, old
-        unity = unity.replace(old, new)
-    test_compiler, _ = compile_(producer, "test-compiler-snprintf", unity, fmt="static", tgt=host)
+    source = "".join((ROOT / p).read_text() + "\n" for p in paths)
+
+    def test_only(patches):
+        unity = source
+        for old, new in patches:
+            assert unity.count(old) == 1, old
+            unity = unity.replace(old, new)
+        return unity
+    test_compiler, _ = compile_(producer, "test-compiler-snprintf", test_only(TEST_ONLY), fmt="static", tgt=host)
     images["abi"], _ = compile_(test_compiler, "abi", GUESTS["abi"])
     e = structure(images["abi"], ["__libc_start_main", "snprintf"])
     assert not allowlisted(e), "the allowlist check must refuse an image importing snprintf"
     rows["structure"]["abi"] = dict(image=pin(images["abi"]), needed=e["needed"], imports=["__libc_start_main", "snprintf"],
                                     testOnlyCompiler="import 1 replaced by libc snprintf in memory; never written to seed/",
                                     allowlistRefuses=True)
+    syscall_compiler, _ = compile_(producer, "test-compiler-syscall", test_only(TEST_ONLY_SYSCALL), fmt="static", tgt=host)
+    images["confine"], _ = compile_(syscall_compiler, "confine", GUESTS["confine"])
+    e = structure(images["confine"], ["__libc_start_main", "syscall"])
+    assert not allowlisted(e), "the allowlist check must refuse an image importing syscall"
+    rows["structure"]["confine"] = dict(image=pin(images["confine"]), needed=e["needed"], imports=["__libc_start_main", "syscall"],
+                                        testOnlyCompiler="import 1 replaced by libc syscall in memory; never written to seed/",
+                                        allowlistRefuses=True)
     # refusals
     _, z = compile_(producer, "refuse-runtime", GUESTS["refuse-runtime"], success=False)
     assert z.returncode != 0 and b"E7101" in z.stderr and not (art / "refuse-runtime.elf").exists(), z.stderr[-300:]
@@ -301,6 +401,28 @@ def run(output):
     z = go("abi-snprintf-14-arguments", [img["abi"]], want=23)
     assert z.stdout == b"1 2 3 4 5 6 7 8 9 10 11\n", z.stdout
     z = go("relro-control", [img["relro"]], want=-11)
+    # the provider's API
+    blob, chain = raw / "blob.bin", b""
+    while len(chain) < 100000:
+        chain += hashlib.sha256(chain[-32:] + b"blob").digest()
+    blob.write_bytes(chain[:100000])
+    z = go("api", [img["api"], blob, raw / "missing"])
+    lines = z.stdout.decode().splitlines()
+    digest = hashlib.sha256(chain[:100000]).hexdigest()
+    want = ["clock ok", f"file 100000 100000 {digest}", f"stream 32 {digest} -22", "unmap 0", "missing -2"]
+    pattern = bytes((i * 7 + 3) & 255 for i in range(200))
+    want += [f"sha {k} 32 {hashlib.sha256(pattern[:k]).hexdigest()}" for k in range(131)]
+    u = os.uname()
+    want += [f"uname 0 {u.sysname} {u.release} {u.machine}", "landlock-path-missing -2"]
+    assert [ln.rstrip() for ln in lines] == want, [(a, b) for a, b in zip(lines, want) if a.rstrip() != b][:3]
+    rows["api"]["checked"] = "clock, open/fsize/pread/close and SHA-256 of a 100000-byte file at once and streamed (24 blocks calls of 4096, then finish), a blocks call of 100 bytes -EINVAL, unmap, SHA-256 at lengths 0..130 (hashlib), uname (os.uname), Landlock rule on a missing path -ENOENT"
+    for mode, code in (("default", -13), ("ignore", 32)):
+        r, w = os.pipe()
+        os.close(r)
+        z = subprocess.run([str(img["sigpipe"]), mode], env=env, stdout=w, stderr=subprocess.PIPE, timeout=120)
+        os.close(w)
+        assert z.returncode == code, ("sigpipe", mode, z.returncode, z.stderr[-200:])
+        rows["sigpipe-" + mode] = dict(exit=z.returncode, meaning="SIGPIPE" if code < 0 else "write returned -EPIPE")
     native = native_kernel()
     gl = shutil.which("ldd")
     if gl:
@@ -314,9 +436,25 @@ def run(output):
         line = z.stdout[z.stdout.rindex(b"{:receipt "):].decode()
         assert ":verdict :ok" in line and f":result {len(PROVIDER_ANSWER)} " in line and ':report "served 1"' in line, line
         rows["provider-skeleton-under-the-launcher"]["receipt"] = line.strip()
+        # confinement: Landlock read beneath la only, then the seal (native only:
+        # qemu-user would apply the guest's filter to itself)
+        for d in ("la", "lb"):
+            (raw / d).mkdir()
+            (raw / d / "f").write_bytes(b"x")
+        z = go("confine", [img["confine"], "ok", raw / "la", raw / "lb"])
+        lines = z.stdout.decode().splitlines()
+        abi = int(lines[0].split()[1])
+        landlock = ["ruleset ok", "rule 0", "restrict 0", "a ok", "b -13"] if abi >= 1 else []
+        sealed = ["sealed 0", "inet -1", "unix ok", "fork -1", "clone -1", "clone3 -1", "execve -1", "uname ok"]
+        assert lines == [f"abi {abi}"] + landlock + ["inet-before ok"] + sealed + ["after"], lines
+        z = go("confine-x32", [img["confine"], "x32", raw / "la", raw / "lb"], want=-31)
+        assert z.stdout.decode().splitlines()[-1] == "uname ok", z.stdout
+        rows["confine"]["landlockAbi"] = abi
     report["run"] = dict(host=[platform.system(), platform.machine(), platform.release()], nativeKernel=native,
                          glibc=subprocess.run(["ldd", "--version"], capture_output=True, text=True).stdout.splitlines()[0] if gl else None,
-                         rows=rows, notRun=([] if native else ["provider skeleton under the launcher: binfmt_misc cannot start a close-on-exec memfd image (native kernels only)"])
+                         rows=rows, notRun=([] if native else ["provider skeleton under the launcher: binfmt_misc cannot start a close-on-exec memfd image (native kernels only)",
+                                                               "confinement (Landlock, seal): qemu-user would apply the guest's filter to itself (native kernels only)"])
+                         + ([] if not native or rows["confine"]["landlockAbi"] >= 1 else ["Landlock: not available on this kernel"])
                          + ["the libvulkan image: GPU hosts only (owner decision 2026-10-22)"])
     report["status"] = "PASS_PLATFORM_LINKED_BUILD_AND_RUN"
     (output / "platform-linked.json").write_text(json.dumps(report, indent=2) + "\n")

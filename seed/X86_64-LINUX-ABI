@@ -318,6 +318,32 @@ address of GOT[0..1]), `alloc` (anonymous RW mmap), `load8`/`store8`/
 `load64`/`store64`, and raw `read`/`write`. seed/78 checks these calls by
 name; any other runtime function is E7101.
 
+For the GPU provider (ADR 0371 step 6) the API also has wrappers of fixed
+syscalls, each returning -errno on failure (there is no generic syscall):
+`clock-ns` (CLOCK_MONOTONIC in ns), `ignore-sigpipe` (SIGPIPE to SIG_IGN),
+`open-ro path` (openat AT_FDCWD, O_RDONLY|O_CLOEXEC), `fsize fd` (st_size from
+fstat), `pread fd a n off`, `close fd`, `unmap a n` (munmap, for memory from
+`alloc`), `uname a` (struct utsname at a), SHA-256 streamed over a 64-byte
+state st in the program's memory: `sha256-start st`, `sha256-blocks st a n`
+(whole 64-byte blocks; another n is -EINVAL) and `sha256-finish st a n total
+out` (the last n bytes, the total length; the 32-byte digest at out; returns
+32), and `sha256 a n out` (the three at once),
+`landlock-abi`, `landlock-ruleset fs-access` (handled_access_fs only),
+`landlock-path ruleset path access` (a path-beneath rule; the path is opened
+O_PATH|O_CLOEXEC and closed), `landlock-restrict ruleset` (no_new_privs, then
+landlock_restrict_self; the ruleset fd is closed), and `seal`. Seal installs
+ADR 0371 Decision 5's filter with SECCOMP_FILTER_FLAG_TSYNC, after
+no_new_privs: another arch or an x32 number kills the process; execve,
+execveat, fork, vfork, socket other than AF_UNIX, and clone without
+CLONE_THREAD fail with EPERM; clone3 fails with ENOSYS (libc then uses clone);
+everything else is allowed. It returns 0, the id of a thread that could not be
+synchronized, or -errno. Landlock restricts the calling
+thread and the threads it creates afterwards only: threads started earlier
+(a driver's, during device creation) keep their file access, and only the
+seal (TSYNC) covers them. Paths
+are NUL-ended bytes in memory. The wrappers' scratch is a 16 KiB page that
+`kxrt-start` maps at G+16704 in this format only.
+
 ## aarch64-linux-static (seed modules 77, 80)
 
 `compile SOURCE --target aarch64-linux --output NEW --format static|runner|launcher`
