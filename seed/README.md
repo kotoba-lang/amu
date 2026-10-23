@@ -39,6 +39,14 @@ available independent compiler/runner and exact full-closure native
 build/execution evidence remain open. Do not report this source checkout or
 the historical pin checks as native selfhost qualification.
 
+## Stdin in the static runtimes (2026-10-23, JUN-354, JUN-357)
+
+seed/76 and seed/77 answer wire 41 `:io/read` (stdin to end of file, or one read of at most n bytes, completed
+to a whole UTF-8 character; `read(0)` is in the seccomp filter only with the wire granted), and wire 20 takes an
+optional stdin payload after `STDIN_SEP`, written to the child's stdin without blocking past the deadline. The
+root is re-pinned (previous root -> F1, F1 -> F2, F2 -> F3 = F2). Verification, receipts and what stays open:
+[`../docs/static-stdin.md`](../docs/static-stdin.md).
+
 ## Historical C-loader bootstrap provenance
 
 The current source is bootstrapped from
