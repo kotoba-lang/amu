@@ -13,7 +13,7 @@
 ;; CASES equals the expect calls below (the script counts them). CONTROL 1
 ;; makes exactly one expectation wrong; the script requires one failure then.
 
-(def CASES 134)
+(def CASES 145)
 (def CONTROL 0)
 
 (defn- say [s :string] :i64
@@ -320,8 +320,33 @@
        (expect "embed: v 3 gives an empty module" (spv-count (kir2-embed-variant 23 3)) 0)
        (expect "embed: BATCH and BPREFILL differ" (if (= (diff-words (kir2-embed-variant 23 1) (kir2-embed-variant 23 2)) 0) 0 1) 1))))
 
+;; ---------------------------------------------------------------------
+;; The nvgpu-h2 kernels: each checks and writes, and glslang's module passes
+;; the checker too.
+
+(defn- h2-one [m :vector-i64 name :string] :i64
+  (let [path (string-concat "kir2-" (string-concat name ".spv"))]
+    (+ (expect path (spc-check m) 0)
+       (expect (string-concat "write " path) (spv-write m path) (* 4 (spv-count m)))
+       (expect (string-concat "glslang ref-" name) (spc-check (spv-read (string-concat "ref-" (string-concat name ".spv")))) 0))))
+
+(defn- h2 [] :i64
+  (let [r1 (kir2-kdot-h2-r1 0) q6 (kir2-kdot-h2-r1 1) r4 (kir2-kdot-h2-q8 4) r8 (kir2-kdot-h2-q8 8)
+        qkv (kir2-kdot-h2-qkv) qkvr (kir2-kdot-h2-qkvr)]
+    (+ (h2-one r1 "kdot-h2-r1") (h2-one q6 "kdot-h2-r1-q6half") (h2-one r4 "kdot-h2-r4-q8") (h2-one r8 "kdot-h2-r8-q8")
+       (h2-one qkv "kdot-h2-qkv-q8") (h2-one qkvr "kdot-h2-qkvr-q8")
+       ;; Shader, Float16, GroupNonUniform and GroupNonUniformArithmetic, as glslang's
+       (expect "h2: r1's four capabilities" (count-op r1 17) 4)
+       (expect "h2: r1 declares Float16" (op-word r1 17 1) 1)
+       (expect "h2: r1 has one subgroupAdd" (count-op r1 350) 1)
+       (expect "h2: r1 has one subgroupElect" (count-op r1 333) 1)
+       (expect "h2: r1 -DQ6_HALF differs" (if (= (diff-words r1 q6) 0) 0 1) 1)
+       (expect "h2: qkvr has two subgroupAdds" (count-op qkvr 350) 2)
+       (expect "h2: r1 q6 2 gives an empty module" (spv-count (kir2-kdot-h2-r1 2)) 0)
+       (expect "h2: q8 R 5 gives an empty module" (spv-count (kir2-kdot-h2-q8 5)) 0))))
+
 (defn main [] :i64
-  (let [failed (+ (ewise) (+ (ewise-shape) (+ (attn) (+ (attn-ref) (+ (nex-ops) (+ (nex-shape) (+ (nex-variants) (+ (nex-variant-shape) (+ (dots) (+ (dots8) (+ (dots-x8) (+ (dots-i8) (+ (deltanet-embed) (dn-embed-variants))))))))))))))
+  (let [failed (+ (ewise) (+ (ewise-shape) (+ (attn) (+ (attn-ref) (+ (nex-ops) (+ (nex-shape) (+ (nex-variants) (+ (nex-variant-shape) (+ (dots) (+ (dots8) (+ (dots-x8) (+ (dots-i8) (+ (deltanet-embed) (+ (dn-embed-variants) (h2)))))))))))))))
         x (say (string-concat "CASES " (string-from-i64 CASES)))
         y (say (string-concat "FAILED " (string-from-i64 failed)))]
     failed))
