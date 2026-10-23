@@ -604,8 +604,20 @@ Each step is its own PR, in this order:
       which the platform-linked runtime reclaims. Checks: SHA-256 against
       hashlib, SIGPIPE, and confinement (native x86_64 only, since qemu-user
       would apply the guest's filter to itself).
-   2. Protocol core, the grant table and a fake device layer (libc only, run
-      in the native x86_64 CI job).
+   2. **Protocol core, grant and fake device.** In progress.
+      `tools/gpu_provider.kotoba` serves protocol v1 on a device layer: the
+      grant (fd 3, one EDN map in a strict subset: `:wires` with 42,
+      `:artifacts` of `{:path :sha256 :kind}`, `:device-bytes`, and
+      optionally `:submit-timeout-seconds` 1..60 and `:device`; anything else
+      refuses the grant), the artifact table with digests checked before
+      first use, the handle tables, the recording state, refusals 19 on, and
+      a report line on fd 4. Each request is served inside `arena-scope`;
+      state that outlives it is in platform memory.
+      `tools/gpu_device_fake.kotoba` is a device layer without a GPU (host
+      memory; faults for the session-ending refusals).
+      `scripts/seed/check-gpu-provider.py` runs scripted sessions under qemu
+      or natively, and natively the provider under the launcher with a
+      wire-42 guest.
    3. The Vulkan device layer, qualified on a GPU host.
    4. Confinement after device creation, and the launcher's fixed provider
       environment.
