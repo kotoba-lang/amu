@@ -10,11 +10,14 @@ stdout, waits with a wall-time kill and writes one EDN receipt line
 
 * `aarch64-linux.json`: `scripts/seed/check-static-launcher.py` on arm64 Linux
   (podman machine, applehv, native kernel; no emulation), with the re-pinned
-  root as `--compiler` and the previous root `f19ab1c4…` (step 3) as
+  root as `--compiler` and main's root before this PR, `98d4bcb7…`, as
   `--previous-root`.
 * `x86_64-linux.json`: the same check on a native x86_64 kernel, from the
   `qualify-x86_64` job of `selfhost-native.yml` (run through
-  `check-x86_64-native.py` with the self-built x86_64 compiler X2).
+  `check-x86_64-native.py` with the self-built x86_64 compiler X2): CI run
+  39799020895 at `4e1e0e1d`, before main's static-profile merge. The
+  launcher text did not change after it; this PR's final CI run checks it
+  again.
 * `selfhost-bootstrap.json` (the canonical copy is
   `docs/evidence/selfhost-bootstrap-aarch64-20261022/`): the second bootstrap
   run, root = S1 = S2 = S3.

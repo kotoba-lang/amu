@@ -20,7 +20,7 @@ targets. It was found on 2026-10-22 while building ADR 0371 step 5.
 ## What the previous root admitted
 
 `aarch64-linux.json` is `check-runtime-boundary.py` with `--previous-root` set
-to `d83763e0…`, the root of ADR 0371 step 4. Main's root `f19ab1c4…` has the same
+to `98d4bcb7…`, main's root before this fix. Every earlier root has the same
 logic. That root compiled guests calling 8 intrinsics directly:
 
 * `kxrt-call-at` and `kxrt-call-main`;
@@ -62,7 +62,7 @@ images on both targets.
 
   The positive control compiles.
 * The check runs in both native CI jobs.
-* Root re-pinned C-free from `d83763e0…` to `237b59df…`. The old root built
-  S1 = S2 = S3, and a second bootstrap shows root = S1 = S2 = S3. Rerun on the
-  new root: the static launcher (30 cases, 14 runs, 15 refusals), the wire-42
-  transport, protocol and admission checks.
+* Root re-pinned C-free from `98d4bcb7…` to `8ee8dbed…`, together with the
+  launcher of ADR 0371 step 4 (#1484). The old root built S1 = S2 = S3, and a
+  second bootstrap shows root = S1 = S2 = S3. Rerun on the new root: the
+  static launcher, the wire-42 transport, protocol and admission checks.

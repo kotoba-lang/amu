@@ -529,10 +529,11 @@ Each step is its own PR, in this order:
    * **Not under emulation.** Through binfmt_misc, `execveat` of a
      close-on-exec memfd fails (ENOENT), so an image of another ISA cannot be
      started that way. x86_64 is qualified on a native kernel.
-   * **Root.** Re-pinned C-free to `d83763e0…`, on top of step 3's root
-     `f19ab1c4…`, which stays in the receipt's history. No adoption round
-     was needed. The previous root built S1 equal to S2 and S3, since the
-     runtime embedded in static images did not change.
+   * **Root.** Re-pinned C-free to `8ee8dbed…`, together with the
+     guest/runtime boundary fix (JUN-325), on top of main's `98d4bcb7…`,
+     which stays in the receipt's history. No adoption round was needed. The
+     previous root built S1 equal to S2 and S3, since the runtime embedded in
+     static images did not change.
    * **Receipts.** `docs/evidence/static-launcher-20261022/`.
 5. **Platform-linked ELF writer.** Done for x86_64 (JUN-322).
    * **Format.** `--format platform-linked` sets context word 408 = 3, on
