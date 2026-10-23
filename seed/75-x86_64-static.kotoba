@@ -100,6 +100,10 @@
     (cond (= slot 384) 0x401000
           (= slot 408) (xg-get M 2)
           (= slot 392) (xg-pos M)
+          ;; --format packed (seed/80): the payload's address, length and entry offset; 0 otherwise
+          (= slot 416) (vector-at M 252)
+          (= slot 424) (vector-at M 253)
+          (= slot 432) (vector-at M 254)
           (> f 0) (+ 0x401000 (dec (xg-f M f FF-CODE)))
           :else 0)))
 (defn- xs-out-ctx [M :vector-i64 at :i64] :vector-i64
