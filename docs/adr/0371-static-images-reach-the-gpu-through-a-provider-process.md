@@ -2,10 +2,11 @@
 
 Date: 2026-10-22
 Status: Decision 1 (the platform boundary) accepted by the owner on 2026-10-22.
-The rest is Proposed. Steps 1 (the protocol table), 2 (the runtime transport)
-and 3 (wire 42 admission) are merged. The owner signed off the admission
-(Decision 7, open question 2) on 2026-10-22. Nothing else is implemented.
-Tracking: JUN-285 (this ADR), JUN-291 (step 1), JUN-294 (step 2). Related: JUN-109 (wire 42 admission), JUN-282
+The rest is Proposed. Steps 1 (the protocol table), 2 (the runtime transport),
+3 (wire 42 admission), 4 (the launcher) and 5 (the platform-linked writer,
+x86_64) are implemented. The owner signed off the admission (Decision 7, open
+question 2) on 2026-10-22. Nothing else is implemented.
+Tracking: JUN-285 (this ADR), JUN-291 (step 1), JUN-294 (step 2), JUN-313 (step 4), JUN-322 (step 5). Related: JUN-109 (wire 42 admission), JUN-282
 (`amu run` on static images), JUN-283, AWAI-12 (murakumo inference on Amu
 selfhost).
 
@@ -223,7 +224,10 @@ Only the broker's defects change:
   * GOT relocations, bound now (`BIND_NOW`, RELRO).
 
   It also needs a typed C-ABI import declaration. Pointers are `:i64`, and
-  Vulkan structs are laid out byte by byte in Kotoba.
+  Vulkan structs are laid out byte by byte in Kotoba. (Step 5 has no import
+  syntax yet. The import table is fixed in the writer, and the program reaches
+  C through the `kxrt-p-` platform API, so no frontend change and no adoption
+  round were needed; amended 2026-10-22.)
 * **Import allowlist.** The compiler checks it:
   * `libc.so.6`: `__libc_start_main` only. The provider's own I/O uses raw
     syscalls.
@@ -252,7 +256,7 @@ Only the broker's defects change:
 
 ### 6. The launcher and the grant
 
-The launcher reads a structured GPU grant. The grant contains:
+The GPU grant is a structured file. It contains:
 
 * wire 42;
 * the artifact table;
@@ -265,8 +269,26 @@ and is separate from the compiler's `--policy`. Admitting wire 42 at compile
 time therefore does not wait for E2170. Whether GPU guests also need
 compile-time policy narrowing is an open question (below).
 
-The launcher's own filter admits `pipe2`, `clone`, `execve`, `wait4` and
-`kill`. The guest's filter admits none of them.
+**The launcher does not read the grant** (amended 2026-10-22, step 4). It hashes
+the grant and passes a sealed copy to the provider, which parses and enforces it
+(Decision 3). No grant format is parsed in the launcher's scalar runtime code.
+Wall time is not a grant field: it is the launcher's `WALL` argument.
+
+**The launcher seals itself after both children have executed** (amended
+2026-10-22). This decision first said that the launcher's own filter admits
+`pipe2`, `clone`, `execve`, `wait4` and `kill`. That cannot work: a filter is
+inherited across fork and execve, so a filter installed before spawning would
+bind the guest and the provider too, and the provider needs `ioctl`, `mmap`,
+`futex` and threads. So:
+
+1. the launcher stays unsealed until both children have executed;
+2. it then limits itself (a 1 MiB stack, pre-touched; core 0; address space
+   64 MiB);
+3. it installs its own filter: the base set plus `read`, `close`, `ppoll`,
+   `wait4` and `kill`.
+
+That filter admits neither `pipe2`, `clone` nor `execve`: the children already
+exist. The guest's filter admits none of them either.
 
 ### 7. Seed admission (JUN-109, proposal 4a)
 
@@ -457,15 +479,139 @@ Each step is its own PR, in this order:
      by the owner on 2026-10-22.
    * **Known defect.** JUN-309: under the C-free runner, the adopted compiler
      traps instead of naming E2115. It predates this round.
-4. **Launcher** (JUN-282): spawn, pipes, wall time, the GPU grant and the
-   joined receipt.
-5. **Platform-linked ELF writer** and C-ABI imports, x86_64 SysV, with the
-   import allowlist.
+4. **Launcher.** Done (JUN-313). It is narrower than `amu run` (JUN-282): it
+   signs nothing, since the trust plane (M3) does not exist yet.
+   * **Format.** `--format launcher` on both static targets sets context word
+     408 = 4. The launcher runtime text (`xs-rt-launch` in `seed/76`,
+     `xa-rt-launch` in `seed/77`) is appended in place of the standard start
+     in this format only, so static and runner images keep their bytes. A
+     guest cannot turn the launcher on: the mode is fixed at link time.
+   * **Command line.** `LAUNCHER WALL ALLOW GRANT PROVIDER [ARG ...] -- GUEST
+     [ARG ...]`. `GRANT` and `PROVIDER` are both `-` or both paths, and `ALLOW`
+     names wire 42 exactly when a provider is given.
+   * **Inputs.** Each one is read once into a memfd while it is hashed, then
+     sealed against every change. The children are executed from those copies
+     (`execveat`), so what runs is what was hashed. The launcher also hashes
+     its own image.
+   * **Children.** The provider starts first, then the guest. Each child gets
+     fixed descriptors and nothing else open, the parent-death signal, a clear
+     signal mask and `no_new_privs`:
+     * provider: 0 requests, 1 answers, 2 stderr, 3 the grant, 4 its report;
+     * guest: 0 stdin, 1 a pipe to the launcher, 2 stderr, 3 requests,
+       4 answers.
+
+     The guest's environment is built rather than inherited: `KEXE_ALLOW`,
+     `KEXE_STRUCTURED_REPORT=1`, `KEXE_WALL_SECONDS`, `KEXE_CAP_RESOURCES_42=3,4`
+     (with a provider), and seven `KEXE_` knobs passed through when the
+     launcher has them. The provider's environment is empty.
+   * **Waiting.** `ppoll` on the guest's stdout, the provider's report and both
+     pidfds, with no signal handlers. The guest's stdout is relayed as it
+     comes, hashed, and its tail kept for the structured line. At `WALL` the
+     guest is killed. The provider is killed 5 s after the guest exits (never
+     later than `WALL`).
+   * **Receipt.** The facts reach `main` (`tools/static_launcher.kotoba`) as
+     wire-38 arguments. `main` writes one EDN line,
+     `{:receipt :kotoba.static-launcher/v1 :verdict ...}`, holding the
+     launcher, guest, provider and grant digests, the exit or signal of each
+     child, the guest's structured line, the stdout bytes and digest, and the
+     provider's report. The exit status is 0 (ok), 122 (timeout) or 1.
+   * **Check.** `scripts/seed/check-static-launcher.py`:
+     * the receipt functions: 30 Kotoba cases, plus the control;
+     * byte identity of the static and runner outputs against the previous
+       root;
+     * 14 runs: a guest alone, and with a scripted provider (python3, test
+       scaffolding only), covering descriptors, environment, `no_new_privs`,
+       the wall kill, the launcher sealed while it waits, a crashing provider,
+       a lingering one, and invalid and oversized reports;
+     * 15 refusals before anything starts.
+
+     It runs in both native CI jobs (`selfhost-native.yml`).
+   * **Not under emulation.** Through binfmt_misc, `execveat` of a
+     close-on-exec memfd fails (ENOENT), so an image of another ISA cannot be
+     started that way. x86_64 is qualified on a native kernel.
+   * **Root.** Re-pinned C-free to F `710b6ae6…`, on top of main's F
+     `61ee2d38…` (the combined compiler as the root, #1514), which stays in
+     the receipt's history. No adoption round was needed: the previous F
+     compiled FULL-MANIFEST from this source to F1, and F1 rebuilt itself
+     (F2 = F1). The launcher's globals sit at G+16384..16679, clear of the
+     runtime's own (G+0..751 and TCP/spawn's G+2048..2104). Main's boundary corpus
+     (`check-runtime-boundary.py`) covers `--format launcher` on both
+     targets.
+   * **Receipts.** `docs/evidence/static-launcher-20261022/`.
+5. **Platform-linked ELF writer.** Done for x86_64 (JUN-322).
+   * **Format.** `--format platform-linked` sets context word 408 = 3, on
+     x86_64-linux only. `seed/73` dispatches it and `seed/78` writes it. The
+     image is ET_EXEC with these program headers, in order:
+     * PT_PHDR, PT_INTERP (`/lib64/ld-linux-x86-64.so.2`);
+     * the static image's RX segment;
+     * an RW segment holding the dynamic section, a RELRO page with the GOT,
+       and then the context;
+     * PT_DYNAMIC, PT_GNU_RELRO and a non-executable stack.
+
+     Relocations are GLOB_DAT only, bound at load (`DF_BIND_NOW`,
+     `DF_1_NOW`). There is no PLT, no lazy binding and no text relocation.
+     Static, runner and launcher images keep their bytes.
+   * **Imports.** A fixed table, so nothing else can be imported:
+     * `libc.so.6` `__libc_start_main`, always;
+     * `libvulkan.so.1` `vkGetInstanceProcAddr`, only when the program calls
+       `kxrt-p-vkgipa`.
+   * **Start.** `_start` calls `__libc_start_main`. That calls the runtime's
+     `kxrt-start(argc, argv, envp)`, which runs `main` and returns, so libc
+     exits. There are no signal handlers, limits or seccomp: the provider
+     confines itself after device creation (Decision 5, step 6).
+   * **Calling C.** Intrinsic 9, `kxrt-ccall fp argv`, does a SysV call with
+     14 argument words: 6 registers and 8 stack words, with `al = 0` for
+     varargs.
+   * **Platform API.** The program may call the runtime's `kxrt-p-`
+     functions: `ccall`, `vkgipa`, `got-slot`, `alloc`, loads and stores, and
+     raw `read`/`write`. Any other runtime function is E7101. Those calls are
+     checked by name. This relies on the runtime/guest boundary fix of
+     JUN-325.
+   * **Check.** `scripts/seed/check-platform-linked.py`:
+     * the structure, parsed from the bytes, against the allowlist;
+     * the allowlist check's own negative control: an image from a test-only
+       compiler whose import 1 is `snprintf`;
+     * refusals, and byte identity of the other formats;
+     * on glibc: hello, arguments, `snprintf` through `kxrt-ccall` with 14
+       arguments, and the RELRO control (SIGSEGV on a GOT write);
+     * on a native kernel, a Kotoba provider skeleton: a platform-linked
+       program, started by the launcher, that answers a wire-42 guest's
+       `INFO`.
+   * **Where it runs.** The native x86_64 CI job runs the libc-only images
+     (owner decision, 2026-10-22). The libvulkan image is checked for
+     structure only; its probe runs on GPU hosts only.
+   * **Not yet.** Step 6 decides two things. One is how the provider hands
+     strings to and from the platform API (today: bytes in memory from
+     `kxrt-p-alloc`). The other is what the provider's environment holds.
+   * **Root.** Re-pinned C-free to F `094590b6…` on top of step 4's F
+     `710b6ae6…`. No adoption round was needed. The combined compiler F
+     (seed/FULL-MANIFEST) lists seed/78-x86_64-platform, and
+     seed/78-full-entry dispatches the format as seed/73 does.
+   * **Receipts.** `docs/evidence/platform-linked-20261023/`.
 6. **Vulkan provider** in Kotoba on x86_64-linux. Qualify it on B70 or gad
    with:
    * `INFO` and `DEVCLASS`;
    * the dot and kdot fixtures;
    * the decode guest's argmax chain against the f64 oracle.
+
+   It lands in PRs, in this order (JUN-344):
+   1. **Platform API for the provider.** In progress. `kxrt-p-` wrappers in
+      the platform-only runtime text: the monotonic clock, ignoring SIGPIPE,
+      read-only files (open, size, pread, close), unmap, uname, SHA-256 over
+      memory (streamed, so a model is hashed in chunks),
+      Landlock (ABI version, ruleset, path rule, restrict) and the seal (this
+      decision's seccomp filter, installed with TSYNC so the driver's threads
+      are covered). Each wraps fixed syscalls; there is no generic one. Arena
+      reuse needs no API: the provider wraps each request in `arena-scope`,
+      which the platform-linked runtime reclaims. Checks: SHA-256 against
+      hashlib, SIGPIPE, and confinement (native x86_64 only, since qemu-user
+      would apply the guest's filter to itself).
+   2. Protocol core, the grant table and a fake device layer (libc only, run
+      in the native x86_64 CI job).
+   3. The Vulkan device layer, qualified on a GPU host.
+   4. Confinement after device creation, and the launcher's fixed provider
+      environment.
+   5. ADR and documentation.
 7. **aarch64-linux** imports, then Xavier.
 8. **macOS ADR.**
 9. **Dated notes** in the stale docs listed under Consequences.
