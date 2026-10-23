@@ -473,14 +473,15 @@
                     :workgroup-size wg
                     :operators #{:sum :max :min}
                     ;; the measured shapes per cell: the ground shape at
-                    ;; every flipped W, and -- at W = 256 ONLY -- also
-                    ;; shape 2 (n = 2^20, the shape-2 flip of that cell,
-                    ;; 2026-10-24). Shape 2 at the other five widths is
-                    ;; UNMEASURED for this variant and the record names
-                    ;; the shapes so no claim extends past them.
+                    ;; every flipped W, and -- at W = 256 and W = 1024 --
+                    ;; also shape 2 (n = 2^20, the shape-2 flips of those
+                    ;; cells, 2026-10-24). Shape 2 at the other four
+                    ;; widths is UNMEASURED for this variant and the
+                    ;; record names the shapes so no claim extends past
+                    ;; them.
                     :shapes ({256 [1000003 1048576]
                               512 [1000003]
-                              1024 [1000003]
+                              1024 [1000003 1048576]
                               128 [1000003]
                               64 [1000003]
                               32 [1000003]}
@@ -489,7 +490,8 @@
                     :evidence ({256 ["docs/evidence/gpu-simdgroup-reduce-m1max-20261023"
                                      "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w256"]
                                 512 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512"]
-                                1024 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w1024"]
+                                1024 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w1024"
+                                      "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w1024"]
                                 128 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w128"]
                                 64 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w64"]
                                 32 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w32"]}
@@ -500,6 +502,7 @@
             (is (str/includes? (:basis answer) "REGIME-INVARIANT FASTER"))
             (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-20261023"))
             (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w256"))
+            (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w1024"))
             (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w1024"))
             (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w128"))
             (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w64"))
@@ -745,10 +748,13 @@
   ;; one-sided there); the W = 32 flip rests on this fold's own 18/18.
   ;; SHAPE-2 FLIP (2026-10-24): the shape-2 series' anchor re-ran
   ;; W = 256 at n = 2^20 and measured this variant faster again
-  ;; (0.794/0.811/0.812, rule 2 REGIME-INVARIANT FASTER, 18/18), so the
-  ;; W = 256 cell's record names BOTH measured shapes.
-  ;; WHAT THE FLIP DOES NOT LICENSE: shape 2 (n = 2^20) at the five
-  ;; widths but W = 256 is UNMEASURED (their records'
+  ;; (0.794/0.811/0.812, rule 2 REGIME-INVARIANT FASTER, 18/18), and
+  ;; the series' third cell re-ran W = 1024 at n = 2^20 and measured it
+  ;; faster again (0.836/0.843/0.841, rule 2 REGIME-INVARIANT FASTER,
+  ;; 18/18), so the W = 256 and W = 1024 records name BOTH measured
+  ;; shapes.
+  ;; WHAT THE FLIP DOES NOT LICENSE: shape 2 (n = 2^20) at the four
+  ;; widths but W = 256 and W = 1024 is UNMEASURED (their records'
   ;; :shapes name the ONE measured shape); the GLSL arm, every other
   ;; Apple device, every other vendor and cross-day replication stay
   ;; UNMEASURED.
@@ -774,11 +780,11 @@
                   :workgroup-size wg
                   :operators #{:sum :max :min}
                   ;; the measured shapes per cell: the ground shape at
-                  ;; every flipped W, and -- at W = 256 ONLY -- also
-                  ;; shape 2 (the shape-2 flip of that cell).
+                  ;; every flipped W, and -- at W = 256 and W = 1024 --
+                  ;; also shape 2 (the shape-2 flips of those cells).
                   :shapes ({256 [1000003 1048576]
                             512 [1000003]
-                            1024 [1000003]
+                            1024 [1000003 1048576]
                             128 [1000003]
                             64 [1000003]
                             32 [1000003]}
@@ -791,7 +797,8 @@
                   :evidence ({256 ["docs/evidence/gpu-simdgroup-reduce-m1max-20261023"
                                    "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w256"]
                               512 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512"]
-                              1024 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w1024"]
+                              1024 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w1024"
+                                    "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w1024"]
                               128 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w128"]
                               64 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w64"]
                               32 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w32"]}
@@ -805,20 +812,25 @@
           (is (str/includes? (:basis answer) "0.775/0.789/0.789"))
           (is (str/includes? (:basis answer) "0.719/0.728/0.729"))
           (is (str/includes? (:basis answer) "0.657/0.658/0.650"))
+          (is (str/includes? (:basis answer) "0.836/0.843/0.841"))
           (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-20261023"))
+          (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w1024"))
           (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512"))
           (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w1024"))
           (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w128"))
           (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w64"))
           (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w32")))))
     (testing "the record's :shapes names each cell's OWN measured shapes"
-      ;; W = 256 names BOTH measured shapes (shape 2 flipped there,
-      ;; 2026-10-24); the other five widths name the ground shape ONLY
-      ;; -- shape 2 is UNMEASURED at those cells (the shape-2 series'
-      ;; remaining cells) and no claim extends past the named shapes.
-      (is (= [1000003 1048576]
-             (:shapes (:measured-cell (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256}) :msl-v1 m1)))))
-      (doseq [wg [32 64 128 512 1024]]
+      ;; W = 256 and W = 1024 name BOTH measured shapes (shape 2 flipped
+      ;; at those cells, 2026-10-24); the other four widths name the
+      ;; ground shape ONLY -- shape 2 is UNMEASURED at those cells (the
+      ;; shape-2 series' remaining cells) and no claim extends past the
+      ;; named shapes.
+      (doseq [wg [256 1024]]
+        (is (= [1000003 1048576]
+               (:shapes (:measured-cell (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size wg}) :msl-v1 m1))))
+            (str "W=" wg " names BOTH measured shapes")))
+      (doseq [wg [32 64 128 512]]
         (is (= [1000003] (:shapes (:measured-cell (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size wg}) :msl-v1 m1))))
             (str "W=" wg " names the ONE measured shape -- shape 2 is UNMEASURED there"))))
     (testing "the flip is SIX cells wide: every width the row admits answers the row on the class"
@@ -927,7 +939,7 @@
             "the record must not name the refused shape-2 runs")
         (is (str/includes? (:basis answer) "MEASURED BUT REFUSED AS A SELECTION BASIS")
             "the refusal is named in the answer's basis")))
-    (testing "the W = 256 cell is the contrast: its shape-2 verdict was regime-invariant and extended the record"
+    (testing "the W = 256 and W = 1024 cells are the contrast: their shape-2 verdicts were regime-invariant and extended the records"
       (let [answer (variants/select-variant
                     :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
                                               {:workgroup-size 256})
@@ -935,6 +947,14 @@
         (is (= [1000003 1048576] (:shapes (:measured-cell answer))))
         (is (= ["docs/evidence/gpu-simdgroup-reduce-m1max-20261023"
                 "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w256"]
+               (:evidence (:measured-cell answer)))))
+      (let [answer (variants/select-variant
+                    :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                              {:workgroup-size 1024})
+                    :msl-v1 m1)]
+        (is (= [1000003 1048576] (:shapes (:measured-cell answer))))
+        (is (= ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w1024"
+                "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w1024"]
                (:evidence (:measured-cell answer))))))
     (testing "every flip cell's basis names the contract's scoped-cell answer"
       (doseq [wg [32 64 128 256 512 1024]]

@@ -44,13 +44,14 @@
   (the W = 32 flip slice, below) -- six answers of this row carry
   `:measured? true` on the narrowed M1 Max class, the class's whole W
   band [32, 1024] (the six are every width the row admits). UPDATE
-  2026-10-24 (the shape-2 series, two cells): W = 256 measured and
+  2026-10-24 (the shape-2 series, three cells): W = 256 measured and
   FLIPPED at n = 2^20 (the shape-2 anchor -- its record names both
-  shapes) and W = 512 measured at n = 2^20 and REFUSED as a selection
+  shapes), W = 512 measured at n = 2^20 and REFUSED as a selection
   basis (claim-protocol rule 2 REGIME-SCOPED -- the first
   measured-but-scoped cell; the flip contract's scoped-cell answer is
   decided in the measurement-contract section below and pinned by
-  tests). Every other
+  tests) and W = 1024 measured and FLIPPED at n = 2^20 (the W = 1024
+  record now names both shapes). Every other
   cell is unmeasured and every answer outside the six flip cells still
   carries `:measured? false`.] ADR-0356 rule 3 (emission admission
   first) gates its IMPLEMENTATION, which is its own
@@ -60,9 +61,10 @@
   measured and
   flipped 2026-10-23/24, and shape 2 measured and flipped at W = 256
   -- the shape-2 series' anchor -- 2026-10-24, and measured at W = 512
-  2026-10-24 but REFUSED as a selection basis (rule 2 REGIME-SCOPED);
+  2026-10-24 but REFUSED as a selection basis (rule 2 REGIME-SCOPED),
+  and measured and flipped at W = 1024 2026-10-24;
   the remaining cells --
-  shape 2 at W = 32/64/128/1024, cross-day
+  shape 2 at W = 32/64/128, cross-day
   replication -- OPEN)]. Every answer this row
   carries outside the six flip cells is UNMEASURED
   (`:measured? false`, rule 4's lock) until a hardware measurement
@@ -340,6 +342,30 @@ ladder is pinned by `the-msl-ladder-selects-simdgroup-reduce-first` and
    record only on the cell's own rule-2 verdict at that shape. Slice
    record:
    `docs/evidence/gpu-simdgroup-reduce-flip-shape2-w512-refused-20261024.txt`.]
+   [UPDATE 2026-10-24, the SHAPE-2 W = 1024 FLIP SLICE (the shape-2
+   series' third cell, measured and flipped 2026-10-24): the shape-2
+   measurement of THIS variant at W = 1024, n = 2^20
+   (`docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w1024`)
+   ran the byte-identical protocol (no padded-lane tail) and measured it
+   FASTER than `:baseline` again (paired median ratios
+   0.836/0.843/0.841 for `:sum`/`:max`/`:min`, claim-protocol rule 2
+   REGIME-INVARIANT FASTER, 18/18 per-run ratios below 1.0 -- every
+   observed regime one-sided; in family with the shape-1 same-W record
+   0.840/0.847/0.850 and the shape-2 anchor 0.794/0.811/0.812 --
+   one-sided again after the W = 512 straddle). The flip contract's
+   keys hold at this second shape of the W = 1024 cell, and the cell's
+   `:measured-cell` record now names BOTH measured shapes
+   (`:shapes [1000003 1048576]`) and both records in `:evidence`. The
+   flip is code in `select-variant`
+   (`apple-simdgroup-measured-shapes` keyed per W -- W = 256 and
+   W = 1024 `[1000003 1048576]`, the other four widths `[1000003]`
+   unchanged -- `apple-simdgroup-measured-evidence`'s W = 1024 entry
+   gaining the shape-2 record). No `:measured?` flag moves (the W = 1024
+   answer was already MEASURED at the ground shape) and no workgroup row
+   (ADR-0355/0358) moves. WHAT THIS SLICE DOES NOT LICENSE: shape 2 at
+   W = 32/64/128 stays UNMEASURED (the shape-2 series' remaining cells)
+   and stays measured-but-REFUSED at W = 512. Slice record:
+   `docs/evidence/gpu-simdgroup-reduce-flip-shape2-w1024-20261024.txt`.]
 2. **The MSL ladder (the ADR-0361 CUDA-ladder idiom).** Outside the
    carved-out class, an Apple MSL descriptor that reports the fold's
    facts (rule 6, below) answers `:simdgroup-reduce` -- the vendor-native
@@ -385,7 +411,8 @@ extends no `:measured-cell` record's `:shapes` or `:evidence`, moves no
 `:measured?` flag and moves no workgroup row; the flip at the cell's
 other shapes stands on those shapes' own verdicts. A shape enters a
 flip cell's record only when the cell's own rule-2 verdict at that
-shape is REGIME-INVARIANT FASTER (the W = 256 shape-2 record), and the
+shape is REGIME-INVARIANT FASTER (the W = 256 and W = 1024 shape-2
+records), and the
 reduce shape is selected as a whole (`:operators #{:sum :max :min}`) --
 the cell's pooled verdict governs; the contract has no per-operator
 flip and none is invented here.
@@ -565,6 +592,25 @@ step-1 slice added the rows below it.]
   pins the refusal and the W = 256 contrast);
   `docs/evidence/gpu/simdgroup-reduce-flip-shape2-w512-refused-20261024.txt`:
   the slice record (gate output included).
+- [SHAPE-2 W = 1024 FLIP SLICE, 2026-10-24 (the shape-2 series' third
+  cell, measured and flipped the same day):]
+  `src/kotoba/compiler/accelerator_variants.cljk`:
+  `apple-simdgroup-measured-shapes` (W = 1024 now `[1000003 1048576]`,
+  keyed per W; W = 256 unchanged), `apple-simdgroup-measured-evidence`'s
+  W = 1024 entry gaining the shape-2 record (each flip cell names ITS
+  OWN runs), `apple-simdgroup-flip-note` (the SHAPE-2 W = 1024 CELL
+  paragraph), `apple-simdgroup-measured-workgroups` (the shape-2 scope
+  prose), the `simd-flip?` comment unchanged (no lookup key changed --
+  the flip keys were already per-W per-shape);
+  `src/kotoba/compiler/accelerator_simdgroup_reduce.cljk`: honesty marks
+  for the shape-2 flip (docstring only);
+  `test/kotoba/compiler/accelerator_variants_test.cljk`: both flip-cell
+  record blocks pin the W = 1024 two-shape record, the shapes block
+  names W = 256 AND W = 1024 as the both-shapes cells, and
+  `the-shape2-w512-scoped-cell-is-refused-as-a-selection-basis`'s
+  contrast block gains the W = 1024 record;
+  `docs/evidence/gpu/simdgroup-reduce-flip-shape2-w1024-20261024.txt`:
+  the slice record (gate output included).
 
 ## What did NOT move (named so nothing is silently upgraded)
 
@@ -616,6 +662,18 @@ step-1 slice added the rows below it.]
   measurement itself stands recorded in `docs/evidence` as a
   regime-structure record and is refused every selection role -- measured
   is a fact about runs, not a license.]
+- [The shape-2 W = 1024 flip slice (2026-10-24) moved NO `:measured?`
+  flag (the W = 1024 answer was already MEASURED at the ground shape)
+  and extended exactly ONE `:measured-cell` record -- the W = 1024
+  cell's `:shapes` gaining its second shape and its `:evidence` the
+  shape-2 record. Nothing else moved: the W = 256 and W = 512 records
+  are untouched, the workgroup rows (ADR-0355/0358) remain untouched,
+  and no speed claim extends past the flip cells' own recorded scopes.]
+  The ADR's older diff-record prose that still predates the W = 32
+  flip's reconciliation (the "five measured cells" / "only the W = 64,
+  W = 128, W = 256, W = 512 and W = 1024 cells have flipped" phrasings
+  in the State and UNMEASURED sections) is named prose debt in every
+  slice record since, not silently rewritten here.
 
 ## State (the honesty rule's three states)
 
@@ -656,8 +714,15 @@ measured-but-scoped answer: that cell's shape-2 measurement
 (0.812/0.821/0.822, rule 2 REGIME-SCOPED -- `:min` straddles 1.0 inside
 one regime) is MEASURED but REFUSED as a selection basis, the W = 512
 record keeps `:shapes [1000003]`, and the refusal is pinned by tests
-(`the-shape2-w512-scoped-cell-is-refused-as-a-selection-basis`).
-ACCEPTED
+(`the-shape2-w512-scoped-cell-is-refused-as-a-selection-basis`). THE
+SHAPE-2 W = 1024 FLIP SLICE (2026-10-24) moved NO flag but ONE record:
+the W = 1024 cell's `:measured-cell` record now names BOTH measured
+shapes (`:shapes [1000003 1048576]`, the shape-2 third cell's runs
+named in its `:evidence`) -- the shape-2 measurement at W = 1024
+(0.836/0.843/0.841, rule 2 REGIME-INVARIANT FASTER, 18/18) extends the
+flip contract to the second shape of that cell, and to that cell only
+(shape 2 at W = 32/64/128 stays UNMEASURED and at W = 512 stays
+measured-but-REFUSED). ACCEPTED
 DESIGN ONLY: any wording above that governs this variant's OTHER future
 measurement cells (the flip contract as applied to `:simdgroup-reduce` --
 only the W = 64, W = 128, W = 256, W = 512 and W = 1024 cells have
@@ -677,12 +742,12 @@ measured and
 flipped 2026-10-23/24,
 faster than `:baseline` at those cells, see the step-3 and W-sweep
 records); every other
-W of this variant (32); shape 2 for this variant at W = 32/64/128/1024
+W of this variant (32); shape 2 for this variant at W = 32/64/128
 (the shape-2 series' remaining unmeasured cells) and at W = 512 --
 measured 2026-10-24 but REFUSED as a selection basis (rule 2
 REGIME-SCOPED), so no measured claim covers it
-(its W = 256 shape-2 flip landed 2026-10-24 -- the anchor is
-measured and flipped at both measured shapes);
+(its W = 256 and W = 1024 shape-2 flips landed 2026-10-24 -- those
+cells are measured and flipped at both measured shapes);
 `simd_sum`'s association order as a spec-text claim (the spec was NOT
 re-read this tick -- the P1 scope does not depend on it); every Apple
 device but this M1 Max for any variant; the GLSL arm of
@@ -710,8 +775,12 @@ Scoped GPU gate (the 7 GPU-owned test namespaces, scratch runner
     kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
       /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
 
-(this slice adds no test and changes no code namespace; the gate runs to
-prove nothing broke -- counts recorded in the evidence record).
+(the SHAPE-2 W = 1024 flip slice, 2026-10-24: this slice changes the
+two accelerator namespaces' records and pins tests in
+`accelerator-variants-test` -- targeted two namespaces green (27 tests,
+7928 assertions, 0 failures) and the scoped GPU gate green (101 tests,
+9090 assertions, 0 failures); counts in the slice record
+`docs/evidence/gpu/simdgroup-reduce-flip-shape2-w1024-20261024.txt`).
 
 Full suite (`run-tests.cljk`): RED AT BASE at namespace load on
 `kotoba.form` (the W3 port path, documented red at base in ADR 0362),
@@ -755,8 +824,9 @@ outside this diff. No green full suite is claimed.
    subgroup size, route, channel, W set and shapes -- one cell set at a
    time. Until it lands no `:measured?` flag moves.
 3. (step 3) Measure the remaining cells (shape
-   2 at W = 32/64/128/1024 -- the shape-2 series' remaining unmeasured
-   cells; its W = 256 anchor measured and flipped 2026-10-24, its
+   2 at W = 32/64/128 -- the shape-2 series' remaining unmeasured
+   cells; its W = 256 anchor and its W = 1024 third cell measured and
+   flipped 2026-10-24, its
    W = 512 cell measured 2026-10-24 and REFUSED as a selection basis
    (rule 2 REGIME-SCOPED) -- and cross-day
    replication) under the same claim protocol.
