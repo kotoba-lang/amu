@@ -77,6 +77,19 @@ LEFT (the next rows):
 - The residual exact-match gate class in the harness's argv parsing
   (op-order `argc == 5`; harmless with today's single caller).
 - The GLSL arm stays blocked on a wire-42 execution route (ADR 0371).
-- Per-vendor workgroup sweep (backlog 3): no workgroup row is measured
-  yet -- every row in kotoba.compiler.accelerator-targets still carries
-  :measured? false.
+- Per-vendor workgroup sweep (backlog 3): DONE for the four vendors with
+  hardware (ADR-0358, 2026-10-19 -- :nvidia/:apple/:intel/:amd measured,
+  scoped to their named devices); :arm (Mali) and :unknown stay
+  provisional with no hardware to sweep. A re-sweep of a measured row is
+  a MEASUREMENT row, one vendor at a time.
+
+CORRECTION (2026-10-23, later tick): the third item above once read
+"no workgroup row is measured yet -- every row in
+kotoba.compiler.accelerator-targets still carries :measured? false".
+That claim was false when written -- ADR-0358 measured four rows on
+2026-10-19 and those rows carry :measured? true (this file's own green
+gate asserts it in recommend-is-total-deterministic-and-provisional) --
+and it misdirected backlog 3 as untouched. Corrected in place here and
+in argv-gate-class-20261023.txt; the full correction, the runtime dump
+of the table and the gate evidence:
+docs/evidence/gpu/workgroup-row-state-correction-20261023.txt.

@@ -102,13 +102,30 @@ beyond the two contract shapes; the GLSL arm at every width beyond its
 LABELED BOOTSTRAP record (blocked on a wire-42 execution route, ADR 0371);
 every Apple device but this M1 Max; W = 32's selection answer (a
 decision, not a verdict); the NVIDIA/Intel/ARM/AMD variant rows entirely;
-and every workgroup row in kotoba.compiler.accelerator-targets -- all
-still :measured? false.
+and the provisional :arm/:unknown workgroup rows of
+kotoba.compiler.accelerator-targets (the four ADR-0358 rows are
+:measured? true, scoped to their named devices -- see the correction
+section below).
 
 LEFT (the next rows):
-- Per-vendor workgroup sweep (backlog 3): no workgroup row is measured
-  yet -- every row in kotoba.compiler.accelerator-targets still carries
-  :measured? false.
+- Per-vendor workgroup sweep (backlog 3): DONE for the four vendors with
+  hardware (ADR-0358, 2026-10-19); :arm (Mali) and :unknown stay
+  provisional with no hardware to sweep. A re-sweep of a measured row is
+  a MEASUREMENT row, one vendor at a time.
 - The GLSL arm stays blocked on a wire-42 execution route (ADR 0371).
 - JUN-57/59/60 design slices that need no hardware (dispatch rows, loader
   device-class reporting, kernel variants), all UNMEASURED.
+
+CORRECTION (2026-10-23, later tick): the UNMEASURED tail above once read
+"and every workgroup row in kotoba.compiler.accelerator-targets -- all
+still :measured? false", and the first LEFT item once read "no workgroup
+row is measured yet -- every row ... still carries :measured? false".
+Both were false when written: ADR-0358 measured
+:nvidia/:apple/:intel/:amd on 2026-10-19 (scoping amendment 2026-10-22)
+and those rows carry :measured? true -- this file's own green gate asserts
+it in recommend-is-total-deterministic-and-provisional, so the reported
+88-test green run and the claim could not both hold. The commit message
+of 7b053893 carried the same claim and cannot be rewritten
+(no force-push); it is corrected here and in
+flip-contract-widen-20261023.txt. Full correction, runtime dump and gate
+evidence: docs/evidence/gpu/workgroup-row-state-correction-20261023.txt.
