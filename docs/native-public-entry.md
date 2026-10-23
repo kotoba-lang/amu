@@ -1,9 +1,10 @@
 # Current Amu selfhost native entry
 
-The public `bin/amu` is a 8,704,512-byte static Linux x86_64 ELF,
-SHA-256 `67476a255ba9115fead86b9fa54d5f0240b4e275786d1c42a97953c440e0d11d`, built from complete29 source `e29ef6b1cabb4874aecbec773e484326a5cc1453`.
-Both relative aliases resolve to that same image. The native ARM root is
-`f782f3f2a8298c39feeedf873896c9858535a8e371786337632cc60f9e971b9f`. Every adopted18 core module is retained. Complete
+The public `bin/amu` is a 8,790,528-byte static Linux x86_64 ELF,
+SHA-256 `c8a23df53645b545d14cafb1745103a5f10ba05b88a695b17cdeb640f8dbcc80`, built from the complete29 source of amu#1535 (JUN-354: an ungranted
+wire is refused by name) on main 6deb9969. Both relative aliases resolve to that same image. The native ARM root is
+`f0462f5beabf173d39638a2ccb3ba4d2d3512b5c9e1d7168a720fed563c0485f`. Before amu#1535 the image was
+`23e714db082b2db65208cfc573ad682c399a4228fb1e04041f420ea50d9d65c0` (source `f382a939ec3b0c750393d04a8efaaa1f5e3bd30c`) and the root `c95b844146ae31e9…`. Every adopted18 core module is retained. Complete
 ARM containers F1=F2=F3, packed F2=F3 and independent canonical Pw agree;
 actual native x86 F1=F2=F3 reproduce the public image. Static capacities are
 TOK786432/MM-WORDS29,491,200/LitB1MiB/OUT12MiB, heap1765120 words unchanged.

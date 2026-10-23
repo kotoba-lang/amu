@@ -1,0 +1,202 @@
+{
+  "status": "PASS_IO_READ_RUNTIME",
+  "target": "aarch64-linux",
+  "compiler": {
+    "bytes": 3277312,
+    "sha256": "f0462f5beabf173d39638a2ccb3ba4d2d3512b5c9e1d7168a720fed563c0485f"
+  },
+  "host": [
+    "Linux",
+    "aarch64",
+    "6.15.10-200.fc42.aarch64"
+  ],
+  "imageSeccomp": "required",
+  "cases": [
+    {
+      "name": "all-from-file",
+      "via": "file",
+      "stdinBytes": 22,
+      "exit": 0,
+      "stdout": "hello\nこんにちは\n{:status :ok :result 7 :fuel {:initial 100000000 :remaining 99999997}}\n",
+      "stderr": ""
+    },
+    {
+      "name": "all-from-pipe",
+      "via": "pipe",
+      "stdinBytes": 22,
+      "exit": 0,
+      "stdout": "hello\nこんにちは\n{:status :ok :result 7 :fuel {:initial 100000000 :remaining 99999997}}\n",
+      "stderr": ""
+    },
+    {
+      "name": "all-empty",
+      "via": "file",
+      "stdinBytes": 0,
+      "exit": 0,
+      "stdout": "{:status :ok :result 7 :fuel {:initial 100000000 :remaining 99999997}}\n",
+      "stderr": ""
+    },
+    {
+      "name": "twice",
+      "via": "file",
+      "stdinBytes": 5,
+      "exit": 0,
+      "stdout": "hello||{:status :ok :result 7 :fuel {:initial 100000000 :remaining 99999993}}\n",
+      "stderr": ""
+    },
+    {
+      "name": "two-mib",
+      "via": "file",
+      "stdinBytes": 2097152,
+      "exit": 0,
+      "stdout": "2097152{:status :ok :result 7 :fuel {:initial 100000000 :remaining 99999997}}\n",
+      "stderr": ""
+    },
+    {
+      "name": "pieces-complete-characters",
+      "via": "file",
+      "stdinBytes": 8,
+      "exit": 0,
+      "stdout": "aこ|ん|b|{:status :ok :result 7 :fuel {:initial 100000000 :remaining 99999985}}\n",
+      "stderr": ""
+    },
+    {
+      "name": "pieces-ascii",
+      "via": "file",
+      "stdinBytes": 5,
+      "exit": 0,
+      "stdout": "ab|cd|e|{:status :ok :result 7 :fuel {:initial 100000000 :remaining 99999985}}\n",
+      "stderr": ""
+    },
+    {
+      "name": "zero",
+      "via": "file",
+      "stdinBytes": 3,
+      "exit": 0,
+      "stdout": "[]{:status :ok :result 7 :fuel {:initial 100000000 :remaining 99999995}}\n",
+      "stderr": ""
+    },
+    {
+      "name": "not-utf8",
+      "via": "file",
+      "stdinBytes": 2,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 100000000 :remaining 99999998}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "name": "malformed-request",
+      "via": "file",
+      "stdinBytes": 3,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 100000000 :remaining 99999998}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "name": "wire-not-granted",
+      "via": "file",
+      "stdinBytes": 3,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 100000000 :remaining 99999998}}\n",
+      "stderr": "KEXE_CAP {:wire 41 :refused :not-granted}\nKEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "name": "control-no-read0-rule",
+      "via": "file",
+      "stdinBytes": 3,
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 100000000 :remaining 99999998}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGSYS}\n"
+    }
+  ],
+  "controlCompiler": {
+    "mutation": "no read(0) rule in the seccomp filter, in both runtimes",
+    "pin": {
+      "bytes": 1651200,
+      "sha256": "af46593cfb948e1e15840a39bac40e9366eb04ad66392d7607ad6d5c1a2fbf40"
+    }
+  },
+  "unity": {
+    "seed/X86_64-LINUX-SELFHOST-MANIFEST": {
+      "bytes": 541,
+      "sha256": "807282afc305ed284486296b30f115faa031db859d5bdf8a46c70ea154f8bd6a"
+    },
+    "seed/00-ns-static.kotoba": {
+      "bytes": 15174,
+      "sha256": "e4aa5686dbb76ad923c50f0054e42a20deef910b78312c4ff7b54c3fb4ea891b"
+    },
+    "seed/01-mem.kotoba": {
+      "bytes": 15304,
+      "sha256": "79bb1d1154857efc70bee464161abfce37ec6b90e55af7bbef386ab96ca131c9"
+    },
+    "seed/02-io.kotoba": {
+      "bytes": 11962,
+      "sha256": "a3c8424e1a4a57de2cf72df5e75f0cb04c3da8547ae22ae5598c271093ca33e8"
+    },
+    "seed/10-lex.kotoba": {
+      "bytes": 24829,
+      "sha256": "a8b8128b9e00564f3d86a81b9c69e692efa0114a3cd0083e401cda8577086d6b"
+    },
+    "seed/11-read.kotoba": {
+      "bytes": 9176,
+      "sha256": "89fd65139a4502f96c87807db80d4cbaa15913ea75788eb3b647dcc9556e0392"
+    },
+    "seed/20-names.kotoba": {
+      "bytes": 39427,
+      "sha256": "660bac926a904112dad5265e80b26a354632805122d8c46e5aa7860d2859cded"
+    },
+    "seed/21-check.kotoba": {
+      "bytes": 381742,
+      "sha256": "30f90d5873f3b9ce482a3efbe1a11d014450fb7039265038ad80de8ad593ca23"
+    },
+    "seed/30-lower.kotoba": {
+      "bytes": 88252,
+      "sha256": "8311440010b5a6ae5ca30127c269714756710b31085cbe669bcf6dcba259f4bf"
+    },
+    "seed/50-out.kotoba": {
+      "bytes": 21354,
+      "sha256": "1cf17b348bda09d73d721856705a52db05131b88f80d017e1fe9b9a92c066955"
+    },
+    "seed/70-x86_64-linux.kotoba": {
+      "bytes": 19376,
+      "sha256": "063d72ca10fd9214e3efe83fb57a2c8530ade95e1f3afcceea53ebbc5a7f19c0"
+    },
+    "seed/71-x86_64-runtime.kotoba": {
+      "bytes": 5579,
+      "sha256": "8abe266aaeac337810472459f458591228df28081bbcd9a95b8638b75db895d3"
+    },
+    "seed/75-x86_64-static.kotoba": {
+      "bytes": 11557,
+      "sha256": "c2a660cb71dfaa12580ce2926591b54ea9faf19d791810861c414434d7591bea"
+    },
+    "seed/76-x86_64-static-rt.kotoba": {
+      "bytes": 157107,
+      "sha256": "f829f3f0f9d3c3d8781e9f193c16b077ae7a85f7762339ae772717715f29597f"
+    },
+    "seed/77-aarch64-static-rt.kotoba": {
+      "bytes": 147531,
+      "sha256": "b6be045a61282727acc2b4f38aafc6afd36baab4561327ab41c373f5fe89ecd6"
+    },
+    "seed/78-x86_64-platform.kotoba": {
+      "bytes": 10690,
+      "sha256": "99e99f629e28862f5c47d1d853afdfb805399dcde7f79717d1eabfe4c0d2f7df"
+    },
+    "seed/80-aarch64-linux.kotoba": {
+      "bytes": 17709,
+      "sha256": "9a8b74dc8d42b3cb6475f5368ee2204c3dc4e36ee0815e1511f0c2bcf148a355"
+    },
+    "seed/74-x86_64-aiueos-object.kotoba": {
+      "bytes": 21783,
+      "sha256": "6639f870859cfa164aa65f68cab1e38fc403c777918d3f81ad82ced1b9f68773"
+    },
+    "seed/73-x86-linux-entry.kotoba": {
+      "bytes": 1502,
+      "sha256": "0fc9b588c8806b4e21341691473e526b8407bc998cf5ea520a4e75e04562f3ff"
+    }
+  },
+  "cCompilerOrLoader": false,
+  "notCovered": [
+    "a read that fails with an error other than EINTR (EBADF, EIO)",
+    "stdin closed in the middle of a UTF-8 sequence that a piece read completes"
+  ]
+}

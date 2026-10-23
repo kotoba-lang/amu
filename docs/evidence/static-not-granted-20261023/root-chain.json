@@ -1,0 +1,154 @@
+{
+  "chain": {
+    "root.elf": {
+      "bytes": 3277312,
+      "sha256": "c95b844146ae31e9c47b5bd02a7b6590f3a158e74d9759eb48dfcf8bf2fe60a1"
+    },
+    "B.kotoba": {
+      "bytes": 3258565,
+      "sha256": "9f2a3d56085dbff2703451f0db70b997d9bd625335aaeacd99453023e5e34ae5"
+    },
+    "runner.kotoba": {
+      "bytes": 357,
+      "sha256": "c9f1fe1b5c1748450fb11b233cbdc9d9234880a60dc480c0387b173f60d905be"
+    },
+    "F1": {
+      "producer": "root.elf",
+      "source": "B.kotoba",
+      "kseed": {
+        "bytes": 3040731,
+        "sha256": "0a7a678174039c8c566be5c149ad1dfe774bfbbf9af55aec9b88209471d4cfa2"
+      },
+      "elf": {
+        "bytes": 3277312,
+        "sha256": "f420a13ad62452cb59438bf4923ce2b834eebe11a1fc144b61e4b650eee91e01"
+      }
+    },
+    "F2": {
+      "producer": "F1.elf",
+      "source": "B.kotoba",
+      "kseed": {
+        "bytes": 3040731,
+        "sha256": "0a7a678174039c8c566be5c149ad1dfe774bfbbf9af55aec9b88209471d4cfa2"
+      },
+      "elf": {
+        "bytes": 3277312,
+        "sha256": "f0462f5beabf173d39638a2ccb3ba4d2d3512b5c9e1d7168a720fed563c0485f"
+      }
+    },
+    "F3": {
+      "producer": "F2.elf",
+      "source": "B.kotoba",
+      "kseed": {
+        "bytes": 3040731,
+        "sha256": "0a7a678174039c8c566be5c149ad1dfe774bfbbf9af55aec9b88209471d4cfa2"
+      },
+      "elf": {
+        "bytes": 3277312,
+        "sha256": "f0462f5beabf173d39638a2ccb3ba4d2d3512b5c9e1d7168a720fed563c0485f"
+      }
+    },
+    "fixedPoints": {
+      "F1.kseed == F2.kseed == F3.kseed": true,
+      "F2.elf == F3.elf": true
+    }
+  },
+  "steps": [
+    {
+      "name": "F1-compile",
+      "argv": [
+        "/Users/junkawasaki/github/workspaces/claude/amu-cap-refused/r3/chain/root.elf",
+        "compile",
+        "/Users/junkawasaki/github/workspaces/claude/amu-cap-refused/r3/chain/B.kotoba",
+        "--target",
+        "aarch64-macos",
+        "--output",
+        "/Users/junkawasaki/github/workspaces/claude/amu-cap-refused/r3/chain/F1.kseed"
+      ],
+      "exit": 0,
+      "seconds": 116.5
+    },
+    {
+      "name": "F1-pack",
+      "argv": [
+        "/Users/junkawasaki/github/workspaces/claude/amu-cap-refused/r3/chain/root.elf",
+        "compile",
+        "/Users/junkawasaki/github/workspaces/claude/amu-cap-refused/r3/chain/runner.kotoba",
+        "--target",
+        "aarch64-linux",
+        "--output",
+        "/Users/junkawasaki/github/workspaces/claude/amu-cap-refused/r3/chain/F1.elf",
+        "--format",
+        "packed",
+        "--payload",
+        "/Users/junkawasaki/github/workspaces/claude/amu-cap-refused/r3/chain/F1.kseed"
+      ],
+      "exit": 0,
+      "seconds": 2.3
+    },
+    {
+      "name": "F2-compile",
+      "argv": [
+        "/Users/junkawasaki/github/workspaces/claude/amu-cap-refused/r3/chain/F1.elf",
+        "compile",
+        "/Users/junkawasaki/github/workspaces/claude/amu-cap-refused/r3/chain/B.kotoba",
+        "--target",
+        "aarch64-macos",
+        "--output",
+        "/Users/junkawasaki/github/workspaces/claude/amu-cap-refused/r3/chain/F2.kseed"
+      ],
+      "exit": 0,
+      "seconds": 105.1
+    },
+    {
+      "name": "F2-pack",
+      "argv": [
+        "/Users/junkawasaki/github/workspaces/claude/amu-cap-refused/r3/chain/F1.elf",
+        "compile",
+        "/Users/junkawasaki/github/workspaces/claude/amu-cap-refused/r3/chain/runner.kotoba",
+        "--target",
+        "aarch64-linux",
+        "--output",
+        "/Users/junkawasaki/github/workspaces/claude/amu-cap-refused/r3/chain/F2.elf",
+        "--format",
+        "packed",
+        "--payload",
+        "/Users/junkawasaki/github/workspaces/claude/amu-cap-refused/r3/chain/F2.kseed"
+      ],
+      "exit": 0,
+      "seconds": 2.5
+    },
+    {
+      "name": "F3-compile",
+      "argv": [
+        "/Users/junkawasaki/github/workspaces/claude/amu-cap-refused/r3/chain/F2.elf",
+        "compile",
+        "/Users/junkawasaki/github/workspaces/claude/amu-cap-refused/r3/chain/B.kotoba",
+        "--target",
+        "aarch64-macos",
+        "--output",
+        "/Users/junkawasaki/github/workspaces/claude/amu-cap-refused/r3/chain/F3.kseed"
+      ],
+      "exit": 0,
+      "seconds": 112.5
+    },
+    {
+      "name": "F3-pack",
+      "argv": [
+        "/Users/junkawasaki/github/workspaces/claude/amu-cap-refused/r3/chain/F2.elf",
+        "compile",
+        "/Users/junkawasaki/github/workspaces/claude/amu-cap-refused/r3/chain/runner.kotoba",
+        "--target",
+        "aarch64-linux",
+        "--output",
+        "/Users/junkawasaki/github/workspaces/claude/amu-cap-refused/r3/chain/F3.elf",
+        "--format",
+        "packed",
+        "--payload",
+        "/Users/junkawasaki/github/workspaces/claude/amu-cap-refused/r3/chain/F3.kseed"
+      ],
+      "exit": 0,
+      "seconds": 2.4
+    }
+  ]
+}
