@@ -9,7 +9,7 @@ Decision 5 and step 5.
 
 * `x86_64-linux-qemu.json`: `scripts/seed/check-platform-linked.py`.
   * The build phase ran on arm64 Linux (podman machine, native), with the
-    re-pinned root's S3 as `--compiler` and `84b77278…` (step 4) as
+    re-pinned root's S3 as `--compiler` and `b4352834…` (step 4) as
     `--previous-root`.
   * The run phase ran in an x86_64 Debian 12 container (glibc 2.36) under
     qemu-user.

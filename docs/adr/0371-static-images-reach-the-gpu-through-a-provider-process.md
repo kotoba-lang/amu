@@ -583,8 +583,8 @@ Each step is its own PR, in this order:
    * **Not yet.** Step 6 decides two things. One is how the provider hands
      strings to and from the platform API (today: bytes in memory from
      `kxrt-p-alloc`). The other is what the provider's environment holds.
-   * **Root.** Re-pinned C-free to `c54e82ee…` on top of step 4's
-     `84b77278…`. No adoption round was needed.
+   * **Root.** Re-pinned C-free to `9c2b981f…` on top of step 4's
+     `b4352834…`. No adoption round was needed.
    * **Receipts.** `docs/evidence/platform-linked-20261023/`.
 6. **Vulkan provider** in Kotoba on x86_64-linux. Qualify it on B70 or gad
    with:
