@@ -17,6 +17,14 @@ G11 = G12 (KSEED SHA-256 `f354ca247a0d1683dc5a6966198f3e1e77db4381caf29d7b54a93e
 All19 Embench correctness workloads freshly compiled and executed with exit0.
 This is not a performance measurement.
 
+[The input ledger](evidence/native-source-lock-20261023/embench-inputs.json)
+identifies all19 checked-in `bench/embench/reproduce-20261015/ports` files.
+Each canonical body is unchanged. Its explicit correctness fixture exports
+`main` and appends the same checked-in literal shown in the ledger, calling
+`bench-verify 1` and returning zero only on success. The exact staged hashes
+were checked; all19 generated native code bodies are byte-identical to the
+prior complete corpus. No host tool interprets or translates the workload.
+
 The exact merged GMIR source (`40ef6c95`) passed all8 entrypoints. The exact
 merged MIR source (`b9a570a5`) passed ordinary main, module/reentry/table/
 schedule/counted/allocator large, and aggregate large-main. The aggregate
@@ -31,6 +39,31 @@ KGraph uses bounded last-write-wins storage; unsupported public command,
 resolver-lock/CID and generic abort/recur cleanup qualification remain open.
 These proofs establish the recorded source port; adoption and owning-main
 integration are tracked separately from public CLI/CDCI qualification.
+
+## Final platform integration
+
+[The final native receipt](evidence/native-source-lock-20261023/final-main-correctness.json)
+records the runtime after incorporating main `e06dbba7` (packed mode and
+JUN-325 direct/function-address refusal). The native platform root reached
+S2 = S3 = S4 (`cd85f3fc6e68511f6de3e71692dfd9b90133bab3fe2c85285bb423a7dc80ad60`).
+It built the complete18 C0; C0 produced G1, followed by G2 and G3 through
+the native runner. G1 = G2 = G3 = G11. A standalone packed compiler rebuilt
+the same complete source to the same container and native code. The previous
+16-module adoption and measured performance baseline remain historical pins.
+
+The final runtime passed all19 freshly compiled workloads, all8 GMIR and
+all8 MIR entrypoints including whole-large, all17 pin refusals, both units,
+scalar-reference refusal, scope/growth/KGraph controls and vector-budget
+refusal. MIR whole-large ended with zero tracked arena use and recorded
+155,688,217 scope-release events. These are final use/events, not peak-memory
+measurements. The static profile's exact-copy fallback under constrained
+20/18-item limits remains separately unqualified; its ordinary fixture does
+not force that branch at this profile's unchanged capacities.
+
+This integrates the tested native compiler lineage. Public command/target/
+profile/seal, x86 native execution, resolver/module-lock/Definition CID,
+generic abort/recur cleanup, historical assertion parity and the native CDCI
+controller remain separate qualification work.
 
 ## Project input contract
 
