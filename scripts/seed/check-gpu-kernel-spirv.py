@@ -93,8 +93,11 @@ SUITES = {
                         "kir2-dot-rows.spv": 2448, "kir2-kdot-f32-r1.spv": 28776,
                         "kir2-kdot-f32-r8.spv": 25056, "kir2-kdot-f32-r8-rows4.spv": 25056,
                         "kir2-kdot-x8r8.spv": 26028, "kir2-kdot-x8r4.spv": 26028,
-                        "kir2-kdot-i8-x8r4.spv": 23028, "kir2-kdot-i8-x8r8.spv": 23028},
-                 count=36, control="FAIL attn: variables", refs=True),
+                        "kir2-kdot-i8-x8r4.spv": 23028, "kir2-kdot-i8-x8r8.spv": 23028,
+                        "kir2-deltanet-step.spv": 3728, "kir2-deltanet-fused.spv": 13724,
+                        **{f"kir2-embed-{n}.spv": b for n, b in (("iq4xs", 4164), ("q8", 2956), ("b32-2", 3128), ("b32-3", 3320),
+                                                                  ("b32-6", 4216), ("b32-7", 4376), ("ptq1", 4164))}},
+                 count=45, control="FAIL attn: variables", refs=True),
 }
 FUEL = 100000000
 EXPECT_CALL = re.compile(r"\(expect ")
@@ -127,7 +130,11 @@ REFS = ROOT / "tools/gpu_kernel_refs"
 REF_VARIANTS = {"nex-ops.comp": [(op, "OP=" + op) for op in NEX_OPS],
                 "kdot-f32-r8.comp": [(None, None), ("rows4", "ROWS=4")],
                 "kdot-x8r8.comp": [(None, None), ("rows4", "ROWS=4")],
-                "kdot-i8-x8r4.comp": [(None, None), ("rows8", "ROWS=8")]}
+                "kdot-i8-x8r4.comp": [(None, None), ("rows8", "ROWS=8")],
+                "embed-iq4xs.comp": [(None, None), ("q8", "Q8"), ("b32-2", "B32=2"), ("b32-3", "B32=3"), ("b32-6", "B32=6"),
+                                     ("b32-7", "B32=7"), ("ptq1", "PTQ1")]}
+# embed_iq4xs's variants: KIR v2 kind -> name (the GLSL's define)
+EMBED_KINDS = {23: "iq4xs", 8: "q8", 2: "b32-2", 3: "b32-3", 6: "b32-6", 7: "b32-7", 143: "ptq1"}
 
 
 def refs(output):
@@ -521,6 +528,79 @@ KDOT_R8_TYPES = [tt for tt in KDOT_TYPES if tt not in (30, 142, 143)]
 KDOT_X8_TYPES = [12, 13, 14, 23, 8, 2, 1]
 
 
+def deltanet_step_ref(meta, q, k, v, g, beta, state):
+    """deltanet_step in f64: the state after the step, and out."""
+    heads, K, V, khs, voff = struct.unpack("<5I", meta[:20])
+    state, out = list(state), [0.0] * (heads * V)
+    for h in range(heads):
+        kh, sb, decay, b = h % khs, h * K * V, math.exp(g[h]), beta[h]
+        for j in range(V):
+            kv = 0.0
+            for i in range(K):
+                state[sb + i * V + j] *= decay
+                kv += state[sb + i * V + j] * k[kh * K + i]
+            delta = (v[voff + h * V + j] - kv) * b
+            o = 0.0
+            for i in range(K):
+                state[sb + i * V + j] += k[kh * K + i] * delta
+                o += state[sb + i * V + j] * q[kh * K + i]
+            out[h * V + j] = o
+    return state, out
+
+
+def deltanet_embed_cases():
+    """Each case: name, the module pair's suffix, the bindings' bytes in order,
+    the indices of the bindings to compare, the workgroups, and a check of the
+    outputs (binding index -> bytes) answering the largest error."""
+    cases = []
+    # deltanet_step: 4 heads on 2 key heads, K = V = 128, values at v_off 8;
+    # one workgroup past the heads (it returns)
+    H, KH, K, V = 4, 2, 128, 128
+    meta = struct.pack("<8I", H, K, V, KH, 8, 0, 0, 0)
+    q, k, v = lcg(KH * K, 90), lcg(KH * K, 91), lcg(8 + H * V, 92)
+    g, beta, st = [x * 0.5 - 0.1 for x in lcg(H, 93)], lcg(H, 94), lcg(H * K * V, 95)
+
+    def step_check(o, args=(meta, q, k, v, g, beta, st)):
+        want_s, want_o = deltanet_step_ref(*args)
+        return max(max(abs(a - b) for a, b in zip(from_f32(o[6]), want_s)), max(abs(a - b) for a, b in zip(from_f32(o[7]), want_o)))
+    cases.append(dict(name="deltanet_step", pair="dns", bufs=[meta, f32(q), f32(k), f32(v), f32(g), f32(beta), f32(st), bytes(4 * H * V)],
+                      compare=[6, 7], groups=(H + 1, 1, 1), check=step_check))
+    # deltanet_fused: 4 heads on 2 key heads, K = V = 128, n = 1024 channels
+    # (q | k | v); at position 0 (fresh: no ring or state history) and at 5
+    # (odd parity, history); row 0
+    n, voff = 2 * KH * K + H * V, 2 * KH * K
+    for pos0 in (0, 5):
+        fm = struct.pack("<6I2f", H, K, V, KH, voff, n, 1e-6, 1 / math.sqrt(K))
+        cases.append(dict(name=f"deltanet_fused position {pos0}", pair="dnf",
+                          bufs=[fm, f32(lcg(n, 100)), f32(lcg(4 * n, 101)), f32(lcg(6 * n, 102)), f32(lcg(H, 103)), f32(lcg(H, 104)),
+                                f32(lcg(H, 105)), f32([-abs(x) for x in lcg(H, 106)]), f32(lcg(H * K * V, 107)), f32(lcg(V, 108)),
+                                f32(lcg(H * V, 109)), bytes(4 * H * V), struct.pack("<4I", pos0, 0, 0, 0)],
+                          compare=[3, 8, 11], groups=(H, 1, 1), check=None))
+    # embed: two token rows of a 6-token vocabulary at cols 512, the slot from
+    # Meta (and once from pos[0]); Q8 also exactly against a dequant
+    ids = struct.pack("<4I", 5, 2, 4, 0)
+    for kind, name in EMBED_KINDS.items():
+        per_token = {23: 2 * 136, 8: 16 * 34, 2: 16 * 18, 3: 16 * 20, 6: 16 * 22, 7: 16 * 24, 143: 4 * 28}[kind]
+        w = kdot_weights(12, 6 * per_token + (-6 * per_token % 4) + 4, 110 + kind)
+        for dyn in ((0, 1) if kind == 23 else (0,)):
+            em = struct.pack("<4I", 512, 1, dyn, 0)
+            pos = struct.pack("<4I", 2, 0, 0, 0)
+
+            def q8_check(o, w=w, dyn=dyn):
+                want = []
+                for row in range(2):
+                    tok = struct.unpack("<4I", ids)[(2 if dyn else 1) + row]
+                    for blk in range(16):
+                        b0 = (tok * 16 + blk) * 34
+                        d = struct.unpack("<e", w[b0:b0 + 2])[0]
+                        want += [d * x for x in struct.unpack("<32b", w[b0 + 2:b0 + 34])]
+                return 0 if o[3] == f32(want) else 1
+            cases.append(dict(name=f"embed {name}" + (" dynamic" if dyn else ""), pair="emb-" + name,
+                              bufs=[em, w, ids, bytes(4 * 2 * 512), pos], compare=[3], groups=(1, 2, 1),
+                              check=q8_check if kind == 8 else None))
+    return cases
+
+
 def gpu(output, suite, provider_out):
     assert suite["name"] == "kir2", "the gpu phase is suite kir2's"
     assert platform.system() == "Linux" and platform.machine() in ("x86_64", "AMD64"), "gpu phase: x86_64 Linux with a Vulkan driver"
@@ -539,13 +619,17 @@ def gpu(output, suite, provider_out):
           "v2-dot.spv": "kir2-dot-rows.spv", "v2-kdot.spv": "kir2-kdot-f32-r1.spv",
           "v2-kdot8.spv": "kir2-kdot-f32-r8.spv", "v2-kdot4.spv": "kir2-kdot-f32-r8-rows4.spv",
           "v2-kdotx8.spv": "kir2-kdot-x8r8.spv", "v2-kdotx4.spv": "kir2-kdot-x8r4.spv",
-          "v2-i8x4.spv": "kir2-kdot-i8-x8r4.spv", "v2-i8x8.spv": "kir2-kdot-i8-x8r8.spv"}
+          "v2-i8x4.spv": "kir2-kdot-i8-x8r4.spv", "v2-i8x8.spv": "kir2-kdot-i8-x8r8.spv",
+          "v2-dns.spv": "kir2-deltanet-step.spv", "v2-dnf.spv": "kir2-deltanet-fused.spv",
+          **{f"v2-emb-{n}.spv": f"kir2-embed-{n}.spv" for n in EMBED_KINDS.values()}}
     refs = {"ref-attn.spv": "ref-attn-copy-dense.spv", "ref-add.spv": "ref-ewise-add.spv",
             **{f"ref-nex-{op}.spv": f"ref-nex-ops-{op}.spv" for op in NEX_OPS},
             "ref-dot.spv": "ref-dot-rows.spv", "ref-kdot.spv": "ref-kdot-f32-r1.spv",
             "ref-kdot8.spv": "ref-kdot-f32-r8.spv", "ref-kdot4.spv": "ref-kdot-f32-r8-rows4.spv",
             "ref-kdotx8.spv": "ref-kdot-x8r8.spv", "ref-kdotx4.spv": "ref-kdot-x8r8-rows4.spv",
-            "ref-i8x4.spv": "ref-kdot-i8-x8r4.spv", "ref-i8x8.spv": "ref-kdot-i8-x8r4-rows8.spv"}
+            "ref-i8x4.spv": "ref-kdot-i8-x8r4.spv", "ref-i8x8.spv": "ref-kdot-i8-x8r4-rows8.spv",
+            "ref-dns.spv": "ref-deltanet-step.spv", "ref-dnf.spv": "ref-deltanet-fused.spv",
+            **{f"ref-emb-{n}.spv": "ref-embed-iq4xs" + ("" if n == "iq4xs" else "-" + n) + ".spv" for n in EMBED_KINDS.values()}}
     files = {**{n: output / "spv" / m for n, m in v2.items()}, **{n: output / "refs" / m for n, m in refs.items()}}
     for n, f in files.items():
         shutil.copy(f, raw / n)
@@ -577,8 +661,11 @@ def gpu(output, suite, provider_out):
                            "ref-dot.spv", "v2-dot.spv", "ref-kdot.spv", "v2-kdot.spv",
                            "ref-kdot8.spv", "v2-kdot8.spv", "ref-kdot4.spv", "v2-kdot4.spv",
                            "ref-kdotx8.spv", "v2-kdotx8.spv", "ref-kdotx4.spv", "v2-kdotx4.spv",
-                           "ref-i8x4.spv", "v2-i8x4.spv", "ref-i8x8.spv", "v2-i8x8.spv"]):
-        nb = 7 if "-nex-" in n else 6 if "i8x" in n else 5 if "kdot" in n else 8 if "attn" in n else 4
+                           "ref-i8x4.spv", "v2-i8x4.spv", "ref-i8x8.spv", "v2-i8x8.spv",
+                           "ref-dns.spv", "v2-dns.spv", "ref-dnf.spv", "v2-dnf.spv",
+                           *[f"{w}-emb-{e}.spv" for e in EMBED_KINDS.values() for w in ("ref", "v2")]]):
+        nb = (7 if "-nex-" in n else 6 if "i8x" in n else 5 if ("kdot" in n or "-emb-" in n) else 8 if ("attn" in n or "dns" in n)
+              else 13 if "dnf" in n else 4)
         cgp.expect(s, f"PIPELINE {n} {nb}", str(k + 1))
         pipes[n] = k + 1
     rows = {}
@@ -699,6 +786,24 @@ def gpu(output, suite, provider_out):
         rows[c["name"]] = dict(tensorType=c["tt"], groups=list(c["groups"]), identical=True, maxRelErrVsF64=err,
                                inputsSHA256=hashlib.sha256(c["meta"] + c["w"] + c["x"] + c["e"] + c.get("xs", b"")).hexdigest(),
                                outputSHA256=hashlib.sha256(v2).hexdigest())
+    # deltanet and embed
+    for c in deltanet_embed_cases():
+        hs = [alloc(len(b)) for b in c["bufs"]]
+        outs = {}
+        for m in ("ref-" + c["pair"] + ".spv", "v2-" + c["pair"] + ".spv"):
+            for h, b in zip(hs, c["bufs"]):
+                write(h, b)
+            cgp.expect(s, f"DISPATCH {pipes[m]} {c['groups'][0]} {c['groups'][1]} {c['groups'][2]} " + " ".join(map(str, hs)),
+                       re.compile(r"^\d+$"))
+            outs[m] = {i: read(hs[i], len(c["bufs"][i])) for i in c["compare"]}
+        ref, v2 = outs.values()
+        assert ref == v2, (c["name"], [i for i in ref if ref[i] != v2[i]], "differs from glslang's module")
+        assert any(v2[i] != c["bufs"][i] for i in c["compare"]), (c["name"], "nothing written")
+        err = c["check"](v2) if c["check"] else None
+        assert err is None or err < 1e-4, (c["name"], err)
+        rows[c["name"]] = dict(groups=list(c["groups"]), identical=True, check=err,
+                               inputsSHA256=hashlib.sha256(b"".join(c["bufs"])).hexdigest(),
+                               outputSHA256=hashlib.sha256(b"".join(v2[i] for i in c["compare"])).hexdigest())
     line = s.close(0)
     rows["confinement"] = cgp.confined(line, True)
     # the int8 kernels use the packed integer dot product: the provider must
