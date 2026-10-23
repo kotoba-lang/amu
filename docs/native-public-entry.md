@@ -73,10 +73,11 @@ source/image/result/exit/fuel vectors. Callers cannot substitute a green
 stub or alter expected values. These controls bind bytes and observations;
 caller-supplied hashes are not external authentication or signatures.
 
-The pre-TCP controller completed all24 cases,18 refusal probes and child
-cleanup. The current TCP/spawn gate independently passed all24 on x86.
-Current-controller whole-run and hosted workflow completion are recorded
-in the evidence scope when terminal. GitHub Actions/Python stage and
+The current TCP/spawn controller completed both native roles, all24 cases,
+18 refusal probes and parent-death child cleanup on x86. The public Git
+entry and both aliases also passed pinned check/compile, generated ELF
+execution and named refusals. Hosted workflow completion is recorded
+separately when terminal. GitHub Actions/Python stage and
 observe processes; native role code owns the ordered semantic verdict.
 No production route or branch-protection change is part of this work.
 
@@ -90,6 +91,10 @@ native migration. Archived text has no executable bit and is not used by
 the native manifests or workflow.
 
 Old local/x86 CLJK poller/supervisor processes were absent at readback.
-Amu repository-specific runner registration was empty. Org runner
-registration could not be read with the available permission; draining/
-deregistration remains a separate unresolved operations record.
+Amu repository-specific runner registration was empty. The surviving
+Itonami runner44 belongs to `network-awai/kotobase-control-plane`, not Amu.
+It was idle, with no worker process or in-progress run. That repository
+still has11 queued non-gate workflows with no instantiated jobs. They are
+outside the two native CDCI roles; this change does not cancel them,
+stop their infrastructure or claim runner deregistration. The initial
+org-level403 did not apply to this repository's accessible runner API.
