@@ -2,9 +2,9 @@
 
 The product identity is [native-product.json](../native-product.json).
 `bin/amu`, `bin/kotoba` and `bin/kotoba-compiler` resolve to the same
-8,434,176-byte Linux x86_64 ELF, SHA-256
-`47e90db27ba64c60212ae149877be6b45a07200b87e509d3e79f76e4e1d862a3`.
-The source revision is `5d66b129`; metadata/entry retirement commits can
+8,532,480-byte Linux x86_64 ELF, SHA-256
+`79c7e57ae01752170eb0eef9727fd1487405bb8ec2e40c5c666611c8429d8f09`.
+The source revision is `5cf84a36`; metadata/entry retirement commits can
 follow without changing this compiler source or image.
 
 ## Artifact qualification
@@ -33,13 +33,16 @@ the native per-vector limit of 2^25. This changes capacity, not expected
 results, grants or fixture count.
 
 Full original source/corpus and prior receipts remain identifiable.
-The exact final F2 image passed fresh all19 Embench correctness, MIR
-normal and all seven large entries, GMIR all eight entries, and resource/
-pin refusals. All 33 MIR files/three roots and 12 GMIR files/two roots
+The retained correctness receipt records all19 Embench, MIR normal and
+all seven large entries, GMIR all eight entries, and resource/pin refusals
+with its exact producer revision and digest. All 33 MIR files/three roots
+and 12 GMIR files/two roots
 were retained and their KSL digests checked. MIR whole-large ended with
 zero tracked arena use after 155,688,217 scope releases. The receipt is
-`docs/evidence/native-cdci-20261023/final-f-correctness.json`; correctness
-is recorded separately from compiler fixed points. No new performance score,
+`docs/evidence/native-cdci-20261023/final-f-correctness.json`; subsequent
+complete27 results are recorded with PR #1510 and workflow artifacts.
+Correctness is recorded separately from compiler fixed points. No new
+performance score,
 full historical assertion parity, general sandbox certificate or live
 service cutover follows from these bounded qualifications.
 
@@ -80,9 +83,12 @@ source/image/result/exit/fuel vectors. Callers cannot substitute a green
 stub or alter expected values. These controls bind bytes and observations;
 caller-supplied hashes are not external authentication or signatures.
 
-The current TCP/spawn controller completed both native roles, all24 cases,
-18 refusal probes and parent-death child cleanup on x86. The public Git
-entry and both aliases also passed pinned check/compile, generated ELF
+The controller completed both native roles, all24 cases,
+18 refusal probes and parent-death child cleanup on x86. The current27
+build reproduces every role image and fixture record
+byte-for-byte; `controller-platform-identity.json` records this qualification
+carry explicitly. The current public product bytes and aliases passed
+pinned check/compile, generated ELF
 execution and named refusals. Hosted workflow completion is recorded
 separately when terminal. GitHub Actions/Python stage and
 observe processes; native role code owns the ordered semantic verdict.
