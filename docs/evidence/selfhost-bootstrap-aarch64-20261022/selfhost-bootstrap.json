@@ -15,48 +15,64 @@
   ],
   "root": {
     "image": {
-      "bytes": 1323520,
-      "sha256": "cd85f3fc6e68511f6de3e71692dfd9b90133bab3fe2c85285bb423a7dc80ad60"
+      "bytes": 1389056,
+      "sha256": "84b77278e47d3ac2ef79dc83c86f88acf5eda6c6d6b5a41ee8b261f0272e8a58"
     },
     "receipt": {
       "schema": "amu.seed.static-root.v1",
       "image": {
-        "bytes": 1323520,
-        "sha256": "cd85f3fc6e68511f6de3e71692dfd9b90133bab3fe2c85285bb423a7dc80ad60"
+        "bytes": 1389056,
+        "sha256": "84b77278e47d3ac2ef79dc83c86f88acf5eda6c6d6b5a41ee8b261f0272e8a58"
       },
       "target": "aarch64-linux",
       "format": "static",
       "sourceManifest": "seed/X86_64-LINUX-SELFHOST-MANIFEST",
       "sourceUnity": {
-        "bytes": 793591,
-        "sha256": "b7a4219d6037f7a71277ed6e8e117adace0d273d06a2404651cc07b0673150c5"
+        "bytes": 857625,
+        "sha256": "8a17c79e8ed9bc12d933607a5247a4f7db5ca0e681e4c46ec9087f47b97c81a6"
       },
-      "sourceCommitBase": "e06dbba75ce7b559c23e3199189f476599973df0",
+      "sourceCommitBase": "3b9728a58a19d027c7757da2678da9d1442a7866",
       "producedBy": {
-        "how": "Amu native previous root built S1, S1 built S2, S2 built S3, S3 built S4. S2=S3=S4. The runtime gains bounded scalar lifetimes/vector growth/KGraph while preserving current-main packed mode and JUN-325 direct/function-address refusals. Existing native limits and grants retained; no hosted compiler or C loader.",
+        "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 and S2 built S3 = this image (S1 = S2 = S3: the runtime text embedded in static images did not change). Re-pinned because this source adds --format launcher (ADR 0371 step 4, context word 408 = 4): the launcher runtime text and the format plumbing in seed/70, 75, 76, 77 and 80.",
         "date": "2026-10-23",
-        "previousRoot": "d17590b4352b4ecae97fb472355b05cda54cbfc01d3a29ad284531e2342e13d2",
-        "chain": {
-          "S1": {
-            "bytes": 1315328,
-            "sha256": "28aac6a86bd0b6cb944d173996b94aab5c7b72be419199ce0be0d4d24f5647bc"
-          },
-          "S2": {
-            "bytes": 1323520,
-            "sha256": "cd85f3fc6e68511f6de3e71692dfd9b90133bab3fe2c85285bb423a7dc80ad60"
-          },
-          "S3": {
-            "bytes": 1323520,
-            "sha256": "cd85f3fc6e68511f6de3e71692dfd9b90133bab3fe2c85285bb423a7dc80ad60"
-          },
-          "S4": {
-            "bytes": 1323520,
-            "sha256": "cd85f3fc6e68511f6de3e71692dfd9b90133bab3fe2c85285bb423a7dc80ad60"
-          }
-        }
+        "previousRoot": "cd85f3fc6e68511f6de3e71692dfd9b90133bab3fe2c85285bb423a7dc80ad60"
       },
       "verification": "Native S2=S3=S4 and full current runtime-boundary corpus. Full18 core bootstrap and final corpus evidence recorded separately.",
       "history": [
+        {
+          "image": {
+            "bytes": 1323520,
+            "sha256": "cd85f3fc6e68511f6de3e71692dfd9b90133bab3fe2c85285bb423a7dc80ad60"
+          },
+          "sourceUnity": {
+            "bytes": 793591,
+            "sha256": "b7a4219d6037f7a71277ed6e8e117adace0d273d06a2404651cc07b0673150c5"
+          },
+          "sourceCommitBase": "e06dbba75ce7b559c23e3199189f476599973df0",
+          "producedBy": {
+            "how": "Amu native previous root built S1, S1 built S2, S2 built S3, S3 built S4. S2=S3=S4. The runtime gains bounded scalar lifetimes/vector growth/KGraph while preserving current-main packed mode and JUN-325 direct/function-address refusals. Existing native limits and grants retained; no hosted compiler or C loader.",
+            "date": "2026-10-23",
+            "previousRoot": "d17590b4352b4ecae97fb472355b05cda54cbfc01d3a29ad284531e2342e13d2",
+            "chain": {
+              "S1": {
+                "bytes": 1315328,
+                "sha256": "28aac6a86bd0b6cb944d173996b94aab5c7b72be419199ce0be0d4d24f5647bc"
+              },
+              "S2": {
+                "bytes": 1323520,
+                "sha256": "cd85f3fc6e68511f6de3e71692dfd9b90133bab3fe2c85285bb423a7dc80ad60"
+              },
+              "S3": {
+                "bytes": 1323520,
+                "sha256": "cd85f3fc6e68511f6de3e71692dfd9b90133bab3fe2c85285bb423a7dc80ad60"
+              },
+              "S4": {
+                "bytes": 1323520,
+                "sha256": "cd85f3fc6e68511f6de3e71692dfd9b90133bab3fe2c85285bb423a7dc80ad60"
+              }
+            }
+          }
+        },
         {
           "schema": "amu.seed.static-root.v1",
           "image": {
@@ -226,8 +242,8 @@
   },
   "sourceGraph": {
     "seed/X86_64-LINUX-SELFHOST-MANIFEST": {
-      "bytes": 510,
-      "sha256": "af651c4d855723a633d3b94c4fc6393e5c6c6e53ac7e58186e0ec3228e8625b0"
+      "bytes": 541,
+      "sha256": "807282afc305ed284486296b30f115faa031db859d5bdf8a46c70ea154f8bd6a"
     },
     "seed/00-ns-static.kotoba": {
       "bytes": 14937,
@@ -274,16 +290,20 @@
       "sha256": "8abe266aaeac337810472459f458591228df28081bbcd9a95b8638b75db895d3"
     },
     "seed/75-x86_64-static.kotoba": {
-      "bytes": 9873,
-      "sha256": "c6b4a02ae10d06e9c9bc77b69ba84c4399d9680043667489fd5d7aa7a6f393cf"
+      "bytes": 11557,
+      "sha256": "c2a660cb71dfaa12580ce2926591b54ea9faf19d791810861c414434d7591bea"
     },
     "seed/76-x86_64-static-rt.kotoba": {
-      "bytes": 95137,
-      "sha256": "6bbbbccac63c3a49665053266141e7789ae87e0839eb02e2852a22f895515606"
+      "bytes": 99202,
+      "sha256": "28d41d595ca47bc51ce8a10a3a6690f3453f48e15984bfce69b13dd7ab457b74"
     },
     "seed/77-aarch64-static-rt.kotoba": {
       "bytes": 95832,
       "sha256": "031f4e461884c1575906929f8d9e6234be3421599b4bcfa6adc14ba69bfd6696"
+    },
+    "seed/78-x86_64-platform.kotoba": {
+      "bytes": 10690,
+      "sha256": "99e99f629e28862f5c47d1d853afdfb805399dcde7f79717d1eabfe4c0d2f7df"
     },
     "seed/80-aarch64-linux.kotoba": {
       "bytes": 17709,
@@ -294,8 +314,8 @@
       "sha256": "9c3b16530f722e9a86249d17be3d5d55e1306be759be76c21df8cfac1d5db4d8"
     },
     "seed/73-x86-linux-entry.kotoba": {
-      "bytes": 1175,
-      "sha256": "499022e15adce90748a6a545230e3ca922a6a49cf0f9cd986807a59d93b36b6b"
+      "bytes": 1498,
+      "sha256": "757116e6ced4d0aa7bf567471505507489a4b686632ea0f35ff6a48bdbaaf705"
     }
   },
   "generations": [
@@ -303,24 +323,24 @@
       "name": "S1",
       "producedBy": "root.elf",
       "pin": {
-        "bytes": 1389056,
-        "sha256": "84b77278e47d3ac2ef79dc83c86f88acf5eda6c6d6b5a41ee8b261f0272e8a58"
+        "bytes": 1417728,
+        "sha256": "c54e82ee52f7beb35df701d3156bd9881ddddfac5f3ea9c7b0eb5b25af73bddd"
       }
     },
     {
       "name": "S2",
       "producedBy": "S1.elf",
       "pin": {
-        "bytes": 1389056,
-        "sha256": "84b77278e47d3ac2ef79dc83c86f88acf5eda6c6d6b5a41ee8b261f0272e8a58"
+        "bytes": 1417728,
+        "sha256": "c54e82ee52f7beb35df701d3156bd9881ddddfac5f3ea9c7b0eb5b25af73bddd"
       }
     },
     {
       "name": "S3",
       "producedBy": "S2.elf",
       "pin": {
-        "bytes": 1389056,
-        "sha256": "84b77278e47d3ac2ef79dc83c86f88acf5eda6c6d6b5a41ee8b261f0272e8a58"
+        "bytes": 1417728,
+        "sha256": "c54e82ee52f7beb35df701d3156bd9881ddddfac5f3ea9c7b0eb5b25af73bddd"
       }
     }
   ],
@@ -331,8 +351,8 @@
       "sha256": "298708edd87a0105a39eab8a09980035a4c5774877ce73a5590800757475d9bc"
     },
     "x86_64Compiler": {
-      "bytes": 1688064,
-      "sha256": "614c2535070bd9c6c7c0a851d39f49661ae02190325d4acd7245ac717128ae52"
+      "bytes": 1720832,
+      "sha256": "dd190809318258710adb31543b724487fdf1919e211267d08983262bf5bab7f6"
     },
     "x86_64Runner": {
       "bytes": 172544,
@@ -705,8 +725,8 @@
   "runtimeBoundary": {
     "status": "PASS_RUNTIME_BOUNDARY",
     "compiler": {
-      "bytes": 1389056,
-      "sha256": "84b77278e47d3ac2ef79dc83c86f88acf5eda6c6d6b5a41ee8b261f0272e8a58"
+      "bytes": 1417728,
+      "sha256": "c54e82ee52f7beb35df701d3156bd9881ddddfac5f3ea9c7b0eb5b25af73bddd"
     },
     "previousRoot": null,
     "host": [
@@ -1017,6 +1037,156 @@
       },
       {
         "name": "syscall",
+        "target": "aarch64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "load64",
+        "target": "aarch64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "store64",
+        "target": "aarch64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "load8",
+        "target": "aarch64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "store8",
+        "target": "aarch64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "ctx",
+        "target": "aarch64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "call-main",
+        "target": "aarch64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "trap",
+        "target": "aarch64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "call-at",
+        "target": "aarch64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "exit",
+        "target": "aarch64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "gl",
+        "target": "aarch64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "gs",
+        "target": "aarch64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "allow-bit",
+        "target": "aarch64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "map",
+        "target": "aarch64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "slot-56",
+        "target": "aarch64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "fn-ref-invoke",
+        "target": "aarch64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "fn-ref-alias",
+        "target": "aarch64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "bare-alias",
+        "target": "aarch64-linux",
+        "format": "launcher",
+        "diagnostic": "E2102"
+      },
+      {
+        "name": "fn-ref-only",
+        "target": "aarch64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "fn-ref-ctx",
+        "target": "aarch64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "fn-ref-slot",
+        "target": "aarch64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "qualified-call",
+        "target": "aarch64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "qualified-fn-ref",
+        "target": "aarch64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "nested-call",
+        "target": "aarch64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "allow-mask",
+        "target": "aarch64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "syscall",
         "target": "x86_64-linux",
         "format": "static",
         "diagnostic": "E7101"
@@ -1313,6 +1483,156 @@
         "name": "allow-mask",
         "target": "x86_64-linux",
         "format": "kx64-runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "syscall",
+        "target": "x86_64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "load64",
+        "target": "x86_64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "store64",
+        "target": "x86_64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "load8",
+        "target": "x86_64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "store8",
+        "target": "x86_64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "ctx",
+        "target": "x86_64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "call-main",
+        "target": "x86_64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "trap",
+        "target": "x86_64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "call-at",
+        "target": "x86_64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "exit",
+        "target": "x86_64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "gl",
+        "target": "x86_64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "gs",
+        "target": "x86_64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "allow-bit",
+        "target": "x86_64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "map",
+        "target": "x86_64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "slot-56",
+        "target": "x86_64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "fn-ref-invoke",
+        "target": "x86_64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "fn-ref-alias",
+        "target": "x86_64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "bare-alias",
+        "target": "x86_64-linux",
+        "format": "launcher",
+        "diagnostic": "E2102"
+      },
+      {
+        "name": "fn-ref-only",
+        "target": "x86_64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "fn-ref-ctx",
+        "target": "x86_64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "fn-ref-slot",
+        "target": "x86_64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "qualified-call",
+        "target": "x86_64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "qualified-fn-ref",
+        "target": "x86_64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "nested-call",
+        "target": "x86_64-linux",
+        "format": "launcher",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "allow-mask",
+        "target": "x86_64-linux",
+        "format": "launcher",
         "diagnostic": "E7101"
       },
       {
@@ -1486,6 +1806,15 @@
         "sameBytes": null
       },
       {
+        "target": "aarch64-linux",
+        "format": "launcher",
+        "image": {
+          "bytes": 188928,
+          "sha256": "5809a60b3f60449e601ad714c61ed85a42ae1f0dc454ee4d0491ba2796f3051e"
+        },
+        "sameBytes": null
+      },
+      {
         "target": "x86_64-linux",
         "format": "static",
         "image": {
@@ -1500,6 +1829,15 @@
         "image": {
           "bytes": 172544,
           "sha256": "845059b50c6565f03efad07e1cb410f162fdddd5cf86cd60b6a984d0949620a8"
+        },
+        "sameBytes": null
+      },
+      {
+        "target": "x86_64-linux",
+        "format": "launcher",
+        "image": {
+          "bytes": 233984,
+          "sha256": "fdde58551f659d9714559ac94a0b95a323ce1b133414e0fbfc470f6d4429f9fd"
         },
         "sameBytes": null
       },
