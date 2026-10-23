@@ -11,7 +11,7 @@
 // interleaved paired samples with alternating order, first submits discarded
 // as warmup, and verified read-back of the partials the kernels produce.
 //
-//   measure <workdir> [workgroup] [elements] [op-order]
+//   measure <workdir> [workgroup] [elements] [op-order] [variant-prefix]
 //
 // [workgroup] is the dispatch width W (default 256, the measured Apple
 // workgroup row of ADR-0358); a W-sweep cell passes its own width, and the
@@ -34,13 +34,18 @@
 // blocked the W = 32 regime question (the shape-2 record's named blocker).
 // A "sum-last" order puts :sum's block after the ramp on purpose.
 //
-// <workdir> must contain baseline-<op>.metallib and subgroup-<op>.metallib
+// <workdir> must contain baseline-<op>.metallib and <prefix>-<op>.metallib
 // for op in {sum, max, min} (entry reduce_<op>, the emitter's kernel name --
-// one library per arm and operator: the subgroup arm's sources all define the
+// one library per arm and operator: the variant arm's sources all define the
 // same emitted `combine` helper, which collides if linked together) and
 // probe.metallib (the instrument kernel that reports
 // [[threads_per_simdgroup]] -- the tested device's reported subgroup size,
-// which ADR-0360's measurement contract keys the result to).
+// which ADR-0360's measurement contract keys the result to). [variant-prefix]
+// is the variant arm's library prefix (default "subgroup" -- the historical
+// :subgroup-reduce comparison; "simdgroup" names ADR-0373's
+// :simdgroup-reduce row, rule 3 step 3's measurement). The prefix is an
+// instrument label; both variant arms share the same entry and buffer
+// contract.
 //
 // Output is machine-readable lines on stdout; statistics are computed by
 // scripts/gpu-subgroup-reduce-metal-measure.py. All input values are in
@@ -105,7 +110,7 @@ static id<MTLComputePipelineState> pso_for(id<MTLDevice> dev, id<MTLLibrary> lib
 }
 
 // One reduce dispatch. tg_mem > 0 arms the baseline's [[threadgroup(0)]]
-// scratch pointer; the subgroup arm declares its own threadgroup array.
+// scratch pointer; the variant arm declares its own threadgroup array.
 // Answers the GPU-timestamp span in nanoseconds; host_ns is submit->done.
 static double run_dispatch(id<MTLCommandQueue> q, id<MTLComputePipelineState> pso,
                             id<MTLBuffer> x, id<MTLBuffer> parts, id<MTLBuffer> nbuf,
@@ -131,8 +136,8 @@ static double run_dispatch(id<MTLCommandQueue> q, id<MTLComputePipelineState> ps
 
 int main(int argc, char **argv) {
   @autoreleasepool {
-    if (argc < 2 || argc > 5) {
-      fprintf(stderr, "usage: measure <workdir> [workgroup] [elements] [op-order]\n");
+    if (argc < 2 || argc > 6) {
+      fprintf(stderr, "usage: measure <workdir> [workgroup] [elements] [op-order] [variant-prefix]\n");
       return 2;
     }
     NSString *dir = [NSString stringWithUTF8String:argv[1]];
@@ -207,6 +212,23 @@ int main(int argc, char **argv) {
       }
     }
     const char *ops[3] = {"sum", "max", "min"};
+    /* The variant arm's metallib prefix (argv[5], default "subgroup" --
+     * the historical :subgroup-reduce instrument; "simdgroup" names
+     * ADR-0373's :simdgroup-reduce row). A label only: the entry name and
+     * the buffer contract are the emitter's, identical for both rows.
+     * argc >= 6, the same >= gate class as every positional above (the
+     * exact-match class is pinned out by
+     * test/kotoba/compiler/accelerator_variants_test.cljk's
+     * the-measure-harness-argv-gates-carry-no-exact-match-class). */
+    NSString *variant_prefix = @"subgroup";
+    if (argc >= 6) {
+      if (strlen(argv[5]) == 0 || strlen(argv[5]) > 32) {
+        fprintf(stderr, "REFUSED variant-prefix %s: need a non-empty label\n",
+                argv[5]);
+        return 2;
+      }
+      variant_prefix = [NSString stringWithUTF8String:argv[5]];
+    }
     id<MTLDevice> dev = MTLCreateSystemDefaultDevice();
     if (dev == nil) {
       fprintf(stderr, "FATAL no Metal device\n");
@@ -266,7 +288,8 @@ int main(int argc, char **argv) {
       base_lib = load_lib(dev, dir,
                           [NSString stringWithFormat:@"baseline-%s.metallib", ops[op]]);
       sub_lib = load_lib(dev, dir,
-                         [NSString stringWithFormat:@"subgroup-%s.metallib", ops[op]]);
+                         [NSString stringWithFormat:@"%@-%s.metallib",
+                              variant_prefix, ops[op]]);
       id<MTLComputePipelineState> pso_base =
           pso_for(dev, base_lib, entry.UTF8String);
       id<MTLComputePipelineState> pso_sub =

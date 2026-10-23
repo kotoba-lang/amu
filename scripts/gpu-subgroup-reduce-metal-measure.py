@@ -1,15 +1,24 @@
 #!/usr/bin/env python3
-"""JUN-58 hardware measurement driver: :baseline vs :subgroup-reduce MSL arms
-on this host's Apple GPU, from the emitters' own bytes.
+"""JUN-58 hardware measurement driver: :baseline vs a reduce variant's MSL
+arms on this host's Apple GPU, from the emitters' own bytes.
 
-    python3 scripts/gpu-subgroup-reduce-metal-measure.py [--runs N] [--workgroup W] [--elements N] [--out DIR] [--compare-historical HIST.md]
+    python3 scripts/gpu-subgroup-reduce-metal-measure.py [--runs N] [--workgroup W] [--elements N] [--out DIR] [--compare-historical HIST.md] [--variant V]
+
+--variant selects the compared arm: "subgroup-reduce" (default, the
+historical :baseline-vs-:subgroup-reduce cells) or "simdgroup-reduce"
+(ADR-0373's row, rule 3 step 3's measurement; arm label "simdgroup").
+A non-default --variant REQUIRES --out: the default --out is the
+historical :subgroup-reduce cell's record and must never be rewritten
+by another variant's run (the same FOOTGUN class the --out note below
+names, closed at the driver instead of by care).
 
 Pipeline (every step's transcript lands in the evidence directory):
 
   1. emit   -- kbb scripts/gpu-subgroup-reduce-metal-measure.cljk writes the
                six emitted sources into <out>/shaders/ (both arms, three
                operators, at W = --workgroup; default 256, the measured
-               Apple workgroup row of ADR-0358).
+               Apple workgroup row of ADR-0358), the variant arm named by
+               --variant.
   2. build  -- xcrun metal compiles each source to AIR and links one metallib
                per (arm, operator) (the emitted sources collide on their
                shared `combine` helper if linked together); xcrun clang builds
@@ -166,7 +175,14 @@ def main():
                          "then carries the claim-protocol rule-3 "
                          "regime-matched comparison against it (the file is "
                          "read once, never modified)")
+    ap.add_argument("--variant", type=str, default="subgroup-reduce",
+                    choices=["subgroup-reduce", "simdgroup-reduce"],
+                    help="the compared variant arm: subgroup-reduce "
+                         "(default, the historical cells) or "
+                         "simdgroup-reduce (ADR-0373's row, rule 3 step 3); "
+                         "a non-default variant requires --out")
     args = ap.parse_args()
+    variant_arm = "simdgroup" if args.variant == "simdgroup-reduce" else "subgroup"
     order_names = [t.strip() for t in args.op_order.split(",")]
     if sorted(order_names) != ["max", "min", "sum"]:
         sys.stderr.write(f"REFUSED --op-order {args.op_order}: need a "
@@ -182,6 +198,12 @@ def main():
         sys.stderr.write(f"REFUSED --elements {n_want}: "
                          "need an integer in [1, 16777216]\n")
         sys.exit(2)
+    if args.variant != "subgroup-reduce" and not args.out:
+        sys.stderr.write(
+            f"REFUSED --variant {args.variant} without --out: the default "
+            "record directory is the historical :subgroup-reduce cell and "
+            "must not be rewritten by another variant's run\n")
+        sys.exit(2)
     out = pathlib.Path(args.out) if args.out else EVID
 
     out.mkdir(parents=True, exist_ok=True)
@@ -194,11 +216,12 @@ def main():
     cp = sh(["kbb", "-Spath", "-M:test"], log).strip()
     sh(["kbb", "--backend", "sci", "--classpath", f"src:test:{cp}",
         "scripts/gpu-subgroup-reduce-metal-measure.cljk",
-        "--width", str(wg_want), "--out", str(out / "shaders")], log)
+        "--width", str(wg_want), "--out", str(out / "shaders"),
+        "--variant", args.variant], log)
 
     # 2. build
     arms = {}
-    for arm in ("baseline", "subgroup"):
+    for arm in ("baseline", variant_arm):
         for op in ("sum", "max", "min"):
             src = out / "shaders" / f"{arm}-reduce-{op}.emitted.metal"
             air = build / f"{arm}-reduce-{op}.air"
@@ -224,7 +247,7 @@ def main():
     runs = []
     for i in range(args.runs):
         proc_out = sh([str(exe), str(build), str(wg_want), str(n_want),
-                       args.op_order], log)
+                       args.op_order, variant_arm], log)
         runs.append(proc_out)
 
     (out / "compile-log.txt").write_text("\n".join(log) + "\n")
@@ -279,7 +302,7 @@ def main():
         sys.exit(2)
 
     lines = []
-    lines.append(f"# JUN-58: :baseline vs :subgroup-reduce on Apple M1 Max at "
+    lines.append(f"# JUN-58: :baseline vs :{args.variant} on Apple M1 Max at "
                  f"W = {wg} -- the MSL arms on the native Metal route\n")
     lines.append(f"- device: {device}")
     lines.append(f"- reported subgroup size ([[threads_per_simdgroup]]): {sg}")
@@ -300,7 +323,7 @@ def main():
                       "n = 1000003); read as measured data, not as an anchor")
     lines.append(f"- shape: {shape_note}")
     lines.append(f"- emitted at W = {wg_want} by the emitters' own bytes "
-                 f"(shaders/; the subgroup arm's threadgroup partials array "
+                 f"(shaders/; the variant arm's threadgroup partials array "
                  f"is sized from this W)"
                  + ("" if int(wg) == wg_want
                     else f" -- MISMATCH: the harness dispatched W = {wg}"))

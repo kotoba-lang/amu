@@ -610,11 +610,14 @@
   ;; lands behind it. This pin removes the CLASS from the harness -- every
   ;; positional gate is a >= test -- and fails if an exact-match gate ever
   ;; returns. Comment text is not code: the match is the `if (argc ==` gate
-  ;; form (the harness comments deliberately spell `NOT argc == N`).
+  ;; form (the harness comments deliberately spell `NOT argc == N`). The
+  ;; gate list grows with the positionals: [variant-prefix] (argv[5], the
+  ;; ADR-0373 :simdgroup-reduce measurement's arm label) landed behind
+  ;; op-order and carries the same >= gate class (rule 3 step 3).
   (let [harness (slurp "scripts/gpu-subgroup-reduce-metal-measure.m")]
     (is (nil? (re-find #"if\s*\(\s*argc\s*==" harness))
         "the measure harness must carry no exact-match argc gate (the misshape class)")
-    (doseq [gate ["if (argc >= 3)" "if (argc >= 4)" "if (argc >= 5)"]]
+    (doseq [gate ["if (argc >= 3)" "if (argc >= 4)" "if (argc >= 5)" "if (argc >= 6)"]]
       (is (str/includes? harness gate)
           (str "the measure harness must keep its positional gate " gate)))))
 

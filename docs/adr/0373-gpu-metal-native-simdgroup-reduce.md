@@ -10,12 +10,21 @@
   SELECTION predicate is IMPLEMENTED -- the MSL ladder, the measured-cell
   carve-out and the `:simd-reduce` gate fact are code in
   kotoba.compiler.accelerator-variants' `select-variant`, pinned by
-  tests (docs/evidence/gpu/simdgroup-reduce-selection-20261023/). A
-  measurement row remains NOT implemented: step 3 is
-  OPEN and every answer this row carries is UNMEASURED.] ADR-0356 rule 3 (emission admission
+  tests (docs/evidence/gpu/simdgroup-reduce-selection-20261023/). UPDATE
+  2026-10-23, rule 3 step 3 STARTED (the later same-day slice): the first
+  hardware measurement of this variant ran on M1 Max at W = 256, n =
+  1000003 through the conforming native-Metal channel
+  (docs/evidence/gpu-simdgroup-reduce-m1max-20261023/,
+  docs/evidence/gpu/simdgroup-reduce-m1max-measure-20261023.txt): paired
+  median ratios 0.790/0.800/0.799 (sum/max/min vs :baseline), claim-
+  protocol rule 2 REGIME-INVARIANT FASTER (18/18 per-run ratios below
+  1.0). The flip is NOT done and the remaining cells are unmeasured:
+  every answer this row carries is still UNMEASURED as a selection
+  basis.] ADR-0356 rule 3 (emission admission
   first) gates its IMPLEMENTATION, which is its own
   later slice [now split: step 1 emission DONE, step 2 selection DONE,
-  step 3 measurement OPEN]. Every answer this row will carry is UNMEASURED
+  step 3 measurement STARTED (the W = 256 cell measured 2026-10-23; the
+  flip and the remaining cells OPEN)]. Every answer this row will carry is UNMEASURED
   (`:measured? false`, rule 4's lock) until a hardware measurement replaces the
   basis text of the answer's cell.
 - Date: 2026-10-23
@@ -210,6 +219,20 @@ step-1 slice added the rows below it.]
   step-1 slice record (toolchain probe and gate output included).
 - `docs/evidence/gpu/simdgroup-reduce-selection-20261023.txt`: the step-2
   slice record (gate output included).
+- [STEP 3, started 2026-10-23 (the later same-day slice):]
+  `scripts/gpu-subgroup-reduce-metal-measure.cljk`,
+  `scripts/gpu-subgroup-reduce-metal-measure.py`,
+  `scripts/gpu-subgroup-reduce-metal-measure.m`: the measurement
+  instrument grows one variable -- `--variant` selects the compared arm
+  (`:simdgroup-reduce` emits through the same `lower` admission) and the
+  harness's `[variant-prefix]` positional (argv[5]) names its metallibs;
+  the historical default path is byte-for-byte unchanged, and a
+  non-default `--variant` requires `--out` at the driver so the
+  historical record directory cannot be rewritten by another variant's
+  run. `docs/evidence/gpu-simdgroup-reduce-m1max-20261023/`: the first
+  measurement record (W = 256, n = 1000003, 6 fresh processes).
+  `docs/evidence/gpu/simdgroup-reduce-m1max-measure-20261023.txt`: the
+  step-3 slice record.
 
 ## What did NOT move (named so nothing is silently upgraded)
 
@@ -229,21 +252,29 @@ step-1 slice added the rows below it.]
 [After rule 3 steps 1-2 (2026-10-23): IMPLEMENTED is the MSL emission +
 `lower` admission + tests, AND the selection ladder -- the measured-cell
 carve-out, the MSL ladder's two rungs, the `:simd-reduce` rule-6 gate --
-+ its tests (the ladder's step-2 slice). ACCEPTED DESIGN ONLY: any
-wording above that governs this variant's own future measurement cells
-(the flip contract as applied to `:simdgroup-reduce` -- no cell exists).
-PROPOSED, unchanged: every performance question about this variant.] The
++ its tests (the ladder's step-2 slice). STEP 3 (the later same-day
+slice) adds MEASURED DATA, not implementation: the W = 256, n = 1000003
+cell ran on M1 Max and its record is in the repo (ratio 0.790/0.800/0.799
+vs `:baseline`, rule 2 regime-invariant faster). ACCEPTED DESIGN ONLY:
+any wording above that governs this variant's own future measurement
+cells (the flip contract as applied to `:simdgroup-reduce` -- no cell has
+flipped).
+PROPOSED, unchanged: every performance question about this variant off
+the one measured cell.] The
 two design
 questions ADR-0356's reconciliation parked are now both DECIDED
 (narrowing: ADR-0360's second decision; this row: this ADR).
 
 ## UNMEASURED, named
 
-Everything about this variant's performance on every device; `simd_sum`'s
-association order as a spec-text claim (the spec was NOT re-read this
-tick -- the P1 scope does not depend on it); every Apple device but this
-M1 Max for any variant; the M1 Max cells of this variant (nothing has run
-it); the GLSL arm of `:subgroup-reduce` at W = 512/1024 (unchanged).
+Everything about this variant's performance on every device but the one
+measured cell (M1 Max, W = 256, n = 1000003 -- measured 2026-10-23,
+faster than `:baseline` at that cell, see the step-3 record); every other
+W of this variant (32/64/128/512/1024); shape 2 for this variant;
+`simd_sum`'s association order as a spec-text claim (the spec was NOT
+re-read this tick -- the P1 scope does not depend on it); every Apple
+device but this M1 Max for any variant; the GLSL arm of
+`:subgroup-reduce` at W = 512/1024 (unchanged).
 
 ## Toolchain probe (compiler verification, NOT a measurement)
 
@@ -278,12 +309,17 @@ outside this diff. No green full suite is claimed.
 
 1. [STEPS 1-2 DONE 2026-10-23: (1) the MSL emission + `lower` admission
    + tests; (2) the selection predicate (the ladder, the carve-out, the
-   `:simd-reduce` gate fact) + tests.] Rule 3's order keeps (3) next: the
-   measurement row.
-2. (step 3) Measure `:simdgroup-reduce` on M1 Max through the conforming
-   channel (the native-Metal harness runs the emitters' own bytes): a MEASUREMENT
-   row, one cell set at a time, under the claim protocol.
-3. Cross-day replication of the existing `:subgroup-reduce` cells (needs a
+   `:simd-reduce` gate fact) + tests. STEP 3 STARTED 2026-10-23: the
+   W = 256, n = 1000003 cell measured on M1 Max (faster than
+   `:baseline`, rule 2 regime-invariant).] Rule 3's order keeps the rest
+   of (3) next: the flip slice and the remaining cells.
+2. (step 3) The flip: what the W = 256 numbers license under the flip
+   contract -- this VARIANT's own cells keyed by name fragment, reported
+   subgroup size, route, channel, W set and shapes -- one cell set at a
+   time. Until it lands no `:measured?` flag moves.
+3. (step 3) Measure the remaining cells (W = 32/64/128/512/1024, shape
+   2, cross-day replication) under the same claim protocol.
+4. Cross-day replication of the existing `:subgroup-reduce` cells (needs a
    later-day cron tick).
-4. The GLSL arm of `:subgroup-reduce` stays blocked on ADR 0371's provider
+5. The GLSL arm of `:subgroup-reduce` stays blocked on ADR 0371's provider
    route.
