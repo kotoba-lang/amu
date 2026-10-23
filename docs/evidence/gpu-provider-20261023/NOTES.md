@@ -68,9 +68,16 @@ the selfhost compiler.
     * as two independent DISPATCHC.
   * Per-workgroup sums of 1..1000.
   * Every value is exact in f32, so each READ is compared byte for byte.
+* **Vulkan's rules where the protocol is wider**:
+  * an unaligned WRITE and READ (copies are widened to 4-byte spans, and a
+    write reads the span's other bytes first);
+  * ZERO of a 3-byte buffer (buffers are a multiple of 4 bytes, so the
+    whole-size fill covers every byte);
+  * a workgroup count over the device's limit, refused as
+    `gpu/device-error`, after which the session goes on.
 * **Submits** took 30-50 us each, measured on the host clock.
-* **Report** (fd 4): device, 48 served, 0 refused, `:eof`, the image's
-  SHA-256 and the kernel release.
+* **Report** (fd 4): device, 59 served, 1 refused, `:eof`, the image's
+  SHA-256, its DT_NEEDED names and the kernel release.
 
 ## Limits
 

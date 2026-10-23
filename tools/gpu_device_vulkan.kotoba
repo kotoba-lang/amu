@@ -16,6 +16,14 @@
 ;; * buffers in device-local memory (any type when none is device-local);
 ;;   WRITE, WRITEDEC, READ and MAP go through a 64 MiB host-visible, coherent
 ;;   staging buffer, a chunk at a time; ZERO is vkCmdFillBuffer;
+;; * where Vulkan needs more than the broker gave: a buffer is created a
+;;   multiple of 4 bytes long, so ZERO's whole-size fill covers every byte and
+;;   copies can be widened to 4-byte aligned spans (a write reads the span's
+;;   other bytes first); every command buffer starts with a memory barrier
+;;   (all earlier writes to all later accesses), and a transfer ends with one
+;;   to host reads; a dispatch over the device's maxComputeWorkGroupCount is
+;;   a device error; after device lost or a fence timeout teardown is skipped
+;;   (it could wait on the hung device forever) and process exit reclaims it;
 ;; * a DISPATCH after the first in a command buffer is preceded by a compute
 ;;   to compute barrier (shader write to shader read and write); DISPATCHC has
 ;;   none;
@@ -227,13 +235,23 @@
         r2 (if (= r1 0) (vr (vk6 v 48 dev 1 (+ v V-FENCE) 1 timeout 0)) r1)
         t1 (kxrt-p-clock-ns)]
     (cond (or (= r1 -4) (= r2 -4)) -33 (= r2 2) -34 (or (not= r0 0) (not= r2 0)) -32 :else (- t1 t0))))
+;; a memory barrier in cb from every write in src stages to dst accesses in
+;; dst stages (VkMemoryBarrier at V-T+768)
+(defn- vk-barrier [v :i64 cb :i64 src :i64 dst :i64 dst-access :i64] :i64
+  (let [m (+ v V-T 768) z (vk-zero m 24) a (w32 m 46) b (w32 (+ m 16) 65536) c (w32 (+ m 20) dst-access)]
+    (vk10 v 42 cb src dst 0 1 m 0 0 0 0)))
+;; at the start of every command buffer: all earlier writes (an earlier
+;; submit's transfer or dispatch) to all later reads and writes
+(defn- vk-barrier-in [v :i64 cb :i64] :i64 (vk-barrier v cb 65536 65536 98304))
 ;; the transfer command buffer (9), reset and begun for one submit
 (defn- vk-once [v :i64] :i64
   (let [t (+ v V-T) cb (vg v (+ V-CBS 72)) r (vk6 v 38 cb 0 0 0 0 0)
-        z (vk-zero t 32) a (w32 t 42) b (w32 (+ t 16) 1)]
-    (vr (vk6 v 36 cb t 0 0 0 0))))
+        z (vk-zero t 32) a (w32 t 42) b (w32 (+ t 16) 1)
+        g (vr (vk6 v 36 cb t 0 0 0 0))]
+    (if (not= g 0) g (let [x (vk-barrier-in v cb)] 0))))
+;; ends with the writes made visible to host reads (the staging buffer)
 (defn- vk-once-submit [s :i64 v :i64] :i64
-  (let [cb (vg v (+ V-CBS 72))]
+  (let [cb (vg v (+ V-CBS 72)) h (vk-barrier v cb 65536 16384 8192)]
     (if (not= (vr (vk6 v 37 cb 0 0 0 0 0)) 0) -32 (vk-submit-wait v (+ v V-CBS 72) (kxrt-p-load64 (+ s S-TIMEOUT))))))
 ;; copy m bytes between the staging buffer and buffer b: up 1 staging -> b
 (defn- vk-transfer [s :i64 v :i64 b :i64 off :i64 m :i64 up :i64] :i64
@@ -246,13 +264,15 @@
 
 ;; ---------------------------------------------------------------------
 ;; Buffers. A buffer id is its row: 0 live, 8 VkBuffer, 16 VkDeviceMemory,
-;; 24 size.
+;; 24 size. The VkBuffer is the size rounded up to 4 bytes.
 
+(defn- floor4 [x :i64] :i64 (bit-and x -4))
+(defn- ceil4 [x :i64] :i64 (bit-and (+ x 3) -4))
 (defn- dev-alloc [s :i64 n :i64] :i64
   (let [v (vk-state s)
         row (loop [k 0] (cond (>= k 4096) -1 (= (vg v (+ V-BUFS (* 32 k))) 0) (+ v V-BUFS (* 32 k)) :else (recur (inc k))))]
     (cond (< row 0) -1
-          (< (vk-make-buffer v n 35 1 (+ row 8)) 0) -1
+          (< (vk-make-buffer v (ceil4 n) 35 1 (+ row 8)) 0) -1
           :else (let [a (w64 (+ row 24) n) b (w64 row 1)] row))))
 (defn- dev-free [s :i64 id :i64 n :i64] :i64
   (let [v (vk-state s) dev (vg v V-DEVICE)
@@ -264,26 +284,26 @@
       (let [x (vk6 v 44 (vg v (+ V-CBS 72)) (kxrt-p-load64 (+ id 8)) 0 -1 0 0)
             r (vk-once-submit s v)]
         (if (< r 0) r 0)))))
+;; n bytes from src to the buffer at off, through the 4-byte aligned span
+;; around them a staging chunk at a time; where the bytes do not cover a
+;; chunk of the span, the chunk is read first so its other bytes stay
 (defn- dev-write [s :i64 id :i64 off :i64 src :i64 n :i64] :i64
-  (let [v (vk-state s)]
-    (loop [k 0]
-      (if (>= k n) 0
-        (let [m (min2 STAGING (- n k)) c (vk-copy (vg v V-STAGING-MAP) (+ src k) m)
-              r (vk-transfer s v (kxrt-p-load64 (+ id 8)) (+ off k) m 1)]
-          (if (< r 0) r (recur (+ k m))))))))
+  (let [v (vk-state s) b (kxrt-p-load64 (+ id 8)) sm (vg v V-STAGING-MAP) a1 (ceil4 (+ off n))]
+    (loop [p (floor4 off)]
+      (if (>= p a1) 0
+        (let [q (min2 a1 (+ p STAGING)) lo (if (> off p) off p) hi (min2 (+ off n) q)
+              r0 (if (or (< p off) (> q (+ off n))) (vk-transfer s v b p (- q p) 0) 0)
+              c (if (< r0 0) 0 (vk-copy (+ sm (- lo p)) (+ src (- lo off)) (- hi lo)))
+              r (if (< r0 0) r0 (vk-transfer s v b p (- q p) 1))]
+          (if (< r 0) r (recur q)))))))
+;; n bytes of the buffer at off to dst, through the aligned span around them
 (defn- dev-read [s :i64 id :i64 off :i64 dst :i64 n :i64] :i64
-  (let [v (vk-state s)]
-    (loop [k 0]
-      (if (>= k n) 0
-        (let [m (min2 STAGING (- n k)) r (vk-transfer s v (kxrt-p-load64 (+ id 8)) (+ off k) m 0)]
-          (if (< r 0) r (let [c (vk-copy (+ dst k) (vg v V-STAGING-MAP) m)] (recur (+ k m)))))))))
-(defn- dev-load [s :i64 id :i64 off :i64 fd :i64 foff :i64 n :i64] :i64
-  (let [v (vk-state s)]
-    (loop [k 0]
-      (if (>= k n) 0
-        (let [m (min2 STAGING (- n k)) got (read-at fd (vg v V-STAGING-MAP) m (+ foff k))]
-          (if (< got m) -5
-            (let [r (vk-transfer s v (kxrt-p-load64 (+ id 8)) (+ off k) m 1)] (if (< r 0) r (recur (+ k m))))))))))
+  (let [v (vk-state s) b (kxrt-p-load64 (+ id 8)) sm (vg v V-STAGING-MAP) a1 (ceil4 (+ off n))]
+    (loop [p (floor4 off)]
+      (if (>= p a1) 0
+        (let [q (min2 a1 (+ p STAGING)) lo (if (> off p) off p) hi (min2 (+ off n) q)
+              r (vk-transfer s v b p (- q p) 0)]
+          (if (< r 0) r (let [c (vk-copy (+ dst (- lo off)) (+ sm (- lo p)) (- hi lo))] (recur q))))))))
 
 ;; ---------------------------------------------------------------------
 ;; Pipelines. A pipeline id is its row: 0 live, 8 VkShaderModule, 16
@@ -326,11 +346,14 @@
         a (w64 (+ v V-REC) k) b (w64 (+ v V-RECORDED) 0)
         r0 (vk6 v 38 cb 0 0 0 0 0) r1 (vk6 v 30 (vg v V-DEVICE) (vg v (+ V-DPOOLS (* 8 k))) 0 0 0 0)
         z (vk-zero t 32) c (w32 t 42) d (w32 (+ t 16) (if (< slot 0) 1 0))]
-    (if (not= (vr (vk6 v 36 cb t 0 0 0 0)) 0) -1 0)))
+    (if (not= (vr (vk6 v 36 cb t 0 0 0 0)) 0) -1 (let [x (vk-barrier-in v cb)] 0))))
 (defn- dev-dispatch [s :i64 pipe :i64 x :i64 y :i64 z :i64 ids :i64 nids :i64 barrier :i64] :i64
   (let [v (vk-state s) t (+ v V-T) dev (vg v V-DEVICE) k (vg v V-REC) cb (vg v (+ V-CBS (* 8 k)))
+        lim (+ v V-PROPS 16 516)
         q (vk-zero t 128) a0 (w32 t 34) a1 (w64 (+ t 16) (vg v (+ V-DPOOLS (* 8 k)))) a2 (w32 (+ t 24) 1) a3 (w64 (+ t 32) (+ pipe 16))]
-    (if (not= (vr (vk6 v 31 dev t (+ t 64) 0 0 0)) 0) -1
+    ;; maxComputeWorkGroupCount
+    (if (or (> x (r32 lim)) (> y (r32 (+ lim 4))) (> z (r32 (+ lim 8)))
+            (not= (vr (vk6 v 31 dev t (+ t 64) 0 0 0)) 0)) -1
       (let [dset (vg t 64)
             w (loop [i 0]
                 (if (= i nids) 0
@@ -380,8 +403,8 @@
 (defn- dev-devclass [s :i64] :i64
   (let [t (r32 (+ (vk-state s) V-PROPS 16 16))] (case t 2 1 1 2 3 3 4 4 5)))
 (defn- dev-close [s :i64] :i64
-  (let [v (vk-state s)]
-    (if (or (= v 0) (not= (vg v V-READY) 1)) 0
+  (let [v (vk-state s) e (kxrt-p-load64 (+ s S-END))]
+    (if (or (= v 0) (not= (vg v V-READY) 1) (= e 3) (= e 4)) 0
       (let [dev (vg v V-DEVICE)
             w (vk6 v 50 dev 0 0 0 0 0)
             p (loop [k 0] (if (= k 128) 0 (let [row (+ v V-PIPES (* 64 k)) x (if (= (vg row 0) 1) (vk-pipe-destroy v row) 0)] (recur (inc k)))))

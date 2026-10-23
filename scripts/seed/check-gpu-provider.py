@@ -483,6 +483,21 @@ def gpu(output):
     expect(s, "PIPELINE sum.spv 3", "2")
     ns.append(int(expect(s, "DISPATCH 2 4 1 1 7 8 6", NS)))
     expect(s, "READ 8 0 16", f32([sum(ints[k:k + 256]) for k in range(0, n, 256)]).hex())
+    # unaligned bytes (copies are widened to 4-byte spans) and ZERO of a
+    # buffer whose size is not a multiple of 4
+    expect(s, "ALLOC 3", "9")
+    expect(s, "WRITE 9 0 a1b2c3", "1")
+    expect(s, "WRITE 9 1 abcd", "1")
+    expect(s, "READ 9 0 3", "a1abcd")
+    expect(s, "READ 9 2 1", "cd")
+    expect(s, "ZERO 9", "1")
+    expect(s, "READ 9 0 3", "000000")
+    expect(s, "WRITE 1 4093 010203", "1")
+    expect(s, "READ 1 4092 4", "00010203")
+    # a workgroup count over the device's limit is a device error, and the
+    # session goes on
+    expect(s, "DISPATCH 1 4 4294967295 1 3 4 5 6", "!gpu/device-error DISPATCH: device error")
+    expect(s, "INFO", info)
     line = s.close(0)
     name = info.split("|")[0]
     assert f':device "{name}" ' in line and " :end :eof " in line, (line, name)

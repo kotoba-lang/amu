@@ -631,6 +631,12 @@ Each step is its own PR, in this order:
       answers depend on them: the device, the INFO fields, device-local
       buffers behind a 64 MiB staging buffer, the barrier before every
       DISPATCH after the first, the submit timing, and the teardown order.
+      It also follows Vulkan's rules where the broker relied on drivers.
+      Buffers are a multiple of 4 bytes long, and copies are widened to
+      aligned spans. Every command buffer opens with a memory barrier, and
+      transfers close with one to host reads. Dispatch counts are checked
+      against the device's limits. Teardown is skipped after device lost or a
+      fence timeout.
       First run on gad (Radeon 8060S, RADV, Vulkan 1.4.318): INFO, DEVCLASS,
       transfers, a 70 MiB MAP across staging chunks, and KIR v1 kernels
       (ADR 0372) for `z = x + y` and per-workgroup sums. They ran at once,
