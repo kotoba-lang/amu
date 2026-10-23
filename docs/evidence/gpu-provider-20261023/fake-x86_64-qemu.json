@@ -11,20 +11,20 @@
   ],
   "sources": {
     "tools/gpu_provider.kotoba": {
-      "bytes": 33682,
-      "sha256": "7eb2f4474db8cd2f879195b30b578ff30b6c26672d855a18add5bdb1fa0da792"
+      "bytes": 39263,
+      "sha256": "73bc46c90e5ba203d4e178476b59c99ee5396eba9fc964d18b5e0515143023ee"
     },
     "tools/gpu_compute_protocol.kotoba": {
       "bytes": 18021,
       "sha256": "131e531c453e4ad490c030ec704f49a10a97ee12bb9ea91e787d9053a8631884"
     },
     "tools/gpu_device_fake.kotoba": {
-      "bytes": 3018,
-      "sha256": "e9ec66b132972a8b479d71b9a83d233246c19962d8d71cadcd6f10c7765b5733"
+      "bytes": 2924,
+      "sha256": "395ae42966b15c331856f10407d3ea6c63d46c2bb1107e2bd1b8fd180fe43a47"
     },
     "tools/gpu_device_vulkan.kotoba": {
-      "bytes": 24959,
-      "sha256": "c51e87b5c948810b63f8dafa8ef622b336a0322edfd8f5fb7a88b9602dc9c2c5"
+      "bytes": 27479,
+      "sha256": "0b3f4310b900746157cf4ef14e7a24b063e5a32db07c9cdeae2dbc85b4a4184a"
     },
     "tools/spirv_encode.kotoba": {
       "bytes": 6820,
@@ -57,7 +57,7 @@
       "name": "provider-fake",
       "format": "platform-linked",
       "exit": 0,
-      "stdout": "{:ok true, :target :x86_64-linux, :format :platform-linked, :code-bytes 391643, :bytes 401920, :libvulkan false}"
+      "stdout": "{:ok true, :target :x86_64-linux, :format :platform-linked, :code-bytes 404099, :bytes 414208, :libvulkan false}"
     },
     {
       "name": "guest",
@@ -75,7 +75,7 @@
       "name": "provider-vulkan",
       "format": "platform-linked",
       "exit": 0,
-      "stdout": "{:ok true, :target :x86_64-linux, :format :platform-linked, :code-bytes 471315, :bytes 483840, :libvulkan true}"
+      "stdout": "{:ok true, :target :x86_64-linux, :format :platform-linked, :code-bytes 488395, :bytes 500224, :libvulkan true}"
     },
     {
       "name": "kernels",
@@ -96,7 +96,7 @@
       "verbs": {
         "requests": 59,
         "refused": 31,
-        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 59 :refused 31 :end :eof :confinement {:landlock :unavailable :seal :unavailable} :device-facts {:layer :fake} :image \"97ca4c635f91cb64d34d28ce2457952b71f5cc1b92aaa5fb56dda428fbb79177\" :kernel \"6.15.10-200.fc42.aarch64\"}",
+        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 59 :refused 31 :end :eof :confinement {:landlock :unavailable :seal :unavailable} :device-facts {:layer :fake} :image \"03e94a624cdb94f44481346b4e303046871bd9ccc8c8240c7321b347aaf36f16\" :needed [\"libc.so.6\"] :kernel \"6.15.10-200.fc42.aarch64\"}",
         "confinement": {
           "landlock": ":unavailable",
           "seal": ":unavailable"
@@ -228,7 +228,7 @@
           ],
           [
             "DISPATCH 1 1 1 1 2 3",
-            "70667"
+            "54500"
           ],
           [
             "DISPATCH 1 1 1 1 2",
@@ -260,7 +260,7 @@
           ],
           [
             "SUBMIT",
-            "1125"
+            "1375"
           ],
           [
             "SUBMIT",
@@ -284,7 +284,7 @@
           ],
           [
             "SUBMIT",
-            "1000"
+            "1084"
           ],
           [
             "FREE 2",
@@ -296,7 +296,7 @@
           ],
           [
             "REPLAY 0",
-            "541"
+            "709"
           ],
           [
             "BEGINK 0",
@@ -340,8 +340,80 @@
           ]
         ]
       },
+      "device-error": {
+        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 9 :refused 3 :end :eof :confinement {:landlock :unavailable :seal :unavailable} :device-facts {:layer :fake} :image \"03e94a624cdb94f44481346b4e303046871bd9ccc8c8240c7321b347aaf36f16\" :needed [\"libc.so.6\"] :kernel \"6.15.10-200.fc42.aarch64\"}",
+        "log": [
+          [
+            "ALLOC 4294967293",
+            "!gpu/device-error ALLOC: device error"
+          ],
+          [
+            "ALLOC 16",
+            "1"
+          ],
+          [
+            "PIPELINE k.spv 1",
+            "1"
+          ],
+          [
+            "BEGIN",
+            "1"
+          ],
+          [
+            "DISPATCH 1 4294967293 1 1 1",
+            "!gpu/device-error DISPATCH: device error"
+          ],
+          [
+            "DISPATCH 1 1 1 1 1",
+            "1"
+          ],
+          [
+            "SUBMIT",
+            "61542"
+          ],
+          [
+            "DISPATCH 1 4294967293 1 1 1",
+            "!gpu/device-error DISPATCH: device error"
+          ],
+          [
+            "INFO",
+            "Kotoba fake device|fake|65535|1"
+          ]
+        ]
+      },
+      "artifact-changed": {
+        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 5 :refused 2 :end :eof :confinement {:landlock :unavailable :seal :unavailable} :device-facts {:layer :fake} :image \"03e94a624cdb94f44481346b4e303046871bd9ccc8c8240c7321b347aaf36f16\" :needed [\"libc.so.6\"] :kernel \"6.15.10-200.fc42.aarch64\"}",
+        "log": [
+          [
+            "MAP changed-model.bin 0 1000",
+            "1"
+          ],
+          [
+            "PIPELINE changed-k.spv 1",
+            "1"
+          ],
+          [
+            "MAP changed-model.bin 199000 2000",
+            "!gpu/artifact-digest-mismatch MAP: artifact digest does not match the grant"
+          ],
+          [
+            "MAP changed-model.bin 0 1000",
+            "!gpu/artifact-digest-mismatch MAP: artifact digest does not match the grant"
+          ],
+          [
+            "PIPELINE changed-k.spv 1",
+            "2"
+          ]
+        ]
+      },
+      "truncated-header": {
+        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 0 :refused 0 :end :truncated-request :confinement {:landlock :unavailable :seal :unavailable} :device-facts {:layer :fake} :image \"03e94a624cdb94f44481346b4e303046871bd9ccc8c8240c7321b347aaf36f16\" :needed [\"libc.so.6\"] :kernel \"6.15.10-200.fc42.aarch64\"}"
+      },
+      "truncated-payload": {
+        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 0 :refused 0 :end :truncated-request :confinement {:landlock :unavailable :seal :unavailable} :device-facts {:layer :fake} :image \"03e94a624cdb94f44481346b4e303046871bd9ccc8c8240c7321b347aaf36f16\" :needed [\"libc.so.6\"] :kernel \"6.15.10-200.fc42.aarch64\"}"
+      },
       "device-lost": {
-        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 3 :refused 1 :end :device-lost :confinement {:landlock :unavailable :seal :unavailable} :device-facts {:layer :fake} :image \"97ca4c635f91cb64d34d28ce2457952b71f5cc1b92aaa5fb56dda428fbb79177\" :kernel \"6.15.10-200.fc42.aarch64\"}",
+        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 3 :refused 1 :end :device-lost :confinement {:landlock :unavailable :seal :unavailable} :device-facts {:layer :fake} :image \"03e94a624cdb94f44481346b4e303046871bd9ccc8c8240c7321b347aaf36f16\" :needed [\"libc.so.6\"] :kernel \"6.15.10-200.fc42.aarch64\"}",
         "log": [
           [
             "ALLOC 16",
@@ -362,7 +434,7 @@
         ]
       },
       "fence-timeout": {
-        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 3 :refused 1 :end :fence-timeout :confinement {:landlock :unavailable :seal :unavailable} :device-facts {:layer :fake} :image \"97ca4c635f91cb64d34d28ce2457952b71f5cc1b92aaa5fb56dda428fbb79177\" :kernel \"6.15.10-200.fc42.aarch64\"}",
+        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 3 :refused 1 :end :fence-timeout :confinement {:landlock :unavailable :seal :unavailable} :device-facts {:layer :fake} :image \"03e94a624cdb94f44481346b4e303046871bd9ccc8c8240c7321b347aaf36f16\" :needed [\"libc.so.6\"] :kernel \"6.15.10-200.fc42.aarch64\"}",
         "log": [
           [
             "ALLOC 16",
@@ -383,62 +455,62 @@
         ]
       },
       "request-too-long": {
-        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 0 :refused 1 :end :request-too-long :confinement {:landlock :unavailable :seal :unavailable} :device-facts {:layer :fake} :image \"97ca4c635f91cb64d34d28ce2457952b71f5cc1b92aaa5fb56dda428fbb79177\" :kernel \"6.15.10-200.fc42.aarch64\"}"
+        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 0 :refused 1 :end :request-too-long :confinement {:landlock :unavailable :seal :unavailable} :device-facts {:layer :fake} :image \"03e94a624cdb94f44481346b4e303046871bd9ccc8c8240c7321b347aaf36f16\" :needed [\"libc.so.6\"] :kernel \"6.15.10-200.fc42.aarch64\"}"
       },
       "answers-closed": {
-        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 1 :refused 0 :end :answers-not-written :confinement {:landlock :unavailable :seal :unavailable} :device-facts {:layer :fake} :image \"97ca4c635f91cb64d34d28ce2457952b71f5cc1b92aaa5fb56dda428fbb79177\" :kernel \"6.15.10-200.fc42.aarch64\"}"
+        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 1 :refused 0 :end :answers-not-written :confinement {:landlock :unavailable :seal :unavailable} :device-facts {:layer :fake} :image \"03e94a624cdb94f44481346b4e303046871bd9ccc8c8240c7321b347aaf36f16\" :needed [\"libc.so.6\"] :kernel \"6.15.10-200.fc42.aarch64\"}"
       },
       "bounds": {
         "requests": 6275,
-        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 6275 :refused 3 :end :eof :confinement {:landlock :unavailable :seal :unavailable} :device-facts {:layer :fake} :image \"97ca4c635f91cb64d34d28ce2457952b71f5cc1b92aaa5fb56dda428fbb79177\" :kernel \"6.15.10-200.fc42.aarch64\"}"
+        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 6275 :refused 3 :end :eof :confinement {:landlock :unavailable :seal :unavailable} :device-facts {:layer :fake} :image \"03e94a624cdb94f44481346b4e303046871bd9ccc8c8240c7321b347aaf36f16\" :needed [\"libc.so.6\"] :kernel \"6.15.10-200.fc42.aarch64\"}"
       },
       "grant-good": {
-        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 2 :refused 1 :end :eof :confinement {:landlock :unavailable :seal :unavailable} :device-facts {:layer :fake} :image \"97ca4c635f91cb64d34d28ce2457952b71f5cc1b92aaa5fb56dda428fbb79177\" :kernel \"6.15.10-200.fc42.aarch64\"}"
+        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 2 :refused 1 :end :eof :confinement {:landlock :unavailable :seal :unavailable} :device-facts {:layer :fake} :image \"03e94a624cdb94f44481346b4e303046871bd9ccc8c8240c7321b347aaf36f16\" :needed [\"libc.so.6\"] :kernel \"6.15.10-200.fc42.aarch64\"}"
       },
       "grant-another-key": {
-        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 0 :refused 0 :end :grant-refused :grant-error-at 50 :image \"97ca4c635f91cb64d34d28ce2457952b71f5cc1b92aaa5fb56dda428fbb79177\" :kernel \"6.15.10-200.fc42.aarch64\"}"
+        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 0 :refused 0 :end :grant-refused :grant-error-at 50 :image \"03e94a624cdb94f44481346b4e303046871bd9ccc8c8240c7321b347aaf36f16\" :needed [\"libc.so.6\"] :kernel \"6.15.10-200.fc42.aarch64\"}"
       },
       "grant-repeated-key": {
-        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 0 :refused 0 :end :grant-refused :grant-error-at 50 :image \"97ca4c635f91cb64d34d28ce2457952b71f5cc1b92aaa5fb56dda428fbb79177\" :kernel \"6.15.10-200.fc42.aarch64\"}"
+        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 0 :refused 0 :end :grant-refused :grant-error-at 50 :image \"03e94a624cdb94f44481346b4e303046871bd9ccc8c8240c7321b347aaf36f16\" :needed [\"libc.so.6\"] :kernel \"6.15.10-200.fc42.aarch64\"}"
       },
       "grant-no-wire-42": {
-        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 0 :refused 0 :end :grant-refused :grant-error-at 43 :image \"97ca4c635f91cb64d34d28ce2457952b71f5cc1b92aaa5fb56dda428fbb79177\" :kernel \"6.15.10-200.fc42.aarch64\"}"
+        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 0 :refused 0 :end :grant-refused :grant-error-at 43 :image \"03e94a624cdb94f44481346b4e303046871bd9ccc8c8240c7321b347aaf36f16\" :needed [\"libc.so.6\"] :kernel \"6.15.10-200.fc42.aarch64\"}"
       },
       "grant-missing-key": {
-        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 0 :refused 0 :end :grant-refused :grant-error-at 27 :image \"97ca4c635f91cb64d34d28ce2457952b71f5cc1b92aaa5fb56dda428fbb79177\" :kernel \"6.15.10-200.fc42.aarch64\"}"
+        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 0 :refused 0 :end :grant-refused :grant-error-at 27 :image \"03e94a624cdb94f44481346b4e303046871bd9ccc8c8240c7321b347aaf36f16\" :needed [\"libc.so.6\"] :kernel \"6.15.10-200.fc42.aarch64\"}"
       },
       "grant-short-digest": {
-        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 0 :refused 0 :end :grant-refused :grant-error-at 14 :image \"97ca4c635f91cb64d34d28ce2457952b71f5cc1b92aaa5fb56dda428fbb79177\" :kernel \"6.15.10-200.fc42.aarch64\"}"
+        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 0 :refused 0 :end :grant-refused :grant-error-at 14 :image \"03e94a624cdb94f44481346b4e303046871bd9ccc8c8240c7321b347aaf36f16\" :needed [\"libc.so.6\"] :kernel \"6.15.10-200.fc42.aarch64\"}"
       },
       "grant-backslash": {
-        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 0 :refused 0 :end :grant-refused :grant-error-at 14 :image \"97ca4c635f91cb64d34d28ce2457952b71f5cc1b92aaa5fb56dda428fbb79177\" :kernel \"6.15.10-200.fc42.aarch64\"}"
+        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 0 :refused 0 :end :grant-refused :grant-error-at 14 :image \"03e94a624cdb94f44481346b4e303046871bd9ccc8c8240c7321b347aaf36f16\" :needed [\"libc.so.6\"] :kernel \"6.15.10-200.fc42.aarch64\"}"
       },
       "grant-timeout-61": {
-        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 0 :refused 0 :end :grant-refused :grant-error-at 50 :image \"97ca4c635f91cb64d34d28ce2457952b71f5cc1b92aaa5fb56dda428fbb79177\" :kernel \"6.15.10-200.fc42.aarch64\"}"
+        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 0 :refused 0 :end :grant-refused :grant-error-at 50 :image \"03e94a624cdb94f44481346b4e303046871bd9ccc8c8240c7321b347aaf36f16\" :needed [\"libc.so.6\"] :kernel \"6.15.10-200.fc42.aarch64\"}"
       },
       "grant-trailing": {
-        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 0 :refused 0 :end :grant-refused :grant-error-at 78 :image \"97ca4c635f91cb64d34d28ce2457952b71f5cc1b92aaa5fb56dda428fbb79177\" :kernel \"6.15.10-200.fc42.aarch64\"}"
+        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 0 :refused 0 :end :grant-refused :grant-error-at 78 :image \"03e94a624cdb94f44481346b4e303046871bd9ccc8c8240c7321b347aaf36f16\" :needed [\"libc.so.6\"] :kernel \"6.15.10-200.fc42.aarch64\"}"
       },
       "grant-unknown-kind": {
-        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 0 :refused 0 :end :grant-refused :grant-error-at 14 :image \"97ca4c635f91cb64d34d28ce2457952b71f5cc1b92aaa5fb56dda428fbb79177\" :kernel \"6.15.10-200.fc42.aarch64\"}"
+        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 0 :refused 0 :end :grant-refused :grant-error-at 14 :image \"03e94a624cdb94f44481346b4e303046871bd9ccc8c8240c7321b347aaf36f16\" :needed [\"libc.so.6\"] :kernel \"6.15.10-200.fc42.aarch64\"}"
       },
       "grant-empty": {
-        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 0 :refused 0 :end :grant-refused :grant-error-at 0 :image \"97ca4c635f91cb64d34d28ce2457952b71f5cc1b92aaa5fb56dda428fbb79177\" :kernel \"6.15.10-200.fc42.aarch64\"}"
+        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 0 :refused 0 :end :grant-refused :grant-error-at 0 :image \"03e94a624cdb94f44481346b4e303046871bd9ccc8c8240c7321b347aaf36f16\" :needed [\"libc.so.6\"] :kernel \"6.15.10-200.fc42.aarch64\"}"
       },
       "grant-confinement-sometimes": {
-        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 0 :refused 0 :end :grant-refused :grant-error-at 50 :image \"97ca4c635f91cb64d34d28ce2457952b71f5cc1b92aaa5fb56dda428fbb79177\" :kernel \"6.15.10-200.fc42.aarch64\"}"
+        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 0 :refused 0 :end :grant-refused :grant-error-at 50 :image \"03e94a624cdb94f44481346b4e303046871bd9ccc8c8240c7321b347aaf36f16\" :needed [\"libc.so.6\"] :kernel \"6.15.10-200.fc42.aarch64\"}"
       },
       "grant-confinement-repeated": {
-        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 0 :refused 0 :end :grant-refused :grant-error-at 73 :image \"97ca4c635f91cb64d34d28ce2457952b71f5cc1b92aaa5fb56dda428fbb79177\" :kernel \"6.15.10-200.fc42.aarch64\"}"
+        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 0 :refused 0 :end :grant-refused :grant-error-at 73 :image \"03e94a624cdb94f44481346b4e303046871bd9ccc8c8240c7321b347aaf36f16\" :needed [\"libc.so.6\"] :kernel \"6.15.10-200.fc42.aarch64\"}"
       },
       "grant-no-fd-3": {
-        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 0 :refused 0 :end :grant-refused :grant-error-at -1 :image \"97ca4c635f91cb64d34d28ce2457952b71f5cc1b92aaa5fb56dda428fbb79177\" :kernel \"6.15.10-200.fc42.aarch64\"}"
+        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 0 :refused 0 :end :grant-refused :grant-error-at -1 :image \"03e94a624cdb94f44481346b4e303046871bd9ccc8c8240c7321b347aaf36f16\" :needed [\"libc.so.6\"] :kernel \"6.15.10-200.fc42.aarch64\"}"
       },
       "confinement-required-unavailable": {
-        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 0 :refused 0 :end :confinement-failed :confinement {:landlock :unavailable :seal :unavailable} :device-facts {:layer :fake} :image \"97ca4c635f91cb64d34d28ce2457952b71f5cc1b92aaa5fb56dda428fbb79177\" :kernel \"6.15.10-200.fc42.aarch64\"}"
+        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 0 :refused 0 :end :confinement-failed :confinement {:landlock :unavailable :seal :unavailable} :device-facts {:layer :fake} :image \"03e94a624cdb94f44481346b4e303046871bd9ccc8c8240c7321b347aaf36f16\" :needed [\"libc.so.6\"] :kernel \"6.15.10-200.fc42.aarch64\"}"
       },
       "no-device": {
-        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 0 :refused 0 :end :no-device :image \"97ca4c635f91cb64d34d28ce2457952b71f5cc1b92aaa5fb56dda428fbb79177\" :kernel \"6.15.10-200.fc42.aarch64\"}"
+        "report": "{:provider :kotoba.gpu-provider/v1 :device \"fake\" :served 0 :refused 0 :end :no-device :image \"03e94a624cdb94f44481346b4e303046871bd9ccc8c8240c7321b347aaf36f16\" :needed [\"libc.so.6\"] :kernel \"6.15.10-200.fc42.aarch64\"}"
       }
     },
     "notRun": [
