@@ -1,50 +1,92 @@
 {
   "schema": "amu.seed.static-root.v1",
   "image": {
-    "bytes": 3199488,
-    "sha256": "048244b3c26204ea32ff545005d2826d068fb15787dd20a8c5c636758e0f4d49"
+    "bytes": 3207680,
+    "sha256": "88afda8977285f3839ebad1cb785a344b296c6890f3f901746259dd478ab9fb7"
   },
   "target": "aarch64-linux",
   "format": "packed",
   "sourceManifest": "seed/FULL-MANIFEST",
   "sourceUnity": {
-    "bytes": 3198077,
-    "sha256": "b2ee13ca2eef03df27a9d4747715fc524f8c4fbb6925b20584992aab5a12d31a"
+    "bytes": 3205254,
+    "sha256": "b71a24481ca30e04d971537ff81697f2d8e6f107134002a962e6071d678ac281"
   },
-  "sourceCommitBase": "7ff8d9d34031f6487b625880f136b1d9a92f442d",
+  "sourceCommitBase": "c00d98a4fd396a08b4c93591d221f724f9d24da8",
   "producedBy": {
-    "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt itself to F2 (same container, new runtime wrapper: F1 was packed by the previous runtime); F2 rebuilt itself to F3 = F2 (= this image). Re-pinned because this source adds the static runtimes' stdin: wire 41 :io/read (JUN-354) and wire 20's STDIN_SEP stdin payload (JUN-357), in seed/76 and seed/77.",
+    "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt itself to F2 (same container, new runtime wrapper); F2 rebuilt itself to F3 = F2 (= this image). Re-pinned because this source adds wire 35 FSYNC_SEP and RENAME_SEP (JUN-359) and wire 7 sleep <ms> (JUN-360) to the static runtimes seed/76 and seed/77.",
     "date": "2026-10-23",
-    "previousRoot": "1d54a10811020f5902c563e680fe85ab85cf4de205609200ff8ab9927fab06ae",
+    "previousRoot": "048244b3c26204ea32ff545005d2826d068fb15787dd20a8c5c636758e0f4d49",
     "chain": {
       "F1.kseed": {
-        "bytes": 2974691,
-        "sha256": "7974701abd8561610ecc96c0974a540a65fd51d59f5eed95edb7ea6f152a3162"
+        "bytes": 2981867,
+        "sha256": "559a2623295e5659bda8c66d2769e73cbd62d5702101611c8312ec18196759b5"
       },
       "F1.elf": {
-        "bytes": 3191296,
-        "sha256": "4c165ec04ab8f5cacc2f908e974183f3601d9c85ac2071e4178079e69db746f2"
+        "bytes": 3203584,
+        "sha256": "84673d861264dd95e7e3555d1411a82578cf7b797763b307985a31bf78856e01"
       },
       "F2.kseed": {
-        "bytes": 2974691,
-        "sha256": "7974701abd8561610ecc96c0974a540a65fd51d59f5eed95edb7ea6f152a3162"
+        "bytes": 2981867,
+        "sha256": "559a2623295e5659bda8c66d2769e73cbd62d5702101611c8312ec18196759b5"
       },
       "F2.elf": {
-        "bytes": 3199488,
-        "sha256": "048244b3c26204ea32ff545005d2826d068fb15787dd20a8c5c636758e0f4d49"
+        "bytes": 3207680,
+        "sha256": "88afda8977285f3839ebad1cb785a344b296c6890f3f901746259dd478ab9fb7"
       },
       "F3.kseed": {
-        "bytes": 2974691,
-        "sha256": "7974701abd8561610ecc96c0974a540a65fd51d59f5eed95edb7ea6f152a3162"
+        "bytes": 2981867,
+        "sha256": "559a2623295e5659bda8c66d2769e73cbd62d5702101611c8312ec18196759b5"
       },
       "F3.elf": {
-        "bytes": 3199488,
-        "sha256": "048244b3c26204ea32ff545005d2826d068fb15787dd20a8c5c636758e0f4d49"
+        "bytes": 3207680,
+        "sha256": "88afda8977285f3839ebad1cb785a344b296c6890f3f901746259dd478ab9fb7"
       }
     }
   },
-  "verification": "scripts/seed/selfhost-bootstrap.py --tier pr on arm64 Linux from this root (F1 = root): its core route, the runtime boundary corpus, the 24 runtime cases and hardening; scripts/seed/check-spawn-runtime.py and scripts/seed/check-io-read.py with that F1 (docs/static-stdin.md). CI re-runs the tier from this root (F -> F' = root).",
+  "verification": "scripts/seed/selfhost-bootstrap.py --tier pr and --tier main on arm64 Linux from this root (F1 = root); scripts/seed/check-durable-sleep.py, check-io-read.py and check-spawn-runtime.py with that F1 (docs/durable-sleep.md). CI re-runs the tier from this root (F -> F' = root).",
   "history": [
+    {
+      "image": {
+        "bytes": 3199488,
+        "sha256": "048244b3c26204ea32ff545005d2826d068fb15787dd20a8c5c636758e0f4d49"
+      },
+      "sourceUnity": {
+        "bytes": 3198077,
+        "sha256": "b2ee13ca2eef03df27a9d4747715fc524f8c4fbb6925b20584992aab5a12d31a"
+      },
+      "sourceCommitBase": "7ff8d9d34031f6487b625880f136b1d9a92f442d",
+      "producedBy": {
+        "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt itself to F2 (same container, new runtime wrapper: F1 was packed by the previous runtime); F2 rebuilt itself to F3 = F2 (= this image). Re-pinned because this source adds the static runtimes' stdin: wire 41 :io/read (JUN-354) and wire 20's STDIN_SEP stdin payload (JUN-357), in seed/76 and seed/77.",
+        "date": "2026-10-23",
+        "previousRoot": "1d54a10811020f5902c563e680fe85ab85cf4de205609200ff8ab9927fab06ae",
+        "chain": {
+          "F1.kseed": {
+            "bytes": 2974691,
+            "sha256": "7974701abd8561610ecc96c0974a540a65fd51d59f5eed95edb7ea6f152a3162"
+          },
+          "F1.elf": {
+            "bytes": 3191296,
+            "sha256": "4c165ec04ab8f5cacc2f908e974183f3601d9c85ac2071e4178079e69db746f2"
+          },
+          "F2.kseed": {
+            "bytes": 2974691,
+            "sha256": "7974701abd8561610ecc96c0974a540a65fd51d59f5eed95edb7ea6f152a3162"
+          },
+          "F2.elf": {
+            "bytes": 3199488,
+            "sha256": "048244b3c26204ea32ff545005d2826d068fb15787dd20a8c5c636758e0f4d49"
+          },
+          "F3.kseed": {
+            "bytes": 2974691,
+            "sha256": "7974701abd8561610ecc96c0974a540a65fd51d59f5eed95edb7ea6f152a3162"
+          },
+          "F3.elf": {
+            "bytes": 3199488,
+            "sha256": "048244b3c26204ea32ff545005d2826d068fb15787dd20a8c5c636758e0f4d49"
+          }
+        }
+      }
+    },
     {
       "image": {
         "bytes": 3179008,
