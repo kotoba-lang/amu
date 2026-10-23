@@ -91,10 +91,9 @@ native migration. Archived text has no executable bit and is not used by
 the native manifests or workflow.
 
 Old local/x86 CLJK poller/supervisor processes were absent at readback.
-Amu repository-specific runner registration was empty. The surviving
-Itonami runner44 belongs to `network-awai/kotobase-control-plane`, not Amu.
-It was idle, with no worker process or in-progress run. That repository
-still has11 queued non-gate workflows with no instantiated jobs. They are
-outside the two native CDCI roles; this change does not cancel them,
-stop their infrastructure or claim runner deregistration. The initial
-org-level403 did not apply to this repository's accessible runner API.
+Amu repository-specific runner registration was empty. A surviving idle
+legacy runner belongs to a separate repository with queued non-gate
+workflows and no instantiated jobs. It is outside these two native roles;
+this change does not cancel those workflows, stop their infrastructure or
+claim deregistration. Its detailed inventory remains in the operations
+record, separate from native compiler qualification.
