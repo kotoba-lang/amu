@@ -2,23 +2,58 @@
   "schema": "amu.seed.static-root.v1",
   "image": {
     "bytes": 1303040,
-    "sha256": "2f3c4c1ebe862aee1bf54eae2121a90227e9f6ac6a75b417f4070df8a3fefe5e"
+    "sha256": "d17590b4352b4ecae97fb472355b05cda54cbfc01d3a29ad284531e2342e13d2"
   },
   "target": "aarch64-linux",
   "format": "static",
   "sourceManifest": "seed/X86_64-LINUX-SELFHOST-MANIFEST",
   "sourceUnity": {
-    "bytes": 782160,
-    "sha256": "d2a28ac6e93c5f450a7fef14b6f38fb5ce76e706de68ec656f4974cfe0306982"
+    "bytes": 782654,
+    "sha256": "9d753d6a7cdd2de3953e7083cb1ba8ce0f8bd3339415764a156e3f69deba6480"
   },
-  "sourceCommitBase": "1585cb488ea9a0b4f87c1fd319ea71fa3ceb09a0",
+  "sourceCommitBase": "36d5596597276801ea2728f05d4433b48721981e",
   "producedBy": {
-    "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 = this image and S2 built S3 (S2 = S3; S1 differs because the previous root embeds the previous aarch64 runtime). Re-pinned because the runtime text gains the packed mode (context word 408 = 2: a payload inside the image's code, words 416/424/432).",
+    "how": "Amu native previous root built B1; B1 built B2; B2 built B3, with B1=B2=B3. Definition-position ownership and guest OP-FADDR rejection close JUN-325 direct and function-value routes. No C compiler/loader or hosted compiler executed.",
     "date": "2026-10-23",
-    "previousRoot": "98d4bcb7cd4ca331c292873a6d76b836cd34455b967575ae52af5bb3507ab774"
+    "previousRoot": "2f3c4c1ebe862aee1bf54eae2121a90227e9f6ac6a75b417f4070df8a3fefe5e",
+    "chain": {
+      "B1": {
+        "bytes": 1303040,
+        "sha256": "d17590b4352b4ecae97fb472355b05cda54cbfc01d3a29ad284531e2342e13d2"
+      },
+      "B2": {
+        "bytes": 1303040,
+        "sha256": "d17590b4352b4ecae97fb472355b05cda54cbfc01d3a29ad284531e2342e13d2"
+      },
+      "B3": {
+        "bytes": 1303040,
+        "sha256": "d17590b4352b4ecae97fb472355b05cda54cbfc01d3a29ad284531e2342e13d2"
+      }
+    }
   },
-  "verification": "scripts/seed/selfhost-bootstrap.py on arm64 Linux: root -> S1 = S2 = S3 = root natively, without any C compiler or loader",
+  "verification": "Native three-generation root fixed point; check-runtime-boundary.py covers direct calls, function references, indirect invocation and positive/runtime controls. Complete unchanged CORE-STATIC-MANIFEST rebuilt byte-identically to previous main C0.",
   "history": [
+    {
+      "schema": "amu.seed.static-root.v1",
+      "image": {
+        "bytes": 1303040,
+        "sha256": "2f3c4c1ebe862aee1bf54eae2121a90227e9f6ac6a75b417f4070df8a3fefe5e"
+      },
+      "target": "aarch64-linux",
+      "format": "static",
+      "sourceManifest": "seed/X86_64-LINUX-SELFHOST-MANIFEST",
+      "sourceUnity": {
+        "bytes": 782160,
+        "sha256": "d2a28ac6e93c5f450a7fef14b6f38fb5ce76e706de68ec656f4974cfe0306982"
+      },
+      "sourceCommitBase": "1585cb488ea9a0b4f87c1fd319ea71fa3ceb09a0",
+      "producedBy": {
+        "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 = this image and S2 built S3 (S2 = S3; S1 differs because the previous root embeds the previous aarch64 runtime). Re-pinned because the runtime text gains the packed mode (context word 408 = 2: a payload inside the image's code, words 416/424/432).",
+        "date": "2026-10-23",
+        "previousRoot": "98d4bcb7cd4ca331c292873a6d76b836cd34455b967575ae52af5bb3507ab774"
+      },
+      "verification": "scripts/seed/selfhost-bootstrap.py on arm64 Linux: root -> S1 = S2 = S3 = root natively, without any C compiler or loader"
+    },
     {
       "image": {
         "bytes": 1294848,
