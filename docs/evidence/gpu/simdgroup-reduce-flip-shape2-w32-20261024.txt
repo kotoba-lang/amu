@@ -1,0 +1,165 @@
+JUN-58 / JUN-55: the SHAPE-2 W = 32 :simdgroup-reduce FLIP slice (the
+shape-2 series' sixth and last cell, measured 2026-10-24 and flipped
+the same day) -- 2026-10-24, chain worktree, kbb --backend sci
+
+WHAT THIS RECORD IS: the slice record of the shape-2 flip of the
+W = 32 cell -- what the shape-2 sixth-cell measurement
+(docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w32, taken
+earlier the same day) licenses under the flip contract (ADR-0360
+question (1)'s decision applied to THIS variant's own cells, ADR-0373).
+It is NOT a measurement: no hardware ran in this slice. The numbers
+cited below are the shape-2 W = 32 record's, unchanged and not
+re-measured.
+
+WHAT MOVED (the slice's whole scope):
+- src/kotoba/compiler/accelerator_variants.cljk:
+  apple-simdgroup-measured-shapes -- W = 32 is now [1000003 1048576]
+  (the shape-2 flip's key), W = 256, W = 1024, W = 128 and W = 64 keep
+  their two-shape records and W = 512 keeps [1000003] (measured-but-
+  REFUSED, below); apple-simdgroup-measured-evidence's W = 32 entry
+  gains the shape-2 sixth-cell record
+  (docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w32); the
+  flip note gains the SHAPE-2 FLIP OF THE W = 32 CELL paragraph and
+  its earlier slices' shape-2 scope clauses ("shape 2 stays UNMEASURED
+  at W = 32") are corrected to what this flip makes true (past-tense
+  per-slice, the W = 512 refusal the only unflipped cell); the
+  measured-workgroups note names the shape-2 scope (measured and
+  flipped at W = 256, W = 1024, W = 128, W = 64 and W = 32).
+- src/kotoba/compiler/accelerator_simdgroup_reduce.cljk: the honesty
+  mark names the shape-2 W = 32 flip (docstring only).
+- test/kotoba/compiler/accelerator_variants_test.cljk: both flip-cell
+  record blocks pin the W = 32 :shapes/:evidence pair and the basis
+  names the shape-2 record and its ratios (0.639/0.656/0.659); the
+  shapes block is per-cell (W = 256, W = 1024, W = 128, W = 64 AND
+  W = 32 name BOTH measured shapes, W = 512 alone names the ground
+  shape); the-shape2-w512-scoped-cell-is-refused-as-a-selection-basis's
+  contrast block gains the W = 32 two-shape record.
+- docs/adr/0373-gpu-metal-native-simdgroup-reduce.md: the SHAPE-2
+  W = 32 FLIP SLICE UPDATE section, and the status / step-3 /
+  measurement-contract / State / UNMEASURED / LEFT / Gate lines this
+  flip makes wrong (the shape-2 scope) are corrected.
+
+WHAT THE FLIP ANSWERS (the second shape of ONE cell, per the keys):
+  vendor/apple, the narrowed M1 Max class (name fragment "m1 max" AND
+  reported subgroup size 32), the MSL route (:metal/:msl-v1), a
+  descriptor reporting :simd-reduce, W = 32, reduce shape, n = 2^20
+  -> the record of the already-flipped cell now names both shapes:
+     {:device "m1 max" :subgroup-size 32 :channel :native-metal
+      :route :msl-v1 :workgroup-size 32 :operators #{:sum :max :min}
+      :shapes [1000003 1048576]
+      :evidence ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w32"
+                 "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w32"]}
+  NO :measured? flag moves in this slice: the W = 32 answer was
+  already MEASURED at the ground shape.
+
+MEASURED BASIS (the shape-2 W = 32 record, not re-measured here):
+  paired median ratios 0.639/0.656/0.659 (:sum/:max/:min), claim-
+  protocol rule 2 REGIME-INVARIANT FASTER, 18/18 per-run ratios below
+  1.0 -- every observed regime one-sided; in family with the shape-1
+  same-W record (0.657/0.658/0.650) and the fastest shape-2 cell of
+  the series at every operator. Rule 1 at that record: ONE level for
+  :max and :sum, TWO for :min (runs 5-6 fast at 91646..92500 vs runs
+  1-4 at 113771..114438 baseline per-run medians -- the fresh-process
+  clock ramp in :min only; both :min levels one-sided faster, paired
+  ratios 0.720 0.716 fast / 0.642 0.645 0.673 0.636 slow) and
+  cross-operator level identity REFUTED (8 of 15 run pairs diverge:
+  min splits what max and sum pool) -- the shape-2 series' FOURTH
+  identity-refuted cell against two identity-HOLDS cells (W = 128,
+  W = 64). Unlike the W = 512 shape-2 cell (rule 2 REGIME-SCOPED, its
+  flip refused) this cell's rule-2 verdict is selection-grade. The
+  opposite-sign contrast with :subgroup-reduce at the identical cell
+  holds in its family form (the shuffle ladder's shape-2 W = 32
+  record, docs/evidence/gpu-subgroup-reduce-m1max-shape2-20261023/w32,
+  measures near parity and straddling 0.919/0.921/0.918 while THIS
+  fold is one-sided faster at 18/18). S = 32 divides W = 32 exactly --
+  one SIMD-group per workgroup. The emitted shaders are byte-identical
+  to the shape-1 same-W cell's (diff empty, checked in the measure
+  record). Read-back: 36 verify lines, ok=1 on every one; :max/:min
+  bit-exact vs the CPU reference and between arms, :sum 2.15e-06
+  (baseline) / 1.43e-06 (variant) vs reference, 1.91e-06 between arms
+  (regrouping).
+
+WHAT THE FLIP DOES NOT LICENSE (named so nothing is silently upgraded):
+- shape 2 (n = 2^20) at W = 512: measured 2026-10-24 but REFUSED as a
+  selection basis (rule 2 REGIME-SCOPED) -- measured is a fact about
+  runs, not a license; with this flip it is the shape-2 series' ONLY
+  unflipped cell (the series covers w32 w64 w128 w256 w512 w1024 end
+  to end at both measured shapes but that refusal);
+- every shape beyond the two measured ones at every cell: UNMEASURED;
+- the GLSL arm (:vulkan/:glsl-v1) never flips (LABELED BOOTSTRAP runs
+  are not a verdict);
+- every other Apple device: rung 1 may answer :simdgroup-reduce there,
+  but UNMEASURED (:measured? false);
+- every other vendor: this row is Apple's and the MSL route's alone;
+- cross-day replication of any cell: UNMEASURED;
+- no workgroup row (ADR-0355/0358) moved.
+
+PROSE DEBT, named not hidden: (a) the ADR's older diff-record prose of
+earlier slices (State's "only the W = 64, W = 128, W = 256, W = 512
+and W = 1024 cells have flipped", the "five measured cells" and
+"every other W of this variant (32)" phrasings) still predates the
+shape-1 W = 32 flip slice's deferred reconciliation; this slice
+corrected only the lines its own flip makes wrong (the shape-2 scope)
+and names the debt here, as every slice record since has. (b) The
+W = 128 measure record's shape-1 same-W column cites
+docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-low-20261023/w128, a
+path that does not exist for THIS variant (named by the W = 64 measure
+record; the old record is not rewritten). (c) The W = 64 shape-2
+paragraph in apple-simdgroup-flip-note called W = 64 "the fastest
+shape-2 cell of the series at every operator" -- true when written;
+the shape-2 W = 32 record (0.639/0.656/0.659) is now the fastest. The
+old sentence is left standing as the historical slice's own words and
+the W = 32 paragraph does not repeat it.
+
+GATE (real runs, this host, kbb --backend sci, from the chain worktree
+root, 2026-10-24, run for THIS record). The SOUL.md gate form's
+`$(kbb -Spath -M:test)` subshell is broken at this branch's HEAD (the
+origin/main host-manifest retirement; the CHANNEL NOTE in
+docs/evidence/gpu/simdgroup-reduce-m1max-shape2-w32-measure-20261024.txt
+names it), so the resolved closure is substituted inline -- the same
+route-2 resolution the measure record names (249 dependency entries,
+every directory present):
+
+1. The two touched test namespaces (targeted run):
+     kbb --backend sci --classpath "src:test:<resolved closure>" -e \
+       "(require '[clojure.test :as t] '[kotoba.compiler.accelerator-variants-test] \
+         '[kotoba.compiler.accelerator-simdgroup-reduce-test]) \
+        (t/run-tests 'kotoba.compiler.accelerator-variants-test \
+                     'kotoba.compiler.accelerator-simdgroup-reduce-test)"
+   -> Ran 27 tests containing 8462 assertions.
+      0 failures, 0 errors.
+
+2. The scoped GPU gate (the GPU-owned test namespaces, scratch runner
+   gpu_scoped_gate.cljk, not in the repo):
+     kbb --backend sci --classpath "src:test:<resolved closure>" \
+       /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+   -> Ran 101 tests containing 9624 assertions.
+      0 failures, 0 errors.
+      scoped: 101 tests, 9624 passed, 0 failed, 0 errors
+
+3. Harness self-tests:
+     python3 scripts/gpu-subgroup-reduce-metal-measure.py --self-test
+   -> driver auto-wiring self-test: 12 assertions passed, 0 failed.
+     python3 scripts/gpu_regime_classify.py --self-test
+   -> TOTAL: 1469 assertions passed, 0 failed. (This slice adds a
+      flip slice record .txt, not a summary.md -- the corpus pins parse
+      summary.md only -- so the corpus tally is untouched at 40
+      multi-operator records; run anyway, named not assumed.)
+
+4. Full suite (run-tests.cljk), same classpath substitution: RED AT
+   BASE, outside this diff, at namespace load on `kotoba.form`
+   ("Could not find namespace: kotoba.form"; the W3 port path
+   documented red at base in ADR 0362), re-verified live this tick.
+   The run stops at that load; no green full suite is claimed and none
+   is claimed here.
+
+HONESTY STATE: no :measured? flag moved in this slice. The W = 32
+cell's :measured? true flag stands on the ground-shape measurement and
+now its record names both measured shapes. Every other
+:simdgroup-reduce answer in the dispatch stays :measured? false
+(provisional/design), and the workgroup defaults in
+kotoba.compiler.accelerator-targets are untouched and remain
+:measured? false. With this slice the shape-2 series is COMPLETE
+(six cells, both shapes at every flipped cell but the refused
+W = 512); what remains open for this variant is cross-day replication
+and every shape beyond the two measured ones -- all UNMEASURED.
