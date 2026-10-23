@@ -446,6 +446,10 @@
            for the qualification runner, and unit tests print on stdout"}
   ;; -- R4B (2026-10-03, wires measured on stage-0 and the C loader's providers) --
   {:form "(typed-cap-call :hash/sha256 :string :string s)" :wire 3 :kind 1 :means "the SHA-256 of s's bytes as 64 hex characters"}
+  {:form "(typed-cap-call :clock/now :string :string request)" :wire 7 :kind 1
+   :means "native Linux: exact wall -> epoch milliseconds; monotonic -> nondecreasing nanoseconds. Decimal i64 text; no caller-supplied time"}
+  {:form "(typed-cap-call :entropy/draw :string :string count)" :wire 23 :kind 1
+   :means "native Linux getrandom, 1..256 bytes -> lowercase hex. No deterministic or file fallback"}
   {:form "(typed-cap-call :env/read :string :string name)" :wire 33 :kind 1 :means "the environment variable's value, \"\" when unset"}
   {:form "(typed-cap-call :fs/browse :string :string dir)" :wire 34 :kind 1
    :means "the sorted NAME<TAB>D lines of the directory (inside KEXE_CAP_RESOURCES_34)"}
