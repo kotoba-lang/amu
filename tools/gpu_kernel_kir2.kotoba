@@ -251,6 +251,31 @@
 (defn kb-fne [B :vector-i64 a :i64 b :i64] :i64 (kb-op2 B 183 (kb-tbool B) a b))
 (defn kb-fmax [B :vector-i64 a :i64 b :i64] :i64 (kb-ext2 B (kb-tf32 B) 40 a b))
 (defn kb-fexp [B :vector-i64 a :i64] :i64 (kb-ext1 B (kb-tf32 B) 27 a))
+(defn kb-fneg [B :vector-i64 a :i64] :i64 (kb-op1 B 127 (kb-tf32 B) a))
+(defn kb-uge [B :vector-i64 a :i64 b :i64] :i64 (kb-op2 B 174 (kb-tbool B) a b))
+(defn kb-ine [B :vector-i64 a :i64 b :i64] :i64 (kb-op2 B 171 (kb-tbool B) a b))
+;; ordered float comparisons (GLSL's ==, <, >, >=)
+(defn kb-feq [B :vector-i64 a :i64 b :i64] :i64 (kb-op2 B 180 (kb-tbool B) a b))
+(defn kb-flt [B :vector-i64 a :i64 b :i64] :i64 (kb-op2 B 184 (kb-tbool B) a b))
+(defn kb-fgt [B :vector-i64 a :i64 b :i64] :i64 (kb-op2 B 186 (kb-tbool B) a b))
+(defn kb-fge [B :vector-i64 a :i64 b :i64] :i64 (kb-op2 B 190 (kb-tbool B) a b))
+(defn kb-lor [B :vector-i64 a :i64 b :i64] :i64 (kb-op2 B 166 (kb-tbool B) a b))
+(defn kb-land [B :vector-i64 a :i64 b :i64] :i64 (kb-op2 B 167 (kb-tbool B) a b))
+;; c ? a : b for values both safe to compute (else an if into a variable)
+(defn kb-select [B :vector-i64 t :i64 c :i64 a :i64 b :i64] :i64 (kb-op3 B 169 t c a b))
+;; conversions: float(u), int(f), and bit casts (floatBitsToUint and back)
+(defn kb-u2f [B :vector-i64 a :i64] :i64 (kb-op1 B 112 (kb-tf32 B) a))
+(defn kb-f2s [B :vector-i64 a :i64] :i64 (kb-op1 B 110 (kb-ti32 B) a))
+(defn kb-bitcast [B :vector-i64 t :i64 a :i64] :i64 (kb-op1 B 124 t a))
+;; GLSL.std.450: inversesqrt, log, pow, sin, cos, abs, round, min
+(defn kb-finvsqrt [B :vector-i64 a :i64] :i64 (kb-ext1 B (kb-tf32 B) 32 a))
+(defn kb-flog [B :vector-i64 a :i64] :i64 (kb-ext1 B (kb-tf32 B) 28 a))
+(defn kb-fpow [B :vector-i64 a :i64 b :i64] :i64 (kb-ext2 B (kb-tf32 B) 26 a b))
+(defn kb-fsin [B :vector-i64 a :i64] :i64 (kb-ext1 B (kb-tf32 B) 13 a))
+(defn kb-fcos [B :vector-i64 a :i64] :i64 (kb-ext1 B (kb-tf32 B) 14 a))
+(defn kb-fabs [B :vector-i64 a :i64] :i64 (kb-ext1 B (kb-tf32 B) 4 a))
+(defn kb-fround [B :vector-i64 a :i64] :i64 (kb-ext1 B (kb-tf32 B) 1 a))
+(defn kb-umin [B :vector-i64 a :i64 b :i64] :i64 (kb-ext2 B (kb-tu32 B) 38 a b))
 
 ;; ---------------------------------------------------------------------
 ;; Control. Labels clear the terminated flag; a branch, break, continue or
@@ -298,6 +323,11 @@
 (defn- kb-loop-frame [B :vector-i64] :i64
   (loop [d (dec (kb-get B KB-DEPTH))] (cond (< d 0) -1 (= (kb-get B (+ KB-STACK (* 4 d))) 2) d :else (recur (dec d)))))
 (defn kb-break [B :vector-i64] :i64 (kb-branch B (kb-get B (+ KB-STACK (* 4 (kb-loop-frame B)) 1))))
+;; continue: to the innermost loop's continue block
+(defn kb-next [B :vector-i64] :i64 (kb-branch B (kb-get B (+ KB-STACK (* 4 (kb-loop-frame B)) 2))))
+;; return from the entry function; inside an if the arm ends there
+(defn kb-return [B :vector-i64] :i64
+  (if (= (kb-get B KB-TERM) 1) 0 (let [x (kb-i0 B 6 253)] (kb-set B KB-TERM 1))))
 
 ;; workgroup barrier: execution and Workgroup memory (AcquireRelease)
 (defn kb-barrier [B :vector-i64] :i64

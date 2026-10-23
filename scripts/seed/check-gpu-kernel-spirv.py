@@ -68,6 +68,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 ENCODE_CHECK = ["tools/spirv_encode.kotoba", "tools/spirv_check.kotoba"]
+# nex-ops.comp is one kernel per -DOP (the decode ops that KIR v2 writes,
+# tools/gpu_kernels_v2.kotoba kir2-nex-op 1..14 in this order)
+NEX_OPS = ["rmsnorm", "l2norm", "gated_rmsnorm", "silu_mul", "conv1d_step", "gate_decay", "gate_decay2", "copy_at",
+           "weighted_sum", "add", "add_bias", "f32_matvec", "add_rmsnorm", "pos_incr"]
 # modules, test, the receipt, the written modules' prefix and their sizes by
 # name part, the control's one failure, and whether glslang refs go in
 SUITES = {
@@ -78,7 +82,8 @@ SUITES = {
                  count=23, control="FAIL label inside an open block", refs=True),
     "kir2": dict(modules=[*ENCODE_CHECK, "tools/gpu_kernel_kir2.kotoba", "tools/gpu_kernels_v2.kotoba"],
                  test="tools/gpu_kernel_kir2_test.kotoba", receipt="gpu-kernel-kir2.json", prefix="kir2-",
-                 sizes={"ewise": 1096, "attn-copy-dense": 6488}, count=9, control="FAIL attn: variables", refs=True),
+                 sizes={"ewise": 1096, "attn-copy-dense": 6488, **{"kir2-nex-" + op + ".spv": n for op, n in zip(NEX_OPS, [3440, 3468, 3516, 1992, 2660, 2452, 2396, 2024, 2704, 1872, 1968, 3088, 3476, 1652])}},
+                 count=23, control="FAIL attn: variables", refs=True),
 }
 FUEL = 100000000
 EXPECT_CALL = re.compile(r"\(expect ")
@@ -116,10 +121,12 @@ def refs(output):
     out.mkdir(parents=True, exist_ok=False)
     rows = {}
     for comp in sorted(REFS.glob("*.comp")):
-        spv = out / ("ref-" + comp.stem + ".spv")
-        r = subprocess.run([glslang, "-V", "--target-env", "vulkan1.1", str(comp), "-o", str(spv)], capture_output=True, text=True)
-        assert r.returncode == 0, (comp.name, r.stdout, r.stderr)
-        rows[spv.name] = dict(source=pin(comp), module=pin(spv))
+        for op in (NEX_OPS if comp.name == "nex-ops.comp" else [None]):
+            spv = out / ("ref-" + comp.stem + ("-" + op if op else "") + ".spv")
+            r = subprocess.run([glslang, "-V", "--target-env", "vulkan1.1", *(["-DOP=" + op] if op else []), str(comp), "-o", str(spv)],
+                               capture_output=True, text=True)
+            assert r.returncode == 0, (comp.name, op, r.stdout, r.stderr)
+            rows[spv.name] = dict(source=pin(comp), define=op and "OP=" + op, module=pin(spv))
     version = subprocess.run([glslang, "--version"], capture_output=True, text=True).stdout.splitlines()[0]
     (out / "refs.json").write_text(json.dumps(dict(tool=version, host=[platform.system(), platform.machine()], modules=rows,
                                                    note="oracle input only; not part of the product route"), indent=2) + "\n")
@@ -173,7 +180,9 @@ def build(compiler, output, target, suite, seccomp_if_available=False):
     assert cases == counted and failed == 1 and len(fails) == 1 and fails[0].startswith(suite["control"]), fails
     modules = {p.name: pin(p) for p in sorted(spv.glob(suite["prefix"] + "*.spv"))}
     sizes = suite["sizes"]
-    assert len(modules) == suite["count"] and all(m["bytes"] == next(v for k, v in sizes.items() if k in n) for n, m in modules.items()), modules
+    # a module's size by its name, else by the first key inside its name
+    size = lambda n: sizes[n] if n in sizes else next(v for k, v in sizes.items() if k in n)
+    assert len(modules) == suite["count"] and all(m["bytes"] == size(n) for n, m in modules.items()), modules
     report = dict(status="PASS_GPU_KERNEL_SPIRV_BUILD", suite=suite["name"], target=target, compiler=pin(compiler),
                   host=[platform.system(), platform.machine(), platform.release()],
                   imageSeccomp="if-available" if seccomp_if_available else "required",
@@ -267,6 +276,81 @@ ATTN_SHAPES = [
 ]
 
 
+def nex_cases():
+    """The nex_ops gate: per case the op, Meta, bindings 1..6 (inputs, and the
+    writable ones' initial bytes), the workgroups, and an optional check of the
+    outputs (bindings -> bytes) answering the largest error (0 when exact)."""
+    def meta(n=0, rows=0, aux=0, aux2=0, eps=0.0, scale=0.0, p0=0.0, p1=0.0):
+        return struct.pack("<4I4f", n, rows, aux, aux2, eps, scale, p0, p1)
+
+    def bufs(**kw):
+        out = {b: bytes(16) for b in range(1, 7)}
+        for k, v in kw.items():
+            out["_abcosi".index(k)] = v if isinstance(v, bytes) else f32(v)
+        return out
+
+    def near(got, want):
+        return max(abs(g - w) for g, w in zip(from_f32(got), want))
+
+    def rms(a, w, n, rows, stride, eps):
+        out = []
+        for r in range(rows):
+            x = a[r * stride:r * stride + n]
+            inv = 1.0 / math.sqrt(sum(v * v for v in x) / n + eps)
+            out += [x[i] * inv * w[i] for i in range(n)]
+        return out
+
+    cases = []
+    a, w = lcg(3 * 2100, 11), lcg(2048, 12)
+    cases.append(dict(name="rmsnorm stride", op="rmsnorm", meta=meta(n=2048, aux=2100, eps=1e-6),
+                      bufs=bufs(a=a, b=w, o=bytes(4 * 3 * 2048)), groups=(3, 1, 1),
+                      check=lambda o, a=a, w=w: near(o[4], rms(a, w, 2048, 3, 2100, 1e-6))))
+    a2 = lcg(2 * 1024, 13)
+    cases.append(dict(name="rmsnorm contiguous", op="rmsnorm", meta=meta(n=1024, eps=1e-5),
+                      bufs=bufs(a=a2, b=w[:1024], o=bytes(4 * 2 * 1024)), groups=(2, 1, 1),
+                      check=lambda o, a=a2, w=w: near(o[4], rms(a, w, 1024, 2, 1024, 1e-5))))
+    for sc in (0.0, 0.5):
+        cases.append(dict(name=f"l2norm scale {sc}", op="l2norm", meta=meta(n=128, aux2=64, eps=1e-6, scale=sc),
+                          bufs=bufs(a=lcg(64 + 4 * 128, 14), o=bytes(4 * 4 * 128)), groups=(4, 1, 1)))
+    cases.append(dict(name="gated_rmsnorm", op="gated_rmsnorm", meta=meta(n=128, eps=1e-6),
+                      bufs=bufs(a=lcg(512, 15), b=lcg(128, 16), c=lcg(512, 17), o=bytes(2048)), groups=(4, 1, 1)))
+    cases.append(dict(name="silu_mul", op="silu_mul", meta=meta(n=1000),
+                      bufs=bufs(a=lcg(1000, 18), b=lcg(1000, 19), o=bytes(4000)), groups=(4, 1, 1)))
+    cases.append(dict(name="conv1d_step", op="conv1d_step", meta=meta(n=500),
+                      bufs=bufs(a=lcg(500, 20), b=lcg(2000, 21), s=lcg(1500, 22), o=bytes(2000)), groups=(2, 1, 1)))
+    # softplus takes both arms: a[h] + b[h] > 20 for the first four heads
+    big = [25.0] * 4 + lcg(92, 23)
+    cases.append(dict(name="gate_decay", op="gate_decay", meta=meta(rows=48, aux=48, aux2=48),
+                      bufs=bufs(a=big, b=lcg(48, 24), c=lcg(48, 25), o=bytes(4 * 96)), groups=(1, 1, 1)))
+    cases.append(dict(name="gate_decay2", op="gate_decay2", meta=meta(rows=48, aux=48),
+                      bufs=bufs(a=big[:48], b=lcg(48, 24), c=lcg(48, 25), s=lcg(48, 26), o=bytes(4 * 96)), groups=(1, 1, 1)))
+    x = lcg(512, 27)
+    cases.append(dict(name="copy_at dynamic", op="copy_at", meta=meta(n=512, aux2=512, p1=1.0),
+                      bufs=bufs(a=x, o=bytes(4 * 8 * 512), i=struct.pack("<4I", 3, 0, 0, 0)), groups=(2, 1, 1),
+                      check=lambda o, x=x: 0 if o[4] == bytes(4 * 3 * 512) + f32(x) + bytes(4 * 4 * 512) else 1))
+    cases.append(dict(name="copy_at static", op="copy_at", meta=meta(n=512, aux2=1024),
+                      bufs=bufs(a=x, o=bytes(4 * 8 * 512), i=struct.pack("<4I", 3, 0, 0, 0)), groups=(2, 1, 1),
+                      check=lambda o, x=x: 0 if o[4] == bytes(4 * 1024) + f32(x) + bytes(4 * 5 * 512) else 1))
+    cases.append(dict(name="weighted_sum", op="weighted_sum", meta=meta(n=300, aux=8),
+                      bufs=bufs(a=lcg(16 * 300, 28), b=lcg(16, 29), c=lcg(600, 30), s=lcg(2, 31), o=bytes(2400)), groups=(2, 2, 1)))
+    y1, y2 = lcg(1000, 32), lcg(1000, 33)
+    cases.append(dict(name="add", op="add", meta=meta(n=1000), bufs=bufs(a=y1, b=y2, o=bytes(4000)), groups=(4, 1, 1),
+                      check=lambda o, y1=y1, y2=y2: 0 if o[4] == f32([u + v for u, v in zip(y1, y2)]) else 1))
+    cases.append(dict(name="add_bias", op="add_bias", meta=meta(n=1000, aux=100), bufs=bufs(a=y1, b=y2[:100], o=bytes(4000)),
+                      groups=(4, 1, 1), check=lambda o, y1=y1, y2=y2: 0 if o[4] == f32([y1[i] + y2[i % 100] for i in range(1000)]) else 1))
+    m, v = lcg(64 * 1024, 34), lcg(2 * 1024, 35)
+    cases.append(dict(name="f32_matvec", op="f32_matvec", meta=meta(n=1024, rows=64), bufs=bufs(a=m, b=v, o=bytes(4 * 128)),
+                      groups=(64, 2, 1),
+                      check=lambda o, m=m, v=v: near(o[4], [sum(m[r * 1024 + i] * v[y * 1024 + i] for i in range(1024))
+                                                            for y in range(2) for r in range(64)])))
+    cases.append(dict(name="add_rmsnorm", op="add_rmsnorm", meta=meta(n=2048, eps=1e-6),
+                      bufs=bufs(a=lcg(4096, 36), b=lcg(4096, 37), c=lcg(2048, 38), o=bytes(4 * 4096), s=bytes(4 * 4096)),
+                      groups=(2, 1, 1)))
+    cases.append(dict(name="pos_incr", op="pos_incr", meta=meta(), bufs=bufs(i=struct.pack("<4I", 5, 7, 0, 0)), groups=(1, 1, 1),
+                      check=lambda o: 0 if o[6] == struct.pack("<4I", 6, 7, 0, 0) else 1))
+    return cases
+
+
 def gpu(output, suite, provider_out):
     assert suite["name"] == "kir2", "the gpu phase is suite kir2's"
     assert platform.system() == "Linux" and platform.machine() in ("x86_64", "AMD64"), "gpu phase: x86_64 Linux with a Vulkan driver"
@@ -278,7 +362,9 @@ def gpu(output, suite, provider_out):
     raw = output / "gpu"
     raw.mkdir(exist_ok=False)
     files = {"v2-attn.spv": output / "spv" / "kir2-attn-copy-dense.spv", "ref-attn.spv": output / "refs" / "ref-attn-copy-dense.spv",
-             "v2-add.spv": output / "spv" / "kir2-ewise-add-wg256.spv", "ref-add.spv": output / "refs" / "ref-ewise-add.spv"}
+             "v2-add.spv": output / "spv" / "kir2-ewise-add-wg256.spv", "ref-add.spv": output / "refs" / "ref-ewise-add.spv",
+             **{f"v2-nex-{op}.spv": output / "spv" / f"kir2-nex-{op}.spv" for op in NEX_OPS},
+             **{f"ref-nex-{op}.spv": output / "refs" / f"ref-nex-ops-{op}.spv" for op in NEX_OPS}}
     for n, f in files.items():
         shutil.copy(f, raw / n)
     assert pin(raw / "v2-attn.spv") == report["modules"]["kir2-attn-copy-dense.spv"], "module changed since the build"
@@ -299,8 +385,9 @@ def gpu(output, suite, provider_out):
         return bytes.fromhex(cgp.expect(s, f"READ {h} 0 {nbytes}", re.compile(r"^[0-9a-f]*$")))
 
     pipes = {}
-    for k, n in enumerate(["ref-add.spv", "v2-add.spv", "ref-attn.spv", "v2-attn.spv"]):
-        cgp.expect(s, f"PIPELINE {n} {4 if 'add' in n else 8}", str(k + 1))
+    for k, n in enumerate(["ref-add.spv", "v2-add.spv", "ref-attn.spv", "v2-attn.spv",
+                           *[f"{w}-nex-{op}.spv" for op in NEX_OPS for w in ("ref", "v2")]]):
+        cgp.expect(s, f"PIPELINE {n} {7 if '-nex-' in n else 4 if 'add' in n else 8}", str(k + 1))
         pipes[n] = k + 1
     rows = {}
     # ewise: z = x + y over n = 1000, exact in f32
@@ -346,6 +433,24 @@ def gpu(output, suite, provider_out):
             cacheRowsExact=True, outputsIdentical=True,
             maxAbsErrVsF64={m: outs[m]["maxAbsErrVsF64"] for m in outs},
             outputSHA256={m: hashlib.sha256(outs[m]["o"]).hexdigest() for m in outs})
+    # the nex_ops decode set: every writable binding byte-identical between
+    # glslang's -DOP module and the KIR v2 module, and the case's check
+    for c in nex_cases():
+        hs = [alloc(len(c["meta"]))] + [alloc(len(c["bufs"][b])) for b in range(1, 7)]
+        outs = {}
+        for m in (f"ref-nex-{c['op']}.spv", f"v2-nex-{c['op']}.spv"):
+            for h, b in zip(hs, [c["meta"]] + [c["bufs"][b] for b in range(1, 7)]):
+                write(h, b)
+            cgp.expect(s, f"DISPATCH {pipes[m]} {c['groups'][0]} {c['groups'][1]} {c['groups'][2]} " + " ".join(map(str, hs)),
+                       re.compile(r"^\d+$"))
+            outs[m] = {b: read(hs[b], len(c["bufs"][b])) for b in (2, 4, 5, 6)}
+        ref, v2 = outs.values()
+        assert ref == v2, (c["name"], [b for b in ref if ref[b] != v2[b]], "differs from glslang's module")
+        err = c["check"](v2) if "check" in c else None
+        assert err is None or err < 1e-4, (c["name"], err)
+        rows["nex " + c["name"]] = dict(op=c["op"], groups=list(c["groups"]), identical=True, check=err,
+                                         inputsSHA256=hashlib.sha256(c["meta"] + b"".join(c["bufs"][b] for b in range(1, 7))).hexdigest(),
+                                         outputSHA256=hashlib.sha256(b"".join(v2[b] for b in (2, 4, 5, 6))).hexdigest())
     line = s.close(0)
     rows["confinement"] = cgp.confined(line, True)
     report["gpu"] = dict(host=[platform.system(), platform.machine(), platform.release()], node=platform.node(), info=info,
