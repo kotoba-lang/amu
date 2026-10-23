@@ -30,6 +30,16 @@
 ;; key, a repeated key or a malformed value refuses the grant: the provider
 ;; then serves nothing, reports :grant-refused and exits 2.
 ;;
+;; :confinement is :required (the default) or :if-available. After the device
+;; is created the provider confines itself (ADR 0371 Decision 5): Landlock with
+;; read access to the granted artifacts only (files the driver already opened
+;; stay open), then the seal (kxrt-p-seal: no exec, fork, non-AF_UNIX socket or
+;; non-thread clone, for every thread). A failure ends the run with
+;; :confinement-failed (exit 5); :if-available tolerates a kernel without
+;; Landlock or seccomp (ENOSYS, EOPNOTSUPP: qemu-user) and reports it. Facts
+;; the report needs from files (its image digest, the layer's libraries) are
+;; read before.
+;;
 ;; check-request decides what a line alone decides; this file decides the rest
 ;; and answers refusals 19 on. MAP reads :model artifacts and PIPELINE :spirv
 ;; ones; an artifact's digest is checked against the grant before its first
@@ -42,7 +52,8 @@
 ;; end the session, wherever a device layer reports them.
 ;;
 ;; Exit status: 0 after end of file on fd 0 at a frame boundary, 2 grant
-;; refused, 3 no device, 4 no memory, 1 otherwise (a truncated frame too).
+;; refused, 3 no device, 4 no memory, 5 confinement failed, 1 otherwise (a
+;; truncated frame too).
 
 ;; ---------------------------------------------------------------------
 ;; State: one page, words at these offsets.
@@ -76,6 +87,9 @@
 (def S-T1 208)
 (def S-ERRPOS 216)
 (def S-LAST 224)
+(def S-CONFINE 232)
+(def S-LANDLOCK 240)
+(def S-SEALED 248)
 (def S-SHA 256)
 (def S-DIGEST 320)
 
@@ -210,7 +224,12 @@
         (let [e (gartifact s j)] (if (< e 0) -1 (recur (gskip s e))))))))
 (defn- gkey [s :i64 j :i64] :i64
   (cond (gkw? s j "wires") 1 (gkw? s j "artifacts") 2 (gkw? s j "device-bytes") 4
-        (gkw? s j "submit-timeout-seconds") 8 (gkw? s j "device") 16 :else 0))
+        (gkw? s j "submit-timeout-seconds") 8 (gkw? s j "device") 16 (gkw? s j "confinement") 32 :else 0))
+;; :required (0) or :if-available (1) at i, stored at S-CONFINE: its end, or -1
+(defn- gconfine [s :i64 i :i64] :i64
+  (cond (gkw? s i "required") (let [z (ss s S-CONFINE 0)] (+ i 9))
+        (gkw? s i "if-available") (let [z (ss s S-CONFINE 1)] (+ i 13))
+        :else -1))
 (defn- gvalue [s :i64 j :i64 b :i64] :i64
   (case b
     1 (gwires s (gskip s (+ j 6)))
@@ -218,6 +237,7 @@
     4 (gnum s (gskip s (+ j 13)) S-CAP 0 4611686018427387903 1)
     8 (gnum s (gskip s (+ j 23)) S-TIMEOUT 1 (constant 13) 1000000000)
     16 (gnum s (gskip s (+ j 7)) S-DEVICE 0 255 1)
+    32 (gconfine s (gskip s (+ j 12)))
     -1))
 ;; 0 when the grant parses, else -1 with S-ERRPOS the byte it stopped at
 (defn- parse-grant [s :i64] :i64
@@ -556,6 +576,39 @@
                       :else (recur (inc k)))))))))))
 
 ;; ---------------------------------------------------------------------
+;; Confinement (ADR 0371 Decision 5).
+
+;; every filesystem access right of a Landlock ABI version
+(defn- landlock-handled [abi :i64] :i64 (cond (>= abi 5) 65535 (>= abi 3) 32767 (= abi 2) 16383 :else 8191))
+(defn- unavailable? [r :i64] :bool (or (= r -38) (= r -95)))
+;; a ruleset with read access (LANDLOCK_ACCESS_FS_READ_FILE) to each granted
+;; artifact that exists, then restrict: the ABI version, or -errno
+(defn- landlock [s :i64 abi :i64] :i64
+  (let [rs (kxrt-p-landlock-ruleset (landlock-handled abi))]
+    (if (< rs 0) rs
+      (let [p (sg s S-PATH) g (sg s S-GRANT)
+            r (loop [k 0]
+                (if (>= k (sg s S-NART)) 0
+                  (let [e (art-entry s k) n (kxrt-p-load64 (+ e 8))
+                        c (copy-bytes p (+ g (kxrt-p-load64 e)) n) z (kxrt-p-store8 (+ p n) 0)
+                        x (kxrt-p-landlock-path rs p 4)]
+                    ;; a missing artifact gets no rule: it is unreadable (refusal 28)
+                    (if (and (< x 0) (not= x -2)) x (recur (inc k))))))]
+        (if (< r 0) (let [c (kxrt-p-close rs)] r)
+          (let [x (kxrt-p-landlock-restrict rs)] (if (< x 0) x abi)))))))
+;; 0 when confined (or, with :if-available, when the kernel lacks it), else -1
+(defn- confine [s :i64] :i64
+  (let [abi (kxrt-p-landlock-abi)
+        ll (ss s S-LANDLOCK (if (> abi 0) (landlock s abi) abi))
+        sl (ss s S-SEALED (kxrt-p-seal))
+        tolerate (= (sg s S-CONFINE) 1)]
+    (if (and (or (> ll 0) (and tolerate (unavailable? ll))) (or (= sl 0) (and tolerate (unavailable? sl)))) 0 -1)))
+(defn- confinement-fact [s :i64] :string
+  (let [ll (sg s S-LANDLOCK) sl (sg s S-SEALED)]
+    (string-concat "{:landlock " (string-concat (cond (> ll 0) (string-from-i64 ll) (unavailable? ll) ":unavailable" :else (string-concat ":failed " (string-from-i64 ll)))
+      (string-concat " :seal " (string-concat (cond (= sl 0) ":ok" (unavailable? sl) ":unavailable" :else (string-concat ":failed " (string-from-i64 sl))) "}"))))))
+
+;; ---------------------------------------------------------------------
 ;; The report and main.
 
 (defn- end-name [c :i64] :string
@@ -614,13 +667,15 @@
                       (recur (inc i) out)))))
         c (if (< fd 0) 0 (kxrt-p-close fd))]
     names))
-(defn- report [s :i64 image :string needed :string] :i64
+(defn- report [s :i64 image :string needed :string facts :string] :i64
   (let [a (string-concat "{:provider :kotoba.gpu-provider/v1 :device " (quoted-ascii (dev-name s)))
         b (string-concat a (string-concat " :served " (string-from-i64 (sg s S-SERVED))))
         c (string-concat b (string-concat " :refused " (string-from-i64 (sg s S-REFUSED))))
         d (string-concat c (string-concat " :end " (end-name (sg s S-END))))
         e (if (= (sg s S-END) 6) (string-concat d (string-concat " :grant-error-at " (string-from-i64 (sg s S-ERRPOS)))) d)
-        f (string-concat e (string-concat " :image " (string-concat (quoted-ascii image) (string-concat " :needed " needed))))
+        e2 (if (or (= (sg s S-END) 6) (= (sg s S-END) 7)) e
+             (string-concat e (string-concat " :confinement " (string-concat (confinement-fact s) (string-concat " :device-facts " facts)))))
+        f (string-concat e2 (string-concat " :image " (string-concat (quoted-ascii image) (string-concat " :needed " needed))))
         g (string-concat f (string-concat " :kernel " (string-concat (quoted-ascii (kernel-release s)) "}\n")))
         p (sg s S-ANS) n (string-length g)
         z (loop [i 0] (if (= i n) 0 (let [y (kxrt-p-store8 (+ p i) (string-code-point-at g i))] (recur (inc i)))))]
@@ -650,6 +705,8 @@
       (let [ig (kxrt-p-ignore-sigpipe)
             image (image-digest s) needed (elf-needed s)
             ok (if (< (read-grant s) 0) (gfail s -1) (parse-grant s))]
-        (if (< ok 0) (let [e (ss s S-END 6) r (report s image needed)] 2)
-          (if (< (dev-open s (sg s S-DEVICE)) 0) (let [e (ss s S-END 7) r (report s image needed)] 3)
-            (let [c (session s) x (dev-close s) r (report s image needed)] (if (= c 1) 0 1))))))))
+        (if (< ok 0) (let [e (ss s S-END 6) r (report s image needed "nil")] 2)
+          (if (< (dev-open s (sg s S-DEVICE)) 0) (let [e (ss s S-END 7) r (report s image needed "nil")] 3)
+            (let [facts (dev-facts s)]
+              (if (< (confine s) 0) (let [e (ss s S-END 8) x (dev-close s) r (report s image needed facts)] 5)
+                (let [c (session s) x (dev-close s) r (report s image needed facts)] (if (= c 1) 0 1))))))))))
