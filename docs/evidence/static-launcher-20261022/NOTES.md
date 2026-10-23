@@ -9,25 +9,28 @@ stdout, waits with a wall-time kill and writes one EDN receipt line
 ## Files
 
 * `aarch64-linux.json`: `scripts/seed/check-static-launcher.py` on arm64 Linux
-  (podman machine, applehv, native kernel; no emulation), with the re-pinned
-  root F as `--compiler` and main's root before this PR, F `61ee2d38…`, as
-  `--previous-root`.
+  (podman machine, applehv, native kernel; no emulation). `--compiler` was the
+  pinned root F `50e6de8a…`, and `--previous-root` was main's root before
+  ADR 0371 step 6's provider environment, F `8385ac69…`.
 * `x86_64-linux.json`: the same check on a native x86_64 kernel, from the
-  `qualify-x86_64` job of `selfhost-native.yml` (run through
-  `check-x86_64-native.py` with the self-built x86_64 compiler X2): CI run
-  39799020895 at `4e1e0e1d`, before main's static-profile merge. The
-  launcher text did not change after it; this PR's final CI run checks it
-  again.
+  `qualify-x86_64` job of `selfhost-native.yml`. It ran through
+  `check-x86_64-native.py`, with the x86_64 compiler X2 that the pinned root
+  builds: CI run 39942070030 at `6298543e`.
+* Both receipts include the scripted provider's report of its environment:
+  exactly `MESA_SHADER_CACHE_DISABLE=true` and
+  `VK_LOADER_LAYERS_DISABLE=~all~` (ADR 0371 step 6).
 * `selfhost-bootstrap.json` (the canonical copy is
   `docs/evidence/selfhost-bootstrap-aarch64-20261022/`): the second bootstrap
   run (`--tier pr`), F rebuilds itself (F' = root).
 
 ## What the receipts show
 
-* **Unchanged formats.** The previous root refuses `--format launcher`
-  (E7100). It and the new compiler emit the same bytes for a static guest and
-  for the runner: the launcher runtime text is appended only in the new
-  format.
+* **Unchanged formats.** The previous root and the new compiler emit the same
+  bytes for a static guest and for the runner: the launcher runtime text is
+  appended only in the launcher format. Whether the previous root refuses
+  `--format launcher` is recorded, not asserted. A root from before step 4
+  refuses it (E7100); `8385ac69…` has the format, with the launcher text
+  before the provider environment.
 * **Receipt functions.** 30 Kotoba cases; the control fails exactly one.
 * **Runs.** 14, each checked against the receipt and the bytes Python sees:
   * guest alone: ok, trap, arguments, the built environment, descriptors

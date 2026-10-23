@@ -9,10 +9,10 @@ It runs on this host; --target picks the images' ISA (default: this host's).
    (tools/static_launcher_test.kotoba) built with --format static, plus the
    control (CONTROL 1: exactly one case fails).
 2. The launcher, tools/static_launcher.kotoba with --format launcher.
-3. With --previous-root (the root from before this format): that compiler
-   refuses --format launcher, and both compilers emit the same bytes for a
-   static guest and for the runner (the launcher text is appended only in
-   the new format).
+3. With --previous-root (an earlier root): both compilers emit the same
+   bytes for a static guest and for the runner (the launcher text is
+   appended only in the launcher format). Whether that root refuses
+   --format launcher is recorded: a root from before step 4 does (E7100).
 4. Runs through the launcher, each checked against the receipt line and the
    bytes Python sees: a guest alone (ok, a trap, its arguments, its built
    environment, its descriptors, no_new_privs, the wall-time kill, the
