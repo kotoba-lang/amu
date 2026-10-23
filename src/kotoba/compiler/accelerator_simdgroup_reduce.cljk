@@ -6,18 +6,19 @@
   cross-SIMD-group tree over the W/S partials that the shared
   :subgroup-reduce fold uses.
 
-  STATE, exactly (ADR-0373's rule-3 order, step 1 landed by this slice):
-  the EMISSION is implemented here with tests and ADMITTED into
+  STATE, exactly (ADR-0373's rule-3 order: step 1 landed 2026-10-23 and,
+  in the later same-day slice, step 2): the
+  EMISSION is implemented here with tests and ADMITTED into
   kotoba.compiler.accelerator's plumbing -- `lower` answers this text for
   the (:msl-v1, :simdgroup-reduce) pair in both readings, so compile-kernel
-  seals it and verify-artifact! re-lowers it like any other emission.
-  NOT SELECTABLE: kotoba.compiler.accelerator-variants' select-variant
-  answers byte-for-byte what it answered before this variant existed (its
-  cond rows name no :simdgroup-reduce); the selection predicate (the MSL
-  ladder, the measured-cell carve-out, the :simd-reduce gate fact) is
-  ADR-0373's rule-3 step 2 and lands in its own later slice. Until a
-  selection row exists this variant is reachable ONLY by an explicit
-  (lower kir :msl-v1 :simdgroup-reduce) call.
+  seals it and verify-artifact! re-lowers it like any other emission --
+  and the SELECTION predicate landed with it: kotoba.compiler.accelerator-
+  variants' select-variant answers :simdgroup-reduce under ADR-0373's MSL
+  ladder (rule 3 step 2) -- first rung for an Apple MSL descriptor
+  reporting the fold's rule-6 fact (:simd-reduce) and a reported
+  SIMD-group width dividing W, outside the measured-class carve-out --
+  and every such answer is UNMEASURED (:measured? false). Rule 3 step 3
+  (measurement) is OPEN: nothing has executed this variant anywhere.
 
   What the emission is (ADR-0373's decision, to its letter): the
   intra-SIMD-group stage of :subgroup-reduce's MSL arm -- the
@@ -40,8 +41,9 @@
   min-workgroup-size 32 floor). A Metal SIMD-group size is a power of two,
   so every SIMD-group of the threadgroup is either full or the single first
   partial one (and a workgroup the reported SIMD-group width does not
-  divide answers :baseline at SELECTION time -- rule 1, that gate is not
-  this slice's). The padded lanes (i >= n) fold the operator's identity
+  divide answers :baseline at SELECTION time -- rule 1, that gate is
+  kotoba.compiler.accelerator-variants' simd-reduce gate, landed with
+  rule 3 step 2). The padded lanes (i >= n) fold the operator's identity
   before the intrinsic, so the SIMD-group fold sees exactly the admitted
   elements in every lane.
 

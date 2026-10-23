@@ -156,19 +156,39 @@
       (is (thrown-with-msg? Exception #"unsupported kernel variant"
                             (accelerator/lower kir :msl-v1 :turbo))))))
 
-(deftest simdgroup-selection-has-not-landed
-  ;; ADR-0373: until rule 3 step 2 lands, select-variant answers exactly
-  ;; what it answered before this variant existed -- no row may hand out
-  ;; :simdgroup-reduce. This pin guards against the selection predicate
-  ;; sneaking in with the emission.
-  (let [kir (accelerator/kernel "reduce_sum" :reduce :sum {:workgroup-size 128})]
-    (doseq [vendor [:apple :intel :arm :nvidia :amd]]
-      (is (not= :simdgroup-reduce
-                (:variant (variants/select-variant vendor kir :msl-v1
-                                                   {:device "Apple M1 Max"
-                                                    :subgroup-size 32
-                                                    :subgroup-ops #{:basic :shuffle-relative :simd-reduce}})))
-          (str "select-variant answered the unselectable variant for " vendor)))))
+(deftest simdgroup-selection-has-landed-under-the-msl-ladder
+  ;; ADR-0373 rule 3 step 2 (2026-10-23, JUN-58): the selection predicate
+  ;; has LANDED. This replaces the old "selection has not landed" guard --
+  ;; the guard's spirit survives, scoped where it still binds: the measured
+  ;; class never answers this variant (the carve-out), no other vendor's
+  ;; row carries it, and no answer is measured. The full ladder (rung
+  ;; precedence, fail-closed cells, the carve-out's basis and the flip
+  ;; interaction) is pinned in accelerator-variants-test's
+  ;; the-msl-ladder-selects-simdgroup-reduce-first.
+  (let [kir (accelerator/kernel "reduce_sum" :reduce :sum {:workgroup-size 128})
+        native {:subgroup-size 32 :subgroup-ops #{:simd-reduce}}]
+    (testing "the Apple MSL descriptor carrying the fold's fact gets this variant, unmeasured"
+      (let [answer (variants/select-variant :apple kir :msl-v1
+                                            (assoc native :device "Apple M3"))]
+        (is (= :simdgroup-reduce (:variant answer)))
+        (is (false? (:measured? answer)))
+        (is (nil? (:measured-cell answer)))))
+    (testing "the measured class never answers it, at any W (the carve-out)"
+      (doseq [wg [32 64 128 256 512 1024]
+              device [(assoc native :device "Apple M1 Max")
+                      (assoc native :name "Apple M1 Max"
+                             :subgroup-ops #{:basic :shuffle-relative :simd-reduce})]]
+        (is (not= :simdgroup-reduce
+                  (:variant (variants/select-variant
+                             :apple (accelerator/kernel "reduce_sum" :reduce :sum
+                                                       {:workgroup-size wg})
+                             :msl-v1 device)))
+            (str "the carve-out must refuse the row at W=" wg))))
+    (testing "no other vendor's row carries it, on any route"
+      (doseq [vendor [:intel :arm :nvidia :amd]]
+        (is (not= :simdgroup-reduce
+                  (:variant (variants/select-variant vendor kir :msl-v1
+                                                     (assoc native :device "Apple M3")))))))))
 
 (deftest simdgroup-fold-is-not-a-rewrite-of-subgroup-reduce
   ;; The negative pin family that keeps :subgroup-reduce's fold the shuffle

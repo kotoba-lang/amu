@@ -345,6 +345,119 @@
         (is (= (variants/select-variant :apple kir :msl-v1 device)
                (variants/select-variant :apple kir :msl-v1 device)))))))
 
+(deftest the-msl-ladder-selects-simdgroup-reduce-first
+  ;; ADR-0373 rule 3 step 2 (2026-10-23, JUN-58): the selection predicate
+  ;; lands as the MSL ladder (the ADR-0361 CUDA-ladder idiom). Outside the
+  ;; carved-out measured class, an Apple MSL descriptor reporting the
+  ;; fold's rule-6 fact (:simd-reduce) and a reported SIMD-group width
+  ;; dividing W answers :simdgroup-reduce -- the vendor-native FIRST rung;
+  ;; a descriptor reporting the shuffle fold's facts but not :simd-reduce
+  ;; falls to :subgroup-reduce (the second rung, byte-for-byte the old
+  ;; answer); everything else answers :baseline. The measured-cell
+  ;; carve-out outranks rung 1. Every :simdgroup-reduce answer is
+  ;; UNMEASURED: nothing has executed this variant anywhere.
+  (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
+        both {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative :simd-reduce}}
+        native {:subgroup-size 32 :subgroup-ops #{:simd-reduce}}
+        shuffle-only {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}]
+    (testing "rung 1: the fold's own fact answers first; :basic/:shuffle-relative are the shuffle fold's facts and are NOT required"
+      (doseq [device [both native
+                      ;; a fact set larger than the fold's needs still
+                      ;; selects (the rung-2 idiom, one rule for the gate)
+                      {:subgroup-size 32 :subgroup-ops #{:simd-reduce :arithmetic}}]
+              target [:metal :msl-v1]]
+        (let [answer (variants/select-variant :apple kir target device)]
+          (is (= :simdgroup-reduce (:variant answer))
+              (str "device " (pr-str device) " " target " must take rung 1"))
+          (is (false? (:measured? answer)))
+          (is (nil? (:measured-cell answer)))
+          (is (string? (:basis answer)))
+          (is (contains? variants/variant-bases :simdgroup-reduce)))))
+    (testing "rung 1 covers the whole reduce row: every W of the shape, every operator"
+      (doseq [wg [32 64 128 256 512 1024]
+              operator [:sum :max :min]]
+        (let [k (accelerator/kernel (str "reduce_" (name operator) "_f32")
+                                    :reduce operator {:workgroup-size wg})]
+          (is (= :simdgroup-reduce (:variant (variants/select-variant :apple k :msl-v1 native))))
+          (is (false? (:measured? (variants/select-variant :apple k :msl-v1 native)))))))
+    (testing "rung 2 is byte-for-byte the old answer: the shuffle facts without :simd-reduce"
+      (doseq [target [:metal :msl-v1]]
+        (is (= :subgroup-reduce
+               (:variant (variants/select-variant :apple kir target shuffle-only))))))
+    (testing "the ladder is the MSL route's and Apple's alone"
+      ;; rung 1 does not leak onto the Vulkan route: :simd-reduce alone is
+      ;; no shuffle fold there and fails closed to :baseline; with the
+      ;; shuffle facts present the second rung answers, unchanged.
+      (doseq [target [:vulkan :glsl-v1]]
+        (is (= :baseline (:variant (variants/select-variant :apple kir target native))))
+        (is (= :subgroup-reduce (:variant (variants/select-variant :apple kir target both)))))
+      ;; other vendors stay off the MSL ladder even carrying the fact
+      ;; (row scope, one vendor per decision) -- byte-for-byte their old
+      ;; :baseline answers.
+      (doseq [vendor [:intel :arm :nvidia :amd] device [both native]]
+        (is (= :baseline (:variant (variants/select-variant vendor kir :msl-v1 device))))))
+    (testing "rung 1 fails closed like every row"
+      (doseq [device [{:subgroup-size 24 :subgroup-ops #{:simd-reduce}}
+                      {:subgroup-size 512 :subgroup-ops #{:simd-reduce}}
+                      {:subgroup-size 32.5 :subgroup-ops #{:simd-reduce}}
+                      {:subgroup-size 0 :subgroup-ops #{:simd-reduce}}
+                      {:subgroup-size 32}
+                      {:subgroup-ops #{:simd-reduce}}
+                      {:subgroup-size 32 :subgroup-ops :all}]]
+        (is (not= :simdgroup-reduce
+                  (:variant (variants/select-variant :apple kir :msl-v1 device)))
+            (str "device " (pr-str device) " must fail rung 1 closed")))
+      (doseq [bad [(accelerator/kernel "ewise_add_f32" :ewise :add {:workgroup-size 256})
+                   (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 16})
+                   (assoc kir :kernel/dtype :f64)
+                   {} nil]]
+        (is (not= :simdgroup-reduce
+                  (:variant (variants/select-variant :apple bad :msl-v1 native)))
+            (str "kernel " (pr-str bad) " must fail rung 1 closed"))))
+    (testing "the measured-cell carve-out outranks rung 1: the measured class never answers it"
+      (doseq [device [(assoc native :device "Apple M1 Max")
+                      (assoc both :name "Apple M1 Max")]
+              target [:metal :msl-v1]
+              wg [32 64 128 256 512 1024]]
+        (let [answer (variants/select-variant
+                      :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                                {:workgroup-size wg})
+                      target device)]
+          (is (= :baseline (:variant answer))
+              (str "device " (pr-str device) " W=" wg " must keep the class's answer"))
+          (is (str/includes? (:basis answer) "THE MEASURED-CELL CARVE-OUT"))
+          (is (str/includes? (:basis answer) "CLOSED to design rows"))))
+      (testing "the carve-out note is the row's demotion only, and the flag scope is named"
+        ;; simd-only facts: the shuffle row's gate never held, so no
+        ;; narrowing note -- and the answer is the carve-out's decision,
+        ;; not a measurement's (:measured? false at every W).
+        (let [answer (variants/select-variant
+                      :apple kir :msl-v1 (assoc native :device "Apple M1 Max"))]
+          (is (false? (:measured? answer)))
+          (is (nil? (:measured-cell answer)))
+          (is (not (str/includes? (:basis answer) "APPLE ROW NARROWED"))))
+        ;; both fact sets: the shuffle row's narrowing and its flip are
+        ;; byte-for-byte unchanged (the record's :evidence names the
+        ;; :subgroup-reduce runs only), and the carve-out note rides along.
+        (let [answer (variants/select-variant
+                      :apple kir :msl-v1 (assoc both :name "Apple M1 Max"))]
+          (is (true? (:measured? answer)))
+          (is (= "docs/evidence/gpu-subgroup-reduce-m1max-shape2-band-20261023"
+                 (last (:evidence (:measured-cell answer)))))
+          (is (str/includes? (:basis answer) "APPLE ROW NARROWED"))
+          (is (str/includes? (:basis answer) "marks the :subgroup-reduce refutation ONLY")))))
+    (testing "rule 3 end to end: the selected variant lowers, seals and verifies on :msl-v1"
+      (let [selected (:variant (variants/select-variant :apple kir :msl-v1 native))
+            compiled (accelerator/compile-kernel kir :msl-v1 selected)]
+        (is (= :simdgroup-reduce selected))
+        (is (= :simdgroup-reduce (:variant compiled)))
+        (is (str/includes? (:code compiled) "v = simd_sum(v);"))
+        (is (nil? (re-find #"simd_shuffle_down" (:code compiled))))
+        (is (= compiled (accelerator/verify-artifact! compiled)))))
+    (testing "same arguments in, same map out"
+      (is (= (variants/select-variant :apple kir :msl-v1 native)
+             (variants/select-variant :apple kir :msl-v1 native))))))
+
 (deftest the-measured-cells-flip-the-honesty-lock
   ;; ADR-0360 question (1) DECIDED (2026-10-23, JUN-58) and its flip
   ;; implemented here: for the MSL arm a native Metal harness that
@@ -690,7 +803,9 @@
            (:variant (variants/select-variant
                       :apple kir :vulkan
                       (targets/device-from-subgroup "no|such answer"))))
-        "a malformed answer is an absent fact, and an absent fact is :baseline")))
+        "a malformed answer is an absent fact, and an absent fact is :baseline")
+    (is (nil? (targets/device-from-subgroup "32|basic shuffle-relative simd-reduce"))
+        "the wire-42 SUBGROUP vocabulary is ADR-0362's eight VkSubgroupFeatureFlagBits tokens and does NOT carry :simd-reduce (ADR-0373's named producer gap: a Metal-native probe or provider extension must report the key; an unknown token fails the whole answer)")))
 
 (deftest the-amd-row-rides-the-vulkan-and-wgsl-routes
   ;; ADR-0364 (JUN-84 / AWAI-40, 2026-10-23): the AMD row is the shared

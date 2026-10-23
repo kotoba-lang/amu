@@ -239,10 +239,12 @@
   3's fail-closed contract refuses it on every other target); its
   intra-SIMD-group fold is one simd_sum/simd_max/simd_min intrinsic per
   operator and its cross-SIMD-group tree is :subgroup-reduce's shared
-  fold. The emission landed as rule 3's step 1; the selection predicate
-  (ADR-0373 step 2) has NOT landed, so select-variant never answers this
-  variant and it is reachable only by an explicit (lower kir :msl-v1
-  :simdgroup-reduce) call. UNMEASURED as an optimization claim on every
+  fold. The emission landed as rule 3's step 1 and the selection predicate
+  as step 2 (2026-10-23): select-variant answers this variant under
+  ADR-0373's MSL ladder -- the first rung for an Apple MSL descriptor
+  reporting the :simd-reduce rule-6 fact and a reported SIMD-group width
+  dividing W, outside the measured-class carve-out (the narrowed M1 Max
+  class never answers it). UNMEASURED as an optimization claim on every
   device. A variant is a different grouping of the same
   admitted reduction, never a different meaning. Admission is per target: a
   variant the target's emitter does not admit is refused, never silently

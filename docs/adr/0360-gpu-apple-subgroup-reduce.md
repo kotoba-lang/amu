@@ -256,7 +256,13 @@ simdgroup row is now DESIGNED there (design only, not implemented). That
 ADR's MSL ladder supersedes "keep as designed is what every other Apple
 device gets" as to non-m1-max Apple MSL descriptors FROM THE MOMENT THE
 ROW IS IMPLEMENTED (rule 3); until then selection is unchanged and this
-clause governs.]
+clause governs.][UPDATE 2026-10-23, ADR-0373 rule 3 steps 1-2: the row IS
+implemented (emission + selection) and the supersession has TAKEN EFFECT
+as to non-m1-max Apple MSL descriptors carrying the `:simd-reduce` fact
+(they answer `:simdgroup-reduce`, UNMEASURED); the m1-max class keeps
+this clause's narrowed `:baseline` answers unchanged, and the shuffle
+facts without `:simd-reduce` keep answering `:subgroup-reduce` here,
+byte-for-byte.]
 
 Scope, stated plainly: W > 256 on M1 Max is UNMEASURED (the measured
 penalty grew with W over the measured band); the demotion at those sizes
