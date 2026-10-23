@@ -19,7 +19,9 @@
   hardware a row names: :subgroup-reduce on Apple M1 Max, through
   measurement harnesses (GLSL arm via wire-42/MoltenVK, PR #1347/#1348,
   2026-10-19; MSL arm via a native Metal harness, 2026-10-23, at
-  W = 256/512/1024), losing to :baseline in every measured cell. No other
+  W = 32..1024), losing to :baseline in every measured cell but W = 32 --
+  the one mixed cell, whose signs are scoped to the slow clock regime and
+  whose answer is a decision (see apple-w32-note). No other
   vendor's hardware has run a variant, and no variant has an execution
   path in the product runtime: the wire-42 (:gpu/compute) route has no
   producer today -- the C loader brokers were removed (main 36479076) and
@@ -27,10 +29,14 @@
   Every answer is a design choice marked :measured? false except the
   measured cells ADR-0360 question (1)'s 2026-10-23 decision unlocks (JUN-58):
   the narrowed :baseline answers of the measured device (Apple M1 Max,
-  reported subgroup size 32) on the MSL route at W = 256/512/1024 -- the
-  cells whose refutation ran the emitters' own bytes on hardware under the
-  sweep protocol. Those answers carry :measured? true and a :measured-cell
-  record naming the tested device class, the channel and the evidence. No
+  reported subgroup size 32) on the MSL route at W = 64/128/256/512/1024 --
+  the cells whose refutation ran the emitters' own bytes on hardware under
+  the sweep protocol. Those answers carry :measured? true and a
+  :measured-cell record naming the tested device class, the channel and the
+  evidence. The
+  W = 32 cell ran under the same channel and keeps the lock: its verdict is
+  mixed and regime-scoped, and its :baseline answer is the low-band
+  decision's, not a measurement's. No
   other answer may be reported as optimization evidence until a hardware
   measurement replaces its basis.
 
@@ -109,12 +115,19 @@
   :native-metal)
 
 (def ^:private apple-measured-workgroups
-  "The workgroup widths the native-Metal channel actually ran: W = 256
-  (ADR-0360's measurement amendment, 2026-10-23) and W = 512/1024 (the
-  same day's W-sweep). MSL W = 32..128 is UNMEASURED (the earlier bands
-  were the GLSL arm) and never flips; the GLSL arm never flips at any
+  "The workgroup widths whose measurement CHOSE the answer the flip marks:
+  W = 256 (ADR-0360's measurement amendment, 2026-10-23), W = 512/1024
+  (the same day's W-sweep) and W = 64/128 (the same day's low band -- all
+  three operators 1.20-1.25, the same penalty band as W >= 256). W = 32
+  ran under the same channel and is MEASURED, but it is NOT in this set:
+  its verdict is mixed and regime-scoped (:sum 0.916-0.920 in every fresh
+  process, but every run sat in the slow clock regime; :max wins only in
+  that regime; :min 1.019 NOT ESTABLISHED across the regime shift) and it
+  published no cross-regime verdict that chose an answer -- the W = 32
+  answer is the low-band decision's (apple-w32-note) and keeps the lock.
+  The GLSL arm never flips at any
   width (its runs are LABELED BOOTSTRAP, see the honesty-lock prose)."
-  #{256 512 1024})
+  #{64 128 256 512 1024})
 
 (def ^:private apple-measured-subgroup-size
   "The reported subgroup size the tested device gave: 32
@@ -132,9 +145,11 @@
 
 (def ^:private apple-measured-evidence
   "The evidence directories of the contract-satisfying cells: the W = 256
-  measurement and the W-sweep (W = 256 anchor / 512 / 1024)."
+  measurement, the W-sweep (W = 256 anchor / 512 / 1024) and the low band
+  (W = 32 / 64 / 128)."
   ["docs/evidence/gpu-subgroup-reduce-m1max-20261023"
-   "docs/evidence/gpu-subgroup-reduce-m1max-wsweep-20261023"])
+   "docs/evidence/gpu-subgroup-reduce-m1max-wsweep-20261023"
+   "docs/evidence/gpu-subgroup-reduce-m1max-wsweep-low-20261023"])
 
 (def ^:private apple-narrow-note
   "APPLE ROW NARROWED (ADR-0360's second decision, 2026-10-23, JUN-58):
@@ -149,10 +164,28 @@
   sign, but LABELED BOOTSTRAP: an unbalanced replay order biases the ratio
   and its own record publishes no verdict). The refuted variant is not
   selected on the device that refuted it; every other Apple device keeps
-  the designed row (UNMEASURED). W > 256 on this device rests on the
-  device's own W-sweep measurement; MSL W = 32..128 is UNMEASURED (the
-  earlier bands were the GLSL arm) and the demotion there follows the
-  fail-safe direction of the measured cells, claiming no measurement.")
+  the designed row (UNMEASURED). The low band completed the MSL band
+  W = 32..1024 on this device: W = 64..1024 rests on the device's own
+  measurements and those cells flip the honesty lock; W = 32 is the one
+  mixed cell and its answer carries its own decision note (apple-w32-note).")
+
+(def ^:private apple-w32-note
+  "W = 32, THE DECIDED CELL (ADR-0360's low-band decision, 2026-10-23,
+  JUN-58): the low-band measurement
+  (docs/evidence/gpu-subgroup-reduce-m1max-wsweep-low-20261023) measured
+  this cell and it is the one where the variant is not slower -- :sum
+  0.918 (0.916-0.920 in every fresh process), :max 0.923, :min 1.019 --
+  but the signs are scoped to the slow clock regime the device sat in
+  while every :sum run happened (per-run median gpu-ns 109k -> 36k
+  mid-session; no :sum run exists in the fast regime), :max's win follows
+  the regime, and :min's sign is NOT ESTABLISHED across the shift. A
+  regime-scoped sign is not a selection basis -- the same standard that
+  keeps the LABELED BOOTSTRAP GLSL runs verdict-free -- and an
+  operator-split answer at one cell off one shape would be overfitting, so
+  this cell keeps answering :baseline for all three operators. The
+  demotion here is a DECISION on measured ground, not the fail-safe it was
+  before the low band ran, and the answer keeps the honesty lock
+  (:measured? false): no cross-regime verdict chose it.")
 
 (def variant-bases
   "Why each variant exists. Design rationale, not measurement evidence."
@@ -303,7 +336,9 @@
   flip is keyed per ANSWER CELL: the tested device class (the uB5G name
   fragment \"m1 max\" AND the reported subgroup size 32), the channel that
   measured the arm (:native-metal, the MSL route), and the measured
-  workgroup widths (W = 256/512/1024). Exactly those cells -- the narrowed
+  workgroup widths (W = 64/128/256/512/1024 -- W = 32 measured too but
+  DECIDED, not verdict-chosen; its answer keeps the lock, see
+  apple-w32-note). Exactly those cells -- the narrowed
   :baseline answers of the measured device on the MSL route -- carry
   :measured? true and a :measured-cell record; every other answer keeps
   false. The 2026-10-19 wire-42 baseline-vs-variant runs (PR #1347/#1348)
@@ -468,6 +503,8 @@
     (cond-> {:variant variant
              :measured? (some? measured-cell)
              :basis (if narrowed?
-                      (str (get variant-bases :baseline) "\n  " apple-narrow-note)
+                      (str (get variant-bases :baseline) "\n  " apple-narrow-note
+                           (when (= 32 (:kernel/workgroup-size kir))
+                             (str "\n  " apple-w32-note)))
                       (get variant-bases variant))}
       measured-cell (assoc :measured-cell measured-cell)))))

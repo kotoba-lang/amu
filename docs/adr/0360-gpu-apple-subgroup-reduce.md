@@ -354,6 +354,30 @@ one implementation slice with tests. Until that slice, the W = 32..128
 answers keep the lock (:measured? false) and the demotion stands as the
 fail-safe.
 
+DECIDED 2026-10-23 (the low band's selection question, JUN-58): the
+W = 32 cell keeps answering `:baseline` for all three operators on the
+measured device. The demotion there changes status: it was the fail-safe
+on unmeasured ground, it is now a DECISION on measured ground. The basis:
+the cell's only not-slower signs are scoped to the slow clock regime the
+device sat in while every :sum run happened (per-run median gpu-ns
+109k -> 36k mid-session; no :sum run exists in the fast regime), :max's
+win follows the regime, and :min's sign is NOT ESTABLISHED across the
+shift. A regime-scoped sign is not a selection basis -- the same standard
+that keeps the LABELED BOOTSTRAP GLSL runs verdict-free -- and an
+operator-split answer at one cell off one shape would be overfitting. The
+W = 32 answer keeps the honesty lock (:measured? false): no cross-regime
+verdict chose it, the decision did, and its basis carries the decision
+note (apple-w32-note). The flip set follows the measurement: W = 64 and
+W = 128 JOIN it (their measurement chose the demotion -- all three
+operators 1.20-1.25, the penalty band of W >= 256), so the flipped widths
+are W = 64/128/256/512/1024 and the record's evidence list carries the
+low-band directory. The paragraphs above that leave the question open
+describe the state before this decision and are superseded as to their
+status claims only. The stale clause "MSL W = 32..128 is UNMEASURED" is
+superseded everywhere (the flip-set prose in `kotoba.compiler.accelerator-
+variants`, the pipeline docstring and the test label updated in the same
+slice).
+
 Instrument defect found and fixed in the same record (named, not hidden):
 the harness's verified read-back scratch arrays were fixed at 3907
 elements (W = 256's group count) and overflowed the stack at W = 32 (31251

@@ -151,7 +151,11 @@
     (is (= :baseline (:variant artifact)))
     (is (true? (:variant-measured? dispatch)))
     (is (= artifact (accelerator/verify-artifact! artifact)))
-    (testing "a width the channel never ran keeps the lock"
-      (let [unmeasured (assoc m1-spec :kernel/workgroup-size 64)]
+    (testing "the decided W = 32 cell keeps the lock (the low band's one mixed cell)"
+      ;; W = 64/128 join the flipped widths with the low-band measurement;
+      ;; W = 32 is the one cell whose measurement chose nothing (its signs
+      ;; are scoped to the slow clock regime) -- its :baseline is a
+      ;; decision and keeps the lock, end to end through the report.
+      (let [decided (assoc m1-spec :kernel/workgroup-size 32)]
         (is (false? (:variant-measured?
-                     (:dispatch (pipeline/compile-spec unmeasured device)))))))))
+                     (:dispatch (pipeline/compile-spec decided device)))))))))
