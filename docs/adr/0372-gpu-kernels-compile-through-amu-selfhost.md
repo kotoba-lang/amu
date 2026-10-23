@@ -398,7 +398,31 @@ a follow-up to ADR 0371.
      from the device-features branch (#1534), since no provider on main
      enables the feature yet; with this tree's own provider, every other
      case passes. Receipts: `docs/evidence/gpu-kernel-kir2-x8-20261023/`.
-   * then the nvgpu-h2 kernels for Xavier.
+   * **Done: the nvgpu-h2 kernels**, which the decode path's `nvgpu-h2`
+     layout (Xavier) uses. All are from inference main:
+     * `kdot_h2_r1` (at c21beff), plain and `-DQ6_HALF`;
+     * `kdot_h2_r4_q8` (b5f7ca3) and `kdot_h2_r8_q8` (b3dfa34);
+     * `kdot_h2_qkv_q8` and `kdot_h2_qkvr_q8` (ee95e44).
+
+     They compute their per-value products in packed f16 and reduce by
+     `subgroupAdd`. The builder gained the 16-bit float (`Float16`),
+     constant vectors, shuffles, `OpFConvert`, and subgroup add and elect.
+     The f16 forms are glslang's, so the driver sees the same conversions.
+
+     On gad (RADV), in 33 cases, every kernel is byte-identical to glslang's
+     module:
+     * every type and odd group counts with a trailing group masked in part;
+     * outputs that start as a sentinel;
+     * the same cases again with `RADV_PERFTEST=cswave32`, where a probe
+       shows two subgroups per workgroup, as nvgpu's 32-wide warps give.
+
+     The gate runs them only where the provider enables `shaderFloat16`.
+     `kdot_h2_qkvr_q8` writes its rows with no position term, so it is
+     decode-only and runs at one position.
+
+     Not yet run on Xavier itself: the ADR 0371 provider and this gate run on
+     x86_64 only, so an nvgpu run waits on the provider for aarch64.
+     Receipts: `docs/evidence/gpu-kernel-kir2-h2-20261024/`.
 4. **Execution.** Through the ADR 0371 provider, with numeric and speed gates
    against the hand-written kernels.
 5. **Retirement.** Remove `emit-kernel.cljk`, glslang and the accelerator CLJK
