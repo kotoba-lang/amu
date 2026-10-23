@@ -1,0 +1,117 @@
+(ns gpu-kernel-kir2-test (:export [main]))
+
+;; Tests for tools/gpu_kernel_kir2.kotoba and tools/gpu_kernels_v2.kotoba (ADR
+;; 0372 step 3). No GPU and no C++ tool: scripts/seed/check-gpu-kernel-spirv.py
+;; (suite kir2) builds the unit (this ns line, then spirv_encode, spirv_check,
+;; gpu_kernel_kir2 and gpu_kernels_v2 without their ns lines, then the rest of
+;; this file), compiles it with an Amu-produced static compiler, runs it with a
+;; writable :fs/app-data scope, and afterwards runs spirv-val and spirv-dis on
+;; the written modules as oracles. The numeric gate (the module against the
+;; glslang one on a GPU) is scripts/seed/check-gpu-provider.py's.
+;;
+;; main answers the number of failed cases and prints a FAIL line for each.
+;; CASES equals the expect calls below (the script counts them). CONTROL 1
+;; makes exactly one expectation wrong; the script requires one failure then.
+
+(def CASES 29)
+(def CONTROL 0)
+
+(defn- say [s :string] :i64
+  (let [x (typed-cap-call :io/write :string :string (string-concat s "\n"))] 0))
+
+(defn- fail [what :string got :i64 want :i64] :i64
+  (let [x (say (string-concat "FAIL " (string-concat what (string-concat " => " (string-concat (string-from-i64 got) (string-concat " ; want " (string-from-i64 want)))))))] 1))
+
+(defn- expect [what :string got :i64 want :i64] :i64
+  (if (= got want) 0 (fail what got want)))
+
+;; the number of instructions of the module with opcode op
+(defn- count-op [M :vector-i64 op :i64] :i64
+  (loop [k 5 c 0]
+    (if (>= k (spv-count M)) c
+      (let [w (spv-word M k) wc (u64-shift-right w 16)]
+        (if (= wc 0) -1 (recur (+ k wc) (if (= (bit-and w 65535) op) (inc c) c)))))))
+
+;; word j of the first instruction with opcode op, or -1
+(defn- op-word [M :vector-i64 op :i64 j :i64] :i64
+  (loop [k 5]
+    (if (>= k (spv-count M)) -1
+      (let [w (spv-word M k) wc (u64-shift-right w 16)]
+        (cond (= wc 0) -1
+              (= (bit-and w 65535) op) (spv-word M (+ k j))
+              :else (recur (+ k wc)))))))
+
+;; the number of words in which A and B differ, or -1 when the counts differ
+(defn- diff-words [A :vector-i64 B :vector-i64] :i64
+  (if (not= (vector-at A 0) (vector-at B 0)) -1
+    (loop [i 1 d 0] (if (> i (vector-at A 0)) d (recur (inc i) (if (= (vector-at A i) (vector-at B i)) d (inc d)))))))
+
+(defn- operator-name [o :i64] :string
+  (cond (= o 1) "add" (= o 2) "sub" (= o 3) "mul" :else "div"))
+
+;; ---------------------------------------------------------------------
+;; KIR v1's elementwise kernel through the v2 builder.
+
+(defn- ewise [] :i64
+  (loop [o 1 bad 0]
+    (if (> o 4) bad
+      (let [a (kir2-ewise o 64) b (kir2-ewise o 256)
+            pa (string-concat "kir2-ewise-" (string-concat (operator-name o) "-wg64.spv"))
+            pb (string-concat "kir2-ewise-" (string-concat (operator-name o) "-wg256.spv"))]
+        (recur (inc o)
+               (+ bad (+ (expect pa (spc-check a) 0) (+ (expect pb (spc-check b) 0)
+                      (+ (expect (string-concat "write " pa) (spv-write a pa) (* 4 (spv-count a)))
+                         (expect (string-concat "write " pb) (spv-write b pb) (* 4 (spv-count b))))))))))))
+
+(defn- ewise-shape [] :i64
+  (let [a (kir2-ewise 1 64) b (kir2-ewise 1 256) m (kir2-ewise 3 256)]
+    (+ (expect "ewise: the workgroup size is one word" (diff-words a b) 1)
+       (expect "ewise: the operator is one word" (diff-words b m) 1)
+       (expect "ewise: LocalSize x" (op-word b 16 3) 256)
+       (expect "ewise: one selection merge" (count-op b 247) 1)
+       (expect "ewise: no loop" (count-op b 246) 0)
+       (expect "ewise: Shader only" (count-op b 17) 1)
+       (expect "ewise: four bindings" (count-op b 59) 5)
+       (expect "ewise: OpFMul" (count-op m 133) 1)
+       (expect "ewise: operator 5 gives an empty module" (spv-count (kir2-ewise 5 256)) 0)
+       (expect "ewise: workgroup 96 gives an empty module" (spv-count (kir2-ewise 1 96)) 0))))
+
+;; ---------------------------------------------------------------------
+;; attn_copy_dense.
+
+(defn- attn [] :i64
+  (let [a (kir2-attn-copy-dense) b (kir2-attn-copy-dense)]
+    (+ (expect "attn-copy-dense" (spc-check a) 0)
+       (expect "attn-copy-dense: the same words twice" (diff-words a b) 0)
+       (expect "write kir2-attn-copy-dense.spv" (spv-write a "kir2-attn-copy-dense.spv") (* 4 (spv-count a)))
+       (expect "attn: LocalSize x" (op-word a 16 3) 256)
+       (expect "attn: Shader only" (count-op a 17) 1)
+       ;; the phase-1 copy, the dot, the max tree, the sum tree, the two
+       ;; output loops
+       (expect "attn: six loops" (count-op a 246) 6)
+       ;; the single writer, t < T, the two (t == pos) arms and the two trees'
+       ;; t < st
+       (expect "attn: six selections" (count-op a 247) 6)
+       ;; after red[t] = sc, the max tree, after m, wg_sum's two and its tree,
+       ;; after red[t] = p; none after phase 1 (nothing in the dispatch reads it)
+       (expect "attn: seven barriers" (count-op a 224) 7)
+       (expect "attn: no memory barrier" (count-op a 225) 0)
+       (expect "attn: OpSelect for T and e" (count-op a 169) 2)
+       (expect "attn: exp and max" (count-op a 12) 2)
+       ;; 8 bindings, the shared array, 2 built-ins (WorkgroupId,
+       ;; LocalInvocationId) and 8 function variables
+       (expect "attn: variables" (count-op a 59) (if (= CONTROL 1) 18 19))
+       (expect "attn: two interface built-ins" (- (u64-shift-right (op-word a 15 0) 16) 5) 2))))
+
+;; glslang's module of the same source (oracle input, written by the refs
+;; phase) passes the Kotoba checker too
+(defn- attn-ref [] :i64
+  (let [g (spv-read "ref-attn-copy-dense.spv")]
+    (+ (expect "glslang attn-copy-dense is read" (if (> (spv-count g) 5) 1 0) 1)
+       (expect "glslang attn-copy-dense passes the checker" (spc-check g) 0))))
+
+(defn main [] :i64
+  (let [failed (+ (ewise) (+ (ewise-shape) (+ (attn) (attn-ref))))
+        x (say (string-concat "CASES " (string-from-i64 CASES)))
+        y (say (string-concat "FAILED " (string-from-i64 failed)))]
+    failed))
