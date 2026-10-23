@@ -63,7 +63,9 @@ def main(product, out):
     native.chmod(0o700)
     r = run("run-native", [native], 0,
             {"PATH": "/nonexistent", "KEXE_ALLOW": "-", "KEXE_FUEL": "1000000", "KEXE_STRUCTURED_REPORT": "1"})
-    assert re.search(rb":result 42\b", r.stdout) and re.search(rb":remaining 999999\b", r.stdout)
+    # A literal return emits no OP-FUEL. The fixed24 operation-bearing
+    # corpus has its own unchanged expectations in the native gate.
+    assert re.search(rb":result 42\b", r.stdout) and re.search(rb":remaining 1000000\b", r.stdout)
     run("refuse-digest", [entry, "check", src, "--source-lock", lock,
                           "--source-lock-sha256", "0" * 64], 1, diagnostic="E6015")
     run("refuse-default", [entry, "compile", src, "--output", out / "refused.kseed"], 1, diagnostic="E2")
@@ -71,7 +73,7 @@ def main(product, out):
     assert not (out / "refused.kseed").exists()
     report = dict(status="PASS_PUBLIC_NATIVE_PRODUCT", image=descriptor["image"],
                   sourceRevision=descriptor["sourceRevision"], aliases=len(aliases),
-                  nativeResult=42, remainingFuel=999999, calls=calls,
+                  nativeResult=42, remainingFuel=1000000, calls=calls,
                   host=[platform.system(), platform.machine(), platform.release()],
                   legacyRuntimeFallback=False)
     (out / "public-product.json").write_text(json.dumps(report, indent=2) + "\n")
