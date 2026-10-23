@@ -473,9 +473,10 @@ def gpu(output):
     name = info.split("|")[0]
     assert f':device "{name}" ' in line and " :end :eof " in line, (line, name)
     rows["confinement"] = confined(line, True)
-    facts = re.search(r':device-facts \{:layer :vulkan :driver "([^"]*)" :libraries \[(.*?)\]\}', line)
-    assert facts and re.search(r'\{:path "[^"]*libvulkan\.so[^"]*" :sha256 "[0-9a-f]{64}"\}', facts[2]), ("device facts", line)
-    rows["driver"], rows["libraries"] = facts[1], re.findall(r'\{:path "([^"]*)" :sha256 "([0-9a-f]{64})"\}', facts[2])
+    facts = re.search(r':device-facts \{:layer :vulkan :driver "([^"]*)" :features #\{([^}]*)\} :libraries \[(.*?)\]\}', line)
+    assert facts and re.search(r'\{:path "[^"]*libvulkan\.so[^"]*" :sha256 "[0-9a-f]{64}"\}', facts[3]), ("device facts", line)
+    rows["driver"], rows["features"] = facts[1], facts[2].split()
+    rows["libraries"] = re.findall(r'\{:path "([^"]*)" :sha256 "([0-9a-f]{64})"\}', facts[3])
     rows.update(report=line.strip(), submitNanoseconds=ns, requests=len(s.log))
     report["gpu"] = dict(host=[platform.system(), platform.machine(), platform.release()], node=platform.node(), rows=rows, log=s.log[:8])
     report["status"] = "PASS_GPU_PROVIDER_VULKAN"

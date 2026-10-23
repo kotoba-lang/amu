@@ -18,12 +18,19 @@
 ;;   staging buffer, a chunk at a time; ZERO is vkCmdFillBuffer;
 ;; * a DISPATCH after the first in a command buffer is preceded by a compute
 ;;   to compute barrier (shader write to shader read and write); DISPATCHC has
-;;   none;
+;;   none. With synchronization2 it is the storage-only vkCmdPipelineBarrier2
+;;   (the broker measured half the flush on ANV);
 ;; * a submit's nanoseconds are the host clock from before vkResetFences to
 ;;   after vkWaitForFences;
 ;; * teardown waits for the device idle, then destroys pipelines, buffers,
 ;;   the staging buffer, pools, the fence, the command pool, the device and the
 ;;   instance, in that order (a live device at exit crashed one driver).
+;;
+;; Features (ADR 0372 Decision 5): on a Vulkan 1.2 device the layer enables,
+;; where the device supports them, storageBuffer16BitAccess, storageBuffer8BitAccess,
+;; shaderFloat16, shaderInt8 and, on 1.3, synchronization2,
+;; shaderIntegerDotProduct, subgroupSizeControl and computeFullSubgroups: what
+;; KIR v2 kernels declare. The report lists the ones enabled.
 ;;
 ;; Command buffers: kept slots 0..7, 8 the one-shot recording, 9 transfers;
 ;; each recording slot has a descriptor pool of 2048 sets, reset at BEGIN.
@@ -40,6 +47,7 @@
 (def V-REC 80)
 (def V-RECORDED 88)
 (def V-READY 96)
+(def V-FEATURES 104)
 (def V-FN 256)
 (def V-ARGV 768)
 (def V-PROPS 1024)
@@ -53,18 +61,21 @@
 (def V-QFAMS 16768)
 (def V-DINFO 17408)
 (def V-DWRITE 17920)
+(def V-FEATQ 18944)
+(def V-FEATE 19584)
 (def V-BUFS 32768)
 (def V-PIPES 163840)
 (def V-BYTES 172032)
 (def STAGING 67108864)
 
-;; the entry points, by index: 0..8 resolved with the instance, 10..50 with
-;; the device
+;; the entry points, by index: 0..9 resolved with the instance, 10..51 with
+;; the device; 3, 9 and 51 are optional (Vulkan 1.1 and 1.3)
 (defn- vk-fn-name [i :i64] :string
   (case i
     0 "vkCreateInstance" 1 "vkEnumeratePhysicalDevices" 2 "vkGetPhysicalDeviceProperties"
     3 "vkGetPhysicalDeviceProperties2" 4 "vkGetPhysicalDeviceMemoryProperties"
     5 "vkGetPhysicalDeviceQueueFamilyProperties" 6 "vkCreateDevice" 7 "vkGetDeviceProcAddr" 8 "vkDestroyInstance"
+    9 "vkGetPhysicalDeviceFeatures2"
     10 "vkGetDeviceQueue" 11 "vkDestroyDevice" 12 "vkCreateBuffer" 13 "vkDestroyBuffer"
     14 "vkGetBufferMemoryRequirements" 15 "vkAllocateMemory" 16 "vkFreeMemory" 17 "vkBindBufferMemory"
     18 "vkMapMemory" 19 "vkUnmapMemory" 20 "vkCreateShaderModule" 21 "vkDestroyShaderModule"
@@ -76,7 +87,7 @@
     37 "vkEndCommandBuffer" 38 "vkResetCommandBuffer" 39 "vkCmdBindPipeline" 40 "vkCmdBindDescriptorSets"
     41 "vkCmdDispatch" 42 "vkCmdPipelineBarrier" 43 "vkCmdCopyBuffer" 44 "vkCmdFillBuffer"
     45 "vkQueueSubmit" 46 "vkCreateFence" 47 "vkDestroyFence" 48 "vkWaitForFences" 49 "vkResetFences"
-    50 "vkDeviceWaitIdle"
+    50 "vkDeviceWaitIdle" 51 "vkCmdPipelineBarrier2"
     ""))
 
 (defn- vk-state [s :i64] :i64 (kxrt-p-load64 (+ s S-DEV)))
@@ -114,8 +125,7 @@
             r (if (= (string-length n) 0) 0
                 (let [nm (vk-cstr (+ v V-NAMES) n) p (+ v V-ARGV) a (w64 p handle) b (w64 (+ p 8) nm)
                       fp (kxrt-p-ccall gpa p) z (w64 (+ v V-FN (* 8 i)) fp)]
-                  ;; vkGetPhysicalDeviceProperties2 is Vulkan 1.1: optional
-                  (if (and (= fp 0) (not= i 3)) 1 0)))]
+                  (if (and (= fp 0) (not= i 3) (not= i 9) (not= i 51)) 1 0)))]
         (recur (inc i) (+ missing r))))))
 
 (defn- vk-instance [v :i64] :i64
@@ -126,7 +136,7 @@
         i0 (w32 ici 1) i1 (w64 (+ ici 24) app)]
     (cond (or (= gi 0) (< r0 0)) -1
           (not= (vr (vk6 v 0 ici 0 (+ v V-INSTANCE) 0 0 0)) 0) -1
-          :else (vk-resolve v gi (vg v V-INSTANCE) 1 8))))
+          :else (vk-resolve v gi (vg v V-INSTANCE) 1 9))))
 
 ;; the first queue family of pd with VK_QUEUE_COMPUTE_BIT, or -1
 (defn- vk-compute-family [v :i64 pd :i64] :i64
@@ -156,12 +166,40 @@
             m (vk6 v 4 pd (+ v V-MEMPROPS) 0 0 0 0)]
         0))))
 
+;; a VkPhysicalDeviceFeatures2 chain at c: Vulkan11, 12 and (on 1.3) 13 features
+(defn- vk-feature-chain [c :i64 api :i64] :i64
+  (let [z (vk-zero c 640) a (w32 c 1000059000) b (w64 (+ c 8) (+ c 256))
+        d (w32 (+ c 256) 49) e (w64 (+ c 264) (+ c 320))
+        f (w32 (+ c 320) 51) g (w64 (+ c 328) (if (>= api 4206592) (+ c 528) 0)) h (w32 (+ c 528) 53)] c))
+;; feature bit k: its offset in a chain, and its name
+(defn- vk-feature-at [k :i64] :i64 (case k 0 272 1 344 2 364 3 368 4 580 5 596 6 572 576))
+(defn- vk-feature-name [k :i64] :string
+  (case k 0 ":storage-buffer-16bit" 1 ":storage-buffer-8bit" 2 ":shader-float16" 3 ":shader-int8"
+          4 ":synchronization2" 5 ":shader-integer-dot-product" 6 ":subgroup-size-control" ":compute-full-subgroups"))
+;; on a Vulkan 1.2 device: the features above that it supports, set in the
+;; enable chain at V-FEATE; the mask (V-FEATURES), or 0 with no chain
+(defn- vk-features [v :i64] :i64
+  (let [api (r32 (+ v V-PROPS 16)) q (+ v V-FEATQ) e (+ v V-FEATE)]
+    (if (or (< api 4202496) (= (vg v (+ V-FN 72)) 0)) (w64 (+ v V-FEATURES) 0)
+      (let [a (vk-feature-chain q api) b (vk6 v 9 (vg v V-PHYS) q 0 0 0 0) c (vk-feature-chain e api)
+            m (loop [k 0 m 0]
+                (if (= k 8) m
+                  (if (= (r32 (+ q (vk-feature-at k))) 1)
+                    (let [x (w32 (+ e (vk-feature-at k)) 1)] (recur (inc k) (bit-or m (i64-shift-left 1 k))))
+                    (recur (inc k) m))))]
+        (w64 (+ v V-FEATURES) m)))))
+(defn- vk-feature? [v :i64 k :i64] :bool (not= (bit-and (vg v V-FEATURES) (i64-shift-left 1 k)) 0))
 (defn- vk-device [v :i64] :i64
   (let [t (+ v V-T) z (vk-zero t 256)
         a0 (w32 t 2) a1 (w32 (+ t 20) (vg v V-QFAMILY)) a2 (w32 (+ t 24) 1) a3 (w64 (+ t 32) (+ t 192)) a4 (w32 (+ t 192) 1065353216)
-        d0 (w32 (+ t 64) 3) d1 (w32 (+ t 84) 1) d2 (w64 (+ t 88) t)]
-    (cond (not= (vr (vk6 v 6 (vg v V-PHYS) (+ t 64) 0 (+ v V-DEVICE) 0 0)) 0) -1
-          (< (vk-resolve v (vg v (+ V-FN 56)) (vg v V-DEVICE) 10 50) 0) -1
+        fm (vk-features v)
+        d0 (w32 (+ t 64) 3) d1 (w32 (+ t 84) 1) d2 (w64 (+ t 88) t)
+        d3 (w64 (+ t 72) (if (> fm 0) (+ v V-FEATE) 0))]
+    (cond (and (not= (vr (vk6 v 6 (vg v V-PHYS) (+ t 64) 0 (+ v V-DEVICE) 0 0)) 0)
+               ;; a driver that refuses the features gets a device without them
+               (or (= fm 0) (let [x (w64 (+ t 72) 0) y (w64 (+ v V-FEATURES) 0)]
+                              (not= (vr (vk6 v 6 (vg v V-PHYS) (+ t 64) 0 (+ v V-DEVICE) 0 0)) 0)))) -1
+          (< (vk-resolve v (vg v (+ V-FN 56)) (vg v V-DEVICE) 10 51) 0) -1
           :else (let [q (vk6 v 10 (vg v V-DEVICE) (vg v V-QFAMILY) 0 (+ v V-QUEUE) 0 0)] 0))))
 
 ;; the first memory type allowed by bits that has the flags want, or -1
@@ -340,10 +378,17 @@
                         c4 (w32 (+ wr 36) 7) c5 (w64 (+ wr 48) info)]
                     (recur (inc i)))))
             u (vk6 v 32 dev nids (+ v V-DWRITE) 0 0 0)
-            br (if (and (= barrier 1) (> (vg v V-RECORDED) 0))
-                 (let [m (+ t 128) e (vk-zero m 24) f0 (w32 m 46) f1 (w32 (+ m 16) 64) f2 (w32 (+ m 20) 96)]
-                   (vk10 v 42 cb 2048 2048 0 1 m 0 0 0 0))
-                 0)
+            br (cond (or (not= barrier 1) (= (vg v V-RECORDED) 0)) 0
+                     ;; synchronization2: storage writes to storage reads and writes
+                     (and (vk-feature? v 4) (not= (vg v (+ V-FN 408)) 0))
+                       (let [m (+ t 128) d (+ t 192) e (vk-zero m 128)
+                             f0 (w32 m 1000314000) f1 (w64 (+ m 16) 2048) f2 (w64 (+ m 24) 17179869184)
+                             f3 (w64 (+ m 32) 2048) f4 (w64 (+ m 40) 25769803776)
+                             g0 (w32 d 1000314003) g1 (w32 (+ d 20) 1) g2 (w64 (+ d 24) m)]
+                         (vk6 v 51 cb d 0 0 0 0))
+                     :else
+                       (let [m (+ t 128) e (vk-zero m 24) f0 (w32 m 46) f1 (w32 (+ m 16) 64) f2 (w32 (+ m 20) 96)]
+                         (vk10 v 42 cb 2048 2048 0 1 m 0 0 0 0)))
             bp (vk6 v 39 cb 1 (vg pipe 32) 0 0 0)
             bd (vk10 v 40 cb 1 (vg pipe 24) 0 1 (+ t 64) 0 0 0 0)
             d (vk6 v 41 cb x y z 0 0)]
@@ -399,7 +444,12 @@
   (let [v (vk-state s) d (+ v V-DRIVER)
         drv (if (= (r32 d) 1000196000) (string-concat (ascii-at (+ d 20) 256) (string-concat " " (ascii-at (+ d 276) 256))) "unknown")]
     (string-concat "{:layer :vulkan :driver " (string-concat (quoted-ascii drv)
-      (string-concat " :libraries [" (string-concat (vk-libraries s) "]}"))))))
+      (string-concat " :features #{" (string-concat (vk-feature-names v)
+        (string-concat "} :libraries [" (string-concat (vk-libraries s) "]}"))))))))
+(defn- vk-feature-names [v :i64] :string
+  (loop [k 0 out ""]
+    (if (= k 8) out
+      (recur (inc k) (if (vk-feature? v k) (if (= (string-length out) 0) (vk-feature-name k) (string-concat out (string-concat " " (vk-feature-name k)))) out)))))
 (defn- dev-name [s :i64] :string
   (let [v (vk-state s)] (if (or (= v 0) (= (vg v V-PHYS) 0)) "none" (ascii-at (+ v V-PROPS 16 20) 256))))
 (defn- dev-info [s :i64] :string
