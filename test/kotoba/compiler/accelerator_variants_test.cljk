@@ -354,8 +354,13 @@
   ;; a descriptor reporting the shuffle fold's facts but not :simd-reduce
   ;; falls to :subgroup-reduce (the second rung, byte-for-byte the old
   ;; answer); everything else answers :baseline. The measured-cell
-  ;; carve-out outranks rung 1. Every :simdgroup-reduce answer is
-  ;; UNMEASURED: nothing has executed this variant anywhere.
+  ;; carve-out outranks rung 1 EVERYWHERE BUT THIS VARIANT'S OWN FLIP
+  ;; CELL (2026-10-23, the flip slice): at W = 256 on the measured class
+  ;; (name fragment "m1 max", reported subgroup size 32) the native-Metal
+  ;; measurement of this variant ran there and measured it FASTER than
+  ;; :baseline (apple-simdgroup-flip-note), so the cell answers
+  ;; :simdgroup-reduce, MEASURED. Every other :simdgroup-reduce answer is
+  ;; UNMEASURED (:measured? false).
   (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
         both {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative :simd-reduce}}
         native {:subgroup-size 32 :subgroup-ops #{:simd-reduce}}
@@ -414,11 +419,11 @@
         (is (not= :simdgroup-reduce
                   (:variant (variants/select-variant :apple bad :msl-v1 native)))
             (str "kernel " (pr-str bad) " must fail rung 1 closed"))))
-    (testing "the measured-cell carve-out outranks rung 1: the measured class never answers it"
+    (testing "the measured-cell carve-out outranks rung 1 at every W but this variant's OWN flip cell"
       (doseq [device [(assoc native :device "Apple M1 Max")
                       (assoc both :name "Apple M1 Max")]
               target [:metal :msl-v1]
-              wg [32 64 128 256 512 1024]]
+              wg [32 64 128 512 1024]]
         (let [answer (variants/select-variant
                       :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
                                                 {:workgroup-size wg})
@@ -427,20 +432,58 @@
               (str "device " (pr-str device) " W=" wg " must keep the class's answer"))
           (is (str/includes? (:basis answer) "THE MEASURED-CELL CARVE-OUT"))
           (is (str/includes? (:basis answer) "CLOSED to design rows"))))
+      (testing "W = 256 is this variant's OWN flip cell: the carve-out lifts exactly there, MEASURED"
+        ;; 2026-10-23, the flip slice: the native-Metal measurement of
+        ;; THIS variant ran at W = 256 on the measured class and measured
+        ;; it FASTER than :baseline (apple-simdgroup-flip-note), so the
+        ;; cell answers the row with the row's OWN record.
+        (doseq [device [(assoc native :device "Apple M1 Max")
+                        (assoc both :name "Apple M1 Max")]
+                target [:metal :msl-v1]]
+          (let [answer (variants/select-variant
+                        :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                                  {:workgroup-size 256})
+                        target device)]
+            (is (= :simdgroup-reduce (:variant answer))
+                (str "device " (pr-str device) " " target " W=256 must answer the flip"))
+            (is (true? (:measured? answer)))
+            (is (= {:device "m1 max"
+                    :subgroup-size 32
+                    :channel :native-metal
+                    :route :msl-v1
+                    :workgroup-size 256
+                    :operators #{:sum :max :min}
+                    ;; ONE measured shape only (the flip contract's ground
+                    ;; shape); shape 2 (n = 2^20) is UNMEASURED for this
+                    ;; variant and the record names it so no claim extends
+                    ;; past it.
+                    :shapes [1000003]
+                    :evidence ["docs/evidence/gpu-simdgroup-reduce-m1max-20261023"]}
+                   (:measured-cell answer))
+                (str "device " (pr-str device) " " target " W=256 record"))
+            (is (str/includes? (:basis answer) "THIS VARIANT'S OWN FLIP CELL"))
+            (is (str/includes? (:basis answer) "REGIME-INVARIANT FASTER"))
+            (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-20261023")))))
       (testing "the carve-out note is the row's demotion only, and the flag scope is named"
-        ;; simd-only facts: the shuffle row's gate never held, so no
-        ;; narrowing note -- and the answer is the carve-out's decision,
-        ;; not a measurement's (:measured? false at every W).
+        ;; simd-only facts at a non-flip W: the shuffle row's gate never
+        ;; held, so no narrowing note -- and the answer is the carve-out's
+        ;; decision, not a measurement's (:measured? false at every W but
+        ;; the flip cell).
         (let [answer (variants/select-variant
-                      :apple kir :msl-v1 (assoc native :device "Apple M1 Max"))]
+                      :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                                {:workgroup-size 128})
+                      :msl-v1 (assoc native :device "Apple M1 Max"))]
           (is (false? (:measured? answer)))
           (is (nil? (:measured-cell answer)))
           (is (not (str/includes? (:basis answer) "APPLE ROW NARROWED"))))
-        ;; both fact sets: the shuffle row's narrowing and its flip are
-        ;; byte-for-byte unchanged (the record's :evidence names the
-        ;; :subgroup-reduce runs only), and the carve-out note rides along.
+        ;; both fact sets at a non-flip W: the shuffle row's narrowing and
+        ;; its flip are byte-for-byte unchanged (the record's :evidence
+        ;; names the :subgroup-reduce runs only), and the carve-out note
+        ;; rides along.
         (let [answer (variants/select-variant
-                      :apple kir :msl-v1 (assoc both :name "Apple M1 Max"))]
+                      :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                                {:workgroup-size 128})
+                      :msl-v1 (assoc both :name "Apple M1 Max"))]
           (is (true? (:measured? answer)))
           (is (= "docs/evidence/gpu-subgroup-reduce-m1max-shape2-band-20261023"
                  (last (:evidence (:measured-cell answer)))))
@@ -596,6 +639,112 @@
       (let [kir (accelerator/kernel "reduce_max_f32" :reduce :max {:workgroup-size 512})]
         (is (= (variants/select-variant :apple kir :msl-v1 m1)
                (variants/select-variant :apple kir :msl-v1 m1)))))))
+
+(deftest the-simdgroup-rows-own-flip-cell-flips-the-honesty-lock
+  ;; JUN-58, the flip slice (2026-10-23): ADR-0373's rule-3 step 3, the
+  ;; flip contract applied to :simdgroup-reduce's OWN measured cell. The
+  ;; measurement that ran (docs/evidence/gpu-simdgroup-reduce-m1max-20261023)
+  ;; compared :baseline vs THIS variant at ONE cell -- W = 256 (the
+  ;; honesty-lock flip anchor), n = 1000003 (the flip contract's ground
+  ;; shape) -- on the tested device class (name fragment "m1 max",
+  ;; reported subgroup size 32) through the conforming native-Metal
+  ;; channel, and measured this variant FASTER (paired median ratios
+  ;; 0.790/0.800/0.799 for :sum/:max/:min, claim-protocol rule 2
+  ;; REGIME-INVARIANT FASTER, 18/18 per-run ratios below 1.0). So the
+  ;; flip keys hold exactly there and the cell answers :simdgroup-reduce,
+  ;; MEASURED -- the one answer of this variant that carries :measured?
+  ;; true. WHAT THE FLIP DOES NOT LICENSE: every other W keeps the
+  ;; carve-out's :baseline; shape 2 (n = 2^20) is UNMEASURED (the record's
+  ;; :shapes names the ONE measured shape); the GLSL arm, every other
+  ;; Apple device, every other vendor and cross-day replication stay
+  ;; UNMEASURED.
+  (let [native {:subgroup-size 32 :subgroup-ops #{:simd-reduce}}
+        both {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative :simd-reduce}}
+        m1 (assoc native :device "Apple M1 Max")]
+    (testing "the flip cell answers the row, MEASURED, with the row's OWN record"
+      (doseq [target [:metal :msl-v1]
+              operator [:sum :max :min]
+              device [m1 (assoc both :name "Apple M1 Max")]]
+        (let [kir (accelerator/kernel (str "reduce_" (name operator) "_f32")
+                                      :reduce operator {:workgroup-size 256})
+              answer (variants/select-variant :apple kir target device)]
+          (is (= :simdgroup-reduce (:variant answer))
+              (str operator " " target " must answer the flip"))
+          (is (true? (:measured? answer))
+              (str operator " " target " must carry the flipped flag"))
+          (is (= {:device "m1 max"
+                  :subgroup-size 32
+                  :channel :native-metal
+                  :route :msl-v1
+                  :workgroup-size 256
+                  :operators #{:sum :max :min}
+                  :shapes [1000003]
+                  :evidence ["docs/evidence/gpu-simdgroup-reduce-m1max-20261023"]}
+                 (:measured-cell answer))
+              (str operator " " target " record"))
+          (is (str/includes? (:basis answer) "THIS VARIANT'S OWN FLIP CELL"))
+          (is (str/includes? (:basis answer) "0.790/0.800/0.799"))
+          (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-20261023")))))
+    (testing "the record's :shapes names the ONE measured shape -- shape 2 is UNMEASURED"
+      (is (= [1000003] (:shapes (:measured-cell (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256}) :msl-v1 m1))))))
+    (testing "every other W keeps the carve-out: the flip is ONE cell wide"
+      (doseq [wg [32 64 128 512 1024]]
+        (let [answer (variants/select-variant
+                      :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                                {:workgroup-size wg})
+                      :msl-v1 m1)]
+          (is (= :baseline (:variant answer))
+              (str "W=" wg " must keep the carve-out's :baseline"))
+          (is (false? (:measured? answer))
+              (str "W=" wg " must keep the lock"))
+          (is (nil? (:measured-cell answer))
+              (str "W=" wg " carries no record")))))
+    (testing "the flip keys are the tested device class AND the reported subgroup size"
+      ;; name matches but the reported subgroup size is not the tested
+      ;; one: no flip (32 is what the harness measured) -- the class
+      ;; keeps :baseline and the lock.
+      (doseq [s [8 16]]
+        (let [answer (variants/select-variant
+                      :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                                {:workgroup-size 256})
+                      :msl-v1 (assoc native :name "Apple M1 Max"
+                                     :subgroup-size s))]
+          (is (= :baseline (:variant answer)))
+          (is (false? (:measured? answer)))
+          (is (nil? (:measured-cell answer))))))
+    (testing "without the fold's rule-6 fact the shuffle row's answer is byte-for-byte unchanged"
+      ;; no :simd-reduce fact: rung 1 never held; at W = 256 the narrowed
+      ;; class keeps :baseline and the :subgroup-reduce record (its
+      ;; :evidence names the :subgroup-reduce runs only).
+      (let [answer (variants/select-variant
+                    :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                              {:workgroup-size 256})
+                    :msl-v1 (assoc both :name "Apple M1 Max"
+                                   :subgroup-ops #{:basic :shuffle-relative}))]
+        (is (= :baseline (:variant answer)))
+        (is (true? (:measured? answer)))
+        (is (= "docs/evidence/gpu-subgroup-reduce-m1max-shape2-band-20261023"
+               (last (:evidence (:measured-cell answer)))))))
+    (testing "an unnamed descriptor is never the tested class: rung 1 answers, UNMEASURED"
+      (let [answer (variants/select-variant
+                    :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                              {:workgroup-size 256})
+                    :msl-v1 native)]
+        (is (= :simdgroup-reduce (:variant answer)))
+        (is (false? (:measured? answer)))
+        (is (nil? (:measured-cell answer)))))
+    (testing "the GLSL arm never flips: its runs are LABELED BOOTSTRAP, not a verdict"
+      (doseq [target [:vulkan :glsl-v1]]
+        (let [answer (variants/select-variant
+                      :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                                {:workgroup-size 256})
+                      target m1)]
+          (is (= :baseline (:variant answer)))
+          (is (false? (:measured? answer)))
+          (is (nil? (:measured-cell answer))))))
+    (testing "same arguments in, same map out (the flip record included)"
+      (is (= (variants/select-variant :apple (accelerator/kernel "reduce_max_f32" :reduce :max {:workgroup-size 256}) :msl-v1 m1)
+             (variants/select-variant :apple (accelerator/kernel "reduce_max_f32" :reduce :max {:workgroup-size 256}) :msl-v1 m1))))))
 
 (deftest the-measure-harness-argv-gates-carry-no-exact-match-class
   ;; The measurement instrument (scripts/gpu-subgroup-reduce-metal-measure.m)

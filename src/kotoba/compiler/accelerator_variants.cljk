@@ -15,13 +15,17 @@
   the CUDA route since ADR-0361's same-day amendment (JUN-57's own
   decision) -- as the SECOND rung of that route's ladder, under
   :warp-shuffle-reduce's precedence.
-  UNMEASURED, all of it. One variant reduction has EXECUTED on the vendor
-  hardware a row names: :subgroup-reduce on Apple M1 Max, through
-  measurement harnesses (GLSL arm via wire-42/MoltenVK, PR #1347/#1348,
-  2026-10-19; MSL arm via a native Metal harness, 2026-10-23, at
-  W = 32..1024), losing to :baseline in every measured cell but W = 32 --
-  the one mixed cell, whose signs are scoped to the slow clock regime and
-  whose answer is a decision (see apple-w32-note). No other
+  UNMEASURED, almost all of it. Two variant reductions have EXECUTED on
+  the vendor hardware a row names, both on Apple M1 Max through
+  measurement harnesses: :subgroup-reduce (GLSL arm via wire-42/MoltenVK,
+  PR #1347/#1348, 2026-10-19; MSL arm via a native Metal harness,
+  2026-10-23, at W = 32..1024), losing to :baseline in every measured
+  cell but W = 32 -- the one mixed cell, whose signs are scoped to the
+  slow clock regime and whose answer is a decision (see apple-w32-note)
+  -- and :simdgroup-reduce (the same native-Metal channel, 2026-10-23,
+  at W = 256), BEATING :baseline there (paired median ratios
+  0.790/0.800/0.799 for :sum/:max/:min, claim-protocol rule 2
+  REGIME-INVARIANT FASTER, 18/18 per-run ratios below 1.0). No other
   vendor's hardware has run a variant, and no variant has an execution
   path in the product runtime: the wire-42 (:gpu/compute) route has no
   producer today -- the C loader brokers were removed (main 36479076) and
@@ -31,7 +35,10 @@
   the narrowed :baseline answers of the measured device (Apple M1 Max,
   reported subgroup size 32) on the MSL route at W = 64/128/256/512/1024 --
   the cells whose refutation ran the emitters' own bytes on hardware under
-  the sweep protocol. Those answers carry :measured? true and a
+  the sweep protocol -- and, where the fold's own rule-6 fact is reported,
+  the :simdgroup-reduce answer at W = 256 (this variant's OWN flip cell,
+  measured faster than :baseline the same day, apple-simdgroup-flip-note).
+  Those answers carry :measured? true and a
   :measured-cell record naming the tested device class, the channel and the
   evidence. The
   W = 32 cell ran under the same channel and keeps the lock: its verdict is
@@ -48,11 +55,14 @@
   :simdgroup-reduce FIRST (the vendor-native rung); a descriptor reporting
   the shuffle fold's facts but not :simd-reduce falls to :subgroup-reduce
   (the second rung, byte-for-byte the old answer); everything else answers
-  :baseline. The measured-cell carve-out outranks rung 1: the narrowed M1
+  :baseline. The measured-cell carve-out outranks rung 1 everywhere but
+  this variant's OWN flip cell: the narrowed M1
   Max class keeps its reduce-shape answers (:baseline, measured where the
-  flip keys hold) and :simdgroup-reduce never answers there. Every
-  :simdgroup-reduce answer is UNMEASURED (:measured? false): nothing has
-  executed this variant anywhere.
+  flip keys hold) at every W but 256, where this variant's own
+  measurement (2026-10-23, apple-simdgroup-flip-note) flipped the cell --
+  with the fold's rule-6 fact reported, that cell answers
+  :simdgroup-reduce, MEASURED faster than :baseline. Every other
+  :simdgroup-reduce answer is UNMEASURED (:measured? false).
 
   The functions are TOTAL, like the dispatch table in
   kotoba.compiler.accelerator-targets: a vendor or kernel shape outside the
@@ -254,18 +264,73 @@
   (:simd-reduce) and the row's shape holds, but it names the measured
   device class (\"m1 max\"), whose reduce-shape answers are measured or
   decided and CLOSED to design rows: measurement beats design, so
-  :simdgroup-reduce does not answer here at any W until a measurement of
-  THIS variant on this class flips the cell through the flip contract.
-  Nothing has measured :simdgroup-reduce anywhere -- the M1 Max
-  measurements named below measured :subgroup-reduce against :baseline,
-  and that refutation neither condemns nor blesses this variant (uB5G,
-  reverse reading). The class keeps :baseline at every W (W =
-  64/128/256/512/1024 where :subgroup-reduce was measured slower; W = 32
-  by the low-band decision). A :measured? true flag on any cell this note
-  carries marks the :subgroup-reduce refutation ONLY -- its :measured-cell
-  record's :evidence names those runs and says nothing about this variant;
-  where the flip's keys do not hold the answer is the carve-out's
-  (:measured? false), not a measurement's.")
+  :simdgroup-reduce does not answer here at any W but its own flip cell
+  (W = 256 -- that cell flipped on 2026-10-23 when this variant's own
+  measurement ran there, see apple-simdgroup-flip-note; at every other W
+  this note is what the cell carries). The class keeps :baseline at every
+  other W (W = 64/128/512/1024 where :subgroup-reduce was measured
+  slower; W = 32 by the low-band decision). A :measured? true flag on any
+  cell this note carries marks the :subgroup-reduce refutation ONLY --
+  its :measured-cell record's :evidence names those runs and says nothing
+  about this variant; where the flip's keys do not hold the answer is the
+  carve-out's (:measured? false), not a measurement's. The M1 Max
+  measurements that refuted :subgroup-reduce neither condemn nor bless
+  this variant (uB5G, reverse reading) -- only the W = 256 run of THIS
+  variant measured it, and only there does a measured :simdgroup-reduce
+  answer exist.")
+
+(def ^:private apple-simdgroup-measured-workgroups
+  "The workgroup widths whose measurement of THIS variant CHOSE the
+  answer the flip marks: W = 256 only (the honesty-lock flip anchor --
+  the one cell the native-Metal measurement of :baseline vs
+  :simdgroup-reduce ran, 2026-10-23, ADR-0373's flip contract applied to
+  this variant's own cells). Every other width is UNMEASURED for this
+  variant: W = 32/64/128/512/1024 ran for :subgroup-reduce only and say
+  nothing about this variant (uB5G, reverse reading)."
+  #{256})
+
+(def ^:private apple-simdgroup-measured-shapes
+  "The element counts this variant's contract-satisfying cells ran:
+  n = 1,000,003 (the flip contract's ground shape) ONLY. Shape 2
+  (n = 2^20) is UNMEASURED for this variant at every cell. The selection
+  answer cannot vary with n, and the record's :shapes names the measured
+  shape so no claim extends past it."
+  [1000003])
+
+(def ^:private apple-simdgroup-measured-evidence
+  "The evidence directory of this variant's contract-satisfying cell: the
+  W = 256 native-Metal measurement of :baseline vs :simdgroup-reduce
+  (summary.md, run-log.txt, compile-log.txt, shaders/)."
+  ["docs/evidence/gpu-simdgroup-reduce-m1max-20261023"])
+
+(def ^:private apple-simdgroup-flip-note
+  "THIS VARIANT'S OWN FLIP CELL (ADR-0373's flip contract applied to
+  :simdgroup-reduce's own measured cell, 2026-10-23, JUN-58): the
+  conforming channel (ADR-0360 question (1)'s native-Metal harness
+  family, the emitters' own bytes) measured :baseline vs
+  :simdgroup-reduce at ONE cell -- W = 256 (the honesty-lock flip
+  anchor), n = 1000003 (the flip contract's ground shape) -- on the
+  tested device class (name fragment \"m1 max\", reported subgroup size
+  32), the historical protocol unchanged (6 fresh processes, 20
+  interleaved AB/BA pairs per operator per run, 2 warmups discarded,
+  verified read-back). Paired median ratios (:simdgroup-reduce /
+  :baseline gpu ns): :sum 0.790, :max 0.800, :min 0.799 -- the OPPOSITE
+  sign to :subgroup-reduce at the identical cell (~1.22) -- and the
+  claim-protocol rule-2 verdict is REGIME-INVARIANT FASTER (18/18
+  per-run ratios below 1.0, every observed regime one-sided), so this
+  cell is a selection basis. Measurement beats the carve-out's earlier
+  decision exactly here: the cell answers :simdgroup-reduce with
+  :measured? true. WHAT THE NUMBERS DO NOT LICENSE: every other W
+  (32/64/128/512/1024) keeps the carve-out's :baseline; shape 2
+  (n = 2^20) and every shape beyond n = 1000003 are UNMEASURED at this
+  cell (selection cannot vary with n; the record's :shapes names the
+  measured shape); the GLSL arm, every other Apple device, every other
+  vendor and cross-day replication are UNMEASURED. Read-back: 36/36
+  ok=1, :max/:min bit-exact vs the CPU reference and between arms,
+  :sum 3.05e-05 between arms (regrouping). Cross-operator level
+  identity is REFUTED (14/15 run pairs diverge -- data, not a claim):
+  per-operator level names stay operator-scoped. Evidence:
+  docs/evidence/gpu-simdgroup-reduce-m1max-20261023.")
 
 (def variant-bases
   "Why each variant exists. Design rationale, not measurement evidence."
@@ -277,7 +342,12 @@
     :subgroup-reduce has EXECUTED on Apple M1 Max through measurement
     harnesses (GLSL arm via wire-42/MoltenVK, PR #1347/#1348, 2026-10-19;
     MSL arm via a native Metal harness, ADR-0360's measurement amendment,
-    2026-10-23), losing to :baseline in both."
+    2026-10-23), losing to :baseline in both arms, and
+    :simdgroup-reduce has EXECUTED on the same device through the
+    native-Metal harness (2026-10-23, W = 256), BEATING :baseline there
+    (paired median ratios 0.790/0.800/0.799 for :sum/:max/:min,
+    claim-protocol rule 2 REGIME-INVARIANT FASTER, 18/18 per-run ratios
+    below 1.0)."
    :warp-shuffle-reduce
    "NVIDIA (sm_70+) warp-shuffle reduce: a per-warp __shfl_down_sync fold,
     then one cross-warp stage through shared memory -- one barrier instead
@@ -339,13 +409,20 @@
     intrinsics) and a reported SIMD-group width dividing W;
     :basic/:shuffle-relative are the SHUFFLE fold's facts and are not
     required here (the tree uses threadgroup barriers). The measured-cell
-    carve-out outranks it: the narrowed M1 Max class keeps its
-    reduce-shape answers and this row never answers there. The design
-    assumption (UNMEASURED) is that one reduction intrinsic beats the
-    shuffle ladder -- nothing has measured simd_sum against the shuffle
-    loop on any device, and the shuffle fold's own rationale measured
-    CONTRADICTED on the one device tested (M1 Max); that refutation
-    neither condemns nor blesses this row. No speed claim. Semantics:
+    carve-out outranks it everywhere but this row's OWN flip cell: at
+    W = 256 on the measured class (Apple M1 Max, reported subgroup size
+    32, MSL route, n = 1000003) the native-Metal measurement of
+    2026-10-23 measured this row FASTER than :baseline (paired median
+    ratios 0.790/0.800/0.799 for :sum/:max/:min, claim-protocol rule 2
+    REGIME-INVARIANT FASTER) and the flip contract answers it there,
+    MEASURED (apple-simdgroup-flip-note); the class keeps :baseline at
+    every other W and every other cell stays closed to design rows. The
+    design assumption (UNMEASURED) is that one reduction intrinsic beats
+    the shuffle ladder anywhere else -- one cell, one shape (n = 1000003)
+    and one device are measured; the shuffle fold's own rationale
+    measured CONTRADICTED on that device (M1 Max); that refutation
+    neither condemns nor blesses this row outside the flip cell. No
+    speed claim outside the flip cell's own recorded scope. Semantics:
     :sum is scoped to low bits (the intrinsic's association order is the
     vendor's own, ADR-0357 P1 option b); :max/:min are bit-for-bit within
     the ordinary-value domain only (non-NaN payloads, no negative zeros).
@@ -432,16 +509,21 @@
     fold's facts but not :simd-reduce falls to :subgroup-reduce (the
     second rung, byte-for-byte the old answer); everything else answers
     :baseline (rule 1, total, no throw). The measured-cell carve-out
-    outranks rung 1: a descriptor naming the measured class (\"m1 max\")
-    never answers this variant -- its reduce-shape answers are measured or
+    outranks rung 1 everywhere but this variant's OWN flip cell: at
+    W = 256 on the measured class (\"m1 max\" AND reported subgroup size
+    32) a descriptor reporting :simd-reduce answers THIS variant,
+    MEASURED faster than :baseline (apple-simdgroup-flip-note) -- the one
+    cell where this variant has hardware evidence. At every other W the
+    carve-out stands: the class's reduce-shape answers are measured or
     decided and closed to design rows -- and the row is Apple's and the
     MSL route's alone. The fact's producer gap is ADR-0373's: the wire-42
     SUBGROUP vocabulary is ADR-0362's eight VkSubgroupFeatureFlagBits
     tokens and does NOT carry :simd-reduce (device-from-subgroup parses
     that vocabulary only), so a Metal-native probe or a provider extension
     must report the key -- the row fails closed without it. Every answer
-    this row gives is UNMEASURED (:measured? false): no hardware has run
-    this variant.
+    this row gives is UNMEASURED (:measured? false) except its own flip
+    cell (W = 256 on the measured class, MSL route, n = 1000003 -- the
+    one cell hardware measured, and measured FASTER than :baseline).
 
   Everything else answers :baseline: other vendors (:unknown, :qualcomm
   and any name outside the five classified rows -- :amd has carried a
@@ -466,8 +548,10 @@
   measured the arm (:native-metal, the MSL route), and the measured
   workgroup widths (W = 64/128/256/512/1024 -- W = 32 measured too but
   DECIDED, not verdict-chosen; its answer keeps the lock, see
-  apple-w32-note). Exactly those cells -- the narrowed
-  :baseline answers of the measured device on the MSL route -- carry
+  apple-w32-note) -- plus this variant's OWN flip cell, the
+  :simdgroup-reduce answer at W = 256 where the fold's rule-6 fact is
+  reported (2026-10-23's measurement of this variant, faster than
+  :baseline, apple-simdgroup-flip-note). Exactly those cells carry
   :measured? true and a :measured-cell record; every other answer keeps
   false. The 2026-10-19 wire-42 baseline-vs-variant runs (PR #1347/#1348)
   are NOT verdict-grade: their own record (docs/evidence/gpu/loadsweep-
@@ -489,7 +573,8 @@
   fail-closed :baseline and carries no narrowing note (the note is only
   the row's own demotion). No report may
   cite an answer here as optimization evidence outside the flipped cells'
-  own recorded scope (one device, one channel, the measured widths,
+  own recorded scope (one device, one channel, the measured widths --
+  and for :simdgroup-reduce its own flip cell only, W = 256,
   n = 1000003)."
   ([vendor kir] (select-variant vendor kir nil nil))
   ([vendor kir target] (select-variant vendor kir target nil))
@@ -613,13 +698,32 @@
          ;; reduce shape. The row is Apple's alone (one vendor per
          ;; decision) and the MSL route's alone (rule 3: the emission is
          ;; admitted on :msl-v1 only). The carve-out is checked at the
-         ;; cond below: the measured class never reaches this rung.
+         ;; cond below: the measured class reaches this rung only at this
+         ;; variant's own flip cell (simd-flip?, below).
          simdgroup-row-holds?
          (and (= :apple vendor)
               (= :msl-v1 route)
               valid-kir?
               simd-reduce-cap-ok?
               (simdgroup/applicable? kir))
+         ;; ADR-0373's flip contract applied to this variant's OWN
+         ;; measured cell (2026-10-23, JUN-58): hardware measured THIS
+         ;; variant faster than :baseline at W = 256 on the measured
+         ;; class (apple-simdgroup-flip-note), so the carve-out lifts
+         ;; exactly there. The keys are the tested device class (the uB5G
+         ;; name fragment AND the reported subgroup size 32), the
+         ;; measured channel's route (the MSL route under either
+         ;; spelling), this row's own rule-6 gate (the measurement ran
+         ;; the intrinsic fold), and the one workgroup width the channel
+         ;; ran for this variant. Everything else fails closed to the
+         ;; carve-out.
+         simd-flip?
+         (and simdgroup-row-holds?
+              apple-narrowed-device?
+              (= :msl-v1 route)
+              (= apple-measured-subgroup-size (:subgroup-size dev))
+              (contains? apple-simdgroup-measured-workgroups
+                         (:kernel/workgroup-size kir)))
          variant (cond
                    (and (= :nvidia vendor)
                         (= :cuda-v1 route)
@@ -632,11 +736,15 @@
                    :warp-shuffle-reduce
 
                    ;; ADR-0373's measured-cell carve-out (measurement
-                   ;; beats design) outranks rung 1: the narrowed M1 Max
-                   ;; class keeps its reduce-shape answers and
-                   ;; :simdgroup-reduce never answers there. Rung 2 below
+                   ;; beats design) outranks rung 1 everywhere but this
+                   ;; variant's OWN flip cell (simd-flip?): at W = 256 on
+                   ;; the measured class hardware measured THIS variant
+                   ;; faster and the cell answers it, MEASURED. At every
+                   ;; other W the narrowed M1 Max class keeps its
+                   ;; reduce-shape answers. Rung 2 below
                    ;; is byte-for-byte the pre-step-2 answer.
-                   (and simdgroup-row-holds? (not apple-narrowed-device?))
+                   (and simdgroup-row-holds?
+                        (or (not apple-narrowed-device?) simd-flip?))
                    :simdgroup-reduce
 
                    (and subgroup-row-holds? (not narrowed?))
@@ -645,8 +753,10 @@
                    :else :baseline)
          ;; The carve-out's own note: it attaches only where rung 1's gate
          ;; held and the measured class refused the row -- the row's own
-         ;; demotion, never a fail-closed :baseline.
-         carved? (and simdgroup-row-holds? apple-narrowed-device?)
+         ;; demotion, never a fail-closed :baseline, and never at this
+         ;; variant's own flip cell (the measurement answered there, so
+         ;; there is no demotion to annotate).
+         carved? (and simdgroup-row-holds? apple-narrowed-device? (not simd-flip?))
          ;; ADR-0360 question (1)'s decision, Part 2 (2026-10-23, JUN-58):
          ;; the flip's record. A cell flips only when every key of the
          ;; tested device class holds -- the narrowed answer itself, the
@@ -657,23 +767,41 @@
          ;; channel actually ran. The record names the class so no claim
          ;; extends past it; every other answer keeps :measured? false and
          ;; carries no record.
-         measured-cell
-         (when (and narrowed?
-                    (= :msl-v1 route)
-                    (= apple-measured-subgroup-size (:subgroup-size dev))
-                    (contains? apple-measured-workgroups
-                               (:kernel/workgroup-size kir)))
+         ;; This variant's OWN flip record (2026-10-23): at its flip cell
+         ;; the record names THIS variant's runs and its one measured
+         ;; shape -- the :subgroup-reduce runs say nothing about this
+         ;; variant (uB5G, reverse reading).
+         simd-measured-cell
+         (when simd-flip?
            {:device apple-measured-fragment
             :subgroup-size apple-measured-subgroup-size
             :channel apple-measured-channel
             :route :msl-v1
             :workgroup-size (:kernel/workgroup-size kir)
             :operators #{:sum :max :min}
-            :shapes apple-measured-shapes
-            :evidence apple-measured-evidence})]
+            :shapes apple-simdgroup-measured-shapes
+            :evidence apple-simdgroup-measured-evidence})
+         measured-cell
+         (or simd-measured-cell
+             (when (and narrowed?
+                        (= :msl-v1 route)
+                        (= apple-measured-subgroup-size (:subgroup-size dev))
+                        (contains? apple-measured-workgroups
+                                   (:kernel/workgroup-size kir)))
+               {:device apple-measured-fragment
+                :subgroup-size apple-measured-subgroup-size
+                :channel apple-measured-channel
+                :route :msl-v1
+                :workgroup-size (:kernel/workgroup-size kir)
+                :operators #{:sum :max :min}
+                :shapes apple-measured-shapes
+                :evidence apple-measured-evidence}))]
     (cond-> {:variant variant
              :measured? (some? measured-cell)
-             :basis (cond narrowed?
+             :basis (cond simd-flip?
+                          (str (get variant-bases :simdgroup-reduce) "\n  "
+                               apple-simdgroup-flip-note)
+                          narrowed?
                           (str (get variant-bases :baseline) "\n  " apple-narrow-note
                                (when (= 32 (:kernel/workgroup-size kir))
                                  (str "\n  " apple-w32-note))

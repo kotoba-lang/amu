@@ -17,8 +17,15 @@
   ladder (rule 3 step 2) -- first rung for an Apple MSL descriptor
   reporting the fold's rule-6 fact (:simd-reduce) and a reported
   SIMD-group width dividing W, outside the measured-class carve-out --
-  and every such answer is UNMEASURED (:measured? false). Rule 3 step 3
-  (measurement) is OPEN: nothing has executed this variant anywhere.
+  and every such answer is UNMEASURED (:measured? false) except this
+  variant's OWN flip cell. Rule 3 step 3 (measurement) STARTED
+  2026-10-23: the native-Metal channel ran :baseline vs THIS variant at
+  W = 256, n = 1000003 on Apple M1 Max and measured it FASTER (paired
+  median ratios 0.790/0.800/0.799 for :sum/:max/:min, claim-protocol
+  rule 2 REGIME-INVARIANT FASTER, 18/18 per-run ratios below 1.0) -- the
+  flip contract answers that cell :simdgroup-reduce with :measured? true
+  (ONE cell measured; every other W, shape 2 and every other device
+  UNMEASURED).
 
   What the emission is (ADR-0373's decision, to its letter): the
   intra-SIMD-group stage of :subgroup-reduce's MSL arm -- the
@@ -58,15 +65,18 @@
   threads_per_simdgroup / simdgroups_per_threadgroup) is the shared
   fold's, unchanged.
 
-  UNMEASURED, all of it: no speed claim exists for this variant on any
-  device. No Metal execution path exists in this repository (the brokers
-  died with the C loader; ADR 0371's provider is the replacement track),
-  and nothing has executed this variant on any GPU -- including the M1 Max
-  class where :subgroup-reduce itself measured SLOWER than :baseline at
-  every measured cell. The emitted source COMPILES on this host under the
+  UNMEASURED except one cell: no speed claim exists for this variant
+  anywhere but its own flip cell (W = 256, n = 1000003, Apple M1 Max --
+  paired median ratios 0.790/0.800/0.799, rule-2 REGIME-INVARIANT FASTER,
+  docs/evidence/gpu-simdgroup-reduce-m1max-20261023). No Metal execution
+  path exists in this repository (the brokers died with the C loader;
+  ADR 0371's provider is the replacement track); the flip cell's numbers
+  come from the native-Metal measurement harness (ADR-0360 question (1)'s
+  conforming channel, the emitters' own bytes), not the product runtime.
+  The emitted source COMPILES on this host under the
   Apple Metal compiler (a toolchain fact of what compiles, recorded in
   docs/evidence/gpu/simdgroup-reduce-msl-emission-20261023/, not a
-  measurement). Every answer this row will ever carry stays
+  measurement). Every other answer this row carries stays
   :measured? false until a hardware measurement under ADR-0360's
   measurement contract replaces the basis text."
   {:kotoba/export [applicable? basis emit-msl min-workgroup-size]}
@@ -80,24 +90,33 @@
   32)
 
 (def basis
-  "Why this variant exists. DESIGN ASSUMPTION, not measurement evidence.
-  :measured? false is the honesty lock; it flips only when a hardware
-  measurement under ADR-0360's measurement contract replaces :text for a
-  named device class. Nothing in this repository has executed a
-  simdgroup-reduce anywhere; the one device with any subgroup-reduce
-  evidence (Apple M1 Max) refuted the SHUFFLE fold's rationale, and that
-  refutation neither condemns nor blesses this variant (ADR-0373)."
+  "Why this variant exists. DESIGN ASSUMPTION, not measurement evidence,
+  except at the one measured cell. :measured? false is the honesty lock;
+  it flips only when a hardware measurement under ADR-0360's measurement
+  contract replaces :text for a named device class -- 2026-10-23 flipped
+  W = 256 on Apple M1 Max for this variant (measured FASTER than
+  :baseline, apple-simdgroup-flip-note in
+  kotoba.compiler.accelerator-variants). The one device with any
+  subgroup-reduce evidence (Apple M1 Max) refuted the SHUFFLE fold's
+  rationale, and that refutation neither condemns nor blesses this
+  variant (ADR-0373) -- this variant's own flip cell measured it
+  directly."
   {:measured? false
    :text
-   "Design assumption (UNMEASURED): the baseline tree reduce pays log2(W)
-    barrier stages; folding within a SIMD-group needs no barriers and no
-    shared memory in the intra stage, leaving one write barrier plus a
-    log2(W/S)-stage cross-SIMD-group tree. The intra stage here is ONE
-    reduction intrinsic per operator (simd_sum / simd_max / simd_min)
-    instead of the shuffle ladder -- a structural difference, stated, not
-    priced: nothing has measured simd_sum against the shuffle loop on any
-    device, and the shuffle fold's own rationale measured CONTRADICTED on
-    the one device tested (M1 Max). No speed claim."})
+   "Design assumption (UNMEASURED outside one cell): the baseline tree
+    reduce pays log2(W) barrier stages; folding within a SIMD-group needs
+    no barriers and no shared memory in the intra stage, leaving one
+    write barrier plus a log2(W/S)-stage cross-SIMD-group tree. The intra
+    stage here is ONE reduction intrinsic per operator (simd_sum /
+    simd_max / simd_min) instead of the shuffle ladder -- a structural
+    difference, priced at ONE cell only (W = 256, n = 1000003, Apple M1
+    Max, 2026-10-23: paired median ratios 0.790/0.800/0.799 for
+    :sum/:max/:min, claim-protocol rule 2 REGIME-INVARIANT FASTER,
+    docs/evidence/gpu-simdgroup-reduce-m1max-20261023). Everywhere else
+    nothing has measured simd_sum against the shuffle loop, and the
+    shuffle fold's own rationale measured CONTRADICTED on the one device
+    tested (M1 Max). No speed claim outside the flip cell's own recorded
+    scope."})
 
 (defn applicable?
   "TOTAL predicate for the row ADR-0373 specifies: a REDUCE kernel over

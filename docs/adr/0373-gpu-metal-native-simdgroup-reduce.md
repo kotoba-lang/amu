@@ -126,6 +126,23 @@ ladder is pinned by `the-msl-ladder-selects-simdgroup-reduce-first` and
    gate holds, the `:baseline` answer carries the carve-out note and
    `:measured? false`: nothing measured this variant, and the answer is
    the carve-out's decision.]
+   [UPDATE 2026-10-23, the FLIP SLICE (rule 3 step 3, later same-day):
+   a measurement of THIS variant on that class ran at ONE cell -- W = 256,
+   n = 1000003, the native-Metal channel (the step-3 record,
+   `docs/evidence/gpu-simdgroup-reduce-m1max-20261023`) -- and measured
+   it FASTER than `:baseline` (paired median ratios 0.790/0.800/0.799
+   for `:sum`/`:max`/`:min`, claim-protocol rule 2 REGIME-INVARIANT
+   FASTER, 18/18 per-run ratios below 1.0). The flip contract's keys
+   hold exactly there (name fragment `m1 max`, reported subgroup size
+   32, the MSL route, this row's `:simd-reduce` gate, W = 256), the
+   carve-out lifts exactly there, and the cell answers
+   `:simdgroup-reduce` with `:measured? true` and the row's OWN
+   `:measured-cell` record (`:shapes [1000003]` -- ONE measured shape;
+   shape 2 stays UNMEASURED). Every other W of this class keeps the
+   carve-out's `:baseline` with the lock on. The flip is code in
+   `select-variant` (`simd-flip?`,
+   `apple-simdgroup-measured-workgroups #{256}`), pinned by
+   `the-simdgroup-rows-own-flip-cell-flips-the-honesty-lock`.]
 2. **The MSL ladder (the ADR-0361 CUDA-ladder idiom).** Outside the
    carved-out class, an Apple MSL descriptor that reports the fold's
    facts (rule 6, below) answers `:simdgroup-reduce` -- the vendor-native
@@ -233,6 +250,23 @@ step-1 slice added the rows below it.]
   measurement record (W = 256, n = 1000003, 6 fresh processes).
   `docs/evidence/gpu/simdgroup-reduce-m1max-measure-20261023.txt`: the
   step-3 slice record.
+- [FLIP SLICE, 2026-10-23 (rule 3 step 3's flip, the W = 256 cell
+  flips):] `src/kotoba/compiler/accelerator_variants.cljk`: `simd-flip?`
+  (the flip's key conjunction), `apple-simdgroup-measured-workgroups
+  #{256}`, `apple-simdgroup-measured-shapes`,
+  `apple-simdgroup-measured-evidence`, `apple-simdgroup-flip-note`, the
+  flip's own `:measured-cell` record and the flip-aware ladder cond;
+  `src/kotoba/compiler/accelerator_simdgroup_reduce.cljk`: honesty marks
+  for the flip cell (docstrings only);
+  `test/kotoba/compiler/accelerator_variants_test.cljk`:
+  `the-simdgroup-rows-own-flip-cell-flips-the-honesty-lock` (new) plus
+  the flip-aware carve-out block in
+  `the-msl-ladder-selects-simdgroup-reduce-first`;
+  `test/kotoba/compiler/accelerator_simdgroup_reduce_test.cljk`:
+  `simdgroup-selection-has-landed-under-the-msl-ladder` updated to the
+  flip contract (W = 256 answers the row, MEASURED).
+  `docs/evidence/gpu/simdgroup-reduce-flip-20261023.txt`: the flip slice
+  record (gate output included).
 
 ## What did NOT move (named so nothing is silently upgraded)
 
@@ -246,6 +280,12 @@ step-1 slice added the rows below it.]
   answers byte-for-byte what it answered before: rung 2's answers, the
   flip's records and every non-Apple or non-MSL cell are unchanged (tests
   pin it).
+- [The flip slice (2026-10-23) moved exactly ONE `:measured?` flag and
+  added exactly ONE `:measured-cell` record -- this row's own W = 256
+  cell on the narrowed M1 Max class, as scoped above. Everything else in
+  the step-2 list is still unmoved; the workgroup rows (ADR-0355/0358)
+  remain untouched and no speed claim extends past the flip cell's own
+  recorded scope.]
 
 ## State (the honesty rule's three states)
 
@@ -255,10 +295,14 @@ carve-out, the MSL ladder's two rungs, the `:simd-reduce` rule-6 gate --
 + its tests (the ladder's step-2 slice). STEP 3 (the later same-day
 slice) adds MEASURED DATA, not implementation: the W = 256, n = 1000003
 cell ran on M1 Max and its record is in the repo (ratio 0.790/0.800/0.799
-vs `:baseline`, rule 2 regime-invariant faster). ACCEPTED DESIGN ONLY:
-any wording above that governs this variant's own future measurement
-cells (the flip contract as applied to `:simdgroup-reduce` -- no cell has
-flipped).
+vs `:baseline`, rule 2 regime-invariant faster). THE FLIP SLICE (also
+2026-10-23) then moved ONE `:measured?` flag: the W = 256 cell of THIS
+variant on the narrowed M1 Max class answers `:simdgroup-reduce` with
+`:measured? true` and the row's own `:measured-cell` record
+(`:shapes [1000003]`) -- implemented (`simd-flip?` + tests). ACCEPTED
+DESIGN ONLY: any wording above that governs this variant's OTHER future
+measurement cells (the flip contract as applied to `:simdgroup-reduce` --
+only the W = 256 cell has flipped).
 PROPOSED, unchanged: every performance question about this variant off
 the one measured cell.] The
 two design
@@ -311,9 +355,18 @@ outside this diff. No green full suite is claimed.
    + tests; (2) the selection predicate (the ladder, the carve-out, the
    `:simd-reduce` gate fact) + tests. STEP 3 STARTED 2026-10-23: the
    W = 256, n = 1000003 cell measured on M1 Max (faster than
-   `:baseline`, rule 2 regime-invariant).] Rule 3's order keeps the rest
-   of (3) next: the flip slice and the remaining cells.
-2. (step 3) The flip: what the W = 256 numbers license under the flip
+   `:baseline`, rule 2 regime-invariant). The flip slice (item 2) is
+   DONE the same day.] Rule 3's order keeps the rest
+   of (3) next: the remaining cells.
+2. [(step 3) DONE 2026-10-23, the flip slice: what the W = 256 numbers
+   license under the flip contract is ANSWERED -- this VARIANT's own
+   cells keyed by name fragment, reported subgroup size, route, channel,
+   W set and shapes, one cell set at a time: exactly the W = 256,
+   n = 1000003 cell of the narrowed M1 Max class flipped
+   (`simd-flip?`, `apple-simdgroup-measured-workgroups #{256}`,
+   `:shapes [1000003]`), every other cell keeps the lock. The flip's
+   record: docs/evidence/gpu/simdgroup-reduce-flip-20261023.txt.] The
+   flip: what the W = 256 numbers license under the flip
    contract -- this VARIANT's own cells keyed by name fragment, reported
    subgroup size, route, channel, W set and shapes -- one cell set at a
    time. Until it lands no `:measured?` flag moves.
