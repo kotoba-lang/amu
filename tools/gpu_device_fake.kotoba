@@ -13,12 +13,14 @@
 ;; 4294967295 makes the next submit report a lost device, 4294967294 a fence
 ;; timeout. A real device never sees these counts from this layer.
 ;;
+;; It has one device: index -1 (unset) or 0.
+;;
 ;; Device state: 64 bytes at S-DEV; word 0 is the pending fault (0, 33 or 34).
 
 (defn- dev-open [s :i64 index :i64] :i64
   (let [d (kxrt-p-alloc 4096)]
     (cond (< d 0) d
-          (not= index 0) -19
+          (> index 0) -19
           :else (let [z (kxrt-p-store64 d 0) w (kxrt-p-store64 (+ s S-DEV) d)] 0))))
 (defn- dev-close [s :i64] :i64 0)
 (defn- dev-name [s :i64] :string "fake")

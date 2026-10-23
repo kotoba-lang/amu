@@ -25,7 +25,8 @@
 ;;   {:wires #{42} :artifacts [{:path "P" :sha256 "64 lowercase hex digits"
 ;;     :kind :model} ...] :device-bytes N :submit-timeout-seconds 60 :device 0}
 ;; :wires (holding 42), :artifacts and :device-bytes are required; the timeout
-;; (1..60) defaults to 60 s, protocol constant 13, and the device to 0. Another
+;; (1..60) defaults to 60 s, protocol constant 13. Without :device the layer
+;; picks (-1: the first device with a compute queue, a discrete GPU first). Another
 ;; key, a repeated key or a malformed value refuses the grant: the provider
 ;; then serves nothing, reports :grant-refused and exits 2.
 ;;
@@ -556,7 +557,7 @@
             i (ss s S-PATH (kxrt-p-alloc 8192))
             j (ss s S-IDS (kxrt-p-alloc (* 8 (constant 2))))
             t (ss s S-TIMEOUT (* (constant 13) 1000000000))
-            l (ss s S-SLOT -1)]
+            l (ss s S-SLOT -1) dv (ss s S-DEVICE -1)]
         (if (or (< a 0) (< b 0) (< c 0) (< d 0) (< e 0) (< f 0) (< g 0) (< h 0) (< i 0) (< j 0)) -1 s)))))
 
 (defn main [] :i64
