@@ -61,6 +61,9 @@ removal (ADR 0371). See summary.md for what that does and does not license.
 """
 
 import argparse
+import contextlib
+import io
+import os
 import pathlib
 import re
 import shutil
@@ -99,6 +102,48 @@ def sh(cmd, log, cwd=ROOT):
         sys.stderr.write(r.stdout + r.stderr)
         sys.exit(2)
     return r.stdout
+
+
+def resolve_test_classpath(log, root=ROOT):
+    """The dependency classpath the emit step hands kbb (the <cp> of
+    `kbb --backend sci --classpath "src:test:<cp>"`).
+
+    Route 1 (every measurement before the 2026-10-24 origin/main merge):
+    `kbb -Spath -M:test` at <root>, resolving <root>'s deps.edn. The
+    merge (7b8f6488) retired the host manifests -- deps.edn is gone from
+    every current tree root -- so route 1 FAILS there now.
+
+    Route 2 (fallback, named verbatim in the run-log whenever used):
+    $AMU_KBB_TEST_CLASSPATH -- the SAME kbb -Spath -M:test resolution
+    taken against the retired deps.edn content (its git-history blob
+    materialized outside the tree) and absolutized. The dependency
+    closure (the .gitlibs shas) is identical to route 1's; only the
+    resolution route differs, and it is never silent.
+
+    If route 1 fails and the variable is unset: FATAL. Never a silently
+    thinner classpath.
+    """
+    r = subprocess.run(["kbb", "-Spath", "-M:test"], cwd=root,
+                       capture_output=True, text=True)
+    log.append("$ kbb -Spath -M:test")
+    log.append(r.stdout)
+    if r.stderr:
+        log.append(r.stderr)
+    if r.returncode == 0 and r.stdout.strip():
+        return r.stdout.strip()
+    env_cp = os.environ.get("AMU_KBB_TEST_CLASSPATH", "").strip()
+    if not env_cp:
+        sys.stderr.write("FATAL: kbb -Spath -M:test failed at " + str(root)
+                         + " and AMU_KBB_TEST_CLASSPATH is unset -- "
+                         "no classpath, refusing to run thin\n")
+        sys.stderr.write(r.stdout + r.stderr)
+        sys.exit(2)
+    log.append("FALLBACK classpath route (AMU_KBB_TEST_CLASSPATH; the same "
+               "kbb -Spath -M:test resolution against the retired deps.edn "
+               "content, absolutized -- dependency closure identical to "
+               "route 1's, resolution route named here):")
+    log.append(env_cp)
+    return env_cp
 
 
 VIA_AUTO_WIRE = ("the measurement driver's --compare-historical auto-wiring "
@@ -157,6 +202,46 @@ def self_test():
                gpu_regime_classify.parse_summary_published_medians):
         _expect(fn(out) == fn(new_text),
                 f"{fn.__name__} round-trips through the appended summary")
+    # Classpath resolution (routes 1/2/FATAL), hardware-free: a scratch root
+    # without deps.edn fails route 1 exactly as every post-merge tree root
+    # does, so the fallback and the FATAL paths are exercised without a
+    # measurement and without touching the tree.
+    fake_root = pathlib.Path(tempfile.mkdtemp(prefix="sg-cp-selftest-"))
+    log2 = []
+    saved = os.environ.get("AMU_KBB_TEST_CLASSPATH")
+    os.environ["AMU_KBB_TEST_CLASSPATH"] = "FALLBACK-CP-SELFTEST"
+    try:
+        _expect(resolve_test_classpath(log2, root=fake_root)
+                == "FALLBACK-CP-SELFTEST",
+                "route 2: a root without deps.edn falls back to the named "
+                "env classpath")
+        _expect(any(str(line).startswith("FALLBACK classpath route")
+                    for line in log2),
+                "the fallback route is named in the log, never silent")
+        os.environ.pop("AMU_KBB_TEST_CLASSPATH", None)
+        captured = io.StringIO()
+        try:
+            with contextlib.redirect_stderr(captured):
+                resolve_test_classpath([], root=fake_root)
+            _expect(False, "no route resolving must FATAL, not return")
+        except SystemExit as e:
+            _expect(e.code == 2, "FATAL exits 2 when no route resolves")
+        _expect("refusing to run thin" in captured.getvalue(),
+                "the FATAL names its refusal to run on a thin classpath")
+    finally:
+        if saved is None:
+            os.environ.pop("AMU_KBB_TEST_CLASSPATH", None)
+        else:
+            os.environ["AMU_KBB_TEST_CLASSPATH"] = saved
+    os.environ["AMU_KBB_TEST_CLASSPATH"] = "FALLBACK-CP-SELFTEST"
+    try:
+        _expect(bool(resolve_test_classpath([]).strip()),
+                "the live root resolves a non-empty classpath by some route")
+    finally:
+        if saved is None:
+            os.environ.pop("AMU_KBB_TEST_CLASSPATH", None)
+        else:
+            os.environ["AMU_KBB_TEST_CLASSPATH"] = saved
     print(f"driver auto-wiring self-test: {n} assertions passed, 0 failed")
 
 
@@ -213,7 +298,7 @@ def main():
 
     # 1. emit (at the cell's width -- the subgroup arm's threadgroup partials
     #    array is sized from the emitted W, so the sources are W-specific)
-    cp = sh(["kbb", "-Spath", "-M:test"], log).strip()
+    cp = resolve_test_classpath(log)
     sh(["kbb", "--backend", "sci", "--classpath", f"src:test:{cp}",
         "scripts/gpu-subgroup-reduce-metal-measure.cljk",
         "--width", str(wg_want), "--out", str(out / "shaders"),
