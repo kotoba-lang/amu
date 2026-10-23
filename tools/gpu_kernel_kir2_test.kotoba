@@ -13,7 +13,7 @@
 ;; CASES equals the expect calls below (the script counts them). CONTROL 1
 ;; makes exactly one expectation wrong; the script requires one failure then.
 
-(def CASES 110)
+(def CASES 134)
 (def CONTROL 0)
 
 (defn- say [s :string] :i64
@@ -232,7 +232,43 @@
        (expect "write kir2-kdot-i8-x8r32.spv" (let [m (kir2-kdot-i8-x8 32)] (- (spv-write m "kir2-kdot-i8-x8r32.spv") (* 4 (spv-count m)))) 0)
        (expect "glslang kdot_i8_x8r4 -DROWS=16 passes the checker" (spc-check (spv-read "ref-kdot-i8-x8r4-rows16.spv")) 0)
        (expect "glslang kdot_i8_x8r4 -DROWS=32 passes the checker" (spc-check (spv-read "ref-kdot-i8-x8r4-rows32.spv")) 0))))
+;; ---------------------------------------------------------------------
+;; nex_ops' BATCH, BPREFILL and BIAS variants: each checks and writes, and
+;; glslang's module of the same -DOP and defines passes the checker too.
 
+(defn- nex-variant-name [v :i64] :string
+  (case v 1 "batch" 2 "bprefill" 4 "bias" "batch-bias"))
+
+(defn- nex-variants [] :i64
+  (loop [k 0 bad 0]
+    (if (= k 20) bad
+      (let [op (vector-at [8 8 14 15 15 15 16 16 18 19 22 22 23 24 25 27 28 29 30 31] k)
+            v (vector-at [1 2 1 1 4 5 1 2 1 1 1 2 2 2 1 1 1 1 1 1] k)
+            m (kir2-nex-variant op v)
+            name (string-concat (kir2-nex-op-name op) (string-concat "-" (nex-variant-name v)))
+            path (string-concat "kir2-nex-" (string-concat name ".spv"))
+            g (spv-read (string-concat "ref-nex-ops-" (string-concat name ".spv")))]
+        (recur (inc k)
+               (+ bad (+ (expect path (spc-check m) 0)
+                      (+ (expect (string-concat "write " path) (spv-write m path) (* 4 (spv-count m)))
+                         (expect (string-concat "glslang nex-ops " (string-concat name " passes the checker")) (spc-check g) 0)))))))))
+
+(defn- nex-variant-shape [] :i64
+  (let [sf (kir2-nex-variant 31 1)]
+    (+ (expect "nex variant: v 0 is the decode op" (diff-words (kir2-nex-variant 15 0) (kir2-nex-op 15)) 0)
+       (expect "nex variant: rmsnorm has no BATCH" (spv-count (kir2-nex-variant 1 1)) 0)
+       (expect "nex variant: sample_topp has no BATCH" (spv-count (kir2-nex-variant 26 1)) 0)
+       (expect "nex variant: pos_seed has no BATCH" (spv-count (kir2-nex-variant 24 1)) 0)
+       (expect "nex variant: rope BATCH and BATCH BIAS differ" (if (= (diff-words (kir2-nex-variant 15 1) (kir2-nex-variant 15 5)) 0) 0 1) 1)
+       ;; S_SKIP and the function's end
+       (expect "nex variant: sample_part BATCH returns early" (count-op (kir2-nex-variant 27 1) 253) 2)
+       ;; the position and the seed; no token-buffer write
+       (expect "nex variant: sample_final BATCH's two bit casts" (count-op sf 124) 2)
+       (expect "nex variant: ctl BATCH has no loop" (count-op (kir2-nex-variant 22 1) 246) 0)
+       (expect "nex variant: ctl BPREFILL has one loop" (count-op (kir2-nex-variant 22 2) 246) 1)
+       (expect "nex variant: pos_incr BATCH has no loop" (count-op (kir2-nex-variant 14 1) 246) 0))))
+
+;; ---------------------------------------------------------------------
 ;; deltanet and embed
 (defn- embed-name [k :i64] :string
   (case k 23 "iq4xs" 8 "q8" 2 "b32-2" 3 "b32-3" 6 "b32-6" 7 "b32-7" "ptq1"))
@@ -257,8 +293,35 @@
                             (+ (expect "deltanet_fused: LocalSize 512" (op-word df 16 3) 512)
                                (expect "embed: kind 9 gives an empty module" (spv-count (kir2-embed 9)) 0))))))))))))
 
+;; deltanet_fused's and embed's BATCH and BPREFILL variants (every embed kind)
+(defn- dn-embed-variants [] :i64
+  (let [ds (loop [v 1 bad 0]
+             (if (> v 2) bad
+               (let [m (kir2-deltanet-fused-variant v)
+                     name (string-concat "deltanet-fused-" (nex-variant-name v))
+                     path (string-concat "kir2-" (string-concat name ".spv"))]
+                 (recur (inc v) (+ bad (+ (expect path (spc-check m) 0)
+                                       (+ (expect (string-concat "write " path) (spv-write m path) (* 4 (spv-count m)))
+                                          (expect (string-concat "glslang ref-" name) (spc-check (spv-read (string-concat "ref-" (string-concat name ".spv")))) 0))))))))
+        es (loop [i 0 bad 0]
+             (if (= i 14) bad
+               (let [k (vector-at [23 8 2 3 6 7 143] (quot i 2)) v (inc (rem i 2))
+                     m (kir2-embed-variant k v)
+                     name (string-concat (embed-name k) (string-concat "-" (nex-variant-name v)))
+                     path (string-concat "kir2-embed-" (string-concat name ".spv"))
+                     ref (string-concat "ref-embed-iq4xs-" (string-concat (if (= k 23) (nex-variant-name v) name) ".spv"))]
+                 (recur (inc i) (+ bad (+ (expect path (spc-check m) 0)
+                                       (+ (expect (string-concat "write " path) (spv-write m path) (* 4 (spv-count m)))
+                                          (expect (string-concat "glslang " ref) (spc-check (spv-read ref)) 0))))))))]
+    (+ ds es
+       (expect "deltanet_fused: v 0 is the decode module" (diff-words (kir2-deltanet-fused-variant 0) (kir2-deltanet-fused)) 0)
+       (expect "deltanet_fused: v 3 gives an empty module" (spv-count (kir2-deltanet-fused-variant 3)) 0)
+       (expect "embed: v 0 is the decode module" (diff-words (kir2-embed-variant 8 0) (kir2-embed 8)) 0)
+       (expect "embed: v 3 gives an empty module" (spv-count (kir2-embed-variant 23 3)) 0)
+       (expect "embed: BATCH and BPREFILL differ" (if (= (diff-words (kir2-embed-variant 23 1) (kir2-embed-variant 23 2)) 0) 0 1) 1))))
+
 (defn main [] :i64
-  (let [failed (+ (ewise) (+ (ewise-shape) (+ (attn) (+ (attn-ref) (+ (nex-ops) (+ (nex-shape) (+ (dots) (+ (dots8) (+ (dots-x8) (+ (dots-i8) (deltanet-embed)))))))))))
+  (let [failed (+ (ewise) (+ (ewise-shape) (+ (attn) (+ (attn-ref) (+ (nex-ops) (+ (nex-shape) (+ (nex-variants) (+ (nex-variant-shape) (+ (dots) (+ (dots8) (+ (dots-x8) (+ (dots-i8) (+ (deltanet-embed) (dn-embed-variants))))))))))))))
         x (say (string-concat "CASES " (string-from-i64 CASES)))
         y (say (string-concat "FAILED " (string-from-i64 failed)))]
     failed))

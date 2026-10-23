@@ -26,7 +26,11 @@
 ;; A unit that uses this file prepends its own ns line and drops this one,
 ;; after spirv_encode.kotoba (scripts/seed/check-gpu-kernel-spirv.py).
 
-(def KB-SIZE 2200000)
+;; B's words: the header, the sections (kb-base, kb-cap), the interned
+;; entries, the if/loop stack and the interface list. A unit keeps every
+;; builder it makes, so this reserve bounds how many it can make; the body's
+;; 196608 words are many times the largest kernel's whole module (~7.2K).
+(def KB-SIZE 591632)
 (def KB-NEXT 0)
 (def KB-TERM 1)
 (def KB-GLSL 16)
@@ -37,10 +41,10 @@
 (def KB-VOID 24)
 (def KB-FNTYPE 25)
 (def KB-NINTERN 26)
-(def KB-INTERN 2000000)
-(def KB-INTERN-MAX 30000)
-(def KB-STACK 2190000)
-(def KB-IFACE 2195000)
+(def KB-INTERN 540672)
+(def KB-INTERN-MAX 8192)
+(def KB-STACK 581632)
+(def KB-IFACE 586632)
 ;; features (capabilities beyond Shader): 1 GroupNonUniform (the subgroup
 ;; built-ins set it), 2 GroupNonUniformArithmetic (for the subgroup
 ;; arithmetic ops; none yet), 4 the packed 4x8 integer dot product
@@ -52,7 +56,7 @@
 (def KB-F-DOT 4)
 
 (defn- kb-base [s :i64] :i64 (case s 0 4096 1 8192 2 12288 3 16384 4 81920 5 212992 344064))
-(defn- kb-cap [s :i64] :i64 (case s 0 4096 1 4096 2 4096 3 65536 4 131072 5 131072 1655936))
+(defn- kb-cap [s :i64] :i64 (case s 0 4096 1 4096 2 4096 3 65536 4 131072 5 131072 196608))
 (defn- kb-get [B :vector-i64 k :i64] :i64 (vector-at B k))
 (defn- kb-set [B :vector-i64 k :i64 v :i64] :i64 (let [z (vector-assoc! B k v)] v))
 
