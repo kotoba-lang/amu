@@ -11,6 +11,7 @@ import platform
 import re
 import subprocess
 from pathlib import Path
+from source_lock_checks import check_source_locks
 
 
 def sha(p):
@@ -87,12 +88,14 @@ def main(product, out, complete):
     run("refuse-default", [entry, "compile", src, "--output", out / "refused.kseed"], 1, diagnostic="E2")
     run("refuse-worker", [aliases[2], "worker"], 2, diagnostic="E1")
     assert not (out / "refused.kseed").exists()
+    lock_boundary = check_source_locks(aliases, out / "source-lock-boundary")
     report = dict(status="PASS_PUBLIC_NATIVE_PRODUCT", image=descriptor["image"],
                   sourceRevision=descriptor["sourceRevision"], aliases=len(aliases),
                   nativeResult=42, remainingFuel=1000000, calls=calls,
                   completeReceiptSHA256=sha(proof_path),
                   currentSourceUnity=proof["sourceUnity"],
                   sameAsCurrentNativeGenerations=True,
+                  sourceLockBoundary=lock_boundary,
                   observerSourceSHA256=sha(Path(__file__)),
                   host=[platform.system(), platform.machine(), platform.release()],
                   legacyRuntimeFallback=False)

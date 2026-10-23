@@ -54,7 +54,7 @@
       (and (>= length 7) (string=? (string-substring source (- length 7) length) ".kotoba"))) true))
 (defn- full-lock-ok? [] :bool
   (let [index (drv-pj-flag 1 (io-argc) "--source-lock")]
-    (or (< index 0) (= (io-exists (io-arg index)) 1))))
+    (or (< index 0) (> (vector-count (io-read-source-lock (io-arg index))) 0))))
 (defn- full-c-linked? [] :bool
   (let [index (drv-pj-flag 1 (io-argc) "--format")]
     (and (>= index 0) (string=? (io-arg index) "platform-linked"))))

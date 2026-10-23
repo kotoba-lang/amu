@@ -27,6 +27,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from source_lock_checks import check_source_locks
 
 ROOT = Path(__file__).resolve().parents[2]
 STACK = "8388608"
@@ -199,6 +200,7 @@ def main(boot, out):
     assert not (out / "c-linked.elf").exists()
     assert set(out.glob("*.kseed")) == containers_before_refusals, "refusal produced an artifact"
 
+    lock_boundary = check_source_locks([F], out / "source-lock-boundary")
     report = dict(status="PASS_COMBINED_COMPILER", host=[platform.system(), platform.machine(), platform.release()],
                   sources=sources, bootstrap=dict(targetProducer=dict(name=baseline, **pin(S)), coreProducer=dict(name=core_producer, **pin(P)), receipt=pin(boot / "selfhost-bootstrap.json")),
                   Pw=dict(container=kw, image=pw),
@@ -208,6 +210,7 @@ def main(boot, out):
                   publicEntryRefusals=refusals,
                   completeX86Compiler=pin(out / "F-x86_64.elf"),
                   cdci=dict(sources=cdci_sources, images=cdci_images, executionQualified=False),
+                  sourceLockBoundary=lock_boundary,
                   cCompilerOrLoader=False, emulation=False)
     (out / "calls.json").write_text(json.dumps(calls, indent=1) + "\n")
     (out / "one-compiler.json").write_text(json.dumps(report, indent=2) + "\n")

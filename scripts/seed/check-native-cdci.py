@@ -116,7 +116,7 @@ def main(complete, out):
     # Exercise all actual result/exit/fuel checks before the expensive rebuild.
     root, manifest, lines = stage("gate-positive")
     run("gate-positive", [root / "kotoba-native.elf", root / "cases.kcg", pin(root / "cases.kcg")])
-    gate_receipt = receipt(root / "kotoba-gate.receipt", b"KCGATE-R1")
+    standalone_gate_receipt = receipt(root / "kotoba-gate.receipt", b"KCGATE-R1")
 
     probes = [("wrong-manifest-pin", None, "CDCI:E2001"),
               ("extra-field", None, "CDCI:E1002"), ("nul-manifest", None, "CDCI:E1002"),
@@ -192,11 +192,13 @@ def main(complete, out):
     run("controller-positive", [root / "controller.elf", manifest, pin(manifest)], timeout=10900)
     assert pin(root / "rebuilt.kseed") == policy["coreContainerSHA256"]
     controller_receipt = receipt(root / "cdci.receipt", b"KCDCI-R1")
-    receipt(root / "kotoba-gate.receipt", b"KCGATE-R1")
+    gate_receipt = receipt(root / "kotoba-gate.receipt", b"KCGATE-R1")
+    assert gate_receipt != standalone_gate_receipt, "staged ledgers must have distinct receipt identities"
     report = dict(status="PASS_NATIVE_KOTOBA_CDCI", host=[platform.system(), platform.machine(), platform.release()],
                   observerSourceSHA256=pin(Path(__file__)),
                   controller=proof["cdci"]["controller"], compiler=proof["generations"][0],
                   policy=policy, controllerReceipt=controller_receipt, gateReceipt=gate_receipt,
+                  gateReceiptPath="positive/kotoba-gate.receipt", standaloneGateReceipt=standalone_gate_receipt,
                   manifestSHA256=pin(manifest), coreOutputSHA256=pin(root / "rebuilt.kseed"),
                   refusalCount=len(probes)+3, caseCount=24, parentDeathChildCleanup=True,
                   nativeVerdictAuthority=True, CLoader=False, NodeNBBJVMFallback=False)

@@ -496,9 +496,8 @@
   (let [argument (drv-pj-lock-arg 1 (io-argc) -1)]
     (cond (= argument -1) P
           (or (= argument -2) (= (pj-l L pj-k-unpinned) 1)) (let [w (pj-err M E-PROJ-UNPINNED 0)] P)
-          (= (io-exists (io-arg argument)) 0) (let [w (pj-err M E-PROJ-UNPINNED 0)] P)
           :else
-          (let [text (drv-pj-lock-text (io-read-bytes (io-arg argument)))]
+          (let [text (drv-pj-lock-text (io-read-source-lock (io-arg argument)))]
             (if (and (drv-pj-lock-digest? text) (ksl-valid? text) (string=? (ksl-entry text) path) (drv-pj-lock-roots? L P text))
               (let [w (-> L (pj-ls pj-k-source-lock 1) (pj-ls pj-k-lock-text (pj-n L)) (pj-ls pj-k-lock-files (ksl-file-count text)))]
                 (pj-padd L P text))
@@ -579,8 +578,8 @@
 
 (defn- drv-single-lock? [source :string path :string] :bool
   (let [argument (drv-pj-lock-arg 1 (io-argc) -1)]
-    (and (>= argument 0) (= (io-exists (io-arg argument)) 1)
-         (let [text (drv-pj-lock-text (io-read-bytes (io-arg argument)))]
+    (and (>= argument 0)
+         (let [text (drv-pj-lock-text (io-read-source-lock (io-arg argument)))]
            (and (drv-pj-lock-digest? text) (ksl-valid? text) (string=? (ksl-entry text) path)
                 (= (ksl-root-count text) 0) (= (ksl-file-count text) 1)
                 (string=? (ksl-hash text path) (sh-text source)))))))
