@@ -1,0 +1,328 @@
+{
+  "status": "PASS_PLATFORM_LINKED_BUILD_AND_RUN",
+  "compiler": {
+    "bytes": 1389056,
+    "sha256": "b3b087d89fecb7a7e9fd4903d14f08894b084a9282db8f9f85ce0efd9b90431a"
+  },
+  "host": [
+    "Linux",
+    "aarch64",
+    "6.15.10-200.fc42.aarch64"
+  ],
+  "sources": {
+    "seed/78-x86_64-platform.kotoba": {
+      "bytes": 10690,
+      "sha256": "99e99f629e28862f5c47d1d853afdfb805399dcde7f79717d1eabfe4c0d2f7df"
+    },
+    "seed/75-x86_64-static.kotoba": {
+      "bytes": 11038,
+      "sha256": "338cdd573c8a94b6ee86de53c45d1e04f29dc3ace7984351c4db34a2e7a8c3da"
+    },
+    "seed/76-x86_64-static-rt.kotoba": {
+      "bytes": 93388,
+      "sha256": "d7b6cec9caf5480b81e4f340a1638fd750a57e83c34ec0630ee0df5fd072b9f5"
+    }
+  },
+  "images": {
+    "hello": "artifacts/hello.elf",
+    "args": "artifacts/args.elf",
+    "relro": "artifacts/relro.elf",
+    "provider": "artifacts/provider.elf",
+    "vk": "artifacts/vk.elf",
+    "abi": "artifacts/abi.elf",
+    "launcher": "artifacts/launcher.elf",
+    "gpu-guest": "artifacts/gpu-guest.elf"
+  },
+  "results": {
+    "structure": {
+      "hello": {
+        "image": {
+          "bytes": 160256,
+          "sha256": "29a05402a554356dd42a4df7eb94c99f0d39df21da84de7939ce0c2866087b53"
+        },
+        "needed": [
+          "libc.so.6"
+        ],
+        "imports": [
+          "__libc_start_main"
+        ]
+      },
+      "args": {
+        "image": {
+          "bytes": 160256,
+          "sha256": "6186c930bb33e7a483353a6aa2c5518505b6e21ef4ff324e62a245dd68e37d56"
+        },
+        "needed": [
+          "libc.so.6"
+        ],
+        "imports": [
+          "__libc_start_main"
+        ]
+      },
+      "relro": {
+        "image": {
+          "bytes": 160256,
+          "sha256": "52f8cad9121c2cdad429e4b8980feafcbab17f933d4c869c63d2516675d9a955"
+        },
+        "needed": [
+          "libc.so.6"
+        ],
+        "imports": [
+          "__libc_start_main"
+        ]
+      },
+      "provider": {
+        "image": {
+          "bytes": 164352,
+          "sha256": "c92cf71b84a3af9ae9b07631eb42cd297cd11031fb818773fa08427d172b80cb"
+        },
+        "needed": [
+          "libc.so.6"
+        ],
+        "imports": [
+          "__libc_start_main"
+        ]
+      },
+      "vk": {
+        "image": {
+          "bytes": 160256,
+          "sha256": "844401a9781c44b425374721713a7b270dc7daa5f49ea453264467372508ebd8"
+        },
+        "needed": [
+          "libc.so.6",
+          "libvulkan.so.1"
+        ],
+        "imports": [
+          "__libc_start_main",
+          "vkGetInstanceProcAddr"
+        ]
+      },
+      "abi": {
+        "image": {
+          "bytes": 160256,
+          "sha256": "9994855a92529fc2ea33b4e353df7be7a4febfff28f29eda874c33a422fbb179"
+        },
+        "needed": [
+          "libc.so.6"
+        ],
+        "imports": [
+          "__libc_start_main",
+          "snprintf"
+        ],
+        "testOnlyCompiler": "import 1 replaced by libc snprintf in memory; never written to seed/",
+        "allowlistRefuses": true
+      }
+    },
+    "refusals": {
+      "runtime-call-outside-the-api": "E7101",
+      "api-in-format-static": "seed-x86_64-linux: refuse-static-api.kotoba at 44 detail 0 seed-x86_64-linux: E2101",
+      "format-on-aarch64-linux": "E7100"
+    },
+    "unchangedFormats": {
+      "previousRoot": {
+        "bytes": 1360384,
+        "sha256": "8ee8dbeda45c270e74e01d17fbf3088c699a58c5a800e1981f5109907f8dae0a"
+      },
+      "sameBytes": {
+        "x86_64-linux-static": {
+          "bytes": 160256,
+          "sha256": "10c42b20e8f8f62ca06a0abc18795cd17d934d71ed6a1c6daa74973aff3d2366"
+        },
+        "x86_64-linux-kx64-runner": {
+          "bytes": 160256,
+          "sha256": "478b040b75eca0711d84bb088a87deaaf633b3083ecf796943dac7559e820c70"
+        },
+        "x86_64-linux-launcher": {
+          "bytes": 233984,
+          "sha256": "5e477961b3ff6057af6a30842b4968ea881a5266c73243d63dadfdf3b30d2233"
+        },
+        "aarch64-linux-static": {
+          "bytes": 131584,
+          "sha256": "5c42a8bbdb9855c364be8e800c363026c058b18638aaf9b9ab9b6f3cac79c09c"
+        },
+        "aarch64-linux-launcher": {
+          "bytes": 193024,
+          "sha256": "215a97f1b69ba922b484a893105f938b00ee665df14b192bbdf3e16d84e1e6c0"
+        }
+      },
+      "previousRootRefusesFormat": true
+    }
+  },
+  "calls": [
+    {
+      "name": "hello",
+      "format": "platform-linked",
+      "target": "x86_64-linux",
+      "exit": 0
+    },
+    {
+      "name": "args",
+      "format": "platform-linked",
+      "target": "x86_64-linux",
+      "exit": 0
+    },
+    {
+      "name": "relro",
+      "format": "platform-linked",
+      "target": "x86_64-linux",
+      "exit": 0
+    },
+    {
+      "name": "provider",
+      "format": "platform-linked",
+      "target": "x86_64-linux",
+      "exit": 0
+    },
+    {
+      "name": "vk",
+      "format": "platform-linked",
+      "target": "x86_64-linux",
+      "exit": 0
+    },
+    {
+      "name": "test-compiler-snprintf",
+      "format": "static",
+      "target": "aarch64-linux",
+      "exit": 0
+    },
+    {
+      "name": "abi",
+      "format": "platform-linked",
+      "target": "x86_64-linux",
+      "exit": 0
+    },
+    {
+      "name": "refuse-runtime",
+      "format": "platform-linked",
+      "target": "x86_64-linux",
+      "exit": 1
+    },
+    {
+      "name": "refuse-static-api",
+      "format": "static",
+      "target": "x86_64-linux",
+      "exit": 1
+    },
+    {
+      "name": "refuse-aarch64",
+      "format": "platform-linked",
+      "target": "aarch64-linux",
+      "exit": 2
+    },
+    {
+      "name": "launcher",
+      "format": "launcher",
+      "target": "x86_64-linux",
+      "exit": 0
+    },
+    {
+      "name": "gpu-guest",
+      "format": "static",
+      "target": "x86_64-linux",
+      "exit": 0
+    },
+    {
+      "name": "same-new-x86_64-linux-static",
+      "format": "static",
+      "target": "x86_64-linux",
+      "exit": 0
+    },
+    {
+      "name": "same-old-x86_64-linux-static",
+      "format": "static",
+      "target": "x86_64-linux",
+      "exit": 0
+    },
+    {
+      "name": "same-new-x86_64-linux-kx64-runner",
+      "format": "kx64-runner",
+      "target": "x86_64-linux",
+      "exit": 0
+    },
+    {
+      "name": "same-old-x86_64-linux-kx64-runner",
+      "format": "kx64-runner",
+      "target": "x86_64-linux",
+      "exit": 0
+    },
+    {
+      "name": "same-new-x86_64-linux-launcher",
+      "format": "launcher",
+      "target": "x86_64-linux",
+      "exit": 0
+    },
+    {
+      "name": "same-old-x86_64-linux-launcher",
+      "format": "launcher",
+      "target": "x86_64-linux",
+      "exit": 0
+    },
+    {
+      "name": "same-new-aarch64-linux-static",
+      "format": "static",
+      "target": "aarch64-linux",
+      "exit": 0
+    },
+    {
+      "name": "same-old-aarch64-linux-static",
+      "format": "static",
+      "target": "aarch64-linux",
+      "exit": 0
+    },
+    {
+      "name": "same-new-aarch64-linux-launcher",
+      "format": "launcher",
+      "target": "aarch64-linux",
+      "exit": 0
+    },
+    {
+      "name": "same-old-aarch64-linux-launcher",
+      "format": "launcher",
+      "target": "aarch64-linux",
+      "exit": 0
+    },
+    {
+      "name": "previous-refuses",
+      "format": "platform-linked",
+      "target": "x86_64-linux",
+      "exit": 2
+    }
+  ],
+  "cCompilerOrLoader": false,
+  "run": {
+    "host": [
+      "Linux",
+      "x86_64",
+      "6.15.10-200.fc42.aarch64"
+    ],
+    "nativeKernel": false,
+    "glibc": "ldd (Debian GLIBC 2.36-9+deb12u14) 2.36",
+    "rows": {
+      "hello": {
+        "exit": 7,
+        "stdout": "hello\n"
+      },
+      "hello-structured": {
+        "exit": 0,
+        "stdout": "hello\n{:status :ok :result 7 :fuel {:initial 9007199254740991 :remaining 9007199254740990 :metered false}}\n"
+      },
+      "args": {
+        "exit": 0,
+        "stdout": "2|first|second\n"
+      },
+      "abi-snprintf-14-arguments": {
+        "exit": 23,
+        "stdout": "1 2 3 4 5 6 7 8 9 10 11\n"
+      },
+      "relro-control": {
+        "exit": -11,
+        "stdout": ""
+      },
+      "ldd-hello": "linux-vdso.so.1 (0x0000ffff9c9b4000)\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x0000ffff9b20d000)\n\t/lib64/ld-linux-x86-64.so.2 (0x0000555555556000)"
+    },
+    "notRun": [
+      "provider skeleton under the launcher: binfmt_misc cannot start a close-on-exec memfd image (native kernels only)",
+      "the libvulkan image: GPU hosts only (owner decision 2026-10-22)"
+    ]
+  }
+}

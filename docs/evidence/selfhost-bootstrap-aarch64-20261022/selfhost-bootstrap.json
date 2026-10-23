@@ -15,30 +15,46 @@
   ],
   "root": {
     "image": {
-      "bytes": 1360384,
-      "sha256": "8ee8dbeda45c270e74e01d17fbf3088c699a58c5a800e1981f5109907f8dae0a"
+      "bytes": 1389056,
+      "sha256": "b3b087d89fecb7a7e9fd4903d14f08894b084a9282db8f9f85ce0efd9b90431a"
     },
     "receipt": {
       "schema": "amu.seed.static-root.v1",
       "image": {
-        "bytes": 1360384,
-        "sha256": "8ee8dbeda45c270e74e01d17fbf3088c699a58c5a800e1981f5109907f8dae0a"
+        "bytes": 1389056,
+        "sha256": "b3b087d89fecb7a7e9fd4903d14f08894b084a9282db8f9f85ce0efd9b90431a"
       },
       "target": "aarch64-linux",
       "format": "static",
       "sourceManifest": "seed/X86_64-LINUX-SELFHOST-MANIFEST",
       "sourceUnity": {
-        "bytes": 842787,
-        "sha256": "9b3f3a70cbee16406b0e317515560e0f4c3c8d385a481d8f1f9fd1c0b38ef635"
+        "bytes": 859311,
+        "sha256": "ed132ec0de5b004317aa62a1d2c0cd082a99d0b9ea49a0f171751b44e7106a42"
       },
-      "sourceCommitBase": "1585cb488ea9a0b4f87c1fd319ea71fa3ceb09a0",
+      "sourceCommitBase": "54d26878c004f6ec95950a146c5e74683d298e05",
       "producedBy": {
-        "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 and S2 built S3 = this image (S1 = S2 = S3: the runtime text embedded in static images did not change). Re-pinned because this source adds --format launcher (ADR 0371 step 4: the launcher runtime text and the format plumbing in seed/70, 75, 76, 77 and 80) and decides runtime functions by their definition, not the symbol's first appearance (JUN-325: guest code could name a kxrt- intrinsic and get it inline).",
+        "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 and S2 built S3 = this image (S1 = S2 = S3: the runtime text embedded in static images did not change). Re-pinned because this source adds --format platform-linked (ADR 0371 step 5): seed/78, the platform runtime text of seed/76, intrinsic 9 and the platform API rule of seed/75, and the dispatch in seed/73.",
         "date": "2026-10-23",
-        "previousRoot": "98d4bcb7cd4ca331c292873a6d76b836cd34455b967575ae52af5bb3507ab774"
+        "previousRoot": "8ee8dbeda45c270e74e01d17fbf3088c699a58c5a800e1981f5109907f8dae0a"
       },
       "verification": "scripts/seed/selfhost-bootstrap.py on arm64 Linux: root -> S1 = S2 = S3 = root natively, without any C compiler or loader",
       "history": [
+        {
+          "image": {
+            "bytes": 1360384,
+            "sha256": "8ee8dbeda45c270e74e01d17fbf3088c699a58c5a800e1981f5109907f8dae0a"
+          },
+          "sourceUnity": {
+            "bytes": 842787,
+            "sha256": "9b3f3a70cbee16406b0e317515560e0f4c3c8d385a481d8f1f9fd1c0b38ef635"
+          },
+          "sourceCommitBase": "1585cb488ea9a0b4f87c1fd319ea71fa3ceb09a0",
+          "producedBy": {
+            "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 and S2 built S3 = this image (S1 = S2 = S3: the runtime text embedded in static images did not change). Re-pinned because this source adds --format launcher (ADR 0371 step 4: the launcher runtime text and the format plumbing in seed/70, 75, 76, 77 and 80) and decides runtime functions by their definition, not the symbol's first appearance (JUN-325: guest code could name a kxrt- intrinsic and get it inline).",
+            "date": "2026-10-23",
+            "previousRoot": "98d4bcb7cd4ca331c292873a6d76b836cd34455b967575ae52af5bb3507ab774"
+          }
+        },
         {
           "image": {
             "bytes": 1294848,
@@ -152,8 +168,8 @@
   },
   "sourceGraph": {
     "seed/X86_64-LINUX-SELFHOST-MANIFEST": {
-      "bytes": 510,
-      "sha256": "af651c4d855723a633d3b94c4fc6393e5c6c6e53ac7e58186e0ec3228e8625b0"
+      "bytes": 541,
+      "sha256": "807282afc305ed284486296b30f115faa031db859d5bdf8a46c70ea154f8bd6a"
     },
     "seed/00-ns-static.kotoba": {
       "bytes": 14937,
@@ -200,16 +216,20 @@
       "sha256": "15f2c4f8b8f0a2a46ccd8fbb4c7f621e17a385b680e0d6878d258a9c9e6cc14c"
     },
     "seed/75-x86_64-static.kotoba": {
-      "bytes": 9410,
-      "sha256": "1522fda44be65f986844e5ba2e79136ef302f51f9a4e50dc8e1fe4af8268eb5c"
+      "bytes": 11038,
+      "sha256": "338cdd573c8a94b6ee86de53c45d1e04f29dc3ace7984351c4db34a2e7a8c3da"
     },
     "seed/76-x86_64-static-rt.kotoba": {
-      "bytes": 89506,
-      "sha256": "16eb8bb1f44dc5fe868ee83698bf200a80aef7c0a5d23ae20b8d69b3c06d8ed4"
+      "bytes": 93388,
+      "sha256": "d7b6cec9caf5480b81e4f340a1638fd750a57e83c34ec0630ee0df5fd072b9f5"
     },
     "seed/77-aarch64-static-rt.kotoba": {
       "bytes": 89627,
       "sha256": "d08f3d4f83b5ddeab8eff5956b60fc825ecb8fc3079c2048cd987a234574fbb7"
+    },
+    "seed/78-x86_64-platform.kotoba": {
+      "bytes": 10690,
+      "sha256": "99e99f629e28862f5c47d1d853afdfb805399dcde7f79717d1eabfe4c0d2f7df"
     },
     "seed/80-aarch64-linux.kotoba": {
       "bytes": 15587,
@@ -220,8 +240,8 @@
       "sha256": "9c3b16530f722e9a86249d17be3d5d55e1306be759be76c21df8cfac1d5db4d8"
     },
     "seed/73-x86-linux-entry.kotoba": {
-      "bytes": 1175,
-      "sha256": "499022e15adce90748a6a545230e3ca922a6a49cf0f9cd986807a59d93b36b6b"
+      "bytes": 1498,
+      "sha256": "757116e6ced4d0aa7bf567471505507489a4b686632ea0f35ff6a48bdbaaf705"
     }
   },
   "generations": [
@@ -229,24 +249,24 @@
       "name": "S1",
       "producedBy": "root.elf",
       "pin": {
-        "bytes": 1360384,
-        "sha256": "8ee8dbeda45c270e74e01d17fbf3088c699a58c5a800e1981f5109907f8dae0a"
+        "bytes": 1389056,
+        "sha256": "b3b087d89fecb7a7e9fd4903d14f08894b084a9282db8f9f85ce0efd9b90431a"
       }
     },
     {
       "name": "S2",
       "producedBy": "S1.elf",
       "pin": {
-        "bytes": 1360384,
-        "sha256": "8ee8dbeda45c270e74e01d17fbf3088c699a58c5a800e1981f5109907f8dae0a"
+        "bytes": 1389056,
+        "sha256": "b3b087d89fecb7a7e9fd4903d14f08894b084a9282db8f9f85ce0efd9b90431a"
       }
     },
     {
       "name": "S3",
       "producedBy": "S2.elf",
       "pin": {
-        "bytes": 1360384,
-        "sha256": "8ee8dbeda45c270e74e01d17fbf3088c699a58c5a800e1981f5109907f8dae0a"
+        "bytes": 1389056,
+        "sha256": "b3b087d89fecb7a7e9fd4903d14f08894b084a9282db8f9f85ce0efd9b90431a"
       }
     }
   ],
@@ -257,8 +277,8 @@
       "sha256": "8468afe3b672e460f954a6d8018f64fe89baa07598f8d494939b1b560320699b"
     },
     "x86_64Compiler": {
-      "bytes": 1655296,
-      "sha256": "90c509d5f54aef86bd742b63485fdc49dad7adb74c16d6f13f0a2fb5e56f6745"
+      "bytes": 1688064,
+      "sha256": "35ed9953bba4489a150b86a534d7aa9f3d72d4b9889cd5d7f9005f59b1cff2a0"
     },
     "x86_64Runner": {
       "bytes": 160256,

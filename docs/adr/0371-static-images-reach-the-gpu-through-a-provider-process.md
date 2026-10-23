@@ -3,10 +3,10 @@
 Date: 2026-10-22
 Status: Decision 1 (the platform boundary) accepted by the owner on 2026-10-22.
 The rest is Proposed. Steps 1 (the protocol table), 2 (the runtime transport),
-3 (wire 42 admission) and 4 (the launcher) are implemented. The owner signed
-off the admission (Decision 7, open question 2) on 2026-10-22. Nothing else is
-implemented.
-Tracking: JUN-285 (this ADR), JUN-291 (step 1), JUN-294 (step 2), JUN-313 (step 4). Related: JUN-109 (wire 42 admission), JUN-282
+3 (wire 42 admission), 4 (the launcher) and 5 (the platform-linked writer,
+x86_64) are implemented. The owner signed off the admission (Decision 7, open
+question 2) on 2026-10-22. Nothing else is implemented.
+Tracking: JUN-285 (this ADR), JUN-291 (step 1), JUN-294 (step 2), JUN-313 (step 4), JUN-322 (step 5). Related: JUN-109 (wire 42 admission), JUN-282
 (`amu run` on static images), JUN-283, AWAI-12 (murakumo inference on Amu
 selfhost).
 
@@ -580,6 +580,9 @@ Each step is its own PR, in this order:
    * **Not yet.** Step 6 decides two things. One is how the provider hands
      strings to and from the platform API (today: bytes in memory from
      `kxrt-p-alloc`). The other is what the provider's environment holds.
+   * **Root.** Re-pinned C-free to `b3b087d8…` on top of step 4's
+     `8ee8dbed…`. No adoption round was needed.
+   * **Receipts.** `docs/evidence/platform-linked-20261023/`.
 6. **Vulkan provider** in Kotoba on x86_64-linux. Qualify it on B70 or gad
    with:
    * `INFO` and `DEVCLASS`;

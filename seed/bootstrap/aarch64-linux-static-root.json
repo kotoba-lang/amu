@@ -1,24 +1,40 @@
 {
   "schema": "amu.seed.static-root.v1",
   "image": {
-    "bytes": 1360384,
-    "sha256": "8ee8dbeda45c270e74e01d17fbf3088c699a58c5a800e1981f5109907f8dae0a"
+    "bytes": 1389056,
+    "sha256": "b3b087d89fecb7a7e9fd4903d14f08894b084a9282db8f9f85ce0efd9b90431a"
   },
   "target": "aarch64-linux",
   "format": "static",
   "sourceManifest": "seed/X86_64-LINUX-SELFHOST-MANIFEST",
   "sourceUnity": {
-    "bytes": 842787,
-    "sha256": "9b3f3a70cbee16406b0e317515560e0f4c3c8d385a481d8f1f9fd1c0b38ef635"
+    "bytes": 859311,
+    "sha256": "ed132ec0de5b004317aa62a1d2c0cd082a99d0b9ea49a0f171751b44e7106a42"
   },
-  "sourceCommitBase": "1585cb488ea9a0b4f87c1fd319ea71fa3ceb09a0",
+  "sourceCommitBase": "54d26878c004f6ec95950a146c5e74683d298e05",
   "producedBy": {
-    "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 and S2 built S3 = this image (S1 = S2 = S3: the runtime text embedded in static images did not change). Re-pinned because this source adds --format launcher (ADR 0371 step 4: the launcher runtime text and the format plumbing in seed/70, 75, 76, 77 and 80) and decides runtime functions by their definition, not the symbol's first appearance (JUN-325: guest code could name a kxrt- intrinsic and get it inline).",
+    "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 and S2 built S3 = this image (S1 = S2 = S3: the runtime text embedded in static images did not change). Re-pinned because this source adds --format platform-linked (ADR 0371 step 5): seed/78, the platform runtime text of seed/76, intrinsic 9 and the platform API rule of seed/75, and the dispatch in seed/73.",
     "date": "2026-10-23",
-    "previousRoot": "98d4bcb7cd4ca331c292873a6d76b836cd34455b967575ae52af5bb3507ab774"
+    "previousRoot": "8ee8dbeda45c270e74e01d17fbf3088c699a58c5a800e1981f5109907f8dae0a"
   },
   "verification": "scripts/seed/selfhost-bootstrap.py on arm64 Linux: root -> S1 = S2 = S3 = root natively, without any C compiler or loader",
   "history": [
+    {
+      "image": {
+        "bytes": 1360384,
+        "sha256": "8ee8dbeda45c270e74e01d17fbf3088c699a58c5a800e1981f5109907f8dae0a"
+      },
+      "sourceUnity": {
+        "bytes": 842787,
+        "sha256": "9b3f3a70cbee16406b0e317515560e0f4c3c8d385a481d8f1f9fd1c0b38ef635"
+      },
+      "sourceCommitBase": "1585cb488ea9a0b4f87c1fd319ea71fa3ceb09a0",
+      "producedBy": {
+        "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 and S2 built S3 = this image (S1 = S2 = S3: the runtime text embedded in static images did not change). Re-pinned because this source adds --format launcher (ADR 0371 step 4: the launcher runtime text and the format plumbing in seed/70, 75, 76, 77 and 80) and decides runtime functions by their definition, not the symbol's first appearance (JUN-325: guest code could name a kxrt- intrinsic and get it inline).",
+        "date": "2026-10-23",
+        "previousRoot": "98d4bcb7cd4ca331c292873a6d76b836cd34455b967575ae52af5bb3507ab774"
+      }
+    },
     {
       "image": {
         "bytes": 1294848,
