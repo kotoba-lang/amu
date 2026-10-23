@@ -13,7 +13,7 @@
 ;; CASES equals the expect calls below (the script counts them). CONTROL 1
 ;; makes exactly one expectation wrong; the script requires one failure then.
 
-(def CASES 66)
+(def CASES 75)
 (def CONTROL 0)
 
 (defn- say [s :string] :i64
@@ -185,8 +185,24 @@
        (expect "kdot r8: the same words twice" (diff-words k8 (kir2-kdot-f32-r8 8)) 0)
        (expect "kdot r8: rows 5 gives an empty module" (spv-count (kir2-kdot-f32-r8 5)) 0))))
 
+;; kdot_x8r8 on the x8 mapping (R 8, and 4: kdot_x8r4)
+(defn- dots-x8 [] :i64
+  (let [k8 (kir2-kdot-x8 8) k4 (kir2-kdot-x8 4)
+        g8 (spv-read "ref-kdot-x8r8.spv") g4 (spv-read "ref-kdot-x8r8-rows4.spv")]
+    (+ (expect "kdot-x8r8" (spc-check k8) 0)
+       (expect "write kir2-kdot-x8r8.spv" (spv-write k8 "kir2-kdot-x8r8.spv") (* 4 (spv-count k8)))
+       (expect "kdot-x8r4" (spc-check k4) 0)
+       (expect "write kir2-kdot-x8r4.spv" (spv-write k4 "kir2-kdot-x8r4.spv") (* 4 (spv-count k4)))
+       (expect "glslang kdot_x8r8 passes the checker" (spc-check g8) 0)
+       (expect "glslang kdot_x8r8 -DROWS=4 passes the checker" (spc-check g4) 0)
+       (expect "kdot x8: LocalSize 256" (op-word k8 16 3) 256)
+       ;; two dots in each of the six arms (Q4_K and Q5_K share one), as in
+       ;; glslang's module
+       (expect "kdot x8: twelve dot products" (count-op k8 148) 12)
+       (expect "kdot x8: rows 5 gives an empty module" (spv-count (kir2-kdot-x8 5)) 0))))
+
 (defn main [] :i64
-  (let [failed (+ (ewise) (+ (ewise-shape) (+ (attn) (+ (attn-ref) (+ (nex-ops) (+ (nex-shape) (+ (dots) (dots8))))))))
+  (let [failed (+ (ewise) (+ (ewise-shape) (+ (attn) (+ (attn-ref) (+ (nex-ops) (+ (nex-shape) (+ (dots) (+ (dots8) (dots-x8)))))))))
         x (say (string-concat "CASES " (string-from-i64 CASES)))
         y (say (string-concat "FAILED " (string-from-i64 failed)))]
     failed))
