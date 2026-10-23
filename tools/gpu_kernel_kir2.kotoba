@@ -46,8 +46,8 @@
 (def KB-STACK 581632)
 (def KB-IFACE 586632)
 ;; features (capabilities beyond Shader): 1 GroupNonUniform (the subgroup
-;; built-ins set it), 2 GroupNonUniformArithmetic (for the subgroup
-;; arithmetic ops; none yet), 4 the packed 4x8 integer dot product
+;; built-ins and subgroupElect set it), 2 GroupNonUniformArithmetic
+;; (subgroupAdd sets it), 4 the packed 4x8 integer dot product
 ;; (kb-sdot4x8 sets it: DotProduct, DotProductInput4x8BitPacked and the
 ;; SPV_KHR_integer_dot_product extension, glslang's form at SPIR-V 1.3), 8
 ;; Float16 (kb-tf16 sets it); Int8 comes with the kernels that use it
@@ -110,7 +110,8 @@
             x4 (kb-set B (+ e 4) id) x5 (kb-set B KB-NINTERN (inc n))] id))))
 
 ;; kinds: 1 void 2 bool 3 int 4 float 5 vector 6 array 7 runtime array
-;; 8 pointer 9 function type 20 constant 21 bool constant 30 built-in variable
+;; 8 pointer 9 function type 20 constant 21 bool constant 22 constant vector
+;; 30 built-in variable
 (defn- kb-type [B :vector-i64 kind :i64 a :i64 b :i64] :i64
   (let [f (kb-find B kind a b 0)]
     (if (> f 0) f

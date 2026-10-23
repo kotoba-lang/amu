@@ -2372,7 +2372,7 @@
     (kb-bor B nib h)))
 ;; term32: Q8_0 (int8 -> half by conversion), Q4_0 (the exponent trick, q - 8)
 ;; or F16 (the halves as they are, d 1), this thread's four products
-(defn- h2-term32 [B :vector-i64 W :i64 tt :i64 wb :i64 index :i64 ylo :i64 yhi :i64 vlo :i64 vhi :i64 vd :i64 vu :vector-i64] :i64
+(defn- h2-term32 [B :vector-i64 W :i64 tt :i64 wb :i64 index :i64 ylo :i64 yhi :i64 vlo :i64 vhi :i64 vd :i64] :i64
   (let [tf (kb-tf32 B) th2 (h2-th2 B)
         g0 (kb-if B (kb-ieq B tt (ku B 8)))
         bo (kb-iadd B wb (kb-imul B (kb-udiv B index (ku B 32)) (ku B 34)))
@@ -2400,7 +2400,7 @@
 ;; (codebook halves from shared), Q6_K (with q6 1 on the half path, else
 ;; f32 by dot)
 (defn- h2-term [B :vector-i64 W :i64 H :i64 CB :i64 tt :i64 b :i64 wb :i64 index :i64 y :i64 ysum :i64 ylo :i64 yhi :i64
-                q6 :i64 vr :i64 vc :i64 vq :i64] :i64
+                q6 :i64 vr :i64 vc :i64] :i64
   (let [tu (kb-tu32 B) tf (kb-tf32 B) th (kb-tf16 B) th2 (h2-th2 B)
         g0 (kb-if B (kb-lor B (kb-ieq B tt (ku B 12)) (kb-ieq B tt (ku B 13))))
         j (kb-udiv B index (ku B 32))
@@ -2463,8 +2463,7 @@
           part (kb-shared B tf 2) CB (kb-shared B th 16) H (kb-shared B tu 80)
           vin (kb-var B tu) vw (kb-var B tu) vh (kb-var B tu) vb (kb-var B tu) va0 (kb-var B tf) va1 (kb-var B tf)
           vs (kb-var B tf) vi (kb-var B tu) vlo (kb-var B th2) vhi (kb-var B th2) vd (kb-var B tf) vr (kb-var B tf)
-          vc (kb-var B tu) vq (kb-var B (kd-tiv4 B))
-          vu (-> (vector-alloc 2) (vector-assoc! 0 (kb-var B tu)) (vector-assoc! 1 (kb-var B tu)))
+          vc (kb-var B tu)
           u0 (ku B 0) u1 (ku B 1) u256 (ku B 256) f0 (kb-f32 B 0)
           row (kb-builtin-at B 26 0) position (kb-builtin-at B 26 1) t (kb-builtin-at B 27 0)
           expert (kb-load B tu (kb-at B E tu position))
@@ -2510,11 +2509,11 @@
           mb (kb-load B tu vb)
           mc0 (kb-if B (kb-uge B (kb-iadd B (kb-imul B mb u256) index) cols)) mc1 (kb-break B) mc2 (kb-end-if B)
           my0 (h2-y B X (kb-shr B (kb-iadd B xrow (kb-imul B mb u256)) (ku B 2)))
-          ms0 (k2-acc B va0 (h2-term32 B W tt (kb-iadd B rowbase (kb-imul B mb bbytes)) index (h2-half2 B my0 0) (h2-half2 B my0 2) vlo vhi vd vu))
+          ms0 (k2-acc B va0 (h2-term32 B W tt (kb-iadd B rowbase (kb-imul B mb bbytes)) index (h2-half2 B my0 0) (h2-half2 B my0 2) vlo vhi vd))
           mb1 (kb-iadd B mb u1)
           md0 (kb-if B (kb-ult B (kb-iadd B (kb-imul B mb1 u256) index) cols))
           my1 (h2-y B X (kb-shr B (kb-iadd B xrow (kb-imul B mb1 u256)) (ku B 2)))
-          ms1 (k2-acc B va1 (h2-term32 B W tt (kb-iadd B rowbase (kb-imul B mb1 bbytes)) index (h2-half2 B my1 0) (h2-half2 B my1 2) vlo vhi vd vu))
+          ms1 (k2-acc B va1 (h2-term32 B W tt (kb-iadd B rowbase (kb-imul B mb1 bbytes)) index (h2-half2 B my1 0) (h2-half2 B my1 2) vlo vhi vd))
           md1 (kb-end-if B)
           mc (kb-continue B)
           mi (kb-store B vb (kb-iadd B (kb-load B tu vb) (ku B 2)))
@@ -2522,7 +2521,7 @@
           bt (kb-load B tu vb)
           t0 (kb-if B (kb-land B (kb-ult B bt blocks) (kb-ult B (kb-iadd B (kb-imul B bt u256) index) cols)))
           yt (h2-y B X (kb-shr B (kb-iadd B xrow (kb-imul B bt u256)) (ku B 2)))
-          st (k2-acc B va0 (h2-term32 B W tt (kb-iadd B rowbase (kb-imul B bt bbytes)) index (h2-half2 B yt 0) (h2-half2 B yt 2) vlo vhi vd vu))
+          st (k2-acc B va0 (h2-term32 B W tt (kb-iadd B rowbase (kb-imul B bt bbytes)) index (h2-half2 B yt 0) (h2-half2 B yt 2) vlo vhi vd))
           t1 (kb-end-if B)
           ge (kb-else B)
           ;; K-quants: two blocks an iteration
@@ -2531,9 +2530,9 @@
           kb1 (kb-iadd B kb u1)
           ky1 (h2-y B X (kb-shr B (kb-iadd B xrow (kb-imul B kb1 u256)) (ku B 2)))
           ks0 (k2-acc B va0 (h2-term B W H CB tt kb (kb-iadd B rowbase (kb-imul B kb bbytes)) index ky0 (kd-sum4 B ky0)
-                                    (h2-half2 B ky0 0) (h2-half2 B ky0 2) q6 vr vc vq))
+                                    (h2-half2 B ky0 0) (h2-half2 B ky0 2) q6 vr vc))
           ks1 (k2-acc B va1 (h2-term B W H CB tt kb1 (kb-iadd B rowbase (kb-imul B kb1 bbytes)) index ky1 (kd-sum4 B ky1)
-                                    (h2-half2 B ky1 0) (h2-half2 B ky1 2) q6 vr vc vq))
+                                    (h2-half2 B ky1 0) (h2-half2 B ky1 2) q6 vr vc))
           ke (k2-end-for B vb (ku B 2))
           gz (kb-end-if B)
           z (kb-end-if B)
