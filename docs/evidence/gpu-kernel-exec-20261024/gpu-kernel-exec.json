@@ -1,0 +1,585 @@
+{
+  "status": "PASS_GPU_KERNEL_EXEC",
+  "host": [
+    "Linux",
+    "x86_64",
+    "7.0.0-38-generic"
+  ],
+  "node": "gad",
+  "fixtures": {
+    "attn_qkv": {
+      "rows": 8192,
+      "tt": 13,
+      "seconds": 9.2,
+      "layouts": {
+        "r1": {
+          "identicalToGlslang": true,
+          "maxRelErrVsF64": 2.1587791820820712e-05,
+          "maxErrOverRms": 3.4817634169453194e-06,
+          "kirNs": [
+            387378,
+            598133,
+            775437,
+            777926,
+            779977,
+            571013
+          ],
+          "glslangNs": [
+            151316,
+            874143,
+            968801,
+            864644,
+            1015870,
+            1110367
+          ],
+          "speedRatio": 0.66,
+          "kirGBs": 202.0,
+          "outputSHA256": "daecfd38c79f04ad2b51dfb0853563d93aa0dbfeeb5a1836829114f68adcbac4"
+        },
+        "r8": {
+          "identicalToGlslang": true,
+          "maxRelErrVsF64": 2.1587791820820712e-05,
+          "maxErrOverRms": 3.4817634169453194e-06,
+          "kirNs": [
+            419418,
+            768647,
+            553903,
+            974021,
+            834706,
+            1034629
+          ],
+          "glslangNs": [
+            142066,
+            921303,
+            911043,
+            934542,
+            918113,
+            922033
+          ],
+          "speedRatio": 0.608,
+          "kirGBs": 208.2,
+          "outputSHA256": "daecfd38c79f04ad2b51dfb0853563d93aa0dbfeeb5a1836829114f68adcbac4"
+        },
+        "x8r4": {
+          "identicalToGlslang": true,
+          "maxRelErrVsF64": 5.4001250914018675e-05,
+          "maxErrOverRms": 1.930236329908838e-06,
+          "kirNs": [
+            394388,
+            1039179,
+            1001090,
+            945631,
+            983151,
+            1119207
+          ],
+          "glslangNs": [
+            353929,
+            805166,
+            818525,
+            797856,
+            817736,
+            813806
+          ],
+          "speedRatio": 1.185,
+          "kirGBs": 122.0,
+          "outputSHA256": "1c5646d7c8f8eb08c30f6a5599892636b4bc768065108fa1f2a9b18d00820a65"
+        },
+        "h2r1": {
+          "identicalToGlslang": true,
+          "maxRelErrVsF64": 0.06725532530680312,
+          "maxErrOverRms": 0.005298765842774128,
+          "kirNs": [
+            523544,
+            640791,
+            635801,
+            621002,
+            634231,
+            551973
+          ],
+          "glslangNs": [
+            252962,
+            619351,
+            600972,
+            607811,
+            577993,
+            533454
+          ],
+          "speedRatio": 1.035,
+          "kirGBs": 209.0,
+          "outputSHA256": "4834898670d52b36c41a895ed941aaca27b62ebb62d548ceed9f9c8e4a319666"
+        }
+      },
+      "receipt": "{:receipt :kotoba.static-launcher/v1 :verdict :ok :wall-seconds 300 :elapsed-ms 9092 :timed-out false :relay true :launcher {:sha256 \"98c44d5103483b4614390fa24fe771ffae0417190e57a0c347932c83a20b1743\"} :guest {:sha256 \"4cb0f96ef7874ce160f54c3e622e905644cda05518624d78856ff94c36360a31\" :allow \"37,38,39,42\" :exit 0 :report {:status :ok :result 0 :fuel {:initial 9007199254740991 :remaining 9007199254739718 :metered false}} :stdout {:bytes 262639 :sha256 \"afc697fa54a34eedd3cf751eb037ed41afbfbcf33b932cb495aa56164f600cad\"}} :provider {:sha256 \"742a0de5d2995fce4a9709ce483903fceab55c27e61b077d371a5982859b8cab\" :exit 0 :killed false :report \"{:provider :kotoba.gpu-provider/v1 :device \\\"Radeon 8060S Graphics (RADV GFX1151)\\\" :served 512 :refused 0 :end :eof :confinement {:landlock 8 :seal :ok} :device-facts {:layer :vulkan :driver \\\"radv Mesa 25.2.8-0ubuntu0.24.04.2\\\" :features #{:storage-buffer-16bit :storage-buffer-8bit :shader-float16 :shader-int8 :synchronization2 :shader-integer-dot-product :subgroup-size-control :compute-full-subgroups} :libraries [{:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_nouveau.so\\\" :sha256 \\\"0f0dbae2b1e22fc5f6cec2da5d0b4890825b1134378211efcb4d7b71f44696ca\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_asahi.so\\\" :sha256 \\\"abd4044f2697abe07cc8df95b05dfa72ec6b2ce428103a0c72f108b6bb925a97\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_lvp.so\\\" :sha256 \\\"9d69cae2004b16572acca424741109be37c4ffc759c2461af69d75f7d1c6c139\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_gfxstream.so\\\" :sha256 \\\"89d350ae4b586fb608cc71d01d338ee6c2275a4736dc51b0492c62949142109b\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_intel.so\\\" :sha256 \\\"9ecefd82942c76e227075e01a6dc78318cbb210e7fd86d2bde145501539422e4\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_radeon.so\\\" :sha256 \\\"f12922c854f6e014c635a81f67d7b448ff300fbd5b647c0734ecb3e0d6cd0001\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_intel_hasvk.so\\\" :sha256 \\\"112ba9b9f3281ff2220f87a746b629a36032dbd8b25e2ccb53790c02aa39dc13\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_virtio.so\\\" :sha256 \\\"231059d904e345291c36a3ac0bfb5f3937a77f8bbfa360ee7876b6e6148adc5b\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan.so.1.3.275\\\" :sha256 \\\"e833b010f814b72c6aca0300c8b5f19b6106ffa06c24ddc95a293970c7d6058e\\\"}] :mapped [\\\"/usr/lib/x86_64-linux-gnu/libvulkan_nouveau.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_asahi.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_lvp.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_gfxstream.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_intel.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libicudata.so.74.2\\\" \\\"/usr/lib/x86_64-linux-gnu/libicuuc.so.74.2\\\" \\\"/usr/lib/x86_64-linux-gnu/libxml2.so.2.9.14\\\" \\\"/usr/lib/x86_64-linux-gnu/libLLVM.so.20.1\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_radeon.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_intel_hasvk.so\\\" \\\"/usr/lib/x86_64-linux-gnu/liblzma.so.5.4.5\\\" \\\"/usr/lib/x86_64-linux-gnu/libtinfo.so.6.4\\\" \\\"/usr/lib/x86_64-linux-gnu/libedit.so.2.0.72\\\" \\\"/usr/lib/x86_64-linux-gnu/libdrm_amdgpu.so.1.125.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libelf-0.190.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libmd.so.0.1.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libbsd.so.0.12.1\\\" \\\"/usr/lib/x86_64-linux-gnu/libffi.so.8.1.4\\\" \\\"/usr/lib/x86_64-linux-gnu/libXdmcp.so.6.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libXau.so.6.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libgcc_s.so.1\\\" \\\"/usr/lib/x86_64-linux-gnu/libexpat.so.1.9.1\\\" \\\"/usr/lib/x86_64-linux-gnu/libwayland-client.so.0.22.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxshmfence.so.1.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb-shm.so.0.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb-randr.so.0.1.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb-sync.so.1.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb-xfixes.so.0.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb-present.so.0.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb-dri3.so.0.1.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libX11-xcb.so.1.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb.so.1.1.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libzstd.so.1.5.5\\\" \\\"/usr/lib/x86_64-linux-gnu/libz.so.1.3\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_virtio.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libc.so.6\\\" \\\"/usr/lib/x86_64-linux-gnu/libdrm.so.2.125.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libm.so.6\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan.so.1.3.275\\\" \\\"/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2\\\"]} :image \\\"742a0de5d2995fce4a9709ce483903fceab55c27e61b077d371a5982859b8cab\\\" :needed [\\\"libc.so.6\\\" \\\"libvulkan.so.1\\\"] :kernel \\\"7.0.0-38-generic\\\"}\\n\"} :grant {:sha256 \"7c1092c80bfd6c39d94c1d8dbb1d38f24fdd91d77824c947b7df72c8a8d9d484\"}}",
+      "confinement": {
+        "landlock": "8",
+        "seal": ":ok"
+      }
+    },
+    "attn_gate": {
+      "rows": 4096,
+      "tt": 23,
+      "seconds": 7.8,
+      "layouts": {
+        "r1": {
+          "identicalToGlslang": true,
+          "maxRelErrVsF64": 8.19810756383098e-06,
+          "maxErrOverRms": 6.346420515829633e-07,
+          "kirNs": [
+            105057,
+            359479,
+            347020,
+            313301,
+            333550,
+            338189
+          ],
+          "glslangNs": [
+            122286,
+            350219,
+            337370,
+            331550,
+            337230,
+            342159
+          ],
+          "speedRatio": 0.945,
+          "kirGBs": 142.2,
+          "outputSHA256": "2188449b25c7095edb5ad40ec1ad002739258633c75e33d6745544af5b034efa"
+        },
+        "r8": {
+          "identicalToGlslang": true,
+          "maxRelErrVsF64": 8.19810756383098e-06,
+          "maxErrOverRms": 6.346420515829633e-07,
+          "kirNs": [
+            198334,
+            367689,
+            367699,
+            367819,
+            811226,
+            585602
+          ],
+          "glslangNs": [
+            104927,
+            374399,
+            370219,
+            364439,
+            581783,
+            381049
+          ],
+          "speedRatio": 1.009,
+          "kirGBs": 121.2,
+          "outputSHA256": "2188449b25c7095edb5ad40ec1ad002739258633c75e33d6745544af5b034efa"
+        },
+        "x8r4": {
+          "identicalToGlslang": true,
+          "maxRelErrVsF64": 1.1313643000221418e-05,
+          "maxErrOverRms": 4.789499770332378e-07,
+          "kirNs": [
+            367579,
+            602682,
+            589312,
+            776337,
+            577913,
+            380038
+          ],
+          "glslangNs": [
+            334160,
+            587633,
+            595943,
+            584093,
+            576403,
+            380168
+          ],
+          "speedRatio": 1.0,
+          "kirGBs": 117.3,
+          "outputSHA256": "853756f15cbcaf11fe3c4245053672384a660e37e2a5cc5f5f33c5db12139a6c"
+        },
+        "h2r1": {
+          "identicalToGlslang": true,
+          "maxRelErrVsF64": 0.03280705703516471,
+          "maxErrOverRms": 0.001578165369904187,
+          "kirNs": [
+            118066,
+            3130716,
+            424887,
+            402428,
+            402138,
+            385378
+          ],
+          "glslangNs": [
+            74048,
+            505585,
+            413918,
+            408778,
+            401368,
+            388268
+          ],
+          "speedRatio": 0.993,
+          "kirGBs": 115.6,
+          "outputSHA256": "1878acde117d1ca44266ea0be688372ad81d3564c76a549416990a043ce7e8d1"
+        }
+      },
+      "receipt": "{:receipt :kotoba.static-launcher/v1 :verdict :ok :wall-seconds 300 :elapsed-ms 7664 :timed-out false :relay true :launcher {:sha256 \"98c44d5103483b4614390fa24fe771ffae0417190e57a0c347932c83a20b1743\"} :guest {:sha256 \"61b37355cfccbc3629c9ea71822de01352828236775c228a38822801129cf85c\" :allow \"37,38,39,42\" :exit 0 :report {:status :ok :result 0 :fuel {:initial 9007199254740991 :remaining 9007199254739718 :metered false}} :stdout {:bytes 131561 :sha256 \"d15a364bc421b6160e6066a23f0627195fbe7cc865cc8f70d8c63aa04a3a30d7\"}} :provider {:sha256 \"742a0de5d2995fce4a9709ce483903fceab55c27e61b077d371a5982859b8cab\" :exit 0 :killed false :report \"{:provider :kotoba.gpu-provider/v1 :device \\\"Radeon 8060S Graphics (RADV GFX1151)\\\" :served 512 :refused 0 :end :eof :confinement {:landlock 8 :seal :ok} :device-facts {:layer :vulkan :driver \\\"radv Mesa 25.2.8-0ubuntu0.24.04.2\\\" :features #{:storage-buffer-16bit :storage-buffer-8bit :shader-float16 :shader-int8 :synchronization2 :shader-integer-dot-product :subgroup-size-control :compute-full-subgroups} :libraries [{:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_nouveau.so\\\" :sha256 \\\"0f0dbae2b1e22fc5f6cec2da5d0b4890825b1134378211efcb4d7b71f44696ca\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_asahi.so\\\" :sha256 \\\"abd4044f2697abe07cc8df95b05dfa72ec6b2ce428103a0c72f108b6bb925a97\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_lvp.so\\\" :sha256 \\\"9d69cae2004b16572acca424741109be37c4ffc759c2461af69d75f7d1c6c139\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_gfxstream.so\\\" :sha256 \\\"89d350ae4b586fb608cc71d01d338ee6c2275a4736dc51b0492c62949142109b\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_intel.so\\\" :sha256 \\\"9ecefd82942c76e227075e01a6dc78318cbb210e7fd86d2bde145501539422e4\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_radeon.so\\\" :sha256 \\\"f12922c854f6e014c635a81f67d7b448ff300fbd5b647c0734ecb3e0d6cd0001\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_intel_hasvk.so\\\" :sha256 \\\"112ba9b9f3281ff2220f87a746b629a36032dbd8b25e2ccb53790c02aa39dc13\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_virtio.so\\\" :sha256 \\\"231059d904e345291c36a3ac0bfb5f3937a77f8bbfa360ee7876b6e6148adc5b\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan.so.1.3.275\\\" :sha256 \\\"e833b010f814b72c6aca0300c8b5f19b6106ffa06c24ddc95a293970c7d6058e\\\"}] :mapped [\\\"/usr/lib/x86_64-linux-gnu/libvulkan_nouveau.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_asahi.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_lvp.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_gfxstream.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_intel.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libicudata.so.74.2\\\" \\\"/usr/lib/x86_64-linux-gnu/libicuuc.so.74.2\\\" \\\"/usr/lib/x86_64-linux-gnu/libxml2.so.2.9.14\\\" \\\"/usr/lib/x86_64-linux-gnu/libLLVM.so.20.1\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_radeon.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33\\\" \\\"/usr/lib/x86_64-linux-gnu/liblzma.so.5.4.5\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_intel_hasvk.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libtinfo.so.6.4\\\" \\\"/usr/lib/x86_64-linux-gnu/libedit.so.2.0.72\\\" \\\"/usr/lib/x86_64-linux-gnu/libdrm_amdgpu.so.1.125.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libelf-0.190.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libmd.so.0.1.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libbsd.so.0.12.1\\\" \\\"/usr/lib/x86_64-linux-gnu/libffi.so.8.1.4\\\" \\\"/usr/lib/x86_64-linux-gnu/libXdmcp.so.6.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libXau.so.6.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libgcc_s.so.1\\\" \\\"/usr/lib/x86_64-linux-gnu/libexpat.so.1.9.1\\\" \\\"/usr/lib/x86_64-linux-gnu/libwayland-client.so.0.22.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libzstd.so.1.5.5\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_virtio.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libxshmfence.so.1.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb-shm.so.0.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb-randr.so.0.1.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb-sync.so.1.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb-xfixes.so.0.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb-present.so.0.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb-dri3.so.0.1.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb.so.1.1.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libdrm.so.2.125.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libz.so.1.3\\\" \\\"/usr/lib/x86_64-linux-gnu/libm.so.6\\\" \\\"/usr/lib/x86_64-linux-gnu/libc.so.6\\\" \\\"/usr/lib/x86_64-linux-gnu/libX11-xcb.so.1.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan.so.1.3.275\\\" \\\"/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2\\\"]} :image \\\"742a0de5d2995fce4a9709ce483903fceab55c27e61b077d371a5982859b8cab\\\" :needed [\\\"libc.so.6\\\" \\\"libvulkan.so.1\\\"] :kernel \\\"7.0.0-38-generic\\\"}\\n\"} :grant {:sha256 \"4f5d3357fa12a723088f237611add629bec515c64a5263cde8d662ad4ee43bd1\"}}",
+      "confinement": {
+        "landlock": "8",
+        "seal": ":ok"
+      }
+    },
+    "ffn_gate_exp0": {
+      "rows": 512,
+      "tt": 23,
+      "seconds": 6.9,
+      "layouts": {
+        "r1": {
+          "identicalToGlslang": true,
+          "maxRelErrVsF64": 3.4675977644837985e-06,
+          "maxErrOverRms": 4.053867843641788e-07,
+          "kirNs": [
+            393699,
+            248322,
+            210183,
+            202114,
+            153615,
+            149966
+          ],
+          "glslangNs": [
+            128456,
+            206044,
+            212804,
+            167885,
+            151595,
+            151345
+          ],
+          "speedRatio": 0.991,
+          "kirGBs": 37.1,
+          "outputSHA256": "02d713a057622370fe279db1ece43c57acf6304dc79a836403de22531e40e1d8"
+        },
+        "r8": {
+          "identicalToGlslang": true,
+          "maxRelErrVsF64": 3.4675977644837985e-06,
+          "maxErrOverRms": 4.053867843641788e-07,
+          "kirNs": [
+            433477,
+            339020,
+            347410,
+            344120,
+            338100,
+            299281
+          ],
+          "glslangNs": [
+            145216,
+            362969,
+            351010,
+            349100,
+            343240,
+            287271
+          ],
+          "speedRatio": 1.042,
+          "kirGBs": 18.6,
+          "outputSHA256": "02d713a057622370fe279db1ece43c57acf6304dc79a836403de22531e40e1d8"
+        },
+        "x8r4": {
+          "identicalToGlslang": true,
+          "maxRelErrVsF64": 3.2379247727476468e-06,
+          "maxErrOverRms": 7.01621070336555e-07,
+          "kirNs": [
+            460556,
+            124397,
+            171295,
+            177054,
+            165195,
+            109956
+          ],
+          "glslangNs": [
+            121786,
+            173065,
+            172315,
+            174775,
+            132876,
+            138096
+          ],
+          "speedRatio": 0.828,
+          "kirGBs": 50.7,
+          "outputSHA256": "0d0098cc78eddde17a5bc6fd96fc01f51e5d02fc39f2308008105abe206f516c"
+        },
+        "h2r1": {
+          "identicalToGlslang": true,
+          "maxRelErrVsF64": 0.009490246600307728,
+          "maxErrOverRms": 0.0013526777269584195,
+          "kirNs": [
+            382128,
+            175095,
+            172385,
+            165825,
+            128416,
+            126026
+          ],
+          "glslangNs": [
+            119366,
+            159335,
+            176115,
+            166815,
+            128386,
+            111257
+          ],
+          "speedRatio": 1.133,
+          "kirGBs": 44.2,
+          "outputSHA256": "b2ede7420d82acc373060a8045b6c34356a8d1445b4024766464e1270fc891fa"
+        }
+      },
+      "receipt": "{:receipt :kotoba.static-launcher/v1 :verdict :ok :wall-seconds 300 :elapsed-ms 6850 :timed-out false :relay true :launcher {:sha256 \"98c44d5103483b4614390fa24fe771ffae0417190e57a0c347932c83a20b1743\"} :guest {:sha256 \"9e3ca66baac63cb13f4c726a1e10c04d3abb5486ad4a097156d993bb6b8adc47\" :allow \"37,38,39,42\" :exit 0 :report {:status :ok :result 0 :fuel {:initial 9007199254740991 :remaining 9007199254739718 :metered false}} :stdout {:bytes 16873 :sha256 \"77ce2e23f34833d7bceb7dd5ef642bf7cd7e3185a3c8212c29dadd475c7629ff\"}} :provider {:sha256 \"742a0de5d2995fce4a9709ce483903fceab55c27e61b077d371a5982859b8cab\" :exit 0 :killed false :report \"{:provider :kotoba.gpu-provider/v1 :device \\\"Radeon 8060S Graphics (RADV GFX1151)\\\" :served 512 :refused 0 :end :eof :confinement {:landlock 8 :seal :ok} :device-facts {:layer :vulkan :driver \\\"radv Mesa 25.2.8-0ubuntu0.24.04.2\\\" :features #{:storage-buffer-16bit :storage-buffer-8bit :shader-float16 :shader-int8 :synchronization2 :shader-integer-dot-product :subgroup-size-control :compute-full-subgroups} :libraries [{:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_nouveau.so\\\" :sha256 \\\"0f0dbae2b1e22fc5f6cec2da5d0b4890825b1134378211efcb4d7b71f44696ca\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_asahi.so\\\" :sha256 \\\"abd4044f2697abe07cc8df95b05dfa72ec6b2ce428103a0c72f108b6bb925a97\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_lvp.so\\\" :sha256 \\\"9d69cae2004b16572acca424741109be37c4ffc759c2461af69d75f7d1c6c139\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_gfxstream.so\\\" :sha256 \\\"89d350ae4b586fb608cc71d01d338ee6c2275a4736dc51b0492c62949142109b\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_intel.so\\\" :sha256 \\\"9ecefd82942c76e227075e01a6dc78318cbb210e7fd86d2bde145501539422e4\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_radeon.so\\\" :sha256 \\\"f12922c854f6e014c635a81f67d7b448ff300fbd5b647c0734ecb3e0d6cd0001\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_intel_hasvk.so\\\" :sha256 \\\"112ba9b9f3281ff2220f87a746b629a36032dbd8b25e2ccb53790c02aa39dc13\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_virtio.so\\\" :sha256 \\\"231059d904e345291c36a3ac0bfb5f3937a77f8bbfa360ee7876b6e6148adc5b\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan.so.1.3.275\\\" :sha256 \\\"e833b010f814b72c6aca0300c8b5f19b6106ffa06c24ddc95a293970c7d6058e\\\"}] :mapped [\\\"/usr/lib/x86_64-linux-gnu/libvulkan_nouveau.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_asahi.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_lvp.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_gfxstream.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_intel.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libicudata.so.74.2\\\" \\\"/usr/lib/x86_64-linux-gnu/libicuuc.so.74.2\\\" \\\"/usr/lib/x86_64-linux-gnu/libxml2.so.2.9.14\\\" \\\"/usr/lib/x86_64-linux-gnu/libLLVM.so.20.1\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_radeon.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_intel_hasvk.so\\\" \\\"/usr/lib/x86_64-linux-gnu/liblzma.so.5.4.5\\\" \\\"/usr/lib/x86_64-linux-gnu/libtinfo.so.6.4\\\" \\\"/usr/lib/x86_64-linux-gnu/libedit.so.2.0.72\\\" \\\"/usr/lib/x86_64-linux-gnu/libdrm_amdgpu.so.1.125.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libelf-0.190.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libmd.so.0.1.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libbsd.so.0.12.1\\\" \\\"/usr/lib/x86_64-linux-gnu/libffi.so.8.1.4\\\" \\\"/usr/lib/x86_64-linux-gnu/libXdmcp.so.6.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libXau.so.6.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libgcc_s.so.1\\\" \\\"/usr/lib/x86_64-linux-gnu/libexpat.so.1.9.1\\\" \\\"/usr/lib/x86_64-linux-gnu/libwayland-client.so.0.22.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxshmfence.so.1.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb-shm.so.0.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb-randr.so.0.1.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb-sync.so.1.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb-xfixes.so.0.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb-present.so.0.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb-dri3.so.0.1.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libX11-xcb.so.1.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb.so.1.1.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libdrm.so.2.125.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libzstd.so.1.5.5\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_virtio.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libc.so.6\\\" \\\"/usr/lib/x86_64-linux-gnu/libz.so.1.3\\\" \\\"/usr/lib/x86_64-linux-gnu/libm.so.6\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan.so.1.3.275\\\" \\\"/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2\\\"]} :image \\\"742a0de5d2995fce4a9709ce483903fceab55c27e61b077d371a5982859b8cab\\\" :needed [\\\"libc.so.6\\\" \\\"libvulkan.so.1\\\"] :kernel \\\"7.0.0-38-generic\\\"}\\n\"} :grant {:sha256 \"1072263e68e66167a3e34e9f23e88a3d7e4aec4a52a9b1f443a97f38629a4ae1\"}}",
+      "confinement": {
+        "landlock": "8",
+        "seal": ":ok"
+      }
+    },
+    "output": {
+      "rows": 248320,
+      "tt": 14,
+      "seconds": 92.3,
+      "layouts": {
+        "r1": {
+          "identicalToGlslang": true,
+          "maxRelErrVsF64": 1.5616108584026733e-05,
+          "maxErrOverRms": 5.845088519911526e-07,
+          "kirNs": [
+            3278422,
+            24082378,
+            25182295,
+            24154297,
+            25508976,
+            24628843
+          ],
+          "glslangNs": [
+            2474186,
+            23966723,
+            23694380,
+            24751699,
+            23882725,
+            23884095
+          ],
+          "speedRatio": 1.016,
+          "kirGBs": 173.2,
+          "outputSHA256": "d1e6df2a3b6a7c3fdd2804699a4422c647b72cb87c8610df306d74d7f712430c"
+        },
+        "x8r4": {
+          "identicalToGlslang": true,
+          "maxRelErrVsF64": 2.268325047793951e-05,
+          "maxErrOverRms": 5.495354816696402e-07,
+          "kirNs": [
+            2533664,
+            21403709,
+            21798057,
+            21854946,
+            22272913,
+            22034360
+          ],
+          "glslangNs": [
+            2594503,
+            24131587,
+            23698060,
+            23858875,
+            24010141,
+            23763068
+          ],
+          "speedRatio": 0.903,
+          "kirGBs": 194.9,
+          "outputSHA256": "ce5fc0f0812b625b39edc17f971caf194818c9d21f648db6949ebd9075c3be9e"
+        },
+        "h2q6r1": {
+          "identicalToGlslang": true,
+          "maxRelErrVsF64": 0.05467977253204026,
+          "maxErrOverRms": 0.0014618423716989976,
+          "kirNs": [
+            2578513,
+            24430738,
+            24430958,
+            24470827,
+            24867345,
+            24709090
+          ],
+          "glslangNs": [
+            2475566,
+            24540385,
+            24302412,
+            24687140,
+            24640472,
+            25262924
+          ],
+          "speedRatio": 1.005,
+          "kirGBs": 170.8,
+          "outputSHA256": "d454c88db690e0dd32109e4d6f0930ffb4f7fa7e5e71dbf30287e3de651aa4b3"
+        }
+      },
+      "receipt": "{:receipt :kotoba.static-launcher/v1 :verdict :ok :wall-seconds 300 :elapsed-ms 92257 :timed-out false :relay true :launcher {:sha256 \"98c44d5103483b4614390fa24fe771ffae0417190e57a0c347932c83a20b1743\"} :guest {:sha256 \"879f4ecbb9c42fc0bcfffda57bfad55c3a4eeae76f94974a45ec416a223c6300\" :allow \"37,38,39,42\" :exit 0 :report {:status :ok :result 0 :fuel {:initial 9007199254740991 :remaining 9007199254739891 :metered false}} :stdout {:bytes 5960179 :sha256 \"06d86d68d1e0cadc640fbed36fb32dd67966ab9172737eff6a04b294b793cbca\"}} :provider {:sha256 \"742a0de5d2995fce4a9709ce483903fceab55c27e61b077d371a5982859b8cab\" :exit 0 :killed false :report \"{:provider :kotoba.gpu-provider/v1 :device \\\"Radeon 8060S Graphics (RADV GFX1151)\\\" :served 415 :refused 0 :end :eof :confinement {:landlock 8 :seal :ok} :device-facts {:layer :vulkan :driver \\\"radv Mesa 25.2.8-0ubuntu0.24.04.2\\\" :features #{:storage-buffer-16bit :storage-buffer-8bit :shader-float16 :shader-int8 :synchronization2 :shader-integer-dot-product :subgroup-size-control :compute-full-subgroups} :libraries [{:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_nouveau.so\\\" :sha256 \\\"0f0dbae2b1e22fc5f6cec2da5d0b4890825b1134378211efcb4d7b71f44696ca\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_asahi.so\\\" :sha256 \\\"abd4044f2697abe07cc8df95b05dfa72ec6b2ce428103a0c72f108b6bb925a97\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_lvp.so\\\" :sha256 \\\"9d69cae2004b16572acca424741109be37c4ffc759c2461af69d75f7d1c6c139\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_gfxstream.so\\\" :sha256 \\\"89d350ae4b586fb608cc71d01d338ee6c2275a4736dc51b0492c62949142109b\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_intel.so\\\" :sha256 \\\"9ecefd82942c76e227075e01a6dc78318cbb210e7fd86d2bde145501539422e4\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_radeon.so\\\" :sha256 \\\"f12922c854f6e014c635a81f67d7b448ff300fbd5b647c0734ecb3e0d6cd0001\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_intel_hasvk.so\\\" :sha256 \\\"112ba9b9f3281ff2220f87a746b629a36032dbd8b25e2ccb53790c02aa39dc13\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_virtio.so\\\" :sha256 \\\"231059d904e345291c36a3ac0bfb5f3937a77f8bbfa360ee7876b6e6148adc5b\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan.so.1.3.275\\\" :sha256 \\\"e833b010f814b72c6aca0300c8b5f19b6106ffa06c24ddc95a293970c7d6058e\\\"}] :mapped [\\\"/usr/lib/x86_64-linux-gnu/libvulkan_nouveau.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_asahi.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_lvp.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_gfxstream.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_intel.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libicudata.so.74.2\\\" \\\"/usr/lib/x86_64-linux-gnu/libicuuc.so.74.2\\\" \\\"/usr/lib/x86_64-linux-gnu/libxml2.so.2.9.14\\\" \\\"/usr/lib/x86_64-linux-gnu/libLLVM.so.20.1\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_radeon.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33\\\" \\\"/usr/lib/x86_64-linux-gnu/liblzma.so.5.4.5\\\" \\\"/usr/lib/x86_64-linux-gnu/libedit.so.2.0.72\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_intel_hasvk.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libtinfo.so.6.4\\\" \\\"/usr/lib/x86_64-linux-gnu/libdrm_amdgpu.so.1.125.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libelf-0.190.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libmd.so.0.1.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libbsd.so.0.12.1\\\" \\\"/usr/lib/x86_64-linux-gnu/libffi.so.8.1.4\\\" \\\"/usr/lib/x86_64-linux-gnu/libXdmcp.so.6.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libXau.so.6.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libgcc_s.so.1\\\" \\\"/usr/lib/x86_64-linux-gnu/libexpat.so.1.9.1\\\" \\\"/usr/lib/x86_64-linux-gnu/libwayland-client.so.0.22.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxshmfence.so.1.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb-shm.so.0.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb-randr.so.0.1.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb-sync.so.1.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb.so.1.1.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libzstd.so.1.5.5\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_virtio.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb-xfixes.so.0.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libdrm.so.2.125.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libz.so.1.3\\\" \\\"/usr/lib/x86_64-linux-gnu/libm.so.6\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan.so.1.3.275\\\" \\\"/usr/lib/x86_64-linux-gnu/libc.so.6\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb-present.so.0.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb-dri3.so.0.1.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libX11-xcb.so.1.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2\\\"]} :image \\\"742a0de5d2995fce4a9709ce483903fceab55c27e61b077d371a5982859b8cab\\\" :needed [\\\"libc.so.6\\\" \\\"libvulkan.so.1\\\"] :kernel \\\"7.0.0-38-generic\\\"}\\n\"} :grant {:sha256 \"79ace6458412726f2f7ab7cc6213264eacbeb001158db547289f8d4b07f1832b\"}}",
+      "confinement": {
+        "landlock": "8",
+        "seal": ":ok"
+      },
+      "argmax": {
+        "pick": 66749,
+        "f64Argmax": 66749,
+        "f64Gap": 0.1806224051435521,
+        "identicalToGlslang": true,
+        "maxLogit": 2.2252109050750732
+      }
+    },
+    "attn_gate_q4k": {
+      "rows": 4096,
+      "tt": 12,
+      "seconds": 8.2,
+      "layouts": {
+        "r1": {
+          "identicalToGlslang": true,
+          "maxRelErrVsF64": 2.0192785399331115e-05,
+          "maxErrOverRms": 1.0122126408767356e-06,
+          "kirNs": [
+            704999,
+            602772,
+            413418,
+            312300,
+            309151,
+            273862
+          ],
+          "glslangNs": [
+            225514,
+            629752,
+            398868,
+            384249,
+            357570,
+            346699
+          ],
+          "speedRatio": 0.79,
+          "kirGBs": 172.3,
+          "outputSHA256": "cba6aea01d1b510194d6ac3af54ff6d5bae62f46572b0d37653777b0a9f001ed"
+        },
+        "r8": {
+          "identicalToGlslang": true,
+          "maxRelErrVsF64": 2.0192785399331115e-05,
+          "maxErrOverRms": 1.0122126408767356e-06,
+          "kirNs": [
+            130296,
+            442397,
+            372799,
+            364939,
+            396148,
+            364259
+          ],
+          "glslangNs": [
+            89028,
+            509675,
+            485825,
+            500155,
+            494125,
+            490695
+          ],
+          "speedRatio": 0.75,
+          "kirGBs": 129.5,
+          "outputSHA256": "cba6aea01d1b510194d6ac3af54ff6d5bae62f46572b0d37653777b0a9f001ed"
+        },
+        "x8r4": {
+          "identicalToGlslang": true,
+          "maxRelErrVsF64": 2.055952705859454e-05,
+          "maxErrOverRms": 1.1565720484168697e-06,
+          "kirNs": [
+            655740,
+            393838,
+            355709,
+            335080,
+            331990,
+            312151
+          ],
+          "glslangNs": [
+            126756,
+            426547,
+            401428,
+            372959,
+            371069,
+            309261
+          ],
+          "speedRatio": 1.009,
+          "kirGBs": 151.2,
+          "outputSHA256": "a1d8edab4336fd9c49893c7a136f82850a70a2d509a5c274396dd1935164a1f4"
+        },
+        "h2r1": {
+          "identicalToGlslang": true,
+          "maxRelErrVsF64": 0.04757449334178432,
+          "maxErrOverRms": 0.002770029455178675,
+          "kirNs": [
+            139156,
+            379068,
+            317710,
+            329820,
+            303001,
+            294342
+          ],
+          "glslangNs": [
+            72718,
+            394618,
+            382468,
+            388219,
+            368229,
+            385749
+          ],
+          "speedRatio": 0.799,
+          "kirGBs": 160.3,
+          "outputSHA256": "bc51c37b0ca40707d58db8c9fe51050ce06b1a575ce5f04ddad8c71a57cea31a"
+        }
+      },
+      "receipt": "{:receipt :kotoba.static-launcher/v1 :verdict :ok :wall-seconds 300 :elapsed-ms 8070 :timed-out false :relay true :launcher {:sha256 \"98c44d5103483b4614390fa24fe771ffae0417190e57a0c347932c83a20b1743\"} :guest {:sha256 \"c2e71d41934b4e34782ee7d2825d441581a8d49c9cac0e2930aa5ef8a92d4186\" :allow \"37,38,39,42\" :exit 0 :report {:status :ok :result 0 :fuel {:initial 9007199254740991 :remaining 9007199254739718 :metered false}} :stdout {:bytes 131559 :sha256 \"230929ec4662a79d7a4e32564780931924bc62f88e18244dc3d3f5023b3b97df\"}} :provider {:sha256 \"742a0de5d2995fce4a9709ce483903fceab55c27e61b077d371a5982859b8cab\" :exit 0 :killed false :report \"{:provider :kotoba.gpu-provider/v1 :device \\\"Radeon 8060S Graphics (RADV GFX1151)\\\" :served 512 :refused 0 :end :eof :confinement {:landlock 8 :seal :ok} :device-facts {:layer :vulkan :driver \\\"radv Mesa 25.2.8-0ubuntu0.24.04.2\\\" :features #{:storage-buffer-16bit :storage-buffer-8bit :shader-float16 :shader-int8 :synchronization2 :shader-integer-dot-product :subgroup-size-control :compute-full-subgroups} :libraries [{:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_nouveau.so\\\" :sha256 \\\"0f0dbae2b1e22fc5f6cec2da5d0b4890825b1134378211efcb4d7b71f44696ca\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_asahi.so\\\" :sha256 \\\"abd4044f2697abe07cc8df95b05dfa72ec6b2ce428103a0c72f108b6bb925a97\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_lvp.so\\\" :sha256 \\\"9d69cae2004b16572acca424741109be37c4ffc759c2461af69d75f7d1c6c139\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_gfxstream.so\\\" :sha256 \\\"89d350ae4b586fb608cc71d01d338ee6c2275a4736dc51b0492c62949142109b\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_intel.so\\\" :sha256 \\\"9ecefd82942c76e227075e01a6dc78318cbb210e7fd86d2bde145501539422e4\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_radeon.so\\\" :sha256 \\\"f12922c854f6e014c635a81f67d7b448ff300fbd5b647c0734ecb3e0d6cd0001\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_intel_hasvk.so\\\" :sha256 \\\"112ba9b9f3281ff2220f87a746b629a36032dbd8b25e2ccb53790c02aa39dc13\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_virtio.so\\\" :sha256 \\\"231059d904e345291c36a3ac0bfb5f3937a77f8bbfa360ee7876b6e6148adc5b\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan.so.1.3.275\\\" :sha256 \\\"e833b010f814b72c6aca0300c8b5f19b6106ffa06c24ddc95a293970c7d6058e\\\"}] :mapped [\\\"/usr/lib/x86_64-linux-gnu/libvulkan_nouveau.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_asahi.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_lvp.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_gfxstream.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_intel.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libicudata.so.74.2\\\" \\\"/usr/lib/x86_64-linux-gnu/libicuuc.so.74.2\\\" \\\"/usr/lib/x86_64-linux-gnu/libxml2.so.2.9.14\\\" \\\"/usr/lib/x86_64-linux-gnu/libLLVM.so.20.1\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_radeon.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_intel_hasvk.so\\\" \\\"/usr/lib/x86_64-linux-gnu/liblzma.so.5.4.5\\\" \\\"/usr/lib/x86_64-linux-gnu/libtinfo.so.6.4\\\" \\\"/usr/lib/x86_64-linux-gnu/libedit.so.2.0.72\\\" \\\"/usr/lib/x86_64-linux-gnu/libdrm_amdgpu.so.1.125.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libelf-0.190.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libmd.so.0.1.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libbsd.so.0.12.1\\\" \\\"/usr/lib/x86_64-linux-gnu/libffi.so.8.1.4\\\" \\\"/usr/lib/x86_64-linux-gnu/libXdmcp.so.6.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libXau.so.6.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libgcc_s.so.1\\\" \\\"/usr/lib/x86_64-linux-gnu/libexpat.so.1.9.1\\\" \\\"/usr/lib/x86_64-linux-gnu/libwayland-client.so.0.22.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxshmfence.so.1.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb-shm.so.0.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb-randr.so.0.1.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb-sync.so.1.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb-xfixes.so.0.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libzstd.so.1.5.5\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_virtio.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb-present.so.0.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb-dri3.so.0.1.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libX11-xcb.so.1.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb.so.1.1.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libdrm.so.2.125.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libz.so.1.3\\\" \\\"/usr/lib/x86_64-linux-gnu/libc.so.6\\\" \\\"/usr/lib/x86_64-linux-gnu/libm.so.6\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan.so.1.3.275\\\" \\\"/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2\\\"]} :image \\\"742a0de5d2995fce4a9709ce483903fceab55c27e61b077d371a5982859b8cab\\\" :needed [\\\"libc.so.6\\\" \\\"libvulkan.so.1\\\"] :kernel \\\"7.0.0-38-generic\\\"}\\n\"} :grant {:sha256 \"0a9ed7b99e7deaebdd24b072945ab3ed0c41be96185d2ad51205165f2b1895f1\"}}",
+      "confinement": {
+        "landlock": "8",
+        "seal": ":ok"
+      }
+    },
+    "ffn_gate_inp": {
+      "rows": 256,
+      "tt": 0,
+      "seconds": 7.3,
+      "layouts": {
+        "dot": {
+          "identicalToGlslang": true,
+          "maxRelErrVsF64": 7.622404751828071e-06,
+          "maxErrOverRms": 3.412369331337205e-07,
+          "kirNs": [
+            45489,
+            100167,
+            101257,
+            96187,
+            94047,
+            93957
+          ],
+          "glslangNs": [
+            43799,
+            117966,
+            95447,
+            95887,
+            96268,
+            95438
+          ],
+          "speedRatio": 0.984,
+          "kirGBs": 223.2,
+          "outputSHA256": "ce4efb6bce83663f085b6205624d5cc7bad7060dde00f9221f3c3aaec49c2317"
+        }
+      },
+      "receipt": "{:receipt :kotoba.static-launcher/v1 :verdict :ok :wall-seconds 300 :elapsed-ms 7152 :timed-out false :relay true :launcher {:sha256 \"98c44d5103483b4614390fa24fe771ffae0417190e57a0c347932c83a20b1743\"} :guest {:sha256 \"874ab26154b1198096ea7f4e644cfb15acb8a1622e1a90c84c7b830f24f89ec8\" :allow \"37,38,39,42\" :exit 0 :report {:status :ok :result 0 :fuel {:initial 9007199254740991 :remaining 9007199254740667 :metered false}} :stdout {:bytes 2237 :sha256 \"1918d0f03b2798d71de5ac1e6a911d2a3fef2711e2f4a2f1248cf75f65f06db0\"}} :provider {:sha256 \"742a0de5d2995fce4a9709ce483903fceab55c27e61b077d371a5982859b8cab\" :exit 0 :killed false :report \"{:provider :kotoba.gpu-provider/v1 :device \\\"Radeon 8060S Graphics (RADV GFX1151)\\\" :served 134 :refused 0 :end :eof :confinement {:landlock 8 :seal :ok} :device-facts {:layer :vulkan :driver \\\"radv Mesa 25.2.8-0ubuntu0.24.04.2\\\" :features #{:storage-buffer-16bit :storage-buffer-8bit :shader-float16 :shader-int8 :synchronization2 :shader-integer-dot-product :subgroup-size-control :compute-full-subgroups} :libraries [{:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_nouveau.so\\\" :sha256 \\\"0f0dbae2b1e22fc5f6cec2da5d0b4890825b1134378211efcb4d7b71f44696ca\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_asahi.so\\\" :sha256 \\\"abd4044f2697abe07cc8df95b05dfa72ec6b2ce428103a0c72f108b6bb925a97\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_lvp.so\\\" :sha256 \\\"9d69cae2004b16572acca424741109be37c4ffc759c2461af69d75f7d1c6c139\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_gfxstream.so\\\" :sha256 \\\"89d350ae4b586fb608cc71d01d338ee6c2275a4736dc51b0492c62949142109b\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_intel.so\\\" :sha256 \\\"9ecefd82942c76e227075e01a6dc78318cbb210e7fd86d2bde145501539422e4\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_radeon.so\\\" :sha256 \\\"f12922c854f6e014c635a81f67d7b448ff300fbd5b647c0734ecb3e0d6cd0001\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_intel_hasvk.so\\\" :sha256 \\\"112ba9b9f3281ff2220f87a746b629a36032dbd8b25e2ccb53790c02aa39dc13\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan_virtio.so\\\" :sha256 \\\"231059d904e345291c36a3ac0bfb5f3937a77f8bbfa360ee7876b6e6148adc5b\\\"} {:path \\\"/usr/lib/x86_64-linux-gnu/libvulkan.so.1.3.275\\\" :sha256 \\\"e833b010f814b72c6aca0300c8b5f19b6106ffa06c24ddc95a293970c7d6058e\\\"}] :mapped [\\\"/usr/lib/x86_64-linux-gnu/libvulkan_nouveau.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_asahi.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_lvp.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_gfxstream.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_intel.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libicudata.so.74.2\\\" \\\"/usr/lib/x86_64-linux-gnu/libicuuc.so.74.2\\\" \\\"/usr/lib/x86_64-linux-gnu/libxml2.so.2.9.14\\\" \\\"/usr/lib/x86_64-linux-gnu/libLLVM.so.20.1\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_radeon.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33\\\" \\\"/usr/lib/x86_64-linux-gnu/liblzma.so.5.4.5\\\" \\\"/usr/lib/x86_64-linux-gnu/libtinfo.so.6.4\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_intel_hasvk.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libedit.so.2.0.72\\\" \\\"/usr/lib/x86_64-linux-gnu/libdrm_amdgpu.so.1.125.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libelf-0.190.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libmd.so.0.1.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libbsd.so.0.12.1\\\" \\\"/usr/lib/x86_64-linux-gnu/libffi.so.8.1.4\\\" \\\"/usr/lib/x86_64-linux-gnu/libXdmcp.so.6.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libXau.so.6.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libgcc_s.so.1\\\" \\\"/usr/lib/x86_64-linux-gnu/libexpat.so.1.9.1\\\" \\\"/usr/lib/x86_64-linux-gnu/libwayland-client.so.0.22.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxshmfence.so.1.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb-shm.so.0.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb-randr.so.0.1.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb-sync.so.1.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb-xfixes.so.0.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libzstd.so.1.5.5\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan_virtio.so\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb-present.so.0.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb-dri3.so.0.1.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libX11-xcb.so.1.0.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libxcb.so.1.1.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libdrm.so.2.125.0\\\" \\\"/usr/lib/x86_64-linux-gnu/libz.so.1.3\\\" \\\"/usr/lib/x86_64-linux-gnu/libm.so.6\\\" \\\"/usr/lib/x86_64-linux-gnu/libc.so.6\\\" \\\"/usr/lib/x86_64-linux-gnu/libvulkan.so.1.3.275\\\" \\\"/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2\\\"]} :image \\\"742a0de5d2995fce4a9709ce483903fceab55c27e61b077d371a5982859b8cab\\\" :needed [\\\"libc.so.6\\\" \\\"libvulkan.so.1\\\"] :kernel \\\"7.0.0-38-generic\\\"}\\n\"} :grant {:sha256 \"574042a130a8a1298b07fe6447453e75e9aeef2a28a53c2b76cbaf41d45c5bad\"}}",
+      "confinement": {
+        "landlock": "8",
+        "seal": ":ok"
+      }
+    }
+  },
+  "gates": {
+    "relMax": {
+      "r1": 0.001,
+      "r8": 0.001,
+      "x8r4": 0.001,
+      "dot": 0.001
+    },
+    "rmsMax": {
+      "h2r1": 0.01,
+      "h2q6r1": 0.01
+    },
+    "speedMax": 1.25
+  },
+  "wallSeconds": 300,
+  "note": "glslang's modules and the f64 reference are oracles; the guests, the launcher and the provider are the product route"
+}

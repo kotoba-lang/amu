@@ -644,7 +644,15 @@ Each step is its own PR, in this order:
       kept command buffer that was replayed, and with DISPATCHC. All results
       were exact in f32 and matched byte for byte, at 30-50 us per submit.
       The dot and kdot fixtures and the decode argmax chain need the KIR v2
-      kernels of ADR 0372 step 3, so this step's acceptance waits on them.
+      kernels of ADR 0372 step 3. With them, the acceptance ran on gad
+      through the launcher and this provider, confined
+      (`docs/evidence/gpu-kernel-exec-20261024/`, ADR 0372 step 4):
+      * the dot fixture (`dot_rows` on a real F32 matvec);
+      * the kdot fixtures (Q5_K, IQ4_XS, Q4_K, and the Q6_K lm_head);
+      * the lm_head's argmax chain, whose pick is the f64 argmax.
+
+      Every output is byte-identical to glslang's module, and within 1e-3 of
+      an f64 dequant oracle (f16 layouts: within 1e-2 of the rms).
    4. **Confinement after device creation.** In progress. After the device
       is created the provider reads the facts its report needs from files:
       its image digest, and for the Vulkan layer the driver properties and

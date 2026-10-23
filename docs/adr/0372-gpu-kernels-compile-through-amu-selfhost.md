@@ -425,5 +425,27 @@ a follow-up to ADR 0371.
      Receipts: `docs/evidence/gpu-kernel-kir2-h2-20261024/`.
 4. **Execution.** Through the ADR 0371 provider, with numeric and speed gates
    against the hand-written kernels.
+   * **On gad: the kernels on real tensors.** `scripts/seed/check-gpu-kernel-exec.py`
+     takes the product route: a static guest, the static launcher, and the
+     confined Vulkan provider. It ran KIR v2's modules and glslang's on six
+     fixtures:
+     * kotoba-lang/inference's four kdot fixtures (Q5_K, two IQ4_XS, and the
+       Q6_K lm_head);
+     * a Q4_K tensor;
+     * a real F32 matvec for `dot_rows`.
+
+     The layouts were r1, r8, x8r4 and h2r1, the lm_head's r1, x8r4 and
+     h2q6r1, and the decode argmax chain.
+     * Every output is byte-identical to glslang's.
+     * Against an f64 dequant oracle, the f32 layouts are within 5.4e-5
+       (kdot_check's metric, gate 1e-3). The h2 layouts compute in f16 and
+       are within 5.3e-3 of the output's rms (gate 1e-2).
+     * The argmax chain picks the f64 argmax.
+     * KIR v2 took 0.61-1.19 times glslang's time (gate 1.25). That gate is
+       coarse: run-to-run noise on gad's iGPU is about ±40%.
+
+     Receipts: `docs/evidence/gpu-kernel-exec-20261024/`.
+   * Not yet: the whole decode guest through tokens, ANV, and Xavier (which
+     needs the provider on aarch64).
 5. **Retirement.** Remove `emit-kernel.cljk`, glslang and the accelerator CLJK
    from the product route. The hand `.comp` files stay as baselines.
