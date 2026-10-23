@@ -8,6 +8,30 @@ the candidate has 18 modules, adding pure SHA-256 and KSL1 parsing. The older
 branch's receipts below are historical prototype evidence. They do not qualify
 this port, its main integration, or its filesystem provider.
 
+## Current-main port verification (2026-10-23)
+
+[The actual current-main receipt](evidence/native-source-lock-20261023/current-main-correctness.json)
+pins all 18 sources, the native compiler and runner, all workload inputs,
+linked source locks and execution outputs. The complete compiler rebuilt
+G11 = G12 (KSEED SHA-256 `f354ca247a0d1683dc5a6966198f3e1e77db4381caf29d7b54a93e7d74b5658e`).
+All19 Embench correctness workloads freshly compiled and executed with exit0.
+This is not a performance measurement.
+
+The exact merged GMIR source (`40ef6c95`) passed all8 entrypoints. The exact
+merged MIR source (`b9a570a5`) passed ordinary main, module/reentry/table/
+schedule/counted/allocator large, and aggregate large-main. The aggregate
+exceeded an initial 300-second outer timeout, then finished with exit0 under
+a 900-second outer deadline; its artifact, full input closure, native arena
+limits and grants were identical. GMIR/MIR outputs from G9 and G11 were
+byte-identical. No case or dependency was dropped.
+
+SHA-256 and KSL1 units, all17 E6015 pin refusals, scalar-reference escape
+refusal E2104, and native scope normal/depth256/overflow257 controls passed.
+KGraph uses bounded last-write-wins storage; unsupported public command,
+resolver-lock/CID and generic abort/recur cleanup qualification remain open.
+These proofs establish the recorded source port; adoption and owning-main
+integration are tracked separately from public CLI/CDCI qualification.
+
 ## Project input contract
 
 `check` and `compile` accept one `--source-lock` with an exact KSL1 manifest.
