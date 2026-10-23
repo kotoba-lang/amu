@@ -15,45 +15,103 @@
   ],
   "root": {
     "image": {
-      "bytes": 1389056,
-      "sha256": "b3b087d89fecb7a7e9fd4903d14f08894b084a9282db8f9f85ce0efd9b90431a"
+      "bytes": 1323520,
+      "sha256": "cd85f3fc6e68511f6de3e71692dfd9b90133bab3fe2c85285bb423a7dc80ad60"
     },
     "receipt": {
       "schema": "amu.seed.static-root.v1",
       "image": {
-        "bytes": 1389056,
-        "sha256": "b3b087d89fecb7a7e9fd4903d14f08894b084a9282db8f9f85ce0efd9b90431a"
+        "bytes": 1323520,
+        "sha256": "cd85f3fc6e68511f6de3e71692dfd9b90133bab3fe2c85285bb423a7dc80ad60"
       },
       "target": "aarch64-linux",
       "format": "static",
       "sourceManifest": "seed/X86_64-LINUX-SELFHOST-MANIFEST",
       "sourceUnity": {
-        "bytes": 859311,
-        "sha256": "ed132ec0de5b004317aa62a1d2c0cd082a99d0b9ea49a0f171751b44e7106a42"
+        "bytes": 793591,
+        "sha256": "b7a4219d6037f7a71277ed6e8e117adace0d273d06a2404651cc07b0673150c5"
       },
-      "sourceCommitBase": "54d26878c004f6ec95950a146c5e74683d298e05",
+      "sourceCommitBase": "e06dbba75ce7b559c23e3199189f476599973df0",
       "producedBy": {
-        "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 and S2 built S3 = this image (S1 = S2 = S3: the runtime text embedded in static images did not change). Re-pinned because this source adds --format platform-linked (ADR 0371 step 5): seed/78, the platform runtime text of seed/76, intrinsic 9 and the platform API rule of seed/75, and the dispatch in seed/73.",
+        "how": "Amu native previous root built S1, S1 built S2, S2 built S3, S3 built S4. S2=S3=S4. The runtime gains bounded scalar lifetimes/vector growth/KGraph while preserving current-main packed mode and JUN-325 direct/function-address refusals. Existing native limits and grants retained; no hosted compiler or C loader.",
         "date": "2026-10-23",
-        "previousRoot": "8ee8dbeda45c270e74e01d17fbf3088c699a58c5a800e1981f5109907f8dae0a"
+        "previousRoot": "d17590b4352b4ecae97fb472355b05cda54cbfc01d3a29ad284531e2342e13d2",
+        "chain": {
+          "S1": {
+            "bytes": 1315328,
+            "sha256": "28aac6a86bd0b6cb944d173996b94aab5c7b72be419199ce0be0d4d24f5647bc"
+          },
+          "S2": {
+            "bytes": 1323520,
+            "sha256": "cd85f3fc6e68511f6de3e71692dfd9b90133bab3fe2c85285bb423a7dc80ad60"
+          },
+          "S3": {
+            "bytes": 1323520,
+            "sha256": "cd85f3fc6e68511f6de3e71692dfd9b90133bab3fe2c85285bb423a7dc80ad60"
+          },
+          "S4": {
+            "bytes": 1323520,
+            "sha256": "cd85f3fc6e68511f6de3e71692dfd9b90133bab3fe2c85285bb423a7dc80ad60"
+          }
+        }
       },
-      "verification": "scripts/seed/selfhost-bootstrap.py on arm64 Linux: root -> S1 = S2 = S3 = root natively, without any C compiler or loader",
+      "verification": "Native S2=S3=S4 and full current runtime-boundary corpus. Full18 core bootstrap and final corpus evidence recorded separately.",
       "history": [
         {
+          "schema": "amu.seed.static-root.v1",
           "image": {
-            "bytes": 1360384,
-            "sha256": "8ee8dbeda45c270e74e01d17fbf3088c699a58c5a800e1981f5109907f8dae0a"
+            "bytes": 1303040,
+            "sha256": "d17590b4352b4ecae97fb472355b05cda54cbfc01d3a29ad284531e2342e13d2"
           },
+          "target": "aarch64-linux",
+          "format": "static",
+          "sourceManifest": "seed/X86_64-LINUX-SELFHOST-MANIFEST",
           "sourceUnity": {
-            "bytes": 842787,
-            "sha256": "9b3f3a70cbee16406b0e317515560e0f4c3c8d385a481d8f1f9fd1c0b38ef635"
+            "bytes": 782654,
+            "sha256": "9d753d6a7cdd2de3953e7083cb1ba8ce0f8bd3339415764a156e3f69deba6480"
+          },
+          "sourceCommitBase": "36d5596597276801ea2728f05d4433b48721981e",
+          "producedBy": {
+            "how": "Amu native previous root built B1; B1 built B2; B2 built B3, with B1=B2=B3. Definition-position ownership and guest OP-FADDR rejection close JUN-325 direct and function-value routes. No C compiler/loader or hosted compiler executed.",
+            "date": "2026-10-23",
+            "previousRoot": "2f3c4c1ebe862aee1bf54eae2121a90227e9f6ac6a75b417f4070df8a3fefe5e",
+            "chain": {
+              "B1": {
+                "bytes": 1303040,
+                "sha256": "d17590b4352b4ecae97fb472355b05cda54cbfc01d3a29ad284531e2342e13d2"
+              },
+              "B2": {
+                "bytes": 1303040,
+                "sha256": "d17590b4352b4ecae97fb472355b05cda54cbfc01d3a29ad284531e2342e13d2"
+              },
+              "B3": {
+                "bytes": 1303040,
+                "sha256": "d17590b4352b4ecae97fb472355b05cda54cbfc01d3a29ad284531e2342e13d2"
+              }
+            }
+          },
+          "verification": "Native three-generation root fixed point; check-runtime-boundary.py covers direct calls, function references, indirect invocation and positive/runtime controls. Complete unchanged CORE-STATIC-MANIFEST rebuilt byte-identically to previous main C0."
+        },
+        {
+          "schema": "amu.seed.static-root.v1",
+          "image": {
+            "bytes": 1303040,
+            "sha256": "2f3c4c1ebe862aee1bf54eae2121a90227e9f6ac6a75b417f4070df8a3fefe5e"
+          },
+          "target": "aarch64-linux",
+          "format": "static",
+          "sourceManifest": "seed/X86_64-LINUX-SELFHOST-MANIFEST",
+          "sourceUnity": {
+            "bytes": 782160,
+            "sha256": "d2a28ac6e93c5f450a7fef14b6f38fb5ce76e706de68ec656f4974cfe0306982"
           },
           "sourceCommitBase": "1585cb488ea9a0b4f87c1fd319ea71fa3ceb09a0",
           "producedBy": {
-            "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 and S2 built S3 = this image (S1 = S2 = S3: the runtime text embedded in static images did not change). Re-pinned because this source adds --format launcher (ADR 0371 step 4: the launcher runtime text and the format plumbing in seed/70, 75, 76, 77 and 80) and decides runtime functions by their definition, not the symbol's first appearance (JUN-325: guest code could name a kxrt- intrinsic and get it inline).",
+            "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 = this image and S2 built S3 (S2 = S3; S1 differs because the previous root embeds the previous aarch64 runtime). Re-pinned because the runtime text gains the packed mode (context word 408 = 2: a payload inside the image's code, words 416/424/432).",
             "date": "2026-10-23",
             "previousRoot": "98d4bcb7cd4ca331c292873a6d76b836cd34455b967575ae52af5bb3507ab774"
-          }
+          },
+          "verification": "scripts/seed/selfhost-bootstrap.py on arm64 Linux: root -> S1 = S2 = S3 = root natively, without any C compiler or loader"
         },
         {
           "image": {
@@ -168,8 +226,8 @@
   },
   "sourceGraph": {
     "seed/X86_64-LINUX-SELFHOST-MANIFEST": {
-      "bytes": 541,
-      "sha256": "807282afc305ed284486296b30f115faa031db859d5bdf8a46c70ea154f8bd6a"
+      "bytes": 510,
+      "sha256": "af651c4d855723a633d3b94c4fc6393e5c6c6e53ac7e58186e0ec3228e8625b0"
     },
     "seed/00-ns-static.kotoba": {
       "bytes": 14937,
@@ -196,12 +254,12 @@
       "sha256": "fe067b8e507d6f7321a36f48a2a3d26a8874089caf00ac4ac5371c0d197ccde8"
     },
     "seed/21-check.kotoba": {
-      "bytes": 381021,
-      "sha256": "a42b412a1aed44f9ce24db7a0f7fdec3a242b8b36e3502062bf37fcecfd62081"
+      "bytes": 380988,
+      "sha256": "07c8c89d08de1b6a3434cee596a45c37ecea37835425bb878f0bfdf538f1f0cd"
     },
     "seed/30-lower.kotoba": {
-      "bytes": 87820,
-      "sha256": "42c85dc4c8afa5b82633dd73f61df9bb0f03da6b93c28c7ae2e85008edb980d7"
+      "bytes": 88073,
+      "sha256": "25bdb7abaae2af1f0d9e1b10fcebb59e0244f8ebb477413712b724dcdf4e7d4f"
     },
     "seed/50-out.kotoba": {
       "bytes": 21354,
@@ -209,39 +267,35 @@
     },
     "seed/70-x86_64-linux.kotoba": {
       "bytes": 19311,
-      "sha256": "723a1b4e200b806ef5ecf74a6011a37d3dd6c9b9ce9f1e6e9e372922beef6623"
+      "sha256": "ba6097f95d3cc7fa554be55d5a7f7243571a9d67f7ca6ed3bd3d9dcd5deb144e"
     },
     "seed/71-x86_64-runtime.kotoba": {
-      "bytes": 5382,
-      "sha256": "15f2c4f8b8f0a2a46ccd8fbb4c7f621e17a385b680e0d6878d258a9c9e6cc14c"
+      "bytes": 5579,
+      "sha256": "8abe266aaeac337810472459f458591228df28081bbcd9a95b8638b75db895d3"
     },
     "seed/75-x86_64-static.kotoba": {
-      "bytes": 11038,
-      "sha256": "338cdd573c8a94b6ee86de53c45d1e04f29dc3ace7984351c4db34a2e7a8c3da"
+      "bytes": 9873,
+      "sha256": "c6b4a02ae10d06e9c9bc77b69ba84c4399d9680043667489fd5d7aa7a6f393cf"
     },
     "seed/76-x86_64-static-rt.kotoba": {
-      "bytes": 93388,
-      "sha256": "d7b6cec9caf5480b81e4f340a1638fd750a57e83c34ec0630ee0df5fd072b9f5"
+      "bytes": 95137,
+      "sha256": "6bbbbccac63c3a49665053266141e7789ae87e0839eb02e2852a22f895515606"
     },
     "seed/77-aarch64-static-rt.kotoba": {
-      "bytes": 89627,
-      "sha256": "d08f3d4f83b5ddeab8eff5956b60fc825ecb8fc3079c2048cd987a234574fbb7"
-    },
-    "seed/78-x86_64-platform.kotoba": {
-      "bytes": 10690,
-      "sha256": "99e99f629e28862f5c47d1d853afdfb805399dcde7f79717d1eabfe4c0d2f7df"
+      "bytes": 95832,
+      "sha256": "031f4e461884c1575906929f8d9e6234be3421599b4bcfa6adc14ba69bfd6696"
     },
     "seed/80-aarch64-linux.kotoba": {
-      "bytes": 15587,
-      "sha256": "b93f6e14a6fa7802b4a11dc589b93d47f81d7bc8183006d97225523fa832840d"
+      "bytes": 17709,
+      "sha256": "9a8b74dc8d42b3cb6475f5368ee2204c3dc4e36ee0815e1511f0c2bcf148a355"
     },
     "seed/74-x86_64-aiueos-object.kotoba": {
       "bytes": 8402,
       "sha256": "9c3b16530f722e9a86249d17be3d5d55e1306be759be76c21df8cfac1d5db4d8"
     },
     "seed/73-x86-linux-entry.kotoba": {
-      "bytes": 1498,
-      "sha256": "757116e6ced4d0aa7bf567471505507489a4b686632ea0f35ff6a48bdbaaf705"
+      "bytes": 1175,
+      "sha256": "499022e15adce90748a6a545230e3ca922a6a49cf0f9cd986807a59d93b36b6b"
     }
   },
   "generations": [
@@ -250,7 +304,7 @@
       "producedBy": "root.elf",
       "pin": {
         "bytes": 1389056,
-        "sha256": "b3b087d89fecb7a7e9fd4903d14f08894b084a9282db8f9f85ce0efd9b90431a"
+        "sha256": "84b77278e47d3ac2ef79dc83c86f88acf5eda6c6d6b5a41ee8b261f0272e8a58"
       }
     },
     {
@@ -258,7 +312,7 @@
       "producedBy": "S1.elf",
       "pin": {
         "bytes": 1389056,
-        "sha256": "b3b087d89fecb7a7e9fd4903d14f08894b084a9282db8f9f85ce0efd9b90431a"
+        "sha256": "84b77278e47d3ac2ef79dc83c86f88acf5eda6c6d6b5a41ee8b261f0272e8a58"
       }
     },
     {
@@ -266,30 +320,30 @@
       "producedBy": "S2.elf",
       "pin": {
         "bytes": 1389056,
-        "sha256": "b3b087d89fecb7a7e9fd4903d14f08894b084a9282db8f9f85ce0efd9b90431a"
+        "sha256": "84b77278e47d3ac2ef79dc83c86f88acf5eda6c6d6b5a41ee8b261f0272e8a58"
       }
     }
   ],
-  "rootReproduces": true,
+  "rootReproduces": false,
   "built": {
     "aarch64Runner": {
-      "bytes": 131584,
-      "sha256": "8468afe3b672e460f954a6d8018f64fe89baa07598f8d494939b1b560320699b"
+      "bytes": 139776,
+      "sha256": "298708edd87a0105a39eab8a09980035a4c5774877ce73a5590800757475d9bc"
     },
     "x86_64Compiler": {
       "bytes": 1688064,
-      "sha256": "35ed9953bba4489a150b86a534d7aa9f3d72d4b9889cd5d7f9005f59b1cff2a0"
+      "sha256": "614c2535070bd9c6c7c0a851d39f49661ae02190325d4acd7245ac717128ae52"
     },
     "x86_64Runner": {
-      "bytes": 160256,
-      "sha256": "478b040b75eca0711d84bb088a87deaaf633b3083ecf796943dac7559e820c70"
+      "bytes": 172544,
+      "sha256": "ebf16b95c808d6551ad707fbc019cfa810506a78e13c2bef7ff67a18e75932bb"
     }
   },
   "adopted": {
     "sourceGraph": {
       "seed/MANIFEST": {
-        "bytes": 3299,
-        "sha256": "6f28bcb4ea926a1a5ce1e9c0f8fe5f9f9873fa29546e0efbbde56c145ef1632a"
+        "bytes": 3551,
+        "sha256": "778767e6803d0eedc222e73903fe57e6c4937930a2a03d641e2a2543a997e41f"
       },
       "seed/00-ns.kotoba": {
         "bytes": 14584,
@@ -302,6 +356,10 @@
       "seed/02-io.kotoba": {
         "bytes": 10931,
         "sha256": "268ae7a0d450deb0b7981b85f7e6895b08b4af828f1f57cb96cf2eb29777c4ea"
+      },
+      "seed/03-source-sha256.kotoba": {
+        "bytes": 5483,
+        "sha256": "40be511b6879d1c4c6a4b443b796ec1ef5cbe561d5c69c6ae52b8e62a96393d1"
       },
       "seed/10-lex.kotoba": {
         "bytes": 24829,
@@ -320,20 +378,20 @@
         "sha256": "fe067b8e507d6f7321a36f48a2a3d26a8874089caf00ac4ac5371c0d197ccde8"
       },
       "seed/21-check.kotoba": {
-        "bytes": 381021,
-        "sha256": "a42b412a1aed44f9ce24db7a0f7fdec3a242b8b36e3502062bf37fcecfd62081"
+        "bytes": 380988,
+        "sha256": "07c8c89d08de1b6a3434cee596a45c37ecea37835425bb878f0bfdf538f1f0cd"
       },
       "seed/30-lower.kotoba": {
-        "bytes": 87820,
-        "sha256": "42c85dc4c8afa5b82633dd73f61df9bb0f03da6b93c28c7ae2e85008edb980d7"
+        "bytes": 88073,
+        "sha256": "25bdb7abaae2af1f0d9e1b10fcebb59e0244f8ebb477413712b724dcdf4e7d4f"
       },
       "seed/40-a64enc.kotoba": {
         "bytes": 13003,
         "sha256": "c90fdfe90228b5481264a19ba586e9c96d4bed86e5548b2a54faadc7925313a1"
       },
       "seed/41-a64gen.kotoba": {
-        "bytes": 1842354,
-        "sha256": "e9951afdffa06cc86168d5dd6fbbfb67a3ba5fb6b129f53032045a6e3a6bf15d"
+        "bytes": 1842360,
+        "sha256": "f690946f152892f6790ef50cee8026ffacfd18b6717be68bab6055d5f3c160f8"
       },
       "seed/42-layout.kotoba": {
         "bytes": 18094,
@@ -343,13 +401,17 @@
         "bytes": 21354,
         "sha256": "1cf17b348bda09d73d721856705a52db05131b88f80d017e1fe9b9a92c066955"
       },
+      "seed/59-source-lock.kotoba": {
+        "bytes": 5214,
+        "sha256": "596d16e78ec4b6dacef639315ebfd08bcefaa1738a328c323c716aa3b3fee746"
+      },
       "seed/60-proj.kotoba": {
-        "bytes": 97409,
-        "sha256": "5134aafc125ac5591425f2c9e71536535a5b95b62dfd4f4c7f381fa45a6ab530"
+        "bytes": 98844,
+        "sha256": "f9844711a3043300e79b9b18d4d50ea506ade533c9ff7ca0a10bd40e5c128bf4"
       },
       "seed/90-drv.kotoba": {
-        "bytes": 50762,
-        "sha256": "c9613cedd0ee306c89a033d921dd41eceec41b041d142a36cc61819437513eb5"
+        "bytes": 53617,
+        "sha256": "51388ae37dcd0053ce437fd35e4440e09eb7cbf9a6b83a4c9ad4665c7821e8bd"
       },
       "seed/99-entry.kotoba": {
         "bytes": 249,
@@ -359,8 +421,8 @@
     "coreStatic": {
       "sourceGraph": {
         "seed/CORE-STATIC-MANIFEST": {
-          "bytes": 541,
-          "sha256": "4b7ffa8924a9ed50941c0261e5f865c70f05ac26e6bedeb6e3733331c97548d0"
+          "bytes": 597,
+          "sha256": "e1f93f7a46e2f7a9333f2ba4969ca0088cfcd887ce91a3a508ff7c431fb23de1"
         },
         "seed/00-ns-static.kotoba": {
           "bytes": 14937,
@@ -373,6 +435,10 @@
         "seed/02-io.kotoba": {
           "bytes": 10931,
           "sha256": "268ae7a0d450deb0b7981b85f7e6895b08b4af828f1f57cb96cf2eb29777c4ea"
+        },
+        "seed/03-source-sha256.kotoba": {
+          "bytes": 5483,
+          "sha256": "40be511b6879d1c4c6a4b443b796ec1ef5cbe561d5c69c6ae52b8e62a96393d1"
         },
         "seed/10-lex.kotoba": {
           "bytes": 24829,
@@ -391,20 +457,20 @@
           "sha256": "fe067b8e507d6f7321a36f48a2a3d26a8874089caf00ac4ac5371c0d197ccde8"
         },
         "seed/21-check.kotoba": {
-          "bytes": 381021,
-          "sha256": "a42b412a1aed44f9ce24db7a0f7fdec3a242b8b36e3502062bf37fcecfd62081"
+          "bytes": 380988,
+          "sha256": "07c8c89d08de1b6a3434cee596a45c37ecea37835425bb878f0bfdf538f1f0cd"
         },
         "seed/30-lower.kotoba": {
-          "bytes": 87820,
-          "sha256": "42c85dc4c8afa5b82633dd73f61df9bb0f03da6b93c28c7ae2e85008edb980d7"
+          "bytes": 88073,
+          "sha256": "25bdb7abaae2af1f0d9e1b10fcebb59e0244f8ebb477413712b724dcdf4e7d4f"
         },
         "seed/40-a64enc.kotoba": {
           "bytes": 13003,
           "sha256": "c90fdfe90228b5481264a19ba586e9c96d4bed86e5548b2a54faadc7925313a1"
         },
         "seed/41-a64gen.kotoba": {
-          "bytes": 1842354,
-          "sha256": "e9951afdffa06cc86168d5dd6fbbfb67a3ba5fb6b129f53032045a6e3a6bf15d"
+          "bytes": 1842360,
+          "sha256": "f690946f152892f6790ef50cee8026ffacfd18b6717be68bab6055d5f3c160f8"
         },
         "seed/42-layout.kotoba": {
           "bytes": 18094,
@@ -414,13 +480,17 @@
           "bytes": 21354,
           "sha256": "1cf17b348bda09d73d721856705a52db05131b88f80d017e1fe9b9a92c066955"
         },
+        "seed/59-source-lock.kotoba": {
+          "bytes": 5214,
+          "sha256": "596d16e78ec4b6dacef639315ebfd08bcefaa1738a328c323c716aa3b3fee746"
+        },
         "seed/60-proj.kotoba": {
-          "bytes": 97409,
-          "sha256": "5134aafc125ac5591425f2c9e71536535a5b95b62dfd4f4c7f381fa45a6ab530"
+          "bytes": 98844,
+          "sha256": "f9844711a3043300e79b9b18d4d50ea506ade533c9ff7ca0a10bd40e5c128bf4"
         },
         "seed/90-drv.kotoba": {
-          "bytes": 50762,
-          "sha256": "c9613cedd0ee306c89a033d921dd41eceec41b041d142a36cc61819437513eb5"
+          "bytes": 53617,
+          "sha256": "51388ae37dcd0053ce437fd35e4440e09eb7cbf9a6b83a4c9ad4665c7821e8bd"
         },
         "seed/99-entry.kotoba": {
           "bytes": 249,
@@ -428,8 +498,8 @@
         }
       },
       "image": {
-        "bytes": 6603264,
-        "sha256": "cbc8adc98e406a8679ceeb7ffb943df041bc737906479b9a2a6c5ca1dadae700"
+        "bytes": 6648320,
+        "sha256": "2b3a9adffbe683edc8203f643673771b73d867aed1d4dc201187d6cca5d97e05"
       }
     },
     "runnerStackBytes": 8388608,
@@ -437,38 +507,56 @@
       {
         "generation": 1,
         "native": {
-          "bytes": 2552864,
-          "sha256": "9deed9500c9a5af943efb39be389ce841bfb57d904e9f72fba5227033a8f40d8"
+          "bytes": 2571256,
+          "sha256": "294b4335e8320143d0876276a361acf3624af50ecdfe676075c0a436e04d8cfe"
         },
         "container": {
-          "bytes": 2552891,
-          "sha256": "29197f181430be9ff3c918bb0739bc13686203c3de4ecd560261a37926277a98"
+          "bytes": 2571283,
+          "sha256": "f354ca247a0d1683dc5a6966198f3e1e77db4381caf29d7b54a93e7d74b5658e"
         }
       },
       {
         "generation": 2,
         "native": {
-          "bytes": 2552864,
-          "sha256": "9deed9500c9a5af943efb39be389ce841bfb57d904e9f72fba5227033a8f40d8"
+          "bytes": 2571256,
+          "sha256": "294b4335e8320143d0876276a361acf3624af50ecdfe676075c0a436e04d8cfe"
         },
         "container": {
-          "bytes": 2552891,
-          "sha256": "29197f181430be9ff3c918bb0739bc13686203c3de4ecd560261a37926277a98"
+          "bytes": 2571283,
+          "sha256": "f354ca247a0d1683dc5a6966198f3e1e77db4381caf29d7b54a93e7d74b5658e"
         }
       },
       {
         "generation": 3,
         "native": {
-          "bytes": 2552864,
-          "sha256": "9deed9500c9a5af943efb39be389ce841bfb57d904e9f72fba5227033a8f40d8"
+          "bytes": 2571256,
+          "sha256": "294b4335e8320143d0876276a361acf3624af50ecdfe676075c0a436e04d8cfe"
         },
         "container": {
-          "bytes": 2552891,
-          "sha256": "29197f181430be9ff3c918bb0739bc13686203c3de4ecd560261a37926277a98"
+          "bytes": 2571283,
+          "sha256": "f354ca247a0d1683dc5a6966198f3e1e77db4381caf29d7b54a93e7d74b5658e"
         }
       }
     ],
-    "expectedNativeImage": "9deed9500c9a5af943efb39be389ce841bfb57d904e9f72fba5227033a8f40d8"
+    "packed": {
+      "image": {
+        "bytes": 2712064,
+        "sha256": "e60253ed734b28155c01e183cad933a016b02ccf049d27c8b7e132737583c07a"
+      },
+      "container": {
+        "bytes": 2571283,
+        "sha256": "f354ca247a0d1683dc5a6966198f3e1e77db4381caf29d7b54a93e7d74b5658e"
+      },
+      "native": {
+        "bytes": 2571256,
+        "sha256": "294b4335e8320143d0876276a361acf3624af50ecdfe676075c0a436e04d8cfe"
+      },
+      "arityRefusal": {
+        "exit": 1,
+        "stderr": "seed-aarch64-linux: E7105 the packed payload's main must take no arguments"
+      }
+    },
+    "expectedNativeImage": "294b4335e8320143d0876276a361acf3624af50ecdfe676075c0a436e04d8cfe"
   },
   "cases": [
     {
@@ -613,6 +701,948 @@
       "exit": 120,
       "stderr": "KEXE_TRAP {:kind :signal :signal :SIGSEGV}"
     }
+  },
+  "runtimeBoundary": {
+    "status": "PASS_RUNTIME_BOUNDARY",
+    "compiler": {
+      "bytes": 1389056,
+      "sha256": "84b77278e47d3ac2ef79dc83c86f88acf5eda6c6d6b5a41ee8b261f0272e8a58"
+    },
+    "previousRoot": null,
+    "host": [
+      "Linux",
+      "aarch64",
+      "6.15.10-200.fc42.aarch64"
+    ],
+    "refused": [
+      {
+        "name": "syscall",
+        "target": "aarch64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "load64",
+        "target": "aarch64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "store64",
+        "target": "aarch64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "load8",
+        "target": "aarch64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "store8",
+        "target": "aarch64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "ctx",
+        "target": "aarch64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "call-main",
+        "target": "aarch64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "trap",
+        "target": "aarch64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "call-at",
+        "target": "aarch64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "exit",
+        "target": "aarch64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "gl",
+        "target": "aarch64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "gs",
+        "target": "aarch64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "allow-bit",
+        "target": "aarch64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "map",
+        "target": "aarch64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "slot-56",
+        "target": "aarch64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "fn-ref-invoke",
+        "target": "aarch64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "fn-ref-alias",
+        "target": "aarch64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "bare-alias",
+        "target": "aarch64-linux",
+        "format": "static",
+        "diagnostic": "E2102"
+      },
+      {
+        "name": "fn-ref-only",
+        "target": "aarch64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "fn-ref-ctx",
+        "target": "aarch64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "fn-ref-slot",
+        "target": "aarch64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "qualified-call",
+        "target": "aarch64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "qualified-fn-ref",
+        "target": "aarch64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "nested-call",
+        "target": "aarch64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "allow-mask",
+        "target": "aarch64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "syscall",
+        "target": "aarch64-linux",
+        "format": "runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "load64",
+        "target": "aarch64-linux",
+        "format": "runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "store64",
+        "target": "aarch64-linux",
+        "format": "runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "load8",
+        "target": "aarch64-linux",
+        "format": "runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "store8",
+        "target": "aarch64-linux",
+        "format": "runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "ctx",
+        "target": "aarch64-linux",
+        "format": "runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "call-main",
+        "target": "aarch64-linux",
+        "format": "runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "trap",
+        "target": "aarch64-linux",
+        "format": "runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "call-at",
+        "target": "aarch64-linux",
+        "format": "runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "exit",
+        "target": "aarch64-linux",
+        "format": "runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "gl",
+        "target": "aarch64-linux",
+        "format": "runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "gs",
+        "target": "aarch64-linux",
+        "format": "runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "allow-bit",
+        "target": "aarch64-linux",
+        "format": "runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "map",
+        "target": "aarch64-linux",
+        "format": "runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "slot-56",
+        "target": "aarch64-linux",
+        "format": "runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "fn-ref-invoke",
+        "target": "aarch64-linux",
+        "format": "runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "fn-ref-alias",
+        "target": "aarch64-linux",
+        "format": "runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "bare-alias",
+        "target": "aarch64-linux",
+        "format": "runner",
+        "diagnostic": "E2102"
+      },
+      {
+        "name": "fn-ref-only",
+        "target": "aarch64-linux",
+        "format": "runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "fn-ref-ctx",
+        "target": "aarch64-linux",
+        "format": "runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "fn-ref-slot",
+        "target": "aarch64-linux",
+        "format": "runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "qualified-call",
+        "target": "aarch64-linux",
+        "format": "runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "qualified-fn-ref",
+        "target": "aarch64-linux",
+        "format": "runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "nested-call",
+        "target": "aarch64-linux",
+        "format": "runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "allow-mask",
+        "target": "aarch64-linux",
+        "format": "runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "syscall",
+        "target": "x86_64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "load64",
+        "target": "x86_64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "store64",
+        "target": "x86_64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "load8",
+        "target": "x86_64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "store8",
+        "target": "x86_64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "ctx",
+        "target": "x86_64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "call-main",
+        "target": "x86_64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "trap",
+        "target": "x86_64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "call-at",
+        "target": "x86_64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "exit",
+        "target": "x86_64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "gl",
+        "target": "x86_64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "gs",
+        "target": "x86_64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "allow-bit",
+        "target": "x86_64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "map",
+        "target": "x86_64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "slot-56",
+        "target": "x86_64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "fn-ref-invoke",
+        "target": "x86_64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "fn-ref-alias",
+        "target": "x86_64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "bare-alias",
+        "target": "x86_64-linux",
+        "format": "static",
+        "diagnostic": "E2102"
+      },
+      {
+        "name": "fn-ref-only",
+        "target": "x86_64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "fn-ref-ctx",
+        "target": "x86_64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "fn-ref-slot",
+        "target": "x86_64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "qualified-call",
+        "target": "x86_64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "qualified-fn-ref",
+        "target": "x86_64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "nested-call",
+        "target": "x86_64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "allow-mask",
+        "target": "x86_64-linux",
+        "format": "static",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "syscall",
+        "target": "x86_64-linux",
+        "format": "kx64-runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "load64",
+        "target": "x86_64-linux",
+        "format": "kx64-runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "store64",
+        "target": "x86_64-linux",
+        "format": "kx64-runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "load8",
+        "target": "x86_64-linux",
+        "format": "kx64-runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "store8",
+        "target": "x86_64-linux",
+        "format": "kx64-runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "ctx",
+        "target": "x86_64-linux",
+        "format": "kx64-runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "call-main",
+        "target": "x86_64-linux",
+        "format": "kx64-runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "trap",
+        "target": "x86_64-linux",
+        "format": "kx64-runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "call-at",
+        "target": "x86_64-linux",
+        "format": "kx64-runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "exit",
+        "target": "x86_64-linux",
+        "format": "kx64-runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "gl",
+        "target": "x86_64-linux",
+        "format": "kx64-runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "gs",
+        "target": "x86_64-linux",
+        "format": "kx64-runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "allow-bit",
+        "target": "x86_64-linux",
+        "format": "kx64-runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "map",
+        "target": "x86_64-linux",
+        "format": "kx64-runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "slot-56",
+        "target": "x86_64-linux",
+        "format": "kx64-runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "fn-ref-invoke",
+        "target": "x86_64-linux",
+        "format": "kx64-runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "fn-ref-alias",
+        "target": "x86_64-linux",
+        "format": "kx64-runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "bare-alias",
+        "target": "x86_64-linux",
+        "format": "kx64-runner",
+        "diagnostic": "E2102"
+      },
+      {
+        "name": "fn-ref-only",
+        "target": "x86_64-linux",
+        "format": "kx64-runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "fn-ref-ctx",
+        "target": "x86_64-linux",
+        "format": "kx64-runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "fn-ref-slot",
+        "target": "x86_64-linux",
+        "format": "kx64-runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "qualified-call",
+        "target": "x86_64-linux",
+        "format": "kx64-runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "qualified-fn-ref",
+        "target": "x86_64-linux",
+        "format": "kx64-runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "nested-call",
+        "target": "x86_64-linux",
+        "format": "kx64-runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "allow-mask",
+        "target": "x86_64-linux",
+        "format": "kx64-runner",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "syscall",
+        "target": "aarch64-linux",
+        "format": "packed",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "load64",
+        "target": "aarch64-linux",
+        "format": "packed",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "store64",
+        "target": "aarch64-linux",
+        "format": "packed",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "load8",
+        "target": "aarch64-linux",
+        "format": "packed",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "store8",
+        "target": "aarch64-linux",
+        "format": "packed",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "ctx",
+        "target": "aarch64-linux",
+        "format": "packed",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "call-main",
+        "target": "aarch64-linux",
+        "format": "packed",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "trap",
+        "target": "aarch64-linux",
+        "format": "packed",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "call-at",
+        "target": "aarch64-linux",
+        "format": "packed",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "exit",
+        "target": "aarch64-linux",
+        "format": "packed",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "gl",
+        "target": "aarch64-linux",
+        "format": "packed",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "gs",
+        "target": "aarch64-linux",
+        "format": "packed",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "allow-bit",
+        "target": "aarch64-linux",
+        "format": "packed",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "map",
+        "target": "aarch64-linux",
+        "format": "packed",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "slot-56",
+        "target": "aarch64-linux",
+        "format": "packed",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "fn-ref-invoke",
+        "target": "aarch64-linux",
+        "format": "packed",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "fn-ref-alias",
+        "target": "aarch64-linux",
+        "format": "packed",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "bare-alias",
+        "target": "aarch64-linux",
+        "format": "packed",
+        "diagnostic": "E2102"
+      },
+      {
+        "name": "fn-ref-only",
+        "target": "aarch64-linux",
+        "format": "packed",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "fn-ref-ctx",
+        "target": "aarch64-linux",
+        "format": "packed",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "fn-ref-slot",
+        "target": "aarch64-linux",
+        "format": "packed",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "qualified-call",
+        "target": "aarch64-linux",
+        "format": "packed",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "qualified-fn-ref",
+        "target": "aarch64-linux",
+        "format": "packed",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "nested-call",
+        "target": "aarch64-linux",
+        "format": "packed",
+        "diagnostic": "E7101"
+      },
+      {
+        "name": "allow-mask",
+        "target": "aarch64-linux",
+        "format": "packed",
+        "diagnostic": "E7101"
+      }
+    ],
+    "positives": [
+      {
+        "target": "aarch64-linux",
+        "format": "static",
+        "image": {
+          "bytes": 139776,
+          "sha256": "b2918853b8e9708e9e19ef9410c51982f79bfcd1956c4f1544ff4c7d7b183c35"
+        },
+        "sameBytes": null
+      },
+      {
+        "target": "aarch64-linux",
+        "format": "runner",
+        "image": {
+          "bytes": 139776,
+          "sha256": "7f38c7f17750c4ad8efd13246bbf299d394042c4fd769ee6ea1cfabe6c50b54b"
+        },
+        "sameBytes": null
+      },
+      {
+        "target": "x86_64-linux",
+        "format": "static",
+        "image": {
+          "bytes": 172544,
+          "sha256": "09bac0e076ffdc031011f912ed59fb7e8d25f5512cf2b5bc285bb6bdf93d88ab"
+        },
+        "sameBytes": null
+      },
+      {
+        "target": "x86_64-linux",
+        "format": "kx64-runner",
+        "image": {
+          "bytes": 172544,
+          "sha256": "845059b50c6565f03efad07e1cb410f162fdddd5cf86cd60b6a984d0949620a8"
+        },
+        "sameBytes": null
+      },
+      {
+        "target": "aarch64-linux",
+        "format": "packed",
+        "image": {
+          "bytes": 2712064,
+          "sha256": "f1e66f23d3f05037bb4c3e8bf6cb55708c15436f8c547c5bea690287097ec680"
+        },
+        "sameBytes": null
+      }
+    ],
+    "previous": [],
+    "runtimeCases": [
+      {
+        "name": "string-literal",
+        "exit": 0,
+        "remainingFuel": 999999
+      },
+      {
+        "name": "string-concat",
+        "exit": 0,
+        "remainingFuel": 999999
+      },
+      {
+        "name": "string-view",
+        "exit": 0,
+        "remainingFuel": 999999
+      },
+      {
+        "name": "string-unicode",
+        "exit": 0,
+        "remainingFuel": 999999
+      },
+      {
+        "name": "string-empty-nul",
+        "exit": 0,
+        "remainingFuel": 999999
+      },
+      {
+        "name": "string-search",
+        "exit": 0,
+        "remainingFuel": 999999
+      },
+      {
+        "name": "string-call",
+        "exit": 0,
+        "remainingFuel": 999998
+      },
+      {
+        "name": "vector-literal",
+        "exit": 0,
+        "remainingFuel": 999999
+      },
+      {
+        "name": "vector-dynamic",
+        "exit": 0,
+        "remainingFuel": 999999
+      },
+      {
+        "name": "vector-persistent",
+        "exit": 0,
+        "remainingFuel": 999999
+      },
+      {
+        "name": "vector-mutate",
+        "exit": 0,
+        "remainingFuel": 999999
+      },
+      {
+        "name": "vector-drop-conj",
+        "exit": 0,
+        "remainingFuel": 999995
+      },
+      {
+        "name": "vector-pooled",
+        "exit": 0,
+        "remainingFuel": 999999
+      },
+      {
+        "name": "vector-negative",
+        "exit": 120,
+        "remainingFuel": 999999
+      },
+      {
+        "name": "vector-oob",
+        "exit": 120,
+        "remainingFuel": 999999
+      },
+      {
+        "name": "string-oob",
+        "exit": 120,
+        "remainingFuel": 999999
+      },
+      {
+        "name": "string-boundary",
+        "exit": 120,
+        "remainingFuel": 999999
+      },
+      {
+        "name": "wide-args",
+        "exit": 0,
+        "remainingFuel": 999999
+      },
+      {
+        "name": "closure",
+        "exit": 0,
+        "remainingFuel": 999999
+      },
+      {
+        "name": "closure-env",
+        "exit": 0,
+        "remainingFuel": 999998
+      },
+      {
+        "name": "state-results",
+        "exit": 0,
+        "remainingFuel": 999999
+      },
+      {
+        "name": "bytes-roundtrip",
+        "exit": 0,
+        "remainingFuel": 999999
+      },
+      {
+        "name": "capability-denied",
+        "exit": 120,
+        "remainingFuel": 999999
+      },
+      {
+        "name": "mutual-tail",
+        "exit": 0,
+        "remainingFuel": 979998
+      }
+    ],
+    "payload": {
+      "bytes": 2571283,
+      "sha256": "f354ca247a0d1683dc5a6966198f3e1e77db4381caf29d7b54a93e7d74b5658e"
+    },
+    "cCompilerOrLoader": false,
+    "JVMNodeOrGraalFallback": false,
+    "emulation": false
   },
   "cCompilerOrLoader": false,
   "JVMNodeOrGraalFallback": false,

@@ -104,15 +104,19 @@
   (if (or (not= (vector-at M MM-ERR) 0) (= f (vector-at M MM-FN-N))) M
     (xs-scan (xs-scan-one M S f) S (inc f))))
 ;; Runtime functions: scalar SIR and intrinsic/runtime calls only. Guest
-;; functions never call a runtime function directly; in mode 3 seed/78
-;; (xp-check-api) admits the kxrt-p- functions by name instead.
+;; Guest functions may neither call runtime functions nor acquire their address
+;; as a function value (fn-ref, a bare function value, invoke or apply). In
+;; mode 3 only, seed/78 (xp-check-api) admits direct calls of the kxrt-p-
+;; platform API by name; function values of it stay refused.
 (defn- xs-scalar-op? [op :i64] :bool
   (or (and (>= op OP-FN) (<= op OP-CALL)) (= op OP-FUEL) (= op OP-RET) (= op OP-TRAP)))
 (defn- xs-check [M :vector-i64 i :i64 f :i64] :vector-i64
   (if (or (not= (vector-at M MM-ERR) 0) (= i (vector-at M MM-SIR-N))) M
     (let [op (xg-si M i IF-OP) a (xg-si M i IF-A) g (if (= op OP-FN) a f) rt (xs-rt? M g)]
       (cond (and rt (not (xs-scalar-op? op))) (xg-err M 7101 op)
-            (and (= op OP-CALL) (not rt) (xs-rt? M a) (not= (xg-get M 2) 3)) (xg-err M 7101 op)
+            (and (not rt)
+                 (or (and (= op OP-CALL) (xs-rt? M a) (not= (xg-get M 2) 3))
+                     (and (= op OP-FADDR) (xs-rt? M (xg-si M i IF-B))))) (xg-err M 7101 op)
             :else (xs-check M (inc i) g)))))
 
 ;; ---- image ------------------------------------------------------------------
@@ -129,6 +133,10 @@
     (cond (= slot 384) 0x401000
           (= slot 408) (xg-get M 2)
           (= slot 392) (xg-pos M)
+          ;; --format packed (seed/80): the payload's address, length and entry offset; 0 otherwise
+          (= slot 416) (vector-at M 252)
+          (= slot 424) (vector-at M 253)
+          (= slot 432) (vector-at M 254)
           (> f 0) (+ 0x401000 (dec (xg-f M f FF-CODE)))
           :else 0)))
 (defn- xs-out-ctx [M :vector-i64 at :i64] :vector-i64
@@ -143,8 +151,8 @@
 (defn- xs-clear [M :vector-i64 k :i64] :vector-i64
   (if (= k 256) M (xs-clear (mem-set M k 0) (inc k))))
 ;; mode (context word 408): 0 = --format static, 1 = --format kx64-runner,
-;; 2 = --format launcher (the runtime ends with xs-rt-launch instead of the
-;; standard start; seed/76)
+;; 4 = --format launcher (the runtime ends with xs-rt-launch instead of the
+;; standard start; seed/76); 2 is --format packed (seed/80, aarch64)
 (defn- xs-build [M :vector-i64 S :string rt :i64 mode :i64] :vector-i64
   (let [a (-> M (xs-clear 197) (mem-set 197 rt) (xg-set 0 0) (xg-set 1 0) (xg-set 2 mode) (xg-set 4 1)
               (xg-check-fns S 1) (xg-check-sir 1) (xr-check 1) (xs-scan S 1) (xs-check 1 0))]
@@ -156,7 +164,7 @@
                       data (bit-and (+ 8191 (xg-pos g)) -4096)]
                   (if (>= (+ data XS-CTX-BYTES 1) MM-OUT-CAP) (xg-err g 7104 data)
                     (xs-elf (xg-fix (xg-set g 3 data) 1)))))))
-(defn- xs-format-name [mode :i64] :string (case mode 1 ":kx64-runner" 2 ":launcher" ":static"))
+(defn- xs-format-name [mode :i64] :string (case mode 1 ":kx64-runner" 4 ":launcher" ":static"))
 (defn- xs-write [M :vector-i64 out :string] :i64
   (let [n (dec (vector-at M MM-OUT-N)) written (out-write-v M out (+ MM-OUT-BASE 1) n)
         w (io-out (string-concat "{:ok true, :target :x86_64-linux, :format " (string-concat (xs-format-name (xg-get M 2)) (string-concat ", :code-bytes "
@@ -168,7 +176,7 @@
             (drv-fail0 E-USAGE)
           (= (io-exists src) 0) (drv-fail0 E-READ)
           :else (let [original (drv-read src) guest (string-concat original (ck-r6b-lib original))
-                      rt (if (= mode 2) (string-concat (xs-rt-core) (xs-rt-launch)) (xs-rt-src))
+                      rt (if (= mode 4) (string-concat (xs-rt-core) (xs-rt-launch)) (xs-rt-src))
                       s (string-concat guest rt) m (xs-build (xg-front s) s (string-length guest) mode)]
                   (cond (not= (vector-at m MM-ERR) 0) (xg-report m src out)
                         :else (xs-write m out))))))

@@ -171,7 +171,7 @@ decimal result and a newline with status 0, as the loader.
 
 ### Static launcher (`--format launcher`)
 
-Context word 408 = 2 (ADR 0371 step 4), built from
+Context word 408 = 4 (ADR 0371 step 4; 2 is `--format packed`), built from
 `tools/static_launcher.kotoba`. The runtime text is `xs-rt-core` followed by
 `xs-rt-launch` instead of the standard start (`xs-rt-start`); static and runner
 images are `xs-rt-core` + `xs-rt-start`, the same bytes as before the split.
@@ -264,7 +264,8 @@ name; any other runtime function is E7101.
 ## aarch64-linux-static (seed modules 77, 80)
 
 `compile SOURCE --target aarch64-linux --output NEW --format static|runner|launcher`
-(Linux selfhost closure; dispatched by 73) emits the same image shape for
+(and `--format packed --payload KSEED`, below) (Linux selfhost closure;
+dispatched by 73) emits the same image shape for
 EM_AARCH64. Module 80 is a plain stack-machine emitter for the runtime-profile
 SIR, independent of the adopted 41-a64gen: every local and temp lives in the
 frame (sp-relative, the x86 frame sizes), x0..x4 carry arguments 0..4 and
@@ -281,3 +282,17 @@ flags, AUDIT_ARCH_AARCH64 and the aarch64 allow-lists differ. The runner
 format takes `PAYLOAD OFFSET 0 aarch64 ALLOW [-- ARGS]` and enters the payload
 as the loader did: fn(0..0, x7 = context). `KEXE_STACK_BYTES` (both arches)
 sets the stack budget; the adopted AArch64 compiler needs 8 MiB.
+
+### Packed images (`--format packed --payload KSEED`)
+
+SOURCE is the runner source. The code of KSEED's exported `main` (a `.kseed`
+container, as `extract-native` reads it; `main` must take no arguments, else
+E7105) follows the image's code at a page boundary inside the RX segment.
+Context word 408 = 2, and words 416/424/432 hold the payload's address,
+length and entry offset. At start the runtime sets words 384/392 (the code
+range) to the payload and enters it as the runner enters a mapped payload,
+with the static image's command line, environment and result (`KEXE_ALLOW`
+from the environment, exit status = result). Packing the adopted core's G3
+gives a standalone optimized compiler: it rebuilds the core to the same
+container (`selfhost-bootstrap.py` step 3b). Modes 0 and 1 emit 0 in words
+416..432, so their images are unchanged.

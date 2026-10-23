@@ -220,6 +220,8 @@ compiles `CORE-STATIC-MANIFEST` (the core with the static-profile namespace
 `00-ns-static.kotoba`) to a static image C0, C0 compiles `MANIFEST` to G1,
 and the aarch64 runner takes G1 and G2 to G2 and G3: G1 = G2 = G3 = the
 adoption fixed point. `bootstrap/adopted-20261012.bin` is no longer an input
-of any build. It then checks the runtime cases
+of any build. S3 then packs G3 (`--format packed`) into
+`P-aarch64.elf`, a standalone static image of the optimized core, which
+rebuilds the core to the same container. It then checks the runtime cases
 against `static-cases.json`, and probes seccomp and the resource limits.
 Receipt: `../docs/evidence/selfhost-bootstrap-aarch64-20261022/`.

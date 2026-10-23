@@ -14,8 +14,7 @@ emulation. Records, natively:
 4. the KX64V1 runner: X2's kx64-v1 compiler payload G1 rebuilds itself
    through R-x86_64 (G1 = G2 = G3);
 5. the scalar ELF suite, the aiueos object checks, the static launcher
-   (check-static-launcher.py: --format launcher, ADR 0371 step 4), the
-   runtime boundary (check-runtime-boundary.py, JUN-325) and the
+   (check-static-launcher.py: --format launcher, ADR 0371 step 4) and the
    platform-linked image (check-platform-linked.py: libc-only images run on
    this host's glibc, owner decision 2026-10-22; ADR 0371 step 5) with X2.
 """
@@ -72,6 +71,10 @@ def main(boot, out):
     x3 = compile_(out / "X2.elf", source, out / "X3.elf", "static", "X3")
     assert s_cross == x2 == x3, "x86_64 static fixed point"
     X = out / "X2.elf"
+
+    run("runtime-boundary", [sys.executable, ROOT / "scripts/seed/check-runtime-boundary.py",
+                             "--compiler", X, "--output", out / "runtime-boundary"], {})
+    runtime_boundary = json.loads((out / "runtime-boundary/runtime-boundary.json").read_text())
 
     # 2. runtime cases
     results = []
@@ -132,7 +135,7 @@ def main(boot, out):
     # 5. scalar ELF suite, aiueos object checks and the static launcher with X2
     suites = {}
     for script, args in [("check-x86_64-scalar.py", []), ("check-x86_64-aiueos-object.py", []), ("check-static-launcher.py", []),
-                         ("check-runtime-boundary.py", []), ("check-platform-linked.py", ["all"])]:
+                         ("check-platform-linked.py", ["all"])]:
         dst = out / script.replace(".py", "")
         r = subprocess.run([sys.executable, str(ROOT / "scripts/seed" / script), "--compiler", str(X), "--output", str(dst), *args],
                            capture_output=True, timeout=3600)
@@ -143,6 +146,7 @@ def main(boot, out):
     report = dict(status="PASS_NATIVE_X86_64_LOADERLESS", host=[platform.system(), platform.machine(), platform.release()],
                   nativeX86_64Kernel=True, emulation=False, cCompilerOrLoader=False,
                   compiler=dict(crossBuiltOnArm64=s_cross, X2=x2, X3=x3), cases=results, hardening=hardening,
+                  runtimeBoundary=runtime_boundary,
                   kx64Runner=dict(runner=pin(out / "R-x86_64.elf"), generations=gens), suites=suites,
                   bootstrapReceipt=json.loads((boot / "selfhost-bootstrap.json").read_text())["root"]["image"])
     (out / "x86_64-native.json").write_text(json.dumps(report, indent=2) + "\n")

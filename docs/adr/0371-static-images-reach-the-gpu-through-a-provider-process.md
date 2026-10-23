@@ -482,7 +482,7 @@ Each step is its own PR, in this order:
 4. **Launcher.** Done (JUN-313). It is narrower than `amu run` (JUN-282): it
    signs nothing, since the trust plane (M3) does not exist yet.
    * **Format.** `--format launcher` on both static targets sets context word
-     408 = 2. The launcher runtime text (`xs-rt-launch` in `seed/76`,
+     408 = 4. The launcher runtime text (`xs-rt-launch` in `seed/76`,
      `xa-rt-launch` in `seed/77`) is appended in place of the standard start
      in this format only, so static and runner images keep their bytes. A
      guest cannot turn the launcher on: the mode is fixed at link time.
@@ -529,11 +529,14 @@ Each step is its own PR, in this order:
    * **Not under emulation.** Through binfmt_misc, `execveat` of a
      close-on-exec memfd fails (ENOENT), so an image of another ISA cannot be
      started that way. x86_64 is qualified on a native kernel.
-   * **Root.** Re-pinned C-free to `8ee8dbed…`, together with the
-     guest/runtime boundary fix (JUN-325), on top of main's `98d4bcb7…`,
+   * **Root.** Re-pinned C-free to `84b77278…`, on top of main's
+     `cd85f3fc…` (the native source lock, with the JUN-325 boundary fix),
      which stays in the receipt's history. No adoption round was needed. The
      previous root built S1 equal to S2 and S3, since the runtime embedded in
-     static images did not change.
+     static images did not change. The launcher's globals sit at G+2048..,
+     clear of the runtime's own (G+0..751). Main's boundary corpus
+     (`check-runtime-boundary.py`) covers `--format launcher` on both
+     targets.
    * **Receipts.** `docs/evidence/static-launcher-20261022/`.
 5. **Platform-linked ELF writer.** Done for x86_64 (JUN-322).
    * **Format.** `--format platform-linked` sets context word 408 = 3, on

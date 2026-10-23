@@ -211,31 +211,55 @@
 (defn- xa-elf [M :vector-i64] :vector-i64
   (-> M (mem-set MM-OUT-N 1) (xa-elf-header) (xg-elf-rx) (xs-elf-rw) (xg-elf-stack)
       (xg-pad 4096) (xg-out-code 1) (xg-pad (xg-get M 3)) (xs-out-ctx 0)))
-(defn- xa-build [M :vector-i64 S :string rt :i64 mode :i64] :vector-i64
+;; --format packed (mode 2): the code of a container's `main` (V = the .kseed bytes, [cs, cs+cl) its code, off its entry)
+;; follows the image's code at a page boundary, as the runner would map it. Context words 416/424/432 = its address,
+;; length and entry offset; they are cells 252..254 of M, the link table's cells of those (unlinked) slots.
+(defn- xa-page [M :vector-i64] :vector-i64
+  (loop [g M] (if (or (= (bit-and (xg-pos g) 4095) 0) (not= (vector-at g MM-ERR) 0)) g (recur (xa-w g 0)))))
+(defn- xa-payload [M :vector-i64 V :vector-i64 cs :i64 cl :i64 off :i64] :vector-i64
+  (let [g (xa-page M) at (xg-pos g)
+        h (loop [h g i 0] (if (or (= i cl) (not= (vector-at h MM-ERR) 0)) h (recur (xg-byte h (vector-at V (+ cs i))) (inc i))))]
+    (-> h (mem-set 252 (+ 0x401000 at)) (mem-set 253 cl) (mem-set 254 off))))
+(defn- xa-build [M :vector-i64 S :string rt :i64 mode :i64 V :vector-i64 cs :i64 cl :i64 off :i64] :vector-i64
   (let [a (-> M (xs-clear 197) (mem-set 197 rt) (xg-set 0 0) (xg-set 1 0) (xg-set 2 mode) (xg-set 4 1)
               (xg-check-fns S 1) (xg-check-sir 1) (xr-check 1) (xs-scan S 1) (xs-check 1 0))]
     (cond (not= (vector-at a MM-ERR) 0) a
           (= (xg-get a 1) 0) (xg-err a 7102 0)
           (or (= (vector-at a 199) 0) (= (vector-at a 198) 0)) (xg-err a 7102 1)
-          :else (let [g (-> a (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1) (xg-index-labels 1)
-                            (xa-entry) (xa-code 1) (xr-pool 1))
+          :else (let [g0 (-> a (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1) (xg-index-labels 1)
+                             (xa-entry) (xa-code 1) (xr-pool 1))
+                      g (if (= mode 2) (xa-payload g0 V cs cl off) g0)
                       data (bit-and (+ 8191 (xg-pos g)) -4096)]
                   (if (>= (+ data XS-CTX-BYTES 1) MM-OUT-CAP) (xg-err g 7104 data)
                     (xa-elf (xa-fix (xg-set g 3 data) 1)))))))
 (defn- xa-write [M :vector-i64 out :string] :i64
   (let [n (dec (vector-at M MM-OUT-N)) written (out-write-v M out (+ MM-OUT-BASE 1) n)
-        w (io-out (string-concat "{:ok true, :target :aarch64-linux, :format " (string-concat (case (xg-get M 2) 1 ":runner" 2 ":launcher" ":static") (string-concat ", :code-bytes "
+        w (io-out (string-concat "{:ok true, :target :aarch64-linux, :format " (string-concat (cond (= (xg-get M 2) 1) ":runner" (= (xg-get M 2) 2) ":packed" (= (xg-get M 2) 4) ":launcher" :else ":static") (string-concat ", :code-bytes "
                    (string-concat (mem-u2dec (xg-pos M)) (string-concat ", :bytes " (string-concat (mem-u2dec n) "}\n")))))))]
     (if (= (io-exists out) 1) 0 (drv-fail0 E-WRITE))))
 ;; compile SRC --target aarch64-linux --output NEW --format static|runner|launcher
+;; compile SRC --target aarch64-linux --output NEW --format packed --payload KSEED
+;;   (SRC is the runner source; KSEED a container whose `main` takes no arguments)
+(defn- xa-compile [src :string out :string mode :i64 V :vector-i64 cs :i64 cl :i64 off :i64] :i64
+  (let [original (drv-read src) guest (string-concat original (ck-r6b-lib original))
+        ;; --format launcher (mode 4): the runtime ends with xa-rt-launch, not the standard start
+        rt (if (= mode 4) (string-concat (xa-rt-core) (xa-rt-launch)) (xa-rt-src))
+        s (string-concat guest rt) m (xa-build (xg-front s) s (string-length guest) mode V cs cl off)]
+    (if (not= (vector-at m MM-ERR) 0) (xg-report m src out) (xa-write m out))))
+(defn- xa-packed [src :string out :string kseed :string] :i64
+  (let [V (io-read-bytes kseed) H (out-load-hdr (mem-new) V (out-v-len V) "main") e (vector-at H MM-ERR)]
+    (cond (= e 5002) (drv-fail0 E-NOSYM)
+          (> e 0) (drv-fail0 e)
+          (not= (vector-at H MM-R3) 0)
+            (let [w (io-err "seed-aarch64-linux: E7105 the packed payload's main must take no arguments\n")] 1)
+          :else (xa-compile src out 2 V (vector-at H MM-R1) (vector-at H MM-R2) (vector-at H MM-R0)))))
 (defn- xa-command [] :i64
   (let [src (io-arg 1) out (io-arg 5) fmt (io-arg 7)
-        mode (cond (string=? fmt "static") 0 (string=? fmt "runner") 1 (string=? fmt "launcher") 2 :else -1)]
-    (cond (or (not= (io-argc) 8) (not (string=? (io-arg 4) "--output")) (not (string=? (io-arg 6) "--format"))
+        mode (cond (string=? fmt "static") 0 (string=? fmt "runner") 1 (string=? fmt "packed") 2 (string=? fmt "launcher") 4 :else -1)]
+    (cond (or (not= (io-argc) (if (= mode 2) 10 8)) (not (string=? (io-arg 4) "--output")) (not (string=? (io-arg 6) "--format"))
+              (and (= mode 2) (not (string=? (io-arg 8) "--payload")))
               (< mode 0) (= (string-length out) 0) (= (io-exists out) 1))
-            (let [w (io-err "seed-aarch64-linux: E7100 expected compile SOURCE --target aarch64-linux --output NEW --format static|runner|launcher\n")] 2)
+            (let [w (io-err "seed-aarch64-linux: E7100 expected compile SOURCE --target aarch64-linux --output NEW --format static|runner|packed|launcher [--payload KSEED]\n")] 2)
           (= (io-exists src) 0) (drv-fail0 E-READ)
-          :else (let [original (drv-read src) guest (string-concat original (ck-r6b-lib original))
-                      rt (if (= mode 2) (string-concat (xa-rt-core) (xa-rt-launch)) (xa-rt-src))
-                      s (string-concat guest rt) m (xa-build (xg-front s) s (string-length guest) mode)]
-                  (if (not= (vector-at m MM-ERR) 0) (xg-report m src out) (xa-write m out))))))
+          (= mode 2) (if (= (io-exists (io-arg 9)) 0) (drv-fail0 E-READ) (xa-packed src out (io-arg 9)))
+          :else (xa-compile src out mode (vector-alloc 1) 0 0 0))))
