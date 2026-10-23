@@ -1,42 +1,88 @@
 {
   "schema": "amu.seed.static-root.v1",
   "image": {
-    "bytes": 3121664,
-    "sha256": "094590b650b0293b33e3aaf7113f3cadb5461573a5f974cc6a875d4260df11fb"
+    "bytes": 3133952,
+    "sha256": "8ad2aeaa36012c0ebf5fc1e073acf4073cb18e48451e3297c4301af16d0a8b21"
   },
   "target": "aarch64-linux",
   "format": "packed",
   "sourceManifest": "seed/FULL-MANIFEST",
   "sourceUnity": {
-    "bytes": 3134814,
-    "sha256": "27325238af83aa19856c53213ccaa0db8cdd670a77ed84412699629b5b268ca2"
+    "bytes": 3141802,
+    "sha256": "6e95066da4ce704f1fd67090a8ba41c58e2103973049c48760afc65911d93161"
   },
-  "sourceCommitBase": "60c0f42783e4844ce05cb40e9a2ceda5d26598bf",
+  "sourceCommitBase": "bca073107546cd9685b953d1f7b3dcc289e0f7e7",
   "producedBy": {
-    "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt and packed itself to F2 = F1 (= this image). Re-pinned because this source adds --format platform-linked (ADR 0371 step 5): seed/78-x86_64-platform (now also in FULL-MANIFEST, dispatched by seed/78-full-entry), the platform runtime text of seed/76, intrinsic 9 and the platform API rule of seed/75, and the dispatch in seed/73.",
+    "how": "C-free native arm64 Linux: previous admitted root compiles FULL-MANIFEST to F1; F1 compiles F2, F2 compiles F3. Payload F1=F2=F3; new runtime wrapper F2=F3. Preserve current launcher and platform formats. Re-pin stable F2 only after full19 byte-exact native correctness, core G1=G2=G3 and runtime/refusal/hardening checks.",
     "date": "2026-10-23",
-    "previousRoot": "710b6ae6e7b2887dee317f3cfe0e25c176166ddae9005409c5345311a36d20ae",
+    "previousRoot": "094590b650b0293b33e3aaf7113f3cadb5461573a5f974cc6a875d4260df11fb",
     "chain": {
       "F1.kseed": {
-        "bytes": 2913027,
-        "sha256": "14e348bd43dc8befcf0993aaa2bab17ef27a95b1f2071a465528bbbd9462ef44"
+        "bytes": 2919987,
+        "sha256": "d3f66e933b29c6072e2bda7e86ceadd7a1f730b2a46a3238945f56c2219a3300"
       },
       "F1.elf": {
-        "bytes": 3121664,
-        "sha256": "094590b650b0293b33e3aaf7113f3cadb5461573a5f974cc6a875d4260df11fb"
+        "bytes": 3125760,
+        "sha256": "b6b84f3993edd336d58a1123994d3a31bbf90f876c503a56594759666578f22e"
       },
       "F2.kseed": {
-        "bytes": 2913027,
-        "sha256": "14e348bd43dc8befcf0993aaa2bab17ef27a95b1f2071a465528bbbd9462ef44"
+        "bytes": 2919987,
+        "sha256": "d3f66e933b29c6072e2bda7e86ceadd7a1f730b2a46a3238945f56c2219a3300"
       },
       "F2.elf": {
-        "bytes": 3121664,
-        "sha256": "094590b650b0293b33e3aaf7113f3cadb5461573a5f974cc6a875d4260df11fb"
+        "bytes": 3133952,
+        "sha256": "8ad2aeaa36012c0ebf5fc1e073acf4073cb18e48451e3297c4301af16d0a8b21"
+      },
+      "F3.kseed": {
+        "bytes": 2919987,
+        "sha256": "d3f66e933b29c6072e2bda7e86ceadd7a1f730b2a46a3238945f56c2219a3300"
+      },
+      "F3.elf": {
+        "bytes": 3133952,
+        "sha256": "8ad2aeaa36012c0ebf5fc1e073acf4073cb18e48451e3297c4301af16d0a8b21"
       }
     }
   },
-  "verification": "scripts/seed/selfhost-bootstrap.py --tier pr on arm64 Linux: F1 = F2 from the previous root, F1's core route gives the adoption image, the runtime boundary corpus, the 24 cases and hardening; check-platform-linked.py with F1 (build on arm64, run on x86_64 glibc under qemu-user; natively in the qualify-x86_64 CI job). CI re-runs the tier from this root (F -> F' = root).",
+  "verification": "docs/evidence/native-clock-entropy-20261023/merge-review.json; root reproduces F3 from F2. Native arm64 component/rebuild evidence; hosted native CI readback and x86 qualification tracked separately. Not public CLI/native CDCI qualification.",
   "history": [
+    {
+      "schema": "amu.seed.static-root.v1",
+      "image": {
+        "bytes": 3121664,
+        "sha256": "094590b650b0293b33e3aaf7113f3cadb5461573a5f974cc6a875d4260df11fb"
+      },
+      "target": "aarch64-linux",
+      "format": "packed",
+      "sourceManifest": "seed/FULL-MANIFEST",
+      "sourceUnity": {
+        "bytes": 3134814,
+        "sha256": "27325238af83aa19856c53213ccaa0db8cdd670a77ed84412699629b5b268ca2"
+      },
+      "sourceCommitBase": "60c0f42783e4844ce05cb40e9a2ceda5d26598bf",
+      "producedBy": {
+        "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt and packed itself to F2 = F1 (= this image). Re-pinned because this source adds --format platform-linked (ADR 0371 step 5): seed/78-x86_64-platform (now also in FULL-MANIFEST, dispatched by seed/78-full-entry), the platform runtime text of seed/76, intrinsic 9 and the platform API rule of seed/75, and the dispatch in seed/73.",
+        "date": "2026-10-23",
+        "previousRoot": "710b6ae6e7b2887dee317f3cfe0e25c176166ddae9005409c5345311a36d20ae",
+        "chain": {
+          "F1.kseed": {
+            "bytes": 2913027,
+            "sha256": "14e348bd43dc8befcf0993aaa2bab17ef27a95b1f2071a465528bbbd9462ef44"
+          },
+          "F1.elf": {
+            "bytes": 3121664,
+            "sha256": "094590b650b0293b33e3aaf7113f3cadb5461573a5f974cc6a875d4260df11fb"
+          },
+          "F2.kseed": {
+            "bytes": 2913027,
+            "sha256": "14e348bd43dc8befcf0993aaa2bab17ef27a95b1f2071a465528bbbd9462ef44"
+          },
+          "F2.elf": {
+            "bytes": 3121664,
+            "sha256": "094590b650b0293b33e3aaf7113f3cadb5461573a5f974cc6a875d4260df11fb"
+          }
+        }
+      }
+    },
     {
       "image": {
         "bytes": 3105280,
