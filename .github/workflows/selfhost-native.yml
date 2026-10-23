@@ -3,8 +3,22 @@ name: selfhost-native
 # emulation): the pinned Amu-produced root bootstraps on arm64 Linux, and the
 # x86_64 compiler and KX64V1 runner it builds are qualified on x86_64 Linux.
 # Python only orchestrates processes and hashes.
+#
+# Pushes to main, the daily schedule and manual runs execute the full chain
+# with no reuse, and record C0's compile of the core (G1) by its content key.
+# Pull requests may reuse that one result when its key matches exactly
+# (scripts/seed/selfhost-bootstrap.py --reuse); everything else, including G2,
+# G3 through the runner, runs every time.
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * *"
+  push:
+    branches: [main]
+    paths:
+      - "seed/**"
+      - "scripts/seed/**"
+      - ".github/workflows/selfhost-native.yml"
   pull_request:
     branches: [main]
     paths:
@@ -13,7 +27,8 @@ on:
       - ".github/workflows/selfhost-native.yml"
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # A newer PR push supersedes the old run; full runs on main queue instead.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 permissions:
   contents: read
 jobs:
@@ -24,8 +39,26 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Reuse lookup key (sources, root image, script)
+        id: reuse
+        run: echo "key=selfhost-g1-${{ runner.arch }}-$(python3 scripts/seed/selfhost-bootstrap.py --reuse-lookup-key)" >> "$GITHUB_OUTPUT"
+      - name: Restore content-addressed results (pull requests only)
+        id: restore
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/reuse
+          key: ${{ steps.reuse.outputs.key }}
       - name: Loaderless bootstrap from the pinned root (arm64, native)
-        run: python3 scripts/seed/selfhost-bootstrap.py --output "$RUNNER_TEMP/boot"
+        env:
+          MODE: ${{ github.event_name == 'pull_request' && '--reuse' || '--store' }}
+        run: python3 scripts/seed/selfhost-bootstrap.py --output "$RUNNER_TEMP/boot" "$MODE" "$RUNNER_TEMP/reuse"
+      - name: Save content-addressed results
+        if: success() && steps.restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/reuse
+          key: ${{ steps.reuse.outputs.key }}
       - name: Combined compiler (core + Linux targets) from the bootstrap (arm64, native)
         run: python3 scripts/seed/check-one-compiler.py --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/one"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -44,6 +77,7 @@ jobs:
             ${{ runner.temp }}/boot/selfhost-bootstrap.json
             ${{ runner.temp }}/boot/runtime-boundary/runtime-boundary.json
             ${{ runner.temp }}/boot/runtime-boundary/calls.json
+            ${{ runner.temp }}/boot/calls.json
             ${{ runner.temp }}/boot/S-x86_64.elf
             ${{ runner.temp }}/boot/R-x86_64.elf
             ${{ runner.temp }}/boot/selfhost-unity.kotoba

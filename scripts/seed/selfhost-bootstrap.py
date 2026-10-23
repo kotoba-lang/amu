@@ -17,6 +17,13 @@ Starts from the pinned Amu-produced aarch64-linux-static compiler
 6. runtime capabilities: wire 3 :hash/sha256 (FIPS vectors, granted and
    refused) and a source found under the second of several scope roots.
 
+Content-addressed reuse (--reuse DIR) may stand in only for C0's compile of
+the core (G1), the one slow call, and only when its key matches: the sha256 of
+every file its argv names (C0, rebuilt from S3 on every run, and the unity),
+the argv and the full environment. --store DIR records results without reusing
+any (the full run). The receipt's steps and reuse say what ran and what was
+reused, with the keys. Without either flag everything runs.
+
 Python only orchestrates processes and hashes. Run it on arm64 Linux, for
 example: podman run --platform linux/arm64 -v REPO:REPO -v OUT:OUT
 python:3.12-alpine python3 REPO/scripts/seed/selfhost-bootstrap.py --output OUT
@@ -25,10 +32,12 @@ import argparse
 import hashlib
 import shutil
 import json
+import os
 import platform
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 sys.dont_write_bytecode = True
@@ -49,6 +58,9 @@ STATIC_CAPACITIES = re.compile(rb"\(def MM-(WORDS|(CODE|FIX|LITB|OUT)-CAP|(FIX|L
 # The adopted compiler was qualified on a host whose main stack is 8 MiB; the
 # runtime's default (1 MiB, the old loader's limit) is too small for it.
 ADOPTED_STACK = "8388608"
+RUN_PATH = "/usr/bin:/bin"
+# Bump when the meaning of a reuse record changes.
+REUSE_VERSION = 1
 
 
 def pin(p):
@@ -63,26 +75,89 @@ def unity(manifest, dst):
 
 
 class Runs:
-    def __init__(self, out):
-        self.out, self.calls = out, []
+    def __init__(self, out, reuse=None, store=None):
+        self.out, self.calls, self.reuse, self.store = out, [], reuse, store
         (out / "raw").mkdir()
+
+    def _record(self, call):
+        self.calls.append(call)
+        (self.out / "calls.json").write_text(json.dumps(self.calls, indent=1) + "\n")
 
     def run(self, name, argv, env, success=True, timeout=3600):
         argv = list(map(str, argv))
-        r = subprocess.run(argv, cwd=self.out, env={"PATH": "/usr/bin:/bin", **env}, capture_output=True, timeout=timeout)
+        t = time.monotonic()
+        r = subprocess.run(argv, cwd=self.out, env={"PATH": RUN_PATH, **env}, capture_output=True, timeout=timeout)
         (self.out / "raw" / (name + ".stdout")).write_bytes(r.stdout)
         (self.out / "raw" / (name + ".stderr")).write_bytes(r.stderr)
-        self.calls.append(dict(name=name, argv=argv, env=env, exit=r.returncode))
-        (self.out / "calls.json").write_text(json.dumps(self.calls, indent=1) + "\n")
+        self._record(dict(name=name, argv=argv, env=env, exit=r.returncode, seconds=round(time.monotonic() - t, 1)))
         if success:
             assert r.returncode == 0 and not r.stderr, (name, r.returncode, r.stderr.decode(errors="replace"))
         return r
 
+    def key_material(self, argv, env, outputs):
+        """Every input byte of a call: the sha256 of each existing file its argv
+        names (the producing image first), the argv and the full environment
+        with the output directory written as $OUT, and the declared outputs."""
+        norm = lambda v: str(v).replace(str(self.out), "$OUT")
+        files = {norm(a): pin(a) for a in map(Path, map(str, argv)) if a.is_absolute() and a.is_file()}
+        assert norm(argv[0]) in files, "the producing image must be a file"
+        return dict(version=REUSE_VERSION, host=[platform.system(), platform.machine()], argv=[norm(a) for a in argv],
+                    env={k: norm(v) for k, v in sorted({"PATH": RUN_PATH, **env}.items())},
+                    inputs=files, outputs=sorted(norm(o) for o in outputs))
 
-def main(out):
+    def run_cached(self, name, argv, env, outputs, timeout=3600):
+        """run(), or the content-addressed result of the identical call. The key
+        covers every input byte (key_material); a hit restores the recorded
+        outputs and verifies their pins. Anything different reruns the call."""
+        material = self.key_material(argv, env, outputs)
+        key = hashlib.sha256(json.dumps(material, sort_keys=True).encode()).hexdigest()
+        entry = self.reuse / key if self.reuse else None
+        if entry and (entry / "record.json").is_file():
+            record = json.loads((entry / "record.json").read_text())
+            assert record["key"] == key and record["material"] == material, (name, "reuse record does not match its key")
+            for o in outputs:
+                stored = entry / Path(o).name
+                assert pin(stored) == record["outputs"][Path(o).name], (name, "reused output drift", o)
+                shutil.copyfile(stored, o)
+            for stream in ("stdout", "stderr"):
+                (self.out / "raw" / f"{name}.{stream}").write_bytes((entry / stream).read_bytes())
+            assert record["exit"] == 0 and not (entry / "stderr").read_bytes(), name
+            reused = dict(key=key, **{"from": record["from"]})
+            self._record(dict(name=name, argv=list(map(str, argv)), env=env, exit=0, seconds=0, reused=reused))
+            return reused
+        r = self.run(name, argv, env, timeout=timeout)
+        self.calls[-1]["key"] = key
+        if self.store:
+            entry = self.store / key
+            entry.mkdir(parents=True, exist_ok=True)
+            for o in outputs:
+                shutil.copyfile(o, entry / Path(o).name)
+            (entry / "stdout").write_bytes(r.stdout)
+            (entry / "stderr").write_bytes(r.stderr)
+            origin = {k: os.environ[k] for k in ("GITHUB_REPOSITORY", "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT", "GITHUB_SHA", "GITHUB_EVENT_NAME")
+                      if k in os.environ} or "local"
+            (entry / "record.json").write_text(json.dumps(dict(key=key, material=material, exit=r.returncode, **{"from": origin},
+                                                               outputs={Path(o).name: pin(o) for o in outputs}), indent=1) + "\n")
+        return None
+
+
+def lookup_key():
+    """A cache lookup hint for CI, not the reuse key: the script and every
+    source and image the reusable calls derive from. The exact per-call key is
+    still checked by run_cached."""
+    h = hashlib.sha256()
+    for p in (Path(__file__).resolve(), ROOT / ROOT_IMAGE):
+        h.update(hashlib.sha256(p.read_bytes()).digest())
+    for manifest in (SELFHOST, CORE_STATIC, ADOPTED):
+        for p in [manifest, *(l for l in (ROOT / manifest).read_text().splitlines() if l and not l.startswith("#"))]:
+            h.update(p.encode() + b"\0" + hashlib.sha256((ROOT / p).read_bytes()).digest())
+    return h.hexdigest()
+
+
+def main(out, reuse=None, store=None):
     assert platform.system() == "Linux" and platform.machine() in ("aarch64", "arm64"), "run on arm64 Linux"
     out.mkdir(parents=True, exist_ok=False)
-    run = Runs(out)
+    run = Runs(out, reuse, store)
     scope = {"KEXE_CAP_RESOURCES_35": str(out)}
     root_receipt = json.loads((ROOT / ROOT_RECEIPT).read_text())
     assert pin(ROOT / ROOT_IMAGE) == root_receipt["image"], "pinned root image mismatch"
@@ -141,9 +216,13 @@ def main(out):
         container, native = out / f"G{g}.kseed", out / f"G{g}.bin"
         # C0's code is unoptimized: its compile of the core takes ~32 min on an
         # Apple-silicon VM and over an hour on a hosted arm64 runner.
-        run.run(f"G{g}-compile", prefix + ["compile", adopted_src, "--target", "aarch64-macos", "--output", container], env,
-                timeout=10800 if g == 1 else 3600)
-        run.run(f"G{g}-extract", prefix + ["extract-native", container, "--symbol", "main", "--output", native], env)
+        # G1 is the one call content-addressed reuse may stand in for (--reuse):
+        # its key is C0's fresh image hash, the unity hash, argv and env. G2, G3
+        # are still re-derived from it by the runner on every run.
+        call = run.run_cached if g == 1 else (lambda name, argv, env, outputs, timeout: run.run(name, argv, env, timeout=timeout))
+        call(f"G{g}-compile", prefix + ["compile", adopted_src, "--target", "aarch64-macos", "--output", container], env,
+             [container], timeout=10800 if g == 1 else 3600)
+        call(f"G{g}-extract", prefix + ["extract-native", container, "--symbol", "main", "--output", native], env, [native], timeout=3600)
         assert pin(native)["sha256"] == adoption["nativeImageSHA256"], "adopted fixed point mismatch"
         adopted_gens.append(dict(generation=g, native=pin(native), container=pin(container)))
         payload = native
@@ -245,6 +324,10 @@ def main(out):
                   adopted=dict(sourceGraph=adopted_pins, coreStatic=dict(sourceGraph=core_static_pins, image=c0), runnerStackBytes=int(ADOPTED_STACK), generations=adopted_gens, packed=packed,
                                expectedNativeImage=adoption["nativeImageSHA256"]),
                   cases=results, hardening=hardening, runtimeBoundary=runtime_boundary,
+                  steps=[dict(name=c["name"], seconds=c["seconds"], **({"reused": c["reused"]} if "reused" in c else
+                                                                     dict(ran=True, **({"key": c["key"]} if "key" in c else {}))))
+                         for c in run.calls],
+                  reuse=dict(read=bool(reuse), store=bool(store), reused=[dict(name=c["name"], **c["reused"]) for c in run.calls if "reused" in c]),
                   cCompilerOrLoader=False, JVMNodeOrGraalFallback=False, emulation=False)
     (out / "selfhost-bootstrap.json").write_text(json.dumps(report, indent=2) + "\n")
     print(report["status"], "S2=S3", gens[2]["pin"]["sha256"][:16], "root reproduces" if root_reproduces else "root differs (re-pin to S3)", "adopted G1=G2=G3", len(results), "cases", flush=True)
@@ -252,5 +335,13 @@ def main(out):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, required=True)
-    main(parser.parse_args().output.resolve())
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--reuse", type=Path, help="content-addressed results to reuse for identical calls; new results are added")
+    parser.add_argument("--store", type=Path, help="record content-addressed results without reusing any (full run)")
+    parser.add_argument("--reuse-lookup-key", action="store_true", help="print the CI cache lookup key and exit")
+    a = parser.parse_args()
+    if a.reuse_lookup_key:
+        print(lookup_key())
+        sys.exit(0)
+    assert a.output and not (a.reuse and a.store), "--output is required; --reuse and --store are exclusive"
+    main(a.output.resolve(), a.reuse and a.reuse.resolve(), (a.store or a.reuse) and (a.store or a.reuse).resolve())
