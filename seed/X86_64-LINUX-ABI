@@ -381,3 +381,43 @@ from the environment, exit status = result). Packing the adopted core's G3
 gives a standalone optimized compiler: it rebuilds the core to the same
 container (`selfhost-bootstrap.py` step 3b). Modes 0 and 1 emit 0 in words
 416..432, so their images are unchanged.
+
+## wasm32-browser-static/v1 (JUN-353)
+
+`compile SOURCE --target wasm32-browser --output NEW` (seed/81, runtime text
+seed/82) uses the same admission and static-build cells (197..199, 200..255
+for the slot functions; kxrt-slot-400 is the trap handler, called directly).
+Mode 3 never occurs on this route, so it reuses these cells:
+
+| Cell | Meaning |
+|---|---|
+| 194 | pool length |
+| 195 | defined function count |
+| 201 | current basic block |
+| 202 | block count of the current function |
+| 203 | table size |
+| 205 | fixup record of the current body |
+
+FF-CODE of a FN holds, from the low bits up:
+
+- bits 0..31: the wasm function index;
+- bits 32..47: the table slot + 1;
+- bits 48 and up: an inline kind (1 = `memory.grow`, 2 = `memory.size`).
+
+The MM-FIX records serve as lists:
+
+| Kind | Fields | Meaning |
+|---|---|---|
+| 30 | start, end, f | a function body |
+| 31 | slot, f | a thunk |
+| 32 | start, end | the thunk's body |
+| 40 | start, end, id | a section payload |
+
+Linear memory:
+
+| Address | Contents |
+|---|---|
+| 4096 | the context (fuel at +8, the allow bitmap at +16, code_base at +384 = the pool's address, code_length at +392) |
+| 5120 | G |
+| 65536 | the literal pool (a data segment) |
+| after the pool, 64 KiB aligned | the runtime's arena (memory.grow) |

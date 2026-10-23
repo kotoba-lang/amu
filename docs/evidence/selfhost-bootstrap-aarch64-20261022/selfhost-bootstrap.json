@@ -16,49 +16,225 @@
   ],
   "root": {
     "image": {
-      "bytes": 3142144,
-      "sha256": "8385ac6926d578c16128053e397af8015124e3e6d5db05a8ef7dcbc2501c8cca"
+      "bytes": 3207680,
+      "sha256": "88afda8977285f3839ebad1cb785a344b296c6890f3f901746259dd478ab9fb7"
     },
     "receipt": {
       "schema": "amu.seed.static-root.v1",
       "image": {
-        "bytes": 3142144,
-        "sha256": "8385ac6926d578c16128053e397af8015124e3e6d5db05a8ef7dcbc2501c8cca"
+        "bytes": 3207680,
+        "sha256": "88afda8977285f3839ebad1cb785a344b296c6890f3f901746259dd478ab9fb7"
       },
       "target": "aarch64-linux",
       "format": "packed",
       "sourceManifest": "seed/FULL-MANIFEST",
       "sourceUnity": {
-        "bytes": 3148027,
-        "sha256": "b5745a227a2ee8072fe690c0dea5c9cbcc0129c949565953ed6ada08fa37c217"
+        "bytes": 3205254,
+        "sha256": "b71a24481ca30e04d971537ff81697f2d8e6f107134002a962e6071d678ac281"
       },
-      "sourceCommitBase": "0f364ba059196fd326c478fcf0a8de95dcf454d8",
+      "sourceCommitBase": "c00d98a4fd396a08b4c93591d221f724f9d24da8",
       "producedBy": {
-        "how": "Native arm64 Linux, no C compiler or loader, no emulation: reviewed clock/entropy F2 compiles the final combined source retaining main b5026e2d GPU platform API to J1; J1 rebuilds J2, with identical containers and packed images. Core and arm64 runtime are byte-identical to the full19/runtime/refusal reviewed round.",
+        "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt itself to F2 (same container, new runtime wrapper); F2 rebuilt itself to F3 = F2 (= this image). Re-pinned because this source adds wire 35 FSYNC_SEP and RENAME_SEP (JUN-359) and wire 7 sleep <ms> (JUN-360) to the static runtimes seed/76 and seed/77.",
         "date": "2026-10-23",
-        "previousRoot": "8ad2aeaa36012c0ebf5fc1e073acf4073cb18e48451e3297c4301af16d0a8b21",
-        "previousRootEvidence": "docs/evidence/native-clock-entropy-20261023/merge-review.json",
+        "previousRoot": "048244b3c26204ea32ff545005d2826d068fb15787dd20a8c5c636758e0f4d49",
         "chain": {
-          "J1.kseed": {
-            "bytes": 2926211,
-            "sha256": "1c66ab5431be793b4d6b6422ff4ca7c0514df6d382709779c562e399be2a0eca"
+          "F1.kseed": {
+            "bytes": 2981867,
+            "sha256": "559a2623295e5659bda8c66d2769e73cbd62d5702101611c8312ec18196759b5"
           },
-          "J1.elf": {
-            "bytes": 3142144,
-            "sha256": "8385ac6926d578c16128053e397af8015124e3e6d5db05a8ef7dcbc2501c8cca"
+          "F1.elf": {
+            "bytes": 3203584,
+            "sha256": "84673d861264dd95e7e3555d1411a82578cf7b797763b307985a31bf78856e01"
           },
-          "J2.kseed": {
-            "bytes": 2926211,
-            "sha256": "1c66ab5431be793b4d6b6422ff4ca7c0514df6d382709779c562e399be2a0eca"
+          "F2.kseed": {
+            "bytes": 2981867,
+            "sha256": "559a2623295e5659bda8c66d2769e73cbd62d5702101611c8312ec18196759b5"
           },
-          "J2.elf": {
-            "bytes": 3142144,
-            "sha256": "8385ac6926d578c16128053e397af8015124e3e6d5db05a8ef7dcbc2501c8cca"
+          "F2.elf": {
+            "bytes": 3207680,
+            "sha256": "88afda8977285f3839ebad1cb785a344b296c6890f3f901746259dd478ab9fb7"
+          },
+          "F3.kseed": {
+            "bytes": 2981867,
+            "sha256": "559a2623295e5659bda8c66d2769e73cbd62d5702101611c8312ec18196759b5"
+          },
+          "F3.elf": {
+            "bytes": 3207680,
+            "sha256": "88afda8977285f3839ebad1cb785a344b296c6890f3f901746259dd478ab9fb7"
           }
         }
       },
-      "verification": "Native J1=J2 payload and image; preserved byte-identical core/arm64 runtime and its full19 correctness, 24 result/trap/fuel cases, 175 refusals, five hardening and 12 provider negatives. See merge-review.json. Hosted CI/native x86 execution readback separate; no public CLI/native CDCI qualification.",
+      "verification": "scripts/seed/selfhost-bootstrap.py --tier pr and --tier main on arm64 Linux from this root (F1 = root); scripts/seed/check-durable-sleep.py, check-io-read.py and check-spawn-runtime.py with that F1 (docs/durable-sleep.md). CI re-runs the tier from this root (F -> F' = root).",
       "history": [
+        {
+          "image": {
+            "bytes": 3199488,
+            "sha256": "048244b3c26204ea32ff545005d2826d068fb15787dd20a8c5c636758e0f4d49"
+          },
+          "sourceUnity": {
+            "bytes": 3198077,
+            "sha256": "b2ee13ca2eef03df27a9d4747715fc524f8c4fbb6925b20584992aab5a12d31a"
+          },
+          "sourceCommitBase": "7ff8d9d34031f6487b625880f136b1d9a92f442d",
+          "producedBy": {
+            "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt itself to F2 (same container, new runtime wrapper: F1 was packed by the previous runtime); F2 rebuilt itself to F3 = F2 (= this image). Re-pinned because this source adds the static runtimes' stdin: wire 41 :io/read (JUN-354) and wire 20's STDIN_SEP stdin payload (JUN-357), in seed/76 and seed/77.",
+            "date": "2026-10-23",
+            "previousRoot": "1d54a10811020f5902c563e680fe85ab85cf4de205609200ff8ab9927fab06ae",
+            "chain": {
+              "F1.kseed": {
+                "bytes": 2974691,
+                "sha256": "7974701abd8561610ecc96c0974a540a65fd51d59f5eed95edb7ea6f152a3162"
+              },
+              "F1.elf": {
+                "bytes": 3191296,
+                "sha256": "4c165ec04ab8f5cacc2f908e974183f3601d9c85ac2071e4178079e69db746f2"
+              },
+              "F2.kseed": {
+                "bytes": 2974691,
+                "sha256": "7974701abd8561610ecc96c0974a540a65fd51d59f5eed95edb7ea6f152a3162"
+              },
+              "F2.elf": {
+                "bytes": 3199488,
+                "sha256": "048244b3c26204ea32ff545005d2826d068fb15787dd20a8c5c636758e0f4d49"
+              },
+              "F3.kseed": {
+                "bytes": 2974691,
+                "sha256": "7974701abd8561610ecc96c0974a540a65fd51d59f5eed95edb7ea6f152a3162"
+              },
+              "F3.elf": {
+                "bytes": 3199488,
+                "sha256": "048244b3c26204ea32ff545005d2826d068fb15787dd20a8c5c636758e0f4d49"
+              }
+            }
+          }
+        },
+        {
+          "image": {
+            "bytes": 3179008,
+            "sha256": "1d54a10811020f5902c563e680fe85ab85cf4de205609200ff8ab9927fab06ae"
+          },
+          "sourceUnity": {
+            "bytes": 3188415,
+            "sha256": "e6e75a9a5e8937eead58f05a49a7f630bda772d5ccec6c401eca51857eb5294b"
+          },
+          "sourceCommitBase": "0bace76972c801d9f22b838b23e891eec97c809b",
+          "producedBy": {
+            "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation), in two steps because the previous root's literal-byte table (static MM-LITB-CAP 512 KiB) had about 1 KiB left. Step A: the previous root F compiled seed/FULL-MANIFEST of main plus only the LITB growth (seed/00-ns-static MM-LITB-CAP 1 MiB, later bases shifted; seed/MEMORY-MAP) to FA1 and packed it; FA1 rebuilt and packed itself to FA2 = FA1. Step B: FA1 compiled seed/FULL-MANIFEST of this source to F1 and packed it; F1 rebuilt and packed itself to F2 = F1 (= this image). This source adds the wasm32-browser target (JUN-353 Phase 1): seed/81-wasm32 (the emitter) and seed/82-wasm32-rt (the runtime text, cut from seed/77's at compile time) in FULL-MANIFEST, dispatched by seed/78-full-entry.",
+            "date": "2026-10-23",
+            "previousRoot": "3f39f40a49482849947c9fda175226b90ddccd925ee48849c08ebfe19805f858",
+            "stepA": {
+              "sourceUnity": {
+                "bytes": 3157864,
+                "sha256": "f9c6f84da835274585d0d66548967cd70265e518f3c0d69945210e897c996eb2"
+              },
+              "chain": {
+                "FA1.kseed": {
+                  "bytes": 2932923,
+                  "sha256": "f899c4f33b0edbe69765d2b1d6fc2aeb458fee56ccb65f1823c6430f9be3af02"
+                },
+                "FA1.elf": {
+                  "bytes": 3150336,
+                  "sha256": "b8ba9bcdd1920978b716ec9c427972b341512567840758be1b6eb25c197ffccb"
+                },
+                "FA2.kseed": {
+                  "bytes": 2932923,
+                  "sha256": "f899c4f33b0edbe69765d2b1d6fc2aeb458fee56ccb65f1823c6430f9be3af02"
+                },
+                "FA2.elf": {
+                  "bytes": 3150336,
+                  "sha256": "b8ba9bcdd1920978b716ec9c427972b341512567840758be1b6eb25c197ffccb"
+                }
+              }
+            },
+            "chain": {
+              "F1.kseed": {
+                "bytes": 2965035,
+                "sha256": "038acd3207347e4e7b15a67348abf0e50f7a2559ce70604331b20c480dcb8461"
+              },
+              "F1.elf": {
+                "bytes": 3179008,
+                "sha256": "1d54a10811020f5902c563e680fe85ab85cf4de205609200ff8ab9927fab06ae"
+              },
+              "F2.kseed": {
+                "bytes": 2965035,
+                "sha256": "038acd3207347e4e7b15a67348abf0e50f7a2559ce70604331b20c480dcb8461"
+              },
+              "F2.elf": {
+                "bytes": 3179008,
+                "sha256": "1d54a10811020f5902c563e680fe85ab85cf4de205609200ff8ab9927fab06ae"
+              }
+            }
+          }
+        },
+        {
+          "image": {
+            "bytes": 3150336,
+            "sha256": "3f39f40a49482849947c9fda175226b90ddccd925ee48849c08ebfe19805f858"
+          },
+          "sourceUnity": {
+            "bytes": 3157863,
+            "sha256": "6a6ae151ae5cc01c06a07ff53d1c1566601ec206ebfd25e34a2bd9a1fab0d6f5"
+          },
+          "sourceCommitBase": "2246f2fbeb578f05785849e4def836a428241872",
+          "producedBy": {
+            "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt and packed itself to F2 = F1 (= this image). Re-pinned because this source adds the bounded kernel memory windows of ADR 0373 (kernel-load-u32, kernel-store-u32, kernel-subregion, kernel-load-u32-16k) to the x86_64-aiueos-kernel-v1 object route: the intrinsic library, rooted-base admission and the intrinsic dispatch in seed/74 and seed/70.",
+            "date": "2026-10-23",
+            "previousRoot": "8385ac6926d578c16128053e397af8015124e3e6d5db05a8ef7dcbc2501c8cca",
+            "chain": {
+              "F1.kseed": {
+                "bytes": 2932923,
+                "sha256": "fafa0279ad8ffc09abf735ae99f9b1e29e69f1767a42911eaaa97d4134acc3f9"
+              },
+              "F1.elf": {
+                "bytes": 3150336,
+                "sha256": "3f39f40a49482849947c9fda175226b90ddccd925ee48849c08ebfe19805f858"
+              },
+              "F2.kseed": {
+                "bytes": 2932923,
+                "sha256": "fafa0279ad8ffc09abf735ae99f9b1e29e69f1767a42911eaaa97d4134acc3f9"
+              },
+              "F2.elf": {
+                "bytes": 3150336,
+                "sha256": "3f39f40a49482849947c9fda175226b90ddccd925ee48849c08ebfe19805f858"
+              }
+            }
+          }
+        },
+        {
+          "image": {
+            "bytes": 3142144,
+            "sha256": "8385ac6926d578c16128053e397af8015124e3e6d5db05a8ef7dcbc2501c8cca"
+          },
+          "sourceUnity": {
+            "bytes": 3148027,
+            "sha256": "b5745a227a2ee8072fe690c0dea5c9cbcc0129c949565953ed6ada08fa37c217"
+          },
+          "sourceCommitBase": "0f364ba059196fd326c478fcf0a8de95dcf454d8",
+          "producedBy": {
+            "how": "Native arm64 Linux, no C compiler or loader, no emulation: reviewed clock/entropy F2 compiles the final combined source retaining main b5026e2d GPU platform API to J1; J1 rebuilds J2, with identical containers and packed images. Core and arm64 runtime are byte-identical to the full19/runtime/refusal reviewed round.",
+            "date": "2026-10-23",
+            "previousRoot": "8ad2aeaa36012c0ebf5fc1e073acf4073cb18e48451e3297c4301af16d0a8b21",
+            "previousRootEvidence": "docs/evidence/native-clock-entropy-20261023/merge-review.json",
+            "chain": {
+              "J1.kseed": {
+                "bytes": 2926211,
+                "sha256": "1c66ab5431be793b4d6b6422ff4ca7c0514df6d382709779c562e399be2a0eca"
+              },
+              "J1.elf": {
+                "bytes": 3142144,
+                "sha256": "8385ac6926d578c16128053e397af8015124e3e6d5db05a8ef7dcbc2501c8cca"
+              },
+              "J2.kseed": {
+                "bytes": 2926211,
+                "sha256": "1c66ab5431be793b4d6b6422ff4ca7c0514df6d382709779c562e399be2a0eca"
+              },
+              "J2.elf": {
+                "bytes": 3142144,
+                "sha256": "8385ac6926d578c16128053e397af8015124e3e6d5db05a8ef7dcbc2501c8cca"
+              }
+            }
+          }
+        },
         {
           "schema": "amu.seed.static-root.v1",
           "image": {
@@ -470,12 +646,12 @@
   "sourceGraph": {
     "full": {
       "seed/FULL-MANIFEST": {
-        "bytes": 867,
-        "sha256": "157f0c319772864ebc7fbb1ca476773b1fec48464eecb11c5efe4bf2033e65d2"
+        "bytes": 914,
+        "sha256": "d0ae130b7a1fa2ce0c016ac68f000024782b3e63fa12626384eb32e9b118e355"
       },
       "seed/00-ns-static.kotoba": {
-        "bytes": 15167,
-        "sha256": "063afe1e0958b7b6a07bf1b0441bfdba984225dec1bf264995b0e3c082f8032f"
+        "bytes": 15168,
+        "sha256": "c16623ad503951d63a6dc5144d046146c3fbec59cd75ee1084ea1fc5df246aca"
       },
       "seed/01-mem.kotoba": {
         "bytes": 15304,
@@ -542,8 +718,8 @@
         "sha256": "59d673c7c0217dbc754c6ad04623e6252910bc13f88d820b888ff14165dea7cd"
       },
       "seed/70-x86_64-linux.kotoba": {
-        "bytes": 19311,
-        "sha256": "ba6097f95d3cc7fa554be55d5a7f7243571a9d67f7ca6ed3bd3d9dcd5deb144e"
+        "bytes": 19376,
+        "sha256": "063d72ca10fd9214e3efe83fb57a2c8530ade95e1f3afcceea53ebbc5a7f19c0"
       },
       "seed/71-x86_64-runtime.kotoba": {
         "bytes": 5579,
@@ -554,12 +730,12 @@
         "sha256": "c2a660cb71dfaa12580ce2926591b54ea9faf19d791810861c414434d7591bea"
       },
       "seed/76-x86_64-static-rt.kotoba": {
-        "bytes": 143764,
-        "sha256": "f4ab809628c8602e07784469718da26a1040071368e80a0ab6ded90a8c7e9a77"
+        "bytes": 152183,
+        "sha256": "197b9f5ad7ee891072ac10c375dbe08fd9e97b13ff19a2fb4f73a40e22665399"
       },
       "seed/77-aarch64-static-rt.kotoba": {
-        "bytes": 134185,
-        "sha256": "880a545520dd6c04d0154a575e915fb1e8d122d6d57846ecde8acf82155d029b"
+        "bytes": 142605,
+        "sha256": "192f8eb113fdafdd5c0732cbad3ee919565bd3874f8f532f32106f7e36fb8158"
       },
       "seed/78-x86_64-platform.kotoba": {
         "bytes": 10690,
@@ -570,12 +746,20 @@
         "sha256": "9a8b74dc8d42b3cb6475f5368ee2204c3dc4e36ee0815e1511f0c2bcf148a355"
       },
       "seed/74-x86_64-aiueos-object.kotoba": {
-        "bytes": 8402,
-        "sha256": "9c3b16530f722e9a86249d17be3d5d55e1306be759be76c21df8cfac1d5db4d8"
+        "bytes": 18173,
+        "sha256": "b68b823f2b854b6174f1db2655b324a6a0e917362eff4a4c9345f94dbeba75ae"
+      },
+      "seed/81-wasm32.kotoba": {
+        "bytes": 24244,
+        "sha256": "6e080582621ca81de52c3a406e831cd10d3601382f2490a62b67f585afe2c8fd"
+      },
+      "seed/82-wasm32-rt.kotoba": {
+        "bytes": 6144,
+        "sha256": "b160468bd91e0c56c267fea6f7bb556c5ac369ac12e1a27b56f891bbee2af153"
       },
       "seed/78-full-entry.kotoba": {
-        "bytes": 1221,
-        "sha256": "7ca22584aea272d57040048ae8b0b623d3db2113e0fb75701f7b36492039fa3e"
+        "bytes": 1382,
+        "sha256": "a7239f89fa868c1a9ca3d1ba2726c24d71ed2ae78229a08556da3afa80a2c1d2"
       }
     },
     "selfhost": {
@@ -584,8 +768,8 @@
         "sha256": "807282afc305ed284486296b30f115faa031db859d5bdf8a46c70ea154f8bd6a"
       },
       "seed/00-ns-static.kotoba": {
-        "bytes": 15167,
-        "sha256": "063afe1e0958b7b6a07bf1b0441bfdba984225dec1bf264995b0e3c082f8032f"
+        "bytes": 15168,
+        "sha256": "c16623ad503951d63a6dc5144d046146c3fbec59cd75ee1084ea1fc5df246aca"
       },
       "seed/01-mem.kotoba": {
         "bytes": 15304,
@@ -620,8 +804,8 @@
         "sha256": "1cf17b348bda09d73d721856705a52db05131b88f80d017e1fe9b9a92c066955"
       },
       "seed/70-x86_64-linux.kotoba": {
-        "bytes": 19311,
-        "sha256": "ba6097f95d3cc7fa554be55d5a7f7243571a9d67f7ca6ed3bd3d9dcd5deb144e"
+        "bytes": 19376,
+        "sha256": "063d72ca10fd9214e3efe83fb57a2c8530ade95e1f3afcceea53ebbc5a7f19c0"
       },
       "seed/71-x86_64-runtime.kotoba": {
         "bytes": 5579,
@@ -632,12 +816,12 @@
         "sha256": "c2a660cb71dfaa12580ce2926591b54ea9faf19d791810861c414434d7591bea"
       },
       "seed/76-x86_64-static-rt.kotoba": {
-        "bytes": 143764,
-        "sha256": "f4ab809628c8602e07784469718da26a1040071368e80a0ab6ded90a8c7e9a77"
+        "bytes": 152183,
+        "sha256": "197b9f5ad7ee891072ac10c375dbe08fd9e97b13ff19a2fb4f73a40e22665399"
       },
       "seed/77-aarch64-static-rt.kotoba": {
-        "bytes": 134185,
-        "sha256": "880a545520dd6c04d0154a575e915fb1e8d122d6d57846ecde8acf82155d029b"
+        "bytes": 142605,
+        "sha256": "192f8eb113fdafdd5c0732cbad3ee919565bd3874f8f532f32106f7e36fb8158"
       },
       "seed/78-x86_64-platform.kotoba": {
         "bytes": 10690,
@@ -648,8 +832,8 @@
         "sha256": "9a8b74dc8d42b3cb6475f5368ee2204c3dc4e36ee0815e1511f0c2bcf148a355"
       },
       "seed/74-x86_64-aiueos-object.kotoba": {
-        "bytes": 8402,
-        "sha256": "9c3b16530f722e9a86249d17be3d5d55e1306be759be76c21df8cfac1d5db4d8"
+        "bytes": 18173,
+        "sha256": "b68b823f2b854b6174f1db2655b324a6a0e917362eff4a4c9345f94dbeba75ae"
       },
       "seed/73-x86-linux-entry.kotoba": {
         "bytes": 1498,
@@ -661,39 +845,39 @@
     {
       "name": "F1",
       "container": {
-        "bytes": 2927787,
-        "sha256": "45c5a9b5ddf5dcad2d4274fecfa486b468db4e6e8d5d46871259d3811e506256"
+        "bytes": 2983443,
+        "sha256": "ed9844470c32928ae89e5bc0e74c6cd85c6601f78f1dd15d6fc47c4c8c3d9586"
       },
       "image": {
-        "bytes": 3142144,
-        "sha256": "50e6de8ac722ea3ab678f0bcd107d286a7979a3a47c14dd60d32bdf6b2d601a3"
+        "bytes": 3211776,
+        "sha256": "a6c1727b468c37ebeda368895d05006459c72d2ca4c785190caf825556287918"
       }
     },
     {
       "name": "F2",
       "container": {
-        "bytes": 2927787,
-        "sha256": "45c5a9b5ddf5dcad2d4274fecfa486b468db4e6e8d5d46871259d3811e506256"
+        "bytes": 2983443,
+        "sha256": "ed9844470c32928ae89e5bc0e74c6cd85c6601f78f1dd15d6fc47c4c8c3d9586"
       },
       "image": {
-        "bytes": 3142144,
-        "sha256": "50e6de8ac722ea3ab678f0bcd107d286a7979a3a47c14dd60d32bdf6b2d601a3"
+        "bytes": 3211776,
+        "sha256": "a6c1727b468c37ebeda368895d05006459c72d2ca4c785190caf825556287918"
       }
     }
   ],
   "rootReproduces": false,
   "built": {
     "aarch64Runner": {
-      "bytes": 213504,
-      "sha256": "6452d61d973a47ab6932b26821356f06359230ff0d6fbe64ddb9c02268ea144f"
+      "bytes": 225792,
+      "sha256": "9b752e57033bb8dbba523edaab5847228f8a62742f082d232d9671be2f7e5326"
     },
     "x86_64Compiler": {
-      "bytes": 1896960,
-      "sha256": "94ebd596efbafb4d45c4a8d9f795bd84147af6edcdeaebe7182d0bf5fe4870fd"
+      "bytes": 1954304,
+      "sha256": "ccbeaf3aba1ef8d4943b6d1bfd4bbc487fb70756191bcfdd8f24143e57fec104"
     },
     "x86_64Runner": {
-      "bytes": 262656,
-      "sha256": "a0b10091e07f9314b4a112c7e936a48f48c7e47b8d03850d29dba9844216b8c4"
+      "bytes": 279040,
+      "sha256": "b121914f833897b8cce56ad04b4a12df57c55889ff86d226f0656ca392f51868"
     }
   },
   "adopted": {
@@ -925,6 +1109,129 @@
       "remainingFuel": 979998
     }
   ],
+  "wasm32Browser": {
+    "executed": false,
+    "reason": "no Chromium or Chrome on this host: the qualify-x86_64 job runs these modules",
+    "modules": {
+      "case-bytes-roundtrip.wasm": {
+        "bytes": 26180,
+        "sha256": "e6ccb2e89c914a9ae82efe4aa3539e09c1359c7951d6cb62d8a43d71f4c22d7b"
+      },
+      "case-capability-denied.wasm": {
+        "bytes": 26139,
+        "sha256": "d3820b1519f35b57d42c8d5f88d69bf73e523cdf2b5cfb37360203099eec058c"
+      },
+      "case-closure-env.wasm": {
+        "bytes": 26384,
+        "sha256": "dbbf4c21b734c1aa23ac815a16df98218e8ed806c48b46b25f2cf611c4703fde"
+      },
+      "case-closure.wasm": {
+        "bytes": 26246,
+        "sha256": "6759eae98d191dc7096eb557fc7f172a2d37e91b3250329d22eecb3538262ff4"
+      },
+      "case-mutual-tail.wasm": {
+        "bytes": 26382,
+        "sha256": "d132ba4c23da616b19469f9f8033fdc12ad0295e62a4ea36f7d7f3b662c0fc20"
+      },
+      "case-state-results.wasm": {
+        "bytes": 26233,
+        "sha256": "23e2b3ba7dcea914c2c8eed18e105a37f88867d168c4d45a40d251b93bb2ede1"
+      },
+      "case-string-boundary.wasm": {
+        "bytes": 26145,
+        "sha256": "e3ba681869f771bf1724e2c6239654b2d5526cc2da33db497d9ce7c24a2ebd4e"
+      },
+      "case-string-call.wasm": {
+        "bytes": 26252,
+        "sha256": "9e73417c1e56d1dce11d65a35b14d3438281a0ad1c45d109098a695c5faad6e1"
+      },
+      "case-string-concat.wasm": {
+        "bytes": 26206,
+        "sha256": "d088e9da9b23eb2ff75394e69accc0e9eb0a43cb90478e4d2f52419a01fc2a29"
+      },
+      "case-string-empty-nul.wasm": {
+        "bytes": 26197,
+        "sha256": "2ebcf56e6582f25194c842f330e476005d427d30dbcb08a71a49675c202c318d"
+      },
+      "case-string-literal.wasm": {
+        "bytes": 26124,
+        "sha256": "ec9d237ff45ec5674ee1b0f4847fe233da6e4c04d629fe1499805bb465d91519"
+      },
+      "case-string-oob.wasm": {
+        "bytes": 26145,
+        "sha256": "09ecec2ef2f8e2de3101278586b603367287cf944bb7759560596eda63c86e4a"
+      },
+      "case-string-search.wasm": {
+        "bytes": 26228,
+        "sha256": "4705ae418a6c7ae43940df92ee3b480d786ed50c3387d1f105daaf021fe7fbd5"
+      },
+      "case-string-unicode.wasm": {
+        "bytes": 26165,
+        "sha256": "1a7656c03e43db056612df5f4d51d39de308c8b230542c53955018c75a21d9eb"
+      },
+      "case-string-view.wasm": {
+        "bytes": 26180,
+        "sha256": "709f39fc1b27dd6207236589d26f3675260374c4bbc8d3a2c4352a1047b1f8a6"
+      },
+      "case-vector-drop-conj.wasm": {
+        "bytes": 27420,
+        "sha256": "ccf1305c03715c0d085c64a5a3a98d7a7db0030651345a3f03b7995fb6426ef4"
+      },
+      "case-vector-dynamic.wasm": {
+        "bytes": 26213,
+        "sha256": "34a433e6ca6b4472f5423b020f43650bc549c1d1277fc5730b0861c1f80cd066"
+      },
+      "case-vector-literal.wasm": {
+        "bytes": 26157,
+        "sha256": "1909e928bdf6cc669fe12d844abaf2baac2b28bf2c29edfd8a42406c1601b418"
+      },
+      "case-vector-mutate.wasm": {
+        "bytes": 26164,
+        "sha256": "bbf7118a75c7a0860e7573bf4a2987644f859af0be9098417cb66ebc62f3a345"
+      },
+      "case-vector-negative.wasm": {
+        "bytes": 26180,
+        "sha256": "e076ed12b11ee5bbeec5e90b6a5864cf618f7a0ae8b939255077d67463cd87ab"
+      },
+      "case-vector-oob.wasm": {
+        "bytes": 26167,
+        "sha256": "efff23abcf24d7faee1bb4de0da23917f01ad6b4f5fe2ca3b3a3587ef3d55964"
+      },
+      "case-vector-persistent.wasm": {
+        "bytes": 26223,
+        "sha256": "0489f092119011f4091323ed2d9a0de74a76e5f2a91e2bd9c34d80ad68d5edc5"
+      },
+      "case-vector-pooled.wasm": {
+        "bytes": 28141,
+        "sha256": "22377c183825d9266cd653300146778d104123229ef4f2211ba47e147209bb19"
+      },
+      "case-wide-args.wasm": {
+        "bytes": 26573,
+        "sha256": "4f3b7ed1751e86bdb78a9f1ec3c80cd4bbc755cef0955b7937af12822bb04bf6"
+      },
+      "probe-deep.wasm": {
+        "bytes": 26244,
+        "sha256": "51abc214fd4c081012e70584a5c6f28cbeff8b58b9b826254b78e6ace2f04874"
+      },
+      "probe-spin.wasm": {
+        "bytes": 26180,
+        "sha256": "b5cf8a364f2fdbaa311b6d5fd5cd81ed4beede6a8fb89c7cb7a22f00e5509fa9"
+      }
+    },
+    "floatRefusals": [
+      "float-f64-basic",
+      "float-f64-literal",
+      "float-f64-div-trunc",
+      "float-f64-neg-abs-sqrt",
+      "float-f64-cmp",
+      "float-f64-min-max",
+      "float-f32-basic",
+      "float-f32-conv",
+      "float-f64-unordered",
+      "float-f32-cmp",
+      "float-f32-un"
+    ]
+  },
   "hardening": {
     "seccompDefault": {
       "exit": 0,
@@ -950,8 +1257,8 @@
   "runtimeBoundary": {
     "status": "PASS_RUNTIME_BOUNDARY",
     "compiler": {
-      "bytes": 3142144,
-      "sha256": "50e6de8ac722ea3ab678f0bcd107d286a7979a3a47c14dd60d32bdf6b2d601a3"
+      "bytes": 3211776,
+      "sha256": "a6c1727b468c37ebeda368895d05006459c72d2ca4c785190caf825556287918"
     },
     "previousRoot": null,
     "host": [
@@ -2016,8 +2323,8 @@
         "target": "aarch64-linux",
         "format": "static",
         "image": {
-          "bytes": 213504,
-          "sha256": "53edcd102ced9b3b7f4b06ef03ba40ef361a3429eb6a399eb4a1b366cbe8901e"
+          "bytes": 225792,
+          "sha256": "812bf9c50d7bec0cbbdd3f40e379389ec8ebed2da74275ed244bd312fabc426d"
         },
         "sameBytes": null
       },
@@ -2025,8 +2332,8 @@
         "target": "aarch64-linux",
         "format": "runner",
         "image": {
-          "bytes": 213504,
-          "sha256": "ffe0c0e48c2e226ff58c4363b1d65fefab322dc9e567b1ecd24d19711e87bea6"
+          "bytes": 225792,
+          "sha256": "00645d3fdc94486b7d996645ad92d663c65f44c5d78a273159432508709390ab"
         },
         "sameBytes": null
       },
@@ -2034,8 +2341,8 @@
         "target": "aarch64-linux",
         "format": "launcher",
         "image": {
-          "bytes": 262656,
-          "sha256": "0a6c916de03e57aa910a0771daf7ce76e59a4ae3c92e7066d97cccb9cfc1b38a"
+          "bytes": 279040,
+          "sha256": "8ebb9bb1b84d9c42ebbb1e7926dabe7526115a02c6c4187e34e93851361046bf"
         },
         "sameBytes": null
       },
@@ -2043,8 +2350,8 @@
         "target": "x86_64-linux",
         "format": "static",
         "image": {
-          "bytes": 262656,
-          "sha256": "888d4863a4111cb35308823cc6941c0277ff93b22e7345d6991466c03ca280e1"
+          "bytes": 283136,
+          "sha256": "7698ffcd29ff96b058839cb922534dc04b9cd10945c25dcbcdac8364fb898e55"
         },
         "sameBytes": null
       },
@@ -2052,8 +2359,8 @@
         "target": "x86_64-linux",
         "format": "kx64-runner",
         "image": {
-          "bytes": 262656,
-          "sha256": "a50f23a4b7736e63ff05ffa56dd62a74340d9ede5b04e28f14c2e517f48359e1"
+          "bytes": 283136,
+          "sha256": "f3cf3ed81d46799b55636bc1969c97b550a5263e74c57fc4e944a278809040b1"
         },
         "sameBytes": null
       },
@@ -2061,8 +2368,8 @@
         "target": "x86_64-linux",
         "format": "launcher",
         "image": {
-          "bytes": 328192,
-          "sha256": "1eea05f5071d4e69a0b25cf55a1dc65204da1ed7708594ce85760404120c8a09"
+          "bytes": 344576,
+          "sha256": "b813849119175072218d7bb990f395c1a993c60e6b3cbe2bd143fe322c6c720e"
         },
         "sameBytes": null
       },
@@ -2070,8 +2377,8 @@
         "target": "aarch64-linux",
         "format": "packed",
         "image": {
-          "bytes": 2789888,
-          "sha256": "315758f70bbf11c30608e44fd2f3af90d27d0e2234e7949e20b8db285d30003b"
+          "bytes": 2802176,
+          "sha256": "bf37f01a8b393ca23035e745a17aa4256b6d938519c0bd4432c574c3b6a45a05"
         },
         "sameBytes": null
       }
@@ -2210,47 +2517,47 @@
   "steps": [
     {
       "name": "F1-compile",
-      "seconds": 98.3,
+      "seconds": 110.8,
       "ran": true
     },
     {
       "name": "F1-pack",
-      "seconds": 1.4,
-      "ran": true
-    },
-    {
-      "name": "F2-compile",
-      "seconds": 97.3,
-      "ran": true
-    },
-    {
-      "name": "F2-pack",
       "seconds": 1.6,
       "ran": true
     },
     {
+      "name": "F2-compile",
+      "seconds": 109.2,
+      "ran": true
+    },
+    {
+      "name": "F2-pack",
+      "seconds": 1.7,
+      "ran": true
+    },
+    {
       "name": "R-aarch64",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
       "name": "S-x86_64",
-      "seconds": 6.0,
+      "seconds": 7.7,
       "ran": true
     },
     {
       "name": "R-x86_64",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
       "name": "G1-compile",
-      "seconds": 92.2,
+      "seconds": 95.1,
       "ran": true
     },
     {
       "name": "G1-extract",
-      "seconds": 0.9,
+      "seconds": 1.0,
       "ran": true
     },
     {
@@ -2270,7 +2577,7 @@
     },
     {
       "name": "runtime-boundary",
-      "seconds": 85.9,
+      "seconds": 95.9,
       "ran": true
     },
     {
@@ -2511,6 +2818,191 @@
     {
       "name": "case-mutual-tail",
       "seconds": 0.0,
+      "ran": true
+    },
+    {
+      "name": "case-string-literal-wasm32",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "case-string-concat-wasm32",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "case-string-view-wasm32",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "case-string-unicode-wasm32",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "case-string-empty-nul-wasm32",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "case-string-search-wasm32",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "case-string-call-wasm32",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "case-vector-literal-wasm32",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "case-vector-dynamic-wasm32",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "case-vector-persistent-wasm32",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "case-vector-mutate-wasm32",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "case-vector-drop-conj-wasm32",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "case-vector-pooled-wasm32",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "case-vector-negative-wasm32",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "case-vector-oob-wasm32",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "case-string-oob-wasm32",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "case-string-boundary-wasm32",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "case-wide-args-wasm32",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "case-closure-wasm32",
+      "seconds": 0.4,
+      "ran": true
+    },
+    {
+      "name": "case-closure-env-wasm32",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "case-state-results-wasm32",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "case-bytes-roundtrip-wasm32",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "case-capability-denied-wasm32",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "case-mutual-tail-wasm32",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "probe-spin-wasm32",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "probe-deep-wasm32",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "float-float-f64-basic-wasm32",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "float-float-f64-literal-wasm32",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "float-float-f64-div-trunc-wasm32",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "float-float-f64-neg-abs-sqrt-wasm32",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "float-float-f64-cmp-wasm32",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "float-float-f64-min-max-wasm32",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "float-float-f32-basic-wasm32",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "float-float-f32-conv-wasm32",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "float-float-f64-unordered-wasm32",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "float-float-f32-cmp-wasm32",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "float-float-f32-un-wasm32",
+      "seconds": 0.4,
       "ran": true
     },
     {

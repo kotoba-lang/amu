@@ -39,6 +39,22 @@ available independent compiler/runner and exact full-closure native
 build/execution evidence remain open. Do not report this source checkout or
 the historical pin checks as native selfhost qualification.
 
+## Durable file replace and sleep in the static runtimes (2026-10-23, JUN-359, JUN-360)
+
+seed/76 and seed/77 answer wire 35's `FSYNC_SEP` (a file or directory, opened beneath the scope) and `RENAME_SEP`
+(each parent opened beneath the scope, `renameat` of the last component), so a file can be replaced durably, and
+wire 7 `:clock/now` takes `sleep <ms>` (0..60000, `clock_nanosleep` in the seccomp filter only with the wire
+granted). The root is re-pinned (previous root -> F1, F1 -> F2, F2 -> F3 = F2). Verification and what stays open:
+[`../docs/durable-sleep.md`](../docs/durable-sleep.md).
+
+## Stdin in the static runtimes (2026-10-23, JUN-354, JUN-357)
+
+seed/76 and seed/77 answer wire 41 `:io/read` (stdin to end of file, or one read of at most n bytes, completed
+to a whole UTF-8 character; `read(0)` is in the seccomp filter only with the wire granted), and wire 20 takes an
+optional stdin payload after `STDIN_SEP`, written to the child's stdin without blocking past the deadline. The
+root is re-pinned (previous root -> F1, F1 -> F2, F2 -> F3 = F2). Verification, receipts and what stays open:
+[`../docs/static-stdin.md`](../docs/static-stdin.md).
+
 ## Historical C-loader bootstrap provenance
 
 The current source is bootstrapped from
@@ -225,3 +241,43 @@ of any build. S3 then packs G3 (`--format packed`) into
 rebuilds the core to the same container. It then checks the runtime cases
 against `static-cases.json`, and probes seccomp and the resource limits.
 Receipt: `../docs/evidence/selfhost-bootstrap-aarch64-20261022/`.
+
+## wasm32-browser-static/v1 (JUN-353, Phase 1)
+
+F compiles `compile SRC --target wasm32-browser --output OUT.wasm` to one
+self-contained WebAssembly module that holds the guest and the Kotoba runtime,
+both compiled from SIR:
+
+- `81-wasm32.kotoba` is the emitter. It encodes the module itself (sections,
+  LEB128, opcodes) and is a plain emitter over SIR, like `80-aarch64-linux`.
+  - Values are i64 locals.
+  - Each function is a `loop` over a `br_table` of its basic blocks.
+  - Tail positions use `return_call`.
+  - Function values are indices into a funcref table of five-argument thunks.
+  - RET2's second word is a global.
+  - Fuel is charged at context +8, exactly as natively.
+  - Floats and the `syscall` and `call-at` intrinsics are refused (E7101).
+- `82-wasm32-rt.kotoba` is the runtime. Its shared sections are cut out of the
+  current `77-aarch64-static-rt` text at compile time, by their section
+  markers; a missing marker is refused (E7106). The wasm-specific parts are:
+  - the `kotoba:host` imports `write`, `cap`, `now` and `exit`;
+  - a bump allocator over `memory.grow` (smaller arena capacities than native);
+  - `start(fuel)`, which always writes the structured report.
+
+  There are no seccomp filters, rlimits or signal handlers: the browser Worker
+  is the sandbox. Every capability is refused by name.
+- `../runtime/wasm32-browser-static-host.js` is the dependency-free Worker host.
+  `../runtime/wasm32-browser-static-run.html` is the static run page, whose CSP
+  sets `connect-src 'none'`.
+- `../scripts/seed/check-wasm32-browser.py` runs modules in headless Chromium.
+  It talks to the DevTools protocol on a pipe and reads the result lines from
+  the DOM. There is no Node, npm or Playwright.
+
+The pr tier of `selfhost-bootstrap.py` compiles the 24 runtime cases and two
+probes with F, and checks that the float cases are refused. When a Chromium is
+installed, it also runs the modules. The `ubuntu-24.04-arm` image has none, so
+in CI the `qualify-x86_64` job runs them in the image's Chrome. Each case must
+match its pinned result, trap and remaining fuel.
+
+The consent broker (`kotoba:host/cap`) is Phase 2, and a dapp guest end to
+end is Phase 3 (JUN-353).
