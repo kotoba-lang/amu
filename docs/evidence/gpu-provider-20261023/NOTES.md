@@ -23,6 +23,9 @@ the selfhost compiler.
   * By the owner's decision of 2026-10-22, libvulkan runs on GPU hosts only.
     The provider ran from a temporary directory that was removed afterwards.
 
+* `gad-radv-confined.json`: the same `gpu` phase after the provider confines
+  itself (step 6 (4)), with the grant's default `:confinement :required`.
+
 ## What the fake-device receipt shows
 
 * **19 sessions**, each with fd 3 the grant and fd 4 the report:
@@ -42,6 +45,11 @@ the selfhost compiler.
   With a refused grant the provider serves nothing and exits 2. A device the
   layer lacks exits 3.
 * **Report**: the image digest in each report equals the image's SHA-256.
+* **Confinement.** Under qemu-user the grants say `:confinement :if-available`,
+  and the reports show Landlock and the seal as `:unavailable`. The default,
+  `:required`, fails closed there: no request is served, the report says
+  `:confinement-failed`, and the exit status is 5. Natively, in the CI job,
+  the reports must show a Landlock ABI version and `:seal :ok`.
 
 ## What the gad receipt shows
 
@@ -64,6 +72,13 @@ the selfhost compiler.
 * **Submits** took 30-50 us each, measured on the host clock.
 * **Report** (fd 4): device, 48 served, 0 refused, `:eof`, the image's
   SHA-256 and the kernel release.
+* **Confined** (`gad-radv-confined.json`): RADV ran the same 48 requests after
+  Landlock (ABI 8; read access to the three artifacts only) and the seal, with
+  identical results. This includes the 70 MiB MAP, opened after Landlock
+  through its rule. The report adds:
+  * the driver, `radv Mesa 25.2.8-0ubuntu0.24.04.2`;
+  * the mapped libvulkan libraries with their SHA-256: the loader
+    `libvulkan.so.1.3.275` and the eight ICD libraries the loader opened.
 
 ## Limits
 
@@ -72,9 +87,7 @@ the selfhost compiler.
   step's acceptance. They need the KIR v2 inference kernels (ADR 0372 step 3),
   which do not exist yet.
 * Not covered here:
-  * confinement after device creation;
-  * the libvulkan/ICD paths and digests in the report;
-  * the driver properties;
+  * the launcher's fixed provider environment (the shader cache);
   * shaderFloat16 and integer dot product enablement;
   * B70 (ANV);
   * the launcher on a GPU host.

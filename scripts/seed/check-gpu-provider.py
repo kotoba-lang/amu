@@ -207,9 +207,23 @@ def expect(s, request, want):
     return got
 
 
+# the grant's :confinement: natively the default (:required); under qemu-user,
+# which cannot apply Landlock or seccomp to the guest, :if-available
+CONFINE = [""]
+
+
 def grant(artifacts, cap=1000000, extra=""):
     rows = " ".join(f'{{:path "{p}" :sha256 "{h}" :kind :{k}}}' for p, h, k in artifacts)
-    return f"{{:wires #{{42}} :artifacts [{rows}] :device-bytes {cap}{extra}}}\n".encode()
+    return f"{{:wires #{{42}} :artifacts [{rows}] :device-bytes {cap}{extra}{CONFINE[0]}}}\n".encode()
+
+
+def confined(line, native):
+    """The report's confinement: natively Landlock (an ABI version) and the seal."""
+    m = re.search(r" :confinement \{:landlock (\d+|:unavailable|:failed -?\d+) :seal (:ok|:unavailable|:failed -?\d+)\}", line)
+    assert m, ("no confinement in the report", line)
+    if native:
+        assert m[1].isdigit() and m[2] == ":ok", ("not confined", line)
+    return dict(landlock=m[1], seal=m[2])
 
 
 def run(output):
@@ -226,8 +240,10 @@ def run(output):
     arts = [("model.bin", sha["model.bin"], "model"), ("bad.bin", sha["model.bin"], "model"), ("k.spv", sha["k.spv"], "spirv"),
             ("notspv.spv", sha["notspv.spv"], "spirv"), ("odd.spv", sha["odd.spv"], "spirv"), ("missing.spv", sha["k.spv"], "spirv")]
     rows = {}
+    native = native_kernel()
+    CONFINE[0] = "" if native else " :confinement :if-available"
 
-    # every verb, and the refusals the provider decides
+    # every verb, and the refusals the provider decides (confined)
     s = Session(img["provider-fake"], raw, "verbs", grant(arts, cap=4096))
     for req, want in [
             ("INFO", "Kotoba fake device|fake|65535|1"), ("DEVCLASS", "other"),
@@ -267,8 +283,9 @@ def run(output):
             ("INFO é", "!gpu/unknown-verb unknown :gpu/compute request")]:
         expect(s, req, want)
     line = s.close(0)
-    assert f":served {len(s.log)} " in line and " :end :eof " in line, line
-    rows["verbs"] = dict(requests=len(s.log), refused=int(re.search(r":refused (\d+)", line)[1]), report=line.strip(), log=s.log)
+    assert f":served {len(s.log)} " in line and " :end :eof " in line and " :device-facts {:layer :fake} " in line, line
+    rows["verbs"] = dict(requests=len(s.log), refused=int(re.search(r":refused (\d+)", line)[1]), report=line.strip(),
+                         confinement=confined(line, native), log=s.log)
 
     # faults that end the session
     for name, x, code in (("device-lost", 4294967295, "!gpu/device-lost device lost; the provider ends the session"),
@@ -315,7 +332,7 @@ def run(output):
 
     # grants
     good = (b'  {:wires #{37 42}, :artifacts [{:kind :model :sha256 "' + sha["model.bin"].encode() + b'" :path "model.bin"}]\n'
-            b' :device-bytes 2000 :submit-timeout-seconds 5 :device 0}  \n')
+            b' :device-bytes 2000 :submit-timeout-seconds 5 :device 0' + CONFINE[0].encode() + b'}  \n')
     s = Session(img["provider-fake"], raw, "grant-good", good)
     expect(s, "MAP model.bin 0 2000", "1")
     expect(s, "ALLOC 1", "!gpu/device-bytes-cap ALLOC: over the granted device bytes")
@@ -328,6 +345,8 @@ def run(output):
         "backslash": grant([("mo\\del.bin", sha["model.bin"], "model")]),
         "timeout-61": grant([], extra=" :submit-timeout-seconds 61"), "trailing": grant([]) + b"x",
         "unknown-kind": grant([("model.bin", sha["model.bin"], "wasm")]), "empty": b"",
+        "confinement-sometimes": grant([], extra=" :confinement :sometimes"),
+        "confinement-repeated": grant([], extra=" :confinement :required :confinement :required"),
     }
     for name, g in refused.items():
         s = Session(img["provider-fake"], raw, "grant-" + name, g)
@@ -338,6 +357,14 @@ def run(output):
     line = s.close(2)
     assert " :end :grant-refused " in line, line
     rows["grant-no-fd-3"] = dict(report=line.strip())
+    if not native:
+        # the default, :required, fails closed where the kernel cannot confine
+        CONFINE[0] = ""
+        s = Session(img["provider-fake"], raw, "confinement-required", grant(arts))
+        line = s.close(5)
+        assert " :served 0 " in line and " :end :confinement-failed " in line, line
+        rows["confinement-required-unavailable"] = dict(report=line.strip())
+        CONFINE[0] = " :confinement :if-available"
     s = Session(img["provider-fake"], raw, "no-device", grant([], extra=" :device 1"))
     line = s.close(3)
     assert " :end :no-device " in line, line
@@ -345,7 +372,6 @@ def run(output):
     digest = pin(img["provider-fake"])["sha256"]
     assert f':image "{digest}"' in rows["verbs"]["report"], ("the report's image digest", digest)
 
-    native = native_kernel()
     if native:
         g = raw / "launcher.grant.edn"
         g.write_bytes(grant(arts))
@@ -446,6 +472,10 @@ def gpu(output):
     line = s.close(0)
     name = info.split("|")[0]
     assert f':device "{name}" ' in line and " :end :eof " in line, (line, name)
+    rows["confinement"] = confined(line, True)
+    facts = re.search(r':device-facts \{:layer :vulkan :driver "([^"]*)" :libraries \[(.*?)\]\}', line)
+    assert facts and re.search(r'\{:path "[^"]*libvulkan\.so[^"]*" :sha256 "[0-9a-f]{64}"\}', facts[2]), ("device facts", line)
+    rows["driver"], rows["libraries"] = facts[1], re.findall(r'\{:path "([^"]*)" :sha256 "([0-9a-f]{64})"\}', facts[2])
     rows.update(report=line.strip(), submitNanoseconds=ns, requests=len(s.log))
     report["gpu"] = dict(host=[platform.system(), platform.machine(), platform.release()], node=platform.node(), rows=rows, log=s.log[:8])
     report["status"] = "PASS_GPU_PROVIDER_VULKAN"

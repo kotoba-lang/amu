@@ -636,8 +636,19 @@ Each step is its own PR, in this order:
       were exact in f32 and matched byte for byte, at 30-50 us per submit.
       The dot and kdot fixtures and the decode argmax chain need the KIR v2
       kernels of ADR 0372 step 3, so this step's acceptance waits on them.
-   4. Confinement after device creation, and the launcher's fixed provider
-      environment.
+   4. **Confinement after device creation.** In progress. After the device
+      is created the provider reads the facts its report needs from files:
+      its image digest, and for the Vulkan layer the driver properties and
+      each mapped libvulkan library with its SHA-256. It then confines
+      itself: Landlock read access to the granted artifacts only (files the
+      driver already opened stay open), then the seal. The grant's
+      `:confinement` is `:required` by default. `:if-available` tolerates
+      only a kernel without Landlock or seccomp (ENOSYS or EOPNOTSUPP, as
+      under qemu-user). Any other failure ends the run as
+      `:confinement-failed`, before a request is served. On gad, RADV (Mesa
+      25.2.8) answered all 48 requests confined (Landlock ABI 8 and the
+      seal). The launcher's fixed provider environment (the shader cache)
+      remains.
    5. ADR and documentation.
 7. **aarch64-linux** imports, then Xavier.
 8. **macOS ADR.**
