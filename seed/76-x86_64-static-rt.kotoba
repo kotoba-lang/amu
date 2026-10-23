@@ -532,7 +532,7 @@
                 (> c 57) -1
                 (> v (quot (- 9223372036854775807 d) 10)) 9223372036854775807
                 :else (recur (inc i) (+ (* v 10) d))))))))
-;; wire 35, RANGE form (the k 3 token above): "<path>TOK<off>:<len>" ->
+;; wire 35, RANGE form (the k 3 token above): <path>TOK<off>:<len> ->
 ;; exactly len bytes of the file from off (fs_app_data_range_read_provider).
 ;; The window must lie inside a regular file and fit the pool; a short read
 ;; is never answered. A malformed spec and a window past the pool are ONE
@@ -562,7 +562,7 @@
                     z (kxrt-close fd)]
                 (cond (not ok) (kxrt-fail)
                       (not= k w) (kxrt-fail)
-                      :else (let [y (kxrt-gs 32 (+ u w))] (kxrt-pair-new (- -1 u) w))))))))))
+                      :else (let [y (kxrt-gs 32 (+ u w))] (kxrt-pair-new (- -1 u) w)))))))))
 (defn- kxrt-fs-tok [a :i64 n :i64 k :i64] :bool
   (case k
     3 (>= (kxrt-find a n 0x45535f45474e4152 0x50 9) 0) 4 (>= (kxrt-find a n 0x5045535f54415453 0 8) 0)
