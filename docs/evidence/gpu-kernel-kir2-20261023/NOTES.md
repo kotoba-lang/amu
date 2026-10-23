@@ -37,10 +37,17 @@ writes two kernels with it: KIR v1's elementwise kernel again, and
     same `attn_copy_dense` source.
 * **Oracles**: all 9 modules are valid under `spirv-val --target-env
   vulkan1.1`. The aarch64 and the x86_64 tool images write the same bytes.
-* **GPU** (`gad-radv.json`): each KIR v2 module ran beside glslang's module
-  of the same source, on the same inputs (24-bit values from a fixed LCG,
-  exact in f32; the receipt records their digests).
-  * ewise: z = x + y over 1000 values, exact, from both modules.
+* **GPU** (`gad-radv.json`): the phase ran after the oracle phase, and it
+  checks the bytes it runs against the build's and the refs phase's. Every
+  KIR v2 module ran. Where glslang has a module of the same source, it ran
+  beside it on the same inputs (24-bit values from a fixed LCG, exact in f32;
+  the receipt records their digests).
+  * ewise, all eight modules over 1000 values:
+    * add, sub and mul are exact;
+    * div is within 2 ulp (Vulkan allows `OpFDiv` 2.5);
+    * each operator's two workgroup sizes give the same bytes;
+    * add/wg256 gives the bytes of glslang's module of
+      `tools/gpu_kernel_refs/ewise-add.comp`.
   * `attn_copy_dense`, three shapes:
     * GQA (8 query heads, 2 kv heads, d = 64) at the dynamic position
       (P.p1 != 0, T = 38);
