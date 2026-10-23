@@ -1,42 +1,63 @@
 {
   "schema": "amu.seed.static-root.v1",
   "image": {
-    "bytes": 1458688,
-    "sha256": "1739f52f02fc90c28a1fa4a6c3a3f780caeff481893e3a1cd35badd8c227682e"
+    "bytes": 1524224,
+    "sha256": "b4352834626c9617b1334cc0133f06d5a6d92bb0f0adb795b1f6372590f12d2e"
   },
   "target": "aarch64-linux",
   "format": "static",
   "sourceManifest": "seed/X86_64-LINUX-SELFHOST-MANIFEST",
   "sourceUnity": {
-    "bytes": 862791,
-    "sha256": "4ccdcc04382a2469005a71e87541e6fcc4d50f22ddd088ce420ec2300bcf48fd"
+    "bytes": 927343,
+    "sha256": "faab68ad5997f975f011eb4ddd982a270200099bfcd379755f4ea0a12632f7b2"
   },
-  "sourceCommitBase": "028019bc1ef3c8dbb5dafc08c3de9cc3c9774ab8",
+  "sourceCommitBase": "457042ab741520980bceb5bf12970937d1bc8dba",
   "producedBy": {
-    "how": "The prior Amu-native root built S1, S1 built S2, S2 built S3, S3 built S4. S2=S3=S4. TCP/spawn runtime and shared frontend, no hosted compiler/C loader.",
+    "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 and S2 built S3 = this image (S1 = S2 = S3: the runtime text embedded in static images did not change). Re-pinned because this source adds --format launcher (ADR 0371 step 4, context word 408 = 4): the launcher runtime text and the format plumbing in seed/70, 75, 76, 77 and 80.",
     "date": "2026-10-23",
-    "previousRoot": "cd85f3fc6e68511f6de3e71692dfd9b90133bab3fe2c85285bb423a7dc80ad60",
-    "chain": {
-      "S1": {
-        "bytes": 1393152,
-        "sha256": "75b9975bf141967b8f6d9ee2207308718b0387985fe2de5a9e8bea6e203ecc85"
-      },
-      "S2": {
-        "bytes": 1458688,
-        "sha256": "1739f52f02fc90c28a1fa4a6c3a3f780caeff481893e3a1cd35badd8c227682e"
-      },
-      "S3": {
-        "bytes": 1458688,
-        "sha256": "1739f52f02fc90c28a1fa4a6c3a3f780caeff481893e3a1cd35badd8c227682e"
-      },
-      "S4": {
-        "bytes": 1458688,
-        "sha256": "1739f52f02fc90c28a1fa4a6c3a3f780caeff481893e3a1cd35badd8c227682e"
-      }
-    }
+    "previousRoot": "1739f52f02fc90c28a1fa4a6c3a3f780caeff481893e3a1cd35badd8c227682e"
   },
-  "verification": "Native arm64/x86_64 TCP/spawn, 125 boundary refusals, 24 runtime cases; complete18 C0/G1=G2=G3, full19 exact correctness and combined compiler fixed point. See docs/evidence/tcp-spawn-native-20261023/. Native CDCI controller/public CLI qualification remains open.",
+  "verification": "Native arm64 S1=S2=S3 from the previous root, adopted G1=G2=G3 and the static cases (docs/evidence/selfhost-bootstrap-aarch64-20261022/); the launcher check on arm64 and x86_64 (docs/evidence/static-launcher-20261022/); main's runtime-boundary corpus including --format launcher. CI re-runs all of them.",
   "history": [
+    {
+      "schema": "amu.seed.static-root.v1",
+      "image": {
+        "bytes": 1458688,
+        "sha256": "1739f52f02fc90c28a1fa4a6c3a3f780caeff481893e3a1cd35badd8c227682e"
+      },
+      "target": "aarch64-linux",
+      "format": "static",
+      "sourceManifest": "seed/X86_64-LINUX-SELFHOST-MANIFEST",
+      "sourceUnity": {
+        "bytes": 862791,
+        "sha256": "4ccdcc04382a2469005a71e87541e6fcc4d50f22ddd088ce420ec2300bcf48fd"
+      },
+      "sourceCommitBase": "028019bc1ef3c8dbb5dafc08c3de9cc3c9774ab8",
+      "producedBy": {
+        "how": "The prior Amu-native root built S1, S1 built S2, S2 built S3, S3 built S4. S2=S3=S4. TCP/spawn runtime and shared frontend, no hosted compiler/C loader.",
+        "date": "2026-10-23",
+        "previousRoot": "cd85f3fc6e68511f6de3e71692dfd9b90133bab3fe2c85285bb423a7dc80ad60",
+        "chain": {
+          "S1": {
+            "bytes": 1393152,
+            "sha256": "75b9975bf141967b8f6d9ee2207308718b0387985fe2de5a9e8bea6e203ecc85"
+          },
+          "S2": {
+            "bytes": 1458688,
+            "sha256": "1739f52f02fc90c28a1fa4a6c3a3f780caeff481893e3a1cd35badd8c227682e"
+          },
+          "S3": {
+            "bytes": 1458688,
+            "sha256": "1739f52f02fc90c28a1fa4a6c3a3f780caeff481893e3a1cd35badd8c227682e"
+          },
+          "S4": {
+            "bytes": 1458688,
+            "sha256": "1739f52f02fc90c28a1fa4a6c3a3f780caeff481893e3a1cd35badd8c227682e"
+          }
+        }
+      },
+      "verification": "Native arm64/x86_64 TCP/spawn, 125 boundary refusals, 24 runtime cases; complete18 C0/G1=G2=G3, full19 exact correctness and combined compiler fixed point. See docs/evidence/tcp-spawn-native-20261023/. Native CDCI controller/public CLI qualification remains open."
+    },
     {
       "schema": "amu.seed.static-root.v1",
       "image": {
