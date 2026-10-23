@@ -242,7 +242,7 @@ rebuilds the core to the same container. It then checks the runtime cases
 against `static-cases.json`, and probes seccomp and the resource limits.
 Receipt: `../docs/evidence/selfhost-bootstrap-aarch64-20261022/`.
 
-## wasm32-browser-static/v1 (JUN-353, Phase 1)
+## wasm32-browser-static/v1 (JUN-353)
 
 F compiles `compile SRC --target wasm32-browser --output OUT.wasm` to one
 self-contained WebAssembly module that holds the guest and the Kotoba runtime,
@@ -260,12 +260,14 @@ both compiled from SIR:
 - `82-wasm32-rt.kotoba` is the runtime. Its shared sections are cut out of the
   current `77-aarch64-static-rt` text at compile time, by their section
   markers; a missing marker is refused (E7106). The wasm-specific parts are:
-  - the `kotoba:host` imports `write`, `cap`, `now` and `exit`;
-  - a bump allocator over `memory.grow` (smaller arena capacities than native);
+  - the `kotoba:host` imports `write`, `cap`, `now`, `exit` and `input`;
+  - a bump allocator over `memory.grow` (smaller arena capacities than native:
+    pairs 4M, string pool 64 MiB, vectors 512K, vector items 16M);
   - `start(fuel)`, which always writes the structured report.
 
   There are no seccomp filters, rlimits or signal handlers: the browser Worker
-  is the sandbox. Every capability is refused by name.
+  is the sandbox. `kotoba:host/cap` refuses every capability by name until the
+  consent broker lands (Phase 2).
 - `../runtime/wasm32-browser-static-host.js` is the dependency-free Worker host.
   `../runtime/wasm32-browser-static-run.html` is the static run page, whose CSP
   sets `connect-src 'none'`.
@@ -273,11 +275,41 @@ both compiled from SIR:
   It talks to the DevTools protocol on a pipe and reads the result lines from
   the DOM. There is no Node, npm or Playwright.
 
-The pr tier of `selfhost-bootstrap.py` compiles the 24 runtime cases and two
+The pr tier of `selfhost-bootstrap.py` compiles the 24 runtime cases and three
 probes with F, and checks that the float cases are refused. When a Chromium is
 installed, it also runs the modules. The `ubuntu-24.04-arm` image has none, so
 in CI the `qualify-x86_64` job runs them in the image's Chrome. Each case must
 match its pinned result, trap and remaining fuel.
 
-The consent broker (`kotoba:host/cap`) is Phase 2, and a dapp guest end to
-end is Phase 3 (JUN-353).
+The consent broker (`kotoba:host/cap`) is Phase 2 (JUN-353).
+
+### The entry ABI (Phase 3)
+
+A guest gets its input and gives its output through the same wires as a native
+command, so one source runs natively and in the browser unchanged:
+
+| wire | native | wasm32-browser |
+|---|---|---|
+| 37 `:io/write`, 39 `:io/write-error` | fd 1, 2 | `kotoba:host/write` fd 1, 2 (the same runtime text) |
+| 38 `:cli/args` | the command line | `kotoba:host/input(0, i, ..)`: the page's argument list |
+| 35 `:fs/app-data` | files under `KEXE_CAP_RESOURCES_35` | `kotoba:host/input(1, 0, path, ..)`: read-only files the page holds in memory (plain read and `EXISTS_SEP`; every other `_SEP` request is refused by name) |
+
+- **Grants.** As `KEXE_ALLOW` grants wires natively, the page grants them: at
+  start the runtime asks `kotoba:host/input(2, wire, ..)` for each of 35, 37,
+  38 and 39 and sets the allow bitmap's bit when the answer is 1. No other bit
+  can be set, so without the page's grant every wire is refused, as in Phase 1
+  (the `capability-denied` case).
+- **Copying.** `input(kind, i, ptr, len, dst, cap)` answers the input's length,
+  or -1 when there is none, and copies the bytes to `dst` only when
+  `cap >= length`. The runtime asks twice: the length, then the bytes straight
+  into the string pool. The result is an ordinary string handle (i64).
+- **None of this is a capability.** The data never leaves the page: the host
+  serves only what the page passed in (`{allow, args, files}` in the Worker
+  message) and what the run writes. A guest that reaches a service still goes
+  through `kotoba:host/cap`, which refuses.
+
+The pr tier's `probe-entry` reads argument 0, reads that file and writes it:
+with the grants it echoes the file and returns its length; without them
+`:cli/args` is refused by name. `check-wasm32-browser.py --app MODULE.wasm
+[--allow ..] [--file MOUNT=DIR].. -- ARGS..` runs an application's module the
+same way (kumitate's fixture selftest, JUN-346).

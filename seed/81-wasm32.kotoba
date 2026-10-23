@@ -14,7 +14,8 @@
 ;; Linear memory: the context at XW-CTX (G = context + 1024, as seed/77), the
 ;; literal pool (an active data segment) at XW-POOL, then the runtime's arena,
 ;; grown by memory.grow. Imports (module kotoba:host): 0 write(fd, ptr, len),
-;; 1 cap(wire, ptr, len), 2 now(), 3 exit(code); exports: memory and start(fuel).
+;; 1 cap(wire, ptr, len), 2 now(), 3 exit(code), 4 input(kind, i, ptr, len, dst, cap) (the entry ABI, seed/82);
+;; exports: memory and start(fuel).
 ;; Floats, the syscall and call-at intrinsics are refused (E7101), as seed/80.
 ;; M cells (X86_64-LINUX-ABI; mode 3 is never used here): 194 = pool length,
 ;; 195 = defined function count, 201 = current block, 202 = block count,
@@ -26,7 +27,7 @@
 
 (def XW-CTX 4096)
 (def XW-POOL 65536)
-(def XW-NIMPORT 4)
+(def XW-NIMPORT 5)
 
 ;; ---- bytes and LEB128 into CODE ----
 (defn- xw-uleb [M :vector-i64 v :i64] :vector-i64
@@ -57,6 +58,7 @@
 (defn- xw-special [name :string] :i64
   (cond (string=? name "kxrt-host-write") (+ 256 3) (string=? name "kxrt-host-cap") (+ 256 16 3)
         (string=? name "kxrt-host-now") (+ 256 32) (string=? name "kxrt-host-exit") (+ 256 48 1)
+        (string=? name "kxrt-host-input") (+ 256 64 6)
         (string=? name "kxrt-wasm-grow") (+ 512 16 1) (string=? name "kxrt-wasm-size") (+ 512 32)
         :else 0))
 (defn- xw-sp [M :vector-i64 S :string f :i64] :i64 (if (xs-rt? M f) (xw-special (xw-name M S f)) 0))
@@ -258,10 +260,11 @@
 (defn- xw-section [M :vector-i64 id :i64 at :i64] :vector-i64 (xw-rec M at 40 id (xg-pos M)))
 (defn- xw-host-field [M :vector-i64 k :i64] :vector-i64
   (case k 0 (xg-bytes (xw-uleb M 5) 0x6574697277 5) 1 (xg-bytes (xw-uleb M 3) 0x706163 3)
-          2 (xg-bytes (xw-uleb M 3) 0x776f6e 3) (xg-bytes (xw-uleb M 4) 0x74697865 4)))
+          2 (xg-bytes (xw-uleb M 3) 0x776f6e 3) 3 (xg-bytes (xw-uleb M 4) 0x74697865 4)
+          (xg-bytes (xw-uleb M 5) 0x7475706e69 5)))
 (defn- xw-host-name [M :vector-i64 k :i64] :vector-i64
   (-> M (xw-uleb 11) (xg-bytes 0x683a61626f746f6b 8) (xg-bytes 0x74736f 3) (xw-host-field k)
-      (xg-byte 0) (xw-uleb (case k 0 3 1 3 2 0 1))))
+      (xg-byte 0) (xw-uleb (case k 0 3 1 3 2 0 3 1 6))))
 (defn- xw-types [M :vector-i64 k :i64] :vector-i64
   (if (> k 16) M
     (xw-types (-> (loop [g (-> M (xg-byte 0x60) (xw-uleb k)) j 0] (if (= j k) g (recur (xg-byte g 0x7e) (inc j))))
@@ -285,7 +288,7 @@
   (let [nt (vector-at M 203) nf (xg-get M 3) plen (xg-get M 2)
         pages (quot (+ XW-POOL plen 65535) 65536)
         a1 (xg-pos M) m1 (xw-section (xw-types (xw-uleb M 17) 0) 1 a1)
-        a2 (xg-pos m1) m2 (xw-section (-> m1 (xw-uleb 4) (xw-host-name 0) (xw-host-name 1) (xw-host-name 2) (xw-host-name 3)) 2 a2)
+        a2 (xg-pos m1) m2 (xw-section (-> m1 (xw-uleb 5) (xw-host-name 0) (xw-host-name 1) (xw-host-name 2) (xw-host-name 3) (xw-host-name 4)) 2 a2)
         nrec (vector-at m2 MM-FIX-N)
         a3 (xg-pos m2) m3 (xw-section (xw-ftypes (xw-uleb m2 (+ nf nt)) 1 nrec) 3 a3)
         a4 (xg-pos m3) m4 (xw-section (-> m3 (xw-uleb 1) (xg-byte 0x70) (xg-byte 1) (xw-uleb nt) (xw-uleb nt)) 4 a4)
