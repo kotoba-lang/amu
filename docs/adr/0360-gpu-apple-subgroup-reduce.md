@@ -214,3 +214,48 @@ the row as designed (one W, one device and one operator family is not the
 row), narrowing it, or a Metal-native `simd_sum`/`simd_max`/`simd_min`
 simdgroup row (still NOT designed). Nothing here is optimality evidence for
 any other W, n, device or operator.
+
+## Amendment (2026-10-23, the second decision: the row is NARROWED to the
+measured device)
+
+This DECIDES question (2) above -- what the Apple row should select given
+the measured cell -- as **narrowing**, superseding that question's
+"PROPOSED, decided nowhere" clause as to (2) only. Question (1) -- whether
+a native Metal harness satisfies this ADR's measurement contract, and how
+the flip records the tested device class -- REMAINS PROPOSED and undecided.
+
+Decision: the row is narrowed by the uB5G scoping idiom
+`kotoba.compiler.accelerator-targets` already uses for workgroup-row
+provenance. A device descriptor whose name parts (:device, :name, or the
+:name key `:vendor` that `device-from-info` fills with deviceName) carry
+the measured-device fragment `m1 max` (case-insensitively) answers
+`:baseline` for the reduce shape on BOTH Apple routes (Vulkan/glsl-v1 and
+MSL/msl-v1), at every workgroup size; every other Apple device -- including
+an unnamed `{:vendor-id 4203}` descriptor -- keeps the designed
+`:subgroup-reduce` row (UNMEASURED), and non-Apple vendors are untouched.
+
+Why narrow, and not keep: the row's inherited rationale ("removing most of
+the barrier cascade wins") is MEASURED-CONTRADICTED on the named device,
+twice, on both routes, across the tested band (GLSL arm never faster over
+W = 32..256, penalty growing with W; MSL arm ~22% slower at W = 256 across
+:sum/:max/:min). Selecting a variant on the device that measured it slower
+would be selecting against one's own evidence. Why narrow, and not delete:
+the evidence is ONE device and narrow shape coverage -- it speaks for M1
+Max, not for the vendor class (the uB5G rule: evidence about a named
+device acts on that device's name and never past it). The options the
+question listed that this decision does NOT take stay open on purpose: a
+Metal-native `simd_sum`/`simd_max`/`simd_min` simdgroup row is still NOT
+designed (a separate decision), and "keep as designed" is what every other
+Apple device still gets.
+
+Scope, stated plainly: W > 256 on M1 Max is UNMEASURED (the measured
+penalty grew with W over the measured band); the demotion at those sizes
+follows that trend toward the fail-safe arm and claims no measurement
+there. `:measured?` is UNCHANGED -- false on every answer of every row --
+because question (1) is undecided: the MSL-arm measurement that partly
+backs this narrowing ran through a native Metal harness whose contract
+status is exactly question (1). The narrowing is implemented with tests in
+`kotoba.compiler.accelerator-variants` (the answer's `:basis` carries the
+refutation for a narrowed answer only); a refuted device WITHOUT rule-6
+facts keeps the ordinary fail-closed `:baseline` basis and no narrowing
+note.

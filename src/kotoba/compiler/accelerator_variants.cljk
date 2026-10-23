@@ -29,7 +29,8 @@
   to refuse -- a portable kernel that runs is worth more than an error."
   {:kotoba/export [select-variant variant-bases variants]}
   (:require [kotoba.compiler.accelerator :as accelerator]
-            [kotoba.compiler.accelerator-subgroup-reduce :as subgroup-reduce]))
+            [kotoba.compiler.accelerator-subgroup-reduce :as subgroup-reduce]
+            [kotoba.lang.text :as str]))
 
 (def variants
   "Every variant selection may answer. Backed by the emitter's admitted set --
@@ -62,6 +63,44 @@
   back to :baseline rather than guessing an emitter."
   [target]
   (some (fn [[route names]] (when (contains? names target) route)) route-names))
+
+(def ^:private apple-measured-fragment
+  "The measured-device fragment of the ONE device where the Apple row has
+  hardware measurements: \"Apple M1 Max\" (the GLSL arm via wire-42/MoltenVK
+  2026-10-19, PR #1347/#1348, and the MSL arm via a native Metal harness
+  2026-10-23, ADR-0360's measurement amendment). The uB5G idiom from
+  kotoba.compiler.accelerator-targets: evidence about a NAMED device acts
+  on that device's name -- case-insensitively, per name part -- and never
+  past it. Coarse on purpose (a name carrying the fragment counts as the
+  measured device)."
+  "m1 max")
+
+(defn- device-name-carries?
+  "Whether any name part the descriptor carries (:device, :name, or the
+  :vendor name key -- the same three keys uB5G reads in
+  kotoba.compiler.accelerator-targets/recommend) carries `fragment`,
+  case-insensitively. An unnamed (vendor-id-only) descriptor answers
+  false: no name, no evidence to act on."
+  [dev fragment]
+  (boolean (some (fn [part]
+                   (and (string? part)
+                        (not (str/blank? part))
+                        (str/includes? (str/lower part) fragment)))
+                 [(:device dev) (:name dev) (:vendor dev)])))
+
+(def ^:private apple-narrow-note
+  "APPLE ROW NARROWED (ADR-0360's second decision, 2026-10-23, JUN-58):
+  this named device carries the measured-device fragment \"m1 max\", where
+  hardware measured :subgroup-reduce SLOWER than :baseline -- the GLSL arm
+  via wire-42/MoltenVK 2026-10-19 (PR #1347/#1348: ~20-27% slower at
+  W = 256, never faster over W = 32..256) and the MSL arm via a native
+  Metal harness 2026-10-23 (ADR-0360's measurement amendment: ~22% slower
+  at W = 256 across :sum/:max/:min). The refuted variant is not selected
+  on the device that refuted it; every other Apple device keeps the
+  designed row (UNMEASURED). W > 256 on this device is UNMEASURED (the
+  measured penalty grew with W over the measured band); the demotion
+  follows that trend toward the fail-safe arm and claims no measurement
+  there.")
 
 (def variant-bases
   "Why each variant exists. Design rationale, not measurement evidence."
@@ -105,9 +144,12 @@
     wire-42/MoltenVK, PR #1347/#1348, 2026-10-19: ~20-27% slower at W=256
     and never faster over W=32..256; MSL arm via a native Metal harness,
     ADR-0360's measurement amendment, 2026-10-23: ~22% slower at W=256
-    across :sum/:max/:min) -- one device and narrow shape coverage, so
-    the measured cell PROPOSES (decided nowhere) narrowing the Apple row
-    rather than validating it. It
+    across :sum/:max/:min) -- one device and narrow shape coverage. The
+    measured cell DECIDED the row's fate on 2026-10-23 (ADR-0360's second
+    decision): the row is NARROWED to the measured device -- a descriptor
+    naming the measured device answers :baseline, because that device
+    measured the variant slower -- and stands (UNMEASURED) on every other
+    device. It
     replaces no workgroup row. Semantics, scoped as ADR-0357 P1 requires:
     the reduction groups the same admitted elements as the :baseline tree
     in a different order -- f32 :sum agrees with the baseline to low bits on
@@ -198,11 +240,26 @@
   on. For the Apple row a hardware measurement EXISTS (Apple M1 Max, twice,
   both routes -- the variant slower than :baseline; PR #1347/#1348
   2026-10-19 and ADR-0360's measurement amendment 2026-10-23) and the flag
-  still stays false: the flip is blocked on the per-tested-device scoping
-  and route clauses that amendment names (ADR-0358's :measured-device
-  machinery exists for the workgroup rows only), and a measurement can
-  REFUTE a row's basis, not only validate it. No report may
-  cite an answer here as optimization evidence until then."
+  still stays false: the flip is blocked on ADR-0360's measurement-
+  contract question (1) -- whether a native harness satisfies the
+  contract's route clause -- which is PROPOSED and undecided (the
+  per-tested-device scoping the flip would need is now implemented for the
+  selection itself, see the narrowing below). A measurement can REFUTE a
+  row's basis, not only validate it.
+
+  ADR-0360's second decision (2026-10-23, JUN-58) NARROWS the Apple row
+  to the measured device: a descriptor whose name parts (:device, :name,
+  or the :vendor name key) carry the measured-device fragment \"m1 max\"
+  (case-insensitively -- the uB5G idiom of
+  kotoba.compiler.accelerator-targets) answers :baseline for the reduce
+  shape on BOTH Apple routes, annotated with the refutation in :basis.
+  The narrowing acts exactly where the evidence is: every other Apple
+  device -- including an unnamed {:vendor-id 4203} descriptor -- keeps
+  the designed :subgroup-reduce row (UNMEASURED), and non-Apple vendors
+  are untouched. A refuted device WITHOUT rule-6 facts is the ordinary
+  fail-closed :baseline and carries no narrowing note (the note is only
+  the row's own demotion). No report may
+  cite an answer here as optimization evidence until the flag flips."
   ([vendor kir] (select-variant vendor kir nil nil))
   ([vendor kir target] (select-variant vendor kir target nil))
   ([vendor kir target device]
@@ -249,6 +306,58 @@
                 (contains? ops :shuffle-relative)
                 (int? wg) (pos? wg)
                 (zero? (mod wg s))))
+         ;; ADR-0360's second decision (2026-10-23, JUN-58): the Apple
+         ;; row is NARROWED to the measured device. A descriptor naming
+         ;; the measured device (its name parts carry the fragment
+         ;; "m1 max", uB5G idiom) answers :baseline for the reduce shape
+         ;; on both Apple routes -- the row's own basis is refuted there
+         ;; by hardware (the variant measured ~20-27% slower on the GLSL
+         ;; arm and ~22% slower on the MSL arm). Every other Apple device
+         ;; keeps the designed row (UNMEASURED).
+         apple-narrowed-device?
+         (and (= :apple vendor)
+              (device-name-carries? dev apple-measured-fragment))
+         subgroup-row-holds?
+         (and (contains? #{:intel :arm :apple :nvidia :amd} vendor)
+              (or (= :glsl-v1 route)
+                  ;; ADR-0363: the WGSL route (:webgpu /
+                  ;; :wgsl-v1) carries the Intel and ARM rows;
+                  ;; ADR-0364 adds :amd (its vendor-default
+                  ;; target, the ADR-0363 rationale).
+                  (and (= :wgsl-v1 route)
+                       (contains? #{:intel :arm :amd} vendor))
+                  ;; ADR-0360's amendment (2026-10-23, JUN-58's
+                  ;; own decision): the MSL route (:metal /
+                  ;; :msl-v1) carries the Apple row, under the
+                  ;; same rules 3 + 6 gate as the Vulkan route.
+                  (and (= :msl-v1 route)
+                       (= :apple vendor))
+                  ;; ADR-0361's same-day amendment (JUN-57's own
+                  ;; decision): the CUDA route (:cuda /
+                  ;; :cuda-v1) carries the NVIDIA row as the
+                  ;; SECOND rung of that route's ladder. The
+                  ;; :warp-shuffle-reduce branch above is checked
+                  ;; FIRST in this cond and keeps precedence
+                  ;; whenever its gate holds (a CONFIRMED compute
+                  ;; capability 7.0+ and W >= 32) -- every answer
+                  ;; it gives is unchanged; this rung answers
+                  ;; only where the warp row's gate does not
+                  ;; reach (a descriptor reporting the rule-6
+                  ;; subgroup facts and NO compute capability),
+                  ;; under the same rules 3 + 6 gate, fail closed
+                  ;; included.
+                  (and (= :cuda-v1 route)
+                       (= :nvidia vendor)))
+              valid-kir?
+              subgroup-cap-ok?
+              ;; ADR-0361: NVIDIA's row carries the CUDA row's
+              ;; sm_70+ floor; the other four vendors (AMD's
+              ;; row, ADR-0364, included) have no
+              ;; compute-capability contract and pass this gate
+              ;; on the absent fact alone.
+              (or (not= :nvidia vendor) nvidia-floor-ok?)
+              (subgroup-reduce/applicable? kir))
+         narrowed? (and subgroup-row-holds? apple-narrowed-device?)
          variant (cond
                    (and (= :nvidia vendor)
                         (= :cuda-v1 route)
@@ -260,48 +369,12 @@
                           (and (int? wg) (>= wg min-warp-shuffle-workgroup))))
                    :warp-shuffle-reduce
 
-                   (and (contains? #{:intel :arm :apple :nvidia :amd} vendor)
-                        (or (= :glsl-v1 route)
-                            ;; ADR-0363: the WGSL route (:webgpu /
-                            ;; :wgsl-v1) carries the Intel and ARM rows;
-                            ;; ADR-0364 adds :amd (its vendor-default
-                            ;; target, the ADR-0363 rationale).
-                            (and (= :wgsl-v1 route)
-                                 (contains? #{:intel :arm :amd} vendor))
-                            ;; ADR-0360's amendment (2026-10-23, JUN-58's
-                            ;; own decision): the MSL route (:metal /
-                            ;; :msl-v1) carries the Apple row, under the
-                            ;; same rules 3 + 6 gate as the Vulkan route.
-                            (and (= :msl-v1 route)
-                                 (= :apple vendor))
-                            ;; ADR-0361's same-day amendment (JUN-57's own
-                            ;; decision): the CUDA route (:cuda /
-                            ;; :cuda-v1) carries the NVIDIA row as the
-                            ;; SECOND rung of that route's ladder. The
-                            ;; :warp-shuffle-reduce branch above is checked
-                            ;; FIRST in this cond and keeps precedence
-                            ;; whenever its gate holds (a CONFIRMED compute
-                            ;; capability 7.0+ and W >= 32) -- every answer
-                            ;; it gives is unchanged; this rung answers
-                            ;; only where the warp row's gate does not
-                            ;; reach (a descriptor reporting the rule-6
-                            ;; subgroup facts and NO compute capability),
-                            ;; under the same rules 3 + 6 gate, fail closed
-                            ;; included.
-                            (and (= :cuda-v1 route)
-                                 (= :nvidia vendor)))
-                        valid-kir?
-                        subgroup-cap-ok?
-                        ;; ADR-0361: NVIDIA's row carries the CUDA row's
-                        ;; sm_70+ floor; the other four vendors (AMD's
-                        ;; row, ADR-0364, included) have no
-                        ;; compute-capability contract and pass this gate
-                        ;; on the absent fact alone.
-                        (or (not= :nvidia vendor) nvidia-floor-ok?)
-                        (subgroup-reduce/applicable? kir))
+                   (and subgroup-row-holds? (not narrowed?))
                    :subgroup-reduce
 
                    :else :baseline)]
      {:variant variant
       :measured? false
-      :basis (get variant-bases variant)})))
+      :basis (if narrowed?
+               (str (get variant-bases :baseline) "\n  " apple-narrow-note)
+               (get variant-bases variant))})))

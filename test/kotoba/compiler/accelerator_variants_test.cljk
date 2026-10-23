@@ -251,6 +251,76 @@
         (is (not (str/includes? (:code compiled) "kernel void main")))
         (is (= compiled (accelerator/verify-artifact! compiled)))))))
 
+(deftest the-apple-row-is-narrowed-on-the-measured-device
+  ;; ADR-0360's SECOND decision (2026-10-23, JUN-58): what the Apple row
+  ;; selects given the measured cell. The cell REFUTED the row's basis on
+  ;; one named device (Apple M1 Max: the variant slower than :baseline on
+  ;; both routes, PR #1347/#1348 and ADR-0360's measurement amendment),
+  ;; and evidence about a named device acts on that device only (the uB5G
+  ;; idiom of kotoba.compiler.accelerator-targets). So the row is NARROWED:
+  ;; a descriptor naming the measured device answers :baseline for the
+  ;; reduce shape on both Apple routes, with the refutation in :basis;
+  ;; every other Apple device keeps the designed row (UNMEASURED).
+  (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
+        capable {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}]
+    (testing "the measured device answers :baseline on both Apple routes, at every W"
+      (doseq [device [(assoc capable :vendor "Apple M1 Max")
+                      (assoc capable :name "Apple M1 Max")
+                      (assoc capable :device "Apple M1 Max")
+                      ;; case-insensitive, per name part (uB5G idiom)
+                      (assoc capable :name "apple M1 MAX")
+                      ;; the INFO-derived descriptor shape
+                      (assoc capable :vendor "Apple M1 Max"
+                             :max-workgroup-x 1024 :unified-memory? true)]
+              target [:vulkan :glsl-v1 :metal :msl-v1]
+              operator [:sum :max :min]
+              wg [32 64 128 256 512]]
+        (let [k (accelerator/kernel (str "reduce_" (name operator) "_f32")
+                                    :reduce operator {:workgroup-size wg})
+              answer (variants/select-variant :apple k target device)]
+          (is (= :baseline (:variant answer))
+              (str "device " (pr-str device) " W=" wg " " target " must answer :baseline"))
+          (is (false? (:measured? answer)))
+          (is (str/includes? (:basis answer) "APPLE ROW NARROWED"))
+          (is (str/includes? (:basis answer) "m1 max"))
+          (is (str/includes? (:basis answer) "ADR-0360")))))
+    (testing "every other Apple device keeps the designed row, UNMEASURED"
+      (doseq [device [(assoc capable :vendor "Apple M3")
+                      (assoc capable :name "Apple M2 Pro")
+                      (assoc capable :device "iPad Pro (M4)")
+                      ;; an UNNAMED descriptor: no name, no evidence
+                      (assoc capable :vendor-id 4203)
+                      capable]
+              target [:vulkan :glsl-v1 :metal :msl-v1]]
+        (let [answer (variants/select-variant :apple kir target device)]
+          (is (= :subgroup-reduce (:variant answer))
+              (str "device " (pr-str device) " must keep the designed row"))
+          (is (false? (:measured? answer)))
+          (is (not (str/includes? (:basis answer) "APPLE ROW NARROWED"))
+              "an unrefuted answer carries no narrowing note"))))
+    (testing "the narrowing is Apple's alone: a non-Apple vendor is untouched"
+      (doseq [vendor [:intel :arm :nvidia :amd]]
+        (is (= :subgroup-reduce
+               (:variant (variants/select-variant
+                          vendor kir :vulkan
+                          (assoc capable :name "M1 Max")))))))
+    (testing "a refuted device WITHOUT rule-6 facts is the ordinary fail-closed answer"
+      ;; The narrowing note is the ROW's demotion only: when the gate
+      ;; never held, :baseline is the fail-closed answer and its basis
+      ;; says so -- it must not claim the row was narrowed.
+      (doseq [device [{:vendor "Apple M1 Max"}
+                      {:vendor "Apple M1 Max" :subgroup-size 32}
+                      {:name "Apple M1 Max"
+                       :subgroup-size 24 :subgroup-ops #{:basic :shuffle-relative}}]
+              target [:vulkan :msl-v1]]
+        (let [answer (variants/select-variant :apple kir target device)]
+          (is (= :baseline (:variant answer)))
+          (is (not (str/includes? (:basis answer) "APPLE ROW NARROWED"))))))
+    (testing "same arguments in, same map out"
+      (let [device (assoc capable :vendor "Apple M1 Max")]
+        (is (= (variants/select-variant :apple kir :msl-v1 device)
+               (variants/select-variant :apple kir :msl-v1 device)))))))
+
 (deftest the-nvidia-row-rides-the-vulkan-and-cuda-routes
   ;; ADR-0361 (JUN-57) as amended 2026-10-23 (JUN-57's own decision): the
   ;; NVIDIA row is the shared subgroup-size-parametric emission on the
