@@ -2,7 +2,7 @@
 """JUN-58 hardware measurement driver: :baseline vs :subgroup-reduce MSL arms
 on this host's Apple GPU, from the emitters' own bytes.
 
-    python3 scripts/gpu-subgroup-reduce-metal-measure.py [--runs N] [--workgroup W] [--elements N] [--out DIR]
+    python3 scripts/gpu-subgroup-reduce-metal-measure.py [--runs N] [--workgroup W] [--elements N] [--out DIR] [--compare-historical HIST.md]
 
 Pipeline (every step's transcript lands in the evidence directory):
 
@@ -28,6 +28,15 @@ in [32, 1024]: no padded-lane tail). The emitted kernels read n at runtime
 byte-identical and only the shape changes.
   4. record -- raw runs -> <out>/run-log.txt; transcripts ->
                <out>/compile-log.txt; statistics -> <out>/summary.md.
+               With --compare-historical HIST.md (a prior record's
+               summary.md, read once and never modified) the summary
+               additionally carries the claim-protocol rule-3
+               regime-matched comparison section against that record,
+               auto-wired through
+               gpu_regime_classify.append_comparison_section -- the
+               section is drawn from the exact text being published and
+               names this driver as its publication path (no manual
+               --compare consumption step).
 
 <out> defaults to docs/evidence/gpu-subgroup-reduce-m1max-20261023 (the
 historical W = 256 cell). A W-sweep cell passes its own --out (e.g.
@@ -83,13 +92,80 @@ def sh(cmd, log, cwd=ROOT):
     return r.stdout
 
 
+VIA_AUTO_WIRE = ("the measurement driver's --compare-historical auto-wiring "
+                 "(scripts/gpu-subgroup-reduce-metal-measure.py; rule-3 "
+                 "machinery: scripts/gpu_regime_classify.py)")
+
+
+def finalize_summary(summary_text, compare_historical, new_label):
+    """Rule-3 auto-wiring: with --compare-historical, append the
+    regime-matched comparison section against that record to the summary
+    text about to be published. Without it the text passes through
+    unchanged. The historical file is READ ONLY here and never modified.
+    """
+    if not compare_historical:
+        return summary_text
+    hist_path = pathlib.Path(compare_historical)
+    return gpu_regime_classify.append_comparison_section(
+        hist_path.read_text(), str(hist_path), summary_text, new_label,
+        via=VIA_AUTO_WIRE)
+
+
+def self_test():
+    """Hardware-free check of the --compare-historical auto-wiring path
+    (the exact function main() calls), over two committed corpus records.
+    No GPU, no Metal, no measurement: every input is a committed
+    summary.md.
+    """
+    evid = ROOT / "docs" / "evidence"
+    hist_rel = "gpu-subgroup-reduce-m1max-shape2-band-20261023/w512/summary.md"
+    new_rel = "gpu-subgroup-reduce-m1max-shape2-resweep-20261023/w512/summary.md"
+    hist_text = (evid / hist_rel).read_text()
+    new_text = (evid / new_rel).read_text()
+    n = 0
+
+    def _expect(cond, msg):
+        nonlocal n
+        assert cond, msg
+        n += 1
+
+    _expect(finalize_summary(new_text, None, new_rel) == new_text,
+            "no --compare-historical leaves the summary untouched")
+    out = finalize_summary(new_text, str(evid / hist_rel), new_rel)
+    _expect(out.startswith(new_text.rstrip("\n") + "\n\n"),
+            "the single-record sections stand byte-identical as prefix")
+    section = gpu_regime_classify.render_rule3_section(
+        gpu_regime_classify.load_comparison_cell(hist_text, str(evid / hist_rel)),
+        gpu_regime_classify.load_comparison_cell(new_text, new_rel),
+        via=VIA_AUTO_WIRE)
+    _expect(out.endswith(section + "\n"),
+            "the appended section is the --compare machinery's own output, "
+            "under this driver's via name")
+    _expect("Published by " + VIA_AUTO_WIRE + ": " in out,
+            "the section names this driver as its publication path")
+    for fn in (gpu_regime_classify.parse_summary_per_run_baseline,
+               gpu_regime_classify.parse_summary_per_run_ratios,
+               gpu_regime_classify.parse_summary_published_medians):
+        _expect(fn(out) == fn(new_text),
+                f"{fn.__name__} round-trips through the appended summary")
+    print(f"driver auto-wiring self-test: {n} assertions passed, 0 failed")
+
+
 def main():
+    if sys.argv[1:] == ["--self-test"]:
+        self_test()
+        return
     ap = argparse.ArgumentParser()
     ap.add_argument("--runs", type=int, default=6)
     ap.add_argument("--workgroup", type=int, default=256)
     ap.add_argument("--elements", type=int, default=1000003)
     ap.add_argument("--op-order", type=str, default="sum,max,min")
     ap.add_argument("--out", type=str, default=None)
+    ap.add_argument("--compare-historical", type=str, default=None,
+                    help="a prior record's summary.md; the published summary "
+                         "then carries the claim-protocol rule-3 "
+                         "regime-matched comparison against it (the file is "
+                         "read once, never modified)")
     args = ap.parse_args()
     order_names = [t.strip() for t in args.op_order.split(",")]
     if sorted(order_names) != ["max", "min", "sum"]:
@@ -309,8 +385,10 @@ def main():
         "`:measured?` flag moves in THIS run: the honesty-lock flip set is "
         "code (accelerator_variants' :measured-cell W set) and extends in its "
         "own slice, and no workgroup row (ADR-0355/0358) is touched.")
-    (out / "summary.md").write_text("\n".join(lines) + "\n")
-    print("\n".join(lines))
+    (out / "summary.md").write_text(finalize_summary(
+        "\n".join(lines) + "\n", args.compare_historical,
+        str(out / "summary.md")))
+    print((out / "summary.md").read_text(), end="")
     shutil.rmtree(build, ignore_errors=True)
 
 

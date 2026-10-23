@@ -712,9 +712,12 @@ def cell_regime_matched_comparison(hist, new, gap_max=GAP_MAX):
             "cell_magnitude": cell_magnitude}
 
 
-def render_rule3_section(hist, new, gap_max=GAP_MAX):
+def render_rule3_section(hist, new, gap_max=GAP_MAX, via=None):
     """The claim-protocol rule-3 section for a comparison of two
     measurement records. hist/new: load_comparison_cell() shapes.
+    via: the publication path to name in the section header (default the
+    --compare CLI; the measurement driver's auto-wiring passes its own
+    name so a section never claims a publication path it did not take).
     Returns markdown (no trailing newline).
     """
     cell = cell_regime_matched_comparison(hist, new, gap_max)
@@ -731,7 +734,7 @@ def render_rule3_section(hist, new, gap_max=GAP_MAX):
     lines = []
     lines.append("## Regime-matched comparison (claim protocol rule 3)")
     lines.append("")
-    lines.append(f"Published by scripts/gpu_regime_classify.py --compare: "
+    lines.append(f"Published by {via or 'scripts/gpu_regime_classify.py --compare'}: "
                  f"**{hist['label']}** (historical) against "
                  f"**{new['label']}**. Rule 3: a magnitude comparison "
                  f"across sessions or cells is drawn within matched "
@@ -783,6 +786,25 @@ def render_rule3_section(hist, new, gap_max=GAP_MAX):
                 f"{', '.join(str(j) for j in c['unmatched']['new']) or '-'} | "
                 f"- | - |")
     return "\n".join(lines)
+
+
+def append_comparison_section(hist_text, hist_label, new_text, new_label,
+                              gap_max=GAP_MAX, via=None):
+    """The driver auto-wiring primitive (claim protocol rule 3).
+
+    Returns new_text with the rule-3 section appended as the record's
+    final section, drawn from exactly the text that will be published:
+    the single-record sections are never rewritten and the appended
+    section is byte-identical to what `--compare <hist> <new>` prints
+    for the same pair (modulo the `via` header). The single-record
+    parsers are round-trip safe through the appended text (the rule-3
+    tables match none of their row shapes) -- the self-test asserts it.
+    """
+    section = render_rule3_section(
+        load_comparison_cell(hist_text, hist_label),
+        load_comparison_cell(new_text, new_label),
+        gap_max, via=via)
+    return new_text.rstrip("\n") + "\n\n" + section + "\n"
 
 
 # ---------------------------------------------------------------- tests
@@ -1402,6 +1424,59 @@ def _self_test_rule3_corpus(stats, corpus_root):
     _expect(seen == 10, f"ten re-sweep pairs enumerated ({seen})", stats)
 
 
+def _self_test_rule3_autowire(stats, corpus_root):
+    """Driver auto-wiring of --compare: append_comparison_section() over
+    the real corpus pair, pinned against the --compare machinery's own
+    output and against the single-record parsers' round trip.
+    """
+    hist_path = (corpus_root
+                 / "gpu-subgroup-reduce-m1max-shape2-band-20261023/w512")
+    new_rel = "gpu-subgroup-reduce-m1max-shape2-resweep-20261023/w512"
+    hist_text = (hist_path / "summary.md").read_text()
+    new_text = (corpus_root / new_rel / "summary.md").read_text()
+
+    # the default header phrase is pinned unchanged: the --compare CLI's
+    # published records must not drift
+    section_default = render_rule3_section(
+        load_comparison_cell(hist_text, "H"), load_comparison_cell(new_text, "N"))
+    _expect(section_default.splitlines()[2].startswith(
+                "Published by scripts/gpu_regime_classify.py --compare: "),
+            "default via keeps the --compare CLI header phrase", stats)
+    section_via = render_rule3_section(
+        load_comparison_cell(hist_text, "H"), load_comparison_cell(new_text, "N"),
+        via="driver-auto-wire-test")
+    _expect("Published by driver-auto-wire-test: " in section_via,
+            "via names the publication path that actually published", stats)
+
+    # the append is additive: the single-record text stands byte-identical
+    # as a prefix and the appended section equals --compare's output
+    out = append_comparison_section(hist_text, "H", new_text, "N",
+                                    via="driver-auto-wire-test")
+    _expect(out.startswith(new_text.rstrip("\n") + "\n\n"),
+            "auto-wire appends, never rewrites the single-record sections",
+            stats)
+    _expect(out.endswith(section_via + "\n"),
+            "the appended section equals the --compare machinery's output",
+            stats)
+
+    # the single-record parsers round-trip through the appended text (the
+    # rule-3 tables match none of their row shapes)
+    for fn in (parse_summary_per_run_baseline, parse_summary_per_run_ratios,
+               parse_summary_published_medians):
+        _expect(fn(out) == fn(new_text),
+                f"{fn.__name__} round-trips through the appended summary",
+                stats)
+
+    # a rule-1/2 section parsed from the appended record still classifies
+    # the same runs (the record stays usable as the NEXT comparison's
+    # historical side)
+    rt = load_comparison_cell(out, "round-trip")
+    fresh = load_comparison_cell(new_text, "fresh")
+    _expect(rt["medians"] == fresh["medians"] and rt["ratios"] == fresh["ratios"]
+            and rt["published"] == fresh["published"],
+            "an appended record stays loadable as a comparison cell", stats)
+
+
 def main():
     args = sys.argv[1:]
     if args == ["--self-test"]:
@@ -1411,6 +1486,7 @@ def main():
         _self_test_corpus(stats, ROOT / "docs" / "evidence")
         _self_test_rule3_unit(stats)
         _self_test_rule3_corpus(stats, ROOT / "docs" / "evidence")
+        _self_test_rule3_autowire(stats, ROOT / "docs" / "evidence")
         print(f"TOTAL: {stats['passed']} assertions passed, 0 failed")
         return
     if len(args) == 3 and args[0] == "--compare":

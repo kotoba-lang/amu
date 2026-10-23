@@ -771,3 +771,50 @@ measurement.
 
 Record: `docs/evidence/gpu/rule3-regime-matched-20261023.txt` (this
 slice ran no hardware measurement).
+
+## Amendment 2026-10-23 (rule 3 auto-wired): the driver publishes the
+comparison itself
+
+The row rule 3's state paragraph named ("driver auto-wiring of
+`--compare`", listed UNIMPLEMENTED) lands now. The measurement driver
+`scripts/gpu-subgroup-reduce-metal-measure.py` gains
+`--compare-historical HIST.md` (a prior record's summary.md, read once,
+never modified): the summary it writes then carries the rule-3
+regime-matched comparison against that record as its final section,
+drawn from exactly the text being published -- no manual `--compare`
+consumption step remains. `finalize_summary()` is the exact function
+`main()` calls; without the flag the text passes through unchanged. The
+`--compare` CLI itself is unchanged and still works: auto-wiring is an
+additional publication path, not a replacement.
+
+Honesty detail, decided and pinned: `render_rule3_section()` gains a
+`via` name in the section header. The auto-wired section says "Published
+by the measurement driver's --compare-historical auto-wiring
+(scripts/gpu-subgroup-reduce-metal-measure.py; rule-3 machinery:
+scripts/gpu_regime_classify.py)", never the CLI phrase -- a section
+never claims a publication path it did not take. The default header
+("Published by scripts/gpu_regime_classify.py --compare: ...") is
+pinned unchanged by test.
+
+State, precisely: rules 1, 2 and 3's harness-side publication,
+including driver auto-wiring, is IMPLEMENTED (code + tests). Tests
+(real output): `python3 scripts/gpu_regime_classify.py --self-test` =
+916 assertions, 0 failed (the previous 908 plus 8 auto-wire fixtures:
+the pinned default header, the via substitution, the additive-append
+prefix property, the appended-section-equals-`--compare`-output
+property, three parser round-trips, the appended-record-stays-loadable
+property -- all over the real shape2-band/w512 -> shape2-resweep/w512
+corpus pair); `python3 scripts/gpu-subgroup-reduce-metal-measure.py
+--self-test` = 7 assertions, 0 failed (the hardware-free finalize path
+over the same corpus pair). Scoped GPU gate: 88 tests / 7122
+assertions, unchanged (no .cljk in this diff). Full suite RED AT BASE
+(`Could not find namespace: kotoba.form`), outside this diff.
+UNIMPLEMENTED, unchanged and named: pair-level classification (the
+op-order cell's within-run ramping needs per-pair levels --
+`analyze-oporder.py` remains the manual instrument); cross-operator
+level identity. No `:measured?` flag, workgroup row, flip gate or
+answer moves (rule 4, untouched). This slice ran no hardware
+measurement.
+
+Record: `docs/evidence/gpu/rule3-autowire-20261023.txt` (this slice ran
+no hardware measurement).
