@@ -1,15 +1,19 @@
 # KIR v2 receipts: the dot and kdot kernels (ADR 0372 step 3, JUN-356)
 
-`tools/gpu_kernels_v2.kotoba` `kir2-dot-rows` and `kir2-kdot-f32-r1` write the
-kernels of ADR 0371 step 6's dot and kdot fixtures:
-* `dot_rows`, from kotoba-lang/inference `verify/native/gpu/dot_rows.comp`
-  at 0f5824c;
-* `kdot_f32_r1`, from
+`tools/gpu_kernels_v2.kotoba` writes the kernels of ADR 0371 step 6's dot
+and kdot fixtures:
+* `kir2-dot-rows`: `dot_rows`, from kotoba-lang/inference
+  `verify/native/gpu/dot_rows.comp` at 0f5824c;
+* `kir2-kdot-f32-r1`: `kdot_f32_r1`, from
   `resources/kotodama/inference/kernels/native/kdot_f32_r1.comp` at
-  c7ea9a9.
+  c7ea9a9;
+* `kir2-kdot-f32-r8`: `kdot_f32_r8`, from `verify/native/gpu/kdot_f32_r8.comp`
+  at f57ea5e, with R rows per workgroup.
 
-`tools/gpu_kernel_refs/dot-rows.comp` and `kdot-f32-r1.comp` are those
-files, as oracle inputs. The receipts cover the whole kir2 suite.
+`tools/gpu_kernel_refs/dot-rows.comp`, `kdot-f32-r1.comp` and
+`kdot-f32-r8.comp` are those files, as oracle inputs. The refs phase compiles
+r8 twice, by default and with `-DROWS=4`. The receipts cover the whole kir2
+suite.
 
 ## Files
 
@@ -27,14 +31,16 @@ files, as oracle inputs. The receipts cover the whole kir2 suite.
 
 ## What the receipts show
 
-* **The unit**: 56 Kotoba cases pass, and the control fails exactly once. For
+* **The unit**: 66 Kotoba cases pass, and the control fails exactly once. For
   dot and kdot:
   * the modules and glslang's pass the Kotoba checker;
   * dot_rows returns early;
   * kdot has LocalSize 64, eleven `OpDot` (one per tensor-type arm, as in
     glslang's module), fourteen `unpackHalf2x16` and eight
-    `bitfieldExtract`.
-* **Oracles**: all 30 modules are valid under `spirv-val --target-env
+    `bitfieldExtract`;
+  * r8 has nine `OpDot` (its arms), the same words twice, and an empty
+    module for a row count other than 4, 8, 16 or 32.
+* **Oracles**: all 32 modules are valid under `spirv-val --target-env
   vulkan1.1`, and the two tool images write the same bytes. spirv-val
   rejected a first build of kdot: integer subtractions that build `ivec4`s
   were typed u32, which the Kotoba checker does not see.
@@ -55,5 +61,9 @@ files, as oracle inputs. The receipts cover the whole kir2 suite.
     In each type, glslang's module and the KIR v2 module give byte-identical
     outputs, finite and not all zero. F16, BF16 and Q8_0 are also within
     6.3e-7 (relative) of an f64 dequant.
+  * `kdot_f32_r8`: byte-identical to glslang's module for each of its ten
+    tensor types with 8 rows per workgroup, and for Q4_K and Q8_0 with
+    `-DROWS=4`. Each ran with 20 rows (so the last workgroup is partial) and
+    one workgroup past them, two positions and experts 0 and 1.
 
 glslang and the f64 references are test oracles only.

@@ -90,8 +90,9 @@ SUITES = {
     "kir2": dict(modules=[*ENCODE_CHECK, "tools/gpu_kernel_kir2.kotoba", "tools/gpu_kernels_v2.kotoba"],
                  test="tools/gpu_kernel_kir2_test.kotoba", receipt="gpu-kernel-kir2.json", prefix="kir2-",
                  sizes={"ewise": 1096, "attn-copy-dense": 6488, **{"kir2-nex-" + op + ".spv": n for op, n in zip(NEX_OPS, [3440, 3468, 3516, 1992, 2660, 2452, 2396, 2024, 2704, 1872, 1968, 3088, 3476, 1652, 3888, 5864, 5356, 3604, 4052])},
-                        "kir2-dot-rows.spv": 2448, "kir2-kdot-f32-r1.spv": 28776},
-                 count=30, control="FAIL attn: variables", refs=True),
+                        "kir2-dot-rows.spv": 2448, "kir2-kdot-f32-r1.spv": 28776,
+                        "kir2-kdot-f32-r8.spv": 25056, "kir2-kdot-f32-r8-rows4.spv": 25056},
+                 count=32, control="FAIL attn: variables", refs=True),
 }
 FUEL = 100000000
 EXPECT_CALL = re.compile(r"\(expect ")
@@ -120,6 +121,9 @@ def units(suite):
 
 
 REFS = ROOT / "tools/gpu_kernel_refs"
+# sources compiled more than once: (name suffix, -D define) per module
+REF_VARIANTS = {"nex-ops.comp": [(op, "OP=" + op) for op in NEX_OPS],
+                "kdot-f32-r8.comp": [(None, None), ("rows4", "ROWS=4")]}
 
 
 def refs(output):
@@ -129,12 +133,12 @@ def refs(output):
     out.mkdir(parents=True, exist_ok=False)
     rows = {}
     for comp in sorted(REFS.glob("*.comp")):
-        for op in (NEX_OPS if comp.name == "nex-ops.comp" else [None]):
-            spv = out / ("ref-" + comp.stem + ("-" + op if op else "") + ".spv")
-            r = subprocess.run([glslang, "-V", "--target-env", "vulkan1.1", *(["-DOP=" + op] if op else []), str(comp), "-o", str(spv)],
+        for suffix, define in REF_VARIANTS.get(comp.name, [(None, None)]):
+            spv = out / ("ref-" + comp.stem + ("-" + suffix if suffix else "") + ".spv")
+            r = subprocess.run([glslang, "-V", "--target-env", "vulkan1.1", *(["-D" + define] if define else []), str(comp), "-o", str(spv)],
                                capture_output=True, text=True)
-            assert r.returncode == 0, (comp.name, op, r.stdout, r.stderr)
-            rows[spv.name] = dict(source=pin(comp), define=op and "OP=" + op, module=pin(spv))
+            assert r.returncode == 0, (comp.name, define, r.stdout, r.stderr)
+            rows[spv.name] = dict(source=pin(comp), define=define, module=pin(spv))
     version = subprocess.run([glslang, "--version"], capture_output=True, text=True).stdout.splitlines()[0]
     (out / "refs.json").write_text(json.dumps(dict(tool=version, host=[platform.system(), platform.machine()], modules=rows,
                                                    note="oracle input only; not part of the product route"), indent=2) + "\n")
@@ -414,7 +418,8 @@ def nex_cases():
     return cases
 
 
-# kdot_f32_r1's tensor types: type -> bytes per 256 values (block_bytes_of)
+# kdot_f32_r1's tensor types: type -> bytes per 256 values (block_bytes_of);
+# kdot_f32_r8 has all but BF16 (30), PQ2_0 (142) and PTQ1_0 (143)
 KDOT_TYPES = {12: 144, 13: 176, 14: 210, 23: 136, 8: 272, 2: 144, 1: 512, 30: 512, 142: 68, 143: 56, 3: 160, 6: 176, 7: 192}
 KDOT_BLOCK32 = (8, 2, 1, 30, 3, 6, 7)
 
@@ -474,6 +479,24 @@ def kdot_cases():
     return cases
 
 
+def kdot_r8_cases(R, types):
+    """kdot_f32_r8 with R rows per workgroup: 20 rows (the last workgroup
+    partial) and one workgroup past them, two positions, experts 0 and 1."""
+    cases = []
+    for tt in types:
+        bb, b32 = KDOT_TYPES[tt], tt in KDOT_BLOCK32
+        rows, cols, positions = 20, (480 if b32 else 512), 2
+        row_bytes = ((cols + 31) // 32) * (bb // 8) if b32 else (cols // 256) * bb
+        wbytes = 2 * rows * row_bytes
+        cases.append(dict(name=f"kdot r8 rows {R} type {tt}", tt=tt, R=R, meta=struct.pack("<8I", rows, cols, tt, positions, 1, 0, 0, 0),
+                          w=kdot_weights(tt, wbytes + (-wbytes % 4) + 4, 60 + tt), x=f32(lcg(positions * cols, 61)),
+                          e=struct.pack("<2I", 0, 1), o=bytes(4 * positions * rows), groups=(-(-rows // R) + 1, positions, 1)))
+    return cases
+
+
+KDOT_R8_TYPES = [tt for tt in KDOT_TYPES if tt not in (30, 142, 143)]
+
+
 def gpu(output, suite, provider_out):
     assert suite["name"] == "kir2", "the gpu phase is suite kir2's"
     assert platform.system() == "Linux" and platform.machine() in ("x86_64", "AMD64"), "gpu phase: x86_64 Linux with a Vulkan driver"
@@ -489,10 +512,12 @@ def gpu(output, suite, provider_out):
     v2 = {"v2-attn.spv": "kir2-attn-copy-dense.spv",
           **{f"v2-{o}-wg{wg}.spv": f"kir2-ewise-{o}-wg{wg}.spv" for o in EWISE_OPS for wg in (64, 256)},
           **{f"v2-nex-{op}.spv": f"kir2-nex-{op}.spv" for op in NEX_OPS},
-          "v2-dot.spv": "kir2-dot-rows.spv", "v2-kdot.spv": "kir2-kdot-f32-r1.spv"}
+          "v2-dot.spv": "kir2-dot-rows.spv", "v2-kdot.spv": "kir2-kdot-f32-r1.spv",
+          "v2-kdot8.spv": "kir2-kdot-f32-r8.spv", "v2-kdot4.spv": "kir2-kdot-f32-r8-rows4.spv"}
     refs = {"ref-attn.spv": "ref-attn-copy-dense.spv", "ref-add.spv": "ref-ewise-add.spv",
             **{f"ref-nex-{op}.spv": f"ref-nex-ops-{op}.spv" for op in NEX_OPS},
-            "ref-dot.spv": "ref-dot-rows.spv", "ref-kdot.spv": "ref-kdot-f32-r1.spv"}
+            "ref-dot.spv": "ref-dot-rows.spv", "ref-kdot.spv": "ref-kdot-f32-r1.spv",
+            "ref-kdot8.spv": "ref-kdot-f32-r8.spv", "ref-kdot4.spv": "ref-kdot-f32-r8-rows4.spv"}
     files = {**{n: output / "spv" / m for n, m in v2.items()}, **{n: output / "refs" / m for n, m in refs.items()}}
     for n, f in files.items():
         shutil.copy(f, raw / n)
@@ -521,7 +546,8 @@ def gpu(output, suite, provider_out):
     pipes = {}
     for k, n in enumerate(["ref-add.spv", *[f"v2-{o}-wg{wg}.spv" for o in EWISE_OPS for wg in (64, 256)], "ref-attn.spv", "v2-attn.spv",
                            *[f"{w}-nex-{op}.spv" for op in NEX_OPS for w in ("ref", "v2")],
-                           "ref-dot.spv", "v2-dot.spv", "ref-kdot.spv", "v2-kdot.spv"]):
+                           "ref-dot.spv", "v2-dot.spv", "ref-kdot.spv", "v2-kdot.spv",
+                           "ref-kdot8.spv", "v2-kdot8.spv", "ref-kdot4.spv", "v2-kdot4.spv"]):
         nb = 7 if "-nex-" in n else 5 if "kdot" in n else 8 if "attn" in n else 4
         cgp.expect(s, f"PIPELINE {n} {nb}", str(k + 1))
         pipes[n] = k + 1
@@ -618,23 +644,26 @@ def gpu(output, suite, provider_out):
     assert derr < 1e-4, ("dot_rows against f64", derr)
     rows["dot_rows"] = dict(rows=64, cols=1000, groups=[66, 1, 1], identical=True, maxAbsErrVsF64=derr,
                             outputSHA256=hashlib.sha256(douts["v2-dot.spv"]).hexdigest())
-    # kdot_f32_r1, every tensor type
-    for c in kdot_cases():
+    # kdot_f32_r1, every tensor type; kdot_f32_r8, every r8 type with 8 rows
+    # per workgroup and two with 4
+    for c in kdot_cases() + kdot_r8_cases(8, KDOT_R8_TYPES) + kdot_r8_cases(4, [12, 8]):
         kh = [alloc(32), alloc(len(c["w"])), alloc(len(c["x"])), alloc(len(c["o"])), alloc(8)]
         kouts = {}
-        for m in ("ref-kdot.spv", "v2-kdot.spv"):
+        pair = {None: ("ref-kdot.spv", "v2-kdot.spv"), 8: ("ref-kdot8.spv", "v2-kdot8.spv"), 4: ("ref-kdot4.spv", "v2-kdot4.spv")}[c.get("R")]
+        for m in pair:
             for h, b in zip(kh, [c["meta"], c["w"], c["x"], c["o"], c["e"]]):
                 write(h, b)
             cgp.expect(s, f"DISPATCH {pipes[m]} {c['groups'][0]} {c['groups'][1]} 1 " + " ".join(map(str, kh)), re.compile(r"^\d+$"))
             kouts[m] = read(kh[3], len(c["o"]))
-        assert kouts["ref-kdot.spv"] == kouts["v2-kdot.spv"], (c["name"], "differs from glslang's module")
-        out = from_f32(kouts["v2-kdot.spv"])
+        ref, v2 = (kouts[m] for m in pair)
+        assert ref == v2, (c["name"], "differs from glslang's module")
+        out = from_f32(v2)
         assert all(math.isfinite(v) for v in out) and any(v != 0.0 for v in out), (c["name"], "outputs not finite or all zero")
-        err = c["check"](kouts["v2-kdot.spv"]) if c["check"] else None
+        err = c["check"](v2) if c.get("check") else None
         assert err is None or err < 1e-4, (c["name"], err)
         rows[c["name"]] = dict(tensorType=c["tt"], groups=list(c["groups"]), identical=True, maxRelErrVsF64=err,
                                inputsSHA256=hashlib.sha256(c["meta"] + c["w"] + c["x"] + c["e"]).hexdigest(),
-                               outputSHA256=hashlib.sha256(kouts["v2-kdot.spv"]).hexdigest())
+                               outputSHA256=hashlib.sha256(v2).hexdigest())
     line = s.close(0)
     rows["confinement"] = cgp.confined(line, True)
     report["gpu"] = dict(host=[platform.system(), platform.machine(), platform.release()], node=platform.node(), info=info,
