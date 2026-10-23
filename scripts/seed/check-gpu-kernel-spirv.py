@@ -89,7 +89,7 @@ SUITES = {
                  count=23, control="FAIL label inside an open block", refs=True),
     "kir2": dict(modules=[*ENCODE_CHECK, "tools/gpu_kernel_kir2.kotoba", "tools/gpu_kernels_v2.kotoba"],
                  test="tools/gpu_kernel_kir2_test.kotoba", receipt="gpu-kernel-kir2.json", prefix="kir2-",
-                 sizes={"ewise": 1096, "attn-copy-dense": 6488, **{"kir2-nex-" + op + ".spv": n for op, n in zip(NEX_OPS, [3440, 3468, 3516, 1992, 2660, 2452, 2396, 2024, 2704, 1872, 1968, 3088, 3476, 1652, 3888, 5864, 5356, 3604, 4052])},
+                 sizes={"ewise": 1096, "attn-copy-dense": 6488, **{"kir2-nex-" + op + ".spv": n for op, n in zip(NEX_OPS, [3440, 3468, 3516, 1992, 2660, 2452, 2396, 2140, 2704, 1872, 1968, 3088, 3476, 1652, 3988, 5964, 5356, 3604, 4052])},
                         "kir2-dot-rows.spv": 2448, "kir2-kdot-f32-r1.spv": 28776,
                         "kir2-kdot-f32-r8.spv": 25056, "kir2-kdot-f32-r8-rows4.spv": 25056,
                         "kir2-kdot-x8r8.spv": 26028, "kir2-kdot-x8r4.spv": 26028,
@@ -341,12 +341,13 @@ def nex_cases():
                       bufs=bufs(a=lcg(1000, 18), b=lcg(1000, 19), o=bytes(4000)), groups=(4, 1, 1)))
     cases.append(dict(name="conv1d_step", op="conv1d_step", meta=meta(n=500),
                       bufs=bufs(a=lcg(500, 20), b=lcg(2000, 21), s=lcg(1500, 22), o=bytes(2000)), groups=(2, 1, 1)))
-    # softplus takes both arms: a[h] + b[h] > 20 for the first four heads
-    big = [25.0] * 4 + lcg(92, 23)
-    cases.append(dict(name="gate_decay", op="gate_decay", meta=meta(rows=48, aux=48, aux2=48),
-                      bufs=bufs(a=big, b=lcg(48, 24), c=lcg(48, 25), o=bytes(4 * 96)), groups=(1, 1, 1)))
-    cases.append(dict(name="gate_decay2", op="gate_decay2", meta=meta(rows=48, aux=48),
-                      bufs=bufs(a=big[:48], b=lcg(48, 24), c=lcg(48, 25), s=lcg(48, 26), o=bytes(4 * 96)), groups=(1, 1, 1)))
+    # softplus takes both arms: a[h] + b[h] > 20 for the first four heads;
+    # rows, aux (o's offset) and aux2 (a's offset) all differ
+    big = [25.0] * 4 + lcg(104, 23)
+    cases.append(dict(name="gate_decay", op="gate_decay", meta=meta(rows=48, aux=50, aux2=60),
+                      bufs=bufs(a=big, b=lcg(48, 24), c=lcg(48, 25), o=bytes(4 * 98)), groups=(1, 1, 1)))
+    cases.append(dict(name="gate_decay2", op="gate_decay2", meta=meta(rows=48, aux=52),
+                      bufs=bufs(a=big[:48], b=lcg(48, 24), c=lcg(48, 25), s=lcg(48, 26), o=bytes(4 * 100)), groups=(1, 1, 1)))
     x = lcg(512, 27)
     cases.append(dict(name="copy_at dynamic", op="copy_at", meta=meta(n=512, aux2=512, p1=1.0),
                       bufs=bufs(a=x, o=bytes(4 * 8 * 512), i=struct.pack("<4I", 3, 0, 0, 0)), groups=(2, 1, 1),
@@ -378,11 +379,27 @@ def nex_cases():
                       bufs=bufs(a=lcg(512, 39), o=bytes(2048), i=struct.pack("<4I", 7, 0, 0, 0)), groups=(4, 1, 1)))
     cases.append(dict(name="rope_neox normal", op="rope_neox", meta=meta(n=64, rows=2, aux=64, aux2=5, eps=1.0, scale=500000.0, p0=1.0),
                       bufs=bufs(a=lcg(256, 40), b=[1.0 + 0.125 * k for k in range(32)], o=bytes(1024)), groups=(4, 1, 1)))
+    # NEOX at the dynamic position with two heads per token, rope_freqs and a
+    # copied tail; NORMAL with a copied tail
+    cases.append(dict(name="rope_neox neox dynamic rows freqs", op="rope_neox",
+                      meta=meta(n=128, rows=2, aux=64, eps=1.0, scale=10000.0, p1=1.0),
+                      bufs=bufs(a=lcg(512, 120), b=[1.0 + 0.0625 * k for k in range(32)], o=bytes(2048), i=struct.pack("<4I", 9, 0, 0, 0)),
+                      groups=(4, 1, 1)))
+    cases.append(dict(name="rope_neox normal tail", op="rope_neox", meta=meta(n=128, aux=96, aux2=3, scale=10000.0, p0=1.0),
+                      bufs=bufs(a=lcg(512, 121), o=bytes(2048)), groups=(4, 1, 1)))
     # attn_decode: the interleaved output gate at the dynamic position (T =
     # 38, GQA); dense (p0 != 0, s a stub) with P.aux and two rows
     cases.append(dict(name="attn_decode gated", op="attn_decode", meta=meta(n=64, rows=8, aux2=2, eps=-1.0, scale=0.125, p1=1.0),
                       bufs=bufs(a=lcg(512, 41), b=lcg(64 * 2 * 64, 42), c=lcg(64 * 2 * 64, 43), o=bytes(2048), s=lcg(1024, 44),
                                 i=struct.pack("<4I", 37, 0, 0, 0)), groups=(8, 1, 1)))
+    # the interleaved gate on two rows (T = 38, 39); the plain gate (eps >= 0,
+    # p0 == 0: s[qoff + h d + i]) with P.aux and two rows
+    cases.append(dict(name="attn_decode gated two rows", op="attn_decode", meta=meta(n=64, rows=8, aux2=2, eps=-1.0, scale=0.125, p1=1.0),
+                      bufs=bufs(a=lcg(1024, 122), b=lcg(64 * 2 * 64, 42), c=lcg(64 * 2 * 64, 43), o=bytes(4096), s=lcg(2048, 123),
+                                i=struct.pack("<4I", 37, 0, 0, 0)), groups=(8, 2, 1)))
+    cases.append(dict(name="attn_decode plain gate", op="attn_decode", meta=meta(n=64, rows=4, aux=10, aux2=4, eps=1e-6, scale=0.125),
+                      bufs=bufs(a=lcg(512, 124), b=lcg(16 * 4 * 64, 125), c=lcg(16 * 4 * 64, 126), o=bytes(2048), s=lcg(512, 127)),
+                      groups=(4, 2, 1)))
     cases.append(dict(name="attn_decode dense", op="attn_decode", meta=meta(n=128, rows=4, aux=40, aux2=4, eps=1e-6, scale=0.088, p0=1.0),
                       bufs=bufs(a=lcg(2 * 4 * 128, 45), b=lcg(48 * 4 * 128, 46), c=lcg(48 * 4 * 128, 47), o=bytes(4 * 1024)),
                       groups=(4, 2, 1)))
@@ -405,6 +422,23 @@ def nex_cases():
         return err
     cases.append(dict(name="softmax_topk", op="softmax_topk", meta=meta(n=128, aux=8, scale=2.5),
                       bufs=bufs(a=logits, o=bytes(64), i=bytes(64)), groups=(2, 1, 1), check=topk))
+    # k = 4 over n = 200 (fewer experts than invocations)
+    logits2 = lcg(400, 128)
+
+    def topk4(o):
+        ids, out = struct.unpack("<8I", o[6][:32]), from_f32(o[4][:32])
+        err = 0.0
+        for r in range(2):
+            x = logits2[r * 200:(r + 1) * 200]
+            e = [math.exp(v - max(x)) for v in x]
+            p = [v / sum(e) for v in e]
+            pick = sorted(range(200), key=lambda j: (-p[j], j))[:4]
+            if list(ids[r * 4:(r + 1) * 4]) != pick:
+                return 1.0
+            err = max(err, max(abs(out[r * 4 + q] - p[pick[q]] / sum(p[j] for j in pick)) for q in range(4)))
+        return err
+    cases.append(dict(name="softmax_topk k4 n200", op="softmax_topk", meta=meta(n=200, aux=4, scale=1.0),
+                      bufs=bufs(a=logits2, o=bytes(32), i=bytes(32)), groups=(2, 1, 1), check=topk4))
     # argmax: three partials over 10000 logits with ties at the maximum inside
     # a workgroup and across them (the lower index wins), then the final pick
     # (a tie between partials too) into the token buffer
@@ -421,6 +455,15 @@ def nex_cases():
         return 0 if o[5][:12] == f32(want_v) and struct.unpack("<3I", o[6][:12]) == tuple(want_i) else 1
     cases.append(dict(name="argmax_partial", op="argmax_partial", meta=meta(n=10000),
                       bufs=bufs(a=lg, s=bytes(16), i=bytes(16)), groups=(3, 1, 1), check=partial))
+    # the token-buffer guard at its boundary: pos + 1 == aux2 writes b[5];
+    # inside the prompt (aux2 = 6) and with a static position nothing is written
+    for label, aux2, p1, want_b in (("at the prompt's end", 5, 1.0, bytes(20) + struct.pack("<I", 4200) + bytes(8)),
+                                    ("inside the prompt", 6, 1.0, bytes(32)), ("static position", 2, 0.0, bytes(32))):
+        cases.append(dict(name="argmax_final " + label, op="argmax_final", meta=meta(aux=3, aux2=aux2, p1=p1),
+                          bufs=bufs(b=bytes(32), c=struct.pack("<I", 4) + bytes(12), o=bytes(16), s=f32([0.5, 0.9, 0.9, 0.0]),
+                                    i=struct.pack("<4I", 10, 4200, 9000, 0)), groups=(1, 1, 1),
+                          check=lambda o, want_b=want_b: 0 if (struct.unpack("<4I", o[6]) == (10, 4200, 9000, 4200)
+                                                               and o[2] == want_b) else 1))
     cases.append(dict(name="argmax_final", op="argmax_final", meta=meta(aux=3, aux2=2, p1=1.0),
                       bufs=bufs(b=bytes(32), c=struct.pack("<I", 4) + bytes(12), o=bytes(16), s=f32([0.5, 0.9, 0.9, 0.0]),
                                 i=struct.pack("<4I", 10, 4200, 9000, 0)), groups=(1, 1, 1),
