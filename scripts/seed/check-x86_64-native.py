@@ -16,7 +16,9 @@ emulation. Records, natively:
 5. the scalar ELF suite and the aiueos object checks with X2;
 6. in every tier, ADR 0371's checks that need a native x86_64 kernel, with
    X2 (ADR0371 below): the static launcher (check-static-launcher.py,
-   --format launcher, step 4).
+   --format launcher, step 4) and the platform-linked image
+   (check-platform-linked.py: libc-only images run on this host's glibc, owner
+   decision 2026-10-22; step 5).
 
 --reuse DIR / --store DIR: content-addressed reuse as in selfhost-bootstrap.py
 (scripts/seed/content_reuse.py). Only calls made through reuse.run_cached may
@@ -38,7 +40,7 @@ from content_reuse import Runs  # noqa: E402 (scripts/seed)
 
 ROOT = Path(__file__).resolve().parents[2]
 # ADR 0371's native checks: every tier (a minute or two each)
-ADR0371 = [("check-static-launcher.py", [])]
+ADR0371 = [("check-static-launcher.py", []), ("check-platform-linked.py", ["all"])]
 
 
 def pin(p):

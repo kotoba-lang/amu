@@ -1,42 +1,76 @@
 {
   "schema": "amu.seed.static-root.v1",
   "image": {
-    "bytes": 3105280,
-    "sha256": "710b6ae6e7b2887dee317f3cfe0e25c176166ddae9005409c5345311a36d20ae"
+    "bytes": 3121664,
+    "sha256": "094590b650b0293b33e3aaf7113f3cadb5461573a5f974cc6a875d4260df11fb"
   },
   "target": "aarch64-linux",
   "format": "packed",
   "sourceManifest": "seed/FULL-MANIFEST",
   "sourceUnity": {
-    "bytes": 3118091,
-    "sha256": "ccab911de7f171d02bc187e3751d066cb64fda5a2770fc28c5d4ef82f877014b"
+    "bytes": 3134814,
+    "sha256": "27325238af83aa19856c53213ccaa0db8cdd670a77ed84412699629b5b268ca2"
   },
-  "sourceCommitBase": "3aab6ce03bb5be09914d0acb75936db71511d2a9",
+  "sourceCommitBase": "60c0f42783e4844ce05cb40e9a2ceda5d26598bf",
   "producedBy": {
-    "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt and packed itself to F2 = F1 (= this image). Re-pinned because this source adds --format launcher (ADR 0371 step 4, context word 408 = 4): the launcher runtime text and the format plumbing in seed/70, 75, 76, 77 and 80.",
+    "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt and packed itself to F2 = F1 (= this image). Re-pinned because this source adds --format platform-linked (ADR 0371 step 5): seed/78-x86_64-platform (now also in FULL-MANIFEST, dispatched by seed/78-full-entry), the platform runtime text of seed/76, intrinsic 9 and the platform API rule of seed/75, and the dispatch in seed/73.",
     "date": "2026-10-23",
-    "previousRoot": "61ee2d3870612c7f8ed6bd2d25f40c8cc68b26d2b5b5336204b1ff2651fe60bb",
+    "previousRoot": "710b6ae6e7b2887dee317f3cfe0e25c176166ddae9005409c5345311a36d20ae",
     "chain": {
       "F1.kseed": {
-        "bytes": 2896875,
-        "sha256": "9cf26ca20865c7fcabddaf76996c883ae9ee7123cb506cf96c032fdf147d2b3a"
+        "bytes": 2913027,
+        "sha256": "14e348bd43dc8befcf0993aaa2bab17ef27a95b1f2071a465528bbbd9462ef44"
       },
       "F1.elf": {
-        "bytes": 3105280,
-        "sha256": "710b6ae6e7b2887dee317f3cfe0e25c176166ddae9005409c5345311a36d20ae"
+        "bytes": 3121664,
+        "sha256": "094590b650b0293b33e3aaf7113f3cadb5461573a5f974cc6a875d4260df11fb"
       },
       "F2.kseed": {
-        "bytes": 2896875,
-        "sha256": "9cf26ca20865c7fcabddaf76996c883ae9ee7123cb506cf96c032fdf147d2b3a"
+        "bytes": 2913027,
+        "sha256": "14e348bd43dc8befcf0993aaa2bab17ef27a95b1f2071a465528bbbd9462ef44"
       },
       "F2.elf": {
-        "bytes": 3105280,
-        "sha256": "710b6ae6e7b2887dee317f3cfe0e25c176166ddae9005409c5345311a36d20ae"
+        "bytes": 3121664,
+        "sha256": "094590b650b0293b33e3aaf7113f3cadb5461573a5f974cc6a875d4260df11fb"
       }
     }
   },
-  "verification": "scripts/seed/selfhost-bootstrap.py --tier pr on arm64 Linux: F1 = F2 from the previous root, F1's core route gives the adoption image, the runtime boundary corpus (launcher format included), the 24 cases and hardening; check-static-launcher.py against F1. CI re-runs the tier from this root (F -> F' = root).",
+  "verification": "scripts/seed/selfhost-bootstrap.py --tier pr on arm64 Linux: F1 = F2 from the previous root, F1's core route gives the adoption image, the runtime boundary corpus, the 24 cases and hardening; check-platform-linked.py with F1 (build on arm64, run on x86_64 glibc under qemu-user; natively in the qualify-x86_64 CI job). CI re-runs the tier from this root (F -> F' = root).",
   "history": [
+    {
+      "image": {
+        "bytes": 3105280,
+        "sha256": "710b6ae6e7b2887dee317f3cfe0e25c176166ddae9005409c5345311a36d20ae"
+      },
+      "sourceUnity": {
+        "bytes": 3118091,
+        "sha256": "ccab911de7f171d02bc187e3751d066cb64fda5a2770fc28c5d4ef82f877014b"
+      },
+      "sourceCommitBase": "3aab6ce03bb5be09914d0acb75936db71511d2a9",
+      "producedBy": {
+        "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt and packed itself to F2 = F1 (= this image). Re-pinned because this source adds --format launcher (ADR 0371 step 4, context word 408 = 4): the launcher runtime text and the format plumbing in seed/70, 75, 76, 77 and 80.",
+        "date": "2026-10-23",
+        "previousRoot": "61ee2d3870612c7f8ed6bd2d25f40c8cc68b26d2b5b5336204b1ff2651fe60bb",
+        "chain": {
+          "F1.kseed": {
+            "bytes": 2896875,
+            "sha256": "9cf26ca20865c7fcabddaf76996c883ae9ee7123cb506cf96c032fdf147d2b3a"
+          },
+          "F1.elf": {
+            "bytes": 3105280,
+            "sha256": "710b6ae6e7b2887dee317f3cfe0e25c176166ddae9005409c5345311a36d20ae"
+          },
+          "F2.kseed": {
+            "bytes": 2896875,
+            "sha256": "9cf26ca20865c7fcabddaf76996c883ae9ee7123cb506cf96c032fdf147d2b3a"
+          },
+          "F2.elf": {
+            "bytes": 3105280,
+            "sha256": "710b6ae6e7b2887dee317f3cfe0e25c176166ddae9005409c5345311a36d20ae"
+          }
+        }
+      }
+    },
     {
       "image": {
         "bytes": 3039744,

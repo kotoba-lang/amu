@@ -1,0 +1,162 @@
+;; x86_64-linux platform-linked image (--format platform-linked, mode 3,
+;; ADR 0371 step 5). The code and context of a static image (seed/75; runtime
+;; text xs-rt-core then xs-rt-pstart of seed/76) in a dynamically linked ELF64
+;; ET_EXEC that the host's dynamic linker loads. Only the GPU provider is built
+;; this way (ADR 0371 Decision 1); it is never part of the compiler or selfhost
+;; closure. Linux selfhost closure only; dispatched by seed/73.
+;;
+;; Layout (address = 0x400000 + file offset):
+;;   0         ELF header and 7 program headers: PHDR, INTERP, LOAD RX
+;;             [0, 4096 + code), LOAD RW [D, D + 4608) memsz 4096 + 65536,
+;;             DYNAMIC [D, ...), GNU_RELRO [D, D + 4096), GNU_STACK (RW)
+;;   456       the interpreter path, then the hash table, symbols, strings and
+;;             relocations
+;;   4096      _start, the functions and the literal pool
+;;   D         the dynamic section; at D + 2048 the GOT, 8 bytes per import;
+;;             read-only after relocation (RELRO)
+;;   D + 4096  the context and globals, as in the static image (cell 195)
+;; Imports are a fixed table and nothing else is imported:
+;;   0 __libc_start_main      libc.so.6        always (_start calls it)
+;;   1 vkGetInstanceProcAddr  libvulkan.so.1   only when the program calls
+;;                                             kxrt-p-vkgipa (cell 204)
+;; R_X86_64_GLOB_DAT relocations only, bound at load (DF_BIND_NOW, DF_1_NOW);
+;; no PLT, no lazy binding, no text relocations. The hash table is the
+;; smallest valid one (one empty bucket): nothing is exported.
+
+(defn- xp-interp [] :string "/lib64/ld-linux-x86-64.so.2")
+(def XP-IMPORTS 2)
+(defn- xp-import-name [k :i64] :string (case k 0 "__libc_start_main" 1 "vkGetInstanceProcAddr" ""))
+(defn- xp-import-lib [k :i64] :i64 (case k 0 0 1 1 -1))
+(defn- xp-lib-name [l :i64] :string (case l 0 "libc.so.6" 1 "libvulkan.so.1" ""))
+(defn- xp-used? [M :vector-i64 k :i64] :bool (or (= k 0) (and (= k 1) (= (vector-at M 204) 1))))
+(defn- xp-lib-used? [M :vector-i64 l :i64] :bool
+  (loop [k 0] (cond (= k XP-IMPORTS) false (and (xp-used? M k) (= (xp-import-lib k) l)) true :else (recur (inc k)))))
+;; symbol index of import k (1-based among the used imports)
+(defn- xp-sym [M :vector-i64 k :i64] :i64
+  (loop [j 0 n 0] (if (= j k) (inc n) (recur (inc j) (if (xp-used? M j) (inc n) n)))))
+(defn- xp-nsym [M :vector-i64] :i64 (xp-sym M XP-IMPORTS))
+
+;; ---- the header page ----
+(defn- xp-al8 [n :i64] :i64 (bit-and (+ n 7) -8))
+(defn- xp-str-at [M :vector-i64 s :string] :vector-i64
+  (let [n (string-length s)]
+    (loop [i 0 V M] (if (= i n) (xg-out V 0 1) (recur (inc i) (xg-out V (string-code-point-at s i) 1))))))
+;; dynstr: NUL, the used libraries, the used import names
+(defn- xp-lib-off [M :vector-i64 l :i64] :i64
+  (loop [j 0 o 1] (if (= j l) o (recur (inc j) (if (xp-lib-used? M j) (+ o (inc (string-length (xp-lib-name j)))) o)))))
+(defn- xp-name-off [M :vector-i64 k :i64] :i64
+  (loop [j 0 o (xp-lib-off M 2)] (if (= j k) o (recur (inc j) (if (xp-used? M j) (+ o (inc (string-length (xp-import-name j)))) o)))))
+(defn- xp-strsz [M :vector-i64] :i64 (xp-name-off M XP-IMPORTS))
+;; offsets in the header page
+(defn- xp-hash-at [] :i64 488)
+(defn- xp-sym-at [M :vector-i64] :i64 (xp-al8 (+ (xp-hash-at) (* 4 (+ 3 (xp-nsym M))))))
+(defn- xp-str-at-off [M :vector-i64] :i64 (+ (xp-sym-at M) (* 24 (xp-nsym M))))
+(defn- xp-rela-at [M :vector-i64] :i64 (xp-al8 (+ (xp-str-at-off M) (xp-strsz M))))
+(defn- xp-nrela [M :vector-i64] :i64 (dec (xp-nsym M)))
+(defn- xp-ndyn [M :vector-i64] :i64
+  (+ 11 (loop [l 0 n 0] (if (= l 2) n (recur (inc l) (if (xp-lib-used? M l) (inc n) n))))))
+
+(defn- xp-elf-header [M :vector-i64] :vector-i64
+  (-> M (xg-out 0x00010102464c457f 8) (xg-out 0 8)
+      (xg-out 2 2) (xg-out 62 2) (xg-out 1 4) (xg-out 0x401000 8)
+      (xg-out 64 8) (xg-out 0 8) (xg-out 0 4) (xg-out 64 2) (xg-out 56 2)
+      (xg-out 7 2) (xg-out 0 2) (xg-out 0 2) (xg-out 0 2)))
+(defn- xp-phdr [M :vector-i64 type :i64 flags :i64 off :i64 filesz :i64 memsz :i64 align :i64] :vector-i64
+  (-> M (xg-out type 4) (xg-out flags 4) (xg-out off 8) (xg-out (+ 0x400000 off) 8)
+      (xg-out (+ 0x400000 off) 8) (xg-out filesz 8) (xg-out memsz 8) (xg-out align 8)))
+(defn- xp-phdrs [M :vector-i64] :vector-i64
+  (let [d (- (xg-get M 3) 4096) dyn (* 16 (xp-ndyn M))]
+    (-> M (xp-phdr 6 4 64 392 392 8)                          ; PT_PHDR
+          (xp-phdr 3 4 456 28 28 1)                           ; PT_INTERP
+          (xg-elf-rx)                                         ; PT_LOAD RX
+          (xp-phdr 1 6 d (+ 4096 XS-CTX-BYTES) (+ 4096 XS-RW-BYTES) 4096)   ; PT_LOAD RW
+          (xp-phdr 2 6 d dyn dyn 8)                           ; PT_DYNAMIC
+          (xp-phdr 0x6474e552 4 d 4096 4096 1)                ; PT_GNU_RELRO
+          (xg-elf-stack))))
+(defn- xp-hash [M :vector-i64] :vector-i64
+  (let [n (xp-nsym M)]
+    (loop [i 0 V (-> M (xg-out 1 4) (xg-out n 4) (xg-out 0 4))] (if (= i n) V (recur (inc i) (xg-out V 0 4))))))
+(defn- xp-symtab [M :vector-i64] :vector-i64
+  (loop [k 0 V (-> M (xg-out 0 8) (xg-out 0 8) (xg-out 0 8))]
+    (cond (= k XP-IMPORTS) V
+          (xp-used? M k) (recur (inc k) (-> V (xg-out (xp-name-off M k) 4) (xg-out 0x12 1) (xg-out 0 1) (xg-out 0 2) (xg-out 0 8) (xg-out 0 8)))
+          :else (recur (inc k) V))))
+(defn- xp-strtab [M :vector-i64] :vector-i64
+  (let [a (loop [l 0 V (xg-out M 0 1)] (cond (= l 2) V (xp-lib-used? M l) (recur (inc l) (xp-str-at V (xp-lib-name l))) :else (recur (inc l) V)))]
+    (loop [k 0 V a] (cond (= k XP-IMPORTS) V (xp-used? M k) (recur (inc k) (xp-str-at V (xp-import-name k))) :else (recur (inc k) V)))))
+;; GLOB_DAT (6) at GOT[k] for each used import
+(defn- xp-relas [M :vector-i64] :vector-i64
+  (let [got (+ 0x400000 (- (xg-get M 3) 2048))]
+    (loop [k 0 V M]
+      (cond (= k XP-IMPORTS) V
+            (xp-used? M k) (recur (inc k) (-> V (xg-out (+ got (* 8 k)) 8) (xg-out (bit-or (i64-shift-left (xp-sym M k) 32) 6) 8) (xg-out 0 8)))
+            :else (recur (inc k) V)))))
+(defn- xp-dyn [M :vector-i64 tag :i64 v :i64] :vector-i64 (-> M (xg-out tag 8) (xg-out v 8)))
+(defn- xp-dynamic [M :vector-i64] :vector-i64
+  (let [base 0x400000
+        a (loop [l 0 V M] (cond (= l 2) V (xp-lib-used? M l) (recur (inc l) (xp-dyn V 1 (xp-lib-off M l))) :else (recur (inc l) V)))]
+    (-> a (xp-dyn 4 (+ base (xp-hash-at))) (xp-dyn 5 (+ base (xp-str-at-off M))) (xp-dyn 6 (+ base (xp-sym-at M)))
+          (xp-dyn 10 (xp-strsz M)) (xp-dyn 11 24)
+          (xp-dyn 7 (+ base (xp-rela-at M))) (xp-dyn 8 (* 24 (xp-nrela M))) (xp-dyn 9 24)
+          (xp-dyn 30 8) (xp-dyn 0x6ffffffb 1) (xp-dyn 0 0))))
+
+;; _start (the SysV entry): rtld_fini in rdx, argc and argv on the stack;
+;; __libc_start_main(kxrt-start, argc, argv, 0, 0, rtld_fini, stack_end)
+;; through GOT[0] (2048 bytes below the context), as glibc's start.S does.
+(defn- xp-entry [M :vector-i64] :vector-i64
+  (-> M (xg-bytes 0xed31 2) (xg-bytes 0xd18949 3) (xg-byte 0x5e) (xg-bytes 0xe28948 3)
+      (xg-bytes 0xf0e48348 4) (xg-byte 0x50) (xg-byte 0x54) (xg-bytes 0xc03145 3) (xg-bytes 0xc931 2)
+      (xg-rel 0x3d8d48 3 1 (vector-at M 199))
+      (xg-rel 0x058d48 3 3 0)
+      (xg-bytes 0x90ff 2) (xg-bytes -2048 4)
+      (xg-bytes 0x0b0f 2)))
+
+(defn- xp-elf [M :vector-i64] :vector-i64
+  (let [d (- (xg-get M 3) 4096)]
+    (-> M (mem-set MM-OUT-N 1) (xp-elf-header) (xp-phdrs)
+        (xp-str-at (xp-interp)) (xg-pad (xp-hash-at)) (xp-hash) (xg-pad (xp-sym-at M)) (xp-symtab)
+        (xp-strtab) (xg-pad (xp-rela-at M)) (xp-relas)
+        (xg-pad 4096) (xg-out-code 1) (xg-pad d) (xp-dynamic) (xg-pad (+ d 2048 (* 8 XP-IMPORTS)))
+        (xg-pad (xg-get M 3)) (xs-out-ctx 0))))
+
+;; The program (guest) may call runtime functions named kxrt-p- only, the
+;; platform API; a call of kxrt-p-vkgipa sets cell 204 (import 1).
+(defn- xp-name [M :vector-i64 S :string f :i64] :string
+  (let [sb (+ MM-SYM-BASE (* (xg-f M f FF-SYM) MM-SYM-W))]
+    (string-substring S (vector-at M (+ sb SF-START)) (vector-at M (+ sb SF-END)))))
+(defn- xp-check-api [M :vector-i64 S :string i :i64 f :i64] :vector-i64
+  (if (or (not= (vector-at M MM-ERR) 0) (= i (vector-at M MM-SIR-N))) M
+    (let [op (xg-si M i IF-OP) a (xg-si M i IF-A) g (if (= op OP-FN) a f)]
+      (if (and (= op OP-CALL) (not (xs-rt? M g)) (xs-rt? M a))
+        (let [n (xp-name M S a)]
+          (cond (not (and (> (string-length n) 7) (string=? (string-substring n 0 7) "kxrt-p-"))) (xg-err M 7101 op)
+                (string=? n "kxrt-p-vkgipa") (xp-check-api (mem-set M 204 1) S (inc i) g)
+                :else (xp-check-api M S (inc i) g)))
+        (xp-check-api M S (inc i) g)))))
+(defn- xp-build [M :vector-i64 S :string rt :i64] :vector-i64
+  (let [a (-> M (xs-clear 197) (mem-set 197 rt) (xg-set 0 0) (xg-set 1 0) (xg-set 2 3) (xg-set 4 1)
+              (xg-check-fns S 1) (xg-check-sir 1) (xr-check 1) (xs-scan S 1) (xs-check 1 0) (xp-check-api S 1 0))]
+    (cond (not= (vector-at a MM-ERR) 0) a
+          (= (xg-get a 1) 0) (xg-err a 7102 0)
+          (or (= (vector-at a 199) 0) (= (vector-at a 198) 0) (= (vector-at a 200) 0)) (xg-err a 7102 1)
+          :else (let [g (-> a (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1) (xg-index-labels 1)
+                            (xp-entry) (xg-code 1) (xr-pool 1))
+                      d (bit-and (+ 8191 (xg-pos g)) -4096)]
+                  (if (>= (+ d 4096 XS-CTX-BYTES 1) MM-OUT-CAP) (xg-err g 7104 d)
+                    (xp-elf (xg-fix (xg-set g 3 (+ d 4096)) 1)))))))
+(defn- xp-write [M :vector-i64 out :string] :i64
+  (let [n (dec (vector-at M MM-OUT-N)) written (out-write-v M out (+ MM-OUT-BASE 1) n)
+        w (io-out (string-concat "{:ok true, :target :x86_64-linux, :format :platform-linked, :code-bytes "
+                   (string-concat (mem-u2dec (xg-pos M)) (string-concat ", :bytes " (string-concat (mem-u2dec n)
+                     (string-concat ", :libvulkan " (string-concat (if (= (vector-at M 204) 1) "true" "false") "}\n")))))))]
+    (if (= (io-exists out) 1) 0 (drv-fail0 E-WRITE))))
+;; compile SRC --target x86_64-linux --output NEW --format platform-linked
+(defn- xp-command [] :i64
+  (let [src (io-arg 1) out (io-arg 5)]
+    (cond (or (not (string=? (io-arg 4) "--output")) (= (string-length out) 0) (= (io-exists out) 1))
+            (drv-fail0 E-USAGE)
+          (= (io-exists src) 0) (drv-fail0 E-READ)
+          :else (let [original (drv-read src) guest (string-concat original (ck-r6b-lib original))
+                      s (string-concat guest (string-concat (xs-rt-core) (xs-rt-pstart)))
+                      m (xp-build (xg-front s) s (string-length guest))]
+                  (if (not= (vector-at m MM-ERR) 0) (xg-report m src out) (xp-write m out))))))
