@@ -251,7 +251,8 @@ targets, an empty signal mask, PR_SET_NO_NEW_PRIVS, then
 `execveat(111, "", argv, envp, AT_EMPTY_PATH)`; a failure writes its stage
 byte (1 dup, 2 target, 3 no_new_privs, 4 exec) on the close-on-exec status
 pipe, whose end of file means the exec happened. The provider (argv:
-PROVIDER and its ARGs; empty environment) gets fd 0 requests, 1 answers,
+PROVIDER and its ARGs; the environment MESA_SHADER_CACHE_DISABLE=true
+VK_LOADER_LAYERS_DISABLE=~all~ and nothing else) gets fd 0 requests, 1 answers,
 2 the launcher's stderr, 3 the grant memfd, 4 its report pipe; the guest
 (argv: GUEST and its ARGs) gets 0 the launcher's stdin, 1 a pipe to the
 launcher, 2 the launcher's stderr, and with a provider 3 requests and

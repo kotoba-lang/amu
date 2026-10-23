@@ -1530,7 +1530,8 @@
 ;; KEXE_STRUCTURED_REPORT=1, KEXE_WALL_SECONDS, KEXE_CAP_RESOURCES_42=3,4 with a
 ;; provider, and the launcher own KEXE_FUEL, KEXE_STACK_BYTES, KEXE_CPU_SECONDS,
 ;; KEXE_SECCOMP, KEXE_CAP_RESOURCES_35, KEXE_ARENA_USE, KEXE_SANDBOX_PROBE when
-;; set. The provider environment is empty. The grant is opaque here: hashed and
+;; set. The provider environment is fixed: MESA_SHADER_CACHE_DISABLE=true and
+;; VK_LOADER_LAYERS_DISABLE=~all~ (kxrt-l-penv). The grant is opaque here: hashed and
 ;; passed on; the provider reads and enforces it. Once both have executed, the
 ;; launcher limits and seals itself, relays the guest stdout, and waits until
 ;; both exit. At WALL seconds it kills the guest; the provider gets 5 seconds
@@ -1557,7 +1558,8 @@
 ;; 8512 pollfds, 8576 timespec, 8592 wait status, 8600 pipe fds, 8608 empty
 ;; signal set, 8616 status byte, 8704 input hash, 9600.. digests (launcher,
 ;; guest, provider, grant, stdout; 80 bytes apart), 10240 provider fd pairs,
-;; 10304 guest fd pairs, 10496 stdout hash, 12288 stdout tail, 20480 fact
+;; 10304 guest fd pairs, 10368 provider environment text, 10432 provider
+;; envp, 10496 stdout hash, 12288 stdout tail, 20480 fact
 ;; text, 36864 fact pointers, 40960 read buffer, 106496 provider report.
 (defn- kxrt-l [] :i64 (kxrt-gl 16384))
 (defn- kxrt-l-fail [code :i64 who :i64] :i64
@@ -1725,6 +1727,14 @@
         c (kxrt-copy (+ b j) v vn) z (kxrt-store8 (+ b j vn) 0)
         y (kxrt-store64 (+ b 8192 (* 8 e)) (+ b i))]
     (+ j vn 1)))
+;; the provider environment, fixed and never inherited (ADR 0371 Decision 5):
+;; MESA_SHADER_CACHE_DISABLE=true VK_LOADER_LAYERS_DISABLE=~all~ at L+10368 and
+;; L+10400, envp at L+10432
+(defn- kxrt-l-penv [b :i64] :i64
+  (let [m (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b 10368 0x4148535f4153454d 8) 0x484341435f524544 8) 0x4c42415349445f45 8) 0x657572743d45 7)
+        v (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b 10400 0x4544414f4c5f4b56 8) 0x53524559414c5f52 8) 0x454c42415349445f 8) 0x7e6c6c617e3d 7)
+        e0 (kxrt-store64 (+ b 10432) (+ b 10368)) e1 (kxrt-store64 (+ b 10440) (+ b 10400)) e2 (kxrt-store64 (+ b 10448) 0)]
+    (+ b 10432)))
 ;; the launcher own entry NAME=..., when set, goes to envp slot e
 (defn- kxrt-l-pass [e :i64 w0 :i64 w1 :i64 w2 :i64 n :i64] :i64
   (let [v (kxrt-env w0 w1 w2 n)]
@@ -1961,7 +1971,7 @@
                          a (kxrt-l-pair m 0 (kxrt-gl 16592) 0) c (kxrt-l-pair m 1 (kxrt-gl 16616) 1)
                          e (kxrt-l-pair m 2 (kxrt-gl 16672) 3) f (kxrt-l-pair m 3 (kxrt-gl 16632) 4)
                          z (kxrt-store64 (+ (kxrt-gl 80) (* 8 d)) 0)]
-                     (kxrt-l-spawn 2 m 4 (kxrt-gl 16664) (+ (kxrt-gl 80) 32) (+ b 8448))) 0)
+                     (kxrt-l-spawn 2 m 4 (kxrt-gl 16664) (+ (kxrt-gl 80) 32) (kxrt-l-penv b))) 0)
         ge (kxrt-l-genv allow (kxrt-arg 1) gpu)
         gv (let [m (+ b 10304) a (kxrt-l-pair m 0 (kxrt-gl 16584) 1)
                  c (if gpu (let [x (kxrt-l-pair m 1 (kxrt-gl 16600) 3)] (kxrt-l-pair m 2 (kxrt-gl 16608) 4)) 0)]

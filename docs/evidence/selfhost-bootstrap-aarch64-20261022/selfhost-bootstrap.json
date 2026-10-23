@@ -16,48 +16,82 @@
   ],
   "root": {
     "image": {
-      "bytes": 3125760,
-      "sha256": "c35a54ead02aaee8e3240a611b54d8a5fe821c7007d80dc70c94b053d6c8dec2"
+      "bytes": 3129856,
+      "sha256": "d1410bc589c511c7dc7dd66d8ddaf93f0cc6fc09ad04df1fa4c71b7e6676b276"
     },
     "receipt": {
       "schema": "amu.seed.static-root.v1",
       "image": {
-        "bytes": 3125760,
-        "sha256": "c35a54ead02aaee8e3240a611b54d8a5fe821c7007d80dc70c94b053d6c8dec2"
+        "bytes": 3129856,
+        "sha256": "d1410bc589c511c7dc7dd66d8ddaf93f0cc6fc09ad04df1fa4c71b7e6676b276"
       },
       "target": "aarch64-linux",
       "format": "packed",
       "sourceManifest": "seed/FULL-MANIFEST",
       "sourceUnity": {
-        "bytes": 3141039,
-        "sha256": "cd27f909d4f1d100f28da0ba326d1870cd18609c5dac17d70c8bd66f1210b26c"
+        "bytes": 3142615,
+        "sha256": "c94d399a05a4f692188d87d8c7ff01ed2cbadaad604d5f73d7cd77adf4942b29"
       },
-      "sourceCommitBase": "60c0f42783e4844ce05cb40e9a2ceda5d26598bf",
+      "sourceCommitBase": "b09d9635cf13b48d52dfea4ad62951bb22d8545e",
       "producedBy": {
-        "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt and packed itself to F2 = F1 (= this image). Re-pinned because this source adds the GPU provider's platform API (ADR 0371 step 6): kxrt-p- wrappers in the platform runtime text of seed/76 (clock, SIGPIPE, read-only files, unmap, uname, streamed SHA-256, Landlock, the Decision 5 seal) and its scratch page.",
+        "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt and packed itself to F2 = F1 (= this image). Re-pinned because this source gives the launcher's provider a fixed environment (ADR 0371 step 6): MESA_SHADER_CACHE_DISABLE=true and VK_LOADER_LAYERS_DISABLE=~all~ in the launcher runtime text of seed/76 and seed/77.",
         "date": "2026-10-23",
-        "previousRoot": "094590b650b0293b33e3aaf7113f3cadb5461573a5f974cc6a875d4260df11fb",
+        "previousRoot": "c35a54ead02aaee8e3240a611b54d8a5fe821c7007d80dc70c94b053d6c8dec2",
         "chain": {
           "F1.kseed": {
-            "bytes": 2919251,
-            "sha256": "f20cdae67ebf17bd08f614d504bd60f98162cef66a4ecc189355eddf0290b2b3"
+            "bytes": 2920827,
+            "sha256": "8a8a28bf82ce15fc589997cd76348cec8d93e3c2fab1bd4cd03485220f1bdf94"
           },
           "F1.elf": {
-            "bytes": 3125760,
-            "sha256": "c35a54ead02aaee8e3240a611b54d8a5fe821c7007d80dc70c94b053d6c8dec2"
+            "bytes": 3129856,
+            "sha256": "d1410bc589c511c7dc7dd66d8ddaf93f0cc6fc09ad04df1fa4c71b7e6676b276"
           },
           "F2.kseed": {
-            "bytes": 2919251,
-            "sha256": "f20cdae67ebf17bd08f614d504bd60f98162cef66a4ecc189355eddf0290b2b3"
+            "bytes": 2920827,
+            "sha256": "8a8a28bf82ce15fc589997cd76348cec8d93e3c2fab1bd4cd03485220f1bdf94"
           },
           "F2.elf": {
-            "bytes": 3125760,
-            "sha256": "c35a54ead02aaee8e3240a611b54d8a5fe821c7007d80dc70c94b053d6c8dec2"
+            "bytes": 3129856,
+            "sha256": "d1410bc589c511c7dc7dd66d8ddaf93f0cc6fc09ad04df1fa4c71b7e6676b276"
           }
         }
       },
-      "verification": "scripts/seed/selfhost-bootstrap.py --tier pr on arm64 Linux: F1 = F2 from the previous root, F1's core route gives the adoption image, the runtime boundary corpus, the 24 cases and hardening; check-platform-linked.py with F1 (build on arm64, run on x86_64 glibc under qemu-user; confinement natively in the qualify-x86_64 CI job). CI re-runs the tier from this root (F -> F' = root).",
+      "verification": "scripts/seed/selfhost-bootstrap.py --tier pr on arm64 Linux: F1 = F2 from the previous root, F1's core route gives the adoption image, the runtime boundary corpus, the 24 cases and hardening; check-static-launcher.py with F1 (the scripted provider reports its environment). CI re-runs the tier from this root (F -> F' = root).",
       "history": [
+        {
+          "image": {
+            "bytes": 3125760,
+            "sha256": "c35a54ead02aaee8e3240a611b54d8a5fe821c7007d80dc70c94b053d6c8dec2"
+          },
+          "sourceUnity": {
+            "bytes": 3141039,
+            "sha256": "cd27f909d4f1d100f28da0ba326d1870cd18609c5dac17d70c8bd66f1210b26c"
+          },
+          "sourceCommitBase": "60c0f42783e4844ce05cb40e9a2ceda5d26598bf",
+          "producedBy": {
+            "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt and packed itself to F2 = F1 (= this image). Re-pinned because this source adds the GPU provider's platform API (ADR 0371 step 6): kxrt-p- wrappers in the platform runtime text of seed/76 (clock, SIGPIPE, read-only files, unmap, uname, streamed SHA-256, Landlock, the Decision 5 seal) and its scratch page.",
+            "date": "2026-10-23",
+            "previousRoot": "094590b650b0293b33e3aaf7113f3cadb5461573a5f974cc6a875d4260df11fb",
+            "chain": {
+              "F1.kseed": {
+                "bytes": 2919251,
+                "sha256": "f20cdae67ebf17bd08f614d504bd60f98162cef66a4ecc189355eddf0290b2b3"
+              },
+              "F1.elf": {
+                "bytes": 3125760,
+                "sha256": "c35a54ead02aaee8e3240a611b54d8a5fe821c7007d80dc70c94b053d6c8dec2"
+              },
+              "F2.kseed": {
+                "bytes": 2919251,
+                "sha256": "f20cdae67ebf17bd08f614d504bd60f98162cef66a4ecc189355eddf0290b2b3"
+              },
+              "F2.elf": {
+                "bytes": 3125760,
+                "sha256": "c35a54ead02aaee8e3240a611b54d8a5fe821c7007d80dc70c94b053d6c8dec2"
+              }
+            }
+          }
+        },
         {
           "image": {
             "bytes": 3121664,
@@ -515,12 +549,12 @@
         "sha256": "c2a660cb71dfaa12580ce2926591b54ea9faf19d791810861c414434d7591bea"
       },
       "seed/76-x86_64-static-rt.kotoba": {
-        "bytes": 139528,
-        "sha256": "0add684bc3ee609544591c91adaa77fd6e64212e5be621261688ba1590932c25"
+        "bytes": 140316,
+        "sha256": "c23424bd9948f04ddfe0496134aafd656bf89c93b45d17af2fe2e18087a70b82"
       },
       "seed/77-aarch64-static-rt.kotoba": {
-        "bytes": 129949,
-        "sha256": "12f19a54289a4a8a95bbe63208cfd038e024e70fce72351054cb65d3ffccb190"
+        "bytes": 130737,
+        "sha256": "46de035a0c6e822cc7f4bbb005d3671b3df473d5d373a46bcecfbcac9977c73d"
       },
       "seed/78-x86_64-platform.kotoba": {
         "bytes": 10690,
@@ -593,12 +627,12 @@
         "sha256": "c2a660cb71dfaa12580ce2926591b54ea9faf19d791810861c414434d7591bea"
       },
       "seed/76-x86_64-static-rt.kotoba": {
-        "bytes": 139528,
-        "sha256": "0add684bc3ee609544591c91adaa77fd6e64212e5be621261688ba1590932c25"
+        "bytes": 140316,
+        "sha256": "c23424bd9948f04ddfe0496134aafd656bf89c93b45d17af2fe2e18087a70b82"
       },
       "seed/77-aarch64-static-rt.kotoba": {
-        "bytes": 129949,
-        "sha256": "12f19a54289a4a8a95bbe63208cfd038e024e70fce72351054cb65d3ffccb190"
+        "bytes": 130737,
+        "sha256": "46de035a0c6e822cc7f4bbb005d3671b3df473d5d373a46bcecfbcac9977c73d"
       },
       "seed/78-x86_64-platform.kotoba": {
         "bytes": 10690,
@@ -622,12 +656,12 @@
     {
       "name": "F1",
       "container": {
-        "bytes": 2919251,
-        "sha256": "f20cdae67ebf17bd08f614d504bd60f98162cef66a4ecc189355eddf0290b2b3"
+        "bytes": 2920827,
+        "sha256": "8a8a28bf82ce15fc589997cd76348cec8d93e3c2fab1bd4cd03485220f1bdf94"
       },
       "image": {
-        "bytes": 3125760,
-        "sha256": "c35a54ead02aaee8e3240a611b54d8a5fe821c7007d80dc70c94b053d6c8dec2"
+        "bytes": 3129856,
+        "sha256": "d1410bc589c511c7dc7dd66d8ddaf93f0cc6fc09ad04df1fa4c71b7e6676b276"
       }
     }
   ],
@@ -639,7 +673,7 @@
     },
     "x86_64Compiler": {
       "bytes": 1880576,
-      "sha256": "5b7cf26f2253b53d2f0a06dfa6fc184c1bbce4d71df2c7757b982ccc4d18dfc2"
+      "sha256": "e88e0a1b21df10b2b7d2fe4203b029af92905f1ca0b9fa56d8864bcacd4fba94"
     },
     "x86_64Runner": {
       "bytes": 254464,
@@ -900,8 +934,8 @@
   "runtimeBoundary": {
     "status": "PASS_RUNTIME_BOUNDARY",
     "compiler": {
-      "bytes": 3125760,
-      "sha256": "c35a54ead02aaee8e3240a611b54d8a5fe821c7007d80dc70c94b053d6c8dec2"
+      "bytes": 3129856,
+      "sha256": "d1410bc589c511c7dc7dd66d8ddaf93f0cc6fc09ad04df1fa4c71b7e6676b276"
     },
     "previousRoot": null,
     "host": [
@@ -1985,7 +2019,7 @@
         "format": "launcher",
         "image": {
           "bytes": 258560,
-          "sha256": "1a4cc3d8de681d465e3387b0b90896323068ce0c34dd667aecb278dddf97f727"
+          "sha256": "03e660f470704c91d58be1a03aafa1407190b347a3e8f87c5c135297dbe9b331"
         },
         "sameBytes": null
       },
@@ -2011,8 +2045,8 @@
         "target": "x86_64-linux",
         "format": "launcher",
         "image": {
-          "bytes": 315904,
-          "sha256": "1cd5b9999d4368e70a1734e9ec7cdd106562f9a4b2fc9a70aaf0067a4ae0cd45"
+          "bytes": 320000,
+          "sha256": "dda9dc88242a26b96040d72c097d92417e9099dfd3ca4001bd6ec685befd4f8b"
         },
         "sameBytes": null
       },
@@ -2160,62 +2194,62 @@
   "steps": [
     {
       "name": "F1-compile",
-      "seconds": 117.7,
+      "seconds": 191.3,
       "ran": true
     },
     {
       "name": "F1-pack",
-      "seconds": 1.4,
+      "seconds": 3.6,
       "ran": true
     },
     {
       "name": "R-aarch64",
-      "seconds": 0.4,
+      "seconds": 1.1,
       "ran": true
     },
     {
       "name": "S-x86_64",
-      "seconds": 6.0,
+      "seconds": 12.5,
       "ran": true
     },
     {
       "name": "R-x86_64",
-      "seconds": 0.4,
+      "seconds": 1.0,
       "ran": true
     },
     {
       "name": "G1-compile",
-      "seconds": 106.7,
+      "seconds": 190.4,
       "ran": true
     },
     {
       "name": "G1-extract",
-      "seconds": 0.9,
+      "seconds": 1.9,
       "ran": true
     },
     {
       "name": "arity1-compile",
-      "seconds": 0.3,
+      "seconds": 0.7,
       "ran": true
     },
     {
       "name": "arity1-pack",
-      "seconds": 0.3,
+      "seconds": 0.6,
       "ran": true
     },
     {
       "name": "diagnostic-span",
-      "seconds": 0.3,
+      "seconds": 0.9,
       "ran": true
     },
     {
       "name": "runtime-boundary",
-      "seconds": 89.0,
+      "seconds": 125.1,
       "ran": true
     },
     {
       "name": "case-string-literal-compile",
-      "seconds": 0.4,
+      "seconds": 0.6,
       "ran": true
     },
     {
@@ -2225,7 +2259,7 @@
     },
     {
       "name": "case-string-concat-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2235,7 +2269,7 @@
     },
     {
       "name": "case-string-view-compile",
-      "seconds": 0.4,
+      "seconds": 0.6,
       "ran": true
     },
     {
@@ -2245,7 +2279,7 @@
     },
     {
       "name": "case-string-unicode-compile",
-      "seconds": 0.4,
+      "seconds": 0.6,
       "ran": true
     },
     {
@@ -2255,7 +2289,7 @@
     },
     {
       "name": "case-string-empty-nul-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2265,7 +2299,7 @@
     },
     {
       "name": "case-string-search-compile",
-      "seconds": 0.4,
+      "seconds": 0.7,
       "ran": true
     },
     {
@@ -2275,7 +2309,7 @@
     },
     {
       "name": "case-string-call-compile",
-      "seconds": 0.4,
+      "seconds": 1.0,
       "ran": true
     },
     {
@@ -2285,7 +2319,7 @@
     },
     {
       "name": "case-vector-literal-compile",
-      "seconds": 0.4,
+      "seconds": 0.8,
       "ran": true
     },
     {
@@ -2295,7 +2329,7 @@
     },
     {
       "name": "case-vector-dynamic-compile",
-      "seconds": 0.4,
+      "seconds": 0.7,
       "ran": true
     },
     {
@@ -2305,7 +2339,7 @@
     },
     {
       "name": "case-vector-persistent-compile",
-      "seconds": 0.4,
+      "seconds": 0.7,
       "ran": true
     },
     {
@@ -2315,7 +2349,7 @@
     },
     {
       "name": "case-vector-mutate-compile",
-      "seconds": 0.4,
+      "seconds": 0.6,
       "ran": true
     },
     {
@@ -2325,7 +2359,7 @@
     },
     {
       "name": "case-vector-drop-conj-compile",
-      "seconds": 0.4,
+      "seconds": 0.7,
       "ran": true
     },
     {
@@ -2335,7 +2369,7 @@
     },
     {
       "name": "case-vector-pooled-compile",
-      "seconds": 0.4,
+      "seconds": 0.7,
       "ran": true
     },
     {
@@ -2345,7 +2379,7 @@
     },
     {
       "name": "case-vector-negative-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2355,7 +2389,7 @@
     },
     {
       "name": "case-vector-oob-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2365,7 +2399,7 @@
     },
     {
       "name": "case-string-oob-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2375,7 +2409,7 @@
     },
     {
       "name": "case-string-boundary-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2385,7 +2419,7 @@
     },
     {
       "name": "case-wide-args-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2395,7 +2429,7 @@
     },
     {
       "name": "case-closure-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2405,7 +2439,7 @@
     },
     {
       "name": "case-closure-env-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2415,7 +2449,7 @@
     },
     {
       "name": "case-state-results-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2425,7 +2459,7 @@
     },
     {
       "name": "case-bytes-roundtrip-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2455,7 +2489,7 @@
     },
     {
       "name": "probe-value-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
