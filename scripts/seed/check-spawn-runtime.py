@@ -15,7 +15,10 @@ from selfhost-bootstrap.py) builds every guest here. Three parts:
    - answers "<exit>\\n<stdout>": arguments, an exit code, a signal (-1);
    - the child: stdin at end of file, only the granted variables, only fds
      0..2 open, no_new_privs set, no 64 MiB address-space limit, the
-     :fs/app-data scope root as its working directory;
+     :fs/app-data scope root as its working directory, SIGPIPE at its default;
+   - the stdin payload (JUN-357): the bytes after STDIN_SEP reach the child's
+     stdin, ARG_SEP inside them included; the first STDIN_SEP ends the argv
+     part; 40 KiB read whole, or left unread by a child that exits or sleeps;
    - lookup by name;
    - every refusal the helper can be driven to: program-not-granted,
      path-lookup-denied, argv-budget, output-budget, timeout, exec-failed;
@@ -23,7 +26,8 @@ from selfhost-bootstrap.py) builds every guest here. Three parts:
      is not granted.
 3. The guest stays sandboxed: a control compiler whose filter has no read
    rule for the helper's answer fd dies of SIGSYS on the first answer, when
-   the kernel enforces seccomp.
+   the kernel enforces seccomp. A control compiler that does not restore
+   SIGPIPE in the child (the helper ignores it) shows the child ignoring it.
 
 Python only orchestrates processes and hashes; the runtime and the guests are
 Kotoba. Run on Linux, e.g. through the podman machine:
@@ -43,7 +47,10 @@ ROOT = Path(__file__).resolve().parents[2]
 SELFHOST = "seed/X86_64-LINUX-SELFHOST-MANIFEST"
 FUEL = "100000000"
 S = "ARG_SEP"
+T = "STDIN_SEP"
 NO_READ_RULE = ("(if (> (kxrt-gl 2096) 2) (kxrt-allow-read-fd p i4 (kxrt-gl 2096)) i4)", "i4", 2)
+NO_SIGPIPE_RESET = ("        dfl (kxrt-signal 13 q)\n", "        dfl 0\n", 2)
+SIGPIPE_BIT = "m=$(grep SigIgn /proc/self/status | cut -f2); echo $(( (0x$m >> 12) & 1 ))"
 
 PLAIN = "(ns t (:export [main]))\n(defn main [] :i64 42)\n"
 HEAD = ('(ns t (:export [main]))\n'
@@ -59,6 +66,10 @@ def guest(*requests):
 
 def lit(*parts):
     return '"' + S.join(parts) + '"'
+
+
+def lit_in(parts, payload):
+    return '"' + S.join(parts) + T + payload + '"'
 
 
 def pin(path):
@@ -167,6 +178,19 @@ def main(compiler, output, target, seccomp_if_available=False):
                                     lit("/bin/sh", "-c", "kill -9 $$")),
         stdout_is=b"0\nhello world\n3\n-1\n")
     e2e("stdin-at-eof", guest(lit("/bin/cat")), stdout_is=b"0\n")
+    e2e("stdin-payload", guest(lit_in(["/bin/cat"], "hello\\nworld")), stdout_is=b"0\nhello\nworld")
+    e2e("stdin-payload-with-arguments", guest(lit_in(["/bin/sh", "-c", "tr a-z A-Z"], "abc")), stdout_is=b"0\nABC")
+    e2e("stdin-payload-holds-arg-sep", guest(lit_in(["/bin/cat"], f"x{S}y")), stdout_is=b"0\nx" + S.encode() + b"y")
+    e2e("stdin-payload-empty", guest(lit_in(["/bin/cat"], "")), stdout_is=b"0\n")
+    e2e("stdin-sep-ends-argv", guest(f'"/bin/echo{S}a{T}b"'), stdout_is=b"0\na\n")
+    e2e("stdin-payload-40k-read", guest(f'(string-concat "/bin/sh{S}-c{S}wc -c{T}" (dbl "0123456789" 12))'),
+        stdout_has=[b"40960"])
+    e2e("stdin-payload-40k-unread-exit", guest(f'(string-concat "/bin/sh{S}-c{S}exit 0{T}" (dbl "0123456789" 12))'),
+        stdout_is=b"0\n")
+    e2e("stdin-payload-40k-unread-sleep", guest(f'(string-concat "/bin/sleep{S}1{T}" (dbl "0123456789" 12))'),
+        stdout_is=b"0\n")
+    # bit 12 of SigIgn is SIGPIPE (13); the rest of the mask is the host's
+    e2e("sigpipe-default", guest(lit("/bin/sh", "-c", SIGPIPE_BIT)), stdout_is=b"0\n0\n")
     e2e("only-granted-variables", guest(lit("/usr/bin/env")), stdout_is=b"0\nFOO=bar\n",
         env={"KEXE_SPAWN_ENV": "FOO:MISSING", "FOO": "bar", "BAZ": "qux"})
     e2e("only-stdio-open", guest(lit("/bin/ls", "/proc/self/fd")), stdout_is=b"0\n0\n1\n2\n3\n")
@@ -203,14 +227,18 @@ def main(compiler, output, target, seccomp_if_available=False):
     if enforced:
         e2e("control-no-read-rule", guest(lit("/bin/echo", "x")), want_exit=120, prod=control,
             stderr_has=[b":signal :SIGSYS"])
+    control_pipe = compile_(producer, "control-compiler-no-sigpipe-reset", patched(text, [NO_SIGPIPE_RESET]), host)
+    e2e("control-no-sigpipe-reset", guest(lit("/bin/sh", "-c", SIGPIPE_BIT)), prod=control_pipe, stdout_is=b"0\n1\n")
     report = dict(status="PASS_SPAWN_RUNTIME", target=target, compiler=pin(compiler),
                   host=[platform.system(), platform.machine(), platform.release()],
                   executionNative=target.split("-")[0] == {"arm64": "aarch64", "AMD64": "x86_64"}.get(platform.machine(), platform.machine()),
                   imageSeccomp="if-available" if seccomp_if_available else "required",
                   grant=grant, knob=knob_rows, wire=rows,
                   controlCompiler={"mutation": "no read rule for the helper's answer fd, in both runtimes", "pin": pin(control)},
+                  controlCompilerSigpipe={"mutation": "the child keeps the helper's ignored SIGPIPE, in both runtimes", "pin": pin(control_pipe)},
                   unity=unity_pins, cCompilerOrLoader=False,
-                  notCovered=(["spawn/isolation-unavailable and spawn/setup-failed: no case drives close_range, prctl, dup3 or fchdir to fail"]
+                  notCovered=(["spawn/isolation-unavailable and spawn/setup-failed: no case drives close_range, prctl, dup3 or fchdir to fail",
+                               "the stdin payload's deadline: a request holds at most 65536 bytes, which a default 64 KiB pipe takes whole, so no case blocks the feeding"]
                               + ([] if enforced else ["control-no-read-rule: this kernel does not enforce seccomp (KEXE_SECCOMP=if-available)"])))
     (output / "spawn-runtime.json").write_text(json.dumps(report, indent=2) + "\n")
     print(report["status"], target, len(knob_rows), "grant cases", len(rows), "wire cases", flush=True)

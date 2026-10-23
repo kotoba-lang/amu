@@ -1,0 +1,156 @@
+;; seed/82-wasm32-rt.kotoba -- the wasm32-browser-static/v1 runtime text (JUN-353), appended to the guest by
+;; seed/81 (xw-command) and compiled with it into the same module.
+;;
+;; It is derived from the current aarch64 runtime text (seed/77, xa-rt-core) at compile time: the shared
+;; sections (bytes, traps, pairs and strings, the keyword graph, arena scopes, vectors and bytes, kxrt-admitted?,
+;; the context slots and kxrt-report) are cut out of that text by their section markers, so the two runtimes
+;; cannot drift. A missing marker is refused (E7106). Only the wasm-specific parts are spelled here:
+;; - the intrinsic stubs (seed/75's order) and the kotoba:host imports (kxrt-host-*: write, cap, now, exit, input) and
+;;   memory intrinsics (kxrt-wasm-grow/size), which seed/81 recognizes by name; kxrt-syscall is never called;
+;; - mmap is a bump allocator over memory.grow (G + 760 is the bump pointer);
+;; - no seccomp, rlimits, signal handlers, environment, files, launcher or KEXE_ARENA_USE: the browser Worker is
+;;   the sandbox and the host ends the run. A guest trap calls kxrt-slot-400 directly (5 = SIGTRAP for guest
+;;   traps, 4 = SIGILL for runtime refusals), which writes the native trap lines and report, then exits 120;
+;; - the arena capacities are smaller than natively (wasm32 linear memory: pairs 4M, string pool 64 MiB,
+;;   vectors 512K, vector items 16M, about 290 MiB in all when every arena is reserved);
+;; - the entry ABI (Phase 3): only the wires that move the run's own data inside the Worker can be granted,
+;;   and only by the page, as KEXE_ALLOW grants them natively: at start the runtime asks
+;;   kotoba:host/input(2, wire, 0, 0, 0, 0) for each of 35, 37, 38, 39 and sets the allow bitmap's bit when
+;;   the answer is 1. Granted, 37 :io/write and 39 :io/write-error are seed/77's text (kotoba:host/write fd 1
+;;   and 2), 38 :cli/args and 35 :fs/app-data, read-only (plain read and EXISTS), go through
+;;   kotoba:host/input(kind, i, ptr, len, dst, cap): kind 0 is argument i (i = -1: the count), kind 1 the
+;;   page-supplied file named by the bytes [ptr, ptr+len); it answers the length, or -1 when there is no
+;;   such input, and copies the bytes to dst only when cap >= the length. The runtime asks twice (the
+;;   length, then the bytes into the string pool). Any other :fs/app-data request (WRITE, APPEND, RANGE, ..)
+;;   is refused by name, as an ungranted wire is;
+;; - every other capability is refused by name (its bit is never set; kotoba:host/cap, which refuses
+;;   everything, is where the consent broker plugs in, Phase 2); start(fuel) always writes the report.
+(defn- xw-rt-cut [T :string a :string b :string] :string
+  (let [i (string-index-of T a)
+        j (if (< i 0) -1 (string-index-of (string-substring T i (string-length T)) b))]
+    (if (or (< i 0) (< j 0)) "" (string-substring T i (+ i j)))))
+;; "" when a marker of seed/77 is missing (seed/81 refuses it, E7106)
+(defn- xw-rt-src [] :string
+  (let [T (xa-rt-core)
+        a (xw-rt-cut T ";; ---- bytes ----" ";; ---- capabilities:")
+        b (xw-rt-cut T "(defn- kxrt-admitted?" ";; wire 41 :io/read")
+        c (xw-rt-cut T ";; ---- context slots" ";; ---- hardening")
+        d (xw-rt-cut T "(defn- kxrt-report" ";; Context word 408")]
+    (if (or (= (string-length a) 0) (= (string-length b) 0) (= (string-length c) 0) (= (string-length d) 0)) ""
+      (string-concat (xw-rt-head) (string-concat a (string-concat b (string-concat (xw-rt-caps)
+        (string-concat c (string-concat d (xw-rt-start))))))))))
+(defn- xw-rt-head [] :string
+"
+(defn- kxrt-load64 [a :i64] :i64 0)
+(defn- kxrt-store64 [a :i64 v :i64] :i64 0)
+(defn- kxrt-load8 [a :i64] :i64 0)
+(defn- kxrt-store8 [a :i64 v :i64] :i64 0)
+(defn- kxrt-syscall [n :i64 a :i64 b :i64 c :i64 d :i64 e :i64 f :i64] :i64 0)
+(defn- kxrt-ctx [] :i64 0)
+(defn- kxrt-call-main [ctx :i64] :i64 0)
+(defn- kxrt-trap [code :i64] :i64 0)
+(defn- kxrt-call-at [addr :i64 ctx :i64 argv :i64] :i64 0)
+(defn- kxrt-host-write [fd :i64 a :i64 n :i64] :i64 0)
+(defn- kxrt-host-cap [id :i64 a :i64 n :i64] :i64 0)
+(defn- kxrt-host-now [] :i64 0)
+(defn- kxrt-host-exit [code :i64] :i64 0)
+(defn- kxrt-host-input [kind :i64 i :i64 a :i64 n :i64 dst :i64 cap :i64] :i64 0)
+(defn- kxrt-wasm-grow [pages :i64] :i64 0)
+(defn- kxrt-wasm-size [] :i64 0)
+
+(defn- kxrt-g [] :i64 (+ (kxrt-ctx) 1024))
+(defn- kxrt-gl [k :i64] :i64 (kxrt-load64 (+ (kxrt-g) k)))
+(defn- kxrt-gs [k :i64 v :i64] :i64 (kxrt-store64 (+ (kxrt-g) k) v))
+(def KXRT-PAIRS 4194304)
+(def KXRT-POOL 67108864)
+(def KXRT-VECTORS 524288)
+(def KXRT-ITEMS 16777216)
+(def KXRT-VECTOR-MAX 4194304)
+(def KXRT-VALUE-MAX 8388608)
+
+;; ---- host ----
+(defn- kxrt-exit [code :i64] :i64 (kxrt-host-exit code))
+;; n bytes, 64 KiB aligned, from the bump pointer; memory.grow zero-fills
+(defn- kxrt-map [n :i64] :i64
+  (let [p (kxrt-gl 760) e (bit-and (+ p n 65535) -65536) have (* (kxrt-wasm-size) 65536)
+        g (if (> e have) (kxrt-wasm-grow (quot (- e have) 65536)) 0)]
+    (if (< g 0) (kxrt-exit 125) (let [z (kxrt-gs 760 e)] p))))
+(defn- kxrt-write-all [fd :i64 a :i64 n :i64] :i64
+  (if (= n 0) 1 (if (= (kxrt-host-write fd a n) n) 1 0)))
+
+(defn- kxrt-arena-use [] :i64 0)
+
+")
+(defn- xw-rt-caps [] :string
+"
+;; ---- capabilities: refused by name ----
+(defn- kxrt-cap-refused [id :i64] :i64
+  (let [b (kxrt-gl 200) z (kxrt-flush) i (kxrt-w b (kxrt-w b 0 0x5041435f4558454b 8) 0x20657269773a7b20 8)
+        j (+ i (kxrt-dec (+ b i) id)) y (kxrt-err-text b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b j 0x6573756665723a20 8) 0x336d7361773a2064 8) 0x6573776f72622d32 8) 0xa7d72 3))]
+    (kxrt-fail)))
+;; ---- the entry ABI: the run's own data (wires 35 read-only, 37, 38, 39) ----
+;; input (kind, i, a, n) as a fresh pool string, or -1 when the host has none
+(defn- kxrt-in [kind :i64 i :i64 a :i64 n :i64] :i64
+  (let [len (kxrt-host-input kind i a n 0 0) u (kxrt-gl 32)]
+    (cond (< len 0) -1
+          (> len (- KXRT-POOL u)) (kxrt-budget 4)
+          :else (if (= (kxrt-host-input kind i a n (+ (kxrt-gl 24) u) len) len)
+                  (let [w (kxrt-gs 32 (+ u len))] (kxrt-pair-new (- -1 u) len))
+                  (kxrt-fail)))))
+;; wire 38, as seed/77 kxrt-args: the empty request is the count, I is argument I (empty past the end)
+(defn- kxrt-in-args [h :i64] :i64
+  (let [v (kxrt-valid h) a (kxrt-saddr h) n (kxrt-ps h) c (kxrt-host-input 0 -1 0 0 0 0) argc (if (< c 0) 0 c)]
+    (cond (= n 0) (kxrt-intern-dec argc)
+          (>= n 20) (kxrt-fail)
+          :else (let [i (kxrt-parse a n)]
+                  (cond (< i 0) (kxrt-fail)
+                        (>= i argc) (kxrt-intern a 0)
+                        :else (let [r (kxrt-in 0 i 0 0)] (if (< r 0) (kxrt-intern a 0) r)))))))
+;; wire 35, read-only: PATH EXISTS_SEP answers 1 or 0, any other _SEP token is refused, else the bytes of PATH
+(defn- kxrt-in-fs [h :i64] :i64
+  (let [v (kxrt-valid h) a (kxrt-saddr h) n (kxrt-ps h) ei (kxrt-find a n 0x535f535453495845 0x5045 10)]
+    (cond (>= ei 0) (kxrt-intern-dec (if (< (kxrt-host-input 1 0 a ei 0 0) 0) 0 1))
+          (>= (kxrt-find a n 0x5045535f 0 4) 0) (kxrt-cap-refused 35)
+          :else (let [r (kxrt-in 1 0 a n)] (if (< r 0) (kxrt-fail) r)))))
+;; the page's grants: the allow bitmap's word for wires 0..63, from 35, 37, 38 and 39 only
+(defn- kxrt-in-allow [] :i64
+  (loop [k 0 acc 0]
+    (if (= k 4) acc
+      (let [w (case k 0 35 1 37 2 38 39)]
+        (recur (inc k) (if (= (kxrt-host-input 2 w 0 0 0 0) 1) (bit-or acc (i64-shift-left 1 w)) acc))))))
+(defn- kxrt-typed-cap-call [id :i64 rk :i64 sk :i64 req :i64] :i64
+  (cond (not (kxrt-admitted? id)) (kxrt-cap-refused id)
+        (not= rk sk) (kxrt-fail)
+        (and (= rk 1) (= id 37)) (kxrt-valid (kxrt-io-write req))
+        (and (= rk 1) (= id 39)) (kxrt-valid (kxrt-io-error req))
+        (and (= rk 1) (= id 38)) (kxrt-valid (kxrt-in-args req))
+        (and (= rk 1) (= id 35)) (kxrt-valid (kxrt-in-fs req))
+        (= rk 1) (let [v (kxrt-valid req) r (kxrt-host-cap id (kxrt-saddr req) (kxrt-ps req))]
+                   (if (< r 0) (kxrt-cap-refused id) (kxrt-fail)))
+        :else (kxrt-cap-refused id)))
+
+")
+(defn- xw-rt-start [] :string
+"
+(defn- kxrt-start [fuel :i64] :i64
+  (let [ctx (kxrt-ctx)
+        h (kxrt-gs 760 (bit-and (+ (kxrt-load64 (+ ctx 384)) (kxrt-load64 (+ ctx 392)) 65535) -65536))
+        m0 (kxrt-gs 0 (kxrt-map (* KXRT-PAIRS 16))) m1 (kxrt-gs 16 (kxrt-map KXRT-PAIRS))
+        m2 (kxrt-gs 24 (kxrt-map KXRT-POOL)) m3 (kxrt-gs 40 (kxrt-map (* KXRT-VECTORS 16)))
+        m4 (kxrt-gs 56 (kxrt-map (* KXRT-ITEMS 8))) m5 (kxrt-gs 96 (kxrt-map 65536))
+        m6 (kxrt-gs 200 (kxrt-map 16384))
+        m11 (kxrt-gs 232 (kxrt-map KXRT-VALUE-MAX)) fd (kxrt-gs 112 -1)
+        m12 (kxrt-gs 672 (kxrt-map 16384)) m13 (kxrt-gs 688 (kxrt-map (* 8 KXRT-VECTORS)))
+        m14 (kxrt-gs 696 (kxrt-map (* 16 KXRT-VECTORS))) m15 (kxrt-gs 736 (kxrt-map 98304))
+        v (kxrt-store64 ctx 11) al (kxrt-store64 (+ ctx 16) (kxrt-in-allow))
+        d0 (kxrt-store64 (+ ctx 288) (+ (kxrt-g) 8)) d1 (kxrt-store64 (+ ctx 296) (kxrt-gl 0))
+        d2 (kxrt-store64 (+ ctx 304) (kxrt-gl 16)) d3 (kxrt-store64 (+ ctx 312) (+ (kxrt-g) 48))
+        d4 (kxrt-store64 (+ ctx 320) (kxrt-gl 40)) d5 (kxrt-store64 (+ ctx 328) (kxrt-gl 56))
+        f0 (kxrt-gs 168 (if (> fuel 0) fuel 9007199254740991)) fm (kxrt-gs 176 (if (> fuel 0) 1 0))
+        f1 (kxrt-store64 (+ ctx 8) (kxrt-gl 168))
+        rp (kxrt-gs 160 1)
+        r (kxrt-call-main ctx)
+        e2 (if (= (kxrt-flush) 1) 0 (kxrt-fail))
+        z (kxrt-report r)]
+    (kxrt-exit 0)))
+")

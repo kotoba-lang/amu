@@ -63,7 +63,12 @@
    :kotoba.security/classification :internal}
   :clock/now
   {:source-operation clock/now :effect :clock/now :compiler-wire-id 7
-   :kotoba.security/classification :public}
+   :kotoba.security/classification :public
+   ;; the native Linux static runtimes (amu#1518; sleep: JUN-360)
+   :forms {:wall {:request "wall" :answer "epoch milliseconds, decimal"}
+           :monotonic {:request "monotonic" :answer "nondecreasing nanoseconds, decimal"}
+           :sleep {:request "sleep <ms>" :answer "the monotonic reading after sleeping ms (0..60000) milliseconds on CLOCK_MONOTONIC"
+                   :seccomp "clock_nanosleep only with wire 7 granted"}}}
   :state/transact
   {:source-operation state/transact :effect :state/transact :compiler-wire-id 8
    :kotoba.security/classification :confidential}
@@ -138,9 +143,10 @@
   {:source-operation process/spawn :effect :process/spawn :compiler-wire-id 20
    :kotoba.security/classification :restricted
    :source-status :friendly-qualified
-   :request "<program>[ARG_SEP<arg>]..."
+   :request "<program>[ARG_SEP<arg>]...[STDIN_SEP<stdin>]"
    :request-rules
    ["ARG_SEP separates the program from each argument; there is no quoting, and an argument cannot contain ARG_SEP"
+    "the first STDIN_SEP ends the argv part (so no argument contains STDIN_SEP); the bytes after it are written to the child's stdin and may contain ARG_SEP (selfhost static host only, JUN-357; the other hosts answer without it)"
     "<program> is non-empty; a request holding a NUL byte, or an empty program, is malformed (a plain trap, not a named refusal)"
     "<program> containing / must be byte-equal to a granted program; a bare name is looked up ONLY among the granted programs' last segments, ONLY when :path-lookup is true, and $PATH is never read"
     "the guest's spelling is argv[0]; the granted spelling is what is executed"
@@ -148,7 +154,7 @@
    :answer "<exit>\n<stdout>: the child's exit code in decimal, -1 when a signal ended it; then exactly the bytes it wrote to stdout"
    :child
    ["environment: empty except the variables :env names, copied from the host process's own environment"
-    "stdin: a pipe at EOF; stdout: captured, at most 16,384 bytes; stderr: the host's own fd 2"
+    "stdin: a pipe carrying the request's STDIN_SEP bytes (none without it), then EOF; written without blocking within the 10 s deadline, and a child that exits or closes stdin first drops the rest. stdout: captured, at most 16,384 bytes; stderr: the host's own fd 2"
     "no descriptor but 0, 1 and 2 (the rest are closed across execve)"
     "working directory: the :fs/app-data scope root when one is granted (the first entry when a host holds several), else inherited"
     "no_new_privs where the OS has it (Linux: PR_SET_NO_NEW_PRIVS; macOS and the js host have no equivalent -- recorded, not emulated)"
@@ -366,10 +372,12 @@
     :rmdir {:token "RMDIR_SEP" :request "<path>RMDIR_SEP" :answer "\"1\" / \"0\""
             :answered-by #{:kexe-loader :linux-static}}
     :rename {:token "RENAME_SEP" :request "<from>RENAME_SEP<to>" :answer "\"1\" / \"0\""
-             :answered-by #{:kexe-loader :linux-static}}
+             :answered-by #{:kexe-loader :linux-static :amu-selfhost-static}
+             :amu-selfhost-static "each parent opened beneath the scope, renameat(2) of the last component (JUN-359)"}
     :fsync {:token "FSYNC_SEP" :request "<path>FSYNC_SEP"
             :answer "\"1\" once fsync(2) returned, \"0\" when the file cannot be opened or the flush fails"
-            :answered-by #{:kexe-loader :linux-static}}
+            :answered-by #{:kexe-loader :linux-static :amu-selfhost-static}
+            :amu-selfhost-static "a file or a directory, opened beneath the scope (JUN-359)"}
     :make-temp-dir {:token "MKTEMP_SEP" :request "<dir>MKTEMP_SEP<prefix>"
                     :answer "the absolute path of a NEW directory <dir>/<prefix><6 of [0-9a-z]>, mode 0700 (mkdtemp); \"\" when <dir> cannot be opened"
                     :answered-by #{:kexe-loader :linux-static}}
