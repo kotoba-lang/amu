@@ -4,6 +4,7 @@
   {:kotoba/export [artifact-format compile-kernel dtypes ewise-operators kernel kernel-variants kir-format lower max-static-elements max-workgroup-size reduction-operators targets validate! validation-errors verify-artifact!]}
   (:require [kotoba.artifact.core :as artifact]
             [kotoba.compiler.accelerator-kir :as kir]
+            [kotoba.compiler.accelerator-simdgroup-reduce :as simdgroup-reduce]
             [kotoba.compiler.accelerator-subgroup-reduce :as subgroup-reduce]))
 
 ;; The KIR model and its validation live in the leaf
@@ -187,6 +188,11 @@
 ;; the CUDA arm of the same emission (subgroup-reduce's emit-cuda), same idiom.
 #?(:kotoba
    (defn- subgroup-emit-cuda [kir :document] :string (subgroup-reduce/emit-cuda kir)))
+;; the MSL arm of the Metal-native SIMD-group reduce variant
+;; (accelerator-simdgroup-reduce's emit-msl, ADR-0373), same cross-module
+;; idiom. MSL route only -- `lower` refuses this variant everywhere else.
+#?(:kotoba
+   (defn- simdgroup-emit-msl [kir :document] :string (simdgroup-reduce/emit-msl kir)))
 ;; the artifact seal check (kotoba.artifact.core's valid-seal?)
 #?(:kotoba
    (defn- artifact-valid-seal? [v :document] :bool (artifact/valid-seal? v)))
@@ -211,7 +217,7 @@
   #{:wgsl-v1 :cuda-v1 :msl-v1 :glsl-v1}))
 #?(:kotoba
    (defn kernel-variants [] [:set :keyword]
-     (typed-set-new [:set :keyword] :baseline :warp-shuffle-reduce :subgroup-reduce))
+     (typed-set-new [:set :keyword] :baseline :warp-shuffle-reduce :subgroup-reduce :simdgroup-reduce))
    :default
 (def kernel-variants
   "The emitted-code variants this compiler admits. :baseline is the ADR-0002
@@ -227,11 +233,21 @@
   UNMEASURED as an
   optimization claim -- its GLSL emission has executed on Apple M1 Max hardware
   through wire 42 (a TOOLCHAIN fact of what compiles and runs, not
-  optimization evidence). A variant is a different grouping of the same
+  optimization evidence). :simdgroup-reduce is the Metal-native SIMD-group
+  reduction variant (ADR-0373, JUN-58), emitted by
+  kotoba.compiler.accelerator-simdgroup-reduce on the MSL ROUTE ONLY (rule
+  3's fail-closed contract refuses it on every other target); its
+  intra-SIMD-group fold is one simd_sum/simd_max/simd_min intrinsic per
+  operator and its cross-SIMD-group tree is :subgroup-reduce's shared
+  fold. The emission landed as rule 3's step 1; the selection predicate
+  (ADR-0373 step 2) has NOT landed, so select-variant never answers this
+  variant and it is reachable only by an explicit (lower kir :msl-v1
+  :simdgroup-reduce) call. UNMEASURED as an optimization claim on every
+  device. A variant is a different grouping of the same
   admitted reduction, never a different meaning. Admission is per target: a
   variant the target's emitter does not admit is refused, never silently
   answered as :baseline."
-  #{:baseline :warp-shuffle-reduce :subgroup-reduce}))
+  #{:baseline :warp-shuffle-reduce :subgroup-reduce :simdgroup-reduce}))
 #?(:kotoba
    (defn dtypes [] [:set :keyword]
      (typed-set-new [:set :keyword] :f32))
@@ -611,7 +627,7 @@
        (if (not (in-kset? (targets) (document-keyword target)))
          (throw (ex-info "unsupported accelerator target" {:target target :supported (document-set (document-keyword :wgsl-v1) (document-keyword :cuda-v1) (document-keyword :msl-v1) (document-keyword :glsl-v1))}))
          (if (not (in-kset? (kernel-variants) (document-keyword variant)))
-           (throw (ex-info "unsupported kernel variant" {:variant variant :supported (document-set (document-keyword :baseline) (document-keyword :warp-shuffle-reduce) (document-keyword :subgroup-reduce))}))
+           (throw (ex-info "unsupported kernel variant" {:variant variant :supported (document-set (document-keyword :baseline) (document-keyword :warp-shuffle-reduce) (document-keyword :subgroup-reduce) (document-keyword :simdgroup-reduce))}))
            (if (document-equal? (document-keyword target) (document-keyword :cuda-v1))
              (if (document-equal? (document-keyword variant) (document-keyword :subgroup-reduce))
                (subgroup-emit-cuda kir)
@@ -632,7 +648,9 @@
                    (emit-msl kir)
                    (if (document-equal? (document-keyword variant) (document-keyword :subgroup-reduce))
                      (subgroup-emit-msl kir)
-                     (throw (ex-info "kernel variant not applicable" {:variant variant :target target})))))))))))
+                     (if (document-equal? (document-keyword variant) (document-keyword :simdgroup-reduce))
+                       (simdgroup-emit-msl kir)
+                       (throw (ex-info "kernel variant not applicable" {:variant variant :target target}))))))))))))
    :default
 (defn lower
   "Lower one validated KIR to `target`'s source text. `variant` defaults to
@@ -654,6 +672,7 @@
      :msl-v1 (case variant
                :baseline (emit-msl kir)
                :subgroup-reduce (subgroup-reduce/emit-msl kir)
+               :simdgroup-reduce (simdgroup-reduce/emit-msl kir)
                (throw (ex-info "kernel variant not applicable" {:variant variant :target target})))
      :cuda-v1 (case variant
                :subgroup-reduce (subgroup-reduce/emit-cuda kir)
@@ -697,7 +716,8 @@
              variant (if (document-contains compiled (document-keyword :variant)) (dgk compiled :variant) (document-keyword :baseline))]
          (if (not (or (document-equal? variant (document-keyword :baseline))
                       (document-equal? variant (document-keyword :warp-shuffle-reduce))
-                      (document-equal? variant (document-keyword :subgroup-reduce))))
+                      (document-equal? variant (document-keyword :subgroup-reduce))
+                      (document-equal? variant (document-keyword :simdgroup-reduce))))
            (throw (ex-info "accelerator artifact carries an unsupported kernel variant" {:variant variant}))
            (let [expected-code (lower (dgk compiled :kir) (option-value-of [:option :keyword] (document-keyword-value (dgk compiled :target)) :wgsl-v1) (option-value-of [:option :keyword] (document-keyword-value variant) :baseline))]
              (if (not (and (document-equal? (dgk compiled :kir-sha256) (document-string (artifact-sha256 (dgk compiled :kir))))
@@ -714,7 +734,7 @@
   ;; A sealed artifact that predates variants carries no :variant; that is
   ;; :baseline by definition, and re-lowering must still match exactly.
   (let [variant (if (contains? compiled :variant) (:variant compiled) :baseline)
-        _ (when-not (contains? #{:baseline :warp-shuffle-reduce :subgroup-reduce} variant)
+        _ (when-not (contains? #{:baseline :warp-shuffle-reduce :subgroup-reduce :simdgroup-reduce} variant)
             (throw (ex-info "accelerator artifact carries an unsupported kernel variant"
                             {:variant variant})))
         expected-code (lower (:kir compiled) (:target compiled) variant)]

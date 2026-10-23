@@ -1,11 +1,18 @@
 # ADR-0373 -- The Metal-native SIMD-group reduce row (`:simdgroup-reduce`)
 
-- Status: **accepted as design (2026-10-23). NOT implemented.** No emission,
-  no selection row and no test exists for this variant; ADR-0356 rule 3
-  (emission admission first) gates its IMPLEMENTATION, which is its own
-  later slice. Every answer this row will carry is UNMEASURED
-  (`:measured? false`, rule 4's lock) until a hardware measurement replaces
-  the basis text of the answer's cell.
+- Status: **accepted as design (2026-10-23).** [UPDATE 2026-10-23, rule 3
+  step 1 landed: the MSL EMISSION of this variant is IMPLEMENTED
+  (kotoba.compiler.accelerator-simdgroup-reduce, `lower` admits the
+  (:msl-v1, :simdgroup-reduce) pair in both readings, tests exist --
+  docs/evidence/gpu/simdgroup-reduce-msl-emission-20261023/). The
+  SELECTION predicate and any measurement row remain NOT implemented: no
+  selection row exists and select-variant answers byte-for-byte what it
+  answered before this variant.] ADR-0356 rule 3 (emission admission
+  first) gates its IMPLEMENTATION, which is its own
+  later slice [now split: step 1 emission DONE, step 2 selection OPEN,
+  step 3 measurement OPEN]. Every answer this row will carry is UNMEASURED
+  (`:measured? false`, rule 4's lock) until a hardware measurement replaces the
+  basis text of the answer's cell.
 - Date: 2026-10-23
 - Tracking: JUN-58 (Apple). Parent JUN-55. One vendor per decision, the
   rule ADR-0356 set and ADR-0357/0360/0361/0364 followed.
@@ -143,6 +150,8 @@ when a measurement exists; until then every answer carries
 
 ## What moved in the repository (the diff)
 
+[This section first recorded the design slice; the 2026-10-23 rule-3
+step-1 slice added the rows below it.]
 - `docs/adr/0373-gpu-metal-native-simdgroup-reduce.md`: this ADR.
 - `docs/adr/0356-gpu-kernel-variant-selection.md`: the rows table gains
   the designed-not-implemented row; the "two design questions PROPOSED"
@@ -152,18 +161,32 @@ when a measurement exists; until then every answer carries
   decision's effect.
 - `docs/evidence/gpu/simdgroup-row-design-20261023.txt`: the slice record
   (probe and gate output included).
+- `src/kotoba/compiler/accelerator_simdgroup_reduce.cljk`: the MSL
+  emission (rule 3 step 1, IMPLEMENTED).
+- `src/kotoba/compiler/accelerator.cljk`: `lower` admission for the
+  (:msl-v1, :simdgroup-reduce) pair in both readings; kernel-variants
+  grows the keyword; seal/re-lower admits it.
+- `src/kotoba/compiler/accelerator_variants.cljk`: honesty mark in the
+  `variants` docstring only (selection answers unchanged).
+- `test/kotoba/compiler/accelerator_simdgroup_reduce_test.cljk`: the
+  emission + admission tests.
+- `docs/evidence/gpu/simdgroup-reduce-msl-emission-20261023.txt`: the
+  step-1 slice record (toolchain probe and gate output included).
 
 ## What did NOT move (named so nothing is silently upgraded)
 
-- No code namespace, no test, no emission, no selection row, no
-  `:measured?` flag, no `:measured-cell`, no workgroup row, no evidence
-  record. The row is design only; `select-variant` answers exactly what
-  it answered before this ADR.
+- No selection row, no `:measured?` flag, no `:measured-cell`, no workgroup
+  row. [The emission, its tests and its `lower` admission moved in the
+  step-1 slice; everything selection-side is byte-identical --
+  `select-variant` answers exactly what it answered before this ADR.]
 
 ## State (the honesty rule's three states)
 
-ACCEPTED DESIGN ONLY (this ADR). IMPLEMENTED: nothing of this variant.
-PROPOSED, unchanged: every performance question about it. The two design
+[After rule 3 step 1 (2026-10-23): IMPLEMENTED is the MSL emission +
+`lower` admission + tests. ACCEPTED DESIGN ONLY is the selection ladder
+the "Selection" section specifies (carve-out, MSL ladder, :simd-reduce).
+PROPOSED, unchanged: every performance question about this variant.] The
+two design
 questions ADR-0356's reconciliation parked are now both DECIDED
 (narrowing: ADR-0360's second decision; this row: this ADR).
 
@@ -206,10 +229,10 @@ outside this diff. No green full suite is claimed.
 
 ## LEFT (the next rows)
 
-1. Implement the row in rule-3 order: the MSL emission + `lower`
-   admission + tests, then the selection predicate (the ladder, the
-   carve-out, `:simd-reduce` in the gate vocabulary) -- one or more
-   implementation slices.
+1. [STEP 1 DONE 2026-10-23: the MSL emission + `lower` admission + tests.]
+   Implement the row in rule-3 order: then (2) the selection predicate
+   (the ladder, the carve-out, `:simd-reduce` in the gate vocabulary) -- its
+   own implementation slice.
 2. Measure `:simdgroup-reduce` on M1 Max through the conforming channel
    (the native-Metal harness runs the emitters' own bytes): a MEASUREMENT
    row, one cell set at a time, under the claim protocol.

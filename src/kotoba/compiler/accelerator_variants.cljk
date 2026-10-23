@@ -51,7 +51,12 @@
 
 (def variants
   "Every variant selection may answer. Backed by the emitter's admitted set --
-  a variant that cannot be emitted is never selected."
+  a variant that cannot be emitted is never selected. [Honesty mark
+  2026-10-23: the set now also carries :simdgroup-reduce -- admitted on the
+  MSL route by ADR-0373's rule-3 step 1 -- but select-variant's cond rows
+  name no :simdgroup-reduce and never answer it until rule-3 step 2 (the
+  selection predicate) lands; the admitted set is a NECESSARY gate, not a
+  promise that every member is selectable.]"
   accelerator/kernel-variants)
 
 (def min-warp-shuffle-workgroup
