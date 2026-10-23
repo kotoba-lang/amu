@@ -216,7 +216,43 @@ a follow-up to ADR 0371.
      * the cache rows written are exact.
 
      Receipts: `docs/evidence/gpu-kernel-kir2-20261023/`.
-   * the nex_ops decode set;
+   * **Done: the nex_ops decode set.** 19 ops of kotoba-lang/inference
+     `nex_ops.comp` at 971376a. Each is the module that glslang's
+     `-DOP=<op>` gives, in its decode variant (not BATCH, BPREFILL or BIAS):
+     * rmsnorm, l2norm, gated_rmsnorm and add_rmsnorm;
+     * silu_mul, conv1d_step, gate_decay, gate_decay2, copy_at,
+       weighted_sum, add, add_bias and pos_incr;
+     * f32_matvec;
+     * rope_neox (NEOX and NORMAL pairs, rope_freqs);
+     * attn_decode (with the output gate);
+     * softmax_topk, argmax_partial and argmax_final.
+
+     Every module has nex_ops' seven bindings. The builder gained:
+     * conversions and bit casts;
+     * more `GLSL.std.450` calls;
+     * ordered float comparisons and `OpSelect`;
+     * early return and `continue`;
+     * `memoryBarrierBuffer`.
+
+     A load that a condition guards stays in an if: the output gate's
+     `s[gi]`, softmax_topk's `a[row n + t]`, and rope's `h / P.rows`.
+
+     Results:
+     * the suite has 45 Kotoba cases;
+     * all 28 modules are `spirv-val` valid;
+     * the Kotoba checker accepts glslang's 19 modules.
+
+     On gad (RADV), 24 cases ran glslang's module and the KIR v2 module on the
+     same inputs, and every writable binding is byte-identical:
+     * copy_at, add, add_bias, pos_incr and both argmax stages are exact,
+       ties at the maximum included;
+     * softmax_topk picks the same experts as f64;
+     * rmsnorm, f32_matvec and the top-k weights are within 3e-6 of f64.
+
+     Receipts: `docs/evidence/gpu-kernel-kir2-nex-20261023/`.
+   * the sampler and the resident-serving ops of nex_ops (sample_*, ctl,
+     params, pos_add, pos_seed, pos_incr2, quant_q8), and the BATCH,
+     BPREFILL and BIAS variants;
    * `attn_copy_dense` on B70/ANV;
    * `kdot_f32_r1`, `kdot_x8r4`, `kdot_f32_r8` and `kdot_i8_x8r4`;
    * deltanet and embed;

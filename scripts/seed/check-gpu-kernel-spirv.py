@@ -69,9 +69,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 ENCODE_CHECK = ["tools/spirv_encode.kotoba", "tools/spirv_check.kotoba"]
 # nex-ops.comp is one kernel per -DOP (the decode ops that KIR v2 writes,
-# tools/gpu_kernels_v2.kotoba kir2-nex-op 1..14 in this order)
+# tools/gpu_kernels_v2.kotoba kir2-nex-op 1..19 in this order)
 NEX_OPS = ["rmsnorm", "l2norm", "gated_rmsnorm", "silu_mul", "conv1d_step", "gate_decay", "gate_decay2", "copy_at",
-           "weighted_sum", "add", "add_bias", "f32_matvec", "add_rmsnorm", "pos_incr"]
+           "weighted_sum", "add", "add_bias", "f32_matvec", "add_rmsnorm", "pos_incr", "rope_neox", "attn_decode",
+           "softmax_topk", "argmax_partial", "argmax_final"]
 # modules, test, the receipt, the written modules' prefix and their sizes by
 # name part, the control's one failure, and whether glslang refs go in
 SUITES = {
@@ -79,11 +80,11 @@ SUITES = {
                  receipt="gpu-kernel-spirv.json", prefix="kir1-",
                  sizes={"ewise": 1004, "reduce-sum": 1740, "reduce-max": 1748, "reduce-min": 1748, "sweep": 856,
                         "subgroup-sum": 1896, "subgroup-max": 1904, "subgroup-min": 1904},
-                 count=23, control="FAIL label inside an open block", refs=True),
+                 count=28, control="FAIL label inside an open block", refs=True),
     "kir2": dict(modules=[*ENCODE_CHECK, "tools/gpu_kernel_kir2.kotoba", "tools/gpu_kernels_v2.kotoba"],
                  test="tools/gpu_kernel_kir2_test.kotoba", receipt="gpu-kernel-kir2.json", prefix="kir2-",
-                 sizes={"ewise": 1096, "attn-copy-dense": 6488, **{"kir2-nex-" + op + ".spv": n for op, n in zip(NEX_OPS, [3440, 3468, 3516, 1992, 2660, 2452, 2396, 2024, 2704, 1872, 1968, 3088, 3476, 1652])}},
-                 count=23, control="FAIL attn: variables", refs=True),
+                 sizes={"ewise": 1096, "attn-copy-dense": 6488, **{"kir2-nex-" + op + ".spv": n for op, n in zip(NEX_OPS, [3440, 3468, 3516, 1992, 2660, 2452, 2396, 2024, 2704, 1872, 1968, 3088, 3476, 1652, 3888, 5864, 5356, 3604, 4052])}},
+                 count=28, control="FAIL attn: variables", refs=True),
 }
 FUEL = 100000000
 EXPECT_CALL = re.compile(r"\(expect ")
@@ -348,6 +349,61 @@ def nex_cases():
                       groups=(2, 1, 1)))
     cases.append(dict(name="pos_incr", op="pos_incr", meta=meta(), bufs=bufs(i=struct.pack("<4I", 5, 7, 0, 0)), groups=(1, 1, 1),
                       check=lambda o: 0 if o[6] == struct.pack("<4I", 6, 7, 0, 0) else 1))
+    # rope: NEOX pairs at the dynamic position with a rotated part and a
+    # copied tail; NORMAL pairs at P.aux2, two heads per token, with
+    # rope_freqs divisors (P.eps != 0)
+    cases.append(dict(name="rope_neox neox", op="rope_neox", meta=meta(n=128, aux=64, scale=10000.0, p1=1.0),
+                      bufs=bufs(a=lcg(512, 39), o=bytes(2048), i=struct.pack("<4I", 7, 0, 0, 0)), groups=(4, 1, 1)))
+    cases.append(dict(name="rope_neox normal", op="rope_neox", meta=meta(n=64, rows=2, aux=64, aux2=5, eps=1.0, scale=500000.0, p0=1.0),
+                      bufs=bufs(a=lcg(256, 40), b=[1.0 + 0.125 * k for k in range(32)], o=bytes(1024)), groups=(4, 1, 1)))
+    # attn_decode: the interleaved output gate at the dynamic position (T =
+    # 38, GQA); dense (p0 != 0, s a stub) with P.aux and two rows
+    cases.append(dict(name="attn_decode gated", op="attn_decode", meta=meta(n=64, rows=8, aux2=2, eps=-1.0, scale=0.125, p1=1.0),
+                      bufs=bufs(a=lcg(512, 41), b=lcg(64 * 2 * 64, 42), c=lcg(64 * 2 * 64, 43), o=bytes(2048), s=lcg(1024, 44),
+                                i=struct.pack("<4I", 37, 0, 0, 0)), groups=(8, 1, 1)))
+    cases.append(dict(name="attn_decode dense", op="attn_decode", meta=meta(n=128, rows=4, aux=40, aux2=4, eps=1e-6, scale=0.088, p0=1.0),
+                      bufs=bufs(a=lcg(2 * 4 * 128, 45), b=lcg(48 * 4 * 128, 46), c=lcg(48 * 4 * 128, 47), o=bytes(4 * 1024)),
+                      groups=(4, 2, 1)))
+    # softmax_topk: 2 tokens over 128 experts, top 8, scaled
+    logits = lcg(256, 48)
+
+    def topk(o, k=8, n=128, scale=2.5):
+        ids, out = struct.unpack("<16I", o[6][:64]), from_f32(o[4][:64])
+        err = 0.0
+        for r in range(2):
+            x = logits[r * n:(r + 1) * n]
+            m = max(x)
+            e = [math.exp(v - m) for v in x]
+            p = [v / sum(e) for v in e]
+            pick = sorted(range(n), key=lambda j: (-p[j], j))[:k]
+            if list(ids[r * k:(r + 1) * k]) != pick:
+                return 1.0
+            w = sum(p[j] for j in pick)
+            err = max(err, max(abs(out[r * k + q] - p[pick[q]] / w * scale) for q in range(k)))
+        return err
+    cases.append(dict(name="softmax_topk", op="softmax_topk", meta=meta(n=128, aux=8, scale=2.5),
+                      bufs=bufs(a=logits, o=bytes(64), i=bytes(64)), groups=(2, 1, 1), check=topk))
+    # argmax: three partials over 10000 logits with ties at the maximum inside
+    # a workgroup and across them (the lower index wins), then the final pick
+    # (a tie between partials too) into the token buffer
+    lg = lcg(10000, 49)
+    lg[123] = lg[200] = lg[5000] = lg[9000] = 2.0
+
+    def partial(o):
+        want_v, want_i = [], []
+        for w in range(3):
+            seg = range(w * 4096, min(w * 4096 + 4096, 10000))
+            j = min(seg, key=lambda q: (-lg[q], q))
+            want_v.append(lg[j])
+            want_i.append(j)
+        return 0 if o[5][:12] == f32(want_v) and struct.unpack("<3I", o[6][:12]) == tuple(want_i) else 1
+    cases.append(dict(name="argmax_partial", op="argmax_partial", meta=meta(n=10000),
+                      bufs=bufs(a=lg, s=bytes(16), i=bytes(16)), groups=(3, 1, 1), check=partial))
+    cases.append(dict(name="argmax_final", op="argmax_final", meta=meta(aux=3, aux2=2, p1=1.0),
+                      bufs=bufs(b=bytes(32), c=struct.pack("<I", 4) + bytes(12), o=bytes(16), s=f32([0.5, 0.9, 0.9, 0.0]),
+                                i=struct.pack("<4I", 10, 4200, 9000, 0)), groups=(1, 1, 1),
+                      check=lambda o: 0 if (struct.unpack("<4I", o[6]) == (10, 4200, 9000, 4200) and o[4][:4] == f32([0.9])
+                                            and o[2] == bytes(20) + struct.pack("<I", 4200) + bytes(8)) else 1))
     return cases
 
 
