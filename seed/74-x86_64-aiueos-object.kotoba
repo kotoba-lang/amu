@@ -119,8 +119,9 @@
 ;; (+ base offset), or taking a base out of memory, would conjure a window nothing
 ;; checked, so the base operand (the first) of each of the three must be ROOTED:
 ;;   - an integer literal (a literal window), or
-;;   - a parameter of the function that is never assigned in it (the ABI boundary
-;;     where the kernel hands in a region), or
+;;   - a parameter of the EXPORTED function that is never assigned in it (the ABI
+;;     boundary where the kernel hands in a region; a private helper's parameter
+;;     is whatever its callers pass, so it is not rooted), or
 ;;   - the result of kernel-subregion over a rooted base, or
 ;;   - a let-bound local with exactly one assignment whose source is rooted.
 ;; Anything else -- a value read from memory, arithmetic, a call result, a branch's
@@ -145,7 +146,7 @@
             :else (xk-first-lset M (inc j) s)))))
 (defn- xk-param-slot? [M :vector-i64 j :i64 s :i64] :bool
   (let [st (xk-fn-start M j) f (xg-si M st IF-A)]
-    (and (>= s 1) (<= s (xg-f M f FF-NPARAMS)) (= (xk-lsets M (inc st) s 0) 0))))
+    (and (= (xg-f M f FF-EXPORT) 1) (>= s 1) (<= s (xg-f M f FF-NPARAMS)) (= (xk-lsets M (inc st) s 0) 0))))
 (defn- xk-writer [M :vector-i64 i :i64 t :i64] :i64
   (loop [j (dec i)]
     (if (< j 1) -1
