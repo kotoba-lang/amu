@@ -75,10 +75,11 @@ ROOT = Path(__file__).resolve().parents[2]
 ENCODE_CHECK = ["tools/spirv_encode.kotoba", "tools/spirv_check.kotoba"]
 EWISE_OPS = ["add", "sub", "mul", "div"]
 # nex-ops.comp is one kernel per -DOP (the decode ops that KIR v2 writes,
-# tools/gpu_kernels_v2.kotoba kir2-nex-op 1..19 in this order)
+# tools/gpu_kernels_v2.kotoba kir2-nex-op 1..31 in this order)
 NEX_OPS = ["rmsnorm", "l2norm", "gated_rmsnorm", "silu_mul", "conv1d_step", "gate_decay", "gate_decay2", "copy_at",
            "weighted_sum", "add", "add_bias", "f32_matvec", "add_rmsnorm", "pos_incr", "rope_neox", "attn_decode",
-           "softmax_topk", "argmax_partial", "argmax_final"]
+           "softmax_topk", "argmax_partial", "argmax_final", "quant_q8", "pos_incr2", "ctl", "pos_add", "pos_seed", "params",
+           "sample_topp", "sample_part", "sample_probs", "sample_bisect_part", "sample_bisect_step", "sample_final"]
 # modules, test, the receipt, the written modules' prefix and their sizes by
 # name part, the control's one failure, and whether glslang refs go in
 SUITES = {
@@ -89,7 +90,7 @@ SUITES = {
                  count=23, control="FAIL label inside an open block", refs=True),
     "kir2": dict(modules=[*ENCODE_CHECK, "tools/gpu_kernel_kir2.kotoba", "tools/gpu_kernels_v2.kotoba"],
                  test="tools/gpu_kernel_kir2_test.kotoba", receipt="gpu-kernel-kir2.json", prefix="kir2-",
-                 sizes={"ewise": 1096, "attn-copy-dense": 6488, **{"kir2-nex-" + op + ".spv": n for op, n in zip(NEX_OPS, [3440, 3468, 3516, 1992, 2660, 2452, 2396, 2140, 2704, 1872, 1968, 3088, 3476, 1652, 3988, 5964, 5356, 3604, 4052])},
+                 sizes={"ewise": 1096, "attn-copy-dense": 6488, **{"kir2-nex-" + op + ".spv": n for op, n in zip(NEX_OPS, [3440, 3468, 3516, 1992, 2660, 2452, 2396, 2140, 2704, 1872, 1968, 3088, 3476, 1652, 3988, 5964, 5356, 3604, 4052, 3252, 1780, 2172, 1720, 1732, 1752, 9816, 4656, 4152, 3828, 3268, 6120])},
                         "kir2-dot-rows.spv": 2448, "kir2-kdot-f32-r1.spv": 28776,
                         "kir2-kdot-f32-r8.spv": 25056, "kir2-kdot-f32-r8-rows4.spv": 25056,
                         "kir2-kdot-x8r8.spv": 26028, "kir2-kdot-x8r4.spv": 26028,
@@ -97,7 +98,7 @@ SUITES = {
                         "kir2-deltanet-step.spv": 3728, "kir2-deltanet-fused.spv": 13724,
                         **{f"kir2-embed-{n}.spv": b for n, b in (("iq4xs", 4164), ("q8", 2956), ("b32-2", 3128), ("b32-3", 3320),
                                                                   ("b32-6", 4216), ("b32-7", 4376), ("ptq1", 4164))}},
-                 count=45, control="FAIL attn: variables", refs=True),
+                 count=57, control="FAIL attn: variables", refs=True),
 }
 FUEL = 100000000
 EXPECT_CALL = re.compile(r"\(expect ")
@@ -469,6 +470,33 @@ def nex_cases():
                                 i=struct.pack("<4I", 10, 4200, 9000, 0)), groups=(1, 1, 1),
                       check=lambda o: 0 if (struct.unpack("<4I", o[6]) == (10, 4200, 9000, 4200) and o[4][:4] == f32([0.9])
                                             and o[2] == bytes(20) + struct.pack("<I", 4200) + bytes(8)) else 1))
+    # the resident-serving ops
+    ramp = [((i * 37) % 255 - 127) / 64.0 for i in range(512)]
+    cases.append(dict(name="quant_q8", op="quant_q8", meta=meta(n=512), bufs=bufs(a=lcg(480, 130) + ramp[:32], o=bytes(64), i=bytes(512)),
+                      groups=(1, 1, 1)))
+    cases.append(dict(name="pos_incr2", op="pos_incr2", meta=meta(), bufs=bufs(i=struct.pack("<4I", 5, 7, 0, 0)), groups=(1, 1, 1),
+                      check=lambda o: 0 if o[6] == struct.pack("<4I", 6, 8, 0, 0) else 1))
+    toks = struct.pack("<3I", 11, 22, 33)
+    # ctl: with the flag the position rewinds to 0 and the tokens land at
+    # b[0..2]; without it they land at b[7..9]
+    for flag in (1, 0):
+        want_b = (toks + bytes(52)) if flag else (bytes(28) + toks + bytes(24))
+        want_i = struct.pack("<4I", 0 if flag else 7, 0, 0, 0)
+        cases.append(dict(name=f"ctl flag {flag}", op="ctl", meta=meta(n=3), bufs=bufs(b=bytes(64), c=toks + struct.pack("<I", flag),
+                                                                                     i=struct.pack("<4I", 7, 0, 0, 0)),
+                          groups=(1, 1, 1), check=lambda o, wb=want_b, wi=want_i: 0 if (o[2] == wb and o[6] == wi) else 1))
+    cases.append(dict(name="pos_add", op="pos_add", meta=meta(n=5), bufs=bufs(i=struct.pack("<4I", 7, 3, 0, 0)), groups=(1, 1, 1),
+                      check=lambda o: 0 if o[6] == struct.pack("<4I", 12, 3, 0, 0) else 1))
+    cases.append(dict(name="pos_seed", op="pos_seed", meta=meta(), bufs=bufs(a=struct.pack("<I", 42) + bytes(12), i=struct.pack("<4I", 7, 3, 0, 0)),
+                      groups=(1, 1, 1), check=lambda o: 0 if o[6] == struct.pack("<4I", 42, 0, 0, 0) else 1))
+    cases.append(dict(name="params", op="params", meta=meta(), bufs=bufs(c=f32([9.0, 8.0, 0.7, 0.95, 1.5, 6.0]), o=bytes(32)),
+                      groups=(1, 1, 1), check=lambda o: 0 if o[4] == bytes(16) + f32([0.7, 0.95, 1.5]) + bytes(4) else 1))
+    # sample_topp on one workgroup: T 0.8, top_p 0.9, a seed, the position from
+    # c[0] (p1 != 0), past the prompt so the token buffer gets the pick
+    cases.append(dict(name="sample_topp", op="sample_topp", meta=meta(n=1000, aux=3, aux2=2, eps=0.8, scale=0.9,
+                                                                     p0=struct.unpack("<f", struct.pack("<I", 0x1234567))[0], p1=1.0),
+                      bufs=bufs(a=[x * 4.0 for x in lcg(1000, 131)], b=bytes(32), c=struct.pack("<I", 4) + bytes(12), i=bytes(16)),
+                      groups=(1, 1, 1)))
     return cases
 
 
@@ -642,6 +670,18 @@ def deltanet_embed_cases():
                               bufs=[em, w, ids, bytes(4 * 2 * 512), pos], compare=[3], groups=(1, 2, 1),
                               check=q8_check if kind == 8 else None))
     return cases
+
+
+def sampler_chain(n, seed):
+    """The multi-workgroup sampler: sample_part, sample_probs, 30 x
+    (sample_bisect_part, sample_bisect_step), sample_final, over shared
+    buffers. Answers Meta, the bindings 1..6, and the dispatches."""
+    parts = (n + 4095) // 4096
+    m = struct.pack("<4I4f", n, 0, 5, 2, 0.7, 0.92, struct.unpack("<f", struct.pack("<I", seed))[0], 1.0)
+    bufs = {1: f32([x * 6.0 for x in lcg(n, 132)]), 2: bytes(64), 3: struct.pack("<I", 9) + bytes(12), 4: bytes(4 * 256), 5: bytes(4 * n),
+            6: bytes(64)}
+    steps = [("sample_part", parts), ("sample_probs", parts)] + [("sample_bisect_part", parts), ("sample_bisect_step", 1)] * 30
+    return m, bufs, steps + [("sample_final", 1)]
 
 
 def gpu(output, suite, provider_out):
@@ -829,6 +869,21 @@ def gpu(output, suite, provider_out):
         rows[c["name"]] = dict(tensorType=c["tt"], groups=list(c["groups"]), identical=True, maxRelErrVsF64=err,
                                inputsSHA256=hashlib.sha256(c["meta"] + c["w"] + c["x"] + c["e"] + c.get("xs", b"")).hexdigest(),
                                outputSHA256=hashlib.sha256(v2).hexdigest())
+    # the multi-workgroup sampler chain, run whole for each module set
+    m, cb, steps = sampler_chain(10000, 0x2468ACE)
+    hs = [alloc(len(m))] + [alloc(len(cb[b])) for b in range(1, 7)]
+    chain = {}
+    for w in ("ref", "v2"):
+        for h, b in zip(hs, [m] + [cb[b] for b in range(1, 7)]):
+            write(h, b)
+        for op, groups in steps:
+            cgp.expect(s, f"DISPATCH {pipes[w + '-nex-' + op + '.spv']} {groups} 1 1 " + " ".join(map(str, hs)), re.compile(r"^\d+$"))
+        chain[w] = {b: read(hs[b], len(cb[b])) for b in (2, 4, 5, 6)}
+    assert chain["ref"] == chain["v2"], ("the sampler chain differs from glslang's modules", [b for b in chain["ref"] if chain["ref"][b] != chain["v2"][b]])
+    pick = struct.unpack("<I", chain["v2"][6][20:24])[0]
+    assert pick < 10000 and chain["v2"][2][40:44] == struct.pack("<I", pick), ("the chain's pick", pick)
+    rows["nex sampler chain"] = dict(n=10000, dispatches=len(steps), identical=True, pick=pick,
+                                     outputSHA256=hashlib.sha256(b"".join(chain["v2"][b] for b in (2, 4, 5, 6))).hexdigest())
     # deltanet and embed
     for c in deltanet_embed_cases():
         hs = [alloc(len(b)) for b in c["bufs"]]

@@ -259,9 +259,36 @@ a follow-up to ADR 0371.
      * rmsnorm, f32_matvec and the top-k weights are within 3e-6 of f64.
 
      Receipts: `docs/evidence/gpu-kernel-kir2-nex-20261023/`.
-   * the sampler and the resident-serving ops of nex_ops (sample_*, ctl,
-     params, pos_add, pos_seed, pos_incr2, quant_q8), and the BATCH,
-     BPREFILL and BIAS variants;
+   * **Done: the rest of nex_ops' decode ops**, with the same seven bindings:
+     * the resident-serving ops: quant_q8, pos_incr2, ctl, pos_add, pos_seed
+       and params;
+     * the sampler: sample_topp on one workgroup, and the multi-workgroup
+       chain sample_part, sample_probs, sample_bisect_part,
+       sample_bisect_step and sample_final.
+
+     The sampler uses:
+     * the mix32 hash;
+     * thread 0's serial exclusive prefix;
+     * a shared scalar, as a one-element shared array;
+     * a descending scan with `break`.
+
+     On gad, each resident op is exact. sample_topp is byte-identical to
+     glslang's module. So is the whole 63-dispatch chain (n = 10000:
+     part, probs, 30 bisection rounds, final), down to the pick and the
+     token-buffer write.
+   * **Done: deltanet and embed.**
+     * `deltanet_step` (inference at 9aab2b1).
+     * `deltanet_fused` (at ee9ebc5), decode variant. It has 512
+       invocations and 13 bindings, a conv ring double-buffered by the
+       position's parity, and the state's key dimension in four quarters.
+     * `embed_iq4xs` (at c7ea9a9), in all seven decode variants: IQ4_XS, and
+       `-DQ8`, `-DB32=2/3/6/7` and `-DPTQ1` as generator parameters. The
+       B32 variants keep the `+ m` of 0.0, because `-0.0 + 0.0` is `+0.0`.
+
+     On gad each is byte-identical to glslang's module. deltanet_step is
+     within 4.1e-6 of f64; deltanet_fused was run at a fresh position and
+     with history (ring, state and output); the Q8 embedding is exact.
+   * the BATCH, BPREFILL and BIAS variants of nex_ops, deltanet and embed;
    * `attn_copy_dense` on B70/ANV;
    * **Done: the dot and kdot fixtures' kernels.**
      * `dot_rows`, from inference at 0f5824c.
@@ -318,7 +345,6 @@ a follow-up to ADR 0371.
 
      The int8 run's provider reported `:shader-integer-dot-product` enabled,
      and the gate requires it.
-   * deltanet and embed;
    * then the nvgpu-h2 kernels for Xavier.
 4. **Execution.** Through the ADR 0371 provider, with numeric and speed gates
    against the hand-written kernels.

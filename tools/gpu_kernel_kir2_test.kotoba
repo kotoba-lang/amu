@@ -13,7 +13,7 @@
 ;; CASES equals the expect calls below (the script counts them). CONTROL 1
 ;; makes exactly one expectation wrong; the script requires one failure then.
 
-(def CASES 97)
+(def CASES 98)
 (def CONTROL 0)
 
 (defn- say [s :string] :i64
@@ -127,7 +127,9 @@
 
 (defn- nex-shape [] :i64
   (let [rms (kir2-nex-op 1) silu (kir2-nex-op 4) gate (kir2-nex-op 6) mv (kir2-nex-op 12) pos (kir2-nex-op 14)]
-    (+ (expect "nex: op 20 gives an empty module" (spv-count (kir2-nex-op 20)) 0)
+    (+ (expect "nex: op 32 gives an empty module" (spv-count (kir2-nex-op 32)) 0)
+       ;; quant_q8's max, abs and round
+       (expect "nex: quant_q8's three GLSL.std.450 calls" (count-op (kir2-nex-op 20) 12) 3)
        (expect "nex: rmsnorm twice, the same words" (diff-words rms (kir2-nex-op 1)) 0)
        ;; the strided sum, wg_sum's tree, the strided write
        (expect "nex: rmsnorm has three loops" (count-op rms 246) 3)
