@@ -2074,13 +2074,13 @@
 
 ;; ---- typed-cap-call ----
 ;; R4B: the wire as a keyword code: a wire keyword, or the wire id as an integer literal (the spelling of stage-0's KIR,
-;; which stage-0 also admits in source): 3 33 34 41 35 37 38 39 (35 with a :bytes request = :fs/app-data-bytes); 0 otherwise.
+;; which stage-0 also admits in source): 3 7 33 34 41 35 37 38 39 (35 with a :bytes request = :fs/app-data-bytes); 0 otherwise.
 ;; 21-check leaves the code in NF-TYPE of the wire node for 30-lower.
 (defn- ck-wire-kw [M :vector-i64 w :i64 q :i64] :i64
   (cond (= (nm-kind M w) ND-KW) (nm-head-of M w)
         (nm-ne (nm-kind M w) ND-INT) 0
         :else (case (nm-nf M w NF-AUX)
-                3 KW-HASH-SHA256 33 KW-ENV-READ 34 KW-FS-BROWSE 41 KW-IO-READ
+                3 KW-HASH-SHA256 7 KW-CLOCK-NOW 33 KW-ENV-READ 34 KW-FS-BROWSE 41 KW-IO-READ
                 35 (if (= (nm-head-of M q) KW-BYTES) KW-FS-APP-DATA-BYTES KW-FS-APP-DATA)
                 37 KW-IO-WRITE 38 KW-CLI-ARGS 39 KW-IO-WRITE-ERROR
                 20 KW-PROCESS-SPAWN 23 KW-ENTROPY-DRAW   ; R6B
@@ -2090,8 +2090,8 @@
 (defn- ck-wire-ok [k :i64] :i64
   (cond (= k KW-FS-APP-DATA) 1 (= k KW-CLI-ARGS) 1 (= k KW-IO-WRITE-ERROR) 1 (= k KW-IO-WRITE) 1
         (= k KW-FS-APP-DATA-BYTES) 1
-        ;; R4B: wires 3 33 34 41 (:string :string)
-        (= k KW-HASH-SHA256) 1 (= k KW-ENV-READ) 1 (= k KW-FS-BROWSE) 1 (= k KW-IO-READ) 1
+        ;; R4B plus native clock: wires 3 7 33 34 41 (:string :string)
+        (= k KW-HASH-SHA256) 1 (= k KW-CLOCK-NOW) 1 (= k KW-ENV-READ) 1 (= k KW-FS-BROWSE) 1 (= k KW-IO-READ) 1
         (= k KW-PROCESS-SPAWN) 1 (= k KW-ENTROPY-DRAW) 1   ; R6B: wires 20 23 (:string :string)
         (= k KW-GPU-COMPUTE) 1   ; ADR 0371: wire 42 (:string :string)
         (= k KW-NET-LISTEN) 1 (= k KW-NET-ACCEPT) 1 (= k KW-NET-DIAL) 1
@@ -4987,7 +4987,7 @@
 ;; at its head (named, never guessed).
 (defn- ck-r6b-capkw [w :i64 hh :i64] :i64
   (case w
-    3 KW-HASH-SHA256 20 KW-PROCESS-SPAWN 23 KW-ENTROPY-DRAW 33 KW-ENV-READ 34 KW-FS-BROWSE
+    3 KW-HASH-SHA256 7 KW-CLOCK-NOW 20 KW-PROCESS-SPAWN 23 KW-ENTROPY-DRAW 33 KW-ENV-READ 34 KW-FS-BROWSE
     35 (if (= hh ck-r6b-h-fs-app-data-bytes) KW-FS-APP-DATA-BYTES KW-FS-APP-DATA)
     37 KW-IO-WRITE 38 KW-CLI-ARGS 39 KW-IO-WRITE-ERROR 41 KW-IO-READ 42 KW-GPU-COMPUTE
     43 KW-NET-LISTEN 44 KW-NET-ACCEPT 45 KW-NET-DIAL 46 KW-NET-READ 47 KW-NET-WRITE

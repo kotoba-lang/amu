@@ -29,6 +29,7 @@
 ;; 400.. root lengths (16) 528.. root fds (16) 656 root count 664 matched root fd
 ;; 672 scope marks 680 depth 688 region-map 696 rows 704 region-used
 ;; 712 conj-region 720 reserved-words 728 scope-releases 736 graph 744 graph-used
+;; 752 last monotonic nanoseconds (clock/now)
 (defn- kxrt-g [] :i64 (+ (kxrt-ctx) 1024))
 (defn- kxrt-gl [k :i64] :i64 (kxrt-load64 (+ (kxrt-g) k)))
 (defn- kxrt-gs [k :i64 v :i64] :i64 (kxrt-store64 (+ (kxrt-g) k) v))
@@ -1120,12 +1121,65 @@
     (cond (> n 65536) (kxrt-fail)
           (or (= id 43) (= id 45)) (kxrt-net-open id a n)
           :else (kxrt-net-handle id a n))))
+
+;; ---- clock/now (wire 7) and entropy/draw (wire 23) ----
+;; Private scratch S+15360..16127, separate from SHA / TCP / BPF scratch.
+;; G+752 stores the last monotonic reading. Kernel time is not caller input.
+(defn- kxrt-request= [h :i64 lo :i64 hi :i64 want :i64] :bool
+  (and (= (kxrt-ps h) want)
+    (let [p (kxrt-saddr h)]
+      (loop [i 0]
+        (if (= i want) true
+          (let [w (if (< i 8) lo hi) shift (* 8 (if (< i 8) i (- i 8)))]
+            (if (= (kxrt-load8 (+ p i)) (bit-and (u64-shift-right w shift) 255)) (recur (inc i)) false)))))))
+(defn- kxrt-clock [req :i64] :i64
+  (let [wall (kxrt-request= req 0x6c6c6177 0 4)
+        mono (kxrt-request= req 0x696e6f746f6e6f6d 0x63 9)
+        s (+ (kxrt-gl 200) 15360)]
+    (if (not (or wall mono)) (kxrt-fail)
+      (let [r (loop [attempt 0] (let [v (kxrt-syscall 228 (if wall 0 1) s 0 0 0 0)] (if (= v -4) (if (< attempt 1024) (recur (inc attempt)) (kxrt-fail)) v)))
+            sec (kxrt-load64 s) ns (kxrt-load64 (+ s 8))
+            scale (if wall 1000 1000000000) part (if wall (quot ns 1000000) ns)]
+        (if (or (< r 0) (< sec 0) (< ns 0) (>= ns 1000000000)
+                (> sec (quot (- 9223372036854775807 part) scale))) (kxrt-fail)
+          (let [ticks (+ (* sec scale) part)]
+            (if (and mono (< ticks (kxrt-gl 752))) (kxrt-fail)
+              (let [saved (if mono (kxrt-gs 752 ticks) 0) out (+ s 64) n (kxrt-dec out ticks)]
+                (kxrt-intern out n)))))))))
+(defn- kxrt-entropy-unavailable [] :i64
+  (let [b (kxrt-gl 200) n (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b 0 0x4152545f4558454b 8) 0x646e696b3a7b2050 8) 0x6962617061633a20 8) 0x61633a207974696c 8) 0x7974696c69626170 8) 0x706f72746e653a20 8) 0x3a20776172642f79 8) 0x3a206e6f73616572 8) 0x2f79706f72746e65 8) 0x616c696176616e75 8) 0xa7d656c62 5) f (kxrt-flush) e (kxrt-err-text b n)]
+    (kxrt-exit 126)))
+(defn- kxrt-entropy [req :i64] :i64
+  (let [n (kxrt-ps req) p (kxrt-saddr req)
+        ;; Match the existing decimal parser, then enforce the 1..256 byte bound.
+        count (if (and (> n 0) (<= n 19)) (kxrt-parse p n) -1)
+        raw (+ (kxrt-gl 200) 15360) out (+ raw 256)]
+    (if (or (< count 1) (> count 256)) (kxrt-fail)
+      (let [got (loop [off 0]
+                  (if (= off count) off
+                    (let [r (kxrt-syscall 318 (+ raw off) (- count off) 0 0 0 0)]
+                      (cond (= r -4) (recur off)
+                            (= r -38) (kxrt-entropy-unavailable)
+                            (or (<= r 0) (> r (- count off))) (kxrt-fail)
+                            :else (recur (+ off r))))))
+            encoded (loop [i 0]
+                      (if (= i count) 0
+                        (let [v (kxrt-load8 (+ raw i)) hi (quot v 16) lo (bit-and v 15)
+                              a (kxrt-store8 (+ out (* 2 i)) (if (< hi 10) (+ 48 hi) (+ 87 hi)))
+                              b (kxrt-store8 (+ out (inc (* 2 i))) (if (< lo 10) (+ 48 lo) (+ 87 lo)))]
+                          (recur (inc i)))))
+            result (kxrt-intern out (* count 2))
+            cleared (loop [i 0]
+                      (if (= i (+ 256 (* count 2))) 0
+                        (let [z (kxrt-store8 (+ raw i) 0)] (recur (inc i)))))]
+        result))))
+
 (defn- kxrt-typed-cap-call [id :i64 rk :i64 sk :i64 req :i64] :i64
   (cond (not (kxrt-admitted? id)) (kxrt-fail)
         (not= rk sk) (kxrt-fail)
         (= rk 1)
           (let [v (kxrt-valid req)
-                r (case id 3 (kxrt-sha256 req) 20 (kxrt-spawn req) 35 (kxrt-fs req) 37 (kxrt-io-write req) 38 (kxrt-args req) 39 (kxrt-io-error req) 42 (kxrt-gpu req)
+                r (case id 3 (kxrt-sha256 req) 7 (kxrt-clock req) 20 (kxrt-spawn req) 23 (kxrt-entropy req) 35 (kxrt-fs req) 37 (kxrt-io-write req) 38 (kxrt-args req) 39 (kxrt-io-error req) 42 (kxrt-gpu req)
                     43 (kxrt-net 43 req) 44 (kxrt-net 44 req) 45 (kxrt-net 45 req) 46 (kxrt-net 46 req) 47 (kxrt-net 47 req) (kxrt-fail))]
             (kxrt-valid r))
         (and (= rk 8) (= id 35))
@@ -1279,7 +1333,8 @@
         i3 (if (> (kxrt-gl 312) 2) (kxrt-allow-read-fd p i2 (kxrt-gl 312)) i2)
         i4 (if (kxrt-net-any?) (kxrt-allow-net p i3) i3)
         i5 (if (> (kxrt-gl 2096) 2) (kxrt-allow-read-fd p i4 (kxrt-gl 2096)) i4)
-        n (kxrt-bpf p i5 6 0 0 196608)
+        i6 (if (kxrt-admitted? 23) (kxrt-allow-nr p i5 318) i5)
+        n (kxrt-bpf p i6 6 0 0 196608)
         a (kxrt-store64 prog n) b (kxrt-store64 (+ prog 8) p)]
     (if (< (kxrt-syscall 157 38 1 0 0 0 0) 0) (kxrt-die)
       (let [r (kxrt-syscall 317 1 0 prog 0 0 0)]
