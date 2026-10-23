@@ -109,10 +109,36 @@ def main(compiler, arm_proof, out):
         ledger.append(dict(name=case["name"], source=pin(src), image=static_elf(dst),
                            result=case["result"], reference=case["reference"]))
 
+    # Exercise the actual complete x86 product entry with pinned bytes. These
+    # observations supplement, rather than substitute for, the native verdict.
+    good = out / "public-good.kotoba"
+    good.write_text("(ns public-good (:export [main]))\n(defn main [] :i64 42)\n")
+    lock = out / "public-good.ksl"
+    lock.write_text(f"KSL1\nentry {good}\nfile {pin(good)['sha256']} {good}\n")
+    digest = pin(lock)["sha256"]
+    run("native-public-check", [F, "check", good, "--source-lock", lock, "--source-lock-sha256", digest])
+    run("native-public-compile", [F, "compile", good, "--target", "aarch64-macos", "--output", out / "public-good.kseed",
+                                 "--source-lock", lock, "--source-lock-sha256", digest])
+    unknown = out / "public-unknown.kotoba"
+    unknown.write_text("(ns public-unknown (:export [main]))\n(defn main [] :i64 (amu-unresolved 0))\n")
+    refusals = []
+    for name, args, code in [
+        ("digest-mismatch", ["check", good, "--source-lock", lock, "--source-lock-sha256", "0" * 64], b"E6015"),
+        ("missing-lock", ["check", good, "--source-lock", out / "missing.ksl"], b"E6015"),
+        ("unknown-form", ["check", unknown], b"E2101"),
+        ("unsupported-default", ["compile", good, "--output", out / "refused.kseed"], b"E2"),
+        ("unsupported-verb", ["worker"], b"E1"),
+        ("unsupported-seal", ["compile", good, "--target", "aarch64-macos", "--output", out / "refused.kseed", "--seal", "unknown"], b"E1")]:
+        r = run("native-public-refuse-" + name, [F, *args], ok=False)
+        assert r.returncode in (1, 2) and code in r.stderr and b"KEXE_TRAP" not in r.stderr
+        refusals.append(dict(name=name, exit=r.returncode, diagnostic=code.decode()))
+    assert not (out / "refused.kseed").exists()
+
     report = dict(status="PASS_COMPLETE_NATIVE_X86_COMPILER_BUILD", host=[platform.system(), platform.machine(), platform.release()],
                   generations=generations, sourceUnity=pin(full), armBuildReceipt=pin(arm_proof),
                   coreAdoption=json.loads((ROOT / json.loads((ROOT / "seed/compiler-core.json").read_text())["adoptionReceipt"]).read_text()),
                   cdci=roles, cases=ledger, nativeCDCIExecutionQualified=False,
+                  publicNativeEntry=dict(pinnedCheck=True, pinnedCompile=pin(out / "public-good.kseed"), refusals=refusals),
                   cCompilerOrLoader=False, JVMNodeOrGraalFallback=False, emulation=False)
     (out / "complete-x86.json").write_text(json.dumps(report, indent=2) + "\n")
     print(report["status"], "F1=F2=F3", generations[0]["sha256"], flush=True)
