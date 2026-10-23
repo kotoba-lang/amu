@@ -308,8 +308,8 @@
   end to end, so at the measured reported width NO admitted width keeps
   the carve-out. What stays UNMEASURED (or measured-but-refused) is
   everything else -- shape 2 at
-  W = 32/64/128 (the shape-2 series' remaining unmeasured cells; W = 256
-  and W = 1024 carry their own shape-2 flips),
+  W = 32/64 (the shape-2 series' remaining unmeasured cells; W = 256,
+  W = 1024 and W = 128 carry their own shape-2 flips),
   shape 2 at W = 512 (measured 2026-10-24 but REFUSED as a selection
   basis, claim-protocol rule 2 REGIME-SCOPED -- the first
   measured-but-scoped cell),
@@ -321,29 +321,35 @@
 (def ^:private apple-simdgroup-measured-shapes
   "The element counts this variant's contract-satisfying cells ran, keyed
   by workgroup width: n = 1,000,003 (the flip contract's ground shape) at
-  every flipped W (32, 64, 128, 256, 512, 1024), and -- at W = 256 and
-  W = 1024 ONLY -- also shape 2, n = 2^20 (the shape-2 series' anchor
-  cell, docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w256,
+  every flipped W (32, 64, 128, 256, 512, 1024), and -- at W = 256,
+  W = 1024 and W = 128 ONLY -- also shape 2, n = 2^20 (the shape-2
+  series' anchor cell,
+  docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w256,
   paired median ratios 0.794/0.811/0.812, rule 2 REGIME-INVARIANT FASTER,
-  18/18 -- the shape-2 flip of the W = 256 cell, 2026-10-24; and the
+  18/18 -- the shape-2 flip of the W = 256 cell, 2026-10-24; the
   shape-2 series' third cell,
   docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w1024, paired
   median ratios 0.836/0.843/0.841, rule 2 REGIME-INVARIANT FASTER,
-  18/18 -- the shape-2 flip of the W = 1024 cell, 2026-10-24). Shape 2 at
+  18/18 -- the shape-2 flip of the W = 1024 cell, 2026-10-24; and the
+  shape-2 series' fourth cell,
+  docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w128, paired
+  median ratios 0.769/0.780/0.780, rule 2 REGIME-INVARIANT FASTER,
+  18/18, cross-operator level identity HOLDS -- the shape-2 flip of the
+  W = 128 cell, 2026-10-24). Shape 2 at
   W = 512 was measured 2026-10-24
   (docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w512) and is
   REFUSED as a selection basis -- claim-protocol rule 2 classifies that
   cell REGIME-SCOPED (:min straddles 1.0 inside one regime; 1 of 18
   pooled per-run ratios above 1.0) and a regime-scoped sign is denied
   any selection role whatever its shape -- so W = 512 keeps the ONE
-  shape. Shape 2 at W = 32/64/128 is UNMEASURED for this variant
+  shape. Shape 2 at W = 32/64 is UNMEASURED for this variant
   (the shape-2 series' remaining cells). The selection answer cannot
   vary with n, and the record's :shapes names the measured shapes so no
   claim extends past them."
   {256 [1000003 1048576]
    512 [1000003]
    1024 [1000003 1048576]
-   128 [1000003]
+   128 [1000003 1048576]
    64 [1000003]
    32 [1000003]})
 
@@ -358,9 +364,12 @@
   shape-2 flip's basis); W = 1024 -> the W-sweep series' third cell AND
   the shape-2 series' third cell's own record
   (docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w1024, the
-  W = 1024 shape-2 flip's basis); W = 512,
-  W = 128, W = 64 and
-  W = 32 -> the W-sweep series' second, fourth, fifth and sixth cells
+  W = 1024 shape-2 flip's basis); W = 128 -> the W-sweep series' fourth
+  cell AND the shape-2 series' fourth cell's own record
+  (docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w128, the
+  W = 128 shape-2 flip's basis); W = 512,
+  W = 64 and
+  W = 32 -> the W-sweep series' second, fifth and sixth cells
   (summary.md,
   run-log.txt, compile-log.txt, shaders/ in each)."
   {256 ["docs/evidence/gpu-simdgroup-reduce-m1max-20261023"
@@ -368,7 +377,8 @@
    512 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512"]
    1024 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w1024"
          "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w1024"]
-   128 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w128"]
+   128 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w128"
+        "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w128"]
    64 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w64"]
    32 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w32"]})
 
@@ -428,7 +438,7 @@
   re-sweep 1.226/1.225/1.225). The W = 256 flip cell's :shapes is now
   [1000003 1048576] and its :evidence names this record too.
   WHAT THE NUMBERS DO NOT LICENSE: shape 2 (n = 2^20) is still
-  UNMEASURED at W = 32/64/128 (the shape-2 series' remaining
+  UNMEASURED at W = 32/64 (the shape-2 series' remaining
   unmeasured cells) and measured-but-REFUSED at W = 512 (the paragraph
   below), and every shape beyond the two measured ones is
   UNMEASURED at every cell (selection cannot vary with n; the record's
@@ -493,10 +503,34 @@
   36 verify lines, ok=1 on every one; :max/:min bit-exact vs the
   reference and between arms, :sum 3.27e-05 vs the reference and
   6.10e-05 between arms (regrouping). WHAT THIS SLICE DOES NOT LICENSE:
-  shape 2 stays UNMEASURED at W = 32/64/128 and measured-but-REFUSED at
+  shape 2 stays UNMEASURED at W = 32/64 (the shape-2 series' remaining
+  cells after the W = 128 flip below) and measured-but-REFUSED at
   W = 512 (the paragraph above); no :measured? flag moves (the W = 1024
   answer was already MEASURED at the ground shape) and no workgroup row
-  (ADR-0355/0358) moves.")
+  (ADR-0355/0358) moves.
+  SHAPE-2 FLIP OF THE W = 128 CELL (the shape-2 series' fourth cell,
+  2026-10-24): the byte-identical protocol re-ran W = 128 at shape 2,
+  n = 2^20 (no padded-lane tail) and measured THIS variant faster again
+  (paired median ratios 0.769/0.780/0.780 for :sum/:max/:min, claim-
+  protocol rule 2 REGIME-INVARIANT FASTER, 18/18 per-run ratios below
+  1.0 -- every observed regime one-sided; in family with the shape-1
+  same-W record 0.775/0.789/0.789 and faster than the shape-2 anchor
+  0.794/0.811/0.812 at every operator). Rule 1 sees ONE level per
+  operator and cross-operator level identity HOLDS (all 15 run pairs
+  agree) -- the shape-2 series' first cell this clean: the anchor
+  (W = 256, 8/15 divergent pairs), W = 512 (11/15, plus the :min
+  straddle -- measured-but-REGIME-SCOPED) and W = 1024 (5/15) all
+  published identity REFUTED. The W = 128 flip cell's :shapes is now
+  [1000003 1048576] and its :evidence names this record too
+  (docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w128, the
+  W = 128 shape-2 flip's own record). Read-back: 36 verify lines, ok=1
+  on every one; :max/:min bit-exact vs the reference and between arms,
+  :sum 9.24e-06 (baseline) / 6.02e-06 (variant) vs reference, 1.53e-05
+  between arms (regrouping). WHAT THIS SLICE DOES NOT LICENSE: shape 2
+  stays UNMEASURED at W = 32/64 (the shape-2 series' remaining cells)
+  and measured-but-REFUSED at W = 512 (the paragraph above); no
+  :measured? flag moves (the W = 128 answer was already MEASURED at the
+  ground shape) and no workgroup row (ADR-0355/0358) moves.")
 
 (def variant-bases
   "Why each variant exists. Design rationale, not measurement evidence."
