@@ -1,0 +1,474 @@
+{
+  "status": "PASS_NET_RUNTIME",
+  "target": "x86_64-linux",
+  "compiler": {
+    "bytes": 1360384,
+    "sha256": "b2f96378dbf90bc3f950e111fba5b203761045fc100f05fd8210d005da95e9cf"
+  },
+  "host": [
+    "Linux",
+    "aarch64",
+    "6.15.10-200.fc42.aarch64"
+  ],
+  "executionNative": false,
+  "imageSeccomp": "if-available",
+  "checkerRefusesWire43": true,
+  "knob": [
+    {
+      "name": "not-an-address",
+      "allow": "37,43,44,45,46,47",
+      "listen": "x",
+      "dial": null,
+      "exit": 2
+    },
+    {
+      "name": "no-port",
+      "allow": "37,43,44,45,46,47",
+      "listen": "127.0.0.1",
+      "dial": null,
+      "exit": 2
+    },
+    {
+      "name": "port-zero",
+      "allow": "37,43,44,45,46,47",
+      "listen": "127.0.0.1:0",
+      "dial": null,
+      "exit": 2
+    },
+    {
+      "name": "port-65536",
+      "allow": "37,43,44,45,46,47",
+      "listen": null,
+      "dial": "127.0.0.1:65536",
+      "exit": 2
+    },
+    {
+      "name": "octet-256",
+      "allow": "37,43,44,45,46,47",
+      "listen": "256.0.0.1:80",
+      "dial": null,
+      "exit": 2
+    },
+    {
+      "name": "three-octets",
+      "allow": "37,43,44,45,46,47",
+      "listen": null,
+      "dial": "1.2.3:80",
+      "exit": 2
+    },
+    {
+      "name": "trailing-comma",
+      "allow": "37,43,44,45,46,47",
+      "listen": "127.0.0.1:80,",
+      "dial": null,
+      "exit": 2
+    },
+    {
+      "name": "seventeen-entries",
+      "allow": "37,43,44,45,46,47",
+      "listen": "127.0.0.1:7000,127.0.0.1:7001,127.0.0.1:7002,127.0.0.1:7003,127.0.0.1:7004,127.0.0.1:7005,127.0.0.1:7006,127.0.0.1:7007,127.0.0.1:7008,127.0.0.1:7009,127.0.0.1:7010,127.0.0.1:7011,127.0.0.1:7012,127.0.0.1:7013,127.0.0.1:7014,127.0.0.1:7015,127.0.0.1:7016",
+      "dial": null,
+      "exit": 2
+    },
+    {
+      "name": "sixteen-entries",
+      "allow": "37,43,44,45,46,47",
+      "listen": "127.0.0.1:7000,127.0.0.1:7001,127.0.0.1:7002,127.0.0.1:7003,127.0.0.1:7004,127.0.0.1:7005,127.0.0.1:7006,127.0.0.1:7007,127.0.0.1:7008,127.0.0.1:7009,127.0.0.1:7010,127.0.0.1:7011,127.0.0.1:7012,127.0.0.1:7013,127.0.0.1:7014,127.0.0.1:7015",
+      "dial": null,
+      "exit": 0
+    },
+    {
+      "name": "valid-both",
+      "allow": "37,43,44,45,46,47",
+      "listen": "127.0.0.1:7001,0.0.0.0:7002",
+      "dial": "127.0.0.1:7001",
+      "exit": 0
+    },
+    {
+      "name": "absent",
+      "allow": "37,43,44,45,46,47",
+      "listen": null,
+      "dial": null,
+      "exit": 0
+    },
+    {
+      "name": "empty",
+      "allow": "37,43,44,45,46,47",
+      "listen": "",
+      "dial": "",
+      "exit": 0
+    },
+    {
+      "name": "not-granted-ignored",
+      "allow": "37",
+      "listen": "x",
+      "dial": "y",
+      "exit": 0
+    }
+  ],
+  "wires": [
+    {
+      "name": "round-trip",
+      "exit": 0,
+      "stdout": "1\n2\n3\n5\n68656c6c6f\nclosed\n\nclosed\n{:status :ok :result 7 :fuel {:initial 100000000 :remaining 99999979}}\n",
+      "stderr": "",
+      "image": {
+        "bytes": 201216,
+        "sha256": "056ac506b84c1e801addbd0475f19074311176c3f3aad62ad1d4797e8e54c24e"
+      }
+    },
+    {
+      "name": "accept-timeout",
+      "exit": 0,
+      "stdout": "timeout\n{:status :ok :result 7 :fuel {:initial 100000000 :remaining 99999995}}\n",
+      "stderr": "",
+      "image": {
+        "bytes": 201216,
+        "sha256": "316d2ac452ea86f37667e1d102fd26b69fafd5fdd3513f9459243905e885fc7a"
+      }
+    },
+    {
+      "name": "read-timeout",
+      "exit": 0,
+      "stdout": "timeout\n{:status :ok :result 7 :fuel {:initial 100000000 :remaining 99999992}}\n",
+      "stderr": "",
+      "image": {
+        "bytes": 201216,
+        "sha256": "d33717b3ff5c4fc2cdf53e6e5697d1d4e2ca39c35a1f6e6318b91cc67ae4555b"
+      }
+    },
+    {
+      "name": "dial-refused",
+      "exit": 0,
+      "stdout": "refused\n{:status :ok :result 7 :fuel {:initial 100000000 :remaining 99999997}}\n",
+      "stderr": "",
+      "image": {
+        "bytes": 201216,
+        "sha256": "efdd4b9f5e4aff1acebfc8c83758315450b5cd33806e1752b6bd38fae01f2c68"
+      }
+    },
+    {
+      "name": "listen-not-granted",
+      "exit": 126,
+      "stdout": "",
+      "stderr": "KEXE_TRAP {:kind :capability :capability :net/listen :reason :net/address-not-granted}\n",
+      "image": {
+        "bytes": 201216,
+        "sha256": "cc9bbe7afcf9055547d4b88c86214408183cb68667b18409a3afaa9c4638d145"
+      }
+    },
+    {
+      "name": "listen-malformed",
+      "exit": 126,
+      "stdout": "",
+      "stderr": "KEXE_TRAP {:kind :capability :capability :net/listen :reason :net/malformed-request}\n",
+      "image": {
+        "bytes": 201216,
+        "sha256": "7558c753ec546cbad513960f0b8567f58bc5be2c7188c78e7333b80615bf7ffa"
+      }
+    },
+    {
+      "name": "listen-bad-octet",
+      "exit": 126,
+      "stdout": "",
+      "stderr": "KEXE_TRAP {:kind :capability :capability :net/listen :reason :net/malformed-request}\n",
+      "image": {
+        "bytes": 201216,
+        "sha256": "393a91e37ae29101f695db76def5d3da5203512cb849983503d455211b81c7e7"
+      }
+    },
+    {
+      "name": "listen-two-fields",
+      "exit": 126,
+      "stdout": "",
+      "stderr": "KEXE_TRAP {:kind :capability :capability :net/listen :reason :net/malformed-request}\n",
+      "image": {
+        "bytes": 201216,
+        "sha256": "33da92c3d26901b87938ad4a67c866892c56977768732dc0f2b98d7d96eec1d8"
+      }
+    },
+    {
+      "name": "listen-failed",
+      "exit": 126,
+      "stdout": "",
+      "stderr": "KEXE_TRAP {:kind :capability :capability :net/listen :reason :net/listen-failed}\n",
+      "image": {
+        "bytes": 201216,
+        "sha256": "17ff4ac9efeb1f519a36cdae7e9e890c42a43566d3e4435ec9d60d554c48619c"
+      }
+    },
+    {
+      "name": "dial-no-timeout",
+      "exit": 126,
+      "stdout": "",
+      "stderr": "KEXE_TRAP {:kind :capability :capability :net/dial :reason :net/malformed-request}\n",
+      "image": {
+        "bytes": 201216,
+        "sha256": "f307756a0ef08f4f477872fdd5bbbcbac1e9dd01003bc50ccf06dfac6f056c33"
+      }
+    },
+    {
+      "name": "dial-timeout-budget",
+      "exit": 126,
+      "stdout": "",
+      "stderr": "KEXE_TRAP {:kind :capability :capability :net/dial :reason :net/timeout-budget}\n",
+      "image": {
+        "bytes": 201216,
+        "sha256": "bd913070d0d60e3139372d40cf8f92a483e389427c6345bf9ac644de0680693c"
+      }
+    },
+    {
+      "name": "dial-not-granted",
+      "exit": 126,
+      "stdout": "",
+      "stderr": "KEXE_TRAP {:kind :capability :capability :net/dial :reason :net/address-not-granted}\n",
+      "image": {
+        "bytes": 201216,
+        "sha256": "7f2ed6a85db744916f7b947dce8ebedaa860af3b36a50d0b799da0a0f46efba6"
+      }
+    },
+    {
+      "name": "dial-handle-budget",
+      "exit": 126,
+      "stdout": "16\n",
+      "stderr": "KEXE_TRAP {:kind :capability :capability :net/dial :reason :net/handle-budget}\n",
+      "image": {
+        "bytes": 201216,
+        "sha256": "50b6a61387c9e1973d8d84d94613a3b0553b67203cc3d63f1a4ddd7524a07ff4"
+      }
+    },
+    {
+      "name": "accept-out-of-range",
+      "exit": 126,
+      "stdout": "",
+      "stderr": "KEXE_TRAP {:kind :capability :capability :net/accept :reason :net/handle-out-of-range}\n",
+      "image": {
+        "bytes": 201216,
+        "sha256": "73d2ff041be37975c1a839040efdb1968f680584a4751d538508d5888e9df728"
+      }
+    },
+    {
+      "name": "accept-not-open",
+      "exit": 126,
+      "stdout": "",
+      "stderr": "KEXE_TRAP {:kind :capability :capability :net/accept :reason :net/handle-not-open}\n",
+      "image": {
+        "bytes": 201216,
+        "sha256": "8d55d24a999f6517cfe75d646de0cc83bfefddc76bc625777ef2ee19f76133df"
+      }
+    },
+    {
+      "name": "accept-on-connection",
+      "exit": 126,
+      "stdout": "",
+      "stderr": "KEXE_TRAP {:kind :capability :capability :net/accept :reason :net/handle-not-open}\n",
+      "image": {
+        "bytes": 201216,
+        "sha256": "1b3fb8b21f97615054b2b2ade7c5dfdc483b2d6638a898a39729a5de88a511cc"
+      }
+    },
+    {
+      "name": "read-zero-handle",
+      "exit": 126,
+      "stdout": "",
+      "stderr": "KEXE_TRAP {:kind :capability :capability :net/read :reason :net/handle-out-of-range}\n",
+      "image": {
+        "bytes": 201216,
+        "sha256": "0fae2239a68cc7b6704ce66e437bff06156541c24863f4366a0d477a71236f37"
+      }
+    },
+    {
+      "name": "read-byte-budget",
+      "exit": 126,
+      "stdout": "",
+      "stderr": "KEXE_TRAP {:kind :capability :capability :net/read :reason :net/byte-budget}\n",
+      "image": {
+        "bytes": 201216,
+        "sha256": "4a25c3473008013ba50dfaa2ab82c481ebea49d0781156b7a4ffe4573cc870d4"
+      }
+    },
+    {
+      "name": "read-timeout-budget",
+      "exit": 126,
+      "stdout": "",
+      "stderr": "KEXE_TRAP {:kind :capability :capability :net/read :reason :net/timeout-budget}\n",
+      "image": {
+        "bytes": 201216,
+        "sha256": "78be7c11bf3ee99b63d1f36cf69d7c24b41e64bd6220f8b13a495d5e92bb2bcc"
+      }
+    },
+    {
+      "name": "read-malformed",
+      "exit": 126,
+      "stdout": "",
+      "stderr": "KEXE_TRAP {:kind :capability :capability :net/read :reason :net/malformed-request}\n",
+      "image": {
+        "bytes": 201216,
+        "sha256": "f09560da9d4a3f1ad33d529731f400f24a20481c5bc710ffe8c6aa74d147dd7f"
+      }
+    },
+    {
+      "name": "write-odd-hex",
+      "exit": 126,
+      "stdout": "",
+      "stderr": "KEXE_TRAP {:kind :capability :capability :net/write :reason :net/malformed-request}\n",
+      "image": {
+        "bytes": 201216,
+        "sha256": "5f94eb3712ae6ec59b39d5e9f25c735efb1f7cf16de7a742aae7efe565893203"
+      }
+    },
+    {
+      "name": "write-upper-hex",
+      "exit": 126,
+      "stdout": "",
+      "stderr": "KEXE_TRAP {:kind :capability :capability :net/write :reason :net/malformed-request}\n",
+      "image": {
+        "bytes": 201216,
+        "sha256": "de6d4522edb15a2b3ca26035e7a4da10c27c08d409fae1802ac2b9c5fd0d8b63"
+      }
+    },
+    {
+      "name": "write-on-listener",
+      "exit": 126,
+      "stdout": "",
+      "stderr": "KEXE_TRAP {:kind :capability :capability :net/write :reason :net/handle-not-open}\n",
+      "image": {
+        "bytes": 201216,
+        "sha256": "59cc3befe057c4807457bdb40be4049f5d7148557c993f954d714e979800d862"
+      }
+    },
+    {
+      "name": "write-byte-budget",
+      "exit": 126,
+      "stdout": "",
+      "stderr": "KEXE_TRAP {:kind :capability :capability :net/write :reason :net/byte-budget}\n",
+      "image": {
+        "bytes": 201216,
+        "sha256": "53bba6f79dec68a2f13bb3524d4aabffb844aa7e1ccf0518e13f8132b7ede159"
+      }
+    },
+    {
+      "name": "request-over-65536",
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 100000000 :remaining 99999981}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n",
+      "image": {
+        "bytes": 201216,
+        "sha256": "47a5baef5dfe7d7f7c72522d808d012e777c49b97da4485f68e710965c6e0a90"
+      }
+    },
+    {
+      "name": "wire-not-granted",
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 100000000 :remaining 99999998}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n",
+      "image": {
+        "bytes": 201216,
+        "sha256": "08be016bbb7848dc32abdb8d91edc0c7468dbb79c35413df8f72a0d3fc58c11f"
+      }
+    },
+    {
+      "name": "no-scope-granted",
+      "exit": 126,
+      "stdout": "",
+      "stderr": "KEXE_TRAP {:kind :capability :capability :net/listen :reason :net/address-not-granted}\n",
+      "image": {
+        "bytes": 201216,
+        "sha256": "1ca96e6d4886b030fb4e63f7c4e8c4306e65e0b6ce3c5b64a3e04dd2a52c18fb"
+      }
+    }
+  ],
+  "testOnlyCompilers": {
+    "admission": "in-memory ADMISSION patch of the selfhost unity; never written to seed/ or adopted",
+    "net": {
+      "bytes": 1360384,
+      "sha256": "e7280cc7a9d6e31d76b273b72d7df258c60ff3f18ce0cbfecb41053e360619e4"
+    },
+    "controlNoNetRules": {
+      "bytes": 1360384,
+      "sha256": "dfb9844053bb20c9b306ec74e59f0f40717eb6fd6204e883054e3b3a5bd4ebc6"
+    },
+    "controlOtherSocket": {
+      "bytes": 1360384,
+      "sha256": "6eb15d50df306ccf6c5e5255dce2bc97be58444264724943591ed59758739915"
+    }
+  },
+  "unity": {
+    "seed/X86_64-LINUX-SELFHOST-MANIFEST": {
+      "bytes": 510,
+      "sha256": "af651c4d855723a633d3b94c4fc6393e5c6c6e53ac7e58186e0ec3228e8625b0"
+    },
+    "seed/00-ns-static.kotoba": {
+      "bytes": 14937,
+      "sha256": "a1b4360121914820be63dd8ce9d58f83a291ff5f3f9d5ed6ca06c60469035a3b"
+    },
+    "seed/01-mem.kotoba": {
+      "bytes": 15304,
+      "sha256": "79bb1d1154857efc70bee464161abfce37ec6b90e55af7bbef386ab96ca131c9"
+    },
+    "seed/02-io.kotoba": {
+      "bytes": 10931,
+      "sha256": "268ae7a0d450deb0b7981b85f7e6895b08b4af828f1f57cb96cf2eb29777c4ea"
+    },
+    "seed/10-lex.kotoba": {
+      "bytes": 24829,
+      "sha256": "a8b8128b9e00564f3d86a81b9c69e692efa0114a3cd0083e401cda8577086d6b"
+    },
+    "seed/11-read.kotoba": {
+      "bytes": 9176,
+      "sha256": "89fd65139a4502f96c87807db80d4cbaa15913ea75788eb3b647dcc9556e0392"
+    },
+    "seed/20-names.kotoba": {
+      "bytes": 38998,
+      "sha256": "fe067b8e507d6f7321a36f48a2a3d26a8874089caf00ac4ac5371c0d197ccde8"
+    },
+    "seed/21-check.kotoba": {
+      "bytes": 381021,
+      "sha256": "a42b412a1aed44f9ce24db7a0f7fdec3a242b8b36e3502062bf37fcecfd62081"
+    },
+    "seed/30-lower.kotoba": {
+      "bytes": 87820,
+      "sha256": "42c85dc4c8afa5b82633dd73f61df9bb0f03da6b93c28c7ae2e85008edb980d7"
+    },
+    "seed/50-out.kotoba": {
+      "bytes": 21354,
+      "sha256": "1cf17b348bda09d73d721856705a52db05131b88f80d017e1fe9b9a92c066955"
+    },
+    "seed/70-x86_64-linux.kotoba": {
+      "bytes": 19198,
+      "sha256": "82f14d94d4d9b1f8c71a65de463b784b78b34ade93e5bb630148b5bde2dbebe7"
+    },
+    "seed/71-x86_64-runtime.kotoba": {
+      "bytes": 5382,
+      "sha256": "15f2c4f8b8f0a2a46ccd8fbb4c7f621e17a385b680e0d6878d258a9c9e6cc14c"
+    },
+    "seed/75-x86_64-static.kotoba": {
+      "bytes": 8845,
+      "sha256": "e2f260bae95b873fb5b18c4f47324429cff1acf969d4a39ba4386da76fcfe2c9"
+    },
+    "seed/76-x86_64-static-rt.kotoba": {
+      "bytes": 73972,
+      "sha256": "7eeb7ed3893809cfa7dd50e59ef010112e444344ae3276cac48d7b1099eaad7c"
+    },
+    "seed/77-aarch64-static-rt.kotoba": {
+      "bytes": 74104,
+      "sha256": "a7f848bb93a6e2cf4032ffb661b38ee61b91574fb23917783f2d433f849482e1"
+    },
+    "seed/80-aarch64-linux.kotoba": {
+      "bytes": 15441,
+      "sha256": "508dd6769a2e8e9fd3c99bd5fe4c15c7a5bfd70a67b4451847f9cee547c58a1a"
+    },
+    "seed/74-x86_64-aiueos-object.kotoba": {
+      "bytes": 8402,
+      "sha256": "9c3b16530f722e9a86249d17be3d5d55e1306be759be76c21df8cfac1d5db4d8"
+    },
+    "seed/73-x86-linux-entry.kotoba": {
+      "bytes": 1175,
+      "sha256": "499022e15adce90748a6a545230e3ca922a6a49cf0f9cd986807a59d93b36b6b"
+    }
+  },
+  "cCompilerOrLoader": false,
+  "notCovered": [
+    "the two seccomp controls: this kernel does not enforce seccomp (KEXE_SECCOMP=if-available)"
+  ]
+}

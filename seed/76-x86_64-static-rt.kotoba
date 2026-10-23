@@ -517,12 +517,259 @@
         (let [x (kxrt-gs 304 rq) y (kxrt-gs 312 an) act (+ (kxrt-gl 200) 8192)
               a0 (kxrt-store64 act 1) a1 (kxrt-store64 (+ act 8) 0) a2 (kxrt-store64 (+ act 16) 0) a3 (kxrt-store64 (+ act 24) 0)]
           (if (< (kxrt-signal 13 act) 0) (kxrt-die) 0))))))
+;; ---- wires 43..47 native TCP: :net/listen :net/accept :net/dial :net/read :net/write ----
+;; The removed loader's knet_serve_one, in this process: the runtime decides
+;; every request (tools/kexe_loader_decisions.kotoba ops 10-18, the names of
+;; tools/kexe_loader_names.kotoba) and makes the system calls; the guest
+;; cannot reach them itself. IPv4 only, exact granted addresses, at most 16
+;; handles, 16384 bytes per read or write, timeouts up to 30000 ms.
+;; State at G+1024: 16 slots of (kind, fd) words, kind 0 free 1 listener
+;; 2 connection; G+1280 the listen scope (count, then 16 entries), G+1552 the
+;; dial scope. An entry or address is ip*65536+port.
+;; Scratch: S+14336 sockaddr_in, S+14400 pollfd, S+14432 timespec, S+14464
+;; clock, S+14496 socket option and its length.
+(defn- kxrt-net-kind [s :i64] :i64 (kxrt-gl (+ 1024 (* 16 s))))
+(defn- kxrt-net-fd [s :i64] :i64 (kxrt-gl (+ 1032 (* 16 s))))
+(defn- kxrt-net-set [s :i64 kind :i64 fd :i64] :i64
+  (let [z (kxrt-gs (+ 1024 (* 16 s)) kind)] (kxrt-gs (+ 1032 (* 16 s)) fd)))
+(defn- kxrt-net-free [] :i64
+  (loop [s 0] (cond (>= s 16) -1 (= (kxrt-net-kind s) 0) s :else (recur (inc s)))))
+(defn- kxrt-net-any? [] :bool
+  (or (kxrt-admitted? 43) (kxrt-admitted? 44) (kxrt-admitted? 45) (kxrt-admitted? 46) (kxrt-admitted? 47)))
+;; 1..19 decimal digits, saturating at i64 max (decimal-step); -1 otherwise
+(defn- kxrt-net-dec [a :i64 n :i64] :i64
+  (if (or (< n 1) (>= n 20)) -1
+    (loop [i 0 v 0]
+      (if (= i n) v
+        (let [c (kxrt-load8 (+ a i))]
+          (cond (or (< c 48) (> c 57)) -1
+                (> v (quot (- 9223372036854775807 (- c 48)) 10)) (recur (inc i) 9223372036854775807)
+                :else (recur (inc i) (+ (* v 10) (- c 48)))))))))
+(defn- kxrt-net-count [a :i64 n :i64 ch :i64] :i64
+  (loop [i 0 k 0] (if (= i n) k (recur (inc i) (if (= (kxrt-load8 (+ a i)) ch) (inc k) k)))))
+;; the first ch at or after st, or n
+(defn- kxrt-net-until [a :i64 n :i64 st :i64 ch :i64] :i64
+  (loop [i st] (cond (>= i n) n (= (kxrt-load8 (+ a i)) ch) i :else (recur (inc i)))))
+;; <a>.<b>.<c>.<d>:<port> (ops 11, 12): ip*65536+port, or -1
+(defn- kxrt-net-addr [a :i64 n :i64] :i64
+  (if (or (not= (kxrt-net-count a n 46) 3) (not= (kxrt-net-count a n 58) 1)) -1
+    (loop [w 0 st 0 ip 0]
+      (let [e (if (= w 4) n (kxrt-net-until a n st (if (< w 3) 46 58)))
+            v (if (> e st) (kxrt-net-dec (+ a st) (- e st)) -1)]
+        (cond (< v 0) -1
+              (< w 4) (if (> v 255) -1 (recur (inc w) (inc e) (+ (* ip 256) v)))
+              :else (if (or (< v 1) (> v 65535)) -1 (+ (* ip 65536) v)))))))
+;; KEXE_CAP_RESOURCES_43 (listen) / _45 (dial): comma-separated exact
+;; addresses, at most 16. Absent or empty grants nothing; malformed exits 2.
+(defn- kxrt-net-scope [s :i64 base :i64] :i64
+  (if (or (= s 0) (= (kxrt-load8 s) 0)) 0
+    (let [n (kxrt-cstrlen s)]
+      (loop [st 0]
+        (let [e (kxrt-net-until s n st 44) c (kxrt-gl base) v (kxrt-net-addr (+ s st) (- e st))]
+          (if (or (< v 0) (>= c 16)) (kxrt-exit 2)
+            (let [z (kxrt-gs (+ base 8 (* 8 c)) v) y (kxrt-gs base (inc c))]
+              (if (>= e n) 0 (recur (inc e))))))))))
+(defn- kxrt-net-grants [] :i64
+  (if (not (kxrt-net-any?)) 0
+    (let [a (kxrt-net-scope (kxrt-env 0x5041435f4558454b 0x4352554f5345525f 0x3d33345f5345 22) 1280)]
+      (kxrt-net-scope (kxrt-env 0x5041435f4558454b 0x4352554f5345525f 0x3d35345f5345 22) 1552))))
+;; op 13: exact equality with one entry of the scope
+(defn- kxrt-net-granted? [base :i64 v :i64] :bool
+  (loop [k 0] (cond (>= k (kxrt-gl base)) false (= (kxrt-gl (+ base 8 (* 8 k))) v) true :else (recur (inc k)))))
+(defn- kxrt-net-op-name [b :i64 i :i64 wire :i64] :i64
+  (case wire
+    43 (kxrt-w b (kxrt-w b i 0x7473696c2f74656e 8) 0x6e65 2)
+    44 (kxrt-w b (kxrt-w b i 0x656363612f74656e 8) 0x7470 2)
+    45 (kxrt-w b i 0x6c6169642f74656e 8)
+    46 (kxrt-w b i 0x646165722f74656e 8)
+    (kxrt-w b (kxrt-w b i 0x746972772f74656e 8) 0x65 1)))
+(defn- kxrt-net-reason [b :i64 i :i64 k :i64] :i64
+  (case k
+    1 (kxrt-w b (kxrt-w b (kxrt-w b i 0x666c616d2f74656e 8) 0x65722d64656d726f 8) 0x7473657571 5)
+    2 (kxrt-w b (kxrt-w b (kxrt-w b i 0x726464612f74656e 8) 0x2d746f6e2d737365 8) 0x6465746e617267 7)
+    3 (kxrt-w b (kxrt-w b (kxrt-w b i 0x646e61682f74656e 8) 0x6f2d74756f2d656c 8) 0x65676e61722d66 7)
+    4 (kxrt-w b (kxrt-w b (kxrt-w b i 0x646e61682f74656e 8) 0x6f2d746f6e2d656c 8) 0x6e6570 3)
+    5 (kxrt-w b (kxrt-w b (kxrt-w b i 0x646e61682f74656e 8) 0x65676475622d656c 8) 0x74 1)
+    6 (kxrt-w b (kxrt-w b i 0x657479622f74656e 8) 0x7465676475622d 7)
+    7 (kxrt-w b (kxrt-w b (kxrt-w b i 0x656d69742f74656e 8) 0x676475622d74756f 8) 0x7465 2)
+    8 (kxrt-w b (kxrt-w b (kxrt-w b i 0x7473696c2f74656e 8) 0x656c6961662d6e65 8) 0x64 1)
+    (kxrt-w b (kxrt-w b i 0x757465732f74656e 8) 0x64656c6961662d70 8)))
+;; refused by name (kexe_net_refuse): stdout flushed, then one stderr line
+;; KEXE_TRAP {:kind :capability :capability :net/<op> :reason :net/<name>},
+;; then exit 126 (:capability/refused)
+(defn- kxrt-net-refuse [wire :i64 k :i64] :i64
+  (let [b (kxrt-gl 200)
+        i0 (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b 0 0x4152545f4558454b 8) 0x646e696b3a7b2050 8) 0x6962617061633a20 8) 0x61633a207974696c 8) 0x7974696c69626170 8) 0x3a20 2)
+        i1 (kxrt-net-op-name b i0 wire)
+        i2 (kxrt-w b (kxrt-w b i1 0x6e6f736165723a20 8) 0x3a20 2)
+        i3 (kxrt-net-reason b i2 k)
+        z (kxrt-flush) y (kxrt-err-text b (kxrt-w b i3 0xa7d 2))]
+    (kxrt-exit 126)))
+;; the answer words of an environmental outcome (net-answer-word)
+(defn- kxrt-net-word [k :i64] :i64
+  (let [b (kxrt-gl 200)
+        n (case k
+            1 (kxrt-w b 0 0x74756f656d6974 7)
+            2 (kxrt-w b 0 0x64657375666572 7)
+            3 (kxrt-w b (kxrt-w b 0 0x6168636165726e75 8) 0x656c62 3)
+            4 (kxrt-w b 0 0x7465736572 5)
+            (kxrt-w b 0 0x6465736f6c63 6))]
+    (kxrt-intern b n)))
+(defn- kxrt-now-ms [] :i64
+  (let [t (+ (kxrt-gl 200) 14464) r (kxrt-syscall 228 1 t 0 0 0 0)]
+    (+ (* (kxrt-load64 t) 1000) (quot (kxrt-load64 (+ t 8)) 1000000))))
+;; ppoll one fd for ev until ms have passed: 1 ready, 0 timed out
+(defn- kxrt-net-wait [fd :i64 ev :i64 ms :i64] :i64
+  (let [dl (+ (kxrt-now-ms) ms) p (+ (kxrt-gl 200) 14400) ts (+ (kxrt-gl 200) 14432)]
+    (loop [k 0]
+      (let [l0 (- dl (kxrt-now-ms)) left (if (< l0 0) 0 l0)
+            a (kxrt-store64 p (bit-or fd (i64-shift-left ev 32)))
+            b (kxrt-store64 ts (quot left 1000)) c (kxrt-store64 (+ ts 8) (* (- left (* (quot left 1000) 1000)) 1000000))
+            r (kxrt-syscall 271 p 1 ts 0 0 0)]
+        (cond (> r 0) 1 (= r 0) 0 (= r -4) (recur (inc k)) :else (kxrt-fail))))))
+;; sockaddr_in for ip*65536+port: family AF_INET, port and address in network order
+(defn- kxrt-net-sockaddr [v :i64] :i64
+  (let [sa (+ (kxrt-gl 200) 14336) ip (u64-shift-right v 16) port (bit-and v 65535)
+        a (kxrt-store64 sa 0) b (kxrt-store64 (+ sa 8) 0)
+        c (kxrt-store8 sa 2) d (kxrt-store8 (+ sa 2) (u64-shift-right port 8)) e (kxrt-store8 (+ sa 3) (bit-and port 255))
+        f (kxrt-store8 (+ sa 4) (bit-and (u64-shift-right ip 24) 255)) g (kxrt-store8 (+ sa 5) (bit-and (u64-shift-right ip 16) 255))
+        h (kxrt-store8 (+ sa 6) (bit-and (u64-shift-right ip 8) 255)) k (kxrt-store8 (+ sa 7) (bit-and ip 255))]
+    sa))
+;; socket(AF_INET, SOCK_STREAM|SOCK_NONBLOCK|SOCK_CLOEXEC, 0), the only form the filter admits
+(defn- kxrt-net-socket [] :i64 (kxrt-syscall 41 2 526337 0 0 0 0))
+(defn- kxrt-net-keep [s :i64 kind :i64 fd :i64] :i64 (let [z (kxrt-net-set s kind fd)] (kxrt-intern-dec (inc s))))
+(defn- kxrt-net-listen [s :i64 v :i64] :i64
+  (let [fd (kxrt-net-socket)]
+    (if (< fd 0) (kxrt-net-refuse 43 9)
+      (let [o (+ (kxrt-gl 200) 14496) x (kxrt-store64 o 1)
+            y (kxrt-syscall 54 fd 1 2 o 4 0)
+            sa (kxrt-net-sockaddr v)]
+        (if (or (< (kxrt-syscall 49 fd sa 16 0 0 0) 0) (< (kxrt-syscall 50 fd 16 0 0 0 0) 0))
+          (let [z (kxrt-close fd)] (kxrt-net-refuse 43 8))
+          (kxrt-net-keep s 1 fd))))))
+;; refused when connect or SO_ERROR says ECONNREFUSED, unreachable otherwise
+(defn- kxrt-net-dial [s :i64 v :i64 tmo :i64] :i64
+  (let [fd (kxrt-net-socket)]
+    (if (< fd 0) (kxrt-net-refuse 45 9)
+      (let [r (kxrt-syscall 42 fd (kxrt-net-sockaddr v) 16 0 0 0)]
+        (cond (= r 0) (kxrt-net-keep s 2 fd)
+              (and (not= r -115) (not= r -4)) (let [z (kxrt-close fd)] (kxrt-net-word (if (= r -111) 2 3)))
+              (= (kxrt-net-wait fd 4 tmo) 0) (let [z (kxrt-close fd)] (kxrt-net-word 1))
+              :else (let [o (+ (kxrt-gl 200) 14496) x (kxrt-store64 o 0) y (kxrt-store64 (+ o 8) 4)
+                          g (kxrt-syscall 55 fd 1 4 o (+ o 8) 0)
+                          err (if (< g 0) (- 0 g) (bit-and (kxrt-load64 o) 4294967295))]
+                      (if (= err 0) (kxrt-net-keep s 2 fd)
+                        (let [z (kxrt-close fd)] (kxrt-net-word (if (= err 111) 2 3))))))))))
+;; wires 43 and 45: <ip>:<port> and <ip>:<port> <ms>; refusals in the
+;; loader's order: form, address, timeout, scope, a free handle
+(defn- kxrt-net-open [wire :i64 a :i64 n :i64] :i64
+  (let [fields (inc (kxrt-net-count a n 32))
+        e0 (kxrt-net-until a n 0 32)
+        v (kxrt-net-addr a e0)
+        tmo (if (= wire 45) (kxrt-net-dec (+ a e0 1) (- n (inc e0))) 0)]
+    (cond (not= fields (if (= wire 43) 1 2)) (kxrt-net-refuse wire 1)
+          (< v 0) (kxrt-net-refuse wire 1)
+          (< tmo 0) (kxrt-net-refuse wire 1)
+          (> tmo 30000) (kxrt-net-refuse wire 7)
+          (not (kxrt-net-granted? (if (= wire 43) 1280 1552) v)) (kxrt-net-refuse wire 2)
+          (< (kxrt-net-free) 0) (kxrt-net-refuse wire 5)
+          (= wire 43) (kxrt-net-listen (kxrt-net-free) v)
+          :else (kxrt-net-dial (kxrt-net-free) v tmo))))
+;; wire 44: <listener> <ms>
+(defn- kxrt-net-accept [a :i64 n :i64 e0 :i64 fd :i64] :i64
+  (let [tmo (kxrt-net-dec (+ a e0 1) (- n (inc e0)))]
+    (cond (< tmo 0) (kxrt-net-refuse 44 1)
+          (> tmo 30000) (kxrt-net-refuse 44 7)
+          (< (kxrt-net-free) 0) (kxrt-net-refuse 44 5)
+          (= (kxrt-net-wait fd 1 tmo) 0) (kxrt-net-word 1)
+          :else (let [c (kxrt-syscall 288 fd 0 0 526336 0 0)]
+                  (if (< c 0) (kxrt-net-word 1) (kxrt-net-keep (kxrt-net-free) 2 c))))))
+;; got bytes at p as lowercase hex, straight into the pool
+(defn- kxrt-net-hex [p :i64 got :i64] :i64
+  (let [u (kxrt-gl 32) m (* 2 got)]
+    (if (> m (- KXRT-POOL u)) (kxrt-budget 4)
+      (let [d (+ (kxrt-gl 24) u)
+            z (loop [i 0]
+                (if (>= i got) 0
+                  (let [c (kxrt-load8 (+ p i)) hi (u64-shift-right c 4) lo (bit-and c 15)
+                        x (kxrt-store8 (+ d (* 2 i)) (if (< hi 10) (+ 48 hi) (+ 87 hi)))
+                        y (kxrt-store8 (+ d (inc (* 2 i))) (if (< lo 10) (+ 48 lo) (+ 87 lo)))]
+                    (recur (inc i)))))
+            w (kxrt-gs 32 (+ u m))]
+        (kxrt-pair-new (- -1 u) m)))))
+;; wire 46: <conn> <max-bytes> <ms>; the empty string at end of file
+(defn- kxrt-net-read [a :i64 n :i64 e0 :i64 fd :i64] :i64
+  (let [e1 (kxrt-net-until a n (inc e0) 32)
+        want (kxrt-net-dec (+ a e0 1) (- e1 (inc e0)))
+        tmo (kxrt-net-dec (+ a e1 1) (- n (inc e1)))
+        p (kxrt-gl 232)]
+    (cond (or (< want 0) (< tmo 0)) (kxrt-net-refuse 46 1)
+          (or (< want 1) (> want 16384)) (kxrt-net-refuse 46 6)
+          (> tmo 30000) (kxrt-net-refuse 46 7)
+          (= (kxrt-net-wait fd 1 tmo) 0) (kxrt-net-word 1)
+          :else (let [got (loop [k 0] (let [r (kxrt-syscall 45 fd p want 0 0 0)] (if (= r -4) (recur (inc k)) r)))]
+                  (cond (= got -11) (kxrt-net-word 1)
+                        (< got 0) (kxrt-net-word 4)
+                        :else (kxrt-net-hex p got))))))
+(defn- kxrt-net-nibble [c :i64] :i64
+  (cond (< c 48) -1 (<= c 57) (- c 48) (< c 97) -1 (<= c 102) (- c 87) :else -1))
+;; hex at [x, x+hl) into the io buffer: the byte count, or -1 for a byte that is not lowercase hex
+(defn- kxrt-net-unhex [x :i64 hl :i64] :i64
+  (let [p (kxrt-gl 232)]
+    (loop [i 0]
+      (if (>= (* 2 i) hl) i
+        (let [h (kxrt-net-nibble (kxrt-load8 (+ x (* 2 i)))) l (kxrt-net-nibble (kxrt-load8 (+ x (inc (* 2 i)))))]
+          (if (or (< h 0) (< l 0)) -1
+            (let [z (kxrt-store8 (+ p i) (+ (* h 16) l))] (recur (inc i)))))))))
+;; send with MSG_NOSIGNAL until all is taken; a peer that takes nothing for
+;; 1000 ms ends it with the partial count; an error before any byte: reset
+(defn- kxrt-net-send [fd :i64 cnt :i64] :i64
+  (let [p (kxrt-gl 232)]
+    (loop [put 0]
+      (if (>= put cnt) (kxrt-intern-dec put)
+        (let [w (kxrt-syscall 44 fd (+ p put) (- cnt put) 16384 0 0)]
+          (cond (> w 0) (recur (+ put w))
+                (= w -4) (recur put)
+                (= w -11) (if (= (kxrt-net-wait fd 4 1000) 0) (kxrt-intern-dec put) (recur put))
+                (= put 0) (kxrt-net-word 4)
+                :else (kxrt-intern-dec put)))))))
+;; wire 47: <conn> <hex> writes, <conn> alone closes
+(defn- kxrt-net-write [a :i64 n :i64 e0 :i64 fd :i64] :i64
+  (let [hl (- n (inc e0))]
+    (cond (< hl 2) (kxrt-net-refuse 47 1)
+          (> hl 32768) (kxrt-net-refuse 47 6)
+          (not= hl (* 2 (quot hl 2))) (kxrt-net-refuse 47 1)
+          :else (let [cnt (kxrt-net-unhex (+ a e0 1) hl)]
+                  (if (< cnt 0) (kxrt-net-refuse 47 1) (kxrt-net-send fd cnt))))))
+;; wires 44, 46, 47: the first field is a handle (op 14)
+(defn- kxrt-net-handle [wire :i64 a :i64 n :i64] :i64
+  (let [fields (inc (kxrt-net-count a n 32))
+        form (cond (= wire 44) (if (= fields 2) 1 0) (= wire 46) (if (= fields 3) 1 0)
+                   :else (if (= fields 2) 1 (if (= fields 1) 2 0)))
+        e0 (kxrt-net-until a n 0 32)
+        h (kxrt-net-dec a e0)
+        kind (if (and (>= h 1) (<= h 16)) (kxrt-net-kind (dec h)) 0)
+        vr (cond (< h 1) 3 (> h 16) 3 (= kind (if (= wire 44) 1 2)) 0 :else 4)]
+    (cond (= form 0) (kxrt-net-refuse wire 1)
+          (< h 0) (kxrt-net-refuse wire 1)
+          (> vr 0) (kxrt-net-refuse wire vr)
+          (= wire 44) (kxrt-net-accept a n e0 (kxrt-net-fd (dec h)))
+          (= wire 46) (kxrt-net-read a n e0 (kxrt-net-fd (dec h)))
+          (= form 2) (let [z (kxrt-close (kxrt-net-fd (dec h))) y (kxrt-net-set (dec h) 0 -1)] (kxrt-net-word 5))
+          :else (kxrt-net-write a n e0 (kxrt-net-fd (dec h))))))
+;; a request longer than 65536 bytes is not refused by name: it traps
+(defn- kxrt-net [id :i64 h :i64] :i64
+  (let [a (kxrt-saddr h) n (kxrt-ps h)]
+    (cond (> n 65536) (kxrt-fail)
+          (or (= id 43) (= id 45)) (kxrt-net-open id a n)
+          :else (kxrt-net-handle id a n))))
 (defn- kxrt-typed-cap-call [id :i64 rk :i64 sk :i64 req :i64] :i64
   (cond (not (kxrt-admitted? id)) (kxrt-fail)
         (not= rk sk) (kxrt-fail)
         (= rk 1)
           (let [v (kxrt-valid req)
-                r (case id 3 (kxrt-sha256 req) 35 (kxrt-fs req) 37 (kxrt-io-write req) 38 (kxrt-args req) 39 (kxrt-io-error req) 42 (kxrt-gpu req) (kxrt-fail))]
+                r (case id 3 (kxrt-sha256 req) 35 (kxrt-fs req) 37 (kxrt-io-write req) 38 (kxrt-args req) 39 (kxrt-io-error req) 42 (kxrt-gpu req)
+                    43 (kxrt-net 43 req) 44 (kxrt-net 44 req) 45 (kxrt-net 45 req) 46 (kxrt-net 46 req) 47 (kxrt-net 47 req) (kxrt-fail))]
             (kxrt-valid r))
         (and (= rk 8) (= id 35))
           (let [n (kxrt-vlen req)
@@ -652,9 +899,18 @@
 ;; syscall number is loaded back for the rules after it
 (defn- kxrt-allow-read-fd [p :i64 i :i64 fd :i64] :i64
   (kxrt-bpf p (kxrt-bpf p (kxrt-bpf p (kxrt-bpf p (kxrt-bpf p i 21 0 4 0) 32 0 0 16) 21 0 1 fd) 6 0 0 2147418112) 32 0 0 0))
+;; socket (41) only as socket(AF_INET, SOCK_STREAM|SOCK_NONBLOCK|SOCK_CLOEXEC, 0):
+;; args[0..2] low words at offsets 16, 24, 32; the number is loaded back after
+(defn- kxrt-allow-socket [i :i64 p :i64] :i64
+  (kxrt-bpf p (kxrt-bpf p (kxrt-bpf p (kxrt-bpf p (kxrt-bpf p (kxrt-bpf p (kxrt-bpf p (kxrt-bpf p (kxrt-bpf p i 21 0 8 41) 32 0 0 16) 21 0 5 2) 32 0 0 24) 21 0 3 526337) 32 0 0 32) 21 0 1 0) 6 0 0 2147418112) 32 0 0 0))
+;; the net set: setsockopt getsockopt bind listen connect accept4 sendto
+;; recvfrom ppoll close
+(defn- kxrt-allow-net [p :i64 i :i64] :i64
+  (-> i (kxrt-allow-socket p) (kxrt-allow-nr-at p 54) (kxrt-allow-nr-at p 55) (kxrt-allow-nr-at p 49) (kxrt-allow-nr-at p 50) (kxrt-allow-nr-at p 42) (kxrt-allow-nr-at p 288) (kxrt-allow-nr-at p 44) (kxrt-allow-nr-at p 45) (kxrt-allow-nr-at p 271) (kxrt-allow-nr-at p 3)))
 ;; Wrong arch: kill. Base set always; the fs set and the :fs/app-data extras
 ;; only with an open scope 35 that is granted; read on the GPU answer fd only
-;; with wire 42 granted (kxrt-gpu-fds). Everything else: SIGSYS (trap).
+;; with wire 42 granted (kxrt-gpu-fds); the net set only with one of wires
+;; 43..47 granted. Everything else: SIGSYS (trap).
 ;; A kernel without seccomp fails closed unless KEXE_SECCOMP=if-available.
 (defn- kxrt-sandbox [] :i64
   (let [p (+ (kxrt-gl 200) 12352) prog (+ (kxrt-gl 200) 12304)
@@ -663,7 +919,8 @@
         i1 (kxrt-allow-base p i0)
         i2 (if fs (kxrt-allow-scope p (kxrt-allow-fs p i1)) i1)
         i3 (if (> (kxrt-gl 312) 2) (kxrt-allow-read-fd p i2 (kxrt-gl 312)) i2)
-        n (kxrt-bpf p i3 6 0 0 196608)
+        i4 (if (kxrt-net-any?) (kxrt-allow-net p i3) i3)
+        n (kxrt-bpf p i4 6 0 0 196608)
         a (kxrt-store64 prog n) b (kxrt-store64 (+ prog 8) p)]
     (if (< (kxrt-syscall 157 38 1 0 0 0 0) 0) (kxrt-die)
       (let [r (kxrt-syscall 317 1 0 prog 0 0 0)]
@@ -845,6 +1102,7 @@
         rp (kxrt-gs 160 (if (= (kxrt-env 0x5254535f4558454b 0x5f44455255544355 0x3d54524f504552 23) 0) 0 1))
         sc (kxrt-scope (kxrt-env 0x5041435f4558454b 0x4352554f5345525f 0x3d35335f5345 22))
         gk (kxrt-gpu-fds (kxrt-env 0x5041435f4558454b 0x4352554f5345525f 0x3d32345f5345 22))
+        nk (kxrt-net-grants)
         ;; struct sigaction: handler, SA_RESTORER|SA_RESETHAND, restorer, mask
         act (+ (kxrt-gl 200) 8192)
         alt (kxrt-gs 248 (kxrt-map 65536)) ss (+ act 64)

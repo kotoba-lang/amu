@@ -1,46 +1,62 @@
 {
   "schema": "amu.seed.static-root.v1",
   "image": {
-    "bytes": 1294848,
-    "sha256": "98d4bcb7cd4ca331c292873a6d76b836cd34455b967575ae52af5bb3507ab774"
+    "bytes": 1360384,
+    "sha256": "b2f96378dbf90bc3f950e111fba5b203761045fc100f05fd8210d005da95e9cf"
   },
   "target": "aarch64-linux",
   "format": "static",
   "sourceManifest": "seed/X86_64-LINUX-SELFHOST-MANIFEST",
   "sourceUnity": {
-    "bytes": 779344,
-    "sha256": "07b469c489d80ada7bed2ef1c7b208e7bee712d6cdb92b264d1f6ad5fdb9f163"
+    "bytes": 810906,
+    "sha256": "fbadb8ab506fe216f97266f9bbacbb1269cd694c8f20ec89a4a9a633523a17c0"
   },
-  "sourceCommitBase": "6a54e3cea861d772343865d9dddd0fded314220c",
+  "sourceCommitBase": "1585cb488ea9a0b4f87c1fd319ea71fa3ceb09a0",
   "producedBy": {
-    "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation). The closure moves to the static profile (seed/00-ns-static.kotoba: M of 24248320 words) and the runtime to 2^25-item vectors and a 2^28-item arena. A compiler embeds its own runtime text in what it builds, so the previous root's runtime cannot allocate the wider M: the previous root built S1n from this source with the previous capacities (seed/00-ns.kotoba), S1n built S2n (the new runtime), S2n built S3w from this source, S3w built S4w = this image and S4w built S5w (S3w = S4w = S5w).",
-    "date": "2026-10-22",
-    "previousRoot": "f19ab1c48b54e8ae032f26563b99695c38bd10de8ab7305407fc8fd05ace8eba",
-    "chain": {
-      "S1n": {
-        "bytes": 1294848,
-        "sha256": "0f13857258995cc57a93f6465ec6c5d0c3e0f79b8f1fd336cf6fa518392cb86a"
-      },
-      "S2n": {
-        "bytes": 1294848,
-        "sha256": "40f70a6dec5d8e3228f615abd1bfded40b33bf2e4c0f6dca803303f996aafe7f"
-      },
-      "S3w": {
-        "bytes": 1294848,
-        "sha256": "98d4bcb7cd4ca331c292873a6d76b836cd34455b967575ae52af5bb3507ab774"
-      },
-      "S4w": {
-        "bytes": 1294848,
-        "sha256": "98d4bcb7cd4ca331c292873a6d76b836cd34455b967575ae52af5bb3507ab774"
-      },
-      "S5w": {
-        "bytes": 1294848,
-        "sha256": "98d4bcb7cd4ca331c292873a6d76b836cd34455b967575ae52af5bb3507ab774"
-      }
-    }
+    "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 and S2 built S3 = this image (S2 = S3; S1 differs because the previous root embeds the previous aarch64 runtime). Re-pinned because this source changes the runtime text embedded in every image: native TCP wires 43..47 (:net/listen :net/accept :net/dial :net/read :net/write, Linear JUN-292).",
+    "date": "2026-10-23",
+    "previousRoot": "98d4bcb7cd4ca331c292873a6d76b836cd34455b967575ae52af5bb3507ab774"
   },
   "verification": "scripts/seed/selfhost-bootstrap.py on arm64 Linux: root -> S1 = S2 = S3 = root natively, without any C compiler or loader",
   "history": [
+    {
+      "image": {
+        "bytes": 1294848,
+        "sha256": "98d4bcb7cd4ca331c292873a6d76b836cd34455b967575ae52af5bb3507ab774"
+      },
+      "sourceUnity": {
+        "bytes": 779344,
+        "sha256": "07b469c489d80ada7bed2ef1c7b208e7bee712d6cdb92b264d1f6ad5fdb9f163"
+      },
+      "sourceCommitBase": "6a54e3cea861d772343865d9dddd0fded314220c",
+      "producedBy": {
+        "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation). The closure moves to the static profile (seed/00-ns-static.kotoba: M of 24248320 words) and the runtime to 2^25-item vectors and a 2^28-item arena. A compiler embeds its own runtime text in what it builds, so the previous root's runtime cannot allocate the wider M: the previous root built S1n from this source with the previous capacities (seed/00-ns.kotoba), S1n built S2n (the new runtime), S2n built S3w from this source, S3w built S4w = this image and S4w built S5w (S3w = S4w = S5w).",
+        "date": "2026-10-22",
+        "previousRoot": "f19ab1c48b54e8ae032f26563b99695c38bd10de8ab7305407fc8fd05ace8eba",
+        "chain": {
+          "S1n": {
+            "bytes": 1294848,
+            "sha256": "0f13857258995cc57a93f6465ec6c5d0c3e0f79b8f1fd336cf6fa518392cb86a"
+          },
+          "S2n": {
+            "bytes": 1294848,
+            "sha256": "40f70a6dec5d8e3228f615abd1bfded40b33bf2e4c0f6dca803303f996aafe7f"
+          },
+          "S3w": {
+            "bytes": 1294848,
+            "sha256": "98d4bcb7cd4ca331c292873a6d76b836cd34455b967575ae52af5bb3507ab774"
+          },
+          "S4w": {
+            "bytes": 1294848,
+            "sha256": "98d4bcb7cd4ca331c292873a6d76b836cd34455b967575ae52af5bb3507ab774"
+          },
+          "S5w": {
+            "bytes": 1294848,
+            "sha256": "98d4bcb7cd4ca331c292873a6d76b836cd34455b967575ae52af5bb3507ab774"
+          }
+        }
+      }
+    },
     {
       "image": {
         "bytes": 1294848,

@@ -2,6 +2,7 @@ name: selfhost-native
 # Loaderless Amu selfhost on native kernels (no C compiler or loader, no
 # emulation): the pinned Amu-produced root bootstraps on arm64 Linux, and the
 # x86_64 compiler and KX64V1 runner it builds are qualified on x86_64 Linux.
+# The runtime's native TCP wires 43..47 run on loopback on both.
 # Python only orchestrates processes and hashes.
 on:
   workflow_dispatch:
@@ -26,6 +27,8 @@ jobs:
           persist-credentials: false
       - name: Loaderless bootstrap from the pinned root (arm64, native)
         run: python3 scripts/seed/selfhost-bootstrap.py --output "$RUNNER_TEMP/boot"
+      - name: Native TCP wires 43..47 on loopback (arm64, native, seccomp enforced)
+        run: python3 scripts/seed/check-net-runtime.py --compiler "$RUNNER_TEMP/boot/S3.elf" --output "$RUNNER_TEMP/net"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: bootstrap-arm64
@@ -34,6 +37,13 @@ jobs:
             ${{ runner.temp }}/boot/S-x86_64.elf
             ${{ runner.temp }}/boot/R-x86_64.elf
             ${{ runner.temp }}/boot/selfhost-unity.kotoba
+          if-no-files-found: error
+      # its own artifact: a second directory in the one above would move its
+      # root to runner.temp, and qualify-x86_64 reads boot/ at the top
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: net-runtime-arm64
+          path: ${{ runner.temp }}/net/net-runtime.json
           if-no-files-found: error
   qualify-x86_64:
     needs: bootstrap-arm64
@@ -49,6 +59,8 @@ jobs:
           path: ${{ runner.temp }}/boot
       - name: Native x86_64 qualification (no loader, no emulation)
         run: python3 scripts/seed/check-x86_64-native.py --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/x86"
+      - name: Native TCP wires 43..47 on loopback (x86_64, native, seccomp enforced)
+        run: python3 scripts/seed/check-net-runtime.py --compiler "$RUNNER_TEMP/boot/S-x86_64.elf" --target x86_64-linux --output "$RUNNER_TEMP/net-x86"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
@@ -56,4 +68,10 @@ jobs:
           path: |
             ${{ runner.temp }}/x86/x86_64-native.json
             ${{ runner.temp }}/x86/raw
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: net-runtime-x86_64
+          path: ${{ runner.temp }}/net-x86/net-runtime.json
           if-no-files-found: warn
