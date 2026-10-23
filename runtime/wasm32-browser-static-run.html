@@ -1,7 +1,8 @@
 <!doctype html>
 <!-- wasm32-browser-static/v1 run page (JUN-353). Static: it loads the host
      (wasm32-browser-static-host.js) and runs.js from its own directory.
-     runs.js sets window.KOTOBA_RUNS = [{name, fuel, wasm: base64}, ...].
+     runs.js sets window.KOTOBA_RUNS = [{name, fuel, wasm: base64, allow?, args?, files?}, ...]
+     (allow, args and files: the entry ABI, see the host).
      Each module runs in its own Worker; one JSON line per run is written to
      #results, then the title becomes "kotoba-done". The CSP admits no
      network: connect-src is 'none'. -->
@@ -28,7 +29,7 @@
       const worker = new Worker(url);
       worker.onmessage = (e) => { worker.terminate(); resolve(Object.assign({ name: run.name }, e.data)); };
       worker.onerror = (e) => { worker.terminate(); resolve({ name: run.name, exit: null, hostError: String(e.message) }); };
-      worker.postMessage({ bytes, fuel: run.fuel });
+      worker.postMessage({ bytes, fuel: run.fuel, allow: run.allow, args: run.args, files: run.files });
     });
     results.textContent += JSON.stringify(line) + "\n";
   }
