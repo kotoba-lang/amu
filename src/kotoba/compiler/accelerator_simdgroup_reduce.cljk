@@ -24,14 +24,16 @@
   median ratios 0.790/0.800/0.799 for :sum/:max/:min, claim-protocol
   rule 2 REGIME-INVARIANT FASTER, 18/18 per-run ratios below 1.0), the
   W-sweep series' second cell the same at W = 512 (paired median
-  ratios 0.815/0.823/0.824, rule 2 REGIME-INVARIANT FASTER, 18/18) and
-  the series' third cell the same at W = 1024 (paired median ratios
+  ratios 0.815/0.823/0.824, rule 2 REGIME-INVARIANT FASTER, 18/18), the
+  series' third cell the same at W = 1024 (paired median ratios
   0.840/0.847/0.850, rule 2 REGIME-INVARIANT FASTER, 18/18, 2026-10-24)
+  and the series' fourth cell the same at W = 128 (paired median ratios
+  0.775/0.789/0.789, rule 2 REGIME-INVARIANT FASTER, 18/18, 2026-10-24)
   --
   the
   flip contract answers those cells :simdgroup-reduce with :measured?
   true
-  (THREE cells measured; every other W, shape 2 and every other device
+  (FOUR cells measured; every other W, shape 2 and every other device
   UNMEASURED).
 
   What the emission is (ADR-0373's decision, to its letter): the
@@ -73,13 +75,16 @@
   fold's, unchanged.
 
   UNMEASURED except its flip cells: no speed claim exists for this variant
-  anywhere but its own flip cells (W = 256, W = 512 and W = 1024,
+  anywhere but its own flip cells (W = 128, W = 256, W = 512 and
+  W = 1024,
   n = 1000003,
   Apple M1 Max --
-  paired median ratios 0.790/0.800/0.799 at W = 256,
+  paired median ratios 0.775/0.789/0.789 at W = 128,
+  0.790/0.800/0.799 at W = 256,
   0.815/0.823/0.824 at W = 512 and 0.840/0.847/0.850 at W = 1024,
-  rule-2 REGIME-INVARIANT FASTER at all three
+  rule-2 REGIME-INVARIANT FASTER at all four
   cells,
+  docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w128,
   docs/evidence/gpu-simdgroup-reduce-m1max-20261023,
   docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512 and
   docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w1024). No
@@ -110,10 +115,11 @@
   it flips only when a hardware measurement under ADR-0360's measurement
   contract replaces :text for a named device class -- 2026-10-23/24
   flipped
-  W = 256, W = 512 and W = 1024 on Apple M1 Max for this variant
+  W = 128, W = 256, W = 512 and W = 1024 on Apple M1 Max for this
+  variant
   (measured FASTER
   than
-  :baseline at all three cells, apple-simdgroup-flip-note in
+  :baseline at all four cells, apple-simdgroup-flip-note in
   kotoba.compiler.accelerator-variants). The one device with any
   subgroup-reduce evidence (Apple M1 Max) refuted the SHUFFLE fold's
   rationale, and that refutation neither condemns nor blesses this
@@ -128,13 +134,15 @@
     write barrier plus a log2(W/S)-stage cross-SIMD-group tree. The intra
     stage here is ONE reduction intrinsic per operator (simd_sum /
     simd_max / simd_min) instead of the shuffle ladder -- a structural
-    difference, priced at its flip cells only (W = 256, W = 512 and
-    W = 1024,
+    difference, priced at its flip cells only (W = 128, W = 256,
+    W = 512 and W = 1024,
     n = 1000003, Apple M1
-    Max, 2026-10-23/24: paired median ratios 0.790/0.800/0.799 at W = 256,
+    Max, 2026-10-23/24: paired median ratios 0.775/0.789/0.789 at
+    W = 128, 0.790/0.800/0.799 at W = 256,
     0.815/0.823/0.824 at W = 512 and 0.840/0.847/0.850 at W = 1024 for
     :sum/:max/:min, claim-protocol rule 2 REGIME-INVARIANT FASTER at
-    all three cells,
+    all four cells,
+    docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w128,
     docs/evidence/gpu-simdgroup-reduce-m1max-20261023,
     docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512 and
     docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w1024).

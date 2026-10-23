@@ -355,7 +355,8 @@
   ;; falls to :subgroup-reduce (the second rung, byte-for-byte the old
   ;; answer); everything else answers :baseline. The measured-cell
   ;; carve-out outranks rung 1 EVERYWHERE BUT THIS VARIANT'S OWN FLIP
-  ;; CELLS (the flip slices, 2026-10-23/24): at W = 256, W = 512 and
+  ;; CELLS (the flip slices, 2026-10-23/24): at W = 128, W = 256,
+  ;; W = 512 and
   ;; W = 1024 on the measured class
   ;; (name fragment "m1 max", reported subgroup size 32) the native-Metal
   ;; measurement of this variant ran there and measured it FASTER than
@@ -424,7 +425,7 @@
       (doseq [device [(assoc native :device "Apple M1 Max")
                       (assoc both :name "Apple M1 Max")]
               target [:metal :msl-v1]
-              wg [32 64 128]]
+              wg [32 64]]
         (let [answer (variants/select-variant
                       :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
                                                 {:workgroup-size wg})
@@ -433,17 +434,19 @@
               (str "device " (pr-str device) " W=" wg " must keep the class's answer"))
           (is (str/includes? (:basis answer) "THE MEASURED-CELL CARVE-OUT"))
           (is (str/includes? (:basis answer) "CLOSED to design rows"))))
-      (testing "W = 256, W = 512 and W = 1024 are this variant's OWN flip cells: the carve-out lifts exactly there, MEASURED"
-        ;; the flip slices (the W = 512 and W = 1024 cells flipped in
+      (testing "W = 128, W = 256, W = 512 and W = 1024 are this variant's OWN flip cells: the carve-out lifts exactly there, MEASURED"
+        ;; the flip slices (the W = 512, W = 1024 and W = 128 cells
+        ;; flipped in
         ;; their own later slices): the native-Metal measurement of
-        ;; THIS variant ran at W = 256, W = 512 and W = 1024 on the
+        ;; THIS variant ran at W = 128, W = 256, W = 512 and W = 1024 on
+        ;; the
         ;; measured class and measured
         ;; it FASTER than :baseline (apple-simdgroup-flip-note), so each
         ;; cell answers the row with the row's OWN record.
         (doseq [device [(assoc native :device "Apple M1 Max")
                         (assoc both :name "Apple M1 Max")]
                 target [:metal :msl-v1]
-                wg [256 512 1024]]
+                wg [128 256 512 1024]]
           (let [answer (variants/select-variant
                         :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
                                                   {:workgroup-size wg})
@@ -465,33 +468,38 @@
                     ;; each flip cell's record names ITS OWN runs.
                     :evidence ({256 ["docs/evidence/gpu-simdgroup-reduce-m1max-20261023"]
                                 512 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512"]
-                                1024 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w1024"]}
+                                1024 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w1024"]
+                                128 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w128"]}
                                wg)}
                    (:measured-cell answer))
                 (str "device " (pr-str device) " " target " W=" wg " record"))
             (is (str/includes? (:basis answer) "THIS VARIANT'S OWN FLIP CELLS"))
             (is (str/includes? (:basis answer) "REGIME-INVARIANT FASTER"))
             (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-20261023"))
-            (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w1024")))))
+            (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w1024"))
+            (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w128")))))
       (testing "the carve-out note is the row's demotion only, and the flag scope is named"
-        ;; simd-only facts at a non-flip W: the shuffle row's gate never
+        ;; simd-only facts at a non-flip W (W = 64 -- W = 128 flipped
+        ;; 2026-10-24 and no longer sits here): the shuffle row's gate
+        ;; never
         ;; held, so no narrowing note -- and the answer is the carve-out's
         ;; decision, not a measurement's (:measured? false at every W but
         ;; the flip cells).
         (let [answer (variants/select-variant
                       :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
-                                                {:workgroup-size 128})
+                                                {:workgroup-size 64})
                       :msl-v1 (assoc native :device "Apple M1 Max"))]
           (is (false? (:measured? answer)))
           (is (nil? (:measured-cell answer)))
           (is (not (str/includes? (:basis answer) "APPLE ROW NARROWED"))))
-        ;; both fact sets at a non-flip W: the shuffle row's narrowing and
+        ;; both fact sets at a non-flip W (W = 64): the shuffle row's
+        ;; narrowing and
         ;; its flip are byte-for-byte unchanged (the record's :evidence
         ;; names the :subgroup-reduce runs only), and the carve-out note
         ;; rides along.
         (let [answer (variants/select-variant
                       :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
-                                                {:workgroup-size 128})
+                                                {:workgroup-size 64})
                       :msl-v1 (assoc both :name "Apple M1 Max"))]
           (is (true? (:measured? answer)))
           (is (= "docs/evidence/gpu-subgroup-reduce-m1max-shape2-band-20261023"
@@ -650,22 +658,24 @@
                (variants/select-variant :apple kir :msl-v1 m1)))))))
 
 (deftest the-simdgroup-rows-own-flip-cell-flips-the-honesty-lock
-  ;; JUN-58, the flip slices (2026-10-23/24; the W = 512 and W = 1024
+  ;; JUN-58, the flip slices (2026-10-23/24; the W = 512, W = 1024 and
+  ;; W = 128
   ;; cells flipped in their own later slices): ADR-0373's rule-3 step 3,
   ;; the flip contract applied
   ;; to :simdgroup-reduce's OWN measured cells. The measurements that ran
   ;; (docs/evidence/gpu-simdgroup-reduce-m1max-20261023,
-  ;; docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512 and
-  ;; .../w1024)
-  ;; compared :baseline vs THIS variant at THREE cells -- W = 256 (the
-  ;; honesty-lock flip anchor) and W = 512 and W = 1024 (the W-sweep
-  ;; series' second and third
+  ;; docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512,
+  ;; .../w1024 and .../w128)
+  ;; compared :baseline vs THIS variant at FOUR cells -- W = 256 (the
+  ;; honesty-lock flip anchor) and W = 512, W = 1024 and W = 128 (the
+  ;; W-sweep
+  ;; series' second, third and fourth
   ;; cells), all n = 1000003 (the flip contract's ground
   ;; shape) -- on the tested device class (name fragment "m1 max",
   ;; reported subgroup size 32) through the conforming native-Metal
   ;; channel, and measured this variant FASTER (paired median ratios
-  ;; 0.790/0.800/0.799 at W = 256, 0.815/0.823/0.824 at W = 512 and
-  ;; 0.840/0.847/0.850 at W = 1024 for
+  ;; 0.790/0.800/0.799 at W = 256, 0.815/0.823/0.824 at W = 512,
+  ;; 0.840/0.847/0.850 at W = 1024 and 0.775/0.789/0.789 at W = 128 for
   ;; :sum/:max/:min, claim-protocol rule 2
   ;; REGIME-INVARIANT FASTER, 18/18 per-run ratios below 1.0 at each
   ;; cell). So the
@@ -683,7 +693,7 @@
       (doseq [target [:metal :msl-v1]
               operator [:sum :max :min]
               device [m1 (assoc both :name "Apple M1 Max")]
-              wg [256 512 1024]]
+              wg [128 256 512 1024]]
         (let [kir (accelerator/kernel (str "reduce_" (name operator) "_f32")
                                       :reduce operator {:workgroup-size wg})
               answer (variants/select-variant :apple kir target device)]
@@ -699,11 +709,13 @@
                   :operators #{:sum :max :min}
                   :shapes [1000003]
                   ;; each flip cell's record names ITS OWN runs (the
-                  ;; W = 512 and W = 1024 cells' evidence is the W-sweep
-                  ;; second and third cells).
+                  ;; W = 512, W = 1024 and W = 128 cells' evidence is the
+                  ;; W-sweep
+                  ;; second, third and fourth cells).
                   :evidence ({256 ["docs/evidence/gpu-simdgroup-reduce-m1max-20261023"]
                               512 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512"]
-                              1024 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w1024"]}
+                              1024 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w1024"]
+                              128 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w128"]}
                              wg)}
                  (:measured-cell answer))
               (str operator " " target " W=" wg " record"))
@@ -711,14 +723,16 @@
           (is (str/includes? (:basis answer) "0.790/0.800/0.799"))
           (is (str/includes? (:basis answer) "0.815/0.823/0.824"))
           (is (str/includes? (:basis answer) "0.840/0.847/0.850"))
+          (is (str/includes? (:basis answer) "0.775/0.789/0.789"))
           (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-20261023"))
           (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512"))
-          (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w1024")))))
+          (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w1024"))
+          (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w128")))))
     (testing "the record's :shapes names the ONE measured shape -- shape 2 is UNMEASURED"
-      (doseq [wg [256 512 1024]]
+      (doseq [wg [128 256 512 1024]]
         (is (= [1000003] (:shapes (:measured-cell (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size wg}) :msl-v1 m1)))))))
-    (testing "every other W keeps the carve-out: the flip is THREE cells wide"
-      (doseq [wg [32 64 128]]
+    (testing "every other W keeps the carve-out: the flip is FOUR cells wide"
+      (doseq [wg [32 64]]
         (let [answer (variants/select-variant
                       :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
                                                 {:workgroup-size wg})
