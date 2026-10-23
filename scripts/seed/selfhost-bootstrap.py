@@ -165,6 +165,13 @@ def main(out):
     packed = dict(image=pin(P), container=pin(out / "P.kseed"), native=pin(out / "P.bin"),
                   arityRefusal=dict(exit=r.returncode, stderr=r.stderr.decode().strip()))
 
+    # JUN-325: run the shared call/function-value boundary corpus, including
+    # this main's packed route, through the freshly selfhost-built compiler.
+    run.run("runtime-boundary", [sys.executable, ROOT / "scripts/seed/check-runtime-boundary.py",
+                                 "--compiler", S, "--output", out / "runtime-boundary",
+                                 "--payload", out / "G3.kseed"], {})
+    runtime_boundary = json.loads((out / "runtime-boundary/runtime-boundary.json").read_text())
+
     # 4. runtime cases as static images against the pinned loader results
     cases = json.loads((ROOT / CASES).read_text())["cases"]
     results = []
@@ -235,7 +242,7 @@ def main(out):
                   generations=gens, rootReproduces=root_reproduces, built=built,
                   adopted=dict(sourceGraph=adopted_pins, coreStatic=dict(sourceGraph=core_static_pins, image=c0), runnerStackBytes=int(ADOPTED_STACK), generations=adopted_gens, packed=packed,
                                expectedNativeImage=adoption["nativeImageSHA256"]),
-                  cases=results, hardening=hardening,
+                  cases=results, hardening=hardening, runtimeBoundary=runtime_boundary,
                   cCompilerOrLoader=False, JVMNodeOrGraalFallback=False, emulation=False)
     (out / "selfhost-bootstrap.json").write_text(json.dumps(report, indent=2) + "\n")
     print(report["status"], "S2=S3", gens[2]["pin"]["sha256"][:16], "root reproduces" if root_reproduces else "root differs (re-pin to S3)", "adopted G1=G2=G3", len(results), "cases", flush=True)
