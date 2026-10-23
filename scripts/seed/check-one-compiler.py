@@ -52,6 +52,10 @@ def main(boot, out):
             assert r.returncode == 0 and not r.stderr, (name, r.returncode, r.stderr[-400:])
         return r
 
+    # FULL-MANIFEST's core section is seed/MANIFEST without 99-entry, with the static-profile namespace
+    lines = lambda m: [p for p in (ROOT / m).read_text().splitlines() if p and not p.startswith("#")]
+    core = [p.replace("seed/00-ns.kotoba", "seed/00-ns-static.kotoba") for p in lines("seed/MANIFEST") if p != "seed/99-entry.kotoba"]
+    assert lines("seed/FULL-MANIFEST")[:len(core)] == core, "FULL-MANIFEST's core section differs from seed/MANIFEST"
     for name in ("S3.elf", "P-aarch64.elf", "S-x86_64.elf", "runner.kotoba"):
         shutil.copy2(boot / name, out / name)
     for name in ("S3.elf", "P-aarch64.elf"):
@@ -95,7 +99,7 @@ def main(boot, out):
     F = out / "F2.elf"
 
     # 3. F's core route reproduces the adoption image
-    adoption = json.loads((ROOT / "seed/adoption-20261022.json").read_text())
+    adoption = json.loads((ROOT / json.loads((ROOT / "seed/compiler-core.json").read_text())["adoptionReceipt"]).read_text())
     assert pin(out / "adopted.kotoba")["sha256"] == adoption["sourceUnitySHA256"], "adopted source drift"
     core(F, "adopted", "A")
     run("A-extract", [F, "extract-native", out / "A.kseed", "--symbol", "main", "--output", out / "A.bin"], env)
