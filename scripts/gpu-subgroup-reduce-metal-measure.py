@@ -51,6 +51,9 @@ import subprocess
 import sys
 import tempfile
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import gpu_regime_classify
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SCRIPTS = ROOT / "scripts"
 EVID = ROOT / "docs" / "evidence" / "gpu-subgroup-reduce-m1max-20261023"
@@ -272,6 +275,15 @@ def main():
             ratios.append(statistics.median(v) / statistics.median(b))
         lines.append(f"| {op} | {', '.join(f'{r:.3f}' for r in ratios)} | "
                      f"{statistics.median(ratios):.3f} |")
+    lines.append("")
+    # Claim protocol rule 1 (the 2026-10-23 regime-robust magnitude claim
+    # protocol, ADR-0360): the regime clusters this session observed,
+    # published from the same per-run baseline medians the first table
+    # lists. Implemented in scripts/gpu_regime_classify.py (GAP-1.15).
+    lines.append(gpu_regime_classify.render_section(
+        {op: {ri + 1: statistics.median(per_run[(op, "baseline", ri)])
+              for ri in range(args.runs)}
+         for op in ("sum", "max", "min")}))
     lines.append("")
     lines.append("Verified read-back (every fresh process):")
     lines.append("")

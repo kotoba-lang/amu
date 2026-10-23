@@ -578,3 +578,49 @@ beyond its LABELED BOOTSTRAP record; every Apple device but this M1 Max;
 W = 32 as a verdict (it is a decision); the NVIDIA/Intel/ARM/AMD variant
 rows entirely; cross-day replication of every cell; regime
 classification inside the harness.
+
+## Amendment 2026-10-23 (rule 1 mechanised): harness-side regime
+classification is IMPLEMENTED (the GAP-1.15 clustering)
+
+The slice the protocol's state paragraph named ("harness-side
+classification is UNIMPLEMENTED, its own later slice") lands for
+**rule 1 only**. `scripts/gpu_regime_classify.py` clusters the per-run
+baseline medians into clock levels and every `summary.md` the
+measurement driver (`scripts/gpu-subgroup-reduce-metal-measure.py`)
+writes now carries a "Regime classification (claim protocol rule 1)"
+section: the per-run baseline medians per operator (rule 1's first
+publication, also in the first table as before) and the regime clusters,
+named by their gpu-ns ranges with run membership.
+
+The clustering rule is named **GAP-1.15** and is data-derived, not
+tuned: per operator, the per-run medians sorted ascending,
+single-linkage -- the next median joins the current level at <= 1.15x
+the previous, else a new level starts. 1.15 is the geometric midpoint
+of the separation window the committed corpus itself establishes
+between prose-decided within-level drift (1.0753: the wsweep-low
+W = 32 `:max` runs 4 and 6, one "fast regime" in that record's prose)
+and prose-decided between-level steps (1.2343: the shape-2 re-sweep
+W = 512 `:min` run 3 "dropped" from the slow level). Gaps strictly
+between the anchors were decided by no prose in the corpus; GAP-1.15
+decides them mechanically and the published ranges make every such
+decision visible. `--self-test` enumerates them (12 gaps at this
+writing) so a new record cannot hide one.
+
+State, precisely: rule 1's harness-side publication is IMPLEMENTED
+(code + tests: 606 assertions -- unit fixtures, the corpus regression
+over all 28 committed summaries, and the pinned manual classifications
+of the w512 shape-2 re-sweep cell, the shape-2 W = 32 cell and the
+wsweep-low W = 32 cell reproduced from their committed summary.md
+text). Rule 1's claims discipline is unchanged and no existing record is
+rewritten: the older records stand with their manual NOTES.md
+classification until their own re-sweep rows re-derive them.
+**UNIMPLEMENTED, named:** rule 2's sign classification (regime-invariant
+vs regime-scoped) harness-side; rule 3's regime-matched comparison
+machinery; pair-level classification (the op-order cell's within-run
+ramping needs per-pair levels -- `analyze-oporder.py` remains the manual
+instrument); cross-operator level identity (the harness reads no clock
+and does not assert that two operators' clusters are one clock level).
+No `:measured?` flag, workgroup row, flip gate or answer moves (rule 4,
+untouched).
+
+Record: `docs/evidence/gpu/regime-classification-20261023.txt`.
