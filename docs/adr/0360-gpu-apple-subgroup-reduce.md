@@ -251,7 +251,9 @@ Apple device still gets.
 Scope, stated plainly: W > 256 on M1 Max is UNMEASURED (the measured
 penalty grew with W over the measured band); the demotion at those sizes
 follows that trend toward the fail-safe arm and claims no measurement
-there. `:measured?` is UNCHANGED -- false on every answer of every row --
+there. [SUPERSEDED as to W > 256 on M1 Max's MSL arm -- the same-day
+W-sweep amendment below measures those sizes; the clause stands unchanged
+for the GLSL arm, whose W = 512/1024 remains UNMEASURED.] `:measured?` is UNCHANGED -- false on every answer of every row --
 because question (1) is undecided: the MSL-arm measurement that partly
 backs this narrowing ran through a native Metal harness whose contract
 status is exactly question (1). The narrowing is implemented with tests in
@@ -259,3 +261,44 @@ status is exactly question (1). The narrowing is implemented with tests in
 refutation for a narrowed answer only); a refuted device WITHOUT rule-6
 facts keeps the ordinary fail-closed `:baseline` basis and no narrowing
 note.
+
+### Amendment 2026-10-23 (the W-sweep): W > 256 on M1 Max is MEASURED on the MSL arm
+
+The "Scope, stated plainly" paragraph above is SUPERSEDED as to W > 256 on
+M1 Max's MSL arm. The same-day native-Metal W-sweep
+(docs/evidence/gpu-subgroup-reduce-m1max-wsweep-20261023/; the JUN-58
+measurement driver extended to emit, dispatch and time the two MSL arms at
+each width -- the subgroup arm's threadgroup partials array is sized from
+the emitted W, so every cell runs the emitters' own bytes for its own
+width) measured the reduce shape at W = 512 and W = 1024 for the first
+time, with W = 256 re-run in the same session as the anchor. Paired
+within-run ratios (median over each fresh process's pairs of
+variant/baseline gpu-ns, then the median of the six), all three operators:
+
+| W | :sum | :max | :min |
+|---|------|------|------|
+| 256 (anchor) | 1.220 | 1.217 | 1.217 |
+| 512 | 1.196 | 1.195 | 1.197 |
+| 1024 | 1.186 | 1.186 | 1.185 |
+
+The anchor reproduces the earlier same-day W = 256 cell (1.216-1.223), and
+the variant is SLOWER at both newly measured sizes, all three operators,
+in every fresh process. The demotion to `:baseline` at W > 256 on this
+device now rests on this device's own measurement at those sizes, not on
+the monotone-trend inference the superseded clause described. The penalty
+narrows slightly with W on the MSL arm (1.22 -> 1.19) where the GLSL band's
+penalty grew with W; the SIGN is unanimous in every measured cell of both
+arms. One noisy run at W = 512 (`:max` run 3, a faster-clocked baseline,
+ratio 1.648) is visible in the per-run ratios and does not move the
+medians; :max/:min are bit-exact against the CPU reference and between
+arms in every cell (rule 2's ordinary-value domain holds on hardware);
+:sum's low-bit divergence grows with W (max abs vs other 3.05e-05 at
+W = 256, 6.10e-05 at W = 1024).
+
+What does NOT change: the contract caveat. These numbers carry exactly
+question (1)'s undecided contract status -- the same native-Metal harness
+channel as the W = 256 MSL measurement, not the wire-42 route -- so
+`:measured?` stays false on every answer and no workgroup row (ADR-0355 /
+0358) is touched. The GLSL arm at W = 512/1024 remains UNMEASURED: the
+wire-42 route has no execution path since the C loader removal, and the
+2026-10-19 GLSL band stopped at W = 256.

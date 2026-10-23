@@ -2,13 +2,14 @@
 """JUN-58 hardware measurement driver: :baseline vs :subgroup-reduce MSL arms
 on this host's Apple GPU, from the emitters' own bytes.
 
-    python3 scripts/gpu-subgroup-reduce-metal-measure.py [--runs N]
+    python3 scripts/gpu-subgroup-reduce-metal-measure.py [--runs N] [--workgroup W] [--out DIR]
 
 Pipeline (every step's transcript lands in the evidence directory):
 
   1. emit   -- kbb scripts/gpu-subgroup-reduce-metal-measure.cljk writes the
-               six emitted sources into docs/evidence/gpu-subgroup-reduce-
-               m1max-20261023/shaders/ (both arms, three operators, W = 256).
+               six emitted sources into <out>/shaders/ (both arms, three
+               operators, at W = --workgroup; default 256, the measured
+               Apple workgroup row of ADR-0358).
   2. build  -- xcrun metal compiles each source to AIR and links one metallib
                per (arm, operator) (the emitted sources collide on their
                shared `combine` helper if linked together); xcrun clang builds
@@ -18,8 +19,16 @@ Pipeline (every step's transcript lands in the evidence directory):
   3. run    -- the harness binary runs as FRESH PROCESSES (--runs, default 6),
                interleaved paired samples with alternating order per ADR-0358's
                protocol, verified read-back of the partials.
-  4. record -- raw runs -> run-log.txt; transcripts -> compile-log.txt;
-               statistics -> summary.md.
+  4. record -- raw runs -> <out>/run-log.txt; transcripts ->
+               <out>/compile-log.txt; statistics -> <out>/summary.md.
+
+<out> defaults to docs/evidence/gpu-subgroup-reduce-m1max-20261023 (the
+historical W = 256 cell). A W-sweep cell passes its own --out (e.g.
+docs/evidence/gpu-subgroup-reduce-m1max-wsweep-20261023/w512) so the
+historical cell's record is never rewritten by a sweep run. FOOTGUN, named:
+a default run rewrites the historical run-log/compile-log/summary in place
+(the emitted shaders under shaders/ are deterministic by design and may be
+rewritten to check the emitters; the run logs are not).
 
 This measurement runs emitted code on the Apple GPU through the Metal API
 directly -- NOT through wire 42, which has no route since the C loader
@@ -67,23 +76,33 @@ def sh(cmd, log, cwd=ROOT):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--runs", type=int, default=6)
+    ap.add_argument("--workgroup", type=int, default=256)
+    ap.add_argument("--out", type=str, default=None)
     args = ap.parse_args()
+    wg_want = args.workgroup
+    if wg_want < 32 or wg_want > 1024 or (wg_want & (wg_want - 1)) != 0:
+        sys.stderr.write(f"REFUSED --workgroup {wg_want}: "
+                         "need a power of two in [32, 1024]\n")
+        sys.exit(2)
+    out = pathlib.Path(args.out) if args.out else EVID
 
-    EVID.mkdir(parents=True, exist_ok=True)
-    (EVID / "shaders").mkdir(exist_ok=True)
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "shaders").mkdir(exist_ok=True)
     build = pathlib.Path(tempfile.mkdtemp(prefix="sg-measure-"))
     log = []
 
-    # 1. emit
+    # 1. emit (at the cell's width -- the subgroup arm's threadgroup partials
+    #    array is sized from the emitted W, so the sources are W-specific)
     cp = sh(["kbb", "-Spath", "-M:test"], log).strip()
     sh(["kbb", "--backend", "sci", "--classpath", f"src:test:{cp}",
-        "scripts/gpu-subgroup-reduce-metal-measure.cljk"], log)
+        "scripts/gpu-subgroup-reduce-metal-measure.cljk",
+        "--width", str(wg_want), "--out", str(out / "shaders")], log)
 
     # 2. build
     arms = {}
     for arm in ("baseline", "subgroup"):
         for op in ("sum", "max", "min"):
-            src = EVID / "shaders" / f"{arm}-reduce-{op}.emitted.metal"
+            src = out / "shaders" / f"{arm}-reduce-{op}.emitted.metal"
             air = build / f"{arm}-reduce-{op}.air"
             sh(["xcrun", "-sdk", "macosx", "metal", "-c", str(src), "-o", str(air)], log)
             # one metallib per (arm, operator): the subgroup arm's sources all
@@ -106,11 +125,11 @@ def main():
     # 3. run: fresh processes
     runs = []
     for i in range(args.runs):
-        out = sh([str(exe), str(build)], log)
-        runs.append(out)
+        proc_out = sh([str(exe), str(build), str(wg_want)], log)
+        runs.append(proc_out)
 
-    (EVID / "compile-log.txt").write_text("\n".join(log) + "\n")
-    (EVID / "run-log.txt").write_text(
+    (out / "compile-log.txt").write_text("\n".join(log) + "\n")
+    (out / "run-log.txt").write_text(
         "".join(f"===== fresh-process run {i + 1} =====\n{o}"
                 for i, o in enumerate(runs)))
 
@@ -120,8 +139,8 @@ def main():
     host = {}
     ver = []
     device = sg = n = wg = pairs = warmup = None
-    for ri, out in enumerate(runs):
-        for line in out.splitlines():
+    for ri, run_out in enumerate(runs):
+        for line in run_out.splitlines():
             m = re.match(r"sample op=(\w+) pair=(\d+) order=(\S) arm=(\w+) "
                          r"gpu_ns=([\d.]+) host_ns=([\d.]+)", line)
             if m:
@@ -151,13 +170,25 @@ def main():
                                                     vals["workgroup"], vals["pairs"],
                                                     vals["warmup"])
 
+    if wg is None or sg is None:
+        sys.stderr.write("FATAL: no workgroup=/simdgroup_size= line in any run "
+                         "output -- nothing was measured\n")
+        sys.exit(2)
+
     lines = []
-    lines.append("# JUN-58: :baseline vs :subgroup-reduce on Apple M1 Max -- "
-                 "the first hardware comparison of the emitted arms\n")
+    lines.append(f"# JUN-58: :baseline vs :subgroup-reduce on Apple M1 Max at "
+                 f"W = {wg} -- the MSL arms on the native Metal route\n")
     lines.append(f"- device: {device}")
     lines.append(f"- reported subgroup size ([[threads_per_simdgroup]]): {sg}")
-    lines.append(f"- n = {n} elements, workgroup W = {wg} (the measured Apple "
-                 f"row, ADR-0358), {args.runs} fresh-process runs")
+    lines.append(f"- n = {n} elements, workgroup W = {wg}"
+                 + (" (the measured Apple row, ADR-0358)" if int(wg) == 256
+                    else " (a W-sweep cell, NOT the ADR-0358 row)")
+                 + f", {args.runs} fresh-process runs")
+    lines.append(f"- emitted at W = {wg_want} by the emitters' own bytes "
+                 f"(shaders/; the subgroup arm's threadgroup partials array "
+                 f"is sized from this W)"
+                 + ("" if int(wg) == wg_want
+                    else f" -- MISMATCH: the harness dispatched W = {wg}"))
     lines.append(f"- protocol: {pairs} interleaved pairs per operator per run, "
                  f"alternating AB/BA order, {warmup} warmup submits per arm "
                  "discarded (ADR-0358's sweep protocol)")
@@ -217,7 +248,7 @@ def main():
         "flip would need). Whether a native Metal harness satisfies the "
         "measurement contract is a design decision, PROPOSED by this evidence "
         "and decided nowhere.")
-    (EVID / "summary.md").write_text("\n".join(lines) + "\n")
+    (out / "summary.md").write_text("\n".join(lines) + "\n")
     print("\n".join(lines))
     shutil.rmtree(build, ignore_errors=True)
 

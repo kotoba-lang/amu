@@ -11,7 +11,12 @@
 // interleaved paired samples with alternating order, first submits discarded
 // as warmup, and verified read-back of the partials the kernels produce.
 //
-//   measure <workdir>
+//   measure <workdir> [workgroup]
+//
+// [workgroup] is the dispatch width W (default 256, the measured Apple
+// workgroup row of ADR-0358); a W-sweep cell passes its own width, and the
+// emitted sources must have been emitted at that same width (the subgroup
+// arm sizes its threadgroup partials array from the emitted W).
 //
 // <workdir> must contain baseline-<op>.metallib and subgroup-<op>.metallib
 // for op in {sum, max, min} (entry reduce_<op>, the emitter's kernel name --
@@ -35,9 +40,11 @@
 #include <string.h>
 
 #define N_ELEM 1000003u /* not a multiple of WG: padded lanes exercised */
-#define WG 256u         /* the measured Apple workgroup row (ADR-0358) */
 #define PAIRS 20        /* interleaved pairs per operator per process */
 #define WARMUP 2        /* discarded submits per arm */
+
+static uint32_t WG = 256u; /* default: the measured Apple workgroup row
+                            * (ADR-0358); argv[2] overrides */
 
 static uint32_t lcg_state = 20261023u;
 static uint32_t lcg_next(void) {
@@ -103,11 +110,22 @@ static double run_dispatch(id<MTLCommandQueue> q, id<MTLComputePipelineState> ps
 
 int main(int argc, char **argv) {
   @autoreleasepool {
-    if (argc != 2) {
-      fprintf(stderr, "usage: measure <workdir>\n");
+    if (argc < 2 || argc > 3) {
+      fprintf(stderr, "usage: measure <workdir> [workgroup]\n");
       return 2;
     }
     NSString *dir = [NSString stringWithUTF8String:argv[1]];
+    if (argc == 3) {
+      char *end = 0;
+      unsigned long w = strtoul(argv[2], &end, 10);
+      if (end == argv[2] || *end != '\0' || w < 32ul || w > 1024ul ||
+          (w & (w - 1ul)) != 0) {
+        fprintf(stderr, "REFUSED workgroup %s: need a power of two in [32, 1024]\n",
+                argv[2]);
+        return 2;
+      }
+      WG = (uint32_t)w;
+    }
     id<MTLDevice> dev = MTLCreateSystemDefaultDevice();
     if (dev == nil) {
       fprintf(stderr, "FATAL no Metal device\n");
@@ -170,6 +188,14 @@ int main(int argc, char **argv) {
           pso_for(dev, base_lib, entry.UTF8String);
       id<MTLComputePipelineState> pso_sub =
           pso_for(dev, sub_lib, entry.UTF8String);
+      // The dispatch width must fit what the emitted kernel's pipeline
+      // allows (the subgroup arm sizes its threadgroup array from the
+      // emitted W -- a source emitted at another W is not this cell).
+      if (WG > pso_base.maxTotalThreadsPerThreadgroup ||
+          WG > pso_sub.maxTotalThreadsPerThreadgroup) {
+        printf("shape=UNUSABLE (W exceeds pipeline maxTotalThreadsPerThreadgroup)\n");
+        return 1;
+      }
 
       double host_ns;
       for (int w = 0; w < WARMUP; w++) {

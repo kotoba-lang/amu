@@ -15,13 +15,18 @@
   the CUDA route since ADR-0361's same-day amendment (JUN-57's own
   decision) -- as the SECOND rung of that route's ladder, under
   :warp-shuffle-reduce's precedence.
-  UNMEASURED, all of it. Nothing in this repository has executed a variant
-  reduction on the vendor hardware its rows name: the wire-42 (:gpu/compute)
-  execution path has no producer today -- the C loader brokers were removed
-  (main 36479076) and the replacement is ADR 0371's GPU provider process,
-  not implemented. Every answer here is a design choice marked
-  :measured? false, and no caller may report one as optimization evidence
-  until a hardware measurement replaces its basis.
+  UNMEASURED, all of it. One variant reduction has EXECUTED on the vendor
+  hardware a row names: :subgroup-reduce on Apple M1 Max, through
+  measurement harnesses (GLSL arm via wire-42/MoltenVK, PR #1347/#1348,
+  2026-10-19; MSL arm via a native Metal harness, 2026-10-23, at
+  W = 256/512/1024), losing to :baseline in every measured cell. No other
+  vendor's hardware has run a variant, and no variant has an execution
+  path in the product runtime: the wire-42 (:gpu/compute) route has no
+  producer today -- the C loader brokers were removed (main 36479076) and
+  the replacement is ADR 0371's GPU provider process, not implemented.
+  Every answer here is a design choice marked :measured? false, and no
+  caller may report one as optimization evidence until a hardware
+  measurement replaces its basis.
 
   The functions are TOTAL, like the dispatch table in
   kotoba.compiler.accelerator-targets: a vendor or kernel shape outside the
@@ -97,10 +102,11 @@
   Metal harness 2026-10-23 (ADR-0360's measurement amendment: ~22% slower
   at W = 256 across :sum/:max/:min). The refuted variant is not selected
   on the device that refuted it; every other Apple device keeps the
-  designed row (UNMEASURED). W > 256 on this device is UNMEASURED (the
-  measured penalty grew with W over the measured band); the demotion
-  follows that trend toward the fail-safe arm and claims no measurement
-  there.")
+  designed row (UNMEASURED). W > 256 on this device is MEASURED too (the
+  same 2026-10-23 native-Metal W-sweep: the variant still slower at
+  W = 512 and W = 1024, paired median ratios 1.19-1.20 and 1.18-1.19
+  across :sum/:max/:min), so the demotion at those sizes rests on this
+  device's own measurement, not on trend.")
 
 (def variant-bases
   "Why each variant exists. Design rationale, not measurement evidence."
@@ -144,7 +150,9 @@
     wire-42/MoltenVK, PR #1347/#1348, 2026-10-19: ~20-27% slower at W=256
     and never faster over W=32..256; MSL arm via a native Metal harness,
     ADR-0360's measurement amendment, 2026-10-23: ~22% slower at W=256
-    across :sum/:max/:min) -- one device and narrow shape coverage. The
+    across :sum/:max/:min, and the same day's native-Metal W-sweep: still
+    slower at W=512 and W=1024, paired median ratios 1.19-1.20 and
+    1.18-1.19) -- one device and narrow shape coverage. The
     measured cell DECIDED the row's fate on 2026-10-23 (ADR-0360's second
     decision): the row is NARROWED to the measured device -- a descriptor
     naming the measured device answers :baseline, because that device
