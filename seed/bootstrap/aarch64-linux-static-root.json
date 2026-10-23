@@ -1,24 +1,45 @@
 {
   "schema": "amu.seed.static-root.v1",
   "image": {
-    "bytes": 1524224,
-    "sha256": "b4352834626c9617b1334cc0133f06d5a6d92bb0f0adb795b1f6372590f12d2e"
+    "bytes": 1552896,
+    "sha256": "9c2b981f96142109a7f8aa1e4fb0207e3b92c53678f197a70e7aac29f9224efb"
   },
   "target": "aarch64-linux",
   "format": "static",
   "sourceManifest": "seed/X86_64-LINUX-SELFHOST-MANIFEST",
   "sourceUnity": {
-    "bytes": 927343,
-    "sha256": "faab68ad5997f975f011eb4ddd982a270200099bfcd379755f4ea0a12632f7b2"
+    "bytes": 944106,
+    "sha256": "64c8cd647b3991ed50c453cff6db4a7c9c3b1529852cafd79710dc85e81d845d"
   },
   "sourceCommitBase": "457042ab741520980bceb5bf12970937d1bc8dba",
   "producedBy": {
-    "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 and S2 built S3 = this image (S1 = S2 = S3: the runtime text embedded in static images did not change). Re-pinned because this source adds --format launcher (ADR 0371 step 4, context word 408 = 4): the launcher runtime text and the format plumbing in seed/70, 75, 76, 77 and 80.",
+    "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 and S2 built S3 = this image (S1 = S2 = S3: the runtime text embedded in static images did not change). Re-pinned because this source adds --format platform-linked (ADR 0371 step 5): seed/78-x86_64-platform, the platform runtime text of seed/76, intrinsic 9 and the platform API rule of seed/75, and the dispatch in seed/73.",
     "date": "2026-10-23",
-    "previousRoot": "1739f52f02fc90c28a1fa4a6c3a3f780caeff481893e3a1cd35badd8c227682e"
+    "previousRoot": "b4352834626c9617b1334cc0133f06d5a6d92bb0f0adb795b1f6372590f12d2e"
   },
-  "verification": "Native arm64 S1=S2=S3 from the previous root, adopted G1=G2=G3 and the static cases (docs/evidence/selfhost-bootstrap-aarch64-20261022/); the launcher check on arm64 and x86_64 (docs/evidence/static-launcher-20261022/); main's runtime-boundary corpus including --format launcher. CI re-runs all of them.",
+  "verification": "Native arm64 S1=S2=S3 from the previous root, adopted G1=G2=G3 and the static cases; check-platform-linked.py (build on arm64, run on x86_64 glibc under qemu-user; natively in the qualify-x86_64 CI job), with static, runner and launcher output byte-identical to the previous root's on both targets. CI re-runs the bootstrap from this root.",
   "history": [
+    {
+      "schema": "amu.seed.static-root.v1",
+      "image": {
+        "bytes": 1524224,
+        "sha256": "b4352834626c9617b1334cc0133f06d5a6d92bb0f0adb795b1f6372590f12d2e"
+      },
+      "target": "aarch64-linux",
+      "format": "static",
+      "sourceManifest": "seed/X86_64-LINUX-SELFHOST-MANIFEST",
+      "sourceUnity": {
+        "bytes": 927343,
+        "sha256": "faab68ad5997f975f011eb4ddd982a270200099bfcd379755f4ea0a12632f7b2"
+      },
+      "sourceCommitBase": "457042ab741520980bceb5bf12970937d1bc8dba",
+      "producedBy": {
+        "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 and S2 built S3 = this image (S1 = S2 = S3: the runtime text embedded in static images did not change). Re-pinned because this source adds --format launcher (ADR 0371 step 4, context word 408 = 4): the launcher runtime text and the format plumbing in seed/70, 75, 76, 77 and 80.",
+        "date": "2026-10-23",
+        "previousRoot": "1739f52f02fc90c28a1fa4a6c3a3f780caeff481893e3a1cd35badd8c227682e"
+      },
+      "verification": "Native arm64 S1=S2=S3 from the previous root, adopted G1=G2=G3 and the static cases (docs/evidence/selfhost-bootstrap-aarch64-20261022/); the launcher check on arm64 and x86_64 (docs/evidence/static-launcher-20261022/); main's runtime-boundary corpus including --format launcher. CI re-runs all of them."
+    },
     {
       "schema": "amu.seed.static-root.v1",
       "image": {
