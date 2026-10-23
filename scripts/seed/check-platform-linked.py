@@ -249,8 +249,11 @@ def build(compiler, output, previous_root):
                               ("aarch64-linux", "static", GUESTS["hello"]), ("aarch64-linux", "launcher", (ROOT / "tools/static_launcher.kotoba").read_text())):
             tag = f"{tgt}-{fmt}"
             a, _ = compile_(producer, "same-new-" + tag, src, fmt=fmt, tgt=tgt)
-            b, _ = compile_(old, "same-old-" + tag, src, fmt=fmt, tgt=tgt)
-            assert a.read_bytes() == b.read_bytes(), ("output changed", tag)
+            b, z = compile_(old, "same-old-" + tag, src, fmt=fmt, tgt=tgt, success=False)
+            if fmt == "launcher" and z.returncode == 2 and b"E7100" in z.stderr:
+                same[tag] = "n/a: the previous root has no --format launcher"
+                continue
+            assert z.returncode == 0 and a.read_bytes() == b.read_bytes(), ("output changed", tag)
             same[tag] = pin(a)
         _, z = compile_(old, "previous-refuses", GUESTS["hello"], success=False)
         assert z.returncode != 0 and not (art / "previous-refuses.elf").exists(), z.stderr[-200:]
