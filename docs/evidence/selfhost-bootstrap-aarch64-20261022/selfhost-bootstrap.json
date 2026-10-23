@@ -16,56 +16,90 @@
   ],
   "root": {
     "image": {
-      "bytes": 3207680,
-      "sha256": "88afda8977285f3839ebad1cb785a344b296c6890f3f901746259dd478ab9fb7"
+      "bytes": 3211776,
+      "sha256": "bd0254759e442533ead3e190f361257725667ea252a83b3575a3fb0d65becb66"
     },
     "receipt": {
       "schema": "amu.seed.static-root.v1",
       "image": {
-        "bytes": 3207680,
-        "sha256": "88afda8977285f3839ebad1cb785a344b296c6890f3f901746259dd478ab9fb7"
+        "bytes": 3211776,
+        "sha256": "bd0254759e442533ead3e190f361257725667ea252a83b3575a3fb0d65becb66"
       },
       "target": "aarch64-linux",
       "format": "packed",
       "sourceManifest": "seed/FULL-MANIFEST",
       "sourceUnity": {
-        "bytes": 3205254,
-        "sha256": "b71a24481ca30e04d971537ff81697f2d8e6f107134002a962e6071d678ac281"
+        "bytes": 3208839,
+        "sha256": "d277637b779a7f6c192e765bbdeca192d94c2cc57dfeb36ee8423ecfc6c75998"
       },
-      "sourceCommitBase": "c00d98a4fd396a08b4c93591d221f724f9d24da8",
+      "sourceCommitBase": "51b89255ef674a2da8bfbe650c971f1b08c0e3d3",
       "producedBy": {
-        "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt itself to F2 (same container, new runtime wrapper); F2 rebuilt itself to F3 = F2 (= this image). Re-pinned because this source adds wire 35 FSYNC_SEP and RENAME_SEP (JUN-359) and wire 7 sleep <ms> (JUN-360) to the static runtimes seed/76 and seed/77.",
+        "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt and packed itself to F2 = F1 (= this image). Re-pinned because this source adds the wasm32-browser entry ABI (JUN-353 Phase 3): the kotoba:host/input import (seed/81), the page-granted wires 35 (read-only), 37, 38 and 39 and larger wasm arenas (seed/82).",
         "date": "2026-10-23",
-        "previousRoot": "048244b3c26204ea32ff545005d2826d068fb15787dd20a8c5c636758e0f4d49",
+        "previousRoot": "88afda8977285f3839ebad1cb785a344b296c6890f3f901746259dd478ab9fb7",
         "chain": {
           "F1.kseed": {
-            "bytes": 2981867,
-            "sha256": "559a2623295e5659bda8c66d2769e73cbd62d5702101611c8312ec18196759b5"
+            "bytes": 2984307,
+            "sha256": "9dacd3f1f6ddec844796d8e74b97010ff78f8bb5bc7b1f77d7702bdd4c48be8d"
           },
           "F1.elf": {
-            "bytes": 3203584,
-            "sha256": "84673d861264dd95e7e3555d1411a82578cf7b797763b307985a31bf78856e01"
+            "bytes": 3211776,
+            "sha256": "bd0254759e442533ead3e190f361257725667ea252a83b3575a3fb0d65becb66"
           },
           "F2.kseed": {
-            "bytes": 2981867,
-            "sha256": "559a2623295e5659bda8c66d2769e73cbd62d5702101611c8312ec18196759b5"
+            "bytes": 2984307,
+            "sha256": "9dacd3f1f6ddec844796d8e74b97010ff78f8bb5bc7b1f77d7702bdd4c48be8d"
           },
           "F2.elf": {
-            "bytes": 3207680,
-            "sha256": "88afda8977285f3839ebad1cb785a344b296c6890f3f901746259dd478ab9fb7"
-          },
-          "F3.kseed": {
-            "bytes": 2981867,
-            "sha256": "559a2623295e5659bda8c66d2769e73cbd62d5702101611c8312ec18196759b5"
-          },
-          "F3.elf": {
-            "bytes": 3207680,
-            "sha256": "88afda8977285f3839ebad1cb785a344b296c6890f3f901746259dd478ab9fb7"
+            "bytes": 3211776,
+            "sha256": "bd0254759e442533ead3e190f361257725667ea252a83b3575a3fb0d65becb66"
           }
         }
       },
-      "verification": "scripts/seed/selfhost-bootstrap.py --tier pr and --tier main on arm64 Linux from this root (F1 = root); scripts/seed/check-durable-sleep.py, check-io-read.py and check-spawn-runtime.py with that F1 (docs/durable-sleep.md). CI re-runs the tier from this root (F -> F' = root).",
+      "verification": "scripts/seed/selfhost-bootstrap.py --tier pr on arm64 Linux (python:3.12-alpine with apk chromium), from the previous root: F1 = F2, F1's core route gives the adoption image, the runtime boundary corpus, the 24 cases, hardening, capabilities, and the 24 cases plus the spin, deep and entry probes (entry with and without the page's grants) as wasm32-browser modules in headless Chromium 155.0.8059.84 (all match their pinned result, trap and remaining fuel; the float cases are refused with E7101). CI re-runs the tier from this root (F -> F' = root).",
       "history": [
+        {
+          "image": {
+            "bytes": 3207680,
+            "sha256": "88afda8977285f3839ebad1cb785a344b296c6890f3f901746259dd478ab9fb7"
+          },
+          "sourceUnity": {
+            "bytes": 3205254,
+            "sha256": "b71a24481ca30e04d971537ff81697f2d8e6f107134002a962e6071d678ac281"
+          },
+          "sourceCommitBase": "c00d98a4fd396a08b4c93591d221f724f9d24da8",
+          "producedBy": {
+            "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt itself to F2 (same container, new runtime wrapper); F2 rebuilt itself to F3 = F2 (= this image). Re-pinned because this source adds wire 35 FSYNC_SEP and RENAME_SEP (JUN-359) and wire 7 sleep <ms> (JUN-360) to the static runtimes seed/76 and seed/77.",
+            "date": "2026-10-23",
+            "previousRoot": "048244b3c26204ea32ff545005d2826d068fb15787dd20a8c5c636758e0f4d49",
+            "chain": {
+              "F1.kseed": {
+                "bytes": 2981867,
+                "sha256": "559a2623295e5659bda8c66d2769e73cbd62d5702101611c8312ec18196759b5"
+              },
+              "F1.elf": {
+                "bytes": 3203584,
+                "sha256": "84673d861264dd95e7e3555d1411a82578cf7b797763b307985a31bf78856e01"
+              },
+              "F2.kseed": {
+                "bytes": 2981867,
+                "sha256": "559a2623295e5659bda8c66d2769e73cbd62d5702101611c8312ec18196759b5"
+              },
+              "F2.elf": {
+                "bytes": 3207680,
+                "sha256": "88afda8977285f3839ebad1cb785a344b296c6890f3f901746259dd478ab9fb7"
+              },
+              "F3.kseed": {
+                "bytes": 2981867,
+                "sha256": "559a2623295e5659bda8c66d2769e73cbd62d5702101611c8312ec18196759b5"
+              },
+              "F3.elf": {
+                "bytes": 3207680,
+                "sha256": "88afda8977285f3839ebad1cb785a344b296c6890f3f901746259dd478ab9fb7"
+              }
+            }
+          }
+        },
         {
           "image": {
             "bytes": 3199488,
@@ -750,12 +784,12 @@
         "sha256": "b68b823f2b854b6174f1db2655b324a6a0e917362eff4a4c9345f94dbeba75ae"
       },
       "seed/81-wasm32.kotoba": {
-        "bytes": 24244,
-        "sha256": "6e080582621ca81de52c3a406e831cd10d3601382f2490a62b67f585afe2c8fd"
+        "bytes": 24438,
+        "sha256": "0647a1ff4f59ba7cd239b3b53df671be99847622d1db91a8efc74259f1a4cc06"
       },
       "seed/82-wasm32-rt.kotoba": {
-        "bytes": 6144,
-        "sha256": "b160468bd91e0c56c267fea6f7bb556c5ac369ac12e1a27b56f891bbee2af153"
+        "bytes": 9535,
+        "sha256": "9dfc5944844aae8d33ca41db73548bde8ba7547841cc31aed42cffe2cd0b3a64"
       },
       "seed/78-full-entry.kotoba": {
         "bytes": 1382,
@@ -845,23 +879,23 @@
     {
       "name": "F1",
       "container": {
-        "bytes": 2983443,
-        "sha256": "ed9844470c32928ae89e5bc0e74c6cd85c6601f78f1dd15d6fc47c4c8c3d9586"
+        "bytes": 2985883,
+        "sha256": "c55b4a4cd2783d70c90a75a5520fce340b0fac5b53a644a4f1045775e5aa9de8"
       },
       "image": {
         "bytes": 3211776,
-        "sha256": "a6c1727b468c37ebeda368895d05006459c72d2ca4c785190caf825556287918"
+        "sha256": "436ec7261c14d857d0fa6e835a11f0d3a6e35fff2f959fcc0ecf42032080ea98"
       }
     },
     {
       "name": "F2",
       "container": {
-        "bytes": 2983443,
-        "sha256": "ed9844470c32928ae89e5bc0e74c6cd85c6601f78f1dd15d6fc47c4c8c3d9586"
+        "bytes": 2985883,
+        "sha256": "c55b4a4cd2783d70c90a75a5520fce340b0fac5b53a644a4f1045775e5aa9de8"
       },
       "image": {
         "bytes": 3211776,
-        "sha256": "a6c1727b468c37ebeda368895d05006459c72d2ca4c785190caf825556287918"
+        "sha256": "436ec7261c14d857d0fa6e835a11f0d3a6e35fff2f959fcc0ecf42032080ea98"
       }
     }
   ],
@@ -1114,108 +1148,112 @@
     "reason": "no Chromium or Chrome on this host: the qualify-x86_64 job runs these modules",
     "modules": {
       "case-bytes-roundtrip.wasm": {
-        "bytes": 26180,
-        "sha256": "e6ccb2e89c914a9ae82efe4aa3539e09c1359c7951d6cb62d8a43d71f4c22d7b"
+        "bytes": 28654,
+        "sha256": "9abcb2976c947e3cbfa577d117d34d93f32890a28af8c743205ab3ed78fed51c"
       },
       "case-capability-denied.wasm": {
-        "bytes": 26139,
-        "sha256": "d3820b1519f35b57d42c8d5f88d69bf73e523cdf2b5cfb37360203099eec058c"
+        "bytes": 28613,
+        "sha256": "034e0fe0b1fba666ab9c126e1e46585d2e13f069973e626ea40066c2ef2376ba"
       },
       "case-closure-env.wasm": {
-        "bytes": 26384,
-        "sha256": "dbbf4c21b734c1aa23ac815a16df98218e8ed806c48b46b25f2cf611c4703fde"
+        "bytes": 28861,
+        "sha256": "f2b70a884e72d89e98057a9305d4fa55127869e80bdc8ad40a83e6d86f26a829"
       },
       "case-closure.wasm": {
-        "bytes": 26246,
-        "sha256": "6759eae98d191dc7096eb557fc7f172a2d37e91b3250329d22eecb3538262ff4"
+        "bytes": 28722,
+        "sha256": "39cbf1ebcaeb2c4ddabc4a2eb3b919eb5b77d155eac3e7bc6c186de28645b462"
       },
       "case-mutual-tail.wasm": {
-        "bytes": 26382,
-        "sha256": "d132ba4c23da616b19469f9f8033fdc12ad0295e62a4ea36f7d7f3b662c0fc20"
+        "bytes": 28858,
+        "sha256": "1010455c67170eac34402b94b7d47bf010d948ae46c4420d005fa46427381e59"
       },
       "case-state-results.wasm": {
-        "bytes": 26233,
-        "sha256": "23e2b3ba7dcea914c2c8eed18e105a37f88867d168c4d45a40d251b93bb2ede1"
+        "bytes": 28709,
+        "sha256": "950371d3fadd088b4925d0688513f58ed01c89314cc63c63c405e3d8bb47bade"
       },
       "case-string-boundary.wasm": {
-        "bytes": 26145,
-        "sha256": "e3ba681869f771bf1724e2c6239654b2d5526cc2da33db497d9ce7c24a2ebd4e"
+        "bytes": 28619,
+        "sha256": "f7ee7f4acc50021fbe9845866cdd23add867a3551ab9f979d6cebba18f36982e"
       },
       "case-string-call.wasm": {
-        "bytes": 26252,
-        "sha256": "9e73417c1e56d1dce11d65a35b14d3438281a0ad1c45d109098a695c5faad6e1"
+        "bytes": 28727,
+        "sha256": "a4c1ae5ea2560a80077477229a4f3de302eaa2efe91cfd704bd7bec610543438"
       },
       "case-string-concat.wasm": {
-        "bytes": 26206,
-        "sha256": "d088e9da9b23eb2ff75394e69accc0e9eb0a43cb90478e4d2f52419a01fc2a29"
+        "bytes": 28680,
+        "sha256": "23f01276c3d1f30fff60549b370d23c92ed642e228c379ae81c6ecfb3e9a2d4b"
       },
       "case-string-empty-nul.wasm": {
-        "bytes": 26197,
-        "sha256": "2ebcf56e6582f25194c842f330e476005d427d30dbcb08a71a49675c202c318d"
+        "bytes": 28671,
+        "sha256": "5e3d55ef5426e2994fcbcf8c3246b9c08530d964d4d1557706587dd62590b47a"
       },
       "case-string-literal.wasm": {
-        "bytes": 26124,
-        "sha256": "ec9d237ff45ec5674ee1b0f4847fe233da6e4c04d629fe1499805bb465d91519"
+        "bytes": 28598,
+        "sha256": "53b5f6dd080dfdc57a18f5ac31800911955138dbea0af18354749b16547b6fee"
       },
       "case-string-oob.wasm": {
-        "bytes": 26145,
-        "sha256": "09ecec2ef2f8e2de3101278586b603367287cf944bb7759560596eda63c86e4a"
+        "bytes": 28619,
+        "sha256": "7475a2d6495a64db01962a41158b4f42fae445e1a35b5cd3febeba31875aed1d"
       },
       "case-string-search.wasm": {
-        "bytes": 26228,
-        "sha256": "4705ae418a6c7ae43940df92ee3b480d786ed50c3387d1f105daaf021fe7fbd5"
+        "bytes": 28702,
+        "sha256": "a10762de4357a4d23077556bbabaafc0352df566dfdc3931d384ba06e91a2edb"
       },
       "case-string-unicode.wasm": {
-        "bytes": 26165,
-        "sha256": "1a7656c03e43db056612df5f4d51d39de308c8b230542c53955018c75a21d9eb"
+        "bytes": 28639,
+        "sha256": "56274e60eebb8a6775c04978af8480c3faff0d8aff6941fafa164be35d3b6406"
       },
       "case-string-view.wasm": {
-        "bytes": 26180,
-        "sha256": "709f39fc1b27dd6207236589d26f3675260374c4bbc8d3a2c4352a1047b1f8a6"
+        "bytes": 28654,
+        "sha256": "f8004a82b7cb1279cfbaa314acf0e36a9297383cd0b386e0b8e1321ada66da7d"
       },
       "case-vector-drop-conj.wasm": {
-        "bytes": 27420,
-        "sha256": "ccf1305c03715c0d085c64a5a3a98d7a7db0030651345a3f03b7995fb6426ef4"
+        "bytes": 29899,
+        "sha256": "fa3fe5dd83ca18ed37664b12e0754f487433d057c89292b1d3a1aeb6ad81eb96"
       },
       "case-vector-dynamic.wasm": {
-        "bytes": 26213,
-        "sha256": "34a433e6ca6b4472f5423b020f43650bc549c1d1277fc5730b0861c1f80cd066"
+        "bytes": 28687,
+        "sha256": "5c58baa4f774a0c5596faacbd6fd235d1cec902a3ea2b213acee93cff2c64b21"
       },
       "case-vector-literal.wasm": {
-        "bytes": 26157,
-        "sha256": "1909e928bdf6cc669fe12d844abaf2baac2b28bf2c29edfd8a42406c1601b418"
+        "bytes": 28631,
+        "sha256": "d7383ce7d3187eba1532594ca699cd7c1d13d60d458a2cb4392d09301ec16a81"
       },
       "case-vector-mutate.wasm": {
-        "bytes": 26164,
-        "sha256": "bbf7118a75c7a0860e7573bf4a2987644f859af0be9098417cb66ebc62f3a345"
+        "bytes": 28638,
+        "sha256": "ceb42c4a3dcd444d70afd4fc4f426e4864137f136a4a56b28b7cb75726cf3fc5"
       },
       "case-vector-negative.wasm": {
-        "bytes": 26180,
-        "sha256": "e076ed12b11ee5bbeec5e90b6a5864cf618f7a0ae8b939255077d67463cd87ab"
+        "bytes": 28655,
+        "sha256": "e5bb9ef5d8f311e47bb07002ca2020e3b2b77d0b51574f9e8e6bfea20455262c"
       },
       "case-vector-oob.wasm": {
-        "bytes": 26167,
-        "sha256": "efff23abcf24d7faee1bb4de0da23917f01ad6b4f5fe2ca3b3a3587ef3d55964"
+        "bytes": 28641,
+        "sha256": "a0fbf3090a8d0e722b2ebbe05d36728ec966dcd81ac059293925b5e5c951e4fe"
       },
       "case-vector-persistent.wasm": {
-        "bytes": 26223,
-        "sha256": "0489f092119011f4091323ed2d9a0de74a76e5f2a91e2bd9c34d80ad68d5edc5"
+        "bytes": 28697,
+        "sha256": "eeb2d7cd928aadca00c264339da7d934fd6a6c3f21ca04ea8bb9b4b6296fceac"
       },
       "case-vector-pooled.wasm": {
-        "bytes": 28141,
-        "sha256": "22377c183825d9266cd653300146778d104123229ef4f2211ba47e147209bb19"
+        "bytes": 30615,
+        "sha256": "0684d55863191e7657c01891b4f8b1ac2d4b43970659e6003667782cf13930f5"
       },
       "case-wide-args.wasm": {
-        "bytes": 26573,
-        "sha256": "4f3b7ed1751e86bdb78a9f1ec3c80cd4bbc755cef0955b7937af12822bb04bf6"
+        "bytes": 29048,
+        "sha256": "92a269c3211e0028f6b70aa6974a95dfc99f65e6595d41c60aca90d8b85ad395"
       },
       "probe-deep.wasm": {
-        "bytes": 26244,
-        "sha256": "51abc214fd4c081012e70584a5c6f28cbeff8b58b9b826254b78e6ace2f04874"
+        "bytes": 28719,
+        "sha256": "f391f88f552f35fd9a5570ee76bdba13e83beadb71cad94ef82583fbacb2f0e5"
+      },
+      "probe-entry.wasm": {
+        "bytes": 28664,
+        "sha256": "84146a50e2507f6a8a7d64d2a6b01e63e924409f422ae58b97b71960e860ca97"
       },
       "probe-spin.wasm": {
-        "bytes": 26180,
-        "sha256": "b5cf8a364f2fdbaa311b6d5fd5cd81ed4beede6a8fb89c7cb7a22f00e5509fa9"
+        "bytes": 28654,
+        "sha256": "21b5b96751974172808e2d209104815b6f8c645e5a937267ecbb0f800be1686b"
       }
     },
     "floatRefusals": [
@@ -1258,7 +1296,7 @@
     "status": "PASS_RUNTIME_BOUNDARY",
     "compiler": {
       "bytes": 3211776,
-      "sha256": "a6c1727b468c37ebeda368895d05006459c72d2ca4c785190caf825556287918"
+      "sha256": "436ec7261c14d857d0fa6e835a11f0d3a6e35fff2f959fcc0ecf42032080ea98"
     },
     "previousRoot": null,
     "host": [
@@ -2517,32 +2555,32 @@
   "steps": [
     {
       "name": "F1-compile",
-      "seconds": 110.8,
+      "seconds": 118.3,
       "ran": true
     },
     {
       "name": "F1-pack",
-      "seconds": 1.6,
+      "seconds": 1.9,
       "ran": true
     },
     {
       "name": "F2-compile",
-      "seconds": 109.2,
+      "seconds": 104.3,
       "ran": true
     },
     {
       "name": "F2-pack",
-      "seconds": 1.7,
+      "seconds": 1.6,
       "ran": true
     },
     {
       "name": "R-aarch64",
-      "seconds": 0.5,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "S-x86_64",
-      "seconds": 7.7,
+      "seconds": 7.4,
       "ran": true
     },
     {
@@ -2552,12 +2590,12 @@
     },
     {
       "name": "G1-compile",
-      "seconds": 95.1,
+      "seconds": 103.9,
       "ran": true
     },
     {
       "name": "G1-extract",
-      "seconds": 1.0,
+      "seconds": 0.9,
       "ran": true
     },
     {
@@ -2577,7 +2615,7 @@
     },
     {
       "name": "runtime-boundary",
-      "seconds": 95.9,
+      "seconds": 91.9,
       "ran": true
     },
     {
@@ -2772,7 +2810,7 @@
     },
     {
       "name": "case-closure-env-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2842,7 +2880,7 @@
     },
     {
       "name": "case-string-empty-nul-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
@@ -2902,7 +2940,7 @@
     },
     {
       "name": "case-string-boundary-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2912,7 +2950,7 @@
     },
     {
       "name": "case-closure-wasm32",
-      "seconds": 0.4,
+      "seconds": 0.3,
       "ran": true
     },
     {
@@ -2947,6 +2985,11 @@
     },
     {
       "name": "probe-deep-wasm32",
+      "seconds": 0.3,
+      "ran": true
+    },
+    {
+      "name": "probe-entry-wasm32",
       "seconds": 0.3,
       "ran": true
     },
@@ -3002,7 +3045,7 @@
     },
     {
       "name": "float-float-f32-un-wasm32",
-      "seconds": 0.4,
+      "seconds": 0.3,
       "ran": true
     },
     {

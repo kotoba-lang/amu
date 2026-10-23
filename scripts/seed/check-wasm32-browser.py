@@ -11,11 +11,23 @@ result lines from the DOM. No Node, npm or Playwright.
 
 Standalone: check-wasm32-browser.py --modules DIR --output OUT [--browser PATH]
 checks DIR/case-NAME.wasm against seed/static-cases.json (result, trap and
-remaining fuel, as the native cases are checked) and DIR/probe-spin.wasm and
-DIR/probe-deep.wasm when present (see PROBES).
+remaining fuel, as the native cases are checked) and DIR/probe-spin.wasm,
+DIR/probe-deep.wasm and DIR/probe-entry.wasm when present (see PROBES).
+
+run_modules is also the harness of applications' own browser checks (for
+example kumitate's fixture selftest): each run may carry the entry ABI's
+inputs (allow, args, files; runtime/wasm32-browser-static-host.js).
+
+An application's module: check-wasm32-browser.py --app MODULE.wasm --output OUT
+[--allow 35,37,38,39] [--file MOUNT=DIR].. [-- ARGS..] runs it once with those
+inputs (every file under DIR is readable at MOUNT/<its relative path>; nothing
+is writable), writes OUT/app.json and the run's output (stdout without the
+report line) to OUT/output, prints the report line and exits 0 when the run
+ended with :status :ok and exit 0.
 """
 import argparse
 import base64
+import hashlib
 import json
 import os
 import re
@@ -110,12 +122,14 @@ class Pipe:
 
 
 def run_modules(browser, out, runs, timeout=300):
-    """runs: [(name, wasm path)]. Returns (browser version, {name: result line})."""
+    """runs: [(name, wasm path)] or [(name, wasm path, {fuel?, allow?, args?, files?})].
+    Returns (browser version, {name: result line})."""
     page_dir = out / "page"
     page_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy(PAGE, page_dir / PAGE.name)
     shutil.copy(HOST, page_dir / HOST.name)
-    data = [dict(name=n, fuel=FUEL, wasm=base64.b64encode(Path(p).read_bytes()).decode()) for n, p in runs]
+    data = [dict(dict(name=r[0], fuel=FUEL, wasm=base64.b64encode(Path(r[1]).read_bytes()).decode()), **(r[2] if len(r) > 2 else {}))
+            for r in runs]
     (page_dir / "runs.js").write_text("window.KOTOBA_RUNS = " + json.dumps(data) + ";\n")
     with tempfile.TemporaryDirectory(prefix="kotoba-browser-") as profile:
         pipe = Pipe(browser, profile)
@@ -153,17 +167,27 @@ def observe(line):
 # Probes (optional, when DIR/probe-NAME.wasm exists): fuel exhaustion traps with
 # the native report and no fuel left; unbounded recursion exhausts the wasm
 # stack, which the host ends as a native signal would (exit 120, no report).
+# The entry ABI (probe-entry: read argument 0, read that file, write it, return
+# its length) runs twice: with the page's grants it echoes the file; without
+# them :cli/args is refused by name, as natively without KEXE_ALLOW.
+ENTRY_TEXT = "kotoba \u8a00\u8449 entry\n"
 PROBES = {"spin": dict(exit=120, status="trap", remainingFuel=0),
-          "deep": dict(exit=120, status=None, remainingFuel=None)}
+          "deep": dict(exit=120, status=None, remainingFuel=None),
+          "entry": dict(exit=0, status="ok", result=len(ENTRY_TEXT.encode())),
+          "entry-denied": dict(exit=120, status="trap")}
+PROBE_RUNS = {"entry": [("entry", dict(allow=[35, 37, 38, 39], args=["/data/../data/in.txt"], files={"/data/in.txt": ENTRY_TEXT})),
+                        ("entry-denied", dict(args=["/data/in.txt"], files={"/data/in.txt": ENTRY_TEXT}))]}
 
 
 def check_cases(browser, out, modules, cases=None):
     """Run case-NAME.wasm (and probe-NAME.wasm) from `modules`; compare with seed/static-cases.json."""
     cases = cases or json.loads(CASES.read_text())["cases"]
-    probes = [p for p in PROBES if (modules / f"probe-{p}.wasm").exists()]
+    probe_runs = [(name, m, extra) for m in PROBES if (modules / f"probe-{m}.wasm").exists()
+                  for name, extra in PROBE_RUNS.get(m, [(m, {})])]
+    probes = [name for name, m, extra in probe_runs]
     t0 = time.time()
     version, lines = run_modules(browser, out, [(c["name"], modules / f"case-{c['name']}.wasm") for c in cases]
-                                 + [(f"probe-{p}", modules / f"probe-{p}.wasm") for p in probes])
+                                 + [(f"probe-{n}", modules / f"probe-{m}.wasm", e) for n, m, e in probe_runs])
     seconds = round(time.time() - t0, 3)
     results = []
     for c in cases:
@@ -181,19 +205,59 @@ def check_cases(browser, out, modules, cases=None):
         o = observe(line)
         assert all(o[k] == v for k, v in PROBES[p].items()), (p, o, line)
         assert p != "deep" or line.get("wasmTrap"), (p, line)
+        assert p != "entry" or line.get("output") == ENTRY_TEXT, (p, line)
+        assert p != "entry-denied" or ":wire 38 :refused" in (line.get("stderr") or ""), (p, line)
         probe_results.append(dict(name=p, wasmTrap=line.get("wasmTrap"), **o))
     return dict(browser=version, seconds=seconds, fuel=FUEL, cases=results, probes=probe_results)
 
 
+def run_app(browser, out, module, allow, mounts, args):
+    """One application module with the entry ABI's inputs; see the module doc."""
+    files = {}
+    for mount in mounts:
+        at, _, local = mount.partition("=")
+        assert at.startswith("/") and local, ("--file MOUNT=DIR with an absolute MOUNT", mount)
+        root = Path(local).resolve()
+        for p in sorted(root.rglob("*")):
+            if p.is_file():
+                files[at.rstrip("/") + "/" + p.relative_to(root).as_posix()] = p.read_text(encoding="utf-8")
+    t0 = time.time()
+    version, lines = run_modules(browser, out, [("app", module, dict(fuel=0, allow=allow, args=args, files=files))])
+    line = lines["app"]
+    output = line.get("output") or ""
+    (out / "output").write_text(output, encoding="utf-8")
+    report = dict(status="PASS_WASM32_BROWSER_APP" if line.get("exit") == 0 and (line.get("report") or "").startswith("{:status :ok")
+                  else "FAIL_WASM32_BROWSER_APP",
+                  browser=version, seconds=round(time.time() - t0, 3), module=dict(path=str(module), sha256=sha256(module)),
+                  allow=allow, args=args, files=len(files), exit=line.get("exit"), report=line.get("report"),
+                  stderr=line.get("stderr"), wasmTrap=line.get("wasmTrap"),
+                  output=dict(bytes=len(output.encode()), sha256=hashlib.sha256(output.encode()).hexdigest()))
+    (out / "app.json").write_text(json.dumps(report, indent=2) + "\n")
+    return report
+
+
+def sha256(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--modules", type=Path, required=True, help="directory with case-NAME.wasm")
+    ap.add_argument("--modules", type=Path, help="directory with case-NAME.wasm")
+    ap.add_argument("--app", type=Path, help="one application module, run with the entry ABI's inputs")
+    ap.add_argument("--allow", default="", help="--app: the wires the page grants (of 35, 37, 38, 39), comma-separated")
+    ap.add_argument("--file", action="append", default=[], help="--app: MOUNT=DIR, read-only files")
     ap.add_argument("--output", type=Path, required=True)
     ap.add_argument("--browser", help="Chromium or Chrome executable (default: KOTOBA_BROWSER, then PATH)")
+    ap.add_argument("args", nargs="*", help="--app: the module's arguments (after --)")
     a = ap.parse_args()
+    assert (a.modules is None) != (a.app is None), "give --modules or --app"
     browser = find_browser(a.browser)
     assert browser, "no Chromium or Chrome found"
     a.output.mkdir(parents=True, exist_ok=True)
+    if a.app:
+        r = run_app(browser, a.output.resolve(), a.app.resolve(), [int(w) for w in a.allow.split(",") if w], a.file, a.args)
+        print(r["status"], r["browser"]["product"], r["report"], r["seconds"], "s")
+        sys.exit(0 if r["status"] == "PASS_WASM32_BROWSER_APP" else 1)
     report = dict(status="PASS_WASM32_BROWSER_STATIC_CASES", **check_cases(browser, a.output.resolve(), a.modules.resolve()))
     (a.output / "wasm32-browser.json").write_text(json.dumps(report, indent=2) + "\n")
     print(report["status"], report["browser"]["product"], len(report["cases"]), "cases", len(report["probes"]), "probes",
