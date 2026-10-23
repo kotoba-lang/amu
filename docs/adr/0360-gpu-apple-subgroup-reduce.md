@@ -685,3 +685,89 @@ ran no hardware measurement.
 
 Record: `docs/evidence/gpu/rule2-sign-classification-20261023.txt` (this
 slice ran no hardware measurement).
+
+## Amendment 2026-10-23 (rule 3 mechanised): harness-side regime-matched
+comparison is IMPLEMENTED
+
+The row rules 1's and 2's state paragraphs named ("rule 3's
+regime-matched comparison machinery", listed UNIMPLEMENTED after both
+earlier slices) lands now. `scripts/gpu_regime_classify.py` gains
+median_draw(), draw_levels(), strata_matched(),
+regime_matched_comparison() / cell_regime_matched_comparison() /
+render_rule3_section(), and a `--compare <historical.md> <new.md>` CLI:
+the protocol's exactly-three-phrase reproduction vocabulary, applied to
+a comparison of two measurement records, with the magnitude comparison
+drawn within matched regime strata as rule 3 requires.
+
+The verdicts are rule 3's, mechanically. The SIGN phrase ("reproduces
+in sign strictly") is rule 2's, for reproduction: exactly when the
+historical cell is regime-invariant on one side and every new-cell
+per-run ratio holds it. The MAGNITUDE phrase is keyed on the regime mix
+of the paired medians' draws (the closing cell's "the medians' regime
+mixes differ"): "magnitude reproduces within <delta>" when the mixes
+match, "magnitude splits by clock regime" when they do not -- the
+deviation attributed to session mixing, never "failed to reproduce".
+<delta> is the observed deviation of the published paired medians,
+quoted from the summary's own median column so the phrase digits match
+the committed prose. Beside the cell-median delta the machinery
+publishes the within-stratum comparison (per matched stratum pair, the
+per-run ratio medians of the member runs): at the closing cell the :min
+comparison drawn within the matched slow stratum is 1.194 vs 1.197 =
+0.003 against the cell-median 0.010 -- the session-mixing artifact,
+quantified within strata.
+
+Two boundary cases the prose did not decide are decided mechanically
+and published (the GAP-1.15 ethos applied to comparisons):
+
+- the DRAW tie rule: the paired median's draw is the middle run(s) of
+  the (ratio, run) sort, and every run tying a middle ratio is a
+  candidate draw -- a tie cannot silently pick the pure stratum. At the
+  closing cell's historical :max this matters: its per-run ratios tie
+  at 1.192 across THREE strata (the 49k / 96k / 119k levels), so the
+  draw is mixed whatever the tie resolution;
+- the cross-cell STRATUM-MATCHING rule: two levels from different
+  sessions match under rule 1's own single-linkage test at GAP-1.15.
+  The harness reads no clock, so "matched" is gpu-ns compatibility
+  under the same constant that defines a level within a session, not
+  verified cross-session clock identity -- the corpus prose's
+  cross-session slow/fast naming is the assumption this replaces with a
+  visible test.
+
+Consequence, pinned and not bent away: the machine's mix-keyed verdicts
+DIVERGE from pre-protocol manual prose wherever that prose published
+"within <delta>" by deviation size on a mixed-draw comparison. The
+first case is the closing cell's :max (manual: "within 0.003";
+machine: "magnitude splits by clock regime", within-stratum 0.001).
+Across the ten re-sweep pairs the enumeration shows 30/30 signs
+reproducing strictly and 11 split phrases, only one of which the manual
+prose had also published as splitting. Nothing is weakened -- rule 3's
+own text forbids publishing a mixed comparison as "failed to
+reproduce", and every relabeled comparison's within-stratum delta is
+<= 0.005 where any matched stratum exists. A second finding rides the
+enumeration: at shape-2 W = 1024 the two sessions observed NO common
+regime (zero matched strata on :max/:min), so the split phrase is the
+only admissible one there -- the mechanical account of that cell's
+record-wide +0.017/+0.016 deviation (disjoint session regimes, not
+non-reproduction).
+
+State, precisely: rules 1, 2 and 3's harness-side publication is
+IMPLEMENTED (code + tests). Tests (real output):
+`python3 scripts/gpu_regime_classify.py --self-test` = 908 assertions,
+0 failed -- the previous 887 plus rule-3 unit fixtures (draws
+even/odd/tie, purity, the 1.15 matching boundary on both sides, the
+matched/mixed/unmatched phrase matrix, both sign-phrase refusals, the
+three-way tie robustness shape on the real historical :max w512
+numbers, the cell roll-up, the renderer) and the corpus pins (the
+closing cell's three operators, the :min within-stratum 0.003 datum,
+the ten-pair enumeration). No record is rewritten.
+UNIMPLEMENTED, unchanged and named: pair-level classification (the
+op-order cell's within-run ramping needs per-pair levels --
+`analyze-oporder.py` remains the manual instrument); cross-operator
+level identity; driver auto-wiring of `--compare` (the rule-3 section
+is consumed manually today -- the measurement driver writes
+single-record sections only). No `:measured?` flag, workgroup row, flip
+gate or answer moves (rule 4, untouched). This slice ran no hardware
+measurement.
+
+Record: `docs/evidence/gpu/rule3-regime-matched-20261023.txt` (this
+slice ran no hardware measurement).

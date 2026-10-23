@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Harness-side regime classification for the gpu-subgroup-reduce records
-(JUN-58, the 2026-10-23 claim protocol, rules 1 and 2).
+(JUN-58, the 2026-10-23 claim protocol, rules 1, 2 and 3).
 
 The protocol (docs/adr/0360-gpu-apple-subgroup-reduce.md, the regime-robust
 magnitude claim protocol amendment; decision record
@@ -52,11 +52,6 @@ WHAT THIS MODULE DOES NOT DO (named so nothing is silently upgraded):
     clock level" is a prose inference this harness cannot verify. The
     rule-2 cell row is therefore only an admissibility roll-up over
     pooled per-run ratios -- it carries no cross-operator regime structure.
-  - Rule 3's regime-matched comparison machinery is NOT here -- its own
-    later slice, still UNIMPLEMENTED harness-side. (Rule 2's sign
-    classification IS here as of the 2026-10-23 rule-2 slice:
-    sign_classification(), and the "Sign classification (claim protocol
-    rule 2)" section render_sign_section() publishes.)
   - Pair-level classification (a run's clock can ramp mid-run; the
     op-order cell's analyze-oporder.py buckets individual pairs) is NOT
     here. This is run-level classification over baseline per-run medians,
@@ -85,15 +80,71 @@ RULE 2 (sign classification), mechanised:
       admissibility -- a regime-scoped sign cannot choose a variant
       whatever its shape.
 
+RULE 3 (the regime-matched comparison), mechanised:
+
+  Rule 3 of the protocol: a magnitude comparison across sessions or
+  cells is drawn within matched regime strata; when the regime mixes
+  differ the claim names the split ("magnitude splits by clock regime")
+  and attributes the deviation to session mixing -- it is never
+  published as a failure to reproduce. The reproduction vocabulary is
+  exactly three phrases: "reproduces in sign strictly" (all per-run
+  ratios hold the historical sign), "magnitude reproduces within
+  <delta>" (matched regime mixes), "magnitude splits by clock regime"
+  (mixed). This module compares two measurement records mechanically
+  (regime_matched_comparison / cell_regime_matched_comparison, published
+  by render_rule3_section):
+
+  - the SIGN phrase is rule 2's, for reproduction: "reproduces in sign
+    strictly" exactly when the historical cell is regime-invariant on
+    some side and every per-run ratio of the new cell holds that same
+    side. A regime-scoped historical cell has no single historical sign
+    to hold, so the phrase cannot be claimed (named in the output).
+  - the MAGNITUDE phrase is keyed on the regime mix of the paired
+    median's DRAW (the prose's "the medians' regime mixes differ"). The
+    draw is the middle run(s) of the (ratio, run) sort; TIES are named,
+    not resolved -- every run tying a middle ratio is a candidate draw,
+    so a tie cannot silently pick the pure stratum. The mixes are
+    matched exactly when both draws lie within one rule-1 level each and
+    those two levels match under rule 1's OWN single-linkage test at
+    GAP-1.15 (some member median of one within 1.15x of some member
+    median of the other). Matched -> "magnitude reproduces within
+    <delta>" where <delta> is the observed deviation of the published
+    paired medians (quoted from the summary's own median column, so the
+    phrase digits match the committed prose). Mixed -> "magnitude splits
+    by clock regime".
+  - the comparison is ALSO drawn within every matched stratum pair
+    (per-stratum ratio medians and their delta) -- the record's
+    regime-matched magnitude datum. The cell-median delta and the
+    within-stratum delta publish side by side, so a session-mixing
+    artifact cannot masquerade as a reproduction failure (or a
+    reproduction).
+
+  Two boundary cases the prose did not decide are decided mechanically
+  and published (the GAP-1.15 ethos applied to comparisons): the tie
+  rule for draws (above), and the cross-cell stratum-matching rule
+  (rule 1's own single-linkage test -- "matched" is gpu-ns compatibility
+  under the same constant that defines a level within a session; the
+  harness reads no clock and asserts no cross-session clock identity, so
+  the corpus prose's cross-session slow/fast naming is the assumption
+  this replaces with a visible test). Where the machine's verdict
+  diverges from a record's manual prose, the divergence is printed and
+  pinned in --self-test, not bent away.
+
 CLI:
 
     python3 scripts/gpu_regime_classify.py <summary.md>
         print the claim-protocol sections (rule 1; rule 2 when the
         record carries per-run ratios) for one measurement record
+    python3 scripts/gpu_regime_classify.py --compare <historical.md> <new.md>
+        print the claim-protocol rule-3 section: the regime-matched
+        comparison of two measurement records (first = the historical
+        cell the claim is drawn against)
     python3 scripts/gpu_regime_classify.py --self-test
         unit fixtures + a regression pass over every committed summary.md
         under docs/evidence/ (pinned manual classifications must
-        reproduce; cluster invariants must hold)
+        reproduce; cluster invariants must hold; rule-3 pins reproduce
+        the closing-cell prose where it decided, and the machine's
+        divergence is pinned where it decides alone)
 
 The measurement driver (scripts/gpu-subgroup-reduce-metal-measure.py)
 imports render_section() and appends the section to every summary.md it
@@ -443,6 +494,294 @@ def render_section(per_op, gap_max=GAP_MAX, ratios=None):
     if ratios is not None:
         lines.append("")
         lines.append(render_sign_section(per_op, ratios, gap_max))
+    return "\n".join(lines)
+
+
+# ------------------------------------------------------- rule 3 machinery
+
+def parse_summary_published_medians(text):
+    """Parse the published paired median ratios out of a driver summary.md.
+
+    Returns {operator: median}. The summary's own median column IS the
+    record's published paired statistic (median of the per-run ratios);
+    the rule-3 delta phrases quote it so a phrase like "within 0.002"
+    matches the committed prose digit for digit. Raises ValueError on a
+    summary with no per-run ratio rows.
+    """
+    out = {}
+    for line in text.splitlines():
+        m = re.match(r"\| (\w+) \| ([\d.]+(?:, [\d.]+)+) \| ([\d.]+) \|",
+                     line)
+        if m:
+            op, _pr, med = m.groups()
+            out[op] = float(med)
+    if not out:
+        raise ValueError("no '| op | per-run ratios | median ratio |' rows "
+                         "found in summary")
+    return out
+
+
+def median_draw(ratios):
+    """The regime mix of a paired median: which runs draw it.
+
+    ratios: {run_index (1-based int): per-run paired ratio}
+    The paired median of n ratios is the mean of the two middle values
+    under (ratio, run) sort order (the single middle value when n is
+    odd). TIES are named, not resolved: every run whose ratio equals a
+    middle-position ratio is a candidate draw, so a tie cannot silently
+    pick the pure stratum. Returns {
+      "mid_runs": [run, ...],     (the (ratio, run)-sort middle runs)
+      "mid_ratios": [float, ...], (sorted)
+      "candidates": [run, ...],   (every run tying a middle ratio)
+    }
+    """
+    if not ratios:
+        raise ValueError("no per-run ratios to draw the median from")
+    ordered = sorted(ratios.items(), key=lambda kv: (kv[1], kv[0]))
+    n = len(ordered)
+    if n % 2 == 0:
+        mid = [ordered[n // 2 - 1], ordered[n // 2]]
+    else:
+        mid = [ordered[n // 2]]
+    mid_ratios = sorted({v for _, v in mid})
+    mid_set = set(mid_ratios)
+    candidates = sorted(r for r, v in ratios.items() if v in mid_set)
+    return {"mid_runs": [r for r, _ in mid], "mid_ratios": mid_ratios,
+            "candidates": candidates}
+
+
+def draw_levels(draw, levels):
+    """Which rule-1 levels the candidate draw runs sit in.
+
+    Returns [(level_index_1_based, [runs, ...]), ...] fastest level
+    first. The draw is PURE exactly when this has one entry.
+    """
+    run_level = {}
+    for i, lv in enumerate(levels, start=1):
+        for r in lv["runs"]:
+            run_level[r] = i
+    out = {}
+    for r in draw["candidates"]:
+        out.setdefault(run_level[r], []).append(r)
+    return sorted((i, sorted(rs)) for i, rs in out.items())
+
+
+def strata_matched(lv_a, lv_b, gap_max=GAP_MAX):
+    """Rule-3 stratum matching across two cells, by rule 1's own rule.
+
+    Two regime levels from different sessions are MATCHED when the
+    GAP-1.15 single-linkage test would merge them: some member median of
+    one is within gap_max of some member median of the other. The
+    harness reads no clock, so "matched" is gpu-ns compatibility under
+    the SAME constant that defines a level within a session -- not
+    verified clock identity across sessions.
+    """
+    for va in lv_a["medians"].values():
+        for vb in lv_b["medians"].values():
+            if max(va, vb) / min(va, vb) <= gap_max:
+                return True
+    return False
+
+
+def _stratum_ratio_median(ratios, level):
+    vals = sorted(ratios[r] for r in level["runs"])
+    n = len(vals)
+    return (vals[n // 2] if n % 2
+            else 0.5 * (vals[n // 2 - 1] + vals[n // 2]))
+
+
+def regime_matched_comparison(hist_meds, hist_rats, hist_pub,
+                              new_meds, new_rats, new_pub,
+                              gap_max=GAP_MAX):
+    """Claim-protocol rule 3, mechanically, for ONE operator's two cells.
+
+    hist_*: the historical cell (per-run baseline medians {run: float},
+            per-run ratios {run: float}, published paired median float);
+    new_*: the reproduction cell, same shape (same run indices within a
+           cell; run indices need not correspond across cells).
+    Returns {
+      "sign_ok": bool, "sign_phrase": str,
+      "matched": bool, "magnitude_phrase": str, "delta": float,
+      "draw": {"hist": ..., "new": ...},   (median_draw + draw_levels)
+      "levels": {"hist": [...], "new": [...]},
+      "matched_strata": [(i, j, med_h, med_n, dlt, runs_h, runs_n), ...],
+      "unmatched": {"hist": [i, ...], "new": [j, ...]},
+    }
+
+    The magnitude phrase is exactly one of the protocol's two magnitude
+    vocabulary phrases; the sign phrase is the vocabulary's sign phrase
+    or a named non-phrase (the vocabulary names reproductions only).
+    """
+    lv_h = level_clusters(hist_meds, gap_max)
+    lv_n = level_clusters(new_meds, gap_max)
+    draw_h = median_draw(hist_rats)
+    draw_n = median_draw(new_rats)
+    dl_h = draw_levels(draw_h, lv_h)
+    dl_n = draw_levels(draw_n, lv_n)
+    pure_h, pure_n = len(dl_h) == 1, len(dl_n) == 1
+    matched = (pure_h and pure_n
+               and strata_matched(lv_h[dl_h[0][0] - 1],
+                                  lv_n[dl_n[0][0] - 1], gap_max))
+    delta = abs(new_pub - hist_pub)
+    # rule 2 supplies the historical sign the phrase must hold
+    c_h = sign_classification(hist_rats, lv_h)
+    if c_h["verdict"] == "regime-invariant" and all(
+            ratio_side(r) == c_h["side"] for r in new_rats.values()):
+        sign_ok = True
+        sign_phrase = ("reproduces in sign strictly (all "
+                       f"{len(new_rats)} per-run ratios hold the "
+                       f"historical sign: {c_h['side']})")
+    else:
+        sign_ok = False
+        if c_h["verdict"] != "regime-invariant":
+            sign_phrase = ("no single historical sign to hold (the "
+                           f"historical cell is regime-scoped, "
+                           f"{c_h['straddle']})")
+        else:
+            sides = {ratio_side(r) for r in new_rats.values()}
+            sign_phrase = (f"sign does not reproduce strictly (new-cell "
+                           f"per-run ratio sides: "
+                           f"{', '.join(sorted(sides))}; historical sign: "
+                           f"{c_h['side']})")
+    magnitude_phrase = ("magnitude reproduces within "
+                        f"{delta:.3f}") if matched \
+        else "magnitude splits by clock regime"
+    # the within-stratum datum: every matched stratum pair
+    matched_strata = []
+    used_h, used_n = set(), set()
+    for i, lvh in enumerate(lv_h, start=1):
+        for j, lvn in enumerate(lv_n, start=1):
+            if strata_matched(lvh, lvn, gap_max):
+                mh = _stratum_ratio_median(hist_rats, lvh)
+                mn = _stratum_ratio_median(new_rats, lvn)
+                matched_strata.append((i, j, mh, mn, abs(mn - mh),
+                                       lvh["runs"], lvn["runs"]))
+                used_h.add(i)
+                used_n.add(j)
+    unmatched = {"hist": [i for i in range(1, len(lv_h) + 1)
+                          if i not in used_h],
+                 "new": [j for j in range(1, len(lv_n) + 1)
+                         if j not in used_n]}
+    return {"sign_ok": sign_ok, "sign_phrase": sign_phrase,
+            "matched": matched, "magnitude_phrase": magnitude_phrase,
+            "delta": delta,
+            "draw": {"hist": {**draw_h, "levels": dl_h, "pure": pure_h},
+                     "new": {**draw_n, "levels": dl_n, "pure": pure_n}},
+            "levels": {"hist": lv_h, "new": lv_n},
+            "matched_strata": matched_strata, "unmatched": unmatched}
+
+
+def load_comparison_cell(text, label):
+    """Build the cell shape regime_matched_comparison consumes, from one
+    summary.md. Returns {"label", "medians", "ratios", "published"} with
+    per-operator dicts (ratios keyed by run index).
+    """
+    med = parse_summary_per_run_baseline(text)
+    rats = {op: {ri + 1: v for ri, v in enumerate(rs)}
+            for op, rs in parse_summary_per_run_ratios(text).items()}
+    pub = parse_summary_published_medians(text)
+    return {"label": label, "medians": med, "ratios": rats,
+            "published": pub}
+
+
+def cell_regime_matched_comparison(hist, new, gap_max=GAP_MAX):
+    """Rule 3 for a whole cell pair: every shared operator, plus the
+    cell roll-up (a cell reproduces its magnitude only when EVERY
+    operator's comparison is regime-matched).
+    """
+    ops = sorted(set(hist["ratios"]) & set(new["ratios"]))
+    if not ops:
+        raise ValueError("the two cells share no operator")
+    per_op = {}
+    for op in ops:
+        per_op[op] = regime_matched_comparison(
+            hist["medians"][op], hist["ratios"][op], hist["published"][op],
+            new["medians"][op], new["ratios"][op], new["published"][op],
+            gap_max)
+    sign_ok = all(c["sign_ok"] for c in per_op.values())
+    matched = all(c["matched"] for c in per_op.values())
+    delta = max(c["delta"] for c in per_op.values())
+    split_ops = [op for op in ops if not per_op[op]["matched"]]
+    if matched:
+        cell_magnitude = f"magnitude reproduces within {delta:.3f}"
+    else:
+        cell_magnitude = ("magnitude splits by clock regime (mixed: "
+                          f"{', '.join(split_ops)})")
+    return {"per_op": per_op, "ops": ops, "sign_ok": sign_ok,
+            "matched": matched, "delta": delta, "split_ops": split_ops,
+            "cell_magnitude": cell_magnitude}
+
+
+def render_rule3_section(hist, new, gap_max=GAP_MAX):
+    """The claim-protocol rule-3 section for a comparison of two
+    measurement records. hist/new: load_comparison_cell() shapes.
+    Returns markdown (no trailing newline).
+    """
+    cell = cell_regime_matched_comparison(hist, new, gap_max)
+
+    def _draw_desc(d):
+        if d["pure"]:
+            i, rs = d["levels"][0]
+            return (f"pure (level {i}, runs "
+                    + ", ".join(str(r) for r in rs) + ")")
+        return ("mixed (" + "; ".join(
+            f"level {i}: runs " + ", ".join(str(r) for r in rs)
+            for i, rs in d["levels"]) + ")")
+
+    lines = []
+    lines.append("## Regime-matched comparison (claim protocol rule 3)")
+    lines.append("")
+    lines.append(f"Published by scripts/gpu_regime_classify.py --compare: "
+                 f"**{hist['label']}** (historical) against "
+                 f"**{new['label']}**. Rule 3: a magnitude comparison "
+                 f"across sessions or cells is drawn within matched "
+                 f"regime strata; when the regime mixes differ the claim "
+                 f"names the split (\"magnitude splits by clock regime\") "
+                 f"and attributes the deviation to session mixing -- "
+                 f"never \"failed to reproduce\". The reproduction "
+                 f"vocabulary is exactly three phrases. Strata match "
+                 f"across cells under rule 1's own single-linkage test at "
+                 f"GAP-1.15 (the harness reads no clock: matched = "
+                 f"gpu-ns-compatible, not verified clock identity). The "
+                 f"magnitude phrase's delta is the observed deviation of "
+                 f"the published paired medians.")
+    lines.append("")
+    lines.append("| operator | sign phrase | magnitude phrase | median draw "
+                 "(historical / new) |")
+    lines.append("|---|---|---|---|")
+    for op in cell["ops"]:
+        c = cell["per_op"][op]
+        lines.append(f"| {op} | {c['sign_phrase']} | "
+                     f"{c['magnitude_phrase']} | "
+                     f"{_draw_desc(c['draw']['hist'])} / "
+                     f"{_draw_desc(c['draw']['new'])} |")
+    lines.append("")
+    lines.append(f"Cell: sign -- "
+                 f"{'reproduces in sign strictly (every operator)' if cell['sign_ok'] else 'does NOT reproduce strictly (see per-operator detail)'}; "
+                 f"magnitude -- {cell['cell_magnitude']}.")
+    lines.append("")
+    lines.append("Within-stratum comparison (the regime-matched datum; "
+                 "per matched stratum pair, the per-run ratio medians of "
+                 "the member runs):")
+    lines.append("")
+    lines.append("| operator | strata (hist / new) | runs (hist / new) | "
+                 "median ratio (hist / new) | delta |")
+    lines.append("|---|---|---|---|---|")
+    for op in cell["ops"]:
+        c = cell["per_op"][op]
+        for (i, j, mh, mn, dlt, rh, rn) in c["matched_strata"]:
+            lines.append(
+                f"| {op} | {i} / {j} | "
+                f"{', '.join(str(r) for r in rh)} / "
+                f"{', '.join(str(r) for r in rn)} | "
+                f"{mh:.3f} / {mn:.3f} | {dlt:.3f} |")
+        if c["unmatched"]["hist"] or c["unmatched"]["new"]:
+            lines.append(
+                f"| {op} | unmatched levels | hist: "
+                f"{', '.join(str(i) for i in c['unmatched']['hist']) or '-'}; "
+                f"new: "
+                f"{', '.join(str(j) for j in c['unmatched']['new']) or '-'} | "
+                f"- | - |")
     return "\n".join(lines)
 
 
@@ -802,6 +1141,267 @@ def _self_test_corpus(stats, corpus_root):
           f"within-regime, {tally['no-side']} no-side")
 
 
+def _self_test_rule3_unit(stats):
+    # ---- rule 3: median draw, stratum matching, comparison phrases ----
+
+    # empty ratios refuse
+    try:
+        median_draw({})
+        raise AssertionError("empty ratios must raise")
+    except ValueError:
+        stats["passed"] += 1
+
+    # even n: the two middle positions under (ratio, run) sort
+    # (sorted: run 2 = 1.1, run 1 = 1.2, run 4 = 1.3, run 3 = 1.4)
+    d = median_draw({1: 1.2, 2: 1.1, 3: 1.4, 4: 1.3})
+    _expect(d["mid_runs"] == [1, 4] and d["candidates"] == [1, 4],
+            "even draw: middle two under (ratio, run)", stats)
+
+    # odd n: the single middle (sorted: run 2 = 1.1, run 1 = 1.2,
+    # run 3 = 1.3 -> the middle is run 1)
+    d = median_draw({1: 1.2, 2: 1.1, 3: 1.3})
+    _expect(d["mid_runs"] == [1] and d["candidates"] == [1],
+            "odd draw: the single middle", stats)
+
+    # ties are NAMED, not resolved: a tie cannot pick the pure stratum
+    d = median_draw({1: 1.192, 2: 1.178, 3: 1.192, 4: 1.192,
+                     5: 1.196, 6: 1.194})
+    _expect(d["mid_ratios"] == [1.192] and d["candidates"] == [1, 3, 4],
+            "tie draw: every run tying a middle ratio is a candidate",
+            stats)
+
+    # draw_levels: pure and mixed
+    lv = level_clusters({1: 100.0, 2: 100.0, 3: 300.0, 4: 301.0})
+    dl = draw_levels({"candidates": [1, 2]}, lv)
+    _expect(dl == [(1, [1, 2])], "pure draw", stats)
+    dl = draw_levels({"candidates": [1, 3]}, lv)
+    _expect(dl == [(1, [1]), (2, [3])], "mixed draw", stats)
+
+    # strata_matched: rule 1's own single-linkage test across cells
+    a = {"medians": {1: 100.0}}
+    b = {"medians": {1: 115.0}}
+    _expect(strata_matched(a, b), "exactly 1.15x across cells matches",
+            stats)
+    b = {"medians": {1: 115.01}}
+    _expect(not strata_matched(a, b), "1.1501x across cells does not "
+            "match", stats)
+
+    # comparison: both draws pure and matched -> the delta phrase, with
+    # the observed deviation digit for digit
+    c = regime_matched_comparison(
+        {1: 100.0, 2: 101.0, 3: 100.5, 4: 100.7},
+        {1: 1.200, 2: 1.201, 3: 1.200, 4: 1.199}, 1.200,
+        {1: 100.2, 2: 100.9, 3: 101.1, 4: 100.4},
+        {1: 1.202, 2: 1.203, 3: 1.201, 4: 1.202}, 1.202)
+    _expect(c["matched"] and c["magnitude_phrase"]
+            == "magnitude reproduces within 0.002"
+            and c["sign_ok"] and c["sign_phrase"].startswith(
+                "reproduces in sign strictly"),
+            "matched mixes -> 'magnitude reproduces within <delta>' "
+            "(delta from the published medians: 0.002)", stats)
+
+    # comparison: mixed historical draw -> the split phrase, never
+    # "failed to reproduce"
+    c = regime_matched_comparison(
+        {1: 37.0, 2: 37.1, 3: 37.2, 4: 119.0, 5: 119.4, 6: 119.3},
+        {1: 1.182, 2: 1.179, 3: 1.178, 4: 1.192, 5: 1.194, 6: 1.194},
+        1.187,
+        {1: 118.6, 2: 118.9, 3: 96.1, 4: 119.3, 5: 118.9, 6: 119.1},
+        {1: 1.197, 2: 1.201, 3: 1.187, 4: 1.196, 5: 1.200, 6: 1.197},
+        1.197)
+    _expect(not c["matched"] and c["magnitude_phrase"]
+            == "magnitude splits by clock regime"
+            and "failed to reproduce" not in c["magnitude_phrase"],
+            "mixed draw -> 'magnitude splits by clock regime'", stats)
+
+    # comparison: both draws pure but the strata do not match (fast vs
+    # slow across sessions) -> still the split phrase
+    c = regime_matched_comparison(
+        {1: 37.0, 2: 37.1},
+        {1: 0.9, 2: 0.91}, 0.905,
+        {1: 119.0, 2: 119.1},
+        {1: 1.2, 2: 1.21}, 1.205)
+    _expect(not c["matched"] and c["magnitude_phrase"]
+            == "magnitude splits by clock regime",
+            "pure draws in UNmatched strata -> split phrase", stats)
+
+    # sign phrase refusal: a regime-scoped historical cell has no single
+    # historical sign to hold
+    c = regime_matched_comparison(
+        {1: 37.0, 2: 119.0},
+        {1: 0.95, 2: 1.05}, 1.0,
+        {1: 37.1, 2: 119.1},
+        {1: 1.02, 2: 1.03}, 1.025)
+    _expect(not c["sign_ok"] and "no single historical sign" in
+            c["sign_phrase"],
+            "regime-scoped historical cell refuses the sign phrase", stats)
+
+    # sign phrase refusal: the new cell does not hold the historical sign
+    c = regime_matched_comparison(
+        {1: 100.0, 2: 101.0},
+        {1: 1.2, 2: 1.21}, 1.205,
+        {1: 100.1, 2: 100.2},
+        {1: 1.2, 2: 0.99}, 1.095)
+    _expect(not c["sign_ok"] and "does not reproduce strictly" in
+            c["sign_phrase"],
+            "a new-cell ratio off the historical side refuses the sign "
+            "phrase", stats)
+
+    # the tie robustness shape (the historical :max w512 draw): three
+    # runs tie the middle ratio across THREE strata -> mixed, whatever
+    # order the tie resolves in
+    c = regime_matched_comparison(
+        {1: 49042.0, 2: 37625.0, 3: 119396.0, 4: 96438.0,
+         5: 119312.0, 6: 119250.0},
+        {1: 1.192, 2: 1.178, 3: 1.192, 4: 1.192, 5: 1.196, 6: 1.194},
+        1.192,
+        {1: 119166.0, 2: 119208.0, 3: 72542.0, 4: 119188.0,
+         5: 119438.0, 6: 119500.0},
+        {1: 1.197, 2: 1.197, 3: 1.186, 4: 1.194, 5: 1.195, 6: 1.191},
+        1.195)
+    _expect(not c["draw"]["hist"]["pure"]
+            and len(c["draw"]["hist"]["levels"]) == 3
+            and not c["matched"]
+            and c["magnitude_phrase"] == "magnitude splits by clock regime",
+            "the three-way 1.192 tie draws across three strata -> mixed, "
+            "no tie resolution picks a pure stratum", stats)
+
+    # cell roll-up: one split operator splits the cell
+    hist = {"label": "h",
+            "medians": {"sum": {1: 100.0, 2: 101.0},
+                        "max": {1: 37.0, 2: 119.0}},
+            "ratios": {"sum": {1: 1.2, 2: 1.21},
+                       "max": {1: 1.182, 2: 1.192}},
+            "published": {"sum": 1.205, "max": 1.187}}
+    new = {"label": "n",
+           "medians": {"sum": {1: 100.1, 2: 100.9},
+                       "max": {1: 118.6, 2: 119.1}},
+           "ratios": {"sum": {1: 1.202, 2: 1.203},
+                      "max": {1: 1.197, 2: 1.201}},
+           "published": {"sum": 1.2025, "max": 1.199}}
+    cell = cell_regime_matched_comparison(hist, new)
+    _expect(not cell["matched"] and cell["split_ops"] == ["max"]
+            and cell["sign_ok"]
+            and "splits by clock regime (mixed: max)" in
+            cell["cell_magnitude"],
+            "cell roll-up: one mixed operator splits the cell", stats)
+
+    # the renderer's call shape
+    out = render_rule3_section(hist, new)
+    _expect("## Regime-matched comparison (claim protocol rule 3)" in out
+            and "magnitude splits by clock regime" in out
+            and "Within-stratum comparison" in out,
+            "render_rule3_section publishes the rule-3 section", stats)
+
+
+def _self_test_rule3_corpus(stats, corpus_root):
+    """Rule 3 over the committed corpus: the closing cell's pins (prose
+    decided sum and min; the machine decides max alone and the
+    divergence is published), plus the full ten-pair re-sweep
+    enumeration (printed, GAP-1.15 ethos: nothing hides).
+    """
+    def _load(rel):
+        return load_comparison_cell(
+            (corpus_root / rel / "summary.md").read_text(), rel)
+
+    # ---- pins: the shape-2 w512 closing cell (the protocol's own
+    # motivating case). Provenance of each pin:
+    #   sum -- the closing NOTES: "Sum reproduces within 0.002 (1.202 vs
+    #     1.200)": prose-decided matched, the machine reproduces it;
+    #   min -- the closing NOTES: ":min lands +0.010 above ... the min
+    #     median straddles the regime boundary"; the protocol record:
+    #     "the medians' regime mixes differ": prose-decided split, the
+    #     machine reproduces it;
+    #   max -- the closing NOTES published "max within 0.003" as
+    #     reproducing, by deviation size. Rule 3 AS DECIDED keys the
+    #     phrase on the regime mix, not the deviation size, and this
+    #     cell's historical :max median draw ties at 1.192 across THREE
+    #     strata (runs 1/3/4) -- mixed by the tie rule whatever the tie
+    #     resolution. The machine therefore says "magnitude splits by
+    #     clock regime" where the manual prose said "within 0.003": the
+    #     FIRST visible consequence of the protocol's own decision, and
+    #     it is pinned here as the machine deciding alone, not bent back
+    #     to the prose. The divergence is printed, never hidden.
+    hist = _load("gpu-subgroup-reduce-m1max-shape2-band-20261023/w512")
+    new = _load("gpu-subgroup-reduce-m1max-shape2-resweep-20261023/w512")
+    cell = cell_regime_matched_comparison(hist, new)
+    pins = {
+        "sum": (True, True, "magnitude reproduces within 0.002"),
+        "max": (True, False, "magnitude splits by clock regime"),
+        "min": (True, False, "magnitude splits by clock regime"),
+    }
+    for op, (sign_ok, matched, phrase) in pins.items():
+        c = cell["per_op"][op]
+        _expect(c["sign_ok"] == sign_ok and c["matched"] == matched
+                and c["magnitude_phrase"] == phrase,
+                f"closing cell {op}: pin (sign_ok={sign_ok}, "
+                f"matched={matched}, {phrase!r}), got "
+                f"(sign_ok={c['sign_ok']}, matched={c['matched']}, "
+                f"{c['magnitude_phrase']!r})", stats)
+
+    # the regime-matched datum at the closing cell: the min comparison
+    # drawn WITHIN the matched slow stratum is 1.194 vs 1.197 = 0.003 --
+    # the 0.010 cell-median deviation is session mixing, and rule 3
+    # publishes both numbers side by side
+    cmin = cell["per_op"]["min"]
+    slow_pairs = [t for t in cmin["matched_strata"]
+                  if t[5] == [4, 5, 6]]
+    _expect(len(slow_pairs) == 1
+            and round(slow_pairs[0][2], 3) == 1.194
+            and round(slow_pairs[0][3], 3) == 1.197
+            and round(slow_pairs[0][4], 3) == 0.003,
+            "closing cell min: within-stratum (slow) comparison is "
+            "1.194 vs 1.197 = 0.003 against the cell-median 0.010",
+            stats)
+
+    # ---- enumeration over the ten re-sweep pairs (published, not
+    # asserted): every flip-set cell's historical-vs-re-sweep rule-3
+    # verdicts
+    print("rule 3 over the ten re-sweep pairs (historical -> re-sweep; "
+          "printed, GAP-1.15 ethos):")
+    # the ten re-sweep pairs, with the historical cell each re-sweep
+    # actually re-swept (named in each re-sweep NOTES):
+    #   shape-1: wsweep-low holds w64/w128, wsweep holds w256/w512/w1024;
+    #   shape-2: shape2 holds the w256 anchor, the band holds the rest.
+    pair_dirs = []
+    for w, h in (("w64", "gpu-subgroup-reduce-m1max-wsweep-low-20261023"),
+                 ("w128", "gpu-subgroup-reduce-m1max-wsweep-low-20261023"),
+                 ("w256", "gpu-subgroup-reduce-m1max-wsweep-20261023"),
+                 ("w512", "gpu-subgroup-reduce-m1max-wsweep-20261023"),
+                 ("w1024", "gpu-subgroup-reduce-m1max-wsweep-20261023")):
+        pair_dirs.append((f"{h}/{w}",
+                          f"gpu-subgroup-reduce-m1max-resweep-20261023/{w}"))
+    for w, h in (("w64", "gpu-subgroup-reduce-m1max-shape2-band-20261023"),
+                 ("w128", "gpu-subgroup-reduce-m1max-shape2-band-20261023"),
+                 ("w256", "gpu-subgroup-reduce-m1max-shape2-20261023"),
+                 ("w512", "gpu-subgroup-reduce-m1max-shape2-band-20261023"),
+                 ("w1024", "gpu-subgroup-reduce-m1max-shape2-band-20261023")):
+        pair_dirs.append(
+            (f"{h}/{w}",
+             f"gpu-subgroup-reduce-m1max-shape2-resweep-20261023/{w}"))
+    seen = 0
+    for hrel, nrel in pair_dirs:
+        hp = corpus_root / hrel / "summary.md"
+        np_ = corpus_root / nrel / "summary.md"
+        if not hp.exists() or not np_.exists():
+            continue
+        seen += 1
+        c = cell_regime_matched_comparison(_load(hrel), _load(nrel))
+        for op in c["ops"]:
+            co = c["per_op"][op]
+            print(f"  {nrel} {op}: sign "
+                  f"{'reproduces strictly' if co['sign_ok'] else 'DOES NOT'}"
+                  f"; {co['magnitude_phrase']} (cell-median delta "
+                  f"{co['delta']:.3f}); draw hist "
+                  f"{'pure' if co['draw']['hist']['pure'] else 'MIXED'}/"
+                  f"new {'pure' if co['draw']['new']['pure'] else 'MIXED'}"
+                  + ("; within-stratum "
+                     + ", ".join(f"{t[2]:.3f}/{t[3]:.3f} d{t[4]:.3f}"
+                                 for t in co["matched_strata"])
+                     if co["matched_strata"] else ""))
+    _expect(seen == 10, f"ten re-sweep pairs enumerated ({seen})", stats)
+
+
 def main():
     args = sys.argv[1:]
     if args == ["--self-test"]:
@@ -809,7 +1409,16 @@ def main():
         _self_test_unit(stats)
         print(f"unit fixtures: {stats['passed']} assertions passed")
         _self_test_corpus(stats, ROOT / "docs" / "evidence")
+        _self_test_rule3_unit(stats)
+        _self_test_rule3_corpus(stats, ROOT / "docs" / "evidence")
         print(f"TOTAL: {stats['passed']} assertions passed, 0 failed")
+        return
+    if len(args) == 3 and args[0] == "--compare":
+        hist = load_comparison_cell(pathlib.Path(args[1]).read_text(),
+                                    args[1])
+        new = load_comparison_cell(pathlib.Path(args[2]).read_text(),
+                                   args[2])
+        print(render_rule3_section(hist, new))
         return
     if len(args) != 1:
         doc = __doc__ or ""
