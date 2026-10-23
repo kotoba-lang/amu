@@ -13,7 +13,7 @@
 ;; CASES equals the expect calls below (the script counts them). CONTROL 1
 ;; makes exactly one expectation wrong; the script requires one failure then.
 
-(def CASES 75)
+(def CASES 85)
 (def CONTROL 0)
 
 (defn- say [s :string] :i64
@@ -201,8 +201,26 @@
        (expect "kdot x8: twelve dot products" (count-op k8 148) 12)
        (expect "kdot x8: rows 5 gives an empty module" (spv-count (kir2-kdot-x8 5)) 0))))
 
+;; kdot_i8_x8r4: int8 activations and the packed integer dot product (R 4,
+;; and 8 as glslang's -DROWS=8)
+(defn- dots-i8 [] :i64
+  (let [k4 (kir2-kdot-i8-x8 4) k8 (kir2-kdot-i8-x8 8)
+        g4 (spv-read "ref-kdot-i8-x8r4.spv") g8 (spv-read "ref-kdot-i8-x8r4-rows8.spv")]
+    (+ (expect "kdot-i8-x8r4" (spc-check k4) 0)
+       (expect "write kir2-kdot-i8-x8r4.spv" (spv-write k4 "kir2-kdot-i8-x8r4.spv") (* 4 (spv-count k4)))
+       (expect "kdot-i8-x8r8" (spc-check k8) 0)
+       (expect "write kir2-kdot-i8-x8r8.spv" (spv-write k8 "kir2-kdot-i8-x8r8.spv") (* 4 (spv-count k8)))
+       (expect "glslang kdot_i8_x8r4 passes the checker" (spc-check g4) 0)
+       (expect "glslang kdot_i8_x8r4 -DROWS=8 passes the checker" (spc-check g8) 0)
+       ;; ysum's two, and two in each of the five integer arms (F16 dots floats)
+       (expect "kdot i8: twelve packed int8 dots" (count-op k4 4450) 12)
+       ;; Shader, DotProduct and DotProductInput4x8BitPacked
+       (expect "kdot i8: three capabilities" (count-op k4 17) 3)
+       (expect "kdot i8: the integer dot product extension" (count-op k4 10) 1)
+       (expect "kdot i8: rows 5 gives an empty module" (spv-count (kir2-kdot-i8-x8 5)) 0))))
+
 (defn main [] :i64
-  (let [failed (+ (ewise) (+ (ewise-shape) (+ (attn) (+ (attn-ref) (+ (nex-ops) (+ (nex-shape) (+ (dots) (+ (dots8) (dots-x8)))))))))
+  (let [failed (+ (ewise) (+ (ewise-shape) (+ (attn) (+ (attn-ref) (+ (nex-ops) (+ (nex-shape) (+ (dots) (+ (dots8) (+ (dots-x8) (dots-i8))))))))))
         x (say (string-concat "CASES " (string-from-i64 CASES)))
         y (say (string-concat "FAILED " (string-from-i64 failed)))]
     failed))

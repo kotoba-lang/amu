@@ -92,8 +92,9 @@ SUITES = {
                  sizes={"ewise": 1096, "attn-copy-dense": 6488, **{"kir2-nex-" + op + ".spv": n for op, n in zip(NEX_OPS, [3440, 3468, 3516, 1992, 2660, 2452, 2396, 2024, 2704, 1872, 1968, 3088, 3476, 1652, 3888, 5864, 5356, 3604, 4052])},
                         "kir2-dot-rows.spv": 2448, "kir2-kdot-f32-r1.spv": 28776,
                         "kir2-kdot-f32-r8.spv": 25056, "kir2-kdot-f32-r8-rows4.spv": 25056,
-                        "kir2-kdot-x8r8.spv": 26028, "kir2-kdot-x8r4.spv": 26028},
-                 count=34, control="FAIL attn: variables", refs=True),
+                        "kir2-kdot-x8r8.spv": 26028, "kir2-kdot-x8r4.spv": 26028,
+                        "kir2-kdot-i8-x8r4.spv": 23028, "kir2-kdot-i8-x8r8.spv": 23028},
+                 count=36, control="FAIL attn: variables", refs=True),
 }
 FUEL = 100000000
 EXPECT_CALL = re.compile(r"\(expect ")
@@ -125,7 +126,8 @@ REFS = ROOT / "tools/gpu_kernel_refs"
 # sources compiled more than once: (name suffix, -D define) per module
 REF_VARIANTS = {"nex-ops.comp": [(op, "OP=" + op) for op in NEX_OPS],
                 "kdot-f32-r8.comp": [(None, None), ("rows4", "ROWS=4")],
-                "kdot-x8r8.comp": [(None, None), ("rows4", "ROWS=4")]}
+                "kdot-x8r8.comp": [(None, None), ("rows4", "ROWS=4")],
+                "kdot-i8-x8r4.comp": [(None, None), ("rows8", "ROWS=8")]}
 
 
 def refs(output):
@@ -481,6 +483,23 @@ def kdot_cases():
     return cases
 
 
+def kdot_i8_cases(R, types):
+    """kdot_i8_x8r4 with R rows per workgroup: as kdot_r8_cases, with the
+    activations as packed int8 words (random) and one positive scale per 32."""
+    cases = []
+    for tt in types:
+        bb, b32 = KDOT_TYPES[tt], tt in KDOT_BLOCK32
+        rows, cols, positions = 20, (480 if b32 else 512), 2
+        row_bytes = ((cols + 31) // 32) * (bb // 8) if b32 else (cols // 256) * bb
+        wbytes = 2 * rows * row_bytes
+        xq = hashlib.shake_256(b"xq%d" % tt).digest(positions * cols)
+        xs = [abs(v) * 0.05 + 0.01 for v in lcg(positions * cols // 32, 70 + tt)]
+        cases.append(dict(name=f"kdot i8 rows {R} type {tt}", tt=tt, R=R, kind="i8", meta=struct.pack("<8I", rows, cols, tt, positions, 1, 0, 0, 0),
+                          w=kdot_weights(tt, wbytes + (-wbytes % 4) + 4, 80 + tt), x=xq, xs=f32(xs),
+                          e=struct.pack("<2I", 0, 1), o=bytes(4 * positions * rows), groups=(-(-rows // R) + 1, positions, 1)))
+    return cases
+
+
 def kdot_r8_cases(R, types, kind="r8"):
     """kdot_f32_r8 (kind r8) or kdot_x8r8 (kind x8) with R rows per
     workgroup: 20 rows (the last workgroup partial) and one workgroup past
@@ -519,12 +538,14 @@ def gpu(output, suite, provider_out):
           **{f"v2-nex-{op}.spv": f"kir2-nex-{op}.spv" for op in NEX_OPS},
           "v2-dot.spv": "kir2-dot-rows.spv", "v2-kdot.spv": "kir2-kdot-f32-r1.spv",
           "v2-kdot8.spv": "kir2-kdot-f32-r8.spv", "v2-kdot4.spv": "kir2-kdot-f32-r8-rows4.spv",
-          "v2-kdotx8.spv": "kir2-kdot-x8r8.spv", "v2-kdotx4.spv": "kir2-kdot-x8r4.spv"}
+          "v2-kdotx8.spv": "kir2-kdot-x8r8.spv", "v2-kdotx4.spv": "kir2-kdot-x8r4.spv",
+          "v2-i8x4.spv": "kir2-kdot-i8-x8r4.spv", "v2-i8x8.spv": "kir2-kdot-i8-x8r8.spv"}
     refs = {"ref-attn.spv": "ref-attn-copy-dense.spv", "ref-add.spv": "ref-ewise-add.spv",
             **{f"ref-nex-{op}.spv": f"ref-nex-ops-{op}.spv" for op in NEX_OPS},
             "ref-dot.spv": "ref-dot-rows.spv", "ref-kdot.spv": "ref-kdot-f32-r1.spv",
             "ref-kdot8.spv": "ref-kdot-f32-r8.spv", "ref-kdot4.spv": "ref-kdot-f32-r8-rows4.spv",
-            "ref-kdotx8.spv": "ref-kdot-x8r8.spv", "ref-kdotx4.spv": "ref-kdot-x8r8-rows4.spv"}
+            "ref-kdotx8.spv": "ref-kdot-x8r8.spv", "ref-kdotx4.spv": "ref-kdot-x8r8-rows4.spv",
+            "ref-i8x4.spv": "ref-kdot-i8-x8r4.spv", "ref-i8x8.spv": "ref-kdot-i8-x8r4-rows8.spv"}
     files = {**{n: output / "spv" / m for n, m in v2.items()}, **{n: output / "refs" / m for n, m in refs.items()}}
     for n, f in files.items():
         shutil.copy(f, raw / n)
@@ -555,8 +576,9 @@ def gpu(output, suite, provider_out):
                            *[f"{w}-nex-{op}.spv" for op in NEX_OPS for w in ("ref", "v2")],
                            "ref-dot.spv", "v2-dot.spv", "ref-kdot.spv", "v2-kdot.spv",
                            "ref-kdot8.spv", "v2-kdot8.spv", "ref-kdot4.spv", "v2-kdot4.spv",
-                           "ref-kdotx8.spv", "v2-kdotx8.spv", "ref-kdotx4.spv", "v2-kdotx4.spv"]):
-        nb = 7 if "-nex-" in n else 5 if "kdot" in n else 8 if "attn" in n else 4
+                           "ref-kdotx8.spv", "v2-kdotx8.spv", "ref-kdotx4.spv", "v2-kdotx4.spv",
+                           "ref-i8x4.spv", "v2-i8x4.spv", "ref-i8x8.spv", "v2-i8x8.spv"]):
+        nb = 7 if "-nex-" in n else 6 if "i8x" in n else 5 if "kdot" in n else 8 if "attn" in n else 4
         cgp.expect(s, f"PIPELINE {n} {nb}", str(k + 1))
         pipes[n] = k + 1
     rows = {}
@@ -655,14 +677,16 @@ def gpu(output, suite, provider_out):
     # kdot_f32_r1, every tensor type; kdot_f32_r8, every r8 type with 8 rows
     # per workgroup and two with 4
     for c in (kdot_cases() + kdot_r8_cases(8, KDOT_R8_TYPES) + kdot_r8_cases(4, [12, 8])
-              + kdot_r8_cases(8, KDOT_X8_TYPES, "x8") + kdot_r8_cases(4, [13, 2], "x8")):
-        kh = [alloc(32), alloc(len(c["w"])), alloc(len(c["x"])), alloc(len(c["o"])), alloc(8)]
+              + kdot_r8_cases(8, KDOT_X8_TYPES, "x8") + kdot_r8_cases(4, [13, 2], "x8")
+              + kdot_i8_cases(4, KDOT_X8_TYPES) + kdot_i8_cases(8, [14, 23])):
+        kh = [alloc(32), alloc(len(c["w"])), alloc(len(c["x"])), alloc(len(c["o"])), alloc(8)] + ([alloc(len(c["xs"]))] if "xs" in c else [])
         kouts = {}
         pair = {(None, None): ("ref-kdot.spv", "v2-kdot.spv"), ("r8", 8): ("ref-kdot8.spv", "v2-kdot8.spv"),
                 ("r8", 4): ("ref-kdot4.spv", "v2-kdot4.spv"), ("x8", 8): ("ref-kdotx8.spv", "v2-kdotx8.spv"),
-                ("x8", 4): ("ref-kdotx4.spv", "v2-kdotx4.spv")}[(c.get("kind"), c.get("R"))]
+                ("x8", 4): ("ref-kdotx4.spv", "v2-kdotx4.spv"), ("i8", 4): ("ref-i8x4.spv", "v2-i8x4.spv"),
+                ("i8", 8): ("ref-i8x8.spv", "v2-i8x8.spv")}[(c.get("kind"), c.get("R"))]
         for m in pair:
-            for h, b in zip(kh, [c["meta"], c["w"], c["x"], c["o"], c["e"]]):
+            for h, b in zip(kh, [c["meta"], c["w"], c["x"], c["o"], c["e"]] + ([c["xs"]] if "xs" in c else [])):
                 write(h, b)
             cgp.expect(s, f"DISPATCH {pipes[m]} {c['groups'][0]} {c['groups'][1]} 1 " + " ".join(map(str, kh)), re.compile(r"^\d+$"))
             kouts[m] = read(kh[3], len(c["o"]))
@@ -673,10 +697,15 @@ def gpu(output, suite, provider_out):
         err = c["check"](v2) if c.get("check") else None
         assert err is None or err < 1e-4, (c["name"], err)
         rows[c["name"]] = dict(tensorType=c["tt"], groups=list(c["groups"]), identical=True, maxRelErrVsF64=err,
-                               inputsSHA256=hashlib.sha256(c["meta"] + c["w"] + c["x"] + c["e"]).hexdigest(),
+                               inputsSHA256=hashlib.sha256(c["meta"] + c["w"] + c["x"] + c["e"] + c.get("xs", b"")).hexdigest(),
                                outputSHA256=hashlib.sha256(v2).hexdigest())
     line = s.close(0)
     rows["confinement"] = cgp.confined(line, True)
+    # the int8 kernels use the packed integer dot product: the provider must
+    # have enabled it (ADR 0372 Decision 5), not merely run the module
+    feats = re.search(r":features #\{([^}]*)\}", line)
+    rows["providerFeatures"] = feats[1].split() if feats else None
+    assert feats and ":shader-integer-dot-product" in feats[1].split(), ("the provider did not enable shaderIntegerDotProduct", line[:300])
     report["gpu"] = dict(host=[platform.system(), platform.machine(), platform.release()], node=platform.node(), info=info,
                          provider=dict(image=pin(img), source=preport.get("sources")), modules={n: pin(raw / n) for n in files},
                          rows=rows, report=line.strip(), requests=len(s.log),

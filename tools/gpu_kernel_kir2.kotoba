@@ -43,10 +43,13 @@
 (def KB-IFACE 2195000)
 ;; features (capabilities beyond Shader): 1 GroupNonUniform (the subgroup
 ;; built-ins set it), 2 GroupNonUniformArithmetic (for the subgroup
-;; arithmetic ops; none yet); Float16, Int8 and the integer dot product come
-;; with the kernels that use them
+;; arithmetic ops; none yet), 4 the packed 4x8 integer dot product
+;; (kb-sdot4x8 sets it: DotProduct, DotProductInput4x8BitPacked and the
+;; SPV_KHR_integer_dot_product extension, glslang's form at SPIR-V 1.3);
+;; Float16 and Int8 come with the kernels that use them
 (def KB-F-SUBGROUP 1)
 (def KB-F-ARITH 2)
+(def KB-F-DOT 4)
 
 (defn- kb-base [s :i64] :i64 (case s 0 4096 1 8192 2 12288 3 16384 4 81920 5 212992 344064))
 (defn- kb-cap [s :i64] :i64 (case s 0 4096 1 4096 2 4096 3 65536 4 131072 5 131072 1655936))
@@ -287,6 +290,10 @@
 (defn kb-s2f [B :vector-i64 t :i64 a :i64] :i64 (kb-op1 B 111 t a))
 (defn kb-unpack-half2 [B :vector-i64 a :i64] :i64 (kb-ext1 B (kb-tvec B (kb-tf32 B) 2) 62 a))
 (defn kb-sbfe [B :vector-i64 base :i64 offset :i64 count :i64] :i64 (kb-op3 B 202 (kb-ti32 B) base offset count))
+;; dotPacked4x8EXT(a, b): the signed dot of two ints of four packed int8
+;; (OpSDot with PackedVectorFormat4x8Bit)
+(defn kb-sdot4x8 [B :vector-i64 a :i64 b :i64] :i64
+  (let [g (kb-set B KB-FEATURES (bit-or (kb-get B KB-FEATURES) KB-F-DOT)) id (kb-id B) x (kb-i5 B 6 4450 (kb-ti32 B) id a b 0)] id))
 
 ;; ---------------------------------------------------------------------
 ;; Control. Labels clear the terminated flag; a branch, break, continue or
@@ -380,7 +387,13 @@
         M0 (spv-header (spv-new words) SPV-VERSION-1-3)
         M1 (spv-i1 M0 17 1)
         M2a (if (not= (bit-and f (bit-or KB-F-SUBGROUP KB-F-ARITH)) 0) (spv-i1 M1 17 61) M1)
-        M2 (if (not= (bit-and f KB-F-ARITH) 0) (spv-i1 M2a 17 63) M2a)
+        M2b (if (not= (bit-and f KB-F-ARITH) 0) (spv-i1 M2a 17 63) M2a)
+        ;; the integer dot product: two capabilities and the extension, which
+        ;; precedes the extended-instruction import of section 1
+        M2 (if (not= (bit-and f KB-F-DOT) 0)
+             (let [c (spv-i1 (spv-i1 M2b 17 6019) 17 6018) x "SPV_KHR_integer_dot_product"]
+               (spv-put-str (spv-put c (bit-or (i64-shift-left (+ 1 (spv-str-words x)) 16) 10)) x))
+             M2b)
         M3 (kb-copy M2 B 1)
         M4 (spv-i2 M3 14 0 1)
         ;; OpEntryPoint GLCompute main "main" interface...
