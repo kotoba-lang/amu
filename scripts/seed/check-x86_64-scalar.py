@@ -100,7 +100,7 @@ def main(compiler, output, seccomp_if_available=False):
     art, raw = output / "artifacts", output / "raw"
     art.mkdir()
     raw.mkdir()
-    env = {"PATH": "/usr/bin:/bin", "KEXE_CAP_RESOURCES_35": str(art)}
+    env = {"PATH": "/nonexistent", "KEXE_CAP_RESOURCES_35": str(art)}
     if seccomp_if_available:
         env["KEXE_SECCOMP"] = "if-available"
 
@@ -126,7 +126,7 @@ def main(compiler, output, seccomp_if_available=False):
         assert struct.unpack_from("<QQ", data, data_offset) == (0, case["fuel"])
         assert 0 < fields["function-offset"] < fields["code-bytes"]
         elf.chmod(0o700)
-        x = subprocess.run([str(elf)], env={"PATH": "/usr/bin:/bin"}, capture_output=True, timeout=15)
+        x = subprocess.run([str(elf)], env={"PATH": "/nonexistent"}, capture_output=True, timeout=15)
         (raw / (case["name"] + ".run.stdout")).write_bytes(x.stdout)
         if case["trap"]:
             assert x.returncode == -getattr(signal, case["trap"]) and not x.stdout, (case["name"], x)
