@@ -222,8 +222,17 @@ int main(int argc, char **argv) {
       // agree BIT-FOR-BIT in the ordinary value domain (rule 2); :sum may
       // differ in the low bits, and the observed deviation is reported as
       // data rather than hidden behind a pass/fail alone.
-      double ref[3907];
-      float base_v[3907], sub_v[3907];
+      // Sized from THIS cell's num_groups. The old fixed 3907 was W = 256's
+      // group count: W = 32 admits 31251 groups and overflowed the stack
+      // here (SIGBUS before any output) -- a named instrument defect, fixed
+      // in the low-band sweep tick that found it.
+      double *ref = (double *)malloc((size_t)num_groups * sizeof(double));
+      float *base_v = (float *)malloc((size_t)num_groups * sizeof(float));
+      float *sub_v = (float *)malloc((size_t)num_groups * sizeof(float));
+      if (ref == NULL || base_v == NULL || sub_v == NULL) {
+        fprintf(stderr, "FATAL out of memory for %u groups\n", num_groups);
+        return 2;
+      }
       for (uint32_t g = 0; g < num_groups; g++) {
         double acc = (op == 1) ? -INFINITY : (op == 2) ? INFINITY : 0.0;
         for (uint32_t l = 0; l < WG; l++) {
@@ -268,6 +277,9 @@ int main(int argc, char **argv) {
                ops[op], arm ? "variant" : "baseline", max_dev_ref[arm],
                max_dev_other, exact_ref[arm], exact_other, ok);
       }
+      free(ref);
+      free(base_v);
+      free(sub_v);
     }
     return 0;
   }

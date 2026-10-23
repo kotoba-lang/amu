@@ -238,16 +238,14 @@ def main():
     lines.append(
         "This is a REAL hardware measurement: the emitter's own bytes for the "
         "two arms ran on the Apple M1 Max GPU, interleaved, with verified "
-        "read-back. It is NOT the measurement ADR-0360's contract names: that "
-        "contract requires the wire-42 route, which does not exist since the "
-        "C loader removal (ADR 0371 -- the provider is the replacement track "
-        "and is not implemented). This run dispatches the MSL arms through the "
-        "Metal API directly instead. No `:measured?` flag moves and no "
-        "workgroup row is touched: the row's flip stays blocked on the "
-        "contract's route clause (and on the per-tested-device scoping the "
-        "flip would need). Whether a native Metal harness satisfies the "
-        "measurement contract is a design decision, PROPOSED by this evidence "
-        "and decided nowhere.")
+        "read-back. ADR-0360 question (1)'s 2026-10-23 decision admits this "
+        "native-Metal channel as contract-satisfying FOR THE MSL ARM: wire 42 "
+        "executes SPIR-V through Vulkan and can never run MSL, so a "
+        "wire-42-only contract could never measure this arm at all (the GLSL "
+        "arm is a different story and keeps its LABELED BOOTSTRAP status). No "
+        "`:measured?` flag moves in THIS run: the honesty-lock flip set is "
+        "code (accelerator_variants' :measured-cell W set) and extends in its "
+        "own slice, and no workgroup row (ADR-0355/0358) is touched.")
     (out / "summary.md").write_text("\n".join(lines) + "\n")
     print("\n".join(lines))
     shutil.rmtree(build, ignore_errors=True)

@@ -302,3 +302,73 @@ channel as the W = 256 MSL measurement, not the wire-42 route -- so
 0358) is touched. The GLSL arm at W = 512/1024 remains UNMEASURED: the
 wire-42 route has no execution path since the C loader removal, and the
 2026-10-19 GLSL band stopped at W = 256.
+
+## Amendment 2026-10-23 (the low band): W = 32..128 on M1 Max is MEASURED on the MSL arm
+
+The "MSL W = 32..128 is UNMEASURED" clause that every later record carried
+is SUPERSEDED. The same native-Metal harness measured the remaining three
+widths of the MSL band on the same host (Apple M1 Max, reported subgroup
+size 32), same protocol (6 fresh processes, 20 interleaved pairs per
+operator per run, alternating AB/BA, verified read-back),
+docs/evidence/gpu-subgroup-reduce-m1max-wsweep-low-20261023/. Paired
+within-run ratios (variant/baseline gpu-ns, per-run median of pairs, then
+the median of six), anchors from the earlier sessions in parentheses:
+
+| W | :sum | :max | :min |
+|---|------|------|------|
+| 32 | 0.918 (0.917-0.920 per run) | 0.923 | 1.019 |
+| 64 | 1.221 | 1.216 | 1.202 |
+| 128 | 1.246 | 1.243 | 1.242 |
+| 256 | 1.220 | 1.217 | 1.217 |
+| 512 | 1.196 | 1.195 | 1.197 |
+| 1024 | 1.186 | 1.186 | 1.185 |
+
+Read-back: ok=1 on all 108 verify lines of the three cells; :max/:min
+bit-exact against the CPU reference and between arms in every cell; :sum
+bit-exact between arms at W = 32 (one simdgroup per group regroups
+identically), divergent in the low bits at W = 64/128 as in the wider band.
+
+What the numbers say. The penalty band is NOT monotone toward small W. The
+W-sweep's "the penalty narrows with W" holds over W = 128..1024 (peak
+1.246 at W = 128, narrowing to 1.186 at W = 1024); W = 64 sits in the same
+band (~1.20-1.22). W = 32 is the single cell where the variant is not
+slower: :sum is faster in every fresh process (0.916-0.920) and :max is
+faster in the slow-clock runs (0.916-0.924) -- roughly 8% ahead. REGIME
+NOISE, named: the GPU changed clock state mid-session in this cell (per-run
+median gpu-ns steps 109k -> 36k), and in the fast regime the W = 32 arms
+are within noise of each other (:min runs 3-6 at 1.017-1.024; :max runs 4/6
+at 0.958/1.017). The W = 32 :min cell's overall sign (median 1.019) is
+therefore NOT ESTABLISHED -- its per-run ratios straddle 1 with the regime
+shift -- and "the variant is faster at W = 32" is scoped to the slow regime
+where :sum ran all six processes.
+
+What this contradicts, stated plainly: the narrowing's rationale ("the
+variant measured slower at every W, so `:baseline` at every W on this
+device") is contradicted at W = 32 by this device's own measurement. What
+this does NOT do: no selection behavior changes here. Whether the
+narrowing's W = 32 cell should answer `:subgroup-reduce` (and how the
+honesty-lock flip set -- currently W = 256/512/1024 in
+`kotoba.compiler.accelerator-variants` -- and its test label follow) is a
+new design question, PROPOSED by this evidence and decided nowhere; it is
+one implementation slice with tests. Until that slice, the W = 32..128
+answers keep the lock (:measured? false) and the demotion stands as the
+fail-safe.
+
+Instrument defect found and fixed in the same record (named, not hidden):
+the harness's verified read-back scratch arrays were fixed at 3907
+elements (W = 256's group count) and overflowed the stack at W = 32 (31251
+groups) -- the guard admitted [32, 1024] but the instrument could only run
+[256, 1024] before this fix. The timing path never used the arrays.
+
+Supersession note on the contract caveat above: question (1) was DECIDED
+2026-10-23 (the decision reached code in the honesty-lock flip,
+`accelerator_variants`'s `:measured-cell` and the `:variant-measured?`
+axis; the decision text is the flip commit's and the namespace docstrings').
+The admitted channel is this native-Metal harness FOR THE MSL ARM (wire 42
+executes SPIR-V through Vulkan and can never run MSL), the flip records the
+tested device class as the `:measured-cell` keys (name fragment `m1 max`
+AND reported subgroup size 32, MSL route, a W the channel ran). The
+paragraphs above that call question (1) undecided describe the state before
+that decision and are superseded as to their status claims only; the GLSL
+arm keeps its LABELED BOOTSTRAP status at every width and no workgroup row
+(ADR-0355/0358) has been touched by any of this.
