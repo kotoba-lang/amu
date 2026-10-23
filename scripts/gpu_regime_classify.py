@@ -2527,10 +2527,13 @@ def _self_test_identity_corpus(stats, corpus_root):
             "the 'runs 4/6 fast regime' naming is :max's partition "
             "alone", stats)
 
-    # the op-order cell: the ONLY record in the corpus where :sum's
-    # partition is the finest (:sum ran LAST; the within-run ramping the
-    # pair-level slice named shows up at run level in the operator that
-    # ran last)
+    # the op-order cell: one of the corpus's TWO :sum-refines-:max
+    # records (the second arrived 2026-10-24 with the shape-2 W = 1024
+    # record) and still the only one where :sum ran LAST -- the
+    # within-run ramping the pair-level slice named shows up at run
+    # level in the operator that ran last. The 2026-10-23 "the ONLY
+    # record where :sum's partition is the finest" reading is
+    # SUPERSEDED; the corpus-wide fact is the set pinned below.
     oo = _ident("gpu-subgroup-reduce-m1max-oporder-20261023/w32-sum-last")
     _expect(oo["verdict"] == "identity-refuted"
             and len(oo["divergent"]) == 12
@@ -2555,15 +2558,34 @@ def _self_test_identity_corpus(stats, corpus_root):
             "shape2 w32: identity refuted -- :sum one level vs :max's "
             "three prose-named levels", stats)
 
-    # the corpus's only finest-:sum claim, stated as a corpus-wide fact
+    # the corpus's :sum-refines-:max set, stated as a corpus-wide fact.
+    # TWO records carry the strict edge as of 2026-10-24: the op-order
+    # cell (:sum ran LAST -- the dispatch-position ramping story) and
+    # the shape-2 W = 1024 record
+    # (gpu-simdgroup-reduce-m1max-shape2-20261024/w1024, added
+    # 2026-10-24 by the W = 1024 measurement slice -- which ran no
+    # self-test over its evidence addition, so this pin's red went
+    # unnoticed until the 2026-10-24 corpus-pin fix slice). At that
+    # record :sum ran FIRST and its refinement is the single-run
+    # clock-level split (sum [[2], [1, 3, 4, 5, 6]] against :max/:min
+    # pooling all six), so refinement does NOT track the last-
+    # dispatched operator. The 2026-10-23 claim "the op-order cell is
+    # the corpus's only record where :sum refines :max" is SUPERSEDED
+    # by this set, not silently dropped. A future record entering this
+    # set fails this pin on purpose: the corpus fact must be re-stated
+    # with its own story, never drift silently.
     finest_sum = [rel for rel, per_op in records
                   if (lambda i: ("sum", "max") in i["refinements"]
                       and ("max", "sum") not in i["refinements"])(
                           cross_operator_level_identity(per_op))]
-    _expect(finest_sum == ["gpu-subgroup-reduce-m1max-oporder-20261023/"
+    _expect(finest_sum == ["gpu-simdgroup-reduce-m1max-shape2-20261024/"
+                           "w1024",
+                           "gpu-subgroup-reduce-m1max-oporder-20261023/"
                            "w32-sum-last"],
-            f"the op-order cell is the corpus's only record where :sum "
-            f"refines :max ({finest_sum})", stats)
+            f"the corpus's :sum-refines-:max records are the shape-2 "
+            f"W = 1024 record (:sum FIRST, run-2 clock split) and the "
+            f"op-order cell (:sum LAST, dispatch ramping) ({finest_sum})",
+            stats)
 
     print(f"cross-operator level identity: {len(records)} multi-operator "
           f"records -- {len(holds)} identity-holds "

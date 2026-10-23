@@ -939,6 +939,20 @@ refuted record). Three named consequences:
    is the FINEST (and :max pools all six runs) -- :sum ran LAST in that
    cell's op order, so the within-run ramping the pair-level slice
    named shows up at run level in the operator that ran last.
+   [UPDATE 2026-10-24: SUPERSEDED as a uniqueness claim. The shape-2
+   W = 1024 :simdgroup-reduce record
+   (docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w1024) is
+   a second corpus record where :sum refines :max (:sum [[2],
+   [1, 3, 4, 5, 6]] against :max/:min pooling all six) -- and there
+   :sum ran FIRST in the op order, so refinement does not track the
+   last-dispatched operator. The op-order cell keeps its own reading
+   (:sum ran LAST, the ramping story); the corpus-wide fact is now the
+   two-record set pinned in scripts/gpu_regime_classify.py's identity
+   corpus self-test. That pin was red from the W = 1024 record's
+   commit until the 2026-10-24 corpus-pin fix slice (the measurement
+   slice ran no self-test over its evidence addition -- the gap this
+   red exposed); fixed and re-verified there,
+   docs/evidence/gpu/finest-sum-corpus-pin-20261024.txt.]
 
 Tests (real output): `python3 scripts/gpu_regime_classify.py --self-test`
 = 1074 assertions, 0 failed (the previous 1019 plus 55 identity
