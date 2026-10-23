@@ -1,0 +1,114 @@
+JUN-58 / JUN-55 -- the exact-match gate class removed from the measure
+harness's argv parsing (2026-10-23)
+
+One implementation slice: the row flip-contract-widen-20261023.txt's
+"LEFT (the next rows)" named first -- the residual exact-match gate class
+in the harness's argv parsing (op-order `argc == 5`; harmless with today's
+single caller). NO hardware measurement was taken in this slice and no
+number below is a measurement record.
+
+WHAT CHANGED (the diff):
+
+- scripts/gpu-subgroup-reduce-metal-measure.m: the op-order gate
+  `if (argc == 5)` -> `if (argc >= 5)`, with a comment naming the class.
+  This was the LAST positional gate of the exact-match class in the
+  harness: the `argc == 4` shape gate went dead the moment the op-order
+  variable made the driver pass five arguments (the 2026-10-23 misshape
+  defect -- every driver run silently measured the default shape until a
+  run-log header exposed it; the mis-shaped cells are preserved under
+  misshape-defect-20261023/ inside
+  docs/evidence/gpu-subgroup-reduce-m1max-shape2-band-20261023/), and this
+  `argc == 5` gate was the residual of the same class: correct today (the
+  usage bound `argc > 5` refuses everything else, so `== 5` and `>= 5`
+  accept exactly the same argv), dead the same way the moment a later
+  positional lands behind the op-order. The fix is prophylactic: it makes
+  the class structurally absent rather than accidentally harmless.
+
+- test/kotoba/compiler/accelerator_variants_test.cljk: a new deftest
+  the-measure-harness-argv-gates-carry-no-exact-match-class pins the
+  class out of the harness source -- no `if (argc ==` gate form may
+  appear (the match is the gate form, not comment text: the harness
+  comments deliberately spell "NOT argc == N"), and the three positional
+  gates must stay `if (argc >= 3)` / `if (argc >= 4)` / `if (argc >= 5)`.
+  The misshape class had NO test guard before this pin.
+
+WHAT DID NOT MOVE (named so nothing is silently upgraded):
+
+- No measurement, no measurement record, no :measured? flag, no
+  :measured-cell set, no selection answer, no workgroup row
+  (ADR-0355/0358) moves. The harness's accepted argv domain is unchanged
+  (the usage bound still refuses argc > 5), so no cell's numbers are
+  affected and no prior record is superseded. The ADRs are untouched: this
+  is instrument hygiene on a file that is explicitly "NOT repository
+  product code and NOT a wire-42 route".
+
+VERIFIED BY TOOL OUTPUT (this host, real runs):
+
+1. Parse matrix -- the harness compiled with the driver's own clang line
+   (`xcrun -sdk macosx clang -fobjc-arc -O2 ... -framework Metal
+   -framework Foundation -framework QuartzCore`) and run over the argv
+   shapes against a probe-only workdir (every parse case prints its full
+   header before any kernel library loads; the probe-only workdir then
+   ends FATAL load baseline-*.metallib, expected):
+
+   - no args          -> "usage: measure <workdir> [workgroup] [elements]
+                          [op-order]" on stderr, exit 2
+   - argc 2           -> header n=1000003 workgroup=256
+                          op_order=sum,max,min (all defaults)
+   - argc 3 (W=128)   -> workgroup=128, shape default
+   - argc 4 (n=2^20)  -> n=1048576 (shape forwarded)
+   - argc 5 (min,...) -> op_order=min,sum,max (the fixed gate forwards)
+   - argc 6 (+extra)  -> usage refused by the bound, exit 2
+   - bad op-order     -> "REFUSED op-order bogus: need a comma-separated
+                          permutation of sum,max,min", exit 2
+
+   Every case behaved exactly as the pre-fix binary would on today's
+   accepted domain -- the parity claim is verified, and the class is gone.
+
+2. End-to-end single run -- the emitted arms built at W = 256 through the
+   driver's own emit/build commands and one fresh-process invocation
+   (`measure <workdir> 256 1000003 min,sum,max`) exited 0 with header
+   device=Apple M1 Max / simdgroup_size=32 / n=1000003 / workgroup=256 /
+   op_order=min,sum,max and verified read-back ok=1 in all six
+   operator x arm lines (max/min bit-exact vs reference and each other;
+   :sum max_abs_vs_ref 1.58e-05, the regrouping's low bits, as designed).
+   The dispatch order followed the permuted op-order (the first library
+   load was baseline-min). The run's 120 sample lines are SMOKE OUTPUT,
+   not a measurement record: one fresh process, no ADR-0358 cell
+   protocol, not a cell, cited nowhere as measurement.
+
+3. Scoped GPU gate (the 7 GPU-owned test namespaces, scratch runner
+   gpu_scoped_gate.cljk, not in the repo), from the chain worktree root:
+
+     kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+       /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+
+     Ran 88 tests containing 7122 assertions.
+     0 failures, 0 errors.
+
+     scoped: 88 tests, 7122 passed, 0 failed, 0 errors
+
+   (88/7122 vs the previous 87/7118: this diff's one new deftest and its
+   four assertions.)
+
+4. Full suite (kbb --backend sci --classpath "src:test:$(kbb -Spath
+   -M:test)" run-tests.cljk): RED AT BASE, re-verified this tick, outside
+   this diff -- fails at NAMESPACE LOAD with "Could not find namespace:
+   kotoba.form" (the W3 port path, documented red at base in ADR 0362 and
+   every prior tick record). This diff touches no namespace on that path.
+
+UNMEASURED, unchanged and named so no claim extends past it: shapes
+beyond the two contract shapes; the GLSL arm at every width beyond its
+LABELED BOOTSTRAP record (blocked on a wire-42 execution route, ADR 0371);
+every Apple device but this M1 Max; W = 32's selection answer (a
+decision, not a verdict); the NVIDIA/Intel/ARM/AMD variant rows entirely;
+and every workgroup row in kotoba.compiler.accelerator-targets -- all
+still :measured? false.
+
+LEFT (the next rows):
+- Per-vendor workgroup sweep (backlog 3): no workgroup row is measured
+  yet -- every row in kotoba.compiler.accelerator-targets still carries
+  :measured? false.
+- The GLSL arm stays blocked on a wire-42 execution route (ADR 0371).
+- JUN-57/59/60 design slices that need no hardware (dispatch rows, loader
+  device-class reporting, kernel variants), all UNMEASURED.

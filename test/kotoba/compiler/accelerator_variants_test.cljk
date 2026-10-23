@@ -484,6 +484,27 @@
         (is (= (variants/select-variant :apple kir :msl-v1 m1)
                (variants/select-variant :apple kir :msl-v1 m1)))))))
 
+(deftest the-measure-harness-argv-gates-carry-no-exact-match-class
+  ;; The measurement instrument (scripts/gpu-subgroup-reduce-metal-measure.m)
+  ;; carried TWO positional gates of the exact-match class (`if (argc == N)`).
+  ;; The first (argc == 4, the shape) went dead the moment the op-order
+  ;; variable made the driver pass five arguments: every driver run silently
+  ;; measured the default shape until a run-log header exposed it (the
+  ;; 2026-10-23 misshape defect, preserved under misshape-defect-20261023/
+  ;; inside docs/evidence/gpu-subgroup-reduce-m1max-shape2-band-20261023/).
+  ;; The second (argc == 5, the op-order) was the residual: harmless with
+  ;; today's single caller, dead the same way the moment a later positional
+  ;; lands behind it. This pin removes the CLASS from the harness -- every
+  ;; positional gate is a >= test -- and fails if an exact-match gate ever
+  ;; returns. Comment text is not code: the match is the `if (argc ==` gate
+  ;; form (the harness comments deliberately spell `NOT argc == N`).
+  (let [harness (slurp "scripts/gpu-subgroup-reduce-metal-measure.m")]
+    (is (nil? (re-find #"if\s*\(\s*argc\s*==" harness))
+        "the measure harness must carry no exact-match argc gate (the misshape class)")
+    (doseq [gate ["if (argc >= 3)" "if (argc >= 4)" "if (argc >= 5)"]]
+      (is (str/includes? harness gate)
+          (str "the measure harness must keep its positional gate " gate)))))
+
 (deftest the-nvidia-row-rides-the-vulkan-and-cuda-routes
   ;; ADR-0361 (JUN-57) as amended 2026-10-23 (JUN-57's own decision): the
   ;; NVIDIA row is the shared subgroup-size-parametric emission on the

@@ -169,7 +169,15 @@ int main(int argc, char **argv) {
      * {0,1,2} = sum,max,min (the fixed order every earlier cell used);
      * argv[4] is a comma-separated permutation of sum,max,min. */
     int op_seq[3] = {0, 1, 2};
-    if (argc == 5) {
+    /* argc >= 5, NOT argc == 5: the last residual of the exact-match gate
+     * class the argc >= 4 comment above names. An == gate is dead the moment
+     * a later positional lands behind this one (the usage bound grows, the
+     * == gate silently falls back to the default, and the run-log header is
+     * the only tell -- exactly how the 2026-10-23 misshape defect hid).
+     * Every positional gate in this harness is a >= test; the pin is
+     * test/kotoba/compiler/accelerator_variants_test.cljk's
+     * the-measure-harness-argv-gates-carry-no-exact-match-class. */
+    if (argc >= 5) {
       char buf[64];
       if (strlen(argv[4]) >= sizeof(buf)) {
         fprintf(stderr, "REFUSED op-order %s: need a comma-separated "
