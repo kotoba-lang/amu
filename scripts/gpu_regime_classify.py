@@ -55,10 +55,16 @@ WHAT THIS MODULE DOES NOT DO (named so nothing is silently upgraded):
     record's prose may name one level across operators; where they
     diverge, the divergent run pairs are named and the per-operator
     level names stay operator-scoped. Pair-level cross-operator
-    identity is NOT tested. The rule-2 cell row is still only an
+    identity is its own mechanical publication fact at pair
+    granularity (cross_operator_pair_level_identity /
+    render_pair_identity_section, published inside the --pairs output
+    when the record carries at least two operators): the same
+    partition-agreement test over the shared (run, pair) key set, with
+    keys completed by some operators only NAMED and excluded, never
+    silently dropped. The rule-2 cell row is still only an
     admissibility roll-up over pooled per-run ratios -- it carries no
-    cross-operator regime structure regardless of the identity verdict
-    (rule 4: the identity verdict changes no rule-2 verdict, no rule-3
+    cross-operator regime structure regardless of the identity verdicts
+    (rule 4: an identity verdict changes no rule-2 verdict, no rule-3
     phrase, no selection answer).
   - Rule 1/2 themselves are RUN-level (per-run baseline medians, per-run
     ratios), which is what rule 1 asks a record to publish. Pair-level
@@ -163,8 +169,36 @@ CROSS-OPERATOR LEVEL IDENTITY (the run partition across operators):
   - this is a publication fact about one record's regime structure.
     Rule 4 stands: it changes no rule-2 verdict, no rule-3 phrase, no
     selection answer, no :measured? flag, no workgroup row. Clock
-    identity is never asserted (the harness reads no clock), and
-    pair-level cross-operator identity is NOT tested.
+    identity is never asserted (the harness reads no clock).
+
+PAIR-LEVEL CROSS-OPERATOR IDENTITY (the pair partition across
+operators):
+
+  The pair-level section classifies per operator; the cross-operator
+  question at pair granularity is answered by the SAME test at pair
+  granularity (cross_operator_pair_level_identity, published by
+  render_pair_identity_section inside the --pairs output when the
+  record carries at least two operators):
+
+  - partition agreement over the shared (run, pair) key set: for every
+    key pair, every operator must agree on whether the two pairs sit in
+    the same rule-1 pair level (GAP-1.15, per operator). Agreement
+    everywhere = "identity holds"; any divergent key pair = "identity
+    refuted", the per-operator level names stay operator-scoped.
+  - one contract decision this granularity forces: operator key sets
+    may disagree (a pair can lose an arm in one operator's block), and
+    incompleteness is data -- the keys missing from some operator are
+    NAMED and excluded, never silently dropped; refusal happens only
+    below two operators or two shared keys. Divergent key pairs are
+    published by CLASS (every divergent pair in exactly one class,
+    counts sum to the verdict's total), because a 6 x 20 record has
+    7140 key pairs and one row per pair hides the shape behind bulk.
+  - rule 4 again: the verdict changes no rule-2 verdict, no rule-3
+    phrase, no selection answer, no :measured? flag, no workgroup row.
+    The same (run, pair) index is not one wall-clock moment across
+    operators (each operator's pairs run in its own block of the op
+    order), so this is agreement of pair partitions over a shared key
+    index set, not clock identity.
 
 CLI:
 
@@ -180,7 +214,9 @@ CLI:
     python3 scripts/gpu_regime_classify.py --pairs <run-log.txt>
         print the pair-level regime classification (rule 1's GAP-1.15
         rule at pair granularity, plus the rule-2 machine as an
-        ANALOGUE) from the driver's raw run log
+        ANALOGUE) from the driver's raw run log, followed by the
+        pair-level cross-operator identity section when the log
+        carries at least two operators
     python3 scripts/gpu_regime_classify.py --self-test
         unit fixtures + a regression pass over every committed summary.md
         under docs/evidence/ (pinned manual classifications must
@@ -916,7 +952,9 @@ def pair_level_classification(pairs, gap_max=GAP_MAX):
     run-level over per-run ratios; the "sign" field here is the rule-2
     machine applied at pair granularity, published as an ANALOGUE only --
     it never replaces or amends a rule-2 verdict, and it cannot choose a
-    variant. Cross-operator level identity is NOT asserted here either.
+    variant. Cross-operator level identity (run level and pair level) is
+    NOT asserted here -- both are their own sections
+    (cross_operator_level_identity / cross_operator_pair_level_identity).
     """
     if not pairs:
         raise ValueError("no complete pairs to classify")
@@ -958,9 +996,10 @@ def render_pair_level_section(pairs, incomplete=None, gap_max=GAP_MAX,
                  "to the pairs' baseline gpu-ns per operator (pair "
                  "granularity instead of per-run medians). The harness "
                  "reads no GPU clock; a level is one observed baseline "
-                 "plateau. Pair-level cross-operator identity is NOT "
-                 "tested here (run-level cross-operator identity is its "
-                 "own section in the record's rule-1 block).")
+                 "plateau. Pair-level cross-operator identity is its "
+                 "own section below when the record carries at least "
+                 "two operators (run-level cross-operator identity is "
+                 "its own section in the record's rule-1 block).")
     lines.append("")
     lines.append("What this section is NOT: it is not rule 2. Rule 2's "
                  "verdicts stay run-level over per-run ratios; the sides "
@@ -1014,6 +1053,14 @@ def render_pair_level_section(pairs, incomplete=None, gap_max=GAP_MAX,
         lines.append("")
         lines.append(f"Incomplete pairs, named and excluded "
                      f"({len(incomplete)}): {keys}.")
+    per_op = {}
+    for (r, op, p), rec in pairs.items():
+        per_op.setdefault(op, {})[(r, p)] = rec["baseline"]
+    if len(per_op) >= 2:
+        lines.append("")
+        lines.append(render_pair_identity_section(
+            per_op, gap_max,
+            via=(via or "scripts/gpu_regime_classify.py --pairs")))
     return "\n".join(lines)
 
 
@@ -1162,9 +1209,222 @@ def render_identity_section(per_op, gap_max=GAP_MAX, via=None):
     lines.append("What this section does NOT do (rule 4, unchanged): it "
                  "changes no rule-2 verdict, no rule-3 phrase, no "
                  "selection answer, no `:measured?` flag, no workgroup "
-                 "row. Pair-level cross-operator identity is not tested "
-                 "(the pair-level section's levels are never compared "
-                 "across operators).")
+                 "row. Pair-level cross-operator identity is its own "
+                 "test at pair granularity (the pair-level section "
+                 "publishes it); nothing in this run-level section "
+                 "licenses or refutes a pair-level naming.")
+    return "\n".join(lines)
+
+
+# ----------------------- pair-level cross-operator identity machinery
+
+def cross_operator_pair_level_identity(per_op, gap_max=GAP_MAX):
+    """Pair-level cross-operator identity: the pair partition across
+    operators, tested exactly as the run partition is.
+
+    per_op: {operator: {(run, pair): baseline gpu-ns}} -- each
+    operator's complete pair baselines, the same maps
+    pair_level_classification clusters (so the levels compared here ARE
+    the pair-level section's levels). Returns {
+      "verdict": "identity-holds" | "identity-refuted",
+      "ops": [op, ...], "keys": [(run, pair), ...]  (the shared ground
+        set, sorted),
+      "excluded": {(run, pair): [op, ...]}  (key completed by SOME
+        operators only; NAMED here, never silently dropped),
+      "levels": {op: [level, ...]},        (rule 1's own pair clusters)
+      "partitions": {op: {key: level_index}},  (1-based, fastest 1)
+      "divergent": [(a, b, {op: "same-level" | "split-level"}), ...],
+      "refinements": [(fine, coarse), ...]  (fine's partition refines
+        coarse's, equality included -- both directions = equal)
+    }
+
+    The mechanical test is the run-level one, unchanged: PARTITION
+    AGREEMENT over the shared (run, pair) key set -- for every key pair,
+    every operator must agree on whether the two pairs sit in the same
+    rule-1 pair level (GAP-1.15, applied per operator to that
+    operator's own pairs). Agreement on every key pair -> "identity
+    holds" (one record's prose may then name one pair level across
+    operators); any divergent key pair -> "identity refuted" (the pairs
+    named with every operator's relation, the per-operator level names
+    stay operator-scoped).
+
+    One contract decision this granularity forces (the run-level
+    contract cannot be copied verbatim): operators' key sets may
+    DISAGREE (a pair can lose an arm in one operator's block and not
+    another's), and the parser's rule stands -- incompleteness is data,
+    not noise to be deleted. So a key-set mismatch does NOT refuse here:
+    the keys missing from some operator are NAMED in "excluded" and the
+    agreement test runs on the shared ground set only. Refusal happens
+    only below two operators or below two shared keys.
+
+    This is a publication fact about one record's regime structure (rule
+    4, unchanged): it never changes a rule-2 verdict, a rule-3 phrase,
+    a selection answer, a :measured? flag or a workgroup row. The
+    harness reads no GPU clock and asserts no clock identity -- and the
+    same (run, pair) index is not one wall-clock moment across
+    operators (each operator's pairs run in its own block of the
+    driver's op order), so identity here is agreement of the pair
+    partitions over the shared key index set, nothing more. Clock
+    identity remains unasserted.
+    """
+    if len(per_op) < 2:
+        raise ValueError("pair-level cross-operator identity needs at "
+                         "least two operators")
+    ops = sorted(per_op)
+    key_sets = {op: set(m) for op, m in per_op.items()}
+    shared = set.intersection(*key_sets.values())
+    if len(shared) < 2:
+        raise ValueError("pair-level cross-operator identity needs at "
+                         "least two shared pair keys, got "
+                         f"{len(shared)}")
+    excluded = {}
+    for k in sorted(set.union(*key_sets.values()) - shared):
+        excluded[k] = [op for op in ops if k in key_sets[op]]
+    keys = sorted(shared)
+    levels = {op: level_clusters(per_op[op], gap_max) for op in ops}
+    partitions = {}
+    for op in ops:
+        partitions[op] = {}
+        for i, lv in enumerate(levels[op], start=1):
+            for k in lv["runs"]:
+                partitions[op][k] = i
+
+    def same(op, a, b):
+        return partitions[op][a] == partitions[op][b]
+
+    divergent = []
+    for ia, a in enumerate(keys):
+        for b in keys[ia + 1:]:
+            rels = {}
+            for op in ops:
+                rels[op] = "same-level" if same(op, a, b) else "split-level"
+            if len(set(rels.values())) > 1:
+                divergent.append((a, b, rels))
+    refinements = []
+    for fine in ops:
+        for coarse in ops:
+            if fine == coarse:
+                continue
+            if all(not same(fine, a, b) or same(coarse, a, b)
+                   for ia, a in enumerate(keys) for b in keys[ia + 1:]):
+                refinements.append((fine, coarse))
+    return {"verdict": ("identity-holds" if not divergent
+                        else "identity-refuted"),
+            "ops": ops, "keys": keys, "excluded": excluded,
+            "levels": levels, "partitions": partitions,
+            "divergent": divergent, "refinements": refinements}
+
+
+def render_pair_identity_section(per_op, gap_max=GAP_MAX, via=None):
+    """The pair-level cross-operator identity section for one
+    measurement record. per_op: {operator: {(run, pair): baseline}}.
+    Returns markdown (no trailing newline).
+
+    The divergent key pairs are published by CLASS, not one row per
+    pair: a 6-run x 20-pair record has 7140 key pairs, and a table with
+    thousands of rows hides the disagreement's shape behind its own
+    bulk. Every divergent key pair belongs to exactly one class (its
+    operators' relation tuple) and each class publishes its count and
+    named example key pairs -- the counts sum to the verdict's total,
+    asserted in --self-test, so nothing is silently dropped.
+    """
+    ident = cross_operator_pair_level_identity(per_op, gap_max)
+    ops = ident["ops"]
+    keys = ident["keys"]
+    npairs = len(keys) * (len(keys) - 1) // 2
+
+    def _key(k):
+        return f"run {k[0]} pair {k[1]}"
+
+    lines = []
+    lines.append("## Pair-level cross-operator identity (the pair "
+                 "partition across operators)")
+    lines.append("")
+    lines.append("Published by " + (via or "scripts/gpu_regime_classify.py "
+                                    "--pairs") + ": the pair-level "
+                 "section classifies per operator; this section tests "
+                 "mechanically whether those pair classifications "
+                 "describe ONE regime structure. The test is the "
+                 "run-level identity test at pair granularity, "
+                 "unchanged -- partition agreement over the shared "
+                 "(run, pair) key set: for every key pair, every "
+                 "operator must agree on whether the two pairs sit in "
+                 "the same rule-1 pair level (GAP-1.15, applied per "
+                 "operator). The harness reads no GPU clock and asserts "
+                 "no clock identity; the same (run, pair) index is not "
+                 "one wall-clock moment across operators (each "
+                 "operator's pairs run in its own block of the driver's "
+                 "op order), so identity here is agreement of the pair "
+                 "partitions over the shared key index set, nothing "
+                 "more.")
+    lines.append("")
+    if ident["verdict"] == "identity-holds":
+        lines.append(f"Verdict: **identity holds** -- the pair-level "
+                     f"partition is identical across {', '.join(ops)} "
+                     f"(all {npairs} key pairs agree). Where it holds, "
+                     f"a record's prose may name one pair level across "
+                     f"these operators.")
+    else:
+        lines.append(f"Verdict: **identity refuted** -- "
+                     f"{len(ident['divergent'])} of {npairs} key pairs "
+                     f"diverge across {', '.join(ops)} (their classes "
+                     f"below). Per-operator pair level names stay "
+                     f"operator-scoped: one operator's fastest pair "
+                     f"level is not another's.")
+    lines.append("")
+    refin = set(ident["refinements"])
+    rel_lines = []
+    for i, o1 in enumerate(ops):
+        for o2 in ops[i + 1:]:
+            if (o1, o2) in refin and (o2, o1) in refin:
+                rel_lines.append(f"{o1} and {o2}: equal partitions")
+            elif (o1, o2) in refin:
+                rel_lines.append(f"{o1}'s partition refines {o2}'s "
+                                 f"({o2} pools what {o1} splits)")
+            elif (o2, o1) in refin:
+                rel_lines.append(f"{o2}'s partition refines {o1}'s "
+                                 f"({o1} pools what {o2} splits)")
+            else:
+                rel_lines.append(f"{o1} and {o2} cross-cut (neither "
+                                 f"partition refines the other)")
+    lines.append("Partition relations (the disagreement's shape where "
+                 "the partitions disagree): " + "; ".join(rel_lines) + ".")
+    if ident["divergent"]:
+        classes = {}
+        for a, b, rels in ident["divergent"]:
+            sig = tuple(rels[op] for op in ops)
+            classes.setdefault(sig, []).append((a, b))
+        lines.append("")
+        lines.append(f"Divergent key pairs ({len(ident['divergent'])} of "
+                     f"{npairs}), by class (every divergent key pair is "
+                     f"in exactly one class; the counts sum to "
+                     f"{len(ident['divergent'])}):")
+        lines.append("")
+        lines.append("| " + " | ".join(ops) + " | key pairs | examples |")
+        lines.append(("|---" * (len(ops) + 2)) + "|")
+        for sig, members in sorted(classes.items(),
+                                   key=lambda kv: (-len(kv[1]), kv[0])):
+            examples = "; ".join(f"{_key(a)} vs {_key(b)}"
+                                 for a, b in members[:3])
+            if len(members) > 3:
+                examples += f"; +{len(members) - 3} more"
+            lines.append("| " + " | ".join(sig) + f" | {len(members)} | "
+                         + examples + " |")
+    if ident["excluded"]:
+        lines.append("")
+        lines.append("Excluded keys, named and not compared "
+                     f"({len(ident['excluded'])}; completed by some "
+                     "operators only, never silently dropped): "
+                     + "; ".join(
+                         f"{_key(k)} ({', '.join(ops_have)})"
+                         for k, ops_have in sorted(
+                             ident["excluded"].items())) + ".")
+    lines.append("")
+    lines.append("What this section does NOT do (rule 4, unchanged): it "
+                 "changes no rule-2 verdict (pair-level and run-level), "
+                 "no rule-3 phrase, no selection answer, no "
+                 "`:measured?` flag, no workgroup row. Clock identity "
+                 "is never asserted (the harness reads no clock).")
     return "\n".join(lines)
 
 
@@ -2319,6 +2579,195 @@ def _self_test_identity_corpus(stats, corpus_root):
               + ", ".join(f"{op} {n}" for op, n in nlv.items()) + ")")
 
 
+def _self_test_pair_identity_unit(stats):
+    # ---- pair-level cross-operator identity: partition agreement at
+    # ---- (run, pair) granularity ----
+
+    # fewer than two operators refuses (there is no cross-operator
+    # question)
+    try:
+        cross_operator_pair_level_identity({"sum": {(1, 0): 100.0}})
+        raise AssertionError("one operator must raise")
+    except ValueError:
+        stats["passed"] += 1
+
+    # fewer than two SHARED pair keys refuses (there is no agreement
+    # to test)
+    try:
+        cross_operator_pair_level_identity(
+            {"sum": {(1, 0): 100.0, (1, 1): 101.0},
+             "max": {(1, 0): 100.0, (2, 0): 101.0}})
+        raise AssertionError("one shared key must raise")
+    except ValueError:
+        stats["passed"] += 1
+
+    # operators' key sets may DISAGREE (a pair can lose an arm in one
+    # operator's block): that does NOT refuse -- the incomplete keys
+    # are NAMED in "excluded" and the agreement test runs on the
+    # shared ground set only
+    ident = cross_operator_pair_level_identity(
+        {"sum": {(1, 0): 100.0, (1, 1): 101.0, (1, 2): 500.0},
+         "max": {(1, 0): 100.0, (1, 1): 101.0}})
+    _expect(ident["excluded"] == {(1, 2): ["sum"]},
+            "a key completed by some operators only is NAMED in "
+            "excluded, never silently dropped", stats)
+    _expect(ident["verdict"] == "identity-holds" and ident["keys"]
+            == [(1, 0), (1, 1)],
+            "the agreement test runs on the shared ground set only",
+            stats)
+
+    # identical pair partitions -> identity holds (partitions refine
+    # each other in both directions)
+    ident = cross_operator_pair_level_identity(
+        {"sum": {(1, 0): 100.0, (1, 1): 101.0,
+                 (2, 0): 300.0, (2, 1): 305.0},
+         "max": {(1, 0): 100.5, (1, 1): 101.5,
+                 (2, 0): 301.0, (2, 1): 306.0}})
+    _expect(ident["verdict"] == "identity-holds" and not ident["divergent"],
+            "identical pair partitions: identity holds", stats)
+    _expect(("sum", "max") in ident["refinements"]
+            and ("max", "sum") in ident["refinements"],
+            "equal pair partitions refine each other in both directions",
+            stats)
+
+    # one operator splits a pair the others pool -> identity refuted,
+    # the divergent key pairs NAMED with every operator's relation
+    ident = cross_operator_pair_level_identity(
+        {"sum": {(1, 0): 100.0, (1, 1): 101.0, (1, 2): 102.0},
+         "max": {(1, 0): 100.0, (1, 1): 101.0, (1, 2): 300.0}})
+    _expect(ident["verdict"] == "identity-refuted"
+            and ident["divergent"] == [((1, 0), (1, 2),
+                                        {"sum": "same-level",
+                                         "max": "split-level"}),
+                                       ((1, 1), (1, 2),
+                                        {"sum": "same-level",
+                                         "max": "split-level"})],
+            "the divergent key pairs are named with each operator's "
+            "relation", stats)
+
+    # the GAP-1.15 boundary decides pair identity exactly as it
+    # decides a pair level: 100 -> 115 merges in both operators
+    # (holds); one operator just over 1.15x splits (refuted)
+    ident = cross_operator_pair_level_identity(
+        {"sum": {(1, 0): 100.0, (1, 1): 115.0},
+         "max": {(1, 0): 101.0, (1, 1): 116.0}})
+    _expect(ident["verdict"] == "identity-holds",
+            "exactly 1.15x merges in both operators: pair identity "
+            "holds", stats)
+    ident = cross_operator_pair_level_identity(
+        {"sum": {(1, 0): 100.0, (1, 1): 115.0},
+         "max": {(1, 0): 101.0, (1, 1): 116.17}})
+    _expect(ident["verdict"] == "identity-refuted",
+            "one operator just over 1.15x splits: pair identity "
+            "refuted", stats)
+
+    # refinement shapes: strict refinement
+    ident = cross_operator_pair_level_identity(
+        {"sum": {(1, 0): 100.0, (1, 1): 101.0, (1, 2): 102.0},
+         "max": {(1, 0): 100.0, (1, 1): 101.0, (1, 2): 300.0}})
+    _expect(("max", "sum") in ident["refinements"]
+            and ("sum", "max") not in ident["refinements"],
+            "strict refinement at pair granularity: max's partition "
+            "refines sum's", stats)
+
+    # refinement shapes: cross-cutting (neither refines) -- sum pools
+    # {(1,0),(1,1)} where max splits them, max pools {(1,1),(1,2)}
+    # where sum splits them
+    ident = cross_operator_pair_level_identity(
+        {"sum": {(1, 0): 100.0, (1, 1): 101.0,
+                 (1, 2): 300.0, (1, 3): 301.0},
+         "max": {(1, 0): 100.0, (1, 1): 200.0,
+                 (1, 2): 201.0, (1, 3): 302.0}})
+    _expect(("sum", "max") not in ident["refinements"]
+            and ("max", "sum") not in ident["refinements"]
+            and len(ident["divergent"]) == 3,
+            "cross-cutting pair partitions refine in neither "
+            "direction (3 divergent key pairs)", stats)
+
+    # rendering: divergent key pairs are published by CLASS, every
+    # pair in exactly one class, and the class counts SUM to the
+    # verdict's total -- nothing is silently dropped (the contract
+    # render_pair_identity_section states)
+    sec = render_pair_identity_section(
+        {"sum": {(1, 0): 100.0, (1, 1): 101.0,
+                 (1, 2): 300.0, (1, 3): 301.0},
+         "max": {(1, 0): 100.0, (1, 1): 200.0,
+                 (1, 2): 201.0, (1, 3): 302.0}})
+    _expect("identity refuted" in sec and "3 of 6 key pairs" in sec,
+            "the refuted section names the divergent total over the "
+            "key-pair ground set", stats)
+    rows = re.findall(
+        r"^\| ((?:same-level|split-level)(?: \| (?:same-level|split-level))*)"
+        r" \| (\d+) \| ", sec, re.M)
+    _expect(rows and sum(int(n) for _sig, n in rows) == 3,
+            f"divergent key pairs published by class; the class counts "
+            f"sum to the verdict's total ({sum(int(n) for _s, n in rows)})"
+            f" -- nothing silently dropped", stats)
+    _expect(("split-level | same-level", "2") in rows
+            and ("same-level | split-level", "1") in rows,
+            "each divergent class publishes its own count and "
+            "operator relations", stats)
+    _expect("run 1 pair 0 vs run 1 pair 1" in sec,
+            "the class examples name real divergent key pairs", stats)
+
+    # rendering: the refuted section carries the refinement shape and
+    # the rule-4 disclaimer
+    _expect("cross-cut (neither partition refines the other)" in sec,
+            "the partition relation is published", stats)
+    _expect("changes no rule-2 verdict" in sec and "rule 4" in sec,
+            "the section carries the rule-4 disclaimer", stats)
+
+    # rendering: the holds section licenses cross-operator pair naming
+    sec_ok = render_pair_identity_section(
+        {"sum": {(1, 0): 100.0, (1, 1): 115.0},
+         "max": {(1, 0): 101.0, (1, 1): 116.0}})
+    _expect("identity holds" in sec_ok
+            and "may name one pair level across these operators" in sec_ok,
+            "the holds section licenses cross-operator pair naming",
+            stats)
+
+    # rendering: excluded keys are NAMED in the section
+    sec_ex = render_pair_identity_section(
+        {"sum": {(1, 0): 100.0, (1, 1): 101.0, (1, 2): 500.0},
+         "max": {(1, 0): 100.0, (1, 1): 101.0}})
+    _expect("Excluded keys, named and not compared (1;" in sec_ex
+            and "run 1 pair 2 (sum)" in sec_ex,
+            "excluded keys are named in the section, never dropped",
+            stats)
+
+    # via names the publication path that actually published
+    sec_via = render_pair_identity_section(
+        {"sum": {(1, 0): 100.0, (1, 1): 101.0},
+         "max": {(1, 0): 100.5, (1, 1): 101.5}},
+        via="pair-identity-test")
+    _expect(sec_via.splitlines()[2].startswith(
+                "Published by pair-identity-test: "),
+            "via names the publication path that actually published",
+            stats)
+
+    # render_pair_level_section (the --pairs output) carries the pair
+    # identity section for >= 2 operators and omits it for one
+    two_ops = {(1, "sum", 0): {"baseline": 100.0, "variant": 90.0,
+                               "order": "A"},
+               (1, "sum", 1): {"baseline": 300.0, "variant": 290.0,
+                               "order": "B"},
+               (1, "max", 0): {"baseline": 101.0, "variant": 91.0,
+                               "order": "A"},
+               (1, "max", 1): {"baseline": 301.0, "variant": 291.0,
+                               "order": "B"}}
+    out = render_pair_level_section(two_ops)
+    _expect("## Pair-level cross-operator identity" in out
+            and "identity holds" in out,
+            "the --pairs output carries the pair identity section for "
+            "two operators", stats)
+    out1 = render_pair_level_section(
+        {(1, "sum", 0): {"baseline": 100.0, "variant": 90.0,
+                         "order": "A"}})
+    _expect("## Pair-level cross-operator identity" not in out1,
+            "the --pairs output omits the pair identity section for "
+            "one operator", stats)
+
+
 def main():
     args = sys.argv[1:]
     if args == ["--self-test"]:
@@ -2333,6 +2782,7 @@ def main():
         _self_test_pair_level_corpus(stats, ROOT / "docs" / "evidence")
         _self_test_identity_unit(stats)
         _self_test_identity_corpus(stats, ROOT / "docs" / "evidence")
+        _self_test_pair_identity_unit(stats)
         print(f"TOTAL: {stats['passed']} assertions passed, 0 failed")
         return
     if len(args) == 2 and args[0] == "--pairs":
