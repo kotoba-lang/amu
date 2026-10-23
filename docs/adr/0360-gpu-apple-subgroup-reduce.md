@@ -48,7 +48,9 @@ Vulkan route, and a Metal simdgroup row is still not designed here.
 SUPERSEDED AGAIN later the same day as to the conclusion too: the
 amendment at the end of this ADR extends the row to the MSL route; a
 Metal simdgroup row -- a different, Metal-native variant -- is still not
-designed here.) The
+designed here. [DECIDED later the same day in ADR-0373: that separate
+variant is now DESIGNED there -- design only, not implemented. "Not
+designed HERE" stands as to this ADR.]) The
 measurement this row waits on runs GLSL ->
 SPIR-V through glslang (ADR-0359 decision 2's sealed build step) on
 MoltenVK.
@@ -249,7 +251,12 @@ device acts on that device's name and never past it). The options the
 question listed that this decision does NOT take stay open on purpose: a
 Metal-native `simd_sum`/`simd_max`/`simd_min` simdgroup row is still NOT
 designed (a separate decision), and "keep as designed" is what every other
-Apple device still gets.
+Apple device still gets. [DECIDED 2026-10-23, ADR-0373: the Metal-native
+simdgroup row is now DESIGNED there (design only, not implemented). That
+ADR's MSL ladder supersedes "keep as designed is what every other Apple
+device gets" as to non-m1-max Apple MSL descriptors FROM THE MOMENT THE
+ROW IS IMPLEMENTED (rule 3); until then selection is unchanged and this
+clause governs.]
 
 Scope, stated plainly: W > 256 on M1 Max is UNMEASURED (the measured
 penalty grew with W over the measured band); the demotion at those sizes
