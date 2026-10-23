@@ -41,8 +41,9 @@
 (def KB-INTERN-MAX 30000)
 (def KB-STACK 2190000)
 (def KB-IFACE 2195000)
-;; features (capabilities beyond Shader): 1 GroupNonUniform, 2
-;; GroupNonUniformArithmetic; Float16, Int8 and the integer dot product come
+;; features (capabilities beyond Shader): 1 GroupNonUniform (the subgroup
+;; built-ins set it), 2 GroupNonUniformArithmetic (for the subgroup
+;; arithmetic ops; none yet); Float16, Int8 and the integer dot product come
 ;; with the kernels that use them
 (def KB-F-SUBGROUP 1)
 (def KB-F-ARITH 2)
@@ -298,7 +299,13 @@
   (let [d (kb-get B KB-DEPTH) e (+ KB-STACK (* 4 d))]
     (if (>= d 64) (vector-at B -1)
       (let [x0 (kb-set B e kind) x1 (kb-set B (+ e 1) a) x2 (kb-set B (+ e 2) b) x3 (kb-set B (+ e 3) c)] (kb-set B KB-DEPTH (inc d))))))
-(defn- kb-top [B :vector-i64 k :i64] :i64 (kb-get B (+ KB-STACK (* 4 (dec (kb-get B KB-DEPTH))) k)))
+;; slot k of the innermost frame, which must be of kind (1 an if, 2 a loop):
+;; a kb-else, kb-end-if, kb-while, kb-continue or kb-end-loop out of place
+;; traps instead of writing a branch to id 0
+(defn- kb-top [B :vector-i64 kind :i64 k :i64] :i64
+  (let [d (kb-get B KB-DEPTH)]
+    (if (or (< d 1) (not= (kb-get B (+ KB-STACK (* 4 (dec d)))) kind)) (vector-at B -1)
+      (kb-get B (+ KB-STACK (* 4 (dec d)) k)))))
 (defn- kb-pop [B :vector-i64] :i64 (kb-set B KB-DEPTH (dec (kb-get B KB-DEPTH))))
 
 ;; if c (then the body, kb-else, kb-end-if): frame 1 merge else
@@ -308,9 +315,9 @@
         p (kb-push B 1 merge els 0)]
     (kb-label B then)))
 (defn kb-else [B :vector-i64] :i64
-  (let [b (kb-branch B (kb-top B 1)) l (kb-label B (kb-top B 2)) z (kb-set B (+ KB-STACK (* 4 (dec (kb-get B KB-DEPTH))) 2) 0)] l))
+  (let [b (kb-branch B (kb-top B 1 1)) l (kb-label B (kb-top B 1 2)) z (kb-set B (+ KB-STACK (* 4 (dec (kb-get B KB-DEPTH))) 2) 0)] l))
 (defn kb-end-if [B :vector-i64] :i64
-  (let [merge (kb-top B 1) els (kb-top B 2)
+  (let [merge (kb-top B 1 1) els (kb-top B 1 2)
         b (kb-branch B merge)
         ;; no else arm: the false edge's block goes straight to the merge
         e (if (> els 0) (let [l (kb-label B els)] (kb-branch B merge)) 0)
@@ -324,17 +331,23 @@
         m (kb-i3 B 6 246 merge cont 0) c (kb-i1 B 6 249 check)
         p (kb-push B 2 merge cont header)]
     (kb-label B check)))
+;; kb-while, kb-continue and kb-end-loop belong to the innermost frame, which
+;; must be the loop (an if opened in the body is closed first)
 (defn kb-while [B :vector-i64 c :i64] :i64
-  (let [body (kb-id B) b (kb-i3 B 6 250 c body (kb-top B 1))] (kb-label B body)))
-(defn kb-continue [B :vector-i64] :i64 (let [b (kb-branch B (kb-top B 2))] (kb-label B (kb-top B 2))))
+  (let [body (kb-id B) b (kb-i3 B 6 250 c body (kb-top B 2 1))] (kb-label B body)))
+(defn kb-continue [B :vector-i64] :i64 (let [b (kb-branch B (kb-top B 2 2))] (kb-label B (kb-top B 2 2))))
 (defn kb-end-loop [B :vector-i64] :i64
-  (let [b (kb-branch B (kb-top B 3)) merge (kb-top B 1) p (kb-pop B)] (kb-label B merge)))
-;; the innermost loop's frame index, or -1
-(defn- kb-loop-frame [B :vector-i64] :i64
-  (loop [d (dec (kb-get B KB-DEPTH))] (cond (< d 0) -1 (= (kb-get B (+ KB-STACK (* 4 d))) 2) d :else (recur (dec d)))))
-(defn kb-break [B :vector-i64] :i64 (kb-branch B (kb-get B (+ KB-STACK (* 4 (kb-loop-frame B)) 1))))
+  (let [b (kb-branch B (kb-top B 2 3)) merge (kb-top B 2 1) p (kb-pop B)] (kb-label B merge)))
+;; slot k of the innermost loop's frame, through any ifs inside it; outside
+;; a loop it traps
+(defn- kb-loop-slot [B :vector-i64 k :i64] :i64
+  (loop [d (dec (kb-get B KB-DEPTH))]
+    (cond (< d 0) (vector-at B -1)
+          (= (kb-get B (+ KB-STACK (* 4 d))) 2) (kb-get B (+ KB-STACK (* 4 d) k))
+          :else (recur (dec d)))))
+(defn kb-break [B :vector-i64] :i64 (kb-branch B (kb-loop-slot B 1)))
 ;; continue: to the innermost loop's continue block
-(defn kb-next [B :vector-i64] :i64 (kb-branch B (kb-get B (+ KB-STACK (* 4 (kb-loop-frame B)) 2))))
+(defn kb-next [B :vector-i64] :i64 (kb-branch B (kb-loop-slot B 2)))
 ;; return from the entry function; inside an if the arm ends there
 (defn kb-return [B :vector-i64] :i64
   (if (= (kb-get B KB-TERM) 1) 0 (let [x (kb-i0 B 6 253)] (kb-set B KB-TERM 1))))
@@ -359,7 +372,9 @@
 ;; the module: entry point "main" with LocalSize x y z, capabilities from the
 ;; features used, SPIR-V 1.3
 (defn kb-module [B :vector-i64 x :i64 y :i64 z :i64] :vector-i64
-  (let [r (if (= (kb-get B KB-TERM) 1) 0 (kb-i0 B 6 253)) e (kb-i0 B 6 56)
+  ;; every if and loop is closed (else a trap)
+  (let [open (if (not= (kb-get B KB-DEPTH) 0) (vector-at B -1) 0)
+        r (if (= (kb-get B KB-TERM) 1) 0 (kb-i0 B 6 253)) e (kb-i0 B 6 56)
         f (kb-get B KB-FEATURES) ni (kb-get B KB-NIFACE)
         words (+ 5 64 (kb-get B 9) 64 (kb-get B 11) (kb-get B 12) (kb-get B 13) (kb-get B 14) ni)
         M0 (spv-header (spv-new words) SPV-VERSION-1-3)

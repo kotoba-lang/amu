@@ -189,7 +189,10 @@ a follow-up to ADR 0371.
      * loops take glslang's four-block form and an if is `OpSelectionMerge`
        before its branch. A guarded load is computed inside an if into a
        variable, never through `OpSelect`;
-     * the capabilities follow the features used.
+     * the capabilities follow the features used;
+     * an if, loop or break out of place traps, as do an unclosed if or
+       loop at `kb-module` and a full section. Nothing is emitted with a
+       branch to id 0.
    * **Done: the first two kernels** (`tools/gpu_kernels_v2.kotoba`):
      * KIR v1's elementwise kernel again (4 operators x 2 workgroup sizes),
        as the proof of the lowering;
@@ -208,12 +211,16 @@ a follow-up to ADR 0371.
      * the modules are byte-identical from the aarch64 and the x86_64 tool
        images.
 
-     Phase `gpu` runs each module beside glslang's module of the same source,
-     through the ADR 0371 provider. On gad (RADV), in three `attn_copy_dense`
-     shapes:
-     * the outputs of the two modules are byte-identical;
-     * both are within 1e-7 of an f64 reference;
-     * the cache rows written are exact.
+     Phase `gpu` runs after the oracle phase. It runs every module through
+     the ADR 0371 provider, after checking the bytes against the build's.
+     Where glslang has a module of the same source, it runs that beside the
+     KIR v2 module. On gad (RADV):
+     * **The eight ewise modules.** add, sub and mul are exact. div is within
+       2 ulp; Vulkan allows `OpFDiv` 2.5. Both workgroup sizes give the same
+       bytes, and add gives glslang's bytes.
+     * **`attn_copy_dense`, in three shapes.** The outputs are byte-identical
+       to glslang's module and within 1e-7 of an f64 reference. The cache rows
+       written are exact.
 
      Receipts: `docs/evidence/gpu-kernel-kir2-20261023/`.
    * **Done: the nex_ops decode set.** 19 ops of kotoba-lang/inference
