@@ -11,7 +11,7 @@
 // interleaved paired samples with alternating order, first submits discarded
 // as warmup, and verified read-back of the partials the kernels produce.
 //
-//   measure <workdir> [workgroup] [elements]
+//   measure <workdir> [workgroup] [elements] [op-order]
 //
 // [workgroup] is the dispatch width W (default 256, the measured Apple
 // workgroup row of ADR-0358); a W-sweep cell passes its own width, and the
@@ -25,6 +25,14 @@
 // tail is absent and the shape variable is the ONLY thing that changes).
 // The emitted kernels read n at runtime (buffer 2), so the same emitted
 // bytes serve every shape; the arms stay byte-identical across shapes.
+//
+// [op-order] is the operator dispatch order: a comma-separated permutation
+// of sum,max,min (default "sum,max,min" -- the fixed order every cell before
+// the op-order variant used). The variant exists because the fresh-process
+// GPU clock ramp left :sum with NO fast-regime sample under the fixed order
+// (the ramp completed after :sum's block on every cell), which structurally
+// blocked the W = 32 regime question (the shape-2 record's named blocker).
+// A "sum-last" order puts :sum's block after the ramp on purpose.
 //
 // <workdir> must contain baseline-<op>.metallib and subgroup-<op>.metallib
 // for op in {sum, max, min} (entry reduce_<op>, the emitter's kernel name --
@@ -123,8 +131,8 @@ static double run_dispatch(id<MTLCommandQueue> q, id<MTLComputePipelineState> ps
 
 int main(int argc, char **argv) {
   @autoreleasepool {
-    if (argc < 2 || argc > 4) {
-      fprintf(stderr, "usage: measure <workdir> [workgroup] [elements]\n");
+    if (argc < 2 || argc > 5) {
+      fprintf(stderr, "usage: measure <workdir> [workgroup] [elements] [op-order]\n");
       return 2;
     }
     NSString *dir = [NSString stringWithUTF8String:argv[1]];
@@ -151,6 +159,40 @@ int main(int argc, char **argv) {
       }
       N = (uint32_t)e;
     }
+    /* The operator dispatch order: indices into ops[] below. Default
+     * {0,1,2} = sum,max,min (the fixed order every earlier cell used);
+     * argv[4] is a comma-separated permutation of sum,max,min. */
+    int op_seq[3] = {0, 1, 2};
+    if (argc == 5) {
+      char buf[64];
+      if (strlen(argv[4]) >= sizeof(buf)) {
+        fprintf(stderr, "REFUSED op-order %s: need a comma-separated "
+                        "permutation of sum,max,min\n", argv[4]);
+        return 2;
+      }
+      strcpy(buf, argv[4]);
+      int seen[3] = {0, 0, 0}, got = 0;
+      char *save = buf, *tok;
+      while ((tok = strsep(&save, ",")) != NULL) {
+        int idx = (strcmp(tok, "sum") == 0)   ? 0
+                  : (strcmp(tok, "max") == 0) ? 1
+                  : (strcmp(tok, "min") == 0) ? 2
+                                              : -1;
+        if (idx < 0 || seen[idx] || got == 3) {
+          fprintf(stderr, "REFUSED op-order %s: need a comma-separated "
+                          "permutation of sum,max,min\n", argv[4]);
+          return 2;
+        }
+        seen[idx] = 1;
+        op_seq[got++] = idx;
+      }
+      if (got != 3) {
+        fprintf(stderr, "REFUSED op-order %s: need a comma-separated "
+                        "permutation of sum,max,min\n", argv[4]);
+        return 2;
+      }
+    }
+    const char *ops[3] = {"sum", "max", "min"};
     id<MTLDevice> dev = MTLCreateSystemDefaultDevice();
     if (dev == nil) {
       fprintf(stderr, "FATAL no Metal device\n");
@@ -182,6 +224,8 @@ int main(int argc, char **argv) {
     uint32_t sg_size = *(uint32_t *)probe_out.contents;
     printf("simdgroup_size=%u\n", sg_size);
     printf("n=%u\nworkgroup=%u\npairs=%d\nwarmup=%d\n", N, WG, PAIRS, WARMUP);
+    printf("op_order=%s,%s,%s\n", ops[op_seq[0]], ops[op_seq[1]],
+           ops[op_seq[2]]);
     if (sg_size == 0 || (WG % sg_size) != 0) {
       printf("shape=UNUSABLE (subgroup size does not divide W)\n");
       return 1;
@@ -189,7 +233,6 @@ int main(int argc, char **argv) {
 
     id<MTLLibrary> base_lib, sub_lib;
 
-    const char *ops[3] = {"sum", "max", "min"};
     NSString *entry;
     id<MTLBuffer> x = [dev newBufferWithLength:(NSUInteger)N * 4
                                        options:MTLResourceStorageModeShared];
@@ -203,7 +246,8 @@ int main(int argc, char **argv) {
     }
     *(uint32_t *)nbuf.contents = N;
 
-    for (int op = 0; op < 3; op++) {
+    for (int oi = 0; oi < 3; oi++) {
+      int op = op_seq[oi];
       entry = [NSString stringWithFormat:@"reduce_%s", ops[op]];
       base_lib = load_lib(dev, dir,
                           [NSString stringWithFormat:@"baseline-%s.metallib", ops[op]]);

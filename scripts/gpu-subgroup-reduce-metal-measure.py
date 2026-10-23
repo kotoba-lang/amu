@@ -85,8 +85,14 @@ def main():
     ap.add_argument("--runs", type=int, default=6)
     ap.add_argument("--workgroup", type=int, default=256)
     ap.add_argument("--elements", type=int, default=1000003)
+    ap.add_argument("--op-order", type=str, default="sum,max,min")
     ap.add_argument("--out", type=str, default=None)
     args = ap.parse_args()
+    order_names = [t.strip() for t in args.op_order.split(",")]
+    if sorted(order_names) != ["max", "min", "sum"]:
+        sys.stderr.write(f"REFUSED --op-order {args.op_order}: need a "
+                         "comma-separated permutation of sum,max,min\n")
+        sys.exit(2)
     wg_want = args.workgroup
     if wg_want < 32 or wg_want > 1024 or (wg_want & (wg_want - 1)) != 0:
         sys.stderr.write(f"REFUSED --workgroup {wg_want}: "
@@ -138,7 +144,8 @@ def main():
     # 3. run: fresh processes
     runs = []
     for i in range(args.runs):
-        proc_out = sh([str(exe), str(build), str(wg_want), str(n_want)], log)
+        proc_out = sh([str(exe), str(build), str(wg_want), str(n_want),
+                       args.op_order], log)
         runs.append(proc_out)
 
     (out / "compile-log.txt").write_text("\n".join(log) + "\n")
@@ -152,6 +159,7 @@ def main():
     host = {}
     ver = []
     device = sg = n = wg = pairs = warmup = None
+    op_order_seen = None
     for ri, run_out in enumerate(runs):
         for line in run_out.splitlines():
             m = re.match(r"sample op=(\w+) pair=(\d+) order=(\S) arm=(\w+) "
@@ -164,6 +172,9 @@ def main():
                 continue
             if line.startswith("verify "):
                 ver.append((ri + 1, line))
+                continue
+            if line.startswith("op_order="):
+                op_order_seen = line.split("=", 1)[1]
                 continue
             for key, pat in (("device", r"device=(.*)"),
                              ("simdgroup_size", r"simdgroup_size=(\d+)"),
@@ -217,6 +228,16 @@ def main():
     lines.append(f"- protocol: {pairs} interleaved pairs per operator per run, "
                  f"alternating AB/BA order, {warmup} warmup submits per arm "
                  "discarded (ADR-0358's sweep protocol)")
+    lines.append(f"- operator dispatch order: "
+                 f"{op_order_seen or args.op_order}"
+                 + (" (the default fixed order every earlier cell used)"
+                    if (op_order_seen or args.op_order) == "sum,max,min"
+                    else " (OP-ORDER VARIANT, named: under the fixed "
+                         "sum,max,min order the fresh-process clock ramp "
+                         "left :sum with no fast-regime sample on any cell -- "
+                         "the shape-2 record's structural blocker on the "
+                         "W = 32 regime question; this order puts :sum's "
+                         "block after the ramp on purpose)"))
     lines.append("- timer: Metal GPU timestamps (command buffer "
                  "GPUStartTime->GPUEndTime) around one reduce dispatch; host "
                  "submit->completion ns recorded as secondary")
