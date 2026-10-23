@@ -194,6 +194,10 @@ def main(complete, out):
     controller_receipt = receipt(root / "cdci.receipt", b"KCDCI-R1")
     gate_receipt = receipt(root / "kotoba-gate.receipt", b"KCGATE-R1")
     assert gate_receipt != standalone_gate_receipt, "staged ledgers must have distinct receipt identities"
+    controller_fields = (root / "cdci.receipt").read_bytes().splitlines()
+    gate_fields = (root / "kotoba-gate.receipt").read_bytes().splitlines()
+    assert controller_fields[10] == gate_fields[1] == pin(root / "cases.kcg").encode()
+    assert controller_fields[7] == gate_fields[2] == policy["kotobaNativeGateSHA256"].encode()
     report = dict(status="PASS_NATIVE_KOTOBA_CDCI", host=[platform.system(), platform.machine(), platform.release()],
                   observerSourceSHA256=pin(Path(__file__)),
                   controller=proof["cdci"]["controller"], compiler=proof["generations"][0],

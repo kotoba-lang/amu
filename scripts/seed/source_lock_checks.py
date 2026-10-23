@@ -91,6 +91,7 @@ def _check_source_locks(compilers, observations, out):
                   namedRefusal="E6015", cases=rows, noRefusalOutput=True,
                   singleAndProjectRoutes=True, unicodeAndSeparatorPaths=True,
                   positiveCompilePathIdentity=True,
+                  observerSourceSHA256=sha(Path(__file__)),
                   compilerLegacyFallback=False)
     (observations / "source-lock-boundary.json").write_text(json.dumps(result, indent=2) + "\n")
     return result
