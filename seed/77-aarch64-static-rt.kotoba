@@ -772,7 +772,11 @@
 ;; 1 = KX64V1 runner (--format kx64-runner) with the loader's command line
 ;;     PAYLOAD OFFSET 0 x86_64 ALLOW [-- ARGS], KEXE_COMMAND and the loader's
 ;;     result line; the payload is mapped read+execute and entered as
-;;     fn(0,0,0,0,0, context) at PAYLOAD+OFFSET.
+;;     fn(0,0,0,0,0, context) at PAYLOAD+OFFSET;
+;; 2 = packed (--format packed): as 0 for the command line, the environment
+;;     and the result, but the entry is a payload inside the image's code
+;;     (context words 416 address, 424 length, 432 entry offset), entered as
+;;     the runner enters a mapped one.
 (defn- kxrt-usage [code :i64] :i64
   (let [m (if (= (kxrt-gl 200) 0) (kxrt-gs 200 (kxrt-map 16384)) 0) b (kxrt-gl 200) z (kxrt-err-text b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b 0 0x6e75722d6578656b 8) 0x617375203a72656e 8) 0x4c594150203a6567 8) 0x5346464f2044414f 8) 0x5954495241205445 8) 0x492029352e2e3028 8) 0x574f4c4c41204153 8) 0x52412d3436495b20 8) 0x5b205d2e2e2e2047 8) 0x5453455547202d2d 8) 0xa5d534752412d 7))] (kxrt-exit code)))
 (defn- kxrt-arg [i :i64] :i64 (kxrt-load64 (+ (kxrt-gl 80) (* 8 i))))
@@ -839,8 +843,10 @@
         d2 (kxrt-store64 (+ ctx 304) (kxrt-gl 16)) d3 (kxrt-store64 (+ ctx 312) (+ (kxrt-g) 48))
         d4 (kxrt-store64 (+ ctx 320) (kxrt-gl 40)) d5 (kxrt-store64 (+ ctx 328) (kxrt-gl 56))
         al (kxrt-allow (if (= mode 1) allow (kxrt-env 0x4c4c415f4558454b 0x3d574f 0 11)))
-        cm (kxrt-gs 240 (if (or (= mode 0) (not= (kxrt-env 0x4d4f435f4558454b 0x3d444e414d 0 13) 0)) 1 0))
-        pl (if (= mode 1) (kxrt-load-payload path) 0)
+        cm (kxrt-gs 240 (if (or (= mode 0) (= mode 2) (not= (kxrt-env 0x4d4f435f4558454b 0x3d444e414d 0 13) 0)) 1 0))
+        pl (cond (= mode 1) (kxrt-load-payload path)
+                 (= mode 2) (let [p (kxrt-load64 (+ ctx 416)) x (kxrt-store64 (+ ctx 384) p) y (kxrt-store64 (+ ctx 392) (kxrt-load64 (+ ctx 424)))] p)
+                 :else 0)
         po (if (and (= mode 1) (>= off (kxrt-load64 (+ ctx 392)))) (kxrt-usage 2) 0)
         f0 (kxrt-gs 168 (kxrt-fuel (kxrt-env 0x4555465f4558454b 0x3d4c 0 10)))
         f1 (kxrt-store64 (+ ctx 8) (kxrt-gl 168))
@@ -862,7 +868,9 @@
         ;; diagnostic: a syscall outside the filter must trap (SIGSYS, exit 120)
         pr (if (= (kxrt-env 0x4e41535f4558454b 0x4f52505f584f4244 0x3d4542 19) 0) 0 (kxrt-syscall 198 2 1 0 0 0 0))
         au (kxrt-gs 296 (if (= (kxrt-env 0x4552415f4558454b 0x3d4553555f414e 0 15) 0) 0 1))
-        r (if (= mode 1) (kxrt-call-at (+ pl off) ctx (+ (kxrt-g) 320)) (kxrt-call-main ctx))
+        r (cond (= mode 1) (kxrt-call-at (+ pl off) ctx (+ (kxrt-g) 320))
+                (= mode 2) (kxrt-call-at (+ pl (kxrt-load64 (+ ctx 432))) ctx (+ (kxrt-g) 320))
+                :else (kxrt-call-main ctx))
         e1 (if (= (kxrt-sink-close) 1) 0 (kxrt-fail))
         e2 (if (= (kxrt-flush) 1) 0 (kxrt-fail))
         e3 (kxrt-arena-use)]

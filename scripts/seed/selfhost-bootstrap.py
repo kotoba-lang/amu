@@ -9,7 +9,9 @@ Starts from the pinned Amu-produced aarch64-linux-static compiler
 3. the adopted compiler core (ADR 0370) from source: S3 builds it as a static
    image C0 (seed/CORE-STATIC-MANIFEST), C0 compiles seed/MANIFEST to G1, and
    G1, G2 run by the aarch64 runner give G2, G3: G1 = G2 = G3 = the adoption
-   receipt's image. The historical C-loader-built payload is not used;
+   receipt's image. The historical C-loader-built payload is not used.
+   S3 then packs G3 into a standalone static image (--format packed) that
+   rebuilds the same core;
 4. the runtime case suite (seed/static-cases.json) as static images;
 5. the runtime hardening: seccomp enforced, cpu / wall / stack limits;
 6. runtime capabilities: wire 3 :hash/sha256 (FIPS vectors, granted and
@@ -144,6 +146,25 @@ def main(out):
         adopted_gens.append(dict(generation=g, native=pin(native), container=pin(container)))
         payload = native
 
+    # 3b. the core as a standalone static image: S3 packs G3's container
+    # (--format packed); the packed compiler rebuilds the core to the same
+    # container and image. A payload whose main takes arguments is refused.
+    P = out / "P-aarch64.elf"
+    run.run("P-pack", [S, "compile", out / "runner.kotoba", "--target", "aarch64-linux", "--output", P,
+                       "--format", "packed", "--payload", out / "G3.kseed"], scope)
+    P.chmod(0o755)
+    run.run("P-compile", [P, "compile", adopted_src, "--target", "aarch64-macos", "--output", out / "P.kseed"], senv)
+    run.run("P-extract", [P, "extract-native", out / "P.kseed", "--symbol", "main", "--output", out / "P.bin"], senv)
+    assert pin(out / "P.bin")["sha256"] == adoption["nativeImageSHA256"], "packed compiler output mismatch"
+    assert pin(out / "P.kseed") == adopted_gens[2]["container"], "packed compiler container mismatch"
+    (out / "arity1.kotoba").write_text("(ns arity1 (:export [main]))\n(defn main [x :i64] :i64 x)\n")
+    run.run("arity1-compile", [P, "compile", out / "arity1.kotoba", "--target", "aarch64-macos", "--output", out / "arity1.kseed"], senv)
+    r = run.run("arity1-pack", [S, "compile", out / "runner.kotoba", "--target", "aarch64-linux", "--output", out / "arity1.elf",
+                                "--format", "packed", "--payload", out / "arity1.kseed"], scope, success=False)
+    assert r.returncode == 1 and b"E7105" in r.stderr and not (out / "arity1.elf").exists(), "packed arity refusal"
+    packed = dict(image=pin(P), container=pin(out / "P.kseed"), native=pin(out / "P.bin"),
+                  arityRefusal=dict(exit=r.returncode, stderr=r.stderr.decode().strip()))
+
     # 4. runtime cases as static images against the pinned loader results
     cases = json.loads((ROOT / CASES).read_text())["cases"]
     results = []
@@ -212,7 +233,7 @@ def main(out):
     report = dict(status="PASS_LOADERLESS_SELFHOST_BOOTSTRAP", capabilities=capabilities, host=[platform.system(), platform.machine(), platform.release()],
                   root=dict(image=pin(ROOT / ROOT_IMAGE), receipt=root_receipt), sourceGraph=source_pins,
                   generations=gens, rootReproduces=root_reproduces, built=built,
-                  adopted=dict(sourceGraph=adopted_pins, coreStatic=dict(sourceGraph=core_static_pins, image=c0), runnerStackBytes=int(ADOPTED_STACK), generations=adopted_gens,
+                  adopted=dict(sourceGraph=adopted_pins, coreStatic=dict(sourceGraph=core_static_pins, image=c0), runnerStackBytes=int(ADOPTED_STACK), generations=adopted_gens, packed=packed,
                                expectedNativeImage=adoption["nativeImageSHA256"]),
                   cases=results, hardening=hardening,
                   cCompilerOrLoader=False, JVMNodeOrGraalFallback=False, emulation=False)
