@@ -593,6 +593,25 @@ Each step is its own PR, in this order:
    * `INFO` and `DEVCLASS`;
    * the dot and kdot fixtures;
    * the decode guest's argmax chain against the f64 oracle.
+
+   It lands in PRs, in this order (JUN-344):
+   1. **Platform API for the provider.** In progress. `kxrt-p-` wrappers in
+      the platform-only runtime text: the monotonic clock, ignoring SIGPIPE,
+      read-only files (open, size, pread, close), unmap, uname, SHA-256 over
+      memory (streamed, so a model is hashed in chunks),
+      Landlock (ABI version, ruleset, path rule, restrict) and the seal (this
+      decision's seccomp filter, installed with TSYNC so the driver's threads
+      are covered). Each wraps fixed syscalls; there is no generic one. Arena
+      reuse needs no API: the provider wraps each request in `arena-scope`,
+      which the platform-linked runtime reclaims. Checks: SHA-256 against
+      hashlib, SIGPIPE, and confinement (native x86_64 only, since qemu-user
+      would apply the guest's filter to itself).
+   2. Protocol core, the grant table and a fake device layer (libc only, run
+      in the native x86_64 CI job).
+   3. The Vulkan device layer, qualified on a GPU host.
+   4. Confinement after device creation, and the launcher's fixed provider
+      environment.
+   5. ADR and documentation.
 7. **aarch64-linux** imports, then Xavier.
 8. **macOS ADR.**
 9. **Dated notes** in the stale docs listed under Consequences.
