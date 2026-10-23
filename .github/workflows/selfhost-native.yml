@@ -47,6 +47,8 @@ jobs:
         env:
           TIER: ${{ github.event_name == 'pull_request' && 'pr' || github.event_name == 'push' && 'main' || 'full' }}
         run: python3 scripts/seed/selfhost-bootstrap.py --output "$RUNNER_TEMP/boot" --tier "$TIER"
+      - name: Static launcher (--format launcher, ADR 0371 step 4; arm64, native)
+        run: python3 scripts/seed/check-static-launcher.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/launcher"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: bootstrap-arm64
@@ -58,6 +60,13 @@ jobs:
             ${{ runner.temp }}/boot/S-x86_64.elf
             ${{ runner.temp }}/boot/R-x86_64.elf
             ${{ runner.temp }}/boot/selfhost-unity.kotoba
+          if-no-files-found: error
+      # a separate artifact: another path in the one above would move its root
+      # (the qualify job expects boot/ at the top)
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: static-launcher-arm64
+          path: ${{ runner.temp }}/launcher/static-launcher.json
           if-no-files-found: error
   qualify-x86_64:
     needs: bootstrap-arm64
@@ -81,6 +90,7 @@ jobs:
           name: x86_64-native-receipt
           path: |
             ${{ runner.temp }}/x86/x86_64-native.json
+            ${{ runner.temp }}/x86/check-static-launcher/static-launcher.json
             ${{ runner.temp }}/x86/runtime-boundary/runtime-boundary.json
             ${{ runner.temp }}/x86/runtime-boundary/calls.json
             ${{ runner.temp }}/x86/raw

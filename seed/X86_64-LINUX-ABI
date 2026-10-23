@@ -99,9 +99,12 @@ appended after the guest (and its r6b library) and compiled by the same
 frontend and runtime-profile backend. Absolute header cells, static builds
 only: 197 = byte offset of the runtime text (0 = not a static build), 198 =
 first intrinsic FN, 199 = `kxrt-start`, 200..255 = FN whose absolute address
-fills context word slot/8 (slots 48..440). Functions whose symbol starts at or
-after cell 197 are runtime functions: no OP-FUEL code, scalar SIR only, and
-never called directly by guest functions (E7101). Calls to the eight
+fills context word slot/8 (slots 48..440). Functions whose definition (the
+first token of the def form) is at or after cell 197 are runtime functions:
+no OP-FUEL code, scalar SIR only, and never called directly by guest functions
+(E7101). Naming a runtime function in the guest does not change that; until
+2026-10-22 the test used the symbol's first appearance, and a guest that named
+an intrinsic (kxrt-syscall, kxrt-store64, ...) got it inline (JUN-325). Calls to the eight
 `kxrt-` intrinsic stubs (load64, store64, load8, store8, syscall, ctx,
 call-main, trap) are replaced by inline code.
 
@@ -155,8 +158,9 @@ answer is read from ANSWER into the string pool (at most 8 MiB, else a value
 trap). An answer that starts with `!` is a refusal: one line
 `KEXE_TRAP {:kind :capability :wire 42 :refusal :NAME}` on stderr (NAME = its
 first field, at most 64 bytes of [a-z0-9/-], else `unnamed`), then a trap.
-End of file, EPIPE or a short read also trap (exit 120). The checker does not
-admit wire 42 yet (E2115); ADR 0371 step 3 admits it.
+End of file, EPIPE or a short read also trap (exit 120). The checker admits
+wire 42 as `:string :string` only (ADR 0371 step 3,
+`seed/adoption-20261022.json`); other shapes stay E2115.
 Wires 43..47 (`:net/listen` `:net/accept` `:net/dial` `:net/read` `:net/write`,
 Linear JUN-292) are the removed loader's native TCP broker, answered in the
 image's own process: the runtime decides every request with the decisions and
@@ -222,9 +226,65 @@ or trap; peaks equal the final use and the growth-region/scope fields are 0. Exi
 line, else `result & 0xff` when `KEXE_COMMAND` is present, else the signed
 decimal result and a newline with status 0, as the loader.
 
+### Static launcher (`--format launcher`)
+
+Context word 408 = 4 (ADR 0371 step 4; 2 is `--format packed`), built from
+`tools/static_launcher.kotoba`. The runtime text is `xs-rt-core` followed by
+`xs-rt-launch` instead of the standard start (`xs-rt-start`); static and runner
+images are `xs-rt-core` + `xs-rt-start`, the same bytes as before the split.
+Command line: `WALL ALLOW GRANT PROVIDER [ARG ...] -- GUEST [ARG ...]`: WALL
+1..86400 seconds; ALLOW is the guest's `KEXE_ALLOW` (ids 0..255 or `-`, at most
+1024 bytes); GRANT and PROVIDER are both `-` or both paths, and ALLOW names
+wire 42 exactly when a provider is given. Refusals print one line
+`kexe-launcher: <reason>[: guest|provider|grant|launcher image]` on stderr
+and exit 2 (usage, WALL, ALLOW) or 1 (an input that cannot be read, is empty
+or over its bound (images 256 MiB, grant 1 MiB), cannot be sealed, a pipe or
+process that cannot be made, a child that cannot be executed, stdio not open,
+the filter, the wait); started children are killed and reaped first.
+Each input is read once into a memfd (MFD_CLOEXEC|MFD_ALLOW_SEALING) while
+SHA-256 is computed, then sealed (F_SEAL_SEAL|SHRINK|GROW|WRITE) and rewound;
+`/proc/self/exe` is hashed as the launcher image. Children are `clone(SIGCHLD)`
+forks: PR_SET_PDEATHSIG SIGKILL (and exit 127 if the parent changed), the
+status pipe and image to fds 110/111 and the sources to 100.. (close-on-exec),
+`close_range` 3..99 and 112.. (else close one by one), the sources onto their
+targets, an empty signal mask, PR_SET_NO_NEW_PRIVS, then
+`execveat(111, "", argv, envp, AT_EMPTY_PATH)`; a failure writes its stage
+byte (1 dup, 2 target, 3 no_new_privs, 4 exec) on the close-on-exec status
+pipe, whose end of file means the exec happened. The provider (argv:
+PROVIDER and its ARGs; empty environment) gets fd 0 requests, 1 answers,
+2 the launcher's stderr, 3 the grant memfd, 4 its report pipe; the guest
+(argv: GUEST and its ARGs) gets 0 the launcher's stdin, 1 a pipe to the
+launcher, 2 the launcher's stderr, and with a provider 3 requests and
+4 answers, and the environment `KEXE_ALLOW=ALLOW`, `KEXE_STRUCTURED_REPORT=1`,
+`KEXE_WALL_SECONDS=WALL`, `KEXE_CAP_RESOURCES_42=3,4` (with a provider) plus
+the launcher's own `KEXE_FUEL`, `KEXE_STACK_BYTES`, `KEXE_CPU_SECONDS`,
+`KEXE_SECCOMP`, `KEXE_CAP_RESOURCES_35`, `KEXE_ARENA_USE` and
+`KEXE_SANDBOX_PROBE` when set. After both have executed the launcher closes
+every child end, sets RLIMIT_STACK 1 MiB (pre-touched, as the standard start
+does), RLIMIT_CORE 0 and RLIMIT_AS 64 MiB, ignores SIGPIPE and
+installs its filter: the base set plus read, close, ppoll, wait4 and kill
+(`KEXE_SECCOMP=if-available` as for images). It then `ppoll`s the guest's
+stdout, the provider's report and both pidfds (pidfd_open, Linux 5.3; no
+signal handlers): stdout is written to the launcher's fd 1 as it comes,
+hashed, and its last 4096 bytes kept; the report is kept up to 64 KiB (more
+sets overflow); a readable pidfd is reaped with wait4 WNOHANG. At WALL the
+guest is killed (SIGKILL, timed out); the provider is killed at the earlier of
+5 s after the guest is reaped and WALL; pipes still open 1 s after both are
+reaped are closed. The guest's structured line is the stdout tail from its
+last `{:status :`, printable ASCII, when it exited 0 or 120. Wire-38
+arguments for `main` (allowed wires 37 38 39, unmetered fuel): 0 WALL, 1
+ALLOW, 2 elapsed ms, 3 timed out, 4 relay ok, 5..6 launcher and guest
+SHA-256, 7 guest exit (-1 for a signal), 8 guest signal, 9 its structured
+line, 10..11 stdout bytes and SHA-256, 12 provider given, 13 provider SHA-256,
+14..15 provider exit and signal, 16 provider killed, 17 report state (0 none,
+1 UTF-8 without NUL, 2 otherwise, 3 overflow), 18 the report when state 1,
+19 grant SHA-256. The launcher exits with `main`'s result & 0xff. An image of
+another ISA cannot be started through binfmt_misc (execveat of a
+close-on-exec fd: ENOENT).
+
 ## aarch64-linux-static (seed modules 77, 80)
 
-`compile SOURCE --target aarch64-linux --output NEW --format static|runner`
+`compile SOURCE --target aarch64-linux --output NEW --format static|runner|launcher`
 (and `--format packed --payload KSEED`, below) (Linux selfhost closure;
 dispatched by 73) emits the same image shape for
 EM_AARCH64. Module 80 is a plain stack-machine emitter for the runtime-profile
