@@ -36,15 +36,20 @@ output and their results join the receipt. They are test oracles only: the
 product route has no C or C++ tool (ADR 0372).
 
 Phase "gpu" (suite kir2, a GPU host only: libvulkan runs there and nowhere
-else, owner decision 2026-10-22): each KIR v2 module and glslang's module of
-the same source run through the ADR 0371 provider (the provider-vulkan image
-of a scripts/seed/check-gpu-provider.py build output, --provider) on the same
-inputs. ewise: z = x + y, exact. attn_copy_dense: three shapes (GQA with the
-dynamic position; no GQA, P.aux and two rows; d = 320 with T = 256), the
-cache rows written by phase 1 compared byte for byte with the expected copy,
-the outputs compared with each other byte for byte (the same arithmetic in
-the same order) and with an f64 reference of the same math (below 1e-5). The inputs are 24-bit values from a fixed LCG (exact in
-f32), and the receipt records their digests.
+else, owner decision 2026-10-22), after the oracle phase: every KIR v2 module
+runs through the ADR 0371 provider (the provider-vulkan image of a
+scripts/seed/check-gpu-provider.py build output, --provider), and where a
+glslang module of the same source exists it runs beside it on the same
+inputs. The modules must be the bytes the build and refs phases recorded.
+* ewise, all eight modules: add, sub and mul exact, div within 3 ulp; the
+  two workgroup sizes give the same bytes; add/wg256 gives glslang's bytes.
+* attn_copy_dense, three shapes (GQA with the dynamic position; no GQA,
+  P.aux and two rows; d = 320 with T = 256): the cache rows written by phase
+  1 equal the expected copy, the output bytes equal glslang's module's (the
+  same arithmetic in the same order), and both are within 1e-5 of an f64
+  reference of the same math.
+The inputs are 24-bit values from a fixed LCG (exact in f32), and the
+receipt records their digests.
 
 Python only orchestrates processes and hashes. Examples:
   podman run --platform linux/arm64 -v REPO:REPO -v OUT:OUT python:3.12-alpine \
@@ -68,6 +73,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 ENCODE_CHECK = ["tools/spirv_encode.kotoba", "tools/spirv_check.kotoba"]
+EWISE_OPS = ["add", "sub", "mul", "div"]
 # modules, test, the receipt, the written modules' prefix and their sizes by
 # name part, the control's one failure, and whether glslang refs go in
 SUITES = {
@@ -273,15 +279,24 @@ def gpu(output, suite, provider_out):
     cgp = provider_driver()
     receipt_path = output / suite["receipt"]
     report = json.loads(receipt_path.read_text())
+    # after the oracle phase only: every module the GPU runs passed spirv-val
+    assert report["status"] == "PASS_GPU_KERNEL_SPIRV_BUILD_AND_ORACLE" and "oracle" in report, ("run the oracle phase first", report["status"])
     preport = json.loads((provider_out / "gpu-provider.json").read_text())
     img = provider_out / preport["images"]["provider-vulkan"]
     raw = output / "gpu"
     raw.mkdir(exist_ok=False)
-    files = {"v2-attn.spv": output / "spv" / "kir2-attn-copy-dense.spv", "ref-attn.spv": output / "refs" / "ref-attn-copy-dense.spv",
-             "v2-add.spv": output / "spv" / "kir2-ewise-add-wg256.spv", "ref-add.spv": output / "refs" / "ref-ewise-add.spv"}
+    v2 = {"v2-attn.spv": "kir2-attn-copy-dense.spv",
+          **{f"v2-{o}-wg{wg}.spv": f"kir2-ewise-{o}-wg{wg}.spv" for o in EWISE_OPS for wg in (64, 256)}}
+    refs = {"ref-attn.spv": "ref-attn-copy-dense.spv", "ref-add.spv": "ref-ewise-add.spv"}
+    files = {**{n: output / "spv" / m for n, m in v2.items()}, **{n: output / "refs" / m for n, m in refs.items()}}
     for n, f in files.items():
         shutil.copy(f, raw / n)
-    assert pin(raw / "v2-attn.spv") == report["modules"]["kir2-attn-copy-dense.spv"], "module changed since the build"
+    # the bytes that run are the ones the build wrote and the oracle checked
+    # (KIR v2), and the ones the refs phase recorded (glslang)
+    for n, m in v2.items():
+        assert pin(raw / n) == report["modules"][m], (m, "changed since the build")
+    for n, m in refs.items():
+        assert pin(raw / n) == report["glslangReferences"]["modules"][m]["module"], (m, "changed since the refs phase")
     g = cgp.grant([(n, pin(raw / n)["sha256"], "spirv") for n in files], cap=1 << 28)
     s = cgp.Session(img, raw, "kir2-gpu", g, device=None)
     info = cgp.expect(s, "INFO", re.compile(r"[^|]+\|\d+\.\d+\.\d+\|\d+\|[01]"))
@@ -299,23 +314,41 @@ def gpu(output, suite, provider_out):
         return bytes.fromhex(cgp.expect(s, f"READ {h} 0 {nbytes}", re.compile(r"^[0-9a-f]*$")))
 
     pipes = {}
-    for k, n in enumerate(["ref-add.spv", "v2-add.spv", "ref-attn.spv", "v2-attn.spv"]):
-        cgp.expect(s, f"PIPELINE {n} {4 if 'add' in n else 8}", str(k + 1))
+    for k, n in enumerate(["ref-add.spv", *[f"v2-{o}-wg{wg}.spv" for o in EWISE_OPS for wg in (64, 256)], "ref-attn.spv", "v2-attn.spv"]):
+        cgp.expect(s, f"PIPELINE {n} {8 if 'attn' in n else 4}", str(k + 1))
         pipes[n] = k + 1
     rows = {}
-    # ewise: z = x + y over n = 1000, exact in f32
+    # ewise, all eight modules over n = 1000 (y kept away from 0 for div).
+    # add, sub and mul are exact in f32 (packing rounds the f64 result once);
+    # div is within 3 ulp (Vulkan allows OpFDiv 2.5 ulp). Each operator's two
+    # workgroup sizes give the same bytes, and add/wg256 those of glslang's
+    # module of tools/gpu_kernel_refs/ewise-add.comp.
     n = 1000
-    x, y = lcg(n, 1), lcg(n, 2)
+    # y as the f32 the device reads: the expectations use the same values
+    x, y = lcg(n, 1), from_f32(f32([v + (1.5 if v >= 0 else -1.5) for v in lcg(n, 2)]))
     bx, by, bz, bn = alloc(4 * n), alloc(4 * n), alloc(4 * n), alloc(4)
     for h, b in ((bx, f32(x)), (by, f32(y)), (bn, struct.pack("<I", n))):
         write(h, b)
-    # packing rounds the f64 sum once: the f32 sum
-    want = f32([a + b for a, b in zip(x, y)])
-    for m in ("ref-add.spv", "v2-add.spv"):
+    fn = {"add": lambda a, b: a + b, "sub": lambda a, b: a - b, "mul": lambda a, b: a * b, "div": lambda a, b: a / b}
+
+    def ulps(got, want):
+        g, w = struct.unpack(f"<{n}i", got), struct.unpack(f"<{n}i", want)
+        return max(abs(u - v) for u, v in zip(g, w))
+
+    def ewise(m, wg):
         cgp.expect(s, f"ZERO {bz}", "1")
-        cgp.expect(s, f"DISPATCH {pipes[m]} 4 1 1 {bx} {by} {bz} {bn}", re.compile(r"^\d+$"))
-        assert read(bz, 4 * n) == want, (m, "z = x + y")
-    rows["ewise-add"] = dict(n=n, exact=True, modules=["ref-add.spv", "v2-add.spv"])
+        cgp.expect(s, f"DISPATCH {pipes[m]} {(n + wg - 1) // wg} 1 1 {bx} {by} {bz} {bn}", re.compile(r"^\d+$"))
+        return read(bz, 4 * n)
+    for o in EWISE_OPS:
+        want = f32([fn[o](a, b) for a, b in zip(x, y)])
+        z64, z256 = ewise(f"v2-{o}-wg64.spv", 64), ewise(f"v2-{o}-wg256.spv", 256)
+        assert z64 == z256, (o, "the workgroup sizes differ")
+        err = ulps(z256, want)
+        assert (err == 0) if o != "div" else (err <= 3), (o, err, "ulp")
+        rows["ewise " + o] = dict(n=n, workgroups=[64, 256], ulpVsF32=err, outputSHA256=hashlib.sha256(z256).hexdigest())
+        if o == "add":
+            assert ewise("ref-add.spv", 256) == z256, "add differs from glslang's module"
+            rows["ewise add"]["identicalToGlslang"] = True
     # attn_copy_dense
     for c in ATTN_SHAPES:
         d, H, KVH, Y = c["d"], c["heads"], c["kvHeads"], c["rows"]
@@ -336,9 +369,8 @@ def gpu(output, suite, provider_out):
             err = max(abs(u - v) for u, v in zip(from_f32(o), o_ref))
             assert err < 1e-5, (m, c["name"], "o against the f64 reference", err)
             outs[m] = dict(o=o, maxAbsErrVsF64=err)
-        # the same arithmetic in the same order: the driver gives the same bits
-        diff = sum(1 for u, v in zip(from_f32(outs["ref-attn.spv"]["o"]), from_f32(outs["v2-attn.spv"]["o"])) if u != v)
-        assert diff == 0, (c["name"], diff, "outputs differ from glslang's module")
+        # the same arithmetic in the same order: the driver gives the same bytes
+        assert outs["ref-attn.spv"]["o"] == outs["v2-attn.spv"]["o"], (c["name"], "outputs differ from glslang's module")
         rows["attn-copy-dense " + c["name"]] = dict(
             shape={k: c[k] for k in ("d", "heads", "kvHeads", "rows", "p1", "aux", "pos", "maxpos")},
             T=[(c["pos"] + 1 if c["p1"] != 0 else c["aux"]) + r for r in range(Y)],
