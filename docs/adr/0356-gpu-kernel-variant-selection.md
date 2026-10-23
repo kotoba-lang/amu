@@ -72,11 +72,11 @@ and binding on every future row):
 
 | variant | vendor | shape | state | measurement |
 |---------|--------|-------|-------|-------------|
-| `:baseline` | all | all | implemented (main; ADR-0002 emitters) | the only variant with an execution path today |
-| `:warp-shuffle-reduce` | nvidia | reduce, W >= 32 | implemented in flight (PR #1331, open and unmerged at this date); CUDA emission only | UNMEASURED: no NVIDIA hardware, and the CUDA emitter has no execution path in this repo |
+| `:baseline` | all | all | implemented (main; ADR-0002 emitters) | EXECUTION RECORD (reconciled 2026-10-23): no variant has an in-repo execution path today (the wire-42 route died with the C loader; ADR 0371's provider is the replacement track) -- and `:subgroup-reduce` has EXECUTED on Apple M1 Max through measurement harnesses (2026-10-19 wire-42/MoltenVK, 2026-10-23 native Metal), losing to `:baseline` in both |
+| `:warp-shuffle-reduce` | nvidia | reduce, W >= 32 | implemented (PR #1331, MERGED 2026-10-20); CUDA emission only | UNMEASURED: no NVIDIA hardware, and the CUDA emitter has no execution path in this repo |
 | `:subgroup-reduce` | intel | reduce, W >= 32 | **implemented** 2026-10-22 (this ADR's design, on ADR-0359's admitted emission and sealed build step; selection row in `kotoba.compiler.accelerator-variants` under rules 3 + 6) | UNMEASURED: no Intel hardware |
 | `:subgroup-reduce` | arm | reduce, W >= 32 | **implemented** 2026-10-22 (the row is DESIGNED in ADR-0357, the ARM decision of record; same emission and selection row as the Intel row) | UNMEASURED: no Mali hardware |
-| `:subgroup-reduce` | apple | reduce, W >= 32 | **implemented** 2026-10-23 (the row is DESIGNED in ADR-0360, the Apple decision of record; same emission and selection row as the Intel row, Vulkan route only) | UNMEASURED: no Apple device has run the variant |
+| `:subgroup-reduce` | apple | reduce, W >= 32 | **implemented** 2026-10-23 (the row is DESIGNED in ADR-0360, the Apple decision of record; same emission and selection row as the Intel row; Vulkan route, and the MSL route too since ADR-0360's later 2026-10-23 amendment) | **MEASURED ON APPLE M1 MAX, TWICE, BOTH ROUTES -- THE VARIANT LOST BOTH TIMES** (this cell replaces the false "no Apple device has run the variant"): GLSL arm via wire-42/MoltenVK 2026-10-19 (PR #1347/#1348: ~20-27% slower at W=256, never faster over W=32..256) and MSL arm via a native Metal harness 2026-10-23 (ADR-0360's measurement amendment: ~22% slower at W=256 across :sum/:max/:min). `:measured?` stays `false` -- the contract's flip is blocked on the per-tested-device scoping and route clauses ADR-0360's amendment names, and what the row selects given the measured cell (keep / narrow / a Metal-native simdgroup row) is PROPOSED, decided nowhere |
 | `:subgroup-reduce` | nvidia (Vulkan route) | reduce, W >= 32 | **implemented** 2026-10-23 (the row is DESIGNED in ADR-0361, the NVIDIA decision of record; same emission and selection row as the Intel row, Vulkan route only, plus the sm_70+ floor fail-closed on a reported compute capability) | UNMEASURED: no NVIDIA device has run the variant |
 
 **Amendment (2026-10-22, the JUN-59/JUN-60 selection rows land).** The
@@ -233,9 +233,16 @@ a TOOLCHAIN fact of what compiles, in
 the compile transcript, and the scoped/full gate logs). This is the
 first arm of the variant with any compiler verification at all (the
 GLSL arm has executed, the CUDA/WGSL arms remain uncompiled text
-contracts). No Metal execution path exists in this repository (the
+contracts). (A "first" CORRECTED by the 2026-10-23 reconciliation: the
+GLSL arm compiled through glslang when it executed on 2026-10-19, so this
+arm is not the first with compiler verification -- its own first is the
+MSL family and the language's compiler.) No Metal execution path exists in
+this repository (the
 brokers died with the C loader; ADR 0371's provider is the replacement
-track), so nothing has executed this arm, no `:measured?` flag moves and
+track), so nothing has executed this arm (SUPERSEDED later the same day:
+the MSL arm DID execute on Apple M1 Max through the native-Metal harness
+of ADR-0360's measurement amendment -- a harness path, not this
+repository's runtime), no `:measured?` flag moves and
 no workgroup row is touched.
 
 The selection rows do NOT move: `select-variant` answers `:subgroup-reduce`
@@ -370,7 +377,8 @@ optimization evidence, and `:measured? false` is part of every answer.
 ## Consequences
 
 - PR #1331's namespace docstring citation "(ADR-0356)" resolves to this
-  file; the NVIDIA row is citable as *implemented in flight, UNMEASURED*.
+  file; the NVIDIA row is citable as *implemented (PR #1331 merged
+  2026-10-20), UNMEASURED*.
 - JUN-59 has a concrete, mechanically checkable row: implement the emission,
   then the predicate, then measure on hardware. The three states stay
   distinguishable at every step.
@@ -395,3 +403,63 @@ instructions are the driver compiler's concern -- ADR-0364 records the
 reason). Implemented with tests; UNMEASURED like every other row -- no
 AMD hardware has run this variant and `:measured?` stays `false` on every
 answer.
+
+**Amendment (2026-10-23, the row prose reconciled to the execution
+record).** The correction commit 7f1c7faf named this slice: the row prose
+said "no Apple device has run the variant" while the record said
+otherwise. The full contradiction set in this file and in the `:basis`
+text the answers carry (`kotoba.compiler.accelerator-variants`) is now
+reconciled to the merged record -- every claim below is a citation, not a
+new measurement:
+
+1. Apple row: "UNMEASURED: no Apple device has run the variant" was FALSE.
+   Apple M1 Max ran the variant twice: the GLSL arm via wire-42/MoltenVK
+   2026-10-19 (ba1fcced / 677fa1cf, PR #1347/#1348 -- ~20-27% slower at
+   W=256, never faster over W=32..256) and the MSL arm via a native Metal
+   harness 2026-10-23 (009c86ef, corrected in 7f1c7faf -- ~22% slower at
+   W=256 across :sum/:max/:min). The row's measurement cell now carries
+   the measured truth and the direction of the result. The row's state
+   cell also said "Vulkan route only", superseded by ADR-0360's later
+   2026-10-23 amendment (the row rides the MSL route too).
+2. `:baseline` row: "the only variant with an execution path today" was
+   stale twice over -- no variant has an in-repo execution path since the
+   C loader removal (ADR 0371's provider is the replacement track), and
+   `:subgroup-reduce` has executed through measurement harnesses. The same
+   claim sat in `variant-bases`' `:baseline` basis text (every
+   `:baseline` answer carried it); both are corrected.
+3. `variant-bases`' `:subgroup-reduce` basis: "no hardware here has said
+   so" was FALSE on the same record (see 1); the basis now separates
+   UNMEASURED (Intel, Mali, NVIDIA) from MEASURED-CONTRADICTED (Apple) and
+   keeps the two design questions PROPOSED (narrow the row, or a
+   Metal-native simdgroup row -- decided nowhere).
+4. The MSL-arm paragraph: "nothing has executed this arm" was SUPERSEDED
+   the same day by the 2026-10-23 native-Metal run (marked inline), and
+   "the first arm of the variant with any compiler verification at all"
+   over-claimed against its own parenthetical (the GLSL arm compiled via
+   glslang when it executed on 2026-10-19) -- marked inline.
+5. NVIDIA CUDA row and Consequences: "PR #1331, open and unmerged at this
+   date" / "implemented in flight" -- PR #1331 MERGED 2026-10-20; the
+   table and consequences now say so. (ADR-0357's line "PR #1331 is in
+   flight ... at this date" is dated snapshot prose in another ADR and is
+   left as written there.)
+
+Vocabulary, settled here so the two facts never merge: UNMEASURED in this
+ADR means the `:measured?` lock is in force (no report may cite the row as
+optimization evidence). "Has a hardware measurement" is a separate fact:
+the Apple row has one (two, in fact) and every other row has none. The
+Apple row is therefore *implemented, hardware-measured (refuting),
+`:measured? false`* -- all three at once, and each is stated where it
+belongs.
+
+Locks unchanged by this reconciliation: NO `:measured?` flag moves (the
+Apple flip stays blocked on the per-tested-device scoping and route
+clauses ADR-0360's measurement amendment names -- the flag question is
+part of the PROPOSED questions that amendment lists), no workgroup row is
+touched (a different axis), and no state is upgraded: the Apple row's
+measured cell says what the hardware said -- a refutation of the design
+assumption on the one device tested, not optimization evidence for or
+against any other device, W, n or operator. Named, not hidden: the rows
+table still has no separate table row for the NVIDIA CUDA-ladder second
+rung (`:subgroup-reduce` under `:warp-shuffle-reduce`'s precedence); the
+rung is recorded in ADR-0361's amendment and in `select-variant`'s
+docstring, and adding a table row is not done here.

@@ -93,6 +93,8 @@ Named, not hidden: the chain's ADR-0356 row prose ("no Apple device has run
 the variant") conflicts with ba1fcced/677fa1cf having run and timed the
 GLSL arm on 2026-10-19 -- the row prose predates this correction and is out
 of scope for this measurement tick; it needs its own reconciliation.
+(CLOSED later 2026-10-23: ADR-0356's "row prose reconciled to the
+execution record" amendment -- this file's record stands as written.)
 
 ## What this is, and what it is not
 

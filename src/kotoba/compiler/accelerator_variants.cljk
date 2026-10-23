@@ -67,7 +67,13 @@
   "Why each variant exists. Design rationale, not measurement evidence."
   {:baseline
    "ADR-0002 v1 tree reduction over workgroup shared memory; the portable
-    fallback and the only variant with an execution path today."
+    fallback. Execution record (reconciled 2026-10-23): NO variant has an
+    execution path in this repository today -- the wire-42 route died with
+    the C loader and ADR 0371's provider is the replacement track -- and
+    :subgroup-reduce has EXECUTED on Apple M1 Max through measurement
+    harnesses (GLSL arm via wire-42/MoltenVK, PR #1347/#1348, 2026-10-19;
+    MSL arm via a native Metal harness, ADR-0360's measurement amendment,
+    2026-10-23), losing to :baseline in both."
    :warp-shuffle-reduce
    "NVIDIA (sm_70+) warp-shuffle reduce: a per-warp __shfl_down_sync fold,
     then one cross-warp stage through shared memory -- one barrier instead
@@ -92,8 +98,16 @@
     log2(W)-stage cascade (4/3/2 stages at W = 128 for S = 8/16/32 against
     the baseline's 7 -- stage arithmetic, not a speed claim). The design
     assumption (UNMEASURED) is that removing most of the barrier cascade
-    wins on Intel, Mali, Apple and NVIDIA hardware; no hardware here has
-    said so. It
+    wins on Intel, Mali, Apple and NVIDIA hardware. The assumption is
+    UNMEASURED on Intel, Mali and NVIDIA (no hardware there has run the
+    variant) and MEASURED-CONTRADICTED on Apple: Apple M1 Max ran the
+    variant twice and it lost to :baseline both times (GLSL arm via
+    wire-42/MoltenVK, PR #1347/#1348, 2026-10-19: ~20-27% slower at W=256
+    and never faster over W=32..256; MSL arm via a native Metal harness,
+    ADR-0360's measurement amendment, 2026-10-23: ~22% slower at W=256
+    across :sum/:max/:min) -- one device and narrow shape coverage, so
+    the measured cell PROPOSES (decided nowhere) narrowing the Apple row
+    rather than validating it. It
     replaces no workgroup row. Semantics, scoped as ADR-0357 P1 requires:
     the reduction groups the same admitted elements as the :baseline tree
     in a different order -- f32 :sum agrees with the baseline to low bits on
@@ -181,7 +195,13 @@
   only when hardware measurement (JUN-57 on NVIDIA, JUN-59 on Intel, JUN-60
   on Mali, JUN-58 on Apple, JUN-84 on AMD) replaces the basis text of the
   row it stands
-  on. No report may
+  on. For the Apple row a hardware measurement EXISTS (Apple M1 Max, twice,
+  both routes -- the variant slower than :baseline; PR #1347/#1348
+  2026-10-19 and ADR-0360's measurement amendment 2026-10-23) and the flag
+  still stays false: the flip is blocked on the per-tested-device scoping
+  and route clauses that amendment names (ADR-0358's :measured-device
+  machinery exists for the workgroup rows only), and a measurement can
+  REFUTE a row's basis, not only validate it. No report may
   cite an answer here as optimization evidence until then."
   ([vendor kir] (select-variant vendor kir nil nil))
   ([vendor kir target] (select-variant vendor kir target nil))
