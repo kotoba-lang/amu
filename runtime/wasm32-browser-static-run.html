@@ -1,0 +1,40 @@
+<!doctype html>
+<!-- wasm32-browser-static/v1 run page (JUN-353). Static: it loads the host
+     (wasm32-browser-static-host.js) and runs.js from its own directory.
+     runs.js sets window.KOTOBA_RUNS = [{name, fuel, wasm: base64, allow?, args?, files?}, ...]
+     (allow, args and files: the entry ABI, see the host).
+     Each module runs in its own Worker; one JSON line per run is written to
+     #results, then the title becomes "kotoba-done". The CSP admits no
+     network: connect-src is 'none'. -->
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' file:; worker-src blob:; connect-src 'none'">
+<title>kotoba-pending</title>
+</head>
+<body>
+<pre id="results"></pre>
+<script src="wasm32-browser-static-host.js"></script>
+<script src="runs.js"></script>
+<script>
+"use strict";
+(async () => {
+  const results = document.getElementById("results");
+  const source = "(" + kotobaWasm32BrowserStaticHost.toString() + ")()";
+  const url = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
+  for (const run of window.KOTOBA_RUNS || []) {
+    const bytes = Uint8Array.from(atob(run.wasm), (c) => c.charCodeAt(0));
+    const line = await new Promise((resolve) => {
+      const worker = new Worker(url);
+      worker.onmessage = (e) => { worker.terminate(); resolve(Object.assign({ name: run.name }, e.data)); };
+      worker.onerror = (e) => { worker.terminate(); resolve({ name: run.name, exit: null, hostError: String(e.message) }); };
+      worker.postMessage({ bytes, fuel: run.fuel, allow: run.allow, args: run.args, files: run.files });
+    });
+    results.textContent += JSON.stringify(line) + "\n";
+  }
+  document.title = "kotoba-done";
+})();
+</script>
+</body>
+</html>

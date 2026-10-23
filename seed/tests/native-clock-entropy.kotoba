@@ -1,0 +1,40 @@
+;; Native Linux provider gate. No random bytes are printed or persisted.
+(ns seed.native-clock-entropy (:export [main]))
+(defn ce-arg [i :i64] :string (typed-cap-call 38 :string :string (string-from-i64 i)))
+(defn ce-decimal [s :string] :i64
+  (if (or (= (string-length s) 0) (> (string-length s) 19)) -1
+    (loop [i 0 n 0]
+      (if (= i (string-length s)) n
+        (let [c (string-code-point-at s i)]
+          (if (or (< c 48) (> c 57) (> n (quot (- 9223372036854775807 (- c 48)) 10))) -1
+            (recur (+ i 1) (+ (* n 10) (- c 48)))))))))
+(defn ce-clock [s :string] :i64 (ce-decimal (typed-cap-call 7 :string :string s)))
+(defn ce-hex? [s :string n :i64] :bool
+  (and (= (string-length s) (* n 2))
+    (loop [i 0]
+      (if (= i (string-length s)) true
+        (let [c (string-code-point-at s i)]
+          (if (or (and (>= c 48) (<= c 57)) (and (>= c 97) (<= c 102))) (recur (+ i 1)) false))))))
+(defn main [] :i64
+  (let [mode (ce-arg 0)]
+    (cond
+      (= mode "clock")
+        (let [wall (ce-clock "wall") first (ce-clock "monotonic")
+              last (loop [i 0 previous first]
+                     (if (= i 128) previous
+                       (let [next (ce-clock "monotonic")]
+                         (if (< next previous) -1 (recur (+ i 1) next)))))
+              ;; Keyword and integer wire spellings must reach the same provider.
+              keyword-wall (ce-decimal (typed-cap-call :clock/now :string :string "wall"))]
+          (if (and (> wall 1700000000000) (< wall 9999999999999) (>= keyword-wall wall)
+                   (> first 0) (> last first)) 1 0))
+      (= mode "entropy")
+        (let [one (typed-cap-call 23 :string :string "1")
+              full (typed-cap-call 23 :string :string "256")
+              a (typed-cap-call 23 :string :string "32") b (typed-cap-call 23 :string :string "32")
+              zero-padded (typed-cap-call :entropy/draw :string :string "0000000000000000001")]
+          (if (and (ce-hex? one 1) (ce-hex? full 256) (ce-hex? a 32) (ce-hex? b 32)
+                   (ce-hex? zero-padded 1) (not= a b)) 1 0))
+      (= mode "clock-request") (let [ignored (typed-cap-call 7 :string :string (ce-arg 1))] 99)
+      (= mode "entropy-request") (let [ignored (typed-cap-call 23 :string :string (ce-arg 1))] 99)
+      :else 2)))

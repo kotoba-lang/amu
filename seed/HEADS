@@ -446,10 +446,14 @@
            for the qualification runner, and unit tests print on stdout"}
   ;; -- R4B (2026-10-03, wires measured on stage-0 and the C loader's providers) --
   {:form "(typed-cap-call :hash/sha256 :string :string s)" :wire 3 :kind 1 :means "the SHA-256 of s's bytes as 64 hex characters"}
+  {:form "(typed-cap-call :clock/now :string :string request)" :wire 7 :kind 1
+   :means "native Linux: exact wall -> epoch milliseconds; monotonic -> nondecreasing nanoseconds. Decimal i64 text; no caller-supplied time. sleep <ms> (0..60000) -> the monotonic reading after a CLOCK_MONOTONIC sleep; clock_nanosleep in the seccomp filter only with wire 7 granted (JUN-360)"}
+  {:form "(typed-cap-call :entropy/draw :string :string count)" :wire 23 :kind 1
+   :means "native Linux getrandom, 1..256 bytes -> lowercase hex. No deterministic or file fallback"}
   {:form "(typed-cap-call :env/read :string :string name)" :wire 33 :kind 1 :means "the environment variable's value, \"\" when unset"}
   {:form "(typed-cap-call :fs/browse :string :string dir)" :wire 34 :kind 1
    :means "the sorted NAME<TAB>D lines of the directory (inside KEXE_CAP_RESOURCES_34)"}
-  {:form "(typed-cap-call :io/read :string :string n)" :wire 41 :kind 1 :means "\"\" -> stdin to EOF; a decimal n -> at most n unread bytes"}
+  {:form "(typed-cap-call :io/read :string :string n)" :wire 41 :kind 1 :means "\"\" -> stdin to EOF; a decimal n -> at most n unread bytes (one read; \"\" only at EOF), extended by at most 3 bytes to finish a UTF-8 sequence it splits. Native Linux static runtimes: read(0) is in the seccomp filter only with wire 41 granted (JUN-354)"}
   {:form "(typed-cap-call :fs/app-data :string :bytes path) or :fs/app-data-bytes" :wire 35 :kind 9
    :means "read the whole file at path as bytes (KEXE_TYPED_STRING_BYTES_V1)"}
   ;; -- ADR 0371 step 3 (2026-10-22) --
