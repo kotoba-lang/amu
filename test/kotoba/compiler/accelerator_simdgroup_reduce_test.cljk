@@ -161,7 +161,8 @@
   ;; has LANDED. This replaces the old "selection has not landed" guard --
   ;; the guard's spirit survives, scoped where it still binds: the measured
   ;; class never answers this variant except at its OWN flip cells (W =
-  ;; 256 and W = 512, the flip slices 2026-10-23 -- those cells measured
+  ;; 256, W = 512 and W = 1024, the flip slices 2026-10-23/24 -- those
+  ;; cells measured
   ;; THIS variant faster than :baseline and answered it there, MEASURED),
   ;; no other vendor's row carries it, and every answer but those flip
   ;; cells is unmeasured. The full ladder (rung precedence, fail-closed
@@ -178,7 +179,7 @@
         (is (false? (:measured? answer)))
         (is (nil? (:measured-cell answer)))))
     (testing "the measured class never answers it at any W but the flip cells (the carve-out)"
-      (doseq [wg [32 64 128 1024]
+      (doseq [wg [32 64 128]
               device [(assoc native :device "Apple M1 Max")
                       (assoc native :name "Apple M1 Max"
                              :subgroup-ops #{:basic :shuffle-relative :simd-reduce})]]
@@ -188,11 +189,11 @@
                                                        {:workgroup-size wg})
                              :msl-v1 device)))
             (str "the carve-out must refuse the row at W=" wg))))
-    (testing "W = 256 and W = 512 are the flip cells: the measured class answers there, MEASURED"
+    (testing "W = 256, W = 512 and W = 1024 are the flip cells: the measured class answers there, MEASURED"
       (doseq [device [(assoc native :device "Apple M1 Max")
                       (assoc native :name "Apple M1 Max"
                              :subgroup-ops #{:basic :shuffle-relative :simd-reduce})]
-              wg [256 512]]
+              wg [256 512 1024]]
         (let [answer (variants/select-variant
                       :apple (accelerator/kernel "reduce_sum" :reduce :sum
                                                 {:workgroup-size wg})
