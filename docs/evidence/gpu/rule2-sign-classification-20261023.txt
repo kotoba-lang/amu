@@ -1,0 +1,143 @@
+# JUN-58 rule 2 mechanised -- harness-side sign classification (2026-10-23)
+
+WHAT THIS SLICE IS: one IMPLEMENTATION slice -- the row the regime-robust
+magnitude claim protocol's own state paragraph named ("rule 2's sign
+classification (regime-invariant vs regime-scoped) harness-side", listed
+UNIMPLEMENTED after rule 1's GAP-1.15 slice landed). No hardware
+measurement runs in this slice: the ground is the 28 committed
+gpu-subgroup-reduce summaries already on disk. Rule 4 is untouched: no
+:measured? flag, no workgroup row (ADR-0355/0358), no flip gate and no
+selection answer moves.
+
+WHAT CHANGED:
+  scripts/gpu_regime_classify.py -- ratio_side(), sign_classification(),
+    cell_sign_classification(), render_sign_section(),
+    parse_summary_per_run_ratios(); render_section() takes the per-run
+    ratios and appends the rule-2 section when a record provides them.
+  scripts/gpu-subgroup-reduce-metal-measure.py -- passes the per-run
+    paired ratios it tabulates into render_section(), so every future
+    summary.md publishes the rule-2 verdicts alongside rule 1's clusters.
+  docs/adr/0360-gpu-apple-subgroup-reduce.md -- the "rule 2 mechanised"
+    amendment.
+
+THE CLASSIFIER (exactly rule 2's dichotomy, mechanically):
+  REGIME-INVARIANT -- every per-run ratio of every observed regime lies
+  strictly on the same side of 1.0 (the flip-set cells' 18/18 slower).
+  Only such a sign may be a selection basis.
+  REGIME-SCOPED -- anything else. Cannot choose a variant.
+
+TWO BOUNDARY CASES THE PROSE DID NOT DECIDE -- decided mechanically and
+published, not hidden (the GAP-1.15 ethos applied to signs):
+
+  1. The straddle's shape. Rule 2 named only "a sign that follows the
+     regime" as regime-scoped. The committed corpus contains a straddle
+     that does NOT follow the regime -- wsweep-low W = 32 :max, whose
+     fast regime runs 4/6 are 0.958/1.017 (both sides inside ONE
+     regime). The classifier therefore publishes the shape:
+       by-regime     -- every regime one-sided, regimes disagree (sign
+                        follows the regime; the W = 32 pattern);
+       within-regime -- one regime holds both sides;
+       no-side       -- every ratio exactly 1.0: no sign exists to claim.
+     The shape NEVER changes the verdict: rule 2's second sentence
+     already denies a regime-scoped sign any selection role whatever its
+     shape.
+  2. A ratio at exactly 1.0 sits on NEITHER side of 1.0, so a cell
+     holding one is not regime-invariant ("the same side of 1.0" is read
+     strictly).
+
+The cell row is an admissibility roll-up over pooled per-run ratios only
+(the "18/18 slower" shape): cross-operator level identity is NOT
+asserted (rule 1's own named limit), so no cross-operator regime
+structure is claimed.
+
+CORPUS RESULT (all previously measured numbers; the classification is
+new, the measurements are not): 84 operator-cells over the 28 committed
+summaries -- 75 regime-invariant slower, 3 regime-invariant faster, 5
+regime-scoped by-regime, 1 regime-scoped within-regime, 0 no-side. Every
+verdict is recomputed independently in --self-test from rule 2's own
+condition (not from the classifier's own return value).
+
+PINNED CLASSIFICATIONS (must reproduce from the committed summary.md
+text):
+  wsweep-low w32 :max -> regime-scoped, within-regime. Provenance: that
+    record's prose ":max runs 4/6 0.958/1.017" names the fast-regime
+    runs; both sides sit inside that one regime.
+  shape2 w32 :max/:min -> regime-scoped, by-regime. Provenance:
+    accelerator_variants' prose "fast-level :max 1.026 and :min
+    1.021-1.026 against slow-level ~0.92" -- sign follows the regime.
+  shape2-resweep w512 sum/max/min -> regime-invariant, slower (18/18
+    slower). Provenance: the re-sweep's "reproduces in sign strictly"
+    cells.
+  wsweep-low w32 :sum -> regime-invariant, faster; wsweep-low w32 :min ->
+    regime-scoped, by-regime. Provenance: the committed summary numbers
+    only -- NO prose decided wsweep-low :min's three-level split (that is
+    GAP-1.15's verdict), so these pins claim only what the numbers say.
+
+STILL UNIMPLEMENTED, named (unchanged by this slice): rule 3's
+regime-matched comparison machinery; pair-level classification (the
+op-order cell's within-run ramping; analyze-oporder.py remains the
+manual instrument); cross-operator level identity (the harness reads no
+clock and does not assert that two operators' clusters are one clock
+level).
+
+--- python3 scripts/gpu_regime_classify.py --self-test (real output) ---
+
+unit fixtures: 27 assertions passed
+corpus: 28 committed summaries classified under GAP-1.15
+gaps strictly between the two decided anchors (1.0753 within-level, 1.2343 between-level) -- decided by GAP-1.15 alone, named not hidden:
+  gpu-subgroup-reduce-m1max-20261023/summary.md max: 83584 -> 103062  gap 1.233  -> split
+  gpu-subgroup-reduce-m1max-20261023/summary.md min: 83625 -> 102834  gap 1.230  -> split
+  gpu-subgroup-reduce-m1max-oporder-20261023/w32-sum-last/summary.md sum: 45833 -> 56104  gap 1.224  -> split
+  gpu-subgroup-reduce-m1max-resweep-20261023/w128/summary.md min: 77188 -> 95271  gap 1.234  -> split
+  gpu-subgroup-reduce-m1max-resweep-20261023/w512/summary.md min: 92979 -> 114500  gap 1.231  -> split
+  gpu-subgroup-reduce-m1max-shape2-20261023/w256/summary.md max: 66062 -> 75730  gap 1.146  -> merge
+  gpu-subgroup-reduce-m1max-shape2-band-20261023/misshape-defect-20261023/w128/summary.md max: 77375 -> 95438  gap 1.233  -> split
+  gpu-subgroup-reduce-m1max-shape2-band-20261023/w128/summary.md max: 81104 -> 100021  gap 1.233  -> split
+  gpu-subgroup-reduce-m1max-shape2-resweep-20261023/w1024/summary.md min: 68417 -> 81146  gap 1.186  -> split
+  gpu-subgroup-reduce-m1max-shape2-resweep-20261023/w1024/summary.md min: 81146 -> 93771  gap 1.156  -> split
+  gpu-subgroup-reduce-m1max-wsweep-low-20261023/w64/summary.md max: 29833 -> 34062  gap 1.142  -> merge
+  gpu-subgroup-reduce-m1max-wsweep-low-20261023/w64/summary.md max: 74750 -> 91875  gap 1.229  -> split
+rule 2 sign classification: 84 operator-cells over the corpus -- 75 regime-invariant slower, 3 regime-invariant faster, 5 regime-scoped by-regime, 1 regime-scoped within-regime, 0 no-side
+TOTAL: 887 assertions passed, 0 failed
+
+--- the rule-2 section for wsweep-low W = 32 (CLI, real output) ---
+
+## Sign classification (claim protocol rule 2)
+
+Published by scripts/gpu_regime_classify.py from the per-run paired ratios above and the rule-1 regime clusters. Rule 2: a sign is REGIME-INVARIANT when every per-run ratio of every observed regime lies on the same side of 1.0 -- only such a sign may be a selection basis. Any other cell is published REGIME-SCOPED and cannot choose a variant. The harness reads no clock: a regime is the rule-1 cluster. Cross-operator level identity is NOT asserted, so the cell row carries only the admissibility roll-up, no cross-operator regime structure.
+
+| operator | verdict | side | detail |
+|---|---|---|---|
+| max | regime-scoped | straddles 1.0 | straddle within regime 1 (one regime holds both sides): level 1 (fastest observed): run 4 0.958 below 1.0, run 6 1.017 above 1.0; level 2 (slowest observed): run 1 0.916 below 1.0, run 2 0.924 below 1.0, run 3 0.916 below 1.0, run 5 0.922 below 1.0 |
+| min | regime-scoped | straddles 1.0 | straddle separates by regime (every regime one-sided, regimes disagree): level 1 (fastest observed): run 3 1.017 above 1.0, run 4 1.024 above 1.0, run 5 1.021 above 1.0, run 6 1.022 above 1.0; level 2 (middle level): run 2 0.990 below 1.0; level 3 (slowest observed): run 1 0.916 below 1.0 |
+| sum | regime-invariant | faster | all 6 per-run ratios below 1.0 (6/6 faster); every observed regime one-sided |
+
+Cell (all 18 per-run ratios pooled): **regime-scoped** (5 above 1.0, 13 below 1.0) -- not a selection basis; non-invariant operators: max, min.
+
+--- the rule-2 section for shape-2 W = 32 (CLI, real output) ---
+
+## Sign classification (claim protocol rule 2)
+
+Published by scripts/gpu_regime_classify.py from the per-run paired ratios above and the rule-1 regime clusters. Rule 2: a sign is REGIME-INVARIANT when every per-run ratio of every observed regime lies on the same side of 1.0 -- only such a sign may be a selection basis. Any other cell is published REGIME-SCOPED and cannot choose a variant. The harness reads no clock: a regime is the rule-1 cluster. Cross-operator level identity is NOT asserted, so the cell row carries only the admissibility roll-up, no cross-operator regime structure.
+
+| operator | verdict | side | detail |
+|---|---|---|---|
+| max | regime-scoped | straddles 1.0 | straddle separates by regime (every regime one-sided, regimes disagree): level 1 (fastest observed): run 4 1.026 above 1.0; level 2 (middle level): run 3 0.928 below 1.0; level 3 (slowest observed): run 1 0.916 below 1.0, run 2 0.918 below 1.0, run 5 0.925 below 1.0, run 6 0.917 below 1.0 |
+| min | regime-scoped | straddles 1.0 | straddle separates by regime (every regime one-sided, regimes disagree): level 1 (fastest observed): run 4 1.021 above 1.0, run 5 1.026 above 1.0; level 2 (middle level): run 3 0.910 below 1.0; level 3 (slowest observed): run 1 0.917 below 1.0, run 2 0.918 below 1.0, run 6 0.917 below 1.0 |
+| sum | regime-invariant | faster | all 6 per-run ratios below 1.0 (6/6 faster); every observed regime one-sided |
+
+Cell (all 18 per-run ratios pooled): **regime-scoped** (3 above 1.0, 15 below 1.0) -- not a selection basis; non-invariant operators: max, min.
+
+--- the rule-2 section for shape-2 re-sweep W = 512 (CLI, real output) ---
+
+## Sign classification (claim protocol rule 2)
+
+Published by scripts/gpu_regime_classify.py from the per-run paired ratios above and the rule-1 regime clusters. Rule 2: a sign is REGIME-INVARIANT when every per-run ratio of every observed regime lies on the same side of 1.0 -- only such a sign may be a selection basis. Any other cell is published REGIME-SCOPED and cannot choose a variant. The harness reads no clock: a regime is the rule-1 cluster. Cross-operator level identity is NOT asserted, so the cell row carries only the admissibility roll-up, no cross-operator regime structure.
+
+| operator | verdict | side | detail |
+|---|---|---|---|
+| max | regime-invariant | slower | all 6 per-run ratios above 1.0 (6/6 slower); every observed regime one-sided |
+| min | regime-invariant | slower | all 6 per-run ratios above 1.0 (6/6 slower); every observed regime one-sided |
+| sum | regime-invariant | slower | all 6 per-run ratios above 1.0 (6/6 slower); every observed regime one-sided |
+
+Cell (all 18 per-run ratios pooled): **regime-invariant**, slower (18/18 slower).

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Harness-side regime classification for the gpu-subgroup-reduce records
-(JUN-58, the 2026-10-23 claim protocol, rule 1).
+(JUN-58, the 2026-10-23 claim protocol, rules 1 and 2).
 
 The protocol (docs/adr/0360-gpu-apple-subgroup-reduce.md, the regime-robust
 magnitude claim protocol amendment; decision record
@@ -49,18 +49,47 @@ WHAT THIS MODULE DOES NOT DO (named so nothing is silently upgraded):
     baseline-median levels, exactly as the protocol's rule 1 defines it.
   - Cross-operator level identity is NOT asserted. Classification is per
     operator; calling :sum's slow cluster and :min's slow cluster "the same
-    clock level" is a prose inference this harness cannot verify.
-  - Rule 2's sign classification (regime-invariant vs regime-scoped) is
-    NOT here -- its own later slice, still UNIMPLEMENTED harness-side.
+    clock level" is a prose inference this harness cannot verify. The
+    rule-2 cell row is therefore only an admissibility roll-up over
+    pooled per-run ratios -- it carries no cross-operator regime structure.
+  - Rule 3's regime-matched comparison machinery is NOT here -- its own
+    later slice, still UNIMPLEMENTED harness-side. (Rule 2's sign
+    classification IS here as of the 2026-10-23 rule-2 slice:
+    sign_classification(), and the "Sign classification (claim protocol
+    rule 2)" section render_sign_section() publishes.)
   - Pair-level classification (a run's clock can ramp mid-run; the
     op-order cell's analyze-oporder.py buckets individual pairs) is NOT
     here. This is run-level classification over baseline per-run medians,
     which is what rule 1 asks a record to publish.
 
+RULE 2 (sign classification), mechanised:
+
+  Rule 2 of the protocol: a sign is REGIME-INVARIANT when every per-run
+  ratio of every observed regime lies on the same side of 1.0 -- only
+  such a sign may be a selection basis. A sign that follows the regime
+  (the W = 32 straddle) is published REGIME-SCOPED and cannot choose a
+  variant. This module classifies exactly that dichotomy, mechanically:
+
+    - regime-invariant: every per-run ratio is strictly above 1.0
+      ("slower", variant/baseline) or every one is strictly below
+      ("faster");
+    - anything else is regime-scoped. The published detail names the
+      straddle's shape instead of hiding it: "by-regime" (every regime
+      one-sided, regimes disagree -- sign follows the regime, the W = 32
+      pattern), "within-regime" (one regime holds both sides -- the
+      wsweep-low W = 32 :max cell, whose fast regime runs 4/6 are
+      0.958/1.017), or "no-side" (every ratio exactly 1.0: no sign
+      exists to claim). The prose of rule 2 decided only the invariant /
+      scoped split; the straddle shape is this module's mechanical
+      extension, published for visibility and it never upgrades
+      admissibility -- a regime-scoped sign cannot choose a variant
+      whatever its shape.
+
 CLI:
 
     python3 scripts/gpu_regime_classify.py <summary.md>
-        print the rule-1 section for one measurement record
+        print the claim-protocol sections (rule 1; rule 2 when the
+        record carries per-run ratios) for one measurement record
     python3 scripts/gpu_regime_classify.py --self-test
         unit fixtures + a regression pass over every committed summary.md
         under docs/evidence/ (pinned manual classifications must
@@ -140,7 +169,240 @@ def parse_summary_per_run_baseline(text):
     return out
 
 
-def render_section(per_op, gap_max=GAP_MAX):
+def parse_summary_per_run_ratios(text):
+    """Parse the per-run paired ratios out of a driver summary.md.
+
+    Returns {operator: [ratio, ...]} in run order (run indices positional,
+    matching parse_summary_per_run_baseline). Raises ValueError on a
+    summary with no per-run ratio rows.
+    """
+    out = {}
+    for line in text.splitlines():
+        m = re.match(r"\| (\w+) \| ([\d.]+(?:, [\d.]+)+) \| ([\d.]+) \|",
+                     line)
+        if m:
+            op, pr, _med = m.groups()
+            out[op] = [float(x) for x in pr.split(",") if x.strip()]
+    if not out:
+        raise ValueError("no '| op | per-run ratios | median ratio |' rows "
+                         "found in summary")
+    return out
+
+
+def _level_tag(i, n):
+    if n == 1:
+        return f"{i} (the only observed level)"
+    if i == 1:
+        return f"{i} (fastest observed)"
+    if i == n:
+        return f"{i} (slowest observed)"
+    return str(i)
+
+
+def _level_name(i, n):
+    if n == 1:
+        return "the only observed level"
+    if i == 1:
+        return "fastest observed"
+    if i == n:
+        return "slowest observed"
+    return "middle level"
+
+
+def ratio_side(ratio):
+    """Which side of 1.0 a per-run ratio (variant/baseline) sits on.
+
+    'slower' = above 1.0 (the variant is slower than the baseline),
+    'faster' = below 1.0, 'even' = exactly 1.0 (on neither side).
+    """
+    if ratio > 1.0:
+        return "slower"
+    if ratio < 1.0:
+        return "faster"
+    return "even"
+
+
+def sign_classification(ratios, levels):
+    """Claim-protocol rule 2 sign classification, mechanically.
+
+    ratios: {run_index (1-based int): per-run paired ratio (variant/baseline)}
+    levels: the rule-1 regime clusters for the SAME runs (as returned by
+            level_clusters over that operator's baseline medians).
+
+    Returns {
+      "verdict": "regime-invariant" | "regime-scoped",
+      "side": "slower" | "faster" | None,       (set iff regime-invariant)
+      "counts": {"slower": n, "faster": n, "even": n},
+      "straddle": None | "by-regime" | "within-regime" | "no-side",
+      "level_sides": [{"level": i, "runs": [(run, ratio, side), ...],
+                       "sides": set}, ...]      (fastest level first)
+    }
+
+    regime-invariant, exactly the protocol's words: every per-run ratio of
+    every observed regime lies on the same side of 1.0. Anything else is
+    regime-scoped (and cannot be a selection basis). The straddle shape is
+    published but never changes the verdict:
+      by-regime    -- every regime is one-sided and regimes disagree
+                      (sign follows the regime; the W = 32 pattern);
+      within-regime -- some single regime holds both sides
+                      (the wsweep-low W = 32 :max cell, fast-regime runs
+                      4/6 at 0.958/1.017);
+      no-side      -- every ratio is exactly 1.0: no sign exists to claim.
+    """
+    if not ratios:
+        raise ValueError("no per-run ratios to classify")
+    lv_runs = [r for l in levels for r in l["runs"]]
+    if set(lv_runs) != set(ratios):
+        raise ValueError("ratio runs and regime-level runs disagree: "
+                         f"ratios {sorted(ratios)}, levels {sorted(lv_runs)}")
+    sides = {run: ratio_side(r) for run, r in ratios.items()}
+    counts = {"slower": 0, "faster": 0, "even": 0}
+    for s in sides.values():
+        counts[s] += 1
+    side_set = set(sides.values())
+    level_sides = []
+    for i, lv in enumerate(levels, start=1):
+        runs = [(r, ratios[r], sides[r]) for r in lv["runs"]]
+        level_sides.append({"level": i, "runs": runs,
+                            "sides": {s for _, _, s in runs}})
+    if side_set <= {"slower"}:
+        return {"verdict": "regime-invariant", "side": "slower",
+                "counts": counts, "straddle": None,
+                "level_sides": level_sides}
+    if side_set <= {"faster"}:
+        return {"verdict": "regime-invariant", "side": "faster",
+                "counts": counts, "straddle": None,
+                "level_sides": level_sides}
+    if side_set == {"even"}:
+        straddle = "no-side"
+    elif all(len(ls["sides"]) == 1 for ls in level_sides) \
+            and len({next(iter(ls["sides"])) for ls in level_sides}) > 1:
+        straddle = "by-regime"
+    else:
+        straddle = "within-regime"
+    return {"verdict": "regime-scoped", "side": None,
+            "counts": counts, "straddle": straddle,
+            "level_sides": level_sides}
+
+
+def cell_sign_classification(per_op_ratios, per_op_medians, gap_max=GAP_MAX):
+    """Rule 2 at cell level: the admissibility roll-up over pooled ratios.
+
+    per_op_ratios: {operator: {run: ratio}} (same run indices as medians)
+    per_op_medians: {operator: {run: baseline median}} (for the rule-1
+                    levels each sign classification is scoped to)
+
+    The cell is regime-invariant only when EVERY operator is
+    regime-invariant on the SAME side -- the "18/18 slower" shape. Because
+    cross-operator level identity is NOT asserted, this roll-up carries no
+    cross-operator regime structure: the straddle shape is reported per
+    operator only.
+    """
+    per_op = {}
+    for op in sorted(per_op_ratios):
+        per_op[op] = sign_classification(per_op_ratios[op],
+                                         level_clusters(per_op_medians[op],
+                                                        gap_max))
+    sides = {c["side"] for c in per_op.values()
+             if c["verdict"] == "regime-invariant"}
+    all_inv = all(c["verdict"] == "regime-invariant" for c in per_op.values())
+    counts = {"slower": 0, "faster": 0, "even": 0}
+    for c in per_op.values():
+        for k in counts:
+            counts[k] += c["counts"][k]
+    if all_inv and len(sides) == 1:
+        return {"verdict": "regime-invariant", "side": sides.pop(),
+                "counts": counts, "per_op": per_op}
+    return {"verdict": "regime-scoped", "side": None,
+            "counts": counts, "per_op": per_op}
+
+
+def _side_phrase(side, n):
+    if side == "slower":
+        return f"all {n} per-run ratios above 1.0 ({n}/{n} slower)"
+    if side == "faster":
+        return f"all {n} per-run ratios below 1.0 ({n}/{n} faster)"
+    return f"all {n} per-run ratios at 1.0"
+
+
+def render_sign_section(per_op, ratios, gap_max=GAP_MAX):
+    """The claim-protocol rule-2 section for a measurement record.
+
+    per_op: {operator: {run_index: baseline per-run median gpu-ns}}
+    ratios: {operator: [per-run ratio, ...]} in run order
+    Returns markdown (no trailing newline).
+    """
+    per_op_ratios = {op: {ri + 1: v for ri, v in enumerate(rs)}
+                     for op, rs in ratios.items()}
+    per_op_med = {op: dict(m) for op, m in per_op.items()}
+    cell = cell_sign_classification(per_op_ratios, per_op_med, gap_max)
+    lines = []
+    lines.append("## Sign classification (claim protocol rule 2)")
+    lines.append("")
+    lines.append("Published by scripts/gpu_regime_classify.py from the "
+                 "per-run paired ratios above and the rule-1 regime "
+                 "clusters. Rule 2: a sign is REGIME-INVARIANT when every "
+                 "per-run ratio of every observed regime lies on the same "
+                 "side of 1.0 -- only such a sign may be a selection "
+                 "basis. Any other cell is published REGIME-SCOPED and "
+                 "cannot choose a variant. The harness reads no clock: a "
+                 "regime is the rule-1 cluster. Cross-operator level "
+                 "identity is NOT asserted, so the cell row carries only "
+                 "the admissibility roll-up, no cross-operator regime "
+                 "structure.")
+    lines.append("")
+    lines.append("| operator | verdict | side | detail |")
+    lines.append("|---|---|---|---|")
+    for op in sorted(cell["per_op"]):
+        c = cell["per_op"][op]
+        n = sum(c["counts"].values())
+        if c["verdict"] == "regime-invariant":
+            detail = _side_phrase(c["side"], n) + \
+                "; every observed regime one-sided"
+            side = c["side"]
+        elif c["straddle"] == "no-side":
+            detail = "every ratio is exactly 1.0 -- no sign exists to claim"
+            side = "none"
+        else:
+            nlevels = len(c["level_sides"])
+            segs = "; ".join(
+                f"level {ls['level']} ({_level_name(ls['level'], nlevels)}): "
+                + ", ".join(f"run {r} {v:.3f} "
+                            f"{'above' if s == 'slower' else 'below' if s == 'faster' else 'at'} 1.0"
+                            for r, v, s in ls["runs"])
+                for ls in c["level_sides"])
+            if c["straddle"] == "by-regime":
+                detail = ("straddle separates by regime (every regime "
+                          "one-sided, regimes disagree): " + segs)
+            else:
+                mixed = [str(ls["level"]) for ls in c["level_sides"]
+                         if len(ls["sides"]) > 1]
+                detail = (f"straddle within regime {', '.join(mixed)} "
+                          f"(one regime holds both sides): " + segs)
+            side = "straddles 1.0"
+        lines.append(f"| {op} | {c['verdict']} | {side} | {detail} |")
+    n = sum(cell["counts"].values())
+    pooled = (f"{cell['counts']['slower']} above 1.0, "
+              f"{cell['counts']['faster']} below 1.0"
+              + (f", {cell['counts']['even']} at 1.0"
+                 if cell["counts"]["even"] else ""))
+    if cell["verdict"] == "regime-invariant":
+        cell_line = (f"Cell (all {n} per-run ratios pooled): "
+                     f"**regime-invariant**, {cell['side']} "
+                     f"({n}/{n} {cell['side']}).")
+    else:
+        bad = sorted(op for op, c in cell["per_op"].items()
+                     if c["verdict"] != "regime-invariant")
+        cell_line = (f"Cell (all {n} per-run ratios pooled): "
+                     f"**regime-scoped** ({pooled}) -- not a selection "
+                     f"basis; non-invariant operators: "
+                     f"{', '.join(bad)}.")
+    lines.append("")
+    lines.append(cell_line)
+    return "\n".join(lines)
+
+
+def render_section(per_op, gap_max=GAP_MAX, ratios=None):
     """The claim-protocol rule-1 section for a measurement record.
 
     per_op: {operator: {run_index: baseline per-run median gpu-ns}}
@@ -154,7 +416,8 @@ def render_section(per_op, gap_max=GAP_MAX):
                  "cluster of the observed baseline per-run median gpu-ns "
                  "levels, named by its gpu-ns range, per operator. "
                  "Cross-operator level identity is NOT asserted. Rule 2's "
-                 "sign classification is not implemented harness-side.")
+                 "sign classification is published in its own section "
+                 "below when the record's per-run ratios are provided.")
     lines.append("")
     lines.append("Clustering rule GAP-1.15: per operator, the per-run "
                  "baseline medians sorted ascending, single-linkage -- the "
@@ -171,19 +434,15 @@ def render_section(per_op, gap_max=GAP_MAX):
         levels = level_clusters(per_op[op], gap_max)
         n = len(levels)
         for i, lv in enumerate(levels, start=1):
-            if n == 1:
-                tag = f"{i} (the only observed level)"
-            elif i == 1:
-                tag = f"{i} (fastest observed)"
-            elif i == n:
-                tag = f"{i} (slowest observed)"
-            else:
-                tag = str(i)
+            tag = _level_tag(i, n)
             rng = (f"{lv['lo']:.0f}" if lv["lo"] == lv["hi"]
                    else f"{lv['lo']:.0f}..{lv['hi']:.0f}")
             members = ", ".join(f"{r} ({lv['medians'][r]:.0f})"
                                 for r in lv["runs"])
             lines.append(f"| {op} | {tag} | {rng} | {members} |")
+    if ratios is not None:
+        lines.append("")
+        lines.append(render_sign_section(per_op, ratios, gap_max))
     return "\n".join(lines)
 
 
@@ -268,6 +527,120 @@ def _self_test_unit(stats):
             "wsweep-low w32 :max: runs 4 and 6 one fast regime (the "
             "NOTES' ':max runs 4/6' fast-regime grouping)", stats)
 
+    # ---- rule 2: sign classification ----
+
+    # empty ratios refuse
+    try:
+        sign_classification({}, level_clusters({1: 100.0}))
+        raise AssertionError("empty ratios must raise")
+    except ValueError:
+        stats["passed"] += 1
+
+    # ratio runs and regime-level runs must agree
+    try:
+        sign_classification({1: 1.2}, level_clusters({1: 100.0, 2: 200.0}))
+        raise AssertionError("run-set mismatch must raise")
+    except ValueError:
+        stats["passed"] += 1
+
+    # all above 1.0 -> regime-invariant slower (the flip-set 18/18 shape)
+    c = sign_classification({1: 1.2, 2: 1.3, 3: 1.1},
+                            level_clusters({1: 100.0, 2: 200.0, 3: 300.0}))
+    _expect(c["verdict"] == "regime-invariant" and c["side"] == "slower"
+            and c["straddle"] is None,
+            "all above 1.0 is regime-invariant slower", stats)
+
+    # all below 1.0 -> regime-invariant faster (wsweep-low w32 :sum shape)
+    c = sign_classification({1: 0.917, 2: 0.918, 3: 0.916},
+                            level_clusters({1: 100.0, 2: 101.0, 3: 99.0}))
+    _expect(c["verdict"] == "regime-invariant" and c["side"] == "faster",
+            "all below 1.0 is regime-invariant faster", stats)
+
+    # a ratio at exactly 1.0 sits on NEITHER side (rule 2: "the same side
+    # of 1.0") -> invariance is blocked
+    c = sign_classification({1: 1.0, 2: 1.2},
+                            level_clusters({1: 100.0, 2: 100.0}))
+    _expect(c["verdict"] == "regime-scoped"
+            and c["straddle"] == "within-regime",
+            "a ratio at 1.0 blocks invariance", stats)
+
+    # every ratio at 1.0 -> no sign exists to claim
+    c = sign_classification({1: 1.0, 2: 1.0},
+                            level_clusters({1: 100.0, 2: 105.0}))
+    _expect(c["verdict"] == "regime-scoped" and c["straddle"] == "no-side",
+            "all ratios at 1.0 is no-side, not a sign", stats)
+
+    # the W = 32 by-regime straddle, real committed numbers (shape2 w32
+    # :max: run 4 alone in the fastest level at 1.026 above 1.0, run 3's
+    # middle level and the slow level below) -- sign follows the regime
+    c = sign_classification(
+        {1: 0.916, 2: 0.918, 3: 0.928, 4: 1.026, 5: 0.925, 6: 0.917},
+        level_clusters({1: 114084.0, 2: 113875.0, 3: 48042.0,
+                        4: 37812.0, 5: 112916.0, 6: 113834.0}))
+    _expect(c["verdict"] == "regime-scoped" and c["straddle"] == "by-regime",
+            "shape2 w32 :max: sign separates by regime (run 4's fastest "
+            "level alone above 1.0)", stats)
+
+    # the within-regime straddle, real committed numbers (wsweep-low w32
+    # :max: the fast regime's own runs 4/6 at 0.958/1.017 -- both sides
+    # inside ONE regime)
+    c = sign_classification(
+        {1: 0.916, 2: 0.924, 3: 0.916, 4: 0.958, 5: 0.922, 6: 1.017},
+        level_clusters({1: 109479.0, 2: 107771.0, 3: 109562.0,
+                        4: 38958.0, 5: 108875.0, 6: 36229.0}))
+    _expect(c["verdict"] == "regime-scoped"
+            and c["straddle"] == "within-regime",
+            "wsweep-low w32 :max: the fast regime itself straddles "
+            "(runs 4/6 at 0.958/1.017) -- within-regime", stats)
+
+    # a straddle inside the only observed regime is within-regime
+    c = sign_classification({1: 0.95, 2: 1.05},
+                            level_clusters({1: 100.0, 2: 101.0}))
+    _expect(c["straddle"] == "within-regime",
+            "straddle inside the only regime is within-regime", stats)
+
+    # cell roll-up: every operator invariant on the same side -> the cell
+    # is invariant (the "18/18 slower" shape)
+    cell = cell_sign_classification(
+        {"sum": {1: 1.2, 2: 1.2}, "max": {1: 1.3, 2: 1.3}},
+        {"sum": {1: 100.0, 2: 101.0}, "max": {1: 100.0, 2: 105.0}})
+    _expect(cell["verdict"] == "regime-invariant" and cell["side"] == "slower"
+            and cell["counts"] == {"slower": 4, "faster": 0, "even": 0},
+            "cell roll-up: every operator invariant on one side", stats)
+
+    # cell roll-up: one regime-scoped operator blocks the cell
+    cell = cell_sign_classification(
+        {"sum": {1: 1.2, 2: 1.2}, "max": {1: 0.9, 2: 1.1}},
+        {"sum": {1: 100.0, 2: 101.0}, "max": {1: 100.0, 2: 200.0}})
+    _expect(cell["verdict"] == "regime-scoped",
+            "cell roll-up: one regime-scoped operator blocks the cell",
+            stats)
+
+    # cell roll-up: operators invariant on OPPOSITE sides pool to a
+    # straddle (the pooled ratios are not one-sided)
+    cell = cell_sign_classification(
+        {"sum": {1: 0.9, 2: 0.9}, "max": {1: 1.1, 2: 1.1}},
+        {"sum": {1: 100.0, 2: 101.0}, "max": {1: 100.0, 2: 101.0}})
+    _expect(cell["verdict"] == "regime-scoped",
+            "cell roll-up: opposite invariant sides pool to a straddle",
+            stats)
+
+    # the driver's call shape: render_section with ratios carries both
+    # sections and the rule-2 cell line
+    out = render_section({"sum": {1: 100.0, 2: 101.0}},
+                         ratios={"sum": [1.2, 1.2]})
+    _expect("## Regime classification (claim protocol rule 1)" in out
+            and "## Sign classification (claim protocol rule 2)" in out
+            and "2/2 slower" in out,
+            "render_section with ratios publishes both protocol sections",
+            stats)
+
+    # and without ratios the rule-1 section is unchanged (no rule-2 block)
+    out = render_section({"sum": {1: 100.0, 2: 101.0}})
+    _expect("## Sign classification" not in out
+            and "published in its own section below" in out,
+            "render_section without ratios stays rule-1-only", stats)
+
 
 def _self_test_corpus(stats, corpus_root):
     summaries = sorted(corpus_root.rglob("summary.md"))
@@ -275,14 +648,19 @@ def _self_test_corpus(stats, corpus_root):
     for s in summaries:
         text = s.read_text()
         try:
-            parsed.append((s, parse_summary_per_run_baseline(text)))
+            per_op = parse_summary_per_run_baseline(text)
         except ValueError:
             continue  # a record without per-run baseline rows: not this corpus
+        try:
+            per_rat = parse_summary_per_run_ratios(text)
+        except ValueError:
+            per_rat = None  # a record without per-run ratio rows: rule 1 only
+        parsed.append((s, per_op, per_rat))
     _expect(len(parsed) >= 20, f"corpus size {len(parsed)} (>= 20)",
             stats)
 
     gaps_in_window = []
-    for s, per_op in parsed:
+    for s, per_op, _per_rat in parsed:
         for op, med in sorted(per_op.items()):
             runs = set(med)
             _expect(runs == set(range(1, len(med) + 1)),
@@ -320,7 +698,7 @@ def _self_test_corpus(stats, corpus_root):
             "max": [[4], [3], [1, 2, 5, 6]],
         },
     }
-    for s, per_op in parsed:
+    for s, per_op, _per_rat in parsed:
         rel = str(s.relative_to(corpus_root)).replace("/summary.md", "")
         if rel in want:
             for op, expect in want[rel].items():
@@ -328,6 +706,83 @@ def _self_test_corpus(stats, corpus_root):
                 _expect(got == expect,
                         f"{rel}:{op}: pinned manual classification "
                         f"{expect}, got {got}", stats)
+
+    # ---- rule 2 over the corpus: sign classification ----
+    sign_cells = 0
+    tally = {"regime-invariant slower": 0, "regime-invariant faster": 0,
+             "by-regime": 0, "within-regime": 0, "no-side": 0}
+    # pinned sign classifications over the parsed corpus (not fixtures).
+    # Provenance of each pin:
+    #   wsweep-low w32 :max -- that record's own prose ":max runs 4/6
+    #     0.958/1.017" names the fast-regime runs and both sides live in
+    #     that one regime (within-regime);
+    #   shape2 w32 :max/:min -- accelerator_variants' prose "fast-level
+    #     :max 1.026 and :min 1.021-1.026 against slow-level ~0.92": the
+    #     sign follows the regime (by-regime);
+    #   shape2-resweep w512 all ops -- the re-sweep's "reproduces in sign
+    #     strictly" cells, 18/18 slower (regime-invariant);
+    #   wsweep-low w32 :sum/:min -- mechanically from the committed
+    #     summary numbers; NO prose decided wsweep-low :min's three-level
+    #     split (GAP-1.15's verdict), so the pin says only what the
+    #     numbers say.
+    pinned_sign = {
+        "gpu-subgroup-reduce-m1max-wsweep-low-20261023/w32": {
+            "sum": ("regime-invariant", "faster", None),
+            "max": ("regime-scoped", None, "within-regime"),
+            "min": ("regime-scoped", None, "by-regime"),
+        },
+        "gpu-subgroup-reduce-m1max-shape2-20261023/w32": {
+            "sum": ("regime-invariant", "faster", None),
+            "max": ("regime-scoped", None, "by-regime"),
+            "min": ("regime-scoped", None, "by-regime"),
+        },
+        "gpu-subgroup-reduce-m1max-shape2-resweep-20261023/w512": {
+            "sum": ("regime-invariant", "slower", None),
+            "max": ("regime-invariant", "slower", None),
+            "min": ("regime-invariant", "slower", None),
+        },
+    }
+    for s, per_op, per_rat in parsed:
+        if not per_rat:
+            continue
+        rel = str(s.relative_to(corpus_root)).replace("/summary.md", "")
+        for op, rs in sorted(per_rat.items()):
+            _expect(op in per_op,
+                    f"{rel}:{op}: ratio rows have baseline rows", stats)
+            ratios = {ri + 1: v for ri, v in enumerate(rs)}
+            _expect(set(ratios) == set(per_op[op]),
+                    f"{rel}:{op}: ratio runs == baseline-median runs", stats)
+            c = sign_classification(ratios, level_clusters(per_op[op]))
+            sign_cells += 1
+            # independent recomputation of rule 2's condition, not
+            # reusing the classifier's own verdict
+            sides = {ratio_side(r) for r in ratios.values()}
+            want_inv = sides <= {"slower"} or sides <= {"faster"}
+            _expect((c["verdict"] == "regime-invariant") == want_inv,
+                    f"{rel}:{op}: verdict matches an independent "
+                    f"recomputation of rule 2's condition", stats)
+            if c["verdict"] == "regime-invariant":
+                tally[f"regime-invariant {c['side']}"] += 1
+            else:
+                tally[c["straddle"]] += 1
+                if c["straddle"] == "by-regime":
+                    _expect(all(len(ls["sides"]) == 1
+                                for ls in c["level_sides"]),
+                            f"{rel}:{op}: by-regime means every regime "
+                            f"one-sided", stats)
+                elif c["straddle"] == "within-regime":
+                    _expect(any(len(ls["sides"]) > 1
+                                for ls in c["level_sides"]),
+                            f"{rel}:{op}: within-regime means one regime "
+                            f"holds both sides", stats)
+        if rel in pinned_sign:
+            for op, expect in pinned_sign[rel].items():
+                ratios = {ri + 1: v for ri, v in enumerate(per_rat[op])}
+                c = sign_classification(ratios, level_clusters(per_op[op]))
+                _expect((c["verdict"], c["side"], c["straddle"]) == expect,
+                        f"{rel}:{op}: pinned sign classification {expect}, "
+                        f"got {(c['verdict'], c['side'], c['straddle'])}",
+                        stats)
 
     print(f"corpus: {len(parsed)} committed summaries classified under "
           f"GAP-1.15")
@@ -339,6 +794,12 @@ def _self_test_corpus(stats, corpus_root):
         print(f"  {rel} {op}: {a:.0f} -> {b:.0f}  gap {gap:.3f}  -> {verdict}")
     if not gaps_in_window:
         print("  (none)")
+    print(f"rule 2 sign classification: {sign_cells} operator-cells over "
+          f"the corpus -- {tally['regime-invariant slower']} "
+          f"regime-invariant slower, {tally['regime-invariant faster']} "
+          f"regime-invariant faster, {tally['by-regime']} regime-scoped "
+          f"by-regime, {tally['within-regime']} regime-scoped "
+          f"within-regime, {tally['no-side']} no-side")
 
 
 def main():
@@ -354,8 +815,13 @@ def main():
         doc = __doc__ or ""
         sys.stderr.write(doc.split("CLI:")[1] if "CLI:" in doc else doc)
         sys.exit(2)
-    per_op = parse_summary_per_run_baseline(pathlib.Path(args[0]).read_text())
-    print(render_section(per_op))
+    text = pathlib.Path(args[0]).read_text()
+    per_op = parse_summary_per_run_baseline(text)
+    try:
+        ratios = parse_summary_per_run_ratios(text)
+    except ValueError:
+        ratios = None
+    print(render_section(per_op, ratios=ratios))
 
 
 if __name__ == "__main__":

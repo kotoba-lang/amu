@@ -624,3 +624,64 @@ No `:measured?` flag, workgroup row, flip gate or answer moves (rule 4,
 untouched).
 
 Record: `docs/evidence/gpu/regime-classification-20261023.txt`.
+
+## Amendment 2026-10-23 (rule 2 mechanised): harness-side sign
+classification is IMPLEMENTED
+
+The row the protocol's state paragraph named ("rule 2's sign
+classification (regime-invariant vs regime-scoped) harness-side", listed
+UNIMPLEMENTED after rule 1's GAP-1.15 slice) lands now.
+`scripts/gpu_regime_classify.py` gains sign_classification() and
+render_sign_section(), and every `summary.md` the measurement driver
+(`scripts/gpu-subgroup-reduce-metal-measure.py`) writes now carries a
+"Sign classification (claim protocol rule 2)" section beneath the rule-1
+clusters: per operator the verdict and its detail, and the cell's
+admissibility roll-up over pooled per-run ratios (the "18/18 slower"
+shape).
+
+The verdict is exactly rule 2's dichotomy, mechanically:
+REGIME-INVARIANT when every per-run ratio of every observed regime lies
+strictly on one side of 1.0 (only such a sign may be a selection basis);
+anything else REGIME-SCOPED (cannot choose a variant). Two boundary
+cases the prose did not decide are decided mechanically and published,
+not hidden (the GAP-1.15 ethos applied to signs):
+
+- the straddle's shape: "by-regime" (every regime one-sided, regimes
+  disagree -- sign follows the regime; the shape-2 W = 32 :max/:min
+  cells, reproducing accelerator_variants' "fast-level :max 1.026 and
+  :min 1.021-1.026 against slow-level ~0.92"), "within-regime" (one
+  regime holds both sides -- wsweep-low W = 32 :max, whose fast regime
+  runs 4/6 are 0.958/1.017, both sides inside ONE regime), or "no-side"
+  (every ratio exactly 1.0: no sign exists to claim). The shape never
+  changes the verdict -- rule 2's second sentence already denies a
+  regime-scoped sign any selection role whatever its shape;
+- a ratio at exactly 1.0 sits on NEITHER side of 1.0, so a cell holding
+  one is not regime-invariant ("the same side of 1.0" is read strictly).
+
+Because cross-operator level identity is NOT asserted (rule 1's own
+named limit), the cell row is only an admissibility roll-up -- it carries
+no cross-operator regime structure.
+
+State, precisely: rules 1 and 2's harness-side publication is IMPLEMENTED
+(code + tests). Tests (real output):
+`python3 scripts/gpu_regime_classify.py --self-test` = 887 assertions, 0
+failed -- unit fixtures (invariant on either side, the exact-1.0
+boundary, both straddle shapes on real committed W = 32 numbers, the
+cell roll-ups, the driver's call shape), a corpus regression over all 28
+committed summaries (84 operator-cells classified: 75 regime-invariant
+slower, 3 regime-invariant faster, 5 regime-scoped by-regime, 1
+regime-scoped within-regime, 0 no-side; every verdict independently
+recomputed from rule 2's condition), and pinned classifications
+reproducing committed prose (wsweep-low w32 :max within-regime; shape2
+w32 :max/:min by-regime; shape2-resweep w512 18/18 slower). No record is
+rewritten: the older records stand with their manual NOTES.md
+classification until their own re-sweep rows re-derive them.
+UNIMPLEMENTED, unchanged and named: rule 3's regime-matched comparison
+machinery; pair-level classification (the op-order cell's within-run
+ramping needs per-pair levels -- analyze-oporder.py remains the manual
+instrument); cross-operator level identity. No `:measured?` flag,
+workgroup row, flip gate or answer moves (rule 4, untouched). This slice
+ran no hardware measurement.
+
+Record: `docs/evidence/gpu/rule2-sign-classification-20261023.txt` (this
+slice ran no hardware measurement).

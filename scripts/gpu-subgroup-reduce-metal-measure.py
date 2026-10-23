@@ -267,23 +267,28 @@ def main():
     lines.append("")
     lines.append("| operator | per-run ratios | median ratio |")
     lines.append("|---|---|---|")
+    per_op_ratios = {}
     for op in ("sum", "max", "min"):
         ratios = []
         for ri in range(args.runs):
             b = per_run[(op, "baseline", ri)]
             v = per_run[(op, "variant", ri)]
             ratios.append(statistics.median(v) / statistics.median(b))
+        per_op_ratios[op] = ratios
         lines.append(f"| {op} | {', '.join(f'{r:.3f}' for r in ratios)} | "
                      f"{statistics.median(ratios):.3f} |")
     lines.append("")
-    # Claim protocol rule 1 (the 2026-10-23 regime-robust magnitude claim
-    # protocol, ADR-0360): the regime clusters this session observed,
+    # Claim protocol rules 1 and 2 (the 2026-10-23 regime-robust magnitude
+    # claim protocol, ADR-0360): the regime clusters this session observed,
     # published from the same per-run baseline medians the first table
-    # lists. Implemented in scripts/gpu_regime_classify.py (GAP-1.15).
+    # lists (rule 1), and the sign classification over the per-run paired
+    # ratios just tabulated (rule 2). Implemented in
+    # scripts/gpu_regime_classify.py (GAP-1.15 clustering + sign verdicts).
     lines.append(gpu_regime_classify.render_section(
         {op: {ri + 1: statistics.median(per_run[(op, "baseline", ri)])
               for ri in range(args.runs)}
-         for op in ("sum", "max", "min")}))
+         for op in ("sum", "max", "min")},
+        ratios=per_op_ratios))
     lines.append("")
     lines.append("Verified read-back (every fresh process):")
     lines.append("")
