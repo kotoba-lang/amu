@@ -1,33 +1,75 @@
 {
   "schema": "amu.seed.static-root.v1",
   "image": {
-    "bytes": 1524224,
-    "sha256": "b4352834626c9617b1334cc0133f06d5a6d92bb0f0adb795b1f6372590f12d2e"
+    "bytes": 3039744,
+    "sha256": "61ee2d3870612c7f8ed6bd2d25f40c8cc68b26d2b5b5336204b1ff2651fe60bb"
   },
   "target": "aarch64-linux",
-  "format": "static",
-  "sourceManifest": "seed/X86_64-LINUX-SELFHOST-MANIFEST",
+  "format": "packed",
+  "sourceManifest": "seed/FULL-MANIFEST",
   "sourceUnity": {
-    "bytes": 927343,
-    "sha256": "faab68ad5997f975f011eb4ddd982a270200099bfcd379755f4ea0a12632f7b2"
+    "bytes": 3053539,
+    "sha256": "3c81e1f7acc6822b173a089fef80e829db2efb28c19bd23726c18e01f81f9480"
   },
   "sourceCommitBase": "457042ab741520980bceb5bf12970937d1bc8dba",
   "producedBy": {
-    "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 and S2 built S3 = this image (S1 = S2 = S3: the runtime text embedded in static images did not change). Re-pinned because this source adds --format launcher (ADR 0371 step 4, context word 408 = 4): the launcher runtime text and the format plumbing in seed/70, 75, 76, 77 and 80.",
+    "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation). The root becomes F, the combined compiler (seed/FULL-MANIFEST) packed as a static image (JUN-341): the previous root built S1 = S2 = S3 from the Linux selfhost closure; S2 built C0 from seed/CORE-STATIC-MANIFEST; C0 compiled CORE-STATIC to Kw, S2 packed it as Pw; Pw compiled FULL-MANIFEST to F1, S2 packed it; F1 rebuilt and packed itself to F2 = F1 (= this image), F2 rebuilt the same container (F3); F2's core route gives the adoption image.",
     "date": "2026-10-23",
-    "previousRoot": "1739f52f02fc90c28a1fa4a6c3a3f780caeff481893e3a1cd35badd8c227682e"
+    "previousRoot": "1739f52f02fc90c28a1fa4a6c3a3f780caeff481893e3a1cd35badd8c227682e",
+    "chain": {
+      "S1.elf": {
+        "bytes": 1458688,
+        "sha256": "1739f52f02fc90c28a1fa4a6c3a3f780caeff481893e3a1cd35badd8c227682e"
+      },
+      "S2.elf": {
+        "bytes": 1458688,
+        "sha256": "1739f52f02fc90c28a1fa4a6c3a3f780caeff481893e3a1cd35badd8c227682e"
+      },
+      "C0.elf": {
+        "bytes": 6722048,
+        "sha256": "de51f261c8bfb9b2c9d7b16383600f52487eb0535b17fd3fd88ff17d83e60f99"
+      },
+      "Kw.kseed": {
+        "bytes": 2573379,
+        "sha256": "e109836db29b5e8cc8e9e1de0058b7010894259c7e7a6e22a54959192bf387f9"
+      },
+      "Pw.elf": {
+        "bytes": 2781696,
+        "sha256": "f052b05282825aefc6eb17f810079cab70e309bed7fd4077acb6ddb13d0da48b"
+      },
+      "F1.kseed": {
+        "bytes": 2832643,
+        "sha256": "b02f7ad3eb19987db1b525b4d23e5f6d4b093c151e96c9ba863e13821078b35e"
+      },
+      "F1.elf": {
+        "bytes": 3039744,
+        "sha256": "61ee2d3870612c7f8ed6bd2d25f40c8cc68b26d2b5b5336204b1ff2651fe60bb"
+      },
+      "F2.kseed": {
+        "bytes": 2832643,
+        "sha256": "b02f7ad3eb19987db1b525b4d23e5f6d4b093c151e96c9ba863e13821078b35e"
+      },
+      "F2.elf": {
+        "bytes": 3039744,
+        "sha256": "61ee2d3870612c7f8ed6bd2d25f40c8cc68b26d2b5b5336204b1ff2651fe60bb"
+      },
+      "F3.kseed": {
+        "bytes": 2832643,
+        "sha256": "b02f7ad3eb19987db1b525b4d23e5f6d4b093c151e96c9ba863e13821078b35e"
+      },
+      "A.bin": {
+        "bytes": 2573448,
+        "sha256": "d88720e6d6cf9be9cf3f82a5719d9bc885440b7833fdbdc6590f2e787f90dd9f"
+      }
+    }
   },
-  "verification": "Native arm64 S1=S2=S3 from the previous root, adopted G1=G2=G3 and the static cases (docs/evidence/selfhost-bootstrap-aarch64-20261022/); the launcher check on arm64 and x86_64 (docs/evidence/static-launcher-20261022/); main's runtime-boundary corpus including --format launcher. CI re-runs all of them.",
+  "verification": "scripts/seed/selfhost-bootstrap.py on arm64 Linux: F rebuilds itself (F -> F' = root) natively, without any C compiler or loader; --tier full re-derives F from the previous lineage (C0 -> Kw -> Pw -> F)",
   "history": [
     {
-      "schema": "amu.seed.static-root.v1",
       "image": {
         "bytes": 1458688,
         "sha256": "1739f52f02fc90c28a1fa4a6c3a3f780caeff481893e3a1cd35badd8c227682e"
       },
-      "target": "aarch64-linux",
-      "format": "static",
-      "sourceManifest": "seed/X86_64-LINUX-SELFHOST-MANIFEST",
       "sourceUnity": {
         "bytes": 862791,
         "sha256": "4ccdcc04382a2469005a71e87541e6fcc4d50f22ddd088ce420ec2300bcf48fd"
@@ -55,8 +97,7 @@
             "sha256": "1739f52f02fc90c28a1fa4a6c3a3f780caeff481893e3a1cd35badd8c227682e"
           }
         }
-      },
-      "verification": "Native arm64/x86_64 TCP/spawn, 125 boundary refusals, 24 runtime cases; complete18 C0/G1=G2=G3, full19 exact correctness and combined compiler fixed point. See docs/evidence/tcp-spawn-native-20261023/. Native CDCI controller/public CLI qualification remains open."
+      }
     },
     {
       "schema": "amu.seed.static-root.v1",
