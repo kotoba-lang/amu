@@ -2,14 +2,14 @@
 
 The product identity is [native-product.json](../native-product.json).
 `bin/amu`, `bin/kotoba` and `bin/kotoba-compiler` resolve to the same
-8,536,576-byte Linux x86_64 ELF, SHA-256
-`7e3724160c4ca373a05526ae7b94fd22739b1a8fa62e802fdf5663251e729802`.
-The source revision is `c4687580`; metadata/entry retirement commits can
+8,679,936-byte Linux x86_64 ELF, SHA-256
+`d1a865ac790857c0d838fd6fb9b9ebe32317c3c7cf2c406c96fe0d6c06cf2fc5`.
+The source revision is `7f8b7467`; metadata/entry retirement commits can
 follow without changing this compiler source or image.
 
 ## Artifact qualification
 
-The complete 27-module compiler includes the adopted 18-module core and
+The complete 29-module compiler includes the adopted 18-module core and
 all Linux emitter/factory/entry modules in `seed/FULL-MANIFEST`.
 Native ARM F1=F2=F3 payloads and independently packed images agree.
 Native x86 F1=F2=F3 loaderless images agree with the ARM cross-built ELF.
@@ -19,32 +19,39 @@ The complete compiler, public product and native controller qualification
 processes use `PATH=/nonexistent`. The upstream bootstrap orchestrator
 uses `/usr/bin:/bin`; its native executable arguments are explicit paths.
 
-The adopted current core source is `2524a4c5`, container `88540e78`,
-native payload `a8513d51`. Warm G1=G2=G3, an independent cold C0
-rebuild and immutable-lock single-unity rebuilding produce the same
-container. The cold C0 uses the preceding 8MiB bootstrap capacity profile;
-the complete product and its three-generation rebuild use the 12MiB
-static OUT profile. No core source module is omitted in either route.
-The adopted normal-core memory layout and heap size are preserved.
+The adopted normal18 core source is `3adfa7cf`, container `dfbbf04d`,
+native payload `df9b530a`. Every normal core module is retained. Warm
+G1=G2=G3 and digest-bound unity compilation reproduce the same container.
+The independent current durable-runtime cold C0 is pending; the earlier
+clock and stdin cold receipts retain their original source/runtime identity.
 
-The 12MiB static OUT replaces an observed E7104 refusal at 8MiB for the
-complete compiler with current TCP/spawn. MM-WORDS is 28,442,624, below
-the native per-vector limit of 2^25. This changes capacity, not expected
-results, grants or fixture count.
+The complete29 static profile uses OUT12MiB and LitB1MiB; MM-WORDS is
+28,966,912, below the per-vector limit of 2^25. The normal core's memory
+layout and heap size are unchanged. The complete source retains the Linux,
+factory, kernel-object and browser emitters and current stdin, durable-file
+and sleep runtimes. A C-linked format is refused by the native public entry.
+Capacity changes do not change grants, fixture count, results or fuel.
 
 Full original source/corpus and prior receipts remain identifiable.
-The current correctness receipt records the exact complete27 F2 producer
-for all19 Embench, MIR normal and all seven large entries, GMIR all eight
-entries, and resource/pin refusals. All 33 MIR files/three roots
-and 12 GMIR files/two roots
-were retained and their KSL digests checked. MIR whole-large ended with
-zero tracked arena use after 155,688,217 scope releases. The receipt is
-`docs/evidence/native-cdci-20261023/current-main-correctness.json`; additional
-workflow results are recorded with PR #1510 and its artifacts.
-Correctness is recorded separately from compiler fixed points. No new
-performance score,
-full historical assertion parity, general sandbox certificate or live
-service cutover follows from these bounded qualifications.
+`current-durable-correctness.json` records the actual stage compiler
+`07f299a9` and current native runner `9b752e57`: all19 Embench, MIR normal,
+each of six individual large entries and whole-large, GMIR all eight, and
+31 runtime/resource cases completed. There are 17 pinned-input refusals
+plus the E2104 reference escape. Every one of the 33 MIR files/three roots
+and 12 GMIR files/two roots was retained with its exact digest. MIR
+whole-large ended with zero tracked arena use after 155,688,217 scope
+releases. `durable-correctness-identity.json` records the final `7f8b7467`
+compiler reproducing all27 executed containers and that exact runtime.
+The earlier incorrect static-entry staging observation is excluded; the
+completed runs use `--format runner`. This is correctness evidence, with
+no new performance score or complete historical assertion-parity claim.
+
+The actual native x86 compiler independently rebuilt both full source
+graphs to the same AArch64 containers. Their runtime execution above was
+on native ARM, not x86 emulation. Current x86 clock/entropy and durable/
+sleep provider receipts include positive, malformed, missing-grant and
+restrictive-seccomp controls. A power-cut durability experiment, interrupted
+sleep and statistical entropy certification are separate work.
 
 ## Public command boundary
 
@@ -83,16 +90,15 @@ source/image/result/exit/fuel vectors. Callers cannot substitute a green
 stub or alter expected values. These controls bind bytes and observations;
 caller-supplied hashes are not external authentication or signatures.
 
-The controller completed both native roles, all24 cases,
-18 refusal probes and parent-death child cleanup on x86. The current27
-build reproduces every role image and fixture record
-byte-for-byte; `controller-provider-identity.json` records this qualification
-carry explicitly. The current public product bytes and aliases passed
-pinned check/compile, generated ELF
-execution and named refusals. Hosted workflow completion is recorded
-separately when terminal. GitHub Actions/Python stage and
-observe processes; native role code owns the ordered semantic verdict.
-No production route or branch-protection change is part of this work.
+The current29 controller's fresh 24-case, 18-refusal and parent-death
+cleanup qualification is pending. Earlier controller receipts retain their
+source identity. The current public product bytes and three aliases passed
+pinned check/compile, generated ELF execution and named refusals on native
+x86. Hosted workflow completion is recorded separately when terminal.
+GitHub Actions/Python stage and observe processes; native role code owns
+the ordered semantic verdict. The compiler and roles use loaderless static
+ELF with no legacy compiler/runtime fallback. No production route or
+branch-protection change is part of this work.
 
 ## Retirement
 
@@ -125,8 +131,8 @@ optional provider backend source and corpus are retained, but libc/dynamic-
 loader execution is excluded from mandatory native CDCI. The static
 launcher, complete core, all24 native cases and hardening remain required.
 
-The bootstrap root is the same self-rebuilt complete27 ARM compiler,
-image `1374f69b`, derived from prior native root `c35a54ea`. Its exact
+The bootstrap root is the same self-rebuilt complete29 ARM compiler,
+image `d201f6da`, derived from prior native root `88afda89`. Its exact
 source/packed generations and prior-root history are retained in
 `seed/bootstrap/aarch64-linux-static-root.json`. Hosted CI independently
 checks root reproduction; an artifact receipt is not a terminal CI claim.

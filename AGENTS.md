@@ -66,7 +66,7 @@
 
 ## Native CDCI and retired public entry
 
-- The complete product uses `seed/FULL-MANIFEST` (27 modules), retaining
+- The complete product uses `seed/FULL-MANIFEST` (29 modules), retaining
   every adopted core module. Static OUT is 12MiB because the complete
   TCP/spawn image exceeded the old 8MiB bound. Heap size, expected results,
   all19 workloads and all24 runtime fixtures remain unchanged.
