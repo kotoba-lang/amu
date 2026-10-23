@@ -69,7 +69,7 @@
 - The complete product uses `seed/FULL-MANIFEST` (29 modules), retaining
   every adopted core module. Static OUT is 12MiB because the complete
   TCP/spawn image exceeded the old 8MiB bound. The full29 static profile
-  also uses LitB1MiB and MM-WORDS28,966,912 (<2^25). Heap size, expected results,
+  also uses LitB1MiB and TOK786432 and MM-WORDS29,491,200 (<2^25). Heap size, expected results,
   all19 workloads and all24 runtime fixtures remain unchanged.
 - `seed/cdci` owns the Kotoba-native controller and gate. Its two mandatory
   roles are Amu selfhost and Kotoba native; legacy fleet/authoring labels
@@ -103,3 +103,9 @@ excluded from mandatory native CDCI: they require the refused C-linked
 format. Their source and corpus remain preserved, and provider qualification
 is blocked until an Amu/Kotoba-native route exists. Do not mark those
 excluded checks passed through the two bounded native compiler roles.
+
+The public-product native check must receive the current complete compiler
+receipt (`--complete`) and match the actual entry to all3 current native F
+images/current FULL-MANIFEST bytes. An older self-consistent descriptor is
+insufficient. Runtime/target changes must regenerate affected role/source,
+root and product pins and re-run native positive/refusal/resource checks.

@@ -2,9 +2,9 @@
 
 The product identity is [native-product.json](../native-product.json).
 `bin/amu`, `bin/kotoba` and `bin/kotoba-compiler` resolve to the same
-8,679,936-byte Linux x86_64 ELF, SHA-256
-`8fd3f650cadb3bc63fd90cf3b1aac25b952495d72fba5f8f4b8746f1c7ad8580`.
-The source revision is `e0885e3b`; metadata/entry retirement commits can
+8,684,032-byte Linux x86_64 ELF, SHA-256
+`2e67514988174549fc634adae6491331ce8aac9fefa1793bd6ac652836996b94`.
+The source revision is `74fe989a`; metadata/entry retirement commits can
 follow without changing this compiler source or image.
 
 ## Artifact qualification
@@ -23,12 +23,12 @@ The adopted normal18 core source is `3adfa7cf`, container `dfbbf04d`,
 native payload `df9b530a`. Every normal core module is retained. Warm
 G1=G2=G3 and digest-bound unity compilation reproduce the same container.
 The independent current durable-runtime cold C0 completed and reproduces
-`dfbbf04d`. Its static image is `da8bda03` with OUT12MiB/LitB1MiB; the
+`dfbbf04d`. Its static image is `c67676ba` with OUT12MiB/LitB1MiB; the
 final complete29 compiler reproduces that exact executed C0 image. Earlier
 clock/stdin cold receipts retain their original source/runtime identity.
 
-The complete29 static profile uses OUT12MiB and LitB1MiB; MM-WORDS is
-28,966,912, below the per-vector limit of 2^25. The normal core's memory
+The complete29 static profile uses TOK786432, OUT12MiB and LitB1MiB; MM-WORDS is
+29,491,200, below the per-vector limit of 2^25. The normal core's memory
 layout and heap size are unchanged. The complete source retains the Linux,
 factory, kernel-object and browser emitters and current stdin, durable-file
 and sleep runtimes. A C-linked format is refused by the native public entry.
@@ -42,7 +42,7 @@ each of six individual large entries and whole-large, GMIR all eight, and
 plus the E2104 reference escape. Every one of the 33 MIR files/three roots
 and 12 GMIR files/two roots was retained with its exact digest. MIR
 whole-large ended with zero tracked arena use after 155,688,217 scope
-releases. `browser3-correctness-identity.json` records the final `e0885e3b`
+releases. `tokcap-correctness-identity.json` records the final `74fe989a`
 compiler reproducing all27 executed containers and that exact runtime.
 The earlier incorrect static-entry staging observation is excluded; the
 completed runs use `--format runner`. This is correctness evidence, with
@@ -92,14 +92,13 @@ source/image/result/exit/fuel vectors. Callers cannot substitute a green
 stub or alter expected values. These controls bind bytes and observations;
 caller-supplied hashes are not external authentication or signatures.
 
-The current native controller completed both mandatory roles, all24 cases,
-18 refusal probes and parent-death child cleanup on actual x86.
-`controller-durable-fresh.json` records the execution source `7f8b7467`;
-`controller-browser3-identity.json` proves that the final `e0885e3b` compiler
-reproduces all3 role images/sources and every one of the24 fixture records
-byte-for-byte. The exec trace contains73 execve/execveat observations, with
-no observed legacy compiler/runtime or shell execution in the role closure.
-Earlier receipts retain their own source/runtime identity.
+The fresh current74fe native controller completed both mandatory roles,
+all24 cases,18 refusal probes and parent-death child cleanup on actual x86.
+`controller-tokcap-fresh.json` records the actual new Amu image `ac6d788a`
+and controller `8296049d`, without transferring old-profile execution flags.
+The trace records73 execve/execveat observations with no observed legacy
+compiler/runtime or shell in the native role closure. Historical receipts
+retain their source/runtime identity.
 The current public product bytes and three aliases passed
 pinned check/compile, generated ELF execution and named refusals on native
 x86. Hosted workflow completion is recorded separately when terminal.
@@ -140,7 +139,7 @@ loader execution is excluded from mandatory native CDCI. The static
 launcher, complete core, all24 native cases and hardening remain required.
 
 The bootstrap root is the same self-rebuilt complete29 ARM compiler,
-image `d5009f37`, derived from prior qualified native root `d201f6da`. Its exact
+image `e3451a26`, derived from prior qualified native root `d5009f37`. Its exact
 source/packed generations and prior-root history are retained in
 `seed/bootstrap/aarch64-linux-static-root.json`. Hosted CI independently
 checks root reproduction; an artifact receipt is not a terminal CI claim.
@@ -154,3 +153,12 @@ the exact PR-head and post-merge main workflow results linked in PR #1510
 and the Kotoba Labs task records. Historical source-specific false/pending
 flags and earlier receipt names do not redefine the current qualification.
 The broad public command/CID migration remains separate implementation work.
+
+The public-product CI check requires the current complete native compiler
+receipt and checks the entry against all3 freshly rebuilt F files and the
+current full source unity. A stale but previously qualified native image
+is refused before execution. Build/rebuild and full-graph harnesses use an
+8MiB stack; this does not qualify every default host/resource configuration.
+The static token extension and its bounded E101 negative control are
+recorded in `tokcap-token-limit-refusal.json`; normal core, heap, fixture
+count, grants, results and fuel are unchanged.
