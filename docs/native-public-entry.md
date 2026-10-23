@@ -31,8 +31,13 @@ the native per-vector limit of 2^25. This changes capacity, not expected
 results, grants or fixture count.
 
 Full original source/corpus and prior receipts remain identifiable.
-Fresh all19 Embench correctness and MIR/GMIR complete large suites are
-recorded separately from compiler fixed points. No new performance score,
+The exact final F2 image passed fresh all19 Embench correctness, MIR
+normal and all seven large entries, GMIR all eight entries, and resource/
+pin refusals. All 33 MIR files/three roots and 12 GMIR files/two roots
+were retained and their KSL digests checked. MIR whole-large ended with
+zero tracked arena use after 155,688,217 scope releases. The receipt is
+`docs/evidence/native-cdci-20261023/final-f-correctness.json`; correctness
+is recorded separately from compiler fixed points. No new performance score,
 full historical assertion parity, general sandbox certificate or live
 service cutover follows from these bounded qualifications.
 
@@ -97,3 +102,12 @@ workflows and no instantiated jobs. It is outside these two native roles;
 this change does not cancel those workflows, stop their infrastructure or
 claim deregistration. Its detailed inventory remains in the operations
 record, separate from native compiler qualification.
+
+## Current main CI integration
+
+The tiered bootstrap and F root from main are preserved. The complete
+compiler verifier accepts that rebuilt F as its native baseline when a
+PR tier omits S3/P; it still derives Pw and checks F1=F2=F3, packing,
+all24 cases, core adoption and exact privileged-role images. The x86
+job also executes the published product and both aliases. Scheduled
+full-tier provenance and main-tier runner checks remain in place.

@@ -52,11 +52,16 @@ def main(boot, out):
             assert r.returncode == 0 and not r.stderr, (name, r.returncode, r.stderr[-400:])
         return r
 
-    for name in ("S3.elf", "P-aarch64.elf", "S-x86_64.elf", "runner.kotoba"):
+    # Older bootstrap receipts provide S3 and P; tiered F-root receipts
+    # provide the complete compiler F1. Both are native Amu products. The
+    # same Pw and complete three-generation checks below still run.
+    baseline = "S3.elf" if (boot / "S3.elf").is_file() else "F1.elf"
+    core_producer = "P-aarch64.elf" if (boot / "P-aarch64.elf").is_file() else baseline
+    for name in dict.fromkeys((baseline, core_producer, "S-x86_64.elf", "runner.kotoba")):
         shutil.copy2(boot / name, out / name)
-    for name in ("S3.elf", "P-aarch64.elf"):
-        (out / name).chmod(0o755)
-    S, P, runner = out / "S3.elf", out / "P-aarch64.elf", out / "runner.kotoba"
+    S, P, runner = out / baseline, out / core_producer, out / "runner.kotoba"
+    S.chmod(0o755)
+    P.chmod(0o755)
     env = {"KEXE_CAP_RESOURCES_35": str(out), "KEXE_STACK_BYTES": STACK}
 
     def unity(manifest, dst):
@@ -189,7 +194,7 @@ def main(boot, out):
     assert set(out.glob("*.kseed")) == containers_before_refusals, "refusal produced an artifact"
 
     report = dict(status="PASS_COMBINED_COMPILER", host=[platform.system(), platform.machine(), platform.release()],
-                  sources=sources, bootstrap=dict(S3=pin(S), P=pin(P), receipt=pin(boot / "selfhost-bootstrap.json")),
+                  sources=sources, bootstrap=dict(targetProducer=dict(name=baseline, **pin(S)), coreProducer=dict(name=core_producer, **pin(P)), receipt=pin(boot / "selfhost-bootstrap.json")),
                   Pw=dict(container=kw, image=pw),
                   F=dict(containers=[f1, f2, f3], image=f1_image, packedByF=f2_image),
                   coreRoute=dict(native=pin(out / "A.bin"), expected=adoption["nativeImageSHA256"]),

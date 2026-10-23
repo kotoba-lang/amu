@@ -14,6 +14,10 @@ emulation. Records, natively:
 4. the KX64V1 runner: X2's kx64-v1 compiler payload G1 rebuilds itself
    through R-x86_64 (G1 = G2 = G3);
 5. the scalar ELF suite and the aiueos object checks with X2.
+
+--reuse DIR / --store DIR: content-addressed reuse as in selfhost-bootstrap.py
+(scripts/seed/content_reuse.py). Only calls made through reuse.run_cached may
+be stood in for, and only on an exact key; the receipt's reuse lists them.
 """
 import argparse
 import hashlib
@@ -26,6 +30,9 @@ import sys
 import time
 from pathlib import Path
 
+sys.dont_write_bytecode = True
+from content_reuse import Runs  # noqa: E402 (scripts/seed)
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -34,11 +41,13 @@ def pin(p):
     return {"bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
 
 
-def main(boot, out):
+def main(boot, out, tier="main", reuse_dir=None, store_dir=None):
     assert platform.system() == "Linux" and platform.machine() in ("x86_64", "AMD64"), "run on native x86_64 Linux"
     out.mkdir(parents=True, exist_ok=False)
     (out / "raw").mkdir()
     calls = []
+    # the calls content-addressed reuse may stand in for (exact key only)
+    reuse = Runs(out, reuse_dir, store_dir)
 
     def run(name, argv, env, ok=True, timeout=3600):
         started = time.monotonic()
@@ -68,8 +77,11 @@ def main(boot, out):
     # 1. fixed point on x86_64
     s_cross = pin(out / "S-x86_64.elf")
     x2 = compile_(out / "S-x86_64.elf", source, out / "X2.elf", "static", "X2")
-    x3 = compile_(out / "X2.elf", source, out / "X3.elf", "static", "X3")
-    assert s_cross == x2 == x3, "x86_64 static fixed point"
+    assert s_cross == x2, "x86_64 static compiler: cross-built = self-built"
+    x3 = None
+    if tier != "pr":
+        x3 = compile_(out / "X2.elf", source, out / "X3.elf", "static", "X3")
+        assert x2 == x3, "x86_64 static fixed point"
     X = out / "X2.elf"
 
     run("runtime-boundary", [sys.executable, ROOT / "scripts/seed/check-runtime-boundary.py",
@@ -114,6 +126,50 @@ def main(boot, out):
     assert hardening["wallSeconds3"]["exit"] == 120 and "SIGALRM" in hardening["wallSeconds3"]["stderr"]
     assert hardening["stack1MiB"]["exit"] == 120 and "SIGSEGV" in hardening["stack1MiB"]["stderr"]
 
+    # main and full tiers: the KX64V1 runner and the suites
+    gens, suites = [], {}
+    if tier != "pr":
+        gens, suites = kx64_and_suites(run, out, X, source, scope)
+
+    # full tier: the adopted compiler core as an x86_64 static image (JUN-330):
+    # X2 builds seed/CORE-STATIC-MANIFEST as X0; X0 rebuilds seed/MANIFEST (the
+    # core targets aarch64-macos) to the adoption image (~17 min natively)
+    core_x86 = None
+    if tier == "full":
+        import time
+        adoption = json.loads((ROOT / json.loads((ROOT / "seed/compiler-core.json").read_text())["adoptionReceipt"]).read_text())
+
+        def unity_of(manifest, dst):
+            ps = [p for p in (ROOT / manifest).read_text().splitlines() if p and not p.startswith("#")]
+            dst.write_bytes(b"".join((ROOT / p).read_bytes() + b"\n" for p in ps))
+            return pin(dst)
+        core_static, adopted = out / "core-static-unity.kotoba", out / "adopted-unity.kotoba"
+        unity_of("seed/CORE-STATIC-MANIFEST", core_static)
+        assert unity_of("seed/MANIFEST", adopted)["sha256"] == adoption["sourceUnitySHA256"], "adopted source drift"
+        senv = dict(scope, KEXE_STACK_BYTES="8388608")
+        run("X0", [X, "compile", core_static, "--target", "x86_64-linux", "--output", out / "X0.elf", "--format", "static"], senv)
+        (out / "X0.elf").chmod(0o755)
+        t0 = time.monotonic()
+        run("X0-core", [out / "X0.elf", "compile", adopted, "--target", "aarch64-macos", "--output", out / "X0-core.kseed"], senv, timeout=10800)
+        seconds = round(time.monotonic() - t0, 1)
+        run("X0-extract", [out / "X0.elf", "extract-native", out / "X0-core.kseed", "--symbol", "main", "--output", out / "X0-core.bin"], senv)
+        assert pin(out / "X0-core.bin")["sha256"] == adoption["nativeImageSHA256"], "x86_64 core output mismatch"
+        core_x86 = dict(X0=pin(out / "X0.elf"), container=pin(out / "X0-core.kseed"), native=pin(out / "X0-core.bin"),
+                        coreCompileSeconds=seconds)
+
+    report = dict(status="PASS_NATIVE_X86_64_LOADERLESS", tier=tier, host=[platform.system(), platform.machine(), platform.release()],
+                  nativeX86_64Kernel=True, emulation=False, cCompilerOrLoader=False,
+                  compiler=dict(crossBuiltOnArm64=s_cross, X2=x2, X3=x3), cases=results, hardening=hardening,
+                  runtimeBoundary=runtime_boundary, coreOnX86_64=core_x86,
+                  kx64Runner=dict(runner=pin(out / "R-x86_64.elf"), generations=gens), suites=suites,
+                  reuse=dict(read=bool(reuse_dir), store=bool(store_dir), steps=[{k: c[k] for k in ("name", "seconds", "key", "reused") if k in c}
+                                                                                for c in reuse.calls]),
+                  bootstrapReceipt=json.loads((boot / "selfhost-bootstrap.json").read_text())["root"]["image"])
+    (out / "x86_64-native.json").write_text(json.dumps(report, indent=2) + "\n")
+    print(report["status"], tier, "X2", x2["sha256"][:16], len(results), "cases", flush=True)
+
+
+def kx64_and_suites(run, out, X, source, scope):
     # 4. the KX64V1 runner: the kx64-v1 compiler payload rebuilds itself
     run("G1-kx64", [X, "compile", source, "--target", "x86_64-linux", "--output", out / "G1.kx64", "--format", "kx64-v1"], scope)
 
@@ -141,41 +197,17 @@ def main(boot, out):
         (out / "raw" / (script + ".log")).write_bytes(r.stdout + r.stderr)
         assert r.returncode == 0, (script, r.stdout[-400:], r.stderr[-400:])
         suites[script] = r.stdout.decode().strip().splitlines()[-1]
-
-    # 6. the adopted compiler core as an x86_64 static image
-    adoption = json.loads((ROOT / json.loads((ROOT / "seed/compiler-core.json").read_text())["adoptionReceipt"]).read_text())
-    def unity_of(manifest, dst):
-        ps = [p for p in (ROOT / manifest).read_text().splitlines() if p and not p.startswith("#")]
-        dst.write_bytes(b"".join((ROOT / p).read_bytes() + b"\n" for p in ps))
-        return pin(dst)
-    core_static, adopted = out / "core-static-unity.kotoba", out / "adopted-unity.kotoba"
-    unity_of("seed/CORE-STATIC-MANIFEST", core_static)
-    assert unity_of("seed/MANIFEST", adopted)["sha256"] == adoption["sourceUnitySHA256"], "adopted source drift"
-    senv = dict(scope, KEXE_STACK_BYTES="8388608")
-    run("X0", [X, "compile", core_static, "--target", "x86_64-linux", "--output", out / "X0.elf", "--format", "static"], senv)
-    (out / "X0.elf").chmod(0o755)
-    t0 = time.monotonic()
-    run("X0-core", [out / "X0.elf", "compile", adopted, "--target", "aarch64-macos", "--output", out / "X0-core.kseed"], senv, timeout=10800)
-    core_seconds = round(time.monotonic() - t0, 1)
-    run("X0-extract", [out / "X0.elf", "extract-native", out / "X0-core.kseed", "--symbol", "main", "--output", out / "X0-core.bin"], senv)
-    assert pin(out / "X0-core.bin")["sha256"] == adoption["nativeImageSHA256"], "x86_64 core output mismatch"
-    core_x86 = dict(X0=pin(out / "X0.elf"), container=pin(out / "X0-core.kseed"), native=pin(out / "X0-core.bin"),
-                    coreCompileSeconds=core_seconds)
-
-
-    report = dict(status="PASS_NATIVE_X86_64_LOADERLESS", host=[platform.system(), platform.machine(), platform.release()],
-                  nativeX86_64Kernel=True, emulation=False, cCompilerOrLoader=False,
-                  compiler=dict(crossBuiltOnArm64=s_cross, X2=x2, X3=x3), cases=results, hardening=hardening,
-                  runtimeBoundary=runtime_boundary,
-                  coreOnX86_64=core_x86, kx64Runner=dict(runner=pin(out / "R-x86_64.elf"), generations=gens), suites=suites,
-                  bootstrapReceipt=json.loads((boot / "selfhost-bootstrap.json").read_text())["root"]["image"])
-    (out / "x86_64-native.json").write_text(json.dumps(report, indent=2) + "\n")
-    print(report["status"], "X1=X2=X3", x2["sha256"][:16], len(results), "cases; G1=G2=G3 through the runner", flush=True)
+    return gens, suites
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bootstrap", type=Path, required=True, help="selfhost-bootstrap.py output (from arm64 Linux)")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--tier", choices=("pr", "main", "full"), default="full")
+    parser.add_argument("--reuse", type=Path, help="content-addressed results to reuse for identical calls; new results are added")
+    parser.add_argument("--store", type=Path, help="record content-addressed results without reusing any (full run)")
     args = parser.parse_args()
-    main(args.bootstrap.resolve(), args.output.resolve())
+    assert not (args.reuse and args.store), "--reuse and --store are exclusive"
+    store = args.store or args.reuse
+    main(args.bootstrap.resolve(), args.output.resolve(), args.tier, args.reuse and args.reuse.resolve(), store and store.resolve())
