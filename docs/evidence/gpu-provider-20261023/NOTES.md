@@ -25,6 +25,11 @@ the selfhost compiler.
 
 * `gad-radv-confined.json`: the same `gpu` phase after the provider confines
   itself (step 6 (4)), with the grant's default `:confinement :required`.
+* `gad-launcher-receipt.edn`: the whole route on gad. The static launcher
+  (C-free) started the confined Vulkan provider, with the fixed environment of
+  step 6 (5), and a static guest (`gad-launcher-guest.kotoba`) that runs ALLOC,
+  WRITE, READ and DEVCLASS over wire 42. All three were built by the root F
+  `d1410bc5…`.
 
 ## What the fake-device receipt shows
 
@@ -80,6 +85,13 @@ the selfhost compiler.
   * the mapped libvulkan libraries with their SHA-256: the loader
     `libvulkan.so.1.3.275` and the eight ICD libraries the loader opened.
 
+## What the launcher receipt shows
+
+* The verdict is `:ok`, and the guest exits 0 with result 0.
+* The provider served 4 requests and refused none. It was confined (Landlock ABI 8, seal `:ok`), and its report names the driver and the libraries.
+* The receipt pins the launcher, guest, provider and grant digests. The provider's image digest in its own report equals the launcher's.
+* The whole run took 6.8 s, most of it the provider hashing its libraries before confinement.
+
 ## Limits
 
 * The fake layer has no GPU: a dispatch does nothing.
@@ -87,7 +99,5 @@ the selfhost compiler.
   step's acceptance. They need the KIR v2 inference kernels (ADR 0372 step 3),
   which do not exist yet.
 * Not covered here:
-  * the launcher's fixed provider environment (the shader cache);
   * shaderFloat16 and integer dot product enablement;
-  * B70 (ANV);
-  * the launcher on a GPU host.
+  * B70 (ANV).
