@@ -4,7 +4,10 @@
   (code + tests in `kotoba.compiler.accelerator-variants`); the row is
   UNMEASURED. The 2026-10-23 amendment at the end of this ADR extends the
   row from the Vulkan route to the MSL route as well (implemented same
-  date).
+  date). [The "UNMEASURED" clause predates the same-day measurement
+  amendments further down: the MSL arm ran on Apple M1 Max, the row is
+  NARROWED to that device, and the measured cells flip the honesty lock.
+  Those amendments govern; this line describes the state at adoption.]
 - Date: 2026-10-23
 - Tracking: JUN-58 (Apple). Parent JUN-55. This is one vendor per decision,
   the rule ADR-0356 set and ADR-0357 (ARM) followed.
@@ -396,3 +399,64 @@ paragraphs above that call question (1) undecided describe the state before
 that decision and are superseded as to their status claims only; the GLSL
 arm keeps its LABELED BOOTSTRAP status at every width and no workgroup row
 (ADR-0355/0358) has been touched by any of this.
+
+## Amendment 2026-10-23 (the second shape and the op-order regime
+measurement): the W = 32 regime scoping is MEASURED, every decision
+unchanged
+
+Two more same-channel cells landed (same host, Apple M1 Max, reported
+subgroup size 32; same ADR-0358 protocol; records under `docs/evidence/`),
+and the flip contract's basis text cites them from this slice (no flag,
+no `:measured-cell` set and no workgroup row moves):
+
+1. **Shape 2** (`gpu-subgroup-reduce-m1max-shape2-20261023/`): n = 2^20 =
+   1,048,576 -- a clean multiple of every W in [32, 1024], the padded-lane
+   tail every earlier shape (n = 1,000,003) exercised now absent -- at
+   W = 256 (the anchor of the flip set) and W = 32 (the decided cell).
+   The verdicts replicate: W = 256's penalty band is 1.220-1.227 (shape 1:
+   1.217-1.220) and W = 32's :sum is 0.919 with every one of the six fresh
+   processes below 1 (0.916-0.922). The narrowing's demotion basis is
+   therefore NOT a padded-tail artifact. The W = 32 sign straddles 1
+   across clock levels on this shape too (fast-level :max 1.026, :min
+   1.021-1.026 against slow-level ~0.92), and :sum still had no
+   fast-level sample in that cell -- the harness's fixed operator order
+   (sum first, every process) made that structural, and the record names
+   it.
+
+2. **Op-order** (`gpu-subgroup-reduce-m1max-oporder-20261023/`): the
+   instrument variant that removes that blocker -- the harness takes a
+   dispatch order (`argv[4]` / `--op-order`, default `sum,max,min`
+   byte-identical to every earlier cell), this cell running **sum LAST**
+   (W = 32, n = 1,000,003 -- the flip contract's shape -- otherwise the
+   standard protocol). The first :sum fast-regime samples in the series
+   measure the variant SLOWER there. Regime-conditioned within-pair
+   medians (variant/baseline gpu-ns, by observed clock level -- slow
+   ~109k, middle ~45-69k, fast ~35.6-37k baseline gpu-ns per pair):
+
+   | op  | slow | middle | fast |
+   |-----|------|--------|------|
+   | :sum | 0.919 (61 pairs) | 0.932 (35) | 1.018 (24) |
+   | :max | 0.917 (113) | -- | 1.029 (7) |
+   | :min | 0.920 (86) | 0.993 (14) | 1.018 (20) |
+
+   FINDING: the W = 32 sign is regime-scoped for **all three** operators
+   -- the slow-regime win (roughly 8%) is a clock artifact, and at the
+   fast level the variant is slower in each. What the low-band record
+   inferred from structure for :sum is now directly measured.
+
+Supersession (claims only): the low-band DECIDED paragraph's "no :sum run
+exists in the fast regime" and ":min's sign is NOT ESTABLISHED across the
+shift" describe the state before these two cells and are superseded as to
+those claims -- :sum's regime split is measured (1.018 at the fast level
+over 24 pairs), and :min's straddle replicates with the mechanism visible
+(its sign follows the clock level like the other two). Nothing else
+moves: the W = 32 decision (keep `:baseline` for all three operators,
+honesty lock on) stands unchanged -- its basis is **strengthened**, from
+inference to measurement, and a regime-scoped sign is still not a
+selection basis. The flip contract still keys to n = 1,000,003
+(`accelerator-variants`' `apple-measured-n`); shape 2 is corroboration,
+not a contract cell, and whether the contract should widen to more shapes
+is its own later decision. UNMEASURED unchanged: the GLSL arm at every
+width beyond its LABELED BOOTSTRAP record, every Apple device but this
+M1 Max, shapes beyond these two, and the NVIDIA/Intel/ARM/AMD variant
+rows entirely.

@@ -296,7 +296,14 @@
               (str "device " (pr-str device) " W=" wg " " target " measured?"))
           (is (str/includes? (:basis answer) "APPLE ROW NARROWED"))
           (is (str/includes? (:basis answer) "m1 max"))
-          (is (str/includes? (:basis answer) "ADR-0360")))))
+          (is (str/includes? (:basis answer) "ADR-0360"))
+          ;; 2026-10-23 prose slice: the basis text cites the second-shape
+          ;; corroboration (n = 2^20, the padded tail gone) -- the demotion
+          ;; basis is not a padded-tail artifact, and the flip contract
+          ;; still keys to n = 1,000,003 (shape 2 is corroboration).
+          (is (str/includes? (:basis answer)
+                             "docs/evidence/gpu-subgroup-reduce-m1max-shape2-20261023")
+              "the narrowing note must cite the shape-2 corroboration"))))
     (testing "every other Apple device keeps the designed row, UNMEASURED"
       (doseq [device [(assoc capable :vendor "Apple M3")
                       (assoc capable :name "Apple M2 Pro")
@@ -376,12 +383,15 @@
       ;; The low-band measurement (2026-10-23) measured W = 32 and the
       ;; variant is not slower there -- :sum 0.918 in every fresh process
       ;; -- but every run sat in the slow clock regime (per-run median
-      ;; gpu-ns 109k -> 36k mid-session), :max's win follows the regime
-      ;; and :min's sign (1.019) is NOT ESTABLISHED across the shift. A
-      ;; regime-scoped sign is not a selection basis, so the answer stays
-      ;; :baseline for ALL THREE OPERATORS (no operator split), it is a
-      ;; DECISION on measured ground (the basis says so), and it keeps the
-      ;; lock: no cross-regime verdict chose it.
+      ;; gpu-ns 109k -> 36k mid-session). The later shape-2 and op-order
+      ;; cells measured the scoping itself (2026-10-23): the sign follows
+      ;; the clock level for all three operators -- op-order within-pair
+      ;; medians slow vs fast: :sum 0.919 vs 1.018, :max 0.917 vs 1.029,
+      ;; :min 0.920 vs 1.018. A regime-scoped sign is not a selection
+      ;; basis, so the answer stays :baseline for ALL THREE OPERATORS (no
+      ;; operator split), it is a DECISION on measured ground (the basis
+      ;; says so), and it keeps the lock: no regime-robust verdict chose
+      ;; it.
       (doseq [operator [:sum :max :min]]
         (let [answer (variants/select-variant
                       :apple (accelerator/kernel (str "reduce_" (name operator) "_f32")
@@ -396,7 +406,16 @@
               (str "W=32 " operator " carries no measured-cell record"))
           (is (str/includes? (:basis answer) "W = 32, THE DECIDED CELL"))
           (is (str/includes? (:basis answer) "DECISION on measured ground"))
-          (is (str/includes? (:basis answer) "slow clock regime")))))
+          (is (str/includes? (:basis answer) "slow clock regime"))
+          ;; 2026-10-23 prose slice: the decision note's basis names the
+          ;; measured :sum fast-regime samples (the op-order cell) and the
+          ;; second-shape corroboration explicitly.
+          (is (str/includes? (:basis answer)
+                             "docs/evidence/gpu-subgroup-reduce-m1max-shape2-20261023")
+              (str "W=32 " operator " basis must cite the shape-2 cell"))
+          (is (str/includes? (:basis answer)
+                             "docs/evidence/gpu-subgroup-reduce-m1max-oporder-20261023")
+              (str "W=32 " operator " basis must cite the op-order cell")))))
     (testing "the GLSL arm keeps the lock at every width: LABELED BOOTSTRAP is not a verdict"
       ;; PR #1347/#1348 measured the same sign, but their own record
       ;; (docs/evidence/gpu/loadsweep-20261019/README.md) labels the runs

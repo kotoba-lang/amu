@@ -120,10 +120,15 @@
   (the same day's W-sweep) and W = 64/128 (the same day's low band -- all
   three operators 1.20-1.25, the same penalty band as W >= 256). W = 32
   ran under the same channel and is MEASURED, but it is NOT in this set:
-  its verdict is mixed and regime-scoped (:sum 0.916-0.920 in every fresh
-  process, but every run sat in the slow clock regime; :max wins only in
-  that regime; :min 1.019 NOT ESTABLISHED across the regime shift) and it
-  published no cross-regime verdict that chose an answer -- the W = 32
+  its verdict is mixed and regime-scoped -- the low band saw :sum
+  0.916-0.920 with every one of those runs in the slow clock regime, and
+  the later shape-2 and op-order cells
+  (docs/evidence/gpu-subgroup-reduce-m1max-shape2-20261023,
+  docs/evidence/gpu-subgroup-reduce-m1max-oporder-20261023) measured the
+  scoping itself: the sign follows the clock level for all three operators
+  (op-order within-pair medians, slow vs fast: :sum 0.919 vs 1.018, :max
+  0.917 vs 1.029, :min 0.920 vs 1.018) -- and it published no
+  regime-robust verdict that chose an answer -- the W = 32
   answer is the low-band decision's (apple-w32-note) and keeps the lock.
   The GLSL arm never flips at any
   width (its runs are LABELED BOOTSTRAP, see the honesty-lock prose)."
@@ -167,7 +172,13 @@
   the designed row (UNMEASURED). The low band completed the MSL band
   W = 32..1024 on this device: W = 64..1024 rests on the device's own
   measurements and those cells flip the honesty lock; W = 32 is the one
-  mixed cell and its answer carries its own decision note (apple-w32-note).")
+  mixed cell and its answer carries its own decision note (apple-w32-note).
+  Corroboration (2026-10-23, no flag movement): the demotion basis
+  replicates at a second shape -- n = 2^20
+  (docs/evidence/gpu-subgroup-reduce-m1max-shape2-20261023), the padded
+  tail gone, W = 256 penalty 1.220-1.227 against shape 1's 1.217-1.220 --
+  so it is not a padded-tail artifact; the flip contract still keys to
+  n = 1,000,003 and shape 2 is corroboration, not a contract cell.")
 
 (def ^:private apple-w32-note
   "W = 32, THE DECIDED CELL (ADR-0360's low-band decision, 2026-10-23,
@@ -176,16 +187,27 @@
   this cell and it is the one where the variant is not slower -- :sum
   0.918 (0.916-0.920 in every fresh process), :max 0.923, :min 1.019 --
   but the signs are scoped to the slow clock regime the device sat in
-  while every :sum run happened (per-run median gpu-ns 109k -> 36k
-  mid-session; no :sum run exists in the fast regime), :max's win follows
-  the regime, and :min's sign is NOT ESTABLISHED across the shift. A
+  while every :sum run of that cell happened (per-run median gpu-ns 109k
+  -> 36k mid-session). The scoping is now MEASURED, not inferred: the
+  shape-2 cell (docs/evidence/gpu-subgroup-reduce-m1max-shape2-20261023,
+  n = 2^20) replicated the straddle (:sum 0.919 / :max 0.921 / :min 0.918
+  overall, fast-level :max 1.026 and :min 1.021-1.026 against slow-level
+  ~0.92), and the op-order cell
+  (docs/evidence/gpu-subgroup-reduce-m1max-oporder-20261023) built the
+  instrument the shape-2 record named as the structural blocker (sum
+  dispatched last) and sampled :sum at the fast level for the first time:
+  within-pair medians by clock level -- :sum slow 0.919 / middle 0.932 /
+  fast 1.018, :max slow 0.917 / fast 1.029, :min slow 0.920 / fast 1.018
+  -- so the sign follows the regime for all three operators and the W = 32
+  win is a slow-regime artifact in each of them. A
   regime-scoped sign is not a selection basis -- the same standard that
   keeps the LABELED BOOTSTRAP GLSL runs verdict-free -- and an
   operator-split answer at one cell off one shape would be overfitting, so
   this cell keeps answering :baseline for all three operators. The
   demotion here is a DECISION on measured ground, not the fail-safe it was
   before the low band ran, and the answer keeps the honesty lock
-  (:measured? false): no cross-regime verdict chose it.")
+  (:measured? false): no regime-robust verdict chose it -- every cell that
+  sampled both clock levels straddles 1 across them -- the decision did.")
 
 (def variant-bases
   "Why each variant exists. Design rationale, not measurement evidence."
