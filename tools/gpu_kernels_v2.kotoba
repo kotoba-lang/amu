@@ -655,6 +655,9 @@
     (kb-load B tu v)))
 ;; int(x), the bits of a u32 as an int
 (defn- kd-int [B :vector-i64 x :i64] :i64 (kb-bitcast B (kb-ti32 B) x))
+;; a - b for ints, and for ivec4s
+(defn- kd-isub [B :vector-i64 a :i64 b :i64] :i64 (kb-op2 B 130 (kb-ti32 B) a b))
+(defn- kd-isub4 [B :vector-i64 a :i64 b :i64] :i64 (kb-op2 B 130 (kd-tiv4 B) a b))
 ;; int((w >> s) & m)
 (defn- kd-field [B :vector-i64 w :i64 s :i64 m :i64] :i64 (kd-int B (kb-band B (kb-shr B w s) (ku B m))))
 ;; ivec4 of the four nibbles of w at shift, 8 + shift, 16 + shift, 24 + shift
@@ -700,10 +703,10 @@
         qls (kb-select B tu (kb-uge B quarter (ku B 2)) (ku B 4) (ku B 0))
         qhs (kb-imul B quarter (ku B 2))
         ;; int(((ql >> (k + ql_shift)) & 15) | (((qh >> (k + qh_shift)) & 3) << 4)) - 32
-        c0 (kb-isub B (kd-int B (kb-bor B (kb-band B (kb-shr B ql qls) (ku B 15)) (kb-shl B (kb-band B (kb-shr B qh qhs) (ku B 3)) (ku B 4)))) (kb-i32 B 32))
-        c1 (kb-isub B (kd-int B (kb-bor B (kb-band B (kb-shr B ql (kb-iadd B (ku B 8) qls)) (ku B 15)) (kb-shl B (kb-band B (kb-shr B qh (kb-iadd B (ku B 8) qhs)) (ku B 3)) (ku B 4)))) (kb-i32 B 32))
-        c2 (kb-isub B (kd-int B (kb-bor B (kb-band B (kb-shr B ql (kb-iadd B (ku B 16) qls)) (ku B 15)) (kb-shl B (kb-band B (kb-shr B qh (kb-iadd B (ku B 16) qhs)) (ku B 3)) (ku B 4)))) (kb-i32 B 32))
-        c3 (kb-isub B (kd-int B (kb-bor B (kb-band B (kb-shr B ql (kb-iadd B (ku B 24) qls)) (ku B 15)) (kb-shl B (kb-band B (kb-shr B qh (kb-iadd B (ku B 24) qhs)) (ku B 3)) (ku B 4)))) (kb-i32 B 32))]
+        c0 (kd-isub B (kd-int B (kb-bor B (kb-band B (kb-shr B ql qls) (ku B 15)) (kb-shl B (kb-band B (kb-shr B qh qhs) (ku B 3)) (ku B 4)))) (kb-i32 B 32))
+        c1 (kd-isub B (kd-int B (kb-bor B (kb-band B (kb-shr B ql (kb-iadd B (ku B 8) qls)) (ku B 15)) (kb-shl B (kb-band B (kb-shr B qh (kb-iadd B (ku B 8) qhs)) (ku B 3)) (ku B 4)))) (kb-i32 B 32))
+        c2 (kd-isub B (kd-int B (kb-bor B (kb-band B (kb-shr B ql (kb-iadd B (ku B 16) qls)) (ku B 15)) (kb-shl B (kb-band B (kb-shr B qh (kb-iadd B (ku B 16) qhs)) (ku B 3)) (ku B 4)))) (kb-i32 B 32))
+        c3 (kd-isub B (kd-int B (kb-bor B (kb-band B (kb-shr B ql (kb-iadd B (ku B 24) qls)) (ku B 15)) (kb-shl B (kb-band B (kb-shr B qh (kb-iadd B (ku B 24) qhs)) (ku B 3)) (ku B 4)))) (kb-i32 B 32))]
     (kb-construct4 B (kd-tiv4 B) c0 c1 c2 c3)))
 ;; kvalue(i): the IQ4_XS codebook entry, from four packed words by comparison
 (defn- kd-kvalue [B :vector-i64 i :i64] :i64
@@ -755,7 +758,7 @@
   (let [tu (kb-tu32 B) within (kb-band B index (ku B 31))
         shift (kb-select B tu (kb-uge B within (ku B 16)) (ku B 4) (ku B 0))
         w (kd-u32-at B W (kb-iadd B (kb-iadd B (kb-iadd B base (kb-imul B (kb-udiv B index (ku B 32)) (ku B 18))) (ku B 2)) (kb-band B within (ku B 15))))]
-    (kb-isub B (kd-nibbles B w shift) (kd-isplat B 8))))
+    (kd-isub4 B (kd-nibbles B w shift) (kd-isplat B 8))))
 ;; f16_values: vec4(unpackHalf2x16(weights[w]), unpackHalf2x16(weights[w + 1])), w = (base + index 2) >> 2
 (defn- kd-f16-values [B :vector-i64 W :i64 base :i64 index :i64] :i64
   (let [w (kb-shr B (kb-iadd B base (kb-imul B index (ku B 2))) (ku B 2))]
@@ -766,8 +769,8 @@
         w (kd-u32-at B W (kb-iadd B (kb-iadd B base (ku B 2)) (kb-udiv B e (ku B 4))))
         s (kb-imul B (kb-band B e (ku B 3)) (ku B 2))
         i1 (kb-i32 B 1)]
-    (kb-construct4 B (kd-tiv4 B) (kb-isub B (kd-field B w s 3) i1) (kb-isub B (kd-field B w (kb-iadd B s (ku B 2)) 3) i1)
-                   (kb-isub B (kd-field B w (kb-iadd B s (ku B 4)) 3) i1) (kb-isub B (kd-field B w (kb-iadd B s (ku B 6)) 3) i1))))
+    (kb-construct4 B (kd-tiv4 B) (kd-isub B (kd-field B w s 3) i1) (kd-isub B (kd-field B w (kb-iadd B s (ku B 2)) 3) i1)
+                   (kd-isub B (kd-field B w (kb-iadd B s (ku B 4)) 3) i1) (kd-isub B (kd-field B w (kb-iadd B s (ku B 6)) 3) i1))))
 ;; ptq1_pow3(n) = 3^n for n <= 4, and ptq1_decode_byte(b, p) = int((((b p) & 255) 3) >> 8) - 1
 (defn- kd-pow3 [B :vector-i64 n :i64] :i64
   (let [tu (kb-tu32 B)]
@@ -776,7 +779,7 @@
                           (kb-select B tu (kb-ieq B n (ku B 2)) (ku B 9)
                                      (kb-select B tu (kb-ieq B n (ku B 3)) (ku B 27) (ku B 81)))))))
 (defn- kd-trit [B :vector-i64 b :i64 p :i64] :i64
-  (kb-isub B (kd-int B (kb-shr B (kb-imul B (kb-band B (kb-imul B b p) (ku B 255)) (ku B 3)) (ku B 8))) (kb-i32 B 1)))
+  (kd-isub B (kd-int B (kb-shr B (kb-imul B (kb-band B (kb-imul B b p) (ku B 255)) (ku B 3)) (ku B 8))) (kb-i32 B 1)))
 ;; ptq1_0_word_values: e < 120 decodes four radix bytes at one depth as a
 ;; vector, else the two tail bytes; the arms read different words (an if
 ;; into v)
@@ -863,7 +866,7 @@
         ;; 23 IQ4_XS
         g2 (kb-if B (kb-ieq B tt (ku B 23)))
         ib (kb-udiv B index (ku B 32))
-        ls (kb-s2f B tf (kb-isub B (kd-iq4xs-scale B W wb ib) (kb-i32 B 32)))
+        ls (kb-s2f B tf (kd-isub B (kd-iq4xs-scale B W wb ib) (kb-i32 B 32)))
         a3 (kd-acc B vacc (kb-fmul B (kb-fmul B (kd-half B W wb) ls) (kd-dotq B (kd-iq4xs-values B W wb index) y)))
         e2 (kb-else B)
         ;; 8 Q8_0
@@ -902,7 +905,7 @@
         ;; 6 Q5_0
         g9 (kb-if B (kb-ieq B tt (ku B 6)))
         a10 (kd-acc B vacc (kb-fmul B (kd-half B W (kb-iadd B wb (kb-imul B (kb-udiv B index (ku B 32)) (ku B 22))))
-                                     (kd-dotq B (kb-isub B (kd-q5x-values B W wb index 22 2) (kd-isplat B 16)) y)))
+                                     (kd-dotq B (kd-isub4 B (kd-q5x-values B W wb index 22 2) (kd-isplat B 16)) y)))
         e9 (kb-else B)
         ;; 7 Q5_1
         g10 (kb-if B (kb-ieq B tt (ku B 7)))
@@ -912,7 +915,7 @@
         e10 (kb-else B)
         ;; else Q6_K: scale = the signed byte at wb + 192 + index / 16
         sb (kd-byte B W (kb-iadd B (kb-iadd B wb (ku B 192)) (kb-udiv B index (ku B 16))))
-        sbi (kb-select B (kb-ti32 B) (kb-uge B sb (ku B 128)) (kb-isub B (kd-int B sb) (kb-i32 B 256)) (kd-int B sb))
+        sbi (kb-select B (kb-ti32 B) (kb-uge B sb (ku B 128)) (kd-isub B (kd-int B sb) (kb-i32 B 256)) (kd-int B sb))
         a12 (kd-acc B vacc (kb-fmul B (kb-fmul B (kd-half B W (kb-iadd B wb (ku B 208))) (kb-s2f B tf sbi)) (kd-dotq B (kd-q6-values B W wb index) y)))
         z10 (kb-end-if B) z9 (kb-end-if B) z8 (kb-end-if B) z7 (kb-end-if B) z6 (kb-end-if B)
         z5 (kb-end-if B) z4 (kb-end-if B) z3 (kb-end-if B) z2 (kb-end-if B)]
