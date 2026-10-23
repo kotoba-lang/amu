@@ -39,6 +39,14 @@ available independent compiler/runner and exact full-closure native
 build/execution evidence remain open. Do not report this source checkout or
 the historical pin checks as native selfhost qualification.
 
+## Durable file replace and sleep in the static runtimes (2026-10-23, JUN-359, JUN-360)
+
+seed/76 and seed/77 answer wire 35's `FSYNC_SEP` (a file or directory, opened beneath the scope) and `RENAME_SEP`
+(each parent opened beneath the scope, `renameat` of the last component), so a file can be replaced durably, and
+wire 7 `:clock/now` takes `sleep <ms>` (0..60000, `clock_nanosleep` in the seccomp filter only with the wire
+granted). The root is re-pinned (previous root -> F1, F1 -> F2, F2 -> F3 = F2). Verification and what stays open:
+[`../docs/durable-sleep.md`](../docs/durable-sleep.md).
+
 ## Stdin in the static runtimes (2026-10-23, JUN-354, JUN-357)
 
 seed/76 and seed/77 answer wire 41 `:io/read` (stdin to end of file, or one read of at most n bytes, completed
