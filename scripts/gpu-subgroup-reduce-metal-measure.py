@@ -2,7 +2,7 @@
 """JUN-58 hardware measurement driver: :baseline vs :subgroup-reduce MSL arms
 on this host's Apple GPU, from the emitters' own bytes.
 
-    python3 scripts/gpu-subgroup-reduce-metal-measure.py [--runs N] [--workgroup W] [--out DIR]
+    python3 scripts/gpu-subgroup-reduce-metal-measure.py [--runs N] [--workgroup W] [--elements N] [--out DIR]
 
 Pipeline (every step's transcript lands in the evidence directory):
 
@@ -19,6 +19,13 @@ Pipeline (every step's transcript lands in the evidence directory):
   3. run    -- the harness binary runs as FRESH PROCESSES (--runs, default 6),
                interleaved paired samples with alternating order per ADR-0358's
                protocol, verified read-back of the partials.
+
+The reduction shape n is a measurement variable (--elements, default 1000003
+-- the shape every cell before the shape-2 run used, a padded non-multiple
+of W). The shape-2 cells pass 1048576 = 2^20 (a clean multiple of every W
+in [32, 1024]: no padded-lane tail). The emitted kernels read n at runtime
+(buffer 2), so the same emitted bytes serve every shape -- the arms stay
+byte-identical and only the shape changes.
   4. record -- raw runs -> <out>/run-log.txt; transcripts ->
                <out>/compile-log.txt; statistics -> <out>/summary.md.
 
@@ -77,12 +84,18 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--runs", type=int, default=6)
     ap.add_argument("--workgroup", type=int, default=256)
+    ap.add_argument("--elements", type=int, default=1000003)
     ap.add_argument("--out", type=str, default=None)
     args = ap.parse_args()
     wg_want = args.workgroup
     if wg_want < 32 or wg_want > 1024 or (wg_want & (wg_want - 1)) != 0:
         sys.stderr.write(f"REFUSED --workgroup {wg_want}: "
                          "need a power of two in [32, 1024]\n")
+        sys.exit(2)
+    n_want = args.elements
+    if n_want < 1 or n_want > 16777216:
+        sys.stderr.write(f"REFUSED --elements {n_want}: "
+                         "need an integer in [1, 16777216]\n")
         sys.exit(2)
     out = pathlib.Path(args.out) if args.out else EVID
 
@@ -125,7 +138,7 @@ def main():
     # 3. run: fresh processes
     runs = []
     for i in range(args.runs):
-        proc_out = sh([str(exe), str(build), str(wg_want)], log)
+        proc_out = sh([str(exe), str(build), str(wg_want), str(n_want)], log)
         runs.append(proc_out)
 
     (out / "compile-log.txt").write_text("\n".join(log) + "\n")
@@ -184,6 +197,18 @@ def main():
                  + (" (the measured Apple row, ADR-0358)" if int(wg) == 256
                     else " (a W-sweep cell, NOT the ADR-0358 row)")
                  + f", {args.runs} fresh-process runs")
+    if int(n) == 1000003:
+        shape_note = ("the historical shape (not a multiple of W: the "
+                      "padded-lane tail is exercised)")
+    elif int(n) == 1048576:
+        shape_note = ("SHAPE 2: n = 2^20, a clean multiple of every W in "
+                      "[32, 1024] -- no padded-lane tail; the only variable "
+                      "changed from the historical cells (same LCG input "
+                      "prefix, byte-identical emitted arms)")
+    else:
+        shape_note = ("a NON-HISTORICAL shape (the historical shape is "
+                      "n = 1000003); read as measured data, not as an anchor")
+    lines.append(f"- shape: {shape_note}")
     lines.append(f"- emitted at W = {wg_want} by the emitters' own bytes "
                  f"(shaders/; the subgroup arm's threadgroup partials array "
                  f"is sized from this W)"

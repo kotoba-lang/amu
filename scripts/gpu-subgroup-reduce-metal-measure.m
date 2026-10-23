@@ -11,12 +11,20 @@
 // interleaved paired samples with alternating order, first submits discarded
 // as warmup, and verified read-back of the partials the kernels produce.
 //
-//   measure <workdir> [workgroup]
+//   measure <workdir> [workgroup] [elements]
 //
 // [workgroup] is the dispatch width W (default 256, the measured Apple
 // workgroup row of ADR-0358); a W-sweep cell passes its own width, and the
 // emitted sources must have been emitted at that same width (the subgroup
 // arm sizes its threadgroup partials array from the emitted W).
+//
+// [elements] is the reduction shape n (default 1000003 -- the shape every
+// cell before the shape-2 run used; not a multiple of W, so the padded-lane
+// tail is exercised). A shape-2 cell passes its own count (the shape-2 run
+// uses 1048576 = 2^20: a clean multiple of every W in [32, 1024], so the
+// tail is absent and the shape variable is the ONLY thing that changes).
+// The emitted kernels read n at runtime (buffer 2), so the same emitted
+// bytes serve every shape; the arms stay byte-identical across shapes.
 //
 // <workdir> must contain baseline-<op>.metallib and subgroup-<op>.metallib
 // for op in {sum, max, min} (entry reduce_<op>, the emitter's kernel name --
@@ -39,7 +47,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define N_ELEM 1000003u /* not a multiple of WG: padded lanes exercised */
+/* The reduction shape n. Default 1000003 (the historical cell); argv[3]
+ * overrides -- the shape-2 run passes 1048576. NOT a compile-time constant
+ * any more: the shape is a measurement variable, so it must ride the
+ * command line like W does. The old #define kept the 'not a multiple of WG:
+ * padded lanes exercised' property of the DEFAULT shape only. */
+static uint32_t N = 1000003u;
 #define PAIRS 20        /* interleaved pairs per operator per process */
 #define WARMUP 2        /* discarded submits per arm */
 
@@ -110,12 +123,12 @@ static double run_dispatch(id<MTLCommandQueue> q, id<MTLComputePipelineState> ps
 
 int main(int argc, char **argv) {
   @autoreleasepool {
-    if (argc < 2 || argc > 3) {
-      fprintf(stderr, "usage: measure <workdir> [workgroup]\n");
+    if (argc < 2 || argc > 4) {
+      fprintf(stderr, "usage: measure <workdir> [workgroup] [elements]\n");
       return 2;
     }
     NSString *dir = [NSString stringWithUTF8String:argv[1]];
-    if (argc == 3) {
+    if (argc >= 3) {
       char *end = 0;
       unsigned long w = strtoul(argv[2], &end, 10);
       if (end == argv[2] || *end != '\0' || w < 32ul || w > 1024ul ||
@@ -126,6 +139,18 @@ int main(int argc, char **argv) {
       }
       WG = (uint32_t)w;
     }
+    if (argc == 4) {
+      char *end = 0;
+      unsigned long e = strtoul(argv[3], &end, 10);
+      /* Bound: [1, 2^24] -- the input buffer is 4n bytes and the CPU
+       * reference loop is O(n) per operator per run. */
+      if (end == argv[3] || *end != '\0' || e < 1ul || e > 16777216ul) {
+        fprintf(stderr, "REFUSED elements %s: need an integer in [1, 16777216]\n",
+                argv[3]);
+        return 2;
+      }
+      N = (uint32_t)e;
+    }
     id<MTLDevice> dev = MTLCreateSystemDefaultDevice();
     if (dev == nil) {
       fprintf(stderr, "FATAL no Metal device\n");
@@ -133,7 +158,7 @@ int main(int argc, char **argv) {
     }
     printf("device=%s\n", dev.name.UTF8String);
 
-    NSUInteger num_groups = (N_ELEM + WG - 1) / WG;
+    NSUInteger num_groups = (N + WG - 1) / WG;
 
     // The tested device's reported subgroup size (the instrument kernel
     // reads [[threads_per_simdgroup]] -- what the variant's fold actually
@@ -156,7 +181,7 @@ int main(int argc, char **argv) {
     }
     uint32_t sg_size = *(uint32_t *)probe_out.contents;
     printf("simdgroup_size=%u\n", sg_size);
-    printf("n=%u\nworkgroup=%u\npairs=%d\nwarmup=%d\n", N_ELEM, WG, PAIRS, WARMUP);
+    printf("n=%u\nworkgroup=%u\npairs=%d\nwarmup=%d\n", N, WG, PAIRS, WARMUP);
     if (sg_size == 0 || (WG % sg_size) != 0) {
       printf("shape=UNUSABLE (subgroup size does not divide W)\n");
       return 1;
@@ -166,17 +191,17 @@ int main(int argc, char **argv) {
 
     const char *ops[3] = {"sum", "max", "min"};
     NSString *entry;
-    id<MTLBuffer> x = [dev newBufferWithLength:(NSUInteger)N_ELEM * 4
+    id<MTLBuffer> x = [dev newBufferWithLength:(NSUInteger)N * 4
                                        options:MTLResourceStorageModeShared];
     id<MTLBuffer> parts = [dev newBufferWithLength:(NSUInteger)num_groups * 4
                                            options:MTLResourceStorageModeShared];
     id<MTLBuffer> nbuf = [dev newBufferWithLength:4
                                           options:MTLResourceStorageModeShared];
     float *xs = (float *)x.contents;
-    for (uint32_t i = 0; i < N_ELEM; i++) {
+    for (uint32_t i = 0; i < N; i++) {
       xs[i] = (float)((lcg_next() >> 8) * (1.0f / 16777216.0f)); /* [0,1) */
     }
-    *(uint32_t *)nbuf.contents = N_ELEM;
+    *(uint32_t *)nbuf.contents = N;
 
     for (int op = 0; op < 3; op++) {
       entry = [NSString stringWithFormat:@"reduce_%s", ops[op]];
@@ -237,7 +262,7 @@ int main(int argc, char **argv) {
         double acc = (op == 1) ? -INFINITY : (op == 2) ? INFINITY : 0.0;
         for (uint32_t l = 0; l < WG; l++) {
           uint32_t i = g * WG + l;
-          double v = (i < N_ELEM) ? (double)xs[i]
+          double v = (i < N) ? (double)xs[i]
                                   : (op == 1) ? -INFINITY
                                               : (op == 2) ? INFINITY : 0.0;
           if (op == 0) acc += v;
