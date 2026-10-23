@@ -15,7 +15,11 @@ pr    1. F rebuilds itself: FULL-MANIFEST -> container, packed -> F' (= root,
          a packed payload whose main takes arguments is refused (E7105); a
          diagnostic with a source span is named (E2101), not a trap;
       4. the runtime boundary corpus, the runtime cases
-         (seed/static-cases.json), hardening and capabilities, all with F.
+         (seed/static-cases.json), hardening and capabilities, all with F;
+      5. the runtime cases and two probes as wasm32-browser modules (JUN-353),
+         run in headless Chromium (scripts/seed/check-wasm32-browser.py) when
+         one is installed; the float cases are refused. Without a browser the
+         modules are compiled and pinned, and the qualify-x86_64 job runs them.
 main  + G1, G2 through the aarch64 runner give G2, G3 (= G1); S3 packs G3 as
         P, which rebuilds the core; the Linux selfhost closure S built by F
         rebuilds itself (S = S').
@@ -36,6 +40,7 @@ import argparse
 import hashlib
 import shutil
 import json
+import os
 import platform
 import re
 import subprocess
@@ -58,6 +63,8 @@ NS, NS_STATIC = "seed/00-ns.kotoba", "seed/00-ns-static.kotoba"
 ADOPTION = json.loads((ROOT / "seed/compiler-core.json").read_text())["adoptionReceipt"]
 RUNNER_SRC = "seed/x86_64-kx64-runner.kotoba"
 CASES = "seed/static-cases.json"
+FLOAT_CASES = "seed/float-cases.json"
+WASM_CHECK = "scripts/seed/check-wasm32-browser.py"
 # 00-ns-static is 00-ns with the static profile's capacities (seed/MEMORY-MAP).
 STATIC_CAPACITIES = re.compile(rb"\(def MM-(WORDS|(CODE|FIX|LITB|OUT)-CAP|(FIX|LIT|LITB|EXP|OUT|HEAP)-BASE|HEAP-END) [0-9]+\)")
 # The adopted compiler was qualified on a host whose main stack is 8 MiB; the
@@ -168,6 +175,38 @@ def main(out, tier, reuse=None, store=None):
             assert int(re.search(rb":result (-?[0-9]+)", r.stdout)[1]) == case["result"]
         results.append(dict(name=case["name"], **observed))
 
+    # 5. JUN-353: the same cases, and two probes, as wasm32-browser modules
+    wasm_dir = out / "wasm32"
+    wasm_dir.mkdir()
+    for case in json.loads((ROOT / CASES).read_text())["cases"]:
+        compile_(F, out / f"case-{case['name']}.kotoba", wasm_dir / f"case-{case['name']}.wasm", "wasm32-browser", None,
+                 f"case-{case['name']}-wasm32", scope)
+    wasm_probes = {"spin": "(defn main [] :i64 (loop [i 0] (if (< i 0) i (recur (inc i)))))",
+                   "deep": "(defn- f [n :i64] :i64 (if (= n 0) 0 (+ 1 (f (dec n)))))\n(defn main [] :i64 (f 100000000))"}
+    for name, body in wasm_probes.items():
+        src = out / f"wasm-probe-{name}.kotoba"
+        src.write_text(f"(ns probe-{name} (:export [main]))\n{body}\n")
+        compile_(F, src, wasm_dir / f"probe-{name}.wasm", "wasm32-browser", None, f"probe-{name}-wasm32", scope)
+    float_refusals = []
+    for case in json.loads((ROOT / FLOAT_CASES).read_text())["cases"]:
+        src = out / f"float-{case['name']}.kotoba"
+        src.write_text(case["source"])
+        r = run.run(f"float-{case['name']}-wasm32", [F, "compile", src, "--target", "wasm32-browser", "--output", wasm_dir / f"float-{case['name']}.wasm"],
+                    scope, success=False)
+        assert r.returncode == 1 and b"E7101" in r.stderr and f"detail {case['refusalDetail']}".encode() in r.stderr \
+            and not (wasm_dir / f"float-{case['name']}.wasm").exists(), ("wasm32 float refusal", case["name"], r.returncode, r.stderr[-300:])
+        float_refusals.append(case["name"])
+    wasm_modules = {p.name: pin(p) for p in sorted(wasm_dir.glob("*.wasm"))}
+    browser = shutil.which(os.environ.get("KOTOBA_BROWSER", "")) or next(
+        (shutil.which(b) for b in ("chromium", "chromium-browser", "google-chrome", "google-chrome-stable") if shutil.which(b)), None)
+    if browser:
+        run.run("wasm32-browser", [sys.executable, ROOT / WASM_CHECK, "--modules", wasm_dir, "--output", out / "wasm32-browser",
+                                   "--browser", browser], dict(HOME=str(out)))
+        wasm32 = dict(executed=True, **json.loads((out / "wasm32-browser/wasm32-browser.json").read_text()))
+    else:
+        wasm32 = dict(executed=False, reason="no Chromium or Chrome on this host: the qualify-x86_64 job runs these modules")
+    wasm32.update(modules=wasm_modules, floatRefusals=float_refusals)
+
     # hardening, natively
     probes = {"value": "(defn main [] :i64 42)",
               "spin": "(defn main [] :i64 (loop [i 0] (if (< i 0) i (recur (inc i)))))",
@@ -275,7 +314,7 @@ def main(out, tier, reuse=None, store=None):
                   adopted=dict(sourceGraph=adopted_pins, runnerStackBytes=int(ADOPTED_STACK), generations=adopted_gens, packed=packed,
                                arityRefusal=arity_refusal, expectedNativeImage=adoption["nativeImageSHA256"]),
                   diagnostic=diagnostic, closure=closure, provenance=provenance,
-                  cases=results, hardening=hardening, runtimeBoundary=runtime_boundary,
+                  cases=results, wasm32Browser=wasm32, hardening=hardening, runtimeBoundary=runtime_boundary,
                   steps=[dict(name=c["name"], seconds=c["seconds"], **({"reused": c["reused"]} if "reused" in c else
                                                                      dict(ran=True, **({"key": c["key"]} if "key" in c else {}))))
                          for c in run.calls],
@@ -283,7 +322,7 @@ def main(out, tier, reuse=None, store=None):
                   cCompilerOrLoader=False, JVMNodeOrGraalFallback=False, emulation=False)
     (out / "selfhost-bootstrap.json").write_text(json.dumps(report, indent=2) + "\n")
     print(report["status"], tier, "F", gens[-1]["image"]["sha256"][:16], "root reproduces" if root_reproduces else f"root differs (re-pin to F{len(gens)})",
-          "adoption image", len(results), "cases", flush=True)
+          "adoption image", len(results), "cases", "wasm32-browser", "executed" if wasm32["executed"] else "compiled", flush=True)
 
 
 if __name__ == "__main__":

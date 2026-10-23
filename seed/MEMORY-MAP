@@ -119,6 +119,9 @@
 ;; and MM-WORDS shifted by 4980736 + 2621440 = 7602176; MM-WORDS 24248320, heap size unchanged). The stack-machine static
 ;; emitter turns the 16-module core into a 6.6 MB image, beyond the AArch64 core's 3 MiB OUT. The core (seed/MANIFEST) keeps
 ;; this block, so its payload identity is unchanged. The static runtime's per-vector limit is 2^25 items (KXRT-VECTOR-MAX).
+;; LITB growth (2026-10-23, JUN-353): the combined compiler (seed/FULL-MANIFEST) reached 523 KiB of literal bytes and
+;; vector-literal tables (lowering adds the tables to the same region); MM-LITB-CAP 1048576 (+524288), every later base,
+;; MM-HEAP-END and MM-WORDS +524288 (MM-WORDS 24772608, heap size unchanged).
 
   ;; --- 1.3 record fields (offset inside a record) -------------------------------------------------------
   ;; TOK: one per token, source order. Written by 10-lex only.
