@@ -63,7 +63,12 @@
    :kotoba.security/classification :internal}
   :clock/now
   {:source-operation clock/now :effect :clock/now :compiler-wire-id 7
-   :kotoba.security/classification :public}
+   :kotoba.security/classification :public
+   ;; the native Linux static runtimes (amu#1518; sleep: JUN-360)
+   :forms {:wall {:request "wall" :answer "epoch milliseconds, decimal"}
+           :monotonic {:request "monotonic" :answer "nondecreasing nanoseconds, decimal"}
+           :sleep {:request "sleep <ms>" :answer "the monotonic reading after sleeping ms (0..60000) milliseconds on CLOCK_MONOTONIC"
+                   :seccomp "clock_nanosleep only with wire 7 granted"}}}
   :state/transact
   {:source-operation state/transact :effect :state/transact :compiler-wire-id 8
    :kotoba.security/classification :confidential}
@@ -367,10 +372,12 @@
     :rmdir {:token "RMDIR_SEP" :request "<path>RMDIR_SEP" :answer "\"1\" / \"0\""
             :answered-by #{:kexe-loader :linux-static}}
     :rename {:token "RENAME_SEP" :request "<from>RENAME_SEP<to>" :answer "\"1\" / \"0\""
-             :answered-by #{:kexe-loader :linux-static}}
+             :answered-by #{:kexe-loader :linux-static :amu-selfhost-static}
+             :amu-selfhost-static "each parent opened beneath the scope, renameat(2) of the last component (JUN-359)"}
     :fsync {:token "FSYNC_SEP" :request "<path>FSYNC_SEP"
             :answer "\"1\" once fsync(2) returned, \"0\" when the file cannot be opened or the flush fails"
-            :answered-by #{:kexe-loader :linux-static}}
+            :answered-by #{:kexe-loader :linux-static :amu-selfhost-static}
+            :amu-selfhost-static "a file or a directory, opened beneath the scope (JUN-359)"}
     :make-temp-dir {:token "MKTEMP_SEP" :request "<dir>MKTEMP_SEP<prefix>"
                     :answer "the absolute path of a NEW directory <dir>/<prefix><6 of [0-9a-z]>, mode 0700 (mkdtemp); \"\" when <dir> cannot be opened"
                     :answered-by #{:kexe-loader :linux-static}}
