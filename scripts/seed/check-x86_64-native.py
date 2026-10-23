@@ -23,6 +23,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -39,11 +40,13 @@ def main(boot, out):
     (out / "raw").mkdir()
     calls = []
 
-    def run(name, argv, env, ok=True):
-        r = subprocess.run(list(map(str, argv)), cwd=out, env={"PATH": "/usr/bin:/bin", **env}, capture_output=True, timeout=3600)
+    def run(name, argv, env, ok=True, timeout=3600):
+        started = time.monotonic()
+        r = subprocess.run(list(map(str, argv)), cwd=out, env={"PATH": "/nonexistent", **env}, capture_output=True, timeout=timeout)
         (out / "raw" / (name + ".stdout")).write_bytes(r.stdout)
         (out / "raw" / (name + ".stderr")).write_bytes(r.stderr)
-        calls.append(dict(name=name, exit=r.returncode))
+        calls.append(dict(name=name, argv=list(map(str, argv)), exit=r.returncode, seconds=round(time.monotonic() - started, 3)))
+        (out / "calls.json").write_text(json.dumps(calls, indent=2) + "\n")
         if ok:
             assert r.returncode == 0 and not r.stderr, (name, r.returncode, r.stderr[-400:])
         return r
@@ -139,11 +142,32 @@ def main(boot, out):
         assert r.returncode == 0, (script, r.stdout[-400:], r.stderr[-400:])
         suites[script] = r.stdout.decode().strip().splitlines()[-1]
 
+    # 6. the adopted compiler core as an x86_64 static image
+    adoption = json.loads((ROOT / json.loads((ROOT / "seed/compiler-core.json").read_text())["adoptionReceipt"]).read_text())
+    def unity_of(manifest, dst):
+        ps = [p for p in (ROOT / manifest).read_text().splitlines() if p and not p.startswith("#")]
+        dst.write_bytes(b"".join((ROOT / p).read_bytes() + b"\n" for p in ps))
+        return pin(dst)
+    core_static, adopted = out / "core-static-unity.kotoba", out / "adopted-unity.kotoba"
+    unity_of("seed/CORE-STATIC-MANIFEST", core_static)
+    assert unity_of("seed/MANIFEST", adopted)["sha256"] == adoption["sourceUnitySHA256"], "adopted source drift"
+    senv = dict(scope, KEXE_STACK_BYTES="8388608")
+    run("X0", [X, "compile", core_static, "--target", "x86_64-linux", "--output", out / "X0.elf", "--format", "static"], senv)
+    (out / "X0.elf").chmod(0o755)
+    t0 = time.monotonic()
+    run("X0-core", [out / "X0.elf", "compile", adopted, "--target", "aarch64-macos", "--output", out / "X0-core.kseed"], senv, timeout=10800)
+    core_seconds = round(time.monotonic() - t0, 1)
+    run("X0-extract", [out / "X0.elf", "extract-native", out / "X0-core.kseed", "--symbol", "main", "--output", out / "X0-core.bin"], senv)
+    assert pin(out / "X0-core.bin")["sha256"] == adoption["nativeImageSHA256"], "x86_64 core output mismatch"
+    core_x86 = dict(X0=pin(out / "X0.elf"), container=pin(out / "X0-core.kseed"), native=pin(out / "X0-core.bin"),
+                    coreCompileSeconds=core_seconds)
+
+
     report = dict(status="PASS_NATIVE_X86_64_LOADERLESS", host=[platform.system(), platform.machine(), platform.release()],
                   nativeX86_64Kernel=True, emulation=False, cCompilerOrLoader=False,
                   compiler=dict(crossBuiltOnArm64=s_cross, X2=x2, X3=x3), cases=results, hardening=hardening,
                   runtimeBoundary=runtime_boundary,
-                  kx64Runner=dict(runner=pin(out / "R-x86_64.elf"), generations=gens), suites=suites,
+                  coreOnX86_64=core_x86, kx64Runner=dict(runner=pin(out / "R-x86_64.elf"), generations=gens), suites=suites,
                   bootstrapReceipt=json.loads((boot / "selfhost-bootstrap.json").read_text())["root"]["image"])
     (out / "x86_64-native.json").write_text(json.dumps(report, indent=2) + "\n")
     print(report["status"], "X1=X2=X3", x2["sha256"][:16], len(results), "cases; G1=G2=G3 through the runner", flush=True)

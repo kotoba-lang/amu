@@ -83,7 +83,7 @@ def main(compiler, output, previous_root, payload, definition_only_root=None):
         argv = [producers[who], "compile", src, "--target", target, "--output", dst, "--format", fmt]
         if fmt == "packed":
             argv += ["--payload", payload]
-        r = subprocess.run(list(map(str, argv)), cwd=art, env={"PATH": "/usr/bin:/bin", "KEXE_CAP_RESOURCES_35": str(art)},
+        r = subprocess.run(list(map(str, argv)), cwd=art, env={"PATH": "/nonexistent", "KEXE_CAP_RESOURCES_35": str(art)},
                            capture_output=True, timeout=900)
         src.with_suffix(".stdout").write_bytes(r.stdout)
         src.with_suffix(".stderr").write_bytes(r.stderr)
@@ -132,7 +132,7 @@ def main(compiler, output, previous_root, payload, definition_only_root=None):
         r, dst = compile_("new", "case-" + case["name"], case["source"], host_target, "static")
         assert r.returncode == 0 and not r.stderr, calls[-1]
         dst.chmod(0o755)
-        r = subprocess.run([str(dst)], cwd=art, env={"PATH": "/usr/bin:/bin", "KEXE_STRUCTURED_REPORT": "1", "KEXE_ALLOW": "-", "KEXE_FUEL": "1000000"}, capture_output=True, timeout=120)
+        r = subprocess.run([str(dst)], cwd=art, env={"PATH": "/nonexistent", "KEXE_STRUCTURED_REPORT": "1", "KEXE_ALLOW": "-", "KEXE_FUEL": "1000000"}, capture_output=True, timeout=120)
         (art / ("case-" + case["name"] + ".stdout")).write_bytes(r.stdout)
         (art / ("case-" + case["name"] + ".stderr")).write_bytes(r.stderr)
         fuel = re.search(rb":remaining ([0-9]+)", r.stdout)

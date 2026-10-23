@@ -1,0 +1,271 @@
+;; Privileged native CDCI supervisor. Appended only to the pinned canonical
+;; entry by the dedicated Amu factory, never to arbitrary guest source.
+;; Linux x86_64 only. Exactly two jobs: Amu selfhost and Kotoba native.
+;; No shell, PATH lookup, interpreter, dynamic loader, or external verdict.
+(defn- kxrt-load64 [a :i64] :i64 0)
+(defn- kxrt-store64 [a :i64 v :i64] :i64 0)
+(defn- kxrt-load8 [a :i64] :i64 0)
+(defn- kxrt-store8 [a :i64 v :i64] :i64 0)
+(defn- kxrt-syscall [n :i64 a :i64 b :i64 c :i64 d :i64 e :i64 f :i64] :i64 0)
+(defn- kxrt-ctx [] :i64 0)
+(defn- kxrt-call-main [ctx :i64] :i64 0)
+(defn- kxrt-trap [code :i64] :i64 0)
+(defn- kxrt-call-at [addr :i64 ctx :i64 argv :i64] :i64 0)
+(defn- kc-g [] :i64 (kxrt-load64 (+ (kxrt-ctx) 512)))
+(defn- kc-get [i :i64] :i64 (kxrt-load64 (+ (kc-g) i)))
+(defn- kc-set [i :i64 v :i64] :i64 (kxrt-store64 (+ (kc-g) i) v))
+(defn- kc-copy [dst :i64 src :i64 n :i64] :i64
+  (loop [i 0] (if (= i n) dst (let [w (kxrt-store8 (+ dst i) (kxrt-load8 (+ src i)))] (recur (+ i 1))))))
+(defn- kc-word [dst :i64 bits :i64 n :i64] :i64
+  (loop [i 0 v bits] (if (= i n) dst (let [w (kxrt-store8 (+ dst i) (bit-and v 255))] (recur (+ i 1) (u64-shift-right v 8))))))
+(defn- kc-equal [a :i64 b :i64 n :i64] :bool
+  (loop [i 0] (if (= i n) true (and (= (kxrt-load8 (+ a i)) (kxrt-load8 (+ b i))) (recur (+ i 1))))))
+(defn- kc-len [p :i64 limit :i64] :i64
+  (loop [i 0] (cond (>= i limit) -1 (= (kxrt-load8 (+ p i)) 0) i :else (recur (+ i 1)))))
+(defn- kc-write [fd :i64 p :i64 n :i64] :i64
+  (loop [i 0]
+    (if (= i n) 0
+      (let [r (kxrt-syscall 1 fd (+ p i) (- n i) 0 0 0)]
+        (cond (= r -4) (recur i) (> r 0) (recur (+ i r)) :else -1)))))
+(defn- kc-rem [a :i64 b :i64] :i64 (- a (* (quot a b) b)))
+(defn- kc-dec [p :i64 n :i64] :i64
+  (if (< n 10) (let [w (kxrt-store8 p (+ 48 n))] 1)
+    (let [i (kc-dec p (quot n 10)) w (kxrt-store8 (+ p i) (+ 48 (kc-rem n 10)))] (+ i 1))))
+(defn- kc-fail [code :i64] :i64
+  (let [p (+ (kc-g) 65536) a (kc-word p 0x453a49434443 6) n (kc-dec (+ p 6) code)
+        z (kxrt-store8 (+ p 6 n) 10) w (kc-write 2 p (+ 7 n))]
+    (kxrt-syscall 60 2 0 0 0 0 0)))
+(defn- kc-close [fd :i64] :i64 (if (< (kxrt-syscall 3 fd 0 0 0 0 0) 0) (kc-fail 1007) 0))
+(defn- kc-readfd [fd :i64 limit :i64] :i64
+  (let [p (+ (kc-g) 131072)]
+    (loop [n 0]
+      (let [r (kxrt-syscall 0 fd (+ p n) (if (< (+ 1 (- limit n)) 65536) (+ 1 (- limit n)) 65536) 0 0 0)]
+        (cond (= r -4) (recur n) (< r 0) (kc-fail 1003) (= r 0) n
+              (> (+ n r) limit) (kc-fail 1004) :else (recur (+ n r)))))))
+;; Deliberately bounded ASCII paths: no empty/dot segments, colon, control,
+;; escaping names or symlinks. openat2 enforces BENEATH|NO_MAGICLINKS|NO_SYMLINKS.
+(defn- kc-path? [p :i64 absolute :bool] :bool
+  (let [n (kc-len p 4097)]
+    (and (> n 0) (or (not absolute) (= (kxrt-load8 p) 47))
+         (or absolute (not= (kxrt-load8 p) 47))
+         (loop [i (if absolute 1 0) start (if absolute 1 0)]
+           (let [c (kxrt-load8 (+ p i))]
+             (cond (or (= c 0) (= c 47))
+                   (and (> i start)
+                        (not (and (= (- i start) 1) (= (kxrt-load8 (+ p start)) 46)))
+                        (not (and (= (- i start) 2) (= (kxrt-load8 (+ p start)) 46) (= (kxrt-load8 (+ p start 1)) 46)))
+                        (if (= c 0) true (recur (+ i 1) (+ i 1))))
+                   (or (and (>= c 48) (<= c 57)) (and (>= c 65) (<= c 90))
+                       (and (>= c 97) (<= c 122)) (= c 46) (= c 45) (= c 95)) (recur (+ i 1) start)
+                   :else false))))))
+(defn- kc-line [i :i64] :i64 (kxrt-load64 (+ (kc-g) 110592 (* i 8))))
+(defn- kc-open [p :i64 flags :i64 mode :i64] :i64
+  (let [how (+ (kc-g) 1024) a (kxrt-store64 how flags) b (kxrt-store64 (+ how 8) mode)
+        c (kxrt-store64 (+ how 16) 14)]
+    (kxrt-syscall 437 (kc-get 8) p how 24 0 0)))
+(defn- kc-absolute-open [p :i64 flags :i64] :i64
+  (let [how (+ (kc-g) 1024) a (kxrt-store64 how flags) b (kxrt-store64 (+ how 8) 0)
+        c (kxrt-store64 (+ how 16) 6)]
+    (kxrt-syscall 437 -100 p how 24 0 0)))
+(defn- kc-file [p :i64] :i64
+  (let [fd (kc-open p 655360 0)]
+    (if (< fd 0) (kc-fail 1003) (let [n (kc-readfd fd 16777216) c (kc-close fd)] n))))
+(defn- kc-hex? [p :i64] :bool
+  (and (= (kc-len p 65) 64)
+       (loop [i 0] (if (= i 64) true
+         (let [c (kxrt-load8 (+ p i))]
+           (and (or (and (>= c 48) (<= c 57)) (and (>= c 97) (<= c 102))) (recur (+ i 1))))))))
+
+(defn- kxrt-u32 [x :i64] :i64 (bit-and x 4294967295))
+(defn- kxrt-rotr [x :i64 n :i64] :i64 (kxrt-u32 (bit-or (u64-shift-right x n) (i64-shift-left x (- 32 n)))))
+(defn- kxrt-sha-k [i :i64] :i64 (case i 0 1116352408 1 1899447441 2 3049323471 3 3921009573 4 961987163 5 1508970993 6 2453635748 7 2870763221 8 3624381080 9 310598401 10 607225278 11 1426881987 12 1925078388 13 2162078206 14 2614888103 15 3248222580 16 3835390401 17 4022224774 18 264347078 19 604807628 20 770255983 21 1249150122 22 1555081692 23 1996064986 24 2554220882 25 2821834349 26 2952996808 27 3210313671 28 3336571891 29 3584528711 30 113926993 31 338241895 32 666307205 33 773529912 34 1294757372 35 1396182291 36 1695183700 37 1986661051 38 2177026350 39 2456956037 40 2730485921 41 2820302411 42 3259730800 43 3345764771 44 3516065817 45 3600352804 46 4094571909 47 275423344 48 430227734 49 506948616 50 659060556 51 883997877 52 958139571 53 1322822218 54 1537002063 55 1747873779 56 1955562222 57 2024104815 58 2227730452 59 2361852424 60 2428436474 61 2756734187 62 3204031479 3329325298))
+(defn- kxrt-sha-h0 [i :i64] :i64 (case i 0 1779033703 1 3144134277 2 1013904242 3 2773480762 4 1359893119 5 2600822924 6 528734635 1541459225))
+(defn- kxrt-be32 [p :i64] :i64
+  (bit-or (i64-shift-left (kxrt-load8 p) 24) (bit-or (i64-shift-left (kxrt-load8 (+ p 1)) 16)
+          (bit-or (i64-shift-left (kxrt-load8 (+ p 2)) 8) (kxrt-load8 (+ p 3))))))
+(defn- kxrt-sha-block [h :i64 w :i64 blk :i64] :i64
+  (let [a (loop [i 0] (if (= i 16) 0 (let [z (kxrt-store64 (+ w (* 8 i)) (kxrt-be32 (+ blk (* 4 i))))] (recur (inc i)))))
+        b (loop [i 16]
+            (if (= i 64) 0
+              (let [w15 (kxrt-load64 (+ w (* 8 (- i 15)))) w2 (kxrt-load64 (+ w (* 8 (- i 2))))
+                    s0 (bit-xor (kxrt-rotr w15 7) (bit-xor (kxrt-rotr w15 18) (u64-shift-right w15 3)))
+                    s1 (bit-xor (kxrt-rotr w2 17) (bit-xor (kxrt-rotr w2 19) (u64-shift-right w2 10)))
+                    z (kxrt-store64 (+ w (* 8 i)) (kxrt-u32 (+ (kxrt-load64 (+ w (* 8 (- i 16)))) s0 (kxrt-load64 (+ w (* 8 (- i 7)))) s1)))]
+                (recur (inc i)))))]
+    (loop [i 0 va (kxrt-load64 h) vb (kxrt-load64 (+ h 8)) vc (kxrt-load64 (+ h 16)) vd (kxrt-load64 (+ h 24))
+           ve (kxrt-load64 (+ h 32)) vf (kxrt-load64 (+ h 40)) vg (kxrt-load64 (+ h 48)) vh (kxrt-load64 (+ h 56))]
+      (if (= i 64)
+        (let [z0 (kxrt-store64 h (kxrt-u32 (+ (kxrt-load64 h) va))) z1 (kxrt-store64 (+ h 8) (kxrt-u32 (+ (kxrt-load64 (+ h 8)) vb)))
+              z2 (kxrt-store64 (+ h 16) (kxrt-u32 (+ (kxrt-load64 (+ h 16)) vc))) z3 (kxrt-store64 (+ h 24) (kxrt-u32 (+ (kxrt-load64 (+ h 24)) vd)))
+              z4 (kxrt-store64 (+ h 32) (kxrt-u32 (+ (kxrt-load64 (+ h 32)) ve))) z5 (kxrt-store64 (+ h 40) (kxrt-u32 (+ (kxrt-load64 (+ h 40)) vf)))
+              z6 (kxrt-store64 (+ h 48) (kxrt-u32 (+ (kxrt-load64 (+ h 48)) vg)))]
+          (kxrt-store64 (+ h 56) (kxrt-u32 (+ (kxrt-load64 (+ h 56)) vh))))
+        (let [t1 (kxrt-u32 (+ vh (bit-xor (kxrt-rotr ve 6) (bit-xor (kxrt-rotr ve 11) (kxrt-rotr ve 25)))
+                              (bit-xor (bit-and ve vf) (bit-and (kxrt-u32 (bit-not ve)) vg)) (kxrt-sha-k i) (kxrt-load64 (+ w (* 8 i)))))
+              t2 (kxrt-u32 (+ (bit-xor (kxrt-rotr va 2) (bit-xor (kxrt-rotr va 13) (kxrt-rotr va 22)))
+                              (bit-xor (bit-and va vb) (bit-xor (bit-and va vc) (bit-and vb vc)))))]
+          (recur (inc i) (kxrt-u32 (+ t1 t2)) va vb vc (kxrt-u32 (+ vd t1)) ve vf vg))))))
+;; SHA-256 over the exact read buffer, sharing the runtime's scalar rounds.
+;; SHA scratch never aliases the manifest, argv, read buffer or receipt.
+(defn- kc-sha [a :i64 n :i64] :i64
+  (let [s (+ (kc-g) 4096) h s w (+ s 64) tail (+ s 576) hex (+ s 704)
+        z (loop [i 0] (if (= i 8) 0 (let [v (kxrt-store64 (+ h (* i 8)) (kxrt-sha-h0 i))] (recur (+ i 1)))))
+        done (loop [d 0] (if (> (+ d 64) n) d (let [v (kxrt-sha-block h w (+ a d))] (recur (+ d 64)))))
+        rest (- n done) c (kc-copy tail (+ a done) rest) v (kxrt-store8 (+ tail rest) 128)
+        padded (if (<= (+ rest 1) 56) 64 128)
+        zz (loop [i (+ rest 1)] (if (= i padded) 0 (let [v (kxrt-store8 (+ tail i) 0)] (recur (+ i 1)))))
+        lb (loop [i 0] (if (= i 8) 0 (let [v (kxrt-store8 (+ tail (- padded 1 i)) (bit-and (u64-shift-right (* n 8) (* i 8)) 255))] (recur (+ i 1)))))
+        b1 (kxrt-sha-block h w tail) b2 (if (= padded 128) (kxrt-sha-block h w (+ tail 64)) 0)
+        render (loop [i 0] (if (= i 64) 0
+          (let [word (kxrt-load64 (+ h (* (quot i 8) 8))) digit (bit-and (u64-shift-right word (* (- 7 (kc-rem i 8)) 4)) 15)
+                v (kxrt-store8 (+ hex i) (+ digit (if (< digit 10) 48 87)))] (recur (+ i 1)))))
+        end (kxrt-store8 (+ hex 64) 0)] hex))
+(defn- kc-pin [path :i64 expected :i64] :i64
+  (let [n (kc-file path) hash (kc-sha (+ (kc-g) 131072) n)]
+    (if (kc-equal hash expected 64) n (kc-fail 2001))))
+(defn- kc-elf? [p :i64 n :i64] :bool
+  (and (>= n 64) (= (kxrt-load64 p) 0x00010102464c457f)
+       (= (bit-and (kxrt-load64 (+ p 16)) 4294967295) 4063234)
+       (= (bit-and (kxrt-load64 (+ p 54)) 65535) 56)
+       (let [off (kxrt-load64 (+ p 32)) count (bit-and (kxrt-load64 (+ p 56)) 65535)]
+         (and (>= off 64) (> count 0) (<= count 16) (<= off (- n (* count 56)))
+              (loop [i 0 load 0]
+                (if (= i count) (> load 0)
+                  (let [ph (+ p off (* i 56)) type (bit-and (kxrt-load64 ph) 4294967295)
+                        flags (u64-shift-right (kxrt-load64 ph) 32)]
+                    (and (not= type 2) (not= type 3)
+                         (or (not= type 1) (and (not= (bit-and flags 3) 3)
+                            (<= (kxrt-load64 (+ ph 8)) n) (<= (kxrt-load64 (+ ph 32)) (- n (kxrt-load64 (+ ph 8))))))
+                         (recur (+ i 1) (if (= type 1) (+ load 1) load))))))))))
+;; Snapshot the exact verified ELF into a sealed memfd. execveat consumes that
+;; descriptor, avoiding a path lookup or mutable executable after its hash check.
+(defn- kc-image [path :i64 expected :i64] :i64
+  (let [n (kc-pin path expected) p (+ (kc-g) 131072)]
+    (if (not (kc-elf? p n)) (kc-fail 2002)
+      (let [name (+ (kc-g) 2032) z (kxrt-store8 name 0) fd (kxrt-syscall 319 name 19 0 0 0 0)]
+        (if (< fd 0) (kc-fail 2003)
+          (if (or (< (kc-write fd p n) 0) (< (kxrt-syscall 72 fd 1033 15 0 0 0) 0))
+            (kc-fail 2003) fd))))))
+(defn- kc-parse [p :i64 n :i64 expected-lines :i64] :i64
+  (if (or (< n 7) (> n 32768) (not= (kxrt-load8 (+ p (- n 1))) 10)) (kc-fail 1002)
+    (let [a (kxrt-store64 (+ (kc-g) 110592) p)]
+      (loop [i 0 line 0]
+        (cond (= i n) (if (= line expected-lines) 0 (kc-fail 1002))
+              (= (kxrt-load8 (+ p i)) 0) (kc-fail 1002)
+              (= (kxrt-load8 (+ p i)) 10)
+                (let [z (kxrt-store8 (+ p i) 0)]
+                  (if (>= line expected-lines) (kc-fail 1002)
+                    (let [w (if (< (+ i 1) n) (kxrt-store64 (+ (kc-g) 110592 (* (+ line 1) 8)) (+ p i 1)) 0)]
+                      (recur (+ i 1) (+ line 1)))))
+              :else (recur (+ i 1) line))))))
+(defn- kc-absolute [index :i64 offset :i64] :i64
+  (let [root (kc-line 1) rel (kc-line index) rn (kc-len root 4097) n (kc-len rel 4097)
+        dst (+ (kc-g) offset) bounded (if (> (+ rn n 1) 4095) (kc-fail 1002) 0) c (kc-copy dst root rn) slash (kxrt-store8 (+ dst rn) 47)
+        d (kc-copy (+ dst rn 1) rel n) z (kxrt-store8 (+ dst rn n 1) 0)] dst))
+(defn- kc-newfile [name :i64] :i64
+  (let [fd (kc-open name 524481 384)] (if (< fd 0) (kc-fail 1006) fd)))
+(defn- kc-now [] :i64
+  (let [p (+ (kc-g) 128) r (kxrt-syscall 228 1 p 0 0 0 0)]
+    (if (< r 0) (kc-fail 3001) (kxrt-load64 p))))
+(defn- kc-limit [resource :i64 n :i64] :i64
+  (let [p (+ (kc-g) 160) a (kxrt-store64 p n) b (kxrt-store64 (+ p 8) n)]
+    (if (< (kxrt-syscall 160 resource p 0 0 0 0) 0) (kc-fail 3001) 0)))
+(defn- kc-child [image :i64 argv :i64 out :i64 err :i64 limit :i64 expected-exit :i64] :i64
+  (let [death (kxrt-syscall 157 1 9 0 0 0 0)
+        parent (kxrt-syscall 110 0 0 0 0 0 0)
+        priv (kxrt-syscall 157 38 1 0 0 0 0)
+        fds (kxrt-syscall 436 3 4294967295 4 0 0 0)
+        o (kxrt-syscall 33 out 1 0 0 0 0) e (kxrt-syscall 33 err 2 0 0 0 0)
+        a (kc-limit 0 limit) b (kc-limit 1 16777216) c (kc-limit 4 0)]
+    (if (or (< death 0) (not= parent (kc-get 32)) (< priv 0) (< fds 0) (< o 0) (< e 0)) (kc-fail 3001)
+      (let [r (kxrt-syscall 322 image (+ (kc-g) 2032) argv (+ (kc-g) 9000) 4096 0)] (kc-fail 3002)))))
+(defn- kc-job [image :i64 argv :i64 out :i64 err :i64 limit :i64 expected-exit :i64] :i64
+  (let [start (kc-now) child (kxrt-syscall 57 0 0 0 0 0 0)]
+    (cond (< child 0) (kc-fail 3001)
+          (= child 0) (kc-child image argv out err limit expected-exit)
+          :else (let [c (kc-set 40 child)]
+            (loop [attempt 0]
+              (let [r (kxrt-syscall 61 child (+ (kc-g) 64) 1 0 0 0)]
+                (cond (= r child) (if (= (kc-get 64) (* expected-exit 256)) 0 (kc-fail 3004))
+                      (and (< r 0) (not= r -4)) (kc-fail 3001)
+                      (>= (- (kc-now) start) limit)
+                        (let [k (kxrt-syscall 62 child 9 0 0 0 0) w (kxrt-syscall 61 child (+ (kc-g) 64) 0 0 0 0)] (kc-fail 3003))
+                      :else (let [p (+ (kc-g) 144) a (kxrt-store64 p 0) b (kxrt-store64 (+ p 8) 100000000)
+                                  s (kxrt-syscall 35 p 0 0 0 0 0)] (recur (+ attempt 1))))))))))
+
+;; Fixed argv, output paths and child environment; no caller command string.
+(defn- kc-tokens [] :i64
+  (let [
+        w0_0 (kc-word (+ (kc-g) 2048) 0x656c69706d6f63 7)
+        w1_0 (kc-word (+ (kc-g) 2112) 0x7465677261742d2d 8)
+        w2_0 (kc-word (+ (kc-g) 2176) 0x2d34366863726161 8)
+        w2_8 (kc-word (+ (kc-g) 2184) 0x736f63616d 5)
+        w3_0 (kc-word (+ (kc-g) 2240) 0x74757074756f2d2d 8)
+        w4_0 (kc-word (+ (kc-g) 2304) 0x656372756f732d2d 8)
+        w4_8 (kc-word (+ (kc-g) 2312) 0x6b636f6c2d 5)
+        w5_0 (kc-word (+ (kc-g) 2368) 0x6f6474732e756d61 8)
+        w5_8 (kc-word (+ (kc-g) 2376) 0x7475 2)
+        w6_0 (kc-word (+ (kc-g) 2432) 0x656474732e756d61 8)
+        w6_8 (kc-word (+ (kc-g) 2440) 0x7272 2)
+        w7_0 (kc-word (+ (kc-g) 2496) 0x732e61626f746f6b 8)
+        w7_8 (kc-word (+ (kc-g) 2504) 0x74756f6474 5)
+        w8_0 (kc-word (+ (kc-g) 1105920) 0x732e61626f746f6b 8)
+        w8_8 (kc-word (+ (kc-g) 1105928) 0x7272656474 5)
+        w9_0 (kc-word (+ (kc-g) 2624) 0x6365722e69636463 8)
+        w9_8 (kc-word (+ (kc-g) 2632) 0x74706965 4)
+        w10_0 (kc-word (+ (kc-g) 2688) 0x65732f636f72702f 8)
+        w10_8 (kc-word (+ (kc-g) 2696) 0x6578652f666c 6)
+        w11_0 (kc-word (+ (kc-g) 2752) 0x31522d494344434b 8)
+        w12_0 (kc-word (+ (kc-g) 2816) 0x6f6e2f3d48544150 8)
+        w12_8 (kc-word (+ (kc-g) 2824) 0x6e6574736978656e 8)
+        w12_16 (kc-word (+ (kc-g) 2832) 0x74 1)
+        w13_0 (kc-word (+ (kc-g) 2880) 0x4c4c415f4558454b 8)
+        w13_8 (kc-word (+ (kc-g) 2888) 0x37332c35333d574f 8)
+        w13_16 (kc-word (+ (kc-g) 2896) 0x39332c38332c 6)
+        w14_0 (kc-word (+ (kc-g) 2944) 0x4154535f4558454b 8)
+        w14_8 (kc-word (+ (kc-g) 2952) 0x53455459425f4b43 8)
+        w14_16 (kc-word (+ (kc-g) 2960) 0x383036383833383d 8)
+        w15_0 (kc-word (+ (kc-g) 3008) 0x5041435f4558454b 8)
+        w15_8 (kc-word (+ (kc-g) 3016) 0x4352554f5345525f 8)
+        w15_16 (kc-word (+ (kc-g) 3024) 0x3d35335f5345 6)
+        w27_0 (kc-word (+ (kc-g) 3776) 0x4154535f4558454b 8)
+        w27_8 (kc-word (+ (kc-g) 3784) 0x53455459425f4b43 8)
+        w27_16 (kc-word (+ (kc-g) 3792) 0x363735383430313d 8)
+        w28_0 (kc-word (+ (kc-g) 3840) 0x656372756f732d2d 8)
+        w28_8 (kc-word (+ (kc-g) 3848) 0x68732d6b636f6c2d 8)
+        w28_16 (kc-word (+ (kc-g) 3856) 0x36353261 4)
+        w29_0 (kc-word (+ (kc-g) 3904) 0x746e650a314c534b 8)
+        w29_8 (kc-word (+ (kc-g) 3912) 0x207972 3)
+        w30_0 (kc-word (+ (kc-g) 3968) 0x20656c69660a 6)
+        end 0] 0))
+(defn- kc-token [i :i64] :i64 (+ (kc-g) 2048 (* i 64)))
+(defn- kc-prepare-env [mode :i64] :i64
+  (let [a (kc-copy (+ (kc-g) 12288) (kc-token (if (= mode 0) 13 18)) (if (= mode 0) 23 13))
+        b (kc-copy (+ (kc-g) 12352) (kc-token (if (= mode 0) 14 27)) 25)
+        c (kc-copy (+ (kc-g) 12416) (kc-token 15) 22)
+        root (kc-line 1) n (kc-len root 4097) d (kc-copy (+ (kc-g) 12438) root (+ n 1))
+        e0 (kxrt-store64 (+ (kc-g) 9000) (+ (kc-g) 12288))
+        e1 (kxrt-store64 (+ (kc-g) 9008) (+ (kc-g) 12352))
+        e2 (kxrt-store64 (+ (kc-g) 9016) (+ (kc-g) 12416))
+        e3 (kxrt-store64 (+ (kc-g) 9024) (kc-token 12))
+        e4 (kxrt-store64 (+ (kc-g) 9032) (if (= mode 0) 0 (kc-token 16)))
+        e5 (kxrt-store64 (+ (kc-g) 9040) (if (= mode 0) 0 (kc-token 17)))
+        e6 (kxrt-store64 (+ (kc-g) 9048) 0)] 0))
+(defn- kc-prepare-args [] :i64
+  (let [p (+ (kc-g) 8192) a (kxrt-store64 p (kc-absolute 8 24576))
+        b (kxrt-store64 (+ p 8) (kc-token 0))
+        c (kxrt-store64 (+ p 16) (kc-absolute 9 32768))
+        d (kxrt-store64 (+ p 24) (kc-token 1))
+        e (kxrt-store64 (+ p 32) (kc-token 2))
+        f (kxrt-store64 (+ p 40) (kc-token 3))
+        g (kxrt-store64 (+ p 48) (kc-absolute 11 49152))
+        h (kxrt-store64 (+ p 56) (kc-token 4))
+        i (kxrt-store64 (+ p 64) (kc-absolute 10 40960))
+        j (kxrt-store64 (+ p 72) (kc-token 28))
+        k (kxrt-store64 (+ p 80) (kc-line 5)) l (kxrt-store64 (+ p 88) 0)] p))
+(defn- kc-sync-close [fd :i64] :i64
+  (if (< (kxrt-syscall 74 fd 0 0 0 0 0) 0) (kc-fail 1007) (kc-close fd)))
+(defn- kc-log-pin [token :i64 dst :i64] :i64
+  (let [n (kc-file (kc-token token)) h (kc-sha (+ (kc-g) 131072) n)] (kc-copy dst h 64)))
+(defn- kc-hash-line [p :i64 i :i64 h :i64] :i64
+  (let [c (kc-copy (+ p i) h 64) z (kxrt-store8 (+ p i 64) 10)] (+ i 65)))

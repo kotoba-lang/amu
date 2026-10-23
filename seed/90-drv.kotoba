@@ -27,6 +27,7 @@
         ;; R5A: --source-path D (repeatable) and --policy P also take a value
         (string=? s "--source-path") 1
         (string=? s "--source-lock") 1
+        (string=? s "--source-lock-sha256") 1
         (string=? s "--policy") 1
         (string=? s "--object-dir") 1
         (string=? s "--ns") 1   ; EMIT: compile-kir --emit-module --ns NAME
@@ -470,13 +471,35 @@
        (loop [index 0]
          (if (>= index (pj-l L pj-k-nroot)) true
            (and (pj-peq L P (pj-l L (+ pj-k-root0 index)) (ksl-root text index)) (recur (+ index 1)))))))
+;; A caller may bind the lock itself to an immutable digest. Validate the
+;; exact bytes that become the cached lock text, with no second file read.
+(defn- drv-pj-digest-arg [index :i64 count :i64 found :i64] :i64
+  (cond (>= index count) found
+        (string=? (io-arg index) "--source-lock-sha256")
+        (if (or (not= found -1) (>= (+ index 1) count)) -2
+          (drv-pj-digest-arg (+ index 2) count (+ index 1)))
+        (= (drv-flagv (io-arg index)) 1) (drv-pj-digest-arg (+ index 2) count found)
+        :else (drv-pj-digest-arg (+ index 1) count found)))
+(defn- drv-pj-lock-text [bytes :vector-i64] :string
+  (if (and (<= (vector-count bytes) 1048576)
+           (loop [index 0]
+             (if (= index (vector-count bytes)) true
+               (let [byte (vector-at bytes index)]
+                 (and (or (= byte 10) (and (>= byte 32) (<= byte 126))) (recur (+ index 1)))))))
+    (string-from-utf8 (bytes-from-vector-i64 bytes)) ""))
+(defn- drv-pj-lock-digest? [text :string] :bool
+  (let [argument (drv-pj-digest-arg 1 (io-argc) -1)]
+    (or (= argument -1)
+        (and (>= argument 0) (= (string-length (io-arg argument)) 64)
+             (ksl-hex? (io-arg argument) 0) (string=? (sh-text text) (io-arg argument))))))
 (defn- drv-pj-lock [M :vector-i64 L :vector-i64 P :string path :string] :string
   (let [argument (drv-pj-lock-arg 1 (io-argc) -1)]
     (cond (= argument -1) P
           (or (= argument -2) (= (pj-l L pj-k-unpinned) 1)) (let [w (pj-err M E-PROJ-UNPINNED 0)] P)
+          (= (io-exists (io-arg argument)) 0) (let [w (pj-err M E-PROJ-UNPINNED 0)] P)
           :else
-          (let [text (io-read-file M (io-arg argument))]
-            (if (and (ksl-valid? text) (string=? (ksl-entry text) path) (drv-pj-lock-roots? L P text))
+          (let [text (drv-pj-lock-text (io-read-bytes (io-arg argument)))]
+            (if (and (drv-pj-lock-digest? text) (ksl-valid? text) (string=? (ksl-entry text) path) (drv-pj-lock-roots? L P text))
               (let [w (-> L (pj-ls pj-k-source-lock 1) (pj-ls pj-k-lock-text (pj-n L)) (pj-ls pj-k-lock-files (ksl-file-count text)))]
                 (pj-padd L P text))
               (let [w (pj-err M E-PROJ-UNPINNED 0)] P))))))
@@ -822,6 +845,8 @@
   (cond (< n 1) (drv-usage)
         ;; Final native project commands cannot opt out of exact input pins.
         (= (drv-pj-has 1 n "--unpinned") 1) (drv-fail0 E-PROJ-UNPINNED)
+        (and (= (drv-pj-has 1 n "--source-lock-sha256") 1)
+             (= (drv-pj-has 1 n "--source-lock") 0)) (drv-fail0 E-PROJ-UNPINNED)
         (and (= (drv-pj-has 1 n "--source-lock") 1)
              (not (or (string=? (io-arg 0) "compile") (string=? (io-arg 0) "check")))) (drv-fail0 E-PROJ-UNPINNED)
         (= (drv-is (io-arg 0) 11 1891999495935608509) 1) (drv-kir n)  ; compile-kir (block above)
