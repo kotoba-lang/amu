@@ -1,0 +1,224 @@
+[
+  {
+    "name": "S1.elf",
+    "argv": [
+      "/work/bootstrap/previous-root.elf",
+      "compile",
+      "/work/bootstrap/selfhost-unity.kotoba",
+      "--target",
+      "aarch64-linux",
+      "--output",
+      "/work/bootstrap/S1.elf",
+      "--format",
+      "static"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "S2.elf",
+    "argv": [
+      "/work/bootstrap/S1.elf",
+      "compile",
+      "/work/bootstrap/selfhost-unity.kotoba",
+      "--target",
+      "aarch64-linux",
+      "--output",
+      "/work/bootstrap/S2.elf",
+      "--format",
+      "static"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "S3.elf",
+    "argv": [
+      "/work/bootstrap/S2.elf",
+      "compile",
+      "/work/bootstrap/selfhost-unity.kotoba",
+      "--target",
+      "aarch64-linux",
+      "--output",
+      "/work/bootstrap/S3.elf",
+      "--format",
+      "static"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "runner.elf",
+    "argv": [
+      "/work/bootstrap/S3.elf",
+      "compile",
+      "/work/bootstrap/runner.kotoba",
+      "--target",
+      "aarch64-linux",
+      "--output",
+      "/work/bootstrap/runner.elf",
+      "--format",
+      "runner"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "S-x86_64.elf",
+    "argv": [
+      "/work/bootstrap/S3.elf",
+      "compile",
+      "/work/bootstrap/selfhost-unity.kotoba",
+      "--target",
+      "x86_64-linux",
+      "--output",
+      "/work/bootstrap/S-x86_64.elf",
+      "--format",
+      "static"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "C0.elf",
+    "argv": [
+      "/work/bootstrap/S3.elf",
+      "compile",
+      "/work/bootstrap/core-static-unity.kotoba",
+      "--target",
+      "aarch64-linux",
+      "--output",
+      "/work/bootstrap/C0.elf",
+      "--format",
+      "static"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "G1-compile",
+    "argv": [
+      "/work/bootstrap/C0.elf",
+      "compile",
+      "/work/bootstrap/adopted-unity.kotoba",
+      "--target",
+      "aarch64-macos",
+      "--output",
+      "/work/bootstrap/G1.kseed"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "G1-extract",
+    "argv": [
+      "/work/bootstrap/C0.elf",
+      "extract-native",
+      "/work/bootstrap/G1.kseed",
+      "--symbol",
+      "main",
+      "--output",
+      "/work/bootstrap/G1.bin"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "G2-compile",
+    "argv": [
+      "/work/bootstrap/runner.elf",
+      "/work/bootstrap/G1.bin",
+      "0",
+      "0",
+      "aarch64",
+      "35,37,38,39",
+      "--",
+      "compile",
+      "/work/bootstrap/adopted-unity.kotoba",
+      "--target",
+      "aarch64-macos",
+      "--output",
+      "/work/bootstrap/G2.kseed"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "G2-extract",
+    "argv": [
+      "/work/bootstrap/runner.elf",
+      "/work/bootstrap/G1.bin",
+      "0",
+      "0",
+      "aarch64",
+      "35,37,38,39",
+      "--",
+      "extract-native",
+      "/work/bootstrap/G2.kseed",
+      "--symbol",
+      "main",
+      "--output",
+      "/work/bootstrap/G2.bin"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "G3-compile",
+    "argv": [
+      "/work/bootstrap/runner.elf",
+      "/work/bootstrap/G2.bin",
+      "0",
+      "0",
+      "aarch64",
+      "35,37,38,39",
+      "--",
+      "compile",
+      "/work/bootstrap/adopted-unity.kotoba",
+      "--target",
+      "aarch64-macos",
+      "--output",
+      "/work/bootstrap/G3.kseed"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "G3-extract",
+    "argv": [
+      "/work/bootstrap/runner.elf",
+      "/work/bootstrap/G2.bin",
+      "0",
+      "0",
+      "aarch64",
+      "35,37,38,39",
+      "--",
+      "extract-native",
+      "/work/bootstrap/G3.kseed",
+      "--symbol",
+      "main",
+      "--output",
+      "/work/bootstrap/G3.bin"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "pack",
+    "argv": [
+      "/work/bootstrap/S3.elf",
+      "compile",
+      "/work/bootstrap/runner.kotoba",
+      "--target",
+      "aarch64-linux",
+      "--output",
+      "/work/bootstrap/P.elf",
+      "--format",
+      "packed",
+      "--payload",
+      "/work/bootstrap/G3.kseed"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "packed-rebuild",
+    "argv": [
+      "/work/bootstrap/P.elf",
+      "compile",
+      "/work/bootstrap/adopted-unity.kotoba",
+      "--target",
+      "aarch64-macos",
+      "--output",
+      "/work/bootstrap/P.kseed"
+    ],
+    "exit": 0
+  }
+]

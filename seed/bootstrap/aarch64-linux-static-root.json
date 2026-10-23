@@ -1,42 +1,143 @@
 {
   "schema": "amu.seed.static-root.v1",
   "image": {
-    "bytes": 1323520,
-    "sha256": "cd85f3fc6e68511f6de3e71692dfd9b90133bab3fe2c85285bb423a7dc80ad60"
+    "bytes": 3039744,
+    "sha256": "61ee2d3870612c7f8ed6bd2d25f40c8cc68b26d2b5b5336204b1ff2651fe60bb"
   },
   "target": "aarch64-linux",
-  "format": "static",
-  "sourceManifest": "seed/X86_64-LINUX-SELFHOST-MANIFEST",
+  "format": "packed",
+  "sourceManifest": "seed/FULL-MANIFEST",
   "sourceUnity": {
-    "bytes": 793591,
-    "sha256": "b7a4219d6037f7a71277ed6e8e117adace0d273d06a2404651cc07b0673150c5"
+    "bytes": 3053539,
+    "sha256": "3c81e1f7acc6822b173a089fef80e829db2efb28c19bd23726c18e01f81f9480"
   },
-  "sourceCommitBase": "e06dbba75ce7b559c23e3199189f476599973df0",
+  "sourceCommitBase": "457042ab741520980bceb5bf12970937d1bc8dba",
   "producedBy": {
-    "how": "Amu native previous root built S1, S1 built S2, S2 built S3, S3 built S4. S2=S3=S4. The runtime gains bounded scalar lifetimes/vector growth/KGraph while preserving current-main packed mode and JUN-325 direct/function-address refusals. Existing native limits and grants retained; no hosted compiler or C loader.",
+    "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation). The root becomes F, the combined compiler (seed/FULL-MANIFEST) packed as a static image (JUN-341): the previous root built S1 = S2 = S3 from the Linux selfhost closure; S2 built C0 from seed/CORE-STATIC-MANIFEST; C0 compiled CORE-STATIC to Kw, S2 packed it as Pw; Pw compiled FULL-MANIFEST to F1, S2 packed it; F1 rebuilt and packed itself to F2 = F1 (= this image), F2 rebuilt the same container (F3); F2's core route gives the adoption image.",
     "date": "2026-10-23",
-    "previousRoot": "d17590b4352b4ecae97fb472355b05cda54cbfc01d3a29ad284531e2342e13d2",
+    "previousRoot": "1739f52f02fc90c28a1fa4a6c3a3f780caeff481893e3a1cd35badd8c227682e",
     "chain": {
-      "S1": {
-        "bytes": 1315328,
-        "sha256": "28aac6a86bd0b6cb944d173996b94aab5c7b72be419199ce0be0d4d24f5647bc"
+      "S1.elf": {
+        "bytes": 1458688,
+        "sha256": "1739f52f02fc90c28a1fa4a6c3a3f780caeff481893e3a1cd35badd8c227682e"
       },
-      "S2": {
-        "bytes": 1323520,
-        "sha256": "cd85f3fc6e68511f6de3e71692dfd9b90133bab3fe2c85285bb423a7dc80ad60"
+      "S2.elf": {
+        "bytes": 1458688,
+        "sha256": "1739f52f02fc90c28a1fa4a6c3a3f780caeff481893e3a1cd35badd8c227682e"
       },
-      "S3": {
-        "bytes": 1323520,
-        "sha256": "cd85f3fc6e68511f6de3e71692dfd9b90133bab3fe2c85285bb423a7dc80ad60"
+      "C0.elf": {
+        "bytes": 6722048,
+        "sha256": "de51f261c8bfb9b2c9d7b16383600f52487eb0535b17fd3fd88ff17d83e60f99"
       },
-      "S4": {
-        "bytes": 1323520,
-        "sha256": "cd85f3fc6e68511f6de3e71692dfd9b90133bab3fe2c85285bb423a7dc80ad60"
+      "Kw.kseed": {
+        "bytes": 2573379,
+        "sha256": "e109836db29b5e8cc8e9e1de0058b7010894259c7e7a6e22a54959192bf387f9"
+      },
+      "Pw.elf": {
+        "bytes": 2781696,
+        "sha256": "f052b05282825aefc6eb17f810079cab70e309bed7fd4077acb6ddb13d0da48b"
+      },
+      "F1.kseed": {
+        "bytes": 2832643,
+        "sha256": "b02f7ad3eb19987db1b525b4d23e5f6d4b093c151e96c9ba863e13821078b35e"
+      },
+      "F1.elf": {
+        "bytes": 3039744,
+        "sha256": "61ee2d3870612c7f8ed6bd2d25f40c8cc68b26d2b5b5336204b1ff2651fe60bb"
+      },
+      "F2.kseed": {
+        "bytes": 2832643,
+        "sha256": "b02f7ad3eb19987db1b525b4d23e5f6d4b093c151e96c9ba863e13821078b35e"
+      },
+      "F2.elf": {
+        "bytes": 3039744,
+        "sha256": "61ee2d3870612c7f8ed6bd2d25f40c8cc68b26d2b5b5336204b1ff2651fe60bb"
+      },
+      "F3.kseed": {
+        "bytes": 2832643,
+        "sha256": "b02f7ad3eb19987db1b525b4d23e5f6d4b093c151e96c9ba863e13821078b35e"
+      },
+      "A.bin": {
+        "bytes": 2573448,
+        "sha256": "d88720e6d6cf9be9cf3f82a5719d9bc885440b7833fdbdc6590f2e787f90dd9f"
       }
     }
   },
-  "verification": "Native S2=S3=S4 and full current runtime-boundary corpus. Full18 core bootstrap and final corpus evidence recorded separately.",
+  "verification": "scripts/seed/selfhost-bootstrap.py on arm64 Linux: F rebuilds itself (F -> F' = root) natively, without any C compiler or loader; --tier full re-derives F from the previous lineage (C0 -> Kw -> Pw -> F)",
   "history": [
+    {
+      "image": {
+        "bytes": 1458688,
+        "sha256": "1739f52f02fc90c28a1fa4a6c3a3f780caeff481893e3a1cd35badd8c227682e"
+      },
+      "sourceUnity": {
+        "bytes": 862791,
+        "sha256": "4ccdcc04382a2469005a71e87541e6fcc4d50f22ddd088ce420ec2300bcf48fd"
+      },
+      "sourceCommitBase": "028019bc1ef3c8dbb5dafc08c3de9cc3c9774ab8",
+      "producedBy": {
+        "how": "The prior Amu-native root built S1, S1 built S2, S2 built S3, S3 built S4. S2=S3=S4. TCP/spawn runtime and shared frontend, no hosted compiler/C loader.",
+        "date": "2026-10-23",
+        "previousRoot": "cd85f3fc6e68511f6de3e71692dfd9b90133bab3fe2c85285bb423a7dc80ad60",
+        "chain": {
+          "S1": {
+            "bytes": 1393152,
+            "sha256": "75b9975bf141967b8f6d9ee2207308718b0387985fe2de5a9e8bea6e203ecc85"
+          },
+          "S2": {
+            "bytes": 1458688,
+            "sha256": "1739f52f02fc90c28a1fa4a6c3a3f780caeff481893e3a1cd35badd8c227682e"
+          },
+          "S3": {
+            "bytes": 1458688,
+            "sha256": "1739f52f02fc90c28a1fa4a6c3a3f780caeff481893e3a1cd35badd8c227682e"
+          },
+          "S4": {
+            "bytes": 1458688,
+            "sha256": "1739f52f02fc90c28a1fa4a6c3a3f780caeff481893e3a1cd35badd8c227682e"
+          }
+        }
+      }
+    },
+    {
+      "schema": "amu.seed.static-root.v1",
+      "image": {
+        "bytes": 1323520,
+        "sha256": "cd85f3fc6e68511f6de3e71692dfd9b90133bab3fe2c85285bb423a7dc80ad60"
+      },
+      "target": "aarch64-linux",
+      "format": "static",
+      "sourceManifest": "seed/X86_64-LINUX-SELFHOST-MANIFEST",
+      "sourceUnity": {
+        "bytes": 793591,
+        "sha256": "b7a4219d6037f7a71277ed6e8e117adace0d273d06a2404651cc07b0673150c5"
+      },
+      "sourceCommitBase": "e06dbba75ce7b559c23e3199189f476599973df0",
+      "producedBy": {
+        "how": "Amu native previous root built S1, S1 built S2, S2 built S3, S3 built S4. S2=S3=S4. The runtime gains bounded scalar lifetimes/vector growth/KGraph while preserving current-main packed mode and JUN-325 direct/function-address refusals. Existing native limits and grants retained; no hosted compiler or C loader.",
+        "date": "2026-10-23",
+        "previousRoot": "d17590b4352b4ecae97fb472355b05cda54cbfc01d3a29ad284531e2342e13d2",
+        "chain": {
+          "S1": {
+            "bytes": 1315328,
+            "sha256": "28aac6a86bd0b6cb944d173996b94aab5c7b72be419199ce0be0d4d24f5647bc"
+          },
+          "S2": {
+            "bytes": 1323520,
+            "sha256": "cd85f3fc6e68511f6de3e71692dfd9b90133bab3fe2c85285bb423a7dc80ad60"
+          },
+          "S3": {
+            "bytes": 1323520,
+            "sha256": "cd85f3fc6e68511f6de3e71692dfd9b90133bab3fe2c85285bb423a7dc80ad60"
+          },
+          "S4": {
+            "bytes": 1323520,
+            "sha256": "cd85f3fc6e68511f6de3e71692dfd9b90133bab3fe2c85285bb423a7dc80ad60"
+          }
+        }
+      },
+      "verification": "Native S2=S3=S4 and full current runtime-boundary corpus. Full18 core bootstrap and final corpus evidence recorded separately."
+    },
     {
       "schema": "amu.seed.static-root.v1",
       "image": {
