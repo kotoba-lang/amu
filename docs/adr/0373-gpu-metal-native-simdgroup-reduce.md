@@ -43,7 +43,14 @@
   0.657/0.658/0.650, rule 2 REGIME-INVARIANT FASTER, 18/18) and FLIPPED
   (the W = 32 flip slice, below) -- six answers of this row carry
   `:measured? true` on the narrowed M1 Max class, the class's whole W
-  band [32, 1024] (the six are every width the row admits). Every other
+  band [32, 1024] (the six are every width the row admits). UPDATE
+  2026-10-24 (the shape-2 series, two cells): W = 256 measured and
+  FLIPPED at n = 2^20 (the shape-2 anchor -- its record names both
+  shapes) and W = 512 measured at n = 2^20 and REFUSED as a selection
+  basis (claim-protocol rule 2 REGIME-SCOPED -- the first
+  measured-but-scoped cell; the flip contract's scoped-cell answer is
+  decided in the measurement-contract section below and pinned by
+  tests). Every other
   cell is unmeasured and every answer outside the six flip cells still
   carries `:measured? false`.] ADR-0356 rule 3 (emission admission
   first) gates its IMPLEMENTATION, which is its own
@@ -52,8 +59,10 @@
   W = 128, W = 64 and W = 32 cells
   measured and
   flipped 2026-10-23/24, and shape 2 measured and flipped at W = 256
-  -- the shape-2 series' anchor -- 2026-10-24; the remaining cells --
-  shape 2 at the five widths but W = 256, cross-day
+  -- the shape-2 series' anchor -- 2026-10-24, and measured at W = 512
+  2026-10-24 but REFUSED as a selection basis (rule 2 REGIME-SCOPED);
+  the remaining cells --
+  shape 2 at W = 32/64/128/1024, cross-day
   replication -- OPEN)]. Every answer this row
   carries outside the six flip cells is UNMEASURED
   (`:measured? false`, rule 4's lock) until a hardware measurement
@@ -309,6 +318,28 @@ ladder is pinned by `the-msl-ladder-selects-simdgroup-reduce-first` and
    already MEASURED at the ground shape); no workgroup row
    (ADR-0355/0358) moves. Slice record:
    `docs/evidence/gpu/simdgroup-reduce-flip-shape2-w256-20261024.txt`.]
+   [UPDATE 2026-10-24, the SHAPE-2 W = 512 FLIP SLICE (the shape-2
+   series' second cell, measured earlier the same day -- REFUSED, the
+   flip contract's first measured-but-scoped cell): the shape-2
+   measurement of THIS variant at W = 512, n = 2^20
+   (`docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w512`) ran
+   the byte-identical protocol and measured pooled medians
+   0.812/0.821/0.822 for `:sum`/`:max`/`:min` (in family with the
+   shape-1 same-W record 0.815/0.823/0.824) -- but claim-protocol rule 2
+   classifies the CELL REGIME-SCOPED, NOT a selection basis: `:sum` and
+   `:max` are REGIME-INVARIANT FASTER (6/6 each) yet `:min` straddles
+   1.0 INSIDE one regime (run 3 at 1.054, run 5 at 0.821; 1 of 18 pooled
+   per-run ratios above 1.0). Rule 2's second sentence denies a
+   regime-scoped sign any selection role whatever its shape, so the flip
+   REFUSES this cell and NOTHING extends: the W = 512 record keeps
+   `:shapes [1000003]` and the W-sweep w512 runs as its `:evidence`, no
+   `:measured?` flag moves (the W = 512 answer stands on the shape-1
+   cell's REGIME-INVARIANT basis) and no workgroup row (ADR-0355/0358)
+   moves. The contrast is the W = 256 cell's shape-2 record above
+   (REGIME-INVARIANT FASTER at that shape): a shape enters a flip cell's
+   record only on the cell's own rule-2 verdict at that shape. Slice
+   record:
+   `docs/evidence/gpu-simdgroup-reduce-flip-shape2-w512-refused-20261024.txt`.]
 2. **The MSL ladder (the ADR-0361 CUDA-ladder idiom).** Outside the
    carved-out class, an Apple MSL descriptor that reports the fold's
    facts (rule 6, below) answers `:simdgroup-reduce` -- the vendor-native
@@ -344,6 +375,20 @@ ADR-0360's amendment) binds every claim a record may make. Nothing in
 this ADR amends any of it. The flip's gates key this VARIANT's own cells
 when a measurement exists; until then every answer carries
 `:measured? false` and a basis naming the design choice.
+
+The composed contract's answer for a MEASURED-BUT-SCOPED cell (decided
+2026-10-24 by the shape-2 W = 512 cell, the first of its kind -- nothing
+new: rule 2's second sentence already denies a regime-scoped sign any
+selection role whatever its shape): the cell is MEASURED (its runs are
+recorded in `docs/evidence`) but it is NEVER a selection basis. It
+extends no `:measured-cell` record's `:shapes` or `:evidence`, moves no
+`:measured?` flag and moves no workgroup row; the flip at the cell's
+other shapes stands on those shapes' own verdicts. A shape enters a
+flip cell's record only when the cell's own rule-2 verdict at that
+shape is REGIME-INVARIANT FASTER (the W = 256 shape-2 record), and the
+reduce shape is selected as a whole (`:operators #{:sum :max :min}`) --
+the cell's pooled verdict governs; the contract has no per-operator
+flip and none is invented here.
 
 ## What this decision is NOT
 
@@ -503,6 +548,23 @@ step-1 slice added the rows below it.]
   W = 32 is not verdict-chosen);
   `docs/evidence/gpu/simdgroup-reduce-flip-w64-20261024.txt`: the slice
   record (gate output included).
+- [SHAPE-2 W = 512 FLIP SLICE, 2026-10-24 (the shape-2 series' second
+  cell, measured earlier the same day; REFUSED as a selection basis --
+  the flip contract's first measured-but-scoped cell):]
+  `src/kotoba/compiler/accelerator_variants.cljk`: the refusal named in
+  `apple-simdgroup-measured-workgroups`,
+  `apple-simdgroup-measured-shapes`, `apple-simdgroup-flip-note` (the
+  SHAPE-2 W = 512 CELL paragraph) and the `simd-flip?` comment
+  (docstrings and comments only -- NO map, NO lookup and NO answer
+  moves: the W = 512 record keeps `:shapes [1000003]` and the W-sweep
+  w512 runs as its `:evidence`);
+  `src/kotoba/compiler/accelerator_simdgroup_reduce.cljk`: honesty marks
+  for the refusal (docstring only);
+  `test/kotoba/compiler/accelerator_variants_test.cljk`:
+  `the-shape2-w512-scoped-cell-is-refused-as-a-selection-basis` (new --
+  pins the refusal and the W = 256 contrast);
+  `docs/evidence/gpu/simdgroup-reduce-flip-shape2-w512-refused-20261024.txt`:
+  the slice record (gate output included).
 
 ## What did NOT move (named so nothing is silently upgraded)
 
@@ -548,6 +610,12 @@ step-1 slice added the rows below it.]
   records are
   untouched, the workgroup rows (ADR-0355/0358) remain untouched, and no
   speed claim extends past the five flip cells' own recorded scopes.]
+- [The shape-2 W = 512 flip slice (2026-10-24) landed a REFUSAL: no
+  `:measured?` flag, no `:measured-cell` record's `:shapes` or
+  `:evidence`, no selection answer and no workgroup row moved. The
+  measurement itself stands recorded in `docs/evidence` as a
+  regime-structure record and is refused every selection role -- measured
+  is a fact about runs, not a license.]
 
 ## State (the honesty rule's three states)
 
@@ -582,7 +650,14 @@ cell, ratios 0.719/0.728/0.729) answers `:simdgroup-reduce` with
 (`:shapes [1000003 1048576]`, the shape-2 anchor's runs named in its
 `:evidence`) -- the shape-2 measurement (0.794/0.811/0.812, rule 2
 REGIME-INVARIANT FASTER, 18/18) extends the flip contract to the second
-shape of that cell, and to that cell only. ACCEPTED
+shape of that cell, and to that cell only. THE SHAPE-2 W = 512 FLIP
+SLICE (2026-10-24) moved NOTHING and decided the contract's
+measured-but-scoped answer: that cell's shape-2 measurement
+(0.812/0.821/0.822, rule 2 REGIME-SCOPED -- `:min` straddles 1.0 inside
+one regime) is MEASURED but REFUSED as a selection basis, the W = 512
+record keeps `:shapes [1000003]`, and the refusal is pinned by tests
+(`the-shape2-w512-scoped-cell-is-refused-as-a-selection-basis`).
+ACCEPTED
 DESIGN ONLY: any wording above that governs this variant's OTHER future
 measurement cells (the flip contract as applied to `:simdgroup-reduce` --
 only the W = 64, W = 128, W = 256, W = 512 and W = 1024 cells have
@@ -602,8 +677,11 @@ measured and
 flipped 2026-10-23/24,
 faster than `:baseline` at those cells, see the step-3 and W-sweep
 records); every other
-W of this variant (32); shape 2 for this variant at every width but
-W = 256 (its W = 256 shape-2 flip landed 2026-10-24 -- the anchor is
+W of this variant (32); shape 2 for this variant at W = 32/64/128/1024
+(the shape-2 series' remaining unmeasured cells) and at W = 512 --
+measured 2026-10-24 but REFUSED as a selection basis (rule 2
+REGIME-SCOPED), so no measured claim covers it
+(its W = 256 shape-2 flip landed 2026-10-24 -- the anchor is
 measured and flipped at both measured shapes);
 `simd_sum`'s association order as a spec-text claim (the spec was NOT
 re-read this tick -- the P1 scope does not depend on it); every Apple
@@ -677,8 +755,10 @@ outside this diff. No green full suite is claimed.
    subgroup size, route, channel, W set and shapes -- one cell set at a
    time. Until it lands no `:measured?` flag moves.
 3. (step 3) Measure the remaining cells (shape
-   2 at W = 32/64/128/512/1024 -- the shape-2 series' remaining cells,
-   its W = 256 anchor measured and flipped 2026-10-24 -- and cross-day
+   2 at W = 32/64/128/1024 -- the shape-2 series' remaining unmeasured
+   cells; its W = 256 anchor measured and flipped 2026-10-24, its
+   W = 512 cell measured 2026-10-24 and REFUSED as a selection basis
+   (rule 2 REGIME-SCOPED) -- and cross-day
    replication) under the same claim protocol.
 4. Cross-day replication of the existing `:subgroup-reduce` cells (needs a
    later-day cron tick).

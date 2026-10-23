@@ -306,8 +306,12 @@
   series' second through sixth cells). These six are every width the row
   admits (a power of two in [32, 1024]): the class's W band is measured
   end to end, so at the measured reported width NO admitted width keeps
-  the carve-out. What stays UNMEASURED is everything else -- shape 2 at
-  every width but W = 256 (the shape-2 series has measured one cell),
+  the carve-out. What stays UNMEASURED (or measured-but-refused) is
+  everything else -- shape 2 at
+  W = 32/64/128/1024 (the shape-2 series' remaining unmeasured cells),
+  shape 2 at W = 512 (measured 2026-10-24 but REFUSED as a selection
+  basis, claim-protocol rule 2 REGIME-SCOPED -- the first
+  measured-but-scoped cell),
   every other Apple device, every other vendor, cross-day replication --
   and no width outside this set answers at all (the row refuses it at
   selection)."
@@ -321,10 +325,16 @@
   docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w256, paired
   median ratios 0.794/0.811/0.812, rule 2 REGIME-INVARIANT FASTER,
   18/18 -- the shape-2 flip of the W = 256 cell, 2026-10-24). Shape 2 at
-  the other five widths is UNMEASURED for this variant (the shape-2
-  series' remaining cells). The selection answer cannot vary with n, and
-  the record's :shapes names the measured shapes so no claim extends past
-  them."
+  W = 512 was measured 2026-10-24
+  (docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w512) and is
+  REFUSED as a selection basis -- claim-protocol rule 2 classifies that
+  cell REGIME-SCOPED (:min straddles 1.0 inside one regime; 1 of 18
+  pooled per-run ratios above 1.0) and a regime-scoped sign is denied
+  any selection role whatever its shape -- so W = 512 keeps the ONE
+  shape. Shape 2 at W = 32/64/128/1024 is UNMEASURED for this variant
+  (the shape-2 series' remaining cells). The selection answer cannot
+  vary with n, and the record's :shapes names the measured shapes so no
+  claim extends past them."
   {256 [1000003 1048576]
    512 [1000003]
    1024 [1000003]
@@ -409,8 +419,9 @@
   re-sweep 1.226/1.225/1.225). The W = 256 flip cell's :shapes is now
   [1000003 1048576] and its :evidence names this record too.
   WHAT THE NUMBERS DO NOT LICENSE: shape 2 (n = 2^20) is still
-  UNMEASURED at the five widths but W = 256 (the shape-2 series'
-  remaining cells), and every shape beyond the two measured ones is
+  UNMEASURED at W = 32/64/128/1024 (the shape-2 series' remaining
+  unmeasured cells) and measured-but-REFUSED at W = 512 (the paragraph
+  below), and every shape beyond the two measured ones is
   UNMEASURED at every cell (selection cannot vary with n; the record's
   :shapes names the measured shapes so no claim extends past them); the
   GLSL arm, every other Apple device, every other vendor and cross-day
@@ -432,7 +443,28 @@
   docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w1024 (W = 1024),
   docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w128 (W = 128),
   docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w64 (W = 64),
-  docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w32 (W = 32).")
+  docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w32 (W = 32).
+  SHAPE-2 W = 512 CELL: MEASURED BUT REFUSED AS A SELECTION BASIS
+  (2026-10-24, the shape-2 series' second cell,
+  docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w512): the
+  byte-identical protocol ran W = 512 at shape 2, n = 2^20 and measured
+  pooled medians 0.812/0.821/0.822 for :sum/:max/:min -- in family with
+  the shape-1 same-W record -- but claim-protocol rule 2 classifies the
+  CELL REGIME-SCOPED: :sum and :max are REGIME-INVARIANT FASTER (6/6
+  each) yet :min straddles 1.0 INSIDE one regime (run 3 at 1.054, run 5
+  at 0.821; 1 of 18 pooled per-run ratios above 1.0), and a
+  regime-scoped sign is denied any selection role whatever its shape
+  (the reduce shape is selected as a whole -- :operators #{:sum :max
+  :min} -- so the cell's pooled verdict governs; the contract has no
+  per-operator flip and none is invented here). THE CONTRACT'S ANSWER
+  FOR A MEASURED-BUT-SCOPED CELL: it is measured (its runs are recorded
+  in docs/evidence) but it extends NO record and moves NO flag -- the
+  W = 512 record stays :shapes [1000003] with the W-sweep w512 runs as
+  its evidence, the W = 512 answer stands on the shape-1 cell's
+  REGIME-INVARIANT basis, and no workgroup row moves. The contrast is
+  the W = 256 cell's shape-2 record (REGIME-INVARIANT FASTER at that
+  shape): a shape enters a flip cell's :shapes only on the cell's own
+  rule-2 verdict at that shape.")
 
 (def variant-bases
   "Why each variant exists. Design rationale, not measurement evidence."
@@ -860,7 +892,12 @@
          ;; spelling), this row's own rule-6 gate (the measurement ran
          ;; the intrinsic fold), and the workgroup widths the channel ran
          ;; for this variant. Everything else fails closed to the
-         ;; carve-out.
+         ;; carve-out. A shape enters a flip cell's :measured-cell record
+         ;; only on the cell's OWN claim-protocol rule-2 verdict at that
+         ;; shape -- REGIME-INVARIANT FASTER. A measured-but-scoped cell
+         ;; (rule 2 REGIME-SCOPED) is REFUSED as a selection basis and
+         ;; extends no record: the shape-2 W = 512 cell, 2026-10-24, the
+         ;; first of its kind.
          simd-flip?
          (and simdgroup-row-holds?
               apple-narrowed-device?

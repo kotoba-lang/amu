@@ -886,6 +886,65 @@
       (is (= (variants/select-variant :apple (accelerator/kernel "reduce_max_f32" :reduce :max {:workgroup-size 256}) :msl-v1 m1)
              (variants/select-variant :apple (accelerator/kernel "reduce_max_f32" :reduce :max {:workgroup-size 256}) :msl-v1 m1))))))
 
+(deftest the-shape2-w512-scoped-cell-is-refused-as-a-selection-basis
+  ;; The shape-2 series' second cell (W = 512, n = 2^20,
+  ;; docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w512) ran
+  ;; the byte-identical protocol and measured pooled medians
+  ;; 0.812/0.821/0.822 for :sum/:max/:min -- but claim-protocol rule 2
+  ;; classifies the CELL REGIME-SCOPED (:sum and :max are regime-invariant
+  ;; faster, 6/6 each, but :min straddles 1.0 INSIDE one regime -- run 3
+  ;; at 1.054, run 5 at 0.821; 1 of 18 pooled per-run ratios above 1.0).
+  ;; Rule 2's second sentence denies a regime-scoped sign any selection
+  ;; role whatever its shape, so THE CONTRACT'S ANSWER FOR A
+  ;; MEASURED-BUT-SCOPED CELL is the flip's REFUSAL: the cell is measured
+  ;; (its runs are recorded in docs/evidence) but it extends NO
+  ;; :measured-cell record and moves NO :measured? flag. The W = 512
+  ;; record stays :shapes [1000003] with the W-sweep w512 runs as its
+  ;; evidence, and the W = 512 answer stands on the shape-1 cell's
+  ;; REGIME-INVARIANT basis. The contrast is the W = 256 cell's shape-2
+  ;; record (rule 2 REGIME-INVARIANT FASTER at that shape): a shape
+  ;; enters a flip cell's record only on the cell's own rule-2 verdict
+  ;; at that shape.
+  (let [m1 {:subgroup-size 32
+            :subgroup-ops #{:simd-reduce}
+            :device "Apple M1 Max"}]
+    (testing "the W = 512 record extends nothing: :shapes and :evidence name the shape-1 basis only"
+      (let [answer (variants/select-variant
+                    :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                              {:workgroup-size 512})
+                    :msl-v1 m1)]
+        (is (= :simdgroup-reduce (:variant answer))
+            "the refusal removes nothing: the shape-1 flip still answers")
+        (is (true? (:measured? answer))
+            "the refusal moves no flag: W = 512 stands on the shape-1 cell")
+        (is (= [1000003] (:shapes (:measured-cell answer)))
+            "the scoped shape-2 cell must not extend :shapes")
+        (is (= ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512"]
+               (:evidence (:measured-cell answer)))
+            "the refused record is never a contract-satisfying record")
+        (is (not (str/includes? (str/join (:evidence (:measured-cell answer)))
+                                "shape2-20261024/w512"))
+            "the record must not name the refused shape-2 runs")
+        (is (str/includes? (:basis answer) "MEASURED BUT REFUSED AS A SELECTION BASIS")
+            "the refusal is named in the answer's basis")))
+    (testing "the W = 256 cell is the contrast: its shape-2 verdict was regime-invariant and extended the record"
+      (let [answer (variants/select-variant
+                    :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                              {:workgroup-size 256})
+                    :msl-v1 m1)]
+        (is (= [1000003 1048576] (:shapes (:measured-cell answer))))
+        (is (= ["docs/evidence/gpu-simdgroup-reduce-m1max-20261023"
+                "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w256"]
+               (:evidence (:measured-cell answer))))))
+    (testing "every flip cell's basis names the contract's scoped-cell answer"
+      (doseq [wg [32 64 128 256 512 1024]]
+        (let [answer (variants/select-variant
+                      :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                                {:workgroup-size wg})
+                      :msl-v1 m1)]
+          (is (str/includes? (:basis answer) "MEASURED BUT REFUSED AS A SELECTION BASIS")
+              (str "W=" wg " basis names the refusal")))))))
+
 (deftest the-measure-harness-argv-gates-carry-no-exact-match-class
   ;; The measurement instrument (scripts/gpu-subgroup-reduce-metal-measure.m)
   ;; carried TWO positional gates of the exact-match class (`if (argc == N)`).
