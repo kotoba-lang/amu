@@ -1,7 +1,7 @@
 ;; x86_64-linux-static: one ELF64 with the guest and a Kotoba runtime, no loader.
 ;; The runtime source (xs-rt-src, seed/76) is appended to the guest source and compiled
 ;; by the same checked frontend and x86 backend. Runtime functions are the ones
-;; whose symbol starts at or after the appended text; they charge no fuel, use
+;; defined at or after the appended text (xs-rt?); they charge no fuel, use
 ;; only scalar SIR and the kxrt- intrinsics below, and are not callable from the
 ;; guest. Context slots hold the absolute addresses of kxrt-slot-N functions.
 ;; Absolute M cells (X86_64-LINUX-ABI): 197 = runtime text offset (0 = not a
@@ -15,10 +15,12 @@
           4 "kxrt-syscall" 5 "kxrt-ctx" 6 "kxrt-call-main" 7 "kxrt-trap"
           8 "kxrt-call-at" ""))
 (defn- xs-on? [M :vector-i64] :bool (> (vector-at M 197) 0))
-(defn- xs-sym-start [M :vector-i64 f :i64] :i64
-  (vector-at M (+ MM-SYM-BASE (* (xg-f M f FF-SYM) MM-SYM-W) SF-START)))
+;; From JUN-325 / 4cff642e: a guest reference must not reclassify a runtime def.
+(defn- xs-def-start [M :vector-i64 f :i64] :i64
+  (let [tok (vector-at M (+ MM-NODE-BASE (* (xg-f M f FF-NODE) MM-NODE-W) NF-TOK))]
+    (vector-at M (+ MM-TOK-BASE (* tok MM-TOK-W) TF-START))))
 (defn- xs-rt? [M :vector-i64 f :i64] :bool
-  (and (xs-on? M) (> f 0) (>= (xs-sym-start M f) (vector-at M 197))))
+  (and (xs-on? M) (> f 0) (>= (xs-def-start M f) (vector-at M 197))))
 (defn- xs-intr [M :vector-i64 f :i64] :i64
   (let [k (- f (vector-at M 198))]
     (if (and (xs-on? M) (> (vector-at M 198) 0) (>= k 0) (< k XS-INTR-N)) k -1)))

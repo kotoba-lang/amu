@@ -26,6 +26,8 @@
 ;; 256 conj 264 conj-tail 272 conj-copy 280 copied-words 288 string-copied-bytes
 ;; 296 arena-use flag 304 gpu-request-fd 312 gpu-answer-fd 320..359 payload arguments
 ;; 400.. root lengths (16) 528.. root fds (16) 656 root count 664 matched root fd
+;; 672 scope marks 680 depth 688 region-map 696 rows 704 region-used
+;; 712 conj-region 720 reserved-words 728 scope-releases 736 graph 744 graph-used
 (defn- kxrt-g [] :i64 (+ (kxrt-ctx) 1024))
 (defn- kxrt-gl [k :i64] :i64 (kxrt-load64 (+ (kxrt-g) k)))
 (defn- kxrt-gs [k :i64 v :i64] :i64 (kxrt-store64 (+ (kxrt-g) k) v))
@@ -276,6 +278,52 @@
             (let [c (kxrt-load8 (+ a i)) d (kxrt-load8 (+ b i))]
               (cond (< c d) -1 (> c d) 1 :else (recur (inc i))))))))))
 
+;; ---- bounded append-only keyword graph, context v11 slots 80/88 ----
+;; Matches owning native/linux_static_graph.kotoba: 4096 datoms, backwards
+;; last-write-wins lookup, i64 MIN for missing; scopes do not erase interned data.
+(defn- kxrt-graph-used [] :i64
+  (let [n (kxrt-gl 744)] (if (or (< n 0) (> n 4096)) (kxrt-fail) n)))
+(defn- kxrt-graph-row [index :i64] :i64 (+ (kxrt-gl 736) (* index 24)))
+(defn- kxrt-graph-full [] :i64
+  (let [b (kxrt-gl 200) z (kxrt-err-text b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b 0 0x4152545f4558454b 8) 0x646e696b3a7b2050 8) 0x20616e6572613a20 8) 0x206e6f736165723a 8) 0x2d68706172676b3a 8) 0x6574737561687865 8) 0xa7d64 3))] (kxrt-fail)))
+(defn- kxrt-slot-80 [c :i64 entity :i64 attribute :i64 value :i64] :i64
+  (let [n (kxrt-graph-used)]
+    (cond (not= (kxrt-load64 c) 11) (kxrt-fail)
+          (= n 4096) (kxrt-graph-full)
+          :else (let [p (kxrt-graph-row n) a (kxrt-store64 p entity)
+                      b (kxrt-store64 (+ p 8) attribute) d (kxrt-store64 (+ p 16) value)
+                      e (kxrt-gs 744 (inc n))] 1))))
+(defn- kxrt-slot-88 [c :i64 entity :i64 attribute :i64] :i64
+  (if (not= (kxrt-load64 c) 11) (kxrt-fail)
+    (loop [n (kxrt-graph-used)]
+      (if (= n 0) -9223372036854775808
+        (let [p (kxrt-graph-row (dec n))]
+          (if (and (= (kxrt-load64 p) entity) (= (kxrt-load64 (+ p 8)) attribute))
+            (kxrt-load64 (+ p 16)) (recur (dec n))))))))
+
+;; ---- structural scalar arena scopes: five checkpoints, bounded LIFO ----
+(defn- kxrt-arena-mark [depth :i64] :i64 (+ (kxrt-gl 672) (* depth 64)))
+(defn- kxrt-slot-224 [c :i64] :i64
+  (let [d (kxrt-gl 680)]
+    (if (or (not= (kxrt-load64 c) 11) (< d 0) (>= d 256)) (kxrt-fail)
+      (let [p (kxrt-arena-mark d)
+            a (kxrt-store64 p (kxrt-gl 8)) b (kxrt-store64 (+ p 8) (kxrt-gl 32))
+            e (kxrt-store64 (+ p 16) (kxrt-gl 48)) f (kxrt-store64 (+ p 24) (kxrt-gl 64))
+            g (kxrt-store64 (+ p 32) (kxrt-gl 704)) h (kxrt-gs 680 (inc d))] 0))))
+(defn- kxrt-slot-232 [c :i64] :i64
+  (let [d (kxrt-gl 680)]
+    (if (or (not= (kxrt-load64 c) 11) (<= d 0) (> d 256)) (kxrt-fail)
+      (let [p (kxrt-arena-mark (dec d))
+            a (kxrt-load64 p) b (kxrt-load64 (+ p 8)) e (kxrt-load64 (+ p 16))
+            f (kxrt-load64 (+ p 24)) g (kxrt-load64 (+ p 32))]
+        ;; Validate every saved counter before restoring any counter or depth.
+        (if (or (< a 0) (> a (kxrt-gl 8)) (< b 0) (> b (kxrt-gl 32))
+                (< e 0) (> e (kxrt-gl 48)) (< f 0) (> f (kxrt-gl 64))
+                (< g 0) (> g (kxrt-gl 704))) (kxrt-fail)
+          (let [a1 (kxrt-gs 8 a) b1 (kxrt-gs 32 b) e1 (kxrt-gs 48 e)
+                f1 (kxrt-gs 64 f) g1 (kxrt-gs 704 g) d1 (kxrt-gs 680 (dec d))
+                r (kxrt-gs 728 (inc (kxrt-gl 728)))] 0))))))
+
 ;; ---- vectors and bytes ----
 (defn- kxrt-vec [h :i64] :i64
   (if (or (<= h 0) (> h (kxrt-gl 48))) (kxrt-fail) (+ (kxrt-gl 40) (* (dec h) 16))))
@@ -285,7 +333,7 @@
 (defn- kxrt-vnew [off :i64 n :i64] :i64
   (let [u (kxrt-gl 48)]
     (if (>= u KXRT-VECTORS) (kxrt-arena 2)
-      (let [p (+ (kxrt-gl 40) (* u 16)) x (kxrt-store64 p off) y (kxrt-store64 (+ p 8) n) w (kxrt-gs 48 (inc u))]
+      (let [p (+ (kxrt-gl 40) (* u 16)) x (kxrt-store64 p off) y (kxrt-store64 (+ p 8) n) r (kxrt-store64 (+ (kxrt-gl 688) (* u 8)) 0) w (kxrt-gs 48 (inc u))]
         (inc u)))))
 (defn- kxrt-icopy [d :i64 s :i64 n :i64] :i64
   (loop [i 0] (if (>= i n) d (let [z (kxrt-store64 (kxrt-item d i) (kxrt-load64 (kxrt-item s i)))] (recur (inc i))))))
@@ -306,16 +354,44 @@
           (> n (- KXRT-ITEMS u)) (kxrt-fail)
           :else (let [z (kxrt-icopy u off n) y (kxrt-store64 (kxrt-item u i) x) w (kxrt-gs 64 (+ u n))] (kxrt-vnew u n)))))
 (defn- kxrt-count [k :i64 n :i64] :i64 (kxrt-gs k (+ (kxrt-gl k) n)))
-(defn- kxrt-conj [h :i64 x :i64] :i64
-  (let [n (kxrt-vlen h) off (kxrt-voff h) u (kxrt-gl 64) c (kxrt-count 256 1)]
-    (cond (>= n KXRT-VECTOR-MAX) (kxrt-fail)
-          (= (+ off n) u)
+;; Region metadata is private; descriptors remain the two-word ABI.
+;; A retained prefix appends in place only at its region's current fill.
+(defn- kxrt-rmap [h :i64] :i64 (+ (kxrt-gl 688) (* (dec h) 8)))
+(defn- kxrt-region [id :i64] :i64 (+ (kxrt-gl 696) (* (dec id) 16)))
+(defn- kxrt-rattach [h :i64 id :i64] :i64
+  (let [z (kxrt-store64 (kxrt-rmap h) id)] h))
+(defn- kxrt-conj-regular [off :i64 n :i64 x :i64] :i64
+  (let [u (kxrt-gl 64) need (inc n)]
+    (cond (= (+ off n) u)
             (if (>= u KXRT-ITEMS) (kxrt-arena 3)
-              (let [t (kxrt-count 264 1) z (kxrt-store64 (kxrt-item u 0) x) w (kxrt-gs 64 (inc u))] (kxrt-vnew off (inc n))))
-          (> (inc n) (- KXRT-ITEMS u)) (kxrt-arena 3)
-          :else (let [t (kxrt-count 272 1) t2 (kxrt-count 280 n)
-                      z (kxrt-icopy u off n) y (kxrt-store64 (kxrt-item u n) x) w (kxrt-gs 64 (+ u n 1))]
-                  (kxrt-vnew u (inc n))))))
+              (let [t (kxrt-count 264 1) z (kxrt-store64 (kxrt-item u 0) x)
+                    w (kxrt-gs 64 (inc u))] (kxrt-vnew off need)))
+          (> need (- KXRT-ITEMS u)) (kxrt-arena 3)
+          :else
+            (let [t (kxrt-count 272 1) t2 (kxrt-count 280 n)
+                  capacity (if (< (* 2 need) 4) 4 (* 2 need))
+                  reserve (and (<= capacity (- KXRT-ITEMS u)) (< (kxrt-gl 704) KXRT-VECTORS))
+                  z (kxrt-icopy u off n) y (kxrt-store64 (kxrt-item u n) x)]
+              (if reserve
+                (let [id (inc (kxrt-gl 704)) p (kxrt-region id)
+                      a (kxrt-store64 p (+ u need)) b (kxrt-store64 (+ p 8) (+ u capacity))
+                      w (kxrt-gs 64 (+ u capacity)) v (kxrt-gs 704 id)
+                      r (kxrt-count 720 (- capacity need))]
+                  (kxrt-rattach (kxrt-vnew u need) id))
+                ;; Optional growth must not turn an exact-size success into refusal.
+                (let [w (kxrt-gs 64 (+ u need))] (kxrt-vnew u need)))))))
+(defn- kxrt-conj [h :i64 x :i64] :i64
+  (let [n (kxrt-vlen h) off (kxrt-voff h) u (kxrt-gl 64) c (kxrt-count 256 1)
+        id (kxrt-load64 (kxrt-rmap h)) used (kxrt-gl 704)]
+    (cond (>= n KXRT-VECTOR-MAX) (kxrt-fail)
+          (or (< used 0) (> used KXRT-VECTORS) (< id 0) (> id used)) (kxrt-fail)
+          (= id 0) (kxrt-conj-regular off n x)
+          :else (let [p (kxrt-region id) fill (kxrt-load64 p) end (kxrt-load64 (+ p 8))]
+                  (cond (or (< fill 0) (> fill end) (> end u)) (kxrt-fail)
+                        (and (= (+ off n) fill) (< fill end))
+                          (let [z (kxrt-store64 (kxrt-item fill 0) x) w (kxrt-store64 p (inc fill))
+                                t (kxrt-count 712 1)] (kxrt-rattach (kxrt-vnew off (inc n)) id))
+                        :else (kxrt-conj-regular off n x))))))
 (defn- kxrt-drop [h :i64 k :i64] :i64
   (let [n (kxrt-vlen h)] (if (or (< k 0) (> k n)) (kxrt-fail) (kxrt-vnew (+ (kxrt-voff h) k) (- n k)))))
 ;; bytes: copy n raw bytes at a into the items arena
@@ -675,25 +751,31 @@
               :else (kxrt-die))))))
 (defn- kxrt-if-available? [s :i64] :bool (and (not= s 0) (kxrt-cstr= s 0x6c696176612d6669 0x656c6261 12)))
 
-;; KEXE_ARENA_USE: one line on stderr with the loader's 17 fields. Peaks equal
-;; the final use (this runtime never releases an arena scope); the region and
-;; scope fields are 0 because the runtime has no growth regions.
+;; KEXE_ARENA_USE: current arena use plus cumulative allocation/cleanup counters.
+;; Private growth rows are checkpointed with the four guest allocation counters.
+;; These fields describe current use and events, not historical peak use.
 (defn- kxrt-kv [b :i64 i :i64 v :i64] :i64 (+ i (kxrt-dec (+ b i) v)))
 (defn- kxrt-arena-use [] :i64
   (if (= (kxrt-gl 296) 0) 0
-    (let [b (+ (kxrt-gl 200) 4096) pairs (kxrt-gl 8) pool (kxrt-gl 32) vecs (kxrt-gl 48) items (kxrt-gl 64)
-          i0 (kxrt-w b (kxrt-w b (kxrt-w b 0 0x4552415f4558454b 8) 0x7b204553555f414e 8) 0x2073726961703a 7)
-          i1 (kxrt-kv b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-kv b i0 pairs) 0x676e697274733a20 8) 0x79622d6c6f6f702d 8) 0x20736574 4) pool)
-          i2 (kxrt-kv b (kxrt-w b (kxrt-w b i1 0x726f746365763a20 8) 0x2073 2) vecs)
-          i3 (kxrt-kv b (kxrt-w b (kxrt-w b i2 0x726f746365763a20 8) 0x20736d6574692d 7) items)
-          i4 (kxrt-kv b (kxrt-w b (kxrt-w b i3 0x622d706165683a20 8) 0x2073657479 5) (+ (* 16 pairs) pool (* 16 vecs) (* 8 items)))
+    (let [b (+ (kxrt-gl 200) 4096)
+          i0 (kxrt-kv b (kxrt-w b (kxrt-w b (kxrt-w b 0 0x4552415f4558454b 8) 0x7b204553555f414e 8) 0x2073726961703a 7) (kxrt-gl 8))
+          i1 (kxrt-kv b (kxrt-w b (kxrt-w b (kxrt-w b i0 0x676e697274733a20 8) 0x79622d6c6f6f702d 8) 0x20736574 4) (kxrt-gl 32))
+          i2 (kxrt-kv b (kxrt-w b (kxrt-w b i1 0x726f746365763a20 8) 0x2073 2) (kxrt-gl 48))
+          i3 (kxrt-kv b (kxrt-w b (kxrt-w b i2 0x726f746365763a20 8) 0x20736d6574692d 7) (kxrt-gl 64))
+          i4 (kxrt-kv b (kxrt-w b (kxrt-w b i3 0x622d706165683a20 8) 0x2073657479 5) (+ (* 16 (kxrt-gl 8)) (kxrt-gl 32) (* 16 (kxrt-gl 48)) (* 8 (kxrt-gl 64))))
           i5 (kxrt-kv b (kxrt-w b i4 0x206a6e6f633a20 7) (kxrt-gl 256))
           i6 (kxrt-kv b (kxrt-w b (kxrt-w b i5 0x742d6a6e6f633a20 8) 0x206c6961 4) (kxrt-gl 264))
-          i7 (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b i6 0x722d6a6e6f633a20 8) 0x2030206e6f696765 8) 0x6f632d6a6e6f633a 8) 0x207970 3)
-          i8 (kxrt-kv b (kxrt-w b (kxrt-w b (kxrt-kv b i7 (kxrt-gl 272)) 0x646569706f633a20 8) 0x207364726f772d 7) (kxrt-gl 280))
-          i9 (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b i8 0x7672657365723a20 8) 0x7364726f772d6465 8) 0x696765723a203020 8) 0x733a203020736e6f 8) 0x6c65722d65706f63 8) 0x2030207365736165 8) 0x2d676e697274733a 8) 0x20736e6f69676572 8) 0x6e697274733a2030 8) 0x6e6f696765722d67 8) 0x73646e657070612d 8) 0x697274733a203020 8) 0x6569706f632d676e 8) 0x2073657479622d64 8)
-          i10 (kxrt-kv b i9 (kxrt-gl 288))]
-      (kxrt-err-text b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b i10 0x676e697274733a20 8) 0x657672657365722d 8) 0x2073657479622d64 8) 0xa7d30 3)))))
+          i7 (kxrt-kv b (kxrt-w b (kxrt-w b i6 0x722d6a6e6f633a20 8) 0x206e6f696765 6) (kxrt-gl 712))
+          i8 (kxrt-kv b (kxrt-w b (kxrt-w b i7 0x632d6a6e6f633a20 8) 0x2079706f 4) (kxrt-gl 272))
+          i9 (kxrt-kv b (kxrt-w b (kxrt-w b i8 0x646569706f633a20 8) 0x207364726f772d 7) (kxrt-gl 280))
+          i10 (kxrt-kv b (kxrt-w b (kxrt-w b (kxrt-w b i9 0x7672657365723a20 8) 0x7364726f772d6465 8) 0x20 1) (kxrt-gl 720))
+          i11 (kxrt-kv b (kxrt-w b (kxrt-w b i10 0x6e6f696765723a20 8) 0x2073 2) (kxrt-gl 704))
+          i12 (kxrt-kv b (kxrt-w b (kxrt-w b (kxrt-w b i11 0x2d65706f63733a20 8) 0x73657361656c6572 8) 0x20 1) (kxrt-gl 728))
+          i13 (kxrt-kv b (kxrt-w b (kxrt-w b (kxrt-w b i12 0x676e697274733a20 8) 0x736e6f696765722d 8) 0x20 1) 0)
+          i14 (kxrt-kv b (kxrt-w b (kxrt-w b (kxrt-w b i13 0x676e697274733a20 8) 0x2d6e6f696765722d 8) 0x2073646e65707061 8) 0)
+          i15 (kxrt-kv b (kxrt-w b (kxrt-w b (kxrt-w b i14 0x676e697274733a20 8) 0x2d646569706f632d 8) 0x207365747962 6) (kxrt-gl 288))
+          i16 (kxrt-kv b (kxrt-w b (kxrt-w b (kxrt-w b i15 0x676e697274733a20 8) 0x657672657365722d 8) 0x2073657479622d64 8) 0)]
+      (kxrt-err-text b (kxrt-w b i16 0xa7d 2)))))
 
 ;; ---- start ----
 ;; value of the environment entry NAME= (packed w0 w1 w2, length n incl. '='), or 0
@@ -831,6 +913,8 @@
         m6 (kxrt-gs 200 (kxrt-map 16384)) m7 (kxrt-gs 208 (kxrt-map 8192))
         m8 (kxrt-gs 120 (kxrt-map 4096)) m9 (kxrt-gs 136 (kxrt-map 65536)) m10 (kxrt-gs 184 (kxrt-map 4096))
         m11 (kxrt-gs 232 (kxrt-map KXRT-VALUE-MAX)) fd (kxrt-gs 112 -1)
+        m12 (kxrt-gs 672 (kxrt-map 16384)) m13 (kxrt-gs 688 (kxrt-map (* 8 KXRT-VECTORS)))
+        m14 (kxrt-gs 696 (kxrt-map (* 16 KXRT-VECTORS))) m15 (kxrt-gs 736 (kxrt-map 98304))
         cw (kxrt-syscall 17 (kxrt-gl 184) 4096 0 0 0 0)
         cl (kxrt-gs 192 (if (and (> cw 1) (= (kxrt-load8 (kxrt-gl 184)) 47)) (kxrt-cstrlen (kxrt-gl 184)) 0))
         ;; v11 context: version, data slots, code range (slots are in the image)
