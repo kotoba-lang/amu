@@ -16,48 +16,82 @@
   ],
   "root": {
     "image": {
-      "bytes": 3105280,
-      "sha256": "710b6ae6e7b2887dee317f3cfe0e25c176166ddae9005409c5345311a36d20ae"
+      "bytes": 3121664,
+      "sha256": "094590b650b0293b33e3aaf7113f3cadb5461573a5f974cc6a875d4260df11fb"
     },
     "receipt": {
       "schema": "amu.seed.static-root.v1",
       "image": {
-        "bytes": 3105280,
-        "sha256": "710b6ae6e7b2887dee317f3cfe0e25c176166ddae9005409c5345311a36d20ae"
+        "bytes": 3121664,
+        "sha256": "094590b650b0293b33e3aaf7113f3cadb5461573a5f974cc6a875d4260df11fb"
       },
       "target": "aarch64-linux",
       "format": "packed",
       "sourceManifest": "seed/FULL-MANIFEST",
       "sourceUnity": {
-        "bytes": 3118091,
-        "sha256": "ccab911de7f171d02bc187e3751d066cb64fda5a2770fc28c5d4ef82f877014b"
+        "bytes": 3134814,
+        "sha256": "27325238af83aa19856c53213ccaa0db8cdd670a77ed84412699629b5b268ca2"
       },
-      "sourceCommitBase": "3aab6ce03bb5be09914d0acb75936db71511d2a9",
+      "sourceCommitBase": "60c0f42783e4844ce05cb40e9a2ceda5d26598bf",
       "producedBy": {
-        "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt and packed itself to F2 = F1 (= this image). Re-pinned because this source adds --format launcher (ADR 0371 step 4, context word 408 = 4): the launcher runtime text and the format plumbing in seed/70, 75, 76, 77 and 80.",
+        "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt and packed itself to F2 = F1 (= this image). Re-pinned because this source adds --format platform-linked (ADR 0371 step 5): seed/78-x86_64-platform (now also in FULL-MANIFEST, dispatched by seed/78-full-entry), the platform runtime text of seed/76, intrinsic 9 and the platform API rule of seed/75, and the dispatch in seed/73.",
         "date": "2026-10-23",
-        "previousRoot": "61ee2d3870612c7f8ed6bd2d25f40c8cc68b26d2b5b5336204b1ff2651fe60bb",
+        "previousRoot": "710b6ae6e7b2887dee317f3cfe0e25c176166ddae9005409c5345311a36d20ae",
         "chain": {
           "F1.kseed": {
-            "bytes": 2896875,
-            "sha256": "9cf26ca20865c7fcabddaf76996c883ae9ee7123cb506cf96c032fdf147d2b3a"
+            "bytes": 2913027,
+            "sha256": "14e348bd43dc8befcf0993aaa2bab17ef27a95b1f2071a465528bbbd9462ef44"
           },
           "F1.elf": {
-            "bytes": 3105280,
-            "sha256": "710b6ae6e7b2887dee317f3cfe0e25c176166ddae9005409c5345311a36d20ae"
+            "bytes": 3121664,
+            "sha256": "094590b650b0293b33e3aaf7113f3cadb5461573a5f974cc6a875d4260df11fb"
           },
           "F2.kseed": {
-            "bytes": 2896875,
-            "sha256": "9cf26ca20865c7fcabddaf76996c883ae9ee7123cb506cf96c032fdf147d2b3a"
+            "bytes": 2913027,
+            "sha256": "14e348bd43dc8befcf0993aaa2bab17ef27a95b1f2071a465528bbbd9462ef44"
           },
           "F2.elf": {
-            "bytes": 3105280,
-            "sha256": "710b6ae6e7b2887dee317f3cfe0e25c176166ddae9005409c5345311a36d20ae"
+            "bytes": 3121664,
+            "sha256": "094590b650b0293b33e3aaf7113f3cadb5461573a5f974cc6a875d4260df11fb"
           }
         }
       },
-      "verification": "scripts/seed/selfhost-bootstrap.py --tier pr on arm64 Linux: F1 = F2 from the previous root, F1's core route gives the adoption image, the runtime boundary corpus (launcher format included), the 24 cases and hardening; check-static-launcher.py against F1. CI re-runs the tier from this root (F -> F' = root).",
+      "verification": "scripts/seed/selfhost-bootstrap.py --tier pr on arm64 Linux: F1 = F2 from the previous root, F1's core route gives the adoption image, the runtime boundary corpus, the 24 cases and hardening; check-platform-linked.py with F1 (build on arm64, run on x86_64 glibc under qemu-user; natively in the qualify-x86_64 CI job). CI re-runs the tier from this root (F -> F' = root).",
       "history": [
+        {
+          "image": {
+            "bytes": 3105280,
+            "sha256": "710b6ae6e7b2887dee317f3cfe0e25c176166ddae9005409c5345311a36d20ae"
+          },
+          "sourceUnity": {
+            "bytes": 3118091,
+            "sha256": "ccab911de7f171d02bc187e3751d066cb64fda5a2770fc28c5d4ef82f877014b"
+          },
+          "sourceCommitBase": "3aab6ce03bb5be09914d0acb75936db71511d2a9",
+          "producedBy": {
+            "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt and packed itself to F2 = F1 (= this image). Re-pinned because this source adds --format launcher (ADR 0371 step 4, context word 408 = 4): the launcher runtime text and the format plumbing in seed/70, 75, 76, 77 and 80.",
+            "date": "2026-10-23",
+            "previousRoot": "61ee2d3870612c7f8ed6bd2d25f40c8cc68b26d2b5b5336204b1ff2651fe60bb",
+            "chain": {
+              "F1.kseed": {
+                "bytes": 2896875,
+                "sha256": "9cf26ca20865c7fcabddaf76996c883ae9ee7123cb506cf96c032fdf147d2b3a"
+              },
+              "F1.elf": {
+                "bytes": 3105280,
+                "sha256": "710b6ae6e7b2887dee317f3cfe0e25c176166ddae9005409c5345311a36d20ae"
+              },
+              "F2.kseed": {
+                "bytes": 2896875,
+                "sha256": "9cf26ca20865c7fcabddaf76996c883ae9ee7123cb506cf96c032fdf147d2b3a"
+              },
+              "F2.elf": {
+                "bytes": 3105280,
+                "sha256": "710b6ae6e7b2887dee317f3cfe0e25c176166ddae9005409c5345311a36d20ae"
+              }
+            }
+          }
+        },
         {
           "image": {
             "bytes": 3039744,
@@ -363,8 +397,8 @@
   "sourceGraph": {
     "full": {
       "seed/FULL-MANIFEST": {
-        "bytes": 836,
-        "sha256": "fbfd6ba6241a2c1dbc8e4192d676e0665464990b3007c56cf7e52fdf28d44ffa"
+        "bytes": 867,
+        "sha256": "157f0c319772864ebc7fbb1ca476773b1fec48464eecb11c5efe4bf2033e65d2"
       },
       "seed/00-ns-static.kotoba": {
         "bytes": 15167,
@@ -443,16 +477,20 @@
         "sha256": "8abe266aaeac337810472459f458591228df28081bbcd9a95b8638b75db895d3"
       },
       "seed/75-x86_64-static.kotoba": {
-        "bytes": 9873,
-        "sha256": "c6b4a02ae10d06e9c9bc77b69ba84c4399d9680043667489fd5d7aa7a6f393cf"
+        "bytes": 11557,
+        "sha256": "c2a660cb71dfaa12580ce2926591b54ea9faf19d791810861c414434d7591bea"
       },
       "seed/76-x86_64-static-rt.kotoba": {
-        "bytes": 129238,
-        "sha256": "5c0839bddd9b09d87b8220cbd96da6e0962efdbbe30bb700e6ec1fc620998109"
+        "bytes": 133303,
+        "sha256": "a4ec62c4dfb8cbab94e217345b018c8d7628455bc82c906506724e2e47e86184"
       },
       "seed/77-aarch64-static-rt.kotoba": {
         "bytes": 129949,
         "sha256": "12f19a54289a4a8a95bbe63208cfd038e024e70fce72351054cb65d3ffccb190"
+      },
+      "seed/78-x86_64-platform.kotoba": {
+        "bytes": 10690,
+        "sha256": "99e99f629e28862f5c47d1d853afdfb805399dcde7f79717d1eabfe4c0d2f7df"
       },
       "seed/80-aarch64-linux.kotoba": {
         "bytes": 17709,
@@ -463,14 +501,14 @@
         "sha256": "9c3b16530f722e9a86249d17be3d5d55e1306be759be76c21df8cfac1d5db4d8"
       },
       "seed/78-full-entry.kotoba": {
-        "bytes": 938,
-        "sha256": "83c69d03fd0bdc25ee5c55cefe4969a29f045a5a886e2c38c85e497a108effa0"
+        "bytes": 1221,
+        "sha256": "7ca22584aea272d57040048ae8b0b623d3db2113e0fb75701f7b36492039fa3e"
       }
     },
     "selfhost": {
       "seed/X86_64-LINUX-SELFHOST-MANIFEST": {
-        "bytes": 510,
-        "sha256": "af651c4d855723a633d3b94c4fc6393e5c6c6e53ac7e58186e0ec3228e8625b0"
+        "bytes": 541,
+        "sha256": "807282afc305ed284486296b30f115faa031db859d5bdf8a46c70ea154f8bd6a"
       },
       "seed/00-ns-static.kotoba": {
         "bytes": 15167,
@@ -517,16 +555,20 @@
         "sha256": "8abe266aaeac337810472459f458591228df28081bbcd9a95b8638b75db895d3"
       },
       "seed/75-x86_64-static.kotoba": {
-        "bytes": 9873,
-        "sha256": "c6b4a02ae10d06e9c9bc77b69ba84c4399d9680043667489fd5d7aa7a6f393cf"
+        "bytes": 11557,
+        "sha256": "c2a660cb71dfaa12580ce2926591b54ea9faf19d791810861c414434d7591bea"
       },
       "seed/76-x86_64-static-rt.kotoba": {
-        "bytes": 129238,
-        "sha256": "5c0839bddd9b09d87b8220cbd96da6e0962efdbbe30bb700e6ec1fc620998109"
+        "bytes": 133303,
+        "sha256": "a4ec62c4dfb8cbab94e217345b018c8d7628455bc82c906506724e2e47e86184"
       },
       "seed/77-aarch64-static-rt.kotoba": {
         "bytes": 129949,
         "sha256": "12f19a54289a4a8a95bbe63208cfd038e024e70fce72351054cb65d3ffccb190"
+      },
+      "seed/78-x86_64-platform.kotoba": {
+        "bytes": 10690,
+        "sha256": "99e99f629e28862f5c47d1d853afdfb805399dcde7f79717d1eabfe4c0d2f7df"
       },
       "seed/80-aarch64-linux.kotoba": {
         "bytes": 17709,
@@ -537,8 +579,8 @@
         "sha256": "9c3b16530f722e9a86249d17be3d5d55e1306be759be76c21df8cfac1d5db4d8"
       },
       "seed/73-x86-linux-entry.kotoba": {
-        "bytes": 1175,
-        "sha256": "499022e15adce90748a6a545230e3ca922a6a49cf0f9cd986807a59d93b36b6b"
+        "bytes": 1498,
+        "sha256": "757116e6ced4d0aa7bf567471505507489a4b686632ea0f35ff6a48bdbaaf705"
       }
     }
   },
@@ -546,12 +588,12 @@
     {
       "name": "F1",
       "container": {
-        "bytes": 2896875,
-        "sha256": "9cf26ca20865c7fcabddaf76996c883ae9ee7123cb506cf96c032fdf147d2b3a"
+        "bytes": 2913027,
+        "sha256": "14e348bd43dc8befcf0993aaa2bab17ef27a95b1f2071a465528bbbd9462ef44"
       },
       "image": {
-        "bytes": 3105280,
-        "sha256": "710b6ae6e7b2887dee317f3cfe0e25c176166ddae9005409c5345311a36d20ae"
+        "bytes": 3121664,
+        "sha256": "094590b650b0293b33e3aaf7113f3cadb5461573a5f974cc6a875d4260df11fb"
       }
     }
   ],
@@ -562,8 +604,8 @@
       "sha256": "798d7bf788fcd457f8ce91ef1e387908cc66d212879a93cc4c3d0edf98aaffc8"
     },
     "x86_64Compiler": {
-      "bytes": 1839616,
-      "sha256": "cb05bc9a815eb432fe90ce2e3e159abe48dab6b345d2ac529a22d30214ee5ca8"
+      "bytes": 1876480,
+      "sha256": "a335fb52f413a44145b8865b303f812cea989d82d7c6b46386bde1009b8b8769"
     },
     "x86_64Runner": {
       "bytes": 254464,
@@ -824,8 +866,8 @@
   "runtimeBoundary": {
     "status": "PASS_RUNTIME_BOUNDARY",
     "compiler": {
-      "bytes": 3105280,
-      "sha256": "710b6ae6e7b2887dee317f3cfe0e25c176166ddae9005409c5345311a36d20ae"
+      "bytes": 3121664,
+      "sha256": "094590b650b0293b33e3aaf7113f3cadb5461573a5f974cc6a875d4260df11fb"
     },
     "previousRoot": null,
     "host": [
@@ -2084,57 +2126,57 @@
   "steps": [
     {
       "name": "F1-compile",
-      "seconds": 104.0,
+      "seconds": 176.2,
       "ran": true
     },
     {
       "name": "F1-pack",
-      "seconds": 1.6,
+      "seconds": 3.4,
       "ran": true
     },
     {
       "name": "R-aarch64",
-      "seconds": 0.4,
+      "seconds": 0.7,
       "ran": true
     },
     {
       "name": "S-x86_64",
-      "seconds": 6.1,
+      "seconds": 9.8,
       "ran": true
     },
     {
       "name": "R-x86_64",
-      "seconds": 0.5,
+      "seconds": 0.6,
       "ran": true
     },
     {
       "name": "G1-compile",
-      "seconds": 97.4,
+      "seconds": 145.8,
       "ran": true
     },
     {
       "name": "G1-extract",
-      "seconds": 0.8,
+      "seconds": 1.3,
       "ran": true
     },
     {
       "name": "arity1-compile",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "arity1-pack",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "diagnostic-span",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "runtime-boundary",
-      "seconds": 92.6,
+      "seconds": 131.2,
       "ran": true
     },
     {
@@ -2149,7 +2191,7 @@
     },
     {
       "name": "case-string-concat-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2169,7 +2211,7 @@
     },
     {
       "name": "case-string-unicode-compile",
-      "seconds": 0.4,
+      "seconds": 0.6,
       "ran": true
     },
     {
@@ -2179,7 +2221,7 @@
     },
     {
       "name": "case-string-empty-nul-compile",
-      "seconds": 0.4,
+      "seconds": 0.6,
       "ran": true
     },
     {
@@ -2189,7 +2231,7 @@
     },
     {
       "name": "case-string-search-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2209,7 +2251,7 @@
     },
     {
       "name": "case-vector-literal-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2219,7 +2261,7 @@
     },
     {
       "name": "case-vector-dynamic-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2229,7 +2271,7 @@
     },
     {
       "name": "case-vector-persistent-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2239,7 +2281,7 @@
     },
     {
       "name": "case-vector-mutate-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2249,7 +2291,7 @@
     },
     {
       "name": "case-vector-drop-conj-compile",
-      "seconds": 0.4,
+      "seconds": 0.6,
       "ran": true
     },
     {
@@ -2259,7 +2301,7 @@
     },
     {
       "name": "case-vector-pooled-compile",
-      "seconds": 0.5,
+      "seconds": 0.6,
       "ran": true
     },
     {
@@ -2269,7 +2311,7 @@
     },
     {
       "name": "case-vector-negative-compile",
-      "seconds": 0.4,
+      "seconds": 0.6,
       "ran": true
     },
     {
@@ -2279,7 +2321,7 @@
     },
     {
       "name": "case-vector-oob-compile",
-      "seconds": 0.4,
+      "seconds": 0.7,
       "ran": true
     },
     {
@@ -2289,7 +2331,7 @@
     },
     {
       "name": "case-string-oob-compile",
-      "seconds": 0.4,
+      "seconds": 0.6,
       "ran": true
     },
     {
@@ -2299,7 +2341,7 @@
     },
     {
       "name": "case-string-boundary-compile",
-      "seconds": 0.4,
+      "seconds": 0.6,
       "ran": true
     },
     {
@@ -2309,7 +2351,7 @@
     },
     {
       "name": "case-wide-args-compile",
-      "seconds": 0.4,
+      "seconds": 0.7,
       "ran": true
     },
     {
@@ -2319,7 +2361,7 @@
     },
     {
       "name": "case-closure-compile",
-      "seconds": 0.4,
+      "seconds": 0.6,
       "ran": true
     },
     {
@@ -2329,7 +2371,7 @@
     },
     {
       "name": "case-closure-env-compile",
-      "seconds": 0.4,
+      "seconds": 0.6,
       "ran": true
     },
     {
@@ -2339,7 +2381,7 @@
     },
     {
       "name": "case-state-results-compile",
-      "seconds": 0.4,
+      "seconds": 0.6,
       "ran": true
     },
     {
@@ -2349,7 +2391,7 @@
     },
     {
       "name": "case-bytes-roundtrip-compile",
-      "seconds": 0.4,
+      "seconds": 0.6,
       "ran": true
     },
     {
@@ -2359,7 +2401,7 @@
     },
     {
       "name": "case-capability-denied-compile",
-      "seconds": 0.4,
+      "seconds": 0.6,
       "ran": true
     },
     {
@@ -2369,7 +2411,7 @@
     },
     {
       "name": "case-mutual-tail-compile",
-      "seconds": 0.4,
+      "seconds": 0.6,
       "ran": true
     },
     {
@@ -2379,17 +2421,17 @@
     },
     {
       "name": "probe-value-compile",
-      "seconds": 0.4,
+      "seconds": 0.6,
       "ran": true
     },
     {
       "name": "probe-spin-compile",
-      "seconds": 0.5,
+      "seconds": 0.6,
       "ran": true
     },
     {
       "name": "probe-deep-compile",
-      "seconds": 0.4,
+      "seconds": 0.6,
       "ran": true
     },
     {
@@ -2419,7 +2461,7 @@
     },
     {
       "name": "cap-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
