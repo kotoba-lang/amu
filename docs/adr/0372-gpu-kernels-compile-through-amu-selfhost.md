@@ -340,11 +340,13 @@ a follow-up to ADR 0371.
      these.
 
      On gad (RADV), each is byte-identical to glslang's module:
-     * every x8 tensor type with 8 and with 4 rows per workgroup;
+     * every x8 tensor type with 8 rows per workgroup, and two types with 4;
      * every type of the int8 kernel with 4 rows, and two types with 8.
 
      The int8 run's provider reported `:shader-integer-dot-product` enabled,
-     and the gate requires it.
+     and the gate requires it. That provider was built from the
+     device-features branch, since no provider on main enables the feature
+     yet. Receipts: `docs/evidence/gpu-kernel-kir2-x8-20261023/`.
    * then the nvgpu-h2 kernels for Xavier.
 4. **Execution.** Through the ADR 0371 provider, with numeric and speed gates
    against the hand-written kernels.
