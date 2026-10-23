@@ -21,7 +21,7 @@ suite.
   * The refs and oracle phases (glslangValidator, spirv-val and spirv-dis)
     ran on the developer host (macOS, arm64).
   * The build phase ran on arm64 Linux (podman machine, native), with the
-    pinned root as `--compiler` and an aarch64 tool image.
+    pinned root (`bd025475…`) as `--compiler` and an aarch64 tool image.
 * `x86_64-linux.json`: the same with an x86_64 tool image, run under
   qemu-user on arm64 Linux (`--seccomp-if-available`, recorded).
 * `gad-radv.json`: the aarch64 receipt with the `gpu` phase added. It ran on
