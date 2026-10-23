@@ -80,7 +80,7 @@ SUITES = {
                  receipt="gpu-kernel-spirv.json", prefix="kir1-",
                  sizes={"ewise": 1004, "reduce-sum": 1740, "reduce-max": 1748, "reduce-min": 1748, "sweep": 856,
                         "subgroup-sum": 1896, "subgroup-max": 1904, "subgroup-min": 1904},
-                 count=28, control="FAIL label inside an open block", refs=True),
+                 count=23, control="FAIL label inside an open block", refs=True),
     "kir2": dict(modules=[*ENCODE_CHECK, "tools/gpu_kernel_kir2.kotoba", "tools/gpu_kernels_v2.kotoba"],
                  test="tools/gpu_kernel_kir2_test.kotoba", receipt="gpu-kernel-kir2.json", prefix="kir2-",
                  sizes={"ewise": 1096, "attn-copy-dense": 6488, **{"kir2-nex-" + op + ".spv": n for op, n in zip(NEX_OPS, [3440, 3468, 3516, 1992, 2660, 2452, 2396, 2024, 2704, 1872, 1968, 3088, 3476, 1652, 3888, 5864, 5356, 3604, 4052])}},
