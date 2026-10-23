@@ -10,7 +10,7 @@ stdout, waits with a wall-time kill and writes one EDN receipt line
 
 * `aarch64-linux.json`: `scripts/seed/check-static-launcher.py` on arm64 Linux
   (podman machine, applehv, native kernel; no emulation), with the re-pinned
-  root as `--compiler` and main's root before this PR, `98d4bcb7…`, as
+  root as `--compiler` and main's root before this PR, `cd85f3fc…`, as
   `--previous-root`.
 * `x86_64-linux.json`: the same check on a native x86_64 kernel, from the
   `qualify-x86_64` job of `selfhost-native.yml` (run through
