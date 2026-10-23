@@ -119,9 +119,9 @@
 ;; (+ base offset), or taking a base out of memory, would conjure a window nothing
 ;; checked, so the base operand (the first) of each of the three must be ROOTED:
 ;;   - an integer literal (a literal window), or
-;;   - a parameter of the EXPORTED function that is never assigned in it (the ABI
-;;     boundary where the kernel hands in a region; a private helper's parameter
-;;     is whatever its callers pass, so it is not rooted), or
+;;   - a parameter never assigned in its function: of the exported function (the ABI
+;;     boundary where the kernel hands in a region), or of a private helper when
+;;     EVERY call of that helper passes a rooted value at that position, or
 ;;   - the result of kernel-subregion over a rooted base, or
 ;;   - a let-bound local with exactly one assignment whose source is rooted.
 ;; Anything else -- a value read from memory, arithmetic, a call result, a branch's
@@ -146,7 +146,7 @@
             :else (xk-first-lset M (inc j) s)))))
 (defn- xk-param-slot? [M :vector-i64 j :i64 s :i64] :bool
   (let [st (xk-fn-start M j) f (xg-si M st IF-A)]
-    (and (= (xg-f M f FF-EXPORT) 1) (>= s 1) (<= s (xg-f M f FF-NPARAMS)) (= (xk-lsets M (inc st) s 0) 0))))
+    (and (>= s 1) (<= s (xg-f M f FF-NPARAMS)) (= (xk-lsets M (inc st) s 0) 0))))
 (defn- xk-writer [M :vector-i64 i :i64 t :i64] :i64
   (loop [j (dec i)]
     (if (< j 1) -1
@@ -165,7 +165,14 @@
         (let [op (xg-si M j IF-OP) a (xg-si M j IF-A) b (xg-si M j IF-B)]
           (cond (= op OP-CONST) true
                 (= op OP-LGET)
-                  (cond (xk-param-slot? M j b) true
+                  (cond (xk-param-slot? M j b)
+                          (let [f (xg-si M (xk-fn-start M j) IF-A)]
+                            (if (= (xg-f M f FF-EXPORT) 1) true
+                              (loop [c 1]
+                                (if (>= c (vector-at M MM-SIR-N)) true
+                                  (if (and (= (xg-si M c IF-OP) OP-CALL) (= (xg-si M c IF-A) f))
+                                    (if (xk-rooted M c (+ (xg-si M c IF-B) (dec b)) (inc depth)) (recur (inc c)) false)
+                                    (recur (inc c)))))))
                         (= (xk-lsets M (inc (xk-fn-start M j)) b 0) 1)
                           (let [k (xk-first-lset M (inc (xk-fn-start M j)) b)]
                             (and (> k 0) (xk-rooted M k (xg-si M k IF-B) (inc depth))))
