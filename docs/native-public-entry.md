@@ -3,8 +3,8 @@
 The product identity is [native-product.json](../native-product.json).
 `bin/amu`, `bin/kotoba` and `bin/kotoba-compiler` resolve to the same
 8,679,936-byte Linux x86_64 ELF, SHA-256
-`d1a865ac790857c0d838fd6fb9b9ebe32317c3c7cf2c406c96fe0d6c06cf2fc5`.
-The source revision is `7f8b7467`; metadata/entry retirement commits can
+`8fd3f650cadb3bc63fd90cf3b1aac25b952495d72fba5f8f4b8746f1c7ad8580`.
+The source revision is `e0885e3b`; metadata/entry retirement commits can
 follow without changing this compiler source or image.
 
 ## Artifact qualification
@@ -22,8 +22,10 @@ uses `/usr/bin:/bin`; its native executable arguments are explicit paths.
 The adopted normal18 core source is `3adfa7cf`, container `dfbbf04d`,
 native payload `df9b530a`. Every normal core module is retained. Warm
 G1=G2=G3 and digest-bound unity compilation reproduce the same container.
-The independent current durable-runtime cold C0 is pending; the earlier
-clock and stdin cold receipts retain their original source/runtime identity.
+The independent current durable-runtime cold C0 completed and reproduces
+`dfbbf04d`. Its static image is `da8bda03` with OUT12MiB/LitB1MiB; the
+final complete29 compiler reproduces that exact executed C0 image. Earlier
+clock/stdin cold receipts retain their original source/runtime identity.
 
 The complete29 static profile uses OUT12MiB and LitB1MiB; MM-WORDS is
 28,966,912, below the per-vector limit of 2^25. The normal core's memory
@@ -40,7 +42,7 @@ each of six individual large entries and whole-large, GMIR all eight, and
 plus the E2104 reference escape. Every one of the 33 MIR files/three roots
 and 12 GMIR files/two roots was retained with its exact digest. MIR
 whole-large ended with zero tracked arena use after 155,688,217 scope
-releases. `durable-correctness-identity.json` records the final `7f8b7467`
+releases. `browser3-correctness-identity.json` records the final `e0885e3b`
 compiler reproducing all27 executed containers and that exact runtime.
 The earlier incorrect static-entry staging observation is excluded; the
 completed runs use `--format runner`. This is correctness evidence, with
@@ -90,9 +92,15 @@ source/image/result/exit/fuel vectors. Callers cannot substitute a green
 stub or alter expected values. These controls bind bytes and observations;
 caller-supplied hashes are not external authentication or signatures.
 
-The current29 controller's fresh 24-case, 18-refusal and parent-death
-cleanup qualification is pending. Earlier controller receipts retain their
-source identity. The current public product bytes and three aliases passed
+The current native controller completed both mandatory roles, all24 cases,
+18 refusal probes and parent-death child cleanup on actual x86.
+`controller-durable-fresh.json` records the execution source `7f8b7467`;
+`controller-browser3-identity.json` proves that the final `e0885e3b` compiler
+reproduces all3 role images/sources and every one of the24 fixture records
+byte-for-byte. The exec trace contains73 execve/execveat observations, with
+no observed legacy compiler/runtime or shell execution in the role closure.
+Earlier receipts retain their own source/runtime identity.
+The current public product bytes and three aliases passed
 pinned check/compile, generated ELF execution and named refusals on native
 x86. Hosted workflow completion is recorded separately when terminal.
 GitHub Actions/Python stage and observe processes; native role code owns
@@ -132,7 +140,17 @@ loader execution is excluded from mandatory native CDCI. The static
 launcher, complete core, all24 native cases and hardening remain required.
 
 The bootstrap root is the same self-rebuilt complete29 ARM compiler,
-image `d201f6da`, derived from prior native root `88afda89`. Its exact
+image `d5009f37`, derived from prior qualified native root `d201f6da`. Its exact
 source/packed generations and prior-root history are retained in
 `seed/bootstrap/aarch64-linux-static-root.json`. Hosted CI independently
 checks root reproduction; an artifact receipt is not a terminal CI claim.
+
+## Current evidence index
+
+[`current-scope.json`](evidence/native-cdci-20261023/current-scope.json) binds
+the current compiler, public image, cold core, exact correctness producer,
+runtime and controller receipts. Artifact qualification is separate from
+the exact PR-head and post-merge main workflow results linked in PR #1510
+and the Kotoba Labs task records. Historical source-specific false/pending
+flags and earlier receipt names do not redefine the current qualification.
+The broad public command/CID migration remains separate implementation work.
