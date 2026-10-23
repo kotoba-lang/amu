@@ -247,6 +247,7 @@ def ref_rows(args):
 
 def ref(output, jobs):
     fx = json.loads((output / "fixtures.json").read_text())
+    assert pin(output / "fixtures" / "x.f32") == fx["x"], "x changed since the fixtures phase"
     x = list(struct.unpack(f"<{COLS}f", (output / "fixtures" / "x.f32").read_bytes()))
     out = output / "ref"
     out.mkdir(exist_ok=False)
@@ -259,13 +260,13 @@ def ref(output, jobs):
             step = 2048
             vals = [v for part in pool.map(ref_rows, [(str(path), f["tt"], r, min(r + step, f["rows"]), x) for r in range(0, f["rows"], step)]) for v in part]
             (out / (name + ".f64")).write_bytes(struct.pack(f"<{len(vals)}d", *vals))
-            row = dict(rows=len(vals), seconds=round(time.monotonic() - t0, 1), ref=pin(out / (name + ".f64")))
+            row = dict(rows=len(vals), seconds=round(time.monotonic() - t0, 1), fixture=f["data"], ref=pin(out / (name + ".f64")))
             if name == "output":
                 order = sorted(range(len(vals)), key=lambda k: -vals[k])[:8]
                 row.update(argmax=order[0], top8=[[k, vals[k]] for k in order], gap=vals[order[0]] - vals[order[1]])
             rows[name] = row
             print("REF", name, row["rows"], row["seconds"], "s", flush=True)
-    (output / "ref.json").write_text(json.dumps(dict(status="REF", host=[platform.system(), platform.machine()], fixtures=rows,
+    (output / "ref.json").write_text(json.dumps(dict(status="REF", host=[platform.system(), platform.machine()], fixtures=rows, x=fx["x"],
                                                      note="f64 dequant oracle, test-time only"), indent=2) + "\n")
 
 
@@ -287,9 +288,13 @@ def guest_source(name, f, layouts):
              '(defn- gpu [r :string] :string (typed-cap-call 42 :string :string r))',
              '(defn- say [s :string] :i64 (let [x (typed-cap-call :io/write :string :string s)] 0))',
              '(defn- cat [a :string b :string] :string (string-concat a b))',
-             '(defn- times [n :i64 req :string] :i64 (if (< n 1) 0 (let [a (gpu req)] (times (- n 1) req))))',
-             ';; a command buffer of 10 dispatches: its ns',
-             '(defn- batch [req :string] :string (let [a (gpu "BEGIN") b (times 10 req)] (gpu "SUBMIT")))',
+             ';; n recorded dispatches; the number whose answer is not "1"',
+             '(defn- times [n :i64 req :string bad :i64] :i64',
+             '  (if (< n 1) bad (let [a (gpu req)] (times (- n 1) req (if (string=? a "1") bad (+ bad 1))))))',
+             ';; n hex digits of ff (NaN as f32), by doubling',
+             '(defn- ffs [n :i64 s :string] :string (if (>= (string-length s) n) (string-substring s 0 n) (ffs n (cat s s))))',
+             ';; a command buffer of 10 dispatches: its ns, or X when a recorded dispatch was refused',
+             '(defn- batch [req :string] :string (let [a (gpu "BEGIN") b (times 10 req 0) t (gpu "SUBMIT")] (if (= b 0) t "X")))',
              ';; n rounds, KIR v2 then glslang in each: " k1 .. kn R <one-r> r1 .. rn"',
              '(defn- rounds [n :i64 rk :string rr :string one-r :string ak :string ar :string] :string',
              '  (if (< n 1) (cat ak (cat " R " (cat one-r ar)))',
@@ -302,7 +307,7 @@ def guest_source(name, f, layouts):
              '(defn main [] :i64',
              f'  (let [w (gpu "MAP {name}.bin 0 {f["data"]["bytes"]}") x (gpu "MAP x.f32 0 {COLS * 4}")',
              '        m (gpu "ALLOC 32") e (gpu "ALLOC 16")',
-             f'        o1 (gpu "ALLOC {nb}") o2 (gpu "ALLOC {nb}")',
+             f'        o1 (gpu "ALLOC {nb}") o2 (gpu "ALLOC {nb}") nan (ffs {2 * nb} "ff")',
              f'        wm (gpu (cat "WRITE " (cat m " 0 {hexu32(rows, COLS) if f["tt"] == 0 else hexu32(rows, COLS, f["tt"], 1, 0, 0, 0, 0)}")))',
              '        we (gpu (cat "WRITE " (cat e " 0 00000000000000000000000000000000")))']
     for k, lay in enumerate(layouts):
@@ -311,9 +316,10 @@ def guest_source(name, f, layouts):
         nbind, rq = (4, "req4") if lay == "dot" else (5, "req")
         lines += [f'        pk{k} (gpu "PIPELINE {kir} {nbind}") pr{k} (gpu "PIPELINE {gl} {nbind}")',
                   f'        qk{k} ({rq} pk{k} "{wg}" m w x o1 e) qr{k} ({rq} pr{k} "{wg}" m w x o2 e)',
+                  f'        fk{k} (gpu (cat "WRITE " (cat o1 (cat " 0 " nan)))) fr{k} (gpu (cat "WRITE " (cat o2 (cat " 0 " nan))))',
                   f'        ok{k} (gpu qk{k}) or{k} (gpu qr{k}) tk{k} (rounds 5 qk{k} qr{k} or{k} "" "")',
                   f'        hk{k} (gpu (cat "READ " (cat o1 " 0 {nb}"))) hr{k} (gpu (cat "READ " (cat o2 " 0 {nb}")))',
-                  f'        s{k} (say (cat "L {lay} " (cat (if (string=? hk{k} hr{k}) "1" "0") (cat " K " (cat ok{k} (cat tk{k} (cat " " (cat hk{k} "\\n"))))))))']
+                  f'        s{k} (say (cat "L {lay} " (cat (if (and (string=? fk{k} "1") (and (string=? fr{k} "1") (string=? hk{k} hr{k}))) "1" "0") (cat " K " (cat ok{k} (cat tk{k} (cat " " (cat hk{k} "\\n"))))))))']
     if name == "output":
         # the decode guest's argmax chain over the r1 logits: argmax_partial (one
         # workgroup per 4096 logits) then argmax_final; nex Meta, bindings 1..6
@@ -326,11 +332,18 @@ def guest_source(name, f, layouts):
         for side, (pp, pf) in (("k", (ARGMAX[0][0], ARGMAX[1][0])), ("r", (ARGMAX[0][1], ARGMAX[1][1]))):
             o = "o1" if side == "k" else "o2"
             lines += [f'        a{side}p (gpu "PIPELINE {pp} 7") a{side}f (gpu "PIPELINE {pf} 7")',
-                      f'        a{side}0 (gpu (cat "ZERO " ns)) a{side}1 (gpu (cat "ZERO " ni)) a{side}2 (gpu (cat "ZERO " no))',
+                      f'        a{side}0 (gpu (cat "WRITE " (cat ns (cat " 0 " (ffs 512 "ff"))))) a{side}1 (gpu (cat "WRITE " (cat ni (cat " 0 " (ffs 512 "ff")))))',
+                      f'        a{side}2 (gpu (cat "WRITE " (cat no (cat " 0 " (ffs 512 "ff")))))',
                       f'        a{side}3 (gpu (cat "DISPATCH " (cat a{side}p (cat " {parts} 1 1 " (cat nm (cat " " (cat {o} (cat " " (cat nb (cat " " (cat nc (cat " " (cat no (cat " " (cat ns (cat " " ni))))))))))))))))',
                       f'        a{side}4 (gpu (cat "DISPATCH " (cat a{side}f (cat " 1 1 1 " (cat nm (cat " " (cat {o} (cat " " (cat nb (cat " " (cat nc (cat " " (cat no (cat " " (cat ns (cat " " ni))))))))))))))))',
-                      f'        a{side}5 (gpu (cat "READ " (cat ni " {4 * parts} 4"))) a{side}6 (gpu (cat "READ " (cat no " 0 4")))']
-        lines += ['        sa (say (cat "A " (cat ak5 (cat " " (cat ar5 (cat " " (cat ak6 (cat " " (cat ar6 "\\n")))))))))']
+                      f'        a{side}5 (gpu (cat "READ " (cat ni " {4 * parts} 4"))) a{side}6 (gpu (cat "READ " (cat no " 0 4")))',
+                      f'        a{side}7 (gpu (cat "READ " (cat ns " 0 {4 * parts}"))) a{side}8 (gpu (cat "READ " (cat ni " 0 {4 * parts}")))']
+        # A <r1 KIR> <r1 glslang> <partial, final KIR> <partial, final glslang> <picks> <maxima> <partials KIR> <partials glslang>
+        fields = ["lk", "lr", "ak3", "ak4", "ar3", "ar4", "ak5", "ar5", "ak6", "ar6", "ak7", "ak8", "ar7", "ar8"]
+        expr = '"\\n"'
+        for fld in reversed(fields):
+            expr = f'(cat " " (cat {fld} {expr}))'
+        lines += [f'        sa (say (cat "A" {expr}))']
     lines += ['        ]', '    0))']
     return "\n".join(lines) + "\n"
 
@@ -338,6 +351,9 @@ def guest_source(name, f, layouts):
 def build(compiler, output, kernels, provider):
     assert platform.system() == "Linux", "run the build phase on Linux"
     fx = json.loads((output / "fixtures.json").read_text())
+    assert sorted(fx["fixtures"]) == sorted(f["name"] for f in FIXTURES), sorted(fx["fixtures"])
+    root = json.loads((ROOT / "seed/bootstrap/aarch64-linux-static-root.json").read_text())["image"]
+    assert pin(compiler) == root, ("not the pinned root", pin(compiler), root)
     art = output / "artifacts"
     art.mkdir(exist_ok=False)
     producer = art / "compiler.elf"
@@ -392,6 +408,9 @@ def run(output, provider):
     fx = json.loads((output / "fixtures.json").read_text())
     rf = json.loads((output / "ref.json").read_text())
     br = json.loads((output / "exec-build.json").read_text())
+    assert sorted(fx["fixtures"]) == sorted(f["name"] for f in FIXTURES) == sorted(rf["fixtures"]) == sorted(br["guests"])
+    assert rf["x"] == fx["x"] and all(rf["fixtures"][n]["fixture"] == f["data"] for n, f in fx["fixtures"].items()), \
+        "the references are not of these fixtures"
     prep = json.loads((provider / "gpu-provider.json").read_text())
     launcher, vulkan = provider / prep["images"]["launcher"], provider / prep["images"]["provider-vulkan"]
     assert pin(launcher) == br["provider"]["images"]["launcher"] and pin(vulkan) == br["provider"]["images"]["provider-vulkan"]
@@ -422,7 +441,7 @@ def run(output, provider):
         assert z.returncode == 0 and ":verdict :ok" in line, (name, z.returncode, line[:600], z.stderr[-400:])
         refv = struct.unpack(f"<{f['rows']}d", (output / "ref" / (name + ".f64")).read_bytes())
         assert pin(output / "ref" / (name + ".f64")) == rf["fixtures"][name]["ref"]
-        layout_rows = {}
+        layout_rows, r1_got = {}, None
         for ln in z.stdout.decode().splitlines():
             if ln.startswith("L "):
                 p = ln.split()
@@ -430,6 +449,8 @@ def run(output, provider):
                 assert p[3] == "K" and p[10] == "R" and len(p) == 18, (name, lay, p[:17])
                 kt, rt = [int(v) for v in p[4:10]], [int(v) for v in p[11:17]]
                 got = struct.unpack(f"<{f['rows']}f", bytes.fromhex(p[17]))
+                if lay == "r1":
+                    r1_got = got
                 assert same, (name, lay, "KIR v2's outputs differ from glslang's module")
                 assert all(math.isfinite(v) for v in got), (name, lay, "non-finite outputs")
                 rel = max(abs(a - b) / max(abs(b), 1e-2) for a, b in zip(got, refv))
@@ -442,18 +463,31 @@ def run(output, provider):
                 layout_rows[lay] = dict(identicalToGlslang=True, maxRelErrVsF64=rel, maxErrOverRms=over_rms, kirNs=kt, glslangNs=rt, speedRatio=round(ratio, 3),
                                         kirGBs=round(gbs, 1), outputSHA256=hashlib.sha256(bytes.fromhex(p[17])).hexdigest())
         assert sorted(layout_rows) == sorted(br["guests"][name]["layouts"]), (name, "missing layouts", sorted(layout_rows))
+        assert rep, (name, "no provider report in the receipt")
         row = dict(rows=f["rows"], tt=f["tt"], seconds=seconds, layouts=layout_rows, receipt=line.strip(),
-                   confinement=cgp.confined(rep, True) if rep else None)
+                   confinement=cgp.confined(rep, True))
         if name == "output":
             a = [ln for ln in z.stdout.decode().splitlines() if ln.startswith("A ")]
             assert len(a) == 1, "the argmax line"
-            _, kp, rp, km, rm = a[0].split()
+            q = a[0].split()[1:]
+            assert len(q) == 14 and all(v.isdigit() for v in q[:6]), ("a chain dispatch was refused", q[:6])
+            kp, rp, km, rm, ks, ki, rs, ri = q[6:]
             kpick, rpick = struct.unpack("<I", bytes.fromhex(kp))[0], struct.unpack("<I", bytes.fromhex(rp))[0]
-            assert kpick == rpick and km == rm, ("the argmax chains differ", kpick, rpick)
+            assert kpick == rpick and km == rm and ks == rs and ki == ri, ("the argmax chains differ", kpick, rpick)
+            # the chain against the r1 logits it ran on: each partial is its segment's
+            # max at the lowest index, the pick the lowest index of the overall max
+            parts = -(-f["rows"] // 4096)
+            sv, si = struct.unpack(f"<{parts}f", bytes.fromhex(ks)), struct.unpack(f"<{parts}I", bytes.fromhex(ki))
+            for w in range(parts):
+                seg = range(w * 4096, min(w * 4096 + 4096, f["rows"]))
+                j = min(seg, key=lambda k: (-r1_got[k], k))
+                assert si[w] == j and sv[w] == r1_got[j], ("partial", w, si[w], j)
+            top = min(range(f["rows"]), key=lambda k: (-r1_got[k], k))
+            assert kpick == top and struct.unpack("<f", bytes.fromhex(km))[0] == r1_got[top], ("the pick vs the r1 logits", kpick, top)
             want = rf["fixtures"]["output"]["argmax"]
             assert kpick == want, ("the argmax chain's pick vs the f64 argmax", kpick, want, rf["fixtures"]["output"]["top8"][:3])
             row["argmax"] = dict(pick=kpick, f64Argmax=want, f64Gap=rf["fixtures"]["output"]["gap"], identicalToGlslang=True,
-                                 maxLogit=struct.unpack("<f", bytes.fromhex(km))[0])
+                                 partials=parts, partialsMatchR1Logits=True, maxLogit=struct.unpack("<f", bytes.fromhex(km))[0])
         rows[name] = row
         print("RAN", name, seconds, "s", sorted(layout_rows), flush=True)
     report = dict(status="PASS_GPU_KERNEL_EXEC", host=[platform.system(), platform.machine(), platform.release()], node=platform.node(),

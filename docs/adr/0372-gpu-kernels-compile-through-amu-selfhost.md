@@ -436,12 +436,14 @@ a follow-up to ADR 0371.
 
      The layouts were r1, r8, x8r4 and h2r1, the lm_head's r1, x8r4 and
      h2q6r1, and the decode argmax chain.
-     * Every output is byte-identical to glslang's.
+     * Every output is byte-identical to glslang's. The output buffers start
+       as NaN before each layout, so an unwritten row fails.
      * Against an f64 dequant oracle, the f32 layouts are within 5.4e-5
        (kdot_check's metric, gate 1e-3). The h2 layouts compute in f16 and
        are within 5.3e-3 of the output's rms (gate 1e-2).
-     * The argmax chain picks the f64 argmax.
-     * KIR v2 took 0.61-1.19 times glslang's time (gate 1.25). That gate is
+     * The argmax chain's 61 partials match glslang's and the r1 logits, and
+       its pick is the f64 argmax.
+     * KIR v2 took 0.69-1.17 times glslang's time (gate 1.25). That gate is
        coarse: run-to-run noise on gad's iGPU is about ±40%.
 
      Receipts: `docs/evidence/gpu-kernel-exec-20261024/`.

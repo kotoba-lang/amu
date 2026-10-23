@@ -651,8 +651,10 @@ Each step is its own PR, in this order:
       * the kdot fixtures (Q5_K, IQ4_XS, Q4_K, and the Q6_K lm_head);
       * the lm_head's argmax chain, whose pick is the f64 argmax.
 
-      Every output is byte-identical to glslang's module, and within 1e-3 of
-      an f64 dequant oracle (f16 layouts: within 1e-2 of the rms).
+      Every output is byte-identical to glslang's module. Against an f64
+      dequant oracle, every output is within 1e-3 relative error (with a 1e-2
+      floor, kdot_check's metric). The f16 layouts are measured instead
+      against the output's rms, within 1e-2.
    4. **Confinement after device creation.** In progress. After the device
       is created the provider reads the facts its report needs from files:
       its image digest, and for the Vulkan layer the driver properties and
