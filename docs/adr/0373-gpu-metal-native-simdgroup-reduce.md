@@ -18,15 +18,20 @@
   docs/evidence/gpu/simdgroup-reduce-m1max-measure-20261023.txt): paired
   median ratios 0.790/0.800/0.799 (sum/max/min vs :baseline), claim-
   protocol rule 2 REGIME-INVARIANT FASTER (18/18 per-run ratios below
-  1.0). The flip is NOT done and the remaining cells are unmeasured:
-  every answer this row carries is still UNMEASURED as a selection
-  basis.] ADR-0356 rule 3 (emission admission
+  1.0). UPDATE 2026-10-23 (later same-day slices): the W = 256 and
+  W = 512 cells FLIPPED (the flip slices, below) -- two answers of this
+  row carry `:measured? true` on the narrowed M1 Max class -- and the
+  W-sweep's second cell measured W = 512 (paired median ratios
+  0.815/0.823/0.824, rule 2 REGIME-INVARIANT FASTER, 18/18). Every other
+  cell is unmeasured and every answer outside the two flip cells still
+  carries `:measured? false`.] ADR-0356 rule 3 (emission admission
   first) gates its IMPLEMENTATION, which is its own
   later slice [now split: step 1 emission DONE, step 2 selection DONE,
-  step 3 measurement STARTED (the W = 256 cell measured 2026-10-23; the
-  flip and the remaining cells OPEN)]. Every answer this row will carry is UNMEASURED
-  (`:measured? false`, rule 4's lock) until a hardware measurement replaces the
-  basis text of the answer's cell.
+  step 3 measurement STARTED (the W = 256 and W = 512 cells measured and
+  flipped 2026-10-23; the remaining cells OPEN)]. Every answer this row
+  carries outside the two flip cells is UNMEASURED
+  (`:measured? false`, rule 4's lock) until a hardware measurement
+  replaces the basis text of the answer's cell.
 - Date: 2026-10-23
 - Tracking: JUN-58 (Apple). Parent JUN-55. One vendor per decision, the
   rule ADR-0356 set and ADR-0357/0360/0361/0364 followed.
@@ -143,6 +148,24 @@ ladder is pinned by `the-msl-ladder-selects-simdgroup-reduce-first` and
    `select-variant` (`simd-flip?`,
    `apple-simdgroup-measured-workgroups #{256}`), pinned by
    `the-simdgroup-rows-own-flip-cell-flips-the-honesty-lock`.]
+   [UPDATE 2026-10-23, the W = 512 FLIP SLICE (rule 3 step 3's W-sweep
+   second cell, flipped later the same day): the W-sweep measurement of
+   THIS variant at W = 512, n = 1000003 (the W-sweep record,
+   `docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512`) ran
+   the byte-identical protocol and measured it FASTER than `:baseline`
+   (paired median ratios 0.815/0.823/0.824 for `:sum`/`:max`/`:min`,
+   claim-protocol rule 2 REGIME-INVARIANT FASTER, 18/18 per-run ratios
+   below 1.0). The flip contract's keys hold exactly there too (same
+   class, route and gate; W = 512), the carve-out lifts exactly there,
+   and the cell answers `:simdgroup-reduce` with `:measured? true` and
+   the row's OWN `:measured-cell` record (`:shapes [1000003]`, the
+   `:evidence` naming this cell's own runs -- each flip cell names ITS
+   OWN record). The flip is code in `select-variant`
+   (`apple-simdgroup-measured-workgroups #{256 512}`,
+   `apple-simdgroup-measured-evidence` keyed per W). Every other W of
+   this class (32/64/128/1024) keeps the carve-out's `:baseline` with
+   the lock on. Slice record:
+   `docs/evidence/gpu/simdgroup-reduce-flip-w512-20261023.txt`.]
 2. **The MSL ladder (the ADR-0361 CUDA-ladder idiom).** Outside the
    carved-out class, an Apple MSL descriptor that reports the fold's
    facts (rule 6, below) answers `:simdgroup-reduce` -- the vendor-native
@@ -267,6 +290,21 @@ step-1 slice added the rows below it.]
   flip contract (W = 256 answers the row, MEASURED).
   `docs/evidence/gpu/simdgroup-reduce-flip-20261023.txt`: the flip slice
   record (gate output included).
+- [W = 512 FLIP SLICE, 2026-10-23 (rule 3 step 3's W-sweep second cell,
+  flipped later the same day):] `src/kotoba/compiler/accelerator_variants.cljk`:
+  `apple-simdgroup-measured-workgroups #{256 512}`,
+  `apple-simdgroup-measured-evidence` keyed per W (each flip cell's
+  record names ITS OWN runs), `apple-simdgroup-measured-shapes`,
+  `apple-simdgroup-flip-note` (both cells), the carve-out note and the
+  flip-aware ladder prose;
+  `src/kotoba/compiler/accelerator_simdgroup_reduce.cljk`: honesty marks
+  for the two flip cells (docstrings only);
+  `test/kotoba/compiler/accelerator_variants_test.cljk` and
+  `test/kotoba/compiler/accelerator_simdgroup_reduce_test.cljk`: the
+  flip pins extended to both cells (per-W records), the carve-out
+  blocks' W sets narrowed to 32/64/128/1024;
+  `docs/evidence/gpu/simdgroup-reduce-flip-w512-20261023.txt`: the slice
+  record (gate output included).
 
 ## What did NOT move (named so nothing is silently upgraded)
 
@@ -286,6 +324,12 @@ step-1 slice added the rows below it.]
   the step-2 list is still unmoved; the workgroup rows (ADR-0355/0358)
   remain untouched and no speed claim extends past the flip cell's own
   recorded scope.]
+- [The W = 512 flip slice (2026-10-23, later same-day) moved exactly ONE
+  more `:measured?` flag and added exactly ONE more `:measured-cell`
+  record -- this row's own W = 512 cell on the same class, as scoped
+  above. Nothing else moved: the W = 256 record is untouched, the
+  workgroup rows (ADR-0355/0358) remain untouched, and no speed claim
+  extends past the two flip cells' own recorded scopes.]
 
 ## State (the honesty rule's three states)
 
@@ -299,22 +343,28 @@ vs `:baseline`, rule 2 regime-invariant faster). THE FLIP SLICE (also
 2026-10-23) then moved ONE `:measured?` flag: the W = 256 cell of THIS
 variant on the narrowed M1 Max class answers `:simdgroup-reduce` with
 `:measured? true` and the row's own `:measured-cell` record
-(`:shapes [1000003]`) -- implemented (`simd-flip?` + tests). ACCEPTED
+(`:shapes [1000003]`) -- implemented (`simd-flip?` + tests). THE W = 512
+FLIP SLICE (later same-day) moved ONE more flag the same way: the
+W = 512 cell (the W-sweep's second measured cell, ratios
+0.815/0.823/0.824) answers `:simdgroup-reduce` with `:measured? true`
+and its OWN record. ACCEPTED
 DESIGN ONLY: any wording above that governs this variant's OTHER future
 measurement cells (the flip contract as applied to `:simdgroup-reduce` --
-only the W = 256 cell has flipped).
+only the W = 256 and W = 512 cells have flipped).
 PROPOSED, unchanged: every performance question about this variant off
-the one measured cell.] The
+the two measured cells.] The
 two design
 questions ADR-0356's reconciliation parked are now both DECIDED
 (narrowing: ADR-0360's second decision; this row: this ADR).
 
 ## UNMEASURED, named
 
-Everything about this variant's performance on every device but the one
-measured cell (M1 Max, W = 256, n = 1000003 -- measured 2026-10-23,
-faster than `:baseline` at that cell, see the step-3 record); every other
-W of this variant (32/64/128/512/1024); shape 2 for this variant;
+Everything about this variant's performance on every device but the two
+measured cells (M1 Max, W = 256 and W = 512, n = 1000003 -- measured and
+flipped 2026-10-23,
+faster than `:baseline` at those cells, see the step-3 and W-sweep
+records); every other
+W of this variant (32/64/128/1024); shape 2 for this variant;
 `simd_sum`'s association order as a spec-text claim (the spec was NOT
 re-read this tick -- the P1 scope does not depend on it); every Apple
 device but this M1 Max for any variant; the GLSL arm of
@@ -355,22 +405,27 @@ outside this diff. No green full suite is claimed.
    + tests; (2) the selection predicate (the ladder, the carve-out, the
    `:simd-reduce` gate fact) + tests. STEP 3 STARTED 2026-10-23: the
    W = 256, n = 1000003 cell measured on M1 Max (faster than
-   `:baseline`, rule 2 regime-invariant). The flip slice (item 2) is
-   DONE the same day.] Rule 3's order keeps the rest
+   `:baseline`, rule 2 regime-invariant), as did the W-sweep's second
+   cell (W = 512, 0.815/0.823/0.824, same day). The flip slices (item 2)
+   are
+   DONE the same day (W = 256 and W = 512).] Rule 3's order keeps the rest
    of (3) next: the remaining cells.
-2. [(step 3) DONE 2026-10-23, the flip slice: what the W = 256 numbers
+2. [(step 3) DONE 2026-10-23, the flip slices: what the W = 256 and
+   W = 512 numbers
    license under the flip contract is ANSWERED -- this VARIANT's own
    cells keyed by name fragment, reported subgroup size, route, channel,
-   W set and shapes, one cell set at a time: exactly the W = 256,
-   n = 1000003 cell of the narrowed M1 Max class flipped
-   (`simd-flip?`, `apple-simdgroup-measured-workgroups #{256}`,
-   `:shapes [1000003]`), every other cell keeps the lock. The flip's
-   record: docs/evidence/gpu/simdgroup-reduce-flip-20261023.txt.] The
+   W set and shapes, one cell set at a time: exactly the W = 256 and
+   W = 512,
+   n = 1000003 cells of the narrowed M1 Max class flipped
+   (`simd-flip?`, `apple-simdgroup-measured-workgroups #{256 512}`,
+   `:shapes [1000003]`), every other cell keeps the lock. The flips'
+   records: docs/evidence/gpu-simdgroup-reduce-flip-20261023.txt and
+   docs/evidence/gpu/simdgroup-reduce-flip-w512-20261023.txt.] The
    flip: what the W = 256 numbers license under the flip
    contract -- this VARIANT's own cells keyed by name fragment, reported
    subgroup size, route, channel, W set and shapes -- one cell set at a
    time. Until it lands no `:measured?` flag moves.
-3. (step 3) Measure the remaining cells (W = 32/64/128/512/1024, shape
+3. (step 3) Measure the remaining cells (W = 32/64/128/1024, shape
    2, cross-day replication) under the same claim protocol.
 4. Cross-day replication of the existing `:subgroup-reduce` cells (needs a
    later-day cron tick).
