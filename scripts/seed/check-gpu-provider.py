@@ -283,9 +283,50 @@ def run(output):
             ("INFO é", "!gpu/unknown-verb unknown :gpu/compute request")]:
         expect(s, req, want)
     line = s.close(0)
-    assert f":served {len(s.log)} " in line and " :end :eof " in line and " :device-facts {:layer :fake} " in line, line
+    assert (f":served {len(s.log)} " in line and " :end :eof " in line and " :device-facts {:layer :fake} " in line
+            and ' :needed ["libc.so.6"] ' in line), line
     rows["verbs"] = dict(requests=len(s.log), refused=int(re.search(r":refused (\d+)", line)[1]), report=line.strip(),
                          confinement=confined(line, native), log=s.log)
+
+    # ordinary device errors: refused, and the session goes on
+    s = Session(img["provider-fake"], raw, "device-error", grant(arts, cap=1 << 40))
+    for req, want in [("ALLOC 4294967293", "!gpu/device-error ALLOC: device error"), ("ALLOC 16", "1"), ("PIPELINE k.spv 1", "1"),
+                      ("BEGIN", "1"), ("DISPATCH 1 4294967293 1 1 1", "!gpu/device-error DISPATCH: device error"),
+                      ("DISPATCH 1 1 1 1 1", "1"), ("SUBMIT", NS), ("DISPATCH 1 4294967293 1 1 1", "!gpu/device-error DISPATCH: device error"),
+                      ("INFO", "Kotoba fake device|fake|65535|1")]:
+        expect(s, req, want)
+    line = s.close(0)
+    assert " :refused 3 " in line and " :end :eof " in line, line
+    rows["device-error"] = dict(report=line.strip(), log=s.log)
+
+    # an artifact changed after its verification: MAP checks each piece it
+    # reads and refuses; PIPELINE keeps using the module bytes it verified
+    for n in ("model.bin", "k.spv"):
+        (raw / ("changed-" + n)).write_bytes((raw / n).read_bytes())
+    changed = [("changed-model.bin", sha["model.bin"], "model"), ("changed-k.spv", sha["k.spv"], "spirv")]
+    s = Session(img["provider-fake"], raw, "artifact-changed", grant(changed))
+    expect(s, "MAP changed-model.bin 0 1000", "1")
+    expect(s, "PIPELINE changed-k.spv 1", "1")
+    with open(raw / "changed-model.bin", "r+b") as f:
+        f.seek(200000)
+        f.write(b"\xff" * 16)
+    with open(raw / "changed-k.spv", "r+b") as f:
+        f.write(b"\0" * 20)
+    # one 1 MiB piece holds the whole file: the change refuses any range of it
+    expect(s, "MAP changed-model.bin 199000 2000", "!gpu/artifact-digest-mismatch MAP: artifact digest does not match the grant")
+    expect(s, "MAP changed-model.bin 0 1000", "!gpu/artifact-digest-mismatch MAP: artifact digest does not match the grant")
+    expect(s, "PIPELINE changed-k.spv 1", "2")
+    line = s.close(0)
+    rows["artifact-changed"] = dict(report=line.strip(), log=s.log)
+
+    # truncated frames: not a clean end
+    for name, data in (("truncated-header", b"\x04\x00"), ("truncated-payload", struct.pack("<I", 10) + b"INF")):
+        s = Session(img["provider-fake"], raw, name, grant(arts))
+        s.p.stdin.write(data)
+        s.p.stdin.flush()
+        line = s.close(1)
+        assert " :end :truncated-request " in line, (name, line)
+        rows[name] = dict(report=line.strip())
 
     # faults that end the session
     for name, x, code in (("device-lost", 4294967295, "!gpu/device-lost device lost; the provider ends the session"),
@@ -469,14 +510,32 @@ def gpu(output):
     expect(s, "PIPELINE sum.spv 3", "2")
     ns.append(int(expect(s, "DISPATCH 2 4 1 1 7 8 6", NS)))
     expect(s, "READ 8 0 16", f32([sum(ints[k:k + 256]) for k in range(0, n, 256)]).hex())
+    # unaligned bytes (copies are widened to 4-byte spans) and ZERO of a
+    # buffer whose size is not a multiple of 4
+    expect(s, "ALLOC 3", "9")
+    expect(s, "WRITE 9 0 a1b2c3", "1")
+    expect(s, "WRITE 9 1 abcd", "1")
+    expect(s, "READ 9 0 3", "a1abcd")
+    expect(s, "READ 9 2 1", "cd")
+    expect(s, "ZERO 9", "1")
+    expect(s, "READ 9 0 3", "000000")
+    expect(s, "WRITE 1 4093 010203", "1")
+    expect(s, "READ 1 4092 4", "00010203")
+    # a workgroup count over the device's limit is a device error, and the
+    # session goes on
+    expect(s, "DISPATCH 1 4 4294967295 1 3 4 5 6", "!gpu/device-error DISPATCH: device error")
+    expect(s, "INFO", info)
     line = s.close(0)
     name = info.split("|")[0]
     assert f':device "{name}" ' in line and " :end :eof " in line, (line, name)
     rows["confinement"] = confined(line, True)
-    facts = re.search(r':device-facts \{:layer :vulkan :driver "([^"]*)" :features #\{([^}]*)\} :libraries \[(.*?)\]\}', line)
+    facts = re.search(r':device-facts \{:layer :vulkan :driver "([^"]*)" :features #\{([^}]*)\} :libraries \[(.*?)\] :mapped \[(.*?)\]\}', line)
     assert facts and re.search(r'\{:path "[^"]*libvulkan\.so[^"]*" :sha256 "[0-9a-f]{64}"\}', facts[3]), ("device facts", line)
     rows["driver"], rows["features"] = facts[1], facts[2].split()
     rows["libraries"] = re.findall(r'\{:path "([^"]*)" :sha256 "([0-9a-f]{64})"\}', facts[3])
+    rows["mapped"] = re.findall(r'"([^"]*)"', facts[4])
+    assert any("libc.so" in m for m in rows["mapped"]), ("mapped libraries", facts[4][:300])
+    assert ' :needed ["libc.so.6" "libvulkan.so.1"] ' in line, ("DT_NEEDED", line)
     rows.update(report=line.strip(), submitNanoseconds=ns, requests=len(s.log))
     report["gpu"] = dict(host=[platform.system(), platform.machine(), platform.release()], node=platform.node(), rows=rows, log=s.log[:8])
     report["status"] = "PASS_GPU_PROVIDER_VULKAN"
