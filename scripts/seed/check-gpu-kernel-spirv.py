@@ -91,8 +91,9 @@ SUITES = {
                  test="tools/gpu_kernel_kir2_test.kotoba", receipt="gpu-kernel-kir2.json", prefix="kir2-",
                  sizes={"ewise": 1096, "attn-copy-dense": 6488, **{"kir2-nex-" + op + ".spv": n for op, n in zip(NEX_OPS, [3440, 3468, 3516, 1992, 2660, 2452, 2396, 2140, 2704, 1872, 1968, 3088, 3476, 1652, 3988, 5964, 5356, 3604, 4052])},
                         "kir2-dot-rows.spv": 2448, "kir2-kdot-f32-r1.spv": 28776,
-                        "kir2-kdot-f32-r8.spv": 25056, "kir2-kdot-f32-r8-rows4.spv": 25056},
-                 count=32, control="FAIL attn: variables", refs=True),
+                        "kir2-kdot-f32-r8.spv": 25056, "kir2-kdot-f32-r8-rows4.spv": 25056,
+                        "kir2-kdot-f32-r8-rows16.spv": 25072, "kir2-kdot-f32-r8-rows32.spv": 25072},
+                 count=34, control="FAIL attn: variables", refs=True),
 }
 FUEL = 100000000
 EXPECT_CALL = re.compile(r"\(expect ")
@@ -123,7 +124,7 @@ def units(suite):
 REFS = ROOT / "tools/gpu_kernel_refs"
 # sources compiled more than once: (name suffix, -D define) per module
 REF_VARIANTS = {"nex-ops.comp": [(op, "OP=" + op) for op in NEX_OPS],
-                "kdot-f32-r8.comp": [(None, None), ("rows4", "ROWS=4")]}
+                "kdot-f32-r8.comp": [(None, None), ("rows4", "ROWS=4"), ("rows16", "ROWS=16"), ("rows32", "ROWS=32")]}
 
 
 def refs(output):
@@ -484,56 +485,75 @@ def kdot_weights(tt, n, seed):
     return bytes(raw)
 
 
+def kdot_ref(tt, w, x, rows, cols, row_bytes, experts, in_rows):
+    """kdot in f64 for F16, BF16 and Q8_0: o[pos rows + r] for each position,
+    with its expert's rows and its input row."""
+    want = []
+    for pos, (ex, xr) in enumerate(zip(experts, in_rows)):
+        for r in range(rows):
+            base = (ex * rows + r) * row_bytes
+            if tt == 1:
+                vals = struct.unpack(f"<{cols}e", w[base:base + 2 * cols])
+            elif tt == 30:
+                vals = [struct.unpack("<f", bytes(2) + w[base + 2 * k:base + 2 * k + 2])[0] for k in range(cols)]
+            else:
+                vals = []
+                for blk in range(cols // 32):
+                    o0 = base + blk * 34
+                    d = struct.unpack("<e", w[o0:o0 + 2])[0]
+                    vals += [d * q for q in struct.unpack("<32b", w[o0 + 2:o0 + 34])]
+            want.append(sum(v * x[xr * cols + k] for k, v in enumerate(vals)))
+    return want
+
+
 def kdot_cases():
-    """kdot_f32_r1 per tensor type: 8 rows, two positions of their own input
-    row (input_per_expert 1), experts 0 and 1, one workgroup past the rows; for
-    the 32-value types a column count that is not a multiple of 256 (the tail
-    group is skipped). F16, BF16 and Q8_0 also against an f64 dequant."""
+    """kdot_f32_r1 per tensor type: 8 rows, two positions on experts 1 and 0
+    (so expert and position differ) reading their own input rows
+    (input_per_expert 1), one workgroup past the rows and one position past
+    the positions; for the 32-value types a column count that is not a
+    multiple of 256 (the tail group is skipped). Then the input-row paths: a
+    prefill MoE (pad0 = 2 positions per input row, pad1 = 1 row offset) and a
+    shared input (input_per_expert 0, pad1 = 1). F16, BF16 and Q8_0 also
+    against an f64 dequant."""
     cases = []
-    for tt, bb in KDOT_TYPES.items():
-        b32 = tt in KDOT_BLOCK32
-        rows, cols, positions = 8, (480 if b32 else 512), 2
+
+    def case(name, tt, positions, experts, ipe, pad0, pad1, xrows, seed):
+        bb, b32 = KDOT_TYPES[tt], tt in KDOT_BLOCK32
+        rows, cols = 8, (480 if b32 else 512)
         row_bytes = ((cols + 31) // 32) * (bb // 8) if b32 else (cols // 256) * bb
         wbytes = 2 * rows * row_bytes
-        w = kdot_weights(tt, wbytes + (-wbytes % 4) + 4, 50 + tt)
-        x = lcg(positions * cols, 51)
-        meta = struct.pack("<8I", rows, cols, tt, positions, 1, 0, 0, 0)
-
-        def ref(o, tt=tt, w=w, x=x, rows=rows, cols=cols, row_bytes=row_bytes):
-            want = []
-            for pos in range(2):
-                for r in range(rows):
-                    base = (pos * rows + r) * row_bytes
-                    if tt == 1:
-                        vals = struct.unpack(f"<{cols}e", w[base:base + 2 * cols])
-                    elif tt == 30:
-                        vals = [struct.unpack("<f", bytes(2) + w[base + 2 * k:base + 2 * k + 2])[0] for k in range(cols)]
-                    else:
-                        vals = []
-                        for blk in range(cols // 32):
-                            o0 = base + blk * 34
-                            d = struct.unpack("<e", w[o0:o0 + 2])[0]
-                            vals += [d * q for q in struct.unpack("<32b", w[o0 + 2:o0 + 34])]
-                    want.append(sum(v * x[pos * cols + k] for k, v in enumerate(vals)))
-            got = from_f32(o)
-            return max(abs(g - v) / max(1.0, abs(v)) for g, v in zip(got, want))
-        cases.append(dict(name=f"kdot type {tt}", tt=tt, meta=meta, w=w, x=f32(x), e=struct.pack("<2I", 0, 1),
-                          o=bytes(4 * positions * rows), groups=(rows + 1, positions, 1), check=ref if tt in (1, 30, 8) else None))
+        w = kdot_weights(tt, wbytes + (-wbytes % 4) + 4, seed)
+        x = lcg(xrows * cols, 51)
+        in_rows = [((p // pad0 if pad0 > 1 else p) if ipe == 1 else 0) + pad1 for p in range(positions)]
+        meta = struct.pack("<8I", rows, cols, tt, positions, ipe, pad0, pad1, 0)
+        check = None
+        if tt in (1, 30, 8):
+            def check(o, args=(tt, w, x, rows, cols, row_bytes, experts[:positions], in_rows)):
+                return max(abs(g - v) / max(1.0, abs(v)) for g, v in zip(from_f32(o), kdot_ref(*args)))
+        # experts has one entry past the positions: main reads expert_ids[position] before its guard
+        cases.append(dict(name=name, tt=tt, meta=meta, w=w, x=f32(x), e=struct.pack(f"<{len(experts)}I", *experts),
+                          o=bytes(4 * positions * rows), groups=(rows + 1, positions + 1, 1), check=check))
+    for tt in KDOT_TYPES:
+        case(f"kdot type {tt}", tt, 2, [1, 0, 0], 1, 0, 0, 2, 50 + tt)
+    case("kdot type 12 prefill MoE", 12, 4, [1, 0, 1, 0, 0], 1, 2, 1, 3, 140)
+    case("kdot type 8 shared input", 8, 2, [0, 1, 0], 0, 0, 1, 2, 141)
     return cases
 
 
 def kdot_r8_cases(R, types):
-    """kdot_f32_r8 with R rows per workgroup: 20 rows (the last workgroup
-    partial) and one workgroup past them, two positions, experts 0 and 1."""
+    """kdot_f32_r8 with R rows per workgroup: 22 rows (the last workgroup
+    partial for R = 4, 8 and 16) or 40 (R = 32: 8 rows in the last of two),
+    one workgroup past them, two positions on experts 1 and 0, and one
+    position past them."""
     cases = []
     for tt in types:
         bb, b32 = KDOT_TYPES[tt], tt in KDOT_BLOCK32
-        rows, cols, positions = 20, (480 if b32 else 512), 2
+        rows, cols, positions = (40 if R == 32 else 22), (480 if b32 else 512), 2
         row_bytes = ((cols + 31) // 32) * (bb // 8) if b32 else (cols // 256) * bb
         wbytes = 2 * rows * row_bytes
         cases.append(dict(name=f"kdot r8 rows {R} type {tt}", tt=tt, R=R, meta=struct.pack("<8I", rows, cols, tt, positions, 1, 0, 0, 0),
                           w=kdot_weights(tt, wbytes + (-wbytes % 4) + 4, 60 + tt), x=f32(lcg(positions * cols, 61)),
-                          e=struct.pack("<2I", 0, 1), o=bytes(4 * positions * rows), groups=(-(-rows // R) + 1, positions, 1)))
+                          e=struct.pack("<3I", 1, 0, 0), o=bytes(4 * positions * rows), groups=(-(-rows // R) + 1, positions + 1, 1)))
     return cases
 
 
@@ -556,11 +576,13 @@ def gpu(output, suite, provider_out):
           **{f"v2-{o}-wg{wg}.spv": f"kir2-ewise-{o}-wg{wg}.spv" for o in EWISE_OPS for wg in (64, 256)},
           **{f"v2-nex-{op}.spv": f"kir2-nex-{op}.spv" for op in NEX_OPS},
           "v2-dot.spv": "kir2-dot-rows.spv", "v2-kdot.spv": "kir2-kdot-f32-r1.spv",
-          "v2-kdot8.spv": "kir2-kdot-f32-r8.spv", "v2-kdot4.spv": "kir2-kdot-f32-r8-rows4.spv"}
+          "v2-kdot8.spv": "kir2-kdot-f32-r8.spv", "v2-kdot4.spv": "kir2-kdot-f32-r8-rows4.spv",
+          "v2-kdot16.spv": "kir2-kdot-f32-r8-rows16.spv", "v2-kdot32.spv": "kir2-kdot-f32-r8-rows32.spv"}
     refs = {"ref-attn.spv": "ref-attn-copy-dense.spv", "ref-add.spv": "ref-ewise-add.spv",
             **{f"ref-nex-{op}.spv": f"ref-nex-ops-{op}.spv" for op in NEX_OPS},
             "ref-dot.spv": "ref-dot-rows.spv", "ref-kdot.spv": "ref-kdot-f32-r1.spv",
-            "ref-kdot8.spv": "ref-kdot-f32-r8.spv", "ref-kdot4.spv": "ref-kdot-f32-r8-rows4.spv"}
+            "ref-kdot8.spv": "ref-kdot-f32-r8.spv", "ref-kdot4.spv": "ref-kdot-f32-r8-rows4.spv",
+            "ref-kdot16.spv": "ref-kdot-f32-r8-rows16.spv", "ref-kdot32.spv": "ref-kdot-f32-r8-rows32.spv"}
     files = {**{n: output / "spv" / m for n, m in v2.items()}, **{n: output / "refs" / m for n, m in refs.items()}}
     for n, f in files.items():
         shutil.copy(f, raw / n)
@@ -590,7 +612,8 @@ def gpu(output, suite, provider_out):
     for k, n in enumerate(["ref-add.spv", *[f"v2-{o}-wg{wg}.spv" for o in EWISE_OPS for wg in (64, 256)], "ref-attn.spv", "v2-attn.spv",
                            *[f"{w}-nex-{op}.spv" for op in NEX_OPS for w in ("ref", "v2")],
                            "ref-dot.spv", "v2-dot.spv", "ref-kdot.spv", "v2-kdot.spv",
-                           "ref-kdot8.spv", "v2-kdot8.spv", "ref-kdot4.spv", "v2-kdot4.spv"]):
+                           "ref-kdot8.spv", "v2-kdot8.spv", "ref-kdot4.spv", "v2-kdot4.spv",
+                           "ref-kdot16.spv", "v2-kdot16.spv", "ref-kdot32.spv", "v2-kdot32.spv"]):
         nb = 7 if "-nex-" in n else 5 if "kdot" in n else 8 if "attn" in n else 4
         cgp.expect(s, f"PIPELINE {n} {nb}", str(k + 1))
         pipes[n] = k + 1
@@ -689,10 +712,11 @@ def gpu(output, suite, provider_out):
                             outputSHA256=hashlib.sha256(douts["v2-dot.spv"]).hexdigest())
     # kdot_f32_r1, every tensor type; kdot_f32_r8, every r8 type with 8 rows
     # per workgroup and two with 4
-    for c in kdot_cases() + kdot_r8_cases(8, KDOT_R8_TYPES) + kdot_r8_cases(4, [12, 8]):
-        kh = [alloc(32), alloc(len(c["w"])), alloc(len(c["x"])), alloc(len(c["o"])), alloc(8)]
+    for c in kdot_cases() + kdot_r8_cases(8, KDOT_R8_TYPES) + kdot_r8_cases(4, [12, 8]) + kdot_r8_cases(16, [12]) + kdot_r8_cases(32, [2]):
+        kh = [alloc(32), alloc(len(c["w"])), alloc(len(c["x"])), alloc(len(c["o"])), alloc(len(c["e"]))]
         kouts = {}
-        pair = {None: ("ref-kdot.spv", "v2-kdot.spv"), 8: ("ref-kdot8.spv", "v2-kdot8.spv"), 4: ("ref-kdot4.spv", "v2-kdot4.spv")}[c.get("R")]
+        pair = {None: ("ref-kdot.spv", "v2-kdot.spv"), 8: ("ref-kdot8.spv", "v2-kdot8.spv"), 4: ("ref-kdot4.spv", "v2-kdot4.spv"),
+                16: ("ref-kdot16.spv", "v2-kdot16.spv"), 32: ("ref-kdot32.spv", "v2-kdot32.spv")}[c.get("R")]
         for m in pair:
             for h, b in zip(kh, [c["meta"], c["w"], c["x"], c["o"], c["e"]]):
                 write(h, b)

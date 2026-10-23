@@ -13,7 +13,7 @@
 ;; CASES equals the expect calls below (the script counts them). CONTROL 1
 ;; makes exactly one expectation wrong; the script requires one failure then.
 
-(def CASES 66)
+(def CASES 70)
 (def CONTROL 0)
 
 (defn- say [s :string] :i64
@@ -183,7 +183,11 @@
        ;; r8's nine tensor-type arms
        (expect "kdot r8: nine dot products" (count-op k8 148) 9)
        (expect "kdot r8: the same words twice" (diff-words k8 (kir2-kdot-f32-r8 8)) 0)
-       (expect "kdot r8: rows 5 gives an empty module" (spv-count (kir2-kdot-f32-r8 5)) 0))))
+       (expect "kdot r8: rows 5 gives an empty module" (spv-count (kir2-kdot-f32-r8 5)) 0)
+       (expect "write kir2-kdot-f32-r8-rows16.spv" (let [m (kir2-kdot-f32-r8 16)] (- (spv-write m "kir2-kdot-f32-r8-rows16.spv") (* 4 (spv-count m)))) 0)
+       (expect "write kir2-kdot-f32-r8-rows32.spv" (let [m (kir2-kdot-f32-r8 32)] (- (spv-write m "kir2-kdot-f32-r8-rows32.spv") (* 4 (spv-count m)))) 0)
+       (expect "glslang kdot_f32_r8 -DROWS=16 passes the checker" (spc-check (spv-read "ref-kdot-f32-r8-rows16.spv")) 0)
+       (expect "glslang kdot_f32_r8 -DROWS=32 passes the checker" (spc-check (spv-read "ref-kdot-f32-r8-rows32.spv")) 0))))
 
 (defn main [] :i64
   (let [failed (+ (ewise) (+ (ewise-shape) (+ (attn) (+ (attn-ref) (+ (nex-ops) (+ (nex-shape) (+ (dots) (dots8))))))))

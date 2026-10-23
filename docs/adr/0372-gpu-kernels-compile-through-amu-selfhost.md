@@ -279,21 +279,26 @@ a follow-up to ADR 0371.
 
      On gad (RADV), with random weights for every type, glslang's module and
      the KIR v2 module are byte-identical on:
-     * two positions;
-     * two experts;
-     * a workgroup past the rows;
-     * a tail group for the 32-value types.
+     * two positions on two experts that differ from the positions;
+     * a workgroup past the rows and a position past the positions;
+     * a tail group for the 32-value types;
+     * the prefill-MoE and shared-input rows (`pad0`, `pad1`,
+       `input_per_expert`).
 
-     F16, BF16 and Q8_0 are within 6.3e-7 (relative) of an f64 dequant.
+     F16, BF16 and Q8_0 are within 2.5e-06 (relative) of an f64 dequant.
      `dot_rows` is byte-identical too, and within 2.4e-6 of f64.
 
      `kdot_f32_r8`, from inference at f57ea5e, has R rows per workgroup (the
      GLSL's `-DROWS`, a generator parameter), with `acc[R]` and `mins[R]` in
      Function arrays and r8's ten tensor types. It shares r1's helpers
      (a flag drops BF16, PQ2_0 and PTQ1_0). On gad it is byte-identical to
-     glslang's module for every r8 type with 8 rows, and for two types with
-     `-DROWS=4`. That run had 20 rows, so the last workgroup was partial,
-     plus a workgroup past them.
+     glslang's module for:
+     * every r8 type with 8 rows;
+     * two types with `-DROWS=4`;
+     * one each with 16 and with 32.
+
+     The rows were 22, or 40 for R = 32, so the last workgroup is partial for
+     every R.
 
      Receipts: `docs/evidence/gpu-kernel-kir2-kdot-20261023/`.
    * `kdot_x8r4` and `kdot_i8_x8r4`: the int8 kernels, which need the
