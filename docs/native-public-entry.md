@@ -2,9 +2,9 @@
 
 The product identity is [native-product.json](../native-product.json).
 `bin/amu`, `bin/kotoba` and `bin/kotoba-compiler` resolve to the same
-8,532,480-byte Linux x86_64 ELF, SHA-256
-`79c7e57ae01752170eb0eef9727fd1487405bb8ec2e40c5c666611c8429d8f09`.
-The source revision is `5cf84a36`; metadata/entry retirement commits can
+8,536,576-byte Linux x86_64 ELF, SHA-256
+`7e3724160c4ca373a05526ae7b94fd22739b1a8fa62e802fdf5663251e729802`.
+The source revision is `c4687580`; metadata/entry retirement commits can
 follow without changing this compiler source or image.
 
 ## Artifact qualification
@@ -33,14 +33,14 @@ the native per-vector limit of 2^25. This changes capacity, not expected
 results, grants or fixture count.
 
 Full original source/corpus and prior receipts remain identifiable.
-The retained correctness receipt records all19 Embench, MIR normal and
-all seven large entries, GMIR all eight entries, and resource/pin refusals
-with its exact producer revision and digest. All 33 MIR files/three roots
+The current correctness receipt records the exact complete27 F2 producer
+for all19 Embench, MIR normal and all seven large entries, GMIR all eight
+entries, and resource/pin refusals. All 33 MIR files/three roots
 and 12 GMIR files/two roots
 were retained and their KSL digests checked. MIR whole-large ended with
 zero tracked arena use after 155,688,217 scope releases. The receipt is
-`docs/evidence/native-cdci-20261023/final-f-correctness.json`; subsequent
-complete27 results are recorded with PR #1510 and workflow artifacts.
+`docs/evidence/native-cdci-20261023/current-main-correctness.json`; additional
+workflow results are recorded with PR #1510 and its artifacts.
 Correctness is recorded separately from compiler fixed points. No new
 performance score,
 full historical assertion parity, general sandbox certificate or live
@@ -86,7 +86,7 @@ caller-supplied hashes are not external authentication or signatures.
 The controller completed both native roles, all24 cases,
 18 refusal probes and parent-death child cleanup on x86. The current27
 build reproduces every role image and fixture record
-byte-for-byte; `controller-platform-identity.json` records this qualification
+byte-for-byte; `controller-provider-identity.json` records this qualification
 carry explicitly. The current public product bytes and aliases passed
 pinned check/compile, generated ELF
 execution and named refusals. Hosted workflow completion is recorded
@@ -124,3 +124,9 @@ The native-only entry refuses `--format platform-linked` with E2. The
 optional provider backend source and corpus are retained, but libc/dynamic-
 loader execution is excluded from mandatory native CDCI. The static
 launcher, complete core, all24 native cases and hardening remain required.
+
+The bootstrap root is the same self-rebuilt complete27 ARM compiler,
+image `1374f69b`, derived from prior native root `c35a54ea`. Its exact
+source/packed generations and prior-root history are retained in
+`seed/bootstrap/aarch64-linux-static-root.json`. Hosted CI independently
+checks root reproduction; an artifact receipt is not a terminal CI claim.
