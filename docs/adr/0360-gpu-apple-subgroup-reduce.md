@@ -460,3 +460,54 @@ is its own later decision. UNMEASURED unchanged: the GLSL arm at every
 width beyond its LABELED BOOTSTRAP record, every Apple device but this
 M1 Max, shapes beyond these two, and the NVIDIA/Intel/ARM/AMD variant
 rows entirely.
+
+## Amendment 2026-10-23 (the flip-contract widening decision): the
+contract keys to the two measured shapes
+
+DECIDED (JUN-58, the slice the shape-2 band's record named as the next
+row): the flip contract's shape key WIDENS from the single shape
+n = 1,000,003 to the two MEASURED shapes -- n = 1,000,003 and
+n = 2^20 = 1,048,576. `accelerator-variants`' `apple-measured-n` is
+replaced by `apple-measured-shapes` `[1000003 1048576]`, and the
+`:measured-cell` record's `:n` field by `:shapes`, naming both.
+
+Grounds (all of it previously measured, no measurement taken in this
+slice): shape 2's completed flip-set band
+(`docs/evidence/gpu-subgroup-reduce-m1max-shape2-band-20261023`, plus the
+W = 256 anchor of `gpu-subgroup-reduce-m1max-shape2-20261023`) measured
+`:subgroup-reduce` SLOWER than `:baseline` in all 15 width x operator
+cells -- W = 64/128/256/512/1024 x :sum/:max/:min -- with paired
+within-run median ratios 1.166-1.239, the same sign and the same penalty
+band as shape 1 at every width. The demotion basis is therefore not
+shape-dependent over the two measured shapes, and shape 2 is a contract
+cell, not corroboration.
+
+What moves: the record's shape field, `apple-measured-evidence` (gains the
+two shape-2 directories), and the basis prose (`apple-narrow-note` names
+the widening; `apple-w32-note`'s overfitting clause now reads "off the two
+measured shapes"). What does NOT move: the flip's gates (device-name
+fragment "m1 max" AND reported subgroup size 32, the MSL route, the
+verdict-chosen widths 64/128/256/512/1024) and their behavior -- the
+shape key never gated selection, it bounded the claim; no workgroup row
+(ADR-0355/0358) moves; the W = 32 cell keeps the lock by decision,
+unchanged; `:measured?` still means "a measurement CHOSE this answer",
+never "optimal".
+
+Supersession (claims only): the previous amendment's "the flip contract
+still keys to n = 1,000,003; shape 2 is corroboration, not a contract
+cell, and whether the contract should widen to more shapes is its own
+later decision" is superseded as to that key -- the decision has now run,
+and it widened. Nothing else in that amendment moves.
+
+UNMEASURED, unchanged and named so no claim extends past it: shapes
+beyond these two (the answer cannot vary with n, but only these two ran),
+the GLSL arm at every width beyond its LABELED BOOTSTRAP record, every
+Apple device but this M1 Max, W = 32's selection answer as a verdict
+(it is a decision), and the NVIDIA/Intel/ARM/AMD variant rows entirely.
+
+Record: `docs/evidence/gpu/flip-contract-widen-20261023.txt` (the
+decision's record; this slice ran no hardware measurement). Tests:
+`test/kotoba/compiler/accelerator_variants_test.cljk` pins the widened
+record map and the basis prose (scoped GPU gate 87 tests / 7118
+assertions, 0 failures; full suite RED AT BASE at `kotoba.form`, the W3
+port path, outside this diff -- both re-verified in the slice).

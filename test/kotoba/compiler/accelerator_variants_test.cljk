@@ -297,13 +297,17 @@
           (is (str/includes? (:basis answer) "APPLE ROW NARROWED"))
           (is (str/includes? (:basis answer) "m1 max"))
           (is (str/includes? (:basis answer) "ADR-0360"))
-          ;; 2026-10-23 prose slice: the basis text cites the second-shape
-          ;; corroboration (n = 2^20, the padded tail gone) -- the demotion
-          ;; basis is not a padded-tail artifact, and the flip contract
-          ;; still keys to n = 1,000,003 (shape 2 is corroboration).
+          ;; 2026-10-23 prose slices: the basis text cites the second-shape
+          ;; records (n = 2^20, the padded tail gone) -- the demotion
+          ;; basis is not a padded-tail artifact -- and names the flip
+          ;; contract's WIDENING DECISION: both measured shapes are
+          ;; contract cells now (shape 2's flip-set band, all 15 cells
+          ;; slower), shapes beyond these two stay UNMEASURED.
           (is (str/includes? (:basis answer)
                              "docs/evidence/gpu-subgroup-reduce-m1max-shape2-20261023")
-              "the narrowing note must cite the shape-2 corroboration"))))
+              "the narrowing note must cite the shape-2 evidence")
+          (is (str/includes? (:basis answer) "The flip contract WIDENED")
+              "the narrowing note must name the widening decision"))))
     (testing "every other Apple device keeps the designed row, UNMEASURED"
       (doseq [device [(assoc capable :vendor "Apple M3")
                       (assoc capable :name "Apple M2 Pro")
@@ -373,10 +377,15 @@
                   :route :msl-v1
                   :workgroup-size wg
                   :operators #{:sum :max :min}
-                  :n 1000003
+                  ;; the widening decision (2026-10-23): the record names
+                  ;; BOTH measured shapes -- n = 1,000,003 and n = 2^20 --
+                  ;; and no claim extends past these two.
+                  :shapes [1000003 1048576]
                   :evidence ["docs/evidence/gpu-subgroup-reduce-m1max-20261023"
                              "docs/evidence/gpu-subgroup-reduce-m1max-wsweep-20261023"
-                             "docs/evidence/gpu-subgroup-reduce-m1max-wsweep-low-20261023"]}
+                             "docs/evidence/gpu-subgroup-reduce-m1max-wsweep-low-20261023"
+                             "docs/evidence/gpu-subgroup-reduce-m1max-shape2-20261023"
+                             "docs/evidence/gpu-subgroup-reduce-m1max-shape2-band-20261023"]}
                  (:measured-cell answer))
               (str "W=" wg " " target " " operator " record")))))
     (testing "the W = 32 cell keeps the lock by decision (the low band's one mixed cell)"

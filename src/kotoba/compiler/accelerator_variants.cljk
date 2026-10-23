@@ -142,19 +142,31 @@
   else is not the tested device class."
   32)
 
-(def ^:private apple-measured-n
-  "The element count the contract-satisfying cells ran (n = 1,000,003).
-  The selection answer cannot vary with n; the record names it so no claim
-  extends past it."
-  1000003)
+(def ^:private apple-measured-shapes
+  "The element counts the contract-satisfying cells ran: the flip-contract
+  WIDENING DECISION (ADR-0360's third amendment, 2026-10-23, JUN-58) -- the
+  key is no longer the single shape n = 1,000,003 but the two MEASURED
+  shapes, n = 1,000,003 (every shape-1 cell) and n = 2^20 (the shape-2
+  records, gpu-subgroup-reduce-m1max-shape2-20261023 and
+  gpu-subgroup-reduce-m1max-shape2-band-20261023). Shape 2's completed
+  flip-set band measured the variant slower in all 15 width x operator
+  cells (1.166-1.239, paired within-run medians) -- the same sign and the
+  same penalty band as shape 1 at every width -- so it is a contract cell,
+  not corroboration. The selection answer cannot vary with n; the record
+  names the shapes so no claim extends past these two -- shapes beyond
+  them are UNMEASURED."
+  [1000003 1048576])
 
 (def ^:private apple-measured-evidence
   "The evidence directories of the contract-satisfying cells: the W = 256
   measurement, the W-sweep (W = 256 anchor / 512 / 1024) and the low band
-  (W = 32 / 64 / 128)."
+  (W = 32 / 64 / 128) at shape 1, and the shape-2 records (W = 256/32 and
+  the flip-set band W = 64/128/512/1024) the widening decision added."
   ["docs/evidence/gpu-subgroup-reduce-m1max-20261023"
    "docs/evidence/gpu-subgroup-reduce-m1max-wsweep-20261023"
-   "docs/evidence/gpu-subgroup-reduce-m1max-wsweep-low-20261023"])
+   "docs/evidence/gpu-subgroup-reduce-m1max-wsweep-low-20261023"
+   "docs/evidence/gpu-subgroup-reduce-m1max-shape2-20261023"
+   "docs/evidence/gpu-subgroup-reduce-m1max-shape2-band-20261023"])
 
 (def ^:private apple-narrow-note
   "APPLE ROW NARROWED (ADR-0360's second decision, 2026-10-23, JUN-58):
@@ -177,8 +189,15 @@
   replicates at a second shape -- n = 2^20
   (docs/evidence/gpu-subgroup-reduce-m1max-shape2-20261023), the padded
   tail gone, W = 256 penalty 1.220-1.227 against shape 1's 1.217-1.220 --
-  so it is not a padded-tail artifact; the flip contract still keys to
-  n = 1,000,003 and shape 2 is corroboration, not a contract cell.")
+  so it is not a padded-tail artifact. The flip contract WIDENED on
+  2026-10-23 (the widening decision, ADR-0360's third amendment): shape 2's
+  completed flip-set band
+  (docs/evidence/gpu-subgroup-reduce-m1max-shape2-band-20261023) measured
+  the variant slower in all 15 width x operator
+  cells (1.166-1.239, paired within-run medians) -- the same sign and the
+  same penalty band as shape 1 at every width -- so both measured shapes
+  are contract cells now (the record's :shapes names them) and shapes
+  beyond these two stay UNMEASURED.")
 
 (def ^:private apple-w32-note
   "W = 32, THE DECIDED CELL (ADR-0360's low-band decision, 2026-10-23,
@@ -202,8 +221,9 @@
   win is a slow-regime artifact in each of them. A
   regime-scoped sign is not a selection basis -- the same standard that
   keeps the LABELED BOOTSTRAP GLSL runs verdict-free -- and an
-  operator-split answer at one cell off one shape would be overfitting, so
-  this cell keeps answering :baseline for all three operators. The
+  operator-split answer at one cell off the two measured shapes would be
+  overfitting, so this cell keeps answering :baseline for all three
+  operators. The
   demotion here is a DECISION on measured ground, not the fail-safe it was
   before the low band ran, and the answer keeps the honesty lock
   (:measured? false): no regime-robust verdict chose it -- every cell that
@@ -520,7 +540,7 @@
             :route :msl-v1
             :workgroup-size (:kernel/workgroup-size kir)
             :operators #{:sum :max :min}
-            :n apple-measured-n
+            :shapes apple-measured-shapes
             :evidence apple-measured-evidence})]
     (cond-> {:variant variant
              :measured? (some? measured-cell)
