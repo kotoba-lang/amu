@@ -511,3 +511,70 @@ decision's record; this slice ran no hardware measurement). Tests:
 record map and the basis prose (scoped GPU gate 87 tests / 7118
 assertions, 0 failures; full suite RED AT BASE at `kotoba.form`, the W3
 port path, outside this diff -- both re-verified in the slice).
+
+## Amendment 2026-10-23 (the regime-robust magnitude claim protocol):
+how sign and magnitude claims are published under clock regimes
+
+DECIDED (JUN-58, the slice the shape-2 re-sweep's closing record named
+as the strengthened case -- "a regime-robust magnitude claim protocol --
+PROPOSED, decided nowhere, own slice if taken"): the claim rules this
+campaign's records already practiced ad hoc become the protocol for sign
+and magnitude claims in this evidence family (the gpu-subgroup-reduce
+measurement records; a later vendor campaign adopts it by citation, its
+own row). NO hardware measurement runs in this slice -- the ground is
+all previously measured: the regime term was named at every one of the
+ten re-swept cells (shape-1 and shape-2 re-sweeps, W = 64/128/256/512/
+1024), and at the closing cell (W = 512 shape 2) it quantified as a
+session-mixing effect on the `:min` median -- :sum/:max reproduce within
+0.002/0.003 while :min lands +0.010 above the historical cell because
+the two sessions' regime mixes differ. The mechanism is measured
+directly (the op-order cell's within-pair medians by clock level, W =
+32: :sum slow 0.919 / fast 1.018, :max 0.917 / 1.029, :min 0.920 /
+1.018): ratio magnitude AND sign both follow the clock level.
+
+The protocol (four rules):
+
+1. **Regime classification is published, not hidden.** Every measurement
+   record publishes each run's baseline per-run median gpu-ns per
+   operator and the regime clusters its session observed (the discrete
+   clock levels; the harness reads no GPU clock, so clusters are the
+   observed baseline-median levels, named by their gpu-ns ranges). A
+   magnitude claim whose record does not publish them is inadmissible.
+
+2. **Sign claims are regime-invariant or regime-scoped, and only a
+   regime-invariant sign is a selection basis.** "Regime-invariant":
+   every per-run ratio of every observed regime lies on the same side of
+   1.0 (the flip-set cells' 18/18 slower). A sign that follows the
+   regime (the W = 32 straddle) is published regime-scoped and cannot
+   choose a variant -- the standard that kept the LABELED BOOTSTRAP GLSL
+   runs verdict-free and the W = 32 answer decision-locked, now stated
+   once for every cell.
+
+3. **Magnitude claims are regime-matched.** A magnitude comparison
+   across sessions or cells is drawn within matched regime strata. When
+   the regime mixes differ, the claim names the split ("magnitude splits
+   by clock regime") and attributes the deviation to session mixing --
+   it is NOT published as a failure to reproduce. The reproduction
+   vocabulary is exactly three phrases: "reproduces in sign strictly"
+   (all per-run ratios hold the historical sign), "magnitude reproduces
+   within <delta>" (matched regime mixes), "magnitude splits by clock
+   regime" (mixed).
+
+4. **Nothing here measures anything.** No `:measured?` flag, no
+   workgroup row (ADR-0355/0358), no flip gate and no selection answer
+   moves. The protocol changes what a record may CLAIM, not what any row
+   answers.
+
+State (the honesty rule's three states): ACCEPTED DESIGN ONLY (this
+amendment). No harness implements regime classification -- the records
+classify manually in NOTES.md -- and harness-side classification is
+UNIMPLEMENTED, its own later slice. This amendment does not make the
+protocol "implemented".
+
+Record: `docs/evidence/gpu/regime-robust-protocol-20261023.txt` (the
+decision's record; this slice ran no hardware measurement). UNMEASURED,
+unchanged: shapes beyond the two measured; the GLSL arm at every width
+beyond its LABELED BOOTSTRAP record; every Apple device but this M1 Max;
+W = 32 as a verdict (it is a decision); the NVIDIA/Intel/ARM/AMD variant
+rows entirely; cross-day replication of every cell; regime
+classification inside the harness.
