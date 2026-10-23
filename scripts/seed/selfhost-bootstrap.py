@@ -21,7 +21,8 @@ Content-addressed reuse (--reuse DIR) may stand in only for C0's compile of
 the core (G1), the one slow call, and only when its key matches: the sha256 of
 every file its argv names (C0, rebuilt from S3 on every run, and the unity),
 the argv and the full environment. --store DIR records results without reusing
-any (the full run). The receipt's steps and reuse say what ran and what was
+any (the full run). G2, G3 (through the runner) and the packed P (step 3b)
+still re-derive the adopted image on every run. The receipt's steps and reuse say what ran and what was
 reused, with the keys. Without either flag everything runs.
 
 Python only orchestrates processes and hashes. Run it on arm64 Linux, for
