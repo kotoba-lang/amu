@@ -144,7 +144,7 @@ def main(boot, out):
         suites[script] = r.stdout.decode().strip().splitlines()[-1]
 
     # 6. the adopted compiler core as an x86_64 static image
-    adoption = json.loads((ROOT / "seed/adoption-20261022.json").read_text())
+    adoption = json.loads((ROOT / json.loads((ROOT / "seed/compiler-core.json").read_text())["adoptionReceipt"]).read_text())
     def unity_of(manifest, dst):
         ps = [p for p in (ROOT / manifest).read_text().splitlines() if p and not p.startswith("#")]
         dst.write_bytes(b"".join((ROOT / p).read_bytes() + b"\n" for p in ps))

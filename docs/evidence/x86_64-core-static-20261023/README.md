@@ -7,5 +7,5 @@ compiler or loader. `check-x86_64-native.py` step 6 did the following:
 1. X2 built `seed/CORE-STATIC-MANIFEST` as X0.elf: 7,913,984 bytes,
    `18061319…`.
 2. X0 compiled `seed/MANIFEST` in **1,036.4 s**.
-3. `extract-native` gave `9deed950…`, the `adoption-20261022.json` image.
+3. `extract-native` gave `9deed950…`, the the adoption receipt then current (`adoption-20261022.json`) image.
    The container (`29197f18…`) is byte-identical to the bootstrap's G3.
