@@ -31,6 +31,9 @@ the selfhost compiler.
   WRITE, READ and DEVCLASS over wire 42. All three were built by the root F
   `d1410bc5…`.
 
+* `gad-radv-features.json`: the `gpu` phase with the device features enabled
+  (step 6, ADR 0372 Decision 5).
+
 ## What the fake-device receipt shows
 
 * **23 sessions**, each with fd 3 the grant and fd 4 the report:
@@ -101,6 +104,12 @@ the selfhost compiler.
     loader `libvulkan.so.1.3.275` and the eight ICD libraries it opened;
   * every mapped shared library by path (43 on gad);
   * the image's DT_NEEDED names, `["libc.so.6" "libvulkan.so.1"]`.
+
+## What the features receipt shows
+
+* RADV supports all eight features the layer asks for: `storageBuffer16BitAccess`, `storageBuffer8BitAccess`, `shaderFloat16`, `shaderInt8`, `synchronization2`, `shaderIntegerDotProduct`, `subgroupSizeControl` and `computeFullSubgroups`. The layer enables all of them, and the report lists them.
+* With synchronization2 the barrier between dispatches is `vkCmdPipelineBarrier2`. The recording whose second dispatch reads the first's output still gives the exact result.
+* All 59 requests pass confined, at 40-59 us per submit.
 
 ## What the launcher receipt shows
 
