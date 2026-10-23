@@ -37,13 +37,17 @@
 
 ## Q9 compiler routes must use Kotoba / Amu selfhost only
 
-- Q9 callers use the qualified Amu selfhost-built entrypoint for `check`
-  and `compile`. A Node/nbb `bin/amu` is not that entrypoint, and
-  `--jvm-free` alone does not establish selfhost or exclude Node/NBB/C.
-  An omitted `--target` selects the
-  engine-neutral Kototama program target; `AMU_TARGET` or an explicit
-  `--target` selects another backend. Browser / Worker / WASI builds name
-  `wasm32-browser` / `wasm32-wasi` explicitly.
+- Q9 callers use the Amu selfhost-built native `bin/amu` (the `bin/kotoba`
+  and `bin/kotoba-compiler` aliases resolve to that same image) for the
+  qualified `check` and explicit-target `compile` lane. The public host is
+  native Linux x86_64; other public hosts remain unqualified. See
+  `native-product.json` and `docs/native-public-entry.md`.
+- The public default remains an engine-neutral Kototama program contract.
+  Its native implementation is still missing: omitted compile targets
+  refuse `E2`, without an implicit AArch64 or legacy-host substitution.
+  Use explicit `--target`; the retired Node launcher's `AMU_TARGET` routing
+  is not current native behavior. Browser / Worker / WASI targets need
+  their own native qualification before callers can depend on them.
 - The build and execution closure must not invoke NBB, KBB, Node, Java,
   Clojure/JVM, GraalVM, a C compiler or C loader, including through wrappers,
   `resolveWithJvm`, compatibility adapters or packaging helpers.
@@ -59,6 +63,27 @@
   to the native route. Record forbidden-process traces, compiler generations,
   source/lock pins, artifact hashes and actual execution results. Missing
   native functionality stays blocked; source admission alone is not a pass.
+
+## Native CDCI and retired public entry
+
+- The complete product uses `seed/FULL-MANIFEST` (26 modules), retaining
+  every adopted core module. Static OUT is 12MiB because the complete
+  TCP/spawn image exceeded the old 8MiB bound. Heap size, expected results,
+  all19 workloads and all24 runtime fixtures remain unchanged.
+- `seed/cdci` owns the Kotoba-native controller and gate. Its two mandatory
+  roles are Amu selfhost and Kotoba native; legacy fleet/authoring labels
+  are not extra gates. Privileged role sources, images and inputs are
+  pinned; changed source needs matching newly built artifacts and proof.
+- GitHub Actions/Python can stage bytes, launch test processes and transport
+  artifacts. They do not replace the native controller's ordered verdict
+  or turn source admission, cached historical receipts or pending execution
+  into a successful native gate. Keep artifact qualification, terminal CI
+  status and live service deployment distinct.
+- Old Node/NBB/KBB launchers, package manifests, JVM deps and former README
+  are complete non-executable historical text under
+  `docs/retired/legacy-public-entry-20261023`. They are not fallback tools,
+  installation inputs, current Q9 instructions or acceptance blockers.
+  Preserve their corpus while porting genuinely missing public behavior.
 
 
 ## Shared agent rule
