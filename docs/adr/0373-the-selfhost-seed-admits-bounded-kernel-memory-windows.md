@@ -90,13 +90,19 @@ against length, all unsigned, `UD2` on violation. The fuel and frame rules of AD
   straight-line reader as for the intrinsics; recursion through the helper is
   refused at depth 6); an exported function's parameters stay the ABI boundary.
   Cases `no_helper_computed_arg`, `no_helper_second_caller` (one good and one
-  computed caller) are refused, `ok_helper_rooted_arg` is accepted; (b) the LENGTH
-  operand is not rooted or tied to its base, so `(kernel-load-u32 b 512 400)`
-  over an 8-byte entry window is admitted (the pairing of a base with its
-  length is the region type this slice does not have); (c) an integer literal
-  base is a "literal window" and admits any absolute address. The guarantee
-  is: no base is built by arithmetic, read from memory, or taken from a call
-  result or a loop variable INSIDE the function that uses it.
+  computed caller) are refused, `ok_helper_rooted_arg` is accepted; (b) [closed 2026-10-23] the LENGTH operand was not tied to its base, so
+  `(kernel-load-u32 b 512 400)` over an 8-byte entry window was admitted: now the length
+  of an access must have the SOURCE of the length of the base's own region -- for an
+  exported parameter p the parameter p + 1 (the ABI hands a region in as the pair
+  (base, length)), for a kernel-subregion its n (and the length it was given must be
+  the parent's), through let-bound locals, and for a helper's parameter at every call
+  (the argument at p + 1 is the length of the base passed at p); (c) [closed] an integer literal
+  base was a "literal window" and admitted any absolute address: a literal is no longer
+  a base. The guarantee is now: every base is the entry window or a checked sub-window
+  of it, and every access names that window's own length. What remains is the trusted
+  ABI boundary: that the (base, length) the kernel hands in describe real memory, and
+  that a helper reached from outside the object (no call site) is not rooted by this
+  check.
 
 ## As built
 
@@ -118,10 +124,12 @@ change to the adopted core:
   +58/+49/+40/+21/+8) match that file's own comments and layout.
 - **Rooted bases** are enforced on the SIR the backend already reads (`xk-check`):
   the base operand's last writer is found in straight-line code (a label or jump
-  in between refuses) and must be a literal, a parameter that is never assigned (of the exported function, or of a private
-  helper when every call passes a rooted value there), a `kernel-subregion` of a rooted base, or a let-bound local with one
-  assignment of a rooted value. Everything else is E7106. Eighteen cases in
-  `seed/tests/kernel-memory/` (eight accepted, ten refused: a computed or mixed helper argument, a base read from
+  in between refuses) and must be a parameter that is never assigned (of the exported function, or of a private
+  helper when every call roots it with the matching length), a `kernel-subregion` of a rooted base whose given length is the
+  parent's, or a let-bound local with one assignment of such a value; the access's length operand must have the source of that
+  base's region length. A literal is not a base. Everything else is E7106. Twenty-three cases in
+  `seed/tests/kernel-memory/` (nine accepted, fourteen refused: a literal base, a free or other-parameter length, a subregion
+  whose given length is not the parent's, a helper called with another length, a computed or mixed helper argument, a base read from
   memory, arithmetic, a call result, a branch, a computed let, a loop variable,
   a subregion of arithmetic, arithmetic under the 16 KiB load).
 - Only the object route has the library: `xk-intr` recognizes the stubs only

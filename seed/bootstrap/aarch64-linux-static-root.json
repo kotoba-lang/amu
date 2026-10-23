@@ -2,41 +2,75 @@
   "schema": "amu.seed.static-root.v1",
   "image": {
     "bytes": 3211776,
-    "sha256": "e50784661adae25089e47e5a85514911ae4085391bd9cb92d0f33440457d055b"
+    "sha256": "ab71596bc75820c9bfc72ff2476c770cd0179c75fab3e2a8d9a56aceadeb4cf0"
   },
   "target": "aarch64-linux",
   "format": "packed",
   "sourceManifest": "seed/FULL-MANIFEST",
   "sourceUnity": {
-    "bytes": 3209466,
-    "sha256": "21212acf3a760335dedb72997a7336e91bc5529be462e8c0dc68192c2fede48a"
+    "bytes": 3212023,
+    "sha256": "cea32756942bf935bb89a5e5275ab4719e78fd29ad40aebc0f106cf8bf493468"
   },
-  "sourceCommitBase": "3c2207f42a6b1f86687a7c35ad7ee4977bdfc216",
+  "sourceCommitBase": "c293de2a437d270844cc8d1b53906f1b913740b9",
   "producedBy": {
-    "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt and packed itself to F2 = F1 (= this image). Re-pinned because this source checks the call sites of private helpers whose parameters are kernel-memory bases (ADR 0373 gap a).",
+    "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt and packed itself to F2 = F1 (= this image). Re-pinned because this source ties the length operand of a kernel-memory access to its base's region and no longer takes a literal as a base (ADR 0373 gaps b and c).",
     "date": "2026-10-23",
-    "previousRoot": "04ae0fa8f5fb966983d2ca4a9d8ecaf5ac41ce9a58c9474bd239c1c8e78829b3",
+    "previousRoot": "e50784661adae25089e47e5a85514911ae4085391bd9cb92d0f33440457d055b",
     "chain": {
       "F1.kseed": {
-        "bytes": 2984643,
-        "sha256": "bec5e0972d2f79bd751e1152716aee7a282b1e8fd58058ee6f71b47f6c432ed3"
+        "bytes": 2985443,
+        "sha256": "77ddebeb4984cebefd95e8649876b2f54c5c4ffc06188fcfb1d825c1546219c5"
       },
       "F1.elf": {
         "bytes": 3211776,
-        "sha256": "e50784661adae25089e47e5a85514911ae4085391bd9cb92d0f33440457d055b"
+        "sha256": "ab71596bc75820c9bfc72ff2476c770cd0179c75fab3e2a8d9a56aceadeb4cf0"
       },
       "F2.kseed": {
-        "bytes": 2984643,
-        "sha256": "bec5e0972d2f79bd751e1152716aee7a282b1e8fd58058ee6f71b47f6c432ed3"
+        "bytes": 2985443,
+        "sha256": "77ddebeb4984cebefd95e8649876b2f54c5c4ffc06188fcfb1d825c1546219c5"
       },
       "F2.elf": {
         "bytes": 3211776,
-        "sha256": "e50784661adae25089e47e5a85514911ae4085391bd9cb92d0f33440457d055b"
+        "sha256": "ab71596bc75820c9bfc72ff2476c770cd0179c75fab3e2a8d9a56aceadeb4cf0"
       }
     }
   },
-  "verification": "scripts/seed/selfhost-bootstrap.py --tier pr on arm64 Linux (python:3.12-alpine) from the previous root: F1 = F2, the core route, the boundary corpus and the runtime cases pass; scripts/seed/check-kernel-memory.py --cases gives PASS_KERNEL_MEMORY_ADMISSION 18 cases with F1. CI re-runs the tier from this root (F -> F' = root).",
+  "verification": "scripts/seed/selfhost-bootstrap.py --tier pr on arm64 Linux (python:3.12-alpine) from the previous root: F1 = F2, the core route, the boundary corpus and the runtime cases pass; scripts/seed/check-kernel-memory.py --cases gives PASS_KERNEL_MEMORY_ADMISSION 23 cases with F1. CI re-runs the tier from this root (F -> F' = root).",
   "history": [
+    {
+      "image": {
+        "bytes": 3211776,
+        "sha256": "e50784661adae25089e47e5a85514911ae4085391bd9cb92d0f33440457d055b"
+      },
+      "sourceUnity": {
+        "bytes": 3209466,
+        "sha256": "21212acf3a760335dedb72997a7336e91bc5529be462e8c0dc68192c2fede48a"
+      },
+      "sourceCommitBase": "3c2207f42a6b1f86687a7c35ad7ee4977bdfc216",
+      "producedBy": {
+        "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt and packed itself to F2 = F1 (= this image). Re-pinned because this source checks the call sites of private helpers whose parameters are kernel-memory bases (ADR 0373 gap a).",
+        "date": "2026-10-23",
+        "previousRoot": "04ae0fa8f5fb966983d2ca4a9d8ecaf5ac41ce9a58c9474bd239c1c8e78829b3",
+        "chain": {
+          "F1.kseed": {
+            "bytes": 2984643,
+            "sha256": "bec5e0972d2f79bd751e1152716aee7a282b1e8fd58058ee6f71b47f6c432ed3"
+          },
+          "F1.elf": {
+            "bytes": 3211776,
+            "sha256": "e50784661adae25089e47e5a85514911ae4085391bd9cb92d0f33440457d055b"
+          },
+          "F2.kseed": {
+            "bytes": 2984643,
+            "sha256": "bec5e0972d2f79bd751e1152716aee7a282b1e8fd58058ee6f71b47f6c432ed3"
+          },
+          "F2.elf": {
+            "bytes": 3211776,
+            "sha256": "e50784661adae25089e47e5a85514911ae4085391bd9cb92d0f33440457d055b"
+          }
+        }
+      }
+    },
     {
       "image": {
         "bytes": 3211776,

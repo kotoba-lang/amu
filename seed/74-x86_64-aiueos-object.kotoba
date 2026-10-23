@@ -124,6 +124,8 @@
 ;;     EVERY call of that helper passes a rooted value at that position, or
 ;;   - the result of kernel-subregion over a rooted base, or
 ;;   - a let-bound local with exactly one assignment whose source is rooted.
+;; (ADR 0373 gaps closed: a helper's parameter is rooted only when every call roots it; a literal is not a base; the LENGTH operand
+;; must be the length of the base's own region, not a free number -- see xk-region below.)
 ;; Anything else -- a value read from memory, arithmetic, a call result, a branch's
 ;; result, a loop variable -- is refused (E7106, detail the SIR index of the call).
 ;; SIR is read backwards from the call: the argument temps are allocated stack-wise,
@@ -158,31 +160,65 @@
                   (= op OP-LSET) (= op OP-FUEL) (= op OP-RET) (= op OP-TRAP)) (recur (dec j))
               (or (= a t) (= b t) (= c t)) -1
               :else (recur (dec j)))))))
-(defn- xk-rooted [M :vector-i64 i :i64 t :i64 depth :i64] :bool
-  (if (> depth 6) false
+;; A value's SOURCE as a number, 0 when unknown: 2^32 + v for the integer literal v, 2^33 + s for the unassigned parameter slot s of
+;; its function (through a let-bound local with one assignment). Two temps with the same non-zero source hold the same value.
+(defn- xk-src [M :vector-i64 i :i64 t :i64 depth :i64] :i64
+  (if (> depth 6) 0
     (let [j (xk-writer M i t)]
-      (if (< j 0) false
+      (if (< j 0) 0
         (let [op (xg-si M j IF-OP) a (xg-si M j IF-A) b (xg-si M j IF-B)]
-          (cond (= op OP-CONST) true
+          (cond (= op OP-CONST) (+ 4294967296 (bit-and b 4294967295))
                 (= op OP-LGET)
-                  (cond (xk-param-slot? M j b)
-                          (let [f (xg-si M (xk-fn-start M j) IF-A)]
-                            (if (= (xg-f M f FF-EXPORT) 1) true
-                              (loop [c 1]
-                                (if (>= c (vector-at M MM-SIR-N)) true
-                                  (if (and (= (xg-si M c IF-OP) OP-CALL) (= (xg-si M c IF-A) f))
-                                    (if (xk-rooted M c (+ (xg-si M c IF-B) (dec b)) (inc depth)) (recur (inc c)) false)
-                                    (recur (inc c)))))))
+                  (cond (xk-param-slot? M j b) (+ 8589934592 b)
                         (= (xk-lsets M (inc (xk-fn-start M j)) b 0) 1)
                           (let [k (xk-first-lset M (inc (xk-fn-start M j)) b)]
-                            (and (> k 0) (xk-rooted M k (xg-si M k IF-B) (inc depth))))
-                        :else false)
-                (= op OP-CALL) (and (= (xk-intr M a) 2) (xk-rooted M j b (inc depth)))
-                :else false))))))
+                            (if (> k 0) (xk-src M k (xg-si M k IF-B) (inc depth)) 0))
+                        :else 0)
+                :else 0))))))
+;; The REGION of a base: -1 when the base is not rooted, else the source its length must have. A rooted base is
+;;   - a parameter slot p never assigned: of the exported function (the ABI boundary hands in a region as the pair (base, length),
+;;     the length being parameter p + 1), or of a private helper when EVERY call of it passes a rooted base at p whose length
+;;     (the source of the argument at p + 1) is the length of that base;
+;;   - the result of kernel-subregion over a rooted base, when the length it was given is the parent's length; the new region's
+;;     length is the subregion's n;
+;;   - a let-bound local with one assignment of such a value.
+;; A literal is NOT a base: it would name any absolute address (ADR 0373).
+(defn- xk-region [M :vector-i64 i :i64 t :i64 depth :i64] :i64
+  (if (> depth 6) -1
+    (let [j (xk-writer M i t)]
+      (if (< j 0) -1
+        (let [op (xg-si M j IF-OP) a (xg-si M j IF-A) b (xg-si M j IF-B)]
+          (cond (= op OP-LGET)
+                  (cond (xk-param-slot? M j b)
+                          (let [f (xg-si M (xk-fn-start M j) IF-A)]
+                            (cond (> (inc b) (xg-f M f FF-NPARAMS)) -1
+                                  (= (xg-f M f FF-EXPORT) 1) (+ 8589934592 (inc b))
+                                  :else
+                                    (loop [c 1]
+                                      (if (>= c (vector-at M MM-SIR-N)) (+ 8589934592 (inc b))
+                                        (if (and (= (xg-si M c IF-OP) OP-CALL) (= (xg-si M c IF-A) f))
+                                          (let [r (xk-region M c (+ (xg-si M c IF-B) (dec b)) (inc depth))
+                                                ln (xk-src M c (+ (xg-si M c IF-B) b) 0)]
+                                            (if (and (>= r 0) (not= ln 0) (= ln r)) (recur (inc c)) -1))
+                                          (recur (inc c)))))))
+                        (= (xk-lsets M (inc (xk-fn-start M j)) b 0) 1)
+                          (let [k (xk-first-lset M (inc (xk-fn-start M j)) b)]
+                            (if (> k 0) (xk-region M k (xg-si M k IF-B) (inc depth)) -1))
+                        :else -1)
+                (= op OP-CALL)
+                  (if (= (xk-intr M a) 2)
+                    (let [p (xk-region M j b (inc depth))
+                          l0 (xk-src M j (inc b) 0)
+                          n (xk-src M j (+ b 3) 0)]
+                      (if (and (>= p 0) (not= l0 0) (= l0 p) (not= n 0)) n -1))
+                    -1)
+                :else -1))))))
 (defn- xk-check [M :vector-i64 i :i64] :vector-i64
   (if (or (not= (vector-at M MM-ERR) 0) (>= i (vector-at M MM-SIR-N))) M
     (let [op (xg-si M i IF-OP) a (xg-si M i IF-A) b (xg-si M i IF-B)]
-      (if (and (= op OP-CALL) (>= (xk-intr M a) 0) (not (xk-rooted M i b 0)))
+      (if (and (= op OP-CALL) (>= (xk-intr M a) 0)
+               (let [r (xk-region M i b 0) ln (xk-src M i (inc b) 0)]
+                 (not (and (>= r 0) (not= ln 0) (= ln r)))))
         (xg-err M 7106 i)
         (xk-check M (inc i))))))
 
