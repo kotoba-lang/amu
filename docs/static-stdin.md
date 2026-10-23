@@ -74,6 +74,11 @@ emulation were used. Receipts are in
   - the runtime boundary corpus, the 24 runtime cases, hardening and
     capabilities;
   - the wasm32-browser compile.
+- **`selfhost-bootstrap.py --tier main`** (`selfhost-bootstrap-main.json`)
+  passes all of that again. It also passes the main tier's own checks:
+  - the core through the aarch64 runner, G2 and G3 (= G1);
+  - P, which packs G3 and rebuilds the core;
+  - the Linux selfhost closure built by F, rebuilding itself.
 - **`check-io-read.py`** (`io-read.json`), 12 cases:
   - **To end of file.** UTF-8 text arrives whole from a file and from a pipe.
     An empty stdin gives `""`, and 2 MiB arrives in one read. After end of
