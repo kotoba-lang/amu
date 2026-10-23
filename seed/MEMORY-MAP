@@ -67,7 +67,7 @@
   [:c MM-CT 91 "R3: HEAP address of the composite type table CT (21-check writes it; 30-lower and the driver read it)"]
   ;; R5B (2026-10-03): two cells of the stat range of 40-a64enc (a pure module that writes none)
   [:c MM-FN2 96 "R5B: HEAP address of the FN side table FN2 (MM-FN-CAP records of FN2-W words; 21-check writes, 30-lower and 60-proj read)"]
-  [:c MM-CAPS 97 "R5B: the capability wires the module's checked code calls, a mask (bit w = wire w < 47; 21-check)"]
+  [:c MM-CAPS 97 "R5B: capability mask (wire w < 47 = bit w; wire 47 = extension bit 48; state bit 47 unchanged)"]
 
   ;; --- 1.2 regions: BASE (word address), W (words per record), CAP (records incl. the null record) ------
   ;; R6B (2026-10-03): the seed's own unity (14k lines) filled TOK to 129,234 of 131,072 (measured with a stats build of the R6A
@@ -193,7 +193,7 @@
                    specialization; bit 2: a handler's get clause; bit 3: a handler's put clause"]
   [:c FN2-ORIGIN 1 "a specialization: its template FN; a handler clause: the handler's name symbol"]
   [:c FN2-HAND 2 "a specialization: the handler (its get clause FN; put = get + 1); a handler clause: the get clause FN"]
-  [:c FN2-CAPS 3 "the effect mask the function's checked body performs directly (bit w = wire w, bit 47 = :state)"]
+  [:c FN2-CAPS 3 "direct effect mask (wire w < 47 = bit w; :state = bit 47; wire 47 = bit 48)"]
   [:c FN2-S 4 "a handler clause: the handler's state type S"]
   [:c FN2-FX 5 "21-check scratch: the inferred effect mask (effect ceilings)"]
   [:c FN2-NODE 6 "a handler clause: the defhandler form"]
