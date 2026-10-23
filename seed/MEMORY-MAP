@@ -115,9 +115,11 @@
   [:c MM-OUT-BASE 11735296] [:c MM-OUT-W 1] [:c MM-OUT-CAP 3145728]
   [:c MM-HEAP-BASE 14881024] [:c MM-HEAP-END 16646144]
 ;; Static profile (2026-10-22, JUN-29 / M2): seed/00-ns-static.kotoba, used by the loaderless static closures, is this
-;; block with MM-CODE-CAP 2097152, MM-FIX-CAP 262144, MM-LITB-CAP 524288 and MM-OUT-CAP 8388608 (every later base, MM-HEAP-END
-;; and MM-WORDS shifted by 4980736 + 2621440 = 7602176; MM-WORDS 24248320, heap size unchanged). The stack-machine static
-;; emitter turns the 16-module core into a 6.6 MB image, beyond the AArch64 core's 3 MiB OUT. The core (seed/MANIFEST) keeps
+;; block with MM-CODE-CAP 2097152, MM-FIX-CAP 262144, MM-LITB-CAP 524288 and MM-OUT-CAP 12582912 (every later base, MM-HEAP-END
+;; and MM-WORDS shifted by 11796480; MM-WORDS 28442624, heap size unchanged). The stack-machine static
+;; emitter turns the complete core into a native static image beyond the AArch64 core's 3 MiB OUT.
+;; 2026-10-23: complete26 plus adopted TCP/spawn needs 8,433,664 bytes before context;
+;; the old 8 MiB OUT refused E7104. 12 MiB OUT preserves all modules and existing checks. The core (seed/MANIFEST) keeps
 ;; this block, so its payload identity is unchanged. The static runtime's per-vector limit is 2^25 items (KXRT-VECTOR-MAX).
 
   ;; --- 1.3 record fields (offset inside a record) -------------------------------------------------------
