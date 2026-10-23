@@ -479,7 +479,7 @@ Each step is its own PR, in this order:
 4. **Launcher.** Done (JUN-313). It is narrower than `amu run` (JUN-282): it
    signs nothing, since the trust plane (M3) does not exist yet.
    * **Format.** `--format launcher` on both static targets sets context word
-     408 = 2. The launcher runtime text (`xs-rt-launch` in `seed/76`,
+     408 = 4. The launcher runtime text (`xs-rt-launch` in `seed/76`,
      `xa-rt-launch` in `seed/77`) is appended in place of the standard start
      in this format only, so static and runner images keep their bytes. A
      guest cannot turn the launcher on: the mode is fixed at link time.
