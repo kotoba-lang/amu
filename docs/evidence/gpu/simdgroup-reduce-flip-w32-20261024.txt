@@ -1,0 +1,98 @@
+JUN-58 / JUN-55: the W = 32 :simdgroup-reduce FLIP slice (rule 3 step 3's
+W-sweep sixth and last cell, measured and flipped) -- 2026-10-24, chain
+worktree, kbb --backend sci
+
+WHAT THIS RECORD IS: the slice record of the W = 32 flip -- what the
+W = 32 W-sweep measurement
+(docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w32, taken
+earlier the same day) licenses under the flip contract (ADR-0360
+question (1)'s decision applied to THIS variant's own cells, ADR-0373).
+It is NOT a measurement: no hardware ran in this slice. The numbers
+cited below are the W-sweep record's, unchanged and not re-measured.
+
+WHAT MOVED (the slice's whole scope):
+- src/kotoba/compiler/accelerator_variants.cljk:
+  apple-simdgroup-measured-workgroups #{32 64 128 256 512 1024} (was
+  #{64 128 256 512 1024}); apple-simdgroup-measured-evidence keyed per
+  W, the W = 32 cell's :measured-cell record naming ITS OWN runs
+  (docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w32),
+  apple-simdgroup-measured-shapes [1000003] (unchanged), the flip note
+  (six cells; the W = 32 contrast named in its WEAKER form -- the
+  shuffle ladder measures MIXED at that cell and the flip rests on this
+  fold's own 18/18), the carve-out note (no width of the class carries
+  it at the measured reported width any more), the flip-aware ladder
+  prose and the :measured-cell lookup.
+- src/kotoba/compiler/accelerator_simdgroup_reduce.cljk and
+  src/kotoba/compiler/accelerator_pipeline.cljk: honesty marks for the
+  six flip cells (docstrings only).
+- test namespaces (accelerator-variants-test,
+  accelerator-simdgroup-reduce-test): the flip-cell and carve-out
+  blocks extended to six cells; the carve-out's live cells are now the
+  flip keys' own refusals (a class name whose reported SIMD-group width
+  is not the measured 32) plus the SHUFFLE fold's decided W = 32 cell,
+  pinned byte-for-byte unchanged.
+- docs/adr/0373-gpu-metal-native-simdgroup-reduce.md: status UPDATE
+  and the W = 32 FLIP SLICE section (the diff-record sections of the
+  ADR -- "What moved"/"What did NOT move"/State/UNMEASURED/LEFT --
+  still name five cells at this commit; they are the next slice's
+  prose, named not hidden).
+
+WHAT THE FLIP ANSWERS (the class's LAST :baseline cell, per the keys):
+  vendor/apple, the narrowed M1 Max class (name fragment "m1 max" AND
+  reported subgroup size 32), the MSL route (:metal/:msl-v1), a
+  descriptor reporting :simd-reduce, W = 32, reduce shape, n = 1000003
+  -> variant :simdgroup-reduce, :measured? true, :measured-cell record
+     {:device "m1 max" :subgroup-size 32 :channel :native-metal
+      :route :msl-v1 :workgroup-size 32 :operators #{:sum :max :min}
+      :shapes [1000003]
+      :evidence ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w32"]}
+  The measured basis (the W-sweep record, not re-measured here): paired
+  median ratios 0.657/0.658/0.650 (:sum/:max/:min), claim-protocol
+  rule 2 REGIME-INVARIANT FASTER, 18/18 per-run ratios below 1.0. The
+  six flip cells are every width the row admits (power of two in
+  [32, 1024]): the class's W band is flipped end to end.
+
+WHAT THE FLIP DOES NOT LICENSE (named so nothing is silently upgraded):
+- shape 2 (n = 2^20) at this cell: UNMEASURED for this variant;
+- the GLSL arm (:vulkan/:glsl-v1) never flips (LABELED BOOTSTRAP runs
+  are not a verdict);
+- every other Apple device: rung 1 may answer :simdgroup-reduce there,
+  but UNMEASURED (:measured? false);
+- every other vendor: this row is Apple's and the MSL route's alone;
+- cross-day replication of the six flip cells: UNMEASURED;
+- the SHUFFLE fold's W = 32 answer is untouched: without :simd-reduce
+  the narrowed class keeps :baseline there by the low-band DECISION
+  (apple-w32-note, :measured? false);
+- no workgroup row (ADR-0355/0358) moved.
+
+GATE (real runs, this host, kbb --backend sci, from the chain worktree
+root, 2026-10-24, run for THIS record):
+
+1. The two touched test namespaces (targeted run):
+     kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" -e \
+       "(require '[clojure.test :as t] '[kotoba.compiler.accelerator-variants-test] \
+         '[kotoba.compiler.accelerator-simdgroup-reduce-test]) \
+        (t/run-tests 'kotoba.compiler.accelerator-variants-test \
+                     'kotoba.compiler.accelerator-simdgroup-reduce-test)"
+   -> Ran 26 tests containing 7720 assertions.
+      0 failures, 0 errors.
+
+2. The scoped GPU gate (the 8 GPU-owned test namespaces, scratch
+   runner gpu_scoped_gate.cljk, not in the repo):
+     kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+       /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+   -> Ran 100 tests containing 8882 assertions.
+      0 failures, 0 errors.
+      scoped: 100 tests, 8882 passed, 0 failed, 0 errors
+
+3. Full suite (run-tests.cljk): RED AT BASE, outside this diff, at
+   namespace load on `kotoba.form` ("Could not find namespace:
+   kotoba.form"; the W3 port path documented red at base in ADR 0362),
+   re-verified this tick. The run stops at that load; no green full
+   suite is claimed and none is claimed here.
+
+HONESTY STATE: the six flip cells' :measured? true flags are backed by
+the hardware records named above. Every other :simdgroup-reduce answer
+in the dispatch stays :measured? false (provisional/design), and the
+workgroup defaults in kotoba.compiler.accelerator-targets are untouched
+and remain :measured? false.

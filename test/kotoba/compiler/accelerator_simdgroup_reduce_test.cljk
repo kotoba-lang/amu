@@ -161,7 +161,7 @@
   ;; has LANDED. This replaces the old "selection has not landed" guard --
   ;; the guard's spirit survives, scoped where it still binds: the measured
   ;; class never answers this variant except at its OWN flip cells (W =
-  ;; 64, W = 128, W = 256, W = 512 and W = 1024, the flip slices
+  ;; 32, W = 64, W = 128, W = 256, W = 512 and W = 1024, the flip slices
   ;; 2026-10-23/24 --
   ;; those
   ;; cells measured
@@ -180,22 +180,28 @@
         (is (= :simdgroup-reduce (:variant answer)))
         (is (false? (:measured? answer)))
         (is (nil? (:measured-cell answer)))))
-    (testing "the measured class never answers it at any W but the flip cells (the carve-out)"
-      (doseq [wg [32]
-              device [(assoc native :device "Apple M1 Max")
+    (testing "the measured class never answers it where the flip's keys do not hold (the carve-out)"
+      ;; after the W = 32 flip every width the row admits is a flip cell
+      ;; at the measured reported width, so the carve-out's live cells are
+      ;; the flip keys' own refusals: a class name whose reported
+      ;; SIMD-group width is not the measured 32.
+      (doseq [wg [32 256]
+              device [(assoc native :device "Apple M1 Max"
+                             :subgroup-size 8)
                       (assoc native :name "Apple M1 Max"
-                             :subgroup-ops #{:basic :shuffle-relative :simd-reduce})]]
+                             :subgroup-ops #{:basic :shuffle-relative :simd-reduce}
+                             :subgroup-size 16)]]
         (is (not= :simdgroup-reduce
                   (:variant (variants/select-variant
                              :apple (accelerator/kernel "reduce_sum" :reduce :sum
                                                        {:workgroup-size wg})
                              :msl-v1 device)))
             (str "the carve-out must refuse the row at W=" wg))))
-    (testing "W = 64, W = 128, W = 256, W = 512 and W = 1024 are the flip cells: the measured class answers there, MEASURED"
+    (testing "W = 32, W = 64, W = 128, W = 256, W = 512 and W = 1024 are the flip cells: the measured class answers there, MEASURED"
       (doseq [device [(assoc native :device "Apple M1 Max")
                       (assoc native :name "Apple M1 Max"
                              :subgroup-ops #{:basic :shuffle-relative :simd-reduce})]
-              wg [64 128 256 512 1024]]
+              wg [32 64 128 256 512 1024]]
         (let [answer (variants/select-variant
                       :apple (accelerator/kernel "reduce_sum" :reduce :sum
                                                 {:workgroup-size wg})

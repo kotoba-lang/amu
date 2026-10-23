@@ -37,16 +37,23 @@
   same-day slices): W = 64 measured (paired median ratios
   0.719/0.728/0.729, rule 2 REGIME-INVARIANT FASTER, 18/18) and FLIPPED
   (the W = 64 flip slice, below) -- five answers of this row carry
-  `:measured? true` on the narrowed M1 Max class. Every other
-  cell is unmeasured and every answer outside the five flip cells still
+  `:measured? true` on the narrowed M1 Max class. UPDATE 2026-10-24
+  (the W-sweep's sixth and last cell, measured and flipped in its own
+  same-day slices): W = 32 measured (paired median ratios
+  0.657/0.658/0.650, rule 2 REGIME-INVARIANT FASTER, 18/18) and FLIPPED
+  (the W = 32 flip slice, below) -- six answers of this row carry
+  `:measured? true` on the narrowed M1 Max class, the class's whole W
+  band [32, 1024] (the six are every width the row admits). Every other
+  cell is unmeasured and every answer outside the six flip cells still
   carries `:measured? false`.] ADR-0356 rule 3 (emission admission
   first) gates its IMPLEMENTATION, which is its own
   later slice [now split: step 1 emission DONE, step 2 selection DONE,
   step 3 measurement STARTED (the W = 256, W = 512, W = 1024,
-  W = 128 and W = 64 cells
+  W = 128, W = 64 and W = 32 cells
   measured and
-  flipped 2026-10-23/24; the remaining cells OPEN)]. Every answer this row
-  carries outside the five flip cells is UNMEASURED
+  flipped 2026-10-23/24; the remaining cells -- shape 2, cross-day
+  replication -- OPEN)]. Every answer this row
+  carries outside the six flip cells is UNMEASURED
   (`:measured? false`, rule 4's lock) until a hardware measurement
   replaces the basis text of the answer's cell.
 - Date: 2026-10-23
@@ -243,6 +250,36 @@ ladder is pinned by `the-msl-ladder-selects-simdgroup-reduce-first` and
    flag-scope clause is HISTORY: no cell carries both the note and a
    `:measured? true` flag. Slice record:
    `docs/evidence/gpu/simdgroup-reduce-flip-w64-20261024.txt`.]
+   [UPDATE 2026-10-24, the W = 32 FLIP SLICE (rule 3 step 3's W-sweep
+   sixth and last cell, measured and flipped 2026-10-24): the W-sweep
+   measurement of THIS variant at W = 32, n = 1000003 (the W-sweep
+   record,
+   `docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w32`) ran
+   the byte-identical protocol and measured it FASTER than `:baseline`
+   (paired median ratios 0.657/0.658/0.650 for `:sum`/`:max`/`:min`,
+   claim-protocol rule 2 REGIME-INVARIANT FASTER, 18/18 per-run ratios
+   below 1.0). The contrast with `:subgroup-reduce` at this cell reaches
+   only the WEAKER form: the shuffle ladder measures MIXED here
+   (0.918/0.923/1.019 -- the `:min` operator's per-run ratios straddle
+   1.0, that cell's verdict is regime-scoped) and only THIS fold is
+   one-sided, so the W = 32 flip rests on this fold's own 18/18, not on
+   the opposite-sign contrast (which holds at W = 64/128/256/512/1024
+   only). The flip contract's keys hold exactly here too (same
+   class, route and gate; W = 32), the carve-out lifts exactly here,
+   and the cell answers `:simdgroup-reduce` with `:measured? true` and
+   the row's OWN `:measured-cell` record (`:shapes [1000003]`, the
+   `:evidence` naming this cell's own runs -- each flip cell names ITS
+   OWN record). The flip is code in `select-variant`
+   (`apple-simdgroup-measured-workgroups #{32 64 128 256 512 1024}`,
+   `apple-simdgroup-measured-evidence` keyed per W). These six are
+   every width the row admits (a power of two in [32, 1024]): the
+   class's W band is flipped end to end and NO admitted width of the
+   class keeps the carve-out at the measured reported width any more --
+   the carve-out's remaining live cells are the flip keys' own refusals
+   (a `m1 max` descriptor whose reported SIMD-group width is not the
+   measured 32). The class's last `:baseline` cell is gone with this
+   slice. Slice record:
+   `docs/evidence/gpu/simdgroup-reduce-flip-w32-20261024.txt`.]
 2. **The MSL ladder (the ADR-0361 CUDA-ladder idiom).** Outside the
    carved-out class, an Apple MSL descriptor that reports the fold's
    facts (rule 6, below) answers `:simdgroup-reduce` -- the vendor-native
