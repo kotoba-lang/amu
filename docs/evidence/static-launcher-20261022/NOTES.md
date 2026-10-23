@@ -10,7 +10,7 @@ stdout, waits with a wall-time kill and writes one EDN receipt line
 
 * `aarch64-linux.json`: `scripts/seed/check-static-launcher.py` on arm64 Linux
   (podman machine, applehv, native kernel; no emulation), with the re-pinned
-  root as `--compiler` and main's root before this PR, `1739f52f…`, as
+  root F as `--compiler` and main's root before this PR, F `61ee2d38…`, as
   `--previous-root`.
 * `x86_64-linux.json`: the same check on a native x86_64 kernel, from the
   `qualify-x86_64` job of `selfhost-native.yml` (run through
@@ -20,15 +20,14 @@ stdout, waits with a wall-time kill and writes one EDN receipt line
   again.
 * `selfhost-bootstrap.json` (the canonical copy is
   `docs/evidence/selfhost-bootstrap-aarch64-20261022/`): the second bootstrap
-  run, root = S1 = S2 = S3.
+  run (`--tier pr`), F rebuilds itself (F' = root).
 
 ## What the receipts show
 
 * **Unchanged formats.** The previous root refuses `--format launcher`
   (E7100). It and the new compiler emit the same bytes for a static guest and
   for the runner: the launcher runtime text is appended only in the new
-  format. The compiler image itself is a static image, which is why the old
-  root built S1 equal to S2 and S3.
+  format.
 * **Receipt functions.** 30 Kotoba cases; the control fails exactly one.
 * **Runs.** 14, each checked against the receipt and the bytes Python sees:
   * guest alone: ok, trap, arguments, the built environment, descriptors
