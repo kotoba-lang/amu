@@ -7,7 +7,10 @@ name: selfhost-native
 # Tiers (scripts/seed/selfhost-bootstrap.py --tier; every check runs in one):
 #   pull_request -> pr:   the root F rebuilds itself, F's targets, F's core route
 #                         (the adoption image), boundary corpus, cases,
-#                         hardening, capabilities; x86_64: X2, cases, hardening.
+#                         hardening, capabilities, the cases as wasm32-browser
+#                         modules; x86_64: X2, cases, hardening, and the
+#                         wasm32-browser modules in headless Chrome (JUN-353:
+#                         the arm64 image has no Chrome or Chromium).
 #   push to main -> main: + G2/G3 through the runner, the packed core P, the
 #                         Linux selfhost closure fixed point; x86_64: X3, the
 #                         KX64V1 runner, the scalar and aiueos suites.
@@ -25,6 +28,7 @@ on:
       - "tools/gpu_*.kotoba"
       - "tools/spirv_*.kotoba"
       - "tools/static_launcher*.kotoba"
+      - "runtime/wasm32-browser-static-*"
       - ".github/workflows/selfhost-native.yml"
   pull_request:
     branches: [main]
@@ -34,6 +38,7 @@ on:
       - "tools/gpu_*.kotoba"
       - "tools/spirv_*.kotoba"
       - "tools/static_launcher*.kotoba"
+      - "runtime/wasm32-browser-static-*"
       - ".github/workflows/selfhost-native.yml"
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -66,6 +71,7 @@ jobs:
             ${{ runner.temp }}/boot/S-x86_64.elf
             ${{ runner.temp }}/boot/R-x86_64.elf
             ${{ runner.temp }}/boot/selfhost-unity.kotoba
+            ${{ runner.temp }}/boot/wasm32/*.wasm
           if-no-files-found: error
       # a separate artifact: another path in the one above would move its root
       # (the qualify job expects boot/ at the top)
@@ -90,6 +96,10 @@ jobs:
         env:
           TIER: ${{ github.event_name == 'pull_request' && 'pr' || github.event_name == 'push' && 'main' || 'full' }}
         run: python3 scripts/seed/check-x86_64-native.py --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/x86" --tier "$TIER"
+      # JUN-353: F's wasm32-browser modules of the runtime cases, in the image's
+      # Chrome (static page, Worker host, DevTools protocol on a pipe; no Node)
+      - name: wasm32-browser cases in headless Chrome
+        run: python3 scripts/seed/check-wasm32-browser.py --modules "$RUNNER_TEMP/boot/wasm32" --output "$RUNNER_TEMP/x86/wasm32-browser" --browser google-chrome
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
@@ -102,4 +112,5 @@ jobs:
             ${{ runner.temp }}/x86/runtime-boundary/runtime-boundary.json
             ${{ runner.temp }}/x86/runtime-boundary/calls.json
             ${{ runner.temp }}/x86/raw
+            ${{ runner.temp }}/x86/wasm32-browser/wasm32-browser.json
           if-no-files-found: warn
