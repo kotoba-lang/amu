@@ -312,7 +312,12 @@
   basis, claim-protocol rule 2 REGIME-SCOPED -- the first
   measured-but-scoped cell; W = 256, W = 1024, W = 128, W = 64 and
   W = 32 carry their own shape-2 flips),
-  every other Apple device, every other vendor, cross-day replication --
+  every other Apple device, every other vendor, and cross-day
+  replication beyond its ONE measured cell (the W = 256 anchor's
+  later-day run, 2026-10-24,
+  docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w256 -- the
+  flip note's CROSS-DAY paragraph; every other cell's cross-day
+  replication) --
   and no width outside this set answers at all (the row refuses it at
   selection)."
   #{32 64 128 256 512 1024})
@@ -369,7 +374,10 @@
   native-Metal measurement of :baseline vs :simdgroup-reduce AND the
   shape-2 anchor's own record
   (docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w256, the
-  shape-2 flip's basis); W = 1024 -> the W-sweep series' third cell AND
+  shape-2 flip's basis) AND the anchor's cross-day replication record
+  (docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w256 --
+  corroboration of the W = 256 basis on a later day, 2026-10-24; it
+  flipped nothing: the anchor was already flipped 2026-10-23); W = 1024 -> the W-sweep series' third cell AND
   the shape-2 series' third cell's own record
   (docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w1024, the
   W = 1024 shape-2 flip's basis); W = 128 -> the W-sweep series' fourth
@@ -387,7 +395,8 @@
   (summary.md,
   run-log.txt, compile-log.txt, shaders/ in each)."
   {256 ["docs/evidence/gpu-simdgroup-reduce-m1max-20261023"
-        "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w256"]
+        "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w256"
+        "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w256"]
    512 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512"]
    1024 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w1024"
          "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w1024"]
@@ -459,8 +468,10 @@
   beyond the two measured ones is
   UNMEASURED at every cell (selection cannot vary with n; the record's
   :shapes names the measured shapes so no claim extends past them); the
-  GLSL arm, every other Apple device, every other vendor and cross-day
-  replication are UNMEASURED. Read-back: 36/36
+  GLSL arm, every other Apple device and every other vendor are
+  UNMEASURED, and cross-day replication is measured at exactly ONE cell
+  (the W = 256 anchor -- the CROSS-DAY paragraph below) and UNMEASURED
+  at every other. Read-back: 36/36
   ok=1 per cell, :max/:min bit-exact vs the CPU reference and between
   arms, :sum 3.05e-05 between arms at W = 256 and W = 512, 6.10e-05
   at W = 1024, 1.53e-05 at W = 128, 3.81e-06 at W = 64 and 1.91e-06
@@ -472,6 +483,9 @@
   not a claim):
   per-operator level names stay operator-scoped. Evidence:
   docs/evidence/gpu-simdgroup-reduce-m1max-20261023 (W = 256),
+  docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w256
+  (W = 256 -- the anchor's cross-day replication record, corroboration,
+  not a flip basis),
   docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w256
   (W = 256, shape 2 -- the shape-2 flip's own record),
   docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512 (W = 512),
@@ -605,7 +619,32 @@
   measured-but-REFUSED at W = 512 (the paragraph above) and every
   shape beyond the two measured ones stays UNMEASURED at every cell;
   no :measured? flag moves (the W = 32 answer was already MEASURED at
-  the ground shape) and no workgroup row (ADR-0355/0358) moves.")
+  the ground shape) and no workgroup row (ADR-0355/0358) moves.
+  CROSS-DAY REPLICATION OF THE ANCHOR CELL (W = 256, shape 1 -- the
+  record's first later-day replication, 2026-10-24,
+  docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w256): the
+  byte-identical protocol re-ran the honesty-lock flip anchor (the cell
+  measured 2026-10-23,
+  docs/evidence/gpu-simdgroup-reduce-m1max-20261023) on a later day and
+  the verdict reproduces: rule 2 REGIME-INVARIANT FASTER again (18/18
+  per-run ratios below 1.0, every observed regime one-sided), paired
+  median ratios 0.790/0.800/0.801 for :sum/:max/:min against the
+  anchor's 0.790/0.800/0.799. The rule-3 regime-matched comparison
+  against the anchor record: sign reproduces in sign strictly at
+  every operator (all 6 per-run ratios hold the historical sign at
+  each); magnitude reproduces within 0.000 (:sum) and within
+  0.002 (:min), magnitude splits by clock regime for :max (mixed
+  strata draws; both matched strata-pair deltas 0.000). The emitted
+  shaders are byte-identical to the anchor record's (diff -r empty,
+  checked). Read-back: 36 verify lines, ok=1 on every one; :max/:min
+  bit-exact vs the CPU reference and between arms, :sum 1.58e-05 vs the
+  reference and 3.05e-05 between arms (regrouping). WHAT THIS
+  REPLICATION DOES NOT LICENSE: no :measured? flag moves (the anchor
+  was already flipped 2026-10-23) and no workgroup row (ADR-0355/0358)
+  moves -- it is replication evidence only; cross-day replication of
+  every OTHER cell stays UNMEASURED, and the measured-but-REFUSED
+  shape-2 W = 512 cell's refusal is a protocol decision no re-run
+  revisits.")
 
 (def variant-bases
   "Why each variant exists. Design rationale, not measurement evidence."
