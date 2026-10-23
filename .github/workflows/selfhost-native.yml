@@ -108,6 +108,8 @@ jobs:
           path: ${{ runner.temp }}/one
       - name: Complete native x86 compiler fixed point and CDCI images
         run: python3 scripts/seed/check-complete-x86.py --compiler "$RUNNER_TEMP/one/F-x86_64.elf" --arm-proof "$RUNNER_TEMP/one/one-compiler.json" --output "$RUNNER_TEMP/complete"
+      - name: Native x86 clock and entropy (fixed Kotoba guest, refusal and ENOSYS)
+        run: python3 scripts/seed/check-native-clock-entropy.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/clock-entropy"
       - name: Kotoba native controller (Amu selfhost and complete24 Kotoba gate)
         run: python3 scripts/seed/check-native-cdci.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/native-cdci"
       - name: Public native product and aliases
@@ -125,6 +127,9 @@ jobs:
             ${{ runner.temp }}/public-product/public-product.json
             ${{ runner.temp }}/complete/complete-x86.json
             ${{ runner.temp }}/complete/calls.json
+            ${{ runner.temp }}/clock-entropy/native-clock-entropy.json
+            ${{ runner.temp }}/clock-entropy/calls.json
+            ${{ runner.temp }}/clock-entropy/enosys.trace
             ${{ runner.temp }}/native-cdci/native-cdci.json
             ${{ runner.temp }}/native-cdci/calls.json
             ${{ runner.temp }}/native-cdci/raw
