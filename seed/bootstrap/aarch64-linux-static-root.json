@@ -1,50 +1,92 @@
 {
   "schema": "amu.seed.static-root.v1",
   "image": {
-    "bytes": 3199488,
-    "sha256": "048244b3c26204ea32ff545005d2826d068fb15787dd20a8c5c636758e0f4d49"
+    "bytes": 3207680,
+    "sha256": "82fba3b456118c5a2b38ccf31d5b62d9c0181ba1f3a66613f0e6e422f5057de0"
   },
   "target": "aarch64-linux",
   "format": "packed",
   "sourceManifest": "seed/FULL-MANIFEST",
   "sourceUnity": {
-    "bytes": 3198077,
-    "sha256": "b2ee13ca2eef03df27a9d4747715fc524f8c4fbb6925b20584992aab5a12d31a"
+    "bytes": 3203208,
+    "sha256": "4572a4b77359a65f1e5a2d2ea50a77e7e28be24db6b035480c969d76d21dba0c"
   },
-  "sourceCommitBase": "7ff8d9d34031f6487b625880f136b1d9a92f442d",
+  "sourceCommitBase": "c00d98a4fd396a08b4c93591d221f724f9d24da8",
   "producedBy": {
-    "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt itself to F2 (same container, new runtime wrapper: F1 was packed by the previous runtime); F2 rebuilt itself to F3 = F2 (= this image). Re-pinned because this source adds the static runtimes' stdin: wire 41 :io/read (JUN-354) and wire 20's STDIN_SEP stdin payload (JUN-357), in seed/76 and seed/77.",
+    "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt itself to F2 (same container, new runtime wrapper: F1 was packed by the previous runtime); F2 rebuilt itself to F3 = F2 (= this image). Re-pinned because this source adds the wire 35 RANGE window (io-slice) form \"<path>TOK<off>:<len>\" to the x86_64 and aarch64 static runtimes (JUN-19): the decimal span parser, the fs range reader and the fs_app_data_range_read_provider dispatch in seed/76 and seed/77, qualified by scripts/seed/check-rt-embed.py; the rebuild chain now converges within three generations (scripts/seed/selfhost-bootstrap.py re-pins to the fixed point Fn = Fn-1).",
     "date": "2026-10-23",
-    "previousRoot": "1d54a10811020f5902c563e680fe85ab85cf4de205609200ff8ab9927fab06ae",
+    "previousRoot": "048244b3c26204ea32ff545005d2826d068fb15787dd20a8c5c636758e0f4d49",
     "chain": {
       "F1.kseed": {
-        "bytes": 2974691,
-        "sha256": "7974701abd8561610ecc96c0974a540a65fd51d59f5eed95edb7ea6f152a3162"
+        "bytes": 2979827,
+        "sha256": "a13e1caa280853d6889a18fdaf38cfab186d2a488205e60a8aa4c7cf84219c1c"
       },
       "F1.elf": {
-        "bytes": 3191296,
-        "sha256": "4c165ec04ab8f5cacc2f908e974183f3601d9c85ac2071e4178079e69db746f2"
+        "bytes": 3203584,
+        "sha256": "b149e906356b4b5002de654a19ef42e288e1a84bc4dca1cb82cbb725a99c79c9"
       },
       "F2.kseed": {
-        "bytes": 2974691,
-        "sha256": "7974701abd8561610ecc96c0974a540a65fd51d59f5eed95edb7ea6f152a3162"
+        "bytes": 2979827,
+        "sha256": "a13e1caa280853d6889a18fdaf38cfab186d2a488205e60a8aa4c7cf84219c1c"
       },
       "F2.elf": {
-        "bytes": 3199488,
-        "sha256": "048244b3c26204ea32ff545005d2826d068fb15787dd20a8c5c636758e0f4d49"
+        "bytes": 3207680,
+        "sha256": "82fba3b456118c5a2b38ccf31d5b62d9c0181ba1f3a66613f0e6e422f5057de0"
       },
       "F3.kseed": {
-        "bytes": 2974691,
-        "sha256": "7974701abd8561610ecc96c0974a540a65fd51d59f5eed95edb7ea6f152a3162"
+        "bytes": 2979827,
+        "sha256": "a13e1caa280853d6889a18fdaf38cfab186d2a488205e60a8aa4c7cf84219c1c"
       },
       "F3.elf": {
-        "bytes": 3199488,
-        "sha256": "048244b3c26204ea32ff545005d2826d068fb15787dd20a8c5c636758e0f4d49"
+        "bytes": 3207680,
+        "sha256": "82fba3b456118c5a2b38ccf31d5b62d9c0181ba1f3a66613f0e6e422f5057de0"
       }
     }
   },
   "verification": "scripts/seed/selfhost-bootstrap.py --tier pr on arm64 Linux from this root (F1 = root): its core route, the runtime boundary corpus, the 24 runtime cases and hardening; scripts/seed/check-spawn-runtime.py and scripts/seed/check-io-read.py with that F1 (docs/static-stdin.md). CI re-runs the tier from this root (F -> F' = root).",
   "history": [
+    {
+      "image": {
+        "bytes": 3199488,
+        "sha256": "048244b3c26204ea32ff545005d2826d068fb15787dd20a8c5c636758e0f4d49"
+      },
+      "sourceUnity": {
+        "bytes": 3198077,
+        "sha256": "b2ee13ca2eef03df27a9d4747715fc524f8c4fbb6925b20584992aab5a12d31a"
+      },
+      "sourceCommitBase": "7ff8d9d34031f6487b625880f136b1d9a92f442d",
+      "producedBy": {
+        "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt itself to F2 (same container, new runtime wrapper: F1 was packed by the previous runtime); F2 rebuilt itself to F3 = F2 (= this image). Re-pinned because this source adds the static runtimes' stdin: wire 41 :io/read (JUN-354) and wire 20's STDIN_SEP stdin payload (JUN-357), in seed/76 and seed/77.",
+        "date": "2026-10-23",
+        "previousRoot": "1d54a10811020f5902c563e680fe85ab85cf4de205609200ff8ab9927fab06ae",
+        "chain": {
+          "F1.kseed": {
+            "bytes": 2974691,
+            "sha256": "7974701abd8561610ecc96c0974a540a65fd51d59f5eed95edb7ea6f152a3162"
+          },
+          "F1.elf": {
+            "bytes": 3191296,
+            "sha256": "4c165ec04ab8f5cacc2f908e974183f3601d9c85ac2071e4178079e69db746f2"
+          },
+          "F2.kseed": {
+            "bytes": 2974691,
+            "sha256": "7974701abd8561610ecc96c0974a540a65fd51d59f5eed95edb7ea6f152a3162"
+          },
+          "F2.elf": {
+            "bytes": 3199488,
+            "sha256": "048244b3c26204ea32ff545005d2826d068fb15787dd20a8c5c636758e0f4d49"
+          },
+          "F3.kseed": {
+            "bytes": 2974691,
+            "sha256": "7974701abd8561610ecc96c0974a540a65fd51d59f5eed95edb7ea6f152a3162"
+          },
+          "F3.elf": {
+            "bytes": 3199488,
+            "sha256": "048244b3c26204ea32ff545005d2826d068fb15787dd20a8c5c636758e0f4d49"
+          }
+        }
+      }
+    },
     {
       "image": {
         "bytes": 3179008,
