@@ -24,7 +24,8 @@ Phase "build" (any Linux):
   (E7101), the platform API in --format static (unresolved), and the format
   on aarch64-linux (E7100);
 * with --previous-root: the static, runner and launcher outputs are the same
-  bytes as the previous root's.
+  bytes as the previous root's, and whether it refuses the format (a root
+  from before step 5 does).
 
 Phase "run" (x86_64 Linux with glibc's /lib64/ld-linux-x86-64.so.2; native,
 or emulated by qemu-user): hello (exit 7, and the structured line), the
@@ -355,9 +356,11 @@ def build(compiler, output, previous_root):
                 continue
             assert z.returncode == 0 and a.read_bytes() == b.read_bytes(), ("output changed", tag)
             same[tag] = pin(a)
+        # a root from before step 5 refuses the format; a later one has it
+        # (its platform text may differ: not compared)
         _, z = compile_(old, "previous-refuses", GUESTS["hello"], success=False)
-        assert z.returncode != 0 and not (art / "previous-refuses.elf").exists(), z.stderr[-200:]
-        rows["unchangedFormats"] = dict(previousRoot=pin(previous_root), sameBytes=same, previousRootRefusesFormat=True)
+        refuses = z.returncode != 0 and not (art / "previous-refuses.elf").exists()
+        rows["unchangedFormats"] = dict(previousRoot=pin(previous_root), sameBytes=same, previousRootRefusesFormat=refuses)
     report = dict(status="PASS_PLATFORM_LINKED_BUILD", compiler=pin(compiler), host=[platform.system(), platform.machine(), platform.release()],
                   sources={p: pin(ROOT / p) for p in ("seed/78-x86_64-platform.kotoba", "seed/75-x86_64-static.kotoba", "seed/76-x86_64-static-rt.kotoba")},
                   images={k: str(v.relative_to(output)) for k, v in images.items()}, results=rows, calls=calls, cCompilerOrLoader=False)
