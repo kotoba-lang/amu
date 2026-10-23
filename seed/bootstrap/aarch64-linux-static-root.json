@@ -48,6 +48,45 @@
     {
       "schema": "amu.seed.static-root.v1",
       "image": {
+        "bytes": 3211776,
+        "sha256": "04ae0fa8f5fb966983d2ca4a9d8ecaf5ac41ce9a58c9474bd239c1c8e78829b3"
+      },
+      "target": "aarch64-linux",
+      "format": "packed",
+      "sourceManifest": "seed/FULL-MANIFEST",
+      "sourceUnity": {
+        "bytes": 3208962,
+        "sha256": "d83c1205dd29578d5930fbf92ec327f97d82726d13626b4ac6ff4e4d8cfbf602"
+      },
+      "sourceCommitBase": "3b88263ebebaa0256221e0edef48327193e4456a",
+      "producedBy": {
+        "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt and packed itself to F2 = F1 (= this image). Re-pinned because this source narrows the rooted-base rule of the kernel memory windows: a private helper's parameter is no longer rooted (only the exported function's), closing the call-site gap of ADR 0373.",
+        "date": "2026-10-23",
+        "previousRoot": "bd0254759e442533ead3e190f361257725667ea252a83b3575a3fb0d65becb66",
+        "chain": {
+          "F1.kseed": {
+            "bytes": 2984339,
+            "sha256": "e64ba7b65a23799cacd6494efe811b33f9191bafaa62f914e89d9efbd6076e99"
+          },
+          "F1.elf": {
+            "bytes": 3211776,
+            "sha256": "04ae0fa8f5fb966983d2ca4a9d8ecaf5ac41ce9a58c9474bd239c1c8e78829b3"
+          },
+          "F2.kseed": {
+            "bytes": 2984339,
+            "sha256": "e64ba7b65a23799cacd6494efe811b33f9191bafaa62f914e89d9efbd6076e99"
+          },
+          "F2.elf": {
+            "bytes": 3211776,
+            "sha256": "04ae0fa8f5fb966983d2ca4a9d8ecaf5ac41ce9a58c9474bd239c1c8e78829b3"
+          }
+        }
+      },
+      "verification": "scripts/seed/selfhost-bootstrap.py --tier pr on arm64 Linux (python:3.12-alpine) from the previous root: F1 = F2, the core route, the boundary corpus and the runtime cases pass; scripts/seed/check-kernel-memory.py --cases gives PASS_KERNEL_MEMORY_ADMISSION 16 cases with F1. CI re-runs the tier from this root (F -> F' = root)."
+    },
+    {
+      "schema": "amu.seed.static-root.v1",
+      "image": {
         "bytes": 3219968,
         "sha256": "d201f6dab1548b026d614a5ed319388591be158d72d0d0917270b285dd41403a"
       },
