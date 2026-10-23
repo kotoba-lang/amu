@@ -9,9 +9,11 @@
 ;;
 ;; A unit that uses it drops this ns line (tools/gpu_provider.kotoba).
 ;;
-;; Faults, for the provider's session-ending refusals: a DISPATCH whose x is
+;; Faults, for the provider's device refusals: a DISPATCH whose x is
 ;; 4294967295 makes the next submit report a lost device, 4294967294 a fence
-;; timeout. A real device never sees these counts from this layer.
+;; timeout (both end the session); a DISPATCH whose x is 4294967293 and an
+;; ALLOC of 4294967293 bytes fail as an ordinary device error. A real device
+;; never sees these values from this layer.
 ;;
 ;; It has one device: index -1 (unset) or 0.
 ;;
@@ -29,7 +31,7 @@
 (defn- dev-devclass [s :i64] :i64 5)
 
 ;; a buffer is anonymous memory; its id is the address
-(defn- dev-alloc [s :i64 n :i64] :i64 (kxrt-p-alloc n))
+(defn- dev-alloc [s :i64 n :i64] :i64 (if (= n 4294967293) -1 (kxrt-p-alloc n)))
 (defn- dev-free [s :i64 id :i64 n :i64] :i64 (kxrt-p-unmap id n))
 (defn- dev-zero [s :i64 id :i64 n :i64] :i64
   (loop [i 0] (if (>= i n) 0 (let [z (kxrt-p-store8 (+ id i) 0)] (recur (inc i))))))
@@ -37,19 +39,13 @@
   (loop [i 0] (if (>= i n) 0 (let [z (kxrt-p-store8 (+ id off i) (kxrt-p-load8 (+ src i)))] (recur (inc i))))))
 (defn- dev-read [s :i64 id :i64 off :i64 dst :i64 n :i64] :i64
   (loop [i 0] (if (>= i n) 0 (let [z (kxrt-p-store8 (+ dst i) (kxrt-p-load8 (+ id off i)))] (recur (inc i))))))
-;; n bytes of fd from foff into the buffer at off
-(defn- dev-load [s :i64 id :i64 off :i64 fd :i64 foff :i64 n :i64] :i64
-  (loop [k 0]
-    (if (>= k n) 0
-      (let [r (kxrt-p-pread fd (+ id off k) (- n k) (+ foff k))]
-        (if (<= r 0) -5 (recur (+ k r)))))))
 
 (defn- dev-pipeline [s :i64 code :i64 n :i64 bindings :i64] :i64 1)
 (defn- dev-begin [s :i64 slot :i64] :i64 0)
 (defn- dev-dispatch [s :i64 pipe :i64 x :i64 y :i64 z :i64 ids :i64 nids :i64 barrier :i64] :i64
   (let [d (kxrt-p-load64 (+ s S-DEV))]
     (let [f (cond (= x 4294967295) 33 (= x 4294967294) 34 :else 0)
-          w (if (> f 0) (kxrt-p-store64 d f) 0)] 0)))
+          w (if (> f 0) (kxrt-p-store64 d f) 0)] (if (= x 4294967293) -1 0))))
 ;; nanoseconds, or a session-ending refusal
 (defn- dev-submit [s :i64 slot :i64 timeout :i64] :i64
   (let [d (kxrt-p-load64 (+ s S-DEV)) f (kxrt-p-load64 d) t0 (kxrt-p-clock-ns)]

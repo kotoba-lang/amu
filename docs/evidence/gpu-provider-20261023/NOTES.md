@@ -18,7 +18,7 @@ the selfhost compiler.
 
 ## What the receipt shows
 
-* **19 sessions**, each with fd 3 the grant and fd 4 the report:
+* **23 sessions**, each with fd 3 the grant and fd 4 the report:
   * every verb, with its exact answer;
   * the provider's refusals (19 on), and the table's refusals passed
     through;
@@ -28,13 +28,20 @@ the selfhost compiler.
   * a frame over one runtime value;
   * the buffer table (4096), the pipeline table (128) and the dispatch limit
     (2048), at their bounds;
-  * answers that cannot be written.
+  * answers that cannot be written;
+  * ordinary device errors (the fake layer's non-terminal faults): refused
+    as `gpu/device-error`, and the session goes on;
+  * an artifact changed on disk after its verification: MAP refuses it as a
+    digest mismatch, while PIPELINE keeps using the module bytes it verified;
+  * truncated frames (a short header, a short payload), which end the
+    session as `:truncated-request`, not as a clean end of file.
 * **Grants**: one well-formed grant, and 11 refused ones (another key, a
   repeated key, no wire 42, a missing key, a short digest, a backslash, a
   timeout of 61, trailing bytes, an unknown kind, an empty grant, no fd 3).
   With a refused grant the provider serves nothing and exits 2. A device the
   layer lacks exits 3.
-* **Report**: the image digest in each report equals the image's SHA-256.
+* **Report**: the image digest in each report equals the image's SHA-256,
+  and `:needed` lists the image's DT_NEEDED names (`["libc.so.6"]`).
 
 ## Limits
 

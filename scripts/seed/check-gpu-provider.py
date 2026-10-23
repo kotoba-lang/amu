@@ -236,8 +236,48 @@ def run(output):
             ("INFO é", "!gpu/unknown-verb unknown :gpu/compute request")]:
         expect(s, req, want)
     line = s.close(0)
-    assert f":served {len(s.log)} " in line and " :end :eof " in line, line
+    assert f":served {len(s.log)} " in line and " :end :eof " in line and ' :needed ["libc.so.6"] ' in line, line
     rows["verbs"] = dict(requests=len(s.log), refused=int(re.search(r":refused (\d+)", line)[1]), report=line.strip(), log=s.log)
+
+    # ordinary device errors: refused, and the session goes on
+    s = Session(img["provider-fake"], raw, "device-error", grant(arts, cap=1 << 40))
+    for req, want in [("ALLOC 4294967293", "!gpu/device-error ALLOC: device error"), ("ALLOC 16", "1"), ("PIPELINE k.spv 1", "1"),
+                      ("BEGIN", "1"), ("DISPATCH 1 4294967293 1 1 1", "!gpu/device-error DISPATCH: device error"),
+                      ("DISPATCH 1 1 1 1 1", "1"), ("SUBMIT", NS), ("DISPATCH 1 4294967293 1 1 1", "!gpu/device-error DISPATCH: device error"),
+                      ("INFO", "Kotoba fake device|fake|65535|1")]:
+        expect(s, req, want)
+    line = s.close(0)
+    assert " :refused 3 " in line and " :end :eof " in line, line
+    rows["device-error"] = dict(report=line.strip(), log=s.log)
+
+    # an artifact changed after its verification: MAP checks each piece it
+    # reads and refuses; PIPELINE keeps using the module bytes it verified
+    for n in ("model.bin", "k.spv"):
+        (raw / ("changed-" + n)).write_bytes((raw / n).read_bytes())
+    changed = [("changed-model.bin", sha["model.bin"], "model"), ("changed-k.spv", sha["k.spv"], "spirv")]
+    s = Session(img["provider-fake"], raw, "artifact-changed", grant(changed))
+    expect(s, "MAP changed-model.bin 0 1000", "1")
+    expect(s, "PIPELINE changed-k.spv 1", "1")
+    with open(raw / "changed-model.bin", "r+b") as f:
+        f.seek(200000)
+        f.write(b"\xff" * 16)
+    with open(raw / "changed-k.spv", "r+b") as f:
+        f.write(b"\0" * 20)
+    # one 1 MiB piece holds the whole file: the change refuses any range of it
+    expect(s, "MAP changed-model.bin 199000 2000", "!gpu/artifact-digest-mismatch MAP: artifact digest does not match the grant")
+    expect(s, "MAP changed-model.bin 0 1000", "!gpu/artifact-digest-mismatch MAP: artifact digest does not match the grant")
+    expect(s, "PIPELINE changed-k.spv 1", "2")
+    line = s.close(0)
+    rows["artifact-changed"] = dict(report=line.strip(), log=s.log)
+
+    # truncated frames: not a clean end
+    for name, data in (("truncated-header", b"\x04\x00"), ("truncated-payload", struct.pack("<I", 10) + b"INF")):
+        s = Session(img["provider-fake"], raw, name, grant(arts))
+        s.p.stdin.write(data)
+        s.p.stdin.flush()
+        line = s.close(1)
+        assert " :end :truncated-request " in line, (name, line)
+        rows[name] = dict(report=line.strip())
 
     # faults that end the session
     for name, x, code in (("device-lost", 4294967295, "!gpu/device-lost device lost; the provider ends the session"),
