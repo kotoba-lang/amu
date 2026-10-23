@@ -880,3 +880,61 @@ untouched). This slice ran no hardware measurement.
 
 Record: `docs/evidence/gpu/pair-level-classification-20261023.txt`
 (this slice ran no hardware measurement).
+
+## Amendment 2026-10-23 (f): cross-operator level identity lands
+
+The pair-level state paragraph named one UNIMPLEMENTED residue:
+"cross-operator level identity (classification stays per operator; a
+:sum level and a :min level are never called one clock level)". That
+row is now IMPLEMENTED (code + tests): `cross_operator_level_identity`
+in `scripts/gpu_regime_classify.py` tests, mechanically, whether the
+operators' rule-1 run partitions AGREE -- for every run pair, every
+operator must agree on whether the two runs sit in the same GAP-1.15
+level. Agreement on every pair = "identity holds" (a record's prose may
+then name one level across operators); any divergent pair = "identity
+refuted", the pairs named with every operator's relation, and the
+disagreement's shape published as partition refinement (equal / one
+refines the other / cross-cutting). `render_identity_section` publishes
+it in the single-record output (and therefore every future summary.md
+the driver writes) when the record has at least two operators.
+
+This is a publication fact about one record's regime structure. Rule 4
+stands: it changes no rule-2 verdict (the cell row is still only the
+admissibility roll-up), no rule-3 phrase, no selection answer, no
+`:measured?` flag, no workgroup row. What stays unasserted, named:
+CLOCK identity (the harness reads no clock) and pair-level
+cross-operator identity (the pair-level section's levels are never
+compared across operators).
+
+Finding over the committed corpus (machine output over committed
+summary.md text; NO hardware measurement ran in this slice): of the 28
+multi-operator records, 9 hold (only 2 of those with multi-level
+partitions) and 19 refute -- and every one of the 19 refuted records
+has refinement structure (a strict refinement edge; asserted over every
+refuted record). Three named consequences:
+
+1. The closing cell (shape2-resweep w512) HOLDS: all three partitions
+   are {3} / {1,2,4,5,6}, so that record's cross-operator fast/slow
+   prose ("run 3 sat fast/intermediate"; "fast-level :max 1.026 /
+   :min 1.021-1.026 vs slow ~0.92") is mechanically licensed.
+2. wsweep-low w32 REFUTES: the record's "runs 4/6 one fast regime"
+   naming is :max's partition alone (:min splits [3,4,5,6]/[2]/[1],
+   :sum pools all six, and :max and :min CROSS-CUT). The cross-operator
+   "the fast regime" prose of that cell is not mechanically
+   licenseable; the W = 32 regime story stays per-operator.
+3. The op-order cell is the corpus's only record where :sum's partition
+   is the FINEST (and :max pools all six runs) -- :sum ran LAST in that
+   cell's op order, so the within-run ramping the pair-level slice
+   named shows up at run level in the operator that ran last.
+
+Tests (real output): `python3 scripts/gpu_regime_classify.py --self-test`
+= 1074 assertions, 0 failed (the previous 1019 plus 55 identity
+fixtures -- unit refusal/boundary/refinement/rendering/round-trip pins,
+corpus floors, the structural claim over every refuted record, and the
+three named-record pins above); `python3
+scripts/gpu-subgroup-reduce-metal-measure.py --self-test` = 7
+assertions, 0 failed. Scoped GPU gate: 88 tests / 7122 assertions,
+unchanged (no .cljk in this diff). Full suite RED AT BASE (`Could not
+find namespace: kotoba.form`), outside this diff, re-verified.
+
+Record: `docs/evidence/gpu/cross-operator-level-identity-20261023.txt`.

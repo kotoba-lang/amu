@@ -47,11 +47,19 @@ WHAT THIS MODULE DOES NOT DO (named so nothing is silently upgraded):
 
   - It reads no GPU clock. A "regime" here is a cluster of observed
     baseline-median levels, exactly as the protocol's rule 1 defines it.
-  - Cross-operator level identity is NOT asserted. Classification is per
-    operator; calling :sum's slow cluster and :min's slow cluster "the same
-    clock level" is a prose inference this harness cannot verify. The
-    rule-2 cell row is therefore only an admissibility roll-up over
-    pooled per-run ratios -- it carries no cross-operator regime structure.
+  - Clock identity is never asserted (this module reads no clock).
+    Cross-operator level identity at RUN level is a mechanical
+    publication fact (cross_operator_level_identity /
+    render_identity_section): per record, the operators' rule-1 run
+    partitions are tested for agreement, and where they agree a
+    record's prose may name one level across operators; where they
+    diverge, the divergent run pairs are named and the per-operator
+    level names stay operator-scoped. Pair-level cross-operator
+    identity is NOT tested. The rule-2 cell row is still only an
+    admissibility roll-up over pooled per-run ratios -- it carries no
+    cross-operator regime structure regardless of the identity verdict
+    (rule 4: the identity verdict changes no rule-2 verdict, no rule-3
+    phrase, no selection answer).
   - Rule 1/2 themselves are RUN-level (per-run baseline medians, per-run
     ratios), which is what rule 1 asks a record to publish. Pair-level
     classification (a run's clock can ramp mid-run) is its own section
@@ -133,11 +141,38 @@ RULE 3 (the regime-matched comparison), mechanised:
   diverges from a record's manual prose, the divergence is printed and
   pinned in --self-test, not bent away.
 
+CROSS-OPERATOR LEVEL IDENTITY (the run partition across operators):
+
+  Rule 1 classifies per operator, which leaves the cross-operator
+  question open: is a run's regime operator-independent? This module
+  answers it mechanically (cross_operator_level_identity, published by
+  render_identity_section in the single-record output when the record
+  has at least two operators):
+
+  - the test is PARTITION AGREEMENT: for every run pair, every operator
+    must agree on whether the two runs sit in the same rule-1 level
+    (GAP-1.15, applied per operator). Agreement on every pair =
+    "identity holds" -- a record's prose may then name one level across
+    operators. Any divergent pair = "identity refuted" -- the pairs are
+    NAMED with every operator's relation, and the per-operator level
+    names stay operator-scoped (one operator's fastest level is not
+    another's).
+  - where the partitions disagree, the disagreement's SHAPE is
+    published too: partition refinement between every operator pair
+    (equal partitions / one refines the other / cross-cutting).
+  - this is a publication fact about one record's regime structure.
+    Rule 4 stands: it changes no rule-2 verdict, no rule-3 phrase, no
+    selection answer, no :measured? flag, no workgroup row. Clock
+    identity is never asserted (the harness reads no clock), and
+    pair-level cross-operator identity is NOT tested.
+
 CLI:
 
     python3 scripts/gpu_regime_classify.py <summary.md>
-        print the claim-protocol sections (rule 1; rule 2 when the
-        record carries per-run ratios) for one measurement record
+        print the claim-protocol sections (rule 1; the cross-operator
+        level identity section when the record has at least two
+        operators; rule 2 when the record carries per-run ratios) for
+        one measurement record
     python3 scripts/gpu_regime_classify.py --compare <historical.md> <new.md>
         print the claim-protocol rule-3 section: the regime-matched
         comparison of two measurement records (first = the historical
@@ -407,10 +442,11 @@ def render_sign_section(per_op, ratios, gap_max=GAP_MAX):
                  "side of 1.0 -- only such a sign may be a selection "
                  "basis. Any other cell is published REGIME-SCOPED and "
                  "cannot choose a variant. The harness reads no clock: a "
-                 "regime is the rule-1 cluster. Cross-operator level "
-                 "identity is NOT asserted, so the cell row carries only "
+                 "regime is the rule-1 cluster. The cell row carries only "
                  "the admissibility roll-up, no cross-operator regime "
-                 "structure.")
+                 "structure -- cross-operator level identity (its own "
+                 "section) is a publication fact about the regime "
+                 "structure and never re-scopes a rule-2 verdict.")
     lines.append("")
     lines.append("| operator | verdict | side | detail |")
     lines.append("|---|---|---|---|")
@@ -476,7 +512,9 @@ def render_section(per_op, gap_max=GAP_MAX, ratios=None):
                  "The harness reads no GPU clock: a regime here is a "
                  "cluster of the observed baseline per-run median gpu-ns "
                  "levels, named by its gpu-ns range, per operator. "
-                 "Cross-operator level identity is NOT asserted. Rule 2's "
+                 "Cross-operator level identity is tested mechanically "
+                 "and published in its own section below when the record "
+                 "has at least two operators. Rule 2's "
                  "sign classification is published in its own section "
                  "below when the record's per-run ratios are provided.")
     lines.append("")
@@ -501,6 +539,9 @@ def render_section(per_op, gap_max=GAP_MAX, ratios=None):
             members = ", ".join(f"{r} ({lv['medians'][r]:.0f})"
                                 for r in lv["runs"])
             lines.append(f"| {op} | {tag} | {rng} | {members} |")
+    if len(per_op) >= 2:
+        lines.append("")
+        lines.append(render_identity_section(per_op, gap_max))
     if ratios is not None:
         lines.append("")
         lines.append(render_sign_section(per_op, ratios, gap_max))
@@ -917,7 +958,9 @@ def render_pair_level_section(pairs, incomplete=None, gap_max=GAP_MAX,
                  "to the pairs' baseline gpu-ns per operator (pair "
                  "granularity instead of per-run medians). The harness "
                  "reads no GPU clock; a level is one observed baseline "
-                 "plateau. Cross-operator level identity is NOT asserted.")
+                 "plateau. Pair-level cross-operator identity is NOT "
+                 "tested here (run-level cross-operator identity is its "
+                 "own section in the record's rule-1 block).")
     lines.append("")
     lines.append("What this section is NOT: it is not rule 2. Rule 2's "
                  "verdicts stay run-level over per-run ratios; the sides "
@@ -971,6 +1014,157 @@ def render_pair_level_section(pairs, incomplete=None, gap_max=GAP_MAX,
         lines.append("")
         lines.append(f"Incomplete pairs, named and excluded "
                      f"({len(incomplete)}): {keys}.")
+    return "\n".join(lines)
+
+
+# ------------------------------- cross-operator identity machinery
+
+def cross_operator_level_identity(per_op, gap_max=GAP_MAX):
+    """Cross-operator level identity, mechanically: do the operators'
+    rule-1 run partitions agree?
+
+    per_op: {operator: {run_index: baseline per-run median gpu-ns}} for
+            at least two operators over the SAME run set.
+
+    Rule 1 classifies per operator, which leaves the cross-operator
+    question open: is a run's regime operator-independent? The
+    mechanical test is PARTITION AGREEMENT -- for every run pair, every
+    operator must agree on whether the two runs sit in the same rule-1
+    level (GAP-1.15 applied per operator). Returns {
+      "verdict": "identity-holds" | "identity-refuted",
+      "ops": [op, ...], "runs": [run, ...],
+      "levels": {op: [level, ...]},        (rule 1's own clusters)
+      "partitions": {op: {run: level_index}},  (1-based, fastest 1)
+      "divergent": [(a, b, {op: "same-level" | "split-level"}), ...],
+      "refinements": [(fine, coarse), ...]  (fine's partition refines
+        coarse's, equality included -- both directions = equal)
+    }
+
+    This is a publication fact about one record's regime structure. It
+    NEVER changes a rule-2 verdict, a rule-3 phrase, a selection answer,
+    a :measured? flag or a workgroup row (rule 4). Where identity
+    refutes, the per-operator level names stay operator-scoped -- one
+    operator's fastest level is not another's. The harness reads no GPU
+    clock: identity is agreement of the run partitions, not verified
+    clock identity, and pair-level cross-operator identity is not
+    tested here.
+    """
+    if len(per_op) < 2:
+        raise ValueError("cross-operator level identity needs at least "
+                         "two operators")
+    ops = sorted(per_op)
+    run_sets = {op: set(med) for op, med in per_op.items()}
+    if len({frozenset(s) for s in run_sets.values()}) != 1:
+        raise ValueError("operators disagree on the run set: "
+                         + "; ".join(f"{op} {sorted(s)}"
+                                     for op, s in sorted(run_sets.items())))
+    runs = sorted(run_sets[ops[0]])
+    if len(runs) < 2:
+        raise ValueError("cross-operator level identity needs at least "
+                         "two runs")
+    levels = {op: level_clusters(per_op[op], gap_max) for op in ops}
+    partitions = {}
+    for op in ops:
+        partitions[op] = {}
+        for i, lv in enumerate(levels[op], start=1):
+            for r in lv["runs"]:
+                partitions[op][r] = i
+
+    def same(op, a, b):
+        return partitions[op][a] == partitions[op][b]
+
+    divergent = []
+    for ia, a in enumerate(runs):
+        for b in runs[ia + 1:]:
+            rels = {}
+            for op in ops:
+                rels[op] = "same-level" if same(op, a, b) else "split-level"
+            if len(set(rels.values())) > 1:
+                divergent.append((a, b, rels))
+    refinements = []
+    for fine in ops:
+        for coarse in ops:
+            if fine == coarse:
+                continue
+            if all(not same(fine, a, b) or same(coarse, a, b)
+                   for ia, a in enumerate(runs) for b in runs[ia + 1:]):
+                refinements.append((fine, coarse))
+    return {"verdict": ("identity-holds" if not divergent
+                        else "identity-refuted"),
+            "ops": ops, "runs": runs, "levels": levels,
+            "partitions": partitions, "divergent": divergent,
+            "refinements": refinements}
+
+
+def render_identity_section(per_op, gap_max=GAP_MAX, via=None):
+    """The cross-operator level identity section for one measurement
+    record. per_op: {operator: {run_index: baseline per-run median}}.
+    Returns markdown (no trailing newline).
+    """
+    ident = cross_operator_level_identity(per_op, gap_max)
+    ops = ident["ops"]
+    npairs = len(ident["runs"]) * (len(ident["runs"]) - 1) // 2
+    lines = []
+    lines.append("## Cross-operator level identity (the rule-1 partition "
+                 "across operators)")
+    lines.append("")
+    lines.append("Published by " + (via or "scripts/gpu_regime_classify.py")
+                 + ": rule 1 classifies per operator; this section tests "
+                 "mechanically whether those classifications describe ONE "
+                 "regime structure. The test is partition agreement -- for "
+                 "every run pair, every operator must agree on whether the "
+                 "two runs sit in the same rule-1 level (GAP-1.15, applied "
+                 "per operator). The harness reads no GPU clock and asserts "
+                 "no clock identity: identity here is agreement of the run "
+                 "partitions, nothing more.")
+    lines.append("")
+    if ident["verdict"] == "identity-holds":
+        lines.append(f"Verdict: **identity holds** -- the rule-1 run "
+                     f"partition is identical across "
+                     f"{', '.join(ops)} (all {npairs} run pairs agree). "
+                     f"Where it holds, a record's prose may name one "
+                     f"level across these operators.")
+    else:
+        lines.append(f"Verdict: **identity refuted** -- "
+                     f"{len(ident['divergent'])} of {npairs} run pairs "
+                     f"diverge across {', '.join(ops)} (named below). "
+                     f"Per-operator level names stay operator-scoped: "
+                     f"one operator's fastest level is not another's.")
+    lines.append("")
+    refin = set(ident["refinements"])
+    rel_lines = []
+    for i, o1 in enumerate(ops):
+        for o2 in ops[i + 1:]:
+            if (o1, o2) in refin and (o2, o1) in refin:
+                rel_lines.append(f"{o1} and {o2}: equal partitions")
+            elif (o1, o2) in refin:
+                rel_lines.append(f"{o1}'s partition refines {o2}'s "
+                                 f"({o2} pools what {o1} splits)")
+            elif (o2, o1) in refin:
+                rel_lines.append(f"{o2}'s partition refines {o1}'s "
+                                 f"({o1} pools what {o2} splits)")
+            else:
+                rel_lines.append(f"{o1} and {o2} cross-cut (neither "
+                                 f"partition refines the other)")
+    lines.append("Partition relations (the disagreement's shape where "
+                 "the partitions disagree): " + "; ".join(rel_lines) + ".")
+    if ident["divergent"]:
+        lines.append("")
+        lines.append(f"Divergent run pairs ({len(ident['divergent'])} of "
+                     f"{npairs}):")
+        lines.append("")
+        lines.append("| run pair | " + " | ".join(ops) + " |")
+        lines.append(("|---" * (len(ops) + 1)) + "|")
+        for a, b, rels in ident["divergent"]:
+            lines.append(f"| {a} vs {b} | "
+                         + " | ".join(rels[op] for op in ops) + " |")
+    lines.append("")
+    lines.append("What this section does NOT do (rule 4, unchanged): it "
+                 "changes no rule-2 verdict, no rule-3 phrase, no "
+                 "selection answer, no `:measured?` flag, no workgroup "
+                 "row. Pair-level cross-operator identity is not tested "
+                 "(the pair-level section's levels are never compared "
+                 "across operators).")
     return "\n".join(lines)
 
 
@@ -1836,6 +2030,295 @@ def _self_test_pair_level_corpus(stats, corpus_root):
                     f"pinned, not bent away", stats)
 
 
+def _self_test_identity_unit(stats):
+    # ---- cross-operator level identity: partition agreement ----
+
+    # fewer than two operators refuses (there is no cross-operator
+    # question)
+    try:
+        cross_operator_level_identity({"sum": {1: 100.0}})
+        raise AssertionError("one operator must raise")
+    except ValueError:
+        stats["passed"] += 1
+
+    # fewer than two runs refuses
+    try:
+        cross_operator_level_identity({"sum": {1: 100.0},
+                                       "max": {1: 101.0}})
+        raise AssertionError("one run must raise")
+    except ValueError:
+        stats["passed"] += 1
+
+    # operators must cover the same run set
+    try:
+        cross_operator_level_identity(
+            {"sum": {1: 100.0, 2: 101.0}, "max": {1: 100.0}})
+        raise AssertionError("run-set mismatch must raise")
+    except ValueError:
+        stats["passed"] += 1
+
+    # identical partitions -> identity holds (partitions equal refine
+    # each other in both directions)
+    ident = cross_operator_level_identity(
+        {"sum": {1: 100.0, 2: 101.0, 3: 300.0, 4: 305.0},
+         "max": {1: 100.5, 2: 101.5, 3: 301.0, 4: 306.0}})
+    _expect(ident["verdict"] == "identity-holds" and not ident["divergent"],
+            "identical partitions: identity holds", stats)
+    _expect(("sum", "max") in ident["refinements"]
+            and ("max", "sum") in ident["refinements"],
+            "equal partitions refine each other in both directions", stats)
+
+    # one operator splits a pair the others pool -> identity refuted,
+    # the divergent pairs NAMED with every operator's relation
+    ident = cross_operator_level_identity(
+        {"sum": {1: 100.0, 2: 101.0, 3: 102.0},
+         "max": {1: 100.0, 2: 101.0, 3: 300.0}})
+    _expect(ident["verdict"] == "identity-refuted"
+            and ident["divergent"] == [(1, 3, {"sum": "same-level",
+                                               "max": "split-level"}),
+                                       (2, 3, {"sum": "same-level",
+                                               "max": "split-level"})],
+            "the divergent pairs are named with each operator's relation",
+            stats)
+
+    # the GAP-1.15 boundary decides identity exactly as it decides a
+    # level: 100 -> 115 merges in both operators (holds); one operator
+    # at 115.01 splits (refuted)
+    ident = cross_operator_level_identity(
+        {"sum": {1: 100.0, 2: 115.0}, "max": {1: 101.0, 2: 116.0}})
+    _expect(ident["verdict"] == "identity-holds",
+            "exactly 1.15x merges in both operators: identity holds",
+            stats)
+    ident = cross_operator_level_identity(
+        {"sum": {1: 100.0, 2: 115.0}, "max": {1: 101.0, 2: 116.17}})
+    _expect(ident["verdict"] == "identity-refuted",
+            "one operator just over 1.15x splits: identity refuted", stats)
+
+    # refinement shapes: strict refinement
+    ident = cross_operator_level_identity(
+        {"sum": {1: 100.0, 2: 101.0, 3: 102.0},
+         "max": {1: 100.0, 2: 101.0, 3: 300.0}})
+    _expect(("max", "sum") in ident["refinements"]
+            and ("sum", "max") not in ident["refinements"],
+            "strict refinement: max's partition refines sum's", stats)
+
+    # refinement shapes: cross-cutting (neither refines) -- sum pools
+    # {1,2} where max splits them, max pools {2,3} where sum splits them
+    ident = cross_operator_level_identity(
+        {"sum": {1: 100.0, 2: 101.0, 3: 300.0, 4: 301.0},
+         "max": {1: 100.0, 2: 200.0, 3: 201.0, 4: 302.0}})
+    _expect(("sum", "max") not in ident["refinements"]
+            and ("max", "sum") not in ident["refinements"]
+            and len(ident["divergent"]) == 3,
+            "cross-cutting partitions refine in neither direction (3 "
+            "divergent pairs)", stats)
+
+    # rendering: the refuted section names the pairs, the refinement
+    # shape, and carries the rule-4 disclaimer
+    sec = render_identity_section(
+        {"sum": {1: 100.0, 2: 101.0, 3: 102.0},
+         "max": {1: 100.0, 2: 101.0, 3: 300.0}})
+    _expect("identity refuted" in sec and "1 vs 3" in sec
+            and "same-level" in sec and "split-level" in sec,
+            "the refuted section names the divergent pairs", stats)
+    _expect("changes no rule-2 verdict" in sec and "rule 4" in sec,
+            "the section carries the rule-4 disclaimer", stats)
+    _expect("max's partition refines sum's" in sec,
+            "the refinement shape is published", stats)
+
+    # rendering: the holds section licenses cross-operator naming
+    sec_ok = render_identity_section(
+        {"sum": {1: 100.0, 2: 101.0}, "max": {1: 100.5, 2: 101.5}})
+    _expect("identity holds" in sec_ok
+            and "may name one level across these operators" in sec_ok,
+            "the holds section licenses cross-operator naming", stats)
+
+    # via names the publication path that actually published
+    sec_via = render_identity_section(
+        {"sum": {1: 100.0, 2: 101.0}, "max": {1: 100.5, 2: 101.5}},
+        via="identity-test")
+    _expect(sec_via.splitlines()[2].startswith("Published by identity-test: "),
+            "via names the publication path that actually published", stats)
+
+    # render_section publishes the identity section for >= 2 operators
+    # and stays rule-1-only for one
+    out = render_section({"sum": {1: 100.0, 2: 101.0},
+                          "max": {1: 100.5, 2: 300.0}})
+    _expect("## Cross-operator level identity" in out
+            and "identity refuted" in out,
+            "render_section carries the identity section for two "
+            "operators", stats)
+    out1 = render_section({"sum": {1: 100.0, 2: 101.0}})
+    _expect("## Cross-operator level identity" not in out1,
+            "render_section omits the identity section for one operator",
+            stats)
+
+    # the single-record parsers round-trip through a record carrying
+    # the identity section (its tables match none of their row shapes) --
+    # the record stays loadable as a comparison cell
+    rows = ("| sum | baseline | 2 | 250.0 | 100.0, 400.0 |\n"
+            "| max | baseline | 2 | 255.0 | 105.0, 405.0 |\n"
+            "| sum | 1.200, 1.186 | 1.193 |\n"
+            "| max | 1.195, 1.183 | 1.189 |\n")
+    body = rows + render_section(
+        {"sum": {1: 100.0, 2: 400.0}, "max": {1: 105.0, 2: 405.0}},
+        ratios={"sum": [1.200, 1.186], "max": [1.195, 1.183]})
+    _expect(parse_summary_per_run_baseline(body)
+            == {"sum": {1: 100.0, 2: 400.0}, "max": {1: 105.0, 2: 405.0}},
+            "baseline rows round-trip through a record carrying the "
+            "identity section", stats)
+    _expect(parse_summary_per_run_ratios(body)
+            == {"sum": [1.200, 1.186], "max": [1.195, 1.183]},
+            "ratio rows round-trip through a record carrying the "
+            "identity section", stats)
+
+
+def _self_test_identity_corpus(stats, corpus_root):
+    """Cross-operator level identity over the committed corpus: every
+    record with at least two operators gets its verdict (printed, the
+    GAP-1.15 ethos), the structural claim is asserted over every
+    refuted record, and the machine's verdicts are pinned per named
+    record -- including next to the record prose they license or
+    refute. No prose decided these partitions' cross-operator relation;
+    the pins are the machine's own verdicts over committed numbers and
+    must not drift silently. Nothing is re-measured here: every number
+    is parsed from committed summary.md text.
+    """
+    records = []
+    for s in sorted(corpus_root.rglob("summary.md")):
+        try:
+            per_op = parse_summary_per_run_baseline(s.read_text())
+        except ValueError:
+            continue
+        if len(per_op) < 2:
+            continue
+        rel = str(s.relative_to(corpus_root)).replace("/summary.md", "")
+        records.append((rel, per_op))
+    # a floor, not an exact pin: the corpus grows with every new record
+    _expect(len(records) >= 28,
+            f"multi-operator corpus floor 28 ({len(records)})", stats)
+    holds, refuted = [], []
+    strict_edge_records = 0
+    multi_level_holds = 0
+    for rel, per_op in records:
+        _expect(len({frozenset(m) for m in per_op.values()}) == 1,
+                f"{rel}: operators share one run set", stats)
+        ident = cross_operator_level_identity(per_op)
+        if ident["verdict"] == "identity-holds":
+            holds.append(rel)
+            if any(len(lvs) > 1 for lvs in ident["levels"].values()):
+                multi_level_holds += 1
+        else:
+            refuted.append(rel)
+            refin = set(ident["refinements"])
+            if any((o1, o2) in refin and (o2, o1) not in refin
+                   for o1 in ident["ops"] for o2 in ident["ops"]
+                   if o1 != o2):
+                strict_edge_records += 1
+    # floors over the 2026-10-23 corpus; the exact tallies are printed
+    # and quoted by docs/evidence/gpu/cross-operator-level-identity-
+    # 20261023.txt
+    _expect(len(holds) >= 9 and len(refuted) >= 19,
+            f"corpus tally floors: >= 9 holds / >= 19 refuted (got "
+            f"{len(holds)}/{len(refuted)})", stats)
+    # the structural claim, asserted over EVERY refuted record: a
+    # refuted record's disagreement always has refinement structure (a
+    # strict refinement edge) -- a record with cross-cutting-only
+    # divergence would fail this pin and surface instead of hiding
+    _expect(strict_edge_records == len(refuted),
+            f"every refuted record has a strict refinement edge "
+            f"({strict_edge_records}/{len(refuted)})", stats)
+
+    def _ident(rel):
+        return cross_operator_level_identity(
+            parse_summary_per_run_baseline(
+                (corpus_root / rel / "summary.md").read_text()))
+
+    # the closing cell (shape2-resweep w512): its own prose names the
+    # regime split ACROSS operators ("this session's run 3 sat
+    # fast/intermediate"; "fast-level :max 1.026 / :min 1.021-1.026 vs
+    # slow ~0.92") -- the machine LICENSES that cross-operator naming:
+    # all three partitions agree on {3} / {1,2,4,5,6}
+    closing = _ident("gpu-subgroup-reduce-m1max-shape2-resweep-20261023/w512")
+    _expect(closing["verdict"] == "identity-holds"
+            and all([lv["runs"] for lv in closing["levels"][op]]
+                    == [[3], [1, 2, 4, 5, 6]] for op in closing["ops"]),
+            "closing cell w512: identity holds -- the three operators' "
+            "partitions agree on {3} / {1,2,4,5,6}, licensing the "
+            "record's cross-operator fast/slow prose", stats)
+
+    # wsweep-low w32: the record's "runs 4/6 one fast regime" prose is
+    # :max's partition; the machine REFUTES cross-operator identity
+    # here -- :min's partition is [3,4,5,6]/[2]/[1], :sum pools all
+    # six, and :max and :min cross-cut. The cross-operator "the fast
+    # regime" naming is NOT mechanically licenseable in this record.
+    w32 = _ident("gpu-subgroup-reduce-m1max-wsweep-low-20261023/w32")
+    _expect(w32["verdict"] == "identity-refuted"
+            and len(w32["divergent"]) == 13
+            and [lv["runs"] for lv in w32["levels"]["max"]]
+                == [[4, 6], [1, 2, 3, 5]]
+            and [lv["runs"] for lv in w32["levels"]["min"]]
+                == [[3, 4, 5, 6], [2], [1]]
+            and [lv["runs"] for lv in w32["levels"]["sum"]]
+                == [[1, 2, 3, 4, 5, 6]]
+            and ("max", "min") not in w32["refinements"]
+            and ("min", "max") not in w32["refinements"],
+            "wsweep-low w32: identity refuted (13 divergent pairs) -- "
+            "the 'runs 4/6 fast regime' naming is :max's partition "
+            "alone", stats)
+
+    # the op-order cell: the ONLY record in the corpus where :sum's
+    # partition is the finest (:sum ran LAST; the within-run ramping the
+    # pair-level slice named shows up at run level in the operator that
+    # ran last)
+    oo = _ident("gpu-subgroup-reduce-m1max-oporder-20261023/w32-sum-last")
+    _expect(oo["verdict"] == "identity-refuted"
+            and len(oo["divergent"]) == 12
+            and [lv["runs"] for lv in oo["levels"]["max"]]
+                == [[1, 2, 3, 4, 5, 6]]
+            and ("sum", "max") in oo["refinements"]
+            and ("sum", "min") in oo["refinements"]
+            and ("max", "sum") not in oo["refinements"],
+            "op-order cell: identity refuted; :sum -- the operator that "
+            "ran LAST -- refines both others (:max pools all six)", stats)
+
+    # shape2 w32: the record's own prose already knew the operators
+    # disagreed ("all six :sum runs sat at the slow level" vs :max's
+    # three named levels); the machine reproduces exactly that split
+    s2 = _ident("gpu-subgroup-reduce-m1max-shape2-20261023/w32")
+    _expect(s2["verdict"] == "identity-refuted"
+            and len(s2["divergent"]) == 12
+            and [lv["runs"] for lv in s2["levels"]["sum"]]
+                == [[1, 2, 3, 4, 5, 6]]
+            and [lv["runs"] for lv in s2["levels"]["max"]]
+                == [[4], [3], [1, 2, 5, 6]],
+            "shape2 w32: identity refuted -- :sum one level vs :max's "
+            "three prose-named levels", stats)
+
+    # the corpus's only finest-:sum claim, stated as a corpus-wide fact
+    finest_sum = [rel for rel, per_op in records
+                  if (lambda i: ("sum", "max") in i["refinements"]
+                      and ("max", "sum") not in i["refinements"])(
+                          cross_operator_level_identity(per_op))]
+    _expect(finest_sum == ["gpu-subgroup-reduce-m1max-oporder-20261023/"
+                           "w32-sum-last"],
+            f"the op-order cell is the corpus's only record where :sum "
+            f"refines :max ({finest_sum})", stats)
+
+    print(f"cross-operator level identity: {len(records)} multi-operator "
+          f"records -- {len(holds)} identity-holds "
+          f"({multi_level_holds} of them multi-level), {len(refuted)} "
+          f"identity-refuted ({strict_edge_records} with refinement "
+          f"structure)")
+    print("per-record verdicts (printed, GAP-1.15 ethos):")
+    for rel, per_op in records:
+        ident = cross_operator_level_identity(per_op)
+        nlv = {op: len(lvs) for op, lvs in sorted(ident["levels"].items())}
+        print(f"  {rel}: {ident['verdict']} "
+              f"({len(ident['divergent'])} divergent pairs; levels "
+              + ", ".join(f"{op} {n}" for op, n in nlv.items()) + ")")
+
+
 def main():
     args = sys.argv[1:]
     if args == ["--self-test"]:
@@ -1848,6 +2331,8 @@ def main():
         _self_test_rule3_autowire(stats, ROOT / "docs" / "evidence")
         _self_test_pair_level_unit(stats)
         _self_test_pair_level_corpus(stats, ROOT / "docs" / "evidence")
+        _self_test_identity_unit(stats)
+        _self_test_identity_corpus(stats, ROOT / "docs" / "evidence")
         print(f"TOTAL: {stats['passed']} assertions passed, 0 failed")
         return
     if len(args) == 2 and args[0] == "--pairs":
