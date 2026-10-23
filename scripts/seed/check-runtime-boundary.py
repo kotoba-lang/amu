@@ -102,8 +102,11 @@ def main(compiler, output, previous_root):
         rows["plain"][f"{tgt} {fmt}"] = pin(out)
         if previous_root:
             z, old, err = compile_("previous", "plain", PLAIN, tgt, fmt)
-            assert z.returncode == 0 and old.read_bytes() == out.read_bytes(), ("plain output changed", tgt, fmt)
-            rows["sameBytes"][f"{tgt} {fmt}"] = True
+            if fmt == "launcher" and z.returncode == 2 and "E7100" in err:
+                rows["sameBytes"][f"{tgt} {fmt}"] = "n/a: the previous root has no --format launcher"
+            else:
+                assert z.returncode == 0 and old.read_bytes() == out.read_bytes(), ("plain output changed", tgt, fmt)
+                rows["sameBytes"][f"{tgt} {fmt}"] = True
     if previous_root:
         admitted = sorted({k.split()[0] for k, v in rows["previous"].items() if v == "compiled"})
         assert "kxrt-syscall" in admitted, ("the previous root is expected to admit the kxrt-syscall probe", rows["previous"])
