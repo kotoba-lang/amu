@@ -2,15 +2,16 @@
 """Observe the fixed Kotoba provider gate on a native x86 kernel.
 
 Amu builds the guest; the guest checks time/entropy without printing random
-bytes. Python stages/observes; strace injects ENOSYS in the fault probe only.
-Neither is a compiler, provider implementation or runtime fallback.
+bytes. Python stages/observes and adds an inherited restrictive syscall
+filter for the ENOSYS probe. The guest's own filter and grants stay intact.
+This is not a compiler, provider implementation or runtime fallback.
 """
 import argparse
+import ctypes
 import hashlib
 import json
 import platform
 import re
-import shutil
 import struct
 import subprocess
 from pathlib import Path
@@ -18,6 +19,36 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = "seed/tests/native-clock-entropy.kotoba"
 SOURCE_SHA256 = "83c64d0d27d10ce08d4150fe659f4d739cb5750c6060725c79746426fccf4861"
+
+
+def enosys_filter():
+    # Restrict getrandom only, before exec; the native guest adds its own filter.
+    # Unlike ptrace syscall replacement, this never fabricates a negative syscall
+    # number that would correctly trigger the guest's x32/negative-number refusal.
+    class Filter(ctypes.Structure):
+        _fields_ = [("code", ctypes.c_ushort), ("jt", ctypes.c_ubyte),
+                    ("jf", ctypes.c_ubyte), ("k", ctypes.c_uint32)]
+
+    class Program(ctypes.Structure):
+        _fields_ = [("length", ctypes.c_ushort),
+                    ("filter", ctypes.POINTER(Filter))]
+
+    operations = [(0x20, 0, 0, 0), (0x15, 0, 1, 318),
+                  (0x06, 0, 0, 0x00050000 | 38), (0x06, 0, 0, 0x7fff0000)]
+    instructions = (Filter * len(operations))(*(Filter(*op) for op in operations))
+    program = Program(len(operations), instructions)
+    libc = ctypes.CDLL(None, use_errno=True)
+    libc.prctl.argtypes = [ctypes.c_int] + [ctypes.c_ulong] * 4
+
+    def install():
+        if libc.prctl(38, 1, 0, 0, 0) != 0:
+            raise OSError(ctypes.get_errno(), "PR_SET_NO_NEW_PRIVS")
+        if libc.prctl(22, 2, ctypes.addressof(program), 0, 0) != 0:
+            raise OSError(ctypes.get_errno(), "PR_SET_SECCOMP")
+
+    return install, dict(method="inherited getrandom ERRNO38 filter",
+                         filterSHA256=hashlib.sha256(bytes(instructions)).hexdigest(),
+                         guestFilterUnchanged=True, grantsUnchanged=True)
 
 
 def pin(path):
@@ -40,16 +71,14 @@ def main(compiler, out):
     assert platform.system() == "Linux" and platform.machine() == "x86_64"
     assert pin(ROOT / SOURCE)["sha256"] == SOURCE_SHA256, "provider fixture source drift"
     static_x86(compiler)
-    tracer = shutil.which("strace", path="/usr/bin:/bin")
-    assert tracer, "ENOSYS observation tool missing; fault qualification remains open"
     out.mkdir(mode=0o700, parents=True, exist_ok=False)
     src, guest = out / "provider-gate.kotoba", out / "provider-gate.elf"
     src.write_bytes((ROOT / SOURCE).read_bytes())
     calls = []
 
-    def observe(name, argv, env, expected, result=None, diagnostic=None):
+    def observe(name, argv, env, expected, result=None, diagnostic=None, preexec_fn=None):
         completed = subprocess.run(list(map(str, argv)), cwd=out, env=env,
-                                   capture_output=True, timeout=300)
+                                   capture_output=True, timeout=300, preexec_fn=preexec_fn)
         # This fixed guest returns booleans/status only; it never prints entropy.
         (out / (name + ".stdout")).write_bytes(completed.stdout)
         (out / (name + ".stderr")).write_bytes(completed.stderr)
@@ -99,17 +128,16 @@ def main(compiler, out):
         observe(name, [guest, mode, value], runtime(grants), 120)
     observe("clock-no-grant", [guest, "clock"], runtime("38"), 120)
     observe("entropy-no-grant", [guest, "entropy"], runtime("38"), 120)
-    fault = out / "enosys.trace"
-    observe("entropy-enosys", [tracer, "-qq", "-e", "trace=getrandom", "-e",
-                             "inject=getrandom:error=ENOSYS", "-o", fault,
-                             guest, "entropy"], runtime("23,38"), 126,
-            diagnostic="entropy/unavailable")
-    assert "ENOSYS" in fault.read_text() and "INJECTED" in fault.read_text()
+    install, filter_receipt = enosys_filter()
+    observe("entropy-enosys", [guest, "entropy"], runtime("23,38"), 126,
+            diagnostic="entropy/unavailable", preexec_fn=install)
+    fault = out / "enosys-filter.json"
+    fault.write_text(json.dumps(filter_receipt, indent=2) + "\n")
     report = dict(status="PASS_NATIVE_X86_CLOCK_ENTROPY", compiler=pin(compiler),
                   source=dict(path=SOURCE, **pin(ROOT / SOURCE)), image=image,
                   host=[platform.system(), platform.machine(), platform.release()],
                   positiveCases=2, malformedRequests=len(invalid), missingGrants=2,
-                  getrandomENOSYS=dict(exit=126, fallback=False, trace=pin(fault)),
+                  getrandomENOSYS=dict(exit=126, fallback=False, filter=pin(fault)),
                   randomBytesPrintedOrSaved=False, statisticalRNGCertification=False,
                   nativeGuestOwnsPositiveVerdict=True, cCompilerOrLoader=False,
                   legacyRuntimeFallback=False, emulation=False)
