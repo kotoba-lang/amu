@@ -18,13 +18,15 @@
   caller of this pipeline compiled :baseline regardless. Now the selected
   variant rides into `compile-kernel`, the sealed artifact carries it in its
   own :variant field, and the dispatch report names it. Selection is
-  fail-closed and UNMEASURED like the rows themselves: a descriptor that
+  fail-closed like the rows themselves: a descriptor that
   reports no rule-6 subgroup facts gets :baseline (the facts' producer -- the
   ADR 0371 GPU provider's SUBGROUP reply -- does not exist yet, so no live
   device descriptor carries them today), and `:variant-measured?` is false
-  on every answer until a hardware measurement replaces the row's basis --
-  it is NOT optimization evidence, and neither the variant nor its basis may
-  be reported as one."
+  except the measured cells ADR-0360 question (1)'s 2026-10-23 decision
+  unlocks (the narrowed :baseline answers of the measured device, Apple M1
+  Max at subgroup size 32, on the MSL route at W = 256/512/1024) --
+  outside those cells it is NOT optimization evidence, and neither the
+  variant nor its basis may be reported as one."
   {:kotoba/export [compile-spec]}
   (:require [kotoba.compiler.accelerator :as accelerator]
             [kotoba.compiler.accelerator-targets :as accelerator-targets]
@@ -55,8 +57,9 @@
   dispatch table and the variant rows are all deterministic. The variant is
   the one `accelerator-variants/select-variant` answers for the classified
   vendor, the dispatched target and the same DEVICE (fail-closed :baseline
-  off the rows); `:variant-measured?` is that answer's honesty lock and is
-  false on every row today."
+  off the rows); `:variant-measured?` is that answer's honesty lock -- false
+  except the measured cells of the Apple row's narrowing on the MSL route
+  (ADR-0360 question (1)'s 2026-10-23 decision)."
   [spec device]
   (let [dispatch (accelerator-targets/recommend device)
         declared (:kernel/workgroup-size spec)
@@ -92,8 +95,10 @@
                   :workgroup-source source
                   :measured? (and (:measured? dispatch) (= source :dispatch))
                   :variant variant
-                  ;; The variant rows' honesty lock (ADR-0356): false until
-                  ;; a hardware measurement replaces the row's basis. Never
-                  ;; merge this with the workgroup row's :measured? -- they
-                  ;; are evidence about different things.
+                  ;; The variant rows' honesty lock (ADR-0356): false
+                  ;; until a hardware measurement replaces the row's basis
+                  ;; -- today only the measured cells of the Apple row's
+                  ;; narrowing on the MSL route (ADR-0360 question (1)'s
+                  ;; decision). Never merge this with the workgroup row's
+                  ;; :measured? -- they are evidence about different things.
                   :variant-measured? (boolean (:measured? selection))}})))

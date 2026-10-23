@@ -254,13 +254,16 @@
 (deftest the-apple-row-is-narrowed-on-the-measured-device
   ;; ADR-0360's SECOND decision (2026-10-23, JUN-58): what the Apple row
   ;; selects given the measured cell. The cell REFUTED the row's basis on
-  ;; one named device (Apple M1 Max: the variant slower than :baseline on
-  ;; both routes, PR #1347/#1348 and ADR-0360's measurement amendment),
-  ;; and evidence about a named device acts on that device only (the uB5G
-  ;; idiom of kotoba.compiler.accelerator-targets). So the row is NARROWED:
-  ;; a descriptor naming the measured device answers :baseline for the
-  ;; reduce shape on both Apple routes, with the refutation in :basis;
-  ;; every other Apple device keeps the designed row (UNMEASURED).
+  ;; one named device (Apple M1 Max: the variant slower than :baseline --
+  ;; the MSL arm natively, ADR-0360's measurement amendment, the
+  ;; contract-satisfying channel of question (1)'s decision; the GLSL arm
+  ;; via wire-42/MoltenVK, PR #1347/#1348, as LABELED BOOTSTRAP
+  ;; corroboration), and evidence about a named device acts on that device
+  ;; only (the uB5G idiom of kotoba.compiler.accelerator-targets). So the
+  ;; row is NARROWED: a descriptor naming the measured device answers
+  ;; :baseline for the reduce shape on both Apple routes, with the
+  ;; refutation in :basis; every other Apple device keeps the designed row
+  ;; (UNMEASURED).
   (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
         capable {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}]
     (testing "the measured device answers :baseline on both Apple routes, at every W"
@@ -280,7 +283,16 @@
               answer (variants/select-variant :apple k target device)]
           (is (= :baseline (:variant answer))
               (str "device " (pr-str device) " W=" wg " " target " must answer :baseline"))
-          (is (false? (:measured? answer)))
+          ;; The flip (ADR-0360 question (1)'s decision) is per CELL: the
+          ;; MSL route at the measured widths only. Every other cell of
+          ;; this narrowing keeps the lock -- MSL W = 32..128 is UNMEASURED
+          ;; and the GLSL arm is LABELED BOOTSTRAP at every width (the
+          ;; per-cell record is pinned in the-measured-cells-flip-the-
+          ;; honesty-lock).
+          (is (= (and (contains? #{:metal :msl-v1} target)
+                      (contains? #{256 512 1024} wg))
+                 (:measured? answer))
+              (str "device " (pr-str device) " W=" wg " " target " measured?"))
           (is (str/includes? (:basis answer) "APPLE ROW NARROWED"))
           (is (str/includes? (:basis answer) "m1 max"))
           (is (str/includes? (:basis answer) "ADR-0360")))))
@@ -320,6 +332,109 @@
       (let [device (assoc capable :vendor "Apple M1 Max")]
         (is (= (variants/select-variant :apple kir :msl-v1 device)
                (variants/select-variant :apple kir :msl-v1 device)))))))
+
+(deftest the-measured-cells-flip-the-honesty-lock
+  ;; ADR-0360 question (1) DECIDED (2026-10-23, JUN-58) and its flip
+  ;; implemented here: for the MSL arm a native Metal harness that
+  ;; dispatches the emitters' own bytes under the sweep protocol SATISFIES
+  ;; the measurement contract (wire-42 executes SPIR-V through Vulkan and
+  ;; can never run MSL -- the route clause was a deadlock for this arm, not
+  ;; an honesty lock), and the flip is keyed per ANSWER CELL: the tested
+  ;; device class (name fragment "m1 max" AND reported subgroup size 32),
+  ;; the channel's route (MSL), and the widths the channel ran (256/512/
+  ;; 1024). Everything else keeps :measured? false. The flag says a
+  ;; measurement CHOSE this answer (the variant measured SLOWER there) --
+  ;; never that :baseline is optimal.
+  (let [capable {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}
+        m1 (assoc capable :name "Apple M1 Max")]
+    (testing "the flipped cells carry the tested-device-class record"
+      (doseq [target [:metal :msl-v1]
+              wg [256 512 1024]
+              operator [:sum :max :min]]
+        (let [kir (accelerator/kernel (str "reduce_" (name operator) "_f32")
+                                      :reduce operator {:workgroup-size wg})
+              answer (variants/select-variant :apple kir target m1)]
+          (is (= :baseline (:variant answer)))
+          (is (true? (:measured? answer))
+              (str "W=" wg " " target " " operator " must be flipped"))
+          (is (= {:device "m1 max"
+                  :subgroup-size 32
+                  :channel :native-metal
+                  :route :msl-v1
+                  :workgroup-size wg
+                  :operators #{:sum :max :min}
+                  :n 1000003
+                  :evidence ["docs/evidence/gpu-subgroup-reduce-m1max-20261023"
+                             "docs/evidence/gpu-subgroup-reduce-m1max-wsweep-20261023"]}
+                 (:measured-cell answer))
+              (str "W=" wg " " target " " operator " record")))))
+    (testing "the unmeasured MSL widths keep the lock (the record's own UNMEASURED scope)"
+      (doseq [wg [32 64 128]]
+        (let [answer (variants/select-variant
+                      :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                                {:workgroup-size wg})
+                      :msl-v1 m1)]
+          (is (= :baseline (:variant answer)))
+          (is (false? (:measured? answer)))
+          (is (nil? (:measured-cell answer))))))
+    (testing "the GLSL arm keeps the lock at every width: LABELED BOOTSTRAP is not a verdict"
+      ;; PR #1347/#1348 measured the same sign, but their own record
+      ;; (docs/evidence/gpu/loadsweep-20261019/README.md) labels the runs
+      ;; LABELED BOOTSTRAP -- an unbalanced replay order biases the ratio
+      ;; beyond drift -- and publishes no verdict. Nothing flips off them.
+      (doseq [target [:vulkan :glsl-v1]
+              wg [32 64 128 256 512 1024]]
+        (let [answer (variants/select-variant
+                      :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                                {:workgroup-size wg})
+                      target m1)]
+          (is (= :baseline (:variant answer)))
+          (is (false? (:measured? answer))
+              (str "W=" wg " " target " must keep the lock"))
+          (is (nil? (:measured-cell answer))))))
+    (testing "the tested device class is the name AND the reported subgroup size"
+      ;; The name matches but the reported subgroup size is not the tested
+      ;; one: the narrowing still acts (the name is the refutation's key)
+      ;; but the flip does not (32 is what the harness measured).
+      (doseq [s [8 16]]
+        (let [answer (variants/select-variant
+                      :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                                {:workgroup-size 256})
+                      :msl-v1 (assoc capable :name "Apple M1 Max"
+                                     :subgroup-size s))]
+          (is (= :baseline (:variant answer)))
+          (is (str/includes? (:basis answer) "APPLE ROW NARROWED"))
+          (is (false? (:measured? answer)))
+          (is (nil? (:measured-cell answer))))))
+    (testing "an unnamed descriptor is never the tested device class"
+      (let [answer (variants/select-variant
+                    :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                              {:workgroup-size 256})
+                    :msl-v1 capable)]
+        (is (= :subgroup-reduce (:variant answer)))
+        (is (false? (:measured? answer)))
+        (is (nil? (:measured-cell answer)))))
+    (testing "other vendors keep the lock at the same cells (the flip is Apple's alone)"
+      (doseq [vendor [:intel :arm :nvidia :amd]]
+        (let [answer (variants/select-variant
+                      vendor (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                                {:workgroup-size 256})
+                      :vulkan (assoc capable :name "Apple M1 Max"))]
+          (is (= :subgroup-reduce (:variant answer)))
+          (is (false? (:measured? answer)))
+          (is (nil? (:measured-cell answer))))))
+    (testing "the warp row keeps the lock too (NVIDIA has no hardware here)"
+      (let [answer (variants/select-variant
+                    :nvidia (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                                {:workgroup-size 256})
+                    :cuda {:compute-capability 7.0})]
+        (is (= :warp-shuffle-reduce (:variant answer)))
+        (is (false? (:measured? answer)))
+        (is (nil? (:measured-cell answer)))))
+    (testing "same arguments in, same map out (the record included)"
+      (let [kir (accelerator/kernel "reduce_max_f32" :reduce :max {:workgroup-size 512})]
+        (is (= (variants/select-variant :apple kir :msl-v1 m1)
+               (variants/select-variant :apple kir :msl-v1 m1)))))))
 
 (deftest the-nvidia-row-rides-the-vulkan-and-cuda-routes
   ;; ADR-0361 (JUN-57) as amended 2026-10-23 (JUN-57's own decision): the

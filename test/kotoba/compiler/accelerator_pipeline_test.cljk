@@ -136,3 +136,22 @@
              (:artifact (pipeline/compile-spec reduce-spec device)))))
     (testing "the rows are :reduce rows: an ewise kernel keeps :baseline"
       (is (= :baseline (:variant (:dispatch (pipeline/compile-spec spec device))))))))
+
+(deftest the-flip-reaches-the-dispatch-report
+  ;; ADR-0360 question (1)'s 2026-10-23 decision (JUN-58), end to end: the
+  ;; measured cells' :measured? true rides into the dispatch report as
+  ;; :variant-measured?, and the workgroup row's :measured? stays its own
+  ;; axis (they are evidence about different things).
+  (let [m1-spec {:kernel/name "reduce_sum_f32" :kernel/op :reduce
+                 :kernel/operator :sum :kernel/workgroup-size 256}
+        device {:vendor "Apple M1 Max" :subgroup-size 32
+                :subgroup-ops #{:basic :shuffle-relative}}
+        {:keys [artifact dispatch]} (pipeline/compile-spec m1-spec device)]
+    (is (= :baseline (:variant dispatch)))
+    (is (= :baseline (:variant artifact)))
+    (is (true? (:variant-measured? dispatch)))
+    (is (= artifact (accelerator/verify-artifact! artifact)))
+    (testing "a width the channel never ran keeps the lock"
+      (let [unmeasured (assoc m1-spec :kernel/workgroup-size 64)]
+        (is (false? (:variant-measured?
+                     (:dispatch (pipeline/compile-spec unmeasured device)))))))))
