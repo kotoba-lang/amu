@@ -116,6 +116,7 @@
       11 (-> M (xg-load a 0x858b48) (xg-bytes 0xc08548 3) (xg-rel 0x840f 2 2 b))
       12 (-> M (xg-load a 0x858b48) (xg-bytes 0xc08548 3) (xg-rel 0x850f 2 2 b))
       13 (cond (>= (xs-intr M a) 0) (xs-intrinsic M (xs-intr M a) b)
+           (>= (xk-intr M a) 0) (xk-intrinsic M (xk-intr M a) b)
            (and (<= c 5) (xg-tail? M (inc i) b 64))
            ;; No outgoing stack arguments survive frame removal. The caller's
            ;; return address and SysV entry alignment are kept by leave/jmp.
@@ -287,4 +288,5 @@
     (cond (and (= (io-argc) 8) (string=? (io-arg 6) "--format") (string=? (io-arg 7) "kx64-v1")) (xr-command)
           (and (= (io-argc) 8) (string=? (io-arg 6) "--format") (string=? (io-arg 7) "static")) (xs-command 0)
           (and (= (io-argc) 8) (string=? (io-arg 6) "--format") (string=? (io-arg 7) "kx64-runner")) (xs-command 1)
+          (and (= (io-argc) 8) (string=? (io-arg 6) "--format") (string=? (io-arg 7) "launcher")) (xs-command 4)
           :else (xg-command)) (xg-default)))

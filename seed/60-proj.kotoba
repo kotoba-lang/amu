@@ -93,6 +93,9 @@
 (def pj-img-cap 29589504)
 (def pj-k-ifover 38)
 (def pj-k-strover 39)
+(def pj-k-source-lock 40) ; 1 only after an exact KSL1 manifest/entry/root check
+(def pj-k-lock-text 41)   ; P index of immutable manifest bytes (decoded as ASCII)
+(def pj-k-lock-files 42)  ; exact number of distinct source paths in that manifest
 ;; image byte a, and image byte a := b
 (defn- pj-ib [L :vector-i64 a :i64] :i64
   (bit-and (u64-shift-right (vector-at L (+ pj-img-base (u64-shift-right a 3))) (* 8 (bit-and a 7))) 255))
@@ -164,6 +167,25 @@
     M))
 (defn- pj-err [M :vector-i64 code :i64 n :i64] :vector-i64
   (if (= n 0) (pj-err-span M code -1 0 0) (pj-err-span M code (pj-a M n) (pj-a M n) (pj-b M n))))
+
+;; Read once as bytes, check those exact bytes, then decode that same value.
+;; Every discovery/compilation/header read goes through here; no check/read race.
+(defn- pj-source-read [M :vector-i64 L :vector-i64 P :string path :string] :string
+  (if (= (pj-l L pj-k-source-lock) 0) (io-read-file M path)
+    (let [bytes (io-read-bytes path)]
+      (if (ksl-check-bytes? (pj-p L P (pj-l L pj-k-lock-text)) path bytes)
+        (string-from-utf8 (bytes-from-vector-i64 bytes))
+        (let [w (pj-err M E-PROJ-UNPINNED 0)] "")))))
+
+(defn- pj-source-unique [L :vector-i64 P :string] :i64
+  (loop [module 0 count 0]
+    (if (>= module (pj-l L pj-k-nmod)) count
+      (let [path (pj-p L P (pj-mf L module pj-mf-path))
+            seen (loop [earlier 0]
+                   (cond (>= earlier module) false
+                         (pj-peq L P (pj-mf L earlier pj-mf-path) path) true
+                         :else (recur (+ earlier 1))))]
+        (recur (+ module 1) (if seen count (+ count 1)))))))
 
 ;; ---- reset of M between modules ------------------------------------------------------------------------------------------
 (defn- pj-zero [M :vector-i64 a :i64 e :i64] :vector-i64
@@ -464,10 +486,10 @@
 ;; visit module m: read, header, resolve, children, then append m to the compile order
 (defn- pj-visit [M :vector-i64 L :vector-i64 P :string m :i64] :string
   (let [path (pj-p L P (pj-mf L m pj-mf-path))
-        S (io-read-file M path)
+        S (pj-source-read M L P path)
         bytes (+ (pj-l L pj-k-bytes) (string-length S))
         w (-> L (pj-ls pj-k-bytes bytes) (pj-ls pj-k-errmod m) (pj-mset m pj-mf-state 1))
-        M1 (pj-read M S)]
+        M1 (if (pj-ok M) (pj-read M S) M)]
     (cond (not (pj-ok M1)) P
           (> bytes pj-max-bytes) (let [w2 (pj-err M1 E-PROJ-BYTES 0)] P)
           :else
@@ -1003,7 +1025,7 @@
                 :else (recur (+ i (lx-cpw c)) from acc)))))))
 ;; the source text of module m (read from its path; a template instantiated)
 (defn- pj-src [M :vector-i64 L :vector-i64 P :string m :i64] :string
-  (let [S (io-read-file M (pj-p L P (pj-mf L m pj-mf-path)))
+  (let [S (pj-source-read M L P (pj-p L P (pj-mf L m pj-mf-path)))
         t (pj-mf L m pj-mf-tpl)]
     (if (> t 0) (pj-tpl-subst S (pj-p L P (- t 1))) S)))
 
@@ -1070,16 +1092,16 @@
         ;; R6B: the source library the module spells. R6C: BEFORE the trailer (was after it): the stub clauses of the trailer
         ;; must be the LAST FN records (pj-c3 takes stub0 = FN-N - nstub), else an importer that also gets a library group
         ;; patched its library functions as stubs (measured: r6-diff driver of kotoba.compiler.decimal-text looped)
-        S1 (string-concat S0 (ck-r6b-lib-t S0 (pj-kw-table M L P m S0)))   ; R6D: the entry of a link gets the link's keyword table
+        S1 (if (pj-ok M) (string-concat S0 (ck-r6b-lib-t S0 (pj-kw-table M L P m S0))) S0)
         S (string-concat S1 T)
         base (bit-and (+ (pj-l L pj-k-img) 7) -8)
         w (-> L (pj-ls pj-k-errmod m) (pj-ls pj-k-trail (string-length S1)) (pj-ls pj-k-base base) (pj-mset m pj-mf-base base))
-        M1 (pj-read M S)
+        M1 (if (pj-ok M) (pj-read M S) M)
         M2 (if (pj-ok M1) (pj-refcheck (pj-qscan (pj-norm M1 L S) L P S m) L P m) M1)
         M3 (if (pj-ok M2) (pj-splice M2 L) M2)
         M4 (if (pj-ok M3) (pj-c3 M3 L S H) M3)
         w9 (if (pj-ok M4) (pj-kw-note M4 L m) L)]   ; R6D
-    (cond (ck-hint-again? H M4) (pj-module-h M4 L P m H)   ; R6C
+    (cond (and (pj-ok M4) (ck-hint-again? H M4)) (pj-module-h M4 L P m H)   ; R6C
           (not (pj-ok M4)) (let [w2 (pj-err-back M4 L m (string-length S1))] P)   ; R6C: the trailer starts after the library
           (>= (pj-n L) (- pj-s-cap 1)) (let [w2 (pj-err M4 E-PROJ-IMAGE 0)] P)
           (not (pj-ok (pj-r5b-after M4 L P S m))) P   ; R5B: namespace :capabilities, stateful library exports
@@ -1092,12 +1114,14 @@
 (defn- pj-discover [M :vector-i64 L :vector-i64 P :string root :i64] :string
   (let [w (-> L (pj-add-mod (pj-n L) root) (pj-mset 0 pj-mf-depth 1) (pj-mset 0 pj-mf-entry 1))
         P1 (pj-visit M L (pj-padd L P "") 0)]
-    (if (and (pj-ok M) (> (pj-l L pj-k-nmod) 1) (= (pj-l L pj-k-unpinned) 0))
+    (if (and (pj-ok M)
+             (or (and (> (pj-l L pj-k-nmod) 1) (= (pj-l L pj-k-unpinned) 0) (= (pj-l L pj-k-source-lock) 0))
+                 (and (= (pj-l L pj-k-source-lock) 1) (not= (pj-source-unique L P1) (pj-l L pj-k-lock-files)))))
       (let [w2 (pj-err M E-PROJ-UNPINNED 0)] P1)
       P1)))
 
 ;; pj-project M L P root -> P : discover, then compile every module in order. On success M holds the entry module; the image
-;; is the packed L[pj-img-base ..], L[pj-k-img] bytes (LINK). A multi-module project needs --unpinned.
+;; is the packed L[pj-img-base ..], L[pj-k-img] bytes (LINK). KSL1 locks do not set the legacy --unpinned bit.
 (defn- pj-project [M :vector-i64 L :vector-i64 P :string root :i64] :string
   (let [P1 (pj-discover M L P root)]
     (loop [k 0 P P1]
@@ -1426,7 +1450,10 @@
 (defn- pj-r5b-wire [s :string] :i64
   (cond (string=? s ":hash/sha256") 3 (string=? s ":clock/now") 7 (string=? s ":env/read") 33 (string=? s ":fs/browse") 34
         (string=? s ":fs/app-data") 35 (string=? s ":fs/app-data-bytes") 35 (string=? s ":io/write") 37 (string=? s ":cli/args") 38
-        (string=? s ":io/write-error") 39 (string=? s ":io/read") 41 (string=? s ":gpu/compute") 42 :else -1))
+        (string=? s ":io/write-error") 39 (string=? s ":io/read") 41 (string=? s ":gpu/compute") 42
+        (string=? s ":process/spawn") 20
+        (string=? s ":net/listen") 43 (string=? s ":net/accept") 44 (string=? s ":net/dial") 45
+        (string=? s ":net/read") 46 (string=? s ":net/write") 47 :else -1))
 ;; the declared set node v of the module being read (L[pj-k-errmod])
 (defn- pj-r5b-decl [M :vector-i64 L :vector-i64 S :string v :i64] :vector-i64
   (let [m (pj-l L pj-k-errmod)
@@ -1434,7 +1461,9 @@
                (if (= c 0)
                  acc
                  (let [w (if (= (pj-kind M c) ND-KW) (pj-r5b-wire (pj-text M S c)) -1)]
-                   (recur (pj-next M c) (if (and (>= w 0) (< w 47)) (bit-or acc (i64-shift-left 1 w)) acc)))))]
+                   (recur (pj-next M c) (bit-or acc (cond (= w 47) 281474976710656
+                                                          (and (>= w 0) (< w 47)) (i64-shift-left 1 w)
+                                                          :else 0))))))]
     (if (or (= (pj-kind M v) ND-SET) (= (pj-kind M v) ND-VEC))
       (let [w (pj-mset L m pj-mf-caps (+ mask 1))] M)
       (pj-err M E-PROJ-NSFORM v))))

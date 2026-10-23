@@ -156,6 +156,7 @@
     KW-IO-WRITE WIRE-IO-WRITE
     ;; R4B
     KW-HASH-SHA256 WIRE-HASH-SHA256
+    KW-CLOCK-NOW 7
     KW-ENV-READ WIRE-ENV-READ
     KW-FS-BROWSE WIRE-FS-BROWSE
     KW-IO-READ WIRE-IO-READ
@@ -164,6 +165,11 @@
     KW-ENTROPY-DRAW WIRE-ENTROPY-DRAW
     ;; ADR 0371
     KW-GPU-COMPUTE WIRE-GPU-COMPUTE
+    KW-NET-LISTEN WIRE-NET-LISTEN
+    KW-NET-ACCEPT WIRE-NET-ACCEPT
+    KW-NET-DIAL WIRE-NET-DIAL
+    KW-NET-READ WIRE-NET-READ
+    KW-NET-WRITE WIRE-NET-WRITE
     0))
 (defn- lw-kind [kw :i64] :i64 (case kw KW-STRING CK-STRING KW-BYTES CK-BYTES 0))
 ;; R4B: the kind of a (request, result) keyword pair: :string :bytes is KEXE_TYPED_STRING_BYTES_V1
@@ -445,6 +451,9 @@
       HD-BIT-NOT (lw-un M a t UOP-BITNOT)
       HD-TYPED-CAP-CALL (lw-cap M a t)
       HD-DO (lw-do M a t k)
+      ;; Context ABI v6, structural only: no source head names these slots.
+      ;; The scalar body stays in temp t across leave's separate result temp.
+      ck-r6m-hd-arena (-> M (lw-emit OP-RT 224 t 0) (lw-expr a t 0) (lw-emit OP-RT 232 (inc t) 0))
       HD-TRAP (lw-emit M OP-TRAP 0)
       HD-RECORD-NEW (lw-recnew M (lw-next M a) t)
       HD-RECORD-CTOR (lw-recnew M a t)

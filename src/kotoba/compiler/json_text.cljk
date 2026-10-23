@@ -27,28 +27,39 @@
   ;; `src` classpath by test/nbb/compile_cache.cljk).
   (:require #?(:kotoba [kotoba.lang.json :as json])))
 
+;; R6QW3: the Kotoba reading (W3 re-port). The pure library (kotoba.lang.json) is the
+;; shared reading. The host's decode-object walks the parsed value to keywordize the map
+;; keys (a named fn literal -- host-only syntax); the guest's documents carry keyword keys
+;; natively, so the :kotoba arm is the bare decode. The host reading is byte-for-byte.
+#?(:kotoba
+   (defn encode-array
+     "ITEMS -- a vector of strings, booleans and nils -- as JSON text."
+     [items :document] :string
+     (json/encode items))
+   :default
 (defn encode-array
   "ITEMS -- a vector of strings, booleans and nils -- as JSON text."
   [items]
   #?(:cljs (.stringify js/JSON (clj->js items))
-     :default (json/encode items)))
-
-;; Maps, and reading. Under nbb these stay the host's JSON -- a named
-;; exception (superproject adr-2609242330 S5, S2 item): the pure library
-;; writes a map's keys sorted where JSON.stringify keeps insertion order, so
-;; the worker responses and the timing report would change bytes; and pure
-;; decode was measured 2026-09-25 at 0.13 ms against 0.010 ms for a typical
-;; 170-byte worker request and 27 ms against 0.21 ms at the 60 KB bound,
-;; with different error messages for a malformed line. Under Kotoba the
-;; reading is the pure library.
-
+     :default (json/encode items))))
+#?(:kotoba
+   (defn encode-value
+     "VALUE as JSON text."
+     [value :document] :string
+     (json/encode value))
+   :default
 (defn encode-value
   "VALUE (maps, vectors, strings, numbers, booleans, nil; keyword keys) as
   JSON text."
   [value]
   #?(:cljs (.stringify js/JSON (clj->js value))
-     :default (json/encode value)))
-
+     :default (json/encode value))))
+#?(:kotoba
+   (defn decode-object
+     "JSON TEXT as a document (the keys are keywords natively)."
+     [text :string] [:result :document :document]
+     (json/decode text))
+   :default
 (defn decode-object
   "JSON TEXT as a value, object keys as keywords."
   [text]
@@ -57,4 +68,4 @@
                            (cond (map? v) (into {} (map (fn [[k x]] [(keyword k) (walk x)])) v)
                                  (vector? v) (mapv walk v)
                                  :else v))]
-                (walk (json/decode text)))))
+                (walk (json/decode text))))))

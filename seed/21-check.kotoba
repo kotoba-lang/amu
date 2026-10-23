@@ -2074,25 +2074,28 @@
 
 ;; ---- typed-cap-call ----
 ;; R4B: the wire as a keyword code: a wire keyword, or the wire id as an integer literal (the spelling of stage-0's KIR,
-;; which stage-0 also admits in source): 3 33 34 41 35 37 38 39 (35 with a :bytes request = :fs/app-data-bytes); 0 otherwise.
+;; which stage-0 also admits in source): 3 7 33 34 41 35 37 38 39 (35 with a :bytes request = :fs/app-data-bytes); 0 otherwise.
 ;; 21-check leaves the code in NF-TYPE of the wire node for 30-lower.
 (defn- ck-wire-kw [M :vector-i64 w :i64 q :i64] :i64
   (cond (= (nm-kind M w) ND-KW) (nm-head-of M w)
         (nm-ne (nm-kind M w) ND-INT) 0
         :else (case (nm-nf M w NF-AUX)
-                3 KW-HASH-SHA256 33 KW-ENV-READ 34 KW-FS-BROWSE 41 KW-IO-READ
+                3 KW-HASH-SHA256 7 KW-CLOCK-NOW 33 KW-ENV-READ 34 KW-FS-BROWSE 41 KW-IO-READ
                 35 (if (= (nm-head-of M q) KW-BYTES) KW-FS-APP-DATA-BYTES KW-FS-APP-DATA)
                 37 KW-IO-WRITE 38 KW-CLI-ARGS 39 KW-IO-WRITE-ERROR
                 20 KW-PROCESS-SPAWN 23 KW-ENTROPY-DRAW   ; R6B
                 42 KW-GPU-COMPUTE   ; ADR 0371
+                43 KW-NET-LISTEN 44 KW-NET-ACCEPT 45 KW-NET-DIAL 46 KW-NET-READ 47 KW-NET-WRITE
                 0)))
 (defn- ck-wire-ok [k :i64] :i64
   (cond (= k KW-FS-APP-DATA) 1 (= k KW-CLI-ARGS) 1 (= k KW-IO-WRITE-ERROR) 1 (= k KW-IO-WRITE) 1
         (= k KW-FS-APP-DATA-BYTES) 1
-        ;; R4B: wires 3 33 34 41 (:string :string)
-        (= k KW-HASH-SHA256) 1 (= k KW-ENV-READ) 1 (= k KW-FS-BROWSE) 1 (= k KW-IO-READ) 1
+        ;; R4B plus native clock: wires 3 7 33 34 41 (:string :string)
+        (= k KW-HASH-SHA256) 1 (= k KW-CLOCK-NOW) 1 (= k KW-ENV-READ) 1 (= k KW-FS-BROWSE) 1 (= k KW-IO-READ) 1
         (= k KW-PROCESS-SPAWN) 1 (= k KW-ENTROPY-DRAW) 1   ; R6B: wires 20 23 (:string :string)
         (= k KW-GPU-COMPUTE) 1   ; ADR 0371: wire 42 (:string :string)
+        (= k KW-NET-LISTEN) 1 (= k KW-NET-ACCEPT) 1 (= k KW-NET-DIAL) 1
+        (= k KW-NET-READ) 1 (= k KW-NET-WRITE) 1
         :else 0))
 
 ;; the request/result type of the shape, 0 when the shape is not one of seed/HEADS :cap-shapes
@@ -4127,7 +4130,7 @@
 (def ck-s-loopn 12)  ; loop nesting depth of the expression being checked
 (def ck-s-andor 13)  ; the and/or head node whose operands are being checked (0 = none)
 
-(def ck-fx-state 140737488355328)   ; 2^47: the :state bit of an effect mask (bit w < 47 = capability wire w)
+(def ck-fx-state 140737488355328)   ; Preserve legacy :state bit 47; wire 47 uses extension bit 48.
 
 ;; ---- FN2 ----
 (defn- ck-f2 [M :vector-i64 f :i64 fld :i64] :i64 (vector-at M (+ (vector-at M MM-FN2) (* f FN2-W) fld)))
@@ -4151,8 +4154,12 @@
     KW-CLI-ARGS 38 KW-IO-WRITE-ERROR 39 KW-IO-READ 41
     KW-PROCESS-SPAWN 20 KW-ENTROPY-DRAW 23   ; R6B
     KW-GPU-COMPUTE 42   ; ADR 0371
+    KW-NET-LISTEN 43 KW-NET-ACCEPT 44 KW-NET-DIAL 45 KW-NET-READ 46 KW-NET-WRITE 47
     -1))
-(defn- ck-wire-bit [w :i64] :i64 (if (and (>= w 0) (< w 47)) (i64-shift-left 1 w) 0))
+(defn- ck-wire-bit [w :i64] :i64
+  (cond (= w 47) 281474976710656
+        (and (>= w 0) (< w 47)) (i64-shift-left 1 w)
+        :else 0))
 ;; FN f calls capability wire w: its FN2-CAPS and the module's mask
 ;; R5B rung proof (local state in the seed): the heap handle threaded through a cell (atom, swap!, reset!, @)
 (defn- ck-r5b-cap [M :vector-i64 f :i64 w :i64] :vector-i64
@@ -4980,9 +4987,10 @@
 ;; at its head (named, never guessed).
 (defn- ck-r6b-capkw [w :i64 hh :i64] :i64
   (case w
-    3 KW-HASH-SHA256 20 KW-PROCESS-SPAWN 23 KW-ENTROPY-DRAW 33 KW-ENV-READ 34 KW-FS-BROWSE
+    3 KW-HASH-SHA256 7 KW-CLOCK-NOW 20 KW-PROCESS-SPAWN 23 KW-ENTROPY-DRAW 33 KW-ENV-READ 34 KW-FS-BROWSE
     35 (if (= hh ck-r6b-h-fs-app-data-bytes) KW-FS-APP-DATA-BYTES KW-FS-APP-DATA)
     37 KW-IO-WRITE 38 KW-CLI-ARGS 39 KW-IO-WRITE-ERROR 41 KW-IO-READ 42 KW-GPU-COMPUTE
+    43 KW-NET-LISTEN 44 KW-NET-ACCEPT 45 KW-NET-DIAL 46 KW-NET-READ 47 KW-NET-WRITE
     0))
 (defn- ck-r6b-cap [M :vector-i64 n :i64] :vector-i64
   (let [h (nm-first M n)
@@ -5295,6 +5303,11 @@
         (= h -3807296312816633077) 40   ; sys/cwd
         (= h 524881795662885090) 41   ; io/read
         (= h 1791932595410158387) 42   ; gpu/compute
+        (= h -2985494221685490570) 43   ; net/listen
+        (= h 4235867802804660953) 44   ; net/accept
+        (= h -6487152585558698765) 45   ; net/dial
+        (= h 56528935486559349) 46   ; net/read
+        (= h 7427296218179622668) 47   ; net/write
         :else 0))
 (def ck-r6b-h-fs-app-data-bytes 173977598554302551)
 (defn- ck-r6b-t-kw0 [] :string
@@ -6187,6 +6200,7 @@
 (def ck-r6m-tc-hvec 41)
 (def ck-r6m-hd-vnew 3001)
 (def ck-r6m-hd-vmatch 3002)
+(def ck-r6m-hd-arena 3003)
 (def ck-r6m-h-arena 1121630809250370429)   ; arena-scope
 (defn- ck-r6m-var-form? [M :vector-i64 n :i64] :bool
   (and (= (nm-kind M n) ND-VEC) (= (nm-count M n) 3) (= (nm-kind M (nm-first M n)) ND-KW)
@@ -6312,14 +6326,14 @@
       6 (if (= na 4) (ck-r6m-hat M n fx 1) (ck-err M E-CHECK-ARITY h 4))
       7 (if (= na 1) (ck-r6m-arena M n fx ctx) (ck-err M E-CHECK-ARITY h 1))
       (ck-err M E-CHECK-HEAD h 0))))
-;; (arena-scope e) -> (do e): the reference's scope reclaims the arenas a scalar body used (loader ABI v6); the seed keeps the
-;; value and does not reclaim (the result is the same; memory is not). The body must be :i64 :bool or :f64 as there.
+;; ABI v6 scalar region: check its body as before, retaining a structural
+;; lowering marker for enter/body/leave. Only scalar results may escape.
 (defn- ck-r6m-arena [M :vector-i64 n :i64 fx :i64 ctx :i64] :vector-i64
   (let [h (nm-first M n)
         M1 (ck-expr (ck-rehead M n HD-DO (nm-next M h)) n fx ctx)
         ty (ck-ty M1)]
     (cond (nm-failed M1) (ck-touch M1)
-          (or (= ty TY-I64) (= ty TY-BOOL) (= ty TY-F64) (zero? ty)) M1
+          (or (= ty TY-I64) (= ty TY-BOOL) (= ty TY-F64) (zero? ty)) (nm-set-nf M1 n NF-RES ck-r6m-hd-arena)
           :else (ck-err M1 E-CHECK-TYPE h TY-I64))))
 (defn- ck-r6m-vnew [M :vector-i64 n :i64 fx :i64] :vector-i64
   (let [h (nm-first M n)

@@ -179,8 +179,52 @@ a follow-up to ADR 0371.
      those files (#1478, #1481), so that the two efforts do not edit the same
      files.
 3. **KIR v2 and the inference kernels, B70/ANV first:**
+   * **Done: the KIR v2 builder** (`tools/gpu_kernel_kir2.kotoba`). A kernel
+     is a Kotoba function of its parameters that calls builder functions:
+     * ids are allocated, and types and constants are interned;
+     * the module's sections are kept apart and written in the logical
+       layout by `kb-module`;
+     * buffers, the parameter block, shared arrays and built-ins are globals;
+       variables live in Function storage;
+     * loops take glslang's four-block form and an if is `OpSelectionMerge`
+       before its branch. A guarded load is computed inside an if into a
+       variable, never through `OpSelect`;
+     * the capabilities follow the features used;
+     * an if, loop or break out of place traps, as do an unclosed if or
+       loop at `kb-module` and a full section. Nothing is emitted with a
+       branch to id 0.
+   * **Done: the first two kernels** (`tools/gpu_kernels_v2.kotoba`):
+     * KIR v1's elementwise kernel again (4 operators x 2 workgroup sizes),
+       as the proof of the lowering;
+     * `attn_copy_dense`, statement for statement from kotoba-lang/inference
+       at 808e5f0. That revision has one cache writer per kv group, and it
+       reads the current position from DK/DV.
+   * **Checks.** `scripts/seed/check-gpu-kernel-spirv.py --suite kir2` builds
+     `tools/gpu_kernel_kir2_test.kotoba`; it has 29 cases plus the control:
+     * the module shapes;
+     * one word apart per parameter;
+     * the same words twice;
+     * the Kotoba checker accepts glslang's module of the same source.
+
+     Results:
+     * all 9 modules are valid under `spirv-val`;
+     * the modules are byte-identical from the aarch64 and the x86_64 tool
+       images.
+
+     Phase `gpu` runs after the oracle phase. It runs every module through
+     the ADR 0371 provider, after checking the bytes against the build's.
+     Where glslang has a module of the same source, it runs that beside the
+     KIR v2 module. On gad (RADV):
+     * **The eight ewise modules.** add, sub and mul are exact. div is within
+       2 ulp; Vulkan allows `OpFDiv` 2.5. Both workgroup sizes give the same
+       bytes, and add gives glslang's bytes.
+     * **`attn_copy_dense`, in three shapes.** The outputs are byte-identical
+       to glslang's module and within 1e-7 of an f64 reference. The cache rows
+       written are exact.
+
+     Receipts: `docs/evidence/gpu-kernel-kir2-20261023/`.
    * the nex_ops decode set;
-   * `attn_copy_dense`;
+   * `attn_copy_dense` on B70/ANV;
    * `kdot_f32_r1`, `kdot_x8r4`, `kdot_f32_r8` and `kdot_i8_x8r4`;
    * deltanet and embed;
    * then the nvgpu-h2 kernels for Xavier.
