@@ -1,0 +1,38 @@
+{
+  "schema": "amu.seed.security-integration.v1",
+  "round": "tcp-spawn-native-20261023",
+  "scope": [
+    "wire20 bounded exec provider",
+    "wires43-47 native TCP",
+    "shared product frontend admission",
+    "legacy state effect separation"
+  ],
+  "authority": {
+    "ownerInstruction": "この依存順で実装も進めて。まず TCP/spawn の競合解消と native gate から",
+    "newAuthorityClass": false,
+    "runtimeGrantsRemainOptIn": true,
+    "x86TransferAndExecution": "Explicit owner approval; fixed 21-item payload only"
+  },
+  "implementationReview": {
+    "reviewer": "Codex",
+    "method": "Changed-source review plus native positive/refusal/negative-control execution; not a standalone security audit",
+    "checked": [
+      "Guest cannot name runtime primitives or function references; boundary corpus retained.",
+      "Helper takes a private copy of the grant before guest execution and independently validates every request.",
+      "Guest seccomp allows no fork/exec; only the helper-answer fd read is added for granted wire20.",
+      "TCP system calls are enabled only for granted TCP wires; socket family/type/protocol constrained.",
+      "Typed-cap-call dispatch checks each wire admission before its handler.",
+      "Wire47 internal bit48 cannot alias legacy state bit47; effect and project declaration refusals exercised.",
+      "Catalog explicitly retains the ordinary host-process authority and bounded unary spawn semantics.",
+      "No hosted compiler, C loader, removed service fallback or key distribution introduced."
+    ]
+  },
+  "evidence": "docs/evidence/tcp-spawn-native-20261023/",
+  "qualificationOpen": [
+    "Native CDCI controller",
+    "Public CLI/target/profile/seal admission",
+    "Hata native Cell execution",
+    "Persistent duplex stdio provider",
+    "Node launch and Yataverse restore"
+  ]
+}
