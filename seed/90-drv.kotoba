@@ -913,18 +913,22 @@
     :else ""))
 
 (def drv-r5b-m24 16777215)
-(def drv-r5b-m47 140737488355327)
+(def drv-r5b-m47 422212465065983)   ; bits 0..46 plus extension bit 48; bit 47 remains :state
 (def drv-r5b-state 140737488355328)
 
 ;; the catalogue name of capability wire w
 (defn- drv-r5b-wname [w :i64] :string
   (case w 3 ":hash/sha256" 7 ":clock/now" 33 ":env/read" 34 ":fs/browse" 35 ":fs/app-data" 37 ":io/write" 38 ":cli/args"
-        39 ":io/write-error" 41 ":io/read" 42 ":gpu/compute" (mem-u2dec w)))
+        39 ":io/write-error" 41 ":io/read" 42 ":gpu/compute" 20 ":process/spawn"
+        43 ":net/listen" 44 ":net/accept" 45 ":net/dial" 46 ":net/read" 47 ":net/write" (mem-u2dec w)))
 ;; the wire of a capability name (with ':'), -1 when none
 (defn- drv-r5b-wire [s :string] :i64
   (cond (string=? s ":hash/sha256") 3 (string=? s ":clock/now") 7 (string=? s ":env/read") 33 (string=? s ":fs/browse") 34
         (string=? s ":fs/app-data") 35 (string=? s ":fs/app-data-bytes") 35 (string=? s ":io/write") 37 (string=? s ":cli/args") 38
-        (string=? s ":io/write-error") 39 (string=? s ":io/read") 41 (string=? s ":gpu/compute") 42 :else -1))
+        (string=? s ":io/write-error") 39 (string=? s ":io/read") 41 (string=? s ":gpu/compute") 42
+        (string=? s ":process/spawn") 20
+        (string=? s ":net/listen") 43 (string=? s ":net/accept") 44 (string=? s ":net/dial") 45
+        (string=? s ":net/read") 46 (string=? s ":net/write") 47 :else -1))
 ;; the items of mask m (bit 47 = :state first, then the wires in ascending order), each wrapped by pre/post, as #{..}. R5B rung
 ;; proof (a handler written in the language): the text is the state of handler drv-acc, whose put APPENDS (it was a loop
 ;; accumulator); drv-r5b-items is stateful and self-recursive
@@ -935,8 +939,8 @@
 (defn- drv-r5b-item [x :string pre :string post :string] :string
   (perform :state/put (string-concat (if (= (string-byte-length (perform :state/get)) 2) "" " ") (string-concat pre (string-concat x post)))))
 (defn- drv-r5b-items [m :i64 w :i64 pre :string post :string] :i64
-  (cond (>= w 47) 0
-        (= (bit-and m (i64-shift-left 1 w)) 0) (drv-r5b-items m (inc w) pre post)
+  (cond (>= w 48) 0
+        (= (bit-and m (if (= w 47) 281474976710656 (i64-shift-left 1 w))) 0) (drv-r5b-items m (inc w) pre post)
         :else (do (drv-r5b-item (drv-r5b-wname w) pre post) (drv-r5b-items m (inc w) pre post))))
 (defn- drv-r5b-set [m :i64 pre :string post :string] :string
   (handle (do (if (= (bit-and m drv-r5b-state) 0) "" (drv-r5b-item ":state" pre post))
@@ -1019,7 +1023,8 @@
                 j (string-index-of r "]")
                 x (if (< j 0) "" (string-substring r 0 j))
                 w (if (and (> (string-length x) 0) (= (string-code-point-at x 0) 58)) (drv-r5b-wire x) (drv-r5b-num x))]
-            (if (or (< w 0) (>= w 47)) -1 (recur (string-substring r (+ j 1) (string-length r)) (bit-or acc (i64-shift-left 1 w))))))))))
+            (if (or (< w 0) (>= w 48)) -1 (recur (string-substring r (+ j 1) (string-length r))
+                                               (bit-or acc (if (= w 47) 281474976710656 (i64-shift-left 1 w)))))))))))
 ;; -1 when the compile may write its output: no --policy, or every required capability (mask req) is allowed; else the
 ;; refusal is printed (E2177 / E2170) and the exit status is returned
 (defn- drv-r5b-gate [M :vector-i64 path :string req :i64] :i64

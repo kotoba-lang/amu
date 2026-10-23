@@ -68,6 +68,9 @@ def main(boot, out):
                                                            ("seed/FULL-MANIFEST", "full"),
                                                            ("seed/MANIFEST", "adopted"),
                                                            ("seed/X86_64-LINUX-SELFHOST-MANIFEST", "selfhost"))}
+    full_paths = list(sources["seed/FULL-MANIFEST"])[1:]
+    core_paths = [p for p in list(sources["seed/CORE-STATIC-MANIFEST"])[1:] if p != "seed/99-entry.kotoba"]
+    assert full_paths[:len(core_paths)] == core_paths, "FULL-MANIFEST must preserve the entire adopted static core in order"
 
     def core(prod, src, name):
         run(name, [prod, "compile", out / f"{src}.kotoba", "--target", "aarch64-macos", "--output", out / f"{name}.kseed"], env)
@@ -95,7 +98,8 @@ def main(boot, out):
     F = out / "F2.elf"
 
     # 3. F's core route reproduces the adoption image
-    adoption = json.loads((ROOT / json.loads((ROOT / "seed/compiler-core.json").read_text())["adoptionReceipt"]).read_text())
+    adoption_path = json.loads((ROOT / "seed/compiler-core.json").read_text())["adoptionReceipt"]
+    adoption = json.loads((ROOT / adoption_path).read_text())
     assert pin(out / "adopted.kotoba")["sha256"] == adoption["sourceUnitySHA256"], "adopted source drift"
     core(F, "adopted", "A")
     run("A-extract", [F, "extract-native", out / "A.kseed", "--symbol", "main", "--output", out / "A.bin"], env)
