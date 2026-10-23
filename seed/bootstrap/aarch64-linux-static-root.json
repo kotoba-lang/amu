@@ -1,43 +1,77 @@
 {
   "schema": "amu.seed.static-root.v1",
   "image": {
-    "bytes": 3142144,
-    "sha256": "8385ac6926d578c16128053e397af8015124e3e6d5db05a8ef7dcbc2501c8cca"
+    "bytes": 3150336,
+    "sha256": "3f39f40a49482849947c9fda175226b90ddccd925ee48849c08ebfe19805f858"
   },
   "target": "aarch64-linux",
   "format": "packed",
   "sourceManifest": "seed/FULL-MANIFEST",
   "sourceUnity": {
-    "bytes": 3148027,
-    "sha256": "b5745a227a2ee8072fe690c0dea5c9cbcc0129c949565953ed6ada08fa37c217"
+    "bytes": 3157863,
+    "sha256": "6a6ae151ae5cc01c06a07ff53d1c1566601ec206ebfd25e34a2bd9a1fab0d6f5"
   },
-  "sourceCommitBase": "0f364ba059196fd326c478fcf0a8de95dcf454d8",
+  "sourceCommitBase": "2246f2fbeb578f05785849e4def836a428241872",
   "producedBy": {
-    "how": "Native arm64 Linux, no C compiler or loader, no emulation: reviewed clock/entropy F2 compiles the final combined source retaining main b5026e2d GPU platform API to J1; J1 rebuilds J2, with identical containers and packed images. Core and arm64 runtime are byte-identical to the full19/runtime/refusal reviewed round.",
+    "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt and packed itself to F2 = F1 (= this image). Re-pinned because this source adds the bounded kernel memory windows of ADR 0373 (kernel-load-u32, kernel-store-u32, kernel-subregion, kernel-load-u32-16k) to the x86_64-aiueos-kernel-v1 object route: the intrinsic library, rooted-base admission and the intrinsic dispatch in seed/74 and seed/70.",
     "date": "2026-10-23",
-    "previousRoot": "8ad2aeaa36012c0ebf5fc1e073acf4073cb18e48451e3297c4301af16d0a8b21",
-    "previousRootEvidence": "docs/evidence/native-clock-entropy-20261023/merge-review.json",
+    "previousRoot": "8385ac6926d578c16128053e397af8015124e3e6d5db05a8ef7dcbc2501c8cca",
     "chain": {
-      "J1.kseed": {
-        "bytes": 2926211,
-        "sha256": "1c66ab5431be793b4d6b6422ff4ca7c0514df6d382709779c562e399be2a0eca"
+      "F1.kseed": {
+        "bytes": 2932923,
+        "sha256": "fafa0279ad8ffc09abf735ae99f9b1e29e69f1767a42911eaaa97d4134acc3f9"
       },
-      "J1.elf": {
-        "bytes": 3142144,
-        "sha256": "8385ac6926d578c16128053e397af8015124e3e6d5db05a8ef7dcbc2501c8cca"
+      "F1.elf": {
+        "bytes": 3150336,
+        "sha256": "3f39f40a49482849947c9fda175226b90ddccd925ee48849c08ebfe19805f858"
       },
-      "J2.kseed": {
-        "bytes": 2926211,
-        "sha256": "1c66ab5431be793b4d6b6422ff4ca7c0514df6d382709779c562e399be2a0eca"
+      "F2.kseed": {
+        "bytes": 2932923,
+        "sha256": "fafa0279ad8ffc09abf735ae99f9b1e29e69f1767a42911eaaa97d4134acc3f9"
       },
-      "J2.elf": {
-        "bytes": 3142144,
-        "sha256": "8385ac6926d578c16128053e397af8015124e3e6d5db05a8ef7dcbc2501c8cca"
+      "F2.elf": {
+        "bytes": 3150336,
+        "sha256": "3f39f40a49482849947c9fda175226b90ddccd925ee48849c08ebfe19805f858"
       }
     }
   },
-  "verification": "Native J1=J2 payload and image; preserved byte-identical core/arm64 runtime and its full19 correctness, 24 result/trap/fuel cases, 175 refusals, five hardening and 12 provider negatives. See merge-review.json. Hosted CI/native x86 execution readback separate; no public CLI/native CDCI qualification.",
+  "verification": "scripts/seed/selfhost-bootstrap.py --tier pr on arm64 Linux: F1 = F2 from the previous root, F1's core route gives the adoption image, the runtime boundary corpus, the 24 cases and hardening; scripts/seed/check-kernel-memory.py with F1 (conformance, mutants, admission cases). CI re-runs the tier from this root (F -> F' = root).",
   "history": [
+    {
+      "image": {
+        "bytes": 3142144,
+        "sha256": "8385ac6926d578c16128053e397af8015124e3e6d5db05a8ef7dcbc2501c8cca"
+      },
+      "sourceUnity": {
+        "bytes": 3148027,
+        "sha256": "b5745a227a2ee8072fe690c0dea5c9cbcc0129c949565953ed6ada08fa37c217"
+      },
+      "sourceCommitBase": "0f364ba059196fd326c478fcf0a8de95dcf454d8",
+      "producedBy": {
+        "how": "Native arm64 Linux, no C compiler or loader, no emulation: reviewed clock/entropy F2 compiles the final combined source retaining main b5026e2d GPU platform API to J1; J1 rebuilds J2, with identical containers and packed images. Core and arm64 runtime are byte-identical to the full19/runtime/refusal reviewed round.",
+        "date": "2026-10-23",
+        "previousRoot": "8ad2aeaa36012c0ebf5fc1e073acf4073cb18e48451e3297c4301af16d0a8b21",
+        "previousRootEvidence": "docs/evidence/native-clock-entropy-20261023/merge-review.json",
+        "chain": {
+          "J1.kseed": {
+            "bytes": 2926211,
+            "sha256": "1c66ab5431be793b4d6b6422ff4ca7c0514df6d382709779c562e399be2a0eca"
+          },
+          "J1.elf": {
+            "bytes": 3142144,
+            "sha256": "8385ac6926d578c16128053e397af8015124e3e6d5db05a8ef7dcbc2501c8cca"
+          },
+          "J2.kseed": {
+            "bytes": 2926211,
+            "sha256": "1c66ab5431be793b4d6b6422ff4ca7c0514df6d382709779c562e399be2a0eca"
+          },
+          "J2.elf": {
+            "bytes": 3142144,
+            "sha256": "8385ac6926d578c16128053e397af8015124e3e6d5db05a8ef7dcbc2501c8cca"
+          }
+        }
+      }
+    },
     {
       "schema": "amu.seed.static-root.v1",
       "image": {
