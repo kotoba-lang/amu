@@ -7,7 +7,8 @@ targets) packed as a static image. Tiers (--tier) say how much is re-derived;
 every check runs in at least one tier:
 
 pr    1. F rebuilds itself: FULL-MANIFEST -> container, packed -> F' (= root,
-         else F' rebuilds itself to the same image and is re-pinned);
+         else the rebuilds converge to a fixed point Fn = Fn-1 within four
+         generations and that image is re-pinned as the root);
       2. F's Linux targets: aarch64 runner, x86_64 static compiler (the Linux
          selfhost closure), x86_64 KX64V1 runner;
       3. F's core route: seed/MANIFEST -> G1 = the adoption receipt's image;
@@ -109,16 +110,23 @@ def main(out, tier, reuse=None, store=None):
         dst.chmod(0o755)
         return pin(dst)
 
-    # 1. F rebuilds itself
-    gens = [dict(name="F1", container=compile_(out / "root.elf", full_src, out / "F1.kseed", "aarch64-macos", None, "F1-compile"),
-                 image=pack(out / "root.elf", out / "F1.kseed", out / "F1.elf", "F1-pack"))]
+    # 1. F rebuilds itself. A compiler embeds its own runtime text in what it
+    # packs, so after a source change the first generation can sit one step off
+    # the fixed point (measured JUN-19: F1 -> F2 -> F3 = F2; the container is
+    # stable from F1 and the packed image converges one rebuild later). Rebuild
+    # until an image reproduces itself; if that fixed point is not the pinned
+    # root, the root is re-pinned to it.
+    def generation(i, producer) -> dict:
+        return dict(name=f"F{i}", container=compile_(producer, full_src, out / f"F{i}.kseed", "aarch64-macos", None, f"F{i}-compile"),
+                    image=pack(producer, out / f"F{i}.kseed", out / f"F{i}.elf", f"F{i}-pack"))
+    gens = [generation(1, out / "root.elf")]
     root_reproduces = gens[0]["image"] == pin(ROOT / ROOT_IMAGE)
-    if not root_reproduces:
-        # a source change: F1 is this source's compiler; it must rebuild itself
-        gens.append(dict(name="F2", container=compile_(out / "F1.elf", full_src, out / "F2.kseed", "aarch64-macos", None, "F2-compile"),
-                         image=pack(out / "F1.elf", out / "F2.kseed", out / "F2.elf", "F2-pack")))
-        assert gens[1] == dict(gens[0], name="F2"), "combined compiler fixed point mismatch"
-    F = out / "F1.elf"
+    converged = root_reproduces
+    while not converged:
+        assert len(gens) < 4, "combined compiler fixed point not reached"
+        gens.append(generation(len(gens) + 1, out / f"F{len(gens)}.elf"))
+        converged = gens[-1] == dict(gens[-2], name=gens[-1]["name"])
+    F = out / f"F{len(gens)}.elf"
 
     # 2. F's Linux targets
     built = dict(
@@ -298,7 +306,7 @@ def main(out, tier, reuse=None, store=None):
                        senv, [out / "Kw.kseed"], timeout=10800)
         pw = pack(S, out / "Kw.kseed", out / "Pw.elf", "Pw-pack")
         compile_(out / "Pw.elf", full_src, out / "Pw-F.kseed", "aarch64-macos", None, "Pw-F")
-        assert pin(out / "Pw-F.kseed") == gens[0]["container"], "F from the C0 lineage differs from F"
+        assert pin(out / "Pw-F.kseed") == gens[-1]["container"], "F from the C0 lineage differs from F"
         provenance = dict(coreStatic=dict(sourceGraph=core_static_pins, C0=c0), core=pin(out / "C0-core.bin"),
                           Kw=pin(out / "Kw.kseed"), Pw=pw, F=pin(out / "Pw-F.kseed"))
 
@@ -317,7 +325,7 @@ def main(out, tier, reuse=None, store=None):
                   reuse=dict(read=bool(reuse), store=bool(store), reused=[dict(name=c["name"], **c["reused"]) for c in run.calls if "reused" in c]),
                   cCompilerOrLoader=False, JVMNodeOrGraalFallback=False, emulation=False)
     (out / "selfhost-bootstrap.json").write_text(json.dumps(report, indent=2) + "\n")
-    print(report["status"], tier, "F", gens[-1]["image"]["sha256"][:16], "root reproduces" if root_reproduces else "root differs (re-pin to F1)",
+    print(report["status"], tier, "F", gens[-1]["image"]["sha256"][:16], "root reproduces" if root_reproduces else f"root differs (re-pin to F{len(gens)})",
           "adoption image", len(results), "cases", "wasm32-browser", "executed" if wasm32["executed"] else "compiled", flush=True)
 
 
