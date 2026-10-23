@@ -41,8 +41,8 @@ PROBES = {
     "nested-call": "(let [f (fn [x] (kxrt-exit x))] (invoke f 42))",
     "allow-mask": '(let [c (kxrt-ctx) a (kxrt-store64 (+ c 16) -1)] (string-length (typed-cap-call :hash/sha256 :string :string "x")))',
 }
-FORMATS = [("aarch64-linux", "static"), ("aarch64-linux", "runner"),
-           ("x86_64-linux", "static"), ("x86_64-linux", "kx64-runner")]
+FORMATS = [("aarch64-linux", "static"), ("aarch64-linux", "runner"), ("aarch64-linux", "launcher"),
+           ("x86_64-linux", "static"), ("x86_64-linux", "kx64-runner"), ("x86_64-linux", "launcher")]
 PLAIN = '(ns plain (:export [main]))\n(defn- add [x :i64] :i64 (+ x 1))\n(defn main [] :i64 (let [f (fn-ref add) k 1 g (fn [x] (+ x k))] (+ (invoke f 20) (invoke g 20))))\n'
 
 
@@ -107,8 +107,11 @@ def main(compiler, output, previous_root, payload, definition_only_root=None):
         same = None
         if previous_root:
             r, old = compile_("previous", "plain", PLAIN, target, fmt)
-            assert r.returncode == 0 and not r.stderr and old.read_bytes() == dst.read_bytes(), calls[-1]
-            same = True
+            if fmt == "launcher" and r.returncode == 2 and b"E7100" in r.stderr:
+                same = "n/a: the previous root has no --format launcher"
+            else:
+                assert r.returncode == 0 and not r.stderr and old.read_bytes() == dst.read_bytes(), calls[-1]
+                same = True
         positives.append(dict(target=target, format=fmt, image=pin(dst), sameBytes=same))
     previous = []
     if previous_root:

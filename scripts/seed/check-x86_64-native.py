@@ -13,7 +13,10 @@ emulation. Records, natively:
    SIGSYS), cpu / wall / stack limits;
 4. the KX64V1 runner: X2's kx64-v1 compiler payload G1 rebuilds itself
    through R-x86_64 (G1 = G2 = G3);
-5. the scalar ELF suite and the aiueos object checks with X2.
+5. the scalar ELF suite and the aiueos object checks with X2;
+6. in every tier, ADR 0371's checks that need a native x86_64 kernel, with
+   X2 (ADR0371 below): the static launcher (check-static-launcher.py,
+   --format launcher, step 4).
 
 --reuse DIR / --store DIR: content-addressed reuse as in selfhost-bootstrap.py
 (scripts/seed/content_reuse.py). Only calls made through reuse.run_cached may
@@ -34,6 +37,8 @@ sys.dont_write_bytecode = True
 from content_reuse import Runs  # noqa: E402 (scripts/seed)
 
 ROOT = Path(__file__).resolve().parents[2]
+# ADR 0371's native checks: every tier (a minute or two each)
+ADR0371 = [("check-static-launcher.py", [])]
 
 
 def pin(p):
@@ -126,10 +131,11 @@ def main(boot, out, tier="main", reuse_dir=None, store_dir=None):
     assert hardening["wallSeconds3"]["exit"] == 120 and "SIGALRM" in hardening["wallSeconds3"]["stderr"]
     assert hardening["stack1MiB"]["exit"] == 120 and "SIGSEGV" in hardening["stack1MiB"]["stderr"]
 
-    # main and full tiers: the KX64V1 runner and the suites
-    gens, suites = [], {}
+    # every tier: ADR 0371's checks; main and full tiers: the KX64V1 runner and the suites
+    gens, suites = [], run_suites(out, X, ADR0371)
     if tier != "pr":
-        gens, suites = kx64_and_suites(run, out, X, source, scope)
+        gens, more = kx64_and_suites(run, out, X, source, scope)
+        suites.update(more)
 
     # full tier: the adopted compiler core as an x86_64 static image (JUN-330):
     # X2 builds seed/CORE-STATIC-MANIFEST as X0; X0 rebuilds seed/MANIFEST (the
@@ -189,15 +195,19 @@ def kx64_and_suites(run, out, X, source, scope):
     assert gens[0] == gens[1] == gens[2], "KX64V1 runner fixed point"
 
     # 5. scalar ELF suite and aiueos object checks with X2
+    return gens, run_suites(out, X, [("check-x86_64-scalar.py", []), ("check-x86_64-aiueos-object.py", [])])
+
+
+def run_suites(out, X, scripts):
     suites = {}
-    for script, args in [("check-x86_64-scalar.py", []), ("check-x86_64-aiueos-object.py", [])]:
+    for script, args in scripts:
         dst = out / script.replace(".py", "")
         r = subprocess.run([sys.executable, str(ROOT / "scripts/seed" / script), "--compiler", str(X), "--output", str(dst), *args],
                            capture_output=True, timeout=3600)
         (out / "raw" / (script + ".log")).write_bytes(r.stdout + r.stderr)
         assert r.returncode == 0, (script, r.stdout[-400:], r.stderr[-400:])
         suites[script] = r.stdout.decode().strip().splitlines()[-1]
-    return gens, suites
+    return suites
 
 
 if __name__ == "__main__":
