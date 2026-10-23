@@ -15,7 +15,9 @@ Native ARM F1=F2=F3 payloads and independently packed images agree.
 Native x86 F1=F2=F3 loaderless images agree with the ARM cross-built ELF.
 Pinned public `check` and `compile`, exact native role/image reproduction,
 all24 fixture-image builds and named public refusals were measured.
-The native process environment uses `PATH=/nonexistent`.
+The complete compiler, public product and native controller qualification
+processes use `PATH=/nonexistent`. The upstream bootstrap orchestrator
+uses `/usr/bin:/bin`; its native executable arguments are explicit paths.
 
 The adopted current core source is `2524a4c5`, container `88540e78`,
 native payload `a8513d51`. Warm G1=G2=G3, an independent cold C0

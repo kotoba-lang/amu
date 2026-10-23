@@ -57,9 +57,13 @@ def main(boot, out):
     # same Pw and complete three-generation checks below still run.
     baseline = "S3.elf" if (boot / "S3.elf").is_file() else "F1.elf"
     core_producer = "P-aarch64.elf" if (boot / "P-aarch64.elf").is_file() else baseline
-    for name in dict.fromkeys((baseline, core_producer, "S-x86_64.elf", "runner.kotoba")):
+    # Keep bootstrap executables separate from the F1/Pw outputs below.
+    # The tiered bootstrap's input is itself named F1.elf.
+    S, P, runner = out / "bootstrap-target.elf", out / "bootstrap-core.elf", out / "runner.kotoba"
+    shutil.copy2(boot / baseline, S)
+    shutil.copy2(boot / core_producer, P)
+    for name in ("S-x86_64.elf", "runner.kotoba"):
         shutil.copy2(boot / name, out / name)
-    S, P, runner = out / baseline, out / core_producer, out / "runner.kotoba"
     S.chmod(0o755)
     P.chmod(0o755)
     env = {"KEXE_CAP_RESOURCES_35": str(out), "KEXE_STACK_BYTES": STACK}
