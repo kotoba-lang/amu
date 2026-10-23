@@ -17,12 +17,26 @@ def sha(p):
     return hashlib.sha256(p.read_bytes()).hexdigest()
 
 
-def main(product, out):
+def main(product, out, complete):
     assert platform.system() == "Linux" and platform.machine() == "x86_64"
     descriptor = json.loads((product / "native-product.json").read_text())
     entry = product / descriptor["entry"]
     assert sha(entry) == descriptor["image"]["sha256"]
     assert entry.stat().st_size == descriptor["image"]["bytes"]
+    proof_path = complete / "complete-x86.json"
+    proof = json.loads(proof_path.read_text())
+    assert proof["status"] == "PASS_COMPLETE_NATIVE_X86_COMPILER_BUILD"
+    assert len(proof["generations"]) == 3
+    for i, generation in enumerate(proof["generations"], 1):
+        actual = complete / f"F{i}.elf"
+        assert sha(actual) == generation["sha256"] == sha(entry), "public image differs from current native compiler"
+        assert actual.stat().st_size == generation["bytes"] == descriptor["image"]["bytes"]
+    root = Path(__file__).resolve().parents[2]
+    paths = [p for p in (root / descriptor["sourceManifest"]).read_text().splitlines()
+             if p and not p.startswith("#")]
+    assert len(paths) == descriptor["sourceModuleCount"]
+    unity = b"".join((root / p).read_bytes() + b"\n" for p in paths)
+    assert {"bytes": len(unity), "sha256": hashlib.sha256(unity).hexdigest()} == proof["sourceUnity"], "current full source differs"
     aliases = [entry, *[product / p for p in descriptor["aliases"]]]
     for p in aliases[1:]:
         assert p.is_symlink() and os.readlink(p) == "amu"
@@ -76,6 +90,10 @@ def main(product, out):
     report = dict(status="PASS_PUBLIC_NATIVE_PRODUCT", image=descriptor["image"],
                   sourceRevision=descriptor["sourceRevision"], aliases=len(aliases),
                   nativeResult=42, remainingFuel=1000000, calls=calls,
+                  completeReceiptSHA256=sha(proof_path),
+                  currentSourceUnity=proof["sourceUnity"],
+                  sameAsCurrentNativeGenerations=True,
+                  observerSourceSHA256=sha(Path(__file__)),
                   host=[platform.system(), platform.machine(), platform.release()],
                   legacyRuntimeFallback=False)
     (out / "public-product.json").write_text(json.dumps(report, indent=2) + "\n")
@@ -86,5 +104,6 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--product", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
+    p.add_argument("--complete", type=Path, required=True, help="current check-complete-x86.py output")
     a = p.parse_args()
-    main(a.product.resolve(), a.output.resolve())
+    main(a.product.resolve(), a.output.resolve(), a.complete.resolve())
