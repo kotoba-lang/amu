@@ -147,7 +147,13 @@ int main(int argc, char **argv) {
       }
       WG = (uint32_t)w;
     }
-    if (argc == 4) {
+    /* argc >= 4, NOT argc == 4: the driver passes [workdir workgroup
+     * elements op-order] (argc 5) since the op-order variable landed, and
+     * the == 4 gate silently dropped the shape back to the 1000003 default
+     * for every driver run -- found 2026-10-23 by a shape-2 band run whose
+     * run-log header read n=1000003 (record: the misshape-defect cells in
+     * docs/evidence/gpu-subgroup-reduce-m1max-shape2-band-20261023/). */
+    if (argc >= 4) {
       char *end = 0;
       unsigned long e = strtoul(argv[3], &end, 10);
       /* Bound: [1, 2^24] -- the input buffer is 4n bytes and the CPU
