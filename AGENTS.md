@@ -66,7 +66,7 @@
 
 ## Native CDCI and retired public entry
 
-- The complete product uses `seed/FULL-MANIFEST` (26 modules), retaining
+- The complete product uses `seed/FULL-MANIFEST` (27 modules), retaining
   every adopted core module. Static OUT is 12MiB because the complete
   TCP/spawn image exceeded the old 8MiB bound. Heap size, expected results,
   all19 workloads and all24 runtime fixtures remain unchanged.
@@ -91,3 +91,8 @@
 These rules apply to every agent. Migrate and qualify whole components,
 including their launch/build/packaging dependencies. Keep historical
 measurements distinct from current qualification and preserve unrelated WIP.
+
+The native-only entry refuses `--format platform-linked` with E2. The
+optional provider backend source and corpus are retained, but libc/dynamic-
+loader execution is excluded from mandatory native CDCI. The static
+launcher, complete core, all24 native cases and hardening remain required.

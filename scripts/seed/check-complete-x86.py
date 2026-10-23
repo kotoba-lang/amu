@@ -126,13 +126,14 @@ def main(compiler, arm_proof, out):
         ("digest-mismatch", ["check", good, "--source-lock", lock, "--source-lock-sha256", "0" * 64], b"E6015"),
         ("missing-lock", ["check", good, "--source-lock", out / "missing.ksl"], b"E6015"),
         ("unknown-form", ["check", unknown], b"E2101"),
+        ("c-linked-format", ["compile", good, "--target", "x86_64-linux", "--output", out / "c-linked.elf", "--format", "platform-linked"], b"E2"),
         ("unsupported-default", ["compile", good, "--output", out / "refused.kseed"], b"E2"),
         ("unsupported-verb", ["worker"], b"E1"),
         ("unsupported-seal", ["compile", good, "--target", "aarch64-macos", "--output", out / "refused.kseed", "--seal", "unknown"], b"E1")]:
         r = run("native-public-refuse-" + name, [F, *args], ok=False)
         assert r.returncode in (1, 2) and code in r.stderr and b"KEXE_TRAP" not in r.stderr
         refusals.append(dict(name=name, exit=r.returncode, diagnostic=code.decode()))
-    assert not (out / "refused.kseed").exists()
+    assert not (out / "refused.kseed").exists() and not (out / "c-linked.elf").exists()
 
     report = dict(status="PASS_COMPLETE_NATIVE_X86_COMPILER_BUILD", host=[platform.system(), platform.machine(), platform.release()],
                   generations=generations, sourceUnity=pin(full), armBuildReceipt=pin(arm_proof),

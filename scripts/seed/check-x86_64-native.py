@@ -16,9 +16,8 @@ emulation. Records, natively:
 5. the scalar ELF suite and the aiueos object checks with X2;
 6. in every tier, ADR 0371's checks that need a native x86_64 kernel, with
    X2 (ADR0371 below): the static launcher (check-static-launcher.py,
-   --format launcher, step 4) and the platform-linked image
-   (check-platform-linked.py: libc-only images run on this host's glibc, owner
-   decision 2026-10-22; step 5).
+   --format launcher, step 4). C-linked provider execution is outside the
+   native-only CDCI contract; its source/corpus remains separate.
 
 --reuse DIR / --store DIR: content-addressed reuse as in selfhost-bootstrap.py
 (scripts/seed/content_reuse.py). Only calls made through reuse.run_cached may
@@ -40,7 +39,7 @@ from content_reuse import Runs  # noqa: E402 (scripts/seed)
 
 ROOT = Path(__file__).resolve().parents[2]
 # ADR 0371's native checks: every tier (a minute or two each)
-ADR0371 = [("check-static-launcher.py", []), ("check-platform-linked.py", ["all"])]
+ADR0371 = [("check-static-launcher.py", [])]
 
 
 def pin(p):
@@ -133,6 +132,13 @@ def main(boot, out, tier="main", reuse_dir=None, store_dir=None):
     assert hardening["wallSeconds3"]["exit"] == 120 and "SIGALRM" in hardening["wallSeconds3"]["stderr"]
     assert hardening["stack1MiB"]["exit"] == 120 and "SIGSEGV" in hardening["stack1MiB"]["stderr"]
 
+    # This entry must not reintroduce a C loader/runtime prerequisite.
+    platform_output = out / "platform-refused.elf"
+    linked_refusal = run("refuse-platform-linked", [X, "compile", out / "probe-value.kotoba",
+                         "--target", "x86_64-linux", "--output", platform_output,
+                         "--format", "platform-linked"], scope, ok=False)
+    assert linked_refusal.returncode == 1 and b"E2" in linked_refusal.stderr and not platform_output.exists()
+
     # every tier: ADR 0371's checks; main and full tiers: the KX64V1 runner and the suites
     gens, suites = [], run_suites(out, X, ADR0371)
     if tier != "pr":
@@ -168,7 +174,7 @@ def main(boot, out, tier="main", reuse_dir=None, store_dir=None):
     report = dict(status="PASS_NATIVE_X86_64_LOADERLESS", tier=tier, host=[platform.system(), platform.machine(), platform.release()],
                   nativeX86_64Kernel=True, emulation=False, cCompilerOrLoader=False,
                   compiler=dict(crossBuiltOnArm64=s_cross, X2=x2, X3=x3), cases=results, hardening=hardening,
-                  runtimeBoundary=runtime_boundary, coreOnX86_64=core_x86,
+                  runtimeBoundary=runtime_boundary, platformLinkedRefusal=dict(exit=linked_refusal.returncode, diagnostic="E2"), coreOnX86_64=core_x86,
                   kx64Runner=dict(runner=pin(out / "R-x86_64.elf"), generations=gens), suites=suites,
                   reuse=dict(read=bool(reuse_dir), store=bool(store_dir), steps=[{k: c[k] for k in ("name", "seconds", "key", "reused") if k in c}
                                                                                 for c in reuse.calls]),

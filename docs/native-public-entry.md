@@ -9,7 +9,7 @@ follow without changing this compiler source or image.
 
 ## Artifact qualification
 
-The complete 26-module compiler includes the adopted 18-module core and
+The complete 27-module compiler includes the adopted 18-module core and
 all Linux emitter/factory/entry modules in `seed/FULL-MANIFEST`.
 Native ARM F1=F2=F3 payloads and independently packed images agree.
 Native x86 F1=F2=F3 loaderless images agree with the ARM cross-built ELF.
@@ -113,3 +113,8 @@ PR tier omits S3/P; it still derives Pw and checks F1=F2=F3, packing,
 all24 cases, core adoption and exact privileged-role images. The x86
 job also executes the published product and both aliases. Scheduled
 full-tier provenance and main-tier runner checks remain in place.
+
+The native-only entry refuses `--format platform-linked` with E2. The
+optional provider backend source and corpus are retained, but libc/dynamic-
+loader execution is excluded from mandatory native CDCI. The static
+launcher, complete core, all24 native cases and hardening remain required.

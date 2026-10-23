@@ -175,7 +175,8 @@ def main(boot, out):
     legacy.write_bytes(good.read_bytes())
     refusals = []
     containers_before_refusals = set(out.glob("*.kseed"))
-    probes = [("unknown-small", ["check", unknown], "E2101"),
+    probes = [("c-linked-format", ["compile", good, "--target", "x86_64-linux", "--output", out / "c-linked.elf", "--format", "platform-linked"], "E2"),
+              ("unknown-small", ["check", unknown], "E2101"),
               ("unknown-large", ["check", large], "E2101"),
               ("legacy-source", ["check", legacy], "E1"),
               ("default-target", ["compile", good, "--output", out / "default.kseed"], "E2"),
@@ -195,6 +196,7 @@ def main(boot, out):
         assert r.returncode in (1, 2) and re.search(rb"\b" + code.encode() + rb"\b", r.stderr), (name, r.returncode, r.stderr[-500:])
         assert b"KEXE_TRAP" not in r.stderr, (name, r.stderr[-500:])
         refusals.append(dict(name=name, exit=r.returncode, diagnostic=code))
+    assert not (out / "c-linked.elf").exists()
     assert set(out.glob("*.kseed")) == containers_before_refusals, "refusal produced an artifact"
 
     report = dict(status="PASS_COMBINED_COMPILER", host=[platform.system(), platform.machine(), platform.release()],

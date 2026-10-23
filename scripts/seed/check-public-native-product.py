@@ -68,6 +68,8 @@ def main(product, out):
     assert re.search(rb":result 42\b", r.stdout) and re.search(rb":remaining 1000000\b", r.stdout)
     run("refuse-digest", [entry, "check", src, "--source-lock", lock,
                           "--source-lock-sha256", "0" * 64], 1, diagnostic="E6015")
+    run("refuse-c-linked", [entry, "compile", src, "--target", "x86_64-linux", "--output", out / "c-linked.elf", "--format", "platform-linked"], 1, diagnostic="E2")
+    assert not (out / "c-linked.elf").exists()
     run("refuse-default", [entry, "compile", src, "--output", out / "refused.kseed"], 1, diagnostic="E2")
     run("refuse-worker", [aliases[2], "worker"], 2, diagnostic="E1")
     assert not (out / "refused.kseed").exists()

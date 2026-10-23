@@ -6,7 +6,7 @@ x86_64 executable. `bin/kotoba` and `bin/kotoba-compiler` name that same image.
 It has no ELF interpreter or dynamic runtime dependency.
 
 The complete product is `seed/FULL-MANIFEST`: the adopted 18-module core,
-Linux emitters and native CDCI factory/entry, 26 modules in one compiler.
+Linux emitters and native CDCI factory/entry, 27 modules in one compiler.
 The frontend, lowering, optimization and AArch64 backend measured by the
 19-workload Embench corpus remain in this lineage. This migration publishes
 correctness evidence; it publishes no new performance score.
@@ -84,3 +84,8 @@ their own boundaries.
 
 The complete former README is retained with its digest in the historical
 text archive. Its hosted-route claims do not qualify the native product.
+
+The native-only entry refuses `--format platform-linked` with E2. The
+optional provider backend source and corpus are retained, but libc/dynamic-
+loader execution is excluded from mandatory native CDCI. The static
+launcher, complete core, all24 native cases and hardening remain required.
