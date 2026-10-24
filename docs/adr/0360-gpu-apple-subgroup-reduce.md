@@ -924,7 +924,14 @@ summary.md text; NO hardware measurement ran in this slice): of the 28
 multi-operator records, 9 hold (only 2 of those with multi-level
 partitions) and 19 refute -- and every one of the 19 refuted records
 has refinement structure (a strict refinement edge; asserted over every
-refuted record). Three named consequences:
+refuted record). [UPDATE 2026-10-25: the "asserted over every refuted
+record" half is SUPERSEDED by the 2026-10-25 cross-cutting-only
+decision (Amendment 2026-10-25 below): the 2026-10-25 cross-day
+W = 32 record refutes with NO strict refinement edge (all three
+operator pairs cross-cut), so the corpus-wide structural claim fails
+its pin at 36/37 and is re-stated as the named crossing-only set pin.
+The dated 19/19 tally stands as history of the 2026-10-23 corpus.] Three
+named consequences:
 
 1. The closing cell (shape2-resweep w512) HOLDS: all three partitions
    are {3} / {1,2,4,5,6}, so that record's cross-operator fast/slow
@@ -1085,3 +1092,45 @@ for the five designed rows.
 State: the decision is ACCEPTED DESIGN ONLY (this amendment); the
 selection row it names is IMPLEMENTED with tests (one set membership in
 `kotoba.compiler.accelerator-variants`, gate evidence in the record).
+
+## Amendment 2026-10-25: cross-cutting-only is a legal refuted shape;
+the structural pin's supersession
+
+The 2026-10-25 cross-day W = 32 replica
+(docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w32) is the
+corpus's FIRST cross-cutting-only identity refutation -- 5 of 15 run
+pairs diverge, no refinement edge in either direction, all three
+operator pairs cross-cut (machine output over the committed
+summary.md, quoted in the decision record). It failed amendment (f)'s
+structural pin exactly as that pin's comment prescribed ("a record
+with cross-cutting-only divergence would fail this pin and surface
+instead of hiding"), at `36/37`. The record named the decision as its
+own next slice, taken before the pin is touched. DECIDED:
+
+YES -- cross-cutting-only is a legal refuted shape. Identity refutes on
+partition disagreement alone (any divergent run pair); the refinement
+relation is the published SHAPE of the disagreement (equal / one
+refines the other / cross-cutting), never a legality condition. A
+refuted record is REFINEMENT-STRUCTURED (>= 1 strict refinement edge)
+or CROSSING-ONLY (none; the record refutes, so at least one pair
+cross-cuts); CROSS-CUTTING-ONLY is the crossing-only record whose every
+pair cross-cuts -- this record's shape.
+
+What the pin asserts afterwards: amendment (f)'s corpus-wide claim
+"every refuted record has a strict refinement edge" is SUPERSEDED (its
+dated 19/19 tally stands as history, bracketed above). The replacement
+pin is the `:sum-refines-:max` set pin's idiom: the crossing-only
+refuted records are EXACTLY a named set (one member today), and a
+future crossing-only record fails the pin on purpose and enters the set
+with its own story -- the surfacing mechanism is preserved where it
+matters, not dropped. The named record's shape is pinned per record;
+the strict-edge tally stays a printed corpus fact.
+
+What this changes: nothing else. Rule 4 stands (no rule-2 verdict,
+rule-3 phrase, selection answer, `:measured?` flag or workgroup row
+moves); no record is rewritten and no number re-measured.
+
+State: ACCEPTED DESIGN ONLY at this amendment's commit; the pin update
+it authorizes is IMPLEMENTED with tests in the next commit of the same
+tick (until then the classify self-test stays RED at 36/37, named).
+Record: `docs/evidence/gpu/cross-cutting-only-decision-20261025.txt`.
