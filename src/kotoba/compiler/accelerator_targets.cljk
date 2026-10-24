@@ -1,12 +1,23 @@
 (ns kotoba.compiler.accelerator-targets
   "Deterministic GPU vendor classification, accelerator target dispatch and
-  provisional per-vendor workgroup defaults (ADR-0355).
+  per-vendor workgroup defaults (ADR-0355; the measured rows are ADR-0358's,
+  2026-10-19, scoping amendment 2026-10-22).
 
-  One decision table, and no measurement in it yet: the workgroup sizes below
-  are PROVISIONAL design defaults chosen as powers of two that are multiples
-  of each vendor's published execution width. `recommend` marks every answer
-  :measured? false; nothing here may be reported as optimization evidence
-  until hardware measurement replaces a row.
+  One decision table, two row states: :nvidia, :apple, :intel and :amd are
+  MEASURED rows -- a hardware measurement chose each size on one workload
+  shape on one device, named by the row's :measured-device fragment -- and
+  :arm (no Mali hardware) and :unknown (the portable fallback) stay
+  PROVISIONAL design defaults (:measured? false), powers of two that are
+  multiples of each vendor's published execution width. `recommend` answers
+  the row's :measured?: true for a measured row whose fragment names the
+  device, false otherwise. A measured row is evidence for its named device
+  on the recorded workload shape only; the provisional rows are not
+  optimization evidence at all.
+
+  Correction 2026-10-24: this docstring once read \"no measurement in it
+  yet\" and \"`recommend` marks every answer :measured? false\" -- false
+  from 2026-10-19 on. Runtime state and full census of the claim's
+  surface: docs/evidence/gpu/workgroup-prose-rootcause-20261024.txt.
 
   The functions are TOTAL. An unknown vendor or api answers the documented
   fallback instead of throwing -- dispatch time is where a refusal costs the
@@ -395,7 +406,9 @@
          (option-value-of [:option :i64] (document-i64-value (dgk row :size)) 256))))
    :default
 (defn workgroup-default
-  "The provisional workgroup size for a vendor (a power of two in [32, 1024]).
+  "The workgroup size for a vendor (a power of two in [32, 1024]) -- the
+  row's :size, from a measured row or a provisional one as the row's
+  :measured? flag says (`workgroup-defaults`).
   Total: a vendor outside `vendors` takes the :unknown row."
   [vendor]
   (get-in workgroup-defaults [vendor :size] 256)))

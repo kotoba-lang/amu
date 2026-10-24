@@ -387,7 +387,11 @@ optimization evidence, and `:measured? false` is part of every answer.
   one vendor per decision -- and nothing here should be read as having
   designed it.
 - The provisional workgroup rows of ADR-0355 are untouched by this ADR and
-  remain `:measured? false` on their own axis.
+  remain `:measured? false` on their own axis. [UPDATE 2026-10-24:
+  superseded in part -- ADR-0358 (2026-10-19) measured four of ADR-0355's
+  rows; only :arm/:unknown remain `:measured? false` on the workgroup axis.
+  "Untouched by this ADR" stands. Census:
+  docs/evidence/gpu/workgroup-prose-rootcause-20261024.txt.]
 
 **Amendment (2026-10-23, the AMD row joins the table -- ADR-0364).**
 `:amd` (JUN-84 / AWAI-40) is the fifth classified vendor to ride the

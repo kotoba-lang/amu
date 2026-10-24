@@ -38,7 +38,14 @@ Rules:
    published execution width. Nothing in this repository has measured them.
    `recommend` marks every answer `:measured? false`, and no caller may
    report these values as optimization evidence until hardware measurement
-   (tracked as JUN-57..60) replaces the row it stands on.
+   (tracked as JUN-57..60) replaces the row it stands on. [SUPERSEDED IN
+   PART 2026-10-19 by ADR-0358: four of the six rows (:nvidia, :apple,
+   :intel, :amd) are MEASURED -- "nothing has measured them" and "every
+   answer :measured? false" stopped being true that day, and `recommend`'s
+   flag is scoped to each row's one named measured device (uB5G, amended
+   2026-10-22). The provisional rule above still binds :arm and :unknown.
+   The code docstring that carried the old state was corrected 2026-10-24,
+   docs/evidence/gpu/workgroup-prose-rootcause-20261024.txt.]
 4. Same descriptor in, same map out. The table adds no nondeterminism to the
    byte-identical artifact regime of ADR-0002.
 

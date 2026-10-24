@@ -240,3 +240,22 @@
   (testing "same record in, same bytes out (ADR-0356 rule 5)"
     (let [record {:subgroup-size 64 :supported-stages 0x20 :supported-ops 0x21}]
       (is (= (targets/subgroup-answer record) (targets/subgroup-answer record))))))
+
+(deftest the-row-split-is-four-measured-two-provisional
+  ;; The honesty split the ns docstring states (corrected 2026-10-24,
+  ;; docs/evidence/gpu/workgroup-prose-rootcause-20261024.txt): four rows
+  ;; measured by ADR-0358 (2026-10-19), two provisional. A measured row
+  ;; names its one measured device; a provisional row names none.
+  (is (= #{:nvidia :apple :intel :amd}
+         (set (for [[v row] targets/workgroup-defaults :when (:measured? row)] v)))
+      "exactly the four ADR-0358 rows are measured")
+  (is (= #{:arm :unknown}
+         (set (for [[v row] targets/workgroup-defaults :when (not (:measured? row))] v)))
+      "exactly :arm and :unknown stay provisional")
+  (testing "a measured row names its one measured device; a provisional row names none"
+    (doseq [[v row] targets/workgroup-defaults]
+      (if (:measured? row)
+        (is (and (string? (:measured-device row)) (pos? (count (:measured-device row))))
+            (str v " is measured but names no measured device"))
+        (is (nil? (:measured-device row))
+            (str v " is provisional but carries a measured-device"))))))
