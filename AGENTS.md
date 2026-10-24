@@ -66,7 +66,7 @@
 
 ## Native CDCI and retired public entry
 
-The integrated FULL40 source retains current main47 native CLI/CID/FS2,
+The integrated FULL41 source retains current main47 native CLI/CID/FS2,
 kernel/DMA packaging modules and all18 normal adopted core modules. Its
 checked-in root and public image match exact-source ARM and native x86
 three-generation fixed points. Local profile/resource/refusal/public gates
@@ -78,10 +78,10 @@ v6 PCI candidate has128KiB RW storage and a64KiB private floor; its copied
 BAR catalog starts at context20480. Live ValueRuntime queue/arena and
 capability/domain storage require a separately versioned ABI.
 
-- The complete candidate uses `seed/FULL-MANIFEST` (40 modules), retaining
-  every adopted core module. Static OUT is 12MiB because the complete
+- The complete candidate uses `seed/FULL-MANIFEST` (41 modules), retaining
+  every adopted core module. The static compiler syntax-node capacity is655360; normal core/heap/guest limits are unchanged. Static OUT is 12MiB because the complete
   TCP/spawn image exceeded the old 8MiB bound. The complete static profile
-  also uses LitB1MiB and TOK786432 and MM-WORDS29,491,200 (<2^25). Heap size, expected results,
+  also uses LitB1MiB and TOK786432 and MM-WORDS30,015,488 (<2^25). Heap size, expected results,
   all19 workloads and all24 runtime fixtures remain unchanged.
 - `seed/cdci` owns the Kotoba-native controller and gate. Its two mandatory
   roles are Amu selfhost and Kotoba native; legacy fleet/authoring labels
@@ -147,3 +147,20 @@ the adopted core and existing emitters authoritative. The native ordered
 gate checks raw observations, named resource refusals and actual metering
 removal; Python only stages bytes/processes. The unsigned process receipt
 is not a signed VM receipt, fresh node admission or an in-process unwind ABI.
+
+## Budget-independent local cache (JUN-371)
+
+`seed/85-kototama-i64-cache.kotoba` retains that closed language and reuses
+the same emitters, but separates immutable code identity from the fresh
+stdin72 invocation context. Cache identity binds Program CID, compiler/source
+digests, decoder/value/fuel/profile/ABI, target baseline CPU, optimizer and
+empty imports. Never persist authority, approvals, lease or mutable fuel in
+the code cache. Reject a missing/mismatched context before any guest code.
+
+The dedicated pinned factory builds `seed/cache/host.kotoba` with a fixed
+compiler/source policy, using the existing native CDCI supervisor primitives.
+It is a bounded local x86 host, separate from the two mandatory CDCI roles.
+Keep the private16-slot/1MiB-image/concurrency1/compile120s/guest5s bounds and
+fresh empty-authority admission on every hit. Runtime deadlines are host
+failures, never fabricated fuel receipts. Remote signatures, effectful grants,
+Cell integration and an ARM supervisor require separate qualification.
