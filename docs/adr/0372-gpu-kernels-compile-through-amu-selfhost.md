@@ -405,8 +405,17 @@ a follow-up to ADR 0371.
      from the device-features branch (#1534), since no provider on main
      enables the feature yet; with this tree's own provider, every other
      case passes. Receipts: `docs/evidence/gpu-kernel-kir2-x8-20261023/`.
-   * **Done: the nvgpu-h2 kernels**, which the decode path's `nvgpu-h2`
-     layout (Xavier) uses. All are from inference main:
+   * **Done: the nvgpu-h2 kernels**, the packed-half kernels of inference's
+     `nvgpu` rows (`layout-table` in `gen_decode_tokens_guest.cljk`):
+     * `kdot_h2_r1` and `kdot_h2q6_r1` are the plain `nvgpu` row, Xavier's
+       default for MoE models.
+     * The Q8 kernels (`kdot_h2_qkv_q8`, `kdot_h2_qkvr_q8`, r4, r8) are the
+       `nvgpu-h2` row. It was adopted on the M1 Max (MoltenVK) for dense
+       models (inference #55, f676ba4). Xavier's dense models use the exact
+       table.
+
+     (Corrected 2026-10-24: this said the `nvgpu-h2` layout was Xavier's.)
+     All are from inference main:
      * `kdot_h2_r1` (at c21beff), plain and `-DQ6_HALF`;
      * `kdot_h2_r4_q8` (b5f7ca3) and `kdot_h2_r8_q8` (b3dfa34);
      * `kdot_h2_qkv_q8` and `kdot_h2_qkvr_q8` (ee95e44).
@@ -427,8 +436,8 @@ a follow-up to ADR 0371.
      `kdot_h2_qkvr_q8` writes its rows with no position term, so it is
      decode-only and runs at one position.
 
-     Not yet run on Xavier itself: the ADR 0371 provider and this gate run on
-     x86_64 only, so an nvgpu run waits on the provider for aarch64.
+     Not yet run on Xavier or the M1 Max: the ADR 0371 provider and this gate
+     run on x86_64 Linux only.
      Receipts: `docs/evidence/gpu-kernel-kir2-h2-20261024/`.
 4. **Execution.** Through the ADR 0371 provider, with numeric and speed gates
    against the hand-written kernels.
