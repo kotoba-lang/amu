@@ -1,0 +1,6 @@
+(ns seed.native-cwd (:export [main]))
+(defn main [] :i64
+ (let [expected (typed-cap-call :cli/args :string :string "0")
+       request (typed-cap-call :cli/args :string :string "1")
+       actual (typed-cap-call :sys/cwd :string :string request)]
+  (if (string=? actual expected) 0 93)))

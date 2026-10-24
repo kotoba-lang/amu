@@ -4,7 +4,7 @@
 (defn- t-lock [] :string
   (string-concat "KSL1\nentry /scope/main.kotoba\nroot /scope/src\nroot /scope/test\n"
                  (t-file (t-abc) "/scope/main.kotoba")))
-(defn- seed-main [] :i64
+(defn- t-v1 [] :i64
   (let [text (t-lock)]
     (cond (not (ksl-valid? text)) 1
           (not (string=? (ksl-entry text) "/scope/main.kotoba")) 2
@@ -28,3 +28,44 @@
           (not (ksl-path? "/scope/a b.kotoba")) 20
           (ksl-valid? (string-substring text 0 (- (string-length text) 1))) 21
           :else 0)))
+
+(defn- t-v2-base [modules :string files :string] :string
+  (string-concat "KSL2\nentry /scope/blocks/a\n" (string-concat modules files)))
+(defn- t-v2 [] :i64
+  (let [modules "module app /scope/blocks/a\nmodule util /scope/blocks/b\n"
+        files (string-concat (t-file (t-abc) "/scope/blocks/a") (t-file (t-abc) "/scope/blocks/b"))
+        text (t-v2-base modules files)]
+    (cond (not (ksl-valid? text)) 31
+          (not (string=? (ksl-module-path text "util") "/scope/blocks/b")) 32
+          (not (string=? (ksl-module-path text "missing") "")) 33
+          (not (ksl-check-bytes? text "/scope/blocks/a" [97 98 99])) 34
+          (not= (ksl-file-count text) 2) 35
+          (not= (ksl-root-count text) 0) 36
+          (ksl-valid? (t-v2-base "module app /scope/blocks/a\nmodule app /scope/blocks/b\n" files)) 37
+          (ksl-valid? (t-v2-base "module app /scope/blocks/a\nmodule util /scope/blocks/a\n" files)) 38
+          (ksl-valid? (t-v2-base modules (t-file (t-abc) "/scope/blocks/a"))) 39
+          (ksl-valid? (string-concat text (t-file (t-abc) "/scope/blocks/c"))) 40
+          (ksl-valid? (t-v2-base "module util /scope/blocks/b\nmodule app /scope/blocks/a\n" files)) 41
+          (ksl-valid? (t-v2-base (string-concat modules "root /scope\n") files)) 42
+          (ksl-valid? (t-v2-base "module app /scope/blocks/c\nmodule util /scope/blocks/b\n" files)) 43
+          (ksl-valid? (t-v2-base "module app /scope/../blocks/a\nmodule util /scope/blocks/b\n" files)) 44
+          (ksl-valid? (t-v2-base "module app /scope/blocks/a\nmodule util /scope/blocks/b\nmodule z /scope/blocks/c\n" files)) 45
+          (ksl-valid? (t-v2-base "module app\n" files)) 46
+          (ksl-valid? (t-v2-base modules (string-concat (t-file (t-abc) "/scope/blocks/b") (t-file (t-abc) "/scope/blocks/a")))) 47
+          (ksl-valid? (string-substring text 0 (- (string-length text) 1))) 48
+          :else 0)))
+(defn- t-utf8 [] :i64
+ (let [text (string-concat "KSL2\nentry /scope/保管-📦/block\nmodule 例.入口 /scope/保管-📦/block\n"
+                          (t-file (t-abc) "/scope/保管-📦/block"))]
+  (cond (not (ksl-valid? text)) 51
+        (not (string=? (ksl-module-path text "例.入口") "/scope/保管-📦/block")) 52
+        (not (ksl-utf8? [230 151 165 240 159 147 166])) 53
+        (ksl-utf8? [255]) 54 (ksl-utf8? [192 128]) 55 (ksl-utf8? [237 160 128]) 56
+        (ksl-utf8? [244 144 128 128]) 57 (ksl-utf8? [240 159 147]) 58
+        (ksl-path-v2? "/scope/保管/../block") 59
+        (ksl-path-v2? "/scope/保管//block") 60
+        (ksl-valid? (string-concat "KSL2\nentry /scope/保管/block\nmodule 例.入口 /scope/保管/block\n"
+                                  (t-file (t-abc) "/scope/保管/other"))) 61
+        :else 0)))
+(defn- seed-main [] :i64
+ (let [v1 (t-v1) v2 (t-v2)] (cond (not= v1 0) v1 (not= v2 0) v2 :else (t-utf8))))
