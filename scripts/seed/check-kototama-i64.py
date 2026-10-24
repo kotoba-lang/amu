@@ -110,6 +110,10 @@ def vectors():
             ["if", var("n"), ["recur", [const(0), var("y"), var("x")]], arith("sub", var("x"), var("y"))]]
     good("recur-parallel", swap, 15, 2)
     good("call", ["call", "plus", [const(40)]], 5, 42, {"plus": method(arith("add", var("n"), const(2)), ["n"])})
+    good("five-params", ["call", "fifth", [const(0), const(0), const(0), const(0), const(42)]], 7, 42,
+         {"fifth": method(var("e"), ["a", "b", "c", "d", "e"])})
+    good("sixteen-operands", arith("add", *([const(1)] * 16)), 17, 16)
+    good("thirty-two-methods", const(42), 1, 42, {f"f{i:02d}": method(const(0)) for i in range(31)})
     good("injection-names", ["call", "(typed-cap-call)", [const(42)]], 3, 42,
          {"(typed-cap-call)": method(var("a ] :i64"), ["a ] :i64"])})
     for op, result in [("=", 0), ("<", 1), (">", 0), ("<=", 1), (">=", 0)]:
@@ -132,6 +136,9 @@ def vectors():
     p = program(["call", "run", []]); refuse("recursive-method", p)
     p = program(["call", "b", []], {"b": method(["call", "run", []])}); refuse("mutual-recursion", p)
     p = program(const(42), {"unused": method(const(0))}); p[2]["methods"]["unused"]["effects"] = [["fs/read"]]; refuse("unreachable-effects", p)
+    p = program(const(42)); p[2]["methods"]["run"] = method(const(42), ["n"]); refuse("entry-arguments", p)
+    refuse("six-params", program(const(42), {"unused": method(const(0), ["a", "b", "c", "d", "e", "f"])}))
+    refuse("thirty-three-methods", program(const(42), {f"f{i:02d}": method(const(0)) for i in range(32)}))
     for name, body in [("effect-tag", ["effect", "invoke-capability", [const(35)]]),
                        ("unbound", var("missing")), ("unknown-call", ["call", "missing", []]),
                        ("wrong-arity", ["call", "run", [const(1)]]),
@@ -156,6 +163,12 @@ def vectors():
     refuse("too-many-bytes", raw + b"\x00" * 65536)
     refuse("too-many-nodes", b"\x99\x10\x00" + b"\x00" * 4096)
     refuse("too-deep", b"\x81" * 66 + b"\x00")
+    for label, fuel in [("zero-fuel", 0), ("negative-fuel", -1), ("too-much-fuel", 9007199254740992)]:
+        cases.append(dict(name=label, wire=raw, fuel=fuel, outcome="refuse"))
+    cases.append(dict(name="unknown-profile", wire=raw, fuel=1, profile="unknown", outcome="refuse"))
+    cases.append(dict(name="unsupported-target", wire=raw, fuel=1, target="wasm32-browser", outcome="refuse"))
+    cases.append(dict(name="unknown-flag", wire=raw, fuel=1, extra=["--unknown"], outcome="refuse"))
+    cases.append(dict(name="existing-output", wire=raw, fuel=1, existing=True, outcome="refuse"))
     return cases
 
 
@@ -203,8 +216,10 @@ def main():
         prefix = f"{i:03d}"
         src, dst = out / (prefix + ".cbor"), out / (prefix + ".elf")
         src.write_bytes(c["wire"])
-        p = subprocess.run([str(compiler), "compile-kototama", str(src), "--target", target, "--output", str(dst),
-                            "--fuel", str(c["fuel"]), "--profile", PROFILE], env=env, capture_output=True, timeout=120)
+        if c.get("existing"):
+            dst.write_bytes(struct.pack("<q", 42))
+        p = subprocess.run([str(compiler), "compile-kototama", str(src), "--target", c.get("target", target), "--output", str(dst),
+                            "--fuel", str(c["fuel"]), "--profile", c.get("profile", PROFILE), *c.get("extra", [])], env=env, capture_output=True, timeout=120)
         (out / (prefix + "-compile.stdout")).write_bytes(p.stdout)
         (out / (prefix + "-compile.stderr")).write_bytes(p.stderr)
         code, data = -999, b""
@@ -215,11 +230,14 @@ def main():
             (out / (prefix + "-guest.stderr")).write_bytes(r.stderr)
         exists = int(dst.exists())
         value = struct.unpack("<q", data)[0] if len(data) == 8 else 0
-        observations.extend([i, p.returncode, code, len(data), value, exists])
+        saved = dst.read_bytes() if c.get("existing") and dst.exists() else b""
+        observations.extend([i, p.returncode, code, len(data), value, exists,
+                             len(saved), struct.unpack("<q", saved[:8])[0] if len(saved) >= 8 else 0])
         outcome = c["outcome"]
         expected.extend([i, 1 if outcome == "refuse" else 0,
                          -999 if outcome == "refuse" else -8 if outcome == "arithmetic" and target == "x86_64-linux" else signal if outcome in ("trap", "arithmetic") else 0,
-                         8 if outcome == "ok" else 0, c.get("result", 0), 0 if outcome == "refuse" else 1])
+                         8 if outcome == "ok" else 0, c.get("result", 0), 1 if c.get("existing") else 0 if outcome == "refuse" else 1,
+                         8 if c.get("existing") else 0, 42 if c.get("existing") else 0])
         records.append(dict(index=i, name=c["name"], outcome=outcome, fuel=c["fuel"],
                             inputSHA256=hashlib.sha256(c["wire"]).hexdigest(),
                             compileExit=p.returncode, guestExit=code, outputBytes=len(data), result=value))

@@ -1,43 +1,92 @@
 {
   "schema": "amu.seed.static-root.v1",
   "image": {
-    "bytes": 3240448,
-    "sha256": "688324e0fdc7a93a664ae55fe0ad417e7a980ab844656f3f97889812363c9479"
+    "bytes": 3273216,
+    "sha256": "96145f2c2b246ae133a576c86792b4db5a33594e84e51dfd1b8044267d9d035c"
   },
   "target": "aarch64-linux",
   "format": "packed",
   "sourceManifest": "seed/FULL-MANIFEST",
   "sourceUnity": {
-    "bytes": 3228090,
-    "sha256": "eeecfd8358242405f2a2956037a724f2bdf1ef3f21539aacb834cb8ab5a5425a"
+    "bytes": 3253651,
+    "sha256": "91abb8b4d2f6dd40092fe6d6e5afefd3be7acfb9a02ca432007d8dbf3ea580d1"
   },
-  "sourceCommitBase": "0007e50f4ed61841240838a435d9da1b7f7cf222",
+  "sourceCommitBase": "6a8aef1cb84bd6a1430eb21607eb1f8e0a48523a",
   "producedBy": {
-    "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root (main's, f782f3f2) compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt and packed itself to F2 = F1 (= this image). Re-pinned because this source adds, to main's, the launcher's fixed provider environment (ADR 0371 step 6): MESA_SHADER_CACHE_DISABLE=true and VK_LOADER_LAYERS_DISABLE=~all~ in the launcher runtime text of seed/76 and seed/77.",
+    "how": "The previous committed native ARM root 688324e0 compiled the exact complete30 source to prior-root-current.kseed and packed it. That container and image equal the current compiler F2, which rebuilt and packed F3 identically. The adopted18 core sources are unchanged. The only compiler extension is the canonical bounded pure-i64 frontend; no hosted compiler, C compiler/loader or emulation.",
     "date": "2026-10-24",
     "timeZone": "Asia/Tokyo",
-    "previousRoot": "f782f3f2a8298c39feeedf873896c9858535a8e371786337632cc60f9e971b9f",
+    "previousRoot": "688324e0fdc7a93a664ae55fe0ad417e7a980ab844656f3f97889812363c9479",
     "chain": {
-      "F1.kseed": {
-        "bytes": 3004339,
-        "sha256": "edc7a5d1c7dce5c7c95ec28206b767f5558e8be272296bb0b9371f11f5220a60"
-      },
-      "F1.elf": {
-        "bytes": 3240448,
-        "sha256": "688324e0fdc7a93a664ae55fe0ad417e7a980ab844656f3f97889812363c9479"
-      },
       "F2.kseed": {
-        "bytes": 3004339,
-        "sha256": "edc7a5d1c7dce5c7c95ec28206b767f5558e8be272296bb0b9371f11f5220a60"
+        "bytes": 3038147,
+        "sha256": "aead92578f1434c56b75aacdb971a8bde0aabc437ce8ef471e1b07c19903ea31"
       },
       "F2.elf": {
-        "bytes": 3240448,
-        "sha256": "688324e0fdc7a93a664ae55fe0ad417e7a980ab844656f3f97889812363c9479"
+        "bytes": 3273216,
+        "sha256": "96145f2c2b246ae133a576c86792b4db5a33594e84e51dfd1b8044267d9d035c"
+      },
+      "F3.kseed": {
+        "bytes": 3038147,
+        "sha256": "aead92578f1434c56b75aacdb971a8bde0aabc437ce8ef471e1b07c19903ea31"
+      },
+      "F3.elf": {
+        "bytes": 3273216,
+        "sha256": "96145f2c2b246ae133a576c86792b4db5a33594e84e51dfd1b8044267d9d035c"
+      },
+      "prior-root-current.kseed": {
+        "bytes": 3038147,
+        "sha256": "aead92578f1434c56b75aacdb971a8bde0aabc437ce8ef471e1b07c19903ea31"
+      },
+      "prior-root-current.elf": {
+        "bytes": 3273216,
+        "sha256": "96145f2c2b246ae133a576c86792b4db5a33594e84e51dfd1b8044267d9d035c"
       }
     }
   },
-  "verification": "This source's native artifacts are indexed by docs/evidence/provider-environment-20261024/current-scope.json (root, the complete x86_64 public image, the CDCI roles). Exact-head PR CI, merge and main CI are separate gates.",
+  "verification": "Bounded pure-i64 native corpus passes on ARM and x86. Broader artifact qualification and exact-head PR/main CI are separate gates; see docs/evidence/kototama-i64-aot-20261024/current-scope.json.",
   "history": [
+    {
+      "schema": "amu.seed.static-root.v1",
+      "image": {
+        "bytes": 3240448,
+        "sha256": "688324e0fdc7a93a664ae55fe0ad417e7a980ab844656f3f97889812363c9479"
+      },
+      "target": "aarch64-linux",
+      "format": "packed",
+      "sourceManifest": "seed/FULL-MANIFEST",
+      "sourceUnity": {
+        "bytes": 3228090,
+        "sha256": "eeecfd8358242405f2a2956037a724f2bdf1ef3f21539aacb834cb8ab5a5425a"
+      },
+      "sourceCommitBase": "0007e50f4ed61841240838a435d9da1b7f7cf222",
+      "producedBy": {
+        "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root (main's, f782f3f2) compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt and packed itself to F2 = F1 (= this image). Re-pinned because this source adds, to main's, the launcher's fixed provider environment (ADR 0371 step 6): MESA_SHADER_CACHE_DISABLE=true and VK_LOADER_LAYERS_DISABLE=~all~ in the launcher runtime text of seed/76 and seed/77.",
+        "date": "2026-10-24",
+        "timeZone": "Asia/Tokyo",
+        "previousRoot": "f782f3f2a8298c39feeedf873896c9858535a8e371786337632cc60f9e971b9f",
+        "chain": {
+          "F1.kseed": {
+            "bytes": 3004339,
+            "sha256": "edc7a5d1c7dce5c7c95ec28206b767f5558e8be272296bb0b9371f11f5220a60"
+          },
+          "F1.elf": {
+            "bytes": 3240448,
+            "sha256": "688324e0fdc7a93a664ae55fe0ad417e7a980ab844656f3f97889812363c9479"
+          },
+          "F2.kseed": {
+            "bytes": 3004339,
+            "sha256": "edc7a5d1c7dce5c7c95ec28206b767f5558e8be272296bb0b9371f11f5220a60"
+          },
+          "F2.elf": {
+            "bytes": 3240448,
+            "sha256": "688324e0fdc7a93a664ae55fe0ad417e7a980ab844656f3f97889812363c9479"
+          }
+        }
+      },
+      "verification": "This source's native artifacts are indexed by docs/evidence/provider-environment-20261024/current-scope.json (root, the complete x86_64 public image, the CDCI roles). Exact-head PR CI, merge and main CI are separate gates.",
+      "sourceCommit": "6c2c6034fe9509759119c076bb51faa6cf7369bd"
+    },
     {
       "schema": "amu.seed.static-root.v1",
       "image": {
@@ -1028,5 +1077,5 @@
       "verification": "scripts/seed/selfhost-bootstrap.py --tier pr on arm64 Linux (python:3.12-alpine) from this root (F1 = root): the core route, the runtime boundary corpus, the 24 runtime cases and hardening pass and the rebuild reproduces this root (rootReproduces); scripts/seed/check-kernel-memory.py --cases gives PASS_KERNEL_MEMORY_ADMISSION 16 cases with F1. CI re-runs the tier from this root (F -> F' = root)."
     }
   ],
-  "sourceCommit": "6c2c6034fe9509759119c076bb51faa6cf7369bd"
+  "sourceCommit": "6a8aef1cb84bd6a1430eb21607eb1f8e0a48523a"
 }

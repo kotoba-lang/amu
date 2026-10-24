@@ -22,7 +22,7 @@ flowchart LR
 The current native compiler supports:
 
 ```sh
-bin/amu compile-kototama program.cbor --target x86_64-linux --output answer.elf --fuel 100 --profile kototama.pure-i64-aot/v1
+KEXE_ALLOW=35,37,38,39 KEXE_CAP_RESOURCES_35="$PWD" bin/amu compile-kototama program.cbor --target x86_64-linux --output answer.elf --fuel 100 --profile kototama.pure-i64-aot/v1
 chmod +x answer.elf
 ./answer.elf | od -An -td8
 ```
@@ -128,5 +128,7 @@ The wire/semantic migration references reviewed on 2026-10-24 are
 `kotoba-vm/src/kotoba/vm/kototama/program.cljk` (blob
 `65dbbf03d2804820b23fe6b21ade1e7d43cdb5ed`), `interpreter.cljk` (blob
 `a11d244f7b3aacc4b4f548317691dd2500babc60`) and `kernel.cljk` (blob
-`d27233720ac385a93b2c8e4b1446425c66d34913`). They are references, never an
+`d27233720ac385a93b2c8e4b1446425c66d34913`); the one-unit `:guest/op` cost is
+in `syscall.cljk` (blob `9bb8c37f0d374f57035e5d34d8baf9c65d06338e`).
+They are references, never an
 executable compiler/test dependency or a JVM/Node fallback.
