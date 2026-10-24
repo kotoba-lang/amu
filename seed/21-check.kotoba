@@ -4708,9 +4708,16 @@
 (defn- ck-r6b-symend [S :string i :i64] :i64
   (loop [j i] (if (and (< j (string-length S)) (lx-symch? (string-code-point-at S j))) (recur (+ j (lx-cpw (string-code-point-at S j)))) j)))
 (defn- ck-r6b-is? [S :string a :i64 b :i64 t :string] :bool
-  (and (= (- b a) (string-length t)) (string=? (string-substring S a b) t)))
+  ;; A prefix probe can end inside a Unicode source point. Compare complete
+  ;; points without allocating that invalid substring. This checker helper
+  ;; also belongs to the Linux closure, which has no project-loader module.
+  (and (= (- b a) (string-length t))
+    (loop [i 0]
+      (cond (>= i (string-length t)) true
+            (not= (string-code-point-at S (+ a i)) (string-code-point-at t i)) false
+            :else (recur (+ i (mem-cpw (string-code-point-at t i))))))))
 (defn- ck-r6b-head-bit [S :string a :i64 b :i64] :i64
-  (cond (and (> (- b a) 9) (pj-span= S a (+ a 9) "document-")) ck-r6b-g-doc
+  (cond (and (> (- b a) 9) (ck-r6b-is? S a (+ a 9) "document-")) ck-r6b-g-doc
         (ck-r6f-ksnth-text? S a b) ck-r6f-g-kwo   ; R6F
         (or (ck-r6b-is? S a b "f32-to-bits") (ck-r6b-is? S a b "f32-from-bits")) ck-r6f-g-f32   ; R6F
         (pos? (ck-r6f-name-bit S a b)) (ck-r6f-name-bit S a b)   ; R6F
@@ -5826,7 +5833,7 @@
   (let [q (lx-sk-ws S b)]
     (and (ck-r6b-is? S a b "typed-set-nth")
          (<= (+ q 15) (string-length S))
-         (pj-span= S q (+ q 15) "[:set :keyword]"))))
+         (ck-r6b-is? S q (+ q 15) "[:set :keyword]"))))
 ;; n is (typed-set-nth [:set :keyword] s i) with the builtin head
 (defn- ck-r6f-ksnth? [M :vector-i64 n :i64] :bool
   (let [h (nm-first M n)

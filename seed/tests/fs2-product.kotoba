@@ -7,6 +7,13 @@
 (defn- acknowledged? [s :string] :bool
   (and (>= (string-byte-length s) 5) (string=? (string-substring s 0 5) "\u0000FS2\u0000")))
 (defn- payload [s :string] :string (string-substring s 5 (string-length s)))
+(defn- field [s :string wanted :i64] :string
+  (loop [start 0 index 0]
+    (if (>= start (string-length s)) ""
+      (let [end (loop [at start]
+                  (if (or (= at (string-length s)) (= (string-code-point-at s at) 32)) at (recur (+ at 1))))]
+        (if (= index wanted) (string-substring s start end) (recur (+ end 1) (+ index 1)))))))
+(defn- yes? [reply :string] :bool (and (acknowledged? reply) (string=? (payload reply) "1")))
 (defn- chunks [head :string data :bytes] [:list :bytes]
   (typed-list-conj [:list :bytes]
     (typed-list-conj [:list :bytes] (typed-list-new [:list :bytes]) (string-to-utf8 head)) data))
@@ -52,6 +59,28 @@
              (string=? (payload destination-kept) "sentinel") (string=? (payload removed) "1")
              (string=? (payload published) "1") (string=? (payload source-gone) "0")
              (string=? (payload final) "source") (string=? (payload cleanup) "1")) 0 26)))
+(defn- original-forms-test [parent :string] :i64
+  (let [file (string-concat parent "/original") renamed (string-concat parent "/renamed")
+        directory (string-concat parent "/directory")
+        written (call "B" file "abc") appended (call "C" file "def")
+        read (call "A" file "") exists (call "D" file "") range (call "E" file "2:2")
+        mode (call "H" file "600") stat (call "F" file "") mtime (call "G" file "")
+        mkdir (call "I" directory "") rmdir (call "K" directory "")
+        moved (call "L" file renamed) durable (call "M" renamed "")
+        temporary (call "N" parent "probe-") temporary-path (payload temporary)
+        temporary-stat (call "F" temporary-path "") nofollow (call "O" renamed "") owner (call "P" renamed "")
+        removed (call "J" renamed "") temporary-removed (call "K" temporary-path "")
+        absent (call "D" renamed "")]
+    (if (and (string=? (payload written) "abc") (string=? (payload appended) "def")
+             (string=? (payload read) "abcdef") (yes? exists) (string=? (payload range) "cd")
+             (yes? mode) (string=? (field (payload stat) 0) "384")
+             (string=? (field (payload stat) 1) "6") (string=? (field (payload stat) 3) "0")
+             (> (string-length (payload mtime)) 0) (yes? mkdir) (yes? rmdir) (yes? moved) (yes? durable)
+             (string=? (field (payload temporary-stat) 0) "448") (string=? (field (payload temporary-stat) 3) "1")
+             (string=? (field (payload nofollow) 3) "0")
+             (not (string=? (field (payload owner) 0) ""))
+             (string=? (field (payload owner) 0) (field (payload owner) 1))
+             (yes? removed) (yes? temporary-removed) (string=? (payload absent) "0")) 0 27)))
 (defn- response-pattern? [value [:list :bytes] n :i64] :bool
   (loop [i 0 at 0]
     (if (= i (vector-count value)) (= at (+ n 5))
@@ -76,10 +105,12 @@
   (let [begin (typed-cap-call :fs/app-data [:list :bytes] [:list :bytes] (chunks (frame "R" parent "") (bytes-empty)))
         first (typed-list-nth [:list :bytes] begin 0)
         dir (string-from-utf8 (bytes-slice first 5 (bytes-count first)))
-        file (string-concat dir "/0.tmp")
+        file (if (> (string-length dir) 0) (string-concat dir "/0.tmp") (throw :test/fs2-begin))
         stage (typed-cap-call :fs/app-data [:list :bytes] [:list :bytes]
           (chunks (frame "Q" file "0400\u0000") (string-to-utf8 "preserved")))
-        marker (call "B" (string-concat parent "/ready") dir)]
+        status (typed-list-nth [:list :bytes] stage 0)
+        marker (if (and (= (bytes-count status) 6) (= (bytes-at status 5) 49))
+                 (call "B" (string-concat parent "/ready") dir) (throw :test/fs2-stage))]
     (cond (string=? mode "managed-return") 0
           (or (string=? mode "managed-publish") (string=? mode "managed-publish-exclusive"))
             (let [renamed (call (if (string=? mode "managed-publish-exclusive") "T" "L") file (string-concat parent "/published"))
@@ -87,9 +118,10 @@
               (if (and (string=? (payload renamed) "1") (string=? (payload durable) "1")) 0 24))
           (string=? mode "managed-fault") (vector-at (vector-alloc 0) 0)
           :else (loop [i 0] (recur (+ i 1))))))
-(defn main [] :i64
+(defn- run [] :i64
   (let [mode (arg "0") path (arg "1")]
     (cond (string=? mode "raw") (raw-test path)
+          (string=? mode "original-forms") (original-forms-test path)
           (string=? mode "managed") (managed-test path)
           (string=? mode "no-replace") (no-replace-test path)
           (string=? mode "large") (large-test path)
@@ -100,3 +132,5 @@
             (let [r (typed-cap-call :fs/app-data :bytes :bytes (string-to-utf8 path))] 25)
           :else (let [out (call mode path (arg "2"))
                       printed (typed-cap-call :io/write :string :string out)] 0))))
+(defn main [] :i64
+  (try (run) (catch :keyword reason 91)))
