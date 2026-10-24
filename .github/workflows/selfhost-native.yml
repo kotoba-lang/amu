@@ -11,6 +11,10 @@ name: selfhost-native
 #                         modules; x86_64: X2, cases, hardening, and the
 #                         wasm32-browser modules in headless Chrome (JUN-353:
 #                         the arm64 image has no Chrome or Chromium).
+#                         On both kernels in every tier: the static runtimes'
+#                         stdin (wire 41), durable files and sleep (35, 7) and
+#                         spawn (20) checks, with their refusal and seccomp
+#                         controls (JUN-354, JUN-357, JUN-359, JUN-360).
 #   push to main -> main: + G2/G3 through the runner, the packed core P, the
 #                         Linux selfhost closure fixed point; x86_64: X3, the
 #                         KX64V1 runner, the scalar and aiueos suites.
@@ -68,6 +72,12 @@ jobs:
         run: python3 scripts/seed/selfhost-bootstrap.py --output "$RUNNER_TEMP/boot" --tier "$TIER"
       - name: Static launcher (--format launcher, ADR 0371 step 4; arm64, native)
         run: python3 scripts/seed/check-static-launcher.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/launcher"
+      - name: Static runtime stdin, wire 41 (arm64, native)
+        run: python3 scripts/seed/check-io-read.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/io-read"
+      - name: Static runtime durable files and sleep, wires 35 and 7 (arm64, native)
+        run: python3 scripts/seed/check-durable-sleep.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/durable-sleep"
+      - name: Static runtime spawn, wire 20 (arm64, native)
+        run: python3 scripts/seed/check-spawn-runtime.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/spawn"
       - name: Kototama bounded pure i64 AOT (arm64, native verdict)
         run: python3 scripts/seed/check-kototama-i64.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/kototama-i64-arm64"
       - name: Combined compiler (core + Linux targets) from the bootstrap (arm64, native)
@@ -113,6 +123,15 @@ jobs:
           name: static-launcher-arm64
           path: ${{ runner.temp }}/launcher/static-launcher.json
           if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: runtime-checks-arm64
+          path: |
+            ${{ runner.temp }}/runtime/io-read/io-read.json
+            ${{ runner.temp }}/runtime/durable-sleep/durable-sleep.json
+            ${{ runner.temp }}/runtime/spawn/spawn-runtime.json
+          if-no-files-found: warn
   qualify-x86_64:
     needs: bootstrap-arm64
     runs-on: ubuntu-latest
@@ -148,6 +167,12 @@ jobs:
         run: python3 scripts/seed/check-kototama-i64.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/kototama-i64-x86_64"
       - name: Native x86 clock and entropy (fixed Kotoba guest, refusal and ENOSYS)
         run: python3 scripts/seed/check-native-clock-entropy.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/clock-entropy"
+      - name: Static runtime stdin, wire 41 (x86_64, native)
+        run: python3 scripts/seed/check-io-read.py --compiler "$RUNNER_TEMP/complete/F2.elf" --target x86_64-linux --output "$RUNNER_TEMP/runtime/io-read"
+      - name: Static runtime durable files and sleep, wires 35 and 7 (x86_64, native)
+        run: python3 scripts/seed/check-durable-sleep.py --compiler "$RUNNER_TEMP/complete/F2.elf" --target x86_64-linux --output "$RUNNER_TEMP/runtime/durable-sleep"
+      - name: Static runtime spawn, wire 20 (x86_64, native)
+        run: python3 scripts/seed/check-spawn-runtime.py --compiler "$RUNNER_TEMP/complete/F2.elf" --target x86_64-linux --output "$RUNNER_TEMP/runtime/spawn"
       - name: Kotoba native controller (Amu selfhost and complete24 Kotoba gate)
         run: python3 scripts/seed/check-native-cdci.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/native-cdci"
       - name: Public native product and aliases
@@ -186,6 +211,9 @@ jobs:
             ${{ runner.temp }}/clock-entropy/native-clock-entropy.json
             ${{ runner.temp }}/clock-entropy/calls.json
             ${{ runner.temp }}/clock-entropy/enosys-filter.json
+            ${{ runner.temp }}/runtime/io-read/io-read.json
+            ${{ runner.temp }}/runtime/durable-sleep/durable-sleep.json
+            ${{ runner.temp }}/runtime/spawn/spawn-runtime.json
             ${{ runner.temp }}/native-cdci/native-cdci.json
             ${{ runner.temp }}/native-cdci/calls.json
             ${{ runner.temp }}/native-cdci/raw
