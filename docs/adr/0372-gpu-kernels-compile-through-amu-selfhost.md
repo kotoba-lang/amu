@@ -398,8 +398,88 @@ a follow-up to ADR 0371.
      from the device-features branch (#1534), since no provider on main
      enables the feature yet; with this tree's own provider, every other
      case passes. Receipts: `docs/evidence/gpu-kernel-kir2-x8-20261023/`.
-   * then the nvgpu-h2 kernels for Xavier.
+   * **Done: the nvgpu-h2 kernels**, which the decode path's `nvgpu-h2`
+     layout (Xavier) uses. All are from inference main:
+     * `kdot_h2_r1` (at c21beff), plain and `-DQ6_HALF`;
+     * `kdot_h2_r4_q8` (b5f7ca3) and `kdot_h2_r8_q8` (b3dfa34);
+     * `kdot_h2_qkv_q8` and `kdot_h2_qkvr_q8` (ee95e44).
+
+     They compute their per-value products in packed f16 and reduce by
+     `subgroupAdd`. The builder gained the 16-bit float (`Float16`),
+     constant vectors, shuffles, `OpFConvert`, and subgroup add and elect.
+     The f16 forms are glslang's, so the driver sees the same conversions.
+
+     On gad (RADV), in 33 cases, every kernel is byte-identical to glslang's
+     module:
+     * every type and odd group counts with a trailing group masked in part;
+     * outputs that start as a sentinel;
+     * the same cases again with `RADV_PERFTEST=cswave32`, where a probe
+       shows two subgroups per workgroup, as nvgpu's 32-wide warps give.
+
+     The gate runs them only where the provider enables `shaderFloat16`.
+     `kdot_h2_qkvr_q8` writes its rows with no position term, so it is
+     decode-only and runs at one position.
+
+     Not yet run on Xavier itself: the ADR 0371 provider and this gate run on
+     x86_64 only, so an nvgpu run waits on the provider for aarch64.
+     Receipts: `docs/evidence/gpu-kernel-kir2-h2-20261024/`.
 4. **Execution.** Through the ADR 0371 provider, with numeric and speed gates
    against the hand-written kernels.
+   * **On gad: the kernels on real tensors.** `scripts/seed/check-gpu-kernel-exec.py`
+     takes the product route: a static guest, the static launcher, and the
+     confined Vulkan provider. It ran KIR v2's modules and glslang's on six
+     fixtures:
+     * kotoba-lang/inference's four kdot fixtures (Q5_K, two IQ4_XS, and the
+       Q6_K lm_head);
+     * a Q4_K tensor;
+     * a real F32 matvec for `dot_rows`.
+
+     The layouts were r1, r8, x8r4 and h2r1, the lm_head's r1, x8r4 and
+     h2q6r1, and the decode argmax chain.
+     * Every output is byte-identical to glslang's. The output buffers start
+       as NaN before each layout, so an unwritten row fails.
+     * Against an f64 dequant oracle, the f32 layouts are within 5.4e-5
+       (kdot_check's metric, gate 1e-3). The h2 layouts compute in f16 and
+       are within 5.3e-3 of the output's rms (gate 1e-2).
+     * The argmax chain's 61 partials match glslang's and the logits it ran
+       on, and its pick is the f64 argmax.
+     * Speed: KIR v2's median 10-dispatch command buffer (seven rounds,
+       alternating with glslang's) took 0.93-1.07 times glslang's on gad and
+       on ANV. The gate is 1.25, where glslang's median buffer takes at least
+       0.5 ms; shorter, launch-bound ones are recorded but not gated.
+
+     Receipts: `docs/evidence/gpu-kernel-exec-20261024/`.
+   * **ANV (Intel BMG G31, the B70).** The whole kir2 suite is
+     byte-identical to glslang's modules there too, including int8 and h2.
+     Its subgroups are 32 wide, so the h2 kernels run two per workgroup.
+
+     The exec gate found one speed gap. On attn_qkv, KIR v2's x8r4 took 1.37
+     times glslang's time, and the cause was visible in ANV's compile
+     statistics:
+     * KIR v2's module failed SIMD32 register allocation and fell back to
+       SIMD16.
+     * Its `q4_scale` and `q4_min` loaded both forms and picked one with
+       `OpSelect`, where the GLSL returns early. A driver does not
+       speculate a storage load, so the selection's form kept every byte
+       load live at once.
+
+     The same rule applies to the h2 kernels' `h_scale` and `h_min`. Written
+     as the GLSL's branch, x8r4 compiles to SIMD32 and runs at glslang's
+     speed.
+
+     The lm_head's r1 and h2q6r1 dispatch one workgroup per row, 248320 of
+     them. That is past Vulkan's guaranteed `maxComputeWorkGroupCount` of
+     65535, which is ANV's. So on ANV the lm_head runs x8r4 and r8 (the
+     argmax chain on x8r4's logits), as the decode path's ANV table does.
+   * Not yet: the whole decode guest through tokens, and Xavier (which needs
+     the provider on aarch64).
+   * **After #1510.** These GPU runs go through the ADR 0371 provider. Main's
+     compiler no longer builds it (`--format platform-linked` is refused),
+     and its qualifications are excluded from mandatory native CDCI (main's
+     AGENTS.md).
+     * The modules, the Kotoba unit and the oracles stand on main's route:
+       static images and spirv-val.
+     * The GPU receipts above are historical, from providers the earlier
+       root built. They are not native gates.
 5. **Retirement.** Remove `emit-kernel.cljk`, glslang and the accelerator CLJK
    from the product route. The hand `.comp` files stay as baselines.

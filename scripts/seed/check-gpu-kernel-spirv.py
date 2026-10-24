@@ -104,21 +104,23 @@ SUITES = {
                  test="tools/gpu_kernel_kir2_test.kotoba", receipt="gpu-kernel-kir2.json", prefix="kir2-",
                  sizes={"ewise": 1096, "attn-copy-dense": 6488, **{"kir2-nex-" + op + ".spv": n for op, n in zip(NEX_OPS, [3440, 3468, 3516, 1992, 2660, 2452, 2396, 2140, 2704, 1872, 1968, 3088, 3476, 1652, 3988, 5964, 5356, 3604, 4052, 3252, 1780, 2172, 1720, 1732, 1752, 9916, 4504, 4000, 3676, 3116, 6220])},
                         **{"kir2-nex-" + v + ".spv": n for v, n in zip(NEX_VARIANT_NAMES, NEX_VARIANT_SIZES)},
-                        "kir2-dot-rows.spv": 2448, "kir2-kdot-f32-r1.spv": 28776,
-                        "kir2-kdot-f32-r8.spv": 25056, "kir2-kdot-f32-r8-rows4.spv": 25056,
-                        "kir2-kdot-f32-r8-rows16.spv": 25072, "kir2-kdot-f32-r8-rows32.spv": 25072,
-                        "kir2-kdot-x8r8.spv": 26028, "kir2-kdot-x8r4.spv": 26028,
-                        "kir2-kdot-i8-x8r4.spv": 23028, "kir2-kdot-i8-x8r8.spv": 23028,
-                        "kir2-kdot-x8r16.spv": 26028, "kir2-kdot-x8r32.spv": 26028, "kir2-kdot-i8-x8r16.spv": 23028, "kir2-kdot-i8-x8r32.spv": 23028,
+                        "kir2-dot-rows.spv": 2448, "kir2-kdot-f32-r1.spv": 28976,
+                        "kir2-kdot-f32-r8.spv": 25256, "kir2-kdot-f32-r8-rows4.spv": 25256,
+                        "kir2-kdot-f32-r8-rows16.spv": 25272, "kir2-kdot-f32-r8-rows32.spv": 25272,
+                        "kir2-kdot-x8r8.spv": 26228, "kir2-kdot-x8r4.spv": 26228,
+                        "kir2-kdot-i8-x8r4.spv": 23228, "kir2-kdot-i8-x8r8.spv": 23228,
+                        "kir2-kdot-x8r16.spv": 26228, "kir2-kdot-x8r32.spv": 26228, "kir2-kdot-i8-x8r16.spv": 23228, "kir2-kdot-i8-x8r32.spv": 23228,
                         "kir2-deltanet-step.spv": 3728, "kir2-deltanet-fused.spv": 13724,
                         "kir2-deltanet-fused-batch.spv": 14076, "kir2-deltanet-fused-bprefill.spv": 14120,
+                        "kir2-kdot-h2-r1.spv": 33448, "kir2-kdot-h2-r1-q6half.spv": 33196, "kir2-kdot-h2-r4-q8.spv": 10332,
+                        "kir2-kdot-h2-r8-q8.spv": 10348, "kir2-kdot-h2-qkv-q8.spv": 12656, "kir2-kdot-h2-qkvr-q8.spv": 24256,
                         # embed's BATCH and BPREFILL: 160 and 100 bytes under each decode module
                         **{f"kir2-embed-{n}-{v}.spv": b - d for n, b in (("iq4xs", 4264), ("q8", 3056), ("b32-2", 3228), ("b32-3", 3420),
                                                                           ("b32-6", 4316), ("b32-7", 4476), ("ptq1", 4264))
                            for v, d in (("batch", 160), ("bprefill", 100))},
                         **{f"kir2-embed-{n}.spv": b for n, b in (("iq4xs", 4264), ("q8", 3056), ("b32-2", 3228), ("b32-3", 3420),
                                                                   ("b32-6", 4316), ("b32-7", 4476), ("ptq1", 4264))}},
-                 count=99, control="FAIL attn: variables", refs=True),
+                 count=105, control="FAIL attn: variables", refs=True),
 }
 FUEL = 100000000
 EXPECT_CALL = re.compile(r"\(expect ")
@@ -155,10 +157,13 @@ REF_VARIANTS = {"nex-ops.comp": [(op, "OP=" + op) for op in NEX_OPS]
                 "kdot-i8-x8r4.comp": [(None, None), ("rows8", "ROWS=8"), ("rows16", "ROWS=16"), ("rows32", "ROWS=32")],
                 "embed-iq4xs.comp": [(None, None), ("q8", "Q8"), ("b32-2", "B32=2"), ("b32-3", "B32=3"), ("b32-6", "B32=6"),
                                      ("b32-7", "B32=7"), ("ptq1", "PTQ1")],
-                "deltanet-fused.comp": [(None, None), ("batch", "BATCH"), ("bprefill", "BPREFILL")]}
+                "deltanet-fused.comp": [(None, None), ("batch", "BATCH"), ("bprefill", "BPREFILL")],
+                "kdot-h2-r1.comp": [(None, None), ("q6half", "Q6_HALF")]}
 # embed's BATCH and BPREFILL, for every kind
 REF_VARIANTS["embed-iq4xs.comp"] += [((k + "-" if k else "") + v, (d + " " if d else "") + v.upper())
                                      for k, d in list(REF_VARIANTS["embed-iq4xs.comp"]) for v in ("batch", "bprefill")]
+# the nvgpu-h2 kernels: the gpu phase's module pair -> the module's name part
+H2_PAIRS = {"kdoth2r1": "r1", "kdoth2q6": "r1-q6half", "kdoth2r4": "r4-q8", "kdoth2r8": "r8-q8", "h2qkv": "qkv-q8", "h2qkvr": "qkvr-q8"}
 # embed_iq4xs's variants: KIR v2 kind -> name (the GLSL's define)
 EMBED_KINDS = {23: "iq4xs", 8: "q8", 2: "b32-2", 3: "b32-3", 6: "b32-6", 7: "b32-7", 143: "ptq1"}
 
@@ -946,6 +951,89 @@ def deltanet_embed_variant_cases():
     return cases
 
 
+def h2_cases():
+    """The nvgpu-h2 kernels, as deltanet_embed_cases (pair is the module pair).
+    kdot_h2_r1: every type, 8 rows and a workgroup past them, two positions
+    on experts 1 and 0 and a position past them. The K-quants run 4096
+    columns (16 blocks, the most the staged headers hold, an even count for
+    the two-block loop); the 32-value types run 4064 (a tail group), Q8_0
+    also 4864 (19 groups: the trailing single) and Q4_0 896. -DQ6_HALF runs
+    Q6_K, Q4_K and Q8_0. The Q8_0 kernels: R = 4 and 8 over 22 rows (a
+    partial last workgroup); qkv and qkvr over 2 query heads and 1 kv head of
+    64, with the input-row paths (qkvr, decode only, at one position). Every
+    output must be finite."""
+    cases = []
+
+    def finite(o, idx):
+        return 0 if all(math.isfinite(v) for i in idx for v in from_f32(o[i])) else 1
+
+    # outputs start as a sentinel with a 64-byte tail, so a write a guard
+    # should have stopped shows in the bytes
+    def sentinel(n):
+        return b"\xa5" * (n + 64)
+
+    def kd(name, pair, tt, cols, shape=KDOT_ROWS_PLAIN, rows=8, R=1, seed=0):
+        suffix, positions, experts, ipe, pad0, pad1, xrows = shape
+        bb, b32 = KDOT_TYPES[tt], tt in (8, 2, 1)
+        row_bytes = ((cols + 31) // 32) * (bb // 8) if b32 else (cols // 256) * bb
+        wbytes = 2 * rows * row_bytes
+        cases.append(dict(name=name + suffix, pair=pair,
+                          bufs=[struct.pack("<8I", rows, cols, tt, positions, ipe, pad0, pad1, 0),
+                                kdot_weights(tt, wbytes + (-wbytes % 4) + 4, 170 + tt + seed), f32(lcg(xrows * cols, 171 + seed)),
+                                sentinel(4 * positions * rows), struct.pack(f"<{len(experts)}I", *experts)],
+                          compare=[3], groups=(-(-rows // R) + 1, positions + 1, 1), check=lambda o: finite(o, [3])))
+    for tt in (12, 13, 14, 23):
+        kd(f"kdot_h2_r1 type {tt}", "kdoth2r1", tt, 4096)
+    for tt in (8, 2, 1):
+        kd(f"kdot_h2_r1 type {tt}", "kdoth2r1", tt, 4064)
+    kd("kdot_h2_r1 type 8 cols 4864", "kdoth2r1", 8, 4864)
+    kd("kdot_h2_r1 type 2 cols 896", "kdoth2r1", 2, 896)
+    # an odd group count whose trailing single group is masked in part
+    kd("kdot_h2_r1 type 8 cols 4832", "kdoth2r1", 8, 4832)
+    kd("kdot_h2_r1 type 2 cols 1152", "kdoth2r1", 2, 1152)
+    kd("kdot_h2_r1 type 1 cols 1152", "kdoth2r1", 1, 1152)
+    kd("kdot_h2_r1 type 12", "kdoth2r1", 12, 4096, KDOT_ROWS_MOE, seed=1)
+    kd("kdot_h2_r1 type 8", "kdoth2r1", 8, 4064, KDOT_ROWS_SHARED, seed=1)
+    for tt in (14, 12, 8):
+        kd(f"kdot_h2_r1 -DQ6_HALF type {tt}", "kdoth2q6", tt, 4096 if tt != 8 else 4064)
+    kd("kdot_h2_r4_q8 cols 4864", "kdoth2r4", 8, 4864, rows=22, R=4)
+    kd("kdot_h2_r4_q8 cols 896", "kdoth2r4", 8, 896, KDOT_ROWS_MOE, rows=22, R=4)
+    kd("kdot_h2_r8_q8 cols 4064", "kdoth2r8", 8, 4064, rows=22, R=8)
+    kd("kdot_h2_r8_q8 cols 896", "kdoth2r8", 8, 896, KDOT_ROWS_SHARED, rows=22, R=8)
+    kd("kdot_h2_r4_q8 cols 4832", "kdoth2r4", 8, 4832, rows=22, R=4)
+    kd("kdot_h2_r8_q8 cols 1152", "kdoth2r8", 8, 1152, rows=22, R=8)
+    # qkv and qkvr: q 2 heads of 64 (128 rows), k and v 1 head (64 rows each);
+    # 1152 columns, 5 groups, the trailing single masked in part
+    hd, cols = 64, 1152
+    rb = ((cols + 31) // 32) * 34
+    ws = [kdot_weights(8, n * rb + (-(n * rb) % 4) + 4, 180 + k) for k, n in enumerate((128, 64, 64))]
+    for suffix, positions, experts, ipe, pad0, pad1, xrows in (KDOT_ROWS_PLAIN, KDOT_ROWS_MOE):
+        meta = struct.pack("<8I", 128, 64, cols, 8, positions, ipe, pad0, pad1)
+        x = f32(lcg(xrows * cols, 183))
+        outs = [sentinel(4 * positions * n) for n in (128, 64, 64)]
+        cases.append(dict(name="kdot_h2_qkv_q8" + suffix, pair="h2qkv", bufs=[meta, ws[0], x, outs[0], ws[1], outs[1], ws[2], outs[2]],
+                          compare=[3, 5, 7], groups=(128 + 2 * 64 + 1, positions + 1, 1), check=lambda o: finite(o, [3, 5, 7])))
+    # qkvr is decode only: it writes o[row] with no position term, so one
+    # position (and one past it), from input row 0 and from input row 1 (pad1);
+    # the position from ids[0] = 7 (p1 != 0) or RopeP.aux2 = 3, each with and
+    # without the rope_freqs division (eps)
+    for suffix, pad1 in (("", 0), (" input row 1", 1)):
+        meta = struct.pack("<8I", 128, 64, cols, 8, 1, 1, 0, pad1)
+        x = f32(lcg(2 * cols, 183))
+        outs = [sentinel(4 * n) for n in (128, 64, 64)]
+        positions = 1
+        for label, rope, ids in ((" dynamic freqs", (hd, 0, hd, 0, 1.0, 10000.0, 0.0, 1.0), 7),
+                                 (" dynamic", (hd, 0, hd, 0, 0.0, 10000.0, 0.0, 1.0), 7),
+                                 (" static freqs", (hd, 0, hd, 3, 1.0, 10000.0, 0.0, 0.0), 7),
+                                 (" static", (hd, 0, hd, 3, 0.0, 10000.0, 0.0, 0.0), 7)):
+            cases.append(dict(name="kdot_h2_qkvr_q8" + suffix + label, pair="h2qkvr",
+                              bufs=[meta, ws[0], x, outs[0], ws[1], outs[1], ws[2], outs[2], f32(lcg(128, 184)), f32(lcg(64, 185)),
+                                    f32(lcg(64, 186)), struct.pack("<4I4f", *rope), f32([1.0 + 0.0625 * k for k in range(32)]),
+                                    struct.pack("<4I", ids, 0, 0, 0)],
+                              compare=[3, 5, 7], groups=(64 + 2 * 32 + 1, positions + 1, 1), check=lambda o: finite(o, [3, 5, 7])))
+    return cases
+
+
 def sampler_chain(n, seed):
     """The multi-workgroup sampler: sample_part, sample_probs, 30 x
     (sample_bisect_part, sample_bisect_step), sample_final, over shared
@@ -997,7 +1085,8 @@ def gpu(output, suite, provider_out):
           "v2-dns.spv": "kir2-deltanet-step.spv", "v2-dnf.spv": "kir2-deltanet-fused.spv",
           **{f"v2-emb-{n}.spv": f"kir2-embed-{n}.spv" for n in EMBED_KINDS.values()},
           **{f"v2-dnf-{v}.spv": f"kir2-deltanet-fused-{v}.spv" for v in ("batch", "bprefill")},
-          **{f"v2-emb-{n}-{v}.spv": f"kir2-embed-{n}-{v}.spv" for n in EMBED_KINDS.values() for v in ("batch", "bprefill")}}
+          **{f"v2-emb-{n}-{v}.spv": f"kir2-embed-{n}-{v}.spv" for n in EMBED_KINDS.values() for v in ("batch", "bprefill")},
+          **{f"v2-{p}.spv": f"kir2-kdot-h2-{m}.spv" for p, m in H2_PAIRS.items()}}
     refs = {"ref-attn.spv": "ref-attn-copy-dense.spv", "ref-add.spv": "ref-ewise-add.spv",
             **{f"ref-nex-{op}.spv": f"ref-nex-ops-{op}.spv" for op in NEX_OPS + NEX_VARIANT_NAMES},
             "ref-dot.spv": "ref-dot-rows.spv", "ref-kdot.spv": "ref-kdot-f32-r1.spv",
@@ -1010,7 +1099,9 @@ def gpu(output, suite, provider_out):
             **{f"ref-emb-{n}.spv": "ref-embed-iq4xs" + ("" if n == "iq4xs" else "-" + n) + ".spv" for n in EMBED_KINDS.values()},
             **{f"ref-dnf-{v}.spv": f"ref-deltanet-fused-{v}.spv" for v in ("batch", "bprefill")},
             **{f"ref-emb-{n}-{v}.spv": "ref-embed-iq4xs-" + ("" if n == "iq4xs" else n + "-") + v + ".spv"
-               for n in EMBED_KINDS.values() for v in ("batch", "bprefill")}}
+               for n in EMBED_KINDS.values() for v in ("batch", "bprefill")},
+            **{f"ref-{p}.spv": f"ref-kdot-h2-{m}.spv" for p, m in H2_PAIRS.items()},
+            "ref-probe.spv": "ref-subgroup-probe.spv"}
     files = {**{n: output / "spv" / m for n, m in v2.items()}, **{n: output / "refs" / m for n, m in refs.items()}}
     for n, f in files.items():
         shutil.copy(f, raw / n)
@@ -1029,6 +1120,8 @@ def gpu(output, suite, provider_out):
     feats = re.search(r":features #\{([^}]*)\}", probe.close(0))
     features = feats[1].split() if feats else []
     int8 = ":shader-integer-dot-product" in features
+    # the h2 kernels compute in f16: shaderFloat16, likewise
+    f16 = ":shader-float16" in features
     s = cgp.Session(img, raw, "kir2-gpu", g, device=None)
     info = cgp.expect(s, "INFO", re.compile(r"[^|]+\|\d+\.\d+\.\d+\|\d+\|[01]"))
     handles = [0]
@@ -1045,7 +1138,7 @@ def gpu(output, suite, provider_out):
         return bytes.fromhex(cgp.expect(s, f"READ {h} 0 {nbytes}", re.compile(r"^[0-9a-f]*$")))
 
     def bindings(n):
-        return (7 if "-nex-" in n else 6 if "i8x" in n else 5 if ("kdot" in n or "-emb-" in n) else 8 if ("attn" in n or "dns" in n)
+        return (1 if "probe" in n else 14 if "h2qkvr" in n else 8 if "h2qkv" in n else 7 if "-nex-" in n else 6 if "i8x" in n else 5 if ("kdot" in n or "-emb-" in n) else 8 if ("attn" in n or "dns" in n)
                 else 13 if "dnf" in n else 4)
     pipes = {}
     for k, n in enumerate(["ref-add.spv", *[f"v2-{o}-wg{wg}.spv" for o in EWISE_OPS for wg in (64, 256)], "ref-attn.spv", "v2-attn.spv",
@@ -1230,13 +1323,24 @@ def gpu(output, suite, provider_out):
     handles[0], pipes = 0, {}
     for k, n in enumerate([*[f"{w}-nex-{v}.spv" for v in NEX_VARIANT_NAMES for w in ("ref", "v2")],
                            *[f"{w}-dnf-{v}.spv" for v in ("batch", "bprefill") for w in ("ref", "v2")],
-                           *[f"{w}-emb-{e}-{v}.spv" for e in EMBED_KINDS.values() for v in ("batch", "bprefill") for w in ("ref", "v2")]]):
+                           *[f"{w}-emb-{e}-{v}.spv" for e in EMBED_KINDS.values() for v in ("batch", "bprefill") for w in ("ref", "v2")],
+                           *([f"{w}-{p}.spv" for p in H2_PAIRS for w in ("ref", "v2")] + ["ref-probe.spv"] if f16 else [])]):
         cgp.expect(s, f"PIPELINE {n} {bindings(n)}", str(k + 1))
         pipes[n] = k + 1
     for c in nex_variant_cases():
         nex(c)
     for c in deltanet_embed_variant_cases():
         dne(c)
+    # the subgroups of a 64-invocation workgroup, from the probe
+    def subgroups():
+        h = alloc(16)
+        cgp.expect(s, f"DISPATCH {pipes['ref-probe.spv']} 1 1 1 {h}", re.compile(r"^\d+$"))
+        size, n = struct.unpack("<2I", read(h, 8))
+        return dict(subgroupSize=size, numSubgroups=n)
+    for c in h2_cases() if f16 else []:
+        dne(c)
+    if f16:
+        rows["h2 subgroups"] = subgroups()
     # the -DBATCH chain over three rows of 5000 (row 1 skipped)
     m, cb, steps = sampler_chain_batch(5000, 3)
     hs = [alloc(len(m))] + [alloc(len(cb[b])) for b in range(1, 7)]
@@ -1263,11 +1367,37 @@ def gpu(output, suite, provider_out):
                                            outputSHA256=hashlib.sha256(b"".join(v[b] for b in (2, 4, 5, 6))).hexdigest())
     line2 = s.close(0)
     rows["confinement variants"] = cgp.confined(line2, True)
+    # the h2 kernels again with 32-wide waves (RADV's compute default is 64,
+    # one subgroup per 64-invocation workgroup; nvgpu's warps are 32, two
+    # subgroups): RADV_PERFTEST=cswave32, which the probe must show as two
+    # subgroups. glslang's and the KIR v2 module must still agree; the outputs
+    # may equal the first run's (wave64's add combines its two halves in the
+    # same order)
+    wave32 = f16 and "RADV" in info
+    s2 = s
+    if wave32:
+        s = cgp.Session(img, raw, "kir2-gpu-h2-wave32", g, device=None, env={"RADV_PERFTEST": "cswave32"})
+        handles[0], pipes = 0, {}
+        for k, n in enumerate([*[f"{w}-{p}.spv" for p in H2_PAIRS for w in ("ref", "v2")], "ref-probe.spv"]):
+            cgp.expect(s, f"PIPELINE {n} {bindings(n)}", str(k + 1))
+            pipes[n] = k + 1
+        sg = subgroups()
+        assert sg["numSubgroups"] == 2, ("RADV_PERFTEST=cswave32 did not give two subgroups", sg)
+        changed = []
+        for c in h2_cases():
+            dne(dict(c, name="wave32 " + c["name"]))
+            if rows["wave32 " + c["name"]]["outputSHA256"] != rows[c["name"]]["outputSHA256"]:
+                changed.append(c["name"])
+        line3 = s.close(0)
+        rows["confinement h2 wave32"] = cgp.confined(line3, True)
+        rows["h2 wave32"] = dict(env="RADV_PERFTEST=cswave32", subgroups=sg, casesWhoseOutputChanged=len(changed))
     rows["providerFeatures"] = features
     rows["int8"] = "ran" if int8 else "skipped: the provider did not enable shaderIntegerDotProduct"
+    rows["h2"] = ("ran, and again with RADV_PERFTEST=cswave32" if wave32 else "ran") if f16 else "skipped: the provider did not enable shaderFloat16"
     report["gpu"] = dict(host=[platform.system(), platform.machine(), platform.release()], node=platform.node(), info=info,
                          provider=dict(image=pin(img), source=preport.get("sources")), modules={n: pin(raw / n) for n in files},
-                         rows=rows, report=line.strip(), reportVariants=line2.strip(), requests=len(s1.log) + len(s.log),
+                         rows=rows, report=line.strip(), reportVariants=line2.strip(), requests=len(s1.log) + len(s2.log) + (len(s.log) if wave32 else 0),
+                         reportWave32=line3.strip() if wave32 else None,
                          note="glslang's modules are oracle inputs; the f64 reference is Python, test-time only")
     report["status"] = "PASS_GPU_KERNEL_KIR2_GPU"
     receipt_path.write_text(json.dumps(report, indent=2) + "\n")
