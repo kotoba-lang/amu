@@ -163,6 +163,15 @@ jobs:
         run: python3 scripts/seed/check-complete-x86.py --compiler "$RUNNER_TEMP/one/F-x86_64.elf" --arm-proof "$RUNNER_TEMP/one/one-compiler.json" --output "$RUNNER_TEMP/complete"
       - name: Native FS2 forms, kernel errors and journal cleanup (x86)
         run: python3 scripts/seed/check-native-fs2.py --compiler "$RUNNER_TEMP/complete/F3.elf" --output "$RUNNER_TEMP/fs2-x86"
+      - name: Native x86 AIUEOS image ABI and refusal diagnostics
+        run: python3 scripts/seed/check-aiueos-image-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/aiueos-image"
+      - name: Native x86 AIUEOS EFI packaging and refusal diagnostics
+        run: python3 scripts/seed/check-aiueos-boot-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/aiueos-boot"
+      - name: Native x86 kernel memory admission and emitted guard diagnostics
+        shell: bash
+        run: |
+          python3 scripts/seed/check-kernel-memory.py --compiler "$RUNNER_TEMP/complete/F2.elf" --work "$RUNNER_TEMP/kernel-memory-admission" --cases seed/tests/kernel-memory | tee "$RUNNER_TEMP/kernel-memory-admission.log"
+          python3 scripts/seed/check-kernel-memory.py --compiler "$RUNNER_TEMP/complete/F2.elf" --work "$RUNNER_TEMP/kernel-memory-guards" | tee "$RUNNER_TEMP/kernel-memory-guards.log"
       - name: Kototama bounded pure i64 AOT (x86_64, native verdict)
         run: python3 scripts/seed/check-kototama-i64.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/kototama-i64-x86_64"
       - name: Kototama pure i64 receipts (x86_64, native verdict)
@@ -201,6 +210,17 @@ jobs:
             ${{ runner.temp }}/fs2-x86/native-fs2.json
             ${{ runner.temp }}/fs2-x86/calls.json
             ${{ runner.temp }}/fs2-x86/*/receipt.json
+            ${{ runner.temp }}/complete/F1.elf
+            ${{ runner.temp }}/complete/F2.elf
+            ${{ runner.temp }}/complete/F3.elf
+            ${{ runner.temp }}/kernel-memory-admission.log
+            ${{ runner.temp }}/kernel-memory-guards.log
+            ${{ runner.temp }}/aiueos-image/native-image.json
+            ${{ runner.temp }}/aiueos-image/F2/commands.json
+            ${{ runner.temp }}/aiueos-image/F3/commands.json
+            ${{ runner.temp }}/aiueos-boot/native-boot.json
+            ${{ runner.temp }}/aiueos-boot/F2/commands.json
+            ${{ runner.temp }}/aiueos-boot/F3/commands.json
             ${{ runner.temp }}/kototama-i64-x86_64/report.json
             ${{ runner.temp }}/kototama-i64-x86_64/gate.stdout
             ${{ runner.temp }}/kototama-i64-x86_64/gate.stderr
