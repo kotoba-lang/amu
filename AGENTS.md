@@ -66,7 +66,7 @@
 
 ## Native CDCI and retired public entry
 
-The kernel-integration working branch contains a full36 engineering source
+The kernel-integration working branch contains a full37 engineering source
 candidate. Its checked-in public/root descriptor still names the admitted
 full31 compiler from #1547. Successor native x86/controller adoption is open;
 ARM rebuild/QEMU receipts do not qualify the working source as public product.

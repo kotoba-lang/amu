@@ -23,7 +23,8 @@ def pin(path):
     return dict(bytes=len(b), sha256=hashlib.sha256(b).hexdigest())
 
 
-def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalog=False, stack_exhaustion=False):
+def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalog=False, stack_exhaustion=False, pci_catalog=False):
+    assert not (pci_catalog and (sealed_catalog or stack_exhaustion)), "select one versioned fixture"
     assert 0 <= remaining_fuel <= 9007199254740991
     assert efi.read_bytes().count(kernel.read_bytes()) == 1, "EFI/kernel pair identity mismatch"
     expected_pc = 0x10104b
@@ -114,7 +115,7 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
             assert fuel == remaining_fuel, (fuel, remaining_fuel)
         assert hmp(f"pmemsave 0x{boot:x} 160 boot-info.bin") == ""
         info = Path("boot-info.bin").read_bytes()
-        assert struct.unpack_from("<QQ", info) == (0x544f4f4245554941, 5)
+        assert struct.unpack_from("<QQ", info) == (0x544f4f4245554941, 6 if pci_catalog else 5)
         map_pointer, map_size, desc_size = struct.unpack_from("<QQQ", info, 16)
         assert map_pointer == boot + 160 and 0 < map_size <= 16384 and desc_size >= 40
         assert map_size % desc_size == 0
@@ -125,6 +126,32 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
         for offset in range(0, map_size, desc_size):
             kind = str(struct.unpack_from("<I", memory_map, offset)[0])
             memory_types[kind] = memory_types.get(kind, 0) + 1
+        pci = None
+        if pci_catalog:
+            pointer, size = struct.unpack_from('<QQ', info, 144)
+            assert pointer == boot+16544 and 32 <= size <= 8224
+            assert hmp(f"pmemsave 0x{pointer:x} {size} pci-catalog.bin") == ""
+            raw = Path('pci-catalog.bin').read_bytes()
+            magic, version, count, stride = struct.unpack_from('<QQQQ', raw)
+            assert (magic, version, stride) == (0x31494350534f4941, 1, 64)
+            assert count <= 128 and size == 32+64*count
+            devices = call('query-pci')
+            (output/'qmp-pci.json').write_text(json.dumps(devices, indent=2)+'\n')
+            expected = set()
+            def scan(bus):
+                for device in bus['devices']:
+                    for region in device.get('regions', []):
+                        if region['type'] == 'memory' and 0 <= region['bar'] <= 5:
+                            assert region['address'] > 0 and region['size'] > 0
+                            expected.add((region['address'],region['size'],0,device['bus'],device['slot'],device['function'],region['bar'],device['id']['vendor']+(device['id']['device']<<16)))
+                    if 'pci_bridge' in device:
+                        scan(device['pci_bridge']['bus'])
+            for bus in devices: scan(bus)
+            observed = [struct.unpack_from('<8Q', raw, 32+64*i) for i in range(count)]
+            assert len(set(observed)) == len(observed), 'duplicate catalog record'
+            assert set(observed) == expected and count > 0, (observed, expected)
+            pci = dict(records=count,catalog=pin(Path('pci-catalog.bin')),qmp=pin(output/'qmp-pci.json'),
+                       exactDeviceAndBARParity=True,osOwnershipQualified=False)
         catalog = None
         if sealed_catalog or stack_exhaustion:
             assert hmp(f"pmemsave 0x{context:x} 16896 private-context.bin") == ""
@@ -154,7 +181,7 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
         report = dict(status="PASS_NATIVE_STACK_LIMIT_QEMU" if stack_exhaustion else "PASS_AIUEOS_ENTRY_QEMU", observer=pin(Path(__file__).resolve()), efi=pin(efi), kernel=pin(kernel),
                       firmware=pin(firmware), qemuVersion=subprocess.check_output([str(qemu), "--version"]).decode().splitlines()[0],
                       result=None if stack_exhaustion else 42, pc=hex(expected_pc), remainingFuel=fuel,
-                      expectedRemainingFuel=None if stack_exhaustion else remaining_fuel, bootInfoVersion=5,
+                      expectedRemainingFuel=None if stack_exhaustion else remaining_fuel, bootInfoVersion=6 if pci_catalog else 5, pciResources=pci,
                       observedPublicMapTypes=memory_types, firmwareMap=pin(Path("firmware-map.bin")), sealedCatalog=catalog,
                       framebuffer=dict(base=fb, bytes=fbsize, width=width, height=height, stride=stride, pixelFormat=pixel_format),
                       completeKernel=False, desktop=False, input=False, gpt=False, physicalHardware=False,
@@ -186,6 +213,7 @@ if __name__ == "__main__":
     p.add_argument("--remaining-fuel", type=int, default=1024)
     p.add_argument("--sealed-catalog", action="store_true")
     p.add_argument("--stack-exhaustion", action="store_true")
+    p.add_argument("--pci-catalog", action="store_true")
     a = p.parse_args()
     main(*(getattr(a, n).resolve() for n in ("efi", "kernel", "qemu", "firmware", "output")), remaining_fuel=a.remaining_fuel,
-         sealed_catalog=a.sealed_catalog, stack_exhaustion=a.stack_exhaustion)
+         sealed_catalog=a.sealed_catalog, stack_exhaustion=a.stack_exhaustion, pci_catalog=a.pci_catalog)
