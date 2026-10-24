@@ -81,6 +81,14 @@ jobs:
             ${{ runner.temp }}/one/calls.json
             ${{ runner.temp }}/one/F2.elf
             ${{ runner.temp }}/one/F-x86_64.elf
+          if-no-files-found: warn
+      # Keep the transported compiler files at the artifact root. Adding the
+      # sibling AOT directory above changes upload-artifact's common ancestor.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: kototama-i64-arm64
+          path: |
             ${{ runner.temp }}/kototama-i64-arm64/report.json
             ${{ runner.temp }}/kototama-i64-arm64/gate.stdout
             ${{ runner.temp }}/kototama-i64-arm64/gate.stderr
