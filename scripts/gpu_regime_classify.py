@@ -2530,6 +2530,22 @@ def _self_test_identity_corpus(stats, corpus_root):
     # (crossday-20261025/w32-shape2 NOTES: sign reproduces strictly
     # against the 2026-10-24 shape-2 flip basis, 18/18). Pinned per
     # named record, as every machine verdict over committed numbers is.
+    #
+    # the 2026-10-25 cross-day shape-2 W = 128 replica
+    # (crossday-20261025/w128-shape2) -- the corpus's THIRD crossing-only
+    # refutation, surfaced by this pin failing on purpose exactly as the
+    # idiom prescribes: 4 of 15 run pairs diverge and NO one-way
+    # refinement edge exists. Its shape returns to the FIRST record's
+    # cross-cutting-only one (every operator pair cross-cutting,
+    # refinements empty) -- the corpus's SECOND cross-cutting-only
+    # record -- at a four-level regime mix at every operator, and the
+    # fewest divergent run pairs of the three named records (4 of 15).
+    # Levels (GAP-1.15, fastest-first): max [[6], [4, 5], [3], [1, 2]],
+    # min [[5, 6], [4], [3], [1, 2]], sum [[5], [3], [6], [1, 2, 4]].
+    # Its story is its own record's (crossday-20261025/w128-shape2
+    # NOTES: sign reproduces strictly against the 2026-10-24 shape-2
+    # flip basis, 18/18). Pinned per named record, as every machine
+    # verdict over committed numbers is.
     cdw32 = _ident("gpu-simdgroup-reduce-m1max-crossday-20261025/w32")
     _expect(cdw32["verdict"] == "identity-refuted"
             and len(cdw32["divergent"]) == 5
@@ -2562,6 +2578,22 @@ def _self_test_identity_corpus(stats, corpus_root):
             "refinement and both cross-cutting sum -- the corpus's "
             "second crossing-only refutation, a DIFFERENT shape from "
             "the first one's", stats)
+    cdw128s = _ident("gpu-simdgroup-reduce-m1max-crossday-20261025/"
+                     "w128-shape2")
+    _expect(cdw128s["verdict"] == "identity-refuted"
+            and len(cdw128s["divergent"]) == 4
+            and [lv["runs"] for lv in cdw128s["levels"]["max"]]
+                == [[6], [4, 5], [3], [1, 2]]
+            and [lv["runs"] for lv in cdw128s["levels"]["min"]]
+                == [[5, 6], [4], [3], [1, 2]]
+            and [lv["runs"] for lv in cdw128s["levels"]["sum"]]
+                == [[5], [3], [6], [1, 2, 4]]
+            and cdw128s["refinements"] == [],
+            "cross-day w128-shape2 (2026-10-25): identity refuted "
+            "(4/15) with NO refinement edge -- the corpus's third "
+            "crossing-only refutation and second cross-cutting-only "
+            "one (every operator pair cross-cutting), at four observed "
+            "levels per operator", stats)
 
     crossing_only = [rel for rel, per_op in records
                      if (lambda i: i["verdict"] == "identity-refuted"
@@ -2571,13 +2603,16 @@ def _self_test_identity_corpus(stats, corpus_root):
                                      if o1 != o2))(
                              cross_operator_level_identity(per_op))]
     _expect(crossing_only == ["gpu-simdgroup-reduce-m1max-crossday-"
+                              "20261025/w128-shape2",
+                              "gpu-simdgroup-reduce-m1max-crossday-"
                               "20261025/w32",
                               "gpu-simdgroup-reduce-m1max-crossday-"
                               "20261025/w32-shape2"],
             f"the corpus's crossing-only refuted records are exactly "
             f"the named set (the 2026-10-25 cross-day shape-1 W = 32 "
-            f"record and the 2026-10-25 cross-day shape-2 W = 32 "
-            f"record); a future crossing-only record fails this "
+            f"record, the 2026-10-25 cross-day shape-2 W = 32 record "
+            f"and the 2026-10-25 cross-day shape-2 W = 128 record); a "
+            f"future crossing-only record fails this "
             f"pin on purpose ({crossing_only})", stats)
 
     # the closing cell (shape2-resweep w512): its own prose names the
