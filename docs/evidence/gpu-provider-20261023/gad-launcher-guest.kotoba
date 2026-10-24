@@ -1,0 +1,5 @@
+(ns g (:export [main]))
+(defn- gpu [r :string] :string (typed-cap-call 42 :string :string r))
+(defn main [] :i64
+  (let [a (gpu "ALLOC 16") w (gpu "WRITE 1 0 0a0b0c") r (gpu "READ 1 0 3") d (gpu "DEVCLASS")]
+    (if (and (string=? a "1") (string=? w "1") (string=? r "0a0b0c") (> (string-length d) 0)) 0 1)))

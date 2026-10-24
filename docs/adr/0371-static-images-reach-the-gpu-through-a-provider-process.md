@@ -507,7 +507,10 @@ Each step is its own PR, in this order:
      The guest's environment is built rather than inherited: `KEXE_ALLOW`,
      `KEXE_STRUCTURED_REPORT=1`, `KEXE_WALL_SECONDS`, `KEXE_CAP_RESOURCES_42=3,4`
      (with a provider), and seven `KEXE_` knobs passed through when the
-     launcher has them. The provider's environment is empty.
+     launcher has them. The provider's environment is fixed (step 6):
+     `MESA_SHADER_CACHE_DISABLE=true` (Decision 5: no shader cache on disk)
+     and `VK_LOADER_LAYERS_DISABLE=~all~` (no Vulkan layer between the
+     provider and the driver). Nothing is inherited.
    * **Waiting.** `ppoll` on the guest's stdout, the provider's report and both
      pidfds, with no signal handlers. The guest's stdout is relayed as it
      comes, hashed, and its tail kept for the structured line. At `WALL` the
@@ -587,6 +590,8 @@ Each step is its own PR, in this order:
    * **Not yet.** Step 6 decides two things. One is how the provider hands
      strings to and from the platform API (today: bytes in memory from
      `kxrt-p-alloc`). The other is what the provider's environment holds.
+     Both are settled in step 6: strings are made from bytes in memory with
+     `string-from-utf8`, and the environment is the fixed pair above.
    * **Root.** Re-pinned C-free to F `094590b6…` on top of step 4's F
      `710b6ae6…`. No adoption round was needed. The combined compiler F
      (seed/FULL-MANIFEST) lists seed/78-x86_64-platform, and
@@ -681,8 +686,11 @@ Each step is its own PR, in this order:
       under qemu-user). Any other failure ends the run as
       `:confinement-failed`, before a request is served. On gad, RADV (Mesa
       25.2.8) answered all 48 requests confined (Landlock ABI 8 and the
-      seal). The launcher's fixed provider environment (the shader cache)
-      remains.
+      seal). The launcher now gives the provider a fixed environment,
+      `MESA_SHADER_CACHE_DISABLE=true` and `VK_LOADER_LAYERS_DISABLE=~all~`,
+      so no shader cache is written and no implicit layer is loaded. On gad
+      the launcher started the confined provider and a wire-42 guest with
+      it (verdict `:ok`, 4 requests served).
    5. ADR and documentation.
 7. **aarch64-linux** imports, then Xavier.
 8. **macOS ADR.**
