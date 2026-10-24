@@ -1,6 +1,6 @@
 # Current Amu selfhost native entry
 
-The full31 public `bin/amu` is a static Linux x86_64 ELF. Its exact size,
+The full34 public `bin/amu` is a static Linux x86_64 ELF. Its exact size,
 SHA256 and source revision are recorded in `native-product.json`; the exact
 manifest source pins are bound by the current native execution receipts.
 `bin/kotoba` and `bin/kotoba-compiler` are relative aliases of that image.
@@ -17,7 +17,7 @@ call-site/base-length memory hardening together with image/EFI packaging.
 ## Adoption and native verdict
 
 Current evidence belongs in
-`docs/evidence/aiueos-aot-adoption-20261024/`. Earlier full30 snapshots retain
+`docs/evidence/kototama-i64-receipt-20261024/`. Earlier full30 snapshots retain
 their historical source binding. Acceptance requires the
 actual native x86 full compiler F1=F2=F3, current-source unity identity,
 clock/entropy/refusal/resource checks, both mandatory native CDCI roles
@@ -27,9 +27,9 @@ An old matching descriptor or a Python observation is not that verdict.
 
 The controller and gates rebuild byte-identically with this compiler:
 
-* controller `13dbe6c7ca373fd083d7c2e44299dcc95e285a7a6be8d5b60fb06a560f9d207d`
-* Amu selfhost `6370110508fee2379a659b5830c706c07ec46ca752f20cd95f2d81c66406871f`
-* Kotoba native `528d3d3523b2bbd0cb868c7090d7579f6b5348f1880299539ff84b9dd9f69102`
+* controller `54e7c9fc5b39cb788dd670a22c9abb5b6e3163e417c172bb05f910d1469e8197`
+* Amu selfhost `d69dcbe783846c7c22c4d7957be10a66fed7b6f82e35f5affb27b2b171162c53`
+* Kotoba native `e015c387cc87b14022781c94474104ffe0ff113a2623ae5882a72ce6c3212b80`
 
 Fresh native receipts bind those exact images and their input ledger to the
 new compiler. The fixed24 corpus and complete core are unchanged. No new
