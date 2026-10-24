@@ -1,4 +1,4 @@
-(ns gpu-kernels-v2 (:export [kir2-ewise kir2-attn-copy-dense kir2-nex-op kir2-nex-op-name]))
+(ns gpu-kernels-v2 (:export [kir2-ewise kir2-attn-copy-dense kir2-nex-op kir2-nex-variant kir2-nex-op-name kir2-dot-rows kir2-kdot-f32-r1 kir2-kdot-f32-r8 kir2-kdot-x8 kir2-kdot-i8-x8 kir2-deltanet-step kir2-deltanet-fused kir2-deltanet-fused-variant kir2-embed kir2-embed-variant kir2-kdot-h2-r1 kir2-kdot-h2-q8 kir2-kdot-h2-qkv kir2-kdot-h2-qkvr]))
 
 ;; Kernels written with KIR v2 (tools/gpu_kernel_kir2.kotoba, ADR 0372 step 3).
 ;; Each is the Kotoba form of a GLSL kernel of kotoba-lang/inference; the
@@ -170,15 +170,20 @@
 ;; ops: 1 rmsnorm 2 l2norm 3 gated_rmsnorm 4 silu_mul 5 conv1d_step
 ;; 6 gate_decay 7 gate_decay2 8 copy_at 9 weighted_sum 10 add 11 add_bias
 ;; 12 f32_matvec 13 add_rmsnorm 14 pos_incr 15 rope_neox 16 attn_decode
-;; 17 softmax_topk 18 argmax_partial 19 argmax_final
+;; 17 softmax_topk 18 argmax_partial 19 argmax_final; the resident-serving
+;; ops 20 quant_q8 21 pos_incr2 22 ctl 23 pos_add 24 pos_seed 25 params; the
+;; sampler 26 sample_topp 27 sample_part 28 sample_probs 29 sample_bisect_part
+;; 30 sample_bisect_step 31 sample_final
 
-(def NEX-OPS 19)
+(def NEX-OPS 31)
 
 (defn kir2-nex-op-name [op :i64] :string
   (case op 1 "rmsnorm" 2 "l2norm" 3 "gated_rmsnorm" 4 "silu_mul" 5 "conv1d_step" 6 "gate_decay"
         7 "gate_decay2" 8 "copy_at" 9 "weighted_sum" 10 "add" 11 "add_bias" 12 "f32_matvec"
         13 "add_rmsnorm" 14 "pos_incr" 15 "rope_neox" 16 "attn_decode" 17 "softmax_topk"
-        18 "argmax_partial" 19 "argmax_final" ""))
+        18 "argmax_partial" 19 "argmax_final" 20 "quant_q8" 21 "pos_incr2" 22 "ctl" 23 "pos_add" 24 "pos_seed"
+        25 "params" 26 "sample_topp" 27 "sample_part" 28 "sample_probs" 29 "sample_bisect_part" 30 "sample_bisect_step"
+        31 "sample_final" ""))
 
 ;; f32 bit patterns
 (def F-ONE 0x3F800000)
@@ -235,6 +240,13 @@
         x (kb-store B v (case how 0 d 1 (kb-iadd B d (kb-u32 B 1)) (kb-imul B d mul)))
         z (kb-end-if B)]
     (kb-load B tu v)))
+;; BATCH_CACHE_ROWS: KV positions per sequence (each row's cache slice)
+(def BATCH-CACHE-ROWS 4096)
+;; base + x, or x when there is no base (base 0, the decode variants): the
+;; decode modules keep their words
+(defn- k2-off [B :vector-i64 base :i64 x :i64] :i64 (if (= base 0) x (kb-iadd B base x)))
+;; base + c for a constant c, or c alone
+(defn- k2-offc [B :vector-i64 base :i64 c :i64] :i64 (if (= base 0) (kb-u32 B c) (kb-iadd B base (kb-u32 B c))))
 ;; if (c) return;
 (defn- k2-return-if [B :vector-i64 c :i64] :i64
   (let [g (kb-if B c) r (kb-return B)] (kb-end-if B)))
@@ -291,11 +303,13 @@
 ;; the one-invocation-per-element ops: i = GlobalInvocationID.x, and
 ;; if (i >= bound) return; first. op: 4 silu_mul 5 conv1d_step 6 gate_decay
 ;; 7 gate_decay2 8 copy_at 10 add 11 add_bias
-(defn- k2-nex-ewise [op :i64] :vector-i64
+(defn- k2-nex-ewise [op :i64 v :i64] :vector-i64
   (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) tf (kb-tf32 B) V (k2-nex-bindings B)
         vsp (kb-var B tf)
         u1 (kb-u32 B 1) u2 (kb-u32 B 2) u3 (kb-u32 B 3) u4 (kb-u32 B 4) f0 (kb-f32 B 0)
-        i (kb-builtin-at B 28 0)
+        ;; copy_at BATCH: row = WorkGroupID.y, i = WorkGroupID.x 256 + LocalInvocationID.x
+        row (if (= v 1) (kb-builtin-at B 26 1) 0)
+        i (if (= v 1) (kb-iadd B (kb-imul B (kb-builtin-at B 26 0) (kb-u32 B 256)) (kb-builtin-at B 27 0)) (kb-builtin-at B 28 0))
         ;; gate_decay(2) loop over P.rows, the others over P.n
         g (k2-return-if B (kb-uge B i (k2-pm B V (if (or (= op 6) (= op 7)) 1 0))))
         n (k2-pm B V 0)
@@ -321,10 +335,20 @@
                 (k2-st B V 4 (kb-iadd B (k2-pm B V 2) i) (k2-sigmoid B (k2-ld B V 1 (kb-iadd B (k2-pm B V 3) i)))))
             7 (let [a (k2-st B V 4 i (kb-fmul B (k2-softplus B vsp (kb-fadd B (k2-ld B V 1 i) (k2-ld B V 2 i))) (k2-ld B V 3 i)))]
                 (k2-st B V 4 (kb-iadd B (k2-pm B V 2) i) (k2-sigmoid B (k2-ld B V 5 i))))
-            ;; off = (P.p1 != 0) ? dyn_pos() * aux2 : aux2; o[off + i] = a[i]
-            8 (let [aux2 (k2-pm B V 3)
-                    off (k2-if-dyn B V 2 aux2 aux2)]
-                (k2-st B V 4 (kb-iadd B off i) (k2-ld B V 1 i)))
+            ;; off = (P.p1 != 0) ? dyn_pos() * aux2 : aux2; o[off + i] = a[i]. BATCH:
+            ;; o[row aux + ids[row] aux2 + i] = a[row n + i]. BPREFILL: o[ids[1]
+            ;; BATCH_CACHE_ROWS aux2 + dyn_pos() aux2 + i] = a[i] (sequence ids[1]'s slice)
+            8 (let [aux2 (k2-pm B V 3)]
+                (cond (= v 1)
+                      (k2-st B V 4 (kb-iadd B (kb-iadd B (kb-imul B row (k2-pm B V 2)) (kb-imul B (k2-ld B V 6 row) aux2)) i)
+                             (k2-ld B V 1 (kb-iadd B (kb-imul B row n) i)))
+                      (= v 2)
+                      (k2-st B V 4 (kb-iadd B (kb-iadd B (kb-imul B (kb-imul B (k2-ld B V 6 u1) (kb-u32 B BATCH-CACHE-ROWS)) aux2)
+                                                       (kb-imul B (k2-ld B V 6 (kb-u32 B 0)) aux2))
+                                           i)
+                             (k2-ld B V 1 i))
+                      :else
+                      (let [off (k2-if-dyn B V 2 aux2 aux2)] (k2-st B V 4 (kb-iadd B off i) (k2-ld B V 1 i)))))
             ;; o[i] = a[i] + b[i]
             10 (k2-st B V 4 i (kb-fadd B (k2-ld B V 1 i) (k2-ld B V 2 i)))
             ;; o[i] = a[i] + b[i - (i / aux) * aux]
@@ -370,12 +394,15 @@
         z (kb-end-if B)]
     (kb-module B 256 1 1)))
 
-;; pos_incr: if (GlobalInvocationID.x == 0) ids[0] += 1
-(defn- k2-nex-pos-incr [] :vector-i64
+;; pos_incr: if (GlobalInvocationID.x == 0) ids[0] += 1. BATCH: r =
+;; GlobalInvocationID.x; if (r < n) ids[r] += 1 (every row's position)
+(defn- k2-nex-pos-incr [v :i64] :vector-i64
   (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) V (k2-nex-bindings B)
         u0 (kb-u32 B 0)
-        g (kb-if B (kb-ieq B (kb-builtin-at B 28 0) u0))
-        w (k2-st B V 6 u0 (kb-iadd B (k2-ld B V 6 u0) (kb-u32 B 1)))
+        r (kb-builtin-at B 28 0)
+        g (if (= v 1) (kb-if B (kb-ult B r (k2-pm B V 0))) (kb-if B (kb-ieq B r u0)))
+        at (if (= v 1) r u0)
+        w (k2-st B V 6 at (kb-iadd B (k2-ld B V 6 at) (kb-u32 B 1)))
         z (kb-end-if B)]
     (kb-module B 256 1 1)))
 
@@ -384,8 +411,12 @@
 ;; tail (i >= nrot) is copied; else p0 != 0 pairs (2p, 2p + 1) and p0 == 0
 ;; pairs (p, p + hlf), theta = float(pos + tokrow) * pow(P.scale, -2 pair /
 ;; nrot), divided by b[pair] when P.eps != 0, and the pair rotated
-(defn- k2-nex-rope [] :vector-i64
+;; -DBIAS (v bit 4): x = a + c before the rope (c the per-column bias), and the
+;; tail gets the add too. -DBATCH (v bit 1): the position of token row tokrow is
+;; ids[tokrow].
+(defn- k2-nex-rope [v :i64] :vector-i64
   (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) tf (kb-tf32 B) tb (kb-tbool B) V (k2-nex-bindings B)
+        bias? (not= (bit-and v 4) 0) batch? (not= (bit-and v 1) 0)
         vi (kb-var B tu) vtok (kb-var B tu) vth (kb-var B tf)
         u0 (kb-u32 B 0) u1 (kb-u32 B 1) u2 (kb-u32 B 2) u256 (kb-u32 B 256) f0 (kb-f32 B 0)
         h (kb-builtin-at B 26 0) t (kb-builtin-at B 27 0) n (k2-pm B V 0) nrot (k2-pm B V 2)
@@ -399,13 +430,14 @@
         i (k2-for B vi t n)
         ;; if (i >= nrot) { o[base + i] = a[base + i]; continue; }
         c0 (kb-if B (kb-uge B i nrot))
-        c1 (k2-st B V 4 (kb-iadd B base i) (k2-ld B V 1 (kb-iadd B base i)))
+        c1 (k2-st B V 4 (kb-iadd B base i)
+                 (if bias? (kb-fadd B (k2-ld B V 1 (kb-iadd B base i)) (k2-ld B V 3 (kb-iadd B base i))) (k2-ld B V 1 (kb-iadd B base i))))
         c2 (kb-next B)
         c3 (kb-end-if B)
         norm (kb-fne B (k2-pm B V 6) f0)
         pair (kb-select B tu norm (kb-shr B i u1) (kb-select B tu (kb-uge B i hlf) (kb-isub B i hlf) i))
-        pos (k2-if-dyn B V 0 0 (k2-pm B V 3))
-        d0 (kb-store B vth (kb-fmul B (kb-u2f B (kb-iadd B pos tokrow))
+        pos (if batch? 0 (k2-if-dyn B V 0 0 (k2-pm B V 3)))
+        d0 (kb-store B vth (kb-fmul B (kb-u2f B (if batch? (k2-ld B V 6 tokrow) (kb-iadd B pos tokrow)))
                                     (kb-fpow B (k2-pm B V 5) (kb-fdiv B (kb-fmul B (kb-f32 B F-MINUS-TWO) (kb-u2f B pair)) (kb-u2f B nrot)))))
         d1 (kb-if B (kb-fne B (k2-pm B V 4) f0))
         d2 (kb-store B vth (kb-fdiv B (kb-load B tf vth) (k2-ld B V 2 pair)))
@@ -413,8 +445,10 @@
         theta (kb-load B tf vth)
         cs (kb-fcos B theta) sn (kb-fsin B theta)
         ;; x0 = a[base + (norm ? 2 pair : pair)], x1 = a[base + (norm ? 2 pair + 1 : pair + hlf)]
-        x0 (k2-ld B V 1 (kb-iadd B base (kb-select B tu norm (kb-imul B u2 pair) pair)))
-        x1 (k2-ld B V 1 (kb-iadd B base (kb-select B tu norm (kb-iadd B (kb-imul B u2 pair) u1) (kb-iadd B pair hlf))))
+        i0 (kb-iadd B base (kb-select B tu norm (kb-imul B u2 pair) pair))
+        x0 (if bias? (kb-fadd B (k2-ld B V 1 i0) (k2-ld B V 3 i0)) (k2-ld B V 1 i0))
+        i1 (kb-iadd B base (kb-select B tu norm (kb-iadd B (kb-imul B u2 pair) u1) (kb-iadd B pair hlf)))
+        x1 (if bias? (kb-fadd B (k2-ld B V 1 i1) (k2-ld B V 3 i1)) (k2-ld B V 1 i1))
         second (kb-select B tb norm (kb-ieq B (kb-band B i u1) u1) (kb-uge B i hlf))
         w (k2-st B V 4 (kb-iadd B base i)
                  (kb-select B tf second (kb-fadd B (kb-fmul B x0 sn) (kb-fmul B x1 cs)) (kb-fsub B (kb-fmul B x0 cs) (kb-fmul B x1 sn))))
@@ -425,7 +459,10 @@
 ;; (no current-row substitution), and the output gate: o = (P.p0 != 0) ? acc
 ;; : acc * sigmoid(s[gi]), gi = (P.eps < 0) ? row rows 2 d + (2h + 1) d + i
 ;; : qoff + h d + i. The gate's load is in an if (s is a stub when p0 != 0).
-(defn- k2-nex-attn [] :vector-i64
+;; BATCH (v 1): row is a sequence, T = ids[row] + 1, its cache slice at cbase =
+;; row BATCH_CACHE_ROWS aux2 d. BPREFILL (v 2): rows of sequence ids[1], T =
+;; dyn_pos() + 1 + row, cbase = ids[1] BATCH_CACHE_ROWS aux2 d.
+(defn- k2-nex-attn [v :i64] :vector-i64
   (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) tf (kb-tf32 B) V (k2-nex-bindings B)
         red (kb-shared B tf 256)
         vi (kb-var B tu) vst (kb-var B tu) vsc (kb-var B tf) vdt (kb-var B tf) vacc (kb-var B tf) vtt (kb-var B tu)
@@ -433,8 +470,15 @@
         u0 (kb-u32 B 0) u1 (kb-u32 B 1) u2 (kb-u32 B 2) u256 (kb-u32 B 256) f0 (kb-f32 B 0)
         h (kb-builtin-at B 26 0) row (kb-builtin-at B 26 1) t (kb-builtin-at B 27 0)
         d (k2-pm B V 0)
-        T (kb-iadd B (k2-if-dyn B V 1 0 (k2-pm B V 2)) row)
+        T (case v
+            1 (kb-iadd B (k2-ld B V 6 row) u1)
+            2 (kb-iadd B (kb-iadd B (k2-ld B V 6 u0) u1) row)
+            (kb-iadd B (k2-if-dyn B V 1 0 (k2-pm B V 2)) row))
         aux2 (k2-pm B V 3)
+        cbase (case v
+                1 (kb-imul B (kb-imul B (kb-imul B row (kb-u32 B BATCH-CACHE-ROWS)) aux2) d)
+                2 (kb-imul B (kb-imul B (kb-imul B (k2-ld B V 6 u1) (kb-u32 B BATCH-CACHE-ROWS)) aux2) d)
+                0)
         hkv (kb-udiv B h (kb-udiv B (k2-pm B V 1) aux2))
         qoff (kb-imul B (kb-imul B row (k2-pm B V 1)) d)
         s0 (kb-store B vsc (kb-f32 B F-MINUS-1E30))
@@ -442,7 +486,7 @@
         s2 (kb-store B vdt f0)
         i2 (k2-for B vi u0 d)
         s3 (k2-acc B vdt (kb-fmul B (k2-ld B V 1 (kb-iadd B (kb-iadd B qoff (kb-imul B h d)) i2))
-                                    (k2-ld B V 2 (k2-kv-index B t aux2 hkv d i2))))
+                                    (k2-ld B V 2 (k2-off B cbase (k2-kv-index B t aux2 hkv d i2)))))
         s4 (k2-end-for B vi u1)
         s5 (kb-store B vsc (kb-fmul B (kb-load B tf vdt) (k2-pm B V 5)))
         s6 (kb-end-if B)
@@ -456,7 +500,7 @@
         i3 (k2-for B vi t d)
         q2 (kb-store B vacc f0)
         tt (k2-for B vtt u0 T)
-        q3 (k2-acc B vacc (kb-fmul B (kb-load B tf (kb-shared-at B red tf tt)) (k2-ld B V 3 (k2-kv-index B tt aux2 hkv d i3))))
+        q3 (k2-acc B vacc (kb-fmul B (kb-load B tf (kb-shared-at B red tf tt)) (k2-ld B V 3 (k2-off B cbase (k2-kv-index B tt aux2 hkv d i3)))))
         q4 (k2-end-for B vtt u1)
         acc (kb-load B tf vacc)
         gi (kb-select B tu (kb-flt B (k2-pm B V 4) f0)
@@ -554,17 +598,23 @@
 ;; argmax_final (decode): the same over the P.aux partials in s and ids; ids
 ;; [aux] and o[0] get the pick, and with P.p1 != 0 the token buffer b[pos + 1]
 ;; too (pos = the bits of c[0]) once pos + 1 >= P.aux2.
-(defn- k2-nex-argmax [final? :bool] :vector-i64
+;; BATCH (v 1): row = WorkGroupID.y; the logits at row n, the row's 64
+;; partial slots at row 64 (the pick at slot aux of the row)
+(defn- k2-nex-argmax [final? :bool v :i64] :vector-i64
   (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) tf (kb-tf32 B) V (k2-nex-bindings B)
         red (kb-shared B tf 256) redi (kb-shared B tu 256)
         vi (kb-var B tu) vst (kb-var B tu) vbv (kb-var B tf) vbi (kb-var B tu)
         u0 (kb-u32 B 0) u1 (kb-u32 B 1) u256 (kb-u32 B 256) u4096 (kb-u32 B 4096) f0 (kb-f32 B 0)
         t (kb-builtin-at B 27 0) w (kb-builtin-at B 26 0)
         start (kb-imul B w u4096)
+        row (if (= v 1) (kb-builtin-at B 26 1) 0)
+        lbase (if (and (= v 1) (not final?)) (kb-imul B row (k2-pm B V 0)) 0)
+        pbase (if (= v 1) (kb-imul B row (kb-u32 B 64)) 0)
         b0 (kb-store B vbv (kb-f32 B F-MINUS-1E30)) b1 (kb-store B vbi u0)
         i (if final? (k2-for B vi t (k2-pm B V 2))
             (k2-for B vi (kb-iadd B start t) (kb-umin B (kb-iadd B start u4096) (k2-pm B V 0))))
-        c (if final? (k2-best B vbv vbi (k2-ld B V 5 i) (k2-ld B V 6 i)) (k2-best B vbv vbi (k2-ld B V 1 i) i))
+        c (if final? (k2-best B vbv vbi (k2-ld B V 5 (k2-off B pbase i)) (k2-ld B V 6 (k2-off B pbase i)))
+            (k2-best B vbv vbi (k2-ld B V 1 (k2-off B lbase i)) i))
         e (k2-end-for B vi u256)
         r0 (kb-store B (kb-shared-at B red tf t) (kb-load B tf vbv))
         r1 (kb-store B (kb-shared-at B redi tu t) (kb-load B tu vbi))
@@ -573,18 +623,362 @@
         g (kb-if B (kb-ieq B t u0))
         z (if final?
             (let [parts (k2-pm B V 2)
-                  a1 (k2-st B V 6 parts (kb-load B tu (kb-shared-at B redi tu u0)))
-                  a2 (k2-st B V 4 u0 (kb-load B tf (kb-shared-at B red tf u0)))
+                  a1 (k2-st B V 6 (k2-off B pbase parts) (kb-load B tu (kb-shared-at B redi tu u0)))
+                  a2 (k2-st B V 4 (if (= pbase 0) u0 pbase) (kb-load B tf (kb-shared-at B red tf u0)))
                   h (kb-if B (kb-fne B (k2-pm B V 7) f0))
                   pos (kb-bitcast B tu (k2-ld B V 3 u0))
                   j (kb-if B (kb-uge B (kb-iadd B pos u1) (k2-pm B V 3)))
                   a3 (k2-st B V 2 (kb-iadd B pos u1) (kb-bitcast B tf (kb-load B tu (kb-shared-at B redi tu u0))))
                   j2 (kb-end-if B)]
               (kb-end-if B))
-            (let [a1 (k2-st B V 5 w (kb-load B tf (kb-shared-at B red tf u0)))]
-              (k2-st B V 6 w (kb-load B tu (kb-shared-at B redi tu u0)))))
+            (let [a1 (k2-st B V 5 (k2-off B pbase w) (kb-load B tf (kb-shared-at B red tf u0)))]
+              (k2-st B V 6 (k2-off B pbase w) (kb-load B tu (kb-shared-at B redi tu u0)))))
         z2 (kb-end-if B)]
     (kb-module B 256 1 1)))
+
+;; quant_q8: thread b < n / 32 quantizes 32 values to int8 (scale max|x| /
+;; 127, round(x / scale)), o[b] = the scale, ids[b 8 + w] = four codes a word
+(defn- k2-nex-quant-q8 [] :vector-i64
+  (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) tf (kb-tf32 B) V (k2-nex-bindings B)
+        vm (kb-var B tf) vi (kb-var B tu) vw (kb-var B tu) vk (kb-var B tu) vpk (kb-var B tu)
+        u0 (kb-u32 B 0) u1 (kb-u32 B 1) f0 (kb-f32 B 0)
+        b (kb-builtin-at B 28 0)
+        g (k2-return-if B (kb-uge B b (kb-udiv B (k2-pm B V 0) (kb-u32 B 32))))
+        a0 (kb-store B vm f0)
+        i (k2-for B vi u0 (kb-u32 B 32))
+        a1 (kb-store B vm (kb-fmax B (kb-load B tf vm) (kb-fabs B (k2-ld B V 1 (kb-iadd B (kb-imul B b (kb-u32 B 32)) i)))))
+        e1 (k2-end-for B vi u1)
+        ;; sc = m / 127; inv = (sc > 0) ? 1 / sc : 0
+        sc (kb-fdiv B (kb-load B tf vm) (kb-f32 B 0x42FE0000))
+        inv (kb-select B tf (kb-fgt B sc f0) (kb-fdiv B (kb-f32 B F-ONE) sc) f0)
+        a2 (k2-st B V 4 b sc)
+        w (k2-for B vw u0 (kb-u32 B 8))
+        a3 (kb-store B vpk u0)
+        k (k2-for B vk u0 (kb-u32 B 4))
+        q (kb-f2s B (kb-fround B (kb-fmul B (k2-ld B V 1 (kb-iadd B (kb-iadd B (kb-imul B b (kb-u32 B 32)) (kb-imul B w (kb-u32 B 4))) k)) inv)))
+        a4 (kb-store B vpk (kb-bor B (kb-load B tu vpk) (kb-shl B (kb-band B (kb-bitcast B tu q) (kb-u32 B 255)) (kb-imul B (kb-u32 B 8) k))))
+        e2 (k2-end-for B vk u1)
+        a5 (k2-st B V 6 (kb-iadd B (kb-imul B b (kb-u32 B 8)) w) (kb-load B tu vpk))
+        e3 (k2-end-for B vw u1)]
+    (kb-module B 256 1 1)))
+
+;; the resident-serving ops: 21 pos_incr2 (ids[0] += 1, ids[1] += 1), 22 ctl
+;; (a set flag c[n] rewinds ids[0] to 0, then b[ids[0] + i] = c[i] for i < n),
+;; 23 pos_add (ids[0] += n), 24 pos_seed (ids[0] = the bits of a[0], ids[1] =
+;; 0), 25 params (o[4 + i] = c[2 + i] for i < 3); all but params on invocation
+;; 0 only. Variants: ctl BATCH (v 1, row r < n: c's flags follow the n tokens,
+;; tokbuf row stride aux) and BPREFILL (v 2: the message is n tokens, seq, flag;
+;; rowsel o = [base, seq]); params BATCH (n rows of (T, top_p, seed) into o[r 4
+;; + k]); pos_add BPREFILL (ids[the bits of a[1]] += n); pos_seed BPREFILL
+;; (stepbuf = [base, 0, seq]).
+(defn- k2-nex-resident [op :i64 v :i64] :vector-i64
+  (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) tf (kb-tf32 B) V (k2-nex-bindings B)
+        vi (kb-var B tu)
+        u0 (kb-u32 B 0) u1 (kb-u32 B 1)
+        i (kb-builtin-at B 28 0)
+        g (cond (and (= op 25) (= v 1)) (kb-if B (kb-ult B i (kb-imul B (kb-u32 B 3) (k2-pm B V 0))))
+                (= op 25) (kb-if B (kb-ult B i (kb-u32 B 3)))
+                (and (= op 22) (= v 1)) (kb-if B (kb-ult B i (k2-pm B V 0)))
+                :else (kb-if B (kb-ieq B i u0)))
+        w (cond
+            (= op 21) (let [a (k2-st B V 6 u0 (kb-iadd B (k2-ld B V 6 u0) u1))] (k2-st B V 6 u1 (kb-iadd B (k2-ld B V 6 u1) u1)))
+            ;; BATCH: if (bits(c[n + r]) != 0) ids[r] = 0; b[r aux + ids[r]] = c[r]
+            (and (= op 22) (= v 1))
+            (let [n (k2-pm B V 0)
+                  c0 (kb-if B (kb-ine B (kb-bitcast B tu (k2-ld B V 3 (kb-iadd B n i))) u0))
+                  c1 (k2-st B V 6 i u0)
+                  c2 (kb-end-if B)]
+              (k2-st B V 2 (kb-iadd B (kb-imul B i (k2-pm B V 2)) (k2-ld B V 6 i)) (k2-ld B V 3 i)))
+            ;; BPREFILL: r = bits(c[n]); if (bits(c[n + 1]) != 0) ids[r] = 0; base = ids[r];
+            ;; b[r aux + base + i] = c[i]; o[0] = bits(base); o[1] = bits(r)
+            (and (= op 22) (= v 2))
+            (let [n (k2-pm B V 0)
+                  r (kb-bitcast B tu (k2-ld B V 3 n))
+                  c0 (kb-if B (kb-ine B (kb-bitcast B tu (k2-ld B V 3 (kb-iadd B n u1))) u0))
+                  c1 (k2-st B V 6 r u0)
+                  c2 (kb-end-if B)
+                  base (k2-ld B V 6 r)
+                  j (k2-for B vi u0 n)
+                  c3 (k2-st B V 2 (kb-iadd B (kb-iadd B (kb-imul B r (k2-pm B V 2)) base) j) (k2-ld B V 3 j))
+                  c4 (k2-end-for B vi u1)
+                  c5 (k2-st B V 4 u0 (kb-bitcast B tf base))]
+              (k2-st B V 4 u1 (kb-bitcast B tf r)))
+            (= op 22)
+            (let [n (k2-pm B V 0)
+                  c0 (kb-if B (kb-ine B (kb-bitcast B tu (k2-ld B V 3 n)) u0))
+                  c1 (k2-st B V 6 u0 u0)
+                  c2 (kb-end-if B)
+                  j (k2-for B vi u0 n)
+                  c3 (k2-st B V 2 (kb-iadd B (k2-ld B V 6 u0) j) (k2-ld B V 3 j))]
+              (k2-end-for B vi u1))
+            ;; BPREFILL: ids[bits(a[1])] += n
+            (and (= op 23) (= v 2))
+            (let [at (kb-bitcast B tu (k2-ld B V 1 u1))] (k2-st B V 6 at (kb-iadd B (k2-ld B V 6 at) (k2-pm B V 0))))
+            (= op 23) (k2-st B V 6 u0 (kb-iadd B (k2-ld B V 6 u0) (k2-pm B V 0)))
+            ;; BPREFILL: ids[0] = bits(a[0]); ids[1] = 0; ids[2] = bits(a[1])
+            (and (= op 24) (= v 2))
+            (let [a (k2-st B V 6 u0 (kb-bitcast B tu (k2-ld B V 1 u0))) b (k2-st B V 6 u1 u0)]
+              (k2-st B V 6 (kb-u32 B 2) (kb-bitcast B tu (k2-ld B V 1 u1))))
+            (= op 24) (let [a (k2-st B V 6 u0 (kb-bitcast B tu (k2-ld B V 1 u0)))] (k2-st B V 6 u1 u0))
+            ;; BATCH: r = i / 3, k = i - r 3; o[r 4 + k] = c[2 n + i]
+            (= v 1)
+            (let [r (kb-udiv B i (kb-u32 B 3)) k (kb-isub B i (kb-imul B r (kb-u32 B 3)))]
+              (k2-st B V 4 (kb-iadd B (kb-imul B r (kb-u32 B 4)) k) (k2-ld B V 3 (kb-iadd B (kb-imul B (kb-u32 B 2) (k2-pm B V 0)) i))))
+            :else (k2-st B V 4 (kb-iadd B (kb-u32 B 4) i) (k2-ld B V 3 (kb-iadd B (kb-u32 B 2) i))))
+        z (kb-end-if B)]
+    (kb-module B 256 1 1)))
+
+;; ---- the sampler (iterations 18 and 19), decode variants ----
+
+;; mix32(x): x ^= x >> 16; x *= 0x7FEB352D; x ^= x >> 15; x *= 0x846CA68B; x ^= x >> 16
+(defn- k2-mix32 [B :vector-i64 x0 :i64] :i64
+  (let [tu (kb-tu32 B)
+        x1 (kb-op2 B 198 tu x0 (kb-shr B x0 (kb-u32 B 16)))
+        x2 (kb-imul B x1 (kb-u32 B 0x7FEB352D))
+        x3 (kb-op2 B 198 tu x2 (kb-shr B x2 (kb-u32 B 15)))
+        x4 (kb-imul B x3 (kb-u32 B 0x846CA68B))]
+    (kb-op2 B 198 tu x4 (kb-shr B x4 (kb-u32 B 16)))))
+;; p_i: exp(a[i] invT - m) / Z (sample_topp) or s[LB + i] (the multi-workgroup
+;; chain; lb 0 in decode)
+(defn- k2-pi [B :vector-i64 V :vector-i64 topp? :bool i :i64 invT :i64 m :i64 Z :i64 lb :i64] :i64
+  (if topp? (kb-fdiv B (kb-fexp B (kb-fsub B (kb-fmul B (k2-ld B V 1 i) invT) m)) Z) (k2-ld B V 5 (k2-off B lb i))))
+;; the draw: thread t's chunk [s0, s1) of the set {p_i >= tau} in index order,
+;; the exclusive prefix of the chunks' masses (thread 0, serially), u from the
+;; hash, and the pick -- by the chunk that holds the target, or by thread 255
+;; scanning down from n when rounding put the target at the top; the pick
+;; goes to ids[IB + aux] and, outside BATCH (ib 0) with p1 != 0 past the
+;; prompt, to b[pos + 1]
+(defn- k2-draw [B :vector-i64 V :vector-i64 topp? :bool t :i64 n :i64 tau :i64 invT :i64 m :i64 Z :i64 pos :i64 seed :i64
+                sred :i64 stot :i64 vars :vector-i64 lb :i64 ib :i64] :i64
+  (let [batch? (not= ib 0) tu (kb-tu32 B) tf (kb-tf32 B) u0 (kb-u32 B 0) u1 (kb-u32 B 1) f0 (kb-f32 B 0)
+        vi (vector-at vars 0) vpart (vector-at vars 1) vrun (vector-at vars 2) vpick (vector-at vars 3) vk (vector-at vars 4)
+        chunk (kb-udiv B (kb-iadd B n (kb-u32 B 255)) (kb-u32 B 256))
+        s0 (kb-imul B t chunk) s1 (kb-umin B n (kb-iadd B s0 chunk))
+        a0 (kb-store B vpart f0)
+        i (k2-for B vi s0 s1)
+        pi (k2-pi B V topp? i invT m Z lb)
+        g (kb-if B (kb-fge B pi tau)) a1 (k2-acc B vpart pi) z (kb-end-if B)
+        e1 (k2-end-for B vi u1)
+        part (kb-load B tf vpart)
+        a2 (kb-store B (kb-shared-at B sred tf t) part) b0 (kb-barrier B)
+        ;; if (t == 0) { run = 0; for (k < 256) { v = sred[k]; sred[k] = run; run += v; } stot = run; }
+        h0 (kb-if B (kb-ieq B t u0))
+        h1 (kb-store B vrun f0)
+        k (k2-for B vk u0 (kb-u32 B 256))
+        v (kb-load B tf (kb-shared-at B sred tf k))
+        h2 (kb-store B (kb-shared-at B sred tf k) (kb-load B tf vrun))
+        h3 (k2-acc B vrun v)
+        h4 (k2-end-for B vk u1)
+        h5 (kb-store B (kb-shared-at B stot tf u0) (kb-load B tf vrun))
+        h6 (kb-end-if B)
+        b1 (kb-barrier B)
+        total (kb-load B tf (kb-shared-at B stot tf u0)) before (kb-load B tf (kb-shared-at B sred tf t)) b2 (kb-barrier B)
+        ;; u = float(mix32(seed ^ (pos 0x9E3779B9)) >> 8) / 16777216; target = u total
+        u (kb-fdiv B (kb-u2f B (kb-shr B (k2-mix32 B (kb-op2 B 198 tu seed (kb-imul B pos (kb-u32 B 0x9E3779B9)))) (kb-u32 B 8)))
+                   (kb-f32 B 0x4B800000))
+        target (kb-fmul B u total)
+        ;; the token buffer: if (P.p1 != 0 && pos + 1 >= P.aux2) b[pos + 1] = uintBitsToFloat(pick)
+        p1 (if batch? 0 (kb-fne B (k2-pm B V 7) f0))
+        ;; the chunk that holds the target
+        c0 (kb-if B (kb-land B (kb-fge B target before) (kb-flt B target (kb-fadd B before part))))
+        c1 (kb-store B vrun before)
+        c2 (kb-store B vpick (kb-isub B s1 u1))
+        j (k2-for B vi s0 s1)
+        pj (k2-pi B V topp? j invT m Z lb)
+        d0 (kb-if B (kb-fge B pj tau))
+        d1 (kb-if B (kb-flt B target (kb-fadd B (kb-load B tf vrun) pj)))
+        d2 (kb-store B vpick j)
+        d3 (kb-break B)
+        d4 (kb-end-if B)
+        d5 (k2-acc B vrun pj)
+        d6 (kb-end-if B)
+        e2 (k2-end-for B vi u1)
+        c3 (k2-st B V 6 (k2-off B ib (k2-pm B V 2)) (kb-load B tu vpick))
+        c6 (if batch? 0
+             (let [c4 (kb-if B (kb-land B p1 (kb-uge B (kb-iadd B pos u1) (k2-pm B V 3))))
+                   c5 (k2-st B V 2 (kb-iadd B pos u1) (kb-bitcast B tf (kb-load B tu vpick)))]
+               (kb-end-if B)))
+        c7 (kb-end-if B)
+        ;; the top: thread 255 when target >= total, pick the last i with p_i >= tau
+        t0 (kb-if B (kb-land B (kb-ieq B t (kb-u32 B 255)) (kb-fge B target total)))
+        t1 (kb-store B vpick u0)
+        t2 (kb-store B vi n)
+        l (kb-loop B)
+        w (kb-while B (kb-ugt B (kb-load B tu vi) u0))
+        i1 (kb-isub B (kb-load B tu vi) u1)
+        t3 (kb-if B (kb-fge B (k2-pi B V topp? i1 invT m Z lb) tau))
+        t4 (kb-store B vpick i1)
+        t5 (kb-break B)
+        t6 (kb-end-if B)
+        t7 (kb-continue B)
+        t8 (kb-store B vi (kb-isub B (kb-load B tu vi) u1))
+        t9 (kb-end-loop B)
+        ta (k2-st B V 6 (k2-off B ib (k2-pm B V 2)) (kb-load B tu vpick))
+        td (if batch? 0
+             (let [tb (kb-if B (kb-land B p1 (kb-uge B (kb-iadd B pos u1) (k2-pm B V 3))))
+                   tc (k2-st B V 2 (kb-iadd B pos u1) (kb-bitcast B tf (kb-load B tu vpick)))]
+               (kb-end-if B)))]
+    (kb-end-if B)))
+
+;; 26 sample_topp: one workgroup over the vocabulary; 27 sample_part: workgroup
+;; w's 4096-slice max and Z (relative to it) into o[w] and o[61 + w]; 28
+;; sample_probs: the global M and Z from the partials (invocation 0), o[122] = 0
+;; and o[123] = 1 by workgroup 0, and s[i] = p_i; 29 sample_bisect_part: the
+;; slice's mass of {p_i >= mid} into o[124 + w]; 30 sample_bisect_step: one
+;; bisection step on [o[122], o[123]]; 31 sample_final: the draw with tau =
+;; o[122]. T = P.eps, top_p = P.scale, the seed is the bits of P.p0, the
+;; position the bits of c[0] when P.p1 != 0. BATCH (v 1, ops 27..31): the row is
+;; WorkGroupID.y; its T, top_p and seed are b[row 4 + 0..2] (a row with T == 0
+;; returns at once), its position the bits of c[row]; logits and p_i at row n,
+;; the scratch at row 256, the pick at ids[row 64 + aux], and no token-buffer
+;; write.
+(defn- k2-nex-sample [op :i64 v :i64] :vector-i64
+  (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) tf (kb-tf32 B) V (k2-nex-bindings B)
+        batch? (= v 1)
+        srow (if batch? (kb-builtin-at B 26 1) 0)
+        sb4 (if batch? (kb-imul B srow (kb-u32 B 4)) 0)
+        ;; S_SKIP: if (S_T == 0) return;
+        skip (if batch? (k2-return-if B (kb-feq B (k2-ld B V 2 sb4) (kb-f32 B 0))) 0)
+        sred (kb-shared B tf 256) stot (kb-shared B tf 1)
+        vst (kb-var B tu) vi (kb-var B tu) vm (kb-var B tf) vz (kb-var B tf) vlo (kb-var B tf) vhi (kb-var B tf)
+        vit (kb-var B tu) vacc (kb-var B tf) vk (kb-var B tu) vM (kb-var B tf)
+        vars (-> (vector-alloc 5) (vector-assoc! 0 vi) (vector-assoc! 1 (kb-var B tf)) (vector-assoc! 2 (kb-var B tf))
+                 (vector-assoc! 3 (kb-var B tu)) (vector-assoc! 4 vk))
+        u0 (kb-u32 B 0) u1 (kb-u32 B 1) u256 (kb-u32 B 256) u4096 (kb-u32 B 4096) f0 (kb-f32 B 0) fhalf (kb-f32 B 0x3F000000)
+        t (kb-builtin-at B 27 0) w (kb-builtin-at B 26 0) n (k2-pm B V 0)
+        ;; 1 / T (BATCH: the row's T, read only by the ops that use it)
+        invT (cond (and batch? (>= op 29)) 0
+                   batch? (kb-fdiv B (kb-f32 B F-ONE) (k2-ld B V 2 sb4))
+                   :else (kb-fdiv B (kb-f32 B F-ONE) (k2-pm B V 4)))
+        lb (if batch? (kb-imul B srow n) 0)
+        ob (if batch? (kb-imul B srow (kb-u32 B 256)) 0)
+        ib (if batch? (kb-imul B srow (kb-u32 B 64)) 0)
+        s0 (kb-imul B w u4096) s1 (kb-umin B n (kb-iadd B s0 u4096))
+        parts (kb-udiv B (kb-iadd B n (kb-u32 B 4095)) u4096)
+        ;; pos = (P.p1 != 0) ? floatBitsToUint(c[0]) : 0, the load in an if (the
+        ;; GLSL reads c[0] only then); only sample_topp and sample_final have it
+        pos (cond
+              (and batch? (= op 31)) (kb-bitcast B tu (k2-ld B V 3 srow))
+              (or (= op 26) (= op 31))
+              (let [vp (kb-var B tu) a (kb-store B vp u0)
+                    g (kb-if B (kb-fne B (k2-pm B V 7) f0))
+                    b (kb-store B vp (kb-bitcast B tu (k2-ld B V 3 u0)))
+                    z (kb-end-if B)]
+                (kb-load B tu vp))
+              :else 0)
+        seed (cond (and batch? (= op 31)) (kb-bitcast B tu (k2-ld B V 2 (kb-iadd B sb4 (kb-u32 B 2))))
+                   batch? 0
+                   :else (kb-bitcast B tu (k2-pm B V 6)))
+        body
+        (cond
+          (= op 26)
+          (let [;; 1. the max of a[i] invT over the strided i, the max tree
+                m0 (kb-store B vm (kb-f32 B F-MINUS-1E30))
+                i (k2-for B vi t n)
+                m1 (kb-store B vm (kb-fmax B (kb-load B tf vm) (kb-fmul B (k2-ld B V 1 i) invT)))
+                e1 (k2-end-for B vi u256)
+                m2 (kb-store B (kb-shared-at B sred tf t) (kb-load B tf vm)) m3 (kb-barrier B)
+                m4 (k2-tree B sred t vst true)
+                m (kb-load B tf (kb-shared-at B sred tf u0)) m5 (kb-barrier B)
+                ;; 2. Z
+                z0 (kb-store B vz f0)
+                i2 (k2-for B vi t n)
+                z1 (k2-acc B vz (kb-fexp B (kb-fsub B (kb-fmul B (k2-ld B V 1 i2) invT) m)))
+                e2 (k2-end-for B vi u256)
+                Z (k2-wg-sum B sred t vst (kb-load B tf vz))
+                ;; 3. tau by 30 bisection steps: mass(p >= mid) >= top_p
+                b0 (kb-store B vlo f0) b1 (kb-store B vhi (kb-f32 B F-ONE))
+                it (k2-for B vit u0 (kb-u32 B 30))
+                mid (kb-fmul B fhalf (kb-fadd B (kb-load B tf vlo) (kb-load B tf vhi)))
+                b2 (kb-store B vacc f0)
+                i3 (k2-for B vi t n)
+                pi (k2-pi B V true i3 invT m Z 0)
+                b3 (kb-if B (kb-fge B pi mid)) b4 (k2-acc B vacc pi) b5 (kb-end-if B)
+                e3 (k2-end-for B vi u256)
+                mass (k2-wg-sum B sred t vst (kb-load B tf vacc))
+                b6 (kb-if B (kb-fge B mass (k2-pm B V 5))) b7 (kb-store B vlo mid) b8 (kb-else B) b9 (kb-store B vhi mid) ba (kb-end-if B)
+                e4 (k2-end-for B vit u1)]
+            (k2-draw B V true t n (kb-load B tf vlo) invT m Z pos seed sred stot vars 0 0))
+          (= op 27)
+          (let [m0 (kb-store B vm (kb-f32 B F-MINUS-1E30))
+                i (k2-for B vi (kb-iadd B s0 t) s1)
+                m1 (kb-store B vm (kb-fmax B (kb-load B tf vm) (kb-fmul B (k2-ld B V 1 (k2-off B lb i)) invT)))
+                e1 (k2-end-for B vi u256)
+                m2 (kb-store B (kb-shared-at B sred tf t) (kb-load B tf vm)) m3 (kb-barrier B)
+                m4 (k2-tree B sred t vst true)
+                m (kb-load B tf (kb-shared-at B sred tf u0)) m5 (kb-barrier B)
+                z0 (kb-store B vz f0)
+                i2 (k2-for B vi (kb-iadd B s0 t) s1)
+                z1 (k2-acc B vz (kb-fexp B (kb-fsub B (kb-fmul B (k2-ld B V 1 (k2-off B lb i2)) invT) m)))
+                e2 (k2-end-for B vi u256)
+                Z (k2-wg-sum B sred t vst (kb-load B tf vz))
+                g (kb-if B (kb-ieq B t u0))
+                o1 (k2-st B V 4 (k2-off B ob w) m) o2 (k2-st B V 4 (kb-iadd B (k2-offc B ob 61) w) Z)]
+            (kb-end-if B))
+          (= op 28)
+          (let [g (kb-if B (kb-ieq B t u0))
+                M0 (kb-store B vM (kb-f32 B F-MINUS-1E30))
+                k (k2-for B vk u0 parts)
+                M1 (kb-store B vM (kb-fmax B (kb-load B tf vM) (k2-ld B V 4 (k2-off B ob k))))
+                e1 (k2-end-for B vk u1)
+                M (kb-load B tf vM)
+                z0 (kb-store B vz f0)
+                k2 (k2-for B vk u0 parts)
+                z1 (k2-acc B vz (kb-fmul B (k2-ld B V 4 (kb-iadd B (k2-offc B ob 61) k2)) (kb-fexp B (kb-fsub B (k2-ld B V 4 (k2-off B ob k2)) M))))
+                e2 (k2-end-for B vk u1)
+                z2 (kb-store B (kb-shared-at B sred tf u0) M) z3 (kb-store B (kb-shared-at B sred tf u1) (kb-load B tf vz))
+                h (kb-if B (kb-ieq B w u0))
+                h1 (k2-st B V 4 (k2-offc B ob 122) f0) h2 (k2-st B V 4 (k2-offc B ob 123) (kb-f32 B F-ONE))
+                h3 (kb-end-if B)
+                g2 (kb-end-if B)
+                b0 (kb-barrier B)
+                MM (kb-load B tf (kb-shared-at B sred tf u0)) ZZ (kb-load B tf (kb-shared-at B sred tf u1))
+                i (k2-for B vi (kb-iadd B s0 t) s1)
+                a (k2-st B V 5 (k2-off B lb i) (kb-fdiv B (kb-fexp B (kb-fsub B (kb-fmul B (k2-ld B V 1 (k2-off B lb i)) invT) MM)) ZZ))]
+            (k2-end-for B vi u256))
+          (= op 29)
+          (let [mid (kb-fmul B fhalf (kb-fadd B (k2-ld B V 4 (k2-offc B ob 122)) (k2-ld B V 4 (k2-offc B ob 123))))
+                a0 (kb-store B vacc f0)
+                i (k2-for B vi (kb-iadd B s0 t) s1)
+                pi (k2-ld B V 5 (k2-off B lb i))
+                g (kb-if B (kb-fge B pi mid)) a1 (k2-acc B vacc pi) z (kb-end-if B)
+                e1 (k2-end-for B vi u256)
+                mass (k2-wg-sum B sred t vst (kb-load B tf vacc))
+                h (kb-if B (kb-ieq B t u0))
+                o1 (k2-st B V 4 (kb-iadd B (k2-offc B ob 124) w) mass)]
+            (kb-end-if B))
+          (= op 30)
+          (let [g (kb-if B (kb-ieq B t u0))
+                a0 (kb-store B vacc f0)
+                k (k2-for B vk u0 parts)
+                a1 (k2-acc B vacc (k2-ld B V 4 (kb-iadd B (k2-offc B ob 124) k)))
+                e1 (k2-end-for B vk u1)
+                mid (kb-fmul B fhalf (kb-fadd B (k2-ld B V 4 (k2-offc B ob 122)) (k2-ld B V 4 (k2-offc B ob 123))))
+                ;; top_p: P.scale, or the row's b[row 4 + 1] (BATCH), read under t == 0
+                h (kb-if B (kb-fge B (kb-load B tf vacc) (if batch? (k2-ld B V 2 (kb-iadd B sb4 (kb-u32 B 1))) (k2-pm B V 5))))
+                h1 (k2-st B V 4 (k2-offc B ob 122) mid) h2 (kb-else B) h3 (k2-st B V 4 (k2-offc B ob 123) mid) h4 (kb-end-if B)]
+            (kb-end-if B))
+          :else
+          (k2-draw B V false t n (k2-ld B V 4 (k2-offc B ob 122)) invT f0 f0 pos seed sred stot vars lb ib))]
+    (kb-module B 256 1 1)))
+
+;; the module of op in variant v (0 decode, 1 -DBATCH, 2 -DBPREFILL, 4 -DBIAS,
+;; 5 -DBATCH -DBIAS); an empty one where the defines leave nex_ops.comp's op
+;; as in decode (use v 0 for it) or for another op
+(defn kir2-nex-variant [op :i64 v :i64] :vector-i64
+  (cond (= v 0) (kir2-nex-op op)
+        (and (= op 8) (or (= v 1) (= v 2))) (k2-nex-ewise 8 v)
+        (and (= op 14) (= v 1)) (k2-nex-pos-incr 1)
+        (and (= op 15) (or (= v 1) (= v 4) (= v 5))) (k2-nex-rope v)
+        (and (= op 16) (or (= v 1) (= v 2))) (k2-nex-attn v)
+        (and (= op 18) (= v 1)) (k2-nex-argmax false 1)
+        (and (= op 19) (= v 1)) (k2-nex-argmax true 1)
+        (and (= op 22) (or (= v 1) (= v 2))) (k2-nex-resident 22 v)
+        (and (= op 23) (= v 2)) (k2-nex-resident 23 2)
+        (and (= op 24) (= v 2)) (k2-nex-resident 24 2)
+        (and (= op 25) (= v 1)) (k2-nex-resident 25 1)
+        (and (= v 1) (and (>= op 27) (<= op 31))) (k2-nex-sample op 1)
+        :else (spv-new 0)))
 
 ;; the module of op (an empty one for another op)
 (defn kir2-nex-op [op :i64] :vector-i64
@@ -594,11 +988,1793 @@
         (= op 13) (k2-nex-norm 4)
         (= op 9) (k2-nex-weighted-sum)
         (= op 12) (k2-nex-matvec)
-        (= op 14) (k2-nex-pos-incr)
-        (= op 15) (k2-nex-rope)
-        (= op 16) (k2-nex-attn)
+        (= op 14) (k2-nex-pos-incr 0)
+        (= op 15) (k2-nex-rope 0)
+        (= op 16) (k2-nex-attn 0)
         (= op 17) (k2-nex-topk)
-        (= op 18) (k2-nex-argmax false)
-        (= op 19) (k2-nex-argmax true)
-        (or (and (>= op 4) (<= op 8)) (= op 10) (= op 11)) (k2-nex-ewise op)
+        (= op 18) (k2-nex-argmax false 0)
+        (= op 19) (k2-nex-argmax true 0)
+        (= op 20) (k2-nex-quant-q8)
+        (and (>= op 21) (<= op 25)) (k2-nex-resident op 0)
+        (and (>= op 26) (<= op 31)) (k2-nex-sample op 0)
+        (or (and (>= op 4) (<= op 8)) (= op 10) (= op 11)) (k2-nex-ewise op 0)
         :else (spv-new 0)))
+
+;; ---------------------------------------------------------------------
+;; dot_rows (kotoba-lang/inference verify/native/gpu/dot_rows.comp at
+;; 0f5824c): o[row] = sum over k of w[row cols + k] x[k], one workgroup per
+;; row. Bindings: 0 Meta {rows cols : u32} (ro), 1 W (ro), 2 X (ro), 3 O.
+(defn kir2-dot-rows [] :vector-i64
+  (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) tf (kb-tf32 B)
+        P (kb-meta B 0 2 0) W (kb-buffer B 1 tf 4 true) X (kb-buffer B 2 tf 4 true) O (kb-buffer B 3 tf 4 false)
+        part (kb-shared B tf 256)
+        vk (kb-var B tu) vst (kb-var B tu) vacc (kb-var B tf)
+        u0 (kb-u32 B 0) u256 (kb-u32 B 256) f0 (kb-f32 B 0)
+        row (kb-builtin-at B 26 0) t (kb-builtin-at B 27 0)
+        g (k2-return-if B (kb-uge B row (kb-meta-at B P tu 0)))
+        cols (kb-meta-at B P tu 1)
+        a0 (kb-store B vacc f0)
+        k (k2-for B vk t cols)
+        a1 (k2-acc B vacc (kb-fmul B (kb-load B tf (kb-at B W tf (kb-iadd B (kb-imul B row cols) k))) (kb-load B tf (kb-at B X tf k))))
+        e1 (k2-end-for B vk u256)
+        s0 (kb-store B (kb-shared-at B part tf t) (kb-load B tf vacc))
+        b0 (kb-barrier B)
+        tr (k2-tree B part t vst false)
+        h (kb-if B (kb-ieq B t u0))
+        w (kb-store B (kb-at B O tf row) (kb-load B tf (kb-shared-at B part tf u0)))
+        z (kb-end-if B)]
+    (kb-module B 256 1 1)))
+
+;; ---------------------------------------------------------------------
+;; kdot_f32_r1 (kotoba-lang/inference
+;; resources/kotodama/inference/kernels/native/kdot_f32_r1.comp at c7ea9a9;
+;; tools/gpu_kernel_refs/kdot-f32-r1.comp is that file): the ggml quantized
+;; dot with f32 activations, one row per workgroup, every tensor type in one
+;; module as in the GLSL (a runtime branch on Meta.tensor_type: 12 Q4_K, 13
+;; Q5_K, 14 Q6_K, 23 IQ4_XS, 8 Q8_0, 2 Q4_0, 1 F16, 30 BF16, 142 PQ2_0, 143
+;; PTQ1_0, 3 Q4_1, 6 Q5_0, 7 Q5_1). Bindings: 0 Meta {rows cols tensor_type
+;; positions input_per_expert pad0 pad1 pad2 : u32} (ro), 1 W (u32, ro), 2 X
+;; (ro), 3 O, 4 E (expert ids, u32, ro). LocalSize 64; dispatch (rows,
+;; positions, 1). Each GLSL helper is a function here that writes its code
+;; inline and answers the value.
+
+(defn- ku [B :vector-i64 n :i64] :i64 (kb-u32 B n))
+(defn- kd-tiv4 [B :vector-i64] :i64 (kb-tvec B (kb-ti32 B) 4))
+(defn- kd-tuv4 [B :vector-i64] :i64 (kb-tvec B (kb-tu32 B) 4))
+(defn- kd-tv4 [B :vector-i64] :i64 (kb-tvec B (kb-tf32 B) 4))
+;; weights[k]
+(defn- kd-w [B :vector-i64 W :i64 k :i64] :i64 (kb-load B (kb-tu32 B) (kb-at B W (kb-tu32 B) k)))
+;; weight_byte(o) = (weights[o >> 2] >> ((o & 3) * 8)) & 255
+(defn- kd-byte [B :vector-i64 W :i64 o :i64] :i64
+  (kb-band B (kb-shr B (kd-w B W (kb-shr B o (ku B 2))) (kb-imul B (kb-band B o (ku B 3)) (ku B 8))) (ku B 255)))
+;; weight_half(o): unpackHalf2x16(weights[o >> 2]), .y when (o & 2) != 0
+(defn- kd-half [B :vector-i64 W :i64 o :i64] :i64
+  (let [tf (kb-tf32 B) pr (kb-unpack-half2 B (kd-w B W (kb-shr B o (ku B 2))))]
+    (kb-select B tf (kb-ine B (kb-band B o (ku B 2)) (ku B 0)) (kb-extract B tf pr 1) (kb-extract B tf pr 0))))
+;; weight_u32_at(o): the u32 at byte o; the second word is read only when o
+;; is not word-aligned (an if: at the buffer's end it is past it)
+(defn- kd-u32-at [B :vector-i64 W :i64 o :i64] :i64
+  (let [tu (kb-tu32 B) v (kb-var B tu)
+        w0 (kd-w B W (kb-shr B o (ku B 2))) sh (kb-imul B (kb-band B o (ku B 3)) (ku B 8))
+        a (kb-store B v w0)
+        g (kb-if B (kb-ine B sh (ku B 0)))
+        b (kb-store B v (kb-bor B (kb-shr B w0 sh) (kb-shl B (kd-w B W (kb-iadd B (kb-shr B o (ku B 2)) (ku B 1))) (kb-isub B (ku B 32) sh))))
+        e (kb-end-if B)]
+    (kb-load B tu v)))
+;; int(x), the bits of a u32 as an int
+(defn- kd-int [B :vector-i64 x :i64] :i64 (kb-bitcast B (kb-ti32 B) x))
+;; a - b for ints, and for ivec4s
+(defn- kd-isub [B :vector-i64 a :i64 b :i64] :i64 (kb-op2 B 130 (kb-ti32 B) a b))
+(defn- kd-isub4 [B :vector-i64 a :i64 b :i64] :i64 (kb-op2 B 130 (kd-tiv4 B) a b))
+;; int((w >> s) & m)
+(defn- kd-field [B :vector-i64 w :i64 s :i64 m :i64] :i64 (kd-int B (kb-band B (kb-shr B w s) (ku B m))))
+;; ivec4 of the four nibbles of w at shift, 8 + shift, 16 + shift, 24 + shift
+(defn- kd-nibbles [B :vector-i64 w :i64 shift :i64] :i64
+  (kb-construct4 B (kd-tiv4 B) (kd-field B w shift 15) (kd-field B w (kb-iadd B (ku B 8) shift) 15)
+                 (kd-field B w (kb-iadd B (ku B 16) shift) 15) (kd-field B w (kb-iadd B (ku B 24) shift) 15)))
+;; ivec4(n) and uvec4(n)
+(defn- kd-isplat [B :vector-i64 n :i64] :i64 (let [c (kb-i32 B n)] (kb-construct4 B (kd-tiv4 B) c c c c)))
+(defn- kd-usplat [B :vector-i64 x :i64] :i64 (kb-construct4 B (kd-tuv4 B) x x x x))
+;; y.x + y.y + y.z + y.w
+(defn- kd-sum4 [B :vector-i64 y :i64] :i64
+  (let [tf (kb-tf32 B)]
+    (kb-fadd B (kb-fadd B (kb-fadd B (kb-extract B tf y 0) (kb-extract B tf y 1)) (kb-extract B tf y 2)) (kb-extract B tf y 3))))
+;; dot(vec4(q), y) for an ivec4 q
+(defn- kd-dotq [B :vector-i64 q :i64 y :i64] :i64 (kb-fdot B (kb-s2f B (kd-tv4 B) q) y))
+
+;; q4_scale(base, j) and q4_min(base, j): j < 4 takes the first form. An if,
+;; as the GLSL's early return: both forms read inside the block, but a driver
+;; does not speculate a storage load, so the selection's form keeps every
+;; byte load live at once (on ANV that cost the x8 kernel its SIMD32 build)
+(defn- kd-q4-scale [B :vector-i64 W :i64 base :i64 j :i64] :i64
+  (let [tu (kb-tu32 B) v (kb-var B tu)
+        g (kb-if B (kb-ult B j (ku B 4)))
+        a (kb-store B v (kb-band B (kd-byte B W (kb-iadd B (kb-iadd B base (ku B 4)) j)) (ku B 63)))
+        e (kb-else B)
+        b (kb-store B v (kb-bor B (kb-band B (kd-byte B W (kb-iadd B (kb-iadd B base (ku B 8)) j)) (ku B 15))
+                                (kb-shl B (kb-shr B (kd-byte B W (kb-iadd B base j)) (ku B 6)) (ku B 4))))
+        z (kb-end-if B)]
+    (kd-int B (kb-load B tu v))))
+(defn- kd-q4-min [B :vector-i64 W :i64 base :i64 j :i64] :i64
+  (let [tu (kb-tu32 B) v (kb-var B tu)
+        g (kb-if B (kb-ult B j (ku B 4)))
+        a (kb-store B v (kb-band B (kd-byte B W (kb-iadd B (kb-iadd B base (ku B 8)) j)) (ku B 63)))
+        e (kb-else B)
+        b (kb-store B v (kb-bor B (kb-shr B (kd-byte B W (kb-iadd B (kb-iadd B base (ku B 8)) j)) (ku B 4))
+                                (kb-shl B (kb-shr B (kd-byte B W (kb-iadd B (kb-iadd B base (ku B 4)) j)) (ku B 6)) (ku B 4))))
+        z (kb-end-if B)]
+    (kd-int B (kb-load B tu v))))
+;; q4_word_values: group = index / 64, within = index & 63; w = weights[(base
+;; + 16 + group 32 + (within & 31)) >> 2]; the nibbles at (within >= 32) ? 4 : 0
+(defn- kd-q4-values [B :vector-i64 W :i64 base :i64 index :i64] :i64
+  (let [tu (kb-tu32 B) group (kb-udiv B index (ku B 64)) within (kb-band B index (ku B 63))
+        w (kd-w B W (kb-shr B (kb-iadd B (kb-iadd B (kb-iadd B base (ku B 16)) (kb-imul B group (ku B 32))) (kb-band B within (ku B 31))) (ku B 2)))]
+    (kd-nibbles B w (kb-select B tu (kb-uge B within (ku B 32)) (ku B 4) (ku B 0)))))
+;; q6_word_values
+(defn- kd-q6-values [B :vector-i64 W :i64 base :i64 index :i64] :i64
+  (let [tu (kb-tu32 B)
+        group (kb-udiv B index (ku B 128)) within (kb-band B index (ku B 127)) lane (kb-band B within (ku B 31))
+        qlb (kb-iadd B base (kb-imul B group (ku B 64)))
+        qh (kd-u32-at B W (kb-iadd B (kb-iadd B (kb-iadd B base (ku B 128)) (kb-imul B group (ku B 32))) lane))
+        quarter (kb-udiv B within (ku B 32))
+        ql (kd-u32-at B W (kb-iadd B (kb-iadd B qlb (kb-select B tu (kb-ieq B (kb-band B quarter (ku B 1)) (ku B 1)) (ku B 32) (ku B 0))) lane))
+        qls (kb-select B tu (kb-uge B quarter (ku B 2)) (ku B 4) (ku B 0))
+        qhs (kb-imul B quarter (ku B 2))
+        ;; int(((ql >> (k + ql_shift)) & 15) | (((qh >> (k + qh_shift)) & 3) << 4)) - 32
+        c0 (kd-isub B (kd-int B (kb-bor B (kb-band B (kb-shr B ql qls) (ku B 15)) (kb-shl B (kb-band B (kb-shr B qh qhs) (ku B 3)) (ku B 4)))) (kb-i32 B 32))
+        c1 (kd-isub B (kd-int B (kb-bor B (kb-band B (kb-shr B ql (kb-iadd B (ku B 8) qls)) (ku B 15)) (kb-shl B (kb-band B (kb-shr B qh (kb-iadd B (ku B 8) qhs)) (ku B 3)) (ku B 4)))) (kb-i32 B 32))
+        c2 (kd-isub B (kd-int B (kb-bor B (kb-band B (kb-shr B ql (kb-iadd B (ku B 16) qls)) (ku B 15)) (kb-shl B (kb-band B (kb-shr B qh (kb-iadd B (ku B 16) qhs)) (ku B 3)) (ku B 4)))) (kb-i32 B 32))
+        c3 (kd-isub B (kd-int B (kb-bor B (kb-band B (kb-shr B ql (kb-iadd B (ku B 24) qls)) (ku B 15)) (kb-shl B (kb-band B (kb-shr B qh (kb-iadd B (ku B 24) qhs)) (ku B 3)) (ku B 4)))) (kb-i32 B 32))]
+    (kb-construct4 B (kd-tiv4 B) c0 c1 c2 c3)))
+;; kvalue(i): the IQ4_XS codebook entry, from four packed words by comparison
+(defn- kd-kvalue [B :vector-i64 i :i64] :i64
+  (let [tu (kb-tu32 B)
+        w (kb-select B tu (kb-ult B i (ku B 4)) (ku B 0xBFAD9881)
+                     (kb-select B tu (kb-ult B i (ku B 8)) (ku B 0xF6EADDCF)
+                                (kb-select B tu (kb-ult B i (ku B 12)) (ku B 0x26190D01) (ku B 0x71594535))))]
+    (kb-sbfe B (kd-int B w) (kd-int B (kb-imul B (kb-band B i (ku B 3)) (ku B 8))) (kb-i32 B 8))))
+;; q5_word_values
+(defn- kd-q5-values [B :vector-i64 W :i64 base :i64 index :i64] :i64
+  (let [tu (kb-tu32 B)
+        group (kb-udiv B index (ku B 64)) within (kb-band B index (ku B 63)) lane (kb-band B within (ku B 31))
+        hi (kb-uge B within (ku B 32))
+        qs (kd-w B W (kb-shr B (kb-iadd B (kb-iadd B (kb-iadd B base (ku B 48)) (kb-imul B group (ku B 32))) lane) (ku B 2)))
+        qh (kd-w B W (kb-shr B (kb-iadd B (kb-iadd B base (ku B 16)) lane) (ku B 2)))
+        shift (kb-select B tu hi (ku B 4) (ku B 0))
+        bit (kb-iadd B (kb-imul B (ku B 2) group) (kb-select B tu hi (ku B 1) (ku B 0)))
+        ;; int(((qs >> (k + shift)) & 15) | (((qh >> (k + bit)) & 1) << 4))
+        c0 (kd-int B (kb-bor B (kb-band B (kb-shr B qs shift) (ku B 15)) (kb-shl B (kb-band B (kb-shr B qh bit) (ku B 1)) (ku B 4))))
+        c1 (kd-int B (kb-bor B (kb-band B (kb-shr B qs (kb-iadd B (ku B 8) shift)) (ku B 15)) (kb-shl B (kb-band B (kb-shr B qh (kb-iadd B (ku B 8) bit)) (ku B 1)) (ku B 4))))
+        c2 (kd-int B (kb-bor B (kb-band B (kb-shr B qs (kb-iadd B (ku B 16) shift)) (ku B 15)) (kb-shl B (kb-band B (kb-shr B qh (kb-iadd B (ku B 16) bit)) (ku B 1)) (ku B 4))))
+        c3 (kd-int B (kb-bor B (kb-band B (kb-shr B qs (kb-iadd B (ku B 24) shift)) (ku B 15)) (kb-shl B (kb-band B (kb-shr B qh (kb-iadd B (ku B 24) bit)) (ku B 1)) (ku B 4))))]
+    (kb-construct4 B (kd-tiv4 B) c0 c1 c2 c3)))
+;; iq4xs_word_values and iq4xs_scale
+(defn- kd-iq4xs-values [B :vector-i64 W :i64 base :i64 index :i64] :i64
+  (let [tu (kb-tu32 B)
+        ib (kb-udiv B index (ku B 32)) within (kb-band B index (ku B 31)) hi (kb-uge B within (ku B 16))
+        w (kd-w B W (kb-shr B (kb-iadd B (kb-iadd B (kb-iadd B base (ku B 8)) (kb-imul B ib (ku B 16)))
+                                        (kb-select B tu hi (kb-isub B within (ku B 16)) within))
+                         (ku B 2)))
+        shift (kb-select B tu hi (ku B 4) (ku B 0))]
+    (kb-construct4 B (kd-tiv4 B)
+                   (kd-kvalue B (kb-band B (kb-shr B w shift) (ku B 15)))
+                   (kd-kvalue B (kb-band B (kb-shr B w (kb-iadd B (ku B 8) shift)) (ku B 15)))
+                   (kd-kvalue B (kb-band B (kb-shr B w (kb-iadd B (ku B 16) shift)) (ku B 15)))
+                   (kd-kvalue B (kb-band B (kb-shr B w (kb-iadd B (ku B 24) shift)) (ku B 15))))))
+(defn- kd-iq4xs-scale [B :vector-i64 W :i64 base :i64 ib :i64] :i64
+  (let [sh (kb-shr B (kd-w B W (kb-shr B base (ku B 2))) (ku B 16))
+        sl (kd-byte B W (kb-iadd B (kb-iadd B base (ku B 4)) (kb-udiv B ib (ku B 2))))]
+    (kd-int B (kb-bor B (kb-band B (kb-shr B sl (kb-imul B (ku B 4) (kb-band B ib (ku B 1)))) (ku B 15))
+                     (kb-shl B (kb-band B (kb-shr B sh (kb-imul B (ku B 2) ib)) (ku B 3)) (ku B 4))))))
+;; q8_0_word_values: the four int8 of weight_u32_at(base + (index / 32) 34 + 2 + (index & 31))
+(defn- kd-q8-0-values [B :vector-i64 W :i64 base :i64 index :i64] :i64
+  (let [w (kd-int B (kd-u32-at B W (kb-iadd B (kb-iadd B (kb-iadd B base (kb-imul B (kb-udiv B index (ku B 32)) (ku B 34))) (ku B 2)) (kb-band B index (ku B 31)))))
+        e8 (kb-i32 B 8)]
+    (kb-construct4 B (kd-tiv4 B) (kb-sbfe B w (kb-i32 B 0) e8) (kb-sbfe B w e8 e8) (kb-sbfe B w (kb-i32 B 16) e8) (kb-sbfe B w (kb-i32 B 24) e8))))
+;; q4_0_word_values: the nibbles of weight_u32_at(base + (index / 32) 18 + 2 + (within & 15)), less 8
+(defn- kd-q4-0-values [B :vector-i64 W :i64 base :i64 index :i64] :i64
+  (let [tu (kb-tu32 B) within (kb-band B index (ku B 31))
+        shift (kb-select B tu (kb-uge B within (ku B 16)) (ku B 4) (ku B 0))
+        w (kd-u32-at B W (kb-iadd B (kb-iadd B (kb-iadd B base (kb-imul B (kb-udiv B index (ku B 32)) (ku B 18))) (ku B 2)) (kb-band B within (ku B 15))))]
+    (kd-isub4 B (kd-nibbles B w shift) (kd-isplat B 8))))
+;; f16_values: vec4(unpackHalf2x16(weights[w]), unpackHalf2x16(weights[w + 1])), w = (base + index 2) >> 2
+(defn- kd-f16-values [B :vector-i64 W :i64 base :i64 index :i64] :i64
+  (let [w (kb-shr B (kb-iadd B base (kb-imul B index (ku B 2))) (ku B 2))]
+    (kb-construct2 B (kd-tv4 B) (kb-unpack-half2 B (kd-w B W w)) (kb-unpack-half2 B (kd-w B W (kb-iadd B w (ku B 1)))))))
+;; pq2_0_word_values: four 2-bit codes less 1 of weight_u32_at(base + 2 + e / 4) from s = (e & 3) 2
+(defn- kd-pq2-values [B :vector-i64 W :i64 base :i64 index :i64] :i64
+  (let [e (kb-band B index (ku B 127))
+        w (kd-u32-at B W (kb-iadd B (kb-iadd B base (ku B 2)) (kb-udiv B e (ku B 4))))
+        s (kb-imul B (kb-band B e (ku B 3)) (ku B 2))
+        i1 (kb-i32 B 1)]
+    (kb-construct4 B (kd-tiv4 B) (kd-isub B (kd-field B w s 3) i1) (kd-isub B (kd-field B w (kb-iadd B s (ku B 2)) 3) i1)
+                   (kd-isub B (kd-field B w (kb-iadd B s (ku B 4)) 3) i1) (kd-isub B (kd-field B w (kb-iadd B s (ku B 6)) 3) i1))))
+;; ptq1_pow3(n) = 3^n for n <= 4, and ptq1_decode_byte(b, p) = int((((b p) & 255) 3) >> 8) - 1
+(defn- kd-pow3 [B :vector-i64 n :i64] :i64
+  (let [tu (kb-tu32 B)]
+    (kb-select B tu (kb-ieq B n (ku B 0)) (ku B 1)
+               (kb-select B tu (kb-ieq B n (ku B 1)) (ku B 3)
+                          (kb-select B tu (kb-ieq B n (ku B 2)) (ku B 9)
+                                     (kb-select B tu (kb-ieq B n (ku B 3)) (ku B 27) (ku B 81)))))))
+(defn- kd-trit [B :vector-i64 b :i64 p :i64] :i64
+  (kd-isub B (kd-int B (kb-shr B (kb-imul B (kb-band B (kb-imul B b p) (ku B 255)) (ku B 3)) (ku B 8))) (kb-i32 B 1)))
+;; ptq1_0_word_values: e < 120 decodes four radix bytes at one depth as a
+;; vector, else the two tail bytes; the arms read different words (an if
+;; into v)
+(defn- kd-ptq1-values [B :vector-i64 W :i64 base :i64 index :i64] :i64
+  (let [tu (kb-tu32 B) tuv (kd-tuv4 B) tiv (kd-tiv4 B) v (kb-var B tiv)
+        e (kb-band B index (ku B 127))
+        g (kb-if B (kb-ult B e (ku B 120)))
+        lo (kb-ult B e (ku B 80))
+        q (kb-select B tu lo e (kb-isub B e (ku B 80)))
+        off (kb-select B tu lo (kb-iadd B base (kb-band B e (ku B 15))) (kb-iadd B (kb-iadd B base (ku B 16)) (kb-band B q (ku B 7))))
+        n (kb-select B tu lo (kb-shr B e (ku B 4)) (kb-shr B q (ku B 3)))
+        w (kd-w B W (kb-shr B off (ku B 2)))
+        b0 (kb-construct4 B tuv (kb-band B w (ku B 255)) (kb-band B (kb-shr B w (ku B 8)) (ku B 255))
+                          (kb-band B (kb-shr B w (ku B 16)) (ku B 255)) (kb-shr B w (ku B 24)))
+        b1 (kb-op2 B 199 tuv (kb-op2 B 132 tuv b0 (kd-usplat B (kd-pow3 B n))) (kd-usplat B (ku B 255)))
+        a (kb-store B v (kb-op2 B 130 tiv (kb-bitcast B tiv (kb-op2 B 194 tuv (kb-op2 B 132 tuv b1 (kd-usplat B (ku B 3))) (kd-usplat B (ku B 8))))
+                                (kd-isplat B 1)))
+        x (kb-else B)
+        wt (kd-w B W (kb-shr B (kb-iadd B base (ku B 24)) (ku B 2)))
+        nt (kb-shr B (kb-isub B e (ku B 120)) (ku B 1))
+        t0 (kb-band B wt (ku B 255)) t1 (kb-band B (kb-shr B wt (ku B 8)) (ku B 255))
+        p0 (kd-pow3 B nt) p1 (kd-pow3 B (kb-iadd B nt (ku B 1)))
+        b (kb-store B v (kb-construct4 B tiv (kd-trit B t0 p0) (kd-trit B t1 p0) (kd-trit B t0 p1) (kd-trit B t1 p1)))
+        z (kb-end-if B)]
+    (kb-load B tiv v)))
+;; bf16_values: the four bf16 of weights[w], weights[w + 1] as floats
+(defn- kd-bf16-values [B :vector-i64 W :i64 base :i64 index :i64] :i64
+  (let [tf (kb-tf32 B) w (kb-shr B (kb-iadd B base (kb-imul B index (ku B 2))) (ku B 2))
+        a (kd-w B W w) b (kd-w B W (kb-iadd B w (ku B 1)))
+        lo16 (ku B 0xffff) hi16 (ku B 0xffff0000)]
+    (kb-construct4 B (kd-tv4 B) (kb-bitcast B tf (kb-shl B (kb-band B a lo16) (ku B 16))) (kb-bitcast B tf (kb-band B a hi16))
+                   (kb-bitcast B tf (kb-shl B (kb-band B b lo16) (ku B 16))) (kb-bitcast B tf (kb-band B b hi16)))))
+;; q4_1_word_values: the nibbles of weight_u32_at(base + (index / 32) 20 + 4 + (within & 15))
+(defn- kd-q4-1-values [B :vector-i64 W :i64 base :i64 index :i64] :i64
+  (let [tu (kb-tu32 B) within (kb-band B index (ku B 31))
+        shift (kb-select B tu (kb-uge B within (ku B 16)) (ku B 4) (ku B 0))
+        w (kd-u32-at B W (kb-iadd B (kb-iadd B (kb-iadd B base (kb-imul B (kb-udiv B index (ku B 32)) (ku B 20))) (ku B 4)) (kb-band B within (ku B 15))))]
+    (kd-nibbles B w shift)))
+;; q5x_word_values(base, index, bb, qh_off): Q5_0 (22, 2) and Q5_1 (24, 4)
+(defn- kd-q5x-values [B :vector-i64 W :i64 base :i64 index :i64 bb :i64 qh-off :i64] :i64
+  (let [tu (kb-tu32 B) within (kb-band B index (ku B 31))
+        shift (kb-select B tu (kb-uge B within (ku B 16)) (ku B 4) (ku B 0))
+        blk (kb-iadd B base (kb-imul B (kb-udiv B index (ku B 32)) (ku B bb)))
+        w (kd-u32-at B W (kb-iadd B (kb-iadd B (kb-iadd B blk (ku B qh-off)) (ku B 4)) (kb-band B within (ku B 15))))
+        hb (kb-band B (kb-shr B (kd-u32-at B W (kb-iadd B blk (ku B qh-off))) within) (ku B 15))
+        ;; int(((w >> (k + shift)) & 15) | (((hb >> k') & 1) << 4))
+        c0 (kd-int B (kb-bor B (kb-band B (kb-shr B w shift) (ku B 15)) (kb-shl B (kb-band B hb (ku B 1)) (ku B 4))))
+        c1 (kd-int B (kb-bor B (kb-band B (kb-shr B w (kb-iadd B (ku B 8) shift)) (ku B 15)) (kb-shl B (kb-band B (kb-shr B hb (ku B 1)) (ku B 1)) (ku B 4))))
+        c2 (kd-int B (kb-bor B (kb-band B (kb-shr B w (kb-iadd B (ku B 16) shift)) (ku B 15)) (kb-shl B (kb-band B (kb-shr B hb (ku B 2)) (ku B 1)) (ku B 4))))
+        c3 (kd-int B (kb-bor B (kb-band B (kb-shr B w (kb-iadd B (ku B 24) shift)) (ku B 15)) (kb-shl B (kb-band B (kb-shr B hb (ku B 3)) (ku B 1)) (ku B 4))))]
+    (kb-construct4 B (kd-tiv4 B) c0 c1 c2 c3)))
+;; block_bytes_of(t): bytes per 256 values. r1? is kdot_f32_r1's table; r8's
+;; lacks BF16 (30), PQ2_0 (142) and PTQ1_0 (143).
+(defn- kd-block-bytes [B :vector-i64 t :i64 r1? :bool] :i64
+  (let [tu (kb-tu32 B)]
+    (loop [k 12 r (ku B 0)]
+      (if (< k 0) r
+        (let [tt (vector-at [12 13 14 23 8 2 1 30 142 143 3 6 7] k)
+              bb (vector-at [144 176 210 136 272 144 512 512 68 56 160 176 192] k)]
+          (recur (dec k) (if (or r1? (< tt 30) (> tt 143)) (kb-select B tu (kb-ieq B t (ku B tt)) (ku B bb) r) r)))))))
+;; is_block32(t), the same two families
+(defn- kd-block32? [B :vector-i64 t :i64 r1? :bool] :i64
+  (loop [k 6 r (kb-bool B false)]
+    (if (< k 0) r
+      (let [tt (vector-at [8 2 1 30 3 6 7] k)]
+        (recur (dec k) (if (or r1? (not= tt 30)) (kb-lor B (kb-ieq B t (ku B tt)) r) r))))))
+
+;; acc += v
+(defn- kd-acc [B :vector-i64 vacc :i64 v :i64] :i64 (k2-acc B vacc v))
+;; the dot of one block: the branch on tt in the GLSL's order. vacc and vmin
+;; point at acc and mins; r1? adds kdot_f32_r1's BF16, PQ2_0 and PTQ1_0 arms;
+;; ysum is r8's precomputed y.x + y.y + y.z + y.w (0: computed where used)
+(defn- kd-block [B :vector-i64 W :i64 tt :i64 wb :i64 index :i64 y :i64 vacc :i64 vmin :i64 vq :i64 r1? :bool ysum :i64] :i64
+  (let [tu (kb-tu32 B) tf (kb-tf32 B) tiv (kd-tiv4 B)
+        ;; 12 Q4_K, 13 Q5_K
+        g1 (kb-if B (kb-lor B (kb-ieq B tt (ku B 12)) (kb-ieq B tt (ku B 13))))
+        j (kb-udiv B index (ku B 32))
+        sc (kb-s2f B tf (kd-q4-scale B W wb j))
+        q1 (kb-if B (kb-ieq B tt (ku B 12)))
+        q2 (kb-store B vq (kd-q4-values B W wb index))
+        q3 (kb-else B)
+        q4 (kb-store B vq (kd-q5-values B W wb index))
+        q5 (kb-end-if B)
+        a1 (kd-acc B vacc (kb-fmul B (kb-fmul B (kd-half B W wb) sc) (kd-dotq B (kb-load B tiv vq) y)))
+        a2 (kb-store B vmin (kb-fadd B (kb-load B tf vmin)
+                                     (kb-fmul B (kb-fmul B (kd-half B W (kb-iadd B wb (ku B 2))) (kb-s2f B tf (kd-q4-min B W wb j))) (if (= ysum 0) (kd-sum4 B y) ysum))))
+        e1 (kb-else B)
+        ;; 23 IQ4_XS
+        g2 (kb-if B (kb-ieq B tt (ku B 23)))
+        ib (kb-udiv B index (ku B 32))
+        ls (kb-s2f B tf (kd-isub B (kd-iq4xs-scale B W wb ib) (kb-i32 B 32)))
+        a3 (kd-acc B vacc (kb-fmul B (kb-fmul B (kd-half B W wb) ls) (kd-dotq B (kd-iq4xs-values B W wb index) y)))
+        e2 (kb-else B)
+        ;; 8 Q8_0
+        g3 (kb-if B (kb-ieq B tt (ku B 8)))
+        a4 (kd-acc B vacc (kb-fmul B (kd-half B W (kb-iadd B wb (kb-imul B (kb-udiv B index (ku B 32)) (ku B 34)))) (kd-dotq B (kd-q8-0-values B W wb index) y)))
+        e3 (kb-else B)
+        ;; 2 Q4_0
+        g4 (kb-if B (kb-ieq B tt (ku B 2)))
+        a5 (kd-acc B vacc (kb-fmul B (kd-half B W (kb-iadd B wb (kb-imul B (kb-udiv B index (ku B 32)) (ku B 18)))) (kd-dotq B (kd-q4-0-values B W wb index) y)))
+        e4 (kb-else B)
+        ;; 1 F16
+        g5 (kb-if B (kb-ieq B tt (ku B 1)))
+        a6 (kd-acc B vacc (kb-fdot B (kd-f16-values B W wb index) y))
+        e5 (kb-else B)
+        ;; 30 BF16 (r1 only)
+        g6 (if r1? (kb-if B (kb-ieq B tt (ku B 30))) 0)
+        a7 (if r1? (kd-acc B vacc (kb-fdot B (kd-bf16-values B W wb index) y)) 0)
+        e6 (if r1? (kb-else B) 0)
+        ;; 142 PQ2_0, 143 PTQ1_0 (r1 only)
+        g7 (if r1? (kb-if B (kb-lor B (kb-ieq B tt (ku B 142)) (kb-ieq B tt (ku B 143)))) 0)
+        a8 (if r1?
+             (let [pq (kb-ieq B tt (ku B 142))
+                   qb (kb-iadd B wb (kb-imul B (kb-udiv B index (ku B 128)) (kb-select B tu pq (ku B 34) (ku B 28))))
+                   q1 (kb-if B pq)
+                   q2 (kb-store B vq (kd-pq2-values B W qb index))
+                   q3 (kb-else B)
+                   q4 (kb-store B vq (kd-ptq1-values B W qb index))
+                   q5 (kb-end-if B)]
+               (kd-acc B vacc (kb-fmul B (kd-half B W (kb-iadd B qb (kb-select B tu pq (ku B 0) (ku B 26)))) (kd-dotq B (kb-load B tiv vq) y))))
+             0)
+        e7 (if r1? (kb-else B) 0)
+        ;; 3 Q4_1
+        g8 (kb-if B (kb-ieq B tt (ku B 3)))
+        b3 (kb-iadd B wb (kb-imul B (kb-udiv B index (ku B 32)) (ku B 20)))
+        a9 (kd-acc B vacc (kb-fmul B (kd-half B W b3) (kd-dotq B (kd-q4-1-values B W wb index) y)))
+        m3 (kb-store B vmin (kb-fsub B (kb-load B tf vmin) (kb-fmul B (kd-half B W (kb-iadd B b3 (ku B 2))) (if (= ysum 0) (kd-sum4 B y) ysum))))
+        e8 (kb-else B)
+        ;; 6 Q5_0
+        g9 (kb-if B (kb-ieq B tt (ku B 6)))
+        a10 (kd-acc B vacc (kb-fmul B (kd-half B W (kb-iadd B wb (kb-imul B (kb-udiv B index (ku B 32)) (ku B 22))))
+                                     (kd-dotq B (kd-isub4 B (kd-q5x-values B W wb index 22 2) (kd-isplat B 16)) y)))
+        e9 (kb-else B)
+        ;; 7 Q5_1
+        g10 (kb-if B (kb-ieq B tt (ku B 7)))
+        b7 (kb-iadd B wb (kb-imul B (kb-udiv B index (ku B 32)) (ku B 24)))
+        a11 (kd-acc B vacc (kb-fmul B (kd-half B W b7) (kd-dotq B (kd-q5x-values B W wb index 24 4) y)))
+        m7 (kb-store B vmin (kb-fsub B (kb-load B tf vmin) (kb-fmul B (kd-half B W (kb-iadd B b7 (ku B 2))) (if (= ysum 0) (kd-sum4 B y) ysum))))
+        e10 (kb-else B)
+        ;; else Q6_K: scale = the signed byte at wb + 192 + index / 16
+        sb (kd-byte B W (kb-iadd B (kb-iadd B wb (ku B 192)) (kb-udiv B index (ku B 16))))
+        sbi (kb-select B (kb-ti32 B) (kb-uge B sb (ku B 128)) (kd-isub B (kd-int B sb) (kb-i32 B 256)) (kd-int B sb))
+        a12 (kd-acc B vacc (kb-fmul B (kb-fmul B (kd-half B W (kb-iadd B wb (ku B 208))) (kb-s2f B tf sbi)) (kd-dotq B (kd-q6-values B W wb index) y)))
+        ;; close the arms: ten ifs for r1, eight for r8
+        z (loop [k 0] (if (= k (if r1? 10 8)) 0 (let [x (kb-end-if B)] (recur (inc k)))))]
+    z))
+
+(defn kir2-kdot-f32-r1 [] :vector-i64
+  (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) tf (kb-tf32 B)
+        P (kb-meta B 0 8 0) W (kb-buffer B 1 tu 4 true) X (kb-buffer B 2 tf 4 true) O (kb-buffer B 3 tf 4 false)
+        E (kb-buffer B 4 tu 4 true)
+        part (kb-shared B tf 64)
+        vacc (kb-var B tf) vmin (kb-var B tf) vblk (kb-var B tu) vst (kb-var B tu) vin (kb-var B tu) vq (kb-var B (kd-tiv4 B))
+        u0 (kb-u32 B 0) u1 (kb-u32 B 1) f0 (kb-f32 B 0)
+        row (kb-builtin-at B 26 0) position (kb-builtin-at B 26 1) t (kb-builtin-at B 27 0)
+        expert (kb-load B tu (kb-at B E tu position))
+        ;; in_row = ((input_per_expert == 1) ? ((pad0 > 1) ? position / pad0 : position) : 0) + pad1
+        ;; (the division in an if: pad0 may be 0)
+        i0 (kb-store B vin u0)
+        i1 (kb-if B (kb-ieq B (kb-meta-at B P tu 4) u1))
+        i2 (kb-store B vin position)
+        i3 (kb-if B (kb-ugt B (kb-meta-at B P tu 5) u1))
+        i4 (kb-store B vin (kb-udiv B position (kb-meta-at B P tu 5)))
+        i5 (kb-end-if B)
+        i6 (kb-end-if B)
+        in-row (kb-iadd B (kb-load B tu vin) (kb-meta-at B P tu 6))
+        rows (kb-meta-at B P tu 0) cols (kb-meta-at B P tu 1) tt (kb-meta-at B P tu 2) positions (kb-meta-at B P tu 3)
+        b32 (kd-block32? B tt true)
+        blocks (kb-select B tu b32 (kb-udiv B (kb-iadd B cols (ku B 255)) (ku B 256)) (kb-udiv B cols (ku B 256)))
+        bbytes (kd-block-bytes B tt true)
+        row-bytes (kb-select B tu b32 (kb-imul B (kb-udiv B (kb-iadd B cols (ku B 31)) (ku B 32)) (kb-udiv B bbytes (ku B 8)))
+                             (kb-imul B blocks bbytes))
+        index (kb-imul B t (ku B 4))
+        a0 (kb-store B vacc f0) m0 (kb-store B vmin f0)
+        live (kb-land B (kb-ult B row rows) (kb-ult B position positions))
+        g (kb-if B live)
+        rowbase (kb-imul B (kb-iadd B (kb-imul B expert rows) row) row-bytes)
+        blk (k2-for B vblk u0 blocks)
+        ;; if (block 256 + index >= cols) continue;
+        c0 (kb-if B (kb-uge B (kb-iadd B (kb-imul B blk (ku B 256)) index) cols))
+        c1 (kb-next B)
+        c2 (kb-end-if B)
+        xb (kb-iadd B (kb-iadd B (kb-imul B in-row cols) (kb-imul B blk (ku B 256))) index)
+        y (kb-construct4 B (kd-tv4 B) (kb-load B tf (kb-at B X tf xb)) (kb-load B tf (kb-at B X tf (kb-iadd B xb u1)))
+                         (kb-load B tf (kb-at B X tf (kb-iadd B xb (ku B 2)))) (kb-load B tf (kb-at B X tf (kb-iadd B xb (ku B 3)))))
+        wb (kb-iadd B rowbase (kb-imul B blk bbytes))
+        d (kd-block B W tt wb index y vacc vmin vq true 0)
+        e (k2-end-for B vblk u1)
+        z (kb-end-if B)
+        ;; partial[t] = acc - mins; the tree from stride 32
+        p0 (kb-store B (kb-shared-at B part tf t) (kb-fsub B (kb-load B tf vacc) (kb-load B tf vmin)))
+        p1 (kb-barrier B)
+        p2 (kb-store B vst (ku B 32))
+        l (kb-loop B)
+        w (kb-while B (kb-ugt B (kb-load B tu vst) u0))
+        st (kb-load B tu vst)
+        h (kb-if B (kb-ult B t st))
+        hs (kb-store B (kb-shared-at B part tf t) (kb-fadd B (kb-load B tf (kb-shared-at B part tf t)) (kb-load B tf (kb-shared-at B part tf (kb-iadd B t st)))))
+        he (kb-end-if B)
+        hb (kb-barrier B)
+        hc (kb-continue B)
+        hn (kb-store B vst (kb-shr B (kb-load B tu vst) u1))
+        le (kb-end-loop B)
+        o0 (kb-if B (kb-land B (kb-ieq B t u0) (kb-land B (kb-ult B row rows) (kb-ult B position positions))))
+        o1 (kb-store B (kb-at B O tf (kb-iadd B (kb-imul B position rows) row)) (kb-load B tf (kb-shared-at B part tf u0)))
+        o2 (kb-end-if B)]
+    (kb-module B 64 1 1)))
+
+;; ---------------------------------------------------------------------
+;; kdot_f32_r8 (kotoba-lang/inference verify/native/gpu/kdot_f32_r8.comp at
+;; f57ea5e; tools/gpu_kernel_refs/kdot-f32-r8.comp is that file): kdot_f32_r1's
+;; dot with R rows per workgroup (the GLSL's -DROWS, 8 by default; 4, 16 or
+;; 32), acc[R] and mins[R] in Function arrays, the activation word read once
+;; per block for all R rows, and r8's tensor types (no BF16, PQ2_0 or
+;; PTQ1_0). Bindings as kdot_f32_r1's; dispatch (ceil(rows / R), positions,
+;; 1). Another R gives an empty module.
+
+;; element i of a Function array of f32
+(defn- kd-fn-at [B :vector-i64 arr :i64 i :i64] :i64
+  (kb-chain1 B (kb-tptr B KB-FUNCTION (kb-tf32 B)) arr i))
+
+(defn kir2-kdot-f32-r8 [R :i64] :vector-i64
+  (if (not (or (= R 4) (= R 8) (= R 16) (= R 32))) (spv-new 0)
+    (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) tf (kb-tf32 B)
+          P (kb-meta B 0 8 0) W (kb-buffer B 1 tu 4 true) X (kb-buffer B 2 tf 4 true) O (kb-buffer B 3 tf 4 false)
+          E (kb-buffer B 4 tu 4 true)
+          part (kb-shared B tf (* R 64))
+          vacc (kb-var B (kb-tarray B tf R)) vmin (kb-var B (kb-tarray B tf R))
+          vr (kb-var B tu) vblk (kb-var B tu) vst (kb-var B tu) vin (kb-var B tu) vq (kb-var B (kd-tiv4 B))
+          u0 (kb-u32 B 0) u1 (kb-u32 B 1) u64 (kb-u32 B 64) uR (kb-u32 B R) f0 (kb-f32 B 0)
+          row0 (kb-imul B (kb-builtin-at B 26 0) uR) position (kb-builtin-at B 26 1) t (kb-builtin-at B 27 0)
+          expert (kb-load B tu (kb-at B E tu position))
+          i0 (kb-store B vin u0)
+          i1 (kb-if B (kb-ieq B (kb-meta-at B P tu 4) u1))
+          i2 (kb-store B vin position)
+          i3 (kb-if B (kb-ugt B (kb-meta-at B P tu 5) u1))
+          i4 (kb-store B vin (kb-udiv B position (kb-meta-at B P tu 5)))
+          i5 (kb-end-if B)
+          i6 (kb-end-if B)
+          in-row (kb-iadd B (kb-load B tu vin) (kb-meta-at B P tu 6))
+          rows (kb-meta-at B P tu 0) cols (kb-meta-at B P tu 1) tt (kb-meta-at B P tu 2) positions (kb-meta-at B P tu 3)
+          b32 (kd-block32? B tt false)
+          blocks (kb-select B tu b32 (kb-udiv B (kb-iadd B cols (ku B 255)) (ku B 256)) (kb-udiv B cols (ku B 256)))
+          bbytes (kd-block-bytes B tt false)
+          row-bytes (kb-select B tu b32 (kb-imul B (kb-udiv B (kb-iadd B cols (ku B 31)) (ku B 32)) (kb-udiv B bbytes (ku B 8)))
+                               (kb-imul B blocks bbytes))
+          index (kb-imul B t (ku B 4))
+          ;; for (r = 0; r < ROWS; r++) { acc[r] = 0; mins[r] = 0; }
+          r0 (k2-for B vr u0 uR)
+          z0 (kb-store B (kd-fn-at B vacc r0) f0) z1 (kb-store B (kd-fn-at B vmin r0) f0)
+          z2 (k2-end-for B vr u1)
+          ;; nrows = min(ROWS, rows - min(row0, rows))
+          nrows (kb-umin B uR (kb-isub B rows (kb-umin B row0 rows)))
+          g (kb-if B (kb-ult B position positions))
+          blk (k2-for B vblk u0 blocks)
+          c0 (kb-if B (kb-uge B (kb-iadd B (kb-imul B blk (ku B 256)) index) cols))
+          c1 (kb-next B)
+          c2 (kb-end-if B)
+          xb (kb-iadd B (kb-iadd B (kb-imul B in-row cols) (kb-imul B blk (ku B 256))) index)
+          y (kb-construct4 B (kd-tv4 B) (kb-load B tf (kb-at B X tf xb)) (kb-load B tf (kb-at B X tf (kb-iadd B xb u1)))
+                           (kb-load B tf (kb-at B X tf (kb-iadd B xb (ku B 2)))) (kb-load B tf (kb-at B X tf (kb-iadd B xb (ku B 3)))))
+          ysum (kd-sum4 B y)
+          base0 (kb-iadd B (kb-imul B (kb-iadd B (kb-imul B expert rows) row0) row-bytes) (kb-imul B blk bbytes))
+          r (k2-for B vr u0 nrows)
+          wb (kb-iadd B base0 (kb-imul B r row-bytes))
+          d (kd-block B W tt wb index y (kd-fn-at B vacc r) (kd-fn-at B vmin r) vq false ysum)
+          e1 (k2-end-for B vr u1)
+          e2 (k2-end-for B vblk u1)
+          e3 (kb-end-if B)
+          ;; partial[r 64 + t] = acc[r] - mins[r] for every r < ROWS
+          r2 (k2-for B vr u0 uR)
+          p0 (kb-store B (kb-shared-at B part tf (kb-iadd B (kb-imul B r2 u64) t))
+                       (kb-fsub B (kb-load B tf (kd-fn-at B vacc r2)) (kb-load B tf (kd-fn-at B vmin r2))))
+          p1 (k2-end-for B vr u1)
+          p2 (kb-barrier B)
+          ;; for (stride = 32; stride > 0; stride >>= 1) { if (t < stride) for
+          ;; (r < ROWS) partial[r 64 + t] += partial[r 64 + t + stride]; barrier(); }
+          s0 (kb-store B vst (ku B 32))
+          l (kb-loop B)
+          w (kb-while B (kb-ugt B (kb-load B tu vst) u0))
+          st (kb-load B tu vst)
+          h (kb-if B (kb-ult B t st))
+          r3 (k2-for B vr u0 uR)
+          ia (kb-iadd B (kb-imul B r3 u64) t)
+          hs (kb-store B (kb-shared-at B part tf ia)
+                       (kb-fadd B (kb-load B tf (kb-shared-at B part tf ia)) (kb-load B tf (kb-shared-at B part tf (kb-iadd B ia st)))))
+          r4 (k2-end-for B vr u1)
+          he (kb-end-if B)
+          hb (kb-barrier B)
+          hc (kb-continue B)
+          hn (kb-store B vst (kb-shr B (kb-load B tu vst) u1))
+          le (kb-end-loop B)
+          ;; if (t < nrows && position < positions) outp[position rows + row0 + t] = partial[t 64]
+          o0 (kb-if B (kb-land B (kb-ult B t nrows) (kb-ult B position positions)))
+          o1 (kb-store B (kb-at B O tf (kb-iadd B (kb-iadd B (kb-imul B position rows) row0) t)) (kb-load B tf (kb-shared-at B part tf (kb-imul B t u64))))
+          o2 (kb-end-if B)]
+      (kb-module B 64 1 1))))
+
+;; ---------------------------------------------------------------------
+;; kdot_x8r8 (kotoba-lang/inference verify/native/gpu/kdot_x8r8.comp at
+;; b1e85d0; its -DROWS=4 build is the decode path's kdot_x8r4;
+;; tools/gpu_kernel_refs/kdot-x8r8.comp is that file): r8's dot on the x8 thread mapping. 256
+;; invocations are 8 block slots of 32 lanes, a lane owns eight consecutive
+;; values (two vec4 of activations from the vec4 binding X, two code words),
+;; R rows per workgroup share the activations. Its tensor types: Q4_K, Q5_K,
+;; Q6_K, IQ4_XS, Q8_0, Q4_0, F16. Bindings: 0 Meta (ro), 1 W (u32, ro), 2 X
+;; (vec4, ro), 3 O, 4 E (u32, ro); dispatch (ceil(rows / R), positions, 1).
+
+;; block_bytes_of and the 32-value types for x8 (seven types)
+(defn- kd-x8-block-bytes [B :vector-i64 t :i64] :i64
+  (let [tu (kb-tu32 B)]
+    (loop [k 6 r (ku B 0)]
+      (if (< k 0) r
+        (recur (dec k) (kb-select B tu (kb-ieq B t (ku B (vector-at [12 13 14 23 8 2 1] k))) (ku B (vector-at [144 176 210 136 272 144 512] k)) r))))))
+(defn- kd-x8-block32? [B :vector-i64 t :i64] :i64
+  (kb-lor B (kb-lor B (kb-ieq B t (ku B 8)) (kb-ieq B t (ku B 2))) (kb-ieq B t (ku B 1))))
+;; dot(vec4(qa), y0) + dot(vec4(qb), y1)
+(defn- kd-dot2 [B :vector-i64 qa :i64 qb :i64 y0 :i64 y1 :i64] :i64
+  (kb-fadd B (kd-dotq B qa y0) (kd-dotq B qb y1)))
+
+;; one block of one row on the x8 mapping: the branch on tt in the GLSL's
+;; order. pacc and pmin point at acc[r] and mins[r]; vqa and vqb hold the q4 /
+;; q5 picks (a load the other arm must not make)
+(defn- kd-x8-block [B :vector-i64 W :i64 tt :i64 wb :i64 index :i64 y0 :i64 y1 :i64 ysum :i64
+                    pacc :i64 pmin :i64 vqa :i64 vqb :i64] :i64
+  (let [tu (kb-tu32 B) tf (kb-tf32 B) tiv (kd-tiv4 B) i4 (kb-iadd B index (ku B 4))
+        ;; 12 Q4_K, 13 Q5_K
+        g1 (kb-if B (kb-lor B (kb-ieq B tt (ku B 12)) (kb-ieq B tt (ku B 13))))
+        j (kb-udiv B index (ku B 32))
+        sc (kb-s2f B tf (kd-q4-scale B W wb j))
+        q1 (kb-if B (kb-ieq B tt (ku B 12)))
+        q2 (kb-store B vqa (kd-q4-values B W wb index))
+        q3 (kb-else B)
+        q4 (kb-store B vqa (kd-q5-values B W wb index))
+        q5 (kb-end-if B)
+        q6 (kb-if B (kb-ieq B tt (ku B 12)))
+        q7 (kb-store B vqb (kd-q4-values B W wb i4))
+        q8 (kb-else B)
+        q9 (kb-store B vqb (kd-q5-values B W wb i4))
+        q10 (kb-end-if B)
+        a1 (kd-acc B pacc (kb-fmul B (kb-fmul B (kd-half B W wb) sc) (kd-dot2 B (kb-load B tiv vqa) (kb-load B tiv vqb) y0 y1)))
+        a2 (kb-store B pmin (kb-fadd B (kb-load B tf pmin)
+                                     (kb-fmul B (kb-fmul B (kd-half B W (kb-iadd B wb (ku B 2))) (kb-s2f B tf (kd-q4-min B W wb j))) ysum)))
+        e1 (kb-else B)
+        ;; 23 IQ4_XS
+        g2 (kb-if B (kb-ieq B tt (ku B 23)))
+        ls (kb-s2f B tf (kd-isub B (kd-iq4xs-scale B W wb (kb-udiv B index (ku B 32))) (kb-i32 B 32)))
+        a3 (kd-acc B pacc (kb-fmul B (kb-fmul B (kd-half B W wb) ls) (kd-dot2 B (kd-iq4xs-values B W wb index) (kd-iq4xs-values B W wb i4) y0 y1)))
+        e2 (kb-else B)
+        ;; 8 Q8_0
+        g3 (kb-if B (kb-ieq B tt (ku B 8)))
+        a4 (kd-acc B pacc (kb-fmul B (kd-half B W (kb-iadd B wb (kb-imul B (kb-udiv B index (ku B 32)) (ku B 34))))
+                                    (kd-dot2 B (kd-q8-0-values B W wb index) (kd-q8-0-values B W wb i4) y0 y1)))
+        e3 (kb-else B)
+        ;; 2 Q4_0
+        g4 (kb-if B (kb-ieq B tt (ku B 2)))
+        a5 (kd-acc B pacc (kb-fmul B (kd-half B W (kb-iadd B wb (kb-imul B (kb-udiv B index (ku B 32)) (ku B 18))))
+                                    (kd-dot2 B (kd-q4-0-values B W wb index) (kd-q4-0-values B W wb i4) y0 y1)))
+        e4 (kb-else B)
+        ;; 1 F16
+        g5 (kb-if B (kb-ieq B tt (ku B 1)))
+        a6 (kd-acc B pacc (kb-fadd B (kb-fdot B (kd-f16-values B W wb index) y0) (kb-fdot B (kd-f16-values B W wb i4) y1)))
+        e5 (kb-else B)
+        ;; else Q6_K
+        sb (kd-byte B W (kb-iadd B (kb-iadd B wb (ku B 192)) (kb-udiv B index (ku B 16))))
+        sbi (kb-select B (kb-ti32 B) (kb-uge B sb (ku B 128)) (kd-isub B (kd-int B sb) (kb-i32 B 256)) (kd-int B sb))
+        a7 (kd-acc B pacc (kb-fmul B (kb-fmul B (kd-half B W (kb-iadd B wb (ku B 208))) (kb-s2f B tf sbi))
+                                    (kd-dot2 B (kd-q6-values B W wb index) (kd-q6-values B W wb i4) y0 y1)))
+        ;; close the five arms' ifs
+        z (loop [k 0] (if (= k 4) 0 (let [x (kb-end-if B)] (recur (inc k)))))]
+    (kb-end-if B)))
+
+(defn kir2-kdot-x8 [R :i64] :vector-i64
+  (if (not (or (= R 4) (= R 8) (= R 16) (= R 32))) (spv-new 0)
+    (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) tf (kb-tf32 B) tv4 (kd-tv4 B)
+          P (kb-meta B 0 8 0) W (kb-buffer B 1 tu 4 true) X (kb-buffer B 2 tv4 16 true) O (kb-buffer B 3 tf 4 false)
+          E (kb-buffer B 4 tu 4 true)
+          part (kb-shared B tf (* R 256))
+          vacc (kb-var B (kb-tarray B tf R)) vmin (kb-var B (kb-tarray B tf R))
+          vr (kb-var B tu) vblk (kb-var B tu) vst (kb-var B tu) vin (kb-var B tu)
+          vqa (kb-var B (kd-tiv4 B)) vqb (kb-var B (kd-tiv4 B))
+          u0 (kb-u32 B 0) u1 (kb-u32 B 1) u8 (kb-u32 B 8) u256 (kb-u32 B 256) uR (kb-u32 B R) f0 (kb-f32 B 0)
+          row0 (kb-imul B (kb-builtin-at B 26 0) uR) position (kb-builtin-at B 26 1) t (kb-builtin-at B 27 0)
+          expert (kb-load B tu (kb-at B E tu position))
+          i0 (kb-store B vin u0)
+          i1 (kb-if B (kb-ieq B (kb-meta-at B P tu 4) u1))
+          i2 (kb-store B vin position)
+          i3 (kb-if B (kb-ugt B (kb-meta-at B P tu 5) u1))
+          i4 (kb-store B vin (kb-udiv B position (kb-meta-at B P tu 5)))
+          i5 (kb-end-if B)
+          i6 (kb-end-if B)
+          in-row (kb-iadd B (kb-load B tu vin) (kb-meta-at B P tu 6))
+          rows (kb-meta-at B P tu 0) cols (kb-meta-at B P tu 1) tt (kb-meta-at B P tu 2) positions (kb-meta-at B P tu 3)
+          b32 (kd-x8-block32? B tt)
+          blocks (kb-select B tu b32 (kb-udiv B (kb-iadd B cols (ku B 255)) u256) (kb-udiv B cols u256))
+          bbytes (kd-x8-block-bytes B tt)
+          row-bytes (kb-select B tu b32 (kb-imul B (kb-udiv B (kb-iadd B cols (ku B 31)) (ku B 32)) (kb-udiv B bbytes u8))
+                               (kb-imul B blocks bbytes))
+          ;; b0 = t >> 5 (the block slot), index = (t & 31) 8 (the lane's first value)
+          b0 (kb-shr B t (ku B 5))
+          index (kb-imul B (kb-band B t (ku B 31)) u8)
+          r0 (k2-for B vr u0 uR)
+          z0 (kb-store B (kd-fn-at B vacc r0) f0) z1 (kb-store B (kd-fn-at B vmin r0) f0)
+          z2 (k2-end-for B vr u1)
+          nrows (kb-umin B uR (kb-isub B rows (kb-umin B row0 rows)))
+          g (kb-if B (kb-ult B position positions))
+          blk (k2-for B vblk b0 blocks)
+          ;; if (block 256 + index < cols) { ... } (an if around the body)
+          c0 (kb-if B (kb-ult B (kb-iadd B (kb-imul B blk u256) index) cols))
+          xb (kb-iadd B (kb-iadd B (kb-imul B in-row cols) (kb-imul B blk u256)) index)
+          y0 (kb-load B tv4 (kb-at B X tv4 (kb-shr B xb (ku B 2))))
+          y1 (kb-load B tv4 (kb-at B X tv4 (kb-iadd B (kb-shr B xb (ku B 2)) u1)))
+          ;; ysum = y0.x + y0.y + y0.z + y0.w + y1.x + y1.y + y1.z + y1.w
+          ysum (loop [k 1 s (kb-extract B tf y0 0)]
+                 (if (= k 8) s (recur (inc k) (kb-fadd B s (kb-extract B tf (if (< k 4) y0 y1) (rem k 4))))))
+          base0 (kb-iadd B (kb-imul B (kb-iadd B (kb-imul B expert rows) row0) row-bytes) (kb-imul B blk bbytes))
+          r (k2-for B vr u0 nrows)
+          wb (kb-iadd B base0 (kb-imul B r row-bytes))
+          d (kd-x8-block B W tt wb index y0 y1 ysum (kd-fn-at B vacc r) (kd-fn-at B vmin r) vqa vqb)
+          e1 (k2-end-for B vr u1)
+          c1 (kb-end-if B)
+          e2 (k2-end-for B vblk u8)
+          e3 (kb-end-if B)
+          ;; partial[r 256 + t] = acc[r] - mins[r] for every r < R
+          r2 (k2-for B vr u0 uR)
+          p0 (kb-store B (kb-shared-at B part tf (kb-iadd B (kb-imul B r2 u256) t))
+                       (kb-fsub B (kb-load B tf (kd-fn-at B vacc r2)) (kb-load B tf (kd-fn-at B vmin r2))))
+          p1 (k2-end-for B vr u1)
+          p2 (kb-barrier B)
+          s0 (kb-store B vst (ku B 128))
+          l (kb-loop B)
+          w (kb-while B (kb-ugt B (kb-load B tu vst) u0))
+          st (kb-load B tu vst)
+          h (kb-if B (kb-ult B t st))
+          r3 (k2-for B vr u0 uR)
+          ia (kb-iadd B (kb-imul B r3 u256) t)
+          hs (kb-store B (kb-shared-at B part tf ia)
+                       (kb-fadd B (kb-load B tf (kb-shared-at B part tf ia)) (kb-load B tf (kb-shared-at B part tf (kb-iadd B ia st)))))
+          r4 (k2-end-for B vr u1)
+          he (kb-end-if B)
+          hb (kb-barrier B)
+          hc (kb-continue B)
+          hn (kb-store B vst (kb-shr B (kb-load B tu vst) u1))
+          le (kb-end-loop B)
+          o0 (kb-if B (kb-land B (kb-ult B t nrows) (kb-ult B position positions)))
+          o1 (kb-store B (kb-at B O tf (kb-iadd B (kb-iadd B (kb-imul B position rows) row0) t)) (kb-load B tf (kb-shared-at B part tf (kb-imul B t u256))))
+          o2 (kb-end-if B)]
+      (kb-module B 256 1 1))))
+
+;; ---------------------------------------------------------------------
+;; kdot_i8_x8r4 (kotoba-lang/inference verify/native/gpu/kdot_i8_x8r4.comp at
+;; b1e85d0; tools/gpu_kernel_refs/kdot-i8-x8r4.comp is that file): the x8 dot on
+;; int8 activations with the packed 4x8 integer dot product. A lane's eight
+;; activations are two words of xq (four int8 each, quant_q8's output) with
+;; one scale per 32 in XS; the weights' codes go into dotPacked4x8EXT as
+;; words of four bytes. R rows per workgroup (the GLSL's -DROWS, 4 by
+;; default). Bindings: 0 Meta (ro), 1 W (u32, ro), 2 X (u32, ro), 3 O, 4 E
+;; (u32, ro), 5 XS (ro); dispatch (ceil(rows / R), positions, 1). The provider
+;; must enable shaderIntegerDotProduct (ADR 0372 Decision 5).
+
+;; ints: a & b, a << b, a | b
+(defn- kd-iand [B :vector-i64 a :i64 b :i64] :i64 (kb-op2 B 199 (kb-ti32 B) a b))
+(defn- kd-ishl [B :vector-i64 a :i64 b :i64] :i64 (kb-op2 B 196 (kb-ti32 B) a b))
+(defn- kd-ior [B :vector-i64 a :i64 b :i64] :i64 (kb-op2 B 197 (kb-ti32 B) a b))
+;; (c ? (w >> 4) : w) & 0x0F0F0F0F
+(defn- kd-nib-word [B :vector-i64 c :i64 w :i64] :i64
+  (kb-band B (kb-select B (kb-tu32 B) c (kb-shr B w (ku B 4)) w) (ku B 0x0F0F0F0F)))
+;; q6_codes: the four 6-bit codes of index..index+3 as a word, before the -32
+(defn- kd-q6-codes [B :vector-i64 W :i64 base :i64 index :i64] :i64
+  (let [tu (kb-tu32 B)
+        group (kb-udiv B index (ku B 128)) within (kb-band B index (ku B 127)) lane (kb-band B within (ku B 31))
+        quarter (kb-udiv B within (ku B 32))
+        qh (kd-u32-at B W (kb-iadd B (kb-iadd B (kb-iadd B base (ku B 128)) (kb-imul B group (ku B 32))) lane))
+        ql (kd-u32-at B W (kb-iadd B (kb-iadd B (kb-iadd B base (kb-imul B group (ku B 64)))
+                                                (kb-select B tu (kb-ieq B (kb-band B quarter (ku B 1)) (ku B 1)) (ku B 32) (ku B 0)))
+                                     lane))
+        nib (kd-nib-word B (kb-uge B quarter (ku B 2)) ql)
+        h (kb-shl B (kb-band B (kb-shr B qh (kb-imul B quarter (ku B 2))) (ku B 0x03030303)) (ku B 4))]
+    (kb-bor B nib h)))
+;; q4_codes: the four nibbles of index..index+3 as a word
+(defn- kd-q4-codes [B :vector-i64 W :i64 base :i64 index :i64] :i64
+  (let [group (kb-udiv B index (ku B 64)) within (kb-band B index (ku B 63))
+        w (kd-w B W (kb-shr B (kb-iadd B (kb-iadd B (kb-iadd B base (ku B 16)) (kb-imul B group (ku B 32))) (kb-band B within (ku B 31))) (ku B 2)))]
+    (kd-nib-word B (kb-uge B within (ku B 32)) w)))
+;; q5_codes: q4's nibbles with the fifth bit from qh
+(defn- kd-q5-codes [B :vector-i64 W :i64 base :i64 index :i64] :i64
+  (let [tu (kb-tu32 B)
+        group (kb-udiv B index (ku B 64)) within (kb-band B index (ku B 63)) lane (kb-band B within (ku B 31))
+        hi (kb-uge B within (ku B 32))
+        qs (kd-w B W (kb-shr B (kb-iadd B (kb-iadd B (kb-iadd B base (ku B 48)) (kb-imul B group (ku B 32))) lane) (ku B 2)))
+        qh (kd-w B W (kb-shr B (kb-iadd B (kb-iadd B base (ku B 16)) lane) (ku B 2)))
+        bit (kb-iadd B (kb-imul B (ku B 2) group) (kb-select B tu hi (ku B 1) (ku B 0)))
+        nib (kd-nib-word B hi qs)
+        h (kb-shl B (kb-band B (kb-shr B qh bit) (ku B 0x01010101)) (ku B 4))]
+    (kb-bor B nib h)))
+;; q8_0_codes and q4_0_codes
+(defn- kd-q8-0-codes [B :vector-i64 W :i64 base :i64 index :i64] :i64
+  (kd-u32-at B W (kb-iadd B (kb-iadd B (kb-iadd B base (kb-imul B (kb-udiv B index (ku B 32)) (ku B 34))) (ku B 2)) (kb-band B index (ku B 31)))))
+(defn- kd-q4-0-codes [B :vector-i64 W :i64 base :i64 index :i64] :i64
+  (let [within (kb-band B index (ku B 31))
+        w (kd-u32-at B W (kb-iadd B (kb-iadd B (kb-iadd B base (kb-imul B (kb-udiv B index (ku B 32)) (ku B 18))) (ku B 2)) (kb-band B within (ku B 15))))]
+    (kd-nib-word B (kb-uge B within (ku B 16)) w)))
+;; i8_values(w): the four int8 of w as a vec4
+(defn- kd-i8-values [B :vector-i64 w :i64] :i64
+  (let [tf (kb-tf32 B) e8 (kb-i32 B 8)]
+    (kb-construct4 B (kd-tv4 B) (kb-s2f B tf (kb-sbfe B w (kb-i32 B 0) e8)) (kb-s2f B tf (kb-sbfe B w e8 e8))
+                   (kb-s2f B tf (kb-sbfe B w (kb-i32 B 16) e8)) (kb-s2f B tf (kb-sbfe B w (kb-i32 B 24) e8)))))
+;; the IQ4_XS codebook values of the four nibbles of c as one int of four int8
+(defn- kd-kvalues-packed [B :vector-i64 c :i64] :i64
+  (let [i255 (kb-i32 B 255)
+        v0 (kd-iand B (kd-kvalue B (kb-band B c (ku B 15))) i255)
+        v1 (kd-ishl B (kd-iand B (kd-kvalue B (kb-band B (kb-shr B c (ku B 8)) (ku B 15))) i255) (kb-i32 B 8))
+        v2 (kd-ishl B (kd-iand B (kd-kvalue B (kb-band B (kb-shr B c (ku B 16)) (ku B 15))) i255) (kb-i32 B 16))
+        v3 (kd-ishl B (kd-iand B (kd-kvalue B (kb-band B (kb-shr B c (ku B 24)) (ku B 15))) i255) (kb-i32 B 24))]
+    (kd-ior B (kd-ior B (kd-ior B v0 v1) v2) v3)))
+;; float(dotPacked4x8EXT(a, xw0) + dotPacked4x8EXT(b, xw1))
+(defn- kd-idot2 [B :vector-i64 a :i64 b :i64 xw0 :i64 xw1 :i64] :i64
+  (kb-s2f B (kb-tf32 B) (kb-op2 B 128 (kb-ti32 B) (kb-sdot4x8 B a xw0) (kb-sdot4x8 B b xw1))))
+
+;; one block of one row: the branch on tt in the GLSL's order; vca and vcb
+;; hold the q4 / q5 code picks
+(defn- kd-i8-block [B :vector-i64 W :i64 tt :i64 wb :i64 index :i64 xw0 :i64 xw1 :i64 sx :i64 ysum :i64
+                    pacc :i64 pmin :i64 vca :i64 vcb :i64] :i64
+  (let [tu (kb-tu32 B) tf (kb-tf32 B) i4 (kb-iadd B index (ku B 4))
+        ;; 12 Q4_K, 13 Q5_K
+        g1 (kb-if B (kb-lor B (kb-ieq B tt (ku B 12)) (kb-ieq B tt (ku B 13))))
+        j (kb-udiv B index (ku B 32))
+        sc (kb-s2f B tf (kd-q4-scale B W wb j))
+        q1 (kb-if B (kb-ieq B tt (ku B 12)))
+        q2 (kb-store B vca (kd-q4-codes B W wb index))
+        q3 (kb-else B)
+        q4 (kb-store B vca (kd-q5-codes B W wb index))
+        q5 (kb-end-if B)
+        q6 (kb-if B (kb-ieq B tt (ku B 12)))
+        q7 (kb-store B vcb (kd-q4-codes B W wb i4))
+        q8 (kb-else B)
+        q9 (kb-store B vcb (kd-q5-codes B W wb i4))
+        q10 (kb-end-if B)
+        a1 (kd-acc B pacc (kb-fmul B (kb-fmul B (kb-fmul B (kd-half B W wb) sc) sx)
+                                    (kd-idot2 B (kd-int B (kb-load B tu vca)) (kd-int B (kb-load B tu vcb)) xw0 xw1)))
+        a2 (kb-store B pmin (kb-fadd B (kb-load B tf pmin)
+                                     (kb-fmul B (kb-fmul B (kd-half B W (kb-iadd B wb (ku B 2))) (kb-s2f B tf (kd-q4-min B W wb j))) ysum)))
+        e1 (kb-else B)
+        ;; 23 IQ4_XS: two code words to codebook bytes
+        g2 (kb-if B (kb-ieq B tt (ku B 23)))
+        ib (kb-udiv B index (ku B 32)) within (kb-band B index (ku B 31)) hi (kb-uge B within (ku B 16))
+        wbase (kb-iadd B (kb-iadd B wb (ku B 8)) (kb-imul B ib (ku B 16)))
+        w (kd-w B W (kb-shr B (kb-iadd B wbase (kb-select B tu hi (kb-isub B within (ku B 16)) within)) (ku B 2)))
+        w2 (kd-w B W (kb-shr B (kb-iadd B wbase (kb-select B tu hi (kb-isub B within (ku B 12)) (kb-iadd B within (ku B 4)))) (ku B 2)))
+        va (kd-kvalues-packed B (kd-nib-word B hi w))
+        vb (kd-kvalues-packed B (kd-nib-word B hi w2))
+        ls (kb-s2f B tf (kd-isub B (kd-iq4xs-scale B W wb ib) (kb-i32 B 32)))
+        a3 (kd-acc B pacc (kb-fmul B (kb-fmul B (kb-fmul B (kd-half B W wb) ls) sx) (kd-idot2 B va vb xw0 xw1)))
+        e2 (kb-else B)
+        ;; 8 Q8_0: the codes are the int8 bytes
+        g3 (kb-if B (kb-ieq B tt (ku B 8)))
+        a4 (kd-acc B pacc (kb-fmul B (kb-fmul B (kd-half B W (kb-iadd B wb (kb-imul B (kb-udiv B index (ku B 32)) (ku B 34)))) sx)
+                                    (kd-idot2 B (kd-int B (kd-q8-0-codes B W wb index)) (kd-int B (kd-q8-0-codes B W wb i4)) xw0 xw1)))
+        e3 (kb-else B)
+        ;; 2 Q4_0: the nibbles, with the -8 folded as 8 ysum
+        g4 (kb-if B (kb-ieq B tt (ku B 2)))
+        a5 (kd-acc B pacc (kb-fmul B (kd-half B W (kb-iadd B wb (kb-imul B (kb-udiv B index (ku B 32)) (ku B 18))))
+                                    (kb-fsub B (kb-fmul B sx (kd-idot2 B (kd-int B (kd-q4-0-codes B W wb index)) (kd-int B (kd-q4-0-codes B W wb i4)) xw0 xw1))
+                                             (kb-fmul B (kb-f32 B 0x41000000) ysum))))
+        e4 (kb-else B)
+        ;; 1 F16: the halves against the dequantized activations
+        g5 (kb-if B (kb-ieq B tt (ku B 1)))
+        a6 (kd-acc B pacc (kb-fmul B sx (kb-fadd B (kb-fdot B (kd-f16-values B W wb index) (kd-i8-values B xw0))
+                                                  (kb-fdot B (kd-f16-values B W wb i4) (kd-i8-values B xw1)))))
+        e5 (kb-else B)
+        ;; else Q6_K, with the -32 folded as 32 ysum
+        sb (kd-byte B W (kb-iadd B (kb-iadd B wb (ku B 192)) (kb-udiv B index (ku B 16))))
+        sbi (kb-select B (kb-ti32 B) (kb-uge B sb (ku B 128)) (kd-isub B (kd-int B sb) (kb-i32 B 256)) (kd-int B sb))
+        a7 (kd-acc B pacc (kb-fmul B (kb-fmul B (kd-half B W (kb-iadd B wb (ku B 208))) (kb-s2f B tf sbi))
+                                    (kb-fsub B (kb-fmul B sx (kd-idot2 B (kd-int B (kd-q6-codes B W wb index)) (kd-int B (kd-q6-codes B W wb i4)) xw0 xw1))
+                                             (kb-fmul B (kb-f32 B 0x42000000) ysum))))
+        ;; close the five arms' ifs
+        z (loop [k 0] (if (= k 4) 0 (let [x (kb-end-if B)] (recur (inc k)))))]
+    (kb-end-if B)))
+
+(defn kir2-kdot-i8-x8 [R :i64] :vector-i64
+  (if (not (or (= R 4) (= R 8) (= R 16) (= R 32))) (spv-new 0)
+    (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) tf (kb-tf32 B)
+          P (kb-meta B 0 8 0) W (kb-buffer B 1 tu 4 true) X (kb-buffer B 2 tu 4 true) O (kb-buffer B 3 tf 4 false)
+          E (kb-buffer B 4 tu 4 true) XS (kb-buffer B 5 tf 4 true)
+          part (kb-shared B tf (* R 256))
+          vacc (kb-var B (kb-tarray B tf R)) vmin (kb-var B (kb-tarray B tf R))
+          vr (kb-var B tu) vblk (kb-var B tu) vst (kb-var B tu) vin (kb-var B tu) vca (kb-var B tu) vcb (kb-var B tu)
+          u0 (kb-u32 B 0) u1 (kb-u32 B 1) u8 (kb-u32 B 8) u256 (kb-u32 B 256) uR (kb-u32 B R) f0 (kb-f32 B 0)
+          row0 (kb-imul B (kb-builtin-at B 26 0) uR) position (kb-builtin-at B 26 1) t (kb-builtin-at B 27 0)
+          expert (kb-load B tu (kb-at B E tu position))
+          i0 (kb-store B vin u0)
+          i1 (kb-if B (kb-ieq B (kb-meta-at B P tu 4) u1))
+          i2 (kb-store B vin position)
+          i3 (kb-if B (kb-ugt B (kb-meta-at B P tu 5) u1))
+          i4 (kb-store B vin (kb-udiv B position (kb-meta-at B P tu 5)))
+          i5 (kb-end-if B)
+          i6 (kb-end-if B)
+          in-row (kb-iadd B (kb-load B tu vin) (kb-meta-at B P tu 6))
+          rows (kb-meta-at B P tu 0) cols (kb-meta-at B P tu 1) tt (kb-meta-at B P tu 2) positions (kb-meta-at B P tu 3)
+          b32 (kd-x8-block32? B tt)
+          blocks (kb-select B tu b32 (kb-udiv B (kb-iadd B cols (ku B 255)) u256) (kb-udiv B cols u256))
+          bbytes (kd-x8-block-bytes B tt)
+          row-bytes (kb-select B tu b32 (kb-imul B (kb-udiv B (kb-iadd B cols (ku B 31)) (ku B 32)) (kb-udiv B bbytes u8))
+                               (kb-imul B blocks bbytes))
+          b0 (kb-shr B t (ku B 5))
+          index (kb-imul B (kb-band B t (ku B 31)) u8)
+          r0 (k2-for B vr u0 uR)
+          z0 (kb-store B (kd-fn-at B vacc r0) f0) z1 (kb-store B (kd-fn-at B vmin r0) f0)
+          z2 (k2-end-for B vr u1)
+          nrows (kb-umin B uR (kb-isub B rows (kb-umin B row0 rows)))
+          g (kb-if B (kb-ult B position positions))
+          blk (k2-for B vblk b0 blocks)
+          c0 (kb-if B (kb-ult B (kb-iadd B (kb-imul B blk u256) index) cols))
+          xb (kb-iadd B (kb-iadd B (kb-imul B in-row cols) (kb-imul B blk u256)) index)
+          ;; xw0 = int(xq[xb >> 2]), xw1 = int(xq[(xb >> 2) + 1]); sx = xscale[xb >> 5]
+          xw0 (kd-int B (kb-load B tu (kb-at B X tu (kb-shr B xb (ku B 2)))))
+          xw1 (kd-int B (kb-load B tu (kb-at B X tu (kb-iadd B (kb-shr B xb (ku B 2)) u1))))
+          sx (kb-load B tf (kb-at B XS tf (kb-shr B xb (ku B 5))))
+          ;; ysum = float(dotPacked4x8EXT(0x01010101, xw0) + dotPacked4x8EXT(0x01010101, xw1)) * sx
+          ones (kb-i32 B 0x01010101)
+          ysum (kb-fmul B (kd-idot2 B ones ones xw0 xw1) sx)
+          base0 (kb-iadd B (kb-imul B (kb-iadd B (kb-imul B expert rows) row0) row-bytes) (kb-imul B blk bbytes))
+          r (k2-for B vr u0 nrows)
+          wb (kb-iadd B base0 (kb-imul B r row-bytes))
+          d (kd-i8-block B W tt wb index xw0 xw1 sx ysum (kd-fn-at B vacc r) (kd-fn-at B vmin r) vca vcb)
+          e1 (k2-end-for B vr u1)
+          c1 (kb-end-if B)
+          e2 (k2-end-for B vblk u8)
+          e3 (kb-end-if B)
+          r2 (k2-for B vr u0 uR)
+          p0 (kb-store B (kb-shared-at B part tf (kb-iadd B (kb-imul B r2 u256) t))
+                       (kb-fsub B (kb-load B tf (kd-fn-at B vacc r2)) (kb-load B tf (kd-fn-at B vmin r2))))
+          p1 (k2-end-for B vr u1)
+          p2 (kb-barrier B)
+          s0 (kb-store B vst (ku B 128))
+          l (kb-loop B)
+          w (kb-while B (kb-ugt B (kb-load B tu vst) u0))
+          st (kb-load B tu vst)
+          h (kb-if B (kb-ult B t st))
+          r3 (k2-for B vr u0 uR)
+          ia (kb-iadd B (kb-imul B r3 u256) t)
+          hs (kb-store B (kb-shared-at B part tf ia)
+                       (kb-fadd B (kb-load B tf (kb-shared-at B part tf ia)) (kb-load B tf (kb-shared-at B part tf (kb-iadd B ia st)))))
+          r4 (k2-end-for B vr u1)
+          he (kb-end-if B)
+          hb (kb-barrier B)
+          hc (kb-continue B)
+          hn (kb-store B vst (kb-shr B (kb-load B tu vst) u1))
+          le (kb-end-loop B)
+          o0 (kb-if B (kb-land B (kb-ult B t nrows) (kb-ult B position positions)))
+          o1 (kb-store B (kb-at B O tf (kb-iadd B (kb-iadd B (kb-imul B position rows) row0) t)) (kb-load B tf (kb-shared-at B part tf (kb-imul B t u256))))
+          o2 (kb-end-if B)]
+      (kb-module B 256 1 1))))
+
+;; ---------------------------------------------------------------------
+;; deltanet_step (kotoba-lang/inference verify/native/gpu/deltanet_step.comp at
+;; 9aab2b1; tools/gpu_kernel_refs/deltanet-step.comp is that file): the gated
+;; delta-net recurrence for one decode token, all heads. One workgroup per
+;; value head h (key head h % k_heads); invocation j owns column j of the
+;; head's [K x V] state. Bindings: 0 Meta {heads k_dim v_dim k_heads v_off
+;; pad0 pad1 pad2 : u32} (ro), 1 Q, 2 K, 3 V, 4 G, 5 Beta (ro), 6 State, 7 Out.
+;; LocalSize 128; dispatch (heads, 1, 1).
+(defn kir2-deltanet-step [] :vector-i64
+  (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) tf (kb-tf32 B)
+        P (kb-meta B 0 8 0) Q (kb-buffer B 1 tf 4 true) K (kb-buffer B 2 tf 4 true) Vb (kb-buffer B 3 tf 4 true)
+        G (kb-buffer B 4 tf 4 true) Bt (kb-buffer B 5 tf 4 true) St (kb-buffer B 6 tf 4 false) Ob (kb-buffer B 7 tf 4 false)
+        vi (kb-var B tu) vkv (kb-var B tf) vo (kb-var B tf)
+        u0 (kb-u32 B 0) u1 (kb-u32 B 1) f0 (kb-f32 B 0)
+        h (kb-builtin-at B 26 0) j (kb-builtin-at B 27 0)
+        ;; if (h >= P.heads || j >= P.v_dim) return;
+        g (k2-return-if B (kb-lor B (kb-uge B h (kb-meta-at B P tu 0)) (kb-uge B j (kb-meta-at B P tu 2))))
+        Kd (kb-meta-at B P tu 1) Vd (kb-meta-at B P tu 2)
+        kh (kb-umod B h (kb-meta-at B P tu 3))
+        sbase (kb-imul B (kb-imul B h Kd) Vd)
+        decay (kb-fexp B (kb-load B tf (kb-at B G tf h)))
+        b (kb-load B tf (kb-at B Bt tf h))
+        ;; kv_mem = sum over i of (state[sbase + i V + j] *= decay) * k[kh K + i]
+        a0 (kb-store B vkv f0)
+        i1 (k2-for B vi u0 Kd)
+        si (kb-iadd B (kb-iadd B sbase (kb-imul B i1 Vd)) j)
+        s1 (kb-fmul B (kb-load B tf (kb-at B St tf si)) decay)
+        a1 (kb-store B (kb-at B St tf si) s1)
+        a2 (k2-acc B vkv (kb-fmul B s1 (kb-load B tf (kb-at B K tf (kb-iadd B (kb-imul B kh Kd) i1)))))
+        e1 (k2-end-for B vi u1)
+        ;; delta = (v[v_off + h V + j] - kv_mem) * b
+        delta (kb-fmul B (kb-fsub B (kb-load B tf (kb-at B Vb tf (kb-iadd B (kb-iadd B (kb-meta-at B P tu 4) (kb-imul B h Vd)) j)))
+                                    (kb-load B tf vkv))
+                         b)
+        ;; o = sum over i of (state[..] += k[kh K + i] delta) * q[kh K + i]
+        a3 (kb-store B vo f0)
+        i2 (k2-for B vi u0 Kd)
+        si2 (kb-iadd B (kb-iadd B sbase (kb-imul B i2 Vd)) j)
+        ki (kb-iadd B (kb-imul B kh Kd) i2)
+        s2 (kb-fadd B (kb-load B tf (kb-at B St tf si2)) (kb-fmul B (kb-load B tf (kb-at B K tf ki)) delta))
+        a4 (kb-store B (kb-at B St tf si2) s2)
+        a5 (k2-acc B vo (kb-fmul B s2 (kb-load B tf (kb-at B Q tf ki))))
+        e2 (k2-end-for B vi u1)
+        w (kb-store B (kb-at B Ob tf (kb-iadd B (kb-imul B h Vd) j)) (kb-load B tf vo))]
+    (kb-module B 128 1 1)))
+
+;; ---------------------------------------------------------------------
+;; deltanet_fused (kotoba-lang/inference verify/native/gpu/deltanet_fused.comp
+;; at ee9ebc5; tools/gpu_kernel_refs/deltanet-fused.comp is that file), the
+;; decode variant: one recurrent step of one head per workgroup, fused --
+;; gate and beta, conv1d step + silu on the head's q / k / v channels (the
+;; conv ring double-buffered by the position's parity), l2norm of q (scaled)
+;; and k, the delta rule on the state with the key dimension in four quarters,
+;; and the gated rmsnorm times silu(z). Bindings: 0 Meta {heads k_dim v_dim
+;; k_heads v_off n : u32, eps qscale : f32} (ro), 1 QKV, 2 CW (ro), 3 Ring,
+;; 4 Alpha, 5 Beta, 6 Dt, 7 SsmA (ro), 8 State, 9 Norm, 10 Z (ro), 11 Out,
+;; 12 Pos (u32: [position, row], ro). LocalSize 512; dispatch (heads, 1, 1).
+;; part4[4][128] is one 512-element shared array here (part 128 + j).
+
+;; wg_sum over 512 invocations (the tree from 256)
+(defn- dn-wg-sum [B :vector-i64 red :i64 t :i64 st-var :i64 v :i64] :i64
+  (let [tu (kb-tu32 B) tf (kb-tf32 B)
+        a (kb-store B (kb-shared-at B red tf t) v) b (kb-barrier B)
+        s (kb-store B st-var (kb-u32 B 256))
+        l (kb-loop B)
+        w (kb-while B (kb-ugt B (kb-load B tu st-var) (kb-u32 B 0)))
+        st (kb-load B tu st-var)
+        g (kb-if B (kb-ult B t st))
+        x (kb-store B (kb-shared-at B red tf t) (kb-fadd B (kb-load B tf (kb-shared-at B red tf t)) (kb-load B tf (kb-shared-at B red tf (kb-iadd B t st)))))
+        e (kb-end-if B)
+        c (kb-barrier B)
+        n (kb-continue B)
+        m (kb-store B st-var (kb-shr B (kb-load B tu st-var) (kb-u32 B 1)))
+        z (kb-end-loop B)
+        r (kb-load B tf (kb-shared-at B red tf (kb-u32 B 0))) d (kb-barrier B)]
+    r))
+;; fresh ? 0.0 : buf[i] (the load in an if, into v)
+(defn- dn-unless [B :vector-i64 v :i64 fresh :i64 buf :i64 i :i64] :i64
+  (let [tf (kb-tf32 B) a (kb-store B v (kb-f32 B 0))
+        g (kb-if B fresh)
+        e (kb-else B)
+        b (kb-store B v (kb-load B tf (kb-at B buf tf i)))
+        z (kb-end-if B)]
+    (kb-load B tf v)))
+;; part4[0][j] + part4[1][j] + part4[2][j] + part4[3][j]
+(defn- fn-p4-sum [B :vector-i64 p4 :i64 j :i64] :i64
+  (let [tf (kb-tf32 B)]
+    (kb-fadd B (kb-fadd B (kb-fadd B (kb-load B tf (kb-shared-at B p4 tf j))
+                                     (kb-load B tf (kb-shared-at B p4 tf (kb-iadd B (kb-u32 B 128) j))))
+                         (kb-load B tf (kb-shared-at B p4 tf (kb-iadd B (kb-u32 B 256) j))))
+             (kb-load B tf (kb-shared-at B p4 tf (kb-iadd B (kb-u32 B 384) j))))))
+;; conv_step(c, p, own, qoff): the conv1d step + silu of channel c from ring
+;; slot p; when own, the ring's slot 1 - p gets the shifted window. In BATCH
+;; and BPREFILL the ring of sequence seq is at seq 6 n (seq 0: decode, none).
+(defn- dn-conv [B :vector-i64 Pm :i64 QKV :i64 CW :i64 Ring :i64 vx :i64 c :i64 p :i64 own :i64 qoff :i64 fresh :i64 seq :i64] :i64
+  (let [tu (kb-tu32 B) tf (kb-tf32 B)
+        n (kb-meta-at B Pm tu 5)
+        rb0 (kb-imul B (kb-imul B p (kb-u32 B 3)) n)
+        wb0 (kb-imul B (kb-imul B (kb-isub B (kb-u32 B 1) p) (kb-u32 B 3)) n)
+        soff (if (= seq 0) 0 (kb-imul B (kb-imul B seq (kb-u32 B 6)) n))
+        rb (k2-off B soff rb0) wb (k2-off B soff wb0)
+        x0 (dn-unless B vx fresh Ring (kb-iadd B rb c))
+        x1 (dn-unless B vx fresh Ring (kb-iadd B (kb-iadd B rb n) c))
+        x2 (dn-unless B vx fresh Ring (kb-iadd B (kb-iadd B rb (kb-imul B (kb-u32 B 2) n)) c))
+        x3 (kb-load B tf (kb-at B QKV tf (kb-iadd B qoff c)))
+        c4 (kb-imul B c (kb-u32 B 4))
+        y (kb-fadd B (kb-fadd B (kb-fadd B (kb-fmul B (kb-load B tf (kb-at B CW tf c4)) x0)
+                                           (kb-fmul B (kb-load B tf (kb-at B CW tf (kb-iadd B c4 (kb-u32 B 1)))) x1))
+                               (kb-fmul B (kb-load B tf (kb-at B CW tf (kb-iadd B c4 (kb-u32 B 2)))) x2))
+                   (kb-fmul B (kb-load B tf (kb-at B CW tf (kb-iadd B c4 (kb-u32 B 3)))) x3))
+        g (kb-if B own)
+        a (kb-store B (kb-at B Ring tf (kb-iadd B wb c)) x1)
+        b (kb-store B (kb-at B Ring tf (kb-iadd B (kb-iadd B wb n) c)) x2)
+        d (kb-store B (kb-at B Ring tf (kb-iadd B (kb-iadd B wb (kb-imul B (kb-u32 B 2) n)) c)) x3)
+        z (kb-end-if B)]
+    (k2-silu B y)))
+
+;; the module of deltanet_fused's variant v: 0 decode, 1 -DBATCH (row = a
+;; sequence = WorkGroupID.y, at position pos[row]), 2 -DBPREFILL (the stepbuf
+;; is [position, row, sequence]); the ring and the state of sequence seq at seq
+;; 6 n and seq heads K V. Another v gives an empty module.
+(defn kir2-deltanet-fused-variant [v :i64] :vector-i64
+  (if (or (< v 0) (> v 2)) (spv-new 0)
+  (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) tf (kb-tf32 B) tb (kb-tbool B)
+        Pm (kb-meta B 0 8 192)
+        QKV (kb-buffer B 1 tf 4 true) CW (kb-buffer B 2 tf 4 true) Ring (kb-buffer B 3 tf 4 false)
+        Al (kb-buffer B 4 tf 4 true) Bl (kb-buffer B 5 tf 4 true) Dt (kb-buffer B 6 tf 4 true) Aa (kb-buffer B 7 tf 4 true)
+        St (kb-buffer B 8 tf 4 false) Nw (kb-buffer B 9 tf 4 true) Z (kb-buffer B 10 tf 4 true) Out (kb-buffer B 11 tf 4 false)
+        Pos (kb-buffer B 12 tu 4 true)
+        sq (kb-shared B tf 128) sk (kb-shared B tf 128) red (kb-shared B tf 512)
+        cq (kb-shared B tf 128) ck (kb-shared B tf 128) cv (kb-shared B tf 128) p4 (kb-shared B tf 512)
+        vst (kb-var B tu) vx (kb-var B tf) vi (kb-var B tu) vkv (kb-var B tf) vo (kb-var B tf) vsp (kb-var B tf) vs (kb-var B tf)
+        u0 (kb-u32 B 0) u1 (kb-u32 B 1) u128 (kb-u32 B 128) f0 (kb-f32 B 0)
+        h (kb-builtin-at B 26 0) t (kb-builtin-at B 27 0)
+        j (kb-band B t (kb-u32 B 127)) part (kb-shr B t (kb-u32 B 7))
+        Kd (kb-meta-at B Pm tu 1) Vd (kb-meta-at B Pm tu 2) khs (kb-meta-at B Pm tu 3)
+        kh (kb-umod B h khs)
+        ;; MYPOS, ROW and SEQ: pos[0], pos[1] and none (decode); pos[wg.y],
+        ;; wg.y and wg.y (BATCH); pos[0], pos[1] and pos[2] (BPREFILL)
+        brow (if (= v 1) (kb-builtin-at B 26 1) 0)
+        pos0 (kb-load B tu (kb-at B Pos tu (if (= v 1) brow u0)))
+        p (kb-band B pos0 u1)
+        row (if (= v 1) brow (kb-load B tu (kb-at B Pos tu u1)))
+        seq (cond (= v 1) brow (= v 2) (kb-load B tu (kb-at B Pos tu (kb-u32 B 2))) :else 0)
+        qoff (kb-imul B row (kb-meta-at B Pm tu 5))
+        hoff (kb-imul B row (kb-meta-at B Pm tu 0))
+        voff (kb-imul B (kb-imul B row (kb-meta-at B Pm tu 0)) Vd)
+        fresh (kb-ieq B pos0 u0)
+        part0 (kb-ieq B part u0)
+        ;; conv on this head's channels (part 0): q and k shared with head h + k_heads (owned when h == kh), v own
+        c0 (kb-if B part0)
+        own (kb-ieq B h kh)
+        c1 (kb-store B (kb-shared-at B cq tf j) (dn-conv B Pm QKV CW Ring vx (kb-iadd B (kb-imul B kh Kd) j) p own qoff fresh seq))
+        c2 (kb-store B (kb-shared-at B ck tf j) (dn-conv B Pm QKV CW Ring vx (kb-iadd B (kb-iadd B (kb-imul B khs Kd) (kb-imul B kh Kd)) j) p own qoff fresh seq))
+        c3 (kb-store B (kb-shared-at B cv tf j) (dn-conv B Pm QKV CW Ring vx (kb-iadd B (kb-iadd B (kb-meta-at B Pm tu 4) (kb-imul B h Vd)) j) p (kb-bool B true) qoff fresh seq))
+        c4 (kb-end-if B)
+        b0 (kb-barrier B)
+        qc (kb-load B tf (kb-shared-at B cq tf j)) kc (kb-load B tf (kb-shared-at B ck tf j)) vc (kb-load B tf (kb-shared-at B cv tf j))
+        eps (kb-meta-at B Pm tf 6)
+        ;; qn = qc * inversesqrt(wg_sum(t, part == 0 ? qc qc : 0) + eps) * qscale; kn likewise
+        qn (kb-fmul B (kb-fmul B qc (kb-finvsqrt B (kb-fadd B (dn-wg-sum B red t vst (kb-select B tf part0 (kb-fmul B qc qc) f0)) eps)))
+                    (kb-meta-at B Pm tf 7))
+        kn (kb-fmul B kc (kb-finvsqrt B (kb-fadd B (dn-wg-sum B red t vst (kb-select B tf part0 (kb-fmul B kc kc) f0)) eps)))
+        n0 (kb-if B part0)
+        n1 (kb-store B (kb-shared-at B sq tf j) qn) n2 (kb-store B (kb-shared-at B sk tf j) kn)
+        n3 (kb-end-if B)
+        b1 (kb-barrier B)
+        ;; decay = exp(softplus(alpha[hoff + h] + dt[h]) * ssm_a[h]); b = sigmoid(beta[hoff + h])
+        decay (kb-fexp B (kb-fmul B (k2-softplus B vsp (kb-fadd B (kb-load B tf (kb-at B Al tf (kb-iadd B hoff h))) (kb-load B tf (kb-at B Dt tf h))))
+                                    (kb-load B tf (kb-at B Aa tf h))))
+        b (k2-sigmoid B (kb-load B tf (kb-at B Bl tf (kb-iadd B hoff h))))
+        sbase (k2-off B (if (= seq 0) 0 (kb-imul B (kb-imul B (kb-imul B seq (kb-meta-at B Pm tu 0)) Kd) Vd))
+                      (kb-imul B (kb-imul B h Kd) Vd))
+        quarter (kb-udiv B Kd (kb-u32 B 4))
+        i0 (kb-imul B part quarter)
+        i1 (kb-iadd B i0 quarter)
+        ;; kv_mem over this quarter: s = (fresh ? 0 : state[..]) * decay
+        k0 (kb-store B vkv f0)
+        ia (k2-for B vi i0 i1)
+        si (kb-iadd B (kb-iadd B sbase (kb-imul B ia Vd)) j)
+        s1 (kb-fmul B (dn-unless B vs fresh St si) decay)
+        k1 (kb-store B (kb-at B St tf si) s1)
+        k2 (k2-acc B vkv (kb-fmul B s1 (kb-load B tf (kb-shared-at B sk tf ia))))
+        k3 (k2-end-for B vi u1)
+        k4 (kb-store B (kb-shared-at B p4 tf (kb-iadd B (kb-imul B part u128) j)) (kb-load B tf vkv))
+        b2 (kb-barrier B)
+        ;; the four quarters' sums, in order
+        q4sum (fn-p4-sum B p4 j)
+        delta (kb-fmul B (kb-fsub B vc q4sum) b)
+        b3 (kb-barrier B)
+        o0 (kb-store B vo f0)
+        ib (k2-for B vi i0 i1)
+        si2 (kb-iadd B (kb-iadd B sbase (kb-imul B ib Vd)) j)
+        s2 (kb-fadd B (kb-load B tf (kb-at B St tf si2)) (kb-fmul B (kb-load B tf (kb-shared-at B sk tf ib)) delta))
+        o1 (kb-store B (kb-at B St tf si2) s2)
+        o2 (k2-acc B vo (kb-fmul B s2 (kb-load B tf (kb-shared-at B sq tf ib))))
+        o3 (k2-end-for B vi u1)
+        o4 (kb-store B (kb-shared-at B p4 tf (kb-iadd B (kb-imul B part u128) j)) (kb-load B tf vo))
+        b4 (kb-barrier B)
+        o (fn-p4-sum B p4 j)
+        ;; inv = inversesqrt(wg_sum(t, part == 0 ? o o : 0) / float(V) + eps)
+        inv (kb-finvsqrt B (kb-fadd B (kb-fdiv B (dn-wg-sum B red t vst (kb-select B tf part0 (kb-fmul B o o) f0)) (kb-u2f B Vd)) eps))
+        w0 (kb-if B part0)
+        oi (kb-iadd B (kb-iadd B voff (kb-imul B h Vd)) j)
+        w1 (kb-store B (kb-at B Out tf oi)
+                    (kb-fmul B (kb-fmul B (kb-fmul B o inv) (kb-load B tf (kb-at B Nw tf j))) (k2-silu B (kb-load B tf (kb-at B Z tf oi)))))
+        w2 (kb-end-if B)]
+    (kb-module B 512 1 1))))
+
+(defn kir2-deltanet-fused [] :vector-i64 (kir2-deltanet-fused-variant 0))
+
+;; ---------------------------------------------------------------------
+;; embed_iq4xs (kotoba-lang/inference
+;; resources/kotodama/inference/kernels/native/embed_iq4xs.comp at c7ea9a9;
+;; tools/gpu_kernel_refs/embed-iq4xs.comp is that file), the decode variants:
+;; the token embedding row of ids[((dyn != 0) ? pos[0] : slot) + row],
+;; dequantized to f32. kind is the GLSL's define: 23 the default IQ4_XS
+;; (thread t < blocks 8 owns 32 values), 8 -DQ8 (thread = a 34-byte block),
+;; 2, 3, 6 or 7 -DB32=<type> (Q4_0, Q4_1, Q5_0, Q5_1), 143 -DPTQ1. Bindings: 0
+;; Meta {cols slot dyn pad1 : u32} (ro), 1 W (u32, ro), 2 I (ids, u32, ro), 3
+;; O, 4 Pos (u32, ro). LocalSize 256; dispatch (1, rows, 1). v is the token's
+;; source: 0 the decode one above, 1 -DBATCH (ids[row pad1 + pos[row]], rows
+;; are sequences), 2 -DBPREFILL (ids[pos[1] pad1 + pos[0] + row]). Another
+;; kind or v gives an empty module.
+(defn kir2-embed-variant [kind :i64 v :i64] :vector-i64
+  (if (or (not (or (= kind 23) (= kind 8) (= kind 2) (= kind 3) (= kind 6) (= kind 7) (= kind 143))) (or (< v 0) (> v 2))) (spv-new 0)
+    (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) tf (kb-tf32 B)
+          P (kb-meta B 0 4 0) W (kb-buffer B 1 tu 4 true) I (kb-buffer B 2 tu 4 true) O (kb-buffer B 3 tf 4 false)
+          Pos (kb-buffer B 4 tu 4 true)
+          vj (kb-var B tu) vq (kb-var B tu) vlo (kb-var B tu) vhi (kb-var B tu) vib (kb-var B tu) ve (kb-var B tu)
+          vbv (kb-var B tu) vn1 (kb-var B tu) vjj (kb-var B tu) vqi (kb-var B (kb-ti32 B))
+          u0 (kb-u32 B 0) u1 (kb-u32 B 1)
+          t (kb-builtin-at B 27 0)
+          cols (kb-meta-at B P tu 0)
+          blocks (kb-udiv B cols (ku B 256))
+          ;; the default variant returns before the row and token
+          g0 (if (= kind 23) (k2-return-if B (kb-uge B t (kb-imul B blocks (ku B 8)))) 0)
+          row (kb-builtin-at B 26 1)
+          pad1 (if (= v 0) 0 (kb-meta-at B P tu 3))
+          tok (cond
+                ;; BATCH: ids[row pad1 + pos[row]]
+                (= v 1) (kb-load B tu (kb-at B I tu (kb-iadd B (kb-imul B row pad1) (kb-load B tu (kb-at B Pos tu row)))))
+                ;; BPREFILL: ids[pos[1] pad1 + pos[0] + row]
+                (= v 2) (kb-load B tu (kb-at B I tu (kb-iadd B (kb-iadd B (kb-imul B (kb-load B tu (kb-at B Pos tu u1)) pad1)
+                                                                    (kb-load B tu (kb-at B Pos tu u0)))
+                                                         row)))
+                ;; ids[((P.dyn != 0) ? pos[0] : P.slot) + row]; pos[0] is read only
+                ;; when dyn != 0, so its load stays in an if
+                :else (let [vslot (kb-var B tu)
+                            s0 (kb-store B vslot (kb-meta-at B P tu 1))
+                            s1 (kb-if B (kb-ine B (kb-meta-at B P tu 2) u0))
+                            s2 (kb-store B vslot (kb-load B tu (kb-at B Pos tu u0)))
+                            s3 (kb-end-if B)]
+                        (kb-load B tu (kb-at B I tu (kb-iadd B (kb-load B tu vslot) row)))))
+          orow (kb-imul B row cols)
+          body
+          (cond
+            ;; IQ4_XS: blk = t / 8, ib = t & 7; dl = d float(ls - 32); 16 bytes of two nibbles each
+            (= kind 23)
+            (let [blk (kb-udiv B t (ku B 8)) ib (kb-band B t (ku B 7))
+                  base (kb-imul B (kb-iadd B (kb-imul B tok blocks) blk) (ku B 136))
+                  dl (kb-fmul B (kd-half B W base) (kb-s2f B tf (kd-isub B (kd-iq4xs-scale B W base ib) (kb-i32 B 32))))
+                  j (k2-for B vj u0 (ku B 16))
+                  q (kd-byte B W (kb-iadd B (kb-iadd B (kb-iadd B base (ku B 8)) (kb-imul B ib (ku B 16))) j))
+                  ob (kb-iadd B (kb-iadd B orow (kb-imul B blk (ku B 256))) (kb-imul B ib (ku B 32)))
+                  a (kb-store B (kb-at B O tf (kb-iadd B ob j)) (kb-fmul B dl (kb-s2f B tf (kd-kvalue B (kb-band B q (ku B 15))))))
+                  b (kb-store B (kb-at B O tf (kb-iadd B (kb-iadd B ob (ku B 16)) j)) (kb-fmul B dl (kb-s2f B tf (kd-kvalue B (kb-shr B q (ku B 4))))))]
+              (k2-end-for B vj u1))
+            ;; Q8: thread t = block t of the row; d8 * q per int8
+            (= kind 8)
+            (let [nb (kb-udiv B cols (ku B 32))
+                  r (k2-return-if B (kb-uge B t nb))
+                  bbase (kb-imul B (kb-iadd B (kb-imul B tok nb) t) (ku B 34))
+                  d8 (kd-half B W bbase)
+                  j (k2-for B vj u0 (ku B 32))
+                  ;; q = int(byte); if (q >= 128) q -= 256
+                  a (kb-store B vqi (kd-int B (kd-byte B W (kb-iadd B (kb-iadd B bbase (ku B 2)) j))))
+                  g (kb-if B (kb-op2 B 175 (kb-tbool B) (kb-load B (kb-ti32 B) vqi) (kb-i32 B 128)))
+                  s (kb-store B vqi (kd-isub B (kb-load B (kb-ti32 B) vqi) (kb-i32 B 256)))
+                  z (kb-end-if B)
+                  w (kb-store B (kb-at B O tf (kb-iadd B (kb-iadd B orow (kb-imul B t (ku B 32))) j))
+                               (kb-fmul B d8 (kb-s2f B tf (kb-load B (kb-ti32 B) vqi))))]
+              (k2-end-for B vj u1))
+            ;; PTQ1: 128-value blocks of 28 bytes, d1 at +26; e's byte and depth, then the trit
+            (= kind 143)
+            (let [nb1 (kb-udiv B cols (ku B 128))
+                  ib (k2-for B vib t nb1)
+                  base1 (kb-imul B (kb-iadd B (kb-imul B tok nb1) ib) (ku B 28))
+                  d1 (kd-half B W (kb-iadd B base1 (ku B 26)))
+                  e (k2-for B ve u0 (ku B 128))
+                  g1 (kb-if B (kb-ult B e (ku B 80)))
+                  a1 (kb-store B vbv (kd-byte B W (kb-iadd B base1 (kb-band B e (ku B 15)))))
+                  a2 (kb-store B vn1 (kb-shr B e (ku B 4)))
+                  e1 (kb-else B)
+                  g2 (kb-if B (kb-ult B e (ku B 120)))
+                  q2 (kb-isub B e (ku B 80))
+                  a3 (kb-store B vbv (kd-byte B W (kb-iadd B (kb-iadd B base1 (ku B 16)) (kb-band B q2 (ku B 7)))))
+                  a4 (kb-store B vn1 (kb-shr B q2 (ku B 3)))
+                  e2 (kb-else B)
+                  q3 (kb-isub B e (ku B 120))
+                  a5 (kb-store B vbv (kd-byte B W (kb-iadd B (kb-iadd B base1 (ku B 24)) (kb-band B q3 u1))))
+                  a6 (kb-store B vn1 (kb-shr B q3 u1))
+                  z2 (kb-end-if B)
+                  z1 (kb-end-if B)
+                  ;; for (j = 0; j < n1; ++j) bv = (bv * 3) & 255
+                  jj (k2-for B vjj u0 (kb-load B tu vn1))
+                  m (kb-store B vbv (kb-band B (kb-imul B (kb-load B tu vbv) (ku B 3)) (ku B 255)))
+                  m2 (k2-end-for B vjj u1)
+                  trit (kd-isub B (kd-int B (kb-shr B (kb-imul B (kb-load B tu vbv) (ku B 3)) (ku B 8))) (kb-i32 B 1))
+                  w (kb-store B (kb-at B O tf (kb-iadd B (kb-iadd B orow (kb-imul B ib (ku B 128))) e)) (kb-fmul B d1 (kb-s2f B tf trit)))
+                  ez (k2-end-for B ve u1)]
+              (k2-end-for B vib (ku B 256)))
+            ;; B32 (2, 3, 6, 7): the legacy 32-value blocks
+            :else
+            (let [nb (kb-udiv B cols (ku B 32))
+                  r (k2-return-if B (kb-uge B t nb))
+                  bb (case kind 2 18 3 20 6 22 24)
+                  bbase (kb-imul B (kb-iadd B (kb-imul B tok nb) t) (ku B bb))
+                  d (kd-half B W bbase)
+                  ;; m (0.0 for Q4_0 and Q5_0, and still added: -0.0 + 0.0 is +0.0)
+                  m (if (or (= kind 3) (= kind 7)) (kd-half B W (kb-iadd B bbase (ku B 2))) (kb-f32 B 0))
+                  qhoff (if (or (= kind 3) (= kind 7)) 4 2)
+                  qh (if (or (= kind 6) (= kind 7))
+                       (kb-bor B (kb-bor B (kb-bor B (kd-byte B W (kb-iadd B bbase (ku B qhoff)))
+                                                     (kb-shl B (kd-byte B W (kb-iadd B (kb-iadd B bbase (ku B qhoff)) u1)) (ku B 8)))
+                                           (kb-shl B (kd-byte B W (kb-iadd B (kb-iadd B bbase (ku B qhoff)) (ku B 2))) (ku B 16)))
+                               (kb-shl B (kd-byte B W (kb-iadd B (kb-iadd B bbase (ku B qhoff)) (ku B 3))) (ku B 24)))
+                       u0)
+                  off (kb-i32 B (case kind 2 8 6 16 0))
+                  j (k2-for B vj u0 (ku B 16))
+                  q (kd-byte B W (kb-iadd B (kb-iadd B bbase (ku B (- bb 16))) j))
+                  a0 (kb-store B vlo (kb-band B q (ku B 15)))
+                  a1 (kb-store B vhi (kb-shr B q (ku B 4)))
+                  h5 (if (or (= kind 6) (= kind 7))
+                       (let [x (kb-store B vlo (kb-bor B (kb-load B tu vlo) (kb-shl B (kb-band B (kb-shr B qh j) u1) (ku B 4))))]
+                         (kb-store B vhi (kb-bor B (kb-load B tu vhi) (kb-shl B (kb-band B (kb-shr B qh (kb-iadd B j (ku B 16))) u1) (ku B 4)))))
+                       0)
+                  ob (kb-iadd B orow (kb-imul B t (ku B 32)))
+                  w0 (kb-store B (kb-at B O tf (kb-iadd B ob j))
+                               (kb-fadd B (kb-fmul B d (kb-s2f B tf (kd-isub B (kd-int B (kb-load B tu vlo)) off))) m))
+                  w1 (kb-store B (kb-at B O tf (kb-iadd B (kb-iadd B ob (ku B 16)) j))
+                               (kb-fadd B (kb-fmul B d (kb-s2f B tf (kd-isub B (kd-int B (kb-load B tu vhi)) off))) m))]
+              (k2-end-for B vj u1)))]
+      (kb-module B 256 1 1))))
+
+(defn kir2-embed [kind :i64] :vector-i64 (kir2-embed-variant kind 0))
+
+;; ---------------------------------------------------------------------
+;; The nvgpu-h2 kernels (kotoba-lang/inference verify/native/gpu on main:
+;; kdot_h2_r1 at c21beff, kdot_h2_r4_q8 at b5f7ca3, kdot_h2_r8_q8 at b3dfa34,
+;; kdot_h2_qkv_q8 and kdot_h2_qkvr_q8 at ee95e44; tools/gpu_kernel_refs/
+;; kdot-h2-*.comp are those files): the kdot dot with its per-value
+;; arithmetic in packed half precision, two values an instruction, and the
+;; reduction by subgroupAdd. The decode path's "nvgpu-h2"
+;; layout (Xavier) uses them:
+;; * kir2-kdot-h2-r1 q6: kdot_h2_r1.comp, one row a workgroup over Q4_K, Q5_K,
+;;   Q6_K (with q6 1: -DQ6_HALF, Q6_K on the half path too), IQ4_XS, Q8_0,
+;;   Q4_0 and F16;
+;; * kir2-kdot-h2-q8 R: kdot_h2_r4_q8.comp (R 4) and kdot_h2_r8_q8.comp (R 8),
+;;   R rows a workgroup, Q8_0 only;
+;; * kir2-kdot-h2-qkv: kdot_h2_qkv_q8.comp, the q, k and v matvecs in one
+;;   dispatch;
+;; * kir2-kdot-h2-qkvr: kdot_h2_qkvr_q8.comp, q, k and v with their bias and
+;;   the NeoX rope in the epilogue.
+;; The f16 forms are glslang's: f16vec2(y.xy) is a shuffle and one vector
+;; conversion, the biases of the exponent trick are constant vectors, and a
+;; half goes back to f32 by OpFConvert.
+
+(defn- h2-th2 [B :vector-i64] :i64 (kb-tvec B (kb-tf16 B) 2))
+;; f16vec2(y.xy) (k 0) or f16vec2(y.zw) (k 2) of a vec4 y
+(defn- h2-half2 [B :vector-i64 y :i64 k :i64] :i64
+  (kb-fconvert B (h2-th2 B) (kb-shuffle2 B (kb-tvec B (kb-tf32 B) 2) y y k (inc k))))
+;; f16vec2(h, h) for the half of bits h, as a constant
+(defn- h2-splat [B :vector-i64 bits :i64] :i64 (let [c (kb-f16 B bits)] (kb-const2 B (h2-th2 B) c c)))
+;; codes*_to_halfs: codes 0 and 1 (hi? false) or 2 and 3 (true) of the byte
+;; codes, each masked by m, through the exponent trick: 0x6400 | c is the half
+;; 1024 + c, and the bias's half is subtracted
+(defn- h2-codes [B :vector-i64 codes :i64 m :i64 bias :i64 hi? :bool] :i64
+  (let [mm (ku B m) mh (ku B (* m 65536)) e (ku B 0x64006400)
+        w (if hi?
+            (kb-bor B (kb-bor B e (kb-band B (kb-shr B codes (ku B 16)) mm)) (kb-band B (kb-shr B codes (ku B 8)) mh))
+            (kb-bor B (kb-bor B e (kb-band B codes mm)) (kb-band B (kb-shl B codes (ku B 8)) mh)))]
+    (kb-op2 B 131 (h2-th2 B) (kb-bitcast B (h2-th2 B) w) (h2-splat B bias))))
+;; f16vec2(float16_t(bitfieldExtract(int(codes), k, 8)), float16_t(.. k + 8 ..))
+(defn- h2-int8-halves [B :vector-i64 codes :i64 k :i64] :i64
+  (let [th (kb-tf16 B)]
+    (kb-construct2 B (h2-th2 B) (kb-s2f B th (kb-sbfe B (kd-int B codes) (kb-i32 B k) (kb-i32 B 8)))
+                   (kb-s2f B th (kb-sbfe B (kd-int B codes) (kb-i32 B (+ k 8)) (kb-i32 B 8))))))
+;; p0 = qlo ylo, p1 = qhi yhi (two packed multiplies); float(p0.x) +
+;; float(p0.y) + float(p1.x) + float(p1.y)
+(defn- h2-psum [B :vector-i64 qlo :i64 qhi :i64 ylo :i64 yhi :i64] :i64
+  (let [th2 (h2-th2 B) th (kb-tf16 B) tf (kb-tf32 B)
+        p0 (kb-op2 B 133 th2 qlo ylo) p1 (kb-op2 B 133 th2 qhi yhi)]
+    (kb-fadd B (kb-fadd B (kb-fadd B (kb-fconvert B tf (kb-extract B th p0 0)) (kb-fconvert B tf (kb-extract B th p0 1)))
+                        (kb-fconvert B tf (kb-extract B th p1 0)))
+             (kb-fconvert B tf (kb-extract B th p1 1)))))
+;; vec4 x4[k]
+(defn- h2-y [B :vector-i64 X :i64 k :i64] :i64 (let [tv4 (kd-tv4 B)] (kb-load B tv4 (kb-at B X tv4 k))))
+;; in_row = ((input_per_expert == 1) ? ((pad0 > 1) ? position / pad0 :
+;; position) : 0) + pad1, from Meta fields ipe, ipe + 1 and ipe + 2 (the
+;; division in an if: pad0 may be 0)
+(defn- h2-in-row [B :vector-i64 P :i64 vin :i64 position :i64 ipe :i64] :i64
+  (let [tu (kb-tu32 B) u1 (ku B 1)
+        i0 (kb-store B vin (ku B 0))
+        i1 (kb-if B (kb-ieq B (kb-meta-at B P tu ipe) u1))
+        i2 (kb-store B vin position)
+        i3 (kb-if B (kb-ugt B (kb-meta-at B P tu (+ ipe 1)) u1))
+        i4 (kb-store B vin (kb-udiv B position (kb-meta-at B P tu (+ ipe 1))))
+        i5 (kb-end-if B)
+        i6 (kb-end-if B)]
+    (kb-iadd B (kb-load B tu vin) (kb-meta-at B P tu (+ ipe 2)))))
+
+;; ws: the weight buffers, n of them (1, or 3: q, k, v, which sel picks).
+;; weight_u32_at in the picked buffer; the second word is read only when the
+;; offset is unaligned (at the buffer's end it is past it)
+(defn- h2-w-sel [B :vector-i64 ws :vector-i64 sel :i64 k :i64 v :i64] :i64
+  (let [g0 (kb-if B (kb-ieq B sel (ku B 0)))
+        a (kb-store B v (kd-w B (vector-at ws 0) k))
+        e0 (kb-else B)
+        g1 (kb-if B (kb-ieq B sel (ku B 1)))
+        b (kb-store B v (kd-w B (vector-at ws 1) k))
+        e1 (kb-else B)
+        c (kb-store B v (kd-w B (vector-at ws 2) k))
+        z1 (kb-end-if B)]
+    (kb-end-if B)))
+(defn- h2-u32-at [B :vector-i64 ws :vector-i64 n :i64 sel :i64 o :i64 v0 :i64 v1 :i64] :i64
+  (if (= n 1) (kd-u32-at B (vector-at ws 0) o)
+    (let [tu (kb-tu32 B) k (kb-shr B o (ku B 2))
+          a (h2-w-sel B ws sel k v0)
+          w0 (kb-load B tu v0)
+          sh (kb-imul B (kb-band B o (ku B 3)) (ku B 8))
+          g (kb-if B (kb-ine B sh (ku B 0)))
+          b (h2-w-sel B ws sel (kb-iadd B k (ku B 1)) v1)
+          c (kb-store B v0 (kb-bor B (kb-shr B w0 sh) (kb-shl B (kb-load B tu v1) (kb-isub B (ku B 32) sh))))
+          z (kb-end-if B)]
+      (kb-load B tu v0))))
+;; weight_half in the picked buffer
+(defn- h2-half-at [B :vector-i64 ws :vector-i64 n :i64 sel :i64 o :i64 v0 :i64] :i64
+  (if (= n 1) (kd-half B (vector-at ws 0) o)
+    (let [tu (kb-tu32 B) tf (kb-tf32 B)
+          a (h2-w-sel B ws sel (kb-shr B o (ku B 2)) v0)
+          pr (kb-unpack-half2 B (kb-load B tu v0))]
+      (kb-select B tf (kb-ine B (kb-band B o (ku B 2)) (ku B 0)) (kb-extract B tf pr 1) (kb-extract B tf pr 0)))))
+;; term8: the Q8_0 32-value block's four products of this thread, d applied
+;; in f32 (vu: two u32 Function variables for the picked words)
+(defn- h2-term8 [B :vector-i64 ws :vector-i64 n :i64 sel :i64 wb :i64 index :i64 ylo :i64 yhi :i64 vu :vector-i64] :i64
+  (let [bo (kb-iadd B wb (kb-imul B (kb-udiv B index (ku B 32)) (ku B 34)))
+        codes (h2-u32-at B ws n sel (kb-iadd B (kb-iadd B bo (ku B 2)) (kb-band B index (ku B 31))) (vector-at vu 0) (vector-at vu 1))
+        qlo (h2-int8-halves B codes 0) qhi (h2-int8-halves B codes 16)
+        d (h2-half-at B ws n sel bo (vector-at vu 0))]
+    (kb-fmul B d (h2-psum B qlo qhi ylo yhi))))
+;; dot_row of the Q8_0 kernels: two 256-groups an iteration, the tail group
+;; masked per thread (the break), and a trailing single group
+(defn- h2-dot-row [B :vector-i64 ws :vector-i64 n :i64 sel :i64 X :i64 rowbase :i64 xrow :i64 blocks :i64 index :i64 cols :i64
+                   vb :i64 va0 :i64 va1 :i64 vu :vector-i64] :i64
+  (let [tu (kb-tu32 B) tf (kb-tf32 B) u256 (ku B 256) f0 (kb-f32 B 0)
+        a0 (kb-store B va0 f0) a1 (kb-store B va1 f0) b0 (kb-store B vb (ku B 0))
+        l (kb-loop B)
+        w (kb-while B (kb-ult B (kb-iadd B (kb-load B tu vb) (ku B 1)) blocks))
+        b (kb-load B tu vb)
+        c0 (kb-if B (kb-uge B (kb-iadd B (kb-imul B b u256) index) cols)) c1 (kb-break B) c2 (kb-end-if B)
+        y0 (h2-y B X (kb-shr B (kb-iadd B xrow (kb-imul B b u256)) (ku B 2)))
+        s0 (k2-acc B va0 (h2-term8 B ws n sel (kb-iadd B rowbase (kb-imul B b (ku B 272))) index (h2-half2 B y0 0) (h2-half2 B y0 2) vu))
+        b1 (kb-iadd B b (ku B 1))
+        d0 (kb-if B (kb-ult B (kb-iadd B (kb-imul B b1 u256) index) cols))
+        y1 (h2-y B X (kb-shr B (kb-iadd B xrow (kb-imul B b1 u256)) (ku B 2)))
+        s1 (k2-acc B va1 (h2-term8 B ws n sel (kb-iadd B rowbase (kb-imul B b1 (ku B 272))) index (h2-half2 B y1 0) (h2-half2 B y1 2) vu))
+        d1 (kb-end-if B)
+        c (kb-continue B)
+        i (kb-store B vb (kb-iadd B (kb-load B tu vb) (ku B 2)))
+        le (kb-end-loop B)
+        bt (kb-load B tu vb)
+        t0 (kb-if B (kb-land B (kb-ult B bt blocks) (kb-ult B (kb-iadd B (kb-imul B bt u256) index) cols)))
+        yt (h2-y B X (kb-shr B (kb-iadd B xrow (kb-imul B bt u256)) (ku B 2)))
+        st (k2-acc B va0 (h2-term8 B ws n sel (kb-iadd B rowbase (kb-imul B bt (ku B 272))) index (h2-half2 B yt 0) (h2-half2 B yt 2) vu))
+        t1 (kb-end-if B)]
+    (kb-fadd B (kb-load B tf va0) (kb-load B tf va1))))
+
+;; --- kdot_h2_r1
+;; block_bytes_of(t): 12 144, 13 176, 14 210, 23 136, 8 272, 2 144, 1 512, else 0
+(defn- h2-pick [B :vector-i64 t :i64 tt :i64 bytes :i64 other :i64] :i64
+  (kb-select B (kb-tu32 B) (kb-ieq B t (ku B tt)) (ku B bytes) other))
+(defn- h2-block-bytes [B :vector-i64 t :i64] :i64
+  (h2-pick B t 12 144 (h2-pick B t 13 176 (h2-pick B t 14 210 (h2-pick B t 23 136
+    (h2-pick B t 8 272 (h2-pick B t 2 144 (h2-pick B t 1 512 (ku B 0)))))))))
+;; hdr[b][k] (shared, 5 words a block) and hbyte(b, off)
+(defn- h2-hdr [B :vector-i64 H :i64 b :i64 k :i64] :i64
+  (let [tu (kb-tu32 B)] (kb-load B tu (kb-shared-at B H tu (kb-iadd B (kb-imul B b (ku B 5)) k)))))
+(defn- h2-hbyte [B :vector-i64 H :i64 b :i64 off :i64] :i64
+  (kb-band B (kb-shr B (h2-hdr B H b (kb-shr B off (ku B 2))) (kb-imul B (kb-band B off (ku B 3)) (ku B 8))) (ku B 255)))
+;; h_scale(b, j) and h_min(b, j) from the staged header: an if on j < 4, as
+;; the GLSL's early return (see kd-q4-scale)
+(defn- h2-hscale [B :vector-i64 H :i64 b :i64 j :i64] :i64
+  (let [tu (kb-tu32 B) v (kb-var B tu)
+        g (kb-if B (kb-ult B j (ku B 4)))
+        a (kb-store B v (kb-band B (h2-hbyte B H b (kb-iadd B (ku B 4) j)) (ku B 63)))
+        e (kb-else B)
+        c (kb-store B v (kb-bor B (kb-band B (h2-hbyte B H b (kb-iadd B (ku B 8) j)) (ku B 15))
+                                (kb-shl B (kb-shr B (h2-hbyte B H b j) (ku B 6)) (ku B 4))))
+        z (kb-end-if B)]
+    (kd-int B (kb-load B tu v))))
+(defn- h2-hmin [B :vector-i64 H :i64 b :i64 j :i64] :i64
+  (let [tu (kb-tu32 B) v (kb-var B tu)
+        g (kb-if B (kb-ult B j (ku B 4)))
+        a (kb-store B v (kb-band B (h2-hbyte B H b (kb-iadd B (ku B 8) j)) (ku B 63)))
+        e (kb-else B)
+        c (kb-store B v (kb-bor B (kb-shr B (h2-hbyte B H b (kb-iadd B (ku B 8) j)) (ku B 4))
+                                (kb-shl B (kb-shr B (h2-hbyte B H b (kb-iadd B (ku B 4) j)) (ku B 6)) (ku B 4))))
+        z (kb-end-if B)]
+    (kd-int B (kb-load B tu v))))
+;; q4_codes, q5_codes, q6_codes: four codes of index..index + 3 as one
+;; byte-per-code word
+(defn- h2-q4-codes [B :vector-i64 W :i64 base :i64 index :i64] :i64
+  (let [tu (kb-tu32 B) group (kb-udiv B index (ku B 64)) within (kb-band B index (ku B 63))
+        w (kd-w B W (kb-shr B (kb-iadd B (kb-iadd B (kb-iadd B base (ku B 16)) (kb-imul B group (ku B 32))) (kb-band B within (ku B 31))) (ku B 2)))]
+    (kb-band B (kb-select B tu (kb-uge B within (ku B 32)) (kb-shr B w (ku B 4)) w) (ku B 0x0F0F0F0F))))
+(defn- h2-q5-codes [B :vector-i64 W :i64 base :i64 index :i64] :i64
+  (let [tu (kb-tu32 B) group (kb-udiv B index (ku B 64)) within (kb-band B index (ku B 63)) lane (kb-band B within (ku B 31))
+        hi (kb-uge B within (ku B 32))
+        qs (kd-w B W (kb-shr B (kb-iadd B (kb-iadd B (kb-iadd B base (ku B 48)) (kb-imul B group (ku B 32))) lane) (ku B 2)))
+        qh (kd-w B W (kb-shr B (kb-iadd B (kb-iadd B base (ku B 16)) lane) (ku B 2)))
+        bit (kb-iadd B (kb-imul B (ku B 2) group) (kb-select B tu hi (ku B 1) (ku B 0)))
+        nib (kb-band B (kb-select B tu hi (kb-shr B qs (ku B 4)) qs) (ku B 0x0F0F0F0F))
+        h (kb-shl B (kb-band B (kb-shr B qh bit) (ku B 0x01010101)) (ku B 4))]
+    (kb-bor B nib h)))
+(defn- h2-q6-codes [B :vector-i64 W :i64 base :i64 index :i64] :i64
+  (let [tu (kb-tu32 B) group (kb-udiv B index (ku B 128)) within (kb-band B index (ku B 127)) lane (kb-band B within (ku B 31))
+        quarter (kb-udiv B within (ku B 32))
+        qh (kd-u32-at B W (kb-iadd B (kb-iadd B (kb-iadd B base (ku B 128)) (kb-imul B group (ku B 32))) lane))
+        ql (kd-u32-at B W (kb-iadd B (kb-iadd B (kb-iadd B base (kb-imul B group (ku B 64)))
+                                              (kb-select B tu (kb-ieq B (kb-band B quarter (ku B 1)) (ku B 1)) (ku B 32) (ku B 0)))
+                                   lane))
+        nib (kb-band B (kb-select B tu (kb-uge B quarter (ku B 2)) (kb-shr B ql (ku B 4)) ql) (ku B 0x0F0F0F0F))
+        h (kb-shl B (kb-band B (kb-shr B qh (kb-imul B quarter (ku B 2))) (ku B 0x03030303)) (ku B 4))]
+    (kb-bor B nib h)))
+;; term32: Q8_0 (int8 -> half by conversion), Q4_0 (the exponent trick, q - 8)
+;; or F16 (the halves as they are, d 1), this thread's four products
+(defn- h2-term32 [B :vector-i64 W :i64 tt :i64 wb :i64 index :i64 ylo :i64 yhi :i64 vlo :i64 vhi :i64 vd :i64] :i64
+  (let [tf (kb-tf32 B) th2 (h2-th2 B)
+        g0 (kb-if B (kb-ieq B tt (ku B 8)))
+        bo (kb-iadd B wb (kb-imul B (kb-udiv B index (ku B 32)) (ku B 34)))
+        codes (kd-u32-at B W (kb-iadd B (kb-iadd B bo (ku B 2)) (kb-band B index (ku B 31))))
+        a0 (kb-store B vlo (h2-int8-halves B codes 0)) a1 (kb-store B vhi (h2-int8-halves B codes 16))
+        a2 (kb-store B vd (kd-half B W bo))
+        e0 (kb-else B)
+        g1 (kb-if B (kb-ieq B tt (ku B 2)))
+        within (kb-band B index (ku B 31))
+        bo2 (kb-iadd B wb (kb-imul B (kb-udiv B index (ku B 32)) (ku B 18)))
+        w (kd-u32-at B W (kb-iadd B (kb-iadd B bo2 (ku B 2)) (kb-band B within (ku B 15))))
+        c4 (kb-band B (kb-select B (kb-tu32 B) (kb-uge B within (ku B 16)) (kb-shr B w (ku B 4)) w) (ku B 0x0F0F0F0F))
+        b0 (kb-store B vlo (h2-codes B c4 0x0F 0x6408 false)) b1 (kb-store B vhi (h2-codes B c4 0x0F 0x6408 true))
+        b2 (kb-store B vd (kd-half B W bo2))
+        e1 (kb-else B)
+        wi (kb-shr B (kb-iadd B wb (kb-imul B index (ku B 2))) (ku B 2))
+        f0 (kb-store B vlo (kb-bitcast B th2 (kd-w B W wi))) f1 (kb-store B vhi (kb-bitcast B th2 (kd-w B W (kb-iadd B wi (ku B 1)))))
+        f2 (kb-store B vd (kb-f32 B F-ONE))
+        z1 (kb-end-if B)
+        z0 (kb-end-if B)
+        s (h2-psum B (kb-load B th2 vlo) (kb-load B th2 vhi) ylo yhi)]
+    (kb-fmul B (kb-load B tf vd) s)))
+;; term: block b (staged at hdr[b]) of a K-quant row: Q4_K and Q5_K (codes
+;; through the exponent trick, the min times the activation sum), IQ4_XS
+;; (codebook halves from shared), Q6_K (with q6 1 on the half path, else
+;; f32 by dot)
+(defn- h2-term [B :vector-i64 W :i64 H :i64 CB :i64 tt :i64 b :i64 wb :i64 index :i64 y :i64 ysum :i64 ylo :i64 yhi :i64
+                q6 :i64 vr :i64 vc :i64] :i64
+  (let [tu (kb-tu32 B) tf (kb-tf32 B) th (kb-tf16 B) th2 (h2-th2 B)
+        g0 (kb-if B (kb-lor B (kb-ieq B tt (ku B 12)) (kb-ieq B tt (ku B 13))))
+        j (kb-udiv B index (ku B 32))
+        dd (kb-unpack-half2 B (h2-hdr B H b (ku B 0)))
+        ;; codes = (tt == 12) ? q4_codes : q5_codes (the loads differ, so an if)
+        k0 (kb-if B (kb-ieq B tt (ku B 12)))
+        k1 (kb-store B vc (h2-q4-codes B W wb index))
+        k2 (kb-else B)
+        k3 (kb-store B vc (h2-q5-codes B W wb index))
+        k4 (kb-end-if B)
+        codes (kb-load B tu vc)
+        s45 (h2-psum B (h2-codes B codes 0x1F 0x6400 false) (h2-codes B codes 0x1F 0x6400 true) ylo yhi)
+        r0 (kb-store B vr (kb-fsub B (kb-fmul B (kb-fmul B (kb-extract B tf dd 0) (kb-s2f B tf (h2-hscale B H b j))) s45)
+                                    (kb-fmul B (kb-fmul B (kb-extract B tf dd 1) (kb-s2f B tf (h2-hmin B H b j))) ysum)))
+        e0 (kb-else B)
+        g1 (kb-if B (kb-ieq B tt (ku B 23)))
+        ib (kb-udiv B index (ku B 32)) within (kb-band B index (ku B 31)) hi (kb-uge B within (ku B 16))
+        w (kd-w B W (kb-shr B (kb-iadd B (kb-iadd B (kb-iadd B wb (ku B 8)) (kb-imul B ib (ku B 16)))
+                                         (kb-select B tu hi (kb-isub B within (ku B 16)) within))
+                              (ku B 2)))
+        c (kb-band B (kb-select B tu hi (kb-shr B w (ku B 4)) w) (ku B 0x0F0F0F0F))
+        cb0 (kb-load B th (kb-shared-at B CB th (kb-band B c (ku B 15))))
+        cb1 (kb-load B th (kb-shared-at B CB th (kb-band B (kb-shr B c (ku B 8)) (ku B 15))))
+        qlo (kb-construct2 B th2 cb0 cb1)
+        cb2 (kb-load B th (kb-shared-at B CB th (kb-band B (kb-shr B c (ku B 16)) (ku B 15))))
+        cb3 (kb-load B th (kb-shared-at B CB th (kb-band B (kb-shr B c (ku B 24)) (ku B 15))))
+        qhi (kb-construct2 B th2 cb2 cb3)
+        sh (kb-shr B (h2-hdr B H b (ku B 0)) (ku B 16))
+        sl (h2-hbyte B H b (kb-iadd B (ku B 4) (kb-udiv B ib (ku B 2))))
+        ls (kb-s2f B tf (kd-isub B (kd-int B (kb-bor B (kb-band B (kb-shr B sl (kb-imul B (ku B 4) (kb-band B ib (ku B 1)))) (ku B 15))
+                                                      (kb-shl B (kb-band B (kb-shr B sh (kb-imul B (ku B 2) ib)) (ku B 3)) (ku B 4))))
+                                (kb-i32 B 32)))
+        s23 (h2-psum B qlo qhi ylo yhi)
+        r1 (kb-store B vr (kb-fmul B (kb-fmul B (kb-extract B tf (kb-unpack-half2 B (h2-hdr B H b (ku B 0))) 0) ls) s23))
+        e1 (kb-else B)
+        j6 (kb-udiv B index (ku B 16))
+        scale (kb-s2f B tf (kb-sbfe B (kd-int B (h2-hdr B H b (kb-shr B j6 (ku B 2)))) (kd-int B (kb-imul B (kb-band B j6 (ku B 3)) (ku B 8)))
+                                    (kb-i32 B 8)))
+        r2 (if (= q6 1)
+             (let [codes6 (h2-q6-codes B W wb index)
+                   s6 (h2-psum B (h2-codes B codes6 0x3F 0x6420 false) (h2-codes B codes6 0x3F 0x6420 true) ylo yhi)]
+               (kb-store B vr (kb-fmul B (kb-fmul B (kb-extract B tf (kb-unpack-half2 B (h2-hdr B H b (ku B 4))) 0) scale) s6)))
+             (let [q (kd-q6-values B W wb index)]
+               (kb-store B vr (kb-fmul B (kb-fmul B (kb-extract B tf (kb-unpack-half2 B (h2-hdr B H b (ku B 4))) 0) scale) (kd-dotq B q y)))))
+        z1 (kb-end-if B)
+        z0 (kb-end-if B)]
+    (kb-load B tf vr)))
+
+;; kdot_h2_r1 (q6 0) or -DQ6_HALF (q6 1). Bindings 0 Meta {rows cols
+;; tensor_type positions input_per_expert pad0 pad1 pad2}, 1 W (u32), 2 X
+;; (vec4), 3 O, 4 E (expert ids). LocalSize 64; dispatch (rows, positions, 1).
+;; The K-quant headers are staged into shared memory behind one barrier, the
+;; block loop takes two blocks an iteration (rows of an even block count, up
+;; to 16), and the 32-value types mask their tail group per thread.
+(defn kir2-kdot-h2-r1 [q6 :i64] :vector-i64
+  (if (or (< q6 0) (> q6 1)) (spv-new 0)
+    (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) tf (kb-tf32 B) th (kb-tf16 B) th2 (h2-th2 B) tv4 (kd-tv4 B)
+          P (kb-meta B 0 8 0) W (kb-buffer B 1 tu 4 true) X (kb-buffer B 2 tv4 16 true) O (kb-buffer B 3 tf 4 false)
+          E (kb-buffer B 4 tu 4 true)
+          part (kb-shared B tf 2) CB (kb-shared B th 16) H (kb-shared B tu 80)
+          vin (kb-var B tu) vw (kb-var B tu) vh (kb-var B tu) vb (kb-var B tu) va0 (kb-var B tf) va1 (kb-var B tf)
+          vs (kb-var B tf) vi (kb-var B tu) vlo (kb-var B th2) vhi (kb-var B th2) vd (kb-var B tf) vr (kb-var B tf)
+          vc (kb-var B tu)
+          u0 (ku B 0) u1 (ku B 1) u256 (ku B 256) f0 (kb-f32 B 0)
+          row (kb-builtin-at B 26 0) position (kb-builtin-at B 26 1) t (kb-builtin-at B 27 0)
+          expert (kb-load B tu (kb-at B E tu position))
+          in-row (h2-in-row B P vin position 4)
+          rows (kb-meta-at B P tu 0) cols (kb-meta-at B P tu 1) tt (kb-meta-at B P tu 2) positions (kb-meta-at B P tu 3)
+          b32 (kb-lor B (kb-lor B (kb-ieq B tt (ku B 8)) (kb-ieq B tt (ku B 2))) (kb-ieq B tt (ku B 1)))
+          blocks (kb-select B tu b32 (kb-udiv B (kb-iadd B cols (ku B 255)) u256) (kb-udiv B cols u256))
+          bbytes (h2-block-bytes B tt)
+          row-bytes (kb-select B tu b32 (kb-imul B (kb-udiv B (kb-iadd B cols (ku B 31)) (ku B 32)) (kb-udiv B bbytes (ku B 8)))
+                               (kb-imul B blocks bbytes))
+          index (kb-imul B t (ku B 4))
+          live (kb-land B (kb-ult B row rows) (kb-ult B position positions))
+          rowbase (kb-imul B (kb-iadd B (kb-imul B expert rows) row) row-bytes)
+          hwords (kb-select B tu b32 u0 (kb-select B tu (kb-ieq B tt (ku B 14)) (ku B 5)
+                                                  (kb-select B tu (kb-ieq B tt (ku B 23)) (ku B 2) (ku B 4))))
+          ;; if (t < 16) cb[t] = float16_t(kvalue(t))
+          k0 (kb-if B (kb-ult B t (ku B 16)))
+          k1 (kb-store B (kb-shared-at B CB th t) (kb-s2f B th (kd-kvalue B t)))
+          k2 (kb-end-if B)
+          ;; the row's block headers: hdr[b][k] for w = b hwords + k
+          h0 (kb-if B live)
+          w (k2-for B vw t (kb-imul B blocks hwords))
+          hb (kb-udiv B w hwords)
+          hk (kb-isub B w (kb-imul B hb hwords))
+          hwb (kb-iadd B rowbase (kb-imul B hb bbytes))
+          h1 (kb-if B (kb-ieq B tt (ku B 14)))
+          h2 (kb-store B vh (kd-u32-at B W (kb-iadd B (kb-iadd B hwb (ku B 192)) (kb-imul B hk (ku B 4)))))
+          h3 (kb-else B)
+          h4 (kb-store B vh (kd-w B W (kb-iadd B (kb-shr B hwb (ku B 2)) hk)))
+          h5 (kb-end-if B)
+          h6 (kb-store B (kb-shared-at B H tu (kb-iadd B (kb-imul B hb (ku B 5)) hk)) (kb-load B tu vh))
+          h7 (k2-end-for B vw (ku B 64))
+          h8 (kb-end-if B)
+          b0 (kb-barrier B)
+          a0 (kb-store B va0 f0) a1 (kb-store B va1 f0)
+          g (kb-if B live)
+          xrow (kb-iadd B (kb-imul B in-row cols) index)
+          g32 (kb-if B b32)
+          ;; two groups an iteration, the tail group masked (break), a trailing single
+          m0 (kb-store B vb u0)
+          ml (kb-loop B)
+          mw (kb-while B (kb-ult B (kb-iadd B (kb-load B tu vb) u1) blocks))
+          mb (kb-load B tu vb)
+          mc0 (kb-if B (kb-uge B (kb-iadd B (kb-imul B mb u256) index) cols)) mc1 (kb-break B) mc2 (kb-end-if B)
+          my0 (h2-y B X (kb-shr B (kb-iadd B xrow (kb-imul B mb u256)) (ku B 2)))
+          ms0 (k2-acc B va0 (h2-term32 B W tt (kb-iadd B rowbase (kb-imul B mb bbytes)) index (h2-half2 B my0 0) (h2-half2 B my0 2) vlo vhi vd))
+          mb1 (kb-iadd B mb u1)
+          md0 (kb-if B (kb-ult B (kb-iadd B (kb-imul B mb1 u256) index) cols))
+          my1 (h2-y B X (kb-shr B (kb-iadd B xrow (kb-imul B mb1 u256)) (ku B 2)))
+          ms1 (k2-acc B va1 (h2-term32 B W tt (kb-iadd B rowbase (kb-imul B mb1 bbytes)) index (h2-half2 B my1 0) (h2-half2 B my1 2) vlo vhi vd))
+          md1 (kb-end-if B)
+          mc (kb-continue B)
+          mi (kb-store B vb (kb-iadd B (kb-load B tu vb) (ku B 2)))
+          me (kb-end-loop B)
+          bt (kb-load B tu vb)
+          t0 (kb-if B (kb-land B (kb-ult B bt blocks) (kb-ult B (kb-iadd B (kb-imul B bt u256) index) cols)))
+          yt (h2-y B X (kb-shr B (kb-iadd B xrow (kb-imul B bt u256)) (ku B 2)))
+          st (k2-acc B va0 (h2-term32 B W tt (kb-iadd B rowbase (kb-imul B bt bbytes)) index (h2-half2 B yt 0) (h2-half2 B yt 2) vlo vhi vd))
+          t1 (kb-end-if B)
+          ge (kb-else B)
+          ;; K-quants: two blocks an iteration
+          kb (k2-for B vb u0 blocks)
+          ky0 (h2-y B X (kb-shr B (kb-iadd B xrow (kb-imul B kb u256)) (ku B 2)))
+          kb1 (kb-iadd B kb u1)
+          ky1 (h2-y B X (kb-shr B (kb-iadd B xrow (kb-imul B kb1 u256)) (ku B 2)))
+          ks0 (k2-acc B va0 (h2-term B W H CB tt kb (kb-iadd B rowbase (kb-imul B kb bbytes)) index ky0 (kd-sum4 B ky0)
+                                    (h2-half2 B ky0 0) (h2-half2 B ky0 2) q6 vr vc))
+          ks1 (k2-acc B va1 (h2-term B W H CB tt kb1 (kb-iadd B rowbase (kb-imul B kb1 bbytes)) index ky1 (kd-sum4 B ky1)
+                                    (h2-half2 B ky1 0) (h2-half2 B ky1 2) q6 vr vc))
+          ke (k2-end-for B vb (ku B 2))
+          gz (kb-end-if B)
+          z (kb-end-if B)
+          ;; subgroupAdd, one partial per subgroup, the partials summed in order
+          sg (kb-subgroup-fadd B (kb-fadd B (kb-load B tf va0) (kb-load B tf va1)))
+          e0 (kb-if B (kb-subgroup-elect B))
+          e1 (kb-store B (kb-shared-at B part tf (kb-builtin-at B 40 0)) sg)
+          e2 (kb-end-if B)
+          b1 (kb-barrier B)
+          o0 (kb-if B (kb-land B live (kb-ieq B t u0)))
+          o1 (kb-store B vs f0)
+          oi (k2-for B vi u0 (kb-builtin-at B 38 0))
+          o2 (k2-acc B vs (kb-load B tf (kb-shared-at B part tf oi)))
+          o3 (k2-end-for B vi u1)
+          o4 (kb-store B (kb-at B O tf (kb-iadd B (kb-imul B position rows) row)) (kb-load B tf vs))
+          o5 (kb-end-if B)]
+      (kb-module B 64 1 1))))
+
+;; --- kdot_h2_r4_q8 (R 4) and kdot_h2_r8_q8 (R 8): kdot_h2_r1's Q8_0 dot for
+;; R rows a workgroup, each row its own accumulator chain; per row, subgroupAdd
+;; and one partial per subgroup (psum[k][subgroup], 8 subgroups at most),
+;; summed in order by invocation 0. Bindings as kdot_h2_r1's (E unused);
+;; dispatch (ceil(rows / R), positions, 1). Another R gives an empty module.
+(defn kir2-kdot-h2-q8 [R :i64] :vector-i64
+  (if (not (or (= R 4) (= R 8))) (spv-new 0)
+    (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) tf (kb-tf32 B) tv4 (kd-tv4 B)
+          P (kb-meta B 0 8 0) W (kb-buffer B 1 tu 4 true) X (kb-buffer B 2 tv4 16 true) O (kb-buffer B 3 tf 4 false)
+          E (kb-buffer B 4 tu 4 true)
+          psum (kb-shared B tf (* R 8))
+          vs (kb-var B (kb-tarray B tf R))
+          vin (kb-var B tu) vk (kb-var B tu) vi (kb-var B tu) vb (kb-var B tu) va0 (kb-var B tf) va1 (kb-var B tf) va (kb-var B tf)
+          vu (-> (vector-alloc 2) (vector-assoc! 0 (kb-var B tu)) (vector-assoc! 1 (kb-var B tu)))
+          ws (-> (vector-alloc 1) (vector-assoc! 0 W))
+          u0 (ku B 0) u1 (ku B 1) f0 (kb-f32 B 0) uR (ku B R)
+          base-row (kb-imul B (kb-builtin-at B 26 0) uR) position (kb-builtin-at B 26 1) t (kb-builtin-at B 27 0)
+          index (kb-imul B t (ku B 4))
+          rows (kb-meta-at B P tu 0) cols (kb-meta-at B P tu 1) positions (kb-meta-at B P tu 3)
+          blocks (kb-udiv B (kb-iadd B cols (ku B 255)) (ku B 256))
+          row-bytes (kb-imul B (kb-udiv B (kb-iadd B cols (ku B 31)) (ku B 32)) (ku B 34))
+          in-row (h2-in-row B P vin position 4)
+          xrow (kb-iadd B (kb-imul B in-row cols) index)
+          ;; s[k] = 0; with the position live, s[k] = dot_row(row k) for the rows < rows
+          s0 (k2-for B vk u0 uR)
+          s1 (kb-store B (kd-fn-at B vs s0) f0)
+          s2 (k2-end-for B vk u1)
+          g (kb-if B (kb-ult B position positions))
+          k (k2-for B vk u0 uR)
+          r (kb-iadd B base-row k)
+          d0 (kb-if B (kb-ult B r rows))
+          d1 (kb-store B (kd-fn-at B vs k) (h2-dot-row B ws 1 0 X (kb-imul B r row-bytes) xrow blocks index cols vb va0 va1 vu))
+          d2 (kb-end-if B)
+          ke (k2-end-for B vk u1)
+          gz (kb-end-if B)
+          ;; per row: subgroupAdd, and the elected invocation's psum[k][subgroup]
+          a (k2-for B vk u0 uR)
+          sg (kb-subgroup-fadd B (kb-load B tf (kd-fn-at B vs a)))
+          e0 (kb-if B (kb-subgroup-elect B))
+          e1 (kb-store B (kb-shared-at B psum tf (kb-iadd B (kb-imul B a (ku B 8)) (kb-builtin-at B 40 0))) sg)
+          e2 (kb-end-if B)
+          ae (k2-end-for B vk u1)
+          b0 (kb-barrier B)
+          o0 (kb-if B (kb-land B (kb-ieq B t u0) (kb-ult B position positions)))
+          ok (k2-for B vk u0 uR)
+          orow (kb-iadd B base-row ok)
+          o1 (kb-if B (kb-ult B orow rows))
+          o2 (kb-store B va f0)
+          oi (k2-for B vi u0 (kb-builtin-at B 38 0))
+          o3 (k2-acc B va (kb-load B tf (kb-shared-at B psum tf (kb-iadd B (kb-imul B ok (ku B 8)) oi))))
+          o4 (k2-end-for B vi u1)
+          o5 (kb-store B (kb-at B O tf (kb-iadd B (kb-imul B position rows) orow)) (kb-load B tf va))
+          o6 (kb-end-if B)
+          o7 (k2-end-for B vk u1)
+          o8 (kb-end-if B)]
+      (kb-module B 64 1 1))))
+
+;; --- kdot_h2_qkv_q8: the q, k and v Q8_0 matvecs of the same input in one
+;; dispatch; workgroup r picks its (weight, output) pair by the ranges [0,
+;; rows_q), [rows_q, rows_q + rows_kv) and the rest. Bindings: 0 Meta {rows_q
+;; rows_kv cols type positions input_per_expert pad0 pad1}, 1 Wq, 2 X, 3 Oq,
+;; 4 Wk, 5 Ok, 6 Wv, 7 Ov. Dispatch (rows_q + 2 rows_kv, positions, 1).
+(defn- h2-store-sel [B :vector-i64 os :vector-i64 sel :i64 idx :i64 v :i64] :i64
+  (let [tf (kb-tf32 B)
+        g0 (kb-if B (kb-ieq B sel (ku B 0)))
+        a (kb-store B (kb-at B (vector-at os 0) tf idx) v)
+        e0 (kb-else B)
+        g1 (kb-if B (kb-ieq B sel (ku B 1)))
+        c (kb-store B (kb-at B (vector-at os 1) tf idx) v)
+        e1 (kb-else B)
+        d (kb-store B (kb-at B (vector-at os 2) tf idx) v)
+        z1 (kb-end-if B)]
+    (kb-end-if B)))
+(defn kir2-kdot-h2-qkv [] :vector-i64
+  (let [n 3]
+    (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) tf (kb-tf32 B) tv4 (kd-tv4 B)
+          P (kb-meta B 0 8 0) W0 (kb-buffer B 1 tu 4 true) X (kb-buffer B 2 tv4 16 true) O0 (kb-buffer B 3 tf 4 false)
+          W1 (kb-buffer B 4 tu 4 true) O1 (kb-buffer B 5 tf 4 false)
+          W2 (kb-buffer B 6 tu 4 true) O2 (kb-buffer B 7 tf 4 false)
+          ws (-> (vector-alloc 3) (vector-assoc! 0 W0) (vector-assoc! 1 W1) (vector-assoc! 2 W2))
+          os (-> (vector-alloc 3) (vector-assoc! 0 O0) (vector-assoc! 1 O1) (vector-assoc! 2 O2))
+          part (kb-shared B tf 2)
+          vin (kb-var B tu) vb (kb-var B tu) va0 (kb-var B tf) va1 (kb-var B tf) vs (kb-var B tf) vi (kb-var B tu)
+          vu (-> (vector-alloc 2) (vector-assoc! 0 (kb-var B tu)) (vector-assoc! 1 (kb-var B tu)))
+          u0 (ku B 0) u1 (ku B 1) u2 (ku B 2) f0 (kb-f32 B 0)
+          r (kb-builtin-at B 26 0) position (kb-builtin-at B 26 1) t (kb-builtin-at B 27 0)
+          rq (kb-meta-at B P tu 0) rkv (kb-meta-at B P tu 1) cols (kb-meta-at B P tu 2) positions (kb-meta-at B P tu 4)
+          total (kb-iadd B rq (kb-imul B u2 rkv))
+          live (kb-land B (kb-ult B r total) (kb-ult B position positions))
+          sel (kb-select B tu (kb-ult B r rq) u0 (kb-select B tu (kb-ult B r (kb-iadd B rq rkv)) u1 u2))
+          row (kb-select B tu (kb-ieq B sel u0) r (kb-select B tu (kb-ieq B sel u1) (kb-isub B r rq) (kb-isub B (kb-isub B r rq) rkv)))
+          rows (kb-select B tu (kb-ieq B sel u0) rq rkv)
+          in-row (h2-in-row B P vin position 5)
+          index (kb-imul B t (ku B 4))
+          blocks (kb-udiv B (kb-iadd B cols (ku B 255)) (ku B 256))
+          row-bytes (kb-imul B (kb-udiv B (kb-iadd B cols (ku B 31)) (ku B 32)) (ku B 34))
+          a0 (kb-store B vs f0)
+          g (kb-if B live)
+          xrow (kb-iadd B (kb-imul B in-row cols) index)
+          d (kb-store B vs (h2-dot-row B ws n sel X (kb-imul B row row-bytes) xrow blocks index cols vb va0 va1 vu))
+          gz (kb-end-if B)
+          sg (kb-subgroup-fadd B (kb-load B tf vs))
+          e0 (kb-if B (kb-subgroup-elect B))
+          e1 (kb-store B (kb-shared-at B part tf (kb-builtin-at B 40 0)) sg)
+          e2 (kb-end-if B)
+          b0 (kb-barrier B)
+          o0 (kb-if B (kb-land B live (kb-ieq B t u0)))
+          o1 (kb-store B vs f0)
+          oi (k2-for B vi u0 (kb-builtin-at B 38 0))
+          o2 (k2-acc B vs (kb-load B tf (kb-shared-at B part tf oi)))
+          o3 (k2-end-for B vi u1)
+          o4 (h2-store-sel B os sel (kb-iadd B (kb-imul B position rows) row) (kb-load B tf vs))
+          o5 (kb-end-if B)]
+      (kb-module B 64 1 1))))
+
+;; --- kdot_h2_qkvr_q8: q, k and v of a layer in one dispatch, with the bias
+;; and the NeoX rope in the epilogue. A workgroup takes one rope pair (rows p
+;; and p + hlf of a head) of the matvec sel picks; x = dot + bias, then o[p]
+;; = x0 cos - x1 sin and o[p + hlf] = x0 sin + x1 cos with theta = pos
+;; pow(scale, -2 p / nrot) (divided by rope_freqs[p] when RopeP.eps != 0); v
+;; (sel 2) has no rotation. Bindings: 0 Meta (as kdot_h2_qkv_q8's), 1 Wq, 2
+;; X, 3 Oq, 4 Wk, 5 Ok, 6 Wv, 7 Ov, 8 bias_q, 9 bias_k, 10 bias_v, 11 RopeP
+;; {n rows aux aux2 : u32, eps scale p0 p1 : f32}, 12 rope_freqs, 13 ids (the
+;; position when RopeP.p1 != 0). Dispatch ((NH + 2 NKV) head_dim / 2,
+;; positions, 1).
+(defn- h2-bias-sel [B :vector-i64 bs :vector-i64 sel :i64 idx :i64 v :i64] :i64
+  (let [tf (kb-tf32 B)
+        g0 (kb-if B (kb-ieq B sel (ku B 0)))
+        a (kb-store B v (kb-load B tf (kb-at B (vector-at bs 0) tf idx)))
+        e0 (kb-else B)
+        g1 (kb-if B (kb-ieq B sel (ku B 1)))
+        b (kb-store B v (kb-load B tf (kb-at B (vector-at bs 1) tf idx)))
+        e1 (kb-else B)
+        c (kb-store B v (kb-load B tf (kb-at B (vector-at bs 2) tf idx)))
+        z1 (kb-end-if B)
+        z0 (kb-end-if B)]
+    (kb-load B tf v)))
+(defn kir2-kdot-h2-qkvr [] :vector-i64
+  (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) tf (kb-tf32 B) tv4 (kd-tv4 B)
+        P (kb-meta B 0 8 0) Wq (kb-buffer B 1 tu 4 true) X (kb-buffer B 2 tv4 16 true) Oq (kb-buffer B 3 tf 4 false)
+        Wk (kb-buffer B 4 tu 4 true) Ok (kb-buffer B 5 tf 4 false) Wv (kb-buffer B 6 tu 4 true) Ov (kb-buffer B 7 tf 4 false)
+        Bq (kb-buffer B 8 tf 4 true) Bk (kb-buffer B 9 tf 4 true) Bv (kb-buffer B 10 tf 4 true)
+        RP (kb-meta B 11 8 240) Fq (kb-buffer B 12 tf 4 true) I (kb-buffer B 13 tu 4 true)
+        ws (-> (vector-alloc 3) (vector-assoc! 0 Wq) (vector-assoc! 1 Wk) (vector-assoc! 2 Wv))
+        os (-> (vector-alloc 3) (vector-assoc! 0 Oq) (vector-assoc! 1 Ok) (vector-assoc! 2 Ov))
+        bs (-> (vector-alloc 3) (vector-assoc! 0 Bq) (vector-assoc! 1 Bk) (vector-assoc! 2 Bv))
+        psum (kb-shared B tf 16)
+        vin (kb-var B tu) vb (kb-var B tu) va0 (kb-var B tf) va1 (kb-var B tf) vi (kb-var B tu) vbias (kb-var B tf) vpos (kb-var B tu)
+        vs0 (kb-var B tf) vs1 (kb-var B tf) vc (kb-var B tf) vn (kb-var B tf) vt (kb-var B tf)
+        vu (-> (vector-alloc 2) (vector-assoc! 0 (kb-var B tu)) (vector-assoc! 1 (kb-var B tu)))
+        u0 (ku B 0) u1 (ku B 1) u2 (ku B 2) f0 (kb-f32 B 0) f1 (kb-f32 B F-ONE)
+        gp (kb-builtin-at B 26 0) position (kb-builtin-at B 26 1) t (kb-builtin-at B 27 0)
+        rq (kb-meta-at B P tu 0) rkv (kb-meta-at B P tu 1) cols (kb-meta-at B P tu 2) positions (kb-meta-at B P tu 4)
+        hd (kb-meta-at B RP tu 0) nrot (kb-meta-at B RP tu 2) hlf (kb-udiv B nrot u2)
+        q-pairs (kb-imul B (kb-udiv B rq hd) hlf)
+        kv-pairs (kb-imul B (kb-udiv B rkv hd) hlf)
+        total (kb-iadd B q-pairs (kb-imul B u2 kv-pairs))
+        live (kb-land B (kb-ult B gp total) (kb-ult B position positions))
+        sel (kb-select B tu (kb-ult B gp q-pairs) u0 (kb-select B tu (kb-ult B gp (kb-iadd B q-pairs kv-pairs)) u1 u2))
+        gps (kb-select B tu (kb-ieq B sel u0) gp (kb-select B tu (kb-ieq B sel u1) (kb-isub B gp q-pairs) (kb-isub B (kb-isub B gp q-pairs) kv-pairs)))
+        head (kb-udiv B gps hlf)
+        p (kb-isub B gps (kb-imul B head hlf))
+        r0 (kb-iadd B (kb-imul B head hd) p) r1 (kb-iadd B r0 hlf)
+        in-row (h2-in-row B P vin position 5)
+        index (kb-imul B t (ku B 4))
+        blocks (kb-udiv B (kb-iadd B cols (ku B 255)) (ku B 256))
+        row-bytes (kb-imul B (kb-udiv B (kb-iadd B cols (ku B 31)) (ku B 32)) (ku B 34))
+        z0 (kb-store B vs0 f0) z1 (kb-store B vs1 f0)
+        g (kb-if B live)
+        xrow (kb-iadd B (kb-imul B in-row cols) index)
+        d0 (kb-store B vs0 (h2-dot-row B ws 3 sel X (kb-imul B r0 row-bytes) xrow blocks index cols vb va0 va1 vu))
+        d1 (kb-store B vs1 (h2-dot-row B ws 3 sel X (kb-imul B r1 row-bytes) xrow blocks index cols vb va0 va1 vu))
+        gz (kb-end-if B)
+        g0 (kb-subgroup-fadd B (kb-load B tf vs0)) g1 (kb-subgroup-fadd B (kb-load B tf vs1))
+        sid (kb-builtin-at B 40 0)
+        e0 (kb-if B (kb-subgroup-elect B))
+        e1 (kb-store B (kb-shared-at B psum tf sid) g0)
+        e2 (kb-store B (kb-shared-at B psum tf (kb-iadd B (ku B 8) sid)) g1)
+        e3 (kb-end-if B)
+        bb (kb-barrier B)
+        o0 (kb-if B (kb-land B live (kb-ieq B t u0)))
+        ;; a0, a1: psum[k][i] over the subgroups in order (reusing vs0, vs1)
+        a0 (kb-store B vs0 f0) a1 (kb-store B vs1 f0)
+        oi (k2-for B vi u0 (kb-builtin-at B 38 0))
+        s0 (k2-acc B vs0 (kb-load B tf (kb-shared-at B psum tf oi)))
+        s1 (k2-acc B vs1 (kb-load B tf (kb-shared-at B psum tf (kb-iadd B (ku B 8) oi))))
+        oe (k2-end-for B vi u1)
+        x0 (kb-fadd B (kb-load B tf vs0) (h2-bias-sel B bs sel r0 vbias))
+        x1 (kb-fadd B (kb-load B tf vs1) (h2-bias-sel B bs sel r1 vbias))
+        c0 (kb-store B vc f1) c1 (kb-store B vn f0)
+        h (kb-if B (kb-ine B sel u2))
+        ;; the position: ids[0] when RopeP.p1 != 0 (read only then), else RopeP.aux2
+        q0 (kb-store B vpos (kb-meta-at B RP tu 3))
+        q1 (kb-if B (kb-fne B (kb-meta-at B RP tf 7) f0))
+        q2 (kb-store B vpos (kb-load B tu (kb-at B I tu u0)))
+        q3 (kb-end-if B)
+        t0 (kb-store B vt (kb-fmul B (kb-u2f B (kb-load B tu vpos))
+                                    (kb-fpow B (kb-meta-at B RP tf 5) (kb-fdiv B (kb-fmul B (kb-f32 B F-MINUS-TWO) (kb-u2f B p)) (kb-u2f B nrot)))))
+        f0a (kb-if B (kb-fne B (kb-meta-at B RP tf 4) f0))
+        f1a (kb-store B vt (kb-fdiv B (kb-load B tf vt) (kb-load B tf (kb-at B Fq tf p))))
+        f2a (kb-end-if B)
+        th (kb-load B tf vt)
+        r2 (kb-store B vc (kb-fcos B th)) r3 (kb-store B vn (kb-fsin B th))
+        he (kb-end-if B)
+        cs (kb-load B tf vc) sn (kb-load B tf vn)
+        w0 (h2-store-sel B os sel r0 (kb-fsub B (kb-fmul B x0 cs) (kb-fmul B x1 sn)))
+        w1 (h2-store-sel B os sel r1 (kb-fadd B (kb-fmul B x0 sn) (kb-fmul B x1 cs)))
+        oz (kb-end-if B)]
+    (kb-module B 64 1 1)))
