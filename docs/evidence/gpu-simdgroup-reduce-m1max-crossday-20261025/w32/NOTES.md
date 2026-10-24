@@ -78,9 +78,14 @@ records, 36 with a strict refinement edge). The pin's own comment
 frames the failure as the surfacing mechanism, so this slice changes NO
 instrument: the DECISION -- whether cross-cutting-only is a legal
 refuted shape and what the pin asserts afterwards -- is its own next
-slice, decided before the pin is touched. Everything the aborted
-self-test would have run after the pin (the named-record pins, the
-comparison-cell checks) did NOT run this tick.
+slice, decided before the pin is touched. [UPDATE 2026-10-25: that
+slice landed the same day -- the decision is YES, a legal refuted
+shape, and the pin it authorizes is the named crossing-only set pin
+(docs/evidence/gpu/cross-cutting-only-decision-20261025.txt; ADR-0360
+Amendment 2026-10-25; the classify self-test is GREEN again at 2035
+assertions with this record's shape pinned per record).] Everything
+the aborted self-test would have run after the pin (the named-record
+pins, the comparison-cell checks) did NOT run this tick.
 
 ## What this slice does NOT license
 
@@ -126,7 +131,11 @@ AMU_KBB_TEST_CLASSPATH)
 
 - The cross-cutting-only decision and the pin update it authorizes (its
   own slice, decided before the pin is edited; until then the classify
-  self-test stays RED at 36/37 and named).
+  self-test stays RED at 36/37 and named). [DONE 2026-10-25, same day:
+  the decision (YES, legal) and the named crossing-only set pin landed
+  as the two follow-up commits of the next tick; the classify
+  self-test is GREEN at 2035 assertions. The rest of this LEFT list
+  stands unchanged.]
 - The eight remaining pending :simdgroup-reduce cross-day rows.
 - The naming slice: name this record in the flip note / basis evidence
   lists.

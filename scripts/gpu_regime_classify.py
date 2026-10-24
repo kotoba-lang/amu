@@ -2481,18 +2481,68 @@ def _self_test_identity_corpus(stats, corpus_root):
     _expect(len(holds) >= 9 and len(refuted) >= 19,
             f"corpus tally floors: >= 9 holds / >= 19 refuted (got "
             f"{len(holds)}/{len(refuted)})", stats)
-    # the structural claim, asserted over EVERY refuted record: a
-    # refuted record's disagreement always has refinement structure (a
-    # strict refinement edge) -- a record with cross-cutting-only
-    # divergence would fail this pin and surface instead of hiding
-    _expect(strict_edge_records == len(refuted),
-            f"every refuted record has a strict refinement edge "
-            f"({strict_edge_records}/{len(refuted)})", stats)
-
     def _ident(rel):
         return cross_operator_level_identity(
             parse_summary_per_run_baseline(
                 (corpus_root / rel / "summary.md").read_text()))
+
+    # THE 2026-10-25 DECISION (docs/evidence/gpu/cross-cutting-only-
+    # decision-20261025.txt; ADR-0360 Amendment 2026-10-25):
+    # cross-cutting-only is a LEGAL refuted shape -- identity refutes on
+    # partition disagreement alone (any divergent run pair), and the
+    # refinement relation is the disagreement's published SHAPE (equal /
+    # one refines the other / cross-cutting), never a legality
+    # condition. The 2026-10-23 structural claim ("every refuted record
+    # has a strict refinement edge", asserted over every refuted
+    # record) is SUPERSEDED: its dated 19/19 tally stands as history,
+    # and the corpus's first counterexample surfaced exactly as that
+    # pin's comment prescribed ("would fail this pin and surface
+    # instead of hiding"). What the pin asserts afterwards, in the
+    # :sum-refines-:max set pin's own idiom: the refuted records with
+    # NO strict refinement edge are EXACTLY the named set below. A
+    # future crossing-only record fails this pin on purpose and must
+    # enter the set with its own story -- the surfacing mechanism is
+    # preserved where it matters (crossing-only is legal but never
+    # silent), not dropped.
+    #
+    # the 2026-10-25 cross-day W = 32 replica -- the corpus's FIRST
+    # crossing-only refutation, and (every pair cross-cutting) its
+    # first CROSS-CUTTING-ONLY one: 5 of 15 run pairs diverge, no
+    # refinement edge in either direction. Levels (GAP-1.15,
+    # fastest-first): max [[5], [1, 2], [4], [3, 6]], min [[5, 6],
+    # [4], [1, 2], [3]], sum [[1], [2, 4], [3, 5, 6]]. Its story is
+    # its own record's (crossday-20261025/w32 NOTES: the instrument's
+    # first calendar-stamped session; sign reproduces strictly against
+    # the 2026-10-23 flip basis). Pinned per named record, as every
+    # machine verdict over committed numbers is.
+    cdw32 = _ident("gpu-simdgroup-reduce-m1max-crossday-20261025/w32")
+    _expect(cdw32["verdict"] == "identity-refuted"
+            and len(cdw32["divergent"]) == 5
+            and [lv["runs"] for lv in cdw32["levels"]["max"]]
+                == [[5], [1, 2], [4], [3, 6]]
+            and [lv["runs"] for lv in cdw32["levels"]["min"]]
+                == [[5, 6], [4], [1, 2], [3]]
+            and [lv["runs"] for lv in cdw32["levels"]["sum"]]
+                == [[1], [2, 4], [3, 5, 6]]
+            and cdw32["refinements"] == [],
+            "cross-day w32 (2026-10-25): identity refuted (5/15) with "
+            "NO refinement edge -- the corpus's first cross-cutting-"
+            "only refutation, decided a legal refuted shape "
+            "2026-10-25", stats)
+
+    crossing_only = [rel for rel, per_op in records
+                     if (lambda i: i["verdict"] == "identity-refuted"
+                         and not any((o1, o2) in i["refinements"]
+                                     and (o2, o1) not in i["refinements"]
+                                     for o1 in i["ops"] for o2 in i["ops"]
+                                     if o1 != o2))(
+                             cross_operator_level_identity(per_op))]
+    _expect(crossing_only == ["gpu-simdgroup-reduce-m1max-crossday-"
+                              "20261025/w32"],
+            f"the corpus's crossing-only refuted records are exactly "
+            f"the named set (the 2026-10-25 cross-day W = 32 record "
+            f"alone today); a future crossing-only record fails this "
+            f"pin on purpose ({crossing_only})", stats)
 
     # the closing cell (shape2-resweep w512): its own prose names the
     # regime split ACROSS operators ("this session's run 3 sat
@@ -2635,7 +2685,8 @@ def _self_test_identity_corpus(stats, corpus_root):
           f"records -- {len(holds)} identity-holds "
           f"({multi_level_holds} of them multi-level), {len(refuted)} "
           f"identity-refuted ({strict_edge_records} with refinement "
-          f"structure)")
+          f"structure, {len(crossing_only)} crossing-only: the named "
+          f"set pin's members)")
     print("per-record verdicts (printed, GAP-1.15 ethos):")
     for rel, per_op in records:
         ident = cross_operator_level_identity(per_op)
