@@ -69,7 +69,10 @@
                 (iv-hex "49c781") (xg-bytes (+ UV-FAULT 40) 4) (xg-bytes UV-MAGIC 4)
                 (iv-hex "49c781") (xg-bytes (+ UV-FAULT 48) 4) (xg-bytes vector 4)
                 (iv-hex "66bae900b050ee"))
-        pad (loop [i (xg-pos code)]
-              (if (>= i (- (* (inc vector) IV-STRIDE) 4)) code
-                (let [w (xg-byte code 204)] (recur (inc i)))))]
+        gap (- (* (inc vector) IV-STRIDE) 4 (+ (xg-pos code) 2))
+        branch (if (or (< gap 0) (> gap 127)) (xg-err code 7104 gap)
+                 (-> code (xg-byte 235) (xg-byte gap)))
+        pad (loop [i (xg-pos branch)]
+              (if (>= i (- (* (inc vector) IV-STRIDE) 4)) branch
+                (let [w (xg-byte branch 204)] (recur (inc i)))))]
     (iv-hex pad "faf4ebfd")))

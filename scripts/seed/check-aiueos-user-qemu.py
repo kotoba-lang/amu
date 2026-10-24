@@ -15,7 +15,7 @@ from pathlib import Path
 def pin(p):
  b=p.read_bytes();return dict(bytes=len(b),sha256=hashlib.sha256(b).hexdigest())
 
-def main(efi,kernel,qemu,firmware,output,mode):
+def main(efi,kernel,qemu,firmware,output,mode,media=None):
  assert mode in range(8)
  image=kernel.read_bytes();boot_image=efi.read_bytes();assert boot_image.count(image)==1
  pe=struct.unpack_from('<I',boot_image,60)[0];loader_base=struct.unpack_from('<Q',boot_image,pe+24+24)[0]
@@ -26,9 +26,14 @@ def main(efi,kernel,qemu,firmware,output,mode):
  code=context+0x20000;request=code+4096;stack=code+12288;guard=code+8192
  fault=mode in (1,2,3,6,7);vector=6 if mode==7 else 13 if mode==6 else 14
  expected_pc=table+vector*128+126 if fault else code+51
- output.mkdir(parents=True,exist_ok=False);esp=output/'esp/EFI/BOOT';esp.mkdir(parents=True);shutil.copy2(efi,esp/'BOOTX64.EFI')
+ output.mkdir(parents=True,exist_ok=False)
+ if media:
+  assert media.read_bytes().count(boot_image)==1
+  drive=f'file={media},format=raw,if=virtio,readonly=on'
+ else:
+  esp=output/'esp/EFI/BOOT';esp.mkdir(parents=True);shutil.copy2(efi,esp/'BOOTX64.EFI');drive='file=fat:rw:esp,format=raw'
  args=[str(qemu),'-machine','q35,accel=tcg','-cpu','max','-m','128M','-smp','1',
-       '-drive',f'if=pflash,format=raw,readonly=on,file={firmware}','-drive','file=fat:rw:esp,format=raw',
+       '-drive',f'if=pflash,format=raw,readonly=on,file={firmware}','-drive',drive,
        '-boot','order=c','-nic','none','-display','none','-no-reboot','-serial','file:serial.log',
        '-debugcon','file:debug.log','-global',f'isa-debugcon.readback={mode}',
        '-qmp','unix:qmp.sock,server=on,wait=off','-d','int','-D','exceptions.log']
@@ -121,7 +126,8 @@ def main(efi,kernel,qemu,firmware,output,mode):
               qemuVersion=subprocess.check_output([str(qemu),'--version']).decode().splitlines()[0],pageTable=pin(output/'pds.bin'),
               userPageTables=True,kernelWriteProtected=True,guestEmulation='QEMU TCG',nativeCDCI=False,
               initialLegacyFpuCleared=True,extendedState=False,fpuContextSwitch=False,
-              applicationCompiler=False,preemptiveScheduler=False,completeKernel=False,media=False,desktopInput=False,physicalHardware=False)
+              applicationCompiler=False,preemptiveScheduler=False,completeKernel=False,media=pin(media) if media else None,
+              nativeMediaBoot=bool(media),desktopInput=False,physicalHardware=False)
   (output/'user-entry-qemu.json').write_text(json.dumps(report,indent=2)+'\n');print(report['status'],mode)
  finally:
   if proc.poll() is None:
@@ -138,4 +144,4 @@ def main(efi,kernel,qemu,firmware,output,mode):
 if __name__=='__main__':
  p=argparse.ArgumentParser()
  for n in ['efi','kernel','qemu','firmware','output']:p.add_argument('--'+n,type=Path,required=True)
- p.add_argument('--mode',type=int,required=True,choices=range(8));a=p.parse_args();main(*(getattr(a,n).resolve() for n in ['efi','kernel','qemu','firmware','output']),a.mode)
+ p.add_argument('--mode',type=int,required=True,choices=range(8));p.add_argument('--media',type=Path);a=p.parse_args();main(*(getattr(a,n).resolve() for n in ['efi','kernel','qemu','firmware','output']),a.mode,a.media.resolve() if a.media else None)
