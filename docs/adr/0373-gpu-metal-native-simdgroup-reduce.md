@@ -633,7 +633,16 @@ pending `:simdgroup-reduce` cross-day rows are the shape-1 pairs
 W = 32/64/128/1024 and the shape-2 pairs W = 256/32/64/128/1024 --
 nine rows, no shape-2 W = 512 row owed -- and a later-day DATA run at
 the refused pair is neither scheduled nor forbidden (its own decision
-row if wanted). The rule is ACCEPTED DESIGN as of this slice; naming
+row if wanted). [The S5 carve-out's decision row was TAKEN 2026-10-25
+(the REFUSED-PAIR DATA-RUN NAMING slice's diff row below): the run is
+`docs/evidence/gpu-simdgroup-reduce-m1max-refused-pair-data-20261025/
+w512-shape2`, pure data beside the refusal named (S3), explicitly
+non-basis and NOT a cross-day replication record -- the nine-row
+cross-day list stays COMPLETE; the refusal stands UNCHANGED (S4
+absolute -- no run lifts or narrows it, and a further later-day data
+run at the pair would be its own NEW decision row on this note's
+scope). Every number the naming cites is the record's.] The rule is
+ACCEPTED DESIGN as of this slice; naming
 it in the flip note's SHAPE-2 W = 512 paragraph and the cross-day LEFT
 prose landed later the same day (the REFUSAL SCOPE NAMING slice's diff
 row below: the rule is IMPLEMENTED in the code prose from that slice
@@ -1038,6 +1047,30 @@ step-1 slice added the rows below it.]
   in `:basis`; this ADR (this diff row, the UNMEASURED row below,
   LEFT row 3's closure bracket). Slice record:
   `docs/evidence/gpu/simdgroup-crossday-naming-20261025.txt`. No
+  `:measured?` flag, `:shapes` value, selection answer or workgroup
+  row moves.
+- [REFUSED-PAIR DATA-RUN NAMING SLICE, 2026-10-25 (docstrings, tests,
+  this ADR -- no measurement, no selection logic):] the naming the S5
+  carve-out's decision row (the later-day DATA run at the refused
+  pair, TAKEN 2026-10-25,
+  `docs/evidence/gpu-simdgroup-reduce-m1max-refused-pair-data-20261025/
+  w512-shape2`) owed, exactly its own scope:
+  `src/kotoba/compiler/accelerator_variants.cljk` -- the record named
+  in `apple-simdgroup-flip-note`'s SHAPE-2 W = 512 paragraph (the S5
+  DATA-RUN naming: DECIDED TAKEN, explicitly NON-BASIS, the run's
+  paired medians 0.813/0.820/0.822 against the refused record's
+  0.812/0.821/0.822 and its rule-2/rule-3 verdicts cited from the
+  record -- DATA beside the refusal named (S3), S4 absolute and
+  UNCHANGED, no contract key named (S2), not a cross-day replication
+  record, the nine-row cross-day list stays COMPLETE) and the
+  refusal-scope prose's S5 clause naming the taken decision row;
+  `test/kotoba/compiler/accelerator_variants_test.cljk` -- a naming
+  block (20 assertions) pinning the paragraph's phrases and the record
+  name, the basis-list closure (no `:evidence` list names the record
+  at any W) and the refusal's byte-for-byte unchanged W = 512 record
+  (`:shapes [1000003]`, its own two evidence rows); this ADR (this
+  diff row, the REFUSAL SCOPE rule's S5 bracket). Slice record:
+  `docs/evidence/gpu/refused-pair-data-naming-20261025.txt`. No
   `:measured?` flag, `:shapes` value, selection answer or workgroup
   row moves.
 

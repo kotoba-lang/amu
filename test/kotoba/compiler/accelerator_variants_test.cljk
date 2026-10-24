@@ -1151,6 +1151,52 @@
         (is (not (some #(str/includes? % "resweep")
                        (:evidence (:measured-cell (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size wg}) :msl-v1 m1)))))
             (str "W=" wg " names no resweep directory -- the lists stay closed under the flip contract's record kinds"))))
+    (testing "the S5 carve-out's decision row (the later-day DATA run at the refused pair) is NAMED in the SHAPE-2 W = 512 paragraph prose ONLY -- non-basis, the refusal UNCHANGED"
+      ;; The naming slice (2026-10-25,
+      ;; docs/evidence/gpu/refused-pair-data-naming-20261025.txt): the
+      ;; record
+      ;; docs/evidence/gpu-simdgroup-reduce-m1max-refused-pair-data-20261025/
+      ;; w512-shape2 is S5's decision row, TAKEN 2026-10-25 -- pure data
+      ;; beside the refusal named (S3), explicitly non-basis, NOT a
+      ;; cross-day replication, and the refusal stands UNCHANGED (S4).
+      (let [basis (:basis (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256}) :msl-v1 m1))]
+        (is (str/includes? basis "THE S5 CARVE-OUT'S DECISION ROW, TAKEN 2026-10-25")
+            "the flip note carries the S5 data-run naming paragraph")
+        (is (str/includes? basis "docs/evidence/gpu-simdgroup-reduce-m1max-refused-pair-data-20261025/")
+            "the naming paragraph names the data-run record's directory")
+        (is (str/includes? basis "w512-shape2)")
+            "the naming paragraph names the data-run record's cell directory")
+        (is (str/includes? basis "DECIDED TAKEN -- decided, not assumed silent")
+            "the carve-out is named DECIDED TAKEN, not assumed silent")
+        (is (str/includes? basis "explicitly NON-BASIS")
+            "the record is scoped explicitly non-basis")
+        (is (str/includes? basis "0.813/0.820/0.822")
+            "the naming paragraph cites the run's paired medians from the record")
+        (is (str/includes? basis "named (S3): no selection role, no flip, no narrowing")
+            "S3 is named: data citable beside the refusal, no selection role")
+        (is (str/includes? basis "S4 is absolute and stands")
+            "S4 is named absolute -- the refusal is unchanged by any run")
+        (is (str/includes? basis "new decision row, not this one")
+            "a further data run is scoped to its own new decision row")
+        (is (str/includes? basis "its own decision row if wanted -- that decision row was")
+            "the refusal-scope prose names the taken decision row at S5")
+        (is (str/includes? basis "replication record -- the nine-row cross-day LEFT list stays COMPLETE")
+            "the record is not a cross-day replication -- the nine-row list stays COMPLETE")
+        (is (str/includes? basis "no basis evidence list names it")
+            "the naming is prose only -- the basis evidence lists stay closed"))
+      ;; closure: the record is named in NO :evidence list at any W
+      (doseq [wg [32 64 128 256 512 1024]]
+        (is (not (some #(str/includes? % "refused-pair-data")
+                       (:evidence (:measured-cell (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size wg}) :msl-v1 m1)))))
+            (str "W=" wg " names no refused-pair-data directory -- the lists stay closed under the flip contract's record kinds")))
+      ;; the refusal is UNCHANGED: W = 512 keeps :shapes [1000003] and
+      ;; its own two records, byte-for-byte
+      (is (= [1000003] (:shapes (:measured-cell (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 512}) :msl-v1 m1))))
+          "W=512 names the one measured shape -- the data run moved no :shapes")
+      (is (= ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512"
+              "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w512"]
+             (:evidence (:measured-cell (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 512}) :msl-v1 m1))))
+          "W=512's :evidence is byte-for-byte unchanged -- the data run is named in prose ONLY"))
     (testing "the flip is SIX cells wide: every width the row admits answers the row on the class"
       ;; the class's last :baseline cell (W = 32) flipped with this
       ;; slice: no admitted width (power of two in [32, 1024]) keeps the
