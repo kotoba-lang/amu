@@ -1,0 +1,102 @@
+(ns fs2-product (:export [main]))
+(defn- arg [n :string] :string (typed-cap-call :cli/args :string :string n))
+(defn- frame [letter :string path :string tail :string] :string
+  (string-concat "\u0000FS2\u0000" (string-concat letter (string-concat path (string-concat "\u0000" tail)))))
+(defn- call [letter :string path :string tail :string] :string
+  (typed-cap-call :fs/app-data :string :string (frame letter path tail)))
+(defn- acknowledged? [s :string] :bool
+  (and (>= (string-byte-length s) 5) (string=? (string-substring s 0 5) "\u0000FS2\u0000")))
+(defn- payload [s :string] :string (string-substring s 5 (string-length s)))
+(defn- chunks [head :string data :bytes] [:list :bytes]
+  (typed-list-conj [:list :bytes]
+    (typed-list-conj [:list :bytes] (typed-list-new [:list :bytes]) (string-to-utf8 head)) data))
+(defn- equal-bytes? [a :bytes b :bytes] :bool
+  (and (= (bytes-count a) (bytes-count b))
+    (loop [i 0] (cond (= i (bytes-count a)) true
+      (not= (bytes-at a i) (bytes-at b i)) false :else (recur (inc i))))))
+(defn- raw-test [path :string] :i64
+  (let [raw (bytes-from-vector-i64 (vector-assoc! (vector-assoc! (vector-assoc! (vector-alloc 3) 0 0) 1 255) 2 128))
+        req (bytes-concat (string-to-utf8 (frame "B" path "")) raw)
+        out (typed-cap-call :fs/app-data :bytes :bytes req)
+        read (typed-cap-call :fs/app-data :string :bytes (frame "A" path ""))]
+    (if (and (= (bytes-count out) 8) (= (bytes-count read) 8)
+             (equal-bytes? (bytes-slice out 5 8) raw) (equal-bytes? (bytes-slice read 5 8) raw)) 0 21)))
+(defn- managed-test [parent :string] :i64
+  (let [begin (typed-cap-call :fs/app-data [:list :bytes] [:list :bytes]
+                (chunks (frame "R" parent "") (bytes-empty)))
+        first (typed-list-nth [:list :bytes] begin 0)
+        dir (string-from-utf8 (bytes-slice first 5 (bytes-count first)))
+        file (string-concat dir "/0.tmp")
+        stage (typed-cap-call :fs/app-data [:list :bytes] [:list :bytes]
+                (chunks (frame "Q" file "0000\u0000") (string-to-utf8 "staged")))
+        status (typed-list-nth [:list :bytes] stage 0)
+        discard (typed-cap-call :fs/app-data [:list :bytes] [:list :bytes]
+                  (chunks (frame "S" dir "") (bytes-empty)))
+        ended (typed-list-nth [:list :bytes] discard 0)
+        exists (call "D" dir "")]
+    (if (and (= (bytes-count status) 6) (= (bytes-at status 5) 49)
+             (= (bytes-count ended) 6) (= (bytes-at ended 5) 49)
+             (acknowledged? exists) (string=? (payload exists) "0")) 0 22)))
+(defn- pattern-chunk [] :bytes
+  (let [v (vector-alloc 5000000)
+        filled (loop [i 0]
+          (if (= i 5000000) v (let [w (vector-assoc! v i 165)] (recur (+ i 1)))))]
+    (bytes-from-vector-i64 filled)))
+(defn- no-replace-test [parent :string] :i64
+  (let [one (string-concat parent "/one") two (string-concat parent "/two")
+        source (call "B" one "source") destination (call "B" two "sentinel")
+        refused (call "T" one two) source-kept (call "A" one "") destination-kept (call "A" two "")
+        removed (call "J" two "") published (call "T" one two)
+        source-gone (call "D" one "") final (call "A" two "") cleanup (call "J" two "")]
+    (if (and (string=? (payload refused) "0") (string=? (payload source-kept) "source")
+             (string=? (payload destination-kept) "sentinel") (string=? (payload removed) "1")
+             (string=? (payload published) "1") (string=? (payload source-gone) "0")
+             (string=? (payload final) "source") (string=? (payload cleanup) "1")) 0 26)))
+(defn- response-pattern? [value [:list :bytes] n :i64] :bool
+  (loop [i 0 at 0]
+    (if (= i (vector-count value)) (= at (+ n 5))
+      (let [chunk (typed-list-nth [:list :bytes] value i)
+            ok (loop [j 0]
+              (cond (= j (bytes-count chunk)) true
+                (not= (bytes-at chunk j) (if (< (+ at j) 5) (case (+ at j) 0 0 1 70 2 83 3 50 0) 165)) false
+                :else (recur (+ j 1))))]
+        (if ok (recur (+ i 1) (+ at (bytes-count chunk))) false)))))
+(defn- large-test [path :string] :i64
+  (let [header (string-to-utf8 (frame "B" path ""))
+        split (loop [i 0 value (typed-list-new [:list :bytes])]
+          (if (= i (bytes-count header)) value
+            (recur (+ i 1) (typed-list-conj [:list :bytes] value (bytes-slice header i (+ i 1))))))
+        one (pattern-chunk)
+        request (typed-list-conj [:list :bytes]
+          (typed-list-conj [:list :bytes] (typed-list-conj [:list :bytes] split one) (bytes-empty)) one)
+        written (typed-cap-call :fs/app-data [:list :bytes] [:list :bytes] request)
+        read (typed-cap-call :fs/app-data :string [:list :bytes] (frame "A" path ""))]
+    (if (and (response-pattern? written 10000000) (response-pattern? read 10000000)) 0 23)))
+(defn- managed-exit [parent :string mode :string] :i64
+  (let [begin (typed-cap-call :fs/app-data [:list :bytes] [:list :bytes] (chunks (frame "R" parent "") (bytes-empty)))
+        first (typed-list-nth [:list :bytes] begin 0)
+        dir (string-from-utf8 (bytes-slice first 5 (bytes-count first)))
+        file (string-concat dir "/0.tmp")
+        stage (typed-cap-call :fs/app-data [:list :bytes] [:list :bytes]
+          (chunks (frame "Q" file "0400\u0000") (string-to-utf8 "preserved")))
+        marker (call "B" (string-concat parent "/ready") dir)]
+    (cond (string=? mode "managed-return") 0
+          (or (string=? mode "managed-publish") (string=? mode "managed-publish-exclusive"))
+            (let [renamed (call (if (string=? mode "managed-publish-exclusive") "T" "L") file (string-concat parent "/published"))
+                  durable (call "M" parent "")]
+              (if (and (string=? (payload renamed) "1") (string=? (payload durable) "1")) 0 24))
+          (string=? mode "managed-fault") (vector-at (vector-alloc 0) 0)
+          :else (loop [i 0] (recur (+ i 1))))))
+(defn main [] :i64
+  (let [mode (arg "0") path (arg "1")]
+    (cond (string=? mode "raw") (raw-test path)
+          (string=? mode "managed") (managed-test path)
+          (string=? mode "no-replace") (no-replace-test path)
+          (string=? mode "large") (large-test path)
+          (or (string=? mode "managed-return") (string=? mode "managed-publish") (string=? mode "managed-publish-exclusive")
+              (string=? mode "managed-fault") (string=? mode "managed-fuel") (string=? mode "managed-signal"))
+            (managed-exit path mode)
+          (string=? mode "legacy-bytes")
+            (let [r (typed-cap-call :fs/app-data :bytes :bytes (string-to-utf8 path))] 25)
+          :else (let [out (call mode path (arg "2"))
+                      printed (typed-cap-call :io/write :string :string out)] 0))))

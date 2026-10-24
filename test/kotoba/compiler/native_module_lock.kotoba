@@ -1,0 +1,68 @@
+(ns kotoba.compiler.native-module-lock (:export [main])
+ (:require [kotoba.compiler.module-lock :as lock] [kotoba.form :as f]
+           [kotoba.compiler.kotoba-reader :as reader]))
+(defn- parse [text :string] [:ref :form/r]
+ (let [r (reader/read-forms-bounded text 512 200000)]
+  (if (and (string=? (record-get [:ref :kotoba.reader/out] r :err) "")
+           (= (vector-count (record-get [:ref :kotoba.reader/out] r :forms)) 1))
+   (typed-list-nth [:list [:ref :form/r]] (record-get [:ref :kotoba.reader/out] r :forms) 0)
+   (throw :test/parse))))
+(defn- get [m [:ref :form/r] k :keyword] [:ref :form/r] (f/form-get m (f/keyword-form k)))
+(defn- assert [ok :bool reason :keyword] :i64 (if ok 0 (throw reason)))
+(defn- arg [n :string] :string (typed-cap-call :cli/args :string :string n))
+(defn- print [text :string] :i64 (let [p (typed-cap-call :io/write :string :string (string-concat text "\n"))] 0))
+(defn- file-text [path :string] :string
+ (let [r (typed-cap-call :fs/app-data :string :string (string-concat "\u0000FS2\u0000A" (string-concat path "\u0000")))]
+  (if (and (>= (string-length r) 5) (string=? (string-substring r 0 5) "\u0000FS2\u0000"))
+   (string-substring r 5 (string-length r)) (throw :test/fs2-ack))))
+(defn- path-loader [input :string roots [:list :string]] [:ref :form/r]
+ (let [source (file-text input) util (file-text (string-concat (typed-list-nth [:list :string] roots 0) "/util.kotoba"))
+       root (get (lock/module-info source) :namespace) dependency (get (lock/module-info util) :namespace)
+       sources (f/assoc-form (f/assoc-form (f/form-map (f/no-forms)) root (f/string-form source)) dependency (f/string-form util))]
+  (f/assoc-form (f/assoc-form (f/form-map (f/no-forms)) (f/keyword-form :root) root) (f/keyword-form :sources) sources)))
+(defn- path-loader-checked [input :string roots [:list :string]] [:result [:ref :form/r] :keyword]
+ (try (result-ok-of [:result [:ref :form/r] :keyword] (path-loader input roots))
+  (catch :keyword reason (result-err-of [:result [:ref :form/r] :keyword] reason))))
+(defn- pure [] :i64
+ (let [util "(ns util (:export [twice]))\n(defn twice [x :i64] :i64 (* 2 x))\n"
+       main "(ns main (:require [util :as u]) (:export [run]))\n(defn run [x :i64] :i64 (+ 1 (u/twice x)))\n"
+       u (lock/source-cid (string-to-utf8 util)) m (lock/source-cid (string-to-utf8 main))
+       a (assert (string=? u "bafkreicnabst32iqvrylj36cgn2cm2xfywgxyyoielxnejmqywmcaswmbi") :test/source-util)
+       b (assert (string=? m "bafkreibqtanjq6cttjjq6eywse4a3ryai5txbtswhimcuodgbwnvqx6u3a") :test/source-main)
+       first (lock/validate-lock (parse "{:schema :kotoba.module-lock/v1 :root main :modules {util \"bafkreicnabst32iqvrylj36cgn2cm2xfywgxyyoielxnejmqywmcaswmbi\" main \"bafkreibqtanjq6cttjjq6eywse4a3ryai5txbtswhimcuodgbwnvqx6u3a\"}}"))
+       second (lock/validate-lock (parse "{:schema :kotoba.module-lock/v1 :root \"main\" :modules {\"main\" \"bafkreibqtanjq6cttjjq6eywse4a3ryai5txbtswhimcuodgbwnvqx6u3a\" \"util\" \"bafkreicnabst32iqvrylj36cgn2cm2xfywgxyyoielxnejmqywmcaswmbi\"}}"))
+       c (assert (string=? (lock/lock-cid first) "bafkreibhyfwgozu7dmqhxz2fq7h2xkhmcnmwie4duqf56hx6v2bjy7szvy") :test/frozen-lock-cid)
+       d (assert (and (f/eq first second) (string=? (lock/lock-cid first) (lock/lock-cid second))) :test/key-order-normalized)
+       info (lock/module-info main)
+       e (assert (and (f/eq (get info :namespace) (f/symbol-form "main")) (f/eq (get info :requires) (parse "[util]"))) :test/metadata)
+       order (lock/lock-text (parse "{:root main :modules {\"\" \"b\" \"𐀀\" \"a\"}}"))
+       unicode (assert (string=? order "{:schema :kotoba.module-lock/v1, :root \"main\", :modules {\"𐀀\" \"a\", \"\" \"b\"}}") :test/utf16-lock-order)]
+  (print "PASS_NATIVE_MODULE_LOCK_FROZEN_SOURCE_AND_GRAPH_IDENTITY")))
+(defn- run [] :i64
+ (let [mode (arg "0")]
+  (cond (string=? mode "pure") (pure)
+        (string=? mode "invalid-pin") (print (lock/source-cid (bytes-from-vector-i64 (vector-i64 255))))
+        (string=? mode "pin-file") (print (lock/source-cid (string-to-utf8 (file-text (arg "1")))))
+        (string=? mode "application-pin")
+          (print (lock/source-cid (string-to-utf8 "(ns application (:require [util :as u]) (:export [main]))\n(defn main [] :i64 (if (= (+ 1 (u/twice 20)) 41) 0 91))\n")))
+        (string=? mode "write-frozen")
+          (let [text "(ns util (:export [twice]))\n(defn twice [x :i64] :i64 (* 2 x))\n"
+                first (lock/write-block! (arg "1") text) second (lock/write-block! (arg "1") text)
+                checked (assert (and (string=? first second) (string=? first "bafkreicnabst32iqvrylj36cgn2cm2xfywgxyyoielxnejmqywmcaswmbi")) :test/idempotent-writer)]
+            (print first))
+        (string=? mode "write-project")
+          (let [roots (typed-list-conj [:list :string] (typed-list-new [:list :string]) (arg "2"))
+                result (lock/lock-from-source-paths (fn-ref path-loader-checked) (arg "1") roots (arg "3"))]
+            (print (lock/lock-text result)))
+        (string=? mode "validate") (let [r (lock/validate-lock (parse (arg "1")))] (print (lock/lock-cid r)))
+        (string=? mode "source") (let [s (lock/read-verified-source (arg "1") (arg "2"))] (print s))
+        (string=? mode "emit-lock")
+          (let [r (lock/load-locked-graph (arg "1") (arg "2"))
+                out (typed-cap-call :io/write :string :string (lock/source-manifest r (arg "2")))] 0)
+        :else (let [r (lock/load-locked-graph (arg "1") (arg "2"))
+                    checked (assert (and (= (f/count-of (get r :sources)) 4) (= (f/count-of (get r :modules)) 4)
+                                         (f/eq (get r :root) (f/symbol-form "main"))
+                                         (string=? (f/string-value (get r :lock-cid)) "bafkreibhyfwgozu7dmqhxz2fq7h2xkhmcnmwie4duqf56hx6v2bjy7szvy")) :test/closed-graph)]
+                (print "PASS_NATIVE_CLOSED_MODULE_GRAPH")))))
+(defn main [] :i64
+ (try (run) (catch :keyword reason (let [p (print (document-edn-print (document-keyword reason)))] 90))))

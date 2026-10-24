@@ -1,0 +1,74 @@
+(ns kotoba.compiler.native-definition-graph (:export [main])
+ (:require [kotoba.compiler.definition-identity :as identity] [kotoba.form :as f]
+           [kotoba.compiler.kotoba-reader :as reader] [multiformats.cid :as cid]))
+(defn- parse [source :string] [:ref :form/r]
+ (let [r (reader/read-forms-bounded source 512 131072) error (record-get [:ref :kotoba.reader/out] r :err)
+       forms (record-get [:ref :kotoba.reader/out] r :forms)]
+  (if (and (string=? error "") (= (vector-count forms) 1))
+   (typed-list-nth [:list [:ref :form/r]] forms 0) (throw :test/parse))))
+(defn- get [m [:ref :form/r] key :keyword] [:ref :form/r] (f/form-get m (f/keyword-form key)))
+(defn- entry [report [:ref :form/r] name :string] [:ref :form/r] (f/form-get (get report :entries) (f/string-form name)))
+(defn- assert [ok :bool reason :keyword] :i64 (if ok 0 (throw reason)))
+(defn- report [source :string] [:ref :form/r]
+ (identity/definitions (parse "{:named-operations #{}}") (parse source) (parse "{8 :state/transact 10 :clock/now}")))
+(defn- cid-of [r [:ref :form/r] name :string] [:ref :form/r] (get (entry r name) :cid))
+(defn- ring [n :i64] [:ref :form/r]
+ (let [source (loop [i 0 s "{:functions ["]
+                (if (= i n) (string-concat s "] :schemas {}}")
+                 (recur (+ i 1) (string-concat s
+                  (string-concat (string-concat "{:name r" (string-from-i64 i))
+                   (string-concat " :params [x] :body (if (= x 0) "
+                    (string-concat (string-from-i64 i)
+                     (string-concat " (r" (string-concat (string-from-i64 (mod (+ i 1) n))
+                      " (- x 1))) :effects #{} :result :i64 :param-types [:i64]} ")))))))))]
+  (report source)))
+(defn- extra [] :i64
+ (let [one (report "{:functions [{:name ev :params [n] :body (if (= n 0) 1 (od (- n 1))) :effects #{} :result :i64 :param-types [:i64]} {:name od :params [n] :body (if (= n 0) 0 (ev (- n 1))) :effects #{} :result :i64 :param-types [:i64]}] :schemas {}}")
+       two (report "{:functions [{:name bb :params [y] :body (if (= y 0) 0 (aa (- y 1))) :effects #{} :result :i64 :param-types [:i64]} {:name aa :params [x] :body (if (= x 0) 1 (bb (- x 1))) :effects #{} :result :i64 :param-types [:i64]}] :schemas {}}")
+       changed (report "{:functions [{:name ev :params [n] :body (if (= n 0) 2 (od (- n 1))) :effects #{} :result :i64 :param-types [:i64]} {:name od :params [n] :body (if (= n 0) 0 (ev (- n 1))) :effects #{} :result :i64 :param-types [:i64]}] :schemas {}}")
+       a (assert (and (f/eq (cid-of one "ev") (cid-of two "aa")) (f/eq (cid-of one "od") (cid-of two "bb"))
+                       (not (f/eq (cid-of one "ev") (cid-of one "od")))) :test/mutual-rename-reorder)
+       b (assert (and (not (f/eq (cid-of one "ev") (cid-of changed "ev")))
+                       (not (f/eq (cid-of one "od") (cid-of changed "od")))) :test/mutual-body-closure)
+       refused (report "{:functions [{:name callee :params [] :body 1 :effects #{[:cap/call 9999]} :result :i64 :param-types []} {:name caller :params [] :body (callee) :effects #{} :result :i64 :param-types []}] :schemas {}}")
+       c (assert (and (f/eq (get (entry refused "callee") :definition-cid) (f/keyword-form :unbridged-effect))
+                      (f/eq (get (entry refused "caller") :definition-cid) (f/keyword-form :dependency-unavailable))
+                      (f/is-nil? (identity/cache-material refused (parse "[caller]")))
+                      (string=? (identity/scanned-line refused) "SCANNED\t0/2")
+                      (= (f/count-of (identity/format-lines refused)) 2)) :test/refusal-propagation)
+       control (report "{:functions [{:name aborting :params [] :body 1 :effects #{:abort :state [:cap/call 8]} :result :i64 :param-types []}] :schemas {}}")
+       d (assert (and (f/is-string? (cid-of control "aborting"))
+                      (f/eq (get (entry control "aborting") :effect-row) (parse "#{:abort :state :state/transact}"))) :test/closed-effect-bridge)
+       schema1 (report "{:schemas {:s/rec [:record :s/rec [[:a :i64]]]} :functions [{:name f :params [x] :param-types [[:ref :s/rec]] :result :i64 :effects #{} :body (+ x 1)}]}")
+       schema2 (report "{:schemas {:s/rec [:record :s/rec [[:a :i64] [:b :i64]]]} :functions [{:name f :params [x] :param-types [[:ref :s/rec]] :result :i64 :effects #{} :body (+ x 1)}]}")
+       e (assert (and (f/is-string? (cid-of schema1 "f")) (not (f/eq (cid-of schema1 "f") (cid-of schema2 "f")))) :test/schema-closure)
+       material (identity/cache-material one (parse "[ev]"))
+       g (assert (and (= (identity/definition-count material) 2) (f/eq (get material :exports) (parse "[\"ev\"]"))
+                       (not (f/eq material (identity/cache-material two (parse "[aa]"))))
+                       (string=? (identity/scanned-line one) "SCANNED\t2/2")) :test/cache-order-exports)
+       h (assert (f/eq (get (identity/describe (parse "{}") (parse "{}")) :reason) (f/keyword-form :no-hir)) :test/describe-unavailable)
+       eight (ring 8) nine (ring 9)
+       j (loop [i 0]
+           (if (= i 9) 0
+             (let [name (string-concat "r" (string-from-i64 i))
+                   ok (and (or (= i 8) (f/is-string? (cid-of eight name)))
+                                    (f/eq (get (entry nine name) :definition-cid) (f/keyword-form :recursive-group-too-large))
+                                    (f/is-nil? (cid-of nine name)))]
+               (if ok (recur (+ i 1)) (throw :test/scc-bound)))))] 0))
+(defn- run [] :i64
+ (let [pure (report "{:functions [{:name helper :params [a] :body (+ a 1) :effects #{} :result :i64 :param-types [:i64]} {:name main :params [] :body (helper 41) :effects #{} :result :i64 :param-types []}] :schemas {}}")
+       renamed (report "{:functions [{:name renamed :params [x] :body (+ x 1) :effects #{} :result :i64 :param-types [:i64]} {:name entry :params [] :body (renamed 41) :effects #{} :result :i64 :param-types []}] :schemas {}}")
+       first (get (entry pure "helper") :cid) second (get (entry pure "main") :cid)
+       a (assert (and (f/is-string? first) (cid/cid-valid? (f/string-value first))
+                      (f/is-string? second) (cid/cid-valid? (f/string-value second))) :test/acyclic-cids)
+       b (assert (f/eq first (get (entry renamed "renamed") :cid)) :test/alpha-callee)
+       c (assert (f/eq second (get (entry renamed "entry") :cid)) :test/linked-rename)
+       d (assert (f/eq (get (entry pure "main") :dependencies) (f/form-vec (f/one-form first))) :test/dependency-closure)
+       self (report "{:functions [{:name self :params [n] :body (if (= n 0) 0 (self (- n 1))) :effects #{} :result :i64 :param-types [:i64]}] :schemas {}}")
+       self2 (report "{:functions [{:name other :params [x] :body (if (= x 0) 0 (other (- x 1))) :effects #{} :result :i64 :param-types [:i64]}] :schemas {}}")
+       e (assert (and (f/is-string? (get (entry self "self") :cid))
+                      (f/eq (get (entry self "self") :cid) (get (entry self2 "other") :cid))) :test/self-cycle)
+       additional (extra)
+       p (typed-cap-call :io/write :string :string "PASS_NATIVE_DEFINITION_GRAPH_ACYCLIC_ALPHA_SCC8_REFUSAL_CACHE\n")] 0))
+(defn main [] :i64 (try (run) (catch :keyword reason
+ (let [p (typed-cap-call :io/write :string :string (string-concat (keyword-name reason) "\n"))] 90))))

@@ -76,7 +76,7 @@
 ;; ---- scan and admission ------------------------------------------------------
 (defn- xs-prefix? [S :string a :i64 b :i64 p :string] :bool
   (let [n (string-length p)]
-    (and (>= (- b a) n) (string=? (string-substring S a (+ a n)) p))))
+    (and (>= (- b a) n) (pj-span= S a (+ a n) p))))
 ;; The first runtime FN must be intrinsic 0 and the next ones follow in order.
 (defn- xs-scan-intr [M :vector-i64 name :string f :i64] :vector-i64
   (let [first (if (and (= (vector-at M 198) 0) (string=? name (xs-intr-name 0))) f (vector-at M 198))
