@@ -14,8 +14,8 @@ ACCESS=runpy.run_path(str(Path(__file__).with_name('check-aiueos-pci-private-nat
 def pin(p):
  raw=p.read_bytes();return dict(bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest())
 
-def main(build,out):
- graph,producers,_=load_native_producers(build=build);out.mkdir(parents=True,exist_ok=False);routes=[]
+def main(build, out, complete=None):
+ graph,producers,_=load_native_producers(build=build, complete=complete);out.mkdir(parents=True,exist_ok=False);routes=[]
  fields=[0x31494350534f4941,1,1,64,1048576,4096,0,0,1,0,0,286331444]
  prefix='(let [boot (kernel-subregion (kernel-boot-info) 16544 0 160)\n fake (kernel-owned-page 14)\n'
  for i,value in enumerate(fields):prefix+=f' f{i} (kernel-store-u64-4k fake 4096 {8*i} {value})\n'
@@ -44,4 +44,4 @@ def main(build,out):
  report=dict(status='PASS_NATIVE_PCI_FORGERY_PACKAGING',observer=pin(Path(__file__)),source=graph,routes=routes,guestExecution=False,fullKernel=False,nativeCDCI=False)
  (out/'native-pci-forgery.json').write_text(json.dumps(report,indent=2)+'\n');print(report['status'])
 if __name__=='__main__':
- p=argparse.ArgumentParser();p.add_argument('--build',type=Path,required=True);p.add_argument('--output',type=Path,required=True);a=p.parse_args();main(a.build.resolve(),a.output.resolve())
+ p=argparse.ArgumentParser();g=p.add_mutually_exclusive_group(required=True);g.add_argument('--build',type=Path);g.add_argument('--complete',type=Path);p.add_argument('--output',type=Path,required=True);a=p.parse_args();main(a.build.resolve() if a.build else None, a.output.resolve(), a.complete.resolve() if a.complete else None)

@@ -13,8 +13,8 @@ from aiueos_native_proof import load_native_producers
 def pin(p):
     raw=p.read_bytes(); return dict(bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest())
 
-def main(build,out):
-    graph,producers,_=load_native_producers(build=build)
+def main(build, out, complete=None):
+    graph,producers,_=load_native_producers(build=build, complete=complete)
     out.mkdir(parents=True,exist_ok=False); routes=[]
     for compiler in producers:
         scope=out/compiler.stem;scope.mkdir()
@@ -61,5 +61,5 @@ def main(build,out):
     print(report['status'])
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('--build',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
-    a=p.parse_args();main(a.build.resolve(),a.output.resolve())
+    p=argparse.ArgumentParser();g=p.add_mutually_exclusive_group(required=True);g.add_argument('--build',type=Path);g.add_argument('--complete',type=Path);p.add_argument('--output',type=Path,required=True)
+    a=p.parse_args();main(a.build.resolve() if a.build else None, a.output.resolve(), a.complete.resolve() if a.complete else None)

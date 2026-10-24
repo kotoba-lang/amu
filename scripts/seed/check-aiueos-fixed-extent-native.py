@@ -27,11 +27,33 @@ RECURSIVE='''(ns lib.memory (:export [read]))
 (defn read [base :i64 index :i64] :i64 (leaf base index 3))
 '''
 
+# Both scopes reuse frame slots, but each read must be dominated by its own
+# assignment. The condition is deliberately runtime data, never folded away.
+SCOPED_ENTRY='''(ns entry (:require [lib.bridge :as b]) (:export [main]))
+(defn main [] :i64
+ (if (= (kernel-rdtsc) 0)
+  (let [p (kernel-owned-page 0) saved (kernel-load-u64-4k p 4096 0)
+        write (kernel-store-u64-4k p 4096 0 42) value (b/through p 0)
+        restored (kernel-store-u64-4k p 4096 0 saved)]
+   (if (and (= write 42) (= value 42) (= restored saved)) 42 0))
+  (let [p (kernel-owned-page 1) saved (kernel-load-u64-4k p 4096 0)
+        write (kernel-store-u64-4k p 4096 0 42) value (b/through p 0)
+        restored (kernel-store-u64-4k p 4096 0 saved)]
+   (if (and (= write 42) (= value 42) (= restored saved)) 42 0))))
+'''
+READY_BRIDGE='''(ns lib.bridge (:require [lib.memory :as m]) (:export [through]))
+(defn- resident [base :i64 index :i64 a :i64 b :i64 ready :i64 remaining :i64] :i64
+ (if (= remaining 0) (if (= ready 1) (m/read base index) 42)
+  (resident base index a b ready (- remaining 1))))
+(defn through [base :i64 index :i64] :i64
+ (let [ready (if (= index 0) 1 0)] (resident base index 0 0 ready 3)))
+'''
+
 def pin(p):
  raw=p.read_bytes();return dict(bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest())
 
-def main(build,out):
- graph,producers,_=load_native_producers(build=build);out.mkdir(parents=True,exist_ok=False);routes=[]
+def main(build, out, complete=None):
+ graph,producers,_=load_native_producers(build=build, complete=complete);out.mkdir(parents=True,exist_ok=False);routes=[]
  for compiler in producers:
   scope=out/compiler.stem;(scope/'lib').mkdir(parents=True)
   entry,bridge,memory=[scope/p for p in ['entry.kotoba','lib/bridge.kotoba','lib/memory.kotoba']]
@@ -50,6 +72,8 @@ def main(build,out):
   compile_('fixed-helper')
   compile_('identity-recursion',m=RECURSIVE)
   compile_('identity-nontail-recursion',m=RECURSIVE.replace('(leaf base index (- remaining 1))','(+ 0 (leaf base index (- remaining 1)))'))
+  compile_('disjoint-local-scopes',e=SCOPED_ENTRY)
+  compile_('separate-ready-six-arguments',b=READY_BRIDGE)
   compile_('wrong-extent',m=MEMORY.replace('base 4096 index','base 64 index'),bad=True)
   compile_('literal-caller',e=ENTRY.replace('(b/through p 0)','(b/through 4096 0)'),bad=True)
   compile_('computed-caller',e=ENTRY.replace('(b/through p 0)','(b/through (+ p 0) 0)'),bad=True)
@@ -57,10 +81,14 @@ def main(build,out):
   compile_('mixed-extents',e=ENTRY.replace('value (b/through p 0)','other (b/through (kernel-owned-window 0 8192) 0) value (b/through p 0)'),bad=True)
   compile_('recursive-pointer-change',m=RECURSIVE.replace('(leaf base index (- remaining 1))','(leaf (+ base 8) index (- remaining 1))'),bad=True)
   compile_('unseeded-recursion',e='(ns entry (:require [lib.bridge :as b]) (:export [main]))\n(defn main [] :i64 42)\n',m=RECURSIVE,bad=True)
-  routes.append(dict(compiler=pin(compiler),artifacts=artifacts,refusals=7))
+  compile_('forged-disjoint-scope',e=SCOPED_ENTRY.replace('(kernel-owned-page 1)','4096'),bad=True)
+  compile_('computed-disjoint-scope',e=SCOPED_ENTRY.replace('(kernel-owned-page 1)','(+ (kernel-owned-page 1) 0)'),bad=True)
+  compile_('branch-result-base',e=ENTRY.replace('(kernel-owned-page 0)','(if (= (kernel-rdtsc) 0) (kernel-owned-page 0) (kernel-owned-page 1))'),bad=True)
+  compile_('inline-ready-branch',b=READY_BRIDGE.replace('(let [ready (if (= index 0) 1 0)] (resident base index 0 0 ready 3))','(resident base index 0 0 (if (= index 0) 1 0) 3)'),bad=True)
+  routes.append(dict(compiler=pin(compiler),artifacts=artifacts,refusals=11))
  assert routes[0]['artifacts']==routes[1]['artifacts']
  report=dict(status='PASS_NATIVE_FIXED_EXTENT_HELPERS',source=graph,routes=routes,guestExecution=False,fullKernel=False,nativeCDCI=False)
- (out/'native-fixed-extent.json').write_text(json.dumps(report,indent=2)+'\n');print(report['status'],'uniform rooted callers, identity recursion,7 refusals; guest separate')
+ (out/'native-fixed-extent.json').write_text(json.dumps(report,indent=2)+'\n');print(report['status'],'uniform rooted callers, scoped dominance, separate readiness,11 refusals; guest separate')
 
 if __name__=='__main__':
- p=argparse.ArgumentParser();p.add_argument('--build',type=Path,required=True);p.add_argument('--output',type=Path,required=True);a=p.parse_args();main(a.build.resolve(),a.output.resolve())
+ p=argparse.ArgumentParser();g=p.add_mutually_exclusive_group(required=True);g.add_argument('--build',type=Path);g.add_argument('--complete',type=Path);p.add_argument('--output',type=Path,required=True);a=p.parse_args();main(a.build.resolve() if a.build else None, a.output.resolve(), a.complete.resolve() if a.complete else None)

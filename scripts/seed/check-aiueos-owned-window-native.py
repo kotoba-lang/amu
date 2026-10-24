@@ -33,8 +33,8 @@ def pin(p):
     return dict(bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest())
 
 
-def main(build, out):
-    graph, producers, _ = load_native_producers(build=build)
+def main(build, out, complete=None):
+    graph, producers, _ = load_native_producers(build=build, complete=complete)
     out.mkdir(parents=True, exist_ok=False)
     routes = []
     for compiler in producers:
@@ -74,7 +74,7 @@ def main(build, out):
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser()
-    p.add_argument('--build', type=Path, required=True)
+    g=p.add_mutually_exclusive_group(required=True);g.add_argument('--build',type=Path);g.add_argument('--complete',type=Path)
     p.add_argument('--output', type=Path, required=True)
     a = p.parse_args()
-    main(a.build.resolve(), a.output.resolve())
+    main(a.build.resolve() if a.build else None, a.output.resolve(), a.complete.resolve() if a.complete else None)

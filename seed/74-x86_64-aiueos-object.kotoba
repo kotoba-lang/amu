@@ -146,6 +146,38 @@
       (cond (or (= op OP-FN) (= op OP-END)) -1
             (and (= op OP-LSET) (= (xg-si M j IF-A) s)) j
             :else (xk-first-lset M (inc j) s)))))
+;; Lowering may reuse a local slot in disjoint lexical scopes. In a closed
+;; project, use the last assignment only when no edge can enter between that
+;; assignment and this read. This proves dominance without treating a merge
+;; result as a root. Object-profile admission retains its original rule.
+(defn- xk-local-dominates? [M :vector-i64 assigned :i64 read :i64] :bool
+  ;; Emission has completed before project proof. Reuse its label table as
+  ;; bounded scratch, indexing only this function: module label IDs may repeat
+  ;; elsewhere. No recursive provenance query runs while this index is read.
+  (let [start (inc (xk-fn-start M read))
+        indexed (loop [i start]
+                  (let [op (xg-si M i IF-OP)]
+                    (if (or (>= i (vector-at M MM-SIR-N)) (= op OP-END) (= op OP-FN)) M
+                      (let [w (if (= op OP-LABEL)
+                                (mem-set M (+ MM-LABEL-BASE (xg-si M i IF-A)) i) M)]
+                        (recur (inc i))))))]
+    (loop [i start]
+      (let [op (xg-si M i IF-OP)
+            branch (or (= op OP-BR) (= op OP-BRZ) (= op OP-BRNZ))
+            target (if branch (vector-at M (+ MM-LABEL-BASE (xg-si M i (if (= op OP-BR) IF-A IF-B)))) 0)]
+        (cond (or (>= i (vector-at M MM-SIR-N)) (= op OP-END) (= op OP-FN)) true
+              (and (or (<= i assigned) (>= i read)) branch (> target assigned) (< target read)) false
+              :else (recur (inc i)))))))
+(defn- xk-local-set [M :vector-i64 read :i64 slot :i64] :i64
+  (if (not= (xg-get M 4) 2)
+    (if (= (xk-lsets M (inc (xk-fn-start M read)) slot 0) 1)
+      (xk-first-lset M (inc (xk-fn-start M read)) slot) -1)
+    (let [start (xk-fn-start M read)]
+      (loop [i (dec read)]
+      (cond (<= i start) -1
+            (and (= (xg-si M i IF-OP) OP-LSET) (= (xg-si M i IF-A) slot))
+              (if (xk-local-dominates? M i read) i -1)
+            :else (recur (dec i)))))))
 (defn- xk-identity-lsets? [M :vector-i64 j :i64 s :i64] :bool
   (loop [i j]
     (cond (>= i (vector-at M MM-SIR-N)) true
@@ -182,8 +214,8 @@
           (cond (= op OP-CONST) (if (and (>= b 0) (< b 2147483648)) (+ 4294967296 b) 0)
                 (= op OP-LGET)
                   (cond (xk-param-slot? M j b) (+ 8589934592 b)
-                        (= (xk-lsets M (inc (xk-fn-start M j)) b 0) 1)
-                          (let [k (xk-first-lset M (inc (xk-fn-start M j)) b)]
+                        (> (xk-local-set M j b) 0)
+                          (let [k (xk-local-set M j b)]
                             (if (> k 0) (xk-src M k (xg-si M k IF-B) (inc depth)) 0))
                         :else 0)
                 :else 0))))))
@@ -193,18 +225,28 @@
 ;; carries that established contract; it cannot seed one or change the base.
 ;; This rule does not apply to ordinary object ABI exports or IRQ arguments.
 (defn- xk-fixed-param-region [M :vector-i64 f :i64 b :i64 depth :i64] :i64
-  (loop [c 1 extent -1]
-    (if (>= c (vector-at M MM-SIR-N)) extent
-      (if (and (= (xg-si M c IF-OP) OP-CALL) (= (xg-si M c IF-A) f))
-        (let [t (+ (xg-si M c IF-B) (dec b))
-              self (= (xg-si M (xk-fn-start M c) IF-A) f)
-              same (and self (= (xk-src M c t 0) (+ 8589934592 b)))]
-          (if same (recur (inc c) extent)
-            (let [r (xk-region M c t (inc depth))]
-              (if (and (>= r 4294967296) (< r 8589934592)
-                       (or (= extent -1) (= extent r)))
-                (recur (inc c) r) -1))))
-        (recur (inc c) extent)))))
+  ;; Only successfully completed all-caller proofs are memoized. Unknown,
+  ;; in-progress and depth-exhausted results never seed a contract. The
+  ;; project checker allocates this table after freezing the retained SIR.
+  (let [base (if (and (= (xg-get M 4) 2) (= (vector-at M 197) 0)) (vector-at M 202) 0)
+        at (+ base (* f 16) (dec b))
+        cached (if (> base 0) (vector-at M at) 0)]
+    (if (> cached 0) cached
+      (let [result (loop [c 1 extent -1]
+                      (if (>= c (vector-at M MM-SIR-N)) extent
+                        (if (and (= (xg-si M c IF-OP) OP-CALL) (= (xg-si M c IF-A) f))
+                          (let [t (+ (xg-si M c IF-B) (dec b))
+                                self (= (xg-si M (xk-fn-start M c) IF-A) f)
+                                same (and self (= (xk-src M c t 0) (+ 8589934592 b)))]
+                            (if same (recur (inc c) extent)
+                              (let [r (xk-region M c t (inc depth))]
+                                (if (and (>= r 4294967296) (< r 8589934592)
+                                         (or (= extent -1) (= extent r)))
+                                  (recur (inc c) r) -1))))
+                          (recur (inc c) extent))))
+            recorded (if (and (> base 0) (>= result 4294967296) (< result 8589934592))
+                       (mem-set M at result) M)]
+        result))))
 ;; The REGION of a base: -1 when the base is not rooted, else the source its length must have. A rooted base is
 ;;   - a parameter slot p never assigned: of the exported function (the ABI boundary hands in a region as the pair (base, length),
 ;;     the length being parameter p + 1), or of a private helper when EVERY call of it passes a rooted base at p whose length
@@ -235,8 +277,8 @@
                                                 ln (xk-src M c (+ (xg-si M c IF-B) b) 0)]
                                             (if (and (>= r 0) (not= ln 0) (= ln r)) (recur (inc c)) -1))
                                           (recur (inc c)))))))))
-                        (= (xk-lsets M (inc (xk-fn-start M j)) b 0) 1)
-                          (let [k (xk-first-lset M (inc (xk-fn-start M j)) b)]
+                        (> (xk-local-set M j b) 0)
+                          (let [k (xk-local-set M j b)]
                             (if (> k 0) (xk-region M k (xg-si M k IF-B) (inc depth)) -1))
                         :else -1)
                 (= op OP-CALL)

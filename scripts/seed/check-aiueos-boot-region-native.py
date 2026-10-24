@@ -15,8 +15,8 @@ def pin(p):
     return dict(bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest())
 
 
-def main(build, out):
-    graph, producers, _ = load_native_producers(build=build)
+def main(build, out, complete=None):
+    graph, producers, _ = load_native_producers(build=build, complete=complete)
     out.mkdir(parents=True, exist_ok=False)
     results = []
     boot = '(ns entry (:export [main]))\n(defn main [] :i64 (let [h (kernel-subregion (kernel-boot-info) 16544 0 160)] (if (= (kernel-load-u8 h 160 0) 65) 42 0)))\n'
@@ -72,4 +72,4 @@ def main(build, out):
     print(report['status'],'fixed boot ABI, all32 memory ops and 5 refusal controls; guest gates separate')
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('--build',type=Path,required=True);p.add_argument('--output',type=Path,required=True);a=p.parse_args();main(a.build.resolve(),a.output.resolve())
+    p=argparse.ArgumentParser();g=p.add_mutually_exclusive_group(required=True);g.add_argument('--build',type=Path);g.add_argument('--complete',type=Path);p.add_argument('--output',type=Path,required=True);a=p.parse_args();main(a.build.resolve() if a.build else None, a.output.resolve(), a.complete.resolve() if a.complete else None)

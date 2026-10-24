@@ -46,11 +46,11 @@ def stage(compiler,scope):
     compile_('literal-root','(ns entry (:export [main]))\n(defn main [] :i64 (kernel-load-u32 2147483648 512 0))\n',True)
     return dict(compiler=pin(compiler),artifacts=artifacts,regionRefusals=1,missingV6Refusals=len(artifacts))
 
-def main(build,out):
-    graph,producers,_=load_native_producers(build=build);out.mkdir(parents=True,exist_ok=False)
+def main(build, out, complete=None):
+    graph,producers,_=load_native_producers(build=build, complete=complete);out.mkdir(parents=True,exist_ok=False)
     routes=[stage(c,out/c.stem) for c in producers];assert routes[0]['artifacts']==routes[1]['artifacts']
     report=dict(status='PASS_NATIVE_PRIVATE_PCI_PACKAGING',observer=pin(Path(__file__)),source=graph,routes=routes,guestExecution=False,fullKernel=False,physicalHardware=False,nativeCDCI=False)
     (out/'native-private-pci.json').write_text(json.dumps(report,indent=2)+'\n');print(report['status'])
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('--build',type=Path,required=True);p.add_argument('--output',type=Path,required=True);a=p.parse_args();main(a.build.resolve(),a.output.resolve())
+    p=argparse.ArgumentParser();g=p.add_mutually_exclusive_group(required=True);g.add_argument('--build',type=Path);g.add_argument('--complete',type=Path);p.add_argument('--output',type=Path,required=True);a=p.parse_args();main(a.build.resolve() if a.build else None, a.output.resolve(), a.complete.resolve() if a.complete else None)

@@ -18,8 +18,8 @@ def pin(path):
     return dict(bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest())
 
 
-def main(build, output):
-    source, producers, _ = load_native_producers(build=build)
+def main(build, output, complete=None):
+    source, producers, _ = load_native_producers(build=build, complete=complete)
     output.mkdir(parents=True, exist_ok=False)
     value, base = 0x123456789abcdef, 0x10a000
     bindings, checks, operations = [], [], []
@@ -83,7 +83,7 @@ def main(build, output):
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--build', type=Path, required=True)
+    g=p.add_mutually_exclusive_group(required=True);g.add_argument('--build',type=Path);g.add_argument('--complete',type=Path)
     p.add_argument('--output', type=Path, required=True)
     a = p.parse_args()
-    main(a.build.resolve(), a.output.resolve())
+    main(a.build.resolve() if a.build else None, a.output.resolve(), a.complete.resolve() if a.complete else None)

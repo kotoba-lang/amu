@@ -53,8 +53,8 @@ def pin(p):
  b=p.read_bytes();return dict(bytes=len(b),sha256=hashlib.sha256(b).hexdigest())
 
 
-def main(build,out):
- graph,producers,_=load_native_producers(build=build);out.mkdir(parents=True,exist_ok=False);routes=[]
+def main(build, out, complete=None):
+ graph,producers,_=load_native_producers(build=build, complete=complete);out.mkdir(parents=True,exist_ok=False);routes=[]
  for compiler in producers:
   scope=out/compiler.stem;scope.mkdir();src=scope/'entry.kotoba';lock=scope/'source.ksl';calls=[];artifacts={}
   def compile_(name,text,ok=True):
@@ -78,4 +78,4 @@ def main(build,out):
 
 
 if __name__=='__main__':
- p=argparse.ArgumentParser();p.add_argument('--build',type=Path,required=True);p.add_argument('--output',type=Path,required=True);a=p.parse_args();main(a.build.resolve(),a.output.resolve())
+ p=argparse.ArgumentParser();g=p.add_mutually_exclusive_group(required=True);g.add_argument('--build',type=Path);g.add_argument('--complete',type=Path);p.add_argument('--output',type=Path,required=True);a=p.parse_args();main(a.build.resolve() if a.build else None, a.output.resolve(), a.complete.resolve() if a.complete else None)

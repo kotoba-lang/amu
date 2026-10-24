@@ -48,7 +48,7 @@
 
 (defn- kp-emit-module [M :vector-i64 L :vector-i64 G :vector-i64 S :string m :i64] :vector-i64
   (let [admitted (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 4 2) (mem-set 197 0)
-                    (mem-set 200 0) (mem-set 201 0) (xo-check-fns S 1) (xg-check-sir 1)
+                    (mem-set 200 0) (mem-set 201 0) (mem-set 202 0) (xo-check-fns S 1) (xg-check-sir 1)
                     (xk-scan S) (km-scan S))
         entry (xg-get admitted 1)]
     (cond (not (pj-ok admitted)) admitted
@@ -231,7 +231,7 @@
                 P0 (drv-pj-roots L (pj-new-p L) 1 n)
                 locked (drv-pj-lock M L P0 path)
                 P (if (pj-ok M) (kp-project M L (pj-padd L locked path) G (dec (pj-n L))) locked)
-                admitted (if (pj-ok M) (kg-check M L G) M)
+                admitted (if (pj-ok M) (kg-check M L G P) M)
                 image (if (pj-ok admitted) (kp-image admitted L G fuel) admitted)]
             (cond (>= (vector-at image MM-ERR) 7100)
                   (let [w (io-err (string-concat "kernel project in " (string-concat (pj-err-path L P) ":\n")))
