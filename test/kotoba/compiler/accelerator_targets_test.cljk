@@ -1,7 +1,10 @@
 (ns kotoba.compiler.accelerator-targets-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.accelerator :as accelerator]
-            [kotoba.compiler.accelerator-targets :as targets]))
+            [kotoba.compiler.accelerator-targets :as targets]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
 
 (deftest vendor-classification-is-deterministic
   (testing "pci vendor ids win over names"
@@ -259,3 +262,69 @@
             (str v " is measured but names no measured device"))
         (is (nil? (:measured-device row))
             (str v " is provisional but carries a measured-device"))))))
+
+;; The W3 arm extractor: the balanced-paren form beginning at `start` in
+;; `text`, string literals aware. The `:kotoba` readings of this namespace are
+;; what the W3 route compiles; the kbb gate executes the host readings, so the
+;; W3 arm's behavior is tested by extracting the arm's OWN text from the
+;; namespace source and running it on the kotoba language runtime.
+(defn- extract-balanced [text start]
+  (when-let [i (str/index-of text start)]
+    (let [n (count text)]
+      (loop [j i depth 0 in-str? false esc? false]
+        (when (< j n)
+          (let [c (str (nth text j))
+                close? (and (not in-str?) (not esc?) (= c ")"))
+                d (cond
+                    esc? depth
+                    in-str? depth
+                    (= c "(") (inc depth)
+                    (= c ")") (dec depth)
+                    :else depth)]
+            (if (and close? (zero? d))
+              (subs text i (inc j))
+              (recur (inc j) d
+                     (cond
+                       esc? in-str?
+                       (and in-str? (= c "\\")) true
+                       (= c "\"") (not in-str?)
+                       :else in-str?)
+                     (and in-str? (not esc?) (= c "\\"))))))))))
+
+(deftest w3-name-lowering-lowers-a-z-and-nothing-else
+  ;; The `:kotoba` reading of `string-ascii-lower` is the W3 route's device
+  ;; name fold: classify-vendor's name matching and the uB5G measured-device
+  ;; scoping key both run it. Tested through kotoba.sema/analyze +
+  ;; kotoba.kir/execute over the arm's extracted text (no
+  ;; kotoba.compiler.core, whose kotoba.form require is the suite's named
+  ;; red-at-base). The replaced arm appended `string-from-i64` DECIMAL text
+  ;; per code point -- measured on the runtime before the fix: "A" -> "97",
+  ;; "AB" -> "9798", "Hi" -> "104105", "42" -> "5250", and "NVIDIA" trapped
+  ;; host/stack-exhausted -- so this test pins both the fold's contract and
+  ;; the arm's delegation to the primitive.
+  (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
+        arm (extract-balanced src "(defn- string-ascii-lower")
+        probe (str "(ns accelerator.targets.w3.arm.probe (:export [main lower]))\n"
+                   "(defn main [] :i64 0)\n"
+                   arm "\n"
+                   "(defn lower [s :string] :string (string-ascii-lower s))")
+        hir (sema/analyze probe)
+        fold (fn [s] (ir/execute hir 'lower [s]))]
+    (is (string? arm) "the W3 arm is extractable from the namespace source")
+    (is (str/includes? arm "string-fold-ascii")
+        "the arm lowers through the language primitive")
+    (is (not (str/includes? arm "lower-walk"))
+        "the decimal-appending walk is gone from the arm text")
+    (is (not (str/includes? arm "string-from-i64"))
+        "the arm never renders an i64 to build string text")
+    (testing "A-Z lowered, nothing else (the string-fold-ascii contract)"
+      (is (= "nvidia geforce rtx 4090" (fold "NVIDIA GeForce RTX 4090")))
+      (is (= "apple m1 max" (fold "Apple M1 Max")))
+      (is (= "mali-g78 mp24" (fold "Mali-G78 MP24")))
+      (is (= "rtx 4090" (fold "RTX 4090")) "digits are untouched")
+      (is (= "cafÉ" (fold "CAFÉ")) "a non-ASCII letter is untouched")
+      (is (= "" (fold ""))))
+    (testing "the folded name carries the fragments the call sites search for"
+      (is (str/includes? (fold "NVIDIA GeForce RTX 4090") "geforce"))
+      (is (str/includes? (fold "Apple M1 Max") "m1 max"))
+      (is (str/includes? (fold "Intel(R) Iris(R) Xe Graphics") "iris")))))

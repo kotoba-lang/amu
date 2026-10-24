@@ -1,0 +1,83 @@
+JUN-56 / JUN-55 -- the W3 `string-ascii-lower` residue is FIXED: the
+:kotoba arm now lowers through the language primitive `string-fold-ascii`,
+`lower-walk` is deleted (2026-10-24, chain worktree, kbb --backend sci)
+
+WHAT THIS SLICE IS: the fix the 2026-10-24 21:27 tick named ("THE FIX, next
+tick. Arm body becomes the language primitive string-fold-ascii ...
+lower-walk deleted") -- one implementation slice in the JUN-56 dispatch
+module row. No measurement ran; nothing here is optimization evidence.
+
+THE RESIDUE, NOW RUNTIME-MEASURED (not reading-level): the previous arm
+built its answer with `string-from-i64` per code point, and
+string-from-i64 renders DECIMAL (resources/kotoba/lang-conformance
+pilot-golden.edn: `(string-length (string-concat "n=" (string-from-i64 42)))`
+expects 4). Executed on the kotoba language runtime (kotoba.sema/analyze +
+kotoba.kir/execute -- standalone, without kotoba.compiler.core) over the
+replaced arm's own text, BEFORE the fix:
+
+  old "A"   => "97"        (code point 97, decimal)
+  old "AB"  => "9798"
+  old "Hi"  => "104105"
+  old "a"   => "97"
+  old "42"  => "5250"      (digit code points, decimal)
+  old "NVIDIA" => THREW: host/stack-exhausted
+
+So on the W3 route every device name corrupted to digit text (classify-vendor
+matched no fragment -> :unknown) and a six-character name additionally
+trapped. Both call sites were affected: classify-vendor's name matching
+(accelerator_targets.cljk) and the uB5G measured-device scoping key.
+
+THE FIX (src/kotoba/compiler/accelerator_targets.cljk, the :kotoba arm
+only; the host :default arm was already `(str/lower nm)` and is untouched):
+
+  (defn- string-ascii-lower [s :string] :string
+    (string-fold-ascii s))
+
+`lower-walk` deleted; a dated comment names the residue and the primitive's
+contract.
+
+FIXED ARM, EXECUTED ON THE RUNTIME (same sema/analyze + kir/execute route,
+the arm's text extracted from the namespace source by the committed test's
+own extractor):
+
+  fold "NVIDIA GeForce RTX 4090" => "nvidia geforce rtx 4090"
+  fold "Apple M1 Max"            => "apple m1 max"
+  fold "CAFÉ"                    => "cafÉ"   (A-Z lowered, nothing else)
+  fold "Mali-G78 MP24"           => "mali-g78 mp24"
+  fold "RTX 4090"                => "rtx 4090"
+  fold ""                        => ""
+
+TEST (test/kotoba/compiler/accelerator_targets_test.cljk, +1 deftest
+`w3-name-lowering-lowers-a-z-and-nothing-else` and the string-literal-aware
+`extract-balanced` helper): extracts the `string-ascii-lower` form from the
+namespace source itself (so the test executes exactly the shipped arm),
+compiles it through kotoba.sema/analyze and runs it through kotoba.kir/execute
+-- the string_operation_test.cljk semantic route, WITHOUT kotoba.compiler.core
+whose kotoba.form require is the suite's named red-at-base. Pins: arm
+delegates to string-fold-ascii; no lower-walk / string-from-i64 in the arm
+text; "A-Z lowered, nothing else" over six inputs; the folded name carries
+the fragments classify-vendor and the uB5G key search for.
+
+VERIFIED (runner output, this host):
+- Touched test namespace (targeted run):
+    Ran 10 tests containing 223 assertions. 0 failures, 0 errors.
+  (the new deftest ran and passed; the extractor's arm text is the file's).
+- Scoped GPU gate (the 8 GPU-owned test namespaces, scratch runner
+  gpu_scoped_gate.cljk):
+    before  103 tests / 9791 assertions / 0 failures / 0 errors
+    after   104 tests / 9804 assertions / 0 failures / 0 errors
+  (delta +1 test / +13 assertions = the new deftest; no other test moved).
+- Full run-tests.cljk: NOT re-run this tick (run-time budget); every recent
+  record has it RED AT BASE at namespace load on kotoba.form (the W3 port
+  path, outside this diff) -- no green full suite is claimed here.
+
+HONESTY: this is a correctness fix, not an optimization. No measurement
+channel ran, no `:measured?` flag / selection answer / workgroup row moved,
+and the provisional rows (:arm, :unknown) stay :measured? false. UNMEASURED
+scopes are unchanged everywhere.
+
+PUSH STATE: NOT pushed. Blocker-first rule in force -- kotoba-lang/amu open
+PR #1553 (hermes/jun31-pe-shim-align) verified OPEN this tick, so this
+commit is kept locally on bot/amu-gpu-chain (13 local commits now) and
+pushes on the first tick after the blocker clears. Chain PR #1455 stays the
+one open chain PR; no second chain PR opened.

@@ -83,16 +83,16 @@
                    (document-keyword :basis) (document-string basis)
                    (document-keyword :evidence) (document-string evidence))))
 
+;; the ASCII case fold for device names -- the language primitive
+;; `string-fold-ascii` (contract: "A-Z lowered, nothing else"). The previous
+;; hand-rolled `lower-walk` built its answer with `string-from-i64`, which
+;; renders DECIMAL (the lang-conformance golden for string-from-i64 pins it),
+;; so every name became digit text on this route (verified at runtime
+;; 2026-10-24: "A" -> "97", "AB" -> "9798"; and a six-character name
+;; additionally trapped host/stack-exhausted). The primitive replaces it.
 #?(:kotoba
    (defn- string-ascii-lower [s :string] :string
-     (lower-walk s 0 (string-byte-length s) (string-substring (string-from-i64 7) 0 0))))
-#?(:kotoba
-   (defn- lower-walk [s :string i :i64 n :i64 acc :string] :string
-     (if (>= i n)
-       acc
-       (let [c (string-code-point-at s i)]
-         (lower-walk s (+ i 1) n
-                     (string-concat acc (string-from-i64 (if (and (>= c 65) (<= c 90)) (+ c 32) c))))))))
+     (string-fold-ascii s)))
 
 ;; the device-from-info / recommend helpers: the 4-field split (a document vector of
 ;; the field strings), the digit/version validators, the blank/substring checks, the
