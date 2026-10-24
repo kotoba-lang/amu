@@ -563,6 +563,41 @@ the basis-lists docstring tightening, and tests pinning that no
 basis-evidence list names a resweep directory) -- the rule is
 IMPLEMENTED from that slice on.
 
+The composed contract's cross-day replication LIST MEMBERSHIP rule
+(decided 2026-10-24, answering the question the shape-2 cross-day
+anchor record left OPEN -- "The shape-2 W = 32 cell's membership in
+`the shape-2 cells` of the LEFT list is NOT settled by any record (the
+shape-1 part excluded W = 32 as the decided cell; the LEFT list's
+phrase does not say either way)"; the record:
+`docs/evidence/gpu/subgroup-w32-leftlist-membership-20261024.txt`):
+the cross-day replication row covers the FLIP CELLS -- the cells whose
+own contract-satisfying runs chose the answer the flip marks (the
+`:subgroup-reduce` demotion's W = 64/128/256/512/1024 at the two
+measured shapes; the `:simdgroup-reduce` flip's own six cells). A
+DECIDED cell -- the W = 32 cell (`apple-w32-note`: measured, but its
+verdicts are regime-scoped at every cell that sampled both clock
+levels, so no regime-robust verdict ever chose its answer; the
+decision did; `:measured? false`) -- is NOT a member at any shape:
+the temporal row's role is corroboration of a flip basis ("its
+sanctioned cross-day replication runs -- corroboration that flipped
+nothing"), and a cell that never flipped has no basis for a
+replication to corroborate. The membership decision also holds that
+no re-run revisits the decision -- the same standing the shape-2
+W = 512 refusal's scope row has ("resolving it is a protocol decision
+on the refusal's scope, not a re-run"): if the W = 32 cell's data
+story is ever reopened, it is reopened by a DECISION row on the
+decision note's scope, never by a run on the LEFT list. What the
+decision does NOT license: no `:measured?` flag, `:shapes` value,
+selection answer or workgroup row (ADR-0355/0358) moves; the
+`:simdgroup-reduce` family's W = 32 cross-day row is UNAFFECTED (that
+cell IS a flip cell and keeps its own later-day row); the shape-2
+W = 512 REGIME-SCOPED refusal's scope decision stays OPEN (its own
+row); and a later-day W = 32 DATA run (pure data, explicitly
+non-basis) is neither scheduled nor forbidden by this decision -- if
+wanted, it is its own decision row. The rule is ACCEPTED DESIGN as of
+this slice; naming it in `apple-w32-note`'s prose rides the
+`:subgroup-reduce` naming slice the cross-day records already owe.
+
 ## What this decision is NOT
 
 - **No speed claim.** The family's rationale ("removing most of the
@@ -1182,8 +1217,21 @@ outside this diff. No green full suite is claimed.
    W = 512 cell measured 2026-10-24 and REFUSED as a selection basis
    (rule 2 REGIME-SCOPED) -- the shape-2 series' only unflipped
    cell) under the same claim protocol.
-4. Cross-day replication of the existing `:subgroup-reduce` cells (needs a
-   later-day cron tick).
+4. [DONE 2026-10-24 -- the list is COMPLETE at both shapes and the
+   W = 32 cell's membership is DECIDED OUT of it (the cross-day
+   replication list membership decision,
+   `docs/evidence/gpu/subgroup-w32-leftlist-membership-20261024.txt`,
+   answering the OPEN question every cross-day record since the shape-2
+   anchor carried): ten later-day records corroborate the demotion basis
+   at every flipped cell -- the anchor (W = 256) and W = 64/128/512/1024
+   at shape 1 (`docs/evidence/gpu-subgroup-reduce-m1max-crossday-
+   20261024/`) and the same five at shape 2
+   (`docs/evidence/gpu-subgroup-reduce-m1max-crossday-shape2-20261024/`),
+   all 2026-10-24. The decided cell (W = 32, `apple-w32-note`) is not a
+   member at either shape: it never flipped, so the temporal row has no
+   flip basis to corroborate, and no re-run revisits the decision --
+   decided, not silent.] Cross-day replication of the existing
+   `:subgroup-reduce` cells (needs a later-day cron tick).
 5. The GLSL arm of `:subgroup-reduce` stays blocked on ADR 0371's provider
    route.
 6. [DONE 2026-10-24, the later same-day slice -- the naming
