@@ -34,6 +34,18 @@ disassembly, loader smoke to exit 43) is kotoba-lang/aiueos
    `producedBy.chain` is the measured F1/F2 pair above. Re-verification
    (`F -> F' = root`, `rootReproduces true` against the new pin) is the next
    run's measurement, not claimed here.
+   * **Re-verification measured (2026-10-24 late, this branch's tree)**:
+     `selfhost-bootstrap-root-reproduces.json` in this directory is the raw
+     receipt — `PASS_LOADERLESS_SELFHOST_BOOTSTRAP main F 86da3c52e8019316
+     root reproduces adoption image 24 cases wasm32-browser compiled`,
+     118 steps, no reuse. The new root rebuilds itself to a **byte-identical**
+     image in one generation (F' = F1 = root = `86da3c52…`, 3,293,696 B),
+     `rootReproduces: true`; the Linux selfhost closure re-measured
+     S = `63474bc8…` (matches the build run's S = S2); the core route
+     (adoption image), the arity refusal (E7105), the named diagnostic
+     (E2101), 24 runtime cases, the runtime boundary corpus and the hardening
+     probes all pass again. `cCompilerOrLoader: false`,
+     `JVMNodeOrGraalFallback: false`, `emulation: false`.
 
 4. **Boot proof on the same fixed point** — F (= F1 = F2 = the new root) built
    `os/aiueos/uefi/boot-fixture.kotoba` (`018a939c…`) through the seed image
@@ -52,3 +64,14 @@ disassembly, loader smoke to exit 43) is kotoba-lang/aiueos
   the C-free whole-build gate (JUN-64, 25 `zig cc` calls in the object-route
   build) remains open. JUN-31 acceptance overall remains NOT MET — this is the
   M1 milestone.
+* **PR #1561 is CONFLICTING against main (measured 2026-10-24, `git merge-tree
+  --write-tree origin/main HEAD`)**: exactly the root pin pair
+  (`seed/bootstrap/aarch64-linux-static-root.{elf,json}`) conflicts. main
+  `0486b715e` (JUN-354, the named ungranted-wire refusal in the static
+  runtimes) re-pinned the same pair from the same previous root `fa86314c…` to
+  its own fixed point `482398a4…` (F1 `6197dd0d…` → F2 = F3). Both re-pins are
+  valid measurements of *different* closures (this branch: W2 `kernel-out-u8/u32`
+  intrinsics; main: the runtime wrapper change). The merge needs a **merged-tree
+  fixed point**: merge main in, rebuild the fixed point on the combined source,
+  re-pin. Hand-merging the generated pin/receipt pair is not an option. Every
+  other file merges clean.
