@@ -965,3 +965,64 @@ unchanged (no .cljk in this diff). Full suite RED AT BASE (`Could not
 find namespace: kotoba.form`), outside this diff, re-verified.
 
 Record: `docs/evidence/gpu/cross-operator-level-identity-20261023.txt`.
+
+## Amendment 2026-10-24 (strict-bin reachability at W = 1024): the
+hunt row is closed by decision, with named reopen conditions
+
+The fastbin-hunt record's HONEST LEFT named one design sub-row:
+"strict-bin reachability at this W". It lands here. The question: the
+pair-level ANALOGUE's strict bins are the manual instrument's absolute
+hand buckets (`analyze-oporder.py`: slow > 80k, middle 40k..80k, fast
+<= 40k -- decided above as NOT reused by the machine, unchanged), and
+the strict fast bin (pair baseline <= 40,000 ns) had collected ZERO
+pairs at W = 1024 in every session. Is that bin reachable at that W at
+all?
+
+Measurement basis (machine output over the committed corpus; NO
+hardware measurement ran in this slice -- the census reads every
+committed run-log.txt read-only): `docs/evidence/gpu/
+strict-bin-reachability-20261024.py`, 54 logs, 0 incomplete pairs.
+The strict fast bin is UNREACHED-BY-OBSERVATION at W = 1024 in BOTH
+contract shapes -- n = 1000003: 8 logs / 3,600 pairs / zero in the
+bin / floor 40,083 ns (+83 ns above the boundary); n = 1048576:
+4 logs / 1,440 pairs / zero / floor 41,542 ns -- while REACHED at
+every other W in both shapes (1,268 fast-bin pairs at W = 32..512;
+per-cell counts in the record). The boundary is W-specific, not an
+instrument defect: the shape-1 floor rises with W and the 40k
+boundary sits just below the observed floor at the largest workgroup.
+
+Decided (ACCEPTED DESIGN ONLY -- this clause; no code namespace moved,
+rule 4 untouched):
+
+1. A strict bin at a (n, W) cell carries a reachability state computed
+   from the committed corpus census: REACHED (>= 1 committed pair
+   baseline inside the bin at that cell) or UNREACHED-BY-OBSERVATION
+   (zero committed pairs inside it at that cell).
+2. At W = 1024 the strict fast bin is UNREACHED-BY-OBSERVATION. The
+   <= 40k pair-bin ratio at W = 1024 stays UNMEASURED, and the hunt
+   row is CLOSED by this decision -- no further tick runs a session
+   for that bin at that W by default. Closing the hunt row is NOT
+   filling the bin; no ratio, verdict or row is claimed from it.
+3. Reopen conditions (any one fires and the row returns to the
+   backlog): (a) any committed session -- for any question -- lands a
+   pair baseline <= 40,000 ns at W = 1024; (b) an instrument that
+   reads the GPU clock exists and shows a level at or below the
+   boundary at that W; (c) the owner directs the hunt to resume.
+4. Naming, pinned: UNREACHED-BY-OBSERVATION is a CORPUS fact, never a
+   hardware claim -- whether the hardware can ever produce a
+   <= 40,000 ns pair baseline at W = 1024 is UNMEASURED (the harness
+   reads no clock). The bins stay the manual instrument's absolute
+   hand buckets; the machine keeps GAP-1.15 and never reuses them.
+   Rule 4 stands: no `:measured?` flag, no `:measured-cell` :shapes,
+   no selection answer, no workgroup row (ADR-0355/0358) moves.
+
+State, precisely: the reachability clause is ACCEPTED DESIGN ONLY.
+IMPLEMENTED: the census instrument (evidence tooling only). Nothing in
+`src/kotoba/compiler/*` or `test/*` moved. MEASURED: nothing new on
+hardware; every census number is parsed from committed measurements.
+UNMEASURED, unchanged: the <= 40k pair-bin ratio at W = 1024, the
+hardware reachability of the boundary at that W, the ramp's governing
+conditions, and everything the record's NOT LICENSED list names.
+
+Record: `docs/evidence/gpu/w1024-strict-bin-reachability-20261024.txt`
+(this slice ran no hardware measurement).
