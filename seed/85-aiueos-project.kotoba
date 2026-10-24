@@ -118,7 +118,8 @@
   (loop [i 1]
     (cond (>= i (vector-at M MM-SIR-N)) false
           (and (= (xg-si M i IF-OP) OP-CALL)
-               (= (km-intr M (xg-si M i IF-A)) KM-OWNED-PAGE)) true
+               (let [k (km-intr M (xg-si M i IF-A))]
+                 (or (= k KM-OWNED-PAGE) (= k KM-OWNED-WINDOW)))) true
           :else (recur (inc i)))))
 ;; This trusted bootstrap runs before the user's main and before any guest
 ;; operation can mutate public boot-info. The private slots do not overlap

@@ -12,7 +12,8 @@
 (def KM-UNLOCK 56)
 (def KM-ISR-FIRST 57)
 (def KM-OWNED-PAGE 73)
-(def KM-INTR-N 74)
+(def KM-OWNED-WINDOW 74)
+(def KM-INTR-N 75)
 (def KM-SEALED-SCRATCH 272)
 (def KM-SEALED-PAGES 280)
 
@@ -42,7 +43,7 @@
       37 "kernel-configure-double-fault-ist" 38 "kernel-probe-nx-execute"
       39 "kernel-probe-guard-write" 40 "kernel-probe-text-write"
       41 "kernel-probe-recoverable-guard-write" 42 "kernel-probe-double-fault"
-      43 "kernel-debug-break" 44 "kernel-owned-page" "")))
+      43 "kernel-debug-break" 44 "kernel-owned-page" 45 "kernel-owned-window" "")))
 (defn- km-arity [k :i64] :i64
   (cond (< k KM-MEM-N) (if (= (bit-and (km-raw k) 1) 0) 3 4)
         (< k (+ KM-MEM-N 2)) 2
@@ -52,6 +53,7 @@
         (= k KM-XSETBV) 2
         (or (= k KM-TRY-LOCK) (= k KM-UNLOCK)) 3
         (= k KM-OWNED-PAGE) 1
+        (= k KM-OWNED-WINDOW) 2
         (>= k KM-ISR-FIRST)
           (let [i (- k KM-ISR-FIRST)]
             (cond (or (= i 2) (= i 3) (= i 9)) 2 (= i 4) 1 :else 0))
@@ -76,10 +78,13 @@
 ;; caller-selected address or length is used, and object/static profiles
 ;; retain their existing refusal rules. Consumers must narrow it explicitly.
 (def KM-BOOT-BYTES 16544)
-(defn- km-owned-region [M :vector-i64 f :i64] :i64
+(defn- km-owned-region [M :vector-i64 f :i64 i :i64 t :i64] :i64
   (if (not= (xg-get M 4) 2) -1
     (cond (= (km-intr M f) KM-BOOT-INFO) (+ 4294967296 KM-BOOT-BYTES)
-          (= (km-intr M f) KM-OWNED-PAGE) (+ 4294967296 4096) :else -1)))
+          (= (km-intr M f) KM-OWNED-PAGE) (+ 4294967296 4096)
+          (= (km-intr M f) KM-OWNED-WINDOW)
+            (let [n (xk-src M i (inc t) 0)] (if (= n 0) -1 n))
+          :else -1)))
 (defn- km-scan [M :vector-i64 S :string] :vector-i64
   (let [first (- (vector-at M MM-FN-N) XK-INTR-N KM-INTR-N)]
     (if (<= first 1) (xg-err M 7102 first)
@@ -160,11 +165,18 @@
           (xg-label end) (xg-save t)))))
 ;; The image-owned bootstrap seals loader metadata before main. The guest
 ;; supplies only a bounded slot number, never a physical base or length.
-(defn- km-page [M :vector-i64 t :i64] :vector-i64
-  (let [trap (vector-at M MM-LABEL-N) end (inc trap)]
-    (-> M (iv-reserve 2) (xg-load t 0x858b48)
+(defn- km-page [M :vector-i64 t :i64 window :bool] :vector-i64
+  (let [trap (vector-at M MM-LABEL-N) end (inc trap)
+        checked (-> M (iv-reserve 2) (xg-load t 0x858b48)
         (iv-hex "4883f80f") (xg-rel 0x830f 2 2 trap)
-        (iv-hex "4983b9") (xg-bytes KM-SEALED-PAGES 4) (xg-byte 15) (xg-rel 0x850f 2 2 trap)
+        (iv-hex "4983b9") (xg-bytes KM-SEALED-PAGES 4) (xg-byte 15) (xg-rel 0x850f 2 2 trap))
+        sized (if window
+                (-> checked (xg-load (inc t) 0x8d8b48)
+                    (iv-hex "4885c9") (xg-rel 0x840f 2 2 trap)
+                    (iv-hex "4881f900f00000") (xg-rel 0x870f 2 2 trap)
+                    (iv-hex "48f7c1ff0f0000") (xg-rel 0x850f 2 2 trap)
+                    (iv-hex "be0f0000004829c648c1e60c4839f1") (xg-rel 0x870f 2 2 trap)) checked)]
+    (-> sized
         (iv-hex "498b91") (xg-bytes KM-SEALED-SCRATCH 4)
         (iv-hex "4885d2") (xg-rel 0x840f 2 2 trap)
         (iv-hex "48c1e00c4801d0") (xg-rel 0x820f 2 2 trap)
@@ -181,7 +193,8 @@
               (xg-bytes 0xc28948 3) (xg-bytes 0x20eac148 4)
               (xg-bytes 0xd1010f 3) (xg-save t))
         (or (= k KM-TRY-LOCK) (= k KM-UNLOCK)) (km-lock M (= k KM-UNLOCK) t)
-        (= k KM-OWNED-PAGE) (km-page M t)
+        (= k KM-OWNED-PAGE) (km-page M t false)
+        (= k KM-OWNED-WINDOW) (km-page M t true)
         (and (>= k KM-ISR-FIRST) (< k KM-INTR-N)) (iv-intrinsic M (- k KM-ISR-FIRST) t)
         (< k (+ KM-MEM-N 2))
           (-> M (xg-load t 0x958b48) (xg-load (inc t) 0x858b48)

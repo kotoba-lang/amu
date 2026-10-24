@@ -30,13 +30,20 @@ def main(efi, kernel, qemu, firmware, output, guard_kind='window'):
     assert ph[0:2] == (1, 5) and ph[2] == 4096 and ph[3] == 0x101000
     code = data[ph[2]:ph[2]+ph[5]]
     sites = [i for i in range(len(code)-1) if code[i:i+2] == b'\x0f\x0b']
-    if guard_kind == 'owned-page':
+    if guard_kind in ('owned-page', 'owned-window'):
         starts = [i for i in range(len(code)) if code.startswith(bytes.fromhex('4883f80f0f83'), i)]
         assert len(starts) == 1, ('one owned-page constructor required', starts)
         at = starts[0]
         assert code[at+10:at+18] == bytes.fromhex('4983b9180100000f')
         targets = []
-        for delta, opcode in [(4, b'\x0f\x83'), (18, b'\x0f\x85'), (34, b'\x0f\x84'), (47, b'\x0f\x82')]:
+        branches = [(4, b'\x0f\x83'), (18, b'\x0f\x85'), (34, b'\x0f\x84'), (47, b'\x0f\x82')]
+        if guard_kind == 'owned-window':
+            assert code[at+40:at+47] == bytes.fromhex('4881f900f00000')
+            assert code[at+53:at+60] == bytes.fromhex('48f7c1ff0f0000')
+            branches = [(4, b'\x0f\x83'), (18, b'\x0f\x85'), (34, b'\x0f\x84'),
+                        (47, b'\x0f\x87'), (60, b'\x0f\x85'), (81, b'\x0f\x87'),
+                        (97, b'\x0f\x84'), (110, b'\x0f\x82')]
+        for delta, opcode in branches:
             pc = at + delta
             assert code[pc:pc+2] == opcode
             targets.append(pc+6+struct.unpack_from('<i', code, pc+2)[0])
@@ -95,6 +102,6 @@ if __name__ == '__main__':
     p = argparse.ArgumentParser(description=__doc__)
     for name in ('efi', 'kernel', 'qemu', 'firmware', 'output'):
         p.add_argument('--'+name, type=Path, required=True)
-    p.add_argument('--guard-kind', choices=('window', 'owned-page'), default='window')
+    p.add_argument('--guard-kind', choices=('window', 'owned-page', 'owned-window'), default='window')
     a = p.parse_args()
     main(*(getattr(a, n).resolve() for n in ('efi','kernel','qemu','firmware','output')), guard_kind=a.guard_kind)
