@@ -1,4 +1,4 @@
-(ns gpu-kernels-v2 (:export [kir2-ewise kir2-attn-copy-dense]))
+(ns gpu-kernels-v2 (:export [kir2-ewise kir2-attn-copy-dense kir2-nex-op kir2-nex-op-name]))
 
 ;; Kernels written with KIR v2 (tools/gpu_kernel_kir2.kotoba, ADR 0372 step 3).
 ;; Each is the Kotoba form of a GLSL kernel of kotoba-lang/inference; the
@@ -158,3 +158,447 @@
         q20 (kb-store B vi (kb-iadd B (kb-load B tu vi) u256))
         q21 (kb-end-loop B)]
     (kb-module B 256 1 1)))
+
+;; ---------------------------------------------------------------------
+;; The nex_ops decode set (kotoba-lang/inference verify/native/gpu/nex_ops.comp
+;; at 971376a; tools/gpu_kernel_refs/nex-ops.comp is that file), one module per
+;; op as glslang's -DOP=<op> gives, the decode (not BATCH or BPREFILL)
+;; variants. Seven storage bindings in every module: 0 Meta {n rows aux aux2 :
+;; u32, eps scale p0 p1 : f32} (ro), 1 A (ro), 2 B, 3 C (ro), 4 O, 5 S, 6 I
+;; (u32). LocalSize 256.
+;;
+;; ops: 1 rmsnorm 2 l2norm 3 gated_rmsnorm 4 silu_mul 5 conv1d_step
+;; 6 gate_decay 7 gate_decay2 8 copy_at 9 weighted_sum 10 add 11 add_bias
+;; 12 f32_matvec 13 add_rmsnorm 14 pos_incr 15 rope_neox 16 attn_decode
+;; 17 softmax_topk 18 argmax_partial 19 argmax_final
+
+(def NEX-OPS 19)
+
+(defn kir2-nex-op-name [op :i64] :string
+  (case op 1 "rmsnorm" 2 "l2norm" 3 "gated_rmsnorm" 4 "silu_mul" 5 "conv1d_step" 6 "gate_decay"
+        7 "gate_decay2" 8 "copy_at" 9 "weighted_sum" 10 "add" 11 "add_bias" 12 "f32_matvec"
+        13 "add_rmsnorm" 14 "pos_incr" 15 "rope_neox" 16 "attn_decode" 17 "softmax_topk"
+        18 "argmax_partial" 19 "argmax_final" ""))
+
+;; f32 bit patterns
+(def F-ONE 0x3F800000)
+(def F-TWENTY 0x41A00000)
+(def F-MINUS-ONE 0xBF800000)
+(def F-MINUS-TWO 0xC0000000)
+(def F-MINUS-1E30 0xF149F2CA)
+
+;; the seven bindings, as a vector of their variables (index = binding)
+(defn- k2-nex-bindings [B :vector-i64] :vector-i64
+  (let [tu (kb-tu32 B) tf (kb-tf32 B)
+        P (kb-meta B 0 8 240) A (kb-buffer B 1 tf 4 true) Bb (kb-buffer B 2 tf 4 false) C (kb-buffer B 3 tf 4 true)
+        O (kb-buffer B 4 tf 4 false) S (kb-buffer B 5 tf 4 false) I (kb-buffer B 6 tu 4 false)]
+    (-> (vector-alloc 7) (vector-assoc! 0 P) (vector-assoc! 1 A) (vector-assoc! 2 Bb) (vector-assoc! 3 C)
+        (vector-assoc! 4 O) (vector-assoc! 5 S) (vector-assoc! 6 I))))
+;; Meta member k (0..3 u32, 4..7 f32)
+(defn- k2-pm [B :vector-i64 V :vector-i64 k :i64] :i64
+  (kb-meta-at B (vector-at V 0) (if (< k 4) (kb-tu32 B) (kb-tf32 B)) k))
+;; element i of binding b (6 is u32, the others f32), and a store to it
+(defn- k2-ld [B :vector-i64 V :vector-i64 b :i64 i :i64] :i64
+  (let [t (if (= b 6) (kb-tu32 B) (kb-tf32 B))] (kb-load B t (kb-at B (vector-at V b) t i))))
+(defn- k2-st [B :vector-i64 V :vector-i64 b :i64 i :i64 v :i64] :i64
+  (let [t (if (= b 6) (kb-tu32 B) (kb-tf32 B))] (kb-store B (kb-at B (vector-at V b) t i) v)))
+;; for (i = start; i < bound; i += step): k2-for opens the loop and answers i
+;; as loaded in the body; k2-end-for closes it
+(defn- k2-for [B :vector-i64 vi :i64 start :i64 bound :i64] :i64
+  (let [tu (kb-tu32 B) a (kb-store B vi start) l (kb-loop B) w (kb-while B (kb-ult B (kb-load B tu vi) bound))]
+    (kb-load B tu vi)))
+(defn- k2-end-for [B :vector-i64 vi :i64 step :i64] :i64
+  (let [tu (kb-tu32 B) c (kb-continue B) s (kb-store B vi (kb-iadd B (kb-load B tu vi) step))] (kb-end-loop B)))
+;; v += x for a Function variable of f32
+(defn- k2-acc [B :vector-i64 v :i64 x :i64] :i64 (kb-store B v (kb-fadd B (kb-load B (kb-tf32 B) v) x)))
+;; silu(x) = x / (1 + exp(-x)); sigmoid(x) = 1 / (1 + exp(-x))
+(defn- k2-silu [B :vector-i64 x :i64] :i64
+  (kb-fdiv B x (kb-fadd B (kb-f32 B F-ONE) (kb-fexp B (kb-fneg B x)))))
+(defn- k2-sigmoid [B :vector-i64 x :i64] :i64
+  (kb-fdiv B (kb-f32 B F-ONE) (kb-fadd B (kb-f32 B F-ONE) (kb-fexp B (kb-fneg B x)))))
+;; softplus(x) = x > 20 ? x : log(1 + exp(x)), the arms in an if into v
+(defn- k2-softplus [B :vector-i64 v :i64 x :i64] :i64
+  (let [g (kb-if B (kb-fgt B x (kb-f32 B F-TWENTY)))
+        a (kb-store B v x)
+        e (kb-else B)
+        b (kb-store B v (kb-flog B (kb-fadd B (kb-f32 B F-ONE) (kb-fexp B x))))
+        z (kb-end-if B)]
+    (kb-load B (kb-tf32 B) v)))
+;; (P.p1 != 0) ? dyn_pos() <op> : other, dyn_pos() = ids[0]. The GLSL reads
+;; ids[0] only when P.p1 != 0, so its load stays in the if (into a variable).
+;; how: 0 ids[0], 1 ids[0] + 1, 2 ids[0] * mul.
+(defn- k2-if-dyn [B :vector-i64 V :vector-i64 how :i64 mul :i64 other :i64] :i64
+  (let [tu (kb-tu32 B) v (kb-var B tu)
+        a (kb-store B v other)
+        g (kb-if B (kb-fne B (k2-pm B V 7) (kb-f32 B 0)))
+        d (k2-ld B V 6 (kb-u32 B 0))
+        x (kb-store B v (case how 0 d 1 (kb-iadd B d (kb-u32 B 1)) (kb-imul B d mul)))
+        z (kb-end-if B)]
+    (kb-load B tu v)))
+;; if (c) return;
+(defn- k2-return-if [B :vector-i64 c :i64] :i64
+  (let [g (kb-if B c) r (kb-return B)] (kb-end-if B)))
+
+;; rmsnorm, gated_rmsnorm, l2norm and add_rmsnorm share their shape: the
+;; sum of squares over the row by the strided loop, wg_sum, the scale, a
+;; second strided loop. kind: 1 rmsnorm 2 l2norm 3 gated 4 add_rmsnorm
+(defn- k2-nex-norm [kind :i64] :vector-i64
+  (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) tf (kb-tf32 B) V (k2-nex-bindings B)
+        red (kb-shared B tf 256)
+        vi (kb-var B tu) vst (kb-var B tu) vss (kb-var B tf)
+        u0 (kb-u32 B 0) u256 (kb-u32 B 256) f0 (kb-f32 B 0)
+        r (kb-builtin-at B 26 0) t (kb-builtin-at B 27 0) n (k2-pm B V 0)
+        ;; rmsnorm: stride = (P.aux == 0) ? n : P.aux, ibase = r * stride, obase = r * n
+        ;; l2norm: base = r * n, ibase = P.aux2 + r * n; the others: base = r * n
+        aux (if (= kind 1) (k2-pm B V 2) 0)
+        stride (if (= kind 1) (kb-select B tu (kb-ieq B aux u0) n aux) 0)
+        ibase (case kind 1 (kb-imul B r stride) 2 (kb-iadd B (k2-pm B V 3) (kb-imul B r n)) (kb-imul B r n))
+        obase (if (= kind 1) (kb-imul B r n) ibase)
+        base (if (= kind 2) (kb-imul B r n) obase)
+        s0 (kb-store B vss f0)
+        i1 (k2-for B vi t n)
+        ;; x = a[ibase + i] (add_rmsnorm: v = a + b; o[base + i] = v)
+        x (if (= kind 4)
+            (let [v (kb-fadd B (k2-ld B V 1 (kb-iadd B base i1)) (k2-ld B V 2 (kb-iadd B base i1)))
+                  w (k2-st B V 4 (kb-iadd B base i1) v)]
+              v)
+            (k2-ld B V 1 (kb-iadd B ibase i1)))
+        s1 (k2-acc B vss (kb-fmul B x x))
+        e1 (k2-end-for B vi u256)
+        tot (k2-wg-sum B red t vst (kb-load B tf vss))
+        ;; l2norm: inversesqrt(tot + eps) * ((scale == 0) ? 1 : scale); else
+        ;; inversesqrt(tot / float(n) + eps)
+        inv (if (= kind 2)
+              (let [sc (k2-pm B V 5)]
+                (kb-fmul B (kb-finvsqrt B (kb-fadd B tot (k2-pm B V 4)))
+                         (kb-select B tf (kb-feq B sc f0) (kb-f32 B F-ONE) sc)))
+              (kb-finvsqrt B (kb-fadd B (kb-fdiv B tot (kb-u2f B n)) (k2-pm B V 4))))
+        i2 (k2-for B vi t n)
+        s2 (case kind
+             ;; o[obase + i] = a[ibase + i] * inv * b[i]
+             1 (k2-st B V 4 (kb-iadd B obase i2) (kb-fmul B (kb-fmul B (k2-ld B V 1 (kb-iadd B ibase i2)) inv) (k2-ld B V 2 i2)))
+             ;; o[base + i] = a[ibase + i] * inv
+             2 (k2-st B V 4 (kb-iadd B base i2) (kb-fmul B (k2-ld B V 1 (kb-iadd B ibase i2)) inv))
+             ;; o[base + i] = a[base + i] * inv * b[i] * silu(c[base + i])
+             3 (k2-st B V 4 (kb-iadd B base i2)
+                      (kb-fmul B (kb-fmul B (kb-fmul B (k2-ld B V 1 (kb-iadd B base i2)) inv) (k2-ld B V 2 i2))
+                               (k2-silu B (k2-ld B V 3 (kb-iadd B base i2)))))
+             ;; s[base + i] = o[base + i] * inv * c[i]
+             (k2-st B V 5 (kb-iadd B base i2) (kb-fmul B (kb-fmul B (k2-ld B V 4 (kb-iadd B base i2)) inv) (k2-ld B V 3 i2))))
+        e2 (k2-end-for B vi u256)]
+    (kb-module B 256 1 1)))
+
+;; the one-invocation-per-element ops: i = GlobalInvocationID.x, and
+;; if (i >= bound) return; first. op: 4 silu_mul 5 conv1d_step 6 gate_decay
+;; 7 gate_decay2 8 copy_at 10 add 11 add_bias
+(defn- k2-nex-ewise [op :i64] :vector-i64
+  (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) tf (kb-tf32 B) V (k2-nex-bindings B)
+        vsp (kb-var B tf)
+        u1 (kb-u32 B 1) u2 (kb-u32 B 2) u3 (kb-u32 B 3) u4 (kb-u32 B 4) f0 (kb-f32 B 0)
+        i (kb-builtin-at B 28 0)
+        ;; gate_decay(2) loop over P.rows, the others over P.n
+        g (k2-return-if B (kb-uge B i (k2-pm B V (if (or (= op 6) (= op 7)) 1 0))))
+        n (k2-pm B V 0)
+        w (case op
+            ;; o[i] = silu(a[i]) * b[i]
+            4 (k2-st B V 4 i (kb-fmul B (k2-silu B (k2-ld B V 1 i)) (k2-ld B V 2 i)))
+            ;; x0 = s[ch], x1 = s[n + ch], x2 = s[2n + ch], x3 = a[ch];
+            ;; y = b[4ch] x0 + b[4ch+1] x1 + b[4ch+2] x2 + b[4ch+3] x3; o[ch] = silu(y);
+            ;; s[ch] = x1; s[n + ch] = x2; s[2n + ch] = x3
+            5 (let [x0 (k2-ld B V 5 i) x1 (k2-ld B V 5 (kb-iadd B n i)) x2 (k2-ld B V 5 (kb-iadd B (kb-imul B u2 n) i))
+                    x3 (k2-ld B V 1 i) c4 (kb-imul B i u4)
+                    y (kb-fadd B (kb-fadd B (kb-fadd B (kb-fmul B (k2-ld B V 2 c4) x0)
+                                                       (kb-fmul B (k2-ld B V 2 (kb-iadd B c4 u1)) x1))
+                                           (kb-fmul B (k2-ld B V 2 (kb-iadd B c4 u2)) x2))
+                               (kb-fmul B (k2-ld B V 2 (kb-iadd B c4 u3)) x3))
+                    a (k2-st B V 4 i (k2-silu B y))
+                    b (k2-st B V 5 i x1)
+                    c (k2-st B V 5 (kb-iadd B n i) x2)]
+                (k2-st B V 5 (kb-iadd B (kb-imul B u2 n) i) x3))
+            ;; o[h] = softplus(a[h] + b[h]) * c[h]; o[aux + h] = sigmoid(a[aux2 + h])
+            ;; (gate_decay2: sigmoid(s[h]))
+            6 (let [a (k2-st B V 4 i (kb-fmul B (k2-softplus B vsp (kb-fadd B (k2-ld B V 1 i) (k2-ld B V 2 i))) (k2-ld B V 3 i)))]
+                (k2-st B V 4 (kb-iadd B (k2-pm B V 2) i) (k2-sigmoid B (k2-ld B V 1 (kb-iadd B (k2-pm B V 3) i)))))
+            7 (let [a (k2-st B V 4 i (kb-fmul B (k2-softplus B vsp (kb-fadd B (k2-ld B V 1 i) (k2-ld B V 2 i))) (k2-ld B V 3 i)))]
+                (k2-st B V 4 (kb-iadd B (k2-pm B V 2) i) (k2-sigmoid B (k2-ld B V 5 i))))
+            ;; off = (P.p1 != 0) ? dyn_pos() * aux2 : aux2; o[off + i] = a[i]
+            8 (let [aux2 (k2-pm B V 3)
+                    off (k2-if-dyn B V 2 aux2 aux2)]
+                (k2-st B V 4 (kb-iadd B off i) (k2-ld B V 1 i)))
+            ;; o[i] = a[i] + b[i]
+            10 (k2-st B V 4 i (kb-fadd B (k2-ld B V 1 i) (k2-ld B V 2 i)))
+            ;; o[i] = a[i] + b[i - (i / aux) * aux]
+            (let [aux (k2-pm B V 2)]
+              (k2-st B V 4 i (kb-fadd B (k2-ld B V 1 i) (k2-ld B V 2 (kb-isub B i (kb-imul B (kb-udiv B i aux) aux)))))))]
+    (kb-module B 256 1 1)))
+
+;; weighted_sum: i = GlobalInvocationID.x, y = WorkGroupID.y; if (i >= n)
+;; return; acc = sum over e < aux of b[y aux + e] * a[(y aux + e) n + i];
+;; o[y n + i] = acc + c[y n + i] * sigmoid(s[y])
+(defn- k2-nex-weighted-sum [] :vector-i64
+  (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) tf (kb-tf32 B) V (k2-nex-bindings B)
+        vacc (kb-var B tf) ve (kb-var B tu)
+        u0 (kb-u32 B 0) u1 (kb-u32 B 1) f0 (kb-f32 B 0)
+        i (kb-builtin-at B 28 0) y (kb-builtin-at B 26 1)
+        g (k2-return-if B (kb-uge B i (k2-pm B V 0)))
+        a0 (kb-store B vacc f0)
+        e (k2-for B ve u0 (k2-pm B V 2))
+        ye (kb-iadd B (kb-imul B y (k2-pm B V 2)) e)
+        a1 (k2-acc B vacc (kb-fmul B (k2-ld B V 2 ye) (k2-ld B V 1 (kb-iadd B (kb-imul B ye (k2-pm B V 0)) i))))
+        e1 (k2-end-for B ve u1)
+        yn (kb-iadd B (kb-imul B y (k2-pm B V 0)) i)
+        w (k2-st B V 4 yn (kb-fadd B (kb-load B tf vacc) (kb-fmul B (k2-ld B V 3 yn) (k2-sigmoid B (k2-ld B V 5 y)))))]
+    (kb-module B 256 1 1)))
+
+;; f32_matvec: r = WorkGroupID.x, y = WorkGroupID.y; acc = sum over the
+;; strided i of a[r n + i] * b[y n + i]; tot = wg_sum; if (t == 0)
+;; o[y rows + r] = tot
+(defn- k2-nex-matvec [] :vector-i64
+  (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) tf (kb-tf32 B) V (k2-nex-bindings B)
+        red (kb-shared B tf 256)
+        vi (kb-var B tu) vst (kb-var B tu) vacc (kb-var B tf)
+        u0 (kb-u32 B 0) u256 (kb-u32 B 256) f0 (kb-f32 B 0)
+        r (kb-builtin-at B 26 0) y (kb-builtin-at B 26 1) t (kb-builtin-at B 27 0)
+        n (k2-pm B V 0) base (kb-imul B r n)
+        a0 (kb-store B vacc f0)
+        i (k2-for B vi t n)
+        a1 (k2-acc B vacc (kb-fmul B (k2-ld B V 1 (kb-iadd B base i)) (k2-ld B V 2 (kb-iadd B (kb-imul B y n) i))))
+        e1 (k2-end-for B vi u256)
+        tot (k2-wg-sum B red t vst (kb-load B tf vacc))
+        g (kb-if B (kb-ieq B t u0))
+        w (k2-st B V 4 (kb-iadd B (kb-imul B y (k2-pm B V 1)) r) tot)
+        z (kb-end-if B)]
+    (kb-module B 256 1 1)))
+
+;; pos_incr: if (GlobalInvocationID.x == 0) ids[0] += 1
+(defn- k2-nex-pos-incr [] :vector-i64
+  (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) V (k2-nex-bindings B)
+        u0 (kb-u32 B 0)
+        g (kb-if B (kb-ieq B (kb-builtin-at B 28 0) u0))
+        w (k2-st B V 6 u0 (kb-iadd B (k2-ld B V 6 u0) (kb-u32 B 1)))
+        z (kb-end-if B)]
+    (kb-module B 256 1 1)))
+
+;; rope_neox (decode, no BIAS): h = WorkGroupID.x, nrot = P.aux, hlf = nrot / 2,
+;; base = h n, tokrow = (P.rows > 0) ? h / P.rows : 0; for the strided i: the
+;; tail (i >= nrot) is copied; else p0 != 0 pairs (2p, 2p + 1) and p0 == 0
+;; pairs (p, p + hlf), theta = float(pos + tokrow) * pow(P.scale, -2 pair /
+;; nrot), divided by b[pair] when P.eps != 0, and the pair rotated
+(defn- k2-nex-rope [] :vector-i64
+  (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) tf (kb-tf32 B) tb (kb-tbool B) V (k2-nex-bindings B)
+        vi (kb-var B tu) vtok (kb-var B tu) vth (kb-var B tf)
+        u0 (kb-u32 B 0) u1 (kb-u32 B 1) u2 (kb-u32 B 2) u256 (kb-u32 B 256) f0 (kb-f32 B 0)
+        h (kb-builtin-at B 26 0) t (kb-builtin-at B 27 0) n (k2-pm B V 0) nrot (k2-pm B V 2)
+        hlf (kb-udiv B nrot u2) base (kb-imul B h n)
+        ;; tokrow in an if: the other arm of the select would divide by zero
+        r0 (kb-store B vtok u0)
+        r1 (kb-if B (kb-ugt B (k2-pm B V 1) u0))
+        r2 (kb-store B vtok (kb-udiv B h (k2-pm B V 1)))
+        r3 (kb-end-if B)
+        tokrow (kb-load B tu vtok)
+        i (k2-for B vi t n)
+        ;; if (i >= nrot) { o[base + i] = a[base + i]; continue; }
+        c0 (kb-if B (kb-uge B i nrot))
+        c1 (k2-st B V 4 (kb-iadd B base i) (k2-ld B V 1 (kb-iadd B base i)))
+        c2 (kb-next B)
+        c3 (kb-end-if B)
+        norm (kb-fne B (k2-pm B V 6) f0)
+        pair (kb-select B tu norm (kb-shr B i u1) (kb-select B tu (kb-uge B i hlf) (kb-isub B i hlf) i))
+        pos (k2-if-dyn B V 0 0 (k2-pm B V 3))
+        d0 (kb-store B vth (kb-fmul B (kb-u2f B (kb-iadd B pos tokrow))
+                                    (kb-fpow B (k2-pm B V 5) (kb-fdiv B (kb-fmul B (kb-f32 B F-MINUS-TWO) (kb-u2f B pair)) (kb-u2f B nrot)))))
+        d1 (kb-if B (kb-fne B (k2-pm B V 4) f0))
+        d2 (kb-store B vth (kb-fdiv B (kb-load B tf vth) (k2-ld B V 2 pair)))
+        d3 (kb-end-if B)
+        theta (kb-load B tf vth)
+        cs (kb-fcos B theta) sn (kb-fsin B theta)
+        ;; x0 = a[base + (norm ? 2 pair : pair)], x1 = a[base + (norm ? 2 pair + 1 : pair + hlf)]
+        x0 (k2-ld B V 1 (kb-iadd B base (kb-select B tu norm (kb-imul B u2 pair) pair)))
+        x1 (k2-ld B V 1 (kb-iadd B base (kb-select B tu norm (kb-iadd B (kb-imul B u2 pair) u1) (kb-iadd B pair hlf))))
+        second (kb-select B tb norm (kb-ieq B (kb-band B i u1) u1) (kb-uge B i hlf))
+        w (k2-st B V 4 (kb-iadd B base i)
+                 (kb-select B tf second (kb-fadd B (kb-fmul B x0 sn) (kb-fmul B x1 cs)) (kb-fsub B (kb-fmul B x0 cs) (kb-fmul B x1 sn))))
+        e (k2-end-for B vi u256)]
+    (kb-module B 256 1 1)))
+
+;; attn_decode (decode): attn_copy_dense's phase 2 over the cache in b and c
+;; (no current-row substitution), and the output gate: o = (P.p0 != 0) ? acc
+;; : acc * sigmoid(s[gi]), gi = (P.eps < 0) ? row rows 2 d + (2h + 1) d + i
+;; : qoff + h d + i. The gate's load is in an if (s is a stub when p0 != 0).
+(defn- k2-nex-attn [] :vector-i64
+  (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) tf (kb-tf32 B) V (k2-nex-bindings B)
+        red (kb-shared B tf 256)
+        vi (kb-var B tu) vst (kb-var B tu) vsc (kb-var B tf) vdt (kb-var B tf) vacc (kb-var B tf) vtt (kb-var B tu)
+        vout (kb-var B tf)
+        u0 (kb-u32 B 0) u1 (kb-u32 B 1) u2 (kb-u32 B 2) u256 (kb-u32 B 256) f0 (kb-f32 B 0)
+        h (kb-builtin-at B 26 0) row (kb-builtin-at B 26 1) t (kb-builtin-at B 27 0)
+        d (k2-pm B V 0)
+        T (kb-iadd B (k2-if-dyn B V 1 0 (k2-pm B V 2)) row)
+        aux2 (k2-pm B V 3)
+        hkv (kb-udiv B h (kb-udiv B (k2-pm B V 1) aux2))
+        qoff (kb-imul B (kb-imul B row (k2-pm B V 1)) d)
+        s0 (kb-store B vsc (kb-f32 B F-MINUS-1E30))
+        s1 (kb-if B (kb-ult B t T))
+        s2 (kb-store B vdt f0)
+        i2 (k2-for B vi u0 d)
+        s3 (k2-acc B vdt (kb-fmul B (k2-ld B V 1 (kb-iadd B (kb-iadd B qoff (kb-imul B h d)) i2))
+                                    (k2-ld B V 2 (k2-kv-index B t aux2 hkv d i2))))
+        s4 (k2-end-for B vi u1)
+        s5 (kb-store B vsc (kb-fmul B (kb-load B tf vdt) (k2-pm B V 5)))
+        s6 (kb-end-if B)
+        sc (kb-load B tf vsc)
+        m0 (kb-store B (kb-shared-at B red tf t) sc) m1 (kb-barrier B)
+        m2 (k2-tree B red t vst true)
+        m (kb-load B tf (kb-shared-at B red tf u0)) m3 (kb-barrier B)
+        e (kb-select B tf (kb-ult B t T) (kb-fexp B (kb-fsub B sc m)) f0)
+        denom (k2-wg-sum B red t vst e)
+        q0 (kb-store B (kb-shared-at B red tf t) (kb-fdiv B e denom)) q1 (kb-barrier B)
+        i3 (k2-for B vi t d)
+        q2 (kb-store B vacc f0)
+        tt (k2-for B vtt u0 T)
+        q3 (k2-acc B vacc (kb-fmul B (kb-load B tf (kb-shared-at B red tf tt)) (k2-ld B V 3 (k2-kv-index B tt aux2 hkv d i3))))
+        q4 (k2-end-for B vtt u1)
+        acc (kb-load B tf vacc)
+        gi (kb-select B tu (kb-flt B (k2-pm B V 4) f0)
+                      (kb-iadd B (kb-iadd B (kb-imul B (kb-imul B (kb-imul B row (k2-pm B V 1)) u2) d)
+                                            (kb-imul B (kb-iadd B (kb-imul B h u2) u1) d))
+                               i3)
+                      (kb-iadd B (kb-iadd B qoff (kb-imul B h d)) i3))
+        g0 (kb-if B (kb-fne B (k2-pm B V 6) f0))
+        g1 (kb-store B vout acc)
+        g2 (kb-else B)
+        g3 (kb-store B vout (kb-fmul B acc (k2-sigmoid B (k2-ld B V 5 gi))))
+        g4 (kb-end-if B)
+        q5 (k2-st B V 4 (kb-iadd B (kb-iadd B qoff (kb-imul B h d)) i3) (kb-load B tf vout))
+        q6 (k2-end-for B vi u256)]
+    (kb-module B 256 1 1)))
+
+;; the (value, index) tree: for (st = 128; st > 0; st >>= 1) { if (t < st) {
+;; ov = red[t + st]; oi = redi[t + st]; if (ov > red[t] || (ov == red[t] &&
+;; oi < redi[t])) { red[t] = ov; redi[t] = oi; } } barrier(); }. Both sides
+;; of || and && are safe to evaluate, so neither short-circuits.
+(defn- k2-argmax-tree [B :vector-i64 red :i64 redi :i64 t :i64 st-var :i64] :i64
+  (let [tu (kb-tu32 B) tf (kb-tf32 B)
+        a (kb-store B st-var (kb-u32 B 128))
+        l (kb-loop B)
+        w (kb-while B (kb-ugt B (kb-load B tu st-var) (kb-u32 B 0)))
+        st (kb-load B tu st-var)
+        g (kb-if B (kb-ult B t st))
+        ts (kb-iadd B t st)
+        ov (kb-load B tf (kb-shared-at B red tf ts)) oi (kb-load B tu (kb-shared-at B redi tu ts))
+        rt (kb-load B tf (kb-shared-at B red tf t))
+        h (kb-if B (kb-lor B (kb-fgt B ov rt) (kb-land B (kb-feq B ov rt) (kb-ult B oi (kb-load B tu (kb-shared-at B redi tu t))))))
+        s1 (kb-store B (kb-shared-at B red tf t) ov)
+        s2 (kb-store B (kb-shared-at B redi tu t) oi)
+        e1 (kb-end-if B)
+        e2 (kb-end-if B)
+        b (kb-barrier B)
+        c (kb-continue B)
+        n (kb-store B st-var (kb-shr B (kb-load B tu st-var) (kb-u32 B 1)))]
+    (kb-end-loop B)))
+;; if (v > bv || (v == bv && ix < bi)) { bv = v; bi = ix; }
+(defn- k2-best [B :vector-i64 vbv :i64 vbi :i64 v :i64 ix :i64] :i64
+  (let [bv (kb-load B (kb-tf32 B) vbv) bi (kb-load B (kb-tu32 B) vbi)
+        g (kb-if B (kb-lor B (kb-fgt B v bv) (kb-land B (kb-feq B v bv) (kb-ult B ix bi))))
+        a (kb-store B vbv v) b (kb-store B vbi ix)]
+    (kb-end-if B)))
+
+;; softmax_topk: row = WorkGroupID.x, n = P.n (<= 256), k = P.aux; the softmax
+;; of the row, then k rounds of the (p, index) tree, each writing ids and o
+;; and retiring its pick (p = -1); then o[row k + t] = o / wsum * P.scale
+(defn- k2-nex-topk [] :vector-i64
+  (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) tf (kb-tf32 B) V (k2-nex-bindings B)
+        red (kb-shared B tf 256) redi (kb-shared B tu 256)
+        vst (kb-var B tu) vx (kb-var B tf) vp (kb-var B tf) vws (kb-var B tf) vr (kb-var B tu)
+        u0 (kb-u32 B 0) u1 (kb-u32 B 1) f0 (kb-f32 B 0)
+        t (kb-builtin-at B 27 0) n (k2-pm B V 0) k (k2-pm B V 2) row (kb-builtin-at B 26 0)
+        ;; x = (t < n) ? a[row n + t] : -1e30, the load in an if
+        x0 (kb-store B vx (kb-f32 B F-MINUS-1E30))
+        x1 (kb-if B (kb-ult B t n))
+        x2 (kb-store B vx (k2-ld B V 1 (kb-iadd B (kb-imul B row n) t)))
+        x3 (kb-end-if B)
+        x (kb-load B tf vx)
+        m0 (kb-store B (kb-shared-at B red tf t) x) m1 (kb-barrier B)
+        m2 (k2-tree B red t vst true)
+        m (kb-load B tf (kb-shared-at B red tf u0)) m3 (kb-barrier B)
+        e (kb-select B tf (kb-ult B t n) (kb-fexp B (kb-fsub B x m)) f0)
+        denom (k2-wg-sum B red t vst e)
+        p0 (kb-store B vp (kb-fdiv B e denom))
+        w0 (kb-store B vws f0)
+        rd (k2-for B vr u0 k)
+        r0 (kb-store B (kb-shared-at B red tf t) (kb-load B tf vp))
+        r1 (kb-store B (kb-shared-at B redi tu t) t)
+        r2 (kb-barrier B)
+        r3 (k2-argmax-tree B red redi t vst)
+        best (kb-load B tu (kb-shared-at B redi tu u0)) bp (kb-load B tf (kb-shared-at B red tf u0))
+        r4 (kb-barrier B)
+        r5 (kb-if B (kb-ieq B t u0))
+        r6 (k2-st B V 6 (kb-iadd B (kb-imul B row k) rd) best)
+        r7 (k2-st B V 4 (kb-iadd B (kb-imul B row k) rd) bp)
+        r8 (kb-end-if B)
+        r9 (kb-if B (kb-ieq B t best))
+        r10 (kb-store B vp (kb-f32 B F-MINUS-ONE))
+        r11 (kb-end-if B)
+        r12 (k2-acc B vws bp)
+        r13 (kb-barrier B)
+        r14 (k2-end-for B vr u1)
+        z0 (kb-memory-barrier-buffer B) z1 (kb-barrier B)
+        z2 (kb-if B (kb-ult B t k))
+        oi (kb-iadd B (kb-imul B row k) t)
+        z3 (k2-st B V 4 oi (kb-fmul B (kb-fdiv B (k2-ld B V 4 oi) (kb-load B tf vws)) (k2-pm B V 5)))
+        z4 (kb-end-if B)]
+    (kb-module B 256 1 1)))
+
+;; argmax_partial (decode): workgroup w scans a[w 4096 .. min(w 4096 + 4096,
+;; n)), the (value, index) tree, and invocation 0 writes s[w] and ids[w].
+;; argmax_final (decode): the same over the P.aux partials in s and ids; ids
+;; [aux] and o[0] get the pick, and with P.p1 != 0 the token buffer b[pos + 1]
+;; too (pos = the bits of c[0]) once pos + 1 >= P.aux2.
+(defn- k2-nex-argmax [final? :bool] :vector-i64
+  (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) tf (kb-tf32 B) V (k2-nex-bindings B)
+        red (kb-shared B tf 256) redi (kb-shared B tu 256)
+        vi (kb-var B tu) vst (kb-var B tu) vbv (kb-var B tf) vbi (kb-var B tu)
+        u0 (kb-u32 B 0) u1 (kb-u32 B 1) u256 (kb-u32 B 256) u4096 (kb-u32 B 4096) f0 (kb-f32 B 0)
+        t (kb-builtin-at B 27 0) w (kb-builtin-at B 26 0)
+        start (kb-imul B w u4096)
+        b0 (kb-store B vbv (kb-f32 B F-MINUS-1E30)) b1 (kb-store B vbi u0)
+        i (if final? (k2-for B vi t (k2-pm B V 2))
+            (k2-for B vi (kb-iadd B start t) (kb-umin B (kb-iadd B start u4096) (k2-pm B V 0))))
+        c (if final? (k2-best B vbv vbi (k2-ld B V 5 i) (k2-ld B V 6 i)) (k2-best B vbv vbi (k2-ld B V 1 i) i))
+        e (k2-end-for B vi u256)
+        r0 (kb-store B (kb-shared-at B red tf t) (kb-load B tf vbv))
+        r1 (kb-store B (kb-shared-at B redi tu t) (kb-load B tu vbi))
+        r2 (kb-barrier B)
+        r3 (k2-argmax-tree B red redi t vst)
+        g (kb-if B (kb-ieq B t u0))
+        z (if final?
+            (let [parts (k2-pm B V 2)
+                  a1 (k2-st B V 6 parts (kb-load B tu (kb-shared-at B redi tu u0)))
+                  a2 (k2-st B V 4 u0 (kb-load B tf (kb-shared-at B red tf u0)))
+                  h (kb-if B (kb-fne B (k2-pm B V 7) f0))
+                  pos (kb-bitcast B tu (k2-ld B V 3 u0))
+                  j (kb-if B (kb-uge B (kb-iadd B pos u1) (k2-pm B V 3)))
+                  a3 (k2-st B V 2 (kb-iadd B pos u1) (kb-bitcast B tf (kb-load B tu (kb-shared-at B redi tu u0))))
+                  j2 (kb-end-if B)]
+              (kb-end-if B))
+            (let [a1 (k2-st B V 5 w (kb-load B tf (kb-shared-at B red tf u0)))]
+              (k2-st B V 6 w (kb-load B tu (kb-shared-at B redi tu u0)))))
+        z2 (kb-end-if B)]
+    (kb-module B 256 1 1)))
+
+;; the module of op (an empty one for another op)
+(defn kir2-nex-op [op :i64] :vector-i64
+  (cond (= op 1) (k2-nex-norm 1)
+        (= op 2) (k2-nex-norm 2)
+        (= op 3) (k2-nex-norm 3)
+        (= op 13) (k2-nex-norm 4)
+        (= op 9) (k2-nex-weighted-sum)
+        (= op 12) (k2-nex-matvec)
+        (= op 14) (k2-nex-pos-incr)
+        (= op 15) (k2-nex-rope)
+        (= op 16) (k2-nex-attn)
+        (= op 17) (k2-nex-topk)
+        (= op 18) (k2-nex-argmax false)
+        (= op 19) (k2-nex-argmax true)
+        (or (and (>= op 4) (<= op 8)) (= op 10) (= op 11)) (k2-nex-ewise op)
+        :else (spv-new 0)))

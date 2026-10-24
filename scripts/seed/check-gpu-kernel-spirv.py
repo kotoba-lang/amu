@@ -74,6 +74,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 ENCODE_CHECK = ["tools/spirv_encode.kotoba", "tools/spirv_check.kotoba"]
 EWISE_OPS = ["add", "sub", "mul", "div"]
+# nex-ops.comp is one kernel per -DOP (the decode ops that KIR v2 writes,
+# tools/gpu_kernels_v2.kotoba kir2-nex-op 1..19 in this order)
+NEX_OPS = ["rmsnorm", "l2norm", "gated_rmsnorm", "silu_mul", "conv1d_step", "gate_decay", "gate_decay2", "copy_at",
+           "weighted_sum", "add", "add_bias", "f32_matvec", "add_rmsnorm", "pos_incr", "rope_neox", "attn_decode",
+           "softmax_topk", "argmax_partial", "argmax_final"]
 # modules, test, the receipt, the written modules' prefix and their sizes by
 # name part, the control's one failure, and whether glslang refs go in
 SUITES = {
@@ -84,7 +89,8 @@ SUITES = {
                  count=23, control="FAIL label inside an open block", refs=True),
     "kir2": dict(modules=[*ENCODE_CHECK, "tools/gpu_kernel_kir2.kotoba", "tools/gpu_kernels_v2.kotoba"],
                  test="tools/gpu_kernel_kir2_test.kotoba", receipt="gpu-kernel-kir2.json", prefix="kir2-",
-                 sizes={"ewise": 1096, "attn-copy-dense": 6488}, count=9, control="FAIL attn: variables", refs=True),
+                 sizes={"ewise": 1096, "attn-copy-dense": 6488, **{"kir2-nex-" + op + ".spv": n for op, n in zip(NEX_OPS, [3440, 3468, 3516, 1992, 2660, 2452, 2396, 2140, 2704, 1872, 1968, 3088, 3476, 1652, 3988, 5964, 5356, 3604, 4052])}},
+                 count=28, control="FAIL attn: variables", refs=True),
 }
 FUEL = 100000000
 EXPECT_CALL = re.compile(r"\(expect ")
@@ -122,10 +128,12 @@ def refs(output):
     out.mkdir(parents=True, exist_ok=False)
     rows = {}
     for comp in sorted(REFS.glob("*.comp")):
-        spv = out / ("ref-" + comp.stem + ".spv")
-        r = subprocess.run([glslang, "-V", "--target-env", "vulkan1.1", str(comp), "-o", str(spv)], capture_output=True, text=True)
-        assert r.returncode == 0, (comp.name, r.stdout, r.stderr)
-        rows[spv.name] = dict(source=pin(comp), module=pin(spv))
+        for op in (NEX_OPS if comp.name == "nex-ops.comp" else [None]):
+            spv = out / ("ref-" + comp.stem + ("-" + op if op else "") + ".spv")
+            r = subprocess.run([glslang, "-V", "--target-env", "vulkan1.1", *(["-DOP=" + op] if op else []), str(comp), "-o", str(spv)],
+                               capture_output=True, text=True)
+            assert r.returncode == 0, (comp.name, op, r.stdout, r.stderr)
+            rows[spv.name] = dict(source=pin(comp), define=op and "OP=" + op, module=pin(spv))
     version = subprocess.run([glslang, "--version"], capture_output=True, text=True).stdout.splitlines()[0]
     (out / "refs.json").write_text(json.dumps(dict(tool=version, host=[platform.system(), platform.machine()], modules=rows,
                                                    note="oracle input only; not part of the product route"), indent=2) + "\n")
@@ -179,7 +187,9 @@ def build(compiler, output, target, suite, seccomp_if_available=False):
     assert cases == counted and failed == 1 and len(fails) == 1 and fails[0].startswith(suite["control"]), fails
     modules = {p.name: pin(p) for p in sorted(spv.glob(suite["prefix"] + "*.spv"))}
     sizes = suite["sizes"]
-    assert len(modules) == suite["count"] and all(m["bytes"] == next(v for k, v in sizes.items() if k in n) for n, m in modules.items()), modules
+    # a module's size by its name, else by the first key inside its name
+    size = lambda n: sizes[n] if n in sizes else next(v for k, v in sizes.items() if k in n)
+    assert len(modules) == suite["count"] and all(m["bytes"] == size(n) for n, m in modules.items()), modules
     report = dict(status="PASS_GPU_KERNEL_SPIRV_BUILD", suite=suite["name"], target=target, compiler=pin(compiler),
                   host=[platform.system(), platform.machine(), platform.release()],
                   imageSeccomp="if-available" if seccomp_if_available else "required",
@@ -273,6 +283,179 @@ ATTN_SHAPES = [
 ]
 
 
+def nex_cases():
+    """The nex_ops gate: per case the op, Meta, bindings 1..6 (inputs, and the
+    writable ones' initial bytes), the workgroups, and an optional check of the
+    outputs (bindings -> bytes) answering the largest error (0 when exact)."""
+    def meta(n=0, rows=0, aux=0, aux2=0, eps=0.0, scale=0.0, p0=0.0, p1=0.0):
+        return struct.pack("<4I4f", n, rows, aux, aux2, eps, scale, p0, p1)
+
+    def bufs(**kw):
+        out = {b: bytes(16) for b in range(1, 7)}
+        for k, v in kw.items():
+            out["_abcosi".index(k)] = v if isinstance(v, bytes) else f32(v)
+        return out
+
+    def near(got, want):
+        return max(abs(g - w) for g, w in zip(from_f32(got), want))
+
+    def rms(a, w, n, rows, stride, eps):
+        out = []
+        for r in range(rows):
+            x = a[r * stride:r * stride + n]
+            inv = 1.0 / math.sqrt(sum(v * v for v in x) / n + eps)
+            out += [x[i] * inv * w[i] for i in range(n)]
+        return out
+
+    cases = []
+    a, w = lcg(3 * 2100, 11), lcg(2048, 12)
+    cases.append(dict(name="rmsnorm stride", op="rmsnorm", meta=meta(n=2048, aux=2100, eps=1e-6),
+                      bufs=bufs(a=a, b=w, o=bytes(4 * 3 * 2048)), groups=(3, 1, 1),
+                      check=lambda o, a=a, w=w: near(o[4], rms(a, w, 2048, 3, 2100, 1e-6))))
+    a2 = lcg(2 * 1024, 13)
+    cases.append(dict(name="rmsnorm contiguous", op="rmsnorm", meta=meta(n=1024, eps=1e-5),
+                      bufs=bufs(a=a2, b=w[:1024], o=bytes(4 * 2 * 1024)), groups=(2, 1, 1),
+                      check=lambda o, a=a2, w=w: near(o[4], rms(a, w, 1024, 2, 1024, 1e-5))))
+    for sc in (0.0, 0.5):
+        cases.append(dict(name=f"l2norm scale {sc}", op="l2norm", meta=meta(n=128, aux2=64, eps=1e-6, scale=sc),
+                          bufs=bufs(a=lcg(64 + 4 * 128, 14), o=bytes(4 * 4 * 128)), groups=(4, 1, 1)))
+    cases.append(dict(name="gated_rmsnorm", op="gated_rmsnorm", meta=meta(n=128, eps=1e-6),
+                      bufs=bufs(a=lcg(512, 15), b=lcg(128, 16), c=lcg(512, 17), o=bytes(2048)), groups=(4, 1, 1)))
+    cases.append(dict(name="silu_mul", op="silu_mul", meta=meta(n=1000),
+                      bufs=bufs(a=lcg(1000, 18), b=lcg(1000, 19), o=bytes(4000)), groups=(4, 1, 1)))
+    cases.append(dict(name="conv1d_step", op="conv1d_step", meta=meta(n=500),
+                      bufs=bufs(a=lcg(500, 20), b=lcg(2000, 21), s=lcg(1500, 22), o=bytes(2000)), groups=(2, 1, 1)))
+    # softplus takes both arms: a[h] + b[h] > 20 for the first four heads;
+    # rows, aux (o's offset) and aux2 (a's offset) all differ
+    big = [25.0] * 4 + lcg(104, 23)
+    cases.append(dict(name="gate_decay", op="gate_decay", meta=meta(rows=48, aux=50, aux2=60),
+                      bufs=bufs(a=big, b=lcg(48, 24), c=lcg(48, 25), o=bytes(4 * 98)), groups=(1, 1, 1)))
+    cases.append(dict(name="gate_decay2", op="gate_decay2", meta=meta(rows=48, aux=52),
+                      bufs=bufs(a=big[:48], b=lcg(48, 24), c=lcg(48, 25), s=lcg(48, 26), o=bytes(4 * 100)), groups=(1, 1, 1)))
+    x = lcg(512, 27)
+    cases.append(dict(name="copy_at dynamic", op="copy_at", meta=meta(n=512, aux2=512, p1=1.0),
+                      bufs=bufs(a=x, o=bytes(4 * 8 * 512), i=struct.pack("<4I", 3, 0, 0, 0)), groups=(2, 1, 1),
+                      check=lambda o, x=x: 0 if o[4] == bytes(4 * 3 * 512) + f32(x) + bytes(4 * 4 * 512) else 1))
+    cases.append(dict(name="copy_at static", op="copy_at", meta=meta(n=512, aux2=1024),
+                      bufs=bufs(a=x, o=bytes(4 * 8 * 512), i=struct.pack("<4I", 3, 0, 0, 0)), groups=(2, 1, 1),
+                      check=lambda o, x=x: 0 if o[4] == bytes(4 * 1024) + f32(x) + bytes(4 * 5 * 512) else 1))
+    cases.append(dict(name="weighted_sum", op="weighted_sum", meta=meta(n=300, aux=8),
+                      bufs=bufs(a=lcg(16 * 300, 28), b=lcg(16, 29), c=lcg(600, 30), s=lcg(2, 31), o=bytes(2400)), groups=(2, 2, 1)))
+    y1, y2 = lcg(1000, 32), lcg(1000, 33)
+    cases.append(dict(name="add", op="add", meta=meta(n=1000), bufs=bufs(a=y1, b=y2, o=bytes(4000)), groups=(4, 1, 1),
+                      check=lambda o, y1=y1, y2=y2: 0 if o[4] == f32([u + v for u, v in zip(y1, y2)]) else 1))
+    cases.append(dict(name="add_bias", op="add_bias", meta=meta(n=1000, aux=100), bufs=bufs(a=y1, b=y2[:100], o=bytes(4000)),
+                      groups=(4, 1, 1), check=lambda o, y1=y1, y2=y2: 0 if o[4] == f32([y1[i] + y2[i % 100] for i in range(1000)]) else 1))
+    m, v = lcg(64 * 1024, 34), lcg(2 * 1024, 35)
+    cases.append(dict(name="f32_matvec", op="f32_matvec", meta=meta(n=1024, rows=64), bufs=bufs(a=m, b=v, o=bytes(4 * 128)),
+                      groups=(64, 2, 1),
+                      check=lambda o, m=m, v=v: near(o[4], [sum(m[r * 1024 + i] * v[y * 1024 + i] for i in range(1024))
+                                                            for y in range(2) for r in range(64)])))
+    cases.append(dict(name="add_rmsnorm", op="add_rmsnorm", meta=meta(n=2048, eps=1e-6),
+                      bufs=bufs(a=lcg(4096, 36), b=lcg(4096, 37), c=lcg(2048, 38), o=bytes(4 * 4096), s=bytes(4 * 4096)),
+                      groups=(2, 1, 1)))
+    cases.append(dict(name="pos_incr", op="pos_incr", meta=meta(), bufs=bufs(i=struct.pack("<4I", 5, 7, 0, 0)), groups=(1, 1, 1),
+                      check=lambda o: 0 if o[6] == struct.pack("<4I", 6, 7, 0, 0) else 1))
+    # rope: NEOX pairs at the dynamic position with a rotated part and a
+    # copied tail; NORMAL pairs at P.aux2, two heads per token, with
+    # rope_freqs divisors (P.eps != 0)
+    cases.append(dict(name="rope_neox neox", op="rope_neox", meta=meta(n=128, aux=64, scale=10000.0, p1=1.0),
+                      bufs=bufs(a=lcg(512, 39), o=bytes(2048), i=struct.pack("<4I", 7, 0, 0, 0)), groups=(4, 1, 1)))
+    cases.append(dict(name="rope_neox normal", op="rope_neox", meta=meta(n=64, rows=2, aux=64, aux2=5, eps=1.0, scale=500000.0, p0=1.0),
+                      bufs=bufs(a=lcg(256, 40), b=[1.0 + 0.125 * k for k in range(32)], o=bytes(1024)), groups=(4, 1, 1)))
+    # NEOX at the dynamic position with two heads per token, rope_freqs and a
+    # copied tail; NORMAL with a copied tail
+    cases.append(dict(name="rope_neox neox dynamic rows freqs", op="rope_neox",
+                      meta=meta(n=128, rows=2, aux=64, eps=1.0, scale=10000.0, p1=1.0),
+                      bufs=bufs(a=lcg(512, 120), b=[1.0 + 0.0625 * k for k in range(32)], o=bytes(2048), i=struct.pack("<4I", 9, 0, 0, 0)),
+                      groups=(4, 1, 1)))
+    cases.append(dict(name="rope_neox normal tail", op="rope_neox", meta=meta(n=128, aux=96, aux2=3, scale=10000.0, p0=1.0),
+                      bufs=bufs(a=lcg(512, 121), o=bytes(2048)), groups=(4, 1, 1)))
+    # attn_decode: the interleaved output gate at the dynamic position (T =
+    # 38, GQA); dense (p0 != 0, s a stub) with P.aux and two rows
+    cases.append(dict(name="attn_decode gated", op="attn_decode", meta=meta(n=64, rows=8, aux2=2, eps=-1.0, scale=0.125, p1=1.0),
+                      bufs=bufs(a=lcg(512, 41), b=lcg(64 * 2 * 64, 42), c=lcg(64 * 2 * 64, 43), o=bytes(2048), s=lcg(1024, 44),
+                                i=struct.pack("<4I", 37, 0, 0, 0)), groups=(8, 1, 1)))
+    # the interleaved gate on two rows (T = 38, 39); the plain gate (eps >= 0,
+    # p0 == 0: s[qoff + h d + i]) with P.aux and two rows
+    cases.append(dict(name="attn_decode gated two rows", op="attn_decode", meta=meta(n=64, rows=8, aux2=2, eps=-1.0, scale=0.125, p1=1.0),
+                      bufs=bufs(a=lcg(1024, 122), b=lcg(64 * 2 * 64, 42), c=lcg(64 * 2 * 64, 43), o=bytes(4096), s=lcg(2048, 123),
+                                i=struct.pack("<4I", 37, 0, 0, 0)), groups=(8, 2, 1)))
+    cases.append(dict(name="attn_decode plain gate", op="attn_decode", meta=meta(n=64, rows=4, aux=10, aux2=4, eps=1e-6, scale=0.125),
+                      bufs=bufs(a=lcg(512, 124), b=lcg(16 * 4 * 64, 125), c=lcg(16 * 4 * 64, 126), o=bytes(2048), s=lcg(512, 127)),
+                      groups=(4, 2, 1)))
+    cases.append(dict(name="attn_decode dense", op="attn_decode", meta=meta(n=128, rows=4, aux=40, aux2=4, eps=1e-6, scale=0.088, p0=1.0),
+                      bufs=bufs(a=lcg(2 * 4 * 128, 45), b=lcg(48 * 4 * 128, 46), c=lcg(48 * 4 * 128, 47), o=bytes(4 * 1024)),
+                      groups=(4, 2, 1)))
+    # softmax_topk: 2 tokens over 128 experts, top 8, scaled
+    logits = lcg(256, 48)
+
+    def topk(o, k=8, n=128, scale=2.5):
+        ids, out = struct.unpack("<16I", o[6][:64]), from_f32(o[4][:64])
+        err = 0.0
+        for r in range(2):
+            x = logits[r * n:(r + 1) * n]
+            m = max(x)
+            e = [math.exp(v - m) for v in x]
+            p = [v / sum(e) for v in e]
+            pick = sorted(range(n), key=lambda j: (-p[j], j))[:k]
+            if list(ids[r * k:(r + 1) * k]) != pick:
+                return 1.0
+            w = sum(p[j] for j in pick)
+            err = max(err, max(abs(out[r * k + q] - p[pick[q]] / w * scale) for q in range(k)))
+        return err
+    cases.append(dict(name="softmax_topk", op="softmax_topk", meta=meta(n=128, aux=8, scale=2.5),
+                      bufs=bufs(a=logits, o=bytes(64), i=bytes(64)), groups=(2, 1, 1), check=topk))
+    # k = 4 over n = 200 (fewer experts than invocations)
+    logits2 = lcg(400, 128)
+
+    def topk4(o):
+        ids, out = struct.unpack("<8I", o[6][:32]), from_f32(o[4][:32])
+        err = 0.0
+        for r in range(2):
+            x = logits2[r * 200:(r + 1) * 200]
+            e = [math.exp(v - max(x)) for v in x]
+            p = [v / sum(e) for v in e]
+            pick = sorted(range(200), key=lambda j: (-p[j], j))[:4]
+            if list(ids[r * 4:(r + 1) * 4]) != pick:
+                return 1.0
+            err = max(err, max(abs(out[r * 4 + q] - p[pick[q]] / sum(p[j] for j in pick)) for q in range(4)))
+        return err
+    cases.append(dict(name="softmax_topk k4 n200", op="softmax_topk", meta=meta(n=200, aux=4, scale=1.0),
+                      bufs=bufs(a=logits2, o=bytes(32), i=bytes(32)), groups=(2, 1, 1), check=topk4))
+    # argmax: three partials over 10000 logits with ties at the maximum inside
+    # a workgroup and across them (the lower index wins), then the final pick
+    # (a tie between partials too) into the token buffer
+    lg = lcg(10000, 49)
+    lg[123] = lg[200] = lg[5000] = lg[9000] = 2.0
+
+    def partial(o):
+        want_v, want_i = [], []
+        for w in range(3):
+            seg = range(w * 4096, min(w * 4096 + 4096, 10000))
+            j = min(seg, key=lambda q: (-lg[q], q))
+            want_v.append(lg[j])
+            want_i.append(j)
+        return 0 if o[5][:12] == f32(want_v) and struct.unpack("<3I", o[6][:12]) == tuple(want_i) else 1
+    cases.append(dict(name="argmax_partial", op="argmax_partial", meta=meta(n=10000),
+                      bufs=bufs(a=lg, s=bytes(16), i=bytes(16)), groups=(3, 1, 1), check=partial))
+    # the token-buffer guard at its boundary: pos + 1 == aux2 writes b[5];
+    # inside the prompt (aux2 = 6) and with a static position nothing is written
+    for label, aux2, p1, want_b in (("at the prompt's end", 5, 1.0, bytes(20) + struct.pack("<I", 4200) + bytes(8)),
+                                    ("inside the prompt", 6, 1.0, bytes(32)), ("static position", 2, 0.0, bytes(32))):
+        cases.append(dict(name="argmax_final " + label, op="argmax_final", meta=meta(aux=3, aux2=aux2, p1=p1),
+                          bufs=bufs(b=bytes(32), c=struct.pack("<I", 4) + bytes(12), o=bytes(16), s=f32([0.5, 0.9, 0.9, 0.0]),
+                                    i=struct.pack("<4I", 10, 4200, 9000, 0)), groups=(1, 1, 1),
+                          check=lambda o, want_b=want_b: 0 if (struct.unpack("<4I", o[6]) == (10, 4200, 9000, 4200)
+                                                               and o[2] == want_b) else 1))
+    cases.append(dict(name="argmax_final", op="argmax_final", meta=meta(aux=3, aux2=2, p1=1.0),
+                      bufs=bufs(b=bytes(32), c=struct.pack("<I", 4) + bytes(12), o=bytes(16), s=f32([0.5, 0.9, 0.9, 0.0]),
+                                i=struct.pack("<4I", 10, 4200, 9000, 0)), groups=(1, 1, 1),
+                      check=lambda o: 0 if (struct.unpack("<4I", o[6]) == (10, 4200, 9000, 4200) and o[4][:4] == f32([0.9])
+                                            and o[2] == bytes(20) + struct.pack("<I", 4200) + bytes(8)) else 1))
+    return cases
+
+
 def gpu(output, suite, provider_out):
     assert suite["name"] == "kir2", "the gpu phase is suite kir2's"
     assert platform.system() == "Linux" and platform.machine() in ("x86_64", "AMD64"), "gpu phase: x86_64 Linux with a Vulkan driver"
@@ -286,8 +469,10 @@ def gpu(output, suite, provider_out):
     raw = output / "gpu"
     raw.mkdir(exist_ok=False)
     v2 = {"v2-attn.spv": "kir2-attn-copy-dense.spv",
-          **{f"v2-{o}-wg{wg}.spv": f"kir2-ewise-{o}-wg{wg}.spv" for o in EWISE_OPS for wg in (64, 256)}}
-    refs = {"ref-attn.spv": "ref-attn-copy-dense.spv", "ref-add.spv": "ref-ewise-add.spv"}
+          **{f"v2-{o}-wg{wg}.spv": f"kir2-ewise-{o}-wg{wg}.spv" for o in EWISE_OPS for wg in (64, 256)},
+          **{f"v2-nex-{op}.spv": f"kir2-nex-{op}.spv" for op in NEX_OPS}}
+    refs = {"ref-attn.spv": "ref-attn-copy-dense.spv", "ref-add.spv": "ref-ewise-add.spv",
+            **{f"ref-nex-{op}.spv": f"ref-nex-ops-{op}.spv" for op in NEX_OPS}}
     files = {**{n: output / "spv" / m for n, m in v2.items()}, **{n: output / "refs" / m for n, m in refs.items()}}
     for n, f in files.items():
         shutil.copy(f, raw / n)
@@ -314,8 +499,9 @@ def gpu(output, suite, provider_out):
         return bytes.fromhex(cgp.expect(s, f"READ {h} 0 {nbytes}", re.compile(r"^[0-9a-f]*$")))
 
     pipes = {}
-    for k, n in enumerate(["ref-add.spv", *[f"v2-{o}-wg{wg}.spv" for o in EWISE_OPS for wg in (64, 256)], "ref-attn.spv", "v2-attn.spv"]):
-        cgp.expect(s, f"PIPELINE {n} {8 if 'attn' in n else 4}", str(k + 1))
+    for k, n in enumerate(["ref-add.spv", *[f"v2-{o}-wg{wg}.spv" for o in EWISE_OPS for wg in (64, 256)], "ref-attn.spv", "v2-attn.spv",
+                           *[f"{w}-nex-{op}.spv" for op in NEX_OPS for w in ("ref", "v2")]]):
+        cgp.expect(s, f"PIPELINE {n} {7 if '-nex-' in n else 8 if 'attn' in n else 4}", str(k + 1))
         pipes[n] = k + 1
     rows = {}
     # ewise, all eight modules over n = 1000 (y kept away from 0 for div).
@@ -378,6 +564,24 @@ def gpu(output, suite, provider_out):
             cacheRowsExact=True, outputsIdentical=True,
             maxAbsErrVsF64={m: outs[m]["maxAbsErrVsF64"] for m in outs},
             outputSHA256={m: hashlib.sha256(outs[m]["o"]).hexdigest() for m in outs})
+    # the nex_ops decode set: every writable binding byte-identical between
+    # glslang's -DOP module and the KIR v2 module, and the case's check
+    for c in nex_cases():
+        hs = [alloc(len(c["meta"]))] + [alloc(len(c["bufs"][b])) for b in range(1, 7)]
+        outs = {}
+        for m in (f"ref-nex-{c['op']}.spv", f"v2-nex-{c['op']}.spv"):
+            for h, b in zip(hs, [c["meta"]] + [c["bufs"][b] for b in range(1, 7)]):
+                write(h, b)
+            cgp.expect(s, f"DISPATCH {pipes[m]} {c['groups'][0]} {c['groups'][1]} {c['groups'][2]} " + " ".join(map(str, hs)),
+                       re.compile(r"^\d+$"))
+            outs[m] = {b: read(hs[b], len(c["bufs"][b])) for b in (2, 4, 5, 6)}
+        ref, v2 = outs.values()
+        assert ref == v2, (c["name"], [b for b in ref if ref[b] != v2[b]], "differs from glslang's module")
+        err = c["check"](v2) if "check" in c else None
+        assert err is None or err < 1e-4, (c["name"], err)
+        rows["nex " + c["name"]] = dict(op=c["op"], groups=list(c["groups"]), identical=True, check=err,
+                                         inputsSHA256=hashlib.sha256(c["meta"] + b"".join(c["bufs"][b] for b in range(1, 7))).hexdigest(),
+                                         outputSHA256=hashlib.sha256(b"".join(v2[b] for b in (2, 4, 5, 6))).hexdigest())
     line = s.close(0)
     rows["confinement"] = cgp.confined(line, True)
     report["gpu"] = dict(host=[platform.system(), platform.machine(), platform.release()], node=platform.node(), info=info,

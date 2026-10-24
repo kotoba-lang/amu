@@ -13,7 +13,7 @@
 ;; CASES equals the expect calls below (the script counts them). CONTROL 1
 ;; makes exactly one expectation wrong; the script requires one failure then.
 
-(def CASES 29)
+(def CASES 45)
 (def CONTROL 0)
 
 (defn- say [s :string] :i64
@@ -110,8 +110,46 @@
     (+ (expect "glslang attn-copy-dense is read" (if (> (spv-count g) 5) 1 0) 1)
        (expect "glslang attn-copy-dense passes the checker" (spc-check g) 0))))
 
+;; ---------------------------------------------------------------------
+;; The nex_ops decode set: every op checks and writes, and glslang's module
+;; of the same -DOP passes the Kotoba checker too.
+
+(defn- nex-ops [] :i64
+  (loop [op 1 bad 0]
+    (if (> op NEX-OPS) bad
+      (let [m (kir2-nex-op op) name (kir2-nex-op-name op)
+            path (string-concat "kir2-nex-" (string-concat name ".spv"))
+            g (spv-read (string-concat "ref-nex-ops-" (string-concat name ".spv")))]
+        (recur (inc op)
+               (+ bad (+ (expect path (spc-check m) 0)
+                      (+ (expect (string-concat "write " path) (spv-write m path) (* 4 (spv-count m)))
+                         (expect (string-concat "glslang nex-ops " (string-concat name " passes the checker")) (spc-check g) 0)))))))))
+
+(defn- nex-shape [] :i64
+  (let [rms (kir2-nex-op 1) silu (kir2-nex-op 4) gate (kir2-nex-op 6) mv (kir2-nex-op 12) pos (kir2-nex-op 14)]
+    (+ (expect "nex: op 20 gives an empty module" (spv-count (kir2-nex-op 20)) 0)
+       (expect "nex: rmsnorm twice, the same words" (diff-words rms (kir2-nex-op 1)) 0)
+       ;; the strided sum, wg_sum's tree, the strided write
+       (expect "nex: rmsnorm has three loops" (count-op rms 246) 3)
+       (expect "nex: rmsnorm's inversesqrt" (count-op rms 12) 1)
+       ;; if (i >= n) return; and the function's end
+       (expect "nex: silu_mul returns early" (count-op silu 253) 2)
+       ;; the early return and softplus's x > 20
+       (expect "nex: gate_decay has two selections" (count-op gate 247) 2)
+       ;; softplus's exp and log, and sigmoid's exp
+       (expect "nex: gate_decay's three GLSL.std.450 calls" (count-op gate 12) 3)
+       ;; 7 bindings, the shared array, 2 built-ins and 3 Function variables
+       (expect "nex: f32_matvec's variables" (count-op mv 59) 13)
+       (expect "nex: pos_incr has no loop" (count-op pos 246) 0)
+       (expect "nex: rope_neox's pow, cos and sin" (count-op (kir2-nex-op 15) 12) 3)
+       ;; the max tree's FMax, exp, and sigmoid's exp
+       (expect "nex: attn_decode's three GLSL.std.450 calls" (count-op (kir2-nex-op 16) 12) 3)
+       (expect "nex: softmax_topk's memoryBarrierBuffer" (count-op (kir2-nex-op 17) 225) 1)
+       ;; floatBitsToUint(c[0]) and uintBitsToFloat(redi[0])
+       (expect "nex: argmax_final's two bit casts" (count-op (kir2-nex-op 19) 124) 2))))
+
 (defn main [] :i64
-  (let [failed (+ (ewise) (+ (ewise-shape) (+ (attn) (attn-ref))))
+  (let [failed (+ (ewise) (+ (ewise-shape) (+ (attn) (+ (attn-ref) (+ (nex-ops) (nex-shape))))))
         x (say (string-concat "CASES " (string-from-i64 CASES)))
         y (say (string-concat "FAILED " (string-from-i64 failed)))]
     failed))
