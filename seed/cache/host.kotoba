@@ -301,7 +301,8 @@
         args (+ (kc-g) 22111000) a (kxrt-store64 args (kn-token 19)) b (kxrt-store64 (+ args 8) 0)
         environment (kxrt-store64 (+ (kc-g) 9000) 0)
         ready (if (or (< input 0) (< written 0) (< seal 0) (< seek 0) (< output 0) (< error 0)) (kc-fail 4201) 0)
-        status (kn-job image args input output error 5) rewound (kxrt-syscall 8 output 0 0 0 0 0)
+        status (kn-job image args input output error 5) errors (kc-readfd error 0)
+        rewound (kxrt-syscall 8 output 0 0 0 0 0)
         count (kc-readfd output 64) p (+ (kc-g) 131072) result (kxrt-load64 (+ p 8))
         valid (if (and (= count 64) (= (kxrt-load64 p) 0x003252343649544b) (>= result 0) (<= result 3)
                        (= status (if (= result 0) 0 17920)) (= (kxrt-load64 (+ p 24)) (kc-get 232))
@@ -312,7 +313,7 @@
                        (if (= result 1) (= (kxrt-load64 (+ p 40)) -1)
                          (and (>= (kxrt-load64 (+ p 40)) 0) (<= (kxrt-load64 (+ p 40)) (kc-get 232))))) 0 (kc-fail 4402))
         stdout (kc-write 1 p 64)]
-    (kxrt-syscall 60 (if (= result 0) 0 70) 0 0 0 0 0)))
+    (kxrt-syscall 60 (if (< stdout 0) 74 (if (= result 0) 0 70)) 0 0 0 0 0)))
 (defn- kxrt-start [sp :i64] :i64
   (let [base (kxrt-syscall 9 0 33554432 3 34 -1 0)]
     (if (< base 0) (kxrt-syscall 60 2 0 0 0 0 0)

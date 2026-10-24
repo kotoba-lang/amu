@@ -88,6 +88,10 @@ def main():
     call("hit-zero", budget=0, code=70, status=1)
     call("hit-above", budget=2)
     call("hit-max", budget=9007199254740991)
+    with open("/dev/full", "wb") as full:
+        request = out / "miss.request"
+        failed = subprocess.run([str(host), str(request), digest(request)], env={"PATH": "/nonexistent"}, stdout=full, stderr=subprocess.PIPE, timeout=15)
+    observe("receipt-relay-write-failure", [failed.returncode, len(failed.stderr), *failed.stderr], [74, 10, *b"CACHE_HIT\n"])
     observe("immutable-code", list(hashlib.sha256(image.read_bytes()).digest()), list(hashlib.sha256(initial).digest()))
     observe("cache-contents", [len(list(cache.iterdir())), len(list(image.parent.iterdir())), image.stat().st_mode & 511, binding.stat().st_mode & 511, len(initial)], [1, 2, 448, 384, SIZE])
     for name, index, val in [("denied", 15, "deny"), ("requested-capability", 11, "1"), ("cached-approval-refused", 12, "1"),
