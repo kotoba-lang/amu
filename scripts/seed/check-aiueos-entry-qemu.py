@@ -23,9 +23,22 @@ def pin(path):
     return dict(bytes=len(b), sha256=hashlib.sha256(b).hexdigest())
 
 
-def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024):
+def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalog=False, stack_exhaustion=False):
     assert 0 <= remaining_fuel <= 9007199254740991
     assert efi.read_bytes().count(kernel.read_bytes()) == 1, "EFI/kernel pair identity mismatch"
+    expected_pc = 0x10104b
+    if stack_exhaustion:
+        data = kernel.read_bytes()
+        ph = struct.unpack_from('<IIQQQQQQ', data, struct.unpack_from('<Q', data, 32)[0])
+        code = data[ph[2]:ph[2]+ph[5]]
+        starts = [i for i in range(len(code)) if code.startswith(bytes.fromhex('4989e24981ea'), i)]
+        assert starts, 'native stack guard absent'
+        at = starts[0]  # The fixed fixture declares deep before main.
+        assert code[at+10:at+12] == b'\x0f\x82' and code[at+26:at+28] == b'\x0f\x82'
+        target = at+16+struct.unpack_from('<i', code, at+12)[0]
+        assert target == at+32+struct.unpack_from('<i', code, at+28)[0]
+        assert code[target:target+4] == bytes.fromhex('faf4ebfd')
+        expected_pc = ph[3]+target+2
     output.mkdir(parents=True, exist_ok=False)
     esp = output / "esp/EFI/BOOT"
     esp.mkdir(parents=True)
@@ -77,9 +90,12 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024):
             assert proc.poll() is None, ("QEMU exited before entry proof", proc.returncode)
             registers = hmp("info registers")
             (output / "registers-last.txt").write_text(registers)
-            if re.search(r"RIP=0*10104b\b", registers, re.I):
-                assert re.search(r"RAX=0*2a\b", registers, re.I), registers
+            if re.search(rf"RIP=0*{expected_pc:x}\b", registers, re.I):
+                if not stack_exhaustion:
+                    assert re.search(r"RAX=0*2a\b", registers, re.I), registers
                 break
+            if stack_exhaustion and re.search(r"RIP=0*10104b\b", registers, re.I):
+                raise AssertionError('guest returned; expected the declared deep-function stack guard')
             time.sleep(1)
         else:
             raise AssertionError("native kernel did not reach its post-return halt")
@@ -91,7 +107,11 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024):
         fuel, boot = struct.unpack_from("<Q", ctx, 8)[0], struct.unpack_from("<Q", ctx, 80)[0]
         # The original literal-only probe preserves 1024. Call-bearing locked
         # fixtures supply their exact source-charge expectation explicitly.
-        assert fuel == remaining_fuel and boot > 0, (fuel, remaining_fuel, boot)
+        assert boot > 0
+        if stack_exhaustion:
+            assert 0 < fuel < 1000000, fuel  # Bounded budget, not exact fuel parity.
+        else:
+            assert fuel == remaining_fuel, (fuel, remaining_fuel)
         assert hmp(f"pmemsave 0x{boot:x} 160 boot-info.bin") == ""
         info = Path("boot-info.bin").read_bytes()
         assert struct.unpack_from("<QQ", info) == (0x544f4f4245554941, 5)
@@ -105,20 +125,43 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024):
         for offset in range(0, map_size, desc_size):
             kind = str(struct.unpack_from("<I", memory_map, offset)[0])
             memory_types[kind] = memory_types.get(kind, 0) + 1
+        catalog = None
+        if sealed_catalog or stack_exhaustion:
+            assert hmp(f"pmemsave 0x{context:x} 16896 private-context.bin") == ""
+            private = Path('private-context.bin').read_bytes()
+            size, stride, ready = struct.unpack_from('<QQQ', private, 288)
+            assert (size, stride, ready) == (map_size, desc_size, 0x4d415031)
+            copied = private[512:512+size]
+            if stack_exhaustion:
+                assert copied == memory_map[:size], 'stack damaged the sealed catalog'
+                rsp = int(re.search(r'\bRSP=([0-9a-f]+)', registers, re.I)[1], 16)
+                proposed = int(re.search(r'\bR10=([0-9a-f]+)', registers, re.I)[1], 16)
+                floor = context+20480
+                assert proposed < floor and rsp >= floor-8, (proposed, floor, rsp)
+            else:
+                scratch = struct.unpack_from('<Q', info, 80)[0]
+                assert hmp(f"pmemsave 0x{scratch+14*4096:x} 24 original-record.bin") == ""
+                original = struct.unpack('<QQQ', Path('original-record.bin').read_bytes())
+                actual = (struct.unpack_from('<I', copied)[0], struct.unpack_from('<Q', copied, 8)[0], struct.unpack_from('<Q', copied, 24)[0])
+                public = (struct.unpack_from('<I', memory_map)[0], struct.unpack_from('<Q', memory_map, 8)[0], struct.unpack_from('<Q', memory_map, 24)[0])
+                assert actual == original and public == (11, 4096, 16) and actual != public
+            catalog = dict(bytes=size, stride=stride, sha256=hashlib.sha256(copied).hexdigest(),
+                           publicMutationIsAuthority=False, positivePlatformMMIOQualified=False)
         fb, fbsize = struct.unpack_from("<QQ", info, 112)
         width, height, stride, pixel_format = struct.unpack_from("<IIII", info, 128)
         assert fb > 0 and fbsize > 0 and width > 0 and height > 0 and stride >= width
         (output / "registers.txt").write_text(registers)
-        report = dict(status="PASS_AIUEOS_ENTRY_QEMU", observer=pin(Path(__file__).resolve()), efi=pin(efi), kernel=pin(kernel),
+        report = dict(status="PASS_NATIVE_STACK_LIMIT_QEMU" if stack_exhaustion else "PASS_AIUEOS_ENTRY_QEMU", observer=pin(Path(__file__).resolve()), efi=pin(efi), kernel=pin(kernel),
                       firmware=pin(firmware), qemuVersion=subprocess.check_output([str(qemu), "--version"]).decode().splitlines()[0],
-                      result=42, pc="0x10104b", remainingFuel=fuel, expectedRemainingFuel=remaining_fuel, bootInfoVersion=5,
-                      firmwareMemoryTypes=memory_types, firmwareMap=pin(Path("firmware-map.bin")),
+                      result=None if stack_exhaustion else 42, pc=hex(expected_pc), remainingFuel=fuel,
+                      expectedRemainingFuel=None if stack_exhaustion else remaining_fuel, bootInfoVersion=5,
+                      observedPublicMapTypes=memory_types, firmwareMap=pin(Path("firmware-map.bin")), sealedCatalog=catalog,
                       framebuffer=dict(base=fb, bytes=fbsize, width=width, height=height, stride=stride, pixelFormat=pixel_format),
                       completeKernel=False, desktop=False, input=False, gpt=False, physicalHardware=False,
                       compilerProvenance="requires associated native packaging receipt",
                       guestEmulation="QEMU TCG", nativeCDCI=False)
-        (output / "entry-qemu.json").write_text(json.dumps(report, indent=2) + "\n")
-        print(report["status"], "native-produced EFI -> native-produced kernel -> result 42; full OS gate open", flush=True)
+        (output / ("stack-qemu.json" if stack_exhaustion else "entry-qemu.json")).write_text(json.dumps(report, indent=2) + "\n")
+        print(report["status"], "bounded stack halt with intact catalog" if stack_exhaustion else "native-produced EFI -> native-produced kernel -> result 42; full OS gate open", flush=True)
     finally:
         if stream:
             stream.close()
@@ -141,5 +184,8 @@ if __name__ == "__main__":
     for name in ("efi", "kernel", "qemu", "firmware", "output"):
         p.add_argument("--" + name, required=True, type=Path)
     p.add_argument("--remaining-fuel", type=int, default=1024)
+    p.add_argument("--sealed-catalog", action="store_true")
+    p.add_argument("--stack-exhaustion", action="store_true")
     a = p.parse_args()
-    main(*(getattr(a, n).resolve() for n in ("efi", "kernel", "qemu", "firmware", "output")), remaining_fuel=a.remaining_fuel)
+    main(*(getattr(a, n).resolve() for n in ("efi", "kernel", "qemu", "firmware", "output")), remaining_fuel=a.remaining_fuel,
+         sealed_catalog=a.sealed_catalog, stack_exhaustion=a.stack_exhaustion)

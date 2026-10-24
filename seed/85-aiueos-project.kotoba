@@ -121,7 +121,7 @@
     (cond (>= i (vector-at M MM-SIR-N)) false
           (and (= (xg-si M i IF-OP) OP-CALL)
                (let [k (km-intr M (xg-si M i IF-A))]
-                 (or (= k KM-OWNED-PAGE) (= k KM-OWNED-WINDOW)))) true
+                 (or (= k KM-OWNED-PAGE) (= k KM-OWNED-WINDOW) (= k KM-FIRMWARE-MMIO)))) true
           :else (recur (inc i)))))
 ;; This trusted bootstrap runs before the user's main and before any guest
 ;; operation can mutate public boot-info. The private slots do not overlap
@@ -136,7 +136,8 @@
                     (iv-hex "48f7c2ff0f0000") (xg-rel 0x850f 2 2 1)
                     (iv-hex "4889d0480500f00000") (xg-rel 0x820f 2 2 1)
                     (iv-hex "498991") (xg-bytes KM-SEALED-SCRATCH 4)
-                    (iv-hex "49c781") (xg-bytes KM-SEALED-PAGES 4) (xg-bytes 15 4))
+                    (iv-hex "49c781") (xg-bytes KM-SEALED-PAGES 4) (xg-bytes 15 4)
+                    (kr-seal-map 1))
         delta (- (dec main-entry) (+ at (xg-pos checked) 5))
         code (if (or (< delta -2147483648) (> delta 2147483647)) (xg-err checked 7103 at)
                (-> checked (xg-byte 233) (xg-bytes delta 4) (xg-label 1) (iv-hex "0f0b") (xg-fix 1)))

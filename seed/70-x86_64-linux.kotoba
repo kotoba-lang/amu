@@ -57,6 +57,7 @@
 (defn- xg-fn [M :vector-i64 f :i64 n :i64] :vector-i64
   (let [at (vector-at M MM-CODE-N) frame (xg-frame M f)]
     (-> M (xg-set 0 f) (mem-set (+ MM-FN-BASE (* f MM-FN-W) FF-CODE) at)
+        (cond-> (= (xg-get M 4) 2) (kr-stack-guard frame))
         (xg-bytes 0xe5894855 4) (xg-bytes 0xec8148 3) (xg-bytes frame 4)
         (xg-bytes 0xf84d894c 4) (xg-params 0 n))))
 (defn- xg-fuel [M :vector-i64] :vector-i64

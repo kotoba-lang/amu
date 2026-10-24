@@ -1,0 +1,61 @@
+;; Firmware resource mechanism for the closed native image profile.
+;; Public boot records are not authority after guest main starts. Copy the
+;; bounded descriptor bytes into private image context before any guest code.
+;; A request returns a region only inside an EfiMemoryMappedIO descriptor.
+(def KR-MAP-SIZE 288)
+(def KR-MAP-STRIDE 296)
+(def KR-MAP-READY 304)
+(def KR-MAP-DATA 512)
+(def KR-MAP-MAX 16384)
+(def KR-MAP-MAGIC 0x4d415031)
+(def KR-STACK-FLOOR 20480)
+
+;; Check before saving RBP or writing the callee frame. A small padding area
+;; separates the immutable catalog from the stack floor. Exhaustion halts
+;; directly, so a guest #UD callback cannot recursively exhaust the same stack.
+(defn- kr-stack-guard [M :vector-i64 frame :i64] :vector-i64
+  (let [halt (vector-at M MM-LABEL-N) end (inc halt)]
+    (-> M (iv-reserve 2) (iv-hex "4989e24981ea") (xg-bytes (+ frame 8) 4) (xg-rel 0x820f 2 2 halt)
+        (iv-mem 141 11 9 KR-STACK-FLOOR) (iv-hex "4d39da") (xg-rel 0x820f 2 2 halt)
+        (xg-rel 0xe9 1 2 end) (xg-label halt) (iv-hex "faf4ebfd") (xg-label end))))
+
+(defn- kr-seal-map [M :vector-i64 fail :i64] :vector-i64
+  (-> M (iv-mem 139 8 1 24) (iv-hex "4d85c0") (xg-rel 0x840f 2 2 fail)
+      (iv-hex "4981f800400000") (xg-rel 0x870f 2 2 fail)
+      (iv-mem 139 10 1 32) (iv-hex "4983fa28") (xg-rel 0x820f 2 2 fail)
+      (iv-hex "4d39c2") (xg-rel 0x870f 2 2 fail)
+      (iv-hex "4c89c04831d249f7f24885d2") (xg-rel 0x850f 2 2 fail)
+      (iv-hex "488db1a0000000483b7110") (xg-rel 0x850f 2 2 fail)
+      (iv-mem 137 8 9 KR-MAP-SIZE) (iv-mem 137 10 9 KR-MAP-STRIDE)
+      (iv-mem 141 7 9 KR-MAP-DATA) (iv-hex "4c89c1fcf3a4")
+      (iv-hex "49c781") (xg-bytes KR-MAP-READY 4) (xg-bytes KR-MAP-MAGIC 4)))
+
+(defn- kr-mmio [M :vector-i64 t :i64] :vector-i64
+  (let [trap (vector-at M MM-LABEL-N) next (inc trap) scan (+ trap 2) end (+ trap 3)]
+    (-> M (iv-reserve 4)
+        (iv-hex "4981b9") (xg-bytes KR-MAP-READY 4) (xg-bytes KR-MAP-MAGIC 4) (xg-rel 0x850f 2 2 trap)
+        (xg-load t 0x858b4c) (xg-load (inc t) 0x958b48)
+        (iv-hex "4d85c0") (xg-rel 0x840f 2 2 trap)
+        (iv-hex "4885d2") (xg-rel 0x840f 2 2 trap)
+        (iv-hex "4881fa00000100") (xg-rel 0x870f 2 2 trap)
+        (iv-hex "4d89c34901d3") (xg-rel 0x820f 2 2 trap)
+        (iv-mem 139 1 9 KR-MAP-SIZE) (iv-mem 139 2 9 KR-MAP-STRIDE)
+        (iv-hex "4885c9") (xg-rel 0x840f 2 2 trap)
+        (iv-hex "4881f900400000") (xg-rel 0x870f 2 2 trap)
+        (iv-hex "4883fa28") (xg-rel 0x820f 2 2 trap)
+        (iv-hex "4839ca") (xg-rel 0x870f 2 2 trap)
+        (iv-hex "4531d2") (xg-label scan)
+        (iv-hex "4c89d04801d0") (xg-rel 0x820f 2 2 trap)
+        (iv-hex "4839c8") (xg-rel 0x870f 2 2 trap)
+        (iv-hex "4b8dbc11") (xg-bytes KR-MAP-DATA 4)
+        (iv-hex "8b0783f80b") (xg-rel 0x850f 2 2 next)
+        (iv-hex "488b770848f7c6ff0f0000") (xg-rel 0x850f 2 2 next)
+        (iv-hex "488b47184885c0") (xg-rel 0x840f 2 2 next)
+        (iv-hex "4889c748c1ef34") (xg-rel 0x850f 2 2 next)
+        (iv-hex "48c1e00c4801f0") (xg-rel 0x820f 2 2 next)
+        (iv-hex "48bf00000000800000004839f8") (xg-rel 0x870f 2 2 next)
+        (iv-hex "4939f0") (xg-rel 0x820f 2 2 next)
+        (iv-hex "4939c3") (xg-rel 0x870f 2 2 next)
+        (iv-hex "4c89c0") (xg-rel 0xe9 1 2 end)
+        (xg-label next) (iv-hex "4901d2") (xg-rel 0xe9 1 2 scan)
+        (xg-label trap) (iv-hex "0f0b") (xg-label end) (xg-save t))))

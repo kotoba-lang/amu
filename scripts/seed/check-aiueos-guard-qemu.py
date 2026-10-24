@@ -30,7 +30,15 @@ def main(efi, kernel, qemu, firmware, output, guard_kind='window'):
     assert ph[0:2] == (1, 5) and ph[2] == 4096 and ph[3] == 0x101000
     code = data[ph[2]:ph[2]+ph[5]]
     sites = [i for i in range(len(code)-1) if code[i:i+2] == b'\x0f\x0b']
-    if guard_kind in ('owned-page', 'owned-window'):
+    if guard_kind == 'firmware-mmio':
+        marker = bytes.fromhex('4981b9300100003150414d0f85')
+        starts = [i for i in range(len(code)) if code.startswith(marker, i)]
+        assert len(starts) == 1, ('one sealed-catalog constructor required', starts)
+        at = starts[0]
+        target = at+17+struct.unpack_from('<i', code, at+13)[0]
+        assert code[target:target+2] == b'\x0f\x0b'
+        expected = ph[3] + target
+    elif guard_kind in ('owned-page', 'owned-window'):
         starts = [i for i in range(len(code)) if code.startswith(bytes.fromhex('4883f80f0f83'), i)]
         assert len(starts) == 1, ('one owned-page constructor required', starts)
         at = starts[0]
@@ -102,6 +110,6 @@ if __name__ == '__main__':
     p = argparse.ArgumentParser(description=__doc__)
     for name in ('efi', 'kernel', 'qemu', 'firmware', 'output'):
         p.add_argument('--'+name, type=Path, required=True)
-    p.add_argument('--guard-kind', choices=('window', 'owned-page', 'owned-window'), default='window')
+    p.add_argument('--guard-kind', choices=('window', 'owned-page', 'owned-window', 'firmware-mmio'), default='window')
     a = p.parse_args()
     main(*(getattr(a, n).resolve() for n in ('efi','kernel','qemu','firmware','output')), guard_kind=a.guard_kind)

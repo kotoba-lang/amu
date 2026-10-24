@@ -42,7 +42,7 @@ def main(build,out):
    image=scope/(name+'.elf');env=dict(PATH='/nonexistent',KEXE_STACK_BYTES='8388608',KEXE_CAP_RESOURCES_35=str(scope))
    args=[str(compiler),'compile',str(entry),'--target','x86_64-aiueos-kernel-v1','--artifact','image','--output',str(image),'--fuel','1000000','--source-path',str(scope),'--source-lock',str(lock),'--source-lock-sha256',pin(lock)['sha256']]
    r=subprocess.run(args,env=env,capture_output=True,timeout=240);calls.append(dict(name=name,exit=r.returncode,stderr=r.stderr.decode(),sources={str(p.relative_to(scope)):p.read_text() for p in [entry,bridge,memory]}));(scope/'calls.json').write_text(json.dumps(calls,indent=2)+'\n')
-   if bad:assert r.returncode==1 and b'E7106' in r.stderr and not image.exists(),calls[-1]
+   if bad:assert r.returncode==1 and b'E7106' in r.stderr and b'kernel function ' in r.stderr and not image.exists(),calls[-1]
    else:
     assert r.returncode==0 and not r.stderr and image.exists(),calls[-1]
     efi=scope/(name+'.efi');q=subprocess.run([str(compiler),'package-aiueos-boot',str(image),'--output',str(efi)],env=env,capture_output=True,timeout=180);assert q.returncode==0 and not q.stderr,q.stderr

@@ -66,6 +66,13 @@
 
 ## Native CDCI and retired public entry
 
+The kernel-integration working branch contains a full36 engineering source
+candidate. Its checked-in public/root descriptor still names the admitted
+full31 compiler from #1547. Successor native x86/controller adoption is open;
+ARM rebuild/QEMU receipts do not qualify the working source as public product.
+The closed image currently reserves low20KiB for non-live context/catalog;
+do not place live ValueRuntime queues/arenas there without a reconciled ABI.
+
 - The complete product uses `seed/FULL-MANIFEST` (31 modules), retaining
   every adopted core module. Static OUT is 12MiB because the complete
   TCP/spawn image exceeded the old 8MiB bound. The complete static profile
