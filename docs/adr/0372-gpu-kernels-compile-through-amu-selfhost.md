@@ -491,3 +491,20 @@ a follow-up to ADR 0371.
        2026-10-24).
 5. **Retirement.** Remove `emit-kernel.cljk`, glslang and the accelerator CLJK
    from the product route. The hand `.comp` files stay as baselines.
+
+   **Status (2026-10-24).** The three parts stand apart:
+   * **The accelerator CLJK is outside Amu's product route already.** The
+     native product is `seed/FULL-MANIFEST`, which holds no CLJK, and CDCI
+     runs no CLJK (main's AGENTS.md). `src/kotoba/compiler/accelerator*.cljk`
+     and their tests stay only as the hosted CLI's source and corpus. Porting
+     or retiring them belongs to the migration of that CLI (JUN-280), not to
+     this step.
+   * **In Amu, glslang is a test oracle only:** the refs phase of
+     `check-gpu-kernel-spirv.py` and the hand `.comp` baselines in
+     `tools/gpu_kernel_refs/`. Both stay.
+   * **`emit-kernel.cljk` and glslang's product use are in
+     kotoba-lang/inference** (`verify/native/gpu/kernel-dsl/`). Retiring
+     them means the product that executes these kernels takes KIR v2's
+     modules instead. Since #1510 no Amu route executes them, so which
+     product that is, and on what route, is ADR 0374's decision (JUN-365).
+     This part waits on it.
