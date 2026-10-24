@@ -34,6 +34,8 @@
 ;; 672 scope marks 680 depth 688 region-map 696 rows 704 region-used
 ;; 712 conj-region 720 reserved-words 728 scope-releases 736 graph 744 graph-used
 ;; 752 last monotonic nanoseconds (clock/now)
+;; 760 file-lock fd+1, 768 file-lock canonical-path buffer, 776 path length
+;; 8192..12287 reserved canonical lock path (inside the fixed 64KiB RW map)
 ;; 16384..16679 --format launcher only (the launcher text, ADR 0371 step 4): keep clear
 (defn- kxrt-g [] :i64 (+ (kxrt-ctx) 1024))
 (defn- kxrt-gl [k :i64] :i64 (kxrt-load64 (+ (kxrt-g) k)))
@@ -662,6 +664,7 @@
   (let [a (kxrt-saddr h) n (kxrt-ps h)
         wi (kxrt-find a n 0x45535f4554495257 0x50 9) ai (kxrt-find a n 0x535f444e45505041 0x5045 10) ei (kxrt-find a n 0x535f535453495845 0x5045 10)
         ri (kxrt-find a n 0x45535f45474e4152 0x50 9) rni (kxrt-find a n 0x535f454d414e4552 0x5045 10) fi (kxrt-find a n 0x45535f434e595346 0x50 9)
+        li (kxrt-find a n 4995441188540468294 80 9) ui (kxrt-find a n 6007603180400823893 20549 10)
         append (and (>= ai 0) (or (< wi 0) (< ai wi)))]
     (cond (and (>= n 6) (kxrt-tok-at a 0x314c534b00 0 6))
           (let [z (kxrt-sink-close)] (kxrt-fs-source-lock (+ a 6) (- n 6)))
@@ -677,6 +680,8 @@
           (>= rni 0) (let [z (kxrt-sink-close)]
                       (if (= (kxrt-count2 a n 0x535f454d414e4552 0x5045 10) 1) (kxrt-fs-rename a n rni) (kxrt-fail)))
           (>= fi 0) (let [z (kxrt-sink-close)] (if (= (+ fi 9) n) (kxrt-fs-fsync a fi) (kxrt-fail)))
+          (>= li 0) (let [z (kxrt-sink-close)] (if (= (+ li 9) n) (kxrt-fs-lock a li false) (kxrt-fail)))
+          (>= ui 0) (let [z (kxrt-sink-close)] (if (= (+ ui 10) n) (kxrt-fs-lock a ui true) (kxrt-fail)))
           ;; STAT, MTIME, ... are not provided by this runtime: refused.
           (kxrt-fs-other? a n) (kxrt-fail)
           :else (let [z (kxrt-sink-close)] (kxrt-fs-read a n)))))
@@ -710,6 +715,25 @@
         r (if (< f2 0) -1 (kxrt-syscall 38 f1 b1 f2 b2 0 0))
         z1 (if (>= f1 0) (kxrt-close f1) 0) z2 (if (>= f2 0) (kxrt-close f2) 0)]
     (kxrt-intern-dec (if (= r 0) 1 0))))
+;; Scope-bound single-writer fencing. One cooperative lock per process;
+;; a nonblocking kernel flock persists across arena resets and is released
+;; by process death. Lock files must never be renamed by the store protocol.
+(defn- kxrt-fs-lock [a :i64 n :i64 unlock :bool] :i64
+  (let [m (kxrt-path a n) held (kxrt-gl 760) saved (kxrt-gl 768)]
+    (if (< (kxrt-admit m) 0) (kxrt-intern-dec 0)
+      (if unlock
+        (if (or (= held 0) (not (= m (kxrt-gl 776))) (not (kxrt-same (kxrt-gl 208) saved m))) (kxrt-intern-dec 0)
+          (let [r (kxrt-syscall 32 (dec held) 8 0 0 0 0) c (kxrt-close (dec held)) z (kxrt-gs 760 0)]
+            (kxrt-intern-dec (if (and (= r 0) (= c 0)) 1 0))))
+        (if (> held 0) (kxrt-intern-dec 0)
+          (let [fd (kxrt-open m 557122 384)]
+            (if (< fd 0) (kxrt-intern-dec 0)
+              (let [r (kxrt-syscall 32 fd 6 0 0 0 0)]
+                (if (not (= r 0)) (let [z (kxrt-close fd)] (kxrt-intern-dec 0))
+                  (let [allocated (if (= saved 0) (kxrt-gs 768 (+ (kxrt-g) 8192)) 0)
+                        copied (kxrt-copy (kxrt-gl 768) (kxrt-gl 208) m)
+                        length (kxrt-gs 776 m) stored (kxrt-gs 760 (inc fd))]
+                    (kxrt-intern-dec 1)))))))))))
 ;; ---- wire 42 :gpu/compute: a transport to the GPU provider (ADR 0371) ----
 ;; The provider is another process. The launcher passes two inherited fds,
 ;; KEXE_CAP_RESOURCES_42=REQUEST,ANSWER (checked at start, kxrt-gpu-fds). A
@@ -1521,7 +1545,7 @@
 (defn- kxrt-allow-fs [p :i64 i :i64] :i64
   (-> i (kxrt-allow-nr-at p 63) (kxrt-allow-nr-at p 56) (kxrt-allow-nr-at p 437) (kxrt-allow-nr-at p 57) (kxrt-allow-nr-at p 62) (kxrt-allow-nr-at p 67) (kxrt-allow-nr-at p 80) (kxrt-allow-nr-at p 79) (kxrt-allow-nr-at p 48) (kxrt-allow-nr-at p 439)))
 (defn- kxrt-allow-scope [p :i64 i :i64] :i64
-  (-> i (kxrt-allow-nr-at p 34) (kxrt-allow-nr-at p 35) (kxrt-allow-nr-at p 38) (kxrt-allow-nr-at p 52) (kxrt-allow-nr-at p 82) (kxrt-allow-nr-at p 278)))
+  (-> i (kxrt-allow-nr-at p 34) (kxrt-allow-nr-at p 35) (kxrt-allow-nr-at p 38) (kxrt-allow-nr-at p 52) (kxrt-allow-nr-at p 82) (kxrt-allow-nr-at p 278) (kxrt-allow-nr-at p 32)))
 ;; read (63) only when args[0] (low word at offset 16) is fd; then the
 ;; syscall number is loaded back for the rules after it
 (defn- kxrt-allow-read-fd [p :i64 i :i64 fd :i64] :i64

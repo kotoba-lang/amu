@@ -1,0 +1,14 @@
+(ns amu.test.scoped-flock-gate (:export [main]))
+(defn- lock [path :string] :bool (= (typed-cap-call :fs/app-data :string :string (string-concat path (string-concat "FLOCK" "_SEP"))) "1"))
+(defn- unlock [path :string] :bool (= (typed-cap-call :fs/app-data :string :string (string-concat path (string-concat "UNLOCK" "_SEP"))) "1"))
+(defn main [] :i64
+ (let [a (lock "/work/native-durable/locktest/one.lock")
+       b (lock "/work/native-durable/locktest/one.lock")
+       c (unlock "/work/native-durable/locktest/wrong.lock")
+       d (unlock "/work/native-durable/locktest/one.lock")
+       e (unlock "/work/native-durable/locktest/one.lock")
+       f (lock "/work/native-durable/locktest/one.lock")
+       g (unlock "/work/native-durable/locktest//one.lock")
+       h (lock "/work/lock-outside-scope")
+       i (lock "/work/native-durable/locktest/link.lock")]
+  (+ (if a 1 0) (if b 0 1) (if c 0 1) (if d 1 0) (if e 0 1) (if f 1 0) (if g 1 0) (if h 0 1) (if i 0 1))))
