@@ -1,0 +1,147 @@
+JUN-60 / JUN-55 -- ADR-0357's STATUS LINE staleness ("Nothing is
+implemented"): the debt the route-prose widening record named and
+deferred, PAID -- 2026-10-24, chain worktree, kbb --backend sci
+
+WHAT THIS RECORD IS: the slice record of the prose debt the previous
+tick's route-prose widening slice named and deferred (docs/evidence/gpu/
+adr0356-intel-arm-route-prose-20261024.txt, HONEST LEFT item 1:
+"NEW named debt (discovered this tick, unpaid): ADR-0357's Status
+line -- 'accepted as design. Nothing is implemented; the row is
+UNMEASURED.' -- is stale as written on the IMPLEMENTATION axis ...
+UNMEASURED is still true. Its own slice (one document, prose only)."
+It is NOT a measurement: no hardware ran in this slice. Every fact
+cited below is the committed record's and the committed code's, checked
+live this tick, not re-measured.
+
+WHAT MOVED (the slice's whole scope -- docs/adr/0357-gpu-arm-mali-
+subgroup-reduce.md, the Status line only; no code namespace, no test
+namespace, no measurement): line 3's pre-bracket Status prose is kept
+byte-for-byte (the project idiom: history visible, corrections in dated
+brackets), and one dated bracket [STATUS CORRECTED 2026-10-24] is
+appended under it, stating:
+
+1. the "Nothing is implemented" clause is stale on the IMPLEMENTATION
+   axis -- the file's own 2026-10-22 amendment below ("the emission and
+   the shared selection row now exist") and ADR-0356's rows table (the
+   `:subgroup-reduce` | arm row, implemented 2026-10-22) contradict it,
+   and that amendment predates ADR-0363's WGSL route which this row
+   also rides;
+2. the implementation state today: the shared subgroup-size-parametric
+   emission -- the Vulkan/GLSL arm (ADR-0359, commit 53248c112) and the
+   WGSL arm (`emit-wgsl`, commit 905a15b5a) -- and the shared selection
+   row (`kotoba.compiler.accelerator-variants`, the `#{:intel :arm ...}`
+   vendor set; `:glsl-v1` and `:wgsl-v1` both carry :arm) are
+   IMPLEMENTED;
+3. the UNMEASURED clause is unchanged and governs (no Mali device in
+   this fleet; the measurement contract has not run), and the line above
+   describes the state at adoption, 2026-10-19.
+
+GROUND TRUTH (checked live this tick, cited not re-derived):
+
+- docs/adr/0357-gpu-arm-mali-subgroup-reduce.md: the 2026-10-22
+  amendment at the end of the file -- "the emission and the shared
+  selection row now exist -- `kotoba.compiler.accelerator-subgroup-
+  reduce` emits the Vulkan/GLSL arm for the (:glsl-v1, :subgroup-reduce)
+  pair ... and `select-variant` ... answers `:subgroup-reduce` for `:arm`
+  and `:intel`" -- and its closing honesty clause ("Every performance
+  word and this row's `:measured?` stay UNMEASURED").
+- docs/adr/0356-gpu-kernel-variant-selection.md line 78: the
+  `:subgroup-reduce` | arm row's state cell -- "**implemented**
+  2026-10-22 (the row is DESIGNED in ADR-0357, the ARM decision of
+  record; same emission and selection row as the Intel row)".
+- src/kotoba/compiler/accelerator_subgroup_reduce.cljk: the ns
+  docstring (lines 5-10) names the admitted GLSL arm ("`lower` answers
+  this text for the (:glsl-v1, :subgroup-reduce) pair") and the
+  selectable rows; `emit-wgsl` at line 271 ("the same fold as emit-glsl
+  to its letter, in WGSL spellings") is the WGSL arm.
+- src/kotoba/compiler/accelerator_variants.cljk lines 1189-1194: the
+  selection row's route clause -- `(= :wgsl-v1 route)` with `(contains?
+  #{:intel :arm :amd} vendor)` (ADR-0363, extended to :amd by
+  ADR-0364) -- so :arm rides both routes.
+- commits 53248c112 ("gpu kernels: :subgroup-reduce GLSL emission"),
+  905a15b5a ("ADR-0356: the WGSL arm of the subgroup-size-parametric
+  reduce") and 77a772ff5 ("ADR-0363: the WGSL route carries the Intel
+  and ARM subgroup-reduce rows") -- `git log`, live this tick.
+
+WHAT DID NOT MOVE (named so nothing is silently upgraded):
+
+- The Status line's pre-bracket prose ("accepted as design. Nothing is
+  implemented; the row is UNMEASURED.") is kept as written; the
+  correction rides in the bracket, per the idiom ADR-0360's own Status
+  bracket models ("this line describes the state at adoption").
+- The file's 2026-10-19 "Honest state" section is untouched -- it is an
+  explicitly dated snapshot that the file's own 2026-10-22 amendment
+  already supersedes on the implementation axis.
+- The 2026-10-22 amendment's text is untouched (the bracket cites it;
+  it does not rewrite it).
+- Both measurement tables and every performance word of the ADR are
+  byte-identical. No `:measured?` flag, no `:measured-cell` record, no
+  workgroup row (ADR-0355/0358) moves anywhere; `select-variant` and
+  every emitter are byte-for-byte untouched (no .cljk in this diff at
+  all). Nothing here is a route extension: the routes named are the
+  routes the committed code and tests already admitted (2026-10-22/23,
+  older than this bracket).
+
+GATE (real runs, this host, kbb --backend sci, from the chain worktree
+root, 2026-10-24, run for THIS record; the doc-only gate form. The
+gate form's `$(kbb -Spath -M:test)` subshell is broken at this branch's
+HEAD (deps.edn retirement; the CHANNEL NOTE in docs/evidence/gpu/
+simdgroup-reduce-m1max-shape2-w32-measure-20261024.txt names it), so
+the runs substitute the resolved closure inline -- route 2, the
+AMU_KBB_TEST_CLASSPATH content materialized at
+scratch/amu_kbb_test_classpath.txt):
+
+1. python3 scripts/gpu_regime_classify.py --self-test
+   -> TOTAL: 1904 assertions passed, 0 failed.
+2. python3 scripts/gpu-subgroup-reduce-metal-measure.py --self-test
+   -> driver auto-wiring self-test: 12 assertions passed, 0 failed.
+3. Scoped GPU gate (the 8 GPU-owned test namespaces, scratch runner
+   gpu_scoped_gate.cljk, not in the repo):
+     kbb --backend sci --classpath "src:test:<resolved closure>" \
+       /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+   -> Ran 102 tests containing 9774 assertions.
+      0 failures, 0 errors.
+      scoped: 102 tests, 9774 passed, 0 failed, 0 errors
+   (identical counts to the previous tick's -- this diff touches no
+   code or test namespace; run anyway.)
+4. Full suite (run-tests.cljk), same classpath substitution: RED AT
+   BASE, outside this diff, at namespace load on `kotoba.form`
+   ("Error: Could not find namespace: kotoba.form"; the W3 port path,
+   ADR 0362), re-verified live this tick. The run stops at that load;
+   no green full suite is claimed and none is claimed here.
+
+HONESTY STATE (the three states, nothing upgraded in prose):
+- IMPLEMENTED (code + tests, NOT by this slice): the emission's two
+  arms (GLSL, 53248c112 + 905a15b5a's WGSL) and the shared selection
+  row -- since 2026-10-22/23.
+- ACCEPTED DESIGN ONLY: ADR-0357 (the ARM decision of record: shape,
+  predicate, capability precondition, measurement contract) and
+  ADR-0363 (the WGSL-route decision) as decisions.
+- UNMEASURED: the arm row on every axis of speed -- no Mali device
+  exists in this fleet; the workgroup defaults in
+  kotoba.compiler.accelerator-targets stay `:measured? false` for
+  :arm/:unknown and are untouched by this diff. No measurement ran in
+  this slice; every number above is a citation of committed record.
+
+NOT PUSHED: blocker-first rule in force -- kotoba-lang/amu open PR
+#1553 (hermes/jun31-pe-shim-align, head `hermes/...`) verified open
+this tick (gh pr list), so this commit is kept locally on
+bot/amu-gpu-chain (now 6 commits ahead of origin/bot/amu-gpu-chain)
+and pushes on the first tick after the blocker PR clears. Chain PR
+#1455 (bot/amu-gpu-chain) stays the one open chain PR.
+
+HONEST LEFT (the real remainder after this row):
+
+- Prose debt (b) of the `:simdgroup-reduce` family (the W = 128
+  measure record's stale wsweep-low path) -- named, unpaid.
+- The `:simdgroup-reduce` family's measurement remainder is
+  date-blocked or unmeasurable today: the nine pending cross-day rows
+  (2026-10-25+), the W = 1024 fast-regime ratio at a late block
+  position (UNMEASURED; no session schedules a regime), the shape-2
+  W = 512 later-day DATA run (its own decision row if wanted).
+- SOUL.md backlog item 3 (per-vendor workgroup sweeps replacing the
+  provisional rows) stays BLOCKED on hardware / the ADR-0371 provider
+  (JUN-344's 2026-10-24 dated note: no current route executes a GPU
+  artifact); :arm and :unknown workgroup rows remain `:measured? false`.
+- The W3 `string-ascii-lower` residue (reading-level, unverified,
+  named in the 7b6c8409 record) stays open on the W3 track.

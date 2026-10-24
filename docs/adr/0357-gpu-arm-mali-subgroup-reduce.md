@@ -1,6 +1,22 @@
 # ADR-0357 -- The ARM row: a subgroup-size-parametric reduce for Mali
 
 - Status: accepted as design. Nothing is implemented; the row is UNMEASURED.
+  [STATUS CORRECTED 2026-10-24 (the debt named in docs/evidence/gpu/
+  adr0356-intel-arm-route-prose-20261024.txt): the "Nothing is implemented"
+  clause is stale on the IMPLEMENTATION axis -- this file's own 2026-10-22
+  amendment below ("the emission and the shared selection row now exist")
+  and ADR-0356's rows table (the `:subgroup-reduce` | arm row, implemented
+  2026-10-22) contradict it, and that amendment predates ADR-0363's WGSL
+  route which this row also rides. The implementation state today: the
+  shared subgroup-size-parametric emission -- the Vulkan/GLSL arm
+  (ADR-0359, commit 53248c112) and the WGSL arm (`emit-wgsl`, commit
+  905a15b5a) -- and the shared selection row (`kotoba.compiler.accelerator-
+  variants`, the `#{:intel :arm ...}` vendor set; `:glsl-v1` and `:wgsl-v1`
+  both carry :arm, checked live this tick) are IMPLEMENTED. The UNMEASURED
+  clause is unchanged and governs: no Mali device exists in this fleet and
+  the measurement contract below has not run. The line above describes the
+  state at adoption, 2026-10-19. Prose only -- nothing but this Status
+  line moves in this correction.]
 - Date: 2026-10-19
 - Tracking: JUN-60 (ARM). Parent JUN-55. This is the design decision that
   ADR-0356 deferred ("ARM (JUN-60) is deliberately not designed in this ADR
