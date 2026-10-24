@@ -1,60 +1,56 @@
 {
   "schema": "amu.seed.static-root.v1",
   "image": {
-    "bytes": 3256832,
-    "sha256": "2ebb99ba0dee2be4174c6247f3b9573dc516b8a57142b08d461d52ae72feade5"
+    "bytes": 3240448,
+    "sha256": "257bffe5eb6f6c82a85498d4f2673453df986a3e12cac518807e12ed393caef8"
   },
   "target": "aarch64-linux",
   "format": "packed",
   "sourceManifest": "seed/FULL-MANIFEST",
   "sourceUnity": {
-    "bytes": 3244999,
-    "sha256": "88cef5423e4b24de2a8424f80decef76b1237ff173fa11948ca307e76af3c0ba"
+    "bytes": 3231577,
+    "sha256": "8b06787cd754b6b9546b508e9df4c02d0563630f616a309eb1267a68a83c6d72"
   },
-  "sourceCommitBase": "87fbc40e19a8bcab5e474a64c25c13bf5cf2e051",
+  "sourceCommitBase": "dd35c6379e3b87f024bf685fa8d61af0aa07cea1",
   "producedBy": {
-    "how": "Previous native root builds full30; independent canonical Pw and complete ARM F1=F2=F3 containers agree; packed F1=F2. GitHub native ARM64 run40065864346 and local native ARM64 produce identical current images. The same run verifies actual native x86 F1=F2=F3 and both mandatory native CDCI roles against the new full compiler. No C/JVM/Node compiler or loader. Exact-final-head public-product/AIUEOS diagnostics and merged-main acceptance remain separate gates.",
+    "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root (main's, f782f3f2) compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt and packed itself to F2 = F1 (= this image). Re-pinned because this source adds, to main's, the launcher's fixed provider environment (ADR 0371 step 6): MESA_SHADER_CACHE_DISABLE=true and VK_LOADER_LAYERS_DISABLE=~all~ in the launcher runtime text of seed/76 and seed/77. Re-pinned for the kernel-memory rooting change (ADR 0373 gaps a, b, c): F1=F2 on arm64 and F1=F2=F3 on x86 from this source, public product regenerated from the x86 job image.",
     "date": "2026-10-24",
     "timeZone": "Asia/Tokyo",
     "previousRoot": "688324e0fdc7a93a664ae55fe0ad417e7a980ab844656f3f97889812363c9479",
     "chain": {
-      "containers": [
-        {
-          "bytes": 3020955,
-          "sha256": "0e512838f650b96271fc1d7c1b0b855e24970dc3bbc00d994b76285f206ea7e5"
-        },
-        {
-          "bytes": 3020955,
-          "sha256": "0e512838f650b96271fc1d7c1b0b855e24970dc3bbc00d994b76285f206ea7e5"
-        },
-        {
-          "bytes": 3020955,
-          "sha256": "0e512838f650b96271fc1d7c1b0b855e24970dc3bbc00d994b76285f206ea7e5"
-        }
-      ],
-      "images": [
-        {
-          "bytes": 3256832,
-          "sha256": "2ebb99ba0dee2be4174c6247f3b9573dc516b8a57142b08d461d52ae72feade5"
-        },
-        {
-          "bytes": 3256832,
-          "sha256": "2ebb99ba0dee2be4174c6247f3b9573dc516b8a57142b08d461d52ae72feade5"
-        }
-      ]
+      "F1.kseed": {
+        "bytes": 3005515,
+        "sha256": "eeb0eba41247f911b8b67a869527697bd251256d75e67563a290835236e019f1"
+      },
+      "F1.elf": {
+        "bytes": 3240448,
+        "sha256": "257bffe5eb6f6c82a85498d4f2673453df986a3e12cac518807e12ed393caef8"
+      },
+      "F2.kseed": {
+        "bytes": 3005515,
+        "sha256": "eeb0eba41247f911b8b67a869527697bd251256d75e67563a290835236e019f1"
+      },
+      "F2.elf": {
+        "bytes": 3240448,
+        "sha256": "257bffe5eb6f6c82a85498d4f2673453df986a3e12cac518807e12ed393caef8"
+      },
+      "F3.kseed": {
+        "bytes": 3005515,
+        "sha256": "eeb0eba41247f911b8b67a869527697bd251256d75e67563a290835236e019f1"
+      },
+      "F3.elf": {
+        "bytes": 3240448,
+        "sha256": "257bffe5eb6f6c82a85498d4f2673453df986a3e12cac518807e12ed393caef8"
+      }
     }
   },
-  "verification": "Current source adoption evidence: docs/evidence/aiueos-native-adoption-20261024. Exact-head native x86/compiler/controller/public-product and merged-main CI must pass.",
+  "verification": "This source's native artifacts are indexed by docs/evidence/provider-environment-20261024/current-scope.json (root, the complete x86_64 public image, the CDCI roles). Exact-head PR CI, merge and main CI are separate gates.",
   "history": [
     {
-      "schema": "amu.seed.static-root.v1",
       "image": {
         "bytes": 3240448,
         "sha256": "688324e0fdc7a93a664ae55fe0ad417e7a980ab844656f3f97889812363c9479"
       },
-      "target": "aarch64-linux",
-      "format": "packed",
-      "sourceManifest": "seed/FULL-MANIFEST",
       "sourceUnity": {
         "bytes": 3228090,
         "sha256": "eeecfd8358242405f2a2956037a724f2bdf1ef3f21539aacb834cb8ab5a5425a"
@@ -83,9 +79,7 @@
             "sha256": "688324e0fdc7a93a664ae55fe0ad417e7a980ab844656f3f97889812363c9479"
           }
         }
-      },
-      "verification": "This source's native artifacts are indexed by docs/evidence/provider-environment-20261024/current-scope.json (root, the complete x86_64 public image, the CDCI roles). Exact-head PR CI, merge and main CI are separate gates.",
-      "sourceCommit": "6c2c6034fe9509759119c076bb51faa6cf7369bd"
+      }
     },
     {
       "schema": "amu.seed.static-root.v1",
@@ -1076,5 +1070,6 @@
       },
       "verification": "scripts/seed/selfhost-bootstrap.py --tier pr on arm64 Linux (python:3.12-alpine) from this root (F1 = root): the core route, the runtime boundary corpus, the 24 runtime cases and hardening pass and the rebuild reproduces this root (rootReproduces); scripts/seed/check-kernel-memory.py --cases gives PASS_KERNEL_MEMORY_ADMISSION 16 cases with F1. CI re-runs the tier from this root (F -> F' = root)."
     }
-  ]
+  ],
+  "sourceCommit": "64b15d272d58b71460fad49e09f165480f2d9a33"
 }

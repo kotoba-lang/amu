@@ -1,8 +1,18 @@
 # KIR v2 receipts: the nvgpu-h2 kernels (ADR 0372 step 3, JUN-356)
 
-`tools/gpu_kernels_v2.kotoba` writes the kernels that kotoba-lang/inference's
-`nvgpu-h2` decode layout (Xavier) uses. Each comes from inference main's
-`verify/native/gpu/`:
+`tools/gpu_kernels_v2.kotoba` writes the packed-half kernels of
+kotoba-lang/inference's `nvgpu` decode rows:
+* `kdot_h2_r1` and `kdot_h2q6_r1` are the plain `nvgpu` row, Xavier's
+  default for MoE models.
+* The Q8 kernels are the `nvgpu-h2` row, adopted on the M1 Max (MoltenVK)
+  for dense models (inference #55, f676ba4). Xavier's dense models use the
+  exact table.
+
+(Corrected 2026-10-24: this said the `nvgpu-h2` layout was Xavier's. The
+same wording in a comment in `tools/gpu_kernels_v2.kotoba` is corrected with
+its next code change.)
+
+Each comes from inference main's `verify/native/gpu/`:
 * `kir2-kdot-h2-r1 q6`: `kdot_h2_r1.comp` at c21beff, and with q6 1 its
   `-DQ6_HALF` build (the lm_head's `kdot_h2q6_r1`). It is one row a
   workgroup over Q4_K, Q5_K, Q6_K, IQ4_XS, Q8_0, Q4_0 and F16.
@@ -104,8 +114,8 @@ driver is handed the same conversions. The capability lists match glslang's
     * The outputs equal the first run's: wave64's add combines its two
       halves in the same order.
 
-**Not run on Xavier itself.** The ADR 0371 provider and this gate run on
-x86_64 only, so an nvgpu run waits on the provider for aarch64.
+**Not run on Xavier or the M1 Max.** The ADR 0371 provider and this gate run
+on x86_64 Linux only.
 
 **Review.** Codex was at its usage limit, so an independent agent reviewed
 the diff. It found no fidelity bug. It checked every generator line by line:
