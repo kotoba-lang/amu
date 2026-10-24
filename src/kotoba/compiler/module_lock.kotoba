@@ -1,0 +1,288 @@
+(ns kotoba.compiler.module-lock
+ "CID-pinned input resolution over Forms. This module reads metadata and exact
+ source bytes; the adopted Amu compiler alone checks, links and emits programs.
+ FS access is an explicit FS2 capability, with no source-path fallback."
+ (:export [lock-schema source-cid lock-cid lock-text validate-lock read-lock
+           read-source-path read-verified-source module-info load-locked-graph source-manifest write-block! lock-from-source-paths])
+ (:require [kotoba.form :as f] [kotoba.compiler.kotoba-reader :as reader]
+           [multiformats.cid :as cid] [multiformats.sha256 :as sha]))
+
+(defn lock-schema [] :keyword :kotoba.module-lock/v1)
+(defn- get [m [:ref :form/r] key :keyword] [:ref :form/r] (f/form-get m (f/keyword-form key)))
+(defn- assoc [m [:ref :form/r] key :keyword value [:ref :form/r]] [:ref :form/r]
+ (f/assoc-form m (f/keyword-form key) value))
+(defn- empty-map [] [:ref :form/r] (f/form-map (f/no-forms)))
+(defn- name [node [:ref :form/r]] :string
+ (cond (f/is-symbol? node) (f/symbol-value node) (f/is-string? node) (f/string-value node)
+       :else ""))
+(defn- name-key [node [:ref :form/r]] [:ref :form/r]
+ (let [text (name node)]
+  (if (or (= (string-byte-length text) 0) (> (string-byte-length text) 1024))
+   (throw :module-lock/namespace) (f/symbol-form text))))
+(defn- bytes-vector [data :bytes] :vector-i64
+ (loop [i 0 out (vector-alloc 0)]
+  (if (= i (bytes-count data)) out (recur (+ i 1) (vector-conj out (bytes-at data i))))))
+(defn source-cid [data :bytes] :string (cid/cidv1 85 (sha/digest-hex (bytes-vector data))))
+(defn- source-pin? [text :string] :bool
+ (let [p (cid/cid->parts text)]
+  (and (= (record-get [:ref :multiformats.cid/parts] p :error) :none)
+       (= (record-get [:ref :multiformats.cid/parts] p :codec) 85)
+       (= (record-get [:ref :multiformats.cid/parts] p :hash-code) 18)
+       (= (record-get [:ref :multiformats.cid/parts] p :digest-size) 32))))
+(defn- normalize-modules [pairs [:list [:ref :form/r]] i :i64 out [:ref :form/r]] [:ref :form/r]
+ (if (= i (vector-count pairs)) out
+  (let [key (name-key (typed-list-nth [:list [:ref :form/r]] pairs i))
+        value (typed-list-nth [:list [:ref :form/r]] pairs (+ i 1))]
+   (cond (f/form-has? out key) (throw :module-lock/duplicate-namespace)
+         (not (f/is-string? value)) (throw :module-lock/cid)
+         (not (source-pin? (f/string-value value))) (throw :module-lock/cid)
+         :else (normalize-modules pairs (+ i 2) (f/assoc-form out key value))))))
+(defn validate-lock [input [:ref :form/r]] [:ref :form/r]
+ (cond (not (f/is-map? input)) (throw :module-lock/map)
+       (not (f/eq (get input :schema) (f/keyword-form (lock-schema)))) (throw :module-lock/schema)
+       :else (let [root (name-key (get input :root)) modules (get input :modules)]
+        (if (or (not (f/is-map? modules)) (= (f/count-of modules) 0)
+                (> (f/count-of modules) 512) (not= (mod (f/count-of modules) 2) 0))
+         (throw :module-lock/modules-budget)
+         (let [pins (normalize-modules (f/kids-of modules) 0 (empty-map))]
+          (if (not (f/form-has? pins root)) (throw :module-lock/root-unpinned)
+           (assoc (assoc (assoc (empty-map) :schema (f/keyword-form (lock-schema))) :root root) :modules pins)))))))
+
+;; Sorted lock identity retains the historical exact EDN byte grammar. It is
+;; independent of declaration order and covers only the resolved source set.
+(defn- quoted [text :string] :string (document-edn-print (document-string text)))
+(defn- utf16 [text :string] :vector-i64
+ (loop [i 0 out (vector-alloc 0)]
+  (if (= i (string-length text)) out
+   (let [cp (string-code-point-at text i) width (cond (< cp 128) 1 (< cp 2048) 2 (< cp 65536) 3 :else 4)]
+    (if (< cp 65536) (recur (+ i width) (vector-conj out cp))
+     (let [v (- cp 65536)]
+      (recur (+ i width) (vector-conj (vector-conj out (+ 55296 (quot v 1024))) (+ 56320 (mod v 1024))))))))))
+(defn- name-less? [a [:ref :form/r] b [:ref :form/r]] :bool
+ (let [x (utf16 (name a)) y (utf16 (name b)) nx (vector-count x) ny (vector-count y)]
+  (loop [i 0] (cond (= i nx) (< nx ny) (= i ny) false
+                   (< (vector-at x i) (vector-at y i)) true
+                   (> (vector-at x i) (vector-at y i)) false :else (recur (+ i 1))))))
+(defn- insert [keys [:list [:ref :form/r]] key [:ref :form/r]] [:list [:ref :form/r]]
+ (let [n (vector-count keys)]
+  (loop [i 0 placed false out (f/no-forms)]
+   (if (= i n) (if placed out (f/append-form out key))
+    (let [current (typed-list-nth [:list [:ref :form/r]] keys i) before (and (not placed) (name-less? key current))]
+     (recur (+ i 1) (or placed before) (f/append-form (if before (f/append-form out key) out) current)))))))
+(defn- sorted-keys [modules [:ref :form/r]] [:list [:ref :form/r]]
+ (let [pairs (f/kids-of modules)]
+  (loop [i 0 out (f/no-forms)]
+   (if (= i (vector-count pairs)) out
+    (recur (+ i 2) (insert out (typed-list-nth [:list [:ref :form/r]] pairs i)))))))
+(defn- insert-bytes [keys [:list [:ref :form/r]] key [:ref :form/r]] [:list [:ref :form/r]]
+ (let [n (vector-count keys)]
+  (loop [i 0 placed false out (f/no-forms)]
+   (if (= i n) (if placed out (f/append-form out key))
+    (let [current (typed-list-nth [:list [:ref :form/r]] keys i)
+          before (and (not placed) (< (string-compare (name key) (name current)) 0))]
+     (recur (+ i 1) (or placed before) (f/append-form (if before (f/append-form out key) out) current)))))))
+(defn- sorted-keys-bytes [modules [:ref :form/r]] [:list [:ref :form/r]]
+ (let [pairs (f/kids-of modules)]
+  (loop [i 0 out (f/no-forms)]
+   (if (= i (vector-count pairs)) out
+    (recur (+ i 2) (insert-bytes out (typed-list-nth [:list [:ref :form/r]] pairs i)))))))
+(defn lock-text [lock [:ref :form/r]] :string
+ (let [root (name (get lock :root)) modules (get lock :modules) keys (sorted-keys modules)
+       body (loop [i 0 out ""]
+              (if (= i (vector-count keys)) out
+               (let [key (typed-list-nth [:list [:ref :form/r]] keys i)]
+                (recur (+ i 1) (string-concat out
+                 (string-concat (if (= i 0) "" ", ")
+                  (string-concat (quoted (name key)) (string-concat " " (quoted (f/string-value (f/form-get modules key)))))))))))]
+  (string-concat "{:schema :kotoba.module-lock/v1, :root "
+   (string-concat (quoted root) (string-concat ", :modules {" (string-concat body "}}"))))))
+(defn lock-cid [lock [:ref :form/r]] :string (source-cid (string-to-utf8 (lock-text lock))))
+
+(defn- frame [letter :string path :string] :string
+ (string-concat "\u0000FS2\u0000" (string-concat letter (string-concat path "\u0000"))))
+(defn- collect [parts [:list :bytes] i :i64 out :bytes limit :i64] :bytes
+ (if (= i (vector-count parts)) out
+  (let [part (typed-list-nth [:list :bytes] parts i) start (if (= i 0) 5 0) n (bytes-count part)]
+   (if (or (< n start) (> (- n start) (- limit (bytes-count out)))) (throw :module-lock/source-budget)
+    (collect parts (+ i 1) (bytes-concat out (bytes-slice part start n)) limit)))))
+(defn- read-bytes [path :string limit :i64] :bytes
+ (let [parts (typed-cap-call :fs/app-data :string [:list :bytes] (frame "A" path))]
+  (if (= (vector-count parts) 0) (throw :module-lock/fs2-ack)
+   (let [first (typed-list-nth [:list :bytes] parts 0)]
+    (if (or (< (bytes-count first) 5) (not= (bytes-at first 0) 0) (not= (bytes-at first 1) 70)
+            (not= (bytes-at first 2) 83) (not= (bytes-at first 3) 50) (not= (bytes-at first 4) 0))
+     (throw :module-lock/fs2-ack) (collect parts 0 (bytes-empty) limit))))))
+(defn- utf8? [data :bytes] :bool
+ (let [n (bytes-count data)]
+  (loop [i 0]
+   (if (= i n) true
+    (let [b (bytes-at data i) width (cond (< b 128) 1 (and (>= b 194) (< b 224)) 2
+                                        (and (>= b 224) (< b 240)) 3 (and (>= b 240) (<= b 244)) 4 :else 0)]
+     (cond (= width 0) false (> width (- n i)) false (= width 1) (recur (+ i 1))
+      :else (let [second (bytes-at data (+ i 1))
+                  valid (loop [j 1] (cond (= j width) true
+                    (or (< (bytes-at data (+ i j)) 128) (> (bytes-at data (+ i j)) 191)) false :else (recur (+ j 1))))]
+       (if (and valid (not (and (= b 224) (< second 160))) (not (and (= b 237) (>= second 160)))
+                      (not (and (= b 240) (< second 144))) (not (and (= b 244) (> second 143))))
+        (recur (+ i width)) false))))))))
+(defn- decode [data :bytes] :string
+ (if (utf8? data) (string-from-utf8 data) (throw :module-lock/utf8)))
+(defn- parse [source :string one? :bool] [:list [:ref :form/r]]
+ (let [r (reader/read-forms-bounded source 512 200000) forms (record-get [:ref :kotoba.reader/out] r :forms)]
+  (if (or (not (string=? (record-get [:ref :kotoba.reader/out] r :err) ""))
+          (and one? (not= (vector-count forms) 1)))
+   (throw :module-lock/reader) forms)))
+(defn read-lock [path :string] [:ref :form/r]
+ (validate-lock (typed-list-nth [:list [:ref :form/r]] (parse (decode (read-bytes path 1048576)) true) 0)))
+(defn read-source-path [path :string] :string (decode (read-bytes path 8388608)))
+(defn read-verified-source [blocks :string pin :string] :string
+ (if (not (source-pin? pin)) (throw :module-lock/cid)
+  (let [data (read-bytes (string-concat blocks (string-concat "/" pin)) 8388608)]
+   (if (not (string=? pin (source-cid data))) (throw :module-lock/hash-mismatch) (decode data)))))
+
+;; Header extraction has no type/effect or executable admission semantics.
+;; All source forms subsequently pass through the adopted compiler unchanged.
+(defn- requires-in [clause [:ref :form/r] i :i64 out [:ref :form/r]] [:ref :form/r]
+ (if (= i (f/count-of clause)) out
+  (let [spec (f/nth-of clause i)]
+   (if (or (not (f/is-list-like? spec)) (= (f/count-of spec) 0)) (throw :module-lock/require)
+    (let [key (name-key (f/nth-of spec 0))]
+     (requires-in clause (+ i 1) (f/form-vec (f/append-form (f/kids-of out) key))))))))
+(defn- clauses [header [:ref :form/r] i :i64 out [:ref :form/r]] [:ref :form/r]
+ (if (= i (f/count-of header)) out
+  (let [clause (f/nth-of header i)]
+   (clauses header (+ i 1)
+    (if (and (f/is-seq? clause) (f/eq (f/nth-of clause 0) (f/keyword-form :require)))
+     (requires-in clause 1 out) out)))))
+(defn module-info [source :string] [:ref :form/r]
+ (let [forms (parse source false)]
+  (if (= (vector-count forms) 0) (throw :module-lock/namespace)
+   (let [header (typed-list-nth [:list [:ref :form/r]] forms 0)]
+    (if (or (not (f/is-seq? header)) (< (f/count-of header) 2)
+            (not (f/eq (f/nth-of header 0) (f/symbol-form "ns")))) (throw :module-lock/namespace)
+     (assoc (assoc (empty-map) :namespace (name-key (f/nth-of header 1))) :requires
+       (clauses header 2 (f/form-vec (f/no-forms)))))))))
+(defn- graph [root [:ref :form/r] pins [:ref :form/r] blocks :string pending [:list [:ref :form/r]] at :i64
+              sources [:ref :form/r] resolved [:ref :form/r] total :i64 edges :i64] [:ref :form/r]
+ (if (= at (vector-count pending))
+  (let [lock (assoc (assoc (empty-map) :root root) :modules resolved)]
+   (assoc (assoc (assoc (assoc (empty-map) :root root) :sources sources) :modules resolved) :lock-cid (f/string-form (lock-cid lock))))
+  (let [key (typed-list-nth [:list [:ref :form/r]] pending at)]
+   (if (f/form-has? sources key) (graph root pins blocks pending (+ at 1) sources resolved total edges)
+    (let [pin (f/form-get pins key)]
+     (if (not (f/is-string? pin)) (throw :module-lock/dependency-unpinned)
+      (let [source (read-verified-source blocks (f/string-value pin)) size (string-byte-length source)
+            info (module-info source) deps (f/kids-of (get info :requires)) next-edges (+ edges (vector-count deps))]
+       (cond (not (f/eq key (get info :namespace))) (throw :module-lock/namespace-mismatch)
+             (> size (- 8388608 total)) (throw :module-lock/source-budget)
+             (> next-edges 256) (throw :module-lock/edge-budget)
+             :else (graph root pins blocks (f/append-many pending deps) (+ at 1)
+                     (f/assoc-form sources key (f/string-form source)) (f/assoc-form resolved key pin) (+ total size) next-edges)))))))))
+(defn load-locked-graph [lock-path :string blocks :string] [:ref :form/r]
+ (let [lock (read-lock lock-path)]
+  (graph (get lock :root) (get lock :modules) blocks (f/one-form (get lock :root)) 0 (empty-map) (empty-map) 0 0)))
+
+(defn- block-path [blocks :string pin [:ref :form/r]] :string
+ (string-concat blocks (string-concat "/" (f/string-value pin))))
+(defn source-manifest
+ "Emit exact KSL2 inputs for the adopted compiler. The caller stages these
+ bytes unchanged and supplies their digest to --source-lock-sha256."
+ [resolved [:ref :form/r] blocks :string] :string
+ (let [modules (get resolved :modules) sources (get resolved :sources) keys (sorted-keys-bytes modules)
+       mapped (loop [i 0 text "" files (empty-map)]
+                (if (= i (vector-count keys))
+                 (assoc (assoc (empty-map) :text (f/string-form text)) :files files)
+                 (let [key (typed-list-nth [:list [:ref :form/r]] keys i) path (block-path blocks (f/form-get modules key))
+                       source (f/string-value (f/form-get sources key)) hash (sha/digest-hex (bytes-vector (string-to-utf8 source)))]
+                  (recur (+ i 1)
+                   (string-concat text (string-concat "module " (string-concat (name key) (string-concat " " (string-concat path "\n")))))
+                   (f/assoc-form files (f/string-form path) (f/string-form hash))))))
+       files (get mapped :files) paths (sorted-keys-bytes files)
+       records (loop [i 0 text ""]
+                  (if (= i (vector-count paths)) text
+                   (let [path (typed-list-nth [:list [:ref :form/r]] paths i)]
+                    (recur (+ i 1) (string-concat text (string-concat "file "
+                     (string-concat (f/string-value (f/form-get files path)) (string-concat " " (string-concat (name path) "\n")))))))))]
+  (string-concat "KSL2\nentry " (string-concat (block-path blocks (f/form-get modules (get resolved :root)))
+   (string-concat "\n" (string-concat (f/string-value (get mapped :text)) records))))))
+
+(defn- fs-text [letter :string path :string tail :string] :string
+ (let [reply (typed-cap-call :fs/app-data :string :string (string-concat (frame letter path) tail))]
+  (if (and (>= (string-length reply) 5) (string=? (string-substring reply 0 5) "\u0000FS2\u0000"))
+   (string-substring reply 5 (string-length reply)) (throw :module-lock/fs2-ack))))
+(defn- directory? [path :string] :bool
+ (let [stat (fs-text "F" path "") n (string-length stat)]
+  (and (> n 2) (string=? (string-substring stat (- n 2) n) " 1"))))
+(defn- parent [path :string] :string
+ (let [at (loop [i 0 last-slash -1]
+            (if (= i (string-length path)) last-slash
+             (let [cp (string-code-point-at path i) width (cond (< cp 128) 1 (< cp 2048) 2 (< cp 65536) 3 :else 4)]
+              (recur (+ i width) (if (= cp 47) i last-slash)))))]
+  (if (< at 0) "" (if (= at 0) "/" (string-substring path 0 at)))))
+(defn- mkdirs [path :string depth :i64] :i64
+ (cond (> depth 64) (throw :module-lock/path-depth)
+       (= (string-length path) 0) (throw :module-lock/block-store)
+       (not (string=? (string-substring path 0 1) "/")) (throw :module-lock/block-store)
+       (directory? path) 0
+       (string=? path "/") (throw :module-lock/block-store)
+       :else (let [created-parent (mkdirs (parent path) (+ depth 1)) created (fs-text "I" path "")]
+              (if (directory? path) 0 (throw :module-lock/block-store)))))
+(defn- managed [letter :string path :string tail :string data :bytes] :string
+ (let [request (typed-list-conj [:list :bytes]
+                 (typed-list-conj [:list :bytes] (typed-list-new [:list :bytes])
+                   (string-to-utf8 (string-concat (frame letter path) tail))) data)
+       reply (typed-cap-call :fs/app-data [:list :bytes] [:list :bytes] request)]
+  (if (= (vector-count reply) 0) (throw :module-lock/fs2-ack)
+   (let [first (typed-list-nth [:list :bytes] reply 0)]
+    (if (or (< (bytes-count first) 5) (not= (bytes-at first 0) 0) (not= (bytes-at first 1) 70)
+            (not= (bytes-at first 2) 83) (not= (bytes-at first 3) 50) (not= (bytes-at first 4) 0))
+     (throw :module-lock/fs2-ack) (decode (collect reply 0 (bytes-empty) 4096)))))))
+(defn- existing [blocks :string pin :string source :string] :string
+ (let [data (read-bytes (string-concat blocks (string-concat "/" pin)) 8388608)
+       actual (string-to-utf8 source)]
+  (if (and (= (bytes-count data) (bytes-count actual))
+        (loop [i 0] (cond (= i (bytes-count data)) true
+           (not= (bytes-at data i) (bytes-at actual i)) false :else (recur (+ i 1)))))
+   pin (throw :module-lock/block-conflict))))
+(defn- publish [blocks :string pin :string source :string dir :string] :string
+ (let [member (string-concat dir "/0.tmp")
+       staged (managed "Q" member "0400\u0000" (string-to-utf8 source))]
+  (if (not (string=? staged "1")) (throw :module-lock/stage)
+   (let [published (fs-text "T" member (string-concat blocks (string-concat "/" pin)))
+         checked (if (string=? published "1") pin
+                   (if (string=? (fs-text "D" (string-concat blocks (string-concat "/" pin)) "") "1")
+                     (existing blocks pin source) (throw :module-lock/publication)))
+         durable (fs-text "M" blocks "")]
+    (if (string=? durable "1") checked (throw :module-lock/durability))))))
+(defn- publish-checked [blocks :string pin :string source :string dir :string] [:result :string :keyword]
+ (try (result-ok-of [:result :string :keyword] (publish blocks pin source dir))
+   (catch :keyword reason (result-err-of [:result :string :keyword] reason))))
+(defn write-block! [blocks :string source :string] :string
+ (if (> (string-byte-length source) 8388608) (throw :module-lock/source-budget)
+  (let [created (mkdirs blocks 0) pin (source-cid (string-to-utf8 source)) target (string-concat blocks (string-concat "/" pin))]
+   (if (string=? (fs-text "D" target "") "1") (existing blocks pin source)
+    (let [dir (managed "R" blocks "" (bytes-empty))]
+     (if (= (string-length dir) 0) (throw :module-lock/stage)
+      (let [result (publish-checked blocks pin source dir)
+            discarded (managed "S" dir "" (bytes-empty))]
+       (if (not (string=? discarded "1")) (throw :module-lock/cleanup)
+        (if (result-ok?-of [:result :string :keyword] result) (result-value-of [:result :string :keyword] result "")
+         (throw (result-error-of [:result :string :keyword] result :module-lock/publication)))))))))))
+
+;; The resolver is explicit. The historical ambient requiring-resolve arity
+;; is retired; no hosted path loader enters a locked build's source closure.
+(defn- write-sources [keys [:list [:ref :form/r]] at :i64 sources [:ref :form/r] blocks :string modules [:ref :form/r]] [:ref :form/r]
+ (if (= at (vector-count keys)) modules
+  (let [key (typed-list-nth [:list [:ref :form/r]] keys at) source (f/form-get sources key)]
+   (if (not (f/is-string? source)) (throw :module-lock/source)
+    (write-sources keys (+ at 1) sources blocks (f/assoc-form modules key (f/string-form (write-block! blocks (f/string-value source)))))))))
+(defn lock-from-source-paths [loader [:fn [[:string [:list :string]] [:result [:ref :form/r] :keyword]]] input :string source-paths [:list :string] blocks :string] [:ref :form/r]
+ (let [loaded (loader input source-paths)]
+  (if (not (result-ok?-of [:result [:ref :form/r] :keyword] loaded))
+   (throw (result-error-of [:result [:ref :form/r] :keyword] loaded :module-lock/source))
+ (let [resolved (result-value-of [:result [:ref :form/r] :keyword] loaded (empty-map)) root (name-key (get resolved :root)) sources (get resolved :sources)]
+  (if (or (not (f/is-map? sources)) (= (f/count-of sources) 0) (> (f/count-of sources) 512))
+   (throw :module-lock/modules-budget)
+   (let [modules (write-sources (sorted-keys sources) 0 sources blocks (empty-map))
+         lock (validate-lock (assoc (assoc (assoc (empty-map) :schema (f/keyword-form (lock-schema))) :root root) :modules modules))]
+    (assoc lock :lock-cid (f/string-form (lock-cid lock)))))))))

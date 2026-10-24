@@ -74,6 +74,14 @@ jobs:
         run: python3 scripts/seed/check-kototama-receipt.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/kototama-receipt-arm64"
       - name: Combined compiler (core + Linux targets) from the bootstrap (arm64, native)
         run: python3 scripts/seed/check-one-compiler.py --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/one"
+      - name: Native FS2 forms, kernel errors and journal cleanup (arm64)
+        run: python3 scripts/seed/check-native-fs2.py --compiler "$RUNNER_TEMP/one/F2.elf" --output "$RUNNER_TEMP/fs2-arm"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: native-fs2-arm-evidence
+          path: ${{ runner.temp }}/fs2-arm
+          if-no-files-found: warn
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
@@ -143,6 +151,8 @@ jobs:
           path: ${{ runner.temp }}/one
       - name: Complete native x86 compiler fixed point and CDCI images
         run: python3 scripts/seed/check-complete-x86.py --compiler "$RUNNER_TEMP/one/F-x86_64.elf" --arm-proof "$RUNNER_TEMP/one/one-compiler.json" --output "$RUNNER_TEMP/complete"
+      - name: Native FS2 forms, kernel errors and journal cleanup (x86)
+        run: python3 scripts/seed/check-native-fs2.py --compiler "$RUNNER_TEMP/complete/F3.elf" --output "$RUNNER_TEMP/fs2-x86"
       - name: Kototama bounded pure i64 AOT (x86_64, native verdict)
         run: python3 scripts/seed/check-kototama-i64.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/kototama-i64-x86_64"
       - name: Kototama pure i64 receipts (x86_64, native verdict)
@@ -170,6 +180,9 @@ jobs:
             ${{ runner.temp }}/public-product/public-product.json
             ${{ runner.temp }}/complete/complete-x86.json
             ${{ runner.temp }}/complete/calls.json
+            ${{ runner.temp }}/fs2-x86/native-fs2.json
+            ${{ runner.temp }}/fs2-x86/calls.json
+            ${{ runner.temp }}/fs2-x86/*/receipt.json
             ${{ runner.temp }}/kototama-i64-x86_64/report.json
             ${{ runner.temp }}/kototama-i64-x86_64/gate.stdout
             ${{ runner.temp }}/kototama-i64-x86_64/gate.stderr

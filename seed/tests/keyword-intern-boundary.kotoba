@@ -1,0 +1,17 @@
+(ns keyword-intern-boundary (:export [main]))
+;; Implementation-row budget, distinct from the public KGraph's 4096 rows.
+;; This fixture does not claim that the helper spelling is an access boundary.
+(defn main [] :i64
+  (let [mode (typed-cap-call :cli/args :string :string "0")
+        filled (loop [i 0]
+                 (if (= i 262142) i
+                   (let [put (__r6-kiput i 7 (+ i 100))]
+                     (if (= put 1) (recur (+ i 1)) 0))))
+        replaced (__r6-kiput 1 7 99)
+        latest (__r6-kiput 1 7 101)]
+    (if (and (= filled 262142) (= replaced 1) (= latest 1)
+             (= (__r6-kiget 0 7) 100) (= (__r6-kiget 1 7) 101)
+             (= (__r6-kiget 262141 7) 262241)
+             (= (__r6-kiget -1 7) -9223372036854775808))
+      (if (string=? mode "overflow") (__r6-kiput 262142 7 0) 0)
+      91)))

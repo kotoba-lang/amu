@@ -1,0 +1,372 @@
+;; Shared scalar Linux FS2 mechanism. Both native emitters append this exact
+;; source to the measured compiler's guest; ISA differences are confined to
+;; kxrt-f2-sys, kxrt-f2-mode and kxrt-f2-uid in the owning runtime.
+(defn- linux-fs2-src [] :string
+"
+;; Wire 40 is a separate explicit sys/cwd capability. The physical cwd was
+;; captured by getcwd before scope discovery and remains immutable. It does
+;; not inherit the filesystem grant or consult an environment fallback.
+(defn- kxrt-cwd [req :i64] :i64
+  (let [n (kxrt-gl 192)]
+    (if (and (= (kxrt-ps req) 0) (> n 0) (< n 4096))
+      (kxrt-intern (kxrt-gl 184) n) (kxrt-fail))))
+;; Private FS2 scratch is outside the guest arenas. No guest pointer is kept
+;; here after a capability returns. The request is fully checked before I/O.
+(defn- kxrt-f2-state [] :i64
+  (if (= (kxrt-gl 768) 0)
+    (let [p (kxrt-map 65536) z (kxrt-gs 768 p)
+          a (kxrt-store64 (+ p 8) -1) b (kxrt-store64 (+ p 16) -1)
+          c (kxrt-store64 (+ p 24) -1) d (kxrt-store64 (+ p 32) -1)] p) (kxrt-gl 768)))
+(defn- kxrt-f2-at [offset :i64] :i64 (+ (kxrt-f2-state) offset))
+(defn- kxrt-f2-refused [stage :i64] :i64
+  (let [b (kxrt-gl 200) z (kxrt-flush)
+        n (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b 0 0x4152545f4558454b 8) 0x646e696b3a7b2050 8) 0x6962617061633a20 8) 0x61633a207974696c 8) 0x7974696c69626170 8) 0x3a20 2)
+        n1 (kxrt-w b (kxrt-w b n 0x642d7070612f7366 8) 0x617461 3)
+        n2 (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b n1 0x6e6f736165723a20 8) 0x65722f3273663a20 8) 0x733a206465737566 8) 0x2065676174 5)
+        n4 (+ n2 (kxrt-dec (+ b n2) stage))
+        y (kxrt-err-text b (kxrt-w b n4 0xa7d 2))]
+    (kxrt-exit 126)))
+;; Logical length and byte access retain a segmented request as segments.
+;; Only the bounded path/mode header is copied into private scratch.
+(defn- kxrt-f2-length [kind :i64 req :i64] :i64
+  (cond (= kind 1) (let [v (kxrt-valid req)] (kxrt-ps req))
+        (= kind 8) (let [n (kxrt-vlen req)]
+          (if (or (> n KXRT-VALUE-MAX) (not (kxrt-bytes-ok? (kxrt-voff req) n))) (kxrt-f2-refused 1) n))
+        (= kind 11)
+          (loop [i 0 total 0]
+            (if (= i (kxrt-vlen req)) total
+              (let [h (kxrt-vector-at req i) n (kxrt-vlen h)]
+                (if (or (> n KXRT-VALUE-MAX) (> n (- 9223372036854775807 total))
+                        (not (kxrt-bytes-ok? (kxrt-voff h) n))) (kxrt-f2-refused 1)
+                  (recur (inc i) (+ total n))))))
+        :else (kxrt-f2-refused 1)))
+(defn- kxrt-f2-byte [kind :i64 req :i64 index :i64] :i64
+  (cond (= kind 1) (kxrt-load8 (+ (kxrt-saddr req) index))
+        (= kind 8) (kxrt-vector-at req index)
+        :else (loop [i 0 at index]
+          (if (>= i (kxrt-vlen req)) (kxrt-f2-refused 1)
+            (let [h (kxrt-vector-at req i) n (kxrt-vlen h)]
+              (if (< at n) (kxrt-vector-at h at) (recur (inc i) (- at n))))))))
+(defn- kxrt-f2-copy-request [dst :i64 kind :i64 req :i64 start :i64 n :i64] :i64
+  (cond (= kind 1) (kxrt-copy dst (+ (kxrt-saddr req) start) n)
+        (= kind 8) (loop [i 0] (if (= i n) dst
+          (let [z (kxrt-store8 (+ dst i) (kxrt-vector-at req (+ start i)))] (recur (inc i)))))
+        :else (loop [index 0 skip start written 0]
+          (if (= written n) dst
+            (let [h (kxrt-vector-at req index) size (kxrt-vlen h)]
+              (if (>= skip size) (recur (inc index) (- skip size) written)
+                (let [left (- n written) available (- size skip) count (if (< left available) left available)
+                      copied (kxrt-copy (+ dst written) (+ (kxrt-vbytes h) skip) count)]
+                  (recur (inc index) 0 (+ written count)))))))))
+(defn- kxrt-f2-end [kind :i64 req :i64 start :i64 total :i64 limit :i64] :i64
+  (loop [i start]
+    (cond (>= i total) (kxrt-f2-refused 2)
+          (> (- i start) limit) (kxrt-f2-refused 2)
+          (= (kxrt-f2-byte kind req i) 0) i :else (recur (inc i)))))
+(defn- kxrt-f2-prefix? [kind :i64 req :i64 n :i64] :bool
+  (and (>= n 8) (= (kxrt-f2-byte kind req 0) 0) (= (kxrt-f2-byte kind req 1) 70)
+       (= (kxrt-f2-byte kind req 2) 83) (= (kxrt-f2-byte kind req 3) 50) (= (kxrt-f2-byte kind req 4) 0)))
+(defn- kxrt-f2-form-ok? [kind :i64 sk :i64 form :i64] :bool
+  (cond (or (< form 0) (> form 19)) false
+        (and (= kind 1) (= sk 1)) (or (< form 16) (= form 19))
+        (and (= kind 8) (= sk 8)) (or (= form 1) (= form 2))
+        (and (= kind 11) (= sk 11)) (or (= form 1) (= form 2) (= form 16) (= form 17) (= form 18))
+        (and (= kind 1) (or (= sk 8) (= sk 11))) (or (= form 0) (= form 4)) :else false))
+(defn- kxrt-f2-preflight [sk :i64 n :i64] :i64
+  (let [chunks (quot (+ n 5 1048575) 1048576)
+        cells (cond (= sk 1) 0 (= sk 8) (+ n 5) :else (+ n 5 (* 2 chunks)))
+        vectors (cond (= sk 1) 0 (= sk 8) 1 :else (+ 1 (* 2 chunks)))]
+  (cond (or (< n 0) (> n (- KXRT-POOL (kxrt-gl 32) 5))) (kxrt-budget 4)
+        (and (not= sk 11) (> (+ n 5) KXRT-VALUE-MAX)) (kxrt-value 10)
+        (> cells (- KXRT-ITEMS (kxrt-gl 64))) (kxrt-arena 3)
+        (> vectors (- KXRT-VECTORS (kxrt-gl 48))) (kxrt-arena 2)
+        (and (= sk 1) (>= (kxrt-gl 8) KXRT-PAIRS)) (kxrt-budget 1)
+        :else 0)))
+;; Every response, including an absent/empty one, carries FS2 acknowledgement.
+(defn- kxrt-f2-answer [sk :i64 a :i64 n :i64] :i64
+  (let [v (kxrt-f2-preflight sk n) u (kxrt-gl 32) p (+ (kxrt-gl 24) u)
+        z (kxrt-w p 0 0x32534600 5) c (kxrt-copy (+ p 5) a n) w (kxrt-gs 32 (+ u n 5))]
+    (cond (= sk 1) (kxrt-valid (kxrt-pair-new (- -1 u) (+ n 5)))
+          (= sk 8) (kxrt-bytes-raw p (+ n 5))
+          :else (loop [at 0 out (kxrt-vnew (kxrt-gl 64) 0)]
+            (if (= at (+ n 5)) out
+              (let [left (- (+ n 5) at) size (if (> left 1048576) 1048576 left)
+                    h (kxrt-bytes-raw (+ p at) size)]
+                (recur (+ at size) (kxrt-conj out h))))))))
+(defn- kxrt-f2-boolean [sk :i64 yes :bool] :i64
+  (let [b (kxrt-f2-at 256) z (kxrt-store8 b (if yes 49 48))] (kxrt-f2-answer sk b 1)))
+(defn- kxrt-f2-absent [sk :i64 form :i64] :i64
+  (if (or (= form 3) (= form 7) (= form 8) (= form 9) (= form 10) (= form 11) (= form 12) (= form 16) (= form 18) (= form 19))
+    (kxrt-f2-boolean sk false) (kxrt-f2-answer sk (kxrt-f2-at 256) 0)))
+(defn- kxrt-f2-open [a :i64 n :i64 flags :i64 mode :i64] :i64
+  (let [m (kxrt-path a n)] (if (< m 0) -1 (kxrt-open m flags mode))))
+(defn- kxrt-f2-io-failed [r :i64] :i64
+  (if (or (= r -18) (= r -38)) (kxrt-f2-refused 3) r))
+(defn- kxrt-f2-close [fd :i64] :i64
+  ;; A Linux close consumes the descriptor even on EINTR. Never retry it.
+  (let [r (kxrt-close fd)] (if (= r 0) 0 (kxrt-f2-refused 4))))
+(defn- kxrt-f2-read [sk :i64 path :i64 pn :i64 offset :i64 count :i64 range :bool] :i64
+  (let [fd (kxrt-f2-open path pn (kxrt-f2-flags 0) 0)]
+    (if (< fd 0) (if range (kxrt-fs-range-unavailable) (kxrt-f2-refused 5))
+      (let [st (kxrt-f2-at 512) r (kxrt-f2-sys 2 fd st 0 0 0 0)
+            size (kxrt-load64 (+ st 48)) mode (kxrt-f2-mode st)
+            ok (and (= r 0) (>= size 0) (= (bit-and mode 61440) 32768)
+                    (or (not range) (and (<= offset size) (<= count (- size offset)))))
+            n (if range count 0) pre (if ok (kxrt-f2-preflight sk n) 0)
+            u (kxrt-gl 32) dst (+ (kxrt-gl 24) u 5)
+            got (if (not ok) -1 (if range (loop [i 0]
+                  (if (= i n) i
+                    (let [v (kxrt-f2-sys 1 fd (+ dst i) (- n i) (+ offset i) 0 0)]
+                      (cond (= v -4) (recur i) (<= v 0) -1 :else (recur (+ i v))))))
+                  (loop [i 0]
+                    (let [pool (- KXRT-POOL u 5 i) value (if (= sk 11) pool (- KXRT-VALUE-MAX 5 i))
+                          room (if (< pool value) pool value) want (if (> room 1048576) 1048576 room)
+                          v (kxrt-f2-sys 0 fd (if (= want 0) (kxrt-f2-at 640) (+ dst i)) (if (= want 0) 1 want) 0 0 0)]
+                      (cond (= v -4) (recur i) (< v 0) -1 (= v 0) i
+                            (= want 0) (if (= pool 0) -2 -3) :else (recur (+ i v)))))))
+            closed (kxrt-close fd)]
+        (cond (= got -2) (kxrt-budget 4) (= got -3) (kxrt-value 10)
+              (or (not ok) (< got 0) (and range (not= got n)) (not= closed 0))
+          (if range (kxrt-fs-range-unavailable) (kxrt-f2-refused 5))
+          :else (kxrt-f2-answer sk dst got))))))
+(defn- kxrt-f2-write-request [fd :i64 kind :i64 req :i64 start :i64 total :i64] :i64
+  (cond (= kind 1) (kxrt-write-all fd (+ (kxrt-saddr req) start) (- total start))
+        (= kind 8) (kxrt-write-all fd (+ (kxrt-vbytes req) start) (- total start))
+        :else (loop [i 0 skip start]
+          (if (= i (kxrt-vlen req)) 1
+            (let [h (kxrt-vector-at req i) n (kxrt-vlen h)]
+              (if (>= skip n) (recur (inc i) (- skip n))
+                (let [w (kxrt-write-all fd (+ (kxrt-vbytes h) skip) (- n skip))]
+                  (if (= w 1) (recur (inc i) 0) 0))))))))
+(defn- kxrt-f2-write [sk :i64 kind :i64 req :i64 path :i64 pn :i64 start :i64 total :i64 append :bool] :i64
+  (let [n (- total start) pre (kxrt-f2-preflight sk n)
+        fd (kxrt-f2-open path pn (kxrt-f2-flags (if append 2 1)) (if append 0 420))]
+    (if (< fd 0) (kxrt-f2-refused 6)
+      (let [ok (kxrt-f2-write-request fd kind req start total) closed (kxrt-close fd)]
+        (if (or (not= ok 1) (not= closed 0)) (kxrt-f2-refused 6)
+          (let [dst (+ (kxrt-gl 24) (kxrt-gl 32) 5)
+                c (kxrt-f2-copy-request dst kind req start n)] (kxrt-f2-answer sk dst n)))))))
+(defn- kxrt-f2-metadata [sk :i64 form :i64 path :i64 pn :i64] :i64
+  (let [fd (kxrt-f2-io-failed (kxrt-f2-open path pn (kxrt-f2-flags (if (or (= form 14) (= form 15)) 3 0)) 0))]
+    (if (< fd 0) (kxrt-f2-answer sk (kxrt-f2-at 256) 0)
+      (let [st (kxrt-f2-at 512) r (kxrt-f2-sys 2 fd st 0 0 0 0) closed (kxrt-close fd)
+            b (kxrt-f2-at 256) mode (kxrt-f2-mode st) ft (bit-and mode 61440)
+            n (cond (not= r 0) 0 (= form 6) (kxrt-dec b (kxrt-load64 (+ st 88)))
+                    (= form 15) (let [i (kxrt-dec b (kxrt-f2-uid st)) z (kxrt-store8 (+ b i) 32)]
+                      (+ i 1 (kxrt-dec (+ b i 1) (kxrt-f2-sys 8 0 0 0 0 0 0))))
+                    :else (let [i (kxrt-dec b (bit-and mode 511)) z (kxrt-store8 (+ b i) 32)
+                      j (+ i 1 (kxrt-dec (+ b i 1) (kxrt-load64 (+ st 48)))) y (kxrt-store8 (+ b j) 32)
+                      k (+ j 1 (kxrt-dec (+ b j 1) (kxrt-load64 (+ st 64)))) x (kxrt-store8 (+ b k) 32)]
+                      (+ k 1 (kxrt-dec (+ b k 1) (if (= form 5) (if (= ft 16384) 1 0)
+                        (cond (= ft 32768) 0 (= ft 16384) 1 (= ft 40960) 2 :else 3))))))]
+        (if (not= closed 0) (kxrt-f2-refused 4)
+          (kxrt-f2-answer sk b (if (= r 0) n 0)))))))
+(defn- kxrt-f2-mode-parse [a :i64 n :i64] :i64
+  (if (or (< n 1) (> n 6)) (kxrt-f2-refused 7)
+    (loop [i 0 mode 0]
+      (if (= i n) (bit-and mode 511)
+        (let [c (kxrt-load8 (+ a i))]
+          (if (or (< c 48) (> c 55)) (kxrt-f2-refused 7) (recur (inc i) (+ (* mode 8) (- c 48)))))))))
+(defn- kxrt-f2-chmod [sk :i64 path :i64 pn :i64 tail :i64 tn :i64] :i64
+  (let [mode (kxrt-f2-mode-parse tail tn) pre (kxrt-f2-preflight sk 1)
+        fd (kxrt-f2-io-failed (kxrt-f2-open path pn (kxrt-f2-flags 0) 0))]
+    (if (< fd 0) (kxrt-f2-boolean sk false)
+      (let [r (kxrt-f2-sys 4 fd mode 0 0 0 0) c (kxrt-close fd)]
+        (if (not= c 0) (kxrt-f2-refused 4) (kxrt-f2-boolean sk (= r 0)))))))
+(defn- kxrt-f2-mutate [sk :i64 form :i64 path :i64 pn :i64] :i64
+  (let [pre (kxrt-f2-preflight sk 1) m (kxrt-path path pn) name (kxrt-f2-at 12288)
+        fd (kxrt-f2-io-failed (if (< m 0) -1 (kxrt-fs-parent m name)))]
+    (if (< fd 0) (kxrt-f2-boolean sk false)
+      (let [r (kxrt-f2-sys (if (= form 8) 5 6) fd name (if (= form 8) 511 (if (= form 10) 512 0)) 0 0 0)
+            closed (kxrt-close fd)]
+        (if (not= closed 0) (kxrt-f2-refused 4) (kxrt-f2-boolean sk (= r 0)))))))
+(defn- kxrt-f2-rename [sk :i64 path :i64 pn :i64 to :i64 tn :i64 exclusive :bool] :i64
+  (let [pre (kxrt-f2-preflight sk 1) m (kxrt-path path pn) one (kxrt-f2-at 12288) two (kxrt-f2-at 12544)
+        f1 (kxrt-f2-io-failed (if (< m 0) -1 (kxrt-fs-parent m one)))
+        f2 (if (< f1 0) -1 (let [m2 (kxrt-path to tn)] (kxrt-f2-io-failed (if (< m2 0) -1 (kxrt-fs-parent m2 two)))))
+        r (if (< f2 0) -1 (kxrt-f2-sys (if exclusive 12 7) f1 one f2 two (if exclusive 1 0) 0))
+        c1 (if (< f1 0) 0 (kxrt-close f1)) c2 (if (< f2 0) 0 (kxrt-close f2))]
+    (cond (or (not= c1 0) (not= c2 0)) (kxrt-f2-refused 4)
+          (and exclusive (= r -38)) (kxrt-f2-refused 3)
+          :else (kxrt-f2-boolean sk (= r 0)))))
+(defn- kxrt-f2-fsync [sk :i64 path :i64 pn :i64] :i64
+  (let [pre (kxrt-f2-preflight sk 1) fd (kxrt-f2-io-failed (kxrt-f2-open path pn (kxrt-f2-flags 0) 0))]
+    (if (< fd 0) (kxrt-f2-boolean sk false)
+      (let [r (loop [i 0] (let [r (kxrt-f2-sys 3 fd 0 0 0 0 0)] (if (= r -4) (recur (inc i)) r))) c (kxrt-close fd)]
+        (if (not= c 0) (kxrt-f2-refused 4) (kxrt-f2-boolean sk (= r 0)))))))
+;; Managed outputs use the existing draft's index.tmp names. The journal is
+;; armed before mkdir and records every descriptor before a fallible action.
+;; A failed close consumes its entry; cleanup never retries that descriptor.
+(defn- kxrt-f2-open-at [fd :i64 name :i64 flags :i64 mode :i64] :i64
+  (let [how (kxrt-f2-at 768) a (kxrt-store64 how flags) b (kxrt-store64 (+ how 8) mode)
+        c (kxrt-store64 (+ how 16) 14)] (kxrt-syscall 437 fd name how 24 0 0)))
+(defn- kxrt-f2-mask [block :bool] :i64
+  ;; Do not deliver asynchronous termination between exclusive creation and
+  ;; its journal update. The old mask is restored exactly, including on an
+  ;; ordinary negative answer. Synchronous faults still fail closed.
+  (let [s (kxrt-gl 768) mask (+ s 22016) old (+ s 22024)
+        bits (kxrt-store64 mask 8413186)
+        r (kxrt-f2-sys 11 (if block 0 2) (if block mask old) (if block old 0) 8 0 0)]
+    (if (= r 0) 0 (kxrt-f2-refused 14))))
+(defn- kxrt-f2-owned-close [slot :i64] :i64
+  (let [p (+ (kxrt-gl 768) slot) fd (kxrt-load64 p)]
+    (if (< fd 0) 0 (let [z (kxrt-store64 p -1)] (kxrt-close fd)))))
+(defn- kxrt-f2-member-name [index :i64] :i64
+  (let [b (+ (kxrt-gl 768) 13056) n (kxrt-dec b index) z (kxrt-w b n 0x706d742e 5)] b))
+(defn- kxrt-f2-same-owned [] :bool
+  (let [s (kxrt-gl 768) parent (kxrt-load64 (+ s 8)) directory (kxrt-load64 (+ s 16))
+        st (+ s 20480) named (+ s 20736)
+        a (kxrt-f2-sys 2 directory st 0 0 0 0)
+        probe (kxrt-f2-open-at parent (+ s 16384) (kxrt-f2-flags 5) 0)
+        saved (kxrt-store64 (+ s 32) probe)
+        b (if (< probe 0) -1 (kxrt-f2-sys 2 probe named 0 0 0 0))
+        c (kxrt-f2-owned-close 32)]
+    (and (= a 0) (= b 0) (= c 0) (= (bit-and (kxrt-f2-mode named) 61440) 16384)
+         (= (kxrt-load64 st) (kxrt-load64 (+ s 40))) (= (kxrt-load64 (+ st 8)) (kxrt-load64 (+ s 48)))
+         (= (kxrt-load64 named) (kxrt-load64 (+ s 40))) (= (kxrt-load64 (+ named 8)) (kxrt-load64 (+ s 48))))))
+(defn- kxrt-f2-cleanup [] :bool
+  ;; This leaf must not call f2-state (which can allocate), a guest, or a trap.
+  (let [s (kxrt-gl 768)]
+    (cond (= s 0) true (= (kxrt-load64 s) 0) true
+          (not= (kxrt-load64 (+ s 72)) 0) false
+          :else (let [busy (kxrt-store64 (+ s 72) 1) phase (kxrt-load64 s)
+            member (kxrt-f2-owned-close 24)
+            same (and (= phase 3) (kxrt-f2-same-owned))
+            entries (if same (loop [index 0 ok true]
+              (if (= index (kxrt-load64 (+ s 88))) ok
+                (let [r (kxrt-f2-sys 6 (kxrt-load64 (+ s 16)) (kxrt-f2-member-name index) 0 0 0 0)]
+                  (recur (inc index) (and ok (or (= r 0) (= r -2))))))) (= phase 1))
+            removed (if (and same entries)
+                      (kxrt-f2-sys 6 (kxrt-load64 (+ s 8)) (+ s 16384) 512 0 0 0)
+                      (if (= phase 1) 0 -1))
+            probe (kxrt-f2-owned-close 32) directory (kxrt-f2-owned-close 16) parent (kxrt-f2-owned-close 8)
+            ok (and (= member 0) entries (= removed 0) (= probe 0) (= directory 0) (= parent 0))
+            state (kxrt-store64 s (if ok 0 4)) done (kxrt-store64 (+ s 72) 0)] ok))))
+(defn- kxrt-f2-cleanup-note [] :i64
+  (let [s (kxrt-gl 768) b (+ s 21248)
+        n (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b 0 0x454c435f4558454b 8) 0x693a7b2050554e41 8) 0x74656c706d6f636e 8) 0xa7d65 3)]
+    (kxrt-err-text b n)))
+(defn- kxrt-f2-temp-create [sk :i64 path :i64 pn :i64 prefix :i64 plen :i64 managed :bool] :i64
+  (let [s (kxrt-f2-state) legal (and (>= plen 0) (<= plen 249)
+        (loop [i 0] (cond (= i plen) true
+          (or (= (kxrt-load8 (+ prefix i)) 47) (= (kxrt-load8 (+ prefix i)) 0)) false :else (recur (inc i)))))
+        check (if (or (not legal) (and managed (not= (kxrt-load64 s) 0))) (kxrt-f2-refused 9) 0)
+        m (kxrt-path path pn) full (+ s 9216) copy (if (< m 0) 0 (kxrt-copy full (kxrt-gl 208) m))
+        namelen (+ plen 6) slash (if (= m 1) 0 1)
+        length (if (>= (+ m slash namelen) 4096) (kxrt-f2-refused 2) 0)
+        pre (kxrt-f2-preflight sk (+ m slash namelen))
+        fd (kxrt-f2-io-failed (if (< m 0) -1 (kxrt-open m (kxrt-f2-flags 4) 0)))]
+    (if (< fd 0) (kxrt-f2-answer sk full 0)
+      (let [journal (if managed (let [a (kxrt-store64 (+ s 8) fd) b (kxrt-store64 (+ s 88) 0)
+                                c (kxrt-store64 s 1)] 0) 0)
+            blocked (if managed (kxrt-f2-mask true) 0)
+            name (+ s 12288) c (kxrt-copy name prefix plen)
+            created (loop [attempt 0]
+              (if (= attempt 16) false
+                (let [random (+ s 640) got (loop [i 0]
+                    (if (= i 6) i (let [r (kxrt-f2-sys 9 (+ random i) (- 6 i) 0 0 0 0)]
+                      (cond (= r -4) (recur i) (<= r 0) -1 :else (recur (+ i r))))))
+                      entropy (if (not= got 6) (let [c (if managed 0 (kxrt-close fd))] (kxrt-f2-refused 10)) 0)
+                      suffix (loop [i 0] (if (= i 6) 0
+                        (let [byte (kxrt-load8 (+ random i)) v (- byte (* 36 (quot byte 36)))
+                              z (kxrt-store8 (+ name plen i) (if (< v 10) (+ 48 v) (+ 87 v)))] (recur (inc i)))))
+                      end (kxrt-store8 (+ name namelen) 0)
+                      prepare (if managed (kxrt-copy (+ s 16384) name (inc namelen)) 0)
+                      uncertain (if managed (kxrt-store64 s 2) 0)
+                      r (kxrt-f2-sys 5 fd name 448 0 0 0)
+                      failed (if (and managed (not= r 0)) (kxrt-store64 s 1) 0)]
+                  (cond (= r 0) true (= r -17) (recur (inc attempt)) :else false))))]
+        (if (not created)
+          (let [c (if managed (if (kxrt-f2-cleanup) 0 (kxrt-f2-refused 11)) (kxrt-close fd))
+                unblocked (if managed (kxrt-f2-mask false) 0)]
+            (if (not= c 0) (kxrt-f2-refused 4) (kxrt-f2-answer sk full 0)))
+          (let [phase (if managed (kxrt-store64 s 2) 0)
+                sep (if (= slash 0) 0 (kxrt-store8 (+ full m) 47))
+                dest (kxrt-copy (+ full m slash) name namelen) n (+ m slash namelen)
+                captured (if managed
+                  (let [dir (kxrt-f2-open-at fd name (kxrt-f2-flags 4) 0)
+                        save (kxrt-store64 (+ s 16) dir) st (+ s 20480)
+                        stat (if (< dir 0) -1 (kxrt-f2-sys 2 dir st 0 0 0 0))]
+                    (if (not= stat 0) (kxrt-f2-refused 11)
+                      (let [a (kxrt-store64 (+ s 40) (kxrt-load64 st)) b (kxrt-store64 (+ s 48) (kxrt-load64 (+ st 8)))
+                            c (kxrt-store64 (+ s 64) n) d (kxrt-copy (+ s 16896) full n)
+                            e (kxrt-store64 s 3)] 0))) (kxrt-close fd))
+                unblocked (if managed (kxrt-f2-mask false) 0)]
+            (if (not= captured 0) (kxrt-f2-refused 4) (kxrt-f2-answer sk full n))))))))
+(defn- kxrt-f2-temp [sk :i64 path :i64 pn :i64 prefix :i64 plen :i64] :i64
+  (kxrt-f2-temp-create sk path pn prefix plen false))
+(defn- kxrt-f2-begin [sk :i64 path :i64 pn :i64] :i64
+  (let [p (kxrt-f2-at 13312) z (kxrt-w p (kxrt-w p 0 0x6f2d61626f746f6b 8) 0x2d7475707475 6)]
+    (kxrt-f2-temp-create sk path pn p 14 true)))
+(defn- kxrt-f2-owned-path? [path :i64 pn :i64] :bool
+  (let [s (kxrt-gl 768) n (kxrt-load64 (+ s 64)) m (kxrt-path path pn)]
+    (and (= (kxrt-load64 s) 3) (= m n) (kxrt-same (kxrt-gl 208) (+ s 16896) n))))
+(defn- kxrt-f2-discard [sk :i64 path :i64 pn :i64] :i64
+  (if (not (kxrt-f2-owned-path? path pn)) (kxrt-f2-refused 12)
+    (if (kxrt-f2-cleanup) (kxrt-f2-boolean sk true) (kxrt-f2-refused 11))))
+(defn- kxrt-f2-stage [sk :i64 kind :i64 req :i64 path :i64 pn :i64 tail :i64 total :i64] :i64
+  (let [s (kxrt-f2-state) end (kxrt-f2-end kind req tail total 6)
+        modebytes (+ s 13312) c (kxrt-f2-copy-request modebytes kind req tail (- end tail))
+        mode (kxrt-f2-mode-parse modebytes (- end tail)) start (inc end)
+        pre (kxrt-f2-preflight sk 1) active (kxrt-load64 s)
+        index (kxrt-load64 (+ s 88)) name (kxrt-f2-member-name index)
+        m (kxrt-path path pn) n (kxrt-load64 (+ s 64)) nn (kxrt-cstrlen name)
+        valid (if (= active 0) true
+          (and (= active 3) (< index 9223372036854775807) (= m (+ n 1 nn))
+               (kxrt-same (kxrt-gl 208) (+ s 16896) n) (= (kxrt-load8 (+ (kxrt-gl 208) n)) 47)
+               (kxrt-same (+ (kxrt-gl 208) n 1) name nn)))
+        admitted (if valid 0 (kxrt-f2-refused 13))
+        blocked (if (= active 3) (kxrt-f2-mask true) 0)
+        fd (if (= active 0) (kxrt-f2-open path pn (kxrt-f2-flags 6) 384)
+             (kxrt-f2-open-at (kxrt-load64 (+ s 16)) name (kxrt-f2-flags 6) 384))]
+    (if (< fd 0) (let [unblocked (if (= active 3) (kxrt-f2-mask false) 0)] (kxrt-f2-boolean sk false))
+      (let [journal (kxrt-store64 (+ s 24) fd)
+            count (if (= active 3) (kxrt-store64 (+ s 88) (inc index)) 0)
+            unblocked (if (= active 3) (kxrt-f2-mask false) 0)
+            chmod (kxrt-f2-sys 4 fd mode 0 0 0 0)
+            written (if (= chmod 0) (kxrt-f2-write-request fd kind req start total) 0)
+            flush (if (= written 1) (loop [i 0] (let [r (kxrt-f2-sys 3 fd 0 0 0 0 0)] (if (= r -4) (recur (inc i)) r))) -1)
+            closed (kxrt-f2-owned-close 24)]
+        (if (or (not= chmod 0) (not= written 1) (not= flush 0) (not= closed 0)) (kxrt-f2-refused 13)
+          (kxrt-f2-boolean sk true))))))
+(defn- kxrt-f2-dispatch [kind :i64 sk :i64 req :i64] :i64
+  (let [total (kxrt-f2-length kind req)
+        prefix (if (kxrt-f2-prefix? kind req total) 0 (kxrt-f2-refused 2))
+        form (- (kxrt-f2-byte kind req 5) 65)
+        admitted (if (kxrt-f2-form-ok? kind sk form) 0 (kxrt-f2-refused 8))
+        end (kxrt-f2-end kind req 6 total 4095) pn (- end 6) tail (+ end 1) tn (- total tail)
+        path (kxrt-f2-at 1024) copy (kxrt-f2-copy-request path kind req 6 pn)
+        utf (if (or (= pn 0) (not= (kxrt-utf8 path pn) 0)) (kxrt-f2-refused 2) 0)
+        tails (if (or (= form 1) (= form 2) (= form 4) (= form 7) (= form 11) (= form 13) (= form 16) (= form 19)) 0
+                (if (= tn 0) 0 (kxrt-f2-refused 2)))
+        m (kxrt-path path pn) scoped (kxrt-admit m)
+        tbuf (kxrt-f2-at 5120)
+        tc (if (or (= form 4) (= form 7) (= form 11) (= form 13) (= form 19))
+             (if (> tn 4095) (kxrt-f2-refused 2) (kxrt-f2-copy-request tbuf kind req tail tn)) 0)
+        tvalid (if (or (= form 11) (= form 13) (= form 19))
+                 (if (or (not= (kxrt-utf8 tbuf tn) 0)
+                       (loop [i 0] (cond (= i tn) false (= (kxrt-load8 (+ tbuf i)) 0) true :else (recur (inc i)))))
+                   (kxrt-f2-refused 2) 0) 0)
+        sink (kxrt-sink-close)]
+    (if (< scoped 0) (kxrt-f2-absent sk form)
+      (case form
+        0 (kxrt-f2-read sk path pn 0 0 false)
+        1 (kxrt-f2-write sk kind req path pn tail total false)
+        2 (kxrt-f2-write sk kind req path pn tail total true)
+        3 (let [fd (kxrt-f2-open path pn (kxrt-f2-flags 0) 0) c (if (< fd 0) 0 (kxrt-close fd))]
+            (if (not= c 0) (kxrt-f2-refused 4) (kxrt-f2-boolean sk (>= fd 0))))
+        4 (let [colon (loop [i 0] (cond (>= i tn) -1 (= (kxrt-load8 (+ tbuf i)) 58) i :else (recur (inc i))))
+                off (if (< colon 0) -1 (kxrt-fs-span tbuf colon))
+                n (if (< colon 0) -1 (kxrt-fs-span (+ tbuf colon 1) (- tn colon 1)))]
+            (if (or (< off 0) (< n 0)) (kxrt-budget 4) (kxrt-f2-read sk path pn off n true)))
+        5 (kxrt-f2-metadata sk form path pn) 6 (kxrt-f2-metadata sk form path pn)
+        7 (kxrt-f2-chmod sk path pn tbuf tn)
+        8 (kxrt-f2-mutate sk form path pn) 9 (kxrt-f2-mutate sk form path pn) 10 (kxrt-f2-mutate sk form path pn)
+        11 (kxrt-f2-rename sk path pn tbuf tn false) 12 (kxrt-f2-fsync sk path pn)
+        13 (kxrt-f2-temp sk path pn tbuf tn)
+        14 (kxrt-f2-metadata sk form path pn) 15 (kxrt-f2-metadata sk form path pn)
+        16 (kxrt-f2-stage sk kind req path pn tail total)
+        17 (kxrt-f2-begin sk path pn) 18 (kxrt-f2-discard sk path pn)
+        19 (kxrt-f2-rename sk path pn tbuf tn true)
+        (kxrt-f2-refused 8)))))
+")
