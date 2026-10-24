@@ -33,8 +33,14 @@
 
   Everything host-shaped sits behind `run` (the tool invoker) and kotoba.io
   (the file ops), so the suite drives this namespace with a fake runner and
-  real scratch files; the only seam no test covers is the default runner's
-  own process spawn, exercised by hand against glslangValidator (the tick
+  real scratch files. The seam that was left uncovered -- the default
+  runner's own process spawn -- is covered since 2026-10-24 by
+  `the-default-runner-spawns-the-real-tool` in
+  kotoba.compiler.accelerator-spirv-compile-test: it spawns the real
+  glslangValidator where the real tool is spawnable (the recorded identity
+  is then the tool's own `--version`, verbatim) and asserts the named
+  spawn refusal where it is not, printing which branch ran. Before that
+  slice the spawn was exercised by hand against glslangValidator (the tick
   report, 2026-10-22). This is provenance machinery, not measurement:
   nothing here touches a :measured? flag or a workgroup row.
 

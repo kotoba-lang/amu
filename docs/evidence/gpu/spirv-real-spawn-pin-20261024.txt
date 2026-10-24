@@ -1,0 +1,134 @@
+JUN-59/JUN-60 slice record -- 2026-10-24 -- the sealed SPIR-V build
+step's real process spawn moves from hand-exercised to suite-pinned
+
+WHAT THIS RECORD IS: the tick slice for ADR-0359 decision 2's named seam
+gap. The gap, quoted from
+src/kotoba/compiler/accelerator_spirv_compile.cljk's ns docstring before
+this slice: "the only seam no test covers is the default runner's own
+process spawn, exercised by hand against glslangValidator (the tick
+report, 2026-10-22)". ADR-0359's Status line carried the same claim
+("exercised by hand on this host, not by the suite"). This slice closes
+it: the spawn is now covered by the suite, on hosts where the tool is
+spawnable, with the tool-less host's branch named and printed.
+
+ONE row of work, the hardware-free implementation slice SOUL.md's backlog
+item 4 asks for (JUN-57/59/60): nothing here needs a GPU, and nothing
+here is an optimization measurement. It is a TOOLCHAIN fact about what the
+recorded build step does with the real recorded tool.
+
+WHAT MOVED (test + prose only; no compiler namespace's code moved):
+
+- test/kotoba/compiler/accelerator_spirv_compile_test.cljk: one new test,
+  `the-default-runner-spawns-the-real-tool` (8 tests / 30 assertions ->
+  9 tests / 47 assertions in this namespace). It has two named branches
+  and prints which one ran:
+  (a) EVERY host: an unspawnable tool name is a THROWN refusal through the
+      real default-runner and through compile-spirv! -- never a nil status
+      carried upward as data (the ns docstring's contract, now pinned).
+  (b) The real-tool branch (this host ran it -- see GROUND TRUTH below):
+      compile-spirv! runs with NO :run override, i.e. the real
+      default-runner spawns the real glslangValidator twice (--version,
+      compile) per source; over the ewise source and the :subgroup-reduce
+      GLSL arm (accelerator/compile-kernel ... :glsl-v1
+      :subgroup-reduce). Pinned: the compiled bytes are non-empty and
+      open with the SPIR-V magic 0x07230203 little-endian (03 02 23 07);
+      the sealed artifact answers {:claim :provenance}; the recorded tool
+      identity is name "glslangValidator", the tool's OWN --version output
+      VERBATIM (equal to a separately run probe's output), and the stable
+      argv (compile-argv "glslangValidator"); the loader cache round-trips
+      the sealed bytes and pipeline-command answers the wire command with
+      the sealed bindings count (4 for ewise, 3 for reduce); the variant
+      source's seal carries :variant :subgroup-reduce.
+  The test prints "real-spawn branch: ... spawnable" or "... NOT
+  spawnable" so a green run on a tool-less host can never be read as a
+  real-tool run. The docstring of the test ns was rewritten to keep its
+  own claim true ("nothing in this file shells out" scoped to the
+  fake-runner tests).
+- src/kotoba/compiler/accelerator_spirv_compile.cljk: the ns docstring's
+  seam sentence is updated (the gap is named as closed 2026-10-24, with
+  the hand exercise kept as history). No executable code changed in this
+  file -- verified: the diff is docstring-only.
+- docs/adr/0359-gpu-vulkan-arm-glsl-and-spirv-build-step.md: the Status
+  line's "exercised by hand on this host, not by the suite" sentence gets
+  one dated bracket [UPDATE 2026-10-24] (the adr0357-status-line-
+  reconciliation idiom: the pre-bracket text stands as history). The
+  bracket names what the test pins and what it does not.
+
+WHAT THIS SLICE DOES NOT LICENSE (state honesty):
+- NO MEASUREMENT ran. No :measured? flag, no :measured-cell record, no
+  selection answer, no workgroup row moves. Compiling emitted GLSL with
+  the recorded tool is a toolchain fact; it is not optimization evidence
+  for any vendor row, and no row's UNMEASURED cell changes.
+- The CUDA arm stays UNCOMPILED (no nvcc on this host, unchanged); the
+  WGSL arms stay UNCOMPILED (no WGSL validator on this host, unchanged).
+  This slice says nothing about either.
+- The "STILL UNIMPLEMENTED: the measurement harnesses consuming
+  compiler-sealed artifacts" item in ADR-0359's Status is untouched and
+  stays BLOCKED on the ADR 0371 provider route (the harnesses were
+  removed with the GPU broker).
+- The nine :simdgroup-reduce cross-day rows stay 2026-10-25+ rows; this
+  slice is not a measurement and does not touch that series.
+
+GROUND TRUTH (real runs, this host, this tick, from the chain worktree
+root; classpath substitution as in prior records -- the
+$(kbb -Spath -M:test) subshell is broken at this branch's HEAD ("no
+deps.edn", exit 66; named in
+docs/evidence/gpu/simdgroup-reduce-m1max-shape2-w32-measure-20261024.txt),
+so the resolved 249-entry closure is substituted inline):
+
+1. The touched test namespace (targeted run):
+     kbb --backend sci --classpath "<resolved closure>" -e \
+       "(require '[clojure.test :as t] \
+         '[kotoba.compiler.accelerator-spirv-compile-test]) \
+        (t/run-tests 'kotoba.compiler.accelerator-spirv-compile-test)"
+   -> real-spawn branch: glslangValidator is spawnable; its --version is
+      attributed verbatim below
+      real-spawn tool version: "Glslang Version: 11:16.6.0\nESSL Version:
+      OpenGL ES GLSL 3.20 glslang Khronos. 16.6.0\nGLSL Version: 4.60
+      glslang Khronos. 16.6.0\nSPIR-V Version 0x00010600, Revision
+      1\nGLSL.std.450 Version 100, Revision 1\nKhronos Tool ID 8\nSPIR-V
+      Generator Version 11\nGL_KHR_vulkan_glsl version 100\nARB_GL_gl_spirv
+      version 100\n"
+   -> Ran 9 tests containing 47 assertions.
+      0 failures, 0 errors.
+   (8 tests / 30 assertions before this slice -- measured by running the
+   HEAD version of the namespace from a scratch classpath entry, not
+   assumed; the new test contributes 1 test / 17 assertions.)
+2. The scoped GPU gate (the 8 GPU-owned test namespaces, scratch runner
+   gpu_scoped_gate.cljk, not in the repo):
+     -> Ran 103 tests containing 9791 assertions.
+        0 failures, 0 errors.
+        scoped: 103 tests, 9791 passed, 0 failed, 0 errors
+   (102 tests / 9774 assertions before this slice.)
+3. Full suite (run-tests.cljk, same substituted classpath): RED AT BASE,
+   outside this diff, at namespace load on `kotoba.form` ("Error: Could
+   not find namespace: kotoba.form"; the W3 port path, the same red every
+   recent record names). No green full suite is claimed.
+4. Harness self-tests (run "named not assumed"; this slice adds a record
+   .txt, not a summary.md):
+     python3 scripts/gpu-subgroup-reduce-metal-measure.py --self-test
+       -> driver self-test: 17 assertions passed, 0 failed (unchanged --
+          the driver is untouched by this slice).
+     python3 scripts/gpu_regime_classify.py --self-test
+       -> TOTAL: 2003 assertions passed, 0 failed (identical to the
+          pre-slice run; this record carries no measurement pairs, so no
+          corpus tally or pin moved -- floor pins only).
+   Both ran AFTER this record landed on disk, so the corpus ingested it.
+
+HONEST LEFT (the real remainder after this row):
+- ADR-0359's "STILL UNIMPLEMENTED: the measurement harnesses consuming
+  compiler-sealed artifacts" stays blocked on the ADR 0371 provider
+  route (JUN-285), outside this bot's lane.
+- The CUDA and WGSL arms stay UNCOMPILED on this host; a WGSL validator
+  on the testing host is a possible future slice, proposed here and
+  decided nowhere.
+- SOUL.md backlog items 2/3/4: the JUN-58 measurement series' remaining
+  rows (nine cross-day replications, the shape-2 W = 512 later-day data
+  run) are 2026-10-25+ rows; :arm/:unknown workgroup rows need hardware
+  or are provisional by design; JUN-57/59/60 hardware-free slices
+  continue.
+
+NOT PUSHED / blocker-first rule (owner-approved 2026-10-20): see the
+commit message -- kotoba-lang/amu open PRs with `hermes/` heads are
+re-checked this tick and the push decision follows the rule, recorded in
+the commit and the Linear comment.

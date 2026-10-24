@@ -22,7 +22,18 @@
   glslang invocations and hand-written PIPELINE lines for now).
   The default runner's process spawn against real glslangValidator is exercised
   by hand on this host, not by the suite (the suite drives the seam with a
-  fake runner). UNMEASURED where a measurement is owed. SUPERSEDED AS TO
+  fake runner). [UPDATE 2026-10-24: that sentence is now stale on the
+  SUITE axis -- `the-default-runner-spawns-the-real-tool` in
+  kotoba.compiler.accelerator-spirv-compile-test spawns the real
+  glslangValidator through the default runner over both a baseline source
+  and the `:subgroup-reduce` GLSL arm (the recorded identity is the tool's
+  own `--version`, verbatim; the compiled bytes carry the SPIR-V magic),
+  and asserts the named spawn refusal for an unspawnable tool. The test
+  runs the real-tool branch only where the tool is spawnable and PRINTS
+  which branch ran, so a tool-less host cannot read its green as a
+  real-tool run. Hand exercise is superseded; the fake-runner orchestration
+  tests stand unchanged. Prose + test only: no sealed-artifact contract,
+  selection answer, `:measured?` flag or workgroup row moves.] UNMEASURED where a measurement is owed. SUPERSEDED AS TO
   THE CONSUMER (2026-10-22, amu 36479076, JUN-29): the loader and its GPU
   broker (`tools/kexe_gpu_vulkan.c`) are removed, so "the file the loader
   opens" is now "the file a wire-42 consumer opens" and no consumer exists

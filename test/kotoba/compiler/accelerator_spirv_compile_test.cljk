@@ -1,13 +1,23 @@
 (ns kotoba.compiler.accelerator-spirv-compile-test
   "ADR-0359 decision 2's host half: the one host-invoking entry point of the
-  sealed SPIR-V build step. The runner is FAKE here -- a recorded argv and a
-  file the fake tool writes -- so nothing in this file shells out; what is
-  under test is the orchestration the ADR specifies: refuse an unverified
-  source before any process runs, attribute the tool or refuse, seal what
-  the tool actually produced, write the loader cache from the sealed bytes,
-  fail closed on a cache that no longer matches, and answer the dispatch
-  side's wire command only after those checks (pipeline-command). Nothing
-  in this file is a measurement."
+  sealed SPIR-V build step. Everything above `the-default-runner-spawns-
+  the-real-tool` uses a FAKE runner -- a recorded argv and a file the fake
+  tool writes -- so those tests never shell out; what is under test there is
+  the orchestration the ADR specifies: refuse an unverified source before
+  any process runs, attribute the tool or refuse, seal what the tool
+  actually produced, write the loader cache from the sealed bytes, fail
+  closed on a cache that no longer matches, and answer the dispatch side's
+  wire command only after those checks (pipeline-command).
+  `the-default-runner-spawns-the-real-tool` is the ONE test that spawns
+  real processes: it closes the seam the ns docstring of
+  kotoba.compiler.accelerator-spirv-compile names (\"the only seam no test
+  covers is the default runner's own process spawn, exercised by hand
+  against glslangValidator\"). It runs the real tool where the real tool is
+  spawnable and asserts the named refusal where it is not -- and it PRINTS
+  which branch ran, so a green run on a tool-less host can never be read as
+  a real-tool run. Nothing in this file is a measurement: compiling emitted
+  GLSL with the recorded tool is a toolchain fact, not optimization
+  evidence."
   (:require [clojure.test :refer [deftest is testing]]
             [kotoba.io :as kio]
             [kotoba.artifact.core :as artifact]
@@ -175,3 +185,75 @@
       (finally
         (kio/delete-if-exists out)
         (kio/delete-if-exists dir)))))
+
+;; ---------------------------------------------------------------------------
+;; The real-spawn seam (the ONE block in this file that runs real processes).
+;; ---------------------------------------------------------------------------
+
+(def ^:private absent-tool "amu-no-such-spirv-tool-20261024")
+
+(defn- subgroup-source []
+  (accelerator/compile-kernel
+   (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 128})
+   :glsl-v1 :subgroup-reduce))
+
+(defn- real-tool-probe
+  "The real default runner against the real tool's `--version`: answers the
+  {:status :out :err} map when the tool spawns, nil when it cannot be
+  spawned at all. NEITHER answer is faked -- this is the probe that decides
+  which branch of the real-spawn test runs."
+  []
+  (try (compile/default-runner ["glslangValidator" "--version"] {})
+       (catch :default _ nil)))
+
+(deftest the-default-runner-spawns-the-real-tool
+  (testing "an unspawnable tool is a thrown refusal, never nil-status data
+            carried upward (this branch runs on EVERY host)"
+    (is (thrown? Exception
+                 (compile/default-runner [absent-tool "--version"] {})))
+    (is (thrown? Exception
+                 (compile/compile-spirv! (ewise-source) {:tool absent-tool}))))
+  (let [probe (real-tool-probe)]
+    (if (and probe (= 0 (:status probe)))
+      (do
+        (println (str "real-spawn branch: glslangValidator is spawnable; "
+                      "its --version is attributed verbatim below"))
+        (println (str "real-spawn tool version: "
+                      (pr-str (if-not (empty? (:out probe))
+                                (:out probe) (:err probe)))))
+        (let [{sealed :artifact :keys [bytes tool]}
+              (compile/compile-spirv! (ewise-source) {})]
+          (testing "the real tool produced real SPIR-V bytes"
+            (is (seq bytes))
+            (is (= [0x03 0x02 0x23 0x07] (vec (take 4 bytes)))
+                "the SPIR-V magic 0x07230203, little-endian")
+            (is (= {:claim :provenance} (spirv/verify-spirv-artifact! sealed))))
+          (testing "the recorded tool identity is the real tool's own
+                    --version, verbatim, over the stable argv"
+            (is (= "glslangValidator" (:name tool)))
+            (is (= (:version tool)
+                   (if-not (empty? (:out probe)) (:out probe) (:err probe))))
+            (is (= (compile/compile-argv "glslangValidator") (:argv tool)))
+            (is (= tool (:tool sealed))))
+          (testing "the cache and the dispatch command ride the sealed bytes"
+            (let [dir (kio/temp-dir "amu-spirv-real-")
+                  out (kio/file dir "kernel.spv")]
+              (try
+                (is (= (str out) (compile/write-loader-cache! sealed out)))
+                (is (= sealed (compile/verify-loader-cache! sealed out)))
+                (is (= (str "PIPELINE " (str out) " 4")
+                       (compile/pipeline-command sealed out)))
+                (finally
+                  (kio/delete-if-exists out)
+                  (kio/delete-if-exists dir))))))
+        (let [{sealed :artifact} (compile/compile-spirv! (subgroup-source) {})]
+          (testing "the :subgroup-reduce GLSL arm compiles under the real
+                    tool through the same sealed build step"
+            (is (= :subgroup-reduce (:variant sealed)))
+            (is (= 3 (:bindings sealed)))
+            (is (seq (:spirv-bytes sealed)))
+            (is (= [0x03 0x02 0x23 0x07] (vec (take 4 (:spirv-bytes sealed)))))
+            (is (= {:claim :provenance} (spirv/verify-spirv-artifact! sealed))))))
+      (println (str "real-spawn branch: glslangValidator is NOT spawnable on "
+                    "this host -- only the refusal branches ran; the "
+                    "real-tool assertions did NOT run")))))
