@@ -2,10 +2,17 @@
 
 Date: 2026-10-22
 Status: Decision 1 (the platform boundary) accepted by the owner on 2026-10-22.
+Amended by ADR 0375 (2026-10-24): the provider stays Kotoba and keeps wire 42,
+the launcher, the grant and the confinement, but its platform-linked format
+(the system's ld.so) is replaced by Amu's own loader (route B).
 The rest is Proposed. Steps 1 (the protocol table), 2 (the runtime transport),
 3 (wire 42 admission), 4 (the launcher) and 5 (the platform-linked writer,
 x86_64) are implemented. The owner signed off the admission (Decision 7, open
-question 2) on 2026-10-22. Nothing else is implemented.
+question 2) on 2026-10-22. Step 6's acceptance ran on gad and the B70
+(2026-10-24), as historical receipts: since #1510 main refuses the provider's
+platform-linked build. By ADR 0374 (accepted 2026-10-24, option D), the rest
+of step 6 and steps 7–8 belong to kotoba-lang/inference, which owns GPU
+execution. Step 9 is done.
 Tracking: JUN-285 (this ADR), JUN-291 (step 1), JUN-294 (step 2), JUN-313 (step 4), JUN-322 (step 5). Related: JUN-109 (wire 42 admission), JUN-282
 (`amu run` on static images), JUN-283, AWAI-12 (murakumo inference on Amu
 selfhost).
@@ -692,7 +699,13 @@ Each step is its own PR, in this order:
       the launcher started the confined provider and a wire-42 guest with
       it (verdict `:ok`, 4 requests served).
    5. ADR and documentation.
-7. **aarch64-linux** imports, then Xavier.
-8. **macOS ADR.**
+   **Moved by ADR 0374 (accepted 2026-10-24, option D).** The rest of this
+   step, including #1534's device features, belongs to kotoba-lang/inference,
+   which owns GPU execution. Amu keeps the launcher, wire 42, the protocol
+   table, and the provider-era scripts as history. Tracked in JUN-375.
+7. **aarch64-linux** imports, then Xavier. **Moved to kotoba-lang/inference
+   by ADR 0374.**
+8. **macOS ADR.** **Moved to kotoba-lang/inference by ADR 0374.** On macOS,
+   Metal through Metal.framework is the route either way.
 9. **Done: dated notes** in the stale docs listed under Consequences
    (2026-10-24).
