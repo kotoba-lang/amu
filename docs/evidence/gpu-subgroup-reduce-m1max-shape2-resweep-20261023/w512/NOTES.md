@@ -118,3 +118,11 @@ it:
   correction record left them. No `:measured?` flag or honesty-lock code
   moves in this tick (evidence-only; the lock set is code and extends in
   its own slice).
+
+CORRECTION NOTE (2026-10-24, later tick): true when written
+(2026-10-23, before the 17:07 decision); the state moved the same day
+-- the regime-robust magnitude claim protocol is DECIDED (ADR-0360
+Amendment 2026-10-23, commit 52a8f0634; ACCEPTED DESIGN ONLY) and
+binds the :simdgroup-reduce family by ADR-0373's composition (commit
+7fcaa9406). Do not copy the row forward as current state. Census:
+docs/evidence/gpu/regime-protocol-leftrow-stale-20261024.txt.

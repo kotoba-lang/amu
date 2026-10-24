@@ -88,3 +88,18 @@ silent).
 - The regime-robust magnitude claim protocol (PROPOSED, decided nowhere)
   and the blocked/absent-hardware rows stay exactly as prior records left
   them.
+
+CORRECTION (2026-10-24, later tick): the protocol-state claim in
+this record -- the regime-robust magnitude claim protocol PROPOSED /
+"decided nowhere" -- is FALSE as written. The protocol is DECIDED
+(ADR-0360 Amendment 2026-10-23, commit 52a8f0634; state ACCEPTED
+DESIGN ONLY, rules 1-3 harness mechanisation IMPLEMENTED) and binds
+this evidence family by ADR-0373's composed contract (commit
+7fcaa9406: "the claim protocol (the regime-robust rules 1-4,
+ADR-0360's amendment) binds every claim a record may make"). The
+row is copy-forward residue of the pre-decision resweep LEFT lists
+(2026-10-23 15:07-16:50, "own slice if taken" -- taken 2026-10-23
+17:07). This closes no other row: the cross-regime verdict protocol
+stays PROPOSED and the blocked rows stay as prior records left them.
+Census: docs/evidence/gpu/regime-protocol-leftrow-stale-20261024.txt.
+Everything else in this record stands unchanged.

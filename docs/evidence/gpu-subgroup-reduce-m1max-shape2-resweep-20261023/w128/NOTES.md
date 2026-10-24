@@ -104,3 +104,11 @@ held across sessions even though the clock regime did not.
   -- PROPOSED, decided nowhere, own slice if taken.
 - The blocked/absent-hardware rows stay exactly as the 2026-10-23
   correction record left them.
+
+CORRECTION NOTE (2026-10-24, later tick): true when written
+(2026-10-23, before the 17:07 decision); the state moved the same day
+-- the regime-robust magnitude claim protocol is DECIDED (ADR-0360
+Amendment 2026-10-23, commit 52a8f0634; ACCEPTED DESIGN ONLY) and
+binds the :simdgroup-reduce family by ADR-0373's composition (commit
+7fcaa9406). Do not copy the row forward as current state. Census:
+docs/evidence/gpu/regime-protocol-leftrow-stale-20261024.txt.
