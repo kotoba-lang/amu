@@ -6,7 +6,7 @@
 ;; read: :require, an attr-map, a docstring):
 ;;   1. DISCOVER (pj-visit): the entry, then depth first every `:require` in clause order; each module is read into M
 ;;      (lex + read only), its ns header is parsed (pj-header: name, requires with :as/:refer, exports), its requires are
-;;      resolved to files (namespace a.b-c -> a/b_c + .kotoba | .cljk | .cljc in each --source-path root) and visited;
+;;      resolved through exact KSL2 namespace mappings or canonical .kotoba roots and visited;
 ;;      post-order gives the compile order (dependencies first, the entry last). Bounds: 256 modules, depth 64, 256 edges,
 ;;      8 MiB of source. Cycle, missing module, ns/path mismatch, duplicate alias, :use, two ns forms: refused by name.
 ;;   2. COMPILE each module alone (pj-module): its source S is followed by a generated TRAILER
@@ -93,7 +93,7 @@
 (def pj-img-cap 29589504)
 (def pj-k-ifover 38)
 (def pj-k-strover 39)
-(def pj-k-source-lock 40) ; 1 only after an exact KSL1 manifest/entry/root check
+(def pj-k-source-lock 40) ; 1 only after an exact source manifest/entry/root check
 (def pj-k-lock-text 41)   ; P index of immutable manifest bytes (decoded as ASCII)
 (def pj-k-lock-files 42)  ; exact number of distinct source paths in that manifest
 ;; image byte a, and image byte a := b
@@ -157,7 +157,7 @@
        (loop [i 0]
          (cond (>= i (string-length s)) true
                (not= (string-code-point-at S (+ a i)) (string-code-point-at s i)) false
-               :else (recur (+ i 1))))))
+               :else (recur (+ i (mem-cpw (string-code-point-at s i))))))))
 (defn- pj-is [M :vector-i64 S :string n :i64 s :string] :bool (pj-span= S (pj-a M n) (pj-b M n) s))
 
 ;; first error wins; the span of node n (n = 0: no position)
@@ -235,23 +235,20 @@
     (cond (>= i (string-length nm)) (string-concat acc (string-substring nm a i))
           (= (string-code-point-at nm i) 46) (recur (+ i 1) (+ i 1) (string-concat (string-concat acc (string-substring nm a i)) "/"))
           (= (string-code-point-at nm i) 45) (recur (+ i 1) (+ i 1) (string-concat (string-concat acc (string-substring nm a i)) "_"))
-          :else (recur (+ i 1) a acc))))
+          :else (recur (+ i (mem-cpw (string-code-point-at nm i))) a acc))))
 
-(defn- pj-ext [k :i64] :string (case k 0 ".kotoba" 1 ".cljk" ".cljc"))
-
-;; the file of rel in root: the first extension that exists, else ""
+;; Canonical source only. Historical source extensions are not fallbacks.
 (defn- pj-in-root [root :string rel :string] :string
-  (loop [k 0]
-    (cond (> k 2) ""
-          (= (io-exists (string-concat root (string-concat "/" (string-concat rel (pj-ext k))))) 1)
-          (string-concat root (string-concat "/" (string-concat rel (pj-ext k))))
-          :else (recur (+ k 1)))))
+  (let [path (string-concat root (string-concat "/" (string-concat rel ".kotoba")))]
+    (if (= (io-exists path) 1) path "")))
 
 (defn- pj-kotoba? [path :string] :bool
   (and (>= (string-length path) 7) (string=? (string-substring path (- (string-length path) 7) (string-length path)) ".kotoba")))
 
 ;; the file of namespace nm over the roots: "" none; "\n" ambiguous (two roots, not exactly one .kotoba among them)
 (defn- pj-locate [L :vector-i64 P :string nm :string] :string
+  (if (and (= (pj-l L pj-k-source-lock) 1) (ksl-mapped? (pj-p L P (pj-l L pj-k-lock-text))))
+    (ksl-module-path (pj-p L P (pj-l L pj-k-lock-text)) nm)
   (let [rel (pj-rel nm)
         n (pj-l L pj-k-nroot)]
     (loop [k 0 found "" nfound 0 nkot 0 kot ""]
@@ -260,7 +257,7 @@
         (let [c (pj-in-root (pj-p L P (pj-l L (+ pj-k-root0 k))) rel)]
           (cond (= (string-length c) 0) (recur (+ k 1) found nfound nkot kot)
                 (pj-kotoba? c) (recur (+ k 1) c (+ nfound 1) (+ nkot 1) c)
-                :else (recur (+ k 1) c (+ nfound 1) nkot kot)))))))
+                :else (recur (+ k 1) c (+ nfound 1) nkot kot))))))))
 
 ;; the module named nm, -1 when none
 (defn- pj-find-mod [L :vector-i64 P :string nm :string] :i64
@@ -775,7 +772,7 @@
   (loop [i 0 acc acc]
     (if (>= i (string-length t))
       acc
-      (let [j (loop [j (+ i 1)] (cond (>= j (string-length t)) j (= (string-code-point-at t j) 9) j :else (recur (+ j 1))))
+      (let [j (loop [j (+ i 1)] (cond (>= j (string-length t)) j (= (string-code-point-at t j) 9) j :else (recur (+ j (mem-cpw (string-code-point-at t j))))))
             pc (string-substring t i j)]
         (recur j (if (>= (string-index-of acc pc) 0) acc (string-concat acc pc)))))))
 
@@ -830,10 +827,10 @@
 
 ;; byte offset of the first '/' in S[a,b) after its first byte, -1 when none
 (defn- pj-slash [S :string a :i64 b :i64] :i64
-  (loop [i (+ a 1)]
+  (loop [i (+ a (mem-cpw (string-code-point-at S a)))]
     (cond (>= i (- b 1)) -1
           (= (string-code-point-at S i) 47) i
-          :else (recur (+ i 1)))))
+          :else (recur (+ i (mem-cpw (string-code-point-at S i)))))))
 
 ;; every symbol token alias/name of the module's own text: alias required, name an export of it
 (defn- pj-qscan [M :vector-i64 L :vector-i64 P :string S :string m :i64] :vector-i64
@@ -1169,9 +1166,9 @@
 ;;   S <stub clause offset> <(edge * 4096 + dependency entry) * 8 + clause> / L <movz offset> / X <name> <offset> <arity>
 ;;   (the entry) / C <hex of up to 64 blob bytes> ..
 (defn- pj-eol [T :string i :i64] :i64
-  (loop [j i] (cond (>= j (string-length T)) j (= (string-code-point-at T j) 10) j :else (recur (+ j 1)))))
+  (loop [j i] (cond (>= j (string-length T)) j (= (string-code-point-at T j) 10) j :else (recur (+ j (mem-cpw (string-code-point-at T j)))))))
 (defn- pj-sp [T :string i :i64] :i64
-  (loop [j i] (cond (>= j (string-length T)) j (= (string-code-point-at T j) 10) j (= (string-code-point-at T j) 32) j :else (recur (+ j 1)))))
+  (loop [j i] (cond (>= j (string-length T)) j (= (string-code-point-at T j) 10) j (= (string-code-point-at T j) 32) j :else (recur (+ j (mem-cpw (string-code-point-at T j)))))))
 (defn- pj-dec [T :string a :i64 b :i64] :i64
   (loop [j a v 0] (if (>= j b) v (recur (+ j 1) (+ (* v 10) (- (string-code-point-at T j) 48))))))
 (defn- pj-hexv [c :i64] :i64 (if (< c 58) (- c 48) (- c 87)))
@@ -1242,7 +1239,7 @@
                   ncl (pj-min (pj-dec T a1 b1) pj-if-maxcl)
                   nb (loop [j 0 p (+ b1 1)] (if (>= j ncl) p (let [q (pj-sp T p) y (pj-iset L x (+ pj-if-off0 j) (+ base (pj-dec T p q)))] (recur (+ j 1) (+ q 1)))))
                   ne (pj-sp T nb)
-                  tb (loop [j (pj-min (+ ne 1) e)] (cond (>= j e) e (= (string-code-point-at T j) 9) j :else (recur (+ j 1))))
+                  tb (loop [j (pj-min (+ ne 1) e)] (cond (>= j e) e (= (string-code-point-at T j) 9) j :else (recur (+ j (mem-cpw (string-code-point-at T j))))))
                   w2 (-> L (pj-iset x pj-if-name (pj-n L)) (pj-iset x pj-if-text (+ (pj-n L) 1)) (pj-iset x pj-if-sch (+ (pj-n L) 2)) (pj-iset x pj-if-ncl ncl)
                          (pj-ls pj-k-nif (+ x 1)) (pj-mset d pj-mf-nif (+ (pj-mf L d pj-mf-nif) 1)))]
               ;; R6A: the template ends at the first TAB; the schema pieces follow it
@@ -1412,7 +1409,7 @@
             w2 (loop [a 0] (if (>= a n) 0 (let [e (pj-min n (+ a out-wchunk)) x (io-write-hex (pj-unpack L T 0 a e) 0 (- e a))] (recur e))))]
         (+ hb n))
       (let [w (io-write-bytes M out (+ MM-OUT-BASE 1) hb)
-            d (+ (string-length out) (io-tokn 1))
+            d (+ (string-length out) 7)
             RF (if (> n out-wchunk) (out-rq-new out 1 out-wchunk) (vector-alloc 1))
             w2 (loop [a 0]
                  (if (>= a n) 0

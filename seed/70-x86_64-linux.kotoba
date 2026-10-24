@@ -53,10 +53,11 @@
     (xg-call-args (if (< i 5) (xg-load M (+ t i) (xg-arg-op i true))
       (-> M (xg-load (+ t i) 0x858b48) (xg-bytes 0x24848948 4) (xg-bytes (* 8 (- i 5)) 4))) t (inc i) n)))
 (defn- xg-frame [M :vector-i64 f :i64] :i64
-  (bit-and (+ 15 (if (= (xg-get M 4) 1) 112 0) (* 8 (+ 1 (xg-f M f FF-NSLOTS) (xg-f M f FF-DEPTH)))) -16))
+  (bit-and (+ 15 (if (not= (xg-get M 4) 0) 112 0) (* 8 (+ 1 (xg-f M f FF-NSLOTS) (xg-f M f FF-DEPTH)))) -16))
 (defn- xg-fn [M :vector-i64 f :i64 n :i64] :vector-i64
   (let [at (vector-at M MM-CODE-N) frame (xg-frame M f)]
     (-> M (xg-set 0 f) (mem-set (+ MM-FN-BASE (* f MM-FN-W) FF-CODE) at)
+        (cond-> (= (xg-get M 4) 2) (kr-stack-guard frame))
         (xg-bytes 0xe5894855 4) (xg-bytes 0xec8148 3) (xg-bytes frame 4)
         (xg-bytes 0xf84d894c 4) (xg-params 0 n))))
 (defn- xg-fuel [M :vector-i64] :vector-i64
@@ -116,6 +117,7 @@
       11 (-> M (xg-load a 0x858b48) (xg-bytes 0xc08548 3) (xg-rel 0x840f 2 2 b))
       12 (-> M (xg-load a 0x858b48) (xg-bytes 0xc08548 3) (xg-rel 0x850f 2 2 b))
       13 (cond (>= (xs-intr M a) 0) (xs-intrinsic M (xs-intr M a) b)
+           (>= (km-intr M a) 0) (km-intrinsic M (km-intr M a) b)
            (>= (xk-intr M a) 0) (xk-intrinsic M (xk-intr M a) b)
            (and (<= c 5) (xg-tail? M (inc i) b 64))
            ;; No outgoing stack arguments survive frame removal. The caller's
@@ -142,8 +144,8 @@
 ;; Handles, capabilities, floats, indirect/state calls and >5 arguments refuse.
 (defn- xg-scalar [t :i64] :bool (or (= t TY-I64) (= t TY-BOOL)))
 (defn- xg-type [M :vector-i64 t :i64] :bool
-  (if (= (xg-get M 4) 0) (xg-scalar t)
-    (and (> t 0) (not= t TY-F64) (not= t TY-F32))))
+  (if (= (xg-get M 4) 1)
+    (and (> t 0) (not= t TY-F64) (not= t TY-F32)) (xg-scalar t)))
 (defn- xg-types [M :vector-i64 f :i64 i :i64 n :i64] :bool
   (if (= i n) true (and (xg-type M (ck-pt M f i)) (xg-types M f (inc i) n))))
 (defn- xg-refuse-fn [M :vector-i64 S :string f :i64 a :i64 b :i64] :vector-i64
@@ -181,7 +183,7 @@
             (and (= op OP-BIN) (or (< a 1) (> a 10))) (xg-err M 7101 a)
             (and (= op OP-CMP) (or (< a 1) (> a 5))) (xg-err M 7101 a)
             (and (= op OP-UN) (not (or (= a UOP-NOT) (= a UOP-BITNOT)))) (xg-err M 7101 a)
-            (and (= op OP-CALL) (or (<= a 0) (>= a (vector-at M MM-FN-N)) (< c 0) (> c (if (= (xg-get M 4) 1) 16 5))
+            (and (= op OP-CALL) (or (<= a 0) (>= a (vector-at M MM-FN-N)) (< c 0) (> c (if (= (xg-get M 4) 0) 5 16))
                  (not= c (xg-f M a FF-NPARAMS)) (<= (xg-f M a FF-SIR) 0))) (xg-err M 7101 op)
             :else (xg-check-sir M (inc i))))))
 (defn- xg-code [M :vector-i64 i :i64] :vector-i64
@@ -200,15 +202,18 @@
              2 (dec (bit-and (vector-at M (+ MM-LABEL-BASE target)) 4294967295))
              3 (- (xg-get M 3) 4096)
              4 (vector-at M (+ MM-LIT-BASE (* target MM-LIT-W) LF-POOL))
-             5 (vector-at M (+ MM-LIT-BASE (* target MM-LIT-W) LF-POOL)) -1))
+             5 (vector-at M (+ MM-LIT-BASE (* target MM-LIT-W) LF-POOL))
+             6 (dec (bit-and (vector-at M (+ MM-LABEL-BASE target)) 4294967295)) -1))
 (defn- xg-patch [M :vector-i64 at :i64 bits :i64 n :i64] :vector-i64
   (if (= n 0) M (xg-patch (xg-put-byte M at bits) (inc at) (u64-shift-right bits 8) (dec n))))
 (defn- xg-fix [M :vector-i64 i :i64] :vector-i64
   (if (or (not= (vector-at M MM-ERR) 0) (= i (vector-at M MM-FIX-N))) M
     (let [b (+ MM-FIX-BASE (* i MM-FIX-W)) at (vector-at M b) kind (vector-at M (+ b 1))
-          target (xg-fix-target M kind (vector-at M (+ b 2))) d (if (= kind 4) target (- target (+ at 4)))]
-      (if (or (< target 0) (< at 0) (> (+ at 4) (xg-pos M)) (< d -2147483648) (> d 2147483647))
-        (xg-err M 7103 i) (xg-fix (xg-patch M at d 4) (inc i))))))
+          target (xg-fix-target M kind (vector-at M (+ b 2))) width (if (= kind 6) 1 4)
+          d (if (= kind 4) target (- target (+ at width)))]
+      (if (or (< target 0) (< at 0) (> (+ at width) (xg-pos M))
+              (< d (if (= kind 6) -128 -2147483648)) (> d (if (= kind 6) 127 2147483647)))
+        (xg-err M 7103 i) (xg-fix (xg-patch M at d width) (inc i))))))
 
 ;; ELF64 LE ET_EXEC: RX header/code segment, separate RW context, NX stack.
 (defn- xg-out [M :vector-i64 bits :i64 n :i64] :vector-i64

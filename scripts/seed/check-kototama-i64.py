@@ -180,9 +180,20 @@ def gate_source(expected):
     # is the raw native process observations; it cannot supply its own plan.
     words = struct.pack(">" + "q" * len(expected), *expected).hex()
     return '''(ns kototama-i64-gate (:export [main]))
-(defn- kg-path [s :string] :vector-i64
-  (loop [i 0 v (vector-alloc (string-length s))]
-    (if (= i (string-length s)) v (recur (inc i) (vector-assoc! v i (string-code-point-at s i))))))
+(defn- kg-read [path :string] :bytes
+  (let [parts (typed-cap-call :fs/app-data :string [:list :bytes]
+                (string-concat "\\u0000FS2\\u0000A" (string-concat path "\\u0000")))]
+    (if (= (vector-count parts) 0) (bytes-empty)
+      (let [first (typed-list-nth [:list :bytes] parts 0)]
+        (if (or (< (bytes-count first) 5) (not= (bytes-at first 0) 0)
+                (not= (bytes-at first 1) 70) (not= (bytes-at first 2) 83)
+                (not= (bytes-at first 3) 50) (not= (bytes-at first 4) 0))
+          (bytes-empty)
+          (loop [i 0 out (bytes-empty)]
+            (if (= i (vector-count parts)) out
+              (let [part (typed-list-nth [:list :bytes] parts i)
+                    start (if (= i 0) 5 0)]
+                (recur (inc i) (bytes-concat out (bytes-slice part start (bytes-count part))))))))))))
 (defn- kg-word [v :vector-i64 p :i64] :i64
   (loop [i 0 n 0] (if (= i 8) n (recur (inc i) (bit-or n (i64-shift-left (vector-at v (+ p i)) (* i 8)))))))
 (defn- kg-expected [s :string p :i64] :i64
@@ -190,7 +201,7 @@ def gate_source(expected):
     (recur (inc i) (bit-or (i64-shift-left n 4) (if (<= c 57) (- c 48) (- c 87))))))))
 (defn main [] :i64
   (let [path (typed-cap-call :cli/args :string :string "0")
-        data (vector-i64-from-bytes (typed-cap-call :fs/app-data-bytes :bytes :bytes (bytes-from-vector-i64 (kg-path path))))
+        data (vector-i64-from-bytes (kg-read path))
         expected "''' + words + '''"
         count (quot (string-length expected) 16)
         ok (and (= (vector-count data) (* 8 count))

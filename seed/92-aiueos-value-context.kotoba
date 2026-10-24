@@ -1,0 +1,83 @@
+;; Private ValueRuntime context v2. None of the retired v1 offsets (272+)
+;; are reused: those belong to the sealed allocation, map and PCI metadata.
+;; Four non-evicting scheduler-domain slots have separate 4KiB arenas.
+(def LV-FIRST 76)
+(def LV-MAGIC 0x324c5652)
+(def LV-DOMAIN 480)
+(def LV-STATUS 488)
+(def LV-DOMAINS 33792)
+(def LV-QUEUE 36864)
+(def LV-CAS 40960)
+(def LV-CAPS 45056)
+(def LV-ARENAS 49152)
+(defn- lv-used? [M :vector-i64] :bool
+  (and (= (xg-get M 4) 2)
+    (or (loop [f 1]
+          (cond (>= f (vector-at M MM-FN-N)) false
+                (= (xg-f M f FF-EXPORT) 3) true :else (recur (inc f))))
+    (loop [i 1]
+      (cond (>= i (vector-at M MM-SIR-N)) false
+            (and (= (xg-si M i IF-OP) OP-CALL)
+                 (>= (km-intr M (xg-si M i IF-A)) LV-FIRST)) true
+            :else (recur (inc i)))))))
+(defn- lv-guard [M :vector-i64 trap :i64] :vector-i64
+  (let [version (vector-at M MM-LABEL-N)]
+  (-> M (iv-reserve 1) (iv-hex "4981b9") (xg-bytes 464 4) (xg-bytes LV-MAGIC 4)
+      (xg-rel 0x840f 2 2 version)
+      (iv-hex "4981b9") (xg-bytes 464 4) (xg-bytes UV-MAGIC 4) (xg-rel 0x850f 2 2 trap)
+      (xg-label version)
+      (iv-hex "4983b9") (xg-bytes KM-SEALED-PAGES 4) (xg-byte 15)
+      (xg-rel 0x850f 2 2 trap)
+      (iv-hex "4981b9") (xg-bytes KR-MAP-READY 4) (xg-bytes KR-MAP-MAGIC 4)
+      (xg-rel 0x850f 2 2 trap)
+      (iv-hex "4981b9") (xg-bytes KR-PCI-READY 4) (xg-bytes KR-PCI-MAGIC 4)
+      (xg-rel 0x850f 2 2 trap))))
+;; RAX holds a scalar scheduler ID. Return its slot index in ECX or 4.
+;; Registration is trusted scheduler work with interrupts disabled, never
+;; user input or an inferred physical pointer. Existing slots never move.
+(defn- lv-domain-slot [M :vector-i64 register :bool] :vector-i64
+  (let [scan (vector-at M MM-LABEL-N) next (inc scan) found (+ scan 2)
+        done (+ scan 3) invalid (+ scan 4)]
+    (-> M (iv-reserve 5)
+        (cond-> register (iv-hex "9c5af7c200020000")
+                  register (xg-rel 0x850f 2 2 invalid))
+        (iv-hex "4883f801") (xg-rel 0x820f 2 2 invalid)
+        (iv-hex "483dff7f0000") (xg-rel 0x870f 2 2 invalid)
+        (iv-hex "31c9") (xg-label scan)
+        (iv-hex "4183bc89") (xg-bytes LV-DOMAINS 4) (xg-byte 0)
+        (xg-rel 0x850f 2 2 next)
+        (cond-> register (iv-hex "41898489") register (xg-bytes LV-DOMAINS 4))
+        (xg-rel 0xe9 1 2 (if register found invalid))
+        (xg-label next) (iv-hex "41398489") (xg-bytes LV-DOMAINS 4)
+        (xg-rel 0x840f 2 2 found)
+        (iv-hex "ffc183f904") (xg-rel 0x820f 2 2 scan)
+        (xg-rel 0xe9 1 2 invalid)
+        (xg-label found) (xg-rel 0xe9 1 2 done)
+        (xg-label invalid) (iv-hex "b904000000") (xg-label done))))
+(defn- lv-intrinsic [M :vector-i64 k :i64 t :i64] :vector-i64
+  (let [trap (vector-at M MM-LABEL-N) zero (inc trap) done (+ trap 2)
+        start (-> M (iv-reserve 3) (lv-guard trap))
+        code
+        (cond (< k 3)
+                (-> start (iv-hex "498d81")
+                    (xg-bytes (case k 0 LV-QUEUE 1 LV-CAS LV-CAPS) 4))
+              (= k 3)
+                (-> start (iv-hex "9c5af7c200020000") (xg-rel 0x850f 2 2 zero)
+                    (xg-load t 0x858b48) (lv-domain-slot false)
+                    (iv-hex "83f904") (xg-rel 0x830f 2 2 zero)
+                    (iv-hex "498981") (xg-bytes LV-DOMAIN 4) (uv-refresh t))
+              (= k 4)
+                (-> start (xg-load t 0x858b48)
+                    (iv-hex "483dffff0100") (xg-rel 0x870f 2 2 zero)
+                    (iv-hex "a9ffff0000") (xg-rel 0x840f 2 2 zero)
+                    (iv-hex "498981") (xg-bytes LV-STATUS 4))
+              (= k 5) (-> start (iv-hex "498b81") (xg-bytes LV-STATUS 4))
+              (or (= k 6) (= k 7) (= k 11))
+                (-> start (xg-load t 0x858b48) (lv-domain-slot (= k 7))
+                    (iv-hex "83f904") (xg-rel 0x830f 2 2 zero)
+                    (uv-or-arena k))
+              (= k 8) (-> start (iv-hex "498b81") (xg-bytes LV-DOMAIN 4))
+              (= k 10) (-> start (iv-hex "498d81") (xg-bytes LV-REQUEST 4))
+              :else (xg-err start 7101 OP-CALL))]
+    (-> code (xg-rel 0xe9 1 2 done) (xg-label trap) (iv-hex "0f0b")
+        (xg-label zero) (iv-hex "31c0") (xg-label done) (xg-save t))))

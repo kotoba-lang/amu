@@ -10,7 +10,7 @@ The admitted i64 AOT main root builds native ARM F1=F2. The unmodified
 cases; `arm-cross-candidate.json` records native cross generation of the
 public x86 compiler and all three CDCI executables. The controller and both
 gate hashes remain identical to existing pins. `i64-arm.json` records the
-native ordered121-case AOT verdict and corrupted-observation refusal.
+native ordered122-case AOT verdict and corrupted-observation refusal.
 The image/EFI receipts bind the same complete source and two generations.
 The canonical memory admission corpus still passes all27 cases.
 

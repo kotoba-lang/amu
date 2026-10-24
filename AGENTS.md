@@ -66,10 +66,24 @@
 
 ## Native CDCI and retired public entry
 
-- The complete product uses `seed/FULL-MANIFEST` (31 modules), retaining
+The integrated FULL46 source retains native CLI/CID/FS2, the native i64
+receipt profile, all live/desktop modules and all18 normal adopted core
+modules. Root and public images are rebuilt from this exact graph with
+native ARM F1=F2, core generations, runtime cases and admission/refusal
+proofs. The controller and both gate identities are preserved from the
+qualified45 source. Current46 acceptance requires terminal exact-head
+native ARM/x86, receipt-profile, controller/public and locked consumer CI.
+Historical ARM/QEMU receipts remain bound to their own sources.
+The closed v5 project reserves low20KiB for non-live context/catalog. The
+v6 PCI candidate has128KiB RW storage and a64KiB private floor; its copied
+BAR catalog starts at context20480. The v2 live ABI and v3 private user/desktop context provide separately
+versioned queue/arena/capability/domain regions, with native admission and
+actual guest receipts; full scheduling and shared Browser remain separate.
+
+- The complete candidate uses `seed/FULL-MANIFEST` (46 modules), retaining
   every adopted core module. Static OUT is 12MiB because the complete
   TCP/spawn image exceeded the old 8MiB bound. The complete static profile
-  also uses LitB1MiB and TOK786432 and MM-WORDS29,491,200 (<2^25). Heap size, expected results,
+  also uses LitB1MiB and TOK786432 and NODE786432 and MM-WORDS31,064,064 (<2^25). Heap size, expected results,
   all19 workloads and all24 runtime fixtures remain unchanged.
 - `seed/cdci` owns the Kotoba-native controller and gate. Its two mandatory
   roles are Amu selfhost and Kotoba native; legacy fleet/authoring labels
@@ -124,3 +138,14 @@ This is an entry-only, nonrecursive, heap-free engine profile, not whole-VM
 or Murakumo Cell admission qualification. State/effects, CID-bound cache,
 fresh admission, receipts, recursive methods and runtime arguments remain
 separate gates. See `docs/kototama-i64-aot.md` for exact limits and protocol.
+
+## Bounded native receipt profile (JUN-370)
+
+`kototama.pure-i64-receipt/v2` retains the v1 language/admission and allows
+budget0. `seed/84-kototama-i64-receipt.kotoba` delegates ordinary instructions
+to the existing scalar emitters; its sealed fuel/quotient fault edges and
+fixed process envelope report canonical overspend and typed failures. Keep
+the adopted core and existing emitters authoritative. The native ordered
+gate checks raw observations, named resource refusals and actual metering
+removal; Python only stages bytes/processes. The unsigned process receipt
+is not a signed VM receipt, fresh node admission or an in-process unwind ABI.

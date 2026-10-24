@@ -154,6 +154,7 @@
     KW-CLI-ARGS WIRE-CLI-ARGS
     KW-IO-WRITE-ERROR WIRE-IO-WRITE-ERROR
     KW-IO-WRITE WIRE-IO-WRITE
+    KW-SYS-CWD 40
     ;; R4B
     KW-HASH-SHA256 WIRE-HASH-SHA256
     KW-CLOCK-NOW 7
@@ -310,7 +311,11 @@
   (let [req (lw-next M w)
         x (lw-next M (lw-next M req))
         wire (lw-wire (lw-nf M w NF-TYPE))   ; R4B: 21-check's wire code (a wire keyword or an integer wire id)
-        kind (lw-kind2 (lw-kwcode M req) (lw-kwcode M (lw-next M req)))]
+        ;; FS2 ABI kinds: 10 string/list<bytes>, 11 list<bytes>/list<bytes>.
+        ;; 21-check admitted the exact list element type before lowering.
+        kind (cond (= (lw-nf M req NF-KIND) ND-VEC) 11
+                   (= (lw-nf M (lw-next M req) NF-KIND) ND-VEC) 10
+                   :else (lw-kind2 (lw-kwcode M req) (lw-kwcode M (lw-next M req))))]
     (-> M (lw-expr x t 0) (lw-emit OP-CAP wire kind t))))
 
 ;; entry points that reserve the exit label first
