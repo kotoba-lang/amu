@@ -147,9 +147,21 @@ wires 43..47 granted, `read` on the spawn helper's answer fd only with wire 20
 granted, everything else SIGSYS (exit 120). A kernel
 without seccomp fails closed (exit 1) unless `KEXE_SECCOMP=if-available`.
 `KEXE_SANDBOX_PROBE` issues one filtered call after installation (diagnostic).
-Not provided: wire-35 forms other than READ/EXISTS/WRITE/APPEND (refused),
-wires other than 3/20/35/37/38/39/42/43..47 (refused; wire 3 is :hash/sha256, the
-request bytes' FIPS 180-4 digest as 64 lowercase hex characters), the loader's default 1 s cpu / 3 s wall
+Not provided: wire-35 forms other than READ/EXISTS/WRITE/APPEND/RANGE/RENAME/FSYNC
+(refused), wires other than 3/7/20/23/35/37/38/39/41/42/43..47 (refused; wire 3 is :hash/sha256, the
+request bytes' FIPS 180-4 digest as 64 lowercase hex characters).
+A capability refusal is named (JUN-364): stdout is flushed, one line
+`KEXE_TRAP {:kind :capability :wire W :refusal :NAME}` goes to stderr, then the
+trap as before (`KEXE_TRAP {:kind :signal :signal :SIGILL}`, exit 120). NAME is
+`not-admitted` (W not in KEXE_ALLOW), `unknown-wire` (admitted, not served),
+`request-kind` (a request/answer kind the wire does not take), `malformed`,
+`too-large`, `open-failed`, `read-failed`, `write-failed`, `close-failed`,
+`range-outside`, `no-provider`, `transport`, `clock-failed`, `sleep-failed`,
+`entropy-failed`, or the wire-35 token no runtime serves (`stat`, `mtime`,
+`chmod`, `mkdir`, `unlink`, `rmdir`, `mktemp`, `nofollow`, `owner`). The
+already named refusals keep their lines (wire 42 below, the budget and arena
+lines, the exit-126 `:capability` lines of wires 20, 23 and 43..47);
+`seed/refusal-cases.json` holds the checked cases. Also not provided: the loader's default 1 s cpu / 3 s wall
 budgets (no budget unless given), growth regions (pool/item layout differs;
 values are equal), the arena fields of the structured line.
 Wire 42 (`:gpu/compute`, ADR 0371) is a transport only: the request string is

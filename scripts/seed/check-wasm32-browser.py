@@ -12,7 +12,9 @@ result lines from the DOM. No Node, npm or Playwright.
 Standalone: check-wasm32-browser.py --modules DIR --output OUT [--browser PATH]
 checks DIR/case-NAME.wasm against seed/static-cases.json (result, trap and
 remaining fuel, as the native cases are checked) and DIR/probe-spin.wasm,
-DIR/probe-deep.wasm and DIR/probe-entry.wasm when present (see PROBES).
+DIR/probe-deep.wasm and DIR/probe-entry.wasm when present (see PROBES), and
+DIR/refusal-NAME.wasm against seed/refusal-cases.json (JUN-364: each refusal is
+named on stderr before the trap; scripts/seed/refusal_cases.py).
 
 run_modules is also the harness of applications' own browser checks (for
 example kumitate's fixture selftest): each run may carry the entry ABI's
@@ -38,6 +40,9 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+
+sys.dont_write_bytecode = True
+import refusal_cases  # noqa: E402 (scripts/seed)
 
 ROOT = Path(__file__).resolve().parents[2]
 PAGE = ROOT / "runtime/wasm32-browser-static-run.html"
@@ -185,9 +190,12 @@ def check_cases(browser, out, modules, cases=None):
     probe_runs = [(name, m, extra) for m in PROBES if (modules / f"probe-{m}.wasm").exists()
                   for name, extra in PROBE_RUNS.get(m, [(m, {})])]
     probes = [name for name, m, extra in probe_runs]
+    refusal_runs = refusal_cases.wasm_runs(modules)
+    assert len(refusal_runs) == len(refusal_cases.load()["cases"]), ("refusal modules missing", modules)
     t0 = time.time()
     version, lines = run_modules(browser, out, [(c["name"], modules / f"case-{c['name']}.wasm") for c in cases]
-                                 + [(f"probe-{n}", modules / f"probe-{m}.wasm", e) for n, m, e in probe_runs])
+                                 + [(f"probe-{n}", modules / f"probe-{m}.wasm", e) for n, m, e in probe_runs]
+                                 + refusal_runs)
     seconds = round(time.time() - t0, 3)
     results = []
     for c in cases:
@@ -208,7 +216,9 @@ def check_cases(browser, out, modules, cases=None):
         assert p != "entry" or line.get("output") == ENTRY_TEXT, (p, line)
         assert p != "entry-denied" or ":wire 38 :refused" in (line.get("stderr") or ""), (p, line)
         probe_results.append(dict(name=p, wasmTrap=line.get("wasmTrap"), **o))
-    return dict(browser=version, seconds=seconds, fuel=FUEL, cases=results, probes=probe_results)
+    refusals = refusal_cases.check_wasm(lines)
+    assert len(refusals) == len(refusal_runs)
+    return dict(browser=version, seconds=seconds, fuel=FUEL, cases=results, probes=probe_results, refusals=refusals)
 
 
 def run_app(browser, out, module, allow, mounts, args):
@@ -261,4 +271,4 @@ if __name__ == "__main__":
     report = dict(status="PASS_WASM32_BROWSER_STATIC_CASES", **check_cases(browser, a.output.resolve(), a.modules.resolve()))
     (a.output / "wasm32-browser.json").write_text(json.dumps(report, indent=2) + "\n")
     print(report["status"], report["browser"]["product"], len(report["cases"]), "cases", len(report["probes"]), "probes",
-          report["seconds"], "s")
+          len(report["refusals"]), "named refusals", report["seconds"], "s")

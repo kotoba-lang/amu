@@ -186,6 +186,50 @@
         z (kxrt-flush) y (kxrt-err-text b j)]
     (kxrt-budget code)))
 (defn- kxrt-value [r :i64] :i64 (let [z (if (= (kxrt-gl 224) 0) (kxrt-gs 224 r) 0)] (kxrt-fail)))
+;; JUN-364: a capability refusal is named before it traps. One stderr line
+;; KEXE_TRAP {:kind :capability :wire W :refusal :NAME} (stdout flushed first),
+;; then the runtime's trap: SIGILL, exit 120 and the same report as before.
+;; The codes (kxrt-refusal-name): 1 not-admitted, 2 unknown-wire, 3 request-kind,
+;; 4 malformed, 5 too-large, 6 open-failed, 7 read-failed, 8 write-failed,
+;; 9 close-failed, 10 range-outside, 11 no-provider, 12 transport,
+;; 13 clock-failed, 14 sleep-failed, 15 entropy-failed, 16 wasm32-browser;
+;; 20 + k: the wire-35 token k that the runtime does not serve (kxrt-fs-refused).
+(defn- kxrt-refusal-name [b :i64 i :i64 code :i64] :i64
+  (case code
+    1 (kxrt-w b (kxrt-w b i 0x696d64612d746f6e 8) 0x64657474 4)
+    2 (kxrt-w b (kxrt-w b i 0x2d6e776f6e6b6e75 8) 0x65726977 4)
+    3 (kxrt-w b (kxrt-w b i 0x2d74736575716572 8) 0x646e696b 4)
+    4 (kxrt-w b (kxrt-w b i 0x656d726f666c616d 8) 0x64 1)
+    5 (kxrt-w b (kxrt-w b i 0x6772616c2d6f6f74 8) 0x65 1)
+    6 (kxrt-w b (kxrt-w b i 0x6961662d6e65706f 8) 0x64656c 3)
+    7 (kxrt-w b (kxrt-w b i 0x6961662d64616572 8) 0x64656c 3)
+    8 (kxrt-w b (kxrt-w b i 0x61662d6574697277 8) 0x64656c69 4)
+    9 (kxrt-w b (kxrt-w b i 0x61662d65736f6c63 8) 0x64656c69 4)
+    10 (kxrt-w b (kxrt-w b i 0x756f2d65676e6172 8) 0x6564697374 5)
+    11 (kxrt-w b (kxrt-w b i 0x69766f72702d6f6e 8) 0x726564 3)
+    12 (kxrt-w b (kxrt-w b i 0x726f70736e617274 8) 0x74 1)
+    13 (kxrt-w b (kxrt-w b i 0x61662d6b636f6c63 8) 0x64656c69 4)
+    14 (kxrt-w b (kxrt-w b i 0x61662d7065656c73 8) 0x64656c69 4)
+    15 (kxrt-w b (kxrt-w b i 0x2d79706f72746e65 8) 0x64656c696166 6)
+    16 (kxrt-w b (kxrt-w b i 0x622d32336d736177 8) 0x726573776f72 6)
+    24 (kxrt-w b i 0x74617473 4)
+    25 (kxrt-w b i 0x656d69746d 5)
+    26 (kxrt-w b i 0x646f6d6863 5)
+    27 (kxrt-w b i 0x7269646b6d 5)
+    28 (kxrt-w b i 0x6b6e696c6e75 6)
+    29 (kxrt-w b i 0x7269646d72 5)
+    30 (kxrt-w b i 0x656d616e6572 6)
+    31 (kxrt-w b i 0x636e797366 5)
+    32 (kxrt-w b i 0x706d65746b6d 6)
+    33 (kxrt-w b i 0x776f6c6c6f666f6e 8)
+    (kxrt-w b i 0x72656e776f 5)))
+(defn- kxrt-cap-trap [wire :i64 code :i64] :i64
+  (let [b (kxrt-gl 200) z (kxrt-flush)
+        i (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b 0 0x4152545f4558454b 8) 0x646e696b3a7b2050 8) 0x6962617061633a20 8) 0x69773a207974696c 8) 0x206572 3)
+        j (+ i (kxrt-dec (+ b i) wire))
+        k (kxrt-refusal-name b (kxrt-w b (kxrt-w b j 0x6173756665723a20 8) 0x3a206c 3) code)
+        y (kxrt-err-text b (kxrt-w b k 0xa7d 2))]
+    (kxrt-fail)))
 
 ;; ---- pairs and strings ----
 (defn- kxrt-pair-new [a :i64 b :i64] :i64
@@ -441,15 +485,29 @@
 (defn- kxrt-admitted? [id :i64] :bool
   (and (>= id 0) (< id 256)
        (= (bit-and (u64-shift-right (kxrt-load64 (+ (kxrt-ctx) 16 (* 8 (quot id 64)))) (- id (* 64 (quot id 64)))) 1) 1)))
+;; JUN-364: the wire-35 token of [a, a+n) that no runtime serves (STAT_SEP,
+;; MTIME_SEP, CHMOD_SEP, MKDIR_SEP, UNLINK_SEP, RMDIR_SEP, MKTEMP_SEP,
+;; NOFOLLOW_SEP, OWNER_SEP): its refusal code 20 + k, or 0
+(defn- kxrt-fs-tok [a :i64 n :i64 k :i64] :bool
+  (case k
+    4 (>= (kxrt-find a n 0x5045535f54415453 0 8) 0)
+    5 (>= (kxrt-find a n 0x45535f454d49544d 0x50 9) 0) 6 (>= (kxrt-find a n 0x45535f444f4d4843 0x50 9) 0)
+    7 (>= (kxrt-find a n 0x45535f5249444b4d 0x50 9) 0) 8 (>= (kxrt-find a n 0x535f4b4e494c4e55 0x5045 10) 0)
+    9 (>= (kxrt-find a n 0x45535f5249444d52 0x50 9) 0)
+    12 (>= (kxrt-find a n 0x535f504d45544b4d 0x5045 10) 0)
+    13 (>= (kxrt-find a n 0x574f4c4c4f464f4e 0x5045535f 12) 0) 14 (>= (kxrt-find a n 0x45535f52454e574f 0x50 9) 0)
+    false))
+(defn- kxrt-fs-refused [a :i64 n :i64] :i64
+  (loop [k 4] (cond (> k 14) 0 (kxrt-fs-tok a n k) (+ 20 k) :else (recur (inc k)))))
 (defn- kxrt-io-write [h :i64] :i64
   (let [v (kxrt-valid h) a (kxrt-saddr h) n (kxrt-ps h) u (kxrt-gl 104)
-        f (if (> n (- 65536 u)) (if (= (kxrt-flush) 1) 1 (kxrt-fail)) 1)
-        w (if (>= n 65536) (if (= (kxrt-write-all 1 a n) 1) 1 (kxrt-fail))
+        f (if (> n (- 65536 u)) (if (= (kxrt-flush) 1) 1 (kxrt-cap-trap 37 8)) 1)
+        w (if (>= n 65536) (if (= (kxrt-write-all 1 a n) 1) 1 (kxrt-cap-trap 37 8))
             (let [z (kxrt-copy (+ (kxrt-gl 96) (kxrt-gl 104)) a n)] (kxrt-gs 104 (+ (kxrt-gl 104) n))))]
     (kxrt-intern-dec n)))
 (defn- kxrt-io-error [h :i64] :i64
   (let [v (kxrt-valid h) a (kxrt-saddr h) n (kxrt-ps h)]
-    (if (and (= (kxrt-flush) 1) (= (kxrt-write-all 2 a n) 1)) (kxrt-intern-dec n) (kxrt-fail))))
+    (if (and (= (kxrt-flush) 1) (= (kxrt-write-all 2 a n) 1)) (kxrt-intern-dec n) (kxrt-cap-trap 39 8))))
 ;; wire 41 :io/read: the bytes on fd 0. An empty request -> everything up to
 ;; end of file; a decimal n -> at most n bytes not yet answered, the empty
 ;; string only at end of file (one read; the kernel's file offset is the one
@@ -487,19 +545,19 @@
 (defn- kxrt-io-read [h :i64] :i64
   (let [a (kxrt-saddr h) n (kxrt-ps h) lim (if (= n 0) -1 (kxrt-parse a n))
         u (kxrt-gl 32) p (+ (kxrt-gl 24) u)]
-    (cond (and (> n 0) (< lim 0)) (kxrt-fail)
+    (cond (and (> n 0) (< lim 0)) (kxrt-cap-trap 41 4)
           (= lim 0) (kxrt-intern a 0)
           (> lim (- (- KXRT-POOL u) 3)) (kxrt-budget 4)
           :else
           (let [k (if (< lim 0) (kxrt-io-read-all u p) (kxrt-io-read-some p lim))]
-            (cond (= k -2) (kxrt-budget 4) (< k 0) (kxrt-fail)
+            (cond (= k -2) (kxrt-budget 4) (< k 0) (kxrt-cap-trap 41 7)
                   :else (let [w (kxrt-gs 32 (+ u k))] (kxrt-pair-new (- -1 u) k)))))))
 (defn- kxrt-args [h :i64] :i64
   (let [v (kxrt-valid h) a (kxrt-saddr h) n (kxrt-ps h) argc (kxrt-gl 72)]
     (cond (= n 0) (kxrt-intern-dec argc)
-          (>= n 20) (kxrt-fail)
+          (>= n 20) (kxrt-cap-trap 38 4)
           :else (let [i (kxrt-parse a n)]
-                  (cond (< i 0) (kxrt-fail)
+                  (cond (< i 0) (kxrt-cap-trap 38 4)
                         (>= i argc) (kxrt-intern a 0)
                         :else (let [s (kxrt-load64 (+ (kxrt-gl 80) (* 8 i)))] (kxrt-intern s (kxrt-cstrlen s))))))))
 ;; normalized absolute path of [a, a+n) into the path buffer as a C string;
@@ -545,13 +603,13 @@
             x (kxrt-store64 how flags) y (kxrt-store64 (+ how 8) mode) z (kxrt-store64 (+ how 16) 10)]
         (kxrt-syscall 437 (kxrt-gl 664) rest how 24 0 0)))))
 (defn- kxrt-sink-close [] :i64
-  (let [fd (kxrt-gl 112)] (if (< fd 0) 1 (let [z (kxrt-gs 112 -1) y (kxrt-gs 128 0)] (if (= (kxrt-close fd) 0) 1 (kxrt-fail))))))
+  (let [fd (kxrt-gl 112)] (if (< fd 0) 1 (let [z (kxrt-gs 112 -1) y (kxrt-gs 128 0)] (if (= (kxrt-close fd) 0) 1 (kxrt-cap-trap 35 9))))))
 (defn- kxrt-fs-exists [a :i64 n :i64] :i64
   (let [m (kxrt-path a n) fd (if (< m 0) -1 (kxrt-open m 655360 0))]
     (if (< fd 0) (kxrt-intern-dec 0) (let [z (kxrt-close fd)] (kxrt-intern-dec 1)))))
 (defn- kxrt-fs-read [a :i64 n :i64] :i64
   (let [m (kxrt-path a n) fd (if (< m 0) -1 (kxrt-open m 655360 0))]
-    (if (< fd 0) (kxrt-fail)
+    (if (< fd 0) (kxrt-cap-trap 35 6)
       (let [u (kxrt-gl 32) p (+ (kxrt-gl 24) u)
             k (loop [k 0]
                 (let [r (kxrt-syscall 0 fd (+ p k) (if (> (- KXRT-POOL u k) 1048576) 1048576 (- KXRT-POOL u k)) 0 0 0)]
@@ -559,7 +617,7 @@
                         (>= (+ u k r) KXRT-POOL) -2
                         :else (recur (+ k r)))))
             z (kxrt-close fd)]
-        (cond (= k -2) (kxrt-budget 4) (< k 0) (kxrt-fail)
+        (cond (= k -2) (kxrt-budget 4) (< k 0) (kxrt-cap-trap 35 7)
               :else (let [w (kxrt-gs 32 (+ u k))] (kxrt-pair-new (- -1 u) k)))))))
 
 ;; Private byte source-lock frame: NUL KSL1 NUL + exact path bytes.
@@ -594,15 +652,15 @@
 (defn- kxrt-fs-write [a :i64 n :i64 i :i64 tl :i64 append :bool] :i64
   (let [m (kxrt-path a i) c (+ a i tl) cn (- n (+ i tl)) d (kxrt-gl 208)
         same (and append (>= (kxrt-gl 112) 0) (= (kxrt-gl 128) m) (kxrt-same (kxrt-gl 120) d m))
-        fd (cond (< m 0) (kxrt-fail)
+        fd (cond (< m 0) (kxrt-cap-trap 35 6)
                  same (kxrt-gl 112)
                  append (let [z (kxrt-sink-close) f (kxrt-open m 656385 0)]
-                          (if (< f 0) (kxrt-fail)
+                          (if (< f 0) (kxrt-cap-trap 35 6)
                             (let [y (kxrt-copy (kxrt-gl 120) d m) x (kxrt-gs 128 m) w (kxrt-gs 112 f)] f)))
                  :else (kxrt-open m 655937 420))
-        ok (if (< fd 0) (kxrt-fail) (kxrt-write-all fd c cn))
+        ok (if (< fd 0) (kxrt-cap-trap 35 6) (kxrt-write-all fd c cn))
         z (if append 0 (kxrt-close fd))]
-    (if (= ok 1) (kxrt-intern c cn) (kxrt-fail))))
+    (if (= ok 1) (kxrt-intern c cn) (kxrt-cap-trap 35 8))))
 ;; decimal span of a RANGE spec (op 20 with the decimal step): 1..20 digits,
 ;; saturating at 2^63-1; -1 for a non-digit or an empty/overlong span
 (defn- kxrt-fs-span [a :i64 n :i64] :i64
@@ -631,7 +689,7 @@
           (> w (- KXRT-POOL u)) (kxrt-budget 4)
           :else
           (let [m (kxrt-path a ri) fd (if (< m 0) -1 (kxrt-open m 655360 0))]
-            (if (< fd 0) (kxrt-fail)
+            (if (< fd 0) (kxrt-cap-trap 35 6)
               (let [st (+ (kxrt-gl 200) 8192) f (kxrt-syscall 5 fd st 0 0 0 0)
                     sz (kxrt-load64 (+ st 48)) md (kxrt-load64 (+ st 24))
                     ok (and (= f 0) (= (bit-and md 61440) 32768) (<= o sz) (<= w (- sz o)))
@@ -642,19 +700,9 @@
                                    (cond (= r -4) (recur j) (<= r 0) -1 :else (recur (+ j r))))))
                          -1)
                     z (kxrt-close fd)]
-                (cond (not ok) (kxrt-fail)
-                      (not= k w) (kxrt-fail)
+                (cond (not ok) (kxrt-cap-trap 35 10)
+                      (not= k w) (kxrt-cap-trap 35 7)
                       :else (let [y (kxrt-gs 32 (+ u w))] (kxrt-pair-new (- -1 u) w)))))))))
-(defn- kxrt-fs-tok [a :i64 n :i64 k :i64] :bool
-  (case k
-    3 (>= (kxrt-find a n 0x45535f45474e4152 0x50 9) 0) 4 (>= (kxrt-find a n 0x5045535f54415453 0 8) 0)
-    5 (>= (kxrt-find a n 0x45535f454d49544d 0x50 9) 0) 6 (>= (kxrt-find a n 0x45535f444f4d4843 0x50 9) 0)
-    7 (>= (kxrt-find a n 0x45535f5249444b4d 0x50 9) 0) 8 (>= (kxrt-find a n 0x535f4b4e494c4e55 0x5045 10) 0)
-    9 (>= (kxrt-find a n 0x45535f5249444d52 0x50 9) 0) 10 (>= (kxrt-find a n 0x535f454d414e4552 0x5045 10) 0)
-    11 (>= (kxrt-find a n 0x45535f434e595346 0x50 9) 0) 12 (>= (kxrt-find a n 0x535f504d45544b4d 0x5045 10) 0)
-    13 (>= (kxrt-find a n 0x574f4c4c4f464f4e 0x5045535f 12) 0) (>= (kxrt-find a n 0x45535f52454e574f 0x50 9) 0)))
-(defn- kxrt-fs-other? [a :i64 n :i64] :bool
-  (loop [k 4] (cond (> k 14) false (kxrt-fs-tok a n k) true :else (recur (inc k)))))
 ;; the loader's fs_app_data_dispatch for a validated request string h
 (defn- kxrt-fs [h :i64] :i64
   (let [a (kxrt-saddr h) n (kxrt-ps h)
@@ -663,20 +711,20 @@
         append (and (>= ai 0) (or (< wi 0) (< ai wi)))]
     (cond (and (>= n 6) (kxrt-tok-at a 0x314c534b00 0 6))
           (let [z (kxrt-sink-close)] (kxrt-fs-source-lock (+ a 6) (- n 6)))
-          append (if (= (kxrt-count2 a n 0x535f444e45505041 0x5045 10) 1) (kxrt-fs-write a n ai 10 true) (kxrt-fail))
+          append (if (= (kxrt-count2 a n 0x535f444e45505041 0x5045 10) 1) (kxrt-fs-write a n ai 10 true) (kxrt-cap-trap 35 4))
           (>= wi 0) (let [z (kxrt-sink-close)]
-                      (if (= (kxrt-count2 a n 0x45535f4554495257 0x50 9) 1) (kxrt-fs-write a n wi 9 false) (kxrt-fail)))
+                      (if (= (kxrt-count2 a n 0x45535f4554495257 0x50 9) 1) (kxrt-fs-write a n wi 9 false) (kxrt-cap-trap 35 4)))
           (>= ei 0) (let [z (kxrt-sink-close)] (kxrt-fs-exists a ei))
           (>= ri 0) (let [z (kxrt-sink-close)]
-                      (if (= (kxrt-count2 a n 0x45535f45474e4152 0x50 9) 1) (kxrt-fs-range a n ri) (kxrt-fail)))
+                      (if (= (kxrt-count2 a n 0x45535f45474e4152 0x50 9) 1) (kxrt-fs-range a n ri) (kxrt-cap-trap 35 4)))
           ;; JUN-359: RENAME_SEP and FSYNC_SEP, so a file can be replaced durably
           ;; (WRITE a temporary, FSYNC it, RENAME it over the file, FSYNC the
           ;; directory)
           (>= rni 0) (let [z (kxrt-sink-close)]
-                      (if (= (kxrt-count2 a n 0x535f454d414e4552 0x5045 10) 1) (kxrt-fs-rename a n rni) (kxrt-fail)))
-          (>= fi 0) (let [z (kxrt-sink-close)] (if (= (+ fi 9) n) (kxrt-fs-fsync a fi) (kxrt-fail)))
-          ;; STAT, MTIME, ... are not provided by this runtime: refused.
-          (kxrt-fs-other? a n) (kxrt-fail)
+                      (if (= (kxrt-count2 a n 0x535f454d414e4552 0x5045 10) 1) (kxrt-fs-rename a n rni) (kxrt-cap-trap 35 4)))
+          (>= fi 0) (let [z (kxrt-sink-close)] (if (= (+ fi 9) n) (kxrt-fs-fsync a fi) (kxrt-cap-trap 35 4)))
+          ;; STAT, MTIME, ... are not provided by this runtime: refused by name.
+          (> (kxrt-fs-refused a n) 0) (kxrt-cap-trap 35 (kxrt-fs-refused a n))
           :else (let [z (kxrt-sink-close)] (kxrt-fs-read a n)))))
 
 ;; FSYNC_SEP: fsync(2) of the file or directory at <path>, opened beneath the
@@ -728,15 +776,15 @@
     (kxrt-fail)))
 (defn- kxrt-gpu [h :i64] :i64
   (let [rq (kxrt-gl 304) an (kxrt-gl 312) a (kxrt-saddr h) n (kxrt-ps h) b (kxrt-gl 200)
-        f (if (or (< rq 3) (< an 3)) (kxrt-fail) 0)
-        s (if (and (= (kxrt-write-all rq b (kxrt-w b 0 n 4)) 1) (= (kxrt-write-all rq a n) 1)) 1 (kxrt-fail))
-        g (if (= (kxrt-read-all an b 4) 1) 1 (kxrt-fail))
+        f (if (or (< rq 3) (< an 3)) (kxrt-cap-trap 42 11) 0)
+        s (if (and (= (kxrt-write-all rq b (kxrt-w b 0 n 4)) 1) (= (kxrt-write-all rq a n) 1)) 1 (kxrt-cap-trap 42 12))
+        g (if (= (kxrt-read-all an b 4) 1) 1 (kxrt-cap-trap 42 12))
         m (bit-or (kxrt-load8 b) (bit-or (i64-shift-left (kxrt-load8 (+ b 1)) 8)
                                          (bit-or (i64-shift-left (kxrt-load8 (+ b 2)) 16) (i64-shift-left (kxrt-load8 (+ b 3)) 24))))
         u (kxrt-gl 32) p (+ (kxrt-gl 24) u)]
     (cond (> m KXRT-VALUE-MAX) (kxrt-value 8)
           (> m (- KXRT-POOL u)) (kxrt-budget 4)
-          (= (kxrt-read-all an p m) 0) (kxrt-fail)
+          (= (kxrt-read-all an p m) 0) (kxrt-cap-trap 42 12)
           (and (> m 0) (= (kxrt-load8 p) 33)) (kxrt-gpu-refused p m)
           :else (let [w (kxrt-gs 32 (+ u m))] (kxrt-pair-new (- -1 u) m)))))
 ;; S_IFIFO or S_IFSOCK (st_mode at offset 24 of struct stat)
@@ -1304,20 +1352,20 @@
 ;; bytes, a malformed one (M) or a helper that is gone traps
 (defn- kxrt-spawn [h :i64] :i64
   (let [rq (kxrt-gl 2088) an (kxrt-gl 2096) a (kxrt-saddr h) n (kxrt-ps h) b (kxrt-gl 200)]
-    (if (or (> n 65536) (< rq 3) (< an 3)) (kxrt-fail)
-      (let [s (if (and (= (kxrt-write-all rq b (kxrt-w b 0 n 4)) 1) (= (kxrt-write-all rq a n) 1)) 1 (kxrt-fail))
-            g (if (= (kxrt-read-all an b 4) 1) 1 (kxrt-fail))
+    (if (> n 65536) (kxrt-cap-trap 20 5) (if (or (< rq 3) (< an 3)) (kxrt-cap-trap 20 11)
+      (let [s (if (and (= (kxrt-write-all rq b (kxrt-w b 0 n 4)) 1) (= (kxrt-write-all rq a n) 1)) 1 (kxrt-cap-trap 20 12))
+            g (if (= (kxrt-read-all an b 4) 1) 1 (kxrt-cap-trap 20 12))
             m (kxrt-le32 b) u (kxrt-gl 32) p (+ (kxrt-gl 24) u)]
-        (cond (or (< m 1) (> m 32768)) (kxrt-fail)
+        (cond (or (< m 1) (> m 32768)) (kxrt-cap-trap 20 12)
               (> m (- KXRT-POOL u)) (kxrt-budget 4)
-              (= (kxrt-read-all an p m) 0) (kxrt-fail)
+              (= (kxrt-read-all an p m) 0) (kxrt-cap-trap 20 12)
               (= (kxrt-load8 p) 65) (let [w (kxrt-gs 32 (+ u m))] (kxrt-pair-new (- -1 (inc u)) (dec m)))
               (and (= (kxrt-load8 p) 82) (= m 2)) (kxrt-spawn-refuse (kxrt-load8 (inc p)))
-              :else (kxrt-fail))))))
-;; a request longer than 65536 bytes is not refused by name: it traps
+              :else (kxrt-cap-trap 20 12)))))))
+;; a request longer than 65536 bytes traps (KEXE_TRAP ... :refusal :too-large)
 (defn- kxrt-net [id :i64 h :i64] :i64
   (let [a (kxrt-saddr h) n (kxrt-ps h)]
-    (cond (> n 65536) (kxrt-fail)
+    (cond (> n 65536) (kxrt-cap-trap id 5)
           (or (= id 43) (= id 45)) (kxrt-net-open id a n)
           :else (kxrt-net-handle id a n))))
 
@@ -1333,13 +1381,13 @@
             (if (= (kxrt-load8 (+ p i)) (bit-and (u64-shift-right w shift) 255)) (recur (inc i)) false)))))))
 (defn- kxrt-clock-read [wall :bool] :i64
   (let [mono (not wall) s (+ (kxrt-gl 200) 15360)]
-    (let [r (loop [attempt 0] (let [v (kxrt-syscall 228 (if wall 0 1) s 0 0 0 0)] (if (= v -4) (if (< attempt 1024) (recur (inc attempt)) (kxrt-fail)) v)))
+    (let [r (loop [attempt 0] (let [v (kxrt-syscall 228 (if wall 0 1) s 0 0 0 0)] (if (= v -4) (if (< attempt 1024) (recur (inc attempt)) (kxrt-cap-trap 7 13)) v)))
           sec (kxrt-load64 s) ns (kxrt-load64 (+ s 8))
           scale (if wall 1000 1000000000) part (if wall (quot ns 1000000) ns)]
       (if (or (< r 0) (< sec 0) (< ns 0) (>= ns 1000000000)
-              (> sec (quot (- 9223372036854775807 part) scale))) (kxrt-fail)
+              (> sec (quot (- 9223372036854775807 part) scale))) (kxrt-cap-trap 7 13)
         (let [ticks (+ (* sec scale) part)]
-          (if (and mono (< ticks (kxrt-gl 752))) (kxrt-fail)
+          (if (and mono (< ticks (kxrt-gl 752))) (kxrt-cap-trap 7 13)
             (let [saved (if mono (kxrt-gs 752 ticks) 0) out (+ s 64) n (kxrt-dec out ticks)]
               (kxrt-intern out n))))))))
 ;; JUN-360: clock_nanosleep(CLOCK_MONOTONIC) for ms milliseconds, through EINTR
@@ -1350,7 +1398,7 @@
       (let [v (kxrt-syscall 230 1 0 t r 0 0)]
         (cond (= v 0) 0
               (and (= v -4) (< k 1024)) (let [x (kxrt-store64 t (kxrt-load64 r)) y (kxrt-store64 (+ t 8) (kxrt-load64 (+ r 8)))] (recur (inc k)))
-              :else (kxrt-fail))))))
+              :else (kxrt-cap-trap 7 14))))))
 ;; wall -> epoch ms; monotonic -> nondecreasing ns; sleep <ms> (0..60000)
 ;; sleeps on the monotonic clock, then answers as monotonic
 (defn- kxrt-clock [req :i64] :i64
@@ -1360,7 +1408,7 @@
     (cond (kxrt-request= req 0x6c6c6177 0 4) (kxrt-clock-read true)
           (kxrt-request= req 0x696e6f746f6e6f6d 0x63 9) (kxrt-clock-read false)
           (and sl (>= ms 0) (<= ms 60000)) (let [z (kxrt-sleep ms)] (kxrt-clock-read false))
-          :else (kxrt-fail))))
+          :else (kxrt-cap-trap 7 4))))
 (defn- kxrt-entropy-unavailable [] :i64
   (let [b (kxrt-gl 200) n (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b 0 0x4152545f4558454b 8) 0x646e696b3a7b2050 8) 0x6962617061633a20 8) 0x61633a207974696c 8) 0x7974696c69626170 8) 0x706f72746e653a20 8) 0x3a20776172642f79 8) 0x3a206e6f73616572 8) 0x2f79706f72746e65 8) 0x616c696176616e75 8) 0xa7d656c62 5) f (kxrt-flush) e (kxrt-err-text b n)]
     (kxrt-exit 126)))
@@ -1369,13 +1417,13 @@
         ;; Match the existing decimal parser, then enforce the 1..256 byte bound.
         count (if (and (> n 0) (<= n 19)) (kxrt-parse p n) -1)
         raw (+ (kxrt-gl 200) 15360) out (+ raw 256)]
-    (if (or (< count 1) (> count 256)) (kxrt-fail)
+    (if (or (< count 1) (> count 256)) (kxrt-cap-trap 23 4)
       (let [got (loop [off 0]
                   (if (= off count) off
                     (let [r (kxrt-syscall 318 (+ raw off) (- count off) 0 0 0 0)]
                       (cond (= r -4) (recur off)
                             (= r -38) (kxrt-entropy-unavailable)
-                            (or (<= r 0) (> r (- count off))) (kxrt-fail)
+                            (or (<= r 0) (> r (- count off))) (kxrt-cap-trap 23 15)
                             :else (recur (+ off r))))))
             encoded (loop [i 0]
                       (if (= i count) 0
@@ -1390,19 +1438,19 @@
         result))))
 
 (defn- kxrt-typed-cap-call [id :i64 rk :i64 sk :i64 req :i64] :i64
-  (cond (not (kxrt-admitted? id)) (kxrt-fail)
-        (not= rk sk) (kxrt-fail)
+  (cond (not (kxrt-admitted? id)) (kxrt-cap-trap id 1)
+        (not= rk sk) (kxrt-cap-trap id 3)
         (= rk 1)
           (let [v (kxrt-valid req)
                 r (case id 3 (kxrt-sha256 req) 7 (kxrt-clock req) 20 (kxrt-spawn req) 23 (kxrt-entropy req) 35 (kxrt-fs req) 37 (kxrt-io-write req) 38 (kxrt-args req) 39 (kxrt-io-error req) 41 (kxrt-io-read req) 42 (kxrt-gpu req)
-                    43 (kxrt-net 43 req) 44 (kxrt-net 44 req) 45 (kxrt-net 45 req) 46 (kxrt-net 46 req) 47 (kxrt-net 47 req) (kxrt-fail))]
+                    43 (kxrt-net 43 req) 44 (kxrt-net 44 req) 45 (kxrt-net 45 req) 46 (kxrt-net 46 req) 47 (kxrt-net 47 req) (kxrt-cap-trap id 2))]
             (kxrt-valid r))
         (and (= rk 8) (= id 35))
           (let [n (kxrt-vlen req)
-                t (if (> n KXRT-VALUE-MAX) (kxrt-fail) (kxrt-mark (kxrt-intern (kxrt-vbytes req) n)))
+                t (if (> n KXRT-VALUE-MAX) (kxrt-cap-trap 35 5) (kxrt-mark (kxrt-intern (kxrt-vbytes req) n)))
                 r (kxrt-fs t)]
             (kxrt-bytes-raw (kxrt-saddr r) (kxrt-ps r)))
-        :else (kxrt-fail)))
+        :else (kxrt-cap-trap id 3)))
 
 ;; ---- wire 3 :hash/sha256 (FIPS 180-4): the request bytes' digest as 64 lowercase hex ----
 ;; scratch at S+13312: h[8] words, w[64] words, the padded tail (128 bytes), hex (64 bytes)
@@ -1459,7 +1507,7 @@
     (kxrt-intern hex 64)))
 
 ;; ---- context slots (C ABI: rdi = context) ----
-(defn- kxrt-slot-48 [c :i64 id :i64 v :i64] :i64 (if (kxrt-admitted? id) (+ v 1) (kxrt-fail)))
+(defn- kxrt-slot-48 [c :i64 id :i64 v :i64] :i64 (if (kxrt-admitted? id) (+ v 1) (kxrt-cap-trap id 1)))
 (defn- kxrt-slot-56 [c :i64 a :i64 b :i64] :i64 (kxrt-pair-new a b))
 (defn- kxrt-slot-64 [c :i64 h :i64] :i64 (kxrt-pf h))
 (defn- kxrt-slot-72 [c :i64 h :i64] :i64 (kxrt-ps h))
@@ -1764,8 +1812,8 @@
         pr (if (= (kxrt-env 0x4e41535f4558454b 0x4f52505f584f4244 0x3d4542 19) 0) 0 (kxrt-syscall 41 2 1 0 0 0 0))
         au (kxrt-gs 296 (if (= (kxrt-env 0x4552415f4558454b 0x3d4553555f414e 0 15) 0) 0 1))
         r (if (= mode 1) (kxrt-call-at (+ pl off) ctx (+ (kxrt-g) 320)) (kxrt-call-main ctx))
-        e1 (if (= (kxrt-sink-close) 1) 0 (kxrt-fail))
-        e2 (if (= (kxrt-flush) 1) 0 (kxrt-fail))
+        e1 (if (= (kxrt-sink-close) 1) 0 (kxrt-cap-trap 35 9))
+        e2 (if (= (kxrt-flush) 1) 0 (kxrt-cap-trap 37 8))
         e3 (kxrt-arena-use)]
     (cond (= (kxrt-gl 160) 1) (let [z (kxrt-report r)] (kxrt-exit 0))
           (= (kxrt-gl 240) 1) (kxrt-exit (bit-and r 255))
@@ -2258,8 +2306,8 @@
         g6 (kxrt-signal 14 act) g7 (kxrt-signal 24 act) g8 (kxrt-signal 31 act)
         run (kxrt-l-run argc sp)
         r (kxrt-call-main ctx)
-        e1 (if (= (kxrt-sink-close) 1) 0 (kxrt-fail))
-        e2 (if (= (kxrt-flush) 1) 0 (kxrt-fail))]
+        e1 (if (= (kxrt-sink-close) 1) 0 (kxrt-cap-trap 35 9))
+        e2 (if (= (kxrt-flush) 1) 0 (kxrt-cap-trap 37 8))]
     (kxrt-exit (bit-and r 255))))
 ")
 ;; --format platform-linked (seed/78): xs-rt-core, then this text.
@@ -2410,8 +2458,8 @@
         sc (kxrt-scope (kxrt-env 0x5041435f4558454b 0x4352554f5345525f 0x3d35335f5345 22))
         au (kxrt-gs 296 (if (= (kxrt-env 0x4552415f4558454b 0x3d4553555f414e 0 15) 0) 0 1))
         r (kxrt-call-main ctx)
-        e1 (if (= (kxrt-sink-close) 1) 0 (kxrt-fail))
-        e2 (if (= (kxrt-flush) 1) 0 (kxrt-fail))
+        e1 (if (= (kxrt-sink-close) 1) 0 (kxrt-cap-trap 35 9))
+        e2 (if (= (kxrt-flush) 1) 0 (kxrt-cap-trap 37 8))
         e3 (kxrt-arena-use)]
     (if (= (kxrt-gl 160) 1) (let [z (kxrt-report r)] 0) (bit-and r 255))))
 ")

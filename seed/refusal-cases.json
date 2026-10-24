@@ -1,0 +1,93 @@
+{
+ "schema": "amu.seed.refusal-cases.v1",
+ "about": "JUN-364: capability refusals are named before the runtime traps. Each case is a guest whose one capability call the runtime refuses. Natively (seed/76, seed/77) the image runs with KEXE_ALLOW=allow, KEXE_CAP_RESOURCES_35 = the run directory (which holds refusal-in.txt, 4 bytes) as the working directory, and must exit 120 with stderr exactly `stderr` followed by the trap line KEXE_TRAP {:kind :signal :signal :SIGILL}. As a wasm32-browser module (seed/82) the page grants wasm32.allow and the run must exit 120 with wasm32.stderr followed by the same trap line.",
+ "inputFile": {
+  "name": "refusal-in.txt",
+  "text": "abc\n"
+ },
+ "trapLine": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n",
+ "cases": [
+  {
+   "name": "fs-range-outside",
+   "source": "(ns refusal-fs-range-outside (:export [main]))\n\n(defn main [] :i64 (string-length (typed-cap-call :fs/app-data :string :string \"refusal-in.txtRANGE_SEP0:999\")))\n",
+   "allow": "35",
+   "stderr": "KEXE_TRAP {:kind :capability :wire 35 :refusal :range-outside}\n",
+   "wasm32": {
+    "allow": [
+     35
+    ],
+    "stderr": "KEXE_CAP {:wire 35 :refused :wasm32-browser}\nKEXE_TRAP {:kind :capability :wire 35 :refusal :wasm32-browser}\n"
+   }
+  },
+  {
+   "name": "fs-range-twice",
+   "source": "(ns refusal-fs-range-twice (:export [main]))\n\n(defn main [] :i64 (string-length (typed-cap-call :fs/app-data :string :string \"refusal-in.txtRANGE_SEP0:1RANGE_SEP0:1\")))\n",
+   "allow": "35",
+   "stderr": "KEXE_TRAP {:kind :capability :wire 35 :refusal :malformed}\n",
+   "wasm32": {
+    "allow": [
+     35
+    ],
+    "stderr": "KEXE_CAP {:wire 35 :refused :wasm32-browser}\nKEXE_TRAP {:kind :capability :wire 35 :refusal :wasm32-browser}\n"
+   }
+  },
+  {
+   "name": "fs-stat",
+   "source": "(ns refusal-fs-stat (:export [main]))\n\n(defn main [] :i64 (string-length (typed-cap-call :fs/app-data :string :string \"refusal-in.txtSTAT_SEP\")))\n",
+   "allow": "35",
+   "stderr": "KEXE_TRAP {:kind :capability :wire 35 :refusal :stat}\n",
+   "wasm32": {
+    "allow": [
+     35
+    ],
+    "stderr": "KEXE_CAP {:wire 35 :refused :wasm32-browser}\nKEXE_TRAP {:kind :capability :wire 35 :refusal :stat}\n"
+   }
+  },
+  {
+   "name": "fs-missing",
+   "source": "(ns refusal-fs-missing (:export [main]))\n\n(defn main [] :i64 (string-length (typed-cap-call :fs/app-data :string :string \"refusal-missing.txt\")))\n",
+   "allow": "35",
+   "stderr": "KEXE_TRAP {:kind :capability :wire 35 :refusal :open-failed}\n",
+   "wasm32": {
+    "allow": [
+     35
+    ],
+    "stderr": "KEXE_TRAP {:kind :capability :wire 35 :refusal :open-failed}\n"
+   }
+  },
+  {
+   "name": "not-admitted",
+   "source": "(ns refusal-not-admitted (:export [main]))\n\n(defn main [] :i64 (string-length (typed-cap-call :io/write :string :string \"x\")))\n",
+   "allow": "38",
+   "stderr": "KEXE_TRAP {:kind :capability :wire 37 :refusal :not-admitted}\n",
+   "wasm32": {
+    "allow": [
+     38
+    ],
+    "stderr": "KEXE_CAP {:wire 37 :refused :wasm32-browser}\nKEXE_TRAP {:kind :capability :wire 37 :refusal :not-admitted}\n"
+   }
+  },
+  {
+   "name": "unknown-wire",
+   "source": "(ns refusal-unknown-wire (:export [main]))\n\n(defn main [] :i64 (string-length (typed-cap-call :env/read :string :string \"HOME\")))\n",
+   "allow": "33",
+   "stderr": "KEXE_TRAP {:kind :capability :wire 33 :refusal :unknown-wire}\n",
+   "wasm32": {
+    "allow": [],
+    "stderr": "KEXE_CAP {:wire 33 :refused :wasm32-browser}\nKEXE_TRAP {:kind :capability :wire 33 :refusal :not-admitted}\n"
+   }
+  },
+  {
+   "name": "args-malformed",
+   "source": "(ns refusal-args-malformed (:export [main]))\n\n(defn main [] :i64 (string-length (typed-cap-call :cli/args :string :string \"x\")))\n",
+   "allow": "38",
+   "stderr": "KEXE_TRAP {:kind :capability :wire 38 :refusal :malformed}\n",
+   "wasm32": {
+    "allow": [
+     38
+    ],
+    "stderr": "KEXE_TRAP {:kind :capability :wire 38 :refusal :malformed}\n"
+   }
+  }
+ ]
+}

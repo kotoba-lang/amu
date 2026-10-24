@@ -16,7 +16,9 @@ pr    1. F rebuilds itself: FULL-MANIFEST -> container, packed -> F' (= root,
          diagnostic with a source span is named (E2101), not a trap;
       4. the runtime boundary corpus, the runtime cases
          (seed/static-cases.json), hardening and capabilities, all with F;
-      5. the runtime cases and three probes as wasm32-browser modules (JUN-353),
+         the named capability refusals (seed/refusal-cases.json, JUN-364);
+      5. the runtime cases, three probes and the named refusals as
+         wasm32-browser modules (JUN-353),
          run in headless Chromium (scripts/seed/check-wasm32-browser.py) when
          one is installed; the float cases are refused. Without a browser the
          modules are compiled and pinned, and the qualify-x86_64 job runs them.
@@ -49,6 +51,7 @@ from pathlib import Path
 
 sys.dont_write_bytecode = True
 from content_reuse import Runs, pin  # noqa: E402 (scripts/seed)
+import refusal_cases  # noqa: E402 (scripts/seed)
 ROOT = Path(__file__).resolve().parents[2]
 SELFHOST = "seed/X86_64-LINUX-SELFHOST-MANIFEST"
 FULL = "seed/FULL-MANIFEST"
@@ -218,6 +221,10 @@ def main(out, tier, reuse=None, store=None):
         src = out / f"wasm-probe-{name}.kotoba"
         src.write_text(f"(ns probe-{name} (:export [main]))\n{body}\n")
         compile_(F, src, wasm_dir / f"probe-{name}.wasm", "wasm32-browser", None, f"probe-{name}-wasm32", scope)
+    # JUN-364: the named refusals as modules (check-wasm32-browser.py runs them)
+    for case in refusal_cases.write_sources(out):
+        compile_(F, out / f"refusal-{case['name']}.kotoba", wasm_dir / f"refusal-{case['name']}.wasm", "wasm32-browser", None,
+                 f"refusal-{case['name']}-wasm32", scope)
     float_refusals = []
     for case in json.loads((ROOT / FLOAT_CASES).read_text())["cases"]:
         src = out / f"float-{case['name']}.kotoba"
@@ -282,8 +289,14 @@ def main(out, tier, reuse=None, store=None):
     assert granted.returncode == 7, ("sha256 vectors", granted.returncode)
     assert refused.returncode == 120 and b"SIGILL" in refused.stderr
     assert outside.returncode != 0 and not (roots[1] / "x.elf").exists()
+    assert refused.stderr.startswith(b"KEXE_TRAP {:kind :capability :wire 3 :refusal :not-admitted}\n"), refused.stderr[-300:]
+    # JUN-364: every capability refusal is named before the trap
+    named_refusals = refusal_cases.check_native(
+        out, lambda src, dst, name: compile_(F, src, dst, "aarch64-linux", "static", name, scope),
+        lambda name, argv, env: run.run(name, argv, env, success=False))
     capabilities = dict(sha256Vectors=len(vectors), granted=granted.returncode, refused=refused.returncode,
-                        scopeRoots=len(roots), sourceUnderRoot=3, outsideRootsExit=outside.returncode)
+                        scopeRoots=len(roots), sourceUnderRoot=3, outsideRootsExit=outside.returncode,
+                        namedRefusals=named_refusals)
 
     # main: the runner, the packed core and the Linux selfhost closure
     packed = closure = None

@@ -8,7 +8,8 @@ emulation. Records, natively:
 
 1. X2 = S-x86_64 compiling the closure for x86_64 (cross-built = self-built),
    X3 = X2 again (fixed point);
-2. the runtime cases (seed/static-cases.json) as x86_64 static images;
+2. the runtime cases (seed/static-cases.json) as x86_64 static images, and
+   the named capability refusals (seed/refusal-cases.json, JUN-364);
 3. hardening: seccomp enforced (default required; a filtered call traps
    SIGSYS), cpu / wall / stack limits;
 4. the KX64V1 runner: X2's kx64-v1 compiler payload G1 rebuilds itself
@@ -37,6 +38,7 @@ from pathlib import Path
 
 sys.dont_write_bytecode = True
 from content_reuse import Runs  # noqa: E402 (scripts/seed)
+import refusal_cases  # noqa: E402 (scripts/seed)
 
 ROOT = Path(__file__).resolve().parents[2]
 # ADR 0371's native checks: every tier (a minute or two each)
@@ -109,6 +111,9 @@ def main(boot, out, tier="main", reuse_dir=None, store_dir=None):
         if not case["trap"]:
             assert int(re.search(rb":result (-?[0-9]+)", r.stdout)[1]) == case["result"]
         results.append(dict(name=case["name"], **observed))
+    named_refusals = refusal_cases.check_native(
+        out, lambda src, dst, name: compile_(X, src, dst, "static", name),
+        lambda name, argv, env: run(name, argv, env, ok=False))
 
     # 3. hardening, natively on x86_64
     probes = {"value": "(defn main [] :i64 42)",
@@ -173,7 +178,7 @@ def main(boot, out, tier="main", reuse_dir=None, store_dir=None):
 
     report = dict(status="PASS_NATIVE_X86_64_LOADERLESS", tier=tier, host=[platform.system(), platform.machine(), platform.release()],
                   nativeX86_64Kernel=True, emulation=False, cCompilerOrLoader=False,
-                  compiler=dict(crossBuiltOnArm64=s_cross, X2=x2, X3=x3), cases=results, hardening=hardening,
+                  compiler=dict(crossBuiltOnArm64=s_cross, X2=x2, X3=x3), cases=results, namedRefusals=named_refusals, hardening=hardening,
                   runtimeBoundary=runtime_boundary, platformLinkedRefusal=dict(exit=linked_refusal.returncode, diagnostic="E2"), coreOnX86_64=core_x86,
                   kx64Runner=dict(runner=pin(out / "R-x86_64.elf"), generations=gens), suites=suites,
                   reuse=dict(read=bool(reuse_dir), store=bool(store_dir), steps=[{k: c[k] for k in ("name", "seconds", "key", "reused") if k in c}
