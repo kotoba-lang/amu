@@ -398,7 +398,15 @@
   (docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w32, the
   W = 32 shape-2 flip's basis)
   (summary.md,
-  run-log.txt, compile-log.txt, shaders/ in each)."
+  run-log.txt, compile-log.txt, shaders/ in each). These lists are
+  closed under the flip contract's record kinds -- each cell's own
+  contract-satisfying flip runs (one per measured shape) and its
+  sanctioned cross-day replication runs (corroboration that flipped
+  nothing) -- and name no other record kind: a same-day re-session
+  (docs/evidence/gpu-simdgroup-reduce-m1max-resweep-20261024/w32) is
+  named in apple-simdgroup-flip-note's own scoped paragraph only (the
+  same-day re-session naming decision,
+  docs/evidence/gpu/same-day-resweep-naming-20261024.txt)."
   {256 ["docs/evidence/gpu-simdgroup-reduce-m1max-20261023"
         "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w256"
         "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w256"]
@@ -683,7 +691,43 @@
   cell (W = 32/64/128/1024 at shape 1 and the shape-2 cells, each
   runnable on a day later than its own 2026-10-24 session) stays
   UNMEASURED, and the measured-but-REFUSED shape-2 W = 512 cell's
-  refusal is a protocol decision no re-run revisits.")
+  refusal is a protocol decision no re-run revisits.
+  SAME-DAY RE-SESSION OF THE W = 32 CELL (shape 1, 2026-10-24): NOT a
+  cross-day replication -- 2026-10-24 is the same calendar day as the
+  cell's own flip session (the wsweep session ran 02:39 JST, this one
+  09:01 JST), so the contract's temporal row does not move (the
+  protocol: \"Cross-day replication of any cell needs a later-day run
+  (a cron tick on another day), not more same-day sessions\"). The
+  byte-identical protocol re-ran the W = 32 cell in a second session
+  (docs/evidence/gpu-simdgroup-reduce-m1max-resweep-20261024/w32) and
+  the sign reproduces exactly: rule 2 REGIME-INVARIANT FASTER, 18/18
+  per-run ratios below 1.0 in both sessions, at paired median ratios
+  0.636/0.691/0.731 for :sum/:max/:min against the wsweep session's
+  0.657/0.658/0.650. The rule-3 regime-matched comparison against the
+  wsweep record: sign reproduces in sign strictly at every operator
+  (all 6 per-run ratios hold the historical sign at each); magnitude
+  reproduces within 0.021 for :sum and splits by clock regime for
+  :max/:min (mixed strata draws; within-stratum deltas 0.016 (:max),
+  0.006-0.099 (:min), 0.014 (:sum)). Read-back: 36 verify lines, ok=1
+  on every one; :max/:min bit-exact vs the CPU reference and between
+  arms, :sum 2.15e-06 (baseline) / 1.43e-06 (variant) vs reference and
+  1.91e-06 between arms (regrouping). Its magnitude phrases are
+  regime-scoped WITHIN THE DAY -- the raw paired medians moved
+  0.021 (:sum) / 0.033 (:max) / 0.081 (:min) within one calendar day
+  and the cross-operator level identity flipped from HOLDS (wsweep:
+  0/15 divergent run pairs) to REFUTED (this session: 12/15). WHAT
+  THIS RE-SESSION DOES NOT LICENSE: it is not a cross-day replication
+  and moves no cross-day row (W = 32's own later-day row stays
+  UNMEASURED, runnable 2026-10-25); it extends no :shapes (it ran the
+  ground shape the cell already carries); it moves no :measured? flag,
+  no selection answer and no workgroup row (ADR-0355/0358). Per the
+  same-day re-session naming decision
+  (docs/evidence/gpu/same-day-resweep-naming-20261024.txt) this record
+  is named in flip note prose ONLY: the basis evidence lists
+  (apple-simdgroup-measured-evidence and the :measured-cell :evidence
+  maps) stay closed under the flip contract's record kinds -- each
+  cell's own flip runs and its sanctioned cross-day replications -- and
+  name no other record kind.")
 
 (def variant-bases
   "Why each variant exists. Design rationale, not measurement evidence."
@@ -1179,7 +1223,12 @@
          ;; the record names THIS variant's runs at that cell's own W and
          ;; its one measured shape -- the :subgroup-reduce runs say
          ;; nothing about this
-         ;; variant (uB5G, reverse reading).
+         ;; variant (uB5G, reverse reading). The :evidence map is closed
+         ;; under the flip contract's record kinds (each cell's own flip
+         ;; runs and its sanctioned cross-day replication runs) and names
+         ;; no other record kind: a same-day re-session is flip-note
+         ;; prose only (the same-day re-session naming decision,
+         ;; docs/evidence/gpu/same-day-resweep-naming-20261024.txt).
          simd-measured-cell
          (when simd-flip?
            {:device apple-measured-fragment

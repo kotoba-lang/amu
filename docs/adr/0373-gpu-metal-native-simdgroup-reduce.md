@@ -541,10 +541,12 @@ shape) and its sanctioned cross-day replication runs. The rule's
 ground is the re-session's own measured facts (sign replicates 18/18
 same-day; medians moved 0.021/0.033/0.081 within one calendar day and
 the cross-operator identity flipped HOLDS -> REFUTED) -- a same-day
-session licenses nothing the cell's own run did not. ACCEPTED DESIGN
-ONLY as of that record: the naming implementation (the W = 32
-paragraph, the lists' docstring tightening, their tests) is its own
-later slice.
+session licenses nothing the cell's own run did not. The naming
+implementation landed in the later same-day slice of 2026-10-24 (the
+W = 32 SAME-DAY RE-SESSION paragraph in `apple-simdgroup-flip-note`,
+the basis-lists docstring tightening, and tests pinning that no
+basis-evidence list names a resweep directory) -- the rule is
+IMPLEMENTED from that slice on.
 
 ## What this decision is NOT
 
@@ -814,6 +816,26 @@ step-1 slice added the rows below it.]
   LEFT row below). The naming implementation (the W = 32 SAME-DAY
   RE-SESSION paragraph, the basis-lists docstring tightening, their
   tests) is its own later slice and is NOT in this diff.
+- [SAME-DAY RE-SESSION NAMING IMPLEMENTATION SLICE, 2026-10-24 (the
+  later same-day slice):] the naming decision's follow-through, exactly
+  its own scope:
+  `src/kotoba/compiler/accelerator_variants.cljk` -- the W = 32
+  SAME-DAY RE-SESSION paragraph in `apple-simdgroup-flip-note` (scoped
+  exactly as the decision's part 1 names: not a cross-day replication;
+  extends no `:shapes`; moves no `:measured?` flag, selection answer or
+  workgroup row; magnitude phrases regime-scoped within the day) and
+  the part-2 docstring tightening on both loci
+  (`apple-simdgroup-measured-evidence`'s docstring and the
+  `:measured-cell` `:evidence` map's construction comment -- closed
+  under the flip contract's record kinds, stated not inferred);
+  `test/kotoba/compiler/accelerator_variants_test.cljk` -- a naming
+  block pinning the paragraph's scoping phrases and record name in
+  `:basis` and pinning that no `:evidence` list names a resweep
+  directory at any of the six cells;
+  this ADR (the NAMING rule paragraph above, this diff row, the LEFT
+  row below). No `:measured?` flag, `:shapes` value, selection answer
+  or workgroup row moves: the exact `:measured-cell` record equality
+  tests are byte-for-byte unchanged.
 
 ## What did NOT move (named so nothing is silently upgraded)
 
@@ -1094,10 +1116,13 @@ outside this diff. No green full suite is claimed.
    later-day cron tick).
 5. The GLSL arm of `:subgroup-reduce` stays blocked on ADR 0371's provider
    route.
-6. The SAME-DAY RE-SESSION naming implementation (the 2026-10-24 naming
-   decision's own follow-through, "its own slice" by that decision's
-   terms): the W = 32 SAME-DAY RE-SESSION paragraph in
+6. [DONE 2026-10-24, the later same-day slice -- the naming
+   implementation landed, nothing left of this row:] the SAME-DAY
+   RE-SESSION naming implementation (the 2026-10-24 naming decision's
+   own follow-through, "its own slice" by that decision's terms): the
+   W = 32 SAME-DAY RE-SESSION paragraph in
    `apple-simdgroup-flip-note` (scoped exactly as the decision's part 1
    names), the basis-lists docstring tightening (part 2), and tests
    pinning that no basis-evidence list names a resweep directory. The
-   decision itself is ACCEPTED DESIGN ONLY (docs) until this lands.
+   naming rule is IMPLEMENTED from that slice on (the NAMING rule
+   paragraph above and the implementation diff row carry the scope).

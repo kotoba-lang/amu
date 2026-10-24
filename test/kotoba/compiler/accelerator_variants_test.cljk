@@ -903,6 +903,31 @@
       (is (str/includes? (:basis (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256}) :msl-v1 m1))
                          "cross-day replication of every remaining")
           "the cross-day claim stays scoped to its TWO measured cells"))
+    (testing "the W = 32 same-day re-session is named in the flip note prose ONLY -- no basis-evidence list names it"
+      ;; The naming decision (docs/evidence/gpu/same-day-resweep-naming-20261024.txt):
+      ;; flip note prose NAMED in its own scoped paragraph; basis
+      ;; evidence lists NOT NAMED (closed under the flip contract's
+      ;; record kinds -- each cell's own flip runs and its sanctioned
+      ;; cross-day replications; a same-day re-session is neither kind).
+      (let [basis (:basis (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 32}) :msl-v1 m1))]
+        (is (str/includes? basis "SAME-DAY RE-SESSION OF THE W = 32 CELL (shape 1, 2026-10-24): NOT a")
+            "the flip note carries the W = 32 same-day re-session paragraph")
+        (is (str/includes? basis "cross-day replication -- 2026-10-24 is the same calendar day as the")
+            "the paragraph scopes the record as NOT a cross-day replication")
+        (is (str/includes? basis "docs/evidence/gpu-simdgroup-reduce-m1max-resweep-20261024/w32")
+            "the paragraph names the re-session record")
+        (is (str/includes? basis "regime-scoped WITHIN THE DAY")
+            "the paragraph scopes the magnitude phrases to the day")
+        (is (str/includes? basis "it moves no :measured? flag,")
+            "the paragraph moves no :measured? flag")
+        (is (str/includes? basis "no selection answer and no workgroup row (ADR-0355/0358)")
+            "the paragraph moves no selection answer and no workgroup row")
+        (is (str/includes? basis "stay closed under the flip contract's record kinds")
+            "the paragraph states the lists' closed-under reading"))
+      (doseq [wg [32 64 128 256 512 1024]]
+        (is (not (some #(str/includes? % "resweep")
+                       (:evidence (:measured-cell (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size wg}) :msl-v1 m1)))))
+            (str "W=" wg " names no resweep directory -- the lists stay closed under the flip contract's record kinds"))))
     (testing "the flip is SIX cells wide: every width the row admits answers the row on the class"
       ;; the class's last :baseline cell (W = 32) flipped with this
       ;; slice: no admitted width (power of two in [32, 1024]) keeps the
