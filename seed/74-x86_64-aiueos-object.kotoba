@@ -160,6 +160,8 @@
                   (= op OP-LSET) (= op OP-FUEL) (= op OP-RET) (= op OP-TRAP)) (recur (dec j))
               (or (= a t) (= b t) (= c t)) -1
               :else (recur (dec j)))))))
+;; A PARAMETER slot that is assigned anywhere in its function (a recur or self tail call writes every parameter) has no source or
+;; region at all: the value a caller passes on first entry is never what the assignment says (an independent read, 2026-10-24).
 ;; A value's SOURCE as a number, 0 when unknown: 2^32 + v for the integer literal v (0 <= v < 2^31: a wider literal is unknown, so it
 ;; cannot alias another through masking), 2^33 + s for the unassigned parameter slot s of
 ;; its function (through a let-bound local with one assignment). Two temps with the same non-zero source hold the same value.
@@ -171,7 +173,8 @@
           (cond (= op OP-CONST) (if (and (>= b 0) (< b 2147483648)) (+ 4294967296 b) 0)
                 (= op OP-LGET)
                   (cond (xk-param-slot? M j b) (+ 8589934592 b)
-                        (= (xk-lsets M (inc (xk-fn-start M j)) b 0) 1)
+                        (and (> b (xg-f M (xg-si M (xk-fn-start M j) IF-A) FF-NPARAMS))
+                             (= (xk-lsets M (inc (xk-fn-start M j)) b 0) 1))
                           (let [k (xk-first-lset M (inc (xk-fn-start M j)) b)]
                             (if (> k 0) (xk-src M k (xg-si M k IF-B) (inc depth)) 0))
                         :else 0)
@@ -215,7 +218,8 @@
                                                        (= constv r) constv
                                                        :else -1)))))
                                     (recur (inc c) pairok constv))))))
-                        (= (xk-lsets M (inc (xk-fn-start M j)) b 0) 1)
+                        (and (> b (xg-f M (xg-si M (xk-fn-start M j) IF-A) FF-NPARAMS))
+                             (= (xk-lsets M (inc (xk-fn-start M j)) b 0) 1))
                           (let [k (xk-first-lset M (inc (xk-fn-start M j)) b)]
                             (if (> k 0) (xk-region M k (xg-si M k IF-B) (inc depth)) -1))
                         :else -1)

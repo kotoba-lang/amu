@@ -201,3 +201,11 @@ narrowing `(kernel-subregion st sb 0 L)`, which traps unless the region really i
 A caller with an unrooted base refuses the helper, and different literals from different callers refuse it too, so the proof stays an induction
 over the call sites with no path analysis and no new contract syntax. Six cases pin it (`ok_const_helper`, `ok_const_helper_two_callers`;
 `no_const_helper_wrong_literal`, `no_const_helper_two_lengths`, `no_const_helper_unrooted_caller`, `no_const_helper_param_length_caller`).
+
+An independent read of the constant mode (2026-10-24, from the code only) found no admitted out-of-region access, one fragility, which is fixed
+here (an assigned parameter -- a `recur` or self tail call writes every parameter -- has no source or region at all, so the unchecked first-entry value
+cannot be replaced by the assignment's; `no_assigned_param_is_not_a_root`), and these known limits, left as they are: pair mode wins when a caller's
+next argument happens to equal L (the helper then must name the pair's length, so `(sum w 64)` is refused though it is safe); the depth limit of
+six refuses a helper reached through three wrappers; a helper that returns a window is not rooted; different literals from different callers refuse
+the helper; a branch inside a later argument refuses the call; and the scan is quadratic per level, so a source with very many call sites and deep
+helper nests could cost the compiler time (a resource limit, not a memory hole).
