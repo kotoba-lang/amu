@@ -1,42 +1,24 @@
 {
   "schema": "amu.seed.static-root.v1",
   "image": {
-    "bytes": 3293696,
-    "sha256": "fa86314c3f15ed4577c847209a3674090f52a1b7da8ddf0ea56f1d66af2aa235"
+    "bytes": 3314176,
+    "sha256": "a8589265fdbe448f4238d568cd9a17a2e47b426b664f9fab5bc02bb7d277229b"
   },
   "target": "aarch64-linux",
   "format": "packed",
   "sourceManifest": "seed/FULL-MANIFEST",
   "sourceUnity": {
-    "bytes": 3274470,
-    "sha256": "0ed1107b147f843be89ad72e690b099335a62c89bd5c57641999af79b229c1fe"
+    "bytes": 3283501,
+    "sha256": "d4fe11e466eef848e0153335c1827a892973a464c3d4e14c3850385e49e4dfa1"
   },
-  "sourceCommitBase": "0815e25a7d616822bb16f349781ae58f1720b2bc",
-  "sourceCommit": "0815e25a7d616822bb16f349781ae58f1720b2bc",
+  "sourceCommitBase": "7232237db2896be2905d878bdd0a01d24a366369",
+  "sourceCommit": "7232237db2896be2905d878bdd0a01d24a366369",
   "producedBy": {
-    "how": "Previous admitted i64 AOT main root compiles the combined full31 source, retaining all18 core modules, current memory hardening, i64 AOT and AIUEOS image/EFI. Native ARM64 Linux F1=F2; native cross generation reproduces the controller and both existing gate pins. Native x86 execution and exact-head PR/main CI are separate required gates.",
+    "how": "The admitted AIUEOS main root compiles the merged private-store full source (#1545 private store + #1548 wire-35 + #1547 AIUEOS image/EFI); native arm64 F1 -> F2 = F3 reproduces this packed image exactly. The CDCI identity table and all 24 case-image pins are regenerated from this tree and re-verified.",
     "date": "2026-10-24",
-    "previousRoot": "c95b844146ae31e9c47b5bd02a7b6590f3a158e74d9759eb48dfcf8bf2fe60a1",
-    "chain": {
-      "F1.kseed": {
-        "bytes": 3056339,
-        "sha256": "c25229523b727b4ba12f118b3fe5976cd967a736125e8a01a83c7b63e2eea797"
-      },
-      "F1.elf": {
-        "bytes": 3293696,
-        "sha256": "fa86314c3f15ed4577c847209a3674090f52a1b7da8ddf0ea56f1d66af2aa235"
-      },
-      "F2.kseed": {
-        "bytes": 3056339,
-        "sha256": "c25229523b727b4ba12f118b3fe5976cd967a736125e8a01a83c7b63e2eea797"
-      },
-      "F2.elf": {
-        "bytes": 3293696,
-        "sha256": "fa86314c3f15ed4577c847209a3674090f52a1b7da8ddf0ea56f1d66af2aa235"
-      }
-    }
+    "previousRoot": "fa86314c3f15ed4577c847209a3674090f52a1b7da8ddf0ea56f1d66af2aa235"
   },
-  "verification": "Native ARM full bootstrap passes unchanged24 cases and fixed point. The native workflow additionally measures independent canonical Pw, native x86 F1=F2=F3, i64 AOT/refusals, AIUEOS image/EFI, memory admission/guards, native controller, public aliases and browser. Current runtime acceptance requires terminal exact-head CI and matching raw receipts.",
+  "verification": "Native arm64 bootstrap --tier pr: root reproduces (F1=F2=F3), adoption image, 24 runtime cases, boundary/refusal corpus and wasm32-browser modules; CDCI pins regenerated from this tree (core source/container unchanged, amu-selfhost and gate images re-verified, gate source re-hashed). Native x86_64 controller, public product and exact-final-head PR/main CI remain the merge gate.",
   "history": [
     {
       "schema": "amu.seed.static-root.v1",
@@ -1158,6 +1140,46 @@
         }
       },
       "verification": "scripts/seed/selfhost-bootstrap.py --tier pr on arm64 Linux (python:3.12-alpine) from this root (F1 = root): the core route, the runtime boundary corpus, the 24 runtime cases and hardening pass and the rebuild reproduces this root (rootReproduces); scripts/seed/check-kernel-memory.py --cases gives PASS_KERNEL_MEMORY_ADMISSION 16 cases with F1. CI re-runs the tier from this root (F -> F' = root)."
+    },
+    {
+      "schema": "amu.seed.static-root.v1",
+      "image": {
+        "bytes": 3293696,
+        "sha256": "fa86314c3f15ed4577c847209a3674090f52a1b7da8ddf0ea56f1d66af2aa235"
+      },
+      "target": "aarch64-linux",
+      "format": "packed",
+      "sourceManifest": "seed/FULL-MANIFEST",
+      "sourceUnity": {
+        "bytes": 3274470,
+        "sha256": "0ed1107b147f843be89ad72e690b099335a62c89bd5c57641999af79b229c1fe"
+      },
+      "sourceCommitBase": "7232237db2896be2905d878bdd0a01d24a366369",
+      "sourceCommit": "7232237db2896be2905d878bdd0a01d24a366369",
+      "producedBy": {
+        "how": "Previous admitted i64 AOT main root compiles the combined full31 source, retaining all18 core modules, current memory hardening, i64 AOT and AIUEOS image/EFI. Native ARM64 Linux F1=F2; native cross generation reproduces the controller and both existing gate pins. Native x86 execution and exact-head PR/main CI are separate required gates.",
+        "date": "2026-10-24",
+        "previousRoot": "c95b844146ae31e9c47b5bd02a7b6590f3a158e74d9759eb48dfcf8bf2fe60a1",
+        "chain": {
+          "F1.kseed": {
+            "bytes": 3056339,
+            "sha256": "c25229523b727b4ba12f118b3fe5976cd967a736125e8a01a83c7b63e2eea797"
+          },
+          "F1.elf": {
+            "bytes": 3293696,
+            "sha256": "fa86314c3f15ed4577c847209a3674090f52a1b7da8ddf0ea56f1d66af2aa235"
+          },
+          "F2.kseed": {
+            "bytes": 3056339,
+            "sha256": "c25229523b727b4ba12f118b3fe5976cd967a736125e8a01a83c7b63e2eea797"
+          },
+          "F2.elf": {
+            "bytes": 3293696,
+            "sha256": "fa86314c3f15ed4577c847209a3674090f52a1b7da8ddf0ea56f1d66af2aa235"
+          }
+        }
+      },
+      "verification": "Native ARM full bootstrap passes unchanged24 cases and fixed point. The native workflow additionally measures independent canonical Pw, native x86 F1=F2=F3, i64 AOT/refusals, AIUEOS image/EFI, memory admission/guards, native controller, public aliases and browser. Current runtime acceptance requires terminal exact-head CI and matching raw receipts."
     }
   ]
 }
