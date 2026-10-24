@@ -155,10 +155,13 @@ ladder is pinned by `the-msl-ladder-selects-simdgroup-reduce-first` and
 
 1. **Measured-cell carve-out (measurement beats design).** A device class
    whose reduce-shape answers are measured or decided keeps those answers;
-   no unmeasured design row overrides them. Today that is exactly the
-   narrowed M1 Max class (name fragment `m1 max`): it keeps `:baseline`
+   no unmeasured design row overrides them. At the design slice that was
+   exactly the narrowed M1 Max class (name fragment `m1 max`): it kept
+   `:baseline`
    at every `W` (W = 64/128/256/512/1024 where `:subgroup-reduce` was
-   measured slower, W = 32 by the low-band fail-safe decision).
+   measured slower, W = 32 by the low-band fail-safe decision) -- every
+   one of those cells has since flipped through the flip contract below,
+   the flip keys' own refusals the carve-out's only live cells.
    `:simdgroup-reduce` does NOT answer there until a measurement of THIS
    variant on that class flips the cell through the flip contract (below).
    The rejected alternative is on the record: treating the refutation as
@@ -190,9 +193,12 @@ ladder is pinned by `the-msl-ladder-selects-simdgroup-reduce-first` and
    32, the MSL route, this row's `:simd-reduce` gate, W = 256), the
    carve-out lifts exactly there, and the cell answers
    `:simdgroup-reduce` with `:measured? true` and the row's OWN
-   `:measured-cell` record (`:shapes [1000003]` -- ONE measured shape;
-   shape 2 stays UNMEASURED). Every other W of this class keeps the
-   carve-out's `:baseline` with the lock on. The flip is code in
+   `:measured-cell` record (`:shapes [1000003]` -- ONE measured shape at
+   that slice; shape 2 stayed UNMEASURED at that slice, later measured
+   and flipped at five cells by the shape-2 series below and refused at
+   W = 512). Every other W of this class kept the
+   carve-out's `:baseline` with the lock on at that slice (every one
+   flipped by its own later slice below). The flip is code in
    `select-variant` (`simd-flip?`,
    `apple-simdgroup-measured-workgroups #{256}`), pinned by
    `the-simdgroup-rows-own-flip-cell-flips-the-honesty-lock`.]
@@ -211,8 +217,9 @@ ladder is pinned by `the-msl-ladder-selects-simdgroup-reduce-first` and
    OWN record). The flip is code in `select-variant`
    (`apple-simdgroup-measured-workgroups #{256 512}`,
    `apple-simdgroup-measured-evidence` keyed per W). Every other W of
-   this class (32/64/128/1024) keeps the carve-out's `:baseline` with
-   the lock on. Slice record:
+   this class (32/64/128/1024) kept the carve-out's `:baseline` with
+   the lock on at that slice (every one flipped by its own later slice
+   below). Slice record:
    `docs/evidence/gpu/simdgroup-reduce-flip-w512-20261023.txt`.]
    [UPDATE 2026-10-24, the W = 1024 FLIP SLICE (rule 3 step 3's W-sweep
    third cell, measured and flipped 2026-10-24): the W-sweep measurement
@@ -229,8 +236,9 @@ ladder is pinned by `the-msl-ladder-selects-simdgroup-reduce-first` and
    OWN record). The flip is code in `select-variant`
    (`apple-simdgroup-measured-workgroups #{256 512 1024}`,
    `apple-simdgroup-measured-evidence` keyed per W). Every other W of
-   this class (32/64/128) keeps the carve-out's `:baseline` with
-   the lock on. Slice record:
+   this class (32/64/128) kept the carve-out's `:baseline` with
+   the lock on at that slice (every one flipped by its own later slice
+   below). Slice record:
    `docs/evidence/gpu/simdgroup-reduce-flip-w1024-20261024.txt`.]
    [UPDATE 2026-10-24, the W = 128 FLIP SLICE (rule 3 step 3's W-sweep
    fourth cell, measured and flipped 2026-10-24): the W-sweep measurement
@@ -249,8 +257,9 @@ ladder is pinned by `the-msl-ladder-selects-simdgroup-reduce-first` and
    OWN record). The flip is code in `select-variant`
    (`apple-simdgroup-measured-workgroups #{128 256 512 1024}`,
    `apple-simdgroup-measured-evidence` keyed per W). Every other W of
-   this class (32/64) keeps the carve-out's `:baseline` with
-   the lock on. Slice record:
+   this class (32/64) kept the carve-out's `:baseline` with
+   the lock on at that slice (both flipped by their own later slices
+   below). Slice record:
    `docs/evidence/gpu/simdgroup-reduce-flip-w128-20261024.txt`.]
    [UPDATE 2026-10-24, the W = 64 FLIP SLICE (rule 3 step 3's W-sweep
    fifth cell, measured and flipped 2026-10-24): the W-sweep measurement
@@ -269,8 +278,9 @@ ladder is pinned by `the-msl-ladder-selects-simdgroup-reduce-first` and
    OWN record). The flip is code in `select-variant`
    (`apple-simdgroup-measured-workgroups #{64 128 256 512 1024}`,
    `apple-simdgroup-measured-evidence` keyed per W). Every other W of
-   this class (32) keeps the carve-out's `:baseline` with
-   the lock on -- and with W = 64 flipped, the carve-out note's
+   this class (32) kept the carve-out's `:baseline` with
+   the lock on at that slice (flipped by the W = 32 slice below) -- and
+   with W = 64 flipped, the carve-out note's
    flag-scope clause is HISTORY: no cell carries both the note and a
    `:measured? true` flag. Slice record:
    `docs/evidence/gpu/simdgroup-reduce-flip-w64-20261024.txt`.]
@@ -326,8 +336,10 @@ ladder is pinned by `the-msl-ladder-selects-simdgroup-reduce-first` and
    `[1000003 1048576]`, the other five widths `[1000003]` unchanged --
    `apple-simdgroup-measured-evidence`'s W = 256 entry gaining the
    shape-2 record). WHAT THIS SLICE DOES NOT LICENSE: shape 2 at the
-   five widths but W = 256 stays UNMEASURED (the shape-2 series'
-   remaining cells); no `:measured?` flag moves (the W = 256 answer was
+   five widths but W = 256 stayed UNMEASURED at that slice (the
+   shape-2 series' remaining cells -- all flipped by their own later
+   slices below except the W = 512 refusal); no `:measured?` flag moves
+   (the W = 256 answer was
    already MEASURED at the ground shape); no workgroup row
    (ADR-0355/0358) moves. Slice record:
    `docs/evidence/gpu/simdgroup-reduce-flip-shape2-w256-20261024.txt`.]
@@ -374,8 +386,10 @@ ladder is pinned by `the-msl-ladder-selects-simdgroup-reduce-first` and
    gaining the shape-2 record). No `:measured?` flag moves (the W = 1024
    answer was already MEASURED at the ground shape) and no workgroup row
    (ADR-0355/0358) moves. WHAT THIS SLICE DOES NOT LICENSE: shape 2 at
-   W = 32/64/128 stays UNMEASURED (the shape-2 series' remaining cells)
-   and stays measured-but-REFUSED at W = 512. Slice record:
+   W = 32/64/128 stayed UNMEASURED at that slice (the shape-2 series'
+   remaining cells -- all flipped by the SHAPE-2 W = 128, W = 64 and
+   W = 32 slices below) and stays measured-but-REFUSED at W = 512.
+   Slice record:
    `docs/evidence/gpu-simdgroup-reduce-flip-shape2-w1024-20261024.txt`.]
    [UPDATE 2026-10-24, the SHAPE-2 W = 128 FLIP SLICE (the shape-2
    series' fourth cell, measured and flipped 2026-10-24): the shape-2
@@ -402,9 +416,10 @@ ladder is pinned by `the-msl-ladder-selects-simdgroup-reduce-first` and
    W = 128 entry gaining the shape-2 record). No `:measured?` flag
    moves (the W = 128 answer was already MEASURED at the ground shape)
    and no workgroup row (ADR-0355/0358) moves. WHAT THIS SLICE DOES
-   NOT LICENSE: shape 2 at W = 32/64 stays UNMEASURED (the shape-2
-   series' remaining cells) and stays measured-but-REFUSED at W = 512.
-   Slice record:
+   NOT LICENSE: shape 2 at W = 32/64 stayed UNMEASURED at that slice
+   (the shape-2 series' remaining cells -- both flipped by the SHAPE-2
+   W = 64 and W = 32 slices below) and stays measured-but-REFUSED at
+   W = 512. Slice record:
    `docs/evidence/gpu-simdgroup-reduce-flip-shape2-w128-20261024.txt`.]
    [UPDATE 2026-10-24, the SHAPE-2 W = 64 FLIP SLICE (the shape-2
    series' fifth cell, measured and flipped 2026-10-24): the shape-2
@@ -836,6 +851,30 @@ step-1 slice added the rows below it.]
   row below). No `:measured?` flag, `:shapes` value, selection answer
   or workgroup row moves: the exact `:measured-cell` record equality
   tests are byte-for-byte unchanged.
+- [DIFF-RECORD RECONCILIATION SLICE, 2026-10-24 (this ADR only -- no
+  code namespace, no test, no measurement):] the prose debt every slice
+  record since the W = 32 flip slice has named -- the State and
+  UNMEASURED sections' "five measured cells" / "only the W = 64,
+  W = 128, W = 256, W = 512 and W = 1024 cells have flipped" / "every
+  other W of this variant (32)" phrasings -- is PAID here: those
+  phrasings are corrected in place to the record as it stands (six flip
+  cells including W = 32, both measured shapes named at five of them,
+  the W = 512 shape-2 refusal, cross-day replication measured at
+  exactly two cells -- the W = 256 anchor and the W = 512 cell -- and
+  UNMEASURED at every other), the flip and shape-2 UPDATE paragraphs'
+  stale scope clauses ("Every other W of this class ... keeps the
+  carve-out's `:baseline`", "shape 2 stays UNMEASURED") are brought to
+  the past-tense per-slice form the W = 64 paragraph already carries,
+  the Selection section's design-time carve-out clause ("Today ...
+  keeps `:baseline` at every `W`") is framed as the design slice's
+  state with the flips named as what followed, the LEFT rows'
+  five-cell enumerations gain the sixth cell, and the "What did NOT
+  move" debt marker is closed with its RECONCILED bracket. Nothing is
+  re-measured (every number cited is the committed record's) and no
+  `:measured?` flag, `:shapes` value, selection answer or workgroup row
+  moves.
+  `docs/evidence/gpu/adr0373-diffrecord-reconciliation-20261024.txt`:
+  the slice record (gate output included).
 
 ## What did NOT move (named so nothing is silently upgraded)
 
@@ -918,11 +957,26 @@ step-1 slice added the rows below it.]
   W = 128 and W = 64 records are untouched, the workgroup rows
   (ADR-0355/0358) remain untouched, and no speed claim extends past
   the flip cells' own recorded scopes.]
-  The ADR's older diff-record prose that still predates the W = 32
-  flip's reconciliation (the "five measured cells" / "only the W = 64,
+  The ADR's older diff-record prose that predates the W = 32 flip's
+  reconciliation (the "five measured cells" / "only the W = 64,
   W = 128, W = 256, W = 512 and W = 1024 cells have flipped" phrasings
-  in the State and UNMEASURED sections) is named prose debt in every
-  slice record since, not silently rewritten here.
+  in the State and UNMEASURED sections) was named prose debt in every
+  slice record since the W = 32 flip slice, not silently rewritten
+  there. [RECONCILED 2026-10-24, the DIFF-RECORD RECONCILIATION slice:
+  the named phrasings are corrected in place (State and UNMEASURED,
+  below) to the record as it stands -- six flip cells including W = 32,
+  both measured shapes named at five of them, the W = 512 shape-2
+  refusal, cross-day replication measured at exactly two cells -- and
+  the flip and shape-2 UPDATE paragraphs' stale scope clauses and the
+  LEFT rows' five-cell enumerations are brought current in the
+  past-tense per-slice form (the Selection section's design-time
+  carve-out clause reframed as the design slice's state). The per-slice
+  diff rows of "What moved" are
+  history and stay as written (each names its own slice's state at its
+  own commit). Nothing was re-measured (every number cited is the
+  committed record's) and no `:measured?` flag, `:shapes` value,
+  selection answer or workgroup row moved. Slice record:
+  `docs/evidence/gpu/adr0373-diffrecord-reconciliation-20261024.txt`.]
 
 ## State (the honesty rule's three states)
 
@@ -1000,24 +1054,31 @@ both measured shapes but the W = 512 refusal).
 ACCEPTED
 DESIGN ONLY: any wording above that governs this variant's OTHER future
 measurement cells (the flip contract as applied to `:simdgroup-reduce` --
-only the W = 64, W = 128, W = 256, W = 512 and W = 1024 cells have
-flipped).
+the W = 32, W = 64, W = 128, W = 256, W = 512 and W = 1024 cells have
+flipped, every width the row admits: the ground shape flipped at all
+six, the second shape at five of them, the W = 512 shape-2 cell
+measured-but-REFUSED).
 PROPOSED, unchanged: every performance question about this variant off
-the five measured cells.] The
+the six measured cells.] The
 two design
 questions ADR-0356's reconciliation parked are now both DECIDED
 (narrowing: ADR-0360's second decision; this row: this ADR).
 
 ## UNMEASURED, named
 
-Everything about this variant's performance on every device but the five
-measured cells (M1 Max, W = 64, W = 128, W = 256, W = 512 and W = 1024,
+Everything about this variant's performance on every device but the six
+measured cells (M1 Max, W = 32, W = 64, W = 128, W = 256, W = 512 and
+W = 1024,
 n = 1000003 --
 measured and
 flipped 2026-10-23/24,
 faster than `:baseline` at those cells, see the step-3 and W-sweep
-records); every other
-W of this variant (32); shape 2 for this variant at W = 512 --
+records); every shape beyond the two measured ones (n = 1000003 and
+n = 2^20) at every cell; cross-day replication at every cell but the
+two replicated (the W = 256 anchor and the W = 512 cell, both
+2026-10-24 -- the W = 32 same-day re-session is NOT a cross-day
+replication and licenses nothing the cell's own run did not); shape 2
+for this variant at W = 512 --
 measured 2026-10-24 but REFUSED as a selection basis (rule 2
 REGIME-SCOPED), so no measured claim covers it
 (its W = 256, W = 1024, W = 128, W = 64 and W = 32 shape-2 flips
@@ -1074,10 +1135,12 @@ outside this diff. No green full suite is claimed.
    `:baseline`, rule 2 regime-invariant), as did the W-sweep's second
    cell (W = 512, 0.815/0.823/0.824, same day) and its third cell
    (W = 1024, 0.840/0.847/0.850, 2026-10-24), its fourth cell
-   (W = 128, 0.775/0.789/0.789, 2026-10-24) and its fifth cell
-   (W = 64, 0.719/0.728/0.729, 2026-10-24). The flip slices (item 2)
+   (W = 128, 0.775/0.789/0.789, 2026-10-24), its fifth cell
+   (W = 64, 0.719/0.728/0.729, 2026-10-24) and its sixth and last cell
+   (W = 32, 0.657/0.658/0.650, 2026-10-24). The flip slices (item 2)
    are
-   DONE (W = 256 and W = 512 the same day, W = 1024, W = 128 and W = 64
+   DONE (W = 256 and W = 512 the same day, W = 1024, W = 128, W = 64
+   and W = 32
    on
    2026-10-24).]
    Rule 3's order keeps the rest
@@ -1097,7 +1160,14 @@ outside this diff. No green full suite is claimed.
    docs/evidence/gpu/simdgroup-reduce-flip-w512-20261023.txt,
    docs/evidence/gpu/simdgroup-reduce-flip-w1024-20261024.txt,
    docs/evidence/gpu/simdgroup-reduce-flip-w128-20261024.txt and
-   docs/evidence/gpu/simdgroup-reduce-flip-w64-20261024.txt.] The
+   docs/evidence/gpu/simdgroup-reduce-flip-w64-20261024.txt. At that
+   row exactly those five cells at the ground shape had flipped; the
+   W = 32 cell flipped in its own later same-day slice
+   (docs/evidence/gpu/simdgroup-reduce-flip-w32-20261024.txt) and the
+   second shape landed at five cells in the shape-2 series -- the keys
+   are now `apple-simdgroup-measured-workgroups #{32 64 128 256 512
+   1024}` and per-W `:shapes` (five of them `[1000003 1048576]`, the
+   W = 512 refusal `[1000003]`).] The
    flip: what the W = 256 numbers license under the flip
    contract -- this VARIANT's own cells keyed by name fragment, reported
    subgroup size, route, channel, W set and shapes -- one cell set at a
