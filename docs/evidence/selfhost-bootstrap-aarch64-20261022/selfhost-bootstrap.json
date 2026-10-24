@@ -9,6 +9,13 @@
     "sourceUnderRoot": 3,
     "outsideRootsExit": 1
   },
+  "staticProfile": {
+    "words": 29491200,
+    "tokenCapacity": 786432,
+    "literalBytes": 1048576,
+    "outputBytes": 12582912,
+    "heapWords": 1765120
+  },
   "host": [
     "Linux",
     "aarch64",
@@ -16,53 +23,340 @@
   ],
   "root": {
     "image": {
-      "bytes": 3211776,
-      "sha256": "04ae0fa8f5fb966983d2ca4a9d8ecaf5ac41ce9a58c9474bd239c1c8e78829b3"
+      "bytes": 3240448,
+      "sha256": "688324e0fdc7a93a664ae55fe0ad417e7a980ab844656f3f97889812363c9479"
     },
     "receipt": {
       "schema": "amu.seed.static-root.v1",
       "image": {
-        "bytes": 3211776,
-        "sha256": "04ae0fa8f5fb966983d2ca4a9d8ecaf5ac41ce9a58c9474bd239c1c8e78829b3"
+        "bytes": 3240448,
+        "sha256": "688324e0fdc7a93a664ae55fe0ad417e7a980ab844656f3f97889812363c9479"
       },
       "target": "aarch64-linux",
       "format": "packed",
       "sourceManifest": "seed/FULL-MANIFEST",
       "sourceUnity": {
-        "bytes": 3208962,
-        "sha256": "d83c1205dd29578d5930fbf92ec327f97d82726d13626b4ac6ff4e4d8cfbf602"
+        "bytes": 3228090,
+        "sha256": "eeecfd8358242405f2a2956037a724f2bdf1ef3f21539aacb834cb8ab5a5425a"
       },
-      "sourceCommitBase": "3b88263ebebaa0256221e0edef48327193e4456a",
+      "sourceCommitBase": "0007e50f4ed61841240838a435d9da1b7f7cf222",
       "producedBy": {
-        "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt and packed itself to F2 = F1 (= this image). Re-pinned because this source narrows the rooted-base rule of the kernel memory windows: a private helper's parameter is no longer rooted (only the exported function's), closing the call-site gap of ADR 0373.",
-        "date": "2026-10-23",
-        "previousRoot": "bd0254759e442533ead3e190f361257725667ea252a83b3575a3fb0d65becb66",
+        "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root (main's, f782f3f2) compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt and packed itself to F2 = F1 (= this image). Re-pinned because this source adds, to main's, the launcher's fixed provider environment (ADR 0371 step 6): MESA_SHADER_CACHE_DISABLE=true and VK_LOADER_LAYERS_DISABLE=~all~ in the launcher runtime text of seed/76 and seed/77.",
+        "date": "2026-10-24",
+        "timeZone": "Asia/Tokyo",
+        "previousRoot": "f782f3f2a8298c39feeedf873896c9858535a8e371786337632cc60f9e971b9f",
         "chain": {
           "F1.kseed": {
-            "bytes": 2984339,
-            "sha256": "e64ba7b65a23799cacd6494efe811b33f9191bafaa62f914e89d9efbd6076e99"
+            "bytes": 3004339,
+            "sha256": "edc7a5d1c7dce5c7c95ec28206b767f5558e8be272296bb0b9371f11f5220a60"
           },
           "F1.elf": {
-            "bytes": 3211776,
-            "sha256": "04ae0fa8f5fb966983d2ca4a9d8ecaf5ac41ce9a58c9474bd239c1c8e78829b3"
+            "bytes": 3240448,
+            "sha256": "688324e0fdc7a93a664ae55fe0ad417e7a980ab844656f3f97889812363c9479"
           },
           "F2.kseed": {
-            "bytes": 2984339,
-            "sha256": "e64ba7b65a23799cacd6494efe811b33f9191bafaa62f914e89d9efbd6076e99"
+            "bytes": 3004339,
+            "sha256": "edc7a5d1c7dce5c7c95ec28206b767f5558e8be272296bb0b9371f11f5220a60"
           },
           "F2.elf": {
-            "bytes": 3211776,
-            "sha256": "04ae0fa8f5fb966983d2ca4a9d8ecaf5ac41ce9a58c9474bd239c1c8e78829b3"
+            "bytes": 3240448,
+            "sha256": "688324e0fdc7a93a664ae55fe0ad417e7a980ab844656f3f97889812363c9479"
           }
         }
       },
-      "verification": "scripts/seed/selfhost-bootstrap.py --tier pr on arm64 Linux (python:3.12-alpine) from the previous root: F1 = F2, the core route, the boundary corpus and the runtime cases pass; scripts/seed/check-kernel-memory.py --cases gives PASS_KERNEL_MEMORY_ADMISSION 16 cases with F1. CI re-runs the tier from this root (F -> F' = root).",
+      "verification": "This source's native artifacts are indexed by docs/evidence/provider-environment-20261024/current-scope.json (root, the complete x86_64 public image, the CDCI roles). Exact-head PR CI, merge and main CI are separate gates.",
       "history": [
         {
+          "schema": "amu.seed.static-root.v1",
+          "image": {
+            "bytes": 3240448,
+            "sha256": "f782f3f2a8298c39feeedf873896c9858535a8e371786337632cc60f9e971b9f"
+          },
+          "target": "aarch64-linux",
+          "format": "packed",
+          "sourceManifest": "seed/FULL-MANIFEST",
+          "sourceUnity": {
+            "bytes": 3226514,
+            "sha256": "60e9912b4a0a721e5c7d83874198a27abc464cc1eb451cf0e7555dcb6dd600d4"
+          },
+          "sourceCommitBase": "c293de2a437d270844cc8d1b53906f1b913740b9",
+          "producedBy": {
+            "how": "Amu native full29 framed-lock compiler. Actual complete payloads F1=F2=F3, packed F2=F3, independent canonical Pw, complete18 warm/cold/locked agree. Fresh all19/MIR all large/GMIR/resource execution and final27+runner/C0 identity verified; current native x86/public/controller and physical receipt identities verified in exact db2 native CI. No old language host/compiler/loader or performance claim.",
+            "date": "2026-10-24",
+            "timeZone": "Asia/Tokyo",
+            "previousRoot": "dad76bf95d1ac8d79f12a75b3a1653859ba0a2772c029754852f0ceaf5bc2867",
+            "chain": {
+              "F1.kseed": {
+                "bytes": 3002763,
+                "sha256": "d7e1bf0440cf1dceb9e24c739bc73850837070a7d41de19d117159299d9a99f8"
+              },
+              "F1.elf": {
+                "bytes": 3236352,
+                "sha256": "96e46d70de5f9613ef4cd5e7024f66148a7bd2c9f86d5f714a7cc5d46b3d4442"
+              },
+              "F2.kseed": {
+                "bytes": 3002763,
+                "sha256": "d7e1bf0440cf1dceb9e24c739bc73850837070a7d41de19d117159299d9a99f8"
+              },
+              "F2.elf": {
+                "bytes": 3240448,
+                "sha256": "f782f3f2a8298c39feeedf873896c9858535a8e371786337632cc60f9e971b9f"
+              },
+              "F3.kseed": {
+                "bytes": 3002763,
+                "sha256": "d7e1bf0440cf1dceb9e24c739bc73850837070a7d41de19d117159299d9a99f8"
+              },
+              "F3.elf": {
+                "bytes": 3240448,
+                "sha256": "f782f3f2a8298c39feeedf873896c9858535a8e371786337632cc60f9e971b9f"
+              }
+            }
+          },
+          "verification": "Current source-specific native artifact evidence is indexed by docs/evidence/native-cdci-20261023/current-scope.json. Exact-final-head PR CI, expected-head merge, terminal main CI/readback and archive cleanup remain separate completion gates.",
+          "sourceCommit": "e29ef6b1cabb4874aecbec773e484326a5cc1453"
+        },
+        {
+          "schema": "amu.seed.static-root.v1",
+          "image": {
+            "bytes": 3232256,
+            "sha256": "dad76bf95d1ac8d79f12a75b3a1653859ba0a2772c029754852f0ceaf5bc2867"
+          },
+          "target": "aarch64-linux",
+          "format": "packed",
+          "sourceManifest": "seed/FULL-MANIFEST",
+          "sourceUnity": {
+            "bytes": 3221844,
+            "sha256": "a536f03719b65208f7f0eb5ce988e73a9938631a4d5fe1f03044730d56baba52"
+          },
+          "sourceCommitBase": "c293de2a437d270844cc8d1b53906f1b913740b9",
+          "producedBy": {
+            "how": "Native complete29 compiler retaining all adopted18 modules and current owning main RANGE runtime. Actual F1/F2/F3 containers agree; packed F1 uses the previous runtime, packed F2=F3 is the stable new runtime fixed point. Independent canonical Pw route reproduces the stable image, public x86 and all roles. Final compiler re-emits every freshly executed correctness container, the changed native runner and independent cold C0. No old compiler/runtime/loader or emulation.",
+            "date": "2026-10-23",
+            "timeZone": "UTC",
+            "previousRoot": "e3451a26975941cf7936ff8702e0f49ddc7628d187114bba75fae7ee4e76db74",
+            "chain": {
+              "F1.kseed": {
+                "bytes": 2998323,
+                "sha256": "d827b52893d472ada5617257c7c2aabc78585b7d48f48bd8e3f586b733cf5003"
+              },
+              "F1.elf": {
+                "bytes": 3228160,
+                "sha256": "5b39123b44269b9d9d71aa0eed6d34116d942205cc0bae5b52406cd5a99ebc2f"
+              },
+              "F2.kseed": {
+                "bytes": 2998323,
+                "sha256": "d827b52893d472ada5617257c7c2aabc78585b7d48f48bd8e3f586b733cf5003"
+              },
+              "F2.elf": {
+                "bytes": 3232256,
+                "sha256": "dad76bf95d1ac8d79f12a75b3a1653859ba0a2772c029754852f0ceaf5bc2867"
+              },
+              "F3.kseed": {
+                "bytes": 2998323,
+                "sha256": "d827b52893d472ada5617257c7c2aabc78585b7d48f48bd8e3f586b733cf5003"
+              },
+              "F3.elf": {
+                "bytes": 3232256,
+                "sha256": "dad76bf95d1ac8d79f12a75b3a1653859ba0a2772c029754852f0ceaf5bc2867"
+              }
+            }
+          },
+          "verification": "Fresh RANGE native execution and current-source receipts are indexed by docs/evidence/native-cdci-20261023/current-scope.json. Exact-head PR CI and post-merge main CI/readback are separate terminal gates.",
+          "sourceCommit": "35ad65d3a3a3f142c5d123baa5f67e2b93715422"
+        },
+        {
+          "schema": "amu.seed.static-root.v1",
+          "image": {
+            "bytes": 3219968,
+            "sha256": "e3451a26975941cf7936ff8702e0f49ddc7628d187114bba75fae7ee4e76db74"
+          },
+          "target": "aarch64-linux",
+          "format": "packed",
+          "sourceManifest": "seed/FULL-MANIFEST",
+          "sourceUnity": {
+            "bytes": 3216723,
+            "sha256": "937613e3d56fd84ca8f77a5a41eff482dba44ae522f225cdc618585bb3152fae"
+          },
+          "sourceCommitBase": "3c2207f42a6b1f86687a7c35ad7ee4977bdfc216",
+          "producedBy": {
+            "how": "Native ARM full29 compiler from the prior qualified complete29 root. F1 builds/packs F2; F2 builds/packs F3; all3 containers and images agree. Preserves entire adopted18 lineage, strict source locks, all Linux/kernel/browser targets and current native runtime. Static TOK786432 fits the complete x86 build; all later regions shift contiguously, heap unchanged. Controller/source pins bind the actual new Amu gate. No legacy compiler/runtime/loader or emulation.",
+            "date": "2026-10-23",
+            "timeZone": "UTC",
+            "previousRoot": "d5009f37cfe6cf4fa3f257fd7d467d7c529083ac5f1f21ffd524f312f67b2d6b",
+            "chain": {
+              "F1.kseed": {
+                "bytes": 2993203,
+                "sha256": "d283ce3f5b23aa16d9ff1bc41c4f55d56b40a6c8564b8eeaaa96809dd7576bec"
+              },
+              "F1.elf": {
+                "bytes": 3219968,
+                "sha256": "e3451a26975941cf7936ff8702e0f49ddc7628d187114bba75fae7ee4e76db74"
+              },
+              "F2.kseed": {
+                "bytes": 2993203,
+                "sha256": "d283ce3f5b23aa16d9ff1bc41c4f55d56b40a6c8564b8eeaaa96809dd7576bec"
+              },
+              "F2.elf": {
+                "bytes": 3219968,
+                "sha256": "e3451a26975941cf7936ff8702e0f49ddc7628d187114bba75fae7ee4e76db74"
+              },
+              "F3.kseed": {
+                "bytes": 2993203,
+                "sha256": "d283ce3f5b23aa16d9ff1bc41c4f55d56b40a6c8564b8eeaaa96809dd7576bec"
+              },
+              "F3.elf": {
+                "bytes": 3219968,
+                "sha256": "e3451a26975941cf7936ff8702e0f49ddc7628d187114bba75fae7ee4e76db74"
+              }
+            }
+          },
+          "verification": "Current actual native root/3generations, independent canonical Pw route, full corpus/runtime/C0 identities and fresh x86/controller receipts: docs/evidence/native-cdci-20261023/current-scope.json. Exact-head hosted CI and main readback are recorded independently.",
+          "sourceCommit": "74fe989a0c8a541f265b9619133b4b090b90d50a"
+        },
+        {
+          "schema": "amu.seed.static-root.v1",
+          "image": {
+            "bytes": 3219968,
+            "sha256": "d5009f37cfe6cf4fa3f257fd7d467d7c529083ac5f1f21ffd524f312f67b2d6b"
+          },
+          "target": "aarch64-linux",
+          "format": "packed",
+          "sourceManifest": "seed/FULL-MANIFEST",
+          "sourceUnity": {
+            "bytes": 3216595,
+            "sha256": "09debaf6f4be0a665f1eab5dd3f70f2bb817f1259ca0e2463604a1af7437250b"
+          },
+          "sourceCommitBase": "7239484e2cd1b3bbd9bc3095edb03fd986f8f6e5",
+          "producedBy": {
+            "how": "Native arm64 complete29 compiler, retaining full measured18 core and strict source-lock/CDCI overlay plus owning main browser entry ABI, stdin and durable/sleep. Previous qualified complete29 root builds and packs F1; F1 builds and packs F2; F2 builds and packs F3. All3 containers/images are byte-identical. No C compiler/loader, old host or emulation.",
+            "date": "2026-10-23",
+            "previousRoot": "d201f6dab1548b026d614a5ed319388591be158d72d0d0917270b285dd41403a",
+            "chain": {
+              "F1.kseed": {
+                "bytes": 2993179,
+                "sha256": "5343d2b7dd356c2c5285275d4ca914c56879de268b0ee21d19d48e3ef8735289"
+              },
+              "F1.elf": {
+                "bytes": 3219968,
+                "sha256": "d5009f37cfe6cf4fa3f257fd7d467d7c529083ac5f1f21ffd524f312f67b2d6b"
+              },
+              "F2.kseed": {
+                "bytes": 2993179,
+                "sha256": "5343d2b7dd356c2c5285275d4ca914c56879de268b0ee21d19d48e3ef8735289"
+              },
+              "F2.elf": {
+                "bytes": 3219968,
+                "sha256": "d5009f37cfe6cf4fa3f257fd7d467d7c529083ac5f1f21ffd524f312f67b2d6b"
+              },
+              "F3.kseed": {
+                "bytes": 2993179,
+                "sha256": "5343d2b7dd356c2c5285275d4ca914c56879de268b0ee21d19d48e3ef8735289"
+              },
+              "F3.elf": {
+                "bytes": 3219968,
+                "sha256": "d5009f37cfe6cf4fa3f257fd7d467d7c529083ac5f1f21ffd524f312f67b2d6b"
+              }
+            }
+          },
+          "verification": "docs/evidence/native-cdci-20261023/arm-complete-browser3-29.json records actual native three-generation derivation. Canonical Pw/full verification and root reproduction run independently in the current native workflow.",
+          "sourceCommit": "e0885e3b649f7273513dc2eab72ba4226be37488"
+        },
+        {
+          "schema": "amu.seed.static-root.v1",
+          "image": {
+            "bytes": 3211776,
+            "sha256": "04ae0fa8f5fb966983d2ca4a9d8ecaf5ac41ce9a58c9474bd239c1c8e78829b3"
+          },
+          "target": "aarch64-linux",
+          "format": "packed",
+          "sourceManifest": "seed/FULL-MANIFEST",
+          "sourceUnity": {
+            "bytes": 3208962,
+            "sha256": "d83c1205dd29578d5930fbf92ec327f97d82726d13626b4ac6ff4e4d8cfbf602"
+          },
+          "sourceCommitBase": "3b88263ebebaa0256221e0edef48327193e4456a",
+          "producedBy": {
+            "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt and packed itself to F2 = F1 (= this image). Re-pinned because this source narrows the rooted-base rule of the kernel memory windows: a private helper's parameter is no longer rooted (only the exported function's), closing the call-site gap of ADR 0373.",
+            "date": "2026-10-23",
+            "previousRoot": "bd0254759e442533ead3e190f361257725667ea252a83b3575a3fb0d65becb66",
+            "chain": {
+              "F1.kseed": {
+                "bytes": 2984339,
+                "sha256": "e64ba7b65a23799cacd6494efe811b33f9191bafaa62f914e89d9efbd6076e99"
+              },
+              "F1.elf": {
+                "bytes": 3211776,
+                "sha256": "04ae0fa8f5fb966983d2ca4a9d8ecaf5ac41ce9a58c9474bd239c1c8e78829b3"
+              },
+              "F2.kseed": {
+                "bytes": 2984339,
+                "sha256": "e64ba7b65a23799cacd6494efe811b33f9191bafaa62f914e89d9efbd6076e99"
+              },
+              "F2.elf": {
+                "bytes": 3211776,
+                "sha256": "04ae0fa8f5fb966983d2ca4a9d8ecaf5ac41ce9a58c9474bd239c1c8e78829b3"
+              }
+            }
+          },
+          "verification": "scripts/seed/selfhost-bootstrap.py --tier pr on arm64 Linux (python:3.12-alpine) from the previous root: F1 = F2, the core route, the boundary corpus and the runtime cases pass; scripts/seed/check-kernel-memory.py --cases gives PASS_KERNEL_MEMORY_ADMISSION 16 cases with F1. CI re-runs the tier from this root (F -> F' = root)."
+        },
+        {
+          "schema": "amu.seed.static-root.v1",
+          "image": {
+            "bytes": 3219968,
+            "sha256": "d201f6dab1548b026d614a5ed319388591be158d72d0d0917270b285dd41403a"
+          },
+          "target": "aarch64-linux",
+          "format": "packed",
+          "sourceManifest": "seed/FULL-MANIFEST",
+          "sourceUnity": {
+            "bytes": 3213010,
+            "sha256": "46b90a92c05016936d18d52add3d675b9bb2fa9408661f09c4f7392f023e8967"
+          },
+          "sourceCommitBase": "51b89255ef674a2da8bfbe650c971f1b08c0e3d3",
+          "producedBy": {
+            "how": "Complete29 compiler on native arm64 Linux. Previous owning-main root compiles and packs F1; F1 compiles and packs F2; F2 compiles and packs F3. All three containers and images are byte-identical. Retains full measured18 core with strict source lock, all Linux/kernel/browser emitters, current stdin/durable/sleep runtimes and all current CDCI source/image pins. No C compiler, loader, emulation or legacy host is used.",
+            "date": "2026-10-23",
+            "previousRoot": "88afda8977285f3839ebad1cb785a344b296c6890f3f901746259dd478ab9fb7",
+            "chain": {
+              "F1.kseed": {
+                "bytes": 2990731,
+                "sha256": "86df46b4f7f23827da85c3df1dcbba7ec60b56e2e9285397aebff08fd88ba2e5"
+              },
+              "F1.elf": {
+                "bytes": 3219968,
+                "sha256": "d201f6dab1548b026d614a5ed319388591be158d72d0d0917270b285dd41403a"
+              },
+              "F2.kseed": {
+                "bytes": 2990731,
+                "sha256": "86df46b4f7f23827da85c3df1dcbba7ec60b56e2e9285397aebff08fd88ba2e5"
+              },
+              "F2.elf": {
+                "bytes": 3219968,
+                "sha256": "d201f6dab1548b026d614a5ed319388591be158d72d0d0917270b285dd41403a"
+              },
+              "F3.kseed": {
+                "bytes": 2990731,
+                "sha256": "86df46b4f7f23827da85c3df1dcbba7ec60b56e2e9285397aebff08fd88ba2e5"
+              },
+              "F3.elf": {
+                "bytes": 3219968,
+                "sha256": "d201f6dab1548b026d614a5ed319388591be158d72d0d0917270b285dd41403a"
+              }
+            }
+          },
+          "verification": "Native current full three-generation proof: docs/evidence/native-cdci-20261023/arm-complete-durable29.json. Independent Pw/full canonical verifier and hosted current-head CI are separate recorded checks; root reproduction is checked by selfhost-bootstrap.py.",
+          "sourceCommit": "7f8b7467af57cd48cb7058cdd70d459b6f96a328"
+        },
+        {
+          "schema": "amu.seed.static-root.v1",
           "image": {
             "bytes": 3211776,
             "sha256": "bd0254759e442533ead3e190f361257725667ea252a83b3575a3fb0d65becb66"
           },
+          "target": "aarch64-linux",
+          "format": "packed",
+          "sourceManifest": "seed/FULL-MANIFEST",
           "sourceUnity": {
             "bytes": 3208839,
             "sha256": "d277637b779a7f6c192e765bbdeca192d94c2cc57dfeb36ee8423ecfc6c75998"
@@ -90,13 +384,18 @@
                 "sha256": "bd0254759e442533ead3e190f361257725667ea252a83b3575a3fb0d65becb66"
               }
             }
-          }
+          },
+          "verification": "scripts/seed/selfhost-bootstrap.py --tier pr on arm64 Linux (python:3.12-alpine with apk chromium), from the previous root: F1 = F2, F1's core route gives the adoption image, the runtime boundary corpus, the 24 cases, hardening, capabilities, and the 24 cases plus the spin, deep and entry probes (entry with and without the page's grants) as wasm32-browser modules in headless Chromium 155.0.8059.84 (all match their pinned result, trap and remaining fuel; the float cases are refused with E7101). CI re-runs the tier from this root (F -> F' = root)."
         },
         {
+          "schema": "amu.seed.static-root.v1",
           "image": {
             "bytes": 3207680,
             "sha256": "88afda8977285f3839ebad1cb785a344b296c6890f3f901746259dd478ab9fb7"
           },
+          "target": "aarch64-linux",
+          "format": "packed",
+          "sourceManifest": "seed/FULL-MANIFEST",
           "sourceUnity": {
             "bytes": 3205254,
             "sha256": "b71a24481ca30e04d971537ff81697f2d8e6f107134002a962e6071d678ac281"
@@ -132,7 +431,8 @@
                 "sha256": "88afda8977285f3839ebad1cb785a344b296c6890f3f901746259dd478ab9fb7"
               }
             }
-          }
+          },
+          "verification": "scripts/seed/selfhost-bootstrap.py --tier pr and --tier main on arm64 Linux from this root (F1 = root); scripts/seed/check-durable-sleep.py, check-io-read.py and check-spawn-runtime.py with that F1 (docs/durable-sleep.md). CI re-runs the tier from this root (F -> F' = root)."
         },
         {
           "image": {
@@ -707,27 +1007,75 @@
               "sha256": "8ac88b7b480886de424d060106c87b9e7381a51433169437dfdb2b084fa3e7ae"
             }
           }
+        },
+        {
+          "schema": "amu.seed.static-root.v1",
+          "image": {
+            "bytes": 3219968,
+            "sha256": "6a2b4de4f2bc35dae6c4a2ac77fdaf019066b1dff73a28b9ae482a433cb58f71"
+          },
+          "target": "aarch64-linux",
+          "format": "packed",
+          "sourceManifest": "seed/FULL-MANIFEST",
+          "sourceUnity": {
+            "bytes": 3214083,
+            "sha256": "b4fd4ee42e50ba4c7aebd1f191a1fb16b90b98c190a3fa4524795df8e143e3c0"
+          },
+          "sourceCommitBase": "151913fe311ca76680a1fbde8220f4864a034917",
+          "producedBy": {
+            "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt itself to F2 (same container 001293d2, new runtime wrapper: F1 was packed by the previous runtime); F2 rebuilt itself to F3 = F2 (= this image). Re-pinned because this source merges ADR 0373 gap a (#1528: a private helper's parameter is no longer a rooted kernel-memory base) with the RANGE window (io-slice, JUN-19) and the multi-wrapper runtime sources on merge 151913fe; the rebuild chain converges to the fixed point within three generations (scripts/seed/selfhost-bootstrap.py reports root differs (re-pin to F3)).",
+            "date": "2026-10-24",
+            "previousRoot": "04ae0fa8f5fb966983d2ca4a9d8ecaf5ac41ce9a58c9474bd239c1c8e78829b3",
+            "chain": {
+              "F1.kseed": {
+                "bytes": 2989459,
+                "sha256": "001293d2a4221573a4e6c0802f0aef02d1c1613d494ae77ff02b424fd4a623a9"
+              },
+              "F1.elf": {
+                "bytes": 3215872,
+                "sha256": "4c4efb40e66a777321b18db86a3d3a2349d9b6049647bd7f2031d7341a4b161e"
+              },
+              "F2.kseed": {
+                "bytes": 2989459,
+                "sha256": "001293d2a4221573a4e6c0802f0aef02d1c1613d494ae77ff02b424fd4a623a9"
+              },
+              "F2.elf": {
+                "bytes": 3219968,
+                "sha256": "6a2b4de4f2bc35dae6c4a2ac77fdaf019066b1dff73a28b9ae482a433cb58f71"
+              },
+              "F3.kseed": {
+                "bytes": 2989459,
+                "sha256": "001293d2a4221573a4e6c0802f0aef02d1c1613d494ae77ff02b424fd4a623a9"
+              },
+              "F3.elf": {
+                "bytes": 3219968,
+                "sha256": "6a2b4de4f2bc35dae6c4a2ac77fdaf019066b1dff73a28b9ae482a433cb58f71"
+              }
+            }
+          },
+          "verification": "scripts/seed/selfhost-bootstrap.py --tier pr on arm64 Linux (python:3.12-alpine) from this root (F1 = root): the core route, the runtime boundary corpus, the 24 runtime cases and hardening pass and the rebuild reproduces this root (rootReproduces); scripts/seed/check-kernel-memory.py --cases gives PASS_KERNEL_MEMORY_ADMISSION 16 cases with F1. CI re-runs the tier from this root (F -> F' = root)."
         }
-      ]
+      ],
+      "sourceCommit": "6c2c6034fe9509759119c076bb51faa6cf7369bd"
     }
   },
   "sourceGraph": {
     "full": {
       "seed/FULL-MANIFEST": {
-        "bytes": 914,
-        "sha256": "d0ae130b7a1fa2ce0c016ac68f000024782b3e63fa12626384eb32e9b118e355"
+        "bytes": 793,
+        "sha256": "a664c77bd43072bf44db4a944de1ae017b71cc153bb76a56ec30e3ab5d16cbed"
       },
       "seed/00-ns-static.kotoba": {
-        "bytes": 15168,
-        "sha256": "c16623ad503951d63a6dc5144d046146c3fbec59cd75ee1084ea1fc5df246aca"
+        "bytes": 15174,
+        "sha256": "e4aa5686dbb76ad923c50f0054e42a20deef910b78312c4ff7b54c3fb4ea891b"
       },
       "seed/01-mem.kotoba": {
         "bytes": 15304,
         "sha256": "79bb1d1154857efc70bee464161abfce37ec6b90e55af7bbef386ab96ca131c9"
       },
       "seed/02-io.kotoba": {
-        "bytes": 10931,
-        "sha256": "268ae7a0d450deb0b7981b85f7e6895b08b4af828f1f57cb96cf2eb29777c4ea"
+        "bytes": 11962,
+        "sha256": "a3c8424e1a4a57de2cf72df5e75f0cb04c3da8547ae22ae5598c271093ca33e8"
       },
       "seed/03-source-sha256.kotoba": {
         "bytes": 5483,
@@ -782,8 +1130,8 @@
         "sha256": "1161f307f9be137f501d31dd1b919a2d72dd81d6ff84fd347d95d92a73574c75"
       },
       "seed/90-drv.kotoba": {
-        "bytes": 54094,
-        "sha256": "59d673c7c0217dbc754c6ad04623e6252910bc13f88d820b888ff14165dea7cd"
+        "bytes": 56330,
+        "sha256": "494a69cb014cd9ea42e46927301650d67b169d98e1db73fffe6a8eb4092c95a9"
       },
       "seed/70-x86_64-linux.kotoba": {
         "bytes": 19376,
@@ -798,12 +1146,12 @@
         "sha256": "c2a660cb71dfaa12580ce2926591b54ea9faf19d791810861c414434d7591bea"
       },
       "seed/76-x86_64-static-rt.kotoba": {
-        "bytes": 152183,
-        "sha256": "197b9f5ad7ee891072ac10c375dbe08fd9e97b13ff19a2fb4f73a40e22665399"
+        "bytes": 156605,
+        "sha256": "878464a3bb73dc7336a30abfefa6c31fea5e7c27f99222ffa222446bbecb1578"
       },
       "seed/77-aarch64-static-rt.kotoba": {
-        "bytes": 142605,
-        "sha256": "192f8eb113fdafdd5c0732cbad3ee919565bd3874f8f532f32106f7e36fb8158"
+        "bytes": 147029,
+        "sha256": "dd61c52408cb56c473b33b7dd12af01df00b7808e227e97e766c4bb051ddeadd"
       },
       "seed/78-x86_64-platform.kotoba": {
         "bytes": 10690,
@@ -817,6 +1165,10 @@
         "bytes": 18296,
         "sha256": "9d6e833e784995e24e0a7ce8cd5b44ff469d5543f494e32eb5705813c0939a8e"
       },
+      "seed/79-native-cdci.kotoba": {
+        "bytes": 1490,
+        "sha256": "63a5f1c7174ee1c5010ad54771f789a3d48925b158e17535084dca60028a2f39"
+      },
       "seed/81-wasm32.kotoba": {
         "bytes": 24438,
         "sha256": "0647a1ff4f59ba7cd239b3b53df671be99847622d1db91a8efc74259f1a4cc06"
@@ -826,8 +1178,8 @@
         "sha256": "9dfc5944844aae8d33ca41db73548bde8ba7547841cc31aed42cffe2cd0b3a64"
       },
       "seed/78-full-entry.kotoba": {
-        "bytes": 1382,
-        "sha256": "a7239f89fa868c1a9ca3d1ba2726c24d71ed2ae78229a08556da3afa80a2c1d2"
+        "bytes": 5324,
+        "sha256": "4b155ee37048c379dbbbed7d461c25f08cdfd5d8b574a5f25cc7fa978438ffcf"
       }
     },
     "selfhost": {
@@ -836,16 +1188,16 @@
         "sha256": "807282afc305ed284486296b30f115faa031db859d5bdf8a46c70ea154f8bd6a"
       },
       "seed/00-ns-static.kotoba": {
-        "bytes": 15168,
-        "sha256": "c16623ad503951d63a6dc5144d046146c3fbec59cd75ee1084ea1fc5df246aca"
+        "bytes": 15174,
+        "sha256": "e4aa5686dbb76ad923c50f0054e42a20deef910b78312c4ff7b54c3fb4ea891b"
       },
       "seed/01-mem.kotoba": {
         "bytes": 15304,
         "sha256": "79bb1d1154857efc70bee464161abfce37ec6b90e55af7bbef386ab96ca131c9"
       },
       "seed/02-io.kotoba": {
-        "bytes": 10931,
-        "sha256": "268ae7a0d450deb0b7981b85f7e6895b08b4af828f1f57cb96cf2eb29777c4ea"
+        "bytes": 11962,
+        "sha256": "a3c8424e1a4a57de2cf72df5e75f0cb04c3da8547ae22ae5598c271093ca33e8"
       },
       "seed/10-lex.kotoba": {
         "bytes": 24829,
@@ -884,12 +1236,12 @@
         "sha256": "c2a660cb71dfaa12580ce2926591b54ea9faf19d791810861c414434d7591bea"
       },
       "seed/76-x86_64-static-rt.kotoba": {
-        "bytes": 152183,
-        "sha256": "197b9f5ad7ee891072ac10c375dbe08fd9e97b13ff19a2fb4f73a40e22665399"
+        "bytes": 156605,
+        "sha256": "878464a3bb73dc7336a30abfefa6c31fea5e7c27f99222ffa222446bbecb1578"
       },
       "seed/77-aarch64-static-rt.kotoba": {
-        "bytes": 142605,
-        "sha256": "192f8eb113fdafdd5c0732cbad3ee919565bd3874f8f532f32106f7e36fb8158"
+        "bytes": 147029,
+        "sha256": "dd61c52408cb56c473b33b7dd12af01df00b7808e227e97e766c4bb051ddeadd"
       },
       "seed/78-x86_64-platform.kotoba": {
         "bytes": 10690,
@@ -904,8 +1256,8 @@
         "sha256": "9d6e833e784995e24e0a7ce8cd5b44ff469d5543f494e32eb5705813c0939a8e"
       },
       "seed/73-x86-linux-entry.kotoba": {
-        "bytes": 1498,
-        "sha256": "757116e6ced4d0aa7bf567471505507489a4b686632ea0f35ff6a48bdbaaf705"
+        "bytes": 1502,
+        "sha256": "0fc9b588c8806b4e21341691473e526b8407bc998cf5ea520a4e75e04562f3ff"
       }
     }
   },
@@ -913,39 +1265,28 @@
     {
       "name": "F1",
       "container": {
-        "bytes": 2985915,
-        "sha256": "fa7daba6f8616c625d1f8641050a70a950e6382e5867ace8f4ca3df01a8b5f72"
+        "bytes": 3004339,
+        "sha256": "edc7a5d1c7dce5c7c95ec28206b767f5558e8be272296bb0b9371f11f5220a60"
       },
       "image": {
-        "bytes": 3211776,
-        "sha256": "69b2f69652a412fffcff7e3930111e58e92786a687a7ba00c8188b26b1e7869b"
-      }
-    },
-    {
-      "name": "F2",
-      "container": {
-        "bytes": 2985915,
-        "sha256": "fa7daba6f8616c625d1f8641050a70a950e6382e5867ace8f4ca3df01a8b5f72"
-      },
-      "image": {
-        "bytes": 3211776,
-        "sha256": "69b2f69652a412fffcff7e3930111e58e92786a687a7ba00c8188b26b1e7869b"
+        "bytes": 3240448,
+        "sha256": "688324e0fdc7a93a664ae55fe0ad417e7a980ab844656f3f97889812363c9479"
       }
     }
   ],
-  "rootReproduces": false,
+  "rootReproduces": true,
   "built": {
     "aarch64Runner": {
-      "bytes": 225792,
-      "sha256": "9b752e57033bb8dbba523edaab5847228f8a62742f082d232d9671be2f7e5326"
+      "bytes": 233984,
+      "sha256": "80b757e13799761061c8d13e328d52f325b57e726e736b6e2c73337be56865bf"
     },
     "x86_64Compiler": {
-      "bytes": 1954304,
-      "sha256": "77ad39596ea530afc7c2f206e183c7084a2f8c662a273433c7b4696c36858d23"
+      "bytes": 1978880,
+      "sha256": "05905c306f483c0a10a838985af79a5d4967465415106fbd58e1c0713038154c"
     },
     "x86_64Runner": {
-      "bytes": 279040,
-      "sha256": "b121914f833897b8cce56ad04b4a12df57c55889ff86d226f0656ca392f51868"
+      "bytes": 291328,
+      "sha256": "02ebcbf83bae6c78a34592950d444219e182c4556021dece92ecbb1bbcc9bd78"
     }
   },
   "adopted": {
@@ -963,8 +1304,8 @@
         "sha256": "79bb1d1154857efc70bee464161abfce37ec6b90e55af7bbef386ab96ca131c9"
       },
       "seed/02-io.kotoba": {
-        "bytes": 10931,
-        "sha256": "268ae7a0d450deb0b7981b85f7e6895b08b4af828f1f57cb96cf2eb29777c4ea"
+        "bytes": 11962,
+        "sha256": "a3c8424e1a4a57de2cf72df5e75f0cb04c3da8547ae22ae5598c271093ca33e8"
       },
       "seed/03-source-sha256.kotoba": {
         "bytes": 5483,
@@ -1019,8 +1360,8 @@
         "sha256": "1161f307f9be137f501d31dd1b919a2d72dd81d6ff84fd347d95d92a73574c75"
       },
       "seed/90-drv.kotoba": {
-        "bytes": 54094,
-        "sha256": "59d673c7c0217dbc754c6ad04623e6252910bc13f88d820b888ff14165dea7cd"
+        "bytes": 56330,
+        "sha256": "494a69cb014cd9ea42e46927301650d67b169d98e1db73fffe6a8eb4092c95a9"
       },
       "seed/99-entry.kotoba": {
         "bytes": 249,
@@ -1033,12 +1374,12 @@
         "generation": 1,
         "producedBy": "F",
         "native": {
-          "bytes": 2573512,
-          "sha256": "3fae63e29ef7043a61e9b71dae06d20c42f0f112a33affde6e34087f09977000"
+          "bytes": 2576096,
+          "sha256": "6d94e9b5a1c0241fb28139c9e0a6a2dd373655c74ad2fc1f6e1659988a838b54"
         },
         "container": {
-          "bytes": 2573539,
-          "sha256": "620e7db9bb62ebc054e7493048b5fea84dfdf6497d278907db13a847fe1bb25d"
+          "bytes": 2576123,
+          "sha256": "086f85dbc21ab94098a9ca1f356ce8430741797467c0c586a5c6b97553dffd06"
         }
       }
     ],
@@ -1047,7 +1388,7 @@
       "exit": 1,
       "stderr": "seed-aarch64-linux: E7105 the packed payload's main must take no arguments"
     },
-    "expectedNativeImage": "3fae63e29ef7043a61e9b71dae06d20c42f0f112a33affde6e34087f09977000"
+    "expectedNativeImage": "6d94e9b5a1c0241fb28139c9e0a6a2dd373655c74ad2fc1f6e1659988a838b54"
   },
   "diagnostic": {
     "exit": 1,
@@ -1329,8 +1670,8 @@
   "runtimeBoundary": {
     "status": "PASS_RUNTIME_BOUNDARY",
     "compiler": {
-      "bytes": 3211776,
-      "sha256": "69b2f69652a412fffcff7e3930111e58e92786a687a7ba00c8188b26b1e7869b"
+      "bytes": 3240448,
+      "sha256": "688324e0fdc7a93a664ae55fe0ad417e7a980ab844656f3f97889812363c9479"
     },
     "previousRoot": null,
     "host": [
@@ -2395,8 +2736,8 @@
         "target": "aarch64-linux",
         "format": "static",
         "image": {
-          "bytes": 225792,
-          "sha256": "812bf9c50d7bec0cbbdd3f40e379389ec8ebed2da74275ed244bd312fabc426d"
+          "bytes": 233984,
+          "sha256": "677fe52e539187d0835fc9d8141508d2e84f056685a929e339abe6dad7507de5"
         },
         "sameBytes": null
       },
@@ -2404,8 +2745,8 @@
         "target": "aarch64-linux",
         "format": "runner",
         "image": {
-          "bytes": 225792,
-          "sha256": "00645d3fdc94486b7d996645ad92d663c65f44c5d78a273159432508709390ab"
+          "bytes": 233984,
+          "sha256": "328ffe5195815d457ada4852d3786df6dcbc17b7241b4139a17e199b5ddcc0e1"
         },
         "sameBytes": null
       },
@@ -2413,8 +2754,8 @@
         "target": "aarch64-linux",
         "format": "launcher",
         "image": {
-          "bytes": 279040,
-          "sha256": "8ebb9bb1b84d9c42ebbb1e7926dabe7526115a02c6c4187e34e93851361046bf"
+          "bytes": 287232,
+          "sha256": "da7851e725630d6b711c496ab4d7a9857aeca66a0b4a730b2106a42d3ad4edf1"
         },
         "sameBytes": null
       },
@@ -2422,8 +2763,8 @@
         "target": "x86_64-linux",
         "format": "static",
         "image": {
-          "bytes": 283136,
-          "sha256": "7698ffcd29ff96b058839cb922534dc04b9cd10945c25dcbcdac8364fb898e55"
+          "bytes": 291328,
+          "sha256": "91ad51dd800004787112bbf40e856b13b2ee6a572b9a43040f9804abaa192aab"
         },
         "sameBytes": null
       },
@@ -2431,8 +2772,8 @@
         "target": "x86_64-linux",
         "format": "kx64-runner",
         "image": {
-          "bytes": 283136,
-          "sha256": "f3cf3ed81d46799b55636bc1969c97b550a5263e74c57fc4e944a278809040b1"
+          "bytes": 291328,
+          "sha256": "ed141f328b89dd034705de8be3ec9bbfdb6711d3369f016c9f95acf405787885"
         },
         "sameBytes": null
       },
@@ -2440,8 +2781,8 @@
         "target": "x86_64-linux",
         "format": "launcher",
         "image": {
-          "bytes": 344576,
-          "sha256": "b813849119175072218d7bb990f395c1a993c60e6b3cbe2bd143fe322c6c720e"
+          "bytes": 356864,
+          "sha256": "79cc122919a86cd91d43acc89b4bf21a3cf74f389733078c1887f10c5c98d411"
         },
         "sameBytes": null
       },
@@ -2449,8 +2790,8 @@
         "target": "aarch64-linux",
         "format": "packed",
         "image": {
-          "bytes": 2802176,
-          "sha256": "bf37f01a8b393ca23035e745a17aa4256b6d938519c0bd4432c574c3b6a45a05"
+          "bytes": 2810368,
+          "sha256": "03a21f19af6e75ed010e90a5698d9d81840a17961f514a96eee4ba3b92b874b9"
         },
         "sameBytes": null
       }
@@ -2579,8 +2920,8 @@
       }
     ],
     "payload": {
-      "bytes": 2573539,
-      "sha256": "620e7db9bb62ebc054e7493048b5fea84dfdf6497d278907db13a847fe1bb25d"
+      "bytes": 2576123,
+      "sha256": "086f85dbc21ab94098a9ca1f356ce8430741797467c0c586a5c6b97553dffd06"
     },
     "cCompilerOrLoader": false,
     "JVMNodeOrGraalFallback": false,
@@ -2589,7 +2930,7 @@
   "steps": [
     {
       "name": "F1-compile",
-      "seconds": 101.7,
+      "seconds": 95.5,
       "ran": true
     },
     {
@@ -2598,23 +2939,13 @@
       "ran": true
     },
     {
-      "name": "F2-compile",
-      "seconds": 101.7,
-      "ran": true
-    },
-    {
-      "name": "F2-pack",
-      "seconds": 1.5,
-      "ran": true
-    },
-    {
       "name": "R-aarch64",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
       "name": "S-x86_64",
-      "seconds": 6.0,
+      "seconds": 6.8,
       "ran": true
     },
     {
@@ -2624,7 +2955,7 @@
     },
     {
       "name": "G1-compile",
-      "seconds": 93.2,
+      "seconds": 88.5,
       "ran": true
     },
     {
@@ -2634,7 +2965,7 @@
     },
     {
       "name": "arity1-compile",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
@@ -2649,12 +2980,12 @@
     },
     {
       "name": "runtime-boundary",
-      "seconds": 89.9,
+      "seconds": 101.2,
       "ran": true
     },
     {
       "name": "case-string-literal-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2664,7 +2995,7 @@
     },
     {
       "name": "case-string-concat-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2674,7 +3005,7 @@
     },
     {
       "name": "case-string-view-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2684,7 +3015,7 @@
     },
     {
       "name": "case-string-unicode-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2694,7 +3025,7 @@
     },
     {
       "name": "case-string-empty-nul-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2704,7 +3035,7 @@
     },
     {
       "name": "case-string-search-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2714,7 +3045,7 @@
     },
     {
       "name": "case-string-call-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2724,7 +3055,7 @@
     },
     {
       "name": "case-vector-literal-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2734,7 +3065,7 @@
     },
     {
       "name": "case-vector-dynamic-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2744,7 +3075,7 @@
     },
     {
       "name": "case-vector-persistent-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2754,7 +3085,7 @@
     },
     {
       "name": "case-vector-mutate-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2764,7 +3095,7 @@
     },
     {
       "name": "case-vector-drop-conj-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2794,7 +3125,7 @@
     },
     {
       "name": "case-vector-oob-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2804,7 +3135,7 @@
     },
     {
       "name": "case-string-oob-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2814,7 +3145,7 @@
     },
     {
       "name": "case-string-boundary-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2824,7 +3155,7 @@
     },
     {
       "name": "case-wide-args-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2834,7 +3165,7 @@
     },
     {
       "name": "case-closure-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2844,7 +3175,7 @@
     },
     {
       "name": "case-closure-env-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2854,7 +3185,7 @@
     },
     {
       "name": "case-state-results-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2864,7 +3195,7 @@
     },
     {
       "name": "case-bytes-roundtrip-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2874,7 +3205,7 @@
     },
     {
       "name": "case-capability-denied-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2884,7 +3215,7 @@
     },
     {
       "name": "case-mutual-tail-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -2894,82 +3225,82 @@
     },
     {
       "name": "case-string-literal-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "case-string-concat-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "case-string-view-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "case-string-unicode-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "case-string-empty-nul-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "case-string-search-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "case-string-call-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "case-vector-literal-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "case-vector-dynamic-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "case-vector-persistent-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "case-vector-mutate-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "case-vector-drop-conj-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "case-vector-pooled-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "case-vector-negative-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "case-vector-oob-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "case-string-oob-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
@@ -2979,122 +3310,122 @@
     },
     {
       "name": "case-wide-args-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "case-closure-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "case-closure-env-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "case-state-results-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "case-bytes-roundtrip-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "case-capability-denied-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "case-mutual-tail-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "probe-spin-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "probe-deep-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "probe-entry-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "float-float-f64-basic-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "float-float-f64-literal-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "float-float-f64-div-trunc-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "float-float-f64-neg-abs-sqrt-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "float-float-f64-cmp-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "float-float-f64-min-max-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "float-float-f32-basic-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "float-float-f32-conv-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "float-float-f64-unordered-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "float-float-f32-cmp-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "float-float-f32-un-wasm32",
-      "seconds": 0.3,
+      "seconds": 0.4,
       "ran": true
     },
     {
       "name": "probe-value-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
       "name": "probe-spin-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
       "name": "probe-deep-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {
@@ -3124,7 +3455,7 @@
     },
     {
       "name": "cap-compile",
-      "seconds": 0.4,
+      "seconds": 0.5,
       "ran": true
     },
     {

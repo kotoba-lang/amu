@@ -10,8 +10,8 @@ stdout, waits with a wall-time kill and writes one EDN receipt line
 
 * `aarch64-linux.json`: `scripts/seed/check-static-launcher.py` on arm64 Linux
   (podman machine, applehv, native kernel; no emulation). `--compiler` was the
-  pinned root F `69b2f696…`, and `--previous-root` was main's root before
-  ADR 0371 step 6's provider environment, F `04ae0fa8…`.
+  pinned root F `688324e0…`, and `--previous-root` was main's root (after
+  #1510) before ADR 0371 step 6's provider environment, F `f782f3f2…`.
 * `x86_64-linux.json`: the same check on a native x86_64 kernel, from the
   `qualify-x86_64` job of `selfhost-native.yml`. It ran through
   `check-x86_64-native.py`, with the x86_64 compiler X2 that the pinned root
@@ -29,8 +29,9 @@ stdout, waits with a wall-time kill and writes one EDN receipt line
   bytes for a static guest and for the runner: the launcher runtime text is
   appended only in the launcher format. Whether the previous root refuses
   `--format launcher` is recorded, not asserted. A root from before step 4
-  refuses it (E7100); `04ae0fa8…` has the format, with the launcher text
-  before the provider environment.
+  refuses it (E7100); `f782f3f2…` has the format, with the launcher text
+  before the provider environment. The runner's bytes (`80b757e1…`) are
+  main's current runtime runner (`native-cdci-20261023/current-scope.json`).
 * **Receipt functions.** 30 Kotoba cases; the control fails exactly one.
 * **Runs.** 14, each checked against the receipt and the bytes Python sees:
   * guest alone: ok, trap, arguments, the built environment, descriptors

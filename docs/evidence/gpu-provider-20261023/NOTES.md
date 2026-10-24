@@ -29,8 +29,14 @@ the selfhost compiler.
   (C-free) started the confined Vulkan provider, with the launcher's fixed
   provider environment, and a static guest (`gad-launcher-guest.kotoba`)
   that runs ALLOC, WRITE, READ and DEVCLASS over wire 42.
-  * All three were built by the pinned root F `69b2f696…`: the launcher
-    `98c44d51…`, the guest `d391d271…` and the provider `bf7092d6…`.
+  * All three were built by the root F `69b2f696…`, before #1510: the
+    launcher `98c44d51…`, the guest `d391d271…` and the provider
+    `bf7092d6…`.
+  * Main's root since #1510 refuses the provider's `--format platform-linked`
+    build (`E2 unsupported target (only aarch64-macos)`). Main's AGENTS.md
+    excludes the provider's qualifications from mandatory native CDCI. So
+    this receipt is historical: the current root rebuilds the launcher
+    (`static-launcher-20261022/`) but not the provider.
   * The provider's environment is not in this receipt (the Vulkan provider
     does not report it). `check-static-launcher.py`'s scripted provider
     reports it, and the static-launcher receipts check its exact value.
