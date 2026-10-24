@@ -148,7 +148,7 @@ concurrency/capacity, deadlines, and owned cleanup. Amu-built native ordered
 gates own the verdicts and reject corrupted observations. Python only stages
 literal fixtures, hashes, files and processes; it does not evaluate a VM.
 
-Current local evidence uses full35 source `dc9757040`: ARM containers/images
+Current post1535 evidence uses frozen native `b36ca9d5` and full35 source `4d0f2b15`: ARM containers/images
 and native x86 compilers each have three-generation fixed points; the full34
 receipt root independently reproduces the same full35 image/container.
 Both ISAs pass479 cache-ABI records,122 v1 regressions and262 v2 receipts.

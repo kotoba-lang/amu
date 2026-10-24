@@ -1,6 +1,6 @@
 # Current Amu selfhost native entry
 
-The full34 public `bin/amu` is a static Linux x86_64 ELF. Its exact size,
+The full35 public `bin/amu` is a static Linux x86_64 ELF. Its exact size,
 SHA256 and source revision are recorded in `native-product.json`; the exact
 manifest source pins are bound by the current native execution receipts.
 `bin/kotoba` and `bin/kotoba-compiler` are relative aliases of that image.
@@ -17,7 +17,7 @@ call-site/base-length memory hardening together with image/EFI packaging.
 ## Adoption and native verdict
 
 Current evidence belongs in
-`docs/evidence/kototama-i64-receipt-20261024/`. Earlier full30 snapshots retain
+`docs/evidence/kototama-native-cache-20261024/`. Earlier full30 snapshots retain
 their historical source binding. Acceptance requires the
 actual native x86 full compiler F1=F2=F3, current-source unity identity,
 clock/entropy/refusal/resource checks, both mandatory native CDCI roles
