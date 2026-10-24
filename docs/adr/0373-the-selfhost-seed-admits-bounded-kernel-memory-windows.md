@@ -104,6 +104,14 @@ against length, all unsigned, `UD2` on violation. The fuel and frame rules of AD
   that a helper reached from outside the object (no call site) is not rooted by this
   check.
 
+An independent read of the final check (2026-10-24, from the code only) found two admitted shapes, both closed here and pinned by cases
+(`no_literal_length_alias`, `no_export_self_call`, `no_export_called_by_helper`), and these residuals, stated rather than hidden:
+the ABI convention is positional -- any adjacent pair of the exported function's parameters is taken as (base, length), so an export
+declared `[b n i v]` can use `i` as a base with length `v`; the object's export contract must say which parameters are regions (the
+`kernel-region-report` slice is not ported). The check is conservative: control flow inside a later argument (`if`, `and`, `cond`), a
+`recur` to the function entry, computed lengths (`(- n 8)`) and a helper whose base and length are not adjacent parameters are refused;
+bind the value with `let`, use an inner `loop`, or pass the region as an adjacent pair.
+
 ## As built
 
 The Decision above proposed three new heads in `seed/HEADS`. Reading the code
@@ -127,8 +135,9 @@ change to the adopted core:
   in between refuses) and must be a parameter that is never assigned (of the exported function, or of a private
   helper when every call roots it with the matching length), a `kernel-subregion` of a rooted base whose given length is the
   parent's, or a let-bound local with one assignment of such a value; the access's length operand must have the source of that
-  base's region length. A literal is not a base. Everything else is E7106. Twenty-three cases in
-  `seed/tests/kernel-memory/` (nine accepted, fourteen refused: a literal base, a free or other-parameter length, a subregion
+  base's region length. A literal is not a base. Everything else is E7106. Twenty-seven cases in
+  `seed/tests/kernel-memory/` (nine accepted, eighteen refused: a literal wider than 31 bits posing as a length (it aliased a small literal
+  through masking), a call of the exported function from the object (its parameters would then be handed in by the guest), a literal base, a free or other-parameter length, a subregion
   whose given length is not the parent's, a helper called with another length, a computed or mixed helper argument, a base read from
   memory, arithmetic, a call result, a branch, a computed let, a loop variable,
   a subregion of arithmetic, arithmetic under the 16 KiB load).

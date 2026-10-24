@@ -160,14 +160,15 @@
                   (= op OP-LSET) (= op OP-FUEL) (= op OP-RET) (= op OP-TRAP)) (recur (dec j))
               (or (= a t) (= b t) (= c t)) -1
               :else (recur (dec j)))))))
-;; A value's SOURCE as a number, 0 when unknown: 2^32 + v for the integer literal v, 2^33 + s for the unassigned parameter slot s of
+;; A value's SOURCE as a number, 0 when unknown: 2^32 + v for the integer literal v (0 <= v < 2^31: a wider literal is unknown, so it
+;; cannot alias another through masking), 2^33 + s for the unassigned parameter slot s of
 ;; its function (through a let-bound local with one assignment). Two temps with the same non-zero source hold the same value.
 (defn- xk-src [M :vector-i64 i :i64 t :i64 depth :i64] :i64
   (if (> depth 6) 0
     (let [j (xk-writer M i t)]
       (if (< j 0) 0
         (let [op (xg-si M j IF-OP) a (xg-si M j IF-A) b (xg-si M j IF-B)]
-          (cond (= op OP-CONST) (+ 4294967296 (bit-and b 4294967295))
+          (cond (= op OP-CONST) (if (and (>= b 0) (< b 2147483648)) (+ 4294967296 b) 0)
                 (= op OP-LGET)
                   (cond (xk-param-slot? M j b) (+ 8589934592 b)
                         (= (xk-lsets M (inc (xk-fn-start M j)) b 0) 1)
@@ -216,9 +217,12 @@
 (defn- xk-check [M :vector-i64 i :i64] :vector-i64
   (if (or (not= (vector-at M MM-ERR) 0) (>= i (vector-at M MM-SIR-N))) M
     (let [op (xg-si M i IF-OP) a (xg-si M i IF-A) b (xg-si M i IF-B)]
-      (if (and (= op OP-CALL) (>= (xk-intr M a) 0)
-               (let [r (xk-region M i b 0) ln (xk-src M i (inc b) 0)]
-                 (not (and (>= r 0) (not= ln 0) (= ln r)))))
+      (if (or (and (= op OP-CALL) (>= (xk-intr M a) 0)
+                   (let [r (xk-region M i b 0) ln (xk-src M i (inc b) 0)]
+                     (not (and (>= r 0) (not= ln 0) (= ln r)))))
+              ;; the exported function's parameters are rooted because the kernel hands them in: a guest call of the export would
+              ;; hand them in again with a base of its own making, so nothing in the object may call the export
+              (and (= op OP-CALL) (= (xg-f M a FF-EXPORT) 1)))
         (xg-err M 7106 i)
         (xk-check M (inc i))))))
 
