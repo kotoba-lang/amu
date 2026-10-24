@@ -8,26 +8,19 @@
   "host": "x86_64-linux",
   "format": "loaderless-static-ELF64",
   "image": {
-    "bytes": 8790528,
-    "sha256": "68f1f3db2c185428055005e3052c6458637c64d7a4004481def85aae585979f1"
+    "bytes": 8835584,
+    "sha256": "30d1a760945348f211b73841c647056ccaa85440aeb4668fbd247a85050e1b19"
   },
   "sourceManifest": "seed/FULL-MANIFEST",
-  "sourceModuleCount": 30,
+  "sourceModuleCount": 31,
   "coreModuleCount": 18,
-  "sourceRevision": "42375d1a987a68e0f1463b961aea3de86657abbf",
-  "compilerGenerations": [
-    "68f1f3db2c185428055005e3052c6458637c64d7a4004481def85aae585979f1",
-    "68f1f3db2c185428055005e3052c6458637c64d7a4004481def85aae585979f1",
-    "68f1f3db2c185428055005e3052c6458637c64d7a4004481def85aae585979f1"
-  ],
-  "nativePinnedCheckAndCompile": false,
+  "sourceRevision": "0815e25a7d616822bb16f349781ae58f1720b2bc",
+  "nativePinnedCheckAndCompile": true,
   "legacyRuntimeFallback": false,
-  "controllerQualified": false,
   "broaderPublicCompatibilityQualified": false,
-  "evidence": null,
-  "qualificationState": "pending: JUN-354 re-pin (amu#1535), the static runtimes refuse an ungranted wire by name. This image is check-one-compiler's complete x86_64 compiler, cross-built on arm64 from the root f7048691 on main 6deb9969. Its native x86_64 fixed point, controller execution and public aliases are qualified only by the exact-head selfhost-native CI; the evidence of the previous image (23e714db) does not qualify it, so the evidence-dependent flags stay false until that receipt is recorded.",
-  "controllerEvidence": null,
-  "currentCompilerLinkVerified": false,
+  "evidence": "https://github.com/kotoba-lang/amu/pull/1535/checks",
+  "qualificationState": "Release acceptance requires terminal exact-head PR/main selfhost-native and matching native receipts; checked-in snapshots retain their immutable source bindings.",
+  "controllerEvidence": "https://github.com/kotoba-lang/amu/pull/1535/checks",
   "staticCompilerProfile": {
     "tokenCapacity": 786432,
     "words": 29491200,
@@ -36,9 +29,11 @@
     "heapWords": 1765120
   },
   "buildAndGraphQualificationStackBytes": 8388608,
-  "previousQualification": {
-    "image": "23e714db082b2db65208cfc573ad682c399a4228fb1e04041f420ea50d9d65c0",
-    "evidence": "docs/evidence/kototama-i64-aot-20261024/complete-x86-review.json",
-    "controllerEvidence": "docs/evidence/kototama-i64-aot-20261024/native-cdci.json"
-  }
+  "requiredQualification": [
+    "complete native x86 F1=F2=F3 equals public image",
+    "native controller with Amu selfhost and Kotoba native roles",
+    "pinned public aliases and source-lock controls",
+    "i64 AOT native verdict and corrupted-observation control",
+    "AIUEOS image/EFI and kernel-memory diagnostics"
+  ]
 }

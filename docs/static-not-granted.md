@@ -36,18 +36,18 @@ so a caller that matched them still does.
 
 ## Verification
 
-Measured on 2026-10-23, and again on 2026-10-24 after the rebase onto main
-6deb9969 (after #1510, #1539 and #1548), on arm64 Linux in the podman machine
+Measured on 2026-10-23, and again on 2026-10-24 on main 47f41d0b (after
+#1510, #1539, #1548 and #1547), on arm64 Linux in the podman machine
 (Fedora CoreOS, rootless podman, the arm64 Python image `255f49222a74`). No C compiler or loader and no hosted compiler were used.
 Only the x86_64 run under "Both targets" is emulated (qemu-user). Receipts are in
 [`evidence/static-not-granted-20261023/`](evidence/static-not-granted-20261023/).
 
 - **The root** (`root-chain.json`).
-  1. The previous root (`c95b8441…`, main at 6deb9969) compiled
+  1. The previous root (`fa86314c…`, main at 47f41d0b) compiled
      `seed/FULL-MANIFEST` from this source to F1 and packed it.
   2. F1 rebuilt itself to F2. The container is the same (F1.kseed = F2.kseed);
      the runtime wrapper is new, because the previous runtime packed F1.
-  3. F2 rebuilt itself to F3 = F2. F2 is the pinned root, `f70486914…`
+  3. F2 rebuilt itself to F3 = F2. F2 is the pinned root, `fd395d40…`
      (`seed/bootstrap/aarch64-linux-static-root.json`). Before the rebase
      the same change gave `2cedcaea…` from main 3c2207f4's root.
 - **`selfhost-bootstrap.py --tier pr`** (`selfhost-bootstrap-pr.json`) and
@@ -69,8 +69,9 @@ Only the x86_64 run under "Both targets" is emulated (qemu-user). Receipts are i
       `528d3d35…`, its source `e4097e7c…` to `98c1fc51…`;
     - `bin/amu` (`native-product.json`, `seed/compiler-core.json`,
       [native public entry](native-public-entry.md)), which is the complete
-      x86_64 compiler: `23e714db…` to `68f1f3db…`. Its qualification flags
-      are pending until the exact-head CI receipt is recorded.
+      x86_64 compiler: `91492570…` to `30d1a760…`. As main's descriptor
+      does, its evidence is the exact-head PR/main checks, and
+      `seed/compiler-core.json` marks its older evidence pending.
   - The controller is unchanged. Main's compiler reproduces all 24 old gate
     pins, and this one the 24 new ones.
 - **The runtime checks with the new root.**
