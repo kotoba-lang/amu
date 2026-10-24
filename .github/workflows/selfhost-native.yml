@@ -32,6 +32,7 @@ on:
       - "tools/gpu_*.kotoba"
       - "tools/spirv_*.kotoba"
       - "tools/static_launcher*.kotoba"
+      - "tools/b2/**"
       - "runtime/wasm32-browser-static-*"
       - ".github/workflows/selfhost-native.yml"
   pull_request:
@@ -46,6 +47,7 @@ on:
       - "tools/gpu_*.kotoba"
       - "tools/spirv_*.kotoba"
       - "tools/static_launcher*.kotoba"
+      - "tools/b2/**"
       - "runtime/wasm32-browser-static-*"
       - ".github/workflows/selfhost-native.yml"
 concurrency:
@@ -122,6 +124,10 @@ jobs:
           path: ${{ runner.temp }}/one
       - name: Complete native x86 compiler fixed point and CDCI images
         run: python3 scripts/seed/check-complete-x86.py --compiler "$RUNNER_TEMP/one/F-x86_64.elf" --arm-proof "$RUNNER_TEMP/one/one-compiler.json" --output "$RUNNER_TEMP/complete"
+      # ADR 0375, JUN-377: route B2's image format (SysV entry thunks and the export table, 16- and 32-bit
+      # memory operations, the kxrt-b- API) on a native kernel; the libvulkan image runs on GPU hosts only
+      - name: Route B2 image format (--format b2; native x86_64)
+        run: python3 scripts/seed/check-b2-image.py all --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/b2-image"
       - name: Native x86 clock and entropy (fixed Kotoba guest, refusal and ENOSYS)
         run: python3 scripts/seed/check-native-clock-entropy.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/clock-entropy"
       - name: Kotoba native controller (Amu selfhost and complete24 Kotoba gate)
@@ -145,6 +151,7 @@ jobs:
             ${{ runner.temp }}/public-product/public-product.json
             ${{ runner.temp }}/complete/complete-x86.json
             ${{ runner.temp }}/complete/calls.json
+            ${{ runner.temp }}/b2-image/b2-image.json
             ${{ runner.temp }}/clock-entropy/native-clock-entropy.json
             ${{ runner.temp }}/clock-entropy/calls.json
             ${{ runner.temp }}/clock-entropy/enosys-filter.json

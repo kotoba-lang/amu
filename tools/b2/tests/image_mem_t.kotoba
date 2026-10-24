@@ -1,0 +1,31 @@
+;; tools/b2/tests/image_mem_t.kotoba -- 16- and 32-bit loads and stores (E2)
+;; Run by scripts/seed/check-b2-image.py with image_helpers.kotoba before it.
+(defn- check [ok :bool bit :i64] :i64 (if ok 0 bit))
+(defn main [] :i64
+  (let [m (kxrt-b-alloc 4096)
+        a0 (kxrt-b-store64 m -1)
+        r1 (kxrt-b-store32 m 0xDEADBEEF)
+        r2 (kxrt-b-store16 (+ m 8) 0xCAFE)
+        r3 (kxrt-b-store32 (+ m 16) 0x123456789A)
+        p0 (check (= r1 0xDEADBEEF) 1)
+        p1 (check (= r2 0xCAFE) 2)
+        ;; the store32 wrote 4 bytes only: the rest of the all-ones word stays
+        p2 (check (= (kxrt-b-load64 m) (bit-or -4294967296 0xDEADBEEF)) 4)
+        p3 (check (= (kxrt-b-load32 m) 0xDEADBEEF) 8)
+        p4 (check (= (kxrt-b-load16 m) 0xBEEF) 16)
+        p5 (check (= (kxrt-b-load16 (+ m 2)) 0xDEAD) 32)
+        p6 (check (= (kxrt-b-load16 (+ m 8)) 0xCAFE) 64)
+        ;; the 16-bit store wrote 2 bytes only (the page is zero there)
+        p7 (check (= (kxrt-b-load64 (+ m 8)) 0xCAFE) 128)
+        ;; a 32-bit store keeps the low 32 bits of a wider value; loads zero-extend
+        p8 (check (= (kxrt-b-load32 (+ m 16)) 0x3456789A) 256)
+        p9 (check (= (kxrt-b-load64 (+ m 16)) 0x3456789A) 512)
+        ;; sign bits do not leak into the neighbours
+        s1 (kxrt-b-store16 (+ m 32) -1)
+        s2 (kxrt-b-store32 (+ m 40) -1)
+        p10 (check (= (kxrt-b-load64 (+ m 32)) 65535) 1024)
+        p11 (check (= (kxrt-b-load64 (+ m 40)) 4294967295) 2048)]
+    (let [mask (+ p0 (+ p1 (+ p2 (+ p3 (+ p4 (+ p5 (+ p6 (+ p7 (+ p8 (+ p9 (+ p10 p11)))))))))))
+          w (say-int mask)]
+      (if (= mask 0) 0 1))))
+
