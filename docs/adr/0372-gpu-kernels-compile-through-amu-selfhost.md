@@ -263,7 +263,47 @@ a follow-up to ADR 0371.
      params, pos_add, pos_seed, pos_incr2, quant_q8), and the BATCH,
      BPREFILL and BIAS variants;
    * `attn_copy_dense` on B70/ANV;
-   * `kdot_f32_r1`, `kdot_x8r4`, `kdot_f32_r8` and `kdot_i8_x8r4`;
+   * **Done: the dot and kdot fixtures' kernels.**
+     * `dot_rows`, from inference at 0f5824c.
+     * `kdot_f32_r1`, from inference at c7ea9a9. This is the ggml quantized
+       dot with f32 activations. Every tensor type is in one module, as in
+       the GLSL: Q4_K, Q5_K, Q6_K, IQ4_XS, Q8_0, Q4_0, F16, BF16, PQ2_0,
+       PTQ1_0, Q4_1, Q5_0 and Q5_1. Each GLSL helper is a Kotoba function
+       that writes its code inline.
+
+     The builder gained vectors: construction, `OpDot`, signed conversion,
+     `unpackHalf2x16` and `bitfieldExtract`. The second word of
+     `weight_u32_at`, and the q4/q5 and pq2/ptq1 picks, are guarded loads,
+     so they stay in an if. `spirv-val` caught integer subtractions typed
+     u32 that build ivec4s; the Kotoba checker does not check types.
+
+     On gad (RADV), with random weights for every type, glslang's module and
+     the KIR v2 module are byte-identical on:
+     * two positions on two experts that differ from the positions;
+     * a workgroup past the rows and a position past the positions;
+     * a tail group for the 32-value types;
+     * the prefill-MoE and shared-input rows (`pad0`, `pad1`,
+       `input_per_expert`).
+
+     F16, BF16 and Q8_0 are within 2.5e-06 (relative) of an f64 dequant.
+     `dot_rows` is byte-identical too, and within 2.4e-6 of f64.
+
+     `kdot_f32_r8`, from inference at f57ea5e, has R rows per workgroup (the
+     GLSL's `-DROWS`, a generator parameter), with `acc[R]` and `mins[R]` in
+     Function arrays and r8's ten tensor types. It shares r1's helpers
+     (a flag drops BF16, PQ2_0 and PTQ1_0). On gad it is byte-identical to
+     glslang's module for:
+     * every r8 type with 8 rows;
+     * two types with `-DROWS=4`;
+     * one each with 16 and with 32.
+
+     The rows were 22, or 40 for R = 32, so the last workgroup is partial for
+     every R.
+
+     Receipts: `docs/evidence/gpu-kernel-kir2-kdot-20261023/`.
+   * `kdot_x8r4` and `kdot_i8_x8r4`: the int8 kernels, which need the
+     packed integer dot product (SPIR-V 1.6 or `SPV_KHR_integer_dot_product`)
+     and the provider's `shaderIntegerDotProduct`;
    * deltanet and embed;
    * then the nvgpu-h2 kernels for Xavier.
 4. **Execution.** Through the ADR 0371 provider, with numeric and speed gates
