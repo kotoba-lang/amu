@@ -1,0 +1,31 @@
+(ns kotoba.compiler.native-unicode-reader (:export [main])
+ (:require [kotoba.form :as f] [kotoba.compiler.kotoba-reader :as reader]))
+(defn- one [text :string] [:ref :form/r]
+ (let [result (reader/read-forms-bounded text 64 1000)
+       forms (record-get [:ref :kotoba.reader/out] result :forms)]
+  (if (and (string=? (record-get [:ref :kotoba.reader/out] result :err) "") (= (vector-count forms) 1))
+   (typed-list-nth [:list [:ref :form/r]] forms 0) (throw :test/reader))))
+(defn- symbol? [text :string] :bool
+ (let [node (one text)] (and (f/is-symbol? node) (string=? (f/symbol-value node) text))))
+(defn- run [] :i64
+ (let [symbols (and (symbol? "例") (symbol? "例.実装") (symbol? "é") (symbol? "🧪")
+                    (symbol? "-例") (symbol? "+🧪") (symbol? "a例") (symbol? "例1")
+                    (symbol? "1例") (symbol? "例é🧪") (symbol? "c例.実装abc/名前"))
+       int (one "-42") float (one "1.5")
+       forms (one "[例 🧪 :例/名前 \"日本語\"]")
+       result (reader/read-forms-bounded "例 🧪\n名前" 64 1000)
+       positions (record-get [:ref :kotoba.reader/out] result :forms)]
+  (if (and symbols (f/is-int? int) (= (f/int-value int) -42) (f/is-f64? float)
+           (f/is-vec? forms) (= (f/count-of forms) 4)
+           (string=? (f/symbol-value (f/nth-of forms 0)) "例")
+           (string=? (f/symbol-value (f/nth-of forms 1)) "🧪")
+           (f/is-keyword? (f/nth-of forms 2)) (string=? (keyword-name (f/keyword-value (f/nth-of forms 2))) "名前")
+           (string=? (f/string-value (f/nth-of forms 3)) "日本語")
+           (= (vector-count positions) 3)
+           (= (f/span-of (typed-list-nth [:list [:ref :form/r]] positions 0)) 4294967297)
+           (= (f/span-of (typed-list-nth [:list [:ref :form/r]] positions 1)) 4294967299)
+           (= (f/span-of (typed-list-nth [:list [:ref :form/r]] positions 2)) 8589934593))
+   0 (throw :test/unicode-reader))))
+(defn main [] :i64
+ (try (run) (catch :keyword reason
+   (let [p (typed-cap-call :io/write :string :string (document-edn-print (document-keyword reason)))] 91))))

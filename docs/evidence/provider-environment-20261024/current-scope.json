@@ -1,0 +1,86 @@
+{
+  "status": "PASS_CURRENT_NATIVE_ARTIFACT_QUALIFICATION_LOCAL",
+  "change": "ADR 0371 step 6: the launcher's fixed provider environment (MESA_SHADER_CACHE_DISABLE=true, VK_LOADER_LAYERS_DISABLE=~all~) in the launcher runtime text of seed/76 and seed/77",
+  "compilerSourceRevision": "6c2c6034fe9509759119c076bb51faa6cf7369bd",
+  "integrationBaseMain": "0007e50f4ed61841240838a435d9da1b7f7cf222",
+  "coreSource": {
+    "bytes": 2800340,
+    "sha256": "caf3e9aa0b49e8ed23260a3d02829f4f04ac2bfea43f3bdd7445705eee4b9197"
+  },
+  "coreContainer": {
+    "bytes": 2576123,
+    "sha256": "086f85dbc21ab94098a9ca1f356ce8430741797467c0c586a5c6b97553dffd06"
+  },
+  "root": {
+    "bytes": 3240448,
+    "sha256": "688324e0fdc7a93a664ae55fe0ad417e7a980ab844656f3f97889812363c9479"
+  },
+  "previousRoot": "f782f3f2a8298c39feeedf873896c9858535a8e371786337632cc60f9e971b9f",
+  "publicImage": {
+    "bytes": 8704512,
+    "sha256": "011f1f84068a18b400471cfdfe58acb4525fd189c474c3baf6bc4e67f33fc842"
+  },
+  "publicImageSourceUnity": {
+    "bytes": 3228090,
+    "sha256": "eeecfd8358242405f2a2956037a724f2bdf1ef3f21539aacb834cb8ab5a5425a"
+  },
+  "runtimeRunner": {
+    "imageSHA256": "80b757e13799761061c8d13e328d52f325b57e726e736b6e2c73337be56865bf",
+    "bytes": 233984
+  },
+  "nativeControllerSHA256": "39a500374e27d3a04404573cbf455eef56b2dbb6aa473279e3cd75cae9a1263a",
+  "cdciImages": {
+    "amu-selfhost": "e6dcf6189b527208bd65cd53d8f05d07008fb6adc0dc4e1e37dc1e92df334700",
+    "controller": "39a500374e27d3a04404573cbf455eef56b2dbb6aa473279e3cd75cae9a1263a",
+    "kotoba-native": "39fac666f5eb57b4adf69c1efe1770758e78dd7f51c368cbbdefeda14ee6d995"
+  },
+  "unchangedFromMain": [
+    "coreSource",
+    "coreContainer",
+    "runtimeRunner",
+    "nativeController",
+    "cdci gate images (seed/cdci/policy.json)"
+  ],
+  "hosts": {
+    "arm64": "podman machine (applehv, native arm64 kernel; no emulation)",
+    "x86_64": "gad (native x86_64 Linux 7.0; no emulation)"
+  },
+  "checks": [
+    "selfhost-bootstrap.py --tier pr (F1 = F2, then the root reproduces)",
+    "check-static-launcher.py (arm64, with main's root as --previous-root)",
+    "check-one-compiler.py (arm64; the CDCI gate pins hold)",
+    "check-x86_64-native.py --tier pr (x86_64)",
+    "check-complete-x86.py (F1 = F2 = F3)",
+    "check-native-clock-entropy.py",
+    "check-native-cdci.py (24 cases, 18 refusals, parent-death cleanup)",
+    "check-public-native-product.py (bin/amu = the three generations, the aliases, pinned check/compile)"
+  ],
+  "notRun": [
+    "check-wasm32-browser.py: no Chrome on the x86_64 host; CI runs it"
+  ],
+  "providerRoute": "historical: main's root refuses the provider's --format platform-linked build (E2); its qualifications are outside mandatory native CDCI (AGENTS.md)",
+  "exactFinalHeadPRCI": "pending",
+  "exactMergedMainCI": "pending merge",
+  "evidence": {
+    "complete-x86.json": {
+      "bytes": 20756,
+      "sha256": "7e3c1925f17787d87c5aa846763149f254e3274895468f40a55598a44ddcc2c8"
+    },
+    "native-cdci.json": {
+      "bytes": 2633,
+      "sha256": "0c17563eec328e9fa3c0de2edb0ce30076fcd605dc67c7d470561c4bfd55b031"
+    },
+    "native-clock-entropy.json": {
+      "bytes": 1050,
+      "sha256": "f86cfe9329b76a0332d14753f8894dc388cf847533b390c949e9e0a9273ee19a"
+    },
+    "public-product.json": {
+      "bytes": 27050,
+      "sha256": "dcd37682ec33166cd59c0c0768d86bf457ee2ca728299c6204cf9ac46bb4e9d3"
+    },
+    "x86_64-native.json": {
+      "bytes": 29149,
+      "sha256": "7fd0f5758cfb97060bade3bd3dc49c055000b9b3af8614901b7f96880e52e272"
+    }
+  }
+}
