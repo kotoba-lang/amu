@@ -78,9 +78,9 @@ BAR catalog starts at context20480. Live ValueRuntime queue/arena and
 capability/domain storage require a separately versioned ABI.
 
 - The complete candidate uses `seed/FULL-MANIFEST` (41 modules), retaining
-  every adopted core module. Static OUT is 12MiB because the complete
+  every adopted core module. The static compiler syntax-node capacity is655360; normal core/heap/guest limits are unchanged. Static OUT is 12MiB because the complete
   TCP/spawn image exceeded the old 8MiB bound. The complete static profile
-  also uses LitB1MiB and TOK786432 and MM-WORDS29,491,200 (<2^25). Heap size, expected results,
+  also uses LitB1MiB and TOK786432 and MM-WORDS30,015,488 (<2^25). Heap size, expected results,
   all19 workloads and all24 runtime fixtures remain unchanged.
 - `seed/cdci` owns the Kotoba-native controller and gate. Its two mandatory
   roles are Amu selfhost and Kotoba native; legacy fleet/authoring labels
