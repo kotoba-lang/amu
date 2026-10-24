@@ -111,3 +111,20 @@ sources recorded in the v1 document. The retired CLJK evaluator is not
 executed. Whole-VM differential parity, signed Murakumo receipts, fresh
 node admission, cache identity, in-process unwind and performance remain
 unqualified. JUN-371 and JUN-372 own the cache/admission and host bindings.
+
+## Integrated source and artifact qualification
+
+The current local evidence uses corrected native FS2/CID source from
+`310ea2c00`, combined full33 source `e5b389612`, rather than the former
+full31 artifacts. The native integration root independently reproduces the
+full33 ARM image. ARM and native x86 three-generation fixed points, fresh
+122 v1 and262 v2 cases per ISA, exact cross-ISA v2 observations, updated24
+runtime fixture pins, actual native controller cold execution/refusals and
+public alias/current-source linkage pass. The retained v1 fault signals are
+ISA-specific; the v2 typed receipt removes that platform difference.
+All five literal controller pins are checked before staging; this transport
+audit does not replace the native controller verdict. See
+[`current-scope.json`](evidence/kototama-i64-receipt-20261024/current-scope.json).
+
+These are local source/artifact/execution results. Native integration main
+readback and terminal checks on the final PR head remain separate merge gates.
