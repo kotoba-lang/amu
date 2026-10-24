@@ -242,39 +242,41 @@
 
 (deftest every-arm-shares-one-operator-meaning
   ;; One meaning per operator across EVERY emission arm (review P2,
-  ;; completed 2026-10-22, re-founded 2026-10-25): the reduce answers the
-  ;; same value wherever it is emitted -- ADR-0356 rule 2's ordinary-
-  ;; value domain includes +-Inf, so the padded lanes must never distort
-  ;; the fold. The MECHANISM differs per language, and that is now part
-  ;; of the pin: GLSL/MSL/CUDA (and the WGSL baseline arm, still -- its
-  ;; own later slice) fold the IEEE-754 INFINITE neutral spelled via each
-  ;; language's reinterpretation intrinsic (a finite bound is corrupted
-  ;; by a legitimate +-Inf input -- an all-(-Inf) :max reduction answered
-  ;; -FLT_MAX -- and no infinity literal exists in GLSL or WGSL); the WGSL
-  ;; :subgroup-reduce arm CANNOT hold that neutral -- the WGSL spec's
+  ;; completed 2026-10-22, re-founded 2026-10-25 twice): the reduce
+  ;; answers the same value wherever it is emitted -- ADR-0356 rule 2's
+  ;; ordinary-value domain includes +-Inf, so the padded lanes must never
+  ;; distort the fold. The MECHANISM differs per language, and that is
+  ;; part of the pin: GLSL/MSL/CUDA fold the IEEE-754 INFINITE neutral
+  ;; spelled via each language's reinterpretation intrinsic (a finite
+  ;; bound is corrupted by a legitimate +-Inf input -- an all-(-Inf) :max
+  ;; reduction answered -FLT_MAX -- and no infinity literal exists in
+  ;; GLSL); every WGSL arm CANNOT hold that neutral -- the WGSL spec's
   ;; Finite Math Assumption (15.7.3) makes the infinite const-expression
   ;; a REQUIRED shader-creation error (Chrome 155's Tint refuses it,
   ;; "value -inf cannot be represented as 'f32'") -- so since 2026-10-25
-  ;; it carries the clamped-index fill x[min(i,n.value-1u)]: out-of-range
+  ;; BOTH WGSL arms carry the clamped-index fill x[min(i,n.value-1u)]
+  ;; (:subgroup-reduce first, the baseline :reduce arm's own slice landed
+  ;; the same day -- before it the baseline arm spelled the refused
+  ;; bitcast neutral and its corpus judged 12/18 refused): out-of-range
   ;; lanes duplicate an IN-RANGE element and max/min stay exact by
   ;; idempotence, +-Inf input included. Same meaning, two mechanisms. The
   ;; finite +-3.402823466e+38 bound must appear in NO arm's bytes: that
   ;; absence is the mechanical guard against the drift this test exists
   ;; for.
   (doseq [[operator ids]
-          [[:sum {:wgsl "0.0" :wgsl-fill "select(0.0,x[i],i<n.value)"
+          [[:sum {:wgsl-fill "select(0.0,x[i],i<n.value)"
                   :msl "0.0f" :cuda "0.0f" :glsl "0.0"}]
-           [:max {:wgsl "bitcast<f32>(0xFF800000u)" :wgsl-fill "x[min(i,n.value-1u)]"
+           [:max {:wgsl-fill "x[min(i,n.value-1u)]"
                   :msl "as_type<float>(0xFF800000u)"
                   :cuda "__uint_as_float(0xFF800000u)" :glsl "uintBitsToFloat(0xFF800000u)"}]
-           [:min {:wgsl "bitcast<f32>(0x7F800000u)" :wgsl-fill "x[min(i,n.value-1u)]"
+           [:min {:wgsl-fill "x[min(i,n.value-1u)]"
                   :msl "as_type<float>(0x7F800000u)"
                   :cuda "__uint_as_float(0x7F800000u)" :glsl "uintBitsToFloat(0x7F800000u)"}]]]
     (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
                                   {:workgroup-size 128})]
       (doseq [[code prefix id suffix]
               [[(accelerator/lower kir :wgsl-v1 :baseline)
-                "scratch[lid.x]=select(" (:wgsl ids) ",x[i],i<n.value)"]
+                "scratch[lid.x]=" (:wgsl-fill ids) ";"]
                [(accelerator/lower kir :msl-v1 :baseline)
                 "s[l]=i<n?x[i]:" (:msl ids) ";"]
                [(accelerator/lower kir :cuda-v1 :baseline)
@@ -293,6 +295,26 @@
                 "float v = i < n ? x[i] : " (:cuda ids) ";"]]]
         (is (str/includes? code (str prefix id suffix)))
         (is (not (str/includes? code "3.402823466")))))))
+
+(deftest wgsl-baseline-arm-holds-no-infinite-value-in-any-position
+  ;; The fix rule's own mechanical guard for the baseline :reduce WGSL arm
+  ;; (the same tripwire the :subgroup-reduce arm carries): the IEEE-754
+  ;; infinite bit patterns and their bitcast spelling must appear NOWHERE
+  ;; in the emitted bytes. Before 2026-10-25 this arm spelled
+  ;; select(bitcast<f32>(0xFF800000u),x[i],i<n.value) and Chrome 155's
+  ;; Tint refused the whole :max/:min row at shader creation (12/18 of
+  ;; its pre-fix corpus). The refused spelling cannot return unnoticed.
+  (doseq [w [32 64 128 256 512 1024] operator [:sum :max :min]]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
+                                  {:workgroup-size w})
+          code (accelerator/lower kir :wgsl-v1 :baseline)]
+      (is (nil? (re-find #"0xFF800000|0x7F800000|bitcast<f32>|inf" code))
+          (str "an infinite-value spelling leaked into W=" w " "
+               (name operator) ": " (re-find #"0xFF800000|0x7F800000|bitcast<f32>|inf" code)))
+      (is (str/includes? code (if (= operator :sum)
+                                "scratch[lid.x]=select(0.0,x[i],i<n.value);"
+                                "scratch[lid.x]=x[min(i,n.value-1u)];"))
+          (str "the fix rule's fill is missing from W=" w " " (name operator))))))
 
 (deftest lower-routes-every-target-variant-pair-or-refuses-by-name
   ;; The W3 dual-reading merge (3e14da99) dropped the host reading's

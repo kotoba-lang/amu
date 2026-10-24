@@ -118,7 +118,14 @@
   compile-log.txt; the pre-fix corpus and its judgment stand as
   untouched records. The baseline :reduce WGSL arm (accelerator.cljk's
   wgsl-identity) still spells the infinite identity -- the SAME defect,
-  its own later slice -- and accelerator-test's
+  its own later slice -- [FIXED 2026-10-25, that later slice landed:
+  accelerator.cljk's wgsl-identity is REPLACED by wgsl-fill (the same
+  padded-lane-fill rule), the baseline arm's pre-fix corpus judged 12/18
+  refused on Chrome 155 Dawn/Tint and the post-fix corpus validates
+  18/18 CLEAN at raised limits (12/18 at default, the 6 the known
+  W >= 512 device-limit class) -- docs/evidence/gpu/wgsl-baseline-validate-chrome-20261025/
+  and docs/evidence/gpu/wgsl-baseline-fix-validate-chrome-20261025/; no
+  WGSL arm holds an infinite value now] and accelerator-test's
   every-arm-shares-one-operator-meaning now pins two mechanisms under
   one meaning. UNMEASURED unchanged: shader validation is not a
   measurement and no kernel has executed this arm on any GPU.] The n of the KIR
@@ -331,7 +338,9 @@
   ;; the other arms spell (identity-value; accelerator.cljk's
   ;; wgsl-identity still spells it for the baseline :reduce WGSL arm --
   ;; that spelling is refused by Tint the same way and is its own later
-  ;; slice) cannot exist here. :sum keeps its finite 0.0 identity.
+  ;; slice [FIXED 2026-10-25, that slice landed: accelerator.cljk's
+  ;; wgsl-fill carries this same rule and no WGSL arm holds an infinite
+  ;; value]) cannot exist here. :sum keeps its finite 0.0 identity.
   ;; :max/:min use the CLAMPED-INDEX FILL: every lane carries
   ;; x[min(i,n-1)], so the out-of-range lanes (i >= n) duplicate the
   ;; in-range element x[n-1] and max/min stay exact -- a duplicated

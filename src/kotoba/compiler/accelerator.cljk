@@ -77,8 +77,11 @@
 ;; neutrals are the INFINITE IEEE-754 reinterpretations (review P2, completed
 ;; 2026-10-22) -- a finite bound is corrupted by an input that legitimately
 ;; contains +Inf (:min) or -Inf (:max). Each reading spells them in its own
-;; arm's intrinsic: GLSL uintBitsToFloat, WGSL bitcast<f32>, CUDA
-;; __uint_as_float, MSL as_type<float>.
+;; arm's intrinsic: GLSL uintBitsToFloat, CUDA __uint_as_float, MSL
+;; as_type<float>. WGSL is the exception since 2026-10-25 (wgsl-fill below,
+;; both arms): bitcast<f32> of those bits const-folds to an infinity and the
+;; WGSL spec's Finite Math Assumption (15.7.3) makes that a REQUIRED
+;; shader-creation error.
 #?(:kotoba
    (defn- glsl-identity [operator :document] :string
      (cond (document-equal? operator (document-keyword :sum)) "0.0"
@@ -92,19 +95,44 @@
   {:sum "0.0"
    :max "uintBitsToFloat(0xFF800000u)"
    :min "uintBitsToFloat(0x7F800000u)"}))
+;; THE 2026-10-25 FIX RULE (the same rule the :subgroup-reduce WGSL arm's
+;; padded-lane-fill-wgsl landed under, JUN-59/JUN-60; this is the baseline
+;; :reduce WGSL arm's own named later slice, IMPLEMENTED here): NO infinite
+;; value in any WGSL position. The old wgsl-identity spelled the bitcast
+;; infinite neutral (select(bitcast<f32>(0xFF800000u),x[i],i<n.value)) and
+;; Chrome 155's Tint REFUSED it at shader creation -- "value -inf cannot be
+;; represented as 'f32'" -- because the WGSL spec's Finite Math Assumption
+;; (15.7.3) makes an infinite const-expression of floating point type a
+;; REQUIRED shader-creation error (judged 2026-10-25 on this arm's own
+;; pre-fix corpus: 12/18 refused,
+;; docs/evidence/gpu/wgsl-baseline-validate-chrome-20261025/). The fill is
+;; the subgroup arm's mechanism to its letter: :sum keeps the finite 0.0
+;; select (byte-identical to the old :sum bytes); :max/:min carry the
+;; CLAMPED-INDEX FILL x[min(i,n.value-1u)] -- out-of-range lanes duplicate
+;; the in-range element x[n-1] and max/min idempotence keeps the fold
+;; exact, legitimate +-Inf input included (ADR-0356 rule 2's domain). THE
+;; n=0 CONTRACT: n >= 1 is a CALLER PRECONDITION of this arm (:max/:min's
+;; clamp is exact only under it; an empty reduce has no finite :max/:min
+;; answer). A runtime-escape spelling stays rejected (15.7.3 lets
+;; implementations treat runtime infinities as indeterminate values and
+;; names min/max, this arm's combines).
 #?(:kotoba
-   (defn- wgsl-identity [operator :document] :string
-     (cond (document-equal? operator (document-keyword :sum)) "0.0"
-           (document-equal? operator (document-keyword :max)) "bitcast<f32>(0xFF800000u)"
-           (document-equal? operator (document-keyword :min)) "bitcast<f32>(0x7F800000u)"
-           :else "0.0"))
+   (defn- wgsl-fill [operator :document] :string
+     (cond (document-equal? operator (document-keyword :sum)) "select(0.0,x[i],i<n.value)"
+           (document-equal? operator (document-keyword :max)) "x[min(i,n.value-1u)]"
+           (document-equal? operator (document-keyword :min)) "x[min(i,n.value-1u)]"
+           :else "select(0.0,x[i],i<n.value)"))
    :default
-(def ^:private wgsl-identity
-  ;; The same neutrals as glsl-identity, in WGSL: no infinity literal
-  ;; exists there either, bitcast of the IEEE-754 bits is exact.
-  {:sum "0.0"
-   :max "bitcast<f32>(0xFF800000u)"
-   :min "bitcast<f32>(0x7F800000u)"}))
+(def ^:private wgsl-fill
+  ;; The fix rule's padded-lane load, one spelling per operator: :sum's
+  ;; finite 0.0 select, :max/:min's clamped-index fill. NO infinite value
+  ;; in any position (the refused bitcast spelling cannot return unnoticed
+  ;; -- test/kotoba/compiler/accelerator_test.cljk's
+  ;; wgsl-baseline-arm-holds-no-infinite-value-in-any-position is the
+  ;; tripwire).
+  {:sum "select(0.0,x[i],i<n.value)"
+   :max "x[min(i,n.value-1u)]"
+   :min "x[min(i,n.value-1u)]"}))
 #?(:kotoba
    (defn- cuda-identity [operator :document] :string
      (cond (document-equal? operator (document-keyword :sum)) "0.0f"
@@ -394,7 +422,7 @@
                s4 (string-concat s3 (string-concat (string-concat "@compute @workgroup_size(" (string-from-i64 wg)) ") fn main(@builtin(global_invocation_id) gid: vec3<u32>) {\n"))
                s5 (string-concat s4 (string-concat "  let i=gid.x; if(i<n.value){ z[i]=" (string-concat expr "; }\n}\n")))]
            s5)
-         (let [identity (wgsl-identity operator)
+         (let [fill (wgsl-fill operator)
                combine (wgsl-combine operator)
                s1 (string-concat "struct N { value: u32 };\n@group(0) @binding(0) var<storage,read> x: array<f32>;\n" "@group(0) @binding(1) var<storage,read_write> parts: array<f32>;\n")
                s2 (string-concat s1 "@group(0) @binding(2) var<uniform> n: N;\nvar<workgroup> scratch: array<f32,")
@@ -402,7 +430,7 @@
                s4 (string-concat s3 (string-concat (string-concat (string-concat "fn combine(a:f32,b:f32)->f32{return " combine) ";}\n")
                                                     (string-concat (string-concat "@compute @workgroup_size(" (string-from-i64 wg)) ") fn main(@builtin(global_invocation_id) gid:vec3<u32>,")))
                s5 (string-concat s4 "@builtin(local_invocation_id) lid:vec3<u32>,@builtin(workgroup_id) wid:vec3<u32>){\n")
-               s6 (string-concat s5 (string-concat " let i=gid.x; scratch[lid.x]=select(" (string-concat identity ",x[i],i<n.value); workgroupBarrier();\n")))
+               s6 (string-concat s5 (string-concat " let i=gid.x; scratch[lid.x]=" (string-concat fill "; workgroupBarrier();\n")))
                s7 (string-concat s6 (string-concat (string-concat " var stride:u32=" (string-from-i64 (quot wg 2))) "u; loop { if(stride==0u){break;} if(lid.x<stride){scratch[lid.x]=combine(scratch[lid.x],scratch[lid.x+stride]);} workgroupBarrier(); stride=stride/2u;}\n"))]
            (string-concat s7 " if(lid.x==0u){parts[wid.x]=scratch[0];}\n}\n")))))
    :default
@@ -417,7 +445,7 @@
            "@compute @workgroup_size(" wg ") fn main(@builtin(global_invocation_id) gid: vec3<u32>) {\n"
            "  let i=gid.x; if(i<n.value){ z[i]=" (first (expression operator)) "; }\n}\n")
       :reduce
-      (let [identity (wgsl-identity operator)
+      (let [fill (wgsl-fill operator)
             combine ({:sum "a+b" :max "max(a,b)" :min "min(a,b)"} operator)]
         (str "struct N { value: u32 };\n@group(0) @binding(0) var<storage,read> x: array<f32>;\n"
              "@group(0) @binding(1) var<storage,read_write> parts: array<f32>;\n"
@@ -425,7 +453,7 @@
              "fn combine(a:f32,b:f32)->f32{return " combine ";}\n"
              "@compute @workgroup_size(" wg ") fn main(@builtin(global_invocation_id) gid:vec3<u32>,"
              "@builtin(local_invocation_id) lid:vec3<u32>,@builtin(workgroup_id) wid:vec3<u32>){\n"
-             " let i=gid.x; scratch[lid.x]=select(" identity ",x[i],i<n.value); workgroupBarrier();\n"
+             " let i=gid.x; scratch[lid.x]=" fill "; workgroupBarrier();\n"
              " var stride:u32=" (/ wg 2) "u; loop { if(stride==0u){break;} if(lid.x<stride){scratch[lid.x]=combine(scratch[lid.x],scratch[lid.x+stride]);} workgroupBarrier(); stride=stride/2u;}\n"
              " if(lid.x==0u){parts[wid.x]=scratch[0];}\n}\n"))))))
 #?(:kotoba

@@ -111,7 +111,21 @@ infinite neutral, each spelled in its own exact bit-reinterpretation
 intrinsic (uintBitsToFloat / bitcast<f32> / __uint_as_float /
 as_type<float>), pinned by `every-arm-shares-one-operator-meaning` in
 accelerator-test (which also asserts the finite bound appears in no arm's
-bytes). The NaN / negative-zero regime is UNCHANGED: still excluded from
+bytes). [AMENDED 2026-10-25 on the WGSL arm only: the bitcast spelling
+const-folds to an infinity and the WGSL spec's Finite Math Assumption
+(15.7.3) makes that a REQUIRED shader-creation error -- Chrome 155's
+Dawn/Tint refused the whole :max/:min row ("value -inf cannot be
+represented as 'f32'"), judged on each WGSL arm's own pre-fix corpus
+(:subgroup-reduce 12/18 refused; baseline :reduce 12/18 refused). Both
+WGSL arms now hold NO infinite value in any position -- :max/:min carry
+the clamped-index fill x[min(i,n.value-1u)] (out-of-range lanes duplicate
+the in-range element x[n-1]; max/min idempotence keeps the fold exact),
+:sum keeps the finite 0.0 select, n >= 1 is a caller precondition -- and
+GLSL/MSL/CUDA keep the infinite neutral as written.
+`every-arm-shares-one-operator-meaning` pins one meaning under those two
+mechanisms. Post-fix corpora judge 18/18 clean at raised limits
+(docs/evidence/gpu/wgsl-fix-validate-chrome-20261025/ and
+docs/evidence/gpu/wgsl-baseline-fix-validate-chrome-20261025/).] The NaN / negative-zero regime is UNCHANGED: still excluded from
 rule 2's claim and still UNMEASURED.
 
 **Amendment (2026-10-23, the JUN-58 selection row lands).** ADR-0360 adds

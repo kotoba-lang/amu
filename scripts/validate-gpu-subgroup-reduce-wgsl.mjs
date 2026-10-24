@@ -39,7 +39,7 @@ const corpusDir = path.resolve(
 
 const files = fs.readdirSync(corpusDir).filter((f) => f.endsWith('.wgsl')).sort();
 
-console.log('JUN-59/JUN-60 -- :subgroup-reduce WGSL arm, real-toolchain validation');
+console.log((process.argv[3] ?? 'JUN-59/JUN-60 -- :subgroup-reduce WGSL arm, real-toolchain validation'));
 console.log('run-at: ' + new Date().toISOString());
 console.log('host: ' + os.platform() + ' ' + os.release() + ' ' + os.arch());
 console.log('node: ' + process.version);
