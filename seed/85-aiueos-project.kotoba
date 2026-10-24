@@ -1,0 +1,134 @@
+;; Locked x86 AIUEOS project adapter. Discovery, cached source-lock reads,
+;; namespace/export/schema checks, interfaces, checking and lowering remain
+;; the adopted core's owners. Only the target's byte linking differs from
+;; 60-proj's AArch64 word-branch linker. No declaration is discarded.
+;; This first adapter retains the bounded scalar/no-ISR image admission.
+;; Full kernel intrinsics, ISR and live runtime require subsequent gates.
+
+(def KP-ENTRY 43) ; L header: global byte offset + 1 of the image entry
+
+;; 60-proj records AArch64 interface offsets in words. Convert only the
+;; newly recorded interface addresses to this backend's byte units; retain
+;; the canonical typed clauses and schema identities unchanged.
+(defn- kp-iface [M :vector-i64 L :vector-i64 P :string S :string m :i64] :string
+  (let [first (pj-l L pj-k-nif) base (pj-l L pj-k-base)
+        result (pj-iface M L P S m)
+        updated (loop [e first]
+                  (if (>= e (pj-l L pj-k-nif)) 0
+                    (let [clauses (loop [k 0]
+                                    (if (>= k (pj-if L e pj-if-ncl)) 0
+                                      (let [old (pj-if L e (+ pj-if-off0 k))
+                                            w (pj-iset L e (+ pj-if-off0 k) (+ base (quot (- old base) 4)))]
+                                        (recur (inc k)))))]
+                      (recur (inc e)))))]
+    result))
+
+;; Calls within a module are xg's existing rel32 fixups. Its imported
+;; interface stubs become rel32 tail jumps to the already compiled module.
+;; Every stub keeps the same arguments, return address and hidden context.
+(defn- kp-copy-link [M :vector-i64 L :vector-i64] :vector-i64
+  (let [base (pj-l L pj-k-base) size (xg-pos M)
+        copied (loop [i 0]
+                 (if (>= i size) 0
+                   (let [w (pj-ibset L (+ base i) (xg-code-byte M i))] (recur (inc i)))))
+        patched (loop [k 0]
+                  (if (or (>= k (pj-l L pj-k-nstub)) (not (pj-ok M))) 0
+                    (let [f (+ (pj-l L pj-k-stub0) k)
+                          at (+ base (dec (xg-f M f FF-CODE)))
+                          target (pj-l L (+ pj-t-base k))
+                          delta (- target (+ at 5))]
+                      (if (or (< at base) (> (+ at 5) (+ base size)) (< target 77)
+                              (>= target base) (< delta -2147483648) (> delta 2147483647))
+                        (let [w (pj-err M E-PROJ-IMAGE 0)] 0)
+                        (let [w (pj-ibset L at 233) w2 (pj-put32 L (inc at) delta)] (recur (inc k)))))))
+        filled (pj-ls L pj-k-img (+ base size))]
+    M))
+
+(defn- kp-emit-module [M :vector-i64 L :vector-i64 S :string m :i64] :vector-i64
+  (let [admitted (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 4 0) (mem-set 197 0)
+                    (mem-set 200 0) (xo-check-fns S 1) (xg-check-sir 1) (xk-scan S) (xk-check 1))
+        entry (xg-get admitted 1)]
+    (cond (not (pj-ok admitted)) admitted
+          (not= (vector-at admitted MM-CAPS) 0) (xg-err admitted 7101 OP-CAP)
+          (and (= m 0) (or (= entry 0) (not= (xg-f admitted entry FF-NPARAMS) 0))) (xg-err admitted 7102 entry)
+          :else
+          (let [code (-> admitted (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1)
+                         (xg-index-labels 1) (xg-code 1) (xg-fix 1))
+                size (xg-pos code)]
+            (cond (not (pj-ok code)) code
+                  (> (+ (pj-l L pj-k-base) size) 1048576) (xg-err code 7104 size)
+                  :else (let [linked (kp-copy-link code L)
+                              marked (if (= m 0) (pj-ls L KP-ENTRY (+ (pj-l L pj-k-base) (xg-f code entry FF-CODE))) L)]
+                          linked))))))
+
+;; The four trusted intrinsic stubs follow the canonical import trailer.
+;; Account for them when finding the import stubs; xk-scan still checks the
+;; exact trusted suffix. The canonical checker owns parameter refinement.
+(defn- kp-module-h [M :vector-i64 L :vector-i64 P :string m :i64 H :vector-i64] :string
+  (let [S0 (pj-src M L P m) trailer (pj-trailer L P m)
+        S1 (if (pj-ok M) (string-concat S0 (ck-r6b-lib-t S0 "")) S0)
+        S (string-concat S1 (string-concat trailer (xk-lib)))
+        base (bit-and (+ (pj-l L pj-k-img) 15) -16)
+        w (-> L (pj-ls pj-k-errmod m) (pj-ls pj-k-trail (string-length S1))
+              (pj-ls pj-k-base base) (pj-mset m pj-mf-base base))
+        M1 (if (pj-ok M) (pj-read M S) M)
+        M2 (if (pj-ok M1) (pj-refcheck (pj-qscan (pj-norm M1 L S) L P S m) L P m) M1)
+        M3 (if (pj-ok M2) (pj-splice M2 L) M2)
+        M4 (if (pj-ok M3) (nm-run M3 S) M3)
+        stubs (if (pj-ok M4) (pj-ls L pj-k-stub0 (- (vector-at M4 MM-FN-N) (pj-l L pj-k-nstub) XK-INTR-N)) L)
+        M5 (if (pj-ok M4) (ck-run-h M4 S H) M4)]
+    (cond (and (pj-ok M5) (ck-hint-again? H M5)) (kp-module-h M5 L P m H)
+          (not (pj-ok M5)) (let [w2 (pj-err-back M5 L m (string-length S1))] P)
+          :else
+          (let [lowered (lw-run M5)
+                emitted (if (pj-ok lowered) (kp-emit-module lowered L S m) lowered)]
+            (cond (not (pj-ok emitted)) P
+                  (not (pj-ok (pj-r5b-after emitted L P S m))) P
+                  (= m 0) P
+                  :else (kp-iface emitted L P S m))))))
+
+(defn- kp-project [M :vector-i64 L :vector-i64 P :string root :i64] :string
+  (let [discovered (pj-discover M L P root)
+        reserved (pj-ls L pj-k-img 77)]
+    (loop [k 0 P discovered]
+      (if (or (>= k (pj-l L pj-k-nord)) (not (pj-ok M))) P
+        (recur (inc k) (kp-module-h M L P (pj-l L (+ pj-o-base k)) (ck-hint-new)))))))
+
+(defn- kp-image [M :vector-i64 L :vector-i64 fuel :i64] :vector-i64
+  (let [entry (xg-get M 1) global (pj-l L KP-ENTRY) size (pj-l L pj-k-img)
+        data (max 32768 (bit-and (+ 8191 size) -4096))]
+    (cond (or (<= entry 0) (<= global 77) (> size 1048576)
+              (>= (+ data XI-DATA-SIZE 280) MM-OUT-CAP)) (xg-err M 7104 size)
+          :else
+          (let [prefix (-> M (mem-set (+ MM-FN-BASE (* entry MM-FN-W) FF-CODE) global)
+                           (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1)
+                           (xi-shim entry) (xg-fix 1) (xi-patch-shim data))
+                saved (loop [i 0]
+                        (if (>= i 77) 0
+                          (let [w (pj-ibset L i (xg-code-byte prefix i))] (recur (inc i)))))
+                copied (loop [i 0]
+                         (if (>= i size) 0
+                           (let [w (xg-put-byte M i (pj-ib L i))] (recur (inc i)))))]
+            (if (pj-ok prefix) (xi-elf (mem-set M MM-CODE-N (inc size)) data fuel) prefix)))))
+
+(defn- kp-command [] :i64
+  (let [n (io-argc) path (io-arg 1)
+        output-index (drv-pj-flag 1 n "--output") artifact-index (drv-pj-flag 1 n "--artifact")
+        fuel-index (drv-pj-flag 1 n "--fuel") out (if (< output-index 0) "" (io-arg output-index))
+        fuel (if (< fuel-index 0) 1000000 (xg-budget (io-arg fuel-index)))]
+    (cond (or (< (drv-pj-lock-arg 1 n -1) 0) (= (drv-pj-has 1 n "--unpinned") 1)) (drv-fail0 E-PROJ-UNPINNED)
+          (or (< artifact-index 0) (not (string=? (io-arg artifact-index) "image"))
+              (= (string-length out) 0) (< fuel 1)
+              (= (drv-pj-has 1 n "--format") 1) (= (drv-pj-has 1 n "--payload") 1)) (drv-usage)
+          (= (io-exists out) 1) (drv-fail0 E-WRITE)
+          :else
+          (let [M (mem-new) L (pj-new-l)
+                P0 (drv-pj-roots L (pj-new-p L) 1 n)
+                locked (drv-pj-lock M L P0 path)
+                P (if (pj-ok M) (kp-project M L (pj-padd L locked path) (dec (pj-n L))) locked)
+                image (if (pj-ok M) (kp-image M L fuel) M)]
+            (cond (>= (vector-at image MM-ERR) 7100) (xo-report image (pj-err-path L P) out)
+                  (not (pj-ok image))
+                  (if (= (pj-l L pj-k-nmod) 0) (drv-fail-in image path "") (drv-pj-fail image L P))
+                  :else (let [written (out-write-v image out (+ MM-OUT-BASE 1) (dec (vector-at image MM-OUT-N)))]
+                          (if (= (io-exists out) 1) 0 (drv-fail0 E-WRITE))))))))

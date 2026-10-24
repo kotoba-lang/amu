@@ -23,7 +23,8 @@ def pin(path):
     return dict(bytes=len(b), sha256=hashlib.sha256(b).hexdigest())
 
 
-def main(efi, kernel, qemu, firmware, output):
+def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024):
+    assert 0 <= remaining_fuel <= 9007199254740991
     assert efi.read_bytes().count(kernel.read_bytes()) == 1, "EFI/kernel pair identity mismatch"
     output.mkdir(parents=True, exist_ok=False)
     esp = output / "esp/EFI/BOOT"
@@ -87,9 +88,9 @@ def main(efi, kernel, qemu, firmware, output):
         assert hmp(f"pmemsave 0x{context:x} 96 context.bin") == ""
         ctx = Path("context.bin").read_bytes()
         fuel, boot = struct.unpack_from("<Q", ctx, 8)[0], struct.unpack_from("<Q", ctx, 80)[0]
-        # Literal-only main has no source charge site (same as the existing
-        # public native product test); preserving fuel is the exact contract.
-        assert fuel == 1024 and boot > 0, (fuel, boot)
+        # The original literal-only probe preserves 1024. Call-bearing locked
+        # fixtures supply their exact source-charge expectation explicitly.
+        assert fuel == remaining_fuel and boot > 0, (fuel, remaining_fuel, boot)
         assert hmp(f"pmemsave 0x{boot:x} 160 boot-info.bin") == ""
         info = Path("boot-info.bin").read_bytes()
         assert struct.unpack_from("<QQ", info) == (0x544f4f4245554941, 5)
@@ -101,7 +102,7 @@ def main(efi, kernel, qemu, firmware, output):
         (output / "registers.txt").write_text(registers)
         report = dict(status="PASS_AIUEOS_ENTRY_QEMU", observer=pin(Path(__file__).resolve()), efi=pin(efi), kernel=pin(kernel),
                       firmware=pin(firmware), qemuVersion=subprocess.check_output([str(qemu), "--version"]).decode().splitlines()[0],
-                      result=42, pc="0x10104b", remainingFuel=fuel, bootInfoVersion=5,
+                      result=42, pc="0x10104b", remainingFuel=fuel, expectedRemainingFuel=remaining_fuel, bootInfoVersion=5,
                       framebuffer=dict(base=fb, bytes=fbsize, width=width, height=height, stride=stride, pixelFormat=pixel_format),
                       completeKernel=False, desktop=False, input=False, gpt=False, physicalHardware=False,
                       compilerProvenance="requires associated native packaging receipt",
@@ -129,5 +130,6 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     for name in ("efi", "kernel", "qemu", "firmware", "output"):
         p.add_argument("--" + name, required=True, type=Path)
+    p.add_argument("--remaining-fuel", type=int, default=1024)
     a = p.parse_args()
-    main(*(getattr(a, n).resolve() for n in ("efi", "kernel", "qemu", "firmware", "output")))
+    main(*(getattr(a, n).resolve() for n in ("efi", "kernel", "qemu", "firmware", "output")), remaining_fuel=a.remaining_fuel)
