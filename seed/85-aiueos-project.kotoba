@@ -122,13 +122,14 @@
     (cond (>= i (vector-at M MM-SIR-N)) false
           (and (= (xg-si M i IF-OP) OP-CALL)
                (let [k (km-intr M (xg-si M i IF-A))]
-                 (or (= k KM-OWNED-PAGE) (= k KM-OWNED-WINDOW) (= k KM-PCI-MMIO)))) true
+                 (or (= k KM-OWNED-PAGE) (= k KM-OWNED-WINDOW) (= k KM-PCI-MMIO) (>= k LV-FIRST)))) true
           :else (recur (inc i)))))
 (defn- kp-pci? [M :vector-i64] :bool
   (loop [i 1]
     (cond (>= i (vector-at M MM-SIR-N)) false
           (and (= (xg-si M i IF-OP) OP-CALL)
-               (= (km-intr M (xg-si M i IF-A)) KM-PCI-MMIO)) true
+               (let [k (km-intr M (xg-si M i IF-A))]
+                 (or (= k KM-PCI-MMIO) (>= k LV-FIRST)))) true
           :else (recur (inc i)))))
 ;; This trusted bootstrap runs before the user's main and before any guest
 ;; operation can mutate public boot-info. This non-live profile reserves its
