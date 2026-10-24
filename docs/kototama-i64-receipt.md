@@ -114,8 +114,9 @@ unqualified. JUN-371 and JUN-372 own the cache/admission and host bindings.
 
 ## Integrated source and artifact qualification
 
-The current evidence uses corrected native FS2/CID source from `310ea2c00`
-and main's AIUEOS image/EFI route, combined as full34 source `876f0bb08`.
+The current evidence uses frozen native FS2/CID source `b36ca9d5`, including main `0486b715`'s
+named wire refusal and the AIUEOS image/EFI route, combined as full34 source
+`9ff702d18`.
 ARM and native x86 three-generation fixed points, fresh122 v1 and262 v2
 cases per ISA, exact cross-ISA v2 observations, native FS2, AIUEOS packaging
 and public alias/current-source linkage pass. The retained v1 fault signals
