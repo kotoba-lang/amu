@@ -71,6 +71,23 @@ strictly: failed identity probes preserve members and the directory; failed
 member removal prevents rmdir. The original inputs remain unchanged. This
 unit result does not establish all actual-kernel faults or race windows.
 
+The unchanged current native FS fixture also passed eleven observed OS
+boundaries: real partial read/write, close consumed by the kernel with its
+return changed to EINTR, and INT/TERM/ALRM/XCPU sent after directory/file
+creation before the next guest journal instruction. All eight creation
+windows removed owned output and preserved the unrelated sentinel.
+`scripts/seed/check-fs2-observed.py` reproduces these checks on its own child;
+it performs no source resolution or compilation. Actual kernel write EIO,
+fsync EIO and chmod EPERM refuse and clean the stage. Unlink EACCES and
+fstat EIO preserve data or uncertain ownership, report incomplete cleanup and
+exit nonzero. A container-startup close fault was excluded and its task
+container was removed; it is not a native FS result. These bounded checks do
+not claim every kernel fault, filesystem or scheduling interleaving.
+
+The private intern arena separately passed all262144 rows, last-write-wins
+replacement, a missing key and the next-row overflow refusal. Its helper
+spelling is not claimed as a source-origin or authority boundary.
+
 The T operation passed both exclusive-publication preservation and a real
 kernel ENOSYS control, using the VM default seccomp profile plus that one
 denial. The refused publication exited126 and the managed directory was
@@ -85,14 +102,42 @@ exercise tampering, unpinned dependencies, namespace mismatch, invalid UTF-8,
 missing blocks and duplicate aliases. Native resolver output and writer
 replay both compiled, packed and executed through the adopted compiler.
 
-The explicit path-loader test is a bounded two-module callback fixture.
-General path discovery, package/signature/admission, checked-KIR Definition
-graph integration and full public CLI/target behavior remain open.
+`kotoba.compiler.project-files` now implements generic canonical path
+discovery, rather than relying on the original two-module callback fixture.
+It uses a separate sys/cwd grant for relative paths, physical startup cwd,
+bounded lexical normalization, canonical namespace paths, explicit roots,
+reachable closure, ambiguity/namespace checks and aggregate/module budgets.
+FS2 enforces no-follow traversal, including in-root symlinks; historical
+symlink-following behavior is not claimed. The generic native resolver,
+writer and locked replay compiled, packed and executed a transitive diamond
+project; 256 modules passed and the 257th was refused by name.
+Package/signature/admission, checked-KIR Definition graph integration and
+full public CLI/target behavior remain open.
+
+The adopted source core candidate now admits Unicode symbol/keyword runs
+without normalization, hashes their exact UTF-8 bytes, and retains byte
+offset spans. Native tests passed mixed-width hashing against an explicit
+byte vector, Unicode names and computed/literal keyword equality, source
+execution and Unicode export extraction. CID writer/replay also passed with
+Unicode namespaces and block-store paths. This core extension has not yet
+replaced the qualified main compiler. The independent Form reader boundary
+fix was integrated as Amu PR1546 with native regression/negative controls
+and complete unchanged CBOR/Definition identity corpora.
 
 The repository's canonical Form reader was built through the measured core
 with a source lock, packed into native ARM ELF, and used to read the complete
 current `surface-status.edn` (version 1/profile 6) and `cli.edn` (12 commands
 and their flags). This is reader execution, not implementation of all CLI
-verbs. Full CLI/target, Definition/package CID, fault matrix, actual x86,
-complete selfbuild/Embench/MIR/GMIR/CDCI, main/CI readback and cleanup remain
-required before the encompassing issues can be completed.
+verbs. The full31 source before the controller-pin update passed all19
+Embench, MIR all large, GMIR, resource and pinned-source refusal cases.
+The current core warm three generations, locked unity and independent cold
+C0-to-core agree byte-for-byte. Updated controller source pins also produced
+a new three-generation full31 fixed point. Final cold Pw/full, artifact
+identity links and actual current x86/public/CDCI qualification remain open.
+
+Kotoba product PR761 merged the canonical all12 request parser and replaced
+the retired JVM/Node/C-loader workflow with Amu/Kotoba native CI. Its complete
+ARM chain passed locally and its main CI is running. Command execution is a
+separate acceptance criterion: full CLI/target, checked-KIR Definition and
+package admission, complete FS fault/race parity, final main/CI readback and
+cleanup remain required before the encompassing issues can be completed.
