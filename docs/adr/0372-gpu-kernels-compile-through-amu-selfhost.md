@@ -329,7 +329,10 @@ a follow-up to ADR 0371.
        every kernel skips it.
 
      Receipts: `docs/evidence/gpu-kernel-kir2-var-20261024/`.
-   * `attn_copy_dense` on B70/ANV;
+   * **Done: `attn_copy_dense` on B70/ANV.** The B70 run of the kir2 suite
+     (`gpu-kernel-kir2-h2-20261024/b70-anv.json`) ran all three shapes:
+     byte-identical to glslang's module, the cache rows exact, within
+     7.3e-8 of f64, and the provider confined.
    * **Done: the dot and kdot fixtures' kernels.**
      * `dot_rows`, from inference at 0f5824c.
      * `kdot_f32_r1`, from inference at c7ea9a9. This is the ggml quantized
@@ -481,5 +484,10 @@ a follow-up to ADR 0371.
        static images and spirv-val.
      * The GPU receipts above are historical, from providers the earlier
        root built. They are not native gates.
+     * Main's root since #1510 (`f782f3f2…`) builds the same 105 modules,
+       byte for byte, as the root of those receipts (`bd025475…`). The kir2
+       unit passes (147 cases), and every module passes `spirv-val`. So the
+       receipts describe exactly the modules main now produces (checked
+       2026-10-24).
 5. **Retirement.** Remove `emit-kernel.cljk`, glslang and the accelerator CLJK
    from the product route. The hand `.comp` files stay as baselines.
