@@ -66,13 +66,12 @@
 
 ## Native CDCI and retired public entry
 
-The integrated main FULL46 source retains native CLI/CID/FS2, the native i64
-receipt profile, all live/desktop modules and all18 normal adopted core
-modules. Root and public images are rebuilt from this exact graph with
-native ARM F1=F2, core generations, runtime cases and admission/refusal
-proofs. The controller and both gate identities are preserved from the
-qualified45 source. Current46 acceptance requires terminal exact-head
-native ARM/x86, receipt-profile, controller/public and locked consumer CI.
+The integrated FULL47 source includes main7eb live/user/desktop and the
+Kototama cache module, retaining all18 normal adopted core modules. Exact
+ARM image/container and native x86 three-generation fixed points, profile
+gates, fresh controller24/refusal18/parent cleanup/public and all inherited
+kernel/live/desktop admission gates pass locally. Final-head CI and live
+deployment remain separate states.
 Historical ARM/QEMU receipts remain bound to their own sources.
 The closed v5 project reserves low20KiB for non-live context/catalog. The
 v6 PCI candidate has128KiB RW storage and a64KiB private floor; its copied
@@ -80,7 +79,7 @@ BAR catalog starts at context20480. The v2 live ABI and v3 private user/desktop 
 versioned queue/arena/capability/domain regions, with native admission and
 actual guest receipts; full scheduling and shared Browser remain separate.
 
-- The complete candidate uses `seed/FULL-MANIFEST` (46 modules), retaining
+- The complete candidate uses `seed/FULL-MANIFEST` (47 modules), retaining
   every adopted core module. Static OUT is 12MiB because the complete
   TCP/spawn image exceeded the old 8MiB bound. The complete static profile
   also uses LitB1MiB and TOK786432 and NODE786432 and MM-WORDS31,064,064 (<2^25). Heap size, expected results,
@@ -167,8 +166,7 @@ fresh empty-authority admission on every hit. Runtime deadlines are host
 failures, never fabricated fuel receipts. Remote signatures, effectful grants,
 Cell integration and an ARM supervisor require separate qualification.
 
-Current integration adds that cache module to main7eb as FULL47. Its source
-and static NODE786432 profile require fresh ARM/x86 fixed points, native
-profile/host/controller/public and all inherited live/desktop gates. The
-checked-in main46 root/product are explicit provisional build inputs until
-FULL47 adoption. Prior FULL41 evidence remains historical and source-bound.
+Current FULL47 source and all native artifacts were freshly qualified locally.
+Prior FULL41 evidence remains source-bound in Git history. The four new ARM
+live/desktop gates are retained in final native CI; local x86 proofs include
+all four. Final-head both-ISA CI/artifact/review gates remain open.
