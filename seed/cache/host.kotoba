@@ -1,0 +1,349 @@
+;; Literal native byte table; no host string/loader dependency.
+(defn- kn-tokens [] :i64
+  (let [
+        ;; 0 'KTI64CACHE3'
+        t0_0 (kc-word (+ (kn-token 0) 0) 0x434143343649544b 8)
+        t0_8 (kc-word (+ (kn-token 0) 8) 0x334548 3)
+        ;; 1 'kototama.vm/program-v1'
+        t1_0 (kc-word (+ (kn-token 1) 0) 0x616d61746f746f6b 8)
+        t1_8 (kc-word (+ (kn-token 1) 8) 0x676f72702f6d762e 8)
+        t1_16 (kc-word (+ (kn-token 1) 16) 0x31762d6d6172 6)
+        ;; 2 'canonical-dag-cbor/ascii-bounded-v1'
+        t2_0 (kc-word (+ (kn-token 2) 0) 0x6163696e6f6e6163 8)
+        t2_8 (kc-word (+ (kn-token 2) 8) 0x62632d6761642d6c 8)
+        t2_16 (kc-word (+ (kn-token 2) 16) 0x69696373612f726f 8)
+        t2_24 (kc-word (+ (kn-token 2) 24) 0x6465646e756f622d 8)
+        t2_32 (kc-word (+ (kn-token 2) 32) 0x31762d 3)
+        ;; 3 'i64-wrap/v1'
+        t3_0 (kc-word (+ (kn-token 3) 0) 0x706172772d343669 8)
+        t3_8 (kc-word (+ (kn-token 3) 8) 0x31762f 3)
+        ;; 4 'expression-charge/v1'
+        t4_0 (kc-word (+ (kn-token 4) 0) 0x6973736572707865 8)
+        t4_8 (kc-word (+ (kn-token 4) 8) 0x67726168632d6e6f 8)
+        t4_16 (kc-word (+ (kn-token 4) 16) 0x31762f65 4)
+        ;; 5 'kototama.pure-i64-cache/v3'
+        t5_0 (kc-word (+ (kn-token 5) 0) 0x616d61746f746f6b 8)
+        t5_8 (kc-word (+ (kn-token 5) 8) 0x36692d657275702e 8)
+        t5_16 (kc-word (+ (kn-token 5) 16) 0x2f65686361632d34 8)
+        t5_24 (kc-word (+ (kn-token 5) 24) 0x3376 2)
+        ;; 6 'stdin72-receipt64/v3'
+        t6_0 (kc-word (+ (kn-token 6) 0) 0x2d32376e69647473 8)
+        t6_8 (kc-word (+ (kn-token 6) 8) 0x3674706965636572 8)
+        t6_16 (kc-word (+ (kn-token 6) 16) 0x33762f34 4)
+        ;; 7 'baseline-isa'
+        t7_0 (kc-word (+ (kn-token 7) 0) 0x656e696c65736162 8)
+        t7_8 (kc-word (+ (kn-token 7) 8) 0x6173692d 4)
+        ;; 8 'adopted-core-default'
+        t8_0 (kc-word (+ (kn-token 8) 0) 0x2d646574706f6461 8)
+        t8_8 (kc-word (+ (kn-token 8) 8) 0x6665642d65726f63 8)
+        t8_16 (kc-word (+ (kn-token 8) 16) 0x746c7561 4)
+        ;; 9 'imports-empty'
+        t9_0 (kc-word (+ (kn-token 9) 0) 0x2d7374726f706d69 8)
+        t9_8 (kc-word (+ (kn-token 9) 8) 0x7974706d65 5)
+        ;; 10 'entry-zero-arity'
+        t10_0 (kc-word (+ (kn-token 10) 0) 0x657a2d7972746e65 8)
+        t10_8 (kc-word (+ (kn-token 10) 8) 0x79746972612d6f72 8)
+        ;; 11 'unused'
+        t11_0 (kc-word (+ (kn-token 11) 0) 0x646573756e75 6)
+        ;; 12 'binding'
+        t12_0 (kc-word (+ (kn-token 12) 0) 0x676e69646e6962 7)
+        ;; 13 'slot-'
+        t13_0 (kc-word (+ (kn-token 13) 0) 0x2d746f6c73 5)
+        ;; 14 'KEXE_CAP_RESOURCES_35='
+        t14_0 (kc-word (+ (kn-token 14) 0) 0x5041435f4558454b 8)
+        t14_8 (kc-word (+ (kn-token 14) 8) 0x4352554f5345525f 8)
+        t14_16 (kc-word (+ (kn-token 14) 16) 0x3d35335f5345 6)
+        ;; 15 'KEXE_ALLOW=35,37,38,39'
+        t15_0 (kc-word (+ (kn-token 15) 0) 0x4c4c415f4558454b 8)
+        t15_8 (kc-word (+ (kn-token 15) 8) 0x37332c35333d574f 8)
+        t15_16 (kc-word (+ (kn-token 15) 16) 0x39332c38332c 6)
+        ;; 16 'KEXE_STACK_BYTES=8388608'
+        t16_0 (kc-word (+ (kn-token 16) 0) 0x4154535f4558454b 8)
+        t16_8 (kc-word (+ (kn-token 16) 8) 0x53455459425f4b43 8)
+        t16_16 (kc-word (+ (kn-token 16) 16) 0x383036383833383d 8)
+        ;; 17 'PATH=/nonexistent'
+        t17_0 (kc-word (+ (kn-token 17) 0) 0x6f6e2f3d48544150 8)
+        t17_8 (kc-word (+ (kn-token 17) 8) 0x6e6574736978656e 8)
+        t17_16 (kc-word (+ (kn-token 17) 16) 0x74 1)
+        ;; 18 'input.cbor'
+        t18_0 (kc-word (+ (kn-token 18) 0) 0x62632e7475706e69 8)
+        t18_8 (kc-word (+ (kn-token 18) 8) 0x726f 2)
+        ;; 19 'image.elf'
+        t19_0 (kc-word (+ (kn-token 19) 0) 0x6c652e6567616d69 8)
+        t19_8 (kc-word (+ (kn-token 19) 8) 0x66 1)
+        ;; 20 'binding'
+        t20_0 (kc-word (+ (kn-token 20) 0) 0x676e69646e6962 7)
+        ;; 21 'compile.stderr'
+        t21_0 (kc-word (+ (kn-token 21) 0) 0x2e656c69706d6f63 8)
+        t21_8 (kc-word (+ (kn-token 21) 8) 0x727265647473 6)
+        ;; 22 'building'
+        t22_0 (kc-word (+ (kn-token 22) 0) 0x676e69646c697562 8)
+        ;; 23 'compile-kototama-cache'
+        t23_0 (kc-word (+ (kn-token 23) 0) 0x2d656c69706d6f63 8)
+        t23_8 (kc-word (+ (kn-token 23) 8) 0x616d61746f746f6b 8)
+        t23_16 (kc-word (+ (kn-token 23) 16) 0x65686361632d 6)
+        ;; 24 '/building/input.cbor'
+        t24_0 (kc-word (+ (kn-token 24) 0) 0x6e69646c6975622f 8)
+        t24_8 (kc-word (+ (kn-token 24) 8) 0x2e7475706e692f67 8)
+        t24_16 (kc-word (+ (kn-token 24) 16) 0x726f6263 4)
+        ;; 25 '--target'
+        t25_0 (kc-word (+ (kn-token 25) 0) 0x7465677261742d2d 8)
+        ;; 26 '--output'
+        t26_0 (kc-word (+ (kn-token 26) 0) 0x74757074756f2d2d 8)
+        ;; 27 '/building/image.elf'
+        t27_0 (kc-word (+ (kn-token 27) 0) 0x6e69646c6975622f 8)
+        t27_8 (kc-word (+ (kn-token 27) 8) 0x2e6567616d692f67 8)
+        t27_16 (kc-word (+ (kn-token 27) 16) 0x666c65 3)
+        ;; 28 '--compiler-sha256'
+        t28_0 (kc-word (+ (kn-token 28) 0) 0x6c69706d6f632d2d 8)
+        t28_8 (kc-word (+ (kn-token 28) 8) 0x35326168732d7265 8)
+        t28_16 (kc-word (+ (kn-token 28) 16) 0x36 1)
+        ;; 29 '--source-sha256'
+        t29_0 (kc-word (+ (kn-token 29) 0) 0x656372756f732d2d 8)
+        t29_8 (kc-word (+ (kn-token 29) 8) 0x3635326168732d 7)
+        ;; 30 '--profile'
+        t30_0 (kc-word (+ (kn-token 30) 0) 0x6c69666f72702d2d 8)
+        t30_8 (kc-word (+ (kn-token 30) 8) 0x65 1)
+        ;; 31 'KTI64RUN3'
+        t31_0 (kc-word (+ (kn-token 31) 0) 0x4e5552343649544b 8)
+        t31_8 (kc-word (+ (kn-token 31) 8) 0x33 1)
+        ;; 32 'x86_64-linux'
+        t32_0 (kc-word (+ (kn-token 32) 0) 0x6c2d34365f363878 8)
+        t32_8 (kc-word (+ (kn-token 32) 8) 0x78756e69 4)
+        ;; 33 '0'
+        t33_0 (kc-word (+ (kn-token 33) 0) 0x30 1)
+        ;; 34 'none'
+        t34_0 (kc-word (+ (kn-token 34) 0) 0x656e6f6e 4)
+        ;; 35 'allow'
+        t35_0 (kc-word (+ (kn-token 35) 0) 0x776f6c6c61 5)
+        ;; 36 'CACHE_HIT\n'
+        t36_0 (kc-word (+ (kn-token 36) 0) 0x49485f4548434143 8)
+        t36_8 (kc-word (+ (kn-token 36) 8) 0xa54 2)
+        ;; 37 'CACHE_MISS\n'
+        t37_0 (kc-word (+ (kn-token 37) 0) 0x494d5f4548434143 8)
+        t37_8 (kc-word (+ (kn-token 37) 8) 0xa5353 3)
+        end 0] 0))
+;; Bounded local cache host, native Linux x86_64. Reuses the reviewed CDCI
+;; supervisor's hash, confined open, image sealing and scalar syscall layer.
+;; This is a trusted local host role, not a remotely signed Murakumo Cell.
+(defn- kn-token [i :i64] :i64 (+ (kc-g) 22000000 (* i 512)))
+(defn- kn-request [i :i64] :i64 (kxrt-load64 (+ (kc-g) 22110000 (* i 8))))
+(defn- kn-text? [a :i64 b :i64] :bool
+  (let [n (kc-len a 4097)] (and (>= n 0) (= n (kc-len b 4097)) (kc-equal a b n))))
+(defn- kn-number [p :i64 maximum :i64] :i64
+  (let [n (kc-len p 20)]
+    (if (or (<= n 0) (and (> n 1) (= (kxrt-load8 p) 48))) (kc-fail 4101)
+      (loop [i 0 value 0]
+        (if (= i n) value
+          (let [digit (- (kxrt-load8 (+ p i)) 48)]
+            (if (or (< digit 0) (> digit 9) (> value (quot (- maximum digit) 10))) (kc-fail 4101)
+              (recur (inc i) (+ (* value 10) digit)))))))))
+(defn- kn-hdigit [c :i64] :i64
+  (cond (and (>= c 48) (<= c 57)) (- c 48) (and (>= c 97) (<= c 102)) (- c 87) :else (kc-fail 4101)))
+(defn- kn-hbyte [p :i64 i :i64] :i64
+  (+ (* 16 (kn-hdigit (kxrt-load8 (+ p (* i 2))))) (kn-hdigit (kxrt-load8 (+ p (* i 2) 1)))))
+(defn- kn-hword [p :i64 start :i64] :i64
+  (loop [i 0 word 0] (if (= i 8) word
+    (recur (inc i) (bit-or word (i64-shift-left (kn-hbyte p (+ start i)) (* i 8)))))))
+(defn- kn-policy? [] :bool
+  (loop [i 0] (if (= i 4) true
+    (and (= (kn-hword (kn-request 5) (* i 8)) (kn-policy-word i))
+         (= (kn-hword (kn-request 6) (* i 8)) (kn-policy-word (+ i 4))) (recur (inc i))))))
+(defn- kn-cid [codec :i64 hash :i64 dst :i64] :i64
+  (let [z (kxrt-store8 dst 98)]
+    (loop [i 0 acc 0 bits 0 n 1]
+      (cond (>= bits 5)
+            (let [rest (- bits 5) d (bit-and (u64-shift-right acc rest) 31)
+                  w (kxrt-store8 (+ dst n) (if (< d 26) (+ 97 d) (+ 24 d)))]
+              (recur i (bit-and acc (dec (i64-shift-left 1 rest))) rest (inc n)))
+            (< i 36) (recur (inc i) (+ (* acc 256) (case i 0 1 1 codec 2 18 3 32 (kn-hbyte hash (- i 4)))) (+ bits 8) n)
+            (= bits 0) (let [w (kxrt-store8 (+ dst n) 0)] dst)
+            :else (let [d (bit-and (i64-shift-left acc (- 5 bits)) 31)
+                        w (kxrt-store8 (+ dst n) (if (< d 26) (+ 97 d) (+ 24 d)))
+                        end (kxrt-store8 (+ dst n 1) 0)] dst)))))
+(defn- kn-line [dst :i64 at :i64 p :i64] :i64
+  (let [n (kc-len p 4097) bound (if (or (< n 0) (> (+ at n 1) 2048)) (kc-fail 4101) 0)
+        c (kc-copy (+ dst at) p n) nl (kxrt-store8 (+ dst at n) 10)] (+ at n 1)))
+(defn- kn-binding [] :i64
+  (let [dst (+ (kc-g) 22100000)
+        a (kn-line dst 0 (kn-token 0)) b (kn-line dst a (kn-request 3))
+        c (kn-line dst b (kn-request 5)) d (kn-line dst c (kn-request 6))
+        e (kn-line dst d (kn-request 7))
+        n (loop [i 1 at e] (if (= i 11) at (recur (inc i) (kn-line dst at (kn-token i)))))
+        length (kc-set 216 n) digest (kc-sha dst n) saved (kc-copy (+ (kc-g) 22103000) digest 65)] n))
+(defn- kn-private [fd :i64 directory :bool] :i64
+  (let [s (+ (kc-g) 5120) r (kxrt-syscall 5 fd s 0 0 0 0) mode (kxrt-load64 (+ s 24))
+        uid (kxrt-syscall 107 0 0 0 0 0 0)]
+    (if (or (< r 0) (not= (u64-shift-right mode 32) uid)
+            (not= (bit-and mode 61440) (if directory 16384 32768))
+            (if directory (not= (bit-and mode 511) 448)
+              (or (not= (kxrt-load64 (+ s 16)) 1) (not= (bit-and mode 63) 0))))
+      (kc-fail 4102) fd)))
+(defn- kn-record [fd :i64] :i64
+  (let [old (kc-get 8) root (kc-set 8 fd) file (kc-open (kn-token 12) 655360 0)
+        checked (if (< file 0) (kc-fail 4103) (kn-private file false))
+        n (kc-readfd file 2048) close (kc-close file) restore (kc-set 8 old)
+        saved (kc-copy (+ (kc-g) 22105000) (+ (kc-g) 131072) n)
+        parsed (kc-parse (+ (kc-g) 22105000) n 18)
+        prefix (loop [i 0 at 0]
+          (if (= i 15) at
+            (let [line (kc-line i) len (kc-len line 513)]
+              (if (or (< len 0) (> (+ at len 1) 2048)) (kc-fail 4103)
+                (recur (inc i) (+ at len 1))))))
+        ;; Reconstruct the exact 15-line binding before hashing (parse nulled NL).
+        binding (+ (kc-g) 22108000)
+        bytes (loop [i 0 at 0] (if (= i 15) at (recur (inc i) (kn-line binding at (kc-line i)))))
+        hash (kc-sha binding bytes)
+        valid (if (and (kc-hex? (kc-line 15)) (kc-equal hash (kc-line 15) 64)) 0 (kc-fail 4103))]
+    (if (kc-equal hash (+ (kc-g) 22103000) 64)
+      (if (and (= bytes (kc-get 216)) (kc-equal binding (+ (kc-g) 22100000) bytes)) 1 (kc-fail 4103)) 0)))
+(defn- kn-slot [i :i64] :i64
+  (let [p (+ (kc-g) 22131000) a (kc-copy p (kn-token 13) 5)
+        b (kxrt-store8 (+ p 5) (+ 48 (quot i 10))) c (kxrt-store8 (+ p 6) (+ 48 (kc-rem i 10)))
+        z (kxrt-store8 (+ p 7) 0)] p))
+(defn- kn-find [] :i64
+  (let [z (kc-set 224 -1)]
+    (loop [i 0]
+      (if (= i 16) -1
+        (let [fd (kc-open (kn-slot i) 720896 0)]
+          (cond (= fd -2) (let [mark (if (< (kc-get 224) 0) (kc-set 224 i) 0)] (recur (inc i)))
+                (< fd 0) (kc-fail 4103)
+                :else (let [private (kn-private fd true) match (kn-record fd)]
+                        (if (= match 1) fd (let [closed (kc-close fd)] (recur (inc i)))))))))))
+(defn- kn-seal [fd :i64 expected :i64 limit :i64] :i64
+  (let [n (kc-readfd fd limit) close (kc-close fd) p (+ (kc-g) 131072) hash (kc-sha p n)]
+    (if (or (not (kc-equal hash expected 64)) (not (kc-elf? p n)) (= (bit-and (kc-get 104) 64) 0)) (kc-fail 4104)
+      (let [image (kxrt-syscall 319 (+ (kc-g) 2032) 19 0 0 0 0)]
+        (if (or (< image 0) (< (kc-write image p n) 0) (< (kxrt-syscall 72 image 1033 15 0 0 0) 0)) (kc-fail 4104) image)))))
+(defn- kn-env [] :i64
+  (let [env (+ (kc-g) 9000) fs (+ (kc-g) 22140000) n (kc-len (kn-token 14) 64)
+        prefix (kc-copy fs (kn-token 14) n) root (kn-request 1) rn (kc-len root 4097)
+        c (kc-copy (+ fs n) root (+ rn 1))
+        a (kxrt-store64 env (kn-token 15)) b (kxrt-store64 (+ env 8) (kn-token 16))
+        d (kxrt-store64 (+ env 16) fs) e (kxrt-store64 (+ env 24) (kn-token 17))
+        f (kxrt-store64 (+ env 32) 0)] 0))
+(defn- kn-child [image :i64 args :i64 input :i64 output :i64 error :i64 seconds :i64] :i64
+  (let [death (kxrt-syscall 157 1 9 0 0 0 0) parent (kxrt-syscall 110 0 0 0 0 0 0)
+        priv (kxrt-syscall 157 38 1 0 0 0 0) fds (kxrt-syscall 436 3 4294967295 4 0 0 0)
+        a (kxrt-syscall 33 input 0 0 0 0 0) b (kxrt-syscall 72 0 2 0 0 0 0)
+        c (kxrt-syscall 33 output 1 0 0 0 0) d (kxrt-syscall 33 error 2 0 0 0 0)
+        cpu (kc-limit 0 seconds) size (kc-limit 1 1048576) core (kc-limit 4 0)
+        stack (kc-limit 3 (if (= seconds 120) 8388608 (+ 16384 (kc-get 240))))
+        address (if (= seconds 120) 0 (kc-limit 9 33554432))]
+    (if (or (< death 0) (not= parent (kc-get 32)) (< priv 0) (< fds 0) (< a 0) (< b 0) (< c 0) (< d 0)) (kc-fail 4201)
+      (let [exec (kxrt-syscall 322 image (+ (kc-g) 2032) args (+ (kc-g) 9000) 4096 0)] (kc-fail 4201)))))
+(defn- kn-job [image :i64 args :i64 input :i64 output :i64 error :i64 seconds :i64] :i64
+  (let [start (kc-now) pid (kxrt-syscall 57 0 0 0 0 0 0)]
+    (cond (< pid 0) (kc-fail 4201)
+          (= pid 0) (kn-child image args input output error seconds)
+          :else (loop [attempt 0]
+            (let [r (kxrt-syscall 61 pid (+ (kc-g) 64) 1 0 0 0)]
+              (cond (= r pid) (kc-get 64)
+                    (and (< r 0) (not= r -4)) (kc-fail 4201)
+                    (>= (- (kc-now) start) seconds)
+                    (let [kill (kxrt-syscall 62 pid 9 0 0 0 0)
+                          reap (loop [i 0] (let [w (kxrt-syscall 61 pid (+ (kc-g) 64) 0 0 0 0)] (if (= w -4) (recur (inc i)) w)))] -1)
+                    :else (let [p (+ (kc-g) 144) a (kxrt-store64 p 0) b (kxrt-store64 (+ p 8) 10000000)
+                                sleep (kxrt-syscall 35 p 0 0 0 0 0)] (recur (inc attempt)))))))))
+(defn- kn-absolute [suffix :i64 offset :i64] :i64
+  (let [root (kn-request 1) rn (kc-len root 4097) n (kc-len suffix 4097) p (+ (kc-g) offset)
+        bound (if (> (+ rn n) 4095) (kc-fail 4101) 0) a (kc-copy p root rn) b (kc-copy (+ p rn) suffix (+ n 1))] p))
+(defn- kn-clean [dir :i64] :i64
+  (let [a (loop [i 0] (if (= i 4) 0
+            (let [r (kxrt-syscall 263 dir (kn-token (+ 18 i)) 0 0 0 0)]
+              (if (and (< r 0) (not= r -2)) (kc-fail 4202) (recur (inc i))))))
+        c (kc-close dir) d (kxrt-syscall 263 (kc-get 200) (kn-token 22) 512 0 0 0)]
+    (if (< d 0) (kc-fail 4202) 0)))
+(defn- kn-compile [] :i64
+  (let [available (if (< (kc-get 224) 0) (kc-fail 4301) 0)
+        root (kc-get 200) mkdir (kxrt-syscall 258 root (kn-token 22) 448 0 0 0)
+        admitted (if (< mkdir 0) (kc-fail 4302) 0) dir (kc-open (kn-token 22) 720896 0)
+        directory (if (< dir 0) (kc-fail 4302) (kn-private dir true)) changed (kc-set 8 dir)
+        source (kc-newfile (kn-token 18)) written (kc-write source (+ (kc-g) 21000000) (kc-get 208)) sync (kc-sync-close source)
+        output (kc-newfile (kn-token 12)) error (kc-newfile (kn-token 21))
+        input (kxrt-syscall 257 -100 (kc-token 31) 655360 0 0 0)
+        args (+ (kc-g) 22111000)
+        a0 (kxrt-store64 args (kn-request 4)) a1 (kxrt-store64 (+ args 8) (kn-token 23))
+        a2 (kxrt-store64 (+ args 16) (kn-absolute (kn-token 24) 22112000))
+        a3 (kxrt-store64 (+ args 24) (kn-token 25)) a4 (kxrt-store64 (+ args 32) (kn-request 7))
+        a5 (kxrt-store64 (+ args 40) (kn-token 26)) a6 (kxrt-store64 (+ args 48) (kn-absolute (kn-token 27) 22117000))
+        a7 (kxrt-store64 (+ args 56) (kn-token 28)) a8 (kxrt-store64 (+ args 64) (kn-request 5))
+        a9 (kxrt-store64 (+ args 72) (kn-token 29)) a10 (kxrt-store64 (+ args 80) (kn-request 6))
+        a11 (kxrt-store64 (+ args 88) (kn-token 30)) a12 (kxrt-store64 (+ args 96) (kn-token 5))
+        a13 (kxrt-store64 (+ args 104) 0) env (kn-env)
+        job (kn-job (kc-get 256) args input output error 120)
+        ci (kc-close input) co (kc-sync-close output) ce (kc-sync-close error)]
+    (if (not= job 0) (let [cleanup (kn-clean dir)] (kc-fail (if (= job -1) 4203 4204)))
+      (let [match (kn-record dir) checked (if (not= match 1) (kc-fail 4103) 0)
+            image (kc-open (kn-token 19) 655360 0) mode (kxrt-syscall 91 image 448 0 0 0 0)
+            synced (kc-sync-close image)
+            u0 (kxrt-syscall 263 dir (kn-token 18) 0 0 0 0) u1 (kxrt-syscall 263 dir (kn-token 21) 0 0 0 0)
+            flush (kxrt-syscall 74 dir 0 0 0 0 0)
+            restored (kc-set 8 root) renamed (kxrt-syscall 316 root (kn-token 22) root (kn-slot (kc-get 224)) 1 0)
+            final (kxrt-syscall 74 root 0 0 0 0 0)]
+        (if (or (< mode 0) (< u0 0) (< u1 0) (< flush 0) (< renamed 0) (< final 0)) (kc-fail 4202) dir)))))
+(defn- kn-execute [directory :i64] :i64
+  (let [selected (kc-set 8 directory) match (kn-record directory) checked (if (not= match 1) (kc-fail 4103) 0)
+        bound (kn-number (kc-line 17) 262144)
+        admitted (if (or (< bound 64) (not= (bit-and bound 15) 0) (> bound (kc-get 240))) (kc-fail 4401) 0)
+        file (kc-open (kn-token 19) 655360 0) private (if (< file 0) (kc-fail 4103) (kn-private file false))
+        n (kc-readfd file 1048576) close (kc-close file) hash (kc-sha (+ (kc-g) 131072) n)
+        cid (kn-cid 85 hash (+ (kc-g) 22104000)) pinned (if (kn-text? cid (kc-line 16)) 0 (kc-fail 4104))
+        expected (kc-copy (+ (kc-g) 22104500) hash 65)
+        image (kc-image (kn-token 19) (+ (kc-g) 22104500))
+        context (+ (kc-g) 22130000) magic (kxrt-store64 context 0x003343343649544b)
+        budget (kxrt-store64 (+ context 8) (kc-get 232)) stack (kxrt-store64 (+ context 16) (kc-get 240))
+        arena (kxrt-store64 (+ context 24) 0) authority (kxrt-store64 (+ context 32) 0)
+        key (loop [i 0] (if (= i 32) 0 (let [w (kxrt-store8 (+ context 40 i) (kn-hbyte (+ (kc-g) 22103000) i))] (recur (inc i)))))
+        input (kxrt-syscall 319 (+ (kc-g) 2032) 11 0 0 0 0) written (kc-write input context 72)
+        seal (kxrt-syscall 72 input 1033 15 0 0 0) seek (kxrt-syscall 8 input 0 0 0 0 0)
+        output (kxrt-syscall 319 (+ (kc-g) 2032) 11 0 0 0 0) error (kxrt-syscall 319 (+ (kc-g) 2032) 11 0 0 0 0)
+        args (+ (kc-g) 22111000) a (kxrt-store64 args (kn-token 19)) b (kxrt-store64 (+ args 8) 0)
+        environment (kxrt-store64 (+ (kc-g) 9000) 0)
+        ready (if (or (< input 0) (< written 0) (< seal 0) (< seek 0) (< output 0) (< error 0)) (kc-fail 4201) 0)
+        status (kn-job image args input output error 5) rewound (kxrt-syscall 8 output 0 0 0 0 0)
+        count (kc-readfd output 64) p (+ (kc-g) 131072) result (kxrt-load64 (+ p 8))
+        valid (if (and (= count 64) (= (kxrt-load64 p) 0x003252343649544b) (>= result 0) (<= result 3)
+                       (= status (if (= result 0) 0 17920)) (= (kxrt-load64 (+ p 24)) (kc-get 232))
+                       (= (kxrt-load64 (+ p 48)) 0) (= (kxrt-load64 (+ p 56)) bound)
+                       (= (kxrt-load64 (+ p 32)) (- (kc-get 232) (kxrt-load64 (+ p 40))))
+                       (>= (kxrt-load64 (+ p 32)) 0)
+                       (or (= result 0) (= (kxrt-load64 (+ p 16)) 0))
+                       (if (= result 1) (= (kxrt-load64 (+ p 40)) -1)
+                         (and (>= (kxrt-load64 (+ p 40)) 0) (<= (kxrt-load64 (+ p 40)) (kc-get 232))))) 0 (kc-fail 4402))
+        stdout (kc-write 1 p 64)]
+    (kxrt-syscall 60 (if (= result 0) 0 70) 0 0 0 0 0)))
+(defn- kxrt-start [sp :i64] :i64
+  (let [base (kxrt-syscall 9 0 33554432 3 34 -1 0)]
+    (if (< base 0) (kxrt-syscall 60 2 0 0 0 0 0)
+      (let [init (kxrt-store64 (+ (kxrt-ctx) 512) base) tokens (kc-tokens) literals (kn-tokens)
+            argc (kxrt-load64 sp) argv (+ sp 8) valid (if (not= argc 3) (kc-fail 4101) 0)
+            path (kxrt-load64 (+ argv 8)) digest (kxrt-load64 (+ argv 16))
+            args (if (and (kc-path? path true) (kc-hex? digest)) 0 (kc-fail 4101))
+            fd (kc-absolute-open path 655360) read (if (< fd 0) (kc-fail 4101) 0)
+            n (kc-readfd fd 16384) close (kc-close fd) hash (kc-sha (+ base 131072) n)
+            pin (if (kc-equal hash digest 64) 0 (kc-fail 4101))
+            copy (kc-copy (+ base 73728) (+ base 131072) n) parsed (kc-parse (+ base 73728) n 16)
+            save (loop [i 0] (if (= i 16) 0 (let [w (kxrt-store64 (+ base 22110000 (* i 8)) (kc-line i))] (recur (inc i)))))
+            policy (if (and (kn-text? (kn-request 0) (kn-token 31)) (kn-text? (kn-request 7) (kn-token 32))
+                           (kc-path? (kn-request 1) true) (kc-path? (kn-request 2) true) (kc-path? (kn-request 4) true)
+                           (kc-hex? (kn-request 5)) (kc-hex? (kn-request 6))
+                           (kn-text? (kn-request 10) (kn-token 33)) (kn-text? (kn-request 11) (kn-token 33))
+                           (kn-text? (kn-request 12) (kn-token 33)) (kn-text? (kn-request 13) (kn-token 33))
+                           (kn-text? (kn-request 14) (kn-token 34)) (kn-text? (kn-request 15) (kn-token 35))) 0 (kc-fail 4401))
+            approved-compiler (if (kn-policy?) 0 (kc-fail 4104))
+            fuel (kc-set 232 (kn-number (kn-request 8) 9007199254740991)) stack (kc-set 240 (kn-number (kn-request 9) 262144))
+            root (kc-absolute-open (kn-request 1) 720896) private (if (< root 0) (kc-fail 4102) (kn-private root true))
+            rooted (kc-set 8 root) remembered (kc-set 200 root) lock (kxrt-syscall 73 root 6 0 0 0 0)
+            locked (if (< lock 0) (kc-fail 4302) 0) parent (kc-set 32 (kxrt-syscall 39 0 0 0 0 0 0))
+            source (kc-absolute-open (kn-request 2) 655360) opened (if (< source 0) (kc-fail 4101) 0)
+            size (kc-readfd source 65536) cs (kc-close source) source-size (kc-set 208 size)
+            source-copy (kc-copy (+ base 21000000) (+ base 131072) size)
+            source-hash (kc-sha (+ base 21000000) size) cid (kn-cid 113 source-hash (+ base 22104000))
+            identified (if (kn-text? cid (kn-request 3)) 0 (kc-fail 4104))
+            compiler (kc-absolute-open (kn-request 4) 655360) compiler-open (if (< compiler 0) (kc-fail 4104) 0)
+            sealed (kc-set 256 (kn-seal compiler (kn-request 5) 16777216)) binding (kn-binding)
+            cached (kn-find) marker (if (< cached 0) 37 36)
+            log (kc-write 2 (kn-token marker) (kc-len (kn-token marker) 64))
+            selected (if (< cached 0) (kn-compile) cached)]
+        (kn-execute selected)))))
