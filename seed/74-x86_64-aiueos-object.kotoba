@@ -194,7 +194,9 @@
 ;;   - a let-bound local with one assignment of such a value.
 ;; A literal is NOT a base: it would name any absolute address (ADR 0373).
 (defn- xk-region [M :vector-i64 i :i64 t :i64 depth :i64] :i64
-  (if (> depth 12) -1
+  ;; a work budget per access (M[198], reset by xk-check): an accepted chain is explored in full at every level, so a hostile source with
+  ;; many call sites per helper and a deep chain would cost K^depth visits; past the budget the base is simply not rooted
+  (if (or (> depth 12) (> (vector-at (mem-set M 198 (inc (vector-at M 198))) 198) 40000)) -1
     (let [j (xk-writer M i t)]
       (if (< j 0) -1
         (let [op (xg-si M j IF-OP) a (xg-si M j IF-A) b (xg-si M j IF-B)]
@@ -241,7 +243,7 @@
   (if (or (not= (vector-at M MM-ERR) 0) (>= i (vector-at M MM-SIR-N))) M
     (let [op (xg-si M i IF-OP) a (xg-si M i IF-A) b (xg-si M i IF-B)]
       (if (or (and (= op OP-CALL) (>= (xk-intr M a) 0)
-                   (let [r (xk-region M i b 0) ln (xk-src M i (inc b) 0)]
+                   (let [r (xk-region (mem-set M 198 0) i b 0) ln (xk-src M i (inc b) 0)]
                      (not (and (>= r 0) (not= ln 0) (= ln r)))))
               ;; the exported function's parameters are rooted because the kernel hands them in: a guest call of the export would
               ;; hand them in again with a base of its own making, so nothing in the object may call the export

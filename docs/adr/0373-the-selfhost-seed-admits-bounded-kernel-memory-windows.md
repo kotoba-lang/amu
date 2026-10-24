@@ -216,3 +216,9 @@ counted (`ok_tail_recursive_helper`; a tail call that REBASES the base still ref
 depth limit is 12 instead of 6 (`ok_deep_helper_chain`), because the object reaches a 24-byte op region through seven helper levels. With those and
 three source edits (drop the `main` export, narrow the surface at the entry with `(kernel-subregion st sb 0 128)`, bind an `if` argument with `let`) the
 object compiles to a 9185-byte text on this route. Whether it behaves as the shipped one (the gates, byte for byte frames) is not yet measured.
+
+A third independent read (same day, of the identity-assignment rule and depth 12) found no admitted out-of-region access, and one resource problem,
+fixed here: with no memoization, an accepted chain is explored in full at every level, so a small source of ten helpers each calling the next eight
+times cost about 8^10 visits at depth 12. `xk-region` now has a work budget per access (M[198], reset by `xk-check`; 40000 visits): past it the base is
+not rooted, which refuses and never admits (`no_call_site_blowup_is_refused_not_hung`; the 38 cases check in about fourteen seconds). Not verified
+by that read: R5B specializations (they shift the parameter slots; the profile should refuse them), and closures that write a parent frame's slot.
