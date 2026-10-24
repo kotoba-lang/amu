@@ -1,55 +1,55 @@
 # Current Amu selfhost native entry
 
-The public `bin/amu` is a 8,704,512-byte static Linux x86_64 ELF,
-SHA-256 `67476a255ba9115fead86b9fa54d5f0240b4e275786d1c42a97953c440e0d11d`, built from complete29 source `e29ef6b1cabb4874aecbec773e484326a5cc1453`.
-Both relative aliases resolve to that same image. The native ARM root is
-`f782f3f2a8298c39feeedf873896c9858535a8e371786337632cc60f9e971b9f`. Every adopted18 core module is retained. Complete
-ARM containers F1=F2=F3, packed F2=F3 and independent canonical Pw agree;
-actual native x86 F1=F2=F3 reproduce the public image. Static capacities are
-TOK786432/MM-WORDS29,491,200/LitB1MiB/OUT12MiB, heap1765120 words unchanged.
+The full31 public `bin/amu` is a static Linux x86_64 ELF. Its exact size,
+SHA256 and source revision are recorded in `native-product.json`; the exact
+manifest source pins are bound by the current native execution receipts.
+`bin/kotoba` and `bin/kotoba-compiler` are relative aliases of that image.
+The native ARM root is separately pinned in
+`seed/bootstrap/aarch64-linux-static-root.json`.
 
-## Actual current-source verification
+All 18 adopted core modules remain. Static capacities are unchanged:
+TOK786432/MM-WORDS29,491,200/LitB1MiB/OUT12MiB/heap1765120 words.
+The native workflow measures independent canonical Pw, matching full ARM
+containers and root reproduction, without an old language host, C compiler
+or C loader. The product includes current main's Kototama i64 AOT and
+call-site/base-length memory hardening together with image/EFI packaging.
 
-The changed native runner `80b757e13799761061c8d13e328d52f325b57e726e736b6e2c73337be56865bf` ran
-all19 Embench correctness workloads, MIR normal/all6 large/whole-large,
-GMIR8,31 runtime/resource cases,17 pin refusals and E2104 afresh. All33 MIR
-files/3roots and12 GMIR files/2roots retain exact source locks, fuel and
-grants. Whole-MIR exits with tracked use0 and155,688,217 scope releases.
-The final compiler reproduces all27 executed containers and exact runner
-and C0. New independent C0 `267911f9cdea95d9d3868d342d590c8591349e5622ff1400c549f25da4ffef83` reproduces complete18
-core container `086f85dbc21ab94098a9ca1f356ce8430741797467c0c586a5c6b97553dffd06`, matching warm3 and locked
-unity. No comparative performance score was measured.
+## Adoption and native verdict
 
-Source locks use a private native frame and one nonblocking/no-follow FD,
-regular-file metadata,1MiB maximum, complete read/EOF and close. Directory,
-FIFO,socket,symlink,oversized,empty,malformed and missing inputs refuse
-E6015. Unicode and old-separator filenames preserve positive compiled
-bytes. Direct core/current ARM F/current x86 public3aliases cover150
-positive/refusal observations. The public check requires current complete
-proof, all3 actual native F images and current full unity; mutable matching
-descriptors alone cannot qualify an unrelated or stale product.
+Current evidence belongs in
+`docs/evidence/aiueos-aot-adoption-20261024/`. Earlier full30 snapshots retain
+their historical source binding. Acceptance requires the
+actual native x86 full compiler F1=F2=F3, current-source unity identity,
+clock/entropy/refusal/resource checks, both mandatory native CDCI roles
+and exact public-product/alias/source-lock readback. Exact-final-head PR CI,
+merge, merged-main CI and final tree/pin/mode checks are separate gates.
+An old matching descriptor or a Python observation is not that verdict.
 
-The fresh Kotoba native controller `39a500374e27d3a04404573cbf455eef56b2dbb6aa473279e3cd75cae9a1263a` ran
-both mandatory roles,24 result/exit/fuel cases,18 refusals and parent-death
-child cleanup. The report matches its physical positive gate receipt and
-the controller/gate ledger and image identities. Python only stages/hashes
-and observes processes; the Amu/Kotoba native controller owns the verdict.
-Current clock/entropy controls include ENOSYS refusal; ARM durable/sleep9
-and launcher30 pass. Historical x86 provider/exec-trace observations keep
-their source35 scope; they are not relabeled as current execution.
+The controller and gates rebuild byte-identically with this compiler:
 
-Evidence: `docs/evidence/native-cdci-20261023/current-scope.json`.
-Artifact qualification used exact candidate native CI run40003789973. Terminal
-exact-final-head PR CI, expected-head merge, terminal exact-main CI and
-tree/pin/alias/mode readback, archive-first owned cleanup remain separate
-completion gates recorded in the PR and internal task record.
+* controller `13dbe6c7ca373fd083d7c2e44299dcc95e285a7a6be8d5b60fb06a560f9d207d`
+* Amu selfhost `6370110508fee2379a659b5830c706c07ec46ca752f20cd95f2d81c66406871f`
+* Kotoba native `528d3d3523b2bbd0cb868c7090d7579f6b5348f1880299539ff84b9dd9f69102`
 
-## Remaining broader contracts
+Fresh native receipts bind those exact images and their input ledger to the
+new compiler. The fixed24 corpus and complete core are unchanged. No new
+comparative performance score is published. Earlier all19/MIR/GMIR and
+provider-environment evidence remains historical in its original directories.
 
-Engine-neutral defaults, full CLI verb/target compatibility,module/package
-locks,resolver/Definition CID,profile/seal,historical full assertion and
-general FS fault/race parity remain separate. The earlier RANGE out-of-file
-generic SIGILL observation remains open and is not named-refusal parity.
-Unsupported paths retain named refusals. Platform-linked providers and live
-cutover are not covered. There is no old language host,C compiler,loader,
-runtime or emulation fallback in this qualified native route.
+## AIUEOS scope
+
+The new native image/EFI diagnostics run on the qualified x86 generations
+as well as the native ARM bootstrap. Source/image pin mismatches and absent
+fixed-point proof refuse; post-adoption ARM root=F1 is accepted only when
+the measured rebuild reproduces the pinned root. See
+`docs/native-aiueos-image.md` for the supported bounded ABI.
+
+The QEMU entry probe does not qualify the complete AIUEOS kernel graph,
+module locks, ISR/live runtime, native media, desktop/input, Browser/CSSOM
+or Itonami. These remain JUN-31/JUN-93 dependencies.
+
+Engine-neutral defaults, broader CLI/package/resolver compatibility and
+general FS fault/race parity remain separate work. Platform-linked/C-runtime
+providers remain refused in mandatory native CDCI. The earlier RANGE
+out-of-file SIGILL observation is not named-refusal parity. No legacy
+runtime or emulation fallback is introduced by this adoption.

@@ -5,11 +5,17 @@ lineage. The public `bin/amu` is an Amu-built, self-rebuilt native Linux
 x86_64 executable. `bin/kotoba` and `bin/kotoba-compiler` name that same image.
 It has no ELF interpreter or dynamic runtime dependency.
 
-The complete product is `seed/FULL-MANIFEST`: the adopted 18-module core,
-Linux emitters and native CDCI factory/entry, 29 modules in one compiler.
+The complete product is `seed/FULL-MANIFEST`: all18 adopted core modules
+in a full31 compiler with native Linux emitters, browser Wasm, bounded
+Kototama i64 AOT, native CDCI and the AIUEOS image/EFI route.
 The frontend, lowering, optimization and AArch64 backend measured by the
 19-workload Embench corpus remain in this lineage. This migration publishes
 correctness evidence; it publishes no new performance score.
+
+`compile-kototama` compiles the closed `kototama.pure-i64-aot/v1` profile
+from canonical DAG-CBOR into metered scalar native code using that same
+core. It has empty guest authority, no heap and a static stack bound.
+See [the profile, command and native gate](docs/kototama-i64-aot.md).
 
 ## Native compiler use
 

@@ -20,7 +20,9 @@ holds 41):
 - **The answer is a `:string`.** Stdin that is not UTF-8 traps, as every
   `:string` answer does.
 - **Seccomp.** The filter admits `read(0)` only with wire 41 granted. A wire
-  that is not granted traps, as every capability wire does.
+  that is not granted is refused by name, as every capability wire is: the
+  runtime writes `KEXE_CAP {:wire 41 :refused :not-granted}` to stderr, then
+  traps ([`static-not-granted.md`](static-not-granted.md)).
 
 ## Wire 20 `:process/spawn`: a stdin payload (JUN-357)
 
