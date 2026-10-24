@@ -80,6 +80,25 @@ jobs:
         run: python3 scripts/seed/check-one-compiler.py --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/one"
       - name: Native FS2 forms, kernel errors and journal cleanup (arm64)
         run: python3 scripts/seed/check-native-fs2.py --compiler "$RUNNER_TEMP/one/F2.elf" --output "$RUNNER_TEMP/fs2-arm"
+      - name: Native typed live ABI and user-context admission (arm64)
+        run: |
+          python3 scripts/seed/check-static-profile-native.py --build "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/static-profile-arm"
+          python3 scripts/seed/check-aiueos-value-call-native.py --build "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/live-call-arm"
+          python3 scripts/seed/check-aiueos-user-native.py --build "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/user-context-arm"
+          python3 scripts/seed/check-aiueos-desktop-regions-native.py --build "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/desktop-regions-arm"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: live-abi-arm-evidence
+          path: |
+            ${{ runner.temp }}/static-profile-arm/native-static-profile.json
+            ${{ runner.temp }}/static-profile-arm/*/calls.json
+            ${{ runner.temp }}/live-call-arm/native-value-call.json
+            ${{ runner.temp }}/live-call-arm/*/calls.json
+            ${{ runner.temp }}/user-context-arm/native-user-context.json
+            ${{ runner.temp }}/user-context-arm/*/calls.json
+            ${{ runner.temp }}/desktop-regions-arm/native-desktop-regions.json
+            ${{ runner.temp }}/desktop-regions-arm/*/calls.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
@@ -192,6 +211,25 @@ jobs:
           python3 scripts/seed/check-kototama-cache-host.py --compiler "$RUNNER_TEMP/complete/F2.elf" --source-sha256 "$KOTOTAMA_CACHE_SOURCE_SHA256" --deadline-control --output "$RUNNER_TEMP/kototama-cache-host-x86_64"
       - name: Native x86 clock and entropy (fixed Kotoba guest, refusal and ENOSYS)
         run: python3 scripts/seed/check-native-clock-entropy.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/clock-entropy"
+      - name: Native x86 typed live ABI and user-context admission
+        run: |
+          python3 scripts/seed/check-static-profile-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/static-profile-x86"
+          python3 scripts/seed/check-aiueos-value-call-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/live-call-x86"
+          python3 scripts/seed/check-aiueos-user-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/user-context-x86"
+          python3 scripts/seed/check-aiueos-desktop-regions-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/desktop-regions-x86"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: live-abi-x86-evidence
+          path: |
+            ${{ runner.temp }}/static-profile-x86/native-static-profile.json
+            ${{ runner.temp }}/static-profile-x86/*/calls.json
+            ${{ runner.temp }}/live-call-x86/native-value-call.json
+            ${{ runner.temp }}/live-call-x86/*/calls.json
+            ${{ runner.temp }}/user-context-x86/native-user-context.json
+            ${{ runner.temp }}/user-context-x86/*/calls.json
+            ${{ runner.temp }}/desktop-regions-x86/native-desktop-regions.json
+            ${{ runner.temp }}/desktop-regions-x86/*/calls.json
       - name: Kotoba native controller (Amu selfhost and complete24 Kotoba gate)
         run: python3 scripts/seed/check-native-cdci.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/native-cdci"
       - name: Public native product and aliases
