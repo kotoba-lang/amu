@@ -6,6 +6,8 @@
 ;; Full kernel intrinsics, ISR and live runtime require subsequent gates.
 
 (def KP-ENTRY 43) ; L header: global byte offset + 1 of the image entry
+(def KP-ERR-NAME-START 44)
+(def KP-ERR-NAME-END 45)
 
 ;; 60-proj records AArch64 interface offsets in words. Convert only the
 ;; newly recorded interface addresses to this backend's byte units; retain
@@ -223,7 +225,11 @@
                 admitted (if (pj-ok M) (kg-check M L G) M)
                 image (if (pj-ok admitted) (kp-image admitted L G fuel) admitted)]
             (cond (>= (vector-at image MM-ERR) 7100)
-                  (let [w (io-err (string-concat "kernel project in " (string-concat (pj-err-path L P) ":\n")))]
+                  (let [w (io-err (string-concat "kernel project in " (string-concat (pj-err-path L P) ":\n")))
+                        a (pj-l L KP-ERR-NAME-START) b (pj-l L KP-ERR-NAME-END)
+                        source (if (> b a) (pj-src image L P (pj-l L pj-k-errmod)) "")
+                        named (if (and (> b a) (>= a 0) (<= b (string-length source)))
+                                (io-err (string-concat "kernel function " (string-concat (string-substring source a b) ":\n"))) 0)]
                     (xo-report image (pj-err-path L P) out))
                   (not (pj-ok image))
                   (if (= (pj-l L pj-k-nmod) 0) (drv-fail-in image path "") (drv-pj-fail image L P))

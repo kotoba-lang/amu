@@ -4,7 +4,7 @@
 ;; and instruction, then run xk-check plus the same rule for new widths.
 ;; No alternate AST origin policy and no literal-address region roots.
 (def KG-FBASE 16)
-(def KG-FW 5) ; nparams, ABI-export, code byte, owner module, ISR vector+1
+(def KG-FW 7) ; nparams, ABI-export, code byte, owner module, ISR vector+1, name start/end
 (def KG-SBASE (+ KG-FBASE (* MM-FN-CAP KG-FW)))
 (def KG-XFIRST (+ 1 KM-INTR-N))
 (def KG-FIRST (+ KG-XFIRST XK-INTR-N))
@@ -40,7 +40,9 @@
                             w (-> G (kg-fset g 0 (xg-f M f FF-NPARAMS))
                                     (kg-fset g 1 (if exported (if (>= vector 0) 2 1) 0))
                                     (kg-fset g 2 (+ (pj-l L pj-k-base) (dec (xg-f M f FF-CODE))))
-                                    (kg-fset g 3 m) (kg-fset g 4 (inc vector)))]
+                                    (kg-fset g 3 m) (kg-fset g 4 (inc vector))
+                                    (kg-fset g 5 (vector-at M (+ sb SF-START)))
+                                    (kg-fset g 6 (vector-at M (+ sb SF-END))))]
                         (recur (inc f)))))
         numbered (vector-assoc! G 0 end)]
     (loop [i 1 current 0]
@@ -88,5 +90,7 @@
                 (let [i (vector-at checked MM-ERR-N)
                       f (xg-si checked (xk-fn-start checked i) IF-A)]
                   (if (and (>= f KG-FIRST) (< f (vector-at G 0)))
-                    (pj-ls L pj-k-errmod (kg-f G f 3)) L)) L)]
+                    (-> L (pj-ls pj-k-errmod (kg-f G f 3))
+                          (pj-ls KP-ERR-NAME-START (kg-f G f 5))
+                          (pj-ls KP-ERR-NAME-END (kg-f G f 6))) L)) L)]
     checked))
