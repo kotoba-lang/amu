@@ -1009,6 +1009,37 @@ step-1 slice added the rows below it.]
   `docs/evidence/gpu/simdgroup-reduce-w512-scope-naming-20261024.txt`.
   No `:measured?` flag, `:shapes` value, selection answer or workgroup
   row moves.
+- [SIMDGROUP CROSS-DAY NAMING SLICE, 2026-10-25 (docstrings, tests,
+  this ADR -- no measurement, no selection logic):] the naming the
+  nine 2026-10-25 cross-day rows' own notes and the cross-day LEFT
+  list's closing slice owed, exactly its own scope:
+  `src/kotoba/compiler/accelerator_variants.cljk` -- the nine
+  sanctioned 2026-10-25 cross-day records named in
+  `apple-simdgroup-flip-note` (the CROSS-DAY REPLICATION OF THE FLIP
+  CELLS -- THE NINE LEFT ROWS paragraph: per-row paired medians and
+  rule-2 verdicts cited from the committed records -- all nine
+  REGIME-INVARIANT FASTER 18/18, sign reproducing strictly at every
+  operator -- the magnitude phrases scoped per row, the directory-
+  naming rule named) and in `apple-simdgroup-measured-evidence` (each
+  W's list gains its cross-day replication record(s); the W = 512 cell
+  keeps its one 2026-10-24 row -- the refused shape-2 W = 512 pair
+  owes none, S5); the stale cross-day scope clauses brought current in
+  place (the WHAT THE NUMBERS DO NOT LICENSE clause, the W = 512
+  paragraph's LEFT prose closing with `all nine filled 2026-10-25`,
+  and `apple-simdgroup-measured-workgroups`'s UNMEASURED list naming
+  no cross-day row any more);
+  `test/kotoba/compiler/accelerator_variants_test.cljk` -- the exact
+  `:measured-cell` record equality blocks' `:evidence` maps carry the
+  nine names (the values moved, so its pins moved with them -- the
+  record keys, `:shapes` values and every selection answer are
+  byte-for-byte unchanged), the cross-day block pins every owed cell's
+  records (W = 512 alone keeps the 2026-10-24 row only), and a naming
+  block pins the paragraph's scoping phrases and all nine record names
+  in `:basis`; this ADR (this diff row, the UNMEASURED row below,
+  LEFT row 3's closure bracket). Slice record:
+  `docs/evidence/gpu/simdgroup-crossday-naming-20261025.txt`. No
+  `:measured?` flag, `:shapes` value, selection answer or workgroup
+  row moves.
 
 ## What did NOT move (named so nothing is silently upgraded)
 
@@ -1211,8 +1242,10 @@ flipped 2026-10-23/24,
 faster than `:baseline` at those cells, see the step-3 and W-sweep
 records); every shape beyond the two measured ones (n = 1000003 and
 n = 2^20) at every cell; cross-day replication at every cell but the
-two replicated (the W = 256 anchor and the W = 512 cell, both
-2026-10-24 -- the W = 32 same-day re-session is NOT a cross-day
+eleven replication rows now recorded (the W = 256 anchor and the
+W = 512 cell, both 2026-10-24, and the nine LEFT rows, all 2026-10-25
+-- nothing owed remains; the refused shape-2 W = 512 pair owes none,
+S5 -- the W = 32 same-day re-session is NOT a cross-day
 replication and licenses nothing the cell's own run did not); shape 2
 for this variant at W = 512 --
 measured 2026-10-24 but REFUSED as a selection basis (rule 2
@@ -1331,7 +1364,18 @@ outside this diff. No green full suite is claimed.
    BY CONSTRUCTION (no instrument run-log carried a calendar), and
    the measurement driver now self-dates every fresh-process run
    (`run_started=`/`run_finished=` stamps), so from 2026-10-25 on
-   the check reads the run-log's own stamps.]
+   the check reads the run-log's own stamps.] [The nine rows all
+   FILLED 2026-10-25 and NAMED in the naming slice
+   (`docs/evidence/gpu/simdgroup-crossday-naming-20261025.txt`): the
+   cross-day part of this row is DONE -- zero pending rows; every row
+   reproduces its flip basis in sign strictly (claim-protocol rule 2
+   REGIME-INVARIANT FASTER, 18/18 per-run ratios below 1.0 at each
+   row) at the paired medians cited in the flip note's CROSS-DAY
+   REPLICATION OF THE FLIP CELLS -- THE NINE LEFT ROWS paragraph; the
+   refused shape-2 W = 512 pair owes no row (S5). Nothing is
+   re-measured by the naming slice (every number cited is the nine
+   records') and no `:measured?` flag, `:shapes` value, selection
+   answer or workgroup row moves.]
 4. [DONE 2026-10-24 -- the list is COMPLETE at both shapes and the
    W = 32 cell's membership is DECIDED OUT of it (the cross-day
    replication list membership decision,

@@ -544,17 +544,26 @@
                     ;; each flip cell's record names ITS OWN runs.
                     :evidence ({256 ["docs/evidence/gpu-simdgroup-reduce-m1max-20261023"
                                      "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w256"
-                                     "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w256"]
+                                     "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w256"
+                                     "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w256"]
                                 512 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512"
                                      "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w512"]
                                 1024 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w1024"
-                                      "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w1024"]
+                                      "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w1024"
+                                      "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w1024"
+                                      "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w1024-shape2"]
                                 128 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w128"
-                                     "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w128"]
+                                     "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w128"
+                                     "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w128"
+                                     "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w128-shape2"]
                                 64 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w64"
-                                    "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w64"]
+                                    "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w64"
+                                    "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w64"
+                                    "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w64-shape2"]
                                 32 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w32"
-                                    "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w32"]}
+                                    "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w32"
+                                    "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w32"
+                                    "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w32-shape2"]}
                                wg)}
                    (:measured-cell answer))
                 (str "device " (pr-str device) " " target " W=" wg " record"))
@@ -933,20 +942,31 @@
                   ;; W = 512 cell's evidence is the
                   ;; W-sweep second cell; W = 1024, W = 128,
                   ;; W = 64 and W = 32 name their W-sweep cell AND their
-                  ;; shape-2 record).
+                  ;; shape-2 record -- and every owed cell its
+                  ;; cross-day replication records, the naming slice of
+                  ;; 2026-10-25).
                   :evidence ({256 ["docs/evidence/gpu-simdgroup-reduce-m1max-20261023"
                                    "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w256"
-                                   "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w256"]
+                                   "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w256"
+                                   "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w256"]
                               512 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512"
                                    "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w512"]
                               1024 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w1024"
-                                    "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w1024"]
+                                    "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w1024"
+                                    "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w1024"
+                                    "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w1024-shape2"]
                               128 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w128"
-                                   "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w128"]
+                                   "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w128"
+                                   "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w128"
+                                   "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w128-shape2"]
                               64 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w64"
-                                  "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w64"]
+                                  "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w64"
+                                  "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w64"
+                                  "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w64-shape2"]
                               32 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w32"
-                                  "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w32"]}
+                                  "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w32"
+                                  "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w32"
+                                  "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w32-shape2"]}
                              wg)}
                  (:measured-cell answer))
               (str operator " " target " W=" wg " record"))
@@ -984,28 +1004,41 @@
             (str "W=" wg " names BOTH measured shapes")))
       (is (= [1000003] (:shapes (:measured-cell (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 512}) :msl-v1 m1))))
           "W=512 names the ONE measured shape -- no second shape is licensed there"))
-    (testing "the anchor and W = 512 cells name their cross-day replication records; no other cell does"
-      ;; The record's later-day replications (2026-10-24,
-      ;; docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w256
-      ;; and .../w512) re-ran TWO cells -- the honesty-lock flip anchor
-      ;; (W = 256) and the W = 512 cell (the first non-anchor cross-day
-      ;; row) -- and corroborate their verdicts. They flipped nothing
-      ;; (both cells were already flipped 2026-10-23), and every
-      ;; remaining cell's cross-day replication stays UNMEASURED (each
-      ;; runnable on a day later than its own 2026-10-24 session).
+    (testing "every owed cell names its cross-day replication records -- the two 2026-10-24 rows and the nine 2026-10-25 LEFT rows"
+      ;; The record's later-day replications: the TWO 2026-10-24 rows
+      ;; (docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w256
+      ;; and .../w512 -- the honesty-lock flip anchor and the W = 512
+      ;; cell) and the NINE 2026-10-25 LEFT rows
+      ;; (docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/:
+      ;; the shape-1 pairs w32/w64/w128/w1024 and the shape-2 pairs
+      ;; w256/w32-shape2/w64-shape2/w128-shape2/w1024-shape2), all
+      ;; corroboration that flipped nothing (every cell was already
+      ;; flipped on its own basis session). The refused shape-2
+      ;; W = 512 pair owes no row (S5), so W = 512 names the 2026-10-24
+      ;; row only.
       (is (= ["docs/evidence/gpu-simdgroup-reduce-m1max-20261023"
               "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w256"
-              "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w256"]
+              "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w256"
+              "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w256"]
              (:evidence (:measured-cell (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256}) :msl-v1 m1))))
-          "W=256 names the cross-day replication record third")
+          "W=256 names both cross-day replication records -- 2026-10-24 third, 2026-10-25 (the shape-2 pair) fourth")
       (is (= ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512"
               "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w512"]
              (:evidence (:measured-cell (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 512}) :msl-v1 m1))))
-          "W=512 names its cross-day replication record second")
-      (doseq [wg [32 64 128 1024]]
-        (is (not (some #(str/includes? % "crossday")
-                       (:evidence (:measured-cell (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size wg}) :msl-v1 m1)))))
-            (str "W=" wg " names no cross-day record -- its replication stays UNMEASURED")))
+          "W=512 names its one cross-day replication record second -- no 2026-10-25 row is owed there (S5)")
+      (doseq [[wg s1 s2] [[32 "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w32"
+                           "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w32-shape2"]
+                          [64 "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w64"
+                           "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w64-shape2"]
+                          [128 "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w128"
+                           "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w128-shape2"]
+                          [1024 "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w1024"
+                           "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w1024-shape2"]]]
+        (let [e (:evidence (:measured-cell (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size wg}) :msl-v1 m1)))]
+          (is (= s1 (nth e 2))
+              (str "W=" wg " names its shape-1 2026-10-25 cross-day record third"))
+          (is (= s2 (nth e 3))
+              (str "W=" wg " names its shape-2 2026-10-25 cross-day record fourth"))))
       (is (str/includes? (:basis (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256}) :msl-v1 m1))
                          "CROSS-DAY REPLICATION OF THE ANCHOR CELL")
           "the flip note carries the anchor cross-day paragraph")
@@ -1020,7 +1053,56 @@
           "the anchor paragraph's claim is scoped to its own slice")
       (is (str/includes? (:basis (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256}) :msl-v1 m1))
                          "cross-day replication of every remaining")
-          "the cross-day claim stays scoped to its TWO measured cells"))
+          "the W = 512 paragraph's cross-day claim is scoped to its own slice")
+      (is (str/includes? (:basis (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256}) :msl-v1 m1))
+                         "all nine filled 2026-10-25 and named in the")
+          "the W = 512 paragraph's LEFT prose carries the nine rows' closure"))
+    (testing "the nine 2026-10-25 cross-day replication records are named in the flip note and the basis evidence lists"
+      ;; The naming slice (2026-10-25,
+      ;; docs/evidence/gpu/simdgroup-crossday-naming-20261025.txt): the
+      ;; nine LEFT rows (the shape-1 pairs W = 32/64/128/1024 and the
+      ;; shape-2 pairs W = 256/32/64/128/1024, all later-day 2026-10-25)
+      ;; are named in apple-simdgroup-flip-note's CROSS-DAY paragraph
+      ;; and in apple-simdgroup-measured-evidence -- corroboration that
+      ;; flipped nothing, never a flip basis of their own.
+      (let [answer (variants/select-variant
+                    :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                              {:workgroup-size 256})
+                    :msl-v1 m1)
+            basis (:basis answer)]
+        (is (str/includes? basis "CROSS-DAY REPLICATION OF THE FLIP CELLS -- THE NINE LEFT ROWS")
+            "the flip note carries the nine-row cross-day paragraph")
+        (is (str/includes? basis "corroboration that flipped")
+            "the paragraph scopes the records as corroboration that flipped nothing")
+        (is (str/includes? basis "no :measured? flag, no :shapes")
+            "the paragraph moves no :measured? flag and no :shapes value")
+        (is (str/includes? basis "no selection answer and no workgroup row (ADR-0355/0358)")
+            "the paragraph moves no selection answer and no workgroup row")
+        (is (str/includes? basis "the cross-day LEFT list is COMPLETE")
+            "the paragraph closes the LEFT list")
+        (is (str/includes? basis "zero pending rows")
+            "the paragraph names zero pending rows")
+        (is (str/includes? basis "IN SIGN STRICTLY")
+            "the paragraph names the sign reproduction standard every row met")
+        (is (str/includes? basis "0.728/0.865/0.821")
+            "the paragraph cites the shape-1 w32 row's paired medians")
+        (is (str/includes? basis "0.643/0.756/0.819")
+            "the paragraph cites the shape-2 w32 row's paired medians")
+        (doseq [p ["docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w32"
+                   "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w64"
+                   "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w128"
+                   "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w1024"
+                   "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w256"
+                   "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w32-shape2"
+                   "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w64-shape2"
+                   "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w128-shape2"
+                   "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w1024-shape2"]]
+          (is (str/includes? basis p)
+              (str p " is named in the flip note prose")))
+        (is (not (some #(str/includes? % "resweep")
+                       (mapcat #(:evidence (:measured-cell (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size %}) :msl-v1 m1)))
+                               [32 64 128 256 512 1024])))
+            "the lists name no resweep directory -- the same-day-resweep naming rule applied to this family's lists")))
     (testing "the refusal-scope decision is named in the SHAPE-2 W = 512 paragraph and the cross-day LEFT prose"
       ;; The naming slice (2026-10-24,
       ;; docs/evidence/gpu/simdgroup-reduce-w512-scope-naming-20261024.txt):
@@ -1190,7 +1272,8 @@
         (is (= [1000003 1048576] (:shapes (:measured-cell answer))))
         (is (= ["docs/evidence/gpu-simdgroup-reduce-m1max-20261023"
                 "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w256"
-                "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w256"]
+                "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w256"
+                "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w256"]
                (:evidence (:measured-cell answer)))))
       (let [answer (variants/select-variant
                     :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
@@ -1198,7 +1281,9 @@
                     :msl-v1 m1)]
         (is (= [1000003 1048576] (:shapes (:measured-cell answer))))
         (is (= ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w1024"
-                "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w1024"]
+                "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w1024"
+                "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w1024"
+                "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w1024-shape2"]
                (:evidence (:measured-cell answer)))))
       (let [answer (variants/select-variant
                     :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
@@ -1206,7 +1291,9 @@
                     :msl-v1 m1)]
         (is (= [1000003 1048576] (:shapes (:measured-cell answer))))
         (is (= ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w128"
-                "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w128"]
+                "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w128"
+                "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w128"
+                "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w128-shape2"]
                (:evidence (:measured-cell answer)))))
       (let [answer (variants/select-variant
                     :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
@@ -1214,7 +1301,9 @@
                     :msl-v1 m1)]
         (is (= [1000003 1048576] (:shapes (:measured-cell answer))))
         (is (= ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w64"
-                "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w64"]
+                "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w64"
+                "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w64"
+                "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w64-shape2"]
                (:evidence (:measured-cell answer)))))
       (let [answer (variants/select-variant
                     :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
@@ -1222,7 +1311,9 @@
                     :msl-v1 m1)]
         (is (= [1000003 1048576] (:shapes (:measured-cell answer))))
         (is (= ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w32"
-                "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w32"]
+                "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w32"
+                "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w32"
+                "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w32-shape2"]
                (:evidence (:measured-cell answer))))))
     (testing "every flip cell's basis names the contract's scoped-cell answer"
       (doseq [wg [32 64 128 256 512 1024]]
