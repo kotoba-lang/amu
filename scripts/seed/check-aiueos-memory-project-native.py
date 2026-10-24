@@ -21,16 +21,23 @@ def pin(path):
 def main(build, output, complete=None):
     source, producers, _ = load_native_producers(build=build, complete=complete)
     output.mkdir(parents=True, exist_ok=False)
-    value, base = 0x123456789abcdef, 0x10a000
-    bindings, checks, operations = [], [], []
+    value, base = 0x123456789abcdef, 'region'
+    # The old fixture granted a literal physical address. The locked image
+    # now obtains memory only from an explicit owner. Reuse the boot ABI's
+    # eight-byte scratch record, restoring it before returning.
+    region = '(kernel-subregion (kernel-boot-info) 16544 152 8)'
+    bindings = [f'{base} {region}', f'saved (kernel-load-u64 {base} 8 0)']
+    checks, operations = [], []
     for tier, size in [('', 512), ('-4k', 4096), ('-16k', 16384), ('-64k', 65536)]:
         for bits in (8, 16, 32, 64):
             k = len(operations)
             store, load = 'kernel-store-u' + str(bits) + tier, 'kernel-load-u' + str(bits) + tier
-            bindings += [f's{k} ({store} {base} {size} {16*k} {value})',
-                         f'l{k} ({load} {base} {size} {16*k})']
+            bindings += [f's{k} ({store} {base} 8 0 {value})',
+                         f'l{k} ({load} {base} 8 0)']
             checks += [f'(= s{k} {value})', f'(= l{k} {value & ((1 << bits)-1)})']
             operations.append(dict(store=store, load=load, bits=bits, maximum=size))
+    bindings.append(f'restored (kernel-store-u64 {base} 8 0 saved)')
+    checks.append('(= restored saved)')
     memory = '(ns memory (:export [main]))\n(defn main [] :i64 (let [' + '\n'.join(bindings) + '] (if (and ' + ' '.join(checks) + ') 42 0)))\n'
     pci = '''(ns pci (:export [main]))
 (defn main [] :i64
@@ -49,8 +56,9 @@ def main(build, output, complete=None):
         out.mkdir()
         calls, artifacts = [], {}
         for name, text in [('memory-widths', memory), ('q35-pci-ports', pci),
-                           ('loaded-base', f'(ns bad (:export [main]))\n(defn main [] :i64 (let [p (kernel-load-u64-4k {base} 4096 0)] (kernel-load-u8 p 512 0)))\n'),
-                           ('computed-base', f'(ns bad (:export [main]))\n(defn main [] :i64 (kernel-load-u8 (+ {base} 1) 512 0))\n')]:
+                           ('loaded-base', f'(ns bad (:export [main]))\n(defn main [] :i64 (let [{base} {region} p (kernel-load-u64 {base} 8 0)] (kernel-load-u8 p 8 0)))\n'),
+                           ('computed-base', f'(ns bad (:export [main]))\n(defn main [] :i64 (let [{base} {region}] (kernel-load-u8 (+ {base} 1) 8 0)))\n'),
+                           ('literal-base', '(ns bad (:export [main]))\n(defn main [] :i64 (kernel-load-u8 1089536 8 0))\n')]:
             src, image, lock = out / (name + '.kotoba'), out / (name + '.elf'), out / (name + '.ksl')
             src.write_text(text)
             lock.write_text(f'KSL1\nentry {src}\nroot {out}\nfile {pin(src)["sha256"]} {src}\n')
@@ -64,7 +72,7 @@ def main(build, output, complete=None):
                 assert r.returncode == 1 and b'E7106' in r.stderr and not image.exists(), (name, r.returncode, r.stderr)
             else:
                 assert r.returncode == 0 and not r.stderr, (name, r.returncode, r.stderr)
-                observer.verify(image.read_bytes(), 1000000)
+                observer.verify(image.read_bytes(), 1000000, project=True)
                 artifacts[name] = pin(image)
                 efi = out / (name + '.efi')
                 r = subprocess.run([str(producer), 'package-aiueos-boot', str(image), '--output', str(efi)],

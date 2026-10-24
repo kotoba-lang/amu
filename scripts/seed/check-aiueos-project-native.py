@@ -72,7 +72,7 @@ def main(build, complete, output):
         spec = importlib.util.spec_from_file_location('image_abi_observer', observer)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        module.verify(image.read_bytes(), 1000000)
+        module.verify(image.read_bytes(), 1000000, project=True)
         refusals = []
 
         def refused(name, **kwargs):
