@@ -92,6 +92,34 @@ emitted object has run in a kernel.
 
 ## Loaderless static image (x86_64-linux-static), seed module 75
 
+### Native FS2/keyword extension candidate (2026-10-24)
+
+The candidate FULL-MANIFEST appends shared scalar modules 72 (FS2) and 73
+(keyword storage) to both Linux runtimes. Context byte slots 96 and 104
+carry keyword put/get helpers, independently of the public KGraph slots
+80/88. The keyword store uses at most 262144 append-only 24-byte rows
+(6 MiB), allocated before sandbox/resource installation. Public KGraph
+retains its 4096-row budget and last-write-wins behavior. Guest arena
+rollback and public KGraph writes do not alter keyword rows.
+
+The context version word remains 11. These additional slots require the
+exact matching runtime/source pins; a version-11 image without those slots
+is not compatible with an artifact using the extension. Private-arena
+overflow and the checker exposure of internal helper names remain explicit
+qualification work; the word 'private' describes the separate store and
+does not establish a source-origin access boundary.
+
+Wire35 FS2 supports discriminators 1 (string/string), 8 (bytes/bytes),
+9 (string/bytes), 10 (string/list of bytes) and 11 (list of bytes/list of
+bytes), with per-form admission and mandatory framing/acknowledgement.
+No other wire inherits these combinations. Form T is no-replace publication
+through Linux renameat2; it has no ordinary-rename fallback. Wire40 is an
+explicit string/string sys/cwd grant and does not inherit wire35 authority.
+
+These are candidate source contracts. Complete selfbuild, conformance,
+actual x86 execution and public/CDCI image pins must be regenerated before
+the candidate replaces the qualified main product.
+
 `compile SOURCE --target x86_64-linux --output NEW_ELF --format static` emits
 one ELF64 ET_EXEC (EM_X86_64, no PT_INTERP/PT_DYNAMIC, no libc) holding the
 guest and a runtime written in Kotoba (`xs-rt-src`). The runtime text is

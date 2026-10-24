@@ -1,0 +1,30 @@
+;; Private keyword interning must not consume the public 4096-datom KGraph.
+;; Context v11's previously empty slots 96/104 carry this native extension.
+;; Current source/runtime pins are required; older runtimes have no extension.
+(defn- linux-keyword-src [] :string
+"
+;; Private bounded append-only intern rows. Separate from public graph 80/88;
+;; neither arena rollback nor a public kgraph write changes an interned name.
+;; At most 262144 rows (6 MiB); initialization precedes limits and seccomp.
+(defn- kxrt-ki-init [] :i64
+  (if (not= (kxrt-gl 776) 0) 0
+    (let [p (kxrt-map 6291456) a (kxrt-gs 776 p) b (kxrt-gs 784 0)] 0)))
+(defn- kxrt-ki-full [] :i64
+  (let [b (kxrt-gl 200)
+        n (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b 0 0x4152545f4558454b 8) 0x646e696b3a7b2050 8) 0x20616e6572613a20 8) 0x206e6f736165723a 8) 0x64726f7779656b3a 8) 0x2d6e7265746e692d 8) 0x6574737561687865 8) 0xa7d64 3)
+        z (kxrt-err-text b n)] (kxrt-fail)))
+(defn- kxrt-slot-96 [c :i64 entity :i64 attribute :i64 value :i64] :i64
+  (let [n (kxrt-gl 784)]
+    (cond (not= (kxrt-load64 c) 11) (kxrt-fail)
+          (or (< n 0) (>= n 262144)) (kxrt-ki-full)
+          :else (let [p (+ (kxrt-gl 776) (* n 24)) a (kxrt-store64 p entity)
+                      b (kxrt-store64 (+ p 8) attribute) d (kxrt-store64 (+ p 16) value)
+                      e (kxrt-gs 784 (inc n))] 1))))
+(defn- kxrt-slot-104 [c :i64 entity :i64 attribute :i64] :i64
+  (if (not= (kxrt-load64 c) 11) (kxrt-fail)
+    (loop [n (kxrt-gl 784)]
+      (if (= n 0) -9223372036854775808
+        (let [p (+ (kxrt-gl 776) (* (dec n) 24))]
+          (if (and (= (kxrt-load64 p) entity) (= (kxrt-load64 (+ p 8)) attribute))
+            (kxrt-load64 (+ p 16)) (recur (dec n))))))))
+")
