@@ -47,7 +47,7 @@ Only the x86_64 run under "Both targets" is emulated (qemu-user). Receipts are i
      `seed/FULL-MANIFEST` from this source to F1 and packed it.
   2. F1 rebuilt itself to F2. The container is the same (F1.kseed = F2.kseed);
      the runtime wrapper is new, because the previous runtime packed F1.
-  3. F2 rebuilt itself to F3 = F2. F2 is the pinned root, `fd395d40…`
+  3. F2 rebuilt itself to F3 = F2. F2 is the pinned root, `482398a4…`
      (`seed/bootstrap/aarch64-linux-static-root.json`). Before the rebase
      the same change gave `2cedcaea…` from main 3c2207f4's root.
 - **`selfhost-bootstrap.py --tier pr`** (`selfhost-bootstrap-pr.json`) and
@@ -69,11 +69,15 @@ Only the x86_64 run under "Both targets" is emulated (qemu-user). Receipts are i
       `528d3d35…`, its source `e4097e7c…` to `98c1fc51…`;
     - `bin/amu` (`native-product.json`, `seed/compiler-core.json`,
       [native public entry](native-public-entry.md)), which is the complete
-      x86_64 compiler: `91492570…` to `30d1a760…`. As main's descriptor
+      x86_64 compiler: `91492570…` to `74c06770…`. As main's descriptor
       does, its evidence is the exact-head PR/main checks, and
       `seed/compiler-core.json` marks its older evidence pending.
-  - The controller is unchanged. Main's compiler reproduces all 24 old gate
-    pins, and this one the 24 new ones.
+  - The controller embeds the gate pins it checks before it reads any source
+    (`kc-core-pins` in `seed/cdci/controller.kotoba`): the Amu selfhost gate,
+    the Kotoba native gate and its source are updated there, so its role pin
+    in `seed/79-native-cdci.kotoba` and its image (`39a50037…` to
+    `13dbe6c7…`) change too. Main's compiler reproduces all 24 old gate pins,
+    and this one the 24 new ones.
 - **The runtime checks with the new root.**
   - `check-io-read.py` passes its 12 cases (`io-read.json`). `wire-not-granted`
     writes the wire 41 line. `malformed-request`, a granted wire's bad request,
