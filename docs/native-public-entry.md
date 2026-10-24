@@ -1,9 +1,9 @@
 # Current Amu selfhost native entry
 
 The public `bin/amu` is a 8,790,528-byte static Linux x86_64 ELF,
-SHA-256 `c8a23df53645b545d14cafb1745103a5f10ba05b88a695b17cdeb640f8dbcc80`, built from the complete29 source of amu#1535 (JUN-354: an ungranted
+SHA-256 `68f1f3db2c185428055005e3052c6458637c64d7a4004481def85aae585979f1`, built from the complete29 source of amu#1535 (JUN-354: an ungranted
 wire is refused by name) on main 6deb9969. Both relative aliases resolve to that same image. The native ARM root is
-`f0462f5beabf173d39638a2ccb3ba4d2d3512b5c9e1d7168a720fed563c0485f`. Before amu#1535 the image was
+`f70486914adb760dc35817a9fbd9064c6247af5e198fa644523bb494bd0ce07a`. Its native qualification (x86_64 F1=F2=F3, controller, aliases) is the exact-head PR CI and is recorded as pending in `native-product.json` until then. Before amu#1535 the image was
 `23e714db082b2db65208cfc573ad682c399a4228fb1e04041f420ea50d9d65c0` (source `f382a939ec3b0c750393d04a8efaaa1f5e3bd30c`) and the root `c95b844146ae31e9…`. Every adopted18 core module is retained. Complete
 ARM containers F1=F2=F3, packed F2=F3 and independent canonical Pw agree;
 actual native x86 F1=F2=F3 reproduce the public image. Static capacities are

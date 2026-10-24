@@ -47,7 +47,7 @@ Only the x86_64 run under "Both targets" is emulated (qemu-user). Receipts are i
      `seed/FULL-MANIFEST` from this source to F1 and packed it.
   2. F1 rebuilt itself to F2. The container is the same (F1.kseed = F2.kseed);
      the runtime wrapper is new, because the previous runtime packed F1.
-  3. F2 rebuilt itself to F3 = F2. F2 is the pinned root, `f0462f5b…`
+  3. F2 rebuilt itself to F3 = F2. F2 is the pinned root, `f70486914…`
      (`seed/bootstrap/aarch64-linux-static-root.json`). Before the rebase
      the same change gave `2cedcaea…` from main 3c2207f4's root.
 - **`selfhost-bootstrap.py --tier pr`** (`selfhost-bootstrap-pr.json`) and
@@ -62,11 +62,17 @@ Only the x86_64 run under "Both targets" is emulated (qemu-user). Receipts are i
   - Re-pinned with it:
     - the Amu selfhost gate (`seed/cdci/policy.json`), which is the core
       compiled with seed/76's runtime: `e6dcf618…` to `63701105…`;
+    - the complete24 gate fixture (`seed/cdci/kotoba-gate.kotoba`). Every
+      case image embeds the runtime, so all 24 x86_64 image pins change; the
+      compiler's role pin for that source (`seed/79-native-cdci.kotoba`) and
+      the policy follow: the Kotoba native gate image `39fac666…` to
+      `528d3d35…`, its source `e4097e7c…` to `98c1fc51…`;
     - `bin/amu` (`native-product.json`, `seed/compiler-core.json`,
       [native public entry](native-public-entry.md)), which is the complete
-      x86_64 compiler: `23e714db…` to `c8a23df5…`.
-  - The Kotoba native gate and the controller, built by `cdci-build` with
-    seed/cdci's own runtime, are unchanged.
+      x86_64 compiler: `23e714db…` to `68f1f3db…`. Its qualification flags
+      are pending until the exact-head CI receipt is recorded.
+  - The controller is unchanged. Main's compiler reproduces all 24 old gate
+    pins, and this one the 24 new ones.
 - **The runtime checks with the new root.**
   - `check-io-read.py` passes its 12 cases (`io-read.json`). `wire-not-granted`
     writes the wire 41 line. `malformed-request`, a granted wire's bad request,
@@ -91,6 +97,9 @@ Only the x86_64 run under "Both targets" is emulated (qemu-user). Receipts are i
   qemu-user. `check-native-clock-entropy.py` now requires the line for its
   two no-grant cases (wires 7 and 23), so the selfhost-native CI's x86_64 job
   checks it on a native x86_64 kernel.
-- **Native x86_64 and CI.** The x86_64 fixed point of `bin/amu`, the
-  controller, the public aliases and the clock check are the selfhost-native
-  CI's x86_64 job on this PR's exact head.
+- **Native x86_64 and CI.** CI run 40082886869, on the head before the gate
+  fixture was regenerated, ran on a native x86_64 kernel: the complete
+  compiler's fixed point (F1=F2=F3 = that head's `bin/amu`, cross-built here)
+  and the clock check, whose no-grant cases require the named line, passed;
+  its controller step stopped at the stale gate pins (`CDCI:E4002`). The
+  exact-head CI qualifies the final `bin/amu`, controller and aliases.
