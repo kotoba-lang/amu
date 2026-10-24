@@ -5,9 +5,13 @@ Status: Proposed. Owner direction 2026-10-22: GPU compilation goes through
 selfhost as well. Step 1 (the encoder, the checker and the first kernel)
 and the kernels of step 2 (the workgroup and subgroup reductions, the
 ADR 0358 sweep kernel and the glslang cross-check) are implemented; the
-vendor rows of step 2 and steps 3–5 are not.
-Tracking: AWAI-79 (parent AWAI-35). Related: ADR 0001 Phase 5, ADR 0002,
-ADRs 0355–0358, ADR 0371 (the execution route), AWAI-5 (the inference kernel DSL).
+vendor rows of step 2 are not. Steps 3 (the KIR v2 kernels) and 4 (their
+execution through the ADR 0371 provider) are done (2026-10-24). By ADR 0374
+(accepted 2026-10-24), Amu's part of step 5 is done and the rest belongs to
+kotoba-lang/inference.
+Tracking: AWAI-79 (parent AWAI-35), JUN-356 (steps 3–4), JUN-365 (ADR 0374).
+Related: ADR 0001 Phase 5, ADR 0002, ADRs 0355–0358, ADR 0371 (the execution
+route), AWAI-5 (the inference kernel DSL).
 
 ## Context
 
@@ -505,6 +509,9 @@ a follow-up to ADR 0371.
    * **`emit-kernel.cljk` and glslang's product use are in
      kotoba-lang/inference** (`verify/native/gpu/kernel-dsl/`). Retiring
      them means the product that executes these kernels takes KIR v2's
-     modules instead. Since #1510 no Amu route executes them, so which
-     product that is, and on what route, is ADR 0374's decision (JUN-365).
-     This part waits on it.
+     modules instead. Since #1510 no Amu route executes them.
+
+   **Decided by ADR 0374 (accepted 2026-10-24, option D).** Amu's part of
+   this step is done. kotoba-lang/inference owns GPU execution and takes
+   KIR v2's modules in place of `emit-kernel.cljk` and glslang, under its own
+   policy. That work is tracked in JUN-375.
