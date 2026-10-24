@@ -1,0 +1,384 @@
+;; tools/b2/50-elf.kotoba -- the Kotoba ELF loader of route B2 (ADR 0375, JUN-377): maps a shared object,
+;; applies its relocations, binds its imports to the libc subset of this unit, runs its initializers, and
+;; serves dlopen, dlsym, dlerror and dlclose. Slice 1 loads libvulkan.so.1 alone.
+;;
+;; What it does, for an ET_DYN object of x86_64:
+;;  * maps every PT_LOAD segment from the file at a base the kernel chooses (MAP_PRIVATE, file-backed, so
+;;    /proc/self/maps names the file), zeroes bss, and makes the PT_GNU_RELRO range read-only after
+;;    relocation;
+;;  * applies RELATIVE, 64, GLOB_DAT and JUMP_SLOT relocations, all at load (as DF_BIND_NOW); any other type
+;;    refuses by name;
+;;  * resolves an undefined symbol, with its version from versym/verneed, in this order: the data objects of
+;;    the libc subset (stderr), the export table of this image (name and version must both match: a name
+;;    with another version refuses), the definitions of the other loaded objects (GNU hash), a weak
+;;    reference as 0. Anything else binds to a stub that refuses by name when it is called, never to a
+;;    fallback;
+;;  * DT_NEEDED names that are the C library's (libc, libm, libdl, libpthread, ld.so) are this image;
+;;    any other is looked up among the loaded objects and refuses when it is not there.
+;; Not in slice 1 (each refuses by name): PT_TLS and the TLS relocations, IRELATIVE, DT_RELR, TEXTREL,
+;; loading a dependency from disk, dlopen of a file.
+;;
+;; A library record is 256 bytes (malloc'd); the ELF- constants are its word offsets. Handles are record
+;; addresses.
+
+(def ELF-BASE 0)
+(def ELF-PATH 8)
+(def ELF-SONAME 16)
+(def ELF-DYN 24)
+(def ELF-STRTAB 32)
+(def ELF-SYMTAB 40)
+(def ELF-GNUHASH 48)
+(def ELF-VERSYM 56)
+(def ELF-VERNEED 64)
+(def ELF-VERNEEDNUM 72)
+(def ELF-RELA 80)
+(def ELF-RELASZ 88)
+(def ELF-JMPREL 96)
+(def ELF-PLTRELSZ 104)
+(def ELF-INIT 112)
+(def ELF-INITARR 120)
+(def ELF-INITARRSZ 128)
+(def ELF-FINI 136)
+(def ELF-FINIARR 144)
+(def ELF-FINIARRSZ 152)
+(def ELF-SPAN 160)
+(def ELF-NEXT 168)
+(def ELF-RELRO 176)
+(def ELF-RELROSZ 184)
+(def ELF-INITED 192)
+(def ELF-NEEDED 200)      ;; how many DT_NEEDED entries (the first one's offset is found by walking DT_NEEDED)
+(def ELF-RECORD 256)
+
+(def ELF-PAGE 4096)
+(defn- page-down [n :i64] :i64 (bit-and n -4096))
+(defn- page-up [n :i64] :i64 (align-up n 4096))
+
+;; ---- the call-out helpers ------------------------------------------------------------------------------------
+;; C functions are called with kxrt-b-ccall; the argument block is the 14 words of ST-CALL
+(defn- call-c [fp :i64 a :i64 b :i64 c :i64 d :i64 e :i64 f :i64] :i64
+  (let [v (+ (kxrt-b-state) ST-CALL)
+        z0 (s64 v a) z1 (s64 (+ v 8) b) z2 (s64 (+ v 16) c) z3 (s64 (+ v 24) d) z4 (s64 (+ v 32) e) z5 (s64 (+ v 40) f)]
+    (kxrt-b-ccall fp v)))
+
+;; ---- errors for dlerror ---------------------------------------------------------------------------------------
+(defn- dl-fail [msg :string] :i64
+  (let [buf (if (= (st ST-ERR) 0) (st! ST-ERR (malloc-alloc 512)) 0) b (st ST-ERR)
+        n (min2 (string-length msg) 500)
+        z (loop [i 0] (if (= i n) 0 (let [w (s8 (+ b i) (string-code-point-at msg i))] (recur (inc i)))))
+        y (s8 (+ b n) 0) p (st! ST-ERR-PENDING 1)]
+    0))
+
+;; ---- reading the file -----------------------------------------------------------------------------------------
+(defn- elf-pread [fd :i64 a :i64 n :i64 off :i64] :i64
+  (loop [k 0]
+    (if (>= k n) k
+      (let [r (sys4 SYS-PREAD fd (+ a k) (- n k) (+ off k))]
+        (cond (> r 0) (recur (+ k r)) (= r -4) (recur k) :else k)))))
+(defn- prot-of [flags :i64] :i64
+  (+ (if (= (bit-and flags 4) 0) 0 1) (+ (if (= (bit-and flags 2) 0) 0 2) (if (= (bit-and flags 1) 0) 0 4))))
+
+;; ---- mapping --------------------------------------------------------------------------------------------------
+(defn- ph [hdr :i64 i :i64] :i64 (+ hdr (+ (l64 (+ hdr 32)) (* 56 i))))
+(defn- elf-check [path :string hdr :i64 got :i64] :i64
+  (cond (< got 64) (refuse path "file shorter than an ELF header")
+        (not= (l32 hdr) 0x464c457f) (refuse path "not an ELF file")
+        (not= (l8 (+ hdr 4)) 2) (refuse path "not ELFCLASS64")
+        (not= (l8 (+ hdr 5)) 1) (refuse path "not little-endian")
+        (not= (l16 (+ hdr 16)) 3) (refuse path "not ET_DYN (a shared object)")
+        (not= (l16 (+ hdr 18)) 62) (refuse path "not x86_64")
+        (not= (l16 (+ hdr 54)) 56) (refuse path "unexpected program header size")
+        (> (+ (l64 (+ hdr 32)) (* 56 (l16 (+ hdr 56)))) got) (refuse path "program headers beyond the first 4096 bytes")
+        :else 0))
+;; the lowest page-aligned vaddr and the end of the highest PT_LOAD
+(defn- elf-lo [hdr :i64 i :i64 n :i64 lo :i64] :i64
+  (if (= i n) lo
+    (let [p (ph hdr i)]
+      (elf-lo hdr (inc i) n (if (and (= (l32 p) 1) (< (page-down (l64 (+ p 16))) lo)) (page-down (l64 (+ p 16))) lo)))))
+(defn- elf-hi [hdr :i64 i :i64 n :i64 hi :i64] :i64
+  (if (= i n) hi
+    (let [p (ph hdr i) e (page-up (+ (l64 (+ p 16)) (l64 (+ p 40))))]
+      (elf-hi hdr (inc i) n (if (and (= (l32 p) 1) (> e hi)) e hi)))))
+(defn- elf-map-seg [path :string fd :i64 bias :i64 p :i64] :i64
+  (let [off (l64 (+ p 8)) vaddr (l64 (+ p 16)) filesz (l64 (+ p 32)) memsz (l64 (+ p 40)) flags (l32 (+ p 4))
+        start (page-down vaddr) foff (page-down off) fend (+ vaddr filesz)
+        prot (prot-of flags)]
+    (cond (not= (bit-and off 4095) (bit-and vaddr 4095)) (refuse path "a PT_LOAD whose file offset and address differ modulo the page")
+          (and (> memsz filesz) (= (bit-and flags 2) 0)) (refuse path "bss in a segment that is not writable")
+          :else
+            (let [m (if (= filesz 0) 0
+                      (let [r (sys6 SYS-MMAP (+ bias start) (- (page-up fend) start) prot 18 fd foff)]
+                        (if (not= r (+ bias start)) (refuse path (string-concat "mmap of a segment failed: " (dec-str r))) 0)))
+                  ;; bss: the rest of the last file page, then whole anonymous pages
+                  z (if (> memsz filesz) (c-zero (+ bias fend) (- (page-up fend) fend)) 0)
+                  extra (- (page-up (+ vaddr memsz)) (page-up fend))
+                  x (if (and (> memsz filesz) (> extra 0))
+                      (let [r (sys6 SYS-MMAP (+ bias (page-up fend)) extra prot 50 -1 0)]
+                        (if (not= r (+ bias (page-up fend))) (refuse path "mmap of bss failed") 0))
+                      0)]
+              0))))
+(defn- elf-map-segs [path :string fd :i64 bias :i64 hdr :i64 i :i64 n :i64] :i64
+  (if (= i n) 0
+    (let [p (ph hdr i)
+          z (cond (= (l32 p) 1) (elf-map-seg path fd bias p)
+                  (= (l32 p) 7) (refuse path "PT_TLS: thread-local storage is slice 2")
+                  :else 0)]
+      (elf-map-segs path fd bias hdr (inc i) n))))
+(defn- elf-find-ph [hdr :i64 i :i64 n :i64 type :i64] :i64
+  (cond (= i n) 0 (= (l32 (ph hdr i)) type) (ph hdr i) :else (elf-find-ph hdr (inc i) n type)))
+
+;; ---- the dynamic section --------------------------------------------------------------------------------------
+(defn- dyn-set [lib :i64 tag :i64 val :i64] :i64
+  (let [base (l64 (+ lib ELF-BASE))]
+    (case tag
+      2 (s64 (+ lib ELF-PLTRELSZ) val)
+      5 (s64 (+ lib ELF-STRTAB) val)
+      6 (s64 (+ lib ELF-SYMTAB) val)
+      7 (s64 (+ lib ELF-RELA) val)
+      8 (s64 (+ lib ELF-RELASZ) val)
+      12 (s64 (+ lib ELF-INIT) val)
+      13 (s64 (+ lib ELF-FINI) val)
+      23 (s64 (+ lib ELF-JMPREL) val)
+      25 (s64 (+ lib ELF-INITARR) val)
+      26 (s64 (+ lib ELF-FINIARR) val)
+      27 (s64 (+ lib ELF-INITARRSZ) val)
+      28 (s64 (+ lib ELF-FINIARRSZ) val)
+      0x6ffffef5 (s64 (+ lib ELF-GNUHASH) val)
+      0x6ffffff0 (s64 (+ lib ELF-VERSYM) val)
+      0x6ffffffe (s64 (+ lib ELF-VERNEED) val)
+      0x6fffffff (s64 (+ lib ELF-VERNEEDNUM) val)
+      1 (s64 (+ lib ELF-NEEDED) (inc (l64 (+ lib ELF-NEEDED))))
+      0)))
+;; tags whose value is an address in the object (they get the base added)
+(defn- dyn-addr? [tag :i64] :bool
+  (or (= tag 5) (= tag 6) (= tag 7) (= tag 12) (= tag 13) (= tag 23) (= tag 25) (= tag 26)
+      (= tag 0x6ffffef5) (= tag 0x6ffffff0) (= tag 0x6ffffffe)))
+(defn- elf-dynamic [path :string lib :i64] :i64
+  (let [base (l64 (+ lib ELF-BASE)) dyn (l64 (+ lib ELF-DYN))]
+    (loop [p dyn]
+      (let [tag (l64 p) val (l64 (+ p 8))]
+        (cond (= tag 0) 0
+              (= tag 22) (refuse path "DT_TEXTREL (text relocations)")
+              (= tag 36) (refuse path "DT_RELR (packed relative relocations) is not supported yet")
+              (= tag 14) (let [z (s64 (+ lib ELF-SONAME) val)] (recur (+ p 16)))
+              :else (let [z (dyn-set lib tag (if (dyn-addr? tag) (+ base val) val))] (recur (+ p 16))))))))
+
+;; ---- symbols, versions ----------------------------------------------------------------------------------------
+(defn- sym-addr [lib :i64 i :i64] :i64 (+ (l64 (+ lib ELF-SYMTAB)) (* 24 i)))
+(defn- sym-name [lib :i64 i :i64] :i64 (+ (l64 (+ lib ELF-STRTAB)) (l32 (sym-addr lib i))))
+(defn- gnu-hash [name :i64] :i64
+  (loop [i 0 h 5381]
+    (let [c (l8 (+ name i))]
+      (if (= c 0) h (recur (inc i) (bit-and (+ (* h 33) c) 4294967295))))))
+;; a definition of name in lib by its GNU hash table: the symbol address, or 0
+(defn- elf-lookup [lib :i64 name :i64] :i64
+  (let [t (l64 (+ lib ELF-GNUHASH))]
+    (if (= t 0) 0
+      (let [nb (l32 t) symoff (l32 (+ t 4)) bloom (l32 (+ t 8)) buckets (+ t (+ 16 (* 8 bloom)))
+            chain (+ buckets (* 4 nb)) h (gnu-hash name) first (l32 (+ buckets (* 4 (rem h nb))))]
+        (if (= first 0) 0
+          (loop [i first]
+            (let [hv (l32 (+ chain (* 4 (- i symoff)))) s (sym-addr lib i)]
+              (cond (and (= (bit-or hv 1) (bit-or h 1)) (not= (l16 (+ s 6)) 0) (c-same? (sym-name lib i) name)) s
+                    (not= (bit-and hv 1) 0) 0
+                    :else (recur (inc i))))))))))
+(defn- sym-value [lib :i64 s :i64] :i64 (+ (l64 (+ lib ELF-BASE)) (l64 (+ s 8))))
+;; the version name (a C string) the symbol index i of lib requires, or 0 (unversioned or local)
+(defn- ver-name [lib :i64 i :i64] :i64
+  (let [vs (l64 (+ lib ELF-VERSYM))]
+    (if (= vs 0) 0
+      (let [idx (bit-and (l16 (+ vs (* 2 i))) 32767)]
+        (if (<= idx 1) 0
+          (loop [vn (l64 (+ lib ELF-VERNEED)) k (l64 (+ lib ELF-VERNEEDNUM))]
+            (if (= k 0) 0
+              (let [aux (loop [a (+ vn (l32 (+ vn 8))) j (l16 (+ vn 2))]
+                          (cond (= j 0) 0
+                                (= (l16 (+ a 6)) idx) (+ (l64 (+ lib ELF-STRTAB)) (l32 (+ a 8)))
+                                :else (recur (+ a (l32 (+ a 12))) (dec j))))]
+                (if (not= aux 0) aux (recur (+ vn (l32 (+ vn 12))) (dec k)))))))))))
+
+;; ---- binding to this image's libc ------------------------------------------------------------------------------
+;; the export table: count at t, then {thunk, name, version} per export
+(defn- exp-n [] :i64 (l64 (kxrt-b-exports)))
+(defn- exp-rec [i :i64] :i64 (+ (kxrt-b-exports) (+ 8 (* 24 i))))
+;; the thunk of NAME at VERSION (version 0: any, and an unversioned export matches any requirement); a
+;; negative result -1 means the name exists at other versions only
+(defn- exp-find [name :i64 ver :i64] :i64
+  (let [n (exp-n)]
+    (loop [i 0 other 0]
+      (if (= i n) (if (= other 0) 0 -1)
+        (let [r (exp-rec i)]
+          (if (c-same? (l64 (+ r 8)) name)
+            (if (or (= ver 0) (= (l8 (l64 (+ r 16))) 0) (c-same? (l64 (+ r 16)) ver)) (l64 r) (recur (inc i) 1))
+            (recur (inc i) other)))))))
+(defn- exp-named [s :string] :i64
+  (let [n (exp-n)]
+    (loop [i 0] (cond (= i n) 0 (c-eq? (l64 (+ (exp-rec i) 8)) s) (l64 (exp-rec i)) :else (recur (inc i))))))
+;; the data objects of the libc subset
+(defn- data-sym [name :i64] :i64
+  (if (c-eq? name "stderr") (st ST-STDERR-CELL) 0))
+
+;; refusing stubs: slot i of the page is `mov edi, i ; mov rax, <b2_unresolved> ; jmp rax`; the name and
+;; the library of slot i are in the table after the code slots. The code slots are read-execute except while a
+;; stub is written (W^X); the table stays read-write.
+(def STUB-SLOTS 1024)
+(def STUB-NAMES 32768)
+(defn- stub-page [] :i64
+  (let [p (st ST-STUBS)]
+    (if (not= p 0) p
+      (let [m (sys6 SYS-MMAP 0 65536 3 34 -1 0)]
+        (if (< m 0) (refuse "stubs" "mmap failed") (let [z (st! ST-STUBS m)] m))))))
+(defn- cx-b2_unresolved [i :i64] :i64
+  (let [rec (+ (st ST-STUBS) (+ STUB-NAMES (* 16 i)))]
+    (refuse (string-concat "unimplemented import " (c-str (l64 rec)))
+            (string-concat "called from " (string-concat (c-str (l64 (+ rec 8))) " (nothing in this image implements it)")))))
+(defn- make-stub [name :i64 lib :i64] :i64
+  (let [n (st ST-NSTUBS)]
+    (if (>= n STUB-SLOTS) (refuse "stubs" "too many unresolved imports")
+      (let [page (stub-page) slot (+ page (* 32 n)) rec (+ page (+ STUB-NAMES (* 16 n)))
+            thunk (exp-named "b2_unresolved")
+            ;; the code page is writable only while the stub is written, then read-execute
+            pg (page-down slot) w (sys3 SYS-MPROTECT pg 4096 3)
+            a (s8 slot 0xbf) b (s32 (+ slot 1) n)
+            c (s8 (+ slot 5) 0x48) d (s8 (+ slot 6) 0xb8) e (s64 (+ slot 7) thunk)
+            f (s8 (+ slot 15) 0xff) g (s8 (+ slot 16) 0xe0)
+            x (sys3 SYS-MPROTECT pg 4096 5)
+            h (s64 rec name) i (s64 (+ rec 8) (l64 (+ lib ELF-PATH)))
+            j (st! ST-NSTUBS (inc n))]
+        slot))))
+;; the other loaded objects' definition of name, or 0
+(defn- lib-def [skip :i64 name :i64] :i64
+  (loop [l (st ST-LIBS)]
+    (cond (= l 0) 0
+          (= l skip) (recur (l64 (+ l ELF-NEXT)))
+          :else (let [s (elf-lookup l name)] (if (not= s 0) (sym-value l s) (recur (l64 (+ l ELF-NEXT))))))))
+;; the value to store for the undefined symbol i of lib
+(defn- elf-resolve [lib :i64 i :i64] :i64
+  (let [s (sym-addr lib i) name (sym-name lib i) bind (i64-shift-right (l8 (+ s 4)) 4)]
+    (if (not= (l16 (+ s 6)) 0) (sym-value lib s)
+      (let [d (data-sym name)]
+        (if (not= d 0) d
+          (let [t (exp-find name (ver-name lib i))]
+            (cond (> t 0) t
+                  (< t 0) (refuse (string-concat "import " (c-str name))
+                                  (string-concat "this image has it at another symbol version than " (string-concat (c-str (ver-name lib i)) (string-concat " (needed by " (string-concat (c-str (l64 (+ lib ELF-PATH))) ")")))))
+                  :else (let [o (lib-def lib name)]
+                          (cond (not= o 0) o
+                                (= bind 2) 0
+                                :else (make-stub name lib))))))))))
+
+;; ---- relocation -----------------------------------------------------------------------------------------------
+(defn- elf-reloc [lib :i64 r :i64] :i64
+  (let [base (l64 (+ lib ELF-BASE)) off (l64 r) info (l64 (+ r 8)) addend (l64 (+ r 16))
+        type (bit-and info 4294967295) sym (u64-shift-right info 32) where (+ base off)]
+    (case type
+      8 (s64 where (+ base addend))
+      6 (s64 where (elf-resolve lib sym))
+      7 (s64 where (elf-resolve lib sym))
+      1 (s64 where (+ (elf-resolve lib sym) addend))
+      (refuse (c-str (l64 (+ lib ELF-PATH))) (string-concat "relocation type " (dec-str type))))))
+(defn- elf-reloc-table [lib :i64 tbl :i64 size :i64] :i64
+  (loop [k 0] (if (>= k size) k (let [z (elf-reloc lib (+ tbl k))] (recur (+ k 24))))))
+(defn- elf-relocate [lib :i64] :i64
+  (let [a (elf-reloc-table lib (l64 (+ lib ELF-RELA)) (l64 (+ lib ELF-RELASZ)))
+        b (elf-reloc-table lib (l64 (+ lib ELF-JMPREL)) (l64 (+ lib ELF-PLTRELSZ)))
+        rs (l64 (+ lib ELF-RELROSZ))]
+    (if (> rs 0) (sys3 SYS-MPROTECT (l64 (+ lib ELF-RELRO)) rs 1) 0)))
+
+;; ---- needed libraries -----------------------------------------------------------------------------------------
+(defn- c-lib? [n :i64] :bool
+  (or (c-eq? n "libc.so.6") (c-eq? n "libm.so.6") (c-eq? n "libdl.so.2") (c-eq? n "libpthread.so.0")
+      (c-eq? n "librt.so.1") (c-eq? n "ld-linux-x86-64.so.2")))
+(defn- soname-of [lib :i64] :i64
+  (let [s (l64 (+ lib ELF-SONAME))] (if (= s 0) 0 (+ (l64 (+ lib ELF-STRTAB)) s))))
+(defn- lib-loaded? [name :i64] :bool
+  (loop [l (st ST-LIBS)]
+    (cond (= l 0) false
+          (and (not= (soname-of l) 0) (c-same? (soname-of l) name)) true
+          :else (recur (l64 (+ l ELF-NEXT))))))
+(defn- elf-needed [path :string lib :i64] :i64
+  (loop [p (l64 (+ lib ELF-DYN))]
+    (let [tag (l64 p)]
+      (cond (= tag 0) 0
+            (= tag 1) (let [n (+ (l64 (+ lib ELF-STRTAB)) (l64 (+ p 8)))]
+                        (if (or (c-lib? n) (lib-loaded? n)) (recur (+ p 16))
+                          (refuse path (string-concat "needed library not available in slice 1: " (c-str n)))))
+            :else (recur (+ p 16))))))
+
+;; ---- the public entry points ----
+;; a malloc'd copy of the C string p
+(defn- c-dup [p :i64] :i64
+  (let [n (c-strlen p) q (malloc-alloc (inc n))] (c-copy q p (inc n))))
+;; map, relocate and register the object at path; the record
+(defn- elf-open [path :string cpath :i64] :i64
+  (let [fd (sys4 SYS-OPENAT AT-FDCWD cpath 524288 0)]
+    (if (< fd 0) (refuse path (string-concat "cannot open: " (dec-str fd)))
+      (let [hdr (malloc-alloc 4096) got (elf-pread fd hdr 4096 0)
+            ck (elf-check path hdr got) n (l16 (+ hdr 56))
+            lo (elf-lo hdr 0 n 9223372036854775807) hi (elf-hi hdr 0 n 0)
+            res (sys6 SYS-MMAP 0 (- hi lo) 0 34 -1 0)]
+        (if (< res 0) (refuse path "cannot reserve the address range")
+          (let [bias (- res lo) lib (malloc-alloc ELF-RECORD) z (c-zero lib ELF-RECORD)
+                a (s64 (+ lib ELF-BASE) bias) b (s64 (+ lib ELF-PATH) (c-dup cpath)) c (s64 (+ lib ELF-SPAN) (- hi lo))
+                m (elf-map-segs path fd bias hdr 0 n)
+                dp (elf-find-ph hdr 0 n 2) rp (elf-find-ph hdr 0 n 0x6474e552)
+                d (if (= dp 0) (refuse path "no PT_DYNAMIC") (s64 (+ lib ELF-DYN) (+ bias (l64 (+ dp 16)))))
+                e (if (= rp 0) 0 (let [x (s64 (+ lib ELF-RELRO) (+ bias (page-down (l64 (+ rp 16))))) y (s64 (+ lib ELF-RELROSZ) (- (page-up (+ (l64 (+ rp 16)) (l64 (+ rp 40)))) (page-down (l64 (+ rp 16)))))] 0))
+                f (elf-dynamic path lib)
+                g (elf-needed path lib)
+                h (s64 (+ lib ELF-NEXT) (st ST-LIBS))
+                k (st! ST-LIBS lib)
+                r (elf-relocate lib)
+                cl (sys1 SYS-CLOSE fd) fr (malloc-free hdr)]
+            lib))))))
+;; run DT_INIT and DT_INIT_ARRAY with (argc, argv, envp), as the dynamic linker does
+(defn- elf-init [lib :i64] :i64
+  (if (not= (l64 (+ lib ELF-INITED)) 0) 0
+    (let [flag (s64 (+ lib ELF-INITED) 1) argc (st ST-ARGC) argv (st ST-ARGV) envp (st ST-ENVP)
+          i (l64 (+ lib ELF-INIT))
+          a (if (= i 0) 0 (call-c i argc argv envp 0 0 0))
+          arr (l64 (+ lib ELF-INITARR)) sz (l64 (+ lib ELF-INITARRSZ))]
+      (loop [k 0]
+        (if (>= k sz) 0
+          (let [fp (l64 (+ arr k)) z (if (or (= fp 0) (= fp -1)) 0 (call-c fp argc argv envp 0 0 0))] (recur (+ k 8))))))))
+;; the address of name in lib, or 0
+(defn- elf-sym [lib :i64 name :i64] :i64
+  (let [s (elf-lookup lib name)] (if (= s 0) 0 (sym-value lib s))))
+
+;; ---- dlopen, dlsym, dlerror, dlclose ---------------------------------------------------------------------------
+;; Slice 1 loads no ICD: dlopen answers only for an object already loaded (by its path or its soname), and
+;; reports everything else through dlerror as glibc does.
+(defn- path-base [p :i64] :i64
+  (loop [i 0 b 0] (let [c (l8 (+ p i))] (cond (= c 0) (+ p b) (= c 47) (recur (inc i) (inc i)) :else (recur (inc i) b)))))
+(defn- lib-find [name :i64] :i64
+  (loop [l (st ST-LIBS)]
+    (cond (= l 0) 0
+          (c-same? (l64 (+ l ELF-PATH)) name) l
+          (and (not= (soname-of l) 0) (c-same? (soname-of l) (path-base name))) l
+          :else (recur (l64 (+ l ELF-NEXT))))))
+(defn- cx-dlopen-GLIBC_2.34 [path :i64 flags :i64] :i64
+  (if (= path 0) (let [z (dl-fail "dlopen(NULL): the main program has no handle in this loader")] 0)
+    (let [l (lib-find path)]
+      (if (not= l 0) l
+        (let [z (dl-fail (string-concat (c-str path) ": cannot open shared object file: not loaded by this loader (route B2 slice 1 loads no ICD)"))]
+          0)))))
+(defn- cx-dlsym-GLIBC_2.34 [handle :i64 name :i64] :i64
+  (let [s (if (or (= handle 0) (= handle -1))
+            (loop [l (st ST-LIBS)]
+              (if (= l 0) 0 (let [a (elf-sym l name)] (if (not= a 0) a (recur (l64 (+ l ELF-NEXT)))))))
+            (elf-sym handle name))]
+    (if (not= s 0) s
+      (let [z (dl-fail (string-concat (c-str name) ": undefined symbol"))] 0))))
+(defn- cx-dlerror-GLIBC_2.34 [] :i64
+  (if (= (st ST-ERR-PENDING) 0) 0 (let [z (st! ST-ERR-PENDING 0)] (st ST-ERR))))
+(defn- cx-dlclose-GLIBC_2.34 [handle :i64] :i64 0)
+
+;; ---- the thread control block (E4) -------------------------------------------------------------------------------
+;; glibc's tcbhead_t: fs:0 holds the thread pointer itself, fs:8 the dtv, fs:0x10 the thread pointer again,
+;; fs:0x28 the stack protector canary. A random canary with a zero low byte, as glibc makes it.
+(defn- tcb-init [] :i64
+  (let [m (sys6 SYS-MMAP 0 4096 3 34 -1 0)]
+    (if (< m 0) (refuse "tcb" "mmap failed")
+      (let [a (s64 m m) b (s64 (+ m 16) m) c (sys3 SYS-GETRANDOM (+ m 40) 8 0)
+            d (s8 (+ m 40) 0) e (st! ST-TCB m)
+            r (sys2 SYS-ARCH-PRCTL 4098 m)]
+        (if (< r 0) (refuse "tcb" (string-concat "arch_prctl(ARCH_SET_FS) failed: " (dec-str r))) m)))))
