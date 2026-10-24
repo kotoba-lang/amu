@@ -84,6 +84,8 @@ def main(build, complete, output):
         refused('missing-lock', lock_args=False)
         refused('unpinned', extra=('--unpinned',))
         refused('forbidden-format', extra=('--format', 'static'))
+        refused('unexpected-positional', extra=('ignored',))
+        refused('emit-module', extra=('--emit-module',))
         refused('wrong-lock-digest', digest='0' * 64)
         write_lock([p for p in sources if p.name != 'base.kotoba'])
         refused('missing-transitive-source')

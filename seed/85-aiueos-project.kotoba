@@ -10,7 +10,7 @@
 ;; 60-proj records AArch64 interface offsets in words. Convert only the
 ;; newly recorded interface addresses to this backend's byte units; retain
 ;; the canonical typed clauses and schema identities unchanged.
-(defn- kp-iface [M :vector-i64 L :vector-i64 P :string S :string m :i64] :string
+(defn- kp-iface [M :vector-i64 L :vector-i64 P :string S :string R :vector-i64 m :i64] :string
   (let [first (pj-l L pj-k-nif) base (pj-l L pj-k-base)
         result (pj-iface M L P S m)
         updated (loop [e first]
@@ -20,7 +20,8 @@
                                       (let [old (pj-if L e (+ pj-if-off0 k))
                                             w (pj-iset L e (+ pj-if-off0 k) (+ base (quot (- old base) 4)))]
                                         (recur (inc k)))))]
-                      (recur (inc e)))))]
+                      (recur (inc e)))))
+        requirements (kg-note-interface M L result S R first)]
     result))
 
 ;; Calls within a module are xg's existing rel32 fixups. Its imported
@@ -44,12 +45,14 @@
         filled (pj-ls L pj-k-img (+ base size))]
     M))
 
-(defn- kp-emit-module [M :vector-i64 L :vector-i64 S :string m :i64] :vector-i64
-  (let [admitted (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 4 0) (mem-set 197 0)
+(defn- kp-emit-module [M :vector-i64 L :vector-i64 R :vector-i64 S :string m :i64] :vector-i64
+  (let [admitted (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 4 2) (mem-set 197 0)
                     (mem-set 200 0) (mem-set 201 0) (xo-check-fns S 1) (xg-check-sir 1)
-                    (xk-scan S) (km-scan S) (xk-check 1) (km-check 1))
+                    (xk-scan S) (km-scan S))
         entry (xg-get admitted 1)]
     (cond (not (pj-ok admitted)) admitted
+          (or (not= (vector-count R) (inc (vector-at admitted MM-FN-N)))
+              (not= (vector-at R (dec (vector-count R))) 1)) (xg-err admitted 7106 m)
           (not= (vector-at admitted MM-CAPS) 0) (xg-err admitted 7101 OP-CAP)
           (and (= m 0) (or (= entry 0) (not= (xg-f admitted entry FF-NPARAMS) 0))) (xg-err admitted 7102 entry)
           :else
@@ -66,7 +69,8 @@
 ;; after the canonical import trailer. Account for both suffixes when
 ;; finding import stubs. The canonical checker owns parameter refinement.
 (defn- kp-module-h [M :vector-i64 L :vector-i64 P :string m :i64 H :vector-i64] :string
-  (let [S0 (pj-src M L P m) trailer (pj-trailer L P m)
+  (let [context (pj-ls L pj-k-errmod m)
+        S0 (pj-src M L P m) trailer (pj-trailer L P m)
         S1 (if (pj-ok M) (string-concat S0 (ck-r6b-lib-t S0 "")) S0)
         S (string-concat S1 (string-concat trailer (string-concat (km-lib) (xk-lib))))
         base (bit-and (+ (pj-l L pj-k-img) 15) -16)
@@ -81,12 +85,15 @@
     (cond (and (pj-ok M5) (ck-hint-again? H M5)) (kp-module-h M5 L P m H)
           (not (pj-ok M5)) (let [w2 (pj-err-back M5 L m (string-length S1))] P)
           :else
-          (let [lowered (lw-run M5)
-                emitted (if (pj-ok lowered) (kp-emit-module lowered L S m) lowered)]
+          (let [scanned (-> M5 (mem-set 197 0) (mem-set 200 0) (mem-set 201 0)
+                            (xk-scan S) (km-scan S))
+                R (if (pj-ok scanned) (kg-run scanned L m) (vector-alloc 1))
+                lowered (if (pj-ok scanned) (lw-run scanned) scanned)
+                emitted (if (pj-ok lowered) (kp-emit-module lowered L R S m) lowered)]
             (cond (not (pj-ok emitted)) P
                   (not (pj-ok (pj-r5b-after emitted L P S m))) P
                   (= m 0) P
-                  :else (kp-iface emitted L P S m))))))
+                  :else (kp-iface emitted L P S R m))))))
 
 (defn- kp-project [M :vector-i64 L :vector-i64 P :string root :i64] :string
   (let [discovered (pj-discover M L P root)
@@ -112,13 +119,20 @@
                            (let [w (xg-put-byte M i (pj-ib L i))] (recur (inc i)))))]
             (if (pj-ok prefix) (xi-elf (mem-set M MM-CODE-N (inc size)) data fuel) prefix)))))
 
+(defn- kp-options? [i :i64] :bool
+  (if (>= i (io-argc)) true
+    (let [flag (io-arg i)]
+      (and (< (inc i) (io-argc))
+           (or (string=? flag "--artifact") (string=? flag "--output") (string=? flag "--fuel")
+               (string=? flag "--source-path") (string=? flag "--source-lock") (string=? flag "--source-lock-sha256"))
+           (kp-options? (+ i 2))))))
 (defn- kp-command [] :i64
   (let [n (io-argc) path (io-arg 1)
         output-index (drv-pj-flag 1 n "--output") artifact-index (drv-pj-flag 1 n "--artifact")
         fuel-index (drv-pj-flag 1 n "--fuel") out (if (< output-index 0) "" (io-arg output-index))
         fuel (if (< fuel-index 0) 1000000 (xg-budget (io-arg fuel-index)))]
     (cond (or (< (drv-pj-lock-arg 1 n -1) 0) (= (drv-pj-has 1 n "--unpinned") 1)) (drv-fail0 E-PROJ-UNPINNED)
-          (or (< artifact-index 0) (not (string=? (io-arg artifact-index) "image"))
+          (or (not (kp-options? 4)) (< artifact-index 0) (not (string=? (io-arg artifact-index) "image"))
               (= (string-length out) 0) (< fuel 1)
               (= (drv-pj-has 1 n "--format") 1) (= (drv-pj-has 1 n "--payload") 1)) (drv-usage)
           (= (io-exists out) 1) (drv-fail0 E-WRITE)
@@ -128,7 +142,9 @@
                 locked (drv-pj-lock M L P0 path)
                 P (if (pj-ok M) (kp-project M L (pj-padd L locked path) (dec (pj-n L))) locked)
                 image (if (pj-ok M) (kp-image M L fuel) M)]
-            (cond (>= (vector-at image MM-ERR) 7100) (xo-report image (pj-err-path L P) out)
+            (cond (>= (vector-at image MM-ERR) 7100)
+                  (let [w (io-err (string-concat "kernel project in " (string-concat (pj-err-path L P) ":\n")))]
+                    (xo-report image (pj-err-path L P) out))
                   (not (pj-ok image))
                   (if (= (pj-l L pj-k-nmod) 0) (drv-fail-in image path "") (drv-pj-fail image L P))
                   :else (let [written (out-write-v image out (+ MM-OUT-BASE 1) (dec (vector-at image MM-OUT-N)))]
