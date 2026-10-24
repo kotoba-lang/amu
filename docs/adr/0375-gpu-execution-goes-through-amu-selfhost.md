@@ -126,6 +126,87 @@ first target, and RADV adds libLLVM's closure. So step 1 above becomes:
 1. B2 on ANV;
 2. then RADV.
 
+## B2 in slices (proposed, 2026-10-24)
+
+**What main has today** (origin/main `fea41f39`):
+* **Calls out to C.** `kxrt-ccall` takes 6 register arguments and up to 8
+  stack arguments, returns in rax, and is admitted only in mode 3
+  (`seed/75-x86_64-static.kotoba`). A static mode-3 build exists
+  (`xs-build ... 3`).
+* **Raw syscalls**, including mmap, mprotect, openat and pread
+  (`seed/76-x86_64-static-rt.kotoba`).
+* **Some ELF parsing:** headers, phdrs and the dynamic section
+  (`tools/gpu_provider.kotoba`), and symbol tables
+  (`re_disasm/disasm.kotoba`).
+* **The provider** reaches Vulkan through a single import,
+  `vkGetInstanceProcAddr`.
+
+**What main lacks:**
+* **E1. Calls in from C.** There is no C-callable entry point:
+  `seed/X86_64-LINUX-ABI` says "No externally callable scalar ABI". Every
+  libc function that the vendor code calls is such a call. It needs a SysV
+  entry thunk per exported function, plus an export table by name and
+  version. The thunk must:
+  * move the arguments so that r9 (Kotoba's context register) is free;
+  * set up the context and fuel;
+  * preserve the callee-saved registers;
+  * return rax.
+
+  The aiueos object route's thunk (`seed/74`) and the signal-handler slot
+  (`kxrt-slot-400`) are the precedents.
+* **E2. Memory access:** 16- and 32-bit loads and stores, atomics
+  (cmpxchg, xadd, xchg) and fences.
+* **E3. Threads:** `clone` with `CLONE_THREAD` and `CLONE_SETTLS`, futex,
+  and per-thread runtime state. Today the state is one G region per
+  process.
+* **E4. The FS base and TLS:**
+  * a TCB whose self pointer is at fs:0 and stack-protector canary at
+    fs:0x28;
+  * static TLS blocks for loaded objects;
+  * TPOFF, DTPMOD and DTPOFF relocations and `__tls_get_addr`.
+* **E5. Floating-point arguments.** The x86 profiles refuse floating point,
+  but ANV imports 22 libm and float functions (`powf`, `log2f`, `strtod`
+  and others). As a minimum, thunks move xmm arguments and results.
+* **E6. A loader:**
+  * maps PT_LOAD segments;
+  * applies RELATIVE, 64, GLOB_DAT and JUMP_SLOT relocations;
+  * looks up symbols with versions (versym/verneed, GNU_HASH);
+  * runs init_array;
+  * serves `dlopen`, `dlsym` and `dl_iterate_phdr`.
+
+  Imports with no implementation yet bind to a stub that refuses by name,
+  so the libc grows only with what the compute path calls.
+
+**Slices:**
+1. **The Vulkan loader alone.** Load `libvulkan.so.1` and call
+   `vkEnumerateInstanceVersion` and `vkEnumerateInstanceExtensionProperties`,
+   with no ICD.
+   * Its closure is just libc and libm, about 58 functions: malloc, the
+     strings, `getenv`, stdio, `opendir`/`readdir`, `sscanf`, `snprintf`,
+     `qsort` and pthread mutexes.
+   * Its relocations are 123 RELATIVE, 5 GLOB_DAT and 56 JUMP_SLOT, with
+     no TLS.
+   * It needs E1, E2 (for 32-bit fields), E6, and E4's TCB with the
+     canary.
+2. **The ANV ICD.** `dlopen` the ICD and its closure (26 libraries), then
+   run `vkCreateInstance` and `vkEnumeratePhysicalDevices` with their
+   properties, as the provider's INFO and DEVCLASS. It adds:
+   * E4's full TLS (libstdc++, libgcc_s);
+   * GNU_UNIQUE symbols and the C++ runtime's init;
+   * E5 where it is called.
+3. **A device and one dispatch.** Create the device, a compute pipeline from
+   a KIR v2 module, and one dispatch. E3 comes in here, for Mesa's worker
+   threads.
+4. **The provider on B2.** The provider runs as a static image on B2,
+   behind the launcher with its confinement. The provider-era gates run on
+   the B70 and replace the historical receipts: INFO and DEVCLASS, the dot
+   and kdot fixtures, and the exec gate.
+5. **RADV** (gad). It adds libLLVM's closure (35 libraries, 564 symbols).
+
+E1–E5 are changes to the seed (the compiler and runtime). Each slice that
+changes the seed regenerates and verifies the root, product, gate and
+controller pins, as #1522 did.
+
 ## Consequences
 
 * **B depends on glibc and driver internals.** The GPU hosts pin their
