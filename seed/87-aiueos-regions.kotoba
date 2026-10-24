@@ -7,7 +7,7 @@
 (def KG-FW 7) ; nparams, ABI-export, code byte, owner module, ISR vector+1, name start/end
 (def KG-SBASE (+ KG-FBASE (* MM-FN-CAP KG-FW)))
 (def KG-XFIRST (+ 1 KM-INTR-N))
-(def KG-FIRST (+ KG-XFIRST XK-INTR-N))
+(def KG-FIRST (+ KG-XFIRST XK-WINDOW-N))
 (defn- kg-new [] :vector-i64
   (let [G (vector-alloc (+ KG-SBASE (* MM-SIR-CAP MM-SIR-W)))]
     (-> G (vector-assoc! 0 KG-FIRST) (vector-assoc! 1 1))))

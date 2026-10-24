@@ -35,11 +35,12 @@
       (xg-bytes 0x08c48348 4) (xg-byte 0xc3)))
 
 ;; ADR 0373: bounded kernel memory windows. The source library below is appended to
-;; the guest source for this route only; its three private functions are stubs whose
+;; the guest source for this route only; its private functions are stubs whose
 ;; calls this backend replaces by inline code (the way the static route's kxrt-
 ;; intrinsics are), so the shared frontend, checker and lowering are unchanged and
 ;; the adopted seed/MANIFEST sources are untouched. M[200] is the first stub's FN
-;; (0 = none); the stubs are the last four functions of the text, in this order.
+;; (0 = none). Objects append all six stubs; locked projects append the same
+;; four memory stubs and obtain port writes from their kernel suffix.
 ;;
 ;;   (kernel-load-u32 base length index)      -> the u32 at base + index
 ;;   (kernel-store-u32 base length index v)   -> v, after storing it as a u32
@@ -51,17 +52,22 @@
 ;; subregion: base non-null, offset <= length, n <= length - offset. The byte
 ;; sequences are kotoba-native's x86_64.cljk emit-kernel-load-u32 /
 ;; emit-kernel-store-u32 / emit-kernel-subregion, and so are the displacements.
-(def XK-INTR-N 4)
+(def XK-INTR-N 6)
+(def XK-WINDOW-N 4)
 (defn- xk-intr-name [k :i64] :string
-  (case k 0 "kernel-load-u32" 1 "kernel-store-u32" 2 "kernel-subregion" 3 "kernel-load-u32-16k" ""))
-(defn- xk-lib [] :string
+  (case k 0 "kernel-load-u32" 1 "kernel-store-u32" 2 "kernel-subregion" 3 "kernel-load-u32-16k"
+          4 "kernel-out-u8" 5 "kernel-out-u32" ""))
+(defn- xk-memory-lib [] :string
   "\n(defn- kernel-load-u32 [b :i64 n :i64 i :i64] :i64 0)\n(defn- kernel-store-u32 [b :i64 n :i64 i :i64 v :i64] :i64 0)\n(defn- kernel-subregion [b :i64 n :i64 o :i64 l :i64] :i64 b)\n(defn- kernel-load-u32-16k [b :i64 n :i64 i :i64] :i64 0)\n")
+(defn- xk-lib [] :string
+  (string-concat (xk-memory-lib)
+    "\n(defn- kernel-out-u8 [p :i64 v :i64] :i64 v)\n(defn- kernel-out-u32 [p :i64 v :i64] :i64 v)\n"))
 ;; Only the object route recognizes the stubs. The static route (seed/75, M[197] > 0) keeps
 ;; kxrt-ccall's function id in M[200], so without the M[197] guard the three functions after it
 ;; would be taken for the store, subregion and 16 KiB load (found by an independent review).
 (defn- xk-intr [M :vector-i64 f :i64] :i64
   (let [first (vector-at M 200) k (- f first)]
-    (if (and (= (vector-at M 197) 0) (> first 0) (>= k 0) (< k XK-INTR-N)) k -1)))
+    (if (and (= (vector-at M 197) 0) (> first 0) (>= k 0) (< k (if (> (vector-at M 201) 0) XK-WINDOW-N XK-INTR-N))) k -1)))
 (defn- xk-intrinsic [M :vector-i64 k :i64 t :i64] :vector-i64
   (case k
     ;; mov rdx,[base]; mov rcx,[length]; mov rax,[index]; cmp rcx,512; ja; test rdx,rdx; jz;
@@ -102,23 +108,28 @@
           (xg-bytes 0x8c0f 2) (xg-bytes 21 4)
           (xg-bytes 0xc0f748 3) (xg-bytes 3 4) (xg-bytes 0x870f 2) (xg-bytes 8 4)
           (xg-bytes 0x02048b 3) (xg-bytes 0xe9 1) (xg-bytes 2 4) (xg-bytes 0x0b0f 2) (xg-save t))
+    ;; Port writes take scalars, not a region pair. The instruction truncates
+    ;; the port to DX and leaves the original value in RAX, as the owner ABI.
+    4 (-> M (xg-load t 0x958b48) (xg-load (inc t) 0x858b48) (xg-byte 0xee) (xg-save t))
+    5 (-> M (xg-load t 0x958b48) (xg-load (inc t) 0x858b48) (xg-byte 0xef) (xg-save t))
     (xg-err M 7101 OP-CALL)))
-;; The stubs are the last four functions, in id order, named as above. A source that
+;; The selected stubs are the final functions, in id order, named as above. A source that
 ;; leaves them out or reorders them (it cannot: the library is appended here) is refused.
-(defn- xk-scan [M :vector-i64 S :string] :vector-i64
-  (let [n (vector-at M MM-FN-N) first (- n XK-INTR-N)]
+(defn- xk-scan-count [M :vector-i64 S :string count :i64] :vector-i64
+  (let [n (vector-at M MM-FN-N) first (- n count)]
     (if (or (not= (vector-at M MM-ERR) 0) (<= first 1)) (xg-err M 7102 n)
       (loop [k 0]
-        (let [f (+ first k) sb (+ MM-SYM-BASE (* (xg-f M f FF-SYM) MM-SYM-W))
-              a (vector-at M (+ sb SF-START)) b (vector-at M (+ sb SF-END))]
-          (cond (= k XK-INTR-N) (mem-set M 200 first)
-                (not (string=? (string-substring S a b) (xk-intr-name k))) (xg-err M 7102 f)
-                :else (recur (inc k))))))))
+        (if (= k count) (mem-set M 200 first)
+          (let [f (+ first k) sb (+ MM-SYM-BASE (* (xg-f M f FF-SYM) MM-SYM-W))
+                a (vector-at M (+ sb SF-START)) b (vector-at M (+ sb SF-END))]
+            (if (string=? (string-substring S a b) (xk-intr-name k))
+              (recur (inc k)) (xg-err M 7102 f))))))))
+(defn- xk-scan [M :vector-i64 S :string] :vector-i64
+  (xk-scan-count M S XK-INTR-N))
 
 ;; ROOTED BASES (ADR 0373, kotoba-native docs/threat-model.md). Narrowing a window with
 ;; (+ base offset), or taking a base out of memory, would conjure a window nothing
 ;; checked, so the base operand (the first) of each of the three must be ROOTED:
-;;   - an integer literal (a literal window), or
 ;;   - a parameter never assigned in its function: of the exported function (the ABI
 ;;     boundary where the kernel hands in a region), or of a private helper when
 ;;     EVERY call of that helper passes a rooted value at that position, or
@@ -345,7 +356,7 @@
 (defn- xk-check [M :vector-i64 i :i64] :vector-i64
   (if (or (not= (vector-at M MM-ERR) 0) (>= i (vector-at M MM-SIR-N))) M
     (let [op (xg-si M i IF-OP) a (xg-si M i IF-A) b (xg-si M i IF-B)]
-      (if (or (and (= op OP-CALL) (>= (xk-intr M a) 0)
+      (if (or (and (= op OP-CALL) (>= (xk-intr M a) 0) (< (xk-intr M a) XK-WINDOW-N)
                    (let [r (xk-region (mem-set M 198 0) i b 0) ln (xk-src M i (inc b) 0)]
                      (not (and (>= r 0) (not= ln 0) (xk-same-extent? M i ln r)))))
               ;; the exported function's parameters are rooted because the kernel hands them in: a guest call of the export would
