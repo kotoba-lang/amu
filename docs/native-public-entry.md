@@ -27,9 +27,9 @@ An old matching descriptor or a Python observation is not that verdict.
 
 The controller and gates rebuild byte-identically with this compiler:
 
-* controller `39a500374e27d3a04404573cbf455eef56b2dbb6aa473279e3cd75cae9a1263a`
-* Amu selfhost `e6dcf6189b527208bd65cd53d8f05d07008fb6adc0dc4e1e37dc1e92df334700`
-* Kotoba native `39fac666f5eb57b4adf69c1efe1770758e78dd7f51c368cbbdefeda14ee6d995`
+* controller `13dbe6c7ca373fd083d7c2e44299dcc95e285a7a6be8d5b60fb06a560f9d207d`
+* Amu selfhost `6370110508fee2379a659b5830c706c07ec46ca752f20cd95f2d81c66406871f`
+* Kotoba native `528d3d3523b2bbd0cb868c7090d7579f6b5348f1880299539ff84b9dd9f69102`
 
 Fresh native receipts bind those exact images and their input ledger to the
 new compiler. The fixed24 corpus and complete core are unchanged. No new

@@ -129,9 +129,10 @@ with a source lock, packed into native ARM ELF, and used to read the complete
 current `surface-status.edn` (version 1/profile 6) and `cli.edn` (12 commands
 and their flags). This is reader execution, not implementation of all CLI
 verbs. The full31 run remains historical. The #1548-inclusive full32 source
-passed all19 Embench, MIR all large, GMIR, resource and pinned-source refusal
-cases on native ARM. Its MIR whole-large ended with zero tracked use and
-155688217 scope releases. The adopted core warm three generations, locked
+with final native controller pins passed 146 calls on native ARM: all19
+Embench, MIR all large, GMIR, resource and pinned-source refusal cases. Its
+MIR whole-large ended with zero tracked use and 155688217 scope releases.
+The adopted core warm three generations, locked
 unity and independent cold C0-to-core agree byte-for-byte; the full32 ARM
 image has F4=F5=F6. The current FS2, Kototama AOT, CID writer/replay and
 frozen Definition CID receipts are indexed in
