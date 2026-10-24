@@ -1,5 +1,15 @@
 # Native AOT (x86-64/aarch64) value-representation baseline
 
+> **Dated note (2026-10-24, ADR 0371).** The GPU execution path this baseline
+> refers to is deleted: the C loader `tools/kexe_loader.c`, and wire 42's
+> `:gpu/compute` brokered by `tools/kexe_gpu_vulkan.c`. ADR 0371 replaced
+> it with a provider process that the static launcher starts and that
+> speaks the same wire-42 protocol. Since #1510 two things hold: main's
+> compiler refuses that provider's `--format platform-linked` build, and
+> its qualifications are outside mandatory native CDCI (`AGENTS.md`). So
+> no current route executes a GPU artifact. The text below is kept as
+> written.
+
 > **Correction (2026-09-24, kotoba-native ADR 0087).** Records and variants
 > are no longer limited to the one nested construction shape described below:
 > aggregate ABI v8 carries records, variants and heterogeneous vectors -- and

@@ -410,8 +410,12 @@ Every other GPU number is a bootstrap reference.
     (done: JUN-293, rewritten rather than given a dated note);
   * the `accelerator*` source comments.
 
-  This is a follow-up; this change only adds the refused entry in
-  `docs/c-loader-removal.md`.
+  This change only added the refused entry in `docs/c-loader-removal.md`.
+  The follow-up is done (2026-10-24, JUN-344):
+  * The ADRs and `docs/native-aot-baseline.md` carry a dated note.
+  * The `accelerator*` source comments are left as written. The CLJK
+    sources are historical text since #1510, and dated receipts pin
+    `accelerator_subgroup_reduce.cljk`'s bytes.
 
 ## Open questions for the owner
 
@@ -661,4 +665,5 @@ Each step is its own PR, in this order:
    5. ADR and documentation.
 7. **aarch64-linux** imports, then Xavier.
 8. **macOS ADR.**
-9. **Dated notes** in the stale docs listed under Consequences.
+9. **Done: dated notes** in the stale docs listed under Consequences
+   (2026-10-24).
