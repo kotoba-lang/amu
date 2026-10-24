@@ -288,7 +288,13 @@ query -- no 32-lane constant is baked anywhere in the source), the partial
 index is `threadIdx.x / warpSize` (CUDA has no subgroup-id builtin; P2
 binds unchanged), and the partials array is a fixed
 `__shared__ float partials[W]` (the MSL/WGSL arms' fixed-workgroup-array
-choice). UNCOMPILED and UNMEASURED: no nvcc exists on the testing host
+choice). [UNCOMPILED CLOSED 2026-10-24 as to one real toolchain: the
+emitted row compiles clean with the real nvcc 11.4 (V11.4.315) on the
+fleet's CUDA host xavier (Jetson AGX, L4T R35.4.1, -arch=sm_72) -- 18
+.cubin + 18 .ptx, received bytes sha256-identical to the emitter's,
+docs/evidence/gpu/cuda-compile-xavier-20261024/; this host still has no
+nvcc, and UNMEASURED is UNCHANGED -- a compile is not a measurement.]
+UNCOMPILED and UNMEASURED (as written 2026-10-23): no nvcc exists on the testing host
 (the same regime as the WGSL arm -- text contracts test-pinned to the
 NVIDIA CUDA C++ Programming Guide, fetched 2026-10-23: vendor
 documentation, not a measurement), the CUDA emitter has no execution path
@@ -329,8 +335,13 @@ extension answers exactly one corner the warp row leaves open. The two
 rungs spell the same fold (runtime `warpSize` vs the baked 32), so no
 reduction semantics change with the choice. Implemented with tests;
 UNCOMPILED and UNMEASURED (no nvcc, no NVIDIA execution path, nothing run
-on NVIDIA hardware), `:measured? false` on every answer, no workgroup row
-touched.
+on NVIDIA hardware) [UNCOMPILED CLOSED 2026-10-24 as to one real
+toolchain: the emitted row compiles clean with the real nvcc 11.4
+(V11.4.315) on the fleet's CUDA host xavier, -arch=sm_72 -- 18 .cubin +
+18 .ptx, received bytes sha256-identical to the emitter's,
+docs/evidence/gpu/cuda-compile-xavier-20261024/; UNMEASURED unchanged and
+this host still has no nvcc], `:measured? false` on every answer, no
+workgroup row touched.
 
 ## Intel `:subgroup-reduce` (JUN-59) -- the design
 

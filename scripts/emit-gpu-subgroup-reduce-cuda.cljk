@@ -8,11 +8,17 @@
 ;; Writes docs/evidence/gpu-subgroup-reduce-cuda-20261023/shaders/
 ;; subgroup-reduce-w<W>-<operator>.emitted.cu for W in
 ;; {32, 64, 128, 256, 512, 1024} and operator in {sum, max, min} -- the
-;; whole admitted row. UNCOMPILED: no nvcc exists on this host, so unlike
-;; the MSL arm there is no toolchain step to run on these files. They are
-;; the emitter's bytes recorded as text contracts, and no timing, speedup
-;; or execution result is claimed or implied: the CUDA emitter has no
-;; execution path in this repository (wire 42 runs Vulkan only).
+;; whole admitted row. UNCOMPILED on this host: no nvcc exists here, so
+;; unlike the MSL arm there is no toolchain step to run on these files
+;; HERE. [COMPILED 2026-10-24 on the fleet's CUDA host xavier: these exact
+;; bytes (sha256-identical) compile clean with the real nvcc 11.4
+;; (V11.4.315), -arch=sm_72, 18 .cubin + 18 .ptx,
+;; docs/evidence/gpu/cuda-compile-xavier-20261024/.] They are the
+;; emitter's bytes recorded as text contracts and one real-toolchain
+;; compile; no timing, speedup, execution result or correctness verdict is
+;; claimed or implied: the CUDA emitter has no execution path in this
+;; repository (wire 42 runs Vulkan only) and nothing has executed this arm
+;; on any GPU.
 ;;
 ;; Deterministic: same emitter, same bytes. If a run of this script
 ;; changes a file, the emitter changed.

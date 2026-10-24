@@ -64,8 +64,10 @@
   fold. Spellings verified against the W3C WGSL spec and the merged gpuweb
   subgroups proposal (fetched 2026-10-23) -- vendor documentation, not a
   measurement. UNCOMPILED here: no WGSL compiler or validator exists on
-  this host (the CUDA arm is in the same regime -- no nvcc), so the text
-  contracts the tests pin are the whole verification, and nothing has
+  this host (the CUDA arm left this regime 2026-10-24 -- its emitted row
+  compiles clean with the real nvcc on the fleet's CUDA host, the CUDA arm
+  paragraph below; the WGSL arm keeps the regime), so the text contracts
+  the tests pin are the whole verification, and nothing has
   executed this arm (no WebGPU execution path exists). The n of the KIR
   rides `var<uniform> n: N` at binding 2 -- the WGSL family's own choice
   (every WGSL emission binds it there); the GLSL arm's storage-buffer n is
@@ -125,13 +127,24 @@
   dynamic `extern __shared__ float s[]`. The entry point is the kernel's
   :kernel/name under the CUDA family's own extern-C kernel linkage (exactly
   what the :warp-shuffle-reduce arm emits). The KIR's n is the third kernel
-  argument, the CUDA family's own ABI (x, parts, n). UNCOMPILED and
-  UNMEASURED: no nvcc exists on the testing host (the same regime as the
-  WGSL arm -- the text contracts the tests pin are the whole verification,
-  spellings pinned to the NVIDIA CUDA C++ Programming Guide, fetched
-  2026-10-23: vendor documentation, not a measurement), the CUDA emitter
-  has no execution path in this repository (wire 42 runs Vulkan only), and
-  nothing has executed this arm on any GPU. P1 (option b scoping) and P2
+  argument, the CUDA family's own ABI (x, parts, n). [COMPILED 2026-10-24,
+  closing this arm's UNCOMPILED state as to one real toolchain: the whole
+  admitted row of emitted sources (W in 32..1024 x :sum/:max/:min, 18
+  files -- the committed corpus, re-emitted byte-identically this tick)
+  compiles CLEAN with the real nvcc -- Cuda compilation tools, release
+  11.4, V11.4.315 -- on the fleet's CUDA host xavier (Jetson AGX Xavier,
+  L4T R35.4.1, -arch=sm_72): 18 .cubin + 18 .ptx, each PTX opening
+  `.target sm_72` with the extern-C entry `reduce_{sum,max,min}`, the
+  received bytes sha256-identical to the emitter's;
+  docs/evidence/gpu/cuda-compile-xavier-20261024/. This host still has no
+  nvcc and the WGSL arm's UNCOMPILED is untouched.] UNMEASURED UNCHANGED
+  and still the operative claim: no kernel has executed this arm on any
+  GPU, no timing exists, and no :measured? flag and no workgroup row moves
+  -- the CUDA emitter has no execution path in this repository (wire 42
+  runs Vulkan only). The text contracts the tests pin stand beside the
+  compile, not replaced by it (spellings pinned to the NVIDIA CUDA C++
+  Programming Guide, fetched 2026-10-23: vendor documentation, not a
+  measurement). P1 (option b scoping) and P2
   (subgroup IDs, never lid arithmetic) bind this arm unchanged."
   {:kotoba/export [applicable? basis emit-cuda emit-glsl emit-wgsl emit-msl min-workgroup-size]}
   (:require [kotoba.compiler.accelerator-kir :as kir]))

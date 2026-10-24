@@ -351,9 +351,15 @@
 ;; The CUDA arm (emit-cuda, landed 2026-10-23). The same fold to its letter,
 ;; in CUDA spellings -- the last of the four emitters to carry it (GLSL
 ;; 2026-10-22, WGSL and MSL 2026-10-23). UNCOMPILED on this host (no nvcc
-;; exists here, the same regime as the WGSL arm) -- these text contracts are
-;; the whole verification, and the spellings are pinned to the NVIDIA CUDA
-;; C++ Programming Guide (fetched 2026-10-23), not to a compiler.
+;; exists here, the same regime as the WGSL arm) -- [COMPILED 2026-10-24
+;; elsewhere: the emitter's bytes for this whole admitted row compile clean
+;; with the real nvcc 11.4 (V11.4.315) on the fleet's CUDA host xavier
+;; (-arch=sm_72, 18 .cubin + 18 .ptx),
+;; docs/evidence/gpu/cuda-compile-xavier-20261024/; this host keeps the
+;; regime] -- these text contracts stand beside that compile, and the
+;; spellings are pinned to the NVIDIA CUDA C++ Programming Guide (fetched
+;; 2026-10-23), not to a compiler. Nothing has executed this arm on any
+;; GPU: UNMEASURED unchanged.
 
 (deftest cuda-emission-queries-the-subgroup-size-at-runtime
   ;; ADR-0356's letter, CUDA arm: the fold step is a function of warpSize

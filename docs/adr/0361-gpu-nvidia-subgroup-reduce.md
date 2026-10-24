@@ -131,7 +131,16 @@ unchanged). Spellings pinned to the NVIDIA CUDA C++ Programming Guide
 (fetched 2026-10-23): vendor documentation, not a measurement.
 UNCOMPILED and UNMEASURED: no nvcc exists on the testing host (the same
 regime as the WGSL arm), the CUDA emitter has no execution path in this
-repository, and nothing has run on NVIDIA hardware.
+repository, and nothing has run on NVIDIA hardware. [UNCOMPILED CLOSED
+2026-10-24 as to one real toolchain: the emitted row (W in 32..1024 x
+:sum/:max/:min, 18 files) compiles clean with the real nvcc 11.4
+(V11.4.315) on the fleet's CUDA host xavier (Jetson AGX, L4T R35.4.1,
+-arch=sm_72) -- 18 .cubin + 18 .ptx, each PTX `.target sm_72` with the
+extern-C entry reduce_{sum,max,min}, received bytes sha256-identical to
+the emitter's; docs/evidence/gpu/cuda-compile-xavier-20261024/. This host
+still has no nvcc, the WGSL arm's UNCOMPILED is untouched, and UNMEASURED
+is UNCHANGED -- a compile is not a measurement, no kernel has executed on
+any GPU, no :measured? flag and no workgroup row moves.]
 
 **The selection rows do NOT move.** `select-variant` still answers
 `:warp-shuffle-reduce` for :nvidia on the CUDA route (this ADR's
