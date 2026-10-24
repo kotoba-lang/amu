@@ -1412,8 +1412,14 @@
                         (let [z (kxrt-store8 (+ raw i) 0)] (recur (inc i)))))]
         result))))
 
+;; Refuse an ungranted wire by name after flushing stdout.
+(defn- kxrt-not-granted [id :i64] :i64
+  (let [b (kxrt-gl 200) z (kxrt-flush) i (kxrt-w b (kxrt-w b 0 0x5041435f4558454b 8) 0x20657269773a7b20 8)
+        j (+ i (kxrt-dec (+ b i) id))
+        y (kxrt-err-text b (kxrt-w b (kxrt-w b (kxrt-w b j 0x6573756665723a20 8) 0x672d746f6e3a2064 8) 0x0a7d6465746e6172 8))]
+    (kxrt-fail)))
 (defn- kxrt-typed-cap-call [id :i64 rk :i64 sk :i64 req :i64] :i64
-  (cond (not (kxrt-admitted? id)) (kxrt-fail)
+  (cond (not (kxrt-admitted? id)) (kxrt-not-granted id)
         ;; KSL1 is a separate exact native lock-read operation. Ordinary raw
         ;; FS requests still require FS2; no legacy byte dispatch is restored.
         (and (= id 35) (= rk 8) (= sk 8) (>= (kxrt-vlen req) 6)
