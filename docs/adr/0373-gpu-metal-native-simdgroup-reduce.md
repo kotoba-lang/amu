@@ -524,6 +524,28 @@ reduce shape is selected as a whole (`:operators #{:sum :max :min}`) --
 the cell's pooled verdict governs; the contract has no per-operator
 flip and none is invented here.
 
+The composed contract's NAMING rule for same-day re-session records
+(decided 2026-10-24, answering the question the W = 32 re-session
+record deferred -- "Whether same-day re-session records are named in
+the flip note / basis evidence lists at all"; the record:
+`docs/evidence/gpu/same-day-resweep-naming-20261024.txt`): a same-day
+re-session is NAMED in the flip note's prose only -- its own scoped
+paragraph, carrying exactly the scoping its own record carries (not a
+cross-day replication; extends no `:shapes`; moves no `:measured?`
+flag, selection answer or workgroup row; magnitude phrases
+regime-scoped within the day) -- and is NOT NAMED in the basis
+evidence lists (`apple-simdgroup-measured-evidence` and the
+`:measured-cell` `:evidence` maps), which stay closed under the
+contract's record kinds: each cell's own flip runs (one per measured
+shape) and its sanctioned cross-day replication runs. The rule's
+ground is the re-session's own measured facts (sign replicates 18/18
+same-day; medians moved 0.021/0.033/0.081 within one calendar day and
+the cross-operator identity flipped HOLDS -> REFUTED) -- a same-day
+session licenses nothing the cell's own run did not. ACCEPTED DESIGN
+ONLY as of that record: the naming implementation (the W = 32
+paragraph, the lists' docstring tightening, their tests) is its own
+later slice.
+
 ## What this decision is NOT
 
 - **No speed claim.** The family's rationale ("removing most of the
@@ -785,6 +807,13 @@ step-1 slice added the rows below it.]
   contrast block gains the W = 32 record;
   `docs/evidence/gpu/simdgroup-reduce-flip-shape2-w32-20261024.txt`:
   the slice record (gate output included).
+- [SAME-DAY RE-SESSION NAMING DECISION SLICE, 2026-10-24 (no code
+  namespace, no test):] `docs/evidence/gpu/same-day-resweep-naming-20261024.txt`
+  (the decision record) and this ADR (the NAMING rule paragraph in
+  "Measurement contract and the flip" above, this diff row, and the
+  LEFT row below). The naming implementation (the W = 32 SAME-DAY
+  RE-SESSION paragraph, the basis-lists docstring tightening, their
+  tests) is its own later slice and is NOT in this diff.
 
 ## What did NOT move (named so nothing is silently upgraded)
 
@@ -1065,3 +1094,10 @@ outside this diff. No green full suite is claimed.
    later-day cron tick).
 5. The GLSL arm of `:subgroup-reduce` stays blocked on ADR 0371's provider
    route.
+6. The SAME-DAY RE-SESSION naming implementation (the 2026-10-24 naming
+   decision's own follow-through, "its own slice" by that decision's
+   terms): the W = 32 SAME-DAY RE-SESSION paragraph in
+   `apple-simdgroup-flip-note` (scoped exactly as the decision's part 1
+   names), the basis-lists docstring tightening (part 2), and tests
+   pinning that no basis-evidence list names a resweep directory. The
+   decision itself is ACCEPTED DESIGN ONLY (docs) until this lands.
