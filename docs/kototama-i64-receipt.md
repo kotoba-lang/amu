@@ -114,19 +114,18 @@ unqualified. JUN-371 and JUN-372 own the cache/admission and host bindings.
 
 ## Integrated source and artifact qualification
 
-The current evidence uses frozen native FS2/CID source `b36ca9d5`, including main `0486b715`'s
-named wire refusal and the AIUEOS image/EFI route, combined as full34 source
-`9ff702d18`.
-ARM and native x86 three-generation fixed points, fresh122 v1 and262 v2
-cases per ISA, exact cross-ISA v2 observations, native FS2, AIUEOS packaging
-and public alias/current-source linkage pass. The retained v1 fault signals
-are ISA-specific; the v2 typed receipt removes that platform difference.
+The current evidence normally integrates main `47c9462a` and its native
+CLI/CID/FS2 and kernel/DMA packaging source as FULL40 source `67e0546d6`,
+unity `042ca0574ae2f022d2fb30942ffe82fb47c311433fd5d69305f7a5aa26b67336`. ARM image/container and native x86
+three-generation fixed points,122 v1 and262 v2 cases per ISA, exact cross-ISA
+v2 receipts, public alias/source-lock binding, FS2, clock/entropy and all14
+kernel packaging suites plus memory admission/guards pass locally. The v1
+fault signals remain ISA-specific; v2 receipts remove that difference.
 
-Current compilers reproduce the same mandatory role images, core source
-and all five policy bindings as the actual qualified controller execution.
-That artifact conformance is reused by exact identity; no invocation allow
-judgment or execution state is reused. Fresh full34 controller execution also passes cold core rebuild,24 cases,
-18 refusals and parent-death cleanup. Native integration main readback and
-terminal checks on the final PR head remain separate merge gates. The literal-pin transport audit does not replace the
-native controller verdict. See
+Current compiler emissions match the mandatory role images and all five
+policy pins. Fresh FULL40 controller execution also passes cold core rebuild,
+24 cases,18 refusals and parent-death cleanup. No cached invocation approval
+or execution state is reused. Terminal final-head PR CI/review and dependency
+latest-main source/pin/CI readback remain separate merge gates. Kernel
+packaging does not qualify guest/live-kernel execution. See
 [`current-scope.json`](evidence/kototama-i64-receipt-20261024/current-scope.json).
