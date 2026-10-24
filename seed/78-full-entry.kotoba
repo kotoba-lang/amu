@@ -14,7 +14,8 @@
   (let [command (io-arg 0) module (= (drv-pj-has 1 (io-argc) "--emit-module") 1)]
     (cond (full-native?)
           (or (string=? flag "--target") (string=? flag "--output") (string=? flag "--format")
-              (string=? flag "--payload") (string=? flag "--fuel"))
+              (string=? flag "--payload") (string=? flag "--fuel")
+              (and (= (full-target? "x86_64-aiueos-kernel-v1") 1) (string=? flag "--artifact")))
           (or (string=? command "compile") (string=? command "check"))
           (or (string=? flag "--source-path") (string=? flag "--source-lock") (string=? flag "--source-lock-sha256")
               (string=? flag "--policy")
@@ -24,6 +25,7 @@
           (string=? command "compile-kir") (or (string=? flag "--output") (and module (string=? flag "--ns")))
           (string=? command "link") (or (string=? flag "--object-dir") (string=? flag "--output"))
           (string=? command "modules") (string=? flag "--source-path")
+          (string=? command "package-aiueos-boot") (or (string=? flag "--output") (string=? flag "--payload"))
           :else false)))
 (defn- full-word-flag? [flag :string] :bool
   (let [command (io-arg 0) module (= (drv-pj-has 1 (io-argc) "--emit-module") 1)]
@@ -73,6 +75,7 @@
         ;; Native product/CDCI have no C dynamic-loader/runtime prerequisite.
         (and (string=? (io-arg 0) "compile") (full-c-linked?)) (drv-fail0 E-TARGET)
         (string=? (io-arg 0) "cdci-build") (xc-command)
+        (string=? (io-arg 0) "package-aiueos-boot") (eb-command)
         (= (full-target? "x86_64-aiueos-kernel-v1") 1) (xo-command)
         (= (full-target? "aarch64-linux") 1) (xa-command)
         ;; JUN-353: guest and runtime in a browser Wasm module.
