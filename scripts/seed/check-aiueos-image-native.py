@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 
 sys.dont_write_bytecode = True
+from aiueos_native_proof import load_native_producers
 
 ROOT = Path(__file__).resolve().parents[2]
 TARGET = "x86_64-aiueos-kernel-v1"
@@ -81,26 +82,14 @@ def verify(blob, fuel):
                 fuel=fuel, imports=[], interpreter=None)
 
 
-def main(build, output):
-    assert platform.system() == "Linux" and platform.machine() in ("aarch64", "arm64"), platform.platform()
-    receipt = json.loads((build / "selfhost-bootstrap.json").read_text())
-    assert receipt["status"] == "PASS_LOADERLESS_SELFHOST_BOOTSTRAP"
-    assert receipt["cCompilerOrLoader"] is False and receipt["JVMNodeOrGraalFallback"] is False
-    assert len(receipt["generations"]) >= 2, "need candidate rebuilt to its own fixed point"
-    assert receipt["generations"][-1]["image"] == receipt["generations"][-2]["image"]
-    for rel, expected in receipt["sourceGraph"]["full"].items():
-        assert pin(ROOT / rel) == expected, ("source drift", rel)
+def main(build, output, complete=None):
+    source_graph, producers, baseline = load_native_producers(build, complete)
     output.mkdir(parents=True, exist_ok=False)
-    producers = [build / (g["name"] + ".elf") for g in receipt["generations"][-2:]]
-    baseline = build / "root.elf"
-    assert pin(baseline) == receipt["root"]["image"]
     spec = importlib.util.spec_from_file_location("object_gate", ROOT / "scripts/seed/check-x86_64-aiueos-object-cfree.py")
     object_gate = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(object_gate)
     results, parity = [], []
     for producer in producers:
-        g = next(g for g in receipt["generations"] if g["name"] == producer.stem)
-        assert pin(producer) == g["image"]
         scope = output / producer.stem
         scope.mkdir()
         env = dict(os.environ, KEXE_CAP_RESOURCES_35=str(scope), KEXE_STACK_BYTES="8388608")
@@ -174,7 +163,7 @@ def main(build, output):
         parity.append(artifacts)
     assert parity[0] == parity[1], "fixed-point generations disagree on image bytes"
     report = dict(status="PASS_NATIVE_AIUEOS_IMAGE_PACKAGING", host=[platform.system(), platform.machine()],
-                  source=receipt["sourceGraph"]["full"], routes=results,
+                  source=source_graph, baseline=pin(baseline), routes=results,
                   cCompilerOrLoader=False, JVMNodeOrGraalFallback=False, emulation=False,
                   legacyOwnerOracle="unavailable in permitted native closure; ABI inspected independently",
                   wholeKernel=False, efi=False, gpt=False, qemuBoot=False, nativeCDCI=False)
@@ -184,7 +173,9 @@ def main(build, output):
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--build", required=True, type=Path)
+    group = p.add_mutually_exclusive_group(required=True)
+    group.add_argument("--build", type=Path)
+    group.add_argument("--complete", type=Path)
     p.add_argument("--output", required=True, type=Path)
     a = p.parse_args()
-    main(a.build.resolve(), a.output.resolve())
+    main(a.build.resolve() if a.build else None, a.output.resolve(), a.complete.resolve() if a.complete else None)

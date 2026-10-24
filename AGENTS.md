@@ -66,9 +66,9 @@
 
 ## Native CDCI and retired public entry
 
-- The complete product uses `seed/FULL-MANIFEST` (29 modules), retaining
+- The complete product uses `seed/FULL-MANIFEST` (30 modules), retaining
   every adopted core module. Static OUT is 12MiB because the complete
-  TCP/spawn image exceeded the old 8MiB bound. The full29 static profile
+  TCP/spawn image exceeded the old 8MiB bound. The full30 static profile
   also uses LitB1MiB and TOK786432 and MM-WORDS29,491,200 (<2^25). Heap size, expected results,
   all19 workloads and all24 runtime fixtures remain unchanged.
 - `seed/cdci` owns the Kotoba-native controller and gate. Its two mandatory
