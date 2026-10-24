@@ -66,11 +66,12 @@
 
 ## Native CDCI and retired public entry
 
-The cache-integration working branch contains a full41 source candidate,
-including current main's native CLI/CID/FS2 modules and all18 adopted core
-modules. Its checked-in public/root descriptor names the main full39
-producer until the full41 rebuild is adopted. Main ARM F1=F2 is measured; terminal exact-head native
-x86/controller PR/main qualification is required for acceptance.
+The integrated FULL41 source retains current main47 native CLI/CID/FS2,
+kernel/DMA packaging modules and all18 normal adopted core modules. Its
+checked-in root and public image match exact-source ARM and native x86
+three-generation fixed points. Local profile/resource/refusal/public gates
+and fresh current controller/cold24/refusal18/parent cleanup PASS. Terminal
+exact-head PR/main CI and live deployment remain separate states.
 Historical ARM/QEMU receipts remain bound to their own sources.
 The closed v5 project reserves low20KiB for non-live context/catalog. The
 v6 PCI candidate has128KiB RW storage and a64KiB private floor; its copied
