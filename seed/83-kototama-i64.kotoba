@@ -242,10 +242,16 @@
                    (kt-eq D V tag "var") (kt-vname (kt-find D V E a))
                    (kt-eq D V tag "let") (kt-gen-bind D V methods (kt-f D a 3) E b)
                    (kt-eq D V tag "loop")
+                   (if (= (kt-f D a 2) 0)
+                     ;; The adopted source lowerer needs a loop slot. This
+                     ;; owned dummy is scaffolding, never a canonical charge.
+                     (string-concat "(loop [kz" (string-concat (mem-u2dec n) (string-concat " 0] "
+                       (string-concat (kt-gen D V methods b E) ")"))))
                    (string-concat "(let [" (string-concat (kt-loop-temps D V methods (kt-f D a 3) E)
                      (string-concat "] (loop [" (string-concat (kt-loop-binds D (kt-f D a 3)) (string-concat "] "
-                       (string-concat (kt-gen D V methods b (kt-loop-env D (kt-f D a 3) E)) "))"))))))
-                   (kt-eq D V tag "recur") (string-concat "(recur" (string-concat (kt-gen-values D V methods (kt-f D a 3) E) ")"))
+                       (string-concat (kt-gen D V methods b (kt-loop-env D (kt-f D a 3) E)) "))")))))))
+                   (kt-eq D V tag "recur") (if (= (kt-f D a 2) 0) "(recur 0)"
+                     (string-concat "(recur" (string-concat (kt-gen-values D V methods (kt-f D a 3) E) ")")))
                    (kt-eq D V tag "do") (string-concat "(do" (string-concat (kt-gen-values D V methods (kt-f D a 3) E) ")"))
                    (kt-eq D V tag "if") (string-concat "(if (not= " (string-concat (kt-gen D V methods a E)
                      (string-concat " 0) " (string-concat (kt-gen D V methods b E) (string-concat " " (string-concat (kt-gen D V methods c E) ")"))))))

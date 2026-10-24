@@ -123,6 +123,8 @@ def vectors():
     trap("rem-zero", arith("mod", const(1), const(0)))
     trap("compare-eager", ["compare", "<", [const(2), const(1), arith("div", const(1), const(0))]])
     trap("infinite-loop", ["loop", [["x", const(0)]], ["recur", [var("x")]]], 32, arithmetic=False)
+    good("empty-loop", ["loop", [], const(42)], 2, 42)
+    trap("infinite-empty-loop", ["loop", [], ["recur", []]], 32, arithmetic=False)
     base = program(const(42))
     for name, key, value in [("effects", "effects", [["fs/read"]]), ("bad-param-types", "param-types", ["i64"]),
                               ("unknown-method-field", "provider", "anything"), ("result", "result", "value")]:
