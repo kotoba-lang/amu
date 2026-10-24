@@ -13,7 +13,7 @@
 ;; CASES equals the expect calls below (the script counts them). CONTROL 1
 ;; makes exactly one expectation wrong; the script requires one failure then.
 
-(def CASES 97)
+(def CASES 110)
 (def CONTROL 0)
 
 (defn- say [s :string] :i64
@@ -127,7 +127,9 @@
 
 (defn- nex-shape [] :i64
   (let [rms (kir2-nex-op 1) silu (kir2-nex-op 4) gate (kir2-nex-op 6) mv (kir2-nex-op 12) pos (kir2-nex-op 14)]
-    (+ (expect "nex: op 20 gives an empty module" (spv-count (kir2-nex-op 20)) 0)
+    (+ (expect "nex: op 32 gives an empty module" (spv-count (kir2-nex-op 32)) 0)
+       ;; quant_q8's max, abs and round
+       (expect "nex: quant_q8's three GLSL.std.450 calls" (count-op (kir2-nex-op 20) 12) 3)
        (expect "nex: rmsnorm twice, the same words" (diff-words rms (kir2-nex-op 1)) 0)
        ;; the strided sum, wg_sum's tree, the strided write
        (expect "nex: rmsnorm has three loops" (count-op rms 246) 3)
@@ -231,8 +233,32 @@
        (expect "glslang kdot_i8_x8r4 -DROWS=16 passes the checker" (spc-check (spv-read "ref-kdot-i8-x8r4-rows16.spv")) 0)
        (expect "glslang kdot_i8_x8r4 -DROWS=32 passes the checker" (spc-check (spv-read "ref-kdot-i8-x8r4-rows32.spv")) 0))))
 
+;; deltanet and embed
+(defn- embed-name [k :i64] :string
+  (case k 23 "iq4xs" 8 "q8" 2 "b32-2" 3 "b32-3" 6 "b32-6" 7 "b32-7" "ptq1"))
+(defn- deltanet-embed [] :i64
+  (let [ds (kir2-deltanet-step) df (kir2-deltanet-fused)
+        es (loop [i 0 bad 0]
+             (if (= i 7) bad
+               (let [k (vector-at [23 8 2 3 6 7 143] i) m (kir2-embed k) n (embed-name k)
+                     path (string-concat "kir2-embed-" (string-concat n ".spv"))
+                     ref (if (= k 23) "ref-embed-iq4xs.spv" (string-concat "ref-embed-iq4xs-" (string-concat n ".spv")))]
+                 (recur (inc i) (+ bad (+ (expect path (spc-check m) 0)
+                                       (+ (expect (string-concat "write " path) (spv-write m path) (* 4 (spv-count m)))
+                                          (expect (string-concat "glslang " ref) (spc-check (spv-read ref)) 0))))))))]
+    (+ es
+       (+ (expect "deltanet-step" (spc-check ds) 0)
+          (+ (expect "write kir2-deltanet-step.spv" (spv-write ds "kir2-deltanet-step.spv") (* 4 (spv-count ds)))
+             (+ (expect "deltanet-fused" (spc-check df) 0)
+                (+ (expect "write kir2-deltanet-fused.spv" (spv-write df "kir2-deltanet-fused.spv") (* 4 (spv-count df)))
+                   (+ (expect "glslang deltanet_step passes the checker" (spc-check (spv-read "ref-deltanet-step.spv")) 0)
+                      (+ (expect "glslang deltanet_fused passes the checker" (spc-check (spv-read "ref-deltanet-fused.spv")) 0)
+                         (+ (expect "deltanet_step: LocalSize 128" (op-word ds 16 3) 128)
+                            (+ (expect "deltanet_fused: LocalSize 512" (op-word df 16 3) 512)
+                               (expect "embed: kind 9 gives an empty module" (spv-count (kir2-embed 9)) 0))))))))))))
+
 (defn main [] :i64
-  (let [failed (+ (ewise) (+ (ewise-shape) (+ (attn) (+ (attn-ref) (+ (nex-ops) (+ (nex-shape) (+ (dots) (+ (dots8) (+ (dots-x8) (dots-i8))))))))))
+  (let [failed (+ (ewise) (+ (ewise-shape) (+ (attn) (+ (attn-ref) (+ (nex-ops) (+ (nex-shape) (+ (dots) (+ (dots8) (+ (dots-x8) (+ (dots-i8) (deltanet-embed)))))))))))
         x (say (string-concat "CASES " (string-from-i64 CASES)))
         y (say (string-concat "FAILED " (string-from-i64 failed)))]
     failed))
