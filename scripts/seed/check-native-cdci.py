@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import signal
 import subprocess
@@ -45,6 +46,22 @@ def process_running(pid):
     return state != "Z"
 
 
+def controller_pin_metadata(policy):
+    """Audit literal pin bytes; this is transport preflight, not a native verdict."""
+    source = (ROOT / "seed/cdci/controller.kotoba").read_text()
+    fields = ["coreSourceSHA256", "coreContainerSHA256", "amuSelfhostGateSHA256",
+              "kotobaNativeGateSHA256", "kotobaGateSourceSHA256"]
+    observed = {}
+    for index, field in enumerate(fields):
+        rows = re.findall(r"\bh" + str(index) + r"_(\d+)\s+\(kc-word\s+\(\+\s+\(kc-g\)\s+(\d+)\)\s+0x([0-9a-f]+)\s+8\)", source)
+        assert len(rows) == 8 and [int(row[0]) for row in rows] == list(range(0, 64, 8)), ("controller pin layout", field)
+        assert all(int(address) == 20100000 + index * 64 + int(offset) for offset, address, _ in rows), ("controller pin destination", field)
+        value = b"".join(int(bits, 16).to_bytes(8, "little") for _, _, bits in rows).decode("ascii")
+        assert value == policy[field], ("stale controller pin", field, value, policy[field])
+        observed[field] = value
+    return observed
+
+
 def main(complete, out):
     assert platform.system() == "Linux" and platform.machine() == "x86_64"
     proof = json.loads((complete / "complete-x86.json").read_text())
@@ -54,6 +71,7 @@ def main(complete, out):
     calls = []
     cases = json.loads((ROOT / "seed/static-cases.json").read_text())["cases"]
     policy = json.loads((ROOT / "seed/cdci/policy.json").read_text())
+    binding = controller_pin_metadata(policy)
 
     def stage(name):
         root = out / name
@@ -199,6 +217,7 @@ def main(complete, out):
     assert controller_fields[10] == gate_fields[1] == pin(root / "cases.kcg").encode()
     assert controller_fields[7] == gate_fields[2] == policy["kotobaNativeGateSHA256"].encode()
     report = dict(status="PASS_NATIVE_KOTOBA_CDCI", host=[platform.system(), platform.machine(), platform.release()],
+                  controllerPinMetadata=binding,
                   observerSourceSHA256=pin(Path(__file__)),
                   controller=proof["cdci"]["controller"], compiler=proof["generations"][0],
                   policy=policy, controllerReceipt=controller_receipt, gateReceipt=gate_receipt,
