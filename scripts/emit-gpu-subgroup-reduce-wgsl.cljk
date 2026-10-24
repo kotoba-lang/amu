@@ -1,0 +1,45 @@
+#!/usr/bin/env kbb
+;; EMIT the :subgroup-reduce WGSL arm's source for the JUN-59/JUN-60
+;; validation evidence, straight from the emitter (never hand-written):
+;;
+;;   kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+;;     scripts/emit-gpu-subgroup-reduce-wgsl.cljk
+;;
+;; Writes docs/evidence/gpu-subgroup-reduce-wgsl-20261025/shaders/
+;; subgroup-reduce-w<W>-<operator>.emitted.wgsl for W in
+;; {32, 64, 128, 256, 512, 1024} and operator in {sum, max, min} -- the
+;; whole admitted row. Each file is then validated as WGSL by a real
+;; WebGPU implementation's shader-creation step (Google Chrome's
+;; Dawn/Tint, via createShaderModule + getCompilationInfo; the harness is
+;; scripts/validate-gpu-subgroup-reduce-wgsl.mjs and the transcript is
+;; that evidence directory's compile-log.txt). That is a TOOLCHAIN fact
+;; of what validates, not a measurement: no WebGPU execution path exists
+;; in this repository and no timing or speedup is claimed or implied.
+;; [JUDGED 2026-10-25 (the first run of this script and the instrument):
+;; 6/18 validate clean (:sum at every W, raised limits), 12/18 REFUSED on
+;; the infinite neutrals (:max/:min -- Tint const-folds the bitcast to
+;; -inf/inf and refuses it); W >= 512 additionally needs raised device
+;; limits. docs/evidence/gpu/wgsl-validate-chrome-20261025/README.md.]
+;;
+;; Deterministic: same emitter, same bytes. If a run of this script
+;; changes a file, the emitter changed.
+
+(ns emit-gpu-subgroup-reduce-wgsl
+  (:require [kotoba.compiler.accelerator :as accelerator]
+            [kotoba.compiler.accelerator-subgroup-reduce :as sg]))
+
+(def widths [32 64 128 256 512 1024])
+(def operators [:sum :max :min])
+
+(defn -main [& _]
+  (doseq [w widths
+          operator operators]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
+                                  {:workgroup-size w})
+          code (sg/emit-wgsl kir)
+          path (str "docs/evidence/gpu-subgroup-reduce-wgsl-20261025/shaders/"
+                    "subgroup-reduce-w" w "-" (name operator) ".emitted.wgsl")]
+      (spit path code)
+      (println "WROTE" path (count code) "bytes"))))
+
+(-main)

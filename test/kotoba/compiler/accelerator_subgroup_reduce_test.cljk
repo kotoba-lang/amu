@@ -161,6 +161,18 @@
 ;; exists here) -- these text contracts are the whole verification, and the
 ;; spellings are pinned to the W3C WGSL spec and the merged gpuweb subgroups
 ;; proposal (vendor documentation, fetched 2026-10-23), not to a compiler.
+;; [JUDGED 2026-10-25 by a real validator, Google Chrome 155's Dawn/Tint:
+;; the whole emitted row (docs/evidence/gpu-subgroup-reduce-wgsl-20261025/
+;; shaders/) -- 6/18 validate clean (:sum at every W, raised limits), 12/18
+;; are REFUSED on the infinite neutrals (Tint const-folds
+;; bitcast<f32>(0xFF800000u)/0x7F800000u to -inf/inf and answers "value
+;; -inf cannot be represented as 'f32'"), and W >= 512 additionally needs
+;; raised device limits (the default maxComputeWorkgroupSizeX is 256);
+;; transcript docs/evidence/gpu/wgsl-validate-chrome-20261025/
+;; compile-log.txt. The spelling pins below stand BESIDE that judgment and
+;; are unchanged by it: whether the refusal is a Tint const-eval limit or
+;; real spec drift is the next slice. Nothing has executed this arm:
+;; UNMEASURED unchanged.]
 
 (deftest wgsl-emission-queries-the-subgroup-size-at-runtime
   ;; ADR-0356's letter, WGSL arm: the fold step is a function of

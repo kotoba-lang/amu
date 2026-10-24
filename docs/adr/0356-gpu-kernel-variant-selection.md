@@ -182,7 +182,12 @@ design decision, proposed here and decided nowhere: until it lands, a
 emission can now carry the variant. UNCOMPILED and UNMEASURED: no WGSL
 compiler or validator exists on the testing host (the text contracts are
 test-pinned -- the same regime as the CUDA arm, which has no nvcc), and
-no WebGPU execution path exists. No `:measured?` flag moves and no
+no WebGPU execution path exists. [WGSL JUDGED 2026-10-25 by a real
+validator, Google Chrome 155's Dawn/Tint: the emitted row validates
+6/18 clean and 12/18 are REFUSED (the :max/:min rows at every W, on the
+infinite neutrals; W >= 512 additionally needs raised device limits) --
+docs/evidence/gpu/wgsl-validate-chrome-20261025/. The refusal is named,
+not fixed: that question is the next slice.] No `:measured?` flag moves and no
 workgroup row is touched.
 
 **Amendment (2026-10-23, the :wgsl-v1 selection question is DECIDED).**
@@ -205,7 +210,9 @@ UNDECIDED for the five designed rows.] The selection change is
 implemented with tests; everything about it stays UNCOMPILED and
 UNMEASURED, `:measured? false` on every answer, no workgroup row touched,
 and both routes still fail closed to `:baseline` without the rule-6 facts
-whose producer (ADR-0362) is still unimplemented.
+whose producer (ADR-0362) is still unimplemented. [The UNCOMPILED clause
+is dated 2026-10-25 by the WGSL judgment bracket above: a real validator
+now judges the WGSL arm and REFUSES 12/18 of its emitted row.]
 
 **Amendment (2026-10-23, the MSL arm of the shared emission lands).** The
 subgroup-size-parametric emission gains its MSL arm

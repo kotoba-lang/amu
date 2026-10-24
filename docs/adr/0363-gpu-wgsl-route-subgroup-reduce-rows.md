@@ -73,7 +73,15 @@ route" is stale for both.)
 - **UNCOMPILED.** No WGSL compiler or validator exists on the implementing
   host (`which tint naga wgsl_analyzer` -- empty); the emission's text
   contracts are the whole verification, the same regime as the nvcc-less
-  CUDA arm.
+  CUDA arm. [JUDGED 2026-10-25: the regime closes WITH NAMED REFUSALS --
+  Google Chrome 155's Dawn/Tint (a shipping WGSL validator with the
+  `subgroups` feature) judged the emitted row: 6/18 validate clean,
+  12/18 REFUSED on the infinite neutrals (the :max/:min rows; Tint
+  const-folds the bitcast to -inf/inf and refuses it), and W >= 512
+  additionally needs raised device limits (default
+  maxComputeWorkgroupSizeX 256). The refusal is the finding and its fix
+  is UNDECIDED here;
+  docs/evidence/gpu/wgsl-validate-chrome-20261025/compile-log.txt.]
 - **UNMEASURED.** No WebGPU execution path exists in this repository and no
   hardware ran the variant on this route. Every answer keeps
   `:measured? false`; rule 4's lock is untouched and no workgroup row of
