@@ -59,7 +59,7 @@
             (cond (not (pj-ok code)) code
                   (> (+ (pj-l L pj-k-base) size) 1048576) (xg-err code 7104 size)
                   :else (let [linked (kp-copy-link code L)
-                              proof (kg-note code L G m)
+                              proof (kg-note code L G S m)
                               marked (if (= m 0) (pj-ls L KP-ENTRY (+ (pj-l L pj-k-base) (xg-f code entry FF-CODE))) L)]
                           linked))))))
 
@@ -99,13 +99,59 @@
       (if (or (>= k (pj-l L pj-k-nord)) (not (pj-ok M))) P
         (recur (inc k) (kp-module-h M L P G (pj-l L (+ pj-o-base k)) (ck-hint-new)))))))
 
-(defn- kp-image [M :vector-i64 L :vector-i64 fuel :i64] :vector-i64
-  (let [entry (xg-get M 1) global (pj-l L KP-ENTRY) size (pj-l L pj-k-img)
+(defn- kp-isr-target [G :vector-i64 v :i64] :i64
+  (loop [f KG-FIRST]
+    (cond (>= f (vector-at G 0)) -1
+          (= (kg-f G f 4) (inc v)) (kg-f G f 2)
+          :else (recur (inc f)))))
+(defn- kp-has-isr? [G :vector-i64] :bool
+  (loop [f KG-FIRST]
+    (cond (>= f (vector-at G 0)) false
+          (> (kg-f G f 4) 0) true :else (recur (inc f)))))
+(defn- kp-needs-isr? [M :vector-i64] :bool
+  (loop [i 1]
+    (cond (>= i (vector-at M MM-SIR-N)) false
+          (and (= (xg-si M i IF-OP) OP-CALL)
+               (= (km-intr M (xg-si M i IF-A)) (+ KM-ISR-FIRST 4))) true
+          :else (recur (inc i)))))
+(defn- kp-isr-table [M :vector-i64 L :vector-i64 G :vector-i64 at :i64 data :i64] :vector-i64
+  (let [reset (-> M (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1) (mem-set MM-LABEL-N 1))
+        generated (loop [v 0]
+                    (if (or (>= v IV-VECTORS) (not (pj-ok M))) M
+                      (let [target (kp-isr-target G v)
+                            part (cond (>= target 0)
+                                         (iv-entry M v IV-FUEL
+                                           (- (- data 4096) (+ at (* v IV-STRIDE) (iv-context-offset v) 4))
+                                           (- target (+ at (* v IV-STRIDE) (iv-call-offset v) 4)))
+                                       (= v 6) (iv-undefined M)
+                                       :else (iv-hex M "faf4ebfd"))
+                            end (* (inc v) IV-STRIDE)
+                            padded (if (> (xg-pos part) end) (xg-err part 7104 v)
+                                     (loop [i (xg-pos part)]
+                                       (if (>= i end) part
+                                         (let [w (xg-byte part 204)] (recur (inc i))))))]
+                        (recur (inc v)))))
+        fixed (if (pj-ok generated) (xg-fix generated 1) generated)
+        copied (if (pj-ok fixed)
+                 (loop [i 0]
+                   (if (>= i (* IV-STRIDE IV-VECTORS)) 0
+                     (let [w (pj-ibset L (+ at i) (xg-code-byte fixed i))] (recur (inc i))))) 0)]
+    fixed))
+(defn- kp-image [M :vector-i64 L :vector-i64 G :vector-i64 fuel :i64] :vector-i64
+  (let [entry (xg-get M 1) global (pj-l L KP-ENTRY) program (pj-l L pj-k-img)
+        table (bit-and (+ program 127) -128) has-isr (kp-has-isr? G)
+        needs-isr (kp-needs-isr? M)
+        size (if has-isr (+ table (* IV-STRIDE IV-VECTORS)) program)
         data (max 32768 (bit-and (+ 8191 size) -4096))]
-    (cond (or (<= entry 0) (<= global 77) (> size 1048576)
+    (cond (and needs-isr (not has-isr)) (xg-err M 7102 (+ KM-ISR-FIRST 4))
+          (or (<= entry 0) (<= global 77) (> size 1048576)
               (>= (+ data XI-DATA-SIZE 280) MM-OUT-CAP)) (xg-err M 7104 size)
           :else
-          (let [prefix (-> M (mem-set (+ MM-FN-BASE (* entry MM-FN-W) FF-CODE) global)
+          (let [entries (if has-isr (kp-isr-table M L G table data) M)
+                gap (if has-isr (loop [i program]
+                                 (if (>= i table) 0
+                                   (let [w (pj-ibset L i 204)] (recur (inc i))))) 0)
+                prefix (-> entries (mem-set (+ MM-FN-BASE (* entry MM-FN-W) FF-CODE) global)
                            (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1)
                            (xi-shim entry) (xg-fix 1) (xi-patch-shim data))
                 saved (loop [i 0]
@@ -114,7 +160,8 @@
                 copied (loop [i 0]
                          (if (>= i size) 0
                            (let [w (xg-put-byte M i (pj-ib L i))] (recur (inc i)))))]
-            (if (pj-ok prefix) (xi-elf (mem-set M MM-CODE-N (inc size)) data fuel) prefix)))))
+            (if (pj-ok prefix)
+              (xi-elf (mem-set M MM-CODE-N (inc size)) data fuel (if has-isr (+ 0x101000 table) 0)) prefix)))))
 
 (defn- kp-options? [i :i64] :bool
   (if (>= i (io-argc)) true
@@ -139,7 +186,7 @@
                 locked (drv-pj-lock M L P0 path)
                 P (if (pj-ok M) (kp-project M L (pj-padd L locked path) G (dec (pj-n L))) locked)
                 admitted (if (pj-ok M) (kg-check M L G) M)
-                image (if (pj-ok admitted) (kp-image admitted L fuel) admitted)]
+                image (if (pj-ok admitted) (kp-image admitted L G fuel) admitted)]
             (cond (>= (vector-at image MM-ERR) 7100)
                   (let [w (io-err (string-concat "kernel project in " (string-concat (pj-err-path L P) ":\n")))]
                     (xo-report image (pj-err-path L P) out))

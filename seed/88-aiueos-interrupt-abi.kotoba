@@ -24,8 +24,12 @@
       (-> w (mem-set b at) (mem-set (+ b 1) 6) (mem-set (+ b 2) label)
             (mem-set MM-FIX-N (inc k)) (xg-byte 0)))))
 (defn- iv-reserve [M :vector-i64 n :i64] :vector-i64
-  (let [end (+ (vector-at M MM-LABEL-N) n)]
-    (if (>= end MM-LABEL-CAP) (xg-err M 7104 end) (mem-set M MM-LABEL-N end))))
+  (let [start (vector-at M MM-LABEL-N) end (+ start n)]
+    (if (>= end MM-LABEL-CAP) (xg-err M 7104 end)
+      (let [cleared (loop [i start]
+                      (if (>= i end) M
+                        (let [w (mem-set M (+ MM-LABEL-BASE i) 0)] (recur (inc i)))))]
+        (mem-set cleared MM-LABEL-N end)))))
 (defn- iv-mem [M :vector-i64 op :i64 reg :i64 base :i64 displacement :i64] :vector-i64
   (if (= (bit-and base 7) 4) (xg-err M 7101 base)
     (-> M (xg-byte (bit-or 72 (bit-or (if (>= reg 8) 4 0) (if (>= base 8) 1 0))))
@@ -138,3 +142,24 @@
   (-> M (xg-load t 0x958b4c) (xg-load (inc t) 0x9d8b4c)
       (iv-hex "4983fb0a75384d85d27433410f011a4883ec100f010c24410fb7020fb70c2439c8751b498b4202488b4c24024839c8750d4883c41049c7c201000000eb020f0b4c89d0")
       (xg-save t)))
+(defn- iv-address [M :vector-i64 k :i64 t :i64] :vector-i64
+  (let [start (vector-at M MM-LABEL-N) end (inc start)
+        skipped (-> M (iv-reserve 2) (xg-rel 0xe9 1 2 end) (xg-label start))
+        body (case k 0 (iv-classifier skipped) 1 (iv-timer skipped) 6 (iv-undefined skipped)
+                     7 (iv-recovery skipped) 8 (iv-double skipped) (xg-err skipped 7101 k))]
+    (-> body (xg-label end) (xg-rel 0x058d48 3 2 start) (xg-save t))))
+(defn- iv-intrinsic [M :vector-i64 k :i64 t :i64] :vector-i64
+  (cond (or (= k 0) (= k 1) (= k 6) (= k 7) (= k 8)) (iv-address M k t)
+        (= k 2) (iv-configure M t false)
+        (= k 3) (iv-load-idt M t)
+        (= k 4) (-> M (xg-load t 0x858b48)
+                       (iv-hex "4883f84072020f0b48c1e00749038148010000") (xg-save t))
+        (= k 5) (-> M (iv-hex "0f20d0") (xg-save t))
+        (= k 9) (iv-configure M t true)
+        (= k 10) (-> M (iv-hex "4d89ca41ffd231c0") (xg-save t))
+        (= k 11) (-> M (iv-hex "c60425000010000031c0") (xg-save t))
+        (= k 12) (-> M (iv-hex "c60425001010000031c0") (xg-save t))
+        (= k 13) (-> M (iv-hex "49c7c20000100041c602004d31d2") (xg-save t))
+        (= k 14) (-> M (iv-hex "41bb0000100041c603004d31d2") (xg-save t))
+        (= k 15) (-> M (iv-hex "cc31c0") (xg-save t))
+        :else (xg-err M 7101 k)))

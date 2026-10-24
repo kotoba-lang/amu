@@ -4,7 +4,7 @@
 ;; and instruction, then run xk-check plus the same rule for new widths.
 ;; No alternate AST origin policy and no literal-address region roots.
 (def KG-FBASE 16)
-(def KG-FW 4) ; nparams, ABI-export, absolute code byte, owner module
+(def KG-FW 5) ; nparams, ABI-export, code byte, owner module, ISR vector+1
 (def KG-SBASE (+ KG-FBASE (* MM-FN-CAP KG-FW)))
 (def KG-XFIRST (+ 1 KM-INTR-N))
 (def KG-FIRST (+ KG-XFIRST XK-INTR-N))
@@ -28,16 +28,19 @@
           (and (>= f stub) (< f (+ stub (pj-l L pj-k-nstub))))
             (kg-target G (pj-l L (+ pj-t-base (- f stub))))
           :else -1)))
-(defn- kg-note [M :vector-i64 L :vector-i64 G :vector-i64 m :i64] :vector-i64
+(defn- kg-note [M :vector-i64 L :vector-i64 G :vector-i64 S :string m :i64] :vector-i64
   (let [base (vector-at G 0) end (+ base (dec (pj-l L pj-k-stub0)))
         room (if (>= end MM-FN-CAP) (xg-err M 7104 end) M)
         functions (loop [f 1]
                     (if (or (>= f (pj-l L pj-k-stub0)) (not (pj-ok M))) 0
-                      (let [g (+ base (dec f))
+                      (let [g (+ base (dec f)) sb (+ MM-SYM-BASE (* (xg-f M f FF-SYM) MM-SYM-W))
+                            name (string-substring S (vector-at M (+ sb SF-START)) (vector-at M (+ sb SF-END)))
+                            exported (and (= m 0) (= (xg-f M f FF-EXPORT) 1))
+                            vector (if exported (iv-vector name) -1)
                             w (-> G (kg-fset g 0 (xg-f M f FF-NPARAMS))
-                                    (kg-fset g 1 (if (= m 0) (xg-f M f FF-EXPORT) 0))
+                                    (kg-fset g 1 (if exported (if (>= vector 0) 2 1) 0))
                                     (kg-fset g 2 (+ (pj-l L pj-k-base) (dec (xg-f M f FF-CODE))))
-                                    (kg-fset g 3 m))]
+                                    (kg-fset g 3 m) (kg-fset g 4 (inc vector)))]
                         (recur (inc f)))))
         numbered (vector-assoc! G 0 end)]
     (loop [i 1 current 0]

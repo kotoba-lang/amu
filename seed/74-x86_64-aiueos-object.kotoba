@@ -192,7 +192,8 @@
           (cond (= op OP-LGET)
                   (cond (xk-param-slot? M j b)
                           (let [f (xg-si M (xk-fn-start M j) IF-A)]
-                            (cond (> (inc b) (xg-f M f FF-NPARAMS)) -1
+                            (cond (= (xg-f M f FF-EXPORT) 2) -1
+                                  (> (inc b) (xg-f M f FF-NPARAMS)) -1
                                   (= (xg-f M f FF-EXPORT) 1) (+ 8589934592 (inc b))
                                   :else
                                     (loop [c 1]
@@ -222,7 +223,7 @@
                      (not (and (>= r 0) (not= ln 0) (= ln r)))))
               ;; the exported function's parameters are rooted because the kernel hands them in: a guest call of the export would
               ;; hand them in again with a base of its own making, so nothing in the object may call the export
-              (and (= op OP-CALL) (= (xg-f M a FF-EXPORT) 1)))
+              (and (= op OP-CALL) (> (xg-f M a FF-EXPORT) 0)))
         (xg-err M 7106 i)
         (xk-check M (inc i))))))
 
@@ -238,7 +239,16 @@
                 (< n 0) (> n (if (= (xg-get M 4) 2) 16 5)) (not (xg-types M f 0 n)) (not (xg-type M (xg-f M f FF-RTYPE)))
                 (<= (xg-f M f FF-SIR) 0) (> (xg-frame M f) 4096)) (xg-refuse-fn M S f a b)
             (= (xg-f M f FF-EXPORT) 1)
-              (if (not= (xg-get M 1) 0) (xg-err M 7102 f) (xo-check-fns (xg-set M 1 f) S (inc f)))
+              (if (= (xg-get M 4) 2)
+                (let [name (string-substring S a b) v (iv-vector name)]
+                  (cond (string=? name "main")
+                          (if (or (not= (xg-get M 1) 0) (not= n 0)) (xg-err M 7102 f)
+                            (xo-check-fns (xg-set M 1 f) S (inc f)))
+                        (and (>= v 0) (= n 4) (= (xg-f M f FF-RTYPE) TY-I64)
+                             (= (ck-pt M f 0) TY-I64) (= (ck-pt M f 1) TY-I64)
+                             (= (ck-pt M f 2) TY-I64) (= (ck-pt M f 3) TY-I64)) (xo-check-fns M S (inc f))
+                        :else (xg-err M 7102 f)))
+                (if (not= (xg-get M 1) 0) (xg-err M 7102 f) (xo-check-fns (xg-set M 1 f) S (inc f))))
             :else (xo-check-fns M S (inc f))))))
 
 ;; ELF64 ET_REL emission. Layout: header, seven section headers, .text,
@@ -340,7 +350,7 @@
   (-> M (xg-out 1 4) (xg-out flags 4) (xg-out off 8)
       (xg-out (+ 0x100000 off) 8) (xg-out (+ 0x100000 off) 8)
       (xg-out size 8) (xg-out size 8) (xg-out 4096 8)))
-(defn- xi-data [M :vector-i64 data :i64 fuel :i64] :vector-i64
+(defn- xi-data [M :vector-i64 data :i64 fuel :i64 isr-base :i64] :vector-i64
   (let [context (+ 0x100000 data) tss (+ context 168) stack (+ context XI-DATA-SIZE)]
     (-> M (xg-pad data) (xg-out 0 8) (xg-out fuel 8)
         (xg-pad (+ data 96))
@@ -354,8 +364,9 @@
         (xg-out 55 2) (xg-out (+ context 96) 8)
         (xg-pad (+ data 168)) (xg-out 0 4) (xg-out stack 8)
         (xg-pad (+ data 270)) (xg-out 104 2)
+        (xg-pad (+ data 328)) (xg-out isr-base 8)
         (xg-pad (+ data XI-DATA-SIZE)))))
-(defn- xi-elf [M :vector-i64 data :i64 fuel :i64] :vector-i64
+(defn- xi-elf [M :vector-i64 data :i64 fuel :i64 isr-base :i64] :vector-i64
   (let [text (xg-pos M) names (+ data XI-DATA-SIZE) sections (bit-and (+ names 30) -8)]
     (-> M (mem-set MM-OUT-N 1)
         (xg-out 0x00010102464c457f 8) (xg-out 0 8)
@@ -363,7 +374,7 @@
         (xg-out 64 8) (xg-out sections 8) (xg-out 0 4)
         (xg-out 64 2) (xg-out 56 2) (xg-out 2 2) (xg-out 64 2) (xg-out 4 2) (xg-out 3 2)
         (xi-phdr 5 4096 text) (xi-phdr 6 data XI-DATA-SIZE)
-        (xg-pad 4096) (xg-out-code 1) (xi-data data fuel)
+        (xg-pad 4096) (xg-out-code 1) (xi-data data fuel isr-base)
         (xg-out 0x2e00747865742e00 8) (xg-out 0x68732e0061746164 8) (xg-out 0x00626174727473 7)
         (xg-pad sections) (xg-pad (+ sections 64))
         (xo-shdr 1 1 6 0x101000 4096 text 0 0 16 0)
@@ -382,7 +393,7 @@
                       data (max 32768 (bit-and (+ 8191 end) -4096))]
                   (if (or (>= (+ data XI-DATA-SIZE 280) MM-OUT-CAP) (> (xg-pos generated) 1048576))
                     (xg-err generated 7104 data)
-                    (xi-elf (xi-patch-shim (xg-fix generated 1) data) data fuel))))))
+                    (xi-elf (xi-patch-shim (xg-fix generated 1) data) data fuel 0))))))
 (defn- xi-source [S :string path :string out :string fuel :i64] :i64
   (let [text (string-concat (string-concat S (ck-r6b-lib S)) (xk-lib)) front (xg-front text)
         image (if (= (vector-at front MM-ERR) 0) (xi-build front text fuel) front)
