@@ -1,0 +1,92 @@
+{
+  "status": "PASS_CURRENT_NATIVE_ARTIFACT_QUALIFICATION_LOCAL",
+  "change": "ADR 0375 slice 1: --format b2, the image of route B2 (seed module 84: E1 SysV entry thunks and the export table, E2 16/32-bit loads and stores, the kxrt-b- API), merged with main's bounded Kototama AOT (module 83)",
+  "compilerSourceRevision": "6d2e1cf55ae7002e0b0a638c90f95e32f30e01d6",
+  "integrationBaseMain": "6deb9969392a7fc06319fbedf97cd356128f3c7d",
+  "coreSource": {
+    "bytes": 2800340,
+    "sha256": "caf3e9aa0b49e8ed23260a3d02829f4f04ac2bfea43f3bdd7445705eee4b9197"
+  },
+  "coreContainer": {
+    "bytes": 2576123,
+    "sha256": "086f85dbc21ab94098a9ca1f356ce8430741797467c0c586a5c6b97553dffd06"
+  },
+  "root": {
+    "bytes": 3289600,
+    "sha256": "e53b6076b64fcd010321333b5ca47a19cda089a6ed63bac11ebba2074169e8a8"
+  },
+  "previousRoot": "c95b844146ae31e9c47b5bd02a7b6590f3a158e74d9759eb48dfcf8bf2fe60a1",
+  "publicImage": {
+    "bytes": 8819200,
+    "sha256": "85713104fd62b5e73d3ab46a3807f2af6faebf047420c29e0d6dcb4fd9c4b518"
+  },
+  "publicImageSourceUnity": {
+    "bytes": 3274151,
+    "sha256": "8c2e979d6b2566c9e34dac8418a39a23a5088bb704bad2a4552276c7f844aa27"
+  },
+  "runtimeRunner": {
+    "imageSHA256": "80b757e13799761061c8d13e328d52f325b57e726e736b6e2c73337be56865bf",
+    "bytes": 233984
+  },
+  "nativeControllerSHA256": "39a500374e27d3a04404573cbf455eef56b2dbb6aa473279e3cd75cae9a1263a",
+  "cdciImages": {
+    "amu-selfhost": "e6dcf6189b527208bd65cd53d8f05d07008fb6adc0dc4e1e37dc1e92df334700",
+    "controller": "39a500374e27d3a04404573cbf455eef56b2dbb6aa473279e3cd75cae9a1263a",
+    "kotoba-native": "39fac666f5eb57b4adf69c1efe1770758e78dd7f51c368cbbdefeda14ee6d995"
+  },
+  "unchangedFromMain": [
+    "coreSource",
+    "coreContainer",
+    "runtimeRunner",
+    "nativeController",
+    "cdci gate images (seed/cdci/policy.json)"
+  ],
+  "hosts": {
+    "arm64": "podman machine (applehv, native arm64 kernel; no emulation)",
+    "x86_64": "gad (native x86_64 Linux 7.0; no emulation)"
+  },
+  "checks": [
+    "selfhost-bootstrap.py --tier pr (twice: F1 = F2, then the root reproduces; the artifacts of both runs are the same bytes)",
+    "check-static-launcher.py (arm64, with main's root as --previous-root)",
+    "check-one-compiler.py (arm64; the CDCI gate pins hold)",
+    "check-x86_64-native.py --tier pr (x86_64)",
+    "check-complete-x86.py (F1 = F2 = F3)",
+    "check-native-clock-entropy.py",
+    "check-native-cdci.py (24 cases, 18 refusals, parent-death cleanup)",
+    "check-public-native-product.py (bin/amu = the three generations, the aliases, pinned check/compile)",
+    "check-kototama-i64.py (main's bounded AOT check, with this branch's complete compiler)",
+    "check-b2-image.py (the image format; the static, runner and launcher outputs equal main's compiler's)"
+  ],
+  "notRun": [
+    "check-wasm32-browser.py: no Chrome on the x86_64 host; CI runs it"
+  ],
+  "providerRoute": "the B2 image is the new route's base (ADR 0375); main's root still refuses the provider's --format platform-linked build (E2) and its qualifications stay outside mandatory native CDCI (AGENTS.md)",
+  "exactFinalHeadPRCI": "pending",
+  "exactMergedMainCI": "pending merge",
+  "evidence": {
+    "b2-image.json": {
+      "bytes": 9502,
+      "sha256": "7e91c925fab37e1a14eaf89a04c055df5f52863d82a6085603b10d9dab2e6e82"
+    },
+    "complete-x86.json": {
+      "bytes": 20756,
+      "sha256": "f8b4fc01a306c426591260fe96c5757e8350d767b15fabc17d3f5edfb8a45a57"
+    },
+    "native-cdci.json": {
+      "bytes": 2633,
+      "sha256": "466c2f1f806a72a9086bec7d3360120ce4e28fb31281fb77267ac283ba6bc0c2"
+    },
+    "native-clock-entropy.json": {
+      "bytes": 1050,
+      "sha256": "bb2a6143d3af8b19240572c2778f20edab9487eaf3e0142423fe997298061507"
+    },
+    "public-product.json": {
+      "bytes": 27050,
+      "sha256": "2e197722d96176395f12b20b0ace287e3097405d7f77961caf804ff54c9c5b7b"
+    },
+    "x86_64-native.json": {
+      "bytes": 29149,
+      "sha256": "e25a3753374561bbb90a539829b3d6a7460ea22c0f4316c652487496b8079255"
+    }
+  }
+}

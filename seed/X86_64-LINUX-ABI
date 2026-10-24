@@ -346,6 +346,56 @@ seal (TSYNC) covers them. Paths
 are NUL-ended bytes in memory. The wrappers' scratch is a 16 KiB page that
 `kxrt-start` maps at G+16704 in this format only.
 
+### Route B2 image (`--format b2`, seed module 84)
+
+Context word 408 = 5 (ADR 0375, JUN-377), x86_64-linux only, dispatched by seed/70. The same ELF, context and
+runtime core as a static image; the runtime text is `xs-rt-core` followed by `xs-rt-b2` (seed/76). It is the image of
+the Kotoba loader of route B2: a program that maps a vendor shared object itself (no ld.so, no libc), binds the
+object's libc imports to functions written in Kotoba, and calls into the object. No signal handlers, limits or
+seccomp are installed: what the loaded code does is what the process does (the GPU provider confines itself after
+device creation, ADR 0371 Decision 5). Environment read: `KEXE_ALLOW` (default 35,37,38,39) and `KEXE_FUEL`.
+Absolute header cells in this format: 201 = the first extended intrinsic stub, 252 = the export table (context word
+416); cell 201 is read only where `xb-on?` holds (seed/81 uses it for another purpose).
+
+* **The program's API.** The guest may call the runtime functions named `kxrt-b-` and no other (E7101):
+  `ccall fp argv` (intrinsic 9, the 14 words of the platform-linked image: rdi rsi rdx rcx r8 r9, then 8 stack words;
+  al = 0; the callee runs on the image stack with the stack 16-aligned), `load8 load16 load32 load64` (16 and 32 bits
+  zero-extend), `store8 store16 store32 store64` (they return the value), `syscall n a b c d e f` (the raw call,
+  -errno on failure), `argc argv envp` (the program name is not counted), `exports` (the table below, 0 if none),
+  `state` (32 KiB of the RW segment at context + 32768, zero at start, for the program), `alloc n` (anonymous
+  read-write mmap), `exit code`. Nothing is checked, as in C.
+* **E2, the extended intrinsics.** `kxrt-load16`, `kxrt-load32`, `kxrt-store16`, `kxrt-store32` are four consecutive stubs
+  at the head of `xs-rt-b2`, in this order (E7102 otherwise); calls to them are replaced by inline code
+  (`movzx rax, word [rax]`; `mov eax, [rax]`; `mov [rax], cx`; `mov [rax], ecx`). The stores leave the value in rax.
+* **E1, calls in from C.** A guest function named `cx-NAME` or `cx-NAME-VERSION` is an export. NAME is a C symbol and
+  VERSION a symbol version such as `GLIBC_2.2.5`; neither contains a dash (E7102 for an empty NAME or VERSION). It has
+  at most 16 parameters, all `:i64` or `:bool`, and returns `:i64` or `:bool` (E7102 otherwise). Its entry thunk, for
+  n parameters (F = 16, or (16 + 8(n-5)) rounded down to 16 when n > 5):
+
+      push rbp ; mov rbp, rsp ; sub rsp, F
+      n > 5:  mov [rsp], r9 ; for j = 6..n-1: mov rax, [rbp+16+8(j-6)] ; mov [rsp+8(j-5)], rax
+      lea r9, [context] ; mov rax, [r9+8] ; mov [rbp-8], rax ; mov qword [r9+8], 0x7fffffff
+      call callee
+      lea r9, [context] ; mov rcx, [rbp-8] ; mov [r9+8], rcx
+      leave ; ret
+
+  The C arguments rdi rsi rdx rcx r8 map to the Kotoba parameters 0..4, r9 to parameter 5, and the stack words 6..
+  to parameters 6.. (a variadic C function is exported with a long enough fixed list; surplus parameters hold what
+  the caller left on the stack and are never read unless used). The result is rax. Only rbp is changed among the
+  callee-saved registers, and the thunk restores it; rsp is 16-aligned at the call. The callee runs on a fresh
+  fuel budget of 2^31 - 1 and the caller's meter is restored on return, so a call from C is its own budget and the
+  Kotoba function that made the outgoing call keeps its fuel. The thunks follow the program's code, in definition
+  order, 53 bytes each plus 5 + 9(n-6) when n > 5. The export table follows them, 8-aligned: a count word, then per
+  export three words (the thunk's address, the address of the NUL-ended name, the address of the NUL-ended version, which
+  is empty for an unversioned name), then the strings. There is one context and one fuel word: a second thread
+  needs a context of its own (ADR 0375 E3).
+* **E4, the thread control block** needs no change here: the program sets the FS base with `arch_prctl`
+  (`kxrt-b-syscall 158 0x1002 tcb`) and writes the TCB itself.
+* **Refusals.** E7101: the program calls a runtime function outside `kxrt-b-`. E7102: a malformed export or
+  extended-intrinsic order, or `kxrt-b-` in another format (the name is unknown there: E2101). The format on
+  aarch64-linux: E7100. A `cx-` function in any other format is an ordinary function.
+  `scripts/seed/check-b2-image.py` checks all of this; the other formats' bytes are unchanged.
+
 ## aarch64-linux-static (seed modules 77, 80)
 
 `compile SOURCE --target aarch64-linux --output NEW --format static|runner|launcher`

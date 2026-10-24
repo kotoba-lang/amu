@@ -10,13 +10,13 @@ stdout, waits with a wall-time kill and writes one EDN receipt line
 
 * `aarch64-linux.json`: `scripts/seed/check-static-launcher.py` on arm64 Linux
   (podman machine, applehv, native kernel; no emulation). `--compiler` was the
-  pinned root F `688324e0…`, and `--previous-root` was main's root (after
-  #1510) before ADR 0371 step 6's provider environment, F `f782f3f2…`.
+  pinned root F `e53b6076…` (ADR 0375 slice 1, the B2 image format), and
+  `--previous-root` was main's root, F `c95b8441…`.
 * `x86_64-linux.json`: the same check on a native x86_64 kernel (gad, Linux
   7.0, no emulation). It ran through `check-x86_64-native.py --tier pr`, as
   the `qualify-x86_64` job of `selfhost-native.yml` does, with the x86_64
   compiler X2 that the pinned root builds
-  (`provider-environment-20261024/`).
+  (`b2-image-20261024/`).
 * Both receipts include the scripted provider's report of its environment:
   exactly `MESA_SHADER_CACHE_DISABLE=true` and
   `VK_LOADER_LAYERS_DISABLE=~all~` (ADR 0371 step 6).
