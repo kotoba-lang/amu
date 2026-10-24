@@ -473,5 +473,13 @@ a follow-up to ADR 0371.
      argmax chain on x8r4's logits), as the decode path's ANV table does.
    * Not yet: the whole decode guest through tokens, and Xavier (which needs
      the provider on aarch64).
+   * **After #1510.** These GPU runs go through the ADR 0371 provider. Main's
+     compiler no longer builds it (`--format platform-linked` is refused),
+     and its qualifications are excluded from mandatory native CDCI (main's
+     AGENTS.md).
+     * The modules, the Kotoba unit and the oracles stand on main's route:
+       static images and spirv-val.
+     * The GPU receipts above are historical, from providers the earlier
+       root built. They are not native gates.
 5. **Retirement.** Remove `emit-kernel.cljk`, glslang and the accelerator CLJK
    from the product route. The hand `.comp` files stay as baselines.

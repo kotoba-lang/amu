@@ -655,6 +655,17 @@ Each step is its own PR, in this order:
       dequant oracle, every output is within 1e-3 relative error (with a 1e-2
       floor, kdot_check's metric). The f16 layouts are measured instead
       against the output's rms, within 1e-2.
+
+      **Status after #1510.** Main's compiler refuses `--format
+      platform-linked` (`E2`, the native-only entry). Main's AGENTS.md
+      excludes this provider's fake-device, Vulkan and libc qualifications
+      from mandatory native CDCI: they need the refused C-linked format, and
+      provider qualification is blocked until an Amu/Kotoba-native route
+      exists.
+      * The provider images behind these receipts were built by the root
+        before #1510 (`bd025475…`). They are historical receipts of this
+        route, not native CDCI gates.
+      * Main's root can no longer rebuild them.
    4. **Confinement after device creation.** In progress. After the device
       is created the provider reads the facts its report needs from files:
       its image digest, and for the Vulkan layer the driver properties and
