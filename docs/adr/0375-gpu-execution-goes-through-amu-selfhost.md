@@ -1,7 +1,7 @@
 # ADR-0375 -- GPU execution goes through Amu selfhost: a Kotoba loader, native drivers and WebGPU
 
-- Status: **accepted direction** (the owner, 2026-10-24). The order of the
-  implementation steps below is proposed. Nothing here is implemented.
+- Status: **accepted direction** (the owner, 2026-10-24). The owner set the
+  order the same day: B, then W, then C. Nothing here is implemented.
 - Date: 2026-10-24
 - Amends: ADR 0374 (where GPU execution lives) and ADR 0371 (the provider
   route).
@@ -79,7 +79,7 @@ The owner's answers on 2026-10-24:
    the consuming product's own C stack. Inference consumes both the modules
    and the executors (JUN-375).
 
-## Implementation steps (proposed order)
+## Implementation steps (in the owner's order)
 
 1. **B on x86_64-linux** (gad and the B70):
    * a Kotoba ELF loader that can bring up the system Vulkan stack: glibc,
@@ -222,7 +222,8 @@ controller pins, as #1522 did.
 
 ## Open questions for the owner
 
-1. Is the order above right: B, then W, then C?
+1. **Decided (2026-10-24):** B, then W, then C. B2's slice 1 runs in its own
+   session.
 2. Is amdgpu the first vendor for C?
 3. Once B runs natively, should the GPU-host gates become a named,
    GPU-host-only gate set beside mandatory CDCI?
