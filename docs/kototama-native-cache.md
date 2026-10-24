@@ -148,5 +148,19 @@ concurrency/capacity, deadlines, and owned cleanup. Amu-built native ordered
 gates own the verdicts and reject corrupted observations. Python only stages
 literal fixtures, hashes, files and processes; it does not evaluate a VM.
 
-These sources are development candidates until current integrated source/pin,
-compiler generations, native gates, public entry and required CI qualify them.
+Current local evidence uses full35 source `dc9757040`: ARM containers/images
+and native x86 compilers each have three-generation fixed points; the full34
+receipt root independently reproduces the same full35 image/container.
+Both ISAs pass479 cache-ABI records,122 v1 regressions and262 v2 receipts.
+The x86 host passes60 records including real guest and compiler deadlines,
+compiler-refusal cleanup and fresh admission afterward. Actual authority
+check and fuel-charge removal are rejected by the native ABI gates.
+Public3aliases match the current compiler/source. See
+[`current-scope.json`](evidence/kototama-native-cache-20261024/current-scope.json).
+
+Mandatory native role images, their source and policy reproduce the parent
+receipt qualification byte for byte; this is recorded as reused artifact
+qualification, distinct from fresh controller execution by required CI.
+Dependency main readback and terminal checks on the final PR head remain
+separate gates. Local results do not qualify a remote signed host, ARM cache
+supervisor, Cell integration, whole-VM parity or performance.
