@@ -412,7 +412,7 @@
 (defn- drv-c0 [S :string path :string mode :i64 out :string] :i64
   (drv-c1 (lx-run (mem-set (mem-new) MM-SRC-LEN (string-length S)) S) S path mode out))
 
-(defn- drv-read [path :string] :string (typed-cap-call :fs/app-data :string :string path))
+(defn- drv-read [path :string] :string (io-fs2-text 65 path ""))
 
 ;; ==== BEGIN R5A project route (owner: agent R5A; module seed/60-proj.kotoba) =========================================
 ;;   compile <entry> [--source-path D ..] [--unpinned] [--policy P] --output X
@@ -482,10 +482,12 @@
         :else (drv-pj-digest-arg (+ index 1) count found)))
 (defn- drv-pj-lock-text [bytes :vector-i64] :string
   (if (and (<= (vector-count bytes) 1048576)
+           (or (and (>= (vector-count bytes) 5) (= (vector-at bytes 0) 75) (= (vector-at bytes 1) 83)
+                    (= (vector-at bytes 2) 76) (= (vector-at bytes 3) 50) (= (vector-at bytes 4) 10) (ksl-utf8? bytes))
            (loop [index 0]
              (if (= index (vector-count bytes)) true
                (let [byte (vector-at bytes index)]
-                 (and (or (= byte 10) (and (>= byte 32) (<= byte 126))) (recur (+ index 1)))))))
+                 (and (or (= byte 10) (and (>= byte 32) (<= byte 126))) (recur (+ index 1))))))))
     (string-from-utf8 (bytes-from-vector-i64 bytes)) ""))
 (defn- drv-pj-lock-digest? [text :string] :bool
   (let [argument (drv-pj-digest-arg 1 (io-argc) -1)]
