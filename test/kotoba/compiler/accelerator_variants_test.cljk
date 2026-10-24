@@ -624,9 +624,63 @@
                              "docs/evidence/gpu-subgroup-reduce-m1max-wsweep-20261023"
                              "docs/evidence/gpu-subgroup-reduce-m1max-wsweep-low-20261023"
                              "docs/evidence/gpu-subgroup-reduce-m1max-shape2-20261023"
-                             "docs/evidence/gpu-subgroup-reduce-m1max-shape2-band-20261023"]}
+                             "docs/evidence/gpu-subgroup-reduce-m1max-shape2-band-20261023"
+                             "docs/evidence/gpu-subgroup-reduce-m1max-crossday-20261024/w256"
+                             "docs/evidence/gpu-subgroup-reduce-m1max-crossday-20261024/w64"
+                             "docs/evidence/gpu-subgroup-reduce-m1max-crossday-20261024/w128"
+                             "docs/evidence/gpu-subgroup-reduce-m1max-crossday-20261024/w512"
+                             "docs/evidence/gpu-subgroup-reduce-m1max-crossday-20261024/w1024"
+                             "docs/evidence/gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w256"
+                             "docs/evidence/gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w64"
+                             "docs/evidence/gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w128"
+                             "docs/evidence/gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w512"
+                             "docs/evidence/gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w1024"]}
                  (:measured-cell answer))
               (str "W=" wg " " target " " operator " record")))))
+    (testing "the ten cross-day replication records are named in the flip note and the basis evidence list"
+      ;; The naming slice (2026-10-24,
+      ;; docs/evidence/gpu/subgroup-crossday-naming-20261024.txt): the
+      ;; ten sanctioned cross-day records (the anchor W = 256 and
+      ;; W = 64/128/512/1024 at each measured shape, all later-day
+      ;; 2026-10-24) are named in apple-narrow-note's CROSS-DAY paragraph
+      ;; and in apple-measured-evidence -- corroboration that flipped
+      ;; nothing, never a flip basis of their own.
+      (let [answer (variants/select-variant
+                    :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                              {:workgroup-size 256})
+                    :msl-v1 m1)
+            basis (:basis answer)
+            evidence (:evidence (:measured-cell answer))]
+        (is (str/includes? basis "CROSS-DAY REPLICATION OF THE FLIP")
+            "the flip note carries the cross-day paragraph")
+        (is (str/includes? basis "corroboration that flipped")
+            "the paragraph scopes the records as corroboration that flipped nothing")
+        (is (str/includes? basis "no :measured? flag, no :shapes")
+            "the paragraph moves no :measured? flag and no :shapes value")
+        (is (str/includes? basis "no selection answer and no workgroup row (ADR-0355/0358)")
+            "the paragraph moves no selection answer and no workgroup row")
+        (is (str/includes? basis "sign does NOT reproduce strictly at :max")
+            "the paragraph names the shape-1 w128 row's sign scoping (named, not hidden)")
+        (is (str/includes? basis "DECIDED OUT of this list")
+            "the paragraph defers W = 32 to its own membership decision")
+        (doseq [p ["docs/evidence/gpu-subgroup-reduce-m1max-crossday-20261024/w256"
+                   "docs/evidence/gpu-subgroup-reduce-m1max-crossday-20261024/w64"
+                   "docs/evidence/gpu-subgroup-reduce-m1max-crossday-20261024/w128"
+                   "docs/evidence/gpu-subgroup-reduce-m1max-crossday-20261024/w512"
+                   "docs/evidence/gpu-subgroup-reduce-m1max-crossday-20261024/w1024"
+                   "docs/evidence/gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w256"
+                   "docs/evidence/gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w64"
+                   "docs/evidence/gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w128"
+                   "docs/evidence/gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w512"
+                   "docs/evidence/gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w1024"]]
+          (is (some #(= p %) evidence)
+              (str p " is named in the basis evidence list"))
+          (is (str/includes? basis p)
+              (str p " is named in the flip note prose")))
+        (is (= 15 (count evidence))
+            "the list is the five flip-run records plus the ten cross-day records")
+        (is (not (some #(str/includes? % "resweep") evidence))
+            "the lists name no resweep directory -- the same-day-resweep naming rule applied to this family's lists")))
     (testing "the W = 32 cell keeps the lock by decision (the low band's one mixed cell)"
       ;; The low-band measurement (2026-10-23) measured W = 32 and the
       ;; variant is not slower there -- :sum 0.918 in every fresh process
@@ -663,7 +717,17 @@
               (str "W=32 " operator " basis must cite the shape-2 cell"))
           (is (str/includes? (:basis answer)
                              "docs/evidence/gpu-subgroup-reduce-m1max-oporder-20261023")
-              (str "W=32 " operator " basis must cite the op-order cell")))))
+              (str "W=32 " operator " basis must cite the op-order cell"))
+          ;; The membership decision (2026-10-24, named in this family's
+          ;; naming slice): W = 32 is DECIDED OUT of the cross-day
+          ;; replication list at both measured shapes -- it never
+          ;; flipped, so no flip basis exists to corroborate.
+          (is (str/includes? (:basis answer) "W = 32 AND THE CROSS-DAY LIST")
+              (str "W=32 " operator " basis must carry the membership decision paragraph"))
+          (is (str/includes? (:basis answer) "subgroup-w32-leftlist-")
+              (str "W=32 " operator " basis must name the membership decision record"))
+          (is (str/includes? (:basis answer) "DECIDED OUT of the cross-day replication list")
+              (str "W=32 " operator " is decided out of the list, decided not silent")))))
     (testing "the GLSL arm keeps the lock at every width: LABELED BOOTSTRAP is not a verdict"
       ;; PR #1347/#1348 measured the same sign, but their own record
       ;; (docs/evidence/gpu/loadsweep-20261019/README.md) labels the runs
@@ -962,7 +1026,9 @@
     (testing "without the fold's rule-6 fact the shuffle row's answer is byte-for-byte unchanged"
       ;; no :simd-reduce fact: rung 1 never held; at W = 256 the narrowed
       ;; class keeps :baseline and the :subgroup-reduce record (its
-      ;; :evidence names the :subgroup-reduce runs only).
+      ;; :evidence names the :subgroup-reduce runs only -- the flip runs
+      ;; and their sanctioned cross-day replications, never the
+      ;; :simdgroup-reduce family's runs).
       (let [answer (variants/select-variant
                     :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
                                               {:workgroup-size 256})
@@ -971,7 +1037,11 @@
         (is (= :baseline (:variant answer)))
         (is (true? (:measured? answer)))
         (is (= "docs/evidence/gpu-subgroup-reduce-m1max-shape2-band-20261023"
-               (last (:evidence (:measured-cell answer)))))))
+               (nth (:evidence (:measured-cell answer)) 4)))
+        (is (= "docs/evidence/gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w1024"
+               (last (:evidence (:measured-cell answer)))))
+        (is (not (str/includes? (str/join (:evidence (:measured-cell answer)))
+                                "simdgroup")))))
     (testing "an unnamed descriptor is never the tested class: rung 1 answers, UNMEASURED"
       (let [answer (variants/select-variant
                     :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum

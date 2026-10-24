@@ -596,7 +596,12 @@ row); and a later-day W = 32 DATA run (pure data, explicitly
 non-basis) is neither scheduled nor forbidden by this decision -- if
 wanted, it is its own decision row. The rule is ACCEPTED DESIGN as of
 this slice; naming it in `apple-w32-note`'s prose rides the
-`:subgroup-reduce` naming slice the cross-day records already owe.
+`:subgroup-reduce` naming slice the cross-day records already owe --
+which landed later the same day (the SUBGROUP CROSS-DAY NAMING slice's
+diff row below: the ten records named in `apple-narrow-note` /
+`apple-measured-evidence`, the naming rule applied to that family's
+lists, the membership decision named in `apple-w32-note`; the rule is
+IMPLEMENTED for that family from that slice on).
 
 ## What this decision is NOT
 
@@ -910,6 +915,35 @@ step-1 slice added the rows below it.]
   moves.
   `docs/evidence/gpu/adr0373-diffrecord-reconciliation-20261024.txt`:
   the slice record (gate output included).
+- [SUBGROUP CROSS-DAY NAMING SLICE, 2026-10-24 (docstrings, tests, this
+  ADR -- no measurement, no selection logic):] the `:subgroup-reduce`
+  naming slice the ten cross-day records and the membership decision
+  owed, exactly its own scope:
+  `src/kotoba/compiler/accelerator_variants.cljk` -- the ten sanctioned
+  cross-day records named in `apple-narrow-note` (the CROSS-DAY
+  REPLICATION OF THE FLIP CELLS paragraph, per-row paired medians and
+  rule-2 verdicts cited from the committed records, the shape-1
+  w128 row's sign scoping named not hidden) and in
+  `apple-measured-evidence` (the list widens to flip runs + sanctioned
+  cross-day replication runs); the same-day-resweep naming rule applied
+  to this family's lists (the docstring's closed-under-the-flip-contract's-
+  record-kinds reading, stated not inferred; no resweep directory
+  (`docs/evidence/gpu-subgroup-reduce-m1max-resweep-20261023/`) named in
+  any list); the membership decision named in `apple-w32-note` (W = 32
+  DECIDED OUT of the cross-day list at both measured shapes, decided not
+  silent, no re-run revisits it);
+  `test/kotoba/compiler/accelerator_variants_test.cljk` -- a naming
+  block pinning the paragraph's scoping phrases and all ten record names
+  in `:basis` and `:evidence`, the list's 15-entry shape, and that no
+  `:evidence` list names a resweep directory; the W = 32 block pins the
+  membership-decision paragraph and record name; the exact
+  `:measured-cell` record equality block's `:evidence` vector names the
+  ten records (the values moved, so its pins moved with them -- the
+  record KEYS, `:shapes` values and every answer are byte-for-byte
+  unchanged). Slice record:
+  `docs/evidence/gpu/subgroup-crossday-naming-20261024.txt`. No
+  `:measured?` flag, `:shapes` value, selection answer or workgroup row
+  moves.
 
 ## What did NOT move (named so nothing is silently upgraded)
 
