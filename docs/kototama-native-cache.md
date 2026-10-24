@@ -118,6 +118,9 @@ JUN-372 work.
 
 ## Bounds and failure behavior
 
+Bounds apply per configured private root. A node adapter must select that
+root in trusted configuration; guests do not select cache roots.
+
 - At most16 immutable slots. A full cache refuses; there is no implicit eviction.
 - Each admitted image is at most1MiB and its binding at most2048 bytes.
 - One nonblocking root lock bounds compilation and invocation concurrency to1.

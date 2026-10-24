@@ -129,6 +129,10 @@ def main():
     call("typed-division-fault", body=r.v.arith("div", r.v.const(1), r.v.const(0)), budget=3, code=70, status=2, spent=3, marker="CACHE_MISS\n")
     call("execution-deadline", body=["loop", [], ["recur", []]], budget=9007199254740991, code=2, marker="CACHE_MISS\n", diagnostic=4402)
     call("fresh-after-timeout", body=["loop", [], ["recur", []]], budget=0, code=70, status=1)
+    refusal = out / "compiler-refusal"; refusal.mkdir(mode=0o700)
+    call("compiler-refusal", body=["cap", "fs/app-data", []], root=refusal, code=2, marker="CACHE_MISS\n", diagnostic=4204)
+    observe("compiler-refusal-cleanup", [len(list(refusal.iterdir()))], [0])
+    call("fresh-after-compiler-refusal", root=refusal, marker="CACHE_MISS\n")
     quota = out / "quota"; quota.mkdir(mode=0o700)
     for i in range(16):
         call(f"slot-{i}", body=r.v.const(i), root=quota, value=i, marker="CACHE_MISS\n")
