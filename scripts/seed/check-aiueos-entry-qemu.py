@@ -97,6 +97,14 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024):
         assert struct.unpack_from("<QQ", info) == (0x544f4f4245554941, 5)
         map_pointer, map_size, desc_size = struct.unpack_from("<QQQ", info, 16)
         assert map_pointer == boot + 160 and 0 < map_size <= 16384 and desc_size >= 40
+        assert map_size % desc_size == 0
+        assert hmp(f"pmemsave 0x{map_pointer:x} 16384 firmware-map.bin") == ""
+        memory_map = Path("firmware-map.bin").read_bytes()
+        assert len(memory_map) == 16384
+        memory_types = {}
+        for offset in range(0, map_size, desc_size):
+            kind = str(struct.unpack_from("<I", memory_map, offset)[0])
+            memory_types[kind] = memory_types.get(kind, 0) + 1
         fb, fbsize = struct.unpack_from("<QQ", info, 112)
         width, height, stride, pixel_format = struct.unpack_from("<IIII", info, 128)
         assert fb > 0 and fbsize > 0 and width > 0 and height > 0 and stride >= width
@@ -104,6 +112,7 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024):
         report = dict(status="PASS_AIUEOS_ENTRY_QEMU", observer=pin(Path(__file__).resolve()), efi=pin(efi), kernel=pin(kernel),
                       firmware=pin(firmware), qemuVersion=subprocess.check_output([str(qemu), "--version"]).decode().splitlines()[0],
                       result=42, pc="0x10104b", remainingFuel=fuel, expectedRemainingFuel=remaining_fuel, bootInfoVersion=5,
+                      firmwareMemoryTypes=memory_types, firmwareMap=pin(Path("firmware-map.bin")),
                       framebuffer=dict(base=fb, bytes=fbsize, width=width, height=height, stride=stride, pixelFormat=pixel_format),
                       completeKernel=False, desktop=False, input=False, gpt=False, physicalHardware=False,
                       compilerProvenance="requires associated native packaging receipt",

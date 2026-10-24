@@ -146,9 +146,20 @@
       (cond (or (= op OP-FN) (= op OP-END)) -1
             (and (= op OP-LSET) (= (xg-si M j IF-A) s)) j
             :else (xk-first-lset M (inc j) s)))))
+(defn- xk-identity-lsets? [M :vector-i64 j :i64 s :i64] :bool
+  (loop [i j]
+    (cond (>= i (vector-at M MM-SIR-N)) true
+          (or (= (xg-si M i IF-OP) OP-FN) (= (xg-si M i IF-OP) OP-END)) true
+          (and (= (xg-si M i IF-OP) OP-LSET) (= (xg-si M i IF-A) s))
+            (let [w (xk-writer M i (xg-si M i IF-B))]
+              (if (and (> w 0) (= (xg-si M w IF-OP) OP-LGET) (= (xg-si M w IF-B) s))
+                (recur (inc i)) false))
+          :else (recur (inc i)))))
 (defn- xk-param-slot? [M :vector-i64 j :i64 s :i64] :bool
   (let [st (xk-fn-start M j) f (xg-si M st IF-A)]
-    (and (>= s 1) (<= s (xg-f M f FF-NPARAMS)) (= (xk-lsets M (inc st) s 0) 0))))
+    (and (>= s 1) (<= s (xg-f M f FF-NPARAMS))
+         (if (= (xg-get M 4) 2) (xk-identity-lsets? M (inc st) s)
+           (= (xk-lsets M (inc st) s 0) 0)))))
 (defn- xk-writer [M :vector-i64 i :i64 t :i64] :i64
   (loop [j (dec i)]
     (if (< j 1) -1
@@ -176,6 +187,24 @@
                             (if (> k 0) (xk-src M k (xg-si M k IF-B) (inc depth)) 0))
                         :else 0)
                 :else 0))))))
+;; Closed project helpers can also have a fixed extent without a redundant
+;; adjacent length parameter. EVERY external call must supply an already
+;; rooted region with that same literal extent. An identity self-call merely
+;; carries that established contract; it cannot seed one or change the base.
+;; This rule does not apply to ordinary object ABI exports or IRQ arguments.
+(defn- xk-fixed-param-region [M :vector-i64 f :i64 b :i64 depth :i64] :i64
+  (loop [c 1 extent -1]
+    (if (>= c (vector-at M MM-SIR-N)) extent
+      (if (and (= (xg-si M c IF-OP) OP-CALL) (= (xg-si M c IF-A) f))
+        (let [t (+ (xg-si M c IF-B) (dec b))
+              self (= (xg-si M (xk-fn-start M c) IF-A) f)
+              same (and self (= (xk-src M c t 0) (+ 8589934592 b)))]
+          (if same (recur (inc c) extent)
+            (let [r (xk-region M c t (inc depth))]
+              (if (and (>= r 4294967296) (< r 8589934592)
+                       (or (= extent -1) (= extent r)))
+                (recur (inc c) r) -1))))
+        (recur (inc c) extent)))))
 ;; The REGION of a base: -1 when the base is not rooted, else the source its length must have. A rooted base is
 ;;   - a parameter slot p never assigned: of the exported function (the ABI boundary hands in a region as the pair (base, length),
 ;;     the length being parameter p + 1), or of a private helper when EVERY call of it passes a rooted base at p whose length
@@ -185,7 +214,7 @@
 ;;   - a let-bound local with one assignment of such a value.
 ;; A literal is NOT a base: it would name any absolute address (ADR 0373).
 (defn- xk-region [M :vector-i64 i :i64 t :i64 depth :i64] :i64
-  (if (> depth 6) -1
+  (if (> depth (if (= (xg-get M 4) 2) 24 6)) -1
     (let [j (xk-writer M i t)]
       (if (< j 0) -1
         (let [op (xg-si M j IF-OP) a (xg-si M j IF-A) b (xg-si M j IF-B)]
@@ -193,16 +222,19 @@
                   (cond (xk-param-slot? M j b)
                           (let [f (xg-si M (xk-fn-start M j) IF-A)]
                             (cond (= (xg-f M f FF-EXPORT) 2) -1
-                                  (> (inc b) (xg-f M f FF-NPARAMS)) -1
-                                  (= (xg-f M f FF-EXPORT) 1) (+ 8589934592 (inc b))
+                                  (= (xg-f M f FF-EXPORT) 1)
+                                    (if (> (inc b) (xg-f M f FF-NPARAMS)) -1 (+ 8589934592 (inc b)))
                                   :else
-                                    (loop [c 1]
+                                    (let [fixed (if (= (xg-get M 4) 2) (xk-fixed-param-region M f b depth) -1)]
+                                      (cond (>= fixed 0) fixed
+                                            (> (inc b) (xg-f M f FF-NPARAMS)) -1
+                                            :else (loop [c 1]
                                       (if (>= c (vector-at M MM-SIR-N)) (+ 8589934592 (inc b))
                                         (if (and (= (xg-si M c IF-OP) OP-CALL) (= (xg-si M c IF-A) f))
                                           (let [r (xk-region M c (+ (xg-si M c IF-B) (dec b)) (inc depth))
                                                 ln (xk-src M c (+ (xg-si M c IF-B) b) 0)]
                                             (if (and (>= r 0) (not= ln 0) (= ln r)) (recur (inc c)) -1))
-                                          (recur (inc c)))))))
+                                          (recur (inc c)))))))))
                         (= (xk-lsets M (inc (xk-fn-start M j)) b 0) 1)
                           (let [k (xk-first-lset M (inc (xk-fn-start M j)) b)]
                             (if (> k 0) (xk-region M k (xg-si M k IF-B) (inc depth)) -1))
