@@ -309,12 +309,100 @@
   (let [text (string-concat (string-concat S (ck-r6b-lib S)) (xk-lib)) front (xg-front text)]
     (if (= (vector-at front MM-ERR) 0) (xo-report (xo-build front text fuel) path out) (drv-fail front path))))
 
+;; JUN-31: the image packaging step, in the same adopted compiler lineage.
+;; This grows the existing scalar/object admission; it does not stand in for
+;; the complete AIUEOS kernel graph. Multiple exports (including ISR and live
+;; ValueRuntime entries), host capabilities and unsupported kernel intrinsics
+;; still refuse. No source is trimmed or rewritten to make that graph pass.
+;; The image ABI matches kotoba.native.elf64's non-live, no-ISR layout:
+;; two PT_LOADs (RX then RW), image-owned stack, GDT/TSS and sealed fuel.
+;; A successful image build is not EFI/GPT or a QEMU boot qualification.
+(def XI-DATA-SIZE 77824)
+(defn- xi-shim [M :vector-i64 entry :i64] :vector-i64
+  ;; 77 bytes. RIP displacements for stack/GDTR/boot-info/context are patched
+  ;; after code size determines the data page; the entry call uses xg-fix.
+  (-> M (xg-byte 0xfa) (xg-bytes 0x258d48 3) (xg-bytes 0 4)
+      (xg-bytes 0xf0e48348 4) (xg-bytes 0x15010f 3) (xg-bytes 0 4)
+      (xg-bytes 0x086a 2) (xg-bytes 0x058d48 3) (xg-bytes 3 4)
+      (xg-bytes 0xcb4850 3) (xg-bytes 0x0010b866 4)
+      (xg-bytes 0xd08ec08ed88e 6) (xg-bytes 0xe88ee08ec031 6)
+      (xg-bytes 0x0028b866 4) (xg-bytes 0xd8000f 3)
+      (xg-bytes 0x3d8948 3) (xg-bytes 0 4)
+      (xg-bytes 0x0d8d4c 3) (xg-bytes 0 4) (xg-rel 0xe8 1 1 entry)
+      (xg-bytes 0xfdebf4fa 4)))
+(defn- xi-patch-shim [M :vector-i64 data :i64] :vector-i64
+  (let [relative (- data 4096)]
+    (-> M (xg-patch 4 (- (+ relative XI-DATA-SIZE) 8) 4)
+        (xg-patch 15 (- (+ relative 152) 19) 4)
+        (xg-patch 57 (- (+ relative 80) 61) 4)
+        (xg-patch 64 (- relative 68) 4))))
+(defn- xi-phdr [M :vector-i64 flags :i64 off :i64 size :i64] :vector-i64
+  (-> M (xg-out 1 4) (xg-out flags 4) (xg-out off 8)
+      (xg-out (+ 0x100000 off) 8) (xg-out (+ 0x100000 off) 8)
+      (xg-out size 8) (xg-out size 8) (xg-out 4096 8)))
+(defn- xi-data [M :vector-i64 data :i64 fuel :i64] :vector-i64
+  (let [context (+ 0x100000 data) tss (+ context 168) stack (+ context XI-DATA-SIZE)]
+    (-> M (xg-pad data) (xg-out 0 8) (xg-out fuel 8)
+        (xg-pad (+ data 96))
+        (xg-out 0 8) (xg-out 0x00af9a000000ffff 8)
+        (xg-out 0x00cf92000000ffff 8) (xg-out 0x00cff2000000ffff 8)
+        (xg-out 0x00affa000000ffff 8)
+        ;; 16-byte available 64-bit TSS descriptor, limit 103.
+        (xg-out 103 2) (xg-out tss 3) (xg-out 0x89 1) (xg-out 0 1)
+        (xg-out (u64-shift-right tss 24) 1) (xg-out (u64-shift-right tss 32) 4) (xg-out 0 4)
+        ;; GDTR (56-byte GDT), then 104-byte TSS with RSP0 and no I/O bitmap.
+        (xg-out 55 2) (xg-out (+ context 96) 8)
+        (xg-pad (+ data 168)) (xg-out 0 4) (xg-out stack 8)
+        (xg-pad (+ data 270)) (xg-out 104 2)
+        (xg-pad (+ data XI-DATA-SIZE)))))
+(defn- xi-elf [M :vector-i64 data :i64 fuel :i64] :vector-i64
+  (let [text (xg-pos M) names (+ data XI-DATA-SIZE) sections (bit-and (+ names 30) -8)]
+    (-> M (mem-set MM-OUT-N 1)
+        (xg-out 0x00010102464c457f 8) (xg-out 0 8)
+        (xg-out 2 2) (xg-out 62 2) (xg-out 1 4) (xg-out 0x101000 8)
+        (xg-out 64 8) (xg-out sections 8) (xg-out 0 4)
+        (xg-out 64 2) (xg-out 56 2) (xg-out 2 2) (xg-out 64 2) (xg-out 4 2) (xg-out 3 2)
+        (xi-phdr 5 4096 text) (xi-phdr 6 data XI-DATA-SIZE)
+        (xg-pad 4096) (xg-out-code 1) (xi-data data fuel)
+        (xg-out 0x2e00747865742e00 8) (xg-out 0x68732e0061746164 8) (xg-out 0x00626174727473 7)
+        (xg-pad sections) (xg-pad (+ sections 64))
+        (xo-shdr 1 1 6 0x101000 4096 text 0 0 16 0)
+        (xo-shdr 7 1 3 (+ 0x100000 data) data XI-DATA-SIZE 0 0 4096 0)
+        (xo-shdr 13 3 0 0 names 23 0 0 1 0))))
+(defn- xi-build [M :vector-i64 S :string fuel :i64] :vector-i64
+  (let [admitted (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 2 fuel) (xg-set 4 0)
+                    (xo-check-fns S 1) (xg-check-sir 1) (xk-scan S) (xk-check 1))
+        entry (xg-get admitted 1)]
+    (cond (not= (vector-at admitted MM-ERR) 0) admitted
+          (or (= entry 0) (not= (xg-f admitted entry FF-NPARAMS) 0)) (xg-err admitted 7102 entry)
+          (not= (vector-at admitted MM-CAPS) 0) (xg-err admitted 7101 OP-CAP)
+          :else (let [generated (-> admitted (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1)
+                                    (xg-index-labels 1) (xi-shim entry) (xg-code 1))
+                      end (bit-and (+ (xg-pos generated) 15) -16)
+                      data (max 32768 (bit-and (+ 8191 end) -4096))]
+                  (if (or (>= (+ data XI-DATA-SIZE 280) MM-OUT-CAP) (> (xg-pos generated) 1048576))
+                    (xg-err generated 7104 data)
+                    (xi-elf (xi-patch-shim (xg-fix generated 1) data) data fuel))))))
+(defn- xi-source [S :string path :string out :string fuel :i64] :i64
+  (let [text (string-concat (string-concat S (ck-r6b-lib S)) (xk-lib)) front (xg-front text)
+        image (if (= (vector-at front MM-ERR) 0) (xi-build front text fuel) front)
+        e (vector-at image MM-ERR)]
+    (cond (> e 0) (xo-report image path out)
+          :else (let [n (dec (vector-at image MM-OUT-N)) written (out-write-v image out (+ MM-OUT-BASE 1) n)
+                      w (io-out (string-concat "{:ok true, :target :x86_64-aiueos-kernel-v1, :format :elf64-exec, :bytes "
+                                             (string-concat (mem-u2dec n) "}\n")))]
+                  (if (= (io-exists out) 1) 0 (drv-fail0 E-WRITE))))))
+
 (defn- xo-command [] :i64
-  (let [n (io-argc) src (io-arg 1) out (io-arg 5)
-        fuel (if (= n 8) (xg-budget (io-arg 7)) 1000000)]
-    (cond (or (not (or (= n 6) (= n 8))) (not (string=? (io-arg 4) "--output"))
-              (and (= n 8) (not (string=? (io-arg 6) "--fuel"))) (< fuel 1)
+  (let [n (io-argc) src (io-arg 1) explicit (string=? (io-arg 4) "--artifact")
+        shift (if explicit 2 0) kind (if explicit (io-arg 5) "object") out (io-arg (+ 5 shift))
+        fuel (if (= n (+ 8 shift)) (xg-budget (io-arg (+ 7 shift))) 1000000)]
+    (cond (or (not (or (= n (+ 6 shift)) (= n (+ 8 shift))))
+              (not (or (string=? kind "object") (string=? kind "image")))
+              (not (string=? (io-arg (+ 4 shift)) "--output"))
+              (and (= n (+ 8 shift)) (not (string=? (io-arg (+ 6 shift)) "--fuel"))) (< fuel 1)
               (= (string-length out) 0) (= (io-exists out) 1))
-            (let [w (io-err "seed-x86_64-aiueos-object: E7100 expected compile SOURCE --target x86_64-aiueos-kernel-v1 --output NEW_OBJ [--fuel POSITIVE_BUDGET]\n")] 2)
+            (let [w (io-err "seed-x86_64-aiueos-object: E7100 expected compile SOURCE --target x86_64-aiueos-kernel-v1 [--artifact object|image] --output NEW [--fuel POSITIVE_BUDGET]\n")] 2)
           (= (io-exists src) 0) (drv-fail0 E-READ)
+          (string=? kind "image") (xi-source (drv-read src) src out fuel)
           :else (xo-source (drv-read src) src out fuel))))
