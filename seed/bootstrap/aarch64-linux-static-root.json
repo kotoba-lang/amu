@@ -2,50 +2,131 @@
   "schema": "amu.seed.static-root.v1",
   "image": {
     "bytes": 3293696,
-    "sha256": "482398a449a3238ca5646c6e283c521e6dbbbe4f1e314dde9f1e52396c1349c1"
+    "sha256": "fc48f9faeedcc8a78d0df70a070e3639c0b94c690a82490a9be3b7072b8ad195"
   },
   "target": "aarch64-linux",
   "format": "packed",
   "sourceManifest": "seed/FULL-MANIFEST",
   "sourceUnity": {
-    "bytes": 3275474,
-    "sha256": "20eb5b5b5175b07c3090a89720701562f3045f3703d731d28a0e831e6aa0c552"
+    "bytes": 3277122,
+    "sha256": "d0671bbbef8b943a77ee093441ff4288a2ac11b9ab702110fe4d926a186de1b0"
   },
-  "sourceCommitBase": "47f41d0b23f93d2966ed5ae9c1ef128f4941f5a0",
+  "sourceCommitBase": "67f938f516a5fdda17c744a1baa27d8c5db10ed8",
+  "sourceCommit": "67f938f516a5fdda17c744a1baa27d8c5db10ed8",
   "producedBy": {
-    "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt itself to F2 (same container, new runtime wrapper); F2 rebuilt itself to F3 = F2 (= this image). Re-pinned because this source makes the static runtimes seed/76 and seed/77 refuse an ungranted wire by name (KEXE_CAP {:wire N :refused :not-granted}, then the trap), as seed/82 does (JUN-354).",
+    "how": "scripts/seed/selfhost-bootstrap.py --tier main, C-free on arm64 Linux (podman python:3.12-alpine, no C compiler or loader, no emulation) on the merged tree of origin/main 0486b715e (JUN-354) into hermes/jun31-seed-boot-ops (merge 67f938f51): the previous root (482398a4, main's pair, taken as placeholder at the merge) compiled seed/FULL-MANIFEST to F1 = fc48f9fa (container d2b5363b) and F1 rebuilt itself to F2 = F1 (fixed point in two generations). The Linux selfhost closure rebuilt itself (S = 43313cde); the core route gave G1 = G2 = G3 = 6d94e9b5 (the adoption image) and the packed P reproduced it. 24 runtime cases, the runtime boundary corpus (175 refusals, 7 positives) and the hardening probes passed; 27 wasm32 modules compiled (no browser on host). Evidence: docs/evidence/jun31-merge-fixpoint-20261024/.",
     "date": "2026-10-24",
     "timeZone": "Asia/Tokyo",
-    "previousRoot": "fa86314c3f15ed4577c847209a3674090f52a1b7da8ddf0ea56f1d66af2aa235",
+    "previousRoot": "482398a449a3238ca5646c6e283c521e6dbbbe4f1e314dde9f1e52396c1349c1",
     "chain": {
       "F1.kseed": {
-        "bytes": 3057347,
-        "sha256": "1e77bcb4b40bcb706464da48ed5b8a602e9850a51ee604b24278b205252a9c2c"
+        "bytes": 3057811,
+        "sha256": "d2b5363b8f456ec7043743eeb56494276f07c0bdde7d574050c5e1f71039f36c"
       },
       "F1.elf": {
         "bytes": 3293696,
-        "sha256": "6197dd0d573f25978547048890d0b8422a4fd0f13b338ab18b2220f0a5089759"
+        "sha256": "fc48f9faeedcc8a78d0df70a070e3639c0b94c690a82490a9be3b7072b8ad195"
       },
       "F2.kseed": {
-        "bytes": 3057347,
-        "sha256": "1e77bcb4b40bcb706464da48ed5b8a602e9850a51ee604b24278b205252a9c2c"
+        "bytes": 3057811,
+        "sha256": "d2b5363b8f456ec7043743eeb56494276f07c0bdde7d574050c5e1f71039f36c"
       },
       "F2.elf": {
         "bytes": 3293696,
-        "sha256": "482398a449a3238ca5646c6e283c521e6dbbbe4f1e314dde9f1e52396c1349c1"
-      },
-      "F3.kseed": {
-        "bytes": 3057347,
-        "sha256": "1e77bcb4b40bcb706464da48ed5b8a602e9850a51ee604b24278b205252a9c2c"
-      },
-      "F3.elf": {
-        "bytes": 3293696,
-        "sha256": "482398a449a3238ca5646c6e283c521e6dbbbe4f1e314dde9f1e52396c1349c1"
+        "sha256": "fc48f9faeedcc8a78d0df70a070e3639c0b94c690a82490a9be3b7072b8ad195"
       }
     }
   },
-  "verification": "scripts/seed/selfhost-bootstrap.py --tier pr and scripts/seed/check-one-compiler.py on arm64 Linux (python:3.12-alpine) from this root: F1 = root, the core route, the boundary corpus, the runtime cases, the named capability refusal and the combined compiler with its x86_64 compiler and CDCI images (pinned in seed/cdci/policy.json, bin/amu and native-product.json) pass; check-io-read.py, check-durable-sleep.py and check-spawn-runtime.py pass with the root. Native x86_64 qualification is the exact-head PR CI (selfhost-native).",
+  "verification": "Re-pinned to the measured merged-tree fixed point F2 = F1 = fc48f9fa of this source's combined compiler (selfhost-bootstrap tier main receipt in docs/evidence/jun31-merge-fixpoint-20261024/): rootReproduces was false against the pair taken as placeholder at the merge (the pair is generated), F1 = F2 byte-identical, S = 43313cde, G1 = G2 = G3 = the adoption image, 24 runtime cases, the runtime boundary corpus and the hardening probes pass. Both superseded pins stay in history: main's 482398a4 and the branch's 86da3c52 (parallel re-pins of fa86314c). The rootReproduces re-measurement against this pin is docs/evidence/jun31-root-reproduces-20261025/. General CLI/CID/host parity, performance and live cutover are not claimed.",
   "history": [
+    {
+      "schema": "amu.seed.static-root.v1",
+      "image": {
+        "bytes": 3293696,
+        "sha256": "482398a449a3238ca5646c6e283c521e6dbbbe4f1e314dde9f1e52396c1349c1"
+      },
+      "target": "aarch64-linux",
+      "format": "packed",
+      "sourceManifest": "seed/FULL-MANIFEST",
+      "sourceUnity": {
+        "bytes": 3275474,
+        "sha256": "20eb5b5b5175b07c3090a89720701562f3045f3703d731d28a0e831e6aa0c552"
+      },
+      "sourceCommitBase": "47f41d0b23f93d2966ed5ae9c1ef128f4941f5a0",
+      "producedBy": {
+        "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt itself to F2 (same container, new runtime wrapper); F2 rebuilt itself to F3 = F2 (= this image). Re-pinned because this source makes the static runtimes seed/76 and seed/77 refuse an ungranted wire by name (KEXE_CAP {:wire N :refused :not-granted}, then the trap), as seed/82 does (JUN-354).",
+        "date": "2026-10-24",
+        "timeZone": "Asia/Tokyo",
+        "previousRoot": "fa86314c3f15ed4577c847209a3674090f52a1b7da8ddf0ea56f1d66af2aa235",
+        "chain": {
+          "F1.kseed": {
+            "bytes": 3057347,
+            "sha256": "1e77bcb4b40bcb706464da48ed5b8a602e9850a51ee604b24278b205252a9c2c"
+          },
+          "F1.elf": {
+            "bytes": 3293696,
+            "sha256": "6197dd0d573f25978547048890d0b8422a4fd0f13b338ab18b2220f0a5089759"
+          },
+          "F2.kseed": {
+            "bytes": 3057347,
+            "sha256": "1e77bcb4b40bcb706464da48ed5b8a602e9850a51ee604b24278b205252a9c2c"
+          },
+          "F2.elf": {
+            "bytes": 3293696,
+            "sha256": "482398a449a3238ca5646c6e283c521e6dbbbe4f1e314dde9f1e52396c1349c1"
+          },
+          "F3.kseed": {
+            "bytes": 3057347,
+            "sha256": "1e77bcb4b40bcb706464da48ed5b8a602e9850a51ee604b24278b205252a9c2c"
+          },
+          "F3.elf": {
+            "bytes": 3293696,
+            "sha256": "482398a449a3238ca5646c6e283c521e6dbbbe4f1e314dde9f1e52396c1349c1"
+          }
+        }
+      },
+      "verification": "scripts/seed/selfhost-bootstrap.py --tier pr and scripts/seed/check-one-compiler.py on arm64 Linux (python:3.12-alpine) from this root: F1 = root, the core route, the boundary corpus, the runtime cases, the named capability refusal and the combined compiler with its x86_64 compiler and CDCI images (pinned in seed/cdci/policy.json, bin/amu and native-product.json) pass; check-io-read.py, check-durable-sleep.py and check-spawn-runtime.py pass with the root. Native x86_64 qualification is the exact-head PR CI (selfhost-native)."
+    },
+    {
+      "schema": "amu.seed.static-root.v1",
+      "image": {
+        "bytes": 3293696,
+        "sha256": "86da3c52e80193167bb32365d3f5cf8ef5c1e2c21df99f282c8589806674f46d"
+      },
+      "target": "aarch64-linux",
+      "format": "packed",
+      "sourceManifest": "seed/FULL-MANIFEST",
+      "sourceUnity": {
+        "bytes": 3276118,
+        "sha256": "93b2bccab0938aa01462228efc226d3a44f409e3c9c80f03bbcb69243cd4fada"
+      },
+      "sourceCommitBase": "228455e7b42e68ccb37dbe1c7d649b69b90311ff",
+      "sourceCommit": "228455e7b42e68ccb37dbe1c7d649b69b90311ff",
+      "producedBy": {
+        "how": "scripts/seed/selfhost-bootstrap.py --tier main, C-free on arm64 Linux (podman python:3.12-alpine, no C compiler or loader, no emulation): the previous root (fa86314c) compiled seed/FULL-MANIFEST with the seed/74 kernel-out-u8/u32 route intrinsics (JUN-31 W2) to F1; F1 rebuilt itself to F2 = F1 (fixed point in two generations, container 3755e64f). The Linux selfhost closure rebuilt itself (S = S2 = 63474bc8); the core route gave G1 = G2 = G3 = 6d94e9b5 (the adoption image) and the packed P reproduced it. 24 runtime cases, the runtime-boundary corpus (175 refusals, 7 positives) and the hardening probes passed. F's image route then built os/aiueos/uefi/boot-fixture.kotoba (018a939c) to a kernel image (110872 B d6db84da) that booted through the Kotoba loader to its own exit 43 (kotoba-lang/aiueos docs/evidence/ aiueos-jun31-m1-selfhost-boot-proof-20261024). Native x86 execution and exact-head PR/main CI are separate.",
+        "date": "2026-10-24",
+        "previousRoot": "fa86314c3f15ed4577c847209a3674090f52a1b7da8ddf0ea56f1d66af2aa235",
+        "chain": {
+          "F1.kseed": {
+            "bytes": 3056803,
+            "sha256": "3755e64ffd686205584d9c06611a9e2d1fc3afbdc1f889a01719d602e046f147"
+          },
+          "F1.elf": {
+            "bytes": 3293696,
+            "sha256": "86da3c52e80193167bb32365d3f5cf8ef5c1e2c21df99f282c8589806674f46d"
+          },
+          "F2.kseed": {
+            "bytes": 3056803,
+            "sha256": "3755e64ffd686205584d9c06611a9e2d1fc3afbdc1f889a01719d602e046f147"
+          },
+          "F2.elf": {
+            "bytes": 3293696,
+            "sha256": "86da3c52e80193167bb32365d3f5cf8ef5c1e2c21df99f282c8589806674f46d"
+          }
+        }
+      },
+      "verification": "Re-pinned to the measured fixed point F2 = F1 of this source's combined compiler (selfhost-bootstrap tier main receipt in docs/evidence/jun31-m1-boot-ops-20261024/): rootReproduces false against the previous root as expected from the seed/74 change, F1 = F2 byte-identical, S = S2, G1 = G2 = G3 = the adoption image, 24 runtime cases and the runtime boundary corpus pass. This source's boot proof (a selfhost-emitted kernel image exiting 43 through the Kotoba loader) is kotoba-lang/aiueos docs/evidence/aiueos-jun31-m1-selfhost-boot-proof-20261024. General CLI/CID/host parity, performance and live cutover are not claimed."
+    },
     {
       "image": {
         "bytes": 3293696,
