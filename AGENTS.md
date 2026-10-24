@@ -68,11 +68,11 @@
 
 The integrated FULL46 source retains native CLI/CID/FS2, the native i64
 receipt profile, all live/desktop modules and all18 normal adopted core
-modules. Current45 has terminal native ARM/x86/controller/public CI and
-cold provenance. The merged46 source requires regenerated root/public pins
-and its own native fixed-point, receipt-profile, live and consumer gates
-before adoption. Generated parent binaries are only local placeholders
-until that rebuild; do not claim them as the merged46 product.
+modules. Root and public images are rebuilt from this exact graph with
+native ARM F1=F2, core generations, runtime cases and admission/refusal
+proofs. The controller and both gate identities are preserved from the
+qualified45 source. Current46 acceptance requires terminal exact-head
+native ARM/x86, receipt-profile, controller/public and locked consumer CI.
 Historical ARM/QEMU receipts remain bound to their own sources.
 The closed v5 project reserves low20KiB for non-live context/catalog. The
 v6 PCI candidate has128KiB RW storage and a64KiB private floor; its copied
