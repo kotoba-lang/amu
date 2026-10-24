@@ -1,112 +1,21 @@
 {
-  "status": "PASS_CURRENT_NATIVE_ARTIFACT_QUALIFICATION_LOCAL_BOUNDED_AOT",
-  "change": "JUN-369: bounded canonical DAG-CBOR -> adopted Amu core -> metered scalar native; explicit profile, empty guest authority, zero heap and finite stack",
-  "sourceRevision": "6a8aef1cb84bd6a1430eb21607eb1f8e0a48523a",
-  "integrationBaseMain": "372243efbf2826590d57207e92792f32f0722440",
+  "status": "PASS_CURRENT_NATIVE_BOUNDED_AOT_REVIEW_FIX",
+  "sourceRevision": "f382a939ec3b0c750393d04a8efaaa1f5e3bd30c",
+  "integrationBaseMain": "e8f77af31",
+  "change": "Canonical empty loop/recur are translated using an uncharged compiler-owned dummy slot; current main kernel-memory source retained; compiler artifact transport root fixed.",
   "compilerSourceUnity": {
-    "bytes": 3253651,
-    "sha256": "91abb8b4d2f6dd40092fe6d6e5afefd3be7acfb9a02ca432007d8dbf3ea580d1"
+    "bytes": 3257561,
+    "sha256": "da6c4e7394601f826f49e6d04d20c4638895e8fae928947638a5229f8cd0517d"
   },
-  "adoptedCoreSourceUnchanged": true,
   "root": {
-    "bytes": 3273216,
-    "sha256": "96145f2c2b246ae133a576c86792b4db5a33594e84e51dfd1b8044267d9d035c"
+    "bytes": 3277312,
+    "sha256": "c95b844146ae31e9c47b5bd02a7b6590f3a158e74d9759eb48dfcf8bf2fe60a1"
   },
   "publicCandidate": {
-    "bytes": 8782336,
-    "sha256": "3a7d7cd9185c123c736b26cca27bc80e7e0ae749dc3eda1f672108fdedadec5c"
+    "bytes": 8790528,
+    "sha256": "23e714db082b2db65208cfc573ad682c399a4228fb1e04041f420ea50d9d65c0"
   },
-  "testPlan": {
-    "bytes": 16377,
-    "sha256": "b4a99c9ad2a34aeca9f50ddef670181cfb3d9b2c4427b9c00a00dfbc20511205"
-  },
-  "armGateSource": {
-    "bytes": 16186,
-    "sha256": "def10be815f963f77c81f324f1b4f22187a8ac60feabb483a737c56e2225824a"
-  },
-  "armGateObservations": {
-    "bytes": 7488,
-    "sha256": "ed0d4da8c4b76a5584654468774c3dd43016b467e145f791f71d2f62f15452ce"
-  },
-  "checks": [
-    "ARM and x86 native AOT ordered gate:117 cases each, corrupt-observation control rejected",
-    "Prior committed native ARM root reproduces the exact final container and packed image",
-    "Current native ARM compiler self-rebuild reproduces container and packed image",
-    "Complete x86 compiler three-generation fixed point",
-    "selfhost-bootstrap.py --tier pr: PASS,24 native fixtures/hardening/capability/refusal; Wasm modules compiled",
-    "check-static-launcher.py ARM: PASS,30 receipt cases/14 runs/15 refusals",
-    "check-one-compiler.py: independent Pw, full compiler3 generations, adopted core identity,24 runtime cases, public refusal/source-lock boundaries and current native role images",
-    "check-x86_64-native.py --tier pr:24 cases, call/function boundary, CPU/wall/stack/seccomp, static launcher",
-    "check-complete-x86.py: current native compiler3 generations and current ARM/source pins",
-    "check-native-clock-entropy.py:2 positives/11 malformed/2 missing grants/ENOSYS",
-    "check-native-cdci.py:24 cases/18 refusals/parent-death child cleanup; native controller owns verdict",
-    "check-public-native-product.py:3 aliases/current3 native generations/pinned check-compile/native execution/lock and named refusals",
-    "AOT ARM/x86: all117 input hashes, results, outcome classes, compile statuses and exact-fuel plans agree"
-  ],
-  "pending": [
-    "exact final-head PR CI (source/compiler/target local qualification completed)",
-    "merge/main CI; this draft PR is intentionally unmerged during separate native integration"
-  ],
-  "notQualified": [
-    "complete Kototama VM receipts/state/effects/recursive methods/runtime arguments",
-    "Murakumo node fresh admission and Program CID bound native cache",
-    "full provenance tier / whole inference / performance score"
-  ],
-  "evidence": {
-    "aot-arm64.json": {
-      "bytes": 34085,
-      "sha256": "47b9014ee2552f8e4a22743e2723189d0ad11d47214df21dae4e69c7775a5d2a"
-    },
-    "aot-x86_64.json": {
-      "bytes": 34083,
-      "sha256": "9edc475c03f1be131504de787b5fdfcac57126cfcb8addd63ece05376c640cc3"
-    },
-    "bootstrap-pr.json": {
-      "bytes": 116594,
-      "sha256": "41cfdbc02c8fb280ae753edfc60bf21181e6fa61dbec5b996bf013d17731a43a"
-    },
-    "compiler-reproduction.json": {
-      "bytes": 6597,
-      "sha256": "d133710d41708e4a87d45123816871ea27ebc95c641467acffe29e5a8fcaa8b1"
-    },
-    "complete-x86.json": {
-      "bytes": 20756,
-      "sha256": "1dd1802c6946a17592291274a2c6c8e4366c3f373fd78257c461efb48bdd11fa"
-    },
-    "launcher-arm.json": {
-      "bytes": 28093,
-      "sha256": "96f3a76082f089cbd9fa5ad2a256b877763c874def0e1cedceaf802686a9adaf"
-    },
-    "native-cdci.json": {
-      "bytes": 2633,
-      "sha256": "266e7431075f04252b2ae997733e5b0a04f2ff855f3cbbc850ab1f4fe4de2b15"
-    },
-    "native-clock-entropy.json": {
-      "bytes": 1050,
-      "sha256": "d8a7bd46a0691a77bce5e45825839fe42a59061c51bc4dcfb68fb0f7c6f89571"
-    },
-    "one-compiler.json": {
-      "bytes": 32155,
-      "sha256": "e3931161d65af72468602949da30af82c1136cfe31bb332b0f87e7c33b3e7b7a"
-    },
-    "public-product.json": {
-      "bytes": 27050,
-      "sha256": "1331f929c0e0df1509e045ea7afb5d22640c15b23ba7ff2afda31bc4c078b147"
-    },
-    "x86_64-native.json": {
-      "bytes": 29149,
-      "sha256": "bb0dd858e693e04b574e16459a6f9491b0e9d2e83fa6e371e028c689f4cd99f3"
-    }
-  },
-  "notRun": [
-    "local browser execution of emitted Wasm modules; existing browser CI remains separate",
-    "full bootstrap/provenance tier; the mandated PR tier and independent compiler gates ran"
-  ],
-  "initialPRCI": {
-    "run": "https://github.com/kotoba-lang/amu/actions/runs/40066065546",
-    "head": "818f91e9049a03c28a155eabf908b063b611561f",
-    "observed": "ARM bootstrap, launcher and bounded AOT steps passed; combined compiler still running before final metadata update"
-  },
+  "adoptedCoreSourceUnchanged": true,
   "nativeRoles": {
     "amu-selfhost": {
       "bytes": 8102400,
@@ -128,6 +37,51 @@
       "elf": "ET_EXEC/EM_X86_64",
       "interpreter": false,
       "dynamic": false
+    }
+  },
+  "checks": [
+    "ARM and native x86 bounded AOT122 cases each, negative observation controls rejected",
+    "Initial and nested empty-loop exact/short fuel; infinite empty-loop fuel trap",
+    "Current main native root -> F1=F2=F3 ARM packed image/container fixed point",
+    "Native x86 complete compiler F1=F2=F3 and public entry/lock refusals",
+    "Fresh native role emission on ARM and x86 matches previously qualified role images",
+    "All24 newly emitted native runtime fixtures match previously qualified image identities",
+    "Current public image/3 aliases: pinned check/compile, native execution and source-lock/refusal cases PASS"
+  ],
+  "historicalFullQualification": "current-scope-initial.json (prior complete native regression/independent Pw/controller qualification; source-specific historical proof)",
+  "pending": [
+    "exact final-head PR CI including full native bootstrap/independent compiler/public/controller/browser gates",
+    "merge and main CI/readback"
+  ],
+  "notQualified": [
+    "complete Kototama VM state/effects/signed receipts/recursion/runtime args",
+    "Murakumo fresh node admission and ProgramCID native cache",
+    "performance and whole-VM differential parity"
+  ],
+  "evidence": {
+    "complete-x86-review.json": {
+      "bytes": 20755,
+      "sha256": "9585bc3a0ca7914bf0d888ebd94fb62423c1d3fa8af2a6d332ddf0205db28ee1"
+    },
+    "compiler-reproduction-review.json": {
+      "bytes": 5552,
+      "sha256": "78739d678c9379096787800464bd10f29b65d7cdbf068c8cbe70d3f5bc332ada"
+    },
+    "aot-arm64-review.json": {
+      "bytes": 35532,
+      "sha256": "8d2e49cd43503ddcd85e94e3692f2a23135d3914ec252a78b3c448e49fa39b29"
+    },
+    "native-role-emission-review.json": {
+      "bytes": 6819,
+      "sha256": "c881df0e16a7f7b8dbb442d6ab0c8fdec9dec9c93f2ba0647d6ab34e3bedd5f8"
+    },
+    "aot-x86_64-review.json": {
+      "bytes": 35530,
+      "sha256": "aa195f76f9d2270a5c8376585314bfe3532cf59fe1ffdbba41570139dd2aa42c"
+    },
+    "public-product-review.json": {
+      "bytes": 27050,
+      "sha256": "97bf2e2ee46dfa840b4aae296d06b849fa5b9137db19d5e8d44bfff2abc67481"
     }
   }
 }
