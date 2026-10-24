@@ -1,50 +1,23 @@
 {
   "schema": "amu.seed.static-root.v1",
   "image": {
-    "bytes": 3293696,
-    "sha256": "482398a449a3238ca5646c6e283c521e6dbbbe4f1e314dde9f1e52396c1349c1"
+    "bytes": 3314176,
+    "sha256": "76e0dd621413e5f9edab7f5eb567cb8d5bfbb944738f949ed69bc6eab09ed95a"
   },
   "target": "aarch64-linux",
   "format": "packed",
   "sourceManifest": "seed/FULL-MANIFEST",
   "sourceUnity": {
-    "bytes": 3275474,
-    "sha256": "20eb5b5b5175b07c3090a89720701562f3045f3703d731d28a0e831e6aa0c552"
+    "bytes": 3284505,
+    "sha256": "a56fb1d878adb70dc29883aea68e31558fa1687b4fd9cbc1240a7cf16db10056"
   },
-  "sourceCommitBase": "47f41d0b23f93d2966ed5ae9c1ef128f4941f5a0",
+  "sourceCommitBase": "69593cc19095f5ce35c165f860031acc0571bc29",
   "producedBy": {
-    "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt itself to F2 (same container, new runtime wrapper); F2 rebuilt itself to F3 = F2 (= this image). Re-pinned because this source makes the static runtimes seed/76 and seed/77 refuse an ungranted wire by name (KEXE_CAP {:wire N :refused :not-granted}, then the trap), as seed/82 does (JUN-354).",
+    "how": "The admitted AIUEOS main root compiles the merged private-store full source (#1545 private store + #1548 wire-35 + #1547 AIUEOS image/EFI + #1535 wire refusal); native arm64 F1 -> F2 = F3 reproduces this packed image. The CDCI identity table, the amu-selfhost and kotoba-native gate images and all 24 canonical case-image pins are regenerated from this tree and re-verified against the rebuilt compiler.",
     "date": "2026-10-24",
-    "timeZone": "Asia/Tokyo",
-    "previousRoot": "fa86314c3f15ed4577c847209a3674090f52a1b7da8ddf0ea56f1d66af2aa235",
-    "chain": {
-      "F1.kseed": {
-        "bytes": 3057347,
-        "sha256": "1e77bcb4b40bcb706464da48ed5b8a602e9850a51ee604b24278b205252a9c2c"
-      },
-      "F1.elf": {
-        "bytes": 3293696,
-        "sha256": "6197dd0d573f25978547048890d0b8422a4fd0f13b338ab18b2220f0a5089759"
-      },
-      "F2.kseed": {
-        "bytes": 3057347,
-        "sha256": "1e77bcb4b40bcb706464da48ed5b8a602e9850a51ee604b24278b205252a9c2c"
-      },
-      "F2.elf": {
-        "bytes": 3293696,
-        "sha256": "482398a449a3238ca5646c6e283c521e6dbbbe4f1e314dde9f1e52396c1349c1"
-      },
-      "F3.kseed": {
-        "bytes": 3057347,
-        "sha256": "1e77bcb4b40bcb706464da48ed5b8a602e9850a51ee604b24278b205252a9c2c"
-      },
-      "F3.elf": {
-        "bytes": 3293696,
-        "sha256": "482398a449a3238ca5646c6e283c521e6dbbbe4f1e314dde9f1e52396c1349c1"
-      }
-    }
+    "previousRoot": "482398a449a3238ca5646c6e283c521e6dbbbe4f1e314dde9f1e52396c1349c1"
   },
-  "verification": "scripts/seed/selfhost-bootstrap.py --tier pr and scripts/seed/check-one-compiler.py on arm64 Linux (python:3.12-alpine) from this root: F1 = root, the core route, the boundary corpus, the runtime cases, the named capability refusal and the combined compiler with its x86_64 compiler and CDCI images (pinned in seed/cdci/policy.json, bin/amu and native-product.json) pass; check-io-read.py, check-durable-sleep.py and check-spawn-runtime.py pass with the root. Native x86_64 qualification is the exact-head PR CI (selfhost-native).",
+  "verification": "Native arm64 bootstrap --tier pr: root reproduces (F1=F2=F3), adoption image, 24 runtime cases, boundary/refusal corpus and wasm32-browser modules. The pin set is a fixed point: re-invoking the rebuilt compiler reproduces coreSource/coreContainer, the amu-selfhost and kotoba-native gate images, the gate source hash, the controller identity table and all 24 case images byte for byte. Native x86_64 controller, public product and exact-final-head PR/main CI remain the merge gate.",
   "history": [
     {
       "image": {
@@ -1201,6 +1174,55 @@
         }
       },
       "verification": "scripts/seed/selfhost-bootstrap.py --tier pr on arm64 Linux (python:3.12-alpine) from this root (F1 = root): the core route, the runtime boundary corpus, the 24 runtime cases and hardening pass and the rebuild reproduces this root (rootReproduces); scripts/seed/check-kernel-memory.py --cases gives PASS_KERNEL_MEMORY_ADMISSION 16 cases with F1. CI re-runs the tier from this root (F -> F' = root)."
+    },
+    {
+      "schema": "amu.seed.static-root.v1",
+      "image": {
+        "bytes": 3293696,
+        "sha256": "482398a449a3238ca5646c6e283c521e6dbbbe4f1e314dde9f1e52396c1349c1"
+      },
+      "target": "aarch64-linux",
+      "format": "packed",
+      "sourceManifest": "seed/FULL-MANIFEST",
+      "sourceUnity": {
+        "bytes": 3275474,
+        "sha256": "20eb5b5b5175b07c3090a89720701562f3045f3703d731d28a0e831e6aa0c552"
+      },
+      "sourceCommitBase": "47f41d0b23f93d2966ed5ae9c1ef128f4941f5a0",
+      "producedBy": {
+        "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt itself to F2 (same container, new runtime wrapper); F2 rebuilt itself to F3 = F2 (= this image). Re-pinned because this source makes the static runtimes seed/76 and seed/77 refuse an ungranted wire by name (KEXE_CAP {:wire N :refused :not-granted}, then the trap), as seed/82 does (JUN-354).",
+        "date": "2026-10-24",
+        "timeZone": "Asia/Tokyo",
+        "previousRoot": "fa86314c3f15ed4577c847209a3674090f52a1b7da8ddf0ea56f1d66af2aa235",
+        "chain": {
+          "F1.kseed": {
+            "bytes": 3057347,
+            "sha256": "1e77bcb4b40bcb706464da48ed5b8a602e9850a51ee604b24278b205252a9c2c"
+          },
+          "F1.elf": {
+            "bytes": 3293696,
+            "sha256": "6197dd0d573f25978547048890d0b8422a4fd0f13b338ab18b2220f0a5089759"
+          },
+          "F2.kseed": {
+            "bytes": 3057347,
+            "sha256": "1e77bcb4b40bcb706464da48ed5b8a602e9850a51ee604b24278b205252a9c2c"
+          },
+          "F2.elf": {
+            "bytes": 3293696,
+            "sha256": "482398a449a3238ca5646c6e283c521e6dbbbe4f1e314dde9f1e52396c1349c1"
+          },
+          "F3.kseed": {
+            "bytes": 3057347,
+            "sha256": "1e77bcb4b40bcb706464da48ed5b8a602e9850a51ee604b24278b205252a9c2c"
+          },
+          "F3.elf": {
+            "bytes": 3293696,
+            "sha256": "482398a449a3238ca5646c6e283c521e6dbbbe4f1e314dde9f1e52396c1349c1"
+          }
+        }
+      },
+      "verification": "scripts/seed/selfhost-bootstrap.py --tier pr and scripts/seed/check-one-compiler.py on arm64 Linux (python:3.12-alpine) from this root: F1 = root, the core route, the boundary corpus, the runtime cases, the named capability refusal and the combined compiler with its x86_64 compiler and CDCI images (pinned in seed/cdci/policy.json, bin/amu and native-product.json) pass; check-io-read.py, check-durable-sleep.py and check-spawn-runtime.py pass with the root. Native x86_64 qualification is the exact-head PR CI (selfhost-native)."
     }
-  ]
+  ],
+  "sourceCommit": "69593cc19095f5ce35c165f860031acc0571bc29"
 }
