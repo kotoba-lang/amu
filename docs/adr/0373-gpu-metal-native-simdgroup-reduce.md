@@ -592,7 +592,8 @@ selection answer or workgroup row (ADR-0355/0358) moves; the
 `:simdgroup-reduce` family's W = 32 cross-day row is UNAFFECTED (that
 cell IS a flip cell and keeps its own later-day row); the shape-2
 W = 512 REGIME-SCOPED refusal's scope decision stays OPEN (its own
-row); and a later-day W = 32 DATA run (pure data, explicitly
+row -- closed later the same day by the REFUSAL SCOPE rule, below);
+and a later-day W = 32 DATA run (pure data, explicitly
 non-basis) is neither scheduled nor forbidden by this decision -- if
 wanted, it is its own decision row. The rule is ACCEPTED DESIGN as of
 this slice; naming it in `apple-w32-note`'s prose rides the
@@ -602,6 +603,39 @@ diff row below: the ten records named in `apple-narrow-note` /
 `apple-measured-evidence`, the naming rule applied to that family's
 lists, the membership decision named in `apple-w32-note`; the rule is
 IMPLEMENTED for that family from that slice on).
+
+The composed contract's REFUSAL SCOPE rule (decided 2026-10-24,
+answering the standing row every record since the shape-2 W = 512
+refusal carried -- "resolving it is a protocol decision on the
+refusal's scope, not a re-run"; the record:
+`docs/evidence/gpu/simdgroup-reduce-w512-refusal-scope-20261024.txt`):
+the measured-but-scoped refusal's scope is the CELL-PAIR (W = 512,
+n = 2^20) and its selection roles, in five parts. (S1) The denial
+reaches exactly that pair's selection roles -- the pooled verdict, the
+reduce shape selected as a whole (`:operators #{:sum :max :min}`), no
+per-operator resurrection -- and no other cell, answer or workgroup
+row: the W = 512 answer stands on the shape-1 pair's own
+REGIME-INVARIANT basis, the refusal removes nothing from it. (S2) The
+refused record (`docs/evidence/gpu-simdgroup-reduce-m1max-shape2-
+20261024/w512`) is a regime-structure record in `docs/evidence` and
+names no contract key; it never becomes a contract-satisfying record.
+(S3) The refusal denies SELECTION, not DATA: no claim carrying a
+selection or measured-answer role covers the pair (the standing
+"no measured claim covers (W = 512, n = 2^20)" is scoped here to
+exactly that), while the pair's measured facts stay citable as data
+beside the refusal named. (S4) No run revisits the refusal -- not a
+re-run, not a cross-day replication, not a data run; if the pair is
+ever reopened it is by a DECISION row on this note's scope. (S5) The
+refused pair is NOT a member of the cross-day replication LEFT list at
+shape 2 (the temporal row corroborates a flip basis and the pair has
+none at that shape -- the membership decision's own ground), so the
+pending `:simdgroup-reduce` cross-day rows are the shape-1 pairs
+W = 32/64/128/1024 and the shape-2 pairs W = 256/32/64/128/1024 --
+nine rows, no shape-2 W = 512 row owed -- and a later-day DATA run at
+the refused pair is neither scheduled nor forbidden (its own decision
+row if wanted). The rule is ACCEPTED DESIGN as of this slice; naming
+it in the flip note's SHAPE-2 W = 512 paragraph and the cross-day LEFT
+prose is its own later naming slice.
 
 ## What this decision is NOT
 
@@ -944,6 +978,18 @@ step-1 slice added the rows below it.]
   `docs/evidence/gpu/subgroup-crossday-naming-20261024.txt`. No
   `:measured?` flag, `:shapes` value, selection answer or workgroup row
   moves.
+- [REFUSAL SCOPE DECISION SLICE, 2026-10-24 (this ADR + the decision
+  record -- no code namespace, no test, no measurement):] the standing
+  OPEN row every record since the shape-2 W = 512 refusal carried is
+  ANSWERED: the refusal's scope is the cell-pair (W = 512, n = 2^20)
+  and its selection roles (the five parts S1-S5 of the REFUSAL SCOPE
+  rule paragraph above). Operative addition: the refused pair owes NO
+  cross-day row (S5) -- LEFT row 3's cross-day part is narrowed to
+  nine pending rows (shape-1 W = 32/64/128/1024, shape-2 W =
+  256/32/64/128/1024); the rest anchors what the refusal slice already
+  pinned. No `:measured?` flag, `:shapes` value, selection answer or
+  workgroup row moves. Slice record:
+  `docs/evidence/gpu/simdgroup-reduce-w512-refusal-scope-20261024.txt`.
 
 ## What did NOT move (named so nothing is silently upgraded)
 
@@ -1126,7 +1172,9 @@ measurement cells (the flip contract as applied to `:simdgroup-reduce` --
 the W = 32, W = 64, W = 128, W = 256, W = 512 and W = 1024 cells have
 flipped, every width the row admits: the ground shape flipped at all
 six, the second shape at five of them, the W = 512 shape-2 cell
-measured-but-REFUSED).
+measured-but-REFUSED). The REFUSAL SCOPE rule (2026-10-24, the
+measurement-contract section above) is likewise ACCEPTED DESIGN ONLY
+until its own naming slice.
 PROPOSED, unchanged: every performance question about this variant off
 the six measured cells.] The
 two design
@@ -1250,7 +1298,13 @@ outside this diff. No green full suite is claimed.
    series' identity-HOLDS cells), its
    W = 512 cell measured 2026-10-24 and REFUSED as a selection basis
    (rule 2 REGIME-SCOPED) -- the shape-2 series' only unflipped
-   cell) under the same claim protocol.
+   cell) under the same claim protocol. [The shape-2 W = 512
+   refusal's scope decision (2026-10-24,
+   `docs/evidence/gpu/simdgroup-reduce-w512-refusal-scope-20261024.txt`)
+   narrows this row's cross-day part: the refused pair owes NO
+   cross-day row (S5 of the REFUSAL SCOPE rule), the pending rows are
+   nine -- shape-1 W = 32/64/128/1024 and shape-2 W =
+   256/32/64/128/1024.]
 4. [DONE 2026-10-24 -- the list is COMPLETE at both shapes and the
    W = 32 cell's membership is DECIDED OUT of it (the cross-day
    replication list membership decision,
