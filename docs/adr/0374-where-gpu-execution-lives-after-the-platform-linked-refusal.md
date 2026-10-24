@@ -2,6 +2,10 @@
 
 - Status: **accepted** (the owner, 2026-10-24): option D. C stays open as a
   later, separate decision.
+- **Amended by ADR 0375** (the owner, later the same day): the executor is
+  Amu's, not the consuming product's own C stack. Routes B (a Kotoba loader)
+  and C are the base, and W (browser WebGPU) is supported too. The artifact
+  contract below stands.
 - Date: 2026-10-24
 - Tracking: JUN-365 (this decision); JUN-375 (the inference-side work);
   JUN-344 (ADR 0371, the provider), JUN-356 (ADR 0372, the kernels)
