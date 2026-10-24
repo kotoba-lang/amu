@@ -6,11 +6,11 @@
   {:kotoba/export [link-project-source link-project-forms]}
   (:require [kotoba.compiler.native-project :as project]
             [kotoba.compiler.kotoba-reader :as reader]
-            [kotoba.compiler.syntax-sugar :as syntax-sugar]
+            [kotoba.compiler.source-names :as source-names]
             [kotoba.form :as form])
   (:schemas {:native.project/source
              [:record :native.project/source
-              [[:namespace :string] [:text :string] [:surface :bool]]]
+              [[:namespace :string] [:text :string]]]
              :native.project/graph
              [:record :native.project/graph
               [[:modules [:list [:ref :native.project/source]]]
@@ -599,6 +599,21 @@
          (form/is-vec? (form/nth-of descriptor 2))
          (native-stub-fields-supported? (form/nth-of descriptor 2) schemas 0 depth))))
 
+(defn- native-stub-map-supported? [type [:ref :form/r]
+                                 schemas [:ref :form/r] depth :i64] :bool
+  ;; Keep the complete K/V descriptor in the analysis interface. The scalar
+  ;; :map kind is the older keyword/i64 map and cannot represent this type.
+  (and (< depth 32)
+       (form/is-vec? type)
+       (= (form/count-of type) 3)
+       (form/eq (form/nth-of type 0) (form/keyword-form :map))
+       (not (form/eq (form/nth-of type 1) (form/keyword-form :f32)))
+       (not (form/eq (form/nth-of type 1) (form/keyword-form :f64)))
+       (not (form/eq (form/nth-of type 2) (form/keyword-form :f32)))
+       (not (form/eq (form/nth-of type 2) (form/keyword-form :f64)))
+       (native-stub-type? (form/nth-of type 1) schemas (+ depth 1))
+       (native-stub-type? (form/nth-of type 2) schemas (+ depth 1))))
+
 (defn- native-stub-type? [type [:ref :form/r]
                           schemas [:ref :form/r] depth :i64] :bool
   (if (form/is-keyword? type)
@@ -618,21 +633,22 @@
         (= (form/keyword-value type) :string-index)
         (= (form/keyword-value type) :disjoint-set-i64)
         (= (form/keyword-value type) :document))
-    (and (form/is-vec? type)
-         (= (form/count-of type) 2)
-         (form/is-keyword? (form/nth-of type 0))
-         (or (and (= (form/keyword-value (form/nth-of type 0)) :ref)
-                  (form/is-keyword? (form/nth-of type 1))
-                  (if (= (form/keyword-value (form/nth-of type 1)) :form/r)
-                    true
-                    (native-stub-record-supported? type schemas depth)))
-             (and (= (form/keyword-value (form/nth-of type 0)) :option)
-                  (form/is-keyword? (form/nth-of type 1))
-                  (= (form/keyword-value (form/nth-of type 1)) :i64))
-             (and (= (form/keyword-value (form/nth-of type 0)) :set)
-                  (native-stub-type? (form/nth-of type 1) schemas (+ depth 1)))
-             (and (= (form/keyword-value (form/nth-of type 0)) :list)
-                  (native-stub-type? (form/nth-of type 1) schemas (+ depth 1)))))))
+    (or (native-stub-map-supported? type schemas depth)
+        (and (form/is-vec? type)
+             (= (form/count-of type) 2)
+             (form/is-keyword? (form/nth-of type 0))
+             (or (and (= (form/keyword-value (form/nth-of type 0)) :ref)
+                      (form/is-keyword? (form/nth-of type 1))
+                      (if (= (form/keyword-value (form/nth-of type 1)) :form/r)
+                        true
+                        (native-stub-record-supported? type schemas depth)))
+                 (and (= (form/keyword-value (form/nth-of type 0)) :option)
+                      (form/is-keyword? (form/nth-of type 1))
+                      (= (form/keyword-value (form/nth-of type 1)) :i64))
+                 (and (= (form/keyword-value (form/nth-of type 0)) :set)
+                      (native-stub-type? (form/nth-of type 1) schemas (+ depth 1)))
+                 (and (= (form/keyword-value (form/nth-of type 0)) :list)
+                      (native-stub-type? (form/nth-of type 1) schemas (+ depth 1))))))))
 
 (defn- zero-argument-call [name :string] [:ref :form/r]
   (form/form-seq
@@ -713,6 +729,9 @@
   (if (form/is-vec? type)
     (let [head (if (> (form/count-of type) 0) (form/nth-of type 0) (form/nil-form))]
       (cond
+        (native-stub-map-supported? type schemas depth)
+        (one-argument-call "typed-map-new" type)
+
         (and (= (form/count-of type) 2)
              (form/is-keyword? head)
              (= (form/keyword-value head) :option)
@@ -890,7 +909,7 @@
   [:ref :native.project/source]
   (loop [index 0]
     (if (>= index (vector-count modules))
-      (record-new [:ref :native.project/source] "" "" false)
+      (record-new [:ref :native.project/source] "" "")
       (let [module (typed-list-nth [:list [:ref :native.project/source]] modules index)]
         (if (string=? (record-get [:ref :native.project/source] module :namespace) name)
           module
@@ -1534,19 +1553,15 @@
                          "")))))))))))))
 
 (defn link-project-forms [forms [:list [:ref :form/r]] source :string
-                           surface? :bool dependency-packet :string]
+                           dependency-packet :string]
   [:ref :native.project.link/result]
-  "Validate author names, lower admitted surface syntax, then prepare forms
+  "Validate canonical author names, then prepare forms
   and imported calls for native semantic analysis. Explicit `:with`
   instantiation remains unsupported."
   (let [source-form (form/form-seq forms)]
-    (if (syntax-sugar/source-reserved? source-form)
+    (if (source-names/source-reserved? source-form)
       (link-result (form/nil-form) "symbol uses the reserved __kotoba_ prefix")
-      (let [lowered-form (if surface?
-                           (syntax-sugar/lower-surface source-form)
-                           source-form)
-            core-forms (form/kids-of lowered-form)
-            specialized (specialize-namespace-forms core-forms)
+      (let [specialized (specialize-namespace-forms forms)
             error (record-get [:ref :native.project.link/specialization] specialized :err)]
         (if (not (string=? error ""))
           (link-result (form/nil-form) error)
@@ -1554,7 +1569,7 @@
            (record-get [:ref :native.project.link/specialization] specialized :forms)
            source dependency-packet))))))
 
-(defn link-project-source [source :string surface? :bool dependency-packet :string]
+(defn link-project-source [source :string dependency-packet :string]
   [:ref :native.project.link/result]
   "Parse and link one project module. Call link-project-forms when the caller
   already has the bounded reader result."
@@ -1563,4 +1578,4 @@
         forms (record-get [:ref :kotoba.reader/out] parsed :forms)]
     (if (not (string=? parse-error ""))
       (link-result (form/nil-form) parse-error)
-      (link-project-forms forms source surface? dependency-packet))))
+      (link-project-forms forms source dependency-packet))))
