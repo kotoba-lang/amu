@@ -126,6 +126,10 @@ jobs:
         run: python3 scripts/seed/check-aiueos-image-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/aiueos-image"
       - name: Native x86 AIUEOS EFI packaging and refusal diagnostics
         run: python3 scripts/seed/check-aiueos-boot-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/aiueos-boot"
+      - name: Native x86 kernel memory admission and emitted guard diagnostics
+        run: |
+          python3 scripts/seed/check-kernel-memory.py --compiler "$RUNNER_TEMP/complete/F2.elf" --work "$RUNNER_TEMP/kernel-memory-admission" --cases seed/tests/kernel-memory | tee "$RUNNER_TEMP/kernel-memory-admission.log"
+          python3 scripts/seed/check-kernel-memory.py --compiler "$RUNNER_TEMP/complete/F2.elf" --work "$RUNNER_TEMP/kernel-memory-guards" | tee "$RUNNER_TEMP/kernel-memory-guards.log"
       - name: Native x86 clock and entropy (fixed Kotoba guest, refusal and ENOSYS)
         run: python3 scripts/seed/check-native-clock-entropy.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/clock-entropy"
       - name: Kotoba native controller (Amu selfhost and complete24 Kotoba gate)
@@ -152,6 +156,8 @@ jobs:
             ${{ runner.temp }}/complete/F1.elf
             ${{ runner.temp }}/complete/F2.elf
             ${{ runner.temp }}/complete/F3.elf
+            ${{ runner.temp }}/kernel-memory-admission.log
+            ${{ runner.temp }}/kernel-memory-guards.log
             ${{ runner.temp }}/aiueos-image/native-image.json
             ${{ runner.temp }}/aiueos-image/F2/commands.json
             ${{ runner.temp }}/aiueos-image/F3/commands.json

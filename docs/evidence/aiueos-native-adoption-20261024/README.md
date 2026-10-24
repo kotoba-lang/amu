@@ -1,5 +1,10 @@
 # Full30 native compiler adoption
 
+This directory is a historical snapshot of source `87fbc40`. It predates
+main's ADR 0373 call-site and base/length hardening. The later integration
+is described in `../aiueos-hardening-adoption-20261024/`; current release
+acceptance comes from the terminal exact-head PR/main CI and its artifacts.
+
 The source compiled here is commit
 `87fbc40e19a8bcab5e474a64c25c13bf5cf2e051`. The full manifest contains
 30 modules, retaining all 18 adopted core modules. The root and public
