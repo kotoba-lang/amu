@@ -1,0 +1,9 @@
+;; The runtime performs the actual filesystem operation.  The external
+;; observer supplies a bounded case path/span and checks exact output or
+;; the named capability refusal, without substituting a host implementation.
+(ns fs-range-boundary (:export [main]))
+(defn main [] :i64
+  (let [request (typed-cap-call :cli/args :string :string "0")
+        actual (typed-cap-call :fs/app-data :string :string request)
+        out (typed-cap-call :io/write :string :string actual)]
+    42))
