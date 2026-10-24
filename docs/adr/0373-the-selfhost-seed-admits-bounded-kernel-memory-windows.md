@@ -209,3 +209,10 @@ next argument happens to equal L (the helper then must name the pair's length, s
 six refuses a helper reached through three wrappers; a helper that returns a window is not rooted; different literals from different callers refuse
 the helper; a branch inside a later argument refuses the call; and the scan is quadratic per level, so a source with very many call sites and deep
 helper nests could cost the compiler time (a resource limit, not a memory hole).
+
+Two further changes came from porting `browser-frame` (the smallest shipped object) by hand on the selfhost route (2026-10-24): an assignment of a
+slot from its own current value -- a tail self-call that passes a parameter along unchanged, which the lowerer turns into an assignment -- is not
+counted (`ok_tail_recursive_helper`; a tail call that REBASES the base still refuses, `no_tail_recursive_rebases_the_base`); and the call-chain
+depth limit is 12 instead of 6 (`ok_deep_helper_chain`), because the object reaches a 24-byte op region through seven helper levels. With those and
+three source edits (drop the `main` export, narrow the surface at the entry with `(kernel-subregion st sb 0 128)`, bind an `if` argument with `let`) the
+object compiles to a 9185-byte text on this route. Whether it behaves as the shipped one (the gates, byte for byte frames) is not yet measured.

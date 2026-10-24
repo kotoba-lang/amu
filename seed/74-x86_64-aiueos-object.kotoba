@@ -135,20 +135,6 @@
 ;; reader does not model is met first.
 (defn- xk-fn-start [M :vector-i64 i :i64] :i64
   (if (<= i 1) 1 (if (= (xg-si M i IF-OP) OP-FN) i (xk-fn-start M (dec i)))))
-(defn- xk-lsets [M :vector-i64 j :i64 s :i64 cnt :i64] :i64
-  (if (>= j (vector-at M MM-SIR-N)) cnt
-    (let [op (xg-si M j IF-OP)]
-      (if (or (= op OP-FN) (= op OP-END)) cnt
-        (xk-lsets M (inc j) s (if (and (= op OP-LSET) (= (xg-si M j IF-A) s)) (inc cnt) cnt))))))
-(defn- xk-first-lset [M :vector-i64 j :i64 s :i64] :i64
-  (if (>= j (vector-at M MM-SIR-N)) -1
-    (let [op (xg-si M j IF-OP)]
-      (cond (or (= op OP-FN) (= op OP-END)) -1
-            (and (= op OP-LSET) (= (xg-si M j IF-A) s)) j
-            :else (xk-first-lset M (inc j) s)))))
-(defn- xk-param-slot? [M :vector-i64 j :i64 s :i64] :bool
-  (let [st (xk-fn-start M j) f (xg-si M st IF-A)]
-    (and (>= s 1) (<= s (xg-f M f FF-NPARAMS)) (= (xk-lsets M (inc st) s 0) 0))))
 (defn- xk-writer [M :vector-i64 i :i64 t :i64] :i64
   (loop [j (dec i)]
     (if (< j 1) -1
@@ -160,6 +146,25 @@
                   (= op OP-LSET) (= op OP-FUEL) (= op OP-RET) (= op OP-TRAP)) (recur (dec j))
               (or (= a t) (= b t) (= c t)) -1
               :else (recur (dec j)))))))
+
+;; An assignment of a slot from its own current value (a tail call that passes a parameter along unchanged) changes nothing and is not counted.
+(defn- xk-identity-set? [M :vector-i64 j :i64 s :i64] :bool
+  (let [w (xk-writer M j (xg-si M j IF-B))]
+    (and (>= w 0) (= (xg-si M w IF-OP) OP-LGET) (= (xg-si M w IF-B) s))))
+(defn- xk-lsets [M :vector-i64 j :i64 s :i64 cnt :i64] :i64
+  (if (>= j (vector-at M MM-SIR-N)) cnt
+    (let [op (xg-si M j IF-OP)]
+      (if (or (= op OP-FN) (= op OP-END)) cnt
+        (xk-lsets M (inc j) s (if (and (= op OP-LSET) (= (xg-si M j IF-A) s) (not (xk-identity-set? M j s))) (inc cnt) cnt))))))
+(defn- xk-first-lset [M :vector-i64 j :i64 s :i64] :i64
+  (if (>= j (vector-at M MM-SIR-N)) -1
+    (let [op (xg-si M j IF-OP)]
+      (cond (or (= op OP-FN) (= op OP-END)) -1
+            (and (= op OP-LSET) (= (xg-si M j IF-A) s) (not (xk-identity-set? M j s))) j
+            :else (xk-first-lset M (inc j) s)))))
+(defn- xk-param-slot? [M :vector-i64 j :i64 s :i64] :bool
+  (let [st (xk-fn-start M j) f (xg-si M st IF-A)]
+    (and (>= s 1) (<= s (xg-f M f FF-NPARAMS)) (= (xk-lsets M (inc st) s 0) 0))))
 ;; A PARAMETER slot that is assigned anywhere in its function (a recur or self tail call writes every parameter) has no source or
 ;; region at all: the value a caller passes on first entry is never what the assignment says (an independent read, 2026-10-24).
 ;; A value's SOURCE as a number, 0 when unknown: 2^32 + v for the integer literal v (0 <= v < 2^31: a wider literal is unknown, so it
@@ -179,6 +184,7 @@
                             (if (> k 0) (xk-src M k (xg-si M k IF-B) (inc depth)) 0))
                         :else 0)
                 :else 0))))))
+;; (The call-chain depth limit of xk-region is 12: the aiueos browser objects reach a 24-byte op region through seven helper levels.)
 ;; The REGION of a base: -1 when the base is not rooted, else the source its length must have. A rooted base is
 ;;   - a parameter slot p never assigned: of the exported function (the ABI boundary hands in a region as the pair (base, length),
 ;;     the length being parameter p + 1), or of a private helper when EVERY call of it passes a rooted base at p whose length
@@ -188,7 +194,7 @@
 ;;   - a let-bound local with one assignment of such a value.
 ;; A literal is NOT a base: it would name any absolute address (ADR 0373).
 (defn- xk-region [M :vector-i64 i :i64 t :i64 depth :i64] :i64
-  (if (> depth 6) -1
+  (if (> depth 12) -1
     (let [j (xk-writer M i t)]
       (if (< j 0) -1
         (let [op (xg-si M j IF-OP) a (xg-si M j IF-A) b (xg-si M j IF-B)]
