@@ -1,7 +1,8 @@
 # AIUEOS native image and transition loader candidate
 
 JUN-31, 2026-10-24. These commands extend the adopted compiler lineage in
-`seed/FULL-MANIFEST`; they are a candidate, not the installed public entry.
+`seed/FULL-MANIFEST`; the current root and public-entry candidates include them. Adoption requires
+the exact native x86 and native-controller/public-product receipts.
 The adopted core and its generation-one image stay unchanged. No Node/NBB,
 JVM, C compiler, C loader or foreign linker is a fallback.
 
@@ -74,7 +75,11 @@ Browser/CSSOM or Itonami dapps. A firmware framebuffer descriptor is not a
 rendered desktop. Existing C/reference boots and hosted compiler results
 remain separate historical evidence.
 
-Before adoption, regenerate the affected root/public-product/controller
-pins and run the actual native x86_64 qualification and both mandatory
-native CDCI roles. Python diagnostics and QEMU do not replace that verdict.
-The candidate does not change installed compiler artifacts or restart CDCI.
+The root/public-product pins are updated with the full30 artifacts. Controller
+and two gate binaries rebuild byte-identically; current native execution
+receipts must bind them to this compiler. The native x86 diagnostics accept
+`--complete COMPLETE_DIR`; ARM diagnostics also accept a measured root=F1
+fixed point after adoption. Neither route bypasses source or image pin checks.
+Python diagnostics and QEMU do not replace the native CDCI verdict.
+Actual native x86 qualification, exact-head PR/main CI and readback remain
+separate acceptance gates; see the adoption evidence.

@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 
 sys.dont_write_bytecode = True
+from aiueos_native_proof import load_native_producers
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -77,20 +78,11 @@ def verify(efi, kernel, payload):
     return dict(sections=sections, embeddedKernelOffset=sections[1][3] + ko)
 
 
-def main(build, output):
-    assert platform.system() == "Linux" and platform.machine() in ("aarch64", "arm64")
-    receipt = json.loads((build / "selfhost-bootstrap.json").read_text())
-    assert receipt["status"] == "PASS_LOADERLESS_SELFHOST_BOOTSTRAP"
-    assert not receipt["cCompilerOrLoader"] and not receipt["JVMNodeOrGraalFallback"]
-    gens = receipt["generations"][-2:]
-    assert len(gens) == 2 and gens[0]["image"] == gens[1]["image"]
-    for rel, expected in receipt["sourceGraph"]["full"].items():
-        assert pin(ROOT / rel) == expected, ("source drift", rel)
+def main(build, output, complete=None):
+    source_graph, producers, _ = load_native_producers(build, complete)
     output.mkdir(parents=True, exist_ok=False)
     rows = []
-    for generation in gens:
-        producer = build / (generation["name"] + ".elf")
-        assert pin(producer) == generation["image"]
+    for producer in producers:
         scope = output / producer.stem
         scope.mkdir()
         env = dict(os.environ, KEXE_CAP_RESOURCES_35=str(scope), KEXE_STACK_BYTES="8388608")
@@ -161,7 +153,7 @@ def main(build, output):
         (scope / "commands.json").write_text(json.dumps(commands, indent=2) + "\n")
         rows.append(dict(producer=pin(producer), kernel=pin(kernel), artifacts=positive, refusals=refused))
     assert rows[0]["kernel"] == rows[1]["kernel"] and rows[0]["artifacts"] == rows[1]["artifacts"]
-    report = dict(status="PASS_NATIVE_AIUEOS_BOOT_PACKAGING", source=receipt["sourceGraph"]["full"], routes=rows,
+    report = dict(status="PASS_NATIVE_AIUEOS_BOOT_PACKAGING", source=source_graph, routes=rows,
                   host=[platform.system(), platform.machine()], cCompilerOrLoader=False, JVMNodeOrGraalFallback=False,
                   nativeCDCI=False, completeKernel=False, qemuBoot=False, gpt=False, resident=False, k16Tender=False)
     (output / "native-boot.json").write_text(json.dumps(report, indent=2) + "\n")
@@ -170,7 +162,9 @@ def main(build, output):
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--build", required=True, type=Path)
+    group = p.add_mutually_exclusive_group(required=True)
+    group.add_argument("--build", type=Path)
+    group.add_argument("--complete", type=Path)
     p.add_argument("--output", required=True, type=Path)
     a = p.parse_args()
-    main(a.build.resolve(), a.output.resolve())
+    main(a.build.resolve() if a.build else None, a.output.resolve(), a.complete.resolve() if a.complete else None)
