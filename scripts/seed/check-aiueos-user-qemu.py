@@ -29,7 +29,8 @@ def main(efi,kernel,qemu,firmware,output,mode,media=None):
  output.mkdir(parents=True,exist_ok=False)
  if media:
   assert media.read_bytes().count(boot_image)==1
-  drive=f'file={media},format=raw,if=virtio,readonly=on'
+  media_identity=pin(media)
+  drive=f'file={media},format=raw,if=ide,snapshot=on'
  else:
   esp=output/'esp/EFI/BOOT';esp.mkdir(parents=True);shutil.copy2(efi,esp/'BOOTX64.EFI');drive='file=fat:rw:esp,format=raw'
  args=[str(qemu),'-machine','q35,accel=tcg','-cpu','max','-m','128M','-smp','1',
@@ -44,7 +45,12 @@ def main(efi,kernel,qemu,firmware,output,mode,media=None):
   while not (output/'qmp.sock').exists():
    assert proc.poll() is None,('QEMU exited',proc.returncode)
    assert time.monotonic()<end,'QMP startup timeout';time.sleep(.2)
-  conn=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);conn.settimeout(10);conn.connect('qmp.sock');stream=conn.makefile('rwb',buffering=0);assert 'QMP' in json.loads(stream.readline())
+  while True:
+   conn=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);conn.settimeout(10)
+   try:conn.connect('qmp.sock');break
+   except ConnectionRefusedError:
+    conn.close();conn=None;assert proc.poll() is None and time.monotonic()<end;time.sleep(.1)
+  stream=conn.makefile('rwb',buffering=0);assert 'QMP' in json.loads(stream.readline())
   def call(command,arguments=None):
    nonlocal seq
    seq+=1;row=dict(execute=command,id=seq)
@@ -122,6 +128,7 @@ def main(efi,kernel,qemu,firmware,output,mode,media=None):
   xmm=re.findall(r'XMM[0-9]{2}=([0-9a-f]+)\s+([0-9a-f]+)',registers,re.I)
   assert len(fpu)==8 and len(xmm)==16 and all(int(a,16)==int(b,16)==0 for a,b in fpu+xmm)
   assert reg('MXCSR')==0x1f80 and reg('FCW')==0x37f
+  if media:assert pin(media)==media_identity
   report=dict(status='PASS_NATIVE_USER_ENTRY_QEMU',mode=mode,details=details,efi=pin(efi),kernel=pin(kernel),observer=pin(Path(__file__)),firmware=pin(firmware),
               qemuVersion=subprocess.check_output([str(qemu),'--version']).decode().splitlines()[0],pageTable=pin(output/'pds.bin'),
               userPageTables=True,kernelWriteProtected=True,guestEmulation='QEMU TCG',nativeCDCI=False,
