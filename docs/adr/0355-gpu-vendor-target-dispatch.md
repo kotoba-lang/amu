@@ -106,3 +106,35 @@ Rules:
   with the provider, and until then no DEVCLASS answer exists to map. The
   v1 table still does not branch on device class; when a row needs the
   branch, it lands with the measurement that justifies it (JUN-57..60).
+
+## Amendment (2026-10-25, the measurement channel for row flips)
+
+The Consequences bullet "flips `:measured?` only for rows that carry
+hardware evidence" gains its channel rule (the 2026-10-25 licensing
+decision, record `docs/evidence/gpu/wgsl-wallclock-row-mapping-20261025.txt`):
+hardware evidence for a workgroup row is evidence from THE ROW'S OWN
+CHANNEL -- the ADR-0358 protocol (one workload shape, six LocalSize
+variants differing in nothing else, within-run paired size-vs-size
+comparison, each size timed twice with the first submit discarded,
+submit->fence host clock) taken on the wire-42 loader path the rows'
+provenance names, or its ADR-0371 provider successor once one answers
+INFO. A read on any other channel is a route-level measurement OF THAT
+CHANNEL and answers no row -- the same provenance discipline that keeps
+the ADR-0358 rows labelled "of that path" cuts both ways.
+
+Applied the day it was decided: the 2026-10-25 Chrome 155 Dawn/Metal
+wall-clock read of the two WGSL reduce arms (M1 Max) maps onto NO row
+-- different route (a third channel even for Apple, where ADR-0358
+already disclaims MoltenVK as "not a native Metal path"), different
+workload family (reduce kernels, not the one ewise-FMA shape),
+arm-vs-arm pairing at fixed W rather than within-run size-vs-size
+pairing, and no clock/thermal regime control. Its batch32 argmin
+W = 32 in 11/12 shape-op-arm rows (re-derived from the committed log;
+the timing commit's "10/12" does not re-derive) would CONTRADICT the
+kept `:apple` 256 if it were mapped -- it is not, and the channel rule
+is what keeps that contradiction out of the table. No row moves; the
+provisional `:arm`/`:unknown` rows stay provisional (`:measured?
+false`). REOPEN CONDITION: a row run on the row's own channel
+(JUN-57..60, blocked on the ADR-0371 provider) is new evidence, as is
+a future amendment that names a new row channel with its own paired
+size protocol. Nothing else reopens the mapping.

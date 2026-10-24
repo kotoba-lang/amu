@@ -1069,7 +1069,26 @@ under the SAME rules 3 + 6 gate as the Vulkan and MSL routes.
     cell), so every WGSL answer -- the narrowed `:baseline` included --
     keeps `:measured? false`. REOPEN CONDITION: a WGSL-arm measurement
     of the narrowed device is new evidence and may revisit the
-    narrowing's route scope.
+    narrowing's route scope. [REOPEN VISITED 2026-10-25 -- the trigger
+    fired and the narrowing STANDS (record
+    `docs/evidence/gpu/wgsl-wallclock-row-mapping-20261025.txt`): the
+    2026-10-25 Chrome 155 Dawn/Metal wall-clock read of both WGSL
+    reduce arms is a WGSL-arm measurement of the narrowed device
+    (host-verified this tick: main-2, Apple M1 Max; the adapter string
+    carries no device name) and measures PARITY against `:baseline`
+    (paired-median ratios straddle 1, 72/72 answers exact against the
+    CPU reference) -- parity is not a fold win, so the conservative
+    `:baseline` answer for the named device stands, no `:measured-cell`
+    record moves (the read is outside the claim-protocol channel: the
+    2026-10-25 channel-rule amendment, ADR-0355), and the part's
+    premise sentence "The WGSL arm on that device is UNMEASURED" is
+    SUPERSEDED in its plain reading by MEASURED-AS-PARITY at wall-clock
+    submit-to-completion (per-kernel GPU time stays UNMEASURED --
+    writeTimestamp is refused on this adapter). The REOPEN CONDITION
+    narrows to a claim-protocol WGSL measurement or a GPU-core-timestamp
+    measurement of the device; the wall-clock parity read has had its
+    visit and changed nothing. Prose only: no flag, cell, selection
+    answer or workgroup row moves.]
   Part 3 -- rationale, all of it design fact and not measurement:
     WebGPU-on-Apple is a deployed surface (WebKit ships WebGPU; on
     macOS the browser's WebGPU runs over Metal), so a dispatch there
