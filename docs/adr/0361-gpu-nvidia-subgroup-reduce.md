@@ -198,7 +198,17 @@ stays the Vulkan route's producer, and a CUDA-native probe would fill the
 same keys from the device's warp facts directly -- no key, request or
 producer is invented here. UNCOMPILED and UNMEASURED (no nvcc on the
 testing host, the CUDA emitter has no execution path in this repository,
-nothing has run on NVIDIA hardware); every answer keeps `:measured?
+nothing has run on NVIDIA hardware) [COMPILED 2026-10-24 as to the
+`:warp-shuffle-reduce` rung's arm: the arm's emitted row -- the whole
+admitted row, W in 32..1024 x :sum/:max/:min, 18 files of 3 distinct
+emissions (the arm is workgroup-size-parametric, W never baked) --
+compiles clean with the real nvcc 11.4 (V11.4.315) on the fleet's CUDA
+host xavier (Jetson AGX, L4T R35.4.1, -arch=sm_72) -- 18 .cubin + 18
+.ptx, received bytes sha256-identical to the emitter's,
+docs/evidence/gpu/warp-shuffle-cuda-compile-xavier-20261024/ (the
+`:subgroup-reduce` rung's arm closed the same day in its own bracket
+above); UNMEASURED is UNCHANGED everywhere and this host still has no
+nvcc -- a compile is not a measurement.]; every answer keeps `:measured?
 false`, and no workgroup row is touched.
 
 **Amendment (2026-10-24, the NVIDIA WGSL-route selection question is

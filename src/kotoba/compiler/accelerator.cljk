@@ -224,7 +224,12 @@
   v1 emission, byte-identical before and after variants existed;
   :warp-shuffle-reduce is the NVIDIA reduction variant (ADR-0356), UNMEASURED
   and with no execution path -- the runtime :gpu/compute (wire 42) runs
-  Vulkan only. :subgroup-reduce is the subgroup reduction variant
+  Vulkan only. [COMPILED 2026-10-24: the arm's emitted sources compile
+  clean with the real nvcc 11.4 (V11.4.315) on the fleet's CUDA host
+  xavier, -arch=sm_72, 18 .cubin + 18 .ptx, received bytes
+  sha256-identical to the emitter's,
+  docs/evidence/gpu/warp-shuffle-cuda-compile-xavier-20261024/ -- a
+  toolchain fact, not a measurement; UNMEASURED unchanged.] :subgroup-reduce is the subgroup reduction variant
   (ADR-0356's Intel row; ADR-0357's ARM row reuses it), emitted by
   kotoba.compiler.accelerator-subgroup-reduce on the Vulkan/GLSL arm and,
   since 2026-10-23, on a WGSL arm and an MSL arm (UNCOMPILED WGSL: no WGSL
@@ -433,7 +438,12 @@
   ;; NVIDIA hardware. Assumes a full-warp launch (workgroup-size >= 32, the
   ;; only shape `select-variant` answers this variant for); every warp is
   ;; then full and the 0xffffffff masks are honest. sm_70+ for
-  ;; __shfl_down_sync. The reduction groups the same elements as the
+  ;; __shfl_down_sync. [COMPILED 2026-10-24: the arm's emitted row compiles
+  ;; clean with the real nvcc 11.4 (V11.4.315) on the fleet's CUDA host
+  ;; xavier, -arch=sm_72, 18 .cubin + 18 .ptx, received bytes
+  ;; sha256-identical to the emitter's,
+  ;; docs/evidence/gpu/warp-shuffle-cuda-compile-xavier-20261024/;
+  ;; UNMEASURED UNCHANGED -- a compile is not a measurement.] The reduction groups the same elements as the
   ;; :baseline tree, in a different order -- f32 :sum may differ in the low
   ;; bits across variants; :max/:min are order-independent.
   (let [operator (:kernel/operator kir) name (:kernel/name kir)
