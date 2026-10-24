@@ -67,13 +67,10 @@
 ;;   * The 10000-top-level-form and 8 MiB source limits belong to the
 ;;     frontend's `read-forms` wrapper, not this module.
 ;;
-;; `.cljk` remains Kotoba syntax sugar on every route; the extension does not
-;; select Clojure or ClojureScript semantics. This module is the native Form
-;; implementation of the bounded Kotoba reader contract. A bootstrap host may
-;; use its own implementation over host values. In the native project graph a
-;; `.kotoba` core twin wins within one root; a lone `.cljk` module is still
-;; interpreted by Kotoba frontend rules, with unsupported surface syntax kept
-;; as an explicit migration gap or refusal.
+;; This module implements the bounded Form reader in canonical `.kotoba`.
+;; Native project resolution selects canonical source and verifies its lock.
+;; Historical host readers and source projections are migration inventory;
+;; they are not bootstrap requirements or alternate native execution routes.
 
 (ns kotoba.compiler.kotoba-reader
   (:export [read-forms read-forms-bounded read-forms-count-bounded read-first-form-bounded read-interface-forms-bounded])
@@ -236,6 +233,11 @@
 (defn- point-at [s :string i :i64 n :i64] :i64
   (if (< i n) (string-code-point-at s i) -1))
 
+(defn- last-point [s :string n :i64] :i64
+  (loop [i 0 last -1]
+    (if (>= i n) last
+      (let [cp (string-code-point-at s i)] (recur (+ i (code-point-width cp)) cp)))))
+
 (defn- digit? [p :i64] :bool (and (>= p 48) (<= p 57)))
 (defn- sign? [p :i64] :bool (or (= p 43) (= p 45)))
 
@@ -396,8 +398,8 @@
         neg? (= 45 (point-at tok 0 n))
         i1 (digits-end tok i0 n)
         p0 (point-at tok i0 n)
-        p1 (point-at tok (+ i0 1) n)
-        last (point-at tok (- n 1) n)]
+        p1 (if (< p0 128) (point-at tok (+ i0 1) n) -1)
+        last (last-point tok n)]
     (cond
       ;; A leading zero on a multi-digit token: octal on one host, decimal on
       ;; the other, so refused rather than picked.
