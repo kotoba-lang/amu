@@ -14,7 +14,7 @@
 (def KM-OWNED-PAGE 73)
 (def KM-OWNED-WINDOW 74)
 (def KM-PCI-MMIO 75)
-(def KM-INTR-N 85)
+(def KM-INTR-N 88)
 (def KM-SEALED-SCRATCH 272)
 (def KM-SEALED-PAGES 280)
 
@@ -49,7 +49,8 @@
       49 "kernel-value-runtime-capability-table" 50 "kernel-publish-current-domain"
       51 "kernel-publish-value-provider-status" 52 "kernel-value-provider-status"
       53 "kernel-value-runtime-arena" 54 "kernel-register-value-domain"
-      55 "kernel-current-domain" "")))
+      55 "kernel-current-domain" 56 "kernel-value-runtime-invoke"
+      57 "kernel-value-runtime-request" 58 "kernel-value-domain-request-page" "")))
 (defn- km-arity [k :i64] :i64
   (cond (< k KM-MEM-N) (if (= (bit-and (km-raw k) 1) 0) 3 4)
         (< k (+ KM-MEM-N 2)) 2
@@ -61,7 +62,8 @@
         (= k KM-OWNED-PAGE) 1
         (= k KM-OWNED-WINDOW) 2
         (= k KM-PCI-MMIO) 5
-        (>= k LV-FIRST) (if (or (= k 79) (= k 80) (= k 82) (= k 83)) 1 0)
+        (= k LV-CALL) 6
+        (>= k LV-FIRST) (if (or (= k 79) (= k 80) (= k 82) (= k 83) (= k 87)) 1 0)
         (>= k KM-ISR-FIRST)
           (let [i (- k KM-ISR-FIRST)]
             (cond (or (= i 2) (= i 3) (= i 9)) 2 (= i 4) 1 :else 0))
@@ -74,7 +76,8 @@
   (loop [k 0 text ""]
     (if (>= k KM-INTR-N) text
       (let [args (case (km-arity k) 0 "[]" 1 "[a :i64]" 2 "[a :i64 b :i64]"
-                      3 "[a :i64 b :i64 c :i64]" 4 "[a :i64 b :i64 c :i64 d :i64]" "[a :i64 b :i64 c :i64 d :i64 e :i64]")]
+                      3 "[a :i64 b :i64 c :i64]" 4 "[a :i64 b :i64 c :i64 d :i64]"
+                      6 "[a :i64 b :i64 c :i64 d :i64 e :i64 f :i64]" "[a :i64 b :i64 c :i64 d :i64 e :i64]")]
         (recur (inc k) (string-concat text (string-concat "\n(defn- "
           (string-concat (km-name k) (string-concat " " (string-concat args " :i64 0)\n"))))))))))
 (defn- km-intr [M :vector-i64 f :i64] :i64
@@ -98,7 +101,9 @@
           (= (km-intr M f) (+ LV-FIRST 1)) (+ 4294967296 384)
           (or (= (km-intr M f) (+ LV-FIRST 2))
               (= (km-intr M f) (+ LV-FIRST 6))
-              (= (km-intr M f) (+ LV-FIRST 7))) (+ 4294967296 4096)
+              (= (km-intr M f) (+ LV-FIRST 7))
+              (= (km-intr M f) 87)) (+ 4294967296 4096)
+          (= (km-intr M f) 86) (+ 4294967296 96)
           :else -1)))
 (defn- km-scan [M :vector-i64 S :string] :vector-i64
   (let [first (- (vector-at M MM-FN-N) XK-WINDOW-N KM-INTR-N)]
@@ -199,6 +204,7 @@
         (xg-label end) (xg-save t))))
 (defn- km-intrinsic [M :vector-i64 k :i64 t :i64] :vector-i64
   (cond (< k KM-MEM-N) (km-window M k t)
+        (= k LV-CALL) (lv-call M t)
         (>= k LV-FIRST) (lv-intrinsic M (- k LV-FIRST) t)
         (= k KM-BOOT-INFO) (-> M (xg-bytes 0x50418b49 4) (xg-save t))
         (= k KM-XGETBV)

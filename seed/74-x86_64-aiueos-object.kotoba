@@ -322,7 +322,8 @@
           (cond (= op OP-LGET)
                   (cond (xk-param-slot? M j b)
                           (let [f (xg-si M (xk-fn-start M j) IF-A)]
-                            (cond (= (xg-f M f FF-EXPORT) 2) -1
+                            (cond (= (xg-f M f FF-EXPORT) 3) (lv-param-region M f b)
+                                  (= (xg-f M f FF-EXPORT) 2) -1
                                   (= (xg-f M f FF-EXPORT) 1)
                                     (if (> (inc b) (xg-f M f FF-NPARAMS)) -1 (+ 8589934592 (inc b)))
                                   :else
@@ -378,10 +379,11 @@
                 (<= (xg-f M f FF-SIR) 0) (> (xg-frame M f) 4096)) (xg-refuse-fn M S f a b)
             (= (xg-f M f FF-EXPORT) 1)
               (if (= (xg-get M 4) 2)
-                (let [name (string-substring S a b) v (iv-vector name)]
+                (let [name (string-substring S a b) v (iv-vector name) live (lv-id name)]
                   (cond (string=? name "main")
                           (if (or (not= (xg-get M 1) 0) (not= n 0)) (xg-err M 7102 f)
                             (xo-check-fns (xg-set M 1 f) S (inc f)))
+                        (lv-typed? M f live) (xo-check-fns M S (inc f))
                         (and (>= v 0) (= n 4) (= (xg-f M f FF-RTYPE) TY-I64)
                              (= (ck-pt M f 0) TY-I64) (= (ck-pt M f 1) TY-I64)
                              (= (ck-pt M f 2) TY-I64) (= (ck-pt M f 3) TY-I64)) (xo-check-fns M S (inc f))
@@ -489,7 +491,8 @@
       (xg-out (+ 0x100000 off) 8) (xg-out (+ 0x100000 off) 8)
       (xg-out size 8) (xg-out size 8) (xg-out 4096 8)))
 (defn- xi-data [M :vector-i64 data :i64 fuel :i64 isr-base :i64 size :i64 pci :bool] :vector-i64
-  (let [context (+ 0x100000 data) tss (+ context 168) stack (+ context size)]
+  (let [context (+ 0x100000 data) tss (+ context 168)
+        stack (+ context (if (lv-used? M) 131072 size))]
     (-> M (xg-pad data) (xg-out 0 8) (xg-out fuel 8)
         (xg-pad (+ data 96))
         (xg-out 0 8) (xg-out 0x00af9a000000ffff 8)
@@ -506,9 +509,10 @@
         (xg-out (if pci 0x31494350 0) 8)
         (xg-out (if (= (xg-get M 4) 2) (+ context (if pci 65536 20480)) 0) 8)
         (xg-pad (+ data 464)) (xg-out (if (lv-used? M) LV-MAGIC 0) 8)
+        (lv-data data)
         (xg-pad (+ data size)))))
 (defn- xi-elf [M :vector-i64 data :i64 fuel :i64 isr-base :i64 pci :bool] :vector-i64
-  (let [text (xg-pos M) size (if pci 131072 XI-DATA-SIZE) names (+ data size) sections (bit-and (+ names 30) -8)]
+  (let [text (xg-pos M) size (if (lv-used? M) LV-DATA-SIZE (if pci 131072 XI-DATA-SIZE)) names (+ data size) sections (bit-and (+ names 30) -8)]
     (-> M (mem-set MM-OUT-N 1)
         (xg-out 0x00010102464c457f 8) (xg-out 0 8)
         (xg-out 2 2) (xg-out 62 2) (xg-out 1 4) (xg-out 0x101000 8)

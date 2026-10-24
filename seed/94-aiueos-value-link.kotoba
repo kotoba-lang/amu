@@ -1,0 +1,27 @@
+;; Freeze typed role IDs and code addresses separately from ordinary SIR
+;; inference. An incomplete or duplicate ABI never obtains a call table.
+(defn- lv-link-contracts [M :vector-i64 G :vector-i64] :vector-i64
+  (let [count (vector-at M MM-FN-N) allocated (mem-alloc M (+ count 8))
+        base (if (pj-ok allocated) (vector-at allocated MM-R0) 0)]
+    (if (= base 0) M
+      (let [clear (loop [i 0]
+                    (if (>= i (+ count 8)) M
+                      (let [w (mem-set M (+ base i) 0)] (recur (inc i)))))
+            set (-> M (mem-set 207 base) (mem-set 209 (+ base count)))
+            mask (loop [f KG-FIRST bits 0]
+                   (if (or (>= f count) (not (pj-ok M))) bits
+                     (if (= (kg-f G f 1) 3)
+                       (let [id (dec (kg-f G f 4)) bit (i64-shift-left 1 id)]
+                         (if (or (< id 0) (>= id 8) (not= (bit-and bits bit) 0))
+                           (let [w (xg-err M 7102 f)] bits)
+                           (let [a (mem-set M (+ base f) (inc id))
+                                 b (mem-set M (+ base count id) (+ 0x101000 (kg-f G f 2)))]
+                             (recur (inc f) (bit-or bits bit)))))
+                       (recur (inc f) bits))))
+            invokes (loop [i 1]
+                      (cond (>= i (vector-at M MM-SIR-N)) false
+                            (and (= (xg-si M i IF-OP) OP-CALL)
+                                 (= (km-intr M (xg-si M i IF-A)) LV-CALL)) true
+                            :else (recur (inc i))))]
+        (if (or (and (> mask 0) (not= mask 255)) (and invokes (not= mask 255)))
+          (xg-err M 7102 0) M)))))

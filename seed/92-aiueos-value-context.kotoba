@@ -12,11 +12,14 @@
 (def LV-ARENAS 49152)
 (defn- lv-used? [M :vector-i64] :bool
   (and (= (xg-get M 4) 2)
+    (or (loop [f 1]
+          (cond (>= f (vector-at M MM-FN-N)) false
+                (= (xg-f M f FF-EXPORT) 3) true :else (recur (inc f))))
     (loop [i 1]
       (cond (>= i (vector-at M MM-SIR-N)) false
             (and (= (xg-si M i IF-OP) OP-CALL)
                  (>= (km-intr M (xg-si M i IF-A)) LV-FIRST)) true
-            :else (recur (inc i))))))
+            :else (recur (inc i)))))))
 (defn- lv-guard [M :vector-i64 trap :i64] :vector-i64
   (-> M (iv-hex "4981b9") (xg-bytes 464 4) (xg-bytes LV-MAGIC 4)
       (xg-rel 0x850f 2 2 trap)
@@ -65,11 +68,13 @@
                     (iv-hex "a9ffff0000") (xg-rel 0x840f 2 2 zero)
                     (iv-hex "498981") (xg-bytes LV-STATUS 4))
               (= k 5) (-> start (iv-hex "498b81") (xg-bytes LV-STATUS 4))
-              (or (= k 6) (= k 7))
+              (or (= k 6) (= k 7) (= k 11))
                 (-> start (xg-load t 0x858b48) (lv-domain-slot (= k 7))
                     (iv-hex "83f904") (xg-rel 0x830f 2 2 zero)
-                    (iv-hex "89c848c1e00c4c01c84805") (xg-bytes LV-ARENAS 4))
+                    (iv-hex "89c848c1e00c4c01c84805")
+                    (xg-bytes (if (= k 11) LV-REQUEST-PAGES LV-ARENAS) 4))
               (= k 8) (-> start (iv-hex "498b81") (xg-bytes LV-DOMAIN 4))
+              (= k 10) (-> start (iv-hex "498d81") (xg-bytes LV-REQUEST 4))
               :else (xg-err start 7101 OP-CALL))]
     (-> code (xg-rel 0xe9 1 2 done) (xg-label trap) (iv-hex "0f0b")
         (xg-label zero) (iv-hex "31c0") (xg-label done) (xg-save t))))
