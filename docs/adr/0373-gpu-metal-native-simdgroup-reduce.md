@@ -635,7 +635,9 @@ nine rows, no shape-2 W = 512 row owed -- and a later-day DATA run at
 the refused pair is neither scheduled nor forbidden (its own decision
 row if wanted). The rule is ACCEPTED DESIGN as of this slice; naming
 it in the flip note's SHAPE-2 W = 512 paragraph and the cross-day LEFT
-prose is its own later naming slice.
+prose landed later the same day (the REFUSAL SCOPE NAMING slice's diff
+row below: the rule is IMPLEMENTED in the code prose from that slice
+on).
 
 ## What this decision is NOT
 
@@ -990,6 +992,23 @@ step-1 slice added the rows below it.]
   pinned. No `:measured?` flag, `:shapes` value, selection answer or
   workgroup row moves. Slice record:
   `docs/evidence/gpu/simdgroup-reduce-w512-refusal-scope-20261024.txt`.
+- [REFUSAL SCOPE NAMING SLICE, 2026-10-24 (docstrings, tests, this ADR
+  -- no measurement, no selection logic):] the naming the REFUSAL SCOPE
+  rule paragraph above owed ("its own later naming slice"), exactly its
+  own scope: `src/kotoba/compiler/accelerator_variants.cljk` -- the
+  decision named in `apple-simdgroup-flip-note`'s SHAPE-2 W = 512
+  paragraph (the scope is the CELL-PAIR and its selection roles, the
+  record's own S1-S6 enumeration named in full, every number cited from
+  the committed records) and in the cross-day LEFT prose (the LEFT list
+  read as the decision narrowed it: NINE rows -- shape-1 W = 32/64/128/1024 and
+  shape-2 W = 256/32/64/128/1024 -- and NO shape-2 W = 512 row owed);
+  `test/kotoba/compiler/accelerator_variants_test.cljk` -- a naming
+  block pinning the decision's record name, the scope sentence, the
+  S3/S4 clauses, the LEFT narrowing, the nine-row list and the
+  no-row-owed clause. Slice record:
+  `docs/evidence/gpu/simdgroup-reduce-w512-scope-naming-20261024.txt`.
+  No `:measured?` flag, `:shapes` value, selection answer or workgroup
+  row moves.
 
 ## What did NOT move (named so nothing is silently upgraded)
 

@@ -967,6 +967,29 @@
       (is (str/includes? (:basis (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256}) :msl-v1 m1))
                          "cross-day replication of every remaining")
           "the cross-day claim stays scoped to its TWO measured cells"))
+    (testing "the refusal-scope decision is named in the SHAPE-2 W = 512 paragraph and the cross-day LEFT prose"
+      ;; The naming slice (2026-10-24,
+      ;; docs/evidence/gpu/simdgroup-reduce-w512-scope-naming-20261024.txt):
+      ;; the scope decision
+      ;; (docs/evidence/gpu/simdgroup-reduce-w512-refusal-scope-20261024.txt)
+      ;; is named exactly where its own record said the naming owed -- the
+      ;; flip note's SHAPE-2 W = 512 paragraph and the cross-day LEFT
+      ;; prose -- and the LEFT list reads as the decision narrowed it.
+      (let [basis (:basis (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256}) :msl-v1 m1))]
+        (is (str/includes? basis "docs/evidence/gpu/simdgroup-reduce-w512-refusal-scope-20261024.txt")
+            "the flip note names the refusal-scope decision's record")
+        (is (str/includes? basis "the refusal's scope is the CELL-PAIR (W = 512, n = 2^20)")
+            "the SHAPE-2 W = 512 paragraph names the decided scope")
+        (is (str/includes? basis "the refusal denies SELECTION, not DATA")
+            "S3 is named: selection denied, the data stays citable")
+        (is (str/includes? basis "reopening only by a DECISION row")
+            "S4 is named: no run revisits the refusal")
+        (is (str/includes? basis "the LEFT list, narrowed by the refusal-scope")
+            "the cross-day LEFT prose names the narrowing decision")
+        (is (str/includes? basis "NINE rows: the shape-1 pairs W = 32/64/128/1024 and the")
+            "the LEFT prose names the narrowed nine-row list")
+        (is (str/includes? basis "NO shape-2 W = 512 row is owed")
+            "no shape-2 W = 512 cross-day row is owed -- decided, not silent")))
     (testing "the W = 32 same-day re-session is named in the flip note prose ONLY -- no basis-evidence list names it"
       ;; The naming decision (docs/evidence/gpu/same-day-resweep-naming-20261024.txt):
       ;; flip note prose NAMED in its own scoped paragraph; basis
