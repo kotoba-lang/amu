@@ -128,16 +128,19 @@ The repository's canonical Form reader was built through the measured core
 with a source lock, packed into native ARM ELF, and used to read the complete
 current `surface-status.edn` (version 1/profile 6) and `cli.edn` (12 commands
 and their flags). This is reader execution, not implementation of all CLI
-verbs. The full31 source before the controller-pin update passed all19
-Embench, MIR all large, GMIR, resource and pinned-source refusal cases.
-The current core warm three generations, locked unity and independent cold
-C0-to-core agree byte-for-byte. Updated controller source pins also produced
-a new three-generation full31 fixed point. Final cold Pw/full, artifact
-identity links and actual current x86/public/CDCI qualification remain open.
+verbs. The full31 run remains historical. The #1548-inclusive full32 source
+passed all19 Embench, MIR all large, GMIR, resource and pinned-source refusal
+cases on native ARM. Its MIR whole-large ended with zero tracked use and
+155688217 scope releases. The adopted core warm three generations, locked
+unity and independent cold C0-to-core agree byte-for-byte; the full32 ARM
+image has F4=F5=F6. The current FS2, Kototama AOT, CID writer/replay and
+frozen Definition CID receipts are indexed in
+`docs/evidence/native-cli-cid-fs-20261024/README.md`. Current x86/public/CDCI
+qualification and the merge-after-CI readback remain open.
 
 Kotoba product PR761 merged the canonical all12 request parser and replaced
-the retired JVM/Node/C-loader workflow with Amu/Kotoba native CI. Its complete
-ARM chain passed locally and its main CI is running. Command execution is a
-separate acceptance criterion: full CLI/target, checked-KIR Definition and
-package admission, complete FS fault/race parity, final main/CI readback and
-cleanup remain required before the encompassing issues can be completed.
+the retired JVM/Node/C-loader workflow with Amu/Kotoba native CI. Its main CI
+completed ARM, x86 and required aggregate successfully. Command execution is
+a separate acceptance criterion: full CLI/target, checked-KIR Definition and
+package admission, complete FS fault/race parity, final Amu main/CI readback
+and cleanup remain required before the encompassing issues can be completed.
