@@ -152,9 +152,12 @@
                    (xg-set 12 (eb-align (+ data-rva size) 4096))
                    (xg-set 13 (+ data-off (eb-align size 512))))]
     (eb-image (xg-fix (if pci (ep-labels (eb-labels layout) (eb-align (+ (xg-get M 14) (vector-count K)) 8)) (eb-labels layout)) 1) K P)))
+(defn- eb-pci-required? [K :vector-i64] :bool
+  (let [ph (eb-le K 32 8) rw (eb-le K (+ ph 64) 8)]
+    (= (eb-le K (+ rw 336) 8) 0x31494350)))
 (defn- eb-package [kernel :string payload :string out :string pci :bool] :i64
   (let [K (io-read-bytes kernel) P (if (= (string-length payload) 0) (vector-alloc 0) (io-read-bytes payload))]
-    (if (or (not (eb-admit? K)) (> (vector-count P) 524288))
+    (if (or (not (eb-admit? K)) (> (vector-count P) 524288) (and (eb-pci-required? K) (not pci)))
       (let [w (io-err "seed-aiueos-boot: E7111 bounded ELF64 kernel/payload admission refused\n")] 1)
       (let [M (eb-build K P pci) e (vector-at M MM-ERR)]
         (if (not= e 0) (drv-fail M kernel)

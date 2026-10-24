@@ -23,7 +23,9 @@ def pin(path):
     return dict(bytes=len(b), sha256=hashlib.sha256(b).hexdigest())
 
 
-def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalog=False, stack_exhaustion=False, pci_catalog=False):
+def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalog=False, stack_exhaustion=False, pci_catalog=False, pci_private=False, pci_private_forgery=False):
+    pci_private = pci_private or pci_private_forgery
+    pci_catalog = pci_catalog or pci_private
     assert not (pci_catalog and (sealed_catalog or stack_exhaustion)), "select one versioned fixture"
     assert 0 <= remaining_fuel <= 9007199254740991
     assert efi.read_bytes().count(kernel.read_bytes()) == 1, "EFI/kernel pair identity mismatch"
@@ -129,6 +131,16 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
         pci = None
         if pci_catalog:
             pointer, size = struct.unpack_from('<QQ', info, 144)
+            if pci_private_forgery:
+                scratch=struct.unpack_from('<Q', info, 80)[0]
+                assert (pointer,size)==(scratch+14*4096,96)
+                assert hmp(f"pmemsave 0x{pointer:x} {size} forged-catalog.bin")==""
+                fake=Path('forged-catalog.bin').read_bytes()
+                assert struct.unpack_from('<QQQQ',fake)==(0x31494350534f4941,1,1,64)
+                assert struct.unpack_from('<8Q',fake,32)==(1048576,4096,0,0,1,0,0,286331444)
+                pointer=boot+16544
+                assert hmp(f"pmemsave 0x{context+312:x} 8 pci-private-size.bin")==""
+                size=struct.unpack('<Q',Path('pci-private-size.bin').read_bytes())[0]
             assert pointer == boot+16544 and 32 <= size <= 8224
             assert hmp(f"pmemsave 0x{pointer:x} {size} pci-catalog.bin") == ""
             raw = Path('pci-catalog.bin').read_bytes()
@@ -150,7 +162,16 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
             observed = [struct.unpack_from('<8Q', raw, 32+64*i) for i in range(count)]
             assert len(set(observed)) == len(observed), 'duplicate catalog record'
             assert set(observed) == expected and count > 0, (observed, expected)
-            pci = dict(records=count,catalog=pin(Path('pci-catalog.bin')),qmp=pin(output/'qmp-pci.json'),
+            private_pci = None
+            if pci_private:
+                assert hmp(f"pmemsave 0x{context:x} 28672 private-pci.bin") == ""
+                private = Path('private-pci.bin').read_bytes()
+                assert struct.unpack_from('<QQ', private, 312) == (size, 0x31494350)
+                assert struct.unpack_from('<QQ', private, 336) == (0x31494350, context+65536)
+                assert private[20480:20480+size] == raw
+                private_pci = dict(privateBytesMatch=True,stackFloor=context+65536,
+                                   context=pin(Path('private-pci.bin')))
+            pci = dict(publicMetadataForged=pci_private_forgery,privateSnapshot=private_pci,records=count,catalog=pin(Path('pci-catalog.bin')),qmp=pin(output/'qmp-pci.json'),
                        exactDeviceAndBARParity=True,osOwnershipQualified=False)
         catalog = None
         if sealed_catalog or stack_exhaustion:
@@ -214,6 +235,8 @@ if __name__ == "__main__":
     p.add_argument("--sealed-catalog", action="store_true")
     p.add_argument("--stack-exhaustion", action="store_true")
     p.add_argument("--pci-catalog", action="store_true")
+    p.add_argument("--pci-private", action="store_true")
+    p.add_argument("--pci-private-forgery", action="store_true")
     a = p.parse_args()
     main(*(getattr(a, n).resolve() for n in ("efi", "kernel", "qemu", "firmware", "output")), remaining_fuel=a.remaining_fuel,
-         sealed_catalog=a.sealed_catalog, stack_exhaustion=a.stack_exhaustion, pci_catalog=a.pci_catalog)
+         sealed_catalog=a.sealed_catalog, stack_exhaustion=a.stack_exhaustion, pci_catalog=a.pci_catalog, pci_private=a.pci_private, pci_private_forgery=a.pci_private_forgery)

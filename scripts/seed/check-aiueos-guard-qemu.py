@@ -30,7 +30,27 @@ def main(efi, kernel, qemu, firmware, output, guard_kind='window'):
     assert ph[0:2] == (1, 5) and ph[2] == 4096 and ph[3] == 0x101000
     code = data[ph[2]:ph[2]+ph[5]]
     sites = [i for i in range(len(code)-1) if code[i:i+2] == b'\x0f\x0b']
-    if guard_kind in ('owned-page', 'owned-window'):
+    if guard_kind == 'pci-seal':
+        marker=bytes.fromhex('498b49504885c90f84')
+        starts=[i for i in range(len(code)) if code.startswith(marker,i)]
+        assert len(starts)==1, 'one trusted bootstrap required'
+        at=starts[0];target=at+13+struct.unpack_from('<i',code,at+9)[0]
+        assert code[target:target+2]==b'\x0f\x0b'
+        expected=ph[3]+target
+    elif guard_kind == 'pci-mmio':
+        starts = [i for i in range(len(code)) if code.startswith(bytes.fromhex('4981f8ff0000000f87'), i)]
+        assert len(starts) == 1, ('one PCI constructor required', starts)
+        at = starts[0]
+        # Decode the first three identity guards; they share the single
+        # constructor refusal site. A bootstrap, memory, fuel or stack
+        # failure is not accepted as the PCI-constructor positive.
+        targets=[]
+        for delta, opcode in [(7,b'\x0f\x87'),(17,b'\x0f\x87'),(27,b'\x0f\x87')]:
+            pc=at+delta;assert code[pc:pc+2]==opcode
+            targets.append(pc+6+struct.unpack_from('<i',code,pc+2)[0])
+        assert len(set(targets))==1 and code[targets[0]:targets[0]+2]==b'\x0f\x0b'
+        expected=ph[3]+targets[0]
+    elif guard_kind in ('owned-page', 'owned-window'):
         starts = [i for i in range(len(code)) if code.startswith(bytes.fromhex('4883f80f0f83'), i)]
         assert len(starts) == 1, ('one owned-page constructor required', starts)
         at = starts[0]
@@ -102,6 +122,6 @@ if __name__ == '__main__':
     p = argparse.ArgumentParser(description=__doc__)
     for name in ('efi', 'kernel', 'qemu', 'firmware', 'output'):
         p.add_argument('--'+name, type=Path, required=True)
-    p.add_argument('--guard-kind', choices=('window', 'owned-page', 'owned-window'), default='window')
+    p.add_argument('--guard-kind', choices=('window', 'owned-page', 'owned-window', 'pci-mmio', 'pci-seal'), default='window')
     a = p.parse_args()
     main(*(getattr(a, n).resolve() for n in ('efi','kernel','qemu','firmware','output')), guard_kind=a.guard_kind)

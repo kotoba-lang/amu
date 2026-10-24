@@ -13,7 +13,8 @@
 (def KM-ISR-FIRST 57)
 (def KM-OWNED-PAGE 73)
 (def KM-OWNED-WINDOW 74)
-(def KM-INTR-N 75)
+(def KM-PCI-MMIO 75)
+(def KM-INTR-N 76)
 (def KM-SEALED-SCRATCH 272)
 (def KM-SEALED-PAGES 280)
 
@@ -43,7 +44,7 @@
       37 "kernel-configure-double-fault-ist" 38 "kernel-probe-nx-execute"
       39 "kernel-probe-guard-write" 40 "kernel-probe-text-write"
       41 "kernel-probe-recoverable-guard-write" 42 "kernel-probe-double-fault"
-      43 "kernel-debug-break" 44 "kernel-owned-page" 45 "kernel-owned-window" "")))
+      43 "kernel-debug-break" 44 "kernel-owned-page" 45 "kernel-owned-window" 46 "kernel-pci-mmio" "")))
 (defn- km-arity [k :i64] :i64
   (cond (< k KM-MEM-N) (if (= (bit-and (km-raw k) 1) 0) 3 4)
         (< k (+ KM-MEM-N 2)) 2
@@ -54,6 +55,7 @@
         (or (= k KM-TRY-LOCK) (= k KM-UNLOCK)) 3
         (= k KM-OWNED-PAGE) 1
         (= k KM-OWNED-WINDOW) 2
+        (= k KM-PCI-MMIO) 5
         (>= k KM-ISR-FIRST)
           (let [i (- k KM-ISR-FIRST)]
             (cond (or (= i 2) (= i 3) (= i 9)) 2 (= i 4) 1 :else 0))
@@ -66,7 +68,7 @@
   (loop [k 0 text ""]
     (if (>= k KM-INTR-N) text
       (let [args (case (km-arity k) 0 "[]" 1 "[a :i64]" 2 "[a :i64 b :i64]"
-                      3 "[a :i64 b :i64 c :i64]" "[a :i64 b :i64 c :i64 d :i64]")]
+                      3 "[a :i64 b :i64 c :i64]" 4 "[a :i64 b :i64 c :i64 d :i64]" "[a :i64 b :i64 c :i64 d :i64 e :i64]")]
         (recur (inc k) (string-concat text (string-concat "\n(defn- "
           (string-concat (km-name k) (string-concat " " (string-concat args " :i64 0)\n"))))))))))
 (defn- km-intr [M :vector-i64 f :i64] :i64
@@ -84,6 +86,8 @@
           (= (km-intr M f) KM-OWNED-PAGE) (+ 4294967296 4096)
           (= (km-intr M f) KM-OWNED-WINDOW)
             (let [n (xk-src M i (inc t) 0)] (if (= n 0) -1 n))
+          (= (km-intr M f) KM-PCI-MMIO)
+            (let [n (xk-src M i (+ t 4) 0)] (if (= n 0) -1 n))
           :else -1)))
 (defn- km-scan [M :vector-i64 S :string] :vector-i64
   (let [first (- (vector-at M MM-FN-N) XK-INTR-N KM-INTR-N)]
@@ -195,6 +199,7 @@
         (or (= k KM-TRY-LOCK) (= k KM-UNLOCK)) (km-lock M (= k KM-UNLOCK) t)
         (= k KM-OWNED-PAGE) (km-page M t false)
         (= k KM-OWNED-WINDOW) (km-page M t true)
+        (= k KM-PCI-MMIO) (kr-pci-mmio M t)
         (and (>= k KM-ISR-FIRST) (< k KM-INTR-N)) (iv-intrinsic M (- k KM-ISR-FIRST) t)
         (< k (+ KM-MEM-N 2))
           (-> M (xg-load t 0x958b48) (xg-load (inc t) 0x858b48)

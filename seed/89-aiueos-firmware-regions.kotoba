@@ -16,7 +16,7 @@
 (defn- kr-stack-guard [M :vector-i64 frame :i64] :vector-i64
   (let [halt (vector-at M MM-LABEL-N) end (inc halt)]
     (-> M (iv-reserve 2) (iv-hex "4989e24981ea") (xg-bytes (+ frame 8) 4) (xg-rel 0x820f 2 2 halt)
-        (iv-mem 141 11 9 KR-STACK-FLOOR) (iv-hex "4d39da") (xg-rel 0x820f 2 2 halt)
+        (iv-mem 139 11 9 344) (iv-hex "4d39da") (xg-rel 0x820f 2 2 halt)
         (xg-rel 0xe9 1 2 end) (xg-label halt) (iv-hex "faf4ebfd") (xg-label end))))
 
 (defn- kr-seal-map [M :vector-i64 fail :i64] :vector-i64
@@ -29,3 +29,89 @@
       (iv-mem 137 8 9 KR-MAP-SIZE) (iv-mem 137 10 9 KR-MAP-STRIDE)
       (iv-mem 141 7 9 KR-MAP-DATA) (iv-hex "4c89c1fcf3a4")
       (iv-hex "49c781") (xg-bytes KR-MAP-READY 4) (xg-bytes KR-MAP-MAGIC 4)))
+
+
+;; v6 PCI resource policy, separate from firmware memory classifications.
+;; The first37 collector candidate has its own prior receipt. Its catalog
+;; contains exact allocated segment0 BAR resources, not rounded apertures.
+;; Low64KiB is private in this profile; the stack starts above it.
+(def KR-PCI-DATA 20480)
+(def KR-PCI-SIZE 312)
+(def KR-PCI-READY 320)
+(def KR-PCI-MAGIC 0x31494350)
+
+(defn- kr-pci-protected [M :vector-i64 fail :i64] :vector-i64
+  (let [again (vector-at M MM-LABEL-N) next (inc again) done (+ again 2)]
+    (-> M (iv-reserve 3)
+        (iv-mem 141 8 9 KR-MAP-DATA) (iv-mem 139 2 9 KR-MAP-SIZE)
+        (xg-label again) (iv-hex "4885d2") (xg-rel 0x840f 2 2 done)
+        (iv-mem 139 0 8 24) (iv-hex "4885c0") (xg-rel 0x840f 2 2 next)
+        ;; Reject overflowing descriptor extents even outside the request.
+        (iv-hex "4889c748c1ef34") (xg-rel 0x850f 2 2 fail)
+        (iv-hex "48c1e00c") (iv-mem 3 0 8 8) (xg-rel 0x820f 2 2 fail)
+        (iv-hex "4939c2") (xg-rel 0x830f 2 2 next)
+        (iv-mem 139 0 8 8) (iv-hex "4c39d8") (xg-rel 0x830f 2 2 next)
+        ;; Only reserved(type0) overlap is possible. All RAM/ACPI/runtime
+        ;; types remain protected, and EFI_MEMORY_RUNTIME always refuses.
+        (iv-hex "41833800") (xg-rel 0x850f 2 2 fail)
+        (iv-hex "490fba60203f") (xg-rel 0x820f 2 2 fail)
+        (xg-label next) (iv-mem 3 8 9 KR-MAP-STRIDE)
+        (iv-mem 43 2 9 KR-MAP-STRIDE) (xg-rel 0x820f 2 2 fail)
+        (xg-rel 0xe9 1 2 again) (xg-label done))))
+(defn- kr-seal-pci [M :vector-i64 fail :i64] :vector-i64
+  (let [again (vector-at M MM-LABEL-N) done (inc again)]
+    (-> M (iv-reserve 2) (iv-mem 139 1 9 80)
+        (iv-mem 139 6 1 144) (iv-hex "488d81a04000004839c6") (xg-rel 0x850f 2 2 fail)
+        (iv-mem 139 2 1 152) (iv-hex "4883fa20") (xg-rel 0x820f 2 2 fail)
+        (iv-hex "4881fa20200000") (xg-rel 0x870f 2 2 fail)
+        (iv-hex "48b8") (xg-bytes 0x31494350534f4941 8) (iv-hex "483906") (xg-rel 0x850f 2 2 fail)
+        (iv-hex "48837e0801") (xg-rel 0x850f 2 2 fail)
+        (iv-hex "48837e1840") (xg-rel 0x850f 2 2 fail)
+        (iv-mem 139 0 6 16) (iv-hex "483d80000000") (xg-rel 0x870f 2 2 fail)
+        (iv-hex "48c1e0064883c0204839d0") (xg-rel 0x850f 2 2 fail)
+        (iv-mem 137 2 9 KR-PCI-SIZE) (iv-mem 141 7 9 KR-PCI-DATA)
+        (iv-hex "4889d1fcf3a4")
+        (iv-mem 141 6 9 (+ KR-PCI-DATA 32))
+        (iv-mem 139 1 9 (+ KR-PCI-DATA 16))
+        (xg-label again) (iv-hex "4885c9") (xg-rel 0x840f 2 2 done)
+        (iv-mem 139 10 6 0) (iv-mem 139 11 6 8)
+        (iv-hex "4d85d2") (xg-rel 0x840f 2 2 fail)
+        (iv-hex "4d85db") (xg-rel 0x840f 2 2 fail)
+        (iv-hex "4d01d3") (xg-rel 0x820f 2 2 fail)
+        (iv-hex "48b800000000800000004939c3") (xg-rel 0x870f 2 2 fail)
+        (iv-hex "48837e1000") (xg-rel 0x850f 2 2 fail)
+        (iv-hex "48817e18ff000000") (xg-rel 0x870f 2 2 fail)
+        (iv-hex "48837e201f") (xg-rel 0x870f 2 2 fail)
+        (iv-hex "48837e2807") (xg-rel 0x870f 2 2 fail)
+        (iv-hex "48837e3005") (xg-rel 0x870f 2 2 fail)
+        (iv-mem 139 0 6 56) (iv-hex "4889c748c1ef20") (xg-rel 0x850f 2 2 fail)
+        (iv-hex "663dffff") (xg-rel 0x840f 2 2 fail)
+        (kr-pci-protected fail)
+        (iv-hex "4883c64048ffc9") (xg-rel 0xe9 1 2 again)
+        (xg-label done) (iv-hex "49c781") (xg-bytes KR-PCI-READY 4) (xg-bytes KR-PCI-MAGIC 4))))
+(defn- kr-pci-mmio [M :vector-i64 t :i64] :vector-i64
+  (let [fail (vector-at M MM-LABEL-N) again (inc fail) next (+ fail 2) end (+ fail 3) absent (+ fail 4)]
+    (-> M (iv-reserve 5)
+        (xg-load t 0x858b4c) (xg-load (inc t) 0x958b4c) (xg-load (+ t 2) 0x9d8b4c)
+        (xg-load (+ t 3) 0x958b48) (xg-load (+ t 4) 0x8d8b48)
+        (iv-hex "4981f8ff000000") (xg-rel 0x870f 2 2 fail)
+        (iv-hex "4983fa1f") (xg-rel 0x870f 2 2 fail)
+        (iv-hex "4983fb07") (xg-rel 0x870f 2 2 fail)
+        (iv-hex "4885c9") (xg-rel 0x840f 2 2 fail)
+        (iv-hex "4881f900000100") (xg-rel 0x870f 2 2 fail)
+        (iv-hex "4981b9") (xg-bytes KR-PCI-READY 4) (xg-bytes KR-PCI-MAGIC 4) (xg-rel 0x850f 2 2 fail)
+        (iv-hex "4885d2") (xg-rel 0x840f 2 2 absent)
+        (iv-hex "48f7c207000000") (xg-rel 0x850f 2 2 fail)
+        (iv-mem 141 6 9 (+ KR-PCI-DATA 32))
+        (xg-label again) (iv-mem 141 0 9 KR-PCI-DATA) (iv-mem 3 0 9 KR-PCI-SIZE)
+        (iv-hex "4839c6") (xg-rel 0x830f 2 2 fail)
+        (iv-mem 59 8 6 24) (xg-rel 0x850f 2 2 next)
+        (iv-mem 59 10 6 32) (xg-rel 0x850f 2 2 next)
+        (iv-mem 59 11 6 40) (xg-rel 0x850f 2 2 next)
+        (iv-hex "4889d0") (iv-mem 43 0 6 0) (xg-rel 0x820f 2 2 next)
+        (iv-mem 139 7 6 8) (iv-hex "4829cf") (xg-rel 0x820f 2 2 next)
+        (iv-hex "4839f8") (xg-rel 0x870f 2 2 next)
+        (iv-hex "4889d0") (xg-rel 0xe9 1 2 end)
+        (xg-label next) (iv-hex "4883c640") (xg-rel 0xe9 1 2 again)
+        (xg-label fail) (iv-hex "0f0b") (xg-rel 0xe9 1 2 end)
+        (xg-label absent) (iv-hex "31c0") (xg-label end) (xg-save t))))

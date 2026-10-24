@@ -44,14 +44,14 @@ def main(build,out):
     efi=scope/(name+'.efi');q=subprocess.run([str(compiler),'package-aiueos-boot',str(image),'--output',str(efi)],env=env,capture_output=True,timeout=180);assert q.returncode==0 and not q.stderr,q.stderr
     artifacts[name]=dict(kernel=pin(image),efi=pin(efi))
   compile_('catalog',CATALOG)
-  for name,operation in [('missing-pci','kernel-pci-mmio'),('retired-classification','kernel-firmware-mmio')]:
+  for name,operation in [('retired-classification','kernel-firmware-mmio')]:
    compile_(name,f'(ns entry (:export [main]))\n(defn main [] :i64 ({operation} 4096 512))\n',True)
   compile_('stack-exhaustion',DEEP)
   compile_('shallow-stack',DEEP.replace('deep 10000','deep 0'))
-  routes.append(dict(compiler=pin(compiler),artifacts=artifacts,missingPrimitiveRefusals=2))
+  routes.append(dict(compiler=pin(compiler),artifacts=artifacts,missingPrimitiveRefusals=1))
  assert routes[0]['artifacts']==routes[1]['artifacts']
  report=dict(status='PASS_NATIVE_PRIVATE_CONTEXT_PACKAGING',observer=pin(Path(__file__)),source=graph,routes=routes,guestExecution=False,positivePlatformMMIOQualified=False,fullKernel=False,nativeCDCI=False)
- (out/'native-private-context.json').write_text(json.dumps(report,indent=2)+'\n');print(report['status'],'private metadata + stack fixtures; PCI grant is missing and refuses')
+ (out/'native-private-context.json').write_text(json.dumps(report,indent=2)+'\n');print(report['status'],'private metadata + stack fixtures; retired classification API refuses')
 
 if __name__=='__main__':
  p=argparse.ArgumentParser();p.add_argument('--build',type=Path,required=True);p.add_argument('--output',type=Path,required=True);a=p.parse_args();main(a.build.resolve(),a.output.resolve())

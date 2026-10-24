@@ -121,24 +121,31 @@
     (cond (>= i (vector-at M MM-SIR-N)) false
           (and (= (xg-si M i IF-OP) OP-CALL)
                (let [k (km-intr M (xg-si M i IF-A))]
-                 (or (= k KM-OWNED-PAGE) (= k KM-OWNED-WINDOW)))) true
+                 (or (= k KM-OWNED-PAGE) (= k KM-OWNED-WINDOW) (= k KM-PCI-MMIO)))) true
+          :else (recur (inc i)))))
+(defn- kp-pci? [M :vector-i64] :bool
+  (loop [i 1]
+    (cond (>= i (vector-at M MM-SIR-N)) false
+          (and (= (xg-si M i IF-OP) OP-CALL)
+               (= (km-intr M (xg-si M i IF-A)) KM-PCI-MMIO)) true
           :else (recur (inc i)))))
 ;; This trusted bootstrap runs before the user's main and before any guest
 ;; operation can mutate public boot-info. This non-live profile reserves its
 ;; low20KiB for GDT/TSS, interrupt state, fuel and the sealed catalog. The live
 ;; ValueRuntime queue/arena layout needs a separately reconciled ABI.
-(defn- kp-owned-init [M :vector-i64 L :vector-i64 at :i64 main-entry :i64] :vector-i64
+(defn- kp-owned-init [M :vector-i64 L :vector-i64 at :i64 main-entry :i64 pci :bool] :vector-i64
   (let [reset (-> M (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1) (mem-set MM-LABEL-N 1) (iv-reserve 1))
         checked (-> reset (iv-hex "498b49504885c9") (xg-rel 0x840f 2 2 1)
                     (iv-hex "48b8") (xg-bytes 0x544f4f4245554941 8) (iv-hex "483901") (xg-rel 0x850f 2 2 1)
-                    (iv-hex "4883790805") (xg-rel 0x850f 2 2 1)
+                    (iv-hex "48837908") (xg-byte (if pci 6 5)) (xg-rel 0x850f 2 2 1)
                     (iv-hex "488379580f") (xg-rel 0x850f 2 2 1)
                     (iv-hex "488b51504885d2") (xg-rel 0x840f 2 2 1)
                     (iv-hex "48f7c2ff0f0000") (xg-rel 0x850f 2 2 1)
                     (iv-hex "4889d0480500f00000") (xg-rel 0x820f 2 2 1)
                     (iv-hex "498991") (xg-bytes KM-SEALED-SCRATCH 4)
                     (iv-hex "49c781") (xg-bytes KM-SEALED-PAGES 4) (xg-bytes 15 4)
-                    (kr-seal-map 1))
+                    (kr-seal-map 1)
+                    (cond-> pci (kr-seal-pci 1)))
         delta (- (dec main-entry) (+ at (xg-pos checked) 5))
         code (if (or (< delta -2147483648) (> delta 2147483647)) (xg-err checked 7103 at)
                (-> checked (xg-byte 233) (xg-bytes delta 4) (xg-label 1) (iv-hex "0f0b") (xg-fix 1)))
@@ -171,8 +178,8 @@
     fixed))
 (defn- kp-image [M :vector-i64 L :vector-i64 G :vector-i64 fuel :i64] :vector-i64
   (let [entry (xg-get M 1) user-main (pj-l L KP-ENTRY) raw-program (pj-l L pj-k-img)
-        owned (kp-needs-owned? M) init-at (bit-and (+ raw-program 15) -16)
-        initialized (if owned (kp-owned-init M L init-at user-main) M)
+        pci (kp-pci? M) owned (kp-needs-owned? M) init-at (bit-and (+ raw-program 15) -16)
+        initialized (if owned (kp-owned-init M L init-at user-main pci) M)
         program (if owned (+ init-at (xg-pos initialized)) raw-program)
         global (if owned (inc init-at) user-main)
         init-gap (if owned (loop [i raw-program]
@@ -184,7 +191,7 @@
     (cond (not (pj-ok initialized)) initialized
           (and needs-isr (not has-isr)) (xg-err M 7102 (+ KM-ISR-FIRST 4))
           (or (<= entry 0) (<= global 77) (> size 1048576)
-              (>= (+ data XI-DATA-SIZE 280) MM-OUT-CAP)) (xg-err M 7104 size)
+              (>= (+ data (if pci 131072 XI-DATA-SIZE) 280) MM-OUT-CAP)) (xg-err M 7104 size)
           :else
           (let [entries (if has-isr (kp-isr-table M L G table data) M)
                 gap (if has-isr (loop [i program]
@@ -192,7 +199,7 @@
                                    (let [w (pj-ibset L i 204)] (recur (inc i))))) 0)
                 prefix (-> entries (mem-set (+ MM-FN-BASE (* entry MM-FN-W) FF-CODE) global)
                            (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1)
-                           (xi-shim entry) (xg-fix 1) (xi-patch-shim data))
+                           (xi-shim entry) (xg-fix 1) (xi-patch-shim data (if pci 131072 XI-DATA-SIZE)))
                 saved (loop [i 0]
                         (if (>= i 77) 0
                           (let [w (pj-ibset L i (xg-code-byte prefix i))] (recur (inc i)))))
@@ -200,7 +207,7 @@
                          (if (>= i size) 0
                            (let [w (xg-put-byte M i (pj-ib L i))] (recur (inc i)))))]
             (if (pj-ok prefix)
-              (xi-elf (mem-set M MM-CODE-N (inc size)) data fuel (if has-isr (+ 0x101000 table) 0)) prefix)))))
+              (xi-elf (mem-set M MM-CODE-N (inc size)) data fuel (if has-isr (+ 0x101000 table) 0) pci) prefix)))))
 
 (defn- kp-options? [i :i64] :bool
   (if (>= i (io-argc)) true

@@ -70,8 +70,10 @@ The kernel-integration working branch contains a full37 engineering source
 candidate. Its checked-in public/root descriptor still names the admitted
 full31 compiler from #1547. Successor native x86/controller adoption is open;
 ARM rebuild/QEMU receipts do not qualify the working source as public product.
-The closed image currently reserves low20KiB for non-live context/catalog;
-do not place live ValueRuntime queues/arenas there without a reconciled ABI.
+The closed v5 project reserves low20KiB for non-live context/catalog. The
+v6 PCI candidate has128KiB RW storage and a64KiB private floor; its copied
+BAR catalog starts at context20480. The live ValueRuntime queue/arena and
+capability/domain layout must be reconciled before live entry admission.
 
 - The complete product uses `seed/FULL-MANIFEST` (31 modules), retaining
   every adopted core module. Static OUT is 12MiB because the complete
