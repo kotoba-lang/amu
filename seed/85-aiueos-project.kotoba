@@ -105,12 +105,12 @@
 (defn- kp-isr-target [G :vector-i64 v :i64] :i64
   (loop [f KG-FIRST]
     (cond (>= f (vector-at G 0)) -1
-          (= (kg-f G f 4) (inc v)) (kg-f G f 2)
+          (and (= (kg-f G f 1) 2) (= (kg-f G f 4) (inc v))) (kg-f G f 2)
           :else (recur (inc f)))))
 (defn- kp-has-isr? [G :vector-i64] :bool
   (loop [f KG-FIRST]
     (cond (>= f (vector-at G 0)) false
-          (> (kg-f G f 4) 0) true :else (recur (inc f)))))
+          (= (kg-f G f 1) 2) true :else (recur (inc f)))))
 (defn- kp-needs-isr? [M :vector-i64] :bool
   (loop [i 1]
     (cond (>= i (vector-at M MM-SIR-N)) false
@@ -160,7 +160,8 @@
         generated (loop [v 0]
                     (if (or (>= v IV-VECTORS) (not (pj-ok M))) M
                       (let [target (kp-isr-target G v)
-                            part (cond (>= target 0)
+                            part (cond (and (or (= v 6) (= v 13) (= v 14)) (uv-used? M)) (uv-fault M at data v)
+                                       (>= target 0)
                                          (iv-entry M v IV-FUEL
                                            (- (- data 4096) (+ at (* v IV-STRIDE) (iv-context-offset v) 4))
                                            (- target (+ at (* v IV-STRIDE) (iv-call-offset v) 4)))
@@ -182,20 +183,26 @@
   (let [entry (xg-get M 1) user-main (pj-l L KP-ENTRY) raw-program (pj-l L pj-k-img)
         pci (or (kp-pci? M) (lv-used? M)) owned (or (kp-needs-owned? M) (lv-used? M)) init-at (bit-and (+ raw-program 15) -16)
         initialized (if owned (kp-owned-init M L init-at user-main pci) M)
-        program (if owned (+ init-at (xg-pos initialized)) raw-program)
+        before-user (if owned (+ init-at (xg-pos initialized)) raw-program)
+        user-at (bit-and (+ before-user 15) -16)
+        program (if (uv-used? M) (+ user-at UV-SHIM-SIZE) before-user)
         global (if owned (inc init-at) user-main)
         init-gap (if owned (loop [i raw-program]
                             (if (>= i init-at) 0 (let [w (pj-ibset L i 204)] (recur (inc i))))) 0)
-        table (bit-and (+ program 127) -128) has-isr (kp-has-isr? G)
+        table (bit-and (+ program 127) -128) has-isr (or (kp-has-isr? G) (uv-used? M))
         needs-isr (kp-needs-isr? M)
         size (if has-isr (+ table (* IV-STRIDE IV-VECTORS)) program)
         data (max 32768 (bit-and (+ 8191 size) -4096))]
     (cond (not (pj-ok initialized)) initialized
+          (and (uv-used? M) (>= (kp-isr-target G 6) 0)) (xg-err M 7102 6)
+          (and (uv-used? M) (>= (kp-isr-target G 14) 0)) (xg-err M 7102 14)
+          (and (uv-used? M) (>= (kp-isr-target G 13) 0)) (xg-err M 7102 13)
           (and needs-isr (not has-isr)) (xg-err M 7102 (+ KM-ISR-FIRST 4))
           (or (<= entry 0) (<= global 77) (> size 1048576)
               (>= (+ data (if pci 131072 XI-DATA-SIZE) 280) MM-OUT-CAP)) (xg-err M 7104 size)
           :else
           (let [entries (if has-isr (kp-isr-table M L G table data) M)
+                user-code (if (uv-used? M) (uv-copy-handler entries L user-at data) entries)
                 gap (if has-isr (loop [i program]
                                  (if (>= i table) 0
                                    (let [w (pj-ibset L i 204)] (recur (inc i))))) 0)

@@ -1,0 +1,75 @@
+;; Image-owned SYSCALL entry. These RIP-relative stores run before any use
+;; of user R9 or RSP as a kernel pointer. Only the typed entry is reachable.
+(def UV-SHIM-SIZE 1024)
+(defn- uv-rip [M :vector-i64 op :string offset :i64 at :i64 data :i64] :vector-i64
+  (let [next (+ at (xg-pos M) (quot (string-length op) 2) 4)]
+    (-> M (iv-hex op) (xg-bytes (- (+ (- data 4096) offset) next) 4))))
+(defn- uv-handler [M :vector-i64 at :i64 data :i64] :vector-i64
+  (let [halt 1 zero 2 restore 3
+        reset (-> M (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1) (mem-set MM-LABEL-N 1) (iv-reserve 3))
+        code (-> reset
+          (uv-rip "488925" 32768 at data) (uv-rip "48890d" 32776 at data)
+          (uv-rip "4c891d" 32784 at data) (uv-rip "48893d" 32792 at data)
+          (uv-rip "488905" 32800 at data) (uv-rip "48892d" 32808 at data)
+          (uv-rip "488d25" 131072 at data) (iv-hex "4883e4f0")
+          (uv-rip "4c8d0d" 0 at data)
+          (iv-hex "4983b9") (xg-bytes UV-ACTIVE 4) (xg-byte 1) (xg-rel 0x850f 2 2 halt)
+          (iv-hex "498b81") (xg-bytes LV-DOMAIN 4) (lv-domain-slot false)
+          (iv-hex "83f904") (xg-rel 0x830f 2 2 halt)
+          (uv-page-address 0) (iv-hex "4889c2")
+          ;; RIP belongs to the selected code page; RSP belongs to its stack.
+          (iv-hex "498b81") (xg-bytes 32776 4) (iv-hex "4839d0") (xg-rel 0x820f 2 2 halt)
+          (iv-hex "488db2001000004839f0") (xg-rel 0x830f 2 2 halt)
+          (iv-hex "498b81") (xg-bytes 32768 4) (iv-hex "488db2003000004839f0") (xg-rel 0x820f 2 2 halt)
+          (iv-hex "488db2004000004839f0") (xg-rel 0x830f 2 2 halt)
+          (iv-hex "48a90f000000") (xg-rel 0x850f 2 2 halt)
+          (iv-hex "4983b9") (xg-bytes 32800 4) (xg-byte 5) (xg-rel 0x850f 2 2 zero)
+          ;; The complete104-byte envelope must be inside its request page.
+          (iv-hex "498b81") (xg-bytes 32792 4) (iv-hex "488db2001000004839f0") (xg-rel 0x820f 2 2 zero)
+          (iv-hex "488db2981f00004839f0") (xg-rel 0x870f 2 2 zero)
+          (iv-hex "488db2001000004829f0")
+          (iv-hex "48be") (xg-bytes (+ (* 4096 4294967296) (* 104 281474976710656)) 8)
+          (iv-hex "4809c6498b81") (xg-bytes LV-DOMAIN 4) (iv-hex "48c1e0104809c6")
+          ;; ECX still identifies the slot. All memory arguments are selected
+          ;; here; neither pointers nor domain identity come from the envelope.
+          (iv-hex "89c848c1e00c4c01c84805") (xg-bytes LV-ARENAS 4) (iv-hex "4889c7")
+          (iv-hex "4881c200100000")
+          (uv-context LV-REQUEST 1) (iv-hex "4d8d81") (xg-bytes LV-CAPS 4)
+          (iv-hex "4d8b99") (xg-bytes LV-TABLE 4) (iv-hex "41ffd3")
+          (xg-rel 0xe9 1 2 restore)
+          (xg-label zero) (iv-hex "31c0")
+          (xg-label restore) (iv-hex "498981") (xg-bytes 32840 4)
+          (iv-hex "498b89") (xg-bytes 32776 4)
+          (iv-hex "4d8b99") (xg-bytes 32784 4) (iv-hex "4181e3d50800004183cb02")
+          (iv-hex "498ba9") (xg-bytes 32808 4)
+          (iv-hex "498ba1") (xg-bytes 32768 4)
+          (iv-hex "31d231f631ff4531c04531d24531c9480f07"))
+        padded (loop [i (xg-pos code)]
+                 (if (>= i (- UV-SHIM-SIZE 4)) code
+                   (let [w (xg-byte code 204)] (recur (inc i)))))
+        stopped (-> padded (xg-label halt) (iv-hex "faf4ebfd") (xg-fix 1))]
+    (if (not= (xg-pos stopped) UV-SHIM-SIZE) (xg-err stopped 7104 (xg-pos stopped)) stopped)))
+(defn- uv-copy-handler [M :vector-i64 L :vector-i64 at :i64 data :i64] :vector-i64
+  (let [code (uv-handler M at data)
+        copied (loop [i 0]
+                 (if (or (>= i UV-SHIM-SIZE) (not (pj-ok code))) 0
+                   (let [w (pj-ibset L (+ at i) (xg-code-byte code i))] (recur (inc i)))))]
+    (mem-set code 210 (+ 0x101000 at))))
+;; Controlled #UD/#GP/#PF retain the actual vector, error, CR2 and CS.
+;; #UD has no hardware error code; insert zero to normalize the saved frame.
+;; It never recovers into user code or calls an unqualified callback.
+(defn- uv-fault [M :vector-i64 at :i64 data :i64 vector :i64] :vector-i64
+  (let [normalized (if (= vector 6) (iv-hex M "6a00") M)
+        code (-> normalized (iv-hex "fa") (uv-rip "4c8d0d" 0 at data)
+                (iv-hex "0f20d0") (iv-mem 137 0 9 UV-FAULT)
+                (iv-hex "488b0424") (iv-mem 137 0 9 (+ UV-FAULT 8))
+                (iv-hex "488b442410") (iv-mem 137 0 9 (+ UV-FAULT 16))
+                (iv-hex "488b442408") (iv-mem 137 0 9 (+ UV-FAULT 24))
+                (iv-hex "488b442420") (iv-mem 137 0 9 (+ UV-FAULT 32))
+                (iv-hex "49c781") (xg-bytes (+ UV-FAULT 40) 4) (xg-bytes UV-MAGIC 4)
+                (iv-hex "49c781") (xg-bytes (+ UV-FAULT 48) 4) (xg-bytes vector 4)
+                (iv-hex "66bae900b050ee"))
+        pad (loop [i (xg-pos code)]
+              (if (>= i (- (* (inc vector) IV-STRIDE) 4)) code
+                (let [w (xg-byte code 204)] (recur (inc i)))))]
+    (iv-hex pad "faf4ebfd")))

@@ -21,14 +21,17 @@
                  (>= (km-intr M (xg-si M i IF-A)) LV-FIRST)) true
             :else (recur (inc i)))))))
 (defn- lv-guard [M :vector-i64 trap :i64] :vector-i64
-  (-> M (iv-hex "4981b9") (xg-bytes 464 4) (xg-bytes LV-MAGIC 4)
-      (xg-rel 0x850f 2 2 trap)
+  (let [version (vector-at M MM-LABEL-N)]
+  (-> M (iv-reserve 1) (iv-hex "4981b9") (xg-bytes 464 4) (xg-bytes LV-MAGIC 4)
+      (xg-rel 0x840f 2 2 version)
+      (iv-hex "4981b9") (xg-bytes 464 4) (xg-bytes UV-MAGIC 4) (xg-rel 0x850f 2 2 trap)
+      (xg-label version)
       (iv-hex "4983b9") (xg-bytes KM-SEALED-PAGES 4) (xg-byte 15)
       (xg-rel 0x850f 2 2 trap)
       (iv-hex "4981b9") (xg-bytes KR-MAP-READY 4) (xg-bytes KR-MAP-MAGIC 4)
       (xg-rel 0x850f 2 2 trap)
       (iv-hex "4981b9") (xg-bytes KR-PCI-READY 4) (xg-bytes KR-PCI-MAGIC 4)
-      (xg-rel 0x850f 2 2 trap)))
+      (xg-rel 0x850f 2 2 trap))))
 ;; RAX holds a scalar scheduler ID. Return its slot index in ECX or 4.
 ;; Registration is trusted scheduler work with interrupts disabled, never
 ;; user input or an inferred physical pointer. Existing slots never move.
@@ -59,9 +62,10 @@
                 (-> start (iv-hex "498d81")
                     (xg-bytes (case k 0 LV-QUEUE 1 LV-CAS LV-CAPS) 4))
               (= k 3)
-                (-> start (xg-load t 0x858b48) (lv-domain-slot false)
+                (-> start (iv-hex "9c5af7c200020000") (xg-rel 0x850f 2 2 zero)
+                    (xg-load t 0x858b48) (lv-domain-slot false)
                     (iv-hex "83f904") (xg-rel 0x830f 2 2 zero)
-                    (iv-hex "498981") (xg-bytes LV-DOMAIN 4))
+                    (iv-hex "498981") (xg-bytes LV-DOMAIN 4) (uv-refresh t))
               (= k 4)
                 (-> start (xg-load t 0x858b48)
                     (iv-hex "483dffff0100") (xg-rel 0x870f 2 2 zero)
@@ -71,8 +75,7 @@
               (or (= k 6) (= k 7) (= k 11))
                 (-> start (xg-load t 0x858b48) (lv-domain-slot (= k 7))
                     (iv-hex "83f904") (xg-rel 0x830f 2 2 zero)
-                    (iv-hex "89c848c1e00c4c01c84805")
-                    (xg-bytes (if (= k 11) LV-REQUEST-PAGES LV-ARENAS) 4))
+                    (uv-or-arena k))
               (= k 8) (-> start (iv-hex "498b81") (xg-bytes LV-DOMAIN 4))
               (= k 10) (-> start (iv-hex "498d81") (xg-bytes LV-REQUEST 4))
               :else (xg-err start 7101 OP-CALL))]

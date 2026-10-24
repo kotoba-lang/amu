@@ -23,5 +23,5 @@
                             (and (= (xg-si M i IF-OP) OP-CALL)
                                  (= (km-intr M (xg-si M i IF-A)) LV-CALL)) true
                             :else (recur (inc i))))]
-        (if (or (and (> mask 0) (not= mask 255)) (and invokes (not= mask 255)))
+        (if (or (and (> mask 0) (not= mask 255)) (and (or invokes (uv-used? M)) (not= mask 255)))
           (xg-err M 7102 0) M)))))

@@ -43,6 +43,7 @@ def main(build, complete, output):
    targets=struct.unpack_from('<8Q',b,rw[2]+30208)
    assert rw[5]==147456 and len(set(targets))==8 and all(rx[3]+77<p<rx[3]+rx[5] for p in targets)
    assert struct.unpack_from('<Q',b,rw[2]+172)[0]==rw[3]+131072
+   assert struct.unpack_from('<Q',b,rw[2]+328)[0]==0,'typed roles must not become ISR callbacks'
    efi=out/(name+'.efi');q=subprocess.run([str(compiler),'package-aiueos-boot',str(image),'--output',str(efi),'--pci-resources','v1'],env=env,capture_output=True,timeout=180)
    assert not q.returncode and not q.stderr and efi.read_bytes().count(b)==1
    return dict(kernel=pin(image),efi=pin(efi))
