@@ -35,7 +35,8 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024):
             "-drive", "file=fat:rw:esp,format=raw", "-boot", "order=c", "-nic", "none",
             "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", "-display", "none",
             "-serial", "file:serial.log", "-debugcon", "file:debug.log", "-no-reboot",
-            "-qmp", "unix:qmp.sock,server=on,wait=off"]
+            "-qmp", "unix:qmp.sock,server=on,wait=off",
+            "-d", "int", "-D", "exceptions.log"]
     (output / "command.json").write_text(json.dumps(args, indent=2) + "\n")
     old_cwd = Path.cwd()
     os.chdir(output)  # Keep the Unix socket name below macOS's path limit.

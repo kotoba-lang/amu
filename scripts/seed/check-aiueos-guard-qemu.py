@@ -21,7 +21,7 @@ def pin(path):
     return dict(bytes=len(b), sha256=hashlib.sha256(b).hexdigest())
 
 
-def main(efi, kernel, qemu, firmware, output):
+def main(efi, kernel, qemu, firmware, output, guard_kind='window'):
     data = kernel.read_bytes()
     assert data[:8] == b'\x7fELF\x02\x01\x01\0'
     assert efi.read_bytes().count(data) == 1
@@ -30,8 +30,21 @@ def main(efi, kernel, qemu, firmware, output):
     assert ph[0:2] == (1, 5) and ph[2] == 4096 and ph[3] == 0x101000
     code = data[ph[2]:ph[2]+ph[5]]
     sites = [i for i in range(len(code)-1) if code[i:i+2] == b'\x0f\x0b']
-    assert len(sites) == 2, ('fixture must have exactly fuel + window guards', sites)
-    expected = ph[3] + sites[1]
+    if guard_kind == 'owned-page':
+        starts = [i for i in range(len(code)) if code.startswith(bytes.fromhex('4883f80f0f83'), i)]
+        assert len(starts) == 1, ('one owned-page constructor required', starts)
+        at = starts[0]
+        assert code[at+10:at+18] == bytes.fromhex('4983b9180100000f')
+        targets = []
+        for delta, opcode in [(4, b'\x0f\x83'), (18, b'\x0f\x85'), (34, b'\x0f\x84'), (47, b'\x0f\x82')]:
+            pc = at + delta
+            assert code[pc:pc+2] == opcode
+            targets.append(pc+6+struct.unpack_from('<i', code, pc+2)[0])
+        assert len(set(targets)) == 1 and code[targets[0]:targets[0]+2] == b'\x0f\x0b'
+        expected = ph[3] + targets[0]
+    else:
+        assert len(sites) == 2, ('fixture must have exactly fuel + window guards', sites)
+        expected = ph[3] + sites[1]
     output.mkdir(parents=True, exist_ok=False)
     esp = output / 'esp/EFI/BOOT'
     esp.mkdir(parents=True)
@@ -62,7 +75,7 @@ def main(efi, kernel, qemu, firmware, output):
                 time.sleep(0.25)
             assert event, ('no #UD at the native window guard', hex(expected))
             report = dict(status='PASS_NATIVE_KERNEL_GUARD_QEMU', exception=6, instruction='UD2',
-                          savedIP=hex(expected), event=event, kernel=pin(kernel), efi=pin(efi),
+                          savedIP=hex(expected), event=event, guardKind=guard_kind, kernel=pin(kernel), efi=pin(efi),
                           firmware=pin(firmware), observer=pin(Path(__file__).resolve()),
                           fullKernel=False, desktop=False, input=False, nativeCDCI=False,
                           guestEmulation='QEMU TCG', compilerProvenance='requires associated native packaging receipt')
@@ -82,5 +95,6 @@ if __name__ == '__main__':
     p = argparse.ArgumentParser(description=__doc__)
     for name in ('efi', 'kernel', 'qemu', 'firmware', 'output'):
         p.add_argument('--'+name, type=Path, required=True)
+    p.add_argument('--guard-kind', choices=('window', 'owned-page'), default='window')
     a = p.parse_args()
-    main(*(getattr(a, n).resolve() for n in ('efi','kernel','qemu','firmware','output')))
+    main(*(getattr(a, n).resolve() for n in ('efi','kernel','qemu','firmware','output')), guard_kind=a.guard_kind)
