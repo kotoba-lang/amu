@@ -130,11 +130,15 @@
 ;; result, a loop variable -- is refused (E7106, detail the SIR index of the call).
 ;; SIR is read backwards from the call: the argument temps are allocated stack-wise,
 ;; so the instruction that last wrote the base's temp before the call is the base's
-;; own last step, provided no label or jump lies between (otherwise a path could
-;; reach the call without it) and no op that may write that temp in a way this
-;; reader does not model is met first.
+;; own last step. The closed project may cross labels only after proving that
+;; no edge bypasses that definition; object admission retains its basic-block
+;; rule. Any unmodelled write or merged value is refused.
 (defn- xk-fn-start [M :vector-i64 i :i64] :i64
-  (if (<= i 1) 1 (if (= (xg-si M i IF-OP) OP-FN) i (xk-fn-start M (dec i)))))
+  (if (<= i 1) 1
+    (if (and (= (xg-get M 4) 2) (= (vector-at M 197) 0)
+             (> (vector-at M 202) 0) (> (vector-at M 206) 0))
+      (vector-at M (+ (vector-at M 206) i))
+      (if (= (xg-si M i IF-OP) OP-FN) i (xk-fn-start M (dec i))))))
 (defn- xk-lsets [M :vector-i64 j :i64 s :i64 cnt :i64] :i64
   (if (>= j (vector-at M MM-SIR-N)) cnt
     (let [op (xg-si M j IF-OP)]
@@ -190,19 +194,25 @@
 (defn- xk-param-slot? [M :vector-i64 j :i64 s :i64] :bool
   (let [st (xk-fn-start M j) f (xg-si M st IF-A)]
     (and (>= s 1) (<= s (xg-f M f FF-NPARAMS))
-         (if (= (xg-get M 4) 2) (xk-identity-lsets? M (inc st) s)
+         (if (= (xg-get M 4) 2)
+           (if (and (> (vector-at M 202) 0) (> (vector-at M 205) 0))
+             (= (vector-at M (+ (vector-at M 205) (* f 16) (dec s))) 1)
+             (xk-identity-lsets? M (inc st) s))
            (= (xk-lsets M (inc st) s 0) 0)))))
 (defn- xk-writer [M :vector-i64 i :i64 t :i64] :i64
-  (loop [j (dec i)]
+  (loop [j (dec i) crossed false]
     (if (< j 1) -1
       (let [op (xg-si M j IF-OP) a (xg-si M j IF-A) b (xg-si M j IF-B) c (xg-si M j IF-C)]
-        (cond (or (= op OP-LABEL) (= op OP-BR) (= op OP-BRZ) (= op OP-BRNZ) (= op OP-FN) (= op OP-END)) -1
-              (and (or (= op OP-CONST) (= op OP-LGET)) (= a t)) j
-              (and (or (= op OP-BIN) (= op OP-CMP) (= op OP-UN) (= op OP-CALL)) (= b t)) j
+        (cond (or (= op OP-FN) (= op OP-END)) -1
+              (or (= op OP-LABEL) (= op OP-BR) (= op OP-BRZ) (= op OP-BRNZ))
+                (if (= (xg-get M 4) 2) (recur (dec j) true) -1)
+              (or (and (or (= op OP-CONST) (= op OP-LGET)) (= a t))
+                  (and (or (= op OP-BIN) (= op OP-CMP) (= op OP-UN) (= op OP-CALL)) (= b t)))
+                (if crossed (if (xk-local-dominates? M j i) j -1) j)
               (or (= op OP-CONST) (= op OP-LGET) (= op OP-BIN) (= op OP-CMP) (= op OP-UN) (= op OP-CALL)
-                  (= op OP-LSET) (= op OP-FUEL) (= op OP-RET) (= op OP-TRAP)) (recur (dec j))
+                  (= op OP-LSET) (= op OP-FUEL) (= op OP-RET) (= op OP-TRAP)) (recur (dec j) crossed)
               (or (= a t) (= b t) (= c t)) -1
-              :else (recur (dec j)))))))
+              :else (recur (dec j) crossed))))))
 ;; A value's SOURCE as a number, 0 when unknown: 2^32 + v for the integer literal v (0 <= v < 2^31: a wider literal is unknown, so it
 ;; cannot alias another through masking), 2^33 + s for the unassigned parameter slot s of
 ;; its function (through a let-bound local with one assignment). Two temps with the same non-zero source hold the same value.
@@ -214,39 +224,53 @@
           (cond (= op OP-CONST) (if (and (>= b 0) (< b 2147483648)) (+ 4294967296 b) 0)
                 (= op OP-LGET)
                   (cond (xk-param-slot? M j b) (+ 8589934592 b)
-                        (> (xk-local-set M j b) 0)
+                        (and (> b (xg-f M (xg-si M (xk-fn-start M j) IF-A) FF-NPARAMS))
+                             (> (xk-local-set M j b) 0))
                           (let [k (xk-local-set M j b)]
                             (if (> k 0) (xk-src M k (xg-si M k IF-B) (inc depth)) 0))
                         :else 0)
                 :else 0))))))
+;; An explicit paired length and a proven fixed length may describe the same
+;; parameter. Keep source identities unchanged, and compare their values only
+;; through the complete graph's paired+fixed facts for that local function.
+(defn- xk-extent-constant [M :vector-i64 i :i64 source :i64] :i64
+  (cond (and (>= source 4294967296) (< source 8589934592)) source
+        (and (= (xg-get M 4) 2) (= (vector-at M 197) 0)
+             (> (vector-at M 202) 0) (> source 8589934593) (< source 8589934609))
+          (let [f (xg-si M (xk-fn-start M i) IF-A) p (- source 8589934592)
+                at (+ (* f 16) (- p 2))]
+            (if (and (<= p (xg-f M f FF-NPARAMS))
+                     (= (vector-at M (+ (vector-at M 203) at)) 1))
+              (let [v (vector-at M (+ (vector-at M 202) at))] (if (> v 0) v -1)) -1))
+        :else -1))
+(defn- xk-same-extent? [M :vector-i64 i :i64 a :i64 b :i64] :bool
+  (if (= a b) true
+    (let [left (xk-extent-constant M i a) right (xk-extent-constant M i b)]
+      (and (>= left 4294967296) (= left right)))))
 ;; Closed project helpers can also have a fixed extent without a redundant
 ;; adjacent length parameter. EVERY external call must supply an already
 ;; rooted region with that same literal extent. An identity self-call merely
 ;; carries that established contract; it cannot seed one or change the base.
 ;; This rule does not apply to ordinary object ABI exports or IRQ arguments.
 (defn- xk-fixed-param-region [M :vector-i64 f :i64 b :i64 depth :i64] :i64
-  ;; Only successfully completed all-caller proofs are memoized. Unknown,
-  ;; in-progress and depth-exhausted results never seed a contract. The
-  ;; project checker allocates this table after freezing the retained SIR.
-  (let [base (if (and (= (xg-get M 4) 2) (= (vector-at M 197) 0)) (vector-at M 202) 0)
-        at (+ base (* f 16) (dec b))
-        cached (if (> base 0) (vector-at M at) 0)]
-    (if (> cached 0) cached
-      (let [result (loop [c 1 extent -1]
-                      (if (>= c (vector-at M MM-SIR-N)) extent
-                        (if (and (= (xg-si M c IF-OP) OP-CALL) (= (xg-si M c IF-A) f))
-                          (let [t (+ (xg-si M c IF-B) (dec b))
-                                self (= (xg-si M (xk-fn-start M c) IF-A) f)
-                                same (and self (= (xk-src M c t 0) (+ 8589934592 b)))]
-                            (if same (recur (inc c) extent)
-                              (let [r (xk-region M c t (inc depth))]
-                                (if (and (>= r 4294967296) (< r 8589934592)
-                                         (or (= extent -1) (= extent r)))
-                                  (recur (inc c) r) -1))))
-                          (recur (inc c) extent))))
-            recorded (if (and (> base 0) (>= result 4294967296) (< result 8589934592))
-                       (mem-set M at result) M)]
-        result))))
+  ;; The closed-project solver freezes both fixed and paired contracts before
+  ;; admission. Its table removes recursive graph walking at a use site.
+  ;; Other profiles retain the original conservative all-caller rule.
+  (if (and (= (xg-get M 4) 2) (= (vector-at M 197) 0) (> (vector-at M 202) 0))
+    (let [r (vector-at M (+ (vector-at M 202) (* f 16) (dec b)))]
+      (if (> r 0) r -1))
+    (loop [c 1 extent -1]
+      (if (>= c (vector-at M MM-SIR-N)) extent
+        (if (and (= (xg-si M c IF-OP) OP-CALL) (= (xg-si M c IF-A) f))
+          (let [t (+ (xg-si M c IF-B) (dec b))
+                self (= (xg-si M (xk-fn-start M c) IF-A) f)
+                same (and self (= (xk-src M c t 0) (+ 8589934592 b)))]
+            (if same (recur (inc c) extent)
+              (let [r (xk-region M c t (inc depth))]
+                (if (and (>= r 4294967296) (< r 8589934592)
+                         (or (= extent -1) (= extent r)))
+                  (recur (inc c) r) -1))))
+          (recur (inc c) extent))))))
 ;; The REGION of a base: -1 when the base is not rooted, else the source its length must have. A rooted base is
 ;;   - a parameter slot p never assigned: of the exported function (the ABI boundary hands in a region as the pair (base, length),
 ;;     the length being parameter p + 1), or of a private helper when EVERY call of it passes a rooted base at p whose length
@@ -269,6 +293,9 @@
                                   :else
                                     (let [fixed (if (= (xg-get M 4) 2) (xk-fixed-param-region M f b depth) -1)]
                                       (cond (>= fixed 0) fixed
+                                            (> (vector-at M 202) 0)
+                                              (if (> (vector-at M (+ (vector-at M 203) (* f 16) (dec b))) 0)
+                                                (+ 8589934592 (inc b)) -1)
                                             (> (inc b) (xg-f M f FF-NPARAMS)) -1
                                             :else (loop [c 1]
                                       (if (>= c (vector-at M MM-SIR-N)) (+ 8589934592 (inc b))
@@ -277,7 +304,8 @@
                                                 ln (xk-src M c (+ (xg-si M c IF-B) b) 0)]
                                             (if (and (>= r 0) (not= ln 0) (= ln r)) (recur (inc c)) -1))
                                           (recur (inc c)))))))))
-                        (> (xk-local-set M j b) 0)
+                        (and (> b (xg-f M (xg-si M (xk-fn-start M j) IF-A) FF-NPARAMS))
+                             (> (xk-local-set M j b) 0))
                           (let [k (xk-local-set M j b)]
                             (if (> k 0) (xk-region M k (xg-si M k IF-B) (inc depth)) -1))
                         :else -1)
@@ -286,7 +314,7 @@
                     (let [p (xk-region M j b (inc depth))
                           l0 (xk-src M j (inc b) 0)
                           n (xk-src M j (+ b 3) 0)]
-                      (if (and (>= p 0) (not= l0 0) (= l0 p) (not= n 0)) n -1))
+                      (if (and (>= p 0) (not= l0 0) (xk-same-extent? M j l0 p) (not= n 0)) n -1))
                     (km-owned-region M a j b))
                 :else -1))))))
 (defn- xk-check [M :vector-i64 i :i64] :vector-i64
@@ -294,7 +322,7 @@
     (let [op (xg-si M i IF-OP) a (xg-si M i IF-A) b (xg-si M i IF-B)]
       (if (or (and (= op OP-CALL) (>= (xk-intr M a) 0)
                    (let [r (xk-region M i b 0) ln (xk-src M i (inc b) 0)]
-                     (not (and (>= r 0) (not= ln 0) (= ln r)))))
+                     (not (and (>= r 0) (not= ln 0) (xk-same-extent? M i ln r)))))
               ;; the exported function's parameters are rooted because the kernel hands them in: a guest call of the export would
               ;; hand them in again with a base of its own making, so nothing in the object may call the export
               (and (= op OP-CALL) (> (xg-f M a FF-EXPORT) 0)))

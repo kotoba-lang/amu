@@ -23,8 +23,8 @@ def pin(path):
     return dict(bytes=len(b), sha256=hashlib.sha256(b).hexdigest())
 
 
-def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalog=False, stack_exhaustion=False, pci_catalog=False, pci_private=False, pci_private_forgery=False):
-    pci_private = pci_private or pci_private_forgery
+def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalog=False, stack_exhaustion=False, pci_catalog=False, pci_private=False, pci_private_forgery=False, dma_snapshot=False):
+    pci_private = pci_private or pci_private_forgery or dma_snapshot
     pci_catalog = pci_catalog or pci_private
     assert not (pci_catalog and (sealed_catalog or stack_exhaustion)), "select one versioned fixture"
     assert 0 <= remaining_fuel <= 9007199254740991
@@ -111,7 +111,7 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
         # The original literal-only probe preserves 1024. Call-bearing locked
         # fixtures supply their exact source-charge expectation explicitly.
         assert boot > 0
-        if stack_exhaustion:
+        if stack_exhaustion or dma_snapshot:
             assert 0 < fuel < 1000000, fuel  # Bounded budget, not exact fuel parity.
         else:
             assert fuel == remaining_fuel, (fuel, remaining_fuel)
@@ -195,6 +195,21 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
                 assert actual == original and public == (11, 4096, 16) and actual != public
             catalog = dict(bytes=size, stride=stride, sha256=hashlib.sha256(copied).hexdigest(),
                            publicMutationIsAuthority=False, positivePlatformMMIOQualified=False)
+        dma = None
+        if dma_snapshot:
+            # Functional memory gate; exact source-fuel parity is deliberately
+            # separate. Locate pages through sealed context, never public info.
+            scratch, pages = struct.unpack_from('<QQ', private, 272)
+            assert scratch > 0 and pages == 15
+            assert hmp(f"pmemsave 0x{scratch:x} 80 dma-receipt.bin") == ""
+            assert hmp(f"pmemsave 0x{scratch+14*4096:x} 4096 dma-snapshot.bin") == ""
+            checks = struct.unpack('<10Q', Path('dma-receipt.bin').read_bytes())
+            snapshot = Path('dma-snapshot.bin').read_bytes()
+            assert checks == (1,)*10, checks
+            assert snapshot == bytes([68])*64+bytes(4096-64)
+            dma = dict(checks=list(checks),receipt=pin(Path('dma-receipt.bin')),
+                       snapshot=pin(Path('dma-snapshot.bin')),four2048ByteBuffers=True,
+                       invalidIndexSizeAndAliasPreserveSnapshot=True,exactFuelParity=False)
         fb, fbsize = struct.unpack_from("<QQ", info, 112)
         width, height, stride, pixel_format = struct.unpack_from("<IIII", info, 128)
         assert fb > 0 and fbsize > 0 and width > 0 and height > 0 and stride >= width
@@ -202,7 +217,7 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
         report = dict(status="PASS_NATIVE_STACK_LIMIT_QEMU" if stack_exhaustion else "PASS_AIUEOS_ENTRY_QEMU", observer=pin(Path(__file__).resolve()), efi=pin(efi), kernel=pin(kernel),
                       firmware=pin(firmware), qemuVersion=subprocess.check_output([str(qemu), "--version"]).decode().splitlines()[0],
                       result=None if stack_exhaustion else 42, pc=hex(expected_pc), remainingFuel=fuel,
-                      expectedRemainingFuel=None if stack_exhaustion else remaining_fuel, bootInfoVersion=6 if pci_catalog else 5, pciResources=pci,
+                      expectedRemainingFuel=None if stack_exhaustion or dma_snapshot else remaining_fuel, bootInfoVersion=6 if pci_catalog else 5, pciResources=pci, dmaSnapshot=dma,
                       observedPublicMapTypes=memory_types, firmwareMap=pin(Path("firmware-map.bin")), sealedCatalog=catalog,
                       framebuffer=dict(base=fb, bytes=fbsize, width=width, height=height, stride=stride, pixelFormat=pixel_format),
                       completeKernel=False, desktop=False, input=False, gpt=False, physicalHardware=False,
@@ -237,6 +252,7 @@ if __name__ == "__main__":
     p.add_argument("--pci-catalog", action="store_true")
     p.add_argument("--pci-private", action="store_true")
     p.add_argument("--pci-private-forgery", action="store_true")
+    p.add_argument("--dma-snapshot", action="store_true")
     a = p.parse_args()
     main(*(getattr(a, n).resolve() for n in ("efi", "kernel", "qemu", "firmware", "output")), remaining_fuel=a.remaining_fuel,
-         sealed_catalog=a.sealed_catalog, stack_exhaustion=a.stack_exhaustion, pci_catalog=a.pci_catalog, pci_private=a.pci_private, pci_private_forgery=a.pci_private_forgery)
+         sealed_catalog=a.sealed_catalog, stack_exhaustion=a.stack_exhaustion, pci_catalog=a.pci_catalog, pci_private=a.pci_private, pci_private_forgery=a.pci_private_forgery, dma_snapshot=a.dma_snapshot)

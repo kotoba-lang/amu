@@ -118,6 +118,93 @@
                          (xk-region M k (+ (xg-si M k IF-B) (dec slot)) 0))]
               (recur (inc k) (inc count)))
             (recur (inc k) count)))))))
+;; Infer only contracts reached from actual roots or the canonical adjacent
+;; pair contract of an uncalled private function. Then monotonically remove
+;; every contract with a mismatching caller, until the complete graph is
+;; stable. Mutually recursive components may carry rooted facts, never seed
+;; themselves. No instruction is admitted while candidates are tentative.
+(defn- kg-contract-at [M :vector-i64 f :i64 p :i64 paired :bool] :i64
+  (+ (vector-at M (if paired 203 202)) (* f 16) (dec p)))
+(defn- kg-contract-round [M :vector-i64 prune :bool] :vector-i64
+  (loop [i 1]
+    (if (>= i (vector-at M MM-SIR-N)) M
+      (let [f (xg-si M i IF-A)]
+        (if (and (= (xg-si M i IF-OP) OP-CALL) (>= f KG-FIRST)
+                 (= (xg-f M f FF-EXPORT) 0))
+          (let [n (xg-f M f FF-NPARAMS) t (xg-si M i IF-B)
+                checked (loop [p 1]
+                          (if (> p n) M
+                            (let [fixed-at (kg-contract-at M f p false)
+                                  pair-at (kg-contract-at M f p true)
+                                  fixed (vector-at M fixed-at) paired (vector-at M pair-at)
+                                  r (xk-region M i (+ t (dec p)) 0)
+                                  constant (xk-extent-constant M i r)
+                                  ln (if (< p n) (xk-src M i (+ t p) 0) 0)
+                                  literal (and (>= constant 4294967296) (< constant 8589934592))
+                                  pair-ok (and (< p n) (>= r 0) (not= ln 0) (xk-same-extent? M i r ln))
+                                  change-fixed (if prune (and (> fixed 0) (not (xk-same-extent? M i fixed r)))
+                                                     (and (= fixed 0) literal))
+                                  change-pair (if prune (and (> paired 0) (not pair-ok))
+                                                    (and (= paired 0) pair-ok))
+                                  a (if change-fixed (mem-set M fixed-at (if prune 0 constant)) M)
+                                  b (if change-pair (mem-set M pair-at (if prune 0 1)) M)
+                                  c (if (or change-fixed change-pair) (mem-set M 204 1) M)]
+                              (recur (inc p)))))]
+            (recur (inc i)))
+          (recur (inc i)))))))
+(defn- kg-contract-fixedpoint [M :vector-i64 prune :bool bound :i64] :vector-i64
+  (let [clear (mem-set M 204 0) round (kg-contract-round M prune)]
+    (cond (not (pj-ok round)) round
+          (= (vector-at round 204) 0) round
+          (<= bound 0) (xg-err round 7106 0)
+          :else (kg-contract-fixedpoint round prune (dec bound)))))
+(defn- kg-contracts [M :vector-i64] :vector-i64
+  (let [words (* (vector-at M MM-FN-N) 16) allocation (mem-alloc M (+ (* words 3) (vector-at M MM-SIR-N)))
+        base (if (pj-ok allocation) (vector-at allocation MM-R0) 0)]
+    (if (= base 0) M
+      (let [clear (loop [i 0]
+                    (if (>= i (+ (* words 3) (vector-at M MM-SIR-N))) M
+                      (let [w (mem-set M (+ base i) 0)] (recur (inc i)))))
+            set-bases (-> M (mem-set 202 base) (mem-set 203 (+ base words))
+                            (mem-set 205 0) (mem-set 206 (+ base (* words 3))))
+            fn-index (loop [i 1 start 1]
+                       (if (>= i (vector-at M MM-SIR-N)) M
+                         (let [begin (= (xg-si M i IF-OP) OP-FN) st (if begin i start)
+                               f (xg-si M i IF-A)
+                               a (mem-set M (+ (vector-at M 206) i) st)
+                               b (if begin (mem-set M (+ MM-FN-BASE (* f MM-FN-W) FF-SIR) i) M)]
+                           (recur (inc i) st))))
+            identities (loop [f KG-FIRST]
+                         (if (>= f (vector-at M MM-FN-N)) M
+                           (let [w (loop [p 1]
+                                     (if (> p (xg-f M f FF-NPARAMS)) M
+                                       (let [a (mem-set M (+ base (* words 2) (* f 16) (dec p))
+                                                  (if (xk-identity-lsets? M (inc (xg-f M f FF-SIR)) p) 1 0))]
+                                         (recur (inc p)))))]
+                             (recur (inc f)))))
+            identity-base (mem-set M 205 (+ base (* words 2)))
+            ;; During this bounded prepass the now-unused FN fuel field is an
+            ;; incoming-call marker. Emitted code and ABI fuel are unaffected.
+            no-call (loop [f KG-FIRST]
+                      (if (>= f (vector-at M MM-FN-N)) M
+                        (let [w (mem-set M (+ MM-FN-BASE (* f MM-FN-W) FF-FUEL) 0)]
+                          (recur (inc f)))))
+            callers (loop [i 1]
+                      (if (>= i (vector-at M MM-SIR-N)) M
+                        (let [f (xg-si M i IF-A)
+                              w (if (and (= (xg-si M i IF-OP) OP-CALL) (>= f KG-FIRST))
+                                  (mem-set M (+ MM-FN-BASE (* f MM-FN-W) FF-FUEL) 1) M)]
+                          (recur (inc i)))))
+            seeds (loop [f KG-FIRST]
+                    (if (>= f (vector-at M MM-FN-N)) M
+                      (let [w (if (and (= (xg-f M f FF-FUEL) 0) (= (xg-f M f FF-EXPORT) 0))
+                                (loop [p 1]
+                                  (if (>= p (xg-f M f FF-NPARAMS)) M
+                                    (let [a (mem-set M (kg-contract-at M f p true) 1)]
+                                      (recur (inc p))))) M)]
+                        (recur (inc f)))))
+            inferred (kg-contract-fixedpoint M false (* words 2))]
+        (if (pj-ok inferred) (kg-contract-fixedpoint inferred true (* words 2)) inferred)))))
 (defn- kg-check [M :vector-i64 L :vector-i64 G :vector-i64 P :string] :vector-i64
   (let [functions (loop [f 1]
                     (if (>= f (vector-at G 0)) M
@@ -137,16 +224,10 @@
                                                        (vector-at G (+ KG-SBASE (* i MM-SIR-W) k)))]
                                        (recur (inc k)))))]
                            (recur (inc i)))))
-        cache-words (* (vector-at G 0) 16)
-        allocation (mem-alloc M cache-words)
-        cache (if (pj-ok allocation) (vector-at allocation MM-R0) 0)
-        cleared (if (> cache 0)
-                  (loop [i 0]
-                    (if (>= i cache-words) M
-                      (let [w (mem-set M (+ cache i) 0)] (recur (inc i))))) M)
-        checked (-> M (mem-set MM-FN-N (vector-at G 0)) (mem-set MM-SIR-N (vector-at G 1))
-                      (mem-set 197 0) (mem-set 200 KG-XFIRST) (mem-set 201 1) (mem-set 202 cache)
-                      (xk-check 1) (km-check 1))
+        prepared (-> M (mem-set MM-FN-N (vector-at G 0)) (mem-set MM-SIR-N (vector-at G 1))
+                       (mem-set 197 0) (mem-set 200 KG-XFIRST) (mem-set 201 1)
+                       (mem-set 202 0) (mem-set 203 0) (mem-set 205 0) (mem-set 206 0) (kg-contracts))
+        checked (-> prepared (xk-check 1) (km-check 1))
         owner (if (= (vector-at checked MM-ERR) 7106)
                 (let [i (vector-at checked MM-ERR-N)
                       diagnostic (kg-diag checked L G P i)

@@ -48,6 +48,25 @@ READY_BRIDGE='''(ns lib.bridge (:require [lib.memory :as m]) (:export [through])
 (defn through [base :i64 index :i64] :i64
  (let [ready (if (= index 0) 1 0)] (resident base index 0 0 ready 3)))
 '''
+MUTUAL='''(ns lib.memory (:export [read]))
+(defn- leaf [base :i64 index :i64 remaining :i64] :i64
+ (if (= remaining 0) (kernel-load-u64-4k base 4096 index)
+  (other base index (- remaining 1))))
+(defn- other [base :i64 index :i64 remaining :i64] :i64
+ (if (= remaining 0) (kernel-load-u64-4k base 4096 index)
+  (leaf base index (- remaining 1))))
+(defn read [base :i64 index :i64] :i64 (leaf base index 3))
+'''
+LENGTH_MEMORY='''(ns lib.memory (:export [read]))
+(defn- leaf [base :i64 length :i64 index :i64] :i64
+ (kernel-load-u64-4k base length index))
+(defn read [base :i64 length :i64 index :i64] :i64 (leaf base length index))
+'''
+LENGTH_BRIDGE=BRIDGE.replace('(m/read base index)','(m/read base 4096 index)')
+DIAGNOSTIC_MEMORY=MEMORY+'''
+(defn- diagnostic [parent :i64 bytes :i64] :i64
+ (let [page (kernel-subregion parent bytes 0 4096)] (leaf page 0)))
+'''
 
 def pin(p):
  raw=p.read_bytes();return dict(bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest())
@@ -74,6 +93,10 @@ def main(build, out, complete=None):
   compile_('identity-nontail-recursion',m=RECURSIVE.replace('(leaf base index (- remaining 1))','(+ 0 (leaf base index (- remaining 1)))'))
   compile_('disjoint-local-scopes',e=SCOPED_ENTRY)
   compile_('separate-ready-six-arguments',b=READY_BRIDGE)
+  compile_('rooted-mutual-recursion',m=MUTUAL)
+  compile_('rooted-mutual-nontail',m=MUTUAL.replace('(other base index (- remaining 1))','(+ 0 (other base index (- remaining 1)))'))
+  compile_('fixed-and-paired-length',b=LENGTH_BRIDGE,m=LENGTH_MEMORY)
+  compile_('uncalled-paired-diagnostic',m=DIAGNOSTIC_MEMORY)
   compile_('wrong-extent',m=MEMORY.replace('base 4096 index','base 64 index'),bad=True)
   compile_('literal-caller',e=ENTRY.replace('(b/through p 0)','(b/through 4096 0)'),bad=True)
   compile_('computed-caller',e=ENTRY.replace('(b/through p 0)','(b/through (+ p 0) 0)'),bad=True)
@@ -84,11 +107,17 @@ def main(build, out, complete=None):
   compile_('forged-disjoint-scope',e=SCOPED_ENTRY.replace('(kernel-owned-page 1)','4096'),bad=True)
   compile_('computed-disjoint-scope',e=SCOPED_ENTRY.replace('(kernel-owned-page 1)','(+ (kernel-owned-page 1) 0)'),bad=True)
   compile_('branch-result-base',e=ENTRY.replace('(kernel-owned-page 0)','(if (= (kernel-rdtsc) 0) (kernel-owned-page 0) (kernel-owned-page 1))'),bad=True)
-  compile_('inline-ready-branch',b=READY_BRIDGE.replace('(let [ready (if (= index 0) 1 0)] (resident base index 0 0 ready 3))','(resident base index 0 0 (if (= index 0) 1 0) 3)'),bad=True)
-  routes.append(dict(compiler=pin(compiler),artifacts=artifacts,refusals=11))
+  compile_('inline-ready-branch',b=READY_BRIDGE.replace('(let [ready (if (= index 0) 1 0)] (resident base index 0 0 ready 3))','(resident base index 0 0 (if (= index 0) 1 0) 3)'))
+  compile_('unseeded-mutual',e='(ns entry (:require [lib.bridge :as b]) (:export [main]))\n(defn main [] :i64 42)\n',m=MUTUAL,bad=True)
+  compile_('forged-mutual-caller',m=MUTUAL+'\n(defn- bad [] :i64 (other 4096 0 3))\n',bad=True)
+  compile_('computed-mutual-edge',m=MUTUAL.replace('(other base index (- remaining 1))','(other (+ base 8) index (- remaining 1))'),bad=True)
+  compile_('lying-paired-length',b=LENGTH_BRIDGE.replace('(m/read base 4096 index)','(m/read base 64 index)'),m=LENGTH_MEMORY,bad=True)
+  compile_('assigned-parameter-rebase',m=RECURSIVE.replace('(leaf base index (- remaining 1))','(leaf (kernel-subregion base 4096 0 4096) index (- remaining 1))'),bad=True)
+  compile_('forged-diagnostic-caller',m=DIAGNOSTIC_MEMORY+'\n(defn- bad [] :i64 (diagnostic 4096 4096))\n',bad=True)
+  routes.append(dict(compiler=pin(compiler),artifacts=artifacts,refusals=16))
  assert routes[0]['artifacts']==routes[1]['artifacts']
  report=dict(status='PASS_NATIVE_FIXED_EXTENT_HELPERS',source=graph,routes=routes,guestExecution=False,fullKernel=False,nativeCDCI=False)
- (out/'native-fixed-extent.json').write_text(json.dumps(report,indent=2)+'\n');print(report['status'],'uniform rooted callers, scoped dominance, separate readiness,11 refusals; guest separate')
+ (out/'native-fixed-extent.json').write_text(json.dumps(report,indent=2)+'\n');print(report['status'],'rooted mutual recursion, scoped dominance, fixed/paired lengths,16 refusals; guest separate')
 
 if __name__=='__main__':
  p=argparse.ArgumentParser();g=p.add_mutually_exclusive_group(required=True);g.add_argument('--build',type=Path);g.add_argument('--complete',type=Path);p.add_argument('--output',type=Path,required=True);a=p.parse_args();main(a.build.resolve() if a.build else None, a.output.resolve(), a.complete.resolve() if a.complete else None)

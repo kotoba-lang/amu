@@ -213,7 +213,7 @@
     (let [k (if (= (xg-si M i IF-OP) OP-CALL) (km-intr M (xg-si M i IF-A)) -1)]
       (if (or (and (>= k 0) (or (< k KM-MEM-N) (= k KM-TRY-LOCK) (= k KM-UNLOCK) (= k (+ KM-ISR-FIRST 3)))
                (let [b (xg-si M i IF-B) r (xk-region M i b 0) ln (xk-src M i (inc b) 0)]
-                      (not (and (>= r 0) (not= ln 0) (= ln r)))))
+                      (not (and (>= r 0) (not= ln 0) (xk-same-extent? M i ln r)))))
               (and (or (= k (+ KM-ISR-FIRST 2)) (= k (+ KM-ISR-FIRST 9)))
                    (let [b (xg-si M i IF-B) page (+ 4294967296 4096)]
                      (or (not= (xk-region M i b 0) page)
