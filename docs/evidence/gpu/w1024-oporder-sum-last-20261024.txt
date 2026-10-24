@@ -1,0 +1,95 @@
+JUN-58 / JUN-55 -- the W = 1024 op-order-scoped regime check
+(2026-10-24)
+
+ONE measurement: the PROPOSED row the resweep w1024 record's Honest LEFT
+named -- "The W = 1024 regime term (above) motivates an op-order-scoped
+regime check at this W -- PROPOSED, own slice if taken" -- is taken. The
+check runs the op-order instrument the W = 32 cell built (2026-10-23,
+docs/evidence/gpu/w32-oporder-sum-last-20261023.txt) at the W = 1024 cell:
+:baseline vs :subgroup-reduce, MSL arms, Apple M1 Max (reported subgroup
+size 32), W = 1024, n = 1,000,003, dispatch order "max,min,sum" (:sum
+LAST), 6 fresh processes, 20 interleaved AB/BA pairs per operator per run,
+2 warmup submits per arm discarded, verified read-back (ok=1 on all 36
+verify lines). Native-Metal channel (NOT wire 42, which has no route since
+the C loader removal). Full record:
+docs/evidence/gpu-subgroup-reduce-m1max-oporder-20261024/{NOTES.md,
+w1024-sum-last/,analyze-oporder.py,analyze-oporder.txt}.
+
+The question the resweep's caveat named: at W = 1024 the paired ratio
+carried a regime term (fast-regime runs 1.167-1.175 for :max/:min against
+the slow runs' 1.183-1.186) that was CONFOUNDED with the operator's
+position in the fixed sum,max,min dispatch order (:sum first, :max/:min in
+the later blocks where the fresh-process clock ramp landed). Clock regime
+or block position? This cell moves :sum to the last block.
+
+The numbers (paired statistic = ADR-0358's; within-pair medians in
+analyze-oporder.txt):
+
+  op   per-run-ratio median   per-run ratios        sum-first sessions
+  sum  1.185                  1.184..1.186          1.186 / 1.185
+  max  1.184                  1.183..1.185          1.186 / 1.177
+  min  1.184                  1.183..1.186          1.185 / 1.172
+
+Baseline per-run medians 128,125..128,500 at every operator -- ONE rule-1
+level (GAP-1.15), cross-operator level identity HOLDS. Rule 2:
+regime-invariant slower at all three operators (18/18). Every one of the
+360 pairs sits in the slow bucket (>80k baseline): this session saw NO
+clock ramp at all.
+
+FINDING: at a fixed regime the paired ratio does not follow the dispatch
+block's position. :sum at the LAST block measures 1.185 -- within 0.001 of
+:sum at the FIRST block in both sum-first sessions and of :max/:min at
+their blocks here. The resweep's lower fast-regime ratios are therefore a
+clock-regime term, not a block-position term (the same separation was
+directly measured at the fast regime at W = 32, where :sum at the last
+block also tracked the regime). What stays UNMEASURED is named: the W =
+1024 fast-regime ratio at ANY block position (this session produced zero
+fast pairs -- the fresh-process clock ramp is session-dependent, three
+sessions at this cell shape now showing three different regime
+structures). Nothing here re-derives the resweep's ~17% fast-level band.
+
+Determinism: `diff -r` of this run's shaders/ against BOTH earlier W =
+1024 cells (wsweep-20261023/w1024, resweep-20261023/w1024): BYTE-IDENTICAL
+(empty diff, both). Read-back values match both earlier cells exactly.
+
+STATE HONESTY (nothing moves):
+- no :measured? flag, no :measured-cell set, no selection answer and no
+  workgroup row (ADR-0355/0358) is touched -- this diff is
+  docs/evidence only;
+- this is an op-order check, its own record kind; it fills none of the
+  nine pending :simdgroup-reduce cross-day rows (2026-10-25+) and claims
+  nothing about them;
+- the resweep w1024 record's caveat basis is strengthened (the confound
+  its caveat named is ruled out at the slow regime), not amended;
+- UNMEASURED unchanged: shapes beyond the two contract cells; every Apple
+  device but this M1 Max; the GLSL arm (blocked on a wire-42 route, ADR
+  0371); the NVIDIA/Intel/ARM/AMD variant rows entirely -- and this tick
+  verified the fleet hosts are tailnet-SSH-blocked to this session
+  ("tailnet policy does not permit you to SSH", every user tried), so no
+  remote compile or measurement slice is runnable from here.
+
+Gate (real runs, this host, kbb --backend sci, route-2 classpath):
+
+  1. gpu_regime_classify.py --self-test -> TOTAL: 1904 assertions
+     passed, 0 failed (1873 prior; corpus 53 -> 54 with this record).
+  2. gpu-subgroup-reduce-metal-measure.py --self-test -> 12 assertions
+     passed, 0 failed.
+  3. scoped GPU gate (the 8 GPU-owned test namespaces, scratch runner
+     gpu_scoped_gate.cljk -- not in the repo): Ran 102 tests containing
+     9774 assertions. 0 failures, 0 errors (unchanged -- this diff
+     touches no code or test namespace).
+  4. full run-tests.cljk: RED AT BASE at kotoba.form ("Could not find
+     namespace: kotoba.form", the W3 port path, outside this diff),
+     re-verified this tick. No green full suite is claimed.
+
+PUSH STATEMENT: NOT pushed this tick. The blocker-first rule is in force:
+kotoba-lang/amu open PR hermes/jun31-pe-shim-align (#1553) has a
+`hermes/` head, so this tick's commit is kept locally on
+bot/amu-gpu-chain (which already carries one unpushed commit from the
+previous tick) and pushed on the first tick after that PR clears.
+
+LEFT (the next rows): the nine pending :simdgroup-reduce cross-day rows
+(runnable 2026-10-25+); the W = 1024 fast-regime ratio at a late block
+position stays UNMEASURED (no session schedules a regime); a later-day
+DATA run at the refused pair is neither scheduled nor forbidden; the
+blocked rows stay as prior records left them.
