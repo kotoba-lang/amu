@@ -64,11 +64,15 @@ def main():
             if built.returncode == 0:
                 dst.chmod(0o755)
                 binding = ("\n".join(lines[:-3]) + "\n").encode()
+                fixed_binding = ("\n".join(["KTI64CACHE3", cid(113, c["wire"]), compiler_sha, a.source_sha256, target,
+                                           "kototama.vm/program-v1", "canonical-dag-cbor/ascii-bounded-v1", "i64-wrap/v1", "expression-charge/v1",
+                                           PROFILE, "stdin72-receipt64/v3", "baseline-isa", "adopted-core-default", "imports-empty", "entry-zero-arity"]) + "\n").encode()
                 # Reference hashes only stage fixed expectations. The native
                 # verdict compares all observed bytes, including CID and key.
                 pairs = [(lines[1].encode(), cid(113, c["wire"]).encode()),
                          (lines[-2].encode(), cid(85, dst.read_bytes()).encode()),
-                         (key, hashlib.sha256(binding).digest())]
+                         (hashlib.sha256(binding).digest(), hashlib.sha256(fixed_binding).digest()),
+                         (key, hashlib.sha256(fixed_binding).digest())]
                 for index, (actual, planned) in enumerate(pairs):
                     record(f"binding-{n}-{index}", list(actual), list(planned))
         dst, built, lines, key = cached[cache_id]
@@ -151,7 +155,7 @@ def main():
     else:
         struct.pack_into("<I", code, site + 4, 0xF1000210)
     metering = mutation_verdict("metering-removed", code, struct.pack("<5q", CONTEXT, 0, 262144, 0, 0) + key, "const-budget-zero", True)
-    report = dict(schema="amu.kototama-cache-abi-native.v3", compilerSHA256=compiler_sha, target=target,
+    report = dict(schema="amu.kototama-cache-abi-native.v3", compilerSHA256=compiler_sha, compilerSourceSHA256=a.source_sha256, target=target,
                   records=records, distinctExecutables=len(cached), verdictExit=positive.returncode,
                   corruptControlExit=negative.returncode, cacheHostQualified=False,
                   admissionRemovalControlExit=admission, meteringRemovalControlExit=metering,

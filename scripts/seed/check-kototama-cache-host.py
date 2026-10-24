@@ -163,7 +163,9 @@ def main():
     corrupt = bytearray(raw); corrupt[0] ^= 1; (out / "corrupt.bin").write_bytes(corrupt)
     negative = subprocess.run([str(gate), str(out / "corrupt.bin")], env=env, capture_output=True, timeout=30)
     (out / "corrupt.stdout").write_bytes(negative.stdout); (out / "corrupt.stderr").write_bytes(negative.stderr)
-    report = dict(schema="amu.kototama-local-cache-host-native.v3", records=records, compilerSHA256=compiler_sha, hostSHA256=digest(host),
+    report = dict(schema="amu.kototama-local-cache-host-native.v3", profile="kototama.pure-i64-cache/v3", hostTarget="x86_64-linux", records=records,
+                  compilerSHA256=compiler_sha, compilerSourceSHA256=a.source_sha256, hostSHA256=digest(host),
+                  hostFactorySources={name: digest(out / name) for name in ("entry.kotoba", "runtime.kotoba", "host.kotoba")},
                   verdictExit=positive.returncode, corruptControlExit=negative.returncode, signedRemoteHostQualified=False,
                   status="PASS" if (positive.returncode, negative.returncode) == (0, 1) else "FAIL")
     (out / "report.json").write_text(json.dumps(report, indent=2) + "\n")
