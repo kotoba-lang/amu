@@ -281,6 +281,7 @@ def main(out, tier, reuse=None, store=None):
                       {"KEXE_CAP_RESOURCES_35": str(roots[1])}, success=False)
     assert granted.returncode == 7, ("sha256 vectors", granted.returncode)
     assert refused.returncode == 120 and b"SIGILL" in refused.stderr
+    assert b"KEXE_CAP {:wire 3 :refused :not-granted}\n" in refused.stderr, refused.stderr[-300:]
     assert outside.returncode != 0 and not (roots[1] / "x.elf").exists()
     capabilities = dict(sha256Vectors=len(vectors), granted=granted.returncode, refused=refused.returncode,
                         scopeRoots=len(roots), sourceUnderRoot=3, outsideRootsExit=outside.returncode)
