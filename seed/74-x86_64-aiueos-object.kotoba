@@ -35,27 +35,43 @@
       (xg-bytes 0x08c48348 4) (xg-byte 0xc3)))
 
 ;; ADR 0373: bounded kernel memory windows. The source library below is appended to
-;; the guest source for this route only; its three private functions are stubs whose
+;; the guest source for this route only; its private functions are stubs whose
 ;; calls this backend replaces by inline code (the way the static route's kxrt-
 ;; intrinsics are), so the shared frontend, checker and lowering are unchanged and
 ;; the adopted seed/MANIFEST sources are untouched. M[200] is the first stub's FN
-;; (0 = none); the stubs are the last four functions of the text, in this order.
+;; (0 = none); the stubs are the last XK-INTR-N functions of the text, in this
+;; order.
 ;;
 ;;   (kernel-load-u32 base length index)      -> the u32 at base + index
 ;;   (kernel-store-u32 base length index v)   -> v, after storing it as a u32
 ;;   (kernel-subregion base length offset n)  -> base + offset
 ;;   (kernel-load-u32-16k base length index) -> the u32 at base + index, length <= 16384, index % 4 = 0
+;;   (kernel-out-u8 port value)               -> value, after (out dx, al) to port
+;;   (kernel-out-u32 port value)              -> value, after (out dx, eax) to port
 ;;
 ;; Every check is unsigned and traps (ud2) before the access: length <= 512 (the
 ;; tier of the plain u32 pair), base non-null, index < length, index + 4 <= length;
 ;; subregion: base non-null, offset <= length, n <= length - offset. The byte
 ;; sequences are kotoba-native's x86_64.cljk emit-kernel-load-u32 /
 ;; emit-kernel-store-u32 / emit-kernel-subregion, and so are the displacements.
-(def XK-INTR-N 4)
+;;
+;; The two port writes (the contract's :boot evidence operations,
+;; contracts/value-runtime-kernel-image-v1.edn) take NO window: their operands are
+;; a port and a value, not a base/length pair, so XK-WINDOW-N's rooted-base check
+;; does not cover them (xk-check). Their byte sequences are kotoba-native's
+;; emit-kernel-out (x86_64.cljk): port -> dx, value -> rax, out dx,al / out
+;; dx,eax; rax is left holding the value, which is what a caller who binds the
+;; result of a kernel write already expects. The port is truncated to 16 bits by
+;; the instruction itself, exactly as the reference emits it.
+(def XK-INTR-N 6)
+;; Intrinsics 0..XK-WINDOW-N-1 are the memory-window pair (base, length, ...) whose
+;; base must be ROOTED (ADR 0373). The port writes are not window intrinsics.
+(def XK-WINDOW-N 4)
 (defn- xk-intr-name [k :i64] :string
-  (case k 0 "kernel-load-u32" 1 "kernel-store-u32" 2 "kernel-subregion" 3 "kernel-load-u32-16k" ""))
+  (case k 0 "kernel-load-u32" 1 "kernel-store-u32" 2 "kernel-subregion" 3 "kernel-load-u32-16k"
+          4 "kernel-out-u8" 5 "kernel-out-u32" ""))
 (defn- xk-lib [] :string
-  "\n(defn- kernel-load-u32 [b :i64 n :i64 i :i64] :i64 0)\n(defn- kernel-store-u32 [b :i64 n :i64 i :i64 v :i64] :i64 0)\n(defn- kernel-subregion [b :i64 n :i64 o :i64 l :i64] :i64 b)\n(defn- kernel-load-u32-16k [b :i64 n :i64 i :i64] :i64 0)\n")
+  "\n(defn- kernel-load-u32 [b :i64 n :i64 i :i64] :i64 0)\n(defn- kernel-store-u32 [b :i64 n :i64 i :i64 v :i64] :i64 0)\n(defn- kernel-subregion [b :i64 n :i64 o :i64 l :i64] :i64 b)\n(defn- kernel-load-u32-16k [b :i64 n :i64 i :i64] :i64 0)\n(defn- kernel-out-u8 [p :i64 v :i64] :i64 v)\n(defn- kernel-out-u32 [p :i64 v :i64] :i64 v)\n")
 ;; Only the object route recognizes the stubs. The static route (seed/75, M[197] > 0) keeps
 ;; kxrt-ccall's function id in M[200], so without the M[197] guard the three functions after it
 ;; would be taken for the store, subregion and 16 KiB load (found by an independent review).
@@ -102,6 +118,13 @@
           (xg-bytes 0x8c0f 2) (xg-bytes 21 4)
           (xg-bytes 0xc0f748 3) (xg-bytes 3 4) (xg-bytes 0x870f 2) (xg-bytes 8 4)
           (xg-bytes 0x02048b 3) (xg-bytes 0xe9 1) (xg-bytes 2 4) (xg-bytes 0x0b0f 2) (xg-save t))
+    ;; kernel-out-u8: mov rdx,[port]; mov rax,[value]; out dx,al -- rax stays the value
+    ;; (kotoba-native's emit-kernel-out, which spills the port with push/pop; here the
+    ;; temps already hold both operands, so port -> dx directly is the same instruction
+    ;; stream minus the spill).
+    4 (-> M (xg-load t 0x958b48) (xg-load (+ t 1) 0x858b48) (xg-byte 0xee) (xg-save t))
+    ;; kernel-out-u32: the same with out dx,eax
+    5 (-> M (xg-load t 0x958b48) (xg-load (+ t 1) 0x858b48) (xg-byte 0xef) (xg-save t))
     (xg-err M 7101 OP-CALL)))
 ;; The stubs are the last four functions, in id order, named as above. A source that
 ;; leaves them out or reorders them (it cannot: the library is appended here) is refused.
@@ -217,7 +240,7 @@
 (defn- xk-check [M :vector-i64 i :i64] :vector-i64
   (if (or (not= (vector-at M MM-ERR) 0) (>= i (vector-at M MM-SIR-N))) M
     (let [op (xg-si M i IF-OP) a (xg-si M i IF-A) b (xg-si M i IF-B)]
-      (if (or (and (= op OP-CALL) (>= (xk-intr M a) 0)
+      (if (or (and (= op OP-CALL) (>= (xk-intr M a) 0) (< (xk-intr M a) XK-WINDOW-N)
                    (let [r (xk-region M i b 0) ln (xk-src M i (inc b) 0)]
                      (not (and (>= r 0) (not= ln 0) (= ln r)))))
               ;; the exported function's parameters are rooted because the kernel hands them in: a guest call of the export would
