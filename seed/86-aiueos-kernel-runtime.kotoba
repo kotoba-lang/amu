@@ -5,7 +5,8 @@
 ;; kernel intrinsics when M[197]>0.
 (def KM-MEM-N 29)
 (def KM-CPU-FIRST 33)
-(def KM-INTR-N 52)
+(def KM-BOOT-INFO 52)
+(def KM-INTR-N 53)
 
 ;; All 32 load/store width/tier operations, excluding the three already
 ;; supplied by xk-lib: plain u32 load/store and the 16 KiB u32 load.
@@ -24,7 +25,7 @@
       8 "kernel-rdtsc" 9 "kernel-read-cr0" 10 "kernel-read-cr3" 11 "kernel-read-cr4"
       12 "kernel-write-cr0" 13 "kernel-write-cr3" 14 "kernel-write-cr4" 15 "kernel-read-cs"
       16 "kernel-cli" 17 "kernel-sti" 18 "kernel-hlt" 19 "kernel-pause"
-      20 "kernel-read-msr" 21 "kernel-write-msr" 22 "kernel-invlpg" "")))
+      20 "kernel-read-msr" 21 "kernel-write-msr" 22 "kernel-invlpg" 23 "kernel-boot-info" "")))
 (defn- km-arity [k :i64] :i64
   (cond (< k KM-MEM-N) (if (= (bit-and (km-raw k) 1) 0) 3 4)
         (< k (+ KM-MEM-N 2)) 2
@@ -44,6 +45,15 @@
 (defn- km-intr [M :vector-i64 f :i64] :i64
   (let [first (vector-at M 201) k (- f first)]
     (if (and (= (vector-at M 197) 0) (> first 0) (>= k 0) (< k KM-INTR-N)) k -1)))
+;; The image shim stores its loader-provided boot pointer at context+80.
+;; The paired EFI packager owns a 160-byte v5 prefix plus a 16 KiB map.
+;; Only this closed project/image profile can derive that ABI region; no
+;; caller-selected address or length is used, and object/static profiles
+;; retain their existing refusal rules. Consumers must narrow it explicitly.
+(def KM-BOOT-BYTES 16544)
+(defn- km-owned-region [M :vector-i64 f :i64] :i64
+  (if (and (= (xg-get M 4) 2) (= (km-intr M f) KM-BOOT-INFO))
+    (+ 4294967296 KM-BOOT-BYTES) -1))
 (defn- km-scan [M :vector-i64 S :string] :vector-i64
   (let [first (- (vector-at M MM-FN-N) XK-INTR-N KM-INTR-N)]
     (if (<= first 1) (xg-err M 7102 first)
@@ -105,6 +115,7 @@
         :else (xg-err M 7101 OP-CALL)))
 (defn- km-intrinsic [M :vector-i64 k :i64 t :i64] :vector-i64
   (cond (< k KM-MEM-N) (km-window M k t)
+        (= k KM-BOOT-INFO) (-> M (xg-bytes 0x50418b49 4) (xg-save t))
         (< k (+ KM-MEM-N 2))
           (-> M (xg-load t 0x958b48) (xg-load (inc t) 0x858b48)
               (xg-byte (if (= k KM-MEM-N) 238 239)) (xg-save t))
@@ -115,5 +126,6 @@
 (defn- km-check [M :vector-i64 i :i64] :vector-i64
   (if (or (not= (vector-at M MM-ERR) 0) (>= i (vector-at M MM-SIR-N))) M
     (let [k (if (= (xg-si M i IF-OP) OP-CALL) (km-intr M (xg-si M i IF-A)) -1)]
-      (if (and (>= k 0) (< k KM-MEM-N) (not (xk-rooted M i (xg-si M i IF-B) 0)))
+      (if (and (>= k 0) (< k KM-MEM-N) (let [b (xg-si M i IF-B) r (xk-region M i b 0) ln (xk-src M i (inc b) 0)]
+                      (not (and (>= r 0) (not= ln 0) (= ln r)))))
         (xg-err M 7106 i) (km-check M (inc i))))))

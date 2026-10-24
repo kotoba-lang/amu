@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Observe transitive kernel region requirements and scalar stack arguments."""
+"""Observe whole-project canonical SIR provenance and scalar stack calls.
+
+No alternate region policy, native controller or compiler in this observer.
+"""
 import argparse
 import hashlib
 import json
-import os
 from pathlib import Path
 import subprocess
 import sys
@@ -13,33 +15,8 @@ from aiueos_native_proof import load_native_producers
 
 
 def pin(p):
-    b = p.read_bytes()
-    return dict(bytes=len(b), sha256=hashlib.sha256(b).hexdigest())
-
-
-LIBRARY = '''(ns lib.memory (:export [through repeated offset-read]))
-(defn- leaf [b :i64 i :i64] :i64 (kernel-load-u8 b 64 i))
-(defn- peek-byte [b :i64] :i64 (leaf b 0))
-(defn through [b :i64 flag :bool] :i64
-  (let [r (if flag b (kernel-subregion b 4096 0 4096))
-        ignored (let [r (+ 1 2)] r)]
-    (peek-byte (kernel-subregion r 4096 16 64))))
-(defn- repeat-byte [b :i64 n :i64] :i64
-  (if (= n 0) (leaf b 0) (repeat-byte b (dec n))))
-(defn repeated [b :i64] :i64 (repeat-byte b 2))
-(defn offset-read
-  ([b :i64] :i64 (leaf b 0))
-  ([tag :i64 b :i64] :i64 (+ (leaf b 0) (* 0 tag))))
-'''
-ENTRY = '''(ns entry (:require [lib.memory :as m]) (:export [main]))
-(defn main [] :i64
-  (let [stored (kernel-store-u8-4k 1089536 4096 16 42)
-        a (m/through 1089536 true) b (m/through 1089536 false)
-        narrowed (kernel-subregion 1089536 4096 16 64)
-        c (m/repeated narrowed) scalar (kernel-load-u8-4k 1089536 4096 16)
-        d (m/offset-read narrowed) e (m/offset-read scalar narrowed)]
-    (if (and (= stored 42) (= a 42) (= b 42) (= c 42) (= d 42) (= e 42)) 42 0)))
-'''
+    raw = p.read_bytes()
+    return dict(bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest())
 
 
 def main(build, output):
@@ -49,80 +26,74 @@ def main(build, output):
     for producer in producers:
         out = output / producer.stem
         (out / 'lib').mkdir(parents=True)
-        entry, library, lock = out / 'entry.kotoba', out / 'lib/memory.kotoba', out / 'source.ksl'
-        entry.write_text(ENTRY)
-        library.write_text(LIBRARY)
+        entry = out / 'entry.kotoba'
+        bridge = out / 'lib/bridge.kotoba'
+        memory = out / 'lib/memory.kotoba'
+        lock = out / 'source.ksl'
+        good_entry = '(ns entry (:require [lib.bridge :as b]) (:export [main]))\n(defn main [] :i64 42)\n'
+        good_bridge = '(ns lib.bridge (:require [lib.memory :as m]) (:export [through]))\n(defn through [base :i64 length :i64] :i64 (m/read base length))\n'
+        good_memory = '(ns lib.memory (:export [read]))\n(defn- leaf [base :i64 length :i64] :i64 (kernel-load-u8 base length 0))\n(defn read [base :i64 length :i64] :i64 (leaf base length))\n'
         calls = []
 
-        def compile_(name, extra=(), expected=0, diagnostic=None):
+        def reset():
+            entry.write_text(good_entry)
+            bridge.write_text(good_bridge)
+            memory.write_text(good_memory)
+
+        def compile_(name, expected=0):
             lock.write_text(f'KSL1\nentry {entry}\nroot {out}\n'
-                            + ''.join(f'file {pin(p)["sha256"]} {p}\n' for p in sorted([entry, library])))
+                + ''.join(f'file {pin(p)["sha256"]} {p}\n' for p in sorted([entry, bridge, memory])))
             image = out / (name + '.elf')
-            argv = [str(producer), 'compile', str(entry), '--target', 'x86_64-aiueos-kernel-v1', '--artifact', 'image',
-                    '--output', str(image), '--fuel', '1000000', '--source-path', str(out),
-                    '--source-lock', str(lock), '--source-lock-sha256', pin(lock)['sha256'], *extra]
-            r = subprocess.run(argv, env=dict(PATH='/nonexistent', KEXE_CAP_RESOURCES_35=str(out), KEXE_STACK_BYTES='8388608'),
-                               capture_output=True, timeout=180)
-            calls.append(dict(name=name, exit=r.returncode, stdout=r.stdout.decode(), stderr=r.stderr.decode(), source=pin(entry), library=pin(library)))
-            (out / 'commands.json').write_text(json.dumps(calls, indent=2)+'\n')
+            args = [str(producer), 'compile', str(entry), '--target', 'x86_64-aiueos-kernel-v1',
+                '--artifact', 'image', '--output', str(image), '--fuel', '1000000',
+                '--source-path', str(out), '--source-lock', str(lock), '--source-lock-sha256', pin(lock)['sha256']]
+            r = subprocess.run(args, env=dict(PATH='/nonexistent', KEXE_CAP_RESOURCES_35=str(out), KEXE_STACK_BYTES='8388608'), capture_output=True, timeout=240)
+            calls.append(dict(name=name, exit=r.returncode, stdout=r.stdout.decode(), stderr=r.stderr.decode(), sourceLock=pin(lock)))
+            (out/'commands.json').write_text(json.dumps(calls, indent=2)+'\n')
             assert r.returncode == expected and b'KEXE_TRAP' not in r.stderr, (name, r.returncode, r.stderr)
-            if diagnostic:
-                assert diagnostic.encode() in r.stderr, (name, r.stderr)
             if expected:
-                assert not image.exists()
+                assert b'E7106' in r.stderr and not image.exists(), (name, r.stderr)
             else:
-                assert not r.stderr
+                assert not r.stderr and image.is_file(), (name, r.stderr)
             return image
 
-        region_image = compile_('regions')
-        refusals = {
-            'loaded-cross-module': '(m/repeated (kernel-load-u64-4k 1089536 4096 0))',
-            'wrong-parameter-position': '(m/offset-read 1089536 (kernel-load-u64-4k 1089536 4096 0))',
-            'unsafe-if-arm': '(m/repeated (if true 1089536 (kernel-load-u64-4k 1089536 4096 0)))',
-        }
-        for name, expression in refusals.items():
-            entry.write_text('(ns entry (:require [lib.memory :as m]) (:export [main]))\n(defn main [] :i64 '+expression+')\n')
-            compile_(name, expected=1, diagnostic='E7106')
-        entry.write_text('''(ns entry (:require [lib.memory :as m]) (:export [main]))
-(defn main [] :i64 (bounce (kernel-load-u64-4k 1089536 4096 0)))
-(defn- bounce [b :i64] :i64 (m/repeated b))
-''')
-        compile_('forward-transitive', expected=1, diagnostic='E7106')
-        entry.write_text(ENTRY+'\n(defn- unreachable [] :i64 (m/repeated (kernel-load-u64-4k 1089536 4096 0)))\n')
-        compile_('unreachable-unsafe-caller', expected=1, diagnostic='E7106')
-        entry.write_text('''(ns entry (:export [main]))
-(defn- recur-base [b :i64 n :i64] :i64
-  (if (= n 0) (kernel-load-u8 b 64 0) (recur-base (+ b 1) (dec n))))
-(defn main [] :i64 (recur-base 1089536 2))
-''')
-        # Retain the declared dependency and its exact lock while checking
-        # a local recursive call; no declaration is silently discarded.
-        library.write_text('(ns lib.memory (:export [through]))\n(defn through [] :i64 0)\n')
-        entry.write_text(entry.read_text().replace('(ns entry (:export [main]))', '(ns entry (:require [lib.memory :as unused]) (:export [main]))'))
-        compile_('recursive-base-reassignment', expected=1, diagnostic='E7106')
-        parameters = ' '.join(f'a{i} :i64' for i in range(16))
-        args = ' '.join(str(i+1) for i in range(16))
-        names = ' '.join(f'a{i}' for i in range(16))
-        library.write_text(f'(ns lib.memory (:export [sum16]))\n(defn sum16 [{parameters}] :i64 (+ {names}))\n')
-        entry.write_text(f'(ns entry (:require [lib.memory :as m]) (:export [main]))\n(defn main [] :i64 (- (m/sum16 {args}) 94))\n')
-        stack_image = compile_('stack16')
-        library.write_text(library.read_text() + '\n(defn- too-wide ['+' '.join(f'p{i} :i64' for i in range(17))+'] :i64 0)\n')
-        compile_('unused-17-arguments', expected=1)
-        artifacts = {}
-        for name, image in [('regions', region_image), ('stack16', stack_image)]:
-            efi = out / (name + '.efi')
-            r = subprocess.run([str(producer), 'package-aiueos-boot', str(image), '--output', str(efi)],
-                               env=dict(PATH='/nonexistent', KEXE_CAP_RESOURCES_35=str(out), KEXE_STACK_BYTES='8388608'),
-                               capture_output=True, timeout=180)
+        reset()
+        # Uncalled helpers remain in the graph and use the same conservative
+        # adjacent base/length rule as canonical object admission.
+        valid = compile_('canonical-helper-graph')
+        for name, file, before, after in [
+            ('literal-through-import', entry, ':i64 42)', ':i64 (b/through 1089536 64))'),
+            ('length-lie-through-import', bridge, '(m/read base length)', '(m/read base 4096)'),
+            ('second-bad-caller', bridge, '\n', '\n(defn- bad [] :i64 (m/read 1089536 64))\n'),
+            ('private-length-lie', memory, '(leaf base length)', '(leaf base 512)'),
+            ('private-computed-base', memory, '(leaf base length)', '(leaf (+ base 8) length)'),
+            ('loaded-base', memory, '(leaf base length)', '(leaf (kernel-load-u64 base length 0) length)'),
+            ('subregion-parent-length', memory, '(leaf base length)', '(leaf (kernel-subregion base 4096 0 64) 64)'),
+            ('subregion-output-length', memory, '(leaf base length)', '(leaf (kernel-subregion base length 0 64) 32)'),
+        ]:
+            reset()
+            file.write_text(file.read_text().replace(before, after, 1))
+            compile_(name, expected=1)
+        reset()
+        params = ' '.join(f'a{i} :i64' for i in range(16))
+        # The independent stack-ABI fixture has no privileged memory ops,
+        # so the canonical AArch64 backend can execute this same full graph.
+        memory.write_text('(ns lib.memory (:export [read]))\n(defn read [base :i64 length :i64] :i64 0)\n')
+        bridge.write_text(f'(ns lib.bridge (:require [lib.memory :as m]) (:export [sum16]))\n(defn sum16 [{params}] :i64 (+ '+' '.join(f'a{i}' for i in range(16))+'))\n')
+        entry.write_text('(ns entry (:require [lib.bridge :as b]) (:export [main]))\n(defn main [] :i64 (- (b/sum16 '+' '.join(str(i+1) for i in range(16))+') 94))\n')
+        stack = compile_('stack16')
+        artifacts = dict(helperGraph=pin(valid), stack16=pin(stack))
+        for label, image in [('helper-graph', valid), ('stack16', stack)]:
+            efi = out / (label + '.efi')
+            r = subprocess.run([str(producer), 'package-aiueos-boot', str(image), '--output', str(efi)], env=dict(PATH='/nonexistent', KEXE_CAP_RESOURCES_35=str(out)), capture_output=True, timeout=180)
             assert r.returncode == 0 and not r.stderr, r.stderr
-            artifacts[name] = pin(image)
-            artifacts[name+'-efi'] = pin(efi)
-        routes.append(dict(producer=pin(producer), artifacts=artifacts, refusalCount=7))
+            artifacts[label+'EFI'] = pin(efi)
+        routes.append(dict(producer=pin(producer), artifacts=artifacts, refusalCount=8))
     assert routes[0]['artifacts'] == routes[1]['artifacts']
-    report = dict(status='PASS_NATIVE_PROJECT_REGION_REQUIREMENTS', source=source, routes=routes,
+    report = dict(status='PASS_NATIVE_CANONICAL_PROJECT_PROVENANCE', source=source, routes=routes,
                   qemuBoot=False, fullKernel=False, nativeCDCI=False)
     (output / 'native-regions.json').write_text(json.dumps(report, indent=2)+'\n')
-    print(report['status'], 'private/import/branch/recursive/arity-position masks and scalar16 stack arguments')
+    print(report['status'], 'resolved whole-project SIR, 8 refusals and scalar16 calls')
 
 
 if __name__ == '__main__':

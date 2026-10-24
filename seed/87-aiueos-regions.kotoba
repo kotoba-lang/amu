@@ -1,140 +1,89 @@
-;; Whole-project region requirements over the adopted checked AST.
-;; A scalar is a potential region only when it is a literal, an immutable
-;; parameter/let alias, or a checked subregion of one. Ordinary call/load/
-;; arithmetic results do not become regions. Required parameter bits flow
-;; backwards through every local call and through typed import interfaces.
-;; Object admission in 74 remains unchanged.
-(def KG-PARAM-MASK 65535)
-(def KG-ROOT 65536)
-
-;; Interface words11/12 are unused by the AArch64 owner (schemas are15).
-;; Four16-bit clause masks fit in each word; all8 clauses retain their own
-;; parameter positions. These fields are private to this in-process linker.
-(defn- kg-interface-mask [L :vector-i64 entry :i64 clause :i64] :i64
-  (bit-and (u64-shift-right (pj-if L entry (+ 11 (quot clause 4))) (* 16 (mod clause 4))) KG-PARAM-MASK))
-(defn- kg-imports [M :vector-i64 L :vector-i64 R :vector-i64 m :i64] :vector-i64
-  (loop [k 0]
-    (if (or (>= k (pj-l L pj-k-nstub)) (not (pj-ok M))) R
-      (let [code (pj-l L (+ pj-u-base k)) group (quot code 8)
-            edge (+ (pj-mf L m pj-mf-req0) (quot group 4096))
-            dependency (pj-rf L edge pj-rf-mod)
-            relative (mod group 4096) clause (bit-and code 7)
-            entry (+ (pj-mf L dependency pj-mf-if0) relative)]
-        (if (or (>= relative (pj-mf L dependency pj-mf-nif)) (>= clause (pj-if L entry pj-if-ncl)))
-          (let [w (xg-err M 7106 k)] R)
-          (let [w (vector-assoc! R (+ (pj-l L pj-k-stub0) k) (kg-interface-mask L entry clause))]
-            (recur (inc k))))))))
-
-(defn- kg-require [M :vector-i64 R :vector-i64 f :i64 origin :i64 node :i64] :i64
-  (if (= origin 0) (let [w (xg-err M 7106 node)] 0)
-    (let [w (vector-assoc! R f (bit-or (vector-at R f) (bit-and origin KG-PARAM-MASK)))] origin)))
-
-(defn- kg-chain [M :vector-i64 E :vector-i64 R :vector-i64 n :i64 f :i64 in-loop :bool] :i64
-  (if (or (= n 0) (not (pj-ok M))) 0
-    (let [value (kg-expr M E R n f in-loop)]
-      (if (= (lw-next M n) 0) value (kg-chain M E R (lw-next M n) f in-loop)))))
-
-;; Restore lexical slots after each binding scope. Loop-carried values are
-;; conservative: they are not region roots; an outer immutable base remains
-;; available to an index-only loop. All initializers are still checked.
-(defn- kg-bindings [M :vector-i64 E :vector-i64 R :vector-i64 b :i64 body :i64 f :i64 in-loop :bool loop-bindings :bool] :i64
-  (if (or (= b 0) (not (pj-ok M))) (kg-chain M E R body f in-loop)
-    (let [init (lw-next M b) next (lw-next M init) slot (lw-slot M b)
-          value (kg-expr M E R init f in-loop)]
-      (if (or (<= slot 0) (>= slot (vector-count E)))
-        (let [w (xg-err M 7106 b)] 0)
-        (let [old (vector-at E slot)
-              w (vector-assoc! E slot (if loop-bindings 0 value))
-              result (kg-bindings M E R next body f in-loop loop-bindings)
-              restored (vector-assoc! E slot old)]
-          result)))))
-
-(defn- kg-args [M :vector-i64 E :vector-i64 R :vector-i64 a :i64 f :i64 in-loop :bool mask :i64 i :i64 first :i64] :i64
-  (if (or (= a 0) (not (pj-ok M))) first
-    (let [origin (kg-expr M E R a f in-loop)
-          checked (if (and (< i 16) (not= (bit-and mask (i64-shift-left 1 i)) 0))
-                    (kg-require M R f origin a) origin)]
-      (kg-args M E R (lw-next M a) f in-loop mask (inc i) (if (= i 0) checked first)))))
-
-(defn- kg-call [M :vector-i64 E :vector-i64 R :vector-i64 n :i64 f :i64 in-loop :bool] :i64
-  (let [head (lw-first M n) callee (lw-callee M head)
-        object-intrinsic (xk-intr M callee) project-intrinsic (km-intr M callee)
-        memory (or (>= object-intrinsic 0) (and (>= project-intrinsic 0) (< project-intrinsic KM-MEM-N)))
-        mask (cond memory 1
-                   (and (> callee 0) (< callee (vector-at M MM-FN-N))) (vector-at R callee)
-                   :else 0)
-        base (kg-args M E R (lw-next M head) f in-loop mask 0 0)]
-    (if (= object-intrinsic 2) base 0)))
-
-(defn- kg-expr [M :vector-i64 E :vector-i64 R :vector-i64 n :i64 f :i64 in-loop :bool] :i64
-  (if (or (= n 0) (not (pj-ok M))) 0
-    (case (lw-nf M n NF-KIND)
-      ND-INT KG-ROOT
-      ND-SYM (let [res (lw-nf M n NF-RES) kind (lw-rcls res) index (lw-ridx res)]
-               (cond (= kind RES-LOCAL) (if (and (>= index 0) (< index (vector-count E))) (vector-at E index) 0)
-                     (= kind RES-DEF) (kg-expr M E R (lw-nth M (lw-first M (lw-ff M index FF-NODE)) 2) f in-loop)
-                     (and (= kind RES-CONST) (= (lw-nf M n NF-TYPE) TY-I64)) KG-ROOT
-                     :else 0))
-      ND-LIST
-        (let [head (lw-first M n) args (lw-next M head) hd (lw-nf M n NF-RES)]
-          (case hd
-            HD-LET (kg-bindings M E R (lw-first M args) (lw-next M args) f in-loop false)
-            HD-LOOP (kg-bindings M E R (lw-first M args) (lw-next M args) f true true)
-            HD-IF (let [condition (kg-expr M E R args f in-loop)
-                        yes (kg-expr M E R (lw-next M args) f in-loop)
-                        no (kg-expr M E R (lw-next M (lw-next M args)) f in-loop)]
-                    (if (and (not= yes 0) (not= no 0)) (bit-or yes no) 0))
-            HD-CALL (kg-call M E R n f in-loop)
-            HD-RECUR (let [checked (kg-args M E R args f in-loop (if in-loop 0 (vector-at R f)) 0 0)] 0)
-            HD-DO (kg-chain M E R args f in-loop)
-            ;; Visit every operand of other forms, but never derive a region
-            ;; from an arithmetic/loaded/indirect/collection result.
-            (let [checked (kg-chain M E R args f in-loop)] 0)))
-      (let [checked (kg-chain M E R (lw-first M n) f in-loop)] 0))))
-
-(defn- kg-function [M :vector-i64 E :vector-i64 R :vector-i64 f :i64] :i64
-  (let [kind (xg-f M f FF-KIND) count (xg-f M f FF-NPARAMS)]
-    (cond (= kind FK-DEF) (vector-at R f)
-          (or (< count 0) (> count 16) (not (or (= kind FK-DEFN) (= kind FK-PRIV))))
-            (let [w (xg-err M 7102 f)] 0)
-          :else
-          (let [cleared (loop [i 0]
-                          (if (>= i (vector-count E)) 0
-                            (let [w (vector-assoc! E i 0)] (recur (inc i)))))
-                initialized (loop [i 0]
-                              (if (>= i count) 0
-                                (let [w (vector-assoc! E (inc i) (i64-shift-left 1 i))] (recur (inc i)))))
-                body (lw-nth M (lw-first M (xg-f M f FF-NODE)) 4)
-                checked (kg-expr M E R body f false)]
-            (vector-at R f)))))
-(defn- kg-pass [M :vector-i64 E :vector-i64 R :vector-i64] :bool
-  (loop [f 1 changed false]
-    (if (or (>= f (vector-at M MM-FN-N)) (not (pj-ok M))) changed
-      (let [before (vector-at R f) after (kg-function M E R f)]
-        (recur (inc f) (or changed (not= before after)))))))
-(defn- kg-run [M :vector-i64 L :vector-i64 m :i64] :vector-i64
-  (let [slots (loop [f 1 largest 0]
-                (if (>= f (vector-at M MM-FN-N)) largest
-                  (recur (inc f) (max largest (xg-f M f FF-NSLOTS)))))
-        bounded (if (> slots 511) (xg-err M 7104 slots) M)
-        E (vector-alloc (inc (min slots 511)))
-        ;; The last word binds successful analysis to this exact FN count;
-        ;; it is kept out of M's frontend/lowering scratch header.
-        R (kg-imports M L (vector-alloc (inc (vector-at M MM-FN-N))) m)]
-    (loop [round 0]
-      (cond (not (pj-ok M)) R
-            (> round (* 16 (vector-at M MM-FN-N))) (let [w (xg-err M 7104 round)] R)
-            (kg-pass M E R) (recur (inc round))
-            :else (let [qualified (if (pj-ok M) (vector-assoc! R (vector-at M MM-FN-N) 1) R)] R)))))
-
-(defn- kg-note-interface [M :vector-i64 L :vector-i64 P :string S :string R :vector-i64 first :i64] :vector-i64
-  (loop [entry first]
-    (if (or (>= entry (pj-l L pj-k-nif)) (not (pj-ok M))) L
-      (let [f0 (pj-fn-named M S (pj-p L P (pj-if L entry pj-if-name)))
-            recorded (loop [clause 0]
-                       (if (>= clause (pj-if L entry pj-if-ncl)) 0
-                         (let [word (+ 11 (quot clause 4)) shift (* 16 (mod clause 4))
-                               mask (bit-and (vector-at R (+ f0 clause)) KG-PARAM-MASK)
-                               w (pj-iset L entry word (bit-or (pj-if L entry word) (i64-shift-left mask shift)))]
-                           (recur (inc clause)))))]
-        (recur (inc entry))))))
+;; Whole-project SIR collection for the canonical ADR0373 checker in 74.
+;; Namespace exports are link interfaces, never fresh kernel ABI roots.
+;; Resolve imports to their actual global FN, preserve every real function
+;; and instruction, then run xk-check plus the same rule for new widths.
+;; No alternate AST origin policy and no literal-address region roots.
+(def KG-FBASE 16)
+(def KG-FW 4) ; nparams, ABI-export, absolute code byte, owner module
+(def KG-SBASE (+ KG-FBASE (* MM-FN-CAP KG-FW)))
+(def KG-XFIRST (+ 1 KM-INTR-N))
+(def KG-FIRST (+ KG-XFIRST XK-INTR-N))
+(defn- kg-new [] :vector-i64
+  (let [G (vector-alloc (+ KG-SBASE (* MM-SIR-CAP MM-SIR-W)))]
+    (-> G (vector-assoc! 0 KG-FIRST) (vector-assoc! 1 1))))
+(defn- kg-f [G :vector-i64 f :i64 k :i64] :i64
+  (vector-at G (+ KG-FBASE (* f KG-FW) k)))
+(defn- kg-fset [G :vector-i64 f :i64 k :i64 value :i64] :vector-i64
+  (vector-assoc! G (+ KG-FBASE (* f KG-FW) k) value))
+(defn- kg-target [G :vector-i64 addr :i64] :i64
+  (loop [f KG-FIRST]
+    (cond (>= f (vector-at G 0)) -1
+          (= (kg-f G f 2) addr) f
+          :else (recur (inc f)))))
+(defn- kg-callee [M :vector-i64 L :vector-i64 G :vector-i64 f :i64 base :i64] :i64
+  (let [stub (pj-l L pj-k-stub0) k (km-intr M f) x (xk-intr M f)]
+    (cond (and (> f 0) (< f stub)) (+ base (dec f))
+          (>= k 0) (inc k)
+          (>= x 0) (+ KG-XFIRST x)
+          (and (>= f stub) (< f (+ stub (pj-l L pj-k-nstub))))
+            (kg-target G (pj-l L (+ pj-t-base (- f stub))))
+          :else -1)))
+(defn- kg-note [M :vector-i64 L :vector-i64 G :vector-i64 m :i64] :vector-i64
+  (let [base (vector-at G 0) end (+ base (dec (pj-l L pj-k-stub0)))
+        room (if (>= end MM-FN-CAP) (xg-err M 7104 end) M)
+        functions (loop [f 1]
+                    (if (or (>= f (pj-l L pj-k-stub0)) (not (pj-ok M))) 0
+                      (let [g (+ base (dec f))
+                            w (-> G (kg-fset g 0 (xg-f M f FF-NPARAMS))
+                                    (kg-fset g 1 (if (= m 0) (xg-f M f FF-EXPORT) 0))
+                                    (kg-fset g 2 (+ (pj-l L pj-k-base) (dec (xg-f M f FF-CODE))))
+                                    (kg-fset g 3 m))]
+                        (recur (inc f)))))
+        numbered (vector-assoc! G 0 end)]
+    (loop [i 1 current 0]
+      (if (or (>= i (vector-at M MM-SIR-N)) (not (pj-ok M))) G
+        (let [op (xg-si M i IF-OP) a (xg-si M i IF-A)
+              f (if (= op OP-FN) a current)
+              j (vector-at G 1)]
+          (cond (or (<= f 0) (>= f (pj-l L pj-k-stub0))) (recur (inc i) f)
+                (>= j MM-SIR-CAP) (let [w (xg-err M 7104 j)] G)
+                :else
+                (let [callee (if (= op OP-CALL) (kg-callee M L G a base) 0)
+                      mapped (cond (or (= op OP-FN) (= op OP-END)) (+ base (dec a))
+                                   (= op OP-CALL) callee :else a)]
+                  (if (and (= op OP-CALL) (<= callee 0))
+                    (let [w (xg-err M 7106 i)] G)
+                    (let [at (+ KG-SBASE (* j MM-SIR-W))
+                          w (-> G (vector-assoc! at op) (vector-assoc! (+ at 1) mapped)
+                                  (vector-assoc! (+ at 2) (xg-si M i IF-B))
+                                  (vector-assoc! (+ at 3) (xg-si M i IF-C))
+                                  (vector-assoc! 1 (inc j)))]
+                      (recur (inc i) f))))))))))
+(defn- kg-check [M :vector-i64 L :vector-i64 G :vector-i64] :vector-i64
+  (let [functions (loop [f 1]
+                    (if (>= f (vector-at G 0)) M
+                      (let [k (- f KG-XFIRST)
+                            n (cond (< f KG-XFIRST) (km-arity (dec f))
+                                    (< f KG-FIRST) (if (= k 2) 4 (if (= k 1) 4 3))
+                                    :else (kg-f G f 0))
+                            w (-> M (mem-set (+ MM-FN-BASE (* f MM-FN-W) FF-NPARAMS) n)
+                                    (mem-set (+ MM-FN-BASE (* f MM-FN-W) FF-EXPORT)
+                                             (if (< f KG-FIRST) 0 (kg-f G f 1))))]
+                        (recur (inc f)))))
+        instructions (loop [i 1]
+                       (if (>= i (vector-at G 1)) M
+                         (let [w (loop [k 0]
+                                   (if (>= k MM-SIR-W) M
+                                     (let [w2 (mem-set M (+ MM-SIR-BASE (* i MM-SIR-W) k)
+                                                       (vector-at G (+ KG-SBASE (* i MM-SIR-W) k)))]
+                                       (recur (inc k)))))]
+                           (recur (inc i)))))
+        checked (-> M (mem-set MM-FN-N (vector-at G 0)) (mem-set MM-SIR-N (vector-at G 1))
+                      (mem-set 197 0) (mem-set 200 KG-XFIRST) (mem-set 201 1)
+                      (xk-check 1) (km-check 1))
+        owner (if (= (vector-at checked MM-ERR) 7106)
+                (let [i (vector-at checked MM-ERR-N)
+                      f (xg-si checked (xk-fn-start checked i) IF-A)]
+                  (if (and (>= f KG-FIRST) (< f (vector-at G 0)))
+                    (pj-ls L pj-k-errmod (kg-f G f 3)) L)) L)]
+    checked))
