@@ -8,7 +8,7 @@ eight-byte/signal protocol remain available unchanged. This profile does
 not admit runtime arguments, recursion, imports, heap values or effects.
 
 ```sh
-amu compile-kototama program.cbor --target x86_64-linux --output run.elf --fuel 0 --profile kototama.pure-i64-receipt/v2
+KEXE_ALLOW=35,37,38,39 KEXE_CAP_RESOURCES_35="$PWD" bin/amu compile-kototama program.cbor --target x86_64-linux --output run.elf --fuel 0 --profile kototama.pure-i64-receipt/v2
 chmod +x run.elf
 ./run.elf > receipt.bin
 ```
