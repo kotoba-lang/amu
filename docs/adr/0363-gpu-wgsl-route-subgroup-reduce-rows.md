@@ -82,6 +82,21 @@ route" is stale for both.)
   maxComputeWorkgroupSizeX 256). The refusal is the finding and its fix
   is UNDECIDED here;
   docs/evidence/gpu/wgsl-validate-chrome-20261025/compile-log.txt.]
+  [FIX QUESTION DECIDED 2026-10-25 (JUN-59/JUN-60's own design slice):
+  NEITHER a Tint const-eval limit nor real spec drift in Tint -- the
+  infinite neutral is a const-expression of floating-point type evaluating
+  to infinity, which the WGSL spec's Finite Math Assumption (15.7.3)
+  makes a REQUIRED shader-creation error ("A shader-creation error
+  results if any const-expression of floating-point type overflows or
+  evaluates to NaN or infinity"), so the neutral spelling is the defect.
+  The fix rule (ACCEPTED DESIGN ONLY, implementation its own later slice):
+  no infinite value in the arm at all -- :max/:min fill out-of-range lanes
+  with an IN-RANGE element (clamped-index fill), :sum keeps 0.0; a
+  runtime-escape spelling is rejected as non-portable (the same clause
+  lets implementations treat runtime infinities as indeterminate values
+  and names min/max, this arm's combines). Evidence: 9 probes on 2 real
+  toolchains (Chrome 155 Dawn/Tint and Deno 2.7.14 wgpu/Naga) plus the
+  normative spec quotes, docs/evidence/gpu/wgsl-inf-neutral-fixquestion-20261025/.]
 - **UNMEASURED.** No WebGPU execution path exists in this repository and no
   hardware ran the variant on this route. Every answer keeps
   `:measured? false`; rule 4's lock is untouched and no workgroup row of

@@ -79,9 +79,21 @@
   12/18 are REFUSED at compile-info -- the :max/:min rows at every W,
   where the infinite neutral's bitcast<f32>(0xFF800000u) /
   bitcast<f32>(0x7F800000u) const-folds to -inf/inf and Tint answers
-  \"value -inf cannot be represented as 'f32'\" (error@9:33). Whether that
-  refusal is a Tint const-eval limit or real spec drift in the spelling is
-  UNDECIDED here and is the next slice; the tests' spelling pins stand
+  \"value -inf cannot be represented as 'f32'\" (error@9:33).  [FIX QUESTION
+  DECIDED 2026-10-25: NEITHER a Tint const-eval limit nor real spec drift
+  in Tint -- the infinite neutral is a const-expression of floating-point
+  type evaluating to infinity, which the WGSL spec's Finite Math
+  Assumption (15.7.3) makes a REQUIRED shader-creation error, so the
+  spelling is the defect and Tint is conformant. The fix rule (ACCEPTED
+  DESIGN ONLY -- the emission below is UNCHANGED and still refuses Tint;
+  the implementation is its own later slice): no infinite value in this
+  arm at all, :max/:min fill out-of-range lanes with an IN-RANGE element
+  (clamped-index fill), :sum keeps 0.0, and a runtime-escape spelling is
+  rejected as non-portable (the same clause permits indeterminate values
+  for runtime infinities and names min/max). Evidence: 9 probes on 2 real
+  toolchains plus the normative quotes,
+  docs/evidence/gpu/wgsl-inf-neutral-fixquestion-20261025/.] The tests'
+  spelling pins stand
   beside the judgment, not replaced by it. Verbatim transcript:
   docs/evidence/gpu/wgsl-validate-chrome-20261025/compile-log.txt; Deno
   2.7.14's Naga refuses `enable subgroups;` outright and judges nothing.] The n of the KIR

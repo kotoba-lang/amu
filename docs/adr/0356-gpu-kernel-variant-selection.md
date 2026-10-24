@@ -187,7 +187,19 @@ validator, Google Chrome 155's Dawn/Tint: the emitted row validates
 6/18 clean and 12/18 are REFUSED (the :max/:min rows at every W, on the
 infinite neutrals; W >= 512 additionally needs raised device limits) --
 docs/evidence/gpu/wgsl-validate-chrome-20261025/. The refusal is named,
-not fixed: that question is the next slice.] No `:measured?` flag moves and no
+not fixed: that question is the next slice.] [FIX QUESTION DECIDED
+2026-10-25 (its own design slice): NEITHER a Tint const-eval limit nor
+real spec drift in Tint -- the WGSL spec's Finite Math Assumption
+(15.7.3) REQUIRES a shader-creation error when a const-expression of
+floating-point type evaluates to NaN or infinity, so the infinite
+neutral spelling is the defect and Tint is conformant. Fix rule
+(ACCEPTED DESIGN ONLY, implementation its own later slice): no infinite
+value in the WGSL arm at all -- :max/:min fill out-of-range lanes with
+an in-range element (clamped-index fill), :sum keeps 0.0; a
+runtime-escape spelling is rejected as non-portable (the same clause
+permits indeterminate values for runtime infinities and names min/max).
+Evidence: docs/evidence/gpu/wgsl-inf-neutral-fixquestion-20261025/.]
+No `:measured?` flag moves and no
 workgroup row is touched.
 
 **Amendment (2026-10-23, the :wgsl-v1 selection question is DECIDED).**

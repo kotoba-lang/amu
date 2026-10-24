@@ -240,7 +240,13 @@
   the infinite neutrals (the :max/:min rows -- Tint const-folds the
   bitcast to -inf/inf and refuses it), W >= 512 additionally needs raised
   device limits; docs/evidence/gpu/wgsl-validate-chrome-20261025/. Still
-  UNMEASURED; the fix question is the next slice.]
+  UNMEASURED; the fix question is DECIDED 2026-10-25 -- NEITHER a Tint
+  const-eval limit nor spec drift: the WGSL spec's Finite Math Assumption
+  (15.7.3) requires the refusal for any infinite const-expression, so the
+  neutral spelling is the defect; the fix rule (no infinite value in the
+  arm, clamped-index fill for :max/:min, 0.0 for :sum) is ACCEPTED DESIGN
+  ONLY and its implementation is a later slice,
+  docs/evidence/gpu/wgsl-inf-neutral-fixquestion-20261025/.]
   UNMEASURED as an
   optimization claim -- its GLSL emission has executed on Apple M1 Max hardware
   through wire 42 (a TOOLCHAIN fact of what compiles and runs, not
