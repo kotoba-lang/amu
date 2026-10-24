@@ -189,3 +189,21 @@
 
 (defn- io-read-bytes [path :string] :vector-i64
   (vector-i64-from-bytes (typed-cap-call :fs/app-data-bytes :bytes :bytes (bytes-from-vector-i64 (io-path-vec path)))))
+
+;; The private native lock-read frame is NUL KSL1 NUL followed by the exact
+;; path bytes. The native provider opens once with NONBLOCK/NOFOLLOW, checks
+;; a readable regular file of at most 1 MiB, and returns a status byte plus
+;; its complete bytes. Failure is an empty lock, which the owning KSL parser
+;; rejects as E6015. No legacy token scan, partial read or host fallback.
+(defn- io-lock-copy [bytes :vector-i64 out :vector-i64] :vector-i64
+  (loop [i 0 V out]
+    (if (= i (vector-count out)) V
+      (recur (+ i 1) (vector-assoc! V i (vector-at bytes (+ i 1)))))))
+
+(defn- io-read-source-lock [path :string] :vector-i64
+  (let [prefix (string-from-utf8 (bytes-from-vector-i64 [0 75 83 76 49 0]))
+        request (string-to-utf8 (string-concat prefix path))
+        answer (vector-i64-from-bytes (typed-cap-call :fs/app-data-bytes :bytes :bytes request))]
+    (if (and (> (vector-count answer) 0) (= (vector-at answer 0) 1))
+      (io-lock-copy answer (vector-alloc (- (vector-count answer) 1)))
+      (vector-alloc 0))))

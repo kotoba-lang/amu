@@ -7,7 +7,8 @@ targets) packed as a static image. Tiers (--tier) say how much is re-derived;
 every check runs in at least one tier:
 
 pr    1. F rebuilds itself: FULL-MANIFEST -> container, packed -> F' (= root,
-         else F' rebuilds itself to the same image and is re-pinned);
+         else the rebuilds converge to a fixed point Fn = Fn-1 within four
+         generations and that image is re-pinned as the root);
       2. F's Linux targets: aarch64 runner, x86_64 static compiler (the Linux
          selfhost closure), x86_64 KX64V1 runner;
       3. F's core route: seed/MANIFEST -> G1 = the adoption receipt's image;
@@ -65,7 +66,7 @@ CASES = "seed/static-cases.json"
 FLOAT_CASES = "seed/float-cases.json"
 WASM_CHECK = "scripts/seed/check-wasm32-browser.py"
 # 00-ns-static is 00-ns with the static profile's capacities (seed/MEMORY-MAP).
-STATIC_CAPACITIES = re.compile(rb"\(def MM-(WORDS|(CODE|FIX|LITB|OUT)-CAP|(FIX|LIT|LITB|EXP|OUT|HEAP)-BASE|HEAP-END) [0-9]+\)")
+STATIC_CAPACITIES = re.compile(rb"\(def MM-(WORDS|(TOK|CODE|FIX|LITB|OUT)-CAP|(NODE|SYM|HASH|FN|SCOPE|SIR|LABEL|CODE|FIX|LIT|LITB|EXP|OUT|HEAP)-BASE|HEAP-END) [0-9]+\)")
 # The adopted compiler was qualified on a host whose main stack is 8 MiB; the
 # runtime's default (1 MiB, the old loader's limit) is too small for it.
 ADOPTED_STACK = "8388608"
@@ -77,9 +78,36 @@ def unity(manifest, dst):
     return {p: pin(ROOT / p) for p in [manifest, *paths]}
 
 
+def static_capacity_layout():
+    normal, static = ((ROOT / p).read_bytes() for p in (NS, NS_STATIC))
+    constants = lambda b: {k.decode(): int(v) for k, v in re.findall(rb"\(def (MM-[A-Z0-9-]+) ([0-9]+)\)", b)}
+    a, b = constants(normal), constants(static)
+    assert a.keys() == b.keys()
+    overrides = dict(TOK=786432, CODE=2097152, FIX=262144, LITB=1048576, OUT=12582912)
+    regions = "TOK NODE SYM HASH FN SCOPE SIR LABEL CODE FIX LIT LITB EXP OUT".split()
+    for name in regions:
+        assert b[f"MM-{name}-W"] == a[f"MM-{name}-W"]
+        assert b[f"MM-{name}-CAP"] == overrides.get(name, a[f"MM-{name}-CAP"])
+    for layout in (a, b):
+        next_base = 256
+        for name in regions:
+            assert layout[f"MM-{name}-BASE"] == next_base, (name, "overlap or gap")
+            next_base += layout[f"MM-{name}-W"] * layout[f"MM-{name}-CAP"]
+        assert layout["MM-HEAP-BASE"] == next_base
+        assert layout["MM-HEAP-END"] == layout["MM-WORDS"] < 2**25
+    assert a["MM-HEAP-END"] - a["MM-HEAP-BASE"] == b["MM-HEAP-END"] - b["MM-HEAP-BASE"], "heap changed"
+    strip = lambda raw: STATIC_CAPACITIES.sub(b"", b"".join(line for line in raw.splitlines(True)
+        if not line.startswith((b";; seed/00-ns-static", b";; CORE-STATIC", b";; (CODE, FIX", b";; (TOK, CODE, FIX"))))
+    assert strip(normal) == strip(static), "static source differs beyond checked capacities"
+    return dict(words=b["MM-WORDS"], tokenCapacity=b["MM-TOK-CAP"],
+                literalBytes=b["MM-LITB-CAP"], outputBytes=b["MM-OUT-CAP"],
+                heapWords=b["MM-HEAP-END"]-b["MM-HEAP-BASE"])
+
+
 def main(out, tier, reuse=None, store=None):
     assert platform.system() == "Linux" and platform.machine() in ("aarch64", "arm64"), "run on arm64 Linux"
     level = TIERS.index(tier)
+    static_profile = static_capacity_layout()
     out.mkdir(parents=True, exist_ok=False)
     run = Runs(out, reuse, store)
     scope = {"KEXE_CAP_RESOURCES_35": str(out)}
@@ -109,16 +137,23 @@ def main(out, tier, reuse=None, store=None):
         dst.chmod(0o755)
         return pin(dst)
 
-    # 1. F rebuilds itself
-    gens = [dict(name="F1", container=compile_(out / "root.elf", full_src, out / "F1.kseed", "aarch64-macos", None, "F1-compile"),
-                 image=pack(out / "root.elf", out / "F1.kseed", out / "F1.elf", "F1-pack"))]
+    # 1. F rebuilds itself. A compiler embeds its own runtime text in what it
+    # packs, so after a source change the first generation can sit one step off
+    # the fixed point (measured JUN-19: F1 -> F2 -> F3 = F2; the container is
+    # stable from F1 and the packed image converges one rebuild later). Rebuild
+    # until an image reproduces itself; if that fixed point is not the pinned
+    # root, the root is re-pinned to it.
+    def generation(i, producer) -> dict:
+        return dict(name=f"F{i}", container=compile_(producer, full_src, out / f"F{i}.kseed", "aarch64-macos", None, f"F{i}-compile"),
+                    image=pack(producer, out / f"F{i}.kseed", out / f"F{i}.elf", f"F{i}-pack"))
+    gens = [generation(1, out / "root.elf")]
     root_reproduces = gens[0]["image"] == pin(ROOT / ROOT_IMAGE)
-    if not root_reproduces:
-        # a source change: F1 is this source's compiler; it must rebuild itself
-        gens.append(dict(name="F2", container=compile_(out / "F1.elf", full_src, out / "F2.kseed", "aarch64-macos", None, "F2-compile"),
-                         image=pack(out / "F1.elf", out / "F2.kseed", out / "F2.elf", "F2-pack")))
-        assert gens[1] == dict(gens[0], name="F2"), "combined compiler fixed point mismatch"
-    F = out / "F1.elf"
+    converged = root_reproduces
+    while not converged:
+        assert len(gens) < 4, "combined compiler fixed point not reached"
+        gens.append(generation(len(gens) + 1, out / f"F{len(gens)}.elf"))
+        converged = gens[-1] == dict(gens[-2], name=gens[-1]["name"])
+    F = out / f"F{len(gens)}.elf"
 
     # 2. F's Linux targets
     built = dict(
@@ -280,7 +315,7 @@ def main(out, tier, reuse=None, store=None):
     if level >= 2:
         ns, ns_static = ((ROOT / p).read_bytes() for p in (NS, NS_STATIC))
         strip = lambda b: STATIC_CAPACITIES.sub(b"", b"".join(l for l in b.splitlines(True) if not l.startswith(b";; seed/00-ns-static")
-                                                             and not l.startswith(b";; CORE-STATIC") and not l.startswith(b";; (CODE, FIX")))
+                                                             and not l.startswith(b";; CORE-STATIC") and not l.startswith((b";; (CODE, FIX", b";; (TOK, CODE, FIX"))))
         assert strip(ns) == strip(ns_static), "00-ns-static differs from 00-ns beyond the static capacities"
         S = out / "S.elf"
         core_static_src = out / "core-static-unity.kotoba"
@@ -298,11 +333,11 @@ def main(out, tier, reuse=None, store=None):
                        senv, [out / "Kw.kseed"], timeout=10800)
         pw = pack(S, out / "Kw.kseed", out / "Pw.elf", "Pw-pack")
         compile_(out / "Pw.elf", full_src, out / "Pw-F.kseed", "aarch64-macos", None, "Pw-F")
-        assert pin(out / "Pw-F.kseed") == gens[0]["container"], "F from the C0 lineage differs from F"
+        assert pin(out / "Pw-F.kseed") == gens[-1]["container"], "F from the C0 lineage differs from F"
         provenance = dict(coreStatic=dict(sourceGraph=core_static_pins, C0=c0), core=pin(out / "C0-core.bin"),
                           Kw=pin(out / "Kw.kseed"), Pw=pw, F=pin(out / "Pw-F.kseed"))
 
-    report = dict(status="PASS_LOADERLESS_SELFHOST_BOOTSTRAP", tier=tier, capabilities=capabilities,
+    report = dict(status="PASS_LOADERLESS_SELFHOST_BOOTSTRAP", tier=tier, capabilities=capabilities, staticProfile=static_profile,
                   host=[platform.system(), platform.machine(), platform.release()],
                   root=dict(image=pin(ROOT / ROOT_IMAGE), receipt=root_receipt),
                   sourceGraph=dict(full=full_pins, selfhost=source_pins), generations=gens, rootReproduces=root_reproduces,
@@ -317,7 +352,7 @@ def main(out, tier, reuse=None, store=None):
                   reuse=dict(read=bool(reuse), store=bool(store), reused=[dict(name=c["name"], **c["reused"]) for c in run.calls if "reused" in c]),
                   cCompilerOrLoader=False, JVMNodeOrGraalFallback=False, emulation=False)
     (out / "selfhost-bootstrap.json").write_text(json.dumps(report, indent=2) + "\n")
-    print(report["status"], tier, "F", gens[-1]["image"]["sha256"][:16], "root reproduces" if root_reproduces else "root differs (re-pin to F1)",
+    print(report["status"], tier, "F", gens[-1]["image"]["sha256"][:16], "root reproduces" if root_reproduces else f"root differs (re-pin to F{len(gens)})",
           "adoption image", len(results), "cases", "wasm32-browser", "executed" if wasm32["executed"] else "compiled", flush=True)
 
 
