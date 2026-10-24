@@ -177,7 +177,22 @@
 ;; its implementation a later slice,
 ;; docs/evidence/gpu/wgsl-inf-neutral-fixquestion-20261025/. Nothing has
 ;; executed this arm:
-;; UNMEASURED unchanged.]
+;; UNMEASURED unchanged.] [FIX IMPLEMENTED 2026-10-25 (this arm's own
+;; implementation slice, JUN-59/JUN-60): the fix rule's no-infinite-value
+;; emission is now WHAT IS EMITTED -- :sum's finite 0.0 select, :max/:min's
+;; clamped-index fill x[min(i,n.value-1u)] (padded-lane-fill-wgsl; the
+;; n=0 contract, decided there: n >= 1 is a caller precondition) -- and the
+;; whole admitted row re-emitted and re-judged on the same instrument:
+;; 18/18 VALIDATE CLEAN at the raised limits, 12/18 at the default limits
+;; (the 6 are W >= 512 refused only for workgroup_size above the default
+;; maxComputeWorkgroupSizeX of 256; compile-info: ok for all 18 in both
+;; regimes and the "value -inf cannot be represented as 'f32'" class is
+;; GONE, 0 occurrences). Corpus
+;; docs/evidence/gpu-subgroup-reduce-wgsl-fix-20261025/shaders/, transcript
+;; docs/evidence/gpu/wgsl-fix-validate-chrome-20261025/compile-log.txt; the
+;; pre-fix corpus and its judgment stand as untouched records. The
+;; spelling pins below are the fix rule's own. UNMEASURED unchanged --
+;; shader validation is not a measurement.]
 
 (deftest wgsl-emission-queries-the-subgroup-size-at-runtime
   ;; ADR-0356's letter, WGSL arm: the fold step is a function of
@@ -193,19 +208,39 @@
       (is (nil? (re-find #"\bd\s*=\s*\d+u" code))
           (str "a baked fold width leaked into W=" w " " (name operator))))))
 
-(deftest wgsl-each-operator-carries-its-combine-and-identity
-  (doseq [[operator combine identity-text]
-          [[:sum "a+b" "0.0"]
-           ;; The same INFINITE neutrals as every other arm (accelerator-
-           ;; test's every-arm-shares-one-operator-meaning): WGSL has no
-           ;; infinity literal, bitcast of the IEEE-754 bits is exact.
-           [:max "max(a,b)" "bitcast<f32>(0xFF800000u)"]
-           [:min "min(a,b)" "bitcast<f32>(0x7F800000u)"]]]
+(deftest wgsl-each-operator-carries-its-combine-and-padded-lane-fill
+  ;; THE 2026-10-25 FIX RULE, IMPLEMENTED: this arm holds NO infinite
+  ;; value in any position (WGSL 15.7.3 makes an infinite const-
+  ;; expression a REQUIRED shader-creation error -- the bitcast spelling
+  ;; the other arms use was REFUSED by Chrome 155's Tint at error@9:33,
+  ;; the 2026-10-25 judgment). :sum keeps its finite 0.0 identity in the
+  ;; select; :max/:min use the CLAMPED-INDEX FILL x[min(i,n.value-1u)] --
+  ;; out-of-range lanes duplicate the in-range element x[n-1] and max/min
+  ;; stay exact (a duplicate never changes an extremum, +-Inf input
+  ;; included). n >= 1 is a caller precondition (n=0 is out of contract).
+  (doseq [[operator combine fill-text]
+          [[:sum "a+b" "var v:f32=select(0.0,x[i],i<n.value);"]
+           [:max "max(a,b)" "var v:f32=x[min(i,n.value-1u)];"]
+           [:min "min(a,b)" "var v:f32=x[min(i,n.value-1u)];"]]]
     (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
                                   {:workgroup-size 128})
           code (sg/emit-wgsl kir)]
       (is (str/includes? code (str "fn combine(a:f32,b:f32)->f32{return " combine ";}")))
-      (is (str/includes? code (str "var v:f32=select(" identity-text ",x[i],i<n.value);"))))))
+      (is (str/includes? code fill-text)))))
+
+(deftest wgsl-arm-holds-no-infinite-value-in-any-position
+  ;; The fix rule's own mechanical guard (decision point 3, "no infinite
+  ;; value in the arm at all"): the IEEE-754 infinite bit patterns and
+  ;; their bitcast spelling must appear NOWHERE in the emitted bytes --
+  ;; not in an identity, not in a fill, not in a comment-visible string.
+  ;; This is the tripwire that keeps the refused spelling from returning.
+  (doseq [w [32 64 128 256 512 1024] operator [:sum :max :min]]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
+                                  {:workgroup-size w})
+          code (sg/emit-wgsl kir)]
+      (is (nil? (re-find #"0xFF800000|0x7F800000|bitcast<f32>|inf" code))
+          (str "an infinite-value spelling leaked into W=" w " "
+               (name operator) ": " (re-find #"0xFF800000|0x7F800000|bitcast<f32>|inf" code))))))
 
 (deftest wgsl-cites-the-spec-spellings-only
   ;; Spec pins (W3C WGSL + the merged gpuweb subgroups proposal, fetched

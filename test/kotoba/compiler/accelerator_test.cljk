@@ -242,21 +242,33 @@
 
 (deftest every-arm-shares-one-operator-meaning
   ;; One meaning per operator across EVERY emission arm (review P2,
-  ;; completed 2026-10-22): the reduce identity is the IEEE-754 INFINITE
-  ;; neutral in all four targets and in every reduce variant. A finite bound
-  ;; is corrupted by a legitimate +-Inf input in the padded lanes (an
-  ;; all-(-Inf) :max reduction answered -FLT_MAX), and the same KIR must
-  ;; answer the same reduce wherever it is emitted -- ADR-0356 rule 2's
-  ;; ordinary-value domain includes +-Inf. Each arm spells the exact bits in
-  ;; its own reinterpretation intrinsic (no infinity literal exists in GLSL
-  ;; or WGSL). The finite +-3.402823466e+38 bound must appear in NO arm's
-  ;; bytes: that absence is the mechanical guard against the drift this
-  ;; test exists for.
+  ;; completed 2026-10-22, re-founded 2026-10-25): the reduce answers the
+  ;; same value wherever it is emitted -- ADR-0356 rule 2's ordinary-
+  ;; value domain includes +-Inf, so the padded lanes must never distort
+  ;; the fold. The MECHANISM differs per language, and that is now part
+  ;; of the pin: GLSL/MSL/CUDA (and the WGSL baseline arm, still -- its
+  ;; own later slice) fold the IEEE-754 INFINITE neutral spelled via each
+  ;; language's reinterpretation intrinsic (a finite bound is corrupted
+  ;; by a legitimate +-Inf input -- an all-(-Inf) :max reduction answered
+  ;; -FLT_MAX -- and no infinity literal exists in GLSL or WGSL); the WGSL
+  ;; :subgroup-reduce arm CANNOT hold that neutral -- the WGSL spec's
+  ;; Finite Math Assumption (15.7.3) makes the infinite const-expression
+  ;; a REQUIRED shader-creation error (Chrome 155's Tint refuses it,
+  ;; "value -inf cannot be represented as 'f32'") -- so since 2026-10-25
+  ;; it carries the clamped-index fill x[min(i,n.value-1u)]: out-of-range
+  ;; lanes duplicate an IN-RANGE element and max/min stay exact by
+  ;; idempotence, +-Inf input included. Same meaning, two mechanisms. The
+  ;; finite +-3.402823466e+38 bound must appear in NO arm's bytes: that
+  ;; absence is the mechanical guard against the drift this test exists
+  ;; for.
   (doseq [[operator ids]
-          [[:sum {:wgsl "0.0" :msl "0.0f" :cuda "0.0f" :glsl "0.0"}]
-           [:max {:wgsl "bitcast<f32>(0xFF800000u)" :msl "as_type<float>(0xFF800000u)"
+          [[:sum {:wgsl "0.0" :wgsl-fill "select(0.0,x[i],i<n.value)"
+                  :msl "0.0f" :cuda "0.0f" :glsl "0.0"}]
+           [:max {:wgsl "bitcast<f32>(0xFF800000u)" :wgsl-fill "x[min(i,n.value-1u)]"
+                  :msl "as_type<float>(0xFF800000u)"
                   :cuda "__uint_as_float(0xFF800000u)" :glsl "uintBitsToFloat(0xFF800000u)"}]
-           [:min {:wgsl "bitcast<f32>(0x7F800000u)" :msl "as_type<float>(0x7F800000u)"
+           [:min {:wgsl "bitcast<f32>(0x7F800000u)" :wgsl-fill "x[min(i,n.value-1u)]"
+                  :msl "as_type<float>(0x7F800000u)"
                   :cuda "__uint_as_float(0x7F800000u)" :glsl "uintBitsToFloat(0x7F800000u)"}]]]
     (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
                                   {:workgroup-size 128})]
@@ -274,7 +286,7 @@
                [(accelerator/lower kir :glsl-v1 :subgroup-reduce)
                 "float v = i < n ? x[i] : " (:glsl ids) ";"]
                [(accelerator/lower kir :wgsl-v1 :subgroup-reduce)
-                "var v:f32=select(" (:wgsl ids) ",x[i],i<n.value);"]
+                "var v:f32=" (:wgsl-fill ids) ";"]
                [(accelerator/lower kir :msl-v1 :subgroup-reduce)
                 "float v = i < n ? x[i] : " (:msl ids) ";"]
                [(accelerator/lower kir :cuda-v1 :subgroup-reduce)

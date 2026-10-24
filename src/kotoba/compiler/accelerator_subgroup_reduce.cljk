@@ -96,7 +96,32 @@
   spelling pins stand
   beside the judgment, not replaced by it. Verbatim transcript:
   docs/evidence/gpu/wgsl-validate-chrome-20261025/compile-log.txt; Deno
-  2.7.14's Naga refuses `enable subgroups;` outright and judges nothing.] The n of the KIR
+  2.7.14's Naga refuses `enable subgroups;` outright and judges
+  nothing.] [IMPLEMENTED 2026-10-25 (this arm's own implementation
+  slice, JUN-59/JUN-60): the fix rule is now WHAT THIS ARM EMITS --
+  padded-lane-fill-wgsl, no infinite value in any position: :sum keeps
+  the finite 0.0 select, :max/:min carry the CLAMPED-INDEX FILL
+  x[min(i,n.value-1u)] (the out-of-range lanes duplicate the in-range
+  element x[n-1]; max/min are idempotent, so the fold stays exact,
+  legitimate +-Inf input included). THE n=0 CONTRACT, decided here: n
+  >= 1 is a CALLER PRECONDITION of this arm -- an empty reduce has no
+  finite :max/:min answer (the true neutral is the infinite one this arm
+  must not hold), so n=0 is out of contract and the clamp's n.value-1u
+  is exact only under it. The re-emitted whole admitted row JUDGES CLEAN
+  on the same instrument: 18/18 VALIDATE CLEAN at the raised limits,
+  12/18 at the default limits (the 6 are W >= 512 refused only for
+  workgroup_size above the default maxComputeWorkgroupSizeX of 256 --
+  compile-info: ok for all 18 files in both regimes, and the
+  \"value -inf cannot be represented as 'f32'\" class is GONE),
+  corpus docs/evidence/gpu-subgroup-reduce-wgsl-fix-20261025/shaders/,
+  transcript docs/evidence/gpu/wgsl-fix-validate-chrome-20261025/
+  compile-log.txt; the pre-fix corpus and its judgment stand as
+  untouched records. The baseline :reduce WGSL arm (accelerator.cljk's
+  wgsl-identity) still spells the infinite identity -- the SAME defect,
+  its own later slice -- and accelerator-test's
+  every-arm-shares-one-operator-meaning now pins two mechanisms under
+  one meaning. UNMEASURED unchanged: shader validation is not a
+  measurement and no kernel has executed this arm on any GPU.] The n of the KIR
   rides `var<uniform> n: N` at binding 2 -- the WGSL family's own choice
   (every WGSL emission binds it there); the GLSL arm's storage-buffer n is
   a wire-42 artifact with no WGSL word. P1 (option b scoping) and P2
@@ -297,14 +322,33 @@
          "  if (gl_SubgroupID == 0u && gl_SubgroupInvocationID == 0u) { parts[gl_WorkGroupID.x] = partials[0]; }\n"
          "}\n")))
 
-(def ^:private identity-value-wgsl
-  ;; The same INFINITE neutrals as identity-value, in WGSL: no infinity
-  ;; literal exists there either, bitcast of the IEEE-754 bits is exact --
-  ;; byte-identical to accelerator.cljk's wgsl-identity (one meaning per
-  ;; operator in every arm).
-  {:sum "0.0"
-   :max "bitcast<f32>(0xFF800000u)"
-   :min "bitcast<f32>(0x7F800000u)"})
+(def ^:private padded-lane-fill-wgsl
+  ;; THE 2026-10-25 FIX RULE, IMPLEMENTED (the fixquestion decision's
+  ;; decision point 3; JUN-59/JUN-60's implementation slice): NO infinite
+  ;; value in this arm in any position. The WGSL spec's Finite Math
+  ;; Assumption (15.7.3) makes an infinite const-expression of floating
+  ;; point type a REQUIRED shader-creation error, so the INFINITE neutral
+  ;; the other arms spell (identity-value; accelerator.cljk's
+  ;; wgsl-identity still spells it for the baseline :reduce WGSL arm --
+  ;; that spelling is refused by Tint the same way and is its own later
+  ;; slice) cannot exist here. :sum keeps its finite 0.0 identity.
+  ;; :max/:min use the CLAMPED-INDEX FILL: every lane carries
+  ;; x[min(i,n-1)], so the out-of-range lanes (i >= n) duplicate the
+  ;; in-range element x[n-1] and max/min stay exact -- a duplicated
+  ;; element never changes an extremum, legitimate +-Inf input included
+  ;; (ADR-0356 rule 2's ordinary-value domain). A runtime-escape
+  ;; spelling is rejected as non-portable (15.7.3 lets implementations
+  ;; treat runtime infinities as indeterminate values and names min/max,
+  ;; this arm's combines).
+  ;; THE n=0 CONTRACT, decided here (the fix question left it to this
+  ;; slice): n >= 1 is a CALLER PRECONDITION of this arm. An empty
+  ;; reduce has no finite :max/:min answer -- the true neutral is the
+  ;; infinite one this arm must not hold -- so n=0 is OUT OF CONTRACT,
+  ;; and n.value-1u in the clamp is exact only under it. On contract
+  ;; every read is in range of x[0..n).
+  {:sum "select(0.0,x[i],i<n.value)"
+   :max "x[min(i,n.value-1u)]"
+   :min "x[min(i,n.value-1u)]"})
 
 (def ^:private combine-expression-wgsl
   {:sum "a+b" :max "max(a,b)" :min "min(a,b)"})
@@ -317,7 +361,12 @@
   (ex-info \"kernel variant not applicable\"), for the same reason as
   emit-glsl. Deterministic: the same KIR lowers to the same bytes, forever.
   The entry point is `main` and :kernel/name deliberately does not appear,
-  as in every other emission arm."
+  as in every other emission arm. The padded-lane load is the 2026-10-25
+  fix rule's (padded-lane-fill-wgsl): :sum's finite 0.0 select, :max/:min's
+  clamped-index fill x[min(i,n.value-1u)] -- no infinite value in this arm
+  in any position. THE n=0 CONTRACT: n >= 1 is a caller precondition of
+  this arm; an empty reduce is out of contract (its true :max/:min answer
+  is the infinite neutral this arm must not hold)."
   [kir]
   (kir/validate! kir)
   (when-not (applicable? kir)
@@ -328,7 +377,7 @@
                      :workgroup-size (:kernel/workgroup-size kir)})))
   (let [wg (:kernel/workgroup-size kir)
         operator (:kernel/operator kir)
-        identity (identity-value-wgsl operator)
+        fill (padded-lane-fill-wgsl operator)
         combine (combine-expression-wgsl operator)]
     (str "enable subgroups;\n"
          "struct N { value: u32 };\n"
@@ -343,7 +392,11 @@
          "@builtin(subgroup_size) sgsize:u32,"
          "@builtin(subgroup_id) sg:u32,"
          "@builtin(num_subgroups) nsg:u32){\n"
-         "  let i=gid.x; var v:f32=select(" identity ",x[i],i<n.value);\n"
+         "  let i=gid.x; var v:f32=" fill ";\n"
+         ;; The padded-lane load above is the fix rule's, deliberately NOT
+         ;; emit-glsl's identity select (padded-lane-fill-wgsl's comment):
+         ;; this arm holds no infinite value. The fold below is emit-glsl's
+         ;; to its letter.
          ;; The fold width is the ACTIVE width of this subgroup, exactly as
          ;; in emit-glsl: a subgroup size is a power of two, so every
          ;; subgroup is full or the single first partial one, and

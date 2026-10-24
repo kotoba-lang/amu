@@ -23,6 +23,14 @@
 ;;
 ;; Deterministic: same emitter, same bytes. If a run of this script
 ;; changes a file, the emitter changed.
+;; [FIXED 2026-10-25 (the fix rule's implementation slice): the emitter
+;; now carries the clamped-index fill (:max/:min) and :sum's 0.0 select,
+;; no infinite value in any position. The DEFAULT output path keeps the
+;; PRE-FIX corpus -- the judged input of the 2026-10-25 judgment -- byte-
+;; untouched; the post-fix corpus is emitted to the explicit output-dir
+;; argument (docs/evidence/gpu-subgroup-reduce-wgsl-fix-20261025/shaders)
+;; and judged there (docs/evidence/gpu/wgsl-fix-validate-chrome-20261025/).
+;; Usage: scripts/emit-gpu-subgroup-reduce-wgsl.cljk [output-dir]]
 
 (ns emit-gpu-subgroup-reduce-wgsl
   (:require [kotoba.compiler.accelerator :as accelerator]
@@ -31,14 +39,18 @@
 (def widths [32 64 128 256 512 1024])
 (def operators [:sum :max :min])
 
+(def out-dir
+  (or (first *command-line-args*)
+      "docs/evidence/gpu-subgroup-reduce-wgsl-20261025/shaders"))
+
 (defn -main [& _]
   (doseq [w widths
           operator operators]
     (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
                                   {:workgroup-size w})
           code (sg/emit-wgsl kir)
-          path (str "docs/evidence/gpu-subgroup-reduce-wgsl-20261025/shaders/"
-                    "subgroup-reduce-w" w "-" (name operator) ".emitted.wgsl")]
+          path (str out-dir "/subgroup-reduce-w" w "-" (name operator)
+                    ".emitted.wgsl")]
       (spit path code)
       (println "WROTE" path (count code) "bytes"))))
 

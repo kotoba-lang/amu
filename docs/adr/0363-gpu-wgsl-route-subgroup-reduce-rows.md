@@ -97,6 +97,22 @@ route" is stale for both.)
   and names min/max, this arm's combines). Evidence: 9 probes on 2 real
   toolchains (Chrome 155 Dawn/Tint and Deno 2.7.14 wgpu/Naga) plus the
   normative spec quotes, docs/evidence/gpu/wgsl-inf-neutral-fixquestion-20261025/.]
+  [FIX IMPLEMENTED 2026-10-25 (the implementation slice, JUN-59/JUN-60):
+  the fix rule is now the arm's emission -- :sum keeps the finite 0.0
+  select, :max/:min carry the clamped-index fill x[min(i,n.value-1u)]
+  (out-of-range lanes duplicate the in-range element x[n-1]; max/min
+  idempotence keeps the fold exact, +-Inf input included); n >= 1 is a
+  CALLER PRECONDITION (the n=0 contract this slice owed: an empty reduce
+  has no finite :max/:min answer, so it is out of contract). The
+  re-emitted whole admitted row judges clean on the same instrument:
+  18/18 VALIDATE CLEAN at raised limits, 12/18 at the default limits (6
+  refused only for workgroup_size above the default
+  maxComputeWorkgroupSizeX of 256; compile-info ok for all 18 in both
+  regimes; the "cannot be represented" class gone), corpus
+  docs/evidence/gpu-subgroup-reduce-wgsl-fix-20261025/shaders/,
+  transcript docs/evidence/gpu/wgsl-fix-validate-chrome-20261025/
+  compile-log.txt. The baseline :reduce WGSL arm keeps the refused
+  spelling -- same defect, its own later slice.]
 - **UNMEASURED.** No WebGPU execution path exists in this repository and no
   hardware ran the variant on this route. Every answer keeps
   `:measured? false`; rule 4's lock is untouched and no workgroup row of

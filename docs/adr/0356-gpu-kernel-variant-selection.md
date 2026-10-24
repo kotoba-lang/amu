@@ -199,6 +199,13 @@ an in-range element (clamped-index fill), :sum keeps 0.0; a
 runtime-escape spelling is rejected as non-portable (the same clause
 permits indeterminate values for runtime infinities and names min/max).
 Evidence: docs/evidence/gpu/wgsl-inf-neutral-fixquestion-20261025/.]
+[FIX IMPLEMENTED 2026-10-25 (the implementation slice): the fix rule is
+now the :subgroup-reduce WGSL arm's emission (clamped-index fill
+x[min(i,n.value-1u)] for :max/:min, 0.0 select for :sum; n >= 1 is a
+caller precondition) and the re-emitted row judges clean -- 18/18 at
+raised limits, docs/evidence/gpu/wgsl-fix-validate-chrome-20261025/;
+the baseline :reduce WGSL arm keeps the refused spelling, its own later
+slice. UNMEASURED unchanged.]
 No `:measured?` flag moves and no
 workgroup row is touched.
 
