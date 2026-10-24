@@ -1,0 +1,140 @@
+;; Native port of kotoba.native.interrupt-abi's fixed mechanism.
+;; Owner source: kotoba-native 39190953980d1a0982f590bfdc63471898a2a9e4.
+;; Runtime decisions remain in the Kotoba body; these sequences only carry
+;; registers, context, fuel and the architectural interrupt frame.
+(def IV-STRIDE 128)
+(def IV-VECTORS 64)
+(def IV-FUEL 4096)
+(def IV-CONTEXT-ENTRY 328)
+(def IV-SLOTS 352)
+(defn- iv-digit [c :i64] :i64
+  (cond (and (>= c 48) (<= c 57)) (- c 48)
+        (and (>= c 97) (<= c 102)) (- c 87) :else -1))
+(defn- iv-hex [M :vector-i64 S :string] :vector-i64
+  (if (not= (mod (string-length S) 2) 0) (xg-err M 7104 (string-length S))
+    (loop [i 0]
+      (if (or (>= i (string-length S)) (not= (vector-at M MM-ERR) 0)) M
+        (let [a (iv-digit (string-code-point-at S i)) b (iv-digit (string-code-point-at S (inc i)))]
+          (if (or (< a 0) (< b 0)) (xg-err M 7104 i)
+            (let [w (xg-byte M (+ (* a 16) b))] (recur (+ i 2)))))))))
+(defn- iv-j8 [M :vector-i64 opcode :i64 label :i64] :vector-i64
+  (let [w (xg-byte M opcode) at (xg-pos w) k (vector-at w MM-FIX-N)
+        b (+ MM-FIX-BASE (* k MM-FIX-W))]
+    (if (>= k MM-FIX-CAP) (xg-err w 7104 k)
+      (-> w (mem-set b at) (mem-set (+ b 1) 6) (mem-set (+ b 2) label)
+            (mem-set MM-FIX-N (inc k)) (xg-byte 0)))))
+(defn- iv-reserve [M :vector-i64 n :i64] :vector-i64
+  (let [end (+ (vector-at M MM-LABEL-N) n)]
+    (if (>= end MM-LABEL-CAP) (xg-err M 7104 end) (mem-set M MM-LABEL-N end))))
+(defn- iv-mem [M :vector-i64 op :i64 reg :i64 base :i64 displacement :i64] :vector-i64
+  (if (= (bit-and base 7) 4) (xg-err M 7101 base)
+    (-> M (xg-byte (bit-or 72 (bit-or (if (>= reg 8) 4 0) (if (>= base 8) 1 0))))
+          (xg-byte op) (xg-byte (bit-or 128 (bit-or (* (bit-and reg 7) 8) (bit-and base 7))))
+          (xg-bytes displacement 4))))
+(defn- iv-context [M :vector-i64 base :i64 fail :i64] :vector-i64
+  (-> M (iv-hex "4883ec100f010424") (xg-byte (if (>= base 8) 76 72))
+      (iv-hex "8b") (xg-byte (+ 68 (* 8 (bit-and base 7)))) (iv-hex "24024883c410")
+      (iv-mem 59 base base 58) (xg-rel 0x850f 2 2 fail)
+      (xg-byte (if (>= base 8) 73 72)) (xg-byte 131) (xg-byte (+ 232 (bit-and base 7))) (xg-byte 96)))
+(defn- iv-fail-receipt [M :vector-i64] :vector-i64
+  (iv-hex M "b04666bae900eeb81f00000066baf400ef"))
+(defn- iv-fail-tail [M :vector-i64 halt :i64] :vector-i64
+  (-> M (iv-fail-receipt) (xg-label halt) (xg-byte 244) (iv-j8 235 halt)))
+(defn- iv-fatal [M :vector-i64 halt :i64] :vector-i64
+  (-> M (iv-hex "b00666baf90ceeb04866bae900ee")
+      (xg-label halt) (xg-byte 244) (iv-j8 235 halt)))
+(defn- iv-undefined [M :vector-i64] :vector-i64
+  (let [halt (vector-at M MM-LABEL-N)]
+    (-> M (iv-reserve 1) (iv-hex "fab05566bae900eeb81d00000066baf400ef") (iv-fatal halt))))
+(defn- iv-timer [M :vector-i64] :vector-i64
+  (let [fail (vector-at M MM-LABEL-N) halt (inc fail)]
+    (-> M (iv-reserve 2) (iv-hex "5052") (iv-context 0 fail)
+        (iv-mem 255 0 0 456) (iv-hex "bab000e0fec702000000005a5848cf")
+        (xg-label fail) (iv-fail-tail halt))))
+(defn- iv-classifier [M :vector-i64] :vector-i64
+  (let [guard (vector-at M MM-LABEL-N) text (inc guard) fail (+ guard 2) report (+ guard 3) halt (+ guard 4)]
+    (-> M (iv-reserve 5) (iv-hex "fa410f20d24c8b1c244981fa00001000") (iv-j8 116 guard)
+        (iv-hex "4981fa00101000") (iv-j8 116 text) (iv-context 13 fail)
+        (iv-hex "4d39ea") (iv-j8 117 fail) (iv-hex "4c89d883e01183f811") (iv-j8 117 fail)
+        (iv-hex "b05841b81b000000") (iv-j8 235 report)
+        (xg-label guard) (iv-hex "4c89d883e00383f802") (iv-j8 117 fail)
+        (iv-hex "b04741b819000000") (iv-j8 235 report)
+        (xg-label text) (iv-hex "4c89d883e00383f803") (iv-j8 117 fail)
+        (iv-hex "b05741b81a000000") (iv-j8 235 report)
+        (xg-label fail) (iv-hex "b04641b81f000000")
+        (xg-label report) (iv-hex "66bae900ee4489c066baf400ef") (iv-fatal halt))))
+(defn- iv-spill-reg [i :i64] :i64 (case i 0 0 1 2 2 10 3 11 4 12 5 13 14))
+(defn- iv-spills [M :vector-i64 load :bool] :vector-i64
+  (loop [i 0]
+    (if (>= i 7) M
+      (let [w (iv-mem M (if load 139 137) (iv-spill-reg i) 15 (+ 368 (* i 8)))]
+        (recur (inc i))))))
+(defn- iv-recovery [M :vector-i64] :vector-i64
+  (let [fail (vector-at M MM-LABEL-N) halt (inc fail)]
+    (-> M (iv-reserve 2) (iv-hex "fa4157") (iv-context 15 fail) (iv-spills false)
+        (iv-hex "488b0424") (iv-mem 137 0 15 424)
+        (iv-hex "4883c4084989e6410f20d24d8b1e4981fa00001000") (xg-rel 0x850f 2 2 fail)
+        (iv-hex "4c89d883e00383f802") (xg-rel 0x850f 2 2 fail)
+        (iv-mem 139 12 15 352) (iv-mem 139 13 15 360)
+        (iv-hex "4d85e4") (iv-j8 116 fail) (iv-hex "4d85ed") (iv-j8 116 fail)
+        (iv-hex "4d8914244d895c2408498b460849894424104c89ec4989642418b05266bae900ee49834608044c89f44883c408")
+        (iv-spills true) (iv-mem 139 15 15 424) (iv-hex "48cf")
+        (xg-label fail) (iv-fail-tail halt))))
+(defn- iv-double [M :vector-i64] :vector-i64
+  (let [fail (vector-at M MM-LABEL-N) reset (inc fail) halt (+ fail 2)]
+    (-> M (iv-reserve 3) (iv-hex "fa4989e24c8b1c24") (iv-context 15 fail)
+        (iv-mem 139 12 15 432) (iv-mem 139 13 15 440) (iv-mem 139 14 15 448)
+        (iv-hex "4d85e4") (iv-j8 116 fail) (iv-hex "4d85ed") (iv-j8 116 fail)
+        (iv-hex "4d85f6") (iv-j8 116 fail) (iv-hex "4d39ea") (iv-j8 114 fail)
+        (iv-hex "4d39f2") (iv-j8 115 fail) (iv-hex "498d46d04939c2") (iv-j8 117 fail)
+        (iv-hex "4d85db") (iv-j8 117 fail)
+        (iv-hex "4d8914244d895c2408488b4424204989442410488b44242849894424184d89742420b04466bae900eeb81c00000066baf400ef")
+        (iv-j8 235 reset) (xg-label fail) (iv-fail-receipt)
+        (xg-label reset) (iv-fatal halt))))
+(defn- iv-configure [M :vector-i64 t :i64 double :bool] :vector-i64
+  (let [fail (vector-at M MM-LABEL-N) end (inc fail)
+        frame (if double 432 352) stack-top (if double 448 360)
+        start (-> M (iv-reserve 2) (xg-load t 0x958b4c) (xg-load (inc t) 0x9d8b4c)
+                  (iv-hex "4c89d04c09d848a9ff0f0000") (iv-j8 117 fail)
+                  (iv-hex "4d85d2") (iv-j8 116 fail) (iv-hex "4d85db") (iv-j8 116 fail)
+                  (iv-hex (if double "4d39da" "4d39d3")) (iv-j8 116 fail)
+                  (iv-mem 137 10 9 frame))
+        with-stack (if double (iv-mem start 137 11 9 440) start)
+        checked (-> with-stack (iv-hex "498d83f00f0000") (iv-mem 137 0 9 stack-top)
+                    (iv-mem 59 10 9 frame) (iv-j8 117 fail))
+        read-stack (if double (-> checked (iv-mem 59 11 9 440) (iv-j8 117 fail)) checked)]
+    (-> read-stack (iv-mem 59 0 9 stack-top) (iv-j8 117 fail)
+        (iv-hex "49c7c201000000") (iv-j8 235 end)
+        (xg-label fail) (iv-hex "4d31d2") (xg-label end) (iv-hex "4c89d0") (xg-save t))))
+(defn- iv-error-code? [v :i64] :bool
+  (or (= v 8) (= v 10) (= v 11) (= v 12) (= v 13) (= v 14) (= v 17) (= v 21) (= v 29) (= v 30)))
+(defn- iv-context-offset [v :i64] :i64 (if (iv-error-code? v) 27 29))
+(defn- iv-call-offset [v :i64] :i64 (+ (iv-context-offset v) 46))
+(defn- iv-entry-size [v :i64] :i64 (+ (iv-call-offset v) 37))
+(defn- iv-pushes [M :vector-i64] :vector-i64
+  (iv-hex M "5051525355565741504151415241534154415541564157"))
+(defn- iv-pops [M :vector-i64] :vector-i64
+  (iv-hex M "415f415e415d415c415b415a415941585f5e5d5b5a5958"))
+(defn- iv-entry [M :vector-i64 v :i64 fuel :i64 context-disp :i64 call-disp :i64] :vector-i64
+  (if (or (< v 0) (>= v IV-VECTORS) (< fuel 1) (> fuel 2147483647)
+          (< context-disp -2147483648) (> context-disp 2147483647)
+          (< call-disp -2147483648) (> call-disp 2147483647)) (xg-err M 7104 v)
+    (let [start (if (iv-error-code? v) M (iv-hex M "6a00"))]
+      (-> start (iv-pushes) (iv-hex "fc4c8d0d") (xg-bytes context-disp 4)
+          (iv-hex "41ff710849c74108") (xg-bytes fuel 4) (xg-byte 191) (xg-bytes v 4)
+          (iv-hex "488bb42480000000488b942488000000488b8c24a0000000e8") (xg-bytes call-disp 4)
+          (iv-hex "418f4108") (iv-pops) (iv-hex "4883c40848cf")))))
+(defn- iv-isr-prefix? [S :string] :bool
+  (and (>= (string-length S) 11) (string=? (string-substring S 0 11) "aiueos-isr-")))
+(defn- iv-vector [S :string] :i64
+  (let [n (string-length S)]
+    (if (or (not (iv-isr-prefix? S)) (< n 12) (> n 13)
+            (and (= n 13) (= (string-code-point-at S 11) 48))) -1
+      (let [a (iv-digit (string-code-point-at S 11))
+            b (if (= n 13) (iv-digit (string-code-point-at S 12)) 0)
+            value (if (= n 12) a (+ (* 10 a) b))]
+        (if (or (< a 0) (> a 9) (< b 0) (> b 9) (>= value IV-VECTORS)) -1 value)))))
+(defn- iv-load-idt [M :vector-i64 t :i64] :vector-i64
+  (-> M (xg-load t 0x958b4c) (xg-load (inc t) 0x9d8b4c)
+      (iv-hex "4983fb0a75384d85d27433410f011a4883ec100f010c24410fb7020fb70c2439c8751b498b4202488b4c24024839c8750d4883c41049c7c201000000eb020f0b4c89d0")
+      (xg-save t)))

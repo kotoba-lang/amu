@@ -201,15 +201,18 @@
              2 (dec (bit-and (vector-at M (+ MM-LABEL-BASE target)) 4294967295))
              3 (- (xg-get M 3) 4096)
              4 (vector-at M (+ MM-LIT-BASE (* target MM-LIT-W) LF-POOL))
-             5 (vector-at M (+ MM-LIT-BASE (* target MM-LIT-W) LF-POOL)) -1))
+             5 (vector-at M (+ MM-LIT-BASE (* target MM-LIT-W) LF-POOL))
+             6 (dec (bit-and (vector-at M (+ MM-LABEL-BASE target)) 4294967295)) -1))
 (defn- xg-patch [M :vector-i64 at :i64 bits :i64 n :i64] :vector-i64
   (if (= n 0) M (xg-patch (xg-put-byte M at bits) (inc at) (u64-shift-right bits 8) (dec n))))
 (defn- xg-fix [M :vector-i64 i :i64] :vector-i64
   (if (or (not= (vector-at M MM-ERR) 0) (= i (vector-at M MM-FIX-N))) M
     (let [b (+ MM-FIX-BASE (* i MM-FIX-W)) at (vector-at M b) kind (vector-at M (+ b 1))
-          target (xg-fix-target M kind (vector-at M (+ b 2))) d (if (= kind 4) target (- target (+ at 4)))]
-      (if (or (< target 0) (< at 0) (> (+ at 4) (xg-pos M)) (< d -2147483648) (> d 2147483647))
-        (xg-err M 7103 i) (xg-fix (xg-patch M at d 4) (inc i))))))
+          target (xg-fix-target M kind (vector-at M (+ b 2))) width (if (= kind 6) 1 4)
+          d (if (= kind 4) target (- target (+ at width)))]
+      (if (or (< target 0) (< at 0) (> (+ at width) (xg-pos M))
+              (< d (if (= kind 6) -128 -2147483648)) (> d (if (= kind 6) 127 2147483647)))
+        (xg-err M 7103 i) (xg-fix (xg-patch M at d width) (inc i))))))
 
 ;; ELF64 LE ET_EXEC: RX header/code segment, separate RW context, NX stack.
 (defn- xg-out [M :vector-i64 bits :i64 n :i64] :vector-i64
