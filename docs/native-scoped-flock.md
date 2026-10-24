@@ -8,7 +8,8 @@ root grant are required. This does not introduce a new authority or wire.
 
 The provider holds one lock per process. A second acquisition is refused;
 an unlock must match the normalized path of the held lock. Paths are opened
-beneath an admitted root with no symlink following. The runtime stores its
+beneath an admitted root; final symlinks are refused and openat2 blocks root
+escape and magic links. The runtime stores its
 canonical path in a reserved part of the fixed RW map, so lock acquisition
 does not request mmap after seccomp installation. The kernel releases the
 lock when the process exits or is killed. A cooperating store must retain a
@@ -21,7 +22,7 @@ unacknowledged, uncertain durability window. flock is not distributed
 consensus, malicious-writer protection or a hardware rollback anchor.
 
 The [native receipt](evidence/awai81-native-lock-20261024/receipt.json) records
-three selfhost generations, F2=F3, identical compiler payloads, and a 9/9
+the current full31 closure with F1=F2=F3, identical compiler payloads, and a 9/9
 static native gate covering acquisition, reentry refusal, wrong unlock,
 release/reacquisition, normalized paths, scope and symlink refusal. Kotoba VM
 also exercises this provider in its separate process crash/publication gate.

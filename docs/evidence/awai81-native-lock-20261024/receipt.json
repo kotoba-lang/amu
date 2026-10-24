@@ -1,7 +1,7 @@
 {
   "schema": "amu.scoped-flock-native-gate.v1",
   "qualification": "bounded-native-backend-candidate",
-  "baseRevision": "6deb99693",
+  "baseRevision": "47f41d0b2",
   "sourceManifest": "seed/FULL-MANIFEST",
   "sourcePins": {
     "seed/00-ns-static.kotoba": "e4aa5686dbb76ad923c50f0054e42a20deef910b78312c4ff7b54c3fb4ea891b",
@@ -28,48 +28,49 @@
     "seed/77-aarch64-static-rt.kotoba": "ab8bfce492920f3124b057db4af8c34b6dd425c1020d41a7f30ddcf20961a37a",
     "seed/78-x86_64-platform.kotoba": "99e99f629e28862f5c47d1d853afdfb805399dcde7f79717d1eabfe4c0d2f7df",
     "seed/80-aarch64-linux.kotoba": "9a8b74dc8d42b3cb6475f5368ee2204c3dc4e36ee0815e1511f0c2bcf148a355",
-    "seed/74-x86_64-aiueos-object.kotoba": "6639f870859cfa164aa65f68cab1e38fc403c777918d3f81ad82ced1b9f68773",
+    "seed/74-x86_64-aiueos-object.kotoba": "fb466ace87c4d13bd381fd372ba3b02524a5abdc6f612891c5e32cb50240630f",
+    "seed/84-aiueos-boot.kotoba": "05cdd78a13f8faaf630b202fac95ddb6694c0b182e4b7ba660598c797b02fc3c",
     "seed/79-native-cdci.kotoba": "63a5f1c7174ee1c5010ad54771f789a3d48925b158e17535084dca60028a2f39",
     "seed/81-wasm32.kotoba": "0647a1ff4f59ba7cd239b3b53df671be99847622d1db91a8efc74259f1a4cc06",
     "seed/82-wasm32-rt.kotoba": "9dfc5944844aae8d33ca41db73548bde8ba7547841cc31aed42cffe2cd0b3a64",
     "seed/83-kototama-i64.kotoba": "16a2586a896d811804c6404c7ba8e2fcd3b614a656cd619a9f6354580a5f26e5",
-    "seed/78-full-entry.kotoba": "f1c39c217c714bece2b44a09912c81bbcf9cba9dd4e1751b872c73f862e61856"
+    "seed/78-full-entry.kotoba": "b5a9413009fa147bbd63fc32d753f985e4b356cc75058a121ea796cbf03089a2"
   },
   "unitySource": {
-    "bytes": 3261021,
-    "sha256": "076589b0c71d6580056f08afcf8a5ad6afa2199274873fd3733e846d6e42ccb9"
+    "bytes": 3277930,
+    "sha256": "f351efaa121c40e3d08562d8bb99ee182ceedb67f841df3975f0447ae9f1845d"
   },
   "bootstrap": {
     "bytes": 3281408,
-    "sha256": "55e3b7134d8ee781acfbea7b1049ffb274e43292abfc17722ac193d0f3eb4308"
+    "sha256": "46377edcd83f90e38807f580b00d8217dd92164b431a927d9c110b0c4c749983"
   },
   "buildImages": {
     "F1": {
-      "bytes": 3281408,
-      "sha256": "c32f66010d1643d1e56d20dcbe70c479e928eda3e6c2ee83bce30d073e1a3a0d"
+      "bytes": 3301888,
+      "sha256": "dc5b230e4c7dd6c75392557da12b9b3f27acb9ae9e507a0f7026a51070280772"
     },
     "F2": {
-      "bytes": 3281408,
-      "sha256": "46377edcd83f90e38807f580b00d8217dd92164b431a927d9c110b0c4c749983"
+      "bytes": 3301888,
+      "sha256": "dc5b230e4c7dd6c75392557da12b9b3f27acb9ae9e507a0f7026a51070280772"
     },
     "F3": {
-      "bytes": 3281408,
-      "sha256": "46377edcd83f90e38807f580b00d8217dd92164b431a927d9c110b0c4c749983"
+      "bytes": 3301888,
+      "sha256": "dc5b230e4c7dd6c75392557da12b9b3f27acb9ae9e507a0f7026a51070280772"
     }
   },
-  "fixedPoint": "F2 equals F3; F1 wrapper embeds the predecessor runtime; all three compiler payloads are compared separately",
+  "fixedPoint": "Current full31: F1 equals F2 equals F3; compiler payloads are also identical.",
   "payloads": {
     "F1": {
-      "bytes": 3043187,
-      "sha256": "6635aad4cc51330d43f58fd92376372d59ef6ea25c4d09c9f43d613064ae835e"
+      "bytes": 3059803,
+      "sha256": "724b3ead745cb7fa3892417019073d31aff508fa4dce46be4678a3e81f04aacc"
     },
     "F2": {
-      "bytes": 3043187,
-      "sha256": "6635aad4cc51330d43f58fd92376372d59ef6ea25c4d09c9f43d613064ae835e"
+      "bytes": 3059803,
+      "sha256": "724b3ead745cb7fa3892417019073d31aff508fa4dce46be4678a3e81f04aacc"
     },
     "F3": {
-      "bytes": 3043187,
-      "sha256": "6635aad4cc51330d43f58fd92376372d59ef6ea25c4d09c9f43d613064ae835e"
+      "bytes": 3059803,
+      "sha256": "724b3ead745cb7fa3892417019073d31aff508fa4dce46be4678a3e81f04aacc"
     }
   },
   "testSource": {
@@ -89,5 +90,11 @@
     "filesystemRoot": "/work/native-durable",
     "runtimeSyscallAllowlist": "existing scoped filesystem + flock only; no new mmap permission"
   },
-  "limits": "One cooperative lock per process. Linux process-crash fencing only; x86 emitter is source-aligned but not executed on x86; power failure, distributed consensus and release/controller qualification remain separate."
+  "limits": "One cooperative lock per process. Linux process-crash fencing only; x86 emitter is source-aligned but not executed on x86; power failure, distributed consensus and release/controller qualification remain separate.",
+  "sourceRevision": "75cc804feff395025223bf57d37f72dedec06f7c",
+  "repackedArtifactIdenticalToExecuted": true,
+  "durableDriver": {
+    "bytes": 938496,
+    "sha256": "80a50a4dceb46f67f1d3dcddffd40f77630d478803a6d2799287a0467b7c873f"
+  }
 }
