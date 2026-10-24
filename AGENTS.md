@@ -66,7 +66,7 @@
 
 ## Native CDCI and retired public entry
 
-- The complete product uses `seed/FULL-MANIFEST` (29 modules), retaining
+- The complete product uses `seed/FULL-MANIFEST` (30 modules), retaining
   every adopted core module. Static OUT is 12MiB because the complete
   TCP/spawn image exceeded the old 8MiB bound. The full29 static profile
   also uses LitB1MiB and TOK786432 and MM-WORDS29,491,200 (<2^25). Heap size, expected results,
@@ -109,3 +109,18 @@ receipt (`--complete`) and match the actual entry to all3 current native F
 images/current FULL-MANIFEST bytes. An older self-consistent descriptor is
 insufficient. Runtime/target changes must regenerate affected role/source,
 root and product pins and re-run native positive/refusal/resource checks.
+
+## Bounded canonical Kototama native frontend (JUN-369)
+
+`compile-kototama` requires the explicit `kototama.pure-i64-aot/v1` profile,
+target and positive fuel. `seed/83-kototama-i64.kotoba` validates canonical
+DAG-CBOR and translates only its closed scalar slice into compiler-owned
+source for the unchanged adopted core. Original names are data, never source.
+Reuse the lowerer's existing annotation interface and native OP-FUEL; do not
+introduce another compiler, an interpreter or a hosted fallback. The native
+ordered gate is built by Amu; Python only stages fixed vectors and observations.
+
+This is an entry-only, nonrecursive, heap-free engine profile, not whole-VM
+or Murakumo Cell admission qualification. State/effects, CID-bound cache,
+fresh admission, receipts, recursive methods and runtime arguments remain
+separate gates. See `docs/kototama-i64-aot.md` for exact limits and protocol.
