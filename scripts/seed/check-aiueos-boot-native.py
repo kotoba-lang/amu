@@ -30,10 +30,16 @@ def verify(efi, kernel, payload):
     assert struct.unpack_from("<HHIIIHH", efi, pe + 4) == (0x8664, 3, 0, 0, 0, 240, 0x22)
     opt = pe + 24
     assert struct.unpack_from("<H", efi, opt)[0] == 0x20b
-    assert struct.unpack_from("<IIQII", efi, opt + 16) == (4096, 4096, 0x400000, 4096, 512)
+    entry, code, loader_base, alignment, file_alignment = struct.unpack_from("<IIQII", efi, opt + 16)
+    assert (entry, code, alignment, file_alignment) == (4096,4096,4096,512)
     assert struct.unpack_from("<HH", efi, opt + 68) == (10, 0x160)
     assert struct.unpack_from("<I", efi, opt + 108)[0] == 16
     image_size, header_size = struct.unpack_from("<II", efi, opt + 56)
+    phoff=struct.unpack_from('<Q',kernel,32)[0]
+    segments=[struct.unpack_from('<IIQQQQQQ',kernel,phoff+i*56) for i in range(2)]
+    choices=[base for base in (0x400000,0x1000000,0x2000000)
+             if all(base+image_size<=p[3] or p[3]+p[5]<=base for p in segments)]
+    assert choices and loader_base==choices[0], 'loader overlaps a fixed kernel segment'
     assert header_size == 512
     sections = []
     for i, name in enumerate((b".text", b".data", b".reloc")):

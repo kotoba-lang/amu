@@ -66,22 +66,24 @@
 
 ## Native CDCI and retired public entry
 
-The integrated FULL40 source retains current main47 native CLI/CID/FS2,
-kernel/DMA packaging modules and all18 normal adopted core modules. Its
-checked-in root and public image match exact-source ARM and native x86
-three-generation fixed points. Local profile/resource/refusal/public gates
-and fresh current controller/cold24/refusal18/parent cleanup PASS. Terminal
-exact-head PR/main CI and live deployment remain separate states.
+The integrated FULL46 source retains native CLI/CID/FS2, the native i64
+receipt profile, all live/desktop modules and all18 normal adopted core
+modules. Root and public images are rebuilt from this exact graph with
+native ARM F1=F2, core generations, runtime cases and admission/refusal
+proofs. The controller and both gate identities are preserved from the
+qualified45 source. Current46 acceptance requires terminal exact-head
+native ARM/x86, receipt-profile, controller/public and locked consumer CI.
 Historical ARM/QEMU receipts remain bound to their own sources.
 The closed v5 project reserves low20KiB for non-live context/catalog. The
 v6 PCI candidate has128KiB RW storage and a64KiB private floor; its copied
-BAR catalog starts at context20480. Live ValueRuntime queue/arena and
-capability/domain storage require a separately versioned ABI.
+BAR catalog starts at context20480. The v2 live ABI and v3 private user/desktop context provide separately
+versioned queue/arena/capability/domain regions, with native admission and
+actual guest receipts; full scheduling and shared Browser remain separate.
 
-- The complete candidate uses `seed/FULL-MANIFEST` (40 modules), retaining
+- The complete candidate uses `seed/FULL-MANIFEST` (46 modules), retaining
   every adopted core module. Static OUT is 12MiB because the complete
   TCP/spawn image exceeded the old 8MiB bound. The complete static profile
-  also uses LitB1MiB and TOK786432 and MM-WORDS29,491,200 (<2^25). Heap size, expected results,
+  also uses LitB1MiB and TOK786432 and NODE786432 and MM-WORDS31,064,064 (<2^25). Heap size, expected results,
   all19 workloads and all24 runtime fixtures remain unchanged.
 - `seed/cdci` owns the Kotoba-native controller and gate. Its two mandatory
   roles are Amu selfhost and Kotoba native; legacy fleet/authoring labels

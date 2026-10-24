@@ -1,6 +1,6 @@
 # Current Amu selfhost native entry
 
-The full40 public `bin/amu` is a static Linux x86_64 ELF. Its exact size,
+The full46 public `bin/amu` is a static Linux x86_64 ELF. Its exact size,
 SHA256 and source revision are recorded in `native-product.json`; the exact
 manifest source pins are bound by the current native execution receipts.
 `bin/kotoba` and `bin/kotoba-compiler` are relative aliases of that image.
