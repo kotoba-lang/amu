@@ -66,7 +66,7 @@
 
 ## Native CDCI and retired public entry
 
-- The complete product uses `seed/FULL-MANIFEST` (30 modules), retaining
+- The complete product uses `seed/FULL-MANIFEST` (31 modules), retaining
   every adopted core module. Static OUT is 12MiB because the complete
   TCP/spawn image exceeded the old 8MiB bound. The full29 static profile
   also uses LitB1MiB and TOK786432 and MM-WORDS29,491,200 (<2^25). Heap size, expected results,
@@ -124,3 +124,14 @@ This is an entry-only, nonrecursive, heap-free engine profile, not whole-VM
 or Murakumo Cell admission qualification. State/effects, CID-bound cache,
 fresh admission, receipts, recursive methods and runtime arguments remain
 separate gates. See `docs/kototama-i64-aot.md` for exact limits and protocol.
+
+## Bounded native receipt profile (JUN-370)
+
+`kototama.pure-i64-receipt/v2` retains the v1 language/admission and allows
+budget0. `seed/84-kototama-i64-receipt.kotoba` delegates ordinary instructions
+to the existing scalar emitters; its sealed fuel/quotient fault edges and
+fixed process envelope report canonical overspend and typed failures. Keep
+the adopted core and existing emitters authoritative. The native ordered
+gate checks raw observations, named resource refusals and actual metering
+removal; Python only stages bytes/processes. The unsigned process receipt
+is not a signed VM receipt, fresh node admission or an in-process unwind ABI.

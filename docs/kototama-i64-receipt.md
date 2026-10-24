@@ -71,6 +71,11 @@ tail calls. Both tail and non-tail32-method chains preserve canonical fuel.
 Recursive methods remain refused pending a logical-depth counter/profile.
 The existing admission limits imply the sum is already below262144, so
 that outer limit is conservative rather than a newly reachable stack size.
+The source checker's local-slot ceiling also applies to compiler-generated
+operand bindings: it refuses slot256 with E2120. The corpus exercises the
+largest accepted and next refused nested-operand shape with64 original
+bindings; a canonical lexical environment alone does not bound generated
+temporaries. Refusals are checked by their native diagnostic prefix.
 
 Code is RX; the shared16-byte budget context is RW; stack is NX. Scalar SIR
 admission still rejects capabilities, runtime allocation, imports and indirect
@@ -91,6 +96,8 @@ transport failure and stack/arena bounds. It includes the v1 corpus, zero,
 below/exact/above budgets, fault priority, max budget, eager comparison and
 first-failure ordering,32-method chains, bindings64/65, depth64/66,
 decoder nodes4095/4096, and input bytes65535/65536/65537.
+It also covers generated local-slot admission and explicit arena/data/state/
+import/capability/indirect-call refusals.
 
 Corrupted observations must fail. A second negative control removes the
 actual charge instruction from a generated guest image and executes it;

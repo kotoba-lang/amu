@@ -7,7 +7,7 @@ It has no ELF interpreter or dynamic runtime dependency.
 
 The complete product is `seed/FULL-MANIFEST`: the adopted 18-module core,
 Linux emitters, native CDCI factory/entry and the bounded canonical Kototama
-frontend, 30 modules in one compiler.
+frontend and receipt profile, 31 modules in one compiler.
 The frontend, lowering, optimization and AArch64 backend measured by the
 19-workload Embench corpus remain in this lineage. This migration publishes
 correctness evidence; it publishes no new performance score.
@@ -16,6 +16,9 @@ correctness evidence; it publishes no new performance score.
 from canonical DAG-CBOR into metered scalar native code using that same
 core. It has empty guest authority, no heap and a static stack bound.
 See [the profile, command and native gate](docs/kototama-i64-aot.md).
+The explicit `kototama.pure-i64-receipt/v2` profile also accepts fuel0 and
+returns typed failure/spent/remaining receipts with the same closed language
+and empty authority. See [its ABI and native qualification](docs/kototama-i64-receipt.md).
 
 ## Native compiler use
 

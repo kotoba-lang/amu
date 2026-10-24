@@ -113,6 +113,30 @@ def vectors():
         name = "x" * size
         add("binding-name-" + str(size), ["let", [[name, v.const(42)]], v.var(name)], 0, 1, 1)
         cases[-1]["refuse"] = size == 65
+    for depth in [12, 13]:
+        body = v.const(42)
+        for _ in range(depth):
+            body = v.arith("add", *([v.const(0)] * 15 + [body]))
+        for _ in range(4):
+            body = ["let", [["x", v.const(0)] for _ in range(16)], body]
+        add("generated-local-slots-depth-" + str(depth), body, 0, 1, 1)
+        if depth == 13:
+            cases[-1].update(refuse=True, compilerPrefix=b"seed: E2120 too m")
+    for name, body in [
+        ("arena-vector", ["vector", [v.const(1)]]),
+        ("arena-list", ["list", [v.const(1)]]),
+        ("arena-map", ["map", [[v.const(1), v.const(2)]]]),
+        ("arena-set", ["set", [v.const(1)]]),
+        ("collection-get", ["get", v.const(0), v.const(0)]),
+        ("collection-assoc", ["assoc", v.const(0), v.const(0), v.const(1)]),
+        ("guest-state", ["state", "write", [v.const(1)]]),
+        ("guest-import", ["import", "fs/read", []]),
+        ("guest-capability", ["typed-cap-call", "fs/read", []]),
+        ("guest-indirect-call", ["call-indirect", v.const(0), []]),
+        ("text-value", ["const", ["string", "text"]]),
+    ]:
+        add(name, body, 0, 0, 0)
+        cases[-1]["refuse"] = True
     for raw in ["-0", "00", "+1", "1x", "9007199254740992"]:
         add("invalid-budget-" + raw, v.const(42), raw, 0, 0)
         cases[-1]["refuse"] = True
@@ -156,17 +180,20 @@ def main():
         (out / f"{i:03d}-guest.stdout").write_bytes(data); (out / f"{i:03d}-guest.stderr").write_bytes(err)
         words = list(struct.unpack("<8q", data)) if len(data) == 64 else [0] * 8
         saved = dst.read_bytes() if c.get("existing") and dst.exists() else b""
+        prefix = list(struct.unpack("<2q", r.stderr[:16].ljust(16, b"\0")))
         observations.extend([i, r.returncode, code, len(data), *words, len(err), int(dst.exists()),
-                             len(saved), struct.unpack("<q", saved)[0] if len(saved) == 8 else 0])
+                             len(saved), struct.unpack("<q", saved)[0] if len(saved) == 8 else 0, *prefix])
         refuse = c.get("refuse", False)
         status = c.get("status", 0)
         planned = [0] * 8 if refuse else [MAGIC, status, c.get("result", 0), int(c["fuel"]), c["spent"],
                                                    int(c["fuel"]) - c["spent"], 0, STACK]
         expected.extend([i, 1 if refuse else 0, -999 if refuse else 70 if status else 0, 0 if refuse else 64,
                          *planned, 0, 1 if c.get("existing") else 0 if refuse else 1,
-                         8 if c.get("existing") else 0, 42 if c.get("existing") else 0])
+                         8 if c.get("existing") else 0, 42 if c.get("existing") else 0,
+                         *struct.unpack("<2q", c.get("compilerPrefix", b"kototama-i64: E72")[:16] if refuse else b"\0" * 16)])
         records.append(dict(index=i, name=c["name"], inputSHA256=hashlib.sha256(c["wire"]).hexdigest(),
-                            budget=c["fuel"], expected=planned, compileExit=r.returncode, guestExit=code, receipt=words, outputBytes=len(data)))
+                            budget=c["fuel"], expected=planned, compileExit=r.returncode, compilerPrefix=r.stderr[:16].hex(),
+                            guestExit=code, receipt=words, outputBytes=len(data)))
         if c["name"] == "const-budget-zero":
             zero_case = (i, dst)
         print(i, c["name"], r.returncode, code, words[1:6], flush=True)
@@ -174,8 +201,8 @@ def main():
     # same native gate, never an observation substituted into program source.
     with open("/dev/full", "wb") as full:
         io = subprocess.run([str(zero_case[1])], env={"PATH": "/nonexistent"}, stdout=full, stderr=subprocess.PIPE, timeout=10)
-    observations.extend([len(records), 0, io.returncode, *([0] * 13)])
-    expected.extend([len(records), 0, 74, *([0] * 13)])
+    observations.extend([len(records), 0, io.returncode, *([0] * 15)])
+    expected.extend([len(records), 0, 74, *([0] * 15)])
     raw = struct.pack("<" + "q" * len(observations), *observations)
     (out / "observations.bin").write_bytes(raw); (out / "gate.kotoba").write_text(gate_source(expected))
     gate = out / "gate.elf"
@@ -210,7 +237,7 @@ def main():
     assert matches > 0
     mutant = out / "metering-removed.elf"; mutant.write_bytes(mutated); mutant.chmod(0o755)
     r = subprocess.run([str(mutant)], env={"PATH": "/nonexistent"}, capture_output=True, timeout=10)
-    changed = observations.copy(); pos = index * 16
+    changed = observations.copy(); pos = index * 18
     changed[pos + 2:pos + 12] = [r.returncode, len(r.stdout), *(struct.unpack("<8q", r.stdout) if len(r.stdout) == 64 else [0] * 8)]
     meter_code = verdict("metering-removal-control", struct.pack("<" + "q" * len(changed), *changed))
     report = dict(schema="amu.kototama-receipt-native-gate.v2", profile=PROFILE, target=target,
