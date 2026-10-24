@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage sealed-catalog and fail-closed MMIO fixtures; no platform MMIO pass."""
+"""Stage private metadata and stack fixtures; missing device grants refuse."""
 import argparse,hashlib,json,subprocess,sys
 from pathlib import Path
 sys.dont_write_bytecode=True
@@ -38,23 +38,20 @@ def main(build,out):
    env=dict(PATH='/nonexistent',KEXE_STACK_BYTES='8388608',KEXE_CAP_RESOURCES_35=str(scope))
    r=subprocess.run([str(compiler),'compile',str(src),'--target','x86_64-aiueos-kernel-v1','--artifact','image','--output',str(image),'--fuel','1000000','--source-path',str(scope),'--source-lock',str(lock),'--source-lock-sha256',pin(lock)['sha256']],env=env,capture_output=True,timeout=240)
    calls.append(dict(name=name,exit=r.returncode,stderr=r.stderr.decode(),sourceText=text));(scope/'calls.json').write_text(json.dumps(calls,indent=2)+'\n')
-   if bad:assert r.returncode==1 and b'E7106' in r.stderr and not image.exists(),calls[-1]
+   if bad:assert r.returncode==1 and b'E2101' in r.stderr and not image.exists(),calls[-1]
    else:
     assert r.returncode==0 and not r.stderr and image.exists(),calls[-1]
     efi=scope/(name+'.efi');q=subprocess.run([str(compiler),'package-aiueos-boot',str(image),'--output',str(efi)],env=env,capture_output=True,timeout=180);assert q.returncode==0 and not q.stderr,q.stderr
     artifacts[name]=dict(kernel=pin(image),efi=pin(efi))
   compile_('catalog',CATALOG)
-  compile_('forged-map',CATALOG.replace('42 0)))','(if (> (kernel-firmware-mmio 4096 512) 0) 42 0) 0)))'))
-  for name,base,size in [('ram',4096,512),('zero',4096,0),('oversized',4096,65537),('overflow',-4096,8192)]:
-   compile_(name,f'(ns entry (:export [main]))\n(defn main [] :i64 (if (> (kernel-firmware-mmio {base} {size}) 0) 42 0))\n')
-  compile_('wrong-extent','(ns entry (:export [main]))\n(defn main [] :i64 (kernel-load-u8 (kernel-firmware-mmio 4096 512) 64 0))\n',True)
-  compile_('computed-root','(ns entry (:export [main]))\n(defn main [] :i64 (kernel-load-u8 (+ (kernel-firmware-mmio 4096 512) 0) 512 0))\n',True)
+  for name,operation in [('missing-pci','kernel-pci-mmio'),('retired-classification','kernel-firmware-mmio')]:
+   compile_(name,f'(ns entry (:export [main]))\n(defn main [] :i64 ({operation} 4096 512))\n',True)
   compile_('stack-exhaustion',DEEP)
   compile_('shallow-stack',DEEP.replace('deep 10000','deep 0'))
-  routes.append(dict(compiler=pin(compiler),artifacts=artifacts,provenanceRefusals=2))
+  routes.append(dict(compiler=pin(compiler),artifacts=artifacts,missingPrimitiveRefusals=2))
  assert routes[0]['artifacts']==routes[1]['artifacts']
- report=dict(status='PASS_NATIVE_FIRMWARE_FIXTURE_PACKAGING',source=graph,routes=routes,guestExecution=False,positivePlatformMMIOQualified=False,fullKernel=False,nativeCDCI=False)
- (out/'native-firmware.json').write_text(json.dumps(report,indent=2)+'\n');print(report['status'],'sealed catalog + stack/bounds fixtures; actual positive MMIO remains open')
+ report=dict(status='PASS_NATIVE_PRIVATE_CONTEXT_PACKAGING',observer=pin(Path(__file__)),source=graph,routes=routes,guestExecution=False,positivePlatformMMIOQualified=False,fullKernel=False,nativeCDCI=False)
+ (out/'native-private-context.json').write_text(json.dumps(report,indent=2)+'\n');print(report['status'],'private metadata + stack fixtures; PCI grant is missing and refuses')
 
 if __name__=='__main__':
  p=argparse.ArgumentParser();p.add_argument('--build',type=Path,required=True);p.add_argument('--output',type=Path,required=True);a=p.parse_args();main(a.build.resolve(),a.output.resolve())

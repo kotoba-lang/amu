@@ -1,3 +1,9 @@
+> Retired MMIO classification prototype. The metadata-copy/stack observations
+> remain source-bound; they do not establish OS device ownership. UEFI marks
+> type11 for firmware runtime use. The constructor was removed before public
+> adoption; OS resources require ACPI/PCI provenance. See the following
+> correction in the integration ledger.
+
 # Firmware catalog and bounded native stack
 
 The full36 native ARM candidate preserves all18 core modules, reaches F1=F2

@@ -13,8 +13,7 @@
 (def KM-ISR-FIRST 57)
 (def KM-OWNED-PAGE 73)
 (def KM-OWNED-WINDOW 74)
-(def KM-FIRMWARE-MMIO 75)
-(def KM-INTR-N 76)
+(def KM-INTR-N 75)
 (def KM-SEALED-SCRATCH 272)
 (def KM-SEALED-PAGES 280)
 
@@ -44,8 +43,7 @@
       37 "kernel-configure-double-fault-ist" 38 "kernel-probe-nx-execute"
       39 "kernel-probe-guard-write" 40 "kernel-probe-text-write"
       41 "kernel-probe-recoverable-guard-write" 42 "kernel-probe-double-fault"
-      43 "kernel-debug-break" 44 "kernel-owned-page" 45 "kernel-owned-window"
-      46 "kernel-firmware-mmio" "")))
+      43 "kernel-debug-break" 44 "kernel-owned-page" 45 "kernel-owned-window" "")))
 (defn- km-arity [k :i64] :i64
   (cond (< k KM-MEM-N) (if (= (bit-and (km-raw k) 1) 0) 3 4)
         (< k (+ KM-MEM-N 2)) 2
@@ -55,7 +53,7 @@
         (= k KM-XSETBV) 2
         (or (= k KM-TRY-LOCK) (= k KM-UNLOCK)) 3
         (= k KM-OWNED-PAGE) 1
-        (or (= k KM-OWNED-WINDOW) (= k KM-FIRMWARE-MMIO)) 2
+        (= k KM-OWNED-WINDOW) 2
         (>= k KM-ISR-FIRST)
           (let [i (- k KM-ISR-FIRST)]
             (cond (or (= i 2) (= i 3) (= i 9)) 2 (= i 4) 1 :else 0))
@@ -84,7 +82,7 @@
   (if (not= (xg-get M 4) 2) -1
     (cond (= (km-intr M f) KM-BOOT-INFO) (+ 4294967296 KM-BOOT-BYTES)
           (= (km-intr M f) KM-OWNED-PAGE) (+ 4294967296 4096)
-          (or (= (km-intr M f) KM-OWNED-WINDOW) (= (km-intr M f) KM-FIRMWARE-MMIO))
+          (= (km-intr M f) KM-OWNED-WINDOW)
             (let [n (xk-src M i (inc t) 0)] (if (= n 0) -1 n))
           :else -1)))
 (defn- km-scan [M :vector-i64 S :string] :vector-i64
@@ -197,7 +195,6 @@
         (or (= k KM-TRY-LOCK) (= k KM-UNLOCK)) (km-lock M (= k KM-UNLOCK) t)
         (= k KM-OWNED-PAGE) (km-page M t false)
         (= k KM-OWNED-WINDOW) (km-page M t true)
-        (= k KM-FIRMWARE-MMIO) (kr-mmio M t)
         (and (>= k KM-ISR-FIRST) (< k KM-INTR-N)) (iv-intrinsic M (- k KM-ISR-FIRST) t)
         (< k (+ KM-MEM-N 2))
           (-> M (xg-load t 0x958b48) (xg-load (inc t) 0x858b48)

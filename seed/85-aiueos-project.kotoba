@@ -121,11 +121,12 @@
     (cond (>= i (vector-at M MM-SIR-N)) false
           (and (= (xg-si M i IF-OP) OP-CALL)
                (let [k (km-intr M (xg-si M i IF-A))]
-                 (or (= k KM-OWNED-PAGE) (= k KM-OWNED-WINDOW) (= k KM-FIRMWARE-MMIO)))) true
+                 (or (= k KM-OWNED-PAGE) (= k KM-OWNED-WINDOW)))) true
           :else (recur (inc i)))))
 ;; This trusted bootstrap runs before the user's main and before any guest
-;; operation can mutate public boot-info. The private slots do not overlap
-;; GDT/TSS, interrupt state, fuel, request records or the ValueRuntime arena.
+;; operation can mutate public boot-info. This non-live profile reserves its
+;; low20KiB for GDT/TSS, interrupt state, fuel and the sealed catalog. The live
+;; ValueRuntime queue/arena layout needs a separately reconciled ABI.
 (defn- kp-owned-init [M :vector-i64 L :vector-i64 at :i64 main-entry :i64] :vector-i64
   (let [reset (-> M (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1) (mem-set MM-LABEL-N 1) (iv-reserve 1))
         checked (-> reset (iv-hex "498b49504885c9") (xg-rel 0x840f 2 2 1)
