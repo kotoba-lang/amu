@@ -2,6 +2,9 @@
 
 Date: 2026-10-22
 Status: Decision 1 (the platform boundary) accepted by the owner on 2026-10-22.
+Amended by ADR 0375 (2026-10-24): the provider stays Kotoba and keeps wire 42,
+the launcher, the grant and the confinement, but its platform-linked format
+(the system's ld.so) is replaced by Amu's own loader (route B).
 The rest is Proposed. Steps 1 (the protocol table), 2 (the runtime transport),
 3 (wire 42 admission), 4 (the launcher) and 5 (the platform-linked writer,
 x86_64) are implemented. The owner signed off the admission (Decision 7, open
