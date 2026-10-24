@@ -410,8 +410,12 @@ Every other GPU number is a bootstrap reference.
     (done: JUN-293, rewritten rather than given a dated note);
   * the `accelerator*` source comments.
 
-  This is a follow-up; this change only adds the refused entry in
-  `docs/c-loader-removal.md`.
+  This change only added the refused entry in `docs/c-loader-removal.md`.
+  The follow-up is done (2026-10-24, JUN-344):
+  * The ADRs and `docs/native-aot-baseline.md` carry a dated note.
+  * The `accelerator*` source comments are left as written. The CLJK
+    sources are historical text since #1510, and dated receipts pin
+    `accelerator_subgroup_reduce.cljk`'s bytes.
 
 ## Open questions for the owner
 
@@ -649,7 +653,28 @@ Each step is its own PR, in this order:
       kept command buffer that was replayed, and with DISPATCHC. All results
       were exact in f32 and matched byte for byte, at 30-50 us per submit.
       The dot and kdot fixtures and the decode argmax chain need the KIR v2
-      kernels of ADR 0372 step 3, so this step's acceptance waits on them.
+      kernels of ADR 0372 step 3. With them, the acceptance ran on gad
+      through the launcher and this provider, confined
+      (`docs/evidence/gpu-kernel-exec-20261024/`, ADR 0372 step 4):
+      * the dot fixture (`dot_rows` on a real F32 matvec);
+      * the kdot fixtures (Q5_K, IQ4_XS, Q4_K, and the Q6_K lm_head);
+      * the lm_head's argmax chain, whose pick is the f64 argmax.
+
+      Every output is byte-identical to glslang's module. Against an f64
+      dequant oracle, every output is within 1e-3 relative error (with a 1e-2
+      floor, kdot_check's metric). The f16 layouts are measured instead
+      against the output's rms, within 1e-2.
+
+      **Status after #1510.** Main's compiler refuses `--format
+      platform-linked` (`E2`, the native-only entry). Main's AGENTS.md
+      excludes this provider's fake-device, Vulkan and libc qualifications
+      from mandatory native CDCI: they need the refused C-linked format, and
+      provider qualification is blocked until an Amu/Kotoba-native route
+      exists.
+      * The provider images behind these receipts were built by the root
+        before #1510 (`bd025475…`). They are historical receipts of this
+        route, not native CDCI gates.
+      * Main's root can no longer rebuild them.
    4. **Confinement after device creation.** In progress. After the device
       is created the provider reads the facts its report needs from files:
       its image digest, and for the Vulkan layer the driver properties and
@@ -669,4 +694,5 @@ Each step is its own PR, in this order:
    5. ADR and documentation.
 7. **aarch64-linux** imports, then Xavier.
 8. **macOS ADR.**
-9. **Dated notes** in the stale docs listed under Consequences.
+9. **Done: dated notes** in the stale docs listed under Consequences
+   (2026-10-24).

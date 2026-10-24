@@ -149,7 +149,7 @@ def frame(b):
 class Session:
     """A provider process: fd 0 requests, fd 1 answers, fd 3 the grant, fd 4 the report."""
 
-    def __init__(self, img, raw, name, grant, with_grant=True, device="fake"):
+    def __init__(self, img, raw, name, grant, with_grant=True, device="fake", env=None):
         self.name, self.raw, self.device = name, raw, device
         gpath = raw / (name + ".grant.edn")
         gpath.write_bytes(grant)
@@ -157,7 +157,7 @@ class Session:
         redirect = '3<"$1" 4>&"$2"' if with_grant else '3<&- 4>&"$2"'
         self.p = subprocess.Popen(["/bin/sh", "-c", f'exec "$0" {redirect}', str(img), str(gpath), str(rep_w)],
                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                  env={"PATH": "/usr/bin:/bin"}, pass_fds=(rep_w,), cwd=raw)
+                                  env={"PATH": "/usr/bin:/bin", **(env or {})}, pass_fds=(rep_w,), cwd=raw)
         os.close(rep_w)
         self.log = []
 
