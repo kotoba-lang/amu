@@ -75,11 +75,14 @@ Browser/CSSOM or Itonami dapps. A firmware framebuffer descriptor is not a
 rendered desktop. Existing C/reference boots and hosted compiler results
 remain separate historical evidence.
 
-The root/public-product pins are updated with the full30 artifacts. Controller
+The root/public-product pins are updated with the full31 artifacts. Controller
 and two gate binaries rebuild byte-identically; current native execution
 receipts must bind them to this compiler. The native x86 diagnostics accept
 `--complete COMPLETE_DIR`; ARM diagnostics also accept a measured root=F1
 fixed point after adoption. Neither route bypasses source or image pin checks.
 Python diagnostics and QEMU do not replace the native CDCI verdict.
-Actual native x86 qualification, exact-head PR/main CI and readback remain
-separate acceptance gates; see the adoption evidence.
+Actual native x86 qualification, exact-head PR/main CI and readback are
+separate acceptance gates; see `evidence/aiueos-aot-adoption-20261024/`.
+Earlier adoption receipts predate the current call-site/base-length policy
+and retain their historical source binding. The current image route calls
+the same canonical memory checker as the object route.

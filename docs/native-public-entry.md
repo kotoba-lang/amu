@@ -1,25 +1,24 @@
 # Current Amu selfhost native entry
 
-The full30 candidate public `bin/amu` is an 8,749,568-byte static Linux
-x86_64 ELF, SHA-256
-`d4932491bb3c18824108577c27caab30de197413beb0311910146852ce379789`.
-Its source revision is `87fbc40e19a8bcab5e474a64c25c13bf5cf2e051`;
-the exact manifest source pins are bound by the adoption receipts.
+The full31 public `bin/amu` is a static Linux x86_64 ELF. Its exact size,
+SHA256 and source revision are recorded in `native-product.json`; the exact
+manifest source pins are bound by the current native execution receipts.
 `bin/kotoba` and `bin/kotoba-compiler` are relative aliases of that image.
-The native ARM root is
-`2ebb99ba0dee2be4174c6247f3b9573dc516b8a57142b08d461d52ae72feade5`.
+The native ARM root is separately pinned in
+`seed/bootstrap/aarch64-linux-static-root.json`.
 
 All 18 adopted core modules remain. Static capacities are unchanged:
 TOK786432/MM-WORDS29,491,200/LitB1MiB/OUT12MiB/heap1765120 words.
-The independently rebuilt canonical Pw and full ARM containers F1=F2=F3
-agree; the root reproduces the packed full compiler. GitHub native ARM
-run 40065864346 and the local native ARM build produced identical bytes.
-Neither build invoked an old language host, C compiler or C loader.
+The native workflow measures independent canonical Pw, matching full ARM
+containers and root reproduction, without an old language host, C compiler
+or C loader. The product includes current main's Kototama i64 AOT and
+call-site/base-length memory hardening together with image/EFI packaging.
 
 ## Adoption and native verdict
 
 Current evidence belongs in
-`docs/evidence/aiueos-native-adoption-20261024/`. Acceptance requires the
+`docs/evidence/aiueos-aot-adoption-20261024/`. Earlier full30 snapshots retain
+their historical source binding. Acceptance requires the
 actual native x86 full compiler F1=F2=F3, current-source unity identity,
 clock/entropy/refusal/resource checks, both mandatory native CDCI roles
 and exact public-product/alias/source-lock readback. Exact-final-head PR CI,

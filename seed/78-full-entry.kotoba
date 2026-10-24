@@ -66,6 +66,7 @@
 (defn- xg-default [] :i64 (drv-fail0 E-USAGE))
 (defn- seed-main [] :i64
   (cond (> (io-argc) 256) (drv-usage)
+        (string=? (io-arg 0) "compile-kototama") (kt-command)
         (= (drv-pj-has 1 (io-argc) "--module-lock") 1) (drv-fail0 E-PROJ-UNPINNED)
         (not (full-argv-ok? 1)) (drv-usage)
         (not (full-lock-ok?)) (drv-fail0 E-PROJ-UNPINNED)
