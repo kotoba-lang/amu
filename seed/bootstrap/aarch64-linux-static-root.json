@@ -2,55 +2,51 @@
   "schema": "amu.seed.static-root.v1",
   "image": {
     "bytes": 3240448,
-    "sha256": "9b5587f50053c221aa7638bde144f30509a032b2de7e3ab44e3367a33c52c32e"
+    "sha256": "688324e0fdc7a93a664ae55fe0ad417e7a980ab844656f3f97889812363c9479"
   },
   "target": "aarch64-linux",
   "format": "packed",
   "sourceManifest": "seed/FULL-MANIFEST",
   "sourceUnity": {
-    "bytes": 3230001,
-    "sha256": "88d54f98c45caf924d594eec02fd4443beda9f6d2b987eab1044c4f25cb6ebb1"
+    "bytes": 3228090,
+    "sha256": "eeecfd8358242405f2a2956037a724f2bdf1ef3f21539aacb834cb8ab5a5425a"
   },
   "sourceCommitBase": "0007e50f4ed61841240838a435d9da1b7f7cf222",
   "producedBy": {
-    "how": "Amu native full29 framed-lock compiler. Actual complete payloads F1=F2=F3, packed F2=F3, independent canonical Pw, complete18 warm/cold/locked agree. Fresh all19/MIR all large/GMIR/resource execution and final27+runner/C0 identity verified; current native x86/public/controller and physical receipt identities verified in exact db2 native CI. Re-pinned for the kernel-memory rooting change (ADR 0373 gaps a, b, c): F1=F2 on arm64 and F1=F2=F3 on x86 from this source, public product regenerated from the x86 job image. No old language host/compiler/loader or performance claim.",
+    "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root (main's, f782f3f2) compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt and packed itself to F2 = F1 (= this image). Re-pinned because this source adds, to main's, the launcher's fixed provider environment (ADR 0371 step 6): MESA_SHADER_CACHE_DISABLE=true and VK_LOADER_LAYERS_DISABLE=~all~ in the launcher runtime text of seed/76 and seed/77.",
     "date": "2026-10-24",
     "timeZone": "Asia/Tokyo",
     "previousRoot": "f782f3f2a8298c39feeedf873896c9858535a8e371786337632cc60f9e971b9f",
     "chain": {
       "F1.kseed": {
-        "bytes": 3003939,
-        "sha256": "e6882fb2309d4f6cfd4c5508ecb8792a4716ad410d62acc5497513ea3d32da83"
+        "bytes": 3004339,
+        "sha256": "edc7a5d1c7dce5c7c95ec28206b767f5558e8be272296bb0b9371f11f5220a60"
       },
       "F1.elf": {
         "bytes": 3240448,
-        "sha256": "9b5587f50053c221aa7638bde144f30509a032b2de7e3ab44e3367a33c52c32e"
+        "sha256": "688324e0fdc7a93a664ae55fe0ad417e7a980ab844656f3f97889812363c9479"
       },
       "F2.kseed": {
-        "bytes": 3003939,
-        "sha256": "e6882fb2309d4f6cfd4c5508ecb8792a4716ad410d62acc5497513ea3d32da83"
+        "bytes": 3004339,
+        "sha256": "edc7a5d1c7dce5c7c95ec28206b767f5558e8be272296bb0b9371f11f5220a60"
       },
       "F2.elf": {
         "bytes": 3240448,
-        "sha256": "9b5587f50053c221aa7638bde144f30509a032b2de7e3ab44e3367a33c52c32e"
-      },
-      "F3.kseed": {
-        "bytes": 3003939,
-        "sha256": "e6882fb2309d4f6cfd4c5508ecb8792a4716ad410d62acc5497513ea3d32da83"
-      },
-      "F3.elf": {
-        "bytes": 3240448,
-        "sha256": "9b5587f50053c221aa7638bde144f30509a032b2de7e3ab44e3367a33c52c32e"
+        "sha256": "688324e0fdc7a93a664ae55fe0ad417e7a980ab844656f3f97889812363c9479"
       }
     }
   },
-  "verification": "Current source-specific native artifact evidence is indexed by docs/evidence/native-cdci-20261023/current-scope.json. Exact-final-head PR CI, expected-head merge, terminal main CI/readback and archive cleanup remain separate completion gates.",
+  "verification": "This source's native artifacts are indexed by docs/evidence/provider-environment-20261024/current-scope.json (root, the complete x86_64 public image, the CDCI roles). Exact-head PR CI, merge and main CI are separate gates.",
   "history": [
     {
+      "schema": "amu.seed.static-root.v1",
       "image": {
         "bytes": 3240448,
         "sha256": "f782f3f2a8298c39feeedf873896c9858535a8e371786337632cc60f9e971b9f"
       },
+      "target": "aarch64-linux",
+      "format": "packed",
+      "sourceManifest": "seed/FULL-MANIFEST",
       "sourceUnity": {
         "bytes": 3226514,
         "sha256": "60e9912b4a0a721e5c7d83874198a27abc464cc1eb451cf0e7555dcb6dd600d4"
@@ -87,7 +83,9 @@
             "sha256": "f782f3f2a8298c39feeedf873896c9858535a8e371786337632cc60f9e971b9f"
           }
         }
-      }
+      },
+      "verification": "Current source-specific native artifact evidence is indexed by docs/evidence/native-cdci-20261023/current-scope.json. Exact-final-head PR CI, expected-head merge, terminal main CI/readback and archive cleanup remain separate completion gates.",
+      "sourceCommit": "e29ef6b1cabb4874aecbec773e484326a5cc1453"
     },
     {
       "schema": "amu.seed.static-root.v1",
@@ -1030,5 +1028,5 @@
       "verification": "scripts/seed/selfhost-bootstrap.py --tier pr on arm64 Linux (python:3.12-alpine) from this root (F1 = root): the core route, the runtime boundary corpus, the 24 runtime cases and hardening pass and the rebuild reproduces this root (rootReproduces); scripts/seed/check-kernel-memory.py --cases gives PASS_KERNEL_MEMORY_ADMISSION 16 cases with F1. CI re-runs the tier from this root (F -> F' = root)."
     }
   ],
-  "sourceCommit": "6e912a62203a90312c2769df4c2ca2c3f34a5ace"
+  "sourceCommit": "6c2c6034fe9509759119c076bb51faa6cf7369bd"
 }

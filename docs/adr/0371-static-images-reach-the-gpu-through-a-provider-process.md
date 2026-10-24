@@ -410,8 +410,12 @@ Every other GPU number is a bootstrap reference.
     (done: JUN-293, rewritten rather than given a dated note);
   * the `accelerator*` source comments.
 
-  This is a follow-up; this change only adds the refused entry in
-  `docs/c-loader-removal.md`.
+  This change only added the refused entry in `docs/c-loader-removal.md`.
+  The follow-up is done (2026-10-24, JUN-344):
+  * The ADRs and `docs/native-aot-baseline.md` carry a dated note.
+  * The `accelerator*` source comments are left as written. The CLJK
+    sources are historical text since #1510, and dated receipts pin
+    `accelerator_subgroup_reduce.cljk`'s bytes.
 
 ## Open questions for the owner
 
@@ -503,7 +507,10 @@ Each step is its own PR, in this order:
      The guest's environment is built rather than inherited: `KEXE_ALLOW`,
      `KEXE_STRUCTURED_REPORT=1`, `KEXE_WALL_SECONDS`, `KEXE_CAP_RESOURCES_42=3,4`
      (with a provider), and seven `KEXE_` knobs passed through when the
-     launcher has them. The provider's environment is empty.
+     launcher has them. The provider's environment is fixed (step 6):
+     `MESA_SHADER_CACHE_DISABLE=true` (Decision 5: no shader cache on disk)
+     and `VK_LOADER_LAYERS_DISABLE=~all~` (no Vulkan layer between the
+     provider and the driver). Nothing is inherited.
    * **Waiting.** `ppoll` on the guest's stdout, the provider's report and both
      pidfds, with no signal handlers. The guest's stdout is relayed as it
      comes, hashed, and its tail kept for the structured line. At `WALL` the
@@ -583,6 +590,8 @@ Each step is its own PR, in this order:
    * **Not yet.** Step 6 decides two things. One is how the provider hands
      strings to and from the platform API (today: bytes in memory from
      `kxrt-p-alloc`). The other is what the provider's environment holds.
+     Both are settled in step 6: strings are made from bytes in memory with
+     `string-from-utf8`, and the environment is the fixed pair above.
    * **Root.** Re-pinned C-free to F `094590b6…` on top of step 4's F
      `710b6ae6…`. No adoption round was needed. The combined compiler F
      (seed/FULL-MANIFEST) lists seed/78-x86_64-platform, and
@@ -644,7 +653,28 @@ Each step is its own PR, in this order:
       kept command buffer that was replayed, and with DISPATCHC. All results
       were exact in f32 and matched byte for byte, at 30-50 us per submit.
       The dot and kdot fixtures and the decode argmax chain need the KIR v2
-      kernels of ADR 0372 step 3, so this step's acceptance waits on them.
+      kernels of ADR 0372 step 3. With them, the acceptance ran on gad
+      through the launcher and this provider, confined
+      (`docs/evidence/gpu-kernel-exec-20261024/`, ADR 0372 step 4):
+      * the dot fixture (`dot_rows` on a real F32 matvec);
+      * the kdot fixtures (Q5_K, IQ4_XS, Q4_K, and the Q6_K lm_head);
+      * the lm_head's argmax chain, whose pick is the f64 argmax.
+
+      Every output is byte-identical to glslang's module. Against an f64
+      dequant oracle, every output is within 1e-3 relative error (with a 1e-2
+      floor, kdot_check's metric). The f16 layouts are measured instead
+      against the output's rms, within 1e-2.
+
+      **Status after #1510.** Main's compiler refuses `--format
+      platform-linked` (`E2`, the native-only entry). Main's AGENTS.md
+      excludes this provider's fake-device, Vulkan and libc qualifications
+      from mandatory native CDCI: they need the refused C-linked format, and
+      provider qualification is blocked until an Amu/Kotoba-native route
+      exists.
+      * The provider images behind these receipts were built by the root
+        before #1510 (`bd025475…`). They are historical receipts of this
+        route, not native CDCI gates.
+      * Main's root can no longer rebuild them.
    4. **Confinement after device creation.** In progress. After the device
       is created the provider reads the facts its report needs from files:
       its image digest, and for the Vulkan layer the driver properties and
@@ -656,9 +686,13 @@ Each step is its own PR, in this order:
       under qemu-user). Any other failure ends the run as
       `:confinement-failed`, before a request is served. On gad, RADV (Mesa
       25.2.8) answered all 48 requests confined (Landlock ABI 8 and the
-      seal). The launcher's fixed provider environment (the shader cache)
-      remains.
+      seal). The launcher now gives the provider a fixed environment,
+      `MESA_SHADER_CACHE_DISABLE=true` and `VK_LOADER_LAYERS_DISABLE=~all~`,
+      so no shader cache is written and no implicit layer is loaded. On gad
+      the launcher started the confined provider and a wire-42 guest with
+      it (verdict `:ok`, 4 requests served).
    5. ADR and documentation.
 7. **aarch64-linux** imports, then Xavier.
 8. **macOS ADR.**
-9. **Dated notes** in the stale docs listed under Consequences.
+9. **Done: dated notes** in the stale docs listed under Consequences
+   (2026-10-24).

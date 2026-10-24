@@ -26,7 +26,11 @@
 ;; A unit that uses this file prepends its own ns line and drops this one,
 ;; after spirv_encode.kotoba (scripts/seed/check-gpu-kernel-spirv.py).
 
-(def KB-SIZE 2200000)
+;; B's words: the header, the sections (kb-base, kb-cap), the interned
+;; entries, the if/loop stack and the interface list. A unit keeps every
+;; builder it makes, so this reserve bounds how many it can make; the body's
+;; 196608 words are many times the largest kernel's whole module (~7.2K).
+(def KB-SIZE 591632)
 (def KB-NEXT 0)
 (def KB-TERM 1)
 (def KB-GLSL 16)
@@ -37,19 +41,23 @@
 (def KB-VOID 24)
 (def KB-FNTYPE 25)
 (def KB-NINTERN 26)
-(def KB-INTERN 2000000)
-(def KB-INTERN-MAX 30000)
-(def KB-STACK 2190000)
-(def KB-IFACE 2195000)
+(def KB-INTERN 540672)
+(def KB-INTERN-MAX 8192)
+(def KB-STACK 581632)
+(def KB-IFACE 586632)
 ;; features (capabilities beyond Shader): 1 GroupNonUniform (the subgroup
-;; built-ins set it), 2 GroupNonUniformArithmetic (for the subgroup
-;; arithmetic ops; none yet); Float16, Int8 and the integer dot product come
-;; with the kernels that use them
+;; built-ins and subgroupElect set it), 2 GroupNonUniformArithmetic
+;; (subgroupAdd sets it), 4 the packed 4x8 integer dot product
+;; (kb-sdot4x8 sets it: DotProduct, DotProductInput4x8BitPacked and the
+;; SPV_KHR_integer_dot_product extension, glslang's form at SPIR-V 1.3), 8
+;; Float16 (kb-tf16 sets it); Int8 comes with the kernels that use it
 (def KB-F-SUBGROUP 1)
 (def KB-F-ARITH 2)
+(def KB-F-DOT 4)
+(def KB-F-F16 8)
 
 (defn- kb-base [s :i64] :i64 (case s 0 4096 1 8192 2 12288 3 16384 4 81920 5 212992 344064))
-(defn- kb-cap [s :i64] :i64 (case s 0 4096 1 4096 2 4096 3 65536 4 131072 5 131072 1655936))
+(defn- kb-cap [s :i64] :i64 (case s 0 4096 1 4096 2 4096 3 65536 4 131072 5 131072 196608))
 (defn- kb-get [B :vector-i64 k :i64] :i64 (vector-at B k))
 (defn- kb-set [B :vector-i64 k :i64 v :i64] :i64 (let [z (vector-assoc! B k v)] v))
 
@@ -102,7 +110,8 @@
             x4 (kb-set B (+ e 4) id) x5 (kb-set B KB-NINTERN (inc n))] id))))
 
 ;; kinds: 1 void 2 bool 3 int 4 float 5 vector 6 array 7 runtime array
-;; 8 pointer 9 function type 20 constant 21 bool constant 30 built-in variable
+;; 8 pointer 9 function type 20 constant 21 bool constant 22 constant vector
+;; 30 built-in variable
 (defn- kb-type [B :vector-i64 kind :i64 a :i64 b :i64] :i64
   (let [f (kb-find B kind a b 0)]
     (if (> f 0) f
@@ -126,6 +135,9 @@
 (defn kb-ti32 [B :vector-i64] :i64 (kb-type B 3 32 1))
 (defn kb-tf32 [B :vector-i64] :i64 (kb-type B 4 32 0))
 (defn kb-tvec [B :vector-i64 elem :i64 n :i64] :i64 (kb-type B 5 elem n))
+;; the 16-bit float (the module then declares Float16)
+(defn kb-tf16 [B :vector-i64] :i64
+  (let [g (kb-set B KB-FEATURES (bit-or (kb-get B KB-FEATURES) KB-F-F16))] (kb-type B 4 16 0)))
 (defn kb-tptr [B :vector-i64 storage :i64 t :i64] :i64 (kb-type B 8 storage t))
 ;; storage classes
 (def KB-INPUT 1)
@@ -140,6 +152,12 @@
 (defn kb-i32 [B :vector-i64 v :i64] :i64 (kb-const B (kb-ti32 B) (bit-and v 4294967295)))
 ;; an f32 constant by its bit pattern (static Kotoba has no floats)
 (defn kb-f32 [B :vector-i64 bits :i64] :i64 (kb-const B (kb-tf32 B) (bit-and bits 4294967295)))
+;; an f16 constant by its bit pattern
+(defn kb-f16 [B :vector-i64 bits :i64] :i64 (kb-const B (kb-tf16 B) (bit-and bits 65535)))
+;; a two-component constant vector of type t (OpConstantComposite)
+(defn kb-const2 [B :vector-i64 t :i64 a :i64 b :i64] :i64
+  (let [f (kb-find B 22 t a b)]
+    (if (> f 0) f (let [id (kb-id B) w (kb-i4 B 4 44 t id a b)] (kb-keep B 22 t a b id)))))
 (defn kb-bool [B :vector-i64 v :bool] :i64
   (let [f (kb-find B 21 (if v 1 0) 0 0)]
     (if (> f 0) f (let [id (kb-id B) w (kb-i2 B 4 (if v 41 42) (kb-tbool B) id)] (kb-keep B 21 (if v 1 0) 0 0 id)))))
@@ -252,6 +270,57 @@
 (defn kb-fne [B :vector-i64 a :i64 b :i64] :i64 (kb-op2 B 183 (kb-tbool B) a b))
 (defn kb-fmax [B :vector-i64 a :i64 b :i64] :i64 (kb-ext2 B (kb-tf32 B) 40 a b))
 (defn kb-fexp [B :vector-i64 a :i64] :i64 (kb-ext1 B (kb-tf32 B) 27 a))
+(defn kb-fneg [B :vector-i64 a :i64] :i64 (kb-op1 B 127 (kb-tf32 B) a))
+(defn kb-uge [B :vector-i64 a :i64 b :i64] :i64 (kb-op2 B 174 (kb-tbool B) a b))
+(defn kb-ine [B :vector-i64 a :i64 b :i64] :i64 (kb-op2 B 171 (kb-tbool B) a b))
+;; ordered float comparisons (GLSL's ==, <, >, >=)
+(defn kb-feq [B :vector-i64 a :i64 b :i64] :i64 (kb-op2 B 180 (kb-tbool B) a b))
+(defn kb-flt [B :vector-i64 a :i64 b :i64] :i64 (kb-op2 B 184 (kb-tbool B) a b))
+(defn kb-fgt [B :vector-i64 a :i64 b :i64] :i64 (kb-op2 B 186 (kb-tbool B) a b))
+(defn kb-fge [B :vector-i64 a :i64 b :i64] :i64 (kb-op2 B 190 (kb-tbool B) a b))
+(defn kb-lor [B :vector-i64 a :i64 b :i64] :i64 (kb-op2 B 166 (kb-tbool B) a b))
+(defn kb-land [B :vector-i64 a :i64 b :i64] :i64 (kb-op2 B 167 (kb-tbool B) a b))
+;; c ? a : b for values both safe to compute (else an if into a variable)
+(defn kb-select [B :vector-i64 t :i64 c :i64 a :i64 b :i64] :i64 (kb-op3 B 169 t c a b))
+;; conversions: float(u), int(f), and bit casts (floatBitsToUint and back)
+(defn kb-u2f [B :vector-i64 a :i64] :i64 (kb-op1 B 112 (kb-tf32 B) a))
+(defn kb-f2s [B :vector-i64 a :i64] :i64 (kb-op1 B 110 (kb-ti32 B) a))
+(defn kb-bitcast [B :vector-i64 t :i64 a :i64] :i64 (kb-op1 B 124 t a))
+;; GLSL.std.450: inversesqrt, log, pow, sin, cos, abs, round, min
+(defn kb-finvsqrt [B :vector-i64 a :i64] :i64 (kb-ext1 B (kb-tf32 B) 32 a))
+(defn kb-flog [B :vector-i64 a :i64] :i64 (kb-ext1 B (kb-tf32 B) 28 a))
+(defn kb-fpow [B :vector-i64 a :i64 b :i64] :i64 (kb-ext2 B (kb-tf32 B) 26 a b))
+(defn kb-fsin [B :vector-i64 a :i64] :i64 (kb-ext1 B (kb-tf32 B) 13 a))
+(defn kb-fcos [B :vector-i64 a :i64] :i64 (kb-ext1 B (kb-tf32 B) 14 a))
+(defn kb-fabs [B :vector-i64 a :i64] :i64 (kb-ext1 B (kb-tf32 B) 4 a))
+(defn kb-fround [B :vector-i64 a :i64] :i64 (kb-ext1 B (kb-tf32 B) 1 a))
+(defn kb-umin [B :vector-i64 a :i64 b :i64] :i64 (kb-ext2 B (kb-tu32 B) 38 a b))
+;; vectors: n-component construction, the dot product, int(v) per component
+;; to float, unpackHalf2x16 (a vec2 of the two halves of a u32), and
+;; bitfieldExtract(int, offset, count) with the sign extended
+(defn kb-construct2 [B :vector-i64 t :i64 a :i64 b :i64] :i64 (kb-op2 B 80 t a b))
+(defn kb-construct4 [B :vector-i64 t :i64 a :i64 b :i64 c :i64 d :i64] :i64
+  (let [id (kb-id B) x (kb-i6 B 6 80 t id a b c d)] id))
+(defn kb-fdot [B :vector-i64 a :i64 b :i64] :i64 (kb-op2 B 148 (kb-tf32 B) a b))
+(defn kb-s2f [B :vector-i64 t :i64 a :i64] :i64 (kb-op1 B 111 t a))
+(defn kb-unpack-half2 [B :vector-i64 a :i64] :i64 (kb-ext1 B (kb-tvec B (kb-tf32 B) 2) 62 a))
+(defn kb-sbfe [B :vector-i64 base :i64 offset :i64 count :i64] :i64 (kb-op3 B 202 (kb-ti32 B) base offset count))
+;; components k0 and k1 of the vectors a and b (a then b) as a two-component
+;; vector of type t (OpVectorShuffle), and a float conversion to type t
+(defn kb-shuffle2 [B :vector-i64 t :i64 a :i64 b :i64 k0 :i64 k1 :i64] :i64
+  (let [id (kb-id B) x (kb-i6 B 6 79 t id a b k0 k1)] id))
+(defn kb-fconvert [B :vector-i64 t :i64 a :i64] :i64 (kb-op1 B 115 t a))
+;; subgroupAdd(a) of an f32 (OpGroupNonUniformFAdd, Reduce) and subgroupElect()
+(defn kb-subgroup-fadd [B :vector-i64 a :i64] :i64
+  (let [g (kb-set B KB-FEATURES (bit-or (kb-get B KB-FEATURES) KB-F-ARITH)) id (kb-id B)
+        x (kb-i5 B 6 350 (kb-tf32 B) id (kb-u32 B 3) 0 a)] id))
+(defn kb-subgroup-elect [B :vector-i64] :i64
+  (let [g (kb-set B KB-FEATURES (bit-or (kb-get B KB-FEATURES) KB-F-SUBGROUP)) id (kb-id B)
+        x (kb-i3 B 6 333 (kb-tbool B) id (kb-u32 B 3))] id))
+;; dotPacked4x8EXT(a, b): the signed dot of two ints of four packed int8
+;; (OpSDot with PackedVectorFormat4x8Bit)
+(defn kb-sdot4x8 [B :vector-i64 a :i64 b :i64] :i64
+  (let [g (kb-set B KB-FEATURES (bit-or (kb-get B KB-FEATURES) KB-F-DOT)) id (kb-id B) x (kb-i5 B 6 4450 (kb-ti32 B) id a b 0)] id))
 
 ;; ---------------------------------------------------------------------
 ;; Control. Labels clear the terminated flag; a branch, break, continue or
@@ -311,10 +380,18 @@
           (= (kb-get B (+ KB-STACK (* 4 d))) 2) (kb-get B (+ KB-STACK (* 4 d) k))
           :else (recur (dec d)))))
 (defn kb-break [B :vector-i64] :i64 (kb-branch B (kb-loop-slot B 1)))
+;; continue: to the innermost loop's continue block
+(defn kb-next [B :vector-i64] :i64 (kb-branch B (kb-loop-slot B 2)))
+;; return from the entry function; inside an if the arm ends there
+(defn kb-return [B :vector-i64] :i64
+  (if (= (kb-get B KB-TERM) 1) 0 (let [x (kb-i0 B 6 253)] (kb-set B KB-TERM 1))))
 
 ;; workgroup barrier: execution and Workgroup memory (AcquireRelease)
 (defn kb-barrier [B :vector-i64] :i64
   (kb-i3 B 6 224 (kb-u32 B 2) (kb-u32 B 2) (kb-u32 B 264)))
+;; memoryBarrierBuffer(): Device scope, AcquireRelease and Uniform memory
+(defn kb-memory-barrier-buffer [B :vector-i64] :i64
+  (kb-i2 B 6 225 (kb-u32 B 1) (kb-u32 B 72)))
 
 ;; ---------------------------------------------------------------------
 ;; The module.
@@ -335,9 +412,16 @@
         f (kb-get B KB-FEATURES) ni (kb-get B KB-NIFACE)
         words (+ 5 64 (kb-get B 9) 64 (kb-get B 11) (kb-get B 12) (kb-get B 13) (kb-get B 14) ni)
         M0 (spv-header (spv-new words) SPV-VERSION-1-3)
-        M1 (spv-i1 M0 17 1)
+        M1s (spv-i1 M0 17 1)
+        M1 (if (not= (bit-and f KB-F-F16) 0) (spv-i1 M1s 17 9) M1s)
         M2a (if (not= (bit-and f (bit-or KB-F-SUBGROUP KB-F-ARITH)) 0) (spv-i1 M1 17 61) M1)
-        M2 (if (not= (bit-and f KB-F-ARITH) 0) (spv-i1 M2a 17 63) M2a)
+        M2b (if (not= (bit-and f KB-F-ARITH) 0) (spv-i1 M2a 17 63) M2a)
+        ;; the integer dot product: two capabilities and the extension, which
+        ;; precedes the extended-instruction import of section 1
+        M2 (if (not= (bit-and f KB-F-DOT) 0)
+             (let [c (spv-i1 (spv-i1 M2b 17 6019) 17 6018) x "SPV_KHR_integer_dot_product"]
+               (spv-put-str (spv-put c (bit-or (i64-shift-left (+ 1 (spv-str-words x)) 16) 10)) x))
+             M2b)
         M3 (kb-copy M2 B 1)
         M4 (spv-i2 M3 14 0 1)
         ;; OpEntryPoint GLCompute main "main" interface...
