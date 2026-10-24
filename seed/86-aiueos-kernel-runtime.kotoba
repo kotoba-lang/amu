@@ -14,7 +14,7 @@
 (def KM-OWNED-PAGE 73)
 (def KM-OWNED-WINDOW 74)
 (def KM-PCI-MMIO 75)
-(def KM-INTR-N 92)
+(def KM-INTR-N 100)
 (def KM-SEALED-SCRATCH 272)
 (def KM-SEALED-PAGES 280)
 
@@ -52,7 +52,10 @@
       55 "kernel-current-domain" 56 "kernel-value-runtime-invoke"
       57 "kernel-value-runtime-request" 58 "kernel-value-domain-request-page"
       59 "kernel-value-enable-user" 60 "kernel-value-enter-user"
-      61 "kernel-value-domain-code-page" 62 "kernel-value-domain-stack-page" "")))
+      61 "kernel-value-domain-code-page" 62 "kernel-value-domain-stack-page"
+      63 "kernel-framebuffer-page" 64 "kernel-framebuffer-width" 65 "kernel-framebuffer-height"
+      66 "kernel-framebuffer-stride" 67 "kernel-framebuffer-format"
+      68 "kernel-browser-surface" 69 "kernel-browser-context" 70 "kernel-native-font" "")))
 (defn- km-arity [k :i64] :i64
   (cond (< k KM-MEM-N) (if (= (bit-and (km-raw k) 1) 0) 3 4)
         (< k (+ KM-MEM-N 2)) 2
@@ -65,6 +68,7 @@
         (= k KM-OWNED-WINDOW) 2
         (= k KM-PCI-MMIO) 5
         (= k LV-CALL) 6
+        (>= k WG-FIRST) (if (= k WG-FIRST) 1 0)
         (>= k UV-FIRST) (if (= k UV-FIRST) 0 1)
         (>= k LV-FIRST) (if (or (= k 79) (= k 80) (= k 82) (= k 83) (= k 87)) 1 0)
         (>= k KM-ISR-FIRST)
@@ -107,7 +111,10 @@
               (= (km-intr M f) (+ LV-FIRST 7))
               (= (km-intr M f) 87)) (+ 4294967296 4096)
           (= (km-intr M f) 86) (+ 4294967296 96)
-          (>= (km-intr M f) (+ UV-FIRST 2)) (+ 4294967296 4096)
+          (= (km-intr M f) WG-FIRST) (+ 4294967296 4096)
+          (or (= (km-intr M f) (+ WG-FIRST 5)) (= (km-intr M f) (+ WG-FIRST 6))) (+ 4294967296 8192)
+          (= (km-intr M f) (+ WG-FIRST 7)) (+ 4294967296 WG-FONT-BYTES)
+          (and (>= (km-intr M f) (+ UV-FIRST 2)) (< (km-intr M f) WG-FIRST)) (+ 4294967296 4096)
           :else -1)))
 (defn- km-scan [M :vector-i64 S :string] :vector-i64
   (let [first (- (vector-at M MM-FN-N) XK-WINDOW-N KM-INTR-N)]
@@ -208,6 +215,7 @@
         (xg-label end) (xg-save t))))
 (defn- km-intrinsic [M :vector-i64 k :i64 t :i64] :vector-i64
   (cond (< k KM-MEM-N) (km-window M k t)
+        (>= k WG-FIRST) (wg-intrinsic M (- k WG-FIRST) t)
         (>= k UV-FIRST) (uv-intrinsic M (- k UV-FIRST) t)
         (= k LV-CALL) (lv-call M t)
         (>= k LV-FIRST) (lv-intrinsic M (- k LV-FIRST) t)

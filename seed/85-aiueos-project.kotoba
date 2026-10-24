@@ -147,10 +147,12 @@
                     (iv-hex "498991") (xg-bytes KM-SEALED-SCRATCH 4)
                     (iv-hex "49c781") (xg-bytes KM-SEALED-PAGES 4) (xg-bytes 15 4)
                     (kr-seal-map 1)
-                    (cond-> pci (kr-seal-pci 1)))
+                    (cond-> pci (kr-seal-pci 1))
+                    (cond-> (wg-used? M) (wg-seal 1)))
         delta (- (dec main-entry) (+ at (xg-pos checked) 5))
         code (if (or (< delta -2147483648) (> delta 2147483647)) (xg-err checked 7103 at)
-               (-> checked (xg-byte 233) (xg-bytes delta 4) (xg-label 1) (iv-hex "0f0b") (xg-fix 1)))
+               (-> checked (xg-byte 233) (xg-bytes delta 4) (xg-label 1)
+                   (iv-hex (if (wg-used? M) "faf4ebfd" "0f0b")) (xg-fix 1)))
         copied (loop [i 0]
                  (if (or (>= i (xg-pos code)) (not (pj-ok code))) 0
                    (let [w (pj-ibset L (+ at i) (xg-code-byte code i))] (recur (inc i)))))]
