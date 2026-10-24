@@ -6,6 +6,16 @@
   ADR-0356 deferred ("ARM (JUN-60) is deliberately not designed in this ADR
   ... one vendor per decision").
 
+> **Dated note (2026-10-24, ADR 0371).** The GPU execution path this ADR
+> refers to is deleted: the C loader `tools/kexe_loader.c`, and wire 42's
+> `:gpu/compute` brokered by `tools/kexe_gpu_vulkan.c`. ADR 0371 replaced
+> it with a provider process that the static launcher starts and that
+> speaks the same wire-42 protocol. Since #1510 two things hold: main's
+> compiler refuses that provider's `--format platform-linked` build, and
+> its qualifications are outside mandatory native CDCI (`AGENTS.md`). So
+> no current route executes a GPU artifact. The text below is kept as
+> written.
+
 ## Decision
 
 The ARM row of the per-vendor kernel variant table is a subgroup-reduce
