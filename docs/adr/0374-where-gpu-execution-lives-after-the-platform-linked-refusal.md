@@ -2,7 +2,7 @@
 
 - Status: **proposed**, for the owner's decision. Nothing here is implemented.
 - Date: 2026-10-24
-- Tracking: JUN-344 (ADR 0371, the provider), JUN-356 (ADR 0372, the kernels)
+- Tracking: JUN-365 (this decision); JUN-344 (ADR 0371, the provider), JUN-356 (ADR 0372, the kernels)
 
 ## Context
 
