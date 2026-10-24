@@ -16,17 +16,22 @@ compiler is part of this qualification.
 | `defcid-full32.json`, `defgraph-full32.json` | Native frozen ten-vector Definition CID and dependency-graph fixture execution/refusals |
 | `full32-native-inputs.json`, `full32-artifact-candidate.json` | Source and emitted ARM/x86 product/controller input pins; candidate, not an x86 execution verdict |
 | `complete24-gate-pin-audit.json`, `complete24-image-stability.json` | All 24 gate source/image/result/exit/fuel constants match the first x86 CI compilation, and the refreshed full32 compiler independently re-emits the same 24 x86 case images. The first CI run refused stale image pins as `CDCI:E4002`; current controller execution awaits the new CI run. |
+| `fs2-current-full32-build.json`, `fs2-current-full32-basic.json`, `fs2-current-full32-extended.json`, `fs2-current-full32-observed.json`, `fs2-current-full32-errno.json` | Refreshed compiler `523544cc…` built the FS2 image. Native ARM execution passed 21 basic forms, 39 extended abnormal/cleanup cases, 11 observed partial-I/O/signal boundaries, and eight child-only kernel errno injections. Complete path-race/fault parity is still open. |
+| `fs2-current-full32-errno-details.json` | Per-case kernel syscall/errno, guest exit/diagnostic and remaining-file observations for all eight injections, with each filter hash and one current FS2 image identity. |
+| `module-lock-current-full32.json` | Refreshed compiler passed 37 native CID/block writer, KSL2 replay, Unicode namespace, actual compiler execution and refusal calls; `actualCompilerIntegration` and `writerReplayQualified` are true. Whole CLI caller integration remains open. |
+| `defcid-current-full32.json`, `defgraph-current-full32.json` | Refreshed compiler executed the frozen ten Definition CID vectors and graph fixture, including the bounded refusal cases. Checked-KIR caller-wide qualification remains open. |
+| `full32-corpus-before-gate-pin.json`, `full32-corpus.json` | The earlier corpus is retained separately. The refreshed compiler `523544cc…` passed all 146 calls: 19 Embench, MIR main, six individual large entries and whole-large, GMIR, resource controls and pin refusals. Whole-large ended with zero tracked pairs, vectors, items, heap bytes and regions and 155,688,217 scope releases. |
 
 The full32 ARM checks ran without network access in a native arm64 Linux VM.
 Python staged inputs, verified hashes, and observed process exits; Kotoba
 artifacts performed semantic checks. GitHub PR #1557 native ARM/x86 CI and its
 post-merge main run determine current CI qualification.
 
-The corpus, FS2, AOT, CID and Definition receipts above were produced before
-the gate factory pin refresh. The refresh changes the full32 compiler image;
-the complete corpus is being rerun on the new image, and CI must re-establish
-the current x86, FS2, AOT and controller verdicts. The old receipts remain
-historical evidence until those current-source results are recorded.
+The original corpus, FS2, AOT, CID and Definition receipts above were produced
+before the gate factory pin refresh. The current corpus, FS2, CID and Definition
+receipts are listed separately for compiler image `523544cc…`. CI must still
+establish the current x86, AOT and controller verdicts. The old receipts remain
+historical evidence for the earlier compiler.
 
 **Open qualification:** The public Kotoba CLI's 12 commands have request
 parsing, but their complete native executions and product dispatch are not
