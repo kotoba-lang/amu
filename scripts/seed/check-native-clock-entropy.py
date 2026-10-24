@@ -126,8 +126,11 @@ def main(compiler, out):
                ("entropy-padded-zero", "entropy-request", "0000000000000000000", "23,38")]
     for name, mode, value, grants in invalid:
         observe(name, [guest, mode, value], runtime(grants), 120)
-    observe("clock-no-grant", [guest, "clock"], runtime("38"), 120)
-    observe("entropy-no-grant", [guest, "entropy"], runtime("38"), 120)
+    # an ungranted wire is refused by name (seed/76 kxrt-not-granted), then traps
+    observe("clock-no-grant", [guest, "clock"], runtime("38"), 120,
+            diagnostic="KEXE_CAP {:wire 7 :refused :not-granted}\n")
+    observe("entropy-no-grant", [guest, "entropy"], runtime("38"), 120,
+            diagnostic="KEXE_CAP {:wire 23 :refused :not-granted}\n")
     install, filter_receipt = enosys_filter()
     observe("entropy-enosys", [guest, "entropy"], runtime("23,38"), 126,
             diagnostic="entropy/unavailable", preexec_fn=install)

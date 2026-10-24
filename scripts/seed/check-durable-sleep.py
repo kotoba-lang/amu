@@ -163,7 +163,8 @@ def main(compiler, output, target, seccomp_if_available=False):
     req = compile_(producer, "sleep-request", SLEEP_REQ, target)
     for name, arg in [("sleep-over-60000", "sleep 60001"), ("sleep-not-decimal", "sleep 1x"), ("sleep-no-number", "sleep ")]:
         case(name, req, clock_env, args=[arg], want_exit=120, stderr_has=[sigill])
-    case("sleep-wire-not-granted", req, {"KEXE_ALLOW": "37,38"}, args=["sleep 1"], want_exit=120, stderr_has=[sigill])
+    case("sleep-wire-not-granted", req, {"KEXE_ALLOW": "37,38"}, args=["sleep 1"], want_exit=120,
+         stderr_has=[sigill, b"KEXE_CAP {:wire 7 :refused :not-granted}\n"])
 
     host = {"aarch64": "aarch64-linux", "arm64": "aarch64-linux", "x86_64": "x86_64-linux", "AMD64": "x86_64-linux"}[platform.machine()]
     text, unity_pins = unity_text()
