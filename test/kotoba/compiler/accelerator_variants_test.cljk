@@ -120,7 +120,7 @@
           (is (= :baseline
                  (:variant (variants/select-variant vendor kir target device)))
               (str "device " (pr-str device) " must fail closed")))))
-    (testing "a target outside the rows' routes (ADR-0363 moved the WGSL route in for Intel/ARM and ADR-0364 for AMD; the ADR-0360 amendment moved the MSL route in for Apple; the ADR-0361 amendment moved the CUDA route in for NVIDIA -- its second rung)"
+    (testing "a target outside the rows' routes (ADR-0363 moved the WGSL route in for Intel/ARM and ADR-0364 for AMD; the 2026-10-24 NVIDIA WGSL-route decision moved it in for NVIDIA; the ADR-0360 amendment moved the MSL route in for Apple; the ADR-0361 amendment moved the CUDA route in for NVIDIA -- its second rung)"
       (doseq [target [:cuda :cuda-v1 nil]]
         (is (= :baseline (:variant (variants/select-variant :intel kir target capable))))
         (is (= :baseline (:variant (variants/select-variant :arm kir target capable))))
@@ -134,12 +134,16 @@
         (is (= :baseline (:variant (variants/select-variant :arm kir target capable))))
         (is (= :baseline (:variant (variants/select-variant :nvidia kir target capable))))
         (is (= :baseline (:variant (variants/select-variant :amd kir target capable)))))
-      ;; The WGSL route carries the Intel, ARM and AMD rows (ADR-0363,
-      ;; extended to :amd by ADR-0364); the Apple and NVIDIA rows keep
-      ;; their ADRs' routes.
+      ;; The WGSL route carries the Intel, ARM, AMD and -- since the
+      ;; 2026-10-24 NVIDIA WGSL-route decision (JUN-57's own decision,
+      ;; docs/evidence/gpu/nvidia-wgsl-route-decision-20261024.txt) --
+      ;; NVIDIA rows (ADR-0363, extended to :amd by ADR-0364 and to
+      ;; :nvidia by that decision); the Apple row keeps its ADR's routes
+      ;; (its WGSL question is its own, UNDECIDED). The NVIDIA WGSL
+      ;; positive pin lives in the-nvidia-row-rides-the-vulkan-cuda-and-
+      ;; wgsl-routes.
       (doseq [target [:webgpu :wgsl-v1]]
-        (is (= :baseline (:variant (variants/select-variant :apple kir target capable))))
-        (is (= :baseline (:variant (variants/select-variant :nvidia kir target capable))))))
+        (is (= :baseline (:variant (variants/select-variant :apple kir target capable))))))
     (testing "a vendor outside the designed rows"
       (doseq [vendor [:unknown :qualcomm]]
         (is (= :baseline (:variant (variants/select-variant vendor kir :vulkan capable))))))
@@ -197,7 +201,7 @@
     (doseq [vendor [:intel :arm :apple :nvidia :amd] target [:vulkan :glsl-v1]]
       (is (= :subgroup-reduce
              (:variant (variants/select-variant vendor reduce-kir target capable)))))
-    (doseq [vendor [:intel :arm :amd] target [:webgpu :wgsl-v1]]
+    (doseq [vendor [:intel :arm :amd :nvidia] target [:webgpu :wgsl-v1]]
       (is (= :subgroup-reduce
              (:variant (variants/select-variant vendor reduce-kir target capable)))))
     (doseq [target [:metal :msl-v1]]
@@ -1203,7 +1207,7 @@
       (is (str/includes? harness gate)
           (str "the measure harness must keep its positional gate " gate)))))
 
-(deftest the-nvidia-row-rides-the-vulkan-and-cuda-routes
+(deftest the-nvidia-row-rides-the-vulkan-cuda-and-wgsl-routes
   ;; ADR-0361 (JUN-57) as amended 2026-10-23 (JUN-57's own decision): the
   ;; NVIDIA row is the shared subgroup-size-parametric emission on the
   ;; Vulkan route (the warp's 32 is queried at runtime like every other
@@ -1215,8 +1219,14 @@
   ;; answers only where the warp row's gate does not reach -- a descriptor
   ;; reporting the rule-6 subgroup facts and NO compute capability. The
   ;; two rungs spell the same fold (runtime warpSize vs the baked 32), so
-  ;; the ladder changes no reduction semantics. The MSL and WGSL routes do
-  ;; not carry NVIDIA. Everything is UNMEASURED (:measured? false).
+  ;; the ladder changes no reduction semantics. The WGSL route carries the
+  ;; row too since the 2026-10-24 NVIDIA WGSL-route decision (JUN-57's own
+  ;; decision, docs/evidence/gpu/nvidia-wgsl-route-decision-20261024.txt)
+  ;; -- the same rules 3 + 6 gate, the sm_70+ floor included, and no warp
+  ;; rung there (:warp-shuffle-reduce is CUDA emission only). The MSL
+  ;; route does not carry NVIDIA. Everything is UNCOMPILED (the WGSL arm:
+  ;; no WGSL validator on this host) and UNMEASURED (:measured? false --
+  ;; no NVIDIA hardware has run anything).
   (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
         capable {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}
         answer (variants/select-variant :nvidia kir :vulkan capable)]
@@ -1265,8 +1275,48 @@
               target [:cuda :cuda-v1]]
         (is (= :baseline (:variant (variants/select-variant :nvidia kir target device)))
             (str "device " (pr-str device) " must fail closed on the CUDA route"))))
-    (doseq [target [:msl-v1 :metal :webgpu :wgsl-v1]]
-      (is (= :baseline (:variant (variants/select-variant :nvidia kir target capable)))))
+    (testing "the MSL route still does not carry NVIDIA"
+      (doseq [target [:msl-v1 :metal]]
+        (is (= :baseline (:variant (variants/select-variant :nvidia kir target capable))))))
+    (testing "the WGSL route carries the row since the 2026-10-24 NVIDIA WGSL-route decision"
+      ;; The same rules 3 + 6 gate on both spellings, :measured? false.
+      (doseq [target [:webgpu :wgsl-v1]]
+        (let [wgsl-answer (variants/select-variant :nvidia kir target capable)]
+          (is (= :subgroup-reduce (:variant wgsl-answer)))
+          (is (false? (:measured? wgsl-answer)))
+          (is (str/includes? (:basis wgsl-answer) "nvidia-wgsl-route-decision-20261024")))
+        ;; The sm_70+ floor binds this rung exactly as it binds every
+        ;; NVIDIA rung: a REPORTED capability below the floor, or a
+        ;; malformed one, fails closed; a CONFIRMED 7.0+ still selects.
+        (is (= :subgroup-reduce
+               (:variant (variants/select-variant
+                          :nvidia kir target
+                          (assoc capable :compute-capability 7.0)))))
+        (doseq [device [(assoc capable :compute-capability 6.0)
+                        (assoc capable :compute-capability 6.5)
+                        (assoc capable :compute-capability "7.0")
+                        (assoc capable :compute-capability :seven)]]
+          (is (= :baseline (:variant (variants/select-variant :nvidia kir target device)))
+              (str "compute capability " (pr-str (:compute-capability device)) " must fail closed on the WGSL route")))
+        ;; The rule-6 gate fails closed without the subgroup facts.
+        (doseq [device [nil
+                        {}
+                        {:subgroup-size 32}
+                        {:subgroup-ops #{:basic :shuffle-relative}}
+                        {:subgroup-size 32 :subgroup-ops #{:basic}}
+                        {:subgroup-size 32 :subgroup-ops #{:shuffle-relative}}
+                        {:subgroup-size 24 :subgroup-ops #{:basic :shuffle-relative}}
+                        {:subgroup-size 512 :subgroup-ops #{:basic :shuffle-relative}}]]
+          (is (= :baseline (:variant (variants/select-variant :nvidia kir target device)))
+              (str "device " (pr-str device) " must fail closed on the WGSL route")))
+        ;; The shape gate is the same one as every route.
+        (is (= :baseline
+               (:variant (variants/select-variant
+                          :nvidia (accelerator/kernel "ewise_add_f32" :ewise :add {:workgroup-size 256})
+                          target capable)))))
+      ;; Same arguments in, same map out.
+      (is (= (variants/select-variant :nvidia kir :wgsl-v1 capable)
+             (variants/select-variant :nvidia kir :wgsl-v1 capable))))
     (testing "rule 3 end to end: the second rung lowers, seals and verifies on :cuda-v1"
       (let [selected (:variant (variants/select-variant :nvidia kir :cuda-v1 capable))
             compiled (accelerator/compile-kernel kir :cuda-v1 selected)]
@@ -1285,10 +1335,14 @@
   ;; :wgsl-v1 (emitter target), one route under two names exactly like
   ;; :vulkan/:glsl-v1 (ADR-0359 decision 3) -- selects :subgroup-reduce for
   ;; Intel and ARM under the same rules 3 + 6 gate the Vulkan route uses.
-  ;; The NVIDIA row stays Vulkan-route-only (its ADR's scope; the Apple row
-  ;; now rides the MSL route too -- the ADR-0360 amendment, tested in
-  ;; the-apple-row-rides-the-vulkan-and-msl-routes -- and stays off the
-  ;; WGSL route). ADR-0364 (2026-10-23) adds the AMD row to this route
+  ;; The NVIDIA row joined this route by the 2026-10-24
+  ;; NVIDIA WGSL-route decision (JUN-57's own decision,
+  ;; docs/evidence/gpu/nvidia-wgsl-route-decision-20261024.txt); its pins
+  ;; live in the-nvidia-row-rides-the-vulkan-cuda-and-wgsl-routes. The
+  ;; Apple row now rides the MSL route too (the ADR-0360 amendment,
+  ;; tested in the-apple-row-rides-the-vulkan-and-msl-routes) and stays
+  ;; off the WGSL route -- its own question, UNDECIDED. ADR-0364
+  ;; (2026-10-23) adds the AMD row to this route
   ;; too; that row is pinned in the-amd-row-rides-the-vulkan-and-wgsl-routes.
   ;; Everything here is
   ;; UNCOMPILED (no WGSL validator on this host) and UNMEASURED -- no

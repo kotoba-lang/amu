@@ -14,7 +14,12 @@
   2026-10-23 amendments (JUN-58's own decision), and the NVIDIA row rides
   the CUDA route since ADR-0361's same-day amendment (JUN-57's own
   decision) -- as the SECOND rung of that route's ladder, under
-  :warp-shuffle-reduce's precedence.
+  :warp-shuffle-reduce's precedence -- and the WGSL route since the
+  2026-10-24 NVIDIA WGSL-route decision (JUN-57's own decision,
+  docs/evidence/gpu/nvidia-wgsl-route-decision-20261024.txt): the same
+  rules 3 + 6 gate, the sm_70+ floor included, no warp rung on that
+  route (:warp-shuffle-reduce is CUDA emission only). The Apple row's
+  WGSL question stays UNDECIDED -- one vendor per decision.
   UNMEASURED, almost all of it. Two variant reductions have EXECUTED on
   the vendor hardware a row names, both on Apple M1 Max through
   measurement harnesses: :subgroup-reduce (GLSL arm via wire-42/MoltenVK,
@@ -861,7 +866,9 @@
    "Intel (JUN-59, ADR-0356), ARM (JUN-60, ADR-0357), Apple (JUN-58,
     ADR-0360), NVIDIA (JUN-57, ADR-0361 -- the Vulkan route, and the
     CUDA route as the ladder's second rung under :warp-shuffle-reduce's
-    precedence) and AMD (JUN-84, ADR-0364 -- the Vulkan and WGSL routes)
+    precedence; the WGSL route too since the 2026-10-24 NVIDIA WGSL-route
+    decision, docs/evidence/gpu/nvidia-wgsl-route-decision-20261024.txt)
+    and AMD (JUN-84, ADR-0364 -- the Vulkan and WGSL routes)
     subgroup reduce: an
     intra-subgroup fold whose width is queried at RUNTIME (gl_SubgroupSize)
     and never baked in -- Intel subgroup size is device-chosen among
@@ -959,15 +966,20 @@
     does not confirm it answers :baseline, fail closed).
 
   - :subgroup-reduce -- Intel (JUN-59), ARM (JUN-60), Apple (JUN-58,
-    ADR-0360), NVIDIA on the Vulkan route (JUN-57, ADR-0361) and AMD
+    ADR-0360), NVIDIA (JUN-57, ADR-0361) and AMD
     (JUN-84, ADR-0364) reduction
     kernels
     over :sum/:max/:min with a workgroup of at least one subgroup floor
     (the emission's own predicate, kotoba.compiler.accelerator-subgroup-
     reduce/applicable?), on the Vulkan route (:vulkan or :glsl-v1) for all
-    five vendors, for Intel, ARM and AMD (ADR-0363; for :amd ADR-0364)
+    five vendors, for Intel, ARM, AMD and NVIDIA (ADR-0363; for :amd
+    ADR-0364; for :nvidia the 2026-10-24 NVIDIA WGSL-route decision,
+    JUN-57's own decision,
+    docs/evidence/gpu/nvidia-wgsl-route-decision-20261024.txt)
     on the WGSL route
-    (:webgpu or :wgsl-v1 -- the vendor-default target for all three), for
+    (:webgpu or :wgsl-v1 -- the vendor-default target for Intel, ARM and
+    AMD; NVIDIA reaches the route by naming it, its vendor-default target
+    is the CUDA route), for
     Apple ONLY (ADR-0360's 2026-10-23 amendment, JUN-58's own decision) on
     the MSL route (:metal or :msl-v1 -- Apple's vendor-default target),
     and for NVIDIA (ADR-0361's same-day amendment, JUN-57's own decision)
@@ -1189,9 +1201,20 @@
                   ;; ADR-0363: the WGSL route (:webgpu /
                   ;; :wgsl-v1) carries the Intel and ARM rows;
                   ;; ADR-0364 adds :amd (its vendor-default
-                  ;; target, the ADR-0363 rationale).
+                  ;; target, the ADR-0363 rationale). The
+                  ;; 2026-10-24 NVIDIA WGSL-route decision
+                  ;; (docs/evidence/gpu/nvidia-wgsl-route-decision-
+                  ;; 20261024.txt, JUN-57's own decision) adds
+                  ;; :nvidia on the same rules 3 + 6 gate -- the
+                  ;; sm_70+ floor below binds this rung exactly as
+                  ;; it binds every NVIDIA rung, and no warp rung
+                  ;; exists on this route (:warp-shuffle-reduce is
+                  ;; CUDA emission only). The Apple row stays off
+                  ;; this route: its WGSL question is its own
+                  ;; decision and is UNDECIDED (one vendor per
+                  ;; decision).
                   (and (= :wgsl-v1 route)
-                       (contains? #{:intel :arm :amd} vendor))
+                       (contains? #{:intel :arm :amd :nvidia} vendor))
                   ;; ADR-0360's amendment (2026-10-23, JUN-58's
                   ;; own decision): the MSL route (:metal /
                   ;; :msl-v1) carries the Apple row, under the

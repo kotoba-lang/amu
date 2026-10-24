@@ -116,3 +116,12 @@ report does not claim it is.
   execution path in this repository; nothing has run on NVIDIA hardware;
   every answer keeps :measured? false (including both ladder rungs); no
   workgroup row of ADR-0355/0358 is touched (a different axis).
+
+CORRECTION (2026-10-24, later tick -- naming drift only, nothing in this
+record's claims is affected): the test name this record pins --
+`the-nvidia-row-rides-the-vulkan-and-cuda-routes` -- is RENAMED by the
+2026-10-24 NVIDIA WGSL-route decision slice
+(docs/evidence/gpu/nvidia-wgsl-route-decision-20261024.txt) to
+`the-nvidia-row-rides-the-vulkan-cuda-and-wgsl-routes`, which also grows
+that decision's WGSL pins. The row's Vulkan and CUDA answers this record
+describes are byte-for-byte unchanged by that slice.

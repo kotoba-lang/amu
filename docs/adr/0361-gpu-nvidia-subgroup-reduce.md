@@ -191,3 +191,53 @@ producer is invented here. UNCOMPILED and UNMEASURED (no nvcc on the
 testing host, the CUDA emitter has no execution path in this repository,
 nothing has run on NVIDIA hardware); every answer keeps `:measured?
 false`, and no workgroup row is touched.
+
+**Amendment (2026-10-24, the NVIDIA WGSL-route selection question is
+DECIDED).** The question ADR-0356's `:wgsl-v1`-selection amendment named
+and left open -- "the Apple and NVIDIA rows stay Vulkan-route-only (their
+ADRs' scope; extending either is a separate per-vendor decision,
+undecided)" -- is decided HERE as to NVIDIA (JUN-57's own decision; one
+vendor per decision -- the Apple row's WGSL question stays UNDECIDED):
+YES, the WGSL route (`:webgpu` / `:wgsl-v1`, one route two names, the
+ADR-0359 decision-3 idiom) carries NVIDIA's `:subgroup-reduce` row under
+the SAME rules 3 + 6 gate as the Vulkan route, decided in three parts.
+
+**Part 1: the row extends, with no ladder on this route.**
+`select-variant` answers `:subgroup-reduce` for `:nvidia` on
+`:webgpu` / `:wgsl-v1` whenever the rule-6 facts hold. There is NO
+`:warp-shuffle-reduce` rung on this route -- that variant is CUDA
+emission only (rule 3: admission first, and the CUDA emitter is not the
+WGSL route's emitter) -- so the row is the route's first and only variant
+rung: `:subgroup-reduce` -> `:baseline`, total and deterministic. The
+precedence question the CUDA ladder answers does not arise here.
+
+**Part 2: the sm_70+ floor rides along, unchanged.** The floor is
+NVIDIA's row-wide requirement (the earlier amendment: "whenever the
+descriptor reports a compute capability at all, one below 7.0 (or a
+malformed one) answers `:baseline`, fail closed; an absent capability is
+not a refusal"), and it binds this rung exactly as it binds the Vulkan
+and CUDA rungs -- the gate is route-agnostic in the table. No new floor,
+no new fact and no new key is invented.
+
+**Part 3: the rationale is the AMD row's, plus route reality.** The WGSL
+arm of the shared emission is the same runtime-width fold as every other
+arm (`subgroup_size` queried at runtime, no baked width), so the
+heterogeneity question the AMD row settled ("the RDNA wave32/wave64
+duality is answered by the emission's runtime width query and rule 6's
+`S | W` gate, not by selection") answers NVIDIA's fixed warp width a
+fortiori -- 32 is just the reported `S`. And WebGPU-on-NVIDIA is a
+deployed surface (browser and wgpu/Dawn-native stacks on NVIDIA hardware);
+a dispatch on that surface previously answered `:baseline` even where the
+device reports the fold's facts -- an honest but avoidable refusal now
+that the emission arm exists and is admitted. Nothing here extends the
+`CUDA`-route ladder or the `:warp-shuffle-reduce` row; the questions of
+an Apple WGSL row and of any further vendor/route pair stay UNDECIDED,
+one vendor per decision.
+
+Implemented with tests (the selection row and its pins); UNCOMPILED (the
+WGSL arm -- no WGSL compiler or validator on the testing host, the same
+regime as when the arm landed) and UNMEASURED (no NVIDIA hardware has run
+anything, no WebGPU execution path exists): every answer keeps
+`:measured? false`, no `:shapes` / `:evidence` / flip cell and no
+workgroup row (ADR-0355/0358) is touched. The slice record is
+`docs/evidence/gpu/nvidia-wgsl-route-decision-20261024.txt`.
