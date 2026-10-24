@@ -1026,3 +1026,62 @@ conditions, and everything the record's NOT LICENSED list names.
 
 Record: `docs/evidence/gpu/w1024-strict-bin-reachability-20261024.txt`
 (this slice ran no hardware measurement).
+
+**Amendment (2026-10-24, the WGSL-route selection question is
+DECIDED).** The one route question this row left named and undecided --
+ADR-0356's 2026-10-23 `:wgsl-v1`-selection amendment said "the Apple and
+NVIDIA rows stay Vulkan-route-only ... extending either is a separate
+per-vendor decision, undecided", and the NVIDIA half was decided
+2026-10-24 (ADR-0361's amendment) leaving "the Apple row's WGSL question
+stays UNDECIDED" -- is answered here (JUN-58's own decision, one vendor
+per decision; record:
+`docs/evidence/gpu/apple-wgsl-route-decision-20261024.txt`). Decided in
+three parts:
+
+YES -- the WGSL route (`:webgpu` / `:wgsl-v1`, one route two names, the
+ADR-0359 decision-3 idiom) carries the Apple `:subgroup-reduce` row
+under the SAME rules 3 + 6 gate as the Vulkan and MSL routes.
+
+  Part 1 -- the row extends with no new gate: the WGSL arm of the shared
+    subgroup-size-parametric emission already exists (the ADR-0363
+    idiom: emission first, selection after), the fold's width is queried
+    at runtime and never baked in (rule 6's `S | W` gate), and no new
+    fact, key or floor is invented. Apple reaches this route by NAMING
+    it -- ADR-0355's Apple vendor-default target stays `:msl-v1` --
+    exactly as NVIDIA reaches it by naming it.
+  Part 2 -- the measured-device narrowing RIDES ALONG. A descriptor
+    naming the measured device (the "m1 max" fragment) answers
+    `:baseline` on the WGSL route too: the refutation is of the FOLD on
+    that device (it measured slower than `:baseline` on the two arms
+    that ran -- GLSL via MoltenVK and MSL natively), and the refuted
+    variant is not selected on the device that refuted it on any route
+    that spells the same fold. The WGSL arm on that device is
+    UNMEASURED; the conservative answer is the measured one. This is a
+    DECISION, not a measurement claim: the narrowing's `:measured-cell`
+    records stay MSL-scoped (an MSL measurement never flips a WGSL
+    cell), so every WGSL answer -- the narrowed `:baseline` included --
+    keeps `:measured? false`. REOPEN CONDITION: a WGSL-arm measurement
+    of the narrowed device is new evidence and may revisit the
+    narrowing's route scope.
+  Part 3 -- rationale, all of it design fact and not measurement:
+    WebGPU-on-Apple is a deployed surface (WebKit ships WebGPU; on
+    macOS the browser's WebGPU runs over Metal), so a dispatch there
+    previously answered `:baseline` even where the device reports the
+    fold's facts; and the AMD row's runtime-width answer covers
+    Apple's fixed SIMD-group width a fortiori -- 32 is just the
+    reported `S`.
+
+What this amendment does NOT change: `:simdgroup-reduce` stays MSL-only
+(rule 3: its emission is admitted on `:msl-v1` only; an Apple WGSL
+descriptor reporting only `:simd-reduce` facts fails closed to
+`:baseline`); the MSL ladder, the flip cells and every `:measured-cell`
+record are byte-for-byte unchanged; no workgroup row (ADR-0355/0358)
+moves. UNCOMPILED (the WGSL arm: no validator on this host) and
+UNMEASURED (no WebGPU execution path in this repository, and no Apple
+hardware has run the WGSL arm) -- every answer this route gives keeps
+`:measured? false`. After this decision no route question is UNDECIDED
+for the five designed rows.
+
+State: the decision is ACCEPTED DESIGN ONLY (this amendment); the
+selection row it names is IMPLEMENTED with tests (one set membership in
+`kotoba.compiler.accelerator-variants`, gate evidence in the record).

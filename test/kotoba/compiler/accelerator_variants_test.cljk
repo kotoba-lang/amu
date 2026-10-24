@@ -120,7 +120,7 @@
           (is (= :baseline
                  (:variant (variants/select-variant vendor kir target device)))
               (str "device " (pr-str device) " must fail closed")))))
-    (testing "a target outside the rows' routes (ADR-0363 moved the WGSL route in for Intel/ARM and ADR-0364 for AMD; the 2026-10-24 NVIDIA WGSL-route decision moved it in for NVIDIA; the ADR-0360 amendment moved the MSL route in for Apple; the ADR-0361 amendment moved the CUDA route in for NVIDIA -- its second rung)"
+    (testing "a target outside the rows' routes (ADR-0363 moved the WGSL route in for Intel/ARM and ADR-0364 for AMD; the 2026-10-24 NVIDIA WGSL-route decision moved it in for NVIDIA; the ADR-0360 amendment moved the MSL route in for Apple; the 2026-10-24 Apple WGSL-route decision moved it in for Apple too; the ADR-0361 amendment moved the CUDA route in for NVIDIA -- its second rung)"
       (doseq [target [:cuda :cuda-v1 nil]]
         (is (= :baseline (:variant (variants/select-variant :intel kir target capable))))
         (is (= :baseline (:variant (variants/select-variant :arm kir target capable))))
@@ -134,16 +134,15 @@
         (is (= :baseline (:variant (variants/select-variant :arm kir target capable))))
         (is (= :baseline (:variant (variants/select-variant :nvidia kir target capable))))
         (is (= :baseline (:variant (variants/select-variant :amd kir target capable)))))
-      ;; The WGSL route carries the Intel, ARM, AMD and -- since the
-      ;; 2026-10-24 NVIDIA WGSL-route decision (JUN-57's own decision,
-      ;; docs/evidence/gpu/nvidia-wgsl-route-decision-20261024.txt) --
-      ;; NVIDIA rows (ADR-0363, extended to :amd by ADR-0364 and to
-      ;; :nvidia by that decision); the Apple row keeps its ADR's routes
-      ;; (its WGSL question is its own, UNDECIDED). The NVIDIA WGSL
-      ;; positive pin lives in the-nvidia-row-rides-the-vulkan-cuda-and-
-      ;; wgsl-routes.
-      (doseq [target [:webgpu :wgsl-v1]]
-        (is (= :baseline (:variant (variants/select-variant :apple kir target capable))))))
+      ;; The WGSL route carries all five designed rows' :subgroup-reduce
+      ;; (ADR-0363 for Intel/ARM, ADR-0364 for :amd, the 2026-10-24 NVIDIA
+      ;; WGSL-route decision for :nvidia and the 2026-10-24 Apple WGSL-route
+      ;; decision for :apple (JUN-58's own decision,
+      ;; docs/evidence/gpu/apple-wgsl-route-decision-20261024.txt) -- this
+      ;; spot's :apple refusal pin FLIPPED with that decision and is gone;
+      ;; the positive pins live in each vendor's own route battery
+      ;; (the-apple-row-rides-the-vulkan-msl-and-wgsl-routes for :apple).
+      )
     (testing "a vendor outside the designed rows"
       (doseq [vendor [:unknown :qualcomm]]
         (is (= :baseline (:variant (variants/select-variant vendor kir :vulkan capable))))))
@@ -201,31 +200,45 @@
     (doseq [vendor [:intel :arm :apple :nvidia :amd] target [:vulkan :glsl-v1]]
       (is (= :subgroup-reduce
              (:variant (variants/select-variant vendor reduce-kir target capable)))))
-    (doseq [vendor [:intel :arm :amd :nvidia] target [:webgpu :wgsl-v1]]
+    (doseq [vendor [:intel :arm :amd :nvidia :apple] target [:webgpu :wgsl-v1]]
       (is (= :subgroup-reduce
              (:variant (variants/select-variant vendor reduce-kir target capable)))))
     (doseq [target [:metal :msl-v1]]
       (is (= :subgroup-reduce
              (:variant (variants/select-variant :apple reduce-kir target capable)))))))
 
-(deftest the-apple-row-rides-the-vulkan-and-msl-routes
+(deftest the-apple-row-rides-the-vulkan-msl-and-wgsl-routes
   ;; ADR-0360 (JUN-58) as amended 2026-10-23 (JUN-58's own decision): the
   ;; Apple row is the shared subgroup-size-parametric emission on the
   ;; Vulkan route (MoltenVK is Apple's only EXECUTION route here) AND on
   ;; the MSL route -- :metal (api) / :msl-v1 (emitter target), one route
-  ;; under two names, the ADR-0359 decision-3 idiom. Rule 3 holds on both
-  ;; (the MSL arm of the emission landed 2026-10-23 and lower admits
-  ;; (:msl-v1, :subgroup-reduce)), and rule 6 is the same descriptor gate
-  ;; on both routes -- the keys are the contract, whatever fills them. The
-  ;; WGSL route does NOT carry Apple (ADR-0363's scope is Intel/ARM).
+  ;; under two names, the ADR-0359 decision-3 idiom -- AND, since the
+  ;; 2026-10-24 Apple WGSL-route decision (JUN-58's own decision,
+  ;; docs/evidence/gpu/apple-wgsl-route-decision-20261024.txt), on the
+  ;; WGSL route (:webgpu / :wgsl-v1) under the same rules 3 + 6 gate.
+  ;; Rule 3 holds on every route (the MSL arm of the emission landed
+  ;; 2026-10-23 and lower admits (:msl-v1, :subgroup-reduce)), and rule 6
+  ;; is the same descriptor gate on every route -- the keys are the
+  ;; contract, whatever fills them. The measured-device narrowing rides
+  ;; along on the WGSL route (tested in
+  ;; the-apple-row-is-narrowed-on-the-measured-device) and no simdgroup
+  ;; rung exists there (:simdgroup-reduce is MSL emission only, rule 3).
+  ;; UNCOMPILED on the WGSL arm (no validator on this host) and
+  ;; UNMEASURED -- no WebGPU execution path exists.
   (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
+        ewise (accelerator/kernel "ewise_add_f32" :ewise :add {:workgroup-size 256})
+        malformed (assoc kir :kernel/dtype :f64)
         capable {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}]
-    (doseq [target [:vulkan :glsl-v1 :metal :msl-v1]]
+    (doseq [target [:vulkan :glsl-v1 :metal :msl-v1 :webgpu :wgsl-v1]]
       (let [answer (variants/select-variant :apple kir target capable)]
         (is (= :subgroup-reduce (:variant answer)))
         (is (false? (:measured? answer)))
         (is (str/includes? (:basis answer) "ADR-0360"))))
-    (doseq [target [:webgpu :wgsl-v1 :cuda :cuda-v1]]
+    (testing "the WGSL positive names the 2026-10-24 decision in :basis on both spellings"
+      (doseq [target [:webgpu :wgsl-v1]]
+        (is (str/includes? (:basis (variants/select-variant :apple kir target capable))
+                           "apple-wgsl-route-decision-20261024"))))
+    (doseq [target [:cuda :cuda-v1]]
       (is (= :baseline (:variant (variants/select-variant :apple kir target capable)))))
     (testing "the same rule-6 gate fails closed on the MSL route"
       (doseq [device [nil
@@ -253,7 +266,41 @@
         ;; amendment of ADR-0356).
         (is (str/includes? (:code compiled) "kernel void reduce_sum_f32"))
         (is (not (str/includes? (:code compiled) "kernel void main")))
-        (is (= compiled (accelerator/verify-artifact! compiled)))))))
+        (is (= compiled (accelerator/verify-artifact! compiled)))))
+    (testing "the same rule-6 gate fails closed on the WGSL route too"
+      (doseq [device [nil
+                      {}
+                      {:subgroup-size 32}
+                      {:subgroup-ops #{:basic :shuffle-relative}}
+                      {:subgroup-size 32 :subgroup-ops #{:basic}}
+                      {:subgroup-size 32 :subgroup-ops #{:shuffle-relative}}
+                      {:subgroup-size 24 :subgroup-ops #{:basic :shuffle-relative}}]
+              target [:webgpu :wgsl-v1]]
+        (is (= :baseline (:variant (variants/select-variant :apple kir target device)))
+            (str "device " (pr-str device) " must fail closed on the WGSL route")))
+      (doseq [target [:webgpu :wgsl-v1]]
+        (is (= :baseline (:variant (variants/select-variant :apple ewise target capable))))
+        (is (= :baseline (:variant (variants/select-variant :apple malformed target capable))))))
+    (testing "no simdgroup rung on the WGSL route: :simd-reduce facts alone answer :baseline there"
+      ;; :simdgroup-reduce is MSL emission only (rule 3): an Apple WGSL
+      ;; descriptor reporting ONLY the simd fold's fact must fail closed,
+      ;; not select a variant the WGSL emitter does not admit.
+      (doseq [target [:webgpu :wgsl-v1]]
+        (is (= :baseline
+               (:variant (variants/select-variant
+                          :apple kir target
+                          {:subgroup-size 32 :subgroup-ops #{:simd-reduce}}))))))
+    (testing "rule 3 end to end on the WGSL route: the selected variant lowers, seals and verifies on :wgsl-v1"
+      (let [selected (:variant (variants/select-variant :apple kir :wgsl-v1 capable))
+            compiled (accelerator/compile-kernel kir :wgsl-v1 selected)]
+        (is (= :subgroup-reduce selected))
+        (is (= :subgroup-reduce (:variant compiled)))
+        (is (nil? (re-find #"d:u32=\d+u" (:code compiled)))
+            "a baked fold width leaked into the WGSL emission")
+        (is (= compiled (accelerator/verify-artifact! compiled)))))
+    (testing "same arguments in, same map out (WGSL route included)"
+      (is (= (variants/select-variant :apple kir :wgsl-v1 capable)
+             (variants/select-variant :apple kir :wgsl-v1 capable))))))
 
 (deftest the-apple-row-is-narrowed-on-the-measured-device
   ;; ADR-0360's SECOND decision (2026-10-23, JUN-58): what the Apple row
@@ -265,12 +312,15 @@
   ;; corroboration), and evidence about a named device acts on that device
   ;; only (the uB5G idiom of kotoba.compiler.accelerator-targets). So the
   ;; row is NARROWED: a descriptor naming the measured device answers
-  ;; :baseline for the reduce shape on both Apple routes, with the
+  ;; :baseline for the reduce shape on every Apple route (the WGSL route
+  ;; included since the 2026-10-24 Apple WGSL-route decision -- its arm
+  ;; on this device is UNMEASURED and the conservative answer is the
+  ;; measured one), with the
   ;; refutation in :basis; every other Apple device keeps the designed row
   ;; (UNMEASURED).
   (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
         capable {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}]
-    (testing "the measured device answers :baseline on both Apple routes, at every W"
+    (testing "the measured device answers :baseline on every Apple route (WGSL included since the 2026-10-24 Apple WGSL-route decision), at every W"
       (doseq [device [(assoc capable :vendor "Apple M1 Max")
                       (assoc capable :name "Apple M1 Max")
                       (assoc capable :device "Apple M1 Max")
@@ -279,7 +329,7 @@
                       ;; the INFO-derived descriptor shape
                       (assoc capable :vendor "Apple M1 Max"
                              :max-workgroup-x 1024 :unified-memory? true)]
-              target [:vulkan :glsl-v1 :metal :msl-v1]
+              target [:vulkan :glsl-v1 :metal :msl-v1 :webgpu :wgsl-v1]
               operator [:sum :max :min]
               wg [32 64 128 256 512]]
         (let [k (accelerator/kernel (str "reduce_" (name operator) "_f32")
@@ -319,7 +369,7 @@
                       ;; an UNNAMED descriptor: no name, no evidence
                       (assoc capable :vendor-id 4203)
                       capable]
-              target [:vulkan :glsl-v1 :metal :msl-v1]]
+              target [:vulkan :glsl-v1 :metal :msl-v1 :webgpu :wgsl-v1]]
         (let [answer (variants/select-variant :apple kir target device)]
           (is (= :subgroup-reduce (:variant answer))
               (str "device " (pr-str device) " must keep the designed row"))
@@ -1339,9 +1389,12 @@
   ;; NVIDIA WGSL-route decision (JUN-57's own decision,
   ;; docs/evidence/gpu/nvidia-wgsl-route-decision-20261024.txt); its pins
   ;; live in the-nvidia-row-rides-the-vulkan-cuda-and-wgsl-routes. The
-  ;; Apple row now rides the MSL route too (the ADR-0360 amendment,
-  ;; tested in the-apple-row-rides-the-vulkan-and-msl-routes) and stays
-  ;; off the WGSL route -- its own question, UNDECIDED. ADR-0364
+  ;; Apple row joined this route by the 2026-10-24 Apple WGSL-route
+  ;; decision (JUN-58's own decision,
+  ;; docs/evidence/gpu/apple-wgsl-route-decision-20261024.txt); its pins
+  ;; live in the-apple-row-rides-the-vulkan-msl-and-wgsl-routes (that
+  ;; test also names the measured-device narrowing riding along on this
+  ;; route). ADR-0364
   ;; (2026-10-23) adds the AMD row to this route
   ;; too; that row is pinned in the-amd-row-rides-the-vulkan-and-wgsl-routes.
   ;; Everything here is

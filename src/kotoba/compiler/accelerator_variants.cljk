@@ -18,8 +18,16 @@
   2026-10-24 NVIDIA WGSL-route decision (JUN-57's own decision,
   docs/evidence/gpu/nvidia-wgsl-route-decision-20261024.txt): the same
   rules 3 + 6 gate, the sm_70+ floor included, no warp rung on that
-  route (:warp-shuffle-reduce is CUDA emission only). The Apple row's
-  WGSL question stays UNDECIDED -- one vendor per decision.
+  route (:warp-shuffle-reduce is CUDA emission only). The Apple row
+  rides the WGSL route too since the 2026-10-24 Apple WGSL-route
+  decision (JUN-58's own decision,
+  docs/evidence/gpu/apple-wgsl-route-decision-20261024.txt): the same
+  rules 3 + 6 gate, the measured-device narrowing riding along (the
+  narrowed class answers :baseline on that route too -- its WGSL arm is
+  UNMEASURED and the refuted variant is not selected on the device that
+  refuted it), and no simdgroup rung on that route
+  (:simdgroup-reduce is MSL emission only). No route question is
+  UNDECIDED for the five designed rows after this decision.
   UNMEASURED, almost all of it. Two variant reductions have EXECUTED on
   the vendor hardware a row names, both on Apple M1 Max through
   measurement harnesses: :subgroup-reduce (GLSL arm via wire-42/MoltenVK,
@@ -864,7 +872,9 @@
     :max/:min are order-independent)."
    :subgroup-reduce
    "Intel (JUN-59, ADR-0356), ARM (JUN-60, ADR-0357), Apple (JUN-58,
-    ADR-0360), NVIDIA (JUN-57, ADR-0361 -- the Vulkan route, and the
+    ADR-0360 -- the Vulkan route, the MSL route, and the WGSL route
+    since the 2026-10-24 Apple WGSL-route decision,
+    docs/evidence/gpu/apple-wgsl-route-decision-20261024.txt), NVIDIA (JUN-57, ADR-0361 -- the Vulkan route, and the
     CUDA route as the ladder's second rung under :warp-shuffle-reduce's
     precedence; the WGSL route too since the 2026-10-24 NVIDIA WGSL-route
     decision, docs/evidence/gpu/nvidia-wgsl-route-decision-20261024.txt)
@@ -972,14 +982,16 @@
     over :sum/:max/:min with a workgroup of at least one subgroup floor
     (the emission's own predicate, kotoba.compiler.accelerator-subgroup-
     reduce/applicable?), on the Vulkan route (:vulkan or :glsl-v1) for all
-    five vendors, for Intel, ARM, AMD and NVIDIA (ADR-0363; for :amd
+    five vendors, for Intel, ARM, AMD, NVIDIA and Apple (ADR-0363; for :amd
     ADR-0364; for :nvidia the 2026-10-24 NVIDIA WGSL-route decision,
     JUN-57's own decision,
-    docs/evidence/gpu/nvidia-wgsl-route-decision-20261024.txt)
+    docs/evidence/gpu/nvidia-wgsl-route-decision-20261024.txt; for :apple
+    the 2026-10-24 Apple WGSL-route decision, JUN-58's own decision,
+    docs/evidence/gpu/apple-wgsl-route-decision-20261024.txt)
     on the WGSL route
     (:webgpu or :wgsl-v1 -- the vendor-default target for Intel, ARM and
-    AMD; NVIDIA reaches the route by naming it, its vendor-default target
-    is the CUDA route), for
+    AMD; NVIDIA and Apple reach the route by naming it, their
+    vendor-default targets are the CUDA and MSL routes), for
     Apple ONLY (ADR-0360's 2026-10-23 amendment, JUN-58's own decision) on
     the MSL route (:metal or :msl-v1 -- Apple's vendor-default target),
     and for NVIDIA (ADR-0361's same-day amendment, JUN-57's own decision)
@@ -1188,9 +1200,13 @@
          ;; row is NARROWED to the measured device. A descriptor naming
          ;; the measured device (its name parts carry the fragment
          ;; "m1 max", uB5G idiom) answers :baseline for the reduce shape
-         ;; on both Apple routes -- the row's own basis is refuted there
+         ;; on every Apple route -- the Vulkan, MSL and (since the
+         ;; 2026-10-24 Apple WGSL-route decision) WGSL routes -- the
+         ;; row's own basis is refuted there
          ;; by hardware (the variant measured ~20-27% slower on the GLSL
-         ;; arm and ~22% slower on the MSL arm). Every other Apple device
+         ;; arm and ~22% slower on the MSL arm; the WGSL arm on this
+         ;; device is UNMEASURED and the conservative answer is the
+         ;; measured one). Every other Apple device
          ;; keeps the designed row (UNMEASURED).
          apple-narrowed-device?
          (and (= :apple vendor)
@@ -1209,12 +1225,20 @@
                   ;; sm_70+ floor below binds this rung exactly as
                   ;; it binds every NVIDIA rung, and no warp rung
                   ;; exists on this route (:warp-shuffle-reduce is
-                  ;; CUDA emission only). The Apple row stays off
-                  ;; this route: its WGSL question is its own
-                  ;; decision and is UNDECIDED (one vendor per
-                  ;; decision).
+                  ;; CUDA emission only). The 2026-10-24 Apple
+                  ;; WGSL-route decision
+                  ;; (docs/evidence/gpu/apple-wgsl-route-decision-
+                  ;; 20261024.txt, JUN-58's own decision) adds
+                  ;; :apple on the same rules 3 + 6 gate -- the
+                  ;; measured-device narrowing below rides along
+                  ;; (the narrowed class answers :baseline on this
+                  ;; route too; its WGSL arm is UNMEASURED and the
+                  ;; refuted variant is not selected on the device
+                  ;; that refuted it), and no simdgroup rung exists
+                  ;; on this route (:simdgroup-reduce is MSL
+                  ;; emission only).
                   (and (= :wgsl-v1 route)
-                       (contains? #{:intel :arm :amd :nvidia} vendor))
+                       (contains? #{:intel :arm :amd :nvidia :apple} vendor))
                   ;; ADR-0360's amendment (2026-10-23, JUN-58's
                   ;; own decision): the MSL route (:metal /
                   ;; :msl-v1) carries the Apple row, under the
