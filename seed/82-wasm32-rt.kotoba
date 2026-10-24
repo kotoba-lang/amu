@@ -25,6 +25,10 @@
 ;;   is refused by name, as an ungranted wire is;
 ;; - every other capability is refused by name (its bit is never set; kotoba:host/cap, which refuses
 ;;   everything, is where the consent broker plugs in, Phase 2); start(fuel) always writes the report.
+;; - JUN-364: every refusal also writes seed/77's named line (kxrt-cap-trap, cut from seed/77 with the traps),
+;;   KEXE_TRAP {:kind :capability :wire W :refusal :NAME}, with the native name where the native runtime
+;;   refuses the same request (:not-admitted, :stat, :malformed, ..) and :wasm32-browser where only the
+;;   browser host does (WRITE, APPEND, RANGE, .. of wire 35). A KEXE_CAP line keeps coming first, unchanged.
 (defn- xw-rt-cut [T :string a :string b :string] :string
   (let [i (string-index-of T a)
         j (if (< i 0) -1 (string-index-of (string-substring T i (string-length T)) b))]
@@ -84,10 +88,11 @@
 (defn- xw-rt-caps [] :string
 "
 ;; ---- capabilities: refused by name ----
-(defn- kxrt-cap-refused [id :i64] :i64
+;; KEXE_CAP {:wire W :refused :wasm32-browser}, then the named trap line of the refusal code (kxrt-cap-trap)
+(defn- kxrt-cap-refused [id :i64 code :i64] :i64
   (let [b (kxrt-gl 200) z (kxrt-flush) i (kxrt-w b (kxrt-w b 0 0x5041435f4558454b 8) 0x20657269773a7b20 8)
         j (+ i (kxrt-dec (+ b i) id)) y (kxrt-err-text b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b j 0x6573756665723a20 8) 0x336d7361773a2064 8) 0x6573776f72622d32 8) 0xa7d72 3))]
-    (kxrt-fail)))
+    (kxrt-cap-trap id code)))
 ;; ---- the entry ABI: the run's own data (wires 35 read-only, 37, 38, 39) ----
 ;; input (kind, i, a, n) as a fresh pool string, or -1 when the host has none
 (defn- kxrt-in [kind :i64 i :i64 a :i64 n :i64] :i64
@@ -96,22 +101,24 @@
           (> len (- KXRT-POOL u)) (kxrt-budget 4)
           :else (if (= (kxrt-host-input kind i a n (+ (kxrt-gl 24) u) len) len)
                   (let [w (kxrt-gs 32 (+ u len))] (kxrt-pair-new (- -1 u) len))
-                  (kxrt-fail)))))
+                  (kxrt-cap-trap (if (= kind 0) 38 35) 7)))))
 ;; wire 38, as seed/77 kxrt-args: the empty request is the count, I is argument I (empty past the end)
 (defn- kxrt-in-args [h :i64] :i64
   (let [v (kxrt-valid h) a (kxrt-saddr h) n (kxrt-ps h) c (kxrt-host-input 0 -1 0 0 0 0) argc (if (< c 0) 0 c)]
     (cond (= n 0) (kxrt-intern-dec argc)
-          (>= n 20) (kxrt-fail)
+          (>= n 20) (kxrt-cap-trap 38 4)
           :else (let [i (kxrt-parse a n)]
-                  (cond (< i 0) (kxrt-fail)
+                  (cond (< i 0) (kxrt-cap-trap 38 4)
                         (>= i argc) (kxrt-intern a 0)
                         :else (let [r (kxrt-in 0 i 0 0)] (if (< r 0) (kxrt-intern a 0) r)))))))
-;; wire 35, read-only: PATH EXISTS_SEP answers 1 or 0, any other _SEP token is refused, else the bytes of PATH
+;; wire 35, read-only: PATH EXISTS_SEP answers 1 or 0, any other _SEP token is refused (by its native name
+;; when no runtime serves it, else :wasm32-browser), else the bytes of PATH (:open-failed when there are none)
 (defn- kxrt-in-fs [h :i64] :i64
-  (let [v (kxrt-valid h) a (kxrt-saddr h) n (kxrt-ps h) ei (kxrt-find a n 0x535f535453495845 0x5045 10)]
+  (let [v (kxrt-valid h) a (kxrt-saddr h) n (kxrt-ps h) ei (kxrt-find a n 0x535f535453495845 0x5045 10)
+        k (kxrt-fs-refused a n)]
     (cond (>= ei 0) (kxrt-intern-dec (if (< (kxrt-host-input 1 0 a ei 0 0) 0) 0 1))
-          (>= (kxrt-find a n 0x5045535f 0 4) 0) (kxrt-cap-refused 35)
-          :else (let [r (kxrt-in 1 0 a n)] (if (< r 0) (kxrt-fail) r)))))
+          (>= (kxrt-find a n 0x5045535f 0 4) 0) (kxrt-cap-refused 35 (if (> k 0) k 16))
+          :else (let [r (kxrt-in 1 0 a n)] (if (< r 0) (kxrt-cap-trap 35 6) r)))))
 ;; the page's grants: the allow bitmap's word for wires 0..63, from 35, 37, 38 and 39 only
 (defn- kxrt-in-allow [] :i64
   (loop [k 0 acc 0]
@@ -119,15 +126,15 @@
       (let [w (case k 0 35 1 37 2 38 39)]
         (recur (inc k) (if (= (kxrt-host-input 2 w 0 0 0 0) 1) (bit-or acc (i64-shift-left 1 w)) acc))))))
 (defn- kxrt-typed-cap-call [id :i64 rk :i64 sk :i64 req :i64] :i64
-  (cond (not (kxrt-admitted? id)) (kxrt-cap-refused id)
-        (not= rk sk) (kxrt-fail)
+  (cond (not (kxrt-admitted? id)) (kxrt-cap-refused id 1)
+        (not= rk sk) (kxrt-cap-trap id 3)
         (and (= rk 1) (= id 37)) (kxrt-valid (kxrt-io-write req))
         (and (= rk 1) (= id 39)) (kxrt-valid (kxrt-io-error req))
         (and (= rk 1) (= id 38)) (kxrt-valid (kxrt-in-args req))
         (and (= rk 1) (= id 35)) (kxrt-valid (kxrt-in-fs req))
         (= rk 1) (let [v (kxrt-valid req) r (kxrt-host-cap id (kxrt-saddr req) (kxrt-ps req))]
-                   (if (< r 0) (kxrt-cap-refused id) (kxrt-fail)))
-        :else (kxrt-cap-refused id)))
+                   (if (< r 0) (kxrt-cap-refused id 16) (kxrt-cap-trap id 16)))
+        :else (kxrt-cap-refused id 3)))
 
 ")
 (defn- xw-rt-start [] :string
@@ -150,7 +157,7 @@
         f1 (kxrt-store64 (+ ctx 8) (kxrt-gl 168))
         rp (kxrt-gs 160 1)
         r (kxrt-call-main ctx)
-        e2 (if (= (kxrt-flush) 1) 0 (kxrt-fail))
+        e2 (if (= (kxrt-flush) 1) 0 (kxrt-cap-trap 37 8))
         z (kxrt-report r)]
     (kxrt-exit 0)))
 ")

@@ -283,6 +283,32 @@ match its pinned result, trap and remaining fuel.
 
 The consent broker (`kotoba:host/cap`) is Phase 2 (JUN-353).
 
+### Named capability refusals (JUN-364)
+
+A refused capability request is named before the runtime traps, so a refusal is
+never a bare SIGILL. seed/76, seed/77 and seed/82 write one stderr line, then
+trap as before (SIGILL, exit 120, the same report):
+
+```text
+KEXE_TRAP {:kind :capability :wire 35 :refusal :stat}
+KEXE_TRAP {:kind :signal :signal :SIGILL}
+```
+
+The writer, `kxrt-cap-trap`, sits in the traps section, and the wire-35 token
+table, `kxrt-fs-refused`, next to `kxrt-admitted?`. seed/82 cuts both from
+seed/77, so the three runtimes spell the same names. seed/82 still writes its
+`KEXE_CAP {:wire W :refused :wasm32-browser}` line first, unchanged; a request
+that only the browser host refuses (WRITE, RANGE, .. of wire 35) is named
+`:wasm32-browser`. The names are listed in `X86_64-LINUX-ABI`.
+
+`refusal-cases.json` holds the checked cases: a RANGE outside the file, two
+RANGE tokens, STAT, a missing file, a wire not in `KEXE_ALLOW`, an admitted
+wire the runtime does not serve (33 `:env/read`) and a malformed `:cli/args`
+request. Each must exit 120 with exactly its line and the trap line on stderr:
+on aarch64-linux in the bootstrap's pr tier, on x86_64-linux in
+`check-x86_64-native.py` and as wasm32-browser modules in
+`check-wasm32-browser.py` (the Chrome step of `qualify-x86_64`).
+
 ### The entry ABI (Phase 3)
 
 A guest gets its input and gives its output through the same wires as a native

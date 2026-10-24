@@ -34,7 +34,7 @@ source every day.
 
 | Tier | Trigger | arm64 (`selfhost-bootstrap.py --tier`) | x86_64 (`check-x86_64-native.py --tier`) |
 |---|---|---|---|
-| `pr` | pull request | F → F′ (= root; otherwise F′ must rebuild itself); F's runners and x86_64 compiler; F's core route = adoption image; packed arity refusal (E7105); named diagnostic with a source span (E2101, JUN-334); runtime boundary corpus; 24 cases; the 24 cases and two probes compiled to `wasm32-browser`, float refusals (JUN-353); hardening; capabilities | X2 = cross-built compiler; runtime boundary corpus; 24 cases; hardening; the `wasm32-browser` modules in headless Chrome (`check-wasm32-browser.py`) |
+| `pr` | pull request | F → F′ (= root; otherwise F′ must rebuild itself); F's runners and x86_64 compiler; F's core route = adoption image; packed arity refusal (E7105); named diagnostic with a source span (E2101, JUN-334); runtime boundary corpus; 24 cases; the 24 cases and two probes compiled to `wasm32-browser`, float refusals (JUN-353); hardening; capabilities; named capability refusals (`seed/refusal-cases.json`, JUN-364), natively and as `wasm32-browser` modules | X2 = cross-built compiler; runtime boundary corpus; 24 cases; named capability refusals; hardening; the `wasm32-browser` modules, named refusals included, in headless Chrome (`check-wasm32-browser.py`) |
 | `main` | push to main | + G2/G3 through the aarch64 runner (= adoption image); P = pack(G3) rebuilds the core; the Linux selfhost closure S built by F and S′ = S | + X3 = X2; KX64V1 runner G1 = G2 = G3; scalar ELF suite; aiueos objects |
 | `full` | daily schedule, `workflow_dispatch` | + the `00-ns-static` guard; C0 (from S) → the adoption image; C0 → Kw → Pw → F's own container | same as `main` |
 
