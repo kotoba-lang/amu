@@ -95,7 +95,7 @@ exits. This fixed transport is outside the guest's empty capability set.
 ## Process protocol and qualification boundary
 
 Success exits 0 with exactly eight little-endian result bytes. The envelope
-exits 74 if it cannot write all eight. Fuel exhaustion emits no result and
+exits 74 on a returned short/error write. Fuel exhaustion emits no result and
 traps (SIGTRAP on ARM, SIGILL on x86); arithmetic traps are SIGTRAP on ARM
 and SIGFPE on x86. These are the bounded executable protocol, not full VM
 receipts or a general host ABI. Fuel accounting inside an accepted run is
@@ -108,6 +108,10 @@ JUN-371 covers Program CID + compiler/profile/target keyed cache and fresh
 admission; JUN-372 covers signed host/effects/Cell/receipt integration;
 JUN-373 covers heterogeneous nodes and cold/warm performance. No production
 route or runtime class changes here. No speedup or full-VM claim is made.
+
+The standalone image embeds its explicit fuel budget. A code cache for node
+invocations must separate executable identity from a fresh invocation context;
+this process image cannot silently become a budget-independent cached lease.
 
 ## Native verification
 
@@ -123,6 +127,10 @@ budgets, arithmetic traps, infinite loops, eager comparison arguments,
 parallel recur, outer-scope loop initializers, source-injection names,
 unreachable effects, schema/authority/arity/encoding/depth/size refusals.
 The same gate runs in both native CI jobs alongside the existing qualification.
+The upstream CLJK evaluator was not executed: its retired Node/JVM hosts are
+outside the permitted test closure. These source-derived fixed goldens are
+not a whole-VM differential parity result. Broader parity needs a qualified
+native oracle or the canonical conformance corpus in JUN-370.
 
 The wire/semantic migration references reviewed on 2026-10-24 are
 `kotoba-vm/src/kotoba/vm/kototama/program.cljk` (blob
