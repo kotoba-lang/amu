@@ -79,6 +79,7 @@ jobs:
           python3 scripts/seed/check-static-profile-native.py --build "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/static-profile-arm"
           python3 scripts/seed/check-aiueos-value-call-native.py --build "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/live-call-arm"
           python3 scripts/seed/check-aiueos-user-native.py --build "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/user-context-arm"
+          python3 scripts/seed/check-aiueos-desktop-regions-native.py --build "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/desktop-regions-arm"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
@@ -90,6 +91,8 @@ jobs:
             ${{ runner.temp }}/live-call-arm/*/calls.json
             ${{ runner.temp }}/user-context-arm/native-user-context.json
             ${{ runner.temp }}/user-context-arm/*/calls.json
+            ${{ runner.temp }}/desktop-regions-arm/native-desktop-regions.json
+            ${{ runner.temp }}/desktop-regions-arm/*/calls.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
@@ -185,6 +188,7 @@ jobs:
           python3 scripts/seed/check-static-profile-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/static-profile-x86"
           python3 scripts/seed/check-aiueos-value-call-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/live-call-x86"
           python3 scripts/seed/check-aiueos-user-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/user-context-x86"
+          python3 scripts/seed/check-aiueos-desktop-regions-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/desktop-regions-x86"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
@@ -196,6 +200,8 @@ jobs:
             ${{ runner.temp }}/live-call-x86/*/calls.json
             ${{ runner.temp }}/user-context-x86/native-user-context.json
             ${{ runner.temp }}/user-context-x86/*/calls.json
+            ${{ runner.temp }}/desktop-regions-x86/native-desktop-regions.json
+            ${{ runner.temp }}/desktop-regions-x86/*/calls.json
       - name: Kotoba native controller (Amu selfhost and complete24 Kotoba gate)
         run: python3 scripts/seed/check-native-cdci.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/native-cdci"
       - name: Public native product and aliases
