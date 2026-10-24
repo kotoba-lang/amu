@@ -68,10 +68,10 @@
 
 The kernel-integration working branch contains a full39 source candidate,
 including current main's native CLI/CID/FS2 modules and all18 adopted core
-modules. Its checked-in public/root descriptor initially retains current
-main's admitted full33 compiler. Regeneration and exact-head native
-x86/controller qualification of the integrated source are required before
-adoption. Historical ARM/QEMU receipts remain bound to their own sources.
+modules. Its checked-in public/root descriptor names the regenerated full39
+candidate. Native ARM F1=F2 is measured; terminal exact-head native
+x86/controller PR/main qualification is required for acceptance.
+Historical ARM/QEMU receipts remain bound to their own sources.
 The closed v5 project reserves low20KiB for non-live context/catalog. The
 v6 PCI candidate has128KiB RW storage and a64KiB private floor; its copied
 BAR catalog starts at context20480. Live ValueRuntime queue/arena and
