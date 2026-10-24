@@ -1,0 +1,338 @@
+;; JUN-369: a closed, bounded canonical DAG-CBOR frontend, not a second compiler.
+;; Decoded expressions become compiler-owned source with fresh numeric names.
+;; The adopted reader/names/checker/lowerer and scalar native emitters own codegen.
+;; Profile kototama.pure-i64-aot/v1: ASCII text, <=64KiB / 4096 nodes / depth64,
+;; <=32 acyclic methods, <=5 params, <=16 operands, zero-argument declared entry.
+;; No effects/imports, heap, dynamic calls or recursive methods. Every original
+;; expression emits exactly one OP-FUEL; compiler-generated scaffolding emits none.
+;; D header: cursor,error,next-node,input-bytes,last-node. Node width8, base16:
+;; kind (uint0,text1,array2,map3,null4), value/start,length,first,next.
+(defn- kt-f [D :vector-i64 n :i64 k :i64] :i64 (vector-at D (+ 16 (* n 8) k)))
+(defn- kt-put [D :vector-i64 n :i64 k :i64 v :i64] :vector-i64 (vector-assoc! D (+ 16 (* n 8) k) v))
+(defn- kt-bad [D :vector-i64] :vector-i64 (vector-assoc! D 1 1))
+(defn- kt-byte [V :vector-i64 p :i64] :i64 (if (< p (vector-count V)) (vector-at V p) 0))
+(defn- kt-uint [D :vector-i64 V :vector-i64 ai :i64] :vector-i64
+  (let [p (vector-at D 0) size (case ai 24 1 25 2 26 4 0)]
+    (cond (< ai 24) (vector-assoc! D 4 ai)
+          (or (= size 0) (> (+ p size) (vector-at D 3))) (kt-bad D)
+          :else (let [v (loop [i 0 acc 0] (if (= i size) acc (recur (inc i) (+ (* acc 256) (kt-byte V (+ p i))))))]
+                  (if (or (< v (case size 1 24 2 256 65536)) (> v 65536)) (kt-bad D)
+                    (-> D (vector-assoc! 0 (+ p size)) (vector-assoc! 4 v)))))))
+(defn- kt-ascii? [V :vector-i64 p :i64 end :i64] :bool
+  (cond (= p end) true
+        (or (< (kt-byte V p) 32) (> (kt-byte V p) 126)) false
+        :else (kt-ascii? V (inc p) end)))
+(defn- kt-key-lt? [D :vector-i64 V :vector-i64 a :i64 b :i64] :bool
+  (let [an (kt-f D a 2) bn (kt-f D b 2)]
+    (cond (< an bn) true (> an bn) false
+          :else (loop [i 0]
+                  (if (= i an) false
+                    (let [x (kt-byte V (+ (kt-f D a 1) i)) y (kt-byte V (+ (kt-f D b 1) i))]
+                      (cond (< x y) true (> x y) false :else (recur (inc i)))))))))
+(defn- kt-children [D :vector-i64 V :vector-i64 n :i64 left :i64 last :i64 prevkey :i64 index :i64 depth :i64] :vector-i64
+  (if (or (= left 0) (not= (vector-at D 1) 0)) D
+    (let [d (kt-read D V depth) child (vector-at d 4)
+          key? (and (= (kt-f d n 0) 3) (= (bit-and index 1) 0))]
+      (cond (not= (vector-at d 1) 0) d
+            (and key? (or (not= (kt-f d child 0) 1) (and (> prevkey 0) (not (kt-key-lt? d V prevkey child))))) (kt-bad d)
+            :else (kt-children (if (= last 0) (kt-put d n 3 child) (kt-put d last 4 child)) V n (dec left) child
+                    (if key? child prevkey) (inc index) depth)))))
+(defn- kt-read [D :vector-i64 V :vector-i64 depth :i64] :vector-i64
+  (let [p (vector-at D 0) n (vector-at D 2)]
+    (if (or (> depth 64) (>= n 4096) (>= p (vector-at D 3))) (kt-bad D)
+      (let [b (kt-byte V p) major (quot b 32) ai (bit-and b 31)
+            d0 (-> D (vector-assoc! 0 (inc p)) (vector-assoc! 2 (inc n)))
+            d (if (= b 246) (vector-assoc! d0 4 0) (kt-uint d0 V ai))
+            len (vector-at d 4) at (vector-at d 0)]
+        (cond (not= (vector-at d 1) 0) d
+              (= b 246) (-> d (kt-put n 0 4) (vector-assoc! 4 n))
+              (= major 0) (-> d (kt-put n 0 0) (kt-put n 1 len) (vector-assoc! 4 n))
+              (= major 3)
+              (if (or (> len 128) (> (+ at len) (vector-at d 3)) (not (kt-ascii? V at (+ at len)))) (kt-bad d)
+                (-> d (kt-put n 0 1) (kt-put n 1 at) (kt-put n 2 len) (vector-assoc! 0 (+ at len)) (vector-assoc! 4 n)))
+              (or (= major 4) (= major 5))
+              (let [d1 (-> d (kt-put n 0 (if (= major 4) 2 3)) (kt-put n 2 len))
+                    d2 (kt-children d1 V n (if (= major 5) (* 2 len) len) 0 0 0 (inc depth))]
+                (vector-assoc! d2 4 n))
+              :else (kt-bad d))))))
+(defn- kt-text [D :vector-i64 V :vector-i64 n :i64] :string
+  (let [len (kt-f D n 2) start (kt-f D n 1)
+        bytes (loop [i 0 acc (vector-alloc len)]
+                (if (= i len) acc (recur (inc i) (vector-assoc! acc i (kt-byte V (+ start i))))))]
+    (if (= (kt-f D n 0) 1) (string-from-utf8 (bytes-from-vector-i64 bytes)) "")))
+(defn- kt-eq [D :vector-i64 V :vector-i64 n :i64 s :string] :bool
+  (and (> n 0) (= (kt-f D n 0) 1) (string=? (kt-text D V n) s)))
+(defn- kt-at [D :vector-i64 n :i64 i :i64] :i64
+  (loop [p (kt-f D n 3) j i] (cond (= p 0) 0 (= j 0) p :else (recur (kt-f D p 4) (dec j)))))
+(defn- kt-map [D :vector-i64 V :vector-i64 n :i64 key :string] :i64
+  (loop [p (kt-f D n 3)]
+    (cond (= p 0) 0 (kt-eq D V p key) (kt-f D p 4) :else (recur (kt-f D (kt-f D p 4) 4)))))
+(defn- kt-array? [D :vector-i64 n :i64 size :i64] :bool
+  (and (> n 0) (= (kt-f D n 0) 2) (= (kt-f D n 2) size)))
+(defn- kt-name? [D :vector-i64 n :i64] :bool
+  (and (> n 0) (= (kt-f D n 0) 1) (> (kt-f D n 2) 0) (<= (kt-f D n 2) 64)))
+(defn- kt-find [D :vector-i64 V :vector-i64 E :vector-i64 name :i64] :i64
+  (loop [i (dec (vector-count E))]
+    (if (< i 0) 0
+      (let [p (vector-at E i)] (if (kt-eq D V p (kt-text D V name)) p (recur (dec i)))))))
+(defn- kt-method [D :vector-i64 V :vector-i64 methods :i64 name :i64] :i64
+  (loop [i 0 p (kt-f D methods 3)]
+    (cond (= p 0) -1 (kt-eq D V p (kt-text D V name)) i :else (recur (inc i) (kt-f D (kt-f D p 4) 4)))))
+(defn- kt-method-at [D :vector-i64 methods :i64 i :i64] :i64 (kt-at D methods (inc (* 2 i))))
+(defn- kt-env [D :vector-i64 params :i64] :vector-i64
+  (loop [p (kt-f D params 3) acc (vector-alloc 0)]
+    (if (= p 0) acc (recur (kt-f D p 4) (vector-conj acc p)))))
+;; Reject noncanonical decimals, including +0, -0, leading zeroes and overflow.
+(defn- kt-integer? [s :string] :bool
+  (let [len (string-length s) neg (and (> len 0) (= (string-code-point-at s 0) 45)) start (if neg 1 0)
+        digits (- len start) bound (if neg "9223372036854775808" "9223372036854775807")]
+    (and (> digits 0) (<= digits 19)
+      (not (and (= (string-code-point-at s start) 48) (or neg (> digits 1))))
+      (loop [i start] (if (= i len) true
+        (let [c (string-code-point-at s i)] (and (>= c 48) (<= c 57) (recur (inc i))))))
+      (or (< digits 19) (<= (string-compare (string-substring s start len) bound) 0)))))
+(defn- kt-values [D :vector-i64 V :vector-i64 methods :i64 p :i64 E :vector-i64 lp :i64] :i64
+  (if (= p 0) 0
+    (let [x (kt-expr D V methods p E lp false) y (kt-values D V methods (kt-f D p 4) E lp)]
+      (if (or (< x 0) (< y 0)) -1 (bit-or x y)))))
+(defn- kt-seq [D :vector-i64 V :vector-i64 methods :i64 p :i64 E :vector-i64 lp :i64 tail :bool] :i64
+  (if (= p 0) -1
+    (let [next (kt-f D p 4) a (kt-expr D V methods p E lp (and tail (= next 0)))
+          b (if (= next 0) 0 (kt-seq D V methods next E lp tail))]
+      (if (or (< a 0) (< b 0)) -1 (bit-or a b)))))
+(defn- kt-loop-unique? [D :vector-i64 V :vector-i64 p :i64 E :vector-i64] :bool
+  (if (= p 0) true
+    (let [name (kt-at D p 0)]
+      (and (kt-array? D p 2) (kt-name? D name) (= (kt-find D V E name) 0)
+        (kt-loop-unique? D V (kt-f D p 4) (vector-conj E name))))))
+(defn- kt-bind-check [D :vector-i64 V :vector-i64 methods :i64 p :i64 E :vector-i64 outer :vector-i64 lp :i64 loop? :bool body :i64 tail :bool edges :i64] :i64
+  (if (= p 0)
+    (let [x (kt-expr D V methods body E lp tail)] (if (< x 0) -1 (bit-or edges x)))
+    (let [name (kt-at D p 0) value (kt-at D p 1)]
+      (if (or (not (kt-array? D p 2)) (not (kt-name? D name)) (>= (vector-count E) 64)) -1
+        (let [x (kt-expr D V methods value (if loop? outer E) 0 false)]
+          (if (< x 0) -1
+            (kt-bind-check D V methods (kt-f D p 4) (vector-conj E name) outer lp loop? body tail (bit-or edges x))))))))
+(defn- kt-expr [D :vector-i64 V :vector-i64 methods :i64 n :i64 E :vector-i64 lp :i64 tail :bool] :i64
+  (let [tag (kt-at D n 0) a (kt-at D n 1) b (kt-at D n 2) c (kt-at D n 3) size (kt-f D n 2)]
+    (cond (or (= n 0) (not= (kt-f D n 0) 2) (not= (kt-f D tag 0) 1)) -1
+          (kt-eq D V tag "const")
+          (if (and (= size 2) (kt-array? D a 2) (kt-eq D V (kt-at D a 0) "integer")
+                   (= (kt-f D (kt-at D a 1) 0) 1) (kt-integer? (kt-text D V (kt-at D a 1)))) 0 -1)
+          (kt-eq D V tag "var") (if (and (= size 2) (kt-name? D a) (> (kt-find D V E a) 0)) 0 -1)
+          (or (kt-eq D V tag "let") (kt-eq D V tag "loop"))
+          (if (and (= size 3) (= (kt-f D a 0) 2) (<= (kt-f D a 2) 16)
+                   (or (kt-eq D V tag "let") (kt-loop-unique? D V (kt-f D a 3) (vector-alloc 0))))
+            (kt-bind-check D V methods (kt-f D a 3) E E (if (kt-eq D V tag "loop") a lp)
+              (kt-eq D V tag "loop") b (or tail (kt-eq D V tag "loop")) 0) -1)
+          (kt-eq D V tag "if")
+          (if (= size 4)
+            (let [x (kt-expr D V methods a E lp false) y (kt-expr D V methods b E lp tail) z (kt-expr D V methods c E lp tail)]
+              (if (or (< x 0) (< y 0) (< z 0)) -1 (bit-or x (bit-or y z)))) -1)
+          (kt-eq D V tag "do")
+          (if (and (= size 2) (= (kt-f D a 0) 2) (> (kt-f D a 2) 0) (<= (kt-f D a 2) 16))
+            (kt-seq D V methods (kt-f D a 3) E lp tail) -1)
+          (kt-eq D V tag "recur")
+          (if (and (= size 2) tail (> lp 0) (= (kt-f D a 0) 2) (= (kt-f D a 2) (kt-f D lp 2)))
+            (kt-values D V methods (kt-f D a 3) E lp) -1)
+          (or (kt-eq D V tag "call") (kt-eq D V tag "arith") (kt-eq D V tag "compare"))
+          (if (or (not= size 3) (not= (kt-f D b 0) 2) (> (kt-f D b 2) 16) (not= (kt-f D a 0) 1)) -1
+            (let [edges (kt-values D V methods (kt-f D b 3) E lp) argc (kt-f D b 2)]
+              (cond (< edges 0) -1
+                    (kt-eq D V tag "call")
+                    (let [idx (kt-method D V methods a)]
+                      (if (or (< idx 0) (not= argc (kt-f D (kt-map D V (kt-method-at D methods idx) "params") 2))) -1
+                        (bit-or edges (i64-shift-left 1 idx))))
+                    (kt-eq D V tag "compare")
+                    (if (and (>= argc 2) (or (kt-eq D V a "=") (kt-eq D V a "<") (kt-eq D V a ">")
+                                                            (kt-eq D V a "<=") (kt-eq D V a ">="))) edges -1)
+                    :else (if (or (kt-eq D V a "add") (kt-eq D V a "mul")
+                                  (and (kt-eq D V a "sub") (>= argc 1))
+                                  (and (= argc 2) (or (kt-eq D V a "div") (kt-eq D V a "quot") (kt-eq D V a "mod")))) edges -1))))
+          :else -1)))
+(defn- kt-params? [D :vector-i64 V :vector-i64 p :i64 types :i64 E :vector-i64] :bool
+  (if (= p 0) (= types 0)
+    (and (> types 0) (kt-name? D p) (kt-eq D V types "i64") (= (kt-find D V E p) 0)
+      (kt-params? D V (kt-f D p 4) (kt-f D types 4) (vector-conj E p)))))
+(defn- kt-methods [D :vector-i64 V :vector-i64 methods :i64 G :vector-i64 i :i64] :vector-i64
+  (if (= i (kt-f D methods 2)) G
+    (let [name (kt-at D methods (* 2 i)) m (kt-method-at D methods i)
+          params (kt-map D V m "params") types (kt-map D V m "param-types")
+          effects (kt-map D V m "effects") body (kt-map D V m "body")]
+      (if (not (and (kt-name? D name) (= (kt-f D m 0) 3) (= (kt-f D m 2) 5)
+                    (> params 0) (> types 0) (> effects 0) (> body 0) (kt-eq D V (kt-map D V m "result") "i64")
+                    (= (kt-f D params 0) 2) (<= (kt-f D params 2) 5) (kt-array? D types (kt-f D params 2))
+                    (kt-array? D effects 0) (kt-params? D V (kt-f D params 3) (kt-f D types 3) (vector-alloc 0))))
+        (vector-assoc! G 32 1)
+        (let [edges (kt-expr D V methods body (kt-env D params) 0 true)]
+          (if (< edges 0) (vector-assoc! G 32 1) (kt-methods D V methods (vector-assoc! G i edges) (inc i))))))))
+(defn- kt-acyclic? [G :vector-i64 count :i64] :bool
+  (loop [round 0 done 0]
+    (if (= round count) (= done (dec (i64-shift-left 1 count)))
+      (let [next (loop [i 0 mask done]
+                   (if (= i count) mask
+                     (recur (inc i) (if (= (bit-and (vector-at G i) done) (vector-at G i))
+                                     (bit-or mask (i64-shift-left 1 i)) mask))))]
+        (recur (inc round) next)))))
+(defn- kt-exports? [D :vector-i64 V :vector-i64 methods :i64 p :i64 E :vector-i64] :bool
+  (if (= p 0) true
+    (and (kt-name? D p) (>= (kt-method D V methods p) 0) (= (kt-find D V E p) 0)
+      (kt-exports? D V methods (kt-f D p 4) (vector-conj E p)))))
+(defn- kt-program? [D :vector-i64 V :vector-i64] :bool
+  (let [root 1 p (kt-at D root 2) methods (kt-map D V p "methods") entry (kt-map D V p "entry")
+        exports (kt-map D V p "exports") idx (kt-method D V methods entry)]
+    (and (= (vector-at D 1) 0) (= (vector-at D 0) (vector-at D 3))
+      (kt-array? D root 3) (kt-eq D V (kt-at D root 0) "kototama.vm/program")
+      (= (kt-f D (kt-at D root 1) 0) 0) (= (kt-f D (kt-at D root 1) 1) 1)
+      (= (kt-f D p 0) 3) (= (kt-f D p 2) 4) (kt-eq D V (kt-map D V p "value-profile") "kotoba.i64-wrap/v1")
+      (kt-name? D entry) (> methods 0) (= (kt-f D methods 0) 3) (> (kt-f D methods 2) 0) (<= (kt-f D methods 2) 32)
+      (> exports 0) (= (kt-f D exports 0) 2) (<= (kt-f D exports 2) 32)
+      (kt-exports? D V methods (kt-f D exports 3) (vector-alloc 0))
+      (> (kt-find D V (kt-env D exports) entry) 0) (>= idx 0)
+      (kt-array? D (kt-map D V (kt-method-at D methods idx) "params") 0)
+      (let [G (kt-methods D V methods (vector-alloc 33) 0)]
+        (and (= (vector-at G 32) 0) (kt-acyclic? G (kt-f D methods 2)))))))
+;; Translation follows validation. Original identifiers never enter source text.
+(defn- kt-vname [n :i64] :string (string-concat "kv" (mem-u2dec n)))
+(defn- kt-mname [n :i64] :string (string-concat "km" (mem-u2dec n)))
+(defn- kt-temp [n :i64] :string (string-concat "kt" (mem-u2dec n)))
+(defn- kt-gen-values [D :vector-i64 V :vector-i64 methods :i64 p :i64 E :vector-i64] :string
+  (if (= p 0) "" (string-concat " " (string-concat (kt-gen D V methods p E) (kt-gen-values D V methods (kt-f D p 4) E)))))
+(defn- kt-gen-bind [D :vector-i64 V :vector-i64 methods :i64 p :i64 E :vector-i64 body :i64] :string
+  (if (= p 0) (kt-gen D V methods body E)
+    (let [name (kt-at D p 0) value (kt-at D p 1)]
+      (string-concat "(let [" (string-concat (kt-vname name) (string-concat " " (string-concat (kt-gen D V methods value E)
+        (string-concat "] " (string-concat (kt-gen-bind D V methods (kt-f D p 4) (vector-conj E name) body) ")")))))))))
+(defn- kt-loop-temps [D :vector-i64 V :vector-i64 methods :i64 p :i64 E :vector-i64] :string
+  (if (= p 0) "" (let [value (kt-at D p 1)]
+    (string-concat (kt-temp p) (string-concat " " (string-concat (kt-gen D V methods value E)
+      (string-concat " " (kt-loop-temps D V methods (kt-f D p 4) E))))))))
+(defn- kt-loop-binds [D :vector-i64 p :i64] :string
+  (if (= p 0) "" (string-concat (kt-vname (kt-at D p 0)) (string-concat " " (string-concat (kt-temp p)
+    (string-concat " " (kt-loop-binds D (kt-f D p 4))))))))
+(defn- kt-loop-env [D :vector-i64 p :i64 E :vector-i64] :vector-i64
+  (if (= p 0) E (kt-loop-env D (kt-f D p 4) (vector-conj E (kt-at D p 0)))))
+(defn- kt-operand-binds [D :vector-i64 V :vector-i64 methods :i64 p :i64 E :vector-i64] :string
+  (if (= p 0) "" (string-concat (kt-temp p) (string-concat " " (string-concat (kt-gen D V methods p E)
+    (string-concat " " (kt-operand-binds D V methods (kt-f D p 4) E)))))))
+(defn- kt-fold [D :vector-i64 p :i64 op :string acc :string] :string
+  (if (= p 0) acc (kt-fold D (kt-f D p 4) op (string-concat "(" (string-concat op
+    (string-concat " " (string-concat acc (string-concat " " (string-concat (kt-temp p) ")")))))))))
+(defn- kt-comparisons [D :vector-i64 p :i64 op :string] :string
+  (let [next (kt-f D p 4)]
+    (if (= next 0) "true" (string-concat "(and (" (string-concat op (string-concat " " (string-concat (kt-temp p)
+      (string-concat " " (string-concat (kt-temp next) (string-concat ") " (string-concat (kt-comparisons D next op) ")")))))))))))
+(defn- kt-gen-op [D :vector-i64 V :vector-i64 methods :i64 n :i64 E :vector-i64 compare? :bool] :string
+  (let [op (kt-at D n 1) args (kt-at D n 2) p (kt-f D args 3) next (kt-f D p 4)
+        body (cond compare? (string-concat "(if " (string-concat (kt-comparisons D p (kt-text D V op)) " 1 0)"))
+                   (kt-eq D V op "add") (kt-fold D p "+" "0")
+                   (kt-eq D V op "mul") (kt-fold D p "*" "1")
+                   (kt-eq D V op "sub") (if (= next 0) (string-concat "(- 0 " (string-concat (kt-temp p) ")")) (kt-fold D next "-" (kt-temp p)))
+                   (kt-eq D V op "mod")
+                   ;; Kototama rem(MIN,-1)=0, while its quot(MIN,-1) traps.
+                   (string-concat "(if (and (= " (string-concat (kt-temp p) (string-concat " -9223372036854775808) (= "
+                     (string-concat (kt-temp next) (string-concat " -1)) 0 (- " (string-concat (kt-temp p)
+                       (string-concat " (* (quot " (string-concat (kt-temp p) (string-concat " " (string-concat (kt-temp next)
+                         (string-concat ") " (string-concat (kt-temp next) ")))"))))))))))))
+                   :else (string-concat "(quot " (string-concat (kt-temp p) (string-concat " " (string-concat (kt-temp next) ")")))))]
+    (if (= p 0) body (string-concat "(let [" (string-concat (kt-operand-binds D V methods p E) (string-concat "] " (string-concat body ")")))))))
+(defn- kt-gen [D :vector-i64 V :vector-i64 methods :i64 n :i64 E :vector-i64] :string
+  (let [tag (kt-at D n 0) a (kt-at D n 1) b (kt-at D n 2) c (kt-at D n 3)
+        body (cond (kt-eq D V tag "const") (kt-text D V (kt-at D a 1))
+                   (kt-eq D V tag "var") (kt-vname (kt-find D V E a))
+                   (kt-eq D V tag "let") (kt-gen-bind D V methods (kt-f D a 3) E b)
+                   (kt-eq D V tag "loop")
+                   (string-concat "(let [" (string-concat (kt-loop-temps D V methods (kt-f D a 3) E)
+                     (string-concat "] (loop [" (string-concat (kt-loop-binds D (kt-f D a 3)) (string-concat "] "
+                       (string-concat (kt-gen D V methods b (kt-loop-env D (kt-f D a 3) E)) "))"))))))
+                   (kt-eq D V tag "recur") (string-concat "(recur" (string-concat (kt-gen-values D V methods (kt-f D a 3) E) ")"))
+                   (kt-eq D V tag "do") (string-concat "(do" (string-concat (kt-gen-values D V methods (kt-f D a 3) E) ")"))
+                   (kt-eq D V tag "if") (string-concat "(if (not= " (string-concat (kt-gen D V methods a E)
+                     (string-concat " 0) " (string-concat (kt-gen D V methods b E) (string-concat " " (string-concat (kt-gen D V methods c E) ")"))))))
+                   (kt-eq D V tag "call") (string-concat "(" (string-concat (kt-mname (kt-method D V methods a))
+                     (string-concat (kt-gen-values D V methods (kt-f D b 3) E) ")")))
+                   :else (kt-gen-op D V methods n E (kt-eq D V tag "compare")))]
+    (string-concat "(do (kt-charge) " (string-concat body ")"))))
+(defn- kt-gen-params [D :vector-i64 p :i64] :string
+  (if (= p 0) "" (string-concat (kt-vname p) (string-concat " :i64 " (kt-gen-params D (kt-f D p 4))))))
+(defn- kt-gen-methods [D :vector-i64 V :vector-i64 methods :i64 i :i64] :string
+  (if (= i (kt-f D methods 2)) ""
+    (let [m (kt-method-at D methods i) params (kt-map D V m "params") body (kt-map D V m "body")]
+      (string-concat "(defn- " (string-concat (kt-mname i) (string-concat " [" (string-concat (kt-gen-params D (kt-f D params 3))
+        (string-concat "] :i64 " (string-concat (kt-gen D V methods body (kt-env D params))
+          (string-concat ")\n" (kt-gen-methods D V methods (inc i))))))))))))
+(defn- kt-source [D :vector-i64 V :vector-i64] :string
+  (let [p (kt-at D 1 2) methods (kt-map D V p "methods") entry (kt-method D V methods (kt-map D V p "entry"))]
+    (string-concat "(ns kototama-i64 (:export [main]))\n(defn- kt-charge [] :i64 0)\n"
+      (string-concat (kt-gen-methods D V methods 0) (string-concat "(defn main [] :i64 (" (string-concat (kt-mname entry) "))\n"))))))
+;; A marker is compiler-generated and never a guest identifier. Replacing its
+;; call after checking/lowering preserves eager order, branch and loop placement.
+(defn- kt-charge-fn [M :vector-i64 S :string f :i64] :i64
+  (if (>= f (vector-at M MM-FN-N)) 0
+    (let [sym (xg-f M f FF-SYM) a (vector-at M (+ MM-SYM-BASE (* sym MM-SYM-W) SF-START))
+          b (vector-at M (+ MM-SYM-BASE (* sym MM-SYM-W) SF-END))]
+      (if (string=? (string-substring S a b) "kt-charge") f (kt-charge-fn M S (inc f))))))
+(defn- kt-replace [M :vector-i64 charge :i64 i :i64] :vector-i64
+  (if (= i (vector-at M MM-SIR-N)) M
+    (kt-replace (if (and (= (xg-si M i IF-OP) OP-CALL) (= (xg-si M i IF-A) charge))
+                  (mem-set M (+ MM-SIR-BASE (* i MM-SIR-W) IF-OP) OP-FUEL) M) charge (inc i))))
+;; Reuse the adopted lowerer's existing annotation interface: cell127 ->
+;; table, table[7] -> node marks; bit2 suppresses ordinary recur/backedge fuel.
+;; No entry/loop charge flags are set. This does not parse or execute KIR text.
+(defn- kt-marks [M :vector-i64 marks :i64 f :i64] :vector-i64
+  (if (= f (vector-at M MM-FN-N)) M
+    (kt-marks (mem-set M (+ marks (xg-f M f FF-NODE)) 2) marks (inc f))))
+(defn- kt-metering [M :vector-i64] :vector-i64
+  (let [a (mem-alloc M (+ 8 MM-NODE-CAP)) b (vector-at a MM-R0)]
+    (if (not= (vector-at a MM-ERR) 0) a
+      (kt-marks (-> a (mem-fill b (+ 8 MM-NODE-CAP) 0) (mem-set 127 b) (mem-set (+ b 7) (+ b 8))) (+ b 8) 1))))
+(defn- kt-front [S :string] :vector-i64
+  (let [m0 (mem-set (mem-new) MM-SRC-LEN (string-length S)) m1 (lx-run m0 S)
+        m2 (if (= (vector-at m1 MM-ERR) 0) (rd-run m1 S) m1)
+        m3 (if (= (vector-at m2 MM-ERR) 0) (nm-run m2 S) m2)
+        m4 (if (= (vector-at m3 MM-ERR) 0) (ck-run m3 S) m3)]
+    (if (not= (vector-at m4 MM-ERR) 0) m4
+      (let [charge (kt-charge-fn m4 S 1)]
+        (if (= charge 0) (xg-err m4 7202 0) (kt-replace (lw-run (kt-metering m4)) charge 1))))))
+(defn- kt-stack [M :vector-i64 f :i64 total :i64] :i64
+  (if (= f (vector-at M MM-FN-N)) total (kt-stack M (inc f) (+ total 16 (xg-frame M f)))))
+;; Scalar AArch64 envelope: only write(1, result, 8), exit. No runtime slots,
+;; loader, heap or capability table; context is the same 16-byte fuel context.
+(defn- kt-a64-start [M :vector-i64] :vector-i64
+  (-> M (xa-abs 7 16 0) (xa-fixrec 11 (xg-get M 1)) (xa-w 0x94000000)
+      (xa-w 0xD10043FF) (xa-w 0xF90003E0) (xa-mov64 0 1) (xa-w 0x910003E1)
+      (xa-mov64 2 8) (xa-mov64 8 64) (xa-w 0xD4000001)
+      (xa-w 0xF100201F) (xa-mov64 0 0) (xa-w 0x540000A0) (xa-mov64 0 74)
+      (xa-mov64 8 93) (xa-w 0xD4000001) (xa-w 0xD4200000)))
+(defn- kt-a64-build [M :vector-i64 S :string fuel :i64] :vector-i64
+  (let [a (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 2 fuel) (xg-set 4 0) (xg-check-fns S 1) (xg-check-sir 1))]
+    (cond (not= (vector-at a MM-ERR) 0) a
+          (or (= (xg-get a 1) 0) (not= (vector-at a MM-CAPS) 0)) (xg-err a 7202 1)
+          :else (let [g (-> a (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1) (xg-index-labels 1) (kt-a64-start) (xa-code 1))
+                      data (bit-and (+ 8191 (xg-pos g)) -4096)
+                      fixed (xa-fix (xg-set g 3 data) 1)]
+                  (-> fixed (mem-set MM-OUT-N 1) (xa-elf-header) (xg-elf-rx) (xg-elf-rw) (xg-elf-stack)
+                      (xg-pad 4096) (xg-out-code 1) (xg-pad data) (xg-out 0 8) (xg-out fuel 8))))))
+(defn- kt-refuse [detail :string] :i64
+  (let [w (io-err (string-concat "kototama-i64: E7200 " (string-concat detail "\n")))] 1))
+(defn- kt-command [] :i64
+  (let [src (io-arg 1) target (io-arg 3) out (io-arg 5) fuel (xg-budget (io-arg 7))]
+    (cond (not (and (= (io-argc) 10) (string=? (io-arg 2) "--target") (string=? (io-arg 4) "--output")
+                    (string=? (io-arg 6) "--fuel") (string=? (io-arg 8) "--profile")
+                    (string=? (io-arg 9) "kototama.pure-i64-aot/v1")
+                    (or (string=? target "aarch64-linux") (string=? target "x86_64-linux"))
+                    (> fuel 0) (> (string-length out) 0) (= (io-exists out) 0)))
+          (kt-refuse "usage/profile/target/fuel/output refused")
+          (= (io-exists src) 0) (drv-fail0 E-READ)
+          :else (let [V (io-read-bytes src) len (vector-count V)]
+                  (if (or (= len 0) (> len 65536)) (kt-refuse "input byte limit")
+                    (let [D (kt-read (-> (vector-alloc 32784) (vector-assoc! 2 1) (vector-assoc! 3 len)) V 0)]
+                      (if (not (kt-program? D V)) (kt-refuse "noncanonical or outside pure-i64 profile")
+                        (let [S (kt-source D V) M (kt-front S)]
+                          (cond (not= (vector-at M MM-ERR) 0) (drv-fail M src)
+                                (> (kt-stack M 1 0) 262144) (kt-refuse "static stack bound")
+                                :else (let [built (if (string=? target "aarch64-linux") (kt-a64-build M S fuel) (xg-build M S fuel))]
+                                        (if (not= (vector-at built MM-ERR) 0) (xg-report built src out)
+                                          (let [n (dec (vector-at built MM-OUT-N)) wrote (out-write-v built out (+ MM-OUT-BASE 1) n)
+                                                w (io-out "{:ok true, :profile :kototama.pure-i64-aot/v1, :effects [], :arena-bytes 0, :stack-bound-max 262144}\n")]
+                                            (if (= (io-exists out) 1) 0 (drv-fail0 E-WRITE))))))))))))))
