@@ -11,8 +11,10 @@ import json
 import os
 import platform
 import signal
+import socket
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -97,6 +99,49 @@ def main(compiler, out):
         assert not stdout and not list(scope.glob("kotoba-output-*"))
         calls.append(dict(name=name, exit=p.returncode))
 
+    # FIFO/socket fixtures require a native Linux filesystem. A macOS
+    # virtiofs task mount can reject mknod even though the guest's /tmp admits
+    # it. Only these owned, ephemeral input fixtures live there; all evidence
+    # remains in the requested output directory.
+    refusal_temp = tempfile.TemporaryDirectory(prefix="amu-fs2-refusals-")
+    scope = Path(refusal_temp.name)
+    guest = dict(PATH="/nonexistent", KEXE_ALLOW="35,37,38,39", KEXE_CAP_RESOURCES_35=str(scope), KEXE_STACK_BYTES="8388608")
+    (scope / "ascii").write_bytes(b"abcdef")
+    (scope / "directory").mkdir()
+    os.mkfifo(scope / "fifo")
+    (scope / "link").symlink_to("ascii")
+    local_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    # sockaddr_un bounds the supplied name, even under a long task path.
+    # Change only this observer's cwd while staging the relative socket.
+    prior_cwd = os.open(".", os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.chdir(scope)
+        local_socket.bind("socket")
+    finally:
+        os.fchdir(prior_cwd)
+        os.close(prior_cwd)
+    try:
+        refusals = [
+            ("unknown-form", "U", scope / "ascii", "", b":stage 8}"),
+            ("empty-path", "A", "", "", b":stage 2}"),
+            ("forbidden-tail", "D", scope / "ascii", "x", b":stage 2}"),
+            ("bad-mode", "H", scope / "ascii", "8", b":stage 7}"),
+            ("bad-temp-prefix", "N", scope, "a/b", b":stage 9}"),
+            ("stage-wrong-shape", "Q", scope / "ascii", "644", b":stage 8}"),
+            ("range-outside-file", "E", scope / "ascii", "7:0", b":reason :fs/range-unavailable}"),
+            ("range-short-file", "E", scope / "ascii", "5:2", b":reason :fs/range-unavailable}"),
+            ("range-directory", "E", scope / "directory", "0:0", b":reason :fs/range-unavailable}"),
+            ("range-fifo", "E", scope / "fifo", "0:0", b":reason :fs/range-unavailable}"),
+            ("range-socket", "E", scope / "socket", "0:0", b":reason :fs/range-unavailable}"),
+            ("range-symlink", "E", scope / "link", "0:0", b":reason :fs/range-unavailable}"),
+            ("raw-legacy-refused", "legacy-bytes", scope / "ascii", "", b":stage 2}"),
+        ]
+        for name, mode, path, tail, diagnostic in refusals:
+            observe(name, [image, mode, path, tail], guest, expected=126, diagnostic=diagnostic, timeout=30)
+    finally:
+        local_socket.close()
+        refusal_temp.cleanup()
+
     boundary_cases = ["close-consumed-eintr", "partial-read", "partial-write"] + [f"journal-{window}-{sig}" for window in ("directory", "file") for sig in ("sigint", "sigterm", "sigalrm", "sigxcpu")]
     errno_cases = ("write-eio", "fsync-eio", "chmod-eperm", "unlink-eacces", "fstat-eio", "entropy-enosys", "rename-enosys", "open-enosys")
     for script, cases in (("check-fs2-observed.py", boundary_cases), ("check-fs2-errno.py", errno_cases)):
@@ -106,6 +151,7 @@ def main(compiler, out):
     report = dict(status="PASS_NATIVE_FS2_CURRENT_MATRIX", host=[platform.system(), machine], source=source_pin,
                   compiler=pin(compiler), image=pin(image), calls=calls, positiveFixtureCases=len(positives),
                   observedKernelBoundaries=len(boundary_cases), kernelErrnoCases=len(errno_cases),
+                  framingRangeShapeRefusals=len(refusals),
                   nativeGuestOwnsPositiveAssertions=True, legacyRuntimeFallback=False, emulation=False,
                   allFaultRaceParityQualified=False, wholePublicCLIQualified=False)
     (out / "native-fs2.json").write_text(json.dumps(report, indent=2) + "\n")
