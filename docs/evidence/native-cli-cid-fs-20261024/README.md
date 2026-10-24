@@ -9,7 +9,7 @@ compiler is part of this qualification.
 | --- | --- |
 | `full32-arm-fixed-point.json` | ARM F4 = F5 = F6 after the controller pin refresh; compiler image SHA-256 `4b06ad3fe4ed8e053e3d28ecfea0ed2d8730ec8e4c465285b89a524af3374718` |
 | `core-cold-locked.json`, `core-warm-locked.json` | Independent adopted-core cold, warm, locked, and self-rebuild identities; the core source is unchanged by #1548 |
-| `full32-corpus.json` | The previous gate-pin compiler `523544cc…` passed 146 calls, including 19 Embench, MIR all large/whole-large, GMIR, resource controls and pin refusals. The final controller-pin compiler corpus rerun is in progress. No performance result is claimed. |
+| `full32-corpus.json` | Current controller-pin compiler `4b06ad3f…` passed all 146 native calls: 19 Embench, MIR all large and whole-large, GMIR, resource controls and pin refusals. MIR whole-large ended with zero tracked use and 155688217 scope releases. No performance result is claimed. |
 | `fs2-current-native-matrix.json` | ARM FS2 fixture: eight positive groups, 13 framing/range/shape refusals, 11 observed kernel boundaries, eight actual kernel errno cases, plus cleanup/retention assertions |
 | `full32-aot-arm.json` | 122 bounded Kototama i64 AOT cases; Kotoba-native ordered verdict exit 0, corrupted-observation control exit 1. The gate reads observations through FS2. |
 | `module-lock-full32-real-resolver.json` | 37 native calls: generic source resolution, CID block write, KSL2 replay through the adopted compiler, ASCII/Unicode execution and negative cases without stray block-store creation |
@@ -20,18 +20,18 @@ compiler is part of this qualification.
 | `fs2-current-full32-errno-details.json` | Per-case kernel syscall/errno, guest exit/diagnostic and remaining-file observations for all eight injections, with each filter hash and one current FS2 image identity. |
 | `module-lock-current-full32.json` | Current compiler passed 37 native CID/block writer, KSL2 replay, Unicode namespace, actual compiler execution and refusal calls; `actualCompilerIntegration` and `writerReplayQualified` are true. Whole CLI caller integration remains open. |
 | `defcid-current-full32.json`, `defgraph-current-full32.json` | Current compiler executed the frozen ten Definition CID vectors and graph fixture, including the bounded refusal cases. Checked-KIR caller-wide qualification remains open. |
-| `*-before-controller-pin.json` | Previous `523544cc…` receipts are retained before the controller pin correction. |
+| `*-before-controller-pin.json` | Previous `523544cc…` receipts, including the 146-call corpus, are retained before the controller pin correction. |
 
 The full32 ARM checks ran without network access in a native arm64 Linux VM.
 Python staged inputs, verified hashes, and observed process exits; Kotoba
 artifacts performed semantic checks. GitHub PR #1557 native ARM/x86 CI and its
 post-merge main run determine current CI qualification.
 
-The original corpus, FS2, AOT, CID and Definition receipts above were produced
-before the gate factory and controller pin refreshes. Current FS2, CID and
-Definition receipts use compiler image `4b06ad3f…`; its complete corpus rerun
-is in progress. CI must still establish current x86, AOT and controller
-verdicts. Earlier receipts remain historical evidence.
+The original FS2, AOT, CID and Definition receipts above were produced before
+the gate factory and controller pin refreshes. Current corpus, FS2, CID and
+Definition receipts use compiler image `4b06ad3f…`. CI must still establish
+current x86, AOT and controller verdicts. Earlier receipts remain historical
+evidence.
 
 **Open qualification:** The public Kotoba CLI's 12 commands have request
 parsing, but their complete native executions and product dispatch are not
