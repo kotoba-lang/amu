@@ -140,6 +140,7 @@ jobs:
       - name: Native x86 AIUEOS EFI packaging and refusal diagnostics
         run: python3 scripts/seed/check-aiueos-boot-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/aiueos-boot"
       - name: Native x86 kernel memory admission and emitted guard diagnostics
+        shell: bash
         run: |
           python3 scripts/seed/check-kernel-memory.py --compiler "$RUNNER_TEMP/complete/F2.elf" --work "$RUNNER_TEMP/kernel-memory-admission" --cases seed/tests/kernel-memory | tee "$RUNNER_TEMP/kernel-memory-admission.log"
           python3 scripts/seed/check-kernel-memory.py --compiler "$RUNNER_TEMP/complete/F2.elf" --work "$RUNNER_TEMP/kernel-memory-guards" | tee "$RUNNER_TEMP/kernel-memory-guards.log"

@@ -1,5 +1,9 @@
 # Full30 adoption with current memory hardening
 
+This is the source-bound full30 snapshot before main added i64 AOT in
+PR1548. The combined full31 candidate is recorded in
+`../aiueos-aot-adoption-20261024/`; its exact-head CI owns current acceptance.
+
 `source.json` binds the integrated source, unchanged complete18 core, full30
 unity, packed ARM root and cross-built public x86 compiler. The previous
 main root produced native ARM F1=F2. `arm-cross-candidate.json` records native
