@@ -135,3 +135,20 @@ the adopted core and existing emitters authoritative. The native ordered
 gate checks raw observations, named resource refusals and actual metering
 removal; Python only stages bytes/processes. The unsigned process receipt
 is not a signed VM receipt, fresh node admission or an in-process unwind ABI.
+
+## Budget-independent local cache (JUN-371)
+
+`seed/85-kototama-i64-cache.kotoba` retains that closed language and reuses
+the same emitters, but separates immutable code identity from the fresh
+stdin72 invocation context. Cache identity binds Program CID, compiler/source
+digests, decoder/value/fuel/profile/ABI, target baseline CPU, optimizer and
+empty imports. Never persist authority, approvals, lease or mutable fuel in
+the code cache. Reject a missing/mismatched context before any guest code.
+
+The dedicated pinned factory builds `seed/cache/host.kotoba` with a fixed
+compiler/source policy, using the existing native CDCI supervisor primitives.
+It is a bounded local x86 host, separate from the two mandatory CDCI roles.
+Keep the private16-slot/1MiB-image/concurrency1/compile120s/guest5s bounds and
+fresh empty-authority admission on every hit. Runtime deadlines are host
+failures, never fabricated fuel receipts. Remote signatures, effectful grants,
+Cell integration and an ARM supervisor require separate qualification.

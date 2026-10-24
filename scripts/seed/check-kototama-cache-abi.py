@@ -111,13 +111,51 @@ def main():
     assert built.returncode == 0, built.stderr[-2000:]
     gate.chmod(0o755)
     positive = subprocess.run([str(gate), str(out / "observations.bin")], env=env, capture_output=True, timeout=30)
+    (out / "gate.stdout").write_bytes(positive.stdout); (out / "gate.stderr").write_bytes(positive.stderr)
     corrupt = bytearray(packed(observations)); corrupt[0] ^= 1
     (out / "corrupt.bin").write_bytes(corrupt)
     negative = subprocess.run([str(gate), str(out / "corrupt.bin")], env=env, capture_output=True, timeout=30)
+    (out / "corrupt.stdout").write_bytes(negative.stdout); (out / "corrupt.stderr").write_bytes(negative.stderr)
+
+    def mutation_verdict(name, executable, context, record_name, receipt):
+        mutant = out / (name + ".elf"); mutant.write_bytes(executable); mutant.chmod(0o755)
+        ran = subprocess.run([str(mutant)], input=context, env={"PATH": "/nonexistent"}, capture_output=True, timeout=10)
+        changed = []
+        for item in records:
+            actual = item["actual"]
+            if item["name"] == record_name:
+                if receipt:
+                    words = list(struct.unpack("<8q", ran.stdout)) if len(ran.stdout) == 64 else [0] * 8
+                    actual = [0, ran.returncode, len(ran.stdout), *words, len(ran.stderr)]
+                else:
+                    actual = [ran.returncode, len(ran.stdout), len(ran.stderr)]
+            changed.extend(actual)
+        path = out / (name + ".bin"); path.write_bytes(packed(changed))
+        verdict = subprocess.run([str(gate), str(path)], env=env, capture_output=True, timeout=30)
+        (out / (name + ".stdout")).write_bytes(verdict.stdout); (out / (name + ".stderr")).write_bytes(verdict.stderr)
+        return verdict.returncode
+
+    code = bytearray(image.read_bytes())
+    needle = bytes.fromhex("498b4128490b41304885c00f85") if target == "x86_64-linux" else struct.pack("<III", 0xF94014E9, 0xF94018EA, 0xAA0A0129)
+    site = code.find(needle); assert site >= 0
+    if target == "x86_64-linux":
+        code[site + 11:site + 17] = b"\x90" * 6
+    else:
+        struct.pack_into("<I", code, site + 12, 0xD503201F)
+    admission = mutation_verdict("admission-removed", code, struct.pack("<5q", CONTEXT, 1, 262144, 0, 1) + key, "authority", False)
+    code = bytearray(image.read_bytes())
+    needle = bytes.fromhex("498b410848ffc849894108") if target == "x86_64-linux" else struct.pack("<III", 0xF94004F0, 0xF1000610, 0xF90004F0)
+    site = code.find(needle); assert site >= 0
+    if target == "x86_64-linux":
+        code[site + 4:site + 7] = b"\x90" * 3
+    else:
+        struct.pack_into("<I", code, site + 4, 0xF1000210)
+    metering = mutation_verdict("metering-removed", code, struct.pack("<5q", CONTEXT, 0, 262144, 0, 0) + key, "const-budget-zero", True)
     report = dict(schema="amu.kototama-cache-abi-native.v3", compilerSHA256=compiler_sha, target=target,
                   records=records, distinctExecutables=len(cached), verdictExit=positive.returncode,
                   corruptControlExit=negative.returncode, cacheHostQualified=False,
-                  status="PASS" if (positive.returncode, negative.returncode) == (0, 1) else "FAIL")
+                  admissionRemovalControlExit=admission, meteringRemovalControlExit=metering,
+                  status="PASS" if (positive.returncode, negative.returncode, admission, metering) == (0, 1, 1, 1) else "FAIL")
     (out / "report.json").write_text(json.dumps(report, indent=2) + "\n")
     print(report["status"], len(records), positive.stdout, positive.stderr, flush=True)
     raise SystemExit(0 if report["status"] == "PASS" else 1)

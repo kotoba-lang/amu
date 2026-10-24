@@ -155,8 +155,10 @@ def main():
     built = subprocess.run([str(compiler), "compile", str(out / "gate.kotoba"), "--target", "x86_64-linux", "--output", str(gate), "--format", "static"], env=env, capture_output=True, timeout=180)
     assert built.returncode == 0, built.stderr[-2000:]
     gate.chmod(0o755); positive = subprocess.run([str(gate), str(out / "observations.bin")], env=env, capture_output=True, timeout=30)
+    (out / "gate.stdout").write_bytes(positive.stdout); (out / "gate.stderr").write_bytes(positive.stderr)
     corrupt = bytearray(raw); corrupt[0] ^= 1; (out / "corrupt.bin").write_bytes(corrupt)
     negative = subprocess.run([str(gate), str(out / "corrupt.bin")], env=env, capture_output=True, timeout=30)
+    (out / "corrupt.stdout").write_bytes(negative.stdout); (out / "corrupt.stderr").write_bytes(negative.stderr)
     report = dict(schema="amu.kototama-local-cache-host-native.v3", records=records, compilerSHA256=compiler_sha, hostSHA256=digest(host),
                   verdictExit=positive.returncode, corruptControlExit=negative.returncode, signedRemoteHostQualified=False,
                   status="PASS" if (positive.returncode, negative.returncode) == (0, 1) else "FAIL")
