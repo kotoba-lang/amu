@@ -2545,6 +2545,39 @@ def _self_test_identity_corpus(stats, corpus_root):
             "op-order cell: identity refuted; :sum -- the operator that "
             "ran LAST -- refines both others (:max pools all six)", stats)
 
+    # the op-order RE-SESSION (12 fresh processes, 2026-10-24, the
+    # W = 1024 fast-level capture session): the same ramp shape as the
+    # 6-run op-order cell's at 12 runs -- :sum, the operator that ran
+    # LAST, reached the fastest observed level in runs 8..12 while
+    # :max's FIRST block sat at the slow level in every one of the
+    # twelve (in runs 8 and 12 :min's second block was still slow when
+    # :sum's third block was already fast -- the ramp onset moves
+    # within a process), so :sum's partition refines :max's and :min
+    # and :sum cross-cut. THIRD member of the corpus's
+    # :sum-refines-:max set (below). Levels fastest-first (GAP-1.15):
+    # sum [[8..12],[7],[6],[1..5]], min [[9,10,11],[7],[6],
+    # [1,2,3,4,5,8,12]], max one level.
+    oor = _ident("gpu-subgroup-reduce-m1max-oporder-resweep-20261024/"
+                 "w1024-sum-last")
+    _expect(oor["verdict"] == "identity-refuted"
+            and len(oor["divergent"]) == 52
+            and [lv["runs"] for lv in oor["levels"]["max"]]
+                == [list(range(1, 13))]
+            and [lv["runs"] for lv in oor["levels"]["sum"]]
+                == [[8, 9, 10, 11, 12], [7], [6], [1, 2, 3, 4, 5]]
+            and [lv["runs"] for lv in oor["levels"]["min"]]
+                == [[9, 10, 11], [7], [6], [1, 2, 3, 4, 5, 8, 12]]
+            and ("sum", "max") in oor["refinements"]
+            and ("min", "max") in oor["refinements"]
+            and ("max", "sum") not in oor["refinements"]
+            and ("max", "min") not in oor["refinements"]
+            and ("sum", "min") not in oor["refinements"]
+            and ("min", "sum") not in oor["refinements"],
+            "op-order re-session: identity refuted; :sum -- the "
+            "operator that ran LAST -- refines :max (:max pools all "
+            "twelve), :min and :sum cross-cut (ramp onset moves within "
+            "a process)", stats)
+
     # shape2 w32: the record's own prose already knew the operators
     # disagreed ("all six :sum runs sat at the slow level" vs :max's
     # three named levels); the machine reproduces exactly that split
@@ -2559,7 +2592,9 @@ def _self_test_identity_corpus(stats, corpus_root):
             "three prose-named levels", stats)
 
     # the corpus's :sum-refines-:max set, stated as a corpus-wide fact.
-    # TWO records carry the strict edge as of 2026-10-24: the op-order
+    # THREE records carry the strict edge as of 2026-10-24 (the third
+    # arrived with the op-order RE-SESSION's 12-run capture session,
+    # whose own pin above is its story): the op-order
     # cell (:sum ran LAST -- the dispatch-position ramping story) and
     # the shape-2 W = 1024 record
     # (gpu-simdgroup-reduce-m1max-shape2-20261024/w1024, added
@@ -2573,7 +2608,12 @@ def _self_test_identity_corpus(stats, corpus_root):
     # the corpus's only record where :sum refines :max" is SUPERSEDED
     # by this set, not silently dropped. A future record entering this
     # set fails this pin on purpose: the corpus fact must be re-stated
-    # with its own story, never drift silently.
+    # with its own story, never drift silently. The re-session's entry
+    # (2026-10-24, this tick) is exactly that re-statement: its story
+    # is the fast-level capture -- :sum at the LAST block reached the
+    # fastest observed rule-1 level while :max's first block never
+    # left the slow level, so its refinement edge is the block-
+    # ordered clock ramp, not an operator property.
     finest_sum = [rel for rel, per_op in records
                   if (lambda i: ("sum", "max") in i["refinements"]
                       and ("max", "sum") not in i["refinements"])(
@@ -2581,10 +2621,14 @@ def _self_test_identity_corpus(stats, corpus_root):
     _expect(finest_sum == ["gpu-simdgroup-reduce-m1max-shape2-20261024/"
                            "w1024",
                            "gpu-subgroup-reduce-m1max-oporder-20261023/"
-                           "w32-sum-last"],
+                           "w32-sum-last",
+                           "gpu-subgroup-reduce-m1max-oporder-resweep-"
+                           "20261024/w1024-sum-last"],
             f"the corpus's :sum-refines-:max records are the shape-2 "
-            f"W = 1024 record (:sum FIRST, run-2 clock split) and the "
-            f"op-order cell (:sum LAST, dispatch ramping) ({finest_sum})",
+            f"W = 1024 record (:sum FIRST, run-2 clock split), the "
+            f"op-order cell (:sum LAST, dispatch ramping) and the "
+            f"op-order re-session (:sum LAST, 12 runs, the fast-level "
+            f"capture) ({finest_sum})",
             stats)
 
     print(f"cross-operator level identity: {len(records)} multi-operator "
