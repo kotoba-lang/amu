@@ -1,17 +1,28 @@
 (ns kotoba.compiler.accelerator-targets
   "Deterministic GPU vendor classification, accelerator target dispatch and
-  provisional per-vendor workgroup defaults (ADR-0355).
+  per-vendor workgroup defaults (ADR-0355; the measured rows are ADR-0358's,
+  2026-10-19, scoping amendment 2026-10-22).
 
-  One decision table, and no measurement in it yet: the workgroup sizes below
-  are PROVISIONAL design defaults chosen as powers of two that are multiples
-  of each vendor's published execution width. `recommend` marks every answer
-  :measured? false; nothing here may be reported as optimization evidence
-  until hardware measurement replaces a row.
+  One decision table, two row states: :nvidia, :apple, :intel and :amd are
+  MEASURED rows -- a hardware measurement chose each size on one workload
+  shape on one device, named by the row's :measured-device fragment -- and
+  :arm (no Mali hardware) and :unknown (the portable fallback) stay
+  PROVISIONAL design defaults (:measured? false), powers of two that are
+  multiples of each vendor's published execution width. `recommend` answers
+  the row's :measured?: true for a measured row whose fragment names the
+  device, false otherwise. A measured row is evidence for its named device
+  on the recorded workload shape only; the provisional rows are not
+  optimization evidence at all.
+
+  Correction 2026-10-24: this docstring once read \"no measurement in it
+  yet\" and \"`recommend` marks every answer :measured? false\" -- false
+  from 2026-10-19 on. Runtime state and full census of the claim's
+  surface: docs/evidence/gpu/workgroup-prose-rootcause-20261024.txt.
 
   The functions are TOTAL. An unknown vendor or api answers the documented
   fallback instead of throwing -- dispatch time is where a refusal costs the
   most, and a portable default is honest about what it is."
-  {:kotoba/export [classify-vendor default-target device-classes name-vendor-fragments recommend target-for vendor-ids vendors workgroup-default workgroup-defaults]}
+  {:kotoba/export [classify-vendor default-target device-class device-classes name-vendor-fragments recommend target-for vendor-ids vendors workgroup-default workgroup-defaults]}
   (:require [kotoba.lang.text :as str]
             #?(:cljs [kotoba.kir.cljs-i64 :as i64])))
 
@@ -58,12 +69,17 @@
                     (document-string "apple") (document-string "intel") (document-string "iris")
                     (document-string "mali") (document-string "radeon") (document-string "amd"))))
 
-;; the workgroup row builder (the host map rows: size/execution-width/measured?/basis/evidence)
+;; the workgroup row builder (the host map rows:
+;; size/execution-width/measured?/measured-device/basis/evidence). The
+;; measured-device fragment is the uB5G scoping key; an unmeasured row spells
+;; it "" and a blank fragment never matches a name (the host rows omit the
+;; key entirely for unmeasured rows -- same behavior, one spelling each).
 #?(:kotoba
-   (defn- wg-row [size :i64 width :i64 measured :bool basis :string evidence :string] :document
+   (defn- wg-row [size :i64 width :i64 measured :bool mdev :string basis :string evidence :string] :document
      (document-map (document-keyword :size) (document-i64 size)
                    (document-keyword :execution-width) (document-i64 width)
                    (document-keyword :measured?) (document-bool measured)
+                   (document-keyword :measured-device) (document-string mdev)
                    (document-keyword :basis) (document-string basis)
                    (document-keyword :evidence) (document-string evidence))))
 
@@ -116,7 +132,8 @@
        true
        (let [c (string-code-point-at s i)]
          (if (or (= c 32) (= c 9) (= c 10) (= c 13)) (blank-walk s (+ i 1) n) false)))))
-;; the case-insensitive substring search (the host re-find "(?i)m1 max")
+;; the case-insensitive substring search (the host str/includes? on the
+;; lower-cased name part -- callers lower the haystack)
 #?(:kotoba
    (defn- substr-hits [hay :string needle :string] :bool
      (sub-walk2 hay needle 0 (string-byte-length hay) (string-byte-length needle))))
@@ -155,13 +172,65 @@
   #{:nvidia :apple :intel :arm :amd :unknown}))
 #?(:kotoba
    (defn device-classes [] [:set :keyword]
-     (typed-set-new [:set :keyword] :discrete-gpu :integrated-gpu :unknown))
+     (typed-set-new [:set :keyword] :discrete-gpu :integrated-gpu :virtual-gpu :cpu :other :unknown))
    :default
 (def device-classes
-  "Reserved. The v1 table does not branch on device class yet; when a row
-  needs it (discrete vs integrated memory behavior), it lands with the
-  measurement that justifies the branch."
-  #{:discrete-gpu :integrated-gpu :unknown}))
+  "The device-class vocabulary: one keyword per word of the wire-42 DEVCLASS
+  answer (tools/kexe_gpu_vulkan.c reports the chosen device's
+  VkPhysicalDeviceType as discrete|integrated|virtual|cpu|other), plus
+  :unknown for anything that is not one of those words. Reserved: the v1
+  table does not branch on device class yet; when a row needs it (discrete vs
+  integrated memory behavior), it lands with the measurement that justifies
+  the branch."
+  #{:discrete-gpu :integrated-gpu :virtual-gpu :cpu :other :unknown}))
+;; the DEVCLASS token table (the host device-class-tokens map): the five
+;; loader words and their classes in the guest's two parallel document lists
+;; (a typed vector holds one element kind). Exact word equality, no case
+;; fold -- a word the loader cannot emit is not a class fact.
+#?(:kotoba
+   (defn- dc-tokens-doc [] :document
+     (document-list (document-string "discrete") (document-string "integrated") (document-string "virtual")
+                    (document-string "cpu") (document-string "other")))
+   :default
+(def ^:private device-class-tokens
+  "The DEVCLASS wire words -> device-classes keywords. The loader emits
+  exactly these five lower-case words, so the map is the whole vocabulary and
+  nothing is case-folded: a word the loader cannot emit is not a class fact."
+  {"discrete" :discrete-gpu
+   "integrated" :integrated-gpu
+   "virtual" :virtual-gpu
+   "cpu" :cpu
+   "other" :other}))
+#?(:kotoba
+   (defn- dc-classes-doc [] :document
+     (document-list (document-keyword :discrete-gpu) (document-keyword :integrated-gpu) (document-keyword :virtual-gpu)
+                    (document-keyword :cpu) (document-keyword :other))))
+#?(:kotoba
+   (defn- dc-lookup [token :string i :i64 n :i64] :keyword
+     (if (>= i n)
+       :unknown
+       (let [tx (option-value-of [:option :document] (document-list-at (dc-tokens-doc) i) (document-null))
+             word (option-value-of [:option :string] (document-string-value tx) "")]
+         (if (= token word)
+           (option-value-of [:option :keyword]
+                            (document-keyword-value (option-value-of [:option :document] (document-list-at (dc-classes-doc) i) (document-null)))
+                            :unknown)
+           (dc-lookup token (+ i 1) n))))))
+#?(:kotoba
+   (defn device-class [token :document] :keyword
+     (if (not (= (document-kind token) :string))
+       :unknown
+       (dc-lookup (option-value-of [:option :string] (document-string-value token) "") 0 5)))
+   :default
+(defn device-class
+  "Map one wire-42 DEVCLASS token into `device-classes`. TOTAL: a token
+  outside the loader's five words (nil, blank, a case variant, a keyword)
+  answers :unknown -- a non-fact must not become a specific class. Lossless
+  in the other direction: every loader word keeps its own class. `recommend`
+  does not branch on this; it is the reporting half of device class for the
+  dispatch layers that will (JUN-57..60)."
+  [token]
+  (get device-class-tokens token :unknown)))
 #?(:kotoba
    (defn vendor-ids [] [:map :i64 :keyword]
      (typed-map-new [:map :i64 :keyword]
@@ -260,29 +329,34 @@
    (defn target-for [api :keyword vendor :keyword] :keyword
      (cond (= api :cuda) :cuda-v1
            (= api :metal) :msl-v1
-           (or (= api :vulkan) (= api :webgpu)) :wgsl-v1
+           (= api :vulkan) :glsl-v1
+           (= api :webgpu) :wgsl-v1
            :else (default-target vendor)))
    :default
 (defn target-for
-  "The emission target for an (api, vendor) pair. An api that names its
-  shading language decides outright (:cuda -> :cuda-v1, :metal -> :msl-v1,
-  :vulkan/:webgpu -> :wgsl-v1); a missing or unknown api falls back to the
-  vendor default."
+  "The emission target for an (api, vendor) pair. An api decides its route
+  outright (:cuda -> :cuda-v1, :metal -> :msl-v1, :vulkan -> :glsl-v1,
+  :webgpu -> :wgsl-v1); a missing or unknown api falls back to the vendor
+  default. ADR-0359 decision 3: Vulkan names no shading language -- it opens
+  compiled SPIR-V -- and the only source-to-SPIR-V path this repository owns
+  is glslang from GLSL, so :vulkan answers :glsl-v1. WebGPU keeps its
+  language."
   [api vendor]
   (cond
     (= api :cuda) :cuda-v1
     (= api :metal) :msl-v1
-    (#{:vulkan :webgpu} api) :wgsl-v1
+    (= api :vulkan) :glsl-v1
+    (= api :webgpu) :wgsl-v1
     :else (default-target vendor))))
 #?(:kotoba
    (defn workgroup-defaults [] [:map :keyword :document]
      (typed-map-new [:map :keyword :document]
-                    :nvidia (wg-row 256 32 true "warp width 32; 256 is 8 warps per workgroup" "2026-10-19 Xavier nvgpu, 6 paired runs: 128-1024 flat within 2%, 32 is 22% slower; 256 kept inside the flat band")
-                    :apple (wg-row 256 32 true "SIMD-group width 32" "2026-10-19 Apple M1 Max / MoltenVK, 16 paired runs: 32-1024 medians within ~5% and no size won more than 6/16; 256 kept as the most frequent paired winner")
-                    :intel (wg-row 128 32 true "subgroup width 8/16/32; 128 is a multiple of all three" "2026-10-19 BMG G31 / ANV, 6 paired runs: 32-256 flat within 2% (64 won 4/6 on noise-level margins), 512/1024 marginally slower; 128 kept as the subgroup-safe row inside the flat band")
-                    :arm (wg-row 128 16 false "Mali execution widths 4-32 all divide 128" "")
-                    :amd (wg-row 1024 64 true "wavefront width 64; measurement chose the top of the bound" "2026-10-19 Radeon 680M / RADV, 6 paired runs: 1024 won 5/6 and is 28% faster than the provisional 256 (median 334,528 vs 467,981 ns); 32 slowest")
-                    :unknown (wg-row 256 32 false "portable fallback" "")))
+                    :nvidia (wg-row 256 32 true "xavier" "warp width 32; 256 is 8 warps per workgroup" "2026-10-19 Xavier nvgpu, 6 paired runs: 128-1024 flat within 2%, 32 is 22% slower; 256 kept inside the flat band")
+                    :apple (wg-row 256 32 true "m1 max" "SIMD-group width 32" "2026-10-19 Apple M1 Max / MoltenVK, 16 paired runs: 32-1024 medians within ~5% and no size won more than 6/16; 256 kept as the most frequent paired winner")
+                    :intel (wg-row 128 32 true "g31" "subgroup width 8/16/32; 128 is a multiple of all three" "2026-10-19 BMG G31 / ANV, 6 paired runs: 32-256 flat within 2% (64 won 4/6 on noise-level margins), 512/1024 marginally slower; 128 kept as the subgroup-safe row inside the flat band")
+                    :arm (wg-row 128 16 false "" "Mali execution widths 4-32 all divide 128" "")
+                    :amd (wg-row 1024 64 true "680m" "wavefront width 64; measurement chose the top of the bound" "2026-10-19 Radeon 680M / RADV, 6 paired runs: 1024 won 5/6 and is 28% faster than the provisional 256 (median 334,528 vs 467,981 ns); 32 slowest")
+                    :unknown (wg-row 256 32 false "" "portable fallback" "")))
    :default
 (def workgroup-defaults
   "Per-vendor workgroup rows (ADR-0355). The rows hardware answered for are
@@ -290,19 +364,34 @@
   :unknown stay provisional. :measured? says a hardware measurement chose
   this size -- nothing more. The measurements are one workload shape
   (2^20-thread f32 ewise FMA, 256 FMAs per thread, submit->fence host clock,
-  paired runs) and are not a claim of optimality for every kernel."
+  paired runs) and are not a claim of optimality for every kernel.
+
+  :measured-device (measured rows only) is the case-insensitive name
+  fragment of the ONE device each row's measurement ran on (ADR-0358's host
+  column: Xavier, M1 Max, BMG G31, Radeon 680M). It is the uB5G scoping
+  key: `recommend` reports the row's :measured? for a NAMED device only
+  when the device's name carries this fragment -- the row flag is evidence
+  about the measured device, and a name-fragment match (the same idiom as
+  name-vendor-fragments) is how this table recognises it. A fragment match
+  is deliberately coarse (a name containing the fragment counts as the
+  measured device); it narrows the flag, it never widens it past a named
+  device."
   {:nvidia {:size 256 :execution-width 32 :measured? true
+            :measured-device "xavier"
             :basis "warp width 32; 256 is 8 warps per workgroup"
             :evidence "2026-10-19 Xavier nvgpu, 6 paired runs: 128-1024 flat within 2%, 32 is 22% slower; 256 kept inside the flat band"}
    :apple {:size 256 :execution-width 32 :measured? true
+           :measured-device "m1 max"
            :basis "SIMD-group width 32"
            :evidence "2026-10-19 Apple M1 Max / MoltenVK, 16 paired runs: 32-1024 medians within ~5% and no size won more than 6/16; 256 kept as the most frequent paired winner"}
    :intel {:size 128 :execution-width 32 :measured? true
+           :measured-device "g31"
            :basis "subgroup width 8/16/32; 128 is a multiple of all three"
            :evidence "2026-10-19 BMG G31 / ANV, 6 paired runs: 32-256 flat within 2% (64 won 4/6 on noise-level margins), 512/1024 marginally slower; 128 kept as the subgroup-safe row inside the flat band"}
    :arm {:size 128 :execution-width 16 :measured? false
          :basis "Mali execution widths 4-32 all divide 128"}
    :amd {:size 1024 :execution-width 64 :measured? true
+         :measured-device "680m"
          :basis "wavefront width 64; measurement chose the top of the bound"
          :evidence "2026-10-19 Radeon 680M / RADV, 6 paired runs: 1024 won 5/6 and is 28% faster than the provisional 256 (median 334,528 vs 467,981 ns); 32 slowest"}
    :unknown {:size 256 :execution-width 32 :measured? false
@@ -317,7 +406,9 @@
          (option-value-of [:option :i64] (document-i64-value (dgk row :size)) 256))))
    :default
 (defn workgroup-default
-  "The provisional workgroup size for a vendor (a power of two in [32, 1024]).
+  "The workgroup size for a vendor (a power of two in [32, 1024]) -- the
+  row's :size, from a measured row or a provisional one as the row's
+  :measured? flag says (`workgroup-defaults`).
   Total: a vendor outside `vendors` takes the :unknown row."
   [vendor]
   (get-in workgroup-defaults [vendor :size] 256)))
@@ -354,7 +445,8 @@
   "Parse one wire-42 INFO answer -- \"<device>|<api>|<maxWgX>|<unified>\" as
   tools/kexe_gpu_vulkan.c answers it (deviceName, apiVersion major.minor.patch,
   limits.maxComputeWorkGroupSize[0], deviceType==INTEGRATED_GPU) -- into a
-  device descriptor for `recommend`:
+  device descriptor for `recommend`. The device class is NOT in this answer:
+  it rides the separate DEVCLASS request, and `device-class` maps its word:
   {:vendor <deviceName> :api :vulkan :api-version <string>
    :max-workgroup-x <int> :unified-memory? <bool> :measured? true}.
 
@@ -382,6 +474,270 @@
              :max-workgroup-x wg
              :unified-memory? (= unified "1")
              :measured? true})))))))
+;; the SUBGROUP answer (ADR-0362 decision 2): "<size>|<ops>", exactly two
+;; '|'-separated fields -- the wire-42 answer whose producer is the ADR 0371
+;; provider track (unimplemented; no live wire feeds it today). The
+;; vocabulary is the eight Vulkan 1.1 core VkSubgroupFeatureFlagBits names,
+;; lower-cased, mapped 1:1 to keywords with the hyphen preserved (the
+;; device-class-tokens idiom). The table is the whole vocabulary: a token
+;; outside it is unknown and, all-or-nothing, fails the whole answer.
+#?(:kotoba
+   (defn- sg-tokens-doc [] :document
+     (document-list (document-string "basic") (document-string "vote") (document-string "arithmetic")
+                    (document-string "ballot") (document-string "shuffle") (document-string "shuffle-relative")
+                    (document-string "clustered") (document-string "quad")))
+   :default
+(def ^:private subgroup-op-tokens
+  "The SUBGROUP answer's <ops> vocabulary (ADR-0362 decision 2): the eight
+  Vulkan 1.1 core VkSubgroupFeatureFlagBits names, lower-cased, mapped 1:1 to
+  keywords with the hyphen preserved (shuffle-relative -> :shuffle-relative).
+  The map is the whole vocabulary: a token outside it is an unknown token and,
+  with decision 4's all-or-nothing rule, fails the WHOLE answer to an absent
+  fact."
+  {"basic" :basic
+   "vote" :vote
+   "arithmetic" :arithmetic
+   "ballot" :ballot
+   "shuffle" :shuffle
+   "shuffle-relative" :shuffle-relative
+   "clustered" :clustered
+   "quad" :quad}))
+#?(:kotoba
+   (defn- sg-keywords-doc [] :document
+     (document-list (document-keyword :basic) (document-keyword :vote) (document-keyword :arithmetic)
+                    (document-keyword :ballot) (document-keyword :shuffle) (document-keyword :shuffle-relative)
+                    (document-keyword :clustered) (document-keyword :quad))))
+#?(:kotoba
+   (defn- sg-keyword [token :string i :i64] :document
+     (if (>= i 8)
+       (document-null)
+       (let [tx (option-value-of [:option :document] (document-list-at (sg-tokens-doc) i) (document-null))
+             word (option-value-of [:option :string] (document-string-value tx) "")]
+         (if (= token word)
+           (option-value-of [:option :document] (document-list-at (sg-keywords-doc) i) (document-null))
+           (sg-keyword token (+ i 1)))))))
+;; the <size> field: decimal digits only as an i64, -1 for an empty field, a
+;; non-digit or a value past i64 (the protocol table's parse-decimal
+;; contract).
+#?(:kotoba
+   (defn- sg-size [s :string] :i64
+     (let [n (string-byte-length s)]
+       (if (= n 0) -1 (sg-size-walk s 0 n 0)))))
+#?(:kotoba
+   (defn- sg-size-walk [s :string i :i64 n :i64 acc :i64] :i64
+     (if (>= i n)
+       acc
+       (let [d (- (string-code-point-at s i) 48)]
+         (cond (< d 0) -1
+               (> d 9) -1
+               (> acc (quot (- 9223372036854775807 d) 10)) -1
+               :else (sg-size-walk s (+ i 1) n (+ (* acc 10) d)))))))
+;; the <ops> field's tokens are the wire's tokens: runs of non-space bytes
+;; separated by one or more spaces (byte 32), no other byte separates (the
+;; request grammar's rule), so a separator-only field is also zero tokens.
+#?(:kotoba
+   (defn- sg-token-end [s :string i :i64 n :i64] :i64
+     (if (>= i n)
+       n
+       (if (= (string-code-point-at s i) 32) i (sg-token-end s (+ i 1) n)))))
+#?(:kotoba
+   (defn- sg-member? [acc :document kw :document k :i64 n :i64] :bool
+     (cond (>= k n) false
+           (document-equal? (option-value-of [:option :document] (document-list-at acc k) (document-null)) kw) true
+           :else (sg-member? acc kw (+ k 1) n))))
+#?(:kotoba
+   (defn- sg-ops [field :string] :document
+     (sg-ops-walk field 0 (string-byte-length field) (document-vector))))
+#?(:kotoba
+   (defn- sg-ops-walk [s :string i :i64 n :i64 acc :document] :document
+     (cond (>= i n) acc
+           (= (string-code-point-at s i) 32) (sg-ops-walk s (+ i 1) n acc)
+           :else (let [j (sg-token-end s i n)
+                       kw (sg-keyword (string-substring s i j) 0)]
+                   (if (none? kw)
+                     (document-null)
+                     (if (sg-member? acc kw 0 (document-count acc))
+                       (sg-ops-walk s j n acc)
+                       (sg-ops-walk s j n (document-vector-conj acc kw))))))))
+;; exactly two fields: the index of the single '|', -1 for none, -2 for more.
+#?(:kotoba
+   (defn- sg-pipe [s :string i :i64 n :i64 at :i64] :i64
+     (cond (>= i n) at
+           (= (string-code-point-at s i) 124) (if (< at 0) (sg-pipe s (+ i 1) n i) -2)
+           :else (sg-pipe s (+ i 1) n at))))
+#?(:kotoba
+   (defn device-from-subgroup [answer :document] :document
+     (if (not (= (document-kind answer) :string))
+       (document-null)
+       (let [s (option-value-of [:option :string] (document-string-value answer) "")
+             n (string-byte-length s)
+             p (sg-pipe s 0 n -1)]
+         (if (< p 0)
+           (document-null)
+           (let [size (sg-size (string-substring s 0 p))
+                 ops (sg-ops (string-substring s (+ p 1) n))]
+             (if (and (< 0 size) (not (none? ops)))
+               (document-map (document-keyword :subgroup-size) (document-i64 size)
+                             (document-keyword :subgroup-ops) ops)
+               (document-null)))))))
+   :default
+(defn device-from-subgroup
+  "Parse one wire-42 SUBGROUP answer -- \"<size>|<ops>\", exactly two
+  '|'-separated fields (ADR-0362 decision 2) -- into the two descriptor keys
+  rule 6 (ADR-0356) already consumes (decision 4):
+  {:subgroup-size <positive int> :subgroup-ops #{<keywords>}}. The producer of
+  this answer (the ADR 0371 GPU provider's SUBGROUP reply) does not exist
+  yet, so no live wire feeds this function today.
+
+  <size> is decimal digits only, a positive integer. <ops> is zero or more
+  tokens from `subgroup-op-tokens`, read by the wire's token rule (runs of
+  non-space bytes separated by one or more spaces -- byte 32 is the only
+  separator, the request grammar's rule -- so a separator-only field is also
+  zero tokens). An EMPTY <ops> is a FACT (\"no subgroup operations in
+  compute\"), not a refusal. The answer names a set: a duplicate token is the
+  same fact and collapses.
+
+  TOTAL and all-or-nothing (decision 4): a non-string answer, a field count
+  other than 2, an empty or non-digit <size>, a zero size, a size past the
+  i64 range, or an unknown token makes the WHOLE answer nil -- an absent
+  fact, which rule 6 answers :baseline with. A partially trusted answer must
+  not select a variant."
+  [answer]
+  (when (string? answer)
+    (let [fields (str/split answer #"\|" -1)]
+      (when (= 2 (count fields))
+        (let [[size-text ops-text] fields
+              size (when (re-matches #"[0-9]+" size-text) (parse-long size-text))
+              ops (reduce (fn [acc token]
+                            (if-let [kw (get subgroup-op-tokens token)]
+                              (conj acc kw)
+                              (reduced nil)))
+                          #{}
+                          (remove #(= "" %) (str/split ops-text #" +" -1)))]
+          (when (and size (pos? size) ops)
+            {:subgroup-size size
+             :subgroup-ops ops})))))))
+;; ADR-0362 slice 2's PURE HALF: the producer's answer mapping -- from the
+;; device record the ADR 0371 provider will read (the
+;; VkPhysicalDeviceSubgroupProperties fields as data) to the wire-42
+;; SUBGROUP payload, or to nothing at all (the provider answers the named
+;; refusal gpu/no-compute-subgroups). The bit values are the Vulkan
+;; registry's VkShaderStageFlagBits / VkSubgroupFeatureFlagBits values
+;; (registry.khronos.org refpages, verified 2026-10-23): COMPUTE stage
+;; 0x20; core-eight ops 0x1 0x2 0x4 0x8 0x10 0x20 0x40 0x80 in the
+;; vocabulary order of the table above; partitioned 0x100, rotate 0x200
+;; and rotate-clustered 0x400 are masked off (decision 2).
+#?(:kotoba
+   (defn- sg-compute-stage-bit [] :i64 32)
+   :default
+   (def ^:private subgroup-compute-stage-bit
+     "VK_SHADER_STAGE_COMPUTE_BIT = 0x00000020 (the Vulkan registry's
+  VkShaderStageFlagBits page, verified 2026-10-23). A SUBGROUP answer
+  reports compute-stage facts only, so the producer reads exactly this
+  one stage bit (decision 2: a width that is not a compute-stage fact is
+  not this answer)."
+     0x20))
+#?(:kotoba
+   (defn- sg-bits-doc [] :document
+     (document-list (document-i64 1) (document-i64 2) (document-i64 4) (document-i64 8)
+                    (document-i64 16) (document-i64 32) (document-i64 64) (document-i64 128)))
+   :default
+   (def ^:private subgroup-op-bits
+     "The producer half of `subgroup-op-tokens`: the same eight tokens in the
+  same vocabulary order, each with its VkSubgroupFeatureFlagBits value
+  (the Vulkan registry's VkSubgroupFeatureFlagBits page, verified
+  2026-10-23): basic 0x1, vote 0x2, arithmetic 0x4, ballot 0x8, shuffle
+  0x10, shuffle-relative 0x20, clustered 0x40, quad 0x80. Bits outside
+  the core eight -- partitioned 0x100, rotate 0x200, rotate-clustered
+  0x400 -- answer no token (decision 2 masks them off in v1)."
+     [["basic" 0x1] ["vote" 0x2] ["arithmetic" 0x4] ["ballot" 0x8]
+      ["shuffle" 0x10] ["shuffle-relative" 0x20] ["clustered" 0x40] ["quad" 0x80]]))
+#?(:kotoba
+   (defn- sg-token-at [i :i64] :string
+     (option-value-of [:option :string]
+                      (document-string-value (option-value-of [:option :document] (document-list-at (sg-tokens-doc) i) (document-null)))
+                      "")))
+#?(:kotoba
+   (defn- sg-bits-at [i :i64] :i64
+     (option-value-of [:option :i64]
+                      (document-i64-value (option-value-of [:option :document] (document-list-at (sg-bits-doc) i) (document-null)))
+                      -1)))
+#?(:kotoba
+   (defn- sg-ops-emit [ops-bit :i64 i :i64 acc :string] :string
+     (if (>= i 8)
+       acc
+       (sg-ops-emit ops-bit (+ i 1)
+                    (if (= (sg-bits-at i) (bit-and ops-bit (sg-bits-at i)))
+                      (if (= 0 (string-byte-length acc))
+                        (sg-token-at i)
+                        (string-concat acc (string-concat " " (sg-token-at i))))
+                      acc)))))
+#?(:kotoba
+   (defn subgroup-answer [record :document] :document
+     (let [size-d (dgk record :subgroup-size)
+           stages-d (dgk record :supported-stages)
+           ops-d (dgk record :supported-ops)]
+       (if (and (= (document-kind size-d) :i64)
+                (= (document-kind stages-d) :i64)
+                (= (document-kind ops-d) :i64))
+         (let [size (option-value-of [:option :i64] (document-i64-value size-d) -1)
+               stages (option-value-of [:option :i64] (document-i64-value stages-d) -1)
+               ops-bit (option-value-of [:option :i64] (document-i64-value ops-d) -1)]
+           (if (and (< 0 size) (<= 0 stages) (<= 0 ops-bit)
+                    (= (sg-compute-stage-bit) (bit-and stages (sg-compute-stage-bit))))
+             (document-string (string-concat (string-from-i64 size)
+                                             (string-concat "|" (sg-ops-emit ops-bit 0 ""))))
+             (document-null)))
+         (document-null))))
+   :default
+(defn subgroup-answer
+  "PRODUCER half of one wire-42 SUBGROUP answer (ADR-0362 decisions 2+3):
+  answer the \"<size>|<ops>\" payload for one device record, or nil for
+  the named refusal gpu/no-compute-subgroups -- the provider sends
+  `!gpu/no-compute-subgroups SUBGROUP: ...` on nil (the protocol table's
+  refusal 35), and the consumer treats that refusal exactly like an
+  absent fact (decision 3).
+
+  `record` is the VkPhysicalDeviceSubgroupProperties read the ADR 0371
+  provider will make, as data: {:subgroup-size <int>, :supported-stages
+  <VkShaderStageFlags>, :supported-ops <VkSubgroupFeatureFlags>}. A
+  payload answers exactly when the record reports compute-stage
+  subgroups: the size is a positive integer AND VK_SHADER_STAGE_COMPUTE_BIT
+  (0x20) is set in :supported-stages (decision 2). <ops> is the set
+  tokens of the core eight VkSubgroupFeatureFlagBits bits set in
+  :supported-ops, in the fixed vocabulary order of `subgroup-op-tokens`,
+  space-separated; bits outside the core eight are masked off. An EMPTY
+  <ops> is the legal \"no subgroup operations in compute\" fact
+  (decision 2), not a refusal.
+
+  TOTAL and deterministic (decision 3, ADR-0356 rule 5): any other
+  record shape -- not a map, a non-integer field, a non-positive size, a
+  negative mask -- answers nil (the provider reports no compute-stage
+  subgroups), never a throw; the same record answers the same bytes
+  forever.
+
+  UNMEASURED: this is a pure mapping over vendor-published struct
+  fields. No hardware measured it and it is not optimization evidence.
+  The provider's Vulkan read and wire reply do not exist yet (the ADR
+  0371 track), so no live wire feeds this function today -- and until
+  one does, the consumer sees no facts and every rule-6 row keeps
+  failing closed to :baseline."
+  [record]
+  (when (and (map? record)
+             (integer? (:subgroup-size record))
+             (pos? (:subgroup-size record))
+             (integer? (:supported-stages record))
+             (not (neg? (:supported-stages record)))
+             (integer? (:supported-ops record))
+             (not (neg? (:supported-ops record)))
+             (not (zero? (bit-and (:supported-stages record) subgroup-compute-stage-bit))))
+    (str (:subgroup-size record) "|"
+         (reduce (fn [acc [token bit]]
+                   (if (zero? (bit-and (:supported-ops record) bit))
+                     acc
+                     (if (= "" acc) token (str acc " " token))))
+                 ""
+                 subgroup-op-bits)))))
 #?(:kotoba
    (defn recommend [device :document] :document
      (let [vendor (classify-vendor device)
@@ -395,10 +751,21 @@
                     (clamp2 (option-value-of [:option :i64] (document-i64-value (dgk row :size)) 256)
                             (option-value-of [:option :i64] (document-i64-value lim) -1))
                     -1)
-           device-name (string-concat (option-value-of [:option :string] (document-string-value (dgk device :device)) "")
-                                      (option-value-of [:option :string] (document-string-value (dgk device :name)) ""))
-           named-device? (not (blank-str? device-name))
-           measured-device? (substr-hits (string-ascii-lower device-name) "m1 max")
+           ;; uB5G: the measured flag is scoped to the measured device (one
+           ;; configuration per measured row, ADR-0358). A descriptor NAMES a
+           ;; device through :device, :name, or the :vendor name key -- the
+           ;; key classify-vendor matches and device-from-info fills with
+           ;; deviceName. A named device keeps the row's measured flag only
+           ;; when its name carries the row's :measured-device fragment.
+           p-device (option-value-of [:option :string] (document-string-value (dgk device :device)) "")
+           p-name (option-value-of [:option :string] (document-string-value (dgk device :name)) "")
+           p-vendor (option-value-of [:option :string] (document-string-value (dgk device :vendor)) "")
+           named-device? (or (not (blank-str? p-device)) (not (blank-str? p-name)) (not (blank-str? p-vendor)))
+           frag (option-value-of [:option :string] (document-string-value (dgk row :measured-device)) "")
+           measured-device? (and (not (blank-str? frag))
+                                 (or (substr-hits (string-ascii-lower p-device) frag)
+                                     (substr-hits (string-ascii-lower p-name) frag)
+                                     (substr-hits (string-ascii-lower p-vendor) frag)))
            basis (if (< 0 probed)
                    (string-concat (option-value-of [:option :string] (document-string-value (dgk row :basis)) "")
                                   (string-concat (string-concat " (bounded by probed device limit " (i64-text (option-value-of [:option :i64] (document-i64-value lim) 0))) ")"))
@@ -408,8 +775,17 @@
                      (document-keyword :workgroup-size) (document-i64 (if (< 0 probed) probed (option-value-of [:option :i64] (document-i64-value (dgk row :size)) 256)))
                      (document-keyword :execution-width) (document-i64 (option-value-of [:option :i64] (document-i64-value (dgk row :execution-width)) 32))
                      (document-keyword :basis) (document-string basis)
+                     ;; uB5G: a NAMED device must be the measured device (the
+                     ;; row's :measured-device fragment in its name) for the
+                     ;; row's measured flag to apply; an unnamed
+                     ;; (vendor-id-only) descriptor keeps the row-level flag
+                     ;; as the only available signal. An INFO-derived
+                     ;; descriptor (:max-workgroup-x present, from
+                     ;; device-from-info) reports a LIMIT, not a tuning
+                     ;; result, and never transfers the row's measured flag.
                      (document-keyword :measured?) (document-bool (and (document-equal? (dgk row :measured?) (document-bool true))
-                                                                       named-device? measured-device?)))))
+                                                                       (none? lim)
+                                                                       (or (not named-device?) measured-device?))))))
    :default
 (defn recommend
   "A deterministic dispatch decision for one device descriptor
@@ -417,7 +793,10 @@
   {:vendor :target :workgroup-size :execution-width :basis :measured?}.
   Same descriptor in, same map out, forever. :measured? is the row's: true
   where a hardware measurement (ADR-0358) chose the size, false while the
-  row is still the provisional design default."
+  row is still the provisional design default -- and, for a descriptor that
+  NAMES a device, true only when that name carries the row's
+  :measured-device fragment (uB5G: the flag is evidence about the measured
+  device, not the vendor class)."
   [device]
   (let [vendor (classify-vendor device)
         row (get workgroup-defaults vendor (workgroup-defaults :unknown))
@@ -428,22 +807,37 @@
                  (when (and (number? lim) (pos? lim))
                    (loop [sz (:size row)]
                      (if (and (<= sz lim) (pos? sz)) sz (recur (quot sz 2))))))
-        ;; uB5G: the measured flag is scoped to the measured device (one M1
-        ;; Max configuration, ADR-0358), not to the vendor class.
-        device-name (str (:device device) (:name device))
-        named-device? (not (clojure.string/blank? device-name))
-        measured-device? (boolean (re-find #"(?i)m1 max" device-name))]
+        ;; uB5G: the measured flag is scoped to the measured device (one
+        ;; configuration per measured row, ADR-0358), not to the vendor
+        ;; class. A descriptor NAMES a device through :device, :name, or the
+        ;; :vendor name key (the key classify-vendor matches and
+        ;; device-from-info fills with deviceName) -- before this scoping the
+        ;; :vendor-only spelling was missed and a named device that hardware
+        ;; never measured ({:vendor \"Apple M3\"}) inherited the row's flag,
+        ;; while the measured NVIDIA device spelled by name (Tegra Xavier)
+        ;; was denied it. Now a named device keeps the row flag only when
+        ;; its name carries the row's :measured-device fragment (matched
+        ;; case-insensitively, per name part, the name-vendor-fragments
+        ;; idiom). An UNNAMED (vendor-id-only) descriptor keeps the row-level
+        ;; flag as the only available signal.
+        name-parts (filter #(and (string? %) (not (str/blank? %)))
+                           [(:device device) (:name device) (:vendor device)])
+        named-device? (boolean (seq name-parts))
+        measured-device? (when-let [frag (:measured-device row)]
+                           (boolean (some #(str/includes? (str/lower %) frag)
+                                          name-parts)))]
     {:vendor vendor
      :target (target-for (:api device) vendor)
      :workgroup-size (or probed (:size row))
      :execution-width (:execution-width row)
      :basis (cond-> (:basis row) probed (str " (bounded by probed device limit " (:max-workgroup-x device) ")"))
-     ;; uB5G: a NAMED device must be the measured device for the row's
-     ;; measured flag to apply; an unnamed (vendor-class) descriptor keeps
-     ;; the row-level flag as the only available signal.
+     ;; uB5G: a NAMED device must be the measured device (the row's
+     ;; :measured-device fragment in its name) for the row's measured flag
+     ;; to apply; an unnamed (vendor-id-only) descriptor keeps the
+     ;; row-level flag as the only available signal.
      ;; An INFO-derived descriptor (:max-workgroup-x present, from
      ;; device-from-info) reports a LIMIT, not a tuning result, and never
      ;; transfers the row's measured flag (the device-from-info contract).
      :measured? (and (boolean (:measured? row))
                      (nil? (:max-workgroup-x device))
-                     (or (not named-device?) measured-device?))})))
+                     (or (not named-device?) (boolean measured-device?)))})))

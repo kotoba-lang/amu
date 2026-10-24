@@ -130,6 +130,19 @@ fallback, not a refusal.
 - The ADR-0355 workgroup rows are untouched and stay `:measured? false` on
   their own axis; nothing here upgrades them.
 
+Amended 2026-10-22: the state above is the 2026-10-19 snapshot and is
+superseded on the IMPLEMENTATION axis only. The emission and the shared
+selection row now exist -- `kotoba.compiler.accelerator-subgroup-reduce`
+emits the Vulkan/GLSL arm for the (:glsl-v1, :subgroup-reduce) pair
+(ADR-0359 decision 1) with the sealed GLSL -> SPIR-V build step of decision
+2, and `select-variant` (kotoba.compiler.accelerator-variants) answers
+`:subgroup-reduce` for `:arm` and `:intel` under ADR-0356 rule 6 and this
+file's capability precondition (the descriptor must report the fold's
+subgroup ops and a subgroup size dividing `W`; anything else fails closed to
+`:baseline`). Every performance word and this row's `:measured?` stay
+UNMEASURED: no Mali device exists in this fleet and the measurement
+contract below has not been run.
+
 ## Measurement contract (JUN-60)
 
 The row flips `:measured? false` to true only on an interleaved

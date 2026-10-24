@@ -1,24 +1,89 @@
 (ns kotoba.compiler.accelerator-variants
   "Total, deterministic per-vendor kernel variant selection for the ADR-0002
-  accelerator KIR (ADR-0356; JUN-57 NVIDIA slice, JUN-58/59/60 follow).
+  accelerator KIR (ADR-0356; the NVIDIA CUDA-route row is JUN-57, the
+  Intel and ARM rows are JUN-59/JUN-60 and share one
+  subgroup-size-parametric emission, and the Apple row JUN-58 (ADR-0360)
+  and the NVIDIA Vulkan-route row JUN-57 (ADR-0361) share that same
+  emission on the Vulkan route -- MoltenVK is Apple's only EXECUTION route
+  there, and NVIDIA's CUDA row has no execution path in this repository).
+  The AMD row (JUN-84 / AWAI-40, ADR-0364) shares it too, on the Vulkan
+  route (RADV) and the WGSL route (:amd's vendor-default target) -- its
+  RDNA wave32/wave64 duality is answered by the fold's runtime width
+  query, never at selection time.
+  The Apple row also rides the MSL route since ADR-0356's and ADR-0360's
+  2026-10-23 amendments (JUN-58's own decision), and the NVIDIA row rides
+  the CUDA route since ADR-0361's same-day amendment (JUN-57's own
+  decision) -- as the SECOND rung of that route's ladder, under
+  :warp-shuffle-reduce's precedence.
+  UNMEASURED, almost all of it. Two variant reductions have EXECUTED on
+  the vendor hardware a row names, both on Apple M1 Max through
+  measurement harnesses: :subgroup-reduce (GLSL arm via wire-42/MoltenVK,
+  PR #1347/#1348, 2026-10-19; MSL arm via a native Metal harness,
+  2026-10-23, at W = 32..1024), losing to :baseline in every measured
+  cell but W = 32 -- the one mixed cell, whose signs are scoped to the
+  slow clock regime and whose answer is a decision (see apple-w32-note)
+  -- and :simdgroup-reduce (the same native-Metal channel, 2026-10-23,
+  at W = 256), BEATING :baseline there (paired median ratios
+  0.790/0.800/0.799 for :sum/:max/:min, claim-protocol rule 2
+  REGIME-INVARIANT FASTER, 18/18 per-run ratios below 1.0). No other
+  vendor's hardware has run a variant, and no variant has an execution
+  path in the product runtime: the wire-42 (:gpu/compute) route has no
+  producer today -- the C loader brokers were removed (main 36479076) and
+  the replacement is ADR 0371's GPU provider process, not implemented.
+  Every answer is a design choice marked :measured? false except the
+  measured cells ADR-0360 question (1)'s 2026-10-23 decision unlocks (JUN-58):
+  the narrowed :baseline answers of the measured device (Apple M1 Max,
+  reported subgroup size 32) on the MSL route at W = 64/128/256/512/1024 --
+  the cells whose refutation ran the emitters' own bytes on hardware under
+  the sweep protocol -- and, where the fold's own rule-6 fact is reported,
+  the :simdgroup-reduce answer at W = 64/128/256/512/1024 (this
+  variant's OWN
+  flip cells, measured faster than :baseline 2026-10-23/24,
+  apple-simdgroup-flip-note).
+  Those answers carry :measured? true and a
+  :measured-cell record naming the tested device class, the channel and the
+  evidence. The
+  W = 32 cell ran under the same channel and keeps the lock: its verdict is
+  mixed and regime-scoped, and its :baseline answer is the low-band
+  decision's, not a measurement's. No
+  other answer may be reported as optimization evidence until a hardware
+  measurement replaces its basis.
 
-  UNMEASURED, all of it. Nothing in this repository has executed a
-  warp-shuffle reduction: the runtime :gpu/compute (wire 42) executes through
-  Vulkan only (tools/kexe_gpu_vulkan.c) and the CUDA emitter has no execution
-  path. Every answer here is a design choice marked :measured? false, and no
-  caller may report one as optimization evidence until a hardware measurement
-  replaces its basis.
+  The Metal-native :simdgroup-reduce row (ADR-0373, rule 3 step 2 landed
+  2026-10-23) is SELECTABLE under the MSL ladder: outside the carved-out
+  measured class, an Apple MSL descriptor reporting the fold's own rule-6
+  fact (:simd-reduce -- the device's SIMD-group exposes simd_sum/simd_max/
+  simd_min) and a reported SIMD-group width dividing W answers
+  :simdgroup-reduce FIRST (the vendor-native rung); a descriptor reporting
+  the shuffle fold's facts but not :simd-reduce falls to :subgroup-reduce
+  (the second rung, byte-for-byte the old answer); everything else answers
+  :baseline. The measured-cell carve-out outranks rung 1 everywhere but
+  this variant's OWN flip cells: the narrowed M1
+  Max class keeps its reduce-shape answers (:baseline, measured where the
+  flip keys hold) at every W but 64/128/256/512/1024, where this
+  variant's own
+  measurements (2026-10-23/24, apple-simdgroup-flip-note) flipped the
+  cells -- with the fold's rule-6 fact reported, those cells answer
+  :simdgroup-reduce, MEASURED faster than :baseline. Every other
+  :simdgroup-reduce answer is UNMEASURED (:measured? false).
 
   The functions are TOTAL, like the dispatch table in
   kotoba.compiler.accelerator-targets: a vendor or kernel shape outside the
   table answers :baseline, never a throw. Selection time is the wrong place
   to refuse -- a portable kernel that runs is worth more than an error."
   {:kotoba/export [select-variant variant-bases variants]}
-  (:require [kotoba.compiler.accelerator :as accelerator]))
+  (:require [kotoba.compiler.accelerator :as accelerator]
+            [kotoba.compiler.accelerator-simdgroup-reduce :as simdgroup]
+            [kotoba.compiler.accelerator-subgroup-reduce :as subgroup-reduce]
+            [kotoba.lang.text :as str]))
 
 (def variants
   "Every variant selection may answer. Backed by the emitter's admitted set --
-  a variant that cannot be emitted is never selected."
+  a variant that cannot be emitted is never selected. [Honesty mark
+  2026-10-23, rule-3 step 2: :simdgroup-reduce is not only admitted (step 1,
+  MSL route) but SELECTABLE now -- select-variant answers it under ADR-0373's
+  MSL ladder; the admitted set remains a NECESSARY gate, not a promise that
+  every member is selectable on every route.]"
   accelerator/kernel-variants)
 
 (def min-warp-shuffle-workgroup
@@ -26,11 +91,736 @@
   Below this the variant would need partial-warp masking and gets :baseline."
   32)
 
+(def ^:private route-names
+  "One emission route under the two names callers may hold for it: the api
+  name and the emitter target name. ADR-0359 decision 3 is why :vulkan and
+  :glsl-v1 name one route (the api :vulkan opens compiled SPIR-V and the
+  only source-to-SPIR-V path this repository owns is glslang from GLSL);
+  :cuda and :cuda-v1 are the CUDA route's two spellings the same way,
+  :metal and :msl-v1 are the MSL route's, and :webgpu and :wgsl-v1 are the
+  WGSL route's (ADR-0363). The sets are
+  disjoint, so at most one route answers per target keyword and the lookup
+  is order-independent."
+  {:cuda-v1 #{:cuda :cuda-v1}
+   :glsl-v1 #{:vulkan :glsl-v1}
+   :msl-v1 #{:metal :msl-v1}
+   :wgsl-v1 #{:webgpu :wgsl-v1}})
+
+(defn- emitter-route
+  "The emission route a target keyword names, or nil when it names none.
+  TOTAL: an unknown or absent target answers nil and selection then falls
+  back to :baseline rather than guessing an emitter."
+  [target]
+  (some (fn [[route names]] (when (contains? names target) route)) route-names))
+
+(def ^:private apple-measured-fragment
+  "The measured-device fragment of the ONE device where the Apple row has
+  hardware measurements: \"Apple M1 Max\" (the GLSL arm via wire-42/MoltenVK
+  2026-10-19, PR #1347/#1348, and the MSL arm via a native Metal harness
+  2026-10-23, ADR-0360's measurement amendment). The uB5G idiom from
+  kotoba.compiler.accelerator-targets: evidence about a NAMED device acts
+  on that device's name -- case-insensitively, per name part -- and never
+  past it. Coarse on purpose (a name carrying the fragment counts as the
+  measured device)."
+  "m1 max")
+
+(defn- device-name-carries?
+  "Whether any name part the descriptor carries (:device, :name, or the
+  :vendor name key -- the same three keys uB5G reads in
+  kotoba.compiler.accelerator-targets/recommend) carries `fragment`,
+  case-insensitively. An unnamed (vendor-id-only) descriptor answers
+  false: no name, no evidence to act on."
+  [dev fragment]
+  (boolean (some (fn [part]
+                   (and (string? part)
+                        (not (str/blank? part))
+                        (str/includes? (str/lower part) fragment)))
+                 [(:device dev) (:name dev) (:vendor dev)])))
+
+(def ^:private apple-measured-channel
+  "The channel the contract-satisfying measurements ran through: the
+  native Metal harness (scripts/gpu-subgroup-reduce-metal-measure.{m,py,
+  cljk}) dispatching the emitters' own MSL bytes. ADR-0360 question (1)'s
+  2026-10-23 decision admits this channel for the MSL arm: wire-42
+  executes SPIR-V through Vulkan and can never run MSL, so a wire-42-only
+  clause would be a deadlock for that arm, not an honesty lock."
+  :native-metal)
+
+(def ^:private apple-measured-workgroups
+  "The workgroup widths whose measurement CHOSE the answer the flip marks:
+  W = 256 (ADR-0360's measurement amendment, 2026-10-23), W = 512/1024
+  (the same day's W-sweep) and W = 64/128 (the same day's low band -- all
+  three operators 1.20-1.25, the same penalty band as W >= 256). W = 32
+  ran under the same channel and is MEASURED, but it is NOT in this set:
+  its verdict is mixed and regime-scoped -- the low band saw :sum
+  0.916-0.920 with every one of those runs in the slow clock regime, and
+  the later shape-2 and op-order cells
+  (docs/evidence/gpu-subgroup-reduce-m1max-shape2-20261023,
+  docs/evidence/gpu-subgroup-reduce-m1max-oporder-20261023) measured the
+  scoping itself: the sign follows the clock level for all three operators
+  (op-order within-pair medians, slow vs fast: :sum 0.919 vs 1.018, :max
+  0.917 vs 1.029, :min 0.920 vs 1.018) -- and it published no
+  regime-robust verdict that chose an answer -- the W = 32
+  answer is the low-band decision's (apple-w32-note) and keeps the lock.
+  The GLSL arm never flips at any
+  width (its runs are LABELED BOOTSTRAP, see the honesty-lock prose)."
+  #{64 128 256 512 1024})
+
+(def ^:private apple-measured-subgroup-size
+  "The reported subgroup size the tested device gave: 32
+  ([[threads_per_simdgroup]] on Apple M1 Max, confirming the Vulkan-side
+  reading). The measurement contract keys the flip to the tested device's
+  name AND its reported subgroup size -- a descriptor reporting anything
+  else is not the tested device class."
+  32)
+
+(def ^:private apple-measured-shapes
+  "The element counts the contract-satisfying cells ran: the flip-contract
+  WIDENING DECISION (ADR-0360's third amendment, 2026-10-23, JUN-58) -- the
+  key is no longer the single shape n = 1,000,003 but the two MEASURED
+  shapes, n = 1,000,003 (every shape-1 cell) and n = 2^20 (the shape-2
+  records, gpu-subgroup-reduce-m1max-shape2-20261023 and
+  gpu-subgroup-reduce-m1max-shape2-band-20261023). Shape 2's completed
+  flip-set band measured the variant slower in all 15 width x operator
+  cells (1.166-1.239, paired within-run medians) -- the same sign and the
+  same penalty band as shape 1 at every width -- so it is a contract cell,
+  not corroboration. The selection answer cannot vary with n; the record
+  names the shapes so no claim extends past these two -- shapes beyond
+  them are UNMEASURED."
+  [1000003 1048576])
+
+(def ^:private apple-measured-evidence
+  "The evidence directories of the contract-satisfying cells: the W = 256
+  measurement, the W-sweep (W = 256 anchor / 512 / 1024) and the low band
+  (W = 32 / 64 / 128) at shape 1, and the shape-2 records (W = 256/32 and
+  the flip-set band W = 64/128/512/1024) the widening decision added --
+  plus the ten sanctioned CROSS-DAY REPLICATION records (the anchor
+  W = 256 and W = 64/128/512/1024 at each measured shape, all later-day
+  2026-10-24), corroboration that flipped nothing. These lists are
+  closed under the flip contract's record kinds -- each cell's own
+  contract-satisfying flip runs (one per measured shape) and its
+  sanctioned cross-day replication runs -- and name no other record
+  kind: this family's same-day re-session records
+  (docs/evidence/gpu-subgroup-reduce-m1max-resweep-20261023/) are named
+  in NO list here -- the same-day re-session naming decision
+  (docs/evidence/gpu/same-day-resweep-naming-20261024.txt) applied to
+  this family's lists (that decision's own named follow-through)."
+  ["docs/evidence/gpu-subgroup-reduce-m1max-20261023"
+   "docs/evidence/gpu-subgroup-reduce-m1max-wsweep-20261023"
+   "docs/evidence/gpu-subgroup-reduce-m1max-wsweep-low-20261023"
+   "docs/evidence/gpu-subgroup-reduce-m1max-shape2-20261023"
+   "docs/evidence/gpu-subgroup-reduce-m1max-shape2-band-20261023"
+   "docs/evidence/gpu-subgroup-reduce-m1max-crossday-20261024/w256"
+   "docs/evidence/gpu-subgroup-reduce-m1max-crossday-20261024/w64"
+   "docs/evidence/gpu-subgroup-reduce-m1max-crossday-20261024/w128"
+   "docs/evidence/gpu-subgroup-reduce-m1max-crossday-20261024/w512"
+   "docs/evidence/gpu-subgroup-reduce-m1max-crossday-20261024/w1024"
+   "docs/evidence/gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w256"
+   "docs/evidence/gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w64"
+   "docs/evidence/gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w128"
+   "docs/evidence/gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w512"
+   "docs/evidence/gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w1024"])
+
+(def ^:private apple-narrow-note
+  "APPLE ROW NARROWED (ADR-0360's second decision, 2026-10-23, JUN-58):
+  this named device carries the measured-device fragment \"m1 max\", where
+  hardware measured :subgroup-reduce SLOWER than :baseline -- the MSL arm
+  via a native Metal harness 2026-10-23 (ADR-0360's measurement amendment:
+  ~22% slower at W = 256 across :sum/:max/:min; the same day's W-sweep:
+  still slower at W = 512 and W = 1024, paired median ratios 1.19-1.20 and
+  1.18-1.19 -- the contract-satisfying cells of question (1)'s decision)
+  and the GLSL arm via wire-42/MoltenVK 2026-10-19 (PR #1347/#1348:
+  ~20-27% slower at W = 256, never faster over W = 32..256 -- the same
+  sign, but LABELED BOOTSTRAP: an unbalanced replay order biases the ratio
+  and its own record publishes no verdict). The refuted variant is not
+  selected on the device that refuted it; every other Apple device keeps
+  the designed row (UNMEASURED). The low band completed the MSL band
+  W = 32..1024 on this device: W = 64..1024 rests on the device's own
+  measurements and those cells flip the honesty lock; W = 32 is the one
+  mixed cell and its answer carries its own decision note (apple-w32-note).
+  Corroboration (2026-10-23, no flag movement): the demotion basis
+  replicates at a second shape -- n = 2^20
+  (docs/evidence/gpu-subgroup-reduce-m1max-shape2-20261023), the padded
+  tail gone, W = 256 penalty 1.220-1.227 against shape 1's 1.217-1.220 --
+  so it is not a padded-tail artifact. The flip contract WIDENED on
+  2026-10-23 (the widening decision, ADR-0360's third amendment): shape 2's
+  completed flip-set band
+  (docs/evidence/gpu-subgroup-reduce-m1max-shape2-band-20261023) measured
+  the variant slower in all 15 width x operator
+  cells (1.166-1.239, paired within-run medians) -- the same sign and the
+  same penalty band as shape 1 at every width -- so both measured shapes
+  are contract cells now (the record's :shapes names them) and shapes
+  beyond these two stay UNMEASURED. CROSS-DAY REPLICATION OF THE FLIP
+  CELLS (both measured shapes, all later-day 2026-10-24): the ten
+  sanctioned cross-day records (the anchor W = 256 and W = 64/128/512/
+  1024 at each measured shape) corroborate the demotion basis on a later
+  day at every flipped cell -- paired median ratios (:subgroup-reduce /
+  :baseline gpu ns) shape 1: w256 1.220/1.216/1.212, w64 1.220/1.216/
+  1.217, w128 1.245/1.227/1.230, w512 1.197/1.193/1.193, w1024
+  1.186/1.182/1.181; shape 2: w256 1.226/1.223/1.224, w64 1.222/1.221/
+  1.220, w128 1.239/1.235/1.237, w512 1.200/1.193/1.192, w1024
+  1.184/1.183/1.182. The ten records, named in full:
+  docs/evidence/gpu-subgroup-reduce-m1max-crossday-20261024/w256,
+  docs/evidence/gpu-subgroup-reduce-m1max-crossday-20261024/w64,
+  docs/evidence/gpu-subgroup-reduce-m1max-crossday-20261024/w128,
+  docs/evidence/gpu-subgroup-reduce-m1max-crossday-20261024/w512,
+  docs/evidence/gpu-subgroup-reduce-m1max-crossday-20261024/w1024,
+  docs/evidence/gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w256,
+  docs/evidence/gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w64,
+  docs/evidence/gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w128,
+  docs/evidence/gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w512,
+  docs/evidence/gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w1024.
+  Nine of the ten rows are rule-2 REGIME-INVARIANT
+  SLOWER (18/18 per-run ratios above 1.0) and reproduce in sign strictly
+  at every operator; the shape-1 w128 row is the one exception, named
+  not hidden (rule 2 REGIME-SCOPED, 17/18 -- one :max run at 0.955 --
+  sign does NOT reproduce strictly at :max there). The magnitude phrases
+  differ by row and each row's own roll-up is its record's: magnitude
+  reproduces within 0.004 at the shape-1 w512 row (the series' first
+  magnitude reproduction), partially at the shape-1 w1024 row (within
+  0.000 :sum / 0.004 :max, splits at :min) and within 0.002 at the
+  shape-2 w64 row (the shape-2 part's first); every other row splits by
+  clock regime (mixed-strata draws). These are REPLICATION records,
+  corroboration that flipped nothing: no :measured? flag, no :shapes
+  value, no selection answer and no workgroup row (ADR-0355/0358)
+  moves, and the W = 32 cell is DECIDED OUT of this list (its own
+  membership decision, apple-w32-note). Naming the ten records here and
+  in apple-measured-evidence, plus the same-day-resweep naming rule
+  applied to this family's lists, is the naming slice of 2026-10-24
+  (docs/evidence/gpu/subgroup-crossday-naming-20261024.txt).")
+
+(def ^:private apple-w32-note
+  "W = 32, THE DECIDED CELL (ADR-0360's low-band decision, 2026-10-23,
+  JUN-58): the low-band measurement
+  (docs/evidence/gpu-subgroup-reduce-m1max-wsweep-low-20261023) measured
+  this cell and it is the one where the variant is not slower -- :sum
+  0.918 (0.916-0.920 in every fresh process), :max 0.923, :min 1.019 --
+  but the signs are scoped to the slow clock regime the device sat in
+  while every :sum run of that cell happened (per-run median gpu-ns 109k
+  -> 36k mid-session). The scoping is now MEASURED, not inferred: the
+  shape-2 cell (docs/evidence/gpu-subgroup-reduce-m1max-shape2-20261023,
+  n = 2^20) replicated the straddle (:sum 0.919 / :max 0.921 / :min 0.918
+  overall, fast-level :max 1.026 and :min 1.021-1.026 against slow-level
+  ~0.92), and the op-order cell
+  (docs/evidence/gpu-subgroup-reduce-m1max-oporder-20261023) built the
+  instrument the shape-2 record named as the structural blocker (sum
+  dispatched last) and sampled :sum at the fast level for the first time:
+  within-pair medians by clock level -- :sum slow 0.919 / middle 0.932 /
+  fast 1.018, :max slow 0.917 / fast 1.029, :min slow 0.920 / fast 1.018
+  -- so the sign follows the regime for all three operators and the W = 32
+  win is a slow-regime artifact in each of them. A
+  regime-scoped sign is not a selection basis -- the same standard that
+  keeps the LABELED BOOTSTRAP GLSL runs verdict-free -- and an
+  operator-split answer at one cell off the two measured shapes would be
+  overfitting, so this cell keeps answering :baseline for all three
+  operators. The
+  demotion here is a DECISION on measured ground, not the fail-safe it was
+  before the low band ran, and the answer keeps the honesty lock
+  (:measured? false): no regime-robust verdict chose it -- every cell that
+  sampled both clock levels straddles 1 across them -- the decision did.
+  W = 32 AND THE CROSS-DAY LIST (the membership decision, 2026-10-24,
+  JUN-58): this cell is DECIDED OUT of the cross-day replication list at
+  BOTH measured shapes (docs/evidence/gpu/subgroup-w32-leftlist-
+  membership-20261024.txt) -- that list covers the FLIP CELLS (its
+  sanctioned runs corroborate a flip basis that already exists) and this
+  cell never flipped, so no flip basis exists here to corroborate;
+  decided, not silent. No re-run revisits the decision (the standing the
+  shape-2 W = 512 refusal's scope row already has), and a later-day
+  W = 32 DATA run (pure data, explicitly non-basis) is neither scheduled
+  nor forbidden by it -- if wanted, it is its own decision row. The ten
+  named cross-day records (apple-narrow-note, apple-measured-evidence)
+  say nothing about this cell.")
+
+(def ^:private apple-simdgroup-carveout-note
+  "THE MEASURED-CELL CARVE-OUT (ADR-0373, rule 3 step 2, 2026-10-23,
+  JUN-58): this descriptor reports the :simdgroup-reduce row's rule-6 fact
+  (:simd-reduce) and the row's shape holds, but it names the measured
+  device class (\"m1 max\"), whose reduce-shape answers are measured or
+  decided and CLOSED to design rows: measurement beats design, so
+  :simdgroup-reduce does not answer here at any W but its own flip cells
+  (W = 32, W = 64, W = 128, W = 256, W = 512 and W = 1024 -- each
+  flipped when this variant's
+  own measurement ran there: W = 256 and W = 512 on 2026-10-23, W = 1024,
+  W = 128, W = 64 and W = 32
+  on 2026-10-24, see apple-simdgroup-flip-note; those six are every
+  width the row admits, so at the measured reported width no W of the
+  class carries this note any more -- it rides only where the flip's keys
+  do not hold, e.g. a \"m1 max\" descriptor whose reported SIMD-group
+  width is not the measured 32). The class keeps :baseline
+  wherever this note rides. A :measured? true
+  flag on any
+  cell this note carries marks the :subgroup-reduce refutation ONLY --
+  its :measured-cell record's :evidence names those runs and says nothing
+  about this variant (since the W = 64 flip no cell carries both this
+  note and a true flag, and after the W = 32 flip no width of the class
+  at the measured reported width carries this note at all -- so the
+  clause names the history it records); where
+  the flip's keys do not hold the answer is the
+  carve-out's (:measured? false), not a measurement's. The M1 Max
+  measurements that refuted :subgroup-reduce neither condemn nor bless
+  this variant (uB5G, reverse reading) -- only the W = 32, W = 64,
+  W = 128, W = 256, W = 512 and
+  W = 1024 runs of THIS variant measured it, and only there does a
+  measured :simdgroup-reduce answer exist.")
+
+(def ^:private apple-simdgroup-measured-workgroups
+  "The workgroup widths whose measurement of THIS variant CHOSE the
+  answer the flip marks: W = 32, W = 64, W = 128, W = 256, W = 512 and
+  W = 1024 (the
+  honesty-lock
+  flip anchors -- the cells the native-Metal measurement of :baseline vs
+  :simdgroup-reduce ran, 2026-10-23/24, ADR-0373's flip contract applied
+  to this variant's own cells; W = 512, W = 1024, W = 128, W = 64 and
+  W = 32 are the
+  W-sweep
+  series' second through sixth cells). These six are every width the row
+  admits (a power of two in [32, 1024]): the class's W band is measured
+  end to end, so at the measured reported width NO admitted width keeps
+  the carve-out. What stays UNMEASURED (or measured-but-refused) is
+  everything else -- shape 2 at
+  W = 512 (measured 2026-10-24 but REFUSED as a selection
+  basis, claim-protocol rule 2 REGIME-SCOPED -- the first
+  measured-but-scoped cell; W = 256, W = 1024, W = 128, W = 64 and
+  W = 32 carry their own shape-2 flips),
+  every other Apple device, every other vendor, and cross-day
+  replication beyond its TWO measured cells (the W = 256 anchor's and
+  the W = 512 cell's later-day runs, both 2026-10-24,
+  docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w256 and
+  docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w512 -- the
+  flip note's CROSS-DAY paragraphs; every other cell's cross-day
+  replication) --
+  and no width outside this set answers at all (the row refuses it at
+  selection)."
+  #{32 64 128 256 512 1024})
+
+(def ^:private apple-simdgroup-measured-shapes
+  "The element counts this variant's contract-satisfying cells ran, keyed
+  by workgroup width: n = 1,000,003 (the flip contract's ground shape) at
+  every flipped W (32, 64, 128, 256, 512, 1024), and -- at W = 256,
+  W = 1024, W = 128, W = 64 and W = 32 ONLY -- also shape 2, n = 2^20 (the shape-2
+  series' anchor cell,
+  docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w256,
+  paired median ratios 0.794/0.811/0.812, rule 2 REGIME-INVARIANT FASTER,
+  18/18 -- the shape-2 flip of the W = 256 cell, 2026-10-24; the
+  shape-2 series' third cell,
+  docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w1024, paired
+  median ratios 0.836/0.843/0.841, rule 2 REGIME-INVARIANT FASTER,
+  18/18 -- the shape-2 flip of the W = 1024 cell, 2026-10-24; and the
+  shape-2 series' fourth cell,
+  docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w128, paired
+  median ratios 0.769/0.780/0.780, rule 2 REGIME-INVARIANT FASTER,
+  18/18, cross-operator level identity HOLDS -- the shape-2 flip of the
+  W = 128 cell, 2026-10-24; and the shape-2 series' fifth cell,
+  docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w64, paired
+  median ratios 0.721/0.732/0.729, rule 2 REGIME-INVARIANT FASTER,
+  18/18, cross-operator level identity HOLDS -- the shape-2 series'
+  second identity-HOLDS cell and the shape-2 flip of the W = 64 cell,
+  2026-10-24; and the shape-2 series' sixth and last cell,
+  docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w32, paired
+  median ratios 0.639/0.656/0.659, rule 2 REGIME-INVARIANT FASTER,
+  18/18 -- the shape-2 flip of the W = 32 cell, 2026-10-24). Shape 2 at
+  W = 512 was measured 2026-10-24
+  (docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w512) and is
+  REFUSED as a selection basis -- claim-protocol rule 2 classifies that
+  cell REGIME-SCOPED (:min straddles 1.0 inside one regime; 1 of 18
+  pooled per-run ratios above 1.0) and a regime-scoped sign is denied
+  any selection role whatever its shape -- so W = 512 is the only
+  width keeping the ONE shape (the shape-2 series is complete -- w32
+  w64 w128 w256 w512 w1024, every cell measured at both shapes but the
+  refused W = 512). The selection answer cannot
+  vary with n, and the record's :shapes names the measured shapes so no
+  claim extends past them."
+  {256 [1000003 1048576]
+   512 [1000003]
+   1024 [1000003 1048576]
+   128 [1000003 1048576]
+   64 [1000003 1048576]
+   32 [1000003 1048576]})
+
+(def ^:private apple-simdgroup-measured-evidence
+  "The evidence directory of each flipped cell's contract-satisfying
+  runs, keyed by workgroup width -- each flip cell's :measured-cell
+  record names ITS OWN runs (the :subgroup-reduce runs say nothing about
+  this variant, uB5G, reverse reading): W = 256 -> the step-3
+  native-Metal measurement of :baseline vs :simdgroup-reduce AND the
+  shape-2 anchor's own record
+  (docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w256, the
+  shape-2 flip's basis) AND the anchor's cross-day replication record
+  (docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w256 --
+  corroboration of the W = 256 basis on a later day, 2026-10-24; it
+  flipped nothing: the anchor was already flipped 2026-10-23); W = 1024 -> the W-sweep series' third cell AND
+  the shape-2 series' third cell's own record
+  (docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w1024, the
+  W = 1024 shape-2 flip's basis); W = 128 -> the W-sweep series' fourth
+  cell AND the shape-2 series' fourth cell's own record
+  (docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w128, the
+  W = 128 shape-2 flip's basis); W = 64 -> the W-sweep series' fifth
+  cell AND the shape-2 series' fifth cell's own record
+  (docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w64, the
+  W = 64 shape-2 flip's basis); W = 512 ->
+  the W-sweep series' second cell (its shape-2 runs refused) AND its
+  cross-day replication record
+  (docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w512 -- a
+  later-day corroboration of the W = 512 basis, 2026-10-24; it flipped
+  nothing: W = 512 was already flipped 2026-10-23); W = 32 ->
+  the W-sweep series' sixth cell AND the shape-2 series' sixth cell's
+  own record
+  (docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w32, the
+  W = 32 shape-2 flip's basis)
+  (summary.md,
+  run-log.txt, compile-log.txt, shaders/ in each). These lists are
+  closed under the flip contract's record kinds -- each cell's own
+  contract-satisfying flip runs (one per measured shape) and its
+  sanctioned cross-day replication runs (corroboration that flipped
+  nothing) -- and name no other record kind: a same-day re-session
+  (docs/evidence/gpu-simdgroup-reduce-m1max-resweep-20261024/w32) is
+  named in apple-simdgroup-flip-note's own scoped paragraph only (the
+  same-day re-session naming decision,
+  docs/evidence/gpu/same-day-resweep-naming-20261024.txt)."
+  {256 ["docs/evidence/gpu-simdgroup-reduce-m1max-20261023"
+        "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w256"
+        "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w256"]
+   512 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512"
+        "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w512"]
+   1024 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w1024"
+         "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w1024"]
+   128 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w128"
+        "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w128"]
+   64 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w64"
+       "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w64"]
+   32 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w32"
+       "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w32"]})
+
+(def ^:private apple-simdgroup-flip-note
+  "THIS VARIANT'S OWN FLIP CELLS (ADR-0373's flip contract applied to
+  :simdgroup-reduce's own measured cells, 2026-10-23/24, JUN-58): the
+  conforming channel (ADR-0360 question (1)'s native-Metal harness
+  family, the emitters' own bytes) measured :baseline vs
+  :simdgroup-reduce at SIX cells -- W = 256 (the honesty-lock flip
+  anchor) and W = 512, W = 1024, W = 128, W = 64 and W = 32 (the
+  W-sweep
+  series' second through sixth
+  cells), all
+  n = 1000003 (the flip contract's ground shape) -- on the
+  tested device class (name fragment \"m1 max\", reported subgroup size
+  32), the historical protocol unchanged (6 fresh processes, 20
+  interleaved AB/BA pairs per operator per run, 2 warmups discarded,
+  verified read-back). Paired median ratios (:simdgroup-reduce /
+  :baseline gpu ns): W = 256 -- :sum 0.790, :max 0.800, :min 0.799;
+  W = 512 -- :sum 0.815, :max 0.823, :min 0.824;
+  W = 1024 -- :sum 0.840, :max 0.847, :min 0.850;
+  W = 128 -- :sum 0.775, :max 0.789, :min 0.789;
+  W = 64 -- :sum 0.719, :max 0.728, :min 0.729;
+  W = 32 -- :sum 0.657, :max 0.658, :min 0.650. The contrast with
+  :subgroup-reduce at the identical cells takes TWO forms and only the
+  WEAKER one reaches W = 32: the stronger form (both folds one-sided,
+  opposite signs) holds at W = 64/128/256/512/1024 (~1.22 at W = 256,
+  1.196/1.195/1.197 at W = 512, 1.186/1.186/1.185 at W = 1024,
+  1.244/1.243/1.234 at W = 128, 1.218/1.216/1.214 at W = 64), while at
+  W = 32 the shuffle ladder measures MIXED (0.918/0.923/1.019 -- the
+  min operator's per-run ratios straddle 1.0, that cell's verdict is
+  regime-scoped) and only THIS fold is one-sided there. At all six
+  cells THIS variant's own claim-protocol rule-2 verdict is
+  REGIME-INVARIANT FASTER (18/18 per-run ratios below 1.0 at each
+  cell, every observed regime one-sided -- at W = 32 including the
+  returned fresh-process fast level), so each cell is a selection
+  basis on its own measurement; the W = 32 flip rests on this fold's
+  18/18, not on the contrast. Measurement beats the
+  carve-out's earlier decision exactly here: the cells answer
+  :simdgroup-reduce with
+  :measured? true. The six are every width the row admits (a power of
+  two in [32, 1024]): the class's W band is flipped end to end and its
+  advantage is monotone across it in these records (0.65 -> 0.72 ->
+  0.78 -> 0.79 -> 0.82 -> 0.84 with W -- data on one host, not a fitted
+  trend and not a claim about any unmeasured W or any other shape).
+  SHAPE-2 FLIP OF THE W = 256 CELL (the shape-2 series' anchor,
+  2026-10-24, apple-simdgroup-shape2-flip-note): the same byte-identical
+  protocol re-ran W = 256 at shape 2, n = 2^20 (a clean multiple of every
+  W in [32, 1024] -- no padded-lane tail) and measured THIS variant
+  faster again (paired median ratios 0.794/0.811/0.812 for
+  :sum/:max/:min, rule 2 REGIME-INVARIANT FASTER, 18/18 per-run ratios
+  below 1.0 -- within ~1-2 ratio points of the shape-1 anchor's
+  0.790/0.800/0.799, so the W = 256 win is not a padded-tail artifact of
+  the ground shape). The sign contrast with the shuffle ladder holds at
+  this shape in its stronger form (:subgroup-reduce one-sided slower at
+  this cell in both its shape-2 records, 1.227/1.223/1.220 and the
+  re-sweep 1.226/1.225/1.225). The W = 256 flip cell's :shapes is now
+  [1000003 1048576] and its :evidence names this record too.
+  WHAT THE NUMBERS DO NOT LICENSE: shape 2 (n = 2^20) is
+  measured-but-REFUSED at W = 512 alone (the paragraph
+  below -- the shape-2 series' only unflipped cell) and every shape
+  beyond the two measured ones is
+  UNMEASURED at every cell (selection cannot vary with n; the record's
+  :shapes names the measured shapes so no claim extends past them); the
+  GLSL arm, every other Apple device and every other vendor are
+  UNMEASURED, and cross-day replication is measured at exactly TWO
+  cells (the W = 256 anchor and the W = 512 cell -- the CROSS-DAY
+  paragraphs below) and UNMEASURED
+  at every other. Read-back: 36/36
+  ok=1 per cell, :max/:min bit-exact vs the CPU reference and between
+  arms, :sum 3.05e-05 between arms at W = 256 and W = 512, 6.10e-05
+  at W = 1024, 1.53e-05 at W = 128, 3.81e-06 at W = 64 and 1.91e-06
+  at W = 32
+  (regrouping). Cross-operator level identity is REFUTED at four cells
+  (14/15 run pairs diverge at
+  W = 256, 11/15 at W = 512, 9/15 at W = 1024, 12/15 at W = 128) and
+  HOLDS at W = 64 and W = 32 (15/15 agree at each; data,
+  not a claim):
+  per-operator level names stay operator-scoped. Evidence:
+  docs/evidence/gpu-simdgroup-reduce-m1max-20261023 (W = 256),
+  docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w256
+  (W = 256 -- the anchor's cross-day replication record, corroboration,
+  not a flip basis),
+  docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w256
+  (W = 256, shape 2 -- the shape-2 flip's own record),
+  docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512 (W = 512),
+  docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w512
+  (W = 512 -- the W = 512 cell's cross-day replication record,
+  corroboration, not a flip basis),
+  docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w1024 (W = 1024),
+  docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w128 (W = 128),
+  docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w64 (W = 64),
+  docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w32 (W = 32).
+  SHAPE-2 W = 512 CELL: MEASURED BUT REFUSED AS A SELECTION BASIS
+  (2026-10-24, the shape-2 series' second cell,
+  docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w512): the
+  byte-identical protocol ran W = 512 at shape 2, n = 2^20 and measured
+  pooled medians 0.812/0.821/0.822 for :sum/:max/:min -- in family with
+  the shape-1 same-W record -- but claim-protocol rule 2 classifies the
+  CELL REGIME-SCOPED: :sum and :max are REGIME-INVARIANT FASTER (6/6
+  each) yet :min straddles 1.0 INSIDE one regime (run 3 at 1.054, run 5
+  at 0.821; 1 of 18 pooled per-run ratios above 1.0), and a
+  regime-scoped sign is denied any selection role whatever its shape
+  (the reduce shape is selected as a whole -- :operators #{:sum :max
+  :min} -- so the cell's pooled verdict governs; the contract has no
+  per-operator flip and none is invented here). THE CONTRACT'S ANSWER
+  FOR A MEASURED-BUT-SCOPED CELL: it is measured (its runs are recorded
+  in docs/evidence) but it extends NO record and moves NO flag -- the
+  W = 512 record stays :shapes [1000003] with the W-sweep w512 runs as
+  its evidence, the W = 512 answer stands on the shape-1 cell's
+  REGIME-INVARIANT basis, and no workgroup row moves. The contrast is
+  the W = 256 cell's shape-2 record (REGIME-INVARIANT FASTER at that
+  shape): a shape enters a flip cell's :shapes only on the cell's own
+  rule-2 verdict at that shape.
+  SHAPE-2 FLIP OF THE W = 1024 CELL (the shape-2 series' third cell,
+  2026-10-24): the byte-identical protocol re-ran W = 1024 at shape 2,
+  n = 2^20 (no padded-lane tail) and measured THIS variant faster again
+  (paired median ratios 0.836/0.843/0.841 for :sum/:max/:min, claim-
+  protocol rule 2 REGIME-INVARIANT FASTER, 18/18 per-run ratios below
+  1.0 -- every observed regime one-sided; in family with the shape-1
+  same-W record 0.840/0.847/0.850 and the shape-2 anchor
+  0.794/0.811/0.812 -- one-sided again after the W = 512 straddle). The
+  fast clock level appears here too (sum rule-1 level 1 = run 2,
+  baseline 106646 ns; the variant still wins there, 0.970) and rule 1
+  classifies one level for max and min, two for sum (cross-operator
+  level identity REFUTED, 5/15 run pairs -- per-operator level names
+  stay operator-scoped). The W = 1024 flip cell's :shapes is now
+  [1000003 1048576] and its :evidence names this record too
+  (docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w1024, the
+  W = 1024 shape-2 flip's own record). Read-back:
+  36 verify lines, ok=1 on every one; :max/:min bit-exact vs the
+  reference and between arms, :sum 3.27e-05 vs the reference and
+  6.10e-05 between arms (regrouping). WHAT THIS SLICE DOES NOT LICENSE:
+  shape 2 stayed UNMEASURED at W = 32 at that slice (flipped by the
+  SHAPE-2 W = 32 CELL paragraph below) and measured-but-REFUSED at
+  W = 512 (the paragraph above); no :measured? flag moves (the W = 1024
+  answer was already MEASURED at the ground shape) and no workgroup row
+  (ADR-0355/0358) moves.
+  SHAPE-2 FLIP OF THE W = 128 CELL (the shape-2 series' fourth cell,
+  2026-10-24): the byte-identical protocol re-ran W = 128 at shape 2,
+  n = 2^20 (no padded-lane tail) and measured THIS variant faster again
+  (paired median ratios 0.769/0.780/0.780 for :sum/:max/:min, claim-
+  protocol rule 2 REGIME-INVARIANT FASTER, 18/18 per-run ratios below
+  1.0 -- every observed regime one-sided; in family with the shape-1
+  same-W record 0.775/0.789/0.789 and faster than the shape-2 anchor
+  0.794/0.811/0.812 at every operator). Rule 1 sees ONE level per
+  operator and cross-operator level identity HOLDS (all 15 run pairs
+  agree) -- the shape-2 series' first cell this clean: the anchor
+  (W = 256, 8/15 divergent pairs), W = 512 (11/15, plus the :min
+  straddle -- measured-but-REGIME-SCOPED) and W = 1024 (5/15) all
+  published identity REFUTED. The W = 128 flip cell's :shapes is now
+  [1000003 1048576] and its :evidence names this record too
+  (docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w128, the
+  W = 128 shape-2 flip's own record). Read-back: 36 verify lines, ok=1
+  on every one; :max/:min bit-exact vs the reference and between arms,
+  :sum 9.24e-06 (baseline) / 6.02e-06 (variant) vs reference, 1.53e-05
+  between arms (regrouping). WHAT THIS SLICE DOES NOT LICENSE: shape 2
+  stayed UNMEASURED at W = 32 at that slice (flipped by the SHAPE-2
+  W = 32 CELL paragraph below) and measured-but-REFUSED at W = 512
+  (the paragraph above); no
+  :measured? flag moves (the W = 128 answer was already MEASURED at the
+  ground shape) and no workgroup row (ADR-0355/0358) moves.
+  SHAPE-2 FLIP OF THE W = 64 CELL (the shape-2 series' fifth cell,
+  2026-10-24): the byte-identical protocol re-ran W = 64 at shape 2,
+  n = 2^20 (no padded-lane tail) and measured THIS variant faster again
+  (paired median ratios 0.721/0.732/0.729 for :sum/:max/:min, claim-
+  protocol rule 2 REGIME-INVARIANT FASTER, 18/18 per-run ratios below
+  1.0 -- every observed regime one-sided; in family with the shape-1
+  same-W record 0.719/0.728/0.729 and the fastest shape-2 cell of the
+  series at every operator). Rule 1 sees ONE level per operator and
+  cross-operator level identity HOLDS (all 15 run pairs agree) -- the
+  shape-2 series' second identity-HOLDS cell after W = 128. The
+  opposite-sign contrast with :subgroup-reduce at the identical cell
+  holds in its stronger form (one-sided slower at this shape in both
+  its shape-2 W = 64 records, 1.224/1.220/1.220 and the re-sweep
+  1.223/1.217/1.219). The W = 64 flip cell's :shapes is now
+  [1000003 1048576] and its :evidence names this record too
+  (docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w64, the
+  W = 64 shape-2 flip's own record). Read-back: 36 verify lines, ok=1
+  on every one; :max/:min bit-exact vs the reference and between arms,
+  :sum 3.46e-06 (baseline) / 3.10e-06 (variant) vs reference, 3.81e-06
+  between arms (regrouping). WHAT THIS SLICE DOES NOT LICENSE: shape 2
+  stayed UNMEASURED at W = 32 at that slice (flipped by the SHAPE-2
+  W = 32 CELL paragraph below) and measured-but-REFUSED at W = 512
+  (the paragraph above); no
+  :measured? flag moves (the W = 64 answer was already MEASURED at the
+  ground shape) and no workgroup row (ADR-0355/0358) moves.
+  SHAPE-2 FLIP OF THE W = 32 CELL (the shape-2 series' sixth and last
+  cell, 2026-10-24): the byte-identical protocol re-ran W = 32 at
+  shape 2, n = 2^20 (no padded-lane tail; S = 32 divides W = 32
+  exactly -- one SIMD-group per workgroup, the partials array has one
+  entry) and measured THIS variant faster again (paired median ratios
+  0.639/0.656/0.659 for :sum/:max/:min, claim-protocol rule 2
+  REGIME-INVARIANT FASTER, 18/18 per-run ratios below 1.0 -- every
+  observed regime one-sided; in family with the shape-1 same-W record
+  0.657/0.658/0.650 and the fastest shape-2 cell of the series at
+  every operator). Rule 1 sees ONE level for :max and :sum but TWO for
+  :min (the fresh-process clock ramp in :min's runs only; both levels
+  one-sided faster) and cross-operator level identity is REFUTED (8 of
+  15 run pairs diverge: min splits what max and sum pool) -- the
+  shape-2 series' fourth identity-refuted cell against two
+  identity-HOLDS cells (W = 128, W = 64). The opposite-sign contrast
+  with :subgroup-reduce at the identical cell holds in its family form
+  (the shuffle ladder measures near parity and straddling at this
+  shape, 0.919/0.921/0.918, while THIS fold is one-sided faster at
+  18/18). The emitted shaders are byte-identical to the shape-1 same-W
+  cell's (diff empty, checked). The W = 32 flip cell's :shapes is now
+  [1000003 1048576] and its :evidence names this record too
+  (docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w32, the
+  W = 32 shape-2 flip's own record). Read-back: 36 verify lines, ok=1
+  on every one; :max/:min bit-exact vs the CPU reference and between
+  arms, :sum 2.15e-06 (baseline) / 1.43e-06 (variant) vs reference,
+  1.91e-06 between arms (regrouping). With this cell the shape-2
+  series covers the W band [32, 1024] end to end -- the series
+  complete, every flipped cell naming both shapes but the refused
+  W = 512. WHAT THIS SLICE DOES NOT LICENSE: shape 2 stays
+  measured-but-REFUSED at W = 512 (the paragraph above) and every
+  shape beyond the two measured ones stays UNMEASURED at every cell;
+  no :measured? flag moves (the W = 32 answer was already MEASURED at
+  the ground shape) and no workgroup row (ADR-0355/0358) moves.
+  CROSS-DAY REPLICATION OF THE ANCHOR CELL (W = 256, shape 1 -- the
+  record's first later-day replication, 2026-10-24,
+  docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w256): the
+  byte-identical protocol re-ran the honesty-lock flip anchor (the cell
+  measured 2026-10-23,
+  docs/evidence/gpu-simdgroup-reduce-m1max-20261023) on a later day and
+  the verdict reproduces: rule 2 REGIME-INVARIANT FASTER again (18/18
+  per-run ratios below 1.0, every observed regime one-sided), paired
+  median ratios 0.790/0.800/0.801 for :sum/:max/:min against the
+  anchor's 0.790/0.800/0.799. The rule-3 regime-matched comparison
+  against the anchor record: sign reproduces in sign strictly at
+  every operator (all 6 per-run ratios hold the historical sign at
+  each); magnitude reproduces within 0.000 (:sum) and within
+  0.002 (:min), magnitude splits by clock regime for :max (mixed
+  strata draws; both matched strata-pair deltas 0.000). The emitted
+  shaders are byte-identical to the anchor record's (diff -r empty,
+  checked). Read-back: 36 verify lines, ok=1 on every one; :max/:min
+  bit-exact vs the CPU reference and between arms, :sum 1.58e-05 vs the
+  reference and 3.05e-05 between arms (regrouping). WHAT THIS
+  REPLICATION DOES NOT LICENSE: no :measured? flag moves (the anchor
+  was already flipped 2026-10-23) and no workgroup row (ADR-0355/0358)
+  moves -- it is replication evidence only; cross-day replication of
+  every OTHER cell stayed UNMEASURED at that slice (the W = 512 cell's
+  own later-day run is the next paragraph), and the measured-but-REFUSED
+  shape-2 W = 512 cell's refusal is a protocol decision no re-run
+  revisits.
+  CROSS-DAY REPLICATION OF THE W = 512 CELL (shape 1 -- the record's
+  first non-anchor cross-day row, 2026-10-24,
+  docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w512): the
+  byte-identical protocol re-ran the W = 512 cell (measured 2026-10-23
+  23:22, docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512)
+  on a later day and the verdict reproduces: rule 2 REGIME-INVARIANT
+  FASTER again (18/18 per-run ratios below 1.0 on both days, every
+  observed regime one-sided), paired median ratios 0.814/0.824/0.824
+  for :sum/:max/:min against the wsweep session's 0.815/0.823/0.824.
+  The rule-3 regime-matched comparison against the wsweep record: sign
+  reproduces in sign strictly at every operator (all 6 per-run ratios
+  hold the historical sign at each); magnitude reproduces within 0.001
+  for :sum and splits by clock regime for :max/:min (mixed strata
+  draws) -- but at the MATCHED strata the within-stratum deltas are
+  0.000-0.004 (max: 0.001; min: 0.004/0.000; sum: 0.000). The emitted
+  shaders are byte-identical to the wsweep cell's (diff -r empty,
+  checked). Rule 1 this run: one level for :sum, three for :max, three
+  for :min; cross-operator level identity REFUTED (9/15 run pairs).
+  Read-back: 36 verify lines, ok=1 on every one; :max/:min bit-exact vs
+  the CPU reference and between arms, :sum 1.63e-05 vs the reference
+  and 3.05e-05 between arms (regrouping). WHAT THIS REPLICATION DOES
+  NOT LICENSE: no :measured? flag moves (W = 512 was already flipped
+  2026-10-23) and no workgroup row (ADR-0355/0358) moves -- it is
+  replication evidence only; cross-day replication of every remaining
+  cell (W = 32/64/128/1024 at shape 1 and the shape-2 cells, each
+  runnable on a day later than its own 2026-10-24 session) stays
+  UNMEASURED, and the measured-but-REFUSED shape-2 W = 512 cell's
+  refusal is a protocol decision no re-run revisits.
+  SAME-DAY RE-SESSION OF THE W = 32 CELL (shape 1, 2026-10-24): NOT a
+  cross-day replication -- 2026-10-24 is the same calendar day as the
+  cell's own flip session (the wsweep session ran 02:39 JST, this one
+  09:01 JST), so the contract's temporal row does not move (the
+  protocol: \"Cross-day replication of any cell needs a later-day run
+  (a cron tick on another day), not more same-day sessions\"). The
+  byte-identical protocol re-ran the W = 32 cell in a second session
+  (docs/evidence/gpu-simdgroup-reduce-m1max-resweep-20261024/w32) and
+  the sign reproduces exactly: rule 2 REGIME-INVARIANT FASTER, 18/18
+  per-run ratios below 1.0 in both sessions, at paired median ratios
+  0.636/0.691/0.731 for :sum/:max/:min against the wsweep session's
+  0.657/0.658/0.650. The rule-3 regime-matched comparison against the
+  wsweep record: sign reproduces in sign strictly at every operator
+  (all 6 per-run ratios hold the historical sign at each); magnitude
+  reproduces within 0.021 for :sum and splits by clock regime for
+  :max/:min (mixed strata draws; within-stratum deltas 0.016 (:max),
+  0.006-0.099 (:min), 0.014 (:sum)). Read-back: 36 verify lines, ok=1
+  on every one; :max/:min bit-exact vs the CPU reference and between
+  arms, :sum 2.15e-06 (baseline) / 1.43e-06 (variant) vs reference and
+  1.91e-06 between arms (regrouping). Its magnitude phrases are
+  regime-scoped WITHIN THE DAY -- the raw paired medians moved
+  0.021 (:sum) / 0.033 (:max) / 0.081 (:min) within one calendar day
+  and the cross-operator level identity flipped from HOLDS (wsweep:
+  0/15 divergent run pairs) to REFUTED (this session: 12/15). WHAT
+  THIS RE-SESSION DOES NOT LICENSE: it is not a cross-day replication
+  and moves no cross-day row (W = 32's own later-day row stays
+  UNMEASURED, runnable 2026-10-25); it extends no :shapes (it ran the
+  ground shape the cell already carries); it moves no :measured? flag,
+  no selection answer and no workgroup row (ADR-0355/0358). Per the
+  same-day re-session naming decision
+  (docs/evidence/gpu/same-day-resweep-naming-20261024.txt) this record
+  is named in flip note prose ONLY: the basis evidence lists
+  (apple-simdgroup-measured-evidence and the :measured-cell :evidence
+  maps) stay closed under the flip contract's record kinds -- each
+  cell's own flip runs and its sanctioned cross-day replications -- and
+  name no other record kind.")
+
 (def variant-bases
   "Why each variant exists. Design rationale, not measurement evidence."
   {:baseline
    "ADR-0002 v1 tree reduction over workgroup shared memory; the portable
-    fallback and the only variant with an execution path today."
+    fallback. Execution record (reconciled 2026-10-23): NO variant has an
+    execution path in this repository today -- the wire-42 route died with
+    the C loader and ADR 0371's provider is the replacement track -- and
+    :subgroup-reduce has EXECUTED on Apple M1 Max through measurement
+    harnesses (GLSL arm via wire-42/MoltenVK, PR #1347/#1348, 2026-10-19;
+    MSL arm via a native Metal harness, ADR-0360's measurement amendment,
+    2026-10-23), losing to :baseline in both arms, and
+    :simdgroup-reduce has EXECUTED on the same device through the
+    native-Metal harness (2026-10-23/24, W = 32/64/128/256/512/1024),
+    BEATING
+    :baseline at all six cells (paired median ratios
+    0.657/0.658/0.650 at W = 32,
+    0.719/0.728/0.729 at W = 64,
+    0.775/0.789/0.789 at W = 128,
+    0.790/0.800/0.799 at W = 256, 0.815/0.823/0.824 at W = 512 and
+    0.840/0.847/0.850 at W = 1024 for :sum/:max/:min, claim-protocol
+    rule 2 REGIME-INVARIANT FASTER, 18/18 per-run ratios below 1.0 at
+    each)."
    :warp-shuffle-reduce
    "NVIDIA (sm_70+) warp-shuffle reduce: a per-warp __shfl_down_sync fold,
     then one cross-warp stage through shared memory -- one barrier instead
@@ -38,45 +828,517 @@
     that removing the barrier cascade wins on NVIDIA hardware. It replaces no
     workgroup row and changes no reduction semantics: the same elements are
     grouped in a different order (f32 :sum may differ in the low bits;
-    :max/:min are order-independent)."})
+    :max/:min are order-independent)."
+   :subgroup-reduce
+   "Intel (JUN-59, ADR-0356), ARM (JUN-60, ADR-0357), Apple (JUN-58,
+    ADR-0360), NVIDIA (JUN-57, ADR-0361 -- the Vulkan route, and the
+    CUDA route as the ladder's second rung under :warp-shuffle-reduce's
+    precedence) and AMD (JUN-84, ADR-0364 -- the Vulkan and WGSL routes)
+    subgroup reduce: an
+    intra-subgroup fold whose width is queried at RUNTIME (gl_SubgroupSize)
+    and never baked in -- Intel subgroup size is device-chosen among
+    8/16/32, Mali's spans 4..32, Apple's SIMD-group is 32 and RDNA's wave
+    is 32 or 64 as the shader chooses, so a baked
+    width would be wrong somewhere. The
+    fold needs no barriers and no shared memory; one write barrier plus a
+    cross-subgroup tree over the W/S partials replaces the baseline
+    log2(W)-stage cascade (4/3/2 stages at W = 128 for S = 8/16/32 against
+    the baseline's 7 -- stage arithmetic, not a speed claim). The design
+    assumption (UNMEASURED) is that removing most of the barrier cascade
+    wins on Intel, Mali, Apple and NVIDIA hardware. The assumption is
+    UNMEASURED on Intel, Mali and NVIDIA (no hardware there has run the
+    variant) and MEASURED-CONTRADICTED on Apple: Apple M1 Max ran the
+    variant twice and it lost to :baseline both times (GLSL arm via
+    wire-42/MoltenVK, PR #1347/#1348, 2026-10-19: ~20-27% slower at W=256
+    and never faster over W=32..256; MSL arm via a native Metal harness,
+    ADR-0360's measurement amendment, 2026-10-23: ~22% slower at W=256
+    across :sum/:max/:min, and the same day's native-Metal W-sweep: still
+    slower at W=512 and W=1024, paired median ratios 1.19-1.20 and
+    1.18-1.19) -- one device and narrow shape coverage. The
+    measured cell DECIDED the row's fate on 2026-10-23 (ADR-0360's second
+    decision): the row is NARROWED to the measured device -- a descriptor
+    naming the measured device answers :baseline, because that device
+    measured the variant slower -- and stands (UNMEASURED) on every other
+    device. It
+    replaces no workgroup row. Semantics, scoped as ADR-0357 P1 requires:
+    the reduction groups the same admitted elements as the :baseline tree
+    in a different order -- f32 :sum agrees with the baseline to low bits on
+    well-conditioned inputs, and on cancellation-sensitive inputs the
+    divergence is NOT confined to the low bits and stays an UNMEASURED
+    divergence regime from the baseline; :max/:min are order-independent
+    within the ordinary-value domain only (no NaN payloads, no negative
+    zeros -- ADR-0356 rule 2)."
+   :simdgroup-reduce
+   "Apple (JUN-58, ADR-0373) Metal-native SIMD-group reduce: the reduce
+    shape on the MSL route ONLY, whose intra-SIMD-group fold is ONE Metal
+    SIMD-group reduction intrinsic per operator (simd_sum / simd_max /
+    simd_min) instead of the shuffle ladder -- everything above it is the
+    shared fold, byte-for-byte :subgroup-reduce's MSL arm (the partials
+    array, the one write barrier, the cross-SIMD-group tree). It is a
+    SEPARATE variant, never a rewrite of :subgroup-reduce. Selection is
+    the MSL ladder (rule 3 step 2): the vendor-native FIRST rung for an
+    Apple MSL descriptor reporting the fold's own rule-6 fact
+    (:simd-reduce -- the device's SIMD-group exposes the reduction
+    intrinsics) and a reported SIMD-group width dividing W;
+    :basic/:shuffle-relative are the SHUFFLE fold's facts and are not
+    required here (the tree uses threadgroup barriers). The measured-cell
+    carve-out outranks it everywhere but this row's OWN flip cells: at
+    W = 32, W = 64, W = 128, W = 256, W = 512 and W = 1024 on the
+    measured
+    class (Apple
+    M1 Max,
+    reported subgroup size
+    32, MSL route, n = 1000003) the native-Metal measurements of
+    2026-10-23/24 measured this row FASTER than :baseline (paired median
+    ratios 0.657/0.658/0.650 at W = 32,
+    0.719/0.728/0.729 at W = 64,
+    0.775/0.789/0.789 at W = 128,
+    0.790/0.800/0.799 at W = 256, 0.815/0.823/0.824 at W = 512
+    and 0.840/0.847/0.850 at W = 1024
+    for :sum/:max/:min, claim-protocol rule 2
+    REGIME-INVARIANT FASTER at all six cells) and the flip contract
+    answers it there,
+    MEASURED (apple-simdgroup-flip-note); those six are every width the
+    row admits, so the class's W band is flipped end to end and the
+    carve-out's :baseline survives on the class only where the flip's
+    keys do not hold (e.g. a mismatched reported SIMD-group width).
+    Every other cell stays closed to design rows. The
+    design assumption (UNMEASURED) is that one reduction intrinsic beats
+    the shuffle ladder anywhere else -- six cells, one shape
+    (n = 1000003) and one device are measured; the shuffle fold's own rationale
+    measured CONTRADICTED on that device (M1 Max); that refutation
+    neither condemns nor blesses this row outside the flip cells. No
+    speed claim outside the flip cells' own recorded scope. Semantics:
+    :sum is scoped to low bits (the intrinsic's association order is the
+    vendor's own, ADR-0357 P1 option b); :max/:min are bit-for-bit within
+    the ordinary-value domain only (non-NaN payloads, no negative zeros).
+    It replaces no workgroup row."})
 
 (defn select-variant
-  "The kernel variant for a (vendor, kir) pair. TOTAL and deterministic: the
-  same pair answers the same map, forever. :warp-shuffle-reduce is answered
-  exactly for NVIDIA reduction kernels whose workgroup reaches a full warp;
-  everything else -- other vendors, elementwise kernels, sub-warp
-  workgroups, unknown vendors, malformed kernels -- answers :baseline.
+  "The kernel variant for a (vendor, kir) pair, optionally scoped to the
+  emission `target` and the `device` descriptor the dispatch layers carry.
+  TOTAL and deterministic: the same arguments answer the same map, forever.
 
-  Every answer carries :measured? false. That flag is the honesty lock: it
-  flips only when hardware measurement (JUN-57 for NVIDIA) replaces the
-  basis text."
+  The rows (ADR-0356 as amended by ADR-0357; every answer carries
+  :measured? false except the measured cells of the Apple row's narrowing
+  on the MSL route -- ADR-0360 question (1)'s decision, tested in
+  the-measured-cells-flip-the-honesty-lock):
+
+  - :warp-shuffle-reduce -- NVIDIA reduction kernels over :sum/:max/:min
+    whose workgroup reaches one full warp, on the CUDA route (:cuda or
+    :cuda-v1), on a device confirming compute capability 7.0+ (rule 6: the
+    sm_70+ floor in variant-bases is a real requirement; a descriptor that
+    does not confirm it answers :baseline, fail closed).
+
+  - :subgroup-reduce -- Intel (JUN-59), ARM (JUN-60), Apple (JUN-58,
+    ADR-0360), NVIDIA on the Vulkan route (JUN-57, ADR-0361) and AMD
+    (JUN-84, ADR-0364) reduction
+    kernels
+    over :sum/:max/:min with a workgroup of at least one subgroup floor
+    (the emission's own predicate, kotoba.compiler.accelerator-subgroup-
+    reduce/applicable?), on the Vulkan route (:vulkan or :glsl-v1) for all
+    five vendors, for Intel, ARM and AMD (ADR-0363; for :amd ADR-0364)
+    on the WGSL route
+    (:webgpu or :wgsl-v1 -- the vendor-default target for all three), for
+    Apple ONLY (ADR-0360's 2026-10-23 amendment, JUN-58's own decision) on
+    the MSL route (:metal or :msl-v1 -- Apple's vendor-default target),
+    and for NVIDIA (ADR-0361's same-day amendment, JUN-57's own decision)
+    on the CUDA route (:cuda or :cuda-v1) as the SECOND rung of that
+    route's ladder: :warp-shuffle-reduce is checked first and keeps
+    precedence whenever its gate holds (a CONFIRMED compute capability
+    7.0+ and W >= 32) -- every answer it gives is unchanged -- and this
+    row answers only where the warp row's gate does not reach: a
+    descriptor that reports the rule-6 subgroup facts and NO compute
+    capability gets the parametric fold instead of :baseline (the same
+    treatment the Vulkan row already gives an absent capability). The
+    ladder is total and deterministic: :warp-shuffle-reduce ->
+    :subgroup-reduce -> :baseline. The two rungs spell the same fold (the
+    CUDA arm queries the width at runtime as warpSize where the warp row
+    bakes 32), so the choice changes no reduction semantics -- it is a
+    capability-evidence question, not an algorithmic one. Under
+    ADR-0356 rule 6 and ADR-0357's capability precondition: the device
+    descriptor must report, for the compute stage, the subgroup operations
+    the fold needs (:subgroup-ops containing :basic and :shuffle-relative)
+    and a subgroup size (:subgroup-size) that DIVIDES the workgroup -- which
+    also refuses a subgroup larger than the workgroup, as rule 6 demands.
+    The NVIDIA row carries the CUDA row's sm_70+ floor on top: whenever the
+    descriptor reports a compute capability at all, one below 7.0 (or a
+    malformed one) answers :baseline, fail closed; an absent capability is
+    not a refusal, the reported subgroup facts are the capability evidence
+    (ADR-0361).
+    The reported width is taken as the device gives it (8/16/32 on Intel,
+    4..32 on Mali, 32 on Apple's SIMD-groups, 32 or 64 as the shader
+    chooses on RDNA, 32 -- the warp -- on NVIDIA
+    Vulkan); the emission is parametric
+    over it. The descriptor keys are the contract this table consumes and
+    their producer DOES NOT EXIST YET: the wire-42 answers of the (today
+    unimplemented) ADR-0371 GPU provider carry no subgroup facts (INFO is
+    four fields, DEVCLASS one class word), so a probe or provider extension
+    must report them -- the gap is named in ADR-0360 and the rows fail
+    closed without them: a descriptor that reports none of them answers
+    :baseline. The keys are the contract on EVERY route: the ADR-0362
+    wire-42 SUBGROUP request is the Vulkan route's producer, and a
+    Metal-native probe would fill the same keys directly from the device's
+    SIMD-group facts (:basic / :shuffle-relative are this table's own
+    capability vocabulary -- the two ops the fold needs -- not a Vulkan
+    binding).
+
+  - :simdgroup-reduce -- Apple (JUN-58, ADR-0373) Metal-native SIMD-group
+    reduce, the reduce shape on the MSL route ONLY, and the MSL ladder's
+    FIRST rung (rule 3 step 2): outside the carved-out measured class, an
+    Apple MSL descriptor (:metal or :msl-v1) reporting the fold's own
+    rule-6 fact (:simd-reduce in :subgroup-ops -- evidence the device's
+    SIMD-group exposes simd_sum/simd_max/simd_min) and a :subgroup-size
+    dividing W answers this variant; :basic/:shuffle-relative are the
+    SHUFFLE fold's facts and are NOT required here (the cross-SIMD-group
+    tree uses threadgroup barriers). A descriptor reporting the shuffle
+    fold's facts but not :simd-reduce falls to :subgroup-reduce (the
+    second rung, byte-for-byte the old answer); everything else answers
+    :baseline (rule 1, total, no throw). The measured-cell carve-out
+    outranks rung 1 everywhere but this variant's OWN flip cells: at
+    W = 32, W = 64, W = 128, W = 256, W = 512 and W = 1024 on the
+    measured
+    class
+    (\"m1 max\" AND
+    reported subgroup size
+    32) a descriptor reporting :simd-reduce answers THIS variant,
+    MEASURED faster than :baseline (apple-simdgroup-flip-note) -- the
+    only
+    cells where this variant has hardware evidence. Those six are every
+    width the row admits, so the class's W band is flipped end to end:
+    the carve-out stands only where the flip's keys do not hold (e.g. a
+    \"m1 max\" descriptor whose reported SIMD-group width is not 32) --
+    the class's reduce-shape answers there are measured or decided and
+    closed to design rows -- and the row is Apple's and the
+    MSL route's alone. The fact's producer gap is ADR-0373's: the wire-42
+    SUBGROUP vocabulary is ADR-0362's eight VkSubgroupFeatureFlagBits
+    tokens and does NOT carry :simd-reduce (device-from-subgroup parses
+    that vocabulary only), so a Metal-native probe or a provider extension
+    must report the key -- the row fails closed without it. Every answer
+    this row gives is UNMEASURED (:measured? false) except its own flip
+    cells (W = 32, W = 64, W = 128, W = 256, W = 512 and W = 1024 on
+    the measured class,
+    MSL
+    route,
+    n = 1000003 -- the
+    only cells hardware measured, and measured FASTER than :baseline).
+
+  Everything else answers :baseline: other vendors (:unknown, :qualcomm
+  and any name outside the five classified rows -- :amd has carried a
+  designed row since ADR-0364), other targets, ewise kernels, sub-minimum
+  workgroups, a malformed kernel (the COMPLETE KIR is validated first --
+  shape checks alone would admit W=300 and worse), a device that confirms
+  no capability, or no device at all.
+
+  :measured? is the honesty lock: it flips only when hardware measurement
+  (JUN-57 on NVIDIA, JUN-59 on Intel, JUN-60 on Mali, JUN-58 on Apple,
+  JUN-84 on AMD) replaces the basis text of the row it stands on. A
+  measurement can REFUTE a row's basis, not only validate it. ADR-0360's
+  measurement-contract question (1) is DECIDED (2026-10-23, JUN-58): for
+  the MSL arm a native Metal harness that dispatches the emitters' own
+  bytes under the sweep protocol SATISFIES the contract -- wire-42 executes
+  SPIR-V through Vulkan and can never run MSL, so the route clause was a
+  deadlock for this arm rather than an honesty lock, and the properties it
+  protects (the emitters' own bytes, the sweep protocol, verified
+  read-back, a named device, a record under docs/evidence/) all hold. The
+  flip is keyed per ANSWER CELL: the tested device class (the uB5G name
+  fragment \"m1 max\" AND the reported subgroup size 32), the channel that
+  measured the arm (:native-metal, the MSL route), and the measured
+  workgroup widths (W = 64/128/256/512/1024 -- W = 32 measured too but
+  DECIDED for the SHUFFLE fold, not verdict-chosen; that fold's W = 32
+  answer keeps the lock, see
+  apple-w32-note) -- plus this variant's OWN flip cells, the
+  :simdgroup-reduce answers at W = 32, W = 64, W = 128, W = 256, W = 512
+  and W = 1024
+  where the
+  fold's rule-6 fact is
+  reported (2026-10-23/24's measurements of this variant, faster than
+  :baseline at all six cells, apple-simdgroup-flip-note). Exactly those
+  cells carry
+  :measured? true and a :measured-cell record; every other answer keeps
+  false. The 2026-10-19 wire-42 baseline-vs-variant runs (PR #1347/#1348)
+  are NOT verdict-grade: their own record (docs/evidence/gpu/loadsweep-
+  20261019/README.md) labels them LABELED BOOTSTRAP -- an unbalanced replay
+  order biases the ratio beyond drift -- and publishes no verdict, so the
+  GLSL arm keeps :measured? false at every width; those runs corroborate
+  the sign and nothing more.
+
+  ADR-0360's second decision (2026-10-23, JUN-58) NARROWS the Apple row
+  to the measured device: a descriptor whose name parts (:device, :name,
+  or the :vendor name key) carry the measured-device fragment \"m1 max\"
+  (case-insensitively -- the uB5G idiom of
+  kotoba.compiler.accelerator-targets) answers :baseline for the reduce
+  shape on BOTH Apple routes, annotated with the refutation in :basis.
+  The narrowing acts exactly where the evidence is: every other Apple
+  device -- including an unnamed {:vendor-id 4203} descriptor -- keeps
+  the designed :subgroup-reduce row (UNMEASURED), and non-Apple vendors
+  are untouched. A refuted device WITHOUT rule-6 facts is the ordinary
+  fail-closed :baseline and carries no narrowing note (the note is only
+  the row's own demotion). No report may
+  cite an answer here as optimization evidence outside the flipped cells'
+  own recorded scope (one device, one channel, the measured widths --
+  and for :simdgroup-reduce its own flip cells only, W = 32, W = 64,
+  W = 128, W = 256, W = 512 and
+  W = 1024,
+  n = 1000003)."
   ([vendor kir] (select-variant vendor kir nil nil))
   ([vendor kir target] (select-variant vendor kir target nil))
   ([vendor kir target device]
-  ;; ADR-0356 rule 3 (emission admission first): the variant is admitted
-  ;; only for the emitter that can emit it -- CUDA only for
-  ;; :warp-shuffle-reduce. A Vulkan/WebGPU target answers :baseline.
-  ;; ADR-0356 rule 6 (device capability): the sm_70+ floor in variant-bases
-  ;; is a real requirement; a descriptor that does not confirm compute
-  ;; capability 7.0+ answers :baseline (fail closed, no guessing).
-  (let [cap-ok? (let [cc (:compute-capability (or device {}))]
-                  (cond
-                    (nil? cc) false
-                    (number? cc) (>= cc 7.0)
-                    :else false))
-        ;; rule: validate the COMPLETE KIR first (a malformed kernel never
-        ;; selects a variant -- shape checks alone admit W=300 and worse).
-        valid-kir? (try (accelerator/validate! kir) true (catch :default _ false))
-        variant (if (and (= :nvidia vendor)
-                         (= :cuda target)
-                         valid-kir?
-                         cap-ok?
-                         (= :reduce (:kernel/op kir))
-                         (contains? #{:sum :max :min} (:kernel/operator kir))
-                         (let [wg (:kernel/workgroup-size kir)]
-                           (and (int? wg) (>= wg min-warp-shuffle-workgroup))))
-                  :warp-shuffle-reduce
-                  :baseline)]
-    {:variant variant
-     :measured? false
-     :basis (get variant-bases variant)})))
+   ;; ADR-0356 rule 3 (emission admission first): a selected variant is one
+   ;; the route's emitter can emit -- all four emitters admit
+   ;; :subgroup-reduce since 2026-10-23 (the CUDA arm landed that day), and
+   ;; the CUDA emitter additionally carries :warp-shuffle-reduce. Admission
+   ;; is NECESSARY, not sufficient: the ROWS below decide each route's
+   ;; answer, and a route outside every row answers :baseline.
+   (let [route (emitter-route target)
+         dev (or device {})
+         ;; rule: validate the COMPLETE KIR first (a malformed kernel never
+         ;; selects a variant).
+         valid-kir? (try (accelerator/validate! kir) true (catch :default _ false))
+         ;; ADR-0356 rule 6 (device capability): the NVIDIA row's sm_70+
+         ;; floor is a real requirement; a descriptor that does not confirm
+         ;; compute capability 7.0+ answers :baseline (fail closed, no
+         ;; guessing).
+         cuda-cap-ok? (let [cc (:compute-capability dev)]
+                        (and (number? cc) (>= cc 7.0)))
+         ;; ADR-0361: on the Vulkan route NVIDIA joins the shared
+         ;; subgroup-reduce row, and the CUDA row's sm_70+ floor binds that
+         ;; row whenever the descriptor reports a compute capability at all
+         ;; -- a reported capability below 7.0, or a malformed one, fails
+         ;; closed to :baseline, while an absent capability is not a
+         ;; refusal (the rule-6 subgroup facts are the capability evidence
+         ;; there, exactly as for the Intel/ARM/Apple rows).
+         nvidia-floor-ok? (let [cc (:compute-capability dev)]
+                            (or (nil? cc) (and (number? cc) (>= cc 7.0))))
+         ;; ADR-0356 rule 6 and ADR-0357's ARM gate: the fold needs the
+         ;; basic and shuffle-relative subgroup ops in the compute stage
+         ;; (what the emission's two GL_KHR_shader_subgroup_* extensions
+         ;; name) and a subgroup size that divides the workgroup. Every
+         ;; missing or malformed fact fails closed to :baseline -- a
+         ;; descriptor that reports no capability is not a refusal, it is an
+         ;; absence of evidence, and the portable variant is the answer.
+         subgroup-cap-ok?
+         (let [s (:subgroup-size dev)
+               ops (:subgroup-ops dev)
+               wg (:kernel/workgroup-size kir)]
+           (and (int? s) (pos? s)
+                (set? ops)
+                (contains? ops :basic)
+                (contains? ops :shuffle-relative)
+                (int? wg) (pos? wg)
+                (zero? (mod wg s))))
+         ;; ADR-0373 rule 3 step 2, rule 6 for the :simdgroup-reduce fold:
+         ;; the gate's vocabulary grows ONE fact, :simd-reduce -- evidence
+         ;; that the device's SIMD-group exposes simd_sum/simd_max/simd_min
+         ;; -- plus the reported :subgroup-size (= SIMD-group width)
+         ;; dividing W. :basic and :shuffle-relative are the SHUFFLE fold's
+         ;; facts and are NOT required here (the cross-SIMD-group tree uses
+         ;; threadgroup barriers, not subgroup operations). Every missing
+         ;; or malformed fact fails closed, exactly like every other row.
+         simd-reduce-cap-ok?
+         (let [s (:subgroup-size dev)
+               ops (:subgroup-ops dev)
+               wg (:kernel/workgroup-size kir)]
+           (and (int? s) (pos? s)
+                (set? ops)
+                (contains? ops :simd-reduce)
+                (int? wg) (pos? wg)
+                (zero? (mod wg s))))
+         ;; ADR-0360's second decision (2026-10-23, JUN-58): the Apple
+         ;; row is NARROWED to the measured device. A descriptor naming
+         ;; the measured device (its name parts carry the fragment
+         ;; "m1 max", uB5G idiom) answers :baseline for the reduce shape
+         ;; on both Apple routes -- the row's own basis is refuted there
+         ;; by hardware (the variant measured ~20-27% slower on the GLSL
+         ;; arm and ~22% slower on the MSL arm). Every other Apple device
+         ;; keeps the designed row (UNMEASURED).
+         apple-narrowed-device?
+         (and (= :apple vendor)
+              (device-name-carries? dev apple-measured-fragment))
+         subgroup-row-holds?
+         (and (contains? #{:intel :arm :apple :nvidia :amd} vendor)
+              (or (= :glsl-v1 route)
+                  ;; ADR-0363: the WGSL route (:webgpu /
+                  ;; :wgsl-v1) carries the Intel and ARM rows;
+                  ;; ADR-0364 adds :amd (its vendor-default
+                  ;; target, the ADR-0363 rationale).
+                  (and (= :wgsl-v1 route)
+                       (contains? #{:intel :arm :amd} vendor))
+                  ;; ADR-0360's amendment (2026-10-23, JUN-58's
+                  ;; own decision): the MSL route (:metal /
+                  ;; :msl-v1) carries the Apple row, under the
+                  ;; same rules 3 + 6 gate as the Vulkan route.
+                  (and (= :msl-v1 route)
+                       (= :apple vendor))
+                  ;; ADR-0361's same-day amendment (JUN-57's own
+                  ;; decision): the CUDA route (:cuda /
+                  ;; :cuda-v1) carries the NVIDIA row as the
+                  ;; SECOND rung of that route's ladder. The
+                  ;; :warp-shuffle-reduce branch above is checked
+                  ;; FIRST in this cond and keeps precedence
+                  ;; whenever its gate holds (a CONFIRMED compute
+                  ;; capability 7.0+ and W >= 32) -- every answer
+                  ;; it gives is unchanged; this rung answers
+                  ;; only where the warp row's gate does not
+                  ;; reach (a descriptor reporting the rule-6
+                  ;; subgroup facts and NO compute capability),
+                  ;; under the same rules 3 + 6 gate, fail closed
+                  ;; included.
+                  (and (= :cuda-v1 route)
+                       (= :nvidia vendor)))
+              valid-kir?
+              subgroup-cap-ok?
+              ;; ADR-0361: NVIDIA's row carries the CUDA row's
+              ;; sm_70+ floor; the other four vendors (AMD's
+              ;; row, ADR-0364, included) have no
+              ;; compute-capability contract and pass this gate
+              ;; on the absent fact alone.
+              (or (not= :nvidia vendor) nvidia-floor-ok?)
+              (subgroup-reduce/applicable? kir))
+         narrowed? (and subgroup-row-holds? apple-narrowed-device?)
+         ;; ADR-0373 rule 3 step 2, the MSL ladder's FIRST rung: outside
+         ;; the carved-out measured class, an Apple MSL descriptor that
+         ;; reports the fold's rule-6 fact (:simd-reduce) and a reported
+         ;; SIMD-group width dividing W answers :simdgroup-reduce for the
+         ;; reduce shape. The row is Apple's alone (one vendor per
+         ;; decision) and the MSL route's alone (rule 3: the emission is
+         ;; admitted on :msl-v1 only). The carve-out is checked at the
+         ;; cond below: the measured class reaches this rung only at this
+         ;; variant's own flip cells (simd-flip?, below).
+         simdgroup-row-holds?
+         (and (= :apple vendor)
+              (= :msl-v1 route)
+              valid-kir?
+              simd-reduce-cap-ok?
+              (simdgroup/applicable? kir))
+         ;; ADR-0373's flip contract applied to this variant's OWN
+         ;; measured cells (2026-10-23/24, JUN-58): hardware measured THIS
+         ;; variant faster than :baseline at W = 32, W = 64, W = 128,
+         ;; W = 256,
+         ;; W = 512 and
+         ;; W = 1024
+         ;; on the
+         ;; measured class (apple-simdgroup-flip-note), so the carve-out
+         ;; lifts exactly at those cells. The keys are the tested device class (the uB5G
+         ;; name fragment AND the reported subgroup size 32), the
+         ;; measured channel's route (the MSL route under either
+         ;; spelling), this row's own rule-6 gate (the measurement ran
+         ;; the intrinsic fold), and the workgroup widths the channel ran
+         ;; for this variant. Everything else fails closed to the
+         ;; carve-out. A shape enters a flip cell's :measured-cell record
+         ;; only on the cell's OWN claim-protocol rule-2 verdict at that
+         ;; shape -- REGIME-INVARIANT FASTER. A measured-but-scoped cell
+         ;; (rule 2 REGIME-SCOPED) is REFUSED as a selection basis and
+         ;; extends no record: the shape-2 W = 512 cell, 2026-10-24, the
+         ;; first of its kind.
+         simd-flip?
+         (and simdgroup-row-holds?
+              apple-narrowed-device?
+              (= :msl-v1 route)
+              (= apple-measured-subgroup-size (:subgroup-size dev))
+              (contains? apple-simdgroup-measured-workgroups
+                         (:kernel/workgroup-size kir)))
+         variant (cond
+                   (and (= :nvidia vendor)
+                        (= :cuda-v1 route)
+                        valid-kir?
+                        cuda-cap-ok?
+                        (= :reduce (:kernel/op kir))
+                        (contains? #{:sum :max :min} (:kernel/operator kir))
+                        (let [wg (:kernel/workgroup-size kir)]
+                          (and (int? wg) (>= wg min-warp-shuffle-workgroup))))
+                   :warp-shuffle-reduce
+
+                   ;; ADR-0373's measured-cell carve-out (measurement
+                   ;; beats design) outranks rung 1 everywhere but this
+                   ;; variant's OWN flip cells (simd-flip?): at W = 32,
+                   ;; W = 64,
+                   ;; W = 128,
+                   ;; W = 256,
+                   ;; W = 512 and W = 1024 on
+                   ;; the measured class hardware measured THIS variant
+                   ;; faster and the cells answer it, MEASURED -- every
+                   ;; width the row admits, so the class's W band is
+                   ;; flipped end to end and the narrowed M1 Max class
+                   ;; keeps its reduce-shape answers only where the
+                   ;; flip's keys do not hold. Rung 2 below
+                   ;; is byte-for-byte the pre-step-2 answer.
+                   (and simdgroup-row-holds?
+                        (or (not apple-narrowed-device?) simd-flip?))
+                   :simdgroup-reduce
+
+                   (and subgroup-row-holds? (not narrowed?))
+                   :subgroup-reduce
+
+                   :else :baseline)
+         ;; The carve-out's own note: it attaches only where rung 1's gate
+         ;; held and the measured class refused the row -- the row's own
+         ;; demotion, never a fail-closed :baseline, and never at this
+         ;; variant's own flip cell (the measurement answered there, so
+         ;; there is no demotion to annotate).
+         carved? (and simdgroup-row-holds? apple-narrowed-device? (not simd-flip?))
+         ;; ADR-0360 question (1)'s decision, Part 2 (2026-10-23, JUN-58):
+         ;; the flip's record. A cell flips only when every key of the
+         ;; tested device class holds -- the narrowed answer itself, the
+         ;; measured device (the uB5G name fragment AND the reported
+         ;; subgroup size 32 -- the contract keys on both), the measured
+         ;; channel's route (the MSL route under either spelling; an MSL
+         ;; measurement never flips a GLSL cell), and a workgroup width the
+         ;; channel actually ran. The record names the class so no claim
+         ;; extends past it; every other answer keeps :measured? false and
+         ;; carries no record.
+         ;; This variant's OWN flip records (the W = 512, W = 1024,
+         ;; W = 128, W = 64 and W = 32
+         ;; cells flipped in their own later slices): at each flip cell
+         ;; the record names THIS variant's runs at that cell's own W and
+         ;; its one measured shape -- the :subgroup-reduce runs say
+         ;; nothing about this
+         ;; variant (uB5G, reverse reading). The :evidence map is closed
+         ;; under the flip contract's record kinds (each cell's own flip
+         ;; runs and its sanctioned cross-day replication runs) and names
+         ;; no other record kind: a same-day re-session is flip-note
+         ;; prose only (the same-day re-session naming decision,
+         ;; docs/evidence/gpu/same-day-resweep-naming-20261024.txt).
+         simd-measured-cell
+         (when simd-flip?
+           {:device apple-measured-fragment
+            :subgroup-size apple-measured-subgroup-size
+            :channel apple-measured-channel
+            :route :msl-v1
+            :workgroup-size (:kernel/workgroup-size kir)
+            :operators #{:sum :max :min}
+            :shapes (get apple-simdgroup-measured-shapes
+                         (:kernel/workgroup-size kir))
+            :evidence (get apple-simdgroup-measured-evidence
+                           (:kernel/workgroup-size kir))})
+         measured-cell
+         (or simd-measured-cell
+             (when (and narrowed?
+                        (= :msl-v1 route)
+                        (= apple-measured-subgroup-size (:subgroup-size dev))
+                        (contains? apple-measured-workgroups
+                                   (:kernel/workgroup-size kir)))
+               {:device apple-measured-fragment
+                :subgroup-size apple-measured-subgroup-size
+                :channel apple-measured-channel
+                :route :msl-v1
+                :workgroup-size (:kernel/workgroup-size kir)
+                :operators #{:sum :max :min}
+                :shapes apple-measured-shapes
+                :evidence apple-measured-evidence}))]
+    (cond-> {:variant variant
+             :measured? (some? measured-cell)
+             :basis (cond simd-flip?
+                          (str (get variant-bases :simdgroup-reduce) "\n  "
+                               apple-simdgroup-flip-note)
+                          narrowed?
+                          (str (get variant-bases :baseline) "\n  " apple-narrow-note
+                               (when (= 32 (:kernel/workgroup-size kir))
+                                 (str "\n  " apple-w32-note))
+                               (when carved?
+                                 (str "\n  " apple-simdgroup-carveout-note)))
+                          carved?
+                          (str (get variant-bases :baseline) "\n  "
+                               apple-simdgroup-carveout-note)
+                          :else (get variant-bases variant))}
+      measured-cell (assoc :measured-cell measured-cell)))))

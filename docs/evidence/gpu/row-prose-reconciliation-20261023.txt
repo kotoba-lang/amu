@@ -1,0 +1,77 @@
+amu-gpu tick 2026-10-23 -- ADR-0356 row prose reconciled to the execution
+record (the slice 7f1c7faf named). Evidence log; no POSIX shell files.
+
+WHAT CHANGED (prose + :basis text only; no code path, no test, no flag):
+
+1. docs/adr/0356-gpu-kernel-variant-selection.md
+   - Rows table, :baseline cell: "the only variant with an execution path
+     today" replaced by the execution record (no in-repo path since the C
+     loader removal; :subgroup-reduce HAS executed via harnesses).
+   - Rows table, nvidia CUDA row: "PR #1331, open and unmerged at this
+     date" -> PR #1331 MERGED 2026-10-20 (verified via gh pr view).
+   - Rows table, apple row: state cell "Vulkan route only" extended (the
+     MSL route, per ADR-0360's later 2026-10-23 amendment); measurement
+     cell "UNMEASURED: no Apple device has run the variant" (FALSE) ->
+     the measured truth with direction: GLSL arm wire-42/MoltenVK
+     2026-10-19 (ba1fcced/677fa1cf, PR #1347/#1348: ~20-27% slower at
+     W=256, never faster over W=32..256) and MSL arm native Metal
+     2026-10-23 (009c86ef, corrected 7f1c7faf: ~22% slower at W=256
+     across :sum/:max/:min). :measured? stays false (blocked per
+     ADR-0360's measurement amendment); what the row selects given the
+     measured cell stays PROPOSED.
+   - MSL-arm paragraph: "nothing has executed this arm" marked SUPERSEDED
+     (the same-day native-Metal run); "first arm with any compiler
+     verification" corrected inline (the GLSL arm compiled via glslang
+     when it executed 2026-10-19).
+   - Consequences: "implemented in flight" -> merged 2026-10-20.
+   - New amendment "the row prose reconciled to the execution record"
+     listing all five corrections as citations + settling the vocabulary
+     (UNMEASURED = the :measured? lock; "has a hardware measurement" is a
+     separate fact) + locks unchanged + the named residue (no table row
+     for the NVIDIA CUDA-ladder second rung).
+
+2. src/kotoba/compiler/accelerator_variants.cljk (the :basis text every
+   answer carries):
+   - variant-bases :baseline: same "only variant with an execution path"
+     claim, corrected.
+   - variant-bases :subgroup-reduce: "no hardware here has said so" (FALSE
+     on Apple) -> UNMEASURED (Intel/Mali/NVIDIA) vs MEASURED-CONTRADICTED
+     (Apple), the two design questions kept PROPOSED.
+   - select-variant docstring: the :measured? lock paragraph now records
+     that the Apple row HAS hardware measurements and the flag still
+     stays false, and that a measurement can REFUTE a row's basis.
+
+3. docs/evidence/gpu-subgroup-reduce-m1max-20261023/summary.md: the
+   "needs its own reconciliation" note marked CLOSED (this slice).
+
+VERIFICATION (runner output, not paraphrase):
+
+Scoped gate, the 7 GPU-owned namespaces (kbb --backend sci, scratch
+runner gpu_scoped_gate.cljk over the same 7 namespaces run-tests.cljk
+runs first):
+
+    Testing kotoba.compiler.accelerator-targets-test
+    Testing kotoba.compiler.accelerator-variants-test
+    Testing kotoba.compiler.accelerator-test
+    Testing kotoba.compiler.accelerator-pipeline-test
+    Testing kotoba.compiler.accelerator-subgroup-reduce-test
+    Testing kotoba.compiler.accelerator-spirv-test
+    Testing kotoba.compiler.accelerator-spirv-compile-test
+
+    Ran 84 tests containing 4759 assertions.
+    0 failures, 0 errors.
+
+(identical to the pre-edit count 84/4759 recorded at 7f1c7faf -- a
+prose/data-text diff moves no test count.)
+
+Full gate (kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)"
+run-tests.cljk): RED AT BASE, unchanged by this diff -- aborts at
+namespace load with "Could not find namespace: kotoba.form"
+(kotoba.compiler.js-value-target, the upstream W3 port; outside this
+diff). No green-suite claim.
+
+STATE HONESTY: no :measured? flag moved, no workgroup row touched, no
+measurement taken this tick (all numbers above are citations of merged
+record: PR #1343/#1347/#1348, 009c86ef/7f1c7faf). The Apple row is
+implemented, hardware-measured (refuting its design assumption on one
+device), :measured? false -- all three at once.

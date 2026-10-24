@@ -25,6 +25,9 @@
 ;; Verbs (answer after the arrow):
 ;;   INFO                          -> "<device>|<api>|<maxWgX>|<unified>"
 ;;   DEVCLASS                      -> discrete|integrated|virtual|cpu|other
+;;   SUBGROUP                      -> "<size>|<ops>", exactly two fields
+;;                                    (compute-stage subgroup width; the
+;;                                    Vulkan 1.1 core subgroup-op tokens)
 ;;   ALLOC <bytes>                 -> buffer handle
 ;;   MAP <path> <offset> <length>  -> buffer handle (path: a granted artifact)
 ;;   WRITE <handle> <offset> <hex> -> "1"
@@ -97,7 +100,9 @@
     ;; the first refusal the provider, not check-request, answers
     (= k 15) 19
     ;; the last refusal index
-    (= k 16) 34
+    (= k 16) 35
+    ;; fields of the SUBGROUP answer
+    (= k 17) 2
     :else -1))
 
 (defn- i64-max [] (+ (* 2 (- (i64-shift-left 1 62) 1)) 1))
@@ -124,6 +129,7 @@
     (string=? s "DROP") 15
     (string=? s "ZERO") 16
     (string=? s "FREE") 17
+    (string=? s "SUBGROUP") 18
     :else 0))
 
 (defn- verb-name [v] :string
@@ -145,6 +151,7 @@
     (= v 15) "DROP"
     (= v 16) "ZERO"
     (= v 17) "FREE"
+    (= v 18) "SUBGROUP"
     :else ""))
 
 (defn- usage [v] :string
@@ -166,7 +173,7 @@
 
 ;; ---------------------------------------------------------------------
 ;; Refusals. The index is the public ABI; append, never renumber.
-;; 1..18 come from check-request; 19..34 from the provider.
+;; 1..18 come from check-request; 19..35 from the provider.
 
 (defn refusal-name [r] :string
   (cond
@@ -204,6 +211,7 @@
     (= r 32) "gpu/device-error"
     (= r 33) "gpu/device-lost"
     (= r 34) "gpu/fence-timeout"
+    (= r 35) "gpu/no-compute-subgroups"
     :else ""))
 
 ;; The text after the name. Where the C broker had a reason, the text keeps
@@ -244,6 +252,7 @@
     (= r 32) (string-concat (verb-name v) ": device error")
     (= r 33) "device lost; the provider ends the session"
     (= r 34) "fence timeout; the provider ends the session"
+    (= r 35) (string-concat (verb-name v) ": the provider reports no compute-stage subgroups")
     :else ""))
 
 ;; 1 when the provider ends the session after answering this refusal.
@@ -350,7 +359,7 @@
 
 (defn- arity-ok? [v n] :bool
   (cond
-    (or (= v 1) (= v 2) (= v 9) (= v 13)) (= n 1)
+    (or (= v 1) (= v 2) (= v 9) (= v 13) (= v 18)) (= n 1)
     (= v 3) (= n 2)
     (or (= v 4) (= v 5) (= v 6) (= v 7)) (= n 4)
     (= v 8) (= n 3)

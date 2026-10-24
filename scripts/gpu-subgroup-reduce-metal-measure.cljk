@@ -1,0 +1,78 @@
+#!/usr/bin/env kbb
+;; EMIT the two compared MSL arms for the JUN-58 hardware measurement,
+;; straight from the emitters (never hand-written):
+;;
+;;   kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+;;     scripts/gpu-subgroup-reduce-metal-measure.cljk [--width N] [--out DIR] [--variant V]
+;;
+;; Writes <out>/<arm>-reduce-<operator>.emitted.metal for arm in
+;; {baseline, subgroup|simdgroup} and operator in {sum, max, min}, at
+;; workgroup W = <width> -- `lower` with :baseline and the --variant
+;; answer on the :msl-v1 target, i.e. exactly what
+;; accelerator-pipeline/compile-spec would emit for those two variant
+;; answers at that workgroup. The measurement harness
+;; (scripts/gpu-subgroup-reduce-metal-measure.m) dispatches these
+;; sources; the driver (.py) compiles and runs them.
+;;
+;; --variant selects the compared arm (default "subgroup-reduce", the
+;; historical comparison); "simdgroup-reduce" emits ADR-0373's row for
+;; rule 3 step 3's measurement. The arm label (subgroup / simdgroup)
+;; names the emitted files and the metallibs the harness loads -- an
+;; instrument label, never a variant claim of its own.
+;;
+;; Defaults preserve the original single-cell run: --width 256 (the
+;; measured Apple workgroup row, ADR-0358) and --out
+;; docs/evidence/gpu-subgroup-reduce-m1max-20261023/shaders. The W-sweep
+;; cells pass their own --width/--out so the historical cell is never
+;; rewritten by a sweep run.
+;;
+;; Deterministic: same emitters, same bytes. If a run of this script
+;; changes a file, an emitter changed.
+
+(ns gpu-subgroup-reduce-metal-measure
+  (:require [kotoba.compiler.accelerator :as accelerator]))
+
+(defn- arg [flag fallback]
+  (let [argv (vec *command-line-args*)
+        i (.indexOf argv flag)]
+    (if (neg? i) fallback (nth argv (inc i) fallback))))
+
+(def widths (js/parseInt (arg "--width" "256")))
+(def out-dir (arg "--out" "docs/evidence/gpu-subgroup-reduce-m1max-20261023/shaders"))
+(def operators [:sum :max :min])
+;; The compared arm. --variant selects the variant keyword `lower`
+;; admits on :msl-v1 (default :subgroup-reduce, the historical cell;
+;; :simdgroup-reduce is ADR-0373's row). The arm label is the
+;; instrument's file/metallib prefix only.
+(def variant-kw
+  (let [v (arg "--variant" "subgroup-reduce")]
+    (case v
+      "subgroup-reduce" :subgroup-reduce
+      "simdgroup-reduce" :simdgroup-reduce
+      (do (println "REFUSED --variant" v
+                   ": need subgroup-reduce or simdgroup-reduce")
+          (js/process.exit 2)))))
+(def arm-label (if (= variant-kw :simdgroup-reduce) "simdgroup" "subgroup"))
+(def arms [[:baseline :baseline] [(keyword arm-label) variant-kw]])
+
+;; The width is the KIR's workgroup size: a power of two in [32, 1024]
+;; (accelerator-subgroup-reduce/applicable?'s admission). A width outside
+;; it is REFUSED, not silently clamped -- a measurement taken at a width
+;; other than the one named must not read like one taken at it.
+(when-not (and (int? widths)
+               (<= 32 widths 1024)
+               (zero? (bit-and widths (dec widths))))
+  (println "REFUSED --width" widths ": need a power of two in [32, 1024]")
+  (js/process.exit 2))
+
+(defn -main [& _]
+  (doseq [[arm variant] arms
+          operator operators]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
+                                  {:workgroup-size widths})
+          code (accelerator/lower kir :msl-v1 variant)
+          path (str out-dir "/" (name arm) "-reduce-" (name operator) ".emitted.metal")]
+      (spit path code)
+      (println "WROTE" path (count code) "bytes"))))
+
+(-main)

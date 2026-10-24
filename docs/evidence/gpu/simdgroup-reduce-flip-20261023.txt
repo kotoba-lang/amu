@@ -1,0 +1,91 @@
+JUN-58 / JUN-55: the :simdgroup-reduce FLIP slice (rule 3 step 3's flip) --
+2026-10-23, chain worktree, kbb --backend sci
+
+WHAT THIS RECORD IS: the slice record of the flip -- what the W = 256
+measurement (docs/evidence/gpu-simdgroup-reduce-m1max-20261023, taken
+earlier the same day) licenses under the flip contract (ADR-0360
+question (1)'s decision applied to THIS variant's own cells, ADR-0373).
+It is NOT a measurement: no hardware ran in this slice. The numbers
+cited below are the step-3 record's, unchanged and not re-measured.
+
+WHAT MOVED (the slice's whole scope):
+- src/kotoba/compiler/accelerator_variants.cljk: simd-flip? (the flip's
+  key conjunction: apple-narrowed-device? AND reported subgroup size 32
+  AND the MSL route AND the fold's rule-6 gate AND W = 256),
+  apple-simdgroup-measured-workgroups #{256},
+  apple-simdgroup-measured-shapes [1000003],
+  apple-simdgroup-measured-evidence
+  ["docs/evidence/gpu-simdgroup-reduce-m1max-20261023"],
+  apple-simdgroup-flip-note, the flip's own :measured-cell record, and
+  the flip-aware ladder cond (the carve-out lifts exactly at the flip
+  cell).
+- src/kotoba/compiler/accelerator_simdgroup_reduce.cljk: honesty marks
+  for the flip cell (docstrings only).
+- test/kotoba/compiler/accelerator_variants_test.cljk:
+  the-simdgroup-rows-own-flip-cell-flips-the-honesty-lock (NEW) and the
+  flip-aware carve-out block in
+  the-msl-ladder-selects-simdgroup-reduce-first.
+- test/kotoba/compiler/accelerator_simdgroup_reduce_test.cljk:
+  simdgroup-selection-has-landed-under-the-msl-ladder updated to the
+  flip contract (W = 256 answers the row on the measured class,
+  MEASURED; every other W keeps the carve-out).
+- docs/adr/0373-gpu-metal-native-simdgroup-reduce.md: flip UPDATE
+  notes (carve-out section, files, What did NOT move, State, LEFT).
+
+WHAT THE FLIP ANSWERS (one cell, per the contract's keys):
+  vendor/apple, the narrowed M1 Max class (name fragment "m1 max" AND
+  reported subgroup size 32), the MSL route (:metal/:msl-v1), a
+  descriptor reporting :simd-reduce (the fold's rule-6 fact), W = 256,
+  reduce shape, n = 1000003 (the ONE measured shape; shape 2 UNMEASURED)
+  -> variant :simdgroup-reduce, :measured? true, :measured-cell record
+     {:device "m1 max" :subgroup-size 32 :channel :native-metal
+      :route :msl-v1 :workgroup-size 256 :operators #{:sum :max :min}
+      :shapes [1000003]
+      :evidence ["docs/evidence/gpu-simdgroup-reduce-m1max-20261023"]}
+  The measured basis (step-3 record, not re-measured here): paired
+  median ratios 0.790/0.800/0.799 (:sum/:max/:min), claim-protocol
+  rule 2 REGIME-INVARIANT FASTER, 18/18 per-run ratios below 1.0.
+
+WHAT THE FLIP DOES NOT LICENSE (named so nothing is silently upgraded):
+- every other W (32/64/128/512/1024) of the measured class keeps the
+  carve-out's :baseline with :measured? false;
+- shape 2 (n = 2^20) at this cell: UNMEASURED for this variant (the
+  record's :shapes names the one measured shape);
+- the GLSL arm (:vulkan/:glsl-v1) never flips (LABELED BOOTSTRAP runs
+  are not a verdict);
+- every other Apple device: rung 1 may answer :simdgroup-reduce there,
+  but UNMEASURED (:measured? false);
+- every other vendor: this row is Apple's and the MSL route's alone;
+- no workgroup row (ADR-0355/0358) moved.
+
+GATE (real runs, this host, kbb --backend sci, from the chain worktree root):
+
+1. The two touched test namespaces (targeted run):
+     kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" -e \
+       "(require '[clojure.test :as t] '[kotoba.compiler.accelerator-variants-test] \
+         '[kotoba.compiler.accelerator-simdgroup-reduce-test]) \
+        (t/run-tests 'kotoba.compiler.accelerator-variants-test \
+                     'kotoba.compiler.accelerator-simdgroup-reduce-test)"
+   -> Ran 26 tests containing 6431 assertions.
+      0 failures, 0 errors.
+
+2. The scoped GPU gate (the 8 GPU-owned test namespaces, scratch
+   runner gpu_scoped_gate.cljk, not in the repo):
+     kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+       /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+   -> Ran 100 tests containing 7593 assertions.
+      0 failures, 0 errors.
+      scoped: 100 tests, 7593 passed, 0 failed, 0 errors
+
+3. Full suite (run-tests.cljk): RED AT BASE, outside this diff, at
+   namespace load on `kotoba.form` ("Could not find namespace:
+   kotoba.form", required by kotoba.compiler.js-value-target; the W3
+   port path documented red at base in ADR 0362 and named in ADR-0373's
+   gate section). The run stops at that load; no green full suite is
+   claimed and none is claimed here.
+
+HONESTY STATE: the flip cell's :measured? true is backed by the step-3
+hardware record named above. Every other :simdgroup-reduce answer in the
+dispatch stays :measured? false (provisional/design), and the workgroup
+defaults in kotoba.compiler.accelerator-targets are untouched and remain
+:measured? false.

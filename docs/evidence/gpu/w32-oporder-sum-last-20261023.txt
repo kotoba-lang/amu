@@ -1,0 +1,88 @@
+JUN-58 / JUN-55 -- the op-order variant, and :sum measured in the fast
+regime (2026-10-23)
+
+ONE implementation slice + ONE measurement: the shape-2 record's named
+structural blocker -- "the W = 32 regime question is structurally blocked
+on an op-order variant of the instrument" -- is built and exercised. The
+harness (scripts/gpu-subgroup-reduce-metal-measure.{m,py}) now takes a
+comma-separated operator dispatch order (argv[4] / --op-order, validated
+in both, default "sum,max,min" -- every earlier cell's command line is
+unchanged); the order rides the run header (op_order=) and summary.md.
+The timing path, pairs, warmup, read-back and emitted bytes are untouched.
+
+MEASUREMENT (real hardware, this host): W = 32, n = 1,000,003 (the flip
+contract's shape -- the W = 32 decision's ground), order "max,min,sum"
+(:sum LAST, after where the fresh-process clock ramp happens), 6 fresh
+processes, 20 interleaved AB/BA pairs per operator per run, 2 warmup
+submits per arm discarded, verified read-back (ok=1 on all 36 verify
+lines). Apple M1 Max, reported subgroup size 32, native-Metal channel
+(MSL arm only -- NOT wire 42, which has no route since the C loader
+removal). Full record:
+docs/evidence/gpu-subgroup-reduce-m1max-oporder-20261023/{NOTES.md,
+w32-sum-last/,analyze-oporder.py,analyze-oporder.txt}.
+
+The ADR-0358 per-run statistic cannot answer the regime question (a
+process straddles clock levels), so the statistic here is the within-pair
+variant/baseline gpu-ns ratio conditioned on the pair's clock level
+(buckets set from the observed clusters: slow ~109k, middle ~45-69k,
+fast ~35.6-37k baseline gpu_ns):
+
+  op   level   pairs   median pair ratio
+  sum  slow    61      0.919
+  sum  middle  35      0.932
+  sum  fast    24      1.018      <-- the missing samples, now measured
+  max  slow    113     0.917
+  max  fast    7       1.029
+  min  slow    86      0.920
+  min  middle  14      0.993
+  min  fast    20      1.018
+
+FINDING: :sum's sign follows the clock level exactly as :max/:min's does.
+The first :sum fast-regime samples in the whole series are SLOWER for the
+variant (1.018; run 6's per-run ratio 1.016), while the same :sum at the
+slow level is ~8% faster (0.919). The W = 32 "variant is faster" win is a
+SLOW-REGIME ARTIFACT for all three operators -- at the fast level the
+variant is slower for all three (1.018 / 1.029 / 1.018). The shape-2
+record's regime-scoped verdict for :sum was structural inference (no fast
+sample could exist under the fixed order); it is now directly measured.
+
+Named noise, not hidden: single pairs spike both ways (0.295..2.858 in the
+per-pair lists); medians are robust and the full lists are in
+analyze-oporder.txt. Middle buckets are ramp-transition samples (sum 0.932
+over 0.716..1.274).
+
+STATE HONESTY (nothing moves):
+- no :measured? flag, no :measured-cell set, no selection behavior, no
+  workgroup row (ADR-0355/0358) is touched -- the diff is scripts/*.m,
+  scripts/*.py and docs/evidence only;
+- the W = 32 keep-:baseline decision stands and keeps its honesty lock
+  (:measured? false); its basis is strengthened (the regime split is
+  measured at :sum now, not inferred);
+- the flip contract keys to n = 1,000,003 and is not extended;
+- UNMEASURED unchanged: the GLSL arm (no wire-42 route), every other
+  Apple device, other shapes, NVIDIA/Intel/ARM/AMD variant rows.
+
+Gate (real runs, this host, kbb --backend sci):
+
+  scoped (the 7 GPU-owned test namespaces, scratch runner
+  gpu_scoped_gate.cljk -- not in the repo):
+
+    Ran 87 tests containing 6512 assertions.
+    0 failures, 0 errors.
+
+    scoped: 87 tests, 6512 passed, 0 failed, 0 errors
+
+  (87 tests / 6512 assertions before this tick too -- this diff touches no
+  test namespace.)
+
+  full (kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)"
+  run-tests.cljk): RED AT BASE, verified this tick, outside this diff --
+  fails at NAMESPACE LOAD with "Could not find namespace: kotoba.form"
+  (the W3 port path, documented red at base in ADR 0362 and prior tick
+  records). This diff touches no namespace on that path.
+
+LEFT (the next rows): the prose slice -- the flip contract's basis text /
+ADR-0360 citing the shape-2 corroboration AND this regime measurement (one
+slice); whether the W = 32 decision note names the now-measured :sum
+fast-regime samples; the GLSL arm stays blocked on a wire-42 route (ADR
+0371).

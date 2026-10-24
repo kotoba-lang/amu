@@ -1,0 +1,165 @@
+JUN-58 / JUN-55 -- rule 3 mechanised: the harness-side regime-matched
+comparison (2026-10-23)
+
+One IMPLEMENTATION slice: the row the claim-protocol state paragraph
+named after rules 1 and 2 landed ("UNIMPLEMENTED, named: rule 3's
+regime-matched comparison machinery"). NO hardware measurement ran in
+this slice -- every number below is PARSED from committed summary.md
+records by the machinery's own self-test, not re-measured.
+
+WHAT LANDED (implemented, with tests) -- scripts/gpu_regime_classify.py:
+
+- median_draw(ratios): the regime mix of a paired median -- which runs
+  draw it (the middle run(s) of the (ratio, run) sort). TIES ARE NAMED,
+  NOT RESOLVED: every run tying a middle-position ratio is a candidate
+  draw, so a tie cannot silently pick the pure stratum.
+- draw_levels / strata_matched: draw purity (the draw lies within one
+  rule-1 level) and cross-cell stratum matching by rule 1's OWN
+  single-linkage test at GAP-1.15 (some member median of one level
+  within 1.15x of some member median of the other). The harness reads
+  no clock: "matched" is gpu-ns compatibility under the same constant
+  that defines a level within a session -- NOT verified cross-session
+  clock identity. The corpus prose's cross-session slow/fast naming is
+  the assumption this replaces with a visible test.
+- regime_matched_comparison / cell_regime_matched_comparison /
+  render_rule3_section + CLI `--compare <historical.md> <new.md>`: the
+  three-phrase reproduction vocabulary, mechanically. Sign phrase:
+  "reproduces in sign strictly" exactly when the historical cell is
+  rule-2 regime-invariant on one side and every new-cell per-run ratio
+  holds it (a regime-scoped historical cell has no single historical
+  sign to hold -- named). Magnitude phrase keyed on the regime mix of
+  the two median draws: matched -> "magnitude reproduces within
+  <delta>" (delta = the observed deviation of the PUBLISHED paired
+  medians, quoted from the summary's own median column so the phrase
+  digits match the committed prose); mixed -> "magnitude splits by clock
+  regime", the deviation attributed to session mixing, NEVER "failed to
+  reproduce". The comparison is ALSO drawn within every matched stratum
+  pair (per-stratum ratio medians + delta), published beside the
+  cell-median delta -- the regime-matched datum rule 3 asks for.
+
+TWO PROSE-UNDECIDED BOUNDARY CASES, decided mechanically and published
+(the GAP-1.15 ethos applied to comparisons): the tie rule for draws,
+and the cross-cell stratum-matching rule (above). Where the machine
+diverges from a record's manual prose, the divergence is printed and
+pinned -- not bent back to the prose.
+
+THE CLOSING CELL (the protocol's own motivating case,
+shape2-band/w512 -> shape2-resweep/w512), pinned in --self-test:
+
+  sum  sign strictly / magnitude reproduces within 0.002
+       -- reproduces the manual prose ("Sum reproduces within 0.002")
+  min  sign strictly / magnitude splits by clock regime
+       -- reproduces the manual prose ("the min median straddles the
+          regime boundary"); and the regime-matched datum: the slow
+          stratum comparison is 1.194 vs 1.197 = 0.003 against the
+          cell-median 0.010 -- the session-mixing artifact, quantified
+          within strata
+  max  sign strictly / magnitude splits by clock regime
+       -- DIVERGES from the manual prose ("max within 0.003", published
+          by deviation size). Rule 3 AS DECIDED keys the phrase on the
+          regime mix, not the deviation size, and this cell's historical
+          :max median draw ties at 1.192 across THREE strata (runs
+          1/3/4: the 49k / 96k / 119k levels) -- mixed whatever the tie
+          resolution. The machine says split; the within-stratum datum
+          is 1.194 vs 1.195 = 0.001. This is the first visible
+          consequence of the protocol's own decision and it is pinned
+          as the machine deciding alone.
+
+FINDING ONE (the enumeration's shape-2 w1024 row): the historical band
+session (~41.8k gpu-ns) and the re-sweep session (~132k) observed NO
+common regime -- zero matched strata on :max/:min -- so rule 3 has no
+matched stratum to draw any magnitude comparison from and the split
+phrase is the only admissible one there. That is the mechanical account
+of that cell's record-wide +0.017/+0.016 deviation (the widest of the
+two re-sweep series): disjoint session regimes, not non-reproduction.
+
+FINDING TWO (the enumeration's verdicts): 30 operator comparisons over
+the ten re-sweep pairs -- 30/30 "reproduces in sign strictly"; 11 split
+phrases, of which exactly ONE (closing-cell :min) the manual prose had
+also published as splitting. The other 10 pre-protocol manual calls
+published "within <delta>" by deviation size and relabel to the split
+phrase under the decided mix criterion. Nothing is weakened: rule 3's
+own text forbids publishing a mixed comparison as "failed to
+reproduce", and every relabeled comparison's within-stratum delta is
+<= 0.005 where any matched stratum exists (the split phrase is about
+the mixed MEDIAN, not about the reproduction).
+
+VERIFIED (real output on this host):
+
+  python3 scripts/gpu_regime_classify.py --self-test
+    ... rule 3 over the ten re-sweep pairs (historical -> re-sweep;
+    printed, GAP-1.15 ethos): [30 operator rows, printed in full in the
+    self-test output] ...
+    TOTAL: 908 assertions passed, 0 failed
+
+  (908 = the previous 887 plus the rule-3 unit fixtures -- draws
+  even/odd/tie, purity, the 1.15 matching boundary both sides, the
+  matched/mixed/unmatched phrase matrix, both sign-phrase refusals, the
+  three-way tie robustness shape on the REAL historical :max w512
+  numbers, the cell roll-up, the renderer -- and the corpus pins: the
+  closing cell's three operators, the min within-stratum 0.003 datum,
+  and the ten-pair enumeration count.)
+
+  python3 scripts/gpu_regime_classify.py --compare \
+    docs/evidence/gpu-subgroup-reduce-m1max-shape2-band-20261023/w512/summary.md \
+    docs/evidence/gpu-subgroup-reduce-m1max-shape2-resweep-20261023/w512/summary.md
+
+    | max | reproduces in sign strictly (all 6 per-run ratios hold the
+      historical sign: slower) | magnitude splits by clock regime |
+      mixed (level 2: runs 1; level 3: runs 4; level 4: runs 3) /
+      pure (level 2, runs 4, 5) |
+    | min | reproduces in sign strictly (all 6 per-run ratios hold the
+      historical sign: slower) | magnitude splits by clock regime |
+      mixed (level 1: runs 1; level 2: runs 4) / pure (level 2, runs 1,
+      6) |
+    | sum | reproduces in sign strictly (all 6 per-run ratios hold the
+      historical sign: slower) | magnitude reproduces within 0.002 |
+      pure (level 2, runs 1, 3) / pure (level 2, runs 1, 5) |
+    Cell: sign -- reproduces in sign strictly (every operator);
+    magnitude -- magnitude splits by clock regime (mixed: max, min).
+    Within-stratum: max 1.194/1.195 d0.001; min 1.194/1.197 d0.003;
+    sum 1.200/1.203 d0.003 (plus the named unmatched fast levels).
+
+  Scoped GPU gate (the 7 GPU-owned test namespaces, scratch runner
+  gpu_scoped_gate.cljk, not in the repo), from the chain worktree root:
+
+    kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+      /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+
+    Ran 88 tests containing 7122 assertions.
+    0 failures, 0 errors.
+
+    scoped: 88 tests, 7122 passed, 0 failed, 0 errors
+
+  (88/7122, unchanged from base: this diff touches no .cljk namespace --
+  the gate runs to prove nothing broke.)
+
+  full (kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)"
+  run-tests.cljk): RED AT BASE, re-verified this tick, outside this diff
+  -- aborts at NAMESPACE LOAD with "Could not find namespace:
+  kotoba.form" (the W3 port path, documented red at base in ADR 0362
+  and every prior tick record). This diff touches no namespace on that
+  path. No green full suite is claimed.
+
+WHAT DID NOT MOVE (named so nothing is silently upgraded):
+- src/kotoba/compiler/*, test/*: untouched. No code namespace in this
+  diff.
+- No evidence record is rewritten; every committed summary.md stands.
+- No :measured? flag, no workgroup row (ADR-0355/0358), no flip gate,
+  no selection answer moves (rule 4, untouched). This slice ran no
+  hardware measurement.
+
+State (the honesty rule's three states): rules 1, 2 and 3's harness-side
+publication is IMPLEMENTED (code + tests). UNIMPLEMENTED, unchanged and
+named: pair-level classification (the op-order cell's within-run ramps;
+analyze-oporder.py remains the manual instrument); cross-operator level
+identity; driver auto-wiring of --compare (the rule-3 section is
+consumed manually today -- the measurement driver writes single-record
+sections only).
+
+UNMEASURED, unchanged: everything. No new hardware number exists in
+this slice; every figure above is parsed from committed records.
+
+LEFT: cross-day replication of every cell (needs a later-day cron tick);
+pair-level classification; the blocked/absent-hardware vendor rows
+(JUN-57/59/60 hardware-free slices remain).

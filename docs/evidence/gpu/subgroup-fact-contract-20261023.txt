@@ -1,0 +1,49 @@
+Rule-6 fact production -- the SUBGROUP contract (ADR-0362) -- design only
+2026-10-23, amu-gpu chain tick (bot/amu-gpu-chain)
+
+What landed (docs only):
+- docs/adr/0362-gpu-subgroup-fact-production.md: the design decision
+  ADR-0360/0361 left open ("Producing the facts is a separate design
+  decision, made nowhere yet"). The rule-6 descriptor facts
+  (:subgroup-size, :subgroup-ops) get a designed producer: one additive
+  wire-42 request verb SUBGROUP (verb code 18, next free after FREE=17
+  in tools/gpu_compute_protocol.kotoba -- verified by reading the
+  table), answering exactly two '|'-separated fields <size>|<ops>:
+  the compute-stage subgroup width (VkPhysicalDeviceSubgroupProperties'
+  subgroupSize when supportedStages includes COMPUTE) and the Vulkan 1.1
+  core VkSubgroupFeatureFlagBits tokens lower-cased
+  (basic vote arithmetic ballot shuffle shuffle-relative clustered quad
+  -- verified against the Khronos registry page for
+  VkSubgroupFeatureFlagBits, 2026-10-23). Named refusal
+  gpu/no-compute-subgroups appended at refusal index 35 (the list is
+  public ABI, "append, never renumber"; 1..34 verified in the table).
+  The consumer half is total and all-or-nothing: a malformed field or an
+  unknown token makes the whole answer an absent fact and the rows fail
+  closed to :baseline. Interaction with ADR 0371 decision 3 (Proposed,
+  verb-set freeze) is named: the amendment is "additive verbs only, old
+  guests never send them"; if the owner accepts the strict form instead,
+  decision 1 needs re-decision and the gap re-opens.
+- docs/adr/0356-gpu-kernel-variant-selection.md: one amendment paragraph
+  records the landing.
+- docs/adr/0360-gpu-apple-subgroup-reduce.md,
+  docs/adr/0361-gpu-nvidia-subgroup-reduce.md: the "open contract gap"
+  paragraphs now point at ADR-0362 instead of "made nowhere yet" (the
+  fail-closed sentence is unchanged -- the rows still fail closed).
+
+State honesty:
+- ACCEPTED DESIGN ONLY. No code, no tests, no protocol-table entry, no
+  provider land with this ADR. The three implementation slices (protocol
+  table verb/field/refusal entries, provider answer, consumer parser)
+  are named and not done.
+- UNMEASURED: no measurement was taken (wire 42 has no route today; the
+  C loader was removed 2026-10-22 and the ADR 0371 provider does not
+  exist). No :measured? flag moved and no workgroup row (ADR-0355/0358)
+  changed. The four variant rows stay UNMEASURED and UNSELECTABLE for a
+  descriptor without facts: behavior is unchanged by this document.
+- Verification of this tick: git diff --stat against the tick base shows
+  docs/ files only (no namespace touched), so the gate obligation for
+  touched namespaces does not arise. The suite red outside this diff is
+  unchanged and named in the chain PR: the full run-tests.cljk gate is
+  red at base at namespace load ("Could not find namespace: kotoba.form"
+  via kotoba.compiler.js-value-target, upstream W3 port; no .cljk
+  reading exists), so no green-suite claim is made.

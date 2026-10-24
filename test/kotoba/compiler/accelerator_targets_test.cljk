@@ -23,11 +23,11 @@
     (is (= :unknown (targets/classify-vendor {})))))
 
 (deftest target-dispatch-matches-api-and-vendor
-  (testing "an api that names its shading language decides outright"
+  (testing "an api decides its route outright"
     (is (= :cuda-v1 (targets/target-for :cuda :nvidia)))
     (is (= :msl-v1 (targets/target-for :metal :apple)))
-    (is (= :wgsl-v1 (targets/target-for :vulkan :intel)))
-    (is (= :wgsl-v1 (targets/target-for :webgpu :arm))))
+    (is (= :glsl-v1 (targets/target-for :vulkan :intel)) ":vulkan answers the GLSL it compiles (ADR-0359 decision 3)")
+    (is (= :wgsl-v1 (targets/target-for :webgpu :arm)) ":webgpu keeps its language"))
   (testing "a missing or unknown api falls back to the vendor default"
     (is (= :cuda-v1 (targets/target-for nil :nvidia)))
     (is (= :msl-v1 (targets/target-for nil :apple)))
@@ -55,7 +55,7 @@
 
 (deftest recommend-is-total-deterministic-and-provisional
   (let [nvidia (targets/recommend {:vendor-id 4318 :api :cuda})
-        apple (targets/recommend {:vendor "Apple M3"})
+        apple (targets/recommend {:vendor-id 4203})
         unknown (targets/recommend {})]
     (is (= :nvidia (:vendor nvidia)))
     (is (= :cuda-v1 (:target nvidia)))
@@ -63,12 +63,46 @@
     (is (= :msl-v1 (:target apple)))
     (is (= :unknown (:vendor unknown)))
     (is (= :wgsl-v1 (:target unknown)))
-    (testing "every answer is marked unmeasured until hardware says otherwise"
+    (testing "a measured row answers :measured? true, a provisional row false"
+      (is (true? (:measured? nvidia)))
+      (is (true? (:measured? apple)))
+      (is (false? (:measured? unknown))))
+    (testing "every answer carries its basis"
       (doseq [decision [nvidia apple unknown]]
-        (is (false? (:measured? decision)))
         (is (string? (:basis decision)))))
+    (testing "the measured flag is scoped to the measured device (uB5G, ADR-0358)"
+      (is (false? (:measured? (targets/recommend {:vendor "Apple M3"})))
+          "a device named through :vendor that hardware never measured keeps the row flag out")
+      (is (false? (:measured? (targets/recommend {:vendor "Apple M3" :name "Apple M3"})))
+          "a named device that is not the measured one keeps the row flag out")
+      (is (false? (:measured? (targets/recommend {:vendor "GeForce RTX 4090" :api :cuda})))
+          "an unmeasured NVIDIA device named by name keeps the Xavier row flag out")
+      (is (true? (:measured? (targets/recommend {:vendor "Apple M1 Max" :name "M1 Max"}))))
+      (is (true? (:measured? (targets/recommend {:vendor "NVIDIA Tegra Xavier" :api :cuda})))
+          "the measured NVIDIA device spelled by name keeps its own row flag")
+      (is (true? (:measured? (targets/recommend {:vendor "Intel(R) Graphics (BMG G31)" :api :vulkan}))))
+      (is (true? (:measured? (targets/recommend {:vendor "AMD Radeon 680M"}))))
+      (is (false? (:measured? (targets/recommend {:vendor-id 4318 :api :cuda :max-workgroup-x 512})))
+          "an INFO-derived limit probe never transfers the row flag"))
     (testing "same descriptor in, same map out"
       (is (= nvidia (targets/recommend {:vendor-id 4318 :api :cuda}))))))
+
+(deftest device-class-maps-the-loader-vocabulary
+  (testing "the five DEVCLASS words of tools/kexe_gpu_vulkan.c map losslessly"
+    (is (= :discrete-gpu (targets/device-class "discrete")))
+    (is (= :integrated-gpu (targets/device-class "integrated")))
+    (is (= :virtual-gpu (targets/device-class "virtual")))
+    (is (= :cpu (targets/device-class "cpu")))
+    (is (= :other (targets/device-class "other"))))
+  (testing "every answer is a member of device-classes"
+    (doseq [token ["discrete" "integrated" "virtual" "cpu" "other"]]
+      (is (contains? targets/device-classes (targets/device-class token)))))
+  (testing "a token the loader cannot emit answers :unknown, never a wrong class"
+    (doseq [token [nil "" "Discrete" "discrete-gpu" " integrated" "gpu" 42 :discrete]]
+      (is (= :unknown (targets/device-class token))
+          (str token " must not become a specific class"))))
+  (testing "same token in, same class out"
+    (is (= (targets/device-class "integrated") (targets/device-class "integrated")))))
 
 (deftest info-answers-parse-into-measured-device-facts
   (testing "the recorded 2026-10-18 M1 Max INFO answer (wire 42) parses"
@@ -83,7 +117,7 @@
     (let [decision (targets/recommend (targets/device-from-info "Apple M1 Max|1.3.357|1024|1"))]
       (is (= :apple (:vendor decision)))
       (is (= :msl-v1 (targets/target-for nil :apple)) "vendor default stays msl-v1")
-      (is (= :wgsl-v1 (:target decision)) "the wire is Vulkan, so :vulkan decides")
+      (is (= :glsl-v1 (:target decision)) "the wire is Vulkan, so :vulkan decides :glsl-v1 (ADR-0359 decision 3)")
       (is (false? (:measured? decision)))))
   (testing "malformed answers parse to nil, never a throw or a wrong decision"
     (is (nil? (targets/device-from-info nil)))
@@ -95,3 +129,133 @@
     (is (nil? (targets/device-from-info "dev|1.3.357|0|1")))
     (is (nil? (targets/device-from-info "dev|1.3.357|1024|2")))
     (is (nil? (targets/device-from-info "dev|1.3.357|1024|x")))))
+
+(deftest subgroup-answers-parse-into-rule-6-facts
+  ;; ADR-0362 decision 4 (the consumer half): the parsed answer IS the
+  ;; descriptor rule 6 (ADR-0356) reads -- :subgroup-size a positive int,
+  ;; :subgroup-ops a keyword set. The producer (the ADR 0371 provider's
+  ;; SUBGROUP reply) does not exist yet, so these are parser contracts over
+  ;; answer strings: no wire, no GPU, no measurement.
+  (testing "the answer is exactly two fields, <size>|<ops> (decision 2)"
+    (is (= {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}
+           (targets/device-from-subgroup "32|basic shuffle-relative")))
+    (is (= {:subgroup-size 8 :subgroup-ops #{}}
+           (targets/device-from-subgroup "8|"))
+        "an empty <ops> is a fact (no subgroup operations in compute), not a refusal"))
+  (testing "the eight Vulkan 1.1 core tokens map 1:1, the hyphen preserved"
+    (is (= #{:basic :vote :arithmetic :ballot :shuffle :shuffle-relative :clustered :quad}
+           (:subgroup-ops (targets/device-from-subgroup
+                           "8|basic vote arithmetic ballot shuffle shuffle-relative clustered quad"))))
+    (is (= {:subgroup-size 16 :subgroup-ops #{:shuffle}}
+           (targets/device-from-subgroup "16|shuffle"))))
+  (testing "tokens are the wire's tokens: runs of non-space bytes, one or more spaces separate"
+    (is (= #{:basic :shuffle-relative}
+           (:subgroup-ops (targets/device-from-subgroup "64|  basic   shuffle-relative  "))))
+    (is (= #{:basic}
+           (:subgroup-ops (targets/device-from-subgroup "32|basic basic")))
+        "the answer names a set: a duplicate token is the same fact"))
+  (testing "all-or-nothing: a malformed answer is an absent fact (nil), never a partial one"
+    (doseq [answer [nil
+                    42
+                    :subgroup
+                    ""
+                    "32"
+                    "32|basic|extra"
+                    "32||basic"
+                    "32|basic|"
+                    "|basic"
+                    "|"
+                    "0|basic"
+                    "-1|basic"
+                    "+3|basic"
+                    "12.5|basic"
+                    "x|basic"
+                    " 32|basic"
+                    "32x|basic"
+                    "99999999999999999999|basic"
+                    "32|Basic"
+                    "32|basic vote2"
+                    "32|shuffle_"
+                    "32|basic\tvote"]]
+      (is (nil? (targets/device-from-subgroup answer))
+          (str (pr-str answer) " must parse to no fact at all"))))
+  (testing "same answer in, same fact out"
+    (is (= (targets/device-from-subgroup "32|basic shuffle-relative")
+           (targets/device-from-subgroup "32|basic shuffle-relative")))))
+
+(deftest subgroup-answers-are-produced-from-the-device-record
+  ;; ADR-0362 decisions 2+3 (the producer half's PURE mapping): one device
+  ;; record -- the VkPhysicalDeviceSubgroupProperties fields the ADR 0371
+  ;; provider will read -- answers the "<size>|<ops>" payload, or nil for
+  ;; the named refusal gpu/no-compute-subgroups. Pure contracts over struct
+  ;; field values: no wire, no GPU, no provider, NO MEASUREMENT.
+  (testing "a payload answers exactly when the record reports compute-stage subgroups"
+    (is (= "32|basic"
+           (targets/subgroup-answer {:subgroup-size 32 :supported-stages 0x20 :supported-ops 0x1})))
+    (is (= "32|basic"
+           (targets/subgroup-answer {:subgroup-size 32 :supported-stages 0x23 :supported-ops 0x1}))
+        "other stage bits set alongside COMPUTE (0x20) change nothing")
+    (is (nil? (targets/subgroup-answer {:subgroup-size 32 :supported-stages 0x1f :supported-ops 0x1}))
+        "no COMPUTE in supported-stages -> nil, the named refusal gpu/no-compute-subgroups")
+    (is (nil? (targets/subgroup-answer {:subgroup-size 32 :supported-stages 0x0 :supported-ops 0xff})))
+    (is (nil? (targets/subgroup-answer {:subgroup-size 0 :supported-stages 0x20 :supported-ops 0x1})))
+    (is (nil? (targets/subgroup-answer {:subgroup-size -8 :supported-stages 0x20 :supported-ops 0x1})))
+    (is (nil? (targets/subgroup-answer {:subgroup-size 32.5 :supported-stages 0x20 :supported-ops 0x1})))
+    (is (nil? (targets/subgroup-answer {:subgroup-size 32 :supported-stages 0x20 :supported-ops -1})))
+    (is (nil? (targets/subgroup-answer {:subgroup-size 32 :supported-stages -32 :supported-ops 0x1})))
+    (is (nil? (targets/subgroup-answer {:subgroup-size 32 :supported-stages 0x20})))
+    (is (nil? (targets/subgroup-answer {})))
+    (is (nil? (targets/subgroup-answer "32|basic")))
+    (is (nil? (targets/subgroup-answer nil))))
+  (testing "the eight core bits answer their tokens in the vocabulary order"
+    (is (= "8|basic vote arithmetic ballot shuffle shuffle-relative clustered quad"
+           (targets/subgroup-answer {:subgroup-size 8 :supported-stages 0x20 :supported-ops 0xff})))
+    ;; single-bit pins: the raw values are the VkSubgroupFeatureFlagBits
+    ;; registry values (verified 2026-10-23) -- a changed bit answers a
+    ;; different token and fails here.
+    (doseq [[bits token] [[0x1 "basic"] [0x2 "vote"] [0x4 "arithmetic"] [0x8 "ballot"]
+                          [0x10 "shuffle"] [0x20 "shuffle-relative"] [0x40 "clustered"] [0x80 "quad"]]]
+      (is (= (str "8|" token)
+             (targets/subgroup-answer {:subgroup-size 8 :supported-stages 0x20 :supported-ops bits}))
+          (str "VkSubgroupFeatureFlagBits bit " bits " is " token))))
+  (testing "bits outside the core eight are masked off in v1 (decision 2)"
+    (is (= "8|" (targets/subgroup-answer {:subgroup-size 8 :supported-stages 0x20 :supported-ops 0x100}))
+        "partitioned (0x100) answers no token")
+    (is (= "8|" (targets/subgroup-answer {:subgroup-size 8 :supported-stages 0x20 :supported-ops 0x200}))
+        "rotate (0x200) answers no token")
+    (is (= "8|" (targets/subgroup-answer {:subgroup-size 8 :supported-stages 0x20 :supported-ops 0x400}))
+        "rotate-clustered (0x400) answers no token")
+    (is (= "8|basic"
+           (targets/subgroup-answer {:subgroup-size 8 :supported-stages 0x20 :supported-ops 0x701}))))
+  (testing "an empty <ops> is the legal zero-ops fact, not a refusal (decision 2)"
+    (is (= "32|" (targets/subgroup-answer {:subgroup-size 32 :supported-stages 0x20 :supported-ops 0}))))
+  (testing "the producer's bytes are the consumer's facts (decisions 2/4 seam, round-trip)"
+    (is (= {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}
+           (targets/device-from-subgroup
+            (targets/subgroup-answer {:subgroup-size 32 :supported-stages 0x20 :supported-ops 0x21}))))
+    (is (= {:subgroup-size 8 :subgroup-ops #{}}
+           (targets/device-from-subgroup
+            (targets/subgroup-answer {:subgroup-size 8 :supported-stages 0x20 :supported-ops 0x700})))
+        "a record with only masked-off bits still answers the zero-ops fact"))
+  (testing "same record in, same bytes out (ADR-0356 rule 5)"
+    (let [record {:subgroup-size 64 :supported-stages 0x20 :supported-ops 0x21}]
+      (is (= (targets/subgroup-answer record) (targets/subgroup-answer record))))))
+
+(deftest the-row-split-is-four-measured-two-provisional
+  ;; The honesty split the ns docstring states (corrected 2026-10-24,
+  ;; docs/evidence/gpu/workgroup-prose-rootcause-20261024.txt): four rows
+  ;; measured by ADR-0358 (2026-10-19), two provisional. A measured row
+  ;; names its one measured device; a provisional row names none.
+  (is (= #{:nvidia :apple :intel :amd}
+         (set (for [[v row] targets/workgroup-defaults :when (:measured? row)] v)))
+      "exactly the four ADR-0358 rows are measured")
+  (is (= #{:arm :unknown}
+         (set (for [[v row] targets/workgroup-defaults :when (not (:measured? row))] v)))
+      "exactly :arm and :unknown stay provisional")
+  (testing "a measured row names its one measured device; a provisional row names none"
+    (doseq [[v row] targets/workgroup-defaults]
+      (if (:measured? row)
+        (is (and (string? (:measured-device row)) (pos? (count (:measured-device row))))
+            (str v " is measured but names no measured device"))
+        (is (nil? (:measured-device row))
+            (str v " is provisional but carries a measured-device"))))))
