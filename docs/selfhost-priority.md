@@ -81,9 +81,11 @@ The migration proceeds through these gates:
 1. **Port the language and component boundary.** Migrate required source and
    fixtures to `.kotoba`, preserving recorded semantics, Definition CIDs and
    named refusals. Remove the requirement for a permanent paired CLJK surface.
-2. **Grow the native Kotoba compiler closure.** The adopted seed is a 16-module
-   compiler and has separate source-only x86_64 Linux support; neither covers
-   the complete Amu frontend, project system, verifier, and command surface.
+2. **Grow the native Kotoba compiler closure.** The original adopted seed
+   was a 16-module compiler. The current product retains the extended18
+   core in a complete29 native closure, with actual x86 execution recorded
+   in [native qualification](native-public-entry.md). The broader project
+   system, verifier and command surface retain their own acceptance.
    Extend it from Kotoba source and require each generation to compile and
    verify the next without the forbidden hosts or C loader/runtime. A
    historical subset fixed point does not qualify the full compiler.
@@ -108,9 +110,10 @@ still open; retiring an old route does not certify its replacement.
 
 The remaining four test/browser/fuzz/x86-seed workflow registrations and the
 old Node/KBB checker are retired in
-[native CDCI retirement](native-cdci-retirement.md). The temporary required
-merge-guard remains a separately held approval. No native controller or gate
-is activated or qualified by removing these legacy jobs.
+[native CDCI retirement](native-cdci-retirement.md). The historical required-context
+retirement was subsequently merged in Amu #1439. Removing the legacy jobs
+itself does not qualify the native replacement; current-source execution
+and CI receipts are recorded in [native qualification](native-public-entry.md).
 
 Tracking: AWAI-66 (loaderless bootstrap), AWAI-43 (native selfbuild inputs and
 fixed point), JUN-199 (product entry), KOT-13 (Kotoba core), JUN-198 (Kotoba

@@ -84,11 +84,14 @@ against length, all unsigned, `UD2` on violation. The fuel and frame rules of AD
 - Not a sound pointer discipline yet. An independent review of the first
   slice (2026-10-23) found three admitted shapes that a hostile guest could
   use, all inside the stated first-slice limits and none refused by a test:
-  (a) the parameters of a PRIVATE helper count as rooted, so
-  `(defn- h [p n] (kernel-load-u32 p n 0))` called as `(h (+ b 4096) n)` is
-  admitted -- what a caller passes at a base position is not checked (the
-  call-site taint step; the five desktop objects need helper parameters to
-  carry the region, which is why the first slice allows them); (b) the LENGTH
+  (a) [closed 2026-10-23] the parameters of a PRIVATE helper counted as rooted, so
+  `(defn- h [p n] (kernel-load-u32 p n 0))` called as `(h (+ b 4096) n)` was
+  admitted. A helper's parameter is now NOT rooted (only the exported function's
+  parameters are), which is sound without a call-site analysis but means a helper
+  cannot carry a region: `no_helper_param_base` is refused E7106. The desktop
+  objects use helpers that way, so they cannot be rebuilt on this route until a
+  call-site step (every argument at a base position of a helper is rooted, and
+  the helper's own bases are those parameters) replaces this restriction; (b) the LENGTH
   operand is not rooted or tied to its base, so `(kernel-load-u32 b 512 400)`
   over an 8-byte entry window is admitted (the pairing of a base with its
   length is the region type this slice does not have); (c) an integer literal
@@ -116,11 +119,12 @@ change to the adopted core:
   +58/+49/+40/+21/+8) match that file's own comments and layout.
 - **Rooted bases** are enforced on the SIR the backend already reads (`xk-check`):
   the base operand's last writer is found in straight-line code (a label or jump
-  in between refuses) and must be a literal, a parameter that is never assigned
-  (of the exported function or of a private helper: call sites are not checked),
+  in between refuses) and must be a literal, a parameter of the EXPORTED function that is
+  never assigned (a private helper's parameters are not rooted),
   a `kernel-subregion` of a rooted base, or a let-bound local with one
-  assignment of a rooted value. Everything else is E7106. Fifteen cases in
-  `seed/tests/kernel-memory/` (seven accepted, eight refused: a base read from
+  assignment of a rooted value. Everything else is E7106. Sixteen cases in
+  `seed/tests/kernel-memory/` (seven accepted, nine refused: a base passed through a
+  private helper's parameter, a base read from
   memory, arithmetic, a call result, a branch, a computed let, a loop variable,
   a subregion of arithmetic, arithmetic under the 16 KiB load).
 - Only the object route has the library: `xk-intr` recognizes the stubs only
