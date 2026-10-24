@@ -80,6 +80,18 @@ NEX_OPS = ["rmsnorm", "l2norm", "gated_rmsnorm", "silu_mul", "conv1d_step", "gat
            "weighted_sum", "add", "add_bias", "f32_matvec", "add_rmsnorm", "pos_incr", "rope_neox", "attn_decode",
            "softmax_topk", "argmax_partial", "argmax_final", "quant_q8", "pos_incr2", "ctl", "pos_add", "pos_seed", "params",
            "sample_topp", "sample_part", "sample_probs", "sample_bisect_part", "sample_bisect_step", "sample_final"]
+# nex-ops.comp's BATCH, BPREFILL and BIAS variants (kir2-nex-variant): the op,
+# the name suffix and the defines beside -DOP
+NEX_VARIANTS = [("copy_at", "batch", "BATCH"), ("copy_at", "bprefill", "BPREFILL"), ("pos_incr", "batch", "BATCH"),
+                ("rope_neox", "batch", "BATCH"), ("rope_neox", "bias", "BIAS"), ("rope_neox", "batch-bias", "BATCH BIAS"),
+                ("attn_decode", "batch", "BATCH"), ("attn_decode", "bprefill", "BPREFILL"), ("argmax_partial", "batch", "BATCH"),
+                ("argmax_final", "batch", "BATCH"), ("ctl", "batch", "BATCH"), ("ctl", "bprefill", "BPREFILL"),
+                ("pos_add", "bprefill", "BPREFILL"), ("pos_seed", "bprefill", "BPREFILL"), ("params", "batch", "BATCH"),
+                *[(op, "batch", "BATCH") for op in ("sample_part", "sample_probs", "sample_bisect_part", "sample_bisect_step",
+                                                    "sample_final")]]
+NEX_VARIANT_NAMES = [op + "-" + suffix for op, suffix, _ in NEX_VARIANTS]
+NEX_VARIANT_SIZES = [2208, 2044, 1688, 3720, 4188, 3920, 5828, 5888, 3792, 4184, 2084, 2444, 1792, 1840, 1960, 4776, 4332, 3872,
+                     3340, 5760]
 # modules, test, the receipt, the written modules' prefix and their sizes by
 # name part, the control's one failure, and whether glslang refs go in
 SUITES = {
@@ -91,6 +103,7 @@ SUITES = {
     "kir2": dict(modules=[*ENCODE_CHECK, "tools/gpu_kernel_kir2.kotoba", "tools/gpu_kernels_v2.kotoba"],
                  test="tools/gpu_kernel_kir2_test.kotoba", receipt="gpu-kernel-kir2.json", prefix="kir2-",
                  sizes={"ewise": 1096, "attn-copy-dense": 6488, **{"kir2-nex-" + op + ".spv": n for op, n in zip(NEX_OPS, [3440, 3468, 3516, 1992, 2660, 2452, 2396, 2140, 2704, 1872, 1968, 3088, 3476, 1652, 3988, 5964, 5356, 3604, 4052, 3252, 1780, 2172, 1720, 1732, 1752, 9916, 4504, 4000, 3676, 3116, 6220])},
+                        **{"kir2-nex-" + v + ".spv": n for v, n in zip(NEX_VARIANT_NAMES, NEX_VARIANT_SIZES)},
                         "kir2-dot-rows.spv": 2448, "kir2-kdot-f32-r1.spv": 28776,
                         "kir2-kdot-f32-r8.spv": 25056, "kir2-kdot-f32-r8-rows4.spv": 25056,
                         "kir2-kdot-f32-r8-rows16.spv": 25072, "kir2-kdot-f32-r8-rows32.spv": 25072,
@@ -98,9 +111,14 @@ SUITES = {
                         "kir2-kdot-i8-x8r4.spv": 23028, "kir2-kdot-i8-x8r8.spv": 23028,
                         "kir2-kdot-x8r16.spv": 26028, "kir2-kdot-x8r32.spv": 26028, "kir2-kdot-i8-x8r16.spv": 23028, "kir2-kdot-i8-x8r32.spv": 23028,
                         "kir2-deltanet-step.spv": 3728, "kir2-deltanet-fused.spv": 13724,
+                        "kir2-deltanet-fused-batch.spv": 14076, "kir2-deltanet-fused-bprefill.spv": 14120,
+                        # embed's BATCH and BPREFILL: 160 and 100 bytes under each decode module
+                        **{f"kir2-embed-{n}-{v}.spv": b - d for n, b in (("iq4xs", 4264), ("q8", 3056), ("b32-2", 3228), ("b32-3", 3420),
+                                                                          ("b32-6", 4316), ("b32-7", 4476), ("ptq1", 4264))
+                           for v, d in (("batch", 160), ("bprefill", 100))},
                         **{f"kir2-embed-{n}.spv": b for n, b in (("iq4xs", 4264), ("q8", 3056), ("b32-2", 3228), ("b32-3", 3420),
                                                                   ("b32-6", 4316), ("b32-7", 4476), ("ptq1", 4264))}},
-                 count=63, control="FAIL attn: variables", refs=True),
+                 count=99, control="FAIL attn: variables", refs=True),
 }
 FUEL = 100000000
 EXPECT_CALL = re.compile(r"\(expect ")
@@ -129,13 +147,18 @@ def units(suite):
 
 
 REFS = ROOT / "tools/gpu_kernel_refs"
-# sources compiled more than once: (name suffix, -D define) per module
-REF_VARIANTS = {"nex-ops.comp": [(op, "OP=" + op) for op in NEX_OPS],
+# sources compiled more than once: (name suffix, -D defines) per module
+REF_VARIANTS = {"nex-ops.comp": [(op, "OP=" + op) for op in NEX_OPS]
+                                + [(op + "-" + suffix, "OP=" + op + " " + d) for op, suffix, d in NEX_VARIANTS],
                 "kdot-f32-r8.comp": [(None, None), ("rows4", "ROWS=4"), ("rows16", "ROWS=16"), ("rows32", "ROWS=32")],
                 "kdot-x8r8.comp": [(None, None), ("rows4", "ROWS=4"), ("rows16", "ROWS=16"), ("rows32", "ROWS=32")],
                 "kdot-i8-x8r4.comp": [(None, None), ("rows8", "ROWS=8"), ("rows16", "ROWS=16"), ("rows32", "ROWS=32")],
                 "embed-iq4xs.comp": [(None, None), ("q8", "Q8"), ("b32-2", "B32=2"), ("b32-3", "B32=3"), ("b32-6", "B32=6"),
-                                     ("b32-7", "B32=7"), ("ptq1", "PTQ1")]}
+                                     ("b32-7", "B32=7"), ("ptq1", "PTQ1")],
+                "deltanet-fused.comp": [(None, None), ("batch", "BATCH"), ("bprefill", "BPREFILL")]}
+# embed's BATCH and BPREFILL, for every kind
+REF_VARIANTS["embed-iq4xs.comp"] += [((k + "-" if k else "") + v, (d + " " if d else "") + v.upper())
+                                     for k, d in list(REF_VARIANTS["embed-iq4xs.comp"]) for v in ("batch", "bprefill")]
 # embed_iq4xs's variants: KIR v2 kind -> name (the GLSL's define)
 EMBED_KINDS = {23: "iq4xs", 8: "q8", 2: "b32-2", 3: "b32-3", 6: "b32-6", 7: "b32-7", 143: "ptq1"}
 
@@ -149,7 +172,7 @@ def refs(output):
     for comp in sorted(REFS.glob("*.comp")):
         for suffix, define in REF_VARIANTS.get(comp.name, [(None, None)]):
             spv = out / ("ref-" + comp.stem + ("-" + suffix if suffix else "") + ".spv")
-            r = subprocess.run([glslang, "-V", "--target-env", "vulkan1.1", *(["-D" + define] if define else []), str(comp), "-o", str(spv)],
+            r = subprocess.run([glslang, "-V", "--target-env", "vulkan1.1", *(["-D" + d for d in define.split()] if define else []), str(comp), "-o", str(spv)],
                                capture_output=True, text=True)
             assert r.returncode == 0, (comp.name, define, r.stdout, r.stderr)
             rows[spv.name] = dict(source=pin(comp), define=define, module=pin(spv))
@@ -302,21 +325,29 @@ ATTN_SHAPES = [
 ]
 
 
+def nex_meta(n=0, rows=0, aux=0, aux2=0, eps=0.0, scale=0.0, p0=0.0, p1=0.0):
+    return struct.pack("<4I4f", n, rows, aux, aux2, eps, scale, p0, p1)
+
+
+def nex_bufs(**kw):
+    """bindings 1..6 by the GLSL's names (a, b, c, o, s, ids); 16 bytes each by default"""
+    out = {b: bytes(16) for b in range(1, 7)}
+    for k, v in kw.items():
+        out["_abcosi".index(k)] = v if isinstance(v, bytes) else f32(v)
+    return out
+
+
+def near(got, want):
+    """the largest |got - want|; inf when any is NaN (max would drop it)"""
+    errs = [abs(g - w) for g, w in zip(from_f32(got), want)]
+    return math.inf if any(math.isnan(e) for e in errs) else max(errs)
+
+
 def nex_cases():
     """The nex_ops gate: per case the op, Meta, bindings 1..6 (inputs, and the
     writable ones' initial bytes), the workgroups, and an optional check of the
     outputs (bindings -> bytes) answering the largest error (0 when exact)."""
-    def meta(n=0, rows=0, aux=0, aux2=0, eps=0.0, scale=0.0, p0=0.0, p1=0.0):
-        return struct.pack("<4I4f", n, rows, aux, aux2, eps, scale, p0, p1)
-
-    def bufs(**kw):
-        out = {b: bytes(16) for b in range(1, 7)}
-        for k, v in kw.items():
-            out["_abcosi".index(k)] = v if isinstance(v, bytes) else f32(v)
-        return out
-
-    def near(got, want):
-        return max(abs(g - w) for g, w in zip(from_f32(got), want))
+    meta, bufs = nex_meta, nex_bufs
 
     def rms(a, w, n, rows, stride, eps):
         out = []
@@ -507,6 +538,151 @@ def nex_cases():
                           bufs=bufs(a=[x * 4.0 for x in lcg(1000, 131)], b=bytes(32), c=struct.pack("<I", 4) + bytes(12), i=b"\xff" * 16),
                           groups=(1, 1, 1),
                           check=lambda o: 0 if (o[2] == bytes(32) and struct.unpack("<4I", o[6])[3] < 1000) else 1))
+    return cases
+
+
+def rope_ref(a, n, nrot, heads, pos_of, scale, norm=False, freqs=None, bias=None):
+    """rope_neox in f64: head h at position pos_of(h), the bias added first."""
+    out, hlf = [], nrot // 2
+    for h in range(heads):
+        x = [a[h * n + i] + (bias[h * n + i] if bias else 0.0) for i in range(n)]
+        for i in range(n):
+            if i >= nrot:
+                out.append(x[i])
+                continue
+            pair = (i >> 1) if norm else (i - hlf if i >= hlf else i)
+            th = pos_of(h) * scale ** (-2.0 * pair / nrot) / (freqs[pair] if freqs else 1.0)
+            x0, x1 = (x[2 * pair], x[2 * pair + 1]) if norm else (x[pair], x[pair + hlf])
+            second = (i & 1) == 1 if norm else i >= hlf
+            out.append(x0 * math.sin(th) + x1 * math.cos(th) if second else x0 * math.cos(th) - x1 * math.sin(th))
+    return out
+
+
+def attn_rows_ref(q, kc, vc, gate, d, heads, kvh, rows, scale, gate_index):
+    """attn_decode in f64 over (row, T, cbase): the output row by row, gated
+    by sigmoid(gate[gate_index(row, h, i)])."""
+    o = [0.0] * (len(rows) * heads * d)
+    for row, T, cbase in rows:
+        for h in range(heads):
+            hkv, qoff = h // (heads // kvh), row * heads * d + h * d
+            sc = [scale * sum(q[qoff + i] * kc[cbase + (t * kvh + hkv) * d + i] for i in range(d)) for t in range(T)]
+            m = max(sc)
+            e = [math.exp(x - m) for x in sc]
+            for i in range(d):
+                acc = sum(e[t] / sum(e) * vc[cbase + (t * kvh + hkv) * d + i] for t in range(T))
+                o[qoff + i] = acc / (1.0 + math.exp(-gate[gate_index(row, h, i)]))
+    return o
+
+
+def nex_variant_cases():
+    """The BATCH, BPREFILL and BIAS variants, as nex_cases (op is the
+    variant's name)."""
+    meta, bufs, cases = nex_meta, nex_bufs, []
+    # copy_at BATCH: row r's n values to o[r aux + ids[r] aux2] (aux2 != n, so
+    # neither stride stands in for the other); BPREFILL: n values (3
+    # positions) into sequence ids[1]'s 4096-position slice at ids[0]
+    xb = lcg(600, 140)
+    want = [0.0] * 3600
+    for row, pos in ((0, 2), (1, 4)):
+        want[row * 1800 + pos * 320:row * 1800 + pos * 320 + 300] = xb[row * 300:row * 300 + 300]
+    cases.append(dict(name="copy_at batch", op="copy_at-batch", meta=meta(n=300, aux=1800, aux2=320),
+                      bufs=bufs(a=xb, o=bytes(4 * 3600), i=struct.pack("<4I", 2, 4, 0, 0)), groups=(2, 2, 1),
+                      check=lambda o, w=f32(want): 0 if o[4] == w else 1))
+    xp = lcg(48, 141)
+    wantp = [0.0] * (2 * 4096 * 16)
+    wantp[4096 * 16 + 5 * 16:4096 * 16 + 5 * 16 + 48] = xp
+    cases.append(dict(name="copy_at bprefill", op="copy_at-bprefill", meta=meta(n=48, aux2=16),
+                      bufs=bufs(a=xp, o=bytes(4 * len(wantp)), i=struct.pack("<4I", 5, 1, 0, 0)), groups=(1, 1, 1),
+                      check=lambda o, w=f32(wantp): 0 if o[4] == w else 1))
+    cases.append(dict(name="pos_incr batch", op="pos_incr-batch", meta=meta(n=3), bufs=bufs(i=struct.pack("<4I", 5, 7, 9, 11)),
+                      groups=(1, 1, 1), check=lambda o: 0 if o[6] == struct.pack("<4I", 6, 8, 10, 11) else 1))
+    # rope: BATCH, two heads a token, token rows at positions 7 and 12; BIAS at
+    # the dynamic position; BATCH BIAS with NORMAL pairs, rope_freqs and a tail
+    ra, rc, fr = lcg(512, 142), lcg(512, 143), [1.0 + 0.0625 * k for k in range(32)]
+    cases.append(dict(name="rope_neox batch", op="rope_neox-batch", meta=meta(n=128, rows=2, aux=64, scale=10000.0),
+                      bufs=bufs(a=ra, o=bytes(2048), i=struct.pack("<4I", 7, 12, 0, 0)), groups=(4, 1, 1),
+                      check=lambda o: near(o[4], rope_ref(ra, 128, 64, 4, lambda h: (7, 12)[h // 2], 10000.0))))
+    cases.append(dict(name="rope_neox bias", op="rope_neox-bias", meta=meta(n=128, aux=64, scale=10000.0, p1=1.0),
+                      bufs=bufs(a=ra, c=rc, o=bytes(2048), i=struct.pack("<4I", 9, 0, 0, 0)), groups=(4, 1, 1),
+                      check=lambda o: near(o[4], rope_ref(ra, 128, 64, 4, lambda h: 9, 10000.0, bias=rc))))
+    cases.append(dict(name="rope_neox batch bias", op="rope_neox-batch-bias",
+                      meta=meta(n=64, rows=2, aux=48, eps=1.0, scale=500000.0, p0=1.0),
+                      bufs=bufs(a=ra[:256], b=fr, c=rc[:256], o=bytes(1024), i=struct.pack("<4I", 3, 20, 0, 0)), groups=(4, 1, 1),
+                      check=lambda o: near(o[4], rope_ref(ra, 64, 48, 4, lambda h: (3, 20)[h // 2], 500000.0, True, fr, rc))))
+    # attn_decode BATCH: sequences at positions 5 and 9, each over its own
+    # 4096-position cache slice, the interleaved gate; BPREFILL: two query
+    # rows of sequence 1 from base 4 (T = 5, 6), the plain gate. 4 heads on 2
+    # kv heads, so hkv and the slice's aux2 factor both show.
+    d, H, KVH = 16, 4, 2
+    slice_ = 4096 * KVH * d
+    kc, vc = lcg(2 * slice_, 144), lcg(2 * slice_, 145)
+    qa, gs = lcg(2 * H * d, 146), lcg(2 * H * 2 * d, 147)
+    cases.append(dict(name="attn_decode batch", op="attn_decode-batch", meta=meta(n=d, rows=H, aux2=KVH, eps=-1.0, scale=0.25),
+                      bufs=bufs(a=qa, b=kc, c=vc, o=bytes(4 * 2 * H * d), s=gs, i=struct.pack("<4I", 5, 9, 0, 0)), groups=(H, 2, 1),
+                      check=lambda o: near(o[4], attn_rows_ref(qa, kc, vc, gs, d, H, KVH, [(0, 6, 0), (1, 10, slice_)], 0.25,
+                                                               lambda r, h, i: r * H * 2 * d + (h * 2 + 1) * d + i))))
+    cases.append(dict(name="attn_decode bprefill", op="attn_decode-bprefill", meta=meta(n=d, rows=H, aux2=KVH, eps=1e-6, scale=0.25),
+                      bufs=bufs(a=qa, b=kc, c=vc, o=bytes(4 * 2 * H * d), s=gs[:2 * H * d], i=struct.pack("<4I", 4, 1, 0, 0)),
+                      groups=(H, 2, 1),
+                      check=lambda o: near(o[4], attn_rows_ref(qa, kc, vc, gs, d, H, KVH, [(0, 5, slice_), (1, 6, slice_)], 0.25,
+                                                               lambda r, h, i: r * H * d + h * d + i))))
+    # argmax BATCH: two rows of 5000 logits (two partials a row), a tie across
+    # row 0's partials and one inside row 1's first; then the final picks of
+    # two rows (a tie in row 0), with p1 == 0 (no token-buffer write)
+    lb = lcg(10000, 148)
+    lb[100] = lb[4500] = lb[5010] = lb[5020] = 3.0
+
+    def partial_b(o):
+        sv, si = from_f32(o[5]), struct.unpack("<128I", o[6])
+        for row in range(2):
+            for w in range(2):
+                seg = range(row * 5000 + w * 4096, row * 5000 + min(w * 4096 + 4096, 5000))
+                j = min(seg, key=lambda k: (-lb[k], k))
+                if sv[row * 64 + w] != from_f32(f32([lb[j]]))[0] or si[row * 64 + w] != j - row * 5000:
+                    return 1
+        return 0
+    cases.append(dict(name="argmax_partial batch", op="argmax_partial-batch", meta=meta(n=5000),
+                      bufs=bufs(a=lb, s=bytes(512), i=bytes(512)), groups=(2, 2, 1), check=partial_b))
+    sp = f32([0.5, 0.9, 0.9] + [0.0] * 61 + [0.2, 0.1, 0.7] + [0.0] * 61)
+    ip = struct.pack("<128I", *([10, 4200, 9000] + [0] * 61 + [5, 6, 7] + [0] * 61))
+
+    def final_b(o):
+        ids = struct.unpack("<128I", o[6])
+        return 0 if (ids[3] == 4200 and ids[67] == 7 and o[4][:4] == f32([0.9]) and o[4][256:260] == f32([0.7])
+                     and o[2] == bytes(32)) else 1
+    cases.append(dict(name="argmax_final batch", op="argmax_final-batch", meta=meta(aux=3),
+                      bufs=bufs(b=bytes(32), o=bytes(512), s=sp, i=ip), groups=(1, 2, 1), check=final_b))
+    # -DBATCH keeps argmax_final's token-buffer write (c[0] the position): one
+    # row with p1 != 0 writes b[6]
+    cases.append(dict(name="argmax_final batch token buffer", op="argmax_final-batch", meta=meta(aux=3, p1=1.0),
+                      bufs=bufs(b=bytes(32), c=struct.pack("<I", 5) + bytes(12), o=bytes(512), s=sp, i=ip), groups=(1, 1, 1),
+                      check=lambda o: 0 if (struct.unpack("<128I", o[6])[3] == 4200
+                                            and o[2] == bytes(24) + struct.pack("<I", 4200) + bytes(4)) else 1))
+    # ctl BATCH: three rows, row 0's flag rewinds it; BPREFILL into sequence 2
+    # (its base is ids[2], not ids[1]), without and with the flag; rowsel o =
+    # [base, seq]
+    toks = struct.pack("<3I", 11, 22, 33)
+    cases.append(dict(name="ctl batch", op="ctl-batch", meta=meta(n=3, aux=16),
+                      bufs=bufs(b=bytes(192), c=toks + struct.pack("<3I", 1, 0, 0), i=struct.pack("<4I", 4, 6, 2, 0)), groups=(1, 1, 1),
+                      check=lambda o: 0 if (o[6] == struct.pack("<4I", 0, 6, 2, 0) and o[2] == (
+                          struct.pack("<I", 11) + bytes(60) + bytes(24) + struct.pack("<I", 22) + bytes(36) + bytes(8)
+                          + struct.pack("<I", 33) + bytes(52))) else 1))
+    for flag, base in ((0, 2), (1, 0)):
+        cases.append(dict(name=f"ctl bprefill flag {flag}", op="ctl-bprefill", meta=meta(n=3, aux=16),
+                          bufs=bufs(b=bytes(192), c=toks + struct.pack("<3I", 2, flag, 0), i=struct.pack("<4I", 4, 6, 2, 0)),
+                          groups=(1, 1, 1),
+                          check=lambda o, f=flag, b=base: 0 if (o[6] == struct.pack("<4I", 4, 6, 0 if f else 2, 0)
+                                                                and o[2] == bytes(4 * (32 + b)) + toks + bytes(192 - 4 * (32 + b) - 12)
+                                                                and o[4] == struct.pack("<4I", b, 2, 0, 0)) else 1))
+    cases.append(dict(name="pos_add bprefill", op="pos_add-bprefill", meta=meta(n=5),
+                      bufs=bufs(a=struct.pack("<2I", 30, 2) + bytes(8), i=struct.pack("<4I", 1, 2, 3, 4)), groups=(1, 1, 1),
+                      check=lambda o: 0 if o[6] == struct.pack("<4I", 1, 2, 8, 4) else 1))
+    cases.append(dict(name="pos_seed bprefill", op="pos_seed-bprefill", meta=meta(),
+                      bufs=bufs(a=struct.pack("<2I", 42, 3) + bytes(8), i=struct.pack("<4I", 7, 3, 9, 9)), groups=(1, 1, 1),
+                      check=lambda o: 0 if o[6] == struct.pack("<4I", 42, 0, 3, 9) else 1))
+    cases.append(dict(name="params batch", op="params-batch", meta=meta(n=2),
+                      bufs=bufs(c=f32([9.0, 8.0, 1.0, 0.0, 0.7, 0.95, 1.5, 0.6, 0.85, 2.5]), o=bytes(32)), groups=(1, 1, 1),
+                      check=lambda o: 0 if o[4] == f32([0.7, 0.95, 1.5, 0.0, 0.6, 0.85, 2.5, 0.0]) else 1))
     return cases
 
 
@@ -725,6 +901,51 @@ def deltanet_embed_cases():
     return cases
 
 
+def deltanet_embed_variant_cases():
+    """deltanet_fused's and embed's BATCH and BPREFILL, as deltanet_embed_cases
+    (pair is the variant's module pair)."""
+    cases = []
+    H, KH, K, V = 4, 2, 128, 128
+    n, voff = 2 * KH * K + H * V, 2 * KH * K
+    fm = struct.pack("<6I2f", H, K, V, KH, voff, n, 1e-6, 1 / math.sqrt(K))
+
+    def dnf(name, pair, seqs, rows, groups, pos):
+        # q/k/v, alpha, beta, z and out over `rows` token rows; the ring and the
+        # state over `seqs` sequences (each its own 6 n and H K V)
+        return dict(name=name, pair=pair,
+                    bufs=[fm, f32(lcg(rows * n, 160)), f32(lcg(4 * n, 101)), f32(lcg(seqs * 6 * n, 161)), f32(lcg(rows * H, 162)),
+                          f32(lcg(rows * H, 163)), f32(lcg(H, 105)), f32([-abs(x) for x in lcg(H, 106)]), f32(lcg(seqs * H * K * V, 164)),
+                          f32(lcg(V, 108)), f32(lcg(rows * H * V, 165)), bytes(4 * rows * H * V), struct.pack("<4I", *pos)],
+                    compare=[3, 8, 11], groups=groups, check=None)
+    # BATCH: three sequences, row = sequence: fresh at 0, odd parity at 5, even at 6
+    cases.append(dnf("deltanet_fused batch", "dnf-batch", 3, 3, (H, 3, 1), (0, 5, 6, 0)))
+    # BPREFILL: stepbuf [position, row, sequence]: row 1 of sequence 2 at 7; row 0
+    # of sequence 1 at 0 (fresh)
+    cases.append(dnf("deltanet_fused bprefill", "dnf-bprefill", 3, 2, (H, 1, 1), (7, 1, 2, 0)))
+    cases.append(dnf("deltanet_fused bprefill fresh", "dnf-bprefill", 3, 2, (H, 1, 1), (0, 0, 1, 0)))
+    # embed: a token buffer of two sequences, rows of 4 (pad1); BATCH rows at
+    # positions 2 and 1 (tokens 4 and 3); BPREFILL two positions of sequence 1
+    # from base 0 (tokens 1 and 3; base and sequence swapped would give 2 and
+    # 4). Q8 also exactly against a dequant.
+    ids = struct.pack("<8I", 5, 2, 4, 0, 1, 3, 0, 5)
+    for kind, name in EMBED_KINDS.items():
+        per_token = {23: 2 * 136, 8: 16 * 34, 2: 16 * 18, 3: 16 * 20, 6: 16 * 22, 7: 16 * 24, 143: 4 * 28}[kind]
+        w = kdot_weights(12, 6 * per_token + (-6 * per_token % 4) + 4, 110 + kind)
+        for v, pos, toks in (("batch", (2, 1, 0, 0), (4, 3)), ("bprefill", (0, 1, 0, 0), (1, 3))):
+            def q8_check(o, w=w, toks=toks):
+                want = []
+                for tok in toks:
+                    for blk in range(16):
+                        b0 = (tok * 16 + blk) * 34
+                        d = struct.unpack("<e", w[b0:b0 + 2])[0]
+                        want += [d * x for x in struct.unpack("<32b", w[b0 + 2:b0 + 34])]
+                return 0 if o[3] == f32(want) else 1
+            cases.append(dict(name=f"embed {name} {v}", pair=f"emb-{name}-{v}",
+                              bufs=[struct.pack("<4I", 512, 7, 1, 4), w, ids, bytes(4 * 2 * 512), struct.pack("<4I", *pos)], compare=[3],
+                              groups=(1, 2, 1), check=q8_check if kind == 8 else None))
+    return cases
+
+
 def sampler_chain(n, seed):
     """The multi-workgroup sampler: sample_part, sample_probs, 30 x
     (sample_bisect_part, sample_bisect_step), sample_final, over shared
@@ -733,6 +954,21 @@ def sampler_chain(n, seed):
     m = struct.pack("<4I4f", n, 0, 5, 2, 0.7, 0.92, struct.unpack("<f", struct.pack("<I", seed))[0], 1.0)
     bufs = {1: f32([x * 6.0 for x in lcg(n, 132)]), 2: bytes(64), 3: struct.pack("<I", 9) + bytes(12), 4: bytes(4 * 256), 5: bytes(4 * n),
             6: bytes(64)}
+    steps = [("sample_part", parts), ("sample_probs", parts)] + [("sample_bisect_part", parts), ("sample_bisect_step", 1)] * 30
+    return m, bufs, steps + [("sample_final", 1)]
+
+
+def sampler_chain_batch(n, rows):
+    """The -DBATCH chain over rows of n logits: the rows' (T, top_p, seed) in
+    b, their positions in c; row 1 has T == 0, so every kernel skips it and
+    its slots keep their initial bytes. Answers Meta, the bindings 1..6 and
+    the dispatches (x workgroups, rows)."""
+    parts = (n + 4095) // 4096
+    m = struct.pack("<4I4f", n, 0, 5, 0, 0.0, 0.0, 0.0, 0.0)
+    seed = lambda u: struct.unpack("<f", struct.pack("<I", u))[0]
+    params = [0.7, 0.92, seed(0x2468ACE), 0.0, 0.0, 0.9, seed(0x3A5C1B27), 0.0, 1.1, 0.5, seed(0x3A5C1B27), 0.0][:4 * rows]
+    bufs = {1: f32([x * 6.0 for x in lcg(rows * n, 133)]), 2: f32(params), 3: struct.pack(f"<{rows}I", *[9, 0, 41][:rows]) + bytes(4),
+            4: bytes(4 * 256 * rows), 5: bytes(4 * n * rows), 6: b"\xff" * (4 * 64 * rows)}
     steps = [("sample_part", parts), ("sample_probs", parts)] + [("sample_bisect_part", parts), ("sample_bisect_step", 1)] * 30
     return m, bufs, steps + [("sample_final", 1)]
 
@@ -751,7 +987,7 @@ def gpu(output, suite, provider_out):
     raw.mkdir(exist_ok=False)
     v2 = {"v2-attn.spv": "kir2-attn-copy-dense.spv",
           **{f"v2-{o}-wg{wg}.spv": f"kir2-ewise-{o}-wg{wg}.spv" for o in EWISE_OPS for wg in (64, 256)},
-          **{f"v2-nex-{op}.spv": f"kir2-nex-{op}.spv" for op in NEX_OPS},
+          **{f"v2-nex-{op}.spv": f"kir2-nex-{op}.spv" for op in NEX_OPS + NEX_VARIANT_NAMES},
           "v2-dot.spv": "kir2-dot-rows.spv", "v2-kdot.spv": "kir2-kdot-f32-r1.spv",
           "v2-kdot8.spv": "kir2-kdot-f32-r8.spv", "v2-kdot4.spv": "kir2-kdot-f32-r8-rows4.spv",
           "v2-kdot16.spv": "kir2-kdot-f32-r8-rows16.spv", "v2-kdot32.spv": "kir2-kdot-f32-r8-rows32.spv",
@@ -759,9 +995,11 @@ def gpu(output, suite, provider_out):
           "v2-i8x4.spv": "kir2-kdot-i8-x8r4.spv", "v2-i8x8.spv": "kir2-kdot-i8-x8r8.spv",
           "v2-kdotx16.spv": "kir2-kdot-x8r16.spv", "v2-i8x16.spv": "kir2-kdot-i8-x8r16.spv",
           "v2-dns.spv": "kir2-deltanet-step.spv", "v2-dnf.spv": "kir2-deltanet-fused.spv",
-          **{f"v2-emb-{n}.spv": f"kir2-embed-{n}.spv" for n in EMBED_KINDS.values()}}
+          **{f"v2-emb-{n}.spv": f"kir2-embed-{n}.spv" for n in EMBED_KINDS.values()},
+          **{f"v2-dnf-{v}.spv": f"kir2-deltanet-fused-{v}.spv" for v in ("batch", "bprefill")},
+          **{f"v2-emb-{n}-{v}.spv": f"kir2-embed-{n}-{v}.spv" for n in EMBED_KINDS.values() for v in ("batch", "bprefill")}}
     refs = {"ref-attn.spv": "ref-attn-copy-dense.spv", "ref-add.spv": "ref-ewise-add.spv",
-            **{f"ref-nex-{op}.spv": f"ref-nex-ops-{op}.spv" for op in NEX_OPS},
+            **{f"ref-nex-{op}.spv": f"ref-nex-ops-{op}.spv" for op in NEX_OPS + NEX_VARIANT_NAMES},
             "ref-dot.spv": "ref-dot-rows.spv", "ref-kdot.spv": "ref-kdot-f32-r1.spv",
             "ref-kdot8.spv": "ref-kdot-f32-r8.spv", "ref-kdot4.spv": "ref-kdot-f32-r8-rows4.spv",
             "ref-kdot16.spv": "ref-kdot-f32-r8-rows16.spv", "ref-kdot32.spv": "ref-kdot-f32-r8-rows32.spv",
@@ -769,7 +1007,10 @@ def gpu(output, suite, provider_out):
             "ref-i8x4.spv": "ref-kdot-i8-x8r4.spv", "ref-i8x8.spv": "ref-kdot-i8-x8r4-rows8.spv",
             "ref-kdotx16.spv": "ref-kdot-x8r8-rows16.spv", "ref-i8x16.spv": "ref-kdot-i8-x8r4-rows16.spv",
             "ref-dns.spv": "ref-deltanet-step.spv", "ref-dnf.spv": "ref-deltanet-fused.spv",
-            **{f"ref-emb-{n}.spv": "ref-embed-iq4xs" + ("" if n == "iq4xs" else "-" + n) + ".spv" for n in EMBED_KINDS.values()}}
+            **{f"ref-emb-{n}.spv": "ref-embed-iq4xs" + ("" if n == "iq4xs" else "-" + n) + ".spv" for n in EMBED_KINDS.values()},
+            **{f"ref-dnf-{v}.spv": f"ref-deltanet-fused-{v}.spv" for v in ("batch", "bprefill")},
+            **{f"ref-emb-{n}-{v}.spv": "ref-embed-iq4xs-" + ("" if n == "iq4xs" else n + "-") + v + ".spv"
+               for n in EMBED_KINDS.values() for v in ("batch", "bprefill")}}
     files = {**{n: output / "spv" / m for n, m in v2.items()}, **{n: output / "refs" / m for n, m in refs.items()}}
     for n, f in files.items():
         shutil.copy(f, raw / n)
@@ -803,6 +1044,9 @@ def gpu(output, suite, provider_out):
     def read(h, nbytes):
         return bytes.fromhex(cgp.expect(s, f"READ {h} 0 {nbytes}", re.compile(r"^[0-9a-f]*$")))
 
+    def bindings(n):
+        return (7 if "-nex-" in n else 6 if "i8x" in n else 5 if ("kdot" in n or "-emb-" in n) else 8 if ("attn" in n or "dns" in n)
+                else 13 if "dnf" in n else 4)
     pipes = {}
     for k, n in enumerate(["ref-add.spv", *[f"v2-{o}-wg{wg}.spv" for o in EWISE_OPS for wg in (64, 256)], "ref-attn.spv", "v2-attn.spv",
                            *[f"{w}-nex-{op}.spv" for op in NEX_OPS for w in ("ref", "v2")],
@@ -813,9 +1057,7 @@ def gpu(output, suite, provider_out):
                            *(["ref-i8x4.spv", "v2-i8x4.spv", "ref-i8x8.spv", "v2-i8x8.spv", "ref-i8x16.spv", "v2-i8x16.spv"] if int8 else []),
                            "ref-dns.spv", "v2-dns.spv", "ref-dnf.spv", "v2-dnf.spv",
                            *[f"{w}-emb-{e}.spv" for e in EMBED_KINDS.values() for w in ("ref", "v2")]]):
-        nb = (7 if "-nex-" in n else 6 if "i8x" in n else 5 if ("kdot" in n or "-emb-" in n) else 8 if ("attn" in n or "dns" in n)
-              else 13 if "dnf" in n else 4)
-        cgp.expect(s, f"PIPELINE {n} {nb}", str(k + 1))
+        cgp.expect(s, f"PIPELINE {n} {bindings(n)}", str(k + 1))
         pipes[n] = k + 1
     rows = {}
     # ewise, all eight modules over n = 1000 (y kept away from 0 for div).
@@ -880,7 +1122,7 @@ def gpu(output, suite, provider_out):
             outputSHA256={m: hashlib.sha256(outs[m]["o"]).hexdigest() for m in outs})
     # the nex_ops decode set: every writable binding byte-identical between
     # glslang's -DOP module and the KIR v2 module, and the case's check
-    for c in nex_cases():
+    def nex(c):
         hs = [alloc(len(c["meta"]))] + [alloc(len(c["bufs"][b])) for b in range(1, 7)]
         outs = {}
         for m in (f"ref-nex-{c['op']}.spv", f"v2-nex-{c['op']}.spv"):
@@ -897,6 +1139,8 @@ def gpu(output, suite, provider_out):
         rows["nex " + c["name"]] = dict(op=c["op"], groups=list(c["groups"]), identical=True, check=err,
                                          inputsSHA256=hashlib.sha256(c["meta"] + b"".join(c["bufs"][b] for b in range(1, 7))).hexdigest(),
                                          outputSHA256=hashlib.sha256(b"".join(v2[b] for b in (2, 4, 5, 6))).hexdigest())
+    for c in nex_cases():
+        nex(c)
     # dot_rows: 64 rows of 1000, two workgroups past the rows (they return)
     wm, xv = lcg(64 * 1000, 52), lcg(1000, 53)
     dh = [alloc(8), alloc(4 * len(wm)), alloc(4000), alloc(4 * 64)]
@@ -959,7 +1203,7 @@ def gpu(output, suite, provider_out):
     rows["nex sampler chain"] = dict(n=10000, dispatches=len(steps), identical=True, pick=pick,
                                      outputSHA256=hashlib.sha256(b"".join(chain["v2"][b] for b in (2, 4, 5, 6))).hexdigest())
     # deltanet and embed
-    for c in deltanet_embed_cases():
+    def dne(c):
         hs = [alloc(len(b)) for b in c["bufs"]]
         outs = {}
         for m in ("ref-" + c["pair"] + ".spv", "v2-" + c["pair"] + ".spv"):
@@ -976,13 +1220,54 @@ def gpu(output, suite, provider_out):
         rows[c["name"]] = dict(groups=list(c["groups"]), identical=True, check=err,
                                inputsSHA256=hashlib.sha256(b"".join(c["bufs"])).hexdigest(),
                                outputSHA256=hashlib.sha256(b"".join(v2[i] for i in c["compare"])).hexdigest())
+    for c in deltanet_embed_cases():
+        dne(c)
     line = s.close(0)
     rows["confinement"] = cgp.confined(line, True)
+    # the variants in a second session (a session's pipeline table holds 127,
+    # and there is no verb that frees one)
+    s1, s = s, cgp.Session(img, raw, "kir2-gpu-variants", g, device=None)
+    handles[0], pipes = 0, {}
+    for k, n in enumerate([*[f"{w}-nex-{v}.spv" for v in NEX_VARIANT_NAMES for w in ("ref", "v2")],
+                           *[f"{w}-dnf-{v}.spv" for v in ("batch", "bprefill") for w in ("ref", "v2")],
+                           *[f"{w}-emb-{e}-{v}.spv" for e in EMBED_KINDS.values() for v in ("batch", "bprefill") for w in ("ref", "v2")]]):
+        cgp.expect(s, f"PIPELINE {n} {bindings(n)}", str(k + 1))
+        pipes[n] = k + 1
+    for c in nex_variant_cases():
+        nex(c)
+    for c in deltanet_embed_variant_cases():
+        dne(c)
+    # the -DBATCH chain over three rows of 5000 (row 1 skipped)
+    m, cb, steps = sampler_chain_batch(5000, 3)
+    hs = [alloc(len(m))] + [alloc(len(cb[b])) for b in range(1, 7)]
+    chain = {}
+    for w in ("ref", "v2"):
+        for h, b in zip(hs, [m] + [cb[b] for b in range(1, 7)]):
+            write(h, b)
+        for op, groups in steps:
+            cgp.expect(s, f"DISPATCH {pipes[w + '-nex-' + op + '-batch.spv']} {groups} 3 1 " + " ".join(map(str, hs)), re.compile(r"^\d+$"))
+        chain[w] = {b: read(hs[b], len(cb[b])) for b in (2, 4, 5, 6)}
+    assert chain["ref"] == chain["v2"], ("the batch sampler chain differs from glslang's modules",
+                                         [b for b in chain["ref"] if chain["ref"][b] != chain["v2"][b]])
+    v = chain["v2"]
+    # no token-buffer (params) write; row 1 untouched; rows 0 and 2 wrote
+    # their scratch, p_i and a pick
+    assert v[2] == cb[2], "the batch chain wrote b"
+    assert v[4][1024:2048] == cb[4][1024:2048] and v[5][20000:40000] == cb[5][20000:40000] and v[6][256:512] == cb[6][256:512], \
+        "the batch chain wrote row 1 (T == 0)"
+    bpicks = [struct.unpack("<I", v[6][r * 256 + 20:r * 256 + 24])[0] for r in (0, 2)]
+    assert all(p < 5000 for p in bpicks) and all(v[4][r * 1024:r * 1024 + 1024] != cb[4][r * 1024:r * 1024 + 1024]
+                                                 and v[5][r * 20000:r * 20000 + 20000] != cb[5][r * 20000:r * 20000 + 20000]
+                                                 for r in (0, 2)), ("the batch chain's rows 0 and 2", bpicks)
+    rows["nex sampler chain batch"] = dict(n=5000, rows=3, skippedRow=1, dispatches=len(steps), identical=True, picks=bpicks,
+                                           outputSHA256=hashlib.sha256(b"".join(v[b] for b in (2, 4, 5, 6))).hexdigest())
+    line2 = s.close(0)
+    rows["confinement variants"] = cgp.confined(line2, True)
     rows["providerFeatures"] = features
     rows["int8"] = "ran" if int8 else "skipped: the provider did not enable shaderIntegerDotProduct"
     report["gpu"] = dict(host=[platform.system(), platform.machine(), platform.release()], node=platform.node(), info=info,
                          provider=dict(image=pin(img), source=preport.get("sources")), modules={n: pin(raw / n) for n in files},
-                         rows=rows, report=line.strip(), requests=len(s.log),
+                         rows=rows, report=line.strip(), reportVariants=line2.strip(), requests=len(s1.log) + len(s.log),
                          note="glslang's modules are oracle inputs; the f64 reference is Python, test-time only")
     report["status"] = "PASS_GPU_KERNEL_KIR2_GPU"
     receipt_path.write_text(json.dumps(report, indent=2) + "\n")

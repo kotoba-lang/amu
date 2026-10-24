@@ -1,4 +1,4 @@
-(ns gpu-kernels-v2 (:export [kir2-ewise kir2-attn-copy-dense kir2-nex-op kir2-nex-op-name kir2-dot-rows kir2-kdot-f32-r1 kir2-kdot-f32-r8 kir2-kdot-x8 kir2-kdot-i8-x8 kir2-deltanet-step kir2-deltanet-fused kir2-embed]))
+(ns gpu-kernels-v2 (:export [kir2-ewise kir2-attn-copy-dense kir2-nex-op kir2-nex-variant kir2-nex-op-name kir2-dot-rows kir2-kdot-f32-r1 kir2-kdot-f32-r8 kir2-kdot-x8 kir2-kdot-i8-x8 kir2-deltanet-step kir2-deltanet-fused kir2-deltanet-fused-variant kir2-embed kir2-embed-variant]))
 
 ;; Kernels written with KIR v2 (tools/gpu_kernel_kir2.kotoba, ADR 0372 step 3).
 ;; Each is the Kotoba form of a GLSL kernel of kotoba-lang/inference; the
@@ -240,6 +240,13 @@
         x (kb-store B v (case how 0 d 1 (kb-iadd B d (kb-u32 B 1)) (kb-imul B d mul)))
         z (kb-end-if B)]
     (kb-load B tu v)))
+;; BATCH_CACHE_ROWS: KV positions per sequence (each row's cache slice)
+(def BATCH-CACHE-ROWS 4096)
+;; base + x, or x when there is no base (base 0, the decode variants): the
+;; decode modules keep their words
+(defn- k2-off [B :vector-i64 base :i64 x :i64] :i64 (if (= base 0) x (kb-iadd B base x)))
+;; base + c for a constant c, or c alone
+(defn- k2-offc [B :vector-i64 base :i64 c :i64] :i64 (if (= base 0) (kb-u32 B c) (kb-iadd B base (kb-u32 B c))))
 ;; if (c) return;
 (defn- k2-return-if [B :vector-i64 c :i64] :i64
   (let [g (kb-if B c) r (kb-return B)] (kb-end-if B)))
@@ -296,11 +303,13 @@
 ;; the one-invocation-per-element ops: i = GlobalInvocationID.x, and
 ;; if (i >= bound) return; first. op: 4 silu_mul 5 conv1d_step 6 gate_decay
 ;; 7 gate_decay2 8 copy_at 10 add 11 add_bias
-(defn- k2-nex-ewise [op :i64] :vector-i64
+(defn- k2-nex-ewise [op :i64 v :i64] :vector-i64
   (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) tf (kb-tf32 B) V (k2-nex-bindings B)
         vsp (kb-var B tf)
         u1 (kb-u32 B 1) u2 (kb-u32 B 2) u3 (kb-u32 B 3) u4 (kb-u32 B 4) f0 (kb-f32 B 0)
-        i (kb-builtin-at B 28 0)
+        ;; copy_at BATCH: row = WorkGroupID.y, i = WorkGroupID.x 256 + LocalInvocationID.x
+        row (if (= v 1) (kb-builtin-at B 26 1) 0)
+        i (if (= v 1) (kb-iadd B (kb-imul B (kb-builtin-at B 26 0) (kb-u32 B 256)) (kb-builtin-at B 27 0)) (kb-builtin-at B 28 0))
         ;; gate_decay(2) loop over P.rows, the others over P.n
         g (k2-return-if B (kb-uge B i (k2-pm B V (if (or (= op 6) (= op 7)) 1 0))))
         n (k2-pm B V 0)
@@ -326,10 +335,20 @@
                 (k2-st B V 4 (kb-iadd B (k2-pm B V 2) i) (k2-sigmoid B (k2-ld B V 1 (kb-iadd B (k2-pm B V 3) i)))))
             7 (let [a (k2-st B V 4 i (kb-fmul B (k2-softplus B vsp (kb-fadd B (k2-ld B V 1 i) (k2-ld B V 2 i))) (k2-ld B V 3 i)))]
                 (k2-st B V 4 (kb-iadd B (k2-pm B V 2) i) (k2-sigmoid B (k2-ld B V 5 i))))
-            ;; off = (P.p1 != 0) ? dyn_pos() * aux2 : aux2; o[off + i] = a[i]
-            8 (let [aux2 (k2-pm B V 3)
-                    off (k2-if-dyn B V 2 aux2 aux2)]
-                (k2-st B V 4 (kb-iadd B off i) (k2-ld B V 1 i)))
+            ;; off = (P.p1 != 0) ? dyn_pos() * aux2 : aux2; o[off + i] = a[i]. BATCH:
+            ;; o[row aux + ids[row] aux2 + i] = a[row n + i]. BPREFILL: o[ids[1]
+            ;; BATCH_CACHE_ROWS aux2 + dyn_pos() aux2 + i] = a[i] (sequence ids[1]'s slice)
+            8 (let [aux2 (k2-pm B V 3)]
+                (cond (= v 1)
+                      (k2-st B V 4 (kb-iadd B (kb-iadd B (kb-imul B row (k2-pm B V 2)) (kb-imul B (k2-ld B V 6 row) aux2)) i)
+                             (k2-ld B V 1 (kb-iadd B (kb-imul B row n) i)))
+                      (= v 2)
+                      (k2-st B V 4 (kb-iadd B (kb-iadd B (kb-imul B (kb-imul B (k2-ld B V 6 u1) (kb-u32 B BATCH-CACHE-ROWS)) aux2)
+                                                       (kb-imul B (k2-ld B V 6 (kb-u32 B 0)) aux2))
+                                           i)
+                             (k2-ld B V 1 i))
+                      :else
+                      (let [off (k2-if-dyn B V 2 aux2 aux2)] (k2-st B V 4 (kb-iadd B off i) (k2-ld B V 1 i)))))
             ;; o[i] = a[i] + b[i]
             10 (k2-st B V 4 i (kb-fadd B (k2-ld B V 1 i) (k2-ld B V 2 i)))
             ;; o[i] = a[i] + b[i - (i / aux) * aux]
@@ -375,12 +394,15 @@
         z (kb-end-if B)]
     (kb-module B 256 1 1)))
 
-;; pos_incr: if (GlobalInvocationID.x == 0) ids[0] += 1
-(defn- k2-nex-pos-incr [] :vector-i64
+;; pos_incr: if (GlobalInvocationID.x == 0) ids[0] += 1. BATCH: r =
+;; GlobalInvocationID.x; if (r < n) ids[r] += 1 (every row's position)
+(defn- k2-nex-pos-incr [v :i64] :vector-i64
   (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) V (k2-nex-bindings B)
         u0 (kb-u32 B 0)
-        g (kb-if B (kb-ieq B (kb-builtin-at B 28 0) u0))
-        w (k2-st B V 6 u0 (kb-iadd B (k2-ld B V 6 u0) (kb-u32 B 1)))
+        r (kb-builtin-at B 28 0)
+        g (if (= v 1) (kb-if B (kb-ult B r (k2-pm B V 0))) (kb-if B (kb-ieq B r u0)))
+        at (if (= v 1) r u0)
+        w (k2-st B V 6 at (kb-iadd B (k2-ld B V 6 at) (kb-u32 B 1)))
         z (kb-end-if B)]
     (kb-module B 256 1 1)))
 
@@ -389,8 +411,12 @@
 ;; tail (i >= nrot) is copied; else p0 != 0 pairs (2p, 2p + 1) and p0 == 0
 ;; pairs (p, p + hlf), theta = float(pos + tokrow) * pow(P.scale, -2 pair /
 ;; nrot), divided by b[pair] when P.eps != 0, and the pair rotated
-(defn- k2-nex-rope [] :vector-i64
+;; -DBIAS (v bit 4): x = a + c before the rope (c the per-column bias), and the
+;; tail gets the add too. -DBATCH (v bit 1): the position of token row tokrow is
+;; ids[tokrow].
+(defn- k2-nex-rope [v :i64] :vector-i64
   (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) tf (kb-tf32 B) tb (kb-tbool B) V (k2-nex-bindings B)
+        bias? (not= (bit-and v 4) 0) batch? (not= (bit-and v 1) 0)
         vi (kb-var B tu) vtok (kb-var B tu) vth (kb-var B tf)
         u0 (kb-u32 B 0) u1 (kb-u32 B 1) u2 (kb-u32 B 2) u256 (kb-u32 B 256) f0 (kb-f32 B 0)
         h (kb-builtin-at B 26 0) t (kb-builtin-at B 27 0) n (k2-pm B V 0) nrot (k2-pm B V 2)
@@ -404,13 +430,14 @@
         i (k2-for B vi t n)
         ;; if (i >= nrot) { o[base + i] = a[base + i]; continue; }
         c0 (kb-if B (kb-uge B i nrot))
-        c1 (k2-st B V 4 (kb-iadd B base i) (k2-ld B V 1 (kb-iadd B base i)))
+        c1 (k2-st B V 4 (kb-iadd B base i)
+                 (if bias? (kb-fadd B (k2-ld B V 1 (kb-iadd B base i)) (k2-ld B V 3 (kb-iadd B base i))) (k2-ld B V 1 (kb-iadd B base i))))
         c2 (kb-next B)
         c3 (kb-end-if B)
         norm (kb-fne B (k2-pm B V 6) f0)
         pair (kb-select B tu norm (kb-shr B i u1) (kb-select B tu (kb-uge B i hlf) (kb-isub B i hlf) i))
-        pos (k2-if-dyn B V 0 0 (k2-pm B V 3))
-        d0 (kb-store B vth (kb-fmul B (kb-u2f B (kb-iadd B pos tokrow))
+        pos (if batch? 0 (k2-if-dyn B V 0 0 (k2-pm B V 3)))
+        d0 (kb-store B vth (kb-fmul B (kb-u2f B (if batch? (k2-ld B V 6 tokrow) (kb-iadd B pos tokrow)))
                                     (kb-fpow B (k2-pm B V 5) (kb-fdiv B (kb-fmul B (kb-f32 B F-MINUS-TWO) (kb-u2f B pair)) (kb-u2f B nrot)))))
         d1 (kb-if B (kb-fne B (k2-pm B V 4) f0))
         d2 (kb-store B vth (kb-fdiv B (kb-load B tf vth) (k2-ld B V 2 pair)))
@@ -418,8 +445,10 @@
         theta (kb-load B tf vth)
         cs (kb-fcos B theta) sn (kb-fsin B theta)
         ;; x0 = a[base + (norm ? 2 pair : pair)], x1 = a[base + (norm ? 2 pair + 1 : pair + hlf)]
-        x0 (k2-ld B V 1 (kb-iadd B base (kb-select B tu norm (kb-imul B u2 pair) pair)))
-        x1 (k2-ld B V 1 (kb-iadd B base (kb-select B tu norm (kb-iadd B (kb-imul B u2 pair) u1) (kb-iadd B pair hlf))))
+        i0 (kb-iadd B base (kb-select B tu norm (kb-imul B u2 pair) pair))
+        x0 (if bias? (kb-fadd B (k2-ld B V 1 i0) (k2-ld B V 3 i0)) (k2-ld B V 1 i0))
+        i1 (kb-iadd B base (kb-select B tu norm (kb-iadd B (kb-imul B u2 pair) u1) (kb-iadd B pair hlf)))
+        x1 (if bias? (kb-fadd B (k2-ld B V 1 i1) (k2-ld B V 3 i1)) (k2-ld B V 1 i1))
         second (kb-select B tb norm (kb-ieq B (kb-band B i u1) u1) (kb-uge B i hlf))
         w (k2-st B V 4 (kb-iadd B base i)
                  (kb-select B tf second (kb-fadd B (kb-fmul B x0 sn) (kb-fmul B x1 cs)) (kb-fsub B (kb-fmul B x0 cs) (kb-fmul B x1 sn))))
@@ -430,7 +459,10 @@
 ;; (no current-row substitution), and the output gate: o = (P.p0 != 0) ? acc
 ;; : acc * sigmoid(s[gi]), gi = (P.eps < 0) ? row rows 2 d + (2h + 1) d + i
 ;; : qoff + h d + i. The gate's load is in an if (s is a stub when p0 != 0).
-(defn- k2-nex-attn [] :vector-i64
+;; BATCH (v 1): row is a sequence, T = ids[row] + 1, its cache slice at cbase =
+;; row BATCH_CACHE_ROWS aux2 d. BPREFILL (v 2): rows of sequence ids[1], T =
+;; dyn_pos() + 1 + row, cbase = ids[1] BATCH_CACHE_ROWS aux2 d.
+(defn- k2-nex-attn [v :i64] :vector-i64
   (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) tf (kb-tf32 B) V (k2-nex-bindings B)
         red (kb-shared B tf 256)
         vi (kb-var B tu) vst (kb-var B tu) vsc (kb-var B tf) vdt (kb-var B tf) vacc (kb-var B tf) vtt (kb-var B tu)
@@ -438,8 +470,15 @@
         u0 (kb-u32 B 0) u1 (kb-u32 B 1) u2 (kb-u32 B 2) u256 (kb-u32 B 256) f0 (kb-f32 B 0)
         h (kb-builtin-at B 26 0) row (kb-builtin-at B 26 1) t (kb-builtin-at B 27 0)
         d (k2-pm B V 0)
-        T (kb-iadd B (k2-if-dyn B V 1 0 (k2-pm B V 2)) row)
+        T (case v
+            1 (kb-iadd B (k2-ld B V 6 row) u1)
+            2 (kb-iadd B (kb-iadd B (k2-ld B V 6 u0) u1) row)
+            (kb-iadd B (k2-if-dyn B V 1 0 (k2-pm B V 2)) row))
         aux2 (k2-pm B V 3)
+        cbase (case v
+                1 (kb-imul B (kb-imul B (kb-imul B row (kb-u32 B BATCH-CACHE-ROWS)) aux2) d)
+                2 (kb-imul B (kb-imul B (kb-imul B (k2-ld B V 6 u1) (kb-u32 B BATCH-CACHE-ROWS)) aux2) d)
+                0)
         hkv (kb-udiv B h (kb-udiv B (k2-pm B V 1) aux2))
         qoff (kb-imul B (kb-imul B row (k2-pm B V 1)) d)
         s0 (kb-store B vsc (kb-f32 B F-MINUS-1E30))
@@ -447,7 +486,7 @@
         s2 (kb-store B vdt f0)
         i2 (k2-for B vi u0 d)
         s3 (k2-acc B vdt (kb-fmul B (k2-ld B V 1 (kb-iadd B (kb-iadd B qoff (kb-imul B h d)) i2))
-                                    (k2-ld B V 2 (k2-kv-index B t aux2 hkv d i2))))
+                                    (k2-ld B V 2 (k2-off B cbase (k2-kv-index B t aux2 hkv d i2)))))
         s4 (k2-end-for B vi u1)
         s5 (kb-store B vsc (kb-fmul B (kb-load B tf vdt) (k2-pm B V 5)))
         s6 (kb-end-if B)
@@ -461,7 +500,7 @@
         i3 (k2-for B vi t d)
         q2 (kb-store B vacc f0)
         tt (k2-for B vtt u0 T)
-        q3 (k2-acc B vacc (kb-fmul B (kb-load B tf (kb-shared-at B red tf tt)) (k2-ld B V 3 (k2-kv-index B tt aux2 hkv d i3))))
+        q3 (k2-acc B vacc (kb-fmul B (kb-load B tf (kb-shared-at B red tf tt)) (k2-ld B V 3 (k2-off B cbase (k2-kv-index B tt aux2 hkv d i3)))))
         q4 (k2-end-for B vtt u1)
         acc (kb-load B tf vacc)
         gi (kb-select B tu (kb-flt B (k2-pm B V 4) f0)
@@ -559,17 +598,23 @@
 ;; argmax_final (decode): the same over the P.aux partials in s and ids; ids
 ;; [aux] and o[0] get the pick, and with P.p1 != 0 the token buffer b[pos + 1]
 ;; too (pos = the bits of c[0]) once pos + 1 >= P.aux2.
-(defn- k2-nex-argmax [final? :bool] :vector-i64
+;; BATCH (v 1): row = WorkGroupID.y; the logits at row n, the row's 64
+;; partial slots at row 64 (the pick at slot aux of the row)
+(defn- k2-nex-argmax [final? :bool v :i64] :vector-i64
   (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) tf (kb-tf32 B) V (k2-nex-bindings B)
         red (kb-shared B tf 256) redi (kb-shared B tu 256)
         vi (kb-var B tu) vst (kb-var B tu) vbv (kb-var B tf) vbi (kb-var B tu)
         u0 (kb-u32 B 0) u1 (kb-u32 B 1) u256 (kb-u32 B 256) u4096 (kb-u32 B 4096) f0 (kb-f32 B 0)
         t (kb-builtin-at B 27 0) w (kb-builtin-at B 26 0)
         start (kb-imul B w u4096)
+        row (if (= v 1) (kb-builtin-at B 26 1) 0)
+        lbase (if (and (= v 1) (not final?)) (kb-imul B row (k2-pm B V 0)) 0)
+        pbase (if (= v 1) (kb-imul B row (kb-u32 B 64)) 0)
         b0 (kb-store B vbv (kb-f32 B F-MINUS-1E30)) b1 (kb-store B vbi u0)
         i (if final? (k2-for B vi t (k2-pm B V 2))
             (k2-for B vi (kb-iadd B start t) (kb-umin B (kb-iadd B start u4096) (k2-pm B V 0))))
-        c (if final? (k2-best B vbv vbi (k2-ld B V 5 i) (k2-ld B V 6 i)) (k2-best B vbv vbi (k2-ld B V 1 i) i))
+        c (if final? (k2-best B vbv vbi (k2-ld B V 5 (k2-off B pbase i)) (k2-ld B V 6 (k2-off B pbase i)))
+            (k2-best B vbv vbi (k2-ld B V 1 (k2-off B lbase i)) i))
         e (k2-end-for B vi u256)
         r0 (kb-store B (kb-shared-at B red tf t) (kb-load B tf vbv))
         r1 (kb-store B (kb-shared-at B redi tu t) (kb-load B tu vbi))
@@ -578,16 +623,16 @@
         g (kb-if B (kb-ieq B t u0))
         z (if final?
             (let [parts (k2-pm B V 2)
-                  a1 (k2-st B V 6 parts (kb-load B tu (kb-shared-at B redi tu u0)))
-                  a2 (k2-st B V 4 u0 (kb-load B tf (kb-shared-at B red tf u0)))
+                  a1 (k2-st B V 6 (k2-off B pbase parts) (kb-load B tu (kb-shared-at B redi tu u0)))
+                  a2 (k2-st B V 4 (if (= pbase 0) u0 pbase) (kb-load B tf (kb-shared-at B red tf u0)))
                   h (kb-if B (kb-fne B (k2-pm B V 7) f0))
                   pos (kb-bitcast B tu (k2-ld B V 3 u0))
                   j (kb-if B (kb-uge B (kb-iadd B pos u1) (k2-pm B V 3)))
                   a3 (k2-st B V 2 (kb-iadd B pos u1) (kb-bitcast B tf (kb-load B tu (kb-shared-at B redi tu u0))))
                   j2 (kb-end-if B)]
               (kb-end-if B))
-            (let [a1 (k2-st B V 5 w (kb-load B tf (kb-shared-at B red tf u0)))]
-              (k2-st B V 6 w (kb-load B tu (kb-shared-at B redi tu u0)))))
+            (let [a1 (k2-st B V 5 (k2-off B pbase w) (kb-load B tf (kb-shared-at B red tf u0)))]
+              (k2-st B V 6 (k2-off B pbase w) (kb-load B tu (kb-shared-at B redi tu u0)))))
         z2 (kb-end-if B)]
     (kb-module B 256 1 1)))
 
@@ -617,29 +662,69 @@
         e3 (k2-end-for B vw u1)]
     (kb-module B 256 1 1)))
 
-;; the decode variants of the resident-serving ops: 21 pos_incr2 (ids[0] += 1,
-;; ids[1] += 1), 22 ctl (a set flag c[n] rewinds ids[0] to 0, then b[ids[0] + i]
-;; = c[i] for i < n), 23 pos_add (ids[0] += n), 24 pos_seed (ids[0] = the bits of
-;; a[0], ids[1] = 0), 25 params (o[4 + i] = c[2 + i] for i < 3); all but params
-;; on invocation 0 only
-(defn- k2-nex-resident [op :i64] :vector-i64
-  (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) V (k2-nex-bindings B)
+;; the resident-serving ops: 21 pos_incr2 (ids[0] += 1, ids[1] += 1), 22 ctl
+;; (a set flag c[n] rewinds ids[0] to 0, then b[ids[0] + i] = c[i] for i < n),
+;; 23 pos_add (ids[0] += n), 24 pos_seed (ids[0] = the bits of a[0], ids[1] =
+;; 0), 25 params (o[4 + i] = c[2 + i] for i < 3); all but params on invocation
+;; 0 only. Variants: ctl BATCH (v 1, row r < n: c's flags follow the n tokens,
+;; tokbuf row stride aux) and BPREFILL (v 2: the message is n tokens, seq, flag;
+;; rowsel o = [base, seq]); params BATCH (n rows of (T, top_p, seed) into o[r 4
+;; + k]); pos_add BPREFILL (ids[the bits of a[1]] += n); pos_seed BPREFILL
+;; (stepbuf = [base, 0, seq]).
+(defn- k2-nex-resident [op :i64 v :i64] :vector-i64
+  (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) tf (kb-tf32 B) V (k2-nex-bindings B)
         vi (kb-var B tu)
         u0 (kb-u32 B 0) u1 (kb-u32 B 1)
         i (kb-builtin-at B 28 0)
-        g (if (= op 25) (kb-if B (kb-ult B i (kb-u32 B 3))) (kb-if B (kb-ieq B i u0)))
-        w (case op
-            21 (let [a (k2-st B V 6 u0 (kb-iadd B (k2-ld B V 6 u0) u1))] (k2-st B V 6 u1 (kb-iadd B (k2-ld B V 6 u1) u1)))
-            22 (let [n (k2-pm B V 0)
-                     c0 (kb-if B (kb-ine B (kb-bitcast B tu (k2-ld B V 3 n)) u0))
-                     c1 (k2-st B V 6 u0 u0)
-                     c2 (kb-end-if B)
-                     j (k2-for B vi u0 n)
-                     c3 (k2-st B V 2 (kb-iadd B (k2-ld B V 6 u0) j) (k2-ld B V 3 j))]
-                 (k2-end-for B vi u1))
-            23 (k2-st B V 6 u0 (kb-iadd B (k2-ld B V 6 u0) (k2-pm B V 0)))
-            24 (let [a (k2-st B V 6 u0 (kb-bitcast B tu (k2-ld B V 1 u0)))] (k2-st B V 6 u1 u0))
-            (k2-st B V 4 (kb-iadd B (kb-u32 B 4) i) (k2-ld B V 3 (kb-iadd B (kb-u32 B 2) i))))
+        g (cond (and (= op 25) (= v 1)) (kb-if B (kb-ult B i (kb-imul B (kb-u32 B 3) (k2-pm B V 0))))
+                (= op 25) (kb-if B (kb-ult B i (kb-u32 B 3)))
+                (and (= op 22) (= v 1)) (kb-if B (kb-ult B i (k2-pm B V 0)))
+                :else (kb-if B (kb-ieq B i u0)))
+        w (cond
+            (= op 21) (let [a (k2-st B V 6 u0 (kb-iadd B (k2-ld B V 6 u0) u1))] (k2-st B V 6 u1 (kb-iadd B (k2-ld B V 6 u1) u1)))
+            ;; BATCH: if (bits(c[n + r]) != 0) ids[r] = 0; b[r aux + ids[r]] = c[r]
+            (and (= op 22) (= v 1))
+            (let [n (k2-pm B V 0)
+                  c0 (kb-if B (kb-ine B (kb-bitcast B tu (k2-ld B V 3 (kb-iadd B n i))) u0))
+                  c1 (k2-st B V 6 i u0)
+                  c2 (kb-end-if B)]
+              (k2-st B V 2 (kb-iadd B (kb-imul B i (k2-pm B V 2)) (k2-ld B V 6 i)) (k2-ld B V 3 i)))
+            ;; BPREFILL: r = bits(c[n]); if (bits(c[n + 1]) != 0) ids[r] = 0; base = ids[r];
+            ;; b[r aux + base + i] = c[i]; o[0] = bits(base); o[1] = bits(r)
+            (and (= op 22) (= v 2))
+            (let [n (k2-pm B V 0)
+                  r (kb-bitcast B tu (k2-ld B V 3 n))
+                  c0 (kb-if B (kb-ine B (kb-bitcast B tu (k2-ld B V 3 (kb-iadd B n u1))) u0))
+                  c1 (k2-st B V 6 r u0)
+                  c2 (kb-end-if B)
+                  base (k2-ld B V 6 r)
+                  j (k2-for B vi u0 n)
+                  c3 (k2-st B V 2 (kb-iadd B (kb-iadd B (kb-imul B r (k2-pm B V 2)) base) j) (k2-ld B V 3 j))
+                  c4 (k2-end-for B vi u1)
+                  c5 (k2-st B V 4 u0 (kb-bitcast B tf base))]
+              (k2-st B V 4 u1 (kb-bitcast B tf r)))
+            (= op 22)
+            (let [n (k2-pm B V 0)
+                  c0 (kb-if B (kb-ine B (kb-bitcast B tu (k2-ld B V 3 n)) u0))
+                  c1 (k2-st B V 6 u0 u0)
+                  c2 (kb-end-if B)
+                  j (k2-for B vi u0 n)
+                  c3 (k2-st B V 2 (kb-iadd B (k2-ld B V 6 u0) j) (k2-ld B V 3 j))]
+              (k2-end-for B vi u1))
+            ;; BPREFILL: ids[bits(a[1])] += n
+            (and (= op 23) (= v 2))
+            (let [at (kb-bitcast B tu (k2-ld B V 1 u1))] (k2-st B V 6 at (kb-iadd B (k2-ld B V 6 at) (k2-pm B V 0))))
+            (= op 23) (k2-st B V 6 u0 (kb-iadd B (k2-ld B V 6 u0) (k2-pm B V 0)))
+            ;; BPREFILL: ids[0] = bits(a[0]); ids[1] = 0; ids[2] = bits(a[1])
+            (and (= op 24) (= v 2))
+            (let [a (k2-st B V 6 u0 (kb-bitcast B tu (k2-ld B V 1 u0))) b (k2-st B V 6 u1 u0)]
+              (k2-st B V 6 (kb-u32 B 2) (kb-bitcast B tu (k2-ld B V 1 u1))))
+            (= op 24) (let [a (k2-st B V 6 u0 (kb-bitcast B tu (k2-ld B V 1 u0)))] (k2-st B V 6 u1 u0))
+            ;; BATCH: r = i / 3, k = i - r 3; o[r 4 + k] = c[2 n + i]
+            (= v 1)
+            (let [r (kb-udiv B i (kb-u32 B 3)) k (kb-isub B i (kb-imul B r (kb-u32 B 3)))]
+              (k2-st B V 4 (kb-iadd B (kb-imul B r (kb-u32 B 4)) k) (k2-ld B V 3 (kb-iadd B (kb-imul B (kb-u32 B 2) (k2-pm B V 0)) i))))
+            :else (k2-st B V 4 (kb-iadd B (kb-u32 B 4) i) (k2-ld B V 3 (kb-iadd B (kb-u32 B 2) i))))
         z (kb-end-if B)]
     (kb-module B 256 1 1)))
 
@@ -653,23 +738,25 @@
         x3 (kb-op2 B 198 tu x2 (kb-shr B x2 (kb-u32 B 15)))
         x4 (kb-imul B x3 (kb-u32 B 0x846CA68B))]
     (kb-op2 B 198 tu x4 (kb-shr B x4 (kb-u32 B 16)))))
-;; p_i: exp(a[i] invT - m) / Z (sample_topp) or s[i] (the multi-workgroup chain)
-(defn- k2-pi [B :vector-i64 V :vector-i64 topp? :bool i :i64 invT :i64 m :i64 Z :i64] :i64
-  (if topp? (kb-fdiv B (kb-fexp B (kb-fsub B (kb-fmul B (k2-ld B V 1 i) invT) m)) Z) (k2-ld B V 5 i)))
+;; p_i: exp(a[i] invT - m) / Z (sample_topp) or s[LB + i] (the multi-workgroup
+;; chain; lb 0 in decode)
+(defn- k2-pi [B :vector-i64 V :vector-i64 topp? :bool i :i64 invT :i64 m :i64 Z :i64 lb :i64] :i64
+  (if topp? (kb-fdiv B (kb-fexp B (kb-fsub B (kb-fmul B (k2-ld B V 1 i) invT) m)) Z) (k2-ld B V 5 (k2-off B lb i))))
 ;; the draw: thread t's chunk [s0, s1) of the set {p_i >= tau} in index order,
 ;; the exclusive prefix of the chunks' masses (thread 0, serially), u from the
 ;; hash, and the pick -- by the chunk that holds the target, or by thread 255
 ;; scanning down from n when rounding put the target at the top; the pick
-;; goes to ids[aux] and, with p1 != 0 past the prompt, to b[pos + 1]
+;; goes to ids[IB + aux] and, outside BATCH (ib 0) with p1 != 0 past the
+;; prompt, to b[pos + 1]
 (defn- k2-draw [B :vector-i64 V :vector-i64 topp? :bool t :i64 n :i64 tau :i64 invT :i64 m :i64 Z :i64 pos :i64 seed :i64
-                sred :i64 stot :i64 vars :vector-i64] :i64
-  (let [tu (kb-tu32 B) tf (kb-tf32 B) u0 (kb-u32 B 0) u1 (kb-u32 B 1) f0 (kb-f32 B 0)
+                sred :i64 stot :i64 vars :vector-i64 lb :i64 ib :i64] :i64
+  (let [batch? (not= ib 0) tu (kb-tu32 B) tf (kb-tf32 B) u0 (kb-u32 B 0) u1 (kb-u32 B 1) f0 (kb-f32 B 0)
         vi (vector-at vars 0) vpart (vector-at vars 1) vrun (vector-at vars 2) vpick (vector-at vars 3) vk (vector-at vars 4)
         chunk (kb-udiv B (kb-iadd B n (kb-u32 B 255)) (kb-u32 B 256))
         s0 (kb-imul B t chunk) s1 (kb-umin B n (kb-iadd B s0 chunk))
         a0 (kb-store B vpart f0)
         i (k2-for B vi s0 s1)
-        pi (k2-pi B V topp? i invT m Z)
+        pi (k2-pi B V topp? i invT m Z lb)
         g (kb-if B (kb-fge B pi tau)) a1 (k2-acc B vpart pi) z (kb-end-if B)
         e1 (k2-end-for B vi u1)
         part (kb-load B tf vpart)
@@ -691,13 +778,13 @@
                    (kb-f32 B 0x4B800000))
         target (kb-fmul B u total)
         ;; the token buffer: if (P.p1 != 0 && pos + 1 >= P.aux2) b[pos + 1] = uintBitsToFloat(pick)
-        p1 (kb-fne B (k2-pm B V 7) f0)
+        p1 (if batch? 0 (kb-fne B (k2-pm B V 7) f0))
         ;; the chunk that holds the target
         c0 (kb-if B (kb-land B (kb-fge B target before) (kb-flt B target (kb-fadd B before part))))
         c1 (kb-store B vrun before)
         c2 (kb-store B vpick (kb-isub B s1 u1))
         j (k2-for B vi s0 s1)
-        pj (k2-pi B V topp? j invT m Z)
+        pj (k2-pi B V topp? j invT m Z lb)
         d0 (kb-if B (kb-fge B pj tau))
         d1 (kb-if B (kb-flt B target (kb-fadd B (kb-load B tf vrun) pj)))
         d2 (kb-store B vpick j)
@@ -706,10 +793,11 @@
         d5 (k2-acc B vrun pj)
         d6 (kb-end-if B)
         e2 (k2-end-for B vi u1)
-        c3 (k2-st B V 6 (k2-pm B V 2) (kb-load B tu vpick))
-        c4 (kb-if B (kb-land B p1 (kb-uge B (kb-iadd B pos u1) (k2-pm B V 3))))
-        c5 (k2-st B V 2 (kb-iadd B pos u1) (kb-bitcast B tf (kb-load B tu vpick)))
-        c6 (kb-end-if B)
+        c3 (k2-st B V 6 (k2-off B ib (k2-pm B V 2)) (kb-load B tu vpick))
+        c6 (if batch? 0
+             (let [c4 (kb-if B (kb-land B p1 (kb-uge B (kb-iadd B pos u1) (k2-pm B V 3))))
+                   c5 (k2-st B V 2 (kb-iadd B pos u1) (kb-bitcast B tf (kb-load B tu vpick)))]
+               (kb-end-if B)))
         c7 (kb-end-if B)
         ;; the top: thread 255 when target >= total, pick the last i with p_i >= tau
         t0 (kb-if B (kb-land B (kb-ieq B t (kb-u32 B 255)) (kb-fge B target total)))
@@ -718,17 +806,18 @@
         l (kb-loop B)
         w (kb-while B (kb-ugt B (kb-load B tu vi) u0))
         i1 (kb-isub B (kb-load B tu vi) u1)
-        t3 (kb-if B (kb-fge B (k2-pi B V topp? i1 invT m Z) tau))
+        t3 (kb-if B (kb-fge B (k2-pi B V topp? i1 invT m Z lb) tau))
         t4 (kb-store B vpick i1)
         t5 (kb-break B)
         t6 (kb-end-if B)
         t7 (kb-continue B)
         t8 (kb-store B vi (kb-isub B (kb-load B tu vi) u1))
         t9 (kb-end-loop B)
-        ta (k2-st B V 6 (k2-pm B V 2) (kb-load B tu vpick))
-        tb (kb-if B (kb-land B p1 (kb-uge B (kb-iadd B pos u1) (k2-pm B V 3))))
-        tc (k2-st B V 2 (kb-iadd B pos u1) (kb-bitcast B tf (kb-load B tu vpick)))
-        td (kb-end-if B)]
+        ta (k2-st B V 6 (k2-off B ib (k2-pm B V 2)) (kb-load B tu vpick))
+        td (if batch? 0
+             (let [tb (kb-if B (kb-land B p1 (kb-uge B (kb-iadd B pos u1) (k2-pm B V 3))))
+                   tc (k2-st B V 2 (kb-iadd B pos u1) (kb-bitcast B tf (kb-load B tu vpick)))]
+               (kb-end-if B)))]
     (kb-end-if B)))
 
 ;; 26 sample_topp: one workgroup over the vocabulary; 27 sample_part: workgroup
@@ -738,9 +827,18 @@
 ;; slice's mass of {p_i >= mid} into o[124 + w]; 30 sample_bisect_step: one
 ;; bisection step on [o[122], o[123]]; 31 sample_final: the draw with tau =
 ;; o[122]. T = P.eps, top_p = P.scale, the seed is the bits of P.p0, the
-;; position the bits of c[0] when P.p1 != 0.
-(defn- k2-nex-sample [op :i64] :vector-i64
+;; position the bits of c[0] when P.p1 != 0. BATCH (v 1, ops 27..31): the row is
+;; WorkGroupID.y; its T, top_p and seed are b[row 4 + 0..2] (a row with T == 0
+;; returns at once), its position the bits of c[row]; logits and p_i at row n,
+;; the scratch at row 256, the pick at ids[row 64 + aux], and no token-buffer
+;; write.
+(defn- k2-nex-sample [op :i64 v :i64] :vector-i64
   (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) tf (kb-tf32 B) V (k2-nex-bindings B)
+        batch? (= v 1)
+        srow (if batch? (kb-builtin-at B 26 1) 0)
+        sb4 (if batch? (kb-imul B srow (kb-u32 B 4)) 0)
+        ;; S_SKIP: if (S_T == 0) return;
+        skip (if batch? (k2-return-if B (kb-feq B (k2-ld B V 2 sb4) (kb-f32 B 0))) 0)
         sred (kb-shared B tf 256) stot (kb-shared B tf 1)
         vst (kb-var B tu) vi (kb-var B tu) vm (kb-var B tf) vz (kb-var B tf) vlo (kb-var B tf) vhi (kb-var B tf)
         vit (kb-var B tu) vacc (kb-var B tf) vk (kb-var B tu) vM (kb-var B tf)
@@ -748,19 +846,29 @@
                  (vector-assoc! 3 (kb-var B tu)) (vector-assoc! 4 vk))
         u0 (kb-u32 B 0) u1 (kb-u32 B 1) u256 (kb-u32 B 256) u4096 (kb-u32 B 4096) f0 (kb-f32 B 0) fhalf (kb-f32 B 0x3F000000)
         t (kb-builtin-at B 27 0) w (kb-builtin-at B 26 0) n (k2-pm B V 0)
-        invT (kb-fdiv B (kb-f32 B F-ONE) (k2-pm B V 4))
+        ;; 1 / T (BATCH: the row's T, read only by the ops that use it)
+        invT (cond (and batch? (>= op 29)) 0
+                   batch? (kb-fdiv B (kb-f32 B F-ONE) (k2-ld B V 2 sb4))
+                   :else (kb-fdiv B (kb-f32 B F-ONE) (k2-pm B V 4)))
+        lb (if batch? (kb-imul B srow n) 0)
+        ob (if batch? (kb-imul B srow (kb-u32 B 256)) 0)
+        ib (if batch? (kb-imul B srow (kb-u32 B 64)) 0)
         s0 (kb-imul B w u4096) s1 (kb-umin B n (kb-iadd B s0 u4096))
         parts (kb-udiv B (kb-iadd B n (kb-u32 B 4095)) u4096)
         ;; pos = (P.p1 != 0) ? floatBitsToUint(c[0]) : 0, the load in an if (the
         ;; GLSL reads c[0] only then); only sample_topp and sample_final have it
-        pos (if (or (= op 26) (= op 31))
+        pos (cond
+              (and batch? (= op 31)) (kb-bitcast B tu (k2-ld B V 3 srow))
+              (or (= op 26) (= op 31))
               (let [vp (kb-var B tu) a (kb-store B vp u0)
                     g (kb-if B (kb-fne B (k2-pm B V 7) f0))
                     b (kb-store B vp (kb-bitcast B tu (k2-ld B V 3 u0)))
                     z (kb-end-if B)]
                 (kb-load B tu vp))
-              0)
-        seed (kb-bitcast B tu (k2-pm B V 6))
+              :else 0)
+        seed (cond (and batch? (= op 31)) (kb-bitcast B tu (k2-ld B V 2 (kb-iadd B sb4 (kb-u32 B 2))))
+                   batch? 0
+                   :else (kb-bitcast B tu (k2-pm B V 6)))
         body
         (cond
           (= op 26)
@@ -784,74 +892,93 @@
                 mid (kb-fmul B fhalf (kb-fadd B (kb-load B tf vlo) (kb-load B tf vhi)))
                 b2 (kb-store B vacc f0)
                 i3 (k2-for B vi t n)
-                pi (k2-pi B V true i3 invT m Z)
+                pi (k2-pi B V true i3 invT m Z 0)
                 b3 (kb-if B (kb-fge B pi mid)) b4 (k2-acc B vacc pi) b5 (kb-end-if B)
                 e3 (k2-end-for B vi u256)
                 mass (k2-wg-sum B sred t vst (kb-load B tf vacc))
                 b6 (kb-if B (kb-fge B mass (k2-pm B V 5))) b7 (kb-store B vlo mid) b8 (kb-else B) b9 (kb-store B vhi mid) ba (kb-end-if B)
                 e4 (k2-end-for B vit u1)]
-            (k2-draw B V true t n (kb-load B tf vlo) invT m Z pos seed sred stot vars))
+            (k2-draw B V true t n (kb-load B tf vlo) invT m Z pos seed sred stot vars 0 0))
           (= op 27)
           (let [m0 (kb-store B vm (kb-f32 B F-MINUS-1E30))
                 i (k2-for B vi (kb-iadd B s0 t) s1)
-                m1 (kb-store B vm (kb-fmax B (kb-load B tf vm) (kb-fmul B (k2-ld B V 1 i) invT)))
+                m1 (kb-store B vm (kb-fmax B (kb-load B tf vm) (kb-fmul B (k2-ld B V 1 (k2-off B lb i)) invT)))
                 e1 (k2-end-for B vi u256)
                 m2 (kb-store B (kb-shared-at B sred tf t) (kb-load B tf vm)) m3 (kb-barrier B)
                 m4 (k2-tree B sred t vst true)
                 m (kb-load B tf (kb-shared-at B sred tf u0)) m5 (kb-barrier B)
                 z0 (kb-store B vz f0)
                 i2 (k2-for B vi (kb-iadd B s0 t) s1)
-                z1 (k2-acc B vz (kb-fexp B (kb-fsub B (kb-fmul B (k2-ld B V 1 i2) invT) m)))
+                z1 (k2-acc B vz (kb-fexp B (kb-fsub B (kb-fmul B (k2-ld B V 1 (k2-off B lb i2)) invT) m)))
                 e2 (k2-end-for B vi u256)
                 Z (k2-wg-sum B sred t vst (kb-load B tf vz))
                 g (kb-if B (kb-ieq B t u0))
-                o1 (k2-st B V 4 w m) o2 (k2-st B V 4 (kb-iadd B (kb-u32 B 61) w) Z)]
+                o1 (k2-st B V 4 (k2-off B ob w) m) o2 (k2-st B V 4 (kb-iadd B (k2-offc B ob 61) w) Z)]
             (kb-end-if B))
           (= op 28)
           (let [g (kb-if B (kb-ieq B t u0))
                 M0 (kb-store B vM (kb-f32 B F-MINUS-1E30))
                 k (k2-for B vk u0 parts)
-                M1 (kb-store B vM (kb-fmax B (kb-load B tf vM) (k2-ld B V 4 k)))
+                M1 (kb-store B vM (kb-fmax B (kb-load B tf vM) (k2-ld B V 4 (k2-off B ob k))))
                 e1 (k2-end-for B vk u1)
                 M (kb-load B tf vM)
                 z0 (kb-store B vz f0)
                 k2 (k2-for B vk u0 parts)
-                z1 (k2-acc B vz (kb-fmul B (k2-ld B V 4 (kb-iadd B (kb-u32 B 61) k2)) (kb-fexp B (kb-fsub B (k2-ld B V 4 k2) M))))
+                z1 (k2-acc B vz (kb-fmul B (k2-ld B V 4 (kb-iadd B (k2-offc B ob 61) k2)) (kb-fexp B (kb-fsub B (k2-ld B V 4 (k2-off B ob k2)) M))))
                 e2 (k2-end-for B vk u1)
                 z2 (kb-store B (kb-shared-at B sred tf u0) M) z3 (kb-store B (kb-shared-at B sred tf u1) (kb-load B tf vz))
                 h (kb-if B (kb-ieq B w u0))
-                h1 (k2-st B V 4 (kb-u32 B 122) f0) h2 (k2-st B V 4 (kb-u32 B 123) (kb-f32 B F-ONE))
+                h1 (k2-st B V 4 (k2-offc B ob 122) f0) h2 (k2-st B V 4 (k2-offc B ob 123) (kb-f32 B F-ONE))
                 h3 (kb-end-if B)
                 g2 (kb-end-if B)
                 b0 (kb-barrier B)
                 MM (kb-load B tf (kb-shared-at B sred tf u0)) ZZ (kb-load B tf (kb-shared-at B sred tf u1))
                 i (k2-for B vi (kb-iadd B s0 t) s1)
-                a (k2-st B V 5 i (kb-fdiv B (kb-fexp B (kb-fsub B (kb-fmul B (k2-ld B V 1 i) invT) MM)) ZZ))]
+                a (k2-st B V 5 (k2-off B lb i) (kb-fdiv B (kb-fexp B (kb-fsub B (kb-fmul B (k2-ld B V 1 (k2-off B lb i)) invT) MM)) ZZ))]
             (k2-end-for B vi u256))
           (= op 29)
-          (let [mid (kb-fmul B fhalf (kb-fadd B (k2-ld B V 4 (kb-u32 B 122)) (k2-ld B V 4 (kb-u32 B 123))))
+          (let [mid (kb-fmul B fhalf (kb-fadd B (k2-ld B V 4 (k2-offc B ob 122)) (k2-ld B V 4 (k2-offc B ob 123))))
                 a0 (kb-store B vacc f0)
                 i (k2-for B vi (kb-iadd B s0 t) s1)
-                pi (k2-ld B V 5 i)
+                pi (k2-ld B V 5 (k2-off B lb i))
                 g (kb-if B (kb-fge B pi mid)) a1 (k2-acc B vacc pi) z (kb-end-if B)
                 e1 (k2-end-for B vi u256)
                 mass (k2-wg-sum B sred t vst (kb-load B tf vacc))
                 h (kb-if B (kb-ieq B t u0))
-                o1 (k2-st B V 4 (kb-iadd B (kb-u32 B 124) w) mass)]
+                o1 (k2-st B V 4 (kb-iadd B (k2-offc B ob 124) w) mass)]
             (kb-end-if B))
           (= op 30)
           (let [g (kb-if B (kb-ieq B t u0))
                 a0 (kb-store B vacc f0)
                 k (k2-for B vk u0 parts)
-                a1 (k2-acc B vacc (k2-ld B V 4 (kb-iadd B (kb-u32 B 124) k)))
+                a1 (k2-acc B vacc (k2-ld B V 4 (kb-iadd B (k2-offc B ob 124) k)))
                 e1 (k2-end-for B vk u1)
-                mid (kb-fmul B fhalf (kb-fadd B (k2-ld B V 4 (kb-u32 B 122)) (k2-ld B V 4 (kb-u32 B 123))))
-                h (kb-if B (kb-fge B (kb-load B tf vacc) (k2-pm B V 5)))
-                h1 (k2-st B V 4 (kb-u32 B 122) mid) h2 (kb-else B) h3 (k2-st B V 4 (kb-u32 B 123) mid) h4 (kb-end-if B)]
+                mid (kb-fmul B fhalf (kb-fadd B (k2-ld B V 4 (k2-offc B ob 122)) (k2-ld B V 4 (k2-offc B ob 123))))
+                ;; top_p: P.scale, or the row's b[row 4 + 1] (BATCH), read under t == 0
+                h (kb-if B (kb-fge B (kb-load B tf vacc) (if batch? (k2-ld B V 2 (kb-iadd B sb4 (kb-u32 B 1))) (k2-pm B V 5))))
+                h1 (k2-st B V 4 (k2-offc B ob 122) mid) h2 (kb-else B) h3 (k2-st B V 4 (k2-offc B ob 123) mid) h4 (kb-end-if B)]
             (kb-end-if B))
           :else
-          (k2-draw B V false t n (k2-ld B V 4 (kb-u32 B 122)) invT f0 f0 pos seed sred stot vars))]
+          (k2-draw B V false t n (k2-ld B V 4 (k2-offc B ob 122)) invT f0 f0 pos seed sred stot vars lb ib))]
     (kb-module B 256 1 1)))
+
+;; the module of op in variant v (0 decode, 1 -DBATCH, 2 -DBPREFILL, 4 -DBIAS,
+;; 5 -DBATCH -DBIAS); an empty one where the defines leave nex_ops.comp's op
+;; as in decode (use v 0 for it) or for another op
+(defn kir2-nex-variant [op :i64 v :i64] :vector-i64
+  (cond (= v 0) (kir2-nex-op op)
+        (and (= op 8) (or (= v 1) (= v 2))) (k2-nex-ewise 8 v)
+        (and (= op 14) (= v 1)) (k2-nex-pos-incr 1)
+        (and (= op 15) (or (= v 1) (= v 4) (= v 5))) (k2-nex-rope v)
+        (and (= op 16) (or (= v 1) (= v 2))) (k2-nex-attn v)
+        (and (= op 18) (= v 1)) (k2-nex-argmax false 1)
+        (and (= op 19) (= v 1)) (k2-nex-argmax true 1)
+        (and (= op 22) (or (= v 1) (= v 2))) (k2-nex-resident 22 v)
+        (and (= op 23) (= v 2)) (k2-nex-resident 23 2)
+        (and (= op 24) (= v 2)) (k2-nex-resident 24 2)
+        (and (= op 25) (= v 1)) (k2-nex-resident 25 1)
+        (and (= v 1) (and (>= op 27) (<= op 31))) (k2-nex-sample op 1)
+        :else (spv-new 0)))
 
 ;; the module of op (an empty one for another op)
 (defn kir2-nex-op [op :i64] :vector-i64
@@ -861,16 +988,16 @@
         (= op 13) (k2-nex-norm 4)
         (= op 9) (k2-nex-weighted-sum)
         (= op 12) (k2-nex-matvec)
-        (= op 14) (k2-nex-pos-incr)
-        (= op 15) (k2-nex-rope)
-        (= op 16) (k2-nex-attn)
+        (= op 14) (k2-nex-pos-incr 0)
+        (= op 15) (k2-nex-rope 0)
+        (= op 16) (k2-nex-attn 0)
         (= op 17) (k2-nex-topk)
-        (= op 18) (k2-nex-argmax false)
-        (= op 19) (k2-nex-argmax true)
+        (= op 18) (k2-nex-argmax false 0)
+        (= op 19) (k2-nex-argmax true 0)
         (= op 20) (k2-nex-quant-q8)
-        (and (>= op 21) (<= op 25)) (k2-nex-resident op)
-        (and (>= op 26) (<= op 31)) (k2-nex-sample op)
-        (or (and (>= op 4) (<= op 8)) (= op 10) (= op 11)) (k2-nex-ewise op)
+        (and (>= op 21) (<= op 25)) (k2-nex-resident op 0)
+        (and (>= op 26) (<= op 31)) (k2-nex-sample op 0)
+        (or (and (>= op 4) (<= op 8)) (= op 10) (= op 11)) (k2-nex-ewise op 0)
         :else (spv-new 0)))
 
 ;; ---------------------------------------------------------------------
@@ -1808,12 +1935,15 @@
                          (kb-load B tf (kb-shared-at B p4 tf (kb-iadd B (kb-u32 B 256) j))))
              (kb-load B tf (kb-shared-at B p4 tf (kb-iadd B (kb-u32 B 384) j))))))
 ;; conv_step(c, p, own, qoff): the conv1d step + silu of channel c from ring
-;; slot p; when own, the ring's slot 1 - p gets the shifted window
-(defn- dn-conv [B :vector-i64 Pm :i64 QKV :i64 CW :i64 Ring :i64 vx :i64 c :i64 p :i64 own :i64 qoff :i64 fresh :i64] :i64
+;; slot p; when own, the ring's slot 1 - p gets the shifted window. In BATCH
+;; and BPREFILL the ring of sequence seq is at seq 6 n (seq 0: decode, none).
+(defn- dn-conv [B :vector-i64 Pm :i64 QKV :i64 CW :i64 Ring :i64 vx :i64 c :i64 p :i64 own :i64 qoff :i64 fresh :i64 seq :i64] :i64
   (let [tu (kb-tu32 B) tf (kb-tf32 B)
         n (kb-meta-at B Pm tu 5)
-        rb (kb-imul B (kb-imul B p (kb-u32 B 3)) n)
-        wb (kb-imul B (kb-imul B (kb-isub B (kb-u32 B 1) p) (kb-u32 B 3)) n)
+        rb0 (kb-imul B (kb-imul B p (kb-u32 B 3)) n)
+        wb0 (kb-imul B (kb-imul B (kb-isub B (kb-u32 B 1) p) (kb-u32 B 3)) n)
+        soff (if (= seq 0) 0 (kb-imul B (kb-imul B seq (kb-u32 B 6)) n))
+        rb (k2-off B soff rb0) wb (k2-off B soff wb0)
         x0 (dn-unless B vx fresh Ring (kb-iadd B rb c))
         x1 (dn-unless B vx fresh Ring (kb-iadd B (kb-iadd B rb n) c))
         x2 (dn-unless B vx fresh Ring (kb-iadd B (kb-iadd B rb (kb-imul B (kb-u32 B 2) n)) c))
@@ -1830,7 +1960,12 @@
         z (kb-end-if B)]
     (k2-silu B y)))
 
-(defn kir2-deltanet-fused [] :vector-i64
+;; the module of deltanet_fused's variant v: 0 decode, 1 -DBATCH (row = a
+;; sequence = WorkGroupID.y, at position pos[row]), 2 -DBPREFILL (the stepbuf
+;; is [position, row, sequence]); the ring and the state of sequence seq at seq
+;; 6 n and seq heads K V. Another v gives an empty module.
+(defn kir2-deltanet-fused-variant [v :i64] :vector-i64
+  (if (or (< v 0) (> v 2)) (spv-new 0)
   (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) tf (kb-tf32 B) tb (kb-tbool B)
         Pm (kb-meta B 0 8 192)
         QKV (kb-buffer B 1 tf 4 true) CW (kb-buffer B 2 tf 4 true) Ring (kb-buffer B 3 tf 4 false)
@@ -1845,9 +1980,13 @@
         j (kb-band B t (kb-u32 B 127)) part (kb-shr B t (kb-u32 B 7))
         Kd (kb-meta-at B Pm tu 1) Vd (kb-meta-at B Pm tu 2) khs (kb-meta-at B Pm tu 3)
         kh (kb-umod B h khs)
-        pos0 (kb-load B tu (kb-at B Pos tu u0))
+        ;; MYPOS, ROW and SEQ: pos[0], pos[1] and none (decode); pos[wg.y],
+        ;; wg.y and wg.y (BATCH); pos[0], pos[1] and pos[2] (BPREFILL)
+        brow (if (= v 1) (kb-builtin-at B 26 1) 0)
+        pos0 (kb-load B tu (kb-at B Pos tu (if (= v 1) brow u0)))
         p (kb-band B pos0 u1)
-        row (kb-load B tu (kb-at B Pos tu u1))
+        row (if (= v 1) brow (kb-load B tu (kb-at B Pos tu u1)))
+        seq (cond (= v 1) brow (= v 2) (kb-load B tu (kb-at B Pos tu (kb-u32 B 2))) :else 0)
         qoff (kb-imul B row (kb-meta-at B Pm tu 5))
         hoff (kb-imul B row (kb-meta-at B Pm tu 0))
         voff (kb-imul B (kb-imul B row (kb-meta-at B Pm tu 0)) Vd)
@@ -1856,9 +1995,9 @@
         ;; conv on this head's channels (part 0): q and k shared with head h + k_heads (owned when h == kh), v own
         c0 (kb-if B part0)
         own (kb-ieq B h kh)
-        c1 (kb-store B (kb-shared-at B cq tf j) (dn-conv B Pm QKV CW Ring vx (kb-iadd B (kb-imul B kh Kd) j) p own qoff fresh))
-        c2 (kb-store B (kb-shared-at B ck tf j) (dn-conv B Pm QKV CW Ring vx (kb-iadd B (kb-iadd B (kb-imul B khs Kd) (kb-imul B kh Kd)) j) p own qoff fresh))
-        c3 (kb-store B (kb-shared-at B cv tf j) (dn-conv B Pm QKV CW Ring vx (kb-iadd B (kb-iadd B (kb-meta-at B Pm tu 4) (kb-imul B h Vd)) j) p (kb-bool B true) qoff fresh))
+        c1 (kb-store B (kb-shared-at B cq tf j) (dn-conv B Pm QKV CW Ring vx (kb-iadd B (kb-imul B kh Kd) j) p own qoff fresh seq))
+        c2 (kb-store B (kb-shared-at B ck tf j) (dn-conv B Pm QKV CW Ring vx (kb-iadd B (kb-iadd B (kb-imul B khs Kd) (kb-imul B kh Kd)) j) p own qoff fresh seq))
+        c3 (kb-store B (kb-shared-at B cv tf j) (dn-conv B Pm QKV CW Ring vx (kb-iadd B (kb-iadd B (kb-meta-at B Pm tu 4) (kb-imul B h Vd)) j) p (kb-bool B true) qoff fresh seq))
         c4 (kb-end-if B)
         b0 (kb-barrier B)
         qc (kb-load B tf (kb-shared-at B cq tf j)) kc (kb-load B tf (kb-shared-at B ck tf j)) vc (kb-load B tf (kb-shared-at B cv tf j))
@@ -1875,7 +2014,8 @@
         decay (kb-fexp B (kb-fmul B (k2-softplus B vsp (kb-fadd B (kb-load B tf (kb-at B Al tf (kb-iadd B hoff h))) (kb-load B tf (kb-at B Dt tf h))))
                                     (kb-load B tf (kb-at B Aa tf h))))
         b (k2-sigmoid B (kb-load B tf (kb-at B Bl tf (kb-iadd B hoff h))))
-        sbase (kb-imul B (kb-imul B h Kd) Vd)
+        sbase (k2-off B (if (= seq 0) 0 (kb-imul B (kb-imul B (kb-imul B seq (kb-meta-at B Pm tu 0)) Kd) Vd))
+                      (kb-imul B (kb-imul B h Kd) Vd))
         quarter (kb-udiv B Kd (kb-u32 B 4))
         i0 (kb-imul B part quarter)
         i1 (kb-iadd B i0 quarter)
@@ -1910,7 +2050,9 @@
         w1 (kb-store B (kb-at B Out tf oi)
                     (kb-fmul B (kb-fmul B (kb-fmul B o inv) (kb-load B tf (kb-at B Nw tf j))) (k2-silu B (kb-load B tf (kb-at B Z tf oi)))))
         w2 (kb-end-if B)]
-    (kb-module B 512 1 1)))
+    (kb-module B 512 1 1))))
+
+(defn kir2-deltanet-fused [] :vector-i64 (kir2-deltanet-fused-variant 0))
 
 ;; ---------------------------------------------------------------------
 ;; embed_iq4xs (kotoba-lang/inference
@@ -1921,10 +2063,12 @@
 ;; (thread t < blocks 8 owns 32 values), 8 -DQ8 (thread = a 34-byte block),
 ;; 2, 3, 6 or 7 -DB32=<type> (Q4_0, Q4_1, Q5_0, Q5_1), 143 -DPTQ1. Bindings: 0
 ;; Meta {cols slot dyn pad1 : u32} (ro), 1 W (u32, ro), 2 I (ids, u32, ro), 3
-;; O, 4 Pos (u32, ro). LocalSize 256; dispatch (1, rows, 1). Another kind
-;; gives an empty module.
-(defn kir2-embed [kind :i64] :vector-i64
-  (if (not (or (= kind 23) (= kind 8) (= kind 2) (= kind 3) (= kind 6) (= kind 7) (= kind 143))) (spv-new 0)
+;; O, 4 Pos (u32, ro). LocalSize 256; dispatch (1, rows, 1). v is the token's
+;; source: 0 the decode one above, 1 -DBATCH (ids[row pad1 + pos[row]], rows
+;; are sequences), 2 -DBPREFILL (ids[pos[1] pad1 + pos[0] + row]). Another
+;; kind or v gives an empty module.
+(defn kir2-embed-variant [kind :i64 v :i64] :vector-i64
+  (if (or (not (or (= kind 23) (= kind 8) (= kind 2) (= kind 3) (= kind 6) (= kind 7) (= kind 143))) (or (< v 0) (> v 2))) (spv-new 0)
     (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) tf (kb-tf32 B)
           P (kb-meta B 0 4 0) W (kb-buffer B 1 tu 4 true) I (kb-buffer B 2 tu 4 true) O (kb-buffer B 3 tf 4 false)
           Pos (kb-buffer B 4 tu 4 true)
@@ -1937,14 +2081,22 @@
           ;; the default variant returns before the row and token
           g0 (if (= kind 23) (k2-return-if B (kb-uge B t (kb-imul B blocks (ku B 8)))) 0)
           row (kb-builtin-at B 26 1)
-          ;; tok = ids[((P.dyn != 0) ? pos[0] : P.slot) + row]; pos[0] is read only
-          ;; when dyn != 0, so its load stays in an if
-          vslot (kb-var B tu)
-          s0 (kb-store B vslot (kb-meta-at B P tu 1))
-          s1 (kb-if B (kb-ine B (kb-meta-at B P tu 2) u0))
-          s2 (kb-store B vslot (kb-load B tu (kb-at B Pos tu u0)))
-          s3 (kb-end-if B)
-          tok (kb-load B tu (kb-at B I tu (kb-iadd B (kb-load B tu vslot) row)))
+          pad1 (if (= v 0) 0 (kb-meta-at B P tu 3))
+          tok (cond
+                ;; BATCH: ids[row pad1 + pos[row]]
+                (= v 1) (kb-load B tu (kb-at B I tu (kb-iadd B (kb-imul B row pad1) (kb-load B tu (kb-at B Pos tu row)))))
+                ;; BPREFILL: ids[pos[1] pad1 + pos[0] + row]
+                (= v 2) (kb-load B tu (kb-at B I tu (kb-iadd B (kb-iadd B (kb-imul B (kb-load B tu (kb-at B Pos tu u1)) pad1)
+                                                                    (kb-load B tu (kb-at B Pos tu u0)))
+                                                         row)))
+                ;; ids[((P.dyn != 0) ? pos[0] : P.slot) + row]; pos[0] is read only
+                ;; when dyn != 0, so its load stays in an if
+                :else (let [vslot (kb-var B tu)
+                            s0 (kb-store B vslot (kb-meta-at B P tu 1))
+                            s1 (kb-if B (kb-ine B (kb-meta-at B P tu 2) u0))
+                            s2 (kb-store B vslot (kb-load B tu (kb-at B Pos tu u0)))
+                            s3 (kb-end-if B)]
+                        (kb-load B tu (kb-at B I tu (kb-iadd B (kb-load B tu vslot) row)))))
           orow (kb-imul B row cols)
           body
           (cond
@@ -2035,3 +2187,5 @@
                                (kb-fadd B (kb-fmul B d (kb-s2f B tf (kd-isub B (kd-int B (kb-load B tu vhi)) off))) m))]
               (k2-end-for B vj u1)))]
       (kb-module B 256 1 1))))
+
+(defn kir2-embed [kind :i64] :vector-i64 (kir2-embed-variant kind 0))

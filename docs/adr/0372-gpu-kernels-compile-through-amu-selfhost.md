@@ -301,7 +301,34 @@ a follow-up to ADR 0371.
 
      Receipts (with the rest of nex_ops' decode ops):
      `docs/evidence/gpu-kernel-kir2-dn-20261023/`.
-   * the BATCH, BPREFILL and BIAS variants of nex_ops, deltanet and embed;
+   * **Done: the BATCH, BPREFILL and BIAS variants of nex_ops, deltanet and
+     embed.** Each variant is a generator parameter, and the decode modules
+     keep their bytes.
+     * nex_ops (`kir2-nex-variant op v`), the 20 that differ from decode:
+       * copy_at, attn_decode and ctl in BATCH and BPREFILL;
+       * pos_incr, argmax_partial, argmax_final and params in BATCH;
+       * pos_add and pos_seed in BPREFILL;
+       * rope_neox in BATCH, BIAS and both;
+       * the five multi-workgroup sampler kernels in BATCH.
+     * `deltanet_fused` in BATCH and BPREFILL: the ring and the state of
+       sequence `seq` sit at `seq 6 n` and `seq heads K V`.
+     * embed in BATCH and BPREFILL, for each of its seven kinds.
+
+     The unit made about 165 builders and ran out of memory, so the
+     builder's reserve shrank from 2.2M to 591632 words. One provider
+     session holds 127 pipelines, so the gate runs the variants in a second
+     session.
+
+     On gad, in 35 cases, every variant is byte-identical to glslang's
+     module of the same defines:
+     * rope is within 8.9e-7 of f64 and attn_decode within 5e-8; the rest
+       are exact;
+     * the inputs separate what a wrong port could mix up: two strides,
+       base and sequence, `ids[r]` and `ids[1]`, and two kv heads;
+     * the BATCH sampler chain ran over three rows. One row has T = 0, and
+       every kernel skips it.
+
+     Receipts: `docs/evidence/gpu-kernel-kir2-var-20261024/`.
    * `attn_copy_dense` on B70/ANV;
    * **Done: the dot and kdot fixtures' kernels.**
      * `dot_rows`, from inference at 0f5824c.
