@@ -27,7 +27,14 @@
 // on this host. It does NOT touch any :measured? flag or workgroup row in
 // kotoba.compiler.accelerator-targets -- mapping a measurement onto dispatch
 // table rows is a separate design slice. It is one run, uncontrolled clocks
-// (no thermal/clock-regime control); regime analysis is LEFT.
+// (no thermal/clock-regime control). Claim protocol rule 1 (the 2026-10-25
+// WGSL channel adoption, ADR-0360) IS published by this harness: the
+// GAP-1.15 regime clusters on the channel's own named metric (host
+// wall-clock submit->completion, ms), computed by
+// scripts/gpu_regime_classify.py (--wgsl-log) from the `time` lines printed
+// below, so the section re-derives from the log text exactly. Rule 2's sign
+// classification is UNIMPLEMENTED on this channel (its own later slice); a
+// log without the rule-1 section is NOT a claim-protocol record and says so.
 //
 // Sampling: per cell (shape, W, op) the two arms are sampled in the SAME
 // round with alternating arm order (even round: subgroup first; odd round:
@@ -43,6 +50,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
+import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -325,6 +333,7 @@ let singleSubFaster = 0;
 let batchSubFaster = 0;
 let allChecked = 0;
 let allCheckOk = 0;
+const timeLines = [];
 
 for (const n of SHAPES) {
   for (const w of WS) {
@@ -342,7 +351,9 @@ for (const n of SHAPES) {
         if (c.ok) allCheckOk++;
         console.log(`check n=${n} w=${w} op=${op} arm=${arm} answer=${c.answer} ref=${c.ref} ok=${c.ok ? 1 : 0}`);
         console.log(`raw n=${n} w=${w} op=${op} arm=${arm} single_ms=${r.single[arm].map(fmt3).join(',')} batch${32}_ms=${r.batch[arm].map(fmt4).join(',')}`);
-        console.log(`time n=${n} w=${w} op=${op} arm=${arm} single_median_ms=${fmt3(median(r.single[arm]))} single_rounds=${r.single[arm].length} batch32_median_ms=${fmt4(median(r.batch[arm]))} batch32_rounds=${r.batch[arm].length}`);
+        const timeLine = `time n=${n} w=${w} op=${op} arm=${arm} single_median_ms=${fmt3(median(r.single[arm]))} single_rounds=${r.single[arm].length} batch32_median_ms=${fmt4(median(r.batch[arm]))} batch32_rounds=${r.batch[arm].length}`;
+        timeLines.push(timeLine);
+        console.log(timeLine);
       }
       const singleRatios = r.single.subgroup.map((v, i) => v / r.single.baseline[i]);
       const batchRatios = r.batch.subgroup.map((v, i) => v / r.batch.baseline[i]);
@@ -358,6 +369,34 @@ for (const n of SHAPES) {
 
 console.log(`checks: ${allCheckOk}/${allChecked} arm answers exact against the CPU reference`);
 console.log(`aggregate pairs=${pairsTotal} single_subgroup_faster=${singleSubFaster} batch32_subgroup_faster=${batchSubFaster} (paired-median ratio < 1)`);
+
+// Claim protocol rule 1 on the WGSL wall-clock channel (the 2026-10-25
+// adoption, ADR-0360): publish the GAP-1.15 regime clusters on the
+// channel's OWN named metric (host wall-clock submit->completion, ms).
+// The clustering mechanism is scripts/gpu_regime_classify.py's single
+// implementation (metric-parametric); this harness feeds it the `time`
+// lines it printed above, so the section re-derives from the log text
+// exactly. Rule 2's sign classification is UNIMPLEMENTED on this
+// channel (its own later slice) and nothing here moves a :measured?
+// flag or a workgroup row (rule 4, unchanged).
+let claimStatus;
+try {
+  const res = spawnSync(
+    'python3',
+    [path.join(repoRoot, 'scripts', 'gpu_regime_classify.py'), '--wgsl-log', '-'],
+    { input: timeLines.join('\n') + '\n', encoding: 'utf8' },
+  );
+  if (res.status === 0 && res.stdout.trim()) {
+    console.log('');
+    console.log(res.stdout.trimEnd());
+    claimStatus = 'claim-protocol-rule1: PUBLISHED (rule 1 only -- rule 2 sign classification UNIMPLEMENTED on this channel; no :measured? flag or workgroup row moves)';
+  } else {
+    claimStatus = 'claim-protocol-rule1: UNAVAILABLE -- classifier failed (exit ' + res.status + '): ' + String(res.stderr ?? '').trim().slice(0, 300) + ' -- a log without the rule-1 section is NOT a claim-protocol record';
+  }
+} catch (e) {
+  claimStatus = 'claim-protocol-rule1: UNAVAILABLE -- classifier spawn threw: ' + String(e).slice(0, 200) + ' -- a log without the rule-1 section is NOT a claim-protocol record';
+}
+console.log(claimStatus);
 console.log('run_finished=' + new Date().toISOString());
 console.log('VERDICT: ' + (allCheckOk === allChecked
   ? 'MEASURED-WALLCLOCK -- timings above are wall-clock submit-to-completion on this host (GPU-core timestamps: see gpu-timestamp-write line). CORRECTNESS ALSO VERIFIED per cell. NO :measured? flag or workgroup row is flipped by this log.'

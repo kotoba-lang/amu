@@ -200,6 +200,45 @@ operators):
     order), so this is agreement of pair partitions over a shared key
     index set, not clock identity.
 
+WGSL WALL-CLOCK CHANNEL (rule 1, metric-named):
+
+  The 2026-10-25 claim-protocol WGSL channel adoption (ADR-0360, "the
+  claim-protocol WGSL channel" amendment; record
+  docs/evidence/gpu/claim-protocol-wgsl-channel-20261025.txt) carries
+  rule 1 with the baseline metric NAMED BY THE CHANNEL: the WGSL
+  channel's only clock is host wall-clock submit->completion
+  (performance.now) -- the measured adapter refuses GPU-core timestamps.
+  The clustering mechanism is THIS module's, unchanged and
+  metric-parametric (GAP-1.15 over per-run medians); only the
+  publication names the metric (parse_wgsl_measure_log /
+  render_wgsl_rule1_section, CLI --wgsl-log).
+
+  RUN UNIT on this channel (the adoption's parenthetical, "per cell-arm
+  run"): one run is one cell-arm sampling block -- (n, W, operator,
+  metric) -- whose per-run median is that block's median over its
+  paired rounds of the arm's host submit->completion time (the
+  measure-log's own `time` line). The MSL channel's run is a fresh
+  process; this channel's is the paired sampling block. single and
+  batch32 are TWO metrics of this channel (one dispatch per submit vs
+  amortized over 32 dispatches in one command buffer); each clusters
+  only its own runs -- never mixed.
+
+  RULE 2'S UNIT on this channel is NAMED HERE but published by its own
+  later slice (UNIMPLEMENTED): the per-run ratio is the block's
+  paired-median ratio (median over the block's rounds of
+  subgroup/baseline -- the measure-log's `pair` line), and a WGSL sign
+  claim is channel-scoped (it never flips an MSL cell and never answers
+  a workgroup row). No sign verdict is rendered by the WGSL path.
+
+  DELIBERATE BOUNDARY: the classifier is never run over the committed
+  2026-10-25 pre-adoption measure-log's VALUES in this module's tests
+  -- that record stays OUT of the claim protocol (it predates the
+  adoption) and the named UNMEASURED question (do the WGSL host-clock
+  baselines cluster into more than one regime level at all?) is
+  answered only by a fresh claim-protocol run. The corpus self-test
+  checks that log's STRUCTURE only and pins that it still carries no
+  regime section.
+
 CLI:
 
     python3 scripts/gpu_regime_classify.py <summary.md>
@@ -217,6 +256,10 @@ CLI:
         ANALOGUE) from the driver's raw run log, followed by the
         pair-level cross-operator identity section when the log
         carries at least two operators
+    python3 scripts/gpu_regime_classify.py --wgsl-log <measure-log.txt|->
+        print the claim-protocol rule-1 section for a WGSL wall-clock
+        measurement record (the metric-named WGSL channel publication;
+        read the measure-log from a path or from stdin with '-')
     python3 scripts/gpu_regime_classify.py --self-test
         unit fixtures + a regression pass over every committed summary.md
         under docs/evidence/ (pinned manual classifications must
@@ -1425,6 +1468,169 @@ def render_pair_identity_section(per_op, gap_max=GAP_MAX, via=None):
                  "no rule-3 phrase, no selection answer, no "
                  "`:measured?` flag, no workgroup row. Clock identity "
                  "is never asserted (the harness reads no clock).")
+    return "\n".join(lines)
+
+
+# ------------------------------------------- WGSL wall-clock channel (rule 1)
+# The claim-protocol WGSL channel adoption (2026-10-25, ADR-0360) carries
+# rule 1 with the baseline metric NAMED BY THE CHANNEL: host wall-clock
+# submit->completion, milliseconds. The clustering mechanism is this
+# module's own (GAP-1.15, metric-parametric); only the publication names
+# the metric. See the module docstring for the run unit ("per cell-arm
+# run") and the deliberate boundary on the pre-adoption log.
+
+WGSL_METRICS = ("single", "batch32")
+
+WGSL_METRIC_TEXT = {
+    "single": ("host wall-clock submit->completion, milliseconds (one "
+               "dispatch per queue submit; the performance.now bracket "
+               "submit -> onSubmittedWorkDone)"),
+    "batch32": ("host wall-clock submit->completion per dispatch, "
+                "milliseconds (32 dispatches of the same kernel in one "
+                "command buffer; the submit bracket divided by 32)"),
+}
+
+WGSL_TIME_RE = re.compile(
+    r"^time n=(\d+) w=(\d+) op=(\w+) arm=(\w+) "
+    r"single_median_ms=([\d.]+) single_rounds=(\d+) "
+    r"batch32_median_ms=([\d.]+) batch32_rounds=(\d+)\s*$")
+
+
+def parse_wgsl_measure_log(text):
+    """Parse the per-run medians out of a WGSL measure-log.
+
+    Returns {metric: {op: {(n, w): {"baseline": float or None,
+                                    "subgroup": float or None}}}}
+    where metric is 'single' or 'batch32' and (n, w) is the run identity
+    of the adoption's \"per cell-arm run\" (one cell-arm sampling block;
+    its per-run median is the block's `time` line). Raises ValueError on
+    a log with no `time` lines and on a duplicate (metric, op, run, arm)
+    -- a duplicated block is a measurement error, not a merge candidate.
+    """
+    out = {m: {} for m in WGSL_METRICS}
+    seen = set()
+    n_time = 0
+    for line in text.splitlines():
+        m = WGSL_TIME_RE.match(line)
+        if not m:
+            continue
+        n, w, op, arm, sm, _sr, bm, _br = m.groups()
+        n_time += 1
+        run = (int(n), int(w))
+        for metric, val in (("single", sm), ("batch32", bm)):
+            key = (metric, op, run, arm)
+            if key in seen:
+                raise ValueError(f"duplicate time line for {key}")
+            seen.add(key)
+            rec = out[metric].setdefault(op, {}).setdefault(
+                run, {"baseline": None, "subgroup": None})
+            rec[arm] = float(val)
+    if n_time == 0:
+        raise ValueError("no 'time n=... w=... op=... arm=...' lines found "
+                         "in the WGSL measure log")
+    return out
+
+
+def _wgsl_fmt(v):
+    return f"{v:.4f}"
+
+
+def render_wgsl_rule1_section(parsed, gap_max=GAP_MAX):
+    """The claim-protocol rule-1 section for a WGSL wall-clock record.
+
+    parsed: parse_wgsl_measure_log's return. Returns markdown (no
+    trailing newline). Rule 1 ONLY -- rule 2's sign classification is
+    UNIMPLEMENTED on this channel (its own later slice); nothing here
+    renders a sign verdict, and no :measured? flag or workgroup row is
+    in scope of this publication (rule 4, unchanged).
+    """
+    lines = []
+    lines.append("## Regime classification (claim protocol rule 1, "
+                 "WGSL wall-clock channel)")
+    lines.append("")
+    lines.append("Published by scripts/gpu_regime_classify.py (GAP-1.15), "
+                 "invoked by the WGSL measurement harness. This channel's "
+                 "baseline metric is NAMED BY THE CHANNEL (the 2026-10-25 "
+                 "claim-protocol WGSL adoption, ADR-0360): host wall-clock "
+                 "submit->completion in milliseconds -- the harness reads "
+                 "no GPU clock. A regime here is a cluster of the observed "
+                 "baseline per-run median levels in that metric, named by "
+                 "its host-ms range, per operator.")
+    lines.append("")
+    lines.append("Run unit on this channel (the adoption's \"per cell-arm "
+                 "run\"): one run is one cell-arm sampling block -- "
+                 "(n, W, operator, metric) -- whose per-run median is the "
+                 "block's median over its paired rounds of host "
+                 "submit->completion (the measure-log's own `time` line). "
+                 "The MSL channel's run is a fresh process; this "
+                 "channel's is the paired sampling block. single and "
+                 "batch32 are TWO metrics of the channel (one dispatch "
+                 "per submit vs amortized over 32 dispatches in one "
+                 "command buffer); each clusters only its own runs -- "
+                 "never mixed.")
+    lines.append("")
+    lines.append("Clustering rule GAP-1.15: per operator, the per-run "
+                 "baseline medians sorted ascending, single-linkage -- the "
+                 "next median joins the current level at <= 1.15x the "
+                 "previous, else it starts a new level. The rule is "
+                 "metric-parametric as written (its 1.15 window derives "
+                 "from the MSL corpus's decided separation and carries "
+                 "unchanged); only the publication names the metric. "
+                 "Rule 2's sign classification is NOT published here -- "
+                 "UNIMPLEMENTED on this channel (its own later slice), "
+                 "and rule 4 is unchanged: this publication moves no "
+                 "`:measured?` flag and no workgroup row.")
+    for metric in WGSL_METRICS:
+        per_op = parsed.get(metric) or {}
+        if not per_op:
+            continue
+        lines.append("")
+        lines.append(f"### metric: {metric} -- {WGSL_METRIC_TEXT[metric]}")
+        lines.append("")
+        lines.append("Per-run baseline medians (rule 1's first publication; "
+                     "baseline = the :reduce WGSL arm):")
+        lines.append("")
+        lines.append("| operator | run (n, W) | baseline per-run median "
+                     "(host ms) |")
+        lines.append("|---|---|---|")
+        missing = []
+        for op in sorted(per_op):
+            for run in sorted(per_op[op]):
+                rec = per_op[op][run]
+                if rec["baseline"] is None:
+                    missing.append((op, run))
+                    continue
+                lines.append(f"| {op} | n={run[0]} W={run[1]} | "
+                             f"{_wgsl_fmt(rec['baseline'])} |")
+        lines.append("")
+        lines.append("Regime clusters:")
+        lines.append("")
+        lines.append("| operator | level | host-ms range | runs (baseline "
+                     "per-run median) |")
+        lines.append("|---|---|---|---|")
+        for op in sorted(per_op):
+            med = {run: rec["baseline"] for run, rec in per_op[op].items()
+                   if rec["baseline"] is not None}
+            if not med:
+                raise ValueError(f"operator {op} has no baseline run median "
+                                 f"in metric {metric} -- nothing to cluster")
+            levels = level_clusters(med, gap_max)
+            n = len(levels)
+            for i, lv in enumerate(levels, start=1):
+                tag = _level_tag(i, n)
+                rng = (_wgsl_fmt(lv["lo"]) if lv["lo"] == lv["hi"]
+                       else f"{_wgsl_fmt(lv['lo'])}..{_wgsl_fmt(lv['hi'])}")
+                members = ", ".join(
+                    f"n={r[0]} W={r[1]} ({_wgsl_fmt(lv['medians'][r])})"
+                    for r in lv["runs"])
+                lines.append(f"| {op} | {tag} | {rng} | {members} |")
+        if missing:
+            lines.append("")
+            lines.append("Named and excluded (a block with no baseline arm "
+                         "sample -- incomplete blocks are data, never "
+                         "silently dropped): "
+                         + "; ".join(f"{op} n={run[0]} W={run[1]}"
+                                     for op, run in missing) + ".")
     return "\n".join(lines)
 
 
@@ -2956,6 +3162,150 @@ def _self_test_pair_identity_unit(stats):
             "one operator", stats)
 
 
+def _self_test_wgsl_unit(stats):
+    # ---- the WGSL wall-clock channel's rule-1 publication ----
+    # Synthetic measure-log lines in the 2026-10-25 format's `time` shape
+    # (the classification reads the log's PRINTED per-run medians, so the
+    # published section re-derives from the carrier text exactly).
+    log = "\n".join([
+        "time n=1048576 w=32 op=sum arm=subgroup "
+        "single_median_ms=0.5100 single_rounds=11 "
+        "batch32_median_ms=0.0700 batch32_rounds=7",
+        "time n=1048576 w=32 op=sum arm=baseline "
+        "single_median_ms=0.5000 single_rounds=11 "
+        "batch32_median_ms=0.0638 batch32_rounds=7",
+        "time n=1048576 w=64 op=sum arm=baseline "
+        "single_median_ms=0.5200 single_rounds=11 "
+        "batch32_median_ms=0.0600 batch32_rounds=7",
+        "time n=1048576 w=64 op=sum arm=subgroup "
+        "single_median_ms=0.5050 single_rounds=11 "
+        "batch32_median_ms=0.0610 batch32_rounds=7",
+        "time n=1048576 w=128 op=sum arm=baseline "
+        "single_median_ms=0.8000 single_rounds=11 "
+        "batch32_median_ms=0.0900 batch32_rounds=7",
+        "time n=1048576 w=128 op=sum arm=subgroup "
+        "single_median_ms=0.8100 single_rounds=11 "
+        "batch32_median_ms=0.0910 batch32_rounds=7",
+    ])
+    parsed = parse_wgsl_measure_log(log)
+    _expect(parsed["single"]["sum"][(1048576, 32)]["baseline"] == 0.5
+            and parsed["single"]["sum"][(1048576, 32)]["subgroup"] == 0.51,
+            "wgsl parse: per-arm per-run medians from the time line", stats)
+    _expect(parsed["batch32"]["sum"][(1048576, 128)]["baseline"] == 0.09,
+            "wgsl parse: batch32 is its own metric", stats)
+    _expect(set(parsed["single"]["sum"]) == {(1048576, 32), (1048576, 64),
+                                             (1048576, 128)},
+            "wgsl parse: the run identity is (n, W) -- one cell-arm "
+            "sampling block", stats)
+
+    # duplicate blocks refuse (a measurement error, not a merge candidate)
+    try:
+        parse_wgsl_measure_log(log + "\n" + log.splitlines()[0])
+        raise AssertionError("duplicate wgsl time line must raise")
+    except ValueError:
+        stats["passed"] += 1
+
+    # a log with no time lines refuses
+    try:
+        parse_wgsl_measure_log("check n=1 w=32 op=sum arm=baseline ok=1\n")
+        raise AssertionError("wgsl log with no time lines must raise")
+    except ValueError:
+        stats["passed"] += 1
+
+    out = render_wgsl_rule1_section(parsed)
+    # the metric is NAMED BY THE CHANNEL: host-ms, never gpu-ns
+    _expect("host wall-clock submit->completion" in out
+            and "host-ms range" in out and "gpu-ns" not in out,
+            "wgsl section names the channel's own metric, not gpu-ns",
+            stats)
+    _expect("## Regime classification (claim protocol rule 1, "
+            "WGSL wall-clock channel)" in out,
+            "wgsl section title", stats)
+    _expect("### metric: single -- host wall-clock submit->completion, "
+            "milliseconds (one dispatch per queue submit; the "
+            "performance.now bracket submit -> onSubmittedWorkDone)" in out
+            and "### metric: batch32" in out,
+            "wgsl section keeps single and batch32 apart with each "
+            "metric's own name", stats)
+
+    # single metric: 0.5000/0.5200 merge at GAP-1.15, 0.8000 splits
+    single_part = out.split("### metric: batch32")[0]
+    rows = [l for l in single_part.splitlines()
+            if l.startswith("| sum |") and "fastest observed" in l]
+    _expect(rows == ["| sum | 1 (fastest observed) | 0.5000..0.5200 | "
+                     "n=1048576 W=32 (0.5000), n=1048576 W=64 (0.5200) |"],
+            "wgsl single metric: the fastest level merges W = 32/64",
+            stats)
+    rows = sorted(l for l in out.splitlines()
+                  if l.startswith("| sum |") and "slowest observed" in l)
+    _expect(rows == ["| sum | 2 (slowest observed) | 0.0900 | "
+                     "n=1048576 W=128 (0.0900) |",
+                     "| sum | 2 (slowest observed) | 0.8000 | "
+                     "n=1048576 W=128 (0.8000) |"],
+            "wgsl: each metric clusters only its own runs -- the two "
+            "slowest rows carry their own metric's values", stats)
+    _expect("| sum | n=1048576 W=32 | 0.5000 |" in out.splitlines(),
+            "wgsl rule 1's first publication: per-run baseline medians",
+            stats)
+
+    # one run -> one level, named
+    out1 = render_wgsl_rule1_section(parse_wgsl_measure_log(
+        "time n=1 w=32 op=max arm=baseline single_median_ms=0.4000 "
+        "single_rounds=11 batch32_median_ms=0.0500 batch32_rounds=7\n"))
+    _expect("1 (the only observed level)" in out1,
+            "wgsl single run: degenerate one level, named", stats)
+
+    # a block with no baseline arm sample is NAMED, never silently dropped
+    outm = render_wgsl_rule1_section(parse_wgsl_measure_log(
+        "time n=1 w=32 op=min arm=subgroup single_median_ms=0.4000 "
+        "single_rounds=11 batch32_median_ms=0.0500 batch32_rounds=7\n"
+        "time n=1 w=64 op=min arm=baseline single_median_ms=0.4100 "
+        "single_rounds=11 batch32_median_ms=0.0510 batch32_rounds=7\n"))
+    _expect("Named and excluded" in outm and "min n=1 W=32" in outm,
+            "wgsl: the baseline-less block is named and excluded", stats)
+    _expect("| min | n=1 W=64 | 0.4100 |" in outm,
+            "wgsl: the complete block still classifies", stats)
+
+    # no sign verdict is rendered anywhere (rule 2 on this channel is
+    # UNIMPLEMENTED and its own later slice)
+    _expect("regime-invariant" not in out and "regime-scoped" not in out,
+            "wgsl rule-1 section renders no rule-2 sign verdict", stats)
+
+
+def _self_test_wgsl_corpus(stats, corpus_root):
+    # STRUCTURE-ONLY regression over the committed pre-adoption WGSL
+    # measure-log -- the deliberate boundary in the module docstring: the
+    # classifier is never run over this record's VALUES (the record stays
+    # OUT of the claim protocol; the named UNMEASURED question of whether
+    # the WGSL host-clock baselines cluster into more than one regime
+    # level waits on a fresh claim-protocol run).
+    log_path = (corpus_root / "gpu" / "wgsl-measure-chrome-20261025"
+                / "measure-log.txt")
+    text = log_path.read_text()
+    n_time = sum(1 for line in text.splitlines() if WGSL_TIME_RE.match(line))
+    _expect(n_time == 72,
+            f"the committed wgsl log carries 72 time lines (36 blocks x "
+            f"2 arms), got {n_time}", stats)
+    parsed = parse_wgsl_measure_log(text)
+    runs_expected = {(n, w) for n in (1000003, 1048576)
+                     for w in (32, 64, 128, 256, 512, 1024)}
+    for metric in WGSL_METRICS:
+        _expect(set(parsed[metric]) == {"sum", "max", "min"},
+                f"wgsl corpus {metric}: the three operators", stats)
+        for op in ("sum", "max", "min"):
+            _expect(set(parsed[metric][op]) == runs_expected,
+                    f"wgsl corpus {metric}/{op}: the 12 (n, W) runs", stats)
+            for run, rec in parsed[metric][op].items():
+                _expect(rec["baseline"] is not None
+                        and rec["subgroup"] is not None,
+                        f"wgsl corpus {metric}/{op}/{run}: both arms "
+                        "present", stats)
+    # the pre-adoption record still publishes no regime section
+    _expect("regime" not in text.lower(),
+            "the committed pre-adoption wgsl log stays rule-1 EMPTY",
+            stats)
+
+
 def main():
     args = sys.argv[1:]
     if args == ["--self-test"]:
@@ -2971,7 +3321,14 @@ def main():
         _self_test_identity_unit(stats)
         _self_test_identity_corpus(stats, ROOT / "docs" / "evidence")
         _self_test_pair_identity_unit(stats)
+        _self_test_wgsl_unit(stats)
+        _self_test_wgsl_corpus(stats, ROOT / "docs" / "evidence")
         print(f"TOTAL: {stats['passed']} assertions passed, 0 failed")
+        return
+    if len(args) == 2 and args[0] == "--wgsl-log":
+        text = (sys.stdin.read() if args[1] == "-"
+                else pathlib.Path(args[1]).read_text())
+        print(render_wgsl_rule1_section(parse_wgsl_measure_log(text)))
         return
     if len(args) == 2 and args[0] == "--pairs":
         complete, incomplete = parse_run_log_pairs(

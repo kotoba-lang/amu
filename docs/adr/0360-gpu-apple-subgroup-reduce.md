@@ -1257,3 +1257,64 @@ conservative `:baseline` answer for the named device stands.
 State: ACCEPTED DESIGN ONLY (this amendment). IMPLEMENTED: nothing --
 no code moves in this slice. MEASURED: nothing -- no hardware ran.
 Record: `docs/evidence/gpu/claim-protocol-wgsl-channel-20261025.txt`.
+
+## Amendment 2026-10-25 (WGSL harness rule 1): harness-side rule-1
+classification for the WGSL channel is IMPLEMENTED
+
+The adoption's named missing piece (i) -- "harness-side rule-1
+classification for the WGSL harness: a run's log/summary must publish
+the GAP-1.15 clusters on the WGSL baseline metric" -- lands. The WGSL
+measurement harness (scripts/measure-gpu-reduce-wgsl.mjs) now publishes
+a "Regime classification (claim protocol rule 1, WGSL wall-clock
+channel)" section in its measure-log, computed by
+scripts/gpu_regime_classify.py (new `--wgsl-log` route; parse_wgsl_measure_log
+/ render_wgsl_rule1_section) from the log's own printed `time` lines, so
+the section re-derives from the carrier text exactly. The clustering
+mechanism (GAP-1.15, level_clusters) is the MSL channel's, unchanged and
+metric-parametric; only the publication names the metric -- host
+wall-clock submit->completion, milliseconds, never gpu-ns (pinned by
+test). On classifier failure the log prints
+`claim-protocol-rule1: UNAVAILABLE -- ... a log without the rule-1
+section is NOT a claim-protocol record`; a run cannot silently pass as
+claim-protocol.
+
+The run unit the adoption's parenthetical left implicit is now FIXED
+mechanically and named in the publication: a run is one cell-arm
+sampling block -- (n, W, operator, metric) -- whose per-run median is
+the block's median over its paired rounds of host submit->completion
+(the measure-log's `time` line); the MSL channel's run is a fresh
+process, this channel's is the paired sampling block. single and
+batch32 are TWO metrics of the channel (one dispatch per submit vs
+amortized over 32 dispatches in one command buffer); each clusters only
+its own runs -- never mixed. Rule 2's unit on this channel is NAMED
+with it -- the per-run ratio is the block's paired-median ratio (the
+`pair` line: median over the block's rounds of subgroup/baseline; the
+adoption record's own usage, "its per-run ratios ... 13/36 single and
+17/36 batch32 pairs") -- but rule 2's WGSL PUBLICATION stays
+UNIMPLEMENTED, its own later slice; the rule-1 section renders no sign
+verdict (pinned by test).
+
+Deliberate boundary, named in code and tests: the classifier is never
+run over the committed 2026-10-25 pre-adoption measure-log's values.
+That record stays OUT of the claim protocol and the named UNMEASURED
+question (do the WGSL host-clock baselines cluster into more than one
+regime level at all) is answered only by the fresh claim-protocol run
+of missing piece (ii). The corpus self-test checks that log's structure
+only and pins that it still carries no regime section.
+
+State, precisely: IMPLEMENTED (code + tests: gpu_regime_classify.py
+--self-test GREEN at 2413 assertions, 0 failed -- +97 over the 2316
+baseline: 15 WGSL unit fixtures and 82 structure-only corpus
+assertions; the MSL corpus regression unchanged and green). ACCEPTED
+DESIGN ONLY: the channel adoption and the run/ratio unit definitions
+(this amendment). MEASURED: nothing -- no hardware ran in this slice;
+every number is tool output or committed record text. UNMEASURED,
+unchanged: the WGSL baseline metric's regime structure; any
+claim-protocol WGSL run's sign; per-kernel GPU time; every workgroup-row
+question. Rule 4 unchanged: no `:measured?` flag and no workgroup row
+moves. Not run this slice, named: the scoped GPU gate and the full
+suite (this diff touches no `.cljk` namespace; the tick's run-time
+budget expired after the self-test/CLI verification) -- no green suite
+is claimed and the documented red-at-base is not re-verified here.
+
+Record: `docs/evidence/gpu/wgsl-rule1-classification-20261025.txt`.
