@@ -16,8 +16,8 @@
         (and (>= (io-argc) 4) (string=? (io-arg 0) "compile") (string=? (io-arg 2) "--target")
              (string=? (io-arg 3) "aarch64-linux"))
           (xa-command)
-        ;; ADR 0371 step 5: the GPU provider's dynamically linked image (seed/78)
+        ;; The native-only entry refuses the C dynamic-loader/runtime format.
         (and (= (io-argc) 8) (string=? (io-arg 0) "compile") (string=? (io-arg 2) "--target")
              (string=? (io-arg 3) "x86_64-linux") (string=? (io-arg 6) "--format") (string=? (io-arg 7) "platform-linked"))
-          (xp-command)
+          (drv-fail0 E-TARGET)
         :else (xg-main)))
