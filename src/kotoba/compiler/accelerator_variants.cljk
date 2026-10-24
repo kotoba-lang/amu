@@ -313,10 +313,11 @@
   measured-but-scoped cell; W = 256, W = 1024, W = 128, W = 64 and
   W = 32 carry their own shape-2 flips),
   every other Apple device, every other vendor, and cross-day
-  replication beyond its ONE measured cell (the W = 256 anchor's
-  later-day run, 2026-10-24,
-  docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w256 -- the
-  flip note's CROSS-DAY paragraph; every other cell's cross-day
+  replication beyond its TWO measured cells (the W = 256 anchor's and
+  the W = 512 cell's later-day runs, both 2026-10-24,
+  docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w256 and
+  docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w512 -- the
+  flip note's CROSS-DAY paragraphs; every other cell's cross-day
   replication) --
   and no width outside this set answers at all (the row refuses it at
   selection)."
@@ -387,7 +388,11 @@
   cell AND the shape-2 series' fifth cell's own record
   (docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w64, the
   W = 64 shape-2 flip's basis); W = 512 ->
-  the W-sweep series' second cell (its shape-2 runs refused); W = 32 ->
+  the W-sweep series' second cell (its shape-2 runs refused) AND its
+  cross-day replication record
+  (docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w512 -- a
+  later-day corroboration of the W = 512 basis, 2026-10-24; it flipped
+  nothing: W = 512 was already flipped 2026-10-23); W = 32 ->
   the W-sweep series' sixth cell AND the shape-2 series' sixth cell's
   own record
   (docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w32, the
@@ -397,7 +402,8 @@
   {256 ["docs/evidence/gpu-simdgroup-reduce-m1max-20261023"
         "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w256"
         "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w256"]
-   512 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512"]
+   512 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512"
+        "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w512"]
    1024 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w1024"
          "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w1024"]
    128 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w128"
@@ -469,8 +475,9 @@
   UNMEASURED at every cell (selection cannot vary with n; the record's
   :shapes names the measured shapes so no claim extends past them); the
   GLSL arm, every other Apple device and every other vendor are
-  UNMEASURED, and cross-day replication is measured at exactly ONE cell
-  (the W = 256 anchor -- the CROSS-DAY paragraph below) and UNMEASURED
+  UNMEASURED, and cross-day replication is measured at exactly TWO
+  cells (the W = 256 anchor and the W = 512 cell -- the CROSS-DAY
+  paragraphs below) and UNMEASURED
   at every other. Read-back: 36/36
   ok=1 per cell, :max/:min bit-exact vs the CPU reference and between
   arms, :sum 3.05e-05 between arms at W = 256 and W = 512, 6.10e-05
@@ -489,6 +496,9 @@
   docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w256
   (W = 256, shape 2 -- the shape-2 flip's own record),
   docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512 (W = 512),
+  docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w512
+  (W = 512 -- the W = 512 cell's cross-day replication record,
+  corroboration, not a flip basis),
   docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w1024 (W = 1024),
   docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w128 (W = 128),
   docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w64 (W = 64),
@@ -642,9 +652,38 @@
   REPLICATION DOES NOT LICENSE: no :measured? flag moves (the anchor
   was already flipped 2026-10-23) and no workgroup row (ADR-0355/0358)
   moves -- it is replication evidence only; cross-day replication of
-  every OTHER cell stays UNMEASURED, and the measured-but-REFUSED
+  every OTHER cell stayed UNMEASURED at that slice (the W = 512 cell's
+  own later-day run is the next paragraph), and the measured-but-REFUSED
   shape-2 W = 512 cell's refusal is a protocol decision no re-run
-  revisits.")
+  revisits.
+  CROSS-DAY REPLICATION OF THE W = 512 CELL (shape 1 -- the record's
+  first non-anchor cross-day row, 2026-10-24,
+  docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w512): the
+  byte-identical protocol re-ran the W = 512 cell (measured 2026-10-23
+  23:22, docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512)
+  on a later day and the verdict reproduces: rule 2 REGIME-INVARIANT
+  FASTER again (18/18 per-run ratios below 1.0 on both days, every
+  observed regime one-sided), paired median ratios 0.814/0.824/0.824
+  for :sum/:max/:min against the wsweep session's 0.815/0.823/0.824.
+  The rule-3 regime-matched comparison against the wsweep record: sign
+  reproduces in sign strictly at every operator (all 6 per-run ratios
+  hold the historical sign at each); magnitude reproduces within 0.001
+  for :sum and splits by clock regime for :max/:min (mixed strata
+  draws) -- but at the MATCHED strata the within-stratum deltas are
+  0.000-0.004 (max: 0.001; min: 0.004/0.000; sum: 0.000). The emitted
+  shaders are byte-identical to the wsweep cell's (diff -r empty,
+  checked). Rule 1 this run: one level for :sum, three for :max, three
+  for :min; cross-operator level identity REFUTED (9/15 run pairs).
+  Read-back: 36 verify lines, ok=1 on every one; :max/:min bit-exact vs
+  the CPU reference and between arms, :sum 1.63e-05 vs the reference
+  and 3.05e-05 between arms (regrouping). WHAT THIS REPLICATION DOES
+  NOT LICENSE: no :measured? flag moves (W = 512 was already flipped
+  2026-10-23) and no workgroup row (ADR-0355/0358) moves -- it is
+  replication evidence only; cross-day replication of every remaining
+  cell (W = 32/64/128/1024 at shape 1 and the shape-2 cells, each
+  runnable on a day later than its own 2026-10-24 session) stays
+  UNMEASURED, and the measured-but-REFUSED shape-2 W = 512 cell's
+  refusal is a protocol decision no re-run revisits.")
 
 (def variant-bases
   "Why each variant exists. Design rationale, not measurement evidence."
