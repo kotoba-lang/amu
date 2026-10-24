@@ -16,8 +16,13 @@ through the u8 debug port. These are emulated guest hardware observations.
 Loaded/computed memory bases still refuse. Locked-project diagnostics,
 all existing object/image/EFI refusals and corruption controls pass; the
 eight object fixtures retain byte parity with the previous native root.
-Runtime rejection of mapped but out-of-window accesses still needs its own
-guest control. These results do not qualify the complete kernel.
+`runtime-bounds.json` subsequently binds five guest controls to the immutable
+memory compiler source in04623fbc0: width crossing, misalignment, excessive
+tier length, negative index and null base. Each trace names #UD at the exact
+native window-guard UD2, distinguished from the fuel guard and a general
+boot failure. The valid-access control separately reaches42/fuel999999;
+the guard observer refuses it and writes no PASS receipt. These results do
+not qualify the complete kernel or a later compiler successor.
 
 The exact full kernel and all15 dependencies are retained. Compilation now
 passes watchdog/link-frame and refuses `kernel-cpuid-eax` in the pinned DMA
