@@ -1,5 +1,6 @@
 (ns kotoba.compiler.native-module-lock (:export [main])
  (:require [kotoba.compiler.module-lock :as lock] [kotoba.form :as f]
+           [kotoba.compiler.project-files :as project]
            [kotoba.compiler.kotoba-reader :as reader]))
 (defn- parse [text :string] [:ref :form/r]
  (let [r (reader/read-forms-bounded text 512 200000)]
@@ -15,14 +16,6 @@
  (let [r (typed-cap-call :fs/app-data :string :string (string-concat "\u0000FS2\u0000A" (string-concat path "\u0000")))]
   (if (and (>= (string-length r) 5) (string=? (string-substring r 0 5) "\u0000FS2\u0000"))
    (string-substring r 5 (string-length r)) (throw :test/fs2-ack))))
-(defn- path-loader [input :string roots [:list :string]] [:ref :form/r]
- (let [source (file-text input) util (file-text (string-concat (typed-list-nth [:list :string] roots 0) "/util.kotoba"))
-       root (get (lock/module-info source) :namespace) dependency (get (lock/module-info util) :namespace)
-       sources (f/assoc-form (f/assoc-form (f/form-map (f/no-forms)) root (f/string-form source)) dependency (f/string-form util))]
-  (f/assoc-form (f/assoc-form (f/form-map (f/no-forms)) (f/keyword-form :root) root) (f/keyword-form :sources) sources)))
-(defn- path-loader-checked [input :string roots [:list :string]] [:result [:ref :form/r] :keyword]
- (try (result-ok-of [:result [:ref :form/r] :keyword] (path-loader input roots))
-  (catch :keyword reason (result-err-of [:result [:ref :form/r] :keyword] reason))))
 (defn- pure [] :i64
  (let [util "(ns util (:export [twice]))\n(defn twice [x :i64] :i64 (* 2 x))\n"
        main "(ns main (:require [util :as u]) (:export [run]))\n(defn run [x :i64] :i64 (+ 1 (u/twice x)))\n"
@@ -52,7 +45,7 @@
             (print first))
         (string=? mode "write-project")
           (let [roots (typed-list-conj [:list :string] (typed-list-new [:list :string]) (arg "2"))
-                result (lock/lock-from-source-paths (fn-ref path-loader-checked) (arg "1") roots (arg "3"))]
+                result (lock/lock-from-source-paths (fn-ref project/load-closed-graph-checked) (arg "1") roots (arg "3"))]
             (print (lock/lock-text result)))
         (string=? mode "validate") (let [r (lock/validate-lock (parse (arg "1")))] (print (lock/lock-cid r)))
         (string=? mode "source") (let [s (lock/read-verified-source (arg "1") (arg "2"))] (print s))
