@@ -50,13 +50,27 @@ driver is handed the same conversions. The capability lists match glslang's
   the h2 and int8 kernels ran.
 * `gad-radv-main-provider.json`: the same phase with this tree's own
   provider (145 rows). The h2 and int8 kernels are recorded as skipped.
+* `b70-anv.json`: the same phase on the B70 (x86_64, Intel BMG G31, ANV,
+  Mesa 25.2.8) with the device-features provider: 191 rows, int8 and h2
+  included, confined. ANV's subgroups are 32 wide (the probe reads 2 per
+  64-invocation workgroup), so the h2 kernels' two-subgroup path runs
+  natively there; the wave32 session is RADV's only.
 * The runs' temporary directories were removed.
 
 ## What the receipts show
 
 * **The unit:** 147 Kotoba cases pass, and the control fails exactly once.
-  The checker accepts glslang's modules. The 99 earlier modules are
-  byte-identical to `gpu-kernel-kir2-var-20261024/`.
+  The checker accepts glslang's modules.
+* **One change to earlier modules.** `kd-q4-scale`/`kd-q4-min` (kdot r1, r8,
+  x8 and i8) and the h2 kernels' `h_scale`/`h_min` used to pick between their
+  two forms with `OpSelect`. They now branch, as the GLSL's early return
+  does. Both forms read inside the block, but a driver does not speculate a
+  storage load, so the selection kept every byte load live at once.
+  * On ANV that made the x8 kernel's SIMD32 register allocation fail. It
+    fell back to SIMD16 and ran at 1.37 times glslang's time
+    (`gpu-kernel-exec-20261024/`).
+  * The 15 modules built from these helpers change; the other 84 are
+    byte-identical to `gpu-kernel-kir2-var-20261024/`.
 * **Oracles:** all 105 modules are valid under `spirv-val --target-env
   vulkan1.1`, and the two tool images write the same bytes.
 * **GPU** (226 rows). In 33 h2 cases, every output buffer is byte-identical

@@ -47,60 +47,97 @@ for every row of every fixture: 12 s for the 248320-row lm_head.
 For the lm_head, the f64 argmax is token 66749. Its logit 2.2252 leads the
 runner-up by 0.181.
 
-## The gates (`gpu-kernel-exec.json`, gad)
+## The gates (`gad-radv.json`, `b70-anv.json`)
 
-The run was on gad (x86_64, Radeon 8060S Graphics, RADV GFX1151), and every
-guest's provider was confined (Landlock ABI 8 and the seal).
+Two hosts ran:
+* gad: x86_64, Radeon 8060S Graphics, RADV GFX1151. It ran with
+  `--max-workgroups 4294967295`, so `output_wide` ran too.
+* the B70: x86_64, Intel BMG G31, ANV. It ran with Vulkan's guaranteed 65535,
+  which is ANV's limit, so `output_wide` (one workgroup per row, 248320 of
+  them) is recorded as skipped.
 
-* **Identical to glslang:** every layout of every fixture, and both argmax
+Every guest's provider was confined (Landlock ABI 8 and the seal).
+
+* **Identical to glslang:** every layout of every guest, and both argmax
   chains. Before each layout the guest fills both output buffers with NaN,
   and every output must be finite, so a row a module leaves unwritten fails.
 * **Against f64:**
   * The f32 layouts (r1, r8, x8r4, dot) use kdot_check's metric, max |got -
-    ref| / max(|ref|, 1e-2), which must be at most 1e-3. The worst is 5.4e-5.
+    ref| / max(|ref|, 1e-2), which must be at most 1e-3. The worst is
+    5.4e-05 on gad and 5.4e-05 on the B70.
   * The h2 layouts compute their products in f16, where that metric's 1e-2
-    floor magnifies near-zero rows (up to 6.7e-2). Their gate is max |got -
-    ref| / rms(ref), which must be at most 1e-2. The worst is 5.3e-3,
-    a margin of about 2x.
-* **The argmax chain:** both modules' chains agree in all 61 partials, and
-  every dispatch's answer is checked. Each partial is its segment's maximum
-  of the r1 logits, at the lowest index. The pick is the lowest index of the
-  overall maximum, 66749, which is the f64 argmax.
-* **Speed:** KIR v2's best 10-dispatch command buffer took 0.69-1.17 times
-  glslang's (gate 1.25).
-  * This gate is coarse. On gad's iGPU the same layout's best-of-five moves
-    by up to about ±40% between runs.
-  * A gap would come from how the driver compiles each module, and none
-    shows beyond that noise. With that noise, the gate catches only a
-    slowdown of about 1.4 times or more.
+    floor magnifies near-zero rows. Their gate is max |got - ref| /
+    rms(ref), which must be at most 1e-2. The worst is
+    5.3e-03, a margin of about 2x.
+* **The argmax chain.** It ran on x8r4's logits (`output`, both hosts) and on
+  r1's (`output_wide`, gad). Both modules' chains agree in all 61 partials,
+  and every dispatch's answer is checked. Each partial is its segment's
+  maximum of the logits, at the lowest index. The pick is the lowest index
+  of the overall maximum, 66749, which is the f64 argmax.
+* **Speed.** Each module ran one warm-up dispatch, then seven rounds of a
+  10-dispatch command buffer, KIR v2 and glslang alternating. The gate
+  compares the medians, KIR v2's within 1.25 times glslang's.
+  * The gate applies where glslang's median buffer takes at least 0.5 ms.
+    Shorter buffers are launch-bound, so their ratio is noise; they are
+    recorded but not gated.
+  * Gated ratios: 0.93-1.03 on gad and 0.95-1.07 on the B70.
+    Ungated: 0.96-1.05 and 0.95-1.01.
+  * On ANV this gate found a real gap. KIR v2's x8r4 took 1.37 times
+    glslang's time, because its SIMD32 build failed register allocation.
+    That is fixed in `kd-q4-scale` and `kd-q4-min`; see
+    `gpu-kernel-kir2-h2-20261024/`.
 
-| fixture | layout | kdot_check rel | err / rms | KIR v2 us | glslang us | ratio | GB/s |
+### gad
+
+| guest | layout | kdot_check rel | err / rms | KIR v2 us | glslang us | ratio | gated |
 |---|---|---|---|---|---|---|---|
-| attn_qkv | r1 | 2.2e-05 | 3.5e-06 | 593.2 | 860.6 | 0.69 | 194.5 |
-| attn_qkv | r8 | 2.2e-05 | 3.5e-06 | 525.5 | 675.1 | 0.78 | 219.5 |
-| attn_qkv | x8r4 | 5.4e-05 | 1.9e-06 | 507.3 | 556.2 | 0.91 | 227.4 |
-| attn_qkv | h2r1 | 6.7e-02 | 5.3e-03 | 539.9 | 521.2 | 1.04 | 213.6 |
-| attn_gate | r1 | 8.2e-06 | 6.3e-07 | 402.2 | 394.7 | 1.02 | 110.8 |
-| attn_gate | r8 | 8.2e-06 | 6.3e-07 | 371.0 | 369.9 | 1.00 | 120.1 |
-| attn_gate | x8r4 | 1.1e-05 | 4.8e-07 | 373.6 | 357.5 | 1.04 | 119.3 |
-| attn_gate | h2r1 | 3.3e-02 | 1.6e-03 | 398.2 | 400.7 | 0.99 | 111.9 |
-| ffn_gate_exp0 | r1 | 3.5e-06 | 4.1e-07 | 106.9 | 91.8 | 1.17 | 52.1 |
-| ffn_gate_exp0 | r8 | 3.5e-06 | 4.1e-07 | 303.6 | 301.2 | 1.01 | 18.3 |
-| ffn_gate_exp0 | x8r4 | 3.2e-06 | 7.0e-07 | 109.5 | 111.2 | 0.98 | 50.9 |
-| ffn_gate_exp0 | h2r1 | 9.5e-03 | 1.4e-03 | 102.6 | 99.7 | 1.03 | 54.3 |
-| output | r1 | 1.6e-05 | 5.8e-07 | 23762.9 | 23152.3 | 1.03 | 175.6 |
-| output | x8r4 | 2.3e-05 | 5.5e-07 | 21033.9 | 23176.1 | 0.91 | 198.3 |
-| output | h2q6r1 | 5.5e-02 | 1.5e-03 | 24544.2 | 24408.2 | 1.01 | 170.0 |
-| attn_gate_q4k | r1 | 2.0e-05 | 1.0e-06 | 282.4 | 362.9 | 0.78 | 167.1 |
-| attn_gate_q4k | r8 | 2.0e-05 | 1.0e-06 | 394.3 | 510.5 | 0.77 | 119.7 |
-| attn_gate_q4k | x8r4 | 2.1e-05 | 1.2e-06 | 267.5 | 308.8 | 0.87 | 176.4 |
-| attn_gate_q4k | h2r1 | 4.8e-02 | 2.8e-03 | 304.9 | 307.1 | 0.99 | 154.8 |
-| ffn_gate_inp | dot | 7.6e-06 | 3.4e-07 | 113.0 | 118.6 | 0.95 | 185.6 |
+| attn_qkv | r1 | 2.2e-05 | 3.5e-06 | 695.2 | 695.6 | 1.00 | yes |
+| attn_qkv | r8 | 2.2e-05 | 3.5e-06 | 694.6 | 699.8 | 0.99 | yes |
+| attn_qkv | x8r4 | 5.4e-05 | 1.9e-06 | 564.7 | 568.3 | 0.99 | yes |
+| attn_qkv | h2r1 | 6.7e-02 | 5.3e-03 | 562.5 | 561.5 | 1.00 | yes |
+| attn_gate | r1 | 8.2e-06 | 6.3e-07 | 356.6 | 370.2 | 0.96 | no |
+| attn_gate | r8 | 8.2e-06 | 6.3e-07 | 412.7 | 393.4 | 1.05 | no |
+| attn_gate | x8r4 | 1.1e-05 | 4.8e-07 | 362.0 | 369.5 | 0.98 | no |
+| attn_gate | h2r1 | 3.3e-02 | 1.6e-03 | 318.9 | 325.6 | 0.98 | no |
+| ffn_gate_exp0 | r1 | 3.5e-06 | 4.1e-07 | 110.8 | 107.7 | 1.03 | no |
+| ffn_gate_exp0 | r8 | 3.5e-06 | 4.1e-07 | 278.1 | 279.3 | 1.00 | no |
+| ffn_gate_exp0 | x8r4 | 3.2e-06 | 7.0e-07 | 201.9 | 191.8 | 1.05 | no |
+| ffn_gate_exp0 | h2r1 | 9.5e-03 | 1.4e-03 | 126.8 | 124.3 | 1.02 | no |
+| attn_gate_q4k | r1 | 2.0e-05 | 1.0e-06 | 401.8 | 396.9 | 1.01 | no |
+| attn_gate_q4k | r8 | 2.0e-05 | 1.0e-06 | 752.3 | 736.2 | 1.02 | yes |
+| attn_gate_q4k | x8r4 | 2.1e-05 | 1.2e-06 | 303.8 | 307.5 | 0.99 | no |
+| attn_gate_q4k | h2r1 | 4.8e-02 | 2.8e-03 | 326.5 | 323.3 | 1.01 | no |
+| output | x8r4 | 2.3e-05 | 5.5e-07 | 22232.0 | 23801.2 | 0.93 | yes |
+| output | r8 | 1.6e-05 | 5.8e-07 | 25854.6 | 26595.0 | 0.97 | yes |
+| output_wide | r1 | 1.6e-05 | 5.8e-07 | 24309.2 | 23757.1 | 1.02 | yes |
+| output_wide | h2q6r1 | 5.5e-02 | 1.5e-03 | 25196.0 | 24561.9 | 1.03 | yes |
+| ffn_gate_inp | dot | 7.6e-06 | 3.4e-07 | 98.1 | 94.6 | 1.04 | no |
 
-The times are each module's best of five 10-dispatch command buffers. GB/s is
-ten passes over the tensor in KIR v2's best time. The tensors under about
-32 MiB likely stay in the iGPU's last-level cache across those passes, so
-their GB/s is not DRAM bandwidth.
+### The B70
+
+| guest | layout | kdot_check rel | err / rms | KIR v2 us | glslang us | ratio | gated |
+|---|---|---|---|---|---|---|---|
+| attn_qkv | r1 | 2.2e-05 | 3.5e-06 | 1211.6 | 1265.7 | 0.96 | yes |
+| attn_qkv | r8 | 2.2e-05 | 3.5e-06 | 772.6 | 762.9 | 1.01 | yes |
+| attn_qkv | x8r4 | 5.4e-05 | 1.9e-06 | 898.2 | 941.0 | 0.95 | yes |
+| attn_qkv | h2r1 | 6.7e-02 | 5.3e-03 | 1764.1 | 1743.8 | 1.01 | yes |
+| attn_gate | r1 | 8.2e-06 | 6.3e-07 | 2606.1 | 2557.6 | 1.02 | yes |
+| attn_gate | r8 | 8.2e-06 | 6.3e-07 | 747.2 | 761.1 | 0.98 | yes |
+| attn_gate | x8r4 | 1.1e-05 | 4.8e-07 | 696.5 | 727.0 | 0.96 | yes |
+| attn_gate | h2r1 | 3.3e-02 | 1.6e-03 | 1089.9 | 1115.3 | 0.98 | yes |
+| ffn_gate_exp0 | r1 | 3.5e-06 | 4.1e-07 | 246.0 | 244.4 | 1.01 | no |
+| ffn_gate_exp0 | r8 | 3.5e-06 | 4.1e-07 | 999.4 | 934.6 | 1.07 | yes |
+| ffn_gate_exp0 | x8r4 | 3.2e-06 | 7.0e-07 | 366.1 | 386.9 | 0.95 | no |
+| ffn_gate_exp0 | h2r1 | 9.5e-03 | 1.4e-03 | 393.8 | 394.4 | 1.00 | no |
+| attn_gate_q4k | r1 | 2.0e-05 | 1.0e-06 | 2846.0 | 2779.3 | 1.02 | yes |
+| attn_gate_q4k | r8 | 2.0e-05 | 1.0e-06 | 758.6 | 752.0 | 1.01 | yes |
+| attn_gate_q4k | x8r4 | 2.1e-05 | 1.2e-06 | 614.4 | 643.1 | 0.95 | yes |
+| attn_gate_q4k | h2r1 | 4.8e-02 | 2.8e-03 | 1265.8 | 1258.2 | 1.01 | yes |
+| output | x8r4 | 2.3e-05 | 5.5e-07 | 18859.0 | 18745.6 | 1.01 | yes |
+| output | r8 | 1.6e-05 | 5.8e-07 | 29145.0 | 30822.9 | 0.95 | yes |
+| ffn_gate_inp | dot | 7.6e-06 | 3.4e-07 | 617.3 | 604.0 | 1.02 | yes |
+
+The times are each module's median 10-dispatch command buffer.
 
 ## Files
 
@@ -108,10 +145,11 @@ their GB/s is not DRAM bandwidth.
   vectors themselves are in the run's workspace, pinned by SHA-256 here).
 * `exec-build.json`: the guests (source and image digests), the kernels, and
   the launcher and provider images.
-* `gpu-kernel-exec.json`: the run, with each guest's launcher receipt.
+* `gad-radv.json`, `b70-anv.json`: the runs, with each guest's launcher
+  receipt.
 
 The fixtures, the guests' stdout (the outputs as hex) and the f64 vectors
 stayed in the run's workspace. gad's temporary directory was removed.
 
 **Not covered here:** the whole decode guest (every layer, through tokens),
-Xavier (the provider is x86_64-only) and ANV.
+and Xavier (the provider is x86_64-only).

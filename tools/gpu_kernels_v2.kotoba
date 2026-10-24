@@ -1082,18 +1082,28 @@
 ;; dot(vec4(q), y) for an ivec4 q
 (defn- kd-dotq [B :vector-i64 q :i64 y :i64] :i64 (kb-fdot B (kb-s2f B (kd-tv4 B) q) y))
 
-;; q4_scale(base, j) and q4_min(base, j): j < 4 picks the first form (both
-;; read inside the block, so OpSelect)
+;; q4_scale(base, j) and q4_min(base, j): j < 4 takes the first form. An if,
+;; as the GLSL's early return: both forms read inside the block, but a driver
+;; does not speculate a storage load, so the selection's form keeps every
+;; byte load live at once (on ANV that cost the x8 kernel its SIMD32 build)
 (defn- kd-q4-scale [B :vector-i64 W :i64 base :i64 j :i64] :i64
-  (let [lo (kb-band B (kd-byte B W (kb-iadd B (kb-iadd B base (ku B 4)) j)) (ku B 63))
-        hi (kb-bor B (kb-band B (kd-byte B W (kb-iadd B (kb-iadd B base (ku B 8)) j)) (ku B 15))
-                   (kb-shl B (kb-shr B (kd-byte B W (kb-iadd B base j)) (ku B 6)) (ku B 4)))]
-    (kd-int B (kb-select B (kb-tu32 B) (kb-ult B j (ku B 4)) lo hi))))
+  (let [tu (kb-tu32 B) v (kb-var B tu)
+        g (kb-if B (kb-ult B j (ku B 4)))
+        a (kb-store B v (kb-band B (kd-byte B W (kb-iadd B (kb-iadd B base (ku B 4)) j)) (ku B 63)))
+        e (kb-else B)
+        b (kb-store B v (kb-bor B (kb-band B (kd-byte B W (kb-iadd B (kb-iadd B base (ku B 8)) j)) (ku B 15))
+                                (kb-shl B (kb-shr B (kd-byte B W (kb-iadd B base j)) (ku B 6)) (ku B 4))))
+        z (kb-end-if B)]
+    (kd-int B (kb-load B tu v))))
 (defn- kd-q4-min [B :vector-i64 W :i64 base :i64 j :i64] :i64
-  (let [lo (kb-band B (kd-byte B W (kb-iadd B (kb-iadd B base (ku B 8)) j)) (ku B 63))
-        hi (kb-bor B (kb-shr B (kd-byte B W (kb-iadd B (kb-iadd B base (ku B 8)) j)) (ku B 4))
-                   (kb-shl B (kb-shr B (kd-byte B W (kb-iadd B (kb-iadd B base (ku B 4)) j)) (ku B 6)) (ku B 4)))]
-    (kd-int B (kb-select B (kb-tu32 B) (kb-ult B j (ku B 4)) lo hi))))
+  (let [tu (kb-tu32 B) v (kb-var B tu)
+        g (kb-if B (kb-ult B j (ku B 4)))
+        a (kb-store B v (kb-band B (kd-byte B W (kb-iadd B (kb-iadd B base (ku B 8)) j)) (ku B 63)))
+        e (kb-else B)
+        b (kb-store B v (kb-bor B (kb-shr B (kd-byte B W (kb-iadd B (kb-iadd B base (ku B 8)) j)) (ku B 4))
+                                (kb-shl B (kb-shr B (kd-byte B W (kb-iadd B (kb-iadd B base (ku B 4)) j)) (ku B 6)) (ku B 4))))
+        z (kb-end-if B)]
+    (kd-int B (kb-load B tu v))))
 ;; q4_word_values: group = index / 64, within = index & 63; w = weights[(base
 ;; + 16 + group 32 + (within & 31)) >> 2]; the nibbles at (within >= 32) ? 4 : 0
 (defn- kd-q4-values [B :vector-i64 W :i64 base :i64 index :i64] :i64
@@ -2333,18 +2343,26 @@
   (let [tu (kb-tu32 B)] (kb-load B tu (kb-shared-at B H tu (kb-iadd B (kb-imul B b (ku B 5)) k)))))
 (defn- h2-hbyte [B :vector-i64 H :i64 b :i64 off :i64] :i64
   (kb-band B (kb-shr B (h2-hdr B H b (kb-shr B off (ku B 2))) (kb-imul B (kb-band B off (ku B 3)) (ku B 8))) (ku B 255)))
-;; h_scale(b, j) and h_min(b, j) from the staged header (shared reads in
-;; bounds either way, so the j < 4 pick is a selection)
+;; h_scale(b, j) and h_min(b, j) from the staged header: an if on j < 4, as
+;; the GLSL's early return (see kd-q4-scale)
 (defn- h2-hscale [B :vector-i64 H :i64 b :i64 j :i64] :i64
-  (let [lo (kb-band B (h2-hbyte B H b (kb-iadd B (ku B 4) j)) (ku B 63))
-        hi (kb-bor B (kb-band B (h2-hbyte B H b (kb-iadd B (ku B 8) j)) (ku B 15))
-                   (kb-shl B (kb-shr B (h2-hbyte B H b j) (ku B 6)) (ku B 4)))]
-    (kd-int B (kb-select B (kb-tu32 B) (kb-ult B j (ku B 4)) lo hi))))
+  (let [tu (kb-tu32 B) v (kb-var B tu)
+        g (kb-if B (kb-ult B j (ku B 4)))
+        a (kb-store B v (kb-band B (h2-hbyte B H b (kb-iadd B (ku B 4) j)) (ku B 63)))
+        e (kb-else B)
+        c (kb-store B v (kb-bor B (kb-band B (h2-hbyte B H b (kb-iadd B (ku B 8) j)) (ku B 15))
+                                (kb-shl B (kb-shr B (h2-hbyte B H b j) (ku B 6)) (ku B 4))))
+        z (kb-end-if B)]
+    (kd-int B (kb-load B tu v))))
 (defn- h2-hmin [B :vector-i64 H :i64 b :i64 j :i64] :i64
-  (let [lo (kb-band B (h2-hbyte B H b (kb-iadd B (ku B 8) j)) (ku B 63))
-        hi (kb-bor B (kb-shr B (h2-hbyte B H b (kb-iadd B (ku B 8) j)) (ku B 4))
-                   (kb-shl B (kb-shr B (h2-hbyte B H b (kb-iadd B (ku B 4) j)) (ku B 6)) (ku B 4)))]
-    (kd-int B (kb-select B (kb-tu32 B) (kb-ult B j (ku B 4)) lo hi))))
+  (let [tu (kb-tu32 B) v (kb-var B tu)
+        g (kb-if B (kb-ult B j (ku B 4)))
+        a (kb-store B v (kb-band B (h2-hbyte B H b (kb-iadd B (ku B 8) j)) (ku B 63)))
+        e (kb-else B)
+        c (kb-store B v (kb-bor B (kb-shr B (h2-hbyte B H b (kb-iadd B (ku B 8) j)) (ku B 4))
+                                (kb-shl B (kb-shr B (h2-hbyte B H b (kb-iadd B (ku B 4) j)) (ku B 6)) (ku B 4))))
+        z (kb-end-if B)]
+    (kd-int B (kb-load B tu v))))
 ;; q4_codes, q5_codes, q6_codes: four codes of index..index + 3 as one
 ;; byte-per-code word
 (defn- h2-q4-codes [B :vector-i64 W :i64 base :i64 index :i64] :i64

@@ -441,13 +441,37 @@ a follow-up to ADR 0371.
      * Against an f64 dequant oracle, the f32 layouts are within 5.4e-5
        (kdot_check's metric, gate 1e-3). The h2 layouts compute in f16 and
        are within 5.3e-3 of the output's rms (gate 1e-2).
-     * The argmax chain's 61 partials match glslang's and the r1 logits, and
-       its pick is the f64 argmax.
-     * KIR v2 took 0.69-1.17 times glslang's time (gate 1.25). That gate is
-       coarse: run-to-run noise on gad's iGPU is about ±40%.
+     * The argmax chain's 61 partials match glslang's and the logits it ran
+       on, and its pick is the f64 argmax.
+     * Speed: KIR v2's median 10-dispatch command buffer (seven rounds,
+       alternating with glslang's) took 0.93-1.07 times glslang's on gad and
+       on ANV. The gate is 1.25, where glslang's median buffer takes at least
+       0.5 ms; shorter, launch-bound ones are recorded but not gated.
 
      Receipts: `docs/evidence/gpu-kernel-exec-20261024/`.
-   * Not yet: the whole decode guest through tokens, ANV, and Xavier (which
-     needs the provider on aarch64).
+   * **ANV (Intel BMG G31, the B70).** The whole kir2 suite is
+     byte-identical to glslang's modules there too, including int8 and h2.
+     Its subgroups are 32 wide, so the h2 kernels run two per workgroup.
+
+     The exec gate found one speed gap. On attn_qkv, KIR v2's x8r4 took 1.37
+     times glslang's time, and the cause was visible in ANV's compile
+     statistics:
+     * KIR v2's module failed SIMD32 register allocation and fell back to
+       SIMD16.
+     * Its `q4_scale` and `q4_min` loaded both forms and picked one with
+       `OpSelect`, where the GLSL returns early. A driver does not
+       speculate a storage load, so the selection's form kept every byte
+       load live at once.
+
+     The same rule applies to the h2 kernels' `h_scale` and `h_min`. Written
+     as the GLSL's branch, x8r4 compiles to SIMD32 and runs at glslang's
+     speed.
+
+     The lm_head's r1 and h2q6r1 dispatch one workgroup per row, 248320 of
+     them. That is past Vulkan's guaranteed `maxComputeWorkGroupCount` of
+     65535, which is ANV's. So on ANV the lm_head runs x8r4 and r8 (the
+     argmax chain on x8r4's logits), as the decode path's ANV table does.
+   * Not yet: the whole decode guest through tokens, and Xavier (which needs
+     the provider on aarch64).
 5. **Retirement.** Remove `emit-kernel.cljk`, glslang and the accelerator CLJK
    from the product route. The hand `.comp` files stay as baselines.
