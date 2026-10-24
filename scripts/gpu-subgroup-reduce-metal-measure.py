@@ -37,6 +37,13 @@ in [32, 1024]: no padded-lane tail). The emitted kernels read n at runtime
 byte-identical and only the shape changes.
   4. record -- raw runs -> <out>/run-log.txt; transcripts ->
                <out>/compile-log.txt; statistics -> <out>/summary.md.
+               Each fresh-process run's run-log block self-dates:
+               `run_started=` / `run_finished=` wall-clock stamps at
+               second resolution with the UTC offset (run_block()), so
+               a cell's own session date -- the cross-day eligibility
+               rule's input -- is readable from the run-log itself.
+               The W = 1024 midnight-straddle lesson: a run-log with no
+               calendar lines cannot show what day a run happened.
                With --compare-historical HIST.md (a prior record's
                summary.md, read once and never modified) the summary
                additionally carries the claim-protocol rule-3
@@ -62,6 +69,7 @@ removal (ADR 0371). See summary.md for what that does and does not license.
 
 import argparse
 import contextlib
+import datetime
 import io
 import os
 import pathlib
@@ -102,6 +110,43 @@ def sh(cmd, log, cwd=ROOT):
         sys.stderr.write(r.stdout + r.stderr)
         sys.exit(2)
     return r.stdout
+
+
+STAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$")
+
+
+def wallclock():
+    """Local wall clock at second resolution, ISO 8601 WITH the UTC
+    offset (e.g. 2026-10-25T09:12:33+09:00).
+
+    This is the run-log's calendar evidence. The cross-day eligibility
+    rule reads a cell's own session date from the record, and the
+    W = 1024 shape-1 cell's named escape hatch ("unless its own run-log
+    shows a 2026-10-23 run") was unsatisfiable by construction: this
+    instrument wrote no calendar anywhere, so no future cell could ever
+    prove its run day from its own run-log either. The stamps make the
+    condition checkable from 2026-10-25's sessions on.
+    """
+    return datetime.datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def run_block(index, started, finished, output):
+    """One fresh-process run's run-log block.
+
+    The header line and every line of `output` stay BYTE-IDENTICAL to
+    what every earlier cell's run-log carries -- the corpus parsers
+    (gpu_regime_classify.parse_run_log_pairs, the strict-bin census's
+    parse_log, the op-order analyzers) key on exactly those lines. Only
+    the two `run_started=` / `run_finished=` lines are new; every one of
+    those parsers ignores lines it does not know, and the driver's own
+    summary parsing never reads the run-log (it reads `output` in
+    memory).
+    """
+    sep = "\n" if output and not output.endswith("\n") else ""
+    return (f"===== fresh-process run {index} =====\n"
+            f"run_started={started}\n"
+            f"{output}{sep}"
+            f"run_finished={finished}\n")
 
 
 def resolve_test_classpath(log, root=ROOT):
@@ -166,10 +211,11 @@ def finalize_summary(summary_text, compare_historical, new_label):
 
 
 def self_test():
-    """Hardware-free check of the --compare-historical auto-wiring path
-    (the exact function main() calls), over two committed corpus records.
+    """Hardware-free check of (a) the --compare-historical auto-wiring
+    path (the exact function main() calls), over two committed corpus
+    records, and (b) the run-log calendar stamps (run_block/wallclock).
     No GPU, no Metal, no measurement: every input is a committed
-    summary.md.
+    summary.md or a fixed string.
     """
     evid = ROOT / "docs" / "evidence"
     hist_rel = "gpu-subgroup-reduce-m1max-shape2-band-20261023/w512/summary.md"
@@ -242,7 +288,27 @@ def self_test():
             os.environ.pop("AMU_KBB_TEST_CLASSPATH", None)
         else:
             os.environ["AMU_KBB_TEST_CLASSPATH"] = saved
-    print(f"driver auto-wiring self-test: {n} assertions passed, 0 failed")
+    # Run-log calendar stamps: the cross-day eligibility rule ("its own
+    # run-log shows a <date> run") is checkable only when the run-log
+    # carries dates. Fixed inputs, no measurement.
+    b = run_block(3, "2026-10-23T23:59:59+09:00", "2026-10-24T00:00:01+09:00",
+                  "sample op=sum pair=0 order=A arm=baseline gpu_ns=1\n")
+    _expect(b.splitlines()[0] == "===== fresh-process run 3 =====",
+            "the run block's header line stays byte-identical to every "
+            "earlier cell's run-log")
+    _expect(b.splitlines()[1] == "run_started=2026-10-23T23:59:59+09:00",
+            "the run block opens with the run's start stamp")
+    _expect(b.splitlines()[-1] == "run_finished=2026-10-24T00:00:01+09:00",
+            "the run block closes with the run's finish stamp")
+    _expect(STAMP_RE.match(wallclock()) is not None,
+            "wallclock() answers exactly the stamp format the rule reads")
+    plain = ("===== fresh-process run 3 =====\n"
+             "sample op=sum pair=0 order=A arm=baseline gpu_ns=1\n")
+    _expect(gpu_regime_classify.parse_run_log_pairs(b)
+            == gpu_regime_classify.parse_run_log_pairs(plain),
+            "the pair parser reads a stamped block identically to an "
+            "unstamped one (corpus tolerance)")
+    print(f"driver self-test: {n} assertions passed, 0 failed")
 
 
 def main():
@@ -330,14 +396,17 @@ def main():
 
     # 3. run: fresh processes
     runs = []
+    stamps = []
     for i in range(args.runs):
+        started = wallclock()
         proc_out = sh([str(exe), str(build), str(wg_want), str(n_want),
                        args.op_order, variant_arm], log)
         runs.append(proc_out)
+        stamps.append((started, wallclock()))
 
     (out / "compile-log.txt").write_text("\n".join(log) + "\n")
     (out / "run-log.txt").write_text(
-        "".join(f"===== fresh-process run {i + 1} =====\n{o}"
+        "".join(run_block(i + 1, stamps[i][0], stamps[i][1], o)
                 for i, o in enumerate(runs)))
 
     # 4. record

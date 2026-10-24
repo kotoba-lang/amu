@@ -1323,7 +1323,15 @@ outside this diff. No green full suite is claimed.
    narrows this row's cross-day part: the refused pair owes NO
    cross-day row (S5 of the REFUSAL SCOPE rule), the pending rows are
    nine -- shape-1 W = 32/64/128/1024 and shape-2 W =
-   256/32/64/128/1024.]
+   256/32/64/128/1024.] [The eligibility check for those nine is
+   SETTLED 2026-10-24
+   (`docs/evidence/gpu/crossday-eligibility-stamps-20261024.txt`):
+   all nine are 2026-10-25+ rows -- the shape-1 W = 1024 escape
+   hatch ("unless its own run-log shows a 2026-10-23 run") is UNMET
+   BY CONSTRUCTION (no instrument run-log carried a calendar), and
+   the measurement driver now self-dates every fresh-process run
+   (`run_started=`/`run_finished=` stamps), so from 2026-10-25 on
+   the check reads the run-log's own stamps.]
 4. [DONE 2026-10-24 -- the list is COMPLETE at both shapes and the
    W = 32 cell's membership is DECIDED OUT of it (the cross-day
    replication list membership decision,
