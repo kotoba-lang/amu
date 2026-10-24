@@ -5,9 +5,13 @@ Status: Proposed. Owner direction 2026-10-22: GPU compilation goes through
 selfhost as well. Step 1 (the encoder, the checker and the first kernel)
 and the kernels of step 2 (the workgroup and subgroup reductions, the
 ADR 0358 sweep kernel and the glslang cross-check) are implemented; the
-vendor rows of step 2 and steps 3–5 are not.
-Tracking: AWAI-79 (parent AWAI-35). Related: ADR 0001 Phase 5, ADR 0002,
-ADRs 0355–0358, ADR 0371 (the execution route), AWAI-5 (the inference kernel DSL).
+vendor rows of step 2 are not. Steps 3 (the KIR v2 kernels) and 4 (their
+execution through the ADR 0371 provider) are done (2026-10-24). By ADR 0374
+(accepted 2026-10-24), Amu's part of step 5 is done and the rest belongs to
+kotoba-lang/inference.
+Tracking: AWAI-79 (parent AWAI-35), JUN-356 (steps 3–4), JUN-365 (ADR 0374).
+Related: ADR 0001 Phase 5, ADR 0002, ADRs 0355–0358, ADR 0371 (the execution
+route), AWAI-5 (the inference kernel DSL).
 
 ## Context
 
@@ -401,8 +405,17 @@ a follow-up to ADR 0371.
      from the device-features branch (#1534), since no provider on main
      enables the feature yet; with this tree's own provider, every other
      case passes. Receipts: `docs/evidence/gpu-kernel-kir2-x8-20261023/`.
-   * **Done: the nvgpu-h2 kernels**, which the decode path's `nvgpu-h2`
-     layout (Xavier) uses. All are from inference main:
+   * **Done: the nvgpu-h2 kernels**, the packed-half kernels of inference's
+     `nvgpu` rows (`layout-table` in `gen_decode_tokens_guest.cljk`):
+     * `kdot_h2_r1` and `kdot_h2q6_r1` are the plain `nvgpu` row, Xavier's
+       default for MoE models.
+     * The Q8 kernels (`kdot_h2_qkv_q8`, `kdot_h2_qkvr_q8`, r4, r8) are the
+       `nvgpu-h2` row. It was adopted on the M1 Max (MoltenVK) for dense
+       models (inference #55, f676ba4). Xavier's dense models use the exact
+       table.
+
+     (Corrected 2026-10-24: this said the `nvgpu-h2` layout was Xavier's.)
+     All are from inference main:
      * `kdot_h2_r1` (at c21beff), plain and `-DQ6_HALF`;
      * `kdot_h2_r4_q8` (b5f7ca3) and `kdot_h2_r8_q8` (b3dfa34);
      * `kdot_h2_qkv_q8` and `kdot_h2_qkvr_q8` (ee95e44).
@@ -423,8 +436,8 @@ a follow-up to ADR 0371.
      `kdot_h2_qkvr_q8` writes its rows with no position term, so it is
      decode-only and runs at one position.
 
-     Not yet run on Xavier itself: the ADR 0371 provider and this gate run on
-     x86_64 only, so an nvgpu run waits on the provider for aarch64.
+     Not yet run on Xavier or the M1 Max: the ADR 0371 provider and this gate
+     run on x86_64 Linux only.
      Receipts: `docs/evidence/gpu-kernel-kir2-h2-20261024/`.
 4. **Execution.** Through the ADR 0371 provider, with numeric and speed gates
    against the hand-written kernels.
@@ -505,6 +518,9 @@ a follow-up to ADR 0371.
    * **`emit-kernel.cljk` and glslang's product use are in
      kotoba-lang/inference** (`verify/native/gpu/kernel-dsl/`). Retiring
      them means the product that executes these kernels takes KIR v2's
-     modules instead. Since #1510 no Amu route executes them, so which
-     product that is, and on what route, is ADR 0374's decision (JUN-365).
-     This part waits on it.
+     modules instead. Since #1510 no Amu route executes them.
+
+   **Decided by ADR 0374 (accepted 2026-10-24, option D).** Amu's part of
+   this step is done. kotoba-lang/inference owns GPU execution and takes
+   KIR v2's modules in place of `emit-kernel.cljk` and glslang, under its own
+   policy. That work is tracked in JUN-375.

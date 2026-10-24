@@ -9,10 +9,10 @@ It runs on this host; --target picks the images' ISA (default: this host's).
    (tools/static_launcher_test.kotoba) built with --format static, plus the
    control (CONTROL 1: exactly one case fails).
 2. The launcher, tools/static_launcher.kotoba with --format launcher.
-3. With --previous-root (the root from before this format): that compiler
-   refuses --format launcher, and both compilers emit the same bytes for a
-   static guest and for the runner (the launcher text is appended only in
-   the new format).
+3. With --previous-root (an earlier root): both compilers emit the same
+   bytes for a static guest and for the runner (the launcher text is
+   appended only in the launcher format). Whether that root refuses
+   --format launcher is recorded: a root from before step 4 does (E7100).
 4. Runs through the launcher, each checked against the receipt line and the
    bytes Python sees: a guest alone (ok, a trap, its arguments, its built
    environment, its descriptors, no_new_privs, the wall-time kill, the
@@ -96,7 +96,10 @@ while True:
     requests.append(body.decode())
     answer = ANSWER if body == b"INFO" else b"!gpu/unknown-verb unknown :gpu/compute request"
     os.write(1, len(answer).to_bytes(4, "little") + answer)
-report = ("fds=%s grant=%s requests=%s" % (",".join(map(str, fds)), hashlib.sha256(grant).hexdigest(), ",".join(requests))).encode()
+# the environment as executed (os.environ may gain a coerced locale)
+env = sorted(e.decode() for e in open("/proc/self/environ", "rb").read().split(b"\0") if e)
+report = ("fds=%s grant=%s requests=%s env=%s" % (",".join(map(str, fds)), hashlib.sha256(grant).hexdigest(), ",".join(requests),
+                                                  ";".join(env))).encode()
 if mode == "invalid":
     report = b"\xff\xfe"
 if mode == "overflow":
@@ -251,13 +254,15 @@ def main(compiler, output, target, previous_root, seccomp_if_available):
     assert b":format :launcher" in z.stdout, z.stdout
     rows["launcherImage"] = pin(launcher)
 
-    # 3. the format is new, and the other formats did not change
+    # 3. the other formats did not change; a root from before step 4 refuses
+    # the format (a later one has it, and its launcher text may differ)
     if previous_root:
         old = art / "previous-root.elf"
         old.write_bytes(previous_root.read_bytes())
         old.chmod(0o755)
         _, z = compile_(old, "previous-launcher", launcher_src, fmt="launcher", success=False)
-        assert z.returncode == 2 and b"E7100" in z.stderr, (z.returncode, z.stderr[-300:])
+        refuses = z.returncode == 2 and b"E7100" in z.stderr
+        assert refuses or z.returncode == 0, (z.returncode, z.stderr[-300:])
         runner_fmt = "runner" if target == "aarch64-linux" else "kx64-runner"
         same = {}
         for name, source, fmt in (("hello", GUESTS["hello"], "static"), ("runner", (ROOT / RUNNER_SRC).read_text(), runner_fmt)):
@@ -265,7 +270,8 @@ def main(compiler, output, target, previous_root, seccomp_if_available):
             b, _ = compile_(old, "same-old-" + name, source, fmt=fmt)
             assert a.read_bytes() == b.read_bytes(), ("format output changed", name)
             same[name] = pin(a)
-        rows["unchangedFormats"] = dict(previousRoot=pin(previous_root), previousRootRefusesLauncher="E7100", sameBytes=same)
+        rows["unchangedFormats"] = dict(previousRoot=pin(previous_root), previousRootRefusesLauncher="E7100" if refuses else False,
+                                        sameBytes=same)
 
     # guests
     guests = {name: compile_(producer, "guest-" + name, GUESTS[name])[0] for name in ("hello", "trap", "args")}
@@ -357,7 +363,8 @@ def main(compiler, output, target, previous_root, seccomp_if_available):
     assert r[":verdict"] == ":ok" and r[":guest"][":report"][":result"] == len(ANSWER), r
     pv = r[":provider"]
     assert pv[":exit"] == 0 and pv[":killed"] is False, pv
-    assert pv[":report"] == f"fds=0,1,2,3,4 grant={sha(GRANT)} requests=INFO", pv[":report"]
+    assert pv[":report"] == (f"fds=0,1,2,3,4 grant={sha(GRANT)} requests=INFO"
+                             " env=MESA_SHADER_CACHE_DISABLE=true;VK_LOADER_LAYERS_DISABLE=~all~"), pv[":report"]
     r, out, _ = launch("provider-descriptors", 10, "37,38,39,42", tools["ls"], gargs=("-1", "/proc/self/fd"), mode="serve")
     assert out.decode().split() == ["0", "1", "2", "3", "4", "5"], out
     r, out, _ = launch("provider-environment", 10, "37,38,39,42", tools["env"], mode="serve")
