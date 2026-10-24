@@ -301,9 +301,36 @@ a follow-up to ADR 0371.
      every R.
 
      Receipts: `docs/evidence/gpu-kernel-kir2-kdot-20261023/`.
-   * `kdot_x8r4` and `kdot_i8_x8r4`: the int8 kernels, which need the
-     packed integer dot product (SPIR-V 1.6 or `SPV_KHR_integer_dot_product`)
-     and the provider's `shaderIntegerDotProduct`;
+   * **Done: the x8 kdot kernels** (inference at b1e85d0). On the x8
+     mapping, 256 invocations are 8 block slots of 32 lanes, and each lane
+     owns eight consecutive values.
+     * `kdot_x8r8`, and `kdot_x8r4` (its `-DROWS=4` build, the decode path's
+       wide kernel): f32 activations from a vec4 binding, two dots per arm.
+     * `kdot_i8_x8r4`: int8 activations (quant_q8's packed words and one
+       scale per 32) with the packed integer dot product.
+
+     The int8 kernel is glslang's form at SPIR-V 1.3:
+     * the `SPV_KHR_integer_dot_product` extension;
+     * the `DotProduct` and `DotProductInput4x8BitPacked` capabilities;
+     * `OpSDot` with `PackedVectorFormat4x8Bit`.
+
+     The builder's `kb-sdot4x8` marks the module, and `kb-module` declares
+     these.
+
+     On gad (RADV), each is byte-identical to glslang's module. The runs
+     used 16 blocks, so every block slot takes two, and positions on experts
+     that differ from them:
+     * x8: every tensor type with 8 rows per workgroup, two with 4 and one
+       with 16, plus the prefill-MoE and shared-input rows;
+     * int8: every type with 4 rows, two with 8 and one with 16, plus the
+       same rows.
+
+     A probe session reads the provider's features first. The int8 kernel
+     runs only where `:shader-integer-dot-product` is enabled, and is
+     recorded as skipped elsewhere. For these receipts the provider came
+     from the device-features branch (#1534), since no provider on main
+     enables the feature yet; with this tree's own provider, every other
+     case passes. Receipts: `docs/evidence/gpu-kernel-kir2-x8-20261023/`.
    * deltanet and embed;
    * then the nvgpu-h2 kernels for Xavier.
 4. **Execution.** Through the ADR 0371 provider, with numeric and speed gates

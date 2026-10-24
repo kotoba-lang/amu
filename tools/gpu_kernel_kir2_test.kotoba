@@ -13,7 +13,7 @@
 ;; CASES equals the expect calls below (the script counts them). CONTROL 1
 ;; makes exactly one expectation wrong; the script requires one failure then.
 
-(def CASES 70)
+(def CASES 97)
 (def CONTROL 0)
 
 (defn- say [s :string] :i64
@@ -189,8 +189,50 @@
        (expect "glslang kdot_f32_r8 -DROWS=16 passes the checker" (spc-check (spv-read "ref-kdot-f32-r8-rows16.spv")) 0)
        (expect "glslang kdot_f32_r8 -DROWS=32 passes the checker" (spc-check (spv-read "ref-kdot-f32-r8-rows32.spv")) 0))))
 
+;; kdot_x8r8 on the x8 mapping (R 8, and 4: kdot_x8r4)
+(defn- dots-x8 [] :i64
+  (let [k8 (kir2-kdot-x8 8) k4 (kir2-kdot-x8 4)
+        g8 (spv-read "ref-kdot-x8r8.spv") g4 (spv-read "ref-kdot-x8r8-rows4.spv")]
+    (+ (expect "kdot-x8r8" (spc-check k8) 0)
+       (expect "write kir2-kdot-x8r8.spv" (spv-write k8 "kir2-kdot-x8r8.spv") (* 4 (spv-count k8)))
+       (expect "kdot-x8r4" (spc-check k4) 0)
+       (expect "write kir2-kdot-x8r4.spv" (spv-write k4 "kir2-kdot-x8r4.spv") (* 4 (spv-count k4)))
+       (expect "glslang kdot_x8r8 passes the checker" (spc-check g8) 0)
+       (expect "glslang kdot_x8r8 -DROWS=4 passes the checker" (spc-check g4) 0)
+       (expect "kdot x8: LocalSize 256" (op-word k8 16 3) 256)
+       ;; two dots in each of the six arms (Q4_K and Q5_K share one), as in
+       ;; glslang's module
+       (expect "kdot x8: twelve dot products" (count-op k8 148) 12)
+       (expect "kdot x8: rows 5 gives an empty module" (spv-count (kir2-kdot-x8 5)) 0)
+       (expect "write kir2-kdot-x8r16.spv" (let [m (kir2-kdot-x8 16)] (- (spv-write m "kir2-kdot-x8r16.spv") (* 4 (spv-count m)))) 0)
+       (expect "write kir2-kdot-x8r32.spv" (let [m (kir2-kdot-x8 32)] (- (spv-write m "kir2-kdot-x8r32.spv") (* 4 (spv-count m)))) 0)
+       (expect "glslang kdot_x8r8 -DROWS=16 passes the checker" (spc-check (spv-read "ref-kdot-x8r8-rows16.spv")) 0)
+       (expect "glslang kdot_x8r8 -DROWS=32 passes the checker" (spc-check (spv-read "ref-kdot-x8r8-rows32.spv")) 0))))
+
+;; kdot_i8_x8r4: int8 activations and the packed integer dot product (R 4,
+;; and 8 as glslang's -DROWS=8)
+(defn- dots-i8 [] :i64
+  (let [k4 (kir2-kdot-i8-x8 4) k8 (kir2-kdot-i8-x8 8)
+        g4 (spv-read "ref-kdot-i8-x8r4.spv") g8 (spv-read "ref-kdot-i8-x8r4-rows8.spv")]
+    (+ (expect "kdot-i8-x8r4" (spc-check k4) 0)
+       (expect "write kir2-kdot-i8-x8r4.spv" (spv-write k4 "kir2-kdot-i8-x8r4.spv") (* 4 (spv-count k4)))
+       (expect "kdot-i8-x8r8" (spc-check k8) 0)
+       (expect "write kir2-kdot-i8-x8r8.spv" (spv-write k8 "kir2-kdot-i8-x8r8.spv") (* 4 (spv-count k8)))
+       (expect "glslang kdot_i8_x8r4 passes the checker" (spc-check g4) 0)
+       (expect "glslang kdot_i8_x8r4 -DROWS=8 passes the checker" (spc-check g8) 0)
+       ;; ysum's two, and two in each of the five integer arms (F16 dots floats)
+       (expect "kdot i8: twelve packed int8 dots" (count-op k4 4450) 12)
+       ;; Shader, DotProduct and DotProductInput4x8BitPacked
+       (expect "kdot i8: three capabilities" (count-op k4 17) 3)
+       (expect "kdot i8: the integer dot product extension" (count-op k4 10) 1)
+       (expect "kdot i8: rows 5 gives an empty module" (spv-count (kir2-kdot-i8-x8 5)) 0)
+       (expect "write kir2-kdot-i8-x8r16.spv" (let [m (kir2-kdot-i8-x8 16)] (- (spv-write m "kir2-kdot-i8-x8r16.spv") (* 4 (spv-count m)))) 0)
+       (expect "write kir2-kdot-i8-x8r32.spv" (let [m (kir2-kdot-i8-x8 32)] (- (spv-write m "kir2-kdot-i8-x8r32.spv") (* 4 (spv-count m)))) 0)
+       (expect "glslang kdot_i8_x8r4 -DROWS=16 passes the checker" (spc-check (spv-read "ref-kdot-i8-x8r4-rows16.spv")) 0)
+       (expect "glslang kdot_i8_x8r4 -DROWS=32 passes the checker" (spc-check (spv-read "ref-kdot-i8-x8r4-rows32.spv")) 0))))
+
 (defn main [] :i64
-  (let [failed (+ (ewise) (+ (ewise-shape) (+ (attn) (+ (attn-ref) (+ (nex-ops) (+ (nex-shape) (+ (dots) (dots8))))))))
+  (let [failed (+ (ewise) (+ (ewise-shape) (+ (attn) (+ (attn-ref) (+ (nex-ops) (+ (nex-shape) (+ (dots) (+ (dots8) (+ (dots-x8) (dots-i8))))))))))
         x (say (string-concat "CASES " (string-from-i64 CASES)))
         y (say (string-concat "FAILED " (string-from-i64 failed)))]
     failed))
