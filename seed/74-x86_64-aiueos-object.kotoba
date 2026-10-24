@@ -191,17 +191,30 @@
         (let [op (xg-si M j IF-OP) a (xg-si M j IF-A) b (xg-si M j IF-B)]
           (cond (= op OP-LGET)
                   (cond (xk-param-slot? M j b)
-                          (let [f (xg-si M (xk-fn-start M j) IF-A)]
-                            (cond (> (inc b) (xg-f M f FF-NPARAMS)) -1
-                                  (= (xg-f M f FF-EXPORT) 1) (+ 8589934592 (inc b))
-                                  :else
-                                    (loop [c 1]
-                                      (if (>= c (vector-at M MM-SIR-N)) (+ 8589934592 (inc b))
-                                        (if (and (= (xg-si M c IF-OP) OP-CALL) (= (xg-si M c IF-A) f))
-                                          (let [r (xk-region M c (+ (xg-si M c IF-B) (dec b)) (inc depth))
-                                                ln (xk-src M c (+ (xg-si M c IF-B) b) 0)]
-                                            (if (and (>= r 0) (not= ln 0) (= ln r)) (recur (inc c)) -1))
-                                          (recur (inc c)))))))
+                          (let [f (xg-si M (xk-fn-start M j) IF-A) np (xg-f M f FF-NPARAMS)]
+                            (if (= (xg-f M f FF-EXPORT) 1)
+                              (if (> (inc b) np) -1 (+ 8589934592 (inc b)))
+                              ;; A private helper's parameter is rooted when EVERY call roots it, and then its region is either
+                              ;;  - the pair: the length is the next parameter and each call passes that region's length there, or
+                              ;;  - a CONSTANT: each call passes a base whose region length is the same integer literal L (a
+                              ;;    subregion given n = L); the helper's own accesses must then name L. A caller with an unrooted
+                              ;;    base refuses the helper; different literals from different callers refuse it too.
+                              (loop [c 1 pairok 1 constv -2]
+                                (if (>= c (vector-at M MM-SIR-N))
+                                  (cond (and (= pairok 1) (<= (inc b) np)) (+ 8589934592 (inc b))
+                                        (>= constv 4294967296) constv
+                                        :else -1)
+                                  (if (and (= (xg-si M c IF-OP) OP-CALL) (= (xg-si M c IF-A) f))
+                                    (let [r (xk-region M c (+ (xg-si M c IF-B) (dec b)) (inc depth))]
+                                      (if (< r 0) -1
+                                        (let [ln (if (<= (inc b) np) (xk-src M c (+ (xg-si M c IF-B) b) 0) 0)
+                                              lit (and (>= r 4294967296) (< r 8589934592))]
+                                          (recur (inc c)
+                                                 (if (and (= pairok 1) (not= ln 0) (= ln r)) 1 0)
+                                                 (cond (= constv -2) (if lit r -1)
+                                                       (= constv r) constv
+                                                       :else -1)))))
+                                    (recur (inc c) pairok constv))))))
                         (= (xk-lsets M (inc (xk-fn-start M j)) b 0) 1)
                           (let [k (xk-first-lset M (inc (xk-fn-start M j)) b)]
                             (if (> k 0) (xk-region M k (xg-si M k IF-B) (inc depth)) -1))

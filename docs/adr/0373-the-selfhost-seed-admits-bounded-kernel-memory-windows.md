@@ -193,3 +193,11 @@ was produced by Amu selfhost and ran in the kernel gates.
 - The `:browser-component` floor needs the whole Browser/CSSOM graph; the
   project-capable native CLI is still missing (JUN-137).
 
+**Constant-length helper regions (2026-10-24, ADR 0376's problem).** The shipped aiueos objects reach memory through small accessor
+helpers that take the surface alone and give `kernel-subregion` a literal length: `(defn w-at [st i] (kernel-load-u32 (kernel-subregion st 128 ...)))`.
+The pair rule above refused them, correctly, because nothing in the helper proves the region is that long. A private helper's parameter can
+now also have a CONSTANT region: every call must pass a base whose region length is the same integer literal L (typically a checked
+narrowing `(kernel-subregion st sb 0 L)`, which traps unless the region really is at least L long); the helper's own accesses must then name L.
+A caller with an unrooted base refuses the helper, and different literals from different callers refuse it too, so the proof stays an induction
+over the call sites with no path analysis and no new contract syntax. Six cases pin it (`ok_const_helper`, `ok_const_helper_two_callers`;
+`no_const_helper_wrong_literal`, `no_const_helper_two_lengths`, `no_const_helper_unrooted_caller`, `no_const_helper_param_length_caller`).
