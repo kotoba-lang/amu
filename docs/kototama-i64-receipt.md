@@ -124,8 +124,8 @@ are ISA-specific; the v2 typed receipt removes that platform difference.
 Current compilers reproduce the same mandatory role images, core source
 and all five policy bindings as the actual qualified controller execution.
 That artifact conformance is reused by exact identity; no invocation allow
-judgment or execution state is reused. Fresh controller execution, native
-integration main readback and terminal checks on the final PR head remain
-separate merge gates. The literal-pin transport audit does not replace the
+judgment or execution state is reused. Fresh full34 controller execution also passes cold core rebuild,24 cases,
+18 refusals and parent-death cleanup. Native integration main readback and
+terminal checks on the final PR head remain separate merge gates. The literal-pin transport audit does not replace the
 native controller verdict. See
 [`current-scope.json`](evidence/kototama-i64-receipt-20261024/current-scope.json).
