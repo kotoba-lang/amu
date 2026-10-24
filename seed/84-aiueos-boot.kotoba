@@ -15,13 +15,13 @@
   (let [off (eb-le V (+ at 8) 8) pa (eb-le V (+ at 24) 8)
         size (eb-le V (+ at 32) 8)]
     (and (= (eb-le V at 4) 1) (= (eb-le V (+ at 4) 4) flags)
-         (>= off 0) (> size 0) (<= size 1048576) (= size (eb-le V (+ at 40) 8))
+         (>= off 0) (> size 0) (<= size 3145728) (= size (eb-le V (+ at 40) 8))
          (>= pa 1048576) (<= pa (- 1073741824 size)) (= (bit-and pa 4095) 0)
          (= (eb-le V (+ at 16) 8) pa) (= (eb-le V (+ at 48) 8) 4096)
          (<= off (vector-count V)) (<= size (- (vector-count V) off)))))
 (defn- eb-admit? [V :vector-i64] :bool
   (let [n (vector-count V) ph (eb-le V 32 8) entry (eb-le V 24 8)]
-    (and (>= n 176) (<= n 1048576) (= (eb-le V 0 8) 0x00010102464c457f)
+    (and (>= n 176) (<= n 4194304) (= (eb-le V 0 8) 0x00010102464c457f)
          (= (eb-le V 8 8) 0) (= (eb-le V 16 2) 2) (= (eb-le V 18 2) 62)
          (= (eb-le V 20 4) 1) (= (eb-le V 48 4) 0)
          (= (eb-le V 52 2) 64) (= (eb-le V 54 2) 56) (= (eb-le V 56 2) 2)
@@ -102,15 +102,22 @@
 (defn- eb-section [M :vector-i64 name :i64 size :i64 rva :i64 raw :i64 off :i64 flags :i64] :vector-i64
   (-> M (xg-out name 8) (xg-out size 4) (xg-out rva 4) (xg-out raw 4) (xg-out off 4)
       (xg-out 0 8) (xg-out 0 4) (xg-out flags 4)))
+(defn- eb-loader-base? [M :vector-i64 base :i64 size :i64] :bool
+  (and (or (<= (+ base size) (xg-get M 2)) (<= (+ (xg-get M 2) (xg-get M 3)) base))
+       (or (<= (+ base size) (xg-get M 5)) (<= (+ (xg-get M 5) (xg-get M 6)) base))))
 (defn- eb-header [M :vector-i64] :vector-i64
   (let [text (xg-pos M) text-raw (eb-align text 512) data (xg-get M 10) raw (eb-align data 512)
-        reloc (xg-get M 12) image (eb-align (+ reloc 12) 4096)]
-    (-> M (mem-set MM-OUT-N 1) (xg-out 0x5a4d 2) (xg-pad 60) (xg-out 128 4) (xg-pad 128)
+        reloc (xg-get M 12) image (eb-align (+ reloc 12) 4096)
+        base (cond (eb-loader-base? M 0x400000 image) 0x400000
+                   (eb-loader-base? M 0x1000000 image) 0x1000000
+                   (eb-loader-base? M 0x2000000 image) 0x2000000 :else 0)
+        admitted (if (or (= base 0) (> image 8388608)) (xg-err M 7104 image) M)]
+    (-> admitted (mem-set MM-OUT-N 1) (xg-out 0x5a4d 2) (xg-pad 60) (xg-out 128 4) (xg-pad 128)
         (xg-out 0x4550 4) (xg-out 0x8664 2) (xg-out 3 2) (xg-out 0 8) (xg-out 0 4)
         (xg-out 240 2) (xg-out 0x22 2)
         (xg-out 0x20b 2) (xg-out 1 1) (xg-out 0 1) (xg-out text-raw 4)
         (xg-out (+ raw 512) 4) (xg-out 0 4) (xg-out 4096 4) (xg-out 4096 4)
-        (xg-out 0x400000 8) (xg-out 4096 4) (xg-out 512 4)
+        (xg-out base 8) (xg-out 4096 4) (xg-out 512 4)
         (xg-out 2 2) (xg-out 0 2) (xg-out 0 4) (xg-out 2 2) (xg-out 0 2)
         (xg-out 0 4) (xg-out image 4) (xg-out 512 4) (xg-out 0 4)
         (xg-out 10 2) (xg-out 0x160 2)
