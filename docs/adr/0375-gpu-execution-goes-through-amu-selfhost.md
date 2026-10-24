@@ -103,6 +103,29 @@ The owner's answers on 2026-10-24:
    Mach-O loader for libSystem and Metal.framework, with kernels in MSL.
    W through the browser is the other route.
 
+## Measured: what B's loader must bring up (2026-10-24)
+
+On gad (Ubuntu 24.04, glibc 2.39, Mesa 25.2.8, the B70's Mesa version), the
+`DT_NEEDED` closure of libvulkan plus one ICD was measured
+(`docs/evidence/gpu-loader-closure-20261024/`):
+* **RADV:** 35 libraries, 203 MB. It links libLLVM 20, which brings
+  libstdc++, ICU and libxml2. It imports 564 glibc symbols.
+* **ANV:** 26 libraries, 30 MB, with no LLVM. It imports 404 glibc symbols.
+* **Both:** 68 IRELATIVE relocations, TLS (TLSDESC in RADV), `dlopen` and
+  pthreads.
+
+Two loader designs follow:
+* **B1. A Kotoba ld.so under the real glibc.** It has to provide the 16
+  `GLIBC_PRIVATE` symbols libc needs, including `_rtld_global` and
+  `_rtld_global_ro`, whose layout belongs to one glibc build.
+* **B2. A Kotoba libc in place of glibc.** It exports glibc's public,
+  versioned ABI: 404 symbols for ANV.
+
+B2 is the narrower and more durable design. ANV (the B70) is the smaller
+first target, and RADV adds libLLVM's closure. So step 1 above becomes:
+1. B2 on ANV;
+2. then RADV.
+
 ## Consequences
 
 * **B depends on glibc and driver internals.** The GPU hosts pin their
