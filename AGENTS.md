@@ -66,7 +66,18 @@
 
 ## Native CDCI and retired public entry
 
-- The complete product uses `seed/FULL-MANIFEST` (33 modules), retaining
+The kernel-integration working branch contains a full39 source candidate,
+including current main's native CLI/CID/FS2 modules and all18 adopted core
+modules. Its checked-in public/root descriptor names the regenerated full39
+candidate. Native ARM F1=F2 is measured; terminal exact-head native
+x86/controller PR/main qualification is required for acceptance.
+Historical ARM/QEMU receipts remain bound to their own sources.
+The closed v5 project reserves low20KiB for non-live context/catalog. The
+v6 PCI candidate has128KiB RW storage and a64KiB private floor; its copied
+BAR catalog starts at context20480. Live ValueRuntime queue/arena and
+capability/domain storage require a separately versioned ABI.
+
+- The complete candidate uses `seed/FULL-MANIFEST` (39 modules), retaining
   every adopted core module. Static OUT is 12MiB because the complete
   TCP/spawn image exceeded the old 8MiB bound. The complete static profile
   also uses LitB1MiB and TOK786432 and MM-WORDS29,491,200 (<2^25). Heap size, expected results,

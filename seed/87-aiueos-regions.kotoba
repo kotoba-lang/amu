@@ -1,0 +1,239 @@
+;; Whole-project SIR collection for the canonical ADR0373 checker in 74.
+;; Namespace exports are link interfaces, never fresh kernel ABI roots.
+;; Resolve imports to their actual global FN, preserve every real function
+;; and instruction, then run xk-check plus the same rule for new widths.
+;; No alternate AST origin policy and no literal-address region roots.
+(def KG-FBASE 16)
+(def KG-FW 7) ; nparams, ABI-export, code byte, owner module, ISR vector+1, name start/end
+(def KG-SBASE (+ KG-FBASE (* MM-FN-CAP KG-FW)))
+(def KG-XFIRST (+ 1 KM-INTR-N))
+(def KG-FIRST (+ KG-XFIRST XK-WINDOW-N))
+(defn- kg-new [] :vector-i64
+  (let [G (vector-alloc (+ KG-SBASE (* MM-SIR-CAP MM-SIR-W)))]
+    (-> G (vector-assoc! 0 KG-FIRST) (vector-assoc! 1 1))))
+(defn- kg-f [G :vector-i64 f :i64 k :i64] :i64
+  (vector-at G (+ KG-FBASE (* f KG-FW) k)))
+(defn- kg-fset [G :vector-i64 f :i64 k :i64 value :i64] :vector-i64
+  (vector-assoc! G (+ KG-FBASE (* f KG-FW) k) value))
+(defn- kg-target [G :vector-i64 addr :i64] :i64
+  (loop [f KG-FIRST]
+    (cond (>= f (vector-at G 0)) -1
+          (= (kg-f G f 2) addr) f
+          :else (recur (inc f)))))
+(defn- kg-callee [M :vector-i64 L :vector-i64 G :vector-i64 f :i64 base :i64] :i64
+  (let [stub (pj-l L pj-k-stub0) k (km-intr M f) x (xk-intr M f)]
+    (cond (and (> f 0) (< f stub)) (+ base (dec f))
+          (>= k 0) (inc k)
+          (>= x 0) (+ KG-XFIRST x)
+          (and (>= f stub) (< f (+ stub (pj-l L pj-k-nstub))))
+            (kg-target G (pj-l L (+ pj-t-base (- f stub))))
+          :else -1)))
+(defn- kg-note [M :vector-i64 L :vector-i64 G :vector-i64 S :string m :i64] :vector-i64
+  (let [base (vector-at G 0) end (+ base (dec (pj-l L pj-k-stub0)))
+        room (if (>= end MM-FN-CAP) (xg-err M 7104 end) M)
+        functions (loop [f 1]
+                    (if (or (>= f (pj-l L pj-k-stub0)) (not (pj-ok M))) 0
+                      (let [g (+ base (dec f)) sb (+ MM-SYM-BASE (* (xg-f M f FF-SYM) MM-SYM-W))
+                            name (string-substring S (vector-at M (+ sb SF-START)) (vector-at M (+ sb SF-END)))
+                            exported (and (= m 0) (= (xg-f M f FF-EXPORT) 1))
+                            vector (if exported (iv-vector name) -1)
+                            w (-> G (kg-fset g 0 (xg-f M f FF-NPARAMS))
+                                    (kg-fset g 1 (if exported (if (>= vector 0) 2 1) 0))
+                                    (kg-fset g 2 (+ (pj-l L pj-k-base) (dec (xg-f M f FF-CODE))))
+                                    (kg-fset g 3 m) (kg-fset g 4 (inc vector))
+                                    (kg-fset g 5 (vector-at M (+ sb SF-START)))
+                                    (kg-fset g 6 (vector-at M (+ sb SF-END))))]
+                        (recur (inc f)))))
+        numbered (vector-assoc! G 0 end)]
+    (loop [i 1 current 0]
+      (if (or (>= i (vector-at M MM-SIR-N)) (not (pj-ok M))) G
+        (let [op (xg-si M i IF-OP) a (xg-si M i IF-A)
+              f (if (= op OP-FN) a current)
+              j (vector-at G 1)]
+          (cond (or (<= f 0) (>= f (pj-l L pj-k-stub0))) (recur (inc i) f)
+                (>= j MM-SIR-CAP) (let [w (xg-err M 7104 j)] G)
+                :else
+                (let [callee (if (= op OP-CALL) (kg-callee M L G a base) 0)
+                      mapped (cond (or (= op OP-FN) (= op OP-END)) (+ base (dec a))
+                                   (= op OP-CALL) callee :else a)]
+                  (if (and (= op OP-CALL) (<= callee 0))
+                    (let [w (xg-err M 7106 i)] G)
+                    (let [at (+ KG-SBASE (* j MM-SIR-W))
+                          w (-> G (vector-assoc! at op) (vector-assoc! (+ at 1) mapped)
+                                  (vector-assoc! (+ at 2) (xg-si M i IF-B))
+                                  (vector-assoc! (+ at 3) (xg-si M i IF-C))
+                                  (vector-assoc! 1 (inc j)))]
+                      (recur (inc i) f))))))))))
+;; Bounded refusal diagnostics use the same retained SIR as admission. They
+;; report provenance without granting a region or changing an error verdict.
+(defn- kg-diag-n [label :string n :i64] :i64
+  (io-err (string-concat label (string-concat (if (< n 0) "unknown" (mem-u2dec n)) "\n"))))
+(defn- kg-diag-name [M :vector-i64 L :vector-i64 G :vector-i64 P :string f :i64] :i64
+  (if (or (< f KG-FIRST) (>= f (vector-at G 0))) 0
+    (let [S (pj-src M L P (kg-f G f 3))]
+      (io-err (string-concat "  caller " (string-concat
+        (string-substring S (kg-f G f 5) (kg-f G f 6)) "\n"))))))
+(defn- kg-diag-chain [M :vector-i64 L :vector-i64 G :vector-i64 P :string i :i64 t :i64 depth :i64] :i64
+  (if (> depth 14) 0
+    (let [j (xk-writer M i t) f (xg-si M (xk-fn-start M i) IF-A)
+          name (kg-diag-name M L G P f)
+          at (kg-diag-n "    use " i)
+          writer (kg-diag-n "    writer " j)]
+      (if (< j 0) 0
+        (let [op (xg-si M j IF-OP) b (xg-si M j IF-B)
+              kind (kg-diag-n "    writer op " op)
+              slot (kg-diag-n "    writer operand " b)]
+          (cond (and (= op OP-LGET) (xk-param-slot? M j b))
+                  (loop [c 1]
+                    (if (>= c (vector-at M MM-SIR-N)) 0
+                      (if (and (= (xg-si M c IF-OP) OP-CALL) (= (xg-si M c IF-A) f)
+                               (< (xk-region M c (+ (xg-si M c IF-B) (dec b)) 0) 0))
+                        (kg-diag-chain M L G P c (+ (xg-si M c IF-B) (dec b)) (inc depth))
+                        (recur (inc c)))))
+                (= op OP-LGET)
+                  (let [k (xk-first-lset M (inc (xk-fn-start M j)) b)
+                        sets (kg-diag-n "    local assignments " (xk-lsets M (inc (xk-fn-start M j)) b 0))]
+                    (if (> k 0) (kg-diag-chain M L G P k (xg-si M k IF-B) (inc depth)) 0))
+                (and (= op OP-CALL) (= (xk-intr M (xg-si M j IF-A)) 2))
+                  (kg-diag-chain M L G P j b (inc depth))
+                :else 0))))))
+(defn- kg-diag [M :vector-i64 L :vector-i64 G :vector-i64 P :string i :i64] :i64
+  (let [t (xg-si M i IF-B) j (xk-writer M i t)
+        f (xg-si M (xk-fn-start M i) IF-A)
+        slot (if (and (> j 0) (= (xg-si M j IF-OP) OP-LGET)) (xg-si M j IF-B) 0)
+        a (kg-diag-n "region instruction " i)
+        b (kg-diag-n "  writer " j)
+        c (kg-diag-n "  parameter slot " slot)
+        d (kg-diag-n "  region extent source " (xk-region M i t 0))
+        chain (kg-diag-chain M L G P i t 0)
+        e (kg-diag-n "  supplied extent source " (xk-src M i (inc t) 0))]
+    (if (= slot 0) 0
+      (loop [k 1 count 0]
+        (if (or (>= k (vector-at M MM-SIR-N)) (>= count 32)) 0
+          (if (and (= (xg-si M k IF-OP) OP-CALL) (= (xg-si M k IF-A) f))
+            (let [caller (xg-si M (xk-fn-start M k) IF-A)
+                  named (kg-diag-name M L G P caller)
+                  at (kg-diag-n "    instruction " k)
+                  root (kg-diag-n "    region extent source "
+                         (xk-region M k (+ (xg-si M k IF-B) (dec slot)) 0))]
+              (recur (inc k) (inc count)))
+            (recur (inc k) count)))))))
+;; Infer only contracts reached from actual roots or the canonical adjacent
+;; pair contract of an uncalled private function. Then monotonically remove
+;; every contract with a mismatching caller, until the complete graph is
+;; stable. Mutually recursive components may carry rooted facts, never seed
+;; themselves. No instruction is admitted while candidates are tentative.
+(defn- kg-contract-at [M :vector-i64 f :i64 p :i64 paired :bool] :i64
+  (+ (vector-at M (if paired 203 202)) (* f 16) (dec p)))
+(defn- kg-contract-round [M :vector-i64 prune :bool] :vector-i64
+  (loop [i 1]
+    (if (>= i (vector-at M MM-SIR-N)) M
+      (let [f (xg-si M i IF-A)]
+        (if (and (= (xg-si M i IF-OP) OP-CALL) (>= f KG-FIRST)
+                 (= (xg-f M f FF-EXPORT) 0))
+          (let [n (xg-f M f FF-NPARAMS) t (xg-si M i IF-B)
+                checked (loop [p 1]
+                          (if (> p n) M
+                            (let [fixed-at (kg-contract-at M f p false)
+                                  pair-at (kg-contract-at M f p true)
+                                  fixed (vector-at M fixed-at) paired (vector-at M pair-at)
+                                  r (xk-region M i (+ t (dec p)) 0)
+                                  constant (xk-extent-constant M i r)
+                                  ln (if (< p n) (xk-src M i (+ t p) 0) 0)
+                                  literal (and (>= constant 4294967296) (< constant 8589934592))
+                                  pair-ok (and (< p n) (>= r 0) (not= ln 0) (xk-same-extent? M i r ln))
+                                  change-fixed (if prune (and (> fixed 0) (not (xk-same-extent? M i fixed r)))
+                                                     (and (= fixed 0) literal))
+                                  change-pair (if prune (and (> paired 0) (not pair-ok))
+                                                    (and (= paired 0) pair-ok))
+                                  a (if change-fixed (mem-set M fixed-at (if prune 0 constant)) M)
+                                  b (if change-pair (mem-set M pair-at (if prune 0 1)) M)
+                                  c (if (or change-fixed change-pair) (mem-set M 204 1) M)]
+                              (recur (inc p)))))]
+            (recur (inc i)))
+          (recur (inc i)))))))
+(defn- kg-contract-fixedpoint [M :vector-i64 prune :bool bound :i64] :vector-i64
+  (let [clear (mem-set M 204 0) round (kg-contract-round M prune)]
+    (cond (not (pj-ok round)) round
+          (= (vector-at round 204) 0) round
+          (<= bound 0) (xg-err round 7106 0)
+          :else (kg-contract-fixedpoint round prune (dec bound)))))
+(defn- kg-contracts [M :vector-i64] :vector-i64
+  (let [words (* (vector-at M MM-FN-N) 16) allocation (mem-alloc M (+ (* words 3) (vector-at M MM-SIR-N)))
+        base (if (pj-ok allocation) (vector-at allocation MM-R0) 0)]
+    (if (= base 0) M
+      (let [clear (loop [i 0]
+                    (if (>= i (+ (* words 3) (vector-at M MM-SIR-N))) M
+                      (let [w (mem-set M (+ base i) 0)] (recur (inc i)))))
+            set-bases (-> M (mem-set 202 base) (mem-set 203 (+ base words))
+                            (mem-set 205 0) (mem-set 206 (+ base (* words 3))))
+            fn-index (loop [i 1 start 1]
+                       (if (>= i (vector-at M MM-SIR-N)) M
+                         (let [begin (= (xg-si M i IF-OP) OP-FN) st (if begin i start)
+                               f (xg-si M i IF-A)
+                               a (mem-set M (+ (vector-at M 206) i) st)
+                               b (if begin (mem-set M (+ MM-FN-BASE (* f MM-FN-W) FF-SIR) i) M)]
+                           (recur (inc i) st))))
+            identities (loop [f KG-FIRST]
+                         (if (>= f (vector-at M MM-FN-N)) M
+                           (let [w (loop [p 1]
+                                     (if (> p (xg-f M f FF-NPARAMS)) M
+                                       (let [a (mem-set M (+ base (* words 2) (* f 16) (dec p))
+                                                  (if (xk-identity-lsets? M (inc (xg-f M f FF-SIR)) p) 1 0))]
+                                         (recur (inc p)))))]
+                             (recur (inc f)))))
+            identity-base (mem-set M 205 (+ base (* words 2)))
+            ;; During this bounded prepass the now-unused FN fuel field is an
+            ;; incoming-call marker. Emitted code and ABI fuel are unaffected.
+            no-call (loop [f KG-FIRST]
+                      (if (>= f (vector-at M MM-FN-N)) M
+                        (let [w (mem-set M (+ MM-FN-BASE (* f MM-FN-W) FF-FUEL) 0)]
+                          (recur (inc f)))))
+            callers (loop [i 1]
+                      (if (>= i (vector-at M MM-SIR-N)) M
+                        (let [f (xg-si M i IF-A)
+                              w (if (and (= (xg-si M i IF-OP) OP-CALL) (>= f KG-FIRST))
+                                  (mem-set M (+ MM-FN-BASE (* f MM-FN-W) FF-FUEL) 1) M)]
+                          (recur (inc i)))))
+            seeds (loop [f KG-FIRST]
+                    (if (>= f (vector-at M MM-FN-N)) M
+                      (let [w (if (and (= (xg-f M f FF-FUEL) 0) (= (xg-f M f FF-EXPORT) 0))
+                                (loop [p 1]
+                                  (if (>= p (xg-f M f FF-NPARAMS)) M
+                                    (let [a (mem-set M (kg-contract-at M f p true) 1)]
+                                      (recur (inc p))))) M)]
+                        (recur (inc f)))))
+            inferred (kg-contract-fixedpoint M false (* words 2))]
+        (if (pj-ok inferred) (kg-contract-fixedpoint inferred true (* words 2)) inferred)))))
+(defn- kg-check [M :vector-i64 L :vector-i64 G :vector-i64 P :string] :vector-i64
+  (let [functions (loop [f 1]
+                    (if (>= f (vector-at G 0)) M
+                      (let [k (- f KG-XFIRST)
+                            n (cond (< f KG-XFIRST) (km-arity (dec f))
+                                    (< f KG-FIRST) (if (= k 2) 4 (if (= k 1) 4 3))
+                                    :else (kg-f G f 0))
+                            w (-> M (mem-set (+ MM-FN-BASE (* f MM-FN-W) FF-NPARAMS) n)
+                                    (mem-set (+ MM-FN-BASE (* f MM-FN-W) FF-EXPORT)
+                                             (if (< f KG-FIRST) 0 (kg-f G f 1))))]
+                        (recur (inc f)))))
+        instructions (loop [i 1]
+                       (if (>= i (vector-at G 1)) M
+                         (let [w (loop [k 0]
+                                   (if (>= k MM-SIR-W) M
+                                     (let [w2 (mem-set M (+ MM-SIR-BASE (* i MM-SIR-W) k)
+                                                       (vector-at G (+ KG-SBASE (* i MM-SIR-W) k)))]
+                                       (recur (inc k)))))]
+                           (recur (inc i)))))
+        prepared (-> M (mem-set MM-FN-N (vector-at G 0)) (mem-set MM-SIR-N (vector-at G 1))
+                       (mem-set 197 0) (mem-set 200 KG-XFIRST) (mem-set 201 1)
+                       (mem-set 202 0) (mem-set 203 0) (mem-set 205 0) (mem-set 206 0) (kg-contracts))
+        checked (-> prepared (xk-check 1) (km-check 1))
+        owner (if (= (vector-at checked MM-ERR) 7106)
+                (let [i (vector-at checked MM-ERR-N)
+                      diagnostic (kg-diag checked L G P i)
+                      f (xg-si checked (xk-fn-start checked i) IF-A)]
+                  (if (and (>= f KG-FIRST) (< f (vector-at G 0)))
+                    (-> L (pj-ls pj-k-errmod (kg-f G f 3))
+                          (pj-ls KP-ERR-NAME-START (kg-f G f 5))
+                          (pj-ls KP-ERR-NAME-END (kg-f G f 6))) L)) L)]
+    checked))

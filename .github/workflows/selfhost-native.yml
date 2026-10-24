@@ -149,6 +149,12 @@ jobs:
         run: python3 scripts/seed/check-aiueos-image-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/aiueos-image"
       - name: Native x86 AIUEOS EFI packaging and refusal diagnostics
         run: python3 scripts/seed/check-aiueos-boot-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/aiueos-boot"
+      - name: Native x86 locked kernel graph, DMA contracts and private PCI diagnostics
+        shell: bash
+        run: |
+          for suite in project cpu-project memory-project regions boot-region lock isr fixed-extent owned-page owned-window private-context pci-boot pci-private pci-forgery; do
+            python3 "scripts/seed/check-aiueos-$suite-native.py" --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/aiueos-projects/$suite"
+          done
       - name: Native x86 kernel memory admission and emitted guard diagnostics
         shell: bash
         run: |
@@ -193,6 +199,7 @@ jobs:
             ${{ runner.temp }}/aiueos-boot/native-boot.json
             ${{ runner.temp }}/aiueos-boot/F2/commands.json
             ${{ runner.temp }}/aiueos-boot/F3/commands.json
+            ${{ runner.temp }}/aiueos-projects/**/*.json
             ${{ runner.temp }}/kototama-i64-x86_64/report.json
             ${{ runner.temp }}/kototama-i64-x86_64/gate.stdout
             ${{ runner.temp }}/kototama-i64-x86_64/gate.stderr

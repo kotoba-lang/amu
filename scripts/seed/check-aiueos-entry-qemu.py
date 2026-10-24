@@ -23,8 +23,25 @@ def pin(path):
     return dict(bytes=len(b), sha256=hashlib.sha256(b).hexdigest())
 
 
-def main(efi, kernel, qemu, firmware, output):
+def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalog=False, stack_exhaustion=False, pci_catalog=False, pci_private=False, pci_private_forgery=False, dma_snapshot=False):
+    pci_private = pci_private or pci_private_forgery or dma_snapshot
+    pci_catalog = pci_catalog or pci_private
+    assert not (pci_catalog and (sealed_catalog or stack_exhaustion)), "select one versioned fixture"
+    assert 0 <= remaining_fuel <= 9007199254740991
     assert efi.read_bytes().count(kernel.read_bytes()) == 1, "EFI/kernel pair identity mismatch"
+    expected_pc = 0x10104b
+    if stack_exhaustion:
+        data = kernel.read_bytes()
+        ph = struct.unpack_from('<IIQQQQQQ', data, struct.unpack_from('<Q', data, 32)[0])
+        code = data[ph[2]:ph[2]+ph[5]]
+        starts = [i for i in range(len(code)) if code.startswith(bytes.fromhex('4989e24981ea'), i)]
+        assert starts, 'native stack guard absent'
+        at = starts[0]  # The fixed fixture declares deep before main.
+        assert code[at+10:at+12] == b'\x0f\x82' and code[at+26:at+28] == b'\x0f\x82'
+        target = at+16+struct.unpack_from('<i', code, at+12)[0]
+        assert target == at+32+struct.unpack_from('<i', code, at+28)[0]
+        assert code[target:target+4] == bytes.fromhex('faf4ebfd')
+        expected_pc = ph[3]+target+2
     output.mkdir(parents=True, exist_ok=False)
     esp = output / "esp/EFI/BOOT"
     esp.mkdir(parents=True)
@@ -34,7 +51,8 @@ def main(efi, kernel, qemu, firmware, output):
             "-drive", "file=fat:rw:esp,format=raw", "-boot", "order=c", "-nic", "none",
             "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", "-display", "none",
             "-serial", "file:serial.log", "-debugcon", "file:debug.log", "-no-reboot",
-            "-qmp", "unix:qmp.sock,server=on,wait=off"]
+            "-qmp", "unix:qmp.sock,server=on,wait=off",
+            "-d", "int", "-D", "exceptions.log"]
     (output / "command.json").write_text(json.dumps(args, indent=2) + "\n")
     old_cwd = Path.cwd()
     os.chdir(output)  # Keep the Unix socket name below macOS's path limit.
@@ -75,9 +93,12 @@ def main(efi, kernel, qemu, firmware, output):
             assert proc.poll() is None, ("QEMU exited before entry proof", proc.returncode)
             registers = hmp("info registers")
             (output / "registers-last.txt").write_text(registers)
-            if re.search(r"RIP=0*10104b\b", registers, re.I):
-                assert re.search(r"RAX=0*2a\b", registers, re.I), registers
+            if re.search(rf"RIP=0*{expected_pc:x}\b", registers, re.I):
+                if not stack_exhaustion:
+                    assert re.search(r"RAX=0*2a\b", registers, re.I), registers
                 break
+            if stack_exhaustion and re.search(r"RIP=0*10104b\b", registers, re.I):
+                raise AssertionError('guest returned; expected the declared deep-function stack guard')
             time.sleep(1)
         else:
             raise AssertionError("native kernel did not reach its post-return halt")
@@ -87,27 +108,123 @@ def main(efi, kernel, qemu, firmware, output):
         assert hmp(f"pmemsave 0x{context:x} 96 context.bin") == ""
         ctx = Path("context.bin").read_bytes()
         fuel, boot = struct.unpack_from("<Q", ctx, 8)[0], struct.unpack_from("<Q", ctx, 80)[0]
-        # Literal-only main has no source charge site (same as the existing
-        # public native product test); preserving fuel is the exact contract.
-        assert fuel == 1024 and boot > 0, (fuel, boot)
+        # The original literal-only probe preserves 1024. Call-bearing locked
+        # fixtures supply their exact source-charge expectation explicitly.
+        assert boot > 0
+        if stack_exhaustion or dma_snapshot:
+            assert 0 < fuel < 1000000, fuel  # Bounded budget, not exact fuel parity.
+        else:
+            assert fuel == remaining_fuel, (fuel, remaining_fuel)
         assert hmp(f"pmemsave 0x{boot:x} 160 boot-info.bin") == ""
         info = Path("boot-info.bin").read_bytes()
-        assert struct.unpack_from("<QQ", info) == (0x544f4f4245554941, 5)
+        assert struct.unpack_from("<QQ", info) == (0x544f4f4245554941, 6 if pci_catalog else 5)
         map_pointer, map_size, desc_size = struct.unpack_from("<QQQ", info, 16)
         assert map_pointer == boot + 160 and 0 < map_size <= 16384 and desc_size >= 40
+        assert map_size % desc_size == 0
+        assert hmp(f"pmemsave 0x{map_pointer:x} 16384 firmware-map.bin") == ""
+        memory_map = Path("firmware-map.bin").read_bytes()
+        assert len(memory_map) == 16384
+        memory_types = {}
+        for offset in range(0, map_size, desc_size):
+            kind = str(struct.unpack_from("<I", memory_map, offset)[0])
+            memory_types[kind] = memory_types.get(kind, 0) + 1
+        pci = None
+        if pci_catalog:
+            pointer, size = struct.unpack_from('<QQ', info, 144)
+            if pci_private_forgery:
+                scratch=struct.unpack_from('<Q', info, 80)[0]
+                assert (pointer,size)==(scratch+14*4096,96)
+                assert hmp(f"pmemsave 0x{pointer:x} {size} forged-catalog.bin")==""
+                fake=Path('forged-catalog.bin').read_bytes()
+                assert struct.unpack_from('<QQQQ',fake)==(0x31494350534f4941,1,1,64)
+                assert struct.unpack_from('<8Q',fake,32)==(1048576,4096,0,0,1,0,0,286331444)
+                pointer=boot+16544
+                assert hmp(f"pmemsave 0x{context+312:x} 8 pci-private-size.bin")==""
+                size=struct.unpack('<Q',Path('pci-private-size.bin').read_bytes())[0]
+            assert pointer == boot+16544 and 32 <= size <= 8224
+            assert hmp(f"pmemsave 0x{pointer:x} {size} pci-catalog.bin") == ""
+            raw = Path('pci-catalog.bin').read_bytes()
+            magic, version, count, stride = struct.unpack_from('<QQQQ', raw)
+            assert (magic, version, stride) == (0x31494350534f4941, 1, 64)
+            assert count <= 128 and size == 32+64*count
+            devices = call('query-pci')
+            (output/'qmp-pci.json').write_text(json.dumps(devices, indent=2)+'\n')
+            expected = set()
+            def scan(bus):
+                for device in bus['devices']:
+                    for region in device.get('regions', []):
+                        if region['type'] == 'memory' and 0 <= region['bar'] <= 5:
+                            assert region['address'] > 0 and region['size'] > 0
+                            expected.add((region['address'],region['size'],0,device['bus'],device['slot'],device['function'],region['bar'],device['id']['vendor']+(device['id']['device']<<16)))
+                    if 'pci_bridge' in device:
+                        scan(device['pci_bridge']['bus'])
+            for bus in devices: scan(bus)
+            observed = [struct.unpack_from('<8Q', raw, 32+64*i) for i in range(count)]
+            assert len(set(observed)) == len(observed), 'duplicate catalog record'
+            assert set(observed) == expected and count > 0, (observed, expected)
+            private_pci = None
+            if pci_private:
+                assert hmp(f"pmemsave 0x{context:x} 28672 private-pci.bin") == ""
+                private = Path('private-pci.bin').read_bytes()
+                assert struct.unpack_from('<QQ', private, 312) == (size, 0x31494350)
+                assert struct.unpack_from('<QQ', private, 336) == (0x31494350, context+65536)
+                assert private[20480:20480+size] == raw
+                private_pci = dict(privateBytesMatch=True,stackFloor=context+65536,
+                                   context=pin(Path('private-pci.bin')))
+            pci = dict(publicMetadataForged=pci_private_forgery,privateSnapshot=private_pci,records=count,catalog=pin(Path('pci-catalog.bin')),qmp=pin(output/'qmp-pci.json'),
+                       exactDeviceAndBARParity=True,osOwnershipQualified=False)
+        catalog = None
+        if sealed_catalog or stack_exhaustion:
+            assert hmp(f"pmemsave 0x{context:x} 16896 private-context.bin") == ""
+            private = Path('private-context.bin').read_bytes()
+            size, stride, ready = struct.unpack_from('<QQQ', private, 288)
+            assert (size, stride, ready) == (map_size, desc_size, 0x4d415031)
+            copied = private[512:512+size]
+            if stack_exhaustion:
+                assert copied == memory_map[:size], 'stack damaged the sealed catalog'
+                rsp = int(re.search(r'\bRSP=([0-9a-f]+)', registers, re.I)[1], 16)
+                proposed = int(re.search(r'\bR10=([0-9a-f]+)', registers, re.I)[1], 16)
+                floor = context+20480
+                assert proposed < floor and rsp >= floor-8, (proposed, floor, rsp)
+            else:
+                scratch = struct.unpack_from('<Q', info, 80)[0]
+                assert hmp(f"pmemsave 0x{scratch+14*4096:x} 24 original-record.bin") == ""
+                original = struct.unpack('<QQQ', Path('original-record.bin').read_bytes())
+                actual = (struct.unpack_from('<I', copied)[0], struct.unpack_from('<Q', copied, 8)[0], struct.unpack_from('<Q', copied, 24)[0])
+                public = (struct.unpack_from('<I', memory_map)[0], struct.unpack_from('<Q', memory_map, 8)[0], struct.unpack_from('<Q', memory_map, 24)[0])
+                assert actual == original and public == (11, 4096, 16) and actual != public
+            catalog = dict(bytes=size, stride=stride, sha256=hashlib.sha256(copied).hexdigest(),
+                           publicMutationIsAuthority=False, positivePlatformMMIOQualified=False)
+        dma = None
+        if dma_snapshot:
+            # Functional memory gate; exact source-fuel parity is deliberately
+            # separate. Locate pages through sealed context, never public info.
+            scratch, pages = struct.unpack_from('<QQ', private, 272)
+            assert scratch > 0 and pages == 15
+            assert hmp(f"pmemsave 0x{scratch:x} 80 dma-receipt.bin") == ""
+            assert hmp(f"pmemsave 0x{scratch+14*4096:x} 4096 dma-snapshot.bin") == ""
+            checks = struct.unpack('<10Q', Path('dma-receipt.bin').read_bytes())
+            snapshot = Path('dma-snapshot.bin').read_bytes()
+            assert checks == (1,)*10, checks
+            assert snapshot == bytes([68])*64+bytes(4096-64)
+            dma = dict(checks=list(checks),receipt=pin(Path('dma-receipt.bin')),
+                       snapshot=pin(Path('dma-snapshot.bin')),four2048ByteBuffers=True,
+                       invalidIndexSizeAndAliasPreserveSnapshot=True,exactFuelParity=False)
         fb, fbsize = struct.unpack_from("<QQ", info, 112)
         width, height, stride, pixel_format = struct.unpack_from("<IIII", info, 128)
         assert fb > 0 and fbsize > 0 and width > 0 and height > 0 and stride >= width
         (output / "registers.txt").write_text(registers)
-        report = dict(status="PASS_AIUEOS_ENTRY_QEMU", observer=pin(Path(__file__).resolve()), efi=pin(efi), kernel=pin(kernel),
+        report = dict(status="PASS_NATIVE_STACK_LIMIT_QEMU" if stack_exhaustion else "PASS_AIUEOS_ENTRY_QEMU", observer=pin(Path(__file__).resolve()), efi=pin(efi), kernel=pin(kernel),
                       firmware=pin(firmware), qemuVersion=subprocess.check_output([str(qemu), "--version"]).decode().splitlines()[0],
-                      result=42, pc="0x10104b", remainingFuel=fuel, bootInfoVersion=5,
+                      result=None if stack_exhaustion else 42, pc=hex(expected_pc), remainingFuel=fuel,
+                      expectedRemainingFuel=None if stack_exhaustion or dma_snapshot else remaining_fuel, bootInfoVersion=6 if pci_catalog else 5, pciResources=pci, dmaSnapshot=dma,
+                      observedPublicMapTypes=memory_types, firmwareMap=pin(Path("firmware-map.bin")), sealedCatalog=catalog,
                       framebuffer=dict(base=fb, bytes=fbsize, width=width, height=height, stride=stride, pixelFormat=pixel_format),
                       completeKernel=False, desktop=False, input=False, gpt=False, physicalHardware=False,
                       compilerProvenance="requires associated native packaging receipt",
                       guestEmulation="QEMU TCG", nativeCDCI=False)
-        (output / "entry-qemu.json").write_text(json.dumps(report, indent=2) + "\n")
-        print(report["status"], "native-produced EFI -> native-produced kernel -> result 42; full OS gate open", flush=True)
+        (output / ("stack-qemu.json" if stack_exhaustion else "entry-qemu.json")).write_text(json.dumps(report, indent=2) + "\n")
+        print(report["status"], "bounded stack halt with intact catalog" if stack_exhaustion else "native-produced EFI -> native-produced kernel -> result 42; full OS gate open", flush=True)
     finally:
         if stream:
             stream.close()
@@ -129,5 +246,13 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     for name in ("efi", "kernel", "qemu", "firmware", "output"):
         p.add_argument("--" + name, required=True, type=Path)
+    p.add_argument("--remaining-fuel", type=int, default=1024)
+    p.add_argument("--sealed-catalog", action="store_true")
+    p.add_argument("--stack-exhaustion", action="store_true")
+    p.add_argument("--pci-catalog", action="store_true")
+    p.add_argument("--pci-private", action="store_true")
+    p.add_argument("--pci-private-forgery", action="store_true")
+    p.add_argument("--dma-snapshot", action="store_true")
     a = p.parse_args()
-    main(*(getattr(a, n).resolve() for n in ("efi", "kernel", "qemu", "firmware", "output")))
+    main(*(getattr(a, n).resolve() for n in ("efi", "kernel", "qemu", "firmware", "output")), remaining_fuel=a.remaining_fuel,
+         sealed_catalog=a.sealed_catalog, stack_exhaustion=a.stack_exhaustion, pci_catalog=a.pci_catalog, pci_private=a.pci_private, pci_private_forgery=a.pci_private_forgery, dma_snapshot=a.dma_snapshot)
