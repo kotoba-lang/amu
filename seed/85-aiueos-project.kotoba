@@ -46,7 +46,8 @@
 
 (defn- kp-emit-module [M :vector-i64 L :vector-i64 S :string m :i64] :vector-i64
   (let [admitted (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 4 0) (mem-set 197 0)
-                    (mem-set 200 0) (xo-check-fns S 1) (xg-check-sir 1) (xk-scan S) (xk-check 1))
+                    (mem-set 200 0) (mem-set 201 0) (xo-check-fns S 1) (xg-check-sir 1)
+                    (xk-scan S) (km-scan S) (xk-check 1) (km-check 1))
         entry (xg-get admitted 1)]
     (cond (not (pj-ok admitted)) admitted
           (not= (vector-at admitted MM-CAPS) 0) (xg-err admitted 7101 OP-CAP)
@@ -67,7 +68,7 @@
 (defn- kp-module-h [M :vector-i64 L :vector-i64 P :string m :i64 H :vector-i64] :string
   (let [S0 (pj-src M L P m) trailer (pj-trailer L P m)
         S1 (if (pj-ok M) (string-concat S0 (ck-r6b-lib-t S0 "")) S0)
-        S (string-concat S1 (string-concat trailer (xk-lib)))
+        S (string-concat S1 (string-concat trailer (string-concat (km-lib) (xk-lib))))
         base (bit-and (+ (pj-l L pj-k-img) 15) -16)
         w (-> L (pj-ls pj-k-errmod m) (pj-ls pj-k-trail (string-length S1))
               (pj-ls pj-k-base base) (pj-mset m pj-mf-base base))
@@ -75,7 +76,7 @@
         M2 (if (pj-ok M1) (pj-refcheck (pj-qscan (pj-norm M1 L S) L P S m) L P m) M1)
         M3 (if (pj-ok M2) (pj-splice M2 L) M2)
         M4 (if (pj-ok M3) (nm-run M3 S) M3)
-        stubs (if (pj-ok M4) (pj-ls L pj-k-stub0 (- (vector-at M4 MM-FN-N) (pj-l L pj-k-nstub) XK-INTR-N)) L)
+        stubs (if (pj-ok M4) (pj-ls L pj-k-stub0 (- (vector-at M4 MM-FN-N) (pj-l L pj-k-nstub) XK-INTR-N KM-INTR-N)) L)
         M5 (if (pj-ok M4) (ck-run-h M4 S H) M4)]
     (cond (and (pj-ok M5) (ck-hint-again? H M5)) (kp-module-h M5 L P m H)
           (not (pj-ok M5)) (let [w2 (pj-err-back M5 L m (string-length S1))] P)

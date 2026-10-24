@@ -1,0 +1,84 @@
+;; Kernel-project intrinsics. The original four object intrinsics and their
+;; byte ABI stay in 74. This suffix is admitted only by the locked project
+;; adapter with M[197]=0 and an independently checked first FN in M[201].
+;; Static runtime builds use cells 200..255 for slots: never inspect them as
+;; kernel intrinsics when M[197]>0.
+(def KM-MEM-N 29)
+(def KM-INTR-N 33)
+
+;; All 32 load/store width/tier operations, excluding the three already
+;; supplied by xk-lib: plain u32 load/store and the 16 KiB u32 load.
+(defn- km-raw [k :i64] :i64 (+ k (cond (< k 4) 0 (< k 18) 2 :else 3)))
+(defn- km-width [raw :i64] :i64 (i64-shift-left 1 (mod (quot raw 2) 4)))
+(defn- km-maximum [raw :i64] :i64 (case (quot raw 8) 0 512 1 4096 2 16384 65536))
+(defn- km-name [k :i64] :string
+  (if (< k KM-MEM-N)
+    (let [raw (km-raw k)
+          kind (if (= (bit-and raw 1) 0) "kernel-load-" "kernel-store-")
+          width (case (mod (quot raw 2) 4) 0 "u8" 1 "u16" 2 "u32" "u64")
+          tier (case (quot raw 8) 0 "" 1 "-4k" 2 "-16k" "-64k")]
+      (string-concat kind (string-concat width tier)))
+    (case (- k KM-MEM-N) 0 "kernel-out-u8" 1 "kernel-out-u32" 2 "kernel-in-u8" 3 "kernel-in-u32" "")))
+(defn- km-arity [k :i64] :i64
+  (if (< k KM-MEM-N) (if (= (bit-and (km-raw k) 1) 0) 3 4)
+    (if (< k (+ KM-MEM-N 2)) 2 1)))
+(defn- km-lib [] :string
+  (loop [k 0 text ""]
+    (if (>= k KM-INTR-N) text
+      (let [args (case (km-arity k) 1 "[a :i64]" 2 "[a :i64 b :i64]"
+                      3 "[a :i64 b :i64 c :i64]" "[a :i64 b :i64 c :i64 d :i64]")]
+        (recur (inc k) (string-concat text (string-concat "\n(defn- "
+          (string-concat (km-name k) (string-concat " " (string-concat args " :i64 0)\n"))))))))))
+(defn- km-intr [M :vector-i64 f :i64] :i64
+  (let [first (vector-at M 201) k (- f first)]
+    (if (and (= (vector-at M 197) 0) (> first 0) (>= k 0) (< k KM-INTR-N)) k -1)))
+(defn- km-scan [M :vector-i64 S :string] :vector-i64
+  (let [first (- (vector-at M MM-FN-N) XK-INTR-N KM-INTR-N)]
+    (if (<= first 1) (xg-err M 7102 first)
+      (loop [k 0]
+        (if (>= k KM-INTR-N) (mem-set M 201 first)
+          (let [f (+ first k) sym (xg-f M f FF-SYM) sb (+ MM-SYM-BASE (* sym MM-SYM-W))
+                a (vector-at M (+ sb SF-START)) b (vector-at M (+ sb SF-END))]
+            (if (and (string=? (string-substring S a b) (km-name k))
+                     (= (xg-f M f FF-KIND) FK-PRIV) (= (xg-f M f FF-NPARAMS) (km-arity k)))
+              (recur (inc k)) (xg-err M 7102 f))))))))
+
+;; xg's normal rel32 labels own all jumps. The check subtracts index from
+;; an already bounded length, avoiding index+width overflow. Every width
+;; above one byte is aligned, matching the owner memwidth window ABI.
+(defn- km-window [M :vector-i64 k :i64 t :i64] :vector-i64
+  (let [raw (km-raw k) width (km-width raw) store (= (bit-and raw 1) 1)
+        trap (vector-at M MM-LABEL-N) end (inc trap)]
+    (if (>= end MM-LABEL-CAP) (xg-err M 7104 end)
+      (let [v (-> M (mem-set MM-LABEL-N (inc end))
+                  (xg-load t 0x958b48) (xg-load (inc t) 0x8d8b48)
+                  (xg-load (+ t 2) (if store 0xbd8b48 0x858b48)))
+            v1 (if store (xg-load v (+ t 3) 0x858b48) v)
+            checked (-> v1
+                        (xg-bytes 0xf98148 3) (xg-bytes (km-maximum raw) 4) (xg-rel 0x870f 2 2 trap)
+                        (xg-bytes 0xd28548 3) (xg-rel 0x840f 2 2 trap)
+                        (xg-bytes (if store 0xcf3948 0xc83948) 3) (xg-rel 0x830f 2 2 trap)
+                        (xg-bytes 0xce8948 3) (xg-bytes (if store 0xfe2948 0xc62948) 3)
+                        (xg-bytes 0xfe8148 3) (xg-bytes width 4) (xg-rel 0x820f 2 2 trap))
+            aligned (if (= width 1) checked
+                      (-> checked (xg-bytes (if store 0xc7f748 0xc0f748) 3)
+                          (xg-bytes (dec width) 4) (xg-rel 0x850f 2 2 trap)))
+            accessed (if store
+                       (case width 1 (xg-bytes aligned 0x3a0488 3) 2 (xg-bytes aligned 0x3a048966 4)
+                                   4 (xg-bytes aligned 0x3a0489 3) (xg-bytes aligned 0x3a048948 4))
+                       (case width 1 (xg-bytes aligned 0x0204b60f 4) 2 (xg-bytes aligned 0x0204b70f 4)
+                                   4 (xg-bytes aligned 0x02048b 3) (xg-bytes aligned 0x02048b48 4)))]
+        (-> accessed (xg-rel 0xe9 1 2 end) (xg-label trap) (xg-bytes 0x0b0f 2) (xg-label end) (xg-save t))))))
+(defn- km-intrinsic [M :vector-i64 k :i64 t :i64] :vector-i64
+  (cond (< k KM-MEM-N) (km-window M k t)
+        (< k (+ KM-MEM-N 2))
+          (-> M (xg-load t 0x958b48) (xg-load (inc t) 0x858b48)
+              (xg-byte (if (= k KM-MEM-N) 238 239)) (xg-save t))
+        (= k (+ KM-MEM-N 2)) (-> M (xg-load t 0x958b48) (xg-bytes 0xc031 2) (xg-byte 236) (xg-save t))
+        (= k (+ KM-MEM-N 3)) (-> M (xg-load t 0x958b48) (xg-byte 237) (xg-save t))
+        :else (xg-err M 7101 OP-CALL)))
+(defn- km-check [M :vector-i64 i :i64] :vector-i64
+  (if (or (not= (vector-at M MM-ERR) 0) (>= i (vector-at M MM-SIR-N))) M
+    (let [k (if (= (xg-si M i IF-OP) OP-CALL) (km-intr M (xg-si M i IF-A)) -1)]
+      (if (and (>= k 0) (< k KM-MEM-N) (not (xk-rooted M i (xg-si M i IF-B) 0)))
+        (xg-err M 7106 i) (km-check M (inc i))))))
