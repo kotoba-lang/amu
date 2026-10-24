@@ -1,0 +1,621 @@
+;; tools/b2/tests/string_t.kotoba -- the test of tools/b2/10-string.kotoba (route B2, ADR 0375).
+;; Assembled after the ns line and the B2 unit files (00-base, 10-string). Every check prints one line,
+;; NAME ok or NAME FAIL detail; the status is 0 only when all passed, else 1. The cx- functions are called
+;; from Kotoba directly (no C). With an argument the program instead makes one call that must be refused
+;; (exit status 127 and "b2: refused: ..." on fd 2): overflow-memcpy overflow-memset overflow-strncpy
+;; overflow-strcat overflow-strncat invalid-base invalid-base-1 memcpy-huge strtok-null.
+;; State bytes 6144.. belong to this test (inside the range 4096..8191 of the string file).
+
+(def ts-FAILS 6144)
+(def ts-BUFP 6152)
+;; the scratch buffer is 16384 bytes, used as 1 KiB slots: 0 memset, 1024/2048 memcpy, 3072/4096/5120 memmove,
+;; 6144.. the string tests (6144 first string, 6656 second, 7000 saveptr cell, 7168 destination, 8000 endptr
+;; cell, 8192 strtol input)
+
+(defn- ts-buf [off :i64] :i64 (+ (st ts-BUFP) off))
+
+;; ---- reporting ----
+(defn- ts-ok [name :string] :i64 (let [w (say (string-concat name " ok"))] 0))
+(defn- ts-fail [name :string detail :string] :i64
+  (let [f (st! ts-FAILS (inc (st ts-FAILS)))
+        w (say (string-concat name (string-concat " FAIL " detail)))]
+    1))
+(defn- ts-int [name :string got :i64 want :i64] :i64
+  (if (= got want) (ts-ok name)
+    (ts-fail name (string-concat "got " (string-concat (dec-str got) (string-concat " want " (dec-str want)))))))
+(defn- ts-sign [v :i64] :i64 (cond (< v 0) -1 (> v 0) 1 :else 0))
+;; the C string at p equals want
+(defn- ts-cstr [name :string p :i64 want :string] :i64
+  (if (c-eq? p want) (ts-ok name)
+    (ts-fail name (string-concat "got [" (string-concat (c-str p) (string-concat "] want [" (string-concat want "]")))))))
+
+;; ---- byte-level helpers ----
+(defn- ts-hex2 [b :i64] :string
+  (string-concat (string-from-utf8 (bytes-from-vector-i64 (conj [] (hex-digit (bit-and (u64-shift-right b 4) 15)))))
+                 (string-from-utf8 (bytes-from-vector-i64 (conj [] (hex-digit (bit-and b 15)))))))
+(defn- ts-dump [p :i64 n :i64] :string
+  (loop [i 0 out ""] (if (>= i n) out (recur (inc i) (string-concat out (ts-hex2 (l8 (+ p i))))))))
+(defn- ts-rep [h :string n :i64] :string
+  (loop [i 0 out ""] (if (>= i n) out (recur (inc i) (string-concat out h)))))
+(defn- ts-cat3 [a :string b :string c :string] :string (string-concat a (string-concat b c)))
+(defn- ts-cat5 [a :string b :string c :string d :string e :string] :string
+  (string-concat a (string-concat b (string-concat c (string-concat d e)))))
+;; the n bytes at p are the bytes written as lower-case hex pairs in want
+(defn- ts-hexeq? [p :i64 n :i64 want :string] :bool
+  (and (= (string-length want) (* 2 n))
+       (loop [i 0]
+         (if (= i n) true
+           (let [b (l8 (+ p i))]
+             (if (and (= (string-code-point-at want (* 2 i)) (hex-digit (bit-and (u64-shift-right b 4) 15)))
+                      (= (string-code-point-at want (inc (* 2 i))) (hex-digit (bit-and b 15))))
+               (recur (inc i))
+               false))))))
+(defn- ts-mem [name :string p :i64 n :i64 want :string] :i64
+  (if (ts-hexeq? p n want) (ts-ok name)
+    (ts-fail name (string-concat "got " (string-concat (ts-dump p n) (string-concat " want " want))))))
+(defn- ts-set [p :i64 n :i64 v :i64] :i64
+  (loop [i 0] (if (>= i n) p (let [z (s8 (+ p i) v)] (recur (inc i))))))
+(defn- ts-seq [p :i64 n :i64 start :i64] :i64
+  (loop [i 0] (if (>= i n) p (let [z (s8 (+ p i) (bit-and (+ start i) 255))] (recur (inc i))))))
+;; the number of positions at which the n bytes at a and b differ
+(defn- ts-diff [a :i64 b :i64 n :i64] :i64
+  (loop [i 0 d 0] (if (>= i n) d (recur (inc i) (if (= (l8 (+ a i)) (l8 (+ b i))) d (inc d))))))
+;; the number of the n bytes at p that are not v
+(defn- ts-count-ne [p :i64 n :i64 v :i64] :i64
+  (loop [i 0 d 0] (if (>= i n) d (recur (inc i) (if (= (l8 (+ p i)) v) d (inc d))))))
+;; a Kotoba string as a C string in the slot at off
+(defn- ts-str [off :i64 s :string] :i64 (let [p (ts-buf off) z (put-str p s)] p))
+;; the offset of a result pointer r from s, -1 for NULL
+(defn- ts-off [r :i64 s :i64] :i64 (if (= r 0) -1 (- r s)))
+
+;; ---- memset ----
+(defn- ts-memset [] :i64
+  (let [p (ts-buf 0)
+        a (ts-set p 64 0x5a)
+        r1 (cx-memset-GLIBC_2.2.5 (+ p 8) 4294967361 37)
+        e1 (ts-cat3 (ts-rep "5a" 8) (ts-rep "41" 37) (ts-rep "5a" 19))
+        t1 (ts-int "memset-ret" r1 (+ p 8))
+        t2 (ts-mem "memset-37-c-high-bits" p 64 e1)
+        r2 (cx-memset-GLIBC_2.2.5 (+ p 8) 0 0)
+        t3 (ts-mem "memset-n0" p 64 e1)
+        r3 (cx-memset-GLIBC_2.2.5 (+ p 16) 255 5)
+        t4 (ts-mem "memset-5-ff" p 64
+             (ts-cat5 (ts-rep "5a" 8) (ts-rep "41" 8) (ts-rep "ff" 5) (ts-rep "41" 24) (ts-rep "5a" 19)))
+        r4 (cx-memset-GLIBC_2.2.5 (+ p 60) (- 0 1) 4)
+        t5 (ts-mem "memset-c-minus-1" (+ p 40) 24 (ts-cat3 (ts-rep "41" 5) (ts-rep "5a" 15) (ts-rep "ff" 4)))
+        b (ts-set (+ p 128) 16 0x5a)
+        r5 (cx-memset-GLIBC_2.2.5 (+ p 130) 256 4)
+        t6 (ts-mem "memset-c-256-is-0" (+ p 128) 16 (ts-cat3 (ts-rep "5a" 2) (ts-rep "00" 4) (ts-rep "5a" 10)))
+        c (ts-set (+ p 256) 300 0x5a)
+        r6 (cx-memset-GLIBC_2.2.5 (+ p 257) 7 291)
+        t7 (ts-int "memset-291-fill" (ts-count-ne (+ p 257) 291 7) 0)
+        t8 (ts-mem "memset-291-guard-before" (+ p 256) 1 "5a")
+        t9 (ts-mem "memset-291-guard-after" (+ p 548) 8 (ts-rep "5a" 8))
+        t10 (ts-mem "memset-291-first" (+ p 257) 3 "070707")
+        t11 (ts-mem "memset-291-last" (+ p 545) 3 "070707")]
+    0))
+
+;; ---- memcpy ----
+(defn- ts-cp-case [n :i64 so :i64 dof :i64] :i64
+  (let [src (+ (ts-buf 1024) so) dst (+ (ts-buf 2048) (+ 16 dof))
+        a (ts-seq src 200 3)
+        b (ts-set (- dst 16) (+ n 32) 0x5a)
+        r (cx-memcpy-GLIBC_2.14 dst src n)
+        name (string-concat "memcpy-" (string-concat (dec-str n) (string-concat "-" (string-concat (dec-str so) (string-concat "-" (dec-str dof))))))
+        t1 (ts-int (string-concat name "-ret") r dst)
+        t2 (ts-int (string-concat name "-data") (ts-diff dst src n) 0)
+        t3 (ts-mem (string-concat name "-guard-before") (- dst 16) 16 (ts-rep "5a" 16))
+        t4 (ts-mem (string-concat name "-guard-after") (+ dst n) 16 (ts-rep "5a" 16))]
+    0))
+(defn- ts-memcpy [] :i64
+  (let [a (ts-cp-case 0 0 0) b (ts-cp-case 1 0 0) c (ts-cp-case 7 0 0) d (ts-cp-case 8 0 0)
+        e (ts-cp-case 9 0 0) f (ts-cp-case 15 1 3) g (ts-cp-case 16 3 1) h (ts-cp-case 37 1 2)
+        i (ts-cp-case 100 0 5) j (ts-cp-case 100 7 0) k (ts-cp-case 160 0 0)]
+    0))
+
+;; ---- memmove: the result must equal the oracle (src copied aside, then to dst) ----
+(defn- ts-mm-case [d :i64 s :i64 n :i64] :i64
+  (let [r (ts-buf 3072) o (ts-buf 4096) t (ts-buf 5120)
+        a (ts-seq r 256 7)
+        b (c-copy o r 256)
+        c (c-copy t (+ r s) n)
+        e (c-copy (+ o d) t n)
+        ret (cx-memmove-GLIBC_2.2.5 (+ r d) (+ r s) n)
+        name (string-concat "memmove-d" (string-concat (dec-str d) (string-concat "-s" (string-concat (dec-str s) (string-concat "-n" (dec-str n))))))
+        t1 (ts-int (string-concat name "-ret") ret (+ r d))
+        t2 (ts-int (string-concat name "-data") (ts-diff r o 256) 0)]
+    0))
+(defn- ts-memmove [] :i64
+  (let [a (ts-mm-case 0 5 40) b (ts-mm-case 5 0 40) c (ts-mm-case 1 0 100) d (ts-mm-case 0 1 100)
+        e (ts-mm-case 3 0 7) f (ts-mm-case 0 3 7) g (ts-mm-case 8 0 8) h (ts-mm-case 0 8 8)
+        i (ts-mm-case 0 40 40) j (ts-mm-case 40 0 40) k (ts-mm-case 0 0 50) l (ts-mm-case 10 10 0)
+        m (ts-mm-case 2 0 200) n (ts-mm-case 0 2 200) o (ts-mm-case 0 7 9) p (ts-mm-case 7 0 9)
+        q (ts-mm-case 4 0 12) r (ts-mm-case 0 4 12) s (ts-mm-case 9 0 1) t (ts-mm-case 0 9 1)]
+    0))
+
+;; ---- strlen ----
+(defn- ts-strlen [] :i64
+  (let [p (ts-buf 6144)
+        t1 (ts-int "strlen-empty" (cx-strlen-GLIBC_2.2.5 (ts-str 6144 "")) 0)
+        t2 (ts-int "strlen-1" (cx-strlen-GLIBC_2.2.5 (ts-str 6144 "a")) 1)
+        t3 (ts-int "strlen-11" (cx-strlen-GLIBC_2.2.5 (ts-str 6144 "hello world")) 11)
+        a (ts-set p 1000 120)
+        b (s8 (+ p 1000) 0)
+        t4 (ts-int "strlen-1000" (cx-strlen-GLIBC_2.2.5 p) 1000)
+        c (ts-str 6144 "abc")
+        d (s8 (+ p 1) 255)
+        t5 (ts-int "strlen-high-byte" (cx-strlen-GLIBC_2.2.5 p) 3)]
+    0))
+
+;; ---- strcmp / strncmp ----
+(defn- ts-strcmp [] :i64
+  (let [a (ts-buf 6144) b (ts-buf 6656)
+        t1 (ts-int "strcmp-empty" (cx-strcmp-GLIBC_2.2.5 (ts-str 6144 "") (ts-str 6656 "")) 0)
+        t2 (ts-int "strcmp-equal" (ts-sign (cx-strcmp-GLIBC_2.2.5 (ts-str 6144 "abc") (ts-str 6656 "abc"))) 0)
+        t3 (ts-int "strcmp-less" (ts-sign (cx-strcmp-GLIBC_2.2.5 (ts-str 6144 "abc") (ts-str 6656 "abd"))) -1)
+        t4 (ts-int "strcmp-greater" (ts-sign (cx-strcmp-GLIBC_2.2.5 (ts-str 6144 "abd") (ts-str 6656 "abc"))) 1)
+        t5 (ts-int "strcmp-prefix-less" (ts-sign (cx-strcmp-GLIBC_2.2.5 (ts-str 6144 "ab") (ts-str 6656 "abc"))) -1)
+        t6 (ts-int "strcmp-prefix-greater" (ts-sign (cx-strcmp-GLIBC_2.2.5 (ts-str 6144 "abc") (ts-str 6656 "ab"))) 1)
+        t7 (ts-int "strcmp-empty-less" (ts-sign (cx-strcmp-GLIBC_2.2.5 (ts-str 6144 "") (ts-str 6656 "a"))) -1)
+        t8 (ts-int "strcmp-empty-greater" (ts-sign (cx-strcmp-GLIBC_2.2.5 (ts-str 6144 "a") (ts-str 6656 ""))) 1)
+        c (ts-str 6144 "a")
+        d (s8 (+ a 1) 255)
+        e (s8 (+ a 2) 0)
+        f (ts-str 6656 "ab")
+        t9 (ts-int "strcmp-unsigned-high" (ts-sign (cx-strcmp-GLIBC_2.2.5 a b)) 1)
+        t10 (ts-int "strcmp-unsigned-high-rev" (ts-sign (cx-strcmp-GLIBC_2.2.5 b a)) -1)
+        t11 (ts-int "strcmp-same-pointer" (cx-strcmp-GLIBC_2.2.5 a a) 0)]
+    0))
+
+(defn- ts-strncmp [] :i64
+  (let [a (ts-buf 6144) b (ts-buf 6656)
+        t1 (ts-int "strncmp-n0" (cx-strncmp-GLIBC_2.2.5 (ts-str 6144 "abc") (ts-str 6656 "xyz") 0) 0)
+        t2 (ts-int "strncmp-prefix-equal" (ts-sign (cx-strncmp-GLIBC_2.2.5 (ts-str 6144 "abcdef") (ts-str 6656 "abcxyz") 3)) 0)
+        t3 (ts-int "strncmp-differs-at-4" (ts-sign (cx-strncmp-GLIBC_2.2.5 (ts-str 6144 "abcdef") (ts-str 6656 "abcxyz") 4)) -1)
+        t4 (ts-int "strncmp-differs-reversed" (ts-sign (cx-strncmp-GLIBC_2.2.5 (ts-str 6144 "abcxyz") (ts-str 6656 "abcdef") 4)) 1)
+        t5 (ts-int "strncmp-stops-at-nul" (cx-strncmp-GLIBC_2.2.5 (ts-str 6144 "abc") (ts-str 6656 "abc") 100) 0)
+        t6 (ts-int "strncmp-size-max-differs" (ts-sign (cx-strncmp-GLIBC_2.2.5 (ts-str 6144 "abc") (ts-str 6656 "abd") (- 0 1))) -1)
+        t7 (ts-int "strncmp-size-max-equal" (cx-strncmp-GLIBC_2.2.5 (ts-str 6144 "abc") (ts-str 6656 "abc") (- 0 1)) 0)
+        c (ts-str 6144 "ab")
+        d (s8 (+ a 3) 120)
+        e (ts-str 6656 "ab")
+        f (s8 (+ b 3) 121)
+        t8 (ts-int "strncmp-nothing-after-nul" (cx-strncmp-GLIBC_2.2.5 a b 4) 0)
+        g (ts-str 6144 "a")
+        h (s8 (+ a 1) 255)
+        i (s8 (+ a 2) 0)
+        j (ts-str 6656 "ab")
+        t9 (ts-int "strncmp-unsigned-high" (ts-sign (cx-strncmp-GLIBC_2.2.5 a b 2)) 1)
+        t10 (ts-int "strncmp-short-n" (cx-strncmp-GLIBC_2.2.5 a b 1) 0)]
+    0))
+
+;; ---- strchr / strrchr / strstr ----
+(defn- ts-strchr [] :i64
+  (let [s (ts-str 6144 "hello")
+        t1 (ts-int "strchr-l" (ts-off (cx-strchr-GLIBC_2.2.5 s 108) s) 2)
+        t2 (ts-int "strchr-first" (ts-off (cx-strchr-GLIBC_2.2.5 s 104) s) 0)
+        t3 (ts-int "strchr-last" (ts-off (cx-strchr-GLIBC_2.2.5 s 111) s) 4)
+        t4 (ts-int "strchr-nul" (ts-off (cx-strchr-GLIBC_2.2.5 s 0) s) 5)
+        t5 (ts-int "strchr-absent" (ts-off (cx-strchr-GLIBC_2.2.5 s 122) s) -1)
+        t6 (ts-int "strchr-c-high-bits" (ts-off (cx-strchr-GLIBC_2.2.5 s 4294967404) s) 2)
+        t7 (ts-int "strchr-c-256-plus" (ts-off (cx-strchr-GLIBC_2.2.5 s 364) s) 2)
+        e (ts-str 6656 "")
+        t8 (ts-int "strchr-empty-nul" (ts-off (cx-strchr-GLIBC_2.2.5 e 0) e) 0)
+        t9 (ts-int "strchr-empty-a" (ts-off (cx-strchr-GLIBC_2.2.5 e 97) e) -1)
+        h (ts-str 6144 "ab")
+        z (s8 (+ h 1) 255)
+        y (s8 (+ h 2) 0)
+        t10 (ts-int "strchr-byte-ff" (ts-off (cx-strchr-GLIBC_2.2.5 h 255) h) 1)
+        t11 (ts-int "strchr-c-minus-1" (ts-off (cx-strchr-GLIBC_2.2.5 h (- 0 1)) h) 1)]
+    0))
+
+(defn- ts-strrchr [] :i64
+  (let [s (ts-str 6144 "hello")
+        t1 (ts-int "strrchr-l" (ts-off (cx-strrchr-GLIBC_2.2.5 s 108) s) 3)
+        t2 (ts-int "strrchr-h" (ts-off (cx-strrchr-GLIBC_2.2.5 s 104) s) 0)
+        t3 (ts-int "strrchr-nul" (ts-off (cx-strrchr-GLIBC_2.2.5 s 0) s) 5)
+        t4 (ts-int "strrchr-absent" (ts-off (cx-strrchr-GLIBC_2.2.5 s 122) s) -1)
+        p (ts-str 6656 "a/b/c")
+        t5 (ts-int "strrchr-slash" (ts-off (cx-strrchr-GLIBC_2.2.5 p 47) p) 3)
+        t6 (ts-int "strrchr-c-high-bits" (ts-off (cx-strrchr-GLIBC_2.2.5 p 4294967343) p) 3)
+        e (ts-str 7168 "")
+        t7 (ts-int "strrchr-empty-nul" (ts-off (cx-strrchr-GLIBC_2.2.5 e 0) e) 0)
+        t8 (ts-int "strrchr-empty-a" (ts-off (cx-strrchr-GLIBC_2.2.5 e 97) e) -1)]
+    0))
+
+(defn- ts-find [name :string h :string nd :string want :i64] :i64
+  (let [hp (ts-str 6144 h) np (ts-str 6656 nd)]
+    (ts-int name (ts-off (cx-strstr-GLIBC_2.2.5 hp np) hp) want)))
+(defn- ts-strstr [] :i64
+  (let [t1 (ts-find "strstr-word" "hello world" "world" 6)
+        t2 (ts-find "strstr-empty-needle" "hello" "" 0)
+        t3 (ts-find "strstr-whole" "hello" "hello" 0)
+        t4 (ts-find "strstr-longer-needle" "hello" "hellox" -1)
+        t5 (ts-find "strstr-suffix" "hello" "lo" 3)
+        t6 (ts-find "strstr-restart" "aaab" "aab" 1)
+        t7 (ts-find "strstr-empty-haystack" "" "a" -1)
+        t8 (ts-find "strstr-both-empty" "" "" 0)
+        t9 (ts-find "strstr-last-char" "abc" "c" 2)
+        t10 (ts-find "strstr-mississippi" "mississippi" "issip" 4)
+        t11 (ts-find "strstr-mississippi-miss" "mississippi" "issipx" -1)
+        t12 (ts-find "strstr-first-of-two" "abcabc" "bc" 1)
+        t13 (ts-find "strstr-absent" "abc" "d" -1)]
+    0))
+
+;; ---- strncpy ----
+(defn- ts-ncpy [name :string src :string n :i64 expect :string] :i64
+  (let [d (+ (ts-buf 7168) 8)
+        s (ts-str 6144 src)
+        a (ts-set (- d 8) 64 0x5a)
+        r (cx-strncpy-GLIBC_2.2.5 d s n)
+        t1 (ts-int (string-concat name "-ret") r d)
+        t2 (ts-mem (string-concat name "-bytes") (- d 8) (quot (string-length expect) 2) expect)]
+    0))
+(defn- ts-strncpy [] :i64
+  (let [t1 (ts-ncpy "strncpy-pad" "abc" 6 (ts-cat3 (ts-rep "5a" 8) "616263000000" (ts-rep "5a" 10)))
+        t2 (ts-ncpy "strncpy-truncate" "abcdef" 3 (ts-cat3 (ts-rep "5a" 8) "616263" (ts-rep "5a" 13)))
+        t3 (ts-ncpy "strncpy-exact" "abc" 3 (ts-cat3 (ts-rep "5a" 8) "616263" (ts-rep "5a" 13)))
+        t4 (ts-ncpy "strncpy-n0" "abc" 0 (ts-rep "5a" 24))
+        t5 (ts-ncpy "strncpy-empty" "" 4 (ts-cat3 (ts-rep "5a" 8) "00000000" (ts-rep "5a" 12)))
+        t6 (ts-ncpy "strncpy-long-pad" "xy" 37 (ts-cat3 (ts-rep "5a" 8) (string-concat "7879" (ts-rep "00" 35)) (ts-rep "5a" 8)))]
+    0))
+
+;; ---- strncat ----
+(defn- ts-ncat [name :string dst :string src :string n :i64 expect :string] :i64
+  (let [d (ts-buf 7168)
+        a (ts-set d 32 0x5a)
+        b (put-str d dst)
+        s (ts-str 6144 src)
+        r (cx-strncat-GLIBC_2.2.5 d s n)
+        t1 (ts-int (string-concat name "-ret") r d)
+        t2 (ts-mem (string-concat name "-bytes") d (quot (string-length expect) 2) expect)]
+    0))
+(defn- ts-strncat [] :i64
+  (let [t1 (ts-ncat "strncat-cut" "ab" "cdef" 2 (string-concat "6162636400" (ts-rep "5a" 3)))
+        t2 (ts-ncat "strncat-short-src" "ab" "cd" 100 (string-concat "6162636400" (ts-rep "5a" 3)))
+        t3 (ts-ncat "strncat-n0" "ab" "cd" 0 (string-concat "616200" (ts-rep "5a" 5)))
+        t4 (ts-ncat "strncat-empty-src" "ab" "" 5 (string-concat "616200" (ts-rep "5a" 5)))
+        t5 (ts-ncat "strncat-empty-dst" "" "xyz" 2 (string-concat "787900" (ts-rep "5a" 5)))
+        t6 (ts-ncat "strncat-size-max" "a" "bc" (- 0 1) (string-concat "61626300" (ts-rep "5a" 4)))
+        t7 (ts-ncat "strncat-3-of-4" "ab" "cdef" 3 (string-concat "616263646500" (ts-rep "5a" 2)))
+        t8 (ts-ncat "strncat-both-empty" "" "" 3 (string-concat "00" (ts-rep "5a" 6)))]
+    0))
+
+;; ---- strcspn ----
+(defn- ts-csp [name :string s :string rej :string want :i64] :i64
+  (let [sp (ts-str 6144 s) rp (ts-str 6656 rej)]
+    (ts-int name (cx-strcspn-GLIBC_2.2.5 sp rp) want)))
+(defn- ts-strcspn [] :i64
+  (let [t1 (ts-csp "strcspn-lo" "hello" "lo" 2)
+        t2 (ts-csp "strcspn-none" "hello" "xyz" 5)
+        t3 (ts-csp "strcspn-first" "hello" "h" 0)
+        t4 (ts-csp "strcspn-empty-s" "" "abc" 0)
+        t5 (ts-csp "strcspn-empty-reject" "abc" "" 3)
+        t6 (ts-csp "strcspn-punct" "a,b;c" ";," 1)
+        t7 (ts-csp "strcspn-e" "hello" "e" 1)
+        t8 (ts-csp "strcspn-both-empty" "" "" 0)
+        t9 (ts-csp "strcspn-last" "abcd" "d" 3)]
+    0))
+
+;; ---- strtok_r ----
+(defn- ts-strtok [] :i64
+  (let [s (ts-str 6144 "  a b,,c;d  ")
+        dl (ts-str 6656 " ,;")
+        sv (ts-buf 7000)
+        z (s64 sv 12345)
+        k1 (cx-strtok_r-GLIBC_2.2.5 s dl sv)
+        t1 (ts-int "strtok-1-addr" (ts-off k1 s) 2)
+        t2 (ts-cstr "strtok-1-text" k1 "a")
+        t3 (ts-int "strtok-1-save" (- (l64 sv) s) 4)
+        t4 (ts-int "strtok-1-delim-nul" (l8 (+ s 3)) 0)
+        k2 (cx-strtok_r-GLIBC_2.2.5 0 dl sv)
+        t5 (ts-int "strtok-2-addr" (ts-off k2 s) 4)
+        t6 (ts-cstr "strtok-2-text" k2 "b")
+        t7 (ts-int "strtok-2-save" (- (l64 sv) s) 6)
+        k3 (cx-strtok_r-GLIBC_2.2.5 0 dl sv)
+        t8 (ts-int "strtok-3-addr" (ts-off k3 s) 7)
+        t9 (ts-cstr "strtok-3-text" k3 "c")
+        k4 (cx-strtok_r-GLIBC_2.2.5 0 dl sv)
+        t10 (ts-int "strtok-4-addr" (ts-off k4 s) 9)
+        t11 (ts-cstr "strtok-4-text" k4 "d")
+        t12 (ts-int "strtok-4-save" (- (l64 sv) s) 11)
+        k5 (cx-strtok_r-GLIBC_2.2.5 0 dl sv)
+        t13 (ts-int "strtok-5-end" k5 0)
+        t14 (ts-int "strtok-5-save-at-end" (- (l64 sv) s) 12)
+        k6 (cx-strtok_r-GLIBC_2.2.5 0 dl sv)
+        t15 (ts-int "strtok-6-still-end" k6 0)
+        t16 (ts-int "strtok-6-save" (- (l64 sv) s) 12)]
+    0))
+
+(defn- ts-strtok2 [] :i64
+  (let [dl (ts-str 6656 " ,;")
+        sv (ts-buf 7000)
+        z (s64 sv 777)
+        s (ts-str 6144 ",,,")
+        k1 (cx-strtok_r-GLIBC_2.2.5 s dl sv)
+        t1 (ts-int "strtok-only-delims" k1 0)
+        t2 (ts-int "strtok-only-delims-save" (- (l64 sv) s) 3)
+        e (ts-str 6144 "")
+        k2 (cx-strtok_r-GLIBC_2.2.5 e dl sv)
+        t3 (ts-int "strtok-empty" k2 0)
+        t4 (ts-int "strtok-empty-save" (- (l64 sv) e) 0)
+        a (ts-str 6144 "abc")
+        k3 (cx-strtok_r-GLIBC_2.2.5 a dl sv)
+        t5 (ts-int "strtok-single-addr" (ts-off k3 a) 0)
+        t6 (ts-cstr "strtok-single-text" k3 "abc")
+        t7 (ts-int "strtok-single-save" (- (l64 sv) a) 3)
+        k4 (cx-strtok_r-GLIBC_2.2.5 0 dl sv)
+        t8 (ts-int "strtok-single-then-end" k4 0)
+        m (ts-str 6144 "a=b;c")
+        deq (ts-str 7168 "=")
+        dsc (ts-str 7200 ";")
+        k5 (cx-strtok_r-GLIBC_2.2.5 m deq sv)
+        t9 (ts-cstr "strtok-delim-switch-1" k5 "a")
+        k6 (cx-strtok_r-GLIBC_2.2.5 0 dsc sv)
+        t10 (ts-cstr "strtok-delim-switch-2" k6 "b")
+        k7 (cx-strtok_r-GLIBC_2.2.5 0 dsc sv)
+        t11 (ts-cstr "strtok-delim-switch-3" k7 "c")
+        k8 (cx-strtok_r-GLIBC_2.2.5 0 dsc sv)
+        t12 (ts-int "strtok-delim-switch-end" k8 0)
+        n (ts-str 6144 "x")
+        k9 (cx-strtok_r-GLIBC_2.2.5 n (ts-str 7232 "") sv)
+        t13 (ts-cstr "strtok-empty-delim-set" k9 "x")]
+    0))
+
+;; ---- the fortified variants that must not refuse ----
+(defn- ts-chk [] :i64
+  (let [d (ts-buf 7168) s (ts-buf 6144)
+        a (ts-seq s 10 1)
+        b (ts-set d 24 0x5a)
+        r1 (cx-__memcpy_chk-GLIBC_2.3.4 d s 10 10)
+        t1 (ts-int "memcpy_chk-ret" r1 d)
+        t2 (ts-int "memcpy_chk-exact-data" (ts-diff d s 10) 0)
+        t3 (ts-mem "memcpy_chk-exact-guard" (+ d 10) 4 "5a5a5a5a")
+        c (ts-set d 24 0x5a)
+        r2 (cx-__memcpy_chk-GLIBC_2.3.4 d s 10 (- 0 1))
+        t4 (ts-int "memcpy_chk-unknown-size" (ts-diff d s 10) 0)
+        r3 (cx-__memcpy_chk-GLIBC_2.3.4 d s 0 0)
+        t5 (ts-int "memcpy_chk-zero" r3 d)
+        e (ts-set d 24 0x5a)
+        r4 (cx-__memset_chk-GLIBC_2.3.4 d 113 8 8)
+        t6 (ts-int "memset_chk-ret" r4 d)
+        t7 (ts-mem "memset_chk-exact" d 12 (ts-cat3 (ts-rep "71" 8) (ts-rep "5a" 4) ""))
+        r5 (cx-__memset_chk-GLIBC_2.3.4 d 114 3 (- 0 1))
+        t8 (ts-mem "memset_chk-unknown-size" d 5 "7272727171")
+        f (ts-set d 24 0x5a)
+        g (ts-str 6656 "abc")
+        r6 (cx-__strncpy_chk-GLIBC_2.3.4 d g 6 6)
+        t9 (ts-int "strncpy_chk-ret" r6 d)
+        t10 (ts-mem "strncpy_chk-pad" d 8 (string-concat "616263000000" "5a5a"))
+        h (ts-set d 24 0x5a)
+        r7 (cx-__strncpy_chk-GLIBC_2.3.4 d g 4 (- 0 1))
+        t11 (ts-mem "strncpy_chk-unknown-size" d 6 (string-concat "61626300" "5a5a"))]
+    0))
+(defn- ts-chk2 [] :i64
+  (let [d (ts-buf 7168)
+        a (ts-set d 24 0x5a)
+        b (put-str d "ab")
+        s (ts-str 6144 "cd")
+        r1 (cx-__strcat_chk-GLIBC_2.3.4 d s 5)
+        t1 (ts-int "strcat_chk-ret" r1 d)
+        t2 (ts-mem "strcat_chk-exact" d 7 (string-concat "6162636400" "5a5a"))
+        c (ts-set d 24 0x5a)
+        e (put-str d "ab")
+        r2 (cx-__strcat_chk-GLIBC_2.3.4 d s (- 0 1))
+        t3 (ts-mem "strcat_chk-unknown-size" d 7 (string-concat "6162636400" "5a5a"))
+        f (ts-set d 24 0x5a)
+        g (put-str d "ab")
+        s2 (ts-str 6144 "cdef")
+        r3 (cx-__strncat_chk-GLIBC_2.3.4 d s2 2 5)
+        t4 (ts-int "strncat_chk-ret" r3 d)
+        t5 (ts-mem "strncat_chk-exact" d 7 (string-concat "6162636400" "5a5a"))
+        h (ts-set d 24 0x5a)
+        i (put-str d "ab")
+        s3 (ts-str 6144 "c")
+        r4 (cx-__strncat_chk-GLIBC_2.3.4 d s3 100 5)
+        t6 (ts-mem "strncat_chk-n-larger-than-src" d 6 (string-concat "61626300" "5a5a"))
+        j (ts-set d 24 0x5a)
+        k (put-str d "ab")
+        s4 (ts-str 6144 "cdef")
+        r5 (cx-__strncat_chk-GLIBC_2.3.4 d s4 (- 0 1) (- 0 1))
+        t7 (ts-mem "strncat_chk-unknown-size" d 8 (ts-cat3 "616263646566" "00" "5a"))]
+    0))
+
+;; ---- ctype ----
+(defn- ts-tolower-model [i :i64] :i64
+  (let [c (bit-and i 255)] (if (and (>= c 65) (<= c 90)) (+ c 32) c)))
+(defn- ts-ctype-bad [tab :i64] :i64
+  (loop [i -128 bad 0]
+    (if (> i 255) bad
+      (recur (inc i) (if (= (l32 (+ tab (* 4 i))) (ts-tolower-model i)) bad (inc bad))))))
+(defn- ts-ctype [] :i64
+  (let [t0 (ts-int "ctype-lazy-before" (st str-ST-CTYPE-FLAG) 0)
+        loc (cx-__ctype_tolower_loc-GLIBC_2.3)
+        t1 (ts-int "ctype-lazy-after" (st str-ST-CTYPE-FLAG) 1)
+        t2 (ts-int "ctype-cell-in-state" (- loc (kxrt-b-state)) 5632)
+        tab (l64 loc)
+        t3 (ts-int "ctype-table-middle" (- tab (kxrt-b-state)) 4608)
+        loc2 (cx-__ctype_tolower_loc-GLIBC_2.3)
+        t4 (ts-int "ctype-stable-cell" loc2 loc)
+        t5 (ts-int "ctype-stable-table" (l64 loc2) tab)
+        t6 (ts-int "ctype-A" (l32 (+ tab (* 4 65))) 97)
+        t7 (ts-int "ctype-Z" (l32 (+ tab (* 4 90))) 122)
+        t8 (ts-int "ctype-at" (l32 (+ tab (* 4 64))) 64)
+        t9 (ts-int "ctype-bracket" (l32 (+ tab (* 4 91))) 91)
+        t10 (ts-int "ctype-a" (l32 (+ tab (* 4 97))) 97)
+        t11 (ts-int "ctype-nul" (l32 tab) 0)
+        t12 (ts-int "ctype-127" (l32 (+ tab (* 4 127))) 127)
+        t13 (ts-int "ctype-128" (l32 (+ tab (* 4 128))) 128)
+        t14 (ts-int "ctype-255" (l32 (+ tab (* 4 255))) 255)
+        t15 (ts-int "ctype-minus-1" (l32 (- tab 4)) 255)
+        t16 (ts-int "ctype-minus-128" (l32 (- tab 512)) 128)
+        t17 (ts-int "ctype-minus-61" (l32 (- tab 244)) 195)
+        t18 (ts-int "ctype-minus-127" (l32 (- tab 508)) 129)
+        t19 (ts-int "ctype-all-384-entries" (ts-ctype-bad tab) 0)]
+    0))
+
+;; ---- strtol ----
+(def ts-MAX 0x7FFFFFFFFFFFFFFF)
+(defn- ts-min [] :i64 (- (- 0 ts-MAX) 1))
+
+;; value want, end offset wend
+(defn- ts-tol [tag :string s :string base :i64 want :i64 wend :i64] :i64
+  (let [p (ts-str 8192 s)
+        e (ts-buf 8000)
+        z (s64 e 12345)
+        v (cx-__isoc23_strtol-GLIBC_2.38 p e base)
+        name (string-concat "strtol-" tag)
+        t1 (ts-int (string-concat name "-val") v want)
+        t2 (ts-int (string-concat name "-end") (- (l64 e) p) wend)]
+    0))
+;; the whole string is consumed
+(defn- ts-tola [tag :string s :string base :i64 want :i64] :i64
+  (ts-tol tag s base want (string-length s)))
+
+(defn- ts-strtol-a [] :i64
+  (let [t1 (ts-tola "dec" "123" 10 123)
+        t2 (ts-tola "auto-dec" "123" 0 123)
+        t3 (ts-tola "neg" "-123" 10 -123)
+        t4 (ts-tola "plus" "+123" 10 123)
+        t5 (ts-tol "trailing" "  42xyz" 10 42 4)
+        t6 (ts-tola "hex0" "0x1f" 0 31)
+        t7 (ts-tola "hex16" "0x1f" 16 31)
+        t8 (ts-tola "hex-upper-prefix" "0X1F" 16 31)
+        t9 (ts-tola "hex-no-prefix" "1f" 16 31)
+        t10 (ts-tola "oct0" "017" 0 15)
+        t11 (ts-tola "oct8" "017" 8 15)
+        t12 (ts-tola "dec10-leading-zero" "017" 10 17)
+        t13 (ts-tol "oct-bad-digit" "0189" 0 1 2)
+        t14 (ts-tola "bin0" "0b101" 0 5)
+        t15 (ts-tola "bin2" "0b101" 2 5)
+        t16 (ts-tola "bin-upper" "0B11" 0 3)
+        t17 (ts-tol "bin-prefix-no-digit" "0b" 0 0 1)
+        t18 (ts-tol "hex-prefix-no-digit" "0x" 0 0 1)
+        t19 (ts-tol "hex16-prefix-no-digit" "0x" 16 0 1)
+        t20 (ts-tol "hex-prefix-g" "0xg" 16 0 1)
+        t21 (ts-tol "x-in-dec" "0x" 10 0 1)
+        t22 (ts-tol "neg-hex-prefix-no-digit" "-0x" 0 0 2)
+        t23 (ts-tol "bin-prefix-bad-digit" "0b2" 2 0 1)
+        t24 (ts-tola "b-is-a-hex-digit" "0b1" 16 177)
+        t25 (ts-tol "b-in-dec" "0b1" 10 0 1)
+        t26 (ts-tola "z36" "zz" 36 1295)
+        t27 (ts-tola "Z36" "ZZ" 36 1295)
+        t28 (ts-tola "mixed-case-36" "Zz" 36 1295)
+        t29 (ts-tol "base2-stops" "12" 2 1 1)
+        t30 (ts-tola "neg-hex" "-0x1f" 0 -31)
+        t31 (ts-tola "hex-upper-x-base0" "0XFF" 0 255)]
+    0))
+
+(defn- ts-strtol-b [] :i64
+  (let [t1 (ts-tol "no-digit-base8" "9" 8 0 0)
+        t2 (ts-tol "empty" "" 10 0 0)
+        t3 (ts-tol "only-spaces" "   " 10 0 0)
+        t4 (ts-tol "sign-only" "  -" 10 0 0)
+        t5 (ts-tol "alpha" "abc" 10 0 0)
+        t6 (ts-tola "neg-zero" "-0" 10 0)
+        t7 (ts-tola "zero-base0" "0" 0 0)
+        t8 (ts-tol "08-base0" "08" 0 0 1)
+        t9 (ts-tol "underscore" "1_000" 10 1 1)
+        t10 (ts-tol "plus-minus" "+-5" 10 0 0)
+        t11 (ts-tol "sign-space" "- 5" 10 0 0)
+        t12 (ts-tola "leading-zeros" "00000000000000000000123" 10 123)
+        t13 (ts-tola "neg-max" "-9223372036854775807" 10 (+ (ts-min) 1))
+        t14 (ts-tola "max" "9223372036854775807" 10 ts-MAX)
+        t15 (ts-tola "max-plus-1" "9223372036854775808" 10 ts-MAX)
+        t16 (ts-tola "min" "-9223372036854775808" 10 (ts-min))
+        t17 (ts-tola "min-minus-1" "-9223372036854775809" 10 (ts-min))
+        t18 (ts-tol "huge-skips-all-digits" "99999999999999999999999xyz" 10 ts-MAX 23)
+        t19 (ts-tola "neg-huge" "-99999999999999999999999" 10 (ts-min))
+        t20 (ts-tola "hex-max" "0x7fffffffffffffff" 0 ts-MAX)
+        t21 (ts-tola "hex-max-plus-1" "0x8000000000000000" 0 ts-MAX)
+        t22 (ts-tola "hex-min" "-0x8000000000000000" 0 (ts-min))
+        t23 (ts-tola "hex-huge" (string-concat "0x" (ts-rep "f" 18)) 16 ts-MAX)
+        t24 (ts-tola "bin-62-ones" (ts-rep "1" 62) 2 (- (i64-shift-left 1 62) 1))
+        t25 (ts-tola "bin-63-ones" (ts-rep "1" 63) 2 ts-MAX)
+        t26 (ts-tola "bin-64-ones" (ts-rep "1" 64) 2 ts-MAX)
+        t27 (ts-tola "bin-2-pow-63" (string-concat "1" (ts-rep "0" 63)) 2 ts-MAX)
+        t28 (ts-tola "bin-neg-2-pow-63" (string-concat "-1" (ts-rep "0" 63)) 2 (ts-min))
+        t29 (ts-tola "base36-huge" (ts-rep "z" 14) 36 ts-MAX)
+        t30 (ts-tola "bin-prefix-62-ones" (string-concat "0b" (ts-rep "1" 62)) 0 (- (i64-shift-left 1 62) 1))
+        t31 (ts-tola "oct-max" (string-concat "0" (ts-rep "7" 21)) 0 ts-MAX)
+        t32 (ts-tola "oct-over" (string-concat "01" (ts-rep "0" 21)) 0 ts-MAX)]
+    0))
+
+(defn- ts-strtol-c [] :i64
+  (let [p (ts-buf 8192)
+        e (ts-buf 8000)
+        a (ts-set p 16 0)
+        b0 (s8 p 32)
+        b1 (s8 (+ p 1) 9)
+        b2 (s8 (+ p 2) 10)
+        b3 (s8 (+ p 3) 11)
+        b4 (s8 (+ p 4) 12)
+        b5 (s8 (+ p 5) 13)
+        b6 (s8 (+ p 6) 32)
+        b7 (s8 (+ p 7) 55)
+        z (s64 e 5)
+        v (cx-__isoc23_strtol-GLIBC_2.38 p e 10)
+        t1 (ts-int "strtol-whitespace-set-val" v 7)
+        t2 (ts-int "strtol-whitespace-set-end" (- (l64 e) p) 8)
+        c1 (s8 p 14)
+        v2 (cx-__isoc23_strtol-GLIBC_2.38 p e 10)
+        t3 (ts-int "strtol-0x0e-not-space-val" v2 0)
+        t4 (ts-int "strtol-0x0e-not-space-end" (- (l64 e) p) 0)
+        c2 (s8 p 8)
+        v3 (cx-__isoc23_strtol-GLIBC_2.38 p e 10)
+        t5 (ts-int "strtol-0x08-not-space-end" (- (l64 e) p) 0)
+        c3 (s8 p 160)
+        v4 (cx-__isoc23_strtol-GLIBC_2.38 p e 10)
+        t6 (ts-int "strtol-0xa0-not-space-end" (- (l64 e) p) 0)
+        n (ts-str 8192 "  77")
+        v5 (cx-__isoc23_strtol-GLIBC_2.38 n 0 10)
+        t7 (ts-int "strtol-endptr-null" v5 77)
+        v6 (cx-__isoc23_strtol-GLIBC_2.38 (ts-str 8192 "0x1f") 0 0)
+        t8 (ts-int "strtol-endptr-null-hex" v6 31)
+        v7 (cx-__isoc23_strtol-GLIBC_2.38 (ts-str 8192 "ff") e 4294967312)
+        t9 (ts-int "strtol-base-high-bits-val" v7 255)
+        t10 (ts-int "strtol-base-high-bits-end" (- (l64 e) (ts-buf 8192)) 2)
+        v8 (cx-__isoc23_strtol-GLIBC_2.38 (ts-str 8192 "z") e 4294967332)
+        t11 (ts-int "strtol-base-36-high-bits" v8 35)
+        v9 (cx-__isoc23_strtol-GLIBC_2.38 (ts-str 8192 "11") e 4294967296)
+        t12 (ts-int "strtol-base-0-high-bits" v9 11)]
+    0))
+
+;; ---- driver ----
+(defn- ts-unknown [a :i64] :i64
+  (let [w (warn (string-concat "args FAIL unknown argument " (c-str a)))]
+    (sys1 SYS-EXIT-GROUP 2)))
+;; one call that must be refused; the program exits inside it
+(defn- ts-refusal-call [a :i64] :i64
+  (let [p (ts-buf 0) q (ts-buf 1024)
+        z (ts-set p 64 0x5a)
+        y (ts-set q 64 0x5a)]
+    (cond (c-eq? a "overflow-memcpy") (cx-__memcpy_chk-GLIBC_2.3.4 p q 11 10)
+          (c-eq? a "overflow-memset") (cx-__memset_chk-GLIBC_2.3.4 p 0 9 8)
+          (c-eq? a "overflow-strncpy") (cx-__strncpy_chk-GLIBC_2.3.4 p (ts-str 2048 "a") 9 8)
+          (c-eq? a "overflow-strcat") (cx-__strcat_chk-GLIBC_2.3.4 (ts-str 3072 "ab") (ts-str 4096 "cd") 4)
+          (c-eq? a "overflow-strncat") (cx-__strncat_chk-GLIBC_2.3.4 (ts-str 3072 "ab") (ts-str 4096 "cdef") 3 5)
+          (c-eq? a "invalid-base") (cx-__isoc23_strtol-GLIBC_2.38 (ts-str 3072 "12") 0 37)
+          (c-eq? a "invalid-base-1") (cx-__isoc23_strtol-GLIBC_2.38 (ts-str 3072 "12") 0 1)
+          (c-eq? a "memcpy-huge") (cx-memcpy-GLIBC_2.14 p q (- 0 1))
+          (c-eq? a "strtok-null") (cx-strtok_r-GLIBC_2.2.5 0 (ts-str 3072 ",") (ts-buf 7000))
+          :else (ts-unknown a))))
+(defn- ts-refusal [a :i64] :i64
+  (let [r (ts-refusal-call a)
+        w (say (string-concat (c-str a) " FAIL returned without a refusal"))]
+    1))
+
+(defn- ts-all [] :i64
+  (let [a (ts-memset) b (ts-memcpy) c (ts-memmove) d (ts-strlen) e (ts-strcmp) f (ts-strncmp)
+        g (ts-strchr) h (ts-strrchr) i (ts-strstr) j (ts-strncpy) k (ts-strncat) l (ts-strcspn)
+        m (ts-strtok) n (ts-strtok2) o (ts-chk) p (ts-chk2) q (ts-ctype)
+        r (ts-strtol-a) s (ts-strtol-b) t (ts-strtol-c)
+        fails (st ts-FAILS)
+        u (if (= fails 0) (ts-ok "all") (ts-fail "all" (string-concat "failures=" (dec-str fails))))]
+    (if (= fails 0) 0 1)))
+
+(defn main [] :i64
+  (let [m (st! ts-BUFP (kxrt-b-alloc 16384))]
+    (if (> (kxrt-b-argc) 0)
+      (ts-refusal (l64 (kxrt-b-argv)))
+      (ts-all))))

@@ -1,0 +1,47 @@
+;; tools/b2/tests/elf_t.kotoba -- the ELF loader (tools/b2/50-elf.kotoba) on a shared object that scripts/seed/b2_fixture.py
+;; writes by hand: segments, bss, relocations of four kinds, versioned imports, the GNU hash, init functions, dlopen/dlsym.
+;; Argument 1 is the fixture's path, argument 2 an optional mode: a variant name (the loader must refuse it by name and
+;; exit 127), call-missing (calls the import nothing implements) or relro-write (writes into the RELRO page).
+;; Run by scripts/seed/check-b2-libc.py with tools/b2/00..70 before it.
+
+(defn- expect [name :string got :i64 want :i64] :i64
+  (if (= got want) (let [w (say (string-concat name " ok"))] 0)
+    (let [w (say (string-concat name (string-concat " FAIL got " (string-concat (dec-str got) (string-concat " want " (dec-str want))))))] 1)))
+(defn- cstr [s :string] :i64 (let [m (malloc-alloc (+ 16 (string-length s))) z (put-str m s)] m))
+(defn- call0 [fp :i64] :i64 (if (= fp 0) (refuse "test" "a fixture function is missing") (call-c fp 0 0 0 0 0 0)))
+(defn- sym [lib :i64 name :string] :i64 (elf-sym lib (cstr name)))
+
+(defn- checks [lib :i64 path :i64] :i64
+  (let [r0 (expect "one stub for the import nothing implements" (st ST-NSTUBS) 1)
+        r1 (expect "the init functions have not run" (+ (call0 (sym lib "fx_flag")) (call0 (sym lib "fx_flag2"))) 0)
+        i (elf-init lib)
+        r2 (expect "DT_INIT_ARRAY ran" (call0 (sym lib "fx_flag")) 16962)
+        r3 (expect "DT_INIT ran" (call0 (sym lib "fx_flag2")) 7)
+        i2 (elf-init lib)
+        r4 (expect "initializers run once" (call0 (sym lib "fx_flag2")) 7)
+        r5 (expect "fx_add" (call-c (sym lib "fx_add") 40 2 0 0 0 0) 42)
+        r6 (expect "strlen through the PLT slot (JUMP_SLOT)" (call-c (sym lib "fx_strlen") (cstr "hello fixture") 0 0 0 0 0) 13)
+        r7 (expect "stderr through GLOB_DAT is the image's data object" (call0 (sym lib "fx_stderr")) (st ST-STDERR-CELL))
+        r8 (expect "a weak import binds to 0" (call0 (sym lib "fx_weak")) 0)
+        p (call0 (sym lib "fx_ptr"))
+        r9 (expect "RELATIVE relocation" (if (and (not= p 0) (c-eq? p "hello from fixture")) 1 0) 1)
+        r10 (expect "R_X86_64_64 is symbol plus addend" (call0 (sym lib "fx_ref64")) (+ (sym lib "fx_add") 16))
+        r11 (expect "the zero tail of the segment is zero, not the file's bytes" (call0 (sym lib "fx_bss")) 0)
+        r12 (expect "an exported object" (if (= (sym lib "fx_datum") (+ (l64 (+ lib ELF-BASE)) 8224)) 1 0) 1)
+        r13 (expect "dlsym of a name not defined" (sym lib "fx_nothing") 0)
+        r14 (expect "dlsym(handle)" (cx-dlsym-GLIBC_2.34 lib (cstr "fx_add")) (sym lib "fx_add"))
+        r15 (expect "dlsym(NULL) searches the loaded objects" (cx-dlsym-GLIBC_2.34 0 (cstr "fx_add")) (sym lib "fx_add"))
+        r16 (expect "dlopen by soname" (cx-dlopen-GLIBC_2.34 (cstr "libfixture.so.1") 2) lib)
+        r17 (expect "dlopen by path" (cx-dlopen-GLIBC_2.34 path 2) lib)
+        r18 (expect "dlopen of an unloaded object" (cx-dlopen-GLIBC_2.34 (cstr "libother.so.1") 2) 0)
+        shown (show-maps "libfixture")]
+    (+ r0 (+ r1 (+ r2 (+ r3 (+ r4 (+ r5 (+ r6 (+ r7 (+ r8 (+ r9 (+ r10 (+ r11 (+ r12 (+ r13 (+ r14 (+ r15 (+ r16 (+ r17 r18))))))))))))))))))))
+
+(defn main [] :i64
+  (let [i (b2-init) path (l64 (kxrt-b-argv))
+        mode (if (> (kxrt-b-argc) 1) (l64 (+ (kxrt-b-argv) 8)) 0)
+        lib (elf-open "fixture" path)]
+    (cond (and (not= mode 0) (c-eq? mode "call-missing")) (call0 (sym lib "fx_missing"))
+          (and (not= mode 0) (c-eq? mode "relro-write")) (s64 (l64 (+ lib ELF-RELRO)) 1)
+          (not= mode 0) 0
+          :else (if (= (checks lib path) 0) 0 1))))

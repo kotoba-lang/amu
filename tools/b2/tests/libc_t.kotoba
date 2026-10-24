@@ -1,0 +1,195 @@
+;; tools/b2/tests/libc_t.kotoba -- malloc, stdio, directories, the environment, qsort, mutexes, dl* and the TCB of the
+;; B2 libc subset (tools/b2/30..70). Run by scripts/seed/check-b2-libc.py with tools/b2/00..70 before it. The exported
+;; functions are called from Kotoba directly; the C comparator of qsort and the TCB probes are machine code the test
+;; writes into an executable page. Argument 1 is the scratch directory (a fresh empty one), argument 2 a mode.
+
+(defn- expect [name :string got :i64 want :i64] :i64
+  (if (= got want) (let [w (say (string-concat name " ok"))] 0)
+    (let [w (say (string-concat name (string-concat " FAIL got " (string-concat (dec-str got) (string-concat " want " (dec-str want))))))] 1)))
+(defn- expect-str [name :string got :i64 want :string] :i64
+  (if (and (not= got 0) (c-eq? got want)) (let [w (say (string-concat name " ok"))] 0)
+    (let [w (say (string-concat name (string-concat " FAIL got " (if (= got 0) "NULL" (c-str got)))))] 1)))
+(defn- cstr [s :string] :i64 (let [m (malloc-alloc (+ 16 (string-length s))) z (put-str m s)] m))
+(defn- path-in [dir :i64 name :string] :i64
+  (let [n (c-strlen dir) m (malloc-alloc (+ n (+ 4 (string-length name)))) a (c-copy m dir n) b (s8 (+ m n) 47) c (put-str (+ m (inc n)) name)] m))
+(defn- sum-list [a :i64 b :i64 c :i64 d :i64 e :i64 f :i64 g :i64] :i64 (+ a (+ b (+ c (+ d (+ e (+ f g)))))))
+
+(defn- t-malloc [] :i64
+  (let [a (cx-malloc-GLIBC_2.2.5 1) b (cx-malloc-GLIBC_2.2.5 100) c (cx-malloc-GLIBC_2.2.5 5000)
+        z (cx-malloc-GLIBC_2.2.5 0)
+        w1 (c-zero a 1) w2 (c-zero b 100) w3 (c-zero c 5000)
+        f1 (s8 a 7) f2 (s8 (+ b 99) 8) f3 (s8 (+ c 4999) 9)
+        r0 (expect "malloc aligned a" (bit-and a 15) 0) r1 (expect "malloc aligned b" (bit-and b 15) 0) r2 (expect "malloc aligned c" (bit-and c 15) 0)
+        r3 (expect "malloc(0) is not NULL" (if (= z 0) 0 1) 1)
+        r4 (expect "malloc keeps data" (+ (l8 a) (+ (l8 (+ b 99)) (l8 (+ c 4999)))) 24)
+        r5 (expect "malloc distinct" (if (or (= a b) (= b c) (= a c)) 0 1) 1)
+        d (cx-free-GLIBC_2.2.5 b) e (cx-malloc-GLIBC_2.2.5 90)
+        r6 (expect "free then malloc of the same class reuses the block" e b)
+        ;; calloc zeroes a reused dirty block
+        g (s64 e 123456789) h (cx-free-GLIBC_2.2.5 e) k (cx-calloc-GLIBC_2.2.5 1 90)
+        r7 (expect "calloc reuses and zeroes" (+ (if (= k e) 1 0) (l64 k)) 1)
+        r8 (expect "calloc overflow is NULL" (cx-calloc-GLIBC_2.2.5 4611686018427387905 8) 0)
+        ;; realloc: grows with data, shrinks in place, NULL and zero size
+        p (cx-malloc-GLIBC_2.2.5 40) fill (loop [i 0] (if (= i 40) 0 (let [w (s8 (+ p i) (+ i 1))] (recur (inc i)))))
+        q (cx-realloc-GLIBC_2.2.5 p 4000)
+        r9 (expect "realloc keeps the first bytes" (+ (l8 q) (l8 (+ q 39))) 41)
+        s (cx-realloc-GLIBC_2.2.5 q 8)
+        r10 (expect "realloc shrinks in place" s q)
+        t (cx-realloc-GLIBC_2.2.5 0 64)
+        r11 (expect "realloc(NULL, n) allocates" (if (= t 0) 0 1) 1)
+        u (cx-realloc-GLIBC_2.2.5 t 0)
+        r12 (expect "realloc(p, 0) frees and answers NULL" u 0)
+        ;; a mapping of its own, and growing from it
+        big (cx-malloc-GLIBC_2.2.5 1000000) bw (s8 (+ big 999999) 5)
+        r13 (expect "big block usable" (+ (bit-and big 15) (l8 (+ big 999999))) 5)
+        big2 (cx-realloc-GLIBC_2.2.5 big 3000000)
+        r14 (expect "big realloc keeps data" (l8 (+ big2 999999)) 5)
+        bf (cx-free-GLIBC_2.2.5 big2)
+        r15 (expect "free(NULL)" (cx-free-GLIBC_2.2.5 0) 0)]
+    (+ r0 (+ r1 (+ r2 (+ r3 (+ r4 (+ r5 (+ r6 (+ r7 (+ r8 (+ r9 (+ r10 (+ r11 (+ r12 (+ r13 (+ r14 r15)))))))))))))))))
+
+(defn- write-file [path :i64 text :string] :i64
+  (let [fd (sys4 SYS-OPENAT AT-FDCWD path 577 420) m (cstr text) w (sys3 SYS-WRITE fd m (string-length text)) c (sys1 SYS-CLOSE fd)] w))
+(defn- t-stdio [dir :i64] :i64
+  (let [f (path-in dir "data.txt") wr (write-file f "0123456789abcdefghij")
+        fp (cx-fopen-GLIBC_2.2.5 f (cstr "r"))
+        r0 (expect "fopen" (if (= fp 0) 0 1) 1)
+        buf (malloc-alloc 64) n (cx-fread-GLIBC_2.2.5 buf 1 4 fp)
+        r1 (expect "fread 4" n 4) r2 (expect "fread data" (l32 buf) 0x33323130)
+        r3 (expect "ftell" (cx-ftell-GLIBC_2.2.5 fp) 4)
+        r4 (expect "fseek set" (cx-fseek-GLIBC_2.2.5 fp 10 0) 0)
+        n2 (cx-fread-GLIBC_2.2.5 buf 2 3 fp)
+        r5 (expect "fread 3 items of 2" n2 3) r6 (expect "fread data 2" (l8 buf) 97)
+        r7 (expect "ftell after" (cx-ftell-GLIBC_2.2.5 fp) 16)
+        r8 (expect "feof not yet" (cx-feof-GLIBC_2.2.5 fp) 0)
+        n3 (cx-fread-GLIBC_2.2.5 buf 1 64 fp)
+        r9 (expect "fread to the end" n3 4) r10 (expect "feof" (if (= (cx-feof-GLIBC_2.2.5 fp) 0) 0 1) 1)
+        r11 (expect "fseek clears eof" (+ (cx-fseek-GLIBC_2.2.5 fp 0 2) (cx-feof-GLIBC_2.2.5 fp)) 0)
+        r12 (expect "fseek end then ftell" (cx-ftell-GLIBC_2.2.5 fp) 20)
+        r13 (expect "__fread_chk" (cx-__fread_chk-GLIBC_2.7 buf 64 1 4 fp) 0)
+        r14 (expect "fclose" (cx-fclose-GLIBC_2.2.5 fp) 0)
+        r15 (expect "fopen of a missing file" (cx-fopen-GLIBC_2.2.5 (path-in dir "missing") (cstr "r")) 0)
+        r16 (expect "fputs to stderr" (cx-fputs-GLIBC_2.2.5 (cstr "stderr text") (l64 (st ST-STDERR-CELL))) 1)
+        r17 (expect "fputc to stderr" (cx-fputc-GLIBC_2.2.5 10 (l64 (st ST-STDERR-CELL))) 10)]
+    (+ r0 (+ r1 (+ r2 (+ r3 (+ r4 (+ r5 (+ r6 (+ r7 (+ r8 (+ r9 (+ r10 (+ r11 (+ r12 (+ r13 (+ r14 (+ r15 (+ r16 r17)))))))))))))))))))
+
+(defn- collect-names [d :i64 out :i64] :i64
+  (loop [n 0]
+    (let [e (cx-readdir-GLIBC_2.2.5 d)]
+      (if (= e 0) n
+        (let [z (c-copy (+ out (* 64 n)) (+ e 19) (inc (c-strlen (+ e 19))))] (recur (inc n)))))))
+(defn- has-name? [out :i64 n :i64 s :string] :bool
+  (loop [i 0] (cond (= i n) false (c-eq? (+ out (* 64 i)) s) true :else (recur (inc i)))))
+(defn- t-dir [dir :i64] :i64
+  (let [sub (path-in dir "d") mk (sys2 83 sub 493)
+        a (write-file (path-in sub "a") "1") b (write-file (path-in sub "b") "2") c (write-file (path-in sub "c") "3")
+        d (cx-opendir-GLIBC_2.2.5 sub)
+        r0 (expect "opendir" (if (= d 0) 0 1) 1)
+        out (malloc-alloc 1024) n (collect-names d out)
+        r1 (expect "readdir count" n 5)
+        r2 (expect "readdir names" (+ (if (has-name? out n ".") 1 0) (+ (if (has-name? out n "..") 1 0) (+ (if (has-name? out n "a") 1 0) (+ (if (has-name? out n "b") 1 0) (if (has-name? out n "c") 1 0))))) 5)
+        r3 (expect "readdir at the end stays NULL" (cx-readdir-GLIBC_2.2.5 d) 0)
+        r4 (expect "closedir" (cx-closedir-GLIBC_2.2.5 d) 0)
+        r5 (expect "opendir of a missing directory" (cx-opendir-GLIBC_2.2.5 (path-in dir "none")) 0)
+        r6 (expect "access ok" (cx-access-GLIBC_2.2.5 sub 0) 0)
+        r7 (expect "access missing" (cx-access-GLIBC_2.2.5 (path-in dir "none") 0) -1)
+        lk (sys2 88 (cstr "data.txt") (path-in dir "link"))
+        buf (malloc-alloc 64) n2 (cx-readlink-GLIBC_2.2.5 (path-in dir "link") buf 64)
+        r8 (expect "readlink length" n2 8) r9 (expect "readlink data" (if (= (l64 buf) 0x7478742e61746164) 1 0) 1)
+        r10 (expect "readlink of a non-link" (cx-readlink-GLIBC_2.2.5 sub buf 64) -1)]
+    (+ r0 (+ r1 (+ r2 (+ r3 (+ r4 (+ r5 (+ r6 (+ r7 (+ r8 (+ r9 r10))))))))))))
+
+(defn- t-env [] :i64
+  (let [r0 (expect-str "getenv" (cx-getenv-GLIBC_2.2.5 (cstr "B2_TEST_VAR")) "value=with=equals")
+        r1 (expect "getenv of an unset name" (cx-getenv-GLIBC_2.2.5 (cstr "B2_TEST_UNSET")) 0)
+        r2 (expect "getenv of a prefix of a name" (cx-getenv-GLIBC_2.2.5 (cstr "B2_TEST")) 0)
+        r3 (expect "getenv of an extension of a name" (cx-getenv-GLIBC_2.2.5 (cstr "B2_TEST_VAR2")) 0)
+        r4 (expect-str "secure_getenv" (cx-secure_getenv-GLIBC_2.17 (cstr "B2_TEST_VAR")) "value=with=equals")
+        r5 (expect-str "getenv of an empty value" (cx-getenv-GLIBC_2.2.5 (cstr "B2_TEST_EMPTY")) "")]
+    (+ r0 (+ r1 (+ r2 (+ r3 (+ r4 r5)))))))
+
+;; machine code: mov eax,[rdi] ; sub eax,[rsi] ; ret    (compare 32-bit keys)
+;;               mov rax,fs:0 ; ret ;  mov rax,fs:0x28 ; ret
+(defn- code-page [] :i64
+  (let [m (sys6 SYS-MMAP 0 4096 7 34 -1 0)
+        a (put-hex m "8b072b06c3") b (put-hex (+ m 32) "6448 8b042500000000c3") c (put-hex (+ m 64) "6448 8b042528000000c3")]
+    m))
+(defn- put-hex [a :i64 s :string] :i64
+  (let [n (quot (string-length s) 2) k (loop [i 0 j 0]
+                (let [c (if (< j (string-length s)) (string-code-point-at s j) 0)]
+                  (cond (>= j (string-length s)) i
+                        (= c 32) (recur i (inc j))
+                        :else (let [x (hexv c) y (hexv (string-code-point-at s (inc j))) w (s8 (+ a i) (+ (* 16 x) y))] (recur (inc i) (+ j 2))))))]
+    k))
+(defn- hexv [c :i64] :i64 (if (< c 58) (- c 48) (- c 87)))
+(defn- t-qsort [] :i64
+  (let [m (code-page) cmp m n 60 arr (malloc-alloc (* 8 n))
+        ;; pairs {key, payload}: keys 0..4 from an LCG, payload the index
+        fill (loop [i 0 x 12345]
+               (if (= i n) 0
+                 (let [x2 (rem (+ (* x 1103515245) 12345) 2147483648)
+                       k (rem (quot x2 65536) 5)
+                       w (s32 (+ arr (* 8 i)) k) v (s32 (+ arr (+ 4 (* 8 i))) i)]
+                   (recur (inc i) x2))))
+        s (cx-qsort-GLIBC_2.2.5 arr n 8 cmp)
+        sorted (loop [i 1] (cond (>= i n) true
+                                 (> (l32 (+ arr (* 8 (dec i)))) (l32 (+ arr (* 8 i)))) false
+                                 ;; stable: equal keys keep their payload order
+                                 (and (= (l32 (+ arr (* 8 (dec i)))) (l32 (+ arr (* 8 i))))
+                                      (> (l32 (+ arr (+ 4 (* 8 (dec i))))) (l32 (+ arr (+ 4 (* 8 i)))))) false
+                                 :else (recur (inc i))))
+        r0 (expect "qsort sorted and stable" (if sorted 1 0) 1)
+        ;; n = 0 and n = 1 do nothing
+        e0 (cx-qsort-GLIBC_2.2.5 arr 0 8 cmp) e1 (cx-qsort-GLIBC_2.2.5 arr 1 8 cmp)
+        r1 (expect "qsort of 0 and 1 elements" (+ e0 e1) 0)
+        ;; sorting an already sorted and a reversed list
+        rev (loop [i 0] (if (= i n) 0 (let [w (s32 (+ arr (* 8 i)) (- n i)) v (s32 (+ arr (+ 4 (* 8 i))) i)] (recur (inc i)))))
+        s2 (cx-qsort-GLIBC_2.2.5 arr n 8 cmp)
+        r2 (expect "qsort reversed" (+ (l32 arr) (l32 (+ arr (* 8 (dec n))))) 61)]
+    (+ r0 (+ r1 r2))))
+(defn- t-tcb [] :i64
+  (let [m (code-page) tcb (st ST-TCB)
+        self (kxrt-b-ccall (+ m 32) (+ (kxrt-b-state) ST-CALL))
+        canary (kxrt-b-ccall (+ m 64) (+ (kxrt-b-state) ST-CALL))
+        r0 (expect "fs:0 is the thread pointer" self tcb)
+        r1 (expect "fs:0x10 is the thread pointer" (l64 (+ tcb 16)) tcb)
+        r2 (expect "canary has a zero low byte" (bit-and canary 255) 0)
+        r3 (expect "canary is not zero" (if (= canary 0) 0 1) 1)]
+    (+ r0 (+ r1 (+ r2 r3)))))
+(defn- t-misc [] :i64
+  (let [m (malloc-alloc 64) i (cx-pthread_mutex_init-GLIBC_2.2.5 m 0)
+        l (cx-pthread_mutex_lock-GLIBC_2.2.5 m) u (cx-pthread_mutex_unlock-GLIBC_2.2.5 m)
+        l2 (cx-pthread_mutex_lock-GLIBC_2.2.5 m) u2 (cx-pthread_mutex_unlock-GLIBC_2.2.5 m)
+        d (cx-pthread_mutex_destroy-GLIBC_2.2.5 m)
+        r0 (expect "mutex init lock unlock lock unlock destroy" (+ i (+ l (+ u (+ l2 (+ u2 d))))) 0)
+        o (cx-dlopen-GLIBC_2.34 (cstr "libnot-there.so.9") 2)
+        r1 (expect "dlopen of an unloaded name is NULL" o 0)
+        e1 (cx-dlerror-GLIBC_2.34)
+        r2 (expect "dlerror reports it" (if (and (not= e1 0) (> (c-strlen e1) 10)) 1 0) 1)
+        r3 (expect "dlerror clears" (cx-dlerror-GLIBC_2.34) 0)
+        y (cx-dlsym-GLIBC_2.34 0 (cstr "no_such_symbol"))
+        r4 (expect "dlsym of nothing is NULL" y 0)
+        r5 (expect "dlsym error is reported" (if (= (cx-dlerror-GLIBC_2.34) 0) 0 1) 1)
+        r6 (expect "dlclose" (cx-dlclose-GLIBC_2.34 1) 0)
+        r7 (expect "dlopen(NULL)" (cx-dlopen-GLIBC_2.34 0 2) 0)
+        r8 (expect "__cxa_finalize" (cx-__cxa_finalize-GLIBC_2.2.5 0) 0)]
+    (+ r0 (+ r1 (+ r2 (+ r3 (+ r4 (+ r5 (+ r6 (+ r7 r8))))))))))
+
+(defn main [] :i64
+  (let [i (b2-init)
+        dir (if (> (kxrt-b-argc) 0) (l64 (kxrt-b-argv)) 0)
+        mode (if (> (kxrt-b-argc) 1) (l64 (+ (kxrt-b-argv) 8)) 0)]
+    (cond
+      (and (not= mode 0) (c-eq? mode "mutex-twice"))
+        (let [m (malloc-alloc 64) a (cx-pthread_mutex_lock-GLIBC_2.2.5 m) b (cx-pthread_mutex_lock-GLIBC_2.2.5 m)] 0)
+      (and (not= mode 0) (c-eq? mode "fopen-write")) (cx-fopen-GLIBC_2.2.5 (path-in dir "w.txt") (cstr "w"))
+      (and (not= mode 0) (c-eq? mode "abort")) (cx-abort-GLIBC_2.2.5)
+      (and (not= mode 0) (c-eq? mode "stack-chk")) (cx-__stack_chk_fail-GLIBC_2.4)
+      (and (not= mode 0) (c-eq? mode "free-wild")) (cx-free-GLIBC_2.2.5 (+ (cx-malloc-GLIBC_2.2.5 64) 16))
+      (and (not= mode 0) (c-eq? mode "unresolved"))
+        (let [lib (malloc-alloc ELF-RECORD) z (c-zero lib ELF-RECORD) p (s64 (+ lib ELF-PATH) (cstr "/test/libfake.so"))
+              s (make-stub (cstr "no_such_import") lib)]
+          (kxrt-b-ccall s (+ (kxrt-b-state) ST-CALL)))
+      :else
+        (let [a (t-malloc) b (t-stdio dir) c (t-dir dir) d (t-env) e (t-qsort) f (t-tcb) g (t-misc)]
+          (if (= (+ a (+ b (+ c (+ d (+ e (+ f g)))))) 0) 0 1)))))

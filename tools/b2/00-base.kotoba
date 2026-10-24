@@ -1,0 +1,129 @@
+;; tools/b2/00-base.kotoba -- the base of route B2's Kotoba loader and libc subset (ADR 0375, JUN-377).
+;;
+;; The B2 unit is these files concatenated in tools/b2/MANIFEST order after one ns line, compiled with
+;; --format b2 (seed/84). The program reaches the machine only through the kxrt-b- API of seed/76; the
+;; libc functions the loaded library imports are the guest functions named cx-NAME-VERSION below, which
+;; the compiler gives SysV entry thunks and lists in the export table (name and glibc symbol version).
+;;
+;; A C caller passes int arguments with undefined upper 32 bits: an exported function that takes an
+;; int, unsigned or size_t-as-int normalizes it with (i32 x) or (u32 x). A pointer or a long is whole.
+;;
+;; The program's state is the 32 KiB at (kxrt-b-state), zero at start. Word offsets (byte offsets, 8-byte
+;; words) are the ST- constants of the files that own them; this file owns 0..511.
+
+;; State map (byte offsets in the 32 KiB; 8-byte words unless noted; each file owns its range):
+;;   0..399        malloc (30-malloc)          400..511  this file's words below
+;;   512..4095     loader scratch (50-elf)     4096..8191   string.h (10-string)
+;;   8192..12287   printf and scanf (20-printf)  12288..16383 stdio (40-stdio)
+;;   16384..20479  loader tables (50-elf)      20480..24575 the message scratch below
+;;   24576..32767  free
+(def ST-HEAP-CUR 0)      ;; malloc: next free byte of the current chunk
+(def ST-HEAP-END 8)      ;; malloc: end of the current chunk
+(def ST-FREE 16)         ;; malloc: 40 free-list heads, one per size class (16 + 8 * class)
+(def ST-ENVP 400)        ;; the environment vector (a char**)
+(def ST-ARGC 408)
+(def ST-ARGV 416)
+(def ST-ERR 424)         ;; the dlerror buffer (a malloc'd 512-byte C string, 0 until the first error)
+(def ST-ERR-PENDING 432) ;; 1 when dlerror has an unreported error
+(def ST-STDERR-CELL 440) ;; the address of the data object stderr (a cell holding a FILE*)
+(def ST-LIBS 448)        ;; the first loaded library record
+(def ST-TCB 456)         ;; the thread control block the FS base points to
+(def ST-STUBS 464)       ;; the page of refusing stubs for unresolved imports
+(def ST-NSTUBS 472)      ;; how many
+(def ST-CALL 512)        ;; a 128-byte argument block for outgoing C calls
+(def ST-OUT 20480)       ;; a 4096-byte scratch buffer for messages
+
+;; ---- memory access, short names ----------------------------------------------------------------------
+(defn- l8 [a :i64] :i64 (kxrt-b-load8 a))
+(defn- l16 [a :i64] :i64 (kxrt-b-load16 a))
+(defn- l32 [a :i64] :i64 (kxrt-b-load32 a))
+(defn- l64 [a :i64] :i64 (kxrt-b-load64 a))
+(defn- s8 [a :i64 v :i64] :i64 (kxrt-b-store8 a v))
+(defn- s16 [a :i64 v :i64] :i64 (kxrt-b-store16 a v))
+(defn- s32 [a :i64 v :i64] :i64 (kxrt-b-store32 a v))
+(defn- s64 [a :i64 v :i64] :i64 (kxrt-b-store64 a v))
+;; the low 32 bits of v as a signed or an unsigned value
+(defn- i32 [v :i64] :i64 (i64-shift-right (i64-shift-left v 32) 32))
+(defn- u32 [v :i64] :i64 (bit-and v 4294967295))
+(defn- min2 [a :i64 b :i64] :i64 (if (< a b) a b))
+(defn- max2 [a :i64 b :i64] :i64 (if (> a b) a b))
+(defn- rem [a :i64 b :i64] :i64 (- a (* (quot a b) b)))
+(defn- st [k :i64] :i64 (l64 (+ (kxrt-b-state) k)))
+(defn- st! [k :i64 v :i64] :i64 (s64 (+ (kxrt-b-state) k) v))
+;; round n up to a multiple of the power of two p
+(defn- align-up [n :i64 p :i64] :i64 (bit-and (+ n (- p 1)) (- 0 p)))
+
+;; ---- system calls (the numbers of x86_64 Linux) ---------------------------------------------------------
+(defn- sys0 [n :i64] :i64 (kxrt-b-syscall n 0 0 0 0 0 0))
+(defn- sys1 [n :i64 a :i64] :i64 (kxrt-b-syscall n a 0 0 0 0 0))
+(defn- sys2 [n :i64 a :i64 b :i64] :i64 (kxrt-b-syscall n a b 0 0 0 0))
+(defn- sys3 [n :i64 a :i64 b :i64 c :i64] :i64 (kxrt-b-syscall n a b c 0 0 0))
+(defn- sys4 [n :i64 a :i64 b :i64 c :i64 d :i64] :i64 (kxrt-b-syscall n a b c d 0 0))
+(defn- sys6 [n :i64 a :i64 b :i64 c :i64 d :i64 e :i64 f :i64] :i64 (kxrt-b-syscall n a b c d e f))
+(def SYS-READ 0)
+(def SYS-WRITE 1)
+(def SYS-CLOSE 3)
+(def SYS-MMAP 9)
+(def SYS-MPROTECT 10)
+(def SYS-MUNMAP 11)
+(def SYS-PREAD 17)
+(def SYS-ACCESS 21)
+(def SYS-LSEEK 8)
+(def SYS-READLINK 89)
+(def SYS-ARCH-PRCTL 158)
+(def SYS-GETDENTS64 217)
+(def SYS-EXIT-GROUP 231)
+(def SYS-OPENAT 257)
+(def SYS-GETRANDOM 318)
+
+;; ---- C strings ------------------------------------------------------------------------------------------
+(defn- c-strlen [p :i64] :i64 (loop [i 0] (if (= (l8 (+ p i)) 0) i (recur (inc i)))))
+;; n bytes from src to dst (not overlapping)
+(defn- c-copy [dst :i64 src :i64 n :i64] :i64
+  (loop [i 0] (if (>= i n) dst (let [z (s8 (+ dst i) (l8 (+ src i)))] (recur (inc i))))))
+(defn- c-zero [dst :i64 n :i64] :i64
+  (loop [i 0] (if (>= i n) dst (let [z (s8 (+ dst i) 0)] (recur (inc i))))))
+;; the NUL-ended C string at p equals the Kotoba string s
+(defn- c-eq? [p :i64 s :string] :bool
+  (let [n (string-length s)]
+    (and (= (l8 (+ p n)) 0)
+         (loop [i 0] (cond (= i n) true (= (l8 (+ p i)) (string-code-point-at s i)) (recur (inc i)) :else false)))))
+;; the two NUL-ended C strings are equal
+(defn- c-same? [a :i64 b :i64] :bool
+  (loop [i 0]
+    (let [x (l8 (+ a i))]
+      (cond (not= x (l8 (+ b i))) false (= x 0) true :else (recur (inc i))))))
+;; the Kotoba string s as bytes at a, NUL-ended; the length
+(defn- put-str [a :i64 s :string] :i64
+  (let [n (string-length s)
+        z (loop [i 0] (if (= i n) 0 (let [w (s8 (+ a i) (string-code-point-at s i))] (recur (inc i)))))
+        y (s8 (+ a n) 0)]
+    n))
+;; the bytes at a (n of them, ASCII) as a Kotoba string; a byte outside 32..126 shows as ?
+(defn- str-at [a :i64 n :i64] :string
+  (string-from-utf8 (bytes-from-vector-i64
+    (loop [i 0 v []]
+      (if (>= i n) v
+        (let [c (l8 (+ a i))] (recur (inc i) (conj v (if (or (< c 32) (> c 126)) 63 c)))))))))
+(defn- c-str [p :i64] :string (str-at p (c-strlen p)))
+
+;; ---- messages and refusals -------------------------------------------------------------------------------
+;; every message of the loader goes to fd 2 as one line
+(defn- say-fd [fd :i64 s :string] :i64
+  (let [m (+ (kxrt-b-state) ST-OUT) n (min2 (string-length s) 4000)
+        z (loop [i 0] (if (= i n) 0 (let [w (s8 (+ m i) (string-code-point-at s i))] (recur (inc i)))))
+        y (s8 (+ m n) 10)]
+    (sys3 SYS-WRITE fd m (inc n))))
+(defn- say [s :string] :i64 (say-fd 1 s))
+(defn- warn [s :string] :i64 (say-fd 2 s))
+;; a refusal is a named exit, never a fallback: one line on fd 2, then exit status 127
+(defn- refuse [what :string why :string] :i64
+  (let [w (warn (string-concat "b2: refused: " (string-concat what (string-concat ": " why))))]
+    (sys1 SYS-EXIT-GROUP 127)))
+(defn- dec-str [v :i64] :string (string-from-i64 v))
+(defn- hex-digit [x :i64] :i64 (if (< x 10) (+ 48 x) (+ 87 x)))
+(defn- hex-str [v :i64] :string
+  (let [n (loop [k 1 x (u64-shift-right v 4)] (if (= x 0) k (recur (inc k) (u64-shift-right x 4))))]
+    (string-from-utf8 (bytes-from-vector-i64
+      (loop [i (dec n) out []]
+        (if (< i 0) out (recur (dec i) (conj out (hex-digit (bit-and (u64-shift-right v (* 4 i)) 15))))))))))
