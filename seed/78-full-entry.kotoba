@@ -4,16 +4,77 @@
 ;; compile, extract-native, compile-kir) is the core driver, unchanged.
 (defn- full-target? [t :string] :i64
   (if (and (>= (io-argc) 4) (string=? (io-arg 0) "compile") (string=? (io-arg 2) "--target") (string=? (io-arg 3) t)) 1 0))
+;; The public entry must never silently ignore an unsupported lock, profile,
+;; seal or format. The original core driver remains unchanged; this boundary
+;; checks every flag before dispatching to it or a native emitter.
+(defn- full-native? [] :bool
+  (or (= (full-target? "aarch64-linux") 1) (= (full-target? "x86_64-linux") 1)
+      (= (full-target? "x86_64-aiueos-kernel-v1") 1)))
+(defn- full-value-flag? [flag :string] :bool
+  (let [command (io-arg 0) module (= (drv-pj-has 1 (io-argc) "--emit-module") 1)]
+    (cond (full-native?)
+          (or (string=? flag "--target") (string=? flag "--output") (string=? flag "--format")
+              (string=? flag "--payload") (string=? flag "--fuel"))
+          (or (string=? command "compile") (string=? command "check"))
+          (or (string=? flag "--source-path") (string=? flag "--source-lock") (string=? flag "--source-lock-sha256")
+              (string=? flag "--policy")
+              (and (string=? command "compile") (or (string=? flag "--target") (string=? flag "--output")
+                   (and module (string=? flag "--object-dir")))))
+          (string=? command "extract-native") (or (string=? flag "--symbol") (string=? flag "--output"))
+          (string=? command "compile-kir") (or (string=? flag "--output") (and module (string=? flag "--ns")))
+          (string=? command "link") (or (string=? flag "--object-dir") (string=? flag "--output"))
+          (string=? command "modules") (string=? flag "--source-path")
+          :else false)))
+(defn- full-word-flag? [flag :string] :bool
+  (let [command (io-arg 0) module (= (drv-pj-has 1 (io-argc) "--emit-module") 1)]
+    (or (string=? flag "--unpinned")
+        (and (or (string=? command "compile") (string=? command "compile-kir")) (string=? flag "--emit-module"))
+        (and (string=? command "compile") module (string=? flag "--entry"))
+        (and (string=? command "compile-kir") (not module) (string=? flag "--metered")))))
+(defn- full-seen? [flag :string stop :i64] :bool
+  (loop [index 1]
+    (cond (>= index stop) false (string=? (io-arg index) flag) true
+          (full-value-flag? (io-arg index)) (recur (+ index 2))
+          :else (recur (+ index 1)))))
+(defn- full-is-flag? [word :string] :bool
+  (and (>= (string-length word) 2) (string=? (string-substring word 0 2) "--")))
+(defn- full-argv-ok? [index :i64] :bool
+  (if (>= index (io-argc)) true
+    (let [word (io-arg index)]
+      (cond (full-value-flag? word)
+            (and (or (string=? word "--source-path") (not (full-seen? word index)))
+                 (< (+ index 1) (io-argc)) (> (string-length (io-arg (+ index 1))) 0)
+                 (not (full-is-flag? (io-arg (+ index 1)))) (full-argv-ok? (+ index 2)))
+            (full-word-flag? word) (full-argv-ok? (+ index 1))
+            (full-is-flag? word) false
+            :else (full-argv-ok? (+ index 1))))))
+(defn- full-source-ok? [] :bool
+  (if (or (string=? (io-arg 0) "check") (string=? (io-arg 0) "compile"))
+    (let [index (if (full-native?) 1 (drv-pos 1 (io-argc) 0)) source (drv-arg index) length (string-length source)]
+      (and (>= length 7) (string=? (string-substring source (- length 7) length) ".kotoba"))) true))
+(defn- full-lock-ok? [] :bool
+  (let [index (drv-pj-flag 1 (io-argc) "--source-lock")]
+    (or (< index 0) (> (vector-count (io-read-source-lock (io-arg index))) 0))))
+(defn- full-c-linked? [] :bool
+  (let [index (drv-pj-flag 1 (io-argc) "--format")]
+    (and (>= index 0) (string=? (io-arg index) "platform-linked"))))
 ;; malformed x86_64-linux arguments (70's xg-main) are a usage error, as in 73
 (defn- xg-default [] :i64 (drv-fail0 E-USAGE))
 (defn- seed-main [] :i64
-  (cond (= (full-target? "x86_64-aiueos-kernel-v1") 1) (xo-command)
+  (cond (> (io-argc) 256) (drv-usage)
+        (= (drv-pj-has 1 (io-argc) "--module-lock") 1) (drv-fail0 E-PROJ-UNPINNED)
+        (not (full-argv-ok? 1)) (drv-usage)
+        (not (full-lock-ok?)) (drv-fail0 E-PROJ-UNPINNED)
+        (not (full-source-ok?)) (drv-usage)
+        ;; The engine-neutral default is not implemented in this native
+        ;; closure. Refuse it rather than substituting an AArch64 target.
+        (and (string=? (io-arg 0) "compile") (= (drv-pj-has 1 (io-argc) "--target") 0)) (drv-fail0 E-TARGET)
+        ;; Native product/CDCI have no C dynamic-loader/runtime prerequisite.
+        (and (string=? (io-arg 0) "compile") (full-c-linked?)) (drv-fail0 E-TARGET)
+        (string=? (io-arg 0) "cdci-build") (xc-command)
+        (= (full-target? "x86_64-aiueos-kernel-v1") 1) (xo-command)
         (= (full-target? "aarch64-linux") 1) (xa-command)
-        ;; JUN-353: one wasm module with the guest and the runtime (seed/81, seed/82)
+        ;; JUN-353: guest and runtime in a browser Wasm module.
         (= (full-target? "wasm32-browser") 1) (xw-command)
-        ;; ADR 0371 step 5: the GPU provider's dynamically linked image (seed/78-x86_64-platform), as in 73
-        (and (= (full-target? "x86_64-linux") 1) (= (io-argc) 8) (string=? (io-arg 6) "--format")
-             (string=? (io-arg 7) "platform-linked"))
-          (xp-command)
         (= (full-target? "x86_64-linux") 1) (xg-main)
         :else (drv-main)))

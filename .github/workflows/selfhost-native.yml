@@ -23,6 +23,10 @@ on:
   push:
     branches: [main]
     paths:
+      - "bin/amu"
+      - "bin/kotoba"
+      - "bin/kotoba-compiler"
+      - "native-product.json"
       - "seed/**"
       - "scripts/seed/**"
       - "tools/gpu_*.kotoba"
@@ -33,6 +37,10 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - "bin/amu"
+      - "bin/kotoba"
+      - "bin/kotoba-compiler"
+      - "native-product.json"
       - "seed/**"
       - "scripts/seed/**"
       - "tools/gpu_*.kotoba"
@@ -60,6 +68,18 @@ jobs:
         run: python3 scripts/seed/selfhost-bootstrap.py --output "$RUNNER_TEMP/boot" --tier "$TIER"
       - name: Static launcher (--format launcher, ADR 0371 step 4; arm64, native)
         run: python3 scripts/seed/check-static-launcher.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/launcher"
+      - name: Combined compiler (core + Linux targets) from the bootstrap (arm64, native)
+        run: python3 scripts/seed/check-one-compiler.py --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/one"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: one-compiler-receipt
+          path: |
+            ${{ runner.temp }}/one/one-compiler.json
+            ${{ runner.temp }}/one/calls.json
+            ${{ runner.temp }}/one/F2.elf
+            ${{ runner.temp }}/one/F-x86_64.elf
+          if-no-files-found: warn
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: bootstrap-arm64
@@ -96,6 +116,18 @@ jobs:
         env:
           TIER: ${{ github.event_name == 'pull_request' && 'pr' || github.event_name == 'push' && 'main' || 'full' }}
         run: python3 scripts/seed/check-x86_64-native.py --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/x86" --tier "$TIER"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: one-compiler-receipt
+          path: ${{ runner.temp }}/one
+      - name: Complete native x86 compiler fixed point and CDCI images
+        run: python3 scripts/seed/check-complete-x86.py --compiler "$RUNNER_TEMP/one/F-x86_64.elf" --arm-proof "$RUNNER_TEMP/one/one-compiler.json" --output "$RUNNER_TEMP/complete"
+      - name: Native x86 clock and entropy (fixed Kotoba guest, refusal and ENOSYS)
+        run: python3 scripts/seed/check-native-clock-entropy.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/clock-entropy"
+      - name: Kotoba native controller (Amu selfhost and complete24 Kotoba gate)
+        run: python3 scripts/seed/check-native-cdci.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/native-cdci"
+      - name: Public native product and aliases
+        run: python3 scripts/seed/check-public-native-product.py --product "$GITHUB_WORKSPACE" --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/public-product"
       # JUN-353: F's wasm32-browser modules of the runtime cases, in the image's
       # Chrome (static page, Worker host, DevTools protocol on a pipe; no Node)
       - name: wasm32-browser cases in headless Chrome
@@ -107,10 +139,19 @@ jobs:
           path: |
             ${{ runner.temp }}/x86/x86_64-native.json
             ${{ runner.temp }}/x86/check-static-launcher/static-launcher.json
-            ${{ runner.temp }}/x86/check-platform-linked/platform-linked.json
-            ${{ runner.temp }}/x86/check-gpu-provider/gpu-provider.json
             ${{ runner.temp }}/x86/runtime-boundary/runtime-boundary.json
             ${{ runner.temp }}/x86/runtime-boundary/calls.json
             ${{ runner.temp }}/x86/raw
+            ${{ runner.temp }}/public-product/public-product.json
+            ${{ runner.temp }}/complete/complete-x86.json
+            ${{ runner.temp }}/complete/calls.json
+            ${{ runner.temp }}/clock-entropy/native-clock-entropy.json
+            ${{ runner.temp }}/clock-entropy/calls.json
+            ${{ runner.temp }}/clock-entropy/enosys-filter.json
+            ${{ runner.temp }}/native-cdci/native-cdci.json
+            ${{ runner.temp }}/native-cdci/calls.json
+            ${{ runner.temp }}/native-cdci/raw
+            ${{ runner.temp }}/native-cdci/positive/cdci.receipt
+            ${{ runner.temp }}/native-cdci/positive/kotoba-gate.receipt
             ${{ runner.temp }}/x86/wasm32-browser/wasm32-browser.json
           if-no-files-found: warn

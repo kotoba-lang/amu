@@ -89,7 +89,7 @@ def main(compiler, output, seccomp_if_available=False):
     raw = output / "raw"
     artifacts.mkdir()
     raw.mkdir()
-    env = {"PATH": "/usr/bin:/bin", "KEXE_CAP_RESOURCES_35": str(artifacts)}
+    env = {"PATH": "/nonexistent", "KEXE_CAP_RESOURCES_35": str(artifacts)}
     if seccomp_if_available:
         env["KEXE_SECCOMP"] = "if-available"
     compiler_pin = pin(compiler)
