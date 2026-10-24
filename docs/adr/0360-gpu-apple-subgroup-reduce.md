@@ -1087,8 +1087,16 @@ under the SAME rules 3 + 6 gate as the Vulkan and MSL routes.
     writeTimestamp is refused on this adapter). The REOPEN CONDITION
     narrows to a claim-protocol WGSL measurement or a GPU-core-timestamp
     measurement of the device; the wall-clock parity read has had its
-    visit and changed nothing. Prose only: no flag, cell, selection
-    answer or workgroup row moves.]
+    visit and changed nothing. [FIRST LEG DEFINED 2026-10-25 -- the
+    claim-protocol WGSL channel amendment below designs what a
+    "claim-protocol WGSL measurement" is (a rule-1-publishing,
+    rule-2-sign-scoped record on the channel's own named metric -- for
+    this adapter's only clock, host wall-clock submit->completion) and
+    finds the first leg REACHABLE on this adapter without GPU-core
+    timestamps; it still cannot FIRE until the WGSL harness publishes
+    rule-1 classification and a fresh run carries a regime-invariant
+    sign -- both UNIMPLEMENTED / UNMEASURED, that amendment's part 3.]
+    Prose only: no flag, cell, selection answer or workgroup row moves.]
   Part 3 -- rationale, all of it design fact and not measurement:
     WebGPU-on-Apple is a deployed surface (WebKit ships WebGPU; on
     macOS the browser's WebGPU runs over Metal), so a dispatch there
@@ -1153,3 +1161,99 @@ State: ACCEPTED DESIGN ONLY at this amendment's commit; the pin update
 it authorizes is IMPLEMENTED with tests in the next commit of the same
 tick (until then the classify self-test stays RED at 36/37, named).
 Record: `docs/evidence/gpu/cross-cutting-only-decision-20261025.txt`.
+
+## Amendment 2026-10-25 (the claim-protocol WGSL channel): a host-clock
+campaign adopts the protocol, metric-named and sign-scoped
+
+DECIDED (JUN-58, the row the 2026-10-25 wall-clock-row-mapping record's
+HONEST LEFT 2 named -- "whether a WGSL measurement under the claim
+protocol exists at all (the MSL native-harness idiom for WGSL) is
+PROPOSED, not designed; the narrowing's narrowed REOPEN CONDITION waits
+on it"). The answer: **YES -- a WGSL measurement under the claim
+protocol exists**, by the protocol's own adoption clause ("a later
+vendor campaign adopts it by citation, its own row" -- this is that
+row), but the adoption is **metric-named and sign-scoped**, because the
+adopting channel cannot produce the metric the protocol was written on.
+No hardware measurement runs in this slice; the ground is committed
+records and committed script text (quoted in the record).
+
+Grounding (facts, not design): the protocol's rule-1 baseline metric
+`gpu-ns` is Metal GPU timestamps (the MSL harness's own timer line:
+"Metal GPU timestamps (command buffer GPUStartTime->GPUEndTime) around
+one reduce dispatch; host submit->completion ns recorded as
+secondary"), and the GAP-1.15 clusters are computed over those gpu-ns
+baselines. The WGSL Chrome channel has NO GPU timestamps on this
+adapter (writeTimestamp refused without
+'chromium-experimental-timestamp-query-inside-passes'; no flag exposes
+it) -- its only clock is host wall-clock submit->completion. The
+committed 2026-10-25 WGSL measure-log publishes NO rule-1
+classification (grep -c -i "regime" over it: 0), while every MSL
+summary carries the section. So the WGSL channel today is rule-1
+EMPTY.
+
+Part 1 -- THE ADOPTION CONTRACT (what makes a WGSL record
+claim-protocol):
+
+  (a) Rule 1 carries with the baseline metric NAMED BY THE CHANNEL:
+      for the WGSL wall-clock channel the per-run baseline median is
+      the channel's own per-run median host submit->completion time per
+      operator, and the GAP-1.15 clusters are named in that metric's
+      units. The clustering rule is metric-parametric as written
+      (single-link over per-run medians; `scripts/gpu_regime_classify.py`
+      carries unchanged -- this slice touches no code); only the
+      publication names the metric. A claim-protocol WGSL record
+      publishes per rule 1: per-run baseline medians per operator in
+      the named metric, and the regime clusters.
+  (b) Rule 2 carries IN FULL, unchanged: a regime-invariant sign is the
+      only selection basis. Sign claims are CHANNEL-SCOPED -- a
+      WGSL-channel sign never flips an MSL cell and never answers a
+      workgroup row (the mirror of "an MSL measurement never flips a
+      WGSL cell") -- and only a WGSL-route cell's own selection
+      question consumes it.
+  (c) Rule 3 carries with a NAMED LIMIT: magnitude claims stay
+      within-channel and regime-matched as written; CROSS-METRIC
+      magnitude claims (host-clock vs GPU-timestamp) are INADMISSIBLE.
+      Named hazard (design reasoning, NOT a measurement): fixed
+      host/queue overhead common to both arms biases paired ratios
+      toward 1 -- conservative against win claims (it can hide a real
+      win, it cannot invent one through the common part) -- while
+      asymmetric arm overhead could bias either way and is not assumed
+      away; every magnitude publication on this channel keeps both
+      arms' raw per-round times beside the ratios (a record that hides
+      them is inadmissible).
+  (d) Rule 4 carries unchanged: this adoption measures nothing and
+      moves nothing.
+
+Part 2 -- WHAT THE ADOPTION DOES NOT DO: the 2026-10-25 wall-clock
+read stays OUT (no rule-1 publication, predates this adoption -- its
+parity verdict and its maps-onto-no-row ruling stand); no workgroup
+row (ADR-0355/0358), `:measured?` flag, `:shapes` value or selection
+answer moves; the dispatch-row channel rule (ADR-0355's 2026-10-25
+amendment) is untouched -- a claim-protocol WGSL measurement is CLAIM
+currency for the narrowing's route scope and still maps onto no
+dispatch row. Two "channels", kept apart on purpose: the row-flip
+channel (what evidence may answer a workgroup row) and the
+claim-protocol channel (what evidence may carry a sign or magnitude
+claim).
+
+Part 3 -- CONSEQUENCE for part 2's narrowing: its REOPEN CONDITION's
+first leg ("a claim-protocol WGSL measurement") is now DEFINED and is
+REACHABLE on this adapter's host-clock channel; the second leg ("a
+GPU-core-timestamp measurement") stays REFUSED here and waits on a
+timestamp-capable route (a Vulkan-provider route with timestampValidBits
+> 0 or a native Metal counter channel -- UNDESIGNED, its own row).
+Named missing pieces before the first leg can FIRE (each its own later
+slice): (i) harness-side rule-1 classification for the WGSL harness --
+UNIMPLEMENTED; (ii) a fresh WGSL run of the narrowed device's fold arms
+satisfying rules 1 + 2 -- UNMEASURED. UNMEASURED, named so no reading
+upgrades: whether the WGSL host-clock baselines cluster into more than
+one regime level at all (if single-level, rule 2 degenerates to the
+protocol's own single-level standard -- every per-run ratio on one side
+of 1.0 -- which the 2026-10-25 read would have FAILED); the sign of any
+claim-protocol WGSL run; per-kernel GPU time on this adapter. The
+narrowing itself is unchanged: parity is not a fold win, the
+conservative `:baseline` answer for the named device stands.
+
+State: ACCEPTED DESIGN ONLY (this amendment). IMPLEMENTED: nothing --
+no code moves in this slice. MEASURED: nothing -- no hardware ran.
+Record: `docs/evidence/gpu/claim-protocol-wgsl-channel-20261025.txt`.
