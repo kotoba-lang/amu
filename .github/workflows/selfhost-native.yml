@@ -90,6 +90,8 @@ jobs:
         env:
           TIER: ${{ github.event_name == 'pull_request' && 'pr' || github.event_name == 'push' && 'main' || 'full' }}
         run: python3 scripts/seed/selfhost-bootstrap.py --output "$RUNNER_TEMP/boot" --tier "$TIER"
+      - name: Capability-free AIUEOS user ELF ABI and refusal controls
+        run: python3 scripts/seed/check-aiueos-user-elf-native.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/aiueos-user-elf"
       - name: Static runtime stdin, wire 41 (arm64, native)
         run: python3 scripts/seed/check-io-read.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/io-read"
       - name: Static runtime durable files and sleep, wires 35 and 7 (arm64, native)
