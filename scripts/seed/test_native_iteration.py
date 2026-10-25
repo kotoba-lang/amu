@@ -83,6 +83,27 @@ class NativeIterationTests(unittest.TestCase):
         report = json.loads((self.root / "logs/schedule.json").read_text())
         self.assertEqual(sorted(row["exit"] for row in report["gates"]), [0, 7])
 
+    def test_worker_queue_is_recorded_separately_from_slot_wait(self):
+        manifest = self.root / "queue-plan.json"
+        manifest.write_text(json.dumps(dict(schema="amu.native-gate-plan.v1", phases=dict(test=[
+            dict(name=f"gate-{i}", argv=[sys.executable, "-c", "import time; time.sleep(.2)"])
+            for i in range(5)]))))
+        old = os.environ.get("RUNNER_TEMP")
+        os.environ["RUNNER_TEMP"] = str(self.root)
+        try:
+            self.assertEqual(run_plan(manifest, "test", self.root / "logs", directory=self.root / "slots"), 0)
+        finally:
+            if old is None:
+                os.environ.pop("RUNNER_TEMP")
+            else:
+                os.environ["RUNNER_TEMP"] = old
+        rows = json.loads((self.root / "logs/schedule.json").read_text())["gates"]
+        self.assertEqual(len(rows), 5)
+        self.assertGreater(max(r["workerQueueSeconds"] for r in rows), .2)
+        for row in rows:
+            self.assertAlmostEqual(row["queuedSeconds"], row["workerQueueSeconds"] + row["slotQueueSeconds"])
+            self.assertLess(row["startSeconds"], row["endSeconds"])
+
     @unittest.skipUnless(sys.platform.startswith("linux"), "Linux /proc observer")
     def test_observer_preserves_outputs_exit_and_accounts_children(self):
         # These are explicitly Python harness controls, not compiler artifacts.

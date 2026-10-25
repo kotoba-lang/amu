@@ -16,7 +16,7 @@ that Google's system or models executed these experiments.
 
 | ID | Explanation and discriminator | Admission / falsification | State |
 | -- | -- | -- | -- |
-| H1 | The controller's Amu core rebuild dominates. Observe both sealed child lifetimes and CPU accounting separately from preflight, post-build validation and receipt finalization. | Dominant if rebuild is >90% of controller wall; reject that explanation if hashing/other phases dominate. | Measurement pending |
+| H1 | The controller's Amu core rebuild dominates. Observe both sealed child lifetimes and CPU accounting separately from preflight, post-build validation and receipt finalization. | Dominant if rebuild is >90% of controller wall; reject that explanation if hashing/other phases dominate. | Confirmed:99.7% in native x86 run40170244993 |
 | H2 | Unbounded independent gate fan-out adds CPU and memory contention. Compare the original scheduler with two admitted gate groups and the same commands, on the same host class/source/image. | No missing/altered gate or verdict. Record wall, CPU, queue time and RSS; do not infer speed from concurrency alone. | Bounded scheduler candidate |
 | H3 | The static compiler's own implementation dominates rebuild cost. After H1, compare check versus compile, workload scaling and native CPU samples where available, then refactor the observed hot path. | Same native output, original correctness/fuel/arena/refusal corpus and full compiler self-rebuild. Rank an unqualified or regressing candidate below the baseline. | Await H1 |
 | H4 | Late discovery of a local fault wastes complete builds. Run identities, native locked project controls and CDCI preflight before full qualification. | Broken lock/metadata or a failing gate must stop dependent full work. Local success must never stand in for full success. | Early preflight candidate |
@@ -25,12 +25,42 @@ The baseline is a previous successful run, 40151980803: controller-positive
 3279.737s and the separate 24-case gate 4.198s. These are historical whole-call
 times, not a measured decomposition or a speedup of the current candidate.
 
+## Native x86 controller decomposition
+
+[Run40170244993](https://github.com/kotoba-lang/amu/actions/runs/40170244993)
+executes the actual controller and both roles on a4-CPU x86 Linux runner,
+alone after fresh complete-compiler generations. The controller and gate
+receipts are byte-identical to baseline run40165507318; production source,
+public compiler and role images match. All24 cases,18 refusals and parent-death
+cleanup pass. The preflight-only stage separately states that it does not
+qualify the rebuild.
+
+| Phase | Observed wall seconds |
+| -- | --: |
+| Controller preflight | 1.259 |
+| Amu core rebuild child | **1736.053** |
+| Post-build verification | 0.302 |
+| Kotoba native gate | 3.479 |
+| Receipt finalization | 0.051 |
+| Total | **1741.145** |
+
+The rebuild uses1735.89 CPU seconds during1736.05 wall seconds: one core is
+effectively saturated. Its sampled peak RSS is457039872 bytes (about436MiB).
+The controller's own CPU is1.922 seconds. Thus concurrent scheduling can
+reduce waiting, while the remaining29-minute floor calls for compiler work.
+The concurrent same-image baseline was2342.508 seconds. These are individual
+observations, not a paired or statistically qualified speedup. Full bounded
+scheduling acceptance still requires its own complete native CI.
+
 ## Scheduling
 
 `seed/native-gate-plan.json` retains all14 independent command groups from
 979049caf96a, including nested fail-closed shell pipelines. The runner admits
 at most two groups and awaits every result even when one fails. Each group
 has its own log and exit code. The collector alone writes schedule.json.
+Worker-queue wait and shared-slot wait are recorded separately, as well as
+their total and the phase-relative start/end. A zero slot wait alone does
+not mean a later submitted gate had no wait in the worker pool.
 The long controller / one-compiler group is queued first. The existing
 per-PR supersession and uncached main/full tier behavior are unchanged.
 

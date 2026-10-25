@@ -116,7 +116,8 @@ def run_plan(manifest, phase, output, *, jobs=2, capacity=2, directory=None):
     started = time.monotonic()
     atomic_json(output / "schedule.json", report)
 
-    def run(row):
+    def run(row, submitted):
+        worker_started = time.monotonic()
         name = row["name"]
         if not name or any(c not in "abcdefghijklmnopqrstuvwxyz0123456789-" for c in name):
             raise ValueError("invalid gate name")
@@ -124,12 +125,18 @@ def run_plan(manifest, phase, output, *, jobs=2, capacity=2, directory=None):
             timing = execute(row["argv"], directory=directory or default_slot_dir(),
                              capacity=capacity, stdout=log, stderr=subprocess.STDOUT)
         (output / (name + ".rc")).write_text(str(timing["exit"]) + "\n")
-        return dict(name=name, argv=row["argv"], **timing)
+        worker_queue = worker_started - submitted
+        return dict(name=name, argv=row["argv"], **{**timing,
+                    "workerQueueSeconds": worker_queue,
+                    "slotQueueSeconds": timing["queuedSeconds"],
+                    "queuedSeconds": worker_queue + timing["queuedSeconds"],
+                    "startSeconds": worker_started - started + timing["queuedSeconds"],
+                    "endSeconds": time.monotonic() - started})
 
     # Every submitted gate is awaited even if another fails. No lost pipeline
     # exit, cancelled assertion, swallowed exception or shared JSON writer.
     with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
-        futures = {pool.submit(run, row): row for row in gates}
+        futures = {pool.submit(run, row, time.monotonic()): row for row in gates}
         for future in concurrent.futures.as_completed(futures):
             row = futures[future]
             try:
