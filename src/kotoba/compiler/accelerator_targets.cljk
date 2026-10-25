@@ -102,17 +102,36 @@
 ;; the device-from-info / recommend helpers: the 4-field split (a document vector of
 ;; the field strings), the digit/version validators, the blank/substring checks, the
 ;; digits->i64 parse, the largest power-of-two at or below the limit and the i64 text.
+;; The field spans are PER-FIELD (start..i at each '|', start..n at the last field):
+;; the pre-2026-10-26 arm conjes PREFIX spans (string-substring s 0 i), which
+;; answered ["a" "a|b" "a|b|c" "a|b|c|d"] for "a|b|c|d" -- probed on the kotoba
+;; runtime this tick, docs/evidence/gpu/w3-split4-field-spans-20261026.txt.
+;; Field counting is the raw '|'-split count (fields = pipes + 1, trailing empty
+;; fields counted -- the host arm's str/split ... -1 reading).
 #?(:kotoba
-   (defn- split4 [s :string i :i64 n :i64 k :i64 acc :document] :document
-     (cond (and (>= i n) (= k 3)) (document-vector-conj acc (document-string (string-substring s 0 n)))
+   (defn- split4 [s :string start :i64 i :i64 n :i64 k :i64 acc :document] :document
+     (cond (and (>= i n) (= k 3)) (document-vector-conj acc (document-string (string-substring s start n)))
            (>= i n) (document-null)
            (= (string-code-point-at s i) 124)
-           (split4 s (+ i 1) n (+ k 1) (document-vector-conj acc (document-string (string-substring s 0 i))))
-           :else (split4 s (+ i 1) n k acc))))
+           (split4 s (+ i 1) (+ i 1) n (+ k 1) (document-vector-conj acc (document-string (string-substring s start i))))
+           :else (split4 s start (+ i 1) n k acc))))
+;; digits? = ONE OR MORE ASCII digits in [i, n) -- the host re-matches
+;; "[0-9]+" and an empty range holds no digits. The walk splits at the
+;; first digit: digits? refuses the empty range, digits-all? walks the
+;; tail (vacuously true). The pre-2026-10-26 base (< 0 n) asked whether
+;; the END was positive -- true for every empty range inside a non-empty
+;; string (an empty version part passed) and true only by accident for the
+;; ranges starting at 0 -- measured on the kotoba runtime this tick,
+;; docs/evidence/gpu/w3-split4-field-spans-20261026.txt.
 #?(:kotoba
    (defn- digits? [s :string i :i64 n :i64] :bool
-     (cond (>= i n) (< 0 n)
-           (let [c (string-code-point-at s i)] (and (>= c 48) (<= c 57))) (digits? s (+ i 1) n)
+     (cond (>= i n) false
+           (let [c (string-code-point-at s i)] (and (>= c 48) (<= c 57))) (digits-all? s (+ i 1) n)
+           :else false)))
+#?(:kotoba
+   (defn- digits-all? [s :string i :i64 n :i64] :bool
+     (cond (>= i n) true
+           (let [c (string-code-point-at s i)] (and (>= c 48) (<= c 57))) (digits-all? s (+ i 1) n)
            :else false)))
 ;; d.d.d with digits in each part (the host re-matches "[0-9]+\.[0-9]+\.[0-9]+")
 #?(:kotoba
@@ -125,9 +144,15 @@
 #?(:kotoba
    (defn- dot1 [s :string i :i64 n :i64] :i64
      (if (>= i n) n (if (= 46 (string-code-point-at s i)) i (dot1 s (+ i 1) n)))))
+;; dot2 answers the INDEX of the SECOND '.' (n when fewer than two): at the
+;; first '.', the second one is dot1 from the next byte. The pre-2026-10-26
+;; arm answered n + (number of '.') -- measured 7 for "1.2.3" where the
+;; second dot sits at 3 -- so version3? read its own parts out of span and
+;; answered false for every well-formed version (kotoba runtime,
+;; docs/evidence/gpu/w3-split4-field-spans-20261026.txt).
 #?(:kotoba
    (defn- dot2 [s :string i :i64 n :i64] :i64
-     (if (>= i n) n (if (= 46 (string-code-point-at s i)) (+ 1 (dot2 s (+ i 1) n)) (dot2 s (+ i 1) n)))))
+     (if (>= i n) n (if (= 46 (string-code-point-at s i)) (dot1 s (+ i 1) n) (dot2 s (+ i 1) n)))))
 #?(:kotoba
    (defn- blank-str? [s :string] :bool
      (blank-walk s 0 (string-byte-length s))))
@@ -477,17 +502,17 @@
      (if (not (= (document-kind answer) :string))
        (document-null)
        (let [s (option-value-of [:option :string] (document-string-value answer) "")]
-         (let [f0 (split4 s 0 (string-byte-length s) 0 (document-vector))]
+         (let [f0 (split4 s 0 0 (string-byte-length s) 0 (document-vector))]
            (if (none? f0)
              (document-null)
              (let [fields f0
                    n (document-count fields)]
                (if (not= 4 n)
                  (document-null)
-                 (let [device (option-value-of [:option :string] (document-string-value (option-value-of [:option :document] (document-list-at fields 0) (document-null))) "")
-                       api-version (option-value-of [:option :string] (document-string-value (option-value-of [:option :document] (document-list-at fields 1) (document-null))) "")
-                       max-wg-x (option-value-of [:option :string] (document-string-value (option-value-of [:option :document] (document-list-at fields 2) (document-null))) "")
-                       unified (option-value-of [:option :string] (document-string-value (option-value-of [:option :document] (document-list-at fields 3) (document-null))) "")
+                 (let [device (option-value-of [:option :string] (document-string-value (option-value-of [:option :document] (document-vector-at fields 0) (document-null))) "")
+                       api-version (option-value-of [:option :string] (document-string-value (option-value-of [:option :document] (document-vector-at fields 1) (document-null))) "")
+                       max-wg-x (option-value-of [:option :string] (document-string-value (option-value-of [:option :document] (document-vector-at fields 2) (document-null))) "")
+                       unified (option-value-of [:option :string] (document-string-value (option-value-of [:option :document] (document-vector-at fields 3) (document-null))) "")
                        wg (if (digits? max-wg-x 0 (string-byte-length max-wg-x)) (string->i64 max-wg-x) -1)]
                    (if (and (not (blank-str? device))
                             (version3? api-version)
@@ -517,10 +542,15 @@
   result. The wire is Vulkan-only, so :api is always :vulkan here.
 
   Total: an answer that is not exactly four well-formed fields answers nil
-  (a wrong parse must not become a wrong dispatch decision)."
+  (a wrong parse must not become a wrong dispatch decision). The field
+  count is the RAW '|'-split count (str/split ... -1): trailing empty
+  fields count as fields, so four good fields plus a trailing '|' answers
+  nil on BOTH arms (2026-10-26 parity decision; before it the host arm's
+  un-limited str/split dropped trailing empties and parsed such an answer).
+  The :kotoba arm's split4 counts the same way."
   [answer]
   (when (string? answer)
-    (let [fields (str/split answer #"\|")]
+    (let [fields (str/split answer #"\|" -1)]
       (when (= 4 (count fields))
         (let [[device api-version max-wg-x unified] fields
               wg (when (re-matches #"[0-9]+" max-wg-x) (parse-long max-wg-x))]
