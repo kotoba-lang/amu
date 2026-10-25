@@ -1,6 +1,8 @@
 name: Native controller diagnostic
 # A measurement-only lane: immutable ARM derivation transport, fresh native
 # x86 build, then the unchanged controller alone. Not full product acceptance.
+# Controller diagnostics require an explicitly selected source-identical
+# derivation; a PR cannot silently reuse an older compiler's receipt.
 on:
   pull_request:
     paths:
@@ -74,7 +76,7 @@ jobs:
             ${{ runner.temp }}/proof-scans/*.stdout
           if-no-files-found: error
   measure:
-    if: inputs.mode != 'proof-scans' && inputs.mode != 'proof-comparison'
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'controller'
     runs-on: ubuntu-latest
     timeout-minutes: 240
     steps:
@@ -88,7 +90,7 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: one-compiler-receipt
-          run-id: ${{ inputs.derivation-run || '40165507318' }}
+          run-id: ${{ inputs.derivation-run }}
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/one
       - name: Fresh native x86 fixed point and roles from source-identical derivation
