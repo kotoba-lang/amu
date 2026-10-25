@@ -778,7 +778,8 @@
   ;; w3-subgroup-pipe-and-token-end-find-bytes-not-walks, and the
   ;; sg-member? row (2026-10-26) fixed the dedupe check's accessor
   ;; (document-vector-at over the vector accumulator), see
-  ;; w3-subgroup-member-dedupes-on-the-vector-accumulator; the residual
+  ;; w3-subgroup-member-dedupes-on-the-vector-accumulator (since renamed
+  ;; by the dedupe-map row); the residual
   ;; trap is sg-ops-walk per token/space byte (its own row) -- the
   ;; sg-keyword row (2026-10-26) replaced the vocabulary walk with one
   ;; non-recursive table body, see
@@ -786,7 +787,9 @@
   ;; (2026-10-26) then collapsed the separator skip to ONE
   ;; string-skip-blank per run (one frame per TOKEN), see
   ;; w3-subgroup-ops-walk-is-one-frame-per-token -- the O(TOKENS) walk
-  ;; and sg-member?'s per-element frames remain, their own rows;
+  ;; remains, its own row (sg-member?'s per-element frames were removed
+  ;; by the dedupe-map row, 2026-10-26, see
+  ;; w3-subgroup-dedupe-on-a-shadow-map-not-a-per-element-walk);
   ;; the e2e pins below run only the shapes the probes resolved twice --
   ;; e.g. "32|basic vote2" (14 bytes) TRAPped host/stack-exhausted on
   ;; BOTH arms then (fixed since by the sg-keyword row) and is not
@@ -795,7 +798,7 @@
         arms (str/join "\n" (map #(extract-balanced src %)
                                  ["(defn- none?" "(defn- string->i64" "(defn- digits?"
                                   "(defn- sg-tokens-doc" "(defn- sg-keyword "
-                                  "(defn- sg-size " "(defn- sg-token-end" "(defn- sg-member?"
+                                  "(defn- sg-size " "(defn- sg-token-end"
                                   "(defn- sg-ops " "(defn- sg-ops-walk" "(defn- sg-pipe"
                                   "(defn device-from-subgroup"]))
         probe (str "(ns accelerator.targets.w3.sg.probe (:export [main sz dfs]))\n"
@@ -908,7 +911,8 @@
   ;; canonical two-token answer now parses host-equal (the eight-token
   ;; answer resolves in the standalone probe's context but traps at the
   ;; gate's context depth -- named, never pinned), see
-  ;; w3-subgroup-member-dedupes-on-the-vector-accumulator. The remaining
+  ;; w3-subgroup-member-dedupes-on-the-vector-accumulator (since renamed
+  ;; by the dedupe-map row). The remaining
   ;; walk (sg-ops-walk per token/space byte) keeps its own trap; the
   ;; vocabulary walk had one too -- "32|basic vote2" and the spaced
   ;; two-token answer trapped host/stack-exhausted (re-MEASURED in
@@ -918,14 +922,17 @@
   ;; cells); the sg-ops row (2026-10-26) then moved the separator skip
   ;; to ONE string-skip-blank per run (one frame per TOKEN, see
   ;; w3-subgroup-ops-walk-is-one-frame-per-token -- the 70-byte
-  ;; eight-token cell still traps on both arms there, re-MEASURED).
-  ;; Every trapping cell is measure-only, NEVER pinned (trap
-  ;; boundaries and spellings are state-dependent).
+  ;; eight-token cell still trapped on both arms there, re-MEASURED) --
+  ;; and the dedupe-map row (2026-10-26) then removed sg-member?'s
+  ;; per-element frames (ONE document-contains over a map shadow, see
+  ;; w3-subgroup-dedupe-on-a-shadow-map-not-a-per-element-walk -- the
+  ;; 70-byte cell resolves there). Every trapping cell is measure-only,
+  ;; NEVER pinned (trap boundaries and spellings are state-dependent).
   (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
         arms (str/join "\n" (map #(extract-balanced src %)
                                  ["(defn- none?" "(defn- string->i64" "(defn- digits?"
                                   "(defn- sg-tokens-doc" "(defn- sg-keyword "
-                                  "(defn- sg-size " "(defn- sg-token-end" "(defn- sg-member?"
+                                  "(defn- sg-size " "(defn- sg-token-end"
                                   "(defn- sg-ops " "(defn- sg-ops-walk" "(defn- sg-pipe"
                                   "(defn device-from-subgroup"]))
         probe (str "(ns accelerator.targets.w3.pipe.probe (:export [main sp ste dfs]))\n"
@@ -1037,69 +1044,88 @@
         (is (str/includes? (extract-balanced src "(defn device-from-subgroup") "(sg-pipe s n)")
             "the call site dropped the walk's i/at arguments")))))
 
-(deftest w3-subgroup-member-dedupes-on-the-vector-accumulator
-  ;; The `:kotoba` sg-member? -- the SUBGROUP <ops> chain's set-dedupe
-  ;; check -- reads the chain's own accumulator with `document-vector-at`:
-  ;; the accumulator IS a document-VECTOR (document-vector /
-  ;; document-vector-conj in sg-ops-walk), so it is read with the
-  ;; vector's own accessor (the kexe_fs_forms membership idiom). This is
-  ;; the pipe/token-end row's (2026-10-26) NAMED FINDING -- the check
-  ;; called `document-list-at` over the vector accumulator and TRAPped
-  ;; "document-list-required" on ANY 2+-token <ops> field (its unit
-  ;; mechanism table, measured then: empty-vector acc false / vector acc
-  ;; k=1 TRAP / same count on a LIST acc false) -- a wrong-refusal path:
-  ;; the parse answered a trap, no fact, where the host arm answered the
-  ;; full map. PINNED CONTRACT, unchanged: true iff one of the
-  ;; accumulator's first n elements is document-equal? to kw, false
-  ;; otherwise.
-  ;; NAMED, NOT HIDDEN (their own rows): the remaining walks still trap
-  ;; their own shapes -- sg-ops-walk per token AND per space byte,
-  ;; sg-keyword per vocabulary element -- so the spaced "64|  basic
-  ;;   shuffle-relative  " (31 bytes) and the unknown-token "32|basic
-  ;; vote2" (14 bytes) TRAP host/stack-exhausted on BOTH arms
-  ;; (re-MEASURED this row, both probe runs byte-identical) and are
-  ;; never pinned (trap boundaries and spellings are state-dependent).
-  ;; FIXED SINCE (the sg-keyword row, 2026-10-26): the vocabulary walk
-  ;; is one non-recursive table body now
-  ;; (w3-subgroup-keyword-lookup-is-a-table-not-a-walk re-MEASURES both
-  ;; cells); sg-ops-walk per token/per space byte was fixed by the
-  ;; sg-ops row (2026-10-26) -- one frame per TOKEN, see
-  ;; w3-subgroup-ops-walk-is-one-frame-per-token -- with the O(TOKENS)
-  ;; walk residual.
-  ;; The accessor-kind asymmetry is measure-only too: on a LIST acc the
-  ;; deleted document-list-at answered false while document-vector-at
-  ;; TRAPs "document-vector-required" -- the only caller passes the
-  ;; vector, so no contract covers the list shape.
+(deftest w3-subgroup-dedupe-on-a-shadow-map-not-a-per-element-walk
+  ;; The `:kotoba` SUBGROUP <ops> set-dedupe check reads a document-MAP
+  ;; SHADOW (kw -> true) with ONE `document-contains` (the map-key idiom)
+  ;; and grows it with ONE `document-assoc` -- where the check walked
+  ;; the answer vector one element per RECURSIVE frame (the deleted
+  ;; sg-member?: document-equal? per element, its depth stacked under
+  ;; the walk's per-token frames). This is the sg-ops row's (2026-10-26)
+  ;; named residual: "the O(TOKENS) walk residual and sg-member?'s
+  ;; per-element frames (their own rows; the 70-byte eight-token answer
+  ;; still traps both arms)". This test REPLACES
+  ;; w3-subgroup-member-dedupes-on-the-vector-accumulator -- that
+  ;; test's subject (the accessor match over the vector accumulator) is
+  ;; deleted with the check itself; the ANSWER is still the
+  ;; document-VECTOR in first-occurrence order (kind pinned below).
+  ;; PINNED CONTRACT, unchanged: a duplicate token is the same fact and
+  ;; collapses. The shadow mirrors the answer vector 1:1 (both grow in
+  ;; the same branch), so the membership verdict is EXACT, not
+  ;; approximate. Head calls cost no frame (frames = user call depth,
+  ;; kir.cljk: a trampolined self-tail re-entry is free), so the
+  ;; per-element frames class is GONE.
+  ;; MEASURED BEFORE (the evidence, probe runs byte-identical): the
+  ;; 70-byte eight-token answer, the 86-byte spaced eight-token answer
+  ;; and the 77-byte twelve-token answer TRAPped host/stack-exhausted on
+  ;; the BEFORE arm and answer the host arm's set here; the eight-
+  ;; distinct dedupe grid cell (the deleted walk's worst case: every
+  ;; member check walked to the end) TRAPped too and answers == HOST.
+  ;; GO/NO-GO ground, measured: `document-set-contains?` TRAPs
+  ;; "document-set-required" on a document-VECTOR (the direct route onto
+  ;; the vector is closed) and `document-merge` TRAPs "document-map-
+  ;; required" on sets (a document-set has no grow head) -- hence the
+  ;; map shadow.
+  ;; NAMED, NOT PINNED (the O(TOKENS) residual, measure-only): the walk
+  ;; is still one frame per TOKEN -- the boundary re-MEASURED this row:
+  ;; the 3-word-cycle field resolves through 24 tokens and TRAPs
+  ;; budget/frames at 32+ (BEFORE this row the boundary was NON-
+  ;; MONOTONIC, 12 trapped); the 8-word-cycle field resolves through 24
+  ;; tokens AFTER (BEFORE trapped from 24) and both arms TRAP
+  ;; budget/frames at 32+. Trap boundaries are state- and
+  ;; path-dependent -- the pinned cells are only the shapes both probe
+  ;; runs resolved.
   (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
         arms (str/join "\n" (map #(extract-balanced src %)
                                  ["(defn- none?" "(defn- string->i64" "(defn- digits?"
                                   "(defn- sg-tokens-doc" "(defn- sg-keyword "
-                                  "(defn- sg-size " "(defn- sg-token-end" "(defn- sg-member?"
+                                  "(defn- sg-size " "(defn- sg-token-end"
                                   "(defn- sg-ops " "(defn- sg-ops-walk" "(defn- sg-pipe"
                                   "(defn device-from-subgroup"]))
-        probe (str "(ns accelerator.targets.w3.member.probe (:export [main dfs sme smv smvb smv2 smv2n]))\n"
+        probe (str "(ns accelerator.targets.w3.member2.probe (:export [main dfs sops]))\n"
                    "(defn main [] :i64 0)\n"
                    arms "\n"
                    "(defn dfs [answer :document] :document (device-from-subgroup answer))\n"
-                   "(defn sme [] :bool (sg-member? (document-vector) (document-keyword :vote) 0 0))\n"
-                   "(defn smv [] :bool (sg-member? (document-vector (document-keyword :basic)) (document-keyword :vote) 0 1))\n"
-                   "(defn smvb [] :bool (sg-member? (document-vector (document-keyword :basic)) (document-keyword :basic) 0 1))\n"
-                   "(defn smv2 [] :bool (sg-member? (document-vector-conj (document-vector-conj (document-vector) (document-keyword :basic)) (document-keyword :vote)) (document-keyword :vote) 0 2))\n"
-                   "(defn smv2n [] :bool (sg-member? (document-vector-conj (document-vector-conj (document-vector) (document-keyword :basic)) (document-keyword :shuffle)) (document-keyword :vote) 0 2))\n")
+                   "(defn sops [field :string] :document (sg-ops field))\n")
         hir (sema/analyze probe)
-        run (fn [sym] (str (ir/execute hir sym [])))
+        sops (fn [field] (ir/execute hir 'sops [field]))
         dfs (fn [s] (ir/execute hir 'dfs [["string" s]]))
         fields-of (fn [doc]
                     (into {} (map (fn [kv] [(get (get kv 0) 1) (get (get kv 1) 1)]) (get doc 1))))
-        ops-set (fn [ops] (set (map #(get % 1) ops)))]
-    (testing "the dedupe check answers the membership VERDICT over the vector accumulator (was: TRAP document-list-required)"
-      ;; MEASURED BEFORE (the evidence): every vector-acc cell except the
-      ;; empty one TRAPPED document-list-required
-      (is (= "false" (run 'sme)) "empty accumulator: false -- no element to find")
-      (is (= "false" (run 'smv)) "one element, no match: false")
-      (is (= "true" (run 'smvb)) "one element, match at k=0: true")
-      (is (= "true" (run 'smv2)) "two elements, match at k=1: true")
-      (is (= "false" (run 'smv2n)) "two elements, no match: false"))
+        ops-set (fn [ops] (set (map #(get % 1) ops)))
+        ops-of (fn [r] (if (= ["null"] r) nil (ops-set (get r 1))))
+        host-ops-of (fn [field] (:subgroup-ops (targets/device-from-subgroup (str "8|" field))))]
+    (testing "the dedupe grid: a duplicate token is the same fact and collapses (was: a per-element walk)"
+      ;; MEASURED BEFORE == AFTER == HOST on every short cell (the
+      ;; evidence) -- the walk's cost was FRAMES, not facts
+      (doseq [[field want] [["basic basic" #{:basic}]
+                            ["basic shuffle basic" #{:basic :shuffle}]
+                            ["vote vote" #{:vote}]
+                            ["basic vote basic vote" #{:basic :vote}]
+                            ["basic vote shuffle basic vote shuffle basic" #{:basic :vote :shuffle}]
+                            ["quad quad quad" #{:quad}]
+                            ["basic basic basic basic basic basic basic basic basic basic" #{:basic}]]]
+        (is (= want (ops-of (sops field)))
+            (str (pr-str field) " keeps the set-dedupe contract"))
+        (is (= want (host-ops-of field))
+            (str "HOST parity pin: " (pr-str field))))
+      ;; the eight-distinct cell is the deleted walk's worst case (every
+      ;; member check walked to the end of the accumulator):
+      ;; TRAPped host/stack-exhausted BEFORE, answers == HOST here
+      (let [field "shuffle clustered quad basic vote arithmetic ballot shuffle-relative"
+            want #{:basic :vote :arithmetic :ballot :shuffle :shuffle-relative :clustered :quad}]
+        (is (= want (ops-of (sops field)))
+            "the eight-distinct field resolves (BEFORE: TRAP host/stack-exhausted)")
+        (is (= want (host-ops-of field)) "HOST parity pin")))
     (testing "the multi-token <ops> answers parse -- the wrong-refusal path is gone (BEFORE: TRAP document-list-required)"
       ;; every multi-token cell below TRAPPED document-list-required on
       ;; the BEFORE arm (the evidence) and answers the host arm's map
@@ -1129,16 +1155,31 @@
         (is (= {:subgroup-size 8 :subgroup-ops #{:vote}}
                (targets/device-from-subgroup "8|vote vote"))
             "HOST parity pin"))
-      ;; NAMED, NOT PINNED (the recurring context-depth asymmetry): the
-      ;; eight-token answer "8|basic vote arithmetic ballot shuffle
-      ;; shuffle-relative clustered quad" (70 bytes) RESOLVES in the
-      ;; standalone probe's context on both byte-identical runs (the full
-      ;; 8-element set == HOST, docs/evidence/gpu/
-      ;; w3-sg-member-vector-accumulator-20261026.txt) but TRAPped
-      ;; host/stack-exhausted at THIS gate's context depth on run 1 --
-      ;; trap boundaries are state- and path-dependent, so the cell is
-      ;; measure-only and never pinned (the same asymmetry the pipe/token-
-      ;; end row named for the 26-byte overflow-size cells).
+      ;; the per-element frame class is GONE (BEFORE: the eight-token
+      ;; cells TRAPped host/stack-exhausted on both arms in the sg-ops
+      ;; row's probe, w3-ops-walk-token-skip-20261026.txt; this row's
+      ;; BEFORE re-measures the trap, both probe runs byte-identical)
+      (let [m (fields-of (dfs "8|basic vote arithmetic ballot shuffle shuffle-relative clustered quad"))]
+        (is (= "8" (str (:subgroup-size m)))
+            "the 70-byte eight-token answer parses (8 frames, one per token)")
+        (is (= #{:basic :vote :arithmetic :ballot :shuffle :shuffle-relative :clustered :quad}
+               (ops-set (:subgroup-ops m))))
+        (is (= {:subgroup-size 8 :subgroup-ops #{:basic :vote :arithmetic :ballot :shuffle :shuffle-relative :clustered :quad}}
+               (targets/device-from-subgroup "8|basic vote arithmetic ballot shuffle shuffle-relative clustered quad"))
+            "HOST parity pin"))
+      (let [m (fields-of (dfs (str "8|" (str/join "   " ["basic" "vote" "arithmetic" "ballot" "shuffle" "shuffle-relative" "clustered" "quad"]) "  ")))]
+        (is (= #{:basic :vote :arithmetic :ballot :shuffle :shuffle-relative :clustered :quad}
+               (ops-set (:subgroup-ops m)))
+            "the spaced eight-token answer (86 bytes) parses too")
+        (is (= {:subgroup-size 8 :subgroup-ops #{:basic :vote :arithmetic :ballot :shuffle :shuffle-relative :clustered :quad}}
+               (targets/device-from-subgroup (str "8|" (str/join "   " ["basic" "vote" "arithmetic" "ballot" "shuffle" "shuffle-relative" "clustered" "quad"]) "  ")))
+            "HOST parity pin"))
+      (let [m (fields-of (dfs (str "8|" (str/join " " (take 12 (cycle ["basic" "vote" "shuffle"]))))))]
+        (is (= #{:basic :vote :shuffle} (ops-set (:subgroup-ops m)))
+            "the twelve-token answer (77 bytes) parses -- the O(TOKENS) residual sits below its boundary")
+        (is (= {:subgroup-size 8 :subgroup-ops #{:basic :vote :shuffle}}
+               (targets/device-from-subgroup (str "8|" (str/join " " (take 12 (cycle ["basic" "vote" "shuffle"]))))))
+            "HOST parity pin"))
       ;; the single-token and empty-<ops> shapes did not move
       (let [m (fields-of (dfs "16|shuffle"))]
         (is (= "16" (str (:subgroup-size m))))
@@ -1150,18 +1191,27 @@
                  "-1|basic" "+3|basic" "0|basic" "12.5|basic" " 32|basic"
                  "32x|basic" "x|basic" "32|basic|extra" "32||basic"]]
         (is (= ["null"] (dfs s)) (str (pr-str s) " must parse to no fact at all"))))
-    (testing "the accessor matches the accumulator kind, and the accumulator's seed/grow are untouched"
-      (let [member-body (extract-balanced src "(defn- sg-member?")
-            ops-body (extract-balanced src "(defn- sg-ops ")
+    (testing "the per-element walk is deleted and the check is one map lookup"
+      (is (nil? (extract-balanced src "(defn- sg-member?"))
+          "the per-element membership walk is deleted")
+      (is (not (str/includes? src "(defn- sg-member?"))
+          "and gone from the namespace source under the defn- prefix")
+      (let [ops-body (extract-balanced src "(defn- sg-ops ")
             walk-body (extract-balanced src "(defn- sg-ops-walk")]
-        (is (str/includes? member-body "document-vector-at")
-            "sg-member? reads the vector accumulator with the vector's own accessor")
-        (is (not (str/includes? member-body "document-list-at"))
-            "the list accessor is gone from sg-member?")
+        (is (str/includes? walk-body "document-contains")
+            "the dedupe verdict is ONE document-contains (the map-key idiom)")
+        (is (str/includes? walk-body "document-assoc")
+            "and the shadow grows with ONE document-assoc")
+        (is (not (str/includes? walk-body "document-equal?"))
+            "no per-element comparison remains in the walk")
+        (is (not (str/includes? walk-body "document-vector-at"))
+            "no per-element accessor remains either")
+        (is (str/includes? ops-body "(document-map)")
+            "the shadow is seeded as an empty document-MAP")
         (is (str/includes? ops-body "(document-vector)")
-            "the accumulator is still seeded as a document-VECTOR")
+            "the ANSWER accumulator is still seeded as a document-VECTOR")
         (is (str/includes? walk-body "document-vector-conj")
-            "and still grown with document-vector-conj -- the accessor matches the acc kind")))))
+            "and still grown with document-vector-conj -- the answer kind is pinned")))))
 
 (deftest w3-subgroup-keyword-lookup-is-a-table-not-a-walk
   ;; The `:kotoba` sg-keyword -- the SUBGROUP <ops> vocabulary lookup --
@@ -1182,19 +1232,23 @@
   ;; answer above. MEASURED BEFORE (the evidence): both named cells
   ;; TRAPped host/stack-exhausted on the walk arm and answer the host
   ;; arm's answers on the table arm (probe runs byte-identical).
-  ;; NAMED, NOT PINNED (the recurring context-depth asymmetry): the
-  ;; eight-token answer (70 bytes) still TRAPs host/stack-exhausted on
-  ;; BOTH arms (BEFORE == AFTER, both probe runs) -- the sg-ops-walk
+  ;; NAMED THEN, FIXED SINCE (the dedupe-map row, 2026-10-26): the
+  ;; eight-token answer (70 bytes) TRAPped host/stack-exhausted on BOTH
+  ;; arms then (BEFORE == AFTER, both probe runs) -- the sg-ops-walk
   ;; per-token/per-space frames (collapsed to one frame per TOKEN by
   ;; the sg-ops row, 2026-10-26,
   ;; w3-subgroup-ops-walk-is-one-frame-per-token -- the 70-byte cell
-  ;; still traps on both arms there, re-MEASURED) and the sg-member?
-  ;; per-element frames are their own rows -- and is never pinned.
+  ;; still trapped on both arms there, re-MEASURED) and the sg-member?
+  ;; per-element frames were their own rows -- the per-element frames
+  ;; are now removed (ONE document-contains over a map shadow, see
+  ;; w3-subgroup-dedupe-on-a-shadow-map-not-a-per-element-walk, which
+  ;; pins the 70-byte cell); the O(TOKENS) walk residual remains, never
+  ;; pinned.
   (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
         arms (str/join "\n" (map #(extract-balanced src %)
                                  ["(defn- none?" "(defn- string->i64" "(defn- digits?"
                                   "(defn- sg-tokens-doc" "(defn- sg-keyword "
-                                  "(defn- sg-size " "(defn- sg-token-end" "(defn- sg-member?"
+                                  "(defn- sg-size " "(defn- sg-token-end"
                                   "(defn- sg-ops " "(defn- sg-ops-walk" "(defn- sg-pipe"
                                   "(defn device-from-subgroup"]))
         probe (str "(ns accelerator.targets.w3.keyword.probe (:export [main sk dfs]))\n"
@@ -1298,21 +1352,27 @@
   ;; measured). `string-find-byte` answers -1 for from = n and traps
   ;; only on from > n (measured: the row's probe), so the five guard
   ;; calls are total on every field including "".
-  ;; NAMED, NOT PINNED (the O(TOKENS) residual, measure-only, both
-  ;; probe runs byte-identical): the walk is still one frame per TOKEN
-  ;; and sg-member? still walks the accumulator per element -- the
-  ;; 70-byte eight-token answer still TRAPs host/stack-exhausted on
-  ;; BOTH arms (BEFORE == AFTER) and the boundary is NON-MONOTONIC and
+  ;; NAMED THEN, FIXED SINCE (the dedupe-map row, 2026-10-26): the
+  ;; O(TOKENS) residual was measure-only, both probe runs byte-identical
+  ;; -- the walk is still one frame per TOKEN but sg-member? no longer
+  ;; walks the accumulator per element (ONE document-contains over a map
+  ;; shadow, see
+  ;; w3-subgroup-dedupe-on-a-shadow-map-not-a-per-element-walk): the
+  ;; 70-byte eight-token answer TRAPped host/stack-exhausted on BOTH
+  ;; arms then (BEFORE == AFTER) and the boundary was NON-MONOTONIC and
   ;; state-dependent (the AFTER arm resolved 2..8 tokens, trapped at
   ;; 12, resolved 16/24, trapped 32+ at budget/frames -- and the same
   ;; 24-token field resolved at the boundary probe's position while
-  ;; TRAPping at the e2e probe's position in the same run). Never
-  ;; pinned.
+  ;; TRAPping at the e2e probe's position in the same run). The
+  ;; dedupe-map row re-MEASURED the boundary: 3-word-cycle fields
+  ;; resolve through 24 tokens and trap budget/frames at 32+, no
+  ;; non-monotonic cell in either of its two byte-identical runs. The
+  ;; O(TOKENS) walk itself remains, never pinned.
   (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
         arms (str/join "\n" (map #(extract-balanced src %)
                                  ["(defn- none?" "(defn- string->i64" "(defn- digits?"
                                   "(defn- sg-tokens-doc" "(defn- sg-keyword "
-                                  "(defn- sg-size " "(defn- sg-token-end" "(defn- sg-member?"
+                                  "(defn- sg-size " "(defn- sg-token-end"
                                   "(defn- sg-ops " "(defn- sg-ops-walk" "(defn- sg-pipe"
                                   "(defn device-from-subgroup"]))
         probe (str "(ns accelerator.targets.w3.walk.probe (:export [main sops dfs]))\n"

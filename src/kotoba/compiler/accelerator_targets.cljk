@@ -713,23 +713,30 @@
 #?(:kotoba
    (defn- sg-token-end [s :string i :i64 n :i64] :i64
      (if (>= i n) n (let [p (string-find-byte s 32 i)] (if (< p 0) n p)))))
-;; the dedupe check over the chain's own accumulator -- a document-VECTOR
-;; (document-vector / document-vector-conj in sg-ops-walk), so it is read
-;; with `document-vector-at` (the kexe_fs_forms membership idiom). The
-;; pipe/token-end row (2026-10-26) NAMED the mismatch this replaces: the
-;; check called `document-list-at` over the vector accumulator and TRAPped
-;; "document-list-required" on ANY 2+-token <ops> field (measured
-;; mechanism: empty-vector acc false / vector acc k=1 TRAP / same count on
-;; a LIST acc false -- docs/evidence/gpu/w3-pipe-token-end-primitives-
-;; 20261026.txt), a wrong-refusal path (the parse answered a trap, no
-;; fact, where the host arm answered the full map). CONTRACT UNCHANGED:
-;; true iff one of the accumulator's first n elements is document-equal?
-;; to kw, false otherwise (the set-dedupe check above).
-#?(:kotoba
-   (defn- sg-member? [acc :document kw :document k :i64 n :i64] :bool
-     (cond (>= k n) false
-           (document-equal? (option-value-of [:option :document] (document-vector-at acc k) (document-null)) kw) true
-           :else (sg-member? acc kw (+ k 1) n))))
+;; the dedupe check over the chain's own accumulator reads a document-MAP
+;; SHADOW (kw -> true) with ONE `document-contains` (the map-key idiom)
+;; and grows it with ONE `document-assoc` -- where the check walked the
+;; answer vector one element per RECURSIVE frame (the deleted sg-member?:
+;; document-equal? per element, its depth stacked under the walk's
+;; per-token frames -- MEASURED: the 70-byte eight-token answer TRAPped
+;; host/stack-exhausted on BOTH arms in the sg-ops row's probe,
+;; docs/evidence/gpu/w3-ops-walk-token-skip-20261026.txt; this row's
+;; evidence, w3-dedupe-map-shadow-20261026.txt, re-measures it). The
+;; shadow mirrors the answer vector 1:1 -- both grow in the same branch
+;; -- so the membership verdict is EXACT, not approximate; the ANSWER is
+;; still the document-VECTOR (first-occurrence order, kind pinned), only
+;; the check's cost changed. Head calls cost no frame (frames = user call
+;; depth, kir.cljk: a trampolined self-tail re-entry is free), so the
+;; per-element frames class is GONE. GO/NO-GO ground, measured (this
+;; row's evidence): `document-set-contains?` TRAPs "document-set-required"
+;; on a document-VECTOR (the direct route onto the vector is closed);
+;; `document-contains` answers the map-key idiom exactly (map{basic:true}
+;; holds basic, not vote) and TRAPs "document-map-required" off-map;
+;; `document-assoc` grows without dropping earlier keys;
+;; `document-merge` TRAPs "document-map-required" on sets (the set-shadow
+;; route is closed -- a document-set has no grow head); `(document-map)`
+;; seeds an empty map. CONTRACT UNCHANGED, pinned: a duplicate token is
+;; the same fact and collapses.
 ;; the <ops> walk: TOKEN POSITIONS, not bytes -- a separator RUN costs ONE
 ;; `string-skip-blank`, not one recursive frame per space byte (the
 ;; sg-keyword row's named residual, 2026-10-26: "sg-ops-walk per token AND
@@ -755,11 +762,11 @@
 ;; (all-or-nothing, decision 4). On a field with no such byte the skip is
 ;; exactly the 32-runs. `string-find-byte` answers -1 for from = n and
 ;; traps only on from > n (measured: this row's probe), so the five guard
-;; calls are total on every field including "". RESIDUAL, NAMED: the
-;; walk is still O(TOKENS) frames (the split4 O(FIELDS) class) and
-;; sg-member? still walks the accumulator per element (its own row) -- a
-;; many-token <ops> field can still reach the budget; boundary probes in
-;; this row's evidence measure where.
+;; calls are total on every field including "". RESIDUAL, NAMED (its own
+;; row): the walk is still O(TOKENS) frames (the split4 O(FIELDS) class)
+;; -- a many-token <ops> field can still reach the budget; boundary
+;; probes measure where (the member-map row's evidence re-measures the
+;; boundary).
 #?(:kotoba
    (defn- sg-ops [field :string] :document
      (if (or (>= (string-find-byte field 9 0) 0)
@@ -768,19 +775,20 @@
              (>= (string-find-byte field 12 0) 0)
              (>= (string-find-byte field 13 0) 0))
        (document-null)
-       (sg-ops-walk field (string-skip-blank field 0) (string-byte-length field) (document-vector)))))
+       (sg-ops-walk field (string-skip-blank field 0) (string-byte-length field)
+                    (document-vector) (document-map)))))
 #?(:kotoba
-   (defn- sg-ops-walk [s :string i :i64 n :i64 acc :document] :document
+   (defn- sg-ops-walk [s :string i :i64 n :i64 acc :document seen :document] :document
      (if (>= i n)
        acc
        (let [j (sg-token-end s i n)
              kw (sg-keyword (string-substring s i j))]
          (if (none? kw)
            (document-null)
-           (sg-ops-walk s (string-skip-blank s j) n
-                        (if (sg-member? acc kw 0 (document-count acc))
-                          acc
-                          (document-vector-conj acc kw))))))))
+           (let [dup? (document-contains seen kw)
+                 acc2 (if dup? acc (document-vector-conj acc kw))
+                 seen2 (if dup? seen (document-assoc seen kw (document-bool true)))]
+             (sg-ops-walk s (string-skip-blank s j) n acc2 seen2)))))))
 ;; exactly two fields: the index of the single '|', -1 for none, -2 for
 ;; more. The pipe/token-end row (2026-10-26): the replaced pipe walk
 ;; recursed per ANSWER byte and trapped the budget on every long answer
