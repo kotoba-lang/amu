@@ -29,7 +29,7 @@ def pin(path):
     return dict(bytes=len(b), sha256=hashlib.sha256(b).hexdigest())
 
 
-def main(compiler, out):
+def main(compiler, out, baseline=None):
     assert platform.system() == "Linux" and platform.machine() == "x86_64"
     assert struct.unpack_from("<H", Path("/proc/self/exe").read_bytes(), 18)[0] == 62
     assert pin(compiler)["sha256"] == PUBLIC_SHA
@@ -81,10 +81,16 @@ def main(compiler, out):
         return row
 
     role = out / "amu-selfhost.elf"
-    run("build-exact-role", [compiler, "compile", static, "--target", "x86_64-linux",
-                              "--output", role, "--format", "static"])
-    role.chmod(0o755)
-    assert pin(role)["sha256"] == ROLE_SHA
+    if baseline is None:
+        run("build-exact-role", [compiler, "compile", static, "--target", "x86_64-linux",
+                                  "--output", role, "--format", "static"])
+        role.chmod(0o755)
+        assert pin(role)["sha256"] == ROLE_SHA
+        report["comparisonKind"] = "qualified-core-role-vs-public"
+    else:
+        assert pin(baseline)["sha256"] == "8cd12aed5b663976b77abc06c85bedc558c02f323ea235e3e5c194d3e4795091"
+        role = baseline
+        report["comparisonKind"] = "old-vs-new-runtime-source-lock-path"
     report["roleImage"] = pin(role)
 
     def measure(i, name):
@@ -101,7 +107,7 @@ def main(compiler, out):
     public_time = measure(1, "public")
     # A bounded screen avoids two more slow compiles when the suspected
     # kernel gap is absent. Record the screen rather than invent an ABBA score.
-    if public_time < 0.9 * role_time:
+    if max(public_time, role_time) > 1.05 * min(public_time, role_time):
         measure(2, "public")
         measure(3, "role")
         report["completedABBA"] = True
@@ -120,5 +126,6 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--compiler", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
+    p.add_argument("--baseline", type=Path)
     a = p.parse_args()
-    main(a.compiler.resolve(), a.output.resolve())
+    main(a.compiler.resolve(), a.output.resolve(), a.baseline.resolve() if a.baseline else None)
