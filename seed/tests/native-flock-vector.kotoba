@@ -1,0 +1,22 @@
+(ns seed.flock-vector (:export [main]))
+(defn- request [path :string op :string] :bool
+ (= (typed-cap-call :fs/app-data :string :string (string-concat path op)) "1"))
+(defn- dirty [] :bool
+ (arena-scope (let [v (vector-assoc! (vector-alloc 4096) 4095 71)]
+   (= (vector-at v 4095) 71))))
+(defn- clean [] :bool
+ (arena-scope (let [v (vector-alloc 8192)]
+   (loop [i 0] (if (= i 8192) true
+     (and (= (vector-at v i) 0) (recur (inc i))))))))
+(defn main [] :i64
+ (let [path (typed-cap-call :cli/args :string :string "0")
+       outer (vector-assoc! (vector-alloc 64) 63 93)
+       acquired (request path "FLOCK_SEP")
+       reentry (request path "FLOCK_SEP")
+       reused (and (dirty) (clean))
+       released (request path "UNLOCK_SEP")
+       clean-after-release (and (dirty) (clean))
+       again (request path "FLOCK_SEP")
+       final (request path "UNLOCK_SEP")]
+  (if (and acquired (not reentry) reused released clean-after-release
+           again final (= (vector-at outer 63) 93)) 0 1)))
