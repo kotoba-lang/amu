@@ -779,15 +779,18 @@
   ;; sg-member? row (2026-10-26) fixed the dedupe check's accessor
   ;; (document-vector-at over the vector accumulator), see
   ;; w3-subgroup-member-dedupes-on-the-vector-accumulator; the residual
-  ;; traps are sg-ops-walk per token/space byte and sg-keyword per
-  ;; vocabulary element (their own rows);
+  ;; trap is sg-ops-walk per token/space byte (its own row) -- the
+  ;; sg-keyword row (2026-10-26) replaced the vocabulary walk with one
+  ;; non-recursive table body, see
+  ;; w3-subgroup-keyword-lookup-is-a-table-not-a-walk;
   ;; the e2e pins below run only the shapes the probes resolved twice --
-  ;; e.g. "32|basic vote2" (14 bytes) TRAPS host/stack-exhausted on BOTH
-  ;; arms and is never pinned (trap boundaries are state-dependent).
+  ;; e.g. "32|basic vote2" (14 bytes) TRAPped host/stack-exhausted on
+  ;; BOTH arms then (fixed since by the sg-keyword row) and is not
+  ;; pinned here (trap boundaries are state-dependent).
   (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
         arms (str/join "\n" (map #(extract-balanced src %)
                                  ["(defn- none?" "(defn- string->i64" "(defn- digits?"
-                                  "(defn- sg-tokens-doc" "(defn- sg-keywords-doc" "(defn- sg-keyword "
+                                  "(defn- sg-tokens-doc" "(defn- sg-keyword "
                                   "(defn- sg-size " "(defn- sg-token-end" "(defn- sg-member?"
                                   "(defn- sg-ops " "(defn- sg-ops-walk" "(defn- sg-pipe"
                                   "(defn device-from-subgroup"]))
@@ -902,16 +905,18 @@
   ;; answer resolves in the standalone probe's context but traps at the
   ;; gate's context depth -- named, never pinned), see
   ;; w3-subgroup-member-dedupes-on-the-vector-accumulator. The remaining
-  ;; walks (sg-ops-walk per token/space byte, sg-keyword per vocabulary
-  ;; element) keep their own trap: "32|basic vote2" and the spaced
-  ;; two-token answer still trap host/stack-exhausted (re-MEASURED in
-  ;; the sg-member? row's probe, both runs). Every trapping cell is
-  ;; measure-only, NEVER pinned (trap boundaries and spellings are
-  ;; state-dependent).
+  ;; walk (sg-ops-walk per token/space byte) keeps its own trap; the
+  ;; vocabulary walk had one too -- "32|basic vote2" and the spaced
+  ;; two-token answer trapped host/stack-exhausted (re-MEASURED in
+  ;; the sg-member? row's probe, both runs) -- and the sg-keyword row
+  ;; (2026-10-26) replaced it with one non-recursive table body
+  ;; (w3-subgroup-keyword-lookup-is-a-table-not-a-walk re-MEASURES both
+  ;; cells). Every trapping cell is measure-only, NEVER pinned (trap
+  ;; boundaries and spellings are state-dependent).
   (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
         arms (str/join "\n" (map #(extract-balanced src %)
                                  ["(defn- none?" "(defn- string->i64" "(defn- digits?"
-                                  "(defn- sg-tokens-doc" "(defn- sg-keywords-doc" "(defn- sg-keyword "
+                                  "(defn- sg-tokens-doc" "(defn- sg-keyword "
                                   "(defn- sg-size " "(defn- sg-token-end" "(defn- sg-member?"
                                   "(defn- sg-ops " "(defn- sg-ops-walk" "(defn- sg-pipe"
                                   "(defn device-from-subgroup"]))
@@ -1046,6 +1051,10 @@
   ;; vote2" (14 bytes) TRAP host/stack-exhausted on BOTH arms
   ;; (re-MEASURED this row, both probe runs byte-identical) and are
   ;; never pinned (trap boundaries and spellings are state-dependent).
+  ;; FIXED SINCE (the sg-keyword row, 2026-10-26): the vocabulary walk
+  ;; is one non-recursive table body now
+  ;; (w3-subgroup-keyword-lookup-is-a-table-not-a-walk re-MEASURES both
+  ;; cells); sg-ops-walk per token/per space byte stays its own row.
   ;; The accessor-kind asymmetry is measure-only too: on a LIST acc the
   ;; deleted document-list-at answered false while document-vector-at
   ;; TRAPs "document-vector-required" -- the only caller passes the
@@ -1053,7 +1062,7 @@
   (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
         arms (str/join "\n" (map #(extract-balanced src %)
                                  ["(defn- none?" "(defn- string->i64" "(defn- digits?"
-                                  "(defn- sg-tokens-doc" "(defn- sg-keywords-doc" "(defn- sg-keyword "
+                                  "(defn- sg-tokens-doc" "(defn- sg-keyword "
                                   "(defn- sg-size " "(defn- sg-token-end" "(defn- sg-member?"
                                   "(defn- sg-ops " "(defn- sg-ops-walk" "(defn- sg-pipe"
                                   "(defn device-from-subgroup"]))
@@ -1130,7 +1139,7 @@
                  "-1|basic" "+3|basic" "0|basic" "12.5|basic" " 32|basic"
                  "32x|basic" "x|basic" "32|basic|extra" "32||basic"]]
         (is (= ["null"] (dfs s)) (str (pr-str s) " must parse to no fact at all"))))
-    (testing "the accessor matches the accumulator kind, and the walks' per-element recursion is untouched"
+    (testing "the accessor matches the accumulator kind, and the accumulator's seed/grow are untouched"
       (let [member-body (extract-balanced src "(defn- sg-member?")
             ops-body (extract-balanced src "(defn- sg-ops ")
             walk-body (extract-balanced src "(defn- sg-ops-walk")]
@@ -1142,3 +1151,112 @@
             "the accumulator is still seeded as a document-VECTOR")
         (is (str/includes? walk-body "document-vector-conj")
             "and still grown with document-vector-conj -- the accessor matches the acc kind")))))
+
+(deftest w3-subgroup-keyword-lookup-is-a-table-not-a-walk
+  ;; The `:kotoba` sg-keyword -- the SUBGROUP <ops> vocabulary lookup --
+  ;; as ONE non-recursive table body. This is the sg-member? row's
+  ;; (2026-10-26) named residual: "the remaining walks keep their own
+  ;; trap -- sg-ops-walk per token AND per space byte, sg-keyword per
+  ;; vocabulary element -- the spaced \"64|  basic   shuffle-relative  \"
+  ;; (31 bytes) and the unknown-token \"32|basic vote2\" (14 bytes) still
+  ;; TRAP host/stack-exhausted on BOTH arms". The replaced sg-keyword
+  ;; walked the vocabulary one element per RECURSIVE frame
+  ;; (document-list-at over sg-tokens-doc / sg-keywords-doc per i) and
+  ;; its 8-deep walk stacked under sg-ops-walk's own frames. The lookup
+  ;; is the host arm's map literal (subgroup-op-tokens) spelled as a
+  ;; cond chain: eight constant string tests, zero recursion frames.
+  ;; PINNED CONTRACT, unchanged: the whole vocabulary 1:1 (hyphen
+  ;; preserved: "shuffle-relative" -> :shuffle-relative) and a token
+  ;; outside it answers the null document -- unknown fails the whole
+  ;; answer above. MEASURED BEFORE (the evidence): both named cells
+  ;; TRAPped host/stack-exhausted on the walk arm and answer the host
+  ;; arm's answers on the table arm (probe runs byte-identical).
+  ;; NAMED, NOT PINNED (the recurring context-depth asymmetry): the
+  ;; eight-token answer (70 bytes) still TRAPs host/stack-exhausted on
+  ;; BOTH arms (BEFORE == AFTER, both probe runs) -- the sg-ops-walk
+  ;; per-token/per-space frames and the sg-member? per-element frames
+  ;; are their own rows -- and is never pinned.
+  (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
+        arms (str/join "\n" (map #(extract-balanced src %)
+                                 ["(defn- none?" "(defn- string->i64" "(defn- digits?"
+                                  "(defn- sg-tokens-doc" "(defn- sg-keyword "
+                                  "(defn- sg-size " "(defn- sg-token-end" "(defn- sg-member?"
+                                  "(defn- sg-ops " "(defn- sg-ops-walk" "(defn- sg-pipe"
+                                  "(defn device-from-subgroup"]))
+        probe (str "(ns accelerator.targets.w3.keyword.probe (:export [main sk dfs]))\n"
+                   "(defn main [] :i64 0)\n"
+                   arms "\n"
+                   "(defn sk [token :string] :document (sg-keyword token))\n"
+                   "(defn dfs [answer :document] :document (device-from-subgroup answer))\n")
+        hir (sema/analyze probe)
+        sk (fn [tok] (ir/execute hir 'sk [tok]))
+        dfs (fn [s] (ir/execute hir 'dfs [["string" s]]))
+        fields-of (fn [doc]
+                    (into {} (map (fn [kv] [(get (get kv 0) 1) (get (get kv 1) 1)])
+                                  (get doc 1))))
+        ops-set (fn [ops] (set (map #(get % 1) ops)))]
+    (testing "the vocabulary table answers the whole vocabulary 1:1, and nothing else (was: a per-element walk)"
+      ;; MEASURED BEFORE (the evidence): the walk answered the same
+      ;; values on every one of these short cells -- the walk's cost was
+      ;; FRAMES, not facts
+      (doseq [[tok want] [["basic" ["keyword" :basic]]
+                          ["vote" ["keyword" :vote]]
+                          ["arithmetic" ["keyword" :arithmetic]]
+                          ["ballot" ["keyword" :ballot]]
+                          ["shuffle" ["keyword" :shuffle]]
+                          ["shuffle-relative" ["keyword" :shuffle-relative]]
+                          ["clustered" ["keyword" :clustered]]
+                          ["quad" ["keyword" :quad]]]]
+        (is (= want (sk tok)) (str tok " maps 1:1 to its keyword document")))
+      (doseq [tok ["vote2" "Basic" "" "basic2" "shuffle-"]]
+        (is (= ["null"] (sk tok)) (str (pr-str tok) " is outside the vocabulary: no fact"))))
+    (testing "the two named trap cells resolve and answer the host arm (BEFORE: TRAP host/stack-exhausted on BOTH)"
+      (is (= ["null"] (dfs "32|basic vote2"))
+          "the unknown-token answer (14 bytes) fails closed to no fact, not a trap")
+      (is (nil? (targets/device-from-subgroup "32|basic vote2")) "HOST parity pin")
+      (let [m (fields-of (dfs "64|  basic   shuffle-relative  "))]
+        (is (= "64" (str (:subgroup-size m)))
+            "the spaced two-token answer (31 bytes) parses -- separators are runs of byte 32")
+        (is (= #{:basic :shuffle-relative} (ops-set (:subgroup-ops m))))
+        (is (= {:subgroup-size 64 :subgroup-ops #{:basic :shuffle-relative}}
+               (targets/device-from-subgroup "64|  basic   shuffle-relative  "))
+            "HOST parity pin")))
+    (testing "the table's earlier rows stay resolved, byte-identical (BEFORE == AFTER == HOST)"
+      (let [m (fields-of (dfs "32|basic shuffle-relative"))]
+        (is (= "32" (str (:subgroup-size m))))
+        (is (= #{:basic :shuffle-relative} (ops-set (:subgroup-ops m)))))
+      (let [m (fields-of (dfs "32|basic basic"))]
+        (is (= #{:basic} (ops-set (:subgroup-ops m))) "the dedupe path still collapses"))
+      (let [m (fields-of (dfs "16|shuffle"))]
+        (is (= "16" (str (:subgroup-size m))))
+        (is (= #{:shuffle} (ops-set (:subgroup-ops m)))))
+      (let [m (fields-of (dfs "8|"))]
+        (is (= "8" (str (:subgroup-size m))) "an empty <ops> is the zero-ops fact")
+        (is (= #{} (ops-set (:subgroup-ops m)))))
+      (doseq [s ["no|such answer" "32|Basic" "32|basic\tvote"
+                 "-1|basic" "+3|basic" "0|basic" "12.5|basic" " 32|basic"
+                 "32x|basic" "x|basic" "32|basic|extra" "32||basic"]]
+        (is (= ["null"] (dfs s)) (str (pr-str s) " must parse to no fact at all"))))
+    (testing "the walk is deleted: the lookup body is a cond table with no recursion"
+      (let [kw-body (extract-balanced src "(defn- sg-keyword ")
+            walk-body (extract-balanced src "(defn- sg-ops-walk")]
+        (is (str/includes? kw-body "cond")
+            "the lookup is a constant test chain")
+        (is (= 8 (count (re-seq #"\(document-keyword" kw-body)))
+            "exactly one answer per vocabulary element")
+        (is (str/includes? kw-body "(document-null)")
+            "and the unknown-token answer above the table")
+        (is (not (str/includes? kw-body "(sg-keyword"))
+            "no self-call: zero recursion frames")
+        (is (not (str/includes? kw-body "document-list-at"))
+            "no per-element accessor remains in the lookup")
+        (is (not (str/includes? kw-body "string-code-point-at"))
+            "and no byte scan either")
+        (is (str/includes? walk-body "(sg-keyword (string-substring s i j))")
+            "the one call site passes the token alone")
+        (is (nil? (extract-balanced src "(defn- sg-keywords-doc"))
+            "the walk's answer-column builder is deleted with the walk")
+        (is (not (str/includes? src "(defn- sg-keywords-doc"))
+            "and gone from the namespace source under the defn- prefix")
+        (is (some? (extract-balanced src "(defn- sg-tokens-doc"))
+            "sg-tokens-doc stays: sg-token-at (the producer half) reads it")))))

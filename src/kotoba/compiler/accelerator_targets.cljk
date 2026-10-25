@@ -650,20 +650,34 @@
    "shuffle-relative" :shuffle-relative
    "clustered" :clustered
    "quad" :quad}))
+;; the token -> keyword lookup: ONE non-recursive table body (the
+;; sg-keyword row, 2026-10-26). The replaced sg-keyword walked the
+;; vocabulary one element per RECURSIVE frame (document-list-at over
+;; sg-tokens-doc / sg-keywords-doc per i) and its 8-deep walk stacked
+;; under sg-ops-walk's own per-token/per-space frames -- measured on the
+;; kotoba runtime: the unknown-token "32|basic vote2" (14 bytes) TRAPped
+;; host/stack-exhausted on BOTH arms (the sg-member? row's named
+;; residual, docs/evidence/gpu/w3-sg-member-vector-accumulator-20261026.txt;
+;; this row's probe: w3-sg-keyword-table-20261026.txt). The lookup is the
+;; host arm's map literal (`subgroup-op-tokens`) spelled as a cond
+;; chain: eight constant string tests, zero recursion frames.
+;; CONTRACT UNCHANGED: the whole vocabulary 1:1 with the hyphen
+;; preserved (shuffle-relative -> :shuffle-relative) and a token outside
+;; it answers (document-null) -- unknown fails the whole answer above.
+;; The deleted sg-keywords-doc held only the walk's answer column and is
+;; gone with the walk (sg-tokens-doc stays: sg-token-at, the producer
+;; half, reads it).
 #?(:kotoba
-   (defn- sg-keywords-doc [] :document
-     (document-list (document-keyword :basic) (document-keyword :vote) (document-keyword :arithmetic)
-                    (document-keyword :ballot) (document-keyword :shuffle) (document-keyword :shuffle-relative)
-                    (document-keyword :clustered) (document-keyword :quad))))
-#?(:kotoba
-   (defn- sg-keyword [token :string i :i64] :document
-     (if (>= i 8)
-       (document-null)
-       (let [tx (option-value-of [:option :document] (document-list-at (sg-tokens-doc) i) (document-null))
-             word (option-value-of [:option :string] (document-string-value tx) "")]
-         (if (= token word)
-           (option-value-of [:option :document] (document-list-at (sg-keywords-doc) i) (document-null))
-           (sg-keyword token (+ i 1)))))))
+   (defn- sg-keyword [token :string] :document
+     (cond (= token "basic") (document-keyword :basic)
+           (= token "vote") (document-keyword :vote)
+           (= token "arithmetic") (document-keyword :arithmetic)
+           (= token "ballot") (document-keyword :ballot)
+           (= token "shuffle") (document-keyword :shuffle)
+           (= token "shuffle-relative") (document-keyword :shuffle-relative)
+           (= token "clustered") (document-keyword :clustered)
+           (= token "quad") (document-keyword :quad)
+           :else (document-null))))
 ;; the <size> field: decimal digits only as an i64, -1 for an empty field, a
 ;; non-digit or a value past i64 (the protocol table's parse-decimal
 ;; contract). The sg-size row (2026-10-26): the replaced sg-size-walk
@@ -724,7 +738,7 @@
      (cond (>= i n) acc
            (= (string-code-point-at s i) 32) (sg-ops-walk s (+ i 1) n acc)
            :else (let [j (sg-token-end s i n)
-                       kw (sg-keyword (string-substring s i j) 0)]
+                       kw (sg-keyword (string-substring s i j))]
                    (if (none? kw)
                      (document-null)
                      (if (sg-member? acc kw 0 (document-count acc))
