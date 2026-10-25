@@ -1,5 +1,9 @@
 # Repository-local Mac bootstrap to AIUEOS diagnostic VM
 
+This records the first root on the pre-`c9d13f3` Amu source. After merging
+that newer `main`, the root was regenerated from the changed 47-module graph;
+see [the current-main rerun](../mac-repository-root-main-c9d13f-20261026/README.md).
+
 The candidate root in `seed/bootstrap/aarch64-macos/root.json` contains a
 signed arm64 Amu full compiler and a signed Kotoba Mac packager. Both are
 checked into this branch, with exact digests, source pins and no declared
