@@ -28,17 +28,17 @@ def verify(blob):
     assert len(blob) == 8280, "unexpected image length"
     header = struct.unpack_from("<16sHHIQQQIHHHHHH", blob)
     assert header == (b"\x7fELF\x02\x01\x01" + bytes(9), 2, 62, 1,
-                      0x1E1000, 64, 0, 0, 64, 56, 2, 0, 0, 0), "ELF identity"
+                      0x220000, 64, 0, 0, 64, 56, 2, 0, 0, 0), "ELF identity"
     rx, rw = (struct.unpack_from("<IIQQQQQQ", blob, 64 + 56 * i) for i in range(2))
-    assert rx[:5] == (1, 5, 4096, 0x1E1000, 0x1E1000)
+    assert rx[:5] == (1, 5, 4096, 0x220000, 0x220000)
     assert 64 < rx[5] == rx[6] <= 4096 and rx[7] == 4096
-    assert rw == (1, 6, 8192, 0x1E2000, 0x1E2000, 88, 88, 4096)
+    assert rw == (1, 6, 8192, 0x221000, 0x221000, 88, 88, 4096)
     assert not any(blob[176:4096]) and not any(blob[4096 + rx[5]:8192])
     assert blob[4096:4103] == bytes.fromhex("4c8d0df90f0000")
     assert blob[0x1020:0x102c] == bytes.fromhex("b805000000488b7f500f05c3")
     context = bytearray(88)
     struct.pack_into("<Q", context, 8, 256)
-    struct.pack_into("<Q", context, 48, 0x1E1020)
+    struct.pack_into("<Q", context, 48, 0x220020)
     assert blob[8192:] == context, "capabilities or runtime handle are nonzero"
 
 

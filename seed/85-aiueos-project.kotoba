@@ -194,7 +194,9 @@
         table (bit-and (+ program 127) -128) has-isr (or (kp-has-isr? G) (uv-used? M))
         needs-isr (kp-needs-isr? M)
         size (if has-isr (+ table (* IV-STRIDE IV-VECTORS)) program)
-        data (max 32768 (bit-and (+ 8191 size) -4096))]
+        ;; Keep the v1 user virtual pages stable as kernel text grows. The
+        ;; existing size cap below refuses text that reaches this boundary.
+        data 1048576]
     (cond (not (pj-ok initialized)) initialized
           (and (uv-used? M) (>= (kp-isr-target G 6) 0)) (xg-err M 7102 6)
           (and (uv-used? M) (>= (kp-isr-target G 14) 0)) (xg-err M 7102 14)

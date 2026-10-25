@@ -183,3 +183,27 @@
           (let [w (io-err "seed-aiueos-boot: E7110 expected package-aiueos-boot KERNEL --output NEW_EFI [--payload FILE] [--pci-resources v1]; unsupported options refuse\n")] 2)
           (or (= (io-exists kernel) 0) (and (> (string-length payload) 0) (= (io-exists payload) 0))) (drv-fail0 E-READ)
           :else (eb-package kernel payload out pci))))
+
+;; A fixed-size region for the v6 boot-payload capability. The outer slot is
+;; always allocated in full; its 64-byte header gives the bounded inner bytes.
+;; Digest and signature admission remain the guest's responsibility.
+(defn- eu-package [source :string out :string] :i64
+  (let [P (io-read-bytes source) n (vector-count P)]
+    (if (or (= n 0) (> n 524224))
+      (let [w (io-err "seed-aiueos-boot: E7112 user payload exceeds fixed slot\n")] 1)
+      (let [M (-> (mem-new) (xg-out 0x0031444c50554941 8) (xg-out 1 8)
+                  (xg-out n 8) (xg-pad 64) (eb-copy P 0 n) (xg-pad 524288))
+            size (dec (vector-at M MM-OUT-N))]
+        (if (or (not= (vector-at M MM-ERR) 0) (not= size 524288))
+          (drv-fail M source)
+          (let [written (out-write-v M out (+ MM-OUT-BASE 1) size)]
+            (if (and (= written size) (= (io-exists out) 1))
+              (let [z (io-out "{:ok true, :format :aiueos-user-payload-v1, :bytes 524288}\n")] 0)
+              (drv-fail0 E-WRITE))))))))
+(defn- eu-command [] :i64
+  (let [n (io-argc) source (io-arg 1) out (io-arg 3)]
+    (cond (or (not= n 4) (not (string=? (io-arg 2) "--output"))
+              (= (string-length out) 0) (= (io-exists out) 1))
+          (let [w (io-err "seed-aiueos-boot: E7110 expected package-aiueos-user-payload SOURCE --output NEW_SLOT\n")] 2)
+          (= (io-exists source) 0) (drv-fail0 E-READ)
+          :else (eu-package source out))))
