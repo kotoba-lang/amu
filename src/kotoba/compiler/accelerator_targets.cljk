@@ -730,20 +730,57 @@
      (cond (>= k n) false
            (document-equal? (option-value-of [:option :document] (document-vector-at acc k) (document-null)) kw) true
            :else (sg-member? acc kw (+ k 1) n))))
+;; the <ops> walk: TOKEN POSITIONS, not bytes -- a separator RUN costs ONE
+;; `string-skip-blank`, not one recursive frame per space byte (the
+;; sg-keyword row's named residual, 2026-10-26: "sg-ops-walk per token AND
+;; per space byte ... their own rows"). The replaced walk skipped the
+;; separator one BYTE per recursive frame ((string-code-point-at s i) 32 ->
+;; (+ i 1)) and those frames stacked under the per-token frames and
+;; sg-member?'s per-element frames -- measured on the kotoba runtime
+;; (docs/evidence/gpu/w3-sg-keyword-table-20261026.txt: the 31-byte spaced
+;; and 70-byte eight-token answers TRAPped host/stack-exhausted). Now
+;; sg-ops normalizes the entry to a token start and each walk recursion
+;; arg is the NEXT token start -- first non-blank at or after the token
+;; end (measured: string-skip-blank answers i itself when s[i] is
+;; non-blank and n for from = n), so the walk is one frame per TOKEN.
+;; CONTRACT UNCHANGED, pinned: byte 32 is the wire's ONLY separator --
+;; tokens are maximal non-32 runs, one or more spaces separate, a
+;; separator-only field is zero tokens. `string-skip-blank` is C isspace
+;; (measured: it skips \t as well as 32 -- "a \t b" from 1 answers 4),
+;; which would move the separator rule AWAY from host parity, so a field
+;; holding any byte in {9,10,11,12,13} answers (document-null) ABOVE the
+;; walk: exact, not fail-closed -- such a byte sits INSIDE a maximal
+;; non-32 run, whose token then cannot be a vocabulary word (the
+;; vocabulary is [a-z-] text), so the old walk answered the same null
+;; (all-or-nothing, decision 4). On a field with no such byte the skip is
+;; exactly the 32-runs. `string-find-byte` answers -1 for from = n and
+;; traps only on from > n (measured: this row's probe), so the five guard
+;; calls are total on every field including "". RESIDUAL, NAMED: the
+;; walk is still O(TOKENS) frames (the split4 O(FIELDS) class) and
+;; sg-member? still walks the accumulator per element (its own row) -- a
+;; many-token <ops> field can still reach the budget; boundary probes in
+;; this row's evidence measure where.
 #?(:kotoba
    (defn- sg-ops [field :string] :document
-     (sg-ops-walk field 0 (string-byte-length field) (document-vector))))
+     (if (or (>= (string-find-byte field 9 0) 0)
+             (>= (string-find-byte field 10 0) 0)
+             (>= (string-find-byte field 11 0) 0)
+             (>= (string-find-byte field 12 0) 0)
+             (>= (string-find-byte field 13 0) 0))
+       (document-null)
+       (sg-ops-walk field (string-skip-blank field 0) (string-byte-length field) (document-vector)))))
 #?(:kotoba
    (defn- sg-ops-walk [s :string i :i64 n :i64 acc :document] :document
-     (cond (>= i n) acc
-           (= (string-code-point-at s i) 32) (sg-ops-walk s (+ i 1) n acc)
-           :else (let [j (sg-token-end s i n)
-                       kw (sg-keyword (string-substring s i j))]
-                   (if (none? kw)
-                     (document-null)
-                     (if (sg-member? acc kw 0 (document-count acc))
-                       (sg-ops-walk s j n acc)
-                       (sg-ops-walk s j n (document-vector-conj acc kw))))))))
+     (if (>= i n)
+       acc
+       (let [j (sg-token-end s i n)
+             kw (sg-keyword (string-substring s i j))]
+         (if (none? kw)
+           (document-null)
+           (sg-ops-walk s (string-skip-blank s j) n
+                        (if (sg-member? acc kw 0 (document-count acc))
+                          acc
+                          (document-vector-conj acc kw))))))))
 ;; exactly two fields: the index of the single '|', -1 for none, -2 for
 ;; more. The pipe/token-end row (2026-10-26): the replaced pipe walk
 ;; recursed per ANSWER byte and trapped the budget on every long answer
