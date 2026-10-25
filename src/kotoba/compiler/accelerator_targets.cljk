@@ -666,20 +666,24 @@
            (sg-keyword token (+ i 1)))))))
 ;; the <size> field: decimal digits only as an i64, -1 for an empty field, a
 ;; non-digit or a value past i64 (the protocol table's parse-decimal
-;; contract).
+;; contract). The sg-size row (2026-10-26): the replaced sg-size-walk
+;; recursed per byte and trapped the interpreter's 32-frame budget
+;; (frames-limit 32) on long digit fields -- measured on the kotoba
+;; runtime (docs/evidence/gpu/w3-sg-size-parse-20261026.txt). The parse
+;; is ONE digits? + ONE string->i64, the exact wg-field idiom
+;; (device-from-info, 2026-10-26 numeric-walk row): digits? answers the
+;; host regex [0-9]+ reading (first byte ASCII digit AND verdict
+;; ok|out-of-range -- PROBED taxonomy, not proven) and string->i64 is one
+;; parse-long (the host arm's OWN head) whose no-value shape (-1) IS this
+;; contract's -1 for a value past i64. The digits? guard is load-bearing
+;; for the signed spellings: parse-long accepts "+5"/"-5" (measured) where
+;; the host regex and the deleted walk refuse them.
 #?(:kotoba
    (defn- sg-size [s :string] :i64
      (let [n (string-byte-length s)]
-       (if (= n 0) -1 (sg-size-walk s 0 n 0)))))
-#?(:kotoba
-   (defn- sg-size-walk [s :string i :i64 n :i64 acc :i64] :i64
-     (if (>= i n)
-       acc
-       (let [d (- (string-code-point-at s i) 48)]
-         (cond (< d 0) -1
-               (> d 9) -1
-               (> acc (quot (- 9223372036854775807 d) 10)) -1
-               :else (sg-size-walk s (+ i 1) n (+ (* acc 10) d)))))))
+       (if (and (< 0 n) (digits? s 0 n))
+         (string->i64 s)
+         -1))))
 ;; the <ops> field's tokens are the wire's tokens: runs of non-space bytes
 ;; separated by one or more spaces (byte 32), no other byte separates (the
 ;; request grammar's rule), so a separator-only field is also zero tokens.

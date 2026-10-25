@@ -741,3 +741,119 @@
           "the per-byte tail walk is deleted")
       (is (str/includes? (extract-balanced src "(defn- string->i64") "parse-long")
           "string->i64 is one parse-long call (the host arm's own head)"))))
+
+(deftest w3-subgroup-size-is-one-parse-not-a-byte-walk
+  ;; The `:kotoba` sg-size -- the SUBGROUP answer's <size> field on the
+  ;; parse-decimal contract: decimal digits only as an i64, -1 for an
+  ;; empty field, a non-digit or a value past i64. This is the alt-key
+  ;; row's (2026-10-26) named residual -- "sg-size-walk (the subgroup
+  ;; size field) still walks per byte (named, not hidden, its own row)".
+  ;; The replaced sg-size-walk recursed per byte and trapped the
+  ;; interpreter's 32-frame budget (frames-limit 32) on digit fields at
+  ;; the i64 boundary and on long leading-zero text -- MEASURED BEFORE on
+  ;; this runtime (19-digit i64 max / 20-digit / 104-char leading-zero
+  ;; text -> host/stack-exhausted or budget/frames,
+  ;; docs/evidence/gpu/w3-sg-size-parse-20261026.txt). The parse is ONE
+  ;; digits? + ONE string->i64 -- the exact wg-field idiom
+  ;; (device-from-info, the numeric-walk row 2026-10-26). The digits?
+  ;; guard is load-bearing for the signed spellings: parse-long accepts
+  ;; "+5"/"-5" (measured) where the host regex [0-9]+ and the deleted
+  ;; walk refuse them. PINNED CONTRACT, unchanged: the i64 max text is a
+  ;; VALUE (not past i64) and the one-past text is -1.
+  ;; NAMED, NOT HIDDEN: (a) the parse taxonomy (ok|out-of-range for
+  ;; digit-only text) is PROBED, not proven; (b) ENGINE PARSE-LONG
+  ;; BOUNDARY (measured twice, byte-identical runs): this engine's
+  ;; parse-long answers nil for the exact i64-max text -- so the HOST
+  ;; arm's own heads (re-matches + parse-long) answer NO FACT at exactly
+  ;; that one text while the contract and the :kotoba arm answer the
+  ;; value. Engine-owned, pre-existing since the numeric-walk row's wg
+  ;; route (unprobed there), its own row -- the host cell is named in
+  ;; these pins' comments and never pinned; (c) the SUBGROUP chain's
+  ;; OTHER walks still trap multi-token / long answers on this runtime
+  ;; (sg-pipe walks the answer per byte; sg-token-end/sg-ops-walk walk
+  ;; per token/space byte -- MEASURED: "32|basic shuffle-relative" traps
+  ;; host/stack-exhausted on BOTH arms at this depth), their own rows;
+  ;; the e2e pins below run only the shapes the probes resolved twice --
+  ;; e.g. "32|basic vote2" (13 bytes) TRAPS host/stack-exhausted on BOTH
+  ;; arms and is never pinned (trap boundaries are state-dependent).
+  (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
+        arms (str/join "\n" (map #(extract-balanced src %)
+                                 ["(defn- none?" "(defn- string->i64" "(defn- digits?"
+                                  "(defn- sg-tokens-doc" "(defn- sg-keywords-doc" "(defn- sg-keyword "
+                                  "(defn- sg-size " "(defn- sg-token-end" "(defn- sg-member?"
+                                  "(defn- sg-ops " "(defn- sg-ops-walk" "(defn- sg-pipe"
+                                  "(defn device-from-subgroup"]))
+        probe (str "(ns accelerator.targets.w3.sg.probe (:export [main sz dfs]))\n"
+                   "(defn main [] :i64 0)\n"
+                   arms "\n"
+                   "(defn sz [s :string] :i64 (sg-size s))\n"
+                   "(defn dfs [answer :document] :document (device-from-subgroup answer))\n")
+        hir (sema/analyze probe)
+        sz (fn [s] (str (ir/execute hir 'sz [s])))
+        dfs (fn [s] (ir/execute hir 'dfs [["string" s]]))
+        fields-of (fn [doc]
+                    (into {} (map (fn [kv] [(get (get kv 0) 1) (get (get kv 1) 1)])
+                                  (get doc 1))))
+        ops-set (fn [ops] (set (map #(get % 1) ops)))
+        ;; the host arm's own size heads, mapped to sg-size's -1 shape
+        host-sz (fn [s]
+                  (let [v (when (re-matches #"[0-9]+" s) (parse-long s))]
+                    (if (nil? v) -1 v)))]
+    (testing "the parse-decimal contract on the kotoba runtime (was: a per-byte walk)"
+      ;; MEASURED BEFORE (the evidence): the 19-digit max, the 20-digit
+      ;; overflow and the 104-char leading-zero text TRAPPED in the walk;
+      ;; the walk answered the contract on the short cells
+      (doseq [[s want] [["" "-1"] ["0" "0"] ["32" "32"] ["042" "42"] ["0000" "0"]
+                        ["9223372036854775807" "9223372036854775807"]
+                        ["9223372036854775808" "-1"]
+                        ["99999999999999999999" "-1"]
+                        [(apply str (repeat 100 "9")) "-1"]
+                        [(apply str (repeat 1000 "5")) "-1"]
+                        [(str (apply str (repeat 102 "0")) "42") "42"]
+                        ["32x" "-1"] [" 32" "-1"] ["-1" "-1"] ["+3" "-1"]
+                        ["12.5" "-1"] ["x" "-1"] ["5 " "-1"] ["32\t" "-1"]
+                        ["5\n" "-1"] ["0x1f" "-1"]]]
+        (is (= want (sz s)) (str (pr-str s) " keeps the parse-decimal contract"))))
+    (testing "host-head parity everywhere except the named engine max cell"
+      ;; the i64-max text is EXCLUDED here on purpose: this engine's
+      ;; parse-long answers nil for it (named above, its own row)
+      (doseq [s ["" "0" "32" "042" "0000"
+                 "9223372036854775808" "99999999999999999999"
+                 (apply str (repeat 100 "9")) (apply str (repeat 1000 "5"))
+                 (str (apply str (repeat 102 "0")) "42")
+                 "32x" " 32" "-1" "+3" "12.5" "x" "5 " "32\t" "5\n" "0x1f"]]
+        (is (= (str (host-sz s)) (sz s))
+            (str (pr-str s) " parses the same on the host arm's own heads"))))
+    (testing "the e2e answer parse: the size field's facts flow, malformed fails closed"
+      (let [m (fields-of (dfs "8|"))]
+        (is (= "8" (str (:subgroup-size m))) "an empty <ops> is the zero-ops fact")
+        (is (= #{} (ops-set (:subgroup-ops m)))))
+      (let [m (fields-of (dfs "16|shuffle"))]
+        (is (= "16" (str (:subgroup-size m))))
+        (is (= #{:shuffle} (ops-set (:subgroup-ops m)))))
+      (doseq [s ["no|such answer" "32|Basic" "32|basic\tvote"
+                 "-1|basic" "+3|basic" "0|basic" "12.5|basic" " 32|basic"
+                 "32x|basic" "x|basic" "32|basic|extra" "32||basic"]]
+        (is (= ["null"] (dfs s)) (str (pr-str s) " must parse to no fact at all")))
+      (is (= {:subgroup-size 8 :subgroup-ops #{:basic}}
+             (targets/device-from-subgroup "8|basic"))
+          "HOST parity pin")
+      (is (= {:subgroup-size 16 :subgroup-ops #{:shuffle}}
+             (targets/device-from-subgroup "16|shuffle"))
+          "HOST parity pin")
+      (doseq [s ["no|such answer" "32|Basic" "32|basic\tvote"
+                 "-1|basic" "+3|basic" "0|basic" "12.5|basic" " 32|basic"
+                 "32x|basic" "x|basic" "32|basic|extra" "32||basic"]]
+        (is (nil? (targets/device-from-subgroup s))
+            (str "HOST parity pin: " (pr-str s)))))
+    (testing "the per-byte walk is deleted and the parse delegates to the primitives"
+      (is (nil? (extract-balanced src "(defn- sg-size-walk"))
+          "the per-byte size walk is deleted (prose naming it stays legal)")
+      (is (not (str/includes? src "(defn- sg-size-walk"))
+          "and gone from the namespace source under the defn- prefix")
+      (is (str/includes? (extract-balanced src "(defn- sg-size ") "string->i64")
+          "sg-size delegates to the parse primitive (the host arm's own head)")
+      (is (str/includes? (extract-balanced src "(defn- sg-size ") "digits?")
+          "the [0-9]+ guard is digits? (signed spellings must refuse)")
+      (is (not (str/includes? (extract-balanced src "(defn- sg-size ") "string-code-point-at"))
+          "no byte scan remains in sg-size"))))
