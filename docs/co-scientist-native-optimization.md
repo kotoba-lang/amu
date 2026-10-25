@@ -96,8 +96,9 @@ in the mandatory native label gate. Its existing nine mutation controls stay;
 the gate grows from 21 to 24 fresh calls. Regenerate root/public/controller
 pins because source and controller source-lock identities change, even though
 the normal core container/raw image and Amu selfhost role remain byte-identical.
-Native ARM candidate F1=F2 and two core generations agree; full uncached and
-native x86/controller/public qualification remain required before merging.
+Native ARM candidate F1=F2 and two core generations agree. The subsequent
+uncached full/core/cold/corpus and native x86/controller/public qualification
+passed for these source/image bytes; final PR heads still require mandatory CI.
 
 The [native x86 proof localization](https://github.com/kotoba-lang/amu/actions/runs/40207573562)
 supports H10: `ccf-code` and `ccf-fixes` each ran 2,484 times, consuming
@@ -116,3 +117,25 @@ need actual whole-workflow timings after this candidate; neither the short
 unit build nor an estimated parallel schedule closes the 20-minute goal.
 Portable observations, producer/source/image hashes and the rejected-key
 counterexample are in `docs/evidence/native-source-refinements-20261026/`.
+
+## Qualification and the remaining workflow goal
+
+[Run 40209874933](https://github.com/kotoba-lang/amu/actions/runs/40209874933)
+passed every native ARM/x86/shared/Chrome job for source head `8fbbaf3e27`.
+The public image agrees with all three actual native x86 generations. The
+native controller ran 24 cases, 18 refusals and parent-death cleanup; public
+validation exercised all three aliases and 90 source-lock boundary cases.
+Both ISAs executed the original nine mutants and the new unannotated-source
+build/image-equality/execution controls. Local ARM full-tier provenance used
+no read/store reuse, and all19/MIR/GMIR/resource/lock checks passed. All 28
+emitted corpus artifacts equal the preceding qualified artifacts byte for byte.
+
+The controller observation is 468.687 seconds, separately below the ten-minute
+compiler target. The complete PR workflow was **50m24s**, so the twenty-minute
+goal is **not met**. Its ARM job was 21m43s: bootstrap9m51s and independent
+gates8m02s, plus runtime/live/transport work. The bootstrap's boundary corpus
+alone used 282.9 seconds across 206 process observations. Different runners
+prevent treating this workflow duration as a matched before/after experiment.
+The exact metadata, native receipt digests and source/image pins are recorded
+in `qualified-native.json`; neither that observer summary nor a cached artifact
+replaces fresh native admission or any mandatory check.
