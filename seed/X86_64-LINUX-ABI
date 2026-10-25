@@ -30,6 +30,17 @@ duplicates; relocation reads only low32. Tail admission follows at most64
 LABEL/BR continuations through high32 and stops on any effect/value change.
 All locations are private to this phase, not AArch64 word indices/fixups.
 
+Native vector zero highwater candidate (2026-10-26): global byte offset760
+relative to kxrt-g (context+1024) records the greatest absolute item end ever
+described. Both native templates use the same private invariant. This is not
+a guest handle or a Wasm context slot. vnew raises it monotonically; the five
+arena checkpoints never restore it. vector-alloc clears only the intersection
+with this used prefix. Untouched suffix words retain the kernel's fresh
+MAP_PRIVATE|MAP_ANONYMOUS zero initialization. All item writes are followed by
+vnew or remain inside a previously described view. Capacities, item/descriptor
+counts, failures and fuel are unchanged. Any new item writer must maintain
+this invariant; source/image/native qualification is required before adoption.
+
 Guest parameters: rdi,rsi,rdx,rcx,r8. Private context: r9.
 Runtime profile parameters6..16: [caller rsp +8*(i-5)] (zero-based i).
 The callee reads them at [rbp+16+8*(i-5)]. All call sites align rsp to16.
