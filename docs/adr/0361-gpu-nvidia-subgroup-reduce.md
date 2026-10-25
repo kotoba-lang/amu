@@ -1041,3 +1041,83 @@ under any admissible unit, the flip arm on real data (ZERO real
 flips), every workgroup row (`:arm`/`:unknown` stay provisional
 `:measured? false`), the name-fragment key's coarseness. Record:
 `docs/evidence/gpu/cuda-op-census-route-20261025.txt`.
+
+## Amendment (2026-10-25, ninth the same day: row (iii) first half --
+fresh session A under the pre-registration LANDS)
+
+**MEASURED (JUN-57, the first measurement row of the operator-aware
+registration).** Fresh session A -- the first admissible
+(hypothesis-testing) paired-timing session -- ran on xavier sm_72
+(Jetson AGX Xavier, L4T R35.4.1, nvcc 11.4 V11.4.315) at
+2026-10-25T08:53:58Z, the full pre-registered protocol at its letter
+(the 108-block grid, one fresh process per block, PAIRS=20
+interleaved, WARMUP=2 per arm, AB/BA alternating, LCG seed 20261023,
+gpu_ns CUDA-event + host_ns CLOCK_MONOTONIC, untimed verified
+read-back, correctness re-verified inside the measurement), the
+instrument and the three arms' corpora byte-identical to the
+committed ones (the log's received-file sha256 block: 55/55
+matched). The run driver differed from the exploratory runs' driver
+in its working directory ONLY. The log was analyzed ONLY by the
+committed pre-registered routes (`--cuda-log`, `--cuda-cells`,
+`--cuda-op-census`, all exit 0, stderr 0 bytes) -- row (ii) before
+row (iii) at its letter.
+
+**Reading-arm findings (session A ONLY -- nothing adjudicated,
+nothing entered).** 108/108 cells ran, 0 failed; 218/218 verify
+lines ok=1; 36 (op, W, shape) groups published, 36 folded to a
+winner in every session-A reading, 0 refused; fold census
+warp-shuffle 34 / subgroup 2 -- exactly the exploratory census's
+split, the two subgroup folds being (op `:sum`, W = 64) at both
+shapes (warp/subgroup 1.0700/1.0656/1.0905/1.0962 and
+subgroup/baseline 0.8788/0.8912/0.8746/0.8858, gpu_ns then host_ns
+per shape; unique winner `:subgroup-reduce` in every reading). At
+(`:max`/`:min`, W = 64) every session-A reading folds
+`:warp-shuffle-reduce` (the projected CONFIRM cells). Pooled cell
+census: 48 regime-invariant faster / 3 slower / 21 regime-scoped of
+72 cells. H1/H2 STATUS: NOT ADJUDICATED -- session A's readings
+point the registered way (H1's contrast group folds
+`:subgroup-reduce`; H2's 34 groups fold `:warp-shuffle-reduce`), but
+the replication requirement is HALF MET: session A's UTC day is
+2026-10-25, the earliest admissible session B is 2026-10-26 UTC or
+later, and no verdict may be recorded before B exists and agrees in
+every reading of both.
+
+**Named, not hidden.** (a) session A shares its UTC day (2026-10-25)
+with the two EXPLORATORY sessions; the replication rule at its
+letter constrains the fresh PAIR's days (A and B on different UTC
+days) and the exploratory sessions are excluded from every count
+forever (rejection (a) stands); (b) the exploratory fold census
+matching session A's (34/2, same two groups) is corroboration
+CONTEXT ONLY -- the exploratory sessions generated the hypotheses
+and enter nothing; (c) session A's readings enter NOTHING today:
+entry is the wiring row's (row (i)) job and additionally requires
+the completed cross-day pair.
+
+**Consequence today: NOTHING MOVES** (rule 4): no record, no
+`:measured?` flag, no selection answer, no `:shapes` value, no
+workgroup row; the ladder
+`:warp-shuffle-reduce -> :subgroup-reduce -> :baseline` stays
+byte-for-byte and at (op `:sum`, W = 64) the design-ordered answer
+stands UNCLAIMED.
+
+**States.** MEASURED: session A (one fresh pre-registered session on
+xavier sm_72, 2026-10-25 UTC, analyzed by the committed routes) --
+the only measured thing this row. IMPLEMENTED: nothing new (evidence
++ this amendment only). DECIDED: nothing new. ACCEPTED DESIGN ONLY:
+the operator-aware contract + pre-registration (seventh amendment),
+the row (ii) route set, the entry contract + wiring, ADR-0358,
+ADR-0373. UNMEASURED, named: session B (cross-day; earliest
+2026-10-26 UTC) and therefore H1/H2 and every per-op
+entry/flip/confirm verdict; the wiring (row (i)); every per-op
+verdict on non-xavier hardware; run 3+; the `:sum` ordering at
+W = 64 on any other device; the flip arm on real data (ZERO real
+flips); every workgroup row (`:arm`/`:unknown` stay provisional
+`:measured? false` -- no `:measured?` flag moves this row); the
+name-fragment key's coarseness (row (iv)). Gates: scoped GPU gate
+GREEN 107 tests / 11240 assertions / 0 failures / 0 errors
+(docs-only diff, regression pin); `gpu_regime_classify.py
+--self-test` 2572/0 (regression pin); FULL `run-tests.cljk` NOT RUN
+this slice (no .cljk touched) -- documented red at base (`Could not
+find namespace: kotoba.form`, ADR-0362) outside this diff, NO green
+suite claimed; `find docs -name '*.sh'` -> 0 files. Record:
+`docs/evidence/gpu/cuda-registered-sessionA-20261025/`.
