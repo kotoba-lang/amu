@@ -1663,3 +1663,77 @@ unre-verified and named NOT green); FULL `run-tests.cljk` NOT RUN
 `find docs -name '*.sh'` -> 0.
 
 Record: `docs/evidence/gpu/metal-counter-classifier-route-20261025.txt`.
+
+## Amendment 2026-10-25 (the counters channel's fold-arms MEASUREMENT row): rules 1+2 publish on real hardware, and the fold-arm sign is regime-invariant slower at the anchor cell
+
+ONE measurement slice (JUN-58): the fold arms run on the counters
+channel for the first time -- 6 fresh ADR-0358 processes at cell
+(n = 1000003, W = 256) on this host's Apple M1 Max, the instrument's
+20 interleaved AB/BA pairs per operator per run, WARMUP=2 discarded,
+correctness re-verified inside every measurement (36/36 `verify` lines
+ok=1, 720/720 brackets resolved, zero named exclusions). The run
+protocol was declared in the record directory before the first run
+(`protocol.txt`); the analysis is ONLY the pre-committed route
+(`--counters-log`), so the counter-route row's registration order
+survives. The metric is counter_ns bracket deltas (raw pairs on every
+sample line); the calibration row's MEASURED residual is named and
+never subtracted.
+
+THE FINDING (the publication is `publication.txt`, byte-for-byte
+pinned in the corpus self-test): rule 1 clusters the 6 runs' baseline
+medians as sum ONE level (103458.5..103813.0), max and min TWO levels
+(run 5 alone fast at 54187.5/54250.0, runs 1,2,3,4,6 slow at
+~103.6k..103.9k). Rule 2 answers REGIME-INVARIANT, SLOWER at every
+operator and at the cell -- all 18 per-run paired-median ratios
+(variant_ns/baseline_ns, never re-oriented) above 1.0, band
+1.204..1.221, every observed regime one-sided, roll-up "18/18 slower".
+The verdict holds in BOTH observed counter states (fast level
+1.204-1.206, slow level 1.217-1.219). The sign is CHANNEL-SCOPED: it
+never flips an MSL command-buffer cell, never flips a WGSL cell and
+never answers a workgroup row.
+
+STATE OBSERVATION (MEASURED; cause stays a hypothesis): the counter_ns
+plateau shifts MID-RUN at this workload -- run 5's sum block walked
+103.8k -> 84k -> 64k and its max/min blocks ran at ~54k; run 6's sum
+block shifted to 64k and its max/min blocks RETURNED to ~103.7k (not
+monotonic). The calibration row's question "whether the fold arms' own
+dispatches at their workload cross that threshold" is answered as an
+OBSERVATION: yes, sometimes; no clock is read and the threshold stays
+UNMEASURED. Cross-channel context, never merged (rule 3): the MSL
+command-buffer record at the same cell (1.220/1.217/1.217) reports the
+same sign and near-identical bracket ratios -- corroboration context
+only.
+
+CONSEQUENCE (rule 4, unchanged): nothing moves -- no `:measured?` flag,
+no `:shapes` value, no selection answer, no workgroup row; the
+narrowing stands (parity is not a fold win). The second leg's LETTER
+CONDITION now EXISTS (a counters-channel record of the fold arms on the
+narrowed device); its EVALUATION (including whether it reaches the
+narrowing's route-scope question from an MSL-route counters record) is
+its own next row and nothing fires here beyond the record.
+
+States: MEASURED (this row): the 6-run record, rule 1's clusters, rule
+2's sign, the mid-run state shifts, the spike list. IMPLEMENTED (code +
+tests): `_self_test_counters_corpus`, the corpus join this row's
+predecessor named for this slice (parse pins + cluster/verdict pins +
+byte-for-byte publication reproduction). DECIDED: the run protocol as
+declared. ACCEPTED DESIGN ONLY (unchanged): the claim protocol, the
+narrowing and reopen condition, the second-leg letter, ADR-0355's
+channel rule. PROPOSED (unchanged): the Vulkan-provider timestamp
+route. UNMEASURED, named: every other W and shape 2 on this channel
+(and R at those grids); the residual's decomposition and the absolute
+clock domain; the state-shift cause and threshold; op-order dependence;
+cross-day replication of this cell; anything off M1 Max; the second
+leg's EVALUATION; every workgroup-row question (`:arm`/`:unknown` stay
+provisional `:measured? false` -- no `:measured?` flag, `:shapes` value,
+selection answer or workgroup row moves this tick; this channel can
+never move one). Gates: `--self-test` GREEN 2649/0 (pin 2617/0, delta
++32 = the corpus join); scoped GPU gate GREEN 110 tests / 11445
+assertions / 0 failures / 0 errors (re-verifies the pin the previous
+tick left unre-verified; no `.cljk` namespace touched); FULL
+`run-tests.cljk` NOT RUN (no `.cljk` touched; documented red at base,
+ADR-0362), no green suite claimed; `find docs -name '*.sh'` -> 0.
+
+Record: `docs/evidence/gpu/metal-counter-foldarms-20261025/`
+(`protocol.txt`, `run-1.txt`..`run-6.txt`, `publication.txt`,
+`record.txt`).

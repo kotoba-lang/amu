@@ -1,0 +1,55 @@
+JUN-58 / JUN-55 -- the fold-arms counters MEASUREMENT row: RUN PROTOCOL
+DECLARATION (written BEFORE the first hardware run of this row; the runs
+fill run-1.txt .. run-6.txt beside this file)
+
+Cell (ONE cell = one counters session, the route's own unit):
+  n = 1000003, workgroup = 256
+  -- the historical MSL campaign's ONE-cell pattern (the 2026-10-23
+  :simdgroup-reduce record: "ONE measurement ... at ONE cell, W = 256 ...
+  n = 1000003"), the flip contract's ground shape, and the exact launch
+  shape (3907 x 256) whose bracket residual R the 2026-10-25 calibration
+  row MEASURED. Every other W (32/64/128/512/1024) and shape 2 (n =
+  2^20) stay UNMEASURED on this channel.
+
+Runs: 6 fresh processes (run-1 .. run-6), one ADR-0358 run each -- the
+historical protocol's process count unchanged ("6 fresh processes, 20
+interleaved AB/BA pairs per operator per run, 2 warmup submits per arm
+discarded, verified read-back").
+
+Instrument: scripts/gpu-subgroup-reduce-metal-counters.m compiled fresh
+this row; the counters channel's bracket is the harness row's corrected
+AtStageBoundary pass-attachment pair (raw pair on every sample line).
+Arms: baseline-<op>.metallib vs subgroup-<op>.metallib (the fold arms:
+:baseline vs :subgroup-reduce, the MSL-emitted arms of the same KIR
+reduce shape), built this row from the committed emitters via
+scripts/gpu-subgroup-reduce-metal-measure.cljk --width 256.
+
+Fixed by the instrument (ADR-0358 protocol, byte-unchanged):
+  PAIRS = 20 interleaved AB/BA samples per operator per process
+  (order alternates A/B across pairs), WARMUP = 2 discarded submits per
+  arm, verified untimed read-back per (op, arm), correctness re-verified
+  inside the measurement (verify ok=1 lines).
+op-order: the instrument default sum,max,min, FIXED across all 6 runs
+(named: op-order dependence is UNMEASURED on this channel; a fixed order
+keeps each operator's position constant across runs so cross-run
+comparison within an operator carries no position confound).
+
+Analysis: ONLY the committed route, scripts/gpu_regime_classify.py
+--counters-log run-1.txt ... run-6.txt (pre-committed before this row
+existed: the counters-route row). Rule 2's unit is the run's paired-
+median ratio (variant/baseline, NEVER re-oriented). The metric is
+counter_ns (bracket deltas); the calibration row's MEASURED residual R
+is named in the metric text and NEVER subtracted (no correction is
+designed).
+
+Named questions this record will answer or leave named:
+  - the arm-pair sign of (variant = :subgroup-reduce) / (:baseline) at
+    this cell on THIS channel (channel-scoped; never flips the MSL
+    command-buffer cell, never answers a workgroup row);
+  - rule 1's regime levels of the per-run baseline medians on this
+    channel's own metric.
+Left named regardless: the cold/warm state question (whether the fold
+arms' own dispatches at this workload cross the state threshold is
+UNMEASURED -- the record may observe within-run drift and name it, not
+explain it); the residual's internal decomposition; the absolute clock
+domain; every other cell; anything off M1 Max.

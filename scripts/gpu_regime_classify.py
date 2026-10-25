@@ -3183,10 +3183,10 @@ def render_cuda_op_census(sessions):
 # track's registration order (rows (ii) before (iii)): a session analyzed
 # by code written after the fact is not a pre-registered analysis.
 #
-# No committed counters instrument log exists yet (the harness smoke and
-# the calibration probes were scratch-only), so --self-test carries unit
-# fixtures only; the corpus self-test joins with the first claim-protocol
-# counters log (the measurement row's own slice).
+# The counters channel's first committed instrument logs landed with the
+# 2026-10-25 fold-arms measurement row, so --self-test carries unit
+# fixtures + the corpus join (_self_test_counters_corpus, over the 2026-
+# 10-25 fold-arms measurement row's committed logs).
 
 COUNTERS_OPS = ("sum", "max", "min")
 COUNTERS_ARMS = ("baseline", "variant")
@@ -6506,10 +6506,9 @@ def _self_test_counters_unit(stats):
     # ---- the Metal counters channel's rules-1+2 publication ----
     # Synthetic counters logs in the instrument's PRINTED shape (header
     # lines + `sample ... counter_ns=...` + `verify ... ok=...`); the
-    # block model and the fail-closed readings are pinned below. No
-    # committed counters instrument log exists yet (the harness smoke and
-    # the calibration probes were scratch-only), so this is the whole
-    # test surface of the route until the measurement row commits logs.
+    # block model and the fail-closed readings are pinned below. The
+    # committed corpus join is _self_test_counters_corpus (the 2026-10-25
+    # fold-arms measurement row's logs).
 
     def clog(n, wg, pairs, samples, verifies):
         lines = ["device=Apple M1 Max (fixture)",
@@ -6865,6 +6864,77 @@ def _self_test_counters_unit(stats):
             "usable paired ratio exists", stats)
 
 
+def _self_test_counters_corpus(stats, corpus_root):
+    # The counters channel's corpus join: the 2026-10-25 fold-arms
+    # MEASUREMENT row's committed logs (docs/evidence/gpu/
+    # metal-counter-foldarms-20261025/, cell n=1000003 W=256, 6 fresh
+    # ADR-0358 runs, run-1.txt .. run-6.txt, protocol.txt declared before
+    # the runs). Pins: every run parses clean at the declared cell, the
+    # session's regime structure (run 5's fast regime on max/min), rule
+    # 2's 18/18 one-sided slower sign, and the FULL claim-protocol
+    # publication reproducing the committed publication.txt byte-for-byte
+    # (every published number pinned at once). This is the record's own
+    # evidence, not new measurement.
+    d = corpus_root / "gpu" / "metal-counter-foldarms-20261025"
+    texts = [(d / f"run-{k}.txt").read_text() for k in range(1, 7)]
+    for k, text in enumerate(texts, start=1):
+        run = parse_counters_run(text)
+        _expect(run["n"] == 1000003 and run["workgroup"] == 256
+                and run["declared_pairs"] == 20,
+                f"counters corpus run-{k}: cell n=1000003 W=256 with "
+                f"PAIRS=20 declared", stats)
+        _expect(sorted(run["blocks"]) == ["max", "min", "sum"]
+                and run["excluded"] == [],
+                f"counters corpus run-{k}: three usable blocks, zero "
+                f"named exclusions (got {run['excluded']})", stats)
+        _expect(all(len(b["pair_ratios"]) == 20
+                    for b in run["blocks"].values()),
+                f"counters corpus run-{k}: 20 within-pair ratios per "
+                f"operator", stats)
+        _expect(sum(1 for ln in text.splitlines()
+                    if ln.startswith("verify ") and ln.endswith("ok=1")) == 6,
+                f"counters corpus run-{k}: all six verify lines ok=1 "
+                f"(correctness re-verified inside the measurement)",
+                stats)
+    sess = parse_counters_sessions(texts)
+    _expect(sess["cell"] == (1000003, 256) and sess["n_runs"] == 6,
+            "counters corpus: one session, one cell, 6 fresh-process runs",
+            stats)
+    # the regime structure (GAP-1.15 over the runs' baseline medians):
+    # run 5 alone in the fast level on max/min; sum one level
+    for op, want in (("max", [[5], [1, 2, 3, 4, 6]]),
+                     ("min", [[5], [1, 2, 3, 4, 6]]),
+                     ("sum", [[1, 2, 3, 4, 5, 6]])):
+        lv = level_clusters(sess["per_op_medians"][op])
+        _expect([x["runs"] for x in lv] == want,
+                f"counters corpus: {op}'s regime levels are {want} "
+                f"(the committed publication's clusters)", stats)
+    # the fast regime's anchors and the slow cluster's tightness
+    _expect(sess["per_op_medians"]["max"][5] == 54187.5
+            and sess["per_op_medians"]["min"][5] == 54250.0
+            and sess["per_op_medians"]["sum"][5] == 103708.5,
+            "counters corpus: run 5's baseline medians (fast on max/min, "
+            "slow on sum -- the named mid-run state shift)", stats)
+    # rule 2's sign: 18/18 per-run ratios above 1.0, all inside
+    # 1.20..1.23 (the record's observed band)
+    ratios = [r for op in ("sum", "max", "min")
+              for r in sess["per_op_ratios"][op].values()]
+    _expect(len(ratios) == 18 and all(r > 1.0 for r in ratios)
+            and all(1.20 < r < 1.23 for r in ratios),
+            "counters corpus: 18/18 per-run paired ratios above 1.0 in "
+            "the 1.20..1.23 band (variant slower)", stats)
+    # the publication reproduces byte-for-byte (print adds one newline)
+    pub = (d / "publication.txt").read_text()
+    _expect(render_counters_claim_protocol(texts) + "\n" == pub,
+            "counters corpus: the committed publication reproduces "
+            "byte-for-byte through the committed route", stats)
+    _expect("claim-protocol-rule2: PUBLISHED" in pub
+            and "Cell (all 18 per-run ratios pooled): **regime-invariant**"
+            ", slower (18/18 slower)." in pub,
+            "counters corpus: the published verdict is regime-invariant "
+            "slower at its letter", stats)
+
+
 def main():
     args = sys.argv[1:]
     if args == ["--self-test"]:
@@ -6891,6 +6961,7 @@ def main():
         _self_test_cuda_op_unit(stats)
         _self_test_cuda_op_corpus(stats, ROOT / "docs" / "evidence")
         _self_test_counters_unit(stats)
+        _self_test_counters_corpus(stats, ROOT / "docs" / "evidence")
         print(f"TOTAL: {stats['passed']} assertions passed, 0 failed")
         return
     if len(args) == 2 and args[0] == "--wgsl-log":

@@ -1,0 +1,181 @@
+JUN-58 / JUN-55 -- the fold-arms counters MEASUREMENT row: the first
+claim-protocol counters-channel record of the fold arms -- rules 1 + 2
+PUBLISHED on real hardware, and the arm-pair sign is REGIME-INVARIANT
+SLOWER (18/18) at the anchor cell (2026-10-25, tick slice)
+
+Row taken: the calibration row's inherited "the fold arms' per-dispatch
+GPU times and every sign (the measurement row's run protocol)" -- the
+measurement the harness row, the calibration row and the counters-route
+row all built toward. ONE measurement slice. HARDWARE RAN.
+
+WHAT RAN (the declared protocol, docs/evidence/gpu/
+metal-counter-foldarms-20261025/protocol.txt -- written BEFORE the first
+run of this row):
+
+  cell: n = 1000003, workgroup = 256 (ONE cell = one counters session,
+  the route's own unit) -- the historical MSL campaign's one-cell
+  pattern at its anchor cell, and the exact launch shape (3907 x 256)
+  whose bracket residual R the calibration row MEASURED.
+  runs: 6 fresh processes (run-1.txt .. run-6.txt), one ADR-0358 run
+  each -- the historical protocol's process count unchanged (6 fresh
+  processes, 20 interleaved AB/BA pairs per operator per run, 2 warmup
+  submits per arm discarded, verified read-back).
+  instrument: scripts/gpu-subgroup-reduce-metal-counters.m compiled
+  fresh this row (the harness row's corrected AtStageBoundary
+  pass-attachment bracket; raw pair on every sample line).
+  arms: baseline-<op>.metallib vs subgroup-<op>.metallib -- the fold
+  arms, :baseline vs :subgroup-reduce, the MSL-emitted arms of the same
+  KIR reduce shape -- built this row from the COMMITTED emitters via
+  scripts/gpu-subgroup-reduce-metal-measure.cljk --width 256 (the
+  build/run/analysis scripts and all metallibs lived in Hermes scratch
+  and were never staged; the build log carries every sha256).
+  op-order: the instrument default sum,max,min, FIXED across all 6 runs
+  (named: op-order dependence is UNMEASURED on this channel).
+  analysis: ONLY the committed route --
+  scripts/gpu_regime_classify.py --counters-log run-1..6.txt
+  (pre-committed before this row existed), the publication saved
+  verbatim as publication.txt.
+
+VERIFIED (real runs): all 6 processes exit 0, stderr 0 bytes, 120/120
+sample lines resolved each (counter_ns=ERR count 0 across all 720
+samples), 6/6 verify lines ok=1 per run (36 total, 0 ok=0) -- the
+correctness precondition re-verified inside every measurement. The
+committed route parses the session with ZERO named exclusions (every
+(run, operator) block usable at its letter -- complete, verified,
+resolved, positive, unstale). The publication reproduces
+byte-for-byte through the committed route (pinned in the corpus
+self-test, below).
+
+FINDING (the published claim-protocol record -- rules 1 + 2 at their
+letter over real counters-channel data; publication.txt is the
+publication):
+
+  Rule 1 (GAP-1.15 over the 6 runs' baseline per-run medians,
+  counter_ns bracket deltas): sum ONE level (103458.5..103813.0, all 6
+  runs); max and min TWO levels -- run 5 alone in a fast level
+  (54187.5 / 54250.0), runs 1,2,3,4,6 in the slow level (max
+  103604.5..103791.0, min 103625.0..103875.0).
+
+  Rule 2 (the run's paired-median ratio, variant_ns/baseline_ns, NEVER
+  re-oriented): REGIME-INVARIANT, SLOWER at every operator and at the
+  cell -- all 18 per-run ratios above 1.0 (sum 1.216..1.221, max
+  1.206..1.219, min 1.204..1.219), every observed regime one-sided
+  (max/min: run 5's fast level 1/1 and the slow level 5/5; sum: 6/6),
+  cell roll-up "regime-invariant, slower (18/18 slower)". The verdict
+  holds in BOTH observed counter states and the ratios barely move
+  between them (fast level 1.204-1.206 vs slow level 1.217-1.219).
+
+  Sign scope at its letter (the route's own text): this sign is
+  CHANNEL-SCOPED -- it never flips an MSL command-buffer cell, never
+  flips a WGSL cell and never answers a workgroup row. This channel is
+  neither the wire-42 loader path nor its provider successor.
+
+STATE OBSERVATION (MEASURED; the CAUSE stays the calibration row's
+HYPOTHESIS): the counter_ns plateau SHIFTS MID-RUN at this workload --
+answering the calibration row's named question ("whether the fold arms'
+own dispatches at their workload cross that threshold") as an
+OBSERVATION: yes, sometimes. Run 5's sum block walked 103.8k -> 84k ->
+64k (baseline, pairs 12-18) and its max/min blocks ran at ~54k; run 6's
+sum block shifted 103.7k -> 64k (last five pairs) and then its max/min
+blocks RETURNED to ~103.7k (the state is not monotonic under this
+workload). Runs 1-3 flat slow (first5/last5 baseline ratios
+0.997..1.003), run 4 flat with single fast brackets late. The shifts
+sit in the calibration row's cold/warm signature class (slow/fast here
+1.62x-1.91x); no probe reads a clock, so the cause stays a hypothesis
+and the work threshold stays UNMEASURED.
+
+SPIKES NAMED, NOT HIDDEN: a recurring one-bracket spike class
+~200k-871k against ~54k-127k plateaus (largest: run 5 max variant
+pair 3 = 871500; also run 2 sum variant 403375, run 1 min baseline
+390334, run 6 min baseline 378667, run 5 sum baseline pairs 5/19 =
+381792/288000); low-side one-offs in the fast runs (run 4 min baseline
+83542 / variant 101750, run 5 min baseline pair 1 44333). The record's
+statistics are medians / paired medians (the outlier class the
+calibration row named as support for that statistic class); no
+mechanism is measured.
+
+R HANDLING (the calibration row's inherited decision, at its letter):
+RAW bracket deltas are published; the MEASURED residual R at this launch
+shape (~7.8-8.0 us warm / ~20.6-20.8 us cold, against bracket totals of
+~54k-104k ns here) is named in the metric text and NEVER subtracted (no
+correction is designed). Named reasoning (design, not measurement): R
+is additive to both arms and the two arms' launch-shape floors measured
+within ~0.3 us of each other (calibration FINDING 3), so the bracket
+ratio compresses toward 1 relative to the pure-dispatch ratio --
+conservative against a win claim; nothing here corrects for it.
+
+CROSS-CHANNEL CONTEXT (corroboration context ONLY -- rule 3: magnitudes
+across instruments are never merged, and all three "ns" instruments
+stay apart): the MSL command-buffer channel's historical record at the
+same cell (:subgroup-reduce/:baseline gpu-ns 1.220 / 1.217 / 1.217 at
+W = 256, n = 1000003 -- the carve-out's measured basis) reports the
+same sign and near-identical bracket ratios. Two instruments, same
+direction, NEITHER confirming the other's magnitudes; this counters
+sign never flips that MSL cell and that record never moved this one.
+
+WHAT THIS ROW DOES NOT DO (rule 4, unchanged): no :measured? flag, no
+:shapes value, no selection answer and no workgroup row moves -- a
+counters-channel sign can never answer a workgroup row (the 2026-10-25
+channel-rule amendment). The narrowing is unchanged: parity is not a
+fold win, the conservative :baseline answer for the named device
+stands. The second leg's LETTER CONDITION now EXISTS (a counters-
+channel record of the fold arms on the narrowed device) -- its
+EVALUATION (including whether it reaches the narrowing's route-scope
+question from an MSL-route counters record) is its own next row;
+NOTHING fires from this row beyond the record itself.
+
+STATES (the three states, named):
+- MEASURED (this row): the 6-run counters record at cell (n = 1000003,
+  W = 256) -- 720 resolved brackets with raw pairs (run-1..6.txt), the
+  per-run medians and paired ratios, rule 1's regime clusters, rule 2's
+  regime-invariant slower sign (18/18), the mid-run state shifts and
+  their non-monotonicity, the spike list. This is the only measured
+  thing this tick.
+- IMPLEMENTED (code + tests): _self_test_counters_corpus in
+  scripts/gpu_regime_classify.py -- the corpus join the counters-route
+  row named for this slice ("it joins with the first claim-protocol
+  counters log (the measurement row's slice)"): clean parse pins per
+  run (cell, PAIRS=20, three usable blocks, zero exclusions, 6/6
+  verify ok=1), the cluster structure (max/min [[5],[1,2,3,4,6]], sum
+  [[1..6]]), run 5's anchor medians, the 18/18 band pin (all ratios
+  > 1.0 in 1.20..1.23), and the FULL publication reproducing
+  publication.txt byte-for-byte.
+- DECIDED (this row): the run protocol at its declared letter
+  (protocol.txt: one cell, 6 fresh processes, the instrument's fixed
+  ADR-0358 protocol, fixed op-order sum,max,min).
+- ACCEPTED DESIGN ONLY (unchanged): the claim protocol and its units;
+  the ADR-0360 narrowing and reopen condition; the second-leg letter;
+  ADR-0355's channel rule.
+- PROPOSED (unchanged): the Vulkan-provider timestamp route.
+- UNMEASURED, named so no reading upgrades: every other W
+  (32/64/128/512/1024) and shape 2 (n = 2^20) on this channel (R at
+  those grids is unmeasured too); the residual's internal decomposition
+  and the absolute clock domain; the state-shift cause and threshold;
+  op-order dependence on this channel; cross-day replication of this
+  cell; anything off M1 Max; the WGSL route's kernel time; the second
+  leg's EVALUATION (the next row); every workgroup-row question
+  (:arm/:unknown stay provisional :measured? false -- no :measured?
+  flag, :shapes value, selection answer or workgroup row moves this
+  tick; this channel can never move one).
+
+Gates (real runs, this tick):
+- gpu_regime_classify.py --self-test: TOTAL 2649 assertions passed /
+  0 failed (committed pin 2617/0; delta +32 = this slice's
+  _self_test_counters_corpus exactly).
+- Scoped GPU gate (8 GPU-owned namespaces, scratch runner
+  gpu_scoped_gate.cljk, never committed): GREEN 110 tests / 11445
+  assertions / 0 failures / 0 errors (glslang 16.6.0 real-spawn) --
+  re-verifies the pin the counters-route tick left UNRE-VERIFIED (that
+  tick's named gap); the diff touches no .cljk namespace.
+- FULL run-tests.cljk NOT RUN this slice (the diff touches no .cljk
+  namespace) -- documented red at base 'Could not find namespace:
+  kotoba.form' (ADR-0362), outside this diff. NO green suite claimed.
+- find docs -name '*.sh' -> 0 files (the no-POSIX-sh evidence rule).
+- BLOCKER-FIRST: zero open kotoba-lang/amu PRs with a hermes/ head
+  (checked at tick start and re-checked before the push).
+
+Evidence: docs/evidence/gpu/metal-counter-foldarms-20261025/
+{protocol.txt, run-1.txt..run-6.txt, publication.txt} + the ADR-0360
+measurement-row amendment. The build/run/analysis scripts, the
+metallibs and the instrument binary lived in Hermes scratch and were
+never staged (the harness-row precedent).
