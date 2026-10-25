@@ -76,6 +76,8 @@ jobs:
         run: python3 scripts/seed/check-io-read.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/io-read"
       - name: Static runtime durable files and sleep, wires 35 and 7 (arm64, native)
         run: python3 scripts/seed/check-durable-sleep.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/durable-sleep"
+      - name: Native private-store byte frame and refusals (arm64)
+        run: python3 scripts/seed/check-private-store.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/private-store"
       - name: Static runtime spawn, wire 20 (arm64, native)
         run: python3 scripts/seed/check-spawn-runtime.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/spawn"
       - name: Kototama bounded pure i64 AOT (arm64, native verdict)
@@ -146,6 +148,7 @@ jobs:
             ${{ runner.temp }}/boot/runtime-boundary/runtime-boundary.json
             ${{ runner.temp }}/boot/runtime-boundary/calls.json
             ${{ runner.temp }}/boot/calls.json
+            ${{ runner.temp }}/boot/F1.elf
             ${{ runner.temp }}/boot/S-x86_64.elf
             ${{ runner.temp }}/boot/R-x86_64.elf
             ${{ runner.temp }}/boot/selfhost-unity.kotoba
@@ -165,6 +168,8 @@ jobs:
           path: |
             ${{ runner.temp }}/runtime/io-read/io-read.json
             ${{ runner.temp }}/runtime/durable-sleep/durable-sleep.json
+            ${{ runner.temp }}/runtime/private-store/receipt.json
+            ${{ runner.temp }}/runtime/private-store/probe.elf
             ${{ runner.temp }}/runtime/spawn/spawn-runtime.json
           if-no-files-found: warn
   qualify-x86_64:
@@ -216,6 +221,8 @@ jobs:
         run: python3 scripts/seed/check-io-read.py --compiler "$RUNNER_TEMP/complete/F2.elf" --target x86_64-linux --output "$RUNNER_TEMP/runtime/io-read"
       - name: Static runtime durable files and sleep, wires 35 and 7 (x86_64, native)
         run: python3 scripts/seed/check-durable-sleep.py --compiler "$RUNNER_TEMP/complete/F2.elf" --target x86_64-linux --output "$RUNNER_TEMP/runtime/durable-sleep"
+      - name: Native private-store byte frame and refusals (x86_64)
+        run: python3 scripts/seed/check-private-store.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/runtime/private-store"
       - name: Static runtime spawn, wire 20 (x86_64, native)
         run: python3 scripts/seed/check-spawn-runtime.py --compiler "$RUNNER_TEMP/complete/F2.elf" --target x86_64-linux --output "$RUNNER_TEMP/runtime/spawn"
       - name: Native x86 typed live ABI and user-context admission
@@ -284,6 +291,8 @@ jobs:
             ${{ runner.temp }}/clock-entropy/enosys-filter.json
             ${{ runner.temp }}/runtime/io-read/io-read.json
             ${{ runner.temp }}/runtime/durable-sleep/durable-sleep.json
+            ${{ runner.temp }}/runtime/private-store/receipt.json
+            ${{ runner.temp }}/runtime/private-store/probe.elf
             ${{ runner.temp }}/runtime/spawn/spawn-runtime.json
             ${{ runner.temp }}/native-cdci/native-cdci.json
             ${{ runner.temp }}/native-cdci/calls.json
