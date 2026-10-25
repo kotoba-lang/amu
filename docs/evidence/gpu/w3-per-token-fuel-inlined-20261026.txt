@@ -81,12 +81,21 @@ MEASURED (runtime, no hardware; w3_fuel_run1.txt, COMPLETE, sha256
   through 8192 tokens (51882 bytes) at default budgets == HOST
   (1024/2048/4096/8192 all resolved; the boundary is past 8192 at this
   probe position, never pinned).
-NAMED, NOT VERIFIED (honest gap): probe run 2 was still in flight at
-this commit (run-time budget exhausted) -- the two-run byte-identity
-discipline covers run 1 + run 2 and run 2's comparison lands NEXT
-TICK before any merge-relevant claim; nothing in this row's claims
-rests on run 2. (The interrupted pre-tick's partial run was overwritten
-by this tick's complete run 1 -- named, not hidden.)
+RUN-2 BYTE-IDENTITY, VERIFIED NEXT TICK (2026-10-26, this addendum):
+probe run 2 re-taken from scratch and COMPLETE: w3_fuel_run2b.txt,
+149 lines, sha256
+568563542162070d9cdb7fef817ec1f8bfd5e7999fc9866207266ab149c99af3 --
+byte-identical to run 1 (sha256sum both, `diff -q` clean). The two-run
+byte-identity discipline now covers the fuel row's probe tables.
+NAMED, NOT HIDDEN: the in-flight run 2 of the original commit was
+interrupted mid-run (43 of 149 lines, cut off in the AFTER-boundary
+section at the 4096-token cell -- the 8192-token cell is the slow
+min-fuel search) and is NOT evidence; it is preserved verbatim as
+scratch/w3_fuel_run2_interrupted_20261026.txt (sha256 df38766a...) and
+was replaced by the complete run 2b above. No claim in this row ever
+rested on the interrupted run. This addendum tick changed NO code (this
+evidence file only), so no gate run is claimed for it; the scoped gate's
+GREEN runs above are the code row's, unchanged.
 ALSO NAMED (not re-run this tick, run-time budget): the scoped gate's
 two GREEN runs below stand; gpu_regime_classify.py --self-test (pin
 2649/0) and the FULL run-tests.cljk re-verify (RED AT BASE 'Could not
@@ -124,10 +133,11 @@ STATES:
   GREEN after.
 - DECIDED (contract unchanged): the inlining is an iteration/cost
   detail; the deleted defn-s' contracts survive verbatim inline.
-- MEASURED: the prims ground table + the run-1 tables above.
+- MEASURED: the prims ground table + the run-1/run-2 (byte-identical)
+  tables above.
 - ACCEPTED DESIGN ONLY (unchanged): ADR-0355's table rules, ADR-0358's
   key, ADR-0362's subgroup contract, the claim protocol.
-- UNMEASURED, named: run-2 byte-identity (next tick), the boundary past
+- UNMEASURED, named: the boundary past
   8192 tokens, the loop helper's state-dependent boundary (20000
   standalone / 10000 interleaved, never pinned), the document-vector
   element cap's exact value (unreachable here), trap spellings beyond
