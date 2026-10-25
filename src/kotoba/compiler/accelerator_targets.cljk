@@ -108,13 +108,23 @@
 ;; runtime this tick, docs/evidence/gpu/w3-split4-field-spans-20261026.txt.
 ;; Field counting is the raw '|'-split count (fields = pipes + 1, trailing empty
 ;; fields counted -- the host arm's str/split ... -1 reading).
+;; The per-field split walks PIPE POSITIONS, not bytes (the frame-budget row
+;; 2026-10-26): `string-index-of-from` finds each next '|', so the recursion
+;; is O(fields) frames instead of O(bytes) and the interpreter's 32-frame
+;; budget no longer traps full-length answers (measured before the fix on
+;; the kotoba runtime: 13 bytes resolve, 14 ("ab|1.2.3|4|1|x") and the
+;; 26-byte recorded answer trap host/stack-exhausted). The primitive
+;; replaces the byte scan -- the string-fold-ascii precedent above. Span
+;; and count contracts are unchanged: per-field spans (start..p at each
+;; '|', start..n at the last field) and the raw '|'-split count (fields =
+;; pipes + 1, trailing empty fields counted). `string-index-of-from` traps
+;; on from > n, so the walk keeps i <= n (i = p + 1 for a found p < n).
 #?(:kotoba
    (defn- split4 [s :string start :i64 i :i64 n :i64 k :i64 acc :document] :document
-     (cond (and (>= i n) (= k 3)) (document-vector-conj acc (document-string (string-substring s start n)))
-           (>= i n) (document-null)
-           (= (string-code-point-at s i) 124)
-           (split4 s (+ i 1) (+ i 1) n (+ k 1) (document-vector-conj acc (document-string (string-substring s start i))))
-           :else (split4 s start (+ i 1) n k acc))))
+     (let [p (string-index-of-from s "|" i)]
+       (cond (and (< p 0) (= k 3)) (document-vector-conj acc (document-string (string-substring s start n)))
+             (< p 0) (document-null)
+             :else (split4 s (+ p 1) (+ p 1) n (+ k 1) (document-vector-conj acc (document-string (string-substring s start p))))))))
 ;; digits? = ONE OR MORE ASCII digits in [i, n) -- the host re-matches
 ;; "[0-9]+" and an empty range holds no digits. The walk splits at the
 ;; first digit: digits? refuses the empty range, digits-all? walks the
@@ -153,15 +163,20 @@
 #?(:kotoba
    (defn- dot2 [s :string i :i64 n :i64] :i64
      (if (>= i n) n (if (= 46 (string-code-point-at s i)) (dot1 s (+ i 1) n) (dot2 s (+ i 1) n)))))
+;; the blank check (host str/blank?) -- ONE primitive, no walk (the
+;; frame-budget row 2026-10-26): (string-skip-blank s 0) answers the first
+;; non-C-isspace byte's index (n when every byte is a blank), so a blank
+;; string is skip >= n. The replaced blank-walk recursed per byte and
+;; trapped the budget on long device names. PINNED SEMANTIC CHANGE: the
+;; walk checked {32, 9, 10, 13} only, so a field of only \v(11)/\f(12)
+;; passed as non-blank (and parsed); string-skip-blank is C isspace (adds
+;; 11 and 12) and rejects it -- the HOST arm's str/blank? reading
+;; (Character/isWhitespace covers 11/12), so this moves the W3 arm TOWARD
+;; host parity. Non-ASCII whitespace stays the named residual (neither arm
+;; walks it here; the wire is ASCII).
 #?(:kotoba
    (defn- blank-str? [s :string] :bool
-     (blank-walk s 0 (string-byte-length s))))
-#?(:kotoba
-   (defn- blank-walk [s :string i :i64 n :i64] :bool
-     (if (>= i n)
-       true
-       (let [c (string-code-point-at s i)]
-         (if (or (= c 32) (= c 9) (= c 10) (= c 13)) (blank-walk s (+ i 1) n) false)))))
+     (>= (string-skip-blank s 0) (string-byte-length s))))
 ;; the case-insensitive substring search (the host str/includes? on the
 ;; lower-cased name part -- callers lower the haystack)
 #?(:kotoba

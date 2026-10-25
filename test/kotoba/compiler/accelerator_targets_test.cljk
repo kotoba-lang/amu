@@ -437,15 +437,22 @@
         hir (sema/analyze probe)
         sp (fn [s] (ir/execute hir 'sp [s]))]
     (is (string? arm) "the W3 split4 arm is extractable from the namespace source")
-    (is (str/includes? arm "string-substring s start i")
-        "each field is span start..i, not s 0 i")
-    (is (not (str/includes? arm "string-substring s 0 i"))
+    (is (str/includes? arm "string-index-of-from")
+        "the arm walks pipe POSITIONS through the language primitive (the frame-budget row)")
+    (is (not (str/includes? arm "string-code-point-at"))
+        "the per-byte scan is gone -- it trapped the 32-frame budget on full answers")
+    (is (str/includes? arm "string-substring s start p")
+        "each field is span start..p (the found pipe), not s 0 p")
+    (is (not (str/includes? arm "string-substring s 0"))
         "the prefix-span form is gone -- it answered ['a' 'a|b' 'a|b|c' 'a|b|c|d']")
     (testing "per-field spans"
       (is (= ["vector" [["string" "a"] ["string" "b"] ["string" "c"] ["string" "d"]]]
              (sp "a|b|c|d")))
       (is (= ["vector" [["string" "ab"] ["string" "1.2.3"] ["string" "4"] ["string" "1"]]]
-             (sp "ab|1.2.3|4|1"))))
+             (sp "ab|1.2.3|4|1")))
+      (is (= ["vector" [["string" "Apple M1 Max"] ["string" "1.3.357"] ["string" "1024"] ["string" "1"]]]
+             (sp "Apple M1 Max|1.3.357|1024|1"))
+          "the 26-byte recorded answer splits within the 32-frame budget (the byte walk trapped it)"))
     (testing "the field count is the raw '|'-split count (fields = pipes + 1)"
       (is (= ["null"] (sp "a|b")) "two fields is not four")
       (is (= ["null"] (sp "a|b|c")) "three fields is not four")
@@ -496,19 +503,23 @@
 
 (deftest w3-device-from-info-parses-like-the-host-arm
   ;; The `:kotoba` device-from-info end to end on the kotoba language
-  ;; runtime over SHORT answers -- NAMED CONSTRAINT, not an omission: the
-  ;; interpreter's 32-frame budget (frames-limit 32) traps the per-byte
-  ;; walks on full-length answers (measured this tick: 13 bytes resolve,
-  ;; 14 ("ab|1.2.3|4|1|x") and the recorded 26-byte M1 Max answer trap
-  ;; host/stack-exhausted) -- so these pins run short spellings and the
-  ;; full spellings are the host pins in
-  ;; info-answers-parse-into-measured-device-facts.
+  ;; runtime -- SHORT and FULL-LENGTH answers alike (the frame-budget row
+  ;; 2026-10-26: split4 walks pipe positions through `string-index-of-from`
+  ;; and blank-str? is one `string-skip-blank`, so the 26-byte recorded
+  ;; answer parses within the interpreter's standing 32-frame budget; the
+  ;; pre-row byte walks trapped it -- measured on this runtime,
+  ;; docs/evidence/gpu/w3-frame-budget-20261026.txt). The full spellings
+  ;; are ALSO host pins in info-answers-parse-into-measured-device-facts.
+  ;; NAMED RESIDUAL (not hidden): digits?/digits-all?/parse-walk still walk
+  ;; per digit, so an adversarial numeric field can still reach the budget
+  ;; (fail-closed: the trap answers, no wrong fact), and the trap boundary
+  ;; is run-order dependent (named in the evidence, never pinned here).
   (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
         arms (str/join "\n" (map #(extract-balanced src %)
                                  ["(defn- none?" "(defn- string->i64" "(defn- parse-walk"
                                   "(defn- split4" "(defn- digits?" "(defn- digits-all?"
                                   "(defn- version3?" "(defn- dot1" "(defn- dot2"
-                                  "(defn- blank-str?" "(defn- blank-walk"
+                                  "(defn- blank-str?"
                                   "(defn device-from-info"]))
         probe (str "(ns accelerator.targets.w3.dfi.probe (:export [main dfi]))\n"
                    "(defn main [] :i64 0)\n"
@@ -516,8 +527,7 @@
                    "(defn dfi [answer :document] :document (device-from-info answer))")
         hir (sema/analyze probe)
         dfi (fn [s] (ir/execute hir 'dfi [["string" s]]))
-        ;; host-side navigation of the returned document (no interpreter
-        ;; frames: extraction INSIDE the runtime traps at these lengths)
+        ;; host-side navigation of the returned document
         fields-of (fn [doc]
                     (into {} (map (fn [kv] [(get (get kv 0) 1) (get (get kv 1) 1)])
                                   (get doc 1))))]
@@ -531,10 +541,26 @@
         (is (= "4" (str (:max-workgroup-x m))) "the i64 field, whatever its host integer type")
         (is (true? (:unified-memory? m)))
         (is (true? (:measured? m)))))
+    (testing "full-length answers parse within the standing budget"
+      (let [m (fields-of (dfi "Apple M1 Max|1.3.357|1024|1"))]
+        (is (= "Apple M1 Max" (:vendor m)) "the recorded 26-byte M1 Max answer")
+        (is (= "1.3.357" (:api-version m)))
+        (is (= "1024" (str (:max-workgroup-x m))))
+        (is (true? (:unified-memory? m)))
+        (is (true? (:measured? m))))
+      (let [m (fields-of (dfi "Mali-G78 MP24|1.1.128|256|0"))]
+        (is (= "Mali-G78 MP24" (:vendor m)) "a 28-byte answer, unified false")
+        (is (false? (:unified-memory? m)))
+        (is (= "256" (str (:max-workgroup-x m))))))
     (testing "a non-blank one-byte device parses"
       (is (= "a" (:vendor (fields-of (dfi "a|1.2.3|4|1"))))))
+    (testing "a blank device field rejects (the host str/blank? reading)"
+      (doseq [s [" |1.2.3|4|1" "\t|1.2.3|4|1" "\u000b|1.2.3|4|1"]]
+        (is (= ["null"] (dfi s)) (str (pr-str s) " is a blank device name")))
+      (is (= "a\u000bb" (:vendor (fields-of (dfi "a\u000bb|1.2.3|4|1"))))
+          "a NON-blank field holding a \u000b byte still parses (only all-blank rejects)"))
     (testing "malformed answers parse to null, never a throw or a wrong fact"
       (doseq [s ["a|vulk|4|1"     "ab|1.2.3|0|1" "ab|1.2.3|4|2"
-                 "ab|1.2.3|4|1|"  "ab|1.2.3|4"   "ab|1..3|4|1"
+                 "ab|1.2.3|4|1|"  "ab|1.2.3|4|1|x" "ab|1.2.3|4" "ab|1..3|4|1"
                  "ab|1.2.3|x|1"]]
         (is (= ["null"] (dfi s)) (str (pr-str s) " must parse to no fact at all"))))))
