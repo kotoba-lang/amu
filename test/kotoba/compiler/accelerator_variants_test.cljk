@@ -1724,3 +1724,153 @@
           device {:subgroup-size 64 :subgroup-ops #{:basic :shuffle-relative}}]
       (is (= (variants/select-variant :amd kir :vulkan device)
              (variants/select-variant :amd kir :vulkan device))))))
+
+(deftest the-cuda-cell-entry-wiring-confirms-the-design-answer
+  ;; The wiring row (ADR-0361's 2026-10-25 sixth amendment): the entry
+  ;; contract's flip/confirm application LANDS. The committed entry
+  ;; census (docs/evidence/gpu/cuda-cell-selection-surface-20261025.txt)
+  ;; is 10 CONFIRMS (the unique winner is the design answer,
+  ;; :warp-shuffle-reduce) and 2 REFUSEs (W = 64, both shapes), ZERO
+  ;; flips -- so the wiring attaches 10 confirming :measured-cell records
+  ;; with NO answer text change anywhere, W = 64 keeps :measured? false
+  ;; and no record. Records are DEVICE-SCOPED (xavier sm_72 -- the uB5G
+  ;; name fragment AND the reported compute capability 7.2, both keys,
+  ;; fail closed) and CHANNEL-SCOPED (the CUDA route only). All of it
+  ;; cites committed measurements (run 1 of the two adopted sessions) and
+  ;; re-measures nothing.
+  (let [tested-class {:name "NVIDIA Jetson AGX Xavier" :compute-capability 7.2}
+        expected-record (fn [wg]
+                          {:device "xavier sm_72"
+                           :channel :native-cuda
+                           :route :cuda-v1
+                           :workgroup-size wg
+                           :operators #{:sum :max :min}
+                           :shapes [1000003 1048576]
+                           :evidence ["docs/evidence/gpu/cuda-claimprotocol-run1-20261025"]})]
+    (testing "the entry table is the entry census at its data shape"
+      (is (= #{32 128 256 512 1024} (set (keys variants/cuda-cell-entries))))
+      (is (not (contains? variants/cuda-cell-entries 64))
+          "W = 64 refused in both shapes -- no group entered, no record")
+      (doseq [[wg entry] variants/cuda-cell-entries]
+        (is (= :warp-shuffle-reduce (:winner entry))
+            (str "W=" wg " winner is the design answer -- CONFIRMS, never flips"))
+        (is (= [1000003 1048576] (:shapes entry))
+            (str "W=" wg " names the two qualifying shapes only"))
+        (is (= ["docs/evidence/gpu/cuda-claimprotocol-run1-20261025"] (:evidence entry))
+            (str "W=" wg " evidence is the group's own session's runs; run 2 is a"
+                 " same-day second session and is flip-note prose only"))))
+    (testing "the confirming cells carry the record and freeze the answer text"
+      (doseq [target [:cuda :cuda-v1]
+              wg [32 128 256 512 1024]
+              operator [:sum :max :min]]
+        (let [kir (accelerator/kernel (str "reduce_" (name operator) "_f32")
+                                      :reduce operator {:workgroup-size wg})
+              answer (variants/select-variant :nvidia kir target tested-class)]
+          (is (= :warp-shuffle-reduce (:variant answer))
+              (str "W=" wg " " target " " operator " keeps the design answer"))
+          (is (true? (:measured? answer))
+              (str "W=" wg " " target " " operator " must be confirmed"))
+          (is (= (expected-record wg) (:measured-cell answer))
+              (str "W=" wg " " target " " operator " record"))
+          (is (= (get variants/variant-bases :warp-shuffle-reduce) (:basis answer))
+              (str "W=" wg " " target " " operator
+                   " confirm freezes answer text -- no note appended to :basis"))))
+      (testing "the uB5G name keys all count: :device, :name, :vendor"
+        (doseq [device [{:device "Xavier" :compute-capability 7.2}
+                        {:vendor "Xavier" :compute-capability 7.2}]]
+          (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                        {:workgroup-size 256})
+                answer (variants/select-variant :nvidia kir :cuda-v1 device)]
+            (is (= :warp-shuffle-reduce (:variant answer)))
+            (is (= (expected-record 256) (:measured-cell answer)))))))
+    (testing "a refused group keeps the design answer, :measured? false, no record"
+      ;; W = 64's groups REFUSED (the warp-shuffle/subgroup cell straddles
+      ;; -- no winner exists) and it is the width's ONLY state: the valid
+      ;; rung-1 width band is exactly 32/64/128/256/512/1024 (a positive
+      ;; power of two, the warp floor .. max-workgroup-size), and the
+      ;; table carries every one of them but 64.
+      (is (= #{32 64 128 256 512 1024}
+             (into #{64} (set (keys variants/cuda-cell-entries))))
+          "the table has no hole but the W = 64 refusal")
+      (doseq [target [:cuda :cuda-v1]]
+        (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                      {:workgroup-size 64})
+              answer (variants/select-variant :nvidia kir target tested-class)]
+          (is (= :warp-shuffle-reduce (:variant answer)))
+          (is (false? (:measured? answer))
+              (str "W=64 " target " must keep the honesty lock"))
+          (is (nil? (:measured-cell answer))
+              (str "W=64 " target " carries no record")))))
+    (testing "the class keys fail closed: the fragment AND the reported 7.2, both"
+      ;; Each case answers the design ladder (rung 1 where its gate holds)
+      ;; and attaches NO record: one key missing is not the tested class.
+      (doseq [[device expected]
+              [[{:name "NVIDIA GA10B" :compute-capability 7.2} :warp-shuffle-reduce]
+               [{:compute-capability 7.2} :warp-shuffle-reduce]
+               [{:name "NVIDIA Jetson AGX Xavier" :compute-capability 7.0} :warp-shuffle-reduce]
+               [{:name "NVIDIA Jetson AGX Xavier" :compute-capability 7.5} :warp-shuffle-reduce]
+               [{:name "NVIDIA Jetson AGX Xavier" :compute-capability "7.2"} :baseline]
+               [{:name "NVIDIA Jetson AGX Xavier"} :baseline]]]
+        (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                      {:workgroup-size 256})
+              answer (variants/select-variant :nvidia kir :cuda-v1 device)]
+          (is (= expected (:variant answer))
+              (str (pr-str device) " design answer"))
+          (is (false? (:measured? answer))
+              (str (pr-str device) " is not the tested device class"))
+          (is (nil? (:measured-cell answer))
+              (str (pr-str device) " carries no record")))))
+    (testing "rung-2 answer cells can never attach a record"
+      ;; A descriptor reporting NO compute capability is not the tested
+      ;; class (it reports 7.2 by definition), whatever else it names.
+      (let [capable {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}
+            device (assoc capable :name "NVIDIA Jetson AGX Xavier")
+            kir (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                    {:workgroup-size 256})
+            answer (variants/select-variant :nvidia kir :cuda-v1 device)]
+        (is (= :subgroup-reduce (:variant answer)))
+        (is (false? (:measured? answer)))
+        (is (nil? (:measured-cell answer)))))
+    (testing "a CUDA record never acts on another route or another shape (contract point 5)"
+      (let [capable {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}
+            device (merge capable tested-class)
+            kir (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                    {:workgroup-size 256})
+            ewise (accelerator/kernel "ewise_add_f32" :ewise :add
+                                      {:workgroup-size 256})]
+        (doseq [[target expected] [[:vulkan :subgroup-reduce]
+                                   [:glsl-v1 :subgroup-reduce]
+                                   [:webgpu :subgroup-reduce]
+                                   [:wgsl-v1 :subgroup-reduce]
+                                   [:metal :baseline]
+                                   [:msl-v1 :baseline]]]
+          (let [answer (variants/select-variant :nvidia kir target device)]
+            (is (= expected (:variant answer)))
+            (is (false? (:measured? answer))
+                (str target " is not the measured channel's route"))
+            (is (nil? (:measured-cell answer))
+                (str target " carries no record"))))
+        (is (= :baseline (:variant (variants/select-variant :nvidia ewise :cuda-v1 tested-class))))
+        (is (nil? (:measured-cell (variants/select-variant :nvidia ewise :cuda-v1 tested-class)))
+            "the reduce shape is the unit -- no record on a non-reduce kernel")))
+    (testing "the flip arm answers the group's winner (synthetic entry -- ZERO real flips)"
+      ;; Contract point 4's second half, exercised by redefining one
+      ;; group's winner: a differing winner FLIPS the cell -- the answer
+      ;; becomes the winner, the record rides it, and the basis is the
+      ;; winner's design rationale plus the flip note. No committed entry
+      ;; carries a differing winner, so no production answer is flipped.
+      (with-redefs [variants/cuda-cell-entries
+                    (assoc variants/cuda-cell-entries 256
+                           {:winner :subgroup-reduce
+                            :shapes [1000003 1048576]
+                            :evidence ["docs/evidence/gpu/cuda-claimprotocol-run1-20261025"]})]
+        (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                      {:workgroup-size 256})
+              answer (variants/select-variant :nvidia kir :cuda-v1 tested-class)]
+          (is (= :subgroup-reduce (:variant answer)))
+          (is (true? (:measured? answer)))
+          (is (= (expected-record 256) (:measured-cell answer)))
+          (is (str/starts-with? (:basis answer)
+                                (get variants/variant-bases :subgroup-reduce)))
+          (is (str/includes? (:basis answer)
+                             "MEASURED FLIP (entry contract, ADR-0361 fifth amendment)")))))))

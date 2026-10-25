@@ -52,7 +52,14 @@
   the :simdgroup-reduce answer at W = 64/128/256/512/1024 (this
   variant's OWN
   flip cells, measured faster than :baseline 2026-10-23/24,
-  apple-simdgroup-flip-note).
+  apple-simdgroup-flip-note),
+  and the CUDA route's entry-contract cells (ADR-0361's 2026-10-25 sixth
+  amendment, JUN-57): the :warp-shuffle-reduce answers of the tested
+  device class (xavier sm_72 -- the uB5G name fragment AND a reported
+  compute capability 7.2) at W = 32/128/256/512/1024, where the committed
+  cell census's unique winner CONFIRMS the design answer (both clocks,
+  both measured shapes; W = 64's groups refused -- the straddle -- and
+  keep the lock).
   Those answers carry :measured? true and a
   :measured-cell record naming the tested device class, the channel and the
   evidence. The
@@ -964,6 +971,164 @@
   same-day re-session record stays named in its own paragraph only and
   in NO basis evidence list (the rule above, unchanged).")
 
+(def ^:private cuda-measured-fragment
+  "The measured-device fragment of the ONE device where the NVIDIA CUDA
+  route has hardware measurements: the fleet's CUDA host \"xavier\"
+  (Jetson AGX Xavier, L4T R35.4.1) -- the same uB5G scoping key the
+  workgroup rows use (kotoba.compiler.accelerator-targets
+  :measured-device \"xavier\"). Evidence about a NAMED device acts on
+  that device's name -- case-insensitively, per name part -- and never
+  past it (the uB5G idiom). The tested device CLASS is \"xavier sm_72\":
+  the name fragment AND the reported compute capability 7.2 are both
+  keys (the Apple flip contract's fragment + reported-subgroup-size
+  pairing at its letter), and the record's :device names the class as
+  the entry contract spells it."
+  "xavier")
+
+(def ^:private cuda-measured-compute-capability
+  "The reported compute capability of the tested device class: 7.2
+  (sm_72 -- the -arch the corpora compiled with and the capability the
+  two adopted sessions ran on). The measurement contract keys the entry
+  to the tested device's name AND its reported compute capability: a
+  descriptor reporting anything else (7.0, 7.5, a string, nothing) is
+  not the tested device class and no record attaches -- fail closed,
+  exactly like the Apple contract's subgroup-size key."
+  7.2)
+
+(def ^:private cuda-measured-channel
+  "The channel the contract-satisfying measurements ran through: the
+  CUDA paired-timing instrument (scripts/gpu-cuda-reduce-timing.cu, the
+  ADR-0358 paired-statistic instrument class) dispatching the emitters'
+  own CUDA bytes natively on the tested host under nvcc 11.4 -- one
+  fresh process per pair block, PAIRS=20 interleaved, WARMUP=2 per arm,
+  AB/BA alternating, gpu_ns CUDA-event + host_ns CLOCK_MONOTONIC,
+  untimed verified read-back per arm."
+  :native-cuda)
+
+(def cuda-cell-entries
+  "The CUDA route's entered cell groups under the entry contract
+  (ADR-0361's 2026-10-25 fifth amendment): entry is per (W, shape)
+  GROUP of cells across pair types, arm v entering iff for every other
+  arm u the (v, u) pair cell is REGIME-INVARIANT with side \"v
+  faster\" in BOTH clocks (rule 2 at the cell's letter, unique-winner +
+  both-clocks-or-refuse); anything else REFUSES and keeps the design
+  ladder's answer with no record. This table is the ENTRY CENSUS over
+  the two committed adopted sessions
+  (docs/evidence/gpu/cuda-cell-census-run{1,2}-20261025/census.txt,
+  re-derived byte-identically from the committed measure-logs): winner
+  = :warp-shuffle-reduce (the design answer) at 10 of 12 (W, shape)
+  groups -- W = 32/128/256/512/1024 x n = 1000003/1048576 -- both
+  metrics, identically in both sessions; REFUSE at W = 64 both shapes
+  (the warp-shuffle/subgroup cell straddles in both metrics and both
+  sessions -- no winner exists); ZERO flips. Each map value is ONE
+  entered (W, shape) group per listed shape: :winner is the group's
+  unique winner (a winner equal to the design answer CONFIRMS -- answer
+  text unchanged, :measured? true with the record; a differing winner
+  FLIPS the cell -- no entry here carries one, so nothing flips), and
+  :shapes is QUALIFYING shapes only (a shape whose group refused is not
+  listed and extends no record -- W = 64 has no entry at all).
+  :evidence is the contract's own record kinds: the group's own
+  session's runs (run 1, the adopted session each group's entry was
+  derived from) plus sanctioned cross-day replications (none exist yet
+  -- run 2 is a SAME-DAY second session and is flip-note PROSE ONLY,
+  ADR-0373's naming rule by citation: it corroborates the 12/12
+  cross-session identity and names no record kind here). The confirm
+  note lives in this docstring, the ADR-0361 amendment and the evidence
+  record (docs/evidence/gpu/cuda-cell-entry-wiring-20261025.txt) -- the
+  entry contract freezes answer text on confirm, so NO note is appended
+  to :basis anywhere; variant-bases' design-assumption prose is design
+  rationale and is not rewritten by a confirm. Scope (contract point 5):
+  select-variant answer cells of the CUDA route ONLY, sign claims stay
+  CHANNEL-SCOPED and DEVICE-SCOPED, no workgroup row answers or moves,
+  and rung-2 answer cells (:subgroup-reduce where the warp gate does not
+  reach -- a descriptor reporting NO compute capability) can never
+  attach a record: the tested class reports sm_72 by definition."
+  {32 {:winner :warp-shuffle-reduce
+       :shapes [1000003 1048576]
+       :evidence ["docs/evidence/gpu/cuda-claimprotocol-run1-20261025"]}
+   128 {:winner :warp-shuffle-reduce
+        :shapes [1000003 1048576]
+        :evidence ["docs/evidence/gpu/cuda-claimprotocol-run1-20261025"]}
+   256 {:winner :warp-shuffle-reduce
+        :shapes [1000003 1048576]
+        :evidence ["docs/evidence/gpu/cuda-claimprotocol-run1-20261025"]}
+   512 {:winner :warp-shuffle-reduce
+        :shapes [1000003 1048576]
+        :evidence ["docs/evidence/gpu/cuda-claimprotocol-run1-20261025"]}
+   1024 {:winner :warp-shuffle-reduce
+         :shapes [1000003 1048576]
+         :evidence ["docs/evidence/gpu/cuda-claimprotocol-run1-20261025"]}})
+
+(def ^:private cuda-measured-device-class
+  "The tested device class as the entry contract's record shape (3)
+  spells it in a record's :device: \"xavier sm_72\" -- the uB5G name
+  fragment AND the reported compute capability named together, so the
+  record names the class and no claim extends past either key. NAMED,
+  NOT HIDDEN: the fragment \"xavier\" is coarse on purpose (the same
+  key kotoba.compiler.accelerator-targets' NVIDIA workgroup row uses,
+  :measured-device \"xavier\") and matches any Xavier-family name --
+  a Jetson Xavier NX descriptor (also sm_72) would read as the tested
+  class under these two keys; a narrower key is its own later row."
+  "xavier sm_72")
+
+(def ^:private cuda-flip-note
+  "The note a FLIPPED CUDA-route cell carries in its :basis -- entry
+  contract point 4's flip arm. No entry in cuda-cell-entries carries a
+  differing winner today (ZERO flips in the entry census), so no answer
+  carries this note yet; it exists so the flip arm is implemented, not
+  invented at first need. It names the flip's ground (the cell group's
+  unique winner under the entry contract) and its scope (xavier sm_72,
+  the CUDA route, the record's shapes and operators -- nothing wider)."
+  "MEASURED FLIP (entry contract, ADR-0361 fifth amendment): the
+  committed cell census's unique winner at this (W, shape) group on the
+  tested device class (xavier sm_72, CUDA paired-timing channel) is the
+  variant this cell answers -- REGIME-INVARIANT faster than every rival
+  in BOTH clocks (rule 2 at the cell unit's letter) -- over the measured
+  shapes and operators named in the :measured-cell record this answer
+  carries. DEVICE-SCOPED and CHANNEL-SCOPED: xavier sm_72 on the CUDA
+  route only; no workgroup row answers or moves (ADR-0355).")
+
+(defn- cuda-entry-cell
+  "The entry contract (ADR-0361's 2026-10-25 fifth amendment) applied to
+  ONE CUDA-route answer cell of the design ladder. Answers the group's
+  entry as {:outcome :confirm|:flip :variant winner :record {...}} when
+  a cuda-cell-entries group keys this cell, and nil otherwise -- REFUSE
+  at its letter: the design ladder's answer stands with no record. The
+  keys are the tested device class (the uB5G name fragment AND the
+  reported compute capability 7.2 -- both, fail closed), the measured
+  channel's route (:cuda-v1 under either spelling; a CUDA measurement
+  never acts on an MSL/WGSL/GLSL cell -- contract point 5), the reduce
+  shape selected as a whole (one of :sum/:max/:min, no per-operator
+  entry), and a workgroup width whose group ENTERED (W = 64's groups
+  refused -- the straddle has no winner -- and the valid rung-1 width
+  band is exactly 32/64/128/256/512/1024, so 64 is the band's only
+  non-entry). Rung-2 answer cells (:subgroup-reduce where the
+  warp gate does not reach -- a descriptor reporting NO compute
+  capability) can never attach a record: the tested class reports 7.2
+  by definition. :confirm means the group's unique winner EQUALS the
+  design answer -- answer text is frozen (contract point 4: no note is
+  appended to :basis anywhere), :measured? goes true with the record;
+  :flip means a differing winner -- the cell answers the winner with the
+  record and cuda-flip-note (no entry here carries one today)."
+  [dev route kir design-variant]
+  (when (and (= :cuda-v1 route)
+             (= :warp-shuffle-reduce design-variant)
+             (device-name-carries? dev cuda-measured-fragment)
+             (= cuda-measured-compute-capability (:compute-capability dev))
+             (= :reduce (:kernel/op kir))
+             (contains? #{:sum :max :min} (:kernel/operator kir)))
+    (when-let [entry (get cuda-cell-entries (:kernel/workgroup-size kir))]
+      (let [winner (:winner entry)]
+        {:outcome (if (= winner design-variant) :confirm :flip)
+         :variant winner
+         :record {:device cuda-measured-device-class
+                  :channel cuda-measured-channel
+                  :route :cuda-v1
+                  :workgroup-size (:kernel/workgroup-size kir)
+                  :operators #{:sum :max :min}
+                  :shapes (:shapes entry)
+                  :evidence (:evidence entry)}}))))
+
 (def variant-bases
   "Why each variant exists. Design rationale, not measurement evidence."
   {:baseline
@@ -1091,7 +1256,10 @@
   The rows (ADR-0356 as amended by ADR-0357; every answer carries
   :measured? false except the measured cells of the Apple row's narrowing
   on the MSL route -- ADR-0360 question (1)'s decision, tested in
-  the-measured-cells-flip-the-honesty-lock):
+  the-measured-cells-flip-the-honesty-lock -- and the CUDA route's
+  entry-contract cells on the tested device class (xavier sm_72, W =
+  32/128/256/512/1024, ADR-0361's sixth amendment, tested in
+  the-cuda-cell-entry-wiring-confirms-the-design-answer)):
 
   - :warp-shuffle-reduce -- NVIDIA reduction kernels over :sum/:max/:min
     whose workgroup reaches one full warp, on the CUDA route (:cuda or
@@ -1470,6 +1638,19 @@
                    :subgroup-reduce
 
                    :else :baseline)
+         ;; The wiring row (the entry contract's application, ADR-0361's
+         ;; fifth amendment): a published cell verdict enters the
+         ;; selection surface here and only here. cuda-entry-cell keys
+         ;; the tested device class (xavier sm_72 -- name fragment AND
+         ;; reported 7.2), the CUDA route, the reduce shape whole, and an
+         ;; ENTERED (W, shape) group; everything else is REFUSE and this
+         ;; binding is nil (W = 64's straddle groups, any other device
+         ;; class, any other route, rung-2 answer cells -- the design
+         ;; ladder's answer stands with no record). :confirm freezes the
+         ;; answer text and attaches the record; :flip answers the
+         ;; group's winner (no entry carries a differing winner today).
+         cuda-entry (cuda-entry-cell dev route kir variant)
+         entry-flip? (= :flip (:outcome cuda-entry))
          ;; The carve-out's own note: it attaches only where rung 1's gate
          ;; held and the measured class refused the row -- the row's own
          ;; demotion, never a fail-closed :baseline, and never at this
@@ -1512,6 +1693,7 @@
                            (:kernel/workgroup-size kir))})
          measured-cell
          (or simd-measured-cell
+             (:record cuda-entry)
              (when (and narrowed?
                         (= :msl-v1 route)
                         (= apple-measured-subgroup-size (:subgroup-size dev))
@@ -1525,9 +1707,16 @@
                 :operators #{:sum :max :min}
                 :shapes apple-measured-shapes
                 :evidence apple-measured-evidence}))]
-    (cond-> {:variant variant
+    (cond-> {:variant (if entry-flip? (:variant cuda-entry) variant)
              :measured? (some? measured-cell)
-             :basis (cond simd-flip?
+             :basis (cond entry-flip?
+                          ;; the flip arm (contract point 4): the cell
+                          ;; answers the group's winner, and its basis is
+                          ;; the winner's design rationale plus the flip
+                          ;; note naming the measurement that chose it.
+                          (str (get variant-bases (:variant cuda-entry)) "\n  "
+                               cuda-flip-note)
+                          simd-flip?
                           (str (get variant-bases :simdgroup-reduce) "\n  "
                                apple-simdgroup-flip-note)
                           narrowed?

@@ -775,3 +775,64 @@ cell verdict on non-xavier hardware; run 3+ / cross-day
 replication; the :sum ordering at W = 64 on any device;
 operator-aware selection (PROPOSED, its own row). Record:
 `docs/evidence/gpu/cuda-cell-selection-surface-20261025.txt`.
+
+## Amendment (2026-10-25, sixth the same day: the entry contract's
+WIRING row LANDS -- the CUDA flip/confirm predicate + record data,
+pinned by its tests)
+
+IMPLEMENTED (JUN-57, the implementation row the fifth amendment
+named): the entry contract is now APPLIED in
+`kotoba.compiler.accelerator-variants`. NO hardware ran and nothing
+is re-measured -- the table's ground is the committed cell censuses of
+the two adopted sessions.
+
+**What landed.** (1) `cuda-cell-entries` (public data): the entry
+census as a table -- the five entered widths W =
+32/128/256/512/1024, each `{:winner :warp-shuffle-reduce, :shapes
+[1000003 1048576], :evidence [run 1]}`; W = 64 absent (its groups
+refused). The valid rung-1 width band is exactly
+32/64/128/256/512/1024 (validate!'s rule), so 64 is the band's only
+non-entry. (2) `cuda-entry-cell` (private predicate): keys the tested
+device class (the uB5G name fragment "xavier" AND a reported compute
+capability exactly 7.2 -- both, fail closed), the measured channel's
+route (`:cuda-v1`, either spelling), the reduce shape whole, an
+entered width, and the rung-1 design answer (so a rung-2 answer cell
+can never attach a record -- the tested class reports 7.2 by
+definition); answers `:confirm` (winner equals the design answer --
+answer text frozen, no note in `:basis`, `:measured?` true with the
+record), `:flip` (a differing winner -- the cell answers the winner
+with the record and `cuda-flip-note`), or refuse (nil). (3) The
+record (point 3, shape unchanged): `:device "xavier sm_72"`,
+`:channel :native-cuda`, `:route :cuda-v1`, `:workgroup-size`,
+`:operators #{:sum :max :min}` whole, `:shapes` qualifying-only,
+`:evidence` the group's own session's runs + sanctioned cross-day
+replications (none exist -- run 2 is same-day prose only). (4)
+`select-variant` consumes the record through the `:measured-cell` /
+`:measured?` surface exactly as the Apple flip records do.
+
+**The projection realized.** The 10 confirming (W, shape) groups
+attach confirming records at W = 32/128/256/512/1024 on the tested
+class on the CUDA route with NO answer text change anywhere; W = 64
+keeps `:measured?` false and no record; ZERO flips. NAMED, NOT
+HIDDEN: the 10 groups realize as FIVE per-W records naming both
+shapes each -- the record keys carry no shape axis and the selection
+query has none, so each (W, shape) group's record rides its W with
+the qualifying shapes listed.
+
+**States.** IMPLEMENTED (code + tests, +1 test +194 assertions over
+the scoped-gate pin): the wiring in full, BOTH arms. MEASURED:
+nothing new (consumed, not re-measured). ACCEPTED DESIGN ONLY: the
+claim-protocol adoption, the cell unit + census machinery, the entry
+contract (this ADR's earlier 2026-10-25 amendments), ADR-0358,
+ADR-0373. UNMEASURED, named: every workgroup row (`:arm`/`:unknown`
+stay provisional `:measured? false`); any cell verdict on non-xavier
+hardware; run 3+ / cross-day replication; the :sum ordering at W = 64
+on any device; operator-aware selection (PROPOSED, its own row); the
+flip arm on real data (ZERO real flips -- its test is synthetic); the
+name-fragment key's coarseness (a Jetson Xavier NX descriptor, also
+sm_72, reads as the tested class under "xavier" + 7.2; a narrower key
+is its own later row). Gates: scoped GPU gate GREEN 107 tests / 11240
+assertions / 0 failures / 0 errors; FULL `run-tests.cljk` RED at base
+(`Could not find namespace: kotoba.form`, ADR-0362, outside this
+diff); `gpu_regime_classify.py --self-test` 2536/0 (regression pin).
+Record: `docs/evidence/gpu/cuda-cell-entry-wiring-20261025.txt`.
