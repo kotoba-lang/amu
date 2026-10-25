@@ -30,3 +30,7 @@ No C loader, JVM, Node or host implementation is used for execution.
 
 These are local candidate gates. Default bootstrap artifacts, release/CDCI
 selection and x86 host execution are not promoted by this change.
+
+The later [AArch64 scalar-depth candidate](native-scalar-depth.md) keeps the
+same filesystem lock contract. Its fresh lock result is recorded alongside
+the scope-boundary receipt.

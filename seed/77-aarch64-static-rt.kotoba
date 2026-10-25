@@ -46,6 +46,8 @@
 (def KXRT-ITEMS 268435456)
 (def KXRT-VECTOR-MAX 33554432)
 (def KXRT-VALUE-MAX 8388608)
+;; 1,024 nested EVM frames plus frame/core scalar regions.
+(def KXRT-SCOPES 4096)
 
 ;; ---- system calls ----
 (defn- kxrt-exit [code :i64] :i64 (kxrt-syscall 94 code 0 0 0 0 0))
@@ -312,16 +314,22 @@
 
 ;; ---- structural scalar arena scopes: five checkpoints, bounded LIFO ----
 (defn- kxrt-arena-mark [depth :i64] :i64 (+ (kxrt-gl 672) (* depth 64)))
+(defn- kxrt-scope-depth [] :i64
+ (let [b (kxrt-gl 200)
+       a (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b 0 0x4152545f4558454b 8) 0x646e696b3a7b2050 8) 0x7465676475623a20 8) 0x6e6f736165723a20 8) 0x7465676475623a20 8) 0x2f 1)
+       c (kxrt-w b (kxrt-w b a 0x65642d65706f6373 8) 0x0a7d687470 5)
+       z (kxrt-err-text b c)] (kxrt-fail)))
 (defn- kxrt-slot-224 [c :i64] :i64
   (let [d (kxrt-gl 680)]
-    (if (or (not= (kxrt-load64 c) 11) (< d 0) (>= d 256)) (kxrt-fail)
+    (if (or (not= (kxrt-load64 c) 11) (< d 0)) (kxrt-fail)
+     (if (>= d KXRT-SCOPES) (kxrt-scope-depth)
       (let [p (kxrt-arena-mark d)
             a (kxrt-store64 p (kxrt-gl 8)) b (kxrt-store64 (+ p 8) (kxrt-gl 32))
             e (kxrt-store64 (+ p 16) (kxrt-gl 48)) f (kxrt-store64 (+ p 24) (kxrt-gl 64))
-            g (kxrt-store64 (+ p 32) (kxrt-gl 704)) h (kxrt-gs 680 (inc d))] 0))))
+            g (kxrt-store64 (+ p 32) (kxrt-gl 704)) h (kxrt-gs 680 (inc d))] 0)))))
 (defn- kxrt-slot-232 [c :i64] :i64
   (let [d (kxrt-gl 680)]
-    (if (or (not= (kxrt-load64 c) 11) (<= d 0) (> d 256)) (kxrt-fail)
+    (if (or (not= (kxrt-load64 c) 11) (<= d 0) (> d KXRT-SCOPES)) (kxrt-fail)
       (let [p (kxrt-arena-mark (dec d))
             a (kxrt-load64 p) b (kxrt-load64 (+ p 8)) e (kxrt-load64 (+ p 16))
             f (kxrt-load64 (+ p 24)) g (kxrt-load64 (+ p 32))]
@@ -1756,7 +1764,7 @@
         m6 (kxrt-gs 200 (kxrt-map 16384)) m7 (kxrt-gs 208 (kxrt-map 8192))
         m8 (kxrt-gs 120 (kxrt-map 4096)) m9 (kxrt-gs 136 (kxrt-map 65536)) m10 (kxrt-gs 184 (kxrt-map 4096))
         m11 (kxrt-gs 232 (kxrt-map KXRT-VALUE-MAX)) fd (kxrt-gs 112 -1)
-        m12 (kxrt-gs 672 (kxrt-map 16384)) m13 (kxrt-gs 688 (kxrt-map (* 8 KXRT-VECTORS)))
+        m12 (kxrt-gs 672 (kxrt-map (* 64 KXRT-SCOPES))) m13 (kxrt-gs 688 (kxrt-map (* 8 KXRT-VECTORS)))
         m14 (kxrt-gs 696 (kxrt-map (* 16 KXRT-VECTORS))) m15 (kxrt-gs 736 (kxrt-map 98304))
         cw (kxrt-syscall 17 (kxrt-gl 184) 4096 0 0 0 0)
         cl (kxrt-gs 192 (if (and (> cw 1) (= (kxrt-load8 (kxrt-gl 184)) 47)) (kxrt-cstrlen (kxrt-gl 184)) 0))
@@ -2282,7 +2290,7 @@
         m6 (kxrt-gs 200 (kxrt-map 16384)) m7 (kxrt-gs 208 (kxrt-map 8192))
         m8 (kxrt-gs 120 (kxrt-map 4096)) m9 (kxrt-gs 136 (kxrt-map 65536)) m10 (kxrt-gs 184 (kxrt-map 4096))
         m11 (kxrt-gs 232 (kxrt-map KXRT-VALUE-MAX)) fd (kxrt-gs 112 -1)
-        m12 (kxrt-gs 672 (kxrt-map 16384)) m13 (kxrt-gs 688 (kxrt-map (* 8 KXRT-VECTORS)))
+        m12 (kxrt-gs 672 (kxrt-map (* 64 KXRT-SCOPES))) m13 (kxrt-gs 688 (kxrt-map (* 8 KXRT-VECTORS)))
         m14 (kxrt-gs 696 (kxrt-map (* 16 KXRT-VECTORS))) m15 (kxrt-gs 736 (kxrt-map 98304))
         v (kxrt-store64 ctx 11)
         d0 (kxrt-store64 (+ ctx 288) (+ (kxrt-g) 8)) d1 (kxrt-store64 (+ ctx 296) (kxrt-gl 0))
