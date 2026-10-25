@@ -38,5 +38,30 @@ LLDB observed wire 35, kind 9 -> 9, and the exact FS2 A request
 as a pair-backed string and requires a byte-vector handle in its response.
 Returning the D/A pair response reached `vector-i64-from-bytes`, which trapped
 because it received a pair handle. A correctly typed, bounded vector response
-is the next diagnostic gate. Full Mac F1=F2=F3, Linux-free production,
-AIUEOS build/boot, and release qualification remain open.
+was then added in the Kotoba packager. The Amu-built packager source SHA-256
+for the next diagnostic was
+`86bfb20c647675a7936a319c90d9ff855b72c8ef9026b9e3dbdef62d58ed98af`;
+its ELF SHA-256 was
+`a0fcf17286a7215a91678cc93baafcd4bbe8d29a837ca26fdcde86777183a3cb`.
+The [kind 9 instruction derivation](../mac-fs2-bc-20261026/fs2-kind9.derivation.s)
+is a review record, not a build input.
+
+With the new kind 9 response, the signed Mac producer extracted `main` from
+the F1 container in 0.068 seconds, returning 3,250,952 raw code bytes with
+SHA-256
+`48f724c12ece45c9ba57550932536533a2e340cea27812fb25251678cac97fdd`.
+The same unity source compiled independently under the pinned Linux ARM root
+produced a byte-identical container (`d6612951...46c4`).
+
+The extracted F1 code was packaged into a separate signed Mac Mach-O
+(SHA-256 `757f63a6b29e4c5abf9b39aabadc8b6d1484393759018363a4c3ef6dff020c9b`).
+Its passwordless single-file gate passed. F1 then ran on Mac and compiled
+the same 47-module unity source to F2 in 96.438 seconds: exit 0, 3,250,979
+bytes, SHA-256 `d6612951d7bb5dfdfe4814a26aae0ad8775dde207f80289de0e39b3ac44046c4`.
+F1 and F2 containers were byte-identical. Mac `extract-native` on F2 returned
+3,250,952 raw bytes, byte-identical to F1 raw.
+
+This proves Mac execution of F1 and F1=F2 container/code parity for the pinned
+unity source. Both Mac executables were still packaged by an Amu-built Linux
+ARM producer. F2 execution/F3 parity, a Mac-native producer, complete FS2
+and native corpus, AIUEOS build/boot, and release qualification remain open.
