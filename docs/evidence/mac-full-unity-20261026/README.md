@@ -61,7 +61,19 @@ bytes, SHA-256 `d6612951d7bb5dfdfe4814a26aae0ad8775dde207f80289de0e39b3ac44046c4
 F1 and F2 containers were byte-identical. Mac `extract-native` on F2 returned
 3,250,952 raw bytes, byte-identical to F1 raw.
 
-This proves Mac execution of F1 and F1=F2 container/code parity for the pinned
-unity source. Both Mac executables were still packaged by an Amu-built Linux
-ARM producer. F2 execution/F3 parity, a Mac-native producer, complete FS2
-and native corpus, AIUEOS build/boot, and release qualification remain open.
+The F2 raw code was packaged as a separate Mac Mach-O; its unsigned bytes
+matched the F1 Mach-O exactly (SHA-256
+`40a30d60c8df36d8f72cf1207952a355b1e563e0729fdb02be11b38560b5baa4`).
+The separately signed F2 image SHA-256 was
+`3dcdaac995fb01a149234e4eb272e78951a33e01904f3adc5c1a33dbff4c6ba2`.
+It passed the passwordless single-file gate, then ran on Mac and compiled the
+same 47-module unity source to F3 in 94.805 seconds: exit 0, 3,250,979
+bytes. F1, F2 and F3 container bytes were identical, SHA-256
+`d6612951d7bb5dfdfe4814a26aae0ad8775dde207f80289de0e39b3ac44046c4`.
+Mac `extract-native` on each returned identical 3,250,952-byte `main` code,
+SHA-256 `48f724c12ece45c9ba57550932536533a2e340cea27812fb25251678cac97fdd`.
+
+This proves Mac execution and F1=F2=F3 container/code parity for the pinned
+unity source. The Mac executable images were still packaged by an Amu-built
+Linux ARM producer. A Mac-native producer, complete FS2 and native corpus,
+AIUEOS build/boot, and release qualification remain open.
