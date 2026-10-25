@@ -135,7 +135,7 @@ jobs:
           python3 -c 'import hashlib,os,pathlib; p=pathlib.Path(os.environ["RUNNER_TEMP"])/"previous-amu.elf"; assert hashlib.sha256(p.read_bytes()).hexdigest()=="8cd12aed5b663976b77abc06c85bedc558c02f323ea235e3e5c194d3e4795091"'
           chmod +x "$RUNNER_TEMP/previous-amu.elf"
       - name: Old and new runtime on exactly the same source-lock compile path
-        run: python3 scripts/seed/native_build_queue.py -- python3 scripts/seed/compare-native-locked-runtime.py --baseline "$RUNNER_TEMP/previous-amu.elf" --compiler "$RUNNER_TEMP/current-amu.elf" --output "$RUNNER_TEMP/locked-runtime"
+        run: python3 scripts/seed/native_build_queue.py -- python3 scripts/seed/compare-native-compiler-kernels.py --baseline "$RUNNER_TEMP/previous-amu.elf" --compiler "$RUNNER_TEMP/current-amu.elf" --output "$RUNNER_TEMP/locked-runtime"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
@@ -189,7 +189,7 @@ jobs:
           python3 -c 'import hashlib,os,pathlib; p=pathlib.Path(os.environ["RUNNER_TEMP"])/"current-amu.elf"; assert hashlib.sha256(p.read_bytes()).hexdigest()=="dd289a234cb781248b29924139d8903865dd6337cb82c2ee8dcba7f261e31d98"'
           chmod +x "$RUNNER_TEMP/current-amu.elf"
       - name: Native differential grid, actual mutants and matched frozen-core builds
-        run: python3 scripts/seed/native_build_queue.py -- python3 scripts/seed/compare-native-ccf-filtered.py --variant filtered --current-core --compiler "$RUNNER_TEMP/current-amu.elf" --output "$RUNNER_TEMP/ccf-filtered"
+        run: python3 scripts/seed/native_build_queue.py -- python3 scripts/seed/compare-native-ccf-order.py --variant filtered --current-core --compiler "$RUNNER_TEMP/current-amu.elf" --output "$RUNNER_TEMP/ccf-filtered"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
