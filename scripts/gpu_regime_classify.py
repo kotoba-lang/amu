@@ -290,6 +290,21 @@ CLI:
         clocks' raw per-block times beside every cell row (rule 3), and
         an incomplete operator pool named with NO verdict (read the
         instrument log from a path or from stdin with '-')
+    python3 scripts/gpu_regime_classify.py --cuda-op-census <paired-log.txt> [<paired-log.txt> ...]
+        print the PER-OPERATOR census for one or more CUDA
+        paired-timing sessions (operator-aware selection, ADR-0361's
+        2026-10-25 seventh amendment, row (ii) of the rows it
+        created): every (op, W, shape) group of the scan grid with one
+        reading per (session, metric) over the group's three pair
+        blocks -- the block's paired-median ratio (armA/armB as
+        declared, never re-oriented) with its within-block one-sided
+        count beside it (reported, consumed nowhere) and the reading's
+        unique winner (the arm faster than BOTH rivals) -- then the
+        group's fold (the same unique winner in every reading) and the
+        (op, W) entry fold over qualifying shapes. DERIVATION ONLY:
+        the publication moves no record, no :measured? flag and no
+        selection answer (read each instrument log from a path or from
+        stdin with '-')
     python3 scripts/gpu_regime_classify.py --self-test
         unit fixtures + a regression pass over every committed summary.md
         under docs/evidence/ (pinned manual classifications must
@@ -2796,6 +2811,309 @@ def render_cuda_cell_census(parsed, gap_max=GAP_MAX):
                  "verdict); the record's own named census:")
     lines.append("")
     lines.append(render_cuda_named_section(parsed))
+    return "\n".join(lines)
+
+
+# -------------------------- per-operator census (operator-aware selection)
+# The operator-aware selection row (ADR-0361's 2026-10-25 seventh
+# amendment) pre-registered the per-operator entry contract and named
+# this route its row (ii), the per-op census publication route. It
+# lands BEFORE any fresh session (row iii) is measured: the
+# registration fixes the admissible sessions' analysis as "the
+# committed classifier routes", so a session analyzed by code written
+# after the fact would not be a pre-registered analysis. The census is
+# DERIVATION MACHINERY -- it publishes readings and folds and moves
+# nothing (rule 4): no record, no :measured? flag, no selection
+# answer. Entry into the selection surface is the wiring row's job,
+# under the replication requirement this census cannot decide (the
+# logs' contents carry no UTC dates and this census never reads
+# session admissibility).
+#
+# The winner vocabulary is the instrument's arm names (mapped to KIR
+# variants by CUDA_ARM_VARIANT); canonical arm order. A pair block may
+# declare either order and is looked up both ways -- its ratio is
+# NEVER re-oriented numerically (the statistic is the declared
+# armA/armB paired median).
+
+CUDA_OP_ARMS = ("warp-shuffle", "subgroup", "baseline")
+CUDA_OP_PAIRS = (("warp-shuffle", "subgroup"),
+                 ("warp-shuffle", "baseline"),
+                 ("subgroup", "baseline"))
+
+
+def _cuda_op_pair_fact(idx, op, w, n, metric, v, u):
+    """One (v, u) pair block's side-of-1.0 fact for one reading.
+
+    idx: (op, W, n, declared pair type) -> block (one session).
+    Returns (v_faster, declared label, ratio, one_sided, pairs) where
+    one_sided is the count of the block's within-pair ratios on the
+    same side of 1.0 as its paired-median ratio -- a robustness fact
+    reported beside every ratio and consumed NOWHERE (the
+    registration's rejection (d)) -- or (None, f"{v}/{u}", None, None,
+    None) when the reading carries no block for this pair (fail
+    closed, named not hidden).
+    """
+    for cand in (f"{v}/{u}", f"{u}/{v}"):
+        blk = idx.get((op, w, n, cand))
+        if blk is None:
+            continue
+        m = blk["metrics"][metric]
+        ratio = m["paired_ratio"]
+        flipped = cand == f"{u}/{v}"
+        v_faster = (ratio > 1.0) if flipped else (ratio < 1.0)
+        prs = m["pair_ratios"]
+        below = sum(1 for r in prs if r < 1.0)
+        above = sum(1 for r in prs if r > 1.0)
+        equal = len(prs) - below - above
+        one_sided = (below if ratio < 1.0
+                     else above if ratio > 1.0 else equal)
+        return v_faster, cand, ratio, one_sided, len(prs)
+    return None, f"{v}/{u}", None, None, None
+
+
+def cuda_op_census(sessions):
+    """The per-operator census over one or more CUDA sessions.
+
+    sessions: [(label, parse_cuda_pair_blocks result), ...] -- one
+    entry per measured session, in publication order. Returns
+    {"groups": [...], "entries": [...]}.
+
+    A group is one (op, W, shape) group of the census (the
+    registration's per-operator reading unit), ordered by operator
+    (CUDA_REDUCE_OPS order), then W, then shape:
+
+      {"op", "W", "n",
+       "readings": [{"session", "metric", "winner", "pairs"}, ...],
+       "fold"}
+
+    one reading per (session, metric), in session order then
+    CUDA_METRICS order. reading["pairs"] maps each canonical pair
+    "v/u" to {"declared", "ratio", "one_sided", "pairs", "v_faster"};
+    reading["winner"] is the arm faster than BOTH rivals in that
+    reading (None = REFUSE, no single arm is). group["fold"] is the
+    same unique winner in EVERY reading (None = REFUSE).
+
+    An entry is one (op, W) entry group, ordered by operator then W:
+
+      {"op", "W", "qualifying", "winner", "enter"}
+
+    qualifying lists the shapes whose group folded to a winner (a
+    refused shape is not listed and extends no record -- the pooled
+    record's own :shapes clause, ADR-0361's fifth amendment);
+    winner is the common fold winner of the qualifying shapes; enter
+    is True iff at least one shape qualifies and every qualifying
+    shape names the same winner -- the adopted entry rule's reading
+    arm at its letter (seventh amendment): unique-winner +
+    both-clocks + cross-run invariance (every session x both clocks x
+    every qualifying shape agreeing one-sided on one winner; anything
+    else REFUSES and keeps the standing answer with no record).
+    NAMED, the fail-closed reading: two qualifying shapes naming
+    different winners REFUSE the entry group outright -- one record
+    cannot name two winners and the selection query carries no shape
+    axis. The replication requirement (at least two fresh sessions
+    UNDER THE REGISTRATION on at least TWO different UTC days) is NOT
+    decided here: the logs' contents carry no UTC dates and this
+    census never reads session admissibility.
+
+    An operator outside CUDA_REDUCE_OPS raises ValueError (fail
+    closed, the cell census's own rule). A missing pair block fails
+    its reading closed (no unique winner) and is published as a named
+    gap.
+    """
+    sessions = list(sessions)
+    if not sessions:
+        raise ValueError("the per-op census needs at least one session")
+    op_order = {op: i for i, op in enumerate(CUDA_REDUCE_OPS)}
+    idxs = []
+    for label, parsed in sessions:
+        idx = {}
+        for blk in parsed["blocks"]:
+            if blk["op"] not in CUDA_REDUCE_OPS:
+                raise ValueError(
+                    f"operator {blk['op']} outside the adoption's "
+                    f"pool {sorted(CUDA_REDUCE_OPS)} -- the per-op "
+                    f"unit answers the pool's operators only")
+            key = (blk["op"], blk["run"][1], blk["run"][0],
+                   blk["pair_type"])
+            idx[key] = blk
+        idxs.append((label, idx))
+    keys = sorted({(b["op"], b["run"][1], b["run"][0])
+                   for _l, p in sessions for b in p["blocks"]},
+                  key=lambda k: (op_order[k[0]], k[1], k[2]))
+    groups = []
+    for op, w, n in keys:
+        readings = []
+        for label, idx in idxs:
+            for metric in CUDA_METRICS:
+                pairs = {}
+                faster = {}
+                for v, u in CUDA_OP_PAIRS:
+                    vf, declared, ratio, one_sided, k = \
+                        _cuda_op_pair_fact(idx, op, w, n, metric, v, u)
+                    pairs[f"{v}/{u}"] = {
+                        "declared": declared, "ratio": ratio,
+                        "one_sided": one_sided, "pairs": k,
+                        "v_faster": vf}
+                    faster[(v, u)] = vf
+                    faster[(u, v)] = (None if vf is None else not vf)
+                winner = None
+                for v in CUDA_OP_ARMS:
+                    if all(faster[(v, u)] is True
+                           for u in CUDA_OP_ARMS if u != v):
+                        winner = v
+                        break
+                readings.append({"session": label, "metric": metric,
+                                 "winner": winner, "pairs": pairs})
+        winners = {r["winner"] for r in readings}
+        fold = next(iter(winners)) if len(winners) == 1 else None
+        groups.append({"op": op, "W": w, "n": n, "readings": readings,
+                       "fold": fold})
+    entries = []
+    by_ow = {}
+    for g in groups:
+        by_ow.setdefault((g["op"], g["W"]), []).append(g)
+    for (op, w), gs in sorted(by_ow.items(),
+                              key=lambda kv: (op_order[kv[0][0]],
+                                              kv[0][1])):
+        qualifying = [g["n"] for g in gs if g["fold"] is not None]
+        winners = {g["fold"] for g in gs if g["fold"] is not None}
+        winner = next(iter(winners)) if len(winners) == 1 else None
+        entries.append({"op": op, "W": w, "qualifying": qualifying,
+                        "winner": winner,
+                        "enter": bool(qualifying)
+                        and winner is not None})
+    return {"groups": groups, "entries": entries}
+
+
+def render_cuda_op_census(sessions):
+    """The per-operator census publication for CUDA paired-timing
+    sessions (operator-aware selection, ADR-0361's 2026-10-25 seventh
+    amendment, row (ii) of the rows it created).
+
+    sessions: [(label, parse_cuda_pair_blocks result), ...]. Publishes
+    a FULL CENSUS: every (op, W, shape) group of the records' scan
+    grid with one reading per (session, metric) over the group's
+    three pair blocks, the group's fold and the (op, W) entry fold
+    over qualifying shapes -- derivation only (rule 4): no record, no
+    :measured? flag and no selection answer moves.
+    """
+    census = cuda_op_census(sessions)
+    groups = census["groups"]
+    entries = census["entries"]
+    lines = []
+    lines.append("## Per-operator census (operator-aware selection, "
+                 "CUDA paired-timing channel)")
+    lines.append("")
+    lines.append(
+        "Published by scripts/gpu_regime_classify.py under the "
+        "per-operator reading unit the operator-aware selection row "
+        "adopted (ADR-0361's 2026-10-25 seventh amendment): a group "
+        "is (op, W, shape) and one reading is one (session, metric) "
+        "over the group's three pair blocks. The statistic is the "
+        "block's paired-median ratio (median over the block's "
+        "within-pair ratios armA/armB as the block declares it -- the "
+        "ratio is never re-oriented); v is faster than u in a reading "
+        "iff the ratio sits on v's side of 1.0, and a reading's "
+        "unique winner is the arm faster than BOTH rivals. The "
+        "group's fold is the same unique winner in EVERY reading "
+        "(every session x both clocks x every qualifying shape) -- "
+        "the entry rule's reading arm: unique-winner + both-clocks + "
+        "CROSS-RUN INVARIANCE replaces REGIME-INVARIANCE at this "
+        "unit (the regime machine has no pool here); anything else "
+        "REFUSES. Winner names are the instrument's arm names "
+        "(CUDA_ARM_VARIANT maps them to the KIR variants). The "
+        "within-block one-sided count beside every ratio (of the "
+        "declared pairs, how many within-pair ratios sit on the same "
+        "side of 1.0 as the block's paired-median ratio) is a "
+        "robustness fact reported and consumed NOWHERE.")
+    lines.append("")
+    lines.append(
+        "FULL CENSUS: every (op, W, shape) group of the records' "
+        "scan grid is published, none cherry-picked. Metrics classify "
+        "separately and never mix (rule 3 unchanged; cross-clock "
+        "magnitude claims are INADMISSIBLE). A verdict belongs to the "
+        "sessions that measured it and stays CHANNEL-SCOPED and "
+        "DEVICE-SCOPED (a CUDA-channel sign never flips an MSL/WGSL "
+        "cell and never answers a workgroup row; ADR-0355's "
+        "2026-10-25 channel rule stands). Rule 4 is unchanged -- "
+        "this publication moves no record, no :measured? flag and no "
+        "selection answer: entry into the selection surface is the "
+        "wiring row's job, and the replication requirement (at least "
+        "TWO fresh sessions UNDER THE REGISTRATION on at least TWO "
+        "different UTC days) is decided there, not here -- these "
+        "logs' contents carry no UTC dates and this census never "
+        "reads session admissibility.")
+    lines.append("")
+    lines.append(f"Sessions: {len(sessions)}")
+    for i, (label, parsed) in enumerate(sessions, start=1):
+        lines.append(f"  s{i}: {label} -- usable pair blocks "
+                     f"{len(parsed['blocks'])}, excluded "
+                     f"{len(parsed['excluded'])}, orphan sample lines "
+                     f"{parsed['orphan_samples']}")
+    lines.append("")
+    folded = sum(1 for g in groups if g["fold"] is not None)
+    lines.append(f"Full census: {len(groups)} (op, W, shape) groups "
+                 f"published ({folded} folded to a winner, "
+                 f"{len(groups) - folded} refused).")
+    for g in groups:
+        lines.append("")
+        lines.append(f"### group: op={g['op']} W={g['W']} n={g['n']}")
+        lines.append("")
+        head = " | ".join(f"{v}/{u}" for v, u in CUDA_OP_PAIRS)
+        lines.append(f"| reading | {head} | unique winner |")
+        lines.append("|---|---|---|---|---|")
+        for r in g["readings"]:
+            cells = []
+            for v, u in CUDA_OP_PAIRS:
+                c = r["pairs"][f"{v}/{u}"]
+                if c["ratio"] is None:
+                    cells.append("no block (named gap)")
+                    continue
+                cell = (f"{c['ratio']:.4f} "
+                        f"({c['one_sided']}/{c['pairs']} one-sided)")
+                if c["declared"] != f"{v}/{u}":
+                    cell += f" declared {c['declared']}"
+                cells.append(cell)
+            win = (r["winner"] if r["winner"] is not None
+                   else "REFUSE (no unique winner)")
+            lines.append(f"| {r['session']} {r['metric']} | "
+                         + " | ".join(cells) + f" | {win} |")
+        lines.append("")
+        if g["fold"] is not None:
+            lines.append(f"fold: {g['fold']} -- the same unique "
+                         f"winner in every reading")
+        else:
+            lines.append("fold: REFUSE -- the readings do not agree "
+                         "one-sided on a single unique winner (any "
+                         "reading without one refuses the group)")
+    lines.append("")
+    lines.append("## Entry groups (op, W): the fold across shapes")
+    lines.append("")
+    lines.append("| op | W | qualifying shapes | winner | "
+                 "reading-arm verdict |")
+    lines.append("|---|---|---|---|---|")
+    for e in entries:
+        qs = ", ".join(str(n) for n in e["qualifying"]) or "none"
+        win = e["winner"] if e["winner"] is not None else "REFUSE"
+        verdict = "enter" if e["enter"] else "refuse"
+        lines.append(f"| {e['op']} | {e['W']} | {qs} | {win} | "
+                     f"{verdict} |")
+    lines.append("")
+    n_enter = sum(1 for e in entries if e["enter"])
+    lines.append(f"Entry groups: {len(entries)} published ({n_enter} "
+                 f"enter, {len(entries) - n_enter} refuse). The "
+                 f"verdict is the entry rule's READING ARM ONLY -- "
+                 f"the replication requirement (two fresh "
+                 f"registration sessions on two different UTC days) "
+                 f"is decided at entry, and no record exists until "
+                 f"it is met.")
+    for label, parsed in sessions:
+        lines.append("")
+        lines.append(f"Named and excluded blocks ({label}) leave "
+                     f"named gaps in this census; the record's own "
+                     f"named census:")
+        lines.append("")
+        lines.append(render_cuda_named_section(parsed))
     return "\n".join(lines)
 
 
@@ -5350,6 +5668,280 @@ def _self_test_cuda_cell_corpus(stats, corpus_root):
                     f"either direction", stats)
 
 
+def _self_test_cuda_op_unit(stats):
+    # ---- the per-operator census (operator-aware selection,
+    # ADR-0361's 2026-10-25 seventh amendment; this route is its row
+    # (ii)): one reading per (session, metric) over the group's three
+    # pair blocks, unique winner = faster than BOTH rivals, the
+    # group's fold = the same unique winner in every reading, the
+    # (op, W) entry fold over qualifying shapes. One-sided counts are
+    # reported beside every ratio and consumed NOWHERE.
+    def one(n, w, op, ws, wb, sb):
+        return "\n".join(
+            _cuda_block_lines(n, w, op, "warp-shuffle/subgroup",
+                              [ws] * 3)
+            + _cuda_block_lines(n, w, op, "warp-shuffle/baseline",
+                                [wb] * 3)
+            + _cuda_block_lines(n, w, op, "subgroup/baseline",
+                                [sb] * 3)) + "\n"
+
+    def ps(label, text):
+        return (label, parse_cuda_pair_blocks(text))
+
+    WARP = (50, 100, 40, 100)   # ratio < 1.0 on both clocks
+    SLOW = (100, 50, 100, 40)   # ratio > 1.0 on both clocks
+
+    # -- agree across two sessions, both clocks, both shapes: the
+    #    group folds warp-shuffle and the entry group ENTERs over
+    #    both shapes --
+    two = (one(1000003, 32, "max", WARP, WARP, WARP)
+           + one(1048576, 32, "max", WARP, WARP, WARP))
+    census = cuda_op_census([ps("s1", two), ps("s2", two)])
+    groups = census["groups"]
+    _expect([(g["op"], g["W"], g["n"]) for g in groups]
+            == [("max", 32, 1000003), ("max", 32, 1048576)],
+            "cuda op census: one group per (op, W, shape), operator "
+            "then W then shape", stats)
+    _expect(all(g["fold"] == "warp-shuffle" for g in groups)
+            and all(r["winner"] == "warp-shuffle"
+                    for g in groups for r in g["readings"]),
+            "cuda op census: the same unique winner in every reading "
+            "(both sessions x both clocks) folds the group", stats)
+    _expect(len(groups[0]["readings"]) == 4
+            and [r["session"] for r in groups[0]["readings"]]
+            == ["s1", "s1", "s2", "s2"]
+            and [r["metric"] for r in groups[0]["readings"]]
+            == ["gpu_ns", "host_ns", "gpu_ns", "host_ns"],
+            "cuda op census: one reading per (session, metric), "
+            "session order then gpu_ns first", stats)
+    _expect(census["entries"]
+            == [{"op": "max", "W": 32,
+                 "qualifying": [1000003, 1048576],
+                 "winner": "warp-shuffle", "enter": True}],
+            "cuda op entry fold: both qualifying shapes name one "
+            "winner -- the (op, W) group ENTERs over both", stats)
+
+    # -- a three-way cycle: no arm faster than both rivals -- the
+    #    reading REFUSEs, the group refuses, and no shape qualifies --
+    cyc = one(1000003, 64, "max", WARP, SLOW, WARP)
+    cycc = cuda_op_census([ps("s1", cyc)])
+    g = cycc["groups"][0]
+    _expect(all(r["winner"] is None for r in g["readings"])
+            and g["fold"] is None,
+            "cuda op census: a cycle has no unique winner -- the "
+            "reading REFUSEs and the group refuses", stats)
+    _expect(cycc["entries"] == [{"op": "max", "W": 64,
+                                 "qualifying": [], "winner": None,
+                                 "enter": False}],
+            "cuda op entry fold: a refused shape is not qualifying "
+            "and extends no record", stats)
+
+    # -- metric split: gpu_ns answers warp-shuffle, host_ns answers
+    #    subgroup -- both-clocks-or-refuse: the group REFUSEs --
+    split = one(1000003, 64, "max", (50, 100, 100, 50), WARP, WARP)
+    sp = cuda_op_census([ps("s1", split)])
+    g = sp["groups"][0]
+    _expect([r["winner"] for r in g["readings"]]
+            == ["warp-shuffle", "subgroup"] and g["fold"] is None,
+            "cuda op census: the two clocks disagree -- both-clocks "
+            "or REFUSE (metrics never mix into one answer)", stats)
+
+    # -- cross-session split: s1 answers warp-shuffle, s2 answers
+    #    subgroup -- cross-run invariance: the group REFUSEs --
+    s2split = one(1000003, 64, "max", SLOW, WARP, WARP)
+    cs = cuda_op_census([ps("s1", one(1000003, 64, "max",
+                                      WARP, WARP, WARP)),
+                         ps("s2", s2split)])
+    g = cs["groups"][0]
+    _expect([r["winner"] for r in g["readings"]]
+            == ["warp-shuffle", "warp-shuffle", "subgroup", "subgroup"]
+            and g["fold"] is None,
+            "cuda op census: sessions disagree -- cross-run "
+            "invariance REFUSEs the group", stats)
+
+    # -- entry fold: qualifying shapes disagreeing on the winner
+    #    REFUSE the entry group outright (fail closed: one record
+    #    cannot name two winners and the query has no shape axis) --
+    disc = (one(1000003, 128, "max", WARP, WARP, WARP)
+            + one(1048576, 128, "max", SLOW, WARP, WARP))
+    dc = cuda_op_census([ps("s1", disc)])
+    _expect(dc["entries"] == [{"op": "max", "W": 128,
+                               "qualifying": [1000003, 1048576],
+                               "winner": None, "enter": False}],
+            "cuda op entry fold: qualifying shapes naming different "
+            "winners REFUSE the (op, W) group", stats)
+
+    # -- entry fold: :shapes is qualifying-only -- the refused shape
+    #    is not listed and extends no record --
+    qo = (one(1000003, 256, "max", WARP, WARP, WARP)
+          + one(1048576, 256, "max", WARP, SLOW, WARP))
+    qc = cuda_op_census([ps("s1", qo)])
+    _expect(qc["entries"] == [{"op": "max", "W": 256,
+                               "qualifying": [1000003],
+                               "winner": "warp-shuffle", "enter": True}],
+            "cuda op entry fold: :shapes is qualifying-only -- the "
+            "refused shape is not listed and extends no record", stats)
+
+    # -- one-sided counts are REPORTED and consumed NOWHERE: a block
+    #    whose paired median decides while only 2/3 of its within-pair
+    #    ratios sit on the median's side still reads its median --
+    mixed = "\n".join(
+        _cuda_block_lines(1000003, 512, "max", "warp-shuffle/subgroup",
+                          [(50, 100, 40, 100), (50, 100, 40, 100),
+                           (100, 100, 40, 100)])
+        + _cuda_block_lines(1000003, 512, "max",
+                            "warp-shuffle/baseline", [WARP] * 3)
+        + _cuda_block_lines(1000003, 512, "max", "subgroup/baseline",
+                            [WARP] * 3))
+    mc = cuda_op_census([ps("s1", mixed)])
+    cell = mc["groups"][0]["readings"][0]["pairs"][
+        "warp-shuffle/subgroup"]
+    _expect(cell["ratio"] == 0.5 and cell["one_sided"] == 2
+            and cell["pairs"] == 3,
+            "cuda op census: the one-sided count (2/3 on the median's "
+            "side) rides beside the median ratio and is consumed "
+            "nowhere", stats)
+    _expect(mc["groups"][0]["fold"] == "warp-shuffle",
+            "cuda op census: the winner comes from the paired "
+            "medians, not the sign counts", stats)
+
+    # -- an operator outside the adoption's pool raises (fail closed) --
+    try:
+        cuda_op_census([ps("s1", one(1000003, 32, "prod",
+                                     WARP, WARP, WARP))])
+        raise AssertionError("an operator outside the pool must raise")
+    except ValueError:
+        stats["passed"] += 1
+
+    # -- a missing pair block fails its reading closed and is named --
+    miss = "\n".join(
+        _cuda_block_lines(1000003, 1024, "max",
+                          "warp-shuffle/subgroup", [WARP] * 3)
+        + _cuda_block_lines(1000003, 1024, "max",
+                            "subgroup/baseline", [WARP] * 3))
+    mic = cuda_op_census([ps("s1", miss)])
+    g = mic["groups"][0]
+    _expect(all(r["winner"] is None for r in g["readings"])
+            and g["fold"] is None,
+            "cuda op census: a group missing its "
+            "warp-shuffle/baseline block has no unique winner -- fail "
+            "closed", stats)
+    out = render_cuda_op_census([ps("s1", miss)])
+    _expect("no block (named gap)" in out
+            and "REFUSE (no unique winner)" in out,
+            "cuda op publication: the named gap is published, not "
+            "silently dropped", stats)
+
+    # -- the publication's own shape --
+    out = render_cuda_op_census([ps("s1", two), ps("s2", two)])
+    _expect(out.startswith("## Per-operator census (operator-aware "
+                           "selection, CUDA paired-timing channel)"),
+            "cuda op publication: the section head", stats)
+    _expect("Full census: 2 (op, W, shape) groups published (2 folded "
+            "to a winner, 0 refused)." in out,
+            "cuda op publication: the full-census counts line", stats)
+    _expect("| s1 gpu_ns | 0.5000 (3/3 one-sided) | 0.5000 (3/3 "
+            "one-sided) | 0.5000 (3/3 one-sided) | warp-shuffle |"
+            in out,
+            "cuda op publication: the reading row -- paired-median "
+            "ratios with the one-sided counts beside them", stats)
+    _expect("| max | 32 | 1000003, 1048576 | warp-shuffle | enter |"
+            in out and "Entry groups: 1 published (1 enter, 0 "
+            "refuse)." in out,
+            "cuda op publication: the entry-group table and counts",
+            stats)
+    _expect("Rule 4 is unchanged" in out and "READING ARM ONLY" in out
+            and "CHANNEL-SCOPED" in out,
+            "cuda op publication: the scope and honesty lines", stats)
+
+
+def _self_test_cuda_op_corpus(stats, corpus_root):
+    # ---- the per-op census over the two committed 2026-10-25
+    # sessions: the route RE-DERIVES the operator-aware selection
+    # row's exploratory census from the committed measure logs (the
+    # numbers its decision record cites). NAMED: these two sessions
+    # are EXPLORATORY (same-day, hypothesis-generating) -- this pin
+    # reproduces their derivation, it is NOT entry evidence and
+    # nothing here may enter the selection surface (ADR-0361's
+    # seventh amendment, rejection (a)).
+    sessions = []
+    for i, run in enumerate(("run1", "run2"), start=1):
+        d = corpus_root / "gpu" / f"cuda-claimprotocol-{run}-20261025"
+        parsed = parse_cuda_pair_blocks(
+            (d / "measure-log.txt").read_text())
+        sessions.append((f"s{i} ({run})", parsed))
+    census = cuda_op_census(sessions)
+    groups = census["groups"]
+    _expect(len(groups) == 36,
+            f"cuda op corpus: 36 (op, W, shape) groups (3 ops x 6 "
+            f"widths x 2 shapes), got {len(groups)}", stats)
+    folds = [g["fold"] for g in groups]
+    _expect(all(f is not None for f in folds),
+            "cuda op corpus: 36/36 groups fold to a unique winner -- "
+            "ZERO refusals at this unit (the pooled W = 64 refusal "
+            "resolves as the operator split)", stats)
+    _expect(sum(1 for f in folds if f == "warp-shuffle") == 34
+            and sorted((g["op"], g["W"], g["n"])
+                       for g in groups if g["fold"] == "subgroup")
+            == [("sum", 64, 1000003), ("sum", 64, 1048576)],
+            "cuda op corpus: 34 groups fold :warp-shuffle-reduce and "
+            "EXACTLY TWO -- (op sum, W = 64, both shapes) -- fold "
+            ":subgroup-reduce", stats)
+    by_key = {(g["op"], g["W"], g["n"]): g for g in groups}
+    exp = {1000003: {"run1": ("0.8763", 20), "run2": ("0.8646", 20),
+                     "ws": {"run1": "1.0848", "run2": "1.0813"}},
+           1048576: {"run1": ("0.8715", 19), "run2": ("0.8790", 19),
+                     "ws": {"run1": "1.0683", "run2": "1.0726"}}}
+    for n, ex in exp.items():
+        g = by_key[("sum", 64, n)]
+        for r in g["readings"]:
+            if r["metric"] != "gpu_ns":
+                continue
+            run = "run1" if r["session"].startswith("s1") else "run2"
+            sb = r["pairs"]["subgroup/baseline"]
+            _expect(f"{sb['ratio']:.4f}" == ex[run][0]
+                    and sb["one_sided"] == ex[run][1]
+                    and sb["pairs"] == 20
+                    and sb["ratio"] < 1.0,
+                    f"cuda op corpus (sum, W=64, n={n}) {run} gpu_ns "
+                    f"subgroup/baseline: the decision record's cited "
+                    f"paired-median ratio {ex[run][0]} with its "
+                    f"one-sided count {ex[run][1]}/20", stats)
+            ws = r["pairs"]["warp-shuffle/subgroup"]
+            _expect(f"{ws['ratio']:.4f}" == ex["ws"][run],
+                    f"cuda op corpus (sum, W=64, n={n}) {run} gpu_ns "
+                    f"warp-shuffle/subgroup: the cited paired-median "
+                    f"ratio {ex['ws'][run]}", stats)
+    entries = census["entries"]
+    _expect(len(entries) == 18 and all(e["enter"] for e in entries),
+            "cuda op corpus: 18 (op, W) entry groups, all entering "
+            "over the fold (the reading arm only -- the replication "
+            "requirement is NOT met by these exploratory sessions)",
+            stats)
+    e64 = {(e["op"], e["W"]): e for e in entries}[("sum", 64)]
+    _expect(e64 == {"op": "sum", "W": 64,
+                    "qualifying": [1000003, 1048576],
+                    "winner": "subgroup", "enter": True},
+            "cuda op corpus: (op sum, W = 64) enters :subgroup-reduce "
+            "over both qualifying shapes -- H1's registered shape "
+            "(exploratory derivation, not entry evidence)", stats)
+    _expect(all(e["winner"] == "warp-shuffle"
+                for e in entries if (e["op"], e["W"]) != ("sum", 64)),
+            "cuda op corpus: every other (op, W) group's winner is "
+            ":warp-shuffle-reduce -- H2's registered shape "
+            "(exploratory derivation, not entry evidence)", stats)
+    out = render_cuda_op_census(sessions)
+    _expect("Full census: 36 (op, W, shape) groups published (36 "
+            "folded to a winner, 0 refused)." in out
+            and "Entry groups: 18 published (18 enter, 0 refuse)."
+            in out,
+            "cuda op corpus: the rendered census's counts reproduce "
+            "the exploratory census", stats)
+    _expect("| sum | 64 | 1000003, 1048576 | subgroup | enter |"
+            in out,
+            "cuda op corpus: the (sum, W = 64) entry row", stats)
+
+
 def main():
     args = sys.argv[1:]
     if args == ["--self-test"]:
@@ -5373,6 +5965,8 @@ def main():
         _self_test_cuda_corpus(stats, ROOT / "docs" / "evidence")
         _self_test_cuda_cell_unit(stats)
         _self_test_cuda_cell_corpus(stats, ROOT / "docs" / "evidence")
+        _self_test_cuda_op_unit(stats)
+        _self_test_cuda_op_corpus(stats, ROOT / "docs" / "evidence")
         print(f"TOTAL: {stats['passed']} assertions passed, 0 failed")
         return
     if len(args) == 2 and args[0] == "--wgsl-log":
@@ -5389,6 +5983,15 @@ def main():
         text = (sys.stdin.read() if args[1] == "-"
                 else pathlib.Path(args[1]).read_text())
         print(render_cuda_cell_census(parse_cuda_pair_blocks(text)))
+        return
+    if len(args) >= 2 and args[0] == "--cuda-op-census":
+        sessions = []
+        for i, a in enumerate(args[1:], start=1):
+            text = (sys.stdin.read() if a == "-"
+                    else pathlib.Path(a).read_text())
+            sessions.append((f"s{i}" if a == "-" else f"s{i} ({a})",
+                             parse_cuda_pair_blocks(text)))
+        print(render_cuda_op_census(sessions))
         return
     if len(args) == 2 and args[0] == "--pairs":
         complete, incomplete = parse_run_log_pairs(

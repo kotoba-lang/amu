@@ -960,3 +960,84 @@ claimed; `gpu_regime_classify.py --self-test` 2536/0 (regression
 pin); `--cuda-cells` re-derivation of both committed censuses diffs
 EMPTY. Record:
 `docs/evidence/gpu/cuda-operator-aware-selection-20261025.txt`.
+
+## Amendment (2026-10-25, eighth the same day: the per-op census
+publication route LANDS -- row (ii) of the operator-aware row's
+created rows, the pre-registration's analysis fixed in committed
+code BEFORE any fresh session is measured)
+
+IMPLEMENTED (JUN-57; NO hardware ran this tick, nothing
+re-measured). WHAT LANDED: `scripts/gpu_regime_classify.py` gains
+`cuda_op_census` + `render_cuda_op_census` + the `--cuda-op-census`
+CLI route + self-test fixtures (`_self_test_cuda_op_unit`,
+`_self_test_cuda_op_corpus`): the full per-operator census over one
+or more CUDA paired-timing sessions -- group (op, W, shape), one
+reading per (session, metric) over the group's three pair blocks,
+the block's paired-median ratio (armA/armB as declared, never
+re-oriented) the statistic, the reading's unique winner = the arm
+faster than BOTH rivals, the group's fold = the same unique winner
+in EVERY reading (unique-winner + both-clocks + CROSS-RUN
+INVARIANCE, the entry rule's reading arm), and the (op, W) entry
+fold over qualifying shapes (`:shapes` qualifying-only). The
+within-block one-sided count rides beside every ratio and is
+consumed NOWHERE (rejection (d)).
+
+**Why before row (iii).** The pre-registration fixes the admissible
+sessions' protocol as "the committed classifier routes"; a session
+analyzed by code written after the fact is not a pre-registered
+analysis. Rows (ii) then (iii) is therefore the registration's own
+order, not a preference.
+
+**Named, the fail-closed readings this row adopts where the
+registration left a gap** (each named so no later reading silently
+upgrades): (1) a shape QUALIFIES iff every reading at that shape
+(every session x both clocks) agrees one-sided on one unique winner;
+(2) two qualifying shapes naming different winners REFUSE the entry
+group outright -- one record cannot name two winners and the
+selection query carries no shape axis; (3) a missing pair block
+fails its reading closed (no unique winner) and is published as a
+named gap; (4) the replication requirement (two fresh registration
+sessions on two different UTC days) is NOT derivable from the logs
+(their contents carry no UTC dates) and is decided at ENTRY by the
+wiring row -- the census never reads session admissibility (its
+verdict column is labeled "reading-arm verdict" for exactly that).
+
+**Verified (real runs).** `--self-test` TOTAL 2572/0 (the committed
+base pin 2536/0, delta +36 = this slice's fixtures; every
+pre-existing assertion still green). The route over the two
+committed 2026-10-25 measure-logs exits 0 with stderr 0 bytes and
+re-derives the exploratory census EXACTLY: 36/36 groups fold (ZERO
+fold diffs against the exploratory scratch derivation), fold census
+warp-shuffle 34 / subgroup 2 (the two being (op `:sum`, W = 64) at
+both shapes), 18/18 entry groups entering at the reading arm. The
+decision record's cited numbers reproduce at 4 dp inside the corpus
+self-test. Scoped GPU gate GREEN 107 tests / 11240 assertions / 0
+failures / 0 errors (the diff touches NO .cljk namespace -- regression
+pin at the committed pin). FULL `run-tests.cljk` NOT RUN this slice
+(no .cljk touched) -- documented red at base (`Could not find
+namespace: kotoba.form`, ADR-0362) outside this diff, not
+re-verified here, NO green suite claimed. `find docs -name '*.sh'` ->
+0 files.
+
+**Consequence today: NOTHING MOVES** (rule 4): no record, no
+`:measured?` flag, no selection answer, no `:shapes` value, no
+workgroup row; the ladder
+`:warp-shuffle-reduce -> :subgroup-reduce -> :baseline` stays
+byte-for-byte.
+
+**States.** DECIDED: this row (the (ii)-before-(iii) ordering, the
+fail-closed readings (1)-(4)). IMPLEMENTED: the per-op census
+publication route (row (ii)) -- code + tests. MEASURED: nothing new
+(NO hardware ran; the two committed sessions CONSUMED as exploratory
+derivation, re-derived through the now-committed route -- not
+re-measured, still inadmissible as entry, rejection (a) stands).
+ACCEPTED DESIGN ONLY: the operator-aware contract + pre-registration
+(seventh amendment) and its remaining rows (i) the wiring, (iii) the
+measurement rows, (iv) the narrower device-class key. UNMEASURED,
+named: H1/H2 under admissible sessions (this route answers nothing
+about them), every per-op verdict on non-xavier hardware, run 3+ /
+cross-day replication, the `:sum` ordering at W = 64 on any device
+under any admissible unit, the flip arm on real data (ZERO real
+flips), every workgroup row (`:arm`/`:unknown` stay provisional
+`:measured? false`), the name-fragment key's coarseness. Record:
+`docs/evidence/gpu/cuda-op-census-route-20261025.txt`.
