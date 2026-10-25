@@ -346,9 +346,9 @@
 ;; Byte conversion copies validated vector words. UTF-8 construction
 ;; bounds the pool, copies bytes, creates a string view, and invokes the
 ;; existing whole-string canonical validator before returning. The vector
-;; ABI and direct pointers remain in this blob. The 32M element bound and
-;; 256 MiB backing map admit the full compiler's explicit 0x1da0000 allocation.
-;; The assembler only derived
+;; ABI and direct pointers remain in this blob. The 64M element bound and
+;; 512 MiB backing map leave room for FS2 reply vectors during the full
+;; 47-module self-rebuild probe. The assembler only derived
 ;; these reviewed words; final packaging emits Kotoba data through Amu.
 (defn- vector-helper-words [] :vector-i64
   (-> (vector-alloc 313)
@@ -396,7 +396,12 @@
        0x380015e8 0xd1000631 0x17fffffc 0x8b150288 0xf900ce68 0xaa1303e0 0xcb1403e1 0xd1000421
        0xaa1503e2 0xf9401e70 0xd63f0200 0xaa0003f6 0xb40000d5 0xaa1303e0 0xaa1603e1 0xaa1f03e2
        0xf9404a70 0xd63f0200 0xaa1603e0 0xf94013fe 0xa9415bf5 0xa94053f3 0x9100c3ff 0xd65f03c0
-       0xd4200000])))
+       0xd4200000])
+      ;; 512 MiB item map and matching 64M bounds. Descriptor capacity stays
+      ;; 4M. These are diagnostic arena sizes, not a Mac release profile.
+      (vector-assoc! 33 0xd2a40001)
+      (vector-assoc! 69 0xd2a08008)
+      (vector-assoc! 206 0xd2a0800c)))
 
 ;; Reviewed AArch64 words derived once from the adjacent assembly record.
 ;; The build path consumes this Kotoba literal; it does not invoke an assembler.
