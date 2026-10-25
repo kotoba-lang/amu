@@ -66,12 +66,12 @@
 
 ## Native CDCI and retired public entry
 
-The integrated FULL46 source retains native CLI/CID/FS2, the native i64
+The integrated FULL47 source retains native CLI/CID/FS2, the native i64
 receipt profile, all live/desktop modules and all18 normal adopted core
 modules. Root and public images are rebuilt from this exact graph with
 native ARM F1=F2, core generations, runtime cases and admission/refusal
 proofs. The controller and both gate identities are preserved from the
-qualified45 source. Current46 acceptance requires terminal exact-head
+qualified45 source. Current47 acceptance requires terminal exact-head
 native ARM/x86, receipt-profile, controller/public and locked consumer CI.
 Historical ARM/QEMU receipts remain bound to their own sources.
 The closed v5 project reserves low20KiB for non-live context/catalog. The
@@ -80,7 +80,7 @@ BAR catalog starts at context20480. The v2 live ABI and v3 private user/desktop 
 versioned queue/arena/capability/domain regions, with native admission and
 actual guest receipts; full scheduling and shared Browser remain separate.
 
-- The complete candidate uses `seed/FULL-MANIFEST` (46 modules), retaining
+- The complete candidate uses `seed/FULL-MANIFEST` (47 modules), retaining
   every adopted core module. Static OUT is 12MiB because the complete
   TCP/spawn image exceeded the old 8MiB bound. The complete static profile
   also uses LitB1MiB and TOK786432 and NODE786432 and MM-WORDS31,064,064 (<2^25). Heap size, expected results,
@@ -157,3 +157,15 @@ the adopted core and existing emitters authoritative. The native ordered
 gate checks raw observations, named resource refusals and actual metering
 removal; Python only stages bytes/processes. The unsigned process receipt
 is not a signed VM receipt, fresh node admission or an in-process unwind ABI.
+
+## Locked shared components (JUN-93)
+
+Complete47 adds seed/98-x86_64-project.kotoba: a pure, locked typed project
+adapter for x86_64-linux kx64-v1 and the existing native runner. Preserve every
+module/declaration, immutable source locks and all18 normal adopted core files.
+No effect grant, kernel heap runtime or floating profile is introduced.
+The native project fixture/refusal gate and independently source-pinned shared
+text/DOM/text-edit goldens must execute on actual x86 Linux. ARM code generation
+alone cannot qualify x86. Source-owner pins live in shared-browser-components.json;
+text's canonical owner is kotoba/lib/kotoba.text, not its archived repository.
+CSSOM/surface/kernel desktop/dapps/persistent restore remain later JUN-93 gates.
