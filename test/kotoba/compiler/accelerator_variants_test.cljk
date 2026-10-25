@@ -1394,6 +1394,42 @@
       (is (str/includes? harness gate)
           (str "the measure harness must keep its positional gate " gate)))))
 
+(deftest the-counters-harness-brackets-through-the-stage-boundary-pass-attachment
+  ;; ADR-0360's 2026-10-25 counter-channel design letter named the COMPUTE
+  ;; ENCODER's sampleCountersInBuffer:atSampleIndex:withBarrier: as the
+  ;; bracket method for the GPUTimestamp sample pair. REFUTED live on the
+  ;; narrowed device's host (harness-row probe v1, verbatim in
+  ;; docs/evidence/gpu/metal-counter-channel-harness-20261025.txt): the Metal
+  ;; framework asserts "MTLComputeCommandEncoder:sampleCountersInBuffer:
+  ;; atSampleIndex:withBarrier not supported on this device" and ABORTS at
+  ;; encode time -- the measured sampling-point matrix there is
+  ;; dispatch=0 stage=1 draw=0 tile=0 blit=0 and the SDK ties that method to
+  ;; the unsupported AtDispatchBoundary point. The instrument brackets through
+  ;; the route the device DOES support (AtStageBoundary): the compute pass
+  ;; sample-buffer attachment's startOfEncoderSampleIndex /
+  ;; endOfEncoderSampleIndex with exactly one dispatch per compute encoder,
+  ;; resolved via the blit encoder's resolveCounters:. These pins keep the
+  ;; refuted method out of the instrument and the working bracket in it.
+  ;; Comment text is not code (the measure pin's own idiom): the refutation
+  ;; pin matches the MESSAGE-SEND form (`[enc sampleCountersInBuffer:...`),
+  ;; so naming the refused selector in prose stays legal while no code can
+  ;; ever encode it again.
+  (let [harness (slurp "scripts/gpu-subgroup-reduce-metal-counters.m")]
+    (is (nil? (re-find #"\[\s*[A-Za-z_][A-Za-z0-9_]*\s+sampleCountersInBuffer:" harness))
+        "the counters harness must not encode the refuted compute-encoder sampling method")
+    (is (str/includes? harness "startOfEncoderSampleIndex"))
+    (is (str/includes? harness "endOfEncoderSampleIndex"))
+    (is (str/includes? harness "computeCommandEncoderWithDescriptor"))
+    (is (str/includes? harness "resolveCounters")
+        "the counters harness resolves through the blit encoder's resolveCounters:")
+    (is (nil? (re-find #"GPUStartTime|GPUEndTime" harness))
+        "the counters channel is its own instrument -- no command-buffer bracket")
+    (is (nil? (re-find #"if\s*\(\s*argc\s*==" harness))
+        "the counters harness must carry no exact-match argc gate (the misshape class)")
+    (doseq [gate ["if (argc >= 3)" "if (argc >= 4)" "if (argc >= 5)" "if (argc >= 6)"]]
+      (is (str/includes? harness gate)
+          (str "the counters harness must keep its positional gate " gate)))))
+
 (deftest the-nvidia-row-rides-the-vulkan-cuda-and-wgsl-routes
   ;; ADR-0361 (JUN-57) as amended 2026-10-23 (JUN-57's own decision): the
   ;; NVIDIA row is the shared subgroup-size-parametric emission on the

@@ -1477,3 +1477,86 @@ base ("Could not find namespace: kotoba.form", ADR-0362), no green
 suite claimed; `find docs -name '*.sh'` -> 0 files.
 
 Record: `docs/evidence/gpu/metal-counter-channel-design-20261025.txt`.
+
+## Amendment 2026-10-25 (the kernel-time channel's harness row): the bracket method is CORRECTED -- the letter's compute-encoder sampling call is REFUTED on the narrowed device's host, and the harness lands on the AtStageBoundary route
+
+ONE implementation slice (JUN-58): the counters channel's harness is
+IMPLEMENTED, and the design letter's bracket METHOD is corrected where it
+was measured to be wrong. NO arm-vs-arm measurement ran and nothing is
+timed; every number is a route-capability probe or the instrument's own
+smoke run.
+
+**The refutation (MEASURED).** The letter above adopts "the delta of two
+`GPUTimestamp` counter samples bracketing the dispatch inside the compute
+encoder (`sampleCountersInBuffer:atSampleIndex:withBarrier:` before and
+after...)". That method is UNENCODABLE on the narrowed device's host: the
+Metal framework asserts
+"`MTLComputeCommandEncoder:sampleCountersInBuffer:atSampleIndex:withBarrier
+not supported on this device`" and aborts the process at encode time
+(SIGABRT) -- the SDK ties the method to
+`MTLCounterSamplingPointAtDispatchBoundary`, which this M1 Max does not
+support. The full five-point sampling matrix is now MEASURED
+(dispatch=0 stage=1 draw=0 tile=0 blit=0): exactly one point exists here,
+`AtStageBoundary`, and the blit-encoder fallback route is closed with it.
+This amends the letter's METHOD only; the letter's fact block already
+recorded `AtDispatchBoundary = 0`, and the bracket survives the amendment
+unchanged.
+
+**The corrected carrier (DECIDED).** The pair brackets the dispatch at the
+device's supported sampling point: one dispatch per compute encoder created
+from `MTLComputePassDescriptor`, the attachment carrying the timestamp
+sample buffer with `startOfEncoderSampleIndex=0` /
+`endOfEncoderSampleIndex=1` (MTLComputePass.h: the samples "taken at the
+start/end of command encoder processing", valid iff `AtStageBoundary` is
+supported), resolved through the blit encoder's
+`resolveCounters:inRange:destinationBuffer:destinationOffset:` and read
+back as two `MTLCounterResultTimestamp` uint64 values. Probe-verified on
+this host (6/6 brackets resolved, non-error pairs, positive deltas --
+instrument verification of a trivial kernel, not a measurement of
+anything). The delta's span is now precisely named: [encoder start,
+encoder end] around a single dispatch -- so the letter's open calibration
+question ("whether the sample-pair delta equals the dispatch's GPU time or
+carries sampling/barrier overhead") narrows to the encoder-boundary
+residual and stays UNMEASURED, the measurement row's own question.
+
+**The harness (IMPLEMENTED: code + tests).**
+`scripts/gpu-subgroup-reduce-metal-counters.m` -- the counters-channel
+instrument, carrying the MSL campaign instrument's ADR-0358 protocol and
+argv contract unchanged, the metric source replaced by the corrected
+bracket (`sample ... ts0=.. ts1=.. counter_ns=..`, ERR on an unresolved
+sample). Its source pin
+(`the-counters-harness-brackets-through-the-stage-boundary-pass-attachment`)
+keeps the refuted message-send form out of the instrument, the working
+bracket markers in it, the command-buffer bracket (`GPUStartTime`/
+`GPUEndTime`) banned (rule 3: three instruments, never merged), and the
+misshape argv-gate class pinned out. A smoke run over the committed
+metallibs resolved 120/120 brackets and verified read-back on all three
+operators (instrument verification only -- no sign is read, no speed
+question is answered).
+
+**States.** DECIDED (this row: the corrected bracket method + the named
+residual). IMPLEMENTED: the harness + its pin. MEASURED: route-capability
+facts only (the five-point matrix, the refutation's verbatim abort, the
+bracket resolutions, the smoke's plumbing lines) -- NO performance
+measurement. ACCEPTED DESIGN ONLY: the claim protocol and its units; the
+narrowing and reopen condition; the second-leg letter (unchanged -- the
+letter is method-agnostic by its own words, "device-keyed, not
+route-keyed"). PROPOSED (unchanged): the Vulkan-provider timestamp route.
+UNMEASURED, named: the sample-bracket calibration (the encoder-boundary
+residual), `GPUTimestamp` resolution and clock-domain behavior, the sign
+of any counters-channel arm pair, every per-dispatch GPU time of the fold
+arms, whether the second leg fires, anything off M1 Max, the WGSL route's
+kernel time, every workgroup-row question (`:arm`/`:unknown` stay
+provisional `:measured? false` -- no `:measured?` flag, `:shapes` value,
+selection answer or workgroup row moves this tick). Rule 4 unchanged.
+
+Gates: scoped GPU gate GREEN 110 tests / 11445 assertions / 0 failures /
+0 errors (run 1 red at one pin assertion -- the pin initially matched
+prose naming the refused selector; comment text is not code, the pin now
+matches the message-send form); FULL `run-tests.cljk` RED at base
+("Could not find namespace: kotoba.form", ADR-0362), re-verified since
+the diff touches a `.cljk` namespace, no green suite claimed;
+`gpu_regime_classify.py --self-test` GREEN 2572 / 0 (unchanged);
+`find docs -name '*.sh'` -> 0.
+
+Record: `docs/evidence/gpu/metal-counter-channel-harness-20261025.txt`.
