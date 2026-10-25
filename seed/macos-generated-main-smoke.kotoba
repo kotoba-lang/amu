@@ -1,6 +1,7 @@
-;; Package an extracted Amu aarch64-macos scalar function into arm64 MH_EXECUTE.
+;; Package an extracted Amu aarch64-macos function into arm64 MH_EXECUTE.
 ;; The Darwin exit wrapper and Mach-O layout are diagnostic host code. This
-;; does not qualify a full macOS compiler, runtime, or OS.
+;; supplies a 1000-unit fuel context to pure functions only; it does not
+;; qualify a full macOS compiler, capability runtime, or OS.
 (ns seed.macos-generated-main-smoke (:export [main]))
 
 (defn- byte-at [v :vector-i64 at :i64 value :i64] :vector-i64
@@ -27,7 +28,7 @@
 
 (defn- generated-at [v :vector-i64 at :i64 raw :vector-i64] :vector-i64
   (loop [i 0 out v]
-    (if (= i 12) out
+    (if (= (+ i 5) (vector-count raw)) out
       (recur (+ i 1) (byte-at out (+ at i) (vector-at raw (+ i 5)))))))
 
 (defn- body-at [v :vector-i64 at :i64 raw :vector-i64] :vector-i64
@@ -66,12 +67,17 @@
       (u32-at (+ at 360) 50) (u32-at (+ at 364) 24)
       (u32-at (+ at 368) 1)
       (u32-at (+ at 372) 851968) (u32-at (+ at 376) 851968)
-      ;; bl +16 to the Amu-generated function; then exit(x0).
-      (u32-at (+ at 1024) 0x94000004)
-      (u32-at (+ at 1028) 0xd2800030)
-      (u32-at (+ at 1032) 0xf2a04010)
-      (u32-at (+ at 1036) 0xd4001001)
-      (generated-at (+ at 1040) raw)))
+      ;; AAPCS64 stack context: x7=sp, [x7+8]=fuel 1000. The generated
+      ;; function may charge fuel through this slot. Then exit(x0).
+      (u32-at (+ at 1024) 0xd10043ff)
+      (u32-at (+ at 1028) 0x910003e7)
+      (u32-at (+ at 1032) 0xd2807d08)
+      (u32-at (+ at 1036) 0xf90004e8)
+      (u32-at (+ at 1040) 0x94000004)
+      (u32-at (+ at 1044) 0xd2800030)
+      (u32-at (+ at 1048) 0xf2a04010)
+      (u32-at (+ at 1052) 0xd4001001)
+      (generated-at (+ at 1056) raw)))
 
 (defn- acknowledged-image? [request :vector-i64 offset :i64 reply :vector-i64] :bool
   (if (and (= (vector-count reply) 16389)
@@ -94,7 +100,8 @@
         path-bytes (vector-i64-from-bytes (string-to-utf8 path))
         length (vector-count path-bytes)
         offset (+ 7 length)]
-    (if (or (= length 0) (> length 255) (not (= (vector-count raw) 17))
+    (if (or (= length 0) (> length 255)
+            (< (vector-count raw) 17) (> (vector-count raw) 4101)
             (not (= (vector-at raw 0) 0)) (not (= (vector-at raw 1) 70))
             (not (= (vector-at raw 2) 83)) (not (= (vector-at raw 3) 50))
             (not (= (vector-at raw 4) 0))) 2
