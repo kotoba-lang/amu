@@ -1733,9 +1733,10 @@
   ;; :warp-shuffle-reduce) and 2 REFUSEs (W = 64, both shapes), ZERO
   ;; flips -- so the wiring attaches 10 confirming :measured-cell records
   ;; with NO answer text change anywhere, W = 64 keeps :measured? false
-  ;; and no record. Records are DEVICE-SCOPED (xavier sm_72 -- the uB5G
-  ;; name fragment AND the reported compute capability 7.2, both keys,
-  ;; fail closed) and CHANNEL-SCOPED (the CUDA route only). All of it
+  ;; and no record. Records are DEVICE-SCOPED (xavier sm_72 -- the
+  ;; narrowed class key, row (iv): BOTH name fragments "xavier" +
+  ;; "agx" in ONE name part AND the reported compute capability 7.2,
+  ;; fail closed at every key) and CHANNEL-SCOPED (the CUDA route only). All of it
   ;; cites committed measurements (run 1 of the two adopted sessions) and
   ;; re-measures nothing.
   (let [tested-class {:name "NVIDIA Jetson AGX Xavier" :compute-capability 7.2}
@@ -1775,9 +1776,9 @@
           (is (= (get variants/variant-bases :warp-shuffle-reduce) (:basis answer))
               (str "W=" wg " " target " " operator
                    " confirm freezes answer text -- no note appended to :basis"))))
-      (testing "the uB5G name keys all count: :device, :name, :vendor"
-        (doseq [device [{:device "Xavier" :compute-capability 7.2}
-                        {:vendor "Xavier" :compute-capability 7.2}]]
+      (testing "the uB5G name keys all count: :device, :name, :vendor (both fragments in the one part naming the device)"
+        (doseq [device [{:device "AGX Xavier" :compute-capability 7.2}
+                        {:vendor "agx XAVIER" :compute-capability 7.2}]]
           (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum
                                         {:workgroup-size 256})
                 answer (variants/select-variant :nvidia kir :cuda-v1 device)]
@@ -1801,7 +1802,7 @@
               (str "W=64 " target " must keep the honesty lock"))
           (is (nil? (:measured-cell answer))
               (str "W=64 " target " carries no record")))))
-    (testing "the class keys fail closed: the fragment AND the reported 7.2, both"
+    (testing "the class keys fail closed: both name fragments in ONE name part AND the reported 7.2"
       ;; Each case answers the design ladder (rung 1 where its gate holds)
       ;; and attaches NO record: one key missing is not the tested class.
       (doseq [[device expected]
@@ -1810,7 +1811,14 @@
                [{:name "NVIDIA Jetson AGX Xavier" :compute-capability 7.0} :warp-shuffle-reduce]
                [{:name "NVIDIA Jetson AGX Xavier" :compute-capability 7.5} :warp-shuffle-reduce]
                [{:name "NVIDIA Jetson AGX Xavier" :compute-capability "7.2"} :baseline]
-               [{:name "NVIDIA Jetson AGX Xavier"} :baseline]]]
+               [{:name "NVIDIA Jetson AGX Xavier"} :baseline]
+               ;; row (iv) -- the narrowed key: a Jetson Xavier NX
+               ;; (also sm_72) carries "xavier" but not "agx" and is
+               ;; NOT the tested class
+               [{:name "Jetson Xavier NX" :compute-capability 7.2} :warp-shuffle-reduce]
+               ;; the fragments must sit in ONE name part (the name
+               ;; keys are alternate spellings, not a fragment kit)
+               [{:device "Xavier" :name "AGX" :compute-capability 7.2} :warp-shuffle-reduce]]]
         (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum
                                       {:workgroup-size 256})
               answer (variants/select-variant :nvidia kir :cuda-v1 device)]
@@ -1990,13 +1998,18 @@
       (with-redefs [variants/cuda-op-entries {[:sum 256] (entry :subgroup-reduce)}]
         (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum
                                       {:workgroup-size 256})]
-          ;; not the tested class: the fragment AND the reported 7.2,
-          ;; both keys, fail closed
+          ;; not the tested class: both name fragments in one name
+          ;; part AND the reported 7.2 -- fail closed at every key
           (doseq [device [{:name "NVIDIA Jetson AGX Xavier" :compute-capability 7.0}
                           {:name "NVIDIA Jetson AGX Xavier" :compute-capability 7.5}
                           {:name "NVIDIA GA10B" :compute-capability 7.2}
                           {:name "NVIDIA Jetson AGX Xavier"}
-                          {:compute-capability 7.2}]]
+                          {:compute-capability 7.2}
+                          ;; row (iv) -- the narrowed key names the
+                          ;; per-op records too: a Jetson Xavier NX
+                          ;; (also sm_72) is NOT the tested class
+                          {:name "Jetson Xavier NX" :compute-capability 7.2}
+                          {:device "Xavier" :name "AGX" :compute-capability 7.2}]]
             (let [answer (variants/select-variant :nvidia kir :cuda-v1 device)]
               (is (false? (:measured? answer)) (str (pr-str device)))
               (is (nil? (:measured-cell answer)) (str (pr-str device)))))
@@ -2023,3 +2036,67 @@
                        (variants/select-variant :nvidia ewise :cuda-v1 tested-class))))
             (is (false? (:measured?
                          (variants/select-variant :nvidia ewise :cuda-v1 tested-class))))))))))
+
+(deftest the-tested-class-key-is-the-agx-xavier-name-and-72
+  ;; Row (iv) of the operator-aware row's created rows (ADR-0361's
+  ;; 2026-10-25 seventh amendment): the NARROWER device-class key
+  ;; LANDS (the eleventh amendment). The tested class is keyed by BOTH
+  ;; name fragments "xavier" and "agx" in ONE name part
+  ;; (case-insensitively) AND the reported compute capability 7.2 --
+  ;; replacing the single fragment "xavier", under which a Jetson
+  ;; Xavier NX descriptor (also sm_72) read as the tested class and
+  ;; would have received every entry-contract record -- pooled AND
+  ;; per-op (the row names both layers' records) -- with NO
+  ;; measurement behind it. Record shape (3) is UNCHANGED: the
+  ;; record's :device label stays "xavier sm_72"; what narrowed is
+  ;; the KEY deciding which descriptors are the class.
+  (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                {:workgroup-size 256})
+        expected-record {:device "xavier sm_72"
+                         :channel :native-cuda
+                         :route :cuda-v1
+                         :workgroup-size 256
+                         :operators #{:sum :max :min}
+                         :shapes [1000003 1048576]
+                         :evidence ["docs/evidence/gpu/cuda-claimprotocol-run1-20261025"]}
+        synthetic-evidence ["SYNTHETIC (this test's with-redefs) -- no admissible per-op entry exists"]
+        synthetic-entry {:winner :warp-shuffle-reduce
+                         :shapes [1000003 1048576]
+                         :evidence synthetic-evidence}]
+    (testing "the tested device's own name keys the class (case-insensitive; record shape (3) unchanged)"
+      (doseq [device [{:name "NVIDIA Jetson AGX Xavier" :compute-capability 7.2}
+                      {:name "nvidia Jetson agx XAVIER" :compute-capability 7.2}
+                      {:device "Jetson AGX Xavier" :compute-capability 7.2}]]
+        (let [answer (variants/select-variant :nvidia kir :cuda-v1 device)]
+          (is (= :warp-shuffle-reduce (:variant answer)) (str (pr-str device)))
+          (is (true? (:measured? answer)) (str (pr-str device)))
+          (is (= expected-record (:measured-cell answer)) (str (pr-str device))))))
+    (testing "a Jetson Xavier NX descriptor (also sm_72) is NOT the class -- the pooled arm attaches nothing"
+      (let [answer (variants/select-variant :nvidia kir :cuda-v1
+                                           {:name "Jetson Xavier NX" :compute-capability 7.2})]
+        (is (= :warp-shuffle-reduce (:variant answer)))
+        (is (false? (:measured? answer)))
+        (is (nil? (:measured-cell answer)))))
+    (testing "the narrowed key names the per-op records too (synthetic entry -- the table is empty by rule)"
+      (with-redefs [variants/cuda-op-entries {[:sum 256] synthetic-entry}]
+        (let [nx-answer (variants/select-variant :nvidia kir :cuda-v1
+                                                {:name "Jetson Xavier NX" :compute-capability 7.2})]
+          (is (false? (:measured? nx-answer)))
+          (is (nil? (:measured-cell nx-answer))))
+        (let [answer (variants/select-variant :nvidia kir :cuda-v1
+                                             {:name "NVIDIA Jetson AGX Xavier" :compute-capability 7.2})]
+          (is (true? (:measured? answer)))
+          (is (= (assoc expected-record :operators #{:sum} :evidence synthetic-evidence)
+                 (:measured-cell answer))))))
+    (testing "NAMED RESIDUAL, pinned as behavior: a name carrying both fragments and 7.2 still reads as the class"
+      ;; "Jetson AGX Xavier Industrial" (also sm_72) is the concrete
+      ;; residual of a name-based key: it attaches today -- pinned so
+      ;; the coarseness is NAMED BEHAVIOR, not an accident. The
+      ;; descriptor surface carries no device-id/UUID/PCI-id axis and
+      ;; none is invented here; a device-id key needs a producer fact
+      ;; that does not exist (PROPOSED, its own row if one lands).
+      (let [answer (variants/select-variant :nvidia kir :cuda-v1
+                                           {:name "Jetson AGX Xavier Industrial" :compute-capability 7.2})]
+        (is (= :warp-shuffle-reduce (:variant answer)))
+        (is (true? (:measured? answer)))
+        (is (= expected-record (:measured-cell answer)))))))

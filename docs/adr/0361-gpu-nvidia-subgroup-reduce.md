@@ -1216,3 +1216,81 @@ namespaces, exit 1) -- the touched namespaces' own tests are the
 scoped gate above, NO green full suite claimed; `find docs -name
 '*.sh'` -> 0 files. Record:
 `docs/evidence/gpu/cuda-op-entry-wiring-20261025.txt`.
+
+## Amendment (2026-10-25, eleventh the same day: row (iv) LANDS --
+the narrower device-class key, naming BOTH entry layers' records)
+
+IMPLEMENTED + DECIDED (JUN-57, the operator-aware row's created row
+"(iv) the narrower device-class key"). NO hardware ran this tick and
+nothing was re-measured.
+
+**The key.** The tested device class is now keyed by BOTH name
+fragments `"xavier"` and `"agx"` sitting in ONE name part
+(case-insensitively, the uB5G per-name-part idiom) AND the reported
+compute capability 7.2 exactly -- fail closed at every key --
+replacing the single fragment `"xavier"`. The ground is the tested
+device's own reported name, NVIDIA Jetson AGX Xavier (sm_72), the
+one device where the CUDA route's measurements ran. The hole this
+closes: under the single fragment a Jetson Xavier NX descriptor
+(also sm_72) read as the tested class and would have received every
+entry-contract record -- pooled AND per-op -- with no measurement
+behind it. One shared predicate (`cuda-tested-class?`) keys BOTH
+`cuda-entry-cell` and `cuda-entry-op` -- row (iv) names the per-op
+records too. The fragments must sit in ONE name part (the three
+name keys are alternate spellings of the device's name, not a
+fragment kit). Record shape (3) is UNCHANGED: the record's `:device`
+label stays `"xavier sm_72"`; what narrowed is the KEY deciding
+which descriptors are the class.
+
+**Rejected, named.** (a) a negative key ("xavier" and NOT "nx") --
+a substring blacklist naming only today's known wrong answer; (b)
+exact-name equality -- brittle across producers' spellings and
+against the uB5G idiom's tolerance; (c) a device-id/UUID/PCI-id key
+-- the descriptor surface carries `:device`/`:name`/`:vendor`
+strings and `:compute-capability`, no device-id axis exists and none
+is invented here (PROPOSED, its own row if a producer ever supplies
+one); (d) narrowing `kotoba.compiler.accelerator-targets`'
+workgroup rows' `:measured-device "xavier"` in the same slice --
+that table's scoping is its own decision (ADR-0355/0358) and stays
+coarse, named.
+
+**Named residual, not hidden.** The key is still name-based: any
+name part carrying both fragments with a reported 7.2 still reads as
+the class -- `"Jetson AGX Xavier Industrial"` (also sm_72) is the
+concrete residual, PINNED AS BEHAVIOR by the new test (it attaches
+today; pinned so the coarseness is named behavior, not an accident,
+and not a claim anything was measured on it).
+
+**Consequence today: NOTHING MOVES for any measured device.** The
+narrowed key only removes descriptor classes that were never
+measured: the tested class matches exactly as before, no record, no
+`:measured?` flag, no selection answer, no `:shapes` value and no
+workgroup row moves. The one behavioral delta is fail-closed (Xavier
+NX and across-parts-split descriptors now attach nothing).
+
+**States.** DECIDED: this row (the key + its rejections).
+IMPLEMENTED (code + tests): the narrowed key (`cuda-tested-class-
+fragments` + `cuda-tested-class?`) over both entry arms, pinned by
+`the-tested-class-key-is-the-agx-xavier-name-and-72` and the
+extended fail-closed case lists. MEASURED: nothing new (NO hardware
+ran). ACCEPTED DESIGN ONLY: the operator-aware contract +
+pre-registration (seventh amendment) and its remaining row (iii)
+second half (session B and the per-op entry it enables); the entry
+contract + pooled wiring (fifth/sixth amendments); ADR-0358,
+ADR-0373. UNMEASURED, named: session B (cross-day; earliest
+2026-10-26 UTC) and therefore H1/H2 and every per-op
+entry/flip/confirm verdict; every per-op verdict on non-xavier
+hardware; run 3+; the `:sum` ordering at W = 64 on any device; the
+flip arm on real data (ZERO real flips); the named residual on real
+hardware; every workgroup row (`:arm`/`:unknown` stay provisional
+`:measured? false` -- no `:measured?` flag moves this row). Gates:
+scoped GPU gate GREEN 109 tests / 11434 assertions / 0 failures / 0
+errors (glslang 16.6.0 real-spawn; committed pin 108/11405, delta =
+this slice's new deftest + extended case lists); FULL
+`run-tests.cljk` RED at base -- `Could not find namespace:
+kotoba.form` (ADR-0362) fails the run before any test executes,
+OUTSIDE this diff (re-verified this tick since the diff touches
+.cljk namespaces, exit 1) -- NO green full suite claimed;
+`gpu_regime_classify.py --self-test` 2572/0 (regression pin); `find
+docs -name '*.sh'` -> 0 files. Record:
+`docs/evidence/gpu/cuda-device-class-key-20261025.txt`.

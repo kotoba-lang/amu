@@ -55,8 +55,9 @@
   apple-simdgroup-flip-note),
   and the CUDA route's entry-contract cells (ADR-0361's 2026-10-25 sixth
   amendment, JUN-57): the :warp-shuffle-reduce answers of the tested
-  device class (xavier sm_72 -- the uB5G name fragment AND a reported
-  compute capability 7.2) at W = 32/128/256/512/1024, where the committed
+  device class (xavier sm_72 -- the narrowed class key: both name
+  fragments \"xavier\" + \"agx\" in one name part AND a reported
+  compute capability 7.2, row (iv)) at W = 32/128/256/512/1024, where the committed
   cell census's unique winner CONFIRMS the design answer (both clocks,
   both measured shapes; W = 64's groups refused -- the straddle -- and
   keep the lock).
@@ -971,19 +972,37 @@
   same-day re-session record stays named in its own paragraph only and
   in NO basis evidence list (the rule above, unchanged).")
 
-(def ^:private cuda-measured-fragment
-  "The measured-device fragment of the ONE device where the NVIDIA CUDA
-  route has hardware measurements: the fleet's CUDA host \"xavier\"
-  (Jetson AGX Xavier, L4T R35.4.1) -- the same uB5G scoping key the
-  workgroup rows use (kotoba.compiler.accelerator-targets
-  :measured-device \"xavier\"). Evidence about a NAMED device acts on
-  that device's name -- case-insensitively, per name part -- and never
-  past it (the uB5G idiom). The tested device CLASS is \"xavier sm_72\":
-  the name fragment AND the reported compute capability 7.2 are both
-  keys (the Apple flip contract's fragment + reported-subgroup-size
-  pairing at its letter), and the record's :device names the class as
-  the entry contract spells it."
-  "xavier")
+(def ^:private cuda-tested-class-fragments
+  "The name fragments of the tested device class's KEY -- row (iv) of
+  the operator-aware row's created rows (ADR-0361's 2026-10-25 seventh
+  amendment): the NARROWER device-class key (eleventh amendment). The
+  tested device is the ONE device where the NVIDIA CUDA route's
+  measurements ran: the fleet's CUDA host NVIDIA Jetson AGX Xavier
+  (L4T R35.4.1, sm_72). The key is BOTH fragments \"xavier\" and
+  \"agx\" sitting in ONE name part (case-insensitively, the uB5G
+  per-name-part idiom of kotoba.compiler.accelerator-targets --
+  evidence about a NAMED device acts on that device's name and never
+  past it) AND the reported compute capability 7.2
+  (cuda-measured-compute-capability) -- fail closed at every key. This
+  REPLACES the single fragment \"xavier\": under it a Jetson
+  Xavier NX descriptor (also sm_72, name carries \"xavier\" but
+  not \"agx\") read as the tested class and would have received
+  every entry-contract record -- pooled AND per-op (row (iv) names
+  both layers' records) -- with NO measurement behind it. The
+  fragments must sit in ONE name part: the three name keys are
+  alternate spellings of the device's name, not a fragment kit to be
+  assembled across keys. NAMED RESIDUAL, NOT HIDDEN: the key is still
+  name-based (the descriptor surface carries :device/:name/:vendor
+  strings and :compute-capability -- no device-id, UUID or PCI-id
+  axis exists and none is invented here), so any name part carrying
+  both fragments with a reported 7.2 still reads as the tested class:
+  \"Jetson AGX Xavier Industrial\" (also sm_72) is the concrete
+  residual. A device-id key needs a producer fact that does not exist
+  (PROPOSED, its own row if a producer ever supplies one). NOT
+  NARROWED HERE: kotoba.compiler.accelerator-targets' workgroup rows
+  keep their own coarser uB5G key (:measured-device \"xavier\") --
+  that table's scoping is its own decision and untouched by this row."
+  ["xavier" "agx"])
 
 (def ^:private cuda-measured-compute-capability
   "The reported compute capability of the tested device class: 7.2
@@ -994,6 +1013,31 @@
   not the tested device class and no record attaches -- fail closed,
   exactly like the Apple contract's subgroup-size key."
   7.2)
+
+(defn- cuda-tested-class?
+  "Whether DEV is the tested device class (cuda-tested-class-fragments
+  at its letter): ONE name part -- :device, :name, or the :vendor name
+  key, the same three keys uB5G reads in
+  kotoba.compiler.accelerator-targets/recommend -- carries BOTH name
+  fragments case-insensitively, AND the descriptor reports the compute
+  capability 7.2 exactly (a string, another number, or nothing is not
+  the class). Both keys, fail closed; an unnamed (vendor-id-only)
+  descriptor answers false (no name, no evidence to act on). This one
+  predicate keys BOTH entry-contract layers -- cuda-entry-cell
+  (pooled) and cuda-entry-op (per-op) -- so the narrowed key names the
+  per-op records too (row (iv) at its letter). The tested device's
+  own reported name carries both fragments (\"NVIDIA Jetson AGX
+  Xavier\"); a Jetson Xavier NX (\"Jetson Xavier NX\", also 7.2)
+  fails the fragment key and attaches nothing."
+  [dev]
+  (and (boolean (some (fn [part]
+                        (and (string? part)
+                             (not (str/blank? part))
+                             (every? (fn [fragment]
+                                       (str/includes? (str/lower part) fragment))
+                                     cuda-tested-class-fragments)))
+                      [(:device dev) (:name dev) (:vendor dev)]))
+       (= cuda-measured-compute-capability (:compute-capability dev))))
 
 (def ^:private cuda-measured-channel
   "The channel the contract-satisfying measurements ran through: the
@@ -1061,14 +1105,22 @@
 
 (def ^:private cuda-measured-device-class
   "The tested device class as the entry contract's record shape (3)
-  spells it in a record's :device: \"xavier sm_72\" -- the uB5G name
-  fragment AND the reported compute capability named together, so the
-  record names the class and no claim extends past either key. NAMED,
-  NOT HIDDEN: the fragment \"xavier\" is coarse on purpose (the same
-  key kotoba.compiler.accelerator-targets' NVIDIA workgroup row uses,
-  :measured-device \"xavier\") and matches any Xavier-family name --
-  a Jetson Xavier NX descriptor (also sm_72) would read as the tested
-  class under these two keys; a narrower key is its own later row."
+  spells it in a record's :device: \"xavier sm_72\" -- the class name
+  and the reported compute capability named together, so the record
+  names the class and no claim extends past either key. The label is
+  UNCHANGED by the narrower device-class key (row (iv), the eleventh
+  amendment): record shape (3) stays byte-identical -- what narrowed
+  is the KEY deciding which descriptors ARE this class
+  (cuda-tested-class?: both name fragments in one name part AND the
+  reported 7.2), not the record's :device text. NAMED RESIDUAL, NOT
+  HIDDEN: the key is still name-based and a name part carrying both
+  fragments with a reported 7.2 still reads as the class --
+  \"Jetson AGX Xavier Industrial\" (also sm_72) is the concrete
+  residual; a device-id key needs a producer fact that does not
+  exist (PROPOSED, its own row if a producer ever supplies one). NOT
+  NARROWED HERE: kotoba.compiler.accelerator-targets' workgroup rows
+  keep their own coarser uB5G key (:measured-device \"xavier\") --
+  that table's scoping is untouched by this row."
   "xavier sm_72")
 
 (def ^:private cuda-flip-note
@@ -1094,8 +1146,10 @@
   entry as {:outcome :confirm|:flip :variant winner :record {...}} when
   a cuda-cell-entries group keys this cell, and nil otherwise -- REFUSE
   at its letter: the design ladder's answer stands with no record. The
-  keys are the tested device class (the uB5G name fragment AND the
-  reported compute capability 7.2 -- both, fail closed), the measured
+  keys are the tested device class (cuda-tested-class?: BOTH name
+  fragments \"xavier\" + \"agx\" in ONE name part AND the reported
+  compute capability 7.2 -- fail closed at every key; the narrower
+  device-class key, row (iv)), the measured
   channel's route (:cuda-v1 under either spelling; a CUDA measurement
   never acts on an MSL/WGSL/GLSL cell -- contract point 5), the reduce
   shape selected as a whole (one of :sum/:max/:min, no per-operator
@@ -1118,8 +1172,7 @@
   [dev route kir design-variant]
   (when (and (= :cuda-v1 route)
              (= :warp-shuffle-reduce design-variant)
-             (device-name-carries? dev cuda-measured-fragment)
-             (= cuda-measured-compute-capability (:compute-capability dev))
+             (cuda-tested-class? dev)
              (= :reduce (:kernel/op kir))
              (contains? #{:sum :max :min} (:kernel/operator kir)))
     (when-let [entry (get cuda-cell-entries (:kernel/workgroup-size kir))]
@@ -1204,8 +1257,10 @@
   cuda-op-flip-note :record {...}} when cuda-op-entries keys this
   cell's operator and width, and nil otherwise -- REFUSE at its
   letter. The keys are exactly the pooled arm's keys (the tested
-  device class -- the uB5G name fragment AND the reported compute
-  capability 7.2, both, fail closed; the measured channel's route
+  device class -- cuda-tested-class?: BOTH name fragments \"xavier\" +
+  \"agx\" in ONE name part AND the reported compute capability 7.2,
+  fail closed at every key; the narrower device-class key, row (iv),
+  which names the per-op records too; the measured channel's route
   :cuda-v1 under either spelling; the reduce op with an operator in
   #{:sum :max :min}; a design-ladder rung-1 answer) plus the entry's
   OWN key: [:kernel/operator :kernel/workgroup-size] must be in
@@ -1222,8 +1277,7 @@
   [dev route kir design-variant]
   (when (and (= :cuda-v1 route)
              (= :warp-shuffle-reduce design-variant)
-             (device-name-carries? dev cuda-measured-fragment)
-             (= cuda-measured-compute-capability (:compute-capability dev))
+             (cuda-tested-class? dev)
              (= :reduce (:kernel/op kir))
              (contains? #{:sum :max :min} (:kernel/operator kir)))
     (when-let [entry (get cuda-op-entries [(:kernel/operator kir)
@@ -1756,8 +1810,9 @@
          ;; answers its operator at its W OVER the pooled record (its
          ;; :operators key is #{op}); cuda-entry-cell (the pooled arm)
          ;; answers everywhere NO per-op record applies. Both arms key
-         ;; the tested device class (xavier sm_72 -- name fragment AND
-         ;; reported 7.2), the CUDA route, and the reduce op; the pooled
+         ;; the tested device class (xavier sm_72 -- the narrowed key:
+         ;; both name fragments in one name part AND reported 7.2,
+         ;; cuda-tested-class?), the CUDA route, and the reduce op; the pooled
          ;; arm adds an ENTERED (W, shape) group and the per-op arm an
          ;; ENTERED (op, W) group -- everything else is REFUSE and this
          ;; binding is nil (W = 64's pooled straddle groups, any other
