@@ -836,3 +836,127 @@ assertions / 0 failures / 0 errors; FULL `run-tests.cljk` RED at base
 (`Could not find namespace: kotoba.form`, ADR-0362, outside this
 diff); `gpu_regime_classify.py --self-test` 2536/0 (regression pin).
 Record: `docs/evidence/gpu/cuda-cell-entry-wiring-20261025.txt`.
+
+## Amendment (2026-10-25, seventh the same day: the operator-aware
+selection row is DECIDED -- the CUDA route gains an operator axis
+under a PRE-REGISTERED contract, and the two committed sessions are
+ruled exploratory and inadmissible as entry)
+
+DECIDED (JUN-57, the row every earlier amendment carried as
+"operator-aware selection (PROPOSED, its own row)"). NO hardware ran
+this tick; the ground is the two committed adopted sessions consumed
+as EXPLORATORY derivation through the committed parser
+(`parse_cuda_pair_blocks`, scratch script, never staged) -- they
+GENERATE the hypotheses below and can satisfy no entry under it.
+
+**Exploratory census (derived, inadmissible).** At the per-operator
+reading (one reading = one (session, metric) over the group's three
+pair blocks, the block's paired-median ratio the statistic, unique
+winner = faster than BOTH rivals in EVERY reading of both sessions x
+both clocks): 36 (op, W, shape) groups, 36/36 with a unique winner --
+ZERO refusals at this unit; the pooled W = 64 refusal resolves as
+exactly the operator split. 34 groups' winner is `:warp-shuffle-reduce`;
+EXACTLY TWO -- (op `:sum`, W = 64, both shapes) -- winner
+`:subgroup-reduce`, with subgroup/baseline paired-median ratios
+0.8763 / 0.8646 (n = 1000003) and 0.8715 / 0.8790 (n = 1048576)
+gpu_ns, within-block one-sided 19-20/20, in both sessions and both
+clocks. NAMED: this cuts against the entry contract's rejection-(a)
+hazard reading ("its pair against `:baseline` is scoped and often
+slower") -- that was the pooled-stratum reading; at the per-op unit
+the (:sum, W = 64) subgroup/baseline pair is decisively one-sided
+the other way in every reading.
+
+**Adopted contract.** (1) *Unit + surface*: a per-operator record
+keys `:operators #{op}` and applies only to KIRs of that operator;
+the pooled records are unchanged and answer everywhere no per-op
+record applies; PRECEDENCE: the per-op record answers its operator at
+its W (the KIR carries the reduce operator, `select-variant` reads
+KIR facts). (2) *Entry group*: (op, W), `:shapes` qualifying-only,
+the pooled record shape (3) with single-op `:operators`. (3) *Entry
+rule*: unique-winner + both-clocks + **CROSS-RUN INVARIANCE** (NAMED
+AS NEW -- rule 2's regime machine has no pool at this unit, so
+REGIME-INVARIANCE is replaced by every qualifying reading agreeing
+one-sided: every session x both clocks x every qualifying shape;
+anything else REFUSES and keeps the standing answer with no record).
+(4) *Replication requirement*: EVERY per-op entry (confirm or flip)
+requires at least TWO fresh sessions UNDER THIS REGISTRATION on at
+least TWO different UTC days agreeing in every reading -- the two
+committed sessions (same-day, hypothesis-generating) are EXPLORATORY
+forever and flip-note prose only (ADR-0373's same-day rule by
+citation); a flip cannot land before the cross-day replication
+exists. (5) *Pre-registration*: H1 (the standing candidate): at
+(op `:sum`, W = 64) on xavier sm_72 on the CUDA route
+`:subgroup-reduce` is the unique winner in every qualifying reading;
+H2 (the contrast): every other (op, W) group's unique winner is
+`:warp-shuffle-reduce` (confirms). The admissible sessions' protocol
+is FIXED here (the ADR-0358 instrument class, the full 108-block
+grid, one fresh process per block, PAIRS=20 interleaved, WARMUP=2,
+AB/BA alternating, published LCG seed, both clocks, untimed verified
+read-back, correctness re-verified inside the measurement, the
+committed classifier routes); a hypothesis that fails REFUSES its
+group and the failure is recorded -- pre-registration includes the
+failure mode. (6) *Scope*: CUDA route only; sign claims CHANNEL-
+SCOPED and DEVICE-SCOPED to xavier sm_72 (the name fragment AND
+reported 7.2, fail closed); rung-2 cells never attach a per-op
+record; no workgroup row answers or moves; the name-fragment key's
+coarseness rides along unchanged (NAMED -- the per-op records widen
+the Xavier-NX-key gap's blast radius; the narrower key is its own
+later row).
+
+**Rejected, named.** (a) consuming the committed sessions (or any
+pre-registration data) as entry -- the overfitting hazard at its
+letter, and the exploratory census's strength is exactly why the
+registration must precede the fresh data; (b) single-pair entry (the
+three-arm rule is what structurally excludes the "slower than its own
+lower rung" hazard); (c) the operator axis on the Metal/MSL channel
+(ADR-0373's "no per-operator flip" stands there -- the two channels'
+contracts now differ at the operator axis, named); (d) per-sample
+sign counts as the statistic (reported beside every ratio, consumed
+nowhere); (e) workgroup-row movement or pooled-layer change (the per-
+op layer only ADDS where the pooled layer refused or an admissible
+per-op winner differs); (f) amending the pooled unit to carry
+operators (the operator axis is a narrower layer over it, not a
+replacement).
+
+**Consequence today: NOTHING MOVES** (docs-only diff; rule 4). No
+record, no `:measured?` flag, no selection answer, no `:shapes`
+value, no workgroup row. At (op `:sum`, W = 64) the design-ordered
+answer stands UNCLAIMED (measured but inadmissible -- named as
+unclaimed, not measured-ordered). Projected once the later rows land:
+under the registration, reproducing the exploratory census would
+FLIP (:sum, W = 64) for `:sum` KIRs on the tested class, CONFIRM
+(:max/:min, W = 64) (`:measured?` true there -- the one projected
+`:measured?` movement, leaving the pooled refusal's false), and
+materialize no per-op record at the 34 design-answer groups. New
+rows created, each its own later row: (i) the wiring (per-op entry
+table + per-op arm of `cuda-entry-cell` + precedence + tests);
+(ii) the per-op census publication route in
+`scripts/gpu_regime_classify.py` (UNIMPLEMENTED); (iii) the
+measurement rows (fresh session A, then cross-day session B);
+(iv) the narrower device-class key. Named interactions: the
+cell-unit row's reopen (i) is NOT triggered and this track runs
+parallel to it; the "READING 2" decision stands scoped to the pooled
+protocol (H1 is its registered successor question, registered not
+answered); the entry contract's rejection (d) "per-operator entry
+stays rejected" is SUPERSEDED for the CUDA route at the (op, W) unit
+by this row (earlier records stand as history).
+
+**States.** DECIDED: this row (contract, rejections, pre-registration,
+consequence). IMPLEMENTED: NOTHING (no code moves). MEASURED: nothing
+new (consumed as exploratory derivation, not re-measured). ACCEPTED
+DESIGN ONLY: the claim-protocol adoption, the cell unit + census
+machinery, the entry contract + wiring (earlier 2026-10-25
+amendments), ADR-0358, ADR-0373. UNMEASURED, named: H1/H2 under
+admissible sessions; every per-op verdict on non-xavier hardware; run
+3+ / cross-day replication; the :sum ordering at W = 64 on any device
+under any admissible unit; the flip arm on real data (ZERO real
+flips); every workgroup row (`:arm`/`:unknown` stay provisional
+`:measured? false`); the name-fragment key's coarseness. Gates:
+scoped GPU gate GREEN 107 tests / 11240 assertions / 0 failures / 0
+errors (docs-only diff, regression pin); FULL `run-tests.cljk` NOT
+RUN this slice (no .cljk touched) -- documented red at base
+(`Could not find namespace: kotoba.form`, ADR-0362), NO green suite
+claimed; `gpu_regime_classify.py --self-test` 2536/0 (regression
+pin); `--cuda-cells` re-derivation of both committed censuses diffs
+EMPTY. Record:
+`docs/evidence/gpu/cuda-operator-aware-selection-20261025.txt`.
