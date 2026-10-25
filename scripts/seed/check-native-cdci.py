@@ -12,6 +12,8 @@ import platform
 import re
 import shutil
 import signal
+import concurrent.futures
+import threading
 import subprocess
 import time
 from pathlib import Path
@@ -69,6 +71,7 @@ def main(complete, out):
     out.mkdir(parents=True, exist_ok=False)
     (out / "raw").mkdir()
     calls = []
+    calls_lock = threading.Lock()
     cases = json.loads((ROOT / "seed/static-cases.json").read_text())["cases"]
     policy = json.loads((ROOT / "seed/cdci/policy.json").read_text())
     binding = controller_pin_metadata(policy)
@@ -122,8 +125,9 @@ def main(complete, out):
         (out / "raw" / (name + ".stderr")).write_bytes(r.stderr)
         row = dict(name=name, exit=r.returncode, seconds=round(time.monotonic() - started, 3),
                    stdoutSHA256=sha(r.stdout), stderrSHA256=sha(r.stderr))
-        calls.append(row)
-        (out / "calls.json").write_text(json.dumps(calls, indent=2) + "\n")
+        with calls_lock:
+            calls.append(row)
+            (out / "calls.json").write_text(json.dumps(calls, indent=2) + "\n")
         assert r.returncode == expected, (name, r.returncode, r.stderr[-300:])
         if diagnostic:
             assert diagnostic.encode() in r.stderr, (name, r.stderr)
@@ -150,7 +154,12 @@ def main(complete, out):
               ("fifo-source", None, "CDCI:E1003"),
               ("non-executable-image", None, "CDCI:E2002"),
               ("existing-output", None, "CDCI:E1006")]
-    for name, change, diagnostic in probes:
+    # The refusal probes are independent: each stages its own root under
+    # out/<name> and refuses before any compiler execution. Run them
+    # concurrently so their serial wall time does not scale with the probe
+    # count; every probe keeps its own verdict, log and negative asserts.
+    def one_probe(probe):
+        name, change, diagnostic = probe
         root, manifest, lines = stage(name)
         if change:
             lines[change[0]] = change[1]
@@ -172,6 +181,10 @@ def main(complete, out):
         run(name, [root / "controller.elf", manifest, digest], 2, diagnostic=diagnostic)
         assert not (root / "cdci.receipt").exists()
         assert not (root / "amu.stdout").exists(), (name, "unexpected compiler execution")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        for _ in pool.map(one_probe, probes):
+            pass
     for field, value in ((8, "43"), (9, "1"), (10, "999998")):
         name = "gate-forged-field-" + str(field)
         root, _, _ = stage(name)
