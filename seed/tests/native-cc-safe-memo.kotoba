@@ -1,0 +1,93 @@
+;; H23 experiment only. A cache lives inside one read-only cc-safe query.
+;; Exact successful cost and largest failed budget are monotone in work.
+;; No result crosses a query, SIR mutation, T2 rollback or open-range change.
+(defn- cm-save [C :vector-i64 at :i64 f :i64 n :i64 depth :i64 work :i64 result :i64] :i64
+ (let [same (and (= (vector-at C at) f) (= (vector-at C (+ at 1)) n) (= (vector-at C (+ at 2)) depth))
+       failed (if (and same (> (vector-at C (+ at 4)) work)) (vector-at C (+ at 4)) work)
+       stored (-> C (vector-assoc! at f) (vector-assoc! (+ at 1) n) (vector-assoc! (+ at 2) depth)
+                    (vector-assoc! (+ at 3) (if (>= result 0) (- work result) 0))
+                    (vector-assoc! (+ at 4) (if (< result 0) failed 0)))] result))
+(defn- cm-query [M :vector-i64 C :vector-i64 f :i64 n :i64 depth :i64 work :i64] :i64
+ (let [p (gn-fnf M f FF-SIR)]
+  (if (and (> f 0) (< f (vector-at M MM-FN-N)) (> p 0)
+           (> depth 0) (> work 0) (not (gn-clamp-open M f))
+           (>= n 0) (<= n 7) (= (gn-fnf M f FF-NPARAMS) n)
+           (= (gn-op M p) OP-FN) (= (gn-sir M p IF-A) f) (= (gn-sir M p IF-B) n))
+   (let [at (* 5 (bit-and (+ (* f 9) depth) 255))
+         same (and (= (vector-at C at) f) (= (vector-at C (+ at 1)) n) (= (vector-at C (+ at 2)) depth))
+         cost (if same (vector-at C (+ at 3)) 0)
+         failed (if same (vector-at C (+ at 4)) 0)]
+    (cond (> cost 0) (if (>= work cost) (- work cost) -1)
+          (>= failed work) -1
+          :else (let [result (cm-scan M C (inc p) f n depth (dec work))]
+                  (cm-save C at f n depth work result)))) -1)))
+(defn- cm-scan [M :vector-i64 C :vector-i64 j :i64 f :i64 n :i64 depth :i64 work :i64] :i64
+ (if (or (>= j (vector-at M MM-SIR-N)) (<= work 0)) -1
+  (let [op (gn-op M j) a (gn-sir M j IF-A) b (gn-sir M j IF-B) c (gn-sir M j IF-C)
+        left (dec work)]
+   (case op
+    OP-END (if (= a f) left -1)
+    (OP-CONST OP-LGET OP-LSET OP-LABEL OP-BR OP-BRZ OP-BRNZ OP-FUEL OP-RET OP-RET2 OP-RES2 OP-TRAP OP-TAB)
+      (cm-scan M C (inc j) f n depth left)
+    OP-BIN (if (< a BOP-F64-ADD) (cm-scan M C (inc j) f n depth left) -1)
+    OP-CMP (if (< a CC-F64-EQ) (cm-scan M C (inc j) f n depth left) -1)
+    OP-UN (if (< a UOP-F64-NEG) (cm-scan M C (inc j) f n depth left) -1)
+    OP-RT (if (or (gn-inl a b c)
+                  (and (= a RT-VECTOR-AT) (= c 2) (>= b 6)
+                       (>= (gn-fnf M f FF-DEPTH) (+ b 2)) (gn-high-loop M j)))
+              (cm-scan M C (inc j) f n depth left) -1)
+    OP-CALL (let [remain (if (and (= a f) (= c n)) left (cm-query M C a c (dec depth) left))]
+      (if (< remain 0) -1 (cm-scan M C (inc j) f n depth remain)))
+    -1))))
+(defn- cm-safe [M :vector-i64 f :i64 n :i64 depth :i64 work :i64] :i64
+ (arena-scope (cm-query M (vector-alloc 1280) f n depth work)))
+
+(defn- cm-ins [M :vector-i64 p :i64 op :i64 a :i64 b :i64 c :i64] :vector-i64
+ (-> M (gn-put (+ MM-SIR-BASE (* p MM-SIR-W) IF-OP) op)
+       (gn-put (+ MM-SIR-BASE (* p MM-SIR-W) IF-A) a)
+       (gn-put (+ MM-SIR-BASE (* p MM-SIR-W) IF-B) b)
+       (gn-put (+ MM-SIR-BASE (* p MM-SIR-W) IF-C) c)))
+(defn- cm-program [M :vector-i64 f :i64] :vector-i64
+ (if (= f 265) M
+  (let [p (+ 1 (* (dec f) 8)) target (case f 1 2 2 3 3 7 4 4 5 6 6 5 0)
+        kind (if (> target 0) OP-CALL OP-CONST)
+        next (-> M (gn-put (+ MM-FN-BASE (* f MM-FN-W) FF-SIR) p)
+                   (gn-put (+ MM-FN-BASE (* f MM-FN-W) FF-NPARAMS) 0)
+                   (gn-put (+ MM-FN-BASE (* f MM-FN-W) FF-DEPTH) 8)
+                   (cm-ins p OP-FN f 0 0)
+                   (cm-ins (inc p) kind target 0 0)
+                   (cm-ins (+ p 2) kind target 0 0)
+                   (cm-ins (+ p 3) OP-END f 0 0))]
+   (cm-program next (inc f)))))
+(defn- cm-grid [M :vector-i64 C :vector-i64 k :i64] :bool
+ (if (= k 32768) true
+  (let [index (if (< k 16384) k (- 32767 k))
+        which (rem index 16) f (if (< which 8) (+ 1 which) (+ 249 which))
+        n (rem (quot index 16) 2) d (rem (quot index 32) 8)
+        depth (case d 0 0 1 1 2 2 3 3 4 7 5 8 6 257 258) work (rem (quot index 256) 64)
+        original (cc-safe M f n depth work) memo (cm-query M C f n depth work)]
+   (and (= original memo) (recur M C (inc k))))))
+(defn- cm-pair [M :vector-i64 f :i64 d :i64 w :i64 g :i64 e :i64 v :i64] :bool
+ (arena-scope
+  (let [C (vector-alloc 1280) first (cm-query M C f 0 d w) second (cm-query M C g 0 e v)]
+   (and (= first (cc-safe M f 0 d w)) (= second (cc-safe M g 0 e v))))))
+(defn- cm-collision-checks [M :vector-i64] :bool
+ (and (cm-pair M 7 8 64 7 8 1)
+      (cm-pair M 7 8 1 7 8 64)
+      (cm-pair M 1 1 4096 1 257 4096)
+      (cm-pair M 1 8 4096 257 8 4096)))
+(defn- cm-mutated-grid [M :vector-i64 mode :i64] :bool
+ (if (= mode 16) true
+  (let [p 50 op (case mode 0 OP-CONST 1 OP-RT 2 OP-RT 3 OP-BIN 4 OP-BIN 5 OP-CMP 6 OP-CMP 7 OP-UN 8 OP-UN 9 OP-CAP 10 OP-CALL 11 OP-CALL 12 OP-TRAP 13 OP-END 14 OP-LABEL 9999)
+        a (case mode 1 RT-STRING-LENGTH-VIA 2 RT-VECTOR-AT 3 BOP-ADD 4 BOP-F64-ADD 5 CC-EQ 6 CC-F64-EQ 7 UOP-NOT 8 UOP-F64-NEG 10 1 11 9 13 8 0)
+        m1 (cm-ins M p op a 6 (if (= mode 2) 2 0))
+        grid (arena-scope (cm-grid m1 (vector-alloc 1280) 0))
+        fresh (= (cc-safe m1 1 0 8 4096) (cm-safe m1 1 0 8 4096))]
+   (and grid fresh (cm-mutated-grid m1 (inc mode))))))
+(defn- seed-main [] :i64
+ (if (not= (io-argc) 0) 1
+  (let [m0 (mem-new) m1 (mem-alloc m0 (+ gn-a-lp MM-LABEL-CAP 91))
+        base (vector-at m1 MM-R0)
+        m2 (-> m1 (gn-put gn-cell base) (gn-gs gn-g-open 0) (gn-gs gn-g-open-n 0)
+                  (gn-put MM-FN-N 265) (gn-put MM-SIR-N 2113) (cm-program 1))]
+   (if (and (cm-collision-checks m2) (cm-mutated-grid m2 0)) 0 1))))

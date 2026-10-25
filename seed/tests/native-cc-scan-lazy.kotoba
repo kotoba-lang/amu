@@ -1,0 +1,28 @@
+;; H27: load only operands actually consumed by each proof opcode.
+;; No memo, reordered predicate, changed budget, SIR write or proof widening.
+(defn- cl-safe [M :vector-i64 f :i64 n :i64 depth :i64 work :i64] :i64
+ (let [p (gn-fnf M f FF-SIR)]
+  (if (and (> f 0) (< f (vector-at M MM-FN-N)) (> p 0)
+           (> depth 0) (> work 0) (not (gn-clamp-open M f))
+           (>= n 0) (<= n 7) (= (gn-fnf M f FF-NPARAMS) n)
+           (= (gn-op M p) OP-FN) (= (gn-sir M p IF-A) f) (= (gn-sir M p IF-B) n))
+    (cl-scan M (inc p) f n depth (dec work)) -1)))
+(defn- cl-scan [M :vector-i64 j :i64 f :i64 n :i64 depth :i64 work :i64] :i64
+ (if (or (>= j (vector-at M MM-SIR-N)) (<= work 0)) -1
+  (let [op (gn-op M j) left (dec work)]
+   (case op
+    OP-END (if (= (gn-sir M j IF-A) f) left -1)
+    (OP-CONST OP-LGET OP-LSET OP-LABEL OP-BR OP-BRZ OP-BRNZ OP-FUEL OP-RET OP-RET2 OP-RES2 OP-TRAP OP-TAB)
+      (cl-scan M (inc j) f n depth left)
+    OP-BIN (if (< (gn-sir M j IF-A) BOP-F64-ADD) (cl-scan M (inc j) f n depth left) -1)
+    OP-CMP (if (< (gn-sir M j IF-A) CC-F64-EQ) (cl-scan M (inc j) f n depth left) -1)
+    OP-UN (if (< (gn-sir M j IF-A) UOP-F64-NEG) (cl-scan M (inc j) f n depth left) -1)
+    OP-RT (let [a (gn-sir M j IF-A) b (gn-sir M j IF-B) c (gn-sir M j IF-C)]
+            (if (or (gn-inl a b c)
+                    (and (= a RT-VECTOR-AT) (= c 2) (>= b 6)
+                         (>= (gn-fnf M f FF-DEPTH) (+ b 2)) (gn-high-loop M j)))
+                (cl-scan M (inc j) f n depth left) -1))
+    OP-CALL (let [a (gn-sir M j IF-A) c (gn-sir M j IF-C)
+                  remain (if (and (= a f) (= c n)) left (cl-safe M a c (dec depth) left))]
+      (if (< remain 0) -1 (cl-scan M (inc j) f n depth remain)))
+    -1))))
