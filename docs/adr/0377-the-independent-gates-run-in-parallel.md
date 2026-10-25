@@ -4,10 +4,14 @@ Date: 2026-10-25
 
 ## Status
 
-Accepted for the selfhost-native workflow and the CDCI refusal probes. It
-changes no gate: every check script keeps its own output directory, its own
+Candidate for the selfhost-native workflow and the CDCI refusal probes. The
+JUN-93 integration retains nested-shell pipefail and serializes receipt
+writes, addressing the review of PR #1566. Its final exact-head native CI
+is still required. The measurements below describe the original historical
+candidate, not this repaired integration. It changes no gate: every check script keeps its own output directory, its own
 verdict and its own negative asserts. Only the execution order changes.
-Landed on `claude/ci-parallel-independent-gates` (PR #1566).
+Original implementation is on `claude/ci-parallel-independent-gates` (PR #1566);
+that does not assert a merge into main.
 
 ## The measurement
 
