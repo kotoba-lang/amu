@@ -1,14 +1,15 @@
 # Current Amu selfhost native entry
 
-The full31 public `bin/amu` is a static Linux x86_64 ELF. Its exact size,
+The full46 public `bin/amu` is a static Linux x86_64 ELF. Its exact size,
 SHA256 and source revision are recorded in `native-product.json`; the exact
 manifest source pins are bound by the current native execution receipts.
 `bin/kotoba` and `bin/kotoba-compiler` are relative aliases of that image.
 The native ARM root is separately pinned in
 `seed/bootstrap/aarch64-linux-static-root.json`.
 
-All 18 adopted core modules remain. Static capacities are unchanged:
-TOK786432/MM-WORDS29,491,200/LitB1MiB/OUT12MiB/heap1765120 words.
+All18 normal adopted core modules remain byte-identical. Static capacities:
+TOK786432/NODE589824/MM-WORDS29491200/LitB1MiB/OUT12MiB/heap1765120 words.
+
 The native workflow measures independent canonical Pw, matching full ARM
 containers and root reproduction, without an old language host, C compiler
 or C loader. The product includes current main's Kototama i64 AOT and
@@ -17,7 +18,7 @@ call-site/base-length memory hardening together with image/EFI packaging.
 ## Adoption and native verdict
 
 Current evidence belongs in
-`docs/evidence/aiueos-aot-adoption-20261024/`. Earlier full30 snapshots retain
+`docs/evidence/kototama-i64-receipt-20261024/`. Earlier full30 snapshots retain
 their historical source binding. Acceptance requires the
 actual native x86 full compiler F1=F2=F3, current-source unity identity,
 clock/entropy/refusal/resource checks, both mandatory native CDCI roles
@@ -27,14 +28,18 @@ An old matching descriptor or a Python observation is not that verdict.
 
 The controller and gates rebuild byte-identically with this compiler:
 
-* controller `39a500374e27d3a04404573cbf455eef56b2dbb6aa473279e3cd75cae9a1263a`
-* Amu selfhost `e6dcf6189b527208bd65cd53d8f05d07008fb6adc0dc4e1e37dc1e92df334700`
-* Kotoba native `39fac666f5eb57b4adf69c1efe1770758e78dd7f51c368cbbdefeda14ee6d995`
+* controller `54e7c9fc5b39cb788dd670a22c9abb5b6e3163e417c172bb05f910d1469e8197`
+* Amu selfhost `d69dcbe783846c7c22c4d7957be10a66fed7b6f82e35f5affb27b2b171162c53`
+* Kotoba native `e015c387cc87b14022781c94474104ffe0ff113a2623ae5882a72ce6c3212b80`
 
 Fresh native receipts bind those exact images and their input ledger to the
 new compiler. The fixed24 corpus and complete core are unchanged. No new
 comparative performance score is published. Earlier all19/MIR/GMIR and
 provider-environment evidence remains historical in its original directories.
+
+All14 main47 kernel packaging suites and memory admission/guard checks also
+pass with this compiler. Their reports retain explicit guest/live-kernel
+exclusions; they do not qualify a live kernel or deployment.
 
 ## AIUEOS scope
 

@@ -215,8 +215,24 @@
                       {:entry source-entry :arity (:arity export)
                        :admitted (sort (keys entry-contracts))})))
     (let [{:keys [contract] shim-size :size} (get entry-contracts (:arity export))
-          source-rva (+ text-rva shim-size (:offset export))
-          text-size (+ shim-size (count (:code artifact)))
+          ;; boot-align: the shim is machine code with its own fixed length,
+          ;; but the artifact's code buffer assumes it STARTS on an 8-byte
+          ;; boundary -- `kotoba.native.machine-ir/resolve-program-layout`
+          ;; aligns every rodata literal to `gmir/rodata-alignment` (8)
+          ;; relative to that buffer's start, and its own comment promises "an
+          ;; entry's alignment is a property of the image". A 21- or 35-byte
+          ;; shim shifted the whole buffer and broke that promise: measured
+          ;; 2026-10-24 (JUN-31) on the fs-stage BOOTX64.EFI, every UCS-2
+          ;; literal (`\EFI\AIUEOS\MISSING.ELF` at .text offset 27643,
+          ;; `\EFI\AIUEOS\KERNEL.ELF` at 26299) started at an ODD offset,
+          ;; mod 8 = 3 = the two-arity shim's 35. Pad the shim with dead
+          ;; bytes (INT3 -- never executed: the shim CALLs the source entry
+          ;; and returns past them) so the code buffer starts 8-aligned and
+          ;; the image keeps the layout contract the pool was built under.
+          shim-pad (- (align shim-size 8) shim-size)
+          shim-total (+ shim-size shim-pad)
+          source-rva (+ text-rva shim-total (:offset export))
+          text-size (+ shim-total (count (:code artifact)))
           ;; boot: derived, not frozen. A section's mapped span is its virtual
           ;; size rounded up to the section alignment, which is the
           ;; granularity the loader assigns pages at -- the same rule
@@ -224,7 +240,8 @@
           data-rva (align (+ text-rva text-size) section-alignment)
           reloc-rva (align (+ data-rva data-size) section-alignment)
           image-size (align (+ reloc-rva 12) section-alignment)
-          shim (entry-shim (:arity export) source-rva data-rva)
+          shim (into (entry-shim (:arity export) source-rva data-rva)
+                     (repeat shim-pad 0xcc))
           text (into shim (:code artifact))
           context (into (vec (repeat 8 0))
                         (concat (le (artifact-fuel artifact) 8)
@@ -257,7 +274,7 @@
                               :bytes reloc}]})]
       (when-not (= text-size (count text))
         (throw (ex-info "UEFI entry shim size disagrees with its declaration"
-                        {:declared shim-size :emitted (- (count text)
+                        {:declared shim-total :emitted (- (count text)
                                                          (count (:code artifact)))})))
       {:format :pe32+/v1
        :target firmware-target

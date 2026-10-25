@@ -30,7 +30,7 @@ def pin(path):
     return dict(bytes=len(data), sha256=hashlib.sha256(data).hexdigest())
 
 
-def verify(blob, fuel):
+def verify(blob, fuel, project=False):
     """Independent image/entry/context ABI checks, including all zero slots."""
     h = struct.unpack_from("<16sHHIQQQIHHHHHH", blob)
     assert h[:4] == (b"\x7fELF\x02\x01\x01" + bytes(9), 2, 62, 1)
@@ -67,7 +67,19 @@ def verify(blob, fuel):
     assert len(boot) == 68 and blob[4096:4164] == boot
     assert blob[4164] == 0xe8 and blob[4169:4173] == bytes.fromhex("faf4ebfd")
     entry = 73 + struct.unpack_from("<i", blob, 4165)[0]
-    assert 77 <= entry < rx[5] and blob[4096 + entry:4100 + entry] == bytes.fromhex("554889e5")
+    assert 77 <= entry < rx[5]
+    if project:
+        # Locked projects check the prospective frame against the private
+        # stack floor before PUSH RBP. This is a different entry ABI from
+        # the scalar/object image; do not relax that image's byte check.
+        body = blob[4096 + entry:4096 + rx[5]]
+        assert body[:6] == bytes.fromhex("4989e24981ea")
+        frame = struct.unpack_from("<I", body, 6)[0]
+        assert 8 <= frame <= 65536 and frame % 16 == 8
+        assert body[10:45] == bytes.fromhex(
+            "0f82150000004d8b99580100004d39da0f8205000000e904000000faf4ebfd554889e5")
+    else:
+        assert blob[4096 + entry:4100 + entry] == bytes.fromhex("554889e5")
     expected = bytearray(DATA_SIZE)
     struct.pack_into("<Q", expected, 8, fuel)
     gdt = (0, 0x00af9a000000ffff, 0x00cf92000000ffff, 0x00cff2000000ffff, 0x00affa000000ffff)
@@ -77,6 +89,8 @@ def verify(blob, fuel):
     struct.pack_into("<HQ", expected, 152, 55, context + 96)
     struct.pack_into("<Q", expected, 172, stack)
     struct.pack_into("<H", expected, 270, 104)
+    if project:
+        struct.pack_into("<Q", expected, 344, context + 20480)
     assert blob[data:data + DATA_SIZE] == expected
     return dict(entry=0x101000, textBytes=rx[5], context=context, stackTop=stack,
                 fuel=fuel, imports=[], interpreter=None)

@@ -39,6 +39,14 @@ available independent compiler/runner and exact full-closure native
 build/execution evidence remain open. Do not report this source checkout or
 the historical pin checks as native selfhost qualification.
 
+## An ungranted wire refused by name in the static runtimes (2026-10-23, JUN-354)
+
+When a guest calls a wire that `KEXE_ALLOW` does not grant, seed/76 and seed/77 flush stdout, write
+`KEXE_CAP {:wire N :refused :not-granted}` to stderr, and then trap as before (SIGILL, exit 120). seed/82 writes
+the same line for a wire its browser host does not provide (`:refused :wasm32-browser`). Other refusals of a granted
+wire still trap without the line. The root is re-pinned (previous root -> F1, F1 -> F2, F2 -> F3 = F2). Verification
+and what stays open: [`../docs/static-not-granted.md`](../docs/static-not-granted.md).
+
 ## Durable file replace and sleep in the static runtimes (2026-10-23, JUN-359, JUN-360)
 
 seed/76 and seed/77 answer wire 35's `FSYNC_SEP` (a file or directory, opened beneath the scope) and `RENAME_SEP`

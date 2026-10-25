@@ -1,0 +1,89 @@
+{
+  "schema": "amu.evidence.static-not-granted.targets.v1",
+  "date": "2026-10-24",
+  "guest": {
+    "source": "(ns not-granted-check (:export [main]))\n(defn main [] :i64\n  (let [w (typed-cap-call 37 :string :string \"before|\")\n        r (typed-cap-call 41 :string :string \"16\")]\n    (string-length r)))\n",
+    "sha256": "9bc4b432e292dcbbcf16506f30ce324fa05f9d7d875964988b1ae8390b15f815",
+    "does": "writes before| on wire 37, then reads 16 bytes on wire 41; stdin is abc"
+  },
+  "host": {
+    "aarch64-linux": "podman linux/arm64 (image 255f49222a74, python 3.12.15 arm64; the guest is a static ELF), the image's seccomp filter installed",
+    "x86_64-linux": "podman linux/amd64 under qemu-user, alpine:3, KEXE_SECCOMP=if-available (no seccomp filter)"
+  },
+  "roots": {
+    "new": {
+      "sha256": "f0462f5beabf173d39638a2ccb3ba4d2d3512b5c9e1d7168a720fed563c0485f"
+    },
+    "previous": {
+      "sha256": "c95b844146ae31e9c47b5bd02a7b6590f3a158e74d9759eb48dfcf8bf2fe60a1",
+      "commit": "6deb9969392a7fc06319fbedf97cd356128f3c7d"
+    }
+  },
+  "images": {
+    "g-aarch64-linux.elf": "3811c42f2b24e47874a5509fb02afba0dd41976510dc3b405f261512f7e21554",
+    "g-x86_64-linux.elf": "c91ea3200d79d0c8f994b12c5429446ddde241f14782d708bca9180db2557533",
+    "p-aarch64-linux.elf": "578bab25e2410139041aa84859e1d3e290ba48eb8bc0846199c26439412d6bd0",
+    "p-x86_64-linux.elf": "9e153c5acecd1d4bdf91b37ce806a33883692a801b5aa29a81d5ff73d2e4ef93"
+  },
+  "runs": [
+    {
+      "root": "new",
+      "target": "aarch64-linux",
+      "KEXE_ALLOW": "37",
+      "stdout": "before|",
+      "report": "{:status :trap :exit 120 :fuel {:initial 9007199254740991 :remaining 9007199254740990 :metered false}}",
+      "stderr": [
+        "KEXE_CAP {:wire 41 :refused :not-granted}",
+        "KEXE_TRAP {:kind :signal :signal :SIGILL}"
+      ]
+    },
+    {
+      "root": "new",
+      "target": "x86_64-linux",
+      "KEXE_ALLOW": "37",
+      "stdout": "before|",
+      "report": "{:status :trap :exit 120 :fuel {:initial 9007199254740991 :remaining 9007199254740990 :metered false}}",
+      "stderr": [
+        "KEXE_CAP {:wire 41 :refused :not-granted}",
+        "KEXE_TRAP {:kind :signal :signal :SIGILL}"
+      ]
+    },
+    {
+      "root": "new",
+      "target": "aarch64-linux",
+      "KEXE_ALLOW": "37,41",
+      "stdout": "before|",
+      "report": "{:status :ok :result 3 :fuel {:initial 9007199254740991 :remaining 9007199254740990 :metered false}}",
+      "stderr": []
+    },
+    {
+      "root": "new",
+      "target": "x86_64-linux",
+      "KEXE_ALLOW": "37,41",
+      "stdout": "before|",
+      "report": "{:status :ok :result 3 :fuel {:initial 9007199254740991 :remaining 9007199254740990 :metered false}}",
+      "stderr": []
+    },
+    {
+      "root": "previous",
+      "target": "aarch64-linux",
+      "KEXE_ALLOW": "37",
+      "stdout": "before|",
+      "report": "{:status :trap :exit 120 :fuel {:initial 9007199254740991 :remaining 9007199254740990 :metered false}}",
+      "stderr": [
+        "KEXE_TRAP {:kind :signal :signal :SIGILL}"
+      ]
+    },
+    {
+      "root": "previous",
+      "target": "x86_64-linux",
+      "KEXE_ALLOW": "37",
+      "stdout": "before|",
+      "report": "{:status :trap :exit 120 :fuel {:initial 9007199254740991 :remaining 9007199254740990 :metered false}}",
+      "stderr": [
+        "KEXE_TRAP {:kind :signal :signal :SIGILL}"
+      ]
+    }
+  ],
+  "negativeControl": "the previous root's images print no KEXE_CAP line"
+}

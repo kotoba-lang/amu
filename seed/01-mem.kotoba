@@ -141,12 +141,28 @@
     (mem-copy-run M0 (mem-sel up src (+ src (- m 1))) (mem-sel up (+ src m) (- src 1)) (mem-sel up 1 -1) (- dst src))))
 
 ;; bytes a .. b-1 of S into M[dst ...], one byte per word. delta = dst - a.
+(defn- mem-cpw [cp :i64] :i64 (cond (< cp 128) 1 (< cp 2048) 2 (< cp 65536) 3 :else 4))
+(defn- mem-cp-byte [cp :i64 at :i64] :i64
+  (let [n (mem-cpw cp)]
+    (if (= n 1) cp
+      (if (= at 0) (bit-or (case n 2 192 3 224 240) (u64-shift-right cp (* 6 (- n 1))))
+        (bit-or 128 (bit-and (u64-shift-right cp (* 6 (- n at 1))) 63))))))
+(defn- mem-put-cp [M :vector-i64 at :i64 cp :i64] :vector-i64
+  (cond (< cp 128) (vector-assoc! M at cp)
+        (< cp 2048) (-> M (vector-assoc! at (bit-or 192 (u64-shift-right cp 6)))
+                         (vector-assoc! (+ at 1) (bit-or 128 (bit-and cp 63))))
+        (< cp 65536) (-> M (vector-assoc! at (bit-or 224 (u64-shift-right cp 12)))
+                          (vector-assoc! (+ at 1) (bit-or 128 (bit-and (u64-shift-right cp 6) 63)))
+                          (vector-assoc! (+ at 2) (bit-or 128 (bit-and cp 63))))
+        :else (-> M (vector-assoc! at (bit-or 240 (u64-shift-right cp 18)))
+                    (vector-assoc! (+ at 1) (bit-or 128 (bit-and (u64-shift-right cp 12) 63)))
+                    (vector-assoc! (+ at 2) (bit-or 128 (bit-and (u64-shift-right cp 6) 63)))
+                    (vector-assoc! (+ at 3) (bit-or 128 (bit-and cp 63))))))
 (defn- mem-put-run [M0 :vector-i64 S :string i :i64 end :i64 delta :i64] :vector-i64
   (if (>= i end)
     (mem-keep M0)
-    (let [c (string-code-point-at S i)
-          M1 (vector-assoc! M0 (+ i delta) c)]
-      (mem-put-run M1 S (+ i 1) end delta))))
+    (let [c (string-code-point-at S i)]
+      (mem-put-run (mem-put-cp M0 (+ i delta) c) S (+ i (mem-cpw c)) end delta))))
 
 (defn- mem-put-bytes [M0 :vector-i64 S :string a :i64 b :i64 dst :i64] :vector-i64
   (mem-put-run M0 S a b (- dst a)))
@@ -213,10 +229,21 @@
 ;; hashing and comparison. FNV-1a 64: h = 14695981039346656037 (as signed -3750763034362895579); for each
 ;; byte h = (h xor byte) * 1099511628211, wrapping. Deterministic, no tables (rule L11).
 ;; ------------------------------------------------------------------------------------------------------------
+(defn- mem-fnv-byte [h :i64 byte :i64] :i64 (* (bit-xor h byte) 1099511628211))
+(defn- mem-hash-cp [h :i64 cp :i64] :i64
+  (cond (< cp 128) (mem-fnv-byte h cp)
+        (< cp 2048) (mem-fnv-byte (mem-fnv-byte h (bit-or 192 (u64-shift-right cp 6))) (bit-or 128 (bit-and cp 63)))
+        (< cp 65536) (mem-fnv-byte (mem-fnv-byte (mem-fnv-byte h (bit-or 224 (u64-shift-right cp 12)))
+                                   (bit-or 128 (bit-and (u64-shift-right cp 6) 63))) (bit-or 128 (bit-and cp 63)))
+        :else (mem-fnv-byte (mem-fnv-byte (mem-fnv-byte (mem-fnv-byte h (bit-or 240 (u64-shift-right cp 18)))
+                              (bit-or 128 (bit-and (u64-shift-right cp 12) 63)))
+                              (bit-or 128 (bit-and (u64-shift-right cp 6) 63))) (bit-or 128 (bit-and cp 63)))))
 (defn- mem-hash-run [S :string i :i64 end :i64 h :i64] :i64
   (if (>= i end)
     h
-    (mem-hash-run S (+ i 1) end (* (bit-xor h (string-code-point-at S i)) 1099511628211))))
+    (let [cp (string-code-point-at S i)]
+      (if (< cp 128) (mem-hash-run S (+ i 1) end (* (bit-xor h cp) 1099511628211))
+        (mem-hash-run S (+ i (mem-cpw cp)) end (mem-hash-cp h cp))))))
 
 (defn- mem-hash-str [S :string a :i64 b :i64] :i64
   (mem-hash-run S a b -3750763034362895579))
@@ -234,7 +261,9 @@
 (defn- mem-span-eq-run [S :string a :i64 b :i64 n :i64] :i64
   (cond
     (<= n 0) 1
-    (= (string-code-point-at S a) (string-code-point-at S b)) (mem-span-eq-run S (+ a 1) (+ b 1) (- n 1))
+    (= (string-code-point-at S a) (string-code-point-at S b))
+      (let [w (mem-cpw (string-code-point-at S a))]
+        (if (> w n) 0 (mem-span-eq-run S (+ a w) (+ b w) (- n w))))
     :else 0))
 
 (defn- mem-span-eq [S :string a :i64 b :i64 n :i64] :i64 (mem-span-eq-run S a b n))
