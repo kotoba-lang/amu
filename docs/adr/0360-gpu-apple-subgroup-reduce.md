@@ -1711,6 +1711,27 @@ CONDITION now EXISTS (a counters-channel record of the fold arms on the
 narrowed device); its EVALUATION (including whether it reaches the
 narrowing's route-scope question from an MSL-route counters record) is
 its own next row and nothing fires here beyond the record.
+[SECOND LEG EVALUATED 2026-10-25 -- the leg FIRES (the first-leg
+bracket's fire criterion: letter condition met AND a regime-invariant
+sign present -- this record carries 18/18 slower, band 1.204..1.221,
+every observed regime one-sided), and the evaluation answers the named
+question SPLIT: the device-level premise (is the fold refuted on the
+device?) is REACHED and CONFIRMED -- a third instrument of the same
+device measures the same sign on GPU-core timestamps, the metric class
+the leg waited for -- while the route-level residual (the WGSL-spelled
+arms' own GPU-core behavior) is NOT REACHED and is unreachable from
+this channel (the letter's scope, "the WGSL route's arms are NOT
+COVERED"; rule 2's channel scoping; Chrome owns its command buffers).
+CONSEQUENCE: the narrowing's route scope STANDS -- the revisit confirms
+part 2's WGSL ride-along, nothing moves (rule 4). Both legs now carry
+evaluations (first leg: evaluated, did not fire; second leg: fired,
+confirm verdict); the reopen condition stays in force as narrowed and
+this record is spent as a trigger -- a future revisit needs NEW
+evidence (a claim-protocol WGSL sign that is regime-invariant, an
+opposing counters-channel sign, or a WGSL-arm GPU-core measurement
+waiting on the Vulkan-provider route). Full decision:
+docs/evidence/gpu/second-leg-evaluation-20261025.txt and the amendment
+at the end of this file.]
 
 States: MEASURED (this row): the 6-run record, rule 1's clusters, rule
 2's sign, the mid-run state shifts, the spike list. IMPLEMENTED (code +
@@ -1737,3 +1758,97 @@ ADR-0362), no green suite claimed; `find docs -name '*.sh'` -> 0.
 Record: `docs/evidence/gpu/metal-counter-foldarms-20261025/`
 (`protocol.txt`, `run-1.txt`..`run-6.txt`, `publication.txt`,
 `record.txt`).
+
+## Amendment 2026-10-25 (the second leg's EVALUATION): the leg FIRES at its letter, the route-scope question is answered SPLIT -- device premise CONFIRMED, route residual unreachable -- and the narrowing STANDS
+
+ONE decision/analysis slice (JUN-58): the reopen's second leg is
+EVALUATED against the committed 6-run counters record -- the fold-arms
+measurement row's own named next row ("its EVALUATION ... is its own
+next row"). NO hardware ran and nothing is re-measured; the record is
+consumed through the pre-committed route only, which reproduces the
+committed `publication.txt` BYTE-FOR-BYTE this tick
+(`--counters-log run-1..6.txt | diff - publication.txt` ->
+DIFF-IDENTICAL, exit 0 -- tool output in the record).
+
+**The leg FIRES.** The fire criterion is the first-leg bracket's own
+committed reading: the first leg "does NOT FIRE: neither run carries a
+regime-invariant sign" -- a leg fires when its letter condition is met
+AND its record carries a regime-invariant rule-2 sign. Both hold: the
+letter condition ("a counters-channel record of the fold arms on the
+narrowed device") exists, and the record's verdict is REGIME-INVARIANT
+SLOWER (18/18 per-run paired-median ratios above 1.0, band
+1.204..1.221, every observed regime one-sided). The reopen's revisit
+of the narrowing's route scope happens now.
+
+**The evaluation's named question, answered SPLIT.** "Whether the
+leg's evaluation reaches the narrowing's route-scope question from an
+MSL-route counters record": (2a) the DEVICE-LEVEL PREMISE (is the fold
+refuted on the device?) is REACHED and CONFIRMED -- part 2's ride-along
+decides on exactly this premise ("the refutation is of the FOLD on that
+device ... the refuted variant is not selected on the device that
+refuted it on any route that spells the same fold"), and the counters
+record measures the same fact on a THIRD instrument of the same device,
+on GPU-core timestamps -- the metric class the leg waited for -- with
+the same sign as both prior arms; (2b) the ROUTE-LEVEL RESIDUAL (is
+the WGSL-spelled fold also slower on this device?) is NOT REACHED and
+is unreachable from this channel: the letter's own scope ("the WGSL
+route's arms are NOT COVERED"), rule 2's channel scoping ("a
+counters-channel sign never flips a WGSL cell"), and the physical
+route (Chrome owns its command buffers; WebGPU timestamp routes CLOSED
+by probe; letter rejection (e)). It stays UNMEASURED until a
+Vulkan-provider timestamp route exists (PROPOSED, DEFERRED to the ADR
+0371 track).
+
+**Consequence: the narrowing's route scope STANDS.** The revisit
+CONFIRMS part 2's WGSL ride-along at the layer the letter lets this
+record answer and contradicts nothing: the "m1 max" descriptor keeps
+answering `:baseline` on the WGSL route too (conservative answer;
+`:measured-cell` records stay MSL-scoped; every WGSL answer keeps
+`:measured? false`). Rule 4: NOTHING MOVES -- no `:measured?` flag, no
+`:shapes` value, no selection answer, no workgroup row (this channel
+can never move one), no WGSL cell flip, no cross-instrument magnitude
+claim.
+
+**Reopen condition status.** BOTH legs now carry an evaluation (first
+leg: evaluated 2026-10-25, did NOT fire -- both claim-protocol WGSL
+runs REGIME-SCOPED everywhere; second leg: FIRED this row, confirm
+verdict). The reopen condition stays in force as narrowed; the
+anchor-cell counters record is spent as a trigger (one visit per
+record). A FUTURE revisit needs NEW evidence, named fail-closed: a
+claim-protocol WGSL measurement carrying a REGIME-INVARIANT sign (the
+first leg can still fire); a counters-channel record carrying an
+OPPOSING device-level sign (another cell/W, or a cross-day replication
+of the anchor cell contradicting it -- cross-day replication is
+UNMEASURED); a WGSL-arm GPU-core-timestamp measurement (waits on the
+Vulkan-provider route).
+
+Named, not hidden: the fired record is ONE cell (n = 1000003, W = 256)
+on ONE day on ONE device -- the confirm verdict is scoped to that
+coverage; the mid-run counter_ns state shifts do not touch the verdict
+(rule 2 held in both observed states); the calibration residual R stays
+named and never subtracted (design reasoning: it compresses ratios
+toward 1, so the slower sign is if anything understated -- not a
+measurement); the counterfactual the fire criterion covers is named
+(an opposing regime-invariant sign would have forced the route-scope
+question open adversarially -- closed by measurement); no number is
+read across instruments (rule 3).
+
+States: DECIDED (this row: the evaluation, the split answer, the
+confirm verdict, the reopen status and the named future-revisit
+conditions). MEASURED: nothing new (NO hardware ran). IMPLEMENTED:
+nothing (docs-only). ACCEPTED DESIGN ONLY (unchanged): the claim
+protocol, the narrowing (now evaluated on both legs) and the reopen
+condition, the second-leg letter, ADR-0355's channel rule. PROPOSED
+(unchanged): the Vulkan-provider timestamp route. UNMEASURED, named:
+the WGSL-spelled arms' GPU-core behavior; cross-day replication of the
+anchor cell; every other W and shape 2 on this channel; the residual's
+decomposition and the absolute clock domain; the state-shift cause and
+threshold; op-order dependence; anything off M1 Max; every workgroup-row
+question (`:arm`/`:unknown` stay provisional `:measured? false` -- no
+`:measured?` flag, `:shapes` value, selection answer or workgroup row
+moves this tick). Gates: see the record (self-test and scoped gate are
+regression pins for this docs-only diff; FULL `run-tests.cljk` NOT RUN,
+documented red at base "Could not find namespace: kotoba.form"
+(ADR-0362), no green suite claimed; `find docs -name '*.sh'` -> 0).
+
+Record: `docs/evidence/gpu/second-leg-evaluation-20261025.txt`.
