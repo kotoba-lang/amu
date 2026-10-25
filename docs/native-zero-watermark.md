@@ -76,7 +76,7 @@ only.
 
 [Run40220687668](https://github.com/kotoba-lang/amu/actions/runs/40220687668)
 measures the combined runtime change on exactly the same core18 source,
-producer, CPU, source lock and limits, in baseline/candidate/candidate/baseline
+producer, CPU and limits, in baseline/candidate/candidate/baseline
 order on each actual native host. All four outputs per ISA equal the normal
 core container digest6ad407c2. Results differ from the tiny-process workload:
 
@@ -87,7 +87,8 @@ core container digest6ad407c2. Results differ from the tiny-process workload:
 
 ARM improved about3.8%; x86 improvement is not confirmed. Do not extrapolate
 the tiny-process or clearing-loop percentages to whole compiler performance.
-These two-pair measurements are a bounded experiment, not an official score.
+These two-pair measurements did not pass `--source-lock`; they do not measure
+the locked controller route. They are a bounded experiment, not an official score.
 The remaining compiler/CI goal needs additional mechanisms and measurements.
 
 ## Integration qualification remains separate
@@ -157,3 +158,22 @@ prevent treating the earlier50m24s and this28m13s as a matched causal speedup.
 Raw native receipt identities and source/image hashes are recorded in
 `qualified-native.json`; that observer summary does not replace native verdicts.
 Final metadata heads require fresh mandatory CI. No deployment is claimed.
+
+
+## Locked-route regression screen and final metadata head
+
+[Run40228776657](https://github.com/kotoba-lang/amu/actions/runs/40228776657)
+compared the old8cd12aed and newdd289a23 public images on the same native
+x86 EPYC9V74 host, CPU0, frozen core44faa79a, KSL1 lock and controller
+environment (8MiB stack, no extra fuel/command override). Both emitted6ad407c2.
+Old/new wall times were256.157/255.229s (ratio0.99638). The initial pair did not
+meet the predeclared5% trigger for an ABBA extension; no broad speedup or
+statistical equivalence is claimed from this two-call regression screen.
+The external controller sandbox was not applied in this diagnostic.
+
+[Final source/image metadata run40226249485](https://github.com/kotoba-lang/amu/actions/runs/40226249485)
+passed all five mandatory jobs atd38bfaf07. Controller wall time was469.232s,
+with462.185s in Amu rebuild. The complete PR workflow took34m11s; the earlier
+source/image qualification took28m13s on different runners. Both observations
+leave the20min whole-CI goal open. Codec40226249494 passed on both native ISAs.
+The subsequent documentation correction changes no source/image/policy bytes.
