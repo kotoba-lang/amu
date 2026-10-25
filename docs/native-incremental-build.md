@@ -75,3 +75,55 @@ pins are unchanged. A successfully hashed supplied payload proves content
 identity only: the checked frontend producer, SCC identity, relocatable object
 store and end-to-end timing criteria above remain open. Caller-supplied
 payloads and hashes never grant execution authority.
+
+## Checked producer and SCC prototype
+
+`seed/05-checked-definition.kotoba` and `seed/06-definition-groups.kotoba`
+add a standalone native producer for a bounded pure KIR v3/v4 profile. It
+parses the supplied KIR itself and freshly runs the adopted native kr/name/
+check pipeline before producing any CID. It accepts neither a supplied
+normalized identity payload nor a caller's `checked` flag. A module failure
+emits no partial identities. These modules remain outside FULL-MANIFEST;
+the production compiler, root/public images and their pins are unchanged.
+
+The admitted profile supports explicit primitive/container interfaces,
+first-order pure operations, direct definition calls, lexical let/result/
+option binders and recursive SCCs of at most eight functions. A single
+left-to-right binder counter survives scope restoration. Direct references
+become dependency CIDs; recursive references become canonical member indices.
+Native iterative Tarjan traversal orders the dependency components. SCC
+identity still searches every member permutation and chooses the least
+canonical payload, including the authority's deterministic tie behavior.
+Unknown fields, nonempty effect rows, schema references, callable/custom
+types, map/set expressions, source loops and other unsupported forms refuse.
+The native Seed source frontend, full schema closure and effect-name bridge
+are still required before this can cover the production compiler graph.
+
+The producer seals profile6 and desugar2, matching the vendored immutable
+kotoba-lang authority snapshot recorded under
+`seed/tests/checked-definition-authority/`. The qualification image reads
+both full EDN authorities with the native reader and rejects changed version
+values. The snapshot is provenance, not a new authority or a runtime approval.
+
+Two measured refactor candidates preserve scc-v1. First normalize each member
+once and record only native-created group-reference integer leaves as holes
+in immutable canonical bytes. Then compare permutations through the first
+differing member. Complete canonical CBOR values cannot be proper prefixes
+of one another, and the remaining group wrapper/interface/dependencies do
+not vary, so this preserves full-payload ordering. It neither prunes the
+permutation search nor caches mutable emission proofs.
+
+The separate native gate compares against independently hand-authored native
+payloads, including an SCC8 whose canonical winner is permutation40319.
+It compares the optimized and original full-payload builders/comparators on
+every permutation of small SCCs, selected SCC8 permutations, ties, multiple
+reference holes and literal digits. External dependency edits must change
+the group, members and caller. Four successfully built and actually executed
+mutants demonstrate the checking, binder-counter, SCC-bound and group-reference
+controls. Python stages bytes and observes processes only. Native ARM evidence
+is recorded in `docs/evidence/native-checked-defcid-20261026/`; native x86 CI
+is required before adopting this prototype as a qualified foundation.
+
+This foundation does not persist an object, relocate code, reuse a build,
+replay a verdict, or establish the20min end-to-end CI target. Those remain
+the next dependency steps listed above.
