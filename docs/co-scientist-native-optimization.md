@@ -77,3 +77,42 @@ An unfinished span or timeout is incomplete diagnostic evidence, not a pass.
 5. Measure the complete PR workflow separately. Keep runner queue delay and
    work time visible; a simulated schedule or individual job under 20 minutes
    cannot close the workflow goal.
+
+## First cycle: measured outcomes
+
+The [native x86 annotation tournament](https://github.com/kotoba-lang/amu/actions/runs/40207570673)
+used one Xeon 6973P-C host, CPU0 and the same admitted public compiler image.
+Baseline/all/all/baseline build times were 36.6722 / 11.1885 / 11.2947 /
+36.6657 seconds. Medians are **36.6689 -> 11.2416 seconds (69.34% less)**.
+All seven screened/alternating images matched the pre-existing whole-image
+digest and each ran both its semantic and wrong-mode entry afresh. Native
+ARM with its own unchanged packed producer measured 20.9625 -> 6.2818 seconds.
+These results concern the full-prefix label-oracle source, not a whole CI run.
+
+Adopt H17 as a candidate source refactor: make the three implementation
+parameters explicit without changing checker bodies. Retain the full original
+unannotated-source build, whole-image equality and execution/refusal controls
+in the mandatory native label gate. Its existing nine mutation controls stay;
+the gate grows from 21 to 24 fresh calls. Regenerate root/public/controller
+pins because source and controller source-lock identities change, even though
+the normal core container/raw image and Amu selfhost role remain byte-identical.
+Native ARM candidate F1=F2 and two core generations agree; full uncached and
+native x86/controller/public qualification remain required before merging.
+
+The [native x86 proof localization](https://github.com/kotoba-lang/amu/actions/runs/40207573562)
+supports H10: `ccf-code` and `ccf-fixes` each ran 2,484 times, consuming
+35.93 and 25.00 instrumented seconds respectively. They scan mutable output.
+Reject H12's proposed query/count-only prefix key: a native counterexample
+keeps the query and CODE/FIX fill counts unchanged while rewriting a prior
+word to ADRP, a forward branch, a negative or an oversized word. The original
+validator refuses each rewrite and accepts restoration. Direct vector writes
+also exist outside `gn-put`; a future write-aware revision must cover them.
+This refutes that key, not every possible prefix optimization. No mutable
+prefix memoization was adopted.
+
+H13 remains open: the separately qualified DefCID codec is not a checked
+frontend producer, SCC object store or persistent incremental build. H14/H15
+need actual whole-workflow timings after this candidate; neither the short
+unit build nor an estimated parallel schedule closes the 20-minute goal.
+Portable observations, producer/source/image hashes and the rejected-key
+counterexample are in `docs/evidence/native-source-refinements-20261026/`.

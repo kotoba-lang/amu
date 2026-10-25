@@ -196,3 +196,20 @@ index. Keep the original G size and all fuel/arena limits.
 The full-prefix native differential oracle and nine successfully built but
 semantically refused guard-removal mutants run on both native ARM and x86
 in the shared two-slot gate plan. Original gate groups remain mandatory.
+
+## Explicit selfhost parameter types (JUN-27 / JUN-332)
+
+The three `ck-r6c-doctail` / `ck-r6c-dt` / `ck-r6c-lit` implementation
+parameters `S` are explicitly `:string`. This avoids repeated inference
+rounds when building the compiler sources; it is a source-build optimization,
+not a new inference algorithm. Keep the complete unannotated counterpart
+in `check-native-label-index.py`: compile it afresh, require whole-image
+byte equality with the annotated source, and execute both its semantic and
+wrong-mode controls on native ARM and x86. All nine original mutation
+controls and every existing gate remain mandatory.
+
+Do not memoize mutable CODE/FIX prefix proofs using query/counts alone.
+`check-prefix-cache-counterexample.py` executes same-extent rewrites that
+the original validator must refuse. Any future reuse needs complete
+write-aware invalidation, including direct memory-vector writes, and a
+fresh native differential/refusal/resource oracle.
