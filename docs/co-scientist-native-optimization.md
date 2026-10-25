@@ -139,3 +139,33 @@ prevent treating this workflow duration as a matched before/after experiment.
 The exact metadata, native receipt digests and source/image pins are recorded
 in `qualified-native.json`; neither that observer summary nor a cached artifact
 replaces fresh native admission or any mandatory check.
+
+## Evolving H13: native checked identities and SCC search
+
+The next discriminator is a real native checked producer, before attempting
+objects/store reuse. The pure KIR prototype runs the existing native checking
+pipeline and refuses missing schema/effect bridges. It is outside FULL47 and
+does not yet identify the complete Seed compiler source graph.
+
+| Candidate | Prediction and discriminator | Native ARM screen |
+| -- | -- | -- |
+| Immutable member templates and empty/single dependency-sort bypass | Eliminate repeated normalization and needless sorting while preserving all canonical payloads | Combined SCC8 screen346.138s to67.836s; all group/member CIDs match an independent native oracle |
+| Compare at the first differing member | Avoid constructing the remainder of each permutation's payload; exhaustive search and tie order stay identical | Same SCC8 1.355s; native full-payload differential and executed mutation controls pass |
+| Persist native symbolic objects | Reuse unchanged DefCID/SCC emission with all context sealed and fresh admission | Not implemented; no cache or whole-CI qualification from the identity prototype |
+
+The first timings are local unpaired screens, not cold-compiler or workflow
+gains. A separate same-input/producer/CPU ABBA experiment compares template
+full-payload versus member-prefix comparison. Both variants still examine
+all40320 permutations. The full normalizer is retained as a native oracle,
+and a manually authored SCC8 forces the canonical winner to permutation40319.
+Native x86 qualification and the remaining end-to-end goal remain required.
+See `docs/native-incremental-build.md` and the checked-DefCID evidence folder.
+
+The local native ARM ABBA result isolates the prefix comparator call-site
+change with both variants using the same immutable templates and all40320
+permutations. CPU0, compiler, input and environment are identical: baseline
+68.186/67.826s, candidate1.338/1.338s; medians68.006 to1.338s (ratio0.019677).
+Every complete group/member output is byte-identical. This is a bounded SCC8
+identity workload on the local native ARM VM, not a quiet-host publication,
+cold compiler measurement or whole-workflow gain. Different ISA/compiler
+results must be recorded separately rather than inferred from this ratio.

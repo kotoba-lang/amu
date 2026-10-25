@@ -249,3 +249,28 @@ adds131072 comparisons against the original evaluator and four built/executed
 mutants on both ISAs; all previous gates and uncached main/full remain required.
 The candidate must rebuild core/controller/root/public pins and pass fresh
 native qualification before its qualification flags are promoted.
+
+## Native checked identity / SCC prototype
+
+`seed/05-checked-definition.kotoba` and `seed/06-definition-groups.kotoba`
+remain outside FULL-MANIFEST. Preserve the current payload-v2 authority,
+profile6/desugar2, one binder counter, direct dependency CIDs and exhaustive
+scc-v1 minimum over at most eight members. Run native kr/name/check freshly;
+caller-supplied checked flags, unsupported schemas/effects and oversized
+groups refuse without partial identities. Immutable normalized member bytes
+may be reused inside that one identity calculation; only structurally recorded,
+native-created group-reference leaves may change under permutations.
+Keep native full-payload equivalence, independent oracle, version-drift
+refusals and actually built/executed mutants on both ISAs. This is not a
+persistent object store, a build-cache hit, a native admission verdict or
+qualification of the full Seed frontend. See docs/native-incremental-build.md.
+
+## Native CI derivation and independent ISA qualification
+
+Fresh ARM bootstrap/one-compiler transport precedes separate ARM and x86
+qualification jobs. Transport alone is never qualification: all six native
+job executions (including both shared-module matrix entries) must succeed.
+Every previous ARM/x86 gate, uncached main/full tier and fresh controller
+verdict remains required. The ARM artifact includes root and final generations
+for unchanged native producer pin checks after transport. No compiler/image
+bytes, limits, case expectations or native gate commands change in this split.
