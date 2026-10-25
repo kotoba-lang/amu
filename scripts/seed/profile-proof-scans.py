@@ -9,16 +9,19 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 def pin(p):
  b=Path(p).read_bytes();return dict(bytes=len(b),sha256=hashlib.sha256(b).hexdigest())
-def main(out,seconds):
+def main(out,seconds,revision=None):
  assert platform.system()=="Linux" and platform.machine() in ("x86_64","aarch64")
  out.mkdir(parents=True,exist_ok=False)
  target="x86_64-linux" if platform.machine()=="x86_64" else "aarch64-linux"
  producer=ROOT/"bin/amu" if platform.machine()=="x86_64" else ROOT/"seed/bootstrap/aarch64-linux-static-root.elf"
- paths=[p for p in (ROOT/"seed/CORE-STATIC-MANIFEST").read_text().splitlines() if p and not p.startswith("#")]
- source=b"".join((ROOT/p).read_bytes()+b"\n" for p in paths)
+ def read(path):
+  if not revision: return (ROOT/path).read_bytes()
+  return subprocess.run(['git','show',revision+':'+path],cwd=ROOT,check=True,capture_output=True).stdout
+ paths=[p for p in read("seed/CORE-STATIC-MANIFEST").decode().splitlines() if p and not p.startswith("#")]
+ source=b"".join(read(p)+b"\n" for p in paths)
  text=source.decode()
  functions=["gn-small-label","gn-op-fn","gn-op-call","qi-admit","pi-admit","ti-admit","rp-admit","rc-admit","gn-call-wrapper","gn-clamp","gn-scalar-mask","gn-affine-reader","mr-reader","di-admit","tc-admit","tb-admit","aw-admit","gn-mask-writer","gn-chain-mode","gn-chain-target","gp-shape"]
- bindings={p:pin(ROOT/p) for p in paths}
+ bindings={p:dict(bytes=len(read(p)),sha256=hashlib.sha256(read(p)).hexdigest()) for p in paths}
  for name in functions:
   match=re.search(r"\(defn- "+re.escape(name)+r" \[([^]]*)\] :(i64|bool|vector-i64)",text)
   assert match,name
@@ -31,8 +34,8 @@ def main(out,seconds):
   wrapper='(defn- '+name+' ['+args+'] :'+match.group(2)+' (let [b (io-err "B '+name+'\\n") result ('+inner+' '+' '.join(names)+') e (io-err "E '+name+'\\n")] result))\n'
   text=text[:start]+body+"\n"+wrapper+text[end:]
  unit=out/"probe.kotoba";unit.write_text(text)
- corepaths=[p for p in (ROOT/"seed/MANIFEST").read_text().splitlines() if p and not p.startswith("#")]
- core=out/"core.kotoba";core.write_bytes(b"".join((ROOT/p).read_bytes()+b"\n" for p in corepaths))
+ corepaths=[p for p in read("seed/MANIFEST").decode().splitlines() if p and not p.startswith("#")]
+ core=out/"core.kotoba";core.write_bytes(b"".join(read(p)+b"\n" for p in corepaths))
  lock=out/"core.ksl";lock.write_text(f"KSL1\nentry {core}\nfile {pin(core)['sha256']} {core}\n")
  env=dict(PATH="/nonexistent",KEXE_STACK_BYTES="8388608",KEXE_CAP_RESOURCES_35=str(out))
  image=out/"probe.elf";build=[str(producer),"compile",str(unit),"--target",target,"--output",str(image),"--format","static"]
@@ -62,4 +65,4 @@ def main(out,seconds):
  (out/"observations.json").write_text(json.dumps(report,indent=2)+"\n")
  print(json.dumps(report,indent=2),flush=True)
 if __name__=="__main__":
- p=argparse.ArgumentParser();p.add_argument("--output",type=Path,required=True);p.add_argument("--seconds",type=int,default=240);a=p.parse_args();main(a.output.resolve(),a.seconds)
+ p=argparse.ArgumentParser();p.add_argument("--output",type=Path,required=True);p.add_argument("--seconds",type=int,default=240);p.add_argument("--baseline-revision");a=p.parse_args();main(a.output.resolve(),a.seconds,a.baseline_revision)

@@ -23,7 +23,7 @@ permissions:
   contents: read
   actions: read
 concurrency:
-  group: native-controller-profile-${{ github.event.pull_request.number || github.ref }}
+  group: native-controller-profile-${{ github.event.pull_request.number || github.ref }}-${{ inputs.mode || 'controller' }}
   cancel-in-progress: true
 jobs:
   proof-comparison:
@@ -59,8 +59,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Profile native proof scans (diagnostic only)
-        run: python3 scripts/seed/native_build_queue.py --output "$RUNNER_TEMP/admission.json" -- python3 scripts/seed/profile-proof-scans.py --output "$RUNNER_TEMP/proof-scans" --seconds 240
+        run: python3 scripts/seed/native_build_queue.py --output "$RUNNER_TEMP/admission.json" -- python3 scripts/seed/profile-proof-scans.py --baseline-revision db6b2f085f627b413a9bc6f80f90ab942481e6b2 --output "$RUNNER_TEMP/proof-scans" --seconds 240
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
