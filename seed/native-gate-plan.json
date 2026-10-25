@@ -15,25 +15,15 @@
         ]
       },
       {
-        "name": "launcher",
+        "name": "label-proof-index",
         "argv": [
           "python3",
-          "scripts/seed/check-static-launcher.py",
+          "scripts/seed/check-native-label-index.py",
           "--compiler",
           "@TEMP@/boot/F1.elf",
           "--output",
-          "@TEMP@/launcher"
-        ]
-      },
-      {
-        "name": "kototama-i64",
-        "argv": [
-          "python3",
-          "scripts/seed/check-kototama-i64.py",
-          "--compiler",
-          "@TEMP@/boot/F1.elf",
-          "--output",
-          "@TEMP@/kototama-i64-arm64"
+          "@TEMP@/label-index-arm64",
+          "--controls-only"
         ]
       },
       {
@@ -48,30 +38,29 @@
         ]
       },
       {
-        "name": "label-proof-index",
+        "name": "kototama-i64",
         "argv": [
           "python3",
-          "scripts/seed/check-native-label-index.py",
+          "scripts/seed/check-kototama-i64.py",
           "--compiler",
           "@TEMP@/boot/F1.elf",
           "--output",
-          "@TEMP@/label-index-arm64",
-          "--controls-only"
+          "@TEMP@/kototama-i64-arm64"
+        ]
+      },
+      {
+        "name": "launcher",
+        "argv": [
+          "python3",
+          "scripts/seed/check-static-launcher.py",
+          "--compiler",
+          "@TEMP@/boot/F1.elf",
+          "--output",
+          "@TEMP@/launcher"
         ]
       }
     ],
     "x86": [
-      {
-        "name": "native-cdci",
-        "argv": [
-          "python3",
-          "scripts/seed/check-native-cdci.py",
-          "--complete",
-          "@TEMP@/complete",
-          "--output",
-          "@TEMP@/native-cdci"
-        ]
-      },
       {
         "name": "label-proof-index",
         "argv": [
@@ -85,36 +74,14 @@
         ]
       },
       {
-        "name": "fs2-x86",
+        "name": "native-cdci",
         "argv": [
           "python3",
-          "scripts/seed/check-native-fs2.py",
-          "--compiler",
-          "@TEMP@/complete/F3.elf",
-          "--output",
-          "@TEMP@/fs2-x86"
-        ]
-      },
-      {
-        "name": "aiueos-image",
-        "argv": [
-          "python3",
-          "scripts/seed/check-aiueos-image-native.py",
+          "scripts/seed/check-native-cdci.py",
           "--complete",
           "@TEMP@/complete",
           "--output",
-          "@TEMP@/aiueos-image"
-        ]
-      },
-      {
-        "name": "aiueos-boot",
-        "argv": [
-          "python3",
-          "scripts/seed/check-aiueos-boot-native.py",
-          "--complete",
-          "@TEMP@/complete",
-          "--output",
-          "@TEMP@/aiueos-boot"
+          "@TEMP@/native-cdci"
         ]
       },
       {
@@ -123,6 +90,25 @@
           "bash",
           "-c",
           "for suite in project cpu-project memory-project regions boot-region lock isr fixed-extent owned-page owned-window private-context pci-boot pci-private pci-forgery; do python3 \"scripts/seed/check-aiueos-$suite-native.py\" --complete \"$RUNNER_TEMP/complete\" --output \"$RUNNER_TEMP/aiueos-projects/$suite\" || exit 1; done"
+        ]
+      },
+      {
+        "name": "kototama-receipt",
+        "argv": [
+          "python3",
+          "scripts/seed/check-kototama-receipt.py",
+          "--compiler",
+          "@TEMP@/complete/F2.elf",
+          "--output",
+          "@TEMP@/kototama-receipt-x86_64"
+        ]
+      },
+      {
+        "name": "live-abi",
+        "argv": [
+          "bash",
+          "-c",
+          "python3 scripts/seed/check-static-profile-native.py --complete \"$RUNNER_TEMP/complete\" --output \"$RUNNER_TEMP/static-profile-x86\" && python3 scripts/seed/check-aiueos-value-call-native.py --complete \"$RUNNER_TEMP/complete\" --output \"$RUNNER_TEMP/live-call-x86\" && python3 scripts/seed/check-aiueos-user-native.py --complete \"$RUNNER_TEMP/complete\" --output \"$RUNNER_TEMP/user-context-x86\" && python3 scripts/seed/check-aiueos-desktop-regions-native.py --complete \"$RUNNER_TEMP/complete\" --output \"$RUNNER_TEMP/desktop-regions-x86\""
         ]
       },
       {
@@ -147,14 +133,36 @@
         ]
       },
       {
-        "name": "kototama-receipt",
+        "name": "aiueos-image",
         "argv": [
           "python3",
-          "scripts/seed/check-kototama-receipt.py",
-          "--compiler",
-          "@TEMP@/complete/F2.elf",
+          "scripts/seed/check-aiueos-image-native.py",
+          "--complete",
+          "@TEMP@/complete",
           "--output",
-          "@TEMP@/kototama-receipt-x86_64"
+          "@TEMP@/aiueos-image"
+        ]
+      },
+      {
+        "name": "fs2-x86",
+        "argv": [
+          "python3",
+          "scripts/seed/check-native-fs2.py",
+          "--compiler",
+          "@TEMP@/complete/F3.elf",
+          "--output",
+          "@TEMP@/fs2-x86"
+        ]
+      },
+      {
+        "name": "aiueos-boot",
+        "argv": [
+          "python3",
+          "scripts/seed/check-aiueos-boot-native.py",
+          "--complete",
+          "@TEMP@/complete",
+          "--output",
+          "@TEMP@/aiueos-boot"
         ]
       },
       {
@@ -166,14 +174,6 @@
           "@TEMP@/complete/F2.elf",
           "--output",
           "@TEMP@/clock-entropy"
-        ]
-      },
-      {
-        "name": "live-abi",
-        "argv": [
-          "bash",
-          "-c",
-          "python3 scripts/seed/check-static-profile-native.py --complete \"$RUNNER_TEMP/complete\" --output \"$RUNNER_TEMP/static-profile-x86\" && python3 scripts/seed/check-aiueos-value-call-native.py --complete \"$RUNNER_TEMP/complete\" --output \"$RUNNER_TEMP/live-call-x86\" && python3 scripts/seed/check-aiueos-user-native.py --complete \"$RUNNER_TEMP/complete\" --output \"$RUNNER_TEMP/user-context-x86\" && python3 scripts/seed/check-aiueos-desktop-regions-native.py --complete \"$RUNNER_TEMP/complete\" --output \"$RUNNER_TEMP/desktop-regions-x86\""
         ]
       }
     ]

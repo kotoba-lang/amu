@@ -1,6 +1,6 @@
 # Native proof-scan refactor (JUN-332 / JUN-27)
 
-The pending candidate targets the original full core18 cold compile, with a
+The refactor targets the original full core18 cold compile, with a
 600-second goal on the same actual native x86 host. It does not substitute a
 cached verdict for any compiler, controller, main/full-tier, resource or refusal
 gate. FULL-MANIFEST47 and both core18 manifests retain every module.
@@ -84,10 +84,42 @@ byte-identical to the timed candidate. These are this workload's whole-process
 times, not a universal project or workflow build time. See
 [portable process observations](evidence/native-proof-scan-20261025/same-host-x86.json).
 
-## Status
+## Native qualification and remaining iteration cost
 
-Candidate root, public entry and controller pins are staged from source-bound
-native ARM fixed points. The uncached full tier, complete native x86/controller,
-public aliases and shared-component qualification remain required before merge.
-The original native gates are retained, including the TCP/spawn acceptance
-added concurrently on main. Nine guard-removal native controls supplement them.
+[Corrected native CI40191488005](https://github.com/kotoba-lang/amu/actions/runs/40191488005)
+passed all five jobs. Current-source x86 controller observations record534.273
+seconds in the compiler rebuild and541.429 seconds for the complete controller,
+including its24-case gate, below ten minutes. This is an absolute observation
+on that CI host, separate from the paired same-host algorithm comparison above.
+The public image equals native F1=F2=F3; three entrypoints and90 source-lock cases,
+18 native refusals, parent-death cleanup, Chrome and shared text/DOM/text-edit
+passed. Both ISAs passed all nine successfully built guard-removal mutants.
+
+The exact selected ARM root also passed the uncached full tier: G1/G2/G3,
+packed core and C0-to-Kw-to-Pw-to-full provenance, with no read/store/reuse cache.
+C0's current core rebuild took395.4 seconds; static core took431.8 seconds.
+Fresh execution on that final root passed all19 workloads, locked MIR/GMIR,
+resource and refusal probes (146 calls/18 refusals). The large MIR probe released
+155,688,217 scopes and retained zero in each checked resource category. All22
+benchmark/linked containers and runner match the intermediate root's outputs.
+The memory-map generator preserves its output and both native routes' six
+refusals. No capacity or limit was increased.
+
+See [native qualification observations](evidence/native-proof-scan-20261025/qualified-native.json),
+[raw controller profile](evidence/native-proof-scan-20261025/controller-profile.json),
+[uncached ARM full observations](evidence/native-proof-scan-20261025/native-arm-full.json),
+[final-root corpus](evidence/native-proof-scan-20261025/final-root-corpus.json) and
+[native derivation chain](evidence/native-proof-scan-20261025/native-derivation-chain.json).
+The selected adoption receipt and qualification annotations reference the
+verified images and source graph; broader public compatibility and deployed
+behavior remain separate.
+
+The x86 label-proof controls now dominate21-minute independent gate scheduling:
+1,113.177 seconds rebuilding test images and81.130 seconds executing semantic
+controls. All21 calls still run. Independent groups are ordered by their
+observed work, retaining every argv and the same two slots. A fixed-runtime
+simulation predicts ARM849.118 to734.961 seconds and x861265.142 to1232.136
+seconds. These are scheduling estimates, not measured speedups; GitHub hosts
+vary. See [ordering observations](evidence/native-proof-scan-20261025/gate-ordering.json).
+The whole PR CI took about73 minutes; the separate20-minute iteration goal
+remains open. Persistent native per-definition object reuse remains future work.
