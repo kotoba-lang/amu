@@ -21,15 +21,18 @@ the extracted function through FS2, bounds it to 12..4096 bytes, writes a
 16 KiB arm64 Mach-O, and checks the entire FS2 write acknowledgement. Its
 eight-instruction entry wrapper at file offset 1024 allocates a 16-byte stack
 context, places fuel 1000 at `[x7+8]`, calls the generated code at offset
-1056, then passes its return value to the Darwin `exit` syscall. The wrapper
-is diagnostic host code; it provides no general runtime or capabilities.
+1056, then passes its return value to the Darwin `exit` syscall. The v3 image
+has six load commands: three segments, `LC_LOAD_DYLINKER`, `LC_MAIN`, and
+`LC_BUILD_VERSION`. It has no `LC_LOAD_DYLIB` and `otool -L` lists no linked
+library. The platform dyld still starts it; the wrapper is diagnostic host
+code and provides no general runtime or capabilities.
 
 The unsigned image SHA-256 values are
-`b8a5c5bcfa50c6c4aa7f7dd4be819024dcb881ae63d5d91b6bd64cf8f82b63d3`,
-`4ff646d2fd295820918e9a8b346cef613deaad5f0ab42f5a6311b7889aa93b2c`,
-and `1d635f61d6df8bac5cee0f4727130d94425a88fbf30af35f97504f4840ca191c`
+`6383ec2b8ea71d5f046f75f091eee0ea95acb04b83aa4e497d0b3f97976a724f`,
+`0cc1ccca32e97bfd4b96036ef2e10946a8f8358c6d0ba2238deabbac9e30ffa5`,
+and `de3c61bf00d32ec5ad82b155292437aba0cbd83636c23e5f08bd7d3e5b2e35ef`
 in table order. An 11-byte truncated function was refused with exit 2 and no
-image. A second loop image emission was byte-identical. Changing only the
+image. A second v3 loop image emission was byte-identical. Changing only the
 loop wrapper's initial fuel from 1000 to 1, then
 signing the modified image, produced a Mac trap (process return code -5)
 without output. This is a negative control for the generated fuel charge.
@@ -38,7 +41,9 @@ without output. This is a negative control for the generated fuel charge.
 packager, `.kseed`, raw function, and unsigned image digests. It checks the
 Mach-O structure and payload bytes, signs diagnostic copies with macOS
 `codesign`, verifies their signatures, and launches all three images plus the
-low-fuel control. [receipt.json](receipt.json) records the observed results.
+low-fuel control. The observer also checks the exact load-command sequence and
+vacated libSystem command bytes. [receipt.json](receipt.json) records the v3
+observed results.
 Python is a host observer; Kotoba/Amu produced the code and images.
 
 The build used an existing local Podman Linux VM only as a host for the pinned
@@ -57,6 +62,14 @@ whose entry immediately reads the runtime context at `x7`; packaging alone
 cannot run that compiler. A Darwin runtime and product packaging remain
 necessary under JUN-417.
 
+The earlier v2 image declared an unused libSystem load command. A diagnostic
+host transformation removing it executed with the same result; the Kotoba
+packager now emits those exact v3 bytes. A separate diagnostic
+`LC_UNIXTHREAD` image with no dyld command passed code-sign verification but
+was killed at launch on this host. This single observation does not establish
+whether a dyld-free product route is possible. The accepted v3 proof uses
+dyld and no libSystem load command.
+
 Reproduction sequence (with a new artifact directory mounted at `/work` and
 `seed/bootstrap` mounted read-only at `/compiler`):
 
@@ -66,7 +79,7 @@ Reproduction sequence (with a new artifact directory mounted at `/work` and
    --output /work/<stem>.raw`.
 3. Compile the Kotoba packager using `compile
    /work/macos-generated-main-smoke.kotoba --target aarch64-linux --output
-   /work/macos-generated-main-smoke-v2.elf --format static`.
+   /work/macos-generated-main-smoke-v3.elf --format static`.
 4. Run the packager with an output Mach-O and raw function path as its two
    arguments, granting FS2 only the artifact directory. Repeat for all three.
 5. On the Mac, run `python3 scripts/seed/check-macos-generated-main-smoke.py

@@ -1,7 +1,8 @@
 ;; Package an extracted Amu aarch64-macos function into arm64 MH_EXECUTE.
 ;; The Darwin exit wrapper and Mach-O layout are diagnostic host code. This
 ;; supplies a 1000-unit fuel context to pure functions only; it does not
-;; qualify a full macOS compiler, capability runtime, or OS.
+;; qualify a full macOS compiler, capability runtime, or OS. It uses the
+;; platform dyld entry contract but has no libSystem load command.
 (ns seed.macos-generated-main-smoke (:export [main]))
 
 (defn- byte-at [v :vector-i64 at :i64 value :i64] :vector-i64
@@ -33,11 +34,11 @@
 
 (defn- body-at [v :vector-i64 at :i64 raw :vector-i64] :vector-i64
   (-> v
-      ;; mach_header_64: MH_EXECUTE, CPU_TYPE_ARM64, seven commands.
-      ;; Dynamic launch needs NOUNDEFS|DYLDLINK|TWOLEVEL|PIE (0x00200085).
+      ;; mach_header_64: MH_EXECUTE, CPU_TYPE_ARM64, six commands.
+      ;; Direct-syscall launch uses NOUNDEFS|DYLDLINK|PIE (0x00200005).
       (u32-at at 4277009103) (u32-at (+ at 4) 16777228)
-      (u32-at (+ at 12) 2) (u32-at (+ at 16) 7)
-      (u32-at (+ at 20) 352) (u32-at (+ at 24) 2097285)
+      (u32-at (+ at 12) 2) (u32-at (+ at 16) 6)
+      (u32-at (+ at 20) 296) (u32-at (+ at 24) 2097157)
       ;; LC_SEGMENT_64 __PAGEZERO, __TEXT and __LINKEDIT.
       (u32-at (+ at 32) 25) (u32-at (+ at 36) 72)
       (text-at (+ at 40) "__PAGEZERO")
@@ -54,19 +55,16 @@
       (u64-at (+ at 208) 16384)
       (u64-at (+ at 216) 16384)
       (u32-at (+ at 232) 1) (u32-at (+ at 236) 1)
-      ;; dyld and libSystem are the only dynamic dependencies.
+      ;; macOS dyld starts LC_MAIN; no C runtime or libSystem load command.
       (u32-at (+ at 248) 14) (u32-at (+ at 252) 32)
       (u32-at (+ at 256) 12) (text-at (+ at 260) "/usr/lib/dyld")
-      (u32-at (+ at 280) 12) (u32-at (+ at 284) 56)
-      (u32-at (+ at 288) 24)
-      (text-at (+ at 304) "/usr/lib/libSystem.B.dylib")
       ;; LC_MAIN enters the wrapper, which calls the extracted function.
-      (u32-at (+ at 336) 2147483688) (u32-at (+ at 340) 24)
-      (u64-at (+ at 344) 1024)
+      (u32-at (+ at 280) 2147483688) (u32-at (+ at 284) 24)
+      (u64-at (+ at 288) 1024)
       ;; LC_BUILD_VERSION: macOS 13.0.0.
-      (u32-at (+ at 360) 50) (u32-at (+ at 364) 24)
-      (u32-at (+ at 368) 1)
-      (u32-at (+ at 372) 851968) (u32-at (+ at 376) 851968)
+      (u32-at (+ at 304) 50) (u32-at (+ at 308) 24)
+      (u32-at (+ at 312) 1)
+      (u32-at (+ at 316) 851968) (u32-at (+ at 320) 851968)
       ;; AAPCS64 stack context: x7=sp, [x7+8]=fuel 1000. The generated
       ;; function may charge fuel through this slot. Then exit(x0).
       (u32-at (+ at 1024) 0xd10043ff)
