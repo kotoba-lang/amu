@@ -4,12 +4,27 @@ Date: 2026-10-24
 
 ## Status
 
-Proposed. A measurement and a design question, not a change. Nothing here alters the seed. It follows ADR 0373 (bounded kernel memory windows, rooted
-per call site and length, merged as #1539) and the aiueos `:browser-component` floor.
+Historical measurement and options, retained for provenance. The measurements
+below describe e8f77af3 on 2026-10-24, not the current native compiler. This
+document changes no seed, artifact or pin. It follows ADR 0373 (bounded kernel
+memory windows, merged as #1539) and the aiueos `:browser-component` floor.
+
+Review update, 2026-10-25: Amu #1563/#1564 and AIUEOS #497/#498 integrated the
+locked complete kernel/live-runtime/native-media route, guarded region and
+queue/ABI contracts, and the diagnostic desktop. Complete46 retained all18
+adopted core modules; exact-head native ARM/x86/controller/public qualification
+passed in run 40136966836. The AIUEOS source-owner consumer separately verified
+full30 desktop/QEMU input at 4cc72740. These are later gates and do not make the
+five historical objects below the current product dependency.
+
+JUN-93 still requires the actual `kotoba-lang/browser` surface/input/text-edit,
+CSSOM and DOM graph to replace the kernel's Browser-frame2 behavioral adapter.
+Rebuilding a mirror object or booting its numeric app cards does not qualify
+shared Browser, Itonami dapps, broker consent or persistent state restoration.
 
 ## Measured (amu e8f77af3, the pinned native root, `compile <src> --target x86_64-aiueos-kernel-v1`, capability env `KEXE_CAP_RESOURCES_35`)
 
-The five objects aiueos ships (`browser-reduce`, `-ime`, `-frame`, `-frame2`, `-damage`; built today by the old nbb route at amu 74ca4aa6):
+The five objects in that snapshot (`browser-reduce`, `-ime`, `-frame`, `-frame2`, `-damage`; then built by the old nbb route at amu 74ca4aa6):
 
 1. **All five are refused `E7102` first**, at the SECOND exported defn. Each exports its entry point and a `main` stub (`(defn main [] 0)`), and
    the object profile admits exactly one export. The detail number is that function's index. Dropping the `main` export (a source edit, in a scratch
@@ -40,6 +55,9 @@ C. **Relax ADR 0373 for literal lengths.** Not recommended: it reopens exactly t
 
 ## Recommendation
 
-B, as its own slice with its own cases (a guard that does not dominate, a guard on the wrong parameter, a literal outside the declared set, a path that
+At the measured revision, B was recommended as its own slice with its own cases (a guard that does not dominate, a guard on the wrong parameter, a literal outside the declared set, a path that
 reaches the access without the guard) and the same independent read ADR 0373 got. Before that, the two source edits in 1 and 2 are small and can be
-done on the aiueos side whenever the objects are rebuilt. aiueos keeps the 74ca4aa6 builds until then.
+done on the aiueos side whenever those historical objects are rebuilt. This is
+not an instruction to restore the 74ca4aa6 build or the retired nbb pipeline.
+Current integration must preserve the adopted native contracts and qualify
+the complete shared source graph, with refusals and actual native execution.
