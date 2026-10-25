@@ -193,3 +193,38 @@ was produced by Amu selfhost and ran in the kernel gates.
 - The `:browser-component` floor needs the whole Browser/CSSOM graph; the
   project-capable native CLI is still missing (JUN-137).
 
+**Constant-length helper regions (2026-10-24, ADR 0376's problem).** The shipped aiueos objects reach memory through small accessor
+helpers that take the surface alone and give `kernel-subregion` a literal length: `(defn w-at [st i] (kernel-load-u32 (kernel-subregion st 128 ...)))`.
+The pair rule above refused them, correctly, because nothing in the helper proves the region is that long. A private helper's parameter can
+now also have a CONSTANT region: every call must pass a base whose region length is the same integer literal L (typically a checked
+narrowing `(kernel-subregion st sb 0 L)`, which traps unless the region really is at least L long); the helper's own accesses must then name L.
+A caller with an unrooted base refuses the helper, and different literals from different callers refuse it too, so the proof stays an induction
+over the call sites with no path analysis and no new contract syntax. Six cases pin it (`ok_const_helper`, `ok_const_helper_two_callers`;
+`no_const_helper_wrong_literal`, `no_const_helper_two_lengths`, `no_const_helper_unrooted_caller`, `no_const_helper_param_length_caller`).
+
+An independent read of the constant mode (2026-10-24, from the code only) found no admitted out-of-region access, one fragility, which is fixed
+here (an assigned parameter -- a `recur` or self tail call writes every parameter -- has no source or region at all, so the unchecked first-entry value
+cannot be replaced by the assignment's; `no_assigned_param_is_not_a_root`), and these known limits, left as they are: pair mode wins when a caller's
+next argument happens to equal L (the helper then must name the pair's length, so `(sum w 64)` is refused though it is safe); the depth limit of
+six refuses a helper reached through three wrappers; a helper that returns a window is not rooted; different literals from different callers refuse
+the helper; a branch inside a later argument refuses the call; and the scan is quadratic per level, so a source with very many call sites and deep
+helper nests could cost the compiler time (a resource limit, not a memory hole).
+
+Two further changes came from porting `browser-frame` (the smallest shipped object) by hand on the selfhost route (2026-10-24): an assignment of a
+slot from its own current value -- a tail self-call that passes a parameter along unchanged, which the lowerer turns into an assignment -- is not
+counted (`ok_tail_recursive_helper`; a tail call that REBASES the base still refuses, `no_tail_recursive_rebases_the_base`); and the call-chain
+depth limit is 12 instead of 6 (`ok_deep_helper_chain`), because the object reaches a 24-byte op region through seven helper levels. With those and
+three source edits (drop the `main` export, narrow the surface at the entry with `(kernel-subregion st sb 0 128)`, bind an `if` argument with `let`) the
+object compiles to a 9185-byte text on this route. Whether it behaves as the shipped one (the gates, byte for byte frames) is not yet measured.
+
+A third independent read (same day, of the identity-assignment rule and depth 12) found no admitted out-of-region access, and one resource problem,
+fixed here: with no memoization, an accepted chain is explored in full at every level, so a small source of ten helpers each calling the next eight
+times cost about 8^10 visits at depth 12. `xk-region` now has a work budget per access (M[198], reset by `xk-check`; 40000 visits): past it the base is
+not rooted, which refuses and never admits (`no_call_site_blowup_is_refused_not_hung`; the 38 cases check in about fourteen seconds). Not verified
+by that read: R5B specializations (they shift the parameter slots; the profile should refuse them), and closures that write a parent frame's slot.
+
+The depth12/work40000 limits and pair-priority behavior above describe the
+single-object route. The closed project retains all functions and solves
+fixed/paired contracts over its complete graph, then verifies local and
+temporary dominance. See [Native kernel region contracts](../native-kernel-region-contracts.md).
+No object-route limit is silently widened by that project mechanism.

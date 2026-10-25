@@ -1,0 +1,24 @@
+(ns kotoba.compiler.native-project-paths (:export [main])
+ (:require [kotoba.compiler.project-files :as project] [kotoba.compiler.module-lock :as lock] [kotoba.form :as f]))
+(defn- arg [n :string] :string (typed-cap-call :cli/args :string :string n))
+(defn- print [text :string] :i64
+ (let [p (typed-cap-call :io/write :string :string (string-concat text "\n"))] 0))
+(defn- paths [] [:list :string]
+ (let [first (typed-list-new [:list :string] (arg "2")) second (arg "3")]
+  (if (string=? second "") first (typed-list-conj [:list :string] first second))))
+(defn- get [m [:ref :form/r] k :keyword] [:ref :form/r] (f/form-get m (f/keyword-form k)))
+(defn- run [] :i64
+ (let [mode (arg "0")]
+  (cond (string=? mode "normalize")
+         (if (string=? (project/normalize-path (arg "1")) (arg "2")) 0 (throw :test/path))
+        (string=? mode "namespace")
+         (if (string=? (project/namespace-relative (arg "1")) (arg "2")) 0 (throw :test/namespace))
+        (string=? mode "write-lock")
+         (print (lock/lock-text (lock/lock-from-source-paths (fn-ref project/load-closed-graph-checked) (arg "1") (paths) (arg "4"))))
+        :else (let [graph (project/load-closed-graph (arg "1") (paths)) sources (get graph :sources) files (get graph :paths)]
+         (if (and (f/eq (get graph :root) (f/symbol-form (arg "4")))
+                  (= (f/count-of sources) (f/count-of files))
+                  (string=? (string-from-i64 (quot (f/count-of sources) 2)) (arg "5")))
+          (print "PASS_NATIVE_GENERAL_PROJECT_PATHS") (throw :test/graph))))))
+(defn main [] :i64
+ (try (run) (catch :keyword reason (let [p (print (document-edn-print (document-keyword reason)))] 90))))
