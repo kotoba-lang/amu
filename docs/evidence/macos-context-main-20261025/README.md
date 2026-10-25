@@ -37,6 +37,15 @@ capabilities. An 11-byte input and an input whose image would exceed the FS2
 single-value limit each returned 2 without an image. The complete hashes,
 controls and status are in [receipt.json](receipt.json).
 
+The pinned full compiler raw contains 4,381 direct calls across 14 ABI-v11
+runtime slots. The largest groups are `pair_new` (2,311), `concat` (876) and
+`vector_alloc` (654); `typed_cap_call` has nine direct sites and must route
+the declared CLI/FS2 operations. The exact offsets and counts are in
+[runtime-calls.json](runtime-calls.json). This is a scan of the compiler's
+`ldr x16, [x0, #slot]; blr x16` form, not an inventory of inline context
+reads or dynamic calls. It makes the next Darwin runtime work measurable
+without treating the 14 slots as a complete memory or authority model.
+
 `scripts/seed/check-macos-context-main-packager.py` is a Mac observer only.
 It pins source and image hashes, verifies Mach-O layout and FS2 admissions,
 signs copies, runs the bounded loop and trap controls, and only verifies the
