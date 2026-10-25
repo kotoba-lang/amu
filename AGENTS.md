@@ -193,6 +193,6 @@ CCF excluded window/reserved operands exact. No CODE/FIX prefix proof is cached.
 The index temporarily uses existing heap capacity and a disjoint alen-state
 cell. No-room falls back to original scans, and emission releases/zeroes the
 index. Keep the original G size and all fuel/arena limits.
-The full-prefix native differential oracle and seven successfully built but
+The full-prefix native differential oracle and nine successfully built but
 semantically refused guard-removal mutants run on both native ARM and x86
 in the shared two-slot gate plan. Original gate groups remain mandatory.

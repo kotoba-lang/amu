@@ -51,7 +51,9 @@
  (let [ordinary (and (ccf-label-grid M)
    (ccf-label-source M 1 1 1 0) (not (ccf-label-source M 1 1 2 0))
    (not (ccf-label-source M 1 1 3 0)) (not (ccf-label-source M 1 1 4 0))
-   (ccf-label-source M 1 1 5 0) (not (ccf-label-source M 1 2 1 0)))
+   (ccf-label-source M 1 1 5 0) (not (ccf-label-source M 1 2 1 0))
+   ;; A suffix can remove the first duplicate, or remove the only hit.
+   (ccf-label-source M 6 2 1 0) (not (ccf-label-source M 3 1 1 0)))
        bad-b (mem-set M (+ MM-SIR-BASE (* 2 MM-SIR-W) IF-B) 7)
        b-ok (and (not (ccf-label-source bad-b 1 1 1 0)) (ccf-label-grid bad-b))
        bad-c (-> bad-b (mem-set (+ MM-SIR-BASE (* 2 MM-SIR-W) IF-B) 0)
@@ -74,7 +76,15 @@
         (glx-anchor indexed (+ t2-max-sir 5) 1 8 8)
         (glx-anchor indexed 6 2 0 7))
        original-top (- (vector-at indexed MM-HEAP-TOP) MM-LABEL-CAP)
-       released (glx-release indexed)
+       later (mem-alloc indexed 3) later-base (vector-at later MM-R0)
+       sentinel (mem-set later later-base 314159)
+       held (glx-release sentinel)
+       held-ok (and (= (vector-at held MM-HEAP-TOP) (+ later-base 3))
+         (= (vector-at held later-base) 314159) (= (glx-base held) original-top))
+       ;; The fixture owns the later allocation; restore it before releasing
+       ;; the table. Production release must never discard somebody else's.
+       rewound (mem-set (mem-fill held later-base 3 0) MM-HEAP-TOP later-base)
+       released (glx-release rewound)
        release-ok (and (= (glx-base released) 0) (= (gn-g released glx-state) 0)
          (= (vector-at released MM-HEAP-TOP) original-top)
          (loop [k 0] (or (= k MM-LABEL-CAP)
@@ -95,6 +105,6 @@
        small-index (glx-prepare small)
        small-ok (and (= (glx-base small-index) 0) (glx-anchor small-index 1 2 0 0))
        bad (gn-gs small-index glx-state -1)]
-  (and fallback anchors release-ok optional-ok stale-ok small-ok (= (glx-base bad) 0))))
+  (and fallback anchors held-ok release-ok optional-ok stale-ok small-ok (= (glx-base bad) 0))))
 (defn- seed-main [] :i64
  (if (= (io-argc) 0) (if (glx-check) 0 1) 1))

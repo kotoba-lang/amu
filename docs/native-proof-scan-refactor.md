@@ -71,7 +71,7 @@ Warm reuse and cold algorithm timings must remain separate.
 
 ## Status
 
-Candidate only. ARM semantic and seven mutation controls have passed after the heap-boundary
+Candidate only. ARM semantic and nine mutation controls have passed after the heap-boundary
 review repair; same-host
 native x86 comparison and whole-closure qualification are in progress. No root,
 public, controller or consumer pin is adopted by this document.

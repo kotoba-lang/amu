@@ -70,6 +70,8 @@ def main(compiler, output):
         "duplicate-label": ("(if (= (vector-at out (+ base l)) 0) j -1)", "j"),
         "suffix-query": ("(and (= j 1) (= found 0) (> (glx-base M) 0))", "(and (= found 0) (> (glx-base M) 0))"),
         "accumulator-query": ("(and (= j 1) (= found 0) (> (glx-base M) 0))", "(and (= j 1) (> (glx-base M) 0))"),
+        "ccf-suffix-query": ("(and (= j 1) (= found 0) (> l 0) (< l MM-LABEL-CAP) (> (glx-base M) 0))", "(and (= found 0) (> l 0) (< l MM-LABEL-CAP) (> (glx-base M) 0))"),
+        "release-top": ("(= (vector-at M MM-HEAP-TOP) (+ base MM-LABEL-CAP))", "true"),
         "ccf-window": ("(or (< position (- i 2)) (> position i))", "true"),
         "ccf-reserved-operands": ("(= (gn-sir M position IF-B) 0) (= (gn-sir M position IF-C) 0)", "true"),
         "optional-heap": ("(> (vector-at M MM-HEAP-TOP) (- MM-HEAP-END MM-LABEL-CAP))", "false"),
