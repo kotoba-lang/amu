@@ -21,3 +21,6 @@ loader/I/O evidence; full Darwin runtime and release remain unqualified.
 Earlier probe fixtures and receipts from the stacked research branches remain
 historical, tied to their recorded sources and artifact digests. They are
 not substituted for the current full compiler bootstrap or native gate.
+
+All42 `seed/macos-*.kotoba` source fixtures passed native Mac `check`.
+That is source admission only, not execution qualification of every prototype.
