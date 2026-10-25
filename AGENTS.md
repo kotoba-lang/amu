@@ -249,3 +249,14 @@ adds131072 comparisons against the original evaluator and four built/executed
 mutants on both ISAs; all previous gates and uncached main/full remain required.
 The candidate must rebuild core/controller/root/public pins and pass fresh
 native qualification before its qualification flags are promoted.
+
+
+## Native CI derivation and independent ISA qualification
+
+Fresh ARM bootstrap/one-compiler transport precedes separate ARM and x86
+qualification jobs. Transport alone is never qualification: all six native
+job executions (including both shared-module matrix entries) must succeed.
+Every previous ARM/x86 gate, uncached main/full tier and fresh controller
+verdict remains required. The ARM artifact includes root and final generations
+for unchanged native producer pin checks after transport. No compiler/image
+bytes, limits, case expectations or native gate commands change in this split.
