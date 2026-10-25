@@ -1560,3 +1560,61 @@ the diff touches a `.cljk` namespace, no green suite claimed;
 `find docs -name '*.sh'` -> 0.
 
 Record: `docs/evidence/gpu/metal-counter-channel-harness-20261025.txt`.
+
+## Amendment 2026-10-25 (the sample-bracket calibration row): the letter's question is ANSWERED -- the delta carries a MEASURED additive residual, and GPUTimestamp quantizes at 125/3 ns
+
+ONE measurement slice (JUN-58): the instrument's own calibration on
+synthetic kernels through the harness's exact bracket. The harness row's
+UNMEASURED "sample-bracket calibration (the encoder-boundary residual)"
+is RESOLVED on this host, and the named "GPUTimestamp resolution" is
+MEASURED. NO arm is timed, NO reduce kernel runs, and no speed question
+is answered.
+
+**The answer (MEASURED).** counter_ns = [encoder start, encoder end] =
+T_dispatch + R(grid shape, state) + epsilon: the delta does NOT equal
+the dispatch's pure GPU time. At the fold arms' launch shape (3907 x
+256 threads = (1000003+255)/256 at WG=256), R ~= 7.83-8.00 us WARM and
+20.6-20.8 us COLD (medians of 12 brackets each); at 1x1, 4.21 us warm /
+9.75-9.79 us cold; a zero-groups encoded dispatch ~0.98-1.00 us warm /
+1.83-1.88 us cold. The two arms' launch shapes (baseline arm threadgroup
+memory WG*4 = 1024 bytes vs subgroup arm 0) differ by 166.5 ns warm /
+187 ns cold -- bounded within the spread, NOT zero-claimed. The spin
+series (v1, 20 recorded rounds x 9 work levels) is linear in work plus a
+floor: low-band fit F = 4417.7 ns, c = 28.5515 ns/iter (top levels bend
+28.55 -> 28.64). State dependence: cold is 1.9x-2.6x warm on every
+shape; the CAUSE (GPU power/clock ramp) is a hypothesis -- no probe
+reads a clock -- and the work threshold that flips the state is
+UNMEASURED (48 zero-work grid launches did not; one ~490 ms dispatch
+did). GPUTimestamp quantizes at 125/3 ns = 41.667 ns: 776 raw ts values
+(cold and warm) sit within 0.651 ns of that lattice with the truncation
+signature {0.041, 0.326, 0.651}; 381 fresh deltas within 0.667 ns. A
+bracket with no dispatch writes NO samples (2 unwritten / 28 stale
+pairs across 30 attempts) -- the one-dispatch-per-encoder contract is
+load-bearing. The absolute clock-domain calibration stays UNMEASURED
+(rule 3 bars the host-clock merge).
+
+**States.** MEASURED: the residual at four launch shapes x cold/warm,
+the spin line, the tick lattice, the staleness counts, the spike list
+(single-bracket outliers named in the record). DECIDED: the letter's
+question at its narrowed form. IMPLEMENTED: nothing (probe sources
+scratch-only, never staged; docs-only diff). ACCEPTED DESIGN ONLY
+(unchanged): the claim protocol, the narrowing, the second-leg letter.
+PROPOSED (unchanged): the Vulkan-provider timestamp route. UNMEASURED,
+named: the residual's internal decomposition; the clock-domain
+calibration; the state-flip work threshold; R off M1 Max / under
+throttle / at other grids; the fold arms' times and every sign; the
+rules-1+2 publication (the classifier's counters route is still
+UNIMPLEMENTED); whether the second leg fires; every workgroup-row
+question (`:arm`/`:unknown` stay provisional `:measured? false` -- no
+`:measured?` flag, `:shapes` value, selection answer or workgroup row
+moves this tick). Rule 4 unchanged.
+
+Gates: scoped GPU gate GREEN 110 tests / 11445 assertions / 0 failures
+/ 0 errors (docs-only, regression pin); `gpu_regime_classify.py
+--self-test` GREEN 2572 / 0 (unchanged); FULL `run-tests.cljk` NOT RUN
+this slice (docs-only), documented red at base ("Could not find
+namespace: kotoba.form", ADR-0362), no green suite claimed;
+`find docs -name '*.sh'` -> 0.
+
+Record: `docs/evidence/gpu/metal-counter-bracket-calibration-20261025.txt`
+(+ raw logs in `docs/evidence/gpu/metal-counter-bracket-calibration-20261025/`).
