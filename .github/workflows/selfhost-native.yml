@@ -76,6 +76,10 @@ jobs:
         run: python3 scripts/seed/check-io-read.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/io-read"
       - name: Static runtime durable files and sleep, wires 35 and 7 (arm64, native)
         run: python3 scripts/seed/check-durable-sleep.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/durable-sleep"
+      - name: Native private store and STOP/CONT sleep resume (arm64)
+        run: |
+          python3 scripts/seed/check-private-store.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/private-store"
+          python3 scripts/seed/check-sleep-resume.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/sleep-resume/receipt.json"
       - name: Static runtime spawn, wire 20 (arm64, native)
         run: python3 scripts/seed/check-spawn-runtime.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/spawn"
       - name: Kototama bounded pure i64 AOT (arm64, native verdict)
@@ -166,6 +170,8 @@ jobs:
             ${{ runner.temp }}/runtime/io-read/io-read.json
             ${{ runner.temp }}/runtime/durable-sleep/durable-sleep.json
             ${{ runner.temp }}/runtime/spawn/spawn-runtime.json
+            ${{ runner.temp }}/runtime/private-store/receipt.json
+            ${{ runner.temp }}/runtime/sleep-resume/receipt.json
           if-no-files-found: warn
   qualify-x86_64:
     needs: bootstrap-arm64
@@ -216,6 +222,10 @@ jobs:
         run: python3 scripts/seed/check-io-read.py --compiler "$RUNNER_TEMP/complete/F2.elf" --target x86_64-linux --output "$RUNNER_TEMP/runtime/io-read"
       - name: Static runtime durable files and sleep, wires 35 and 7 (x86_64, native)
         run: python3 scripts/seed/check-durable-sleep.py --compiler "$RUNNER_TEMP/complete/F2.elf" --target x86_64-linux --output "$RUNNER_TEMP/runtime/durable-sleep"
+      - name: Native private store and STOP/CONT sleep resume (x86_64)
+        run: |
+          python3 scripts/seed/check-private-store.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/runtime/private-store"
+          python3 scripts/seed/check-sleep-resume.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/runtime/sleep-resume/receipt.json"
       - name: Static runtime spawn, wire 20 (x86_64, native)
         run: python3 scripts/seed/check-spawn-runtime.py --compiler "$RUNNER_TEMP/complete/F2.elf" --target x86_64-linux --output "$RUNNER_TEMP/runtime/spawn"
       - name: Native x86 typed live ABI and user-context admission
@@ -285,6 +295,8 @@ jobs:
             ${{ runner.temp }}/runtime/io-read/io-read.json
             ${{ runner.temp }}/runtime/durable-sleep/durable-sleep.json
             ${{ runner.temp }}/runtime/spawn/spawn-runtime.json
+            ${{ runner.temp }}/runtime/private-store/receipt.json
+            ${{ runner.temp }}/runtime/sleep-resume/receipt.json
             ${{ runner.temp }}/native-cdci/native-cdci.json
             ${{ runner.temp }}/native-cdci/calls.json
             ${{ runner.temp }}/native-cdci/raw
