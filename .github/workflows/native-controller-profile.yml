@@ -16,7 +16,7 @@ on:
         required: true
         default: controller
         type: choice
-        options: [controller, proof-scans, proof-comparison, pass-core, pass-label, proof-current, source-refinements, ccf-order, zero-watermark, zero-hoist]
+        options: [controller, proof-scans, proof-comparison, pass-core, pass-label, proof-current, source-refinements, ccf-order, zero-watermark, zero-hoist, zero-core]
       derivation-run:
         description: Public Amu run with a source-identical one-compiler-receipt artifact
         required: true
@@ -56,6 +56,35 @@ jobs:
             ${{ runner.temp }}/zero-hoist/observations.json
             ${{ runner.temp }}/zero-hoist/*.stdout
             ${{ runner.temp }}/zero-hoist/*.stderr
+          if-no-files-found: error
+  zero-core:
+    if: inputs.mode == 'zero-core'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            isa: x86_64
+          - runner: ubuntu-24.04-arm
+            isa: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Verify source and native producer pins
+        run: python3 scripts/seed/check-native-identities.py
+      - name: Native scope mutants, fixed point and matched frozen core18 builds
+        run: python3 scripts/seed/native_build_queue.py -- python3 scripts/seed/compare-native-zero-watermark.py --workload core18 --hoist --output "$RUNNER_TEMP/zero-core"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: native-zero-core-${{ matrix.isa }}
+          path: |
+            ${{ runner.temp }}/zero-core/observations.json
+            ${{ runner.temp }}/zero-core/*.stdout
+            ${{ runner.temp }}/zero-core/*.stderr
           if-no-files-found: error
   zero-watermark:
     if: inputs.mode == 'zero-watermark'

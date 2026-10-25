@@ -33,7 +33,7 @@ def pin(path):
     return dict(bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest())
 
 
-def main(out):
+def main(out, workload="tiny", hoist=False):
     arm = platform.machine() == "aarch64"
     assert platform.system() == "Linux" and platform.machine() in ("aarch64", "x86_64")
     machine = 183 if arm else 62
@@ -54,12 +54,24 @@ def main(out):
         assert native.count(MARK_OLD) == 1 and native.count(ZERO_OLD) == 1
         assert "(kxrt-gl 760)" not in native and "(kxrt-gs 760 " not in native
     text = original.replace(MARK_OLD, MARK_NEW).replace(ZERO_OLD, ZERO_NEW)
+    if hoist:
+        before = "z (loop [i 0] (if (= i count) 0 (let [w (kxrt-store64 (kxrt-item u i) 0)] (recur (inc i)))))"
+        after = "base (kxrt-item u 0) byte-end (+ base (* 8 count))\n            z (loop [cursor base] (if (= cursor byte-end) 0 (let [w (kxrt-store64 cursor 0)] (recur (+ cursor 8)))))"
+        assert text.count(before) == 2
+        text = text.replace(before, after)
     source = out / "candidate-full.kotoba"
     source.write_text(text)
     fixture = out / "oracle.kotoba"
     fixture.write_bytes((ROOT / "seed/tests/native-zero-watermark.kotoba").read_bytes())
     tiny = out / "tiny.kotoba"
     tiny.write_text("(ns zero.tiny (:export [main]))\n(defn main [] :i64 (+ 20 22))\n")
+    compiles_per_batch = 8
+    if workload == "core18":
+        core_paths = [p for p in (ROOT / "seed/MANIFEST").read_text().splitlines() if p and not p.startswith("#")]
+        assert len(core_paths) == 18
+        tiny = out / "frozen-core18.kotoba"
+        tiny.write_bytes(b"".join((ROOT / p).read_bytes() + b"\n" for p in core_paths))
+        compiles_per_batch = 1
     runner = out / "runner.kotoba"
     runner.write_bytes((ROOT / "seed/x86_64-kx64-runner.kotoba").read_bytes())
     cpus = sorted(os.sched_getaffinity(0))
@@ -69,7 +81,7 @@ def main(out):
     report = dict(schema="amu.native-zero-watermark-experiment.v1", nativeVerdictAuthority=False,
                   qualificationReplacement=False, candidateAdopted=False, fullQualification=False,
                   wholeWorkflowQualified=False, compilerAlgorithmChanged=False, runtimeChanged=True,
-                  sourceWorkloadChanged=False, emulation=False,
+                  sourceWorkloadChanged=False, emulation=False, workloadKind=workload, hoistedClearLoop=hoist,
                   host=[platform.system(), platform.machine(), platform.release()], allowedCPUs=cpus,
                   selectedCPU=cpus[0], producer=pin(producer), source=pin(source), fixture=pin(fixture),
                   workload=pin(tiny), sourceBindings={p: pin(ROOT / p) for p in paths}, calls=[], batches=[])
@@ -148,19 +160,19 @@ def main(out):
     for i, (name, compiler) in enumerate((("baseline", producer), ("candidate", final),
                                          ("candidate", final), ("baseline", producer))):
         start = time.monotonic()
-        for j in range(8):
+        for j in range(compiles_per_batch):
             dst = out / (str(i) + "-" + name + "-" + str(j) + ".kseed")
-            run("tiny-" + str(i) + "-" + name + "-" + str(j),
+            run(workload + "-" + str(i) + "-" + name + "-" + str(j),
                 [compiler, "compile", tiny, "--target", "aarch64-macos", "--output", dst])
             if golden is None:
                 golden = dst.read_bytes()
-            assert dst.read_bytes() == golden, "emitted tiny workload changed"
-        report["batches"].append(dict(name=name, compiles=8, seconds=time.monotonic() - start))
+            assert dst.read_bytes() == golden, "emitted frozen workload changed"
+        report["batches"].append(dict(name=name, compiles=compiles_per_batch, seconds=time.monotonic() - start))
         save()
     samples = {v: [r["seconds"] for r in report["batches"] if r["name"] == v] for v in ("baseline", "candidate")}
     report.update(status="PASS_NATIVE_ZERO_WATERMARK_EXPERIMENT", samples=samples,
                   candidateToBaselineRatio=statistics.median(samples["candidate"]) / statistics.median(samples["baseline"]),
-                  allTinyOutputsByteIdentical=True, scopeReuseOraclePassed=True)
+                  allTinyOutputsByteIdentical=(workload == "tiny"), allCore18OutputsByteIdentical=(workload == "core18"), outputContainer=pin(dst), scopeReuseOraclePassed=True)
     save()
     print(report["status"], report["candidateToBaselineRatio"], flush=True)
 
@@ -168,5 +180,7 @@ def main(out):
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--output", type=Path, required=True)
+    p.add_argument("--workload", choices=("tiny", "core18"), default="tiny")
+    p.add_argument("--hoist", action="store_true")
     a = p.parse_args()
-    main(a.output.resolve())
+    main(a.output.resolve(), a.workload, a.hoist)
