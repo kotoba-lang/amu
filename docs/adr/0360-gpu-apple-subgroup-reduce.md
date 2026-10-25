@@ -1096,7 +1096,23 @@ under the SAME rules 3 + 6 gate as the Vulkan and MSL routes.
     timestamps; it still cannot FIRE until the WGSL harness publishes
     rule-1 classification and a fresh run carries a regime-invariant
     sign -- both UNIMPLEMENTED / UNMEASURED, that amendment's part 3.]
-    Prose only: no flag, cell, selection answer or workgroup row moves.]
+    [FIRST LEG EVALUATED 2026-10-25 -- both pieces landed ((i) the
+    WGSL harness publishes rule-1 classification and, since the rule-2
+    slice, rule-2 sign classification; (ii) two fresh claim-protocol
+    runs exist: `docs/evidence/gpu/wgsl-claimprotocol-run1-20261025`
+    and `...-run2-20261025`), and the first leg does NOT FIRE: neither
+    run carries a regime-invariant sign -- rule 2's verdict is
+    REGIME-SCOPED at every operator and at the cell roll-up in both
+    runs (run 1: single 19 above/14 below/3 at 1.0, batch32 20/15/1;
+    run 2: single 14/18/4, batch32 16/20/0 -- re-derived this bracket's
+    slice from the committed logs' own `pair` lines). No reopen; the
+    narrowing stands -- conservative `:baseline` for the named device,
+    no `:measured-cell` record moves (rule 4). UNMEASURED, unchanged:
+    cross-run regime stability as a property (two uncontrolled runs
+    bound no distribution -- and their regime STRUCTURES already
+    differ: 5 of 6 metric/operator level structures differ in level
+    count) and per-kernel GPU time. Prose only: no flag, cell,
+    selection answer or workgroup row moves.]
   Part 3 -- rationale, all of it design fact and not measurement:
     WebGPU-on-Apple is a deployed surface (WebKit ships WebGPU; on
     macOS the browser's WebGPU runs over Metal), so a dispatch there
@@ -1253,6 +1269,25 @@ of 1.0 -- which the 2026-10-25 read would have FAILED); the sign of any
 claim-protocol WGSL run; per-kernel GPU time on this adapter. The
 narrowing itself is unchanged: parity is not a fold win, the
 conservative `:baseline` answer for the named device stands.
+[BOTH MISSING PIECES LAND 2026-10-25 -- (i) harness-side rule-1
+classification landed (the amendment below), and rule-2 sign
+classification landed with it (`docs/evidence/gpu/
+wgsl-rule2-sign-classification-20261025.txt`); (ii) two fresh runs of
+the narrowed device's fold arms exist (`docs/evidence/gpu/
+wgsl-claimprotocol-run1-20261025`, `...-run2-20261025`), each
+publishing rules 1 + 2. The named UNMEASURED question "whether the
+WGSL host-clock baselines cluster into more than one regime level at
+all" is ANSWERED PER RUN, not generalized: run 1 -- batch32 multi-
+level (min 2 levels, boundary 1.1523x; sum 3 levels, boundaries
+1.2044x and 1.1590x), single effectively single-level (its sum's
+second level is one run n=1000003 W=32 at 1.1809x -- a 1-sample
+marginal split, named not read as a regime); run 2 -- 5 of 6
+metric/operator level structures differ in level count from run 1
+(only single/max is single-level in both), so cross-run regime
+stability stays UNMEASURED as a property. "The sign of any
+claim-protocol WGSL run" is ANSWERED for these two runs only:
+REGIME-SCOPED at every operator and cell in both (see the first-leg
+bracket above for the roll-ups).]
 
 State: ACCEPTED DESIGN ONLY (this amendment). IMPLEMENTED: nothing --
 no code moves in this slice. MEASURED: nothing -- no hardware ran.
@@ -1292,7 +1327,22 @@ with it -- the per-run ratio is the block's paired-median ratio (the
 adoption record's own usage, "its per-run ratios ... 13/36 single and
 17/36 batch32 pairs") -- but rule 2's WGSL PUBLICATION stays
 UNIMPLEMENTED, its own later slice; the rule-1 section renders no sign
-verdict (pinned by test).
+verdict (pinned by test). [SUPERSEDED 2026-10-25 -- rule 2's WGSL
+PUBLICATION is IMPLEMENTED (code + tests: render_wgsl_sign_section in
+`scripts/gpu_regime_classify.py`, the combined `--wgsl-log`
+publication; `docs/evidence/gpu/wgsl-rule2-sign-classification-20261025.txt`
+-- the slice named as "its own later slice" above). The pinned
+boundary still holds exactly as written: the rule-1 SECTION itself
+renders no sign verdict; rule 2 publishes in its own section beside
+it. Both claim-protocol runs' rule-2 verdicts and the first-leg
+evaluation are bracketed above. Also superseded in this State
+paragraph's plain reading: its named UNMEASURED "the WGSL baseline
+metric's regime structure; any claim-protocol WGSL run's sign" --
+answered per-run by `wgsl-claimprotocol-run1-20261025` and
+`...-run2-20261025` (structure per run as bracketed; both runs'
+signs REGIME-SCOPED everywhere), while cross-run regime stability as
+a property stays UNMEASURED. Per-kernel GPU time and every
+workgroup-row question stay UNMEASURED as written; rule 4 unchanged.]
 
 Deliberate boundary, named in code and tests: the classifier is never
 run over the committed 2026-10-25 pre-adoption measure-log's values.
