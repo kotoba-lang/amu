@@ -1,7 +1,7 @@
 ;; Kotoba-native project metadata and source-graph resolver. It deliberately
 ;; returns typed Kotoba data rather than Clojure forms or host exceptions.
 (ns kotoba.compiler.native-project
-  {:kotoba/export [decode-source-packet make-source make-source-formatted module-info resolve-graph-packet]}
+  {:kotoba/export [decode-source-packet make-source module-info resolve-graph-packet]}
   (:require [kotoba.compiler.kotoba-reader :as reader]
             [kotoba.form :as form])
   (:schemas {:native.project/module-info
@@ -11,7 +11,7 @@
                [:err :string]]]
              :native.project/source
              [:record :native.project/source
-              [[:namespace :string] [:text :string] [:surface :bool]]]
+              [[:namespace :string] [:text :string]]]
              :native.project/graph
              [:record :native.project/graph
               [[:modules [:list [:ref :native.project/source]]]
@@ -50,11 +50,7 @@
   (record-new [:ref :native.project/module-info] namespace requires error))
 
 (defn make-source [namespace :string text :string] [:ref :native.project/source]
-  (record-new [:ref :native.project/source] namespace text false))
-
-(defn make-source-formatted [namespace :string text :string surface? :bool]
-  [:ref :native.project/source]
-  (record-new [:ref :native.project/source] namespace text surface?))
+  (record-new [:ref :native.project/source] namespace text))
 
 (defn- graph-result [modules [:list [:ref :native.project/source]]
                      order [:list :string] error :string]
@@ -400,57 +396,49 @@
           (>= count max-project-modules)
           (packet-result sources "encoded project module count exceeds limit")
           :else
-          (let [surface-end (string-index-of-from packet "\n" offset)]
-            (if (or (< surface-end 0) (= surface-end offset))
-              (packet-result sources "malformed project source packet format flag")
-              (let [surface-text (string-substring packet offset surface-end)
-                    surface? (string=? surface-text "1")
-                    name-len-start (+ surface-end 1)
-                    name-end (string-index-of-from packet "\n" name-len-start)]
-                (if (or (< name-end 0) (= name-end name-len-start)
-                        (not (or surface? (string=? surface-text "0"))))
-                  (packet-result sources "malformed project source packet namespace length")
-                  (let [source-len-start (+ name-end 1)
-                        source-len-end (string-index-of-from packet "\n" source-len-start)]
-                    (if (< source-len-end 0)
-                      (packet-result sources "malformed project source packet source length")
-                      (let [name-length (parse-long (string-substring packet name-len-start name-end))
-                            source-length (parse-long
-                                           (string-substring packet source-len-start source-len-end))]
-                        (if (or (not (option-some?-of [:option :i64] name-length))
-                                (not (option-some?-of [:option :i64] source-length)))
-                          (packet-result sources "project source packet lengths must be decimal integers")
-                          (let [name-size (option-value-of [:option :i64] name-length 0)
-                                source-size (option-value-of [:option :i64] source-length 0)]
-                            (cond
-                              (or (<= name-size 0) (> name-size 256))
-                              (packet-result sources "project source packet namespace length is invalid")
-
-                              (or (<= source-size 0) (> source-size max-project-source-bytes))
-                              (packet-result sources "project source packet source length is invalid")
-
-                              :else
-                              (let [name-start (+ source-len-end 1)
-                                    source-start (+ name-start name-size)
-                                    next-offset (+ source-start source-size)]
-                                (if (> next-offset length)
-                                  (packet-result sources "project source packet frame is truncated")
-                                  (recur next-offset
-                                         (+ count 1)
-                                         (typed-list-conj
-                                          [:list [:ref :native.project/source]]
-                                          sources
-                                          (make-source-formatted
-                                           (string-substring packet name-start source-start)
-                                           (string-substring packet source-start next-offset)
-                                           surface?)))))))))))))))))
-  )))
+          (let [format-end (string-index-of-from packet "\n" offset)]
+            (if (or (< format-end 0) (= format-end offset))
+              (packet-result sources "malformed project source packet format marker")
+              (if (not (string=? (string-substring packet offset format-end) "0"))
+                (packet-result sources "project source packet requires canonical Kotoba format 0")
+                (let [name-len-start (+ format-end 1)
+                      name-end (string-index-of-from packet "\n" name-len-start)]
+                  (if (or (< name-end 0) (= name-end name-len-start))
+                    (packet-result sources "malformed project source packet namespace length")
+                    (let [source-len-start (+ name-end 1)
+                          source-len-end (string-index-of-from packet "\n" source-len-start)]
+                      (if (< source-len-end 0)
+                        (packet-result sources "malformed project source packet source length")
+                        (let [name-length (parse-long (string-substring packet name-len-start name-end))
+                              source-length (parse-long
+                                             (string-substring packet source-len-start source-len-end))]
+                          (if (or (not (option-some?-of [:option :i64] name-length))
+                                  (not (option-some?-of [:option :i64] source-length)))
+                            (packet-result sources "project source packet lengths must be decimal integers")
+                            (let [name-size (option-value-of [:option :i64] name-length 0)
+                                  source-size (option-value-of [:option :i64] source-length 0)]
+                              (cond
+                                (or (<= name-size 0) (> name-size 256))
+                                (packet-result sources "project source packet namespace length is invalid")
+                                (or (<= source-size 0) (> source-size max-project-source-bytes))
+                                (packet-result sources "project source packet source length is invalid")
+                                :else
+                                (let [name-start (+ source-len-end 1)
+                                      source-start (+ name-start name-size)
+                                      next-offset (+ source-start source-size)]
+                                  (if (> next-offset length)
+                                    (packet-result sources "project source packet frame is truncated")
+                                    (recur next-offset (+ count 1)
+                                      (typed-list-conj [:list [:ref :native.project/source]] sources
+                                        (make-source
+                                          (string-substring packet name-start source-start)
+                                          (string-substring packet source-start next-offset))))))))))))))))))))))
 
 (defn resolve-graph-packet [packet :string root :string]
   [:ref :native.project/graph]
   "Resolve a length-framed string packet into the closed source graph.
 
-  Each frame is a surface flag (`1` for `.cljk`, `0` for `.kotoba`), newline,
+  Each frame begins with canonical format marker `0`, newline,
   namespace-byte-length, newline, source-byte-length, newline, namespace bytes,
   then source bytes. Lengths are decimal. This string boundary is exportable by
   Seed; resolve-graph remains an internal typed-list helper."

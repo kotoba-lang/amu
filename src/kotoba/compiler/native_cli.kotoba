@@ -3,8 +3,7 @@
 (ns kotoba.compiler.native-cli
   {:kotoba/export [main]}
   (:require [kotoba.compiler.native-frontend :as frontend]
-            [kotoba.compiler.native-project-files :as project-files]
-            [kotoba.form :as form])
+            [kotoba.compiler.native-project-files :as project-files])
   (:capabilities #{:cli/args :io/write :io/write-error})
   (:schemas {:native.cli/options
              [:record :native.cli/options
@@ -101,10 +100,9 @@
   [:ref :ana/ir]
   (let [module (typed-list-nth [:list [:ref :native.project/source]] modules index)
         source (record-get [:ref :native.project/source] module :text)
-        surface? (record-get [:ref :native.project/source] module :surface)
         dependency-packet
         (project-files/direct-dependency-source-packet modules index)]
-    (frontend/analyze-project-source source surface? dependency-packet)))
+    (frontend/analyze-project-source source dependency-packet)))
 
 (defn- check-project-module [modules [:list [:ref :native.project/source]] index :i64]
   :i64
@@ -121,80 +119,6 @@
                                            (string-concat ": "
                                              (string-concat (error-message result) "\n")))))
           65)))))
-
-(defn- compare-analysis-results
-  [left-label :string left [:ref :ana/ir]
-   right-label :string right [:ref :ana/ir]] :i64
-  (cond
-    (not (record-get [:ref :ana/ir] left :ok))
-    (do
-      (typed-cap-call :io/write-error :string :string
-                      (string-concat "kotoba: "
-                        (string-concat left-label
-                          (string-concat " semantic error: "
-                            (string-concat (error-message left) "\n")))))
-      65)
-
-    (not (record-get [:ref :ana/ir] right :ok))
-    (do
-      (typed-cap-call :io/write-error :string :string
-                      (string-concat "kotoba: "
-                        (string-concat right-label
-                          (string-concat " semantic error: "
-                            (string-concat (error-message right) "\n")))))
-      65)
-
-    (form/eq (record-get [:ref :ana/ir] left :val)
-             (record-get [:ref :ana/ir] right :val))
-    (do
-      (typed-cap-call :io/write :string :string
-                      "semantic equivalent: HIR equal (.cljk -> .kotoba)\n")
-      0)
-
-    :else
-    (do
-      (typed-cap-call :io/write-error :string :string
-                      "kotoba: semantic mismatch: HIR differs after .cljk lowering\n")
-      65)))
-
-(defn- compare-project-modules
-  [left [:list [:ref :native.project/source]]
-   right [:list [:ref :native.project/source]]] :i64
-  (let [left-count (vector-count left)
-        right-count (vector-count right)]
-    (if (or (= left-count 0) (= right-count 0))
-      (do
-        (typed-cap-call :io/write-error :string :string
-                        "kotoba: compared project has no entry module\n")
-        65)
-      (let [left-index (- left-count 1)
-            right-index (- right-count 1)
-            left-result (analyze-project-module left left-index)
-            right-result (analyze-project-module right right-index)]
-        (compare-analysis-results ".cljk" left-result ".kotoba" right-result)))))
-
-(defn- compare-cljk-kotoba [cljk-path :string kotoba-path :string roots :string]
-  :i64
-  (arena-scope
-    (let [cljk-graph (project-files/resolve-project cljk-path roots)
-          cljk-error (record-get [:ref :native.project/graph] cljk-graph :err)]
-      (if (not (string=? cljk-error ""))
-        (do
-          (typed-cap-call :io/write-error :string :string
-                          (string-concat "kotoba: .cljk project graph: "
-                                         (string-concat cljk-error "\n")))
-          65)
-        (let [kotoba-graph (project-files/resolve-project kotoba-path roots)
-              kotoba-error (record-get [:ref :native.project/graph] kotoba-graph :err)]
-          (if (not (string=? kotoba-error ""))
-            (do
-              (typed-cap-call :io/write-error :string :string
-                              (string-concat "kotoba: .kotoba project graph: "
-                                             (string-concat kotoba-error "\n")))
-              65)
-            (compare-project-modules
-             (record-get [:ref :native.project/graph] cljk-graph :modules)
-             (record-get [:ref :native.project/graph] kotoba-graph :modules))))))))
 
 (defn- check-project-modules [modules [:list [:ref :native.project/source]]
                               index :i64 count :i64] :i64
@@ -288,60 +212,36 @@
 (defn main [] :i64
   (let [command (typed-cap-call :cli/args :string :string "0")
         first-argument (typed-cap-call :cli/args :string :string "1")
-        second-argument (typed-cap-call :cli/args :string :string "2")
         argc-text (typed-cap-call :cli/args :string :string "")
         argc-result (parse-long argc-text)
         argc (option-value-of [:option :i64] argc-result 0)
-        compare-mode? (string=? command "compare-hir")
         entry-path? (and (not (string=? first-argument ""))
                          (not (string=? (string-substring first-argument 0 1) "-")))
         path (if entry-path? first-argument "")
-        options (collect-source-path-options (if entry-path?
-                                               (if compare-mode? 3 2)
-                                               1)
+        options (collect-source-path-options (if entry-path? 2 1)
                                              argc "" 0 "" "" false)
         options-error (record-get [:ref :native.cli/options] options :err)
         roots (record-get [:ref :native.cli/options] options :roots)
         lock (record-get [:ref :native.cli/options] options :lock)
         blocks (record-get [:ref :native.cli/options] options :blocks)
         unpinned (record-get [:ref :native.cli/options] options :unpinned)
-        compare-valid? (and compare-mode?
-                            (option-some?-of [:option :i64] argc-result)
-                            (>= argc 3)
-                            entry-path?
-                            (suffix? path ".cljk")
-                            (suffix? second-argument ".kotoba"))
         single-valid? (and (or (string=? command "check")
                                (string=? command "check-entry")
                                (string=? command "modules"))
                            (option-some?-of [:option :i64] argc-result)
-                           (or (not (string=? lock ""))
-                               (and (not (string=? path ""))
-                                    (or (suffix? path ".kotoba")
-                                        (suffix? path ".cljk")
-                                        ;; the resolver discovers and accepts
-                                        ;; .cljc entries; the entry guard must
-                                        ;; not make that route unreachable
-                                        ;; (review T2).
-                                        (suffix? path ".cljc")))))]
+                           (or (not (string=? lock "")) (not (string=? path "")))
+                           (or (string=? path "") (suffix? path ".kotoba")))]
     (cond
-      (not (or compare-valid? single-valid?))
+      (not single-valid?)
       (do
         (typed-cap-call :io/write-error :string :string
-                        "usage: amu-native check|check-entry|modules <source.cljk|source.cljc|source.kotoba> [--module-lock LOCK --blocks DIR | --unpinned [--source-path DIR ...]] | compare-hir <surface.cljk> <core.kotoba> --unpinned [--source-path DIR ...]\n")
+                        "usage: amu-native check|check-entry|modules [source.kotoba] [--module-lock LOCK --blocks DIR | --unpinned [--source-path DIR ...]]\n")
         64)
 
       (not (string=? options-error ""))
       (do
         (typed-cap-call :io/write-error :string :string
                         (string-concat "kotoba: " (string-concat options-error "\n")))
-        64)
-
-      (and compare-mode? (or (not (string=? lock ""))
-                             (not (string=? blocks ""))))
-      (do
-        (typed-cap-call :io/write-error :string :string
-                        "kotoba: compare-hir uses --unpinned source-path resolution, not --module-lock\n")
         64)
 
       (and (not (string=? blocks "")) (string=? lock ""))
@@ -361,9 +261,6 @@
         (typed-cap-call :io/write-error :string :string
                         "kotoba: path-based project resolution requires --unpinned\n")
         64)
-
-      compare-mode?
-      (compare-cljk-kotoba path second-argument roots)
 
       (string=? command "check-entry")
       (check-project-mode path roots lock blocks true)

@@ -1,0 +1,60 @@
+;; Complete author-source reserved-name check, independent of surface lowering.
+(ns kotoba.compiler.source-names
+  {:kotoba/export [source-reserved?]}
+  (:require [kotoba.form :as form])
+  (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                      [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]}))
+
+(defn- head-is? [node [:ref :form/r] name :string] :bool
+  (and (form/is-seq? node)
+       (> (form/count-of node) 0)
+       (form/is-symbol? (form/nth-of node 0))
+       (= name (form/symbol-value (form/nth-of node 0)))))
+
+(defn- quote-form? [node [:ref :form/r]] :bool
+  (head-is? node "quote"))
+
+(defn- reserved-prefix-symbol? [node [:ref :form/r]] :bool
+  (if (not (form/is-symbol? node))
+    false
+    (let [name (form/symbol-value node)]
+      (and (>= (string-byte-length name) 9)
+           (= (string-substring name 0 9) "__kotoba_")))))
+
+(defn- source-reserved-in? [node [:ref :form/r]] :bool
+  (let [count (form/count-of node)]
+    (cond
+      (quote-form? node)
+      false
+
+      (reserved-prefix-symbol? node)
+      true
+
+      (and (form/is-seq? node) (> count 1) (head-is? node "case"))
+      (or (source-reserved-in? (form/nth-of node 1))
+          (loop [index 3]
+            (if (>= index count)
+              false
+              (if (source-reserved-in? (form/nth-of node index))
+                true
+                (recur (+ index 2)))))
+          (and (= (mod (- count 2) 2) 1)
+               (source-reserved-in? (form/nth-of node (- count 1)))))
+
+      (or (form/is-seq? node) (form/is-vec? node)
+          (form/is-set? node) (form/is-map? node))
+      (loop [index 0]
+        (if (>= index count)
+          false
+          (if (source-reserved-in? (form/nth-of node index))
+            true
+            (recur (+ index 1)))))
+
+      :else
+      false)))
+
+(defn source-reserved? [node [:ref :form/r]] :bool
+  "Report whether author-written, executable source names the reserved
+  `__kotoba_` prefix. Quoted data and case test literals remain data."
+  (source-reserved-in? node))
+

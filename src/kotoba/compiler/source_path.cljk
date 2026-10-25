@@ -7,18 +7,13 @@
             #?@(:kotoba [[kotoba.compiler.source-path-core :as source-core]])))
 
 (defn source-kind
-  "Classify Kotoba source notation for discovery and diagnostics, not runtime."
+  "Recognize canonical Kotoba source; legacy source extensions are retired."
   [#?@(:kotoba [path :string] :default [path])]
   #?@(:kotoba [[:option :keyword]])
   #?(:kotoba
      (source-core/source-kind path)
      :default
-     (when (string? path)
-       (cond
-         (str/ends-with? path ".kotoba") :kotoba
-         (str/ends-with? path ".cljk") :kotoba-syntax-sugar
-         (str/ends-with? path ".cljc") :kotoba-compat-syntax
-         :else nil))))
+     (when (and (string? path) (str/ends-with? path ".kotoba")) :kotoba)))
 
 (defn source-kind-present?
   [#?@(:kotoba [path :string] :default [path])]
@@ -34,10 +29,10 @@
      :default
      (do
        (or (source-kind path)
-           (throw (ex-info "source input must use .kotoba, .cljk, or .cljc"
+           (throw (ex-info "source input must use .kotoba"
                            {:phase :usage
                             :path path
-                            :extensions [".cljc" ".cljk" ".kotoba"]})))
+                            :extensions [".kotoba"]})))
        path)))
 
 #?(:kotoba
@@ -84,7 +79,13 @@
      (source-core/admit-native-artifact! value path)
      :default
      (do
-       (when-let [kind (source-kind path)]
+       (when-let [kind (or (source-kind path)
+                          (when (and (string? path)
+                                     (or (str/ends-with? path ".cljk")
+                                         (str/ends-with? path ".cljc")
+                                         (str/ends-with? path ".cljs")
+                                         (str/ends-with? path ".clj")))
+                            :retired-source))]
          (throw (ex-info "extract-native reads a compiled artifact, not a source file"
                          {:phase :decode
                           :path path
