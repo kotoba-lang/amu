@@ -1,0 +1,2141 @@
+[
+ {
+  "name": "F1-compile",
+  "argv": [
+   "/out/full-bootstrap-v3/root.elf",
+   "compile",
+   "/out/full-bootstrap-v3/full-unity.kotoba",
+   "--target",
+   "aarch64-macos",
+   "--output",
+   "/out/full-bootstrap-v3/F1.kseed"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0,
+  "seconds": 20.6
+ },
+ {
+  "name": "F1-pack",
+  "argv": [
+   "/out/full-bootstrap-v3/root.elf",
+   "compile",
+   "/out/full-bootstrap-v3/runner.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/F1.elf",
+   "--format",
+   "packed",
+   "--payload",
+   "/out/full-bootstrap-v3/F1.kseed"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0,
+  "seconds": 1.1
+ },
+ {
+  "name": "R-aarch64",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/runner.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/R-aarch64.elf",
+   "--format",
+   "runner"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.2
+ },
+ {
+  "name": "S-x86_64",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/selfhost-unity.kotoba",
+   "--target",
+   "x86_64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/S-x86_64.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 1.8
+ },
+ {
+  "name": "R-x86_64",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/runner.kotoba",
+   "--target",
+   "x86_64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/R-x86_64.elf",
+   "--format",
+   "kx64-runner"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.2
+ },
+ {
+  "name": "G1-compile",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/adopted-unity.kotoba",
+   "--target",
+   "aarch64-macos",
+   "--output",
+   "/out/full-bootstrap-v3/G1.kseed"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0,
+  "seconds": 17.3
+ },
+ {
+  "name": "G1-extract",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "extract-native",
+   "/out/full-bootstrap-v3/G1.kseed",
+   "--symbol",
+   "main",
+   "--output",
+   "/out/full-bootstrap-v3/G1.bin"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0,
+  "seconds": 0.7
+ },
+ {
+  "name": "arity1-compile",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/arity1.kotoba",
+   "--target",
+   "aarch64-macos",
+   "--output",
+   "/out/full-bootstrap-v3/arity1.kseed"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "arity1-pack",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/runner.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/arity1.elf",
+   "--format",
+   "packed",
+   "--payload",
+   "/out/full-bootstrap-v3/arity1.kseed"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 1,
+  "seconds": 0.0
+ },
+ {
+  "name": "diagnostic-span",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "check",
+   "/out/full-bootstrap-v3/undefined.kotoba"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 1,
+  "seconds": 0.0
+ },
+ {
+  "name": "runtime-boundary",
+  "argv": [
+   "/usr/local/bin/python3",
+   "/repo/scripts/seed/check-runtime-boundary.py",
+   "--compiler",
+   "/out/full-bootstrap-v3/F1.elf",
+   "--output",
+   "/out/full-bootstrap-v3/runtime-boundary",
+   "--payload",
+   "/out/full-bootstrap-v3/G1.kseed"
+  ],
+  "env": {},
+  "exit": 0,
+  "seconds": 31.1
+ },
+ {
+  "name": "case-string-literal-compile",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-string-literal.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/case-string-literal.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.2
+ },
+ {
+  "name": "case-string-literal",
+  "argv": [
+   "/out/full-bootstrap-v3/case-string-literal.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-string-concat-compile",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-string-concat.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/case-string-concat.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.2
+ },
+ {
+  "name": "case-string-concat",
+  "argv": [
+   "/out/full-bootstrap-v3/case-string-concat.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-string-view-compile",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-string-view.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/case-string-view.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.2
+ },
+ {
+  "name": "case-string-view",
+  "argv": [
+   "/out/full-bootstrap-v3/case-string-view.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-string-unicode-compile",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-string-unicode.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/case-string-unicode.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.2
+ },
+ {
+  "name": "case-string-unicode",
+  "argv": [
+   "/out/full-bootstrap-v3/case-string-unicode.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-string-empty-nul-compile",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-string-empty-nul.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/case-string-empty-nul.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.2
+ },
+ {
+  "name": "case-string-empty-nul",
+  "argv": [
+   "/out/full-bootstrap-v3/case-string-empty-nul.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-string-search-compile",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-string-search.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/case-string-search.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.2
+ },
+ {
+  "name": "case-string-search",
+  "argv": [
+   "/out/full-bootstrap-v3/case-string-search.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-string-call-compile",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-string-call.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/case-string-call.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.2
+ },
+ {
+  "name": "case-string-call",
+  "argv": [
+   "/out/full-bootstrap-v3/case-string-call.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-vector-literal-compile",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-vector-literal.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/case-vector-literal.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.2
+ },
+ {
+  "name": "case-vector-literal",
+  "argv": [
+   "/out/full-bootstrap-v3/case-vector-literal.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-vector-dynamic-compile",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-vector-dynamic.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/case-vector-dynamic.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.2
+ },
+ {
+  "name": "case-vector-dynamic",
+  "argv": [
+   "/out/full-bootstrap-v3/case-vector-dynamic.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-vector-persistent-compile",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-vector-persistent.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/case-vector-persistent.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.2
+ },
+ {
+  "name": "case-vector-persistent",
+  "argv": [
+   "/out/full-bootstrap-v3/case-vector-persistent.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-vector-mutate-compile",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-vector-mutate.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/case-vector-mutate.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.2
+ },
+ {
+  "name": "case-vector-mutate",
+  "argv": [
+   "/out/full-bootstrap-v3/case-vector-mutate.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-vector-drop-conj-compile",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-vector-drop-conj.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/case-vector-drop-conj.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.2
+ },
+ {
+  "name": "case-vector-drop-conj",
+  "argv": [
+   "/out/full-bootstrap-v3/case-vector-drop-conj.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-vector-pooled-compile",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-vector-pooled.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/case-vector-pooled.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.2
+ },
+ {
+  "name": "case-vector-pooled",
+  "argv": [
+   "/out/full-bootstrap-v3/case-vector-pooled.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-vector-negative-compile",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-vector-negative.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/case-vector-negative.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.2
+ },
+ {
+  "name": "case-vector-negative",
+  "argv": [
+   "/out/full-bootstrap-v3/case-vector-negative.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 120,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-vector-oob-compile",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-vector-oob.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/case-vector-oob.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.2
+ },
+ {
+  "name": "case-vector-oob",
+  "argv": [
+   "/out/full-bootstrap-v3/case-vector-oob.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 120,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-string-oob-compile",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-string-oob.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/case-string-oob.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.2
+ },
+ {
+  "name": "case-string-oob",
+  "argv": [
+   "/out/full-bootstrap-v3/case-string-oob.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 120,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-string-boundary-compile",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-string-boundary.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/case-string-boundary.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.2
+ },
+ {
+  "name": "case-string-boundary",
+  "argv": [
+   "/out/full-bootstrap-v3/case-string-boundary.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 120,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-wide-args-compile",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-wide-args.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/case-wide-args.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.2
+ },
+ {
+  "name": "case-wide-args",
+  "argv": [
+   "/out/full-bootstrap-v3/case-wide-args.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-closure-compile",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-closure.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/case-closure.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.2
+ },
+ {
+  "name": "case-closure",
+  "argv": [
+   "/out/full-bootstrap-v3/case-closure.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-closure-env-compile",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-closure-env.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/case-closure-env.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.2
+ },
+ {
+  "name": "case-closure-env",
+  "argv": [
+   "/out/full-bootstrap-v3/case-closure-env.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-state-results-compile",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-state-results.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/case-state-results.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.2
+ },
+ {
+  "name": "case-state-results",
+  "argv": [
+   "/out/full-bootstrap-v3/case-state-results.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-bytes-roundtrip-compile",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-bytes-roundtrip.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/case-bytes-roundtrip.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.2
+ },
+ {
+  "name": "case-bytes-roundtrip",
+  "argv": [
+   "/out/full-bootstrap-v3/case-bytes-roundtrip.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-capability-denied-compile",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-capability-denied.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/case-capability-denied.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.2
+ },
+ {
+  "name": "case-capability-denied",
+  "argv": [
+   "/out/full-bootstrap-v3/case-capability-denied.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 120,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-mutual-tail-compile",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-mutual-tail.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/case-mutual-tail.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.2
+ },
+ {
+  "name": "case-mutual-tail",
+  "argv": [
+   "/out/full-bootstrap-v3/case-mutual-tail.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_FUEL": "1000000",
+   "KEXE_ALLOW": "-"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "net-runtime",
+  "argv": [
+   "/usr/local/bin/python3",
+   "/repo/scripts/seed/check-net-runtime.py",
+   "--compiler",
+   "/out/full-bootstrap-v3/F1.elf",
+   "--output",
+   "/out/full-bootstrap-v3/net-runtime",
+   "--target",
+   "aarch64-linux",
+   "--seccomp-if-available"
+  ],
+  "env": {},
+  "exit": 0,
+  "seconds": 14.2
+ },
+ {
+  "name": "spawn-runtime",
+  "argv": [
+   "/usr/local/bin/python3",
+   "/repo/scripts/seed/check-spawn-runtime.py",
+   "--compiler",
+   "/out/full-bootstrap-v3/F1.elf",
+   "--output",
+   "/out/full-bootstrap-v3/spawn-runtime",
+   "--target",
+   "aarch64-linux",
+   "--seccomp-if-available"
+  ],
+  "env": {},
+  "exit": 0,
+  "seconds": 21.0
+ },
+ {
+  "name": "case-string-literal-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-string-literal.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/case-string-literal.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-string-concat-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-string-concat.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/case-string-concat.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-string-view-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-string-view.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/case-string-view.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-string-unicode-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-string-unicode.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/case-string-unicode.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-string-empty-nul-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-string-empty-nul.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/case-string-empty-nul.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-string-search-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-string-search.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/case-string-search.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-string-call-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-string-call.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/case-string-call.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-vector-literal-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-vector-literal.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/case-vector-literal.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-vector-dynamic-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-vector-dynamic.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/case-vector-dynamic.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-vector-persistent-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-vector-persistent.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/case-vector-persistent.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-vector-mutate-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-vector-mutate.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/case-vector-mutate.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-vector-drop-conj-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-vector-drop-conj.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/case-vector-drop-conj.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.1
+ },
+ {
+  "name": "case-vector-pooled-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-vector-pooled.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/case-vector-pooled.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-vector-negative-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-vector-negative.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/case-vector-negative.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-vector-oob-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-vector-oob.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/case-vector-oob.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-string-oob-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-string-oob.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/case-string-oob.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-string-boundary-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-string-boundary.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/case-string-boundary.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-wide-args-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-wide-args.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/case-wide-args.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-closure-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-closure.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/case-closure.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-closure-env-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-closure-env.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/case-closure-env.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-state-results-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-state-results.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/case-state-results.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-bytes-roundtrip-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-bytes-roundtrip.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/case-bytes-roundtrip.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-capability-denied-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-capability-denied.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/case-capability-denied.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "case-mutual-tail-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/case-mutual-tail.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/case-mutual-tail.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "probe-spin-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/wasm-probe-spin.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/probe-spin.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "probe-deep-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/wasm-probe-deep.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/probe-deep.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "probe-entry-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/wasm-probe-entry.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/probe-entry.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "float-float-f64-basic-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/float-float-f64-basic.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/float-float-f64-basic.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 1,
+  "seconds": 0.0
+ },
+ {
+  "name": "float-float-f64-literal-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/float-float-f64-literal.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/float-float-f64-literal.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 1,
+  "seconds": 0.0
+ },
+ {
+  "name": "float-float-f64-div-trunc-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/float-float-f64-div-trunc.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/float-float-f64-div-trunc.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 1,
+  "seconds": 0.0
+ },
+ {
+  "name": "float-float-f64-neg-abs-sqrt-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/float-float-f64-neg-abs-sqrt.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/float-float-f64-neg-abs-sqrt.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 1,
+  "seconds": 0.0
+ },
+ {
+  "name": "float-float-f64-cmp-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/float-float-f64-cmp.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/float-float-f64-cmp.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 1,
+  "seconds": 0.0
+ },
+ {
+  "name": "float-float-f64-min-max-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/float-float-f64-min-max.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/float-float-f64-min-max.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 1,
+  "seconds": 0.0
+ },
+ {
+  "name": "float-float-f32-basic-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/float-float-f32-basic.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/float-float-f32-basic.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 1,
+  "seconds": 0.0
+ },
+ {
+  "name": "float-float-f32-conv-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/float-float-f32-conv.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/float-float-f32-conv.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 1,
+  "seconds": 0.0
+ },
+ {
+  "name": "float-float-f64-unordered-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/float-float-f64-unordered.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/float-float-f64-unordered.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 1,
+  "seconds": 0.0
+ },
+ {
+  "name": "float-float-f32-cmp-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/float-float-f32-cmp.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/float-float-f32-cmp.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 1,
+  "seconds": 0.0
+ },
+ {
+  "name": "float-float-f32-un-wasm32",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/float-float-f32-un.kotoba",
+   "--target",
+   "wasm32-browser",
+   "--output",
+   "/out/full-bootstrap-v3/wasm32/float-float-f32-un.wasm"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 1,
+  "seconds": 0.0
+ },
+ {
+  "name": "probe-value-compile",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/probe-value.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/probe-value.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.2
+ },
+ {
+  "name": "probe-spin-compile",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/probe-spin.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/probe-spin.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.2
+ },
+ {
+  "name": "probe-deep-compile",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/probe-deep.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/probe-deep.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 0.2
+ },
+ {
+  "name": "probe-seccomp-default",
+  "argv": [
+   "/out/full-bootstrap-v3/probe-value.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1"
+  },
+  "exit": 0,
+  "seconds": 0.0
+ },
+ {
+  "name": "probe-sandbox-probe",
+  "argv": [
+   "/out/full-bootstrap-v3/probe-value.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_SANDBOX_PROBE": "1"
+  },
+  "exit": 120,
+  "seconds": 0.0
+ },
+ {
+  "name": "probe-cpu",
+  "argv": [
+   "/out/full-bootstrap-v3/probe-spin.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_CPU_SECONDS": "1"
+  },
+  "exit": 120,
+  "seconds": 1.0
+ },
+ {
+  "name": "probe-wall",
+  "argv": [
+   "/out/full-bootstrap-v3/probe-spin.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1",
+   "KEXE_WALL_SECONDS": "3"
+  },
+  "exit": 120,
+  "seconds": 2.0
+ },
+ {
+  "name": "probe-stack",
+  "argv": [
+   "/out/full-bootstrap-v3/probe-deep.elf"
+  ],
+  "env": {
+   "KEXE_STRUCTURED_REPORT": "1"
+  },
+  "exit": 120,
+  "seconds": 0.0
+ },
+ {
+  "name": "cap-compile",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/cap-b/hash.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/cap-b/hash.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3/cap-missing:/out/full-bootstrap-v3/cap-a:/out/full-bootstrap-v3/cap-b"
+  },
+  "exit": 0,
+  "seconds": 0.2
+ },
+ {
+  "name": "cap-hash-granted",
+  "argv": [
+   "/out/full-bootstrap-v3/cap-b/hash.elf"
+  ],
+  "env": {
+   "KEXE_ALLOW": "3"
+  },
+  "exit": 7,
+  "seconds": 0.0
+ },
+ {
+  "name": "cap-hash-refused",
+  "argv": [
+   "/out/full-bootstrap-v3/cap-b/hash.elf"
+  ],
+  "env": {
+   "KEXE_ALLOW": "37"
+  },
+  "exit": 120,
+  "seconds": 0.0
+ },
+ {
+  "name": "cap-outside-roots",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/cap-b/hash.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/cap-a/x.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3/cap-a"
+  },
+  "exit": 1,
+  "seconds": 0.0
+ },
+ {
+  "name": "G2-compile",
+  "argv": [
+   "/out/full-bootstrap-v3/R-aarch64.elf",
+   "/out/full-bootstrap-v3/G1.bin",
+   "0",
+   "0",
+   "aarch64",
+   "35,37,38,39",
+   "--",
+   "compile",
+   "/out/full-bootstrap-v3/adopted-unity.kotoba",
+   "--target",
+   "aarch64-macos",
+   "--output",
+   "/out/full-bootstrap-v3/G2.kseed"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3",
+   "KEXE_COMMAND": "1",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0,
+  "seconds": 17.2
+ },
+ {
+  "name": "G2-extract",
+  "argv": [
+   "/out/full-bootstrap-v3/R-aarch64.elf",
+   "/out/full-bootstrap-v3/G1.bin",
+   "0",
+   "0",
+   "aarch64",
+   "35,37,38,39",
+   "--",
+   "extract-native",
+   "/out/full-bootstrap-v3/G2.kseed",
+   "--symbol",
+   "main",
+   "--output",
+   "/out/full-bootstrap-v3/G2.bin"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3",
+   "KEXE_COMMAND": "1",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0,
+  "seconds": 0.7
+ },
+ {
+  "name": "G3-compile",
+  "argv": [
+   "/out/full-bootstrap-v3/R-aarch64.elf",
+   "/out/full-bootstrap-v3/G2.bin",
+   "0",
+   "0",
+   "aarch64",
+   "35,37,38,39",
+   "--",
+   "compile",
+   "/out/full-bootstrap-v3/adopted-unity.kotoba",
+   "--target",
+   "aarch64-macos",
+   "--output",
+   "/out/full-bootstrap-v3/G3.kseed"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3",
+   "KEXE_COMMAND": "1",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0,
+  "seconds": 17.2
+ },
+ {
+  "name": "G3-extract",
+  "argv": [
+   "/out/full-bootstrap-v3/R-aarch64.elf",
+   "/out/full-bootstrap-v3/G2.bin",
+   "0",
+   "0",
+   "aarch64",
+   "35,37,38,39",
+   "--",
+   "extract-native",
+   "/out/full-bootstrap-v3/G3.kseed",
+   "--symbol",
+   "main",
+   "--output",
+   "/out/full-bootstrap-v3/G3.bin"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3",
+   "KEXE_COMMAND": "1",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0,
+  "seconds": 0.7
+ },
+ {
+  "name": "P-pack",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/runner.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/P-aarch64.elf",
+   "--format",
+   "packed",
+   "--payload",
+   "/out/full-bootstrap-v3/G3.kseed"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0,
+  "seconds": 1.0
+ },
+ {
+  "name": "P-compile",
+  "argv": [
+   "/out/full-bootstrap-v3/P-aarch64.elf",
+   "compile",
+   "/out/full-bootstrap-v3/adopted-unity.kotoba",
+   "--target",
+   "aarch64-macos",
+   "--output",
+   "/out/full-bootstrap-v3/P.kseed"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0,
+  "seconds": 17.1
+ },
+ {
+  "name": "P-extract",
+  "argv": [
+   "/out/full-bootstrap-v3/P-aarch64.elf",
+   "extract-native",
+   "/out/full-bootstrap-v3/P.kseed",
+   "--symbol",
+   "main",
+   "--output",
+   "/out/full-bootstrap-v3/P.bin"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0,
+  "seconds": 0.7
+ },
+ {
+  "name": "S",
+  "argv": [
+   "/out/full-bootstrap-v3/F1.elf",
+   "compile",
+   "/out/full-bootstrap-v3/selfhost-unity.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/S.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 1.7
+ },
+ {
+  "name": "S2",
+  "argv": [
+   "/out/full-bootstrap-v3/S.elf",
+   "compile",
+   "/out/full-bootstrap-v3/selfhost-unity.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/S2.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3"
+  },
+  "exit": 0,
+  "seconds": 5.7
+ },
+ {
+  "name": "C0",
+  "argv": [
+   "/out/full-bootstrap-v3/S.elf",
+   "compile",
+   "/out/full-bootstrap-v3/core-static-unity.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/C0.elf",
+   "--format",
+   "static"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0,
+  "seconds": 19.3
+ },
+ {
+  "name": "C0-core",
+  "argv": [
+   "/out/full-bootstrap-v3/C0.elf",
+   "compile",
+   "/out/full-bootstrap-v3/adopted-unity.kotoba",
+   "--target",
+   "aarch64-macos",
+   "--output",
+   "/out/full-bootstrap-v3/C0-core.kseed"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0,
+  "seconds": 285.0,
+  "key": "b936291e46fbe6434d78e7037a6017d98855d1967c27d9506b89078ca65853d0"
+ },
+ {
+  "name": "C0-extract",
+  "argv": [
+   "/out/full-bootstrap-v3/C0.elf",
+   "extract-native",
+   "/out/full-bootstrap-v3/C0-core.kseed",
+   "--symbol",
+   "main",
+   "--output",
+   "/out/full-bootstrap-v3/C0-core.bin"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0,
+  "seconds": 1.3,
+  "key": "2ebfcba4497b44d1976c8a27fbc9af8e3be29156297962220a3f7b618f2f194a"
+ },
+ {
+  "name": "C0-Kw",
+  "argv": [
+   "/out/full-bootstrap-v3/C0.elf",
+   "compile",
+   "/out/full-bootstrap-v3/core-static-unity.kotoba",
+   "--target",
+   "aarch64-macos",
+   "--output",
+   "/out/full-bootstrap-v3/Kw.kseed"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0,
+  "seconds": 285.1,
+  "key": "417d9c6e073bd8e20daadcd0e32ea94dfb041283c8e3e8a2df6c13d466c54006"
+ },
+ {
+  "name": "Pw-pack",
+  "argv": [
+   "/out/full-bootstrap-v3/S.elf",
+   "compile",
+   "/out/full-bootstrap-v3/runner.kotoba",
+   "--target",
+   "aarch64-linux",
+   "--output",
+   "/out/full-bootstrap-v3/Pw.elf",
+   "--format",
+   "packed",
+   "--payload",
+   "/out/full-bootstrap-v3/Kw.kseed"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0,
+  "seconds": 4.4
+ },
+ {
+  "name": "Pw-F",
+  "argv": [
+   "/out/full-bootstrap-v3/Pw.elf",
+   "compile",
+   "/out/full-bootstrap-v3/full-unity.kotoba",
+   "--target",
+   "aarch64-macos",
+   "--output",
+   "/out/full-bootstrap-v3/Pw-F.kseed"
+  ],
+  "env": {
+   "KEXE_CAP_RESOURCES_35": "/out/full-bootstrap-v3",
+   "KEXE_STACK_BYTES": "8388608"
+  },
+  "exit": 0,
+  "seconds": 20.8
+ }
+]

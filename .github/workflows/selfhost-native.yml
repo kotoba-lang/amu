@@ -72,6 +72,17 @@ jobs:
         run: python3 scripts/seed/check-native-identities.py
       - name: Local locked native project and refusal controls
         run: python3 scripts/seed/check-x86-project-native.py --compiler "$PWD/bin/amu" --output "$RUNNER_TEMP/local-native-project"
+      - name: Fresh native Kotoba complete24 gate before expensive derivation
+        run: python3 scripts/seed/check-native-kotoba-early.py --compiler "$PWD/bin/amu" --output "$RUNNER_TEMP/early-kotoba"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: early-native-kotoba24
+          path: |
+            ${{ runner.temp }}/early-kotoba/*.json
+            ${{ runner.temp }}/early-kotoba/*.stdout
+            ${{ runner.temp }}/early-kotoba/*.stderr
+          if-no-files-found: warn
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
@@ -134,6 +145,9 @@ jobs:
         with:
           name: label-index-arm64-evidence
           path: |
+            ${{ runner.temp }}/zero-watermark-arm64/*.json
+            ${{ runner.temp }}/zero-watermark-arm64/*.stdout
+            ${{ runner.temp }}/zero-watermark-arm64/*.stderr
             ${{ runner.temp }}/label-index-arm64/*.json
             ${{ runner.temp }}/label-index-arm64/*.stdout
             ${{ runner.temp }}/label-index-arm64/*.stderr
@@ -266,6 +280,9 @@ jobs:
             ${{ runner.temp }}/x86/runtime-boundary/runtime-boundary.json
             ${{ runner.temp }}/x86/runtime-boundary/calls.json
             ${{ runner.temp }}/x86/raw
+            ${{ runner.temp }}/zero-watermark-x86/*.json
+            ${{ runner.temp }}/zero-watermark-x86/*.stdout
+            ${{ runner.temp }}/zero-watermark-x86/*.stderr
             ${{ runner.temp }}/label-index-x86/*.json
             ${{ runner.temp }}/label-index-x86/*.stdout
             ${{ runner.temp }}/label-index-x86/*.stderr

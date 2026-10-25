@@ -348,14 +348,17 @@
 (defn- kxrt-vnew [off :i64 n :i64] :i64
   (let [u (kxrt-gl 48)]
     (if (>= u KXRT-VECTORS) (kxrt-arena 2)
-      (let [p (+ (kxrt-gl 40) (* u 16)) x (kxrt-store64 p off) y (kxrt-store64 (+ p 8) n) r (kxrt-store64 (+ (kxrt-gl 688) (* u 8)) 0) w (kxrt-gs 48 (inc u))]
+      (let [p (+ (kxrt-gl 40) (* u 16)) x (kxrt-store64 p off) y (kxrt-store64 (+ p 8) n) r (kxrt-store64 (+ (kxrt-gl 688) (* u 8)) 0) high (if (> (+ off n) (kxrt-gl 760)) (kxrt-gs 760 (+ off n)) 0) w (kxrt-gs 48 (inc u))]
         (inc u)))))
 (defn- kxrt-icopy [d :i64 s :i64 n :i64] :i64
   (loop [i 0] (if (>= i n) d (let [z (kxrt-store64 (kxrt-item d i) (kxrt-load64 (kxrt-item s i)))] (recur (inc i))))))
 (defn- kxrt-vector-alloc [n :i64] :i64
   (let [u (kxrt-gl 64)]
     (if (or (< n 0) (> n KXRT-VECTOR-MAX) (> n (- KXRT-ITEMS u))) (kxrt-fail)
-      (let [z (loop [i 0] (if (= i n) 0 (let [w (kxrt-store64 (kxrt-item u i) 0)] (recur (inc i)))))
+      (let [high (kxrt-gl 760) stop (if (< high (+ u n)) high (+ u n))
+            count (if (> stop u) (- stop u) 0)
+            base (kxrt-item u 0) byte-end (+ base (* 8 count))
+            z (loop [cursor base] (if (= cursor byte-end) 0 (let [w (kxrt-store64 cursor 0)] (recur (+ cursor 8)))))
             w (kxrt-gs 64 (+ u n))]
         (kxrt-vnew u n)))))
 (defn- kxrt-vector-at [h :i64 i :i64] :i64
