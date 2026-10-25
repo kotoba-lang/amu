@@ -75,3 +75,16 @@ The initial H34/H35 dispatches40228336057/40228692459 stopped before native
 execution because workflow driver paths were wrong; corrected436dc85c
 re-dispatches succeeded. Failed harness attempts are excluded from samples.
 These experiments never replace mandatory production qualification.
+
+
+### Source-graph correction before H34 adoption
+
+The earlier H18/H34 comparisons froze workload/producer but built candidate
+programs from this research branch, whose native runtime and factory pins
+preceded the producer's runtime epoch. Those ratios compare composite images
+and cannot establish the isolated filter effect. No production adoption is
+qualified by those ratios. The corrected harness uses`--source-revision`
+to freeze the baseline FULL47 graph to6abd468dc (source6f9388a6), then replaces
+only the CCF evaluator. Native current-runtime ARM/x86 remeasurement is required.
+Correctness grids/mutant observations remain bounded evidence; performance
+selection is pending the corrected experiments.

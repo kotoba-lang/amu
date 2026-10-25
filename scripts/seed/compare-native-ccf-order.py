@@ -31,7 +31,7 @@ def manifest(name, read):
     return [p for p in read(name).decode().splitlines() if p and not p.startswith("#")]
 
 
-def main(out, workload_file=None, current_core=False, producer_override=None, variant="order", controls_only=False):
+def main(out, workload_file=None, current_core=False, producer_override=None, variant="order", controls_only=False, source_revision=None):
     assert platform.system() == "Linux" and platform.machine() in ("aarch64", "x86_64")
     arm = platform.machine() == "aarch64"
     machine = 183 if arm else 62
@@ -39,7 +39,11 @@ def main(out, workload_file=None, current_core=False, producer_override=None, va
     producer = producer_override or ROOT / ("seed/bootstrap/aarch64-linux-static-root.elf" if arm else "bin/amu")
     assert struct.unpack_from("<H", producer.read_bytes(), 18)[0] == machine
     out.mkdir(parents=True, exist_ok=False)
-    read = lambda p: (ROOT / p).read_bytes()
+    def read(path):
+        if source_revision:
+            return subprocess.run(["git", "show", source_revision + ":" + path], cwd=ROOT,
+                                  capture_output=True, check=True).stdout
+        return (ROOT / path).read_bytes()
     paths = manifest("seed/FULL-MANIFEST", read)
     original = b"".join(read(p) + b"\n" for p in paths).decode()
     fixture = ROOT / ("seed/tests/native-ccf-addressed-candidate.kotoba" if variant == "addressed" else ("seed/tests/native-ccf-filtered-candidate.kotoba" if variant == "filtered" else "seed/tests/native-ccf-order-candidate.kotoba"))
@@ -78,7 +82,8 @@ def main(out, workload_file=None, current_core=False, producer_override=None, va
                   compilerAlgorithmChanged=True, sourceWorkloadChanged=False, emulation=False, variant=variant,
                   host=[platform.system(), platform.machine(), platform.release()],
                   allowedCPUs=affinity, selectedCPU=affinity[0], producer=pin(producer),
-                  sourceBindings={p: pin(ROOT / p) for p in paths}, candidateSource=pin(candidate_source),
+                  sourceRevision=source_revision, baselineSource=dict(bytes=len(original.encode()), sha256=hashlib.sha256(original.encode()).hexdigest()),
+                  sourceBindings={p: dict(bytes=len(read(p)), sha256=hashlib.sha256(read(p)).hexdigest()) for p in paths}, candidateSource=pin(candidate_source),
                   fixture=pin(fixture), workloadRevision=("current-source-pinned-by-hash" if current_core else REVISION), workload=pin(workload), calls=[])
     cpuinfo = Path("/proc/cpuinfo").read_text()
     report["cpuModel"] = next((s for s in cpuinfo.splitlines() if s.startswith("model name")), "unavailable")
@@ -180,5 +185,6 @@ if __name__ == "__main__":
     p.add_argument("--compiler", type=Path)
     p.add_argument("--variant", choices=("order", "addressed", "filtered"), default="order")
     p.add_argument("--controls-only", action="store_true")
+    p.add_argument("--source-revision", help="Freeze the complete baseline source graph as well as workload/producer")
     a = p.parse_args()
-    main(a.output.resolve(), a.workload_file and a.workload_file.resolve(), a.current_core, a.compiler.resolve() if a.compiler else None, a.variant, a.controls_only)
+    main(a.output.resolve(), a.workload_file and a.workload_file.resolve(), a.current_core, a.compiler.resolve() if a.compiler else None, a.variant, a.controls_only, a.source_revision)
