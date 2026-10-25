@@ -12,6 +12,7 @@ import platform
 import re
 import shutil
 import signal
+import concurrent.futures
 import subprocess
 import time
 from pathlib import Path
@@ -150,7 +151,12 @@ def main(complete, out):
               ("fifo-source", None, "CDCI:E1003"),
               ("non-executable-image", None, "CDCI:E2002"),
               ("existing-output", None, "CDCI:E1006")]
-    for name, change, diagnostic in probes:
+    # The refusal probes are independent: each stages its own root under
+    # out/<name> and refuses before any compiler execution. Run them
+    # concurrently so their serial wall time does not scale with the probe
+    # count; every probe keeps its own verdict, log and negative asserts.
+    def one_probe(probe):
+        name, change, diagnostic = probe
         root, manifest, lines = stage(name)
         if change:
             lines[change[0]] = change[1]
@@ -172,6 +178,10 @@ def main(complete, out):
         run(name, [root / "controller.elf", manifest, digest], 2, diagnostic=diagnostic)
         assert not (root / "cdci.receipt").exists()
         assert not (root / "amu.stdout").exists(), (name, "unexpected compiler execution")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        for _ in pool.map(one_probe, probes):
+            pass
     for field, value in ((8, "43"), (9, "1"), (10, "999998")):
         name = "gate-forged-field-" + str(field)
         root, _, _ = stage(name)

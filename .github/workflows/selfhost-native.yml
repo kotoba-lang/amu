@@ -66,14 +66,26 @@ jobs:
         env:
           TIER: ${{ github.event_name == 'pull_request' && 'pr' || github.event_name == 'push' && 'main' || 'full' }}
         run: python3 scripts/seed/selfhost-bootstrap.py --output "$RUNNER_TEMP/boot" --tier "$TIER"
-      - name: Static launcher (--format launcher, ADR 0371 step 4; arm64, native)
-        run: python3 scripts/seed/check-static-launcher.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/launcher"
-      - name: Kototama bounded pure i64 AOT (arm64, native verdict)
-        run: python3 scripts/seed/check-kototama-i64.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/kototama-i64-arm64"
-      - name: Kototama pure i64 receipts (arm64, native verdict)
-        run: python3 scripts/seed/check-kototama-receipt.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/kototama-receipt-arm64"
-      - name: Combined compiler (core + Linux targets) from the bootstrap (arm64, native)
-        run: python3 scripts/seed/check-one-compiler.py --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/one"
+      - name: Independent arm64 gates in parallel (launcher, kototama i64+receipt, one-compiler)
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p "$RUNNER_TEMP/pg"
+          pids=(); names=()
+          bg() { local n="$1"; shift; { "$@" >"$RUNNER_TEMP/pg/$n.log" 2>&1; echo $? >"$RUNNER_TEMP/pg/$n.rc"; } & pids+=("$!"); names+=("$n"); }
+          bg launcher python3 scripts/seed/check-static-launcher.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/launcher"
+          bg kototama-i64 python3 scripts/seed/check-kototama-i64.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/kototama-i64-arm64"
+          bg kototama-receipt python3 scripts/seed/check-kototama-receipt.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/kototama-receipt-arm64"
+          bg one-compiler python3 scripts/seed/check-one-compiler.py --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/one"
+          fail=0
+          for i in "${!pids[@]}"; do
+            wait "${pids[$i]}"
+            rc="$(cat "$RUNNER_TEMP/pg/${names[$i]}.rc")"
+            echo "=== ${names[$i]} rc=$rc"
+            cat "$RUNNER_TEMP/pg/${names[$i]}.log"
+            [ "$rc" = 0 ] || fail=1
+          done
+          exit $fail
       - name: Native FS2 forms, kernel errors and journal cleanup (arm64)
         run: python3 scripts/seed/check-native-fs2.py --compiler "$RUNNER_TEMP/one/F2.elf" --output "$RUNNER_TEMP/fs2-arm"
       - name: Native typed live ABI and user-context admission (arm64)
@@ -170,35 +182,32 @@ jobs:
           path: ${{ runner.temp }}/one
       - name: Complete native x86 compiler fixed point and CDCI images
         run: python3 scripts/seed/check-complete-x86.py --compiler "$RUNNER_TEMP/one/F-x86_64.elf" --arm-proof "$RUNNER_TEMP/one/one-compiler.json" --output "$RUNNER_TEMP/complete"
-      - name: Native FS2 forms, kernel errors and journal cleanup (x86)
-        run: python3 scripts/seed/check-native-fs2.py --compiler "$RUNNER_TEMP/complete/F3.elf" --output "$RUNNER_TEMP/fs2-x86"
-      - name: Native x86 AIUEOS image ABI and refusal diagnostics
-        run: python3 scripts/seed/check-aiueos-image-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/aiueos-image"
-      - name: Native x86 AIUEOS EFI packaging and refusal diagnostics
-        run: python3 scripts/seed/check-aiueos-boot-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/aiueos-boot"
-      - name: Native x86 locked kernel graph, DMA contracts and private PCI diagnostics
+      - name: Independent x86 gates and the native controller in parallel (complete-based)
         shell: bash
         run: |
-          for suite in project cpu-project memory-project regions boot-region lock isr fixed-extent owned-page owned-window private-context pci-boot pci-private pci-forgery; do
-            python3 "scripts/seed/check-aiueos-$suite-native.py" --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/aiueos-projects/$suite"
+          set -uo pipefail
+          mkdir -p "$RUNNER_TEMP/pg"
+          pids=(); names=()
+          bg() { local n="$1"; shift; { "$@" >"$RUNNER_TEMP/pg/$n.log" 2>&1; echo $? >"$RUNNER_TEMP/pg/$n.rc"; } & pids+=("$!"); names+=("$n"); }
+          bg fs2-x86 python3 scripts/seed/check-native-fs2.py --compiler "$RUNNER_TEMP/complete/F3.elf" --output "$RUNNER_TEMP/fs2-x86"
+          bg aiueos-image python3 scripts/seed/check-aiueos-image-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/aiueos-image"
+          bg aiueos-boot python3 scripts/seed/check-aiueos-boot-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/aiueos-boot"
+          bg aiueos-projects bash -c 'for suite in project cpu-project memory-project regions boot-region lock isr fixed-extent owned-page owned-window private-context pci-boot pci-private pci-forgery; do python3 "scripts/seed/check-aiueos-$suite-native.py" --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/aiueos-projects/$suite" || exit 1; done'
+          bg kernel-memory bash -c 'python3 scripts/seed/check-kernel-memory.py --compiler "$RUNNER_TEMP/complete/F2.elf" --work "$RUNNER_TEMP/kernel-memory-admission" --cases seed/tests/kernel-memory | tee "$RUNNER_TEMP/kernel-memory-admission.log" && python3 scripts/seed/check-kernel-memory.py --compiler "$RUNNER_TEMP/complete/F2.elf" --work "$RUNNER_TEMP/kernel-memory-guards" | tee "$RUNNER_TEMP/kernel-memory-guards.log"'
+          bg kototama-i64 python3 scripts/seed/check-kototama-i64.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/kototama-i64-x86_64"
+          bg kototama-receipt python3 scripts/seed/check-kototama-receipt.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/kototama-receipt-x86_64"
+          bg clock-entropy python3 scripts/seed/check-native-clock-entropy.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/clock-entropy"
+          bg live-abi bash -c 'python3 scripts/seed/check-static-profile-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/static-profile-x86" && python3 scripts/seed/check-aiueos-value-call-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/live-call-x86" && python3 scripts/seed/check-aiueos-user-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/user-context-x86" && python3 scripts/seed/check-aiueos-desktop-regions-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/desktop-regions-x86"'
+          bg native-cdci python3 scripts/seed/check-native-cdci.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/native-cdci"
+          fail=0
+          for i in "${!pids[@]}"; do
+            wait "${pids[$i]}"
+            rc="$(cat "$RUNNER_TEMP/pg/${names[$i]}.rc")"
+            echo "=== ${names[$i]} rc=$rc"
+            cat "$RUNNER_TEMP/pg/${names[$i]}.log"
+            [ "$rc" = 0 ] || fail=1
           done
-      - name: Native x86 kernel memory admission and emitted guard diagnostics
-        shell: bash
-        run: |
-          python3 scripts/seed/check-kernel-memory.py --compiler "$RUNNER_TEMP/complete/F2.elf" --work "$RUNNER_TEMP/kernel-memory-admission" --cases seed/tests/kernel-memory | tee "$RUNNER_TEMP/kernel-memory-admission.log"
-          python3 scripts/seed/check-kernel-memory.py --compiler "$RUNNER_TEMP/complete/F2.elf" --work "$RUNNER_TEMP/kernel-memory-guards" | tee "$RUNNER_TEMP/kernel-memory-guards.log"
-      - name: Kototama bounded pure i64 AOT (x86_64, native verdict)
-        run: python3 scripts/seed/check-kototama-i64.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/kototama-i64-x86_64"
-      - name: Kototama pure i64 receipts (x86_64, native verdict)
-        run: python3 scripts/seed/check-kototama-receipt.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/kototama-receipt-x86_64"
-      - name: Native x86 clock and entropy (fixed Kotoba guest, refusal and ENOSYS)
-        run: python3 scripts/seed/check-native-clock-entropy.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/clock-entropy"
-      - name: Native x86 typed live ABI and user-context admission
-        run: |
-          python3 scripts/seed/check-static-profile-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/static-profile-x86"
-          python3 scripts/seed/check-aiueos-value-call-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/live-call-x86"
-          python3 scripts/seed/check-aiueos-user-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/user-context-x86"
-          python3 scripts/seed/check-aiueos-desktop-regions-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/desktop-regions-x86"
+          exit $fail
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
@@ -212,8 +221,6 @@ jobs:
             ${{ runner.temp }}/user-context-x86/*/calls.json
             ${{ runner.temp }}/desktop-regions-x86/native-desktop-regions.json
             ${{ runner.temp }}/desktop-regions-x86/*/calls.json
-      - name: Kotoba native controller (Amu selfhost and complete24 Kotoba gate)
-        run: python3 scripts/seed/check-native-cdci.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/native-cdci"
       - name: Public native product and aliases
         run: python3 scripts/seed/check-public-native-product.py --product "$GITHUB_WORKSPACE" --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/public-product"
       # JUN-353: F's wasm32-browser modules of the runtime cases, in the image's
