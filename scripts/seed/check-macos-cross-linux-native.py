@@ -19,6 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 FULL = ROOT / "seed/FULL-MANIFEST"
+SELFHOST = ROOT / "seed/X86_64-LINUX-SELFHOST-MANIFEST"
 
 
 def pin(path):
@@ -40,6 +41,30 @@ def check_elf(path, machine):
     return pin(path)
 
 
+def source_unity(manifest, expected):
+    paths = [name for name in manifest.read_text().splitlines()
+             if name and not name.startswith("#")]
+    if (not paths or len(paths) != len(set(paths)) or
+            len(paths) != expected["modules"] or
+            pin(manifest) != expected["manifest"]):
+        raise ValueError("manifest changed since Mac generation")
+    chunks = []
+    for name in paths:
+        part = Path(name)
+        if (part.is_absolute() or ".." in part.parts or
+                not part.parts or part.parts[0] != "seed"):
+            raise ValueError("invalid manifest source path")
+        source = ROOT / part
+        if source.is_symlink() or not source.is_file():
+            raise ValueError("manifest source must be a regular file")
+        chunks.append(source.read_bytes() + b"\n")
+    raw = b"".join(chunks)
+    identity = {"bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}
+    if identity != expected["unity"]:
+        raise ValueError("source changed since Mac generation")
+    return raw, identity
+
+
 def main(candidate, output, isa):
     expected_machine = {"aarch64": ("aarch64", "arm64"), "x86_64": ("x86_64",)}
     if platform.system() != "Linux" or platform.machine() not in expected_machine[isa]:
@@ -51,15 +76,9 @@ def main(candidate, output, isa):
         raise ValueError("unexpected Mac candidate record")
     if pin(ROOT / "seed/x86_64-kx64-runner.kotoba") != record["runnerSource"]:
         raise ValueError("runner source changed since Mac generation")
-    paths = [name for name in FULL.read_text().splitlines() if name and not name.startswith("#")]
-    if len(paths) != 47 or len(set(paths)) != 47:
+    full_bytes, full_pin = source_unity(FULL, record["fullSource"])
+    if record["fullSource"]["modules"] != 47:
         raise ValueError("unexpected complete manifest")
-    if pin(FULL) != record["fullSource"]["manifest"]:
-        raise ValueError("full manifest changed")
-    full_bytes = b"".join((ROOT / name).read_bytes() + b"\n" for name in paths)
-    full_pin = {"bytes": len(full_bytes), "sha256": hashlib.sha256(full_bytes).hexdigest()}
-    if full_pin != record["fullSource"]["unity"]:
-        raise ValueError("full source changed since Mac generation")
     output.mkdir(parents=True, exist_ok=False, mode=0o700)
     full = output / "full-unity.kotoba"
     full.write_bytes(full_bytes)
@@ -114,12 +133,35 @@ def main(candidate, output, isa):
         previous = fresh
     if not generations[0] == generations[1] == generations[2]:
         raise ValueError("Mac-produced Linux compiler did not self-rebuild byte for byte")
+    selfhost_generations = None
+    if isa == "x86_64":
+        selfhost_bytes, _ = source_unity(SELFHOST, record["selfhostSource"])
+        selfhost_source = output / "selfhost-unity.kotoba"
+        selfhost_source.write_bytes(selfhost_bytes)
+        selfhost = output / "S-x86_64.elf"
+        shutil.copyfile(candidate / selfhost.name, selfhost)
+        selfhost.chmod(0o700)
+        selfhost_generations = [check_elf(selfhost, 62)]
+        previous = selfhost
+        for number in (1, 2):
+            fresh = output / f"S{number}.elf"
+            run(f"S{number}-compile", [previous, "compile", selfhost_source,
+                                       "--target", "x86_64-linux", "--output", fresh,
+                                       "--format", "static"])
+            fresh.chmod(0o700)
+            selfhost_generations.append(check_elf(fresh, 62))
+            previous = fresh
+        if not selfhost_generations[0] == selfhost_generations[1] == selfhost_generations[2]:
+            raise ValueError("Mac-produced Linux selfhost compiler did not rebuild byte for byte")
     if pin(candidate / image_name) != original:
         raise ValueError("candidate input changed during execution")
+    if isa == "x86_64" and pin(candidate / "S-x86_64.elf") != record["x86SelfhostCompiler"]:
+        raise ValueError("Mac selfhost candidate changed during execution")
     receipt = {"schema": "amu.mac-cross-native-fixed-point.v1",
                "status": "PASS_MAC_CROSS_NATIVE_FIXED_POINT",
                "isa": isa, "macCandidate": pin(candidate / "cross.json"),
                "source": full_pin, "generations": generations, "calls": calls,
+               "selfhostGenerations": selfhost_generations,
                "linuxWasIndependentVerifier": True,
                "fullNativeCorpusQualified": False,
                "publicProductAdopted": False,
