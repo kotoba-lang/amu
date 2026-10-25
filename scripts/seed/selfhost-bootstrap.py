@@ -66,7 +66,7 @@ CASES = "seed/static-cases.json"
 FLOAT_CASES = "seed/float-cases.json"
 WASM_CHECK = "scripts/seed/check-wasm32-browser.py"
 # 00-ns-static is 00-ns with the static profile's capacities (seed/MEMORY-MAP).
-STATIC_CAPACITIES = re.compile(rb"\(def MM-(WORDS|(TOK|CODE|FIX|LITB|OUT)-CAP|(NODE|SYM|HASH|FN|SCOPE|SIR|LABEL|CODE|FIX|LIT|LITB|EXP|OUT|HEAP)-BASE|HEAP-END) [0-9]+\)")
+STATIC_CAPACITIES = re.compile(rb"\(def MM-(WORDS|(TOK|NODE|CODE|FIX|LITB|OUT)-CAP|(NODE|SYM|HASH|FN|SCOPE|SIR|LABEL|CODE|FIX|LIT|LITB|EXP|OUT|HEAP)-BASE|HEAP-END) [0-9]+\)")
 # The adopted compiler was qualified on a host whose main stack is 8 MiB; the
 # runtime's default (1 MiB, the old loader's limit) is too small for it.
 ADOPTED_STACK = "8388608"
@@ -83,7 +83,7 @@ def static_capacity_layout():
     constants = lambda b: {k.decode(): int(v) for k, v in re.findall(rb"\(def (MM-[A-Z0-9-]+) ([0-9]+)\)", b)}
     a, b = constants(normal), constants(static)
     assert a.keys() == b.keys()
-    overrides = dict(TOK=786432, CODE=2097152, FIX=262144, LITB=1048576, OUT=12582912)
+    overrides = dict(TOK=786432, NODE=786432, CODE=2097152, FIX=262144, LITB=1048576, OUT=12582912)
     regions = "TOK NODE SYM HASH FN SCOPE SIR LABEL CODE FIX LIT LITB EXP OUT".split()
     for name in regions:
         assert b[f"MM-{name}-W"] == a[f"MM-{name}-W"]
@@ -99,7 +99,7 @@ def static_capacity_layout():
     strip = lambda raw: STATIC_CAPACITIES.sub(b"", b"".join(line for line in raw.splitlines(True)
         if not line.startswith((b";; seed/00-ns-static", b";; CORE-STATIC", b";; (CODE, FIX", b";; (TOK, CODE, FIX"))))
     assert strip(normal) == strip(static), "static source differs beyond checked capacities"
-    return dict(words=b["MM-WORDS"], tokenCapacity=b["MM-TOK-CAP"],
+    return dict(words=b["MM-WORDS"], tokenCapacity=b["MM-TOK-CAP"], nodeCapacity=b["MM-NODE-CAP"],
                 literalBytes=b["MM-LITB-CAP"], outputBytes=b["MM-OUT-CAP"],
                 heapWords=b["MM-HEAP-END"]-b["MM-HEAP-BASE"])
 

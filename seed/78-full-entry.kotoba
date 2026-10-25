@@ -15,7 +15,9 @@
     (cond (full-native?)
           (or (string=? flag "--target") (string=? flag "--output") (string=? flag "--format")
               (string=? flag "--payload") (string=? flag "--fuel")
-              (and (= (full-target? "x86_64-aiueos-kernel-v1") 1) (string=? flag "--artifact")))
+              (and (= (full-target? "x86_64-aiueos-kernel-v1") 1)
+                   (or (string=? flag "--artifact") (string=? flag "--source-path")
+                       (string=? flag "--source-lock") (string=? flag "--source-lock-sha256"))))
           (or (string=? command "compile") (string=? command "check"))
           (or (string=? flag "--source-path") (string=? flag "--source-lock") (string=? flag "--source-lock-sha256")
               (string=? flag "--policy")
@@ -25,7 +27,7 @@
           (string=? command "compile-kir") (or (string=? flag "--output") (and module (string=? flag "--ns")))
           (string=? command "link") (or (string=? flag "--object-dir") (string=? flag "--output"))
           (string=? command "modules") (string=? flag "--source-path")
-          (string=? command "package-aiueos-boot") (or (string=? flag "--output") (string=? flag "--payload"))
+          (string=? command "package-aiueos-boot") (or (string=? flag "--output") (string=? flag "--payload") (string=? flag "--pci-resources"))
           :else false)))
 (defn- full-word-flag? [flag :string] :bool
   (let [command (io-arg 0) module (= (drv-pj-has 1 (io-argc) "--emit-module") 1)]
@@ -78,7 +80,8 @@
 (defn- xg-default [] :i64 (drv-fail0 E-USAGE))
 (defn- seed-main [] :i64
   (cond (> (io-argc) 256) (drv-usage)
-        (string=? (io-arg 0) "compile-kototama") (kt-command)
+        (string=? (io-arg 0) "compile-kototama")
+          (if (string=? (io-arg 9) "kototama.pure-i64-receipt/v2") (k2-command) (kt-command))
         (= (drv-pj-has 1 (io-argc) "--module-lock") 1) (drv-fail0 E-PROJ-UNPINNED)
         (not (full-argv-ok? 1)) (drv-usage)
         (not (full-lock-ok?)) (drv-fail0 E-PROJ-UNPINNED)
@@ -90,7 +93,9 @@
         (and (string=? (io-arg 0) "compile") (full-c-linked?)) (drv-fail0 E-TARGET)
         (string=? (io-arg 0) "cdci-build") (xc-command)
         (string=? (io-arg 0) "package-aiueos-boot") (eb-command)
-        (= (full-target? "x86_64-aiueos-kernel-v1") 1) (xo-command)
+        (= (full-target? "x86_64-aiueos-kernel-v1") 1)
+          (if (or (= (drv-pj-has 1 (io-argc) "--source-path") 1)
+                  (= (drv-pj-has 1 (io-argc) "--source-lock") 1)) (kp-command) (xo-command))
         (= (full-target? "aarch64-linux") 1) (xa-command)
         ;; JUN-353: guest and runtime in a browser Wasm module.
         (= (full-target? "wasm32-browser") 1) (xw-command)
