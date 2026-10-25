@@ -1,42 +1,50 @@
 {
   "schema": "amu.seed.static-root.v1",
   "image": {
-    "bytes": 3531264,
-    "sha256": "51549ed9904f829336a9437f7d044cd9859d72411e454d97cbf03e2da87ac942"
+    "bytes": 3551744,
+    "sha256": "06be90ba934b80f8d8faae156360ed6b09ef2be5c0c17ca5f21e944bbe393860"
   },
   "target": "aarch64-linux",
   "format": "packed",
   "sourceManifest": "seed/FULL-MANIFEST",
   "sourceUnity": {
-    "bytes": 3435817,
-    "sha256": "999616c7bfd3c87be3d607807977200b21d6deef1693548aefd40bb1c8cae717"
+    "bytes": 3444848,
+    "sha256": "2ab0deac5f42b537089b0b88461c336e8b683a1fbe1bd8dd853d3638b990dcf5"
   },
-  "sourceCommitBase": "d5f34435cf950aab88a5a77fe8baa7e393adc805",
+  "sourceCommitBase": "90fd08511",
   "producedBy": {
-    "how": "Complete46 native compiler retaining all18 adopted core modules; ARM main-tier F1=F2 with unchanged core image, G1=G2=G3, packed core and Linux closure fixed point. Native-generated static NODE capacity786432 preserves the normal core. This producer rebuilds public x86 compiler, Amu gate and closed-source-checked controller; Kotoba gate is unchanged. Actual native x86/controller/public qualification requires exact-head CI.",
-    "date": "2026-10-25",
+    "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt itself to F2 and F2 to F3 = this image. Re-pinned because the merged private-store source (#1545 native private store and sleep resume) moves the compiler text every image embeds.",
+    "date": "2026-10-24",
     "timeZone": "Asia/Tokyo",
-    "previousRoot": "d171331ea3878bf9425fbd4183b2906a89f85afdf4c8ffa12b0004bbab450ab2",
+    "previousRoot": "51549ed9904f829336a9437f7d044cd9859d72411e454d97cbf03e2da87ac942",
     "chain": {
       "F1.kseed": {
-        "bytes": 3232067,
-        "sha256": "63e8c8df084e071e976af8bccfdf5ffe113a561890d6f8e59727760d3e0c13a0"
+        "bytes": 3241099,
+        "sha256": "309362b1cf4637f7b2d8413019aafba2bdb81131de33468a52b8451e29569cce"
       },
       "F1.elf": {
-        "bytes": 3531264,
-        "sha256": "51549ed9904f829336a9437f7d044cd9859d72411e454d97cbf03e2da87ac942"
+        "bytes": 3539456,
+        "sha256": "1f95cfcf57fac3125e0e2eb37aba499d60d0036c05369863b0a3ca6af391a614"
       },
       "F2.kseed": {
-        "bytes": 3232067,
-        "sha256": "63e8c8df084e071e976af8bccfdf5ffe113a561890d6f8e59727760d3e0c13a0"
+        "bytes": 3241099,
+        "sha256": "309362b1cf4637f7b2d8413019aafba2bdb81131de33468a52b8451e29569cce"
       },
       "F2.elf": {
-        "bytes": 3531264,
-        "sha256": "51549ed9904f829336a9437f7d044cd9859d72411e454d97cbf03e2da87ac942"
+        "bytes": 3551744,
+        "sha256": "06be90ba934b80f8d8faae156360ed6b09ef2be5c0c17ca5f21e944bbe393860"
+      },
+      "F3.kseed": {
+        "bytes": 3241099,
+        "sha256": "309362b1cf4637f7b2d8413019aafba2bdb81131de33468a52b8451e29569cce"
+      },
+      "F3.elf": {
+        "bytes": 3551744,
+        "sha256": "06be90ba934b80f8d8faae156360ed6b09ef2be5c0c17ca5f21e944bbe393860"
       }
     }
   },
-  "verification": "Native ARM main-tier bootstrap and source-bound admission/refusal proofs. Native x86 three-generation fixed point, controller24 cases/refusals and public aliases must pass terminal exact-head CI. Complete kernel/live/native-media/desktop are qualified by the source-owner consumer independently.",
+  "verification": "Native arm64 bootstrap --tier pr from this root: F1 = root, the adoption image, the boundary corpus, the 24 runtime cases and the wasm32-browser modules pass and the rebuild reproduces this image (rootReproduces). The CDCI pin set is a fixed point: re-invoking the rebuilt compiler reproduces coreSource/coreContainer, the amu-selfhost and kotoba-native gate images, the gate source hash, the controller identity table and all 24 case images byte for byte. Native x86_64 controller, public product and terminal exact-head PR/main CI remain the merge gate.",
   "history": [
     {
       "schema": "amu.seed.static-root.v1",
@@ -3914,6 +3922,47 @@
         }
       },
       "verification": "scripts/seed/selfhost-bootstrap.py --tier pr on arm64 Linux (python:3.12-alpine) from this root (F1 = root): the core route, the runtime boundary corpus, the 24 runtime cases and hardening pass and the rebuild reproduces this root (rootReproduces); scripts/seed/check-kernel-memory.py --cases gives PASS_KERNEL_MEMORY_ADMISSION 16 cases with F1. CI re-runs the tier from this root (F -> F' = root)."
+    },
+    {
+      "schema": "amu.seed.static-root.v1",
+      "image": {
+        "bytes": 3531264,
+        "sha256": "51549ed9904f829336a9437f7d044cd9859d72411e454d97cbf03e2da87ac942"
+      },
+      "target": "aarch64-linux",
+      "format": "packed",
+      "sourceManifest": "seed/FULL-MANIFEST",
+      "sourceUnity": {
+        "bytes": 3435817,
+        "sha256": "999616c7bfd3c87be3d607807977200b21d6deef1693548aefd40bb1c8cae717"
+      },
+      "sourceCommitBase": "d5f34435cf950aab88a5a77fe8baa7e393adc805",
+      "producedBy": {
+        "how": "Complete46 native compiler retaining all18 adopted core modules; ARM main-tier F1=F2 with unchanged core image, G1=G2=G3, packed core and Linux closure fixed point. Native-generated static NODE capacity786432 preserves the normal core. This producer rebuilds public x86 compiler, Amu gate and closed-source-checked controller; Kotoba gate is unchanged. Actual native x86/controller/public qualification requires exact-head CI.",
+        "date": "2026-10-25",
+        "timeZone": "Asia/Tokyo",
+        "previousRoot": "d171331ea3878bf9425fbd4183b2906a89f85afdf4c8ffa12b0004bbab450ab2",
+        "chain": {
+          "F1.kseed": {
+            "bytes": 3232067,
+            "sha256": "63e8c8df084e071e976af8bccfdf5ffe113a561890d6f8e59727760d3e0c13a0"
+          },
+          "F1.elf": {
+            "bytes": 3531264,
+            "sha256": "51549ed9904f829336a9437f7d044cd9859d72411e454d97cbf03e2da87ac942"
+          },
+          "F2.kseed": {
+            "bytes": 3232067,
+            "sha256": "63e8c8df084e071e976af8bccfdf5ffe113a561890d6f8e59727760d3e0c13a0"
+          },
+          "F2.elf": {
+            "bytes": 3531264,
+            "sha256": "51549ed9904f829336a9437f7d044cd9859d72411e454d97cbf03e2da87ac942"
+          }
+        }
+      },
+      "verification": "Native ARM main-tier bootstrap and source-bound admission/refusal proofs. Native x86 three-generation fixed point, controller24 cases/refusals and public aliases must pass terminal exact-head CI. Complete kernel/live/native-media/desktop are qualified by the source-owner consumer independently."
     }
-  ]
+  ],
+  "sourceCommit": "90fd08511"
 }
