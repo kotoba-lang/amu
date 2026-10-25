@@ -51,6 +51,25 @@ def verify_macho(path):
     raw = path.read_bytes()
     if len(raw) < 32 or struct.unpack_from("<IiiI", raw) != (0xfeedfacf, 0x100000c, 0, 2):
         raise ValueError("expected arm64 Mach-O executable: " + path.name)
+    commands, size = struct.unpack_from("<II", raw, 16)
+    if commands < 2 or commands > 32 or size > 992 or 32 + size > len(raw):
+        raise ValueError("invalid Mac load-command extent: " + path.name)
+    seen = {2: 0, 11: 0}
+    offset = 32
+    for _ in range(commands):
+        if offset + 8 > 32 + size:
+            raise ValueError("truncated Mac load command: " + path.name)
+        kind, length = struct.unpack_from("<II", raw, offset)
+        if length < 8 or length % 8 or offset + length > 32 + size:
+            raise ValueError("invalid Mac load command: " + path.name)
+        if kind in seen:
+            expected_length = {2: 24, 11: 80}[kind]
+            if length != expected_length or any(raw[offset+8:offset+length]):
+                raise ValueError("nonempty Mac symbol/relocation table: " + path.name)
+            seen[kind] += 1
+        offset += length
+    if offset != 32 + size or seen != {2: 1, 11: 1}:
+        raise ValueError("Mac symbol/relocation commands missing: " + path.name)
     signed = process(["/usr/bin/codesign", "--verify", "--strict", path], timeout=30)
     if signed.returncode:
         raise ValueError("code signature verification failed: " + path.name)

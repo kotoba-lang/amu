@@ -1,5 +1,9 @@
 # Mac root regenerated for Amu main c9d13f3
 
+This records the first root after merging `c9d13f3`. The subsequent
+[macOS 15 dyld repair](../mac-macho-dysymtab-20261026/README.md) replaced its
+Mach-O wrapper and signed images without changing the compiler container.
+
 The Amu branch merged `origin/main` at `c9d13f39091e7fd7e62e0cbd6707f15c874dad2f`.
 The 47 ordered modules in `seed/FULL-MANIFEST` now form a 3,462,309-byte
 unity source with SHA-256
