@@ -1,10 +1,11 @@
 # Kotoba Mach-O loader and Darwin I/O smoke
 
 `seed/macos-exec-smoke.kotoba` emits a fixed, thin arm64 `MH_EXECUTE` image.
-Its entry writes `ok\n` to stdout through the observed Darwin arm64 `x16`
-syscall selector and `svc #0x80`, then exits 42. A separate Clang-assembled
-control gave the same output and exit on this Mac before the Kotoba source
-was changed. This is a format, loader, and minimal host-I/O probe, not a
+Its entry reads at most 16 bytes from stdin into its stack through the
+observed Darwin arm64 `x16` syscall selector and `svc #0x80`, writes exactly
+those bytes to stdout, then exits 42. EOF exits 43. A separate
+Clang-assembled control gave the same outcomes on this Mac before the Kotoba
+source was changed. This is a format, loader, and minimal host-I/O probe, not a
 compiler or Amu runtime. The executable requires
 `MH_NOUNDEFS | MH_DYLDLINK | MH_TWOLEVEL | MH_PIE` (`0x00200085`);
 omitting the first three leaves a
@@ -14,11 +15,11 @@ structurally recognizable, signable image that macOS kills before the entry.
 
 | Input or result | SHA-256 / observation |
 | --- | --- |
-| Source | `4d6a014db6352c4ac860e8d888dd04e1d6f658ffbc8733700f53a8e4fffd4aa4` |
+| Source | `b5fec1a80ea43645cd549d5e57c54802cbdef1eb048300a1a95c62b7bd9a776c` |
 | Pinned Amu ARM Linux selfhost root | `cd65664a146bb0eea13577d5d9687467a22700fe91820a12001f1ddb0dc9b4c9` |
-| Selfhost-built emitter, `aarch64-linux` static ELF | `ed3ce19b4218f3c653d6fb64bbb93487ec67ad5aee5cf7a8d9287f3797163119` |
-| Kotoba-emitted unsigned Mach-O | `badd743552fc678652505fb7d74840a781a0910fc3e51fe69f3f873ec5556058` |
-| macOS arm64 signed diagnostic copy | `codesign --verify --strict` passed; stdout `ok\n`, exit `42`; signed SHA-256 `819aa0d4d6c9db894b95ee6e16f7d6ee7399120b31402d1a08d49583a6bebfea` |
+| Selfhost-built emitter, `aarch64-linux` static ELF | `0906ceed0d5db556c4ecb49973517355876941920c1dc94ad4f3d2f112065ced` |
+| Kotoba-emitted unsigned Mach-O | `cd82530784cae0c2b9b42125fb82f2a3725269b62a34cccb53c2199664109644` |
+| macOS arm64 signed diagnostic copy | `codesign --verify --strict` passed; `abc\n` echoed with exit 42; empty stdin exited 43; 17-byte stdin returned the first 16 bytes with exit 42; signed SHA-256 `2d845d80db12777bf4c942566125887e6cbce8f7c266a30e17555f0c4a113bbd` |
 | Signed copy missing dynamic-link flags | signature passed; exit `-9` in Python subprocess |
 | FS2 write outside granted root | emitter exit `3`; no output file |
 
@@ -31,7 +32,7 @@ negative controls, and writes a JSON receipt. Python stages and observes; it
 does not emit the Mach-O. The negative control changes only the header flags.
 
 This proves that Kotoba can emit bytes accepted by the Mac loader after local
-diagnostic signing and perform one observed Darwin write/exit sequence. The
+diagnostic signing and perform one bounded Darwin stdin/stdout/exit sequence. The
 raw syscall sequence is local ABI evidence, not a general or release-qualified
 Darwin capability contract. It does not remove the Linux build-host dependency,
 provide a macOS Amu full compiler, implement its file/clock/memory/authority

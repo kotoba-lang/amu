@@ -1,5 +1,5 @@
 ;; A native Kotoba format/host-ABI probe for arm64 MH_EXECUTE.
-;; This only tests Mach-O loader admission and the Darwin write/exit syscall
+;; This only tests Mach-O loader admission and the Darwin read/write/exit syscall
 ;; boundary. It has no Amu runtime, signing, self-rebuild, or authority to
 ;; qualify a macOS compiler product.
 (ns seed.macos-exec-smoke (:export [main]))
@@ -62,20 +62,31 @@
       (u32-at (+ at 360) 50) (u32-at (+ at 364) 24)
       (u32-at (+ at 368) 1)
       (u32-at (+ at 372) 851968) (u32-at (+ at 376) 851968)
-      ;; write(1, "ok\n", 3) through Darwin arm64 x16 + svc #0x80,
-      ;; then exit(42). The message is PC-relative, so ASLR is preserved.
-      (u32-at (+ at 1024) 0xd2800020)
-      (u32-at (+ at 1028) 0x10000141)
-      (u32-at (+ at 1032) 0xd2800062)
-      (u32-at (+ at 1036) 0xd2800090)
-      (u32-at (+ at 1040) 0xf2a04010)
-      (u32-at (+ at 1044) 0xd4001001)
-      (u32-at (+ at 1048) 0xd2800540)
-      (u32-at (+ at 1052) 0xd2800030)
-      (u32-at (+ at 1056) 0xf2a04010)
-      (u32-at (+ at 1060) 0xd4001001)
-      (u32-at (+ at 1064) 0xd65f03c0)
-      (text-at (+ at 1068) "ok\n")))
+      ;; read up to 16 stdin bytes into the aligned stack, write exactly the
+      ;; received bytes to stdout, then exit 42. EOF exits 43. This bounds
+      ;; the host-I/O probe without a file capability or a heap.
+      (u32-at (+ at 1024) 0xd10043ff)
+      (u32-at (+ at 1028) 0xd2800000)
+      (u32-at (+ at 1032) 0x910003e1)
+      (u32-at (+ at 1036) 0xd2800202)
+      (u32-at (+ at 1040) 0xd2800070)
+      (u32-at (+ at 1044) 0xf2a04010)
+      (u32-at (+ at 1048) 0xd4001001)
+      (u32-at (+ at 1052) 0xf100001f)
+      (u32-at (+ at 1056) 0x5400012d)
+      (u32-at (+ at 1060) 0xaa0003e2)
+      (u32-at (+ at 1064) 0xd2800020)
+      (u32-at (+ at 1068) 0x910003e1)
+      (u32-at (+ at 1072) 0xd2800090)
+      (u32-at (+ at 1076) 0xf2a04010)
+      (u32-at (+ at 1080) 0xd4001001)
+      (u32-at (+ at 1084) 0xd2800540)
+      (u32-at (+ at 1088) 0x14000002)
+      (u32-at (+ at 1092) 0xd2800560)
+      (u32-at (+ at 1096) 0xd2800030)
+      (u32-at (+ at 1100) 0xf2a04010)
+      (u32-at (+ at 1104) 0xd4001001)
+      (u32-at (+ at 1108) 0xd65f03c0)))
 
 (defn- acknowledged-image? [request :vector-i64 offset :i64 reply :vector-i64] :bool
   (if (and (= (vector-count reply) 16389)
