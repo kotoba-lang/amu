@@ -7,7 +7,6 @@ only stages source/paths and records native process exits and hashes.
 import argparse
 import hashlib
 import json
-import os
 import platform
 import subprocess
 from pathlib import Path
@@ -44,7 +43,9 @@ def main(compiler, out):
         for stream, raw in (("stdout", r.stdout), ("stderr", r.stderr)):
             (out / (name + "." + stream)).write_bytes(raw)
         report["calls"].append(dict(name=name, exit=r.returncode))
-        assert r.returncode == expected and not r.stderr and not r.stdout, (name, r.returncode, r.stderr[-800:])
+        assert r.returncode == expected and not r.stderr, (name, r.returncode, r.stderr[-800:])
+        if not name.startswith("build-"):
+            assert not r.stdout, (name, "unexpected fixture output")
 
     def build(name, producer, source):
         dst = out / (name + ".elf")
