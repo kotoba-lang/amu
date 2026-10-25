@@ -190,3 +190,95 @@ The default full stage repeats every control and the actual controller.
 it does not change its binary, arguments, environment, limits or verdict.
 Source/image/fixed-point/case/fuel/arena/refusal requirements are unchanged.
 There is no new cache substitution or legacy runtime fallback.
+
+## Immutable SIR label proofs (JUN-332)
+
+`glx-prepare` owns the module-local unique-label index after preparation and
+before emission. It is restricted to SIR larger than the T2 rewrite limit;
+changes to that rewrite scope or any emission-time SIR mutation require
+invalidation/requalification. Keep arbitrary suffix/accumulator scans and the
+CCF excluded window/reserved operands exact. No CODE/FIX prefix proof is cached.
+The index temporarily uses existing heap capacity and a disjoint alen-state
+cell. No-room falls back to original scans, and emission releases/zeroes the
+index. Keep the original G size and all fuel/arena limits.
+The full-prefix native differential oracle and nine successfully built but
+semantically refused guard-removal mutants run on both native ARM and x86
+in the shared two-slot gate plan. Original gate groups remain mandatory.
+
+## Explicit selfhost parameter types (JUN-27 / JUN-332)
+
+The three `ck-r6c-doctail` / `ck-r6c-dt` / `ck-r6c-lit` implementation
+parameters `S` are explicitly `:string`. This avoids repeated inference
+rounds when building the compiler sources; it is a source-build optimization,
+not a new inference algorithm. Keep the complete unannotated counterpart
+in `check-native-label-index.py`: compile it afresh, require whole-image
+byte equality with the annotated source, and execute both its semantic and
+wrong-mode controls on native ARM and x86. All nine original mutation
+controls and every existing gate remain mandatory.
+
+Do not memoize mutable CODE/FIX prefix proofs using query/counts alone.
+`check-prefix-cache-counterexample.py` executes same-extent rewrites that
+the original validator must refuse. Any future reuse needs complete
+write-aware invalidation, including direct memory-vector writes, and a
+fresh native differential/refusal/resource oracle.
+
+## Native incremental identity foundation (JUN-332 / JUN-358)
+
+`seed/04-definition-cid.kotoba` is a bounded payload-v2 codec candidate,
+qualified separately on native ARM/x86 against the pinned canonical bytes
+and CIDs. It is not in the adopted FULL-MANIFEST. A supplied canonical payload
+is not proof of checking, SCC identity, object-cache validity or admission.
+Keep the existing canonical identity authority and all six sealed inputs;
+never relabel a source/SIR hash as a canonical DefCID. Unknown/unsupported
+values refuse. Native constructors, refusal and built mutation controls are
+mandatory before widening the codec. See `docs/native-incremental-build.md`.
+
+## Native vector zero highwater contract (JUN-27 / JUN-332)
+
+The native runtime tracks an absolute item highwater in
+private global byte offset760, separately for ARM/x86. It may skip clearing
+only the untouched suffix of its fresh anonymous mapping. Descriptor creation
+raises the highwater; arena rollback must never lower it. Existing item
+writers finish through descriptor creation or write within a previously
+described view. New writers require an audit of this invariant.
+Keep all vector/item/region limits, five rollback counters, fuel and refusal
+conditions. Native scope reuse, partial old/new ranges and missing/relative
+watermark and last-word mutants must pass before adoption. Wasm's context is
+separate and its own offset760 must remain unchanged. Source changes alone do not qualify
+the current root/public/role pins; finish native rebuilding and all gates.
+
+
+## Native instruction-class filter qualification
+
+The CCF high-byte mask is immutable and must conservatively include every
+PC-relative class. Keep word bounds and all original target/refusal checks.
+Do not cache mutable CODE/FIX prefix proofs by their counts. The native gate
+adds131072 comparisons against the original evaluator and four built/executed
+mutants on both ISAs; all previous gates and uncached main/full remain required.
+The candidate must rebuild core/controller/root/public pins and pass fresh
+native qualification before its qualification flags are promoted.
+
+## Native checked identity / SCC prototype
+
+`seed/05-checked-definition.kotoba` and `seed/06-definition-groups.kotoba`
+remain outside FULL-MANIFEST. Preserve the current payload-v2 authority,
+profile6/desugar2, one binder counter, direct dependency CIDs and exhaustive
+scc-v1 minimum over at most eight members. Run native kr/name/check freshly;
+caller-supplied checked flags, unsupported schemas/effects and oversized
+groups refuse without partial identities. Immutable normalized member bytes
+may be reused inside that one identity calculation; only structurally recorded,
+native-created group-reference leaves may change under permutations.
+Keep native full-payload equivalence, independent oracle, version-drift
+refusals and actually built/executed mutants on both ISAs. This is not a
+persistent object store, a build-cache hit, a native admission verdict or
+qualification of the full Seed frontend. See docs/native-incremental-build.md.
+
+## Native CI derivation and independent ISA qualification
+
+Fresh ARM bootstrap/one-compiler transport precedes separate ARM and x86
+qualification jobs. Transport alone is never qualification: all six native
+job executions (including both shared-module matrix entries) must succeed.
+Every previous ARM/x86 gate, uncached main/full tier and fresh controller
+verdict remains required. The ARM artifact includes root and final generations
+for unchanged native producer pin checks after transport. No compiler/image
+bytes, limits, case expectations or native gate commands change in this split.

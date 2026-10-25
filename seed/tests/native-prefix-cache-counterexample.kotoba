@@ -1,0 +1,20 @@
+;; H12 falsification: equal query and CODE/FIX fills do not identify a prefix.
+;; The original validator must notice rewrites before the same cut point.
+(defn- prefix-counterexample [] :bool
+  (let [M (-> (mem-new) (mem-set MM-CODE-N 6) (mem-set MM-FIX-N 1)
+              (mem-fill (+ MM-CODE-BASE 1) 5 0xd503201f))
+        original (ccf-code M 1 6)
+        page (gn-put M (+ MM-CODE-BASE 2) 0x90000000)
+        page-refused (not (ccf-code page 1 6))
+        restored (gn-put page (+ MM-CODE-BASE 2) 0xd503201f)
+        restored-ok (ccf-code restored 1 6)
+        forward (gn-put restored (+ MM-CODE-BASE 2) (enc-b 4))
+        forward-refused (not (ccf-code forward 1 6))
+        negative (gn-put forward (+ MM-CODE-BASE 2) -1)
+        negative-refused (not (ccf-code negative 1 6))
+        wide (gn-put negative (+ MM-CODE-BASE 2) 4294967296)
+        wide-refused (not (ccf-code wide 1 6))]
+    (and original page-refused restored-ok forward-refused negative-refused wide-refused
+         (= (vector-at wide MM-CODE-N) 6) (= (vector-at wide MM-FIX-N) 1))))
+(defn- seed-main [] :i64
+  (if (= (io-argc) 0) (if (prefix-counterexample) 0 1) 1))

@@ -1,0 +1,265 @@
+;; Native payload-v2 identity boundary. The canonical normalization/encoding
+;; contract belongs to kotoba.kir.definition-identity (osaho), ADR0300.
+;; This module encodes/validates normalized DAG-CBOR, then uses the existing
+;; native SHA-256. It does NOT certify that a frontend checked the definition,
+;; grant capabilities, cache a verdict, or implement the SCC producer.
+;; Bounded first profile: ASCII text, 64 KiB block, 8192 nodes, depth 64.
+;; Non-ASCII, unknown tags and noncanonical values refuse; never coerce.
+;; D header: cursor, error, next node, byte length, last node.
+;; Each node: kind (1 text, 2 array, 3 false, 4 true), start, count, child, next.
+(def dc-limit 65536)
+(def dc-nodes 8192)
+(defn- dc-at [D :vector-i64 n :i64 k :i64] :i64 (vector-at D (+ 8 (* n 5) k)))
+(defn- dc-put [D :vector-i64 n :i64 k :i64 v :i64] :vector-i64
+  (vector-assoc! D (+ 8 (* n 5) k) v))
+(defn- dc-bad [D :vector-i64] :vector-i64 (vector-assoc! D 1 1))
+(defn- dc-digit [c :i64] :i64
+  (cond (and (>= c 48) (<= c 57)) (- c 48)
+        (and (>= c 97) (<= c 102)) (+ 10 (- c 97)) :else -1))
+(defn- dc-unhex [s :string] :vector-i64
+  (if (or (= (string-length s) 0) (> (string-length s) (* dc-limit 2))
+          (not= (bit-and (string-length s) 1) 0)) (vector-alloc 0)
+    (loop [i 0 out (vector-alloc (quot (string-length s) 2))]
+      (if (= i (vector-count out)) out
+        (let [a (dc-digit (string-code-point-at s (* i 2)))
+              b (dc-digit (string-code-point-at s (+ (* i 2) 1)))]
+          (if (or (< a 0) (< b 0)) (vector-alloc 0)
+            (recur (+ i 1) (vector-assoc! out i (+ (* a 16) b)))))))))
+(defn- dc-length [D :vector-i64 V :vector-i64 ai :i64] :vector-i64
+  (let [p (vector-at D 0) size (case ai 24 1 25 2 26 4 0)]
+    (cond (< ai 24) (vector-assoc! D 4 ai)
+          (or (= size 0) (> (+ p size) (vector-at D 3))) (dc-bad D)
+          :else
+          (let [value (loop [i 0 v 0]
+                        (if (= i size) v (recur (+ i 1) (+ (* v 256) (vector-at V (+ p i))))))
+                minimum (case size 1 24 2 256 65536)]
+            (if (or (< value minimum) (> value dc-limit)) (dc-bad D)
+              (-> D (vector-assoc! 0 (+ p size)) (vector-assoc! 4 value)))))))
+(defn- dc-read [D :vector-i64 V :vector-i64 depth :i64] :vector-i64
+  (let [p (vector-at D 0) n (vector-at D 2)]
+    (if (or (not= (vector-at D 1) 0) (> depth 64) (>= n dc-nodes) (>= p (vector-at D 3))) (dc-bad D)
+      (let [b (vector-at V p) major (quot b 32)
+            d (dc-length (-> D (vector-assoc! 0 (+ p 1)) (vector-assoc! 2 (+ n 1))) V (bit-and b 31))
+            len (vector-at d 4) at (vector-at d 0)]
+        (cond (not= (vector-at d 1) 0) d
+              (= major 3)
+              (if (or (> (+ at len) (vector-at d 3))
+                      (not (loop [i at] (if (>= i (+ at len)) true
+                             (and (< (vector-at V i) 128) (recur (+ i 1))))))) (dc-bad d)
+                (-> d (dc-put n 0 1) (dc-put n 1 at) (dc-put n 2 len)
+                    (vector-assoc! 0 (+ at len)) (vector-assoc! 4 n)))
+              (= major 4)
+              (let [a (-> d (dc-put n 0 2) (dc-put n 2 len))
+                    parsed (loop [i 0 last 0 state a]
+                             (if (or (= i len) (not= (vector-at state 1) 0)) state
+                               (let [next (dc-read state V (+ depth 1)) child (vector-at next 4)]
+                                 (if (not= (vector-at next 1) 0) next
+                                   (recur (+ i 1) child
+                                     (if (= last 0) (dc-put next n 3 child) (dc-put next last 4 child)))))))]
+                (vector-assoc! parsed 4 n))
+              (or (= b 244) (= b 245)) (-> d (dc-put n 0 (if (= b 244) 3 4)) (vector-assoc! 4 n))
+              :else (dc-bad d))))))
+(defn- dc-text [D :vector-i64 V :vector-i64 n :i64] :string
+  (if (not= (dc-at D n 0) 1) ""
+    (let [start (dc-at D n 1) len (dc-at D n 2)
+          bytes (loop [i 0 out (vector-alloc len)]
+                  (if (= i len) out (recur (+ i 1) (vector-assoc! out i (vector-at V (+ start i))))))]
+      (string-from-utf8 (bytes-from-vector-i64 bytes)))))
+(defn- dc-eq [D :vector-i64 V :vector-i64 n :i64 s :string] :bool
+  (and (> n 0) (= (dc-at D n 0) 1) (= (dc-text D V n) s)))
+(defn- dc-child [D :vector-i64 n :i64 index :i64] :i64
+  (loop [p (dc-at D n 3) i index]
+    (cond (= p 0) 0 (= i 0) p :else (recur (dc-at D p 4) (- i 1)))))
+(defn- dc-array? [D :vector-i64 n :i64 size :i64] :bool
+  (and (> n 0) (= (dc-at D n 0) 2) (= (dc-at D n 2) size)))
+(defn- dc-tag? [D :vector-i64 V :vector-i64 n :i64 tag :string] :bool
+  (and (dc-array? D n 2) (dc-eq D V (dc-child D n 0) tag)))
+;; The owner's normalized-value order is lexicographic over decoded values,
+;; NOT lexicographic CBOR bytes (e.g. "z" sorts after "aa").
+(defn- dc-compare [D :vector-i64 V :vector-i64 a :i64 b :i64] :i64
+  (let [ak (dc-at D a 0) bk (dc-at D b 0)
+        ar (if (= ak 2) 3 (if (= ak 1) 2 1)) br (if (= bk 2) 3 (if (= bk 1) 2 1))]
+    (cond (< ar br) -1 (> ar br) 1
+          (= ar 1) (cond (< ak bk) -1 (> ak bk) 1 :else 0)
+          (= ar 2) (string-compare (dc-text D V a) (dc-text D V b))
+          :else
+          (loop [x (dc-at D a 3) y (dc-at D b 3)]
+            (cond (= x 0) (if (= y 0) 0 -1) (= y 0) 1
+                  :else (let [order (dc-compare D V x y)]
+                          (if (= order 0) (recur (dc-at D x 4) (dc-at D y 4)) order)))))))
+(defn- dc-decimal? [s :string] :bool
+  (let [n (string-length s) start (if (and (> n 0) (= (string-code-point-at s 0) 45)) 1 0)]
+    (and (> n start)
+         (or (= (- n start) 1) (not= (string-code-point-at s start) 48))
+         (loop [i start] (if (= i n) true
+           (let [c (string-code-point-at s i)] (and (>= c 48) (<= c 57) (recur (+ i 1)))))))))
+(defn- dc-hex? [s :string] :bool
+  (and (= (bit-and (string-length s) 1) 0)
+       (loop [i 0] (if (= i (string-length s)) true
+         (and (>= (dc-digit (string-code-point-at s i)) 0) (recur (+ i 1)))))))
+(defn- dc-sequence? [D :vector-i64 V :vector-i64 values :i64 mode :i64] :bool
+  (and (= (dc-at D values 0) 2)
+    (loop [p (dc-at D values 3) last 0]
+      (if (= p 0) true
+        (let [item (if (= mode 2) (dc-child D p 0) p)]
+          (and (if (= mode 2) (and (dc-array? D p 2) (dc-normal? D V (dc-child D p 1))) true)
+               (dc-normal? D V item)
+               (or (= mode 0) (= last 0) (< (dc-compare D V last item) 0))
+               (recur (dc-at D p 4) item)))))))
+(defn- dc-normal? [D :vector-i64 V :vector-i64 n :i64] :bool
+  (let [tag (dc-child D n 0) value (dc-child D n 1) text (dc-text D V value)]
+    (cond (and (dc-array? D n 1) (dc-eq D V tag "nil")) true
+          (not (dc-array? D n 2)) false
+          (dc-eq D V tag "bool") (or (= (dc-at D value 0) 3) (= (dc-at D value 0) 4))
+          (dc-eq D V tag "int") (and (= (dc-at D value 0) 1) (dc-decimal? text))
+          (dc-eq D V tag "f64") (and (= (string-length text) 16) (dc-hex? text))
+          (dc-eq D V tag "bytes") (and (= (dc-at D value 0) 1) (dc-hex? text))
+          (or (dc-eq D V tag "kw") (dc-eq D V tag "sym")) (and (= (dc-at D value 0) 1) (> (string-length text) 0))
+          (dc-eq D V tag "str") (= (dc-at D value 0) 1)
+          (or (dc-eq D V tag "vec") (dc-eq D V tag "list")) (dc-sequence? D V value 0)
+          (dc-eq D V tag "set") (dc-sequence? D V value 1)
+          (dc-eq D V tag "map") (dc-sequence? D V value 2)
+          :else false)))
+(defn- dc-key? [D :vector-i64 V :vector-i64 n :i64 name :string] :bool
+  (and (dc-tag? D V n "kw") (dc-eq D V (dc-child D n 1) name)))
+(defn- dc-field [D :vector-i64 V :vector-i64 n :i64 name :string] :i64
+  (loop [p (dc-at D (dc-child D n 1) 3)]
+    (cond (= p 0) 0 (dc-key? D V (dc-child D p 0) name) (dc-child D p 1)
+          :else (recur (dc-at D p 4)))))
+(defn- dc-positive? [D :vector-i64 V :vector-i64 n :i64] :bool
+  (let [text (dc-text D V (dc-child D n 1))]
+    (and (dc-tag? D V n "int") (> (string-length text) 0)
+         (>= (string-code-point-at text 0) 49) (<= (string-code-point-at text 0) 57))))
+;; Bounded native CID closure currently admits dag-cbor/sha2-256 CIDv1 only.
+;; No opaque identifier or nonzero base32 padding can alias the same block.
+(defn- dc-cid? [s :string] :bool
+  (and (= (string-length s) 59) (= (string-substring s 0 7) "bafyrei")
+       (>= (string-code-point-at s 7) 97) (<= (string-code-point-at s 7) 104)
+       (loop [i 7] (if (= i 59) true
+         (let [c (string-code-point-at s i)]
+           (and (or (and (>= c 97) (<= c 122)) (and (>= c 50) (<= c 55))) (recur (+ i 1))))))
+       (let [last (string-code-point-at s 58)]
+         (or (= last 97) (= last 101) (= last 105) (= last 109)
+             (= last 113) (= last 117) (= last 121) (= last 52)))))
+(defn- dc-dependencies? [D :vector-i64 V :vector-i64 n :i64] :bool
+  (and (dc-tag? D V n "vec")
+    (loop [p (dc-at D (dc-child D n 1) 3) last ""]
+      (if (= p 0) true
+        (let [text (dc-text D V (dc-child D p 1))]
+          (and (dc-tag? D V p "str") (dc-cid? text) (> (string-compare text last) 0)
+               (recur (dc-at D p 4) text)))))))
+(defn- dc-effects? [D :vector-i64 V :vector-i64 n :i64] :bool
+  (and (dc-tag? D V n "set")
+       (loop [p (dc-at D (dc-child D n 1) 3)]
+         (if (= p 0) true (and (dc-tag? D V p "kw") (recur (dc-at D p 4)))))))
+(defn- dc-payload? [D :vector-i64 V :vector-i64 n :i64] :bool
+  (let [kir (dc-field D V n "typed-kir") interface (dc-field D V n "interface")
+        version (dc-field D V n "kotoba.definition-identity/version")]
+    (and (dc-tag? D V n "map") (= (dc-at D (dc-child D n 1) 2) 7)
+         (dc-normal? D V n)
+         (dc-positive? D V (dc-field D V n "profile-version"))
+         (dc-positive? D V (dc-field D V n "desugar-contract-version"))
+         (dc-tag? D V version "int") (dc-eq D V (dc-child D version 1) "2")
+         (dc-tag? D V kir "map") (dc-tag? D V (dc-field D V kir "op") "kw")
+         (dc-tag? D V interface "map")
+         (dc-effects? D V (dc-field D V n "effect-row"))
+         (dc-dependencies? D V (dc-field D V n "dependencies")))))
+(defn- dc-base32 [V :vector-i64] :string
+  (let [alphabet "abcdefghijklmnopqrstuvwxyz234567" total (* (vector-count V) 8)]
+    (loop [bit 0 out "b"]
+      (if (>= bit total) out
+        (let [digit (loop [j 0 v 0]
+                      (if (= j 5) v
+                        (let [position (+ bit j)
+                              x (if (< position total)
+                                  (bit-and (u64-shift-right (vector-at V (quot position 8)) (- 7 (rem position 8))) 1) 0)]
+                          (recur (+ j 1) (+ (* v 2) x)))))]
+          (recur (+ bit 5) (string-concat out (string-substring alphabet digit (+ digit 1)))))))))
+(defn- dc-definition-cid [hex :string] :string
+  (let [V (dc-unhex hex)]
+    (if (= (vector-count V) 0) ""
+      (let [D (dc-read (-> (vector-alloc (+ 8 (* dc-nodes 5)))
+                          (vector-assoc! 2 1) (vector-assoc! 3 (vector-count V))) V 0)]
+        (if (or (not= (vector-at D 1) 0) (not= (vector-at D 0) (vector-count V))
+                (not (dc-payload? D V 1))) ""
+          (let [digest (dc-unhex (sh-bytes V))
+                cid (loop [i 0 out (vector-alloc 36)]
+                      (if (= i 32) out (recur (+ i 1) (vector-assoc! out (+ i 4) (vector-at digest i)))))]
+            (dc-base32 (-> cid (vector-assoc! 0 1) (vector-assoc! 1 113)
+                              (vector-assoc! 2 18) (vector-assoc! 3 32)))))))))
+
+;; Native constructors for the same tagged value domain. Fragments are hex
+;; only to avoid a second binary arena; source strings never become code.
+;; Empty string signals refusal and is never silently omitted by a builder.
+(defn- dc-byte-hex [b :i64] :string
+  (string-concat (sh-hex (quot b 16)) (sh-hex (bit-and b 15))))
+(defn- dc-head [major :i64 n :i64] :string
+  (cond (or (< n 0) (> n dc-limit)) ""
+        (< n 24) (dc-byte-hex (+ major n))
+        (< n 256) (string-concat (dc-byte-hex (+ major 24)) (dc-byte-hex n))
+        (< n 65536) (string-concat (dc-byte-hex (+ major 25))
+                      (string-concat (dc-byte-hex (quot n 256)) (dc-byte-hex (bit-and n 255))))
+        :else (string-concat (dc-byte-hex (+ major 26)) "00010000")))
+(defn- dc-string-bytes [text :string] :string
+  (let [V (vector-i64-from-bytes (string-to-utf8 text)) n (vector-count V)]
+    (if (> n dc-limit) ""
+      (loop [i 0 out (dc-head 96 n)]
+        (cond (= i n) out (>= (vector-at V i) 128) ""
+              :else (recur (+ i 1) (string-concat out (dc-byte-hex (vector-at V i)))))))))
+(defn- dc-atom [tag :string value :string] :string
+  (let [v (dc-string-bytes value)]
+    (if (= (string-length v) 0) "" (string-concat "82" (string-concat (dc-string-bytes tag) v)))))
+(defn- dc-kw [name :string] :string (if (= (string-length name) 0) "" (dc-atom "kw" name)))
+(defn- dc-str [text :string] :string (dc-atom "str" text))
+(defn- dc-int [text :string] :string (if (dc-decimal? text) (dc-atom "int" text) ""))
+(defn- dc-values [values [:list :string]] :string
+  (let [n (vector-count values)]
+    (if (>= n dc-nodes) ""
+      (loop [i 0 out (dc-head 128 n)]
+        (if (= i n) out
+          (let [value (typed-list-nth [:list :string] values i)]
+            (if (or (= (string-length value) 0) (> (+ (string-length out) (string-length value)) (* dc-limit 2))) ""
+              (recur (+ i 1) (string-concat out value)))))))))
+(defn- dc-sort-key [D :vector-i64 nodes :vector-i64 i :i64 pairs :bool] :i64
+  (let [n (vector-at nodes i)] (if pairs (dc-child D n 0) n)))
+(defn- dc-insert [D :vector-i64 V :vector-i64 nodes :vector-i64 order :vector-i64 at :i64 value :i64 pairs :bool] :vector-i64
+  (if (and (> at 0) (> (dc-compare D V (dc-sort-key D nodes (vector-at order (- at 1)) pairs)
+                                       (dc-sort-key D nodes value pairs)) 0))
+    (dc-insert D V nodes (vector-assoc! order at (vector-at order (- at 1))) (- at 1) value pairs)
+    (vector-assoc! order at value)))
+(defn- dc-sorted-values [values [:list :string] pairs :bool] :string
+  (let [raw (dc-values values) V (dc-unhex raw)]
+    (if (= (vector-count V) 0) ""
+      (let [D (dc-read (-> (vector-alloc (+ 8 (* dc-nodes 5)))
+                          (vector-assoc! 2 1) (vector-assoc! 3 (vector-count V))) V 0)
+            n (vector-count values)]
+        (if (or (not= (vector-at D 1) 0) (not= (vector-at D 0) (vector-count V))) ""
+          (let [nodes (loop [i 0 p (dc-at D 1 3) out (vector-alloc n)]
+                        (if (= i n) out (recur (+ i 1) (dc-at D p 4) (vector-assoc! out i p))))
+                valid (loop [i 0]
+                        (if (= i n) true
+                          (let [p (vector-at nodes i)]
+                            (and (if pairs (and (dc-array? D p 2) (dc-normal? D V (dc-child D p 0))
+                                                 (dc-normal? D V (dc-child D p 1))) (dc-normal? D V p))
+                                 (recur (+ i 1))))))]
+            (if (not valid) ""
+              (let [order (loop [i 0 out (vector-alloc n)]
+                            (if (= i n) out (recur (+ i 1) (dc-insert D V nodes out i i pairs))))]
+                (loop [i 0 out (dc-head 128 n)]
+                  (if (= i n) out
+                    (if (and (> i 0) (= (dc-compare D V (dc-sort-key D nodes (vector-at order (- i 1)) pairs)
+                                                       (dc-sort-key D nodes (vector-at order i) pairs)) 0)) ""
+                      (recur (+ i 1) (string-concat out (typed-list-nth [:list :string] values (vector-at order i)))))))))))))))
+(defn- dc-collection [tag :string values [:list :string] sorted :bool] :string
+  (let [items (if sorted (dc-sorted-values values (= tag "map")) (dc-values values))]
+    (if (= (string-length items) 0) "" (string-concat "82" (string-concat (dc-string-bytes tag) items)))))
+(defn- dc-pair [key :string value :string] :string
+  (if (or (= (string-length key) 0) (= (string-length value) 0)) "" (string-concat "82" (string-concat key value))))
+(defn- dc-entry [name :string value :string] :string (dc-pair (dc-kw name) value))
+(defn- dc-payload [profile :string desugar :string kir :string effects :string interface :string dependencies :string] :string
+  (dc-collection "map"
+    (typed-list-new [:list :string]
+      (dc-entry "typed-kir" kir) (dc-entry "profile-version" (dc-int profile))
+      (dc-entry "interface" interface) (dc-entry "effect-row" effects)
+      (dc-entry "dependencies" dependencies) (dc-entry "desugar-contract-version" (dc-int desugar))
+      (dc-entry "kotoba.definition-identity/version" (dc-int "2"))) true))

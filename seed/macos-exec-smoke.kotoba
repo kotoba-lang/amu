@@ -28,11 +28,11 @@
 
 (defn- body-at [v :vector-i64 at :i64] :vector-i64
   (-> v
-      ;; mach_header_64: MH_EXECUTE, CPU_TYPE_ARM64, seven commands.
+      ;; mach_header_64: MH_EXECUTE, CPU_TYPE_ARM64, eight commands.
       ;; Dynamic launch needs NOUNDEFS|DYLDLINK|TWOLEVEL|PIE (0x00200085).
       (u32-at at 4277009103) (u32-at (+ at 4) 16777228)
-      (u32-at (+ at 12) 2) (u32-at (+ at 16) 7)
-      (u32-at (+ at 20) 352) (u32-at (+ at 24) 2097285)
+      (u32-at (+ at 12) 2) (u32-at (+ at 16) 8)
+      (u32-at (+ at 20) 400) (u32-at (+ at 24) 2097285)
       ;; LC_SEGMENT_64 __PAGEZERO, __TEXT and __LINKEDIT.
       (u32-at (+ at 32) 25) (u32-at (+ at 36) 72)
       (text-at (+ at 40) "__PAGEZERO")
@@ -49,22 +49,22 @@
       (u64-at (+ at 208) 16384)
       (u64-at (+ at 216) 16384)
       (u32-at (+ at 232) 1) (u32-at (+ at 236) 1)
-      ;; dyld and libSystem are the only dynamic dependencies.
+      ;; Platform dyld, with no declared dylib. Empty symbol/relocation
+      ;; tables are explicit so macOS15 dyld does not dereference absent metadata.
       (u32-at (+ at 248) 14) (u32-at (+ at 252) 32)
       (u32-at (+ at 256) 12) (text-at (+ at 260) "/usr/lib/dyld")
-      (u32-at (+ at 280) 12) (u32-at (+ at 284) 56)
-      (u32-at (+ at 288) 24)
-      (text-at (+ at 304) "/usr/lib/libSystem.B.dylib")
-      ;; LC_MAIN enters the selfhost-produced payload as a plain function.
-      (u32-at (+ at 336) 2147483688) (u32-at (+ at 340) 24)
-      (u64-at (+ at 344) 1024)
-      ;; LC_BUILD_VERSION: macOS 13.0.0.
-      (u32-at (+ at 360) 50) (u32-at (+ at 364) 24)
-      (u32-at (+ at 368) 1)
-      (u32-at (+ at 372) 851968) (u32-at (+ at 376) 851968)
+      (u32-at (+ at 280) 2147483688) (u32-at (+ at 284) 24)
+      (u64-at (+ at 288) 1024)
+      (u32-at (+ at 304) 50) (u32-at (+ at 308) 24)
+      (u32-at (+ at 312) 1)
+      (u32-at (+ at 316) 851968) (u32-at (+ at 320) 851968)
+      (u32-at (+ at 328) 2) (u32-at (+ at 332) 24)
+      (u32-at (+ at 352) 11) (u32-at (+ at 356) 80)
       ;; read up to 16 stdin bytes into the aligned stack, write exactly the
       ;; received bytes to stdout, then exit 42. EOF exits 43. This bounds
-      ;; the host-I/O probe without a file capability or a heap.
+      ;; the host-I/O probe without a file capability or a heap. Darwin sets carry
+      ;; on syscall error: test it before CMP overwrites flags. Refuse read
+      ;; errors, write errors and short writes with exit44, never success.
       (u32-at (+ at 1024) 0xd10043ff)
       (u32-at (+ at 1028) 0xd2800000)
       (u32-at (+ at 1032) 0x910003e1)
@@ -72,21 +72,27 @@
       (u32-at (+ at 1040) 0xd2800070)
       (u32-at (+ at 1044) 0xf2a04010)
       (u32-at (+ at 1048) 0xd4001001)
-      (u32-at (+ at 1052) 0xf100001f)
-      (u32-at (+ at 1056) 0x5400012d)
-      (u32-at (+ at 1060) 0xaa0003e2)
-      (u32-at (+ at 1064) 0xd2800020)
-      (u32-at (+ at 1068) 0x910003e1)
-      (u32-at (+ at 1072) 0xd2800090)
-      (u32-at (+ at 1076) 0xf2a04010)
-      (u32-at (+ at 1080) 0xd4001001)
-      (u32-at (+ at 1084) 0xd2800540)
-      (u32-at (+ at 1088) 0x14000002)
-      (u32-at (+ at 1092) 0xd2800560)
-      (u32-at (+ at 1096) 0xd2800030)
-      (u32-at (+ at 1100) 0xf2a04010)
-      (u32-at (+ at 1104) 0xd4001001)
-      (u32-at (+ at 1108) 0xd65f03c0)))
+      (u32-at (+ at 1052) 0x54000202)
+      (u32-at (+ at 1056) 0xf100001f)
+      (u32-at (+ at 1060) 0x5400018d)
+      (u32-at (+ at 1064) 0xaa0003e2)
+      (u32-at (+ at 1068) 0xd2800020)
+      (u32-at (+ at 1072) 0x910003e1)
+      (u32-at (+ at 1076) 0xd2800090)
+      (u32-at (+ at 1080) 0xf2a04010)
+      (u32-at (+ at 1084) 0xd4001001)
+      (u32-at (+ at 1088) 0x540000e2)
+      (u32-at (+ at 1092) 0xeb02001f)
+      (u32-at (+ at 1096) 0x540000a1)
+      (u32-at (+ at 1100) 0xd2800540)
+      (u32-at (+ at 1104) 0x14000004)
+      (u32-at (+ at 1108) 0xd2800560)
+      (u32-at (+ at 1112) 0x14000002)
+      (u32-at (+ at 1116) 0xd2800580)
+      (u32-at (+ at 1120) 0xd2800030)
+      (u32-at (+ at 1124) 0xf2a04010)
+      (u32-at (+ at 1128) 0xd4001001)
+      (u32-at (+ at 1132) 0xd65f03c0)))
 
 (defn- acknowledged-image? [request :vector-i64 offset :i64 reply :vector-i64] :bool
   (if (and (= (vector-count reply) 16389)

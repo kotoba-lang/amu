@@ -1,6 +1,8 @@
 name: Native controller diagnostic
 # A measurement-only lane: immutable ARM derivation transport, fresh native
 # x86 build, then the unchanged controller alone. Not full product acceptance.
+# Controller diagnostics require an explicitly selected source-identical
+# derivation; a PR cannot silently reuse an older compiler's receipt.
 on:
   pull_request:
     paths:
@@ -9,6 +11,12 @@ on:
       - ".github/workflows/native-controller-profile.yml"
   workflow_dispatch:
     inputs:
+      mode:
+        description: Measurement only; never substitutes for native qualification
+        required: true
+        default: controller
+        type: choice
+        options: [controller, proof-scans, proof-comparison, pass-core, pass-label, proof-current, source-refinements]
       derivation-run:
         description: Public Amu run with a source-identical one-compiler-receipt artifact
         required: true
@@ -17,10 +25,112 @@ permissions:
   contents: read
   actions: read
 concurrency:
-  group: native-controller-profile-${{ github.event.pull_request.number || github.ref }}
+  group: native-controller-profile-${{ github.event.pull_request.number || github.ref }}-${{ inputs.mode || 'controller' }}
   cancel-in-progress: true
 jobs:
+  pass-localization:
+    if: contains(fromJSON('["pass-core", "pass-label", "proof-current"]'), inputs.mode)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Verify current source and native image pins
+        run: python3 scripts/seed/check-native-identities.py
+      - name: Native localization only; preserve the frozen workload and output
+        env:
+          MODE: ${{ inputs.mode }}
+        run: |
+          if [ "$MODE" = pass-label ]; then
+            python3 scripts/seed/native_build_queue.py -- python3 scripts/seed/profile-native-passes.py --closure full --workload label-x86 --detail passes --output "$RUNNER_TEMP/localization" --seconds 900
+          elif [ "$MODE" = proof-current ]; then
+            python3 scripts/seed/native_build_queue.py -- python3 scripts/seed/profile-native-passes.py --closure core --workload core --detail proofs --output "$RUNNER_TEMP/localization" --seconds 900
+          else
+            python3 scripts/seed/native_build_queue.py -- python3 scripts/seed/profile-native-passes.py --closure core --workload core --detail passes --output "$RUNNER_TEMP/localization" --seconds 900
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: native-localization-${{ inputs.mode }}
+          path: |
+            ${{ runner.temp }}/localization/observations.json
+            ${{ runner.temp }}/localization/events.jsonl
+            ${{ runner.temp }}/localization/*.stdout
+            ${{ runner.temp }}/localization/*.stderr
+          if-no-files-found: warn
+  source-refinements:
+    if: inputs.mode == 'source-refinements'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Verify current source and native image pins
+        run: python3 scripts/seed/check-native-identities.py
+      - name: Native isolated candidates then B C C B source comparison
+        run: python3 scripts/seed/native_build_queue.py -- python3 scripts/seed/compare-source-refinements.py --output "$RUNNER_TEMP/refinements"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: native-source-refinements
+          path: |
+            ${{ runner.temp }}/refinements/observations.json
+            ${{ runner.temp }}/refinements/*.stdout
+            ${{ runner.temp }}/refinements/*.stderr
+          if-no-files-found: error
+  proof-comparison:
+    if: inputs.mode == 'proof-comparison'
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Native semantic and mutation controls first
+        run: python3 scripts/seed/native_build_queue.py -- python3 scripts/seed/check-native-label-index.py --compiler "$GITHUB_WORKSPACE/bin/amu" --output "$RUNNER_TEMP/label-index" --controls-only
+      - name: Same-host native baseline candidate candidate baseline
+        run: python3 scripts/seed/native_build_queue.py --output "$RUNNER_TEMP/admission.json" -- python3 scripts/seed/compare-proof-scans.py --baseline-revision db6b2f085f627b413a9bc6f80f90ab942481e6b2 --output "$RUNNER_TEMP/comparison"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: native-proof-comparison
+          path: |
+            ${{ runner.temp }}/admission.json
+            ${{ runner.temp }}/label-index/observations.json
+            ${{ runner.temp }}/label-index/*.stderr
+            ${{ runner.temp }}/comparison/observations.json
+            ${{ runner.temp }}/comparison/*.stderr
+            ${{ runner.temp }}/comparison/*.stdout
+          if-no-files-found: error
+  proof-scans:
+    if: inputs.mode == 'proof-scans'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Profile native proof scans (diagnostic only)
+        run: python3 scripts/seed/native_build_queue.py --output "$RUNNER_TEMP/admission.json" -- python3 scripts/seed/profile-proof-scans.py --baseline-revision db6b2f085f627b413a9bc6f80f90ab942481e6b2 --output "$RUNNER_TEMP/proof-scans" --seconds 240
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: native-proof-scans
+          path: |
+            ${{ runner.temp }}/admission.json
+            ${{ runner.temp }}/proof-scans/observations.json
+            ${{ runner.temp }}/proof-scans/events.jsonl
+            ${{ runner.temp }}/proof-scans/*.stderr
+            ${{ runner.temp }}/proof-scans/*.stdout
+          if-no-files-found: error
   measure:
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'controller'
     runs-on: ubuntu-latest
     timeout-minutes: 240
     steps:
@@ -34,7 +144,7 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: one-compiler-receipt
-          run-id: ${{ inputs.derivation-run || '40165507318' }}
+          run-id: ${{ inputs.derivation-run }}
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/one
       - name: Fresh native x86 fixed point and roles from source-identical derivation
