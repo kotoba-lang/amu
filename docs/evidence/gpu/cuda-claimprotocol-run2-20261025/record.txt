@@ -1,0 +1,131 @@
+JUN-57 / JUN-55 -- CUDA claim protocol, RUN 2: cross-run stability under
+the adoption (amu-gpu tick 2026-10-25, second tick of the day)
+
+ROW: the run-1 record's named UNMEASURED "cross-run stability under the
+adoption (ONE session; the WGSL channel showed regime structure does not
+reproduce across runs, so a single session bounds nothing about a
+distribution)". This tick MEASURES one more point of it: a SECOND fresh
+paired-timing session under the ADR-0361 claim protocol on the same
+hardware, published the same way, compared verdict-for-verdict against
+run 1. This is a measurement slice; no code and no design text moved.
+
+WHAT RAN (one fresh session, on xavier -- Jetson AGX Xavier L4T R35.4.1,
+sm_72, nvcc 11.4.315):
+  - Remote tree wiped + re-transferred (COPYFILE_DISABLE=1 tar this time;
+    55 files received, 0 AppleDouble -- run 1's named 57 `._*` ride did
+    not recur). The received instrument sha256 matches the committed
+    scripts/gpu-cuda-reduce-timing.cu (0a1c9f35...); the 54 received
+    corpus files are the same committed emitter bytes run 1 verified
+    (their per-file sha256 listing is in the measure log, before any
+    compile).
+  - Instrument OK-instrument; corpus 54/54 OK-cubin, 0 FAIL; all 55
+    diagnostics 0 bytes.
+  - Smoke block rc=0 (its 40 sample lines sit outside any -- cell block
+    and are named and excluded by the publication).
+  - The full grid: 108/108 pair blocks rc=0 (2 shapes n=1000003/1048576
+    x 6 widths W=32..1024 x 3 ops x 3 pair types; ONE FRESH PROCESS PER
+    PAIR BLOCK, the adoption's run unit; PAIRS=20 interleaved, WARMUP=2
+    per arm, AB/BA alternating, LCG 20261023 per process, gpu_ns
+    CUDA-event + host_ns CLOCK_MONOTONIC per dispatch, untimed verified
+    read-back per arm). 4360 timed samples total (4320 grid + 40 smoke).
+    Correctness re-verified INSIDE the measurement: 218/218 verify lines
+    ok=1 (0 ok=0).
+  - Session span from the log's own stamps: start 2026-10-25T03:49:59Z,
+    log close 03:51:05Z (~66s wall, compile + smoke + grid).
+  - The log piped through scripts/gpu_regime_classify.py --cuda-log
+    (exit 0, stderr 0 bytes) into publication.txt. Parse census: 108
+    usable blocks / 0 excluded / 40 smoke orphan samples named. The log
+    itself carries the string 'regime' 0 times (tool-checked) --
+    classification is publication-side only, as in run 1.
+
+FINDING (the cross-run comparison, run1 publication vs run2 publication,
+both derived by the same machinery from their own sessions' logs):
+  - RULE-2 VERDICT AGREEMENT: 18/18 strata (2 metrics x 3 ops x 3 pair
+    types) identical verdict+side between sessions. Census identical in
+    both: warp-shuffle/baseline REGIME-INVARIANT FASTER 6/6 (12/12
+    per-run ratios below 1.0 in each session); warp-shuffle/subgroup
+    REGIME-INVARIANT FASTER 4/6 (:max/:min both metrics), REGIME-SCOPED
+    at :sum (both metrics); subgroup/baseline REGIME-SCOPED 6/6. Both
+    clocks classify separately and agree on every verdict in both runs.
+  - RULE-1 STRUCTURE AGREEMENT: level COUNT identical 18/18 strata, and
+    level MEMBERSHIP identical 18/18 strata (the same (n, W) runs group
+    into the same regime levels in both sessions -- W=32 slowest /
+    W=1024 middle / W=64..512 fast for the 3-level strata, etc.).
+  - PER-LEVEL SIDE AGREEMENT: 17/18 strata identical including counts;
+    ONE named diff (below).
+  - NAMED, NOT HIDDEN: gpu_ns op=sum pair=subgroup/baseline level 1 (the
+    fast cluster, itself a mixed-sides level in BOTH runs) moved from
+    "mixed sides (2 above 1.0, 6 below 1.0)" in run 1 to "mixed sides
+    (1 above 1.0, 7 below 1.0)" in run 2 -- one run's paired ratio
+    crossed 1.0 between sessions. The stratum's verdict (regime-scoped,
+    straddles 1.0) is unchanged in both; no claim in this record depends
+    on that level's within-level balance.
+  - CONTRAST, named: the WGSL channel's regime structure did NOT
+    reproduce across runs (5 of 6 level structures differed between its
+    two claim-protocol runs). The CUDA channel's structure reproduced
+    exactly across its two. Two sessions agree; that is the whole
+    measurement -- a distribution is still not bounded, and agreement
+    across two sessions is not evidence about a third.
+
+STATE (three states, kept apart):
+  - MEASURED: this session's 4360 samples + its rule-1/rule-2
+    publication + the cross-run agreement facts above (verdict 18/18,
+    level count 18/18, level membership 18/18, per-level sides 17/18
+    with the one named diff).
+  - IMPLEMENTED (code + tests): nothing moved this tick (evidence-only
+    diff); the machinery (i) of the adoption remains as landed.
+  - ACCEPTED DESIGN ONLY: the ADR-0361 adoption row; ADR-0373
+    instrument class; ADR-0358 paired-within-run statistic.
+  - UNMEASURED, named: (c) THE SELECTION ROW -- the
+    :warp-shuffle-reduce vs :subgroup-reduce vs :baseline answer for the
+    CUDA-route selection rows is STILL NOT WRITTEN (its own row; it now
+    has two-session claim currency, and this record does not pre-empt
+    it); cross-run stability as a property beyond two sessions (run 3+;
+    two agreeing sessions bound no distribution); every workgroup row
+    (ADR-0355's 2026-10-25 channel rule: the instrument channel answers
+    no dispatch row; :arm/:unknown stay provisional :measured? false);
+    per-kernel GPU time on any channel other than CUDA's own gpu_ns.
+  - No :measured? flag, workgroup row, :shapes value or selection answer
+    moves (rule 4). Sign claims stay CHANNEL-SCOPED: a CUDA sign never
+    flips an MSL/WGSL cell and never answers a workgroup row.
+
+NAMED, NOT HIDDEN (this session's own defects/hazards):
+  - The first transfer attempt failed before any data moved: tailscale
+    SSH policy refused user "junkawasaki" (run 1 and this run both
+    operate as root@xavier). Retried as root@xavier; nothing ran under
+    the refused user.
+  - The remote tar printed 'Ignoring unknown extended header keyword
+    LIBARCHIVE.xattr.com.apple.provenance' warnings (macOS extended
+    attributes, not file content); the received file count and the
+    before-compile sha256 listing (55/55) are the authority and both
+    are in the log.
+  - scripts/gpu_regime_classify.py --cuda-log requires its path/`-`
+    argument (usage: --cuda-log <paired-log.txt|->); the first
+    publication attempt this tick passed no argument and was refused
+    (FileNotFoundError on '--cuda-log', no output produced). Correct
+    invocation re-ran to exit 0. A named invocation hazard, not a data
+    hazard.
+
+GATES (real runs, this slice):
+  - gpu_regime_classify.py --self-test: TOTAL 2491 assertions passed,
+    0 failed (no code touched -- regression pin).
+  - Scoped GPU gate (the 8 GPU-owned test namespaces, scratch runner
+    gpu_scoped_gate.cljk, never committed): GREEN -- 106 tests / 11046
+    assertions / 0 failures / 0 errors (glslang 16.6.0 real-spawn line
+    in the log). The diff is evidence-only, no .cljk namespace touched
+    -- the gate is a regression pin.
+  - FULL run-tests.cljk: NOT RUN this slice (evidence-only diff) --
+    named so nothing is implied. Documented red at base ("Could not
+    find namespace: kotoba.form", the W3 port path, ADR-0362), outside
+    this diff, not re-verified here. NO green full suite is claimed.
+  - Evidence hygiene: no POSIX .sh execution file exists anywhere under
+    docs/ (checked this tick before commit); the run driver and the
+    three comparison scripts lived in Hermes scratch and were never
+    staged.
+
+Evidence: docs/evidence/gpu/cuda-claimprotocol-run2-20261025/
+(measure-log.txt = the complete fresh-session log; publication.txt =
+the --cuda-log claim-protocol publication derived from it;
+crossrun-verdict-compare.txt / crossrun-level-membership.txt /
+crossrun-level-sides.txt = the three comparison outputs; this
+record.txt).
