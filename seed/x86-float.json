@@ -4,23 +4,23 @@
   "source-files": [
     {
       "path": "seed/70-x86_64-linux.kotoba",
-      "sha256": "fc73ec80f0b9e9a3caec1505c1f4c4d9fbdc695c08295782ac66681fd4c13d0a"
+      "sha256": "be6b1645e95288bc5d82569a7509e0847fffbc8ce753663118aa3c6c619b6228"
     },
     {
       "path": "seed/74-x86_64-aiueos-object.kotoba",
-      "sha256": "8816eeb91e2545caba3f105c7ecea0fabfe6cb0caca31ff3072bbeff15ae265d"
+      "sha256": "8f49d987d16b77b9d6a2d5962f9d58518a58e3544f38b7cb4cd447a305d88bfd"
     },
     {
       "path": "seed/X86_64-LINUX-ABI",
-      "sha256": "63753b36c5c61f9bf01fa614daf5628e020620d0ae7ee0796be65f6a222d6457"
+      "sha256": "8ae2b32855be4e454d3763b2fd095ad49545cd8f4e0500c70e6bf6e146faa9e6"
     },
     {
       "path": "seed/tests/unit/x86_float_t.kotoba",
-      "sha256": "7cf18e5a29721a90955d65de4cc6e0f2057ddc07319a66a6eab8956bf4651e39"
+      "sha256": "984c4c792188a929e58af29b97af74c143bf5b34e1fce6582221cb35c5163889"
     },
     {
       "path": "test/fixtures/selfhost/x86-float/README.md",
-      "sha256": "c3e50081b2e9925b65012d5846b83dc0dfa1a270fa63fa43a58c7cc9f0c7989f"
+      "sha256": "d823687c24740dd98cba13f532c3dafbc69c440891e88e696e188c7bda39ea26"
     },
     {
       "path": "test/fixtures/selfhost/x86-float/native/x86_float_stack_test.kotoba",
@@ -54,21 +54,21 @@
   "compiler-manifests": [
     {
       "path": "seed/MANIFEST",
-      "sha256": "f886dc89f4dab0f2c5b3e3b71f363fe54cedfafdcff318fcd9e41f3ad086086d",
-      "modules": 17,
-      "unity-sha256": "b2bba850c3c09f47323f134f29d2f57876e7b66264e680051ab7ebf2fddaf0b9"
+      "sha256": "c6da4d542ae360c5c489df9fad3231c1072a31fc0e28cd98c666192f57d4d95c",
+      "modules": 19,
+      "unity-sha256": "0c92c4c42eb75382caa1118d1402685a7e577a03481e9d26c3d02a700f7a809e"
     },
     {
       "path": "seed/X86_64-LINUX-MANIFEST",
-      "sha256": "9bd28e3738bf816e12098fb44b212b9d76f34c898981bc921389586c8f5c369c",
-      "modules": 20,
-      "unity-sha256": "3a9d70f0d86489d0b56fe4abf08fa157834dab7f57e5fe069ae29bbe6a257f44"
+      "sha256": "0a0ed681a546a61cfa54c6be83f657816e49465d0f4e2977bfd9bab99eb93a8f",
+      "modules": 29,
+      "unity-sha256": "e806927d70669d369829f7b6df2e4192e279ad4438b13a0f0669fcb5075fcbbc"
     },
     {
       "path": "seed/X86_64-LINUX-SELFHOST-MANIFEST",
-      "sha256": "295e7404070eb85a2a752199c6723739691e63ae390232a612f1ccbb563c7f6e",
-      "modules": 14,
-      "unity-sha256": "d2281e05e0c2a18f5b0e312709925871e49a8c72b35990711ab9208656d8bcf8"
+      "sha256": "4c24bdf88de018984be54fb9e2e45d48314d568ea7152b4a1acd5dfb76d8766c",
+      "modules": 28,
+      "unity-sha256": "d10cbdefae4bec35c2c6b0aac27696d7c1500af42d6cebb578180ffebc9989a2"
     }
   ],
   "SIR-contract": {
@@ -146,10 +146,11 @@
   "ABI-boundaries": {
     "profile0": "scalar ELF; public boundary unchanged main()->i64; internal i64/bool/f64/f32 only",
     "profile1": "existing context bit-carrier runtime; six through sixteen stack arguments preserved",
-    "profile2": "integer-only kernel object signatures and operations; all 36 floating SIR tags refused",
+    "profile2": "protected integer kernel project; original 112-byte outgoing/scratch, sixteen arguments and stack guard; all floating SIR refused",
     "frame": "16 extra bytes only in a function with floating SIR; included in existing 4096-byte bound",
     "integer-only-frames": "unchanged",
-    "historical-context-C-loader": "not current acceptance or an authorized fallback"
+    "historical-context-C-loader": "not current acceptance or an authorized fallback",
+    "profile3": "integer-only kernel object/image; five scalar arguments, no runtime/scratch frame; all floating SIR refused"
   },
   "corpora": {
     "scalar": {
@@ -202,5 +203,14 @@
   "adopted-and-preserved-artifact-pins-changed": false,
   "old-receipts-cannot-qualify-new-closure": true,
   "execution-foundation-stays-separate": true,
-  "no-archive-or-delete-authorization-from-this-receipt": true
+  "no-archive-or-delete-authorization-from-this-receipt": true,
+  "current-integration-evidence": {
+    "sourceIntegration": "core19/full48 candidate; all prior modules retained",
+    "nativeCoreFixedPoint": "docs/evidence/cssom-f64-native-20261025/normal-core-candidate.json",
+    "lockedCoreAndCapacity": "docs/evidence/cssom-f64-native-20261025/normal-literal-lock-arm.json",
+    "compilerAdmissionUnit": "docs/evidence/cssom-f64-native-20261025/compiler-admission-arm.json",
+    "actualX86FloatingExecution": false,
+    "fullComponentSuiteQualified": false,
+    "rootPublicControllerAdopted": false
+  }
 }
