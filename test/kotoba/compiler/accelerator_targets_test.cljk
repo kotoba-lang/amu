@@ -772,7 +772,12 @@
   ;; OTHER walks still trap multi-token / long answers on this runtime
   ;; (sg-pipe walks the answer per byte; sg-token-end/sg-ops-walk walk
   ;; per token/space byte -- MEASURED: "32|basic shuffle-relative" traps
-  ;; host/stack-exhausted on BOTH arms at this depth), their own rows;
+  ;; host/stack-exhausted on BOTH arms at this depth), their own rows --
+  ;; the pipe/token-end row (2026-10-26) has since fixed the per-byte
+  ;; scans (sg-pipe/sg-token-end onto string-find-byte), see
+  ;; w3-subgroup-pipe-and-token-end-find-bytes-not-walks; the residual
+  ;; traps are sg-ops-walk per token/space byte and sg-member?/sg-keyword
+  ;; per element (their own rows);
   ;; the e2e pins below run only the shapes the probes resolved twice --
   ;; e.g. "32|basic vote2" (13 bytes) TRAPS host/stack-exhausted on BOTH
   ;; arms and is never pinned (trap boundaries are state-dependent).
@@ -857,3 +862,155 @@
           "the [0-9]+ guard is digits? (signed spellings must refuse)")
       (is (not (str/includes? (extract-balanced src "(defn- sg-size ") "string-code-point-at"))
           "no byte scan remains in sg-size"))))
+
+(deftest w3-subgroup-pipe-and-token-end-find-bytes-not-walks
+  ;; The `:kotoba` sg-pipe and sg-token-end -- the SUBGROUP chain's two
+  ;; per-BYTE scans -- on the kotoba language runtime (the w3
+  ;; extract-balanced idiom). This is the sg-size row's (2026-10-26)
+  ;; named residual: "sg-pipe per answer byte, sg-token-end/sg-ops-walk
+  ;; per token/space byte, sg-member?/sg-keyword per element ... their
+  ;; own rows". The replaced walks recursed one frame per byte and
+  ;; trapped the interpreter's 32-frame budget (frames-limit 32) on
+  ;; every long answer and long token -- MEASURED BEFORE on this runtime
+  ;; (200-byte fields -> host/stack-exhausted; 106..110-byte answers ->
+  ;; budget/frames regardless of the sg-size fix,
+  ;; docs/evidence/gpu/w3-pipe-token-end-primitives-20261026.txt). The
+  ;; scans are `string-find-byte` (the dot1/alt-end precedent): sg-pipe
+  ;; at most TWO finds (the first '|' from 0, then one after it),
+  ;; sg-token-end ONE find per call (byte 32 = the alt-end shape).
+  ;; PINNED CONTRACTS, unchanged: sg-pipe answers the index of the
+  ;; single '|', -1 for none, -2 for more (a trailing pipe is a second
+  ;; pipe -- it splits an empty third field); sg-token-end answers the
+  ;; first byte-32 at or after i, n when absent. The total shapes are
+  ;; answered ABOVE the primitive (string-find-byte answers -1 when
+  ;; absent and traps on from > n; from = n is never called).
+  ;; NAMED, NOT HIDDEN (its own row): the dedupe check sg-member? calls
+  ;; document-list-at over the chain's own document-VECTOR accumulator
+  ;; and TRAPs document-list-required on any 2+-token <ops> field --
+  ;; measured on BOTH arms (the body is untouched by this row) with the
+  ;; unit mechanism table (empty-vector acc false / vector acc k=1 TRAP
+  ;; / same count on a LIST acc false) -- so the canonical "32|basic
+  ;; shuffle-relative" answer and the eight-token answer trap
+  ;; document-list-required while the host arm answers the full map.
+  ;; The bug is PRE-EXISTING and was masked by the walk traps this row
+  ;; removes. The remaining walks (sg-ops-walk per token/space byte,
+  ;; sg-keyword per vocabulary element) keep their own trap: "32|basic
+  ;; vote2" and the spaced two-token answer still trap
+  ;; host/stack-exhausted on both runs. Every trapping cell is
+  ;; measure-only, NEVER pinned (trap boundaries and spellings are
+  ;; state-dependent).
+  (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
+        arms (str/join "\n" (map #(extract-balanced src %)
+                                 ["(defn- none?" "(defn- string->i64" "(defn- digits?"
+                                  "(defn- sg-tokens-doc" "(defn- sg-keywords-doc" "(defn- sg-keyword "
+                                  "(defn- sg-size " "(defn- sg-token-end" "(defn- sg-member?"
+                                  "(defn- sg-ops " "(defn- sg-ops-walk" "(defn- sg-pipe"
+                                  "(defn device-from-subgroup"]))
+        probe (str "(ns accelerator.targets.w3.pipe.probe (:export [main sp ste dfs]))\n"
+                   "(defn main [] :i64 0)\n"
+                   arms "\n"
+                   "(defn sp [s :string] :i64 (sg-pipe s (string-byte-length s)))\n"
+                   "(defn ste [s :string i :i64] :i64 (sg-token-end s i (string-byte-length s)))\n"
+                   "(defn dfs [answer :document] :document (device-from-subgroup answer))\n")
+        hir (sema/analyze probe)
+        sp (fn [s] (str (ir/execute hir 'sp [s])))
+        ste (fn [s i] (str (ir/execute hir 'ste [s i])))
+        dfs (fn [s] (ir/execute hir 'dfs [["string" s]]))
+        fields-of (fn [doc]
+                    (into {} (map (fn [kv] [(get (get kv 0) 1) (get (get kv 1) 1)])
+                                  (get doc 1))))
+        ops-set (fn [ops] (set (map #(get % 1) ops)))
+        ;; the host readings of the same two contracts
+        host-sp (fn [s]
+                  (let [parts (str/split s #"\|" -1)]
+                    (cond (= 1 (count parts)) -1
+                          (= 2 (count parts)) (str/index-of s "|")
+                          :else -2)))
+        host-ste (fn [s i]
+                   (let [p (str/index-of s " " i)]
+                     (if (nil? p) (count s) p)))
+        long-a (apply str (repeat 200 "a"))
+        one-pipe-200 (str (apply str (repeat 150 "a")) "|" (apply str (repeat 49 "b")))
+        two-pipe-200 (str (apply str (repeat 100 "a")) "|" (apply str (repeat 50 "b")) "|")]
+    (testing "the sg-pipe contract on the kotoba runtime (was: a per-answer-byte walk)"
+      ;; MEASURED BEFORE (the evidence): the three 200+-byte cells
+      ;; TRAPPED host/stack-exhausted in the walk; the short cells held
+      (doseq [[s want] [["" "-1"] ["32" "-1"] ["abc" "-1"]
+                        ["32|basic" "2"] ["8|" "1"] ["|x" "0"] ["|" "0"]
+                        ["||" "-2"] ["32|basic|extra" "-2"] ["a||b" "-2"] ["x|y|" "-2"]
+                        [long-a "-1"] [one-pipe-200 "150"] [two-pipe-200 "-2"]
+                        [(apply str (repeat 1000 "a")) "-1"]]]
+        (is (= want (sp s)) (str (pr-str s) " keeps the exactly-two-fields contract"))))
+    (testing "sg-pipe host parity on the same contract"
+      (doseq [s ["" "32" "abc" "32|basic" "8|" "|x" "|" "||"
+                 "32|basic|extra" "a||b" "x|y|"
+                 long-a one-pipe-200 two-pipe-200 (apply str (repeat 1000 "a"))]]
+        (is (= (str (host-sp s)) (sp s))
+            (str (pr-str s) " answers the host's str/split -1 count reading"))))
+    (testing "the sg-token-end contract on the kotoba runtime (was: a per-token-byte walk)"
+      ;; MEASURED BEFORE (the evidence): the four 200+-byte cells
+      ;; TRAPPED host/stack-exhausted in the walk
+      (doseq [[s i want] [["abc" 0 "3"] ["ab cd" 0 "2"] ["ab cd" 3 "5"]
+                          ["ab  cd" 0 "2"] ["ab  cd" 3 "3"] ["ab  cd" 4 "6"]
+                          [" " 0 "0"] ["" 0 "0"]
+                          [long-a 0 "200"]
+                          [(str (apply str (repeat 150 "a")) " " (apply str (repeat 49 "b"))) 0 "150"]
+                          [(str (apply str (repeat 150 "a")) " " (apply str (repeat 49 "b"))) 151 "200"]
+                          [(apply str (repeat 1000 "a")) 0 "1000"]]]
+        (is (= want (ste s i)) (str (pr-str s) " from " i " keeps the token-end contract")))
+      (doseq [[s i] [["abc" 0] ["ab cd" 0] ["ab cd" 3] ["ab  cd" 0] ["ab  cd" 3] ["ab  cd" 4]
+                     [" " 0] ["" 0] [long-a 0]
+                     [(str (apply str (repeat 150 "a")) " " (apply str (repeat 49 "b"))) 0]
+                     [(str (apply str (repeat 150 "a")) " " (apply str (repeat 49 "b"))) 151]
+                     [(apply str (repeat 1000 "a")) 0]]]
+        (is (= (str (host-ste s i)) (ste s i))
+            (str (pr-str s) " from " i " answers the host's str/index-of reading"))))
+    (testing "the standing e2e pins are byte-identical (no spelling moved)"
+      (let [m (fields-of (dfs "8|"))]
+        (is (= "8" (str (:subgroup-size m))) "an empty <ops> is the zero-ops fact")
+        (is (= #{} (ops-set (:subgroup-ops m)))))
+      (let [m (fields-of (dfs "16|shuffle"))]
+        (is (= "16" (str (:subgroup-size m))))
+        (is (= #{:shuffle} (ops-set (:subgroup-ops m)))))
+      (doseq [s ["no|such answer" "32|Basic" "32|basic\tvote"
+                 "-1|basic" "+3|basic" "0|basic" "12.5|basic" " 32|basic"
+                 "32x|basic" "x|basic" "32|basic|extra" "32||basic"]]
+        (is (= ["null"] (dfs s)) (str (pr-str s) " must parse to no fact at all"))))
+    (testing "the walk traps are GONE on long answers (BEFORE: trapped, measure-only)"
+      ;; every cell below TRAPPED on the BEFORE arm (the evidence) and
+      ;; resolves HOST-equal here -- the wrong-refusal path removed
+      (doseq [s ["99999999999999999999|basic" "9223372036854775808|basic"
+                 (str (apply str (repeat 100 "9")) "|basic")
+                 (str (apply str (repeat 1000 "5")) "|basic")
+                 (str (apply str (repeat 200 "9")) "|basic")
+                 long-a
+                 (str "8|" (apply str (repeat 190 "a")))
+                 two-pipe-200]]
+        (is (= ["null"] (dfs s)) (str (pr-str s) " parses to no fact at all, untrapped"))
+        (is (nil? (targets/device-from-subgroup s))
+            (str "HOST parity pin: " (pr-str s))))
+      (let [s (str (apply str (repeat 102 "0")) "42|basic")
+            m (fields-of (dfs s))]
+        (is (= "42" (str (:subgroup-size m)))
+            "the 110-byte leading-zero answer now resolves (it trapped before)")
+        (is (= #{:basic} (ops-set (:subgroup-ops m))))
+        (is (= {:subgroup-size 42 :subgroup-ops #{:basic}}
+               (targets/device-from-subgroup s))
+            "HOST parity pin")))
+    (testing "the per-byte scans are deleted and the bodies delegate to the primitive"
+      (let [pipe-body (extract-balanced src "(defn- sg-pipe")
+            token-end-body (extract-balanced src "(defn- sg-token-end")]
+        (is (str/includes? pipe-body "string-find-byte")
+            "sg-pipe scans with string-find-byte (the dot1/alt-end precedent)")
+        (is (= 2 (count (re-seq #"string-find-byte" pipe-body)))
+            "at most TWO finds: the first '|', then one after it")
+        (is (not (str/includes? pipe-body "string-code-point-at"))
+            "no byte scan remains in sg-pipe")
+        (is (str/includes? token-end-body "string-find-byte")
+            "sg-token-end scans with string-find-byte (the alt-end shape)")
+        (is (= 1 (count (re-seq #"string-find-byte" token-end-body)))
+            "ONE find per call")
+        (is (not (str/includes? token-end-body "string-code-point-at"))
+            "no byte scan remains in sg-token-end")
+        (is (str/includes? (extract-balanced src "(defn device-from-subgroup") "(sg-pipe s n)")
+            "the call site dropped the walk's i/at arguments")))))

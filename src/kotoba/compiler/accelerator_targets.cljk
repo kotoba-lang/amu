@@ -687,11 +687,18 @@
 ;; the <ops> field's tokens are the wire's tokens: runs of non-space bytes
 ;; separated by one or more spaces (byte 32), no other byte separates (the
 ;; request grammar's rule), so a separator-only field is also zero tokens.
+;; The pipe/token-end row (2026-10-26): the replaced token walk recursed
+;; per field byte and trapped the interpreter's 32-frame budget
+;; (frames-limit 32) on long tokens -- MEASURED on the kotoba runtime
+;; (docs/evidence/gpu/w3-pipe-token-end-primitives-20261026.txt). The end
+;; is ONE `string-find-byte` (the alt-end shape, byte 32): the first byte
+;; 32 at or after i, n when absent. `string-find-byte` answers -1 when
+;; absent and traps on from > n (measured: the numeric-walk row, dot1's
+;; exact shape), so the walk's i >= n -> n shape is answered ABOVE the
+;; primitive (total contract; callers hold it).
 #?(:kotoba
    (defn- sg-token-end [s :string i :i64 n :i64] :i64
-     (if (>= i n)
-       n
-       (if (= (string-code-point-at s i) 32) i (sg-token-end s (+ i 1) n)))))
+     (if (>= i n) n (let [p (string-find-byte s 32 i)] (if (< p 0) n p)))))
 #?(:kotoba
    (defn- sg-member? [acc :document kw :document k :i64 n :i64] :bool
      (cond (>= k n) false
@@ -711,19 +718,36 @@
                      (if (sg-member? acc kw 0 (document-count acc))
                        (sg-ops-walk s j n acc)
                        (sg-ops-walk s j n (document-vector-conj acc kw))))))))
-;; exactly two fields: the index of the single '|', -1 for none, -2 for more.
+;; exactly two fields: the index of the single '|', -1 for none, -2 for
+;; more. The pipe/token-end row (2026-10-26): the replaced pipe walk
+;; recursed per ANSWER byte and trapped the budget on every long answer
+;; (MEASURED: 106..110-byte answers trapped budget/frames regardless of
+;; the sg-size fix, docs/evidence/gpu/w3-pipe-token-end-primitives-
+;; 20261026.txt). The scan is at most TWO `string-find-byte` calls (the
+;; dot1/alt-end precedent): the first '|' from 0, then -- only if a first
+;; exists and a byte follows it -- a second '|' after it. The total
+;; shapes (-1 for no pipe; the first index when no byte follows) are
+;; answered ABOVE the primitive (string-find-byte answers -1 when absent
+;; and traps on from > n; from = n is never called -- dot1's i >= n
+;; guard).
 #?(:kotoba
-   (defn- sg-pipe [s :string i :i64 n :i64 at :i64] :i64
-     (cond (>= i n) at
-           (= (string-code-point-at s i) 124) (if (< at 0) (sg-pipe s (+ i 1) n i) -2)
-           :else (sg-pipe s (+ i 1) n at))))
+   (defn- sg-pipe [s :string n :i64] :i64
+     (if (>= 0 n)
+       -1
+       (let [p (string-find-byte s 124 0)]
+         (if (< p 0)
+           -1
+           (if (>= (+ p 1) n)
+             p
+             (let [q (string-find-byte s 124 (+ p 1))]
+               (if (< q 0) p -2))))))))
 #?(:kotoba
    (defn device-from-subgroup [answer :document] :document
      (if (not (= (document-kind answer) :string))
        (document-null)
        (let [s (option-value-of [:option :string] (document-string-value answer) "")
              n (string-byte-length s)
-             p (sg-pipe s 0 n -1)]
+             p (sg-pipe s n)]
          (if (< p 0)
            (document-null)
            (let [size (sg-size (string-substring s 0 p))
