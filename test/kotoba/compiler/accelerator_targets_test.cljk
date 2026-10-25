@@ -90,6 +90,47 @@
     (testing "same descriptor in, same map out"
       (is (= nvidia (targets/recommend {:vendor-id 4318 :api :cuda}))))))
 
+(deftest the-workgroup-device-key-is-a-fragment-set-per-name-part
+  ;; The row-(iv)-named sibling key (ADR-0358 amendment 2026-10-25,
+  ;; docs/evidence/gpu/workgroup-device-key-alternates-20261025.txt): the
+  ;; workgroup rows' :measured-device key narrows from a bare fragment to a
+  ;; SET -- the fragment plus one '|'-alternate of
+  ;; :measured-device-alternates -- read per name part. The ground is the two
+  ;; attested spellings of the NVIDIA row's one measured host: the wire-42
+  ;; INFO receipt (JUN-85) says "NVIDIA Tegra Xavier (nvgpu)" while the CUDA
+  ;; channel says "NVIDIA Jetson AGX Xavier". Row (iv)'s single-set
+  ;; transplant ("xavier"+"agx" in one name part) is refused: it would deny
+  ;; the measured device its flag under its own probe receipt.
+  (testing "both attested spellings of the measured NVIDIA device keep the row flag"
+    (is (true? (:measured? (targets/recommend {:vendor "NVIDIA Tegra Xavier (nvgpu)"})))
+        "the wire-42 INFO receipt's spelling (JUN-85) keeps its own row flag")
+    (is (true? (:measured? (targets/recommend {:vendor "NVIDIA Jetson AGX Xavier" :api :cuda})))
+        "the CUDA channel's spelling of the same host keeps it too")
+    (is (true? (:measured? (targets/recommend {:vendor-id 4318 :name "NVIDIA JETSON AGX XAVIER"})))
+        "the set match is case-insensitive"))
+  (testing "the row-(iv) hole closes fail-closed: a Xavier that is not the measured one attaches nothing"
+    (is (false? (:measured? (targets/recommend {:vendor-id 4318 :name "Jetson Xavier NX"})))
+        "also sm_72 on the CUDA channel, never measured for the workgroup rows")
+    (is (false? (:measured? (targets/recommend {:vendor-id 4318 :name "Xavier"})))
+        "a bare fragment is not a set where alternates exist")
+    (is (false? (:measured? (targets/recommend {:vendor-id 4318 :name "AGX"})))
+        "every fragment of one set -- an alternate without the base fragment attaches nothing")
+    (is (false? (:measured? (targets/recommend {:vendor-id 4318 :device "AGX" :name "Xavier"})))
+        "the fragments must sit in ONE name part -- an across-parts split attaches nothing"))
+  (testing "named residuals ride as NAMED BEHAVIOR, not measurement claims"
+    (is (true? (:measured? (targets/recommend {:vendor-id 4318 :name "Jetson AGX Xavier Industrial"}))))
+    (is (true? (:measured? (targets/recommend {:vendor-id 4318 :name "Tegra Xavier NX"})))))
+  (testing "rows without alternates keep the single-fragment contract"
+    (is (true? (:measured? (targets/recommend {:vendor "Apple M1 Max"}))))
+    (is (true? (:measured? (targets/recommend {:vendor "Intel(R) Graphics (BMG G31)"}))))
+    (is (true? (:measured? (targets/recommend {:vendor "AMD Radeon 680M"}))))
+    (is (false? (:measured? (targets/recommend {:vendor "Apple M3"})))))
+  (testing "the row data is the decided key shape"
+    (is (= "agx|tegra" (:measured-device-alternates (:nvidia targets/workgroup-defaults))))
+    (is (= "" (:measured-device-alternates (:apple targets/workgroup-defaults))))
+    (is (= "" (:measured-device-alternates (:intel targets/workgroup-defaults))))
+    (is (= "" (:measured-device-alternates (:amd targets/workgroup-defaults))))))
+
 (deftest device-class-maps-the-loader-vocabulary
   (testing "the five DEVCLASS words of tools/kexe_gpu_vulkan.c map losslessly"
     (is (= :discrete-gpu (targets/device-class "discrete")))
@@ -261,7 +302,12 @@
         (is (and (string? (:measured-device row)) (pos? (count (:measured-device row))))
             (str v " is measured but names no measured device"))
         (is (nil? (:measured-device row))
-            (str v " is provisional but carries a measured-device"))))))
+            (str v " is provisional but carries a measured-device")))
+      (if (:measured? row)
+        (is (string? (:measured-device-alternates row))
+            (str v " is measured but carries no measured-device-alternates key"))
+        (is (nil? (:measured-device-alternates row))
+            (str v " is provisional but carries a measured-device-alternates key"))))))
 
 ;; The W3 arm extractor: the balanced-paren form beginning at `start` in
 ;; `text`, string literals aware. The `:kotoba` readings of this namespace are
@@ -328,3 +374,44 @@
       (is (str/includes? (fold "NVIDIA GeForce RTX 4090") "geforce"))
       (is (str/includes? (fold "Apple M1 Max") "m1 max"))
       (is (str/includes? (fold "Intel(R) Iris(R) Xe Graphics") "iris")))))
+
+(deftest w3-the-device-key-arm-hits-per-name-part-and-per-set
+  ;; The `:kotoba` reading of the uB5G SET key (key-hits / alt-any-hits /
+  ;; alt-field? / alt-end beside substr-hits, ADR-0358 amendment 2026-10-25)
+  ;; runs on the kotoba language runtime over the arms' OWN extracted text
+  ;; (the w3 extract-balanced idiom). NAMED CONSTRAINT, not an omission: the
+  ;; interpreter carries a 32-frame budget (frames-limit 32) and the per-byte
+  ;; walks (sub-eq per needle byte, sub-walk2 per haystack position) trap
+  ;; host/stack-exhausted on full device names -- measured on this runtime
+  ;; this tick ("apple m1 max"/"m1 max" traps; the old lower-walk's trap, the
+  ;; ns docstring's named hazard) -- so these pins run the SHORT spellings and
+  ;; the full spellings are the host pins in
+  ;; the-workgroup-device-key-is-a-fragment-set-per-name-part.
+  (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
+        arms (str/join "\n" (map #(extract-balanced src %)
+                                 ["(defn- sub-eq" "(defn- sub-walk2" "(defn- substr-hits"
+                                  "(defn- alt-end" "(defn- alt-field?" "(defn- alt-any-hits"
+                                  "(defn- key-hits"]))
+        probe (str "(ns accelerator.targets.w3.key.probe (:export [main hit]))\n"
+                   "(defn main [] :i64 0)\n"
+                   arms "\n"
+                   "(defn hit [part :string frag :string alts :string] :bool (key-hits part frag alts))")
+        hir (sema/analyze probe)
+        hit (fn [part frag alts] (ir/execute hir 'hit [part frag alts]))]
+    (is (every? string? (map #(extract-balanced src %)
+                             ["(defn- sub-eq" "(defn- key-hits"]))
+        "the W3 arms are extractable from the namespace source")
+    (is (str/includes? src "(key-hits (string-ascii-lower")
+        "the :kotoba recommend arm keys through key-hits, not bare substr-hits")
+    (testing "one name part carries every fragment of one set"
+      (is (true? (hit "tx" "x" "a|t")) "the second alternate completes its set")
+      (is (true? (hit "ax" "x" "a|t")) "the first alternate completes its set")
+      (is (false? (hit "x" "x" "a|t")) "a bare fragment is not a set where alternates exist")
+      (is (false? (hit "a" "x" "a")) "an alternate without the base fragment is not a set")
+      (is (true? (hit "txt" "x" "a|t")) "a substring alternate hits like substr-hits"))
+    (testing "empty '|'-fields contribute no set; an all-empty key is the one-fragment set"
+      (is (false? (hit "x" "x" "a|")) "a trailing pipe must not widen the key")
+      (is (true? (hit "x" "x" "|")) "fields that are all empty are no alternates")
+      (is (true? (hit "x" "x" "")) "the rows without alternates keep the fragment contract"))
+    (testing "the haystack is the caller's lowered name (substr-hits' contract)"
+      (is (false? (hit "X" "x" ""))))))

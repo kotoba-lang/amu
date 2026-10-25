@@ -72,3 +72,32 @@ transfers it.
 No size, no row flag and no measurement changed: this narrows WHEN the
 row's flag reaches a caller. Nothing here re-measures anything, and no
 `:measured?` row flips.
+
+## Key-shape amendment (2026-10-25): the scoping key becomes a fragment SET
+
+The 2026-10-22 key is narrowed again, by the row-(iv)-named sibling decision
+(JUN-56; record docs/evidence/gpu/workgroup-device-key-alternates-20261025.txt).
+One measured host is attested under TWO names -- the wire-42 INFO receipt
+(JUN-85) says `NVIDIA Tegra Xavier (nvgpu)`, the CUDA channel says `NVIDIA
+Jetson AGX Xavier` -- so a one-fragment key ("xavier") reads too wide (a
+"Jetson Xavier NX", also sm_72 and never measured here, kept the flag) while
+row (iv)'s two-fragment transplant ("xavier"+"agx") reads too narrow (it
+would refuse the INFO receipt's own spelling).
+
+The key is now a SET, spelled by the new row field
+`:measured-device-alternates` ('|'-separated; the :nvidia row carries
+"agx|tegra", the rows without evidenced siblings carry ""): the sets are the
+`:measured-device` fragment paired with each non-empty alternate, and one
+name part keeps the flag only when it carries every fragment of one set
+("xavier" AND ("agx" OR "tegra") for :nvidia). An empty field contributes no
+set (a trailing pipe must not widen the key); an all-empty key is the
+one-fragment set. Pinned both readers: both attested spellings keep the flag;
+"Jetson Xavier NX", bare "Xavier" and across-parts splits attach nothing (the
+hole closes fail-closed); the named residuals ("Jetson AGX Xavier Industrial",
+"Tegra Xavier NX") ride as named behavior, not measurement claims. Rejected:
+bare fragment, the row-(iv) transplant, negative keys, exact-name equality, a
+device-id key (no producer fact exists), narrowing :apple/:intel/:amd without
+evidenced siblings.
+
+As in 2026-10-22: nothing here re-measures anything and no `:measured?` row
+flips -- the key narrows which descriptor names read the standing flag.

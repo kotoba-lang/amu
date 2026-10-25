@@ -70,16 +70,21 @@
                     (document-string "mali") (document-string "radeon") (document-string "amd"))))
 
 ;; the workgroup row builder (the host map rows:
-;; size/execution-width/measured?/measured-device/basis/evidence). The
-;; measured-device fragment is the uB5G scoping key; an unmeasured row spells
-;; it "" and a blank fragment never matches a name (the host rows omit the
-;; key entirely for unmeasured rows -- same behavior, one spelling each).
+;; size/execution-width/measured?/measured-device/measured-device-alternates/
+;; basis/evidence). The measured-device fragment is the uB5G scoping key; an
+;; unmeasured row spells it "" and a blank fragment never matches a name (the
+;; host rows omit both key fields entirely for unmeasured rows -- same
+;; behavior, one spelling each). measured-device-alternates is the key's
+;; '|'-separated alternate-fragment string (ADR-0358 amendment 2026-10-25):
+;; the key is read as a SET -- the fragment plus ONE alternate per field --
+;; and "" spells the one-fragment set (every row but :nvidia today).
 #?(:kotoba
-   (defn- wg-row [size :i64 width :i64 measured :bool mdev :string basis :string evidence :string] :document
+   (defn- wg-row [size :i64 width :i64 measured :bool mdev :string malts :string basis :string evidence :string] :document
      (document-map (document-keyword :size) (document-i64 size)
                    (document-keyword :execution-width) (document-i64 width)
                    (document-keyword :measured?) (document-bool measured)
                    (document-keyword :measured-device) (document-string mdev)
+                   (document-keyword :measured-device-alternates) (document-string malts)
                    (document-keyword :basis) (document-string basis)
                    (document-keyword :evidence) (document-string evidence))))
 
@@ -147,6 +152,41 @@
      (cond (>= k m) true
            (= (string-code-point-at hay (+ j k)) (string-code-point-at needle k)) (sub-eq hay needle j (+ k 1) m)
            :else false)))
+;; the uB5G SET key (the :measured-device-alternates row key, ADR-0358
+;; amendment 2026-10-25): a row's key is a SET of fragment sets -- the
+;; :measured-device fragment plus ONE alternate per '|'-field of
+;; :measured-device-alternates -- and one name part keeps the row flag only
+;; when it carries every fragment of one set (the nvidia row's
+;; "xavier" + "agx|tegra" is {xavier,agx} / {xavier,tegra}: "xavier" AND
+;; ("agx" OR "tegra"), the key the two attested spellings of its one
+;; measured host share). An empty '|'-field contributes NO set (a trailing
+;; pipe must not widen the key); a key whose fields are all empty ("") is
+;; the one-fragment set (the rows that carry no alternates). Fail closed:
+;; a bare fragment is not a set where alternates exist. Callers lower the
+;; haystack (substr-hits' contract).
+#?(:kotoba
+   (defn- alt-end [s :string i :i64 n :i64] :i64
+     (if (>= i n) n (if (= (string-code-point-at s i) 124) i (alt-end s (+ i 1) n)))))
+#?(:kotoba
+   (defn- alt-field? [alts :string i :i64 n :i64] :bool
+     (cond (>= i n) false
+           (= (string-code-point-at alts i) 124) (alt-field? alts (+ i 1) n)
+           :else true)))
+#?(:kotoba
+   (defn- alt-any-hits [part :string alts :string i :i64 n :i64] :bool
+     (cond (>= i n) false
+           (= (string-code-point-at alts i) 124) (alt-any-hits part alts (+ i 1) n)
+           :else (let [j (alt-end alts i n)]
+                   (if (substr-hits part (string-substring alts i j))
+                     true
+                     (alt-any-hits part alts j n))))))
+#?(:kotoba
+   (defn- key-hits [part :string frag :string alts :string] :bool
+     (if (substr-hits part frag)
+       (if (alt-field? alts 0 (string-byte-length alts))
+         (alt-any-hits part alts 0 (string-byte-length alts))
+         true)
+       false)))
 ;; the digits -> i64 parse (host parse-long on a digit string)
 #?(:kotoba
    (defn- string->i64 [s :string] :i64
@@ -351,12 +391,12 @@
 #?(:kotoba
    (defn workgroup-defaults [] [:map :keyword :document]
      (typed-map-new [:map :keyword :document]
-                    :nvidia (wg-row 256 32 true "xavier" "warp width 32; 256 is 8 warps per workgroup" "2026-10-19 Xavier nvgpu, 6 paired runs: 128-1024 flat within 2%, 32 is 22% slower; 256 kept inside the flat band")
-                    :apple (wg-row 256 32 true "m1 max" "SIMD-group width 32" "2026-10-19 Apple M1 Max / MoltenVK, 16 paired runs: 32-1024 medians within ~5% and no size won more than 6/16; 256 kept as the most frequent paired winner")
-                    :intel (wg-row 128 32 true "g31" "subgroup width 8/16/32; 128 is a multiple of all three" "2026-10-19 BMG G31 / ANV, 6 paired runs: 32-256 flat within 2% (64 won 4/6 on noise-level margins), 512/1024 marginally slower; 128 kept as the subgroup-safe row inside the flat band")
-                    :arm (wg-row 128 16 false "" "Mali execution widths 4-32 all divide 128" "")
-                    :amd (wg-row 1024 64 true "680m" "wavefront width 64; measurement chose the top of the bound" "2026-10-19 Radeon 680M / RADV, 6 paired runs: 1024 won 5/6 and is 28% faster than the provisional 256 (median 334,528 vs 467,981 ns); 32 slowest")
-                    :unknown (wg-row 256 32 false "" "portable fallback" "")))
+                    :nvidia (wg-row 256 32 true "xavier" "agx|tegra" "warp width 32; 256 is 8 warps per workgroup" "2026-10-19 Xavier nvgpu, 6 paired runs: 128-1024 flat within 2%, 32 is 22% slower; 256 kept inside the flat band")
+                    :apple (wg-row 256 32 true "m1 max" "" "SIMD-group width 32" "2026-10-19 Apple M1 Max / MoltenVK, 16 paired runs: 32-1024 medians within ~5% and no size won more than 6/16; 256 kept as the most frequent paired winner")
+                    :intel (wg-row 128 32 true "g31" "" "subgroup width 8/16/32; 128 is a multiple of all three" "2026-10-19 BMG G31 / ANV, 6 paired runs: 32-256 flat within 2% (64 won 4/6 on noise-level margins), 512/1024 marginally slower; 128 kept as the subgroup-safe row inside the flat band")
+                    :arm (wg-row 128 16 false "" "" "Mali execution widths 4-32 all divide 128" "")
+                    :amd (wg-row 1024 64 true "680m" "" "wavefront width 64; measurement chose the top of the bound" "2026-10-19 Radeon 680M / RADV, 6 paired runs: 1024 won 5/6 and is 28% faster than the provisional 256 (median 334,528 vs 467,981 ns); 32 slowest")
+                    :unknown (wg-row 256 32 false "" "" "portable fallback" "")))
    :default
 (def workgroup-defaults
   "Per-vendor workgroup rows (ADR-0355). The rows hardware answered for are
@@ -375,23 +415,43 @@
   name-vendor-fragments) is how this table recognises it. A fragment match
   is deliberately coarse (a name containing the fragment counts as the
   measured device); it narrows the flag, it never widens it past a named
-  device."
+  device.
+
+  :measured-device-alternates (measured rows only, ADR-0358 amendment
+  2026-10-25) is the key's '|'-separated alternate-fragment string, and the
+  key is read as a SET: the fragment plus ONE alternate per field, one name
+  part keeping the flag only when it carries every fragment of one set. The
+  :nvidia row's 'agx|tegra' spells the two attested names of its one
+  measured host -- the wire-42 INFO receipt says 'NVIDIA Tegra Xavier
+  (nvgpu)', the CUDA channel says 'NVIDIA Jetson AGX Xavier' -- so the sets
+  are {xavier, agx} / {xavier, tegra} and the row-(iv) transplant
+  ('xavier'+'agx' alone) is refused: it would deny the measured device its
+  flag under its own probe receipt. A row with no alternates ('') keeps the
+  single-fragment contract. The set closes the NX hole fail-closed:
+  'Jetson Xavier NX' (also sm_72) and a bare 'Xavier' attach nothing, while
+  named residuals ('Jetson AGX Xavier Industrial', 'Tegra Xavier NX') ride
+  as NAMED BEHAVIOR, not measurement claims -- the descriptor surface has no
+  device-id axis and none is invented here."
   {:nvidia {:size 256 :execution-width 32 :measured? true
             :measured-device "xavier"
+            :measured-device-alternates "agx|tegra"
             :basis "warp width 32; 256 is 8 warps per workgroup"
             :evidence "2026-10-19 Xavier nvgpu, 6 paired runs: 128-1024 flat within 2%, 32 is 22% slower; 256 kept inside the flat band"}
    :apple {:size 256 :execution-width 32 :measured? true
            :measured-device "m1 max"
+           :measured-device-alternates ""
            :basis "SIMD-group width 32"
            :evidence "2026-10-19 Apple M1 Max / MoltenVK, 16 paired runs: 32-1024 medians within ~5% and no size won more than 6/16; 256 kept as the most frequent paired winner"}
    :intel {:size 128 :execution-width 32 :measured? true
            :measured-device "g31"
+           :measured-device-alternates ""
            :basis "subgroup width 8/16/32; 128 is a multiple of all three"
            :evidence "2026-10-19 BMG G31 / ANV, 6 paired runs: 32-256 flat within 2% (64 won 4/6 on noise-level margins), 512/1024 marginally slower; 128 kept as the subgroup-safe row inside the flat band"}
    :arm {:size 128 :execution-width 16 :measured? false
          :basis "Mali execution widths 4-32 all divide 128"}
    :amd {:size 1024 :execution-width 64 :measured? true
          :measured-device "680m"
+         :measured-device-alternates ""
          :basis "wavefront width 64; measurement chose the top of the bound"
          :evidence "2026-10-19 Radeon 680M / RADV, 6 paired runs: 1024 won 5/6 and is 28% faster than the provisional 256 (median 334,528 vs 467,981 ns); 32 slowest"}
    :unknown {:size 256 :execution-width 32 :measured? false
@@ -756,16 +816,20 @@
            ;; device through :device, :name, or the :vendor name key -- the
            ;; key classify-vendor matches and device-from-info fills with
            ;; deviceName. A named device keeps the row's measured flag only
-           ;; when its name carries the row's :measured-device fragment.
+           ;; when ONE name part carries every fragment of one of the row's
+           ;; key sets (the :measured-device fragment plus one '|'-alternate
+           ;; of :measured-device-alternates; the fragment alone where the row
+           ;; carries no alternates -- ADR-0358 amendment 2026-10-25).
            p-device (option-value-of [:option :string] (document-string-value (dgk device :device)) "")
            p-name (option-value-of [:option :string] (document-string-value (dgk device :name)) "")
            p-vendor (option-value-of [:option :string] (document-string-value (dgk device :vendor)) "")
            named-device? (or (not (blank-str? p-device)) (not (blank-str? p-name)) (not (blank-str? p-vendor)))
            frag (option-value-of [:option :string] (document-string-value (dgk row :measured-device)) "")
+           malt (option-value-of [:option :string] (document-string-value (dgk row :measured-device-alternates)) "")
            measured-device? (and (not (blank-str? frag))
-                                 (or (substr-hits (string-ascii-lower p-device) frag)
-                                     (substr-hits (string-ascii-lower p-name) frag)
-                                     (substr-hits (string-ascii-lower p-vendor) frag)))
+                                 (or (key-hits (string-ascii-lower p-device) frag malt)
+                                     (key-hits (string-ascii-lower p-name) frag malt)
+                                     (key-hits (string-ascii-lower p-vendor) frag malt)))
            basis (if (< 0 probed)
                    (string-concat (option-value-of [:option :string] (document-string-value (dgk row :basis)) "")
                                   (string-concat (string-concat " (bounded by probed device limit " (i64-text (option-value-of [:option :i64] (document-i64-value lim) 0))) ")"))
@@ -794,9 +858,11 @@
   Same descriptor in, same map out, forever. :measured? is the row's: true
   where a hardware measurement (ADR-0358) chose the size, false while the
   row is still the provisional design default -- and, for a descriptor that
-  NAMES a device, true only when that name carries the row's
-  :measured-device fragment (uB5G: the flag is evidence about the measured
-  device, not the vendor class)."
+  NAMES a device, true only when ONE name part carries every fragment of one
+  of the row's key sets (the :measured-device fragment plus one '|'-alternate
+  of :measured-device-alternates, the fragment alone where the row carries no
+  alternates; uB5G: the flag is evidence about the measured device, not the
+  vendor class)."
   [device]
   (let [vendor (classify-vendor device)
         row (get workgroup-defaults vendor (workgroup-defaults :unknown))
@@ -816,7 +882,10 @@
         ;; never measured ({:vendor \"Apple M3\"}) inherited the row's flag,
         ;; while the measured NVIDIA device spelled by name (Tegra Xavier)
         ;; was denied it. Now a named device keeps the row flag only when
-        ;; its name carries the row's :measured-device fragment (matched
+        ;; ONE name part carries every fragment of one of the row's key sets
+        ;; (the :measured-device fragment plus one '|'-alternate of
+        ;; :measured-device-alternates; the fragment alone where the row
+        ;; carries no alternates -- ADR-0358 amendment 2026-10-25),
         ;; case-insensitively, per name part, the name-vendor-fragments
         ;; idiom). An UNNAMED (vendor-id-only) descriptor keeps the row-level
         ;; flag as the only available signal.
@@ -824,8 +893,13 @@
                            [(:device device) (:name device) (:vendor device)])
         named-device? (boolean (seq name-parts))
         measured-device? (when-let [frag (:measured-device row)]
-                           (boolean (some #(str/includes? (str/lower %) frag)
-                                          name-parts)))]
+                           (let [alts (remove #(= "" %)
+                                              (str/split (or (:measured-device-alternates row) "") #"\|"))]
+                             (boolean (some (fn [part]
+                                              (and (str/includes? (str/lower part) frag)
+                                                   (or (empty? alts)
+                                                       (some #(str/includes? (str/lower part) %) alts))))
+                                            name-parts))))]
     {:vendor vendor
      :target (target-for (:api device) vendor)
      :workgroup-size (or probed (:size row))
