@@ -6,6 +6,7 @@ on:
       - '.github/workflows/mac-selfhost-aiueos.yml'
       - 'scripts/seed/check-aiueos-user-elf-native.py'
       - 'scripts/seed/check-aiueos-user-macos-native.py'
+      - 'scripts/seed/collect-macos-crash-summary.py'
       - 'scripts/seed/native_build_queue.py'
       - 'seed/FULL-MANIFEST'
       - 'seed/*.kotoba'
@@ -31,6 +32,12 @@ jobs:
             --output "$RUNNER_TEMP/mac-root-admission.json" -- \
             python3 scripts/seed/check-aiueos-user-macos-native.py \
               --output "$RUNNER_TEMP/mac-root"
+      - name: Summarize native crash if the root gate failed
+        if: failure()
+        run: |
+          python3 scripts/seed/collect-macos-crash-summary.py \
+            --process amu-full-root \
+            --output "$RUNNER_TEMP/mac-root-crash-summary.json"
       - name: Upload source-bound Mac receipts
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -39,4 +46,5 @@ jobs:
           path: |
             ${{ runner.temp }}/mac-root-admission.json
             ${{ runner.temp }}/mac-root/mac-aiueos-user-target.json
+            ${{ runner.temp }}/mac-root-crash-summary.json
           if-no-files-found: warn
