@@ -1,0 +1,2229 @@
+;; ⚠ Changing anything below means regenerating `deps-lock.edn` IN THE SAME
+;; COMMIT:
+;;
+;;     kbb --backend sci scripts/lock-classpath.cljk
+;;
+;; The lock is what lets `bin/kotoba` resolve this closure without a JDK
+;; (ADR-0202). A stale one is not an error you find later -- it silently sends
+;; the compiler back to `kbb -Spath`, and the JDK-free property is gone
+;; with nobody notified.
+;;
+;; This is not hypothetical: the lock went stale three times in one afternoon
+;; (two pin advances and one new dependency, each landing while a lock refresh
+;; was in review). The murakumo fleet gate `compiler-jdk-free` refuses a
+;; mismatch, so the signal is visible -- but the frequency is the reason
+;; ADR-0202's follow-up is to derive the closure from git and stop needing a
+;; lock on the common path at all.
+{:paths ["src" "resources" "tools"]
+ :deps {
+        ;; kotoba.lang.error replaced clojure.lang.ExceptionInfo here (2026-09-25).
+        ;; An explicit floor: tools.deps takes the NEWEST sha it is shown.
+        io.github.kotoba-lang/error {:git/sha "838dec56c9a5b74f9eec825a2fb28bda157f8cd3"}
+        ;; kotoba.io replaced clojure.java.io here (2026-09-24). An explicit floor:
+        ;; kotoba.io carries clojure.java.io's file/as-file/as-relative-path/
+        ;; make-parents/delete-file from 98045c7, and tools.deps takes the NEWEST
+        ;; sha it is shown.
+        io.github.kotoba-lang/io {:git/sha "72dde04b4c32854d70d17a670b277f8f7957a784"}
+        ;; kotoba.process replaced clojure.java.shell here (2026-09-24). An explicit
+        ;; floor: kotoba.process/sh parses clojure.java.shell's options from db49ea9,
+        ;; and tools.deps takes the NEWEST sha it is shown.
+        io.github.kotoba-lang/process {:git/sha "db49ea936e53d0bc698be0db79bf96ad86b5f7d0"}
+        ;; kotoba.pprint replaced clojure.pprint here (2026-09-24): the same
+        ;; bytes (cljs.pprint transcribed). An explicit floor; tools.deps takes the
+        ;; NEWEST sha it is shown.
+        io.github.kotoba-lang/pprint {:git/sha "5c9d4aea71d6caac529fffcf361aba0f87ee485e"}
+        ;; kotoba.lang.text, not clojure.string. Pinned as an explicit floor:
+        ;; tools.deps takes the NEWEST sha it is shown, so without a floor here
+        ;; this repo silently rides whatever a sibling happens to name.
+        ;; Advanced 2026-09-11, 2ee6dce2 -> 3dcb2ab0 (text main, ahead 16, behind
+        ;; 0, forward only): every module under src/ carries the ns attr-map
+        ;; `{:kotoba/export [...]}` (amu#942's spelling, emitted by amu#946's
+        ;; annotator). The project route (`amu check <entry> --source-path ...`)
+        ;; refuses a REQUIRED module that declares no export vector, so with the
+        ;; compiler's own 58 modules annotated (#946) the refusal moved to the
+        ;; git-dep modules their closures reach -- measured on 16 of them at
+        ;; 1f57a6c6 (kotoba.artifact.core x11, kotoba.abi.contract x2,
+        ;; kotoba.artifact.runtime-identity x1, kotoba.sema x2). Every
+        ;; first-party dependency on this classpath was annotated the same way
+        ;; and its main pinned here in this one commit; each pin below that says
+        ;; `same wave` carries that change and that repo's .cljk rename
+        ;; (adr-2609111500) / kbb cutover (adr-2609112000). Superproject ADR
+        ;; adr-2609111900, source-side wave. io-ipld stays HELD (see its note).
+        io.github.kotoba-lang/text {:git/sha "3dcb2ab087933dc7b703b340dac9afce62cb30ff"}
+        ;; kotoba.bytes. Declared 2026-09-26 as an explicit floor, d5259f35 -> 630e37cf
+        ;; (bytes main, ahead 6, behind 0, forward only): it arrived only through
+        ;; artifact / kotoba-component, which name d5259f35, where `->bytes` has no
+        ;; Kotoba reading -- 13 selfhost rows stopped at bytes.cljk:156 `expression
+        ;; type mismatch: expected vector-i64, got string` (superproject
+        ;; adr-2609242330). 630e37cf gives every function a Kotoba reading (the
+        ;; project check passes) with the host bodies unchanged.
+        io.github.kotoba-lang/bytes {:git/url "https://github.com/kotoba-lang/bytes.git"
+                                     :git/sha "630e37cfce401e5e508ca48a57f2751e3b30e3b1"}
+        ;; The ONE classification lattice (root ADR-2607280100 D1, which exists
+        ;; because there were two copies of that rank map and merging them was
+        ;; the point). `kotoba.compiler.effect-classification` ranks a
+        ;; capability's declared classification with it and defines no second
+        ;; copy.
+        ;;
+        ;; It was already on this classpath, transitively through osaho, and
+        ;; that is exactly why it is declared here: a dependency that arrives
+        ;; only through a sibling rides whatever sha that sibling names, and
+        ;; nothing in this repository would notice the lattice changing under
+        ;; it.
+        ;;
+        ;; ADVANCED IN THE SAME COMMIT, b13c5e12 -> d87f3342 (security main,
+        ;; ahead 44, forward only), because the sha osaho names is from BEFORE
+        ;; D1 landed. Measured 2026-09-10 at b13c5e12: `abac/classification-rank`
+        ;; is still its own `{:public 0 :internal 1 :confidential 2
+        ;; :restricted 3}` map, a SECOND copy of the lattice -- the exact
+        ;; duplication ADR-2607280100 D1 exists to remove and records as
+        ;; "実装済み" in security's main. It was implemented, and it had not
+        ;; arrived: this compiler was borrowing a lattice that was still two.
+        ;; d87f3342 is where `classification-rank` is the alias, and where
+        ;; `canonical`, `unknown-labels` and `:personal` as a spelling of rank
+        ;; 2 exist at all. `unknown-labels` is what
+        ;; `kotoba.compiler.effect-classification` uses to say a declaration is
+        ;; outside the lattice without writing a membership test of its own.
+        io.github.kotoba-lang/security
+        {:git/url "https://github.com/kotoba-lang/security.git"
+         ;; Advanced 2026-09-11, d87f3342 -> 0e8e1a61 (security main, ahead 6,
+         ;; behind 0, forward only): same wave as the text pin above --
+         ;; `{:kotoba/export [...]}` on every module.
+         :git/sha "f9b328ce5f07a2d9fd7dd115c25d6db166572f1e"} ;; Advanced 2026-09-24 0e8e1a61 -> f9b328ce (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+       org.clojure/clojure {:mvn/version "1.12.0"}
+        ;; Advanced 2026-09-09, 32ee84b2 -> 3abf80a1 (abi main, ahead 1,
+        ;; forward only). The same BigInt class as the osaho pin below, but
+        ;; LATENT here: `world-wit` and `capability-import-name` are not on
+        ;; any route this compiler takes -- measured by loading an
+        ;; instrumented copy first on the classpath during a failing wasm
+        ;; compile and observing that the namespace never loads. Taken anyway
+        ;; because the functions are broken as functions (`world-wit` on a
+        ;; two-id set throws `Cannot compare 23 to 7`, and
+        ;; `capability-import-name` throws `Cannot create property
+        ;; closure_uid_... on bigint` because that map has 18 entries and so
+        ;; hashes rather than scanning), and because abi owns the id
+        ;; vocabulary.
+        io.github.kotoba-lang/abi {:git/url "https://github.com/kotoba-lang/abi.git"
+                                   ;; Advanced 2026-09-11, 3abf80a1 -> b0dad3f8 (abi main, ahead 8, behind
+                                   ;; 0, forward only): same wave as the text pin above -- `{:kotoba/export
+                                   ;; [...]}` on every module.
+                                   :git/sha "4e67b6fabc9e8584cb127fdb71b3fc47e2eadc59"}
+        ;; Advanced 2026-09-03 (ADR 0330) with kotoba-lang/provider f040fc0,
+        ;; which retires org.clojure/data.json for this namespace and needs
+        ;; d5137c7's kwargs surface to be a drop-in.
+        io.github.kotoba-lang/json
+        {:git/url "https://github.com/kotoba-lang/json.git"
+         ;; NOT advanced 2026-09-11 with the {:kotoba/export} wave, on purpose.
+         ;; json main (ce3c2b7b, annotated, nbb 32 tests / 115 assertions
+         ;; green) assembles kotoba.json from one repository per definition:
+         ;; measured with `scripts/lock-classpath.cljk`, taking it adds 19
+         ;; `io.github.kotoba-lang/json-*` git coordinates to the JDK-free
+         ;; closure (26 -> 45 entries). That is a closure decision for this
+         ;; repository, not a pin advance, and it clears nothing here: the two
+         ;; modules whose closure reaches json.data-json (host_profile,
+         ;; test_profile) are refused on the project route for its missing
+         ;; export vector, and at ce3c2b7b json.data-json requires json.core,
+         ;; which requires those 19 repositories -- none of which carries the
+         ;; annotation -- so the same refusal would name kotoba.json.emit or
+         ;; a sibling instead. The count moves by 0 and the closure by 19.
+         ;;
+         ;; Advanced 2026-09-12, 15fd195a -> ce3c2b7b (json main, ahead 20,
+         ;; behind 0, forward only), and the note above is CORRECTED by
+         ;; measurement: at ce3c2b7b `json.core` requires `kotoba.lang.text`
+         ;; and nothing else -- the 19 `json-*` repositories are pulled by the
+         ;; FACADE `kotoba.json` (assembled one repo per definition), which no
+         ;; module on this classpath requires (0 requires of `kotoba.json` /
+         ;; `kotoba.json.*` across the 25 src roots, amu src/test, and the test
+         ;; alias roots). So the 4 modules refused for `json.data-json`'s
+         ;; missing export vector at 46d91a25 (cli, evm_cli, host_profile,
+         ;; test_profile) move to their next refusal, and the facade's
+         ;; per-definition repositories are EXCLUDED below rather than taken:
+         ;; they carry one unannotated module each, and taking them puts 19
+         ;; src roots on the selfhost denominator that nothing links. Same
+         ;; shape and same decision as the coll / edn floors at the end of this
+         ;; map. `kotoba.json` itself stays in json's src (annotated); its
+         ;; `:require` of the excluded namespaces makes it a
+         ;; "required module is missing" on the project route, which is the
+         ;; honest name for a facade whose parts this closure does not carry.
+         :git/sha "a5bb7ea74794dc6fae52d6f13d41602564c8877f" ;; Advanced 2026-09-24 ce3c2b7b -> a5bb7ea7 (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         :exclusions [io.github.kotoba-lang/json-decode
+                      io.github.kotoba-lang/json-encode
+                      io.github.kotoba-lang/json-json]}
+        ;; Advanced 2026-09-08 to f803255e (PR #99): `typed-list-nth`, the
+        ;; accessor a [:list T] never had on this backend. Before it, a list
+        ;; could be built and counted and never read -- `amu check` returned 0
+        ;; and `amu compile --target web` returned 70 "unsupported KIR node",
+        ;; for the whole module whether the function was reached or not.
+        io.github.kotoba-lang/kotoba-script
+        {:git/url "https://github.com/kotoba-lang/kotoba-script.git"
+         ;; Advanced 2026-09-11, b4099699 -> 2033d63b (kotoba-script main, ahead
+         ;; 6, behind 0, forward only): same wave as the text pin above --
+         ;; `{:kotoba/export [...]}` on every module.
+         ;; Advanced 2026-09-16, 2033d63b -> 8a2d9b6f (kotoba-script #102, forward
+         ;; only): a closure dispatcher is known by its `__kotoba_closure_*`
+         ;; first parameter, so the module dispatcher this repository's
+         ;; linker renames to `kotoba_module__m__n` guards a closure, not an
+         ;; i64 -- every linked program with a closure across modules trapped
+         ;; `invalid-i64` on the js target alone (ADR 0350;
+         ;; scripts/test-nbb-test.cljk's --source-path case).
+         ;; Advanced 2026-09-23, 8a2d9b6f -> 63d576e5 (kotoba-script #103, forward
+         ;; only): the emitted runtime checks a value where it enters, not on
+         ;; every operation -- string building and document walks were O(n^2)
+         ;; (a 30-row HTML render 11.1 ms -> 0.79 ms, same bytes out).
+         ;; Advanced 2026-09-24, 63d576e5 -> 98f31c66 (kotoba-script main, ahead 5,
+         ;; forward only): adr-2609242100 P1 -- the prelude's literalBytes 4096 ->
+         ;; 65536 and ADT depth 8 -> 12, the numbers of kotoba-lang
+         ;; lang/limits.edn; the js-parity goldens and runtime/http/route-decide.mjs
+         ;; move with it in this commit.
+         ;; Advanced 2026-09-24, 98f31c66 -> fe952ba6 (kotoba-script main, ahead 4,
+         ;; behind 0, forward only by gh api compare): adr-2609242100 P3 -- the
+         ;; prelude walks a tree-typed value in full only at a boundary (the
+         ;; export wrapper the host calls, capability results), iteratively,
+         ;; against the 65,536-node / 1 MiB budget (`budget/boundary-nodes` /
+         ;; `-bytes`); constructors and every call inside the module check
+         ;; tags only. Moves WITH osaho below.
+         ;; Advanced 2026-09-24, fe952ba6 -> 73801678 (kotoba-script main, ahead 4,
+         ;; behind 0, forward only), adr-2609242100 P4: ESM profile: four named budgets, frames 1024, instantiateKotoba(grants, budgets).
+         ;; Advanced 2026-09-25, 73801678 -> d90bc851 (kotoba-script main, ahead 2, forward only):
+         ;; the bytes heads and string-from-utf8 in emitted ESM, named traps (string-from-bytes, superproject adr-2609242330).
+         ;; Advanced 2026-09-26, d90bc851 -> 6500189e (kotoba-script main tip, forward only):
+         ;; vector-take / vector-f64-take in emitted ESM (vectorTake, named traps); carries the 2026-09-25 kotoba.test codemod (tests only) -- selfhost stage 2 (superproject adr-2609242330)
+         ;; Advanced 2026-09-30, 6500189e -> 58d75dae (kotoba-script main, forward only):
+         ;; cell() debits one unit of fuel before its cell -- ADR 0353 point 7, floor :allocation-budget-targets.
+         ;; Advanced 2026-10-06, 58d75dae -> 66bf70b5 (kotoba-script main, forward only):
+         ;; typed-list-conj appends to a [:list T] inline, its prelude unchanged -- floor :empty-vector-field.
+         ;; Advanced 2026-10-08: published Script #112 accepts empty nominal records
+         ;; with unchanged ordinary-module bytes and bounded schema validation.
+         ;; Advanced 2026-10-09, 12060e38 -> e414c0d4 (kotoba-script main, #113,
+         ;; forward only): the :bytes and :link documents in emitted ESM -- root ADR-2610092310 S3.
+         ;; Advanced 2026-10-11, e414c0d4 -> c0120c83 (kotoba-script main, #114 +
+         ;; #115, forward only): i64-shift-left/right, u64-shift-right, bit-or,
+         ;; bit-not and typed-set-nth in emitted ESM -- io-ipld dag_cbor_write's
+         ;; js leg.
+         :git/sha "c0120c834dfbdfbf763a123d6ba8f4f46788d1e9"}
+        ;; ADR-0222: source reading and semantic analysis live behind the
+        ;; kotoba-sema repository boundary and public semantic-analysis API.
+        ;;
+        ;; THIS REPOSITORY SHIPS NO COPY OF THE GRAMMAR (2026-09-03).
+        ;; It reads kotoba-sema's, across this pin.
+        ;;
+        ;; It used to ship one at `resources/kotoba/lang/guest-grammar.edn`.
+        ;; `:paths` precedes the dependency closure, so that copy SHADOWED
+        ;; kotoba-sema's -- and kotoba-sema owns `kotoba.compiler.frontend`,
+        ;; whose `load-catalog-forbidden` is the production reader. The
+        ;; frontend's refusal set was therefore decided by a file in a
+        ;; different repository, updated in a different commit (ADR 0327).
+        ;;
+        ;; ADR 0330's postscript recorded the cost: the pin and the vendored
+        ;; grammar had to move in ONE commit, and on 2026-09-03 #762 landed the
+        ;; pair at 3e3f9748 while #761 landed the next resync of the copy alone
+        ;; minutes apart -- each green on its own base, the merge red, and
+        ;; nothing ran the comparing test on the combination until it was main.
+        ;;
+        ;; Nothing under `src/` ever read the resource (measured 2026-09-03),
+        ;; and the `bin/amu` JDK-free route has no classpath reader at all --
+        ;; which is why `definition-identity/profile-version` repeats the
+        ;; number as a constant. So the copy's only effect was deciding which
+        ;; grammar the frontend read. With it deleted, THE GRAMMAR AND THE
+        ;; FRONTEND TRAVEL IN ONE PIN: a pin left behind is an older language
+        ;; compiled coherently, not a frontend reading a grammar it was not
+        ;; built against.
+        ;;
+        ;; Pin held at df383ba0 across that deletion: kotoba-sema @df383ba0's
+        ;; grammar is byte-identical to the copy that was deleted, so the
+        ;; digest below did not move and the deletion changed no bytes the
+        ;; compiler reads.
+        ;;
+        ;; THE GRAMMAR, MEASURED -- these two lines are PARSED by
+        ;; `guest_grammar_vendor_test/deps-edn-claim`, which recomputes the
+        ;; digest of the copy on the classpath and refuses if this comment and
+        ;; the file disagree. Before that test existed this comment drifted: it
+        ;; read 3e3f9748 while the file on disk hashed to 67561e57, and nothing
+        ;; said so.
+        ;;
+        ;;   grammar-sha256    da68c3fa4065087974abb60e4f0ebca427d0a1ff5f169b1431cf0bef6bd4504d
+        ;;   kotoba-sema-pin   a3303527008c7e52b33c08cd580c7dc71eeead60
+        ;;
+        ;; `guest_grammar_vendor_test/authority-digest-history` ends with the
+        ;; same digest, so the pin, the prose and the history move in one
+        ;; commit or the suite goes red.
+        ;;
+        ;; Advanced 2026-09-05 (kbb slice 3), 63d76616 -> bf01d4a8, and the
+        ;; grammar moved with it (871f3873 -> 9d701ea: the env-read/fs-browse
+        ;; string heads). 9d701ea is APPENDED to the history vector, not
+        ;; substituted. bf01d4a8 also carries the compiler wire ids 33/34
+        ;; (:env/read / :fs/browse) in the vendored capability catalog.
+        ;; What the advance buys, and why it is not optional:
+        ;;
+        ;;  - 72c2577 gives `peek`, `pop`, `keys` and `vals` primitives. Without
+        ;;    it the frontend answers all four with `operation has no admitted
+        ;;    lowering`, measured on the old pin at exit 65.
+        ;;  - c0dfa84 refuses a malformed top-level declaration instead of
+        ;;    crashing on its name. `(defn 42 [] 0)` was an exit-70 internal
+        ;;    compiler error on the old pin, measured; it is a diagnostic now.
+        ;;  - b43d3fb refuses a declaration that compiled and was then silently
+        ;;    dropped.
+        ;;  - 63d76616 resyncs kotoba-sema's copy of
+        ;;    `lang/capability-catalog.edn` from the authority. THIS
+        ;;    REPOSITORY'S copy of that same authority, at
+        ;;    `resources/kotoba/lang/capability-catalog.edn`, SHADOWS
+        ;;    kotoba-sema's on this classpath, so it is resynced in this commit
+        ;;    too -- FROM THE AUTHORITY, not from kotoba-sema. It carries
+        ;;    `:screen/observe` (31) and `:screen/act` (32), which kotoba-sema
+        ;;    c823461 had added to its own vendored copy while the authority
+        ;;    named neither; resyncing the shadowing copy from the copy it
+        ;;    shadows would have carried that misplacement into a third
+        ;;    repository (kotoba-lang 5b54e5e3, ADR-2609031100).
+        ;; Advanced 2026-09-07, 3378b1d3 -> af8cc780 (kotoba-sema main, ahead 16,
+        ;; forward only by merge-base --is-ancestor): kotoba-sema#61/#67 admit
+        ;; `kernel-undefined-opcode-handler-address` (arity 0, sibling of
+        ;; `kernel-double-fault-handler-address`), and the grammar moved with it
+        ;; a1b44423 -> ee7ea37c. kotoba-lang's authority passed through
+        ;; e333abac (f1f62cb, the same head) on the way to ee7ea37c (ba3f941,
+        ;; the fs-browse-dir head); no kotoba-sema commit carried e333abac, so
+        ;; only ee7ea37c is APPENDED to `authority-digest-history`. Measured at
+        ;; these pins: `fs-browse-dir` is a grammar head with no lowering in
+        ;; kotoba-kir 658436f2 and no row in kotoba-verifier ed9bf9b4 (0 files
+        ;; name it in either), and the capability catalog did not move
+        ;; (e191c8b1 on the authority, on kotoba-sema and on this repository's
+        ;; copy alike) -- so it is admitted by the grammar and refused at
+        ;; compile time, not at run time.
+        ;; Advanced 2026-09-07, af8cc780 -> 31d0d463 (kotoba-sema main, ahead 5,
+        ;; forward only). The grammar did NOT move (guest-grammar.edn is not in
+        ;; the diff), so `grammar-sha256` above and `authority-digest-history`
+        ;; are untouched by this advance. What it buys:
+        ;;
+        ;;  - 31d0d463 stops `source-location` re-deriving line/column from
+        ;;    scratch at every located node -- it used to `subs` the whole
+        ;;    prefix from offset 0 and split it on newlines, which is O(offset)
+        ;;    per node and quadratic in source size. Measured on this repo's
+        ;;    own workload at these pins, `amu check` on a 147,835-byte source:
+        ;;    12,442 ms -> 3,551 ms, and the reader's own share 9,371 -> 355 ms.
+        ;;    Output is byte-identical, CIDs and spans included.
+        ;;  - it also carries kotoba-sema's own capability-catalog resync and an
+        ;;    i64 min/max test; THIS repository's copy of the catalog shadows
+        ;;    kotoba-sema's on this classpath and is not resynced here, because
+        ;;    this advance does not claim a catalog change.
+        ;; 2026-10-08: published typed opaque guest captures (Sema PR98/99,
+        ;; Script PR111, Osaho PR103), preserving integer closure ABI/budgets.
+        io.github.kotoba-lang/kotoba-sema
+        ;; 96fd4e19 (2026-09-08, +2 on 7154ffb6): `(def k 1.5)` is admitted.
+        ;; `constant-literal?` asked `value/f64-value?` -- a host double -- so
+        ;; an f64 constant was refused under the JVM-free reader. THIS
+        ;; REPOSITORY found it again: `f64-constants-are-closed-and-use-\
+        ;; canonical-bit-lowering` was the last error in this suite against the
+        ;; unified reader. Third site in frontend.cljc with that shape, after
+        ;; the f32 branch and the map-key/document shims.
+        ;;
+        ;; 7154ffb6 (2026-09-08, +2 on 9d87c113): the reader reads hex. THIS
+        ;; REPOSITORY IS WHY IT WAS FOUND. Advancing to 9d87c113 alone turned
+        ;; `bit-or-and-not-match-jvm-semantics` and
+        ;; `i64-shifts-cover-the-full-width` red on `(bit-or 0xF000 0x00F0)`:
+        ;; kotoba-reader matched decimal digits only, so `0xF000` became a
+        ;; SYMBOL and was refused as an unbound variable. 79 `.kotoba` files
+        ;; use `0x` literals and none of them could be read on nbb -- a defect
+        ;; older than the pin that surfaced it, and invisible while the JVM
+        ;; still had `clojure.tools.reader` to handle hex for free.
+        ;; The same commit refuses `0377` instead of reading it as decimal 377
+        ;; where tools.reader read octal 255 -- two hosts, two numbers, no
+        ;; error on either.
+        ;;
+        ;; 9d87c113 (2026-09-08, +2 on 6c895d10): kotoba-sema reads with ONE
+        ;; reader on both hosts and no longer depends on
+        ;; `org.clojure/tools.reader`. That dependency reached this
+        ;; repository's production classpath transitively and ONLY through
+        ;; kotoba-sema; measured across this pin advance,
+        ;; `clojure -Spath | grep -c tools.reader` goes 1 -> 0. This is the
+        ;; first third-party JVM library to actually LEAVE the compiler's
+        ;; closure rather than be re-declared somewhere quieter.
+        ;;
+        ;; The grammar bytes do not move across it (515bbc7d either side, and
+        ;; the compare names only deps.edn, run-tests.cljk, frontend.cljc,
+        ;; kotoba_reader.cljc and the reader test), so `grammar-sha256` and
+        ;; `authority-digest-history` are unchanged and the pin prose above
+        ;; moves alone.
+        ;;
+        ;; 6c895d10 (2026-09-08, +12): f32 decimal literals reach the f32
+        ;; branch under the JVM-free reader. Before this pin `(f32-add 1.5
+        ;; 2.5)` and `(defn main [] :f32 1.5)` compiled on the JVM and were
+        ;; REFUSED on nbb -- and `bin/amu` runs nbb for wasm32-browser, so the
+        ;; default target of this compiler could not write an f32 literal. It
+        ;; went unseen because the only test of the feature was `.clj`; it is
+        ;; `.cljc` and in `run-tests.cljk` as of that commit.
+        {:git/url "https://github.com/kotoba-lang/kotoba-sema.git"
+         :git/sha          ;;
+         ;; Advanced 2026-09-09, 96fd4e19 -> 930373c7 (kotoba-sema main, forward only).
+         ;; One file: the vendored capability catalog gains :io/write, wire 37,
+         ;; `:string -> :string` -- the bytes a command writes to stdout, answered with
+         ;; the decimal byte count (kotoba-lang a0408d81 is the authority).
+         ;;
+         ;; Advanced AGAIN 2026-09-10, 930373c7 -> 0470c524 (forward only: 2 ahead,
+         ;; 0 behind), for the other two wires a command needs -- :cli/args (38) and
+         ;; :io/write-error (39). The prose block at the top of this file states this
+         ;; same sha, and `guest_grammar_vendor_test/deps-edn-claim` compares the two:
+         ;; it went red because the first advance updated this narrative and not that
+         ;; claim, so the file pinned 0470c524 while announcing 96fd4e19. Two literals
+         ;; for one fact, which is the drift that test exists to catch.
+         ;; This pin is not a convenience. The frontend that raises `cap-call names an
+         ;; unregistered capability` is in kotoba-sema and reads THAT copy, so a
+         ;; capability in the authority is invisible to this compiler until this pin
+         ;; moves. amu's own resources/kotoba/lang/capability-catalog.edn is not the
+         ;; one consulted -- measured on the resolved classpath, where the only entry
+         ;; carrying the resource is kotoba-sema's.
+         ;; Advanced 2026-09-11, 0470c524 -> 8b288047 (forward only: 10 ahead,
+         ;; 0 behind). The reason this pin moves is the last commit in that
+         ;; range: a protocol declaration may carry documentation.
+         ;;
+         ;; `ns` and `defn` both admit a docstring; `defprotocol` and
+         ;; `definterface` did not -- a leading string sat in the first METHOD
+         ;; position and a trailing one after a parameter vector, and both were
+         ;; measured against a shape wanting exactly (name [params]). Measured
+         ;; 2026-09-11 through this CLI at the previous pin:
+         ;;
+         ;;   (defprotocol IP (-scan [this pattern]))                exit 0
+         ;;   (defprotocol IP "the one operation" (-scan [this p]))   exit 65
+         ;;   (defprotocol IP (-scan [this pattern] "method doc"))    exit 65
+         ;;
+         ;; All four :kotoba.error/protocol-declaration findings in the Q9
+         ;; wave-1 corpus came from ONE declaration -- datom.source/
+         ;; IPatternSource, whose docstring states the three invariants every
+         ;; implementation must satisfy -- so the only way past it was to
+         ;; delete that text, which is narrowing the component to compile it.
+         ;;
+         ;; The other nine commits in the range are the capability-catalog
+         ;; resyncs this block already describes plus a computed shift count
+         ;; and ADR-2607280100 Step 4; none changes what this compiler admits
+         ;; except through the same catalog path named above.
+         ;; Advanced AGAIN the same day, 8b288047 -> 9b153c7b (forward only:
+         ;; 2 ahead, 0 behind), for the defect the docstring fix uncovered one
+         ;; step behind it. The source reader had no `^` arm at all, so
+         ;; `^:private h` was read as two ordinary elements and every
+         ;; declaration head misreported it:
+         ;;
+         ;;   (defn ^:private h [x :i64] :i64 x)  "function parameters must be a vector"
+         ;;   (defrecord ^:no-doc Sq [side])      "defrecord requires a bounded name ..."
+         ;;   (defprotocol ^:no-doc IP (area [this]))  "... unique bounded ... signatures"
+         ;;
+         ;; Now `^meta` reads and merges with the source-location metadata,
+         ;; and `^:private` on a defn IS defn- -- exporting it is refused
+         ;; with :kotoba.error/export-names-private-function. The one
+         ;; behaviour that tightened: `(defrecord Sq [^:no-doc side])` was
+         ;; silently a TWO-field record before; it is one field now.
+         ;; Advanced 2026-09-11, 9b153c7b -> 5065a9c4 (forward only: 2 ahead,
+         ;; 0 behind). Diagnostics only -- admission is unchanged. The
+         ;; protocol-method refusal used to fold five causes into one
+         ;; sentence, and the one that actually occurs in the Q9 corpus (a
+         ;; method body with two expressions) was reported as `protocol
+         ;; method does not match its declaration` while the declaration
+         ;; matched perfectly. It now says `protocol method must contain one
+         ;; result expression`, mirroring defn; same error code throughout.
+         ;; Advanced 2026-09-11, 5065a9c4 -> 822496da (kotoba-sema main, forward
+         ;; only: 6 ahead, 0 behind). The commit this pin moves for is the last:
+         ;; the ns header admits an ATTR-MAP spelling of its clauses --
+         ;; `(ns NAME DOCSTRING? {:kotoba/export [...]} ...)` IS
+         ;; `(:export [...])` -- and `kotoba.sema/namespace-attr-map->clauses`
+         ;; is public, which `kotoba.compiler.project/module-info` now calls
+         ;; so the project route admits the same keys with the same refusals
+         ;; as the single-module route. This is the spelling dual-runtime
+         ;; source can carry: SCI's `ns` refuses `(:export ...)` outright, and
+         ;; measured 2026-09-11 in this repository, 19 of the 59 modules under
+         ;; src/ were refused in project mode ONLY for the missing export.
+         ;;
+         ;; The range also carries the .cljk rename (951491fe): kotoba-sema is
+         ;; .cljk-only from here, which the nbb fork this repository pins
+         ;; already loads (this repository's own src/ is .cljk). The grammar
+         ;; bytes move 515bbc7d -> 5a5a3d6c across this pin; the intermediate
+         ;; 10ff0062 (module type parameters) was never on this classpath and
+         ;; is not appended to `authority-digest-history`.
+         ;;
+         ;; Moved on the same day to 2275729c (kotoba-sema main, forward only:
+         ;; 4 ahead, 0 behind) for the two reader widenings landed after the
+         ;; attr-map merge: `#_` discard, `#?@` splicing conditionals,
+         ;; `#:ns{}` maps and `\uXXXX` escapes; then quote, `#"..."` and `#js`
+         ;; read as forms and refused BY NAME in admission. The grammar file
+         ;; is untouched across those four commits (measured: the compare names
+         ;; frontend.cljk, kotoba_reader.cljk and two tests), so the digest
+         ;; above and `authority-digest-history` do not move.
+         ;;
+         ;; 2026-09-11, 2275729c -> f1e5fd5a (kotoba-sema main, forward only):
+         ;; the require `:refer` wave. The grammar moves 5a5a3d6c -> 7262fae3
+         ;; (`:require-spec` admits `[m :refer [f]]` / `[m :as a :refer [f]]`
+         ;; and gains `:ns-refused-clauses`); the frontend refuses `:import` /
+         ;; `:require-macros` / `:refer-clojure` / `:use` BY NAME; the range
+         ;; also carries the reader increment b37f2b7 (`\c` char literals,
+         ;; `0N` / `1.5M`, large integer sets read as tagged host forms) and
+         ;; the kbb cutover text rewrite. The admission of `:refer` itself is
+         ;; THIS repository's (kotoba.compiler.project) -- the frontend never
+         ;; sees a `:require` clause -- and lands in the same commit as this
+         ;; pin, so the grammar and the linker that implements it travel
+         ;; together.
+         ;;
+         ;; 2026-09-11, f1e5fd5a -> 9a5f65ec (kotoba-sema main, forward only):
+         ;; the `:refer-clojure` no-op wave. The grammar moves 7262fae3 ->
+         ;; d07b8816 (`:ns :clauses` gains `:refer-clojure`; `:ns` gains a
+         ;; `:refer-clojure` entry; `:refer-clojure` leaves
+         ;; `:ns-refused-clauses`); the frontend admits `(:refer-clojure
+         ;; :exclude/:only [..])` as a no-op and refuses `:rename` by name
+         ;; (384aad6). The range also carries 1e1a357: the namespace /
+         ;; function docstring bound 4096 -> 65536 chars (still a bound;
+         ;; docstrings are outside identity). On the project route THIS
+         ;; repository (kotoba.compiler.project) validates the clause and
+         ;; strips it with `:require` before the frontend reads the module,
+         ;; so the linked source -- and the definition CIDs -- of a module
+         ;; with the clause are those of the module without it.
+         ;;
+         ;; 2026-09-11, 9a5f65ec -> 3dea8c39 (kotoba-sema main, ahead 2, behind
+         ;; 0, forward only by `gh api .../compare`): amu#951 measured that
+         ;; even after every first-party dependency was annotated, the
+         ;; project-module closure still refused two occurrences naming
+         ;; `kotoba.sema` -- kotoba-sema's OWN 5 `.cljk` modules
+         ;; (affine, frontend, kotoba_reader, schema, sema.cljk itself) had
+         ;; never been run through amu#946's annotator. This advance is that:
+         ;; `{:kotoba/export [...]}` on all 5, run from an uncommitted copy of
+         ;; amu's annotate-kotoba-export.cljk at kotoba-sema's own root (its
+         ;; `../src` then resolves there). `--check` reports 0 remaining, a
+         ;; second `--apply` is a no-op, and kotoba-sema's own suite (nbb
+         ;; --classpath "src:test:$(kbb -Spath -M:test)" run-tests.cljk)
+         ;; stays at 429 tests / 1636 assertions, identical to main. The
+         ;; grammar copy (`resources/kotoba/lang/guest-grammar.edn`) is not in
+         ;; this diff -- only the 5 `src/` files above are -- so
+         ;; `grammar-sha256` and `authority-digest-history` do not move; this
+         ;; prose block moves alone.
+         ;;
+         ;; 2026-09-11, 3dea8c39 -> 3714ffbf (kotoba-sema main, forward only
+         ;; by `gh api .../compare`; adr-2609111900, the selfhost ceiling
+         ;; loop). The range carries three things. 19cd515 refuses `#=` as a
+         ;; reader dispatch instead of scanning the source text for two
+         ;; characters. c5849ff rewrites the 3-arity single-step transducer
+         ;; `into` to the 2-arity. f2cfaae is this wave: a keyword-keyed map
+         ;; literal with a value that spells a non-i64 type lowers to a closed
+         ;; record `[:record :kotoba.map-literal/<keys> [[k T] ...]]` read
+         ;; off its values -- what a defrecord constructor lowers to, so
+         ;; `(:field m)` keeps the field's static type -- and the all-i64
+         ;; keyword literal is unchanged byte for byte (CID control below).
+         ;; Measured at a406845e on the project route: 10 of this compiler's
+         ;; own 210 sources were refused `map literal with keyword keys
+         ;; carries i64 values` for an ordinary config literal. The grammar
+         ;; copy moved with it, d07b8816 -> 48fb5241 (`:sugar :map-literal
+         ;; :value-types :keyword-keys` is a map; `:entry-limits` gains
+         ;; `:keyword-record 20`), APPENDED to `authority-digest-history`.
+         ;; CID control: `amu definition-cids --jvm-free` on a module whose
+         ;; only literal is `{:b 2 :a 1}` mints byte-identical output at
+         ;; 3dea8c39 and at this pin.
+         ;;
+         ;; 2026-09-11, 3714ffbf -> 6a35ed4a (kotoba-sema main, forward only
+         ;; by `gh api .../compare`, ahead 4 behind 0; adr-2609111900, the
+         ;; selfhost ceiling loop). kotoba-sema b782bbf: a top-level `def`
+         ;; whose value is a pure call form (or a collection literal holding
+         ;; one) FOLDS at analysis time -- probed as a one-function module
+         ;; over the constants above it, empty effect row required, executed
+         ;; once on the reference interpreter under the KIR constant oracle's
+         ;; fuel, the result spelled back as the literal (or the canonical
+         ;; typed-set-new / typed-map-new) -- so `(def k 4096)` and `(def k
+         ;; (* 4 1024))` are ONE constant and mint the same definition CIDs
+         ;; (CID control below). Classified IMPLEMENTATION STATE for pure
+         ;; expressions (evidence in that commit); module-level state and
+         ;; effects stay refused as a PROPERTY, by name: `def value is
+         ;; stateful/effectful: (atom ...) -- move it into a function or a
+         ;; capability`; a `loop` is refused by name because its self-tail
+         ;; re-entry is zero-charge on the interpreter and the fuel cannot
+         ;; bound it; a heap handle (closure / list / lazy seq) likewise.
+         ;; Measured at a406845e on the project route: 9 of this compiler's
+         ;; own 210 sources were refused `constant value must be closed
+         ;; bounded ...` at such a def. The grammar copy moved with it,
+         ;; 48fb5241 -> 8450745f (`:core-form-shapes` gains `:def`) and then
+         ;; c308cc04 (692570e, the same wave's second step: a quoted symbol
+         ;; at a def is quoted data, an over-long string is refused by its
+         ;; bound), both APPENDED to `authority-digest-history`. CID control: `amu
+         ;; definition-cids --jvm-free` on `(def k 4096)` + a reader and on
+         ;; `(def k (* 4 1024))` + the same reader mints byte-identical
+         ;; output at this pin.
+         ;;
+         ;; 2026-09-11, 6a35ed4a -> 597cda44 (kotoba-sema main, forward only
+         ;; by `gh api .../compare`, ahead 2 behind 0; adr-2609111900). kotoba-sema
+         ;; 8720979: the `map` callback is refused by its CAUSE -- the one
+         ;; sentence `N-source map fn requires matching unique parameters and
+         ;; one expression` (7 of this compiler's 208 sources at 6e56b1d8,
+         ;; and all 7 were ONE site: `(map (fn [[k v]] ...) x)` in
+         ;; kotoba.artifact.core/edn-safe reached through `into`'s transducer
+         ;; rewrite) becomes eight: parameter vector / count / destructuring /
+         ;; duplicates / empty body / several forms / literal / not-a-head.
+         ;; Destructuring is IMPLEMENTATION STATE (the item of a vector-i64
+         ;; source has no positions; it moves when the source model does),
+         ;; several body forms is the profile's one-expression rule (`fn` and
+         ;; `defn` in `:implicit-body-forms :refuses`), a keyword / partial /
+         ;; comp callback has no value model. The stored-callback path now
+         ;; REQUESTS its dispatcher, so `(defn f [g xs] (map g xs))` in a
+         ;; module with no lambda of arity 1 compiles instead of answering
+         ;; with a synthesized name. The grammar copy moved with it, c308cc04
+         ;; -> 11fd920c (`:sugar :map` gains `:callback`), APPENDED to
+         ;; `authority-digest-history`. CID control: the HIR sha256 of four
+         ;; already-admitted map shapes is identical at 6a35ed4a and here.
+         ;;
+         ;; 2026-09-11, 597cda44 -> 6e6000eb (kotoba-sema main, forward only
+         ;; by `gh api .../compare`, ahead 2 behind 0; adr-2609111900, the
+         ;; clojure.set wall). GRAMMAR COPY ONLY -- kotoba-sema 37f662a
+         ;; resyncs its byte copy to kotoba-lang 2dcd0721, whose `:ns
+         ;; :params` states the template DEFAULT binding this repository's
+         ;; linker implements (`(:params [sym TYPE? ...])`, a bare `:require`
+         ;; of a fully-defaulted template carries the defaults as its
+         ;; binding). The frontend is unchanged: it never sees `:params`.
+         ;; 11fd920c -> b957f5cd, APPENDED to `authority-digest-history`.
+         ;; CID control: `amu check` `:definitions` of a 2-module project
+         ;; that does not require clojure.set, and of examples/todo-app.kotoba,
+         ;; are identical before and after the linker change.
+         ;;
+         ;; 2026-09-12, 6f49a83d -> 9d72b4cd (kotoba-sema main, forward only
+         ;; by `gh api .../compare`; adr-2609111900, the variadic defn wall:
+         ;; 12 of the compiler's own modules at amu 1800fc4 refused `variadic
+         ;; parameters are outside the multi-arity profile`). IMPLEMENTATION
+         ;; STATE closed: the authority's `:named-multi-arity :variadic` had
+         ;; claimed "[fixed ... & rest] statically specialized through arity
+         ;; 5" all along and the fn profile honoured it; the named profile
+         ;; did not, and the single-arity spelling `(defn f [a & r] r)` was
+         ;; READ as a three-parameter function with a parameter named `&`.
+         ;; Now one clause per arity a call site of the closed module uses
+         ;; (plus the smallest arity no fixed clause holds), by
+         ;; `lift-lambda`'s own extracted lowering; rest is the pair-chain
+         ;; `(list ...)` of the surplus parameters. Exported / value-position
+         ;; / past-the-bound uses refused by name -- an exported variadic
+         ;; defn in particular, because THIS repository's `:interface`
+         ;; carries fixed clauses and nothing variadic, so an importing
+         ;; module could only reach the exporter's own arities; the linker
+         ;; therefore never sees a variadic clause, only `$arityN` ones.
+         ;; Grammar copy moved with the frontend, b957f5cd -> 53e4d2f0,
+         ;; APPENDED to `authority-digest-history`. CID control: `amu
+         ;; definition-cids` of a fixed-arity module is identical at
+         ;; 6f49a83d and here (see the test suite commit).
+         ;;
+         ;; 2026-09-12, 9d72b4cd -> e4e9521 (kotoba-sema main, forward only by
+         ;; `gh api .../compare`, ahead 3 behind 0; adr-2609111900, the
+         ;; map-indexed wall, 8 of the compiler's own modules): `map-indexed`
+         ;; passes the index first and reuses `map`'s callback admission
+         ;; (kotoba-sema bc921ab). Grammar copy 53e4d2f0 -> 7644f32d, APPENDED
+         ;; to `authority-digest-history`: kotoba-lang main carried the
+         ;; map-indexed entry at 63dc6e9a WITHOUT the variadic-defn entry
+         ;; (whose branch was not yet merged), and no kotoba-sema copy ever
+         ;; had that digest -- e4e9521's copy is the union of both waves,
+         ;; which is what kotoba-lang main carries once the variadic-defn
+         ;; branch merges (measured: the merge of the two hashes to 7644f32d).
+         ;;
+         ;; 2026-09-12, e4e9521 -> d17a490 (kotoba-sema main, forward only,
+         ;; ahead 2 behind 0; adr-2609111900, the reader-in-a-dependency wall,
+         ;; 43 of 225 modules at measurement 14): the reader accepts `\b` and
+         ;; `\f` string escapes as Clojure's StringReader does. Two files on
+         ;; the compiler's own classpath were refused whole for one each --
+         ;; osaho `kir/value.cljk` (`\b`) and kotoba-sema's own reader
+         ;; (`\f`), the second required by every frontend module. Grammar copy
+         ;; unchanged at 7644f32d: no head admitted or withdrawn.
+         ;;
+         ;; 2026-09-12, d17a490 -> b82c7bb3 (kotoba-sema main, forward only,
+         ;; ahead 2 behind 0; adr-2609111900, the one-result-expression wall:
+         ;; 14 modules refused at measurement 15 and 272 defn forms in the
+         ;; corpus with several body forms, 218 of them a `when` / `when-not`
+         ;; guard before the result): a `defn` / `defn-` / `fn` body of several
+         ;; forms is one `do`, as `let`'s already was. Authority
+         ;; `:implicit-body-forms` moves the three heads from `:refuses` to
+         ;; `:sequences`; `loop` / `try` / `catch` stay refused. Grammar copy
+         ;; 7644f32d -> 5b8af0f9 (kotoba-lang 89e26ec7 = kotoba-sema b82c7bb3,
+         ;; byte-identical), APPENDED to `authority-digest-history`. Measured
+         ;; on wasm32-browser: a two-body defn / defn- / fn answers the LAST
+         ;; form (42), and the locked pin refused the same source.
+         ;;
+         ;; 2026-09-12, b82c7bb3 -> 99f03fc8 (kotoba-sema main, forward only, ahead 2
+         ;; behind 0): the empty-body refusal names the `#?(:clj ...)`-only
+         ;; body -- selfhost measurement 17 showed 13 modules still stopped
+         ;; at `function must contain one result expression` after the body
+         ;; sequencing, every one a body this reader reads as nothing. Same
+         ;; grammar digest (5b8af0f9); no head admitted or withdrawn.
+         ;;
+         ;; 2026-09-12, 99f03fc8 -> 820e85d1 (kotoba-sema main, forward only, ahead 6
+         ;; behind 0; adr-2609111900, measurement 18: 12 of the compiler's own
+         ;; modules hold operation tables as quoted symbol data): `'sym` is
+         ;; `(symbol "sym")`, `'#{a b}` a `[:set :symbol]`, `'{a 1}` a
+         ;; `[:map :symbol V]`, `'[a b]` a hetero-vector of symbols -- as
+         ;; constants and in bodies; mixed kinds and quoted lists refused by
+         ;; name; `=` on :symbol NOT widened (recorded). Also the two-argument
+         ;; `some` is named as the clojure.core/some collision (baa9062f).
+         ;; Grammar copy 5b8af0f9 -> e16c74e5 (kotoba-lang 73397083 =
+         ;; kotoba-sema 820e85d1, byte-identical), APPENDED to
+         ;; `authority-digest-history`. Measured on wasm32-browser: 'a in
+         ;; '#{a b} -> 1, 'c -> 0, (get '{pair 2} 'pair 0) -> 2; the locked
+         ;; pin refused the same source.
+         ;;
+         ;; 2026-09-12, 820e85d1 -> cac05453 (kotoba-sema main, forward only, ahead 5
+         ;; behind 0; adr-2609111900, measurements 16-19: the clojure.walk
+         ;; twin could not provide walk / prewalk / postwalk -- 21 of 25 call
+         ;; sites in 19 modules at `callable parameter types currently
+         ;; require the i64 closure ABI`; the coll / clojure.set twins could
+         ;; not be passed as VALUES to reduce / merge-with, 18 modules): a
+         ;; closure PARAMETER type is admitted exactly when it is admitted as
+         ;; a closure RESULT type -- one predicate, `closure-result-type?`,
+         ;; both sides. One dispatcher per clause signature: an all-i64
+         ;; clause keeps `__kotoba_invoke[_RESULT]$arityN`, its HIR, KIR and
+         ;; CIDs (pinned); a typed clause is `__kotoba_invoke_p_<sha256 of
+         ;; the parameter-type vector>[_RESULT]$arityN`. A callable or linear
+         ;; parameter and a type outside the result profile are refused by
+         ;; name; `callable_values_test`'s `[:fn [[:string] :i64]]` case
+         ;; flips from pinned-refused to admitted. Also the empty set
+         ;; constant spelled as its constructor (e21df8e). Grammar copy
+         ;; e16c74e5 -> 295457fd (kotoba-lang 22180120, merged a6807a73 =
+         ;; kotoba-sema cac05453, byte-identical), APPENDED to
+         ;; `authority-digest-history`. Measured on wasm32-browser (this
+         ;; repository's nbb route, the sema worktree before the locked pin):
+         ;; a [:set :keyword] through a closure parameter -> 2; a document
+         ;; through a closure that document-merges {:b 40}, read at :b -> 40;
+         ;; the locked pin refused the same source, exit 65.
+         ;;
+         ;; Advanced 2026-09-16, cac05453 -> bc4131f7 (kotoba-sema #80, forward
+         ;; only; grammar copy unchanged, 295457fd): a typed-parameter closure
+         ;; dispatcher with a structured result is named by ONE digest
+         ;; (`__kotoba_invoke_pt_<64>$arityN`, 90 chars) -- the two-digest name
+         ;; was 156 chars, over max-symbol-chars, and a LINKED program with a
+         ;; `[:fn [[<record>] <record>]]` parameter was refused as `invalid
+         ;; function name` / `runtime KIR function shape rejected` (ADR 0350;
+         ;; examples/closure-node.kotoba in the JDK-free native conformance).
+         ;; Advanced again 2026-09-16, bc4131f7 -> 31826c10 (kotoba-sema #81, ahead
+         ;; 2 behind 0 by gh api compare): the `arena-scope` region operation
+         ;; with its scalar-body rule (superproject ADR-2609160044).
+         ;; Advanced again 2026-09-16, 31826c10 -> 4422b1f2 (kotoba-sema #82): the
+         ;; four ABI v7 text heads typed; grammar copy resynced to kotoba-lang
+         ;; 9ecd9dbc (arena-scope and the four heads declared, digest 3e1e65d6).
+         ;; Advanced again 2026-09-16, 4422b1f2 -> b8b01d09 (kotoba-sema #83): the
+         ;; two ABI v8 line heads typed; grammar copy resynced to kotoba-lang
+         ;; 72648a8c (digest 9e0eca1e).
+         ;; Advanced again 2026-09-16 to d46897da (kotoba-sema #84): the two ABI
+         ;; v10 range heads typed; grammar copy resynced to kotoba-lang
+         ;; e09a71f8 (digest 8a2913b8).
+         ;; Advanced again 2026-09-16 to 043c6202 (kotoba-sema #85): :io/read,
+         ;; wire 41 -- a command's standard input -- in the ClojureScript
+         ;; fallback the --jvm-free path reads; vendored catalog resynced to
+         ;; kotoba-lang #697. Without it a guest naming :io/read is refused at
+         ;; admission before the loader's provider is ever reached.
+         ;; Advanced 2026-09-18 to 9898f0e2 (kotoba-sema cap/gpu-compute-42):
+         ;; :gpu/compute, wire 42 -- a compute dispatch on the host GPU,
+         ;; brokered by this repo's loader to tools/kexe_gpu_vulkan.c (root
+         ;; ADR-2609182400 C); vendored catalog resynced to kotoba-lang 26f1bb3.
+         ;; Advanced 2026-09-23 to 3fdaefb6 (kotoba-sema affine/evaluation-order,
+         ;; forward only): the vector-assoc! gate decides linearity in
+         ;; EVALUATION ORDER -- reads before the store admitted, any mention
+         ;; after it refused -- and `when` bodies are sequences. Fixes an
+         ;; admitted read-after-store (`(when c (vector-assoc! v 0 5)
+         ;; (vector-at v 0))` answered 5 on aarch64; the copy answers 0).
+         ;; Differential check: a 20,000-step struct-of-arrays program gives
+         ;; the same checksum through vector-assoc! and vector-assoc on 5 seeds.
+         ;; Advanced again 2026-09-23 to ed3bb7c5 (kotoba-sema affine/threads): the
+         ;; gate expands ->, ->> and as-> before checking (inside -> the
+         ;; threaded handle was never a target: `(let [w (-> v (vector-assoc!
+         ;; 0 5))] (+ (vector-at w 0) (vector-at v 0)))` answered 10, the copy
+         ;; 5), refuses a store inside cond->/some->/doto, and checks
+         ;; vector-f64-assoc! handles, which it never did.
+         ;; Advanced 2026-09-25, 5d4161c5 -> 3d5de58a (kotoba-sema main, ahead 2, forward only):
+         ;; the bytes constructors and string-from-utf8 typed; the fold keys on :budget/fuel; grammar copy at digest d71c8b00 (string-from-bytes, superproject adr-2609242330).
+         ;; Advanced 2026-09-25, 3d5de58a -> 110cb48e (kotoba-sema main, ahead 2, forward only):
+         ;; `(:k m)` and `(:k m default)` mean `get` on the bounded keyword->i64
+         ;; map and the canonical typed map (aiueos :browser-component wall 3;
+         ;; test/nbb/project.cljk "keyword-lookup-on-a-map").
+         ;; Advanced 2026-09-25, 110cb48e -> 45913acc (kotoba-sema main, ahead 2, forward only):
+         ;; `conj` on a bounded :vector-i64 / :vector-f64 appends at the end
+         ;; (vector-conj, folded left); disj stays set-only (aiueos
+         ;; :browser-component wall 4; test/nbb/project.cljk "conj-on-a-vector").
+         ;; Advanced 2026-09-25, 45913acc -> 05d8bd8a (kotoba-sema main, ahead 2, forward only):
+         ;; `remove` lowers to filter's bounded loop with the predicate negated;
+         ;; a module defining its own `remove` keeps it (aiueos
+         ;; :browser-component wall 7; test/nbb/project.cljk "remove").
+         ;; Advanced 2026-09-25, 5d3054b0 -> 98dcb389 (kotoba-sema main, ahead 6, forward only):
+         ;; ADR 0353 floor :absence -- nil in a record literal is an absent
+         ;; [:option T] field; option tests are presence in if / when / if-let /
+         ;; when-let / cond-> / some-> (gate nil-field-is-absence-test).
+         ;; Advanced 2026-09-25, 98dcb389 -> b98cd9c9 (kotoba-sema main, ahead 2, forward only):
+         ;; ADR 0353 floor :bool-predicates -- numbers are never truthy: an :i64
+         ;; test is refused by name, and record-equal / typed-map-equal /
+         ;; typed-set-equal / hetero-vector-equal / task-ready? / object-cas-won
+         ;; answer :bool (gate numbers-are-never-truthy-test). Then b98cd9c9 ->
+         ;; a8be041c (main, forward only): linear ownership sees through the
+         ;; :bool elaboration of task-ready? (public sema consumers on NBB).
+         ;; Advanced 2026-09-25, a8be041c -> ea7262de (kotoba-sema main, ahead 1, forward only):
+         ;; ADR 0353 floor :row-records -- an unannotated parameter read as a
+         ;; record is a row {:a T | r}, monomorphized per record a call passes
+         ;; (gate row-polymorphic-record-inference-test).
+         ;; Advanced 2026-09-26, ea7262de -> c99790f (kotoba-sema main tip, forward only):
+         ;; the selfhost builtin gaps (superproject adr-2609242330) -- library heads
+         ;; string-to-utf8 / string-parse-i64 / parse-long / subvec / ex-info /
+         ;; ex-message / ex-data as appended Kotoba helpers (no new operation),
+         ;; = on strings, true? / integer?, conj at a loop exit, throw in a loop
+         ;; body (not before recur), the facet-unwind guard firing on nbb; and
+         ;; the :row-records fix for a parameter passed to a declared record.
+         ;; Advanced 2026-09-26, c99790fe -> 15cc6e25 (kotoba-sema main tip, forward only):
+         ;; ADR 0353 floor :row-operations -- assoc / dissoc / merge / select-keys
+         ;; on a record are row operations whose results are record types
+         ;; (gate row-operations-extend-and-shrink-test).
+         ;; Advanced 2026-09-26, 15cc6e25 -> 0db8462b (kotoba-sema main tip, forward only):
+         ;; affine.cljk's fn values bind their destructuring in a let instead of
+         ;; the parameter vector (selfhost wall "fn value requires unique arities
+         ;; ...", superproject adr-2609242330); affine verdicts unchanged. Then
+         ;; 0db8462b -> 281947c8 (main tip, forward only): affine's two let walks
+         ;; are recursive defns instead of a named fn swap!-ing an atom (the wall
+         ;; behind the first); affine verdicts unchanged.
+         ;; Advanced 2026-09-26, 281947c8 -> 8e243551 (kotoba-sema main tip, ahead 4, forward only):
+         ;; ADR 0353 floor :row-unification -- a map literal written as a row
+         ;; argument is that row's record, the branches of one if are one row,
+         ;; a loop over a row parameter is specialized with its function (gate
+         ;; row-literal-join-and-loop-unification-test); and 51ad4fef, type
+         ;; predicates on a :document ask its kind (superproject adr-2609242330).
+         ;; 8e243551 also carries 634192f9: type predicates on a :document ask
+         ;; its kind -- gap 3 of the selfhost foundation (superproject
+         ;; adr-2609242330), ladder floor :document-type-predicates;
+         ;; guest-grammar digest e2a90a2a.
+         ;; Advanced 2026-09-26, 8e243551 -> 0015dfd6 (kotoba-sema main tip, forward only):
+         ;; expression-level absence -- a missing else and a literal nil answer
+         ;; nothing, typed by the present branch (gap 1 of the selfhost
+         ;; foundation, superproject adr-2609242330), ladder floor
+         ;; :expression-absence; guest-grammar digest 407357fd.
+         ;; Advanced 2026-09-26, 0015dfd6 -> 97635e52 (kotoba-sema main tip, forward only):
+         ;; ADR 0353 floor :literal-typing -- `type-literals` types a map / vector
+         ;; literal by its items: a keyword map literal is a record wherever it is
+         ;; written, a vector literal of non-i64 items is [:list T] or
+         ;; [:vector [T ..]] (gate record-vector-and-map-literal-retirement-test).
+         ;; Also carries 7291dce0 (kernel-dequant-dot-ptq1-0 at arity five).
+         ;; Then 97635e52 -> 18c58545 (main tip, forward only): (:k r default) on a
+         ;; record answers statically -- the default where the record lacks :k,
+         ;; the field where it has it (test/nbb/project.cljk keyword-lookup-on-a-map).
+         ;; Advanced 2026-09-27, 18c58545 -> 69fed11f (main tip, forward only):
+         ;; ADR 0353 floor :stored-closures -- a fn literal stored as a map-literal
+         ;; value or record-new field is lowered inside its binding, not as a lazy
+         ;; seq after it (the ADR 0352 internal error; gate
+         ;; stored-closure-in-record-and-vector-test). Frontend only, grammar unchanged.
+         ;; Advanced 2026-09-27, 69fed11f -> 0cb5b506 (main tip, forward only):
+         ;; ADR 0353 floor :function-values -- number operations and `=` over a
+         ;; closure are refused by name, a fn literal is admitted in a declared
+         ;; [:fn ...] record field (which reaches KIR as :i64); gate
+         ;; function-value-in-record-test. Frontend only, grammar unchanged.
+         ;; Then 0cb5b506 -> bcde5502 (main tip, forward only): the [:fn ...]
+         ;; field erasure no longer reads a variant-match arm [:record p body] as
+         ;; a descriptor (examples/held-operations.kotoba was an internal error).
+         ;; Native Embench loop-capture fix, kotoba-sema PR #89, followed by
+         ;; per-definition source admission for the native compiler bootstrap.
+         ;; Advanced 2026-09-29, 97347531 -> d595e80e (main tip, forward only):
+         ;; ADR 0353 floor :function-effect-rows -- [:fn ...] may end with
+         ;; {:effects #{...}}; a closure lifted under it is refused when its
+         ;; effects exceed the row, and a call through it is bounded by the row
+         ;; (dispatcher family __kotoba_invoke_r_*); gate
+         ;; function-type-declares-its-effect-row-test. Frontend only, grammar
+         ;; unchanged: a type with no row keeps its HIR and CIDs.
+         ;; Advanced 2026-09-29, d595e80e -> baeddf12 (main tip, forward only):
+         ;; ADR 0353 floor :code-units -- string-code-unit-count,
+         ;; string-code-unit-at and subs are library heads over UTF-16 code
+         ;; units; count of a string stays refused and names both counts; gate
+         ;; string-code-unit-primitives-test. A module calling none of them is
+         ;; unchanged, so no existing CID moves. A local that binds a head's
+         ;; name shadows it (it did not, for subvec, before).
+         ;; Advanced 2026-09-30, baeddf12 -> 25618d31 (main tip, forward only):
+         ;; ADR 0353 floor :hiccup-node -- a module naming :kotoba.hiccup/node
+         ;; gets the node schemas, a hiccup literal where a node is expected
+         ;; is its constructors (same CID as written by hand), and a shape
+         ;; test over a node is an exhaustive variant-match; gate
+         ;; hiccup-literal-is-node-adt-test. A module that does not name the
+         ;; type is returned unchanged, so no existing CID moves.
+         ;; Advanced 2026-10-01, 25618d31 -> 442e6d78 (main tip, forward only):
+         ;; ADR 0353 floor :loop-slot-types -- a loop helper's slots are
+         ;; re-resolved once literals are typed (a map literal slot is its
+         ;; record, a vector literal of records a [:list T]); a loop binding
+         ;; is a lexical binding with its callable contract, so a closure slot
+         ;; is callable and the :function-values refusals read it; a nonzero
+         ;; number literal for a closure slot or parameter is refused by name;
+         ;; gate loop-slot-record-list-closure-test.
+         ;; Advanced 2026-10-02, 442e6d78 -> 0632bed0 (main tip, forward
+         ;; only): ADR 0353 floor :empty-map-literal -- (assoc {} :k v ..) is
+         ;; the record of its keys, {} takes a declared record / [:map K V]
+         ;; context, any other {} is refused by name, a match map pattern
+         ;; reads a record; no form lowers to map-new; gate
+         ;; empty-map-literal-is-typed-test.
+         ;; Advanced 2026-10-02, 0632bed0 -> 21e3a23f (main tip, forward
+         ;; only): ADR 0353 floor :row-get-and-match -- (get m :a) reads a
+         ;; row as (:a m) does, (get m :a d) does not require :a, a match map
+         ;; pattern over a parameter specializes per record, a computed key
+         ;; on a record is refused by name; gate
+         ;; row-get-and-match-read-a-row-test.
+         ;; Advanced 2026-10-02, 21e3a23f -> 965feb37 (main tip, forward
+         ;; only): ADR 0353 floor :loop-slot-beside-row -- a descriptor-less
+         ;; (:a ys) is typed as rewrite-record-projection will rewrite it, so
+         ;; a body that reads a row before its loop no longer leaves the
+         ;; loop's slots the :i64 placeholder; gate
+         ;; loop-slot-typed-beside-a-row-read-test.
+         ;; Advanced 2026-10-02, 965feb37 -> 531e89d8 (main tip, forward
+         ;; only): ADR 0353 floor :let-rebinding -- row inference reads a
+         ;; parameter only where it is in scope, so a let that rebinds it
+         ;; leaves it a row, and a name bound again in one let is the nested
+         ;; let that shadows it; gate let-rebinding-is-nested-shadowing-test.
+         ;; Advanced 2026-10-02, 531e89d8 -> 8d3320fc (main tip, forward
+         ;; only): ADR 0353 floor :cljs-literal-hash -- the row-generic value
+         ;; scan asks symbol? before it hashes a call argument, so nine row
+         ;; generics and an integer literal no longer crash nbb ("closure_uid
+         ;; on bigint"); gate text-edit-analyzes-on-nbb-test.
+         ;; Advanced 2026-10-03, 8d3320fc -> 7290e22e (main tip, forward
+         ;; only): ADR 0353 floor :absent-field-from-assoc -- a keyword key
+         ;; written nil in the module is [:option T], T what the module's
+         ;; assoc's and literals write there; gate
+         ;; nil-field-typed-by-the-module-assoc-test.
+         ;; Advanced 2026-10-03, 7290e22e -> 275b40a0 (main tip, forward
+         ;; only): ADR 0353 floor :rebound-row-argument -- each row
+         ;; specialization round infers absent parameter types before
+         ;; results, so a rebound row is its record when passed on; gate
+         ;; text-edit-rebound-state-is-a-row-test.
+         "a3303527008c7e52b33c08cd580c7dc71eeead60"} ;; Advanced 2026-10-10 8c7024cd -> a3303527 (main tip, forward only): doseq analyzes again (bool signals; a pair-sequence alias is not a reserved name the program wrote; the pair walk is a bounded loop), count and nth walk a pair chain, an unpaired reader conditional is refused (kotoba-sema#103) -- four kotoba-lang conformance cases amu test --manifest recorded as unexecuted on 2026-10-09. Grammar unchanged (da68c3fa). Before that: Advanced 2026-10-09 24309c92 -> 8c7024cd (main tip, forward only): the guest grammar is da68c3fa -- three notes say the portable string bound is 65536 UTF-8 bytes, not 127 (kotoba-sema#102, kotoba-lang#730); notes only, no head admitted or withdrawn. Before that: Advanced 2026-10-09 d34fb53f -> 24309c92 (main tip, forward only): the :bytes and :link document operations are typed (kotoba-sema#101, root ADR-2610092310 S2) and the guest grammar is 4f7f138f (:operations-registry, root ADR-2610092330). Before that: Advanced 2026-10-08 60a1b0e6 -> b379f353 (main tip, forward only): a parameter conj'd onto a field a vector literal of records types is specialized at the record its call passes and checked against that [:list R], a second type there refused by name (ADR 0353 floor :record-list-field-literal). Before that: Advanced 2026-10-07 ee495710 -> 88fb9531 (main tip, forward only): str's integer printer is typed where a specialization's result is inferred, so a row function's [(str "w" n) s] pair is [:vector [:string R]] and its destructured record is typed in the caller (ADR 0353 floor :row-tuple-element-argument). Before that: Advanced 2026-10-07 ee61c81d -> 6cba8d76 (main tip, forward only): a field read off an update of a row parameter is a field the row reads, so a missing one is refused by name (ADR 0353 floor :native-rebound-row-update). Before that: Advanced 2026-10-07 0c08bf04 -> 6e04c99d (main tip, forward only): str formats an :i64 part as its decimal digits (string-from-i64's printer, now flat and right at the most negative long) and refuses a record / vector / option part by name, floor :integer-str (ADR 0353). Advanced 2026-10-07 dee5a5d2 -> 0c08bf04 (main tip, forward only): a merged literal that reads the row it merges is the record merge gives -- each specialization round types its literals before inferring results, and a literal's own record field a row read defaulted to :i64 takes the read's type, floor :merge-literal-reads-its-row (ADR 0353). Advanced 2026-10-07 4befca1e -> dee5a5d2 (main tip, forward only): a [] field the module conj's only expressions onto is the [:list R] inference gives -- a conj notes its item's type and the module is analysed again -- and a row function's parameter only conj'd there is specialized at the record its call passes, floor :list-item-from-expression (ADR 0353). Advanced 2026-10-06 b1c48883 -> 4befca1e (main tip, forward only): [] at a keyword field is the [:list R] the module's source conj's there, and conj onto a [:list R] is typed-list-conj, floor :empty-vector-field (ADR 0353). Advanced 2026-10-06 942d8764 -> b1c48883 (main tip, forward only): (update m k f x ..) is (assoc m k (f (k m) x ..)), floor :record-field-update (ADR 0353). Advanced 2026-10-04 3d051f43 -> 942d8764 (main tip, forward only): first of a filter / remove / reverse chain is a search that builds nothing, answering [:option R] over a [:list R]; first of a [:list R] is [:option R]; loop helpers settle again after row specialization, and a capture read as a vector refines its parameter (ADR 0353 floor :record-list-sequence). Before that: Advanced 2026-10-04 77d2dd84 -> 3d051f43 (main tip, forward only): an unannotated parameter read as a vector (nth, count, a vector pattern) is the :vector-i64 its callers pass (ADR 0353 floor :vector-parameter). Before that: Advanced 2026-10-04 275b40a0 -> 77d2dd84 (main tip, forward only): a {:keys [..]} parameter is a row that does not require its keys, {} at a row is the record with no fields, a destructured key the record lacks is its :or default or nothing (ADR 0353 floor :options-map-argument). Before that: Advanced 2026-09-25 05d8bd8a -> 5d3054b0 (main tip, forward only): a quoted ns attr-map value ({:kotoba/export (quote [..])}) means the unquoted one -- the spelling JVM Clojure can load. Before that: Advanced 2026-09-25 a7f5ae17 -> 5d4161c5 (main tip, forward only): the state ability, slice 1 (kotoba-lang lang/state-ability.edn, superproject adr-2609242200) -- defhandler / perform :state/* / handle (with ..), specialization and state passing; guest-grammar d87fe28a. Before that: Advanced 2026-09-24 451afded -> a7f5ae17 (main tip, ahead 5, forward only): adr-2609242100 P1 -- max-type-depth / max-schema-depth 8 -> 12, guest-grammar bdbc8474. Before that: 8571681a -> 451afded (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+        ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
+        ;;
+        ;; The slice-value stream held this pin on purpose (ADR 0314), because
+        ;; kotoba-kir 984a507 ("control effects bridge through as keywords, so
+        ;; `:abort` reaches the sealed row") and this repository's
+        ;; `definition_identity_test` (ADR 0300, "`:abort` names no authority,
+        ;; so the bridge has no catalog keyword for it and refuses") decided the
+        ;; same question in opposite directions on 2026-09-02, and it said the
+        ;; pin waits for that adjudication rather than forcing it.
+        ;;
+        ;; ADJUDICATED 2026-09-02, in kotoba-kir's favour, and this advance is
+        ;; that adjudication rather than a stream forcing past it. Three reasons:
+        ;;
+        ;;  - kotoba-lang lang/code-identity.edn names
+        ;;    :kotoba.kir/definition-identity the :authority for what a sealed
+        ;;    row contains. ADR 0300 described that authority's behaviour; it did
+        ;;    not own it.
+        ;;  - the row is part of the sealed INTERFACE, and a function that can
+        ;;    leave its caller by aborting has interface `[:result T E]` where
+        ;;    one that cannot has `T`. Those are two definitions. Refusing to
+        ;;    identify either is not neutral between them.
+        ;;  - the refusal identified NOTHING in an aborting module, so every
+        ;;    such module was unidentified and uncacheable. Identifying them
+        ;;    differently is strictly more information than identifying neither.
+        ;;
+        ;; The 8 assertions ADR 0314 measured are not deleted. Four now state
+        ;; what is true of `:abort`, and the refusal path they used to reach --
+        ;; :unbridged-effect, :dependency-unavailable, SCANNED 0/2, the REFUSED
+        ;; listing -- is reached by a synthetic module carrying a wire id no
+        ;; catalog entry names, which is the only remaining unbridgeable row.
+        ;;
+        ;; The advance itself is required by this stream and not optional:
+        ;; kotoba.kir.alpha-normalization, the single five-binder walk that
+        ;; kotoba-lang lang/code-identity.edn :ci8 named as the fix for the walk
+        ;; being implemented twice, exists only at afd117d2 and later.
+        ;;
+        ;; Advanced again 2026-09-03 (ADR 0330) to b2e5d9c. d809f28 adds the
+        ;; four codebook dequant formats and their six grid tables and 268e28b
+        ;; the fused dequantize-and-dot oracle -- that oracle is the answer the
+        ;; QEMU K-quant smoke compares its eight digits against, so without this
+        ;; pin `AIUEOS_DEQUANT_KQUANT_QEMU_OK` has nothing to disagree with.
+        ;; 18f7c3a makes the sealed control-effect vocabulary this repository's
+        ;; export rather than something the compiler re-derives.
+        ;; ⚠ Advance this WITH the kotoba-script pin above, never alone. The
+        ;; value-bounds table is stated in both, and
+        ;; `value_bounds_agreement_test` compares them from this classpath --
+        ;; which is the only place they meet. Measured 2026-09-10: moving one
+        ;; alone let a 1057-node document compile and then trap at runtime.
+        ;; 2026-10-08: opaque JS returns are never inspected as trampoline maps;
+        ;; genuine controls use weak allocation identity, preserving tail re-entry.
+        io.github.kotoba-lang/osaho
+        {:git/url "https://github.com/kotoba-lang/osaho.git"
+         ;; fuel64: 233bd6bb exports `max-fuel` (kotoba-kir ADR 0268), the fuel
+         ;; ceiling `kotoba.compiler.nbb.cli` and `kotoba.verifier` now read.
+         ;; Advanced by this stream and independently adopted by #767, so the
+         ;; SHA below is main's as well as this branch's -- only the reason was
+         ;; missing from main.
+         ;;
+         ;; Advanced 2026-09-03, 233bd6bb -> b021a0d1, for 41341bd: the five
+         ;; collection primitives. THIS PIN IS NOT OPTIONAL WHEN THE KOTOBA-SEMA
+         ;; PIN MOVES, and the failure is specific enough to be worth naming --
+         ;; measured with the kotoba-sema pin advanced and this one left behind,
+         ;; the frontend ADMITS `pop` and KIR then traps `:unknown-function`.
+         ;; A frontend that admits a head its lowering has never heard of is a
+         ;; worse state than either pin alone: the refusal moves from compile
+         ;; time to run time. The two pins move in one commit.
+         ;;
+         ;; Advanced 2026-09-07, b021a0d1 -> 658436f2 (kotoba-kir main, ahead 17,
+         ;; forward only), for kotoba-kir#83: the lowering of
+         ;; `kernel-undefined-opcode-handler-address`. Same rule as above --
+         ;; the kotoba-sema pin in this commit admits the head, so a kir left
+         ;; behind would trap `:unknown-function` at run time. The four commits
+         ;; past 55b7a29f (ADR-0270 KIR-as-IPLD-codec and the payload-v3
+         ;; differential) are documentation and tests on kotoba-kir's side.
+         ;;
+         ;; Advanced 2026-09-08, 658436f2 -> 73243145 (osaho main, ahead 4,
+         ;; forward only), for osaho cf11d9e: the native admission gate now
+         ;; admits `i64-shift-left` / `i64-shift-right` / `u64-shift-right`
+         ;; beside a typed value, under the same operand restriction the gate
+         ;; already enforced for their i32 twins (integer shift count in
+         ;; [0,63]). Without it SHA-512 -- rotations over a `:vector-i64` --
+         ;; is refused for aarch64 with a message about typed values that
+         ;; names no shift, which is why the cause took a while to find.
+         ;;
+         ;; Advanced 2026-09-08, 73243145 -> c24c92a1 (osaho main, ahead 2,
+         ;; forward only), and REQUIRED by this commit: `kotoba.kir/lower`
+         ;; gains an `:oracle-fuel` option. Until it had one, the execution
+         ;; that seals a pure entry's value ran on a private 100,000 and
+         ;; `--fuel` could not reach it -- measured on the X25519 Montgomery
+         ;; ladder, which was refused as `fuel-exhausted` identically at
+         ;; `--fuel 60000000` and at the largest budget KIR admits.
+         
+         ;; Advanced 2026-09-09 for osaho 74426ba: a native function may
+         ;; DECLARE an :f64 parameter or result. The operations were
+         ;; admitted in ADR-2608030300; only the signature was not, which
+         ;; is why every float kernel here is written through
+         ;; f64-from-bits. Needed WITH the verifier pin below -- kir alone
+         ;; is a green `check` and a red `compile`.
+         ;;
+         ;; Advanced 2026-09-09, 74426bad -> a37577c9 (osaho main, ahead 1,
+         ;; forward only), for the defect this pin is the ONLY way to reach:
+         ;; `kotoba.kir.descriptor/capability-contracts` deduplicates, orders
+         ;; and groups capability ids, and on cljs those ids are BigInt --
+         ;; which cljs.core cannot sort, cannot `distinct` and cannot
+         ;; `group-by`. Measured on this exact tree: a module declaring TWO
+         ;; capabilities answered `internal compiler error` (exit 70) for
+         ;; `--target wasm32-browser` while ONE capability and both native
+         ;; targets were fine, because a one-element `Array.sort` never
+         ;; invokes its comparator. With the fix on the classpath and nothing
+         ;; else changed, exit 70 -> exit 0, and the artifact instantiates and
+         ;; answers 30002 for `(+ (now-at 1) (draw-at 1))` under a
+         ;; `1000*id + v` capability stub -- 7001 + 23001, so both ids reach
+         ;; the host and reach it distinctly.
+         ;;
+         ;; Merged 2026-09-10. Both notes stand and the sha is main's, which
+         ;; CONTAINS the advance below: compare 1a81e2d7...7a6a27b8 answers
+         ;; ahead 2, behind 0. deps.edn is where the reason for a pin lives,
+         ;; and a later advance does not delete the earlier one's argument.
+         ;;
+         ;;
+         ;; Both notes stand and the sha is the LATER one. Measured on merge:
+         ;; main named a37577c9, which `gh api compare` says is 2 commits BEHIND
+         ;; 1a81e2d7 -- so taking main's side here would have reverted the
+         ;; surrogate fix below while keeping the note that describes it.
+         ;;
+         ;; Advanced 2026-09-09 for the `string-index-of` wave. The operation had no
+         ;; native lowering and failed from source as `aggregate ABI rejected:
+         ;; call-abi-not-admitted` -- an unlowered head is call-shaped, so it reached
+         ;; neither of the two gates ADR 0002 opened for `string-contains?`. Without a
+         ;; byte offset a guest cannot cut a string at a separator, so no line-oriented
+         ;; program compiles for native; `kbb.browse` is the measured case
+         ;; (kotoba/bin/kbb_shim.cljs, 2026-09-07).
+         ;;
+         ;; Three pins move together because the operation needs all three, and ADR 0002
+         ;; measured that opening one gate alone moves nothing:
+         ;;   kotoba-native   `lower-index-of` on both ISAs (its ADR 0081)
+         ;;   kotoba-verifier `string-operations` gains the head (its ADR 0051)
+         ;;   osaho           the ORACLE itself was wrong (its ADR 0271)
+         ;;
+         ;; The osaho half is a CORRECTNESS advance, not a feature one:
+         ;; `utf8-index-of!` charged a surrogate pair 4 bytes at the high surrogate and
+         ;; 3 more at the low one, so it answered 7 where kotoba-script's JS emitter,
+         ;; kotoba-native's lowering and CPython all answer 4. `lower` folds a pure i64
+         ;; entry through that evaluator, so a constant `string-index-of` over an astral
+         ;; literal was baked into artifacts wrong.
+         ;; Advanced 2026-09-11, 7a6a27b8 -> f404babb (osaho main, ahead 24,
+         ;; behind 0, forward only): same wave as the text pin above --
+         ;; `{:kotoba/export [...]}` on every module. Beside the annotation the
+         ;; range carries osaho#89 (a computed i64 shift count is admitted by the
+         ;; KIR gate; the four-repo change with
+         ;; kotoba-sema/kotoba-verifier/kotoba-native) and the payload-v3
+         ;; measurement series, all test-only on osaho's side.
+         ;; Advanced 2026-09-12, f404babb -> 6f5951f3 (osaho main, ahead 2,
+         ;; behind 0, forward only): the portable string literal bound moves
+         ;; 4096 -> 65536 bytes, the value bound. Measured on the selfhost
+         ;; wall at 46d91a25: 3 compiler modules were refused "constant string
+         ;; exceeds the portable string byte limit: 5042 bytes, at most 4096";
+         ;; kotoba-sema does not move for this (the bound is KIR's).
+         ;; Advanced 2026-09-12, 6f5951f -> b8fbdaa (osaho main, forward only by
+         ;; `gh api .../compare`, ahead 2 behind 0): the reader-conditional
+         ;; `:default` clause so the Kotoba reader reads src/kotoba/kir/definition_identity.cljk
+         ;; (adr-2609111900).
+         ;; Advanced 2026-09-16 to 1863a8d (osaho main, forward only, its #90): the
+         ;; `arena-scope` head, the identity in the reference interpreter.
+         ;; Advanced again 2026-09-16, 1863a8de -> 1f07f39b (osaho #91): the
+         ;; four text heads' reference semantics.
+         ;; Advanced again 2026-09-16, 1f07f39b -> 7dfafd78 (osaho #92): the two
+         ;; line heads' reference semantics.
+         ;; Advanced again 2026-09-16, 7dfafd78 -> f44b9489 (osaho #93):
+         ;; vector-item-limit 16384 -> 2^24, at the native arena's maximum.
+         ;; Advanced again 2026-09-16 to 85ed11be (osaho #95): the two range
+         ;; heads' reference semantics.
+         ;; Advanced 2026-09-24 85ed11be -> c5f77e12 (osaho main, forward only):
+         ;; aggregate ABI v8 -- recursive / generic ADT handles on native.
+         ;; Advanced 2026-09-24, ba217bff -> f305bb00 (osaho main, ahead 2,
+         ;; behind 0, forward only), adr-2609242100 P4: reference profile: :budget/fuel|cells|bytes|frames, frames 32, oracle-inconclusive in lower.
+         ;; Advanced 2026-09-25, ed96b8da -> 353dd5f3 (osaho main, ahead 2, forward only):
+         ;; reference semantics of the bytes heads and string-from-utf8, native admission, descriptors (string-from-bytes, superproject adr-2609242330).
+         ;; Advanced 2026-09-25, 353dd5f3 -> e46766f7 (osaho main, ahead 4, behind 0,
+         ;; forward only): the x86_64/aarch64-linux-static target profiles
+         ;; (superproject adr-2609251400 C2).
+         ;; Advanced 2026-09-26, e46766f7 -> 1872b84c (osaho main tip, forward only):
+         ;; a module whose row is pure abilities only (:state, :abort) is oracled --
+         ;; gap 4 of the selfhost foundation (superproject adr-2609242330), ladder
+         ;; floor :native-abort.
+         ;; Advanced 2026-09-26, 1872b84c -> f97fec2b (osaho main tip, forward only):
+         ;; the native gate admits the document operations kotoba-native lowers --
+         ;; gap 2 of the selfhost foundation (superproject adr-2609242330), ladder
+         ;; floor :native-document.
+         ;; Advanced 2026-09-26, f97fec2b -> 00d03837 (osaho main tip, forward only;
+         ;; recorded 2026-09-26 after the fact: the range also carried a8977be, the
+         ;; native gate's :vector-i64 / :bytes EXPORT boundary, which amu #1171
+         ;; completed on the verifier and loader side):
+         ;; the native gate admits i64 min / max (arity 2) and the nbb reference answers them exactly past 2^53 -- selfhost stage 2 (superproject adr-2609242330)
+         ;; Advanced 2026-09-27, 00d03837 -> 1bb61f3d (osaho main tip, forward only):
+         ;; kernel-dequant-dot-ptq1-0, PTQ1_0 fused dequant-dot (aiueos ADR-0222, kotoba-native ADR 0088).
+         ;; Advanced 2026-10-08: published Osaho #104 preserves thrown host values
+         ;; before interpreter stack-exhaustion classification.
+         :git/sha "e20c9affa6ed3e9fc847146829685365cb47481e"} ;; Advanced 2026-10-09 502b5bac -> e20c9aff (main tip, forward only): native admits the four :bytes / :link document operations (osaho#107, root ADR-2610092310 S4); carries osaho#106's consensus gas metering. Before that: Advanced 2026-10-09 8aa04153 -> 502b5bac (main tip, forward only): the :bytes and :link document kinds and their four KIR operations (osaho#105, root ADR-2610092310 S1). Before that: Advanced 2026-10-06 a5db9a89 -> 738d8eb9 (main tip, forward only): typed-list-conj, conj onto a [:list T], bounded and charged, admitted on the native word slice (ADR 0353 floor :empty-vector-field). Before that: Advanced 2026-10-04 3b2eef93 -> a5db9a89 (main tip, forward only): the record with no fields is a value type and a native record (ADR 0353 floor :options-map-argument). Before that: Advanced 2026-10-03 eb39dba5 -> 3b2eef93 (main tip, forward only): a :vector-i64 is a one-word member of a native record / handle, never at an export (ADR 0353 floor :native-vector-field). Before that: Advanced 2026-10-01 0310fb54 -> eb39dba5 (main tip, forward only): typed-map-new / -count / -contains / -get / -assoc / -dissoc over one-word keys and values are qualified natively and [:map K V] is a native handle type (ADR 0353 floor :native-hiccup-node). Before that: Advanced 2026-10-01 ab22ed51 -> 0310fb54 (main tip, forward only): typed-list-new / typed-list-nth over one-word handles are qualified natively and [:list T] is a native handle type (ADR 0353 floor :native-handles). Before that: Advanced 2026-10-01 756c64c6 -> ab22ed51 (main tip, forward only): record-assoc is qualified at the native gate (ADR 0353 floor :native-record-operations). Before that: Advanced 2026-10-01 635bea6d -> 756c64c6 (main tip, forward only): a signature reference carries its schema table into the native program (ADR 0353 floor :native-record-boundary). Before that: Advanced 2026-09-30 1bb61f3d -> 635bea6d (main tip, forward only): every constructor debits the run's fuel (ADR 0353 point 7, floor :allocation-budget); value bounds unchanged, so kotoba-script stays. Before that: Advanced 2026-09-25 f305bb00 -> ed96b8da (main tip, forward only): the state ability -- :state is a sealed control-effect keyword and a :state-only module is oracled like a pure one. Before that: Advanced 2026-09-24 c5f77e12 -> 4860f4c1 (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         ;; Advanced 2026-09-24, 4860f4c1 -> 245bfeb3 (osaho main, ahead 4, behind 0,
+         ;; forward only by gh api compare): adr-2609242100 P2 -- a typed value is
+         ;; validated once, at execute arguments and capability results, by an
+         ;; iterative walk against the boundary budget; constructors and internal
+         ;; calls check tags only; `frames` budget (:budget/frames) and
+         ;; :host/stack-exhausted as its own trap. Lifts the ~5-cell ceiling the
+         ;; compile-time oracle put on every target (examples/recursive-list.kotoba).
+         ;; Moves WITH kotoba-script above.
+         ;; Advanced 2026-09-24, 245bfeb3 -> ba217bff (osaho main, ahead 2, behind 0,
+         ;; forward only by gh api compare): adr-2609242330 S1 -- descriptor/utf8's
+         ;; `:default` is a Kotoba body (string-code-point-at walk) instead of a
+         ;; copy of the TextEncoder form. No value-bounds change, so kotoba-script
+         ;; does not move with it (the only commit in the range is descriptor.cljk).
+        ;; The frontend is an HIR producer and KIR lowering is its consumer;
+        ;; both validate the same checked envelope.
+        io.github.kotoba-lang/kotoba-hir
+        {:git/url "https://github.com/kotoba-lang/kotoba-hir.git"
+         ;; Advanced 2026-09-11, ac8e7051 -> 9e4a5316 (kotoba-hir main, ahead 6,
+         ;; behind 0, forward only): same wave as the text pin above --
+         ;; `{:kotoba/export [...]}` on every module.
+         ;; Advanced 2026-09-12, 9e4a531 -> abe1774 (kotoba-hir main, forward only by
+         ;; `gh api .../compare`, ahead 2 behind 0): the reader-conditional
+         ;; `:default` clause so the Kotoba reader reads src/kotoba/hir.cljk
+         ;; (adr-2609111900).
+         :git/sha "6f58c1aa9925d8b4b9221837dba776a99758fdcd"} ;; Advanced 2026-09-25 a04f02a5 -> 95af6410 (main tip, forward only): the state ability -- the HIR contract admits :state as a row member. Before that: Advanced 2026-09-24 abe17740 -> a04f02a5 (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+        io.github.kotoba-lang/kotoba-object
+        {:git/url "https://github.com/kotoba-lang/kotoba-object.git"
+         ;; Advanced 2026-09-11, 9b53a444 -> a1649ef9 (kotoba-object main, ahead
+         ;; 8, behind 0, forward only): same wave as the text pin above --
+         ;; `{:kotoba/export [...]}` on every module.
+         :git/sha "6ad351002949354be4f608c82ec1b49ff6d869c3"} ;; Advanced 2026-09-24 a1649ef9 -> 6ad35100 (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+        ;; 9007989 pins the context ABI v4 loader identity for both hosts.
+        ;; A loader source hash is what binds an artifact to the host that can
+        ;; run it, so this pin and tools/kexe_loader.c move in the same commit
+        ;; or execution refuses before the guest starts.
+        io.github.kotoba-lang/artifact
+        {:git/url "https://github.com/kotoba-lang/artifact.git"
+         ;;
+         ;; Advanced 2026-09-09 for GRANTED REGIONS. `loader-source-sha256`
+         ;; names the loader in `tools/kexe_loader.c` in THIS commit, which has
+         ;; the `g:<hex>` and `gl:<n>` argument forms. `build-runtime!` compares
+         ;; the reviewed source's sha against that pin and refuses a mismatch,
+         ;; so the C and this pin move in one commit or every execution fails
+         ;; with "native loader source identity mismatch" -- which reads as a
+         ;; tampered loader and is a pin skew.
+         ;; kbb slice 4: 9e908fb0 advances loader-source-sha256 for the
+         ;; env_read_provider (wire id 33); d94e63a4 advances it again for
+         ;; fs_app_data_read_provider (wire id 35, KEXE_CAP_RESOURCES_35 scope);
+         ;; 9749773d advances it for the fs_app_data WRITE provider (write form
+         ;; "path WRITE_SEP content", Seatbelt file-write* subpath); 8c77d809
+         ;; escapes the docstring quotes (PR #21 follow-up, fixes browser matrix);
+         ;; 8546685f advances loader-source-sha256 for the NAME<TAB>D wire-34
+         ;; widening (jvm-retire item 1: fs_browse_provider answers is-directory,
+         ;; windows identity held at f10a99e4 (artifact PR #31): the arena
+         ;; windows loader (0269b0ab) reports :vectors and cannot pair with a posix
+         ;; loader that does not under any single executor.
+         ;; THAT HOLD ENDED 2026-09-09. The posix loader gained the two arenas
+         ;; in this commit, so the pairing is resolved in the other direction
+         ;; and the windows identity advances with it -- both report :vectors
+         ;; and :vector-items, nine sites there and ten here, from one macro
+         ;; each. The hold is over because the thing it was waiting for
+         ;; happened, and it was ADVANCING THIS PIN that said so: windows-arm64
+         ;; and browser-matrix (windows-2025) went red with "malformed native
+         ;; supervisor evidence (exit=0, report-status=:ok)" -- a run that did
+         ;; exactly what it was asked, rejected for the shape of the sentence
+         ;; it said so in, on the one platform whose loader had not been fixed.
+         ;; matching the js host).
+         ;; Advanced 2026-09-10, b5a7c9c5 -> 7bff9bac (forward only: 4
+         ;; ahead, 0 behind). The loader in tools/kexe_loader.c in THIS
+         ;; commit is the one a COMMAND runs on -- :io/write (37),
+         ;; :cli/args (38), :io/write-error (39), and the :fs/app-data EXISTS
+         ;; form -- and its arenas became per-run budgets, which is what put
+         ;; :string-pool into every report. loader-source-sha256 names it as
+         ;; e648fbba. It was THIS pin lagging that turned 25 failures and 109
+         ;; errors in the JVM suite into one cause: every native execution
+         ;; refused the loader as "native loader source identity mismatch",
+         ;; which reads as tampering and is a pin skew.
+         ;; Corrected 2026-09-10 to 97cd1e33: 7bff9bac's docstring closed
+         ;; early on a raw quote and the namespace did not compile, which is
+         ;; what took windows-arm64, android-ndk and both browser-matrix
+         ;; jobs red.
+         ;; Advanced again 2026-09-10 to 15f488d2: the WINDOWS loader
+         ;; identity, for the same :string-pool key. Both windows jobs failed
+         ;; as "malformed native supervisor evidence" while every other job
+         ;; was green -- one executor cannot admit two loaders that disagree
+         ;; about which keys a report has.
+         ;; Advanced 2026-09-10 for the six wire-35 MUTATION forms -- mkdir,
+         ;; unlink, rmdir, rename, stat and chmod -- which is what lets a
+         ;; command change a filesystem rather than only read one. New
+         ;; request forms, not new capabilities, so kotoba-sema did not move.
+         ;; Advanced 2026-09-11, db66a090 -> 84d229c2 (artifact main, ahead 6,
+         ;; behind 0, forward only): same wave as the text pin above --
+         ;; `{:kotoba/export [...]}` on every module.
+         ;; Advanced 2026-09-15, 84d229c -> 2135fdd (artifact main, its #32):
+         ;; both loader identities move with tools/kexe_loader.c and
+         ;; tools/kexe_loader_windows.c in this landing (buffered wire 37,
+         ;; CPU/wall budgets, arena ceilings, ABI v5). measure-runtime
+         ;; refuses the new loader under the old pin ("native loader source
+         ;; identity mismatch", test-nbb-run), which is the pin doing its job.
+         ;; Advanced 2026-09-15, 2135fdd -> 496d498 (artifact main, its #33):
+         ;; the string-concat tail append moves both loader identities again.
+         ;; Advanced 2026-09-16 to 5f09521 (artifact main, its #34): both loader
+         ;; identities move with the ABI v6 arena-scope pair in this landing.
+         ;; 5f095217 -> f93c9b50 -> ba2bd6e8 (2026-09-16, its #35 and #36):
+         ;; loader identities for context ABI v7 (POSIX 603bde98 after the
+         ;; memchr-first memmem / Windows 95095dc9).
+         ;; ba2bd6e8 -> 61f5d38d (2026-09-16, its #37): loader identities for
+         ;; context ABI v8 (POSIX 2a6a5cbc / Windows d32b1a22).
+         ;; 61f5d38d -> 92c35d4b -> 4082c9b1 (2026-09-16, its #38 / #39):
+         ;; loader identities for the vector arena budgets, then for
+         ;; context ABI v9 (POSIX 7b7749c1 / Windows abe8caf4).
+         ;; 4082c9b1 -> c5862d7c -> 96501138 (2026-09-16, its #40 / #41 / #42):
+         ;; loader identities for context ABI v10, then for the pool range
+         ;; bound the sanitized fuzz arm found (POSIX 412fd846 / Windows
+         ;; 9f1c5272).
+         ;; 96501138 -> 157f6032 (2026-09-16, its #43): POSIX loader identity
+         ;; a1193e65 for wire 41 (:io/read, standard input) and the quiet
+         ;; SIGPIPE exit; Windows unchanged.
+         ;; 157f6032 -> d9caf5712bbb3d7bf23130ed6142fe3eb566cf86 (its #44): POSIX loader identity 8d07c6ac --
+         ;; wire 41's decimal form holds an incomplete UTF-8 tail for the
+         ;; next answer.
+         ;; d9caf571 -> ec475bfc (its #45): POSIX loader identity 99852af4 --
+         ;; :clock/now's text form (wall millis / monotonic nanos).
+         ;; ec475bfc -> f44e273d (its #46): POSIX loader identity a78d6d4c --
+         ;; :hash/sha256 provider on wire 3 (was identity fall-through).
+         ;; f44e273d -> 5c8e1653 (its #47): POSIX loader identity 0beec76f --
+         ;; wire 35 MTIME form ("<path>MTIME_SEP" -> epoch seconds).
+         ;; 5c8e1653 -> d296f4c4 (its #48): POSIX loader identity f9a27e38 --
+         ;; a /dev/fd scope entry admits caller-connected descriptors.
+         ;; d296f4c4 -> 7b8ba2f4 (its #49): POSIX loader identity 00d9f5f5 --
+         ;; a $PATH scope entry expands to the caller's PATH; 64 entries.
+         ;; 7b8ba2f4 -> d9df5393 (its #50): POSIX loader identity 537fa7fb --
+         ;; relative request paths resolve against the start directory,
+         ;; normalized, then admitted; a $PWD scope entry.
+         ;; d9df5393 -> 07da66f6 (its #51): POSIX loader identity f6aff46c --
+         ;; the wire-35 APPEND form, in the same landing.
+         ;; 07da66f6 -> d053c900 (its #52): POSIX loader identity f90ece16 --
+         ;; consecutive appends share one descriptor and a buffer.
+         ;; d053c900 -> f0fd1f87 (its #53): the same identity; d053c900's
+         ;; docstring held an unescaped quote and did not compile ("Too many
+         ;; arguments to def" on windows-arm64 / android-ndk / browser-matrix).
+         ;; Advanced 2026-09-24, f0fd1f87 -> ae6684c7 (artifact main, ahead 2,
+         ;; behind 0, forward only, amu-maint): TEST-ONLY delta -- the two
+         ;; commits (699dcaa6 "test: clojure.test -> kotoba.test", ae6684c7
+         ;; merge adr-2809061500) touch .gitignore / deps.edn / nbb.edn and
+         ;; 4 test/*.cljk files, NO tools/kexe_loader*.c and no src, so
+         ;; loader-source-sha256 is NOT skewed (deps.edn :paths are
+         ;; ["src" "resources"], the test tree is not on any consumer's
+         ;; classpath). Main CI green on all runs since 2026-09-23.
+         ;; Advanced 2026-09-24, ae6684c7 -> 9c13e737 (artifact main, ahead 2,
+         ;; forward only): adr-2609242100 P1 -- windows-loader-source-sha256
+         ;; names tools/kexe_loader_windows.c with KEXE_RECORD_FIELD_LIMIT 32 in
+         ;; this commit; without it windows-arm64 and browser-matrix
+         ;; (windows-2025) refused the loader as "native loader source identity
+         ;; mismatch" (measured on this PR's first CI run).
+         ;; Advanced 2026-09-25, 9c13e737 -> 52e91b8c (artifact main, ahead 2, forward only):
+         ;; the POSIX / Windows loader identities at context ABI v11 (string-from-bytes, superproject adr-2609242330).
+         ;; Advanced 2026-09-25, 52e91b8c -> 4bdf84aa (artifact main, ahead 4, forward only):
+         ;; the POSIX loader identity 273b97a6 -- tools/kexe_loader.c with its decisions in Kotoba
+         ;; (superproject adr-2609251400 C1); without it every executor refuses this loader as
+         ;; "native loader source identity mismatch".
+         ;; Advanced 2026-09-25, 4bdf84aa -> eff17393 (artifact main, ahead 2, forward only):
+         ;; the POSIX loader identity 9c2bbcee -- fs opens beneath the scope root and a seccomp
+         ;; filter that admits the fs mutation syscalls (superproject adr-2609251400 C3, the
+         ;; loader's two holes). Then eff17393 -> e410e976 (ahead 2): identity 04ef5b9e, the
+         ;; O_NOFOLLOW_ANY path for a macOS kernel that ignores O_RESOLVE_BENEATH (macos-14 CI).
+         ;; Then e410e976 -> 04c4e0a4 (ahead 2): identity 1a4f2d95, the loader answering
+         ;; :process/spawn, :entropy/draw and fsync / make-temp-dir / stat-nofollow from the
+         ;; handlers' compiled decisions (superproject adr-2609251400 C3).
+         ;; Advanced 2026-09-26, 04c4e0a4 -> 197aefc7 (artifact main, ahead 2, behind 0,
+         ;; forward only): kotoba.artifact.core has a Kotoba reading over :document whose
+         ;; sha256 is the host's digest (superproject adr-2609242330, selfhost wall
+         ;; `map fn parameter destructures ([k v])`, 17 rows). Host bodies unchanged, so
+         ;; no loader identity moves.
+         ;; Advanced 2026-09-26, 197aefc7 -> 0274ce3b (artifact main, forward only): POSIX
+         ;; loader identity 107c6055 -- tools/kexe_loader.c's export boundary codec
+         ;; (superproject adr-2609242330).
+         ;; Advanced 2026-09-26, 0274ce3b -> 4aca449e (artifact main tip, forward only): POSIX
+         ;; loader identity daa8df69 -- the :fs/app-data OWNER form (superproject
+         ;; adr-2609242330, selfhost stage 2).
+        ;; Advanced 2026-10-21 to 16667678 (artifact PR #72): the
+        ;; heap-free fs READ + raw openat O_CLOEXEC loader (amu #1421).
+        ;; Advanced 2026-10-22 to 28936f03 (artifact PR #75, pending merge):
+        ;; loader identity d21ddf03 -- the MERGED loader (the :http/post
+        ;; provider from amu #1427 on the KEXE_GPU_METAL wiring from the
+        ;; amu #1404 line). Supersedes the 60ed80d5 and 3e0f1a19 lines.
+         :git/sha "28936f03dee0e191a3eb657d6d6331cc5f5ff284"}
+        ;; HELD at 1a2e10c on 2026-09-03 (ADR 0331), 28 commits behind its main,
+        ;; while every other pin in this file moved to the tip. The reason, so
+        ;; that a lagging pin and a pin with an argument behind it stay
+        ;; distinguishable from the outside:
+        ;;
+        ;; io-ipld 01b6453 makes the DAG-CBOR DECODER enforce canonical form.
+        ;; `ipld-adl-test/guest-output-must-be-canonical-dag-cbor` proves the
+        ;; opposite layering -- that a guest can emit bytes which decode cleanly
+        ;; and are STILL refused, because only re-encoding shows the codec would
+        ;; have written something shorter. Its fixture is `18 05`, a non-minimal
+        ;; encoding of 5. Measured at 48ba404 that fixture stops reaching the
+        ;; ADL check at all: the decoder refuses first, so the case answers
+        ;; `:adl-output-not-a-node` and `:adl-output-not-canonical` is left with
+        ;; no input that can produce it.
+        ;;
+        ;; Making the test expect the new code would leave this repository with
+        ;; a refusal nothing can trigger -- a check that cannot fire, which is
+        ;; the shape ADR-2608136000 exists to refuse. Deciding whether the ADL
+        ;; canonicality check is genuinely subsumed by the decoder, or whether a
+        ;; non-canonical form still exists that decodes at 48ba404, is a
+        ;; question for io-ipld's owner and not for a pin-consolidation commit.
+        ;; Nothing in the K16 native programme depends on this advance.
+        ;; STILL HELD 2026-09-11 (now 60 behind main, 3e48e468). The
+        ;; `{:kotoba/export [...]}` wave annotated io-ipld's 13 modules too
+        ;; (3e48e468, nbb 150 tests / 5653 assertions green), but taking
+        ;; that sha crosses 01b6453 above, and the hold's argument is
+        ;; unchanged -- and its test (ipld_adl_test) is on the JVM route,
+        ;; which cannot run since the .cljk rename, so an advance here could
+        ;; not even be measured against it. Cost of the hold, measured: an
+        ;; amu module whose closure reaches `ipld.*` (through
+        ;; kotoba.artifact.content-identity) is still refused on the project
+        ;; route with "requires an explicit :export vector" naming an ipld
+        ;; namespace. Lifting it is io-ipld's owner's decision, as before.
+        ;;
+        ;; LIFTED 2026-09-12, 1a2e10cf -> 3e48e468 (io-ipld main, ahead 62,
+        ;; behind 0, forward only). Not because the argument above was wrong
+        ;; -- it was measured again today and still holds as stated -- but
+        ;; because both things it protected have left this repository:
+        ;;   (1) `test/kotoba/compiler/ipld_adl_test.cljk` imports java.nio and
+        ;;       runs on no route since ADR 0347 removed the JVM one; and
+        ;;       `src/kotoba/compiler/ipld_adl.cljk` (the check it exercises)
+        ;;       is itself JVM-only (`FileAttribute`). A hold that keeps a
+        ;;       test discriminating is worth nothing when the test cannot run.
+        ;;   (2) ADR 0331's open question -- is the ADL-level canonicality
+        ;;       check subsumed by the decoder? -- now has measurements on
+        ;;       BOTH shas (scratch probe, nbb, `ipld/decode` then
+        ;;       `ipld/encode`): at 1a2e10cf `18 05` decodes to 5 with
+        ;;       [output 2, canonical 1] (the ADL refusal fires) and
+        ;;       `{"b" 1 "a" 2}` decodes with keys unsorted; at 3e48e468 both
+        ;;       are refused by the decoder ("bytes are not canonical
+        ;;       DAG-CBOR"), and float32 / indefinite length are refused on
+        ;;       both. Four shapes, none reaches the ADL check at 3e48e468.
+        ;;       That is evidence for option 1 of the ADR, not a proof over all
+        ;;       inputs; the ADR carries the same note.
+        ;; Cost of the hold, measured at 46d91a25 on the project route: 9 of
+        ;; the 61 export-vector refusals named an `ipld.*` namespace or
+        ;; `kotoba.value.codec`. The advance adds `dev-protobuf` (dag-pb's
+        ;; wire codec) to the closure: one repository, one unannotated
+        ;; module, a real dependency of `ipld.dag-pb` and so NOT excluded.
+        io.github.kotoba-lang/io-ipld
+        {:git/url "https://github.com/kotoba-lang/io-ipld.git"
+         ;; Advanced 2026-09-12, 3e48e46 -> d02a63c (io-ipld main, forward only by
+         ;; `gh api .../compare`, ahead 2 behind 0): the reader-conditional
+         ;; `:default` clause so the Kotoba reader reads src/ipld/schema.cljk
+         ;; (adr-2609111900).
+         ;; Advanced 2026-09-25, 9a92b167 -> 2a012c5d (io-ipld main, forward only):
+         ;; ipld.link's typed tag-42 path (link-tag-bytes / link-fragment) on
+         ;; cbor.core's typed encoder; ipld.link passes the Kotoba project
+         ;; check; suite CIDs identical (adr-2609242330 S1c).
+         :git/sha "2a012c5d6b5ba71267f5390fee9561e010b8781a"} ;; Advanced 2026-09-24 d02a63cd -> 9a92b167 (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+        ;; Advanced 2026-09-08 to 829966fd (PR #76): the same accessor on
+        ;; wasm32, as two CONDITIONALLY imported intrinsics (`list-nth-i64` /
+        ;; `list-nth-ref`), which runtime/browser-host.mjs now answers.
+        ;;
+        ;; The advance also crosses 2d912bf (#74), which lowers
+        ;; `document-vector-sort` and emits its import inside the same
+        ;; `has-document?` block as the rest -- so every document-using module
+        ;; now carries it. Measured 2026-09-08: with the pin moved and nothing
+        ;; else, 11 tests across document_value / document_sha256 /
+        ;; document_roundtrip / document_edn / dataspace_wasm_aot failed at
+        ;; INSTANTIATION with `forbidden-import: Wasm import is outside the
+        ;; Kotoba browser profile: kotoba:typed/document-vector-sort/function`.
+        ;; This commit teaches the host that operation, sorting by the same
+        ;; total order the KIR reference interpreter uses.
+        io.github.kotoba-lang/kotoba-wasm
+        {:git/url "https://github.com/kotoba-lang/kotoba-wasm.git"
+         ;; Advanced 2026-09-11, 829966fd -> d4207d00 (kotoba-wasm main, ahead 8,
+         ;; behind 0, forward only): same wave as the text pin above --
+         ;; `{:kotoba/export [...]}` on every module.
+         ;;
+         ;; Advanced 2026-09-11, d4207d00 -> f5fdbc5a (kotoba-wasm main, ahead 2,
+         ;; forward only): `kotoba.wasm.tools` on both hosts -- the level-1 leaf
+         ;; outside this repository in docs/jvm-route-topology.edn (ADR 0348
+         ;; iteration 4). Nothing on the Node route calls it yet; what it removes
+         ;; is the first refusal the probe reported under kotoba.component.core.
+         ;;
+         ;; Advanced 2026-09-24, f5fdbc5a -> 83c8009e (kotoba-wasm main, merge
+         ;; of #77, ahead 2, behind 0, forward only): typed-cap-call scalar
+         ;; results/requests (:i64 / :bool / :f64 / :f32) cross as a one-slot
+         ;; [:option T] or bool pair; the emitter self-validates with
+         ;; WebAssembly.validate and refuses (:wasm-self-validation) instead of
+         ;; returning an invalid module; bytes-count / bytes-at / bytes-slice /
+         ;; bytes-concat / string-index-of lower to their own kotoba:typed
+         ;; imports, which runtime/browser-host.mjs answers in the same commit.
+         ;; Advanced 2026-09-24, 83c8009e -> 3f0a3ac3 (kotoba-wasm main, ahead 5,
+         ;; forward only): adr-2609242100 P1 -- component-vector-item-budget names
+         ;; the 16384 the component memory is sized from (same pages).
+         ;; Advanced 2026-09-24, 3f0a3ac3 -> 4afb3a57 (kotoba-wasm main, ahead 4,
+         ;; behind 0, forward only), adr-2609242100 P4: a loop with a reference-typed result is a Wasm loop, not recursion.
+         ;; Advanced 2026-09-25, 4afb3a57 -> 185b3ed0 (kotoba-wasm main, ahead 2, forward only):
+         ;; the bytes constructors and string-from-utf8 as kotoba:typed intrinsics (runtime/browser-host.mjs answers them) (string-from-bytes, superproject adr-2609242330).
+         ;; Advanced 2026-09-30, 185b3ed0 -> 7ff9ad0d (kotoba-wasm main, forward only; carries the
+         ;; 2026-09-25 clojure.*/java.* codemod): every constructor debits the fuel global -- ADR 0353 point 7, floor :allocation-budget-targets.
+         ;; Advanced 2026-10-03, 7ff9ad0d -> a82bc58e (kotoba-wasm main, ahead 3, forward only):
+         ;; the typed emitter lowers min/max (i64 compare + select) -- floor :typed-wasm-min-max.
+         ;; Advanced 2026-10-06, a82bc58e -> fc6c8459 (kotoba-wasm main, forward only):
+         ;; typed-list-conj calls the conditionally imported list-conj-i64 / list-conj-ref,
+         ;; which runtime/browser-host.mjs answers in the same commit -- floor :empty-vector-field.
+         ;; Advanced 2026-10-09, fc6c8459 -> 53683ecb (kotoba-wasm main, #78,
+         ;; forward only): document-bytes / -bytes-value / -link / -link-value as
+         ;; conditionally imported kotoba:typed intrinsics, which runtime/browser-host.mjs
+         ;; answers in the same PR -- root ADR-2610092310 S3.
+         ;; Advanced 2026-10-09, 53683ecb -> 276dd7a6 (main, ahead 2, behind 0):
+         ;; emit :gas / :gas-schedule, the per-form gas debit (kotoba-wasm#80) -- consensus gas, superproject adr-2610092340 D12.
+         ;; Advanced 2026-10-10, 276dd7a6 -> 17429236 (main, ahead 2, behind 0): consensus gas on
+         ;; typed (KIR v4) modules too (kotoba-wasm#81, superproject adr-2610092340 D12).
+         :git/sha "17429236307ddf6796b892fa25100b7aae55f791"}
+        ;; Production KIR routes exclusively through whole-module
+        ;; GMIR/MIR/allocated-MC, including word/f64/memory/runtime/capability,
+        ;; literal-data, scalar variant, word-field record, and x86 privileged
+        ;; operations. Aggregate ABI v7 carries recursively nested record
+        ;; handles, record-payload variants, sealed ordinal callable dispatch,
+        ;; bounded apply, and closed linkage evidence. Multiple exports share
+        ;; one selected layout; IR rejection has no production legacy-emitter
+        ;; fallback.
+        ;; Terminal local calls release the current frame and branch without
+        ;; linking on both native ISAs; kernel ELF contexts preserve the
+        ;; artifact's sealed fuel bound.
+        ;; ADR-0278: kotoba-native 704d02e carries allocator-explicit AArch64
+        ;; self reentry on top of merged virtual MIR branch fusion and
+        ;; post-allocation per-basic-block scheduling with WAR/WAW dependency
+        ;; edges, preserved-register reuse, and the NBB BigInt immediate guard.
+        ;; Eligible AArch64 self-tail edges simultaneously update their exact
+        ;; allocated parameter homes and re-enter after one-time argument
+        ;; materialization. Backed/incomplete sites retain the public ABI path;
+        ;; every recur still recharges fuel. x86 retains its independently
+        ;; qualified teardown path.
+        ;; Call-crossing loop parameters stay in preserved registers instead of
+        ;; storing and loading them on every iteration on both targets. A
+        ;; proven adjacent AArch64 zero-equality branch is fused while virtual
+        ;; SSA identity is available, removing both definitions before RA and
+        ;; emitting one direct CBNZ. A unique-use integer producer in one closed
+        ;; self-recur suffix may write an interference-free parameter home
+        ;; directly; call-crossing and ambiguous sites keep the parallel-copy
+        ;; fallback. x86 retains its canonical TEST/JZ path. A profitable
+        ;; AArch64 constant may use one logical-immediate seed plus one MOVK;
+        ;; the closed selector has no global index and probes at most the four
+        ;; lanes under each of the zero/full replacement hypotheses.
+        ;; cdf7b45 adds AArch64 quotient/remainder MSUB fusion; ADR-0280
+        ;; measures that pin through the common native artifact ABI. 1281ec5
+        ;; bulk-precharges exact counted recurrences containing only proven
+        ;; pure nontrapping leaf calls, retaining a charged negative copy, and
+        ;; rotates their direct recur latch to a bottom conditional branch.
+        ;; effaba5 hoists an exact invariant identity argument on that hot edge;
+        ;; instrumented and otherwise unproven paths retain materialization.
+        ;; 7eb4072 adds a measured latency arm to the Mersenne decision: one
+        ;; serial remainder chain takes the shifted SUB+ADD form (+2.6%
+        ;; measured); independent lanes keep MSUB (-5.1% measured the other
+        ;; way). The chain test is order-independent value reachability with
+        ;; occurrences named by position. 8b78230 reads the constant-divisor
+        ;; quotient's sign correction from the unshifted value, in parallel
+        ;; with the shift (+4.2% measured on the narrow chain, parity with
+        ;; Clang's emission of the semantic twin).
+        ;; 1fd9c22 (via kotoba-mir 8a2bc4d) sends straight-line call
+        ;; functions through the linear scanner: call-crossing values live in
+        ;; preserved registers instead of stable slots (+6.66% measured on
+        ;; the qualified call fixture).
+        ;; 689757a parks an AArch64 leaf's spill slots in caller-saved SIMD
+        ;; registers (+3.21% measured on the deep-spill fixture; fail-closed
+        ;; to the stack shape for calls, >16 slots, or non-AArch64).
+        ;; 5b5d0d5 ports the parallel sign correction to x86 (RDX copy of the
+        ;; unshifted value before SAR, so SAR and SHR run in parallel).
+        ;; a59b8b2 elides a quotient's RAX/RDX saves when provably dead
+        ;; (straight-line scan, fail-closed).
+        ;; 0daafbf brings the two `elf64` twins into agreement about FUEL, not
+        ;; just about the entry table db7b711 settled. The `.clj` the JVM loads
+        ;; was missing `ecdsa-fuel?` and `dhcp-fuel?`, so it under-fuelled three
+        ;; shipping aiueos objects -- ecdsa by 8.6x and both DHCP objects by 64x
+        ;; -- and the shipped bytes prove the portable file was the right one.
+        ;; Found only by comparing the two routes' output, because no single
+        ;; runtime can load both files.
+        ;; 4a4c4c3 lowers `vector-alloc` (context slot 200) and
+        ;; `vector-assoc!` (slot 208) on both ISAs, via kotoba-gmir 682a0d5
+        ;; (the arities) and kotoba-mir 9b3a42e (the offsets). Superproject
+        ;; ADR-2609010200.
+        ;;
+        ;; Advanced 2026-09-03 (ADR 0330) past 44 commits that had accumulated
+        ;; behind this one pin while every K16 stream was told the amu bump was
+        ;; batched. Containment was checked with `compare` per stream, not
+        ;; assumed:
+        ;;   279fbc3  a bounded store answers with the word it STORED, not with
+        ;;            the incoming base (x86) or a register nothing wrote
+        ;;            (aarch64).
+        ;;   da3593b5 kernel-read-cr4 / kernel-write-cr4 / kernel-xsetbv.
+        ;;            Without these `AIUEOS_DOT_F32_QEMU_OK` was
+        ;;            `COULD-NOT-RUN compile-failed ... aggregate ABI rejected:
+        ;;            call-abi-not-admitted` against this repository's main,
+        ;;            and reproduced only against an unlanded branch.
+        ;;   a727bf7  six RTL8125 driver symbols and the FIFO-drain fuel tier.
+        ;;   1baa450  three SHA-256 symbols for a message arriving in pieces.
+        ;;   70984ea / 2c4d6c3 / 449792d  the Qwen3.5 export names and the
+        ;;            measured fuel tiers for the second and third tranches.
+        ;;   1072816 / bbeed36 / a63faa6  Q4_K and Q6_K EMIT (thirty-two groups
+        ;;            unrolled) and the four codebook formats refused BY NAME.
+        ;;            This is what `AIUEOS_DEQUANT_KQUANT_QEMU_OK` needs.
+        ;;   91033a9  the writable region is an lea, a function's address is a
+        ;;            label.
+        ;;   d710558  a reentry parameter's home is stored inside the loop.
+        ;; The advance carries kotoba-gmir fe23816 -> 323bfc0, kotoba-mir
+        ;; e266a86 -> 0bb174c and kotoba-codegen 68d409f -> 3a7d7fc with it;
+        ;; those three are transitive here and only deps-lock.edn names them.
+        io.github.kotoba-lang/kotoba-native
+        {:git/url "https://github.com/kotoba-lang/kotoba-native.git"
+         ;; fuel64: c31cf87b widens the object replenish to a 64-bit budget
+         ;; (kotoba-native ADR 0078) and exports `max-object-fuel`. No shipped
+         ;; object's bytes move -- 108 digests taken before the change are
+         ;; re-derived by that repo's suite; and ADR 0079, where `package-user`
+         ;; read the constant 512 instead of the declared budget -- the same
+         ;; defect this repo's PE32+ packager had. Fast-forward from the pin
+         ;; main now carries (452422f): ahead 5, behind 0.
+         ;;
+         ;; fwstore: and adeb1b0f, which is kotoba-native's MAIN and contains
+         ;; fuel64's 95361f3f -- the `:uefi-alloc-region` lowering landed on
+         ;; top of it (kotoba-native ADR-0080). Taking 95361f3f here would
+         ;; leave this compiler admitting a head in the frontend with no
+         ;; encoding behind it, which is the gap AMU-PINS measured and which
+         ;; aiueos main now has a CONSUMER for.
+         ;; 2026-09-07: 06badc8 was one commit on a side branch (its allow-list
+         ;; entry is on kotoba-native main as 4e717ab). c9d5c44 is kotoba-native
+         ;; main: the pre-allocation hoist (#151), the cross-call hoist (#152)
+         ;; and call-argument copy coalescing (#154). Codegen moves on the call
+         ;; domains and deep-spill; every other benchmark kernel is byte-identical.
+         ;; 2026-09-07 (second advance): c9d5c44 -> f040b483, kotoba-native main,
+         ;; ahead 6, forward only. #153 context slots in the RW page, #155 the
+         ;; vector-6 'U' (undefined opcode) handler, #156 the lowering of
+         ;; `kernel-undefined-opcode-handler-address`, #162 the kotoba-gmir pin
+         ;; -> a3f0597c (kotoba-gmir#30 admits the same head). kotoba-gmir is
+         ;; transitive here -- this repository does not pin it directly -- so
+         ;; deps-lock.edn is where d4e040b2 -> a3f0597c shows. kotoba-mir and
+         ;; kotoba-codegen do not move (0bb174c8 / 3a7d7fc2 on both sides).
+         ;;
+         ;; Advanced 2026-09-08, 70b94c6d -> a5711bdc (kotoba-native main,
+         ;; ahead 4, forward only), and REQUIRED by the `extract-native`
+         ;; change in this commit. Through kotoba-mir ac690136:
+         ;; `aarch64-fuse-zero-equality-branches` tested its constant with
+         ;; `zero?`, which is false for a JavaScript BigInt, so on this front
+         ;; the fusion never fired for a literal that came from the reader --
+         ;; every literal in real source. `(if (= a 0) a a)` compiled to 24
+         ;; bytes here and 12 through the JVM, for the same program.
+         ;;
+         ;; That made emission a function of the host's SPELLING of a value
+         ;; rather than of the value, which only stayed invisible while
+         ;; `extract-native` read artifacts with `cljs.reader` and so handed
+         ;; the verifier the same wrong representation the compiler had used.
+         ;; Reading them exactly turns it into a refusal:
+         ;; `examples/held-operations.kotoba` was rejected as "native
+         ;; instruction stream rejected" by a verifier that was right.
+         ;;
+         ;; Advanced 2026-09-09 to 7cbed512, which carries kotoba-mir b70a567a
+         ;; and is the pin that makes TWO NEW AArch64 ARMS reachable from this
+         ;; repository: `kernel-dot-f32` and Q8_0's fused dequantize-and-dot.
+         ;; Both are the x86 SCALAR arm reproduced instruction for instruction,
+         ;; because the contract of those operations is an ACCUMULATION TREE
+         ;; and not a dot product -- one specific order of summation IS the
+         ;; operation, so an arm that answered a different number would be a
+         ;; different operation wearing the same name.
+         ;;
+         ;; Without this pin `amu compile --target aarch64` refuses them at MIR
+         ;; selection with `x86-simd-target-mismatch`, which is a program this
+         ;; repository can now compile being rejected for a reason that stopped
+         ;; being true.
+         ;;
+         ;; Advanced 2026-09-09, 7cbed512 -> c14a49f3 (kotoba-native main,
+         ;; forward only), and this one carries kotoba-mir b70a567a ->
+         ;; 4a049cc9 with it. A LITERAL'S ADDRESS NOW EMITS ON AARCH64.
+         ;;
+         ;; The refusal that stood there named ADRP+ADD's 4 KiB page split as
+         ;; the blocker. It was the wrong instruction: `adr` reaches +/-1 MiB
+         ;; in one, and kotoba-native places the literal pool at the end of the
+         ;; same emitted buffer as the code, so the distance is bounded by the
+         ;; size of one program -- the fact a linker cannot know and a backend
+         ;; can. Required WITH this file's `rodata-literal-targets` change, not
+         ;; optional: widening the gate here without the pin admits a program
+         ;; that `kotoba.mir` then refuses, which is a green `amu check`
+         ;; followed by a red `amu compile`.
+         ;;
+         ;; The sha above is main's and it CONTAINS the advance below:
+         ;; compare 11691559...edbbe987 answers ahead 7, behind 0. The note is
+         ;; kept because deps.edn is where the reason for a pin lives, and a
+         ;; later advance does not delete the earlier one's argument.
+         ;;
+         ;; Advanced 2026-09-09, a5711bdc -> 11691559 (kotoba-native main, forward
+         ;; only, 20 commits): `lower-index-of`, the same scan `string-contains?`
+         ;; already lowers to, returning the offset `kotoba$string-find` had already
+         ;; computed instead of folding it to 0/1. No new helper, no new callback, no
+         ;; new value representation, no ABI bump. See the osaho note above.
+         ;; Advanced 2026-09-10, edbbe987 -> 5f2717c2 (kotoba-native main,
+         ;; forward only, 12 commits). Required, not optional: `capability-bitmap`
+         ;; in elf64.cljc did `(quot id 8)` on a capability id that arrives as a
+         ;; bigint on cljs, so EVERY `compile --target x86_64-aiueos-user-v1` of a
+         ;; source containing `cap-call` exited 70 :kotoba/internal-error while the
+         ;; same source compiled on six other targets. aiueos PLC_RT was blocked on
+         ;; it and had been recorded as unreachable at three amu revisions.
+         ;; Advanced 2026-09-11, 5f2717c2 -> ece7257a (kotoba-native main,
+         ;; forward only, 8 commits): the .cljk rename of that repo, and #174,
+         ;; which admits `aiueos-relay-hello-payload` / `-ack-payload-valid`
+         ;; to `kernel-object-entries` (aiueos ADR-0213 retirement of
+         ;; relay_protocol.c). The renamed twins (`elf64.clj.cljk` /
+         ;; `elf64.cljc.cljk`) resolve on the nbb route only through the
+         ;; org-babashka-nbb fork this package.json now pins.
+         ;; 2026-09-11, ece7257a -> c0480241 (main, forward only, #175): the
+         ;; x86-64 fuel trap leaves the counter at 0 as aarch64 does. Found by
+         ;; this repository's jdk-free-native-conformance on ubuntu-latest
+         ;; (`:remaining 18446744073709551615`) the first time it ran on the
+         ;; nbb route alone.
+         ;; Advanced 2026-09-11, c0480241 -> 19400641 (kotoba-native main, ahead
+         ;; 4, behind 0, forward only): same wave as the text pin above --
+         ;; `{:kotoba/export [...]}` on every module.
+         ;; Advanced 2026-09-12, 1940064 -> 77a48bd (kotoba-native main, forward only by
+         ;; `gh api .../compare`, ahead 2 behind 0): the reader-conditional
+         ;; `:default` clause so the Kotoba reader reads src/kotoba/native/machine_ir.cljk
+         ;; (adr-2609111900).
+         ;; Advanced 2026-09-15, 77a48bd -> 9a98c3e (kotoba-native main, forward
+         ;; only, its #176): ABI v5 -- `string-index-of` is context slot 216
+         ;; (its ADR 0082), which tools/kexe_loader.c now supplies. A backend
+         ;; before this emits the old per-byte rewrite and a loader before this
+         ;; has nothing at 216; the two move together in this commit.
+         ;; Advanced 2026-09-15, 9a98c3e -> 7da60185 (kotoba-native main, forward
+         ;; only by `gh api .../compare`, ahead 4 behind 0): f98d7f1f keyword
+         ;; equality lowering on both ISAs, and de8e837 admits
+         ;; `aiueos-install-intent-admit` to `kernel-object-entries` -- the
+         ;; installer's DECISION as one pure object `(image length)`, reasons
+         ;; 0-9, aiueos ADR-0213's installer half. aiueos carries the contract
+         ;; (os/aiueos/contracts/install-intent-admit-v1.edn) and the parity
+         ;; gate; without the row its object is refused at packaging.
+         ;; Advanced 2026-09-16 to d259b18 (kotoba-native main, forward only, its
+         ;; #178 / ADR 0083): ABI v6 -- `(arena-scope body)` lowers to the
+         ;; enter / leave slots at 224 / 232, which tools/kexe_loader.c now
+         ;; supplies (superproject ADR-2609160044).
+         ;; Advanced 2026-09-16 to dc853ff (kotoba-native main, its #179): the
+         ;; four ABI v7 text heads as host slots 240-264.
+         ;; Advanced 2026-09-16, dc853ff -> a6a4616 (kotoba-native main, forward
+         ;; only by `gh api .../compare` dc853ff...a6a4616: ahead 2 behind 0,
+         ;; its #180): admits the five aiueos C-free wave-1 flat-record
+         ;; kernel-object exports (aiueos ADR-0219) -- inference-status-valid,
+         ;; inference-milli-tokens-per-second, model-mapping-plan,
+         ;; model-handoff-validate, device-worker-poll-response. Without the
+         ;; rows those objects are refused at packaging.
+         ;; Advanced again 2026-09-16 to d2f1dca (its #181, on top of a6a4616):
+         ;; the two ABI v8 line heads as host slots 272 / 280.
+         ;; Advanced 2026-09-16, d2f1dca -> 9cccd1b6 (kotoba-native main, forward
+         ;; only by `gh api .../compare`: ahead 6 behind 0), three of its PRs
+         ;; for aiueos C-free wave 2 (aiueos ADR-0220): #182 admits
+         ;; job-protocol / micro-infer-next / aes128-gcm-selftest; #183 gives
+         ;; the eight wave objects their fuel tiers (four were packaging at the
+         ;; 1024 default and the AES-GCM known-answer test ud2'd at boot); #184
+         ;; lowers `string-code-point-at` over an ASCII literal to a bounded
+         ;; byte load from the rodata pool instead of the slot-144 runtime call
+         ;; -- a kernel object has no host, and the first one whose literal
+         ;; walk executed jumped to address 0 (measured under QEMU).
+         ;; Advanced again 2026-09-16 to ed534e3 (its #185 / #186, on top of
+         ;; 9cccd1b6, ADR 0084): five handle operations emitted in line
+         ;; through the ABI v9 pointers; #186 is the value register the first
+         ;; cut clobbered, which examples/inline-handles.kotoba caught under
+         ;; the loader.
+         ;; Advanced 2026-09-16 to a9f8a3c (its #187): the two ABI v10 range
+         ;; slots 336 / 344.
+         ;; Advanced 2026-09-22, a9f8a3c -> 207db01 (kotoba-native main,
+         ;; forward only: the pin is an ancestor, ahead 6 behind 0). Three PRs:
+         ;; #188 AArch64 kernel-dot-f32 / kernel-dequant-dot-q8-0 preserve
+         ;; their operand registers (its ADR 0085); #189 its suite runs on kbb
+         ;; (tests only); #190 the kernel-object-entries row and fuel tier
+         ;; for `aiueos-qwen35-hadamard`, the Bonsai Hadamard transform
+         ;; (aiueos ADR-0222 stage A) -- the object compiles for
+         ;; x86_64-aiueos-kernel-v1 only with that row.
+         ;; Advanced 2026-09-23, 207db01 -> a86c08c (kotoba-native main,
+         ;; forward only: ahead 2 behind 0). #191, the kernel-object-entries
+         ;; row and 16,777,216 fuel tier for `aiueos-qwen35-rope` (aiueos
+         ;; ADR-0222 stage B, the rope stage) -- the object compiles for
+         ;; x86_64-aiueos-kernel-v1 only with that row.
+         ;; Advanced 2026-09-24, 85a068a -> 989316b (kotoba-native main,
+         ;; forward only: ahead 2 behind 0). The kernel-object-entries rows
+         ;; `aiueos-browser-frame` (arity 4) and `aiueos-browser-reduce`
+         ;; (arity 5), the guest browser desktop (aiueos ADR-0223) -- both
+         ;; objects compile for x86_64-aiueos-kernel-v1 only with those rows
+         ;; (without them: "declares an aiueos export with no admitted
+         ;; symbol", exit 70).
+         ;; Advanced 2026-09-24, 989316b -> 6b10700 (kotoba-native main,
+         ;; forward only: ahead 4 behind 0). #0c07370 aggregate ABI v8
+         ;; (recursive / generic aggregates as one-word handles, its ADR 0087)
+         ;; and the kernel-object-entries row + 262,144 fuel tier for
+         ;; `aiueos-browser-frame2`, the guest desktop with text (aiueos
+         ;; ADR-0224) -- that object compiles only with the row.
+         ;; Advanced 2026-09-24, 6b10700 -> 71026eb (kotoba-native main,
+         ;; forward only: ahead 2 behind 0). The kernel-object-entries row for
+         ;; `aiueos-browser-key`, the guest desktop's input method (aiueos
+         ;; ADR-0225) -- that object compiles only with the row.
+         ;; Advanced 2026-09-25, b6bfe0aa -> 98406d16 (kotoba-native main, ahead 8, forward only):
+         ;; context ABI v11 slots 352-376 on both ISAs (the 6 commits before it are main's own) (string-from-bytes, superproject adr-2609242330).
+         ;; Advanced 2026-09-25, 98406d16 -> fe3409bf (kotoba-native main, ahead 2, forward only):
+         ;; `aiueos-browser-key` takes the kana-kanji dictionary (arity 5) and gets its
+         ;; own measured fuel tier 16384 (aiueos ADR-0235) -- that object compiles only with the row.
+         ;; Advanced 2026-09-25, fe3409bf -> 27228973 (kotoba-native main, ahead 4, behind 0,
+         ;; forward only): `kotoba.native.linux-static`, the loader-less Linux static ELF
+         ;; packager behind --target x86_64-linux-static / aarch64-linux-static
+         ;; (superproject adr-2609251400 C2).
+         ;; Advanced 2026-09-25, 27228973 -> d8f668cd (kotoba-native main, ahead 2, behind 0,
+         ;; forward only): the static ELF's capability handlers -- typed-cap-call over raw
+         ;; syscalls, decisions in tools/*.kotoba compiled by this compiler (adr-2609251400 C3).
+         ;; Advanced 2026-09-26, 6d5afeda -> bc42c311 (kotoba-native main, ahead 2, behind 0,
+         ;; forward only): the `aiueos-browser-damage` kernel-object row (arity 5) and its
+         ;; measured fuel tier 262144 (aiueos ADR-0242) -- that object compiles only with the row.
+         ;; Advanced 2026-09-26, a0e10057 -> cf02c3d8 (kotoba-native main tip, forward only):
+         ;; the linux-static packager needs no handler and seals no grant bit for a
+         ;; pure ability (:state, :abort) -- gap 4 of the selfhost foundation
+         ;; (superproject adr-2609242330), ladder floor :native-abort.
+         ;; Advanced 2026-09-26, cf02c3d8 -> da64ecbe (kotoba-native main tip, forward only):
+         ;; native :document values -- the canonical EDN text in the string handle,
+         ;; every operation a rewrite onto the string slots plus emitted helpers
+         ;; (kotoba.native.document); keyword-name drops a namespace. Gap 2 of the
+         ;; selfhost foundation (superproject adr-2609242330), ladder floor
+         ;; :native-document.
+         ;; Advanced 2026-09-26, da64ecbe -> 91dc22cc (kotoba-native main tip, forward only):
+         ;; i64 min / max and vector-take lowered (compare-select; bytes-slice view after an emitted bound), and the call-shaped refusal names the unlowered operation -- selfhost stage 2 (superproject adr-2609242330)
+         ;; Advanced 2026-09-26, 91dc22cc -> b1cb6037 (kotoba-native main tip, forward only):
+         ;; the static ELF answers the :fs/app-data OWNER form (form 15: O_PATH |
+         ;; O_NOFOLLOW, fstat, geteuid) -- superproject adr-2609242330. The range also
+         ;; carries a3f439f (bonsai: PTQ1_0 fused dequant-dot on x86-64, ADR 0088).
+         ;; Advanced 2026-09-29, b1cb6037 -> 832c130a: the affine analysis
+         ;; spells symbol-set membership with typed-set-contains on Kotoba,
+         ;; allowing the native self-host closure to pass that language wall.
+         ;; Advanced 2026-09-30, 33418cdc -> d625d554 (kotoba-native main, forward
+         ;; only; 33418cdc is on it): a constructor pays one unit of fuel on both
+         ;; ISAs (its ADR 0089, ADR 0353 floor :allocation-budget-native).
+         ;; Advanced 2026-10-01, 7b5b8fb8 -> 83eecc0e (kotoba-native main tip, forward only):
+         ;; the typed-map heads lower to the word arena, keys and values interleaved (ADR 0353 floor :native-hiccup-node).
+         ;; Advanced 2026-10-01, ace48fd6 -> 7b5b8fb8 (kotoba-native main tip, forward only):
+         ;; typed-list-new / typed-list-nth lower to the typed set's word arena (ADR 0353 floor :native-handles).
+         ;; Advanced 2026-10-01, d625d554 -> ace48fd6 (kotoba-native main tip, forward only):
+         ;; record-assoc lowers on both record routes -- ADR 0353 floor :native-record-operations.
+         ;; Advanced 2026-10-10, 1bdc1a5c -> 34c42ec9 (main, behind 0): one gas debit per form whatever its weight (kotoba-native#197).
+         ;; 2026-10-20, 34c42ec9 -> ede96447 (kotoba-native main tip, forward only):
+         ;; the portable elf64 packager now carries the full AIUEOS kernel-image
+         ;; shim and exports package-kernel-desktop (kotoba-native#203). Required
+         ;; by JUN-30: --selfhost-desktop selects package-kernel-desktop, which
+         ;; fail-closed refuses interrupt entries (:desktop-profile-has-no-isr-runtime).
+         :git/sha "ede9644767fa0d15f4d23dcbcaf2a2c15bcefc37"} ;; Advanced 2026-10-09 0ecca92a -> 1bdc1a5c (main tip, forward only): :bytes and :link documents as EDN tagged literals on native (kotoba-native#196, root ADR-2610092310 S4). Before that: Advanced 2026-10-06 82d3dea1 -> 0ecca92a (main tip, forward only): typed-list-conj lowers to vector-conj on the list's arena (ADR 0353 floor :empty-vector-field). Before that: Advanced 2026-10-04 04a8e0e3 -> 82d3dea1 (main tip, forward only): the record with no fields is the empty pair chain, 0 (ADR 0353 floor :options-map-argument). Before that: Advanced 2026-10-03 e2da186d -> 04a8e0e3 (main tip, forward only): a record an [:option R] holds selects the pair-chain lowering (ADR 0353 floor :native-option-record). Before that: Advanced 2026-10-03 83eecc0e -> e2da186d (main tip, forward only): aggregate-abi spells the record field :vector-i64, not :vector (ADR 0353 floor :native-vector-field). Before that: Native Image host: portable exception class and byte hex rendering.
+         ;; Advanced 2026-09-26 bc42c311 -> a0e10057 (main tip, forward only): string-search drops a bare (:require [kotoba.lang.text]) that named nothing (selfhost wall A, superproject adr-2609242330).
+        io.github.kotoba-lang/kotoba-component
+        {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
+         ;; Advanced 2026-09-11, ff2c3e8c -> cad39ab0 (kotoba-component main,
+         ;; ahead 10, behind 0, forward only): same wave as the text pin above --
+         ;; `{:kotoba/export [...]}` on every module.
+         ;;
+         ;; Advanced 2026-09-11, cad39ab0 -> 472de0c8 (kotoba-component main,
+         ;; ahead 2, forward only): `kotoba.component.admission` on both hosts
+         ;; -- the CID from node:crypto on Node, three vectors pinned to the JVM
+         ;; implementation -- the level-1 leaf of docs/jvm-route-topology.edn
+         ;; that `kotoba.compiler.core` stands on (ADR 0348 iteration 5).
+         ;;
+         ;; Advanced 2026-09-11, 472de0c8 -> db8690ac (kotoba-component main,
+         ;; ahead 2, forward only): `kotoba.component.core` (the encoder),
+         ;; `.artifact` (the packager) and the v3 WIT profile on both hosts --
+         ;; the last JVM-only family in docs/jvm-route-topology.edn outside
+         ;; this repository (ADR 0348 iteration 6). The encoder's whole JVM
+         ;; surface was 40 `.getBytes`, two `format`, and the wasm-tools seam.
+         :git/sha "b31d9fb59e26a1b64b0d674e293fd44365d19e09"} ;; Advanced 2026-09-24 db8690ac -> 94a9382c (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         ;; Advanced 2026-09-25 94a9382c -> b4c181a9 (main tip, forward only):
+         ;; the component contract and vendored WASI WIT are compile-time text
+         ;; (kotoba.component.embedded-resources, superproject adr-2609242330
+         ;; S3 (b')), so wit / wasi-contract / doctor / composition no longer
+         ;; require clojure.java.io; also carries main's clojure.* -> kotoba.*
+         ;; codemods (kotoba.bytes, kotoba.io, kotoba.lang.error).
+        ;; The package contract: `kotoba.lang.package-contract` validates a
+        ;; `kotoba.lock.edn` -- required fields, real CIDv1s, capability grant
+        ;; ⊆ declaration, signer revocation, and Ed25519 signature
+        ;; verification. `kotoba.compiler.nbb.package-lock` consumes a lock
+        ;; through it rather than re-deriving the rules; a second validator
+        ;; would be free to disagree with the one the corpus tests, which is
+        ;; exactly how `check-package-contract.bb` drifted before it was
+        ;; deleted.
+        ;;
+        ;; Pinned at 2ebe7461. This is a FLOOR, not a convenience: ccd26fda
+        ;; made signature verification portable and 2ebe7461 made
+        ;; `manifest-integrity-error` portable. Below ccd26fda every signature
+        ;; is rejected here (`:clj`-only verification), so no signed manifest
+        ;; can be consumed at all; below 2ebe7461 `manifest-integrity-error`
+        ;; does not exist off the JVM, and a lock would be admitted on a
+        ;; signature over a self-declared cid nothing checked against content.
+        ;; An older pin is not a weaker check, it is a build that cannot
+        ;; consume a lock.
+        io.github.kotoba-lang/kotoba-core-contracts
+        {:git/url "https://github.com/kotoba-lang/kotoba-core-contracts.git"
+         ;; Advanced 2026-09-11, 2ebe7461 -> 06d1e98a (kotoba-core-contracts main,
+         ;; ahead 30, behind 0, forward only): same wave as the text pin above --
+         ;; `{:kotoba/export [...]}` on every module. The range also carries
+         ;; capability id 261 (fs/browse-dir) and the kotoba.lang.text / coll /
+         ;; edn substitutions.
+         ;; Advanced 2026-09-12, 06d1e98 -> 6563b35 (kotoba-core-contracts main, forward only by
+         ;; `gh api .../compare`, ahead 2 behind 0): the reader-conditional
+         ;; `:default` clause so the Kotoba reader reads src/kotoba/lang/package_contract.cljk
+         ;; (adr-2609111900).
+         ;; Advanced 2026-09-25, b1bbfe0d -> 500497c4 (kotoba-core-contracts main,
+         ;; forward only): definition-block-fragment encodes the capability
+         ;; definition block with cbor.core's typed encoder; definition CIDs
+         ;; identical (adr-2609242330 S1c). The range also carries ef276ecb
+         ;; (kotoba-migrate-all).
+         :git/sha "00cfa8e29aaa3408e6594c6a55fd46867acc8bfd"} ;; Advanced 2026-09-24 6563b357 -> b1bbfe0d (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+        ;; CIDv1 for `module-lock`: pinned module resolution has to prove the
+        ;; bytes it read are the ones the lock names, and that is a hash, not a
+        ;; path check. Same pin the codebase/semantic layers use, so a source
+        ;; CID means the same thing on both sides of the boundary.
+        ;;
+        ;; Advanced 2026-09-03 (ADR 0330) to 561fe7d, which replaces the npm
+        ;; package `@noble/hashes` with kotoba-lang/org-nist-sha2 -- already in
+        ;; this closure, so the change removes a second sha2 implementation
+        ;; rather than adding a dependency.
+        io.github.kotoba-lang/io-multiformats
+        {:git/url "https://github.com/kotoba-lang/io-multiformats.git"
+         ;; Advanced 2026-09-11, 561fe7df -> dbb877ed (io-multiformats main, ahead
+         ;; 24, behind 0, forward only): same wave as the text pin above --
+         ;; `{:kotoba/export [...]}` on every module. The range also carries
+         ;; base32's bit-accumulator rewrite (the lazy-seq expansion root
+         ;; ADR-2609051700 names) and the sha256 digest seam.
+         ;; Advanced 2026-09-25, dbb877ed -> 721281d2 (io-multiformats main,
+         ;; forward only): base32's Kotoba reading over code points (the first
+         ;; wall of 10 cbor dependents once cbor.core passed; adr-2609242330 S1c).
+         :git/sha "721281d20525dc4d9af0064862d1c35226065ce2"}
+        ;; The verifier independently re-derives aggregate ABI v7, including
+        ;; recursive record-payload variants, and re-emits the widened boundary
+        ;; in addition to scalar/variant/call-frame checks.
+        ;; Producer and verifier move in the same closure; neither trusts the
+        ;; other's aggregate metadata.
+        ;; This pin's reason to move is 3d7a6f0, which re-derives the i64/i32
+        ;; shift-count literal rule with a predicate that recognizes a guest
+        ;; literal on BOTH compiler hosts (its ADR-0022). Before it, the gate
+        ;; was bare `integer?` -- false for the JavaScript bigint every
+        ;; .kotoba literal is under nbb -- so no artifact using a shift could
+        ;; be built on this CLI's JDK-free route while the JVM route compiled
+        ;; the same program. It also carries the earlier aggregate-ABI arities
+        ;; and v4 expected context ABI, the memory widths / window tiers /
+        ;; slice family, the firmware boundary that marks a module
+        ;; kernel-native (8158aa8), and the interrupt entry address gate
+        ;; (7070ec0) -- all fast-forward ancestors of this pin.
+        ;;
+        ;; Advanced 2026-09-03 (ADR 0330) for the fifth and sixth instances of
+        ;; that same independence: b58c009 re-derives the fused
+        ;; dequantize-and-dot family and bcea4a1 the four codebook formats, each
+        ;; on this side of the boundary. A format admitted by kotoba.kir and
+        ;; absent here is a green `check` and "runtime KIR operation rejected"
+        ;; on compile -- which is exactly how the kernel-dot-f32 gap was found
+        ;; the first time. 6a743c3 adds the image-symbol name check.
+        io.github.kotoba-lang/kotoba-verifier
+        {:git/url "https://github.com/kotoba-lang/kotoba-verifier.git"
+         ;; fuel64: d1985d62 reads the fuel ceiling from kotoba.kir instead of
+         ;; carrying 2^20 (kotoba-verifier ADR 0049). Required WITH the two
+         ;; pins above, not optional: this driver would otherwise admit a
+         ;; budget the pinned verifier refuses. Fast-forward from the pin main
+         ;; now carries (6c66e8b): ahead 2, behind 0.
+         ;;
+         ;; fwstore: and 96edd345, kotoba-verifier's MAIN, which contains
+         ;; d1985d62 and adds the four rows for `kernel-uefi-alloc-region`
+         ;; (kotoba-verifier ADR-0050). This verifier rejects by ABSENCE, so
+         ;; the older pin refuses the head the frontend admits.
+         ;; kbb slice 3: 1ee32cab admits a :string entry result — one machine
+         ;; word (pair(offset,length) handle), KEXE_RESULT_TYPE=string is
+         ;; readable by kexe_loader.c.
+         ;; Advanced 2026-09-07, 1ee32cab -> ed9bf9b4 (kotoba-verifier main, ahead
+         ;; 2, forward only), for kotoba-verifier#51: the rows for
+         ;; `kernel-undefined-opcode-handler-address`. This verifier rejects by
+         ;; ABSENCE, so without this the head the frontend now admits and kir now
+         ;; lowers would still be a green `check` and a red `compile`.
+         ;;
+         ;; Advanced 2026-09-08, 2e435cf4 -> 258da2ca (kotoba-verifier main,
+         ;; ahead 5, forward only), and this one is REQUIRED by the
+         ;; `extract-native` change in this commit rather than merely paired
+         ;; with it. The `.cljs` branch of `verify-artifact!` had never once
+         ;; run against a real native artifact -- `amu verify` was `.clj`-only
+         ;; until today -- so six gates read the JVM's representation and
+         ;; refused nbb's. Measured on this repository's SHA-512 aarch64
+         ;; artifact with the old pin: "malformed code bytes", because the
+         ;; byte gate asked `integer?` of a BigInt, which is false. The five
+         ;; commits replace `integer?` with `guest-integer?` at three gates,
+         ;; compare six structures through `guest=`, and normalize
+         ;; `[:limits :fuel]` to a Number at the interpreter boundary.
+         ;;
+         ;; And on to ea50d8f2 (same day, ahead 2, forward only) for the
+         ;; SEVENTH site of the same class, which is the first that was not a
+         ;; refusal: a param index read out of an artifact is a bigint on this
+         ;; host, and `nth` will not take one while `set` and `distinct` throw
+         ;; when they hash one. Measured with `examples/held-operations.kotoba`
+         ;; compiled to aarch64-macos: `extract-native` answered
+         ;; `:kotoba/internal-error`, which points at the compiler instead of
+         ;; at the artifact. That commit also rebuilds the verifier's native
+         ;; fixture, which had gone stale enough that its own suite carried a
+         ;; permanent red.
+         
+         ;; Advanced 2026-09-09 for kotoba-verifier 39db2f3, the other half
+         ;; of the f64 signature admission. This verifier rejects by
+         ;; ABSENCE, so without it the boundary kir now admits is refused
+         ;; at compile time.
+         ;;
+         ;; Advanced 2026-09-09, 39db2f3f -> 33b3d067 (kotoba-verifier main,
+         ;; forward only). The SLICE memory subfamily plus `kernel-subregion`
+         ;; is admitted on general native targets when the verifier's own
+         ;; re-derivation proves every base is a parameter -- so a hosted
+         ;; program can read a region ITS CALLER GRANTED, which is the
+         ;; primitive `kotoba-lang/inference`'s kernel refuses on today. The
+         ;; byte-window family and everything privileged stay aiueos-only, and
+         ;; a literal base is refused on a hosted target even though the
+         ;; frontend admits one.
+         ;;
+         ;; Without this pin `amu compile --target aarch64` still answers
+         ;; "bounded kernel memory operation requires the aiueos kernel
+         ;; target" for a program the verifier now admits -- a green
+         ;; `amu check` followed by a red `amu compile`, which is the exact
+         ;; skew this repo's own deps comments already warn about.
+         ;;
+         ;; Advanced 2026-09-09 to 6f4871f3. Two admissions land together and
+         ;; both are needed by the same program: the four rodata literal heads
+         ;; leave the verifier's aiueos-only set for the two HOSTED native
+         ;; targets, and `traceable-region-base?` admits a rodata literal as a
+         ;; region base beside a parameter. A pool that is addressable and
+         ;; unreadable is not a pool.
+         ;;
+         ;; The literal is admitted as a base for a reason the integer is not:
+         ;; `4096` is an address the program chose and could have chosen
+         ;; differently, while `(bytes-literal "...")` is a relocation the
+         ;; backend resolves into a pool it placed beside the code -- the
+         ;; program cannot make it point anywhere else, and the bytes it
+         ;; reaches are its own.
+         ;;
+         ;; Same shape: main's sha contains this one (ahead 8, behind 0).
+         ;;
+         ;; Advanced 2026-09-09, 33b3d067 -> 1810a62c (kotoba-verifier main, forward
+         ;; only, 2 commits): `string-operations` gains `string-index-of 2`. Without it
+         ;; the backend emits code this verifier then refuses -- the second gate of
+         ;; ADR 0002, which measured that one gate alone unlocks nothing.
+         ;;
+         ;; Advanced 2026-09-11, 85ea11d6 -> f1efb423 (kotoba-verifier main, forward
+         ;; only; carries that repo's .cljk rename and the eighth site of the
+         ;; bigint class): `signing/sign` and `signing/verify` checked a validity
+         ;; bound with `integer?`, which is false for the bigint the kotoba reader
+         ;; hands back on Node. Measured here: an envelope signed on Node, written,
+         ;; read back, refused as "signature statement mismatch". Required by the
+         ;; trust-plane commands (ADR 0348) landing on the nbb route.
+         ;; Advanced 2026-09-11, f1efb423 -> 02774799 (kotoba-verifier main, ahead
+         ;; 4, behind 0, forward only): same wave as the text pin above --
+         ;; `{:kotoba/export [...]}` on every module.
+         ;; Advanced 2026-09-12, 0277479 -> 9cb3b0f (kotoba-verifier main, forward only by
+         ;; `gh api .../compare`, ahead 2 behind 0): the reader-conditional
+         ;; `:default` clause so the Kotoba reader reads src/kotoba/verifier.cljk
+         ;; (adr-2609111900).
+         ;; Advanced 2026-09-15, 9cb3b0f -> a0d0799 (kotoba-verifier main, forward
+         ;; only, its #56): `expected-context` names ABI v5 with
+         ;; `:string-index-of-offset 216`; the v5 artifacts this compiler now
+         ;; seals are refused by any earlier verifier, by name.
+         ;; Advanced 2026-09-16 to 8f6ee07 (kotoba-verifier main, forward only,
+         ;; its #57): expected-context v6, the arena-scope scalar-shape rule.
+         ;; Advanced 2026-09-16 to fb402bf (kotoba-verifier main, its #58):
+         ;; expected-context v7, the four text heads admitted.
+         ;; Advanced 2026-09-16 to 72ba0f4 (kotoba-verifier main, its #59):
+         ;; expected-context v8, the two line heads admitted.
+         ;; Advanced 2026-09-16 to ccbf530 (its #60): the vector LITERAL bound
+         ;; stays at 16384 (code size) while the runtime length moves.
+         ;; Advanced 2026-09-16 to c657b65 (its #61): expected-context v9.
+         ;; Advanced 2026-09-16 to e56795f (its #62): expected-context v10.
+         ;; Advanced 2026-09-24 1a3abd19 -> 1e304790 (kotoba-verifier main, forward only):
+         ;; aggregate ABI v8 -- recursive / generic ADT handles on native.
+         ;; Advanced 2026-09-24, 9a0d3341 -> 447dfb00 (kotoba-verifier main, ahead 5,
+         ;; behind 0, forward only), adr-2609242100 P4: unmetered native artifacts; oracle inconclusive admitted only when the artifact says so.
+         ;; Advanced 2026-09-25, c4742c04 -> 58de25fa (kotoba-verifier main, ahead 2, forward only):
+         ;; expected-context v11 and the bytes heads' arities (string-from-bytes, superproject adr-2609242330).
+         ;; Advanced 2026-09-25, 58de25fa -> a204f533 (kotoba-verifier main, ahead 4,
+         ;; behind 0, forward only): `kotoba.verifier.linux-static`, which the
+         ;; static ELF is verified by before it is written (superproject adr-2609251400 C2).
+         ;; Advanced 2026-09-25, a204f533 -> 13475abc (kotoba-verifier main, ahead 2, behind 0,
+         ;; forward only): `verify-image!` with the packager's options -- the handler decision
+         ;; artifacts re-derived from their programs, the sealed grant checked (adr-2609251400 C3).
+         ;; Advanced 2026-09-26, 1e92074c -> 83552671 (kotoba-verifier main tip, forward only):
+         ;; :abort is a pure-ability row member beside :state, and the static-ELF
+         ;; verifier reads only capability wire ids -- gap 4 of the selfhost
+         ;; foundation (superproject adr-2609242330), ladder floor :native-abort.
+         ;; Advanced 2026-09-26, 83552671 -> 475ce1ec (kotoba-verifier main tip, forward only):
+         ;; the native document operations verify (its own table) -- gap 2 of the
+         ;; selfhost foundation (superproject adr-2609242330), ladder floor
+         ;; :native-document.
+         ;; Advanced 2026-09-26, 475ce1ec -> d6515111 (kotoba-verifier main tip, forward only):
+         ;; min / max and vector-take / vector-f64-take in its own tables -- selfhost stage 2 (superproject adr-2609242330)
+         ;; Advanced 2026-09-26, d6515111 -> 7fd42966 (kotoba-verifier main tip, forward only):
+         ;; the verifier's own copy of the export codec types (:vector-i64, :bytes),
+         ;; which tools/kexe_loader.c's boundary codec builds and decodes
+         ;; (superproject adr-2609242330).
+         ;; Advanced 2026-09-27, 7fd42966 -> e3e24593 (kotoba-verifier main tip, forward only):
+         ;; kernel-dequant-dot-ptq1-0, PTQ1_0 fused dequant-dot (aiueos ADR-0222, kotoba-native ADR 0088).
+         ;; Advanced 2026-10-01, a560612e -> 718befe6 (kotoba-verifier main tip, forward only;
+         ;; a560612e joined main in this merge): a schema table a function signature
+         ;; needs travels with the program -- ADR 0353 floor :native-record-boundary.
+         ;; Advanced 2026-10-01, 32d8a4a2 -> 4410753e (kotoba-verifier main tip, forward only):
+         ;; the typed-map heads re-derived, and a record read out of a map of records (ADR 0353 floor :native-hiccup-node).
+         ;; Advanced 2026-10-01, 1e1b69a6 -> 32d8a4a2 (kotoba-verifier main tip, forward only):
+         ;; typed-list-new / typed-list-nth re-derived, a record through a list item, a let-bound
+         ;; record local and a record-reference field forward (ADR 0353 floor :native-handles).
+         ;; Advanced 2026-10-01, 718befe6 -> 1e1b69a6 (kotoba-verifier main tip, forward only):
+         ;; a record projection sees through let, if and an update, and a let naming a
+         ;; record parameter binds its handle -- ADR 0353 floor :native-record-operations.
+         ;; Advanced 2026-10-09, 192005f9 -> 834c8436 (main, ahead 4, behind 0):
+         ;; context ABI v12 admitted for a program carrying a :gas-schedule (kotoba-verifier#66) -- consensus gas, superproject adr-2610092340 D12.
+         ;; (contains 406f6522, the :bytes / :link pin main took the same day)
+         ;; Advanced 2026-10-09, 834c8436 -> 52a8e4f0 (main, ahead 2, behind 0): a gas schedule read back
+         ;; as bigints is checked, and narrowed for re-emission (kotoba-verifier#67).
+         :git/sha "52a8e4f0e2b24de619425199cfbd9eed25443097"} ;; Advanced 2026-10-07 44fd1b56 -> 192005f9 (main tip, forward only): a let naming an update of a known record binds that record (ADR 0353 floor :native-rebound-row-update). Before that: Advanced 2026-10-06 90ff3911 -> 44fd1b56 (main tip, forward only): typed-list-conj is verified (ADR 0353 floor :empty-vector-field). Before that: Advanced 2026-10-04 fde6f218 -> 90ff3911 (main tip, forward only): a record may hold a [:list R] of one-word items, and a let naming a list item is that record (ADR 0353 floor :record-list-sequence). Before that: Advanced 2026-10-04 3e8134cd -> fde6f218 (main tip, forward only): the record with no fields passes the native record check (ADR 0353 floor :options-map-argument). Before that: Advanced 2026-10-03 4a87b807 -> 3e8134cd (main tip, forward only): the record an [:option R] holds, defaulted to R, is R to the record check (ADR 0353 floor :native-option-record). Before that: Advanced 2026-10-03 4410753e -> 4a87b807 (main tip, forward only): a record holding a :vector-i64 is admitted internally and refused at an export (ADR 0353 floor :native-vector-field). Before that: Native Image host: avoid reflective alength class lookup (a560612e).
+
+        ;; EXPLICIT FLOORS FOR TRANSITIVE DEPENDENCIES (2026-09-12, adr-2609111900
+        ;; source-side wave). None of the eight coordinates below was named in
+        ;; this file before today; each reached the classpath only through a
+        ;; sibling's `:git/sha`, and tools.deps takes the newest sha it is
+        ;; shown -- so when the `{:kotoba/export [...]}` wave annotated each
+        ;; repository's main on 2026-09-11, the annotated sha never arrived
+        ;; here. Measured at 46d91a25 on the project route (`amu check <f>
+        ;; --source-path <every src root> --jvm-free`, 210 sources): 61 modules
+        ;; were refused "project module <ns> requires an explicit :export
+        ;; vector", and 42 of those named a namespace from one of these eight
+        ;; (kotoba.lang.coll 18, kotoba.lang.edn 8, sha2.core 3,
+        ;; kotoba.codegen.layout 3, kotoba.codegen.relocation 2, cbor.core 2,
+        ;; sha2.sha512 / hash.subpath-dispatch / kotoba.codegen.mc / kotoba.mir /
+        ;; kotoba.gmir / ed25519.core 1 each; the other 19 named json.* 9,
+        ;; ipld.* / kotoba.value.codec 9, and this repository's own
+        ;; nbb/test_cli 1). Each floor is the repository's
+        ;; main, forward-only from the sha the sibling named (gh compare: ahead
+        ;; N, behind 0), and the sibling that named the old sha is written
+        ;; beside it so the next reader can tell a floor from a stray pin.
+        ;;
+        ;; coll: named by kotoba-core-contracts 06d1e98a as 563f9e89. Its main
+        ;; (376f8cbd) ALSO assembles a facade `kotoba.coll` from 29
+        ;; per-definition repositories (`coll-*` x27, `set`, `walk`), each one
+        ;; unannotated module. Nothing on this classpath requires `kotoba.coll`
+        ;; (0 requires across the 25 src roots, amu src/test and the test-alias
+        ;; roots; the compiler links `kotoba.lang.coll`, which requires
+        ;; nothing), so the facade's parts are excluded: taking them would put
+        ;; 29 src roots on the selfhost denominator that nothing links, each
+        ;; refused for naming itself. Annotating 29 one-module repositories is
+        ;; the other way to close that, and it is not this commit's.
+        io.github.kotoba-lang/coll
+        {:git/url "https://github.com/kotoba-lang/coll.git"
+         ;; 563f9e89 -> 376f8cbd (coll main, ahead 14, behind 0)
+         :git/sha "f74e248f0a07e8ae572885f50fab6bdb39dc24be" ;; Advanced 2026-09-24 376f8cbd -> 0ffd5f63 (main tip, forward only): kotoba.lang.coll union, difference, intersection are needed by the repos migrated off clojure.set
+         :exclusions [io.github.kotoba-lang/coll-assoc-some
+                      io.github.kotoba-lang/coll-bounded-postwalk
+                      io.github.kotoba-lang/coll-bounded-prewalk
+                      io.github.kotoba-lang/coll-deep-merge
+                      io.github.kotoba-lang/coll-filter-keys
+                      io.github.kotoba-lang/coll-filter-vals
+                      io.github.kotoba-lang/coll-index
+                      io.github.kotoba-lang/coll-index-by
+                      io.github.kotoba-lang/coll-join
+                      io.github.kotoba-lang/coll-keywordize-keys
+                      io.github.kotoba-lang/coll-map-keys
+                      io.github.kotoba-lang/coll-map-vals
+                      io.github.kotoba-lang/coll-postwalk
+                      io.github.kotoba-lang/coll-postwalk-replace
+                      io.github.kotoba-lang/coll-prewalk
+                      io.github.kotoba-lang/coll-prewalk-replace
+                      io.github.kotoba-lang/coll-project
+                      io.github.kotoba-lang/coll-rename
+                      io.github.kotoba-lang/coll-rename-keys
+                      io.github.kotoba-lang/coll-select
+                      io.github.kotoba-lang/coll-set-difference
+                      io.github.kotoba-lang/coll-set-intersection
+                      io.github.kotoba-lang/coll-set-union
+                      io.github.kotoba-lang/coll-stringify-keys
+                      io.github.kotoba-lang/coll-subset
+                      io.github.kotoba-lang/coll-superset
+                      io.github.kotoba-lang/coll-walk
+                      io.github.kotoba-lang/set
+                      io.github.kotoba-lang/walk]}
+        ;; edn: named by kotoba-core-contracts 06d1e98a as 21cfcaef. Same
+        ;; facade shape as coll: main assembles `kotoba.edn` from 4 `edn-*`
+        ;; repositories nothing here requires (the compiler links
+        ;; `kotoba.lang.edn`, which requires kotoba.lang.text). Excluded for
+        ;; the same reason.
+        io.github.kotoba-lang/edn
+        {:git/url "https://github.com/kotoba-lang/edn.git"
+         ;; 21cfcaef -> 79dba32c (edn main, ahead 22, behind 0)
+         ;; Advanced 2026-09-26 3f1889dd -> 9e58ee22 (main tip, forward only): read-string gives Kotoba the 2-arity ex-info, host keeps the cause (selfhost wall C, superproject adr-2609242330); also carries kotoba.bytes for UTF-8 size and kotoba.test in edn tests.
+         ;; Repinned 2026-10-07 47f6a49e -> d3287376 (edn main tip, forward only): 47f6a49e
+         ;; (Native Image/JVM host: character comparisons and byte count) lived only on a
+         ;; deleted branch; it landed on main as d3287376 (edn#7, squash), on top of 3cd952e1
+         ;; (export metadata quoted for JVM namespace loading). Same lexer content.
+         :git/sha "d328737619259ae31384dce61ffe42656586a987"
+         :exclusions [io.github.kotoba-lang/edn-escape-controls
+                      io.github.kotoba-lang/edn-read-all
+                      io.github.kotoba-lang/edn-read-string
+                      io.github.kotoba-lang/edn-write-string]}
+        ;; kotoba-codegen: named by kotoba-native 19400641 as ce1aada1.
+        io.github.kotoba-lang/kotoba-codegen
+        {:git/url "https://github.com/kotoba-lang/kotoba-codegen.git"
+         ;; ce1aada1 -> 3b79b3fd (kotoba-codegen main, ahead 6, behind 0)
+         ;; Advanced 2026-09-27, 9a54c249 -> dabdc0b9 (kotoba-codegen main tip, forward only):
+         ;; kernel-dequant-dot-ptq1-0, PTQ1_0 fused dequant-dot (aiueos ADR-0222, kotoba-native ADR 0088).
+         :git/sha "dabdc0b966412211a58db4c57b230b819b8193d7"}
+        ;; kotoba-mir / kotoba-gmir: named by kotoba-native 19400641 as
+        ;; 1a1c4358 / a3f0597c. The two move together (mir requires gmir).
+        io.github.kotoba-lang/kotoba-mir
+        {:git/url "https://github.com/kotoba-lang/kotoba-mir.git"
+         ;; 1a1c4358 -> b82463c2 (kotoba-mir main, ahead 6, behind 0)
+         ;; b82463c2 -> 1a6424c8 (2026-09-15, its #65): `:string-index-of 216`
+         ;; in runtime-context-offsets, ABI v5.
+         ;; 1a6424c8 -> b33e90d8 (2026-09-16, its #66): offsets 224 / 232.
+         ;; b33e90d8 -> a51dbab3 (2026-09-16, its #67): offsets 240-264.
+         ;; a51dbab3 -> fe5ce059 -> 2c4793dd (2026-09-16, its #68 / #69):
+         ;; offsets 272 / 280 and the fourth runtime argument register.
+         ;; 2c4793dd -> 944b5d30 (2026-09-16, its #70): offsets 336 / 344.
+         ;; Advanced 2026-09-25, cfb086be -> 67a83d06 (kotoba-mir main, ahead 4, forward only):
+         ;; offsets 352-376 (string-from-bytes, superproject adr-2609242330).
+         ;; Advanced 2026-09-27, 67a83d06 -> abb72f61 (kotoba-mir main tip, forward only):
+         ;; kernel-dequant-dot-ptq1-0, PTQ1_0 fused dequant-dot (aiueos ADR-0222, kotoba-native ADR 0088).
+         ;; Advanced 2026-09-30, abb72f61 -> 205f2a93 (kotoba-mir main, forward only):
+         ;; :fuel-charge at the context's fuel word (ADR 0353 floor :allocation-budget-native).
+         ;; Advanced 2026-10-09, 205f2a93 -> 63d6e441 (main, ahead 4, behind 0):
+         ;; :gas-charge at the gas word 384, context ABI v12 (kotoba-mir#73) -- consensus gas, superproject adr-2610092340 D12.
+         ;; Advanced 2026-10-10, 63d6e441 -> 02dc802a (main, behind 0): the gas-word test passes :gas-charge its weight (kotoba-mir#74).
+         :git/sha "02dc802a152ae3572f489482b6edfd2e476291f4"} ;; Advanced 2026-09-24 6d92aea9 -> cfb086be (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+        io.github.kotoba-lang/kotoba-gmir
+        {:git/url "https://github.com/kotoba-lang/kotoba-gmir.git"
+         ;; a3f0597c -> a4b682c4 (kotoba-gmir main, ahead 6, behind 0)
+         ;; a4b682c4 -> 8e572968 (2026-09-15, its #31): `:string-index-of 2`
+         ;; in runtime-operation-arities, ABI v5.
+         ;; 8e572968 -> 966bb4ca (2026-09-16, its #32): :arena-enter / :arena-leave.
+         ;; 966bb4ca -> 2f4ee3ac (2026-09-16, its #33): the four text arities.
+         ;; 2f4ee3ac -> 790a7298 (2026-09-16, its #34): the two line arities.
+         ;; 790a7298 -> 3350ad20 (2026-09-16, its #35): the two range arities.
+         ;; Advanced 2026-09-25, cf39f7c1 -> 47763164 (kotoba-gmir main, ahead 4, forward only):
+         ;; the four ABI v11 runtime arities (string-from-bytes, superproject adr-2609242330).
+         ;; Advanced 2026-09-27, 47763164 -> 8e0c3a23 (kotoba-gmir main tip, forward only):
+         ;; kernel-dequant-dot-ptq1-0, PTQ1_0 fused dequant-dot (aiueos ADR-0222, kotoba-native ADR 0088).
+         ;; Advanced 2026-09-30, 763609e3 -> 6c3651f9 (kotoba-gmir main, forward only):
+         ;; the :fuel-charge arity (ADR 0353 floor :allocation-budget-native).
+         ;; Advanced 2026-10-09, 6c3651f9 -> 54ac95b7 (main, ahead 2, behind 0):
+         ;; the :gas-charge runtime arity (kotoba-gmir#39) -- consensus gas, superproject adr-2610092340 D12.
+         ;; Advanced 2026-10-10, 54ac95b7 -> a891d432 (main, behind 0): :gas-charge takes the form's weight, arity 1 (kotoba-gmir#40).
+         :git/sha "a891d4328132058d31756935a8a1d51630526fcc"}
+        ;; org-nist-sha2: named by osaho f404babb as cb67e53e. Its main adds
+        ;; `text` as a dependency (already here) and moves amu / osaho into
+        ;; the :test alias, so the closure does not grow.
+        io.github.kotoba-lang/org-nist-sha2
+        {:git/url "https://github.com/kotoba-lang/org-nist-sha2.git"
+         ;; cb67e53e -> ad98470c (org-nist-sha2 main, ahead 13, behind 0)
+         :git/sha "8e38c43f5bd5fca90dba613a10c0db76fa2e2140"} ;; Advanced 2026-09-24 ad98470c -> 8e38c43f (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+        ;; org-ietf-cbor: named by io-ipld (1a2e10cf, and still by 3e48e468)
+        ;; as 1dacfc40.
+        io.github.kotoba-lang/org-ietf-cbor
+        {:git/url "https://github.com/kotoba-lang/org-ietf-cbor.git"
+         ;; 1dacfc40 -> 4c129f82 (org-ietf-cbor main, ahead 20, behind 0)
+         ;; Advanced 2026-09-24, 8ddc27d6 -> b3391fa3 (org-ietf-cbor main, ahead 2,
+         ;; behind 0, forward only by gh api compare): adr-2609242330 S1 -- pure
+         ;; byte plumbing, Kotoba `:default` leaves; encoded bytes pinned by a
+         ;; 2,367-value golden corpus written by 8ddc27d6, io-ipld CIDs unchanged.
+         ;; Advanced 2026-09-25, b3391fa3 -> cd9adc9b (org-ietf-cbor main, ahead 2, forward only):
+         ;; bytes->str / bytes-like? get Kotoba bodies; text decodes fatally (string-from-bytes, superproject adr-2609242330).
+         ;; Advanced 2026-09-25, cd9adc9b -> a09268f8 (org-ietf-cbor main, forward only):
+         ;; the typed encoder (one function per CBOR type, no run-time dispatch;
+         ;; owner decision 2026-09-25); cbor.core passes the Kotoba project check;
+         ;; golden 2,367 values 0 byte diff (adr-2609242330 S1c).
+         :git/sha "a09268f8227a8c9b1ce145fa57b244af2ebe7d5e"} ;; Advanced 2026-09-24 4c129f82 -> 8ddc27d6 (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+        ;; org-ietf-ed25519: named by kotoba-core-contracts 06d1e98a and
+        ;; security 0e8e1a61 as c1ba8322. Its main adds `org-ietf-x25519` (a
+        ;; real dependency of ed25519.edwards, two unannotated modules) -- taken,
+        ;; not excluded: a library the source requires is not a facade.
+        io.github.kotoba-lang/org-ietf-ed25519
+        {:git/url "https://github.com/kotoba-lang/org-ietf-ed25519.git"
+         ;; c1ba8322 -> 312dec87 (org-ietf-ed25519 main, ahead 24, behind 0)
+         :git/sha "312dec875eb027021b7ad36c600151cd7bb22dc0"}
+}
+ :aliases {
+ :execution-v2 {:extra-deps {io.github.kotoba-lang/kototama
+                           {:git/url "https://github.com/kotoba-lang/kototama.git"
+                            :git/sha "b7bbcc44d08913fee69074ad70f92d341df2be92"}}}
+:test {:extra-paths ["test"]
+                  :extra-deps
+                  {;; Only `test/kotoba/compiler/backend_cljs_test.cljk` and
+                   ;; `test/kotoba/compiler/cli_test.cljk` require this, and both
+                   ;; are `.clj` -- the JVM test oracle, not the compiler. It sat
+                   ;; in top-level `:deps` until 2026-09-08, where it put a
+                   ;; third-party JVM library on the production closure of a
+                   ;; compiler whose stated exit is a native binary with no
+                   ;; Clojure installed. Measured before the move: one
+                   ;; tools.reader jar on `kbb -Spath`, zero `tools.reader`
+                   ;; references under `src/`, and zero entries in
+                   ;; `deps-lock.edn` -- the JDK-free path never resolved it, so
+                   ;; nothing about `bin/kotoba` changes here. What changes is
+                   ;; that the declaration now says where it is actually used.
+                   ;;
+                   ;; When this moved here it did NOT remove the jar: kotoba-sema
+                   ;; pulled it transitively, and `kbb -Spath` carried one
+                   ;; entry before and after. That is no longer true. kotoba-sema
+                   ;; 9d87c113 reads with one reader on both hosts and dropped the
+                   ;; dependency, so across the pin advance in this same commit the
+                   ;; production classpath goes 1 -> 0.
+                   ;;
+                   ;; The declaration stays here because the two `.clj` tests still
+                   ;; require it, and this is where they are. Do not promote it back
+                   ;; to top-level `:deps` to make some resolution problem go away:
+                   ;; that would put a JVM library back on the closure of a compiler
+                   ;; whose stated exit is a native binary with no Clojure installed.
+                   org.clojure/tools.reader {:mvn/version "1.5.2"}
+                   io.github.kotoba-lang/provider
+                   {:git/url "https://github.com/kotoba-lang/provider.git"
+                    :git/sha "0ba1fbabb536027d25bbefc50374fbe95e6b54ec"}
+                   ;; Advanced 2026-09-07, ec4d182e -> a569f1d1 (kototama-native
+                   ;; main, ahead 10, forward only), REQUIRED by the kotoba-kir
+                   ;; pin above: kotoba-kir d41dc85 (#81) renamed every
+                   ;; `:runtime` keyword kotoba-* -> kototama-*, and the
+                   ;; executor's untagged-supervisor gate compared the artifact
+                   ;; profile against the literal `:kotoba-supervisor-v1`.
+                   ;; Measured with only the kir pin moved: 122 "artifact and
+                   ;; runtime target profiles do not match" errors across the
+                   ;; native suites, 0 on the base. kototama-native #11 follows
+                   ;; the rename. Same sha in :native-run and
+                   ;; :native-conformance below -- one kototama-native.
+                   io.github.kotoba-lang/kototama-native
+                   {:git/url "https://github.com/kotoba-lang/kototama-native.git"
+                    ;; Advanced 2026-09-12, a4089a2f -> 005c9b74 (kototama-native
+                    ;; main, forward only): the executor on both hosts, which
+                    ;; :native-run below pins to the same commit.
+                    ;; Advanced 2026-09-24, 005c9b74 -> 749c74c5 (kototama-native main, ahead 4,
+                    ;; behind 0, forward only), adr-2609242100 P4: supervise a run under the artifact's fuel profile (unmetered by default).
+                    :git/sha "4fdc502667607ae17aa8ee4e79772acb0408ac66"}}
+                  ;; No :main-opts: the JVM test runner left with the JVM route
+                  ;; (2026-09-11). This alias remains as the DECLARATION of the
+                  ;; extra git dependencies the nbb test runners need;
+                  ;; scripts/lock-classpath.cljk records its closure under
+                  ;; :lock/alias-entries and print-classpath.cljk --alias test
+                  ;; resolves it with git alone. `kbb -Spath -M:test` is
+                  ;; how the lock is authored, not how anything runs.
+                  }
+           ;; :run / :conformance / :runtime-bench / :native-conformance /
+           ;; :fuel-estimate / :ipld-adl-conformance were JVM launch aliases
+           ;; (`kbb -M:<alias>`). Removed 2026-09-11 with the JVM route; their
+           ;; mains are listed in docs/adr 0347-the-jvm-route-is-removed.md as
+           ;; the port ledger.
+           ;;
+           ;; :native-run is back the same day as a DECLARATION, not a launch
+           ;; alias (ADR 0348 iteration 8): the closure `amu run` and
+           ;; `amu measure-runtime` need beyond the compiler's own. The
+           ;; executor is a runtime -- it builds the kexe loader with the host
+           ;; C toolchain and walks PATH for it -- so it stays off the
+           ;; compile closure; `scripts/lock-classpath.cljk` records this
+           ;; alias under :lock/alias-entries and `bin/amu` puts it on the
+           ;; classpath for exactly those two commands. Same sha as :test
+           ;; above -- one kototama-native.
+           :native-run {:extra-deps
+                        {io.github.kotoba-lang/kototama-native
+                         {:git/url "https://github.com/kotoba-lang/kototama-native.git"
+                          ;; 005c9b74: the executor portable on both hosts
+                          ;; (kototama-native main 2026-09-11, ahead of a4089a2f).
+                          ;; Advanced 2026-09-24, 005c9b74 -> 749c74c5 (kototama-native main, ahead 4,
+                          ;; behind 0, forward only), adr-2609242100 P4: supervise a run under the artifact's fuel profile (unmetered by default).
+                          :git/sha "4fdc502667607ae17aa8ee4e79772acb0408ac66"}}}}}

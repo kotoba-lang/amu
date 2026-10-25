@@ -1,0 +1,82 @@
+;; This file is staged with the exact current scalar cleanup leaf. The helpers
+;; below model syscall results and record observations; they do not implement
+;; the cleanup algorithm. Kernel faults/races remain a separate execution gate.
+(ns native-cleanup-fault-model (:export [main])
+ (:require [kotoba.native.owned-output-cleanup-cases :as fixtures]))
+(defn- cleanup-test-load64 [address :i64] :i64
+ (let [value (__r6-kgget address 11001)] (if (= value -9223372036854775808) 0 value)))
+(defn- cleanup-test-store64 [address :i64 value :i64] :i64 (__r6-kgput address 11001 value))
+(defn- cleanup-test-gl [slot :i64] :i64 (if (= slot 768) 1000 0))
+(defn- cleanup-test-f2-mode [address :i64] :i64 (cleanup-test-load64 (+ address 16)))
+(defn- cleanup-test-dec [address :i64 index :i64] :i64 1)
+(defn- cleanup-test-w [address :i64 at :i64 value :i64 width :i64] :i64 (+ at width))
+(defn- cleanup-test-close [fd :i64] :i64
+ (let [fault (cleanup-test-load64 -99) old (cleanup-test-load64 (+ 500 fd))
+       count (cleanup-test-store64 (+ 500 fd) (+ old 1))
+       repeated (if (> old 0) (cleanup-test-store64 -5 1) 0)
+       mask (cleanup-test-store64 -1 (bit-or (cleanup-test-load64 -1) (case fd 101 8 102 4 103 1 104 2 0)))]
+  (cond (and (= fd 103) (= fault 1)) -5 (and (= fd 103) (= fault 2)) -4
+        (and (= fd 104) (= fault 11)) -5 (and (= fd 102) (= fault 12)) -5
+        (and (= fd 101) (= fault 13)) -5 :else 0)))
+(defn- cleanup-test-f2-open-at [fd :i64 name :i64 flags :i64 mode :i64] :i64
+ (if (= (cleanup-test-load64 -99) 5) -5 104))
+(defn- cleanup-test-f2-flags [kind :i64] :i64 kind)
+(defn- cleanup-test-f2-sys [op :i64 a :i64 b :i64 c :i64 d :i64 e :i64 f :i64] :i64
+ (let [fault (cleanup-test-load64 -99)]
+  (cond (= op 2)
+    (let [dev (cleanup-test-store64 b (if (and (= a 104) (= fault 8)) 9 7))
+          ino (cleanup-test-store64 (+ b 8) (if (and (= a 104) (= fault 9)) 10 8))
+          mode (cleanup-test-store64 (+ b 16) 16384)]
+     (if (or (and (= a 102) (= fault 6)) (and (= a 104) (= fault 7))) -5 0))
+   (= op 6)
+    (if (= c 512)
+     (let [seen (cleanup-test-store64 -4 (+ 1 (cleanup-test-load64 -4)))] (if (= fault 10) -5 0))
+     (let [seen (cleanup-test-store64 -3 (+ 1 (cleanup-test-load64 -3)))]
+      (cond (= fault 3) -2 (= fault 14) -5 :else 0)))
+   :else -38)))
+
+;; The exact runtime leaf is inserted here by the native test staging script.
+;; Its only transformation is the reserved helper prefix, for a guest-safe
+;; unit namespace. Production source and staged leaf digests are recorded.
+
+(defn- fault-number [fault :keyword] :i64
+ (case fault :member-close-eio 1 :member-close-eintr 2 :members-enoent 3
+   :probe-open-error 5 :owned-stat-error 6 :named-stat-error 7 :device-mismatch 8 :inode-mismatch 9
+   :rmdir-error 10 :probe-close-eio 11 :directory-close-eio 12 :parent-close-eio 13 :member-unlink-error 14 0))
+(defn- reset [row [:ref :linux.static.cleanup/case]] :i64
+ (let [phase (record-get [:ref :linux.static.cleanup/case] row :phase)
+       live (record-get [:ref :linux.static.cleanup/case] row :live-mask)
+       fault (record-get [:ref :linux.static.cleanup/case] row :fault)
+       a (cleanup-test-store64 1000 phase)
+       b (cleanup-test-store64 1008 (if (= (bit-and live 8) 0) -1 101))
+       c (cleanup-test-store64 1016 (if (= (bit-and live 4) 0) -1 102))
+       d (cleanup-test-store64 1024 (if (= (bit-and live 1) 0) -1 103))
+       e (cleanup-test-store64 1032 (if (= (bit-and live 2) 0) -1 104))
+       dev (cleanup-test-store64 1040 7) ino (cleanup-test-store64 1048 8)
+       busy (cleanup-test-store64 1072 (if (= fault :cleanup-in-progress) 1 0))
+       count (cleanup-test-store64 1088 (record-get [:ref :linux.static.cleanup/case] row :member-count))
+       number (cleanup-test-store64 -99 (fault-number fault))
+       telemetry (loop [i 1] (if (= i 6) 0 (let [s (cleanup-test-store64 (- 0 i) 0)] (recur (+ i 1)))))
+       counts (loop [i 101] (if (= i 105) 0 (let [s (cleanup-test-store64 (+ 500 i) 0)] (recur (+ i 1)))))] 0))
+(defn- case-ok? [row [:ref :linux.static.cleanup/case]] :bool
+ (let [reset-state (reset row) fault (fault-number (record-get [:ref :linux.static.cleanup/case] row :fault))
+       result (cleanup-test-f2-cleanup)
+       ;; The current provider requires a fresh successful identity probe before
+       ;; deleting any member. Failed probes preserve the pinned renamed tree.
+       identity-refused (or (= fault 5) (= fault 6) (= fault 7) (= fault 8) (= fault 9) (= fault 11))
+       members (and (record-get [:ref :linux.static.cleanup/case] row :members?) (not identity-refused))
+       rmdir (and (record-get [:ref :linux.static.cleanup/case] row :rmdir?) (not identity-refused) (not= fault 14))]
+  (and (= (if result 1 0) (record-get [:ref :linux.static.cleanup/case] row :result))
+       (= (cleanup-test-load64 1000) (record-get [:ref :linux.static.cleanup/case] row :final-phase))
+       (= (cleanup-test-load64 -1) (record-get [:ref :linux.static.cleanup/case] row :close-mask))
+       (= (cleanup-test-load64 -3) (if members (record-get [:ref :linux.static.cleanup/case] row :member-count) 0))
+       (= (cleanup-test-load64 -4) (if rmdir 1 0)) (= (cleanup-test-load64 -5) 0))))
+(defn main [] :i64
+ (let [rows (fixtures/cases)]
+  (loop [i 0]
+   (if (= i (vector-count rows))
+    (let [p (typed-cap-call :io/write :string :string "PASS_NATIVE_CLEANUP_22_MODEL_CASES\n")] 0)
+    (let [row (typed-list-nth [:list [:ref :linux.static.cleanup/case]] rows i)]
+     (if (case-ok? row) (recur (+ i 1))
+      (let [p (typed-cap-call :io/write :string :string
+                (string-concat (keyword-name (record-get [:ref :linux.static.cleanup/case] row :name)) "\n"))] 91)))))))

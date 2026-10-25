@@ -63,7 +63,12 @@
    :kotoba.security/classification :internal}
   :clock/now
   {:source-operation clock/now :effect :clock/now :compiler-wire-id 7
-   :kotoba.security/classification :public}
+   :kotoba.security/classification :public
+   ;; the native Linux static runtimes (amu#1518; sleep: JUN-360)
+   :forms {:wall {:request "wall" :answer "epoch milliseconds, decimal"}
+           :monotonic {:request "monotonic" :answer "nondecreasing nanoseconds, decimal"}
+           :sleep {:request "sleep <ms>" :answer "the monotonic reading after sleeping ms (0..60000) milliseconds on CLOCK_MONOTONIC"
+                   :seccomp "clock_nanosleep only with wire 7 granted"}}}
   :state/transact
   {:source-operation state/transact :effect :state/transact :compiler-wire-id 8
    :kotoba.security/classification :confidential}
@@ -138,9 +143,10 @@
   {:source-operation process/spawn :effect :process/spawn :compiler-wire-id 20
    :kotoba.security/classification :restricted
    :source-status :friendly-qualified
-   :request "<program>[ARG_SEP<arg>]..."
+   :request "<program>[ARG_SEP<arg>]...[STDIN_SEP<stdin>]"
    :request-rules
    ["ARG_SEP separates the program from each argument; there is no quoting, and an argument cannot contain ARG_SEP"
+    "the first STDIN_SEP ends the argv part (so no argument contains STDIN_SEP); the bytes after it are written to the child's stdin and may contain ARG_SEP (selfhost static host only, JUN-357; the other hosts answer without it)"
     "<program> is non-empty; a request holding a NUL byte, or an empty program, is malformed (a plain trap, not a named refusal)"
     "<program> containing / must be byte-equal to a granted program; a bare name is looked up ONLY among the granted programs' last segments, ONLY when :path-lookup is true, and $PATH is never read"
     "the guest's spelling is argv[0]; the granted spelling is what is executed"
@@ -148,7 +154,7 @@
    :answer "<exit>\n<stdout>: the child's exit code in decimal, -1 when a signal ended it; then exactly the bytes it wrote to stdout"
    :child
    ["environment: empty except the variables :env names, copied from the host process's own environment"
-    "stdin: a pipe at EOF; stdout: captured, at most 16,384 bytes; stderr: the host's own fd 2"
+    "stdin: a pipe carrying the request's STDIN_SEP bytes (none without it), then EOF; written without blocking within the 10 s deadline, and a child that exits or closes stdin first drops the rest. stdout: captured, at most 16,384 bytes; stderr: the host's own fd 2"
     "no descriptor but 0, 1 and 2 (the rest are closed across execve)"
     "working directory: the :fs/app-data scope root when one is granted (the first entry when a host holds several), else inherited"
     "no_new_privs where the OS has it (Linux: PR_SET_NO_NEW_PRIVS; macOS and the js host have no equivalent -- recorded, not emulated)"
@@ -162,6 +168,7 @@
     :authority "a granted program may be run with ANY argument vector the grammar admits"
     :carriers
     {:amu-compile-policy ":spawn (top level, target-neutral); the linux-static target also reads the older :linux-static :spawn spelling, and refuses a policy that spells it both ways"
+     :amu-selfhost-static "KEXE_CAP_RESOURCES_20 (canonical programs), KEXE_SPAWN_ENV, KEXE_SPAWN_PATH_LOOKUP; opt-in KEXE_ALLOW=20; helper forked before guest sandbox; same bounded exec grammar"
      :kexe-loader "KEXE_CAP_RESOURCES_20 (programs, colon-separated), KEXE_SPAWN_ENV (names, colon-separated), KEXE_SPAWN_PATH_LOOKUP=1; a packaged command bakes all three in and ignores the environment"
      :kbb-js ":kotoba.policy/spawn in the kbb policy, with :proc/exec (the kbb name kbb compiles to :process/spawn) in :kotoba.policy/capabilities"}}
    :refusals
@@ -175,7 +182,9 @@
    ;; tools/linux_static_handlers.kotoba; the loader runs the program from
    ;; its unsandboxed supervisor), the kbb js host (kotoba-lang/kotoba
    ;; bin/kbb_js.cljk) restating the same rules in its own provider.
-   :answered-by #{:linux-static :kexe-loader :kbb-js}}
+   :answered-by #{:amu-selfhost-static :linux-static :kexe-loader :kbb-js}
+   :selfhost-static-targets #{:aarch64-linux :x86_64-linux}
+   :selfhost-static-evidence "docs/evidence/tcp-spawn-native-20261023/"}
   :secret/get
   {:source-operation secret/get :effect :secret/get :compiler-wire-id 21
    :kotoba.security/classification :restricted
@@ -326,6 +335,15 @@
   {:source-operation fs/app-data :effect :host/fs-app-data
    :compiler-wire-id 35
    :kotoba.security/classification :confidential
+   ;; The confinement contract every :fs/app-data provider must enforce
+   ;; (pinned 2026-10-20, JUN-11 review finding T5 residual). A provider that
+   ;; cannot enforce both clauses is refused at admission, never downgraded.
+   :confinement
+   {:scope "every request is admitted against the granted path scope; a path outside answers as absent (never a trap, never a leak of existence)"
+    :symlinks "no symlink is served: every path component is resolved with symlinks refused"
+    :descriptor-proof "after open, the descriptor is proved inside the granted scope before the bytes are trusted"
+    :reason :reason/fs-app-data-confinement-pinned
+    :source "measured 2026-10-19: amu tools/kexe_loader.c kexe_scope_open (O_NOFOLLOW_ANY + (st_dev, st_ino) fd containment, shared by EXISTS/STAT/READ); kotoba host_providers.cljk canonical-path + canonicalized prefix compare"}
    :forms
    {:read {:token nil :request "<path>" :answer "the file's bytes"
            :answered-by #{:kexe-loader :linux-static}}
@@ -354,10 +372,12 @@
     :rmdir {:token "RMDIR_SEP" :request "<path>RMDIR_SEP" :answer "\"1\" / \"0\""
             :answered-by #{:kexe-loader :linux-static}}
     :rename {:token "RENAME_SEP" :request "<from>RENAME_SEP<to>" :answer "\"1\" / \"0\""
-             :answered-by #{:kexe-loader :linux-static}}
+             :answered-by #{:kexe-loader :linux-static :amu-selfhost-static}
+             :amu-selfhost-static "each parent opened beneath the scope, renameat(2) of the last component (JUN-359)"}
     :fsync {:token "FSYNC_SEP" :request "<path>FSYNC_SEP"
             :answer "\"1\" once fsync(2) returned, \"0\" when the file cannot be opened or the flush fails"
-            :answered-by #{:kexe-loader :linux-static}}
+            :answered-by #{:kexe-loader :linux-static :amu-selfhost-static}
+            :amu-selfhost-static "a file or a directory, opened beneath the scope (JUN-359)"}
     :make-temp-dir {:token "MKTEMP_SEP" :request "<dir>MKTEMP_SEP<prefix>"
                     :answer "the absolute path of a NEW directory <dir>/<prefix><6 of [0-9a-z]>, mode 0700 (mkdtemp); \"\" when <dir> cannot be opened"
                     :answered-by #{:kexe-loader :linux-static}}
@@ -495,25 +515,37 @@
   ;; compiler native binary で対応」).
   ;;
   ;; `:string -> :string`, one ASCII request line, an answer in decimal or
-  ;; hex: INFO / ALLOC <bytes> / MAP <path> <offset> <length> / WRITE <handle>
-  ;; <offset> <hex> / READ <handle> <offset> <length> / PIPELINE <spv-path>
-  ;; <bindings> / BEGIN / DISPATCH <pipeline> <x> <y> <z> <handle>... /
-  ;; SUBMIT (answers the submit->fence nanoseconds) / FREE <handle>. The
-  ;; grammar is the loader's (amu tools/kexe_gpu_vulkan.c); the guest names
+  ;; hex, or a refusal "!<name> <text>". Among the verbs: INFO / ALLOC
+  ;; <bytes> / MAP <path> <offset> <length> / WRITE <handle> <offset> <hex> /
+  ;; READ <handle> <offset> <length> / PIPELINE <spv-path> <bindings> /
+  ;; BEGIN / DISPATCH <pipeline> <x> <y> <z> <handle>... / SUBMIT (answers
+  ;; the submit->fence nanoseconds) / FREE <handle>. The grammar's reference
+  ;; is amu tools/gpu_compute_protocol.kotoba (protocol v1): the full verb
+  ;; set, the bounds, the order rule and the refusal names. The removed C
+  ;; broker (tools/kexe_gpu_vulkan.c) is provenance only. The guest names
   ;; handles it was answered and workgroup counts, and the weights of a model
   ;; reach the device by PATH (MAP) rather than through this string, which is
   ;; bounded by the string pool.
   ;;
-  ;; The mechanism runs in the SUPERVISOR, not in the sandboxed guest: a
-  ;; Vulkan driver needs syscalls the guest is not admitted, and the guest
-  ;; reaches it over a pipe. Every decision -- which kernel, which shape,
-  ;; which layer, what to sample -- stays in the .kotoba program; the
-  ;; provider decides nothing.
+  ;; The mechanism is a separate GPU PROVIDER process, one per run (amu ADR
+  ;; 0371), never the sandboxed guest. The vendor GPU driver -- the kernel
+  ;; driver and the userspace stack (Vulkan loader and ICD, or
+  ;; Metal.framework) -- is platform (owner, 2026-10-22), and the provider is
+  ;; the only artifact that loads it. The guest gains no syscall for it: it
+  ;; writes one framed request on a pipe the launcher made and reads one
+  ;; framed answer. Every decision -- which kernel, which shape, which layer,
+  ;; what to sample -- stays in the .kotoba program; the provider decides
+  ;; nothing. Until ADR 0371's provider, launcher and seed admission land,
+  ;; wire 42 has no route: the seed checker refuses it (E2115).
   ;;
   ;; Its own effect and NOT :host/fs-app-data, though MAP and PIPELINE name
   ;; a path: what the grant carries is "may run compute on this host's GPU
   ;; and read back what it computed", and a file grant must not carry that,
-  ;; nor this grant open files for the guest to read.
+  ;; nor this grant open files for the guest to read. A MAP or PIPELINE path
+  ;; resolves ONLY through the digest-pinned artifact table the launcher
+  ;; grants (path, SHA-256, kind; the digest checked before first use); any
+  ;; other path is refused by name. The removed broker opened any path its
+  ;; supervisor could read; this grant no longer does.
   :gpu/compute
   {:source-operation gpu/compute :effect :host/gpu-compute
    :compiler-wire-id 42
@@ -524,12 +556,14 @@
   ;; may take connections has not thereby been allowed to open them, and one
   ;; that may read a connection has not been allowed to write into it.
   ;;
-  ;; A BROKER. The sockets are the kexe loader's SUPERVISOR's (amu
-  ;; tools/kexe_loader.c); the guest's sandbox (Linux seccomp, macOS
-  ;; Seatbelt) is NOT widened -- the guest writes a request on a pipe and
-  ;; reads the answer, as :process/spawn 20 and :gpu/compute 42 do. Every
-  ;; decision on the way (request grammar, address scope, handle range,
-  ;; bounds, refusal names) is amu tools/kexe_loader_decisions.kotoba.
+  ;; Providers are distinct: :kexe-loader is historical (the C loader was
+  ;; removed); :linux-static names the historical hosted packager, not Amu
+  ;; selfhost. :amu-selfhost-static is seed/76 and seed/77, on native
+  ;; aarch64/x86_64 Linux. Its own process mediates TCP after validating the
+  ;; wire grant, exact address scope, request and bounds. Its seccomp network
+  ;; set is enabled only when a TCP wire is granted. Guest source cannot
+  ;; name runtime primitives (JUN-325); no C loader or hosted compiler.
+  ;; Native evidence: docs/evidence/tcp-spawn-native-20261023/.
   ;;
   ;; `:string -> :string`. Handles are decimal 1..16, issued per execution
   ;; by the broker, shared by listeners and connections. An ENVIRONMENTAL
@@ -540,20 +574,21 @@
   ;; :capability/refused), never answered with something that looks like
   ;; data. Timeouts are 0..30000 ms (the loader's wall budget still bounds
   ;; the run); a read answers at most 16,384 bytes and a write takes at most
-  ;; 16,384. Only IPv4 dotted-quad addresses. The static Linux image carries
-  ;; no handler for these wires and refuses them at packaging, by name.
+  ;; 16,384. Only IPv4 dotted-quad addresses. Amu selfhost admits numeric, keyword and
+  ;; friendly forms as :string -> :string; other shapes stay refused.
   :net/listen
   {:source-operation net/listen :effect :net/listen :compiler-wire-id 43
    :kotoba.security/classification :confidential
    :source-status :friendly-qualified
    :request "<ipv4>:<port>"
    :answer "<listener-handle>"
-   :grant {:scope "exact <ipv4>:<port> entries; kexe loader: KEXE_CAP_RESOURCES_43, comma-separated"}
+   :grant {:scope "exact <ipv4>:<port> entries; selfhost static and historical kexe loader: KEXE_CAP_RESOURCES_43, comma-separated"}
    :refusals {:trap "KEXE_TRAP {:kind :capability :capability :net/listen :reason :net/<name>}"
               :exit :capability/refused
               :names [:malformed-request :address-not-granted :handle-budget
                       :listen-failed :setup-failed]}
-   :answered-by #{:kexe-loader}}
+   :answered-by #{:amu-selfhost-static :kexe-loader}
+   :selfhost-static-targets #{:aarch64-linux :x86_64-linux}}
   :net/accept
   {:source-operation net/accept :effect :net/accept :compiler-wire-id 44
    :kotoba.security/classification :confidential
@@ -564,19 +599,21 @@
               :exit :capability/refused
               :names [:malformed-request :handle-out-of-range :handle-not-open
                       :handle-budget :timeout-budget :setup-failed]}
-   :answered-by #{:kexe-loader}}
+   :answered-by #{:amu-selfhost-static :kexe-loader}
+   :selfhost-static-targets #{:aarch64-linux :x86_64-linux}}
   :net/dial
   {:source-operation net/dial :effect :net/dial :compiler-wire-id 45
    :kotoba.security/classification :confidential
    :source-status :friendly-qualified
    :request "<ipv4>:<port> <timeout-ms>"
    :answer "<connection-handle> | timeout | refused | unreachable"
-   :grant {:scope "exact <ipv4>:<port> entries; kexe loader: KEXE_CAP_RESOURCES_45, comma-separated"}
+   :grant {:scope "exact <ipv4>:<port> entries; selfhost static and historical kexe loader: KEXE_CAP_RESOURCES_45, comma-separated"}
    :refusals {:trap "KEXE_TRAP {:kind :capability :capability :net/dial :reason :net/<name>}"
               :exit :capability/refused
               :names [:malformed-request :address-not-granted :handle-budget
                       :timeout-budget :setup-failed]}
-   :answered-by #{:kexe-loader}}
+   :answered-by #{:amu-selfhost-static :kexe-loader}
+   :selfhost-static-targets #{:aarch64-linux :x86_64-linux}}
   :net/read
   {:source-operation net/read :effect :net/read :compiler-wire-id 46
    :kotoba.security/classification :confidential
@@ -587,7 +624,8 @@
               :exit :capability/refused
               :names [:malformed-request :handle-out-of-range :handle-not-open
                       :byte-budget :timeout-budget]}
-   :answered-by #{:kexe-loader}}
+   :answered-by #{:amu-selfhost-static :kexe-loader}
+   :selfhost-static-targets #{:aarch64-linux :x86_64-linux}}
   :net/write
   {:source-operation net/write :effect :net/write :compiler-wire-id 47
    :kotoba.security/classification :confidential
@@ -598,7 +636,8 @@
               :exit :capability/refused
               :names [:malformed-request :handle-out-of-range :handle-not-open
                       :byte-budget]}
-   :answered-by #{:kexe-loader}}}
+   :answered-by #{:amu-selfhost-static :kexe-loader}
+   :selfhost-static-targets #{:aarch64-linux :x86_64-linux}}}
  :invariants
  [:semantic-name-is-qualified-keyword
   :source-operation-is-qualified-symbol

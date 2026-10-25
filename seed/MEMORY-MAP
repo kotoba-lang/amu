@@ -67,7 +67,7 @@
   [:c MM-CT 91 "R3: HEAP address of the composite type table CT (21-check writes it; 30-lower and the driver read it)"]
   ;; R5B (2026-10-03): two cells of the stat range of 40-a64enc (a pure module that writes none)
   [:c MM-FN2 96 "R5B: HEAP address of the FN side table FN2 (MM-FN-CAP records of FN2-W words; 21-check writes, 30-lower and 60-proj read)"]
-  [:c MM-CAPS 97 "R5B: the capability wires the module's checked code calls, a mask (bit w = wire w < 47; 21-check)"]
+  [:c MM-CAPS 97 "R5B: capability mask (wire w < 47 = bit w; wire 47 = extension bit 48; state bit 47 unchanged)"]
 
   ;; --- 1.2 regions: BASE (word address), W (words per record), CAP (records incl. the null record) ------
   ;; R6B (2026-10-03): the seed's own unity (14k lines) filled TOK to 129,234 of 131,072 (measured with a stats build of the R6A
@@ -114,6 +114,32 @@
   ;; MM-HEAP-BASE, MM-HEAP-END and MM-WORDS +2097152 (heap size unchanged; MM-WORDS 16252928 < 16M items).
   [:c MM-OUT-BASE 11735296] [:c MM-OUT-W 1] [:c MM-OUT-CAP 3145728]
   [:c MM-HEAP-BASE 14881024] [:c MM-HEAP-END 16646144]
+;; Static profile (2026-10-22, JUN-29 / M2): seed/00-ns-static.kotoba, used by the loaderless static closures, is this
+;; block with MM-TOK-CAP 786432, MM-CODE-CAP 2097152, MM-FIX-CAP 262144, MM-LITB-CAP 1048576 and MM-OUT-CAP 12582912 (every later base, MM-HEAP-END
+;; and MM-WORDS shifted by 12845056; MM-WORDS 29491200, heap size unchanged). The stack-machine static
+;; emitter turns the complete core into a native static image beyond the AArch64 core's 3 MiB OUT.
+;; 2026-10-23: complete26 plus adopted TCP/spawn needs 8,433,664 bytes before context;
+;; the old 8 MiB OUT refused E7104. 12 MiB OUT preserves all modules and existing checks. The core (seed/MANIFEST) keeps
+;; this block, so its payload identity is unchanged. The static runtime's per-vector limit is 2^25 items (KXRT-VECTOR-MAX).
+;; TOK growth (2026-10-23): full29 x86 generation after the kernel helper guard reached E101 region1
+;; at 655360 tokens. The static profile raises TOK by131072 entries and shifts every later region by524288 words.
+;; MM-WORDS29491200 stays below2^25; table widths, normal core, heap size, grants, results and fuel remain unchanged.
+;; The complete44 public static build also appends its native runtime. It
+;; exceeds NODE589824 (E101 region4). Grow only the static NODE capacity;
+;; the normal adopted18 source, widths and heap size remain unchanged.
+;; These six rows are consumed by seed/gen-static-ns.kotoba. That native
+;; generator derives every downstream base and checks the2^25 vector bound.
+;; BEGIN STATIC OVERRIDES
+;; [:s MM-TOK-CAP 786432]
+;; [:s MM-NODE-CAP 786432]
+;; [:s MM-CODE-CAP 2097152]
+;; [:s MM-FIX-CAP 262144]
+;; [:s MM-LITB-CAP 1048576]
+;; [:s MM-OUT-CAP 12582912]
+;; END STATIC OVERRIDES
+;; Historical LITB growth (2026-10-23, JUN-353): the combined compiler (seed/FULL-MANIFEST) reached 523 KiB of literal bytes and
+;; vector-literal tables (lowering adds the tables to the same region); MM-LITB-CAP 1048576 (+524288), every later base,
+;; MM-HEAP-END and MM-WORDS +524288 (MM-WORDS 24772608, heap size unchanged).
 
   ;; --- 1.3 record fields (offset inside a record) -------------------------------------------------------
   ;; TOK: one per token, source order. Written by 10-lex only.
@@ -188,7 +214,7 @@
                    specialization; bit 2: a handler's get clause; bit 3: a handler's put clause"]
   [:c FN2-ORIGIN 1 "a specialization: its template FN; a handler clause: the handler's name symbol"]
   [:c FN2-HAND 2 "a specialization: the handler (its get clause FN; put = get + 1); a handler clause: the get clause FN"]
-  [:c FN2-CAPS 3 "the effect mask the function's checked body performs directly (bit w = wire w, bit 47 = :state)"]
+  [:c FN2-CAPS 3 "direct effect mask (wire w < 47 = bit w; :state = bit 47; wire 47 = bit 48)"]
   [:c FN2-S 4 "a handler clause: the handler's state type S"]
   [:c FN2-FX 5 "21-check scratch: the inferred effect mask (effect ceilings)"]
   [:c FN2-NODE 6 "a handler clause: the defhandler form"]

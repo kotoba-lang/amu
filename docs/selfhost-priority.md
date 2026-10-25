@@ -49,8 +49,25 @@ apply to end-user apps.
    fallback is added to make a selfhost stage pass. `--jvm-free` alone is
    insufficient: it does not exclude Node/NBB/C. An unreachable component
    stays on the scoreboard as refused or blocked, with its reason.
+6. **The host's GPU driver is platform, not a legacy dependency.** The kernel
+   GPU driver and the vendor's userspace driver stack (the Vulkan loader and
+   its ICD, or Metal.framework) belong to the declared host, like the kernel.
+   Only the GPU provider of [ADR 0371](adr/0371-static-images-reach-the-gpu-through-a-provider-process.md)
+   may load them. The provider is never part of the compiler or selfhost
+   closure, never runs in CDCI, and never qualifies a C-free surface. This
+   does not admit a C loader, a C runtime object or any other foreign code.
+   Owner decision, 2026-10-22.
 
 ## Migration gates
+
+The owner selected the Embench-measured compiler lineage as the complete
+compiler core on 2026-10-22. Extend the adopted `seed/MANIFEST` implementation
+through the complete selfhost/public-CLI closure, preserving its semantics
+and measured provenance. [ADR 0370](adr/0370-embench-measured-compiler-core.md)
+and [`seed/compiler-core.json`](../seed/compiler-core.json) fix the baseline,
+descendant identities, review order and required qualification. The old
+optional seed/backend-fallback design is historical; it does not define the
+replacement product. Native-only acceptance remains unchanged.
 
 The final graph contains canonical `.kotoba` implementations. Existing CLJK
 fixtures, readers and host-specific branches are migration inventory; they
@@ -64,9 +81,11 @@ The migration proceeds through these gates:
 1. **Port the language and component boundary.** Migrate required source and
    fixtures to `.kotoba`, preserving recorded semantics, Definition CIDs and
    named refusals. Remove the requirement for a permanent paired CLJK surface.
-2. **Grow the native Kotoba compiler closure.** The adopted seed is a 16-module
-   compiler and has separate source-only x86_64 Linux support; neither covers
-   the complete Amu frontend, project system, verifier, and command surface.
+2. **Grow the native Kotoba compiler closure.** The original adopted seed
+   was a 16-module compiler. The current product retains the extended18
+   core in a complete29 native closure, with actual x86 execution recorded
+   in [native qualification](native-public-entry.md). The broader project
+   system, verifier and command surface retain their own acceptance.
    Extend it from Kotoba source and require each generation to compile and
    verify the next without the forbidden hosts or C loader/runtime. A
    historical subset fixed point does not qualify the full compiler.
@@ -91,13 +110,52 @@ still open; retiring an old route does not certify its replacement.
 
 The remaining four test/browser/fuzz/x86-seed workflow registrations and the
 old Node/KBB checker are retired in
-[native CDCI retirement](native-cdci-retirement.md). The temporary required
-merge-guard remains a separately held approval. No native controller or gate
-is activated or qualified by removing these legacy jobs.
+[native CDCI retirement](native-cdci-retirement.md). The historical required-context
+retirement was subsequently merged in Amu #1439. Removing the legacy jobs
+itself does not qualify the native replacement; current-source execution
+and CI receipts are recorded in [native qualification](native-public-entry.md).
 
 Tracking: AWAI-66 (loaderless bootstrap), AWAI-43 (native selfbuild inputs and
 fixed point), JUN-199 (product entry), KOT-13 (Kotoba core), JUN-198 (Kotoba
-CLI/build) and JUN-162 (the two-gate native CDCI controller).
+CLI/build). Active native CDCI controller work is tracked in JUN-199;
+archived controller issues do not remain prerequisites.
+
+### Typed map interfaces (JUN-235 / ABI JUN-233)
+
+The native project analyzer preserves `[:map K V]` in imported function
+signatures. It builds an empty `typed-map-new` expression with that exact
+descriptor for the temporary analysis stub, rather than substituting the
+older scalar `:map` type. Key and value types must belong to the existing
+closed import profile; direct floating map keys/values stay refused and map
+nesting is bounded. Namespace visibility, duplicate-name, schema and
+expression type checks still apply.
+
+These stubs describe interfaces only. They are not executable definitions
+and do not qualify multi-module code generation, ABI map transfer, the ABI
+WIT accessors, selfhost rebuilding, Q9 or CDCI. The source change has not yet
+been compiled or executed through the qualified loaderless route.
+
+## Canonical native project boundary candidate (2026-10-22)
+
+The same #1437 source draft now retires `.cljk`/`.cljc` project discovery,
+`compare-hir`, CLJK frontend APIs and the source-record lowering flag.
+Canonical packet marker 0 remains; legacy marker 1 refuses. Reserved-name
+validation is extracted unchanged from lowering, while lock/CID/order/budget
+and import/schema/typed-map refusal behavior remain. New record layouts and
+call arities require the same reviewed source revision throughout the image.
+See `docs/canonical-native-project-boundary.md`.
+
+Shared source admission now also accepts only `.kotoba`; the legacy positive
+source-kind labels are retired in both canonical core and historical adapter.
+Legacy source filenames still refuse as compiled-artifact input. The complete
+core no longer imports `kotoba.lang.text` for suffix checks, and typed error
+maps use explicit document keys. Its four public names/result shapes remain;
+current Definition CIDs/native behavior need fresh qualification. See
+`docs/canonical-source-admission.md`.
+
+This is source preparation only. Native admission, Definition CIDs,
+executable project links, full upstream/helper closure and self-rebuild remain
+open; no implementation/build/native execution or tests were performed.
 
 ## Historical checkpoints (superseded contract; evidence only)
 
@@ -175,11 +233,12 @@ native Seed. This does not migrate callers such as `cli.cljk`,
 host-oriented convenience APIs or depend on other unported modules. The
 project-wide CLI graph remains incomplete.
 
-The shared source-kind vocabulary now labels `.cljk` as
-`:kotoba-syntax-sugar` and `.cljc` as `:kotoba-compat-syntax` in both the
-Kotoba core module and its host adapter. The core check passes with the
-language compatibility root explicitly supplied. The suffix remains
-discovery metadata and does not select a runtime.
+That checkpoint's shared source-kind vocabulary labelled `.cljk` as
+`:kotoba-syntax-sugar` and `.cljc` as `:kotoba-compat-syntax`, and its core
+check supplied the language compatibility root. Those positive labels and
+that suffix-library dependency are retired by the current canonical-only
+source admission above. The earlier CID/Seed result remains historical;
+it is not qualification of the changed revision.
 
 `cli.cljk` now puts `:gen-class` behind the `:clj` reader feature, keeping this
 bootstrap launcher clause out of Kotoba input. With explicit roots for Amu

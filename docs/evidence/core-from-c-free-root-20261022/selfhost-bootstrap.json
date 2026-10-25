@@ -1,0 +1,584 @@
+{
+  "status": "PASS_LOADERLESS_SELFHOST_BOOTSTRAP",
+  "capabilities": {
+    "sha256Vectors": 3,
+    "granted": 7,
+    "refused": 120,
+    "scopeRoots": 3,
+    "sourceUnderRoot": 3,
+    "outsideRootsExit": 1
+  },
+  "host": [
+    "Linux",
+    "aarch64",
+    "6.15.10-200.fc42.aarch64"
+  ],
+  "root": {
+    "image": {
+      "bytes": 1294848,
+      "sha256": "98d4bcb7cd4ca331c292873a6d76b836cd34455b967575ae52af5bb3507ab774"
+    },
+    "receipt": {
+      "schema": "amu.seed.static-root.v1",
+      "image": {
+        "bytes": 1294848,
+        "sha256": "98d4bcb7cd4ca331c292873a6d76b836cd34455b967575ae52af5bb3507ab774"
+      },
+      "target": "aarch64-linux",
+      "format": "static",
+      "sourceManifest": "seed/X86_64-LINUX-SELFHOST-MANIFEST",
+      "sourceUnity": {
+        "bytes": 779344,
+        "sha256": "07b469c489d80ada7bed2ef1c7b208e7bee712d6cdb92b264d1f6ad5fdb9f163"
+      },
+      "sourceCommitBase": "6a54e3cea861d772343865d9dddd0fded314220c",
+      "producedBy": {
+        "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation). The closure moves to the static profile (seed/00-ns-static.kotoba: M of 24248320 words) and the runtime to 2^25-item vectors and a 2^28-item arena. A compiler embeds its own runtime text in what it builds, so the previous root's runtime cannot allocate the wider M: the previous root built S1n from this source with the previous capacities (seed/00-ns.kotoba), S1n built S2n (the new runtime), S2n built S3w from this source, S3w built S4w = this image and S4w built S5w (S3w = S4w = S5w).",
+        "date": "2026-10-22",
+        "previousRoot": "f19ab1c48b54e8ae032f26563b99695c38bd10de8ab7305407fc8fd05ace8eba",
+        "chain": {
+          "S1n": {
+            "bytes": 1294848,
+            "sha256": "0f13857258995cc57a93f6465ec6c5d0c3e0f79b8f1fd336cf6fa518392cb86a"
+          },
+          "S2n": {
+            "bytes": 1294848,
+            "sha256": "40f70a6dec5d8e3228f615abd1bfded40b33bf2e4c0f6dca803303f996aafe7f"
+          },
+          "S3w": {
+            "bytes": 1294848,
+            "sha256": "98d4bcb7cd4ca331c292873a6d76b836cd34455b967575ae52af5bb3507ab774"
+          },
+          "S4w": {
+            "bytes": 1294848,
+            "sha256": "98d4bcb7cd4ca331c292873a6d76b836cd34455b967575ae52af5bb3507ab774"
+          },
+          "S5w": {
+            "bytes": 1294848,
+            "sha256": "98d4bcb7cd4ca331c292873a6d76b836cd34455b967575ae52af5bb3507ab774"
+          }
+        }
+      },
+      "verification": "scripts/seed/selfhost-bootstrap.py on arm64 Linux: root -> S1 = S2 = S3 = root natively, without any C compiler or loader",
+      "history": [
+        {
+          "image": {
+            "bytes": 1294848,
+            "sha256": "f19ab1c48b54e8ae032f26563b99695c38bd10de8ab7305407fc8fd05ace8eba"
+          },
+          "sourceUnity": {
+            "bytes": 778991,
+            "sha256": "abfb94dae9a7e243617d7fa6b6bb6cb19dadfb4b3c9a914593d440075c23e84c"
+          },
+          "sourceCommitBase": "84f5e27ef348a252f5af11083425a269cb8ac1c3",
+          "producedBy": {
+            "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 and S2 built S3 = this image (S2 = S3). Re-pinned because the shared frontend admits wire 42 :gpu/compute (ADR 0371 step 3).",
+            "date": "2026-10-22",
+            "previousRoot": "cb0a7d02089de33d9d2e0509f2e070f48bb6f335568f4f4aa89c4b9af702a8a6"
+          }
+        },
+        {
+          "image": {
+            "bytes": 1294848,
+            "sha256": "cb0a7d02089de33d9d2e0509f2e070f48bb6f335568f4f4aa89c4b9af702a8a6"
+          },
+          "sourceUnity": {
+            "bytes": 778613,
+            "sha256": "7a3f6bb9eca8d50a5cdb910a0ea82a60145474d552f3413dbf35377c48933bc2"
+          },
+          "sourceCommitBase": "07e326c8388b9892ca7c857fdd5b2bb58581d289",
+          "producedBy": {
+            "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 and S2 built S3 = this image (S2 = S3; S1 differs because the previous root embeds the previous aarch64 runtime). Re-pinned because this source changes the runtime text embedded in every image: the wire-42 :gpu/compute transport of ADR 0371 step 2, on top of #1475.",
+            "date": "2026-10-22",
+            "previousRoot": "27440856b717877a91387f9a55be7149bacf93f0d31fa82ee1b06f567b370786"
+          }
+        },
+        {
+          "image": {
+            "bytes": 1278464,
+            "sha256": "27440856b717877a91387f9a55be7149bacf93f0d31fa82ee1b06f567b370786"
+          },
+          "sourceUnity": {
+            "bytes": 769800,
+            "sha256": "6d26d54e0e1729fee897c3c9ad2bfce842def76bcb63658b7e3dc4e5a77421b8"
+          },
+          "sourceCommitBase": "70ab19b659e73f72108d63497d3b3ff869f7d4b2",
+          "producedBy": {
+            "how": "C-free: the previous pinned root ran on arm64 Linux (no C compiler or loader, no emulation) and built S1 from this source; S1 built S2 and S2 built S3 = this image (S2 = S3). Re-pinned because this source changes the runtime text (wire 3 :hash/sha256, multiple KEXE_CAP_RESOURCES_35 roots).",
+            "date": "2026-10-22",
+            "previousRoot": "f4a2a53e0787b4a3bc8550e4a3eaf657421c28d6985156dbc564316e46c0d735"
+          }
+        },
+        {
+          "image": {
+            "bytes": 1225216,
+            "sha256": "7c63bc33d3d32bebf2f7627b7b2e0fb45e5cd2a71e7d83a7f0baaa8aeeeff686"
+          },
+          "sourceUnity": {
+            "bytes": 745718,
+            "sha256": "751fe4c40ff29e6dc3ae05e538599dfb173bc902bf79e38fe0649c81378e5c20"
+          },
+          "producedBy": {
+            "how": "last use of the removed trusted C loader (seed/bootstrap/adopted-loader-20261012.c, sha256 f44b5099...a8c3): the pinned adopted compiler built the selfhost closure for aarch64-macos (bridge), and the bridge compiled the same closure with --target aarch64-linux --format static",
+            "date": "2026-10-22",
+            "adoptedProducer": {
+              "bytes": 2547352,
+              "sha256": "6b158aa8654706743462b8a730f189072ba05f364b00af28a3f6d23045add2eb"
+            },
+            "bridge": {
+              "bytes": 1079848,
+              "sha256": "8ac88b7b480886de424d060106c87b9e7381a51433169437dfdb2b084fa3e7ae"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "sourceGraph": {
+    "seed/X86_64-LINUX-SELFHOST-MANIFEST": {
+      "bytes": 510,
+      "sha256": "af651c4d855723a633d3b94c4fc6393e5c6c6e53ac7e58186e0ec3228e8625b0"
+    },
+    "seed/00-ns-static.kotoba": {
+      "bytes": 14937,
+      "sha256": "a1b4360121914820be63dd8ce9d58f83a291ff5f3f9d5ed6ca06c60469035a3b"
+    },
+    "seed/01-mem.kotoba": {
+      "bytes": 15304,
+      "sha256": "79bb1d1154857efc70bee464161abfce37ec6b90e55af7bbef386ab96ca131c9"
+    },
+    "seed/02-io.kotoba": {
+      "bytes": 10931,
+      "sha256": "268ae7a0d450deb0b7981b85f7e6895b08b4af828f1f57cb96cf2eb29777c4ea"
+    },
+    "seed/10-lex.kotoba": {
+      "bytes": 24829,
+      "sha256": "a8b8128b9e00564f3d86a81b9c69e692efa0114a3cd0083e401cda8577086d6b"
+    },
+    "seed/11-read.kotoba": {
+      "bytes": 9176,
+      "sha256": "89fd65139a4502f96c87807db80d4cbaa15913ea75788eb3b647dcc9556e0392"
+    },
+    "seed/20-names.kotoba": {
+      "bytes": 38998,
+      "sha256": "fe067b8e507d6f7321a36f48a2a3d26a8874089caf00ac4ac5371c0d197ccde8"
+    },
+    "seed/21-check.kotoba": {
+      "bytes": 381021,
+      "sha256": "a42b412a1aed44f9ce24db7a0f7fdec3a242b8b36e3502062bf37fcecfd62081"
+    },
+    "seed/30-lower.kotoba": {
+      "bytes": 87820,
+      "sha256": "42c85dc4c8afa5b82633dd73f61df9bb0f03da6b93c28c7ae2e85008edb980d7"
+    },
+    "seed/50-out.kotoba": {
+      "bytes": 21354,
+      "sha256": "1cf17b348bda09d73d721856705a52db05131b88f80d017e1fe9b9a92c066955"
+    },
+    "seed/70-x86_64-linux.kotoba": {
+      "bytes": 19198,
+      "sha256": "82f14d94d4d9b1f8c71a65de463b784b78b34ade93e5bb630148b5bde2dbebe7"
+    },
+    "seed/71-x86_64-runtime.kotoba": {
+      "bytes": 5382,
+      "sha256": "15f2c4f8b8f0a2a46ccd8fbb4c7f621e17a385b680e0d6878d258a9c9e6cc14c"
+    },
+    "seed/75-x86_64-static.kotoba": {
+      "bytes": 8845,
+      "sha256": "e2f260bae95b873fb5b18c4f47324429cff1acf969d4a39ba4386da76fcfe2c9"
+    },
+    "seed/76-x86_64-static-rt.kotoba": {
+      "bytes": 58199,
+      "sha256": "d096b9d21fce0cd8d43a02e816482fbc2047849f1287158d425b382b2147e858"
+    },
+    "seed/77-aarch64-static-rt.kotoba": {
+      "bytes": 58315,
+      "sha256": "3de9338099172e669cdc167350743104ea16985d81210364328560ed713ccce2"
+    },
+    "seed/80-aarch64-linux.kotoba": {
+      "bytes": 15441,
+      "sha256": "508dd6769a2e8e9fd3c99bd5fe4c15c7a5bfd70a67b4451847f9cee547c58a1a"
+    },
+    "seed/74-x86_64-aiueos-object.kotoba": {
+      "bytes": 8402,
+      "sha256": "9c3b16530f722e9a86249d17be3d5d55e1306be759be76c21df8cfac1d5db4d8"
+    },
+    "seed/73-x86-linux-entry.kotoba": {
+      "bytes": 1175,
+      "sha256": "499022e15adce90748a6a545230e3ca922a6a49cf0f9cd986807a59d93b36b6b"
+    }
+  },
+  "generations": [
+    {
+      "name": "S1",
+      "producedBy": "root.elf",
+      "pin": {
+        "bytes": 1294848,
+        "sha256": "98d4bcb7cd4ca331c292873a6d76b836cd34455b967575ae52af5bb3507ab774"
+      }
+    },
+    {
+      "name": "S2",
+      "producedBy": "S1.elf",
+      "pin": {
+        "bytes": 1294848,
+        "sha256": "98d4bcb7cd4ca331c292873a6d76b836cd34455b967575ae52af5bb3507ab774"
+      }
+    },
+    {
+      "name": "S3",
+      "producedBy": "S2.elf",
+      "pin": {
+        "bytes": 1294848,
+        "sha256": "98d4bcb7cd4ca331c292873a6d76b836cd34455b967575ae52af5bb3507ab774"
+      }
+    }
+  ],
+  "rootReproduces": true,
+  "built": {
+    "aarch64Runner": {
+      "bytes": 131584,
+      "sha256": "8468afe3b672e460f954a6d8018f64fe89baa07598f8d494939b1b560320699b"
+    },
+    "x86_64Compiler": {
+      "bytes": 1593856,
+      "sha256": "202a7874bd3f49045abe0328ceea976a30ce802fbaae4431d4575bd2d3590fe8"
+    },
+    "x86_64Runner": {
+      "bytes": 160256,
+      "sha256": "478b040b75eca0711d84bb088a87deaaf633b3083ecf796943dac7559e820c70"
+    }
+  },
+  "adopted": {
+    "sourceGraph": {
+      "seed/MANIFEST": {
+        "bytes": 3299,
+        "sha256": "6f28bcb4ea926a1a5ce1e9c0f8fe5f9f9873fa29546e0efbbde56c145ef1632a"
+      },
+      "seed/00-ns.kotoba": {
+        "bytes": 14584,
+        "sha256": "b97579806d87b772a253d30b0c146cf6b7e88bd4f6f7b353937cb1b23bcade76"
+      },
+      "seed/01-mem.kotoba": {
+        "bytes": 15304,
+        "sha256": "79bb1d1154857efc70bee464161abfce37ec6b90e55af7bbef386ab96ca131c9"
+      },
+      "seed/02-io.kotoba": {
+        "bytes": 10931,
+        "sha256": "268ae7a0d450deb0b7981b85f7e6895b08b4af828f1f57cb96cf2eb29777c4ea"
+      },
+      "seed/10-lex.kotoba": {
+        "bytes": 24829,
+        "sha256": "a8b8128b9e00564f3d86a81b9c69e692efa0114a3cd0083e401cda8577086d6b"
+      },
+      "seed/11-read.kotoba": {
+        "bytes": 9176,
+        "sha256": "89fd65139a4502f96c87807db80d4cbaa15913ea75788eb3b647dcc9556e0392"
+      },
+      "seed/12-kirread.kotoba": {
+        "bytes": 153536,
+        "sha256": "18f0236ceaccb41a8a92fd19a871355cb6f255819e492bed850c66ee82ee540f"
+      },
+      "seed/20-names.kotoba": {
+        "bytes": 38998,
+        "sha256": "fe067b8e507d6f7321a36f48a2a3d26a8874089caf00ac4ac5371c0d197ccde8"
+      },
+      "seed/21-check.kotoba": {
+        "bytes": 381021,
+        "sha256": "a42b412a1aed44f9ce24db7a0f7fdec3a242b8b36e3502062bf37fcecfd62081"
+      },
+      "seed/30-lower.kotoba": {
+        "bytes": 87820,
+        "sha256": "42c85dc4c8afa5b82633dd73f61df9bb0f03da6b93c28c7ae2e85008edb980d7"
+      },
+      "seed/40-a64enc.kotoba": {
+        "bytes": 13003,
+        "sha256": "c90fdfe90228b5481264a19ba586e9c96d4bed86e5548b2a54faadc7925313a1"
+      },
+      "seed/41-a64gen.kotoba": {
+        "bytes": 1842354,
+        "sha256": "e9951afdffa06cc86168d5dd6fbbfb67a3ba5fb6b129f53032045a6e3a6bf15d"
+      },
+      "seed/42-layout.kotoba": {
+        "bytes": 18094,
+        "sha256": "16bb4a9d691138e0e6e033eb171f9ec98566b9f150f3d71b230f19044fe151e5"
+      },
+      "seed/50-out.kotoba": {
+        "bytes": 21354,
+        "sha256": "1cf17b348bda09d73d721856705a52db05131b88f80d017e1fe9b9a92c066955"
+      },
+      "seed/60-proj.kotoba": {
+        "bytes": 97409,
+        "sha256": "5134aafc125ac5591425f2c9e71536535a5b95b62dfd4f4c7f381fa45a6ab530"
+      },
+      "seed/90-drv.kotoba": {
+        "bytes": 50762,
+        "sha256": "c9613cedd0ee306c89a033d921dd41eceec41b041d142a36cc61819437513eb5"
+      },
+      "seed/99-entry.kotoba": {
+        "bytes": 249,
+        "sha256": "c137dd648f1b8370c6a29225d8b2fa90764845f2e7990df7b4f3fd2aecc8937b"
+      }
+    },
+    "coreStatic": {
+      "sourceGraph": {
+        "seed/CORE-STATIC-MANIFEST": {
+          "bytes": 541,
+          "sha256": "4b7ffa8924a9ed50941c0261e5f865c70f05ac26e6bedeb6e3733331c97548d0"
+        },
+        "seed/00-ns-static.kotoba": {
+          "bytes": 14937,
+          "sha256": "a1b4360121914820be63dd8ce9d58f83a291ff5f3f9d5ed6ca06c60469035a3b"
+        },
+        "seed/01-mem.kotoba": {
+          "bytes": 15304,
+          "sha256": "79bb1d1154857efc70bee464161abfce37ec6b90e55af7bbef386ab96ca131c9"
+        },
+        "seed/02-io.kotoba": {
+          "bytes": 10931,
+          "sha256": "268ae7a0d450deb0b7981b85f7e6895b08b4af828f1f57cb96cf2eb29777c4ea"
+        },
+        "seed/10-lex.kotoba": {
+          "bytes": 24829,
+          "sha256": "a8b8128b9e00564f3d86a81b9c69e692efa0114a3cd0083e401cda8577086d6b"
+        },
+        "seed/11-read.kotoba": {
+          "bytes": 9176,
+          "sha256": "89fd65139a4502f96c87807db80d4cbaa15913ea75788eb3b647dcc9556e0392"
+        },
+        "seed/12-kirread.kotoba": {
+          "bytes": 153536,
+          "sha256": "18f0236ceaccb41a8a92fd19a871355cb6f255819e492bed850c66ee82ee540f"
+        },
+        "seed/20-names.kotoba": {
+          "bytes": 38998,
+          "sha256": "fe067b8e507d6f7321a36f48a2a3d26a8874089caf00ac4ac5371c0d197ccde8"
+        },
+        "seed/21-check.kotoba": {
+          "bytes": 381021,
+          "sha256": "a42b412a1aed44f9ce24db7a0f7fdec3a242b8b36e3502062bf37fcecfd62081"
+        },
+        "seed/30-lower.kotoba": {
+          "bytes": 87820,
+          "sha256": "42c85dc4c8afa5b82633dd73f61df9bb0f03da6b93c28c7ae2e85008edb980d7"
+        },
+        "seed/40-a64enc.kotoba": {
+          "bytes": 13003,
+          "sha256": "c90fdfe90228b5481264a19ba586e9c96d4bed86e5548b2a54faadc7925313a1"
+        },
+        "seed/41-a64gen.kotoba": {
+          "bytes": 1842354,
+          "sha256": "e9951afdffa06cc86168d5dd6fbbfb67a3ba5fb6b129f53032045a6e3a6bf15d"
+        },
+        "seed/42-layout.kotoba": {
+          "bytes": 18094,
+          "sha256": "16bb4a9d691138e0e6e033eb171f9ec98566b9f150f3d71b230f19044fe151e5"
+        },
+        "seed/50-out.kotoba": {
+          "bytes": 21354,
+          "sha256": "1cf17b348bda09d73d721856705a52db05131b88f80d017e1fe9b9a92c066955"
+        },
+        "seed/60-proj.kotoba": {
+          "bytes": 97409,
+          "sha256": "5134aafc125ac5591425f2c9e71536535a5b95b62dfd4f4c7f381fa45a6ab530"
+        },
+        "seed/90-drv.kotoba": {
+          "bytes": 50762,
+          "sha256": "c9613cedd0ee306c89a033d921dd41eceec41b041d142a36cc61819437513eb5"
+        },
+        "seed/99-entry.kotoba": {
+          "bytes": 249,
+          "sha256": "c137dd648f1b8370c6a29225d8b2fa90764845f2e7990df7b4f3fd2aecc8937b"
+        }
+      },
+      "image": {
+        "bytes": 6603264,
+        "sha256": "cbc8adc98e406a8679ceeb7ffb943df041bc737906479b9a2a6c5ca1dadae700"
+      }
+    },
+    "runnerStackBytes": 8388608,
+    "generations": [
+      {
+        "generation": 1,
+        "native": {
+          "bytes": 2552864,
+          "sha256": "9deed9500c9a5af943efb39be389ce841bfb57d904e9f72fba5227033a8f40d8"
+        },
+        "container": {
+          "bytes": 2552891,
+          "sha256": "29197f181430be9ff3c918bb0739bc13686203c3de4ecd560261a37926277a98"
+        }
+      },
+      {
+        "generation": 2,
+        "native": {
+          "bytes": 2552864,
+          "sha256": "9deed9500c9a5af943efb39be389ce841bfb57d904e9f72fba5227033a8f40d8"
+        },
+        "container": {
+          "bytes": 2552891,
+          "sha256": "29197f181430be9ff3c918bb0739bc13686203c3de4ecd560261a37926277a98"
+        }
+      },
+      {
+        "generation": 3,
+        "native": {
+          "bytes": 2552864,
+          "sha256": "9deed9500c9a5af943efb39be389ce841bfb57d904e9f72fba5227033a8f40d8"
+        },
+        "container": {
+          "bytes": 2552891,
+          "sha256": "29197f181430be9ff3c918bb0739bc13686203c3de4ecd560261a37926277a98"
+        }
+      }
+    ],
+    "expectedNativeImage": "9deed9500c9a5af943efb39be389ce841bfb57d904e9f72fba5227033a8f40d8"
+  },
+  "cases": [
+    {
+      "name": "string-literal",
+      "exit": 0,
+      "remainingFuel": 999999
+    },
+    {
+      "name": "string-concat",
+      "exit": 0,
+      "remainingFuel": 999999
+    },
+    {
+      "name": "string-view",
+      "exit": 0,
+      "remainingFuel": 999999
+    },
+    {
+      "name": "string-unicode",
+      "exit": 0,
+      "remainingFuel": 999999
+    },
+    {
+      "name": "string-empty-nul",
+      "exit": 0,
+      "remainingFuel": 999999
+    },
+    {
+      "name": "string-search",
+      "exit": 0,
+      "remainingFuel": 999999
+    },
+    {
+      "name": "string-call",
+      "exit": 0,
+      "remainingFuel": 999998
+    },
+    {
+      "name": "vector-literal",
+      "exit": 0,
+      "remainingFuel": 999999
+    },
+    {
+      "name": "vector-dynamic",
+      "exit": 0,
+      "remainingFuel": 999999
+    },
+    {
+      "name": "vector-persistent",
+      "exit": 0,
+      "remainingFuel": 999999
+    },
+    {
+      "name": "vector-mutate",
+      "exit": 0,
+      "remainingFuel": 999999
+    },
+    {
+      "name": "vector-drop-conj",
+      "exit": 0,
+      "remainingFuel": 999995
+    },
+    {
+      "name": "vector-pooled",
+      "exit": 0,
+      "remainingFuel": 999999
+    },
+    {
+      "name": "vector-negative",
+      "exit": 120,
+      "remainingFuel": 999999
+    },
+    {
+      "name": "vector-oob",
+      "exit": 120,
+      "remainingFuel": 999999
+    },
+    {
+      "name": "string-oob",
+      "exit": 120,
+      "remainingFuel": 999999
+    },
+    {
+      "name": "string-boundary",
+      "exit": 120,
+      "remainingFuel": 999999
+    },
+    {
+      "name": "wide-args",
+      "exit": 0,
+      "remainingFuel": 999999
+    },
+    {
+      "name": "closure",
+      "exit": 0,
+      "remainingFuel": 999999
+    },
+    {
+      "name": "closure-env",
+      "exit": 0,
+      "remainingFuel": 999998
+    },
+    {
+      "name": "state-results",
+      "exit": 0,
+      "remainingFuel": 999999
+    },
+    {
+      "name": "bytes-roundtrip",
+      "exit": 0,
+      "remainingFuel": 999999
+    },
+    {
+      "name": "capability-denied",
+      "exit": 120,
+      "remainingFuel": 999999
+    },
+    {
+      "name": "mutual-tail",
+      "exit": 0,
+      "remainingFuel": 979998
+    }
+  ],
+  "hardening": {
+    "seccompDefault": {
+      "exit": 0,
+      "stderr": ""
+    },
+    "sandboxProbe": {
+      "exit": 120,
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGSYS}"
+    },
+    "cpuSeconds1": {
+      "exit": 120,
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGXCPU}"
+    },
+    "wallSeconds3": {
+      "exit": 120,
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGALRM}"
+    },
+    "stack1MiB": {
+      "exit": 120,
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGSEGV}"
+    }
+  },
+  "cCompilerOrLoader": false,
+  "JVMNodeOrGraalFallback": false,
+  "emulation": false
+}

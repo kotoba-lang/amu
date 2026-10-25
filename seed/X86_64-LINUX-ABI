@@ -89,3 +89,363 @@ subset plus the one-export rule; `--fuel` over 2^31-1 takes the imm64
 replenish path and stays ABI-identical. This route emits the object ABI only:
 not the kernel image, not the entry allowlist, not the fuel-tier table, and no
 emitted object has run in a kernel.
+
+## Loaderless static image (x86_64-linux-static), seed module 75
+
+### Native FS2/keyword extension candidate (2026-10-24)
+
+The candidate FULL-MANIFEST appends shared scalar modules 72 (FS2) and 73
+(keyword storage) to both Linux runtimes. Context byte slots 96 and 104
+carry keyword put/get helpers, independently of the public KGraph slots
+80/88. The keyword store uses at most 262144 append-only 24-byte rows
+(6 MiB), allocated before sandbox/resource installation. Public KGraph
+retains its 4096-row budget and last-write-wins behavior. Guest arena
+rollback and public KGraph writes do not alter keyword rows.
+
+The context version word remains 11. These additional slots require the
+exact matching runtime/source pins; a version-11 image without those slots
+is not compatible with an artifact using the extension. Private-arena
+overflow and the checker exposure of internal helper names remain explicit
+qualification work; the word 'private' describes the separate store and
+does not establish a source-origin access boundary.
+
+Wire35 FS2 supports discriminators 1 (string/string), 8 (bytes/bytes),
+9 (string/bytes), 10 (string/list of bytes) and 11 (list of bytes/list of
+bytes), with per-form admission and mandatory framing/acknowledgement.
+No other wire inherits these combinations. Form T is no-replace publication
+through Linux renameat2; it has no ordinary-rename fallback. Wire40 is an
+explicit string/string sys/cwd grant and does not inherit wire35 authority.
+
+These are candidate source contracts. Complete selfbuild, conformance,
+actual x86 execution and public/CDCI image pins must be regenerated before
+the candidate replaces the qualified main product.
+
+`compile SOURCE --target x86_64-linux --output NEW_ELF --format static` emits
+one ELF64 ET_EXEC (EM_X86_64, no PT_INTERP/PT_DYNAMIC, no libc) holding the
+guest and a runtime written in Kotoba (`xs-rt-src`). The runtime text is
+appended after the guest (and its r6b library) and compiled by the same
+frontend and runtime-profile backend. Absolute header cells, static builds
+only: 197 = byte offset of the runtime text (0 = not a static build), 198 =
+first intrinsic FN, 199 = `kxrt-start`, 200..255 = FN whose absolute address
+fills context word slot/8 (slots 48..440). Functions whose definition (the
+first token of the def form) is at or after cell 197 are runtime functions:
+no OP-FUEL code, scalar SIR only, and never called directly by guest functions
+(E7101). Naming a runtime function in the guest does not change that; until
+2026-10-22 the test used the symbol's first appearance, and a guest that named
+an intrinsic (kxrt-syscall, kxrt-store64, ...) got it inline (JUN-325). Calls to the eight
+`kxrt-` intrinsic stubs (load64, store64, load8, store8, syscall, ctx,
+call-main, trap) are replaced by inline code.
+
+Layout: file 0 maps at 0x400000 RX (headers, then code at 0x401000:
+entry stub, functions, literal pool); the RW segment at the page-aligned data
+offset holds the 400-byte v11 context image (function slots, code_base @384 =
+0x401000, code_length @392) plus runtime globals at context+1024. Entry:
+`mov rdi,rsp; and rsp,-16; call kxrt-start; ud2`. `kxrt-start` maps the
+arenas, fills version/data slots/fuel/allow, installs SIGILL/TRAP/BUS/FPE/SEGV
+handlers, calls `main` as the loader does (`fn(0,0,0,0,0, ctx)`, r9 =
+context), closes the append sink, flushes stdout and exits with
+`result & 0xff` (command mode), or prints the structured line when
+`KEXE_STRUCTURED_REPORT` is set. Environment read: `KEXE_ALLOW` (default
+35,37,38,39; `-` = none), `KEXE_FUEL`, `KEXE_STRUCTURED_REPORT`,
+`KEXE_CAP_RESOURCES_35` (colon-separated absolute roots, at most 16; entries
+that are relative or cannot be opened are dropped; a path is admitted under
+the first root that is it or a directory prefix of it; opens use openat2
+RESOLVE_BENEATH|RESOLVE_NO_MAGICLINKS), `KEXE_CAP_RESOURCES_42` (read only when
+wire 42 is granted: REQUEST,ANSWER, two different inherited fds 3..1023, each a
+FIFO or a socket; missing or invalid exits 2; SIGPIPE is then ignored),
+`KEXE_CAP_RESOURCES_43` and `KEXE_CAP_RESOURCES_45` (read only when one of wires
+43..47 is granted: the listen and the dial scope, each comma-separated exact
+`<a>.<b>.<c>.<d>:<port>` IPv4 addresses, at most 16; absent or empty grants
+nothing; malformed exits 2),
+`KEXE_CAP_RESOURCES_20`, `KEXE_SPAWN_ENV` and `KEXE_SPAWN_PATH_LOOKUP` (read only
+when wire 20 is granted: colon-separated canonical absolute programs, 1..16
+distinct; colon-separated variable names, 0..16; lookup 1 or 0; malformed exits
+2, an absent or empty program list grants nothing),
+`KEXE_CPU_SECONDS`, `KEXE_WALL_SECONDS`, `KEXE_SECCOMP`. Before the guest runs: an alternate signal stack (64 KiB,
+SA_ONSTACK) and SIGALRM/SIGXCPU/SIGSYS handlers; 960 KiB of stack pre-touched,
+then RLIMIT_CORE 0, RLIMIT_CPU (only when `KEXE_CPU_SECONDS` is given; soft s,
+hard s+1), RLIMIT_AS 64 MiB, RLIMIT_STACK 1 MiB, alarm(wall-1) for
+`KEXE_WALL_SECONDS`; then the loader's seccomp filter: wrong arch kills, the
+11-call base set always, the 11-call fs set and the 6 `:fs/app-data` calls only
+with an open, granted scope 35, `read` with args[0] = the ANSWER fd only with
+wire 42 granted, the net set (`socket` only as socket(AF_INET,
+SOCK_STREAM|SOCK_NONBLOCK|SOCK_CLOEXEC, 0), then setsockopt, getsockopt, bind,
+listen, connect, accept4, sendto, recvfrom, ppoll and close) only with one of
+wires 43..47 granted, `read` on the spawn helper's answer fd only with wire 20
+granted, everything else SIGSYS (exit 120). A kernel
+without seccomp fails closed (exit 1) unless `KEXE_SECCOMP=if-available`.
+`KEXE_SANDBOX_PROBE` issues one filtered call after installation (diagnostic).
+Not provided: wire-35 forms other than READ/EXISTS/WRITE/APPEND (refused),
+wires other than 3/20/35/37/38/39/42/43..47 (refused; wire 3 is :hash/sha256, the
+request bytes' FIPS 180-4 digest as 64 lowercase hex characters), the loader's default 1 s cpu / 3 s wall
+budgets (no budget unless given), growth regions (pool/item layout differs;
+values are equal), the arena fields of the structured line.
+Wire 42 (`:gpu/compute`, ADR 0371) is a transport only: the request string is
+written to REQUEST as a u32 little-endian length and the bytes, and one framed
+answer is read from ANSWER into the string pool (at most 8 MiB, else a value
+trap). An answer that starts with `!` is a refusal: one line
+`KEXE_TRAP {:kind :capability :wire 42 :refusal :NAME}` on stderr (NAME = its
+first field, at most 64 bytes of [a-z0-9/-], else `unnamed`), then a trap.
+End of file, EPIPE or a short read also trap (exit 120). The checker admits
+wire 42 as `:string :string` only (ADR 0371 step 3,
+`seed/adoption-20261022.json`); other shapes stay E2115.
+Wires 43..47 (`:net/listen` `:net/accept` `:net/dial` `:net/read` `:net/write`,
+Linear JUN-292) are the removed loader's native TCP broker, answered in the
+image's own process: the runtime decides every request with the decisions and
+names of `tools/kexe_loader_decisions.kotoba` ops 10..18 and
+`tools/kexe_loader_names.kotoba`, and makes the system calls; the guest cannot
+reach them. Requests are split at single spaces: 43 `<ip>:<port>`, 44
+`<listener> <ms>`, 45 `<ip>:<port> <ms>`, 46 `<conn> <max-bytes> <ms>`, 47
+`<conn> <hex>` (write) or `<conn>` (close). Handles are decimal 1..16, the
+lowest free slot first, shared by listeners and connections; a listener is
+never closed. Bounds: 16384 bytes per read or write, timeouts 0..30000 ms,
+a write ends with the partial count when the peer takes nothing for 1000 ms.
+Answers: a handle, lowercase hex (the empty string at end of file), a byte
+count, or one of `timeout` `refused` `unreachable` `reset` `closed`. A guest
+error is refused by name: stdout is flushed, one line
+`KEXE_TRAP {:kind :capability :capability :net/<op> :reason :net/<name>}` goes
+to stderr, and the image exits 126; the names are `malformed-request`
+`address-not-granted` `handle-out-of-range` `handle-not-open` `handle-budget`
+`byte-budget` `timeout-budget` `listen-failed` `setup-failed`. A request over
+65536 bytes traps (exit 120). The loader kept the sockets in a supervisor
+process; this runtime has none, so the filter admits the net set only when a
+net wire is granted and `socket` only in the one form above. The checker does
+not admit wires 43..47 yet (E2115): that is a frontend change with an
+adoption round (ADR 0371 §7). `scripts/seed/check-net-runtime.py` qualifies
+the wires through a test-only admission.
+Wire 20 (`:process/spawn`, Linear JUN-292) runs programs through a helper that
+`kxrt-start` forks before the limits and the filter when the wire is granted: a
+child of the sandboxed process would inherit both. The helper keeps its own
+copy of the grant, decides every request (`tools/linux_static_handlers.kotoba`
+ops 33..42) and runs no guest code; the guest frames a request on one pipe and
+reads one answer on another (a u32 little-endian length, then a kind byte: A an
+answer, R a refusal index, M a malformed request). Request:
+`<program>[ARG_SEP<arg>]...`; a path must equal a granted program, a bare name
+is found among the granted programs' last segments only with lookup, `$PATH`
+is never read; the guest's spelling is argv[0], the granted spelling is
+executed; at most 32 arguments and 4096 bytes of argv. The child: stdin at end
+of file, stdout captured (at most 16384 bytes), stderr the image's own,
+descriptors 3 and up closed across execve, PR_SET_NO_NEW_PRIVS, the first
+scope-35 root as its working directory, only the granted variables, the
+host's limits (not the image's), a 10 s deadline (SIGKILL). Answer
+`<exit>\n<stdout>`, -1 when a signal ended the child. Refusals by name, exit
+126: `argv-budget` `program-not-granted` `path-lookup-denied` `output-budget`
+`timeout` `exec-failed` `isolation-unavailable` `setup-failed`. A NUL byte, an
+empty program, a request over 65536 bytes or a helper that is gone trap (exit
+120). The checker admits wire 20; `scripts/seed/check-spawn-runtime.py`
+qualifies it.
+
+### KX64V1 runner (`--format kx64-runner`)
+
+The same image with context word 408 = 1 (link time; 0 for `--format
+static`), built from `seed/x86_64-kx64-runner.kotoba`. It takes the trusted
+loader's command line: `PAYLOAD OFFSET ARITY ISA ALLOW [I64-ARG ...] [--
+GUEST-ARGS]` with ARITY 0..5 and exactly ARITY signed decimal i64 arguments
+(the loader's other argument forms, `s:HEX` strings and region references,
+exit 2 with a usage line), which enter as the payload's first ARITY argument
+registers. The
+payload file is read into an anonymous mapping, made read+execute, and
+`code_base`/`code_length` are set to it; ALLOW comes from argv and
+`KEXE_ALLOW` is ignored. Guest entry is the ninth intrinsic
+`kxrt-call-at addr ctx argv` (five argument words at argv; r9 / x7 =
+context) at PAYLOAD+OFFSET. With `KEXE_ARENA_USE` set, both formats print the
+loader's one-line `KEXE_ARENA_USE {...}` record (17 fields) on stderr at exit
+or trap; peaks equal the final use and the growth-region/scope fields are 0. Exit: `KEXE_STRUCTURED_REPORT`
+line, else `result & 0xff` when `KEXE_COMMAND` is present, else the signed
+decimal result and a newline with status 0, as the loader.
+
+### Static launcher (`--format launcher`)
+
+Context word 408 = 4 (ADR 0371 step 4; 2 is `--format packed`), built from
+`tools/static_launcher.kotoba`. The runtime text is `xs-rt-core` followed by
+`xs-rt-launch` instead of the standard start (`xs-rt-start`); static and runner
+images are `xs-rt-core` + `xs-rt-start`, the same bytes as before the split.
+Command line: `WALL ALLOW GRANT PROVIDER [ARG ...] -- GUEST [ARG ...]`: WALL
+1..86400 seconds; ALLOW is the guest's `KEXE_ALLOW` (ids 0..255 or `-`, at most
+1024 bytes); GRANT and PROVIDER are both `-` or both paths, and ALLOW names
+wire 42 exactly when a provider is given. Refusals print one line
+`kexe-launcher: <reason>[: guest|provider|grant|launcher image]` on stderr
+and exit 2 (usage, WALL, ALLOW) or 1 (an input that cannot be read, is empty
+or over its bound (images 256 MiB, grant 1 MiB), cannot be sealed, a pipe or
+process that cannot be made, a child that cannot be executed, stdio not open,
+the filter, the wait); started children are killed and reaped first.
+Each input is read once into a memfd (MFD_CLOEXEC|MFD_ALLOW_SEALING) while
+SHA-256 is computed, then sealed (F_SEAL_SEAL|SHRINK|GROW|WRITE) and rewound;
+`/proc/self/exe` is hashed as the launcher image. Children are `clone(SIGCHLD)`
+forks: PR_SET_PDEATHSIG SIGKILL (and exit 127 if the parent changed), the
+status pipe and image to fds 110/111 and the sources to 100.. (close-on-exec),
+`close_range` 3..99 and 112.. (else close one by one), the sources onto their
+targets, an empty signal mask, PR_SET_NO_NEW_PRIVS, then
+`execveat(111, "", argv, envp, AT_EMPTY_PATH)`; a failure writes its stage
+byte (1 dup, 2 target, 3 no_new_privs, 4 exec) on the close-on-exec status
+pipe, whose end of file means the exec happened. The provider (argv:
+PROVIDER and its ARGs; the environment MESA_SHADER_CACHE_DISABLE=true
+VK_LOADER_LAYERS_DISABLE=~all~ and nothing else) gets fd 0 requests, 1 answers,
+2 the launcher's stderr, 3 the grant memfd, 4 its report pipe; the guest
+(argv: GUEST and its ARGs) gets 0 the launcher's stdin, 1 a pipe to the
+launcher, 2 the launcher's stderr, and with a provider 3 requests and
+4 answers, and the environment `KEXE_ALLOW=ALLOW`, `KEXE_STRUCTURED_REPORT=1`,
+`KEXE_WALL_SECONDS=WALL`, `KEXE_CAP_RESOURCES_42=3,4` (with a provider) plus
+the launcher's own `KEXE_FUEL`, `KEXE_STACK_BYTES`, `KEXE_CPU_SECONDS`,
+`KEXE_SECCOMP`, `KEXE_CAP_RESOURCES_35`, `KEXE_ARENA_USE` and
+`KEXE_SANDBOX_PROBE` when set. After both have executed the launcher closes
+every child end, sets RLIMIT_STACK 1 MiB (pre-touched, as the standard start
+does), RLIMIT_CORE 0 and RLIMIT_AS 64 MiB, ignores SIGPIPE and
+installs its filter: the base set plus read, close, ppoll, wait4 and kill
+(`KEXE_SECCOMP=if-available` as for images). It then `ppoll`s the guest's
+stdout, the provider's report and both pidfds (pidfd_open, Linux 5.3; no
+signal handlers): stdout is written to the launcher's fd 1 as it comes,
+hashed, and its last 4096 bytes kept; the report is kept up to 64 KiB (more
+sets overflow); a readable pidfd is reaped with wait4 WNOHANG. At WALL the
+guest is killed (SIGKILL, timed out); the provider is killed at the earlier of
+5 s after the guest is reaped and WALL; pipes still open 1 s after both are
+reaped are closed. The guest's structured line is the stdout tail from its
+last `{:status :`, printable ASCII, when it exited 0 or 120. Wire-38
+arguments for `main` (allowed wires 37 38 39, unmetered fuel): 0 WALL, 1
+ALLOW, 2 elapsed ms, 3 timed out, 4 relay ok, 5..6 launcher and guest
+SHA-256, 7 guest exit (-1 for a signal), 8 guest signal, 9 its structured
+line, 10..11 stdout bytes and SHA-256, 12 provider given, 13 provider SHA-256,
+14..15 provider exit and signal, 16 provider killed, 17 report state (0 none,
+1 UTF-8 without NUL, 2 otherwise, 3 overflow), 18 the report when state 1,
+19 grant SHA-256. The launcher exits with `main`'s result & 0xff. An image of
+another ISA cannot be started through binfmt_misc (execveat of a
+close-on-exec fd: ENOENT).
+
+### Platform-linked image (`--format platform-linked`, seed module 78)
+
+Context word 408 = 3 (ADR 0371 step 5), x86_64-linux only, dispatched by
+seed/73 (and by seed/78-full-entry in the combined compiler F); only the GPU
+provider is built this way. The runtime text is
+`xs-rt-core` followed by `xs-rt-pstart`. The image is ELF64 ET_EXEC for the
+host's dynamic linker, with 7 program headers in this order: PT_PHDR (64, 392
+bytes), PT_INTERP (`/lib64/ld-linux-x86-64.so.2` at 456), LOAD RX [0, 4096 +
+code) as in the static image, LOAD RW at D (page after the code) with filesz
+4096 + 512 and memsz 4096 + 65536, PT_DYNAMIC at D, PT_GNU_RELRO [D, D +
+4096), PT_GNU_STACK RW. After the program headers: a hash table with one
+empty bucket (nchain = the symbol count), the symbols (GLOBAL FUNC, undefined),
+the strings, and the relocations. At D: the dynamic section (NEEDED per
+library, HASH, STRTAB, SYMTAB, STRSZ, SYMENT, RELA, RELASZ, RELAENT, FLAGS =
+DF_BIND_NOW, FLAGS_1 = DF_1_NOW, NULL). The GOT is at D + 2048 (8 bytes per
+import), and D + 4096 is the context (cell 195), so the static fixups and the
+context image are unchanged. Imports are a fixed table: 0
+`__libc_start_main` (libc.so.6) always; 1 `vkGetInstanceProcAddr`
+(libvulkan.so.1) only when the program calls `kxrt-p-vkgipa` (cell 204).
+R_X86_64_GLOB_DAT relocations only. Entry `_start`: `xor ebp,ebp; mov
+r9,rdx; pop rsi; mov rdx,rsp; and rsp,-16; push rax; push rsp; xor r8d,r8d;
+xor ecx,ecx; lea rdi,[kxrt-start]; lea rax,[context]; call [rax-2048]; ud2`,
+that is `__libc_start_main(kxrt-start, argc, argv, 0, 0, rtld_fini,
+stack_end)`. `kxrt-start(argc, argv, envp)` maps the arenas, fills the v11
+context, reads `KEXE_ALLOW`, `KEXE_FUEL`, `KEXE_STRUCTURED_REPORT`,
+`KEXE_CAP_RESOURCES_35` and `KEXE_ARENA_USE` as a static image does, calls
+`main`, flushes, and returns `result & 0xff` (or 0 after the structured
+line) to libc, which exits. There are no signal handlers, limits or seccomp:
+a runtime refusal is an unhandled SIGILL. Intrinsic 9, `kxrt-ccall fp argv`
+(cell 200, mode 3 only), loads rdi rsi rdx rcx r8 r9 from argv[0..5] and
+copies argv[6..13] to [rsp..rsp+64) (the frame's outgoing area). It then sets
+eax = 0, calls fp and reloads r9 = context. The program may call the
+runtime's `kxrt-p-` functions: `ccall`, `vkgipa` (GOT[1]), `got-slot` (the
+address of GOT[0..1]), `alloc` (anonymous RW mmap), `load8`/`store8`/
+`load64`/`store64`, and raw `read`/`write`. seed/78 checks these calls by
+name; any other runtime function is E7101.
+
+For the GPU provider (ADR 0371 step 6) the API also has wrappers of fixed
+syscalls, each returning -errno on failure (there is no generic syscall):
+`clock-ns` (CLOCK_MONOTONIC in ns), `ignore-sigpipe` (SIGPIPE to SIG_IGN),
+`open-ro path` (openat AT_FDCWD, O_RDONLY|O_CLOEXEC), `fsize fd` (st_size from
+fstat), `pread fd a n off`, `close fd`, `unmap a n` (munmap, for memory from
+`alloc`), `uname a` (struct utsname at a), SHA-256 streamed over a 64-byte
+state st in the program's memory: `sha256-start st`, `sha256-blocks st a n`
+(whole 64-byte blocks; another n is -EINVAL) and `sha256-finish st a n total
+out` (the last n bytes, the total length; the 32-byte digest at out; returns
+32), and `sha256 a n out` (the three at once),
+`landlock-abi`, `landlock-ruleset fs-access` (handled_access_fs only),
+`landlock-path ruleset path access` (a path-beneath rule; the path is opened
+O_PATH|O_CLOEXEC and closed), `landlock-restrict ruleset` (no_new_privs, then
+landlock_restrict_self; the ruleset fd is closed), and `seal`. Seal installs
+ADR 0371 Decision 5's filter with SECCOMP_FILTER_FLAG_TSYNC, after
+no_new_privs: another arch or an x32 number kills the process; execve,
+execveat, fork, vfork, socket other than AF_UNIX, and clone without
+CLONE_THREAD fail with EPERM; clone3 fails with ENOSYS (libc then uses clone);
+everything else is allowed. It returns 0, the id of a thread that could not be
+synchronized, or -errno. Landlock restricts the calling
+thread and the threads it creates afterwards only: threads started earlier
+(a driver's, during device creation) keep their file access, and only the
+seal (TSYNC) covers them. Paths
+are NUL-ended bytes in memory. The wrappers' scratch is a 16 KiB page that
+`kxrt-start` maps at G+16704 in this format only.
+
+## aarch64-linux-static (seed modules 77, 80)
+
+`compile SOURCE --target aarch64-linux --output NEW --format static|runner|launcher`
+(and `--format packed --payload KSEED`, below) (Linux selfhost closure;
+dispatched by 73) emits the same image shape for
+EM_AARCH64. Module 80 is a plain stack-machine emitter for the runtime-profile
+SIR, independent of the adopted 41-a64gen: every local and temp lives in the
+frame (sp-relative, the x86 frame sizes), x0..x4 carry arguments 0..4 and
+arguments 5.. go to [sp, 8*(i-5)], x7 holds the context at every fuel site
+and guest call, helpers are `ldr x16,[x0,#slot]; blr x16` with x0 = context.
+Generated code uses only x0..x17, x29, x30 and sp, so runtime functions are
+AAPCS64-callable from a foreign payload. Fixups are MM-FIX kinds 11..17
+(imm26 FN/LABEL, imm19 LABEL, absolute FN/data/literal as movz+3 movk,
+code-relative literal). Entry: `mov x0, sp; bl kxrt-start; brk #0`. Traps are
+`brk #0` (SIGTRAP, exit 120) for guest traps; the runtime's own refusals (the trap
+intrinsic) are `udf #0` (SIGILL), as the loader's helpers raised SIGILL. The runtime (77) is generated from the same
+template as 76: syscall numbers, openat for open, setitimer for alarm, O_
+flags, AUDIT_ARCH_AARCH64 and the aarch64 allow-lists differ. The runner
+format takes `PAYLOAD OFFSET 0 aarch64 ALLOW [-- ARGS]` and enters the payload
+as the loader did: fn(0..0, x7 = context). `KEXE_STACK_BYTES` (both arches)
+sets the stack budget; the adopted AArch64 compiler needs 8 MiB.
+
+### Packed images (`--format packed --payload KSEED`)
+
+SOURCE is the runner source. The code of KSEED's exported `main` (a `.kseed`
+container, as `extract-native` reads it; `main` must take no arguments, else
+E7105) follows the image's code at a page boundary inside the RX segment.
+Context word 408 = 2, and words 416/424/432 hold the payload's address,
+length and entry offset. At start the runtime sets words 384/392 (the code
+range) to the payload and enters it as the runner enters a mapped payload,
+with the static image's command line, environment and result (`KEXE_ALLOW`
+from the environment, exit status = result). Packing the adopted core's G3
+gives a standalone optimized compiler: it rebuilds the core to the same
+container (`selfhost-bootstrap.py` step 3b). Modes 0 and 1 emit 0 in words
+416..432, so their images are unchanged.
+
+## wasm32-browser-static/v1 (JUN-353)
+
+`compile SOURCE --target wasm32-browser --output NEW` (seed/81, runtime text
+seed/82) uses the same admission and static-build cells (197..199, 200..255
+for the slot functions; kxrt-slot-400 is the trap handler, called directly).
+Mode 3 never occurs on this route, so it reuses these cells:
+
+| Cell | Meaning |
+|---|---|
+| 194 | pool length |
+| 195 | defined function count |
+| 201 | current basic block |
+| 202 | block count of the current function |
+| 203 | table size |
+| 205 | fixup record of the current body |
+
+FF-CODE of a FN holds, from the low bits up:
+
+- bits 0..31: the wasm function index;
+- bits 32..47: the table slot + 1;
+- bits 48 and up: an inline kind (1 = `memory.grow`, 2 = `memory.size`).
+
+The MM-FIX records serve as lists:
+
+| Kind | Fields | Meaning |
+|---|---|---|
+| 30 | start, end, f | a function body |
+| 31 | slot, f | a thunk |
+| 32 | start, end | the thunk's body |
+| 40 | start, end, id | a section payload |
+
+Linear memory:
+
+| Address | Contents |
+|---|---|
+| 4096 | the context (fuel at +8, the allow bitmap at +16, code_base at +384 = the pool's address, code_length at +392) |
+| 5120 | G |
+| 65536 | the literal pool (a data segment) |
+| after the pool, 64 KiB aligned | the runtime's arena (memory.grow) |

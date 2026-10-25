@@ -1,5 +1,11 @@
 # Adopted native seed compiler
 
+> **2026-10-22: the trusted C loader was removed.** Instructions below that build
+> or run it (clang, `kexe-loader`, `scripts/seed/build-*.py`, `check-*.py`) are
+> historical and no longer runnable; see `scripts/seed/RETIRED.md`. The current
+> route is `scripts/seed/selfhost-bootstrap.py` on arm64 Linux.
+
+
 This directory contains the complete 16-module source based on the adopted
 compiler at `fc49cb2ee6fea1a41a5abbc8ed5b52aaa9f19471`, with an integration
 safety fix: explicit `--policy` is refused with E2170 until structured policy
@@ -32,6 +38,30 @@ and the raw-ELF runner evidence is a probe, not a whole compiler. A currently
 available independent compiler/runner and exact full-closure native
 build/execution evidence remain open. Do not report this source checkout or
 the historical pin checks as native selfhost qualification.
+
+## An ungranted wire refused by name in the static runtimes (2026-10-23, JUN-354)
+
+When a guest calls a wire that `KEXE_ALLOW` does not grant, seed/76 and seed/77 flush stdout, write
+`KEXE_CAP {:wire N :refused :not-granted}` to stderr, and then trap as before (SIGILL, exit 120). seed/82 writes
+the same line for a wire its browser host does not provide (`:refused :wasm32-browser`). Other refusals of a granted
+wire still trap without the line. The root is re-pinned (previous root -> F1, F1 -> F2, F2 -> F3 = F2). Verification
+and what stays open: [`../docs/static-not-granted.md`](../docs/static-not-granted.md).
+
+## Durable file replace and sleep in the static runtimes (2026-10-23, JUN-359, JUN-360)
+
+seed/76 and seed/77 answer wire 35's `FSYNC_SEP` (a file or directory, opened beneath the scope) and `RENAME_SEP`
+(each parent opened beneath the scope, `renameat` of the last component), so a file can be replaced durably, and
+wire 7 `:clock/now` takes `sleep <ms>` (0..60000, `clock_nanosleep` in the seccomp filter only with the wire
+granted). The root is re-pinned (previous root -> F1, F1 -> F2, F2 -> F3 = F2). Verification and what stays open:
+[`../docs/durable-sleep.md`](../docs/durable-sleep.md).
+
+## Stdin in the static runtimes (2026-10-23, JUN-354, JUN-357)
+
+seed/76 and seed/77 answer wire 41 `:io/read` (stdin to end of file, or one read of at most n bytes, completed
+to a whole UTF-8 character; `read(0)` is in the seccomp filter only with the wire granted), and wire 20 takes an
+optional stdin payload after `STDIN_SEP`, written to the child's stdin without blocking past the deadline. The
+root is re-pinned (previous root -> F1, F1 -> F2, F2 -> F3 = F2). Verification, receipts and what stays open:
+[`../docs/static-stdin.md`](../docs/static-stdin.md).
 
 ## Historical C-loader bootstrap provenance
 
@@ -200,3 +230,94 @@ specific to the m104 compiler and its pinned images. See
 [`docs/evidence/same-algo-m105-20261016/`](../docs/evidence/same-algo-m105-20261016/),
 the historical receipt at `adoption-20261012.json`, and the current receipt at
 `adoption-20261017.json`.
+
+## Loaderless bootstrap (2026-10-22)
+
+The C loader is no longer needed to build or rebuild anything here. The root
+is `bootstrap/aarch64-linux-static-root.elf` (receipt
+`bootstrap/aarch64-linux-static-root.json`), an Amu-produced
+`aarch64-linux-static` compiler. On arm64 Linux,
+`scripts/seed/selfhost-bootstrap.py` rebuilds the Linux selfhost closure from
+it (S1 = S2 = S3 = root), builds the aarch64/x86_64 runners and the x86_64
+compiler, then builds the adopted compiler core (ADR 0370) from source: S3
+compiles `CORE-STATIC-MANIFEST` (the core with the static-profile namespace
+`00-ns-static.kotoba`) to a static image C0, C0 compiles `MANIFEST` to G1,
+and the aarch64 runner takes G1 and G2 to G2 and G3: G1 = G2 = G3 = the
+adoption fixed point. `bootstrap/adopted-20261012.bin` is no longer an input
+of any build. S3 then packs G3 (`--format packed`) into
+`P-aarch64.elf`, a standalone static image of the optimized core, which
+rebuilds the core to the same container. It then checks the runtime cases
+against `static-cases.json`, and probes seccomp and the resource limits.
+Receipt: `../docs/evidence/selfhost-bootstrap-aarch64-20261022/`.
+
+## wasm32-browser-static/v1 (JUN-353)
+
+F compiles `compile SRC --target wasm32-browser --output OUT.wasm` to one
+self-contained WebAssembly module that holds the guest and the Kotoba runtime,
+both compiled from SIR:
+
+- `81-wasm32.kotoba` is the emitter. It encodes the module itself (sections,
+  LEB128, opcodes) and is a plain emitter over SIR, like `80-aarch64-linux`.
+  - Values are i64 locals.
+  - Each function is a `loop` over a `br_table` of its basic blocks.
+  - Tail positions use `return_call`.
+  - Function values are indices into a funcref table of five-argument thunks.
+  - RET2's second word is a global.
+  - Fuel is charged at context +8, exactly as natively.
+  - Floats and the `syscall` and `call-at` intrinsics are refused (E7101).
+- `82-wasm32-rt.kotoba` is the runtime. Its shared sections are cut out of the
+  current `77-aarch64-static-rt` text at compile time, by their section
+  markers; a missing marker is refused (E7106). The wasm-specific parts are:
+  - the `kotoba:host` imports `write`, `cap`, `now`, `exit` and `input`;
+  - a bump allocator over `memory.grow` (smaller arena capacities than native:
+    pairs 4M, string pool 64 MiB, vectors 512K, vector items 16M);
+  - `start(fuel)`, which always writes the structured report.
+
+  There are no seccomp filters, rlimits or signal handlers: the browser Worker
+  is the sandbox. `kotoba:host/cap` refuses every capability by name until the
+  consent broker lands (Phase 2).
+- `../runtime/wasm32-browser-static-host.js` is the dependency-free Worker host.
+  `../runtime/wasm32-browser-static-run.html` is the static run page, whose CSP
+  sets `connect-src 'none'`.
+- `../scripts/seed/check-wasm32-browser.py` runs modules in headless Chromium.
+  It talks to the DevTools protocol on a pipe and reads the result lines from
+  the DOM. There is no Node, npm or Playwright.
+
+The pr tier of `selfhost-bootstrap.py` compiles the 24 runtime cases and three
+probes with F, and checks that the float cases are refused. When a Chromium is
+installed, it also runs the modules. The `ubuntu-24.04-arm` image has none, so
+in CI the `qualify-x86_64` job runs them in the image's Chrome. Each case must
+match its pinned result, trap and remaining fuel.
+
+The consent broker (`kotoba:host/cap`) is Phase 2 (JUN-353).
+
+### The entry ABI (Phase 3)
+
+A guest gets its input and gives its output through the same wires as a native
+command, so one source runs natively and in the browser unchanged:
+
+| wire | native | wasm32-browser |
+|---|---|---|
+| 37 `:io/write`, 39 `:io/write-error` | fd 1, 2 | `kotoba:host/write` fd 1, 2 (the same runtime text) |
+| 38 `:cli/args` | the command line | `kotoba:host/input(0, i, ..)`: the page's argument list |
+| 35 `:fs/app-data` | files under `KEXE_CAP_RESOURCES_35` | `kotoba:host/input(1, 0, path, ..)`: read-only files the page holds in memory (plain read and `EXISTS_SEP`; every other `_SEP` request is refused by name) |
+
+- **Grants.** As `KEXE_ALLOW` grants wires natively, the page grants them: at
+  start the runtime asks `kotoba:host/input(2, wire, ..)` for each of 35, 37,
+  38 and 39 and sets the allow bitmap's bit when the answer is 1. No other bit
+  can be set, so without the page's grant every wire is refused, as in Phase 1
+  (the `capability-denied` case).
+- **Copying.** `input(kind, i, ptr, len, dst, cap)` answers the input's length,
+  or -1 when there is none, and copies the bytes to `dst` only when
+  `cap >= length`. The runtime asks twice: the length, then the bytes straight
+  into the string pool. The result is an ordinary string handle (i64).
+- **None of this is a capability.** The data never leaves the page: the host
+  serves only what the page passed in (`{allow, args, files}` in the Worker
+  message) and what the run writes. A guest that reaches a service still goes
+  through `kotoba:host/cap`, which refuses.
+
+The pr tier's `probe-entry` reads argument 0, reads that file and writes it:
+with the grants it echoes the file and returns its length; without them
+`:cli/args` is refused by name. `check-wasm32-browser.py --app MODULE.wasm
+[--allow ..] [--file MOUNT=DIR].. -- ARGS..` runs an application's module the
+same way (kumitate's fixture selftest, JUN-346).

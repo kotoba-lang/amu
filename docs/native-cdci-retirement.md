@@ -45,23 +45,22 @@ Git blobs, job names and schedule are recorded in
 their original compiler/runtime provenance. They do not prove the native
 replacement, and ephemeral Actions artifacts are not assumed available.
 
-## Temporary required-context hold
+## Historical required-context hold (resolved by #1439)
 
-A fresh read before this cleanup showed only `merge-guard` (GitHub App
+At the retirement checkpoint, a read before this cleanup showed only `merge-guard` (GitHub App
 15368, strict=false) as a required status on main, admin enforcement enabled,
 force pushes/deletions disabled, zero required reviewers, and no applied
 branch rules. None of the four deleted workflows supplies that required
-context. Keep the merge-guard workflow/script and all protection settings
-unchanged. Its retirement remains separately held in
-[Amu #1439](https://github.com/kotoba-lang/amu/pull/1439), pending the exact
-human approval requested there. This is a temporary exception to finish,
-not a third accepted native gate or a new hosted comparison requirement.
+context. The former required-context retirement was subsequently merged in
+[Amu #1439](https://github.com/kotoba-lang/amu/pull/1439). The checkpoint
+below is historical; it is not a current approval blocker or a third native
+gate. No branch-protection change is part of the native qualification.
 
-Removing old jobs reduces legacy automated coverage while the native
-replacement is still unavailable. No unconditional success, skipped-test
+At that checkpoint, removing old jobs reduced legacy automated coverage
+while the native replacement was unavailable. No unconditional success, skipped-test
 pass, hosted fallback or synthetic native qualification flag is installed.
 
-## Open native acceptance
+## Acceptance inventory at the retirement checkpoint
 
 The actual native compiler and full command/project/resolver/materializer/
 packaging closure, exact source/lock/Definition CID and sealed decision
@@ -75,6 +74,14 @@ receipts do not satisfy those requirements.
 
 This cleanup establishes absence of the four legacy workflow registrations
 and their checker. It does not establish that all legacy source has been
-retired, that the remaining merge-guard hold is resolved, or that CDCI is
-qualified. Product/static-hosting/browser consent and production-cutover
+retired, that CDCI is qualified. Product/static-hosting/browser consent and production-cutover
 rules remain separate and unchanged.
+
+## Current native implementation (2026-10-23)
+
+[Native public entry and CDCI scope](native-public-entry.md) records the
+current complete29 compiler, public product and native controller/two-role
+qualification. Its receipts distinguish actual current-source execution,
+historical observations, terminal hosted CI and main integration. The
+broader resolver/Definition-CID and unimplemented public command inventory
+remains separate work; retired hosts are not fallback dependencies.

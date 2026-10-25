@@ -11,6 +11,16 @@
   anything else throws. See kotoba.compiler.nbb.host.io."
   {:kotoba/export []})
 
+;; R6QW3: the Kotoba reading (W3 re-port). A pure-CLJS mechanism handler (the nbb/Node
+;; layer of a host ability). The guest has no such host surface (the kexe capability model),
+;; so every :kotoba arm is the fail-closed refusal -- the kotoba.kir.js-operations pattern.
+;; The host reading is byte-for-byte. :kotoba/export [] (the guest does not consume it).
+#?(:kotoba
+   (defn now
+     "clock/now 7, text form: a host ability."
+     [form :string] :string
+     (throw (ex-info "clock/now is a host ability" {:phase :host :trap :clock-now-host})))
+   :default
 (defn now
   "clock/now 7, text form."
   [form]
@@ -18,4 +28,4 @@
     "wall" (str (js/Date.now))
     "monotonic" (str (js/process.hrtime.bigint))
     (throw (ex-info "clock/now request must be \"wall\" or \"monotonic\""
-                    {:phase :host :request form}))))
+                    {:phase :host :request form})))))
