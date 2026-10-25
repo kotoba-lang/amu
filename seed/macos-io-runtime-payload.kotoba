@@ -1,0 +1,76 @@
+;; Emit one fixed diagnostic Darwin ABI runtime payload without invoking as.
+;; This is machine-code bootstrap data, not the general Amu runtime or a user
+;; consent mechanism. The words are pinned against the reviewed diagnostic
+;; runtime and Amu-generated guest in docs/evidence/macos-io-runtime-diagnostic-20261025.
+(ns seed.macos-io-runtime-payload (:export [main]))
+
+(defn- byte-at [v :vector-i64 at :i64 value :i64] :vector-i64
+  (vector-assoc! v at (bit-and value 255)))
+
+(defn- u32-at [v :vector-i64 at :i64 value :i64] :vector-i64
+  (-> v
+      (byte-at at value)
+      (byte-at (+ at 1) (u64-shift-right value 8))
+      (byte-at (+ at 2) (u64-shift-right value 16))
+      (byte-at (+ at 3) (u64-shift-right value 24))))
+
+(defn- text-at [v :vector-i64 at :i64 text :string] :vector-i64
+  (let [bytes (vector-i64-from-bytes (string-to-utf8 text))]
+    (loop [i 0 out v]
+      (if (= i (vector-count bytes)) out
+        (recur (inc i) (byte-at out (+ at i) (vector-at bytes i)))))))
+
+(defn- payload-words [] :vector-i64
+  [0xd11003ff 0x910003e7 0xf90000ff 0xd2807d08 0xf90004e8 0xd2c00408 0xf90008e8 0x100001a8
+   0xf900c0e8 0xd28010e8 0xf900c4e8 0x10000568 0xf9001ce8 0x10000688 0xf90040e8 0x94000005
+   0xd2800030 0xf2a40010 0xd4001001 0xd4200020 0xa9bf7bfd 0x910003fd 0xd100c3ff 0xf90003f3
+   0xf90017e7 0xf94004f0 0xf1000610 0x54000042 0xd4200000 0xf90004f0 0xd2801001 0xf2a00001
+   0xd28000e2 0xf94017e0 0xf9401c10 0xd63f0200 0xaa0003e9 0xaa0903e4 0xd28004a1 0xd2800022
+   0xd2800023 0xf94017e0 0xf9404010 0xd63f0200 0xaa0003f3 0xd2800540 0xf94003f3 0x910003bf
+   0xa8c17bfd 0xd65f03c0 0xd4200020 0x00000000 0x6974616e 0x000a6576 0xf9400005 0xf10010bf
+   0x540006e2 0x91080006 0x8b0510c6 0xf90000c1 0xf90004c2 0x910004a5 0xf9000005 0xaa0503e0
+   0xd65f03c0 0xa9bf7bf3 0xaa0003f3 0xf100943f 0x54000561 0xf100045f 0x54000521 0xf100047f
+   0x540004e1 0xf9400805 0xd2c00406 0xeb0600bf 0x54000461 0xb4000444 0xf9400005 0xeb05009f
+   0x540003e8 0xd1000484 0x91080005 0x8b0410a5 0xf94000a1 0xf94004a2 0xf101005f 0x54000308
+   0xf940c405 0xeb05003f 0x540002a8 0xcb0100a5 0xeb05005f 0x54000248 0xf940c005 0x8b0100a1
+   0xd2800020 0xd2800090 0xf2a40010 0xd4001001 0x54000162 0xf100241f 0x54000128 0x9100c001
+   0x390c0261 0xaa1303e0 0x92800001 0xd2800022 0x97ffffca 0xa8c17bf3 0xd65f03c0 0xd4200020])
+
+(defn- payload-at [v :vector-i64 at :i64 words :vector-i64] :vector-i64
+  (loop [i 0 out v]
+    (if (= i (vector-count words)) out
+      (recur (inc i) (u32-at out (+ at (* 4 i)) (vector-at words i))))))
+
+(defn- acknowledged? [request :vector-i64 offset :i64 reply :vector-i64] :bool
+  (if (and (= (vector-count reply) 453)
+           (= (vector-at reply 0) 0) (= (vector-at reply 1) 70)
+           (= (vector-at reply 2) 83) (= (vector-at reply 3) 50)
+           (= (vector-at reply 4) 0))
+    (loop [i 0]
+      (if (= i 448) true
+        (if (= (vector-at reply (+ i 5)) (vector-at request (+ offset i)))
+          (recur (inc i)) false)))
+    false))
+
+(defn main [] :i64
+  (let [path (typed-cap-call :cli/args :string :string "0")
+        mode (typed-cap-call :cli/args :string :string "1")
+        path-bytes (vector-i64-from-bytes (string-to-utf8 path))
+        length (vector-count path-bytes)
+        offset (+ 7 length)
+        words (payload-words)]
+    (if (or (= length 0) (> length 255)
+            (not (or (string=? mode "allow") (string=? mode "deny")))
+            (not= (vector-count words) 112)) 2
+      (let [v0 (vector-alloc (+ offset 448))
+            v1 (-> v0
+                   (byte-at 0 0) (byte-at 1 70) (byte-at 2 83)
+                   (byte-at 3 50) (byte-at 4 0) (byte-at 5 66)
+                   (text-at 6 path)
+                   (byte-at (+ 6 length) 0)
+                   (payload-at offset words))
+            v2 (if (string=? mode "deny")
+                 (u32-at v1 (+ offset 20) 0xd2800008) v1)
+            response (typed-cap-call :fs/app-data-bytes :bytes :bytes
+                        (bytes-from-vector-i64 v2))]
+        (if (acknowledged? v2 offset (vector-i64-from-bytes response)) 0 3)))))
