@@ -376,3 +376,56 @@ State: ACCEPTED DESIGN ONLY (this amendment). IMPLEMENTED: nothing --
 no code moves in this slice. MEASURED: nothing -- no hardware ran;
 every number quoted here comes from committed records. Record:
 `docs/evidence/gpu/claim-protocol-cuda-channel-20261025.txt`.
+
+## Amendment (2026-10-25, later the same day: HONEST LEFT (c) is
+ANSWERED -- the three-way speed question consumes the claim currency)
+
+DECIDED (JUN-57, the row the adoption amendment left to "NO record, as
+before"): the `:warp-shuffle-reduce` vs `:subgroup-reduce` vs
+`:baseline` speed question is answered for what the claim protocol can
+answer it for -- the CUDA route on xavier sm_72 -- from the two adopted
+sessions (`docs/evidence/gpu/cuda-claimprotocol-run1-20261025/`,
+`...-run2-20261025/`), whose verdicts agree 18/18 across sessions and
+whose publications re-derive byte-exactly from their committed logs
+(re-run this tick, `diff` empty both). Under rule 2 (a regime-invariant
+sign is the only selection basis):
+
+  (1) `:warp-shuffle-reduce` vs `:baseline`: REGIME-INVARIANT FASTER,
+      6/6 strata (both metrics x :max/:min/:sum), 12/12 per-run ratios
+      below 1.0 in each, both sessions -- selection basis at all three
+      ops.
+  (2) `:warp-shuffle-reduce` vs `:subgroup-reduce`: REGIME-INVARIANT
+      FASTER at :max/:min (4/6 strata) -- selection basis there; at
+      :sum (2/6) the sign is REGIME-SCOPED and cannot choose a variant
+      either way (the W=64 run is above 1.0 in both shapes, both
+      clocks, both sessions -- at :sum and W=64 `:subgroup-reduce` is
+      faster every time it was measured -- while W>=128 sits far below
+      1.0).
+  (3) `:subgroup-reduce` vs `:baseline`: REGIME-SCOPED 6/6 (faster
+      only in the W=32 regime, slower at W>=64) -- no selection basis.
+
+Consequence: `select-variant`'s CUDA-route answer stays
+`:warp-shuffle-reduce` and NOTHING MOVES -- the standing ladder is now
+measurement-supported where rule 2 permits signs ((1) all ops, (2)
+:max/:min) and design-ordered where it does not ((2)'s :sum gap, which
+is named as unclaimed, not as measured). `(:cuda-v1,
+:subgroup-reduce)` stays by-name-only; (3) promotes nothing. The
+separate per-vendor question ADR-0356 names ("whether the CUDA-route
+row should ever answer `:subgroup-reduce`") is NOT decided here.
+
+Limits (the answer's scope, named so no reading upgrades): ONE device
+(xavier, L4T R35.4.1, sm_72) -- every sign is xavier-scoped and every
+other NVIDIA device is UNMEASURED on this question; sign claims are
+CHANNEL-SCOPED (CUDA route only) -- they flip no MSL/WGSL cell and
+answer no workgroup row (ADR-0355's 2026-10-25 channel rule stands);
+reduce ops :max/:min/:sum, two shapes, six widths only; rule 3's
+cross-clock magnitude ban stands (both metrics classify separately and
+agree everywhere here); two agreeing sessions bind no distribution --
+run 3+ cross-run stability is UNMEASURED. No `:measured?` flag,
+`:shapes` value or workgroup row moves; `:arm`/`:unknown` stay
+provisional `:measured? false`.
+
+State: DECIDED (this amendment, the answer and its no-move
+consequence) over MEASURED ground (the two sessions' signs, consumed
+not re-measured). IMPLEMENTED: nothing -- no code moves. Record:
+`docs/evidence/gpu/cuda-selection-answer-20261025.txt`.
