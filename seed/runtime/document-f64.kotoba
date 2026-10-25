@@ -1,0 +1,152 @@
+;; Runtime source fragment embedded in seed/21-check.kotoba, not a unity module.
+;; The formatter is an alpha-renamed copy of compiler/f64_text.kotoba, with
+;; its exact decimal parser imported from the seed's existing decimal group.
+;; No host printer/parser or C runtime is involved. See document-runtime.json
+;; for source bindings; this candidate has not been executed or qualified.
+(defn- __krft_decimal-bits [text :string] [:option :i64]
+  (let [parsed (decimal-f64-parse text)]
+    (if (option-some?-of [:option :f64] parsed)
+      (option-some-of [:option :i64]
+        (__r6-as :i64 (option-value-of [:option :f64] parsed (__r6-as :f64 0))))
+      (option-none-of [:option :i64]))))
+
+;; Generate exact decimal digits with integer arithmetic, then choose the first
+;; ties-to-even rounded prefix that parses back to the original bits. Every
+;; finite binary64 has such a prefix by17 significant digits. No host float
+;; printer, float arithmetic, platform locale, C runtime or numeric cast is used.
+(defn- __krft_finite-bits? [bits :i64] :bool
+  (not (= (bit-and (u64-shift-right bits 52) 2047) 2047)))
+
+(defn- __krft_digit [value :i64] :string
+  (string-substring "0123456789" value (+ value 1)))
+(defn- __krft_multiply [text :string factor :i64] :string
+  (loop [i (- (string-byte-length text) 1) carry 0 out ""]
+    (if (< i 0)
+      (if (= carry 0) out (string-concat (__krft_digit carry) out))
+      (let [value (+ (* (- (string-code-point-at text i) 48) factor) carry)
+            next-carry (quot value 10)]
+        (recur (- i 1) next-carry
+               (string-concat (__krft_digit (- value (* next-carry 10))) out))))))
+(defn- __krft_multiply-power [text :string factor :i64 exponent :i64] :string
+  (loop [i 0 current text]
+    (if (>= i exponent) current
+      (recur (+ i 1) (__krft_multiply current factor)))))
+(defn- __krft_zeros [count :i64] :string
+  (loop [i 0 out ""]
+    (if (>= i count) out (recur (+ i 1) (string-concat out "0")))))
+(defn- __krft_increment [text :string] :string
+  (loop [i (- (string-byte-length text) 1) suffix ""]
+    (if (< i 0)
+      (string-concat "1" suffix)
+      (let [d (- (string-code-point-at text i) 48)]
+        (if (= d 9)
+          (recur (- i 1) (string-concat "0" suffix))
+          (string-concat (string-substring text 0 i)
+            (string-concat (__krft_digit (+ d 1)) suffix)))))))
+(defn- __krft_nonzero-after? [text :string start :i64] :bool
+  (loop [i start]
+    (if (>= i (string-byte-length text)) false
+      (if (not (= (string-code-point-at text i) 48)) true (recur (+ i 1))))))
+(defn- __krft_round-prefix [text :string count :i64 mode :i64] :string
+  (let [length (string-byte-length text)
+        prefix (string-substring text 0 (if (< count length) count length))]
+    (if (>= count length)
+      prefix
+      (let [next (- (string-code-point-at text count) 48)
+            last (- (string-code-point-at text (- count 1)) 48)
+            up (cond (= mode -1) false
+                     (= mode 1) (__krft_nonzero-after? text count)
+                     :else (or (> next 5)
+                               (and (= next 5)
+                                    (or (__krft_nonzero-after? text (+ count 1)) (= (bit-and last 1) 1)))))
+            rounded (if up (__krft_increment prefix) prefix)]
+        rounded))))
+(defn- __krft_trim-zeroes [text :string] :string
+  (loop [n (string-byte-length text)]
+    (if (and (> n 1) (= (string-code-point-at text (- n 1)) 48))
+      (recur (- n 1))
+      (string-substring text 0 n))))
+(defn- __krft_render [rounded :string original-order :i64 count :i64 negative :bool] :string
+  (let [carry (> (string-byte-length rounded) count)
+        digits (__krft_trim-zeroes (if carry (string-substring rounded 0 count) rounded))
+        order (if carry (+ original-order 1) original-order)
+        length (string-byte-length digits)
+        point (+ order 1)
+        body (cond
+               (or (< order -6) (>= order 21))
+               (string-concat (string-substring digits 0 1)
+                 (string-concat
+                   (if (> length 1) (string-concat "." (string-substring digits 1 length)) "")
+                   (string-concat "e" (string-from-i64 order))))
+               (<= point 0)
+               (string-concat "0." (string-concat (__krft_zeros (- 0 point)) digits))
+               (>= point length)
+               (string-concat digits (string-concat (__krft_zeros (- point length)) ".0"))
+               :else
+               (string-concat (string-substring digits 0 point)
+                              (string-concat "." (string-substring digits point length))))]
+    (if negative (string-concat "-" body) body)))
+(defn- __krft_shortest [digits :string order :i64 bits :i64] [:result :string :keyword]
+  (loop [count 1]
+    (if (> count 17)
+      (result-err-of [:result :string :keyword] :f64-text/no-roundtrip)
+      ;; At a power-of-two boundary the rounding interval is asymmetric.
+      ;; Check both adjacent decimal lattice points as well as the nearest
+      ;; ties-to-even point; the nearest alone may miss a shorter spelling.
+      (let [nearest (__krft_render (__krft_round-prefix digits count 0) order count (< bits 0))
+            low (__krft_render (__krft_round-prefix digits count -1) order count (< bits 0))
+            high (__krft_render (__krft_round-prefix digits count 1) order count (< bits 0))
+            parsed (__krft_decimal-bits nearest)
+            low-parsed (__krft_decimal-bits low)
+            high-parsed (__krft_decimal-bits high)]
+        (cond
+          (and (option-some?-of [:option :i64] parsed)
+               (= (option-value-of [:option :i64] parsed 0) bits))
+          (result-ok-of [:result :string :keyword] nearest)
+          (and (option-some?-of [:option :i64] low-parsed)
+               (= (option-value-of [:option :i64] low-parsed 0) bits))
+          (result-ok-of [:result :string :keyword] low)
+          (and (option-some?-of [:option :i64] high-parsed)
+               (= (option-value-of [:option :i64] high-parsed 0) bits))
+          (result-ok-of [:result :string :keyword] high)
+          :else (recur (+ count 1)))))))
+
+(defn- __krft_format-bits [bits :i64] [:result :string :keyword]
+  "Shortest round-trip finite decimal; integral values retain an EDN float
+  marker. Signed zero is preserved here; document identity normalizes it at
+  the canonical-byte boundary. NaN and infinities return a typed refusal."
+  (if (not (__krft_finite-bits? bits))
+    (result-err-of [:result :string :keyword] :f64-text/non-finite)
+    (let [magnitude (bit-and bits 9223372036854775807)]
+      (if (= magnitude 0)
+        (result-ok-of [:result :string :keyword] (if (< bits 0) "-0.0" "0.0"))
+        (let [exponent (bit-and (u64-shift-right bits 52) 2047)
+              fraction (bit-and bits 4503599627370495)
+              mantissa (if (= exponent 0) fraction (+ fraction 4503599627370496))
+              binary-exponent (if (= exponent 0) -1074 (- exponent 1075))
+              places (if (< binary-exponent 0) (- 0 binary-exponent) 0)
+              digits (__krft_multiply-power (string-from-i64 mantissa)
+                                     (if (< binary-exponent 0) 5 2)
+                                     (if (< binary-exponent 0) (- 0 binary-exponent) binary-exponent))
+              order (- (- (string-byte-length digits) places) 1)]
+          (__krft_shortest digits order bits))))))
+
+(defn- __kr_df64text [bits :i64] :string
+  (let [result (__krft_format-bits bits)]
+    (if (result-ok?-of [:result :string :keyword] result)
+      (result-value-of [:result :string :keyword] result "")
+      (__kr_dtraps))))
+(defn- __kr_df64canon [d :string i :i64 end :i64] :string
+  (let [parsed (__krft_decimal-bits (string-substring d i end))]
+    (if (option-some?-of [:option :i64] parsed)
+      (let [bits (option-value-of [:option :i64] parsed 0)
+            normalized (if (= (bit-and bits 9223372036854775807) 0) 0 bits)]
+        (string-concat "f" (string-concat (string-from-i64 normalized) ";")))
+      (__kr_dtraps))))
+(defn- document-f64 [value :f64] :document
+  (__r6-dd (__kr_df64text (__r6-as :i64 value))))
+(defn- document-f64-value [d :document] [:option :f64]
+  (let [text (__r6-ds d)]
+    (if (= (__kr_dkindn text) 3)
+      (decimal-f64-parse text)
+      (option-none-of [:option :f64]))))

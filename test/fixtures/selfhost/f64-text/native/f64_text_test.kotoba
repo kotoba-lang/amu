@@ -1,0 +1,46 @@
+(ns native.f64-text-test
+  (:export [main])
+  (:require [kotoba.compiler.f64-text :as text]
+            [kotoba.compiler.decimal-bits :as decimal]))
+
+(defn- equals [bits :i64 expected :string] :bool
+  (let [result (text/format-bits bits)]
+    (and (result-ok?-of [:result :string :keyword] result)
+         (string=? (result-value-of [:result :string :keyword] result "refused") expected))))
+(defn- roundtrip [bits :i64] :bool
+  (let [result (text/format-bits bits)]
+    (if (not (result-ok?-of [:result :string :keyword] result)) false
+      (let [parsed (decimal/decimal-f64-bits
+                     (result-value-of [:result :string :keyword] result ""))]
+        (and (option-some?-of [:option :i64] parsed)
+             (= (option-value-of [:option :i64] parsed 0) bits))))))
+(defn- anchors [] :bool
+  (and (equals 0 "0.0")
+       (equals -9223372036854775808 "-0.0")
+       (equals 4607182418800017408 "1.0")
+       (equals -4616189618054758400 "-1.0")
+       (equals 4609434218613702656 "1.5")
+       (equals 4611686018427387904 "2.0")
+       (equals 4845873199050653696 "9007199254740992.0")
+       (equals 1 "5e-324")
+       (equals 4503599627370496 "2.2250738585072014e-308")
+       (equals 9218868437227405311 "1.7976931348623157e308")))
+(defn- refusals [] :bool
+  (and (not (text/finite-bits? 9218868437227405312))
+       (not (text/finite-bits? -4503599627370496))
+       (not (text/finite-bits? 9221120237041090560))
+       (not (result-ok?-of [:result :string :keyword] (text/format-bits 9218868437227405312)))
+       (not (result-ok?-of [:result :string :keyword] (text/format-bits -4503599627370496)))
+       (not (result-ok?-of [:result :string :keyword] (text/format-bits 9221120237041090560)))))
+(defn- boundaries [] :bool
+  (loop [exponent 0]
+    (if (> exponent 2046) true
+      (let [base (i64-shift-left exponent 52)
+            below (if (= base 0) 1 (- base 1))
+            above (+ base 1)]
+        (if (and (roundtrip base) (roundtrip below) (roundtrip above)
+                 (roundtrip (bit-or -9223372036854775808 above)))
+          (recur (+ exponent 1))
+          false)))))
+(defn main [] :i64
+  (+ (if (anchors) 1 0) (if (refusals) 2 0) (if (boundaries) 4 0)))

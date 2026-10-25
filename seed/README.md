@@ -5,6 +5,14 @@
 > historical and no longer runnable; see `scripts/seed/RETIRED.md`. The current
 > route is `scripts/seed/selfhost-bootstrap.py` on arm64 Linux.
 
+The current worktree contains an unqualified19-module core / complete48
+source integration of decimal, document and x86 floating candidates. It keeps
+all18 adopted core modules and every live/desktop/project declaration. The
+existing complete47 root/product/adoption pins do not qualify this changed
+closure. Native core adoption, complete fixed points and every positive /
+refusal / fuel suite remain required before replacing those pins.
+
+## Historical adopted checkpoint
 
 This directory contains the complete 16-module source based on the adopted
 compiler at `fc49cb2ee6fea1a41a5abbc8ed5b52aaa9f19471`, with an integration

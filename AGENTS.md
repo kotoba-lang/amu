@@ -161,3 +161,15 @@ text/DOM/text-edit goldens must execute on actual x86 Linux. ARM code generation
 alone cannot qualify x86. Source-owner pins live in shared-browser-components.json;
 text's canonical owner is kotoba/lib/kotoba.text, not its archived repository.
 CSSOM/surface/kernel desktop/dapps/persistent restore remain later JUN-93 gates.
+
+## JUN-93 unqualified floating/document integration candidate
+
+This worktree reconciles PR1443 with the complete47 lineage. It retains all
+18 adopted normal core modules and adds decimal module19 (core19 / full48).
+The existing root/public/controller/adoption pins still describe complete47;
+never treat them as qualification for this modified source closure. Re-adopt
+the entire core with native G1=G2=G3, then reproduce the complete compiler and
+run every decimal/document/floating and existing native/refusal/fuel gate.
+Kernel project profile2 keeps its protected context/stack/call ABI and integer
+SIR. Integer-only object/image profile3 is separate; floating support in Linux
+profiles0/1 must not enable SSE in either kernel profile.

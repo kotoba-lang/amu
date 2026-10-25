@@ -1,16 +1,18 @@
-Optional seed x86_64 Linux routes, v2.
+Optional seed x86_64 Linux routes, v3 source candidate (not qualified).
 
 This route creates its own fresh M and runs lex/read/names/check/lower before
 x86 generation. It never invokes gn-run, ly-run, out-build or the project
-linker on that M. These are phase-local reservations; the adopted manifest,
-MEMORY-MAP and bootstrap closure are unchanged.
+linker on that M. These are phase-local reservations; MEMORY-MAP and adopted
+artifact pins are unchanged. The changed compiler source/manifest closure
+requires fresh native selfbuild and execution proof; historical receipts do
+not qualify it.
 
 Absolute header cells, reserved from xg-build/xr-build through output:
 192 = current FN index
 193 = sole exported main FN index
 194 = positive artifact fuel budget
 195 = ELF RW segment file offset
-196 = profile (0 standalone scalar ELF, 1 context-v11 runtime)
+196 = profile (0 standalone scalar ELF, 1 context-v11 runtime, 2 integer kernel object)
 
 These cells are not MM-STAT-BASE-relative statistics. No shared frontend,
 AArch64 generator, linker or future extension may run concurrently with this
@@ -43,11 +45,29 @@ Direct/indirect CALL whose continuation is only LABEL/BR then RET of the same
 temp uses leave/jmp when there are at most5 arguments. Stack arguments retain the regular call
 path. Source fuel charge sites and callee entry charges are unchanged.
 
-C helpers use the ordinary SysV ABI: rdi=context; rsi,rdx,rcx,r8,r9=operands;
+Profiles 0/1 also carry f64 as raw i64 bits and f32 as sign-extended 32 bits
+through the same GPR parameters/results. The existing36 floating SIR tags
+use scratch xmm0/xmm1, never a public SysV floating ABI or a runtime helper.
+Each operation saves MXCSR at [rsp], loads 0x1f80 (nearest-even, masked
+exceptions, DAZ/FTZ off), then restores the complete caller state. A function
+with floating SIR reserves 16 extra frame bytes; the existing 4096 bound
+includes them. Integer-only function frames keep their previous shape.
+MIN/MAX propagate NaN and choose -0 for min / +0 for max in either operand
+order. Truncating conversions saturate to signed i64 and map NaN to 0.
+Unknown tags and gaps remain refused, including unreachable SIR. Profile2
+retains the original i64/bool kernel signatures and refuses every floating
+SIR operation, so kernel objects do not implicitly acquire SSE requirements.
+ELF export admission remains exactly main()->i64; handles/capabilities are
+still refused on that scalar route. Runtime stack arguments 6..16 retain the
+existing bit-carrier ABI. See x86-float.json and its unexecuted corpora.
+
+Context wrappers use the ordinary SysV ABI: rdi=context; rsi,rdx,rcx,r8,r9=operands;
 call [rdi+RT-slot]. Context is reloaded from rbp-8 after every helper call and
 before every guest call. Pointers/handle validation and allocation budgets
 are the existing trusted loader ABI v11's responsibility. No C source
-translates Kotoba or emits guest machine instructions.
+translates Kotoba or emits guest machine instructions. The C mechanism
+described below is historical compatibility evidence, not current loaderless
+selfhost acceptance or authorization for a C fallback.
 
 The ELF profile still rejects handles/runtime operations. The runtime profile
 uses an explicitly tagged container, never the architecture-ambiguous KSEED1:
@@ -60,7 +80,7 @@ The runtime fuel budget comes from that loader's context, not the container.
 The optional Linux bootstrap launcher includes the pinned C loader unchanged
 and pre-touches512 KiB of its existing stack before sandbox installation.
 The unchanged loader lowers RLIMIT_AS after mapping its fixed arenas, so
-post-sandbox heap/stack growth would otherwise fail. glibc reserves16 MiB
+post-sandbox heap/stack growth would otherwise fail. glibc reserves 16 MiB
 of ordinary allocator headroom at startup; the stack reserve stays below
 the existing1 MiB stack budget. No syscall grant or process limit is widened.
 
@@ -69,7 +89,8 @@ optional AArch64 cross compiler. X86_64-LINUX-SELFHOST-MANIFEST builds a
 source-only Linux compiler with the same reader/checker/lowerer and x86
 backend. Its driver requires the explicit x86 target and format; it refuses
 project/KIR/source-path/policy routes rather than discarding their flags.
-Both profiles reject floating-point signatures/operations before output.
+Profiles 0/1 admit the source candidate's 36 floating SIR tags; the kernel
+object route uses profile 2 and retains its integer-only admission.
 State templates have no standalone SIR and are skipped exactly as lw-fns
 requires; all concrete specializations are admitted. Generated closure
 adapters have no parameter type table; their checked lambda is admitted.
@@ -84,7 +105,7 @@ source's single export as one GLOBAL FUNC in `.text`, one 80-byte private
 context in `.data` (second quadword = the per-call fuel bound), and exactly
 one `R_X86_64_PC32` addend -4 relocation of the wrapper's `lea r9,[rip+.data]`
 against the `.data` symbol. The wrapper is lea, fuel replenish,
-`sub rsp,8`, call entry, `add rsp,8`, `ret`. Admission is the profile-0 scalar
+`sub rsp,8`, call entry, `add rsp,8`, `ret`. Admission is the profile-2 integer
 subset plus the one-export rule; `--fuel` over 2^31-1 takes the imm64
 replenish path and stays ABI-identical. This route emits the object ABI only:
 not the kernel image, not the entry allowlist, not the fuel-tier table, and no

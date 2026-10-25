@@ -1,0 +1,69 @@
+(ns native.sha256-bits-test
+  (:export [main])
+  (:require [kotoba.compiler.sha256-bits :as sha]))
+
+(defn- equal [input :bytes expected :string] :bool
+  (string=? (sha/sha256-hex input) expected))
+
+(defn- repeated [length :i64 value :i64] :bytes
+  (let [items (loop [i 0 current (vector-alloc length)]
+                (if (= i length) current
+                  (recur (+ i 1) (vector-assoc! current i value))))]
+    (bytes-from-vector-i64 items)))
+
+(defn- binary [length :i64] :bytes
+  (let [items (loop [i 0 current (vector-alloc length)]
+                (if (= i length) current
+                  (recur (+ i 1) (vector-assoc! current i (bit-and i 255)))))]
+    (bytes-from-vector-i64 items)))
+
+(defn- standard-messages [] :bool
+  (and
+    (equal (string-to-utf8 "") "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+    (equal (string-to-utf8 "abc") "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+    (equal (string-to-utf8 "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq") "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1")
+    (equal (string-to-utf8 "abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstunopqrstu") "47904365c1503f8fece296a75b2d0073fddb18b25b088c1703af297dcc817dc6")
+))
+
+(defn- padding-boundaries [] :bool
+  (and
+    (equal (repeated 55 97) "9f4390f8d30c2dd92ec9f095b65e2b9ae9b0a925a5258e241c9f1e910f734318")
+    (equal (repeated 56 97) "b35439a4ac6f0948b6d6f9e3c6af0f5f590ce20f1bde7090ef7970686ec6738a")
+    (equal (repeated 63 97) "7d3e74a05d7db15bce4ad9ec0658ea98e3f06eeecf16b4c6fff2da457ddc2f34")
+    (equal (repeated 64 97) "ffe054fe7ae0cb6dc65c3af9b61d5209f439851db43d0ba5997337df154668eb")
+    (equal (repeated 119 97) "31eba51c313a5c08226adf18d4a359cfdfd8d2e816b13f4af952f7ea6584dcfb")
+    (equal (repeated 120 97) "2f3d335432c70b580af0e8e1b3674a7c020d683aa5f73aaaedfdc55af904c21c")
+    (equal (repeated 127 97) "c57e9278af78fa3cab38667bef4ce29d783787a2f731d4e12200270f0c32320a")
+    (equal (repeated 128 97) "6836cf13bac400e9105071cd6af47084dfacad4e5e302c94bfed24e013afb73e")
+))
+
+(defn- arbitrary-bytes [] :bool
+  (and
+    (equal (binary 1) "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d")
+    (equal (binary 256) "40aff2e9d2d8922e47afd4648e6967497158785fbd1da870e7110266bf944880")
+    (equal (binary 257) "54acfbfedc4d8da40f76f275e1a98f10af8ef1fb9fb39e5a67a00aabcbe6597c")
+    (equal (binary 65536) "7daca2095d0438260fa849183dfc67faa459fdf4936e1bc91eec6b281b27e4c2")
+    (equal (bytes-from-vector-i64 [255 0 128 0 1]) "9b12dd498807859fa785af14216fc22472a7605158848bc6af8dd2655f461273")
+))
+
+(defn- zero-inputs [] :bool
+  (and
+    (equal (repeated 0 0) "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+    (equal (repeated 55 0) "02779466cdec163811d078815c633f21901413081449002f24aa3e80f0b88ef7")
+    (equal (repeated 56 0) "d4817aa5497628e7c77e6b606107042bbba3130888c5f47a375e6179be789fbb")
+    (equal (repeated 64 0) "f5a5fd42d16a20302798ef6ed309979b43003d2320d9f0e8ea9831a92759fb4b")
+    (equal (repeated 65536 0) "de2f256064a0af797747c2b97505dc0b9f3df0de4f489eac731c23ae9ca9cc31")
+))
+
+(defn- independent-calls [] :bool
+  (let [input (binary 256) before (sha/sha256-hex input)
+        other (sha/sha256-hex (repeated 64 97)) after (sha/sha256-hex input)
+        unchanged (loop [i 0]
+                    (if (= i 256) true
+                      (and (= (bytes-at input i) i) (recur (+ i 1)))))]
+    (and unchanged (string=? before "40aff2e9d2d8922e47afd4648e6967497158785fbd1da870e7110266bf944880")
+         (string=? other "ffe054fe7ae0cb6dc65c3af9b61d5209f439851db43d0ba5997337df154668eb") (string=? before after))))
+
+(defn main [] :i64
+  (+ (if (standard-messages) 1 0) (if (padding-boundaries) 2 0)
+     (if (arbitrary-bytes) 4 0) (if (zero-inputs) 8 0) (if (independent-calls) 16 0)))
