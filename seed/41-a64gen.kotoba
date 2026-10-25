@@ -2551,26 +2551,32 @@
                    (or (> entry 0) (ccf-label-source M 1 target i 0))))))]
      (and ok (<= (+ found (if call 1 0)) 1)
       (ccf-fixes M (inc j) at f i (+ found (if call 1 0)))))))))
+;; The immutable high-byte mask is a superset of all PC-relative classes.
+;; It skips only ordinary words; every candidate class retains its full check.
 (defn- ccf-code [M :vector-i64 j :i64 at :i64] :bool
  (if (= j at) true
   (let [w (vector-at M (+ MM-CODE-BASE j))]
-   (if (or (< w 0) (> w 4294967295)) false
-    (let [b26 (= (bit-and w 2080374784) 335544320)
-          b19 (or (= (bit-and w 4278190096) 1409286144) (= (bit-and w 2113929216) 872415232))
-          b14 (= (bit-and w 2113929216) 905969664)
-          lit (= (bit-and w 989855744) 402653184)
-          adr (= (bit-and w 2667577344) 268435456)
-          adrp (= (bit-and w 2667577344) 2415919104)
-          delta (cond b26 (cfr-signed (bit-and w 67108863) 33554432 67108864)
-                   (or b19 lit) (cfr-signed (bit-and (u64-shift-right w 5) 524287) 262144 524288)
-                   b14 (cfr-signed (bit-and (u64-shift-right w 5) 16383) 8192 16384)
-                   :else 0)
-          adelta (if adr (cfr-signed (+ (* 4 (bit-and (u64-shift-right w 5) 524287))
-                       (bit-and (u64-shift-right w 29) 3)) 1048576 2097152) 0)]
-     (and (not adrp)
-      (not (and (or b26 b19 b14 lit) (>= (+ j delta) at)))
-      (not (and adr (>= (+ (* 4 (dec j)) adelta) (* 4 (dec at)))))
-      (ccf-code M (inc j) at)))))))
+   (and (>= w 0) (<= w 4294967295)
+    (if (= (bit-and (u64-shift-right 67835469688274944 (bit-and (u64-shift-right w 24) 63)) 1) 0)
+      (ccf-code M (inc j) at)
+     (let [page (bit-and w 2667577344)]
+     (and (not= page 2415919104)
+      (cond (= page 268435456)
+        (< (+ (* 4 (dec j))
+              (cfr-signed (+ (* 4 (bit-and (u64-shift-right w 5) 524287))
+                            (bit-and (u64-shift-right w 29) 3)) 1048576 2097152))
+           (* 4 (dec at)))
+       (= (bit-and w 2080374784) 335544320)
+        (< (+ j (cfr-signed (bit-and w 67108863) 33554432 67108864)) at)
+       :else
+        (let [short (bit-and w 2113929216)]
+         (cond (or (= (bit-and w 4278190096) 1409286144) (= short 872415232)
+                   (= (bit-and w 989855744) 402653184))
+           (< (+ j (cfr-signed (bit-and (u64-shift-right w 5) 524287) 262144 524288)) at)
+          (= short 905969664)
+           (< (+ j (cfr-signed (bit-and (u64-shift-right w 5) 16383) 8192 16384)) at)
+          :else true)))
+      (ccf-code M (inc j) at))))))))
 ;; Preserve direct returned-value comparison across the exact fuel reload.
 ;; The existing whole-prefix label/fix/reference checks cover both suffix
 ;; words. LDR x8 does not read/write x0 or flags; x9 is overwritten by CSET.
