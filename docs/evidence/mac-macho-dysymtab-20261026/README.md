@@ -38,7 +38,11 @@ visible pixels; see [receipt](itonami-debug.json) and [screenshot](itonami-debug
 No VNC, guest password, NIC, Linux, JVM, Node or C compiler process was used
 in these local gates.
 
-These are local Mac and VM results. The macOS 15 CI rerun must finish before
-cross-host qualification can be claimed. Full native ARM/x86 integration,
+The exact-source `macos-15` Apple Silicon [CI run #40235646430](https://github.com/kotoba-lang/amu/actions/runs/40235646430)
+completed successfully: it staged the same 47-module source digest, produced
+matching F1 and F2 container digests, rebuilt the packager, emitted the same
+AIUEOS user ELF and exited 0. This closes the Mac root's current CI crash
+gate, while the local AIUEOS boot and Itonami debug remain separate VM
+evidence. Full native ARM/x86 integration,
 registered Itonami agent turn, D2 workspace, release and physical hardware
 remain separate open gates.
