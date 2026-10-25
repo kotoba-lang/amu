@@ -15,8 +15,10 @@ ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "seed/macos-fs2-runtime-packager.kotoba"
 EVIDENCE = ROOT / "docs/evidence/mac-aiueos-kernel-admission-20261026"
 CASES = (
-    ("fs2-da-helper-words", "fs2-da-virtual-root.derivation.s", 184, {27, 179}),
-    ("fs2-lock-helper-words", "ksl1-lock.derivation.s", 198, {197}),
+    ("fs2-da-helper-words", EVIDENCE / "fs2-da-virtual-root.derivation.s", 184, {27, 179}),
+    ("fs2-lock-helper-words", EVIDENCE / "ksl1-lock.derivation.s", 198, {197}),
+    ("fs2-ef-helper-words",
+     ROOT / "docs/evidence/mac-fs2-ef-20261026/fs2-ef.derivation.s", 293, {291, 292}),
 )
 
 
@@ -46,7 +48,7 @@ def main():
         for function, assembly, count, patched in CASES:
             object_path = Path(folder) / (function + ".o")
             subprocess.run(["/usr/bin/clang", "-arch", "arm64", "-c",
-                            str(EVIDENCE / assembly), "-o", str(object_path)], check=True)
+                            str(assembly), "-o", str(object_path)], check=True)
             literal = literal_words(source, function)
             derived = object_words(object_path)
             if len(literal) != count or len(derived) != count:
