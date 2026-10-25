@@ -1,50 +1,42 @@
 {
   "schema": "amu.seed.static-root.v1",
   "image": {
-    "bytes": 3551744,
-    "sha256": "06be90ba934b80f8d8faae156360ed6b09ef2be5c0c17ca5f21e944bbe393860"
+    "bytes": 3564032,
+    "sha256": "d388d2be20a3b0a5f35be3db97bdce4f587baed46b42b74a11f8031ab8b64143"
   },
   "target": "aarch64-linux",
   "format": "packed",
   "sourceManifest": "seed/FULL-MANIFEST",
   "sourceUnity": {
-    "bytes": 3444848,
-    "sha256": "2ab0deac5f42b537089b0b88461c336e8b683a1fbe1bd8dd853d3638b990dcf5"
+    "bytes": 3461438,
+    "sha256": "e4fd75c1f9ccac45ae7b9b317eafb2aefb886402d8f990e2a430f5729bb240b6"
   },
-  "sourceCommitBase": "90fd08511",
+  "sourceCommitBase": "2af7b945f0530a699a2d25047aa4d49cffd94a02",
   "producedBy": {
-    "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt itself to F2 and F2 to F3 = this image. Re-pinned because the merged private-store source (#1545 native private store and sleep resume) moves the compiler text every image embeds.",
-    "date": "2026-10-24",
+    "how": "C-free, on arm64 Linux in Docker (python:3.12-alpine, no C compiler, no loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this merged source to F1 and packed it; F1 rebuilt itself to F2 and F2 is byte-identical to F1 (container and image), so this image is the fixed point. Re-pinned because this merge brings origin/main (FULL46: the i64 receipt profile seed/84-kototama-i64-receipt and the 86-97 aiueos modules) together with this branch's seed/84-x86_64-b2 and the seed/76 static-runtime additions into seed/FULL-MANIFEST, and the merged source moves the compiler text every image embeds. Regenerated with scripts/seed/selfhost-bootstrap.py --tier pr and verified by scripts/seed/check-one-compiler.py in the same container.",
+    "date": "2026-10-25",
     "timeZone": "Asia/Tokyo",
-    "previousRoot": "51549ed9904f829336a9437f7d044cd9859d72411e454d97cbf03e2da87ac942",
+    "previousRoot": "06be90ba934b80f8d8faae156360ed6b09ef2be5c0c17ca5f21e944bbe393860",
     "chain": {
       "F1.kseed": {
-        "bytes": 3241099,
-        "sha256": "309362b1cf4637f7b2d8413019aafba2bdb81131de33468a52b8451e29569cce"
+        "bytes": 3255515,
+        "sha256": "34a96e8979d17f0581bc05eef2e5b744474ff54e239ba7b35995ce0c501b5436"
       },
       "F1.elf": {
-        "bytes": 3539456,
-        "sha256": "1f95cfcf57fac3125e0e2eb37aba499d60d0036c05369863b0a3ca6af391a614"
+        "bytes": 3564032,
+        "sha256": "d388d2be20a3b0a5f35be3db97bdce4f587baed46b42b74a11f8031ab8b64143"
       },
       "F2.kseed": {
-        "bytes": 3241099,
-        "sha256": "309362b1cf4637f7b2d8413019aafba2bdb81131de33468a52b8451e29569cce"
+        "bytes": 3255515,
+        "sha256": "34a96e8979d17f0581bc05eef2e5b744474ff54e239ba7b35995ce0c501b5436"
       },
       "F2.elf": {
-        "bytes": 3551744,
-        "sha256": "06be90ba934b80f8d8faae156360ed6b09ef2be5c0c17ca5f21e944bbe393860"
-      },
-      "F3.kseed": {
-        "bytes": 3241099,
-        "sha256": "309362b1cf4637f7b2d8413019aafba2bdb81131de33468a52b8451e29569cce"
-      },
-      "F3.elf": {
-        "bytes": 3551744,
-        "sha256": "06be90ba934b80f8d8faae156360ed6b09ef2be5c0c17ca5f21e944bbe393860"
+        "bytes": 3564032,
+        "sha256": "d388d2be20a3b0a5f35be3db97bdce4f587baed46b42b74a11f8031ab8b64143"
       }
     }
   },
-  "verification": "Native arm64 bootstrap --tier pr from this root: F1 = root, the adoption image, the boundary corpus, the 24 runtime cases and the wasm32-browser modules pass and the rebuild reproduces this image (rootReproduces). The CDCI pin set is a fixed point: re-invoking the rebuilt compiler reproduces coreSource/coreContainer, the amu-selfhost and kotoba-native gate images, the gate source hash, the controller identity table and all 24 case images byte for byte. Native x86_64 controller, public product and terminal exact-head PR/main CI remain the merge gate.",
+  "verification": "Native arm64 bootstrap --tier pr in a linux/arm64 docker container from this root: the adoption image, the source-lock boundary corpus and the 24 runtime cases pass; the wasm32-browser modules build (the qualify-x86_64 job executes them) and the rebuild converges to this fixed-point image (F1 = F2). The CDCI pin set is unchanged and re-asserted byte-for-byte against the rebuilt compiler: coreSource, coreContainer, the amu-selfhost and kotoba-native gate images, the gate source hash, the controller identity table and all 24 case images. Native x86_64 controller, public product and terminal exact-head PR/main CI remain the merge gate.",
   "history": [
     {
       "schema": "amu.seed.static-root.v1",
@@ -3962,7 +3954,55 @@
         }
       },
       "verification": "Native ARM main-tier bootstrap and source-bound admission/refusal proofs. Native x86 three-generation fixed point, controller24 cases/refusals and public aliases must pass terminal exact-head CI. Complete kernel/live/native-media/desktop are qualified by the source-owner consumer independently."
+    },
+    {
+      "schema": "amu.seed.static-root.v1",
+      "image": {
+        "bytes": 3551744,
+        "sha256": "06be90ba934b80f8d8faae156360ed6b09ef2be5c0c17ca5f21e944bbe393860"
+      },
+      "target": "aarch64-linux",
+      "format": "packed",
+      "sourceManifest": "seed/FULL-MANIFEST",
+      "sourceUnity": {
+        "bytes": 3444848,
+        "sha256": "2ab0deac5f42b537089b0b88461c336e8b683a1fbe1bd8dd853d3638b990dcf5"
+      },
+      "sourceCommitBase": "90fd08511",
+      "producedBy": {
+        "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root F compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt itself to F2 and F2 to F3 = this image. Re-pinned because the merged private-store source (#1545 native private store and sleep resume) moves the compiler text every image embeds.",
+        "date": "2026-10-24",
+        "timeZone": "Asia/Tokyo",
+        "previousRoot": "51549ed9904f829336a9437f7d044cd9859d72411e454d97cbf03e2da87ac942",
+        "chain": {
+          "F1.kseed": {
+            "bytes": 3241099,
+            "sha256": "309362b1cf4637f7b2d8413019aafba2bdb81131de33468a52b8451e29569cce"
+          },
+          "F1.elf": {
+            "bytes": 3539456,
+            "sha256": "1f95cfcf57fac3125e0e2eb37aba499d60d0036c05369863b0a3ca6af391a614"
+          },
+          "F2.kseed": {
+            "bytes": 3241099,
+            "sha256": "309362b1cf4637f7b2d8413019aafba2bdb81131de33468a52b8451e29569cce"
+          },
+          "F2.elf": {
+            "bytes": 3551744,
+            "sha256": "06be90ba934b80f8d8faae156360ed6b09ef2be5c0c17ca5f21e944bbe393860"
+          },
+          "F3.kseed": {
+            "bytes": 3241099,
+            "sha256": "309362b1cf4637f7b2d8413019aafba2bdb81131de33468a52b8451e29569cce"
+          },
+          "F3.elf": {
+            "bytes": 3551744,
+            "sha256": "06be90ba934b80f8d8faae156360ed6b09ef2be5c0c17ca5f21e944bbe393860"
+          }
+        }
+      },
+      "verification": "Native arm64 bootstrap --tier pr from this root: F1 = root, the adoption image, the boundary corpus, the 24 runtime cases and the wasm32-browser modules pass and the rebuild reproduces this image (rootReproduces). The CDCI pin set is a fixed point: re-invoking the rebuilt compiler reproduces coreSource/coreContainer, the amu-selfhost and kotoba-native gate images, the gate source hash, the controller identity table and all 24 case images byte for byte. Native x86_64 controller, public product and terminal exact-head PR/main CI remain the merge gate."
     }
   ],
-  "sourceCommit": "90fd08511"
+  "sourceCommit": "2af7b945f0530a699a2d25047aa4d49cffd94a02"
 }
