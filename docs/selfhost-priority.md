@@ -69,6 +69,11 @@ descendant identities, review order and required qualification. The old
 optional seed/backend-fallback design is historical; it does not define the
 replacement product. Native-only acceptance remains unchanged.
 
+The [native compile baseline](native-compile-baseline.md) binds compiler
+self-rebuilding, the complete Embench suite and public CLI qualification to
+one compiler identity. It also records the current lock-aware-check versus
+lock-unaware-builder boundary; none of its pending cases is a native pass.
+
 The final graph contains canonical `.kotoba` implementations. Existing CLJK
 fixtures, readers and host-specific branches are migration inventory; they
 do not establish a requirement to retain the old surface. Preserve recorded

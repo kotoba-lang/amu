@@ -1,0 +1,140 @@
+;; Complete bounded input unit. Parent IO outputs/callers are still separate.
+(ns kotoba.compiler.io-input
+  {:kotoba/export [max-artifact-bytes read-text-file read-artifact-text-file read-bounded-bytes-file]}
+  (:require [kotoba.compiler.filesystem :as fs]
+            [kotoba.compiler.io-buffer :as buffer])
+  (:schemas {:io.input/metadata [:record :io.input/metadata
+                                  [[:present :bool] [:mode :i64] [:size :i64] [:blocks :i64] [:kind :i64]]]}))
+
+(defn max-artifact-bytes [] :i64 8388608)
+(defn- absent [] [:ref :io.input/metadata] (record-new [:ref :io.input/metadata] false 0 0 0 0))
+(defn- failure [phase :keyword message :string path :string limit :i64] :document
+  (if (< limit 0)
+    (document-map (document-keyword :phase) (document-keyword phase)
+      (document-keyword :message) (document-string message) (document-keyword :path) (document-string path))
+    (document-map (document-keyword :phase) (document-keyword phase)
+      (document-keyword :message) (document-string message) (document-keyword :path) (document-string path)
+      (document-keyword :limit) (document-i64 limit))))
+(defn- caused [phase :keyword message :string path :string cause :document] :document
+  (document-map (document-keyword :phase) (document-keyword phase)
+    (document-keyword :message) (document-string message) (document-keyword :path) (document-string path)
+    (document-keyword :cause) cause))
+(defn- uint-field [text :string start :i64 end :i64 path :string] [:result :i64 :document]
+  (let [bytes (string-to-utf8 text)]
+    (if (>= start end)
+      (result-err-of [:result :i64 :document] (failure :fs "malformed filesystem metadata" path -1))
+      (loop [index start value 0]
+        (if (= index end) (result-ok-of [:result :i64 :document] value)
+          (let [digit (- (bytes-at bytes index) 48)]
+            (if (or (< digit 0) (> digit 9) (> value (quot (- 9223372036854775807 digit) 10)))
+              (result-err-of [:result :i64 :document] (failure :fs "malformed filesystem metadata" path -1))
+              (recur (+ index 1) (+ (* value 10) digit)))))))))
+(defn- fields [text :string path :string] [:result :vector-i64 :document]
+  (let [n (string-byte-length text)]
+    (loop [index 0 start 0 out (vector-alloc 0)]
+      (if (= index 4) (result-ok-of [:result :vector-i64 :document] out)
+        (let [space (string-find-byte text 32 start)
+              end (if (= index 3) n space)]
+          (if (or (>= start n) (and (< index 3) (<= space start)) (and (= index 3) (>= space 0)))
+            (result-err-of [:result :vector-i64 :document] (failure :fs "malformed filesystem metadata" path -1))
+            (let [field (uint-field text start end path)]
+              (if (not (result-ok?-of [:result :i64 :document] field))
+                (result-err-of [:result :vector-i64 :document] (result-error-of [:result :i64 :document] field (document-null)))
+                (recur (+ index 1) (+ end 1)
+                  (vector-conj out (result-value-of [:result :i64 :document] field 0)))))))))))
+(defn- metadata [path :string form :i64 maximum-kind :i64] [:result [:ref :io.input/metadata] :document]
+  (let [answer (fs/app-data form path "")]
+    (if (not (result-ok?-of [:result :string :document] answer))
+      (result-err-of [:result [:ref :io.input/metadata] :document]
+        (result-error-of [:result :string :document] answer (document-null)))
+      (let [text (result-value-of [:result :string :document] answer "")]
+        (if (= text "") (result-ok-of [:result [:ref :io.input/metadata] :document] (absent))
+          (let [parsed (fields text path)]
+            (if (not (result-ok?-of [:result :vector-i64 :document] parsed))
+              (result-err-of [:result [:ref :io.input/metadata] :document]
+                (result-error-of [:result :vector-i64 :document] parsed (document-null)))
+              (let [v (result-value-of [:result :vector-i64 :document] parsed (vector-alloc 0))
+                    mode (vector-at v 0) kind (vector-at v 3)]
+                (if (or (> mode 511) (> kind maximum-kind))
+                  (result-err-of [:result [:ref :io.input/metadata] :document] (failure :fs "malformed filesystem metadata" path -1))
+                  (result-ok-of [:result [:ref :io.input/metadata] :document]
+                    (record-new [:ref :io.input/metadata] true mode (vector-at v 1) (vector-at v 2) kind)))))))))))
+
+(defn- read-text-bounded [path :string limit :i64] [:result [:ref :io.buffer/text] :document]
+  (if (= path "")
+    (result-err-of [:result [:ref :io.buffer/text] :document] (failure :decode "input path is required" path -1))
+    (let [before (metadata path 5 1)]
+      (if (not (result-ok?-of [:result [:ref :io.input/metadata] :document] before))
+        (result-err-of [:result [:ref :io.buffer/text] :document]
+          (caused :decode "input could not be read" path
+            (result-error-of [:result [:ref :io.input/metadata] :document] before (document-null))))
+        (let [info (result-value-of [:result [:ref :io.input/metadata] :document] before (absent))]
+          (cond
+            (not (record-get [:ref :io.input/metadata] info :present))
+            (result-err-of [:result [:ref :io.buffer/text] :document] (failure :decode "input could not be read" path -1))
+            (> (record-get [:ref :io.input/metadata] info :size) limit)
+            (result-err-of [:result [:ref :io.buffer/text] :document] (failure :decode "input exceeds byte limit" path limit))
+            :else
+            (let [read (fs/read-chunks path)]
+              (if (not (result-ok?-of [:result [:ref :io.buffer/value] :document] read))
+                (result-err-of [:result [:ref :io.buffer/text] :document]
+                  (caused :decode "input could not be read" path
+                    (result-error-of [:result [:ref :io.buffer/value] :document] read (document-null))))
+                (let [bytes (result-value-of [:result [:ref :io.buffer/value] :document] read (buffer/empty-buffer))]
+                  ;; Raw bytes are bounded before any UTF8 walk, including
+                  ;; growth between STAT and the single-descriptor READ.
+                  (if (> (buffer/byte-count bytes) limit)
+                    (result-err-of [:result [:ref :io.buffer/text] :document] (failure :decode "input exceeds byte limit" path limit))
+                    (let [decoded (buffer/as-text bytes)]
+                      (if (result-ok?-of [:result [:ref :io.buffer/text] :document] decoded) decoded
+                        (result-err-of [:result [:ref :io.buffer/text] :document]
+                          (caused :decode "input is not valid UTF-8" path
+                            (result-error-of [:result [:ref :io.buffer/text] :document] decoded (document-null))))))))))))))))
+(defn read-text-file [path :string] [:result [:ref :io.buffer/text] :document]
+  (read-text-bounded path 1048576))
+(defn read-artifact-text-file [path :string] [:result [:ref :io.buffer/text] :document]
+  (read-text-bounded path (max-artifact-bytes)))
+
+(defn read-bounded-bytes-file [path :string maximum :i64] [:result [:ref :io.buffer/value] :document]
+  (cond
+    (= path "") (result-err-of [:result [:ref :io.buffer/value] :document] (failure :verify "input path is required" path -1))
+    (< maximum 0) (result-err-of [:result [:ref :io.buffer/value] :document] (failure :verify "invalid byte limit" path maximum))
+    :else
+    (let [before (metadata path 14 3)]
+      (if (not (result-ok?-of [:result [:ref :io.input/metadata] :document] before))
+        (result-err-of [:result [:ref :io.buffer/value] :document]
+          (caused :verify "output-set member could not be read" path
+            (result-error-of [:result [:ref :io.input/metadata] :document] before (document-null))))
+        (let [info (result-value-of [:result [:ref :io.input/metadata] :document] before (absent))
+              size (record-get [:ref :io.input/metadata] info :size)
+              kind (record-get [:ref :io.input/metadata] info :kind)]
+          (cond
+            (not (record-get [:ref :io.input/metadata] info :present))
+            (result-err-of [:result [:ref :io.buffer/value] :document] (failure :verify "output-set member could not be read" path -1))
+            (= kind 2) (result-err-of [:result [:ref :io.buffer/value] :document] (failure :verify "output-set member must not be a symbolic link" path -1))
+            (not= kind 0) (result-err-of [:result [:ref :io.buffer/value] :document] (failure :verify "output-set member is not a regular file" path -1))
+            (> size maximum) (result-err-of [:result [:ref :io.buffer/value] :document] (failure :verify "output-set member exceeds byte limit" path maximum))
+            :else
+            ;; ONE RANGE call, even for size zero: no per-chunk reopening,
+            ;; and the provider retains one no-follow regular descriptor.
+            (let [read (fs/read-range-chunks path 0 size)]
+              (if (not (result-ok?-of [:result [:ref :io.buffer/value] :document] read))
+                (result-err-of [:result [:ref :io.buffer/value] :document]
+                  (caused :verify "output-set member could not be read" path
+                    (result-error-of [:result [:ref :io.buffer/value] :document] read (document-null))))
+                (let [bytes (result-value-of [:result [:ref :io.buffer/value] :document] read (buffer/empty-buffer))
+                      after (metadata path 14 3)]
+                  (cond
+                    (not= (buffer/byte-count bytes) size)
+                    (result-err-of [:result [:ref :io.buffer/value] :document] (failure :verify "output-set member changed while being read" path -1))
+                    (not (result-ok?-of [:result [:ref :io.input/metadata] :document] after))
+                    (result-err-of [:result [:ref :io.buffer/value] :document]
+                      (caused :verify "output-set member could not be read" path
+                        (result-error-of [:result [:ref :io.input/metadata] :document] after (document-null))))
+                    :else
+                    (let [now (result-value-of [:result [:ref :io.input/metadata] :document] after (absent))]
+                      (if (or (not (record-get [:ref :io.input/metadata] now :present))
+                              (not= (record-get [:ref :io.input/metadata] now :kind) 0)
+                              (not= (record-get [:ref :io.input/metadata] now :size) size))
+                        (result-err-of [:result [:ref :io.buffer/value] :document] (failure :verify "output-set member changed while being read" path -1))
+                        (result-ok-of [:result [:ref :io.buffer/value] :document] bytes)))))))))))))
