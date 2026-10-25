@@ -762,11 +762,29 @@
 ;; (all-or-nothing, decision 4). On a field with no such byte the skip is
 ;; exactly the 32-runs. `string-find-byte` answers -1 for from = n and
 ;; traps only on from > n (measured: this row's probe), so the five guard
-;; calls are total on every field including "". RESIDUAL, NAMED (its own
-;; row): the walk is still O(TOKENS) frames (the split4 O(FIELDS) class)
-;; -- a many-token <ops> field can still reach the budget; boundary
-;; probes measure where (the member-map row's evidence re-measures the
-;; boundary).
+;; calls are total on every field including "".
+;; The loop row (2026-10-26): the walk iterates through ONE `loop`/`recur`
+;; -- the frontend desugars the `loop` to a `__kotoba_loop_N` helper whose
+;; self-tail re-entry the KIR interpreter trampolines IN PLACE, zero-charge
+;; (no frame, no fuel -- kir.cljc T7.1/T7.4, read then PROBED here) -- where
+;; the replaced shape was an ordinary `defn-` self-call taking ONE frame per
+;; TOKEN (MEASURED: 32+ token fields trapped budget/frames, the dedupe-map
+;; row's boundary; a bare defn self-recursion exhausts the HOST stack even
+;; earlier -- probe: 24 -- while the loop shape resolves 20000 iterations).
+;; The frame-per-token class is GONE: the walk's depth is now CONSTANT (the
+;; one sg-ops-walk entry + the loop). CONTRACT UNCHANGED, pinned: nothing
+;; about the token/dedupe/answer contract moved (byte 32 separator, maximal
+;; non-32 runs, duplicate collapses, document-VECTOR first-occurrence order).
+;; RESIDUAL, NAMED (its own row): the walk still charges FUEL per user call
+;; per token (sg-token-end / sg-keyword / none? + the walk's own re-entry
+;; terms), so a very many-token field can still reach the FUEL budget
+;; (measured on a 2-word dedupe probe shape: 64 tokens resolve, 200 trap
+;; budget/fuel; the real arm's boundary is measured in this row's evidence)
+;; -- a bounded-content refusal, not a fact corruption; boundary probes
+;; measure where. Also named, measure-only: a document-VECTOR answers at
+;; most 8 elements here (the 8-word vocabulary, all-or-nothing) so the
+;; measured document-vector element cap (32 elements resolve, 48 trap
+;; 'document-vector-too-large') is unreachable in this walk.
 #?(:kotoba
    (defn- sg-ops [field :string] :document
      (if (or (>= (string-find-byte field 9 0) 0)
@@ -779,16 +797,19 @@
                     (document-vector) (document-map)))))
 #?(:kotoba
    (defn- sg-ops-walk [s :string i :i64 n :i64 acc :document seen :document] :document
-     (if (>= i n)
-       acc
-       (let [j (sg-token-end s i n)
-             kw (sg-keyword (string-substring s i j))]
-         (if (none? kw)
-           (document-null)
-           (let [dup? (document-contains seen kw)
-                 acc2 (if dup? acc (document-vector-conj acc kw))
-                 seen2 (if dup? seen (document-assoc seen kw (document-bool true)))]
-             (sg-ops-walk s (string-skip-blank s j) n acc2 seen2)))))))
+     ;; ONE loop, not a self-call: the desugared `__kotoba_loop_N` helper's
+     ;; self-tail re-entry is zero-charge (no frame per token).
+     (loop [i i acc acc seen seen]
+       (if (>= i n)
+         acc
+         (let [j (sg-token-end s i n)
+               kw (sg-keyword (string-substring s i j))]
+           (if (none? kw)
+             (document-null)
+             (let [dup? (document-contains seen kw)
+                   acc2 (if dup? acc (document-vector-conj acc kw))
+                   seen2 (if dup? seen (document-assoc seen kw (document-bool true)))]
+               (recur (string-skip-blank s j) acc2 seen2))))))))
 ;; exactly two fields: the index of the single '|', -1 for none, -2 for
 ;; more. The pipe/token-end row (2026-10-26): the replaced pipe walk
 ;; recursed per ANSWER byte and trapped the budget on every long answer

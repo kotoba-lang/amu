@@ -780,14 +780,16 @@
   ;; (document-vector-at over the vector accumulator), see
   ;; w3-subgroup-member-dedupes-on-the-vector-accumulator (since renamed
   ;; by the dedupe-map row); the residual
-  ;; trap is sg-ops-walk per token/space byte (its own row) -- the
+  ;; trap was sg-ops-walk per token (its own row) -- the
   ;; sg-keyword row (2026-10-26) replaced the vocabulary walk with one
   ;; non-recursive table body, see
   ;; w3-subgroup-keyword-lookup-is-a-table-not-a-walk; the sg-ops row
   ;; (2026-10-26) then collapsed the separator skip to ONE
-  ;; string-skip-blank per run (one frame per TOKEN), see
-  ;; w3-subgroup-ops-walk-is-one-frame-per-token -- the O(TOKENS) walk
-  ;; remains, its own row (sg-member?'s per-element frames were removed
+  ;; string-skip-blank per run, and the loop row (2026-10-26) re-anchored
+  ;; the walk on ONE loop/recur -- the desugared __kotoba_loop_N helper
+  ;; trampolines its self-tail re-entry, zero-charge (kir.cljc T7.1/T7.4)
+  ;; -- see w3-subgroup-ops-walk-is-a-loop-not-a-self-call: the per-token
+  ;; frame class is GONE (sg-member?'s per-element frames were removed
   ;; by the dedupe-map row, 2026-10-26, see
   ;; w3-subgroup-dedupe-on-a-shadow-map-not-a-per-element-walk);
   ;; the e2e pins below run only the shapes the probes resolved twice --
@@ -913,15 +915,18 @@
   ;; gate's context depth -- named, never pinned), see
   ;; w3-subgroup-member-dedupes-on-the-vector-accumulator (since renamed
   ;; by the dedupe-map row). The remaining
-  ;; walk (sg-ops-walk per token/space byte) keeps its own trap; the
+  ;; walk (sg-ops-walk per token) kept its own trap until the loop row
+  ;; (2026-10-26) re-anchored it on ONE loop/recur (zero-charge
+  ;; trampoline re-entry, kir.cljc T7.1/T7.4, see
+  ;; w3-subgroup-ops-walk-is-a-loop-not-a-self-call); the
   ;; vocabulary walk had one too -- "32|basic vote2" and the spaced
   ;; two-token answer trapped host/stack-exhausted (re-MEASURED in
   ;; the sg-member? row's probe, both runs) -- and the sg-keyword row
   ;; (2026-10-26) replaced it with one non-recursive table body
   ;; (w3-subgroup-keyword-lookup-is-a-table-not-a-walk re-MEASURES both
   ;; cells); the sg-ops row (2026-10-26) then moved the separator skip
-  ;; to ONE string-skip-blank per run (one frame per TOKEN, see
-  ;; w3-subgroup-ops-walk-is-one-frame-per-token -- the 70-byte
+  ;; to ONE string-skip-blank per run (one frame per TOKEN then, see
+  ;; w3-subgroup-ops-walk-is-a-loop-not-a-self-call -- the 70-byte
   ;; eight-token cell still trapped on both arms there, re-MEASURED) --
   ;; and the dedupe-map row (2026-10-26) then removed sg-member?'s
   ;; per-element frames (ONE document-contains over a map shadow, see
@@ -1075,15 +1080,18 @@
   ;; the vector is closed) and `document-merge` TRAPs "document-map-
   ;; required" on sets (a document-set has no grow head) -- hence the
   ;; map shadow.
-  ;; NAMED, NOT PINNED (the O(TOKENS) residual, measure-only): the walk
-  ;; is still one frame per TOKEN -- the boundary re-MEASURED this row:
-  ;; the 3-word-cycle field resolves through 24 tokens and TRAPs
-  ;; budget/frames at 32+ (BEFORE this row the boundary was NON-
-  ;; MONOTONIC, 12 trapped); the 8-word-cycle field resolves through 24
-  ;; tokens AFTER (BEFORE trapped from 24) and both arms TRAP
-  ;; budget/frames at 32+. Trap boundaries are state- and
-  ;; path-dependent -- the pinned cells are only the shapes both probe
-  ;; runs resolved.
+  ;; NAMED THEN, FIXED SINCE (the loop row, 2026-10-26, measure-only
+  ;; history): the O(TOKENS) residual -- the walk was still one frame per
+  ;; TOKEN -- measured then as: the 3-word-cycle field resolves through
+  ;; 24 tokens and TRAPs budget/frames at 32+ (BEFORE the dedupe-map row
+  ;; the boundary was NON-MONOTONIC, 12 trapped); the 8-word-cycle field
+  ;; resolved through 24 tokens (BEFORE trapped from 24) and both arms
+  ;; TRAPped budget/frames at 32+. The loop row re-anchored the walk on
+  ;; ONE loop/recur (zero-charge trampoline re-entry), so the per-token
+  ;; frame class is GONE -- see
+  ;; w3-subgroup-ops-walk-is-a-loop-not-a-self-call. Trap boundaries are
+  ;; state- and path-dependent -- the pinned cells are only the shapes
+  ;; both probe runs resolved.
   (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
         arms (str/join "\n" (map #(extract-balanced src %)
                                  ["(defn- none?" "(defn- string->i64" "(defn- digits?"
@@ -1176,7 +1184,7 @@
             "HOST parity pin"))
       (let [m (fields-of (dfs (str "8|" (str/join " " (take 12 (cycle ["basic" "vote" "shuffle"]))))))]
         (is (= #{:basic :vote :shuffle} (ops-set (:subgroup-ops m)))
-            "the twelve-token answer (77 bytes) parses -- the O(TOKENS) residual sits below its boundary")
+            "the twelve-token answer (77 bytes) parses -- the per-token frame class is GONE since the loop row")
         (is (= {:subgroup-size 8 :subgroup-ops #{:basic :vote :shuffle}}
                (targets/device-from-subgroup (str "8|" (str/join " " (take 12 (cycle ["basic" "vote" "shuffle"]))))))
             "HOST parity pin"))
@@ -1237,13 +1245,14 @@
   ;; arms then (BEFORE == AFTER, both probe runs) -- the sg-ops-walk
   ;; per-token/per-space frames (collapsed to one frame per TOKEN by
   ;; the sg-ops row, 2026-10-26,
-  ;; w3-subgroup-ops-walk-is-one-frame-per-token -- the 70-byte cell
+  ;; w3-subgroup-ops-walk-is-a-loop-not-a-self-call -- the 70-byte cell
   ;; still trapped on both arms there, re-MEASURED) and the sg-member?
   ;; per-element frames were their own rows -- the per-element frames
   ;; are now removed (ONE document-contains over a map shadow, see
   ;; w3-subgroup-dedupe-on-a-shadow-map-not-a-per-element-walk, which
-  ;; pins the 70-byte cell); the O(TOKENS) walk residual remains, never
-  ;; pinned.
+  ;; pins the 70-byte cell); the O(TOKENS) per-token frame residual is
+  ;; removed too by the loop row (2026-10-26: ONE loop/recur, zero-charge
+  ;; trampoline re-entry), never pinned.
   (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
         arms (str/join "\n" (map #(extract-balanced src %)
                                  ["(defn- none?" "(defn- string->i64" "(defn- digits?"
@@ -1329,16 +1338,24 @@
         (is (some? (extract-balanced src "(defn- sg-tokens-doc"))
             "sg-tokens-doc stays: sg-token-at (the producer half) reads it")))))
 
-(deftest w3-subgroup-ops-walk-is-one-frame-per-token
-  ;; The `:kotoba` sg-ops / sg-ops-walk -- the SUBGROUP <ops> walk on
-  ;; TOKEN POSITIONS: a separator RUN costs ONE `string-skip-blank`, not
-  ;; one recursive frame per space byte. This is the sg-keyword row's
-  ;; (2026-10-26) named residual: "sg-ops-walk per token AND per space
-  ;; byte ... their own rows". The replaced walk skipped the separator
-  ;; one BYTE per recursive frame ((string-code-point-at s i) 32 ->
-  ;; (+ i 1)) and those frames stacked under the per-token frames --
-  ;; MEASURED BEFORE on this runtime (the 411-byte spaced answer with
-  ;; 400 separator bytes TRAPped host/stack-exhausted,
+(deftest w3-subgroup-ops-walk-is-a-loop-not-a-self-call
+  ;; The `:kotoba` sg-ops / sg-ops-walk -- the SUBGROUP <ops> walk
+  ;; iterates through ONE `loop`/`recur` (the loop row, 2026-10-26): the
+  ;; frontend desugars the `loop` to a `__kotoba_loop_N` helper whose
+  ;; self-tail re-entry the KIR interpreter trampolines IN PLACE,
+  ;; zero-charge (no frame, no fuel -- kir.cljc T7.1/T7.4, read then
+  ;; PROBED: a bare counting loop resolves 20000 iterations where the
+  ;; same count as a `defn-` self-recursion exhausts the HOST stack at
+  ;; 24). The replaced shape was an ordinary `defn-` self-call taking
+  ;; ONE frame per TOKEN (MEASURED BEFORE on this runtime: 32+ token
+  ;; fields TRAPped budget/frames). The walk stays on TOKEN POSITIONS
+  ;; (the sg-ops row, 2026-10-26): a separator RUN costs ONE
+  ;; `string-skip-blank`, not one recursive step per space byte -- the
+  ;; earlier per-byte walk skipped the separator one BYTE per recursive
+  ;; frame ((string-code-point-at s i) 32 -> (+ i 1)) and those frames
+  ;; stacked under the per-token frames -- MEASURED BEFORE then (the
+  ;; 411-byte spaced answer with 400 separator bytes TRAPped
+  ;; host/stack-exhausted,
   ;; docs/evidence/gpu/w3-ops-walk-token-skip-20261026.txt). PINNED
   ;; CONTRACT, unchanged: byte 32 is the wire's ONLY separator -- tokens
   ;; are maximal non-32 runs, one or more spaces separate, a
@@ -1352,22 +1369,29 @@
   ;; measured). `string-find-byte` answers -1 for from = n and traps
   ;; only on from > n (measured: the row's probe), so the five guard
   ;; calls are total on every field including "".
-  ;; NAMED THEN, FIXED SINCE (the dedupe-map row, 2026-10-26): the
-  ;; O(TOKENS) residual was measure-only, both probe runs byte-identical
-  ;; -- the walk is still one frame per TOKEN but sg-member? no longer
-  ;; walks the accumulator per element (ONE document-contains over a map
-  ;; shadow, see
-  ;; w3-subgroup-dedupe-on-a-shadow-map-not-a-per-element-walk): the
-  ;; 70-byte eight-token answer TRAPped host/stack-exhausted on BOTH
-  ;; arms then (BEFORE == AFTER) and the boundary was NON-MONOTONIC and
-  ;; state-dependent (the AFTER arm resolved 2..8 tokens, trapped at
-  ;; 12, resolved 16/24, trapped 32+ at budget/frames -- and the same
-  ;; 24-token field resolved at the boundary probe's position while
-  ;; TRAPping at the e2e probe's position in the same run). The
-  ;; dedupe-map row re-MEASURED the boundary: 3-word-cycle fields
-  ;; resolve through 24 tokens and trap budget/frames at 32+, no
-  ;; non-monotonic cell in either of its two byte-identical runs. The
-  ;; O(TOKENS) walk itself remains, never pinned.
+  ;; NAMED THEN, FIXED NOW (this row, 2026-10-26, both probe runs
+  ;; byte-identical): the O(TOKENS) per-token frame class is GONE -- the
+  ;; walk's depth is CONSTANT (one sg-ops-walk entry + the trampolined
+  ;; loop). MEASURED BEFORE/AFTER on this runtime (the row's evidence):
+  ;; the 3-word-cycle fields at 24/32/48/64 tokens and the 8-word-cycle
+  ;; fields at 32/48/64 tokens ALL TRAPped on the BEFORE arm (spelling
+  ;; varies by probe position -- host/stack-exhausted or budget/frames,
+  ;; the recurring state-dependence: the dedupe-map row's run resolved
+  ;; 24 tokens and trapped at 32+ at ITS position) and all answer the
+  ;; host arm's maps on the AFTER arm. CONTRACT UNCHANGED (the token /
+  ;; guard / dedupe / answer-kind grids below are byte-identical
+  ;; BEFORE == AFTER == HOST).
+  ;; NAMED, NOT PINNED (measure-only): the loop removes FRAMES, not
+  ;; FUEL -- every user call per token still charges fuel, so a very
+  ;; many-token field can still reach the FUEL budget (MEASURED: the
+  ;; 3-word-cycle field resolves through 160 tokens and TRAPs
+  ;; budget/fuel at 192+). Also named: a document-VECTOR answers at most
+  ;; 8 elements here (the 8-word vocabulary, all-or-nothing) so the
+  ;; measured document-vector element cap (32 elements resolve, 48 trap
+  ;; 'document-vector-too-large') is unreachable in this walk; the bare
+  ;; counting loop's own boundary is state-dependent (resolved 20000
+  ;; standalone in one probe but TRAPped budget/frames at 10000 in a
+  ;; run interleaved with trapping neighbours -- never pinned).
   (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
         arms (str/join "\n" (map #(extract-balanced src %)
                                  ["(defn- none?" "(defn- string->i64" "(defn- digits?"
@@ -1457,7 +1481,32 @@
                  "32x|basic" "x|basic" "32|basic|extra" "32||basic"]]
         (is (nil? (targets/device-from-subgroup s))
             (str "HOST parity pin: " (pr-str s)))))
-    (testing "the per-space-byte skip is deleted and the walk advances per token"
+    (testing "the per-token frame class is GONE (BEFORE: one frame per token, MEASURED trap)"
+      ;; the row's trap-gone cells: the 24/32/48/64-token fields (3-word
+      ;; cycle) and 32/48/64-token fields (8-word cycle) TRAPped on the
+      ;; BEFORE arm at this probe's position (spelling varies --
+      ;; host/stack-exhausted or budget/frames; trap boundaries are
+      ;; state- and path-dependent, never pinned) and answer the host
+      ;; arm's maps here
+      (doseq [k [24 32 48 64]]
+        (let [s (str "8|" (str/join " " (take k (cycle ["basic" "vote" "shuffle"]))))
+              m (fields-of (dfs s))]
+          (is (= #{:basic :vote :shuffle} (ops-set (:subgroup-ops m)))
+              (str "the " k "-token 3-word-cycle answer parses -- one loop, no frame per token"))
+          (is (= {:subgroup-size 8 :subgroup-ops #{:basic :vote :shuffle}}
+                 (targets/device-from-subgroup s))
+              (str "HOST parity pin: " k "-token 3-word-cycle"))))
+      (doseq [k [32 48 64]]
+        (let [s (str "8|" (str/join " " (take k (cycle ["basic" "vote" "arithmetic" "ballot"
+                                                        "shuffle" "shuffle-relative" "clustered" "quad"]))))
+              m (fields-of (dfs s))]
+          (is (= #{:basic :vote :arithmetic :ballot :shuffle :shuffle-relative :clustered :quad}
+                 (ops-set (:subgroup-ops m)))
+              (str "the " k "-token 8-word-cycle answer parses -- one loop, no frame per token"))
+          (is (= {:subgroup-size 8 :subgroup-ops #{:basic :vote :arithmetic :ballot :shuffle :shuffle-relative :clustered :quad}}
+                 (targets/device-from-subgroup s))
+              (str "HOST parity pin: " k "-token 8-word-cycle")))))
+    (testing "the walk iterates on a loop helper, not a self-call"
       (let [ops-body (extract-balanced src "(defn- sg-ops ")
             walk-body (extract-balanced src "(defn- sg-ops-walk")]
         (is (= 5 (count (re-seq #"string-find-byte" ops-body)))
@@ -1469,9 +1518,13 @@
         (is (not (str/includes? ops-body "string-code-point-at"))
             "no byte scan remains in sg-ops")
         (is (str/includes? walk-body "(string-skip-blank s j)")
-            "each walk recursion arg is the NEXT token start (a separator run is ONE skip)")
-        (is (= 1 (count (re-seq #"\(sg-ops-walk" walk-body)))
-            "exactly one self-call: one frame per token")
+            "each walk step advances to the NEXT token start (a separator run is ONE skip)")
+        (is (= 1 (count (re-seq #"\(loop \[" walk-body)))
+            "exactly one loop: the desugared __kotoba_loop_N helper is the walk's iteration")
+        (is (= 1 (count (re-seq #"\(recur" walk-body)))
+            "exactly one recur: the helper's self-tail re-entry (zero-charge trampoline)")
+        (is (= 0 (count (re-seq #"\(sg-ops-walk" walk-body)))
+            "no self-call: the per-frame-per-token shape is deleted")
         (is (not (str/includes? walk-body "string-code-point-at"))
             "the per-byte separator skip is deleted")
         (is (not (str/includes? walk-body "(+ i 1)"))
