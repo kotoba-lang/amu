@@ -72,6 +72,24 @@ seed CLI helper as a guest builtin and failed compilation; that harness error
 is excluded from measurements. The successful workload uses vector operations
 only.
 
+## Frozen compiler workload comparison
+
+[Run40220687668](https://github.com/kotoba-lang/amu/actions/runs/40220687668)
+measures the combined runtime change on exactly the same core18 source,
+producer, CPU, source lock and limits, in baseline/candidate/candidate/baseline
+order on each actual native host. All four outputs per ISA equal the normal
+core container digest6ad407c2. Results differ from the tiny-process workload:
+
+| Host | Baseline median | Candidate median | Ratio |
+|---|---:|---:|---:|
+| Native ARM |25.2516s|24.3024s|0.96241|
+| Native x86 |152.5571s|154.8740s|1.01519|
+
+ARM improved about3.8%; x86 improvement is not confirmed. Do not extrapolate
+the tiny-process or clearing-loop percentages to whole compiler performance.
+These two-pair measurements are a bounded experiment, not an official score.
+The remaining compiler/CI goal needs additional mechanisms and measurements.
+
 ## Integration qualification remains separate
 
 The production candidate rebuilds the Amu role and binds its new digest in
@@ -86,3 +104,36 @@ The source/image flags remain candidate/unqualified until fresh full evidence
 passes. DefCID checked producers, SCC/object persistence and an actual PR
 workflow at most20min remain open. A cache or experiment result is never an
 admission, controller verdict, operation approval or deployment.
+
+The combined candidate also passed local native ARM uncached full tier with
+126 fresh calls, root reproduction, all core generations and the cold
+C0->core/C0->Kw->Pw->F paths; read/store reuse was disabled. Full19/MIR/GMIR,
+resource/lock validation passed146 fresh calls and18 named refusals. All27
+guest containers equal the H21-only intermediate corpus byte for byte; the
+native runner intentionally changes with its runtime. The seven released
+arena fields are zero and the large MIR release count remains155,688,217.
+These local results are not a substitute for fresh native x86/controller,
+public aliases/source-lock90, shared UI or Chrome qualification in the PR.
+
+
+## Native complete24 pin correction
+
+The initial PR run40220599783 passed ARM, native x86 fixed point, runtime
+controls and both complete label suites, but the native Kotoba gate refused
+`gate-positive` with E4002. Its canonical24 image expectations still described
+the earlier runtime. The complete compiler correctly emitted different ELF
+bytes for the changed native runtime. No controller/public qualification is
+claimed from this failed run.
+
+Update only the24 image expectation hashes, preserving every source digest,
+result, exit, fuel and native comparison. Cross-target native ARM builds must
+match all24 images emitted on actual native x86. Rebuild and bind the Kotoba
+gate, combined gate source, controller, factory, root and public compiler in
+dependency order. Fresh native execution must still verify all24 numerical,
+exit and fuel results, all refusals and parent-death cleanup.
+
+The preflight now compiles the24 cases with the pinned public native compiler
+and runs that same native Kotoba gate before expensive derivation. Wrong-image
+and wrong-fuel ledgers must be refused with E4002. Python transports source and
+records the native exits; it does not decide numeric correctness. Every later
+full/controller/public/shared/Chrome check remains mandatory.

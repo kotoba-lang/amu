@@ -72,6 +72,17 @@ jobs:
         run: python3 scripts/seed/check-native-identities.py
       - name: Local locked native project and refusal controls
         run: python3 scripts/seed/check-x86-project-native.py --compiler "$PWD/bin/amu" --output "$RUNNER_TEMP/local-native-project"
+      - name: Fresh native Kotoba complete24 gate before expensive derivation
+        run: python3 scripts/seed/check-native-kotoba-early.py --compiler "$PWD/bin/amu" --output "$RUNNER_TEMP/early-kotoba"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: early-native-kotoba24
+          path: |
+            ${{ runner.temp }}/early-kotoba/*.json
+            ${{ runner.temp }}/early-kotoba/*.stdout
+            ${{ runner.temp }}/early-kotoba/*.stderr
+          if-no-files-found: warn
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
