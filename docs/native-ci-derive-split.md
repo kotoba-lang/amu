@@ -23,3 +23,18 @@ PR/main/full tier selection and uncached full behavior are unchanged. No
 previous receipt is reused and no validation check is replaced by a hash.
 The20min target remains open until a complete exact-head native run succeeds
 and its whole-workflow time is observed.
+
+
+## Runtime-only native result and combined compiler candidate
+
+Head fed968bf2 passed all six native jobs in40233360839, including transported
+ARM identity checks and every original ARM/x86 gate. The complete workflow
+took31m30s; controller470.478s/rebuild463.359s. This does not meet20min, and
+different runners prevent a causal percentage against the preceding workflow.
+
+PR1584 is now merged as f5af0c730. The combined candidate imports its new
+core/root/public/controller pins and both native CCF-filter groups/artifacts.
+Derive+ARM again exactly reconstructs the current main ARM plan, x86 plan/job
+text remains byte-identical to current main, and compiler/image bytes match
+that base. All six jobs must execute freshly for this combined head before
+review/merge. The earlier runtime-only result cannot qualify this new compiler.
