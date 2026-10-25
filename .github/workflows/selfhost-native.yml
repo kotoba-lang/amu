@@ -148,10 +148,10 @@ jobs:
         with:
           name: one-compiler-receipt
           path: ${{ runner.temp }}/one
-      - name: Verify current pins and restore transported native execute bits
+      - name: Verify current source/image/receipt bindings before transported native execution
         run: |
           python3 scripts/seed/check-native-identities.py
-          chmod +x "$RUNNER_TEMP"/boot/*.elf "$RUNNER_TEMP/one/F2.elf"
+          python3 scripts/seed/check-native-arm-transport.py --bootstrap "$RUNNER_TEMP/boot" --one "$RUNNER_TEMP/one" --output "$RUNNER_TEMP/arm-transport.json"
       - name: Static runtime stdin, wire 41 (arm64, native)
         run: python3 scripts/seed/check-io-read.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/io-read"
       - name: Static runtime durable files and sleep, wires 35 and 7 (arm64, native)
