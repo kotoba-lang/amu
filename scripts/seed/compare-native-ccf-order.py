@@ -31,7 +31,7 @@ def manifest(name, read):
     return [p for p in read(name).decode().splitlines() if p and not p.startswith("#")]
 
 
-def main(out, workload_file=None, current_core=False, producer_override=None):
+def main(out, workload_file=None, current_core=False, producer_override=None, variant="order"):
     assert platform.system() == "Linux" and platform.machine() in ("aarch64", "x86_64")
     arm = platform.machine() == "aarch64"
     machine = 183 if arm else 62
@@ -42,9 +42,9 @@ def main(out, workload_file=None, current_core=False, producer_override=None):
     read = lambda p: (ROOT / p).read_bytes()
     paths = manifest("seed/FULL-MANIFEST", read)
     original = b"".join(read(p) + b"\n" for p in paths).decode()
-    fixture = ROOT / "seed/tests/native-ccf-order-candidate.kotoba"
+    fixture = ROOT / ("seed/tests/native-ccf-addressed-candidate.kotoba" if variant == "addressed" else "seed/tests/native-ccf-order-candidate.kotoba")
     extra = fixture.read_text()
-    first = extra.index("(defn- ccf-code-ordered [")
+    first = extra.index("(defn- ccf-code-reference [" if variant == "addressed" else "(defn- ccf-code-ordered [")
     last = extra.index("(defn- ccf-order-word", first)
     ordered = extra[first:last].replace("ccf-code-ordered", "ccf-code")
     start = original.index("(defn- ccf-code [")
@@ -75,7 +75,7 @@ def main(out, workload_file=None, current_core=False, producer_override=None):
                KEXE_ALLOW="35,37,38,39", KEXE_FUEL="10000000000", KEXE_COMMAND="1")
     report = dict(schema="amu.native-ccf-order-experiment.v1", nativeVerdictAuthority=False,
                   qualificationReplacement=False, candidateAdopted=False, fullQualification=False,
-                  compilerAlgorithmChanged=True, sourceWorkloadChanged=False, emulation=False,
+                  compilerAlgorithmChanged=True, sourceWorkloadChanged=False, emulation=False, variant=variant,
                   host=[platform.system(), platform.machine(), platform.release()],
                   allowedCPUs=affinity, selectedCPU=affinity[0], producer=pin(producer),
                   sourceBindings={p: pin(ROOT / p) for p in paths}, candidateSource=pin(candidate_source),
@@ -121,8 +121,8 @@ def main(out, workload_file=None, current_core=False, producer_override=None):
     report["gridCases"] = 65536
     report["mutationControls"] = []
     text = grid.read_text()
-    a = text.index("(defn- ccf-code-ordered [")
-    b = text.index("(defn- ccf-order-word", a)
+    a = text.index("(defn- ccf-code-absolute [" if variant == "addressed" else "(defn- ccf-code-ordered [")
+    b = text.index("(defn- ccf-code-ordered [" if variant == "addressed" else "(defn- ccf-order-word", a + 1)
     fragment = text[a:b]
     for name, old, new in (("word-bound", "(and (>= w 0) (<= w 4294967295)", "(and true true"),
                            ("adrp", "(not= page 2415919104)", "true")):
@@ -169,5 +169,6 @@ if __name__ == "__main__":
     p.add_argument("--workload-file", type=Path)
     p.add_argument("--current-core", action="store_true")
     p.add_argument("--compiler", type=Path)
+    p.add_argument("--variant", choices=("order", "addressed"), default="order")
     a = p.parse_args()
-    main(a.output.resolve(), a.workload_file and a.workload_file.resolve(), a.current_core, a.compiler.resolve() if a.compiler else None)
+    main(a.output.resolve(), a.workload_file and a.workload_file.resolve(), a.current_core, a.compiler.resolve() if a.compiler else None, a.variant)
