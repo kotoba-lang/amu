@@ -1,0 +1,5 @@
+;; C0 80 is an overlong encoding and must trap before returning a string.
+(ns seed.macos-utf8-refusal (:export [main]))
+
+(defn main [] :i64
+  (string-length (string-from-utf8 (bytes-from-vector-i64 [192 128]))))

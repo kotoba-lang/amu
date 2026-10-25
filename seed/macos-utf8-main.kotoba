@@ -1,0 +1,13 @@
+;; Rebuild a canonical UTF-8 pool string from validated bytes.
+(ns seed.macos-utf8-main (:export [main]))
+
+(defn main [] :i64
+  (let [text (string-from-utf8
+               (bytes-from-vector-i64 [65 195 169 226 130 172 240 159 153 130]))
+        empty (string-from-utf8 (bytes-from-vector-i64 (vector-alloc 0)))]
+    (if (and (string=? text "Aé€🙂")
+             (= (string-length text) 10)
+             (= (string-code-point-at text 1) 233)
+             (= (string-code-point-at text 3) 8364)
+             (= (string-length empty) 0))
+      42 1)))
