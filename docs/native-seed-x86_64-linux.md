@@ -1,5 +1,11 @@
 # Native seed cross-compilation to x86_64 Linux
 
+> **2026-10-22: the trusted C loader was removed.** Instructions below that build
+> or run it (clang, `kexe-loader`, `scripts/seed/build-*.py`, `check-*.py`) are
+> historical and no longer runnable; see `scripts/seed/RETIRED.md`. The current
+> route is `scripts/seed/selfhost-bootstrap.py` on arm64 Linux.
+
+
 The optional seed closure adds native x86-64 code generation for standalone
 scalar programs and context-v11 runtime programs. An Amu-produced compiler
 reads Kotoba, shares the adopted
@@ -192,3 +198,14 @@ frontend files and the adopted bootstrap unchanged.
 Remaining target work includes project linking, sealed artifact integration,
 float semantics and a fresh19-program comparison on x86_64 Linux.
 AArch64 benchmark results are not x86_64 results.
+
+## Loaderless static image (2026-10-22)
+
+`--format static` (Linux selfhost closure, seed modules 75/76) links the
+guest with a runtime written in Kotoba into one `x86_64-linux-static` ELF; no
+C loader runs it. The selfhost compiler built this way rebuilds itself
+byte-identically on Linux x86-64 (S1=S2=S3) and agrees with the loader-run
+compiler on `kx64-v1` output; the one bootstrap step (S1) still goes through
+the pinned loader. Design, limits and receipts:
+[`native-seed-c-free-runner-static-image-20261022.md`](native-seed-c-free-runner-static-image-20261022.md),
+`scripts/seed/check-x86_64-static.py`.

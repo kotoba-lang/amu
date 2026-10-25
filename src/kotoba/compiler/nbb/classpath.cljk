@@ -1,5 +1,5 @@
 (ns kotoba.compiler.nbb.classpath
-  "JVM-free dependency-closure resolution for `bin/kotoba`'s nbb fast path.
+  "Historical NBB source-lock replay, retained as migration input.
 
   The fast path's *compile* code has never touched the JVM. Its *classpath*
   did: `bin/kotoba` shelled out to `kbb -Spath` purely to locate the
@@ -12,12 +12,10 @@
   This resolves the same closure from a checked-in lock and `git`, which is
   all a set of `:git/sha` pins actually needs. A commit id is a content
   address, so the resolution is reproducible without re-deriving it; that is
-  also why the lock exists at all rather than a resolver that re-implements
-  `tools.deps`. Transitive pins genuinely conflict here — the root pins
-  `kotoba-kir` at one commit and three siblings pin three others — and
-  choosing between them is `tools.deps`' job, done once at authoring time by
-  `scripts/lock-classpath.cljk`. The lock records the answer, not the
-  algorithm.
+  how this historical hosted module replays its recorded closure.
+  The former KBB/JDK authoring generator is retired. Complete canonical
+  native lock generation and resolution remain unqualified under JUN-202;
+  this module does not authorize a hosted authoring exception to Q9.
 
   Maven jars are deliberately absent from the lock. nbb cannot load a `.jar`,
   so they were never part of what this path resolves; recording machine-local
@@ -157,22 +155,22 @@
   [root]
   (let [lock (read-lock root)]
     (when-not lock
-      (throw (ex-info "no dependency lock; run scripts/lock-classpath.cljk"
+      (throw (ex-info "no dependency lock; native lock authoring remains unqualified (JUN-202)"
                       {:phase :lock :expected (posix-path/join root lock-file-name)})))
     (when-not (= lock-version (:lock/version lock))
       (throw (ex-info "unsupported dependency lock version"
                       {:phase :lock :actual (:lock/version lock)})))
     (let [digest (deps-digest root)]
       (when-not (= digest (:lock/deps-digest lock))
-        (throw (ex-info "deps.edn changed since the lock was generated; run scripts/lock-classpath.cljk"
+        (throw (ex-info "deps.edn changed since the lock was generated; native lock authoring remains unqualified (JUN-202)"
                         {:phase :lock :expected (:lock/deps-digest lock) :actual digest}))))
     (when (empty? (:lock/entries lock))
       (throw (ex-info "dependency lock has no entries" {:phase :lock})))
     (into [] (mapcat entry-directories) (:lock/entries lock))))
 
 (defn resolve-alias-directories
-  "The directories an alias ADDS (recorded under `:lock/alias-entries` by
-  `scripts/lock-classpath.cljk`). An alias the lock does not carry is a
+  "The directories an alias ADDS (recorded under `:lock/alias-entries`).
+  Historical lock generation is retired. An alias the lock does not carry is a
   refusal, not an empty vector: an nbb test runner that asked for `:test`
   and got nothing would load its namespaces from wherever else they happened
   to be, or fail on the first require with no hint of why."
@@ -181,7 +179,7 @@
         entries (get-in lock [:lock/alias-entries (keyword alias)])]
     (when-not (contains? (or (:lock/alias-entries lock) {}) (keyword alias))
       (throw (ex-info (str "the dependency lock carries no entries for alias " alias
-                           "; run scripts/lock-classpath.cljk")
+                           "; native lock authoring remains unqualified (JUN-202)")
                       {:phase :lock :alias alias
                        :locked (vec (keys (:lock/alias-entries lock)))})))
     (into [] (mapcat entry-directories) entries)))

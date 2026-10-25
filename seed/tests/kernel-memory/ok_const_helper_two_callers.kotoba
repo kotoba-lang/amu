@@ -1,0 +1,4 @@
+(ns t (:export [f]))
+(defn- g [w :i64 i :i64] :i64 (kernel-load-u32 (kernel-subregion w 64 (* i 4) 4) 4 0))
+(defn f [b :i64 n :i64 i :i64] :i64
+  (let [w (kernel-subregion b n 0 64) v (kernel-subregion b n 128 64)] (+ (g w i) (g v i))))

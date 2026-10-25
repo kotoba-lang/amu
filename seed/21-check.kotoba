@@ -1088,6 +1088,7 @@
 (defn- ck-prefix-blk [M :vector-i64 S :string a :i64 b :i64 k :i64 p :i64] :i64
   (do
     (cond (<= (- b a) k) 0
+          (not (nm-ascii-span? S a (+ a k))) 0
           (nm-ne (nm-pack S a (+ a k) 0) p) 0
           :else (nm-sf M (nm-lookup M S (+ a k) b) SF-REC))))
 ;; "map->" packed little-endian (5 bytes)
@@ -1604,6 +1605,8 @@
     -2449551259944879456 805   ; f32-to-i64-truncating
     4623269880264399329 1034   ; __r6-kgput  R6L (FOLD): kind 4 = a loader runtime call, slot 8 * code (kgraph_assert 80)
     507429522991792204 1035   ; __r6-kgget  R6L (FOLD): kgraph_get 88
+    -6214888422877566689 1036 ; __r6-kiput: private keyword intern rows, slot 96
+    5718820459953963606 1037  ; __r6-kiget: private keyword intern rows, slot 104
     0))
 (defn- ck-fl? [hd :i64] :bool (>= hd ck-fl-base))
 (defn- ck-fl-kind [hd :i64] :i64 (quot (- hd ck-fl-base) 256))
@@ -1614,7 +1617,7 @@
         c (ck-fl-sub hd)]
     (cond (= k 2) (if (< c 16) TY-F64 ck-ty-f32)
           :else (if (< c 24) TY-F64 ck-ty-f32))))
-(defn- ck-fl-arity [hd :i64] :i64 (cond (= (ck-fl-kind hd) 4) (if (= (ck-fl-sub hd) 10) 3 2) (= (ck-fl-kind hd) 3) 1 :else 2))   ; R6L kind 4
+(defn- ck-fl-arity [hd :i64] :i64 (cond (= (ck-fl-kind hd) 4) (if (or (= (ck-fl-sub hd) 10) (= (ck-fl-sub hd) 12)) 3 2) (= (ck-fl-kind hd) 3) 1 :else 2))
 (defn- ck-fl-arg [hd :i64] :i64
   (let [c (ck-fl-sub hd)]
     (cond (= (ck-fl-kind hd) 4) TY-I64   ; R6L: kgraph runtime calls take and answer :i64
@@ -2074,37 +2077,43 @@
 
 ;; ---- typed-cap-call ----
 ;; R4B: the wire as a keyword code: a wire keyword, or the wire id as an integer literal (the spelling of stage-0's KIR,
-;; which stage-0 also admits in source): 3 33 34 41 35 37 38 39 (35 with a :bytes request = :fs/app-data-bytes); 0 otherwise.
+;; which stage-0 also admits in source): 3 7 33 34 41 35 37 38 39 (35 with a :bytes request = :fs/app-data-bytes); 0 otherwise.
 ;; 21-check leaves the code in NF-TYPE of the wire node for 30-lower.
 (defn- ck-wire-kw [M :vector-i64 w :i64 q :i64] :i64
   (cond (= (nm-kind M w) ND-KW) (nm-head-of M w)
         (nm-ne (nm-kind M w) ND-INT) 0
         :else (case (nm-nf M w NF-AUX)
-                3 KW-HASH-SHA256 33 KW-ENV-READ 34 KW-FS-BROWSE 41 KW-IO-READ
+                3 KW-HASH-SHA256 7 KW-CLOCK-NOW 33 KW-ENV-READ 34 KW-FS-BROWSE 41 KW-IO-READ
                 35 (if (= (nm-head-of M q) KW-BYTES) KW-FS-APP-DATA-BYTES KW-FS-APP-DATA)
-                37 KW-IO-WRITE 38 KW-CLI-ARGS 39 KW-IO-WRITE-ERROR
+                37 KW-IO-WRITE 38 KW-CLI-ARGS 39 KW-IO-WRITE-ERROR 40 KW-SYS-CWD
                 20 KW-PROCESS-SPAWN 23 KW-ENTROPY-DRAW   ; R6B
+                42 KW-GPU-COMPUTE   ; ADR 0371
+                43 KW-NET-LISTEN 44 KW-NET-ACCEPT 45 KW-NET-DIAL 46 KW-NET-READ 47 KW-NET-WRITE
                 0)))
 (defn- ck-wire-ok [k :i64] :i64
   (cond (= k KW-FS-APP-DATA) 1 (= k KW-CLI-ARGS) 1 (= k KW-IO-WRITE-ERROR) 1 (= k KW-IO-WRITE) 1
-        (= k KW-FS-APP-DATA-BYTES) 1
-        ;; R4B: wires 3 33 34 41 (:string :string)
-        (= k KW-HASH-SHA256) 1 (= k KW-ENV-READ) 1 (= k KW-FS-BROWSE) 1 (= k KW-IO-READ) 1
+        (= k KW-FS-APP-DATA-BYTES) 1 (= k KW-SYS-CWD) 1
+        ;; R4B plus native clock: wires 3 7 33 34 41 (:string :string)
+        (= k KW-HASH-SHA256) 1 (= k KW-CLOCK-NOW) 1 (= k KW-ENV-READ) 1 (= k KW-FS-BROWSE) 1 (= k KW-IO-READ) 1
         (= k KW-PROCESS-SPAWN) 1 (= k KW-ENTROPY-DRAW) 1   ; R6B: wires 20 23 (:string :string)
+        (= k KW-GPU-COMPUTE) 1   ; ADR 0371: wire 42 (:string :string)
+        (= k KW-NET-LISTEN) 1 (= k KW-NET-ACCEPT) 1 (= k KW-NET-DIAL) 1
+        (= k KW-NET-READ) 1 (= k KW-NET-WRITE) 1
         :else 0))
 
 ;; the request/result type of the shape, 0 when the shape is not one of seed/HEADS :cap-shapes
 ;; (ND-KW kinds are checked by the caller)
-(defn- ck-cap-type [wk :i64 r1 :i64 r2 :i64] :i64
-  (cond (nm-ne r1 r2) 0
-        (= wk KW-FS-APP-DATA-BYTES) (if (= r1 KW-BYTES) TY-BYTES 0)
-        (= r1 KW-STRING) TY-STR
-        :else 0))
-;; R4B: the result type of the shape (wire 35 :string :bytes reads a file as bytes, kind CK-STRING-BYTES), 0 when none
-(defn- ck-cap-res [wk :i64 r1 :i64 r2 :i64] :i64
-  (if (and (or (= wk KW-FS-APP-DATA) (= wk KW-FS-APP-DATA-BYTES)) (= r1 KW-STRING) (= r2 KW-BYTES))
-    TY-BYTES
-    (ck-cap-type wk r1 r2)))
+(defn- ck-cap-chunks? [M :vector-i64 ty :i64] :bool
+  (and (= (ck-tcon M ty) TC-LIST) (= (ck-ta M ty) TY-BYTES)))
+;; Parse the declared types with the same type checker as function signatures.
+;; The FS2 catalogue adds string/bytes, string/list<bytes>, and segmented
+;; list<bytes>/list<bytes>; unrelated capabilities remain string/string.
+(defn- ck-cap-shape? [M :vector-i64 wk :i64 request :i64 result :i64] :bool
+  (if (or (= wk KW-FS-APP-DATA) (= wk KW-FS-APP-DATA-BYTES))
+    (or (and (= request TY-STR) (or (= result TY-STR) (= result TY-BYTES) (ck-cap-chunks? M result)))
+        (and (= request TY-BYTES) (= result TY-BYTES))
+        (and (ck-cap-chunks? M request) (ck-cap-chunks? M result)))
+    (and (= request TY-STR) (= result TY-STR))))
 
 (defn- ck-cap [M :vector-i64 n :i64 fx :i64] :vector-i64
   (let [h (nm-first M n)
@@ -2112,21 +2121,19 @@
         q (nm-next M w)
         r (nm-next M q)
         x (nm-next M r)
-        wk (ck-wire-kw M w q)
-        ty (ck-cap-type wk (nm-head-of M q) (nm-head-of M r))
-        rty (ck-cap-res wk (nm-head-of M q) (nm-head-of M r))
-        aty (if (= rty ty) ty TY-STR)]
+        wk (ck-wire-kw M w q)]
     (cond (nm-ne (nm-count M n) 5) (ck-err M E-CHECK-CAP h 0)
           (= (ck-wire-ok wk) 0) (ck-err M E-CHECK-CAP w 0)
-          (nm-ne (nm-kind M q) ND-KW) (ck-err M E-CHECK-CAP q 0)
-          (nm-ne (nm-kind M r) ND-KW) (ck-err M E-CHECK-CAP r 0)
-          (= rty 0) (ck-err M E-CHECK-CAP q 0)
+          (= (ck-is-tform M q) 0) (ck-err M E-CHECK-CAP q 0)
+          (= (ck-is-tform M r) 0) (ck-err M E-CHECK-CAP r 0)
           :else
-          (let [M1 (ck-expr M x fx 0)
+          (let [Mq (ck-tform M q) aty (ck-r Mq) Mr (ck-tform Mq r) rty (ck-r Mr)
+                M1 (if (and (> aty 0) (> rty 0) (ck-cap-shape? Mr wk aty rty))
+                     (ck-expr Mr x fx 0) (ck-err Mr E-CHECK-CAP q 0))
                 tx (ck-ty M1)]
-            (if (= tx aty)
+            (if (nm-failed M1) M1 (if (= tx aty)
               (ck-mark (ck-r5b-cap (ck-fuel (nm-set-nf M1 w NF-TYPE wk) (ck-fx-f fx)) (ck-fx-f fx) (ck-kw-wire wk)) n rty HD-TYPED-CAP-CALL)
-              (ck-err M1 E-CHECK-TYPE h aty))))))
+              (ck-err M1 E-CHECK-TYPE h aty)))))))
 
 ;; ---- calls of the file's functions ----
 ;; argument c is argument k of FN fi; h = the head node
@@ -4125,7 +4132,7 @@
 (def ck-s-loopn 12)  ; loop nesting depth of the expression being checked
 (def ck-s-andor 13)  ; the and/or head node whose operands are being checked (0 = none)
 
-(def ck-fx-state 140737488355328)   ; 2^47: the :state bit of an effect mask (bit w < 47 = capability wire w)
+(def ck-fx-state 140737488355328)   ; Preserve legacy :state bit 47; wire 47 uses extension bit 48.
 
 ;; ---- FN2 ----
 (defn- ck-f2 [M :vector-i64 f :i64 fld :i64] :i64 (vector-at M (+ (vector-at M MM-FN2) (* f FN2-W) fld)))
@@ -4146,10 +4153,15 @@
 (defn- ck-kw-wire [k :i64] :i64
   (case k
     KW-HASH-SHA256 3 KW-CLOCK-NOW 7 KW-ENV-READ 33 KW-FS-BROWSE 34 (KW-FS-APP-DATA KW-FS-APP-DATA-BYTES) 35 KW-IO-WRITE 37
-    KW-CLI-ARGS 38 KW-IO-WRITE-ERROR 39 KW-IO-READ 41
+    KW-CLI-ARGS 38 KW-IO-WRITE-ERROR 39 KW-SYS-CWD 40 KW-IO-READ 41
     KW-PROCESS-SPAWN 20 KW-ENTROPY-DRAW 23   ; R6B
+    KW-GPU-COMPUTE 42   ; ADR 0371
+    KW-NET-LISTEN 43 KW-NET-ACCEPT 44 KW-NET-DIAL 45 KW-NET-READ 46 KW-NET-WRITE 47
     -1))
-(defn- ck-wire-bit [w :i64] :i64 (if (and (>= w 0) (< w 47)) (i64-shift-left 1 w) 0))
+(defn- ck-wire-bit [w :i64] :i64
+  (cond (= w 47) 281474976710656
+        (and (>= w 0) (< w 47)) (i64-shift-left 1 w)
+        :else 0))
 ;; FN f calls capability wire w: its FN2-CAPS and the module's mask
 ;; R5B rung proof (local state in the seed): the heap handle threaded through a cell (atom, swap!, reset!, @)
 (defn- ck-r5b-cap [M :vector-i64 f :i64 w :i64] :vector-i64
@@ -4694,11 +4706,18 @@
 (defn- ck-r6b-charend [S :string i :i64] :i64
   (if (>= (+ i 1) (string-length S)) (+ i 1) (+ (+ i 1) (lx-cpw (string-code-point-at S (+ i 1))))))
 (defn- ck-r6b-symend [S :string i :i64] :i64
-  (loop [j i] (if (and (< j (string-length S)) (lx-symch? (string-code-point-at S j))) (recur (+ j 1)) j)))
+  (loop [j i] (if (and (< j (string-length S)) (lx-symch? (string-code-point-at S j))) (recur (+ j (lx-cpw (string-code-point-at S j)))) j)))
 (defn- ck-r6b-is? [S :string a :i64 b :i64 t :string] :bool
-  (and (= (- b a) (string-length t)) (string=? (string-substring S a b) t)))
+  ;; A prefix probe can end inside a Unicode source point. Compare complete
+  ;; points without allocating that invalid substring. This checker helper
+  ;; also belongs to the Linux closure, which has no project-loader module.
+  (and (= (- b a) (string-length t))
+    (loop [i 0]
+      (cond (>= i (string-length t)) true
+            (not= (string-code-point-at S (+ a i)) (string-code-point-at t i)) false
+            :else (recur (+ i (mem-cpw (string-code-point-at t i))))))))
 (defn- ck-r6b-head-bit [S :string a :i64 b :i64] :i64
-  (cond (and (> (- b a) 9) (string=? (string-substring S a (+ a 9)) "document-")) ck-r6b-g-doc
+  (cond (and (> (- b a) 9) (ck-r6b-is? S a (+ a 9) "document-")) ck-r6b-g-doc
         (ck-r6f-ksnth-text? S a b) ck-r6f-g-kwo   ; R6F
         (or (ck-r6b-is? S a b "f32-to-bits") (ck-r6b-is? S a b "f32-from-bits")) ck-r6f-g-f32   ; R6F
         (pos? (ck-r6f-name-bit S a b)) (ck-r6f-name-bit S a b)   ; R6F
@@ -4764,7 +4783,7 @@
     (loop [i 0 acc acc0]
       (cond (>= i n) acc
             (= (string-code-point-at T i) 32) (recur (+ i 1) acc)
-            :else (let [e (loop [j i] (if (or (>= j n) (= (string-code-point-at T j) 32)) j (recur (+ j 1))))
+            :else (let [e (loop [j i] (if (or (>= j n) (= (string-code-point-at T j) 32)) j (recur (+ j (lx-cpw (string-code-point-at T j))))))
                         k (string-substring T i e)]
                     (recur e (if (>= (string-index-of acc (string-concat " " (string-concat k " "))) 0) acc (string-concat acc (string-concat k " ")))))))))
 ;; 1 when module text S needs the keyword group of the library on its own
@@ -4973,13 +4992,14 @@
 
 ;; R6B: a friendly capability call (ns/op x) of the catalogue (ck-r6b-capwire; lang/capability-catalog.edn :elaboration:
 ;; source arity 1, request from the argument, result from the context) -> (typed-cap-call :ns/op :string R x), R = :bytes for
-;; fs/app-data-bytes and :string otherwise. Admitted wires: 3 20 23 33 34 35 37 38 39 41; any other catalogue name is E2115
+;; fs/app-data-bytes and :string otherwise. Admitted wires: 3 20 23 33 34 35 37 38 39 41 42; any other catalogue name is E2115
 ;; at its head (named, never guessed).
 (defn- ck-r6b-capkw [w :i64 hh :i64] :i64
   (case w
-    3 KW-HASH-SHA256 20 KW-PROCESS-SPAWN 23 KW-ENTROPY-DRAW 33 KW-ENV-READ 34 KW-FS-BROWSE
+    3 KW-HASH-SHA256 7 KW-CLOCK-NOW 20 KW-PROCESS-SPAWN 23 KW-ENTROPY-DRAW 33 KW-ENV-READ 34 KW-FS-BROWSE
     35 (if (= hh ck-r6b-h-fs-app-data-bytes) KW-FS-APP-DATA-BYTES KW-FS-APP-DATA)
-    37 KW-IO-WRITE 38 KW-CLI-ARGS 39 KW-IO-WRITE-ERROR 41 KW-IO-READ
+    37 KW-IO-WRITE 38 KW-CLI-ARGS 39 KW-IO-WRITE-ERROR 40 KW-SYS-CWD 41 KW-IO-READ 42 KW-GPU-COMPUTE
+    43 KW-NET-LISTEN 44 KW-NET-ACCEPT 45 KW-NET-DIAL 46 KW-NET-READ 47 KW-NET-WRITE
     0))
 (defn- ck-r6b-cap [M :vector-i64 n :i64] :vector-i64
   (let [h (nm-first M n)
@@ -5292,15 +5312,20 @@
         (= h -3807296312816633077) 40   ; sys/cwd
         (= h 524881795662885090) 41   ; io/read
         (= h 1791932595410158387) 42   ; gpu/compute
+        (= h -2985494221685490570) 43   ; net/listen
+        (= h 4235867802804660953) 44   ; net/accept
+        (= h -6487152585558698765) 45   ; net/dial
+        (= h 56528935486559349) 46   ; net/read
+        (= h 7427296218179622668) 47   ; net/write
         :else 0))
 (def ck-r6b-h-fs-app-data-bytes 173977598554302551)
 (defn- ck-r6b-t-kw0 [] :string
   (string-concat "(defn- __r6-trap [] :i64 (vector-at [0] 1))\n"
   (string-concat "(defn- __r6-traps [] :string (string-substring \"x\" 0 (__r6-trap)))\n"
-  (string-concat "(defn- __r6-cpw [c :i64] :i64 (cond (< c 128) 1 (< c 2048) 2 (< c 65536) 3 :else 4))\n"
-  (string-concat "(defn- __r6-kwhr [s :string a :i64 b :i64] :i64 (loop [i a h -3750763034362895579] (if (>= i b) h (let [c (string-code-point-at s i)] (recur (+ i (__r6-cpw c)) (* (bit-xor h c) 1099511628211))))))\n"
+  (string-concat "(defn- __r6-cpw [c :i64] :i64 (cond (< c 128) 1 (< c 2048) 2 (< c 65536) 3 :else 4))\n(defn- __r6-kwhb [h :i64 b :i64] :i64 (* (bit-xor h b) 1099511628211))\n(defn- __r6-kwhcp [h :i64 c :i64] :i64 (cond (< c 128) (__r6-kwhb h c) (< c 2048) (__r6-kwhb (__r6-kwhb h (bit-or 192 (u64-shift-right c 6))) (bit-or 128 (bit-and c 63))) (< c 65536) (__r6-kwhb (__r6-kwhb (__r6-kwhb h (bit-or 224 (u64-shift-right c 12))) (bit-or 128 (bit-and (u64-shift-right c 6) 63))) (bit-or 128 (bit-and c 63))) :else (__r6-kwhb (__r6-kwhb (__r6-kwhb (__r6-kwhb h (bit-or 240 (u64-shift-right c 18))) (bit-or 128 (bit-and (u64-shift-right c 12) 63))) (bit-or 128 (bit-and (u64-shift-right c 6) 63))) (bit-or 128 (bit-and c 63)))))\n"
+  (string-concat "(defn- __r6-kwhr [s :string a :i64 b :i64] :i64 (loop [i a h -3750763034362895579] (if (>= i b) h (let [c (string-code-point-at s i)] (recur (+ i (__r6-cpw c)) (if (< c 128) (* (bit-xor h c) 1099511628211) (__r6-kwhcp h c)))))))\n"
   (string-concat "(defn- __r6-kwh [s :string] :i64 (__r6-kwhr s 0 (string-length s)))\n"
-  "(defn- __r6-tokend [t :string i :i64] :i64 (if (>= i (string-length t)) i (if (= (string-code-point-at t i) 32) i (__r6-tokend t (+ i 1)))))\n"))))))
+  "(defn- __r6-tokend [t :string i :i64] :i64 (if (>= i (string-length t)) i (if (= (string-code-point-at t i) 32) i (__r6-tokend t (+ i (if (< (string-code-point-at t i) 128) 1 (__r6-cpw (string-code-point-at t i))))))))\n"))))))
 (defn- ck-r6b-t-kw1 [] :string
   (string-concat "(defn- __r6-kwfind [t :string h :i64 i :i64] :string (cond (>= i (string-length t)) (__r6-kwdyn h) (= (string-code-point-at t i) 32) (__r6-kwfind t h (+ i 1)) :else (let [e (__r6-tokend t i)] (if (= (__r6-kwhr t i e) h) (string-substring t i e) (__r6-kwfind t h e)))))\n"
   (string-concat "(defn- __r6-kwtext [k :keyword] :string (__r6-kwfind (__r6-kwtab) (__r6-as :i64 k) 0))\n"
@@ -5311,12 +5336,12 @@
 (defn- ck-r6b-t-kw2 [] :string
   (string-concat "(defn- __r6-b2s [b :bool] :string (if b \"true\" \"false\"))\n"
   (string-concat "(defn- __r6-u8 [v :vector-i64 c :i64] :vector-i64 (cond (< c 128) (vector-conj v c) (< c 2048) (vector-conj (vector-conj v (+ 192 (quot c 64))) (+ 128 (bit-and c 63))) (< c 65536) (vector-conj (vector-conj (vector-conj v (+ 224 (quot c 4096))) (+ 128 (bit-and (quot c 64) 63))) (+ 128 (bit-and c 63))) :else (vector-conj (vector-conj (vector-conj (vector-conj v (+ 240 (quot c 262144))) (+ 128 (bit-and (quot c 4096) 63))) (+ 128 (bit-and (quot c 64) 63))) (+ 128 (bit-and c 63)))))\n"
-  (string-concat "(defn- __r6-kwdb [h :i64 n :i64 i :i64 v :vector-i64] :vector-i64 (if (>= i n) v (let [q (quot i 3) r (- i (* 3 q)) w (__r6-kgget h (+ 1897424841649887630 q)) c (bit-and (cond (= r 0) w (= r 1) (quot w 2097152) :else (quot w 4398046511104)) 2097151)] (__r6-kwdb h n (+ i 1) (__r6-u8 v c)))))\n"
-  (string-concat "(defn- __r6-kwdyn [h :i64] :string (let [n (__r6-kgget h 1897424841649887629)] (if (< n 0) (__r6-traps) (string-from-utf8 (bytes-from-vector-i64 (__r6-kwdb h n 0 (vector-alloc 0)))))))\n"
-  (string-concat "(defn- __r6-kwput [s :string h :i64 i :i64 k :i64 w :i64] :i64 (if (>= i (string-length s)) (let [x (if (= (- k (* 3 (quot k 3))) 0) 0 (__r6-kgput h (+ 1897424841649887630 (quot (- k 1) 3)) w))] (__r6-kgput h 1897424841649887629 k)) (let [c (string-code-point-at s i) q (quot k 3) r (- k (* 3 q)) w1 (+ w (* c (cond (= r 0) 1 (= r 1) 2097152 :else 4398046511104)))] (if (= r 2) (let [x (__r6-kgput h (+ 1897424841649887630 q) w1)] (__r6-kwput s h (+ i (__r6-cpw c)) (+ k 1) 0)) (__r6-kwput s h (+ i (__r6-cpw c)) (+ k 1) w1)))))\n"
+  (string-concat "(defn- __r6-kwdb [h :i64 n :i64 i :i64 v :vector-i64] :vector-i64 (if (>= i n) v (let [q (quot i 3) r (- i (* 3 q)) w (__r6-kiget h (+ 1897424841649887630 q)) c (bit-and (cond (= r 0) w (= r 1) (quot w 2097152) :else (quot w 4398046511104)) 2097151)] (__r6-kwdb h n (+ i 1) (__r6-u8 v c)))))\n"
+  (string-concat "(defn- __r6-kwdyn [h :i64] :string (let [n (__r6-kiget h 1897424841649887629)] (if (< n 0) (__r6-traps) (string-from-utf8 (bytes-from-vector-i64 (__r6-kwdb h n 0 (vector-alloc 0)))))))\n"
+  (string-concat "(defn- __r6-kwput [s :string h :i64 i :i64 k :i64 w :i64] :i64 (if (>= i (string-length s)) (let [x (if (= (- k (* 3 (quot k 3))) 0) 0 (__r6-kiput h (+ 1897424841649887630 (quot (- k 1) 3)) w))] (__r6-kiput h 1897424841649887629 k)) (let [c (string-code-point-at s i) q (quot k 3) r (- k (* 3 q)) w1 (+ w (* c (cond (= r 0) 1 (= r 1) 2097152 :else 4398046511104)))] (if (= r 2) (let [x (__r6-kiput h (+ 1897424841649887630 q) w1)] (__r6-kwput s h (+ i (__r6-cpw c)) (+ k 1) 0)) (__r6-kwput s h (+ i (__r6-cpw c)) (+ k 1) w1)))))\n"
   "(defn- __r6-kwhas [t :string h :i64 i :i64] :i64 (cond (>= i (string-length t)) 0 (= (string-code-point-at t i) 32) (__r6-kwhas t h (+ i 1)) :else (let [e (__r6-tokend t i)] (if (= (__r6-kwhr t i e) h) 1 (__r6-kwhas t h e)))))\n"))))))
 (defn- ck-r6b-t-kw3 [] :string
-  "(defn- __r6-kwreg [t :string] :i64 (let [h (__r6-kwh t)] (if (< (__r6-kgget h 1897424841649887629) -1) (let [x (if (= (__r6-kwhas (__r6-kwtab) h 0) 1) (__r6-kgput h 1897424841649887629 -1) (__r6-kwput t h 0 0 0))] h) h)))\n")
+  "(defn- __r6-kwreg [t :string] :i64 (let [h (__r6-kwh t)] (if (< (__r6-kiget h 1897424841649887629) -1) (let [x (if (= (__r6-kwhas (__r6-kwtab) h 0) 1) (__r6-kiput h 1897424841649887629 -1) (__r6-kwput t h 0 0 0))] h) h)))\n")
 (defn- ck-r6b-t-kw [] :string (string-concat (ck-r6b-t-kw0) (string-concat (ck-r6b-t-kw1) (string-concat (ck-r6b-t-kw2) (ck-r6b-t-kw3)))))
 (defn- ck-r6b-t-doc0 [] :string
   (string-concat "(defn- __kr_dw [c :i64] :i64 (cond (< c 128) 1 (< c 2048) 2 (< c 65536) 3 :else 4))\n"
@@ -5808,7 +5833,7 @@
   (let [q (lx-sk-ws S b)]
     (and (ck-r6b-is? S a b "typed-set-nth")
          (<= (+ q 15) (string-length S))
-         (string=? (string-substring S q (+ q 15)) "[:set :keyword]"))))
+         (ck-r6b-is? S q (+ q 15) "[:set :keyword]"))))
 ;; n is (typed-set-nth [:set :keyword] s i) with the builtin head
 (defn- ck-r6f-ksnth? [M :vector-i64 n :i64] :bool
   (let [h (nm-first M n)
@@ -6184,6 +6209,7 @@
 (def ck-r6m-tc-hvec 41)
 (def ck-r6m-hd-vnew 3001)
 (def ck-r6m-hd-vmatch 3002)
+(def ck-r6m-hd-arena 3003)
 (def ck-r6m-h-arena 1121630809250370429)   ; arena-scope
 (defn- ck-r6m-var-form? [M :vector-i64 n :i64] :bool
   (and (= (nm-kind M n) ND-VEC) (= (nm-count M n) 3) (= (nm-kind M (nm-first M n)) ND-KW)
@@ -6309,14 +6335,14 @@
       6 (if (= na 4) (ck-r6m-hat M n fx 1) (ck-err M E-CHECK-ARITY h 4))
       7 (if (= na 1) (ck-r6m-arena M n fx ctx) (ck-err M E-CHECK-ARITY h 1))
       (ck-err M E-CHECK-HEAD h 0))))
-;; (arena-scope e) -> (do e): the reference's scope reclaims the arenas a scalar body used (loader ABI v6); the seed keeps the
-;; value and does not reclaim (the result is the same; memory is not). The body must be :i64 :bool or :f64 as there.
+;; ABI v6 scalar region: check its body as before, retaining a structural
+;; lowering marker for enter/body/leave. Only scalar results may escape.
 (defn- ck-r6m-arena [M :vector-i64 n :i64 fx :i64 ctx :i64] :vector-i64
   (let [h (nm-first M n)
         M1 (ck-expr (ck-rehead M n HD-DO (nm-next M h)) n fx ctx)
         ty (ck-ty M1)]
     (cond (nm-failed M1) (ck-touch M1)
-          (or (= ty TY-I64) (= ty TY-BOOL) (= ty TY-F64) (zero? ty)) M1
+          (or (= ty TY-I64) (= ty TY-BOOL) (= ty TY-F64) (zero? ty)) (nm-set-nf M1 n NF-RES ck-r6m-hd-arena)
           :else (ck-err M1 E-CHECK-TYPE h TY-I64))))
 (defn- ck-r6m-vnew [M :vector-i64 n :i64 fx :i64] :vector-i64
   (let [h (nm-first M n)

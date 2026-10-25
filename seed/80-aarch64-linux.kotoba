@@ -1,0 +1,265 @@
+;; aarch64-linux-static: the runtime-profile SIR (the x86 route's admission,
+;; seed/70-71) emitted as AArch64 into the same loaderless image shape as
+;; seed/75 (guest + Kotoba runtime, seed/77, in one ELF64 EM_AARCH64). It is a
+;; plain stack-machine emitter, independent of the adopted 41-a64gen: every
+;; temp and local lives in the frame, x9..x17 are scratch, x7 holds the
+;; context at every fuel site and guest call. Generated code touches only
+;; x0..x17, x29, x30 and sp, so it is AAPCS64-callable (helpers called by a
+;; foreign payload preserve x19..x28). Fixups use MM-FIX kinds 11..17.
+
+(defn- xa-w [M :vector-i64 w :i64] :vector-i64 (xg-bytes M w 4))
+(defn- xa-code-word [M :vector-i64 at :i64] :i64
+  (bit-or (bit-or (xg-code-byte M at) (i64-shift-left (xg-code-byte M (+ at 1)) 8))
+          (bit-or (i64-shift-left (xg-code-byte M (+ at 2)) 16) (i64-shift-left (xg-code-byte M (+ at 3)) 24))))
+;; record a fixup [at kind target] for the instruction about to be emitted
+(defn- xa-fixrec [M :vector-i64 kind :i64 target :i64] :vector-i64
+  (let [at (xg-pos M) k (vector-at M MM-FIX-N) b (+ MM-FIX-BASE (* k MM-FIX-W))]
+    (if (>= k MM-FIX-CAP) (xg-err M 7104 k)
+      (-> M (mem-set b at) (mem-set (+ b 1) kind) (mem-set (+ b 2) target) (mem-set MM-FIX-N (inc k))))))
+
+;; ---- frame addressing: x29 = sp + F; slot/temp offsets are xg-local/xg-temp (negative from x29) ----
+(defn- xa-frame [M :vector-i64] :i64 (xg-frame M (xg-get M 0)))
+(defn- xa-ldr [M :vector-i64 r :i64 off :i64] :vector-i64
+  (xa-w M (bit-or 0xF94003E0 (bit-or (i64-shift-left (quot (+ (xa-frame M) off) 8) 10) r))))
+(defn- xa-str [M :vector-i64 r :i64 off :i64] :vector-i64
+  (xa-w M (bit-or 0xF90003E0 (bit-or (i64-shift-left (quot (+ (xa-frame M) off) 8) 10) r))))
+(defn- xa-lt [M :vector-i64 r :i64 t :i64] :vector-i64 (xa-ldr M r (xg-temp M t)))
+(defn- xa-st [M :vector-i64 r :i64 t :i64] :vector-i64 (xa-str M r (xg-temp M t)))
+(defn- xa-ctx [M :vector-i64 r :i64] :vector-i64 (xa-ldr M r -8))
+(defn- xa-x7 [M :vector-i64] :vector-i64 (xa-ctx M 7))
+;; Xd := v (movz + three movk; always four words)
+(defn- xa-mov64 [M :vector-i64 d :i64 v :i64] :vector-i64
+  (-> M (xa-w (bit-or 0xD2800000 (bit-or (i64-shift-left (bit-and v 65535) 5) d)))
+      (xa-w (bit-or 0xF2A00000 (bit-or (i64-shift-left (bit-and (u64-shift-right v 16) 65535) 5) d)))
+      (xa-w (bit-or 0xF2C00000 (bit-or (i64-shift-left (bit-and (u64-shift-right v 32) 65535) 5) d)))
+      (xa-w (bit-or 0xF2E00000 (bit-or (i64-shift-left (bit-and (u64-shift-right v 48) 65535) 5) d)))))
+;; Xd := absolute address, patched by fixup kind (14 FN, 16 data, 17 literal)
+(defn- xa-abs [M :vector-i64 d :i64 kind :i64 target :i64] :vector-i64
+  (xa-mov64 (xa-fixrec M kind target) d 0))
+(defn- xa-epilogue [M :vector-i64] :vector-i64 (-> M (xa-w 0x910003BF) (xa-w 0xA8C17BFD)))
+
+;; ---- functions ----
+(defn- xa-params [M :vector-i64 i :i64 n :i64] :vector-i64
+  (if (= i n) M
+    (xa-params (if (< i 5) (xa-str M i (xg-local (inc i)))
+                 (-> M (xa-w (bit-or 0xF94003B0 (i64-shift-left (quot (+ 16 (* 8 (- i 5))) 8) 10)))
+                     (xa-str 16 (xg-local (inc i)))))
+               (inc i) n)))
+(defn- xa-fn [M :vector-i64 f :i64 n :i64] :vector-i64
+  (let [at (vector-at M MM-CODE-N) m (xg-set (mem-set M (+ MM-FN-BASE (* f MM-FN-W) FF-CODE) at) 0 f) frame (xa-frame m)]
+    (-> m (xa-w 0xA9BF7BFD) (xa-w 0x910003FD)
+        (xa-w (if (< frame 4096) (bit-or 0xD10003FF (i64-shift-left frame 10)) 0xD14007FF))
+        (xa-str 7 -8) (xa-params 0 n))))
+(defn- xa-fuel [M :vector-i64] :vector-i64
+  (-> M (xa-w 0xF94004F0) (xa-w 0xF100021F) (xa-w 0x5400004C) (xa-w 0xD4200000)
+      (xa-w 0xD1000610) (xa-w 0xF90004F0)))
+(defn- xa-r3 [base :i64] :i64 (bit-or base (bit-or (i64-shift-left 10 16) (bit-or (i64-shift-left 9 5) 9))))
+(defn- xa-quot [M :vector-i64] :vector-i64
+  ;; cbnz x10 ; brk ; cmn x10,#1 ; b.ne sdiv ; x11 = MIN ; cmp x9,x11 ; b.ne sdiv ; brk ; sdiv
+  (-> M (xa-w 0xB500004A) (xa-w 0xD4200000) (xa-w 0xB100055F) (xa-w 0x540000A1)
+      (xa-w 0xD2F0000B) (xa-w 0xEB0B013F) (xa-w 0x54000041) (xa-w 0xD4200000)
+      (xa-w (xa-r3 0x9AC00C00))))
+(defn- xa-bin-op [M :vector-i64 op :i64] :vector-i64
+  (case op
+    1 (xa-w M (xa-r3 0x8B000000)) 2 (xa-w M (xa-r3 0xCB000000))
+    3 (xa-w M 0x9B0A7D29) 4 (xa-quot M)
+    5 (xa-w M (xa-r3 0x8A000000)) 6 (xa-w M (xa-r3 0xAA000000)) 7 (xa-w M (xa-r3 0xCA000000))
+    8 (xa-w M (xa-r3 0x9AC02000)) 9 (xa-w M (xa-r3 0x9AC02400)) 10 (xa-w M (xa-r3 0x9AC02800))
+    (xg-err M 7101 op)))
+;; cset x9, cc: csinc x9, xzr, xzr, invert(cc)
+(defn- xa-cond [cc :i64] :i64 (case cc 1 0 2 11 3 12 4 13 5 10 0))
+(defn- xa-cmp [M :vector-i64 cc :i64 t :i64] :vector-i64
+  (-> M (xa-lt 9 t) (xa-lt 10 (inc t)) (xa-w 0xEB0A013F)
+      (xa-w (bit-or 0x9A9F07E9 (i64-shift-left (bit-xor (xa-cond cc) 1) 12))) (xa-st 9 t)))
+(defn- xa-un [M :vector-i64 op :i64 t :i64] :vector-i64
+  (-> M (xa-lt 9 t) (xa-w (if (= op UOP-NOT) 0xD2400129 0xAA2903E9)) (xa-st 9 t)))
+;; arguments t .. t+n-1: 0..4 in x0..x4, the rest at [sp, 8*(i-5)]
+(defn- xa-args [M :vector-i64 t :i64 i :i64 n :i64] :vector-i64
+  (if (= i n) M
+    (xa-args (if (< i 5) (xa-lt M i (+ t i))
+               (-> M (xa-lt 16 (+ t i)) (xa-w (bit-or 0xF90003F0 (i64-shift-left (- i 5) 10)))))
+             t (inc i) n)))
+(defn- xa-call [M :vector-i64 i :i64 f :i64 t :i64 c :i64] :vector-i64
+  (if (and (<= c 5) (xg-tail? M (inc i) t 64))
+    (-> M (xa-args t 0 c) (xa-x7) (xa-epilogue) (xa-fixrec 11 f) (xa-w 0x14000000))
+    (-> M (xa-args t 0 c) (xa-x7) (xa-fixrec 11 f) (xa-w 0x94000000) (xa-x7) (xa-st 0 t))))
+;; helper slot call: x0 = context, operands already in x1..
+(defn- xa-slot [M :vector-i64 slot :i64] :vector-i64
+  (-> M (xa-ctx 0) (xa-w (bit-or 0xF9400010 (i64-shift-left (quot slot 8) 10))) (xa-w 0xD63F0200) (xa-x7)))
+(defn- xa-rt-args [M :vector-i64 t :i64 i :i64 n :i64] :vector-i64
+  (if (= i n) M (xa-rt-args (xa-lt M (inc i) (+ t i)) t (inc i) n)))
+(defn- xa-rt [M :vector-i64 slot :i64 t :i64 n :i64] :vector-i64
+  (-> M (xa-rt-args t 0 n) (xa-slot slot) (xa-st 0 t)))
+(defn- xa-cap [M :vector-i64 wire :i64 kind :i64 t :i64] :vector-i64
+  (-> M (xa-lt 4 t) (xa-mov64 1 wire) (xa-mov64 2 kind) (xa-mov64 3 kind)
+      (xa-slot RT-TYPED-CAP-CALL) (xa-st 0 t)))
+(defn- xa-str-lit [M :vector-i64 t :i64 lit :i64] :vector-i64
+  (-> M (xa-fixrec 15 lit) (xa-mov64 1 0)
+      (xa-mov64 2 (vector-at M (+ MM-LIT-BASE (* lit MM-LIT-W) LF-LEN)))
+      (xa-slot RT-PAIR-NEW) (xa-st 0 t)))
+;; vectors: vector_alloc(n) into the scratch word, then assoc_in_place per item
+(defn- xa-scratch [M :vector-i64] :i64 (xr-scratch M))
+(defn- xa-vec-items [M :vector-i64 t :i64 k :i64 n :i64 lit :i64] :vector-i64
+  (if (= k n) M
+    (xa-vec-items
+      (-> (if (= lit 0) (xa-lt M 3 (+ t k))
+            (-> M (xa-abs 16 17 lit) (xa-w (bit-or 0xF9400203 (i64-shift-left k 10)))))
+          (xa-ldr 1 (xa-scratch M)) (xa-mov64 2 k) (xa-slot RT-VECTOR-ASSOC-IN-PLACE)) t (inc k) n lit)))
+(defn- xa-vec [M :vector-i64 t :i64 n :i64 lit :i64] :vector-i64
+  (-> M (xa-mov64 1 n) (xa-slot RT-VECTOR-ALLOC) (xa-str 0 (xa-scratch M))
+      (xa-vec-items t 0 n lit) (xa-ldr 9 (xa-scratch M)) (xa-st 9 t)))
+(defn- xa-tab [M :vector-i64 t :i64 lit :i64 n :i64] :vector-i64
+  ;; unsigned bounds check, then ldr x9, [x16, x9, lsl #3]
+  (-> M (xa-lt 9 t) (xa-mov64 10 n) (xa-w 0xEB0A013F) (xa-w 0x54000043) (xa-w 0xD4200000)
+      (xa-abs 16 17 lit) (xa-w 0xF8697A09) (xa-st 9 t)))
+(defn- xa-calli [M :vector-i64 i :i64 t :i64 c :i64] :vector-i64
+  (let [v (-> M (xa-args t 0 c) (xa-lt 16 (+ t c)) (xa-x7))]
+    (if (and (<= c 5) (xg-tail? M (inc i) t 64))
+      (-> v (xa-epilogue) (xa-w 0xD61F0200))
+      (-> v (xa-w 0xD63F0200) (xa-x7) (xa-st 0 t)))))
+(defn- xa-zero-args [M :vector-i64 i :i64] :vector-i64
+  (if (= i 7) M (xa-zero-args (xa-w M (bit-or 0xAA1F03E0 i)) (inc i))))
+;; intrinsics (static builds only; see seed/75)
+(defn- xa-intrinsic [M :vector-i64 k :i64 t :i64] :vector-i64
+  (case k
+    0 (-> M (xa-lt 9 t) (xa-w 0xF9400129) (xa-st 9 t))
+    1 (-> M (xa-lt 9 t) (xa-lt 10 (inc t)) (xa-w 0xF900012A) (xa-st 10 t))
+    2 (-> M (xa-lt 9 t) (xa-w 0x39400129) (xa-st 9 t))
+    3 (-> M (xa-lt 9 t) (xa-lt 10 (inc t)) (xa-w 0x3900012A) (xa-st 10 t))
+    4 (-> M (xa-lt 8 t) (xa-lt 0 (+ t 1)) (xa-lt 1 (+ t 2)) (xa-lt 2 (+ t 3)) (xa-lt 3 (+ t 4))
+          (xa-lt 4 (+ t 5)) (xa-lt 5 (+ t 6)) (xa-w 0xD4000001) (xa-x7) (xa-st 0 t))
+    5 (-> M (xa-abs 9 16 0) (xa-st 9 t))
+    ;; guest main as the loader calls it: fn(0, 0, 0, 0, 0, 0, 0, context in x7)
+    6 (-> M (xa-zero-args 0) (xa-lt 7 t) (xa-fixrec 11 (xg-get M 1)) (xa-w 0x94000000) (xa-x7) (xa-st 0 t))
+    ;; runtime refusal: udf #0 (SIGILL), as the loader's helpers raise SIGILL;
+    ;; guest traps (OP-TRAP, fuel, quot) stay brk #0 (SIGTRAP)
+    7 (xa-w M 0x00000000)
+    ;; (kxrt-call-at addr ctx argv): x0..x4 from the five words at argv,
+    ;; x5 = x6 = 0, x7 = context, as the loader's fn(a0..a4, 0, 0, context)
+    8 (-> M (xa-zero-args 0) (xa-lt 16 (+ t 2)) (xa-w 0xF9400200) (xa-w 0xF9400601) (xa-w 0xF9400A02)
+          (xa-w 0xF9400E03) (xa-w 0xF9401204) (xa-lt 17 t) (xa-lt 7 (inc t)) (xa-w 0xD63F0220)
+          (xa-x7) (xa-st 0 t))
+    (xg-err M 7101 OP-CALL)))
+(defn- xa-one [M :vector-i64 i :i64] :vector-i64
+  (let [op (xg-si M i IF-OP) a (xg-si M i IF-A) b (xg-si M i IF-B) c (xg-si M i IF-C)]
+    (case op
+      1 (xa-fn M a b) 2 M
+      3 (-> M (xa-mov64 9 b) (xa-st 9 a))
+      4 (-> M (xa-ldr 9 (xg-local b)) (xa-st 9 a))
+      5 (-> M (xa-lt 9 b) (xa-str 9 (xg-local a)))
+      6 (-> M (xa-lt 9 b) (xa-lt 10 (inc b)) (xa-bin-op a) (xa-st 9 b))
+      7 (xa-cmp M a b) 8 (xa-un M a b)
+      9 (xg-label M a)
+      10 (-> M (xa-fixrec 12 a) (xa-w 0x14000000))
+      11 (-> M (xa-lt 9 a) (xa-fixrec 13 b) (xa-w 0xB4000009))
+      12 (-> M (xa-lt 9 a) (xa-fixrec 13 b) (xa-w 0xB5000009))
+      13 (if (>= (xs-intr M a) 0) (xa-intrinsic M (xs-intr M a) b) (xa-call M i a b c))
+      14 (xa-rt M a b c) 15 (xa-cap M a b c) 16 (xa-str-lit M a b) 17 (xa-vec M a b 0)
+      18 (if (xs-rt? M (xg-get M 0)) M (xa-fuel M))
+      19 (-> M (xa-lt 0 a) (xa-epilogue) (xa-w 0xD65F03C0))
+      20 (xa-w M 0xD4200000)
+      21 (xa-tab M a b c)
+      22 (-> M (xa-abs 9 14 b) (xa-st 9 a))
+      23 (xa-calli M i b c)
+      24 (xa-vec M a c b)
+      25 (xa-st M 1 a)
+      26 (-> M (xa-lt 1 (inc a)) (xa-lt 0 a) (xa-epilogue) (xa-w 0xD65F03C0))
+      (xg-err M 7101 op))))
+(defn- xa-code [M :vector-i64 i :i64] :vector-i64
+  (if (or (not= (vector-at M MM-ERR) 0) (= i (vector-at M MM-SIR-N))) M
+    (xa-code (xa-one M i) (inc i))))
+
+;; ---- fixups (kinds 11..17) ----
+(defn- xa-patch-word [M :vector-i64 at :i64 w :i64] :vector-i64 (xg-patch M at w 4))
+(defn- xa-patch-mov [M :vector-i64 at :i64 v :i64 k :i64] :vector-i64
+  (if (= k 4) M
+    (xa-patch-mov (xa-patch-word M (+ at (* 4 k))
+                    (bit-or (xa-code-word M (+ at (* 4 k)))
+                            (i64-shift-left (bit-and (u64-shift-right v (* 16 k)) 65535) 5)))
+                  at v (inc k))))
+(defn- xa-fix-target [M :vector-i64 kind :i64 target :i64] :i64
+  (case kind
+    11 (dec (xg-f M target FF-CODE)) 14 (dec (xg-f M target FF-CODE))
+    12 (dec (bit-and (vector-at M (+ MM-LABEL-BASE target)) 4294967295))
+    13 (dec (bit-and (vector-at M (+ MM-LABEL-BASE target)) 4294967295))
+    15 (vector-at M (+ MM-LIT-BASE (* target MM-LIT-W) LF-POOL))
+    17 (vector-at M (+ MM-LIT-BASE (* target MM-LIT-W) LF-POOL))
+    16 0 -1))
+(defn- xa-fix [M :vector-i64 i :i64] :vector-i64
+  (if (or (not= (vector-at M MM-ERR) 0) (= i (vector-at M MM-FIX-N))) M
+    (let [b (+ MM-FIX-BASE (* i MM-FIX-W)) at (vector-at M b) kind (vector-at M (+ b 1))
+          target (xa-fix-target M kind (vector-at M (+ b 2))) d (quot (- target at) 4)]
+      (cond (or (< target 0) (< at 0) (> (+ at 4) (xg-pos M))) (xg-err M 7103 i)
+            (or (= kind 11) (= kind 12))
+              (if (or (< d -33554432) (> d 33554431)) (xg-err M 7103 i)
+                (xa-fix (xa-patch-word M at (bit-or (xa-code-word M at) (bit-and d 67108863))) (inc i)))
+            (= kind 13)
+              (if (or (< d -262144) (> d 262143)) (xg-err M 7103 i)
+                (xa-fix (xa-patch-word M at (bit-or (xa-code-word M at) (i64-shift-left (bit-and d 524287) 5))) (inc i)))
+            (= kind 15) (xa-fix (xa-patch-mov M at target 0) (inc i))
+            (= kind 16) (xa-fix (xa-patch-mov M at (+ 0x400000 (xg-get M 3)) 0) (inc i))
+            :else (xa-fix (xa-patch-mov M at (+ 0x401000 target) 0) (inc i))))))
+
+;; ---- image: as seed/75, EM_AARCH64; entry = mov x0, sp ; bl kxrt-start ; brk ----
+(defn- xa-entry [M :vector-i64] :vector-i64
+  (-> M (xa-w 0x910003E0) (xa-fixrec 11 (vector-at M 199)) (xa-w 0x94000000) (xa-w 0xD4200000)))
+(defn- xa-elf-header [M :vector-i64] :vector-i64
+  (-> M (xg-out 0x00010102464c457f 8) (xg-out 0 8)
+      (xg-out 2 2) (xg-out 183 2) (xg-out 1 4) (xg-out 0x401000 8)
+      (xg-out 64 8) (xg-out 0 8) (xg-out 0 4) (xg-out 64 2) (xg-out 56 2)
+      (xg-out 3 2) (xg-out 0 2) (xg-out 0 2) (xg-out 0 2)))
+(defn- xa-elf [M :vector-i64] :vector-i64
+  (-> M (mem-set MM-OUT-N 1) (xa-elf-header) (xg-elf-rx) (xs-elf-rw) (xg-elf-stack)
+      (xg-pad 4096) (xg-out-code 1) (xg-pad (xg-get M 3)) (xs-out-ctx 0)))
+;; --format packed (mode 2): the code of a container's `main` (V = the .kseed bytes, [cs, cs+cl) its code, off its entry)
+;; follows the image's code at a page boundary, as the runner would map it. Context words 416/424/432 = its address,
+;; length and entry offset; they are cells 252..254 of M, the link table's cells of those (unlinked) slots.
+(defn- xa-page [M :vector-i64] :vector-i64
+  (loop [g M] (if (or (= (bit-and (xg-pos g) 4095) 0) (not= (vector-at g MM-ERR) 0)) g (recur (xa-w g 0)))))
+(defn- xa-payload [M :vector-i64 V :vector-i64 cs :i64 cl :i64 off :i64] :vector-i64
+  (let [g (xa-page M) at (xg-pos g)
+        h (loop [h g i 0] (if (or (= i cl) (not= (vector-at h MM-ERR) 0)) h (recur (xg-byte h (vector-at V (+ cs i))) (inc i))))]
+    (-> h (mem-set 252 (+ 0x401000 at)) (mem-set 253 cl) (mem-set 254 off))))
+(defn- xa-build [M :vector-i64 S :string rt :i64 mode :i64 V :vector-i64 cs :i64 cl :i64 off :i64] :vector-i64
+  (let [a (-> M (xs-clear 197) (mem-set 197 rt) (xg-set 0 0) (xg-set 1 0) (xg-set 2 mode) (xg-set 4 1)
+              (xg-check-fns S 1) (xg-check-sir 1) (xr-check 1) (xs-scan S 1) (xs-check 1 0))]
+    (cond (not= (vector-at a MM-ERR) 0) a
+          (= (xg-get a 1) 0) (xg-err a 7102 0)
+          (or (= (vector-at a 199) 0) (= (vector-at a 198) 0)) (xg-err a 7102 1)
+          :else (let [g0 (-> a (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1) (xg-index-labels 1)
+                             (xa-entry) (xa-code 1) (xr-pool 1))
+                      g (if (= mode 2) (xa-payload g0 V cs cl off) g0)
+                      data (bit-and (+ 8191 (xg-pos g)) -4096)]
+                  (if (>= (+ data XS-CTX-BYTES 1) MM-OUT-CAP) (xg-err g 7104 data)
+                    (xa-elf (xa-fix (xg-set g 3 data) 1)))))))
+(defn- xa-write [M :vector-i64 out :string] :i64
+  (let [n (dec (vector-at M MM-OUT-N)) written (out-write-v M out (+ MM-OUT-BASE 1) n)
+        w (io-out (string-concat "{:ok true, :target :aarch64-linux, :format " (string-concat (cond (= (xg-get M 2) 1) ":runner" (= (xg-get M 2) 2) ":packed" (= (xg-get M 2) 4) ":launcher" :else ":static") (string-concat ", :code-bytes "
+                   (string-concat (mem-u2dec (xg-pos M)) (string-concat ", :bytes " (string-concat (mem-u2dec n) "}\n")))))))]
+    (if (= (io-exists out) 1) 0 (drv-fail0 E-WRITE))))
+;; compile SRC --target aarch64-linux --output NEW --format static|runner|launcher
+;; compile SRC --target aarch64-linux --output NEW --format packed --payload KSEED
+;;   (SRC is the runner source; KSEED a container whose `main` takes no arguments)
+(defn- xa-compile [src :string out :string mode :i64 V :vector-i64 cs :i64 cl :i64 off :i64] :i64
+  (let [original (drv-read src) guest (string-concat original (ck-r6b-lib original))
+        ;; --format launcher (mode 4): the runtime ends with xa-rt-launch, not the standard start
+        rt (if (= mode 4) (string-concat (xa-rt-core) (xa-rt-launch)) (xa-rt-src))
+        s (string-concat guest rt) m (xa-build (xg-front s) s (string-length guest) mode V cs cl off)]
+    (if (not= (vector-at m MM-ERR) 0) (xg-report m src out) (xa-write m out))))
+(defn- xa-packed [src :string out :string kseed :string] :i64
+  (let [V (io-read-bytes kseed) H (out-load-hdr (mem-new) V (out-v-len V) "main") e (vector-at H MM-ERR)]
+    (cond (= e 5002) (drv-fail0 E-NOSYM)
+          (> e 0) (drv-fail0 e)
+          (not= (vector-at H MM-R3) 0)
+            (let [w (io-err "seed-aarch64-linux: E7105 the packed payload's main must take no arguments\n")] 1)
+          :else (xa-compile src out 2 V (vector-at H MM-R1) (vector-at H MM-R2) (vector-at H MM-R0)))))
+(defn- xa-command [] :i64
+  (let [src (io-arg 1) out (io-arg 5) fmt (io-arg 7)
+        mode (cond (string=? fmt "static") 0 (string=? fmt "runner") 1 (string=? fmt "packed") 2 (string=? fmt "launcher") 4 :else -1)]
+    (cond (or (not= (io-argc) (if (= mode 2) 10 8)) (not (string=? (io-arg 4) "--output")) (not (string=? (io-arg 6) "--format"))
+              (and (= mode 2) (not (string=? (io-arg 8) "--payload")))
+              (< mode 0) (= (string-length out) 0) (= (io-exists out) 1))
+            (let [w (io-err "seed-aarch64-linux: E7100 expected compile SOURCE --target aarch64-linux --output NEW --format static|runner|packed|launcher [--payload KSEED]\n")] 2)
+          (= (io-exists src) 0) (drv-fail0 E-READ)
+          (= mode 2) (if (= (io-exists (io-arg 9)) 0) (drv-fail0 E-READ) (xa-packed src out (io-arg 9)))
+          :else (xa-compile src out mode (vector-alloc 1) 0 0 0))))

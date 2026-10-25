@@ -1,0 +1,11 @@
+(ns private-store.probe (:export [main]))
+(defn arg [i :i64] :string (typed-cap-call 38 :string :string (string-from-i64 i)))
+(defn main [] :i64
+  (let [nul (string-from-utf8 (bytes-from-vector-i64 (vector-alloc 1))) op (arg 0) path (arg 1)
+        tail (if (= op "R") "" (if (= op "C") (str nul (arg 2)) (str nul (arg 2) nul (arg 3))))
+        frame (str nul "KPV1" nul op path tail)
+        answer (vector-i64-from-bytes (typed-cap-call 35 :bytes :bytes (string-to-utf8 frame)))
+        status (if (> (vector-count answer) 0) (vector-at answer 0) -1)
+        text (if (= status 1) (string-from-utf8 (bytes-from-vector-i64 (vector-drop answer 1))) "")
+        printed (typed-cap-call 37 :string :string (str status " " (vector-count answer) " " text "\n"))]
+    (if (= status 1) 0 2)))

@@ -1,5 +1,8 @@
 # Safety-fixed preservation source — 2026-10-12
 
+> **2026-10-22: the trusted C loader was removed**; the commands below are historical. See `scripts/seed/RETIRED.md`.
+
+
 This is the 16-module compiler adopted on the paused preservation branch
 `3eace60393ac711da7f243d72cca813cbe911fef` (source `f86c2a6f0`), integrated as an
 independent closure. It does **not** overwrite current main's optimizer, public

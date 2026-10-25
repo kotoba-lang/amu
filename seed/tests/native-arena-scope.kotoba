@@ -1,0 +1,30 @@
+(ns seed.native-arena-scope (:export [main deep-main overflow-main unscoped-main]))
+
+(defn- allocation-body [] :i64
+  (let [a (vector-assoc! (vector-alloc 64) 0 41)
+        b (vector-conj a 7) c (vector-assoc b 1 43) d (vector-drop c 0)
+        text (string-from-utf8 (bytes-from-vector-i64 d)) joined (string-concat text "tail")]
+    (+ (vector-at d 0) (string-code-point-at joined 0))))
+(defn- scoped-repeat [count :i64] :i64
+  (loop [index 0]
+    (if (= index count) 0
+      (if (= (arena-scope (allocation-body)) 82) (recur (+ index 1)) 1))))
+(defn- depth [count :i64] :i64
+  (if (= count 0) 0 (arena-scope (depth (- count 1)))))
+(defn main [] :i64
+  (let [outer (vector-assoc! (vector-alloc 2) 0 247) text (string-concat "out" "side")
+        before (vector-at outer 0) result (scoped-repeat 600000)]
+    (cond (not= result 0) 1
+          (not= (vector-at outer 0) before) 2
+          (not (string=? text "outside")) 3
+          (not (arena-scope (= (allocation-body) 82))) 4
+          (not (f64-eq (arena-scope (f64-add 1.25 2.5)) 3.75)) 5
+          :else 0)))
+(defn deep-main [] :i64 (depth 256))
+(defn overflow-main [] :i64 (depth 257))
+;; Same allocation count without cleanup must still refuse at the original
+;; table/cell budget. It is a negative control, not an alternate passing suite.
+(defn unscoped-main [] :i64
+  (loop [index 0]
+    (if (= index 600000) 0
+      (if (= (allocation-body) 82) (recur (+ index 1)) 1))))
