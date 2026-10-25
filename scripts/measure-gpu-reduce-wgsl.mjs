@@ -27,14 +27,16 @@
 // on this host. It does NOT touch any :measured? flag or workgroup row in
 // kotoba.compiler.accelerator-targets -- mapping a measurement onto dispatch
 // table rows is a separate design slice. It is one run, uncontrolled clocks
-// (no thermal/clock-regime control). Claim protocol rule 1 (the 2026-10-25
-// WGSL channel adoption, ADR-0360) IS published by this harness: the
-// GAP-1.15 regime clusters on the channel's own named metric (host
-// wall-clock submit->completion, ms), computed by
-// scripts/gpu_regime_classify.py (--wgsl-log) from the `time` lines printed
-// below, so the section re-derives from the log text exactly. Rule 2's sign
-// classification is UNIMPLEMENTED on this channel (its own later slice); a
-// log without the rule-1 section is NOT a claim-protocol record and says so.
+// (no thermal/clock-regime control). Claim protocol rules 1 and 2 (the
+// 2026-10-25 WGSL channel adoption, ADR-0360) ARE published by this
+// harness: the GAP-1.15 regime clusters on the channel's own named
+// metric (host wall-clock submit->completion, ms) and the rule-2 sign
+// classification (regime-matched sign per level over the `pair` lines),
+// computed by scripts/gpu_regime_classify.py (--wgsl-log) from the
+// `time`/`pair` lines printed below, so the sections re-derive from the
+// log text exactly. Sign claims are channel-scoped (a WGSL-channel sign
+// never flips an MSL cell and never answers a workgroup row); a log
+// without the rule-1 section is NOT a claim-protocol record and says so.
 //
 // Sampling: per cell (shape, W, op) the two arms are sampled in the SAME
 // round with alternating arm order (even round: subgroup first; odd round:
@@ -334,6 +336,7 @@ let batchSubFaster = 0;
 let allChecked = 0;
 let allCheckOk = 0;
 const timeLines = [];
+const pairLines = [];
 
 for (const n of SHAPES) {
   for (const w of WS) {
@@ -362,7 +365,9 @@ for (const n of SHAPES) {
       pairsTotal++;
       if (sr < 1) singleSubFaster++;
       if (br < 1) batchSubFaster++;
-      console.log(`pair n=${n} w=${w} op=${op} single_paired_ratio=${fmt3(sr)} batch32_paired_ratio=${fmt3(br)} rounds=${singleRatios.length}/${batchRatios.length}`);
+      const pairLine = `pair n=${n} w=${w} op=${op} single_paired_ratio=${fmt3(sr)} batch32_paired_ratio=${fmt3(br)} rounds=${singleRatios.length}/${batchRatios.length}`;
+      pairLines.push(pairLine);
+      console.log(pairLine);
     }
   }
 }
@@ -370,26 +375,30 @@ for (const n of SHAPES) {
 console.log(`checks: ${allCheckOk}/${allChecked} arm answers exact against the CPU reference`);
 console.log(`aggregate pairs=${pairsTotal} single_subgroup_faster=${singleSubFaster} batch32_subgroup_faster=${batchSubFaster} (paired-median ratio < 1)`);
 
-// Claim protocol rule 1 on the WGSL wall-clock channel (the 2026-10-25
-// adoption, ADR-0360): publish the GAP-1.15 regime clusters on the
-// channel's OWN named metric (host wall-clock submit->completion, ms).
-// The clustering mechanism is scripts/gpu_regime_classify.py's single
-// implementation (metric-parametric); this harness feeds it the `time`
-// lines it printed above, so the section re-derives from the log text
-// exactly. Rule 2's sign classification is UNIMPLEMENTED on this
-// channel (its own later slice) and nothing here moves a :measured?
-// flag or a workgroup row (rule 4, unchanged).
+// Claim protocol rules 1 and 2 on the WGSL wall-clock channel (the
+// 2026-10-25 adoption, ADR-0360): publish the GAP-1.15 regime clusters
+// on the channel's OWN named metric (host wall-clock submit->completion,
+// ms) AND the rule-2 sign classification (regime-matched sign per level
+// over the `pair` lines, sign claims channel-scoped). Both come from
+// scripts/gpu_regime_classify.py's single implementation
+// (metric-parametric); this harness feeds it the `time` and `pair` lines
+// it printed above, so the sections re-derive from the log text exactly.
+// Nothing here moves a :measured? flag or a workgroup row (rule 4,
+// unchanged).
 let claimStatus;
 try {
   const res = spawnSync(
     'python3',
     [path.join(repoRoot, 'scripts', 'gpu_regime_classify.py'), '--wgsl-log', '-'],
-    { input: timeLines.join('\n') + '\n', encoding: 'utf8' },
+    { input: timeLines.concat(pairLines).join('\n') + '\n', encoding: 'utf8' },
   );
   if (res.status === 0 && res.stdout.trim()) {
     console.log('');
     console.log(res.stdout.trimEnd());
-    claimStatus = 'claim-protocol-rule1: PUBLISHED (rule 1 only -- rule 2 sign classification UNIMPLEMENTED on this channel; no :measured? flag or workgroup row moves)';
+    const rule2 = /claim-protocol-rule2: PUBLISHED/.test(String(res.stdout))
+      ? 'rule 2 sign classification also published below (regime-matched sign per level; sign claims channel-scoped)'
+      : 'rule 2 NOT PUBLISHED -- this record carries no paired ratios';
+    claimStatus = 'claim-protocol-rule1: PUBLISHED (' + rule2 + '; no :measured? flag or workgroup row moves)';
   } else {
     claimStatus = 'claim-protocol-rule1: UNAVAILABLE -- classifier failed (exit ' + res.status + '): ' + String(res.stderr ?? '').trim().slice(0, 300) + ' -- a log without the rule-1 section is NOT a claim-protocol record';
   }

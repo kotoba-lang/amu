@@ -223,12 +223,20 @@ WGSL WALL-CLOCK CHANNEL (rule 1, metric-named):
   amortized over 32 dispatches in one command buffer); each clusters
   only its own runs -- never mixed.
 
-  RULE 2'S UNIT on this channel is NAMED HERE but published by its own
-  later slice (UNIMPLEMENTED): the per-run ratio is the block's
+  RULE 2'S UNIT on this channel (PUBLISHED, this module's
+  render_wgsl_sign_section): the per-run ratio is the block's
   paired-median ratio (median over the block's rounds of
   subgroup/baseline -- the measure-log's `pair` line), and a WGSL sign
   claim is channel-scoped (it never flips an MSL cell and never answers
-  a workgroup row). No sign verdict is rendered by the WGSL path.
+  a workgroup row). The publication is REGIME-MATCHED SIGN PER LEVEL
+  over the record's pair lines, per metric (single and batch32 never
+  mix), the MSL channel's sign_classification machine unchanged -- rule
+  1's GAP-1.15 clusters of the same runs' baseline medians are the
+  regimes. The rule-1 section itself still renders no sign verdict;
+  rule 2 publishes in its own section beside it (the two sections are
+  what --wgsl-log prints, with a rule-2 status token between them; a
+  record with no `pair` lines carries no sign to classify and the token
+  says so).
 
   DELIBERATE BOUNDARY: the classifier is never run over the committed
   2026-10-25 pre-adoption measure-log's VALUES in this module's tests
@@ -257,9 +265,12 @@ CLI:
         pair-level cross-operator identity section when the log
         carries at least two operators
     python3 scripts/gpu_regime_classify.py --wgsl-log <measure-log.txt|->
-        print the claim-protocol rule-1 section for a WGSL wall-clock
-        measurement record (the metric-named WGSL channel publication;
-        read the measure-log from a path or from stdin with '-')
+        print the claim-protocol publication for a WGSL wall-clock
+        measurement record: the metric-named rule-1 section, the rule-2
+        status token, and the rule-2 sign section (regime-matched sign
+        per level over the record's `pair` lines) -- or a named rule-2
+        absence when the record carries no paired ratios (read the
+        measure-log from a path or from stdin with '-')
     python3 scripts/gpu_regime_classify.py --self-test
         unit fixtures + a regression pass over every committed summary.md
         under docs/evidence/ (pinned manual classifications must
@@ -1495,6 +1506,11 @@ WGSL_TIME_RE = re.compile(
     r"single_median_ms=([\d.]+) single_rounds=(\d+) "
     r"batch32_median_ms=([\d.]+) batch32_rounds=(\d+)\s*$")
 
+WGSL_PAIR_RE = re.compile(
+    r"^pair n=(\d+) w=(\d+) op=(\w+) "
+    r"single_paired_ratio=([\d.]+) batch32_paired_ratio=([\d.]+) "
+    r"rounds=(\d+)/(\d+)\s*$")
+
 
 def parse_wgsl_measure_log(text):
     """Parse the per-run medians out of a WGSL measure-log.
@@ -1531,6 +1547,38 @@ def parse_wgsl_measure_log(text):
     return out
 
 
+def parse_wgsl_measure_pairs(text):
+    """Parse the per-run paired-median ratios out of a WGSL measure-log.
+
+    Rule 2's unit on this channel (the `pair` line). Returns
+    {metric: {op: {(n, w): paired-median ratio (subgroup/baseline)}}}
+    -- one ratio per (n, W, op) block per metric. Raises ValueError on
+    a log with no `pair` lines and on a duplicate (metric, op, run)
+    -- a duplicated block is a measurement error, not a merge candidate.
+    """
+    out = {m: {} for m in WGSL_METRICS}
+    seen = set()
+    n_pair = 0
+    for line in text.splitlines():
+        m = WGSL_PAIR_RE.match(line)
+        if not m:
+            continue
+        n, w, op, sr, br = m.group(1, 2, 3, 4, 5)
+        n_pair += 1
+        run = (int(n), int(w))
+        for metric, val in (("single", sr), ("batch32", br)):
+            key = (metric, op, run)
+            if key in seen:
+                raise ValueError(f"duplicate pair line for {key}")
+            seen.add(key)
+            out[metric].setdefault(op, {})[run] = float(val)
+    if n_pair == 0:
+        raise ValueError("no 'pair n=... w=... op=...' lines found in "
+                         "the WGSL measure log -- rule 2's unit on this "
+                         "channel is the block's paired-median ratio")
+    return out
+
+
 def _wgsl_fmt(v):
     return f"{v:.4f}"
 
@@ -1539,10 +1587,11 @@ def render_wgsl_rule1_section(parsed, gap_max=GAP_MAX):
     """The claim-protocol rule-1 section for a WGSL wall-clock record.
 
     parsed: parse_wgsl_measure_log's return. Returns markdown (no
-    trailing newline). Rule 1 ONLY -- rule 2's sign classification is
-    UNIMPLEMENTED on this channel (its own later slice); nothing here
-    renders a sign verdict, and no :measured? flag or workgroup row is
-    in scope of this publication (rule 4, unchanged).
+    trailing newline). Rule 1 ONLY -- nothing here renders a sign
+    verdict (rule 2's sign classification publishes in its own section
+    beside this one, render_wgsl_sign_section), and no :measured? flag
+    or workgroup row is in scope of this publication (rule 4,
+    unchanged).
     """
     lines = []
     lines.append("## Regime classification (claim protocol rule 1, "
@@ -1576,9 +1625,11 @@ def render_wgsl_rule1_section(parsed, gap_max=GAP_MAX):
                  "metric-parametric as written (its 1.15 window derives "
                  "from the MSL corpus's decided separation and carries "
                  "unchanged); only the publication names the metric. "
-                 "Rule 2's sign classification is NOT published here -- "
-                 "UNIMPLEMENTED on this channel (its own later slice), "
-                 "and rule 4 is unchanged: this publication moves no "
+                 "Rule 2's sign classification is published in its own "
+                 "section beside this one (regime-matched sign per "
+                 "level over this record's `pair` lines) -- this rule-1 "
+                 "section itself renders no sign verdict -- and rule 4 "
+                 "is unchanged: this publication moves no "
                  "`:measured?` flag and no workgroup row.")
     for metric in WGSL_METRICS:
         per_op = parsed.get(metric) or {}
@@ -1632,6 +1683,238 @@ def render_wgsl_rule1_section(parsed, gap_max=GAP_MAX):
                          + "; ".join(f"{op} n={run[0]} W={run[1]}"
                                      for op, run in missing) + ".")
     return "\n".join(lines)
+
+
+def _wgsl_run_label(run):
+    return f"n={run[0]} W={run[1]}"
+
+
+def _wgsl_level_sign_phrase(sides, runs):
+    """The per-level sign phrase: one-sided / mixed / all-at-1.0, counts."""
+    n = len(runs)
+    counts = {"slower": 0, "faster": 0, "even": 0}
+    for _r, _v, s in runs:
+        counts[s] += 1
+    if sides == {"faster"}:
+        return f"one-sided faster ({n}/{n} below 1.0)"
+    if sides == {"slower"}:
+        return f"one-sided slower ({n}/{n} above 1.0)"
+    if sides == {"even"}:
+        return f"all at 1.0 ({n}/{n})"
+    parts = []
+    if counts["slower"]:
+        parts.append(f"{counts['slower']} above 1.0")
+    if counts["faster"]:
+        parts.append(f"{counts['faster']} below 1.0")
+    if counts["even"]:
+        parts.append(f"{counts['even']} at 1.0")
+    return "mixed sides (" + ", ".join(parts) + ")"
+
+
+def render_wgsl_sign_section(parsed, pairs, gap_max=GAP_MAX):
+    """The claim-protocol rule-2 section for a WGSL wall-clock record.
+
+    parsed: parse_wgsl_measure_log's return -- the rule-1 side; its
+            GAP-1.15 clusters of the per-run baseline medians are the
+            observed regimes of this record.
+    pairs: parse_wgsl_measure_pairs's return -- rule 2's unit on this
+           channel, the block's paired-median subgroup/baseline ratio
+           (the `pair` line).
+
+    Publishes REGIME-MATCHED SIGN PER LEVEL over the record's pair
+    lines: per metric (single and batch32 NEVER mix), per operator, the
+    MSL channel's sign_classification machine unchanged -- a sign is
+    regime-invariant when every per-run ratio of every observed regime
+    lies on the same side of 1.0; only such a sign may be a selection
+    basis -- plus the per-metric cell roll-up (every operator
+    regime-invariant on the SAME side). Sign claims are CHANNEL-SCOPED
+    (the 2026-10-25 adoption carries rule 2 in full): a WGSL-channel
+    sign never flips an MSL cell and never answers a workgroup row.
+    Rule 4 is unchanged -- this publication moves no :measured? flag
+    and no workgroup row. Runs the rule-1 levels cannot place (a pair
+    line with no baseline per-run median) and rule-1 runs with no pair
+    line (rule 2 has no unit for them) are NAMED and excluded, never
+    silently dropped.
+    """
+    lines = []
+    lines.append("## Sign classification (claim protocol rule 2, "
+                 "WGSL wall-clock channel)")
+    lines.append("")
+    lines.append("Published by scripts/gpu_regime_classify.py from the "
+                 "record's own `pair` lines (rule 2's unit on this "
+                 "channel: the per-run ratio is the block's "
+                 "paired-median ratio, median over the block's rounds "
+                 "of subgroup/baseline) and the rule-1 regime clusters "
+                 "of the same runs' baseline per-run medians "
+                 "(GAP-1.15, host-ms). Rule 2: a sign is "
+                 "regime-invariant when every per-run ratio of every "
+                 "observed regime lies on the same side of 1.0 -- only "
+                 "such a sign may be a selection basis; any other sign "
+                 "is regime-scoped and cannot choose a variant. The "
+                 "sign machine is the MSL channel's, unchanged and "
+                 "metric-parametric; single and batch32 are TWO metrics "
+                 "of this channel and classify separately, never "
+                 "mixed.")
+    lines.append("")
+    lines.append("Sign claims on this channel are CHANNEL-SCOPED "
+                 "(rule 2 carries in full, the 2026-10-25 adoption): a "
+                 "WGSL-channel sign never flips an MSL cell and never "
+                 "answers a workgroup row. Rule 4 is unchanged -- this "
+                 "publication moves no `:measured?` flag and no "
+                 "workgroup row.")
+    for metric in WGSL_METRICS:
+        per_op_pairs = pairs.get(metric) or {}
+        per_op_parsed = parsed.get(metric) or {}
+        if not per_op_pairs and not per_op_parsed:
+            continue
+        lines.append("")
+        lines.append(f"### metric: {metric} -- {WGSL_METRIC_TEXT[metric]}")
+        named_unplaceable = []
+        named_unpaired = []
+        op_cls = {}
+        op_med = {}
+        for op in sorted(set(per_op_pairs) | set(per_op_parsed)):
+            ratios_all = per_op_pairs.get(op) or {}
+            med_all = {run: rec["baseline"]
+                       for run, rec in (per_op_parsed.get(op) or {}).items()
+                       if rec["baseline"] is not None}
+            ratios = {r: v for r, v in ratios_all.items() if r in med_all}
+            for r in sorted(set(ratios_all) - set(ratios)):
+                named_unplaceable.append(
+                    f"{_wgsl_run_label(r)} ({op})")
+            for r in sorted(set(med_all) - set(ratios)):
+                named_unpaired.append(f"{_wgsl_run_label(r)} ({op})")
+            if not ratios:
+                continue
+            med = {r: med_all[r] for r in ratios}
+            op_med[op] = med
+            op_cls[op] = sign_classification(ratios,
+                                             level_clusters(med, gap_max))
+            op_cls[op]["ratios"] = ratios
+        if not op_cls:
+            lines.append("")
+            lines.append("No classifiable pair ratios in this metric.")
+        else:
+            lines.append("")
+            lines.append("Regime-matched sign per level (rule 1's "
+                         "levels of this metric; the sign of the pair "
+                         "ratios within each level):")
+            lines.append("")
+            lines.append("| operator | level | runs (paired ratio) | "
+                         "level sign |")
+            lines.append("|---|---|---|---|")
+            for op in sorted(op_cls):
+                cls = op_cls[op]
+                nlevels = len(cls["level_sides"])
+                for ls in cls["level_sides"]:
+                    tag = _level_tag(ls["level"], nlevels)
+                    runs = ", ".join(
+                        f"{_wgsl_run_label(r)} ({v:.3f})"
+                        for r, v, _s in ls["runs"])
+                    phrase = _wgsl_level_sign_phrase(ls["sides"], ls["runs"])
+                    lines.append(f"| {op} | {tag} | {runs} | {phrase} |")
+            lines.append("")
+            lines.append("| operator | verdict | side | detail |")
+            lines.append("|---|---|---|---|")
+            for op in sorted(op_cls):
+                c = op_cls[op]
+                n = sum(c["counts"].values())
+                if c["verdict"] == "regime-invariant":
+                    detail = (_side_phrase(c["side"], n)
+                              + "; every observed regime one-sided")
+                    side = c["side"]
+                elif c["straddle"] == "no-side":
+                    detail = ("every ratio is exactly 1.0 -- no sign "
+                              "exists to claim")
+                    side = "none"
+                else:
+                    nlevels = len(c["level_sides"])
+                    segs = "; ".join(
+                        f"level {ls['level']} "
+                        f"({_level_name(ls['level'], nlevels)}): "
+                        + ", ".join(
+                            f"{_wgsl_run_label(r)} {v:.3f} "
+                            f"{'above' if s == 'slower' else 'below' if s == 'faster' else 'at'} 1.0"
+                            for r, v, s in ls["runs"])
+                        for ls in c["level_sides"])
+                    if c["straddle"] == "by-regime":
+                        detail = ("straddle separates by regime (every "
+                                  "regime one-sided, regimes disagree): "
+                                  + segs)
+                    else:
+                        mixed = [str(ls["level"]) for ls in c["level_sides"]
+                                 if len(ls["sides"]) > 1]
+                        detail = (f"straddle within regime "
+                                  f"{', '.join(mixed)} (one regime "
+                                  f"holds both sides): " + segs)
+                    side = "straddles 1.0"
+                lines.append(f"| {op} | {c['verdict']} | {side} | "
+                             f"{detail} |")
+            cell = cell_sign_classification(
+                {op: cls["ratios"] for op, cls in op_cls.items()},
+                op_med, gap_max)
+            n = sum(cell["counts"].values())
+            pooled = (f"{cell['counts']['slower']} above 1.0, "
+                      f"{cell['counts']['faster']} below 1.0"
+                      + (f", {cell['counts']['even']} at 1.0"
+                         if cell["counts"]["even"] else ""))
+            if cell["verdict"] == "regime-invariant":
+                cell_line = (f"Cell (metric {metric}, all {n} paired "
+                             f"ratios pooled): **regime-invariant**, "
+                             f"{cell['side']} ({n}/{n} {cell['side']}).")
+            else:
+                bad = sorted(op for op, c in cell["per_op"].items()
+                             if c["verdict"] != "regime-invariant")
+                cell_line = (f"Cell (metric {metric}, all {n} paired "
+                             f"ratios pooled): **regime-scoped** "
+                             f"({pooled}) -- not a selection basis; "
+                             f"non-invariant operators: "
+                             f"{', '.join(bad)}.")
+            lines.append("")
+            lines.append(cell_line)
+        if named_unplaceable or named_unpaired:
+            lines.append("")
+            segs = []
+            if named_unplaceable:
+                segs.append("named and excluded (a pair line the "
+                            "rule-1 levels cannot place -- no baseline "
+                            "per-run median, so no regime): "
+                            + "; ".join(named_unplaceable))
+            if named_unpaired:
+                segs.append("named and excluded (a rule-1 run with no "
+                            "pair line -- rule 2 has no unit for it): "
+                            + "; ".join(named_unpaired))
+            lines.append("Incomplete data, named not dropped: "
+                         + "; ".join(segs) + ".")
+    return "\n".join(lines)
+
+
+def render_wgsl_claim_protocol(text):
+    """The full claim-protocol publication for a WGSL measure log.
+
+    The metric-named rule-1 section, the rule-2 status token, and the
+    rule-2 sign section (render_wgsl_sign_section) -- or a named
+    rule-2 absence when the record carries no `pair` lines (a record
+    without paired ratios carries no sign to classify). A duplicated
+    block is a measurement error and propagates as ValueError.
+    """
+    parsed = parse_wgsl_measure_log(text)
+    out = [render_wgsl_rule1_section(parsed)]
+    if not any(WGSL_PAIR_RE.match(l) for l in text.splitlines()):
+        out.append("claim-protocol-rule2: NOT PUBLISHED -- no `pair` "
+                   "lines in this record (rule 2's unit on this "
+                   "channel is the block's paired-median ratio) -- a "
+                   "record without paired ratios carries no sign to "
+                   "classify")
+        return "\n\n".join(out)
+    out.append("claim-protocol-rule2: PUBLISHED (regime-matched sign "
+               "per level below; sign claims channel-scoped -- a "
+               "WGSL-channel sign never flips an MSL cell and never "
+               "answers a workgroup row; rule 4 unchanged: no "
+               ":measured? flag and no workgroup row moves)")
+    out.append(render_wgsl_sign_section(
+        parsed, parse_wgsl_measure_pairs(text)))
+    return "\n\n".join(out)
 
 
 # ---------------------------------------------------------------- tests
@@ -3267,9 +3550,199 @@ def _self_test_wgsl_unit(stats):
             "wgsl: the complete block still classifies", stats)
 
     # no sign verdict is rendered anywhere (rule 2 on this channel is
-    # UNIMPLEMENTED and its own later slice)
+    # published in its own section -- render_wgsl_sign_section -- and
+    # the rule-1 section itself still renders none)
     _expect("regime-invariant" not in out and "regime-scoped" not in out,
             "wgsl rule-1 section renders no rule-2 sign verdict", stats)
+
+
+def _self_test_wgsl_sign_unit(stats):
+    # ---- the WGSL wall-clock channel's rule-2 publication ----
+    # Rule 2's unit on this channel is the `pair` line (the block's
+    # paired-median subgroup/baseline ratio); the regimes are rule 1's
+    # GAP-1.15 clusters of the SAME runs' baseline medians. The machine
+    # is the MSL channel's sign_classification, unchanged.
+    times = "\n".join([
+        "time n=1048576 w=32 op=sum arm=subgroup "
+        "single_median_ms=0.5100 single_rounds=11 "
+        "batch32_median_ms=0.0700 batch32_rounds=7",
+        "time n=1048576 w=32 op=sum arm=baseline "
+        "single_median_ms=0.5000 single_rounds=11 "
+        "batch32_median_ms=0.0638 batch32_rounds=7",
+        "time n=1048576 w=64 op=sum arm=baseline "
+        "single_median_ms=0.5200 single_rounds=11 "
+        "batch32_median_ms=0.0600 batch32_rounds=7",
+        "time n=1048576 w=64 op=sum arm=subgroup "
+        "single_median_ms=0.5050 single_rounds=11 "
+        "batch32_median_ms=0.0610 batch32_rounds=7",
+        "time n=1048576 w=128 op=sum arm=baseline "
+        "single_median_ms=0.8000 single_rounds=11 "
+        "batch32_median_ms=0.0900 batch32_rounds=7",
+        "time n=1048576 w=128 op=sum arm=subgroup "
+        "single_median_ms=0.8100 single_rounds=11 "
+        "batch32_median_ms=0.0910 batch32_rounds=7",
+    ])
+
+    def pair_line(w, s, b):
+        return (f"pair n=1048576 w={w} op=sum single_paired_ratio={s} "
+                f"batch32_paired_ratio={b} rounds=11/7")
+
+    # -- parse: both metrics come off one pair line, per (n, W, op) --
+    plog = "\n".join([pair_line(32, "0.931", "0.984"),
+                      pair_line(64, "0.950", "0.959"),
+                      pair_line(128, "1.020", "0.990")])
+    pairs = parse_wgsl_measure_pairs(plog)
+    _expect(pairs["single"]["sum"][(1048576, 32)] == 0.931
+            and pairs["batch32"]["sum"][(1048576, 32)] == 0.984,
+            "wgsl pair parse: one pair line carries both metrics' "
+            "paired-median ratios", stats)
+    _expect(set(pairs["single"]["sum"])
+            == {(1048576, 32), (1048576, 64), (1048576, 128)},
+            "wgsl pair parse: the run identity is (n, W)", stats)
+
+    # duplicate pair blocks refuse (measurement error, not a merge)
+    try:
+        parse_wgsl_measure_pairs(plog + "\n" + pair_line(32, "0.931", "0.984"))
+        raise AssertionError("duplicate wgsl pair line must raise")
+    except ValueError:
+        stats["passed"] += 1
+
+    # a log with no pair lines refuses
+    try:
+        parse_wgsl_measure_pairs(times)
+        raise AssertionError("wgsl log with no pair lines must raise")
+    except ValueError:
+        stats["passed"] += 1
+
+    # -- by-regime straddle (single) beside regime-invariant (batch32):
+    #    the two metrics NEVER mix in one classification --
+    parsed = parse_wgsl_measure_log(times)
+    out = render_wgsl_sign_section(parsed, parse_wgsl_measure_pairs(plog))
+    _expect("## Sign classification (claim protocol rule 2, "
+            "WGSL wall-clock channel)" in out,
+            "wgsl rule-2 section title", stats)
+    _expect("host wall-clock submit->completion" in out
+            and "host-ms" in out and "gpu-ns" not in out,
+            "wgsl rule-2 section names the channel's own metric",
+            stats)
+    _expect("never flips an MSL cell" in out
+            and "never answers a workgroup row" in out
+            and ":measured?" in out,
+            "wgsl rule-2 sign claims are channel-scoped and rule 4 "
+            "stands", stats)
+    # per-level sign rows, exact
+    rows = [l for l in out.splitlines()
+            if l.startswith("| sum |")
+            and ("| one-sided" in l or "| mixed sides" in l
+                 or "| all at 1.0" in l)]
+    _expect(rows == [
+        "| sum | 1 (fastest observed) | n=1048576 W=32 (0.931), "
+        "n=1048576 W=64 (0.950) | one-sided faster (2/2 below 1.0) |",
+        "| sum | 2 (slowest observed) | n=1048576 W=128 (1.020) | "
+        "one-sided slower (1/1 above 1.0) |",
+        "| sum | 1 (fastest observed) | n=1048576 W=32 (0.984), "
+        "n=1048576 W=64 (0.959) | one-sided faster (2/2 below 1.0) |",
+        "| sum | 2 (slowest observed) | n=1048576 W=128 (0.990) | "
+        "one-sided faster (1/1 below 1.0) |",
+    ], "wgsl rule 2: regime-matched sign per level rows", stats)
+    # single: level 1 faster / level 2 slower -> by-regime straddle
+    _expect("| sum | regime-scoped | straddles 1.0 | straddle separates "
+            "by regime (every regime one-sided, regimes disagree): "
+            "level 1 (fastest observed): n=1048576 W=32 0.931 below "
+            "1.0, n=1048576 W=64 0.950 below 1.0; level 2 (slowest "
+            "observed): n=1048576 W=128 1.020 above 1.0 |" in out,
+            "wgsl rule 2 single: by-regime straddle named", stats)
+    single_part = out.split("### metric: batch32")[0]
+    batch_part = out.split("### metric: batch32")[1]
+    _expect("Cell (metric single, all 3 paired ratios pooled): "
+            "**regime-scoped** (1 above 1.0, 2 below 1.0) -- not a "
+            "selection basis; non-invariant operators: sum."
+            in single_part,
+            "wgsl rule 2 single metric: cell roll-up regime-scoped",
+            stats)
+    _expect("| sum | regime-invariant | faster | all 3 per-run ratios "
+            "below 1.0 (3/3 faster); every observed regime one-sided |"
+            in batch_part,
+            "wgsl rule 2 batch32: same runs, own metric -- regime-"
+            "invariant faster", stats)
+    _expect("Cell (metric batch32, all 3 paired ratios pooled): "
+            "**regime-invariant**, faster (3/3 faster)." in batch_part,
+            "wgsl rule 2 batch32 metric: cell roll-up regime-invariant",
+            stats)
+
+    # -- within-regime straddle + no-side in one fixture --
+    plog2 = "\n".join([pair_line(32, "0.958", "1.000"),
+                       pair_line(64, "1.017", "1.000"),
+                       pair_line(128, "1.100", "1.000")])
+    out2 = render_wgsl_sign_section(parsed, parse_wgsl_measure_pairs(plog2))
+    _expect("| sum | regime-scoped | straddles 1.0 | straddle within "
+            "regime 1 (one regime holds both sides): level 1 (fastest "
+            "observed): n=1048576 W=32 0.958 below 1.0, n=1048576 W=64 "
+            "1.017 above 1.0; level 2 (slowest observed): n=1048576 "
+            "W=128 1.100 above 1.0 |" in out2,
+            "wgsl rule 2: within-regime straddle named", stats)
+    _expect("| sum | regime-scoped | none | every ratio is exactly 1.0 "
+            "-- no sign exists to claim |" in out2,
+            "wgsl rule 2: no-side named when every ratio is exactly "
+            "1.0", stats)
+
+    # -- regime-invariant, the only admissible selection basis --
+    plog3 = "\n".join([pair_line(32, "0.931", "0.900"),
+                       pair_line(64, "0.950", "0.910"),
+                       pair_line(128, "0.990", "0.950")])
+    out3 = render_wgsl_sign_section(parsed, parse_wgsl_measure_pairs(plog3))
+    _expect("Cell (metric single, all 3 paired ratios pooled): "
+            "**regime-invariant**, faster (3/3 faster)." in out3
+            and "Cell (metric batch32, all 3 paired ratios pooled): "
+            "**regime-invariant**, faster (3/3 faster)." in out3,
+            "wgsl rule 2: regime-invariant when every per-run ratio of "
+            "every regime is on one side", stats)
+
+    # -- incomplete data: named and excluded, never silently dropped --
+    plog4 = "\n".join([pair_line(32, "0.931", "0.984"),
+                       pair_line(64, "0.950", "0.959"),
+                       pair_line(128, "1.020", "0.990"),
+                       "pair n=1048576 w=256 op=sum single_paired_ratio="
+                       "0.900 batch32_paired_ratio=0.900 rounds=11/7"])
+    times4 = times + "\n" + "\n".join([
+        "time n=1048576 w=32 op=max arm=baseline "
+        "single_median_ms=0.4000 single_rounds=11 "
+        "batch32_median_ms=0.0500 batch32_rounds=7",
+        "time n=1048576 w=32 op=max arm=subgroup "
+        "single_median_ms=0.4100 single_rounds=11 "
+        "batch32_median_ms=0.0510 batch32_rounds=7",
+    ])
+    out4 = render_wgsl_sign_section(parse_wgsl_measure_log(times4),
+                                    parse_wgsl_measure_pairs(plog4))
+    _expect("n=1048576 W=256 (sum)" in out4
+            and "no baseline per-run median, so no regime" in out4,
+            "wgsl rule 2: a pair line the rule-1 levels cannot place "
+            "is named and excluded", stats)
+    _expect("n=1048576 W=32 (max)" in out4
+            and "rule 2 has no unit for it" in out4,
+            "wgsl rule 2: a rule-1 run with no pair line is named and "
+            "excluded", stats)
+    _expect("Cell (metric single, all 3 paired ratios pooled)" in out4,
+            "wgsl rule 2: excluded runs do not enter the classification",
+            stats)
+
+    # -- the combined publication: rule-1 section, token, rule-2 --
+    full = render_wgsl_claim_protocol(times + "\n" + plog)
+    _expect("claim-protocol-rule2: PUBLISHED" in full
+            and "## Sign classification (claim protocol rule 2, "
+            "WGSL wall-clock channel)" in full,
+            "wgsl claim-protocol publication carries the rule-2 token "
+            "and section", stats)
+    full_none = render_wgsl_claim_protocol(times)
+    _expect("claim-protocol-rule2: NOT PUBLISHED" in full_none
+            and "carries no sign to classify" in full_none,
+            "wgsl claim-protocol publication names a rule-2 absence "
+            "when the record has no pair lines", stats)
+    _expect("## Regime classification (claim protocol rule 1, "
+            "WGSL wall-clock channel)" in full
+            and full.index("## Regime classification")
+            < full.index("claim-protocol-rule2:"),
+            "wgsl claim-protocol publication keeps rule 1 first", stats)
 
 
 def _self_test_wgsl_corpus(stats, corpus_root):
@@ -3306,6 +3779,72 @@ def _self_test_wgsl_corpus(stats, corpus_root):
             stats)
 
 
+def _self_test_wgsl_sign_corpus(stats, corpus_root):
+    # Rule-2 regression over the COMMITTED claim-protocol run-1 record
+    # (docs/evidence/gpu/wgsl-claimprotocol-run1-20261025): the sign
+    # classification re-derives from that log's own `pair` lines and the
+    # pinned verdicts reproduce. (The deliberate boundary above excludes
+    # only the PRE-ADOPTION log's values; run 1 is a claim-protocol
+    # record and its values are exactly the machine's business.)
+    log_path = (corpus_root / "gpu" / "wgsl-claimprotocol-run1-20261025"
+                / "measure-log.txt")
+    text = log_path.read_text()
+    n_pair = sum(1 for l in text.splitlines() if WGSL_PAIR_RE.match(l))
+    _expect(n_pair == 36,
+            f"the run-1 wgsl log carries 36 pair lines (12 runs x 3 "
+            f"ops), got {n_pair}", stats)
+    pairs = parse_wgsl_measure_pairs(text)
+    runs_expected = {(n, w) for n in (1000003, 1048576)
+                     for w in (32, 64, 128, 256, 512, 1024)}
+    for metric in WGSL_METRICS:
+        _expect(set(pairs[metric]) == {"sum", "max", "min"},
+                f"wgsl run-1 {metric}: the three operators", stats)
+        for op in ("sum", "max", "min"):
+            _expect(set(pairs[metric][op]) == runs_expected,
+                    f"wgsl run-1 {metric}/{op}: the 12 (n, W) pair "
+                    f"ratios", stats)
+    out = render_wgsl_claim_protocol(text)
+    _expect("claim-protocol-rule2: PUBLISHED" in out,
+            "wgsl run-1: the claim-protocol publication carries the "
+            "rule-2 token", stats)
+    sign = out.split("## Sign classification (claim protocol rule 2, "
+                     "WGSL wall-clock channel)")[1]
+    single_part = sign.split("### metric: batch32")[0]
+    batch_part = sign.split("### metric: batch32")[1]
+    # pinned cell roll-ups (printed-precision: the machine classifies
+    # the PRINTED pair ratios -- 3 single / 1 batch32 pairs print at
+    # exactly 1.000 and classify 'at 1.0', where the log's own
+    # aggregate counts from unrounded medians; the same
+    # printed-precision class as the 12-vs-13 gap named in the
+    # row-mapping record)
+    _expect("Cell (metric single, all 36 paired ratios pooled): "
+            "**regime-scoped** (19 above 1.0, 14 below 1.0, 3 at 1.0) "
+            "-- not a selection basis; non-invariant operators: "
+            "max, min, sum." in single_part,
+            "wgsl run-1 single metric: the cell roll-up is "
+            "regime-scoped, pinned", stats)
+    _expect("Cell (metric batch32, all 36 paired ratios pooled): "
+            "**regime-scoped** (20 above 1.0, 15 below 1.0, 1 at 1.0) "
+            "-- not a selection basis; non-invariant operators: "
+            "max, min, sum." in batch_part,
+            "wgsl run-1 batch32 metric: the cell roll-up is "
+            "regime-scoped, pinned", stats)
+    # run 1 carries NO regime-invariant sign at any operator or cell --
+    # the ADR-0360 first leg's "a fresh run carries a regime-invariant
+    # sign" does not fire from this record
+    _expect("| regime-invariant |" not in sign
+            and "**regime-invariant**" not in sign,
+            "wgsl run-1: no regime-invariant sign anywhere -- the "
+            "first leg does not fire from run 1", stats)
+    # one-sided LEVELS exist inside the straddling classifications and
+    # are published (regime-matched sign per level, the row's target)
+    _expect("one-sided slower (3/3 above 1.0)" in batch_part
+            and "one-sided faster (1/1 below 1.0)" in single_part,
+            "wgsl run-1: regime-matched sign per level is published "
+            "(one-sided levels named inside regime-scoped operators)",
+            stats)
+
+
 def main():
     args = sys.argv[1:]
     if args == ["--self-test"]:
@@ -3322,13 +3861,15 @@ def main():
         _self_test_identity_corpus(stats, ROOT / "docs" / "evidence")
         _self_test_pair_identity_unit(stats)
         _self_test_wgsl_unit(stats)
+        _self_test_wgsl_sign_unit(stats)
         _self_test_wgsl_corpus(stats, ROOT / "docs" / "evidence")
+        _self_test_wgsl_sign_corpus(stats, ROOT / "docs" / "evidence")
         print(f"TOTAL: {stats['passed']} assertions passed, 0 failed")
         return
     if len(args) == 2 and args[0] == "--wgsl-log":
         text = (sys.stdin.read() if args[1] == "-"
                 else pathlib.Path(args[1]).read_text())
-        print(render_wgsl_rule1_section(parse_wgsl_measure_log(text)))
+        print(render_wgsl_claim_protocol(text))
         return
     if len(args) == 2 and args[0] == "--pairs":
         complete, incomplete = parse_run_log_pairs(
