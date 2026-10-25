@@ -1121,3 +1121,98 @@ this slice (no .cljk touched) -- documented red at base (`Could not
 find namespace: kotoba.form`, ADR-0362) outside this diff, NO green
 suite claimed; `find docs -name '*.sh'` -> 0 files. Record:
 `docs/evidence/gpu/cuda-registered-sessionA-20261025/`.
+
+
+## Amendment (2026-10-25, tenth the same day: row (i) LANDS -- the
+per-op wiring)
+
+**IMPLEMENTED (JUN-57, the operator-aware selection row's wiring).**
+The entry mechanism of the seventh amendment lands in
+`kotoba.compiler.accelerator-variants`, in four parts: (1)
+`cuda-op-entries`, the PER-OPERATOR entry table -- entry group
+(op, W), `:shapes` qualifying-only, single-op `:operators` in the
+record (contract point 2) -- carrying the entry rule (contract point
+3: unique-winner + both-clocks + cross-run invariance, fail closed),
+the replication requirement (contract point 4: at least TWO fresh
+sessions under the registration on at least TWO different UTC days
+agreeing in every reading of both) and the materialization rule
+(rejection (e): the per-op layer only ADDS where the pooled layer
+refused or an admissible per-op winner differs -- the 15 (op, W)
+groups whose winner equals the standing pooled answer materialize NO
+per-op record, so a full reproduction of the exploratory census would
+populate exactly three groups: (`:sum`, 64) FLIP and (`:max`/`:min`,
+64) CONFIRM -- the projection, NOT a measurement); (2)
+`cuda-op-flip-note`, the per-op flip note (naming THIS operator only
+plus the standing DEVICE/CHANNEL scoping); (3) `cuda-entry-op`, the
+per-op arm of the entry application -- the pooled arm's keys (tested
+class both keys fail closed, `:cuda-v1` under either spelling, the
+reduce op with an operator in `#{:sum :max :min}`, a design-ladder
+rung-1 answer) plus the entry's OWN key `[op W]` -- answering
+`:confirm` (winner equals the design answer: answer text frozen) or
+`:flip` (a differing winner: the cell answers the winner with the
+single-op record and the per-op flip note); (4) PRECEDENCE in
+`select-variant` (contract point 1): `cuda-entry-op` is consulted
+FIRST and its record answers its operator at its W OVER the pooled
+record; `cuda-entry-cell` answers everywhere no per-op record applies.
+The entry maps now carry their flip note (`:flip-note`) so one basis
+path serves both layers. Pinned by the new deftest
+`the-cuda-op-entry-wiring-answers-its-operator-at-its-width`: the
+empty-by-rule table, the byte-identical no-entry surface (every
+CUDA-route answer the pooled layer's alone, W = 64 keeping the honesty
+lock), and the confirm arm, the flip arm, the precedence and every
+fail-closed key exercised by SYNTHETIC entries (`with-redefs`) --
+ZERO real per-op entries, so no production answer is confirmed or
+flipped by this row.
+
+**Named, not hidden.** (a) `cuda-op-entries` is EMPTY BY RULE, not by
+oversight: the replication requirement is HALF MET -- fresh session A
+ran under the registration on 2026-10-25 UTC and its readings enter
+NOTHING (they await the pair), the earliest admissible session B is
+2026-10-26 UTC or later -- so the per-op arm keys nothing today and
+every CUDA-route answer is byte-identical to the pooled layer's
+(pinned); (b) the arm and the precedence are exercised ONLY by
+synthetic entries -- the mechanism is implemented, not exercised on
+real data (a real entry additionally requires the completed cross-day
+pair agreeing in every reading of both, contract point 4 at its
+letter); (c) the first gate run was RED at ONE wrong test case -- the
+rung-2 case merged the tested class's `:compute-capability 7.2` into
+the no-capability descriptor, making it exactly the tested class (the
+CODE was right to attach the record there; the TEST case was wrong) --
+the case now names the no-capability descriptor like the pooled
+wiring test's rung-2 case and the second run is GREEN; (d) the
+`:measured?` movement the projection names at (`:max`/`:min`, 64) is
+still PROJECTION, not measurement, and lands only with the entry.
+
+**Consequence today: NOTHING MOVES** (rule 4): `cuda-op-entries` is
+empty, no record exists beyond the pooled layer's, no `:measured?`
+flag, no selection answer, no `:shapes` value and no workgroup row
+moves; the ladder
+`:warp-shuffle-reduce -> :subgroup-reduce -> :baseline` stays
+byte-for-byte and at (op `:sum`, W = 64) the design-ordered answer
+stands UNCLAIMED.
+
+**States.** IMPLEMENTED (code + tests): the per-op wiring (row (i)) --
+the table, the per-op arm (`cuda-entry-op`) with both outcomes, the
+precedence in `select-variant`, the entry-carried flip notes. MEASURED:
+nothing new (NO hardware ran this slice). DECIDED: nothing new.
+ACCEPTED DESIGN ONLY: the operator-aware contract + pre-registration
+(seventh amendment) and its remaining rows (iii) session B and the
+entry it enables, (iv) the narrower device-class key; the entry
+contract + pooled wiring (fifth/sixth amendments); ADR-0358,
+ADR-0373. UNMEASURED, named: session B (cross-day; earliest
+2026-10-26 UTC) and therefore H1/H2 and every per-op
+entry/flip/confirm verdict (the wiring is not a measurement); every
+per-op verdict on non-xavier hardware; run 3+; the `:sum` ordering at
+W = 64 on any other device; the flip arm on real data (ZERO real
+flips); every workgroup row (`:arm`/`:unknown` stay provisional
+`:measured? false` -- no `:measured?` flag moves this row); the
+name-fragment key's coarseness (row (iv)). Gates: scoped GPU gate
+GREEN 108 tests / 11405 assertions / 0 failures / 0 errors (glslang
+16.6.0 real-spawn; committed pin 107/11240, delta = this slice's
+test); FULL `run-tests.cljk` RED at base -- `Could not find namespace:
+kotoba.form` (ADR-0362) fails the run before any test executes,
+OUTSIDE this diff (re-verified this tick since the diff touches .cljk
+namespaces, exit 1) -- the touched namespaces' own tests are the
+scoped gate above, NO green full suite claimed; `find docs -name
+'*.sh'` -> 0 files. Record:
+`docs/evidence/gpu/cuda-op-entry-wiring-20261025.txt`.

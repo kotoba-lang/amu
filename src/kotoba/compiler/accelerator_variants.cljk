@@ -1109,7 +1109,12 @@
   design answer -- answer text is frozen (contract point 4: no note is
   appended to :basis anywhere), :measured? goes true with the record;
   :flip means a differing winner -- the cell answers the winner with the
-  record and cuda-flip-note (no entry here carries one today)."
+  record and cuda-flip-note (no entry here carries one today). LAYERING
+  (the seventh amendment's precedence rule): this pooled arm answers
+  everywhere NO per-op record applies -- cuda-entry-op answers its
+  operator at its W FIRST (its record keys :operators #{op}), and this
+  arm's record (:operators #{:sum :max :min} whole) stands wherever the
+  per-op table has no entry."
   [dev route kir design-variant]
   (when (and (= :cuda-v1 route)
              (= :warp-shuffle-reduce design-variant)
@@ -1121,11 +1126,117 @@
       (let [winner (:winner entry)]
         {:outcome (if (= winner design-variant) :confirm :flip)
          :variant winner
+         :flip-note cuda-flip-note
          :record {:device cuda-measured-device-class
                   :channel cuda-measured-channel
                   :route :cuda-v1
                   :workgroup-size (:kernel/workgroup-size kir)
                   :operators #{:sum :max :min}
+                  :shapes (:shapes entry)
+                  :evidence (:evidence entry)}}))))
+
+(def cuda-op-entries
+  "The CUDA route's PER-OPERATOR entry table under the operator-aware
+  entry contract (ADR-0361's 2026-10-25 seventh amendment, this row =
+  its row (i) wiring). The entry group is (op, W) -- one reduce
+  operator at one workgroup width -- with :shapes QUALIFYING shapes
+  only and a SINGLE-OP record (:operators #{op}, contract point 2:
+  the pooled record shape (3) with single-op :operators). The entry
+  rule (contract point 3) is unique-winner + both-clocks + cross-run
+  invariance: a group enters iff its unique winner (faster than BOTH
+  rivals -- the three-arm ladder) holds one-sided in EVERY qualifying
+  reading (every admissible session x both clocks x every qualifying
+  shape); anything else REFUSES and keeps the standing answer with no
+  record. The replication requirement (contract point 4) is the
+  pre-registration's teeth: EVERY per-op entry, confirm or flip,
+  requires at least TWO fresh paired-timing sessions run UNDER the
+  seventh amendment's registration on at least TWO different UTC days
+  agreeing in every reading of both. MATERIALIZATION (rejection (e) at
+  its letter): the per-op layer only ADDS where the pooled layer
+  refused or an admissible per-op winner differs -- at the 15 (op, W)
+  groups whose winner equals the standing pooled answer NO per-op
+  record materializes (the pooled record stands), so a full
+  reproduction of the exploratory census would populate exactly three
+  groups: (:sum, 64) FLIP and (:max/:min, 64) CONFIRM (the projection,
+  NOT a measurement). TODAY THIS TABLE IS EMPTY BY RULE, NOT BY
+  OVERSIGHT: the replication requirement is HALF MET -- fresh session A
+  ran under the registration on 2026-10-25 UTC (session A's readings
+  enter NOTHING, they await the pair) and the earliest admissible
+  session B is 2026-10-26 UTC or later -- so ZERO groups have entered
+  and every CUDA-route answer today is the pooled layer's alone. The
+  first entry lands only when an admissible cross-day pair exists and
+  agrees in every reading of both (contract point 5 scope unchanged:
+  CUDA route only, sign claims CHANNEL-SCOPED and DEVICE-SCOPED to the
+  tested class, no workgroup row answers or moves). Each map value:
+  :winner the group's unique winner (equal to the standing answer
+  CONFIRMS -- answer text frozen; differing FLIPS -- the cell answers
+  the winner with the record and cuda-op-flip-note), :shapes
+  qualifying-only, :evidence the entry's own record kinds (the
+  qualifying sessions' runs -- a same-day second session is flip-note
+  PROSE ONLY, ADR-0373's naming rule by citation)."  {})
+
+(def ^:private cuda-op-flip-note
+  "The note a FLIPPED per-op cell carries in its :basis -- the
+  operator-aware entry contract's flip arm (seventh amendment). No
+  real per-op entry exists today (cuda-op-entries is empty by rule --
+  the cross-day pair is incomplete), so no answer carries this note
+  yet; it exists so the flip arm is implemented, not invented at first
+  need. It names the flip's ground (the (op, W) group's unique winner
+  under the per-op entry rule) and its scope: THIS operator only, the
+  measured shapes named in the :measured-cell record this answer
+  carries, DEVICE-SCOPED and CHANNEL-SCOPED (xavier sm_72 on the CUDA
+  route only), and no workgroup row answers or moves (ADR-0355)."
+  "MEASURED FLIP (per-op entry contract, ADR-0361 seventh amendment):
+  the committed per-op census's unique winner at this (op, W) group on
+  the tested device class (xavier sm_72, CUDA paired-timing channel) is
+  the variant this cell answers -- unique-winner + both-clocks +
+  cross-run invariance (every qualifying reading one-sided) -- for THIS
+  operator only, over the measured shapes named in the :measured-cell
+  record this answer carries. DEVICE-SCOPED and CHANNEL-SCOPED: xavier
+  sm_72 on the CUDA route only; no workgroup row answers or moves
+  (ADR-0355).")
+
+(defn- cuda-entry-op
+  "The operator-aware entry contract (ADR-0361's 2026-10-25 seventh
+  amendment, row (i)) applied to ONE CUDA-route answer cell: the per-op
+  arm of the entry application, answering the (op, W) group's entry as
+  {:outcome :confirm|:flip :variant winner :flip-note
+  cuda-op-flip-note :record {...}} when cuda-op-entries keys this
+  cell's operator and width, and nil otherwise -- REFUSE at its
+  letter. The keys are exactly the pooled arm's keys (the tested
+  device class -- the uB5G name fragment AND the reported compute
+  capability 7.2, both, fail closed; the measured channel's route
+  :cuda-v1 under either spelling; the reduce op with an operator in
+  #{:sum :max :min}; a design-ladder rung-1 answer) plus the entry's
+  OWN key: [:kernel/operator :kernel/workgroup-size] must be in
+  cuda-op-entries. PRECEDENCE (contract point 1): where this arm
+  answers, its record (:operators #{op}) answers its operator at its
+  W OVER the pooled record -- select-variant consults this arm first
+  and the pooled arm answers everywhere no per-op record applies.
+  Rung-2 answer cells can never attach a record (the tested class
+  reports 7.2 by definition); a non-reduce kernel or an unknown
+  operator keys nothing. The record shape is the pooled record's (3)
+  with single-op :operators: :device cuda-measured-device-class,
+  :channel cuda-measured-channel, :route :cuda-v1, :workgroup-size,
+  :operators #{op}, :shapes qualifying-only, :evidence the entry's."
+  [dev route kir design-variant]
+  (when (and (= :cuda-v1 route)
+             (= :warp-shuffle-reduce design-variant)
+             (device-name-carries? dev cuda-measured-fragment)
+             (= cuda-measured-compute-capability (:compute-capability dev))
+             (= :reduce (:kernel/op kir))
+             (contains? #{:sum :max :min} (:kernel/operator kir)))
+    (when-let [entry (get cuda-op-entries [(:kernel/operator kir)
+                                           (:kernel/workgroup-size kir)])]
+      (let [winner (:winner entry)]
+        {:outcome (if (= winner design-variant) :confirm :flip)
+         :variant winner
+         :flip-note cuda-op-flip-note
+         :record {:device cuda-measured-device-class
+                  :channel cuda-measured-channel
+                  :route :cuda-v1
+                  :workgroup-size (:kernel/workgroup-size kir)
+                  :operators #{(:kernel/operator kir)}
                   :shapes (:shapes entry)
                   :evidence (:evidence entry)}}))))
 
@@ -1638,18 +1749,27 @@
                    :subgroup-reduce
 
                    :else :baseline)
-         ;; The wiring row (the entry contract's application, ADR-0361's
-         ;; fifth amendment): a published cell verdict enters the
-         ;; selection surface here and only here. cuda-entry-cell keys
+         ;; The wiring rows (the entry contracts' application): a
+         ;; published cell verdict enters the selection surface here and
+         ;; only here. PRECEDENCE (the seventh amendment's contract
+         ;; point 1): cuda-entry-op is consulted FIRST -- a per-op record
+         ;; answers its operator at its W OVER the pooled record (its
+         ;; :operators key is #{op}); cuda-entry-cell (the pooled arm)
+         ;; answers everywhere NO per-op record applies. Both arms key
          ;; the tested device class (xavier sm_72 -- name fragment AND
-         ;; reported 7.2), the CUDA route, the reduce shape whole, and an
-         ;; ENTERED (W, shape) group; everything else is REFUSE and this
-         ;; binding is nil (W = 64's straddle groups, any other device
-         ;; class, any other route, rung-2 answer cells -- the design
-         ;; ladder's answer stands with no record). :confirm freezes the
-         ;; answer text and attaches the record; :flip answers the
-         ;; group's winner (no entry carries a differing winner today).
-         cuda-entry (cuda-entry-cell dev route kir variant)
+         ;; reported 7.2), the CUDA route, and the reduce op; the pooled
+         ;; arm adds an ENTERED (W, shape) group and the per-op arm an
+         ;; ENTERED (op, W) group -- everything else is REFUSE and this
+         ;; binding is nil (W = 64's pooled straddle groups, any other
+         ;; device class, any other route, rung-2 answer cells -- the
+         ;; design ladder's answer stands with no record; and
+         ;; cuda-op-entries is EMPTY BY RULE today -- the cross-day pair
+         ;; is incomplete -- so the per-op arm keys nothing yet).
+         ;; :confirm freezes the answer text and attaches the record;
+         ;; :flip answers the entry's winner (no real entry carries a
+         ;; differing winner today).
+         cuda-entry (or (cuda-entry-op dev route kir variant)
+                        (cuda-entry-cell dev route kir variant))
          entry-flip? (= :flip (:outcome cuda-entry))
          ;; The carve-out's own note: it attaches only where rung 1's gate
          ;; held and the measured class refused the row -- the row's own
@@ -1711,11 +1831,14 @@
              :measured? (some? measured-cell)
              :basis (cond entry-flip?
                           ;; the flip arm (contract point 4): the cell
-                          ;; answers the group's winner, and its basis is
+                          ;; answers the entry's winner, and its basis is
                           ;; the winner's design rationale plus the flip
-                          ;; note naming the measurement that chose it.
+                          ;; note naming the measurement that chose it
+                          ;; (pooled entries carry cuda-flip-note, per-op
+                          ;; entries cuda-op-flip-note -- the note rides
+                          ;; the entry).
                           (str (get variant-bases (:variant cuda-entry)) "\n  "
-                               cuda-flip-note)
+                               (:flip-note cuda-entry))
                           simd-flip?
                           (str (get variant-bases :simdgroup-reduce) "\n  "
                                apple-simdgroup-flip-note)
