@@ -25,6 +25,8 @@ def main(compiler, out):
     out.mkdir(parents=True, exist_ok=False, mode=0o700)
     scope = out / "scope"
     scope.mkdir(mode=0o700)
+    (out / "outside-target").write_text("outside\n")
+    (scope / "link.lock").symlink_to(out / "outside-target")
     fixture = ROOT / "seed/tests/native-flock-vector.kotoba"
     src = out / "fixture.kotoba"
     src.write_bytes(fixture.read_bytes())
@@ -38,7 +40,8 @@ def main(compiler, out):
                   sourceBindings={p: pin(ROOT / p) for p in paths}, calls=[])
 
     def run(name, argv, expected=0):
-        r = subprocess.run(list(map(str, argv)), cwd=out, env=env,
+        operation_env = env if name.startswith("build-") else {**env, "KEXE_CAP_RESOURCES_35": str(scope)}
+        r = subprocess.run(list(map(str, argv)), cwd=out, env=operation_env,
                            capture_output=True, timeout=900)
         for stream, raw in (("stdout", r.stdout), ("stderr", r.stderr)):
             (out / (name + "." + stream)).write_bytes(raw)
@@ -55,7 +58,10 @@ def main(compiler, out):
         return dst
 
     good = build("fixture", compiler, src)
-    run("lock-vector-rollback-and-unlock", [good, scope / "good.lock"])
+    def fixture_args(name):
+        return [scope / name, str(scope) + "//" + name, scope / "link.lock", out / "outside.lock"]
+
+    run("lock-vector-rollback-and-unlock", [good, *fixture_args("good.lock")])
     parts = []
     changed = 0
     for p in paths:
@@ -74,7 +80,7 @@ def main(compiler, out):
     mutant_source.write_text("".join(parts))
     mutant_compiler = build("slot-alias-compiler", compiler, mutant_source)
     bad = build("slot-alias-fixture", mutant_compiler, src)
-    run("detect-slot-alias", [bad, scope / "bad.lock"], 1)
+    run("detect-slot-alias", [bad, *fixture_args("bad.lock")], 1)
     assert pin(fixture) == report["fixture"] and pin(compiler) == report["producer"]
     assert all(pin(ROOT / p) == expected for p, expected in report["sourceBindings"].items())
     report.update(status="PASS_NATIVE_FLOCK_VECTOR", image=pin(good),
