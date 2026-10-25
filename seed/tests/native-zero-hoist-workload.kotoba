@@ -1,0 +1,8 @@
+(ns seed.zero-hoist-workload (:export [main]))
+(defn- alloc-check [] :bool
+ (arena-scope (let [v (vector-alloc 1048576)
+       ok (and (= (vector-at v 0) 0) (= (vector-at v 524288) 0) (= (vector-at v 1048575) 0))
+       dirty (-> v (vector-assoc! 0 7) (vector-assoc! 524288 8) (vector-assoc! 1048575 9))]
+   (and ok (= (vector-at dirty 0) 7) (= (vector-at dirty 1048575) 9)))))
+(defn main [] :i64
+ (loop [n 0] (if (= n 32) 0 (if (alloc-check) (recur (inc n)) 1))))
