@@ -17,8 +17,10 @@ to MIN. No additional NaN payload-selection promise is introduced.
 
 Scalar ELF retains its main()->i64 public boundary and handle/capability
 refusals. The context route retains raw-bit stack arguments. The kernel
-object route now selects private profile 2, preserving its original integer
-signatures and rejecting all floating SIR, including unreachable code.
+object/image routes use private profile 3, preserving their original integer
+signatures and rejecting all floating SIR, including unreachable code. Protected
+project profile2 retains its existing 112-byte outgoing/scratch frame, sixteen
+arguments and stack guard; it remains integer-only.
 
 Required native sources:
 
@@ -30,7 +32,7 @@ Required native sources:
 - `native/x86_float_stack_test.kotoba`: context-profile main=3; six-argument
   binary64/binary32 calls exercise the first stack argument and continuations.
 - `seed/tests/unit/x86_float_t.kotoba`: expected 15; all 36 tags in both Linux
-  profiles, all 36 refusals in the kernel profile, thirteen numeric tag gaps,
+  profiles, all 36 refusals in each kernel profile2/3, thirteen numeric tag gaps,
   type/profile boundaries and frame accounting. Assemble the complete
   X86_64-LINUX-MANIFEST with only 72-x86-cross-entry replaced by this unit
   fragment; it retains the original xg-default/driver helper. One compiler

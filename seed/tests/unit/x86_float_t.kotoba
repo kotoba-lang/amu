@@ -19,7 +19,8 @@
     (if (> sub end) current
       (recur (+ sub 1)
         (-> current (t-admission 0 operation sub 0) (t-admission 1 operation sub 0)
-                    (t-admission 2 operation sub 7101))))))
+                    (t-admission 2 operation sub 7101)
+                    (t-admission 3 operation sub 7101))))))
 (defn- t-families [M :vector-i64] :vector-i64
   (-> M (mem-set MM-R0 1) (t-family OP-BIN 16 21) (t-family OP-BIN 24 29)
       (t-family OP-CMP 8 13) (t-family OP-CMP 16 21)
@@ -38,7 +39,9 @@
 (defn- t-profile-types [M :vector-i64] :vector-i64
   (-> M (mem-set MM-R0 1) (t-type 0 TY-F64 true) (t-type 1 TY-F32 true)
       (t-type 2 TY-F64 false) (t-type 2 TY-F32 false)
-      (t-type 2 TY-I64 true) (t-type 2 TY-BOOL true) (t-type 3 TY-I64 false)))
+      (t-type 2 TY-I64 true) (t-type 2 TY-BOOL true)
+      (t-type 3 TY-F64 false) (t-type 3 TY-F32 false)
+      (t-type 3 TY-I64 true) (t-type 3 TY-BOOL true) (t-type 4 TY-I64 false)))
 (defn- t-frame [M :vector-i64 floating :bool slots :i64 expected :i64] :vector-i64
   (let [m (-> (t-float-row M 0 OP-BIN (if floating BOP-F64-ADD BOP-ADD))
               (mem-set (+ MM-FN-BASE MM-FN-W FF-SIR) 1)
@@ -46,9 +49,17 @@
               (mem-set (+ MM-FN-BASE MM-FN-W FF-DEPTH) 0))
         ok (and (= (vector-at m MM-R0) 1) (= (xg-frame m 1) expected))]
     (mem-set m MM-R0 (if ok 1 0))))
+(defn- t-profile-frame [M :vector-i64 profile :i64 expected :i64] :vector-i64
+  (let [m (-> (t-float-row M profile OP-BIN BOP-ADD)
+              (mem-set (+ MM-FN-BASE MM-FN-W FF-SIR) 1)
+              (mem-set (+ MM-FN-BASE MM-FN-W FF-NSLOTS) 0)
+              (mem-set (+ MM-FN-BASE MM-FN-W FF-DEPTH) 0))
+        ok (and (= (vector-at m MM-R0) 1) (= (xg-frame m 1) expected))]
+    (mem-set m MM-R0 (if ok 1 0))))
 (defn- t-frame-bounds [M :vector-i64] :vector-i64
   (-> M (mem-set MM-R0 1) (t-frame false 0 16) (t-frame true 0 32)
-      (t-frame false 511 4096) (t-frame true 511 4112)))
+      (t-frame false 511 4096) (t-frame true 511 4112)
+      (t-profile-frame 1 128) (t-profile-frame 2 128) (t-profile-frame 3 16)))
 (defn- seed-main [] :i64
   (let [m1 (t-families (mem-new)) a (vector-at m1 MM-R0)
         m2 (t-gaps m1) b (vector-at m2 MM-R0)

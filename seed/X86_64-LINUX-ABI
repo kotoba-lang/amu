@@ -12,7 +12,7 @@ Absolute header cells, reserved from xg-build/xr-build through output:
 193 = sole exported main FN index
 194 = positive artifact fuel budget
 195 = ELF RW segment file offset
-196 = profile (0 standalone scalar ELF, 1 context-v11 runtime, 2 integer kernel object)
+196 = profile (0 scalar ELF, 1 context-v11 runtime, 2 protected kernel project, 3 integer kernel object/image)
 
 These cells are not MM-STAT-BASE-relative statistics. No shared frontend,
 AArch64 generator, linker or future extension may run concurrently with this
@@ -54,7 +54,7 @@ with floating SIR reserves 16 extra frame bytes; the existing 4096 bound
 includes them. Integer-only function frames keep their previous shape.
 MIN/MAX propagate NaN and choose -0 for min / +0 for max in either operand
 order. Truncating conversions saturate to signed i64 and map NaN to 0.
-Unknown tags and gaps remain refused, including unreachable SIR. Profile2
+Unknown tags and gaps remain refused, including unreachable SIR. Profiles2/3
 retains the original i64/bool kernel signatures and refuses every floating
 SIR operation, so kernel objects do not implicitly acquire SSE requirements.
 ELF export admission remains exactly main()->i64; handles/capabilities are
@@ -90,7 +90,7 @@ source-only Linux compiler with the same reader/checker/lowerer and x86
 backend. Its driver requires the explicit x86 target and format; it refuses
 project/KIR/source-path/policy routes rather than discarding their flags.
 Profiles 0/1 admit the source candidate's 36 floating SIR tags; the kernel
-object route uses profile 2 and retains its integer-only admission.
+object/image routes use profile 3 and retains its integer-only admission.
 State templates have no standalone SIR and are skipped exactly as lw-fns
 requires; all concrete specializations are admitted. Generated closure
 adapters have no parameter type table; their checked lambda is admitted.
@@ -105,7 +105,7 @@ source's single export as one GLOBAL FUNC in `.text`, one 80-byte private
 context in `.data` (second quadword = the per-call fuel bound), and exactly
 one `R_X86_64_PC32` addend -4 relocation of the wrapper's `lea r9,[rip+.data]`
 against the `.data` symbol. The wrapper is lea, fuel replenish,
-`sub rsp,8`, call entry, `add rsp,8`, `ret`. Admission is the profile-2 integer
+`sub rsp,8`, call entry, `add rsp,8`, `ret`. Admission is the profile-3 integer
 subset plus the one-export rule; `--fuel` over 2^31-1 takes the imm64
 replenish path and stays ABI-identical. This route emits the object ABI only:
 not the kernel image, not the entry allowlist, not the fuel-tier table, and no

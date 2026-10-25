@@ -20,7 +20,7 @@
  ;; Index 0 of every table is the NULL record: it is never written, fills start at 1, and a field value 0
  ;; means "none" (no child, no symbol, no function, no label ...). `mem-new` sets every *-N fill to 1.
  :constants
- [[:c MM-WORDS 16646144 "words in M (127 MiB); below the loader's 16M-item per-vector limit"]
+ [[:c MM-WORDS 16908288 "normal core words; requires the current loaderless runner's qualified 2^25-item vector bound"]
   [:c MM-NULL 0 "the null index of every table"]
   [:c MM-LAYOUT-VERSION 1 "value of M[MM-VERSION] after mem-new"]
 
@@ -108,12 +108,15 @@
   [:c MM-CODE-BASE 10354944] [:c MM-CODE-W 1] [:c MM-CODE-CAP 655360]
   [:c MM-FIX-BASE 11010304] [:c MM-FIX-W 4] [:c MM-FIX-CAP 98304]
   [:c MM-LIT-BASE 11403520] [:c MM-LIT-W 4] [:c MM-LIT-CAP 16384]
-  [:c MM-LITB-BASE 11469056] [:c MM-LITB-W 1] [:c MM-LITB-CAP 262144]
-  [:c MM-EXP-BASE 11731200] [:c MM-EXP-W 4] [:c MM-EXP-CAP 1024]
+  ;; JUN-93 core19: native G2 refused the complete source at E101 region3.
+  ;; LITB +262144 words; every later base/end shifts equally. Heap size,
+  ;; table widths, source declarations and output capacity remain unchanged.
+  [:c MM-LITB-BASE 11469056] [:c MM-LITB-W 1] [:c MM-LITB-CAP 524288]
+  [:c MM-EXP-BASE 11993344] [:c MM-EXP-W 4] [:c MM-EXP-CAP 1024]
   ;; OUT growth (2026-10-15): the compiler's own image neared 2 MiB (T2 + certified kernels); MM-OUT-CAP +2097152 bytes,
   ;; MM-HEAP-BASE, MM-HEAP-END and MM-WORDS +2097152 (heap size unchanged; MM-WORDS 16252928 < 16M items).
-  [:c MM-OUT-BASE 11735296] [:c MM-OUT-W 1] [:c MM-OUT-CAP 3145728]
-  [:c MM-HEAP-BASE 14881024] [:c MM-HEAP-END 16646144]
+  [:c MM-OUT-BASE 11997440] [:c MM-OUT-W 1] [:c MM-OUT-CAP 3145728]
+  [:c MM-HEAP-BASE 15143168] [:c MM-HEAP-END 16908288]
 ;; Static profile (2026-10-22, JUN-29 / M2): seed/00-ns-static.kotoba, used by the loaderless static closures, is this
 ;; block with MM-TOK-CAP 786432, MM-CODE-CAP 2097152, MM-FIX-CAP 262144, MM-LITB-CAP 1048576 and MM-OUT-CAP 12582912 (every later base, MM-HEAP-END
 ;; and MM-WORDS shifted by 12845056; MM-WORDS 29491200, heap size unchanged). The stack-machine static
