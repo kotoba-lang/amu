@@ -238,3 +238,14 @@ conditions. Native scope reuse, partial old/new ranges and missing/relative
 watermark and last-word mutants must pass before adoption. Wasm's context is
 separate and its own offset760 must remain unchanged. Source changes alone do not qualify
 the current root/public/role pins; finish native rebuilding and all gates.
+
+
+## Native CI derivation and independent ISA qualification
+
+Fresh ARM bootstrap/one-compiler transport precedes separate ARM and x86
+qualification jobs. Transport alone is never qualification: all six native
+job executions (including both shared-module matrix entries) must succeed.
+Every previous ARM/x86 gate, uncached main/full tier and fresh controller
+verdict remains required. The ARM artifact includes root and final generations
+for unchanged native producer pin checks after transport. No compiler/image
+bytes, limits, case expectations or native gate commands change in this split.
