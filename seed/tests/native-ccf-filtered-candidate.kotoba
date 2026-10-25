@@ -1,0 +1,58 @@
+;; H34 conservative high-byte filter; every special class still uses the original checks.
+(defn- ccf-code-ordered [M :vector-i64 j :i64 at :i64] :bool
+ (if (= j at) true
+  (let [w (vector-at M (+ MM-CODE-BASE j))]
+   (and (>= w 0) (<= w 4294967295)
+    (if (= (bit-and (u64-shift-right 67835469688274944 (bit-and (u64-shift-right w 24) 63)) 1) 0)
+      (ccf-code-ordered M (inc j) at)
+     (let [page (bit-and w 2667577344)]
+     (and (not= page 2415919104)
+      (cond (= page 268435456)
+        (< (+ (* 4 (dec j))
+              (cfr-signed (+ (* 4 (bit-and (u64-shift-right w 5) 524287))
+                            (bit-and (u64-shift-right w 29) 3)) 1048576 2097152))
+           (* 4 (dec at)))
+       (= (bit-and w 2080374784) 335544320)
+        (< (+ j (cfr-signed (bit-and w 67108863) 33554432 67108864)) at)
+       :else
+        (let [short (bit-and w 2113929216)]
+         (cond (or (= (bit-and w 4278190096) 1409286144) (= short 872415232)
+                   (= (bit-and w 989855744) 402653184))
+           (< (+ j (cfr-signed (bit-and (u64-shift-right w 5) 524287) 262144 524288)) at)
+          (= short 905969664)
+           (< (+ j (cfr-signed (bit-and (u64-shift-right w 5) 16383) 8192 16384)) at)
+          :else true)))
+      (ccf-code-ordered M (inc j) at))))))))
+(defn- ccf-order-word [n :i64 x :i64] :i64
+ (case (rem n 16)
+  0 x
+  1 (bit-or 0x14000000 (bit-and x 67108863))
+  2 (bit-or 0x94000000 (bit-and x 67108863))
+  3 (bit-or 0x54000000 (i64-shift-left (bit-and x 524287) 5))
+  4 (bit-or 0x34000000 (i64-shift-left (bit-and x 524287) 5))
+  5 (bit-or 0x36000000 (i64-shift-left (bit-and x 16383) 5))
+  6 (bit-or 0x18000000 (i64-shift-left (bit-and x 524287) 5))
+  7 (bit-or 0x10000000 (bit-and x 0x60ffffe0))
+  8 (bit-or 0x90000000 (bit-and x 0x60ffffe0))
+  9 -1
+  10 4294967296
+  11 0xd503201f
+  12 (bit-or 0x10000000 (bit-and x 0x60000000))
+  13 (bit-or 0x54000000 (i64-shift-left (bit-and n 524287) 5))
+  14 (bit-or 0xdc000000 (i64-shift-left (bit-and x 524287) 5))
+  15 (bit-or 0x14000000 (bit-and n 67108863))
+  0))
+(defn- ccf-order-grid [] :bool
+ (let [M (mem-fill (mem-new) (+ MM-CODE-BASE 1) 8 0xd503201f)]
+  (loop [n 0 x 17 last 1 m M]
+   (if (= n 131072) true
+    (let [next (bit-and (+ (* x 1103515245) 12345) 4294967295)
+          at (+ 2 (rem n 7)) pos (+ 1 (rem n (dec at)))
+          mm (-> m (gn-put (+ MM-CODE-BASE last) 0xd503201f)
+                   (gn-put (+ MM-CODE-BASE pos) (if (< n 65536) (ccf-order-word n next)
+                       (bit-or (i64-shift-left (quot (- n 65536) 256) 24)
+                         (bit-or (bit-and next 16777199) (if (= (rem n 2) 0) 0 16))))))]
+     (and (= (ccf-code mm 1 at) (ccf-code-ordered mm 1 at))
+          (recur (inc n) next pos mm)))))))
+(defn- seed-main [] :i64
+ (if (= (io-argc) 0) (if (ccf-order-grid) 0 1) 1))

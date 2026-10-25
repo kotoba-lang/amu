@@ -31,7 +31,7 @@ def manifest(name, read):
     return [p for p in read(name).decode().splitlines() if p and not p.startswith("#")]
 
 
-def main(out, workload_file=None, current_core=False, producer_override=None, variant="order"):
+def main(out, workload_file=None, current_core=False, producer_override=None, variant="order", controls_only=False):
     assert platform.system() == "Linux" and platform.machine() in ("aarch64", "x86_64")
     arm = platform.machine() == "aarch64"
     machine = 183 if arm else 62
@@ -42,7 +42,7 @@ def main(out, workload_file=None, current_core=False, producer_override=None, va
     read = lambda p: (ROOT / p).read_bytes()
     paths = manifest("seed/FULL-MANIFEST", read)
     original = b"".join(read(p) + b"\n" for p in paths).decode()
-    fixture = ROOT / ("seed/tests/native-ccf-addressed-candidate.kotoba" if variant == "addressed" else "seed/tests/native-ccf-order-candidate.kotoba")
+    fixture = ROOT / ("seed/tests/native-ccf-addressed-candidate.kotoba" if variant == "addressed" else ("seed/tests/native-ccf-filtered-candidate.kotoba" if variant == "filtered" else "seed/tests/native-ccf-order-candidate.kotoba"))
     extra = fixture.read_text()
     first = extra.index("(defn- ccf-code-reference [" if variant == "addressed" else "(defn- ccf-code-ordered [")
     last = extra.index("(defn- ccf-order-word", first)
@@ -118,14 +118,18 @@ def main(out, workload_file=None, current_core=False, producer_override=None, va
     image = static("grid", grid)
     run("differential-grid", [image])
     run("grid-wrong-mode", [image, "fail-control"], 1)
-    report["gridCases"] = 65536
+    report["gridCases"] = 131072 if variant == "filtered" else 65536
     report["mutationControls"] = []
     text = grid.read_text()
     a = text.index("(defn- ccf-code-absolute [" if variant == "addressed" else "(defn- ccf-code-ordered [")
     b = text.index("(defn- ccf-code-ordered [" if variant == "addressed" else "(defn- ccf-order-word", a + 1)
     fragment = text[a:b]
-    for name, old, new in (("word-bound", "(and (>= w 0) (<= w 4294967295)", "(and true true"),
-                           ("adrp", "(not= page 2415919104)", "true")):
+    mutations = [("word-bound", "(and (>= w 0) (<= w 4294967295)", "(and true true"),
+                 ("adrp", "(not= page 2415919104)", "true")]
+    if variant == "filtered":
+        mutations += [("class-adr-bit", "67835469688274944", "67835469688209408"),
+                      ("class-literal-bit", "67835469688274944", "67835469671497728")]
+    for name, old, new in mutations:
         assert fragment.count(old) == 1
         source = out / ("mutant-" + name + ".kotoba")
         source.write_text(text[:a] + fragment.replace(old, new) + text[b:])
@@ -133,6 +137,11 @@ def main(out, workload_file=None, current_core=False, producer_override=None, va
         run("detect-" + name, [mutant], 1)
         report["mutationControls"].append(dict(name=name, builtSuccessfully=True, detectedByNativeGrid=True))
 
+    if controls_only:
+        report.update(status="PASS_NATIVE_CCF_CONTROLS_ONLY", performanceMeasured=False)
+        save()
+        print(report["status"], flush=True)
+        return
     if arm:
         container = out / "candidate.kseed"
         run("build-candidate", [producer, "compile", candidate_source, "--target", "aarch64-macos", "--output", container])
@@ -169,6 +178,7 @@ if __name__ == "__main__":
     p.add_argument("--workload-file", type=Path)
     p.add_argument("--current-core", action="store_true")
     p.add_argument("--compiler", type=Path)
-    p.add_argument("--variant", choices=("order", "addressed"), default="order")
+    p.add_argument("--variant", choices=("order", "addressed", "filtered"), default="order")
+    p.add_argument("--controls-only", action="store_true")
     a = p.parse_args()
-    main(a.output.resolve(), a.workload_file and a.workload_file.resolve(), a.current_core, a.compiler.resolve() if a.compiler else None, a.variant)
+    main(a.output.resolve(), a.workload_file and a.workload_file.resolve(), a.current_core, a.compiler.resolve() if a.compiler else None, a.variant, a.controls_only)

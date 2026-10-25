@@ -111,7 +111,7 @@ def main(compiler, out):
                    and c["name"].endswith("-" + v)] for v in ("role", "public")}
     report.update(status="PASS_NATIVE_COMPILER_KERNEL_COMPARISON", samples=samples,
                   publicToRoleRatio=statistics.median(samples["public"]) / statistics.median(samples["role"]),
-                  allCoreOutputsByteIdentical=True, productionRoleChangeApproved=False)
+                  allCoreOutputsByteIdentical=True, productionRoleChanged=False)
     save()
     print(report["status"], report["publicToRoleRatio"], flush=True)
 
