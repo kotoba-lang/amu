@@ -43,8 +43,10 @@ SELFHOST = "seed/X86_64-LINUX-SELFHOST-MANIFEST"
 FUEL = "100000000"
 NO_FSYNC_RULE = [("(kxrt-allow-nr-at p 82) (kxrt-allow-nr-at p 278)", "(kxrt-allow-nr-at p 278)", 1),
                  ("(kxrt-allow-nr-at p 74) (kxrt-allow-nr-at p 318)", "(kxrt-allow-nr-at p 318)", 1)]
-NO_SLEEP_RULE = [("        i8 (if (kxrt-admitted? 7) (kxrt-allow-nr p i7 115) i7)\n", "        i8 i7\n", 1),
-                 ("        i8 (if (kxrt-admitted? 7) (kxrt-allow-nr p i7 230) i7)\n", "        i8 i7\n", 1)]
+NO_SLEEP_RULE = [("        i8 (if (kxrt-admitted? 7) (kxrt-allow-nr p (kxrt-allow-nr p i7 115) 128) i7)\n",
+                  "        i8 (if (kxrt-admitted? 7) (kxrt-allow-nr p i7 128) i7)\n", 1),
+                 ("        i8 (if (kxrt-admitted? 7) (kxrt-allow-nr p (kxrt-allow-nr p i7 230) 219) i7)\n",
+                  "        i8 (if (kxrt-admitted? 7) (kxrt-allow-nr p i7 219) i7)\n", 1)]
 
 HEAD = ('(ns t (:export [main]))\n'
         '(defn- fs [s :string] :string (typed-cap-call :fs/app-data :string :string s))\n'
