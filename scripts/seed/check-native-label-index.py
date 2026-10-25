@@ -66,6 +66,32 @@ def main(compiler, output):
     run("semantic-anchors-grid-and-malformed", [image])
     run("wrong-mode-failure-control", [image, "fail-control"], 1)
     original = unity.read_text()
+    # Preserve the selfhost's original R6C inference exercise after making
+    # implementation signatures explicit. Every declaration/body stays in
+    # this source; the only edits remove these three parameter annotations.
+    # The independently checked forms must generate the same entire image.
+    inferred = original
+    inference_parameters = {
+        "ck-r6c-doctail": ("c",), "ck-r6c-dt": ("b",), "ck-r6c-lit": ("m",),
+    }
+    for function, (last,) in inference_parameters.items():
+        typed = f"(defn- {function} [M :vector-i64 S :string {last} :i64]"
+        untyped = f"(defn- {function} [M :vector-i64 S {last} :i64]"
+        assert inferred.count(typed) == 1 and inferred.count(untyped) == 0, function
+        inferred = inferred.replace(typed, untyped)
+    inferred_source = output / "unannotated-inference.kotoba"
+    inferred_source.write_text(inferred)
+    inferred_image = output / "unannotated-inference.elf"
+    run("build-unannotated-inference",
+        [compiler, "compile", inferred_source, "--target", target, "--output", inferred_image, "--format", "static"],
+        process_env={**env, "KEXE_ALLOW": "35,37,38,39"})
+    assert inferred_image.read_bytes() == image.read_bytes(), "inferred and explicit signatures emit different code"
+    inferred_image.chmod(0o755)
+    run("semantic-unannotated-inference", [inferred_image])
+    run("wrong-mode-unannotated-inference", [inferred_image, "fail-control"], 1)
+    report["inferenceControl"] = dict(source=pin(inferred_source), image=pin(inferred_image),
+                                      parameters=list(inference_parameters), wholeImageByteIdentical=True,
+                                      freshCompilation=True, freshExecution=True)
     mutations = {
         "duplicate-label": ("(if (= (vector-at out (+ base l)) 0) j -1)", "j"),
         "suffix-query": ("(and (= j 1) (= found 0) (> (glx-base M) 0))", "(and (= found 0) (> (glx-base M) 0))"),

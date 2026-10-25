@@ -16,7 +16,7 @@ on:
         required: true
         default: controller
         type: choice
-        options: [controller, proof-scans, proof-comparison]
+        options: [controller, proof-scans, proof-comparison, pass-core, pass-label, proof-current, source-refinements]
       derivation-run:
         description: Public Amu run with a source-identical one-compiler-receipt artifact
         required: true
@@ -28,6 +28,60 @@ concurrency:
   group: native-controller-profile-${{ github.event.pull_request.number || github.ref }}-${{ inputs.mode || 'controller' }}
   cancel-in-progress: true
 jobs:
+  pass-localization:
+    if: contains(fromJSON('["pass-core", "pass-label", "proof-current"]'), inputs.mode)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Verify current source and native image pins
+        run: python3 scripts/seed/check-native-identities.py
+      - name: Native localization only; preserve the frozen workload and output
+        env:
+          MODE: ${{ inputs.mode }}
+        run: |
+          if [ "$MODE" = pass-label ]; then
+            python3 scripts/seed/native_build_queue.py -- python3 scripts/seed/profile-native-passes.py --closure full --workload label-x86 --detail passes --output "$RUNNER_TEMP/localization" --seconds 900
+          elif [ "$MODE" = proof-current ]; then
+            python3 scripts/seed/native_build_queue.py -- python3 scripts/seed/profile-native-passes.py --closure core --workload core --detail proofs --output "$RUNNER_TEMP/localization" --seconds 900
+          else
+            python3 scripts/seed/native_build_queue.py -- python3 scripts/seed/profile-native-passes.py --closure core --workload core --detail passes --output "$RUNNER_TEMP/localization" --seconds 900
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: native-localization-${{ inputs.mode }}
+          path: |
+            ${{ runner.temp }}/localization/observations.json
+            ${{ runner.temp }}/localization/events.jsonl
+            ${{ runner.temp }}/localization/*.stdout
+            ${{ runner.temp }}/localization/*.stderr
+          if-no-files-found: warn
+  source-refinements:
+    if: inputs.mode == 'source-refinements'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Verify current source and native image pins
+        run: python3 scripts/seed/check-native-identities.py
+      - name: Native isolated candidates then B C C B source comparison
+        run: python3 scripts/seed/native_build_queue.py -- python3 scripts/seed/compare-source-refinements.py --output "$RUNNER_TEMP/refinements"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: native-source-refinements
+          path: |
+            ${{ runner.temp }}/refinements/observations.json
+            ${{ runner.temp }}/refinements/*.stdout
+            ${{ runner.temp }}/refinements/*.stderr
+          if-no-files-found: error
   proof-comparison:
     if: inputs.mode == 'proof-comparison'
     runs-on: ubuntu-latest
