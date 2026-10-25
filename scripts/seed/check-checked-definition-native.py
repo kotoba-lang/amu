@@ -9,7 +9,9 @@ observations. No definition/hash grants execution or build-cache authority.
 import argparse
 import hashlib
 import json
+import os
 import platform
+import statistics
 import subprocess
 import time
 from pathlib import Path
@@ -54,7 +56,7 @@ def cycle(n):
                             chr(97 + (i - 1) % n) + " (- x 1)))") for i in range(n)])
 
 
-def main(compiler, out):
+def main(compiler, out, benchmark_scc=False):
     assert platform.system() == "Linux" and platform.machine() in ("aarch64", "x86_64")
     out.mkdir(parents=True, exist_ok=False)
     snapshot = json.loads((AUTH / "snapshot.json").read_text())
@@ -232,6 +234,34 @@ def main(compiler, out):
         report["mutations"].append(dict(name=name, source=pin(out / ("mutant-" + name + ".kotoba")),
                                          image=pin(image), builtSuccessfully=True, executed=True,
                                          detection=detection))
+    if benchmark_scc:
+        # Observe this bounded identity workload separately from compilation
+        # and whole CI. Only the production minimum-search call site changes.
+        allowed = sorted(os.sched_getaffinity(0))
+        assert allowed
+        os.sched_setaffinity(0, {allowed[0]})
+        anchor = "let [best (dcs-best-prefix A C T H)\n            ok"
+        replacement = "let [best (dcs-best-fast A C T H)\n            ok"
+        assert original.count(anchor) == 1
+        baseline = build("scc-template-baseline", original.replace(anchor, replacement))
+        expected_output = (out / "cycle8.stdout").read_text()
+        timings = {"baseline": [], "candidate": []}
+        benchmark = dict(scope="SCC8 identity; all40320 permutations in both variants",
+                         allowedCPUs=allowed, pinnedCPU=allowed[0], quietHostQualified=False,
+                         input=pin(sources["cycle8"]), baseline=pin(baseline), candidate=pin(producer),
+                         baselineSource=pin(out / "scc-template-baseline.kotoba"),
+                         candidateSource=pin(out / "checked-producer.kotoba"),
+                         environment=env, loadBefore=Path("/proc/loadavg").read_text().strip(), order="ABBA")
+        for i, kind in enumerate(["baseline", "candidate", "candidate", "baseline"]):
+            actual = run("abba-" + str(i) + "-" + kind,
+                         [baseline if kind == "baseline" else producer, sources["cycle8"]])
+            assert actual == expected_output
+            timings[kind].append(report["calls"][-1]["seconds"])
+        benchmark.update(times=timings, medians={k: statistics.median(v) for k, v in timings.items()},
+                         allOutputsByteIdentical=True, loadAfter=Path("/proc/loadavg").read_text().strip())
+        benchmark["candidateOverBaseline"] = benchmark["medians"]["candidate"] / benchmark["medians"]["baseline"]
+        report["sccABBA"] = benchmark
+        os.sched_setaffinity(0, set(allowed))
     report.update(status="PASS_NATIVE_CHECKED_DEFINITION", independentOraclePassed=True,
                   nativeTypeCheckingRequired=True, nativeAuthorityVersionsChecked=True,
                   scc8LastPermutationOracle=True, scc9Refused=True, nativeSccEquivalence=True)
@@ -243,5 +273,6 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--compiler", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
+    p.add_argument("--benchmark-scc", action="store_true", help="Observe native SCC8 ABBA on this host")
     a = p.parse_args()
-    main(a.compiler.resolve(), a.output.resolve())
+    main(a.compiler.resolve(), a.output.resolve(), a.benchmark_scc)
