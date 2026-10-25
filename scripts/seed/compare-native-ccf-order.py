@@ -31,12 +31,12 @@ def manifest(name, read):
     return [p for p in read(name).decode().splitlines() if p and not p.startswith("#")]
 
 
-def main(out, workload_file=None):
+def main(out, workload_file=None, current_core=False, producer_override=None):
     assert platform.system() == "Linux" and platform.machine() in ("aarch64", "x86_64")
     arm = platform.machine() == "aarch64"
     machine = 183 if arm else 62
     assert struct.unpack_from("<H", Path("/proc/self/exe").read_bytes(), 18)[0] == machine
-    producer = ROOT / ("seed/bootstrap/aarch64-linux-static-root.elf" if arm else "bin/amu")
+    producer = producer_override or ROOT / ("seed/bootstrap/aarch64-linux-static-root.elf" if arm else "bin/amu")
     assert struct.unpack_from("<H", producer.read_bytes(), 18)[0] == machine
     out.mkdir(parents=True, exist_ok=False)
     read = lambda p: (ROOT / p).read_bytes()
@@ -56,15 +56,19 @@ def main(out, workload_file=None):
         return subprocess.run(["git", "show", REVISION + ":" + path], cwd=ROOT,
                               capture_output=True, check=True).stdout
 
-    if workload_file:
+    if current_core:
+        assert workload_file is None
+        raw = b"".join(read(p) + b"\n" for p in manifest("seed/MANIFEST", read))
+    elif workload_file:
         raw = workload_file.read_bytes()
     else:
         raw = b"".join(frozen(p) + b"\n" for p in manifest("seed/MANIFEST", frozen))
     workload = out / "workload.kotoba"
     workload.write_bytes(raw)
-    assert pin(workload)["sha256"] == SOURCE_SHA
+    expected_source = "44faa79ad33730bd81d28329e62bfd2030adee09d1ef31c8e8800f7164e13081" if current_core else SOURCE_SHA
+    assert pin(workload)["sha256"] == expected_source
     lock = out / "workload.ksl"
-    lock.write_text(f"KSL1\nentry {workload}\nfile {SOURCE_SHA} {workload}\n")
+    lock.write_text(f"KSL1\nentry {workload}\nfile {expected_source} {workload}\n")
     affinity = sorted(os.sched_getaffinity(0))
     os.sched_setaffinity(0, {affinity[0]})
     env = dict(PATH="/nonexistent", KEXE_STACK_BYTES="8388608", KEXE_CAP_RESOURCES_35=str(out),
@@ -75,7 +79,7 @@ def main(out, workload_file=None):
                   host=[platform.system(), platform.machine(), platform.release()],
                   allowedCPUs=affinity, selectedCPU=affinity[0], producer=pin(producer),
                   sourceBindings={p: pin(ROOT / p) for p in paths}, candidateSource=pin(candidate_source),
-                  fixture=pin(fixture), workloadRevision=REVISION, workload=pin(workload), calls=[])
+                  fixture=pin(fixture), workloadRevision=("current-source-pinned-by-hash" if current_core else REVISION), workload=pin(workload), calls=[])
     cpuinfo = Path("/proc/cpuinfo").read_text()
     report["cpuModel"] = next((s for s in cpuinfo.splitlines() if s.startswith("model name")), "unavailable")
 
@@ -163,5 +167,7 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--workload-file", type=Path)
+    p.add_argument("--current-core", action="store_true")
+    p.add_argument("--compiler", type=Path)
     a = p.parse_args()
-    main(a.output.resolve(), a.workload_file and a.workload_file.resolve())
+    main(a.output.resolve(), a.workload_file and a.workload_file.resolve(), a.current_core, a.compiler.resolve() if a.compiler else None)

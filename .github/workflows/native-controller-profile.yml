@@ -126,8 +126,13 @@ jobs:
           fetch-depth: 0
       - name: Verify source and native producer pins
         run: python3 scripts/seed/check-native-identities.py
+      - name: Stage the exact zero-runtime experimental producer
+        run: |
+          git show 3bb81695c15549b280b368cb95145bb0a5840c18:bin/amu > "$RUNNER_TEMP/current-amu.elf"
+          python3 -c 'import hashlib,os,pathlib; p=pathlib.Path(os.environ["RUNNER_TEMP"])/"current-amu.elf"; assert hashlib.sha256(p.read_bytes()).hexdigest()=="dd289a234cb781248b29924139d8903865dd6337cb82c2ee8dcba7f261e31d98"'
+          chmod +x "$RUNNER_TEMP/current-amu.elf"
       - name: Native differential grid, actual mutants and matched frozen-core builds
-        run: python3 scripts/seed/native_build_queue.py -- python3 scripts/seed/compare-native-ccf-order.py --output "$RUNNER_TEMP/ccf-order"
+        run: python3 scripts/seed/native_build_queue.py -- python3 scripts/seed/compare-native-ccf-order.py --current-core --compiler "$RUNNER_TEMP/current-amu.elf" --output "$RUNNER_TEMP/ccf-order"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
