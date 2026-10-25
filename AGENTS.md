@@ -196,3 +196,14 @@ index. Keep the original G size and all fuel/arena limits.
 The full-prefix native differential oracle and nine successfully built but
 semantically refused guard-removal mutants run on both native ARM and x86
 in the shared two-slot gate plan. Original gate groups remain mandatory.
+
+## Native incremental identity foundation (JUN-332 / JUN-358)
+
+`seed/04-definition-cid.kotoba` is a bounded payload-v2 codec candidate,
+qualified separately on native ARM/x86 against the pinned canonical bytes
+and CIDs. It is not in the adopted FULL-MANIFEST. A supplied canonical payload
+is not proof of checking, SCC identity, object-cache validity or admission.
+Keep the existing canonical identity authority and all six sealed inputs;
+never relabel a source/SIR hash as a canonical DefCID. Unknown/unsupported
+values refuse. Native constructors, refusal and built mutation controls are
+mandatory before widening the codec. See `docs/native-incremental-build.md`.
