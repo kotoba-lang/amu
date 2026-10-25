@@ -1,0 +1,33 @@
+(ns dve-live-controls (:export [pure-chain payload-alias local-rebind callback-grow callback-drop signed-chain]))
+(defn- narrow16 [x :i64] :i64
+ (let [v (bit-and x 65535)] (if (>= v 32768) (- v 65536) v)))
+(defn pure-chain [x :i64] :i64
+ (let [v (-> (vector-alloc 2) (vector-assoc! 0 x) (vector-assoc! 1 (+ x 1)))
+       a (narrow16 (narrow16 (vector-at v 0)))
+       b (narrow16 (vector-at v 1))]
+  (+ a b)))
+(defn payload-alias [x :i64] :i64
+ (let [v (-> (vector-alloc 2) (vector-assoc! 0 x) (vector-assoc! 1 7))
+       alias v first (narrow16 (vector-at v 0))]
+  (let [changed (vector-assoc! alias 0 (+ x 1))]
+   (+ first (narrow16 (vector-at v 0))))))
+(defn local-rebind [x :i64] :i64
+ (let [v (-> (vector-alloc 2) (vector-assoc! 0 x) (vector-assoc! 1 7))
+       first (narrow16 (vector-at v 0))]
+  (let [v (-> (vector-alloc 2) (vector-assoc! 0 (+ x 2)) (vector-assoc! 1 9))]
+   (+ first (narrow16 (vector-at v 0))))))
+(defn callback-grow [x :i64] :i64
+ (let [v (-> (vector-alloc 2) (vector-assoc! 0 x) (vector-assoc! 1 7))
+       first (narrow16 (vector-at v 0))]
+  (let [grown (vector-conj v (+ x 3))]
+   (+ first (narrow16 (vector-at grown 2))))))
+(defn callback-drop [x :i64] :i64
+ (let [v (-> (vector-alloc 2) (vector-assoc! 0 x) (vector-assoc! 1 (+ x 4)))
+       first (narrow16 (vector-at v 0))]
+  (let [tail (vector-drop v 1)]
+   (+ first (narrow16 (vector-at tail 0))))))
+(defn signed-chain [x :i64] :i64
+ (let [v (-> (vector-alloc 2) (vector-assoc! 0 x) (vector-assoc! 1 (- x 1)))
+       first (narrow16 (narrow16 (vector-at v 0)))
+       second (narrow16 (vector-at v 1))]
+  (- first second)))

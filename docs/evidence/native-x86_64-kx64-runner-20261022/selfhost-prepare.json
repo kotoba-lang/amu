@@ -1,0 +1,535 @@
+{
+  "status": "PASS_NATIVE_X86_RUNTIME_PREPARE",
+  "sourcePins": {
+    "seed/X86_64-LINUX-SELFHOST-MANIFEST": {
+      "bytes": 441,
+      "sha256": "43bb8da3424c1b8d575867c6654ac3f33d108a1b536971ce5e4f76ef3e5303de"
+    },
+    "seed/bootstrap/adopted-loader-20261012.c": {
+      "bytes": 698176,
+      "sha256": "f44b50995a0e45db4be35244da34dd61538a484c7d5ea2f15f7f5a73d9daa8c3"
+    },
+    "tools/seed-x86_64-linux-loader.c": {
+      "bytes": 1152,
+      "sha256": "729192963a5f8783779909adc8521c0179429384b7d6d7a2406ca64d8eb08094"
+    },
+    "seed/00-ns.kotoba": {
+      "bytes": 14534,
+      "sha256": "8d0c0a62a8feda3007d9f7f2140173bb3f724b17e8cee1bdeca2b0a805cb3475"
+    },
+    "seed/01-mem.kotoba": {
+      "bytes": 15304,
+      "sha256": "79bb1d1154857efc70bee464161abfce37ec6b90e55af7bbef386ab96ca131c9"
+    },
+    "seed/02-io.kotoba": {
+      "bytes": 10931,
+      "sha256": "268ae7a0d450deb0b7981b85f7e6895b08b4af828f1f57cb96cf2eb29777c4ea"
+    },
+    "seed/10-lex.kotoba": {
+      "bytes": 24829,
+      "sha256": "a8b8128b9e00564f3d86a81b9c69e692efa0114a3cd0083e401cda8577086d6b"
+    },
+    "seed/11-read.kotoba": {
+      "bytes": 9176,
+      "sha256": "89fd65139a4502f96c87807db80d4cbaa15913ea75788eb3b647dcc9556e0392"
+    },
+    "seed/20-names.kotoba": {
+      "bytes": 38896,
+      "sha256": "fbd708ae321b3520d4d592955ab2ad1bf0378e962eab69964ddc8dd9f6a68e3f"
+    },
+    "seed/21-check.kotoba": {
+      "bytes": 380847,
+      "sha256": "4228b2afeb923ea0cf5dd6e07205b03716ff830cbea340b1b231eef38dd9ba2f"
+    },
+    "seed/30-lower.kotoba": {
+      "bytes": 87768,
+      "sha256": "0dc46637dff1c4a645d8bfa73cf18469913b32ca90ce236c1a76ce89a8fff20e"
+    },
+    "seed/50-out.kotoba": {
+      "bytes": 21354,
+      "sha256": "1cf17b348bda09d73d721856705a52db05131b88f80d017e1fe9b9a92c066955"
+    },
+    "seed/70-x86_64-linux.kotoba": {
+      "bytes": 19198,
+      "sha256": "82f14d94d4d9b1f8c71a65de463b784b78b34ade93e5bb630148b5bde2dbebe7"
+    },
+    "seed/71-x86_64-runtime.kotoba": {
+      "bytes": 5382,
+      "sha256": "15f2c4f8b8f0a2a46ccd8fbb4c7f621e17a385b680e0d6878d258a9c9e6cc14c"
+    },
+    "seed/75-x86_64-static.kotoba": {
+      "bytes": 8595,
+      "sha256": "b866f8f88e95a8adf3c45be1f1ab1a51f53b42f245cbc7bcaa375b1a7e1c4e13"
+    },
+    "seed/76-x86_64-static-rt.kotoba": {
+      "bytes": 41593,
+      "sha256": "de9e72367d34f41ceb582655d88397fa3d14ba7dee4c1a560a2449b0e043504d"
+    },
+    "seed/74-x86_64-aiueos-object.kotoba": {
+      "bytes": 8402,
+      "sha256": "9c3b16530f722e9a86249d17be3d5d55e1306be759be76c21df8cfac1d5db4d8"
+    },
+    "seed/73-x86-linux-entry.kotoba": {
+      "bytes": 981,
+      "sha256": "7d783ab85a24c9147da0404560ed6088b5d274ea29628d9c8c05e38fa810058f"
+    },
+    "seed/bootstrap/adopted-20261012.bin": {
+      "bytes": 2547352,
+      "sha256": "6b158aa8654706743462b8a730f189072ba05f364b00af28a3f6d23045add2eb"
+    }
+  },
+  "sourceUnity": {
+    "bytes": 687805,
+    "sha256": "722c9d2d5be47a4629052a804a9ec38e11a28e28e1538df6562fa9ec1b20b462"
+  },
+  "compiler": {
+    "bytes": 1313808,
+    "sha256": "ef533d07157744ca6e3da517a6be0b4acc3c98af4192aa3c87f6f442dc56c816"
+  },
+  "container": {
+    "bytes": 1313852,
+    "sha256": "88f1ca116cdb4b0165a8a946a643851535e2a2521d4b68e62682a64ed6eeecf5"
+  },
+  "bridge": {
+    "bytes": 1022448,
+    "sha256": "b7e1df3b6b8c83380f6402cb5d4b3e68ae149175b99186c0d4cf18e12639175a"
+  },
+  "cases": [
+    {
+      "name": "string-literal",
+      "source": "(ns runtime-string-literal (:export [main]))\n\n(defn main [] :i64 (string-length \"hello\"))\n",
+      "result": 5,
+      "trap": false,
+      "reference": {
+        "exit": 0,
+        "remainingFuel": 999999
+      },
+      "nativePin": {
+        "bytes": 117,
+        "sha256": "7ff8dc7ea27f9e4a6dd996e5e53bb3c60d51992fa273a13b8caa964de84dace1"
+      },
+      "containerPin": {
+        "bytes": 157,
+        "sha256": "1d3a83a3ba3e6b5117fcce74b320f9dbeb9f741f5f86ac94abdf4b64acb76a8b"
+      }
+    },
+    {
+      "name": "string-concat",
+      "source": "(ns runtime-string-concat (:export [main]))\n\n(defn main [] :i64 (if (string=? (string-concat \"ab\" \"cd\") \"abcd\") 42 -1))\n",
+      "result": 42,
+      "trap": false,
+      "reference": {
+        "exit": 0,
+        "remainingFuel": 999999
+      },
+      "nativePin": {
+        "bytes": 292,
+        "sha256": "b727ef281adeaaa5940ff2c8c805f97d93faa9d8a1d21cc93a2e46599906a154"
+      },
+      "containerPin": {
+        "bytes": 332,
+        "sha256": "ead3a4b133409b7a92af23c8e68457a1da6ca5d9cf0293ef64d6f594b283b795"
+      }
+    },
+    {
+      "name": "string-view",
+      "source": "(ns runtime-string-view (:export [main]))\n\n(defn main [] :i64 (string-code-point-at (string-substring (string-concat \"xx\" \"abcd\") 2 6) 1))\n",
+      "result": 98,
+      "trap": false,
+      "reference": {
+        "exit": 0,
+        "remainingFuel": 999999
+      },
+      "nativePin": {
+        "bytes": 292,
+        "sha256": "41caa03bc10cd02b8583a61c68bc677df08bfc689a4a17115dced3fd34d84cc9"
+      },
+      "containerPin": {
+        "bytes": 332,
+        "sha256": "0c141025ec4b25870cfdf00fd0464119b2a3764117bf0f466c7dfc6280a5afa5"
+      }
+    },
+    {
+      "name": "string-unicode",
+      "source": "(ns runtime-string-unicode (:export [main]))\n\n(defn main [] :i64 (+ (string-length \"\u65e5\u00e9\") (string-code-point-at \"\u65e5\u00e9\" 3)))\n",
+      "result": 238,
+      "trap": false,
+      "reference": {
+        "exit": 0,
+        "remainingFuel": 999999
+      },
+      "nativePin": {
+        "bytes": 237,
+        "sha256": "45b4f362fa9f60f2f10152918a9a93c1a0acd339fc0fcd410783b4796d920cf9"
+      },
+      "containerPin": {
+        "bytes": 277,
+        "sha256": "060c3357c8e1f25494d5627465feaa05130ce4bbb9c13aabc46f29f8087a0901"
+      }
+    },
+    {
+      "name": "string-empty-nul",
+      "source": "(ns runtime-string-empty-nul (:export [main]))\n\n(defn main [] :i64 (if (string=? (string-concat \"\" \"a\\u0000b\") \"a\\u0000b\") 42 -1))\n",
+      "result": 42,
+      "trap": false,
+      "reference": {
+        "exit": 0,
+        "remainingFuel": 999999
+      },
+      "nativePin": {
+        "bytes": 283,
+        "sha256": "119fcd7ed38ac52cafccd6dde77ae6cc81c92416a2228327363084ef935971a8"
+      },
+      "containerPin": {
+        "bytes": 323,
+        "sha256": "d02ab1400976ed2abe25a007d1e15546d46af44ec0d7f7c07525cf6709a551fa"
+      }
+    },
+    {
+      "name": "string-search",
+      "source": "(ns runtime-string-search (:export [main]))\n\n(defn main [] :i64 (+ (string-index-of (string-concat \"ab\" \"cd\") \"bc\") (string-compare \"a\" \"b\")))\n",
+      "result": 0,
+      "trap": false,
+      "reference": {
+        "exit": 0,
+        "remainingFuel": 999999
+      },
+      "nativePin": {
+        "bytes": 369,
+        "sha256": "59f273083c6cbc8e941a63b73eefe811eed9db71b013650820b20bc4fd477db8"
+      },
+      "containerPin": {
+        "bytes": 409,
+        "sha256": "c4491a5705307001e336b2fef7d9a3f7f74cf3d3be220285e96d530756de9a4d"
+      }
+    },
+    {
+      "name": "string-call",
+      "source": "(ns runtime-string-call (:export [main]))\n(defn- decorate [s :string] :string (string-concat \"[\" (string-concat s \"]\")))\n(defn main [] :i64 (string-length (decorate \"hello\")))\n",
+      "result": 7,
+      "trap": false,
+      "reference": {
+        "exit": 0,
+        "remainingFuel": 999998
+      },
+      "nativePin": {
+        "bytes": 357,
+        "sha256": "0a20e8b304296bdaefb7cac80642812975153bc5d9335eeb977fcb7c52f5834b"
+      },
+      "containerPin": {
+        "bytes": 397,
+        "sha256": "8560002d969cae15a5829e16c04c94b25ce62f88c95a88f4490e732328533b23"
+      }
+    },
+    {
+      "name": "vector-literal",
+      "source": "(ns runtime-vector-literal (:export [main]))\n\n(defn main [] :i64 (vector-at [11 22 33] 1))\n",
+      "result": 22,
+      "trap": false,
+      "reference": {
+        "exit": 0,
+        "remainingFuel": 999999
+      },
+      "nativePin": {
+        "bytes": 128,
+        "sha256": "d3cd6662e9e0405b8a5b8c11fbdbeeb7cc39c9dca7853a51564b3f8495f7e460"
+      },
+      "containerPin": {
+        "bytes": 168,
+        "sha256": "896dbb9cbf2ca5332bd7c9b4f00d9ae5fc020b10c86124c80e25afcc5a85c998"
+      }
+    },
+    {
+      "name": "vector-dynamic",
+      "source": "(ns runtime-vector-dynamic (:export [main]))\n\n(defn main [] :i64 (let [x 7 v [x (+ x 1)]] (+ (vector-at v 0) (vector-at v 1))))\n",
+      "result": 15,
+      "trap": false,
+      "reference": {
+        "exit": 0,
+        "remainingFuel": 999999
+      },
+      "nativePin": {
+        "bytes": 427,
+        "sha256": "ffc81f2d2e4331433138616a8cda766d9ad61ebe572717ab0dd1e86500fccc9c"
+      },
+      "containerPin": {
+        "bytes": 467,
+        "sha256": "e5b2a6029536071c9b1cd3011222acaadd65b62b0e3f4b2f2911c406fb9743f3"
+      }
+    },
+    {
+      "name": "vector-persistent",
+      "source": "(ns runtime-vector-persistent (:export [main]))\n\n(defn main [] :i64 (let [v [10 20] w (vector-assoc v 0 30)] (+ (vector-at v 0) (vector-at w 0))))\n",
+      "result": 40,
+      "trap": false,
+      "reference": {
+        "exit": 0,
+        "remainingFuel": 999999
+      },
+      "nativePin": {
+        "bytes": 465,
+        "sha256": "141d2737fd448e862a3f644b0110b932a97923acc8732f8f802f217b5cc29061"
+      },
+      "containerPin": {
+        "bytes": 505,
+        "sha256": "30554b673fb3dbf4afeff7bb53d81bc5d144a867911ef582d778afbd68b6d417"
+      }
+    },
+    {
+      "name": "vector-mutate",
+      "source": "(ns runtime-vector-mutate (:export [main]))\n\n(defn main [] :i64 (let [v (vector-alloc 5) w (vector-assoc! v 3 42)] (vector-at w 3)))\n",
+      "result": 42,
+      "trap": false,
+      "reference": {
+        "exit": 0,
+        "remainingFuel": 999999
+      },
+      "nativePin": {
+        "bytes": 280,
+        "sha256": "01151fadb7cda7d1bada94fb9756e89c970345413efe35ab9402ae16c1789fdb"
+      },
+      "containerPin": {
+        "bytes": 320,
+        "sha256": "953f1ca23c901e7e85b964ae5dd795b00a4443f8d1d7678e829d1b40266c36ea"
+      }
+    },
+    {
+      "name": "vector-drop-conj",
+      "source": "(ns runtime-vector-drop-conj (:export [main]))\n\n(defn main [] :i64 (let [v (vector-conj [1 2] 9) w (vector-drop v 1)] (+ (vector-count w) (vector-at w 1))))\n",
+      "result": 11,
+      "trap": false,
+      "reference": {
+        "exit": 0,
+        "remainingFuel": 999995
+      },
+      "nativePin": {
+        "bytes": 2928,
+        "sha256": "e185511655733db1f242e5797668ec26b6a8efff3e782b003a29f3502d6a7952"
+      },
+      "containerPin": {
+        "bytes": 2969,
+        "sha256": "25789128023c2889199dd477f62e0708093dbbb335e8fce574630aeb64f080a3"
+      }
+    },
+    {
+      "name": "vector-pooled",
+      "source": "(ns runtime-vector-pooled (:export [main]))\n\n(defn main [] :i64 (vector-count [0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79]))\n",
+      "result": 80,
+      "trap": false,
+      "reference": {
+        "exit": 0,
+        "remainingFuel": 999999
+      },
+      "nativePin": {
+        "bytes": 3960,
+        "sha256": "a857428eefe7d11ea874160255320c196ac1e746875a99d0451b01b219008a84"
+      },
+      "containerPin": {
+        "bytes": 4001,
+        "sha256": "27084f2464b0cbf39117a6e4051c12ba3e6d6a9d0fc7bae1a1945ca652251325"
+      }
+    },
+    {
+      "name": "vector-negative",
+      "source": "(ns runtime-vector-negative (:export [main]))\n(defn- negative [] :i64 -1)\n(defn main [] :i64 (vector-at [10 20] (negative)))\n",
+      "result": null,
+      "trap": true,
+      "reference": {
+        "exit": 120,
+        "remainingFuel": 999999
+      },
+      "nativePin": {
+        "bytes": 168,
+        "sha256": "754206ddc1ebd2717c708107281b23654587299b9df298c64b9e15fdd9ab194c"
+      },
+      "containerPin": {
+        "bytes": 208,
+        "sha256": "5687e2ee9a49ae2219c484413bc9b9ae2ae954d6b1d0bf89d17b550e1cea8a45"
+      }
+    },
+    {
+      "name": "vector-oob",
+      "source": "(ns runtime-vector-oob (:export [main]))\n\n(defn main [] :i64 (let [v [10 20]] (vector-at v 2)))\n",
+      "result": null,
+      "trap": true,
+      "reference": {
+        "exit": 120,
+        "remainingFuel": 999999
+      },
+      "nativePin": {
+        "bytes": 271,
+        "sha256": "9b978b3e19b718cb29bb1996d26d8a61b168b056b215eb8dc48e0bbfc890c5e1"
+      },
+      "containerPin": {
+        "bytes": 311,
+        "sha256": "baec92e49757cae87e3ab5591f6959053b22cb05759d63ee487b534fa70ca7f9"
+      }
+    },
+    {
+      "name": "string-oob",
+      "source": "(ns runtime-string-oob (:export [main]))\n\n(defn main [] :i64 (string-length (string-substring \"hello\" 0 10)))\n",
+      "result": null,
+      "trap": true,
+      "reference": {
+        "exit": 120,
+        "remainingFuel": 999999
+      },
+      "nativePin": {
+        "bytes": 197,
+        "sha256": "5e70c31956cfe9b8a3e282e9be42e5198dfb976db1dad1f6e3e9dc4d56865904"
+      },
+      "containerPin": {
+        "bytes": 237,
+        "sha256": "2e0d3ce0ba6981edc2fcb811d380f6acc27220f9f1741bfa44733a35f72ad111"
+      }
+    },
+    {
+      "name": "string-boundary",
+      "source": "(ns runtime-string-boundary (:export [main]))\n\n(defn main [] :i64 (string-length (string-substring \"\u65e5\u00e9\" 1 3)))\n",
+      "result": null,
+      "trap": true,
+      "reference": {
+        "exit": 120,
+        "remainingFuel": 999999
+      },
+      "nativePin": {
+        "bytes": 197,
+        "sha256": "7324bbca416c77ea5aa9b38fe8bf682036b56e3a9e3edace629a4c0351f944bf"
+      },
+      "containerPin": {
+        "bytes": 237,
+        "sha256": "33e0a63ac0317b8ab1e8ae45aef54bd9c8b35db90c85ce69255c357518f59931"
+      }
+    },
+    {
+      "name": "wide-args",
+      "source": "(ns runtime-wide-args (:export [main]))\n(defn- wide [p0 :i64 p1 :i64 p2 :i64 p3 :i64 p4 :i64 p5 :i64 p6 :i64 p7 :i64 p8 :i64 p9 :i64 p10 :i64 p11 :i64 p12 :i64 p13 :i64 p14 :i64 p15 :i64] :i64 (+ (* p0 1) (* p1 2) (* p2 3) (* p3 4) (* p4 5) (* p5 6) (* p6 7) (* p7 8) (* p8 9) (* p9 10) (* p10 11) (* p11 12) (* p12 13) (* p13 14) (* p14 15) (* p15 16)))\n(defn main [] :i64 (wide 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16))\n",
+      "result": 1496,
+      "trap": false,
+      "reference": {
+        "exit": 0,
+        "remainingFuel": 999999
+      },
+      "nativePin": {
+        "bytes": 2012,
+        "sha256": "02f528ae592263814fbf7edb1cefbf6558cea1a7bd70bf3960c07db0e66e61e9"
+      },
+      "containerPin": {
+        "bytes": 2053,
+        "sha256": "e1b775e80bc5b5c276730c7dc0a11c36741dd396d56044e9e95b0fb14dbd1196"
+      }
+    },
+    {
+      "name": "closure",
+      "source": "(ns runtime-closure (:export [main]))\n\n(defn main [] :i64 (let [k 9 f (fn [x] (+ x k))] (invoke f 33)))\n",
+      "result": 42,
+      "trap": false,
+      "reference": {
+        "exit": 0,
+        "remainingFuel": 999999
+      },
+      "nativePin": {
+        "bytes": 410,
+        "sha256": "cf27825513df6170bd2c7f493c7724a35fa1c13f5b45b131505a86007e037a9a"
+      },
+      "containerPin": {
+        "bytes": 450,
+        "sha256": "163abe23592ac4cb9d416cac585e32de5cae6f8244d0597584d940ec611f075d"
+      }
+    },
+    {
+      "name": "closure-env",
+      "source": "(ns runtime-closure-env (:export [main]))\n\n(defn main [] :i64 (let [a 10 b 20 f (fn [x] (+ x a b))] (invoke f 12)))\n",
+      "result": 42,
+      "trap": false,
+      "reference": {
+        "exit": 0,
+        "remainingFuel": 999998
+      },
+      "nativePin": {
+        "bytes": 752,
+        "sha256": "70883fa5a9bc5a144cdfe27c3cc6c651ad346b22595bfaa8ff5f81a96b651735"
+      },
+      "containerPin": {
+        "bytes": 792,
+        "sha256": "f6da6284dae95f0a746b2af0c152e8117fecc6106dcf73dca3a1b54bf23c9ae5"
+      }
+    },
+    {
+      "name": "state-results",
+      "source": "(ns runtime-state-results (:export [main]))\n(defhandler tally [:state :i64] (get [s] (resume s s)) (put [s v] (resume v v)))\n(defn main [] :i64 (handle (do (perform :state/put 42) (perform :state/get)) (with tally 0)))\n",
+      "result": 42,
+      "trap": false,
+      "reference": {
+        "exit": 0,
+        "remainingFuel": 999999
+      },
+      "nativePin": {
+        "bytes": 395,
+        "sha256": "462b0e947ad20dad1021f6175469a1278621652d694bc9863a4132a5e373150d"
+      },
+      "containerPin": {
+        "bytes": 435,
+        "sha256": "cab4b7add1071e81d3fca4720ef85a72d53e05086deea72a00d5527c3d72cc79"
+      }
+    },
+    {
+      "name": "bytes-roundtrip",
+      "source": "(ns runtime-bytes-roundtrip (:export [main]))\n\n(defn main [] :i64 (string-code-point-at (string-from-utf8 (bytes-from-vector-i64 [65 66])) 1))\n",
+      "result": 66,
+      "trap": false,
+      "reference": {
+        "exit": 0,
+        "remainingFuel": 999999
+      },
+      "nativePin": {
+        "bytes": 299,
+        "sha256": "42cf47da20d6a829d59f88f01c1b089c8760bcc04c4a4ddd67ab8c780b8ace9a"
+      },
+      "containerPin": {
+        "bytes": 339,
+        "sha256": "84ecb202616541b88f818b7127a170642fbbd873165dd39b0f9241cb4d1f95cf"
+      }
+    },
+    {
+      "name": "capability-denied",
+      "source": "(ns runtime-capability-denied (:export [main]))\n\n(defn main [] :i64 (let [x (typed-cap-call :io/write :string :string \"denied\")] 42))\n",
+      "result": null,
+      "trap": true,
+      "reference": {
+        "exit": 120,
+        "remainingFuel": 999999
+      },
+      "nativePin": {
+        "bytes": 166,
+        "sha256": "7d9e3754af93625fc7846977f35aa3bda0964126cc516627a56fa74d6928959a"
+      },
+      "containerPin": {
+        "bytes": 206,
+        "sha256": "fb3d3dbd95916aa65ecc54e44e4a529ece3b4bebd170d9bcdd20d2afda12d462"
+      }
+    },
+    {
+      "name": "mutual-tail",
+      "source": "(ns runtime-mutual-tail (:export [main]))\n(defn- even [n :i64] :bool (if (= n 0) true (odd (dec n))))\n(defn- odd [n :i64] :bool (if (= n 0) false (even (dec n))))\n(defn main [] :i64 (if (even 20000) 42 -1))\n",
+      "result": 42,
+      "trap": false,
+      "reference": {
+        "exit": 0,
+        "remainingFuel": 979998
+      },
+      "nativePin": {
+        "bytes": 594,
+        "sha256": "600cb92b04695ff55800bcb9ffcde3e93d8b30f8f4e9f19d25149957d23cc9ea"
+      },
+      "containerPin": {
+        "bytes": 634,
+        "sha256": "4ad89fbb26b089a1df0ddb2b5363e061d4c3ca6f84201bd0a271e072bbf3466c"
+      }
+    }
+  ],
+  "trustedCLoader": true,
+  "JVMNodeOrGraalFallback": false,
+  "linuxSelfhost": false,
+  "performanceMeasured": false
+}

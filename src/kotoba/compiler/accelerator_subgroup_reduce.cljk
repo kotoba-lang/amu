@@ -1,0 +1,161 @@
+(ns kotoba.compiler.accelerator-subgroup-reduce
+  "The Vulkan/GLSL arm of the :subgroup-reduce kernel variant (ADR-0356,
+  JUN-59; ADR-0357's ARM row reuses this same emission).
+
+  STATE, exactly: the EMISSION is implemented here with tests. It is NOT
+  admitted into kotoba.compiler.accelerator's variant plumbing and NOT
+  selectable -- `select-variant` (kotoba.compiler.accelerator-variants, the
+  design home of the row) is in flight in PR #1331 and this row composes
+  with it in a follow-up. Nothing here is measured, and nothing here may be
+  reported as optimization evidence: `basis` carries :measured? false and
+  that flag flips only when an interleaved baseline-vs-variant comparison on
+  an Intel device (JUN-59's measurement contract) replaces the basis text.
+  On ARM the same rule holds with a Mali device (ADR-0357).
+
+  What the emission is (ADR-0356's Intel row, to its letter): a reduce
+  kernel whose intra-subgroup fold queries the subgroup size at RUNTIME
+  (`gl_SubgroupSize`) and never bakes 32 into the fold -- Intel subgroup
+  size is a device choice (8/16/32) and an emission that assumes 32 would
+  be wrong on most Intel devices. The fold needs no barriers and no shared
+  memory; one write barrier plus a short cross-subgroup tree over the
+  gl_NumSubgroups partials replaces the baseline tree's log2(W) cascade.
+  The reduction groups the same admitted elements as the :baseline tree in a
+  different order -- f32 :sum may differ in the low bits; :max/:min are
+  order-independent.
+
+  Safety condition (checked by the tests): a Vulkan subgroup size is a power
+  of two, so for every KIR-admitted W (powers of two in [32, 1024]) every
+  subgroup is either full or the single first partial one, and the active
+  fold width is min(gl_SubgroupSize, gl_WorkGroupSize.x). The shared array
+  is W floats -- the same footprint the :baseline tree uses -- and holds one
+  partial per subgroup; a subgroup has at least one invocation, so
+  gl_NumSubgroups <= W always.
+
+  The ABI edge: the KIR's `n` is :runtime-u32, a uniform in the WGSL
+  emission. The wire-42 (:gpu/compute) path binds storage buffers only
+  (tools/kexe_gpu_vulkan.c: \"PIPELINE <spv> <bindings>, storage buffers
+  0..n-1\"), so this emission carries `n` in a read-only storage buffer at
+  binding 2. Same value, same bounds semantics; the buffer-vs-uniform
+  distinction is a WGSL-ism the GLSL path has no word for."
+  {:kotoba/export [applicable? basis emit-glsl min-workgroup-size]}
+  (:require [kotoba.compiler.accelerator :as accelerator]))
+
+(def min-workgroup-size
+  "The smallest workgroup this variant admits: one full NVIDIA warp-sized
+  floor shared with the :warp-shuffle-reduce row (ADR-0356's predicate). A
+  smaller workgroup gets :baseline -- the fold would be over a partial
+  subgroup only, where the tree is already shorter than the machinery."
+  32)
+
+(def basis
+  "Why this variant exists. DESIGN ASSUMPTION, not measurement evidence.
+  :measured? false is the honesty lock; it flips only when hardware
+  measurement replaces :text for the row it stands on (JUN-59 on Intel,
+  JUN-60 on Mali). Nothing in this repository has executed a subgroup
+  reduce on either vendor's hardware."
+  {:measured? false
+   :text
+   "Design assumption (UNMEASURED): the baseline tree reduce pays log2(W)
+    barrier stages (7 at W = 128); folding within a subgroup needs no
+    barriers and no shared memory, leaving one write barrier plus a
+    log2(W/S)-stage cross-subgroup tree (4/3/2 stages at W = 128 for
+    S = 8/16/32). Removing most of the barrier cascade is assumed to win on
+    Intel hardware and on Mali (ADR-0357); no hardware has said so yet."})
+
+(defn applicable?
+  "TOTAL predicate for the row ADR-0356 specifies: a REDUCE kernel over
+  :sum/:max/:min whose workgroup is a power of two in [32, 1024]. Everything
+  else -- ewise, a sub-warp workgroup, a malformed or partial kernel map --
+  answers false, never a throw. Selection time is where a refusal costs the
+  most."
+  [kir]
+  (and (map? kir)
+       (= :reduce (:kernel/op kir))
+       (contains? #{:sum :max :min} (:kernel/operator kir))
+       (let [wg (:kernel/workgroup-size kir)]
+         (and (int? wg)
+              (pos? wg)
+              (zero? (bit-and wg (dec wg)))
+              (<= wg accelerator/max-workgroup-size)
+              (>= wg min-workgroup-size)))))
+
+(def ^:private identity-value
+  ;; The padded lanes (i >= n) fold the identity. For extrema the identity
+  ;; must be the INFINITE neutral: a finite bound is corrupted by an input
+  ;; that legitimately contains +Inf (:min) or -Inf (:max). GLSL has no
+  ;; infinity literal; uintBitsToFloat of the IEEE-754 sign/exponent bits
+  ;; is exact.
+  {:sum "0.0"
+   :max "uintBitsToFloat(0xFF800000u)"
+   :min "uintBitsToFloat(0x7F800000u)"})
+
+(def ^:private combine-expression
+  {:sum "a+b" :max "max(a,b)" :min "min(a,b)"})
+
+(defn emit-glsl
+  "The :subgroup-reduce GLSL compute shader for one validated KIR. Total on
+  the row, fail-closed off it: a kernel that `applicable?` refuses is
+  refused here too (ex-info \"kernel variant not applicable\") -- silently
+  answering a baseline tree would make the artifact claim a variant it does
+  not carry. A malformed KIR is refused by the same validate! the ADR-0002
+  emitters use. Deterministic: the same KIR lowers to the same bytes,
+  forever. The entry point is `main` (the wire-42 PIPELINE op enters
+  \"main\"); the kernel's :kernel/name deliberately does not appear."
+  [kir]
+  (accelerator/validate! kir)
+  (when-not (applicable? kir)
+    (throw (ex-info "kernel variant not applicable"
+                    {:variant :subgroup-reduce
+                     :op (:kernel/op kir)
+                     :operator (:kernel/operator kir)
+                     :workgroup-size (:kernel/workgroup-size kir)})))
+  (let [wg (:kernel/workgroup-size kir)
+        operator (:kernel/operator kir)
+        identity (identity-value operator)
+        combine (combine-expression operator)]
+    (str "#version 450\n"
+         ;; GLSL wants the per-feature subgroup extensions; the umbrella
+         ;; GL_KHR_shader_subgroup is rejected outright by glslang
+         ;; ("extension not supported"), while basic + shuffle_relative
+         ;; compile -- the harness's measured-working rung patch replaces
+         ;; exactly this pair (PR #1346), so emit what measures.
+         "#extension GL_KHR_shader_subgroup_basic : require\n"
+         "#extension GL_KHR_shader_subgroup_shuffle_relative : require\n"
+         "layout(local_size_x = " wg ") in;\n"
+         "layout(set = 0, binding = 0, std430) readonly buffer X { float x[]; };\n"
+         "layout(set = 0, binding = 1, std430) writeonly buffer Parts { float parts[]; };\n"
+         "layout(set = 0, binding = 2, std430) readonly buffer N { uint n; };\n"
+         "shared float partials[" wg "];\n"
+         "float combine(float a, float b) { return " combine "; }\n"
+         "void main() {\n"
+         "  uint i = gl_GlobalInvocationID.x;\n"
+         "  float v = i < n ? x[i] : " identity ";\n"
+         ;; The fold width is the ACTIVE width of this subgroup: a Vulkan
+         ;; subgroup size is a power of two, so every subgroup is full or the
+         ;; single first partial one, and min(S, W) is exactly the number of
+         ;; active lanes. The guard drops the shuffle's undefined
+         ;; out-of-range read instead of folding it in.
+         "  uint fold = min(gl_SubgroupSize, gl_WorkGroupSize.x);\n"
+         "  for (uint d = fold / 2u; d > 0u; d >>= 1u) {\n"
+         "    float s = subgroupShuffleDown(v, d);\n"
+         "    if (gl_SubgroupInvocationID + d < fold) { v = combine(v, s); }\n"
+         "  }\n"
+         "  if (gl_SubgroupInvocationID == 0u) { partials[gl_SubgroupID] = v; }\n"
+         "  barrier();\n"
+         ;; One cross-subgroup tree over the gl_NumSubgroups partials, run by
+         ;; subgroup 0's lanes STRIDED by the subgroup size: the number of
+         ;; pairs at stage d can exceed the subgroup width (e.g. nsub=32 with
+         ;; S=8 starts at d=16), so a plain lid < d guard would leave
+         ;; partials beyond the first S unfolded. nsub is 1 or a power of two
+         ;; (W and S are), so the halving tree is exact. The barrier per stage
+         ;; is uniform -- every invocation of the workgroup reaches it.
+         "  for (uint d = gl_NumSubgroups / 2u; d > 0u; d >>= 1u) {\n"
+         "    if (gl_SubgroupID == 0u) {\n"
+         "      for (uint lid = gl_SubgroupInvocationID; lid < d; lid += gl_SubgroupSize) {\n"
+         "        partials[lid] = combine(partials[lid], partials[lid + d]);\n"
+         "      }\n"
+         "    }\n"
+         "    barrier();\n"
+         "  }\n"
+         "  if (gl_SubgroupID == 0u && gl_SubgroupInvocationID == 0u) { parts[gl_WorkGroupID.x] = partials[0]; }\n"
+         "}\n")))

@@ -1,0 +1,30 @@
+(ns selfhost.native-source-recovery
+  (:export [main])
+  (:require [kotoba.form :as form]
+            [kotoba.compiler.kotoba-reader :as reader]
+            [kotoba.compiler.decimal-bits :as decimal]
+            [kotoba.compiler.target-names :as target])
+  (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                      [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]
+             :kotoba.reader/out [:record :kotoba.reader/out
+                                 [[:forms [:list [:ref :form/r]]]
+                                  [:err :string] [:at :i64]]]}))
+
+(defn main [] :i64
+  (let [exact (decimal/decimal-f64-bits "1.0")
+        negative (reader/read-forms "-0x8000000000000000")
+        negative-forms (record-get [:ref :kotoba.reader/out] negative :forms)
+        duplicate (reader/read-forms "{:a 1 :a 2}")
+        bounded (reader/read-forms-count-bounded "1 2 3" 64 1024 2)]
+    (+ (if (= (target/parse "wasm-component-kotoba-v2") :wasm-component-kotoba-v2) 1 0)
+       (if (and (option-some?-of [:option :i64] exact)
+                (= (option-value-of [:option :i64] exact 0) 4607182418800017408)) 2 0)
+       (if (and (string=? (record-get [:ref :kotoba.reader/out] negative :err) "")
+                (= (vector-count negative-forms) 1)
+                (= (form/int-value (typed-list-nth [:list [:ref :form/r]] negative-forms 0))
+                   -9223372036854775808)) 4 0)
+       (if (string=? (record-get [:ref :kotoba.reader/out] duplicate :err)
+                     "map literal has duplicate keys") 8 0)
+       (if (and (string=? (record-get [:ref :kotoba.reader/out] bounded :err)
+                         "too many top-level forms")
+                (<= (vector-count (record-get [:ref :kotoba.reader/out] bounded :forms)) 2)) 16 0))))

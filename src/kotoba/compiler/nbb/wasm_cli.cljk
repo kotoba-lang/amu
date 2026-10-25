@@ -17,12 +17,16 @@
             [kotoba.sema :as sema]
             [kotoba.compiler.nbb.io :as io]
             [kotoba.compiler.module-lock :as module-lock]
+            [kotoba.compiler.accelerator-pipeline :as accelerator-pipeline]
             [kotoba.compiler.project-files :as project-files]
             [kotoba.compiler.nbb.project-source :as project-source]
             [kotoba.compiler.nbb.output-set :as output-set]
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.provenance :as provenance]
             [kotoba.kir :as ir]
+            [kotoba.pprint :as pp]
+            [kotoba.lang.edn :as kedn]
+            [clojure.walk :as walk]
             [kotoba.compiler.effect-row :as effect-row]
             [kotoba.kir.compatibility :as compatibility]
             [kotoba.kir.target :as target-profile]
@@ -293,6 +297,61 @@
       (:packages resolved)
       (assoc :packages (package-verdict! resolved report)))))
 
+(defn- edn-value
+  "BigInt -> a bare-digit EDN integer at print time.
+
+  The typed KIR carries i64 bodies as JS BigInt on this route; cljs printing
+  of a BigInt is '#object[BigInt 50052]', which is not EDN and does not
+  round-trip. A digits-only symbol prints as the bare digits, which every EDN
+  reader reads back as an integer of the same value — so the FULL signed
+  64-bit range survives (no Number narrowing, no refusal: i64 beyond double
+  is a supported value here, examples/i64-beyond-double.kotoba)."
+  [x]
+  (if (identical? (type x) js/BigInt)
+    (symbol (js/String x))
+    x))
+
+(defn- kir!
+  "Emit the module's KIR as EDN — the precompiled pure-planner artifact
+  product shells ship (murakumo's resources/murakumo/oracle/*.kir.edn is one
+  consumer).
+
+  This is the source -> resolve-hir! -> kotoba.kir/lower -> pretty-print
+  route, exactly what the artifact generators did on the nbb/kbb test engine
+  (JUN-122: that engine could not reach the compiler at all on one host, and
+  the toolchain rule is that generation moves onto the compiler's own CLI
+  routes). The file printing follows kotoba_oracle_gen: kotoba.pprint with
+  *print-namespace-maps* false, then kotoba.lang.edn/escape-controls — the
+  ONE definition of the control-character rule (reimplementing it here would
+  be two that can disagree).
+
+  Without --output the KIR is the RETURN VALUE (the CLI prints exactly one
+  EDN value; printing the text here as well would append the status map and
+  leave two top-level forms). The lowering runs under the policy's oracle
+  fuel like every other compile route, and a consumed package lock is
+  verified against the lowered definitions before anything is emitted —
+  a locked namespace shadowed by a local one must not silently ship."
+  [args]
+  (let [resolved (project-source/resolve-source! args)
+        policy (support/timed "policy-read" #(read-policy! args))
+        hir (:value (resolve-hir! (:source resolved)
+                                  (project-source/analyze-opts policy (:linked? resolved))
+                                  nil))
+        em (support/emit-metadata args)
+        kir-raw (ir/lower hir {:oracle-fuel (support/oracle-fuel em policy)})
+        report (definition-identity/describe {:hir hir :kir kir-raw})
+        _ (package-verdict! resolved report)   ;; throws on a lock mismatch, before anything is written
+        kir (walk/postwalk edn-value kir-raw)
+        fmt (or (:format kir) :kotoba.kir/v4)
+        text (kedn/escape-controls
+              (binding [*print-namespace-maps* false]
+                (with-out-str (pp/pprint kir))))
+        output (support/option args "--output")]
+    (if output
+      (do (io/write-text! output text)
+          {:ok true :format fmt :output output})
+      kir)))
+
 (defn- compile-uncached! [args target output source linked? lock-cid]
   (let [policy (support/timed "policy-read" #(read-policy! args))
         emit-metadata (support/emit-metadata args)
@@ -502,6 +561,40 @@
                                                         "identity is checked when it "
                                                         "is compiled")})))))
 
+(defn- gpu-compile!
+  "Connect the accelerator pipeline on the bin/amu route (JUN-85 emit stage):
+  SPEC.edn + --device DEVICE.edn -> one sealed GPU artifact through
+  accelerator-targets' vendor dispatch and accelerator's deterministic
+  emitters. Target-independent: the DEVICE, not --target, chooses the emission
+  target. The workgroup row is the provisional dispatch default (ADR-0355)
+  unless the SPEC names one; :workgroup-source / :measured? say which, and
+  neither answer is optimization evidence."
+  [args]
+  (let [spec-path (or (second args)
+                      (support/usage-error! "gpu-compile needs SPEC.edn"))
+        spec (support/read-edn-file! spec-path)
+        device (support/read-edn-file!
+                 (or (support/option args "--device")
+                     (support/usage-error! "--device <DEVICE.edn> is required")))
+        output (or (support/option args "--output")
+                   ;; The launcher runs this driver with the Amu checkout as
+                   ;; CWD, so a bare default would land in the compiler tree;
+                   ;; anchor it to the (already absolute) spec path instead.
+                   (posix-path/join (posix-path/dirname spec-path) "gpu-artifact.edn"))
+        _ (doseq [flag ["--target" "--policy" "--source-path" "--module-lock" "--blocks"]]
+            (when (support/option args flag)
+              (support/usage-error!
+                "gpu-compile takes SPEC.edn --device <DEVICE.edn> [--output <ARTIFACT>]")))
+        {:keys [artifact dispatch]} (accelerator-pipeline/compile-spec spec device)]
+    (io/write-text! output (pr-str artifact))
+    {:ok true :target (:target dispatch) :vendor (:vendor dispatch)
+     :workgroup-size (:workgroup-size dispatch)
+     :workgroup-source (:workgroup-source dispatch)
+     :measured? (:measured? dispatch)
+     :kir-sha256 (:kir-sha256 artifact)
+     :code-sha256 (:code-sha256 artifact)
+     :output output}))
+
 (defn- describe-definition-cids
   "The definition CIDs of one module file, for the lock producer. Reads the
   file alone rather than as part of a project: definition identity is
@@ -523,11 +616,15 @@
   (case (first args)
     "check" (check! args context)
     "definition-cids" (definition-cids! args)
+    "kir" (kir! args)
     "compile" (compile! args context)
     ;; `bin/amu` routes every target-less command here, the same way `check`
     ;; arrives. A lock is target-independent, so there is nothing for the
     ;; native entry points to answer differently.
     "module-lock" (module-lock! args)
+    ;; Also target-independent: the device descriptor picks the emission
+    ;; target through accelerator-targets, not --target.
+    "gpu-compile" (gpu-compile! args)
     ;; Authoring, not building. `package-manifest` needs no resolver at all;
     ;; `package-lock` reads each dependency's own signed manifest and asks
     ;; this compiler for the definition CIDs, so the values it writes are

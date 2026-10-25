@@ -1,0 +1,23 @@
+;; Source-only Linux selfhost closure. Explicit x86 target and format required.
+;; The project/KIR/AArch64 drivers are absent, never silently substituted.
+(defn- drv-read [path :string] :string (typed-cap-call :fs/app-data :string :string path))
+(defn- drv-fail0 [e :i64] :i64
+  (let [z (io-err (string-concat "seed-x86_64-linux: E" (string-concat (mem-u2dec e) "\n")))] 1))
+(defn- drv-fail [M :vector-i64 path :string] :i64
+  (let [z (io-err (string-concat "seed-x86_64-linux: " (string-concat path
+            (string-concat " at " (string-concat (mem-u2dec (vector-at M MM-ERR-POS))
+              (string-concat " detail " (string-concat (mem-u2dec (vector-at M MM-ERR-N)) " ")))))))]
+    (drv-fail0 (vector-at M MM-ERR))))
+(defn- xg-default [] :i64 (drv-fail0 E-USAGE))
+(defn- seed-main [] :i64
+  (cond (and (>= (io-argc) 4) (string=? (io-arg 0) "compile") (string=? (io-arg 2) "--target")
+             (string=? (io-arg 3) "x86_64-aiueos-kernel-v1"))
+          (xo-command)
+        (and (>= (io-argc) 4) (string=? (io-arg 0) "compile") (string=? (io-arg 2) "--target")
+             (string=? (io-arg 3) "aarch64-linux"))
+          (xa-command)
+        ;; The native-only entry refuses the C dynamic-loader/runtime format.
+        (and (= (io-argc) 8) (string=? (io-arg 0) "compile") (string=? (io-arg 2) "--target")
+             (string=? (io-arg 3) "x86_64-linux") (string=? (io-arg 6) "--format") (string=? (io-arg 7) "platform-linked"))
+          (drv-fail0 E-TARGET)
+        :else (xg-main)))

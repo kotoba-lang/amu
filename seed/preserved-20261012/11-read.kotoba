@@ -1,0 +1,179 @@
+;; seed/11-read.kotoba -- the reader of the seed compiler R0 (module 11, prefix rd-). Owner: 11-read.
+;; Contract: seed/HEADS :nodes and :errors (E11nn), seed/MEMORY-MAP NODE region (fields NF-KIND NF-FIRST NF-NEXT
+;; NF-TOK NF-AUX) and rules L1-L13. Reads the tokens that 10-lex produced.
+;;
+;;   (rd-run M S) -> M    writer. Builds the node tree and stores the ND-ROOT node in MM-ROOT and in MM-R0. The
+;;                        children of the root are the top-level forms in source order. On failure MM-ERR is set
+;;                        (E1101 unexpected closer, E1102 unclosed at end of file, E1103 mismatched closer,
+;;                        E1105 map, E101 node table full with MM-ERR-N = 4) and MM-ERR-POS is the start byte of
+;;                        the token, MM-ERR-A/B its span (for E1102 the span of the OPENING bracket). Does nothing
+;;                        when MM-ERR is already set.
+;;
+;; Nodes: ND-LIST ( ... ) and ND-VEC [ ... ] have a child list (NF-FIRST, NF-NEXT, 0 ends) and NF-AUX = child
+;; count; NF-TOK = the index of the opening bracket token. ND-INT: NF-AUX = the i64 value; ND-STR: NF-AUX = the LIT
+;; index; ND-SYM and ND-KW: NF-AUX = 0 (the name is the span of the token NF-TOK, in S). The root has NF-TOK 0.
+;; R1 (2026-10-02, agent R1; seed/CONTRACT-REQUESTS.md): a '{' opens an ND-MAP node like a list (children = keys and
+;; values in source order); 21-check admits it only as the argument of (map->Name {..}) and refuses it elsewhere (E1105).
+;; R3 (2026-10-03, agent R3; minimal delimited change): '#{' (TK-HASH-BRACE) opens an ND-SET node (children = the items),
+;; closed by '}'; 21-check types {..} and #{..} as typed map and set literals.
+;; Recursion: rd-form <-> rd-items (nesting depth = native stack depth); a list's items are a self tail loop.
+
+;; Linearity style of this module (stage-0 affine analysis, see the notes at lx-set in 10-lex): the handle returned by a
+;; writer is passed on as a NESTED call argument, never bound to a let name; a result that must be read is read in a callee
+;; through its parameter (rd-atom2, rd-items2, rd-open2, rd-run2).
+(defn- rd-set [M :vector-i64 i :i64 v :i64] :vector-i64 (vector-assoc! M i v))
+
+;; see the second rule at lx-id in 10-lex: every path of a writer consumes the handle
+(defn- rd-id [M :vector-i64] :vector-i64 (vector-assoc! M MM-VERSION MM-LAYOUT-VERSION))
+
+;; NOTE: no reader helper takes M. A call `(helper M ..)` makes M "consumed" or "escaped" for the stage-0 affine analysis, so every
+;; read of the heap is an inline `(vector-at M (+ BASE (* i W) FIELD))`: token fields at MM-TOK-BASE/MM-TOK-W, node fields at
+;; MM-NODE-BASE/MM-NODE-W.
+
+(defn- rd-nset [M :vector-i64 n :i64 f :i64 v :i64] :vector-i64
+  (vector-assoc! M (+ MM-NODE-BASE (* n MM-NODE-W) f) v))
+
+(defn- rd-fail [M :vector-i64 code :i64 pos :i64 a :i64 b :i64] :vector-i64
+  (if (= (vector-at M MM-ERR) 0)
+    (let [M1 (vector-assoc! M MM-ERR code)
+          M2 (vector-assoc! M1 MM-ERR-POS pos)
+          M3 (vector-assoc! M2 MM-ERR-A a)]
+      (vector-assoc! M3 MM-ERR-B b))
+    (rd-id M)))
+
+;; an error that names token t: position and span are the token's
+(defn- rd-fail-tok [M :vector-i64 code :i64 t :i64] :vector-i64
+  (let [s (vector-at M (+ MM-TOK-BASE (* t MM-TOK-W) TF-START))
+        e (vector-at M (+ MM-TOK-BASE (* t MM-TOK-W) TF-END))]
+    (rd-fail M code s s e)))
+
+(defn- rd-full [M :vector-i64] :vector-i64
+  (if (= (vector-at M MM-ERR) 0)
+    (rd-fail (vector-assoc! M MM-ERR-N 4) E-HEAP-REGION -1 0 0)
+    (rd-id M)))
+
+;; new node; its index is left in MM-R0
+(defn- rd-new [M :vector-i64 kind :i64 tok :i64 aux :i64] :vector-i64
+  (let [n (vector-at M MM-NODE-N)]
+    (if (>= n MM-NODE-CAP)
+      (rd-full M)
+      (let [b (+ MM-NODE-BASE (* n MM-NODE-W))
+            M1 (vector-assoc! M (+ b NF-KIND) kind)
+            M2 (vector-assoc! M1 (+ b NF-TOK) tok)
+            M3 (vector-assoc! M2 (+ b NF-AUX) aux)
+            M4 (vector-assoc! M3 (+ b NF-FIRST) 0)
+            M5 (vector-assoc! M4 (+ b NF-NEXT) 0)
+            M6 (vector-assoc! M5 MM-NODE-N (+ n 1))]
+        (vector-assoc! M6 MM-R0 n)))))
+
+;; append child to parent after `last` (0 = first child) and count it in NF-AUX
+(defn- rd-link2 [M :vector-i64 parent :i64] :vector-i64
+  (let [cnt (vector-at M (+ MM-NODE-BASE (* parent MM-NODE-W) NF-AUX))]
+    (rd-nset M parent NF-AUX (+ cnt 1))))
+
+(defn- rd-link [M :vector-i64 parent :i64 last :i64 child :i64] :vector-i64
+  (if (= last 0)
+    (rd-link2 (rd-nset M parent NF-FIRST child) parent)
+    (rd-link2 (rd-nset M last NF-NEXT child) parent)))
+
+(defn- rd-closer? [k :i64] :bool (or (= k TK-RPAREN) (= k TK-RBRACK) (= k TK-RBRACE)))
+
+;; atom node for token t; reading continues at t+1: MM-R0 = t+1, MM-R1 = the node. (The writer's result is read in
+;; rd-atom2 through its parameter, see the third rule at lx-str-find in 10-lex.)
+(defn- rd-atom2 [M :vector-i64 t :i64] :vector-i64
+  (let [n (vector-at M MM-R0)]
+    (rd-set (rd-set M MM-R1 n) MM-R0 (+ t 1))))
+
+(defn- rd-atom [M :vector-i64 t :i64 kind :i64 aux :i64] :vector-i64
+  (rd-atom2 (rd-new M kind t aux) t))
+
+;; the closing token kind of a list or vector node kind
+(defn- rd-want [pk :i64] :i64
+  (cond (= pk ND-LIST) TK-RPAREN (= pk ND-MAP) TK-RBRACE (= pk ND-SET) TK-RBRACE :else TK-RBRACK))
+
+;; closing bracket token t (kind k) met inside `parent`: success leaves MM-R0 = t+1
+(defn- rd-close [M :vector-i64 t :i64 k :i64 parent :i64] :vector-i64
+  (let [pk (vector-at M (+ MM-NODE-BASE (* parent MM-NODE-W) NF-KIND))
+        want (rd-want pk)]
+    (cond
+      (= pk ND-ROOT) (rd-fail-tok M E-READ-CLOSE t)
+      (= k want) (rd-set M MM-R0 (+ t 1))
+      :else (rd-fail-tok M E-READ-MISMATCH t))))
+
+;; end of tokens inside `parent`: fine for the root, E1102 naming the opening bracket otherwise
+(defn- rd-eof [M :vector-i64 t :i64 parent :i64] :vector-i64
+  (if (= (vector-at M (+ MM-NODE-BASE (* parent MM-NODE-W) NF-KIND)) ND-ROOT)
+    (rd-set M MM-R0 t)
+    (let [open (vector-at M (+ MM-NODE-BASE (* parent MM-NODE-W) NF-TOK))]
+      (rd-fail-tok M E-READ-EOF open))))
+
+;; after one form was read (M1 is the result of rd-form): link it and go on, unless an error stopped it
+(defn- rd-items2 [M :vector-i64 parent :i64 last :i64] :vector-i64
+  (if (= (vector-at M MM-ERR) 0)
+    (let [t2 (vector-at M MM-R0)
+          n (vector-at M MM-R1)]
+      (rd-items (rd-link M parent last n) t2 parent n))
+    (rd-id M)))
+
+(defn- rd-items [M :vector-i64 t :i64 parent :i64 last :i64] :vector-i64
+  (if (>= t (vector-at M MM-TOK-N))
+    (rd-eof M t parent)
+    (let [k (vector-at M (+ MM-TOK-BASE (* t MM-TOK-W) TF-KIND))]
+      (if (rd-closer? k)
+        (rd-close M t k parent)
+        (rd-items2 (rd-form M t) parent last)))))
+
+;; opening bracket at token t: node of kind nk, then its items; MM-R0 = token after the closer, MM-R1 = node
+(defn- rd-open2 [M :vector-i64 t :i64 nk :i64] :vector-i64
+  (if (= (vector-at M MM-ERR) 0)
+    (let [n (vector-at M MM-R0)]
+      (rd-set (rd-items M (+ t 1) n 0) MM-R1 n))
+    (rd-id M)))
+
+(defn- rd-open [M :vector-i64 t :i64 nk :i64] :vector-i64
+  (rd-open2 (rd-new M nk t 0) t nk))
+
+;; one form starting at token t; MM-R0 = next token, MM-R1 = the node
+(defn- rd-form [M :vector-i64 t :i64] :vector-i64
+  (let [k (vector-at M (+ MM-TOK-BASE (* t MM-TOK-W) TF-KIND))
+        v (vector-at M (+ MM-TOK-BASE (* t MM-TOK-W) TF-VAL))]
+    (cond
+      (= k TK-LPAREN) (rd-open M t ND-LIST)
+      (= k TK-LBRACK) (rd-open M t ND-VEC)
+      (= k TK-LBRACE) (rd-open M t ND-MAP)
+      (= k TK-HASH-BRACE) (rd-open M t ND-SET)
+      (= k TK-AT) (rd-deref M t)   ; R5B
+      (rd-closer? k) (rd-fail-tok M E-READ-CLOSE t)
+      (= k TK-INT) (rd-atom M t ND-INT v)
+      (= k TK-STR) (rd-atom M t ND-STR v)
+      (= k TK-SYM) (rd-atom M t ND-SYM 0)
+      :else (rd-atom M t ND-KW 0))))
+
+;; R5B (agent R5B, delimited): @x at token t reads as the list (@ x) -- a list node and a head symbol node on the '@' token
+;; (20-names interns the spelling "@" as HD-DEREF), then the next form; MM-R0 = the token after it, MM-R1 = the list. A '@'
+;; with no form after it is E1005.
+(defn- rd-deref [M :vector-i64 t :i64] :vector-i64
+  (if (or (>= (+ t 1) (vector-at M MM-TOK-N)) (rd-closer? (vector-at M (+ MM-TOK-BASE (* (+ t 1) MM-TOK-W) TF-KIND))))
+    (rd-fail-tok M E-LEX-SYNTAX t)
+    (rd-deref2 (rd-new M ND-LIST t 2) t)))
+(defn- rd-deref2 [M :vector-i64 t :i64] :vector-i64
+  (let [l (vector-at M MM-R0)] (rd-deref3 (rd-new M ND-SYM t 0) t l)))
+(defn- rd-deref3 [M :vector-i64 t :i64 l :i64] :vector-i64
+  (let [h (vector-at M MM-R0)] (rd-deref4 (rd-form M (+ t 1)) l h)))
+(defn- rd-deref4 [M :vector-i64 l :i64 h :i64] :vector-i64
+  (if (= (vector-at M MM-ERR) 0)
+    (let [x (vector-at M MM-R1)
+          nx (vector-at M MM-R0)]
+      (rd-set (rd-set (rd-nset (rd-nset M l NF-FIRST h) h NF-NEXT x) MM-R0 nx) MM-R1 l))
+    (rd-id M)))
+
+(defn- rd-run2 [M :vector-i64] :vector-i64
+  (if (= (vector-at M MM-ERR) 0)
+    (let [root (vector-at M MM-R0)]
+      (rd-set (rd-items (vector-assoc! M MM-ROOT root) 1 root 0) MM-R0 root))
+    (rd-id M)))
+
+(defn- rd-run [M :vector-i64 S :string] :vector-i64
+  (if (= (vector-at M MM-ERR) 0)
+    (rd-run2 (rd-new M ND-ROOT 0 0))
+    (rd-id M)))

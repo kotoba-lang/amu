@@ -12,28 +12,48 @@
   kotoba.compiler.nbb.host.io for the layer's contract."
   {:kotoba/export []})
 
+;; R6QW3: the Kotoba reading (W3 re-port). A pure-CLJS mechanism handler (the nbb/Node
+;; layer of a host ability). The guest has no such host surface (the kexe capability model),
+;; so every :kotoba arm is the fail-closed refusal -- the kotoba.kir.js-operations pattern.
+;; The host reading is byte-for-byte. :kotoba/export [] (the guest does not consume it).
+#?(:kotoba
+   (defn exit! [status :i64] :bool
+     (throw (ex-info "exit! is a host ability" {:phase :host :trap :exit-host})))
+   :default
 (defn exit!
   "End the process with STATUS."
   [status]
-  (.exit js/process status))
-
+  (.exit js/process status)))
+#?(:kotoba
+   (defn exit-soon! [status :i64] :bool
+     (throw (ex-info "exit-soon! is a host ability" {:phase :host :trap :exit-host})))
+   :default
 (defn exit-soon!
   "End the process with STATUS after the current event-loop turn, so a write
   queued in this turn is flushed first."
   [status]
-  (js/setImmediate #(.exit js/process status)))
-
+  (js/setImmediate #(.exit js/process status))))
+#?(:kotoba
+   (defn on-stdin-data! [f :document] :bool
+     (throw (ex-info "on-stdin-data! is a host ability" {:phase :host :trap :stdin-host})))
+   :default
 (defn on-stdin-data!
   "Call F with each chunk (a byte buffer) that arrives on standard input."
   [f]
-  (.on js/process.stdin "data" f))
-
+  (.on js/process.stdin "data" f)))
+#?(:kotoba
+   (defn on-stdin-end! [f :document] :bool
+     (throw (ex-info "on-stdin-end! is a host ability" {:phase :host :trap :stdin-host})))
+   :default
 (defn on-stdin-end!
   "Call F once standard input reaches EOF."
   [f]
-  (.on js/process.stdin "end" f))
-
+  (.on js/process.stdin "end" f)))
+#?(:kotoba
+   (defn pause-stdin! [] :bool
+     (throw (ex-info "pause-stdin! is a host ability" {:phase :host :trap :stdin-host})))
+   :default
 (defn pause-stdin!
   "Stop reading standard input."
   []
-  (.pause js/process.stdin))
+  (.pause js/process.stdin)))

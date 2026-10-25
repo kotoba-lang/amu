@@ -1,3 +1,27 @@
-{:execution.v2/version 1 :owner "kotoba-lang/amu"
+{:execution.v2/version 2 :owner "kotoba-lang/amu"
  :v1-unchanged true :default-cutover false :q9-qualification :not-claimed
- :entrypoint kotoba.compiler.execution-targets :runtime-alias :execution-v2 :node-profiles [:wasm32-kotoba-v1 :js-kotoba-v1 :evm256-kotoba-v1] :subset :pure-zeroarg-i64 :artifact-verification :checked-source-reemission :unknown-or-unqualified-host :deny}
+ :entrypoint kotoba.compiler.execution-targets
+ :exports [compile-envelope compile-effect-envelope measure-runtime mechanisms]
+ :runtime-alias :execution-v2 :node-profiles [:wasm32-kotoba-v1 :js-kotoba-v1 :evm256-kotoba-v1]
+ :pure-artifact :kotoba.target-execution-artifact/v2 :pure-subset :zeroarg-i64
+ :effect-artifact :kotoba.target-execution-artifact/v3
+ :effect-profiles [:wasm32-kotoba-v1 :js-kotoba-v1]
+ :effect-subset :bounded-scalar-zeroarg-i64
+ :effect-entrypoint kotoba.compiler.execution-targets/compile-effect-envelope
+ :provider-binding {:keys [:id :scope] :scope [:capability-cid :resource-cid :purpose]
+                    :max-imports 64 :types [:i64 :i64] :exact-admitted-scopes true}
+ :wasm-imports {:module "kotoba:lease/v2" :field-prefix "call_" :ambient-imports :deny}
+ :script-mechanism :canonical-compiler-output-in-fresh-vm-context
+ :script-code-generation {:strings false :wasm false}
+ :budgets {:wasm [:fuel :memory-pages] :script [:fuel :max-frames :deadline-ms]
+           :providers [:deadline-before-and-after-call :lease-use-before-effect]}
+ :host-provider-requirement :trusted-bounded-synchronous-no-ambient-guest-authority
+ :wasm-deadline :boundary-observation-not-hard-preemption-of-host-callback
+ :artifact-verification :checked-source-reemission
+ :kir-formats [:kotoba.kir/v3 :kotoba.kir/v4]
+ :unknown-or-unqualified-host :deny
+ :native-transport {:host-owner "kotoba-lang/kototama-native" :policy-owner "kotoba-lang/kototama"
+                    :accepted :posix-node-unary-i64 :mode :explicit :bindings :interface-cid
+                    :packaged-commands :baked-providers-ignore-lease-mode
+                    :wire-ids :artifact-local-1-to-255 :no-ambient-fallback true}
+ :remaining-gates [:general-native-values :windows-native-transport :async-task :other-hosts :q9 :distributed-production]}

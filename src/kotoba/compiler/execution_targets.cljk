@@ -1,15 +1,15 @@
 (ns kotoba.compiler.execution-targets
-  "Explicit Node composition for pure, bounded Wasm/Script/EVM v2 profiles.
+  "Explicit Node composition for bounded Wasm/Script/EVM profiles and scoped synchronous providers.
   Not part of language semantics or the ordinary compiler closure."
-  {:kotoba/export [compile-envelope measure-runtime mechanisms]}
+  {:kotoba/export [compile-envelope compile-effect-envelope measure-runtime mechanisms]}
   (:require [kotoba.sema :as sema] [kotoba.kir :as kir]
             [kotoba.wasm.core :as wasm] [kotoba.script :as script]
             [kotoba.compiler.backend.evm :as evm]
             [kotoba.artifact.execution :as blocks] [kotoba.artifact.content-identity :as content] [kotoba.artifact.core :as artifact]
-            [kotoba.abi.target :as abi] [kotoba.value.codec :as value]
+            [kotoba.abi.target :as abi] [kotoba.core.execution :as core] [kotoba.value.codec :as value]
             [kototama.evm-tender :as tender]
             #?@(:cljs [["node:fs" :as fs] ["node:crypto" :as crypto]
-                       ["node:child_process" :as process]])))
+                       ["node:child_process" :as process] ["node:vm" :as vm]])))
 
 (def ^:private targets #{:wasm32-kotoba-v1 :js-kotoba-v1 :evm256-kotoba-v1})
 (def ^:private limit-keys #{:fuel :max-frames :memory-pages :deadline-ms :max-output-bytes :gas :step-limit})
@@ -24,7 +24,7 @@
 (defn- checked [source]
   (when-not (and (string? source) (<= (count source) 65536)) (reject! :source-limit))
   (let [program (kir/lower (sema/analyze source))]
-    (when-not (and (= :kotoba.kir/v3 (:format program)) (= #{} (:effects program))
+    (when-not (and (contains? #{:kotoba.kir/v3 :kotoba.kir/v4} (:format program)) (= #{} (:effects program))
                    (= [(symbol "main")] (:exports program))
                    (= [] (get-in program [:signature :params])) (= :i64 (get-in program [:signature :result])))
       (reject! :pure-zeroarg-i64-required))
@@ -41,9 +41,86 @@
   (limits! limits)
   {:format :kotoba.target-execution-artifact/v2 :source source :target target :limits limits
    :output (output (checked source) target limits)})
+(defn- id-number [id]
+  #?(:clj (when (and (integer? id) (<= 1 id 65535)) id)
+     :cljs (cond
+             (and (pos-int? id) (<= id 65535)) id
+             (and (some? id) (= js/BigInt (.-constructor id))
+                  (<= (js/BigInt 1) id (js/BigInt 65535))) (js/Number id)
+             :else nil)))
+
+(defn- bindings! [bindings]
+  (when-not (and (vector? bindings) (<= 1 (count bindings) 64)
+                 (every? (fn [b]
+                           (and (= #{:id :scope} (set (keys b)))
+                                (pos-int? (:id b)) (id-number (:id b))
+                                (vector? (:scope b)) (= 3 (count (:scope b)))
+                                (every? core/cid? (take 2 (:scope b)))
+                                (keyword? (nth (:scope b) 2)))) bindings)
+                 (= (count bindings) (count (distinct (map :id bindings))))
+                 (= (count bindings) (count (distinct (map :scope bindings)))))
+    (reject! :invalid-provider-bindings))
+  bindings)
+
+(def ^:private scalar-provider-ops
+  '#{typed-cap-call let if do loop recur + - * quot rem = not= < <= > >=
+     not and or bit-and bit-or bit-xor bit-not})
+
+(defn- effect-program [source bindings]
+  (when-not (and (string? source) (<= (count source) 65536)) (reject! :source-limit))
+  (let [program (kir/lower (sema/analyze source))
+        forms (mapcat #(tree-seq coll? seq (:body %)) (:functions program))
+        calls (filter #(and (seq? %) (= (first %) (symbol "typed-cap-call"))) forms)
+        ids (set (map #(id-number (second %)) calls))
+        allowed-ops (into scalar-provider-ops (map :name (:functions program)))
+        effects (set (map (fn [e] (when (and (vector? e) (= 2 (count e)) (= :cap/call (first e)))
+                                    (id-number (second e)))) (:effects program)))]
+    (when-not (and (every? #(or (not (seq? %)) (contains? allowed-ops (first %))) forms)
+                   (every? (fn [f] (and (every? #{:i64 :bool} (:param-types f))
+                                       (contains? #{:i64 :bool} (:result f)))) (:functions program)))
+      (reject! :bounded-scalar-provider-profile-required))
+    (when-not (and (contains? #{:kotoba.kir/v3 :kotoba.kir/v4} (:format program))
+                   (= [(symbol "main")] (:exports program))
+                   (= [] (get-in program [:signature :params]))
+                   (= :i64 (get-in program [:signature :result]))
+                   (seq calls) (not (contains? ids nil)) (= ids effects (set (map :id bindings)))
+                   (every? #(and (= 5 (count %)) (= :i64 (nth % 2)) (= :i64 (nth % 3))) calls)
+                   (not-any? #(and (seq? %) (= (first %) (symbol "cap-call"))) forms))
+      (reject! :scoped-i64-provider-contract-required))
+    program))
+
+(defn- named-imports [bindings]
+  (mapv (fn [{:keys [id]}]
+          {:id id :module "kotoba:lease/v2" :field (str "call_" id)
+           :type [0x60 1 0x7e 1 0x7e]}) bindings))
+
+(defn compile-effect-envelope
+  "An explicit v3 artifact binds each executable typed i64 import to one
+  immutable capability/resource/purpose scope. V2 pure artifacts are unchanged.
+  Only reviewed synchronous Node Wasm and Script mechanisms are enabled."
+  [source target limits bindings]
+  (when-not (contains? #{:wasm32-kotoba-v1 :js-kotoba-v1} target)
+    (reject! :effect-target-not-supported))
+  (limits! limits) (bindings! bindings)
+  (let [program (effect-program source bindings)
+        emitted (if (= :wasm32-kotoba-v1 target)
+                  (let [raw (wasm/emit program target
+                              {:fuel (:fuel limits) :memory-pages (:memory-pages limits)
+                               :capability-imports (named-imports bindings)})]
+                    #?(:clj (mapv #(bit-and 255 %) raw) :cljs (vec (js/Array.from raw))))
+                  (output program target limits))]
+    {:format :kotoba.target-execution-artifact/v3 :source source :target target
+     :limits limits :bindings bindings :output emitted}))
+
+(defn- effect-envelope? [envelope]
+  (= :kotoba.target-execution-artifact/v3 (:format envelope)))
 (defn- verify! [envelope]
-  (when-not (and (= #{:format :source :target :limits :output} (set (keys envelope)))
-                 (= envelope (compile-envelope (:source envelope) (:target envelope) (:limits envelope))))
+  (when-not (if (effect-envelope? envelope)
+              (and (= #{:format :source :target :limits :bindings :output} (set (keys envelope)))
+                   (= envelope (compile-effect-envelope (:source envelope) (:target envelope)
+                                                        (:limits envelope) (:bindings envelope))))
+              (and (= #{:format :source :target :limits :output} (set (keys envelope)))
+                   (= envelope (compile-envelope (:source envelope) (:target envelope) (:limits envelope)))))
     (reject! :artifact-reemission-mismatch))
   envelope)
 
@@ -60,30 +137,100 @@
         :node-executable-sha256 (digest (.-execPath js/process))
         :adapter-source-sha256 (digest adapter-source)})))
 
+#?(:cljs
+   (defn- i64! [x]
+     (when-not (and (some? x) (= js/BigInt (.-constructor x))
+                    (<= (js/BigInt "-9223372036854775808") x (js/BigInt "9223372036854775807")))
+       (reject! :provider-i64-required))
+     x))
+
+#?(:cljs
+   (defn- wasm-provider-module! [artifact]
+     (let [module (js/WebAssembly.Module. (js/Uint8Array.from (clj->js (:output artifact))))
+           observed (mapv #(select-keys (js->clj % :keywordize-keys true) [:module :name :kind])
+                          (js/Array.from (js/WebAssembly.Module.imports module)))
+           expected (mapv (fn [{:keys [id]}]
+                            {:module "kotoba:lease/v2" :name (str "call_" id) :kind "function"})
+                          (:bindings artifact))]
+       (when-not (= observed expected) (reject! :provider-import-mismatch))
+       module)))
+
+#?(:cljs
+   (defn- execute-effect! [{:keys [artifact input scopes call!]}]
+     (let [bindings (:bindings artifact) limits (:limits artifact)]
+       (when-not (and (= {:entry (symbol "main") :arguments []} input)
+                      (fn? call!) (= (set (map :scope bindings)) (set scopes)))
+         (reject! :provider-scope-admission-mismatch))
+       (let [deadline (+ (.bigint (.-hrtime js/process))
+                         (* (js/BigInt (:deadline-ms limits)) (js/BigInt 1000000)))
+             check-deadline! (fn []
+                               (when (>= (.bigint (.-hrtime js/process)) deadline)
+                                 (reject! :provider-deadline)))
+             provider (fn [scope]
+                        (fn [request]
+                          (check-deadline!)
+                          (let [result (call! scope (i64! request))]
+                            (check-deadline!)
+                            (i64! result))))
+             grants (js/Object.create nil)]
+         (doseq [{:keys [id scope]} bindings]
+           (aset grants (str id) (provider scope)))
+         (js/Object.freeze grants)
+         (let [result (case (:target artifact)
+               :wasm32-kotoba-v1
+               (let [module (wasm-provider-module! artifact)
+                     imports (js/Object.create nil)]
+                 (doseq [{:keys [id scope]} bindings]
+                   (aset imports (str "call_" id) (provider scope)))
+                 (let [instance (js/WebAssembly.Instance. module #js {"kotoba:lease/v2" imports})]
+                   ((aget (.-exports instance) "main"))))
+               :js-kotoba-v1
+               ;; Only canonical, independently re-emitted compiler output is
+               ;; adapted. No guest JS, arbitrary module or ambient imports.
+               (let [source (:output artifact)
+                     source (.replace source (js/RegExp. "^export " "gm") "")
+                     code (str source "\ninstantiateKotoba(__kotobaGrants).main();")
+                     context (vm/createContext #js {:__kotobaGrants grants}
+                               #js {:codeGeneration #js {:strings false :wasm false}
+                                    :microtaskMode "afterEvaluate"})
+                     script (vm/Script. code #js {:filename "kotoba-verified-provider-v3"})]
+                 (.runInContext script context #js {:timeout (:deadline-ms limits)}))
+               (reject! :effect-target-not-supported))]
+           (check-deadline!)
+           (value/int64 (i64! result)))))))
+
 (defn mechanisms [runtime adapter-source]
   #?(:clj (reject! :node-host-required)
      :cljs
      {:inspect!
       (fn [envelope observed-runtime]
         (verify! envelope)
+        (when (and (effect-envelope? envelope) (= :wasm32-kotoba-v1 (:target envelope)))
+          (wasm-provider-module! envelope))
         (when-not (= runtime observed-runtime (measure-runtime adapter-source))
           (reject! :runtime-measurement-mismatch))
-        (let [program (checked (:source envelope)) target (:target envelope)
-              interface {:format :kotoba.pure-interface/v2 :exports (:exports program)
-                         :signature (:signature program)}]
+        (let [effect? (effect-envelope? envelope)
+              program (if effect? (effect-program (:source envelope) (:bindings envelope))
+                          (checked (:source envelope))) target (:target envelope)
+              interface (cond-> {:format (if effect? :kotoba.effect-interface/v2 :kotoba.pure-interface/v2)
+                                 :exports (:exports program) :signature (:signature program)}
+                          effect? (assoc :bindings (:bindings envelope)
+                                         :effects (mapv #(vector :cap/call (:id %)) (:bindings envelope))))]
           {:target target :profile :sync
            :artifact-cid (:cid (content/source-block (artifact/canonical-bytes envelope)))
            :interface-cid (:cid (blocks/block :interface interface))
            :runtime-identity (:cid (blocks/block :runtime runtime))
            :layout (:layout (get abi/profiles target))}))
       :execute!
-      (fn [{:keys [artifact runtime input]}]
+      (fn [{:keys [artifact runtime input] :as request}]
         ;; Revalidate immediately before executing; a caller cannot replace an
         ;; artifact between inspection and this boundary.
         (verify! artifact)
         (when-not (= runtime (measure-runtime adapter-source)) (reject! :runtime-changed))
         (when-not (= {:entry (symbol "main") :arguments []} input) (reject! :input-mismatch))
-        (let [limits (:limits artifact) emitted (:output artifact)]
+        (if (effect-envelope? artifact)
+          (execute-effect! request)
+          (let [limits (:limits artifact) emitted (:output artifact)]
           (case (:target artifact)
             :wasm32-kotoba-v1
             (let [module (js/WebAssembly.Module. (js/Uint8Array.from (clj->js emitted)))]
@@ -107,4 +254,4 @@
               (value/int64 (js/BigInt.asIntN 64
                             (reduce (fn [acc b] (+ (* acc (js/BigInt 256)) (js/BigInt b)))
                                     (js/BigInt 0) (:output result)))))
-            (reject! :unsupported-target))))}))
+            (reject! :unsupported-target)))))}))

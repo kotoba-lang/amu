@@ -1,14 +1,26 @@
 # amu: stack integration
 
-Status: accepted architecture direction, 2026-10-10. This document and
+Status: accepted architecture direction, updated 2026-10-15. This document and
 [composition metadata](../spec/stack-integration.edn) describe ownership and
 future boundaries; they do not change runtime schemas or certify migration.
 
 ## Responsibility
 
-Checks target-independent semantics and emits a selected Native, Wasm core, Component, Script or bounded EVM artifact. Project linking belongs here; runtime linking belongs to the host. The default target is host-native. EVM output is a bounded compiler slice, not a settlement network or proof of full Kototama conformance.
+Checks target-independent semantics and emits the default Kototama program or an explicitly selected Native, Wasm core, Component, Script or bounded EVM artifact. Project linking belongs here; runtime linking belongs to the host. The default program is a host-independent, content-addressed DAG-CBOR Kototama expression artifact; native ISA and Wasm remain explicit target choices. EVM output is a bounded compiler slice, not a settlement network or proof of full Kototama conformance.
 
 ## Contract dependency direction
+
+Native module calls share the linked unit's value representation, context and
+budget. Single-clause root exports bind directly to their implementations when
+names cannot capture locals; multi-arity/collision wrappers remain. Module
+imports do not cross a guest/host ABI. Actual foreign/profile, provider,
+authority and independent resource boundaries still do. See the shared
+[native execution-domain decision](https://github.com/kotoba-lang/kotoba-lang/blob/main/docs/adr/ADR-native-execution-domains.md).
+Removing a forwarding call changes implementation overhead, never refills fuel
+or relaxes arena bounds, and does not qualify a selfhost compiler by itself.
+Import signatures are checked without constructing dummy result values;
+recursive records need no foreign-boundary default value. The signature-only
+stubs are removed before code generation.
 
 Arrows are consumer → contract dependency. These are intended entrypoint
 boundaries, not whole-repository imports already achieved.

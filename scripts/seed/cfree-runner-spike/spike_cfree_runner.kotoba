@@ -1,0 +1,14 @@
+;; Historical seed runner spike entry (JUN-29, 2026-10-20).
+;; Evaluates one fixture source with the Kotoba-native integer interpreter
+;; (kotoba.runtime.native-interpreter) and returns the evaluated integer as the
+;; process exit code. The recorded build used a C-loader-hosted G1 builder
+;; and extracted a raw image, not an OS executable. Direct OS execution was
+;; refused with Exec format error. This source is retained as migration input;
+;; neither the old build nor the JVM evaluation qualifies native CDCI.
+(ns seed.cfree-runner-spike
+  {:kotoba/export [main]}
+  (:require [kotoba.runtime.native-interpreter :as ni]))
+
+(defn main [] :i64
+  (let [summary (ni/eval-integer-source "(+ 21 21)")]
+    (record-get [:ref :runtime/eval-summary] summary :value)))

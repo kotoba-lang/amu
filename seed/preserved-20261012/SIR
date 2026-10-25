@@ -1,0 +1,311 @@
+;; seed/SIR -- the stack IR of the seed compiler (R0) and the aarch64 code conventions. EDN.
+;; Owner: contracts. Producers/consumers: 30-lower writes SIR, 41-a64gen reads it (and lw-interp, the test-only
+;; SIR interpreter in 30-lower, executes it). Design: docs/selfhost-seed-design-20261002.md section 2.2.
+;; Every [:c NAME VALUE ...] line is a constant generated into seed/00-ns.kotoba (see seed/MEMORY-MAP header).
+
+{:format :seed.sir/v1
+
+ ;; ---------------------------------------------------------------------------------------------------------
+ ;; 1. Model
+ ;; ---------------------------------------------------------------------------------------------------------
+ ;; - One instruction = 4 words [op a b c] in the SIR region (fields IF-OP IF-A IF-B IF-C). Unused fields are 0.
+ ;; - Temporaries are numbered by EXPRESSION DEPTH t = 0,1,2,... : evaluating an expression "into t" leaves its
+ ;;   value in temporary t and does not change temporaries < t. Operands of a k-ary operation are evaluated
+ ;;   into t, t+1, ..., t+k-1 (left to right) and the result goes to t. So t is always the operand-stack height.
+ ;; - Locals (params, let, loop variables) live in frame SLOTS 1..FF-NSLOTS (slot numbers from 21-check, NF-RES
+ ;;   RES-LOCAL). Params occupy slots 1..nparams in order. Slot 0 is reserved (the saved context pointer).
+ ;; - Values are i64 words. bool = 0/1. string, vector and bytes are the runtime's handles (opaque i64).
+ ;; - Labels are global numbers 1..MM-LABEL-N-1, each defined by exactly one LABEL op, used only inside the
+ ;;   function that defines it.
+ ;; - A program = for every FN record in FN-index order that is a defn/defn- : FN ... END. Def constants have
+ ;;   no SIR of their own (each reference lowers the literal).
+ :opcodes
+ [[:c OP-FN 1 "FN f nparams nslots -- starts function f (FN index). Exactly one per function, first"]
+  [:c OP-END 2 "END f -- ends function f. Falling into END is a lowering bug (lower always emits RET before)"]
+  [:c OP-CONST 3 "CONST t k -- temp t := k (b = the full i64)"]
+  [:c OP-LGET 4 "LGET t slot -- temp t := slot"]
+  [:c OP-LSET 5 "LSET slot t -- slot := temp t"]
+  [:c OP-BIN 6 "BIN bop t -- temp t := temp t (bop) temp t+1 ; bop = BOP-*"]
+  [:c OP-CMP 7 "CMP cc t -- temp t := (temp t cc temp t+1) ? 1 : 0, signed ; cc = CC-*"]
+  [:c OP-UN 8 "UN uop t -- temp t := uop(temp t) ; uop = UOP-*"]
+  [:c OP-LABEL 9 "LABEL l"]
+  [:c OP-BR 10 "BR l -- unconditional jump"]
+  [:c OP-BRZ 11 "BRZ t l -- jump to l when temp t = 0 (t keeps its value)"]
+  [:c OP-BRNZ 12 "BRNZ t l -- jump to l when temp t != 0 (t keeps its value)"]
+  [:c OP-CALL 13 "CALL f t n -- temp t := f(temp t .. temp t+n-1), f an FN index, n <= 5 (R4B: n <= 16, seed/SIR :a64 :r4b)"]
+  [:c OP-RT 14 "RT rt t n -- temp t := runtime helper rt (RT-*) applied to (ctx, temp t .. temp t+n-1)"]
+  [:c OP-CAP 15 "CAP wire kind t -- temp t := typed_cap_call(ctx, wire, kind, temp t) ; kind = CK-*"]
+  [:c OP-STR 16 "STR t lit -- temp t := the string handle of literal lit (LIT index)"]
+  [:c OP-VEC 17 "VEC t n -- temp t := a fresh vector of the n values temp t .. temp t+n-1 (n <= 64)"]
+  [:c OP-FUEL 18 "FUEL -- charge one fuel unit, trap when exhausted"]
+  [:c OP-RET 19 "RET t -- return temp t (t is always 0 in R0 lowering)"]
+  [:c OP-TRAP 20 "TRAP code -- brk #code (unreachable paths)"]
+  [:c OP-TAB 21 "TAB t lit n -- temp t := item (temp t) of the constant i64 table LIT lit (n items, 8 bytes little-endian
+                 each in the pool); traps (brk #0) unless 0 <= temp t < n. Lowering of (vector-at V i) when V is a
+                 vector literal of integer literals (or a def of one): no runtime allocation (integration 2026-10-02:
+                 kexe-benchmark has 4096 vectors, edn's per-call literals exhausted them)"]
+  ;; -- R4 (rung 4, 2026-10-03): closures --
+  [:c OP-FADDR 22 "FADDR t f -- temp t := the absolute code address of FN f's entry (adr xd, fixup FX-ADR19 on FN f)"]
+  [:c OP-CALLI 23 "CALLI 0 t n -- temp t := call the code address in temp t+n with the arguments t .. t+n-1 (n <= 5, x7 = ctx,
+                   result x0): a closure call (seed/SIR :r4-lowering)"]
+  [:c OP-VECP 24 "R4B: VECP t lit n -- temp t := a fresh vector of the n i64 items of the constant table LIT lit (the OP-TAB data
+                  layout: 8 bytes little-endian per item, pooled by 42-layout); n 65..128 (the reference limit) (vector literals of integer literals)"]
+  ;; -- R5B (rung 5 part B, 2026-10-03): the state ability's two-register results (docs/selfhost-seed-r5-design-20261002.md 5.4, 6) --
+  [:c OP-RES2 25 "RES2 t -- temp t := x1 of the CALL immediately before it (the next state a handler clause or a specialization
+                  returned); nothing may come between the CALL and its RES2 (41-a64gen keeps x1 intact through the CALL's result move)"]
+  [:c OP-RET2 26 "RET2 t -- return temp t in x0 and temp t+1 in x1 (a handler clause's (resume v n), a specialization's end)"]
+  [:c OP-COUNT 26 "highest opcode"]]
+
+ :binary-ops
+ [[:c BOP-ADD 1 "+ wrap"] [:c BOP-SUB 2 "- wrap"] [:c BOP-MUL 3 "* low 64"]
+  [:c BOP-QUOT 4 "quot: trap if divisor 0 or (MIN, -1); else sdiv"]
+  [:c BOP-AND 5 "bit-and"] [:c BOP-OR 6 "bit-or"] [:c BOP-XOR 7 "bit-xor"]
+  [:c BOP-SHL 8 "i64-shift-left, count mod 64 (lslv)"] [:c BOP-USHR 9 "u64-shift-right, count mod 64 (lsrv)"]
+  [:c BOP-SSHR 10 "i64-shift-right, count mod 64 (asrv)"]
+  ;; -- FLOAT (agent FLOAT, rung r6j, 2026-10-04): IEEE-754 arithmetic on the carriers. A temp holding an :f64 is its 64-bit
+  ;;    pattern, an :f32 its 32-bit pattern sign-extended (HEADS R6C/R6F). 41-a64gen moves the operands into d0/d1 (s0/s1)
+  ;;    with fmov, applies the instruction and moves the result back (f32: fmov w + sxtw). Never folded, never immediates.
+  [:c BOP-F64-ADD 16 "f64-add: fadd d"] [:c BOP-F64-SUB 17 "f64-sub: fsub d"] [:c BOP-F64-MUL 18 "f64-mul: fmul d"]
+  [:c BOP-F64-DIV 19 "f64-div: fdiv d"] [:c BOP-F64-MIN 20 "f64-min: fmin d (NaN if either is NaN; -0 < +0)"]
+  [:c BOP-F64-MAX 21 "f64-max: fmax d"]
+  [:c BOP-F32-ADD 24 "f32-add: fadd s"] [:c BOP-F32-SUB 25 "f32-sub: fsub s"] [:c BOP-F32-MUL 26 "f32-mul: fmul s"]
+  [:c BOP-F32-DIV 27 "f32-div: fdiv s"] [:c BOP-F32-MIN 28 "f32-min: fmin s"] [:c BOP-F32-MAX 29 "f32-max: fmax s"]]
+ :compare-ops
+ [[:c CC-EQ 1 "=  (cset eq)"] [:c CC-LT 2 "<  (cset lt)"] [:c CC-GT 3 ">  (cset gt)"] [:c CC-LE 4 "<= (cset le)"]
+  [:c CC-GE 5 ">= (cset ge)"]
+  ;; -- FLOAT (r6j): fcmp d0, d1 (s0, s1), false on unordered operands except CC-F*-UN --
+  [:c CC-F64-EQ 8 "f64-eq (eq)"] [:c CC-F64-LT 9 "f64-lt (mi)"] [:c CC-F64-LE 10 "f64-le (ls)"] [:c CC-F64-GT 11 "f64-gt (gt)"]
+  [:c CC-F64-GE 12 "f64-ge (ge)"] [:c CC-F64-UN 13 "f64-unordered (vs)"]
+  [:c CC-F32-EQ 16 "f32-eq"] [:c CC-F32-LT 17 "f32-lt"] [:c CC-F32-LE 18 "f32-le"] [:c CC-F32-GT 19 "f32-gt"]
+  [:c CC-F32-GE 20 "f32-ge"] [:c CC-F32-UN 21 "f32-unordered"]]
+ :unary-ops
+ [[:c UOP-NOT 1 "bool not: t := t xor 1"] [:c UOP-BITNOT 2 "bit-not: mvn"]
+  ;; -- FLOAT (r6j) --
+  [:c UOP-F64-NEG 16 "f64-neg: fneg d"] [:c UOP-F64-ABS 17 "f64-abs: fabs d"] [:c UOP-F64-SQRT 18 "f64-sqrt: fsqrt d"]
+  [:c UOP-F32-NEG 24 "f32-neg: fneg s"] [:c UOP-F32-ABS 25 "f32-abs: fabs s"] [:c UOP-F32-SQRT 26 "f32-sqrt: fsqrt s"]
+  [:c UOP-F64-TO-I64 32 "f64-to-i64-truncating: fcvtzs x, d (saturating, NaN -> 0)"]
+  [:c UOP-I64-TO-F64 33 "i64-to-f64-rounded: scvtf d, x (round to nearest even)"]
+  [:c UOP-F64-TO-F32 34 "f64-to-f32-rounded: fcvt s, d"] [:c UOP-F32-TO-F64 35 "f32-to-f64-exact: fcvt d, s"]
+  [:c UOP-I64-TO-F32 36 "i64-to-f32-rounded: scvtf s, x"] [:c UOP-F32-TO-I64 37 "f32-to-i64-truncating: fcvtzs x, s"]]
+
+ ;; Runtime helpers: the value of RT-* is the BYTE OFFSET of the function pointer in struct kexe_context_v11
+ ;; (tools/kexe_loader.c, bench/runtime-comparison/kexe-benchmark.c _Static_asserts). Called as C functions:
+ ;; x0 = ctx, x1.. = the operands, result x0.
+ :runtime
+ [[:c RT-PAIR-NEW 56 "pair_new(ctx, first, second) -- string literal = pair_new(CODE-RELATIVE byte offset, byte-length)
+                       (T2 measured: code_base = the start of the raw blob)"]
+  [:c RT-PAIR-FIRST 64 "pair_first(ctx, p) -- R1: record field projection (the field's pair)"]
+  [:c RT-PAIR-SECOND 72 "pair_second(ctx, p) -- byte length of a string handle (T2 measured on a literal)"]
+  [:c RT-STRING-CONCAT 120 "string_concat(ctx, a, b)"]
+  [:c RT-TYPED-CAP-CALL 128 "typed_cap_call(ctx, wire, request-kind, result-kind, request); R0 shapes pass the same
+                             kind twice (T2 measured wire 37 kinds 1,1 and wire 35 kinds 8,8)"]
+  [:c RT-STRING-CODE-POINT-AT 144 "string_code_point_at(ctx, s, i)"]
+  [:c RT-VECTOR-NEW-EMPTY 152 "vector_new_empty(ctx)"]
+  [:c RT-VECTOR-CONJ 160 "vector_conj(ctx, v, x)"]
+  [:c RT-VECTOR-COUNT 168 "vector_count(ctx, v)"]
+  [:c RT-VECTOR-AT 176 "vector_at(ctx, v, i) -- traps out of range"]
+  [:c RT-VECTOR-ASSOC 184 "vector_assoc(ctx, v, i, x) persistent"]
+  [:c RT-VECTOR-ALLOC 200 "vector_alloc(ctx, n)"]
+  [:c RT-VECTOR-ASSOC-IN-PLACE 208 "vector_assoc_in_place(ctx, v, i, x)"]
+  [:c RT-BYTES-FROM-VECTOR 360 "bytes_from_vector(ctx, v) -- ABI v11; NULL in kexe-benchmark (no port uses it)"]
+  ;; -- R3 (2026-10-03): more of the context's helpers, called through the generic RT path (no new SIR op) --
+  [:c RT-STRING-EQUAL 112 "string_equal(ctx, a, b) -> 1/0"]
+  [:c RT-STRING-SUBSTRING 136 "string_substring(ctx, s, start, end) -- byte offsets, traps off code point boundaries"]
+  [:c RT-VECTOR-DROP 192 "vector_drop(ctx, v, k) -- the items after the first k (a view)"]
+  [:c RT-STRING-INDEX-OF 216 "string_index_of(ctx, h, n) -> byte offset or -1; an empty needle traps"]
+  [:c RT-STRING-COMPARE 240 "string_compare(ctx, a, b) -> -1/0/1 (byte order)"]
+  [:c RT-BYTES-SLICE 368 "R4B: bytes_slice(ctx, b, start, end) -- a view; traps unless 0 <= start <= end <= count (ABI v11)"]
+  [:c RT-BYTES-CONCAT 376 "R4B: bytes_concat(ctx, a, b) -- a copy (ABI v11)"]
+  [:c RT-STRING-FROM-UTF8 352 "string_from_utf8(ctx, v) -- v a vector of bytes 0..255 that is canonical UTF-8 (ABI v11; NULL in
+                               kexe-benchmark: only string-from-i64 uses it)"]
+  [:c RT-CAP-CALL 48 "R5B: cap_call(ctx, wire, request) -- the untyped i64 capability call; (perform :clock/now x) = wire 7 (stage-0's
+                     lowering, measured 2026-10-03: mov x1,#7 ; mov x2,x ; blr [ctx,#48])"]
+  [:c CTX-FUEL 8 "byte offset of the fuel counter in the context"]
+  [:c CTX-CODE-BASE 384 "byte offset of code_base"]]
+ ;; string-length: 30-lower emits RT RT-STRING-LENGTH-VIA t 1 (docs/selfhost-seed-t2-t3-20261002.md: pair_second).
+ ;; 41-a64gen re-checks it on a string_concat result and a wire-35 result before relying on it.
+ :string-length [[:c RT-STRING-LENGTH-VIA 72 "= RT-PAIR-SECOND"]]
+
+ ;; ---------------------------------------------------------------------------------------------------------
+ ;; 2. Lowering (30-lower). [e -> t] = "lower expression e into temp t". Deterministic: same tree, same SIR.
+ ;; ---------------------------------------------------------------------------------------------------------
+ :lowering
+ {"literal int k"         "CONST t k"
+  "literal string"        "STR t lit"
+  "def reference"         "lower the def's literal into t (int: CONST, string: STR, vector: as a vector literal)"
+  "local x"               "LGET t slot(x)"
+  "[e1 .. en]"            "[e1 -> t] .. [en -> t+n-1]  VEC t n"
+  "(+ a b c)"             "[a -> t] [b -> t+1] BIN ADD t [c -> t+1] BIN ADD t   (left fold, same for - *)"
+  "(quot a b) etc."       "[a -> t] [b -> t+1] BIN bop t"
+  "(< a b) etc."          "[a -> t] [b -> t+1] CMP cc t"
+  "(not a) (bit-not a)"   "[a -> t] UN uop t"
+  "(if c a b)"            "[c -> t] BRZ t Le  [a -> t] BR Lx  LABEL Le  [b -> t]  LABEL Lx"
+  "(cond c1 e1 .. :else en)" "as nested if"
+  "(and a b c)"           "[a -> t] BRZ t Lx [b -> t] BRZ t Lx [c -> t] LABEL Lx   (t holds 0 when a jump is taken)"
+  "(or a b c)"            "[a -> t] BRNZ t Lx [b -> t] BRNZ t Lx [c -> t] LABEL Lx"
+  "(let [x e ..] body)"   "[e -> t] LSET slot(x) t ... [body -> t]"
+  "(loop [x e ..] body)"  "[e1 -> t] .. [en -> t+n-1] LSET slot(x1) t .. LSET slot(xn) t+n-1  LABEL Lh  [body -> t]"
+  "(recur a1 .. an)"      "[a1 -> t] .. [an -> t+n-1]  LSET slot(x1) t .. LSET slot(xn) t+n-1  FUEL  BR Lh
+                           (all values are computed BEFORE any LSET: parallel assignment)"
+  "(f a1 .. an)"          "[a1 -> t] .. [an -> t+n-1] CALL f t n"
+  "SELF TAIL CALL"        "REQUIRED: a call to the enclosing function in tail position (tail of the body, through
+                           if/cond/let/and-or last arm) lowers like recur to the function's entry label Lentry
+                           (emitted right after the entry FUEL), i.e. params are re-assigned, FUEL, BR Lentry. Seed
+                           code loops by self tail recursion over 10^5..10^6 items (MEMORY-MAP rule L5); without
+                           this the seed's own output overflows the stack. A recur with no enclosing loop does the same."
+  "(vector-at v i)"       "[v -> t] [i -> t+1] RT RT-VECTOR-AT t 2 ; when v is a vector literal whose items are all integer
+                           literals, or a def of one: 30-lower appends a LIT record (LF-LEN = 8n, bytes little-endian in
+                           LITB, LF-TOK = the vector's token) and emits [i -> t] TAB t lit n"
+  "(vector-conj v x)"     "RT RT-VECTOR-CONJ t 2"   "(vector-assoc v i x)" "RT RT-VECTOR-ASSOC t 3"
+  "(vector-assoc! v i x)" "RT RT-VECTOR-ASSOC-IN-PLACE t 3"   "(vector-alloc n)" "RT RT-VECTOR-ALLOC t 1"
+  "(string-code-point-at s i)" "RT RT-STRING-CODE-POINT-AT t 2"   "(string-length s)" "RT RT-STRING-LENGTH-VIA t 1"
+  "(string-concat a b)"   "RT RT-STRING-CONCAT t 2"   "(bytes-from-vector-i64 v)" "RT RT-BYTES-FROM-VECTOR t 1"
+  "(typed-cap-call W R R x)" "[x -> t] CAP wire kind t"
+  "defn f [p1..pn] body"  "FN f n nslots  [FUEL if FF-FUEL]  LABEL Lentry  [body -> 0]  RET 0  END f"}
+
+ ;; R3 (2026-10-03, agent R3): values and abort. No new opcode; every R3 head lowers to CONST LGET LSET BIN CMP UN LABEL BR
+ ;; BRZ BRNZ CALL RT VEC TRAP RET (30-lower, R3 block). Representation (seed/HEADS TY-COMP-BASE): option = 0 or pair(x, 0);
+ ;; result = pair(payload, tag), tag 0 ok / 1 err; list = vector; set = vector of distinct items SORTED by key; map =
+ ;; vector k0 v0 k1 v1 .. of distinct keys sorted by key (the reference order, lang/guest-grammar.edn :map-literal
+ ;; :order: i64 signed, string by bytes (= UTF-16 order except supplementary vs U+E000..U+FFFF), bool false < true;
+ ;; keyword items/keys are kept in interning order, so 21-check refuses the order-observing heads on them).
+ ;; hs = the head's first hidden slot (21-check: NF-TYPE of the head symbol node; NF-SYM of an ND-SET/ND-MAP literal),
+ ;; s1 s2 .. the next ones. eq(T) = RT STRING-EQUAL t 2 for strings, else CMP EQ t; lt(T) = RT STRING-COMPARE + CMP LT.
+ :r3-lowering
+ {"(option-some-of T x)"     "[x -> t] CONST t+1 0 RT PAIR-NEW t 2       (option-none-of T): CONST t 0"
+  "(option-some?-of T o)"    "[o -> t] CONST t+1 0 CMP EQ t UN NOT t"
+  "(option-value-of T o d)"  "[o -> t] LSET hs t [d -> t] LSET s1 t LGET t hs BRZ t Ld LGET t hs RT PAIR-FIRST t 1 BR Lx
+                              LABEL Ld LGET t s1 LABEL Lx   ((option-or o d): the same; result-value-of: the test is
+                              RT PAIR-SECOND + BRNZ; result-error-of: RT PAIR-SECOND + BRZ)"
+  "(option-match T o n x s)" "[o -> t] LSET slot(x) t BRZ t Ln LGET t slot(x) RT PAIR-FIRST t 1 LSET slot(x) t [s -> t] BR Lx
+                              LABEL Ln [n -> t] LABEL Lx   (both arms keep the context: recur in an arm is a tail jump)"
+  "(result-ok-of R v)"       "[v -> t] CONST t+1 0 RT PAIR-NEW t 2 ; result-err-of: CONST t+1 1"
+  "(result-ok?-of R r)"      "[r -> t] RT PAIR-SECOND t 1 CONST t+1 0 CMP EQ t"
+  "(result-match-of R r v a e b)" "[r -> t] LSET slot(v) t RT PAIR-SECOND t 1 BRNZ t Le LGET t slot(v) RT PAIR-FIRST t 1 LSET
+                              slot(v) t [a -> t] BR Lx LABEL Le LGET t slot(v) RT PAIR-FIRST t 1 LSET slot(e) t [b -> t] LABEL Lx"
+  "aborting function f"      "its body's value is wrapped: [body -> 0] CONST 1 0 RT PAIR-NEW 0 2 RET 0 (interface [:result T E])"
+  "(throw e)"                "outside a try body: [e -> t] CONST t+1 1 RT PAIR-NEW t 2 RET t ; inside one: [e -> t] LSET
+                              slot(catch binder) t BR Lhandler (30-lower cell M[95] = Lhandler * 256 + that slot)"
+  "(g ..) g aborting"        "CALL g t n LSET hs t RT PAIR-SECOND t 1 BRZ t Lok LGET t hs, then RET t outside a try body (the err
+                              result is re-raised as it is) or RT PAIR-FIRST t 1 LSET slot(binder) t BR Lhandler; LABEL Lok
+                              LGET t hs RT PAIR-FIRST t 1"
+  "(try b (catch [E] x h))"  "[b -> t] (not a tail position) BR Lx LABEL Lhandler [h -> t] LABEL Lx"
+  "lists"                    "typed-list-new = VEC t n; typed-list-nth / typed-set-nth / (nth c i) = RT VECTOR-AT; typed-list-conj
+                              and conj on a vector/list = RT VECTOR-CONJ; count = RT VECTOR-COUNT (a map: halved with BIN USHR)"
+  "sets and maps"            "inline loops over the vector, no FUEL inside (30-lower lw-scan lw-ins lw-sdel lw-proj lw-equal):
+                              scan = index of the item/key (stride 1/2) or -1 (contains, get, typed-map-get); insert = find the
+                              first item >= x, a present item is kept (set), its value replaced (assoc) or TRAP (a duplicate key
+                              in typed-map-new / a map literal), else a copy with x at its place (TRAP beyond 32 items / 31
+                              entries); disj/dissoc/pop/keys/vals = a copy loop with RT VECTOR-AT + VECTOR-CONJ; equal = same
+                              count and every item/key of the first found in the second (maps: equal values). Hidden slots:
+                              hs collection, s1 item/key, s2 count, s3 index, s4 map value, s5 new vector, s6 inner index"
+  "(string-from-i64 x)"      "digits of m = -|x| (no overflow at MIN) by quot 10 into a reversed vector, '-' when x < 0, reversed
+                              into a byte vector, RT STRING-FROM-UTF8 (5 hidden slots)"
+  "strings and pairs"        "string=? RT STRING-EQUAL, string-substring RT STRING-SUBSTRING (byte offsets), string-compare RT
+                              STRING-COMPARE, string-index-of RT STRING-INDEX-OF, string-byte-length / pair-second RT PAIR-SECOND,
+                              pair RT PAIR-NEW, pair-first RT PAIR-FIRST"}
+
+ ;; R4 (2026-10-03, agent R4): functions. Two new opcodes (FADDR, CALLI) and one fixup (FX-ADR19); everything else is CALL, RT,
+ ;; LGET/LSET, VEC and the R3 loop shapes. A fn literal is lifted into FN g (FK-LAMBDA) with parameters p1..pn (slots 1..n)
+ ;; followed by its captures c1..ck (slots n+1..n+k, n+k <= 5): g(p.., c..). Representation of a fn VALUE (a closure):
+ ;; pair(code address of its entry, env): k = 0 entry g, env 0 (g ignores the extra argument); k = 1 entry g, env = c1;
+ ;; k >= 2 entry = the adapter FN g' (FK-ADAPTER) of n+1 parameters and env = pair(c1, pair(c2, .. ck)) (k-1 pairs, the last
+ ;; capture is the tail). fn-ref f = pair(address of f, 0). The captured slots of a lambda are listed in a HEAP block
+ ;; [k s1 .. sk] whose address is NF-TYPE of its parameter vector node (21-check); its FN index is NF-TYPE of the `fn` head
+ ;; symbol node. Every string literal is valid UTF-8 (HEADS :tokens R4 rule), which lets 41-a64gen read an ASCII byte of a
+ ;; code-relative string in line.
+ :r4-lowering
+ {"(fn ..) as a value"       "FADDR t entry  [env -> t+1]  RT PAIR-NEW t 2 ; env: CONST 0 | LGET s1 | LGET s1 .. LGET sk into
+                              t+1 .. t+k, RT PAIR-NEW t+k-1 2 .. RT PAIR-NEW t+1 2"
+  "(fn ..) known, unused"    "a let-bound fn literal that is never used as a value: nothing (no LSET); NF-RES of the node = HD-FN
+                              with NF-TYPE of its binder node's NF-AUX... (21-check marks it: NF-RES = HD-CALLK)"
+  "(f a ..) f known"         "[a -> t] .. LGET t+n s1 .. LGET t+n+k-1 sk  CALL g t n+k"
+  "(invoke c a ..)"          "[c -> t] LSET hs t [a1 -> t] .. [an -> t+n-1] LGET t+n hs RT PAIR-SECOND t+n 1 LGET t+n+1 hs
+                              RT PAIR-FIRST t+n+1 1 CALLI 0 t n+1 ; a local c: LGET instead of the hidden slot"
+  "(apply c a .. l)"         "as invoke; the trailing arguments are RT VECTOR-AT of l (hidden slot) after a count check
+                              (TRAP when count(l) != n - m)"
+  "(fn-ref f)"               "FADDR t f CONST t+1 0 RT PAIR-NEW t 2"
+  "adapter g'"               "FN g' n+1 n+1: LGET p1..pn into 0..n-1, the env (slot n+1) unpacked into n..n+k-1 by RT PAIR-FIRST /
+                              PAIR-SECOND, CALL g 0 n+k, RET 0"
+  "(map f c) (filter p c) (reduce f [i] c)" "c a :vector-i64 (the reference's only source); an inline counted loop over it (no FUEL inside, as the R3 loops),
+                              hidden slots s0 coll s1 count s2 index s3 accumulator s4 the callback value; per item RT VECTOR-AT
+                              and the callback: CALL g (+ captures) for an inline fn, CALL f for a defn name, CALLI for a value;
+                              map/filter collect with RT VECTOR-CONJ into a vector that starts as VEC t 0"
+  "multi-arity defn"         "one FN per clause, consecutive, same FF-SYM; a call picks the clause by its argument count; a
+                              variadic clause (parameter vector NF-TYPE 1) gets the surplus arguments as VEC t+m r"
+  "(list e ..)"              "[e1 -> t] .. VEC t n"}
+
+ ;; R5B (2026-10-03, agent R5B): effects. Local state needs no SIR: a cell is a frame slot (deref = LGET, reset! = [v -> t] LSET
+ ;; slot t, the value stays in t). The state ability is lowered imperatively (design 5.4): sigma = the state slot of the innermost
+ ;; handler (a hidden slot of the handle in a plain function, slot 1 in a specialization), h = the handler's get clause FN (put = h+1).
+ ;; A handler clause is a function (s) / (s v) returning (value x0, next state x1); a specialization f_h of a stateful function f takes
+ ;; the state as parameter 0 (slot 1) and returns (value x0, state x1); its own parameters are slots 2.. .
+ :r5b-lowering
+ {"(handle body (with h init))" "[init -> t] LSET sigma t [body -> t]   (sigma = NF-TYPE of the handle head node)"
+  "(perform :state/get)"   "LGET t sigma CALL h t 1 RES2 t+1 LSET sigma t+1   (the value in t)"
+  "(perform :state/put v)" "LGET t sigma [v -> t+1] CALL h+1 t 2 RES2 t+1 LSET sigma t+1"
+  "(g a ..) g stateful"    "LGET t sigma [a.. -> t+1 ..] CALL g_h t n+1 RES2 t+1 LSET sigma t+1 ; in tail position of g_h itself: the
+                            arguments into slots 2.., FUEL, BR entry (the state stays in slot 1)"
+  "(resume v n)"           "[v -> t] [n -> t+1] RET2 t"
+  "end of g_h"             "[body -> 0] LGET 1 1 RET2 0 ; a recur with no loop sets slots 2.. (slot 1 is the state)"
+  "(perform :clock/now x)" "CONST t 7 [x -> t+1] RT RT-CAP-CALL t 2"
+  "cells"                  "(let [a (atom e)] ..): [e -> t] LSET slot(a) t ; @a / (deref a): LGET t slot(a) ; (reset! a v): [v -> t] LSET slot(a) t"}
+
+ ;; Fuel rule (matches machine-ir entry-fuel-prefixes; T5 checks the seed's minimal passing fuel <= stage-0's):
+ ;; one FUEL at entry of every function with FF-FUEL = 1 (its body contains a CALL, RT or CAP), and one FUEL per
+ ;; recur / self tail call back-edge. Nothing else charges fuel.
+
+ ;; ---------------------------------------------------------------------------------------------------------
+ ;; 3. aarch64-macos code conventions (41-a64gen, 42-layout). R0 = simplest correct; R2 may change the mapping,
+ ;;    never the SIR.
+ ;; ---------------------------------------------------------------------------------------------------------
+ :a64
+ {:entry-abi    "Arguments in x0..x(n-1) (n <= 5), context pointer in x7, result in x0. This is the loader's
+                 calling convention for exports AND the seed's internal convention. Arity-0 `main` is the
+                 command entry (KEXE_COMMAND=1, argv via wire 38)."
+  :frame        "Prologue: stp x29,x30,[sp,#-16]! ; mov x29,sp ; sub sp,sp,#F where F = 8*(1 + nslots + FF-DEPTH)
+                 rounded up to 16. Slot k (0 = saved x7, 1..nslots locals, then the temp homes H) is at [x29,#-8*(k+1)].
+                 Params are stored to slots 1..n right after the prologue. Epilogue: mov sp,x29 ; ldp x29,x30,[sp],#16 ; ret."
+  :temps        "Temp k has a home slot H(k) = nslots+1+k (k = 0 .. FF-DEPTH-1). Temp k < 7 lives in x(9+k)
+                 (x9..x15) and uses H(k) only as its save area around calls; temp k >= 7 lives in H(k)."
+  :calls        "Before CALL/RT/CAP at base t: store the register temps 0..min(t,7)-1 to their H(k), move the
+                 operands to x0.. (RT/CAP: x0 = ctx, operands in x1..), reload x7 from slot 0 for a guest CALL,
+                 bl/blr, move x0 -> temp t, reload the saved temps. Scratch registers: x16, x17 (never hold a
+                 value across SIR instructions)."
+  :fuel         "FUEL = ldr x16,[x7,#8] ; subs x16,x16,#1 ; b.hs ok ; brk #0 ; ok: str x16,[x7,#8]
+                 (the sequence of kotoba-native aarch64.cljk fuel-charge). x7 is valid at every FUEL (reload from slot 0 first if needed)."
+  :quot         "cbz divisor -> brk ; cmn divisor,#1 ; b.ne ok ; check dividend == MIN -> brk ; ok: sdiv"
+  :constants    "CONST: movz/movk (up to 4 halfwords), or movn for negatives with one non-0xffff halfword."
+  :strings      "STR t lit: x1 := LF-POOL as movz x1,#lo16 ; movk x1,#hi16,lsl #16 (fixup FX-LIT32 on the movz, which
+                 patches both words), x2 := LF-LEN (CONST), then the RT RT-PAIR-NEW call sequence. The first pair_new
+                 operand is the CODE-RELATIVE offset, not an address (T2)."
+  :pool         "Literal pool after the last function, each literal's bytes at LF-POOL, 8-byte aligned,
+                 no terminator. MM-CODE-BYTES = end of the pool."
+  :traps        "brk #0 for every trap (quot, fuel, OP-TRAP code goes in the immediate)"
+  :r4           "FADDR: adr d,#0 + FX-ADR19 (d = the temp's register). CALLI like CALL with blr x16 (x16 := the code temp, last).
+                 string-code-point-at on a non-literal string (R4, the UTF-8 rule): the pair is read in line (ABI v9 pointers);
+                 when its offset is code-relative (>= 0), the index is below its length and offset + length <= code_length
+                 ([x7,#392]), the byte at code_base + offset + index is loaded and returned when < 0x80; every other case calls
+                 string_code_point_at (which validates the handle once)"
+  :r4b          "R4B (2026-10-03). CALL with n <= 16 arguments: args 0..6 in x0..x6 (x7 = context), args 7..n-1 at [sp,#8*(k-7)] of
+                 the CALLER: every function reserves an outgoing area of 16-rounded 8*(max n - 7) bytes at the bottom of its
+                 frame ([sp,#0..]), the callee-saved registers are saved above it. The callee (always framed when it reads such a
+                 parameter) loads parameter k >= 7 from [x29,#16+8*(k-7)]. Leaf functions keep slot k <= 7 in x(k-1) as before.
+                 VECP t lit n: vector_alloc(ctx, n), then a copy loop from code_base + LF-POOL(lit) into the fresh vector's
+                 items (x1/x2/x3 as scratch after the call). bytes-count / bytes-at take the inline vector-count / vector-at
+                 paths (a bytes value is a vector handle)"}
+
+ :fixups
+ [[:c FX-B26 1 "b label: imm26 words"] [:c FX-BC19 2 "b.cond label: imm19 words"]
+  [:c FX-CB19 3 "cbz/cbnz label: imm19 words"] [:c FX-BL26 4 "FN call or terminal B: imm26 words, target = FN index; XF-AUX=1 selects the proved private vector entry"]
+  [:c FX-LIT32 5 "movz+movk pair (2 consecutive words) loading LF-POOL of LIT target, 32-bit byte offset"]
+  [:c FX-ADR19 6 "R4: adr xd: the word displacement to the entry of FN target in immhi (bits 23:5, immlo 0): the imm19 patch"]]
+
+ ;; ---------------------------------------------------------------------------------------------------------
+ ;; 4. Output container kseed/v1 (50-out), from the design section 3.1
+ ;; ---------------------------------------------------------------------------------------------------------
+ :kseed
+ "ASCII header line `KSEED1 <code-length> <n-exports>\\n`, then one line per export `<name> <offset> <arity>\\n`
+  (EXP order), then `\\n`, then exactly <code-length> raw code bytes (little-endian words, then the pool).
+  extract-native writes the code bytes to --output and prints `{:ok true, :output \"<path>\", :symbol <name>,
+  :offset <n>, :length <code-length>, :arity <a>}` on stdout (stage-0's own shape, which the runner's regex reads)."}

@@ -1,0 +1,12 @@
+;; deps: 03-source-sha256
+;; Native-only known full SHA-256 vectors, including multi-block padding and
+;; one million input bytes. No host implementation supplies the result.
+(defn- seed-main [] :i64
+  (cond (not (string=? (sh-text "") "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")) 1
+        (not (string=? (sh-text "abc") "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")) 2
+        (not (string=? (sh-text "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq")
+                       "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1")) 3
+        :else
+        (let [bytes (loop [index 0 out (vector-alloc 1000000)]
+                      (if (>= index 1000000) out (recur (+ index 1) (vector-assoc! out index 97))))]
+          (if (string=? (sh-bytes bytes) "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0") 0 4))))

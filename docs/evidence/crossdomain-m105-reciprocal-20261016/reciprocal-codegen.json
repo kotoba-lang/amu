@@ -1,0 +1,142 @@
+{
+  "format": "kotoba.amu-reciprocal-codegen-evidence/v1",
+  "status": "SELFHOST_FIXED_POINT_CODEGEN_AND_EXACT_RUNTIME_NO_TIMING",
+  "sourceTreeCommit": "08e88db930e06deed239660557b8f7110fc7d4c5",
+  "suiteManifest": {
+    "path": "bench/runtime-comparison/multidomain-suite.json",
+    "sha256": "6725607d1228df0a3af16d889edc80b364fe6eec184d2135c2df6f707970b33d"
+  },
+  "candidateSeedModules": {
+    "seed/40-a64enc.kotoba": "c90fdfe90228b5481264a19ba586e9c96d4bed86e5548b2a54faadc7925313a1",
+    "seed/41-a64gen.kotoba": "73b337ce01a7b8544cca22631058322e83dfc6e32860d13794d7b89ee078baba"
+  },
+  "seedUnity": {
+    "modules": 16,
+    "bytes": 2775192,
+    "sha256": "80c69cf264e7bff850e4d00ca9878a08cdd85888ac5a20348a26c026b9f9fa30"
+  },
+  "bootstrap": {
+    "name": "adopted native M105 selfhost fixed point",
+    "path": "seed/bootstrap/adopted-20261012.bin",
+    "sha256": "6b158aa8654706743462b8a730f189072ba05f364b00af28a3f6d23045add2eb",
+    "loaderSource": "seed/bootstrap/adopted-loader-20261012.c",
+    "loaderSourceSha256": "f44b50995a0e45db4be35244da34dd61538a484c7d5ea2f15f7f5a73d9daa8c3",
+    "jvmNodeOrGraalFallback": false
+  },
+  "fixedPoint": {
+    "target": "aarch64-macos",
+    "stages": ["G1", "G2", "G3"],
+    "allStagesByteIdentical": true,
+    "kseed": {
+      "path": "compiler/fixed-point.kseed",
+      "bytes": 2549043,
+      "sha256": "f60b5cbaa696d0a37352fbcbb82cedf2d662f7ed07e124f25cf01104c748b476"
+    },
+    "nativeImage": {
+      "path": "compiler/fixed-point.bin",
+      "bytes": 2549016,
+      "sha256": "40696a8ac6d05889821cf5b9a0feb496ac19890dd02e21f177f6a9ae5541fa55"
+    }
+  },
+  "host": "Apple M1 Max, macOS, native AArch64",
+  "fixtures": {
+    "kernel_strings": {
+      "source": {
+        "path": "fixtures/kernel_strings.kotoba",
+        "bytes": 752,
+        "sha256": "c06504fb42f615002e80163f621e0c3f715324ec954c9fab7d9fc1d3b94a0ab0"
+      },
+      "kseed": {
+        "path": "fixtures/kernel_strings.kseed",
+        "bytes": 1388,
+        "sha256": "71ac2839bea477c926887ac2792b0c80ac20a42ae2a034775797669006d15e4c"
+      },
+      "nativeCode": {
+        "path": "fixtures/kernel_strings.bin",
+        "bytes": 1360,
+        "sha256": "02e0217d5534311eb50b1acfcd19a87f53c4ac5d6dad127ed8b503cba00ecf4c"
+      },
+      "disassembly": {
+        "path": "fixtures/kernel_strings.disasm.txt",
+        "bytes": 11189,
+        "sha256": "faeac34b6851fedc6fdb0d4ee0c4c6fc0305f3647b30c8102a6e44c86ec4cef6"
+      },
+      "baselineCodeSha256": "02e0217d5534311eb50b1acfcd19a87f53c4ac5d6dad127ed8b503cba00ecf4c",
+      "sdivOffsets": ["0x154", "0x228"]
+    },
+    "kernel_collections": {
+      "source": {
+        "path": "fixtures/kernel_collections.kotoba",
+        "bytes": 774,
+        "sha256": "5e31505354f7d803b72e4db61a9eea5f0a38d5457b829f7fae19fcc86c180af0"
+      },
+      "kseed": {
+        "path": "fixtures/kernel_collections.kseed",
+        "bytes": 3189,
+        "sha256": "af23380d8cb8e3df8fb557f9e0a669c9f91a5c21b3954836d36380f092b263a1"
+      },
+      "nativeCode": {
+        "path": "fixtures/kernel_collections.bin",
+        "bytes": 3160,
+        "sha256": "37e96ff0feec89478212b1083991373f47a2ee52cfa7dd6e560ccd265f048276"
+      },
+      "disassembly": {
+        "path": "fixtures/kernel_collections.disasm.txt",
+        "bytes": 25973,
+        "sha256": "6d65b183057f2b6d7f68450420eb0352dad2eaa6eb3c3f55ceb485a7b82bcbb7"
+      },
+      "baselineCodeSha256": "8853a4aeb2b256f8bc2155cb0dc685cd09af5694db6ae3a4c36e1c51944e799e",
+      "constantDivisor": 1000003,
+      "hoistedMagic": "0x8637a2a24e5ace35",
+      "shift": 19,
+      "smulhHotLoopOffsets": ["0x330", "0x360", "0x390", "0x3c0"],
+      "smulhScalarFastPathOffset": "0x408",
+      "fallbackSdivOffset": "0x460"
+    }
+  },
+  "runtimeExactness": {
+    "initialFuel": 16777216,
+    "sourceLevelKirOracleRerun": false,
+    "stringsInputs": [0, 1, 2, 199, 200, 201],
+    "stringsResults": [95351, 374831, 488388, 147903, 799811, 429739],
+    "stringsFuel": [75, 84, 93, 138, 75, 84],
+    "stringsMatchesSuite": true,
+    "collectionsInputs": [0, 1, 2, 199, 200, 201],
+    "collectionsResults": [583979, 314424, 542513, 169665, 416979, 4871],
+    "collectionsPreviousSuiteFuel": [148, 150, 152, 162, 172, 174],
+    "collectionsCurrentBaselineAndCandidateFuel": [198, 200, 202, 212, 230, 232],
+    "collectionsBaselineCandidateResultAndFuelParity": true,
+    "collectionsResultsMatchKnownAnswers": true,
+    "collectionsManifestRefreshed": true,
+    "fuelDriftContext": "The previous vector predates ADR 0353 allocation fuel charges; the current reference/native contract charges aggregate constructors against the shared fuel ledger.",
+    "verificationFiles": [
+      "strings-runtime-verification.txt",
+      "collections-runtime-verification.txt",
+      "reciprocal-arithmetic-verification.txt",
+      "verify-reciprocal.py"
+    ]
+  },
+  "verificationArtifacts": {
+    "strings-runtime-verification.txt": {
+      "bytes": 723,
+      "sha256": "b8a5f8ef68986c2eb4103e2ad7d9da7a9643946ee63a8ca9550ec9e48c18decc"
+    },
+    "collections-runtime-verification.txt": {
+      "bytes": 597,
+      "sha256": "ca2effb39c180538109f7c3e5cf61abcff97f624652359f1d863b530b145a563"
+    },
+    "verify-reciprocal.py": {
+      "bytes": 2457,
+      "sha256": "3acb51cc62195c9f807ab2c22a3c8d96813f25ea71ff35d46d4561e4ebfbfd3c"
+    },
+    "reciprocal-arithmetic-verification.txt": {
+      "bytes": 141,
+      "sha256": "d7802b96f20a9bc52bc5201b8d147c1085e5bdbbd806fe7de1a7ccea6a3fbe0d"
+    }
+  },
+  "timing": {
+    "performed": false,
+    "reason": "The host was not quiet; correctness and codegen evidence do not establish performance."
+  },
+  "baselineEvidence": "../crossdomain-m105-baseline-codegen-20261016/baseline-codegen.json"
+}

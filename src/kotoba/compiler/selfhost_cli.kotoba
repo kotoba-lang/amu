@@ -1,0 +1,43 @@
+;; Selfhost combined CLI entry (JUN-11 r8; tick-42 lock-aware modules route).
+;; Builder commands delegate to the seed-unity builder main; project-check
+;; commands delegate to native_cli main. `modules` is routed per invocation:
+;; with --module-lock/--blocks the pinned project-graph listing lives in
+;; native_cli (list-project-modules -> resolve-locked-project), while the
+;; unpinned build-order listing stays on the seed builder main. Routing the
+;; locked form to seed/main trapped (SIGILL) in its lock-unaware option parser.
+;; Locked build requests must refuse before entering that same lock-unaware
+;; builder. This guard does not implement locked compilation or qualify an image.
+(ns kotoba.compiler.selfhost-cli
+  {:kotoba/export [main]}
+  (:require [kotoba.compiler.native-cli :as ncli]
+            [kotoba.compiler.selfhost-route :as route]
+            [seed :as seed])
+  (:capabilities #{:cli/args :io/write-error}))
+
+(defn- cli-arg [index :i64] :string
+  (typed-cap-call :cli/args :string :string (string-from-i64 index)))
+
+(defn- command-arguments [argc :i64] [:list :string]
+  (loop [index 1 arguments (typed-list-new [:list :string])]
+    (if (>= index argc)
+      arguments
+      (recur (+ index 1)
+             (typed-list-conj [:list :string] arguments (cli-arg index))))))
+
+(defn main [] :i64
+  (let [command (typed-cap-call :cli/args :string :string "0")
+        argc-text (typed-cap-call :cli/args :string :string "")
+        argc-result (parse-long argc-text)
+        argc (option-value-of [:option :i64] argc-result 0)
+        selected (route/dispatch command (command-arguments argc))]
+    (cond
+      (= selected :unsupported-locked-builder)
+      (do
+        (typed-cap-call :io/write-error :string :string
+          "kotoba: E-SELFHOST-LOCKED-BUILD: seed builder does not support --module-lock/--blocks; refusing without an unpinned fallback\n")
+        65)
+
+      (= selected :seed-builder)
+      (seed/main)
+
+      :else (ncli/main))))

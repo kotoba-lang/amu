@@ -1,0 +1,163 @@
+;; seed/02-io.kotoba -- explicit file, argv and stream access.
+;; Ordinary file I/O uses FS2 frames on wire 35. Text replies strip the FS2
+;; acknowledgement; binary writers send bounded B/C pieces without examining
+;; payload bytes. The source-lock operation is separately framed and bounded.
+;; Wires 37/38/39 are stdout/argv/stderr. Scope and resource refusal belongs
+;; to the native provider; it is never a request for a legacy host fallback.
+;; Readers return immutable values; memory writers preserve MEMORY-MAP rules.
+
+(defn- io-out [s :string] :i64
+  (let [r (typed-cap-call :io/write :string :string s)] 0))
+
+(defn- io-err [s :string] :i64
+  (let [r (typed-cap-call :io/write-error :string :string s)] 0))
+
+(defn- io-argc [] :i64
+  (let [s (typed-cap-call :cli/args :string :string "")]
+    (mem-parse-dec s 0 (string-length s))))
+
+(defn- io-arg [i :i64] :string
+  (typed-cap-call :cli/args :string :string (mem-u2dec i)))
+
+;; first byte of the answer is '1' (49)
+(defn- io-first-is-one [s :string] :i64
+  (cond (= (string-length s) 0) 0
+        (= (string-code-point-at s 0) 49) 1
+        :else 0))
+
+;; All ordinary file I/O uses the typed FS2 frame. File names and binary
+;; contents never participate in a separator scan. The source-lock read below is a separate,
+;; exact native regular-file admission operation, not an ordinary FS fallback.
+(defn- io-fs2-prefix [] :string (string-from-utf8 (bytes-from-vector-i64 [0 70 83 50 0])))
+(defn- io-fs2-header [form :i64 path :string] :string
+  (string-concat (io-fs2-prefix)
+    (string-concat (string-from-utf8 (bytes-from-vector-i64 [form]))
+      (string-concat path (string-from-utf8 (bytes-from-vector-i64 [0]))))))
+(defn- io-fs2-text [form :i64 path :string tail :string] :string
+  (let [reply (typed-cap-call :fs/app-data :string :string (string-concat (io-fs2-header form path) tail))]
+    (if (and (>= (string-length reply) 5) (string=? (string-substring reply 0 5) (io-fs2-prefix)))
+      (string-substring reply 5 (string-length reply)) "")))
+
+(defn- io-exists [path :string] :i64
+  (io-first-is-one (io-fs2-text 68 path "")))
+
+(defn- io-read-file [M :vector-i64 path :string] :string
+  (io-fs2-text 65 path ""))
+
+(defn- io-slice [path :string off :i64 len :i64] :string
+  (io-fs2-text 69 path (string-concat (mem-u2dec off) (string-concat ":" (mem-u2dec len)))))
+
+(defn- io-write-text [path :string s :string] :i64
+  (let [r (io-fs2-text 66 path s)]
+    (string-length r)))
+
+;; error word after a check: ok = 1 keeps the recorded error; ok = 0 records `code` unless an error is already there
+(defn- io-check-fin [M0 :vector-i64 ok :i64 code :i64] :vector-i64
+  (let [e (vector-at M0 MM-ERR)
+        p (vector-at M0 MM-ERR-POS)
+        e1 (mem-sel e e code)
+        p1 (mem-sel e p -1)]
+    (vector-assoc! (vector-assoc! (vector-assoc! M0 MM-R0 ok) MM-ERR (mem-sel ok e e1)) MM-ERR-POS (mem-sel ok p p1))))
+
+(defn- io-check-read [M0 :vector-i64 path :string] :vector-i64
+  (io-check-fin M0 (io-exists path) E-IO-READ))
+
+(defn- io-check-write [M0 :vector-i64 path :string] :vector-i64
+  (io-check-fin M0 (io-exists path) E-IO-WRITE))
+
+;; ---- hex on stdout ---------------------------------------------------------------------------------------
+(defn- io-hexd [d :i64] :string
+  (cond (= d 0) "0" (= d 1) "1" (= d 2) "2" (= d 3) "3" (= d 4) "4" (= d 5) "5" (= d 6) "6" (= d 7) "7"
+        (= d 8) "8" (= d 9) "9" (= d 10) "a" (= d 11) "b" (= d 12) "c" (= d 13) "d" (= d 14) "e" :else "f"))
+
+(defn- io-hex2 [b :i64] :string
+  (string-concat (io-hexd (u64-shift-right b 4)) (io-hexd (bit-and b 15))))
+
+;; hex of M[i..end) appended to acc
+(defn- io-hex-line [M :vector-i64 i :i64 end :i64 acc :string] :string
+  (cond (>= i end) acc
+        :else (io-hex-line M (+ i 1) end (string-concat acc (io-hex2 (bit-and (vector-at M i) 255))))))
+
+(defn- io-min [a :i64 b :i64] :i64 (if (< a b) a b))
+
+(defn- io-hex-run [M :vector-i64 i :i64 end :i64] :i64
+  (cond (>= i end) 0
+        :else (io-hex-step M i end (io-min end (+ i 64)))))
+
+(defn- io-hex-step [M :vector-i64 i :i64 end :i64 e :i64] :i64
+  (let [w (typed-cap-call :io/write :string :string (string-concat (io-hex-line M i e "") "\n"))]
+    (io-hex-run M e end)))
+
+(defn- io-write-hex [M :vector-i64 base :i64 len :i64] :i64
+  (io-hex-run M base (+ base len)))
+
+;; ---- binary files (:fs/app-data-bytes, wire 35 kind 8) ------------------------------------------------
+;; T[i + delta] = byte i of S for i in [i, end)
+(defn- io-bput-str [T :vector-i64 S :string i :i64 end :i64 delta :i64] :vector-i64
+  (let [bytes (vector-i64-from-bytes (string-to-utf8 S))]
+    (loop [index i out T]
+      (if (>= index end) (mem-keep out)
+        (recur (+ index 1) (vector-assoc! out (+ index delta) (vector-at bytes index)))))))
+
+;; T[i + delta] = M[i] & 255 for i in [i, end)
+(defn- io-bput-words [T :vector-i64 M :vector-i64 i :i64 end :i64 delta :i64] :vector-i64
+  (if (>= i end)
+    (mem-keep T)
+    (io-bput-words (vector-assoc! T (+ i delta) (bit-and (vector-at M i) 255)) M (+ i 1) end delta)))
+
+(defn- io-bsend [T :vector-i64] :i64
+  (let [r (typed-cap-call :fs/app-data-bytes :bytes :bytes (bytes-from-vector-i64 T))] 0))
+
+;; Bounded FS2 B/C pieces. Splitting depends only on the byte-value budget;
+;; no old token names or content-dependent splitting remain.
+(defn- io-cut [M :vector-i64 i :i64 end :i64] :i64
+  (if (< (+ i 262144) end) (+ i 262144) end))
+
+;; one request "<path><token tw><M[i..j)>"
+(defn- io-piece [M :vector-i64 path :string i :i64 j :i64 tw :i64] :i64
+  (let [header (io-fs2-header (if (= tw 0) 66 67) path) n (string-length header)
+        T0 (vector-alloc (+ n (- j i)))
+        T1 (io-bput-str T0 header 0 n 0)
+        T3 (io-bput-words T1 M i j (- n i))]
+    (io-bsend T3)))
+
+(defn- io-pieces [M :vector-i64 path :string i :i64 end :i64 tw :i64] :i64
+  (let [j (io-cut M i end)
+        z (io-piece M path i j tw)]
+    (if (< j end) (io-pieces M path j end 1) 0)))
+
+(defn- io-write-bytes [M :vector-i64 path :string base :i64 len :i64] :i64
+  (let [z (io-pieces M path base (+ base len) 0)]
+    len))
+;; ==== END KIR5 write pieces ============================================================================================
+
+;; the bytes of path as a fresh vector (one item per byte)
+(defn- io-path-vec [path :string] :vector-i64
+  (io-bput-str (vector-alloc (string-length path)) path 0 (string-length path) 0))
+
+(defn- io-read-bytes [path :string] :vector-i64
+  (let [answer (vector-i64-from-bytes (typed-cap-call :fs/app-data :string :bytes (io-fs2-header 65 path)))
+        n (vector-count answer)]
+    (if (and (>= n 5) (= (vector-at answer 0) 0) (= (vector-at answer 1) 70)
+             (= (vector-at answer 2) 83) (= (vector-at answer 3) 50) (= (vector-at answer 4) 0))
+      (loop [i 5 out (vector-alloc (- n 5))]
+        (if (= i n) out (recur (+ i 1) (vector-assoc! out (- i 5) (vector-at answer i)))))
+      (vector-alloc 0))))
+
+;; The private native lock-read frame is NUL KSL1 NUL followed by the exact
+;; path bytes. The native provider opens once with NONBLOCK/NOFOLLOW, checks
+;; a readable regular file of at most 1 MiB, and returns a status byte plus
+;; its complete bytes. Failure is an empty lock, which the owning KSL parser
+;; rejects as E6015. No legacy token scan, partial read or host fallback.
+(defn- io-lock-copy [bytes :vector-i64 out :vector-i64] :vector-i64
+  (loop [i 0 V out]
+    (if (= i (vector-count out)) V
+      (recur (+ i 1) (vector-assoc! V i (vector-at bytes (+ i 1)))))))
+
+(defn- io-read-source-lock [path :string] :vector-i64
+  (let [prefix (string-from-utf8 (bytes-from-vector-i64 [0 75 83 76 49 0]))
+        request (string-to-utf8 (string-concat prefix path))
+        answer (vector-i64-from-bytes (typed-cap-call :fs/app-data-bytes :bytes :bytes request))]
+    (if (and (> (vector-count answer) 0) (= (vector-at answer 0) 1))
+      (io-lock-copy answer (vector-alloc (- (vector-count answer) 1)))
+      (vector-alloc 0))))

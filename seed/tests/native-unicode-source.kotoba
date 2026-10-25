@@ -1,0 +1,11 @@
+(ns 例.単体 (:export [main 加算]))
+(defn 加算 [値 :i64] :i64 (+ 値 1))
+(defn- 二倍 [値 :i64] :i64 (* 値 2))
+(defn main [] :i64
+ (let [値 (加算 (二倍 20))
+       名 (keyword-from-string "例/名前-🧪")
+       他 (keyword-from-string "別/名前")]
+  (if (and (= 値 41) (= 名 :例/名前-🧪) (= 他 :別/名前)
+           (not= 名 他) (string=? (keyword-name 名) "名前-🧪")
+           (string=? (keyword-name :例/固定) "固定")
+           (string=? (document-edn-print (document-keyword 名)) ":例/名前-🧪")) 0 91)))

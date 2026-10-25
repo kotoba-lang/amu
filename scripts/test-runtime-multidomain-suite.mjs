@@ -57,7 +57,7 @@ function run(args, env = {}, expectSuccess = true) {
 function syntheticCompetitiveReport() {
   const generatedAt = new Date().toISOString();
   const hash = "b".repeat(64);
-  const samples = (value, artifactKind, fuelConsumed) => Array.from({ length: 5 }, () => ({
+  const samples = (value, artifactKind, fuelConsumed) => Array.from({ length: 10 }, () => ({
     result: 42, nanosecondsPerKernel: value, nativeArtifactAbi,
     artifactKind,
     contextFuelBefore: 1_048_576, contextFuelAfter: 1_048_576 - fuelConsumed,
@@ -74,6 +74,10 @@ function syntheticCompetitiveReport() {
       requiredEngines: manifest.requiredEngines,
       requiredComparators: manifest.requiredComparators,
       requiredTargets: manifest.requiredTargets,
+      requestedMeasurementRunsPerDomain: 10,
+      measurementRunsPerDomain: 10,
+      minimumCompetitiveRuns: 10,
+      competitiveRunFloorMet: true,
       preparedIndexSha256: hash,
       // These booleans are deliberately false: the bridge must derive completeness.
       complete: false,
@@ -87,6 +91,8 @@ function syntheticCompetitiveReport() {
       knownAnswer: { benchmark: required.knownAnswer, n: 200, result: 42,
         verifiedBy: ["amu-wasm32", "amu-native", ...comparators] },
       contract: { rotation: "all-engine-pairs ABBA/BAAB per run",
+        runs: 10,
+        samplesPerEngine: 10,
         nativeArtifactAbi,
         nativeArtifactArgMap: manifest.claimContract.nativeArtifactArgMap,
         nativeRunnerCompiler: manifest.claimContract.nativeRunnerCompiler,

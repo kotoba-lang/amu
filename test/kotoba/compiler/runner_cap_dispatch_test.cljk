@@ -1,0 +1,314 @@
+(ns kotoba.compiler.runner-cap-dispatch-test
+  "Vectors for the supervisor-side slot-128 dispatch entity of the
+  C-free x86-64 seed runner (JUN-29). Every behavior under test is the
+  measured `checked_typed_cap_call` chain (seed/bootstrap/
+  adopted-loader-20261012.c line 9930) and its providers 13 / 7 / 12
+  (lines 6969 / 7006 / 7843) and the shipped `cap-provider` table
+  (tools/kexe_loader_decisions.kotoba)."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.runner-entry :as runner-entry]
+            [kotoba.compiler.runner-cap-dispatch :as dispatch]))
+
+(defn- call
+  "One 2-arg typed cap call on `wire` with the string request."
+  [ctx wire request]
+  ((:typed-cap-call ctx) {:id wire :request-kind 1 :result-kind 1
+                          :request request}))
+
+(deftest slot-identity-is-the-measured-128
+  (is (= 128 dispatch/vtable-slot)
+      "offsetof(struct kexe_context_v11, typed_cap_call) == 128")
+  (is (= dispatch/vtable-slot runner-entry/cap-call-vtable-slot)
+      "the entity and the call site name the same slot")
+  (is (= 11 dispatch/ctx-version))
+  (let [{:keys [ctx]} (dispatch/install-dispatch {})]
+    (is (fn? (:typed-cap-call ctx))
+        "the ctx's slot-128 field is the dispatch entity")
+    (is (= :kexe-context-v11 (:struct ctx)))
+    (is (= 11 (:version ctx)))))
+
+(deftest grant-mask-is-the-measured-four-words
+  (let [words (dispatch/words-for #{35 37 38 39})]
+    (is (= 4 (count words)))
+    (is (= #{35 37 38 39} (dispatch/granted-wires words)))
+    (is (true? (dispatch/cap-admitted? words 35)))
+    (is (false? (dispatch/cap-admitted? words 34))
+        "a bit not set in the mask is never granted")
+    (is (false? (dispatch/cap-admitted? words 256))
+        "an id outside 0..255 is never granted")
+    (is (false? (dispatch/cap-admitted? words -1))))
+  (testing "install-dispatch refuses any grant but the pinned set"
+    (doseq [wires [#{35 37 38} #{35 37 38 39 42} #{20} #{}]]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"not exactly the compiler command path"
+                            (dispatch/install-dispatch
+                             {:allow (dispatch/words-for wires)}))
+          (str "grant " (sort wires) " is not the compiler command path")))))
+
+(deftest grant-mask-words-are-exact-u64
+  ;; chatgpt-codex review 2026-10-20 (P2): the mask word's bit sum is
+  ;; NOT exact in Number arithmetic once two bits straddle 2^53 --
+  ;; measured before the fix on this host: `words-for #{0 54}` was
+  ;; `2^54 + 1` rounded back to `2^54`, silently dropping wire 0 from
+  ;; the grant. The words are bigints (the host's guest i64) now.
+  (doseq [wires [#{0 54} #{63 0} #{0 54 63} #{64 127} #{128 255}
+                 (set (range 256))]]
+    (is (= wires (dispatch/granted-wires (dispatch/words-for wires)))
+        (str "round-trip " (vec (sort wires)))))
+  (testing "the wire id and the word may arrive as guest bigints"
+    (let [words (dispatch/words-for #{(js/BigInt 0) (js/BigInt 54)})]
+      (is (= #{0 54} (dispatch/granted-wires words))))
+    (is (true? (dispatch/cap-admitted? (dispatch/words-for #{0 54})
+                                       (js/BigInt 0)))))
+  (testing "a word is read as its u64 bit pattern, like the loader's field"
+    ;; -1 as i64 is the u64 word with every bit set: every id granted.
+    (is (= (set (range 256))
+           (dispatch/granted-wires [(js/BigInt -1) (js/BigInt -1)
+                                    (js/BigInt -1) (js/BigInt -1)])))))
+
+(deftest dispatch-chain-refuses-like-the-loader-sigill
+  (let [{:keys [ctx]} (dispatch/install-dispatch {})]
+    (testing "step 1: ctx shape and version"
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"not the planned :kexe-context-v11"
+                            (dispatch/dispatch! {:struct :wrong} {:id 37})))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"version is not 11"
+                            (dispatch/dispatch! (assoc ctx :version 10)
+                                                {:id 37 :request-kind 1
+                                                 :result-kind 1 :request "x"}))))
+    (testing "step 2: the grant"
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"grant does not admit"
+                            (call ctx 42 "x"))
+          "broker wires are not on the command path"))
+    (testing "step 3: typed kinds must be the same kind"
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"kinds differ"
+                            ((:typed-cap-call ctx)
+                             {:id 37 :request-kind 1 :result-kind 8
+                              :request "x"}))))
+    (testing "step 4: the request is a string handle"
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"not a string handle"
+                            (call ctx 37 42))))
+    (testing "kinds 8/9 request handles are checked like the loader's"
+      (doseq [k [8 9]]
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                              #"not a (bytes|string) handle"
+                              ((:typed-cap-call ctx)
+                               {:id 35 :request-kind k :result-kind k
+                                :request (if (= k 8) "x" [88])}))
+            "kind 8 takes a bytes handle, kind 9 a string handle")))
+    (testing "other kinds are outside the pinned command path"
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"outside the pinned command path"
+                            ((:typed-cap-call ctx)
+                             {:id 35 :request-kind 5 :result-kind 5
+                              :request "x"}))))))
+
+(deftest cap-provider-is-the-measured-embedded-table
+  (testing "the compiler command path's string-kind answers"
+    (is (= dispatch/provider-fs-app-data (dispatch/cap-provider 35 1)))
+    (is (= dispatch/provider-io-write (dispatch/cap-provider 37 1)))
+    (is (= dispatch/provider-cli-args (dispatch/cap-provider 38 1)))
+    (is (= dispatch/provider-io-write-error (dispatch/cap-provider 39 1))))
+  (testing "the table verbatim around them"
+    (is (= 6 (dispatch/cap-provider 34 1)))
+    (is (= 10 (dispatch/cap-provider 7 1)))
+    (is (= 13 (dispatch/cap-provider 37 1)))
+    (is (= 0 (dispatch/cap-provider 36 1)) "unknown string wire -> 0")
+    (is (= 1 (dispatch/cap-provider 7 4)) "clock-v1 pins :clock/now")
+    (is (= -1 (dispatch/cap-provider 35 4))
+        "a clock-v1 record on any id but :clock/now is refused")
+    (is (= 0 (dispatch/cap-provider 35 5)) "dataspace pins wire 24")
+    (is (= 2 (dispatch/cap-provider 24 5)))
+    (is (= 3 (dispatch/cap-provider 9 6)))
+    (is (= 4 (dispatch/cap-provider 10 7))))
+  (testing "kinds 8/9 follow the MEASURED embedded code, not the shipped table"
+    (is (= dispatch/provider-fs-app-data-bytes (dispatch/cap-provider 35 8))
+        "embedded decide answers 17 (probe_decide.c, 2026-10-20)")
+    (is (= dispatch/provider-fs-app-data-bytes (dispatch/cap-provider 35 9)))
+    (is (= 0 (dispatch/cap-provider 37 8))
+        "kinds 8/9 on other wires are UNMEASURED: 0, refused at the switch")
+    (is (= 0 (dispatch/cap-provider 35 2)) "kinds outside 1/4..9 stay 0"))
+  (testing "typed-kinds-admitted is decide op 1"
+    (is (true? (dispatch/typed-kinds-admitted? 1 1)))
+    (is (true? (dispatch/typed-kinds-admitted? 8 8))
+        "measured: typed-kinds(8, 8) = 1")
+    (is (false? (dispatch/typed-kinds-admitted? 1 8)))
+    (is (false? (dispatch/typed-kinds-admitted? 8 9))
+        "measured: typed-kinds(8, 9) = 0")))
+
+(deftest io-write-providers-report-decimal-byte-counts
+  (let [{:keys [ctx host]} (dispatch/install-dispatch {})]
+    (is (= "5" (call ctx 37 "hello")))
+    (is (= "3" (call ctx 37 "abc")))
+    (is (= "3" (call ctx 39 "あ")) "a write counts BYTES, not characters")
+    (is (= "4" (call ctx 37 "😀")) "a surrogate pair is 4 UTF-8 bytes")
+    (is (= "helloabc😀" (:out @host)))
+    (is (= "あ" (:err @host))
+        "the diagnostic stream is separate -- authority, not mechanism")
+    (is (= [37 37 39 37] (map :wire (:log @host))))
+    (is (= [13 13 7 13] (map :provider (:log @host)))
+        "the log names the measured provider ids")))
+
+(deftest cli-args-provider-is-the-measured-grammar
+  (let [{:keys [ctx]} (dispatch/install-dispatch {:argv ["amu" "--target" "x86_64-linux"]})]
+    (is (= "3" (call ctx 38 "")) "the empty request answers the count")
+    (is (= "amu" (call ctx 38 "0")))
+    (is (= "x86_64-linux" (call ctx 38 "2")))
+    (is (= "" (call ctx 38 "3")) "past the end answers the empty string")
+    (is (= "" (call ctx 38 "19")) "past the end is not an error")
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                          #"not a decimal index"
+                          (call ctx 38 "1x"))
+        "a malformed request traps rather than being read as zero")
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                          #"not a decimal index"
+                          (call ctx 38 "-1")))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                          #"20 bytes or more"
+                          (call ctx 38 "00000000000000000000")))))
+
+(deftest fs-app-data-routes-to-the-vehicles-hook-or-traps
+  (let [{:keys [ctx]} (dispatch/install-dispatch {})]
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                          #"no :fs-dispatch hook"
+                          (call ctx 35 "READ app-data/x"))
+        "the fs surface is the vehicle's; without it there is no service"))
+  (let [{:keys [ctx host]}
+        (dispatch/install-dispatch
+         {:fs-dispatch (fn [_host request]
+                         (if (= "READ " (subs request 0 5))
+                           (str "content-of-" (subs request 5))
+                           (throw (ex-info "form refused like the loader's default"
+                                           {:trap :sigill :request request}))))})]
+    (is (= "content-of-app/data/x" (call ctx 35 "READ app/data/x")))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"form refused"
+                          (call ctx 35 "NOPE"))
+        "fs_app_data_dispatch's default is raise(SIGILL)")
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not a string handle"
+                          (call ctx 35 7))
+        "the hook is reached only through the same typed gate")
+    (is (= 1 (count (:log @host))) "only served calls are logged")))
+
+(deftest bytes-bridge-serves-kinds-8-9-like-case-17
+  ;; provider 17 (fs_app_data_bytes_provider, adopted line 9899): the
+  ;; form text goes to the SAME :fs-dispatch hook provider 5 uses, and
+  ;; the answer string's bytes are the result (both kinds answer bytes).
+  ;; Byte vectors are written out (ASCII parts via `a`, あ as its UTF-8
+  ;; bytes 227 129 130) -- `(mapv int s)` is the known CLJS trap
+  ;; (returns 0s) and charCodeAt gives UTF-16 units, not bytes.
+  (let [a (fn [s] (mapv #(.charCodeAt s %) (range (.-length s))))
+        hook (fn [_host request]
+               (if (= "READ " (subs request 0 5))
+                 (str "content-of-" (subs request 5))
+                 (throw (ex-info "form refused" {:trap :sigill :request request}))))
+        {:keys [ctx host]} (dispatch/install-dispatch {:fs-dispatch hook})
+        cap (:typed-cap-call ctx)
+        read-bytes (a "READ x")]
+    (testing "kind 9 (:string -> :bytes): the request is the text"
+      (is (= (a "content-of-x")
+             (cap {:id 35 :request-kind 9 :result-kind 9 :request "READ x"}))))
+    (testing "kind 8 (:bytes -> :bytes): the request bytes are the text"
+      (is (= (a "content-of-x")
+             (cap {:id 35 :request-kind 8 :result-kind 8 :request read-bytes}))
+          "the answer's UTF-8 bytes, not chars")
+      (is (= (into (a "content-of-") [227 129 130])
+             (cap {:id 35 :request-kind 8 :result-kind 8
+                   :request (into (a "READ ") [227 129 130])}))
+          "the request bytes decode strict UTF-8 both ways"))
+    (testing "the loader's bounds, measured (valid_bytes_handle + the loop)"
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"outside 0\.\.255"
+                            (cap {:id 35 :request-kind 8 :result-kind 8
+                                  :request [82 256]})))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not a bytes handle"
+                            (cap {:id 35 :request-kind 8 :result-kind 8
+                                  :request "READ x"})))
+      (with-redefs [dispatch/bytes-value-limit 2]
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"KEXE_BYTES_VALUE_LIMIT"
+                              (cap {:id 35 :request-kind 8 :result-kind 8
+                                    :request read-bytes}))
+            "three bytes over a two-item limit")))
+    (testing "the model boundary: non-UTF-8 request bytes refuse, not normalise"
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not UTF-8"
+                            (cap {:id 35 :request-kind 8 :result-kind 8
+                                  :request [82 69 65 68 32 255]}))))
+    (testing "kinds 8/9 outside wire 35 are unmeasured and refused, not echoed"
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"outside the pinned command path"
+                            (cap {:id 37 :request-kind 8 :result-kind 8
+                                  :request read-bytes}))))
+    (testing "no hook, no service -- provider 17 is the vehicle's like provider 5"
+      (let [{:keys [ctx]} (dispatch/install-dispatch {})]
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no :fs-dispatch hook"
+                              ((:typed-cap-call ctx)
+                               {:id 35 :request-kind 9 :result-kind 9
+                                :request "READ x"})))))
+    (is (= [17 17 17] (map :provider (:log @host)))
+        "the log names provider 17 for every served bytes-bridge call")))
+
+(deftest bytes-bridge-answers-raw-bytes-like-resolve-string-bytes
+  ;; chatgpt-codex review 2026-10-20 (P1): the adopted loader's
+  ;; `resolve_string_bytes` copies the filesystem answer RAW and does
+  ;; not require UTF-8 -- forcing every answer through a string and
+  ;; re-encoding it UTF-8 meant a `0xFF` answer byte could not
+  ;; round-trip. A hook holding binary content answers a BYTES HANDLE
+  ;; and every item comes back byte for byte; a string answer is still
+  ;; its UTF-8 bytes.
+  (let [hook (fn [_host _request] [88 255 0 227 129 130])
+        {:keys [ctx host]} (dispatch/install-dispatch {:fs-dispatch hook})
+        cap (:typed-cap-call ctx)]
+    (is (= [88 255 0 227 129 130]
+           (cap {:id 35 :request-kind 9 :result-kind 9 :request "READ x"}))
+        "0xFF and 0x00 survive -- a string form would have re-encoded")
+    (is (= [88 255 0 227 129 130]
+           (cap {:id 35 :request-kind 8 :result-kind 8
+                 :request [82 69 65 68 32]}))
+        "kind 8 answers the same raw bytes")
+    (is (= [17 17] (map :provider (:log @host)))))
+  (testing "a bytes answer is still a bytes handle (valid_bytes_handle)"
+    (let [{:keys [ctx]} (dispatch/install-dispatch
+                         {:fs-dispatch (fn [_host _request] [256])})]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"outside 0\.\.255"
+                            ((:typed-cap-call ctx)
+                             {:id 35 :request-kind 9 :result-kind 9
+                              :request "READ x"}))))
+    (let [{:keys [ctx]} (dispatch/install-dispatch
+                         {:fs-dispatch (fn [_host _request] 7)})]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not a bytes handle"
+                            ((:typed-cap-call ctx)
+                             {:id 35 :request-kind 9 :result-kind 9
+                              :request "READ x"}))))))
+
+(deftest dispatch-entity-serves-the-entry-guest-call
+  ;; the wiring: runner-entry calls the guest once under ctx-v11, and
+  ;; the guest's services ride the ctx's slot-128 field -- the same
+  ;; path the measured 29-byte sites dispatch on.
+  ;; argv is the compiler command shape (`amu <source>`, 2 args) so the
+  ;; empty request's answer "2" is the measured argv count, not a constant.
+  (let [{:keys [ctx host]} (dispatch/install-dispatch {:argv ["amu" "example.kotoba"]})
+        sites (atom nil)
+        out (runner-entry/call-guest-under-ctx!
+             {:ctx ctx
+              :guest-entry
+              (fn [c]
+                (let [cap (:typed-cap-call c)]
+                  (is (= "2" (cap {:id 38 :request-kind 1 :result-kind 1
+                                   :request ""})))
+                  {:status :ok
+                   :output {:sha256 (str "wrote:"
+                                         (cap {:id 37 :request-kind 1
+                                               :result-kind 1
+                                               :request "done"}))}}))
+              :cap-dispatch (fn [records] (reset! sites records))})]
+    (is (= 1 (:guest-called out)))
+    (is (= :supervisor-op-cap (:entry-route out)))
+    (is (= :ok (:status out)))
+    (is (= "wrote:4" (get-in out [:output :sha256])))
+    (is (= [35 37 38 39] (map :wire @sites))
+        "the entry pre-builds one measured 29-byte site per pinned wire")
+    (is (every? #(= 29 (:bytes %)) @sites))
+    (is (every? #(= 128 (:vtable-slot %)) @sites))
+    (is (= [{:wire 38 :provider 12} {:wire 37 :provider 13}]
+           (map #(select-keys % [:wire :provider]) (:log @host)))
+        "the guest's calls were served by the measured providers")))

@@ -1,0 +1,355 @@
+;; wasm32-browser-static/v1 (JUN-353): the runtime-profile SIR (seed/70-71's
+;; admission, seed/75's runtime rules) emitted as one self-contained
+;; WebAssembly module: the guest and the Kotoba runtime (seed/82, xw-rt-src)
+;; compiled from the same SIR. Like seed/80 it is a plain emitter over SIR:
+;; every value is an i64 wasm local (slot s = local s-1, so the parameters are
+;; the wasm parameters; temp t = local nslots+t; then one scratch i64 and the
+;; i32 pc). Each function is a `loop` around nested `block`s with a `br_table`
+;; over its basic blocks (block 0 = entry, block k = the k-th LABEL), which is
+;; correct for SIR's arbitrary labels: a branch sets pc and continues the loop.
+;; Direct calls use `call` (`return_call` where seed/80 emits a tail jump);
+;; FADDR is a funcref table index whose entry is a thunk of type 5 i64 -> i64,
+;; CALLI pads its arguments to five and uses call_indirect; RET2's second word
+;; is global 0. Fuel stays in the context word +8 and is charged as natively.
+;; Linear memory: the context at XW-CTX (G = context + 1024, as seed/77), the
+;; literal pool (an active data segment) at XW-POOL, then the runtime's arena,
+;; grown by memory.grow. Imports (module kotoba:host): 0 write(fd, ptr, len),
+;; 1 cap(wire, ptr, len), 2 now(), 3 exit(code), 4 input(kind, i, ptr, len, dst, cap) (the entry ABI, seed/82);
+;; exports: memory and start(fuel).
+;; Floats, the syscall and call-at intrinsics are refused (E7101), as seed/80.
+;; M cells (X86_64-LINUX-ABI; mode 3 is never used here): 194 = pool length,
+;; 195 = defined function count, 201 = current block, 202 = block count,
+;; 203 = table size, 205 = the current body's fixup record. FF-CODE of a FN:
+;; low 32 bits = wasm function index, bits 32..47 = table slot + 1, bits 48..
+;; = inline kind (1 memory.grow, 2 memory.size). Fixup records (MM-FIX) are
+;; reused as lists: kind 30 [start 30 f end] a function body, 31 [slot 31 f] a
+;; thunk, 32 [start 32 f end] its body, 40 [start 40 id end] a section payload, all in the CODE buffer.
+
+(def XW-CTX 4096)
+(def XW-POOL 65536)
+(def XW-NIMPORT 5)
+
+;; ---- bytes and LEB128 into CODE ----
+(defn- xw-uleb [M :vector-i64 v :i64] :vector-i64
+  (let [lo (bit-and v 127) rest (u64-shift-right v 7)]
+    (if (= rest 0) (xg-byte M lo) (xw-uleb (xg-byte M (bit-or lo 128)) rest))))
+(defn- xw-sleb [M :vector-i64 v :i64] :vector-i64
+  (let [lo (bit-and v 127) rest (i64-shift-right v 7)]
+    (if (or (and (= rest 0) (= (bit-and lo 64) 0)) (and (= rest -1) (not= (bit-and lo 64) 0)))
+      (xg-byte M lo) (xw-sleb (xg-byte M (bit-or lo 128)) rest))))
+(defn- xw-op [M :vector-i64 op :i64 v :i64] :vector-i64 (xw-uleb (xg-byte M op) v))
+(defn- xw-rec [M :vector-i64 at :i64 kind :i64 target :i64 aux :i64] :vector-i64
+  (let [k (vector-at M MM-FIX-N) b (+ MM-FIX-BASE (* k MM-FIX-W))]
+    (if (>= k MM-FIX-CAP) (xg-err M 7104 k)
+      (-> M (mem-set b at) (mem-set (+ b 1) kind) (mem-set (+ b 2) target) (mem-set (+ b 3) aux) (mem-set MM-FIX-N (inc k))))))
+(defn- xw-fix [M :vector-i64 k :i64 w :i64] :i64 (vector-at M (+ MM-FIX-BASE (* k MM-FIX-W) w)))
+
+;; ---- function records ----
+(defn- xw-code-of [M :vector-i64 f :i64] :i64 (xg-f M f FF-CODE))
+(defn- xw-set-code [M :vector-i64 f :i64 v :i64] :vector-i64 (mem-set M (+ MM-FN-BASE (* f MM-FN-W) FF-CODE) v))
+(defn- xw-idx [M :vector-i64 f :i64] :i64 (bit-and (xw-code-of M f) 4294967295))
+(defn- xw-tab [M :vector-i64 f :i64] :i64 (dec (bit-and (u64-shift-right (xw-code-of M f) 32) 65535)))
+(defn- xw-inline [M :vector-i64 f :i64] :i64 (u64-shift-right (xw-code-of M f) 48))
+(defn- xw-name [M :vector-i64 S :string f :i64] :string
+  (let [sb (+ MM-SYM-BASE (* (xg-f M f FF-SYM) MM-SYM-W))]
+    (string-substring S (vector-at M (+ sb SF-START)) (vector-at M (+ sb SF-END)))))
+;; host imports and inline intrinsics of seed/82, by name: [kind index arity] packed as
+;; kind*256 + index*16 + arity (kind 1 import, 2 inline), 0 otherwise
+(defn- xw-special [name :string] :i64
+  (cond (string=? name "kxrt-host-write") (+ 256 3) (string=? name "kxrt-host-cap") (+ 256 16 3)
+        (string=? name "kxrt-host-now") (+ 256 32) (string=? name "kxrt-host-exit") (+ 256 48 1)
+        (string=? name "kxrt-host-input") (+ 256 64 6)
+        (string=? name "kxrt-wasm-grow") (+ 512 16 1) (string=? name "kxrt-wasm-size") (+ 512 32)
+        :else 0))
+(defn- xw-sp [M :vector-i64 S :string f :i64] :i64 (if (xs-rt? M f) (xw-special (xw-name M S f)) 0))
+;; pass A: wasm function indices in SIR order (imports first)
+(defn- xw-assign [M :vector-i64 S :string i :i64 next :i64] :vector-i64
+  (cond (or (not= (vector-at M MM-ERR) 0) (= i (vector-at M MM-SIR-N))) (xg-set M 3 (- next XW-NIMPORT))
+        (= (xg-si M i IF-OP) OP-FN)
+          (let [f (xg-si M i IF-A) sp (xw-sp M S f) kind (u64-shift-right sp 8) ix (bit-and (u64-shift-right sp 4) 15)]
+            (cond (> (xg-f M f FF-NPARAMS) 16) (xg-err M 7102 f)
+                  (and (> sp 0) (not= (xg-f M f FF-NPARAMS) (bit-and sp 15))) (xg-err M 7102 f)
+                  (= kind 1) (xw-assign (xw-set-code M f ix) S (inc i) next)
+                  (= kind 2) (xw-assign (xw-set-code M f (i64-shift-left ix 48)) S (inc i) next)
+                  :else (xw-assign (xw-set-code M f next) S (inc i) (inc next))))
+        :else (xw-assign M S (inc i) next)))
+;; pass B: a table slot (and a thunk record) for every function value
+(defn- xw-tables [M :vector-i64 i :i64] :vector-i64
+  (if (or (not= (vector-at M MM-ERR) 0) (= i (vector-at M MM-SIR-N))) M
+    (let [f (xg-si M i IF-B) n (vector-at M 203)]
+      (cond (not= (xg-si M i IF-OP) OP-FADDR) (xw-tables M (inc i))
+            (>= (xw-tab M f) 0) (xw-tables M (inc i))
+            (or (> (xg-f M f FF-NPARAMS) 5) (> (xw-inline M f) 0) (< (xw-idx M f) XW-NIMPORT)) (xg-err M 7101 OP-FADDR)
+            :else (xw-tables (-> M (xw-set-code f (bit-or (xw-code-of M f) (i64-shift-left (+ n 1) 32)))
+                                 (xw-rec n 31 f 0) (mem-set 203 (inc n))) (inc i))))))
+
+;; ---- locals ----
+(defn- xw-ns [M :vector-i64] :i64
+  (let [f (xg-get M 0) s (xg-f M f FF-NSLOTS) n (xg-f M f FF-NPARAMS)] (if (< s n) n s)))
+(defn- xw-slot [s :i64] :i64 (dec s))
+(defn- xw-t [M :vector-i64 t :i64] :i64 (+ (xw-ns M) t))
+(defn- xw-scr [M :vector-i64] :i64 (+ (xw-ns M) (xg-f M (xg-get M 0) FF-DEPTH)))
+(defn- xw-pc [M :vector-i64] :i64 (inc (xw-scr M)))
+(defn- xw-get [M :vector-i64 t :i64] :vector-i64 (xw-op M 0x20 (xw-t M t)))
+(defn- xw-put [M :vector-i64 t :i64] :vector-i64 (xw-op M 0x21 (xw-t M t)))
+(defn- xw-i64 [M :vector-i64 v :i64] :vector-i64 (xw-sleb (xg-byte M 0x42) v))
+(defn- xw-i32 [M :vector-i64 v :i64] :vector-i64 (xw-sleb (xg-byte M 0x41) v))
+(defn- xw-mem [M :vector-i64 op :i64 align :i64 off :i64] :vector-i64 (xw-uleb (xw-uleb (xg-byte M op) align) off))
+(defn- xw-addr [M :vector-i64 t :i64] :vector-i64 (xg-byte (xw-get M t) 0xa7))
+
+;; ---- control: blocks over the function's labels ----
+;; label cell: SIR position << 32 | block (xg-tail? follows the positions)
+(defn- xw-blocks [M :vector-i64 i :i64 k :i64] :vector-i64
+  (let [op (xg-si M i IF-OP) l (xg-si M i IF-A)]
+    (cond (or (not= (vector-at M MM-ERR) 0) (>= i (vector-at M MM-SIR-N))) (xg-err M 7103 i)
+          (= op OP-END) (-> M (mem-set 202 k) (mem-set 201 0))
+          (= op OP-LABEL)
+            (if (or (<= l 0) (>= l MM-LABEL-CAP) (not= (vector-at M (+ MM-LABEL-BASE l)) 0)) (xg-err M 7103 l)
+              (xw-blocks (mem-set M (+ MM-LABEL-BASE l) (bit-or (i64-shift-left i 32) k)) (inc i) (inc k)))
+          :else (xw-blocks M (inc i) k))))
+(defn- xw-depth [M :vector-i64] :i64 (- (dec (vector-at M 202)) (vector-at M 201)))
+(defn- xw-target [M :vector-i64 l :i64] :vector-i64
+  (let [j (bit-and (vector-at M (+ MM-LABEL-BASE l)) 4294967295)]
+    (if (or (<= l 0) (>= l MM-LABEL-CAP) (= j 0)) (xg-err M 7103 l) (xw-op (xw-i32 M j) 0x21 (xw-pc M)))))
+(defn- xw-br [M :vector-i64 l :i64] :vector-i64 (xw-op (xw-target M l) 0x0c (xw-depth M)))
+(defn- xw-brif [M :vector-i64 t :i64 l :i64 nz :bool] :vector-i64
+  (let [v (-> M (xw-target l) (xw-get t) (xg-byte 0x50))]
+    (xw-op (if nz (xg-byte v 0x45) v) 0x0d (xw-depth M))))
+(defn- xw-blk [M :vector-i64 k :i64] :vector-i64
+  (if (= k 0) M (xw-blk (-> M (xg-byte 0x02) (xg-byte 0x40)) (dec k))))
+(defn- xw-table-targets [M :vector-i64 k :i64 n :i64] :vector-i64
+  (if (= k n) M (xw-table-targets (xw-uleb M k) (inc k) n)))
+(defn- xw-fn [M :vector-i64 i :i64 f :i64] :vector-i64
+  (let [m (-> M (xg-set 0 f) (mem-set 205 (vector-at M MM-FIX-N)) (xw-rec (xg-pos M) 30 f 0) (xw-blocks (inc i) 1))
+        nb (vector-at m 202) extra (+ (- (xw-ns m) (xg-f m f FF-NPARAMS)) (xg-f m f FF-DEPTH) 1)]
+    (-> m (xw-uleb 2) (xw-uleb extra) (xg-byte 0x7e) (xw-uleb 1) (xg-byte 0x7f)
+        (xg-byte 0x03) (xg-byte 0x40) (xw-blk nb) (xw-op 0x20 (xw-pc m))
+        (xw-op 0x0e (dec nb)) (xw-table-targets 0 (dec nb)) (xw-uleb (dec nb)) (xg-byte 0x0b))))
+(defn- xw-end [M :vector-i64] :vector-i64
+  (let [m (-> M (xg-byte 0x0b) (xg-byte 0x00) (xg-byte 0x0b))]
+    (mem-set m (+ MM-FIX-BASE (* (vector-at m 205) MM-FIX-W) 3) (xg-pos m))))
+
+;; ---- traps: as natively, through the runtime's handler (kxrt-slot-400): SIGTRAP (5) for guest
+;; traps (OP-TRAP, fuel, quot, TAB), SIGILL (4) for kxrt-trap; the handler ends in the host exit
+(defn- xw-trap [M :vector-i64 sig :i64] :vector-i64
+  (let [h (vector-at M 250)]
+    (if (> h 0) (-> M (xw-i64 sig) (xw-op 0x10 (xw-idx M h)) (xg-byte 0x1a) (xg-byte 0x00)) (xg-byte M 0x00))))
+(defn- xw-if-trap [M :vector-i64 sig :i64] :vector-i64
+  (-> M (xg-byte 0x04) (xg-byte 0x40) (xw-trap sig) (xg-byte 0x0b)))
+(defn- xw-fuel [M :vector-i64] :vector-i64
+  (-> M (xw-i32 XW-CTX) (xw-mem 0x29 3 8) (xw-op 0x22 (xw-scr M)) (xw-i64 0) (xg-byte 0x57) (xw-if-trap 5)
+      (xw-i32 XW-CTX) (xw-op 0x20 (xw-scr M)) (xw-i64 1) (xg-byte 0x7d) (xw-mem 0x37 3 8)))
+(defn- xw-quot [M :vector-i64 t :i64] :vector-i64
+  (-> M (xw-get (inc t)) (xg-byte 0x50) (xw-if-trap 5)
+      (xw-get (inc t)) (xw-i64 -1) (xg-byte 0x51) (xw-get t) (xw-i64 -9223372036854775808) (xg-byte 0x51)
+      (xg-byte 0x71) (xw-if-trap 5) (xw-get t) (xw-get (inc t)) (xg-byte 0x7f)))
+(defn- xw-bin [M :vector-i64 op :i64 t :i64] :vector-i64
+  (if (= op 4) (xw-put (xw-quot M t) t)
+    (xw-put (xg-byte (-> M (xw-get t) (xw-get (inc t)))
+                     (case op 1 0x7c 2 0x7d 3 0x7e 5 0x83 6 0x84 7 0x85 8 0x86 9 0x88 10 0x87 0)) t)))
+(defn- xw-cmp [M :vector-i64 cc :i64 t :i64] :vector-i64
+  (-> M (xw-get t) (xw-get (inc t)) (xg-byte (case cc 1 0x51 2 0x53 3 0x55 4 0x57 5 0x59 0x51))
+      (xg-byte 0xad) (xw-put t)))
+(defn- xw-un [M :vector-i64 op :i64 t :i64] :vector-i64
+  (-> M (xw-get t) (xw-i64 (if (= op UOP-NOT) 1 -1)) (xg-byte 0x85) (xw-put t)))
+
+;; ---- calls ----
+(defn- xw-args [M :vector-i64 t :i64 i :i64 n :i64] :vector-i64
+  (if (= i n) M (xw-args (xw-get M (+ t i)) t (inc i) n)))
+(defn- xw-zeros [M :vector-i64 n :i64] :vector-i64 (if (<= n 0) M (xw-zeros (xw-i64 M 0) (dec n))))
+(defn- xw-call [M :vector-i64 i :i64 f :i64 t :i64 c :i64] :vector-i64
+  (let [v (xw-args M t 0 c) k (xw-inline M f)]
+    (cond (= k 1) (-> M (xw-addr t) (xg-byte 0x40) (xg-byte 0) (xg-byte 0xac) (xw-put t))
+          (= k 2) (-> M (xg-byte 0x3f) (xg-byte 0) (xg-byte 0xac) (xw-put t))
+          (and (<= c 5) (xg-tail? M (inc i) t 64)) (xw-op v 0x12 (xw-idx M f))
+          :else (xw-put (xw-op v 0x10 (xw-idx M f)) t))))
+(defn- xw-calli [M :vector-i64 i :i64 t :i64 c :i64] :vector-i64
+  (let [v (-> M (xw-args t 0 c) (xw-zeros (- 5 c)) (xw-addr (+ t c)))]
+    (if (and (<= c 5) (xg-tail? M (inc i) t 64))
+      (-> v (xg-byte 0x13) (xw-uleb 5) (xg-byte 0))
+      (-> v (xg-byte 0x11) (xw-uleb 5) (xg-byte 0) (xw-put t)))))
+(defn- xw-slot-fn [M :vector-i64 slot :i64 n :i64] :i64
+  (let [f (if (and (>= slot 48) (<= slot 440)) (vector-at M (+ 200 (quot slot 8))) 0)]
+    (if (and (> f 0) (= (xg-f M f FF-NPARAMS) (inc n))) f 0)))
+;; runtime slot call: (context, operands t .. t+n-1)
+(defn- xw-rt [M :vector-i64 slot :i64 t :i64 n :i64] :vector-i64
+  (let [f (xw-slot-fn M slot n)]
+    (if (= f 0) (xg-err M 7101 slot)
+      (-> M (xw-i64 XW-CTX) (xw-args t 0 n) (xw-op 0x10 (xw-idx M f)) (xw-put t)))))
+(defn- xw-rtc [M :vector-i64 slot :i64 n :i64] :vector-i64
+  (let [f (xw-slot-fn M slot n)] (if (= f 0) (xg-err M 7101 slot) (xw-op M 0x10 (xw-idx M f)))))
+(defn- xw-cap [M :vector-i64 wire :i64 kind :i64 t :i64] :vector-i64
+  (-> M (xw-i64 XW-CTX) (xw-i64 wire) (xw-i64 kind) (xw-i64 kind) (xw-get t) (xw-rtc RT-TYPED-CAP-CALL 4) (xw-put t)))
+(defn- xw-lit [M :vector-i64 lit :i64 k :i64] :i64 (vector-at M (+ MM-LIT-BASE (* lit MM-LIT-W) k)))
+(defn- xw-str [M :vector-i64 t :i64 lit :i64] :vector-i64
+  (-> M (xw-i64 XW-CTX) (xw-i64 (xw-lit M lit LF-POOL)) (xw-i64 (xw-lit M lit LF-LEN)) (xw-rtc RT-PAIR-NEW 2) (xw-put t)))
+;; vectors: vector_alloc(n) into the scratch local, then assoc_in_place per item
+(defn- xw-item [M :vector-i64 t :i64 k :i64 lit :i64] :vector-i64
+  (if (= lit 0) (xw-get M (+ t k)) (xw-mem (xw-i32 M (+ XW-POOL (xw-lit M lit LF-POOL) (* 8 k))) 0x29 3 0)))
+(defn- xw-vec-items [M :vector-i64 t :i64 k :i64 n :i64 lit :i64] :vector-i64
+  (if (= k n) M
+    (xw-vec-items
+      (-> M (xw-i64 XW-CTX) (xw-op 0x20 (xw-scr M)) (xw-i64 k) (xw-item t k lit)
+          (xw-rtc RT-VECTOR-ASSOC-IN-PLACE 3) (xg-byte 0x1a)) t (inc k) n lit)))
+(defn- xw-vec [M :vector-i64 t :i64 n :i64 lit :i64] :vector-i64
+  (-> M (xw-i64 XW-CTX) (xw-i64 n) (xw-rtc RT-VECTOR-ALLOC 1) (xw-op 0x21 (xw-scr M))
+      (xw-vec-items t 0 n lit) (xw-op 0x20 (xw-scr M)) (xw-put t)))
+(defn- xw-table-at [M :vector-i64 t :i64 lit :i64 n :i64] :vector-i64
+  (-> M (xw-get t) (xw-i64 n) (xg-byte 0x5a) (xw-if-trap 5)
+      (xw-addr t) (xw-i32 3) (xg-byte 0x74) (xw-i32 (+ XW-POOL (xw-lit M lit LF-POOL))) (xg-byte 0x6a)
+      (xw-mem 0x29 3 0) (xw-put t)))
+;; intrinsics (seed/75's list; the runtime source is seed/82)
+(defn- xw-intrinsic [M :vector-i64 k :i64 t :i64] :vector-i64
+  (case k
+    0 (-> M (xw-addr t) (xw-mem 0x29 3 0) (xw-put t))
+    1 (-> M (xw-addr t) (xw-get (inc t)) (xw-mem 0x37 3 0) (xw-get (inc t)) (xw-put t))
+    2 (-> M (xw-addr t) (xw-mem 0x31 0 0) (xw-put t))
+    3 (-> M (xw-addr t) (xw-get (inc t)) (xw-mem 0x3c 0 0) (xw-get (inc t)) (xw-put t))
+    5 (-> M (xw-i64 XW-CTX) (xw-put t))
+    6 (-> M (xw-op 0x10 (xw-idx M (xg-get M 1))) (xw-put t))
+    7 (xw-trap M 4)
+    (xg-err M 7101 OP-CALL)))
+(defn- xw-one [M :vector-i64 i :i64] :vector-i64
+  (let [op (xg-si M i IF-OP) a (xg-si M i IF-A) b (xg-si M i IF-B) c (xg-si M i IF-C)]
+    (case op
+      1 (xw-fn M i a) 2 (xw-end M)
+      3 (-> M (xw-i64 b) (xw-put a))
+      4 (-> M (xw-op 0x20 (xw-slot b)) (xw-put a))
+      5 (-> M (xw-get b) (xw-op 0x21 (xw-slot a)))
+      6 (xw-bin M a b) 7 (xw-cmp M a b) 8 (xw-un M a b)
+      9 (mem-set (xg-byte M 0x0b) 201 (inc (vector-at M 201)))
+      10 (xw-br M a)
+      11 (xw-brif M a b false)
+      12 (xw-brif M a b true)
+      13 (if (>= (xs-intr M a) 0) (xw-intrinsic M (xs-intr M a) b) (xw-call M i a b c))
+      14 (xw-rt M a b c) 15 (xw-cap M a b c) 16 (xw-str M a b) 17 (xw-vec M a b 0)
+      18 (if (xs-rt? M (xg-get M 0)) M (xw-fuel M))
+      19 (-> M (xw-get a) (xg-byte 0x0f))
+      20 (xw-trap M 5)
+      21 (xw-table-at M a b c)
+      22 (-> M (xw-i64 (xw-tab M b)) (xw-put a))
+      23 (xw-calli M i b c)
+      24 (xw-vec M a c b)
+      25 (-> M (xg-byte 0x23) (xg-byte 0) (xw-put a))
+      26 (-> M (xw-get (inc a)) (xg-byte 0x24) (xg-byte 0) (xw-get a) (xg-byte 0x0f))
+      (xg-err M 7101 op))))
+;; host imports and inline intrinsics have no body of their own
+(defn- xw-skip [M :vector-i64 i :i64] :i64
+  (if (or (>= i (vector-at M MM-SIR-N)) (= (xg-si M i IF-OP) OP-END)) (inc i) (xw-skip M (inc i))))
+(defn- xw-code [M :vector-i64 i :i64] :vector-i64
+  (cond (or (not= (vector-at M MM-ERR) 0) (>= i (vector-at M MM-SIR-N))) M
+        (and (= (xg-si M i IF-OP) OP-FN) (let [f (xg-si M i IF-A)] (or (> (xw-inline M f) 0) (< (xw-idx M f) XW-NIMPORT))))
+          (xw-code M (xw-skip M i))
+        :else (xw-code (xw-one M i) (inc i))))
+;; thunks: type 5 (five i64) -> the target's first p parameters
+(defn- xw-thunks [M :vector-i64 k :i64 n :i64] :vector-i64
+  (cond (or (not= (vector-at M MM-ERR) 0) (= k n)) M
+        (not= (xw-fix M k 1) 31) (xw-thunks M (inc k) n)
+        :else (let [f (xw-fix M k 2) at (xg-pos M)
+                    m (loop [g (xg-byte M 0) j 0] (if (= j (xg-f M f FF-NPARAMS)) g (recur (xw-op g 0x20 j) (inc j))))
+                    e (-> m (xw-op 0x12 (xw-idx M f)) (xg-byte 0x0b))]
+                (xw-thunks (xw-rec e at 32 f (xg-pos e)) (inc k) n))))
+
+;; ---- the literal pool: each literal 8-byte aligned at LF-POOL from the pool's start (CODE 0) ----
+(defn- xw-pool [M :vector-i64 lit :i64] :vector-i64
+  (if (or (not= (vector-at M MM-ERR) 0) (= lit (vector-at M MM-LIT-N))) (xg-set M 2 (xg-pos M))
+    (let [v (xr-align M) p (+ MM-LIT-BASE (* lit MM-LIT-W)) w (mem-set v (+ p LF-POOL) (xg-pos v))]
+      (xw-pool (xr-pool-bytes w (vector-at w (+ p LF-B)) (vector-at w (+ p LF-LEN))) (inc lit)))))
+
+;; ---- sections: each payload is built in CODE and recorded [start 40 id end] ----
+(defn- xw-section [M :vector-i64 id :i64 at :i64] :vector-i64 (xw-rec M at 40 id (xg-pos M)))
+(defn- xw-host-field [M :vector-i64 k :i64] :vector-i64
+  (case k 0 (xg-bytes (xw-uleb M 5) 0x6574697277 5) 1 (xg-bytes (xw-uleb M 3) 0x706163 3)
+          2 (xg-bytes (xw-uleb M 3) 0x776f6e 3) 3 (xg-bytes (xw-uleb M 4) 0x74697865 4)
+          (xg-bytes (xw-uleb M 5) 0x7475706e69 5)))
+(defn- xw-host-name [M :vector-i64 k :i64] :vector-i64
+  (-> M (xw-uleb 11) (xg-bytes 0x683a61626f746f6b 8) (xg-bytes 0x74736f 3) (xw-host-field k)
+      (xg-byte 0) (xw-uleb (case k 0 3 1 3 2 0 3 1 6))))
+(defn- xw-types [M :vector-i64 k :i64] :vector-i64
+  (if (> k 16) M
+    (xw-types (-> (loop [g (-> M (xg-byte 0x60) (xw-uleb k)) j 0] (if (= j k) g (recur (xg-byte g 0x7e) (inc j))))
+                  (xg-byte 1) (xg-byte 0x7e)) (inc k))))
+(defn- xw-body? [M :vector-i64 k :i64] :bool (or (= (xw-fix M k 1) 30) (= (xw-fix M k 1) 32)))
+;; function types in body order: defined functions (kind 30), then thunks (kind 32, type 5)
+(defn- xw-ftypes [M :vector-i64 k :i64 n :i64] :vector-i64
+  (cond (= k n) M
+        (= (xw-fix M k 1) 30) (xw-ftypes (xw-uleb M (xg-f M (xw-fix M k 2) FF-NPARAMS)) (inc k) n)
+        (= (xw-fix M k 1) 32) (xw-ftypes (xw-uleb M 5) (inc k) n)
+        :else (xw-ftypes M (inc k) n)))
+(defn- xw-elems [M :vector-i64 s :i64 n :i64] :vector-i64
+  (if (= s n) M (xw-elems (xw-uleb M (+ XW-NIMPORT (xg-get M 3) s)) (inc s) n)))
+(defn- xw-copy [M :vector-i64 a :i64 b :i64] :vector-i64
+  (if (or (>= a b) (not= (vector-at M MM-ERR) 0)) M (xw-copy (xg-byte M (xg-code-byte M a)) (inc a) b)))
+(defn- xw-bodies [M :vector-i64 k :i64 n :i64] :vector-i64
+  (cond (or (= k n) (not= (vector-at M MM-ERR) 0)) M
+        (not (xw-body? M k)) (xw-bodies M (inc k) n)
+        :else (let [a (xw-fix M k 0) b (xw-fix M k 3)] (xw-bodies (xw-copy (xw-uleb M (- b a)) a b) (inc k) n))))
+(defn- xw-sections [M :vector-i64] :vector-i64
+  (let [nt (vector-at M 203) nf (xg-get M 3) plen (xg-get M 2)
+        pages (quot (+ XW-POOL plen 65535) 65536)
+        a1 (xg-pos M) m1 (xw-section (xw-types (xw-uleb M 17) 0) 1 a1)
+        a2 (xg-pos m1) m2 (xw-section (-> m1 (xw-uleb 5) (xw-host-name 0) (xw-host-name 1) (xw-host-name 2) (xw-host-name 3) (xw-host-name 4)) 2 a2)
+        nrec (vector-at m2 MM-FIX-N)
+        a3 (xg-pos m2) m3 (xw-section (xw-ftypes (xw-uleb m2 (+ nf nt)) 1 nrec) 3 a3)
+        a4 (xg-pos m3) m4 (xw-section (-> m3 (xw-uleb 1) (xg-byte 0x70) (xg-byte 1) (xw-uleb nt) (xw-uleb nt)) 4 a4)
+        a5 (xg-pos m4) m5 (xw-section (-> m4 (xw-uleb 1) (xg-byte 0) (xw-uleb pages)) 5 a5)
+        a6 (xg-pos m5) m6 (xw-section (-> m5 (xw-uleb 1) (xg-byte 0x7e) (xg-byte 1) (xw-i64 0) (xg-byte 0x0b)) 6 a6)
+        a7 (xg-pos m6) m7 (xw-section (-> m6 (xw-uleb 2) (xw-uleb 6) (xg-bytes 0x79726f6d656d 6) (xg-byte 2) (xw-uleb 0)
+                                          (xw-uleb 5) (xg-bytes 0x7472617473 5) (xg-byte 0) (xw-uleb (xw-idx m6 (vector-at m6 199)))) 7 a7)
+        a9 (xg-pos m7) m9 (if (= nt 0) m7
+                            (xw-section (-> m7 (xw-uleb 1) (xg-byte 0) (xw-i32 0) (xg-byte 0x0b) (xw-uleb nt) (xw-elems 0 nt)) 9 a9))
+        a10 (xg-pos m9) m10 (xw-section (xw-bodies (xw-uleb m9 (+ nf nt)) 1 nrec) 10 a10)
+        a11 (xg-pos m10)
+        m11 (-> m10 (xw-uleb 2) (xg-byte 0) (xw-i32 XW-POOL) (xg-byte 0x0b) (xw-uleb plen) (xw-copy 0 plen)
+                (xg-byte 0) (xw-i32 (+ XW-CTX 384)) (xg-byte 0x0b) (xw-uleb 16) (xg-bytes XW-POOL 8) (xg-bytes plen 8))]
+    (xw-section m11 11 a11)))
+
+;; ---- output: magic, version, then every recorded section ----
+(defn- xw-out-uleb [M :vector-i64 v :i64] :vector-i64
+  (let [lo (bit-and v 127) rest (u64-shift-right v 7)]
+    (if (= rest 0) (out-put M lo) (xw-out-uleb (out-put M (bit-or lo 128)) rest))))
+(defn- xw-out-range [M :vector-i64 a :i64 b :i64] :vector-i64
+  (if (or (>= a b) (not= (vector-at M MM-ERR) 0)) M (xw-out-range (out-put M (xg-code-byte M a)) (inc a) b)))
+(defn- xw-out [M :vector-i64 k :i64 n :i64] :vector-i64
+  (cond (or (= k n) (not= (vector-at M MM-ERR) 0)) M
+        (not= (xw-fix M k 1) 40) (xw-out M (inc k) n)
+        :else (let [a (xw-fix M k 0) b (xw-fix M k 3)]
+                (xw-out (xw-out-range (xw-out-uleb (out-put M (xw-fix M k 2)) (- b a)) a b) (inc k) n))))
+(defn- xw-module [M :vector-i64] :vector-i64
+  (xw-out (-> M (mem-set MM-OUT-N 1) (xg-out 0x6d736100 4) (xg-out 1 4)) 1 (vector-at M MM-FIX-N)))
+
+(defn- xw-build [M :vector-i64 S :string rt :i64] :vector-i64
+  (let [a (-> M (xs-clear 197) (mem-set 197 rt) (xg-set 0 0) (xg-set 1 0) (xg-set 2 0) (xg-set 3 0) (xg-set 4 1)
+              (xg-check-fns S 1) (xg-check-sir 1) (xr-check 1) (xs-scan S 1) (xs-check 1 0))]
+    (cond (not= (vector-at a MM-ERR) 0) a
+          (= (xg-get a 1) 0) (xg-err a 7102 0)
+          (or (= (vector-at a 199) 0) (= (vector-at a 198) 0) (= (vector-at a 250) 0)) (xg-err a 7102 1)
+          :else (let [g (-> a (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1) (xw-pool 1)
+                            (xw-assign S 1 XW-NIMPORT) (xw-tables 1) (xw-code 1))
+                      t (xw-thunks g 1 (vector-at g MM-FIX-N))]
+                  (if (not= (vector-at t MM-ERR) 0) t (xw-module (xw-sections t)))))))
+(defn- xw-report [M :vector-i64 path :string out :string] :i64
+  (let [e (vector-at M MM-ERR)]
+    (cond (and (> e 0) (< e 7100)) (drv-fail M path)
+          (> e 0) (let [w (io-err (string-concat "seed-wasm32-browser: E" (string-concat (mem-u2dec e)
+                            (string-concat (case e 7101 " unsupported operation (floating point, the syscall or call-at intrinsic, or outside the runtime profile)"
+                                                   7102 " unsupported function (floating point, arity, kind or runtime layout)"
+                                                   7103 " malformed control flow" " code limit")
+                              (string-concat "; detail " (string-concat (mem-u2dec (vector-at M MM-ERR-N)) "\n"))))))] 1)
+          :else (let [n (dec (vector-at M MM-OUT-N)) written (out-write-v M out (+ MM-OUT-BASE 1) n)
+                      w (io-out (string-concat "{:ok true, :target :wasm32-browser, :format :wasm, :functions "
+                           (string-concat (mem-u2dec (+ (xg-get M 3) (vector-at M 203)))
+                             (string-concat ", :pool-bytes " (string-concat (mem-u2dec (xg-get M 2))
+                               (string-concat ", :bytes " (string-concat (mem-u2dec n) "}\n")))))))]
+                  (if (= (io-exists out) 1) 0 (drv-fail0 E-WRITE))))))
+;; compile SRC --target wasm32-browser --output NEW
+(defn- xw-command [] :i64
+  (let [src (io-arg 1) out (io-arg 5)]
+    (cond (or (not= (io-argc) 6) (not (string=? (io-arg 4) "--output")) (= (string-length out) 0) (= (io-exists out) 1))
+            (let [w (io-err "seed-wasm32-browser: E7100 expected compile SOURCE --target wasm32-browser --output NEW_WASM\n")] 2)
+          (= (io-exists src) 0) (drv-fail0 E-READ)
+          (= (string-length (xw-rt-src)) 0)
+            (let [w (io-err "seed-wasm32-browser: E7106 a section marker of the seed/77 runtime text is missing\n")] 1)
+          :else (let [original (drv-read src) guest (string-concat original (ck-r6b-lib original))
+                      s (string-concat guest (xw-rt-src))]
+                  (xw-report (xw-build (xg-front s) s (string-length guest)) src out)))))

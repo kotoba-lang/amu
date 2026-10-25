@@ -1,0 +1,156 @@
+(ns kotoba.compiler.accelerator-subgroup-reduce-test
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.accelerator :as accelerator]
+            [kotoba.compiler.accelerator-subgroup-reduce :as sg]))
+
+;; The :subgroup-reduce emission (ADR-0356's Intel row; ADR-0357's ARM row
+;; reuses it). What these tests pin: the fold queries gl_SubgroupSize at
+;; runtime and bakes no width, the operator row carries its combine and
+;; identity, the workgroup shape mirrors the KIR, the predicate is total,
+;; the emitter is fail-closed off its row and deterministic, the subgroup
+;; geometry the fold width rests on holds across the admitted range, and
+;; :measured? is false on the row.
+
+(deftest emission-queries-the-subgroup-size-at-runtime
+  ;; ADR-0356: "It queries the subgroup size at runtime (gl_SubgroupSize /
+  ;; the WGSL subgroup builtin) and never bakes 32 into the fold." The fold
+  ;; step must therefore be a function of gl_SubgroupSize, and no literal
+  ;; width may appear as a loop bound anywhere in the source.
+  (doseq [w [32 64 128 256 512 1024] operator [:sum :max :min]]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
+                                  {:workgroup-size w})
+          code (sg/emit-glsl kir)]
+      (is (str/includes? code "#extension GL_KHR_shader_subgroup_basic : require"))
+      (is (str/includes? code "#extension GL_KHR_shader_subgroup_shuffle_relative : require"))
+      (is (str/includes? code "gl_SubgroupSize"))
+      (is (str/includes? code "uint fold = min(gl_SubgroupSize, gl_WorkGroupSize.x);"))
+      (is (str/includes? code "for (uint d = fold / 2u; d > 0u; d >>= 1u)"))
+      (is (nil? (re-find #"\bd\s*=\s*\d+u" code))
+          (str "a baked fold width leaked into W=" w " " (name operator))))))
+
+(deftest each-operator-carries-its-combine-and-identity
+  (doseq [[operator combine identity-text]
+          [[:sum "a+b" "0.0"]
+           ;; Extrema identities are the INFINITE neutrals: a finite bound is
+           ;; corrupted by a legitimate +-Inf input in the padded lanes
+           ;; (review P2). GLSL has no infinity literal; uintBitsToFloat of
+           ;; the IEEE-754 sign/exponent bits is exact.
+           [:max "max(a,b)" "uintBitsToFloat(0xFF800000u)"]
+           [:min "min(a,b)" "uintBitsToFloat(0x7F800000u)"]]]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
+                                  {:workgroup-size 128})
+          code (sg/emit-glsl kir)]
+      (is (str/includes? code (str "float combine(float a, float b) { return " combine "; }")))
+      (is (str/includes? code (str "float v = i < n ? x[i] : " identity-text ";"))))))
+
+(deftest the-emitted-source-compiles-as-glsl
+  ;; Review P1s on this file: subgroupShuffleDown needs the per-feature
+  ;; shuffle_relative extension (the umbrella GL_KHR_shader_subgroup does
+  ;; not declare it everywhere), and the GLSL builtin is
+  ;; gl_SubgroupInvocationID -- the SPIR-V spelling
+  ;; gl_SubgroupLocalInvocationId is an undeclared identifier in GLSL.
+  (let [kir (accelerator/kernel "reduce_sum" :reduce :sum {:workgroup-size 256})
+        code (sg/emit-glsl kir)]
+    (is (str/includes? code "#extension GL_KHR_shader_subgroup_basic : require"))
+    (is (str/includes? code "#extension GL_KHR_shader_subgroup_shuffle_relative : require"))
+    (is (nil? (re-find #"GL_KHR_shader_subgroup : require" code))
+        "the umbrella extension -- which glslang rejects outright -- is back")
+    (is (str/includes? code "gl_SubgroupInvocationID"))
+    (is (nil? (re-find #"gl_SubgroupLocalInvocationId" code))
+        "the SPIR-V builtin name leaked into GLSL output")))
+
+(deftest the-cross-subgroup-fold-covers-every-partial
+  ;; Review P1: the cross-subgroup stage ran only subgroup 0's first d
+  ;; lanes; when gl_NumSubgroups / 2 exceeds the subgroup width (W=256 with
+  ;; S=8 starts at d=16) partials beyond the first S were never folded. The
+  ;; stage must stride subgroup 0's lanes by gl_SubgroupSize so every pair
+  ;; is combined regardless of the (S, nsub) shape.
+  (doseq [w [32 64 128 256 512 1024]]
+    (let [code (sg/emit-glsl (accelerator/kernel "reduce_sum" :reduce :sum
+                                                 {:workgroup-size w}))]
+      (is (str/includes? code
+                         "for (uint lid = gl_SubgroupInvocationID; lid < d; lid += gl_SubgroupSize)"))
+      (is (nil? (re-find #"gl_SubgroupInvocationID < d" code))
+          "the unstrided lid < d guard is back"))))
+
+(deftest workgroup-shape-mirrors-the-kir
+  (let [kir (accelerator/kernel "reduce_sum" :reduce :sum {:workgroup-size 128})
+        code (sg/emit-glsl kir)]
+    (is (str/includes? code "layout(local_size_x = 128) in;"))
+    ;; the shared array is W floats -- the same footprint the :baseline tree
+    ;; uses -- and a subgroup has at least one invocation, so
+    ;; gl_NumSubgroups <= W holds for every device.
+    (is (str/includes? code "shared float partials[128];"))
+    (is (str/includes? code "uint i = gl_GlobalInvocationID.x;"))
+    (is (str/includes? code "parts[gl_WorkGroupID.x] = partials[0]"))
+    ;; the KIR's runtime n rides binding 2 (the wire-42 path binds storage
+    ;; buffers only; see the ns docstring).
+    (is (str/includes? code "layout(set = 0, binding = 2, std430) readonly buffer N { uint n; };"))
+    ;; entry point is main (the wire-42 PIPELINE op enters "main") and the
+    ;; kernel's name is deliberately absent from the source.
+    (is (str/includes? code "void main() {"))
+    (is (nil? (re-find #"reduce_sum" code)))))
+
+(deftest the-row-predicate-is-total
+  (doseq [w [32 64 128 256 512 1024] operator [:sum :max :min]]
+    (is (sg/applicable? (accelerator/kernel "k" :reduce operator {:workgroup-size w}))))
+  (doseq [bad [(accelerator/kernel "k" :ewise :add {:workgroup-size 128})
+               (accelerator/kernel "k" :reduce :sum {:workgroup-size 16})
+               (accelerator/kernel "k" :reduce :sum {:workgroup-size 300})
+               (accelerator/kernel "k" :reduce :mul {:workgroup-size 128})
+               {}
+               nil
+               {:kernel/op :reduce :kernel/operator :sum}]]
+    (is (not (sg/applicable? bad)))))
+
+(deftest emission-refuses-off-its-row-and-is-deterministic
+  (let [ewise (accelerator/kernel "k" :ewise :add {:workgroup-size 128})
+        reduce-sum (accelerator/kernel "k" :reduce :sum {:workgroup-size 128})]
+    (is (thrown-with-msg? Exception #"kernel variant not applicable"
+                          (sg/emit-glsl ewise)))
+    (is (thrown-with-msg? Exception #"invalid accelerator KIR"
+                          (sg/emit-glsl (assoc reduce-sum :kernel/dtype :f64))))
+    (is (= (sg/emit-glsl reduce-sum) (sg/emit-glsl reduce-sum)))))
+
+(deftest subgroups-are-full-or-a-single-first-partial
+  ;; The safety condition the fold width rests on: a Vulkan subgroup size is
+  ;; a power of two, so for every KIR-admitted W every subgroup is either
+  ;; full (S divides W) or the single first partial one (S > W). min(S, W) is
+  ;; then exactly the active width. Checked mechanically over the whole
+  ;; admitted range and the subgroup sizes the two rows name (Mali 4..32 per
+  ;; ADR-0357; Intel 8/16/32 per ADR-0356; 1/2/128 cover the degenerate
+  ;; edges).
+  (doseq [w [32 64 128 256 512 1024] s [1 2 4 8 16 32 64 128]]
+    (is (or (> s w) (zero? (mod w s)))
+        (str "W=" w " S=" s " leaves a partial non-first subgroup")))
+  ;; ADR-0356's own claim, restated mechanically: every admitted W >= 32 is
+  ;; a multiple of 8, 16 and 32 alike.
+  (doseq [w [32 64 128 256 512 1024] s [8 16 32]]
+    (is (zero? (mod w s)))))
+
+(deftest the-unmeasured-lock-is-on-the-row
+  (is (false? (:measured? sg/basis)))
+  (is (str/includes? (:text sg/basis) "UNMEASURED"))
+  (is (= 32 sg/min-workgroup-size)))
+
+(deftest fixtures-match-the-emitter
+  ;; test/fixtures/gpu/subgroup-reduce-w<W>-sum.emitted.glsl is a GENERATED
+  ;; ARTIFACT of this emitter (regenerate with
+  ;; scripts/regen-gpu-subgroup-reduce-fixtures.cljk). The files went stale
+  ;; once already -- they predated the 4b7a1ccb fixes (umbrella extension,
+  ;; SPIR-V builtin name, unstrided cross-fold, finite extrema identities)
+  ;; and silently misstated the emission while the JUN-58 sign chain pinned
+  ;; their bytes. This assertion is the staleness tripwire: an emitter
+  ;; change without a fixture regeneration fails here, and the message says
+  ;; what to run.
+  ;;
+  ;; The sign chain's pre-fix inputs are archived separately under
+  ;; docs/evidence/gpu/sign-chain-pinned-fixtures-pre-fix/ and staged over
+  ;; these files by scripts/gpu-sign-chain-stage-fixtures.sh before chain
+  ;; runs -- regenerating here never touches that archive.
+  (doseq [w [32 64 128 256]]
+    (let [kir (accelerator/kernel "reduce_sum" :reduce :sum {:workgroup-size w})
+          path (str "test/fixtures/gpu/subgroup-reduce-w" w "-sum.emitted.glsl")]
+      (is (= (sg/emit-glsl kir) (slurp path))
+          (str path " is stale -- run scripts/regen-gpu-subgroup-reduce-fixtures.cljk")))))

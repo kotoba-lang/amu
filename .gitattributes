@@ -1,7 +1,5 @@
 # Runtime source identity is measured byte-for-byte on every supported host.
 # Never allow checkout configuration to rewrite reviewed loader sources.
-tools/kexe_loader.c text eol=lf
-tools/kexe_loader_windows.c text eol=lf
 
 # `deps.edn` is measured byte-for-byte too, and had no such protection.
 # `kotoba.compiler.nbb.classpath/deps-digest` is sha256 over the FILE'S BYTES,
@@ -18,3 +16,13 @@ tools/kexe_loader_windows.c text eol=lf
 # runner rather than of the commit -- which is the argument for pinning it
 # here instead of hoping.
 deps.edn text eol=lf
+
+# The adopted seed snapshot is digest-bound. Preserve its reviewed source bytes
+# on Windows checkouts too; the native bootstrap is an opaque code payload.
+seed/*.kotoba text eol=lf
+seed/MANIFEST text eol=lf
+seed/HEADS text eol=lf
+seed/MEMORY-MAP text eol=lf
+seed/SIR text eol=lf
+seed/bootstrap/adopted-20261012.bin binary
+seed/bootstrap/aarch64-linux-static-root.elf binary

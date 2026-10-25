@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "status": "REJECTED_FOR_COMPILER_SOURCE_RETENTION",
+  "hypothesis": "Keep four-way tree-walk interleaving and skip a lane's next 14 instructions when it has already reached a leaf.",
+  "selfhostBuild": {
+    "status": "PASS_G1_TO_GN_BYTE_IDENTICAL_FIXED_POINT",
+    "compilerBytes": 2554976,
+    "sourceUnitySHA256": "68f0c46caeb4b613f8a3ab19210333a56ee94d14389138266b870e81490b11af",
+    "generationSHA256": [
+      "f7031cd39c3adbca652c2f0a33a72793a3789973c5600c786a087f1670c8b86e",
+      "f7031cd39c3adbca652c2f0a33a72793a3789973c5600c786a087f1670c8b86e",
+      "f7031cd39c3adbca652c2f0a33a72793a3789973c5600c786a087f1670c8b86e"
+    ],
+    "nativeFallback": false
+  },
+  "workloadBuild": {
+    "name": "xgboost",
+    "sourceSHA256": "78c33ca4cb05425ad5a6b6f4de0725dedb07a05ef772b9f370768d0b1d23acdf",
+    "baseImageSHA256": "1eac8f0f999f632bd2e33d5f7632674606ec38761976c83582f15288ca81ad65",
+    "candidateImageBytes": 66732,
+    "candidateImageSHA256": "05cac8ddd99914bb5a20cedea5f158bb74749faa7290775bf6b7de3c8919c15e",
+    "matchesHandPatchedPrototype": true,
+    "exportsMatchBase": true
+  },
+  "exactness": {
+    "status": "PASS",
+    "round": "sa-m104-20261015",
+    "iterations": 8192,
+    "result": 1,
+    "benchmarkFuel": 2806009749,
+    "arenaMatchesExpected": true,
+    "observedArena": {
+      "pairs": 8,
+      "stringPoolBytes": 0,
+      "vectors": 1,
+      "vectorItems": 39566,
+      "heapBytes": 316672,
+      "conj": 0,
+      "conjTail": 0,
+      "conjRegion": 0,
+      "conjCopy": 0,
+      "copiedWords": 0,
+      "reservedWords": 0,
+      "regions": 0,
+      "scopeReleases": 0,
+      "stringRegions": 0,
+      "stringRegionAppends": 0,
+      "stringCopiedBytes": 0,
+      "stringReservedBytes": 0
+    }
+  },
+  "exploratoryABBA": {
+    "status": "EXACT_BUT_UNQUALIFIED",
+    "pairs": 5,
+    "invocations": 20,
+    "allRunsExact": true,
+    "allRunsFuelConsistent": true,
+    "laneSkipOverFourWideRatios": [
+      1.0652788324834304,
+      1.1369759323149529,
+      1.1303239450920044,
+      1.0538774429014788,
+      1.0160265101485126
+    ],
+    "medianPairedRatio": 1.0652788324834304,
+    "fourWideMedianElapsedNs": 3962191688,
+    "laneSkipMedianElapsedNs": 4323443875,
+    "load1Range": [24.3701171875, 34.70849609375],
+    "idlePercentRange": [6.520321669202347, 39.06119027661358],
+    "quietHostIdleThresholdPercent": 70,
+    "qualifiedPerformanceClaim": false
+  },
+  "decision": {
+    "sourceStatus": "restored_to_four_wide_group_checks",
+    "cComparisonPerformed": false,
+    "officialEmbenchScoreClaimed": false
+  }
+}

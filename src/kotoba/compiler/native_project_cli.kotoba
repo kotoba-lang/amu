@@ -1,0 +1,105 @@
+;; Standalone Native Seed CLI for bounded project-path and require-graph checks.
+;; It is intentionally separate from native_cli's full semantic frontend:
+;; the current Seed image has a fixed 3 MiB code-output region.
+(ns kotoba.compiler.native-project-cli
+  {:kotoba/export [main]}
+  (:require [kotoba.compiler.native-project-files :as project-files])
+  (:capabilities #{:cli/args :fs/app-data :io/write :io/write-error})
+  (:schemas {:native.cli/options
+             [:record :native.cli/options
+              [[:roots :string] [:unpinned :bool] [:err :string]]]
+             :native.project/graph
+             [:record :native.project/graph
+              [[:modules [:list [:ref :native.project/source]]]
+               [:order [:list :string]]
+               [:err :string]]]
+             :native.project/source
+             [:record :native.project/source
+              [[:namespace :string] [:text :string]]]}))
+
+(defn- options-result [roots :string unpinned :bool error :string]
+  [:ref :native.cli/options]
+  (record-new [:ref :native.cli/options] roots unpinned error))
+
+(defn- cli-arg [index :i64] :string
+  (typed-cap-call :cli/args :string :string (string-from-i64 index)))
+
+(defn- collect-source-path-options
+  [index :i64 argc :i64 roots :string root-count :i64 unpinned :bool]
+  [:ref :native.cli/options]
+  (if (>= index argc)
+    (options-result roots unpinned "")
+    (let [argument (cli-arg index)]
+      (cond
+        (string=? argument "--unpinned")
+        (collect-source-path-options (+ index 1) argc roots root-count true)
+
+        (string=? argument "--source-path")
+        (if (>= (+ index 1) argc)
+          (options-result roots unpinned "--source-path requires a directory")
+          (let [path (cli-arg (+ index 1))]
+            (cond
+              (or (= (string-length path) 0)
+                  (> (string-byte-length path) 4096)
+                  (not (string=? (string-substring path 0 1) "/"))
+                  (>= (string-index-of path "\n") 0))
+              (options-result roots unpinned
+                              "source-path directories must be absolute paths up to 4096 bytes")
+
+              (>= root-count 16)
+              (options-result roots unpinned "source-path root count exceeds 16")
+
+              :else
+              (collect-source-path-options
+               (+ index 2) argc
+               (if (= root-count 0)
+                 path
+                 (string-concat roots (string-concat "\n" path)))
+               (+ root-count 1) unpinned))))
+
+        :else
+        (options-result roots unpinned
+                        (string-concat "unknown project option: " argument))))))
+
+(defn main [] :i64
+  (let [command (typed-cap-call :cli/args :string :string "0")
+        path (typed-cap-call :cli/args :string :string "1")
+        argc-text (typed-cap-call :cli/args :string :string "")
+        argc-result (parse-long argc-text)
+        argc (option-value-of [:option :i64] argc-result 0)
+        options (collect-source-path-options 2 argc "" 0 false)
+        options-error (record-get [:ref :native.cli/options] options :err)
+        roots (record-get [:ref :native.cli/options] options :roots)
+        unpinned (record-get [:ref :native.cli/options] options :unpinned)]
+    (if (and (string=? command "check")
+             (not (string=? path ""))
+             (option-some?-of [:option :i64] argc-result))
+      (if (not (string=? options-error ""))
+        (do
+          (typed-cap-call :io/write-error :string :string
+                          (string-concat "kotoba: " (string-concat options-error "\n")))
+          64)
+        (if (not unpinned)
+          (do
+            (typed-cap-call :io/write-error :string :string
+                            "kotoba: locked native project resolution is not implemented; pass --unpinned only for explicit local source roots\n")
+            64)
+          (let [graph (project-files/resolve-project path roots)
+                error (record-get [:ref :native.project/graph] graph :err)]
+            (if (not (string=? error ""))
+              (do
+                (typed-cap-call :io/write-error :string :string
+                                (string-concat "kotoba: " (string-concat error "\n")))
+                65)
+              (let [modules (record-get [:ref :native.project/graph] graph :modules)]
+                (do
+                  (typed-cap-call :io/write :string :string
+                                  (string-concat "project graph ok: "
+                                                 (string-concat
+                                                  (string-from-i64 (vector-count modules))
+                                                  " modules\n")))
+                  0))))))
+      (do
+        (typed-cap-call :io/write-error :string :string
+                        "usage: amu-native-project check <source> --unpinned [--source-path DIR ...]\n")
+        64))))

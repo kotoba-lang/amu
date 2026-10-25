@@ -1,0 +1,272 @@
+;; Native Seed command entry. It resolves bounded source graphs and analyzes
+;; modules in dependency order through the Kotoba-native interface linker.
+(ns kotoba.compiler.native-cli
+  {:kotoba/export [main]}
+  (:require [kotoba.compiler.native-frontend :as frontend]
+            [kotoba.compiler.native-project-files :as project-files])
+  (:capabilities #{:cli/args :io/write :io/write-error})
+  (:schemas {:native.cli/options
+             [:record :native.cli/options
+              [[:roots :string] [:lock :string] [:blocks :string]
+               [:unpinned :bool] [:err :string]]]}))
+
+(defn- options-result [roots :string lock :string blocks :string
+                       unpinned :bool error :string]
+  [:ref :native.cli/options]
+  (record-new [:ref :native.cli/options] roots lock blocks unpinned error))
+
+(defn- cli-arg [index :i64] :string
+  (typed-cap-call :cli/args :string :string (string-from-i64 index)))
+
+(defn- collect-source-path-options
+  [index :i64 argc :i64 roots :string root-count :i64 lock :string
+   blocks :string unpinned :bool]
+  [:ref :native.cli/options]
+  (if (>= index argc)
+    (options-result roots lock blocks unpinned "")
+    (let [argument (cli-arg index)]
+      (cond
+        (string=? argument "--unpinned")
+        (collect-source-path-options (+ index 1) argc roots root-count
+                                     lock blocks true)
+
+        (string=? argument "--source-path")
+        (if (>= (+ index 1) argc)
+          (options-result roots lock blocks unpinned
+                          "--source-path requires a directory")
+          (let [path (cli-arg (+ index 1))]
+            (cond
+              (or (= (string-length path) 0)
+                  (> (string-byte-length path) 4096)
+                  (not (string=? (string-substring path 0 1) "/"))
+                  (>= (string-index-of path "\n") 0))
+              (options-result roots lock blocks unpinned
+                              "source-path directories must be absolute paths up to 4096 bytes")
+
+              (>= root-count 16)
+              (options-result roots lock blocks unpinned
+                              "source-path root count exceeds 16")
+
+              :else
+              (collect-source-path-options
+               (+ index 2) argc
+               (if (= root-count 0)
+                 path
+                 (string-concat roots (string-concat "\n" path)))
+               (+ root-count 1) lock blocks unpinned))))
+
+        (string=? argument "--module-lock")
+        (if (>= (+ index 1) argc)
+          (options-result roots lock blocks unpinned
+                          "--module-lock requires a lock file")
+          (let [path (cli-arg (+ index 1))]
+            (if (or (= (string-byte-length path) 0)
+                    (> (string-byte-length path) 4096)
+                    (not (string=? (string-substring path 0 1) "/"))
+                    (>= (string-index-of path "\n") 0))
+              (options-result roots lock blocks unpinned
+                              "module-lock path must be absolute up to 4096 bytes")
+              (collect-source-path-options (+ index 2) argc roots root-count
+                                           path blocks unpinned))))
+
+        (string=? argument "--blocks")
+        (if (>= (+ index 1) argc)
+          (options-result roots lock blocks unpinned
+                          "--blocks requires a directory")
+          (let [path (cli-arg (+ index 1))]
+            (if (or (= (string-byte-length path) 0)
+                    (> (string-byte-length path) 4096)
+                    (not (string=? (string-substring path 0 1) "/"))
+                    (>= (string-index-of path "\n") 0))
+              (options-result roots lock blocks unpinned
+                              "block-store path must be absolute up to 4096 bytes")
+              (collect-source-path-options (+ index 2) argc roots root-count
+                                           lock path unpinned))))
+
+        :else
+        (options-result roots lock blocks unpinned
+                        (string-concat "unknown project option: " argument))))))
+
+(defn- suffix? [path :string suffix :string] :bool
+  (let [n (string-byte-length path)
+        m (string-byte-length suffix)]
+    (and (>= n m)
+         (string=? (string-substring path (- n m) n) suffix))))
+
+(defn- error-message [result [:ref :ana/ir]] :string
+  (record-get [:ref :fe/err] (record-get [:ref :ana/ir] result :err) :msg))
+
+(defn- analyze-project-module [modules [:list [:ref :native.project/source]] index :i64]
+  [:ref :ana/ir]
+  (let [module (typed-list-nth [:list [:ref :native.project/source]] modules index)
+        source (record-get [:ref :native.project/source] module :text)
+        dependency-packet
+        (project-files/direct-dependency-source-packet modules index)]
+    (frontend/analyze-project-source source dependency-packet)))
+
+(defn- check-project-module [modules [:list [:ref :native.project/source]] index :i64]
+  :i64
+  (arena-scope
+    (let [module (typed-list-nth [:list [:ref :native.project/source]] modules index)
+          namespace (record-get [:ref :native.project/source] module :namespace)
+          result (analyze-project-module modules index)]
+      (if (record-get [:ref :ana/ir] result :ok)
+        0
+        (do
+          (typed-cap-call :io/write-error :string :string
+                          (string-concat "kotoba: "
+                                         (string-concat namespace
+                                           (string-concat ": "
+                                             (string-concat (error-message result) "\n")))))
+          65)))))
+
+(defn- check-project-modules [modules [:list [:ref :native.project/source]]
+                              index :i64 count :i64] :i64
+  (if (>= index count)
+    (do
+      (typed-cap-call :io/write :string :string
+                      (string-concat "semantic ok: modules="
+                                     (string-concat (string-from-i64 count)
+                                                    "\n")))
+      0)
+    (let [status (check-project-module modules index)]
+      (if (= status 0)
+        (check-project-modules modules (+ index 1) count)
+        status))))
+
+(defn- check-project [path :string roots :string] :i64
+  (check-project-mode path roots "" "" false))
+
+(defn- check-project-entry [path :string roots :string] :i64
+  (check-project-mode path roots "" "" true))
+
+(defn- check-project-mode [path :string roots :string lock :string blocks :string
+                           entry-only? :bool] :i64
+  (let [graph (if (string=? lock "")
+                (project-files/resolve-project path roots)
+                (project-files/resolve-locked-project lock blocks))
+        graph-error (record-get [:ref :native.project/graph] graph :err)]
+    (if (not (string=? graph-error ""))
+      (do
+        (typed-cap-call :io/write-error :string :string
+                        (string-concat "kotoba: " (string-concat graph-error "\n")))
+        65)
+      (let [modules (record-get [:ref :native.project/graph] graph :modules)
+            count (vector-count modules)]
+        (if (= count 0)
+          (do
+            (typed-cap-call :io/write-error :string :string
+                            "kotoba: resolved project has no entry module\n")
+            65)
+          (if entry-only?
+            (let [index (- count 1)
+                  module (typed-list-nth [:list [:ref :native.project/source]] modules index)
+                  namespace (record-get [:ref :native.project/source] module :namespace)
+                  status (check-project-module modules index)]
+              (if (= status 0)
+                (do
+                  (typed-cap-call :io/write :string :string
+                                  (string-concat
+                                   "semantic ok: entry="
+                                   (string-concat namespace
+                                     (string-concat " dependency-sources="
+                                       (string-concat (string-from-i64 index) "\n")))))
+                  0)
+                status))
+            (check-project-modules modules 0 count)))))))
+
+(defn- write-project-module-names
+  [modules [:list [:ref :native.project/source]] index :i64 count :i64] :i64
+  (if (>= index count)
+    0
+    (let [module (typed-list-nth [:list [:ref :native.project/source]] modules index)
+          namespace (record-get [:ref :native.project/source] module :namespace)]
+      (do
+        (typed-cap-call :io/write :string :string
+                        (string-concat "module=" (string-concat namespace "\n")))
+        (write-project-module-names modules (+ index 1) count)))))
+
+(defn- list-project-modules [path :string roots :string lock :string blocks :string] :i64
+  (let [graph (if (string=? lock "")
+                (project-files/resolve-project path roots)
+                (project-files/resolve-locked-project lock blocks))
+        graph-error (record-get [:ref :native.project/graph] graph :err)]
+    (if (not (string=? graph-error ""))
+      (do
+        (typed-cap-call :io/write-error :string :string
+                        (string-concat "kotoba: " (string-concat graph-error "\n")))
+        65)
+      (let [modules (record-get [:ref :native.project/graph] graph :modules)
+            count (vector-count modules)]
+        (if (= count 0)
+          (do
+            (typed-cap-call :io/write-error :string :string
+                            "kotoba: resolved project has no entry module\n")
+            65)
+          (do
+            (typed-cap-call :io/write :string :string
+                            (string-concat "project modules="
+                                           (string-concat (string-from-i64 count) "\n")))
+            (write-project-module-names modules 0 count)))))))
+
+(defn main [] :i64
+  (let [command (typed-cap-call :cli/args :string :string "0")
+        first-argument (typed-cap-call :cli/args :string :string "1")
+        argc-text (typed-cap-call :cli/args :string :string "")
+        argc-result (parse-long argc-text)
+        argc (option-value-of [:option :i64] argc-result 0)
+        entry-path? (and (not (string=? first-argument ""))
+                         (not (string=? (string-substring first-argument 0 1) "-")))
+        path (if entry-path? first-argument "")
+        options (collect-source-path-options (if entry-path? 2 1)
+                                             argc "" 0 "" "" false)
+        options-error (record-get [:ref :native.cli/options] options :err)
+        roots (record-get [:ref :native.cli/options] options :roots)
+        lock (record-get [:ref :native.cli/options] options :lock)
+        blocks (record-get [:ref :native.cli/options] options :blocks)
+        unpinned (record-get [:ref :native.cli/options] options :unpinned)
+        single-valid? (and (or (string=? command "check")
+                               (string=? command "check-entry")
+                               (string=? command "modules"))
+                           (option-some?-of [:option :i64] argc-result)
+                           (or (not (string=? lock "")) (not (string=? path "")))
+                           (or (string=? path "") (suffix? path ".kotoba")))]
+    (cond
+      (not single-valid?)
+      (do
+        (typed-cap-call :io/write-error :string :string
+                        "usage: amu-native check|check-entry|modules [source.kotoba] [--module-lock LOCK --blocks DIR | --unpinned [--source-path DIR ...]]\n")
+        64)
+
+      (not (string=? options-error ""))
+      (do
+        (typed-cap-call :io/write-error :string :string
+                        (string-concat "kotoba: " (string-concat options-error "\n")))
+        64)
+
+      (and (not (string=? blocks "")) (string=? lock ""))
+      (do
+        (typed-cap-call :io/write-error :string :string
+                        "kotoba: --blocks requires --module-lock\n")
+        64)
+
+      (and (not (string=? lock "")) (string=? blocks ""))
+      (do
+        (typed-cap-call :io/write-error :string :string
+                        "kotoba: --module-lock requires --blocks <dir>\n")
+        64)
+
+      (and (string=? lock "") (not unpinned))
+      (do
+        (typed-cap-call :io/write-error :string :string
+                        "kotoba: path-based project resolution requires --unpinned\n")
+        64)
+
+      (string=? command "check-entry")
+      (check-project-mode path roots lock blocks true)
+
+      (string=? command "modules")
+      (list-project-modules path roots lock blocks)
+
+      :else
+      (check-project-mode path roots lock blocks false))))
