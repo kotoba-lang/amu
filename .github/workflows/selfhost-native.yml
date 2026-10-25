@@ -264,3 +264,80 @@ jobs:
             ${{ runner.temp }}/native-cdci/positive/kotoba-gate.receipt
             ${{ runner.temp }}/x86/wasm32-browser/wasm32-browser.json
           if-no-files-found: warn
+
+  shared-browser-components:
+    name: Shared text / DOM / text-edit (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04-arm
+            target: arm64
+          - runner: ubuntu-latest
+            target: x86_64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: kotoba-lang/browser
+          ref: 6e3ca4e768d886060abe7bff70da07cf36f5dabc
+          path: _shared/browser
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: kotoba-lang/dom-gpu
+          ref: c0be10ca6b0089e5fbe061eb76a6c23e61f61b22
+          path: _shared/dom
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: kotoba-lang/kotoba
+          ref: fd346090a93bbe0daef272cc4e339eebcee39c46
+          path: _shared/text
+          persist-credentials: false
+      - name: Verify source owner pins and native compiler bytes
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, subprocess
+          from pathlib import Path
+          pins = json.loads(Path('seed/shared-browser-components.json').read_text())
+          for name, owner in pins['repositories'].items():
+              root = Path('_shared') / name
+              assert subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'], text=True).strip() == owner['revision']
+              for path, digest in owner['files'].items():
+                  assert hashlib.sha256((root / path).read_bytes()).hexdigest() == digest, (name, path)
+          arm = os.environ['TARGET'] == 'arm64'
+          image = Path('seed/bootstrap/aarch64-linux-static-root.elf' if arm else 'bin/amu')
+          meta = json.loads(Path('seed/bootstrap/aarch64-linux-static-root.json' if arm else 'native-product.json').read_text())
+          assert hashlib.sha256(image.read_bytes()).hexdigest() == meta['image']['sha256']
+          PY
+      - name: Locked typed x86 project and refusal controls
+        if: matrix.target == 'x86_64'
+        run: python3 scripts/seed/check-x86-project-native.py --compiler "$PWD/bin/amu" --output "$RUNNER_TEMP/x86-project"
+      - name: Execute actual shared modules (ARM)
+        if: matrix.target == 'arm64'
+        run: |
+          python3 _shared/browser/scripts/check-shared-native.py --compiler "$PWD/seed/bootstrap/aarch64-linux-static-root.elf" --target arm64 --runner-source "$PWD/seed/x86_64-kx64-runner.kotoba" --browser "$PWD/_shared/browser" --dom "$PWD/_shared/dom" --text "$PWD/_shared/text/lib/kotoba.text" --output "$RUNNER_TEMP/shared-components"
+      - name: Execute actual shared modules (x86)
+        if: matrix.target == 'x86_64'
+        run: |
+          python3 _shared/browser/scripts/check-shared-native.py --compiler "$PWD/bin/amu" --target x86_64 --runner "$RUNNER_TEMP/x86-project/runner.elf" --browser "$PWD/_shared/browser" --dom "$PWD/_shared/dom" --text "$PWD/_shared/text/lib/kotoba.text" --output "$RUNNER_TEMP/shared-components"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: shared-components-${{ matrix.target }}
+          path: |
+            ${{ runner.temp }}/shared-components/*.json
+            ${{ runner.temp }}/shared-components/*.stdout
+            ${{ runner.temp }}/shared-components/*.stderr
+            ${{ runner.temp }}/shared-components/*.ksl
+            ${{ runner.temp }}/x86-project/*.json
+            ${{ runner.temp }}/x86-project/*.stdout
+            ${{ runner.temp }}/x86-project/*.stderr
+          if-no-files-found: warn

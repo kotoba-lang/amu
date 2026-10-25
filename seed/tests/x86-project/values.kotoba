@@ -1,0 +1,14 @@
+(ns x86-project.values
+  (:export [label keyword-value make-record sum8 apply-one make-document])
+  (:schemas {:x86-project/value
+             [:record :x86-project/value [[:label :string] [:count :i64]]]}))
+
+(defn label [] :string "共有😀")
+(defn keyword-value [] :keyword :x86-project/shared)
+(defn make-record [count :i64] [:ref :x86-project/value]
+  (record [:ref :x86-project/value] (label) count))
+(defn sum8 [a :i64 b :i64 c :i64 d :i64 e :i64 f :i64 g :i64 h :i64] :i64
+  (+ (+ (+ a b) (+ c d)) (+ (+ e f) (+ g h))))
+(defn apply-one [f [:fn [[:i64] :i64]] value :i64] :i64 (f value))
+(defn make-document [] :document
+  (document-map :x86-project/shared (document-string "library😀")))

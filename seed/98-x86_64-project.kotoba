@@ -1,0 +1,121 @@
+;; Typed pure x86 project adapter. The adopted discovery, namespace/schema
+;; checker, typed interfaces and exact source-lock reader remain authoritative.
+;; This emits KX64V1 for the existing C-free native runner, not an AIUEOS image.
+;; Every declaration is admitted; capabilities and unsupported value operations
+;; refuse. A zero-argument i64 main is the only external payload entry.
+
+;; KX64 string literals contain offsets from the payload's code base. The
+;; scalar byte linker already preserves relative branches; literal offsets
+;; additionally need the module's byte base. No address is granted to source.
+(defn- xpj-pool-fix [M :vector-i64 base :i64 index :i64] :vector-i64
+  (if (or (not (pj-ok M)) (>= index (vector-at M MM-FIX-N))) M
+    (let [record (+ MM-FIX-BASE (* index MM-FIX-W))
+          at (vector-at M record) kind (vector-at M (+ record 1))
+          target (vector-at M (+ record 2))
+          offset (if (= kind 4) (+ base (xg-fix-target M kind target)) 0)]
+      (cond (not= kind 4) (xpj-pool-fix M base (inc index))
+            (or (< offset base) (>= offset pj-img-cap) (< at 0) (> (+ at 4) (xg-pos M)))
+              (xg-err M 7103 index)
+            :else (xpj-pool-fix (xg-patch M at offset 4) base (inc index))))))
+
+(defn- xpj-emit-module [M :vector-i64 L :vector-i64 S :string module :i64] :vector-i64
+  (let [admitted (-> M (xs-clear 197) (xg-set 0 0) (xg-set 1 0) (xg-set 4 1)
+                    (xg-check-fns S 1) (xg-check-sir 1) (xr-check 1))
+        entry (xg-get admitted 1)]
+    (cond (not (pj-ok admitted)) admitted
+          (not= (vector-at admitted MM-CAPS) 0) (xg-err admitted 7101 OP-CAP)
+          (and (= module 0) (= entry 0)) (xg-err admitted 7102 0)
+          :else
+          (let [code (-> admitted (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1)
+                         (xg-index-labels 1) (xg-code 1) (xr-pool 1) (xg-fix 1)
+                         (xpj-pool-fix (pj-l L pj-k-base) 1))
+                size (xg-pos code)]
+            (cond (not (pj-ok code)) code
+                  (> (+ (pj-l L pj-k-base) size) pj-img-cap) (xg-err code 7104 size)
+                  :else
+                  (let [linked (kp-copy-link code L)
+                        marked (if (= module 0)
+                                 (pj-ls L KP-ENTRY (+ (pj-l L pj-k-base) (dec (xg-f code entry FF-CODE)))) L)]
+                    linked))))))
+
+(defn- xpj-module [M :vector-i64 L :vector-i64 P :string module :i64 H :vector-i64] :string
+  (let [selected (pj-ls L pj-k-errmod module)
+        original (pj-src M L P module)
+        trailer (pj-trailer L P module)
+        library (if (pj-ok M) (ck-r6b-lib-t original (pj-kw-table M L P module original)) "")
+        guest (string-concat original library)
+        source (string-concat guest trailer)
+        base (bit-and (+ (pj-l L pj-k-img) 15) -16)
+        state (-> L (pj-ls pj-k-trail (string-length guest)) (pj-ls pj-k-base base)
+                    (pj-mset module pj-mf-base base))
+        parsed (if (pj-ok M) (pj-read M source) M)
+        qualified (if (pj-ok parsed)
+                    (pj-refcheck (pj-qscan (pj-norm parsed L source) L P source module) L P module) parsed)
+        spliced (if (pj-ok qualified) (pj-splice qualified L) qualified)
+        named (if (pj-ok spliced) (nm-run spliced source) spliced)
+        stubs (if (pj-ok named) (pj-ls L pj-k-stub0 (- (vector-at named MM-FN-N) (pj-l L pj-k-nstub))) L)
+        checked (if (pj-ok named) (ck-run-h named source H) named)]
+    (cond (and (pj-ok checked) (ck-hint-again? H checked)) (xpj-module checked L P module H)
+          (not (pj-ok checked)) (let [back (pj-err-back checked L module (string-length guest))] P)
+          :else
+          (let [lowered (lw-run checked)
+                emitted (if (pj-ok lowered) (xpj-emit-module lowered L source module) lowered)
+                keywords (if (pj-ok emitted) (pj-kw-note emitted L module) L)]
+            (cond (not (pj-ok emitted)) P
+                  (not (pj-ok (pj-r5b-after emitted L P source module))) P
+                  (= module 0) P
+                  :else (kp-iface emitted L P source module))))))
+
+(defn- xpj-project [M :vector-i64 L :vector-i64 P :string root :i64] :string
+  (let [discovered (pj-discover M L P root)
+        reserved (pj-ls L pj-k-img 128)]
+    (loop [index 0 pool discovered]
+      (if (or (not (pj-ok M)) (>= index (pj-l L pj-k-nord))) pool
+        (recur (inc index) (xpj-module M L pool (pj-l L (+ pj-o-base index)) (ck-hint-new)))))))
+
+(defn- xpj-out-text [M :vector-i64 text :string index :i64] :vector-i64
+  (if (>= index (string-length text)) M
+    (xpj-out-text (out-put M (string-code-point-at text index)) text (inc index))))
+(defn- xpj-out-code [M :vector-i64 L :vector-i64 index :i64] :vector-i64
+  (if (or (not (pj-ok M)) (>= index (pj-l L pj-k-img))) M
+    (xpj-out-code (out-put M (pj-ib L index)) L (inc index))))
+(defn- xpj-write [M :vector-i64 L :vector-i64 out :string] :i64
+  (let [size (pj-l L pj-k-img) entry (pj-l L KP-ENTRY)
+        header (string-concat "KX64V1 x86_64-linux sysv-ctx-v11 " (string-concat (mem-u2dec size) " 0\n\n"))]
+    (cond (or (< entry 128) (>= entry size) (> size pj-img-cap)
+              (>= (+ size (string-length header) 1) MM-OUT-CAP)) (drv-fail0 E-PROJ-IMAGE)
+          :else
+          (let [jump (pj-ibset L 0 233) target (pj-put32 L 1 (- entry 5))
+                bytes (xpj-out-code (xpj-out-text (mem-set M MM-OUT-N 1) header 0) L 0)
+                count (dec (vector-at bytes MM-OUT-N))]
+            (if (not (pj-ok bytes)) (drv-fail0 E-PROJ-IMAGE)
+              (let [written (out-write-v bytes out (+ MM-OUT-BASE 1) count)
+                    note (io-out (string-concat "{:ok true, :target :x86_64-linux, :format :kx64-v1, :project true, :bytes "
+                                  (string-concat (mem-u2dec size) "}\n")))]
+                (if (= (io-exists out) 1) 0 (drv-fail0 E-WRITE))))))))
+
+(defn- xpj-options? [index :i64] :bool
+  (if (>= index (io-argc)) true
+    (let [flag (io-arg index)]
+      (and (< (inc index) (io-argc))
+           (or (string=? flag "--output") (string=? flag "--format")
+               (string=? flag "--source-path") (string=? flag "--source-lock")
+               (string=? flag "--source-lock-sha256"))
+           (xpj-options? (+ index 2))))))
+(defn- xpj-command [] :i64
+  (let [count (io-argc) path (io-arg 1)
+        output-index (drv-pj-flag 1 count "--output")
+        format-index (drv-pj-flag 1 count "--format")
+        output (if (< output-index 0) "" (io-arg output-index))]
+    (cond (or (< (drv-pj-lock-arg 1 count -1) 0) (= (drv-pj-has 1 count "--unpinned") 1))
+              (drv-fail0 E-PROJ-UNPINNED)
+          (or (not (xpj-options? 4)) (< format-index 0)
+              (not (string=? (io-arg format-index) "kx64-v1")) (= (string-length output) 0)) (drv-usage)
+          (= (io-exists output) 1) (drv-fail0 E-WRITE)
+          :else
+          (let [M (mem-new) L (pj-new-l)
+                roots (drv-pj-roots L (pj-new-p L) 1 count)
+                locked (drv-pj-lock M L roots path)
+                pool (if (pj-ok M) (xpj-project M L (pj-padd L locked path) (dec (pj-n L))) locked)]
+            (cond (not (pj-ok M)) (if (= (pj-l L pj-k-nmod) 0) (drv-fail-in M path "") (drv-pj-fail M L pool))
+                  :else (xpj-write M L output))))))
