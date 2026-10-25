@@ -26,6 +26,18 @@
 (def MAC-PACKAGER-RAW-BYTES 38809)
 (def MAC-PACKAGER-ENTRY-OFFSET 34980)
 
+;; The general build mode accepts an explicit extracted main offset. It is
+;; bounded by the image size and the scoped FS2 output limit; admission and
+;; signing of the produced executable are separate release decisions.
+(defn- decimal-entry [s :string] :i64
+  (let [n (string-length s)]
+    (if (or (= n 0) (> n 8)) -1
+      (loop [i 0 value 0]
+        (if (= i n) value
+          (let [digit (- (string-code-point-at s i) 48)]
+            (if (or (< digit 0) (> digit 9)) -1
+              (recur (+ i 1) (+ (* value 10) digit)))))))))
+
 (defn- byte-at [v :vector-i64 at :i64 value :i64] :vector-i64
   (vector-assoc! v at (bit-and value 255)))
 
@@ -99,12 +111,13 @@
   (or (= raw-bytes 3254848) (= raw-bytes 3250952)
       (= raw-bytes MAC-PACKAGER-RAW-BYTES)))
 
-(defn- wrapper-suffix [raw-bytes :i64 mode :string] :vector-i64
+(defn- wrapper-suffix [raw-bytes :i64 mode :string entry-offset :i64 general :bool] :vector-i64
+  (let [cli-image (or (full-compiler-raw? raw-bytes) general)]
   [
    (adr8 1152 TYPED-START) 0xf9004268
    (adr8 1160 POOL-EQUAL-START) 0xf9003a68
    (adr8 1168 CONCAT-START) 0xf9003e68
-   (if (string=? mode "fs2-cli-stdio") 0xd2c01d08
+   (if (or (string=? mode "fs2-cli-stdio") general) 0xd2c01d08
      (if (string=? mode "stdout") 0xd2c00408
      (if (string=? mode "stderr") 0xd2c01008
        (if (string=? mode "cli") 0xd2c00808
@@ -116,23 +129,21 @@
    ;; The pure helper setup installs four additional ABI callbacks and then
    ;; invokes the existing bounded pool setup at 2048.
    (bit-or 0x94000000 (quot (- PURE-RUNTIME-START 1204) 4))
-   (bl-direct 1208
-     (if (= raw-bytes MAC-PACKAGER-RAW-BYTES)
-       (+ RAW-START MAC-PACKAGER-ENTRY-OFFSET) RAW-START))
+   (bl-direct 1208 (+ RAW-START entry-offset))
    ;; The full compiler is a CLI: propagate its actual exit status after
    ;; check/compile. Short fixed fixtures keep their expected-result check.
-   (if (full-compiler-raw? raw-bytes) 0xd2800030 0xf100a81f)
-   (if (full-compiler-raw? raw-bytes) 0xf2a40010 (b-ne 48 56))
+   (if cli-image 0xd2800030 0xf100a81f)
+   (if cli-image 0xf2a40010 (b-ne 48 56))
    ;; Earlier string fixtures require a pair; vector fixtures instead prove
    ;; that at least one checked vector handle was minted.
-   (if (full-compiler-raw? raw-bytes) 0xd4001001
+   (if cli-image 0xd4001001
      (if (or (= raw-bytes 340) (= raw-bytes 124)
              (= raw-bytes 700) (= raw-bytes 220)
              (= raw-bytes 714) (= raw-bytes 200)) 0xf95f4668 0xf9410268))
-   (if (full-compiler-raw? raw-bytes) 0xd4200000 0xf100051f)
-   (if (full-compiler-raw? raw-bytes) 0xd503201f (b-lo 51 56))
-   (if (full-compiler-raw? raw-bytes) 0xd503201f 0xd2800540)
-   0xd2800030 0xf2a40010 0xd4001001 0xd4200000])
+   (if cli-image 0xd4200000 0xf100051f)
+   (if cli-image 0xd503201f (b-lo 51 56))
+   (if cli-image 0xd503201f 0xd2800540)
+   0xd2800030 0xf2a40010 0xd4001001 0xd4200000]))
 
 ;; pair_new(ctx, offset, byte_length): 1-based handle. The context contains
 ;; a count pointer at +288, mmap pair base at +296, and mark base at +304.
@@ -559,7 +570,7 @@
       (bit-or (i64-shift-left (bit-and pages 3) 29)
               (i64-shift-left (quot pages 4) 5)))))
 
-(defn- body-at [v :vector-i64 at :i64 raw :vector-i64 text-bytes :i64 mode :string] :vector-i64
+(defn- body-at [v :vector-i64 at :i64 raw :vector-i64 text-bytes :i64 mode :string entry-offset :i64 general :bool] :vector-i64
   (let [raw-bytes (- (vector-count raw) 5)
         fs2-start (+ RAW-START (* 4 (quot (+ raw-bytes 3) 4)))
         total-bytes (+ text-bytes DATA-BYTES)]
@@ -603,7 +614,7 @@
       (u32-at (+ at 384) 1)
       (u32-at (+ at 388) 851968) (u32-at (+ at 392) 851968)
       (words-at (+ at 1024) (wrapper-prefix text-bytes))
-      (words-at (+ at 1152) (wrapper-suffix raw-bytes mode))
+      (words-at (+ at 1152) (wrapper-suffix raw-bytes mode entry-offset general))
       (words-at (+ at HELPER-START) (pair-helper-words))
       (words-at (+ at LEGACY-TYPED-START) (typed-helper-words))
       (words-at (+ at STDERR-TYPED-START) (stderr-helper-words))
@@ -646,11 +657,15 @@
   (let [path (typed-cap-call :cli/args :string :string "0")
         raw-path (typed-cap-call :cli/args :string :string "1")
         mode (typed-cap-call :cli/args :string :string "2")
+        general (string=? mode "fs2-cli-stdio-general")
+        entry-text (if general (typed-cap-call :cli/args :string :string "3") "")
+        selected-entry (if general (decimal-entry entry-text) 0)
         admitted (or (string=? mode "stdout")
                      (string=? mode "stderr")
                      (string=? mode "cli")
                      (string=? mode "cli-stderr")
                      (string=? mode "fs2-cli-stdio")
+                     general
                      (string=? mode "deny"))
         fs2-prefix (string-from-utf8 (bytes-from-vector-i64 [0 70 83 50 0]))
         read-request (string-concat fs2-prefix (string-concat "A" (string-concat raw-path (string-from-utf8 (bytes-from-vector-i64 [0])))))
@@ -660,11 +675,18 @@
         length (vector-count path-bytes)
         offset (+ 7 length)
         raw-bytes (- (vector-count raw) 5)
+        entry-offset (if general selected-entry
+                       (if (= raw-bytes MAC-PACKAGER-RAW-BYTES)
+                         MAC-PACKAGER-ENTRY-OFFSET 0))
         fs2-end (+ RAW-START (* 4 (quot (+ raw-bytes 3) 4)) FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES)
         text-bytes (* 16384 (quot (+ fs2-end 16383) 16384))
         total-bytes (+ text-bytes DATA-BYTES)]
     (if (or (= length 0) (> length 255) (not admitted)
-            (and (not= raw-bytes 3254848) (not= raw-bytes 3250952)
+            (if general
+              (or (< raw-bytes 4) (> raw-bytes 4194304)
+                  (< entry-offset 0) (not= (bit-and entry-offset 3) 0)
+                  (> (+ entry-offset 4) raw-bytes))
+              (and (not= raw-bytes 3254848) (not= raw-bytes 3250952)
                  (not= raw-bytes MAC-PACKAGER-RAW-BYTES)
                  (not= raw-bytes 516)
                  (not= raw-bytes 694) (not= raw-bytes 210)
@@ -675,7 +697,7 @@
                  (not= raw-bytes 700) (not= raw-bytes 220)
                  (not= raw-bytes 714) (not= raw-bytes 200)
                  (not= raw-bytes 1545) (not= raw-bytes 152)
-                 (not= raw-bytes 172))
+                 (not= raw-bytes 172)))
             (> (+ offset total-bytes) MAX-FS2-VALUE)
             (> (+ total-bytes 5) MAX-FS2-VALUE)
             (> fs2-end text-bytes)
@@ -688,6 +710,6 @@
                    (byte-at 3 50) (byte-at 4 0) (byte-at 5 66)
                    (text-at 6 path)
                    (byte-at (+ 6 length) 0)
-                   (body-at offset raw text-bytes mode))
+                   (body-at offset raw text-bytes mode entry-offset general))
             response (typed-cap-call :fs/app-data-bytes :bytes :bytes (bytes-from-vector-i64 v1))]
         (if (acknowledged-image? v1 offset (vector-i64-from-bytes response) total-bytes) 0 3)))))

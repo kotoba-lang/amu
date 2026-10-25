@@ -1,7 +1,10 @@
 # Mac packager self-rebuild diagnostic
 
 The 47-module full Amu compiler F2 ran on Apple Silicon Mac and compiled
-`seed/macos-fs2-runtime-packager.kotoba` to an `aarch64-macos` container.
+the then-current `seed/macos-fs2-runtime-packager.kotoba` to an
+`aarch64-macos` container. Its exact source is retained as
+[packager-v1.kotoba](packager-v1.kotoba) so this historical gate remains
+replayable after the packager evolves.
 That same Mac compiler extracted its `main` code. The packager source SHA-256
 is `22e03a24b9b2bb2d45552799bbe2284030a19d27212ca84c9bdc8fec8831fce0`.
 

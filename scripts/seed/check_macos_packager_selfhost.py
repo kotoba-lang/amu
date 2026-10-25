@@ -14,7 +14,7 @@ import tempfile
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SOURCE = ROOT / "seed/macos-fs2-runtime-packager.kotoba"
+SOURCE = ROOT / "docs/evidence/mac-packager-selfhost-20261026/packager-v1.kotoba"
 SOURCE_SHA = "22e03a24b9b2bb2d45552799bbe2284030a19d27212ca84c9bdc8fec8831fce0"
 COMPILER_SHA = "3dcdaac995fb01a149234e4eb272e78951a33e01904f3adc5c1a33dbff4c6ba2"
 BOOTSTRAP_PACKAGER_SHA = "14022d47804c251f5095502b7b29fab747736e1e84258a1fdd08d04c8038d4ca"
