@@ -238,3 +238,14 @@ conditions. Native scope reuse, partial old/new ranges and missing/relative
 watermark and last-word mutants must pass before adoption. Wasm's context is
 separate and its own offset760 must remain unchanged. Source changes alone do not qualify
 the current root/public/role pins; finish native rebuilding and all gates.
+
+
+## Native instruction-class filter qualification
+
+The CCF high-byte mask is immutable and must conservatively include every
+PC-relative class. Keep word bounds and all original target/refusal checks.
+Do not cache mutable CODE/FIX prefix proofs by their counts. The native gate
+adds131072 comparisons against the original evaluator and four built/executed
+mutants on both ISAs; all previous gates and uncached main/full remain required.
+The candidate must rebuild core/controller/root/public pins and pass fresh
+native qualification before its qualification flags are promoted.
