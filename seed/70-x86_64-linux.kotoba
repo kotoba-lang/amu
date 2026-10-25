@@ -335,6 +335,14 @@
             (and (= op OP-CALL) (or (<= a 0) (>= a (vector-at M MM-FN-N)) (< c 0) (> c (if (or (= (xg-get M 4) 1) (= (xg-get M 4) 2)) 16 5))
                  (not= c (xg-f M a FF-NPARAMS)) (<= (xg-f M a FF-SIR) 0))) (xg-err M 7101 op)
             :else (xg-check-sir M (inc i))))))
+;; The AArch64 static and wasm32 emitters share the context admission, but
+;; do not implement x86 SSE floating opcodes. Check every SIR instruction
+;; before either emitter runs; the x86 runtime profile alone permits them.
+(defn- xg-check-integer-sir [M :vector-i64 i :i64] :vector-i64
+  (cond (or (not= (vector-at M MM-ERR) 0) (= i (vector-at M MM-SIR-N))) M
+        (xg-fl-sir? (xg-si M i IF-OP) (xg-si M i IF-A))
+          (xg-err M 7101 (xg-si M i IF-A))
+        :else (xg-check-integer-sir M (inc i))))
 (defn- xg-code [M :vector-i64 i :i64] :vector-i64
   (if (or (not= (vector-at M MM-ERR) 0) (= i (vector-at M MM-SIR-N))) M
     (xg-code (xg-one M i) (inc i))))

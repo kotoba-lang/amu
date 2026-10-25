@@ -1,0 +1,5 @@
+Shared x86 floating admission previously let AArch64 static and wasm32 emit unsupported SIR. Before the fix, unchanged f64 basic and parameterized helper modules trapped as unreachable in isolated Chrome. The integer-only backend guard retains every declaration and the x86 profiles.
+
+Native ARM whole48 unit verdict15 verifies all36 tags, kernel refusal, gaps, frames and integer-backend refusal. The whole48 native-generated compiler refuses all11 original float sources on each integer backend (22 no-artifact controls); integer42 still executes on ARM and Chrome. Exact decimal literals now emit raw bits directly, changing the first unsupported opcode for f32-conv to34 and unordered to19; historical refusal details, original sources/results remain intact. This does not qualify actual x86 SSE or the complete compiler.
+
+The separate unchanged normal19 decimal proof has26 anchors in five groups (native result31), five invalid-literal refusals and a wrong-digest refusal. Latest private-store main reconciliation, full compiler adoption, cold provenance, public/controller pins and all component/caller-state suites remain required.

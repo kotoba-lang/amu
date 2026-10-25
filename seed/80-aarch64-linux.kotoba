@@ -222,7 +222,7 @@
     (-> h (mem-set 252 (+ 0x401000 at)) (mem-set 253 cl) (mem-set 254 off))))
 (defn- xa-build [M :vector-i64 S :string rt :i64 mode :i64 V :vector-i64 cs :i64 cl :i64 off :i64] :vector-i64
   (let [a (-> M (xs-clear 197) (mem-set 197 rt) (xg-set 0 0) (xg-set 1 0) (xg-set 2 mode) (xg-set 4 1)
-              (xg-check-fns S 1) (xg-check-sir 1) (xr-check 1) (xs-scan S 1) (xs-check 1 0))]
+              (xg-check-fns S 1) (xg-check-integer-sir 1) (xg-check-sir 1) (xr-check 1) (xs-scan S 1) (xs-check 1 0))]
     (cond (not= (vector-at a MM-ERR) 0) a
           (= (xg-get a 1) 0) (xg-err a 7102 0)
           (or (= (vector-at a 199) 0) (= (vector-at a 198) 0)) (xg-err a 7102 1)

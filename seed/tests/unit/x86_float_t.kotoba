@@ -14,13 +14,19 @@
   (let [m (xg-check-sir (t-float-row M profile operation subcode) 1)
         ok (and (= (vector-at m MM-R0) 1) (= (vector-at m MM-ERR) expected))]
     (mem-set m MM-R0 (if ok 1 0))))
+(defn- t-integer-backend [M :vector-i64 operation :i64 subcode :i64] :vector-i64
+  (let [m (xg-check-integer-sir (t-float-row M 1 operation subcode) 1)
+        ok (and (= (vector-at m MM-R0) 1) (= (vector-at m MM-ERR) 7101)
+                (= (vector-at m MM-ERR-N) subcode))]
+    (mem-set m MM-R0 (if ok 1 0))))
 (defn- t-family [M :vector-i64 operation :i64 start :i64 end :i64] :vector-i64
   (loop [sub start current M]
     (if (> sub end) current
       (recur (+ sub 1)
         (-> current (t-admission 0 operation sub 0) (t-admission 1 operation sub 0)
                     (t-admission 2 operation sub 7101)
-                    (t-admission 3 operation sub 7101))))))
+                    (t-admission 3 operation sub 7101)
+                    (t-integer-backend operation sub))))))
 (defn- t-families [M :vector-i64] :vector-i64
   (-> M (mem-set MM-R0 1) (t-family OP-BIN 16 21) (t-family OP-BIN 24 29)
       (t-family OP-CMP 8 13) (t-family OP-CMP 16 21)

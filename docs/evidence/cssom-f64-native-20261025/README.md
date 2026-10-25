@@ -7,3 +7,5 @@ The old 262144 literal pool admitted the new core through the complete47 static 
 The complete48 compiler admission unit retains all declarations, selecting its test entry with two explicit renames. Actual ARM verdict15 covers all36 floating tags in both Linux profiles, refusal in both integer kernel profiles, type/tag gaps and frame accounting. It does not execute SSE on x86.
 
 Remaining before adoption: independent cold/core conformance, complete48 ARM/x86 fixed points, updated native factory/controller/public pins, all decimal/document/formatter/SHA/floating positive/refusal/fuel/caller-state requirements including the original65536-byte cases. Whole CSSOM, protected UI runtime, dapps, consent and persistent restoration remain open. No JVM/Node/C loader or source-declaration trimming is used.
+
+The integer-backend guard evidence subdirectory records a reviewed regression and bounded native repair. It also records decimal26 anchors with invalid-literal/source-lock controls. Earlier admission artifacts above are historical; the repaired full48 source has its own exact source bindings. No new product has been adopted.
