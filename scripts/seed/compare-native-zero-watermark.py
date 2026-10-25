@@ -47,7 +47,12 @@ def main(out):
     # zero, and excluded from all five arena rollback counters. Every item
     # writer finishes through vnew, or writes inside an already described view.
     assert original.count(MARK_OLD) == 2 and original.count(ZERO_OLD) == 2
-    assert "(kxrt-gl 760)" not in original and "(kxrt-gs 760 " not in original
+    # Wasm owns a different context and already uses its own cell760. Audit
+    # the selected native templates, never conflate the two private ABIs.
+    for path in ("seed/76-x86_64-static-rt.kotoba", "seed/77-aarch64-static-rt.kotoba"):
+        native = (ROOT / path).read_text()
+        assert native.count(MARK_OLD) == 1 and native.count(ZERO_OLD) == 1
+        assert "(kxrt-gl 760)" not in native and "(kxrt-gs 760 " not in native
     text = original.replace(MARK_OLD, MARK_NEW).replace(ZERO_OLD, ZERO_NEW)
     source = out / "candidate-full.kotoba"
     source.write_text(text)
