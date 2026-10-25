@@ -23,6 +23,8 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "seed/FULL-MANIFEST"
 USER_CHECK = ROOT / "scripts/seed/check-aiueos-user-elf-native.py"
+ROOT_DESCRIPTOR = ROOT / "seed/bootstrap/aarch64-macos/root.json"
+PACKAGER_SOURCE = ROOT / "seed/macos-fs2-runtime-packager.kotoba"
 
 
 def pin(path):
@@ -117,6 +119,70 @@ def sign(unsigned, signed):
     return verify_macho(signed)
 
 
+def bootstrap_inputs(args):
+    fields = (args.compiler_image, args.compiler_sha256,
+              args.packager_image, args.packager_sha256)
+    if any(value is not None for value in fields):
+        if not all(value is not None for value in fields):
+            raise ValueError("explicit bootstrap requires both image paths and SHA-256 pins")
+        return (args.compiler_image.resolve(strict=True), args.compiler_sha256,
+                args.packager_image.resolve(strict=True), args.packager_sha256,
+                None, None)
+    descriptor_pin = require_regular(ROOT_DESCRIPTOR)
+    descriptor = json.loads(ROOT_DESCRIPTOR.read_text())
+    if (descriptor.get("schema") != "amu.macos-arm64-selfhost-root.v1"
+            or descriptor.get("status") != "diagnostic-candidate"
+            or descriptor.get("fullManifest") != "seed/FULL-MANIFEST"):
+        raise ValueError("unsupported Mac bootstrap descriptor")
+    paths = {"compiler": "seed/bootstrap/aarch64-macos/amu-full-root.macho",
+             "packager": "seed/bootstrap/aarch64-macos/kotoba-packager-root.macho"}
+    for role, expected in paths.items():
+        if descriptor[role]["path"] != expected:
+            raise ValueError("Mac bootstrap role path changed: " + role)
+        path = ROOT / expected
+        if require_regular(path, descriptor[role]["sha256"]) != {
+                key: descriptor[role][key] for key in ("bytes", "sha256")}:
+            raise ValueError("Mac bootstrap role size changed: " + role)
+    if (descriptor["packagerSource"]["path"]
+            != "seed/macos-fs2-runtime-packager.kotoba"
+            or require_regular(PACKAGER_SOURCE, descriptor["packagerSource"]["sha256"])
+            != {key: descriptor["packagerSource"][key]
+                for key in ("bytes", "sha256")}):
+        raise ValueError("Mac packager source changed")
+    return (ROOT / paths["compiler"], descriptor["compiler"]["sha256"],
+            ROOT / paths["packager"], descriptor["packager"]["sha256"],
+            descriptor, descriptor_pin)
+
+
+def rebuild_packager(producer, packager, directory, compiler_row):
+    shutil.copyfile(PACKAGER_SOURCE, directory / "packager.kotoba")
+    native_run(producer, directory, "compile", "packager.kotoba",
+               "--target", "aarch64-macos", "--output", "P1.kseed")
+    extracted = native_run(producer, directory, "extract-native", "P1.kseed",
+                           "--symbol", "main", "--output", "P1.raw")
+    match = re.search(rb":offset (\d+), :length (\d+), :arity 0}", extracted.stdout)
+    if match is None or int(match.group(2)) != (directory / "P1.raw").stat().st_size:
+        raise ValueError("Mac packager main extraction did not match raw bytes")
+    entry = int(match.group(1))
+    native_run(packager, directory, "P1-unsigned.macho", "P1.raw",
+               "fs2-cli-stdio-general", str(entry))
+    sign(directory / "P1-unsigned.macho", directory / "P1-signed.macho")
+    native_run(directory / "P1-signed.macho", directory, "P2-unsigned.macho",
+               "P1.raw", "fs2-cli-stdio-general", str(entry))
+    if pin(directory / "P1-unsigned.macho") != pin(directory / "P2-unsigned.macho"):
+        raise ValueError("Mac packager did not repackage itself byte for byte")
+    native_run(directory / "P1-signed.macho", directory, "F3-unsigned.macho",
+               f"F{compiler_row['number']}.raw", "fs2-cli-stdio-general",
+               str(compiler_row["entry"]))
+    if pin(directory / "F3-unsigned.macho") != compiler_row["unsigned"]:
+        raise ValueError("rebuilt Mac packager changed the full compiler image")
+    return {"source": pin(PACKAGER_SOURCE), "container": pin(directory / "P1.kseed"),
+            "raw": pin(directory / "P1.raw"), "entry": entry,
+            "unsigned": pin(directory / "P1-unsigned.macho"),
+            "repackagedUnsigned": pin(directory / "P2-unsigned.macho"),
+            "repackagedCompilerUnsigned": pin(directory / "F3-unsigned.macho")}
+
+
 def generation(number, producer, packager, directory):
     container = directory / f"F{number}.kseed"
     raw = directory / f"F{number}.raw"
@@ -143,17 +209,20 @@ def generation(number, producer, packager, directory):
 def main(args):
     if platform.system() != "Darwin" or platform.machine() not in ("arm64", "aarch64"):
         raise ValueError("Mac native user-target gate requires Apple Silicon")
-    compiler = args.compiler_image.resolve(strict=True)
-    packager = args.packager_image.resolve(strict=True)
-    compiler_pin = require_regular(compiler, args.compiler_sha256)
-    packager_pin = require_regular(packager, args.packager_sha256)
+    (compiler, compiler_sha, packager, packager_sha,
+     descriptor, descriptor_pin) = bootstrap_inputs(args)
+    compiler_pin = require_regular(compiler, compiler_sha)
+    packager_pin = require_regular(packager, packager_sha)
     manifest_pin = require_regular(MANIFEST)
     checker_pin = require_regular(USER_CHECK)
+    packager_source_pin = require_regular(PACKAGER_SOURCE)
     verify_macho(compiler)
     verify_macho(packager)
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=False, mode=0o700)
     sources, unity = stage_unity(output)
+    if descriptor is not None and unity != descriptor["fullSource"]:
+        raise ValueError("Mac bootstrap source graph changed")
     print(f"staged {len(sources)} modules {unity['sha256']}", flush=True)
 
     rows = []
@@ -166,6 +235,13 @@ def main(args):
             break
     else:
         raise ValueError("Mac full compiler did not reach a source fixed point")
+    if (descriptor is not None and rows[-1]["container"]["sha256"]
+            != descriptor["expectedFixedPoint"]["compilerContainerSha256"]):
+        raise ValueError("Mac bootstrap compiler fixed-point digest changed")
+    packager_rebuild = rebuild_packager(producer, packager, output, rows[-1])
+    if (descriptor is not None and packager_rebuild["unsigned"]["sha256"]
+            != descriptor["expectedFixedPoint"]["packagerUnsignedSha256"]):
+        raise ValueError("Mac bootstrap packager fixed-point digest changed")
 
     spec = importlib.util.spec_from_file_location("user_check", USER_CHECK)
     checker = importlib.util.module_from_spec(spec)
@@ -185,15 +261,19 @@ def main(args):
         raise ValueError("undeclared effect was not refused without an artifact")
     if (pin(compiler) != compiler_pin or pin(packager) != packager_pin
             or pin(MANIFEST) != manifest_pin or pin(USER_CHECK) != checker_pin
+            or pin(PACKAGER_SOURCE) != packager_source_pin
+            or (descriptor_pin is not None and pin(ROOT_DESCRIPTOR) != descriptor_pin)
             or pin(output / "full-unity.kotoba") != unity
             or any(pin(ROOT / row["name"]) != {key: row[key] for key in ("bytes", "sha256")}
                    for row in sources)):
         raise ValueError("input changed during Mac gate")
-    report = {"schema": "amu.mac-aiueos-user-target.v1",
+    report = {"schema": "amu.mac-aiueos-user-target.v2",
               "status": "PASS_MAC_NATIVE_USER_TARGET_SELFHOST",
               "compiler": compiler_pin, "packager": packager_pin,
               "manifest": manifest_pin, "source": unity, "sources": sources,
               "generations": rows, "fixedPointGeneration": len(rows),
+              "packagerSelfRebuild": packager_rebuild,
+              "bootstrapDescriptor": descriptor_pin,
               "userSource": pin(scalar), "userElf": pin(image),
               "effectSource": pin(effect), "undeclaredEffectRefused": True,
               "guestExecution": False, "ItonamiTurn": False,
@@ -205,9 +285,9 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--compiler-image", type=Path, required=True)
-    parser.add_argument("--compiler-sha256", required=True)
-    parser.add_argument("--packager-image", type=Path, required=True)
-    parser.add_argument("--packager-sha256", required=True)
+    parser.add_argument("--compiler-image", type=Path)
+    parser.add_argument("--compiler-sha256")
+    parser.add_argument("--packager-image", type=Path)
+    parser.add_argument("--packager-sha256")
     parser.add_argument("--output", type=Path, required=True)
     main(parser.parse_args())
