@@ -1,0 +1,199 @@
+JUN-58 record 2026-10-25 -- the kernel-time question's timestamp-capable
+channel is DECIDED and DESIGNED: the native Metal counter-sample channel
+(a design decision slice; NO performance measurement ran this tick and
+nothing is timed -- the only hardware answers below are live
+route-capability probes of this host, in the fact class the
+gpu-timestamp-route-probe record established).
+
+THE ROW: HONEST LEFT 1 of
+docs/evidence/gpu/wgsl-wallclock-row-mapping-20261025.txt, verbatim:
+"The kernel-time question (the arm-vs-arm speed answer) needs a
+timestamp-capable channel: Chrome/Dawn refuses in-pass timestamps on
+this adapter and the wire-42 channel is gone. A Vulkan-provider route
+with timestampValidBits > 0, or a native Metal counter channel, is
+UNDESIGNED here -- a design row of its own." This is that row. (LEFT
+2 -- the claim-protocol WGSL channel -- landed later the same day;
+LEFT 3 -- the workgroup sweep -- stays BLOCKED on the ADR 0371
+provider, ADR-0355's own words; LEFT 4 -- the per-cell prose audit --
+stays open, a prose row.)
+
+## THE DECISION
+
+The native Metal counter-sample channel (the "counters" channel) is
+DESIGN-ADOPTED as the claim-protocol GPU-core-timestamp measurement
+channel on the narrowed device's host. The Vulkan-provider timestamp
+route (VK_QUERY_TYPE_TIMESTAMP through the ADR 0371 provider) stays
+PROPOSED and DEFERRED to that track. With the counters channel
+designed, the ADR-0360 part-2 REOPEN CONDITION's second leg ("a
+GPU-core-timestamp measurement of the device") is now DEFINED and
+REACHABLE on this host -- it does NOT fire from this row: a leg fires
+on a measurement, and nothing is measured here (rule 4).
+
+SECOND-LEG LETTER DECISION (part of this row): does a counters-channel
+record of the fold arms on the narrowed device satisfy the second
+leg's letter ("a GPU-core-timestamp measurement of the device")?
+DECIDED YES, with named scope. Ground: ADR-0360 part 3's own
+parenthetical -- the leg "waits on a timestamp-capable route (a
+Vulkan-provider route with timestampValidBits > 0 or a native Metal
+counter channel)" -- so the ADR's text already contemplates a
+NON-Chrome route's GPU-core-timestamp measurement as what the leg
+waits on; the leg's letter is device-keyed, not route-keyed. Scope
+named with the decision: the counters channel answers for the
+MSL-EMITTED arms of the same KIR reduce shape (the repository's own
+MSL emitter, the arms the MSL flip campaign ran); the WGSL route's
+arms are NOT covered (Chrome owns its command buffers and the WebGPU
+timestamp routes are CLOSED, gpu-timestamp-route-probe-20261025), so
+the WGSL channel's own per-kernel GPU time stays UNMEASURED until a
+Vulkan-provider timestamp route exists. Whether the leg's evaluation
+(the measurement row, its own later slice) reaches the narrowing's
+route-scope question from an MSL-route counters record is named as the
+evaluation row's question, NOT pre-answered here.
+
+## GROUNDING (live probe output, tool output, this host, 2026-10-25)
+
+Host: MacBook Pro, Apple M1 Max, 32 GB, macOS 26.4 (system_profiler /
+sw_vers). SDK: MacOSX26.5.sdk; its Metal.framework headers declare
+MTLCounterSampleBufferDescriptor, the MTLCounterSamplingPoint enum
+(AtBlitBoundary, AtDispatchBoundary, AtDrawBoundary, AtStageBoundary,
+AtTileDispatchBoundary), sampleCountersInBuffer:atSampleIndex:withBarrier:
+and resolveCounters:inRange:destinationBuffer:destinationOffset:.
+
+Probe (scratch metal_counter_probe.m in Hermes scratch, never
+committed; xcrun clang -fobjc-arc -framework Metal; verbatim output):
+
+    device: Apple M1 Max
+    counterSets: 1
+      set: timestamp
+        counter: GPUTimestamp (A timestamp in nanoseconds on the GPU.)
+    sampling dispatch: 0
+    sampling stage: 1
+    sampleBuffer timestamps: OK (no error)
+
+Read at its letter: this device exposes exactly ONE counter set
+("timestamp", singular) with ONE counter, GPUTimestamp (GPU
+nanoseconds); MTLCounterSamplingPointAtDispatchBoundary is NOT
+supported (0); MTLCounterSamplingPointAtStageBoundary IS supported
+(1); a counter sample buffer over the timestamp set CREATES (8
+samples, shared storage). These are route-capability facts (the fact
+class the timestamp probe record established), MEASURED in that class
+only -- no timing ran, no performance number exists in this record.
+
+## THE CHANNEL CONTRACT
+
+1. WHAT IT MEASURES. Per-dispatch GPU-core time of ONE reduce dispatch,
+   in GPU nanoseconds, as the delta of two GPUTimestamp counter
+   samples bracketing the dispatch inside the compute encoder
+   (sampleCountersInBuffer:atSampleIndex:withBarrier: immediately
+   before and after the dispatch; the samples are resolved with
+   resolveCounters:inRange:destinationBuffer:destinationOffset: into a
+   shared buffer and read back). The bracket is the design's
+   substitute for the unavailable dispatch-boundary sampling point
+   (probe fact: dispatch sampling 0) -- NAMED, not hidden: whether the
+   sample-pair delta equals the dispatch's GPU time or carries
+   sampling/barrier overhead is UNMEASURED and is the measurement
+   row's own calibration question.
+2. UNIT AND PROTOCOL. The claim protocol carries IN FULL (rules 1-4):
+   rule 1's baseline metric gpu-ns is this channel's NATIVE metric --
+   unlike the WGSL wall-clock channel's metric-named adoption, no
+   metric renaming happens (the protocol was written on Metal GPU
+   timestamps); GAP-1.15 clusters over per-run baseline medians, the
+   MSL harness idiom's run unit (one fresh process per block, paired
+   rounds, per-run median, the pair's paired-median ratio). Rule 2:
+   regime-matched sign only, CHANNEL-SCOPED (a counters-channel sign
+   flips no other channel's cell and answers no workgroup row). Rule
+   3: within-channel regime-matched magnitudes; the counters channel
+   is its own instrument and its magnitudes NEVER merge with either
+   existing instrument's (the command-buffer GPUStartTime->GPUEndTime
+   bracket -- the MSL campaign's gpu-ns source -- and any host
+   wall-clock); NAMED: all three say "ns" and are still three
+   instruments. Rule 4 unchanged.
+3. INSTRUMENT DISTINCTION (why this row exists at all). The MSL
+   campaign's gpu-ns is the COMMAND BUFFER's GPUStartTime->GPUEndTime
+   around one reduce dispatch; it brackets the buffer's GPU execution,
+   not the kernel. The kernel-time question (the arm-vs-arm speed
+   answer the wall-clock read could not give -- common host/queue
+   overhead biases wall-clock paired ratios toward 1 and can hide a
+   real win) needs the per-dispatch counter samples. The two
+   instruments stay separate under rule 3 (above).
+4. SCOPE. The narrowed device class (uB5G-keyed "m1 max"), this host,
+   the MSL-emitted fold arms (the reduce arms :subgroup-reduce vs
+   :baseline of the same KIR shape the MSL flip campaign ran). No
+   other device, route, arm family or workload is covered.
+
+## REJECTED / DEFERRED, NAMED
+
+(a) Vulkan timestamp queries (VK_QUERY_TYPE_TIMESTAMP) through the
+    wire-42 runtime route -- DEFERRED, PROPOSED (neither implemented
+    nor accepted): the loader's broker is gone (2026-10-22) and the
+    ADR 0371 provider that replaces it is not implemented; the route
+    stays the runtime-side successor (its own row when a provider
+    answers). This record does not decide it.
+(b) Chrome/Dawn writeTimestamp routes -- CLOSED by the 2026-10-25
+    probe (measured route absence), unchanged here.
+(c) WebGL2 EXT_disjoint_timer_query_webgl2 -- REJECTED again: it
+    measures the GL/ANGLE channel, a different execution path from
+    the reduce arms (the probe's route-6 ruling, cited).
+(d) Command-buffer GPUStartTime->GPUEndTime AS the kernel-time answer
+    -- REJECTED: it is a command-buffer bracket, not a kernel bracket
+    (instrument distinction, contract point 3); it remains the MSL
+    campaign's valid metric source and is not deprecated.
+(e) Measuring the WGSL route's arms through the counters channel --
+    IMPOSSIBLE (Chrome owns its command buffers), named above; the
+    WGSL route's kernel time is not this channel's to answer.
+
+## WHAT IT LICENSES / NEVER LICENSES
+
+When a counters-channel MEASUREMENT lands (its own later row, nothing
+measured today): (i) evaluation of the ADR-0360 second leg against
+the measurement's own rules-1+2 record; (ii) the arm-vs-arm GPU-core
+speed answer for the MSL-route fold arms on the narrowed device class
+(channel-scoped, device-scoped). NEVER: any ADR-0355 workgroup row
+(the 2026-10-25 channel-rule amendment -- neither the wire-42 loader
+path nor its provider successor, so no row flip is takeable through
+this channel), any WGSL-channel cell flip (symmetry of "an MSL
+measurement never flips a WGSL cell"), any :measured? movement by
+itself (rule 4 -- movement rides the entry/flip rows that consume a
+record), any cross-instrument magnitude claim (rule 3).
+
+## STATES
+
+DECIDED (this row): the counters channel + its contract; the
+second-leg letter decision (YES, with named scope); the rejections
+above. IMPLEMENTED: NOTHING (no code moved -- the harness is its own
+later row; the probe lived in Hermes scratch and was never staged).
+MEASURED: the route-capability facts only (the verbatim probe block;
+the fact class covers them) -- NO performance measurement, NO timing,
+no number in this record answers any speed question. ACCEPTED DESIGN
+ONLY: the claim protocol (rules 1-4) and its units; ADR-0360's
+narrowing and reopen condition; ADR-0355's channel rule. PROPOSED:
+the Vulkan-provider timestamp route (above). UNMEASURED, named: every
+per-dispatch GPU time (nothing timed); the sample-bracket calibration
+(delta vs sampling/barrier overhead); GPUTimestamp resolution and
+clock-domain behavior under thermal/clock regimes on Apple silicon;
+the sign of any counters-channel arm pair; whether the second leg
+FIRERS (it fires only on a measurement row); anything on non-M1-Max
+hardware; the WGSL route's kernel time; every workgroup-row question
+(:arm/:unknown stay provisional :measured? false -- no :measured?
+flag, :shapes value, selection answer or workgroup row moves).
+
+## GATES (real runs, this tick)
+
+- Scoped GPU gate (8 GPU-owned namespaces, scratch runner
+  gpu_scoped_gate.cljk in Hermes scratch, never committed): GREEN --
+  109 tests / 11434 assertions / 0 failures / 0 errors, exit 0
+  (glslang 16.6.0 real-spawn line in the output). Docs-only diff (ADR
+  + this record) touches no .cljk namespace -- the gate is a
+  regression pin at the committed 109 tests / 11434 assertions.
+- gpu_regime_classify.py --self-test: GREEN -- TOTAL 2572 assertions
+  passed, 0 failed (no classifier code touched -- regression pin).
+- FULL run-tests.cljk: NOT RUN this slice (docs-only diff).
+  Documented red at base ("Could not find namespace: kotoba.form",
+  ADR-0362) outside this diff -- no green full suite is claimed.
+- find docs -name '*.sh' -> 0 files (the no-POSIX-sh evidence rule).
+
+Evidence rule: this file is a .txt log. The probe source lives in
+Hermes scratch (metal_counter_probe.m) and is never committed; no
+POSIX .sh execution file exists anywhere under docs/.
+
+Record: docs/evidence/gpu/metal-counter-channel-design-20261025.txt
+(this file) + the ADR-0360 counter-channel amendment.
