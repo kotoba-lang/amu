@@ -1,0 +1,119 @@
+;; JUN-370: explicit receipt profile, retaining the closed v1 language/admission.
+;; The existing scalar emitters still own every ordinary SIR instruction.
+;; Only charge and quotient fault edges enter the trusted process envelope.
+;; Context: initial budget, remaining (signed; -1 after exhausting charge).
+;; Receipt: 8 LE i64 words: KTI64R2\0, status, value, budget, spent, remaining,
+;; arena bytes (0), conservative native stack bound including 64-byte receipt.
+;; Status 0 success, 1 fuel-exhausted, 2 division-by-zero, 3 signed-div-overflow.
+(defn- k2-budget [s :string] :i64
+  (if (string=? s "0") 0 (xg-budget s)))
+(defn- k2-stack [M :vector-i64] :i64 (+ 64 (kt-stack M 1 0)))
+
+(defn- k2-x-fuel [M :vector-i64 label :i64] :vector-i64
+  (-> M (xg-bytes 0x08418b49 4) (xg-bytes 0xc8ff48 3) (xg-bytes 0x08418949 4)
+      (xg-bytes 0xc08548 3) (xg-rel 0x8c0f 2 2 label)))
+(defn- k2-x-quot [M :vector-i64 i :i64 label :i64] :vector-i64
+  (let [t (xg-si M i IF-B) safe (vector-at M MM-LABEL-N)]
+    (-> M (lw-labels 1) (xg-load t 0x858b48) (xg-load (inc t) 0x8d8b48)
+        (xg-bytes 0xc98548 3) (xg-rel 0x840f 2 2 (inc label))
+        (xg-bytes 0xfff98348 4) (xg-rel 0x850f 2 2 safe)
+        (xg-bytes 0xba48 2) (xg-bytes -9223372036854775808 8)
+        (xg-bytes 0xd03948 3) (xg-rel 0x840f 2 2 (+ label 2))
+        (xg-label safe) (xg-one i))))
+(defn- k2-x-code [M :vector-i64 i :i64 label :i64] :vector-i64
+  (if (or (not= (vector-at M MM-ERR) 0) (= i (vector-at M MM-SIR-N))) M
+    (let [op (xg-si M i IF-OP)]
+      (k2-x-code (cond (= op OP-FUEL) (k2-x-fuel M label)
+                       (and (= op OP-BIN) (= (xg-si M i IF-A) BOP-QUOT)) (k2-x-quot M i label)
+                       :else (xg-one M i)) (inc i) label))))
+(defn- k2-x-fault [M :vector-i64 label :i64 status :i64 common :i64] :vector-i64
+  (-> M (xg-label label) (xg-bytes 0xb841 2) (xg-bytes status 4)
+      (xg-bytes 0xc031 2) (xg-rel 0xe9 1 2 common)))
+(defn- k2-x-start [M :vector-i64 label :i64 stack :i64] :vector-i64
+  (let [common (+ label 3) written (+ label 4) exit (+ label 5)]
+    (-> M (xg-rel 0x0d8d4c 3 3 0) (xg-rel 0xe8 1 1 (xg-get M 1))
+        (xg-bytes 0xc03145 3) (xg-rel 0xe9 1 2 common)
+        (k2-x-fault label 1 common) (k2-x-fault (inc label) 2 common) (k2-x-fault (+ label 2) 3 common)
+        (xg-label common) (xg-bytes 0x40ec8348 4)
+        (xg-bytes 0xb948 2) (xg-bytes 0x003252343649544b 8) (xg-bytes 0x240c8948 4)
+        (xg-bytes 0x082444894c 5)
+        (xg-bytes 0x1024448948 5)
+        (xg-bytes 0x098b49 3) (xg-bytes 0x18244c8948 5)
+        (xg-bytes 0x08518b49 4) (xg-bytes 0xd12948 3) (xg-bytes 0x20244c8948 5)
+        (xg-bytes 0x2824548948 5) (xg-bytes 0xc931 2) (xg-bytes 0x30244c8948 5)
+        (xg-byte 0xb9) (xg-bytes stack 4) (xg-bytes 0x38244c8948 5)
+        (xg-bytes 0x00000001b8 5) (xg-bytes 0x00000001bf 5) (xg-bytes 0xe68948 3)
+        (xg-bytes 0x00000040ba 5) (xg-bytes 0x050f 2) (xg-bytes 0x40f88348 4)
+        (xg-rel 0x840f 2 2 written) (xg-bytes 0x0000004abf 5) (xg-rel 0xe9 1 2 exit)
+        (xg-label written) (xg-bytes 0xff31 2) (xg-bytes 0xc0854d 3) (xg-rel 0x840f 2 2 exit)
+        (xg-bytes 0x00000046bf 5) (xg-label exit)
+        (xg-bytes 0x0000003cb8 5) (xg-bytes 0x050f 2) (xg-bytes 0x0b0f 2))))
+
+(defn- k2-a-fuel [M :vector-i64 label :i64] :vector-i64
+  (-> M (xa-w 0xF94004F0) (xa-w 0xF1000610) (xa-w 0xF90004F0)
+      (xa-w 0x5400004A) (xa-fixrec 12 label) (xa-w 0x14000000)))
+(defn- k2-a-quot [M :vector-i64 i :i64 label :i64] :vector-i64
+  (let [t (xg-si M i IF-B) safe (vector-at M MM-LABEL-N)]
+    (-> M (lw-labels 1) (xa-lt 9 t) (xa-lt 10 (inc t))
+        (xa-w 0xB500004A) (xa-fixrec 12 (inc label)) (xa-w 0x14000000)
+        (xa-w 0xB100055F) (xa-fixrec 13 safe) (xa-w 0x54000001)
+        (xa-w 0xD2F0000B) (xa-w 0xEB0B013F) (xa-w 0x54000041)
+        (xa-fixrec 12 (+ label 2)) (xa-w 0x14000000) (xg-label safe) (xa-one i))))
+(defn- k2-a-code [M :vector-i64 i :i64 label :i64] :vector-i64
+  (if (or (not= (vector-at M MM-ERR) 0) (= i (vector-at M MM-SIR-N))) M
+    (let [op (xg-si M i IF-OP)]
+      (k2-a-code (cond (= op OP-FUEL) (k2-a-fuel M label)
+                       (and (= op OP-BIN) (= (xg-si M i IF-A) BOP-QUOT)) (k2-a-quot M i label)
+                       :else (xa-one M i)) (inc i) label))))
+(defn- k2-a-fault [M :vector-i64 label :i64 status :i64 common :i64] :vector-i64
+  (-> M (xg-label label) (xa-mov64 12 status) (xa-mov64 0 0) (xa-fixrec 12 common) (xa-w 0x14000000)))
+(defn- k2-a-start [M :vector-i64 label :i64 stack :i64] :vector-i64
+  (let [common (+ label 3) written (+ label 4) exit (+ label 5)]
+    (-> M (xa-abs 7 16 0) (xa-fixrec 11 (xg-get M 1)) (xa-w 0x94000000)
+        (xa-mov64 12 0) (xa-fixrec 12 common) (xa-w 0x14000000)
+        (k2-a-fault label 1 common) (k2-a-fault (inc label) 2 common) (k2-a-fault (+ label 2) 3 common)
+        (xg-label common) (xa-w 0xD10103FF)
+        (xa-mov64 16 0x003252343649544b) (xa-w 0xF90003F0) (xa-w 0xF90007EC) (xa-w 0xF9000BE0)
+        (xa-w 0xF94000E9) (xa-w 0xF9000FE9) (xa-w 0xF94004EA) (xa-w 0xCB0A0129)
+        (xa-w 0xF90013E9) (xa-w 0xF90017EA) (xa-w 0xF9001BFF)
+        (xa-mov64 16 stack) (xa-w 0xF9001FF0)
+        (xa-mov64 0 1) (xa-w 0x910003E1) (xa-mov64 2 64) (xa-mov64 8 64) (xa-w 0xD4000001)
+        (xa-w 0xF101001F) (xa-fixrec 13 written) (xa-w 0x54000000)
+        (xa-mov64 0 74) (xa-fixrec 12 exit) (xa-w 0x14000000)
+        (xg-label written) (xa-mov64 0 0) (xa-fixrec 13 exit) (xa-w 0xB400000C)
+        (xa-mov64 0 70) (xg-label exit) (xa-mov64 8 93) (xa-w 0xD4000001) (xa-w 0xD4200000))))
+
+(defn- k2-build [M :vector-i64 S :string fuel :i64 arm :bool] :vector-i64
+  (let [a (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 2 fuel) (xg-set 4 0)
+              (xg-check-fns S 1) (xg-check-sir 1)) label (vector-at a MM-LABEL-N) stack (k2-stack a)]
+    (cond (not= (vector-at a MM-ERR) 0) a
+          (or (= (xg-get a 1) 0) (not= (vector-at a MM-CAPS) 0) (>= (+ label 6) MM-LABEL-CAP)) (xg-err a 7202 2)
+          :else (let [g0 (-> a (lw-labels 6) (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1) (xg-index-labels 1))
+                      g (if arm (k2-a-code (k2-a-start g0 label stack) 1 label)
+                                (k2-x-code (k2-x-start g0 label stack) 1 label))
+                      data (bit-and (+ 8191 (xg-pos g)) -4096) h (xg-set g 3 data)
+                      fixed (if arm (xa-fix h 1) (xg-fix h 1))]
+                  (if (>= (+ data 17) MM-OUT-CAP) (xg-err fixed 7104 data)
+                    (-> (if arm (xa-elf-header (mem-set fixed MM-OUT-N 1)) (xg-elf-header (mem-set fixed MM-OUT-N 1)))
+                        (xg-elf-rx) (xg-elf-rw) (xg-elf-stack) (xg-pad 4096) (xg-out-code 1) (xg-pad data)
+                        (xg-out fuel 8) (xg-out fuel 8)))))))
+(defn- k2-command [] :i64
+  (let [src (io-arg 1) target (io-arg 3) out (io-arg 5) fuel (k2-budget (io-arg 7))]
+    (cond (not (and (= (io-argc) 10) (string=? (io-arg 2) "--target") (string=? (io-arg 4) "--output")
+                    (string=? (io-arg 6) "--fuel") (string=? (io-arg 8) "--profile")
+                    (string=? (io-arg 9) "kototama.pure-i64-receipt/v2")
+                    (or (string=? target "aarch64-linux") (string=? target "x86_64-linux"))
+                    (>= fuel 0) (> (string-length out) 0) (= (io-exists out) 0))) (kt-refuse "usage/profile/target/fuel/output refused")
+          (= (io-exists src) 0) (drv-fail0 E-READ)
+          :else (let [V (io-read-bytes src) len (vector-count V)]
+                  (if (or (= len 0) (> len 65536)) (kt-refuse "input byte limit")
+                    (let [D (kt-read (-> (vector-alloc 32784) (vector-assoc! 2 1) (vector-assoc! 3 len)) V 0)]
+                      (if (not (kt-program? D V)) (kt-refuse "noncanonical or outside pure-i64 profile")
+                        (let [S (kt-source D V) M (kt-front S)]
+                          (cond (not= (vector-at M MM-ERR) 0) (drv-fail M src)
+                                (> (k2-stack M) 262144) (kt-refuse "static stack bound")
+                                :else (let [built (k2-build M S fuel (string=? target "aarch64-linux"))]
+                                        (if (not= (vector-at built MM-ERR) 0) (xg-report built src out)
+                                          (let [n (dec (vector-at built MM-OUT-N)) wrote (out-write-v built out (+ MM-OUT-BASE 1) n)
+                                                w (io-out "{:ok true, :profile :kototama.pure-i64-receipt/v2, :effects [], :arena-bytes 0, :stack-bound-max 262144}\n")]
+                                            (if (= (io-exists out) 1) 0 (drv-fail0 E-WRITE))))))))))))))

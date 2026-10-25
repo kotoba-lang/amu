@@ -19,7 +19,7 @@
           8 "kxrt-call-at" ""))
 (defn- xs-on? [M :vector-i64] :bool (> (vector-at M 197) 0))
 ;; the formats whose program may call the runtime (the platform-linked image and the CDCI roles, mode 3;
-;; route B2, mode 5): seed/78 and seed/84 check which functions
+;; route B2, mode 5): seed/78 and seed/98 check which functions
 (defn- xs-plat? [M :vector-i64] :bool (or (= (xg-get M 2) 3) (= (xg-get M 2) 5)))
 ;; Where f is defined: the first token of its def form. A symbol's SF-START is
 ;; its first appearance anywhere, so a guest that names a runtime function
@@ -78,8 +78,16 @@
 
 ;; ---- scan and admission ------------------------------------------------------
 (defn- xs-prefix? [S :string a :i64 b :i64 p :string] :bool
-  (let [n (string-length p)]
-    (and (>= (- b a) n) (string=? (string-substring S a (+ a n)) p))))
+  ;; The Linux selfhost manifest does not include the project loader. Compare
+  ;; whole code points locally; an ASCII-prefix byte length can cut a Unicode
+  ;; function name inside a code point.
+  (if (< (- b a) (string-length p)) false
+    (loop [at a i 0]
+      (cond (= i (string-length p)) true
+            (>= at b) false
+            :else (let [c (string-code-point-at S at) expected (string-code-point-at p i)]
+                    (if (not= c expected) false
+                      (recur (+ at (mem-cpw c)) (+ i (mem-cpw expected)))))))))
 ;; The first runtime FN must be intrinsic 0 and the next ones follow in order.
 (defn- xs-scan-intr [M :vector-i64 name :string f :i64] :vector-i64
   (let [first (if (and (= (vector-at M 198) 0) (string=? name (xs-intr-name 0))) f (vector-at M 198))
@@ -102,7 +110,7 @@
             (if (and (xs-plat? M) (= (vector-at M 200) 0)) (mem-set M 200 f) (xg-err M 7102 f))
           ;; the platform API (seed/78 checks the program's calls by name)
           (xs-prefix? S a b "kxrt-p-") (if (= (xg-get M 2) 3) M (xg-err M 7102 f))
-          ;; route B2's API (seed/84 checks the program's calls by name)
+          ;; route B2's API (seed/98 checks the program's calls by name)
           (xs-prefix? S a b "kxrt-b-") (if (= (xg-get M 2) 5) M (xg-err M 7102 f))
           :else (xs-scan-intr M (string-substring S a b) f))))
 (defn- xs-scan [M :vector-i64 S :string f :i64] :vector-i64

@@ -1,8 +1,8 @@
 # The route B2 image format on main 6deb9969 (ADR 0375 slice 1, JUN-377)
 
-This branch adds one thing to main: `--format b2`, the static x86_64 image of route B2 (seed module 84; the E1 SysV
+This branch adds one thing to main: `--format b2`, the static x86_64 image of route B2 (seed module 98; the E1 SysV
 entry thunks and export table, the E2 16/32-bit loads and stores, the `kxrt-b-` API and `xs-rt-b2`). It changes the
-compiler's source (`seed/FULL-MANIFEST` has 31 modules, main's 30 and `seed/84-x86_64-b2.kotoba`), so the root, the public x86_64 image (`bin/amu`,
+compiler's source (`seed/FULL-MANIFEST` has 31 modules, main's 30 and `seed/98-x86_64-b2.kotoba`), so the root, the public x86_64 image (`bin/amu`,
 `native-product.json`) and `current-scope.json` are regenerated, as in `provider-environment-20261024/`.
 
 ## What changes, and what does not

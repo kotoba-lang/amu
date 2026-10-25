@@ -92,7 +92,7 @@ def main(compiler, output, target, seccomp_if_available=False):
 
     rows = []
 
-    def case(name, elf, data, via="file", env=None, want_exit=0, stdout_is=None, stderr_has=()):
+    def case(name, elf, data, via="file", env=None, want_exit=0, stdout_is=None, stderr_has=(), stderr_lacks=()):
         e = dict(base_env, **(env or {}))
         if via == "file":
             f = art / (name + ".stdin")
@@ -108,6 +108,8 @@ def main(compiler, output, target, seccomp_if_available=False):
             assert x.stdout.startswith(stdout_is + b"{:status :ok :result 7 "), (name, x.stdout[-300:])
         for s in stderr_has:
             assert s in x.stderr, (name, s, x.stderr[-300:])
+        for s in stderr_lacks:
+            assert s not in x.stderr, (name, s, x.stderr[-300:])
         rows.append(dict(name=name, via=via, stdinBytes=len(data), exit=x.returncode,
                          stdout=x.stdout.decode(errors="replace")[:400], stderr=x.stderr.decode(errors="replace")[:400]))
 
@@ -124,8 +126,11 @@ def main(compiler, output, target, seccomp_if_available=False):
     case("zero", compile_(producer, "zero", ZERO, target), b"abc", stdout_is=b"[]")
     sigill = b":signal :SIGILL"
     case("not-utf8", all_, b"\xff\xfe", want_exit=120, stderr_has=[sigill])
-    case("malformed-request", compile_(producer, "malformed", MALFORMED, target), b"abc", want_exit=120, stderr_has=[sigill])
-    case("wire-not-granted", all_, b"abc", env={"KEXE_ALLOW": "37"}, want_exit=120, stderr_has=[sigill])
+    # an ungranted wire is refused by name (KEXE_CAP, as seed/82 does); a granted wire's bad request is not
+    named = b"KEXE_CAP {:wire 41 :refused :not-granted}\n"
+    case("malformed-request", compile_(producer, "malformed", MALFORMED, target), b"abc", want_exit=120, stderr_has=[sigill],
+         stderr_lacks=[b"KEXE_CAP"])
+    case("wire-not-granted", all_, b"abc", env={"KEXE_ALLOW": "37"}, want_exit=120, stderr_has=[sigill, named])
 
     host = {"aarch64": "aarch64-linux", "arm64": "aarch64-linux", "x86_64": "x86_64-linux", "AMD64": "x86_64-linux"}[platform.machine()]
     text, unity_pins = unity_text()

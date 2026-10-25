@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The route B2 image (--format b2, ADR 0375, JUN-377; seed module 84).
+"""The route B2 image (--format b2, ADR 0375, JUN-377; seed module 98).
 
 --compiler is an Amu-produced compiler from the current sources (F or S of
 selfhost-bootstrap.py, or the complete x86_64 compiler); it writes x86_64
@@ -247,7 +247,7 @@ def build(compiler, output, previous):
                                         previousCompilerRefusesFormat=z.returncode != 0 and not (art / "previous-refuses.elf").exists())
         assert rows["unchangedFormats"]["previousCompilerRefusesFormat"], "the previous compiler must not have --format b2"
     report = dict(status="PASS_B2_IMAGE_BUILD", compiler=pin(compiler), host=[platform.system(), platform.machine(), platform.release()],
-                  sources={p: pin(ROOT / p) for p in ("seed/84-x86_64-b2.kotoba", "seed/75-x86_64-static.kotoba", "seed/76-x86_64-static-rt.kotoba",
+                  sources={p: pin(ROOT / p) for p in ("seed/98-x86_64-b2.kotoba", "seed/75-x86_64-static.kotoba", "seed/76-x86_64-static-rt.kotoba",
                                                       "seed/70-x86_64-linux.kotoba")},
                   images={k: str(v.relative_to(output)) for k, v in images.items()}, results=rows, calls=calls, cCompilerOrLoader=False)
     (output / "b2-image.json").write_text(json.dumps(report, indent=2) + "\n")

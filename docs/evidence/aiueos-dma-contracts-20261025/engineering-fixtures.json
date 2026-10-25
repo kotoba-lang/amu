@@ -1,0 +1,97 @@
+{
+  "compilerSHA256": "6201bff8d0f2dbd54f50e754af3b8c106955438307478829177ec5302f5807b7",
+  "cases": [
+    {
+      "name": "fixed",
+      "exit": 0,
+      "artifact": true,
+      "stderr": ""
+    },
+    {
+      "name": "scoped",
+      "exit": 0,
+      "artifact": true,
+      "stderr": ""
+    },
+    {
+      "name": "ready-six",
+      "exit": 0,
+      "artifact": true,
+      "stderr": ""
+    },
+    {
+      "name": "recursive",
+      "exit": 0,
+      "artifact": true,
+      "stderr": ""
+    },
+    {
+      "name": "computed-scope",
+      "exit": 1,
+      "artifact": false,
+      "stderr": "region instruction 7\n  writer 4\n  parameter slot 1\n  region extent source unknown\n  caller leaf\n    use 7\n    writer 4\n    writer op 4\n    writer operand 1\n  caller read\n    use 15\n    writer 13\n    writer op 4\n    writer operand 1\n  caller through\n    use 23\n    writer 21\n    writer op 4\n    writer operand 1\n  caller main\n    use 95\n    writer 93\n    writer op 4\n    writer operand 1\n    local assignments 2\n  caller main\n    use 35\n    writer 34\n    writer op 13\n    writer operand 0\n  supplied extent source 4294971392\n  caller read\n    instruction 15\n    region extent source unknown\nkernel project in /work/dma-equivalence-fixtures/computed-scope/lib/memory.kotoba:\nkernel function leaf:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 7\n"
+    },
+    {
+      "name": "forged-scope",
+      "exit": 1,
+      "artifact": false,
+      "stderr": "region instruction 7\n  writer 4\n  parameter slot 1\n  region extent source unknown\n  caller leaf\n    use 7\n    writer 4\n    writer op 4\n    writer operand 1\n  caller read\n    use 15\n    writer 13\n    writer op 4\n    writer operand 1\n  caller through\n    use 23\n    writer 21\n    writer op 4\n    writer operand 1\n  caller main\n    use 92\n    writer 90\n    writer op 4\n    writer operand 1\n    local assignments 2\n  caller main\n    use 35\n    writer 34\n    writer op 13\n    writer operand 0\n  supplied extent source 4294971392\n  caller read\n    instruction 15\n    region extent source unknown\nkernel project in /work/dma-equivalence-fixtures/forged-scope/lib/memory.kotoba:\nkernel function leaf:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 7\n"
+    },
+    {
+      "name": "unseeded",
+      "exit": 1,
+      "artifact": false,
+      "stderr": "region instruction 11\n  writer 8\n  parameter slot 1\n  region extent source 8589934594\n  caller leaf\n    use 11\n    writer 8\n    writer op 4\n    writer operand 1\n  supplied extent source 4294971392\n  caller read\n    instruction 33\n    region extent source 8589934594\nkernel project in /work/dma-equivalence-fixtures/unseeded/lib/memory.kotoba:\nkernel function leaf:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 11\n"
+    },
+    {
+      "name": "mutual",
+      "exit": 0,
+      "artifact": true,
+      "stderr": ""
+    },
+    {
+      "name": "unseeded-mutual",
+      "exit": 1,
+      "artifact": false,
+      "stderr": "region instruction 11\n  writer 8\n  parameter slot 1\n  region extent source 8589934594\n  caller leaf\n    use 11\n    writer 8\n    writer op 4\n    writer operand 1\n  supplied extent source 4294971392\n  caller other\n    instruction 41\n    region extent source 8589934594\n  caller read\n    instruction 51\n    region extent source 8589934594\nkernel project in /work/dma-equivalence-fixtures/unseeded-mutual/lib/memory.kotoba:\nkernel function leaf:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 11\n"
+    },
+    {
+      "name": "forged-mutual",
+      "exit": 1,
+      "artifact": false,
+      "stderr": "region instruction 11\n  writer 8\n  parameter slot 1\n  region extent source unknown\n  caller leaf\n    use 11\n    writer 8\n    writer op 4\n    writer operand 1\n  caller other\n    use 41\n    writer 36\n    writer op 4\n    writer operand 1\n  caller leaf\n    use 19\n    writer 14\n    writer op 4\n    writer operand 1\n  caller other\n    use 41\n    writer 36\n    writer op 4\n    writer operand 1\n  caller leaf\n    use 19\n    writer 14\n    writer op 4\n    writer operand 1\n  caller other\n    use 41\n    writer 36\n    writer op 4\n    writer operand 1\n  caller leaf\n    use 19\n    writer 14\n    writer op 4\n    writer operand 1\n  caller other\n    use 41\n    writer 36\n    writer op 4\n    writer operand 1\n  caller leaf\n    use 19\n    writer 14\n    writer op 4\n    writer operand 1\n  caller other\n    use 41\n    writer 36\n    writer op 4\n    writer operand 1\n  caller leaf\n    use 19\n    writer 14\n    writer op 4\n    writer operand 1\n  caller other\n    use 41\n    writer 36\n    writer op 4\n    writer operand 1\n  caller leaf\n    use 19\n    writer 14\n    writer op 4\n    writer operand 1\n  caller other\n    use 41\n    writer 36\n    writer op 4\n    writer operand 1\n  caller leaf\n    use 19\n    writer 14\n    writer op 4\n    writer operand 1\n  supplied extent source 4294971392\n  caller other\n    instruction 41\n    region extent source unknown\n  caller read\n    instruction 51\n    region extent source 4294971392\nkernel project in /work/dma-equivalence-fixtures/forged-mutual/lib/memory.kotoba:\nkernel function leaf:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 11\n"
+    },
+    {
+      "name": "inline-ready",
+      "exit": 0,
+      "artifact": true,
+      "stderr": ""
+    },
+    {
+      "name": "branch-result",
+      "exit": 1,
+      "artifact": false,
+      "stderr": "region instruction 7\n  writer 4\n  parameter slot 1\n  region extent source unknown\n  caller leaf\n    use 7\n    writer 4\n    writer op 4\n    writer operand 1\n  caller read\n    use 15\n    writer 13\n    writer op 4\n    writer operand 1\n  caller through\n    use 23\n    writer 21\n    writer op 4\n    writer operand 1\n  caller main\n    use 54\n    writer 52\n    writer op 4\n    writer operand 1\n    local assignments 1\n  caller main\n    use 40\n    writer unknown\n  supplied extent source 4294971392\n  caller read\n    instruction 15\n    region extent source unknown\nkernel project in /work/dma-equivalence-fixtures/branch-result/lib/memory.kotoba:\nkernel function leaf:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 7\n"
+    },
+    {
+      "name": "paired",
+      "exit": 0,
+      "artifact": true,
+      "stderr": ""
+    },
+    {
+      "name": "lying-paired",
+      "exit": 1,
+      "artifact": false,
+      "stderr": "region instruction 7\n  writer 4\n  parameter slot 1\n  region extent source 4294971392\n  caller leaf\n    use 7\n    writer 4\n    writer op 4\n    writer operand 1\n  supplied extent source 8589934594\n  caller read\n    instruction 16\n    region extent source 4294971392\nkernel project in /work/dma-equivalence-fixtures/lying-paired/lib/memory.kotoba:\nkernel function leaf:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 7\n"
+    },
+    {
+      "name": "assigned-param",
+      "exit": 1,
+      "artifact": false,
+      "stderr": "region instruction 18\n  writer 14\n  parameter slot 1\n  region extent source unknown\n  caller leaf\n    use 18\n    writer 14\n    writer op 4\n    writer operand 1\n    local assignments 1\n  caller leaf\n    use 23\n    writer 18\n    writer op 13\n    writer operand 0\n  caller leaf\n    use 18\n    writer 14\n    writer op 4\n    writer operand 1\n    local assignments 1\n  caller leaf\n    use 23\n    writer 18\n    writer op 13\n    writer operand 0\n  caller leaf\n    use 18\n    writer 14\n    writer op 4\n    writer operand 1\n    local assignments 1\n  caller leaf\n    use 23\n    writer 18\n    writer op 13\n    writer operand 0\n  caller leaf\n    use 18\n    writer 14\n    writer op 4\n    writer operand 1\n    local assignments 1\n  caller leaf\n    use 23\n    writer 18\n    writer op 13\n    writer operand 0\n  caller leaf\n    use 18\n    writer 14\n    writer op 4\n    writer operand 1\n    local assignments 1\n  caller leaf\n    use 23\n    writer 18\n    writer op 13\n    writer operand 0\n  caller leaf\n    use 18\n    writer 14\n    writer op 4\n    writer operand 1\n    local assignments 1\n  caller leaf\n    use 23\n    writer 18\n    writer op 13\n    writer operand 0\n  caller leaf\n    use 18\n    writer 14\n    writer op 4\n    writer operand 1\n    local assignments 1\n  caller leaf\n    use 23\n    writer 18\n    writer op 13\n    writer operand 0\n  caller leaf\n    use 18\n    writer 14\n    writer op 4\n    writer operand 1\n    local assignments 1\n  supplied extent source 4294971392\n  caller read\n    instruction 37\n    region extent source 4294971392\nkernel project in /work/dma-equivalence-fixtures/assigned-param/lib/memory.kotoba:\nkernel function leaf:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 18\n"
+    }
+  ],
+  "engineeringOnly": true,
+  "nativeX86ControllerQualified": false
+}
