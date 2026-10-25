@@ -543,3 +543,110 @@ cell-level unit should exist (PROPOSED here); every workgroup row
 (no `:measured?` flag moves; `:arm`/`:unknown` stay provisional
 `:measured? false`). Record:
 `docs/evidence/gpu/cuda-subgroup-preference-question-20261025.txt`.
+
+## Amendment (2026-10-25, third the same day: whether a cell-level
+rule-2 unit should exist on this channel is DECIDED -- the unit is
+ADOPTED at the code's answer-cell shape, per-operator cells are
+REJECTED, and the standing (op :sum, W = 64) candidate's fate is
+decided under it)
+
+DECIDED (JUN-57, the row the subgroup-preference amendment left
+PROPOSED -- "whether a cell-level unit should exist"). Three parts.
+
+**Part 1 -- ADOPTED: a cell-level rule-2 unit exists on this
+channel, by citation of the ADR-0373 flip-cell precedent's unit
+shape.** The cell is the code's own answer granularity -- (metric,
+W, pair-type, shape) -- with the reduce shape selected as a whole
+(`:operators #{:sum :max :min}` pooled; the cell's pooled verdict
+governs -- ADR-0373's decided shape: "the reduce shape is selected
+as a whole ... the contract has no per-operator flip"). The cell's
+own rule-2 verdict is rule 2 at its letter applied to the cell's
+pooled per-run ratios (each pair block's paired-median ratio in the
+named metric at that (W, shape, pair-type), one per operator per
+session): REGIME-INVARIANT FASTER / SLOWER (every per-run ratio of
+every observed regime on one side of 1.0) is the ONLY selection
+role a cell verdict may play -- the MSL channel's flip-cell role, a
+per-W measured-cell flip of the kind `:measured-cell` records
+already key; anything else (any straddle) is regime-scoped and no
+basis, in either direction. Metrics classify separately and never
+mix (rule 3 unchanged). Publications under this unit are a FULL
+CENSUS -- every (metric, W, pair-type, shape) cell published, so no
+cell is cherry-picked out of the scan grid. Sessions carry the
+ADR-0373 same-day re-session rule by citation: a same-day second
+session is corroboration and licenses nothing the cell's own
+session did not; a cross-day replication is its own record kind.
+This unit is the ONLY cross-stratum roll-up this channel carries:
+the operator pooling inside a cell is exactly the roll-up the
+2026-10-25 adoption deferred to "its own design row" -- this row
+names it and bounds it (operators only; no pooling across W,
+pair-type, metric, shape, device or channel; a CUDA cell verdict
+stays CHANNEL-SCOPED and DEVICE-SCOPED). Rule 4 unchanged.
+
+**Part 2 -- REJECTED: per-operator cell units** ((op, W) verdicts
+as selection units). Grounds: (a) the composed contract's decided
+position (ADR-0373: "the contract has no per-operator flip and
+none is invented here"; apple-w32-note: "an operator-split answer
+at one cell off the two measured shapes would be overfitting");
+(b) the selection surface carries no operator axis to answer --
+`select-variant`'s answer cells and `:measured-cell` records key on
+(device class, channel, W) and carry `:operators #{:sum :max :min}`
+as a whole. NAMED, NOT HIDDEN: this rejection does NOT call the
+(op :sum, W = 64) interaction noise -- it is real as data and
+replicated 8/8 across both same-day sessions, both shapes and both
+clocks (the ratios in Part 3 and its record) -- the rejection rules
+it INADMISSIBLE as a selection unit under this protocol. Its
+admissible home is a separate prospective row: operator-aware
+selection would need its own design + code row (an operator axis in
+`select-variant`'s answer surface -- expressible, since the KIR
+carries the reduce operator and `select-variant` already reads KIR
+facts, so this is a design refusal and not a structural
+impossibility), a pre-registered hypothesis, and fresh sessions
+under that registration -- PROPOSED here, deliberately NOT decided
+here; the (op :sum, W = 64) interaction is that row's standing
+candidate evidence.
+
+**Part 3 -- the standing candidate's fate under the adopted unit:
+it does not qualify. NOTHING MOVES.** Under the adopted unit the
+(op :sum, W = 64) cell is not a cell (the unit pools operators).
+The pooled (W = 64, warp-shuffle/subgroup) cell STRADDLES 1.0 in
+every (session, shape, metric) slice -- 1 above / 2 below in all
+eight slices (run1 gpu_ns 1.0848 / 0.9073 / 0.8901 at n = 1000003
+and 1.0683 / 0.9081 / 0.8970 at n = 1048576; run2 gpu_ns 1.0813 /
+0.9130 / 0.9083 and 1.0726 / 0.9191 / 0.9130; host_ns likewise
+1-above/2-below in every slice; 4 above / 8 below pooled over all
+12 blocks in EACH metric) -- so the cell cannot be REGIME-INVARIANT
+FASTER under any regime clustering (a straddle fails rule 2's first
+condition before regimes enter), and the straddle is
+pooling-robust: every sub-pool straddles, so the conclusion holds
+under the strictest reading (the cell's own session only) and the
+most permissive (both sessions pooled) alike. The reopen condition
+is RE-STATED at the adopted unit: (i) a REGIME-INVARIANT FASTER
+verdict for `:subgroup-reduce` over `:warp-shuffle-reduce` at a
+pooled (metric, W, pair-type, shape) cell of this channel on a
+named device (the W = 64 cell is NOT a standing candidate under it
+-- its data is spent and named), or (ii) unchanged: a stratum-level
+regime-invariant sign in some stratum. The previous row's
+"(op, W) cell" phrasing in (i) is superseded by this row's unit --
+named, not hidden. The ladder stays `:warp-shuffle-reduce` ->
+`:subgroup-reduce` -> `:baseline` byte-for-byte; no `:measured?`
+flag, `:shapes` value, workgroup row or selection answer moves
+(rule 4).
+
+**States.** DECIDED (this row: the unit, the per-operator
+rejection, the candidate's fate, the restated reopen). ACCEPTED
+DESIGN ONLY: the cell unit's publication machinery does not exist
+-- full-census cell publication (rule-1 regimes + rule-2 signs at
+cells) is UNIMPLEMENTED and its own later implementation row;
+until it lands NO cell-level rule-2 verdict may be published (this
+row publishes no sign claim -- Part 3's straddle is arithmetic over
+committed citations, tool-re-derived in the record, not a
+verdict). MEASURED: nothing new (no hardware ran; both committed
+sessions consumed, not re-measured). IMPLEMENTED: nothing (no code
+moves). UNMEASURED, named: every cell-level verdict including the
+W = 64 cell's (no machinery); the operator-aware selection row
+(PROPOSED here); the :sum ordering between the two variants at
+W = 64 on any device under any unit that could carry it; every
+three-way sign on non-sm_72 hardware; run 3+; every workgroup row
+(no `:measured?` flag moves; `:arm`/`:unknown` stay provisional
+`:measured? false`). Record:
+`docs/evidence/gpu/cuda-cell-unit-decision-20261025.txt`.
