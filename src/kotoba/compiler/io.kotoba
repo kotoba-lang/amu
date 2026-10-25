@@ -1,0 +1,16 @@
+;; Seven-name canonical IO surface; explicit segmented typed interface.
+(ns kotoba.compiler.io
+  {:kotoba/export [max-artifact-bytes read-artifact-text-file read-bounded-bytes-file read-text-file write-bytes! write-set! write-text!]}
+  (:require [kotoba.compiler.io-input :as input]
+            [kotoba.compiler.io-output :as output]
+            [kotoba.compiler.io-buffer :as buffer]))
+(defn max-artifact-bytes [] :i64 (input/max-artifact-bytes))
+(defn read-text-file [path :string] [:result [:ref :io.buffer/text] :document] (input/read-text-file path))
+(defn read-artifact-text-file [path :string] [:result [:ref :io.buffer/text] :document] (input/read-artifact-text-file path))
+(defn read-bounded-bytes-file [path :string maximum :i64] [:result [:ref :io.buffer/value] :document]
+  (input/read-bounded-bytes-file path maximum))
+(defn write-set! [entries [:list [:ref :io.output/entry]]] [:result [:list :string] :document] (output/write-set! entries))
+(defn write-bytes!
+  ([path :string bytes [:ref :io.buffer/value]] [:result :string :document] (output/write-bytes! path bytes))
+  ([path :string bytes [:ref :io.buffer/value] mode :i64] [:result :string :document] (output/write-bytes! path bytes mode)))
+(defn write-text! [path :string text [:ref :io.buffer/text]] [:result :string :document] (output/write-text! path text))
