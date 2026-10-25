@@ -650,3 +650,54 @@ three-way sign on non-sm_72 hardware; run 3+; every workgroup row
 (no `:measured?` flag moves; `:arm`/`:unknown` stay provisional
 `:measured? false`). Record:
 `docs/evidence/gpu/cuda-cell-unit-decision-20261025.txt`.
+
+## Amendment (2026-10-25, fourth the same day: the cell unit's
+publication machinery LANDS -- full-census cell publication moves
+UNIMPLEMENTED -> IMPLEMENTED and the first cell censuses are
+published over the two committed adopted sessions)
+
+IMPLEMENTED (JUN-57, the implementation row the cell amendment
+named): `scripts/gpu_regime_classify.py` now carries the full-census
+cell publication -- `cuda_cell_census` (cell = (metric, W,
+pair-type, shape); rule 1 at the cell over the pooled reference-arm
+per-run medians; rule 2 at its letter over the cell's pooled per-run
+ratios, operators pooled as a whole; an incomplete operator pool
+names the gap and publishes NO verdict -- fail closed) and
+`render_cuda_cell_census` (the FULL CENSUS publication, metrics
+separately, both clocks' raw per-block times beside every cell row
+per rule 3, cell verdicts CHANNEL-SCOPED and DEVICE-SCOPED, the
+same-day session rule named, rule 4 unchanged), on the CLI route
+`--cuda-cells`. The `--cuda-log` route is untouched and stays
+byte-stable (re-derivation of both committed claim-protocol
+publications still diffs EMPTY, 912 lines each).
+
+PUBLISHED (derived, not re-measured): the first two cell censuses --
+`docs/evidence/gpu/cuda-cell-census-run1-20261025/census.txt` (72
+cells, 72 verdicts) and `docs/evidence/gpu/cuda-cell-census-run2-
+20261025/census.txt` (72 cells, 72 verdicts; CORROBORATION ONLY, the
+same-day rule). The decided candidate's verdict at the adopted unit
+is now a published verdict, not arithmetic: every (W = 64,
+warp-shuffle/subgroup) cell is REGIME-SCOPED in every (session,
+shape, metric) slice -- the straddle separates BY REGIME (op=sum
+one-sided above 1.0 in the fast level; op=max/op=min one-sided below
+1.0 in the slow level) -- so no W = 64 cell is regime-invariant and
+the reopen condition (i) is not triggered; NOTHING MOVES (rule 4;
+this amendment still writes no `:measured-cell` record and moves no
+selection answer -- whether any published cell verdict enters the
+selection surface is its own later row). Cross-session (same-day,
+corroboration-only): 71/72 cells agree in verdict class and side;
+ONE NAMED DIFF: (gpu_ns, W = 256, subgroup/baseline, n = 1000003) --
+run 1 regime-invariant slower, run 2 regime-scoped straddle.
+
+**States.** IMPLEMENTED: the full-census cell publication machinery
+(code + tests; `--self-test` TOTAL 2536 assertions passed / 0
+failed, +45 over the committed 2491 pin at 189288da8). MEASURED:
+nothing new -- no hardware ran; both sessions consumed, not
+re-measured. ACCEPTED DESIGN ONLY: the claim-protocol adoption, the
+cell unit, ADR-0358, ADR-0373 (unchanged). UNMEASURED, named: any
+cell verdict on non-xavier hardware; run 3+; whether a published
+cell verdict may enter the selection surface (its own row);
+operator-aware selection (PROPOSED, its own row); every workgroup
+row (no `:measured?` flag moves; `:arm`/`:unknown` stay provisional
+`:measured? false`). Record:
+`docs/evidence/gpu/cuda-cell-census-machinery-20261025.txt`.

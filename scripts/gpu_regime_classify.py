@@ -279,6 +279,17 @@ CLI:
         level over the record's pair blocks), rule 3's raw both-clocks
         times beside the ratios, and the named-and-excluded census
         (read the instrument log from a path or from stdin with '-')
+    python3 scripts/gpu_regime_classify.py --cuda-cells <paired-log.txt|->
+        print the FULL-CENSUS CELL publication for a CUDA paired-timing
+        record under the adopted cell unit (ADR-0361's 2026-10-25 cell
+        amendment): every (metric, W, pair-type, shape) cell of the
+        record's scan grid, rule 1's regimes at the cell (GAP-1.15 over
+        the pooled reference-arm per-run medians) + rule 2's sign at
+        the cell (rule 2 at its letter over the pooled per-run ratios,
+        operators pooled -- the reduce shape selected as a whole), both
+        clocks' raw per-block times beside every cell row (rule 3), and
+        an incomplete operator pool named with NO verdict (read the
+        instrument log from a path or from stdin with '-')
     python3 scripts/gpu_regime_classify.py --self-test
         unit fixtures + a regression pass over every committed summary.md
         under docs/evidence/ (pinned manual classifications must
@@ -2508,6 +2519,284 @@ def render_cuda_claim_protocol(text):
     out.append(render_cuda_raw_times_section(parsed))
     out.append(render_cuda_named_section(parsed))
     return "\n\n".join(out)
+
+
+# ------------------------------------------------------------ cell census
+# The cell-level rule-2 unit (ADR-0361's third 2026-10-25 amendment,
+# the ADR-0373 flip-cell precedent's unit shape adopted by citation).
+# Cell = (metric, W, pair-type, shape): the reduce shape is selected as
+# a whole -- the operator pool :operators #{:sum :max :min} pooled (the
+# ONLY cross-stratum roll-up this channel carries, named and bounded:
+# operators only; no pooling across W, pair-type, metric, shape, device
+# or channel). The cell's own rule-2 verdict is rule 2 at its letter
+# applied to the cell's pooled per-run ratios (each pair block's
+# paired-median ratio in the named metric at that (W, shape, pair-type),
+# one per operator): REGIME-INVARIANT FASTER / SLOWER is the ONLY
+# selection role a cell verdict may play (the MSL channel's flip-cell
+# role -- a per-W measured-cell flip of the kind :measured-cell records
+# key); anything else (any straddle) is regime-scoped and no basis, in
+# either direction. Publications under this unit are a FULL CENSUS --
+# every (metric, W, pair-type, shape) cell of the record's scan grid is
+# published, so no cell is cherry-picked out of it. Metrics classify
+# separately and never mix (rule 3 unchanged), and rule 3's publication
+# limit stands: every cell row keeps both clocks' raw per-block times
+# beside the named metric's ratio. A cell verdict belongs to the
+# session that measured it and stays CHANNEL-SCOPED and DEVICE-SCOPED;
+# a same-day second session is corroboration and licenses nothing the
+# cell's own session did not (ADR-0373's same-day rule by citation).
+# Rule 4 unchanged.
+
+CUDA_REDUCE_OPS = ("max", "min", "sum")  # the adoption's operator pool
+
+
+def cuda_cell_census(parsed, gap_max=GAP_MAX):
+    """The adopted cell unit's full census over one session's pair blocks.
+
+    Returns one record per (metric, W, pair-type, shape) cell of the
+    record's scan grid, ordered by the CUDA_METRICS order, then W, then
+    pair-type, then shape:
+
+      {"metric", "W", "pair_type", "n", "ref",
+       "ops": {op: {"ratio", "ref_median",     # the named metric
+                    "raw": {metric: (a_median, b_median)}}},
+       "missing": [op, ...],   # named, never silently dropped
+       "levels",               # rule 1 at the cell: GAP-1.15 clusters
+                               # of the pooled reference-arm per-run
+                               # medians (one per operator present)
+       "cls"}                  # rule 2 at its letter over the cell's
+                               # pooled per-run ratios (keys: the
+                               # operators) -- or None when the
+                               # operator pool is incomplete
+
+    A cell verdict is published ONLY over the adoption's full operator
+    pool (the reduce shape is selected as a whole): a cell missing one
+    of the three operators still carries its ratios and names the gap
+    but has NO verdict -- fail closed, named not hidden. An operator
+    outside the pool is a measurement error and raises ValueError (the
+    unit has no operator axis to answer -- per-operator cells were
+    rejected by the adoption).
+    """
+    cells = {}
+    for blk in parsed["blocks"]:
+        for metric in CUDA_METRICS:
+            key = (metric, blk["run"][1], blk["pair_type"], blk["run"][0])
+            cell = cells.setdefault(key, {"ops": {}})
+            m = blk["metrics"][metric]
+            cell["ops"][blk["op"]] = {
+                "ratio": m["paired_ratio"],
+                "ref_median": m["ref_median"],
+                "raw": {mm: (blk["metrics"][mm]["a_median"],
+                             blk["metrics"][mm]["b_median"])
+                        for mm in CUDA_METRICS},
+            }
+    order = {metric: i for i, metric in enumerate(CUDA_METRICS)}
+    out = []
+    for key in sorted(cells, key=lambda k: (order[k[0]], k[1], k[2], k[3])):
+        metric, w, pair_type, n = key
+        ops = cells[key]["ops"]
+        unknown = sorted(op for op in ops if op not in CUDA_REDUCE_OPS)
+        if unknown:
+            raise ValueError(
+                f"operator(s) {unknown} outside the adoption's pool "
+                f"{sorted(CUDA_REDUCE_OPS)} -- the cell unit pools "
+                f":operators as a whole and has no operator axis")
+        missing = [op for op in CUDA_REDUCE_OPS if op not in ops]
+        levels = level_clusters(
+            {op: ops[op]["ref_median"] for op in ops}, gap_max)
+        cls = None
+        if not missing:
+            cls = sign_classification(
+                {op: ops[op]["ratio"] for op in ops}, levels)
+        out.append({"metric": metric, "W": w, "pair_type": pair_type,
+                    "n": n, "ref": CUDA_PAIR_REF[pair_type], "ops": ops,
+                    "missing": missing, "levels": levels, "cls": cls})
+    return out
+
+
+def render_cuda_cell_census(parsed, gap_max=GAP_MAX):
+    """The full-census cell publication for a CUDA paired-timing record.
+
+    parsed: parse_cuda_pair_blocks's return. Publishes EVERY (metric,
+    W, pair-type, shape) cell of the record's scan grid (rule 1's
+    regimes at the cell + rule 2's sign at the cell, per metric, never
+    mixed), with both clocks' raw per-block times beside each cell row
+    (rule 3). A cell verdict is published only over the full operator
+    pool; an incomplete pool cell is published with the gap named and
+    NO verdict. Rule 4 unchanged.
+    """
+    census = cuda_cell_census(parsed, gap_max)
+    lines = []
+    lines.append("## Cell census (claim protocol rule 2 at cells, "
+                 "CUDA paired-timing channel)")
+    lines.append("")
+    lines.append("Published by scripts/gpu_regime_classify.py under the "
+                 "adopted cell unit (ADR-0361's 2026-10-25 cell "
+                 "amendment, the ADR-0373 flip-cell precedent's unit "
+                 "shape adopted by citation): a cell is (metric, W, "
+                 "pair-type, shape) -- the reduce shape selected as a "
+                 "whole, the operator pool :operators #{:sum :max :min} "
+                 "pooled (the ONLY cross-stratum roll-up this channel "
+                 "carries; operators only, no pooling across W, "
+                 "pair-type, metric, shape, device or channel). The "
+                 "cell's own rule-2 verdict is rule 2 at its letter "
+                 "applied to the cell's pooled per-run ratios (each "
+                 "pair block's paired-median ratio in the named metric "
+                 "at that (W, shape, pair-type), one per operator): "
+                 "REGIME-INVARIANT FASTER / SLOWER is the ONLY "
+                 "selection role a cell verdict may play (the MSL "
+                 "channel's flip-cell role -- a per-W measured-cell "
+                 "flip of the kind :measured-cell records key); "
+                 "anything else (any straddle) is regime-scoped and no "
+                 "basis, in either direction. Rule 1 at the cell: the "
+                 "GAP-1.15 clusters of the pooled reference-arm per-run "
+                 "medians (one per operator present) are the cell's "
+                 "observed regimes.")
+    lines.append("")
+    lines.append("This publication is a FULL CENSUS: every (metric, W, "
+                 "pair-type, shape) cell of the record's scan grid is "
+                 "published, so no cell is cherry-picked out of it. "
+                 "Metrics classify separately and never mix (rule 3 "
+                 "unchanged), and rule 3's publication limit stands -- "
+                 "cross-clock magnitude claims (gpu_ns vs host_ns) are "
+                 "INADMISSIBLE (different spans) -- so every cell row "
+                 "keeps both clocks' raw per-block times beside the "
+                 "named metric's ratio. A cell verdict is published "
+                 "ONLY over the full operator pool (the shape is "
+                 "selected as a whole): a cell missing an operator "
+                 "carries its ratios and names the gap but publishes NO "
+                 "verdict. A cell verdict belongs to the session that "
+                 "measured it and stays CHANNEL-SCOPED and "
+                 "DEVICE-SCOPED (a CUDA-channel sign never flips an "
+                 "MSL/WGSL cell and never answers a workgroup row; "
+                 "ADR-0355's 2026-10-25 channel rule stands); a "
+                 "same-day second session is corroboration and "
+                 "licenses nothing the cell's own session did not "
+                 "(ADR-0373's same-day rule by citation). Rule 4 is "
+                 "unchanged -- this publication moves no :measured? "
+                 "flag and no workgroup row.")
+    lines.append("")
+    npub = sum(1 for c in census if c["cls"] is not None)
+    lines.append(f"Full census: {len(census)} cells published "
+                 f"({npub} with a rule-2 verdict over the full "
+                 f"operator pool, {len(census) - npub} naming an "
+                 f"incomplete operator pool).")
+    for metric in CUDA_METRICS:
+        cells = [c for c in census if c["metric"] == metric]
+        if not cells:
+            continue
+        lines.append("")
+        lines.append(f"### metric: {metric} -- "
+                     f"{CUDA_METRIC_TEXT[metric]}")
+        for c in cells:
+            a, b_arm = c["pair_type"].split("/")
+            lines.append("")
+            lines.append(f"#### cell: W={c['W']} pair={c['pair_type']} "
+                         f"n={c['n']}")
+            lines.append("")
+            pool = " ".join(sorted(c["ops"]))
+            lines.append(f"(reference arm: {c['ref']} "
+                         f"{CUDA_ARM_VARIANT[c['ref']]}; operators "
+                         f"present: {pool} of "
+                         f"{' '.join(CUDA_REDUCE_OPS)})")
+            lines.append("")
+            lines.append("Pooled per-run ratios (rule 2's cell units, "
+                         f"the block's paired-median ratio in {metric}) "
+                         "with both clocks' raw per-block times beside "
+                         "them (rule 3):")
+            lines.append("")
+            lines.append(f"| operator | paired ratio ({metric}) | "
+                         f"{a} gpu_ns | {b_arm} gpu_ns | "
+                         f"{a} host_ns | {b_arm} host_ns |")
+            lines.append("|---|---|---|---|---|---|")
+            for op in sorted(c["ops"]):
+                o = c["ops"][op]
+                ag, bg = o["raw"]["gpu_ns"]
+                ah, bh = o["raw"]["host_ns"]
+                lines.append(
+                    f"| op={op} | {_cuda_ratio(o['ratio'])} "
+                    f"| {_cuda_ns(ag)} | {_cuda_ns(bg)} "
+                    f"| {_cuda_ns(ah)} | {_cuda_ns(bh)} |")
+            nlevels = len(c["levels"])
+            lines.append("")
+            lines.append("Rule 1 at the cell -- the cell's observed "
+                         "regimes (GAP-1.15 clusters of the pooled "
+                         "reference-arm per-run medians in "
+                         f"{metric}):")
+            lines.append("")
+            lines.append(f"| level | {metric} range | operators "
+                         f"(reference-arm per-run median) |")
+            lines.append("|---|---|---|")
+            for i, lv in enumerate(c["levels"], start=1):
+                tag = _level_tag(i, nlevels)
+                rng = (_cuda_ns(lv["lo"]) if lv["lo"] == lv["hi"]
+                       else f"{_cuda_ns(lv['lo'])}..{_cuda_ns(lv['hi'])}")
+                members = ", ".join(
+                    f"op={r} ({_cuda_ns(lv['medians'][r])})"
+                    for r in lv["runs"])
+                lines.append(f"| {tag} | {rng} | {members} |")
+            lines.append("")
+            if c["cls"] is None:
+                lines.append("Cell verdict NOT PUBLISHED -- the "
+                             f"operator pool is incomplete (present: "
+                             f"{pool}; absent: "
+                             f"{' '.join(c['missing'])}); the reduce "
+                             "shape is selected as a whole, so this "
+                             "cell carries no rule-2 verdict (named, "
+                             "not hidden).")
+                continue
+            cls = c["cls"]
+            lines.append("Rule 2 at the cell (the pooled per-run "
+                         "ratios of every observed regime):")
+            lines.append("")
+            lines.append("| level | operators (paired ratio) | "
+                         "level sign |")
+            lines.append("|---|---|---|")
+            for ls in cls["level_sides"]:
+                tag = _level_tag(ls["level"], nlevels)
+                ops_s = ", ".join(
+                    f"op={r} ({v:.3f})" for r, v, _s in ls["runs"])
+                phrase = _wgsl_level_sign_phrase(ls["sides"], ls["runs"])
+                lines.append(f"| {tag} | {ops_s} | {phrase} |")
+            n = sum(cls["counts"].values())
+            if cls["verdict"] == "regime-invariant":
+                detail = (_side_phrase(cls["side"], n)
+                          + "; every observed regime one-sided")
+                side = cls["side"]
+            elif cls["straddle"] == "no-side":
+                detail = ("every pooled per-run ratio is exactly 1.0 "
+                          "-- no sign exists to claim")
+                side = "none"
+            else:
+                segs = "; ".join(
+                    f"level {ls['level']} "
+                    f"({_level_name(ls['level'], nlevels)}): "
+                    + ", ".join(
+                        f"op={r} {v:.3f} "
+                        f"{'above' if s == 'slower' else 'below' if s == 'faster' else 'at'} 1.0"
+                        for r, v, s in ls["runs"])
+                    for ls in cls["level_sides"])
+                if cls["straddle"] == "by-regime":
+                    detail = ("straddle separates by regime (every "
+                              "regime one-sided, regimes disagree): "
+                              + segs)
+                else:
+                    mixed = [str(ls["level"]) for ls in cls["level_sides"]
+                             if len(ls["sides"]) > 1]
+                    detail = (f"straddle within regime "
+                              f"{', '.join(mixed)} (one regime holds "
+                              f"both sides): " + segs)
+                side = "straddles 1.0"
+            lines.append("")
+            lines.append("| verdict | side | detail |")
+            lines.append("|---|---|---|")
+            lines.append(f"| {cls['verdict']} | {side} | {detail} |")
+    lines.append("")
+    lines.append("Named and excluded blocks leave named gaps in this "
+                 "census (an incomplete-pool cell publishes no "
+                 "verdict); the record's own named census:")
+    lines.append("")
+    lines.append(render_cuda_named_section(parsed))
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------- tests
@@ -4801,6 +5090,266 @@ def _self_test_cuda_corpus(stats, corpus_root):
             + ("" if not mism else f"; first: {mism[:3]}"), stats)
 
 
+def _self_test_cuda_cell_unit(stats):
+    # ---- the adopted cell unit's full-census publication (ADR-0361's
+    # 2026-10-25 cell amendment): cell = (metric, W, pair-type, shape),
+    # operators pooled -- the reduce shape selected as a whole; rule 2
+    # at its letter over the cell's pooled per-run ratios; rule 1 at the
+    # cell over the pooled reference-arm medians; metrics separate
+    # (rule 3), both clocks' raw times beside every row; incomplete
+    # operator pools named with NO verdict; full census, channel-scoped,
+    # rule 4 unchanged.
+    def v3(a, b_, ha, hb):
+        return [(a, b_, ha, hb)] * 3
+
+    # -- within-regime straddle in gpu_ns on the SAME blocks whose
+    #    host_ns is regime-invariant faster -- metrics never mix --
+    trio = ("\n".join(
+        _cuda_block_lines(1000003, 64, "max", "warp-shuffle/subgroup",
+                          v3(50, 100, 40, 100))
+        + _cuda_block_lines(1000003, 64, "min", "warp-shuffle/subgroup",
+                            v3(60, 100, 30, 100))
+        + _cuda_block_lines(1000003, 64, "sum", "warp-shuffle/subgroup",
+                            v3(200, 100, 50, 100))))
+    census = cuda_cell_census(parse_cuda_pair_blocks(trio))
+    _expect([(c["metric"], c["W"], c["pair_type"], c["n"])
+             for c in census]
+            == [("gpu_ns", 64, "warp-shuffle/subgroup", 1000003),
+                ("host_ns", 64, "warp-shuffle/subgroup", 1000003)],
+            "cuda cell census: one cell per (metric, W, pair-type, "
+            "shape), gpu_ns first", stats)
+    _expect(all(c["ref"] == "subgroup" and not c["missing"]
+                and sorted(c["ops"]) == ["max", "min", "sum"]
+                for c in census),
+            "cuda cell census: the cell carries the adoption's "
+            "reference arm and the full operator pool", stats)
+    gpu_cell, host_cell = census
+    _expect(len(gpu_cell["levels"]) == 1
+            and gpu_cell["levels"][0]["runs"] == ["max", "min", "sum"],
+            "cuda cell rule 1: the cell's observed regimes are "
+            "GAP-1.15 clusters of the pooled reference-arm medians",
+            stats)
+    gcls = gpu_cell["cls"]
+    _expect(gcls["verdict"] == "regime-scoped" and gcls["side"] is None
+            and gcls["straddle"] == "within-regime"
+            and gcls["counts"] == {"slower": 1, "faster": 2, "even": 0},
+            "cuda cell rule 2 gpu_ns: pooled per-run ratios "
+            "0.5/0.6/2.0 straddle within regime 1 -- regime-scoped, no "
+            "basis", stats)
+    hcls = host_cell["cls"]
+    _expect(hcls["verdict"] == "regime-invariant"
+            and hcls["side"] == "faster"
+            and hcls["counts"] == {"slower": 0, "faster": 3, "even": 0},
+            "cuda cell rule 2 host_ns: SAME blocks, own metric -- "
+            "regime-invariant faster", stats)
+    out = render_cuda_cell_census(parse_cuda_pair_blocks(trio))
+    gpu_part = out.split("### metric: gpu_ns")[1].split(
+        "### metric: host_ns")[0]
+    host_part = out.split("### metric: host_ns")[1]
+    _expect("| op=max | 0.5000 | 50.0 | 100.0 | 40.0 | 100.0 |"
+            in gpu_part,
+            "cuda cell rows: the named metric's pooled ratio with both "
+            "clocks' raw per-block times beside it (rule 3)", stats)
+    _expect("| regime-scoped | straddles 1.0 | straddle within regime "
+            "1 (one regime holds both sides): level 1 (the only "
+            "observed level): op=max 0.500 below 1.0, op=min 0.600 "
+            "below 1.0, op=sum 2.000 above 1.0 |" in gpu_part,
+            "cuda cell verdict gpu_ns: within-regime straddle named at "
+            "the cell", stats)
+    _expect("| regime-invariant | faster | all 3 per-run ratios below "
+            "1.0 (3/3 faster); every observed regime one-sided |"
+            in host_part,
+            "cuda cell verdict host_ns: regime-invariant faster at the "
+            "cell", stats)
+    _expect("2.0000" not in host_part and "0.4000" not in gpu_part,
+            "cuda cell rule 3: the two metrics classify separately, "
+            "never mixed", stats)
+
+    # -- by-regime straddle at a cell (levels disagree, each one-sided) --
+    two = ("\n".join(
+        _cuda_block_lines(1000003, 32, "max", "subgroup/baseline",
+                          v3(50, 100, 50, 100))
+        + _cuda_block_lines(1000003, 32, "min", "subgroup/baseline",
+                            v3(55, 100, 55, 100))
+        + _cuda_block_lines(1000003, 32, "sum", "subgroup/baseline",
+                            v3(300, 150, 300, 150))))
+    tc = cuda_cell_census(parse_cuda_pair_blocks(two))[0]
+    _expect(len(tc["levels"]) == 2
+            and tc["cls"]["verdict"] == "regime-scoped"
+            and tc["cls"]["straddle"] == "by-regime",
+            "cuda cell rule 2: a straddle that separates by regime is "
+            "regime-scoped", stats)
+    tout = render_cuda_cell_census(parse_cuda_pair_blocks(two))
+    _expect("straddle separates by regime (every regime one-sided, "
+            "regimes disagree): level 1 (fastest observed): op=max "
+            "0.500 below 1.0, op=min 0.550 below 1.0; level 2 (slowest "
+            "observed): op=sum 2.000 above 1.0" in tout,
+            "cuda cell verdict: the by-regime straddle detail names "
+            "every level's side", stats)
+
+    # -- incomplete operator pool: ratios carried, gap named, NO
+    #    verdict (the shape is selected as a whole) --
+    inc = ("\n".join(
+        _cuda_block_lines(1000003, 256, "max", "subgroup/baseline",
+                          v3(50, 100, 50, 100))
+        + _cuda_block_lines(1000003, 256, "min", "subgroup/baseline",
+                            v3(55, 100, 55, 100))))
+    inc_census = cuda_cell_census(parse_cuda_pair_blocks(inc))
+    _expect(len(inc_census) == 2
+            and all(c["cls"] is None and c["missing"] == ["sum"]
+                    for c in inc_census),
+            "cuda cell census: an incomplete operator pool publishes NO "
+            "verdict and names the gap", stats)
+    inc_out = render_cuda_cell_census(parse_cuda_pair_blocks(inc))
+    _expect("Cell verdict NOT PUBLISHED -- the operator pool is "
+            "incomplete (present: max min; absent: sum)" in inc_out
+            and "| regime-invariant |" not in inc_out
+            and "| regime-scoped |" not in inc_out,
+            "cuda cell render: the incomplete-pool cell names its gap "
+            "and renders no verdict row", stats)
+    _expect("Full census: 2 cells published (0 with a rule-2 verdict "
+            "over the full operator pool, 2 naming an incomplete "
+            "operator pool)." in inc_out,
+            "cuda cell render: the census line counts verdicts and "
+            "gaps", stats)
+
+    # -- shape is part of the cell key: the same (W, pair-type) at the
+    #    other shape is a DIFFERENT cell --
+    two_shapes = trio + "\n" + "\n".join(
+        _cuda_block_lines(1048576, 64, "max", "warp-shuffle/subgroup",
+                          v3(50, 100, 40, 100))
+        + _cuda_block_lines(1048576, 64, "min", "warp-shuffle/subgroup",
+                            v3(60, 100, 30, 100))
+        + _cuda_block_lines(1048576, 64, "sum", "warp-shuffle/subgroup",
+                            v3(200, 100, 50, 100)))
+    ts_census = cuda_cell_census(parse_cuda_pair_blocks(two_shapes))
+    _expect(len(ts_census) == 4
+            and {(c["metric"], c["n"]) for c in ts_census}
+            == {(m, n) for m in ("gpu_ns", "host_ns")
+                for n in (1000003, 1048576)},
+            "cuda cell census: the cell key includes the shape -- two "
+            "shapes at one (W, pair-type) are two cells", stats)
+
+    # -- an operator outside the adoption's pool is a measurement
+    #    error: fail closed --
+    try:
+        cuda_cell_census(parse_cuda_pair_blocks("\n".join(
+            _cuda_block_lines(1000003, 32, "prod",
+                              "subgroup/baseline", v3(50, 100, 50, 100)))))
+        raise AssertionError("operator outside the pool must raise")
+    except ValueError:
+        stats["passed"] += 1
+
+    # -- census framing: full census, channel scoping, rule 3's named
+    #    limit, the same-day session rule, rule 4 --
+    _expect("Full census: 2 cells published (2 with a rule-2 verdict "
+            "over the full operator pool, 0 naming an incomplete "
+            "operator pool)." in out,
+            "cuda cell render: the full-census line", stats)
+    _expect("FULL CENSUS" in out and "cherry-picked" in out,
+            "cuda cell render: the publication is a full census of the "
+            "scan grid", stats)
+    _expect("INADMISSIBLE" in out
+            and "never flips an MSL/WGSL cell" in out
+            and "never answers a workgroup row" in out
+            and ":measured?" in out
+            and "corroboration" in out,
+            "cuda cell render: rule 3's limit, channel scoping, rule 4 "
+            "and the same-day session rule are named", stats)
+
+
+def _self_test_cuda_cell_corpus(stats, corpus_root):
+    # Full-census cell pins over the two committed ADOPTED claim-
+    # protocol sessions (docs/evidence/gpu/cuda-claimprotocol-run1-
+    # 20261025 + run2). The census is DERIVED from those committed
+    # measurements -- no hardware ran to produce it -- and the run-2
+    # census is corroboration only (the ADR-0373 same-day rule by
+    # citation). The W = 64 warp-shuffle/subgroup pins quote the cell-
+    # unit decision record's own cited ratios (docs/evidence/gpu/
+    # cuda-cell-unit-decision-20261025.txt), so the machinery's cell
+    # verdicts reproduce the decided arithmetic: every (session, shape,
+    # metric) slice is 1 above / 2 below and no slice is regime-
+    # invariant (Part 3's consequence, now a published verdict).
+    exp_w64 = {
+        "run1": {
+            ("gpu_ns", 1000003): {"max": "0.8901", "min": "0.9073",
+                                  "sum": "1.0848"},
+            ("gpu_ns", 1048576): {"max": "0.9081", "min": "0.8970",
+                                  "sum": "1.0683"},
+            ("host_ns", 1000003): {"max": "0.8885", "min": "0.9128",
+                                   "sum": "1.0874"},
+            ("host_ns", 1048576): {"max": "0.9046", "min": "0.8952",
+                                   "sum": "1.0700"},
+        },
+        "run2": {
+            ("gpu_ns", 1000003): {"max": "0.9083", "min": "0.9130",
+                                  "sum": "1.0813"},
+            ("gpu_ns", 1048576): {"max": "0.9191", "min": "0.9130",
+                                  "sum": "1.0726"},
+            ("host_ns", 1000003): {"max": "0.9080", "min": "0.9179",
+                                   "sum": "1.0702"},
+            ("host_ns", 1048576): {"max": "0.9267", "min": "0.9111",
+                                   "sum": "1.0701"},
+        },
+    }
+    expect_keys = {(m, w, pt, n)
+                   for m in ("gpu_ns", "host_ns")
+                   for w in (32, 64, 128, 256, 512, 1024)
+                   for pt in ("subgroup/baseline",
+                              "warp-shuffle/baseline",
+                              "warp-shuffle/subgroup")
+                   for n in (1000003, 1048576)}
+    for run in ("run1", "run2"):
+        d = corpus_root / "gpu" / f"cuda-claimprotocol-{run}-20261025"
+        parsed = parse_cuda_pair_blocks((d / "measure-log.txt").read_text())
+        census = cuda_cell_census(parsed)
+        _expect(len(census) == 72,
+                f"cuda cell corpus {run}: 72 cells (2 metrics x 6 "
+                f"widths x 3 pair types x 2 shapes), got "
+                f"{len(census)}", stats)
+        _expect({(c["metric"], c["W"], c["pair_type"], c["n"])
+                 for c in census} == expect_keys,
+                f"cuda cell corpus {run}: the census is the FULL scan "
+                f"grid -- every cell published, none cherry-picked",
+                stats)
+        _expect(all(c["cls"] is not None and not c["missing"]
+                    for c in census),
+                f"cuda cell corpus {run}: every cell carries the full "
+                f"operator pool and a verdict", stats)
+        out = render_cuda_cell_census(parsed)
+        _expect(out.count("#### cell: ") == 72
+                and "Full census: 72 cells published (72 with a rule-2 "
+                "verdict over the full operator pool, 0 naming an "
+                "incomplete operator pool)." in out,
+                f"cuda cell corpus {run}: the rendered census names all "
+                f"72 cells", stats)
+        w64 = {(c["metric"], c["n"]): c for c in census
+               if c["W"] == 64
+               and c["pair_type"] == "warp-shuffle/subgroup"}
+        _expect(set(w64) == set(exp_w64[run]),
+                f"cuda cell corpus {run}: the four W = 64 "
+                f"warp-shuffle/subgroup cells (both metrics, both "
+                f"shapes)", stats)
+        for key, exp in exp_w64[run].items():
+            c = w64[key]
+            got = {op: f"{c['ops'][op]['ratio']:.4f}"
+                   for op in ("max", "min", "sum")}
+            _expect(got == exp,
+                    f"cuda cell corpus {run} {key}: the W = 64 "
+                    f"warp-shuffle/subgroup pooled per-run ratios "
+                    f"reproduce the cell-unit decision record's cited "
+                    f"numbers (max/min/sum), got {got}", stats)
+            cls = c["cls"]
+            _expect(cls["verdict"] == "regime-scoped"
+                    and cls["side"] is None
+                    and cls["counts"] == {"slower": 1, "faster": 2,
+                                          "even": 0},
+                    f"cuda cell corpus {run} {key}: the cell straddles "
+                    f"1.0 (1 above / 2 below) and is regime-scoped -- "
+                    f"NOT regime-invariant, no selection basis in "
+                    f"either direction", stats)
+
+
 def main():
     args = sys.argv[1:]
     if args == ["--self-test"]:
@@ -4822,6 +5371,8 @@ def main():
         _self_test_wgsl_sign_corpus(stats, ROOT / "docs" / "evidence")
         _self_test_cuda_unit(stats)
         _self_test_cuda_corpus(stats, ROOT / "docs" / "evidence")
+        _self_test_cuda_cell_unit(stats)
+        _self_test_cuda_cell_corpus(stats, ROOT / "docs" / "evidence")
         print(f"TOTAL: {stats['passed']} assertions passed, 0 failed")
         return
     if len(args) == 2 and args[0] == "--wgsl-log":
@@ -4833,6 +5384,11 @@ def main():
         text = (sys.stdin.read() if args[1] == "-"
                 else pathlib.Path(args[1]).read_text())
         print(render_cuda_claim_protocol(text))
+        return
+    if len(args) == 2 and args[0] == "--cuda-cells":
+        text = (sys.stdin.read() if args[1] == "-"
+                else pathlib.Path(args[1]).read_text())
+        print(render_cuda_cell_census(parse_cuda_pair_blocks(text)))
         return
     if len(args) == 2 and args[0] == "--pairs":
         complete, incomplete = parse_run_log_pairs(
