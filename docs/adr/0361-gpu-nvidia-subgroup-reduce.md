@@ -429,3 +429,117 @@ State: DECIDED (this amendment, the answer and its no-move
 consequence) over MEASURED ground (the two sessions' signs, consumed
 not re-measured). IMPLEMENTED: nothing -- no code moves. Record:
 `docs/evidence/gpu/cuda-selection-answer-20261025.txt`.
+
+## Amendment (2026-10-25, again later the same day: whether the
+CUDA-route row should ever answer `:subgroup-reduce` is DECIDED --
+both readings, with the reopen condition named)
+
+DECIDED (JUN-57, the row the selection-answer record left to "NO
+record ... this row does NOT decide it"): the question ADR-0356 names
+-- "whether the CUDA-route row should ever answer `:subgroup-reduce`"
+-- has TWO readings and this row closes BOTH. Ground: the two adopted
+sessions (`docs/evidence/gpu/cuda-claimprotocol-run1-20261025/`,
+`...-run2-20261025/`); their publications re-derived BYTE-EXACTLY
+this tick (classifier over each committed log, `diff` empty, 912
+lines each), so every number below is a tool-reproducible citation,
+not an eyeball reading.
+
+**Reading 1 -- answering the row at all. CLOSED since 2026-10-23.**
+The CUDA-route selection question of that day's amendment is decided
+and IMPLEMENTED: the ladder `:warp-shuffle-reduce` ->
+`:subgroup-reduce` -> `:baseline`, rung 2 answering where the warp
+gate does not reach (rule-6 subgroup facts reported, NO compute
+capability; a reported cc below 7.0 or a malformed one fails closed
+on both rungs -- `accelerator_variants.cljk` `cuda-cap-ok?` /
+`nvidia-floor-ok?`, pinned by `accelerator-variants-test`, green in
+the scoped gate this tick). NAMED, NOT HIDDEN, a citation hazard in
+the 2026-10-25 selection record: its "(`:cuda-v1`,
+`:subgroup-reduce`) stays by-name-only" describes the `lower`
+by-name admission and must NOT be read as "select-variant never
+answers `:subgroup-reduce` on the CUDA route" -- rung 2 selects it
+on descriptor facts. The record stands as history; this row carries
+the reconciliation.
+
+**Reading 2 -- answering it IN PREFERENCE where the warp gate
+holds. DECIDED: NO, on this evidence under this protocol.**
+
+Part 1 -- what the evidence shows (sign claims CHANNEL-SCOPED,
+DEVICE-SCOPED to xavier sm_72; paired-median ratios, warp/subgroup
+above 1.0 means `:subgroup-reduce` faster): the ONLY measured cell
+where `:subgroup-reduce` beats `:warp-shuffle-reduce` is (op :sum,
+W = 64) -- run1 gpu_ns 1.0848 / 1.0683, host_ns 1.0874 / 1.0700;
+run2 gpu_ns 1.081 / 1.073, host_ns 1.070 / 1.070; 8/8 per-run
+ratios above 1.0 across both shapes, both clocks, both sessions.
+Every other measured cell has `:warp-shuffle-reduce` first (at
+:max/:min all widths; at :sum W = 32 and W >= 128). A raw-median
+three-arm check at that cell (RAW DATA, outside the protocol's
+ratio regime -- the adoption publishes no cross-stratum roll-up and
+these arms sit in different pair blocks/processes) puts
+`:subgroup-reduce` fastest there in both sessions (run1, n=1000003:
+subgroup 111888 / 111248, warp 120000 / 120848, baseline 128448 /
+128640 ns gpu; run2 subgroup 111664, warp 120080, baseline 127664
+/ 129088) -- it bears on the question and, under the protocol,
+decides nothing.
+
+Part 2 -- why NO under the standing protocol. Rule 2 (adopted for
+this channel, carried at its letter): a regime-invariant sign is
+the ONLY selection basis. The (op :sum) warp/subgroup stratum is
+REGIME-SCOPED in both sessions and both metrics, and the straddle
+is WITHIN regime 1: rule 1's GAP-1.15 clustering pools the W = 64
+runs with W = 128..512 (the reference arm `:subgroup-reduce`'s
+per-run medians at W = 64 and W = 128 are 111248 / 111168 in
+run1), so the W = 64 cell is NOT its own regime level and its
+one-sided sign is not a regime-invariant sign anywhere. "A
+regime-scoped sign cannot choose a variant, in either direction" --
+the selection-answer record's ruling stands. Per-cell selection
+units do not exist on this channel: the adoption's rule-2 unit is
+the (metric x operator x pair-type) stratum and names no roll-up;
+the Apple flip-cell precedent's "the cell's OWN claim-protocol
+rule-2 verdict at that shape" is a DIFFERENT unit this channel has
+never published. Adopting one is a rule-2 amendment -- its own
+design row, PROPOSED here and deliberately NOT decided in this row.
+Binding limits unchanged: one device (xavier, sm_72); two agreeing
+sessions bind no distribution (run 3+ UNMEASURED); rule 3's
+cross-clock magnitude ban stands.
+
+Part 3 -- consequence and reopen. NOTHING MOVES: the ladder stays
+`:warp-shuffle-reduce` -> `:subgroup-reduce` -> `:baseline`
+byte-for-byte; at (op :sum, W = 64) the design-ordered answer
+stands UNCLAIMED -- named as unclaimed, not as measured-ordered.
+REOPEN CONDITION, either fires the question again: (i) a
+cell-level (or other unit-level) rule-2 amendment for this channel,
+adopted by its own row, and under it a REGIME-INVARIANT FASTER
+verdict for `:subgroup-reduce` over `:warp-shuffle-reduce` at a
+named (op, W) cell on a named device -- the (op :sum, W = 64) cell
+is the standing candidate, its runs one-sided in both sessions; or
+(ii) a stratum-level regime-invariant sign for `:subgroup-reduce`
+over `:warp-shuffle-reduce` in some stratum.
+
+CORRECTION to the selection-answer record, re-derivation-grounded
+(publications reproduced byte-exactly this tick), named not hidden:
+its (3) detail -- "the straddle separates by regime: the W = 32
+regime is one-sided FASTER (~0.88..0.93), the W >= 64 regimes are
+one-sided SLOWER (~1.03..1.18)" -- holds for the FOUR :max/:min
+strata (verified: W = 32 0.919..0.927 faster, W >= 64
+1.027..1.177 slower) but NOT for the two :sum strata, where the
+straddle is WITHIN regime 1 (W = 256 marginally above 1.0 -- run1
+1.011 / 1.009, run2 0.992 / 1.003 gpu_ns, 2-above/6-below then
+1-above/7-below -- while W = 64/128/512/1024/32 sit below,
+0.865..0.976). The (3) VERDICT is unchanged (REGIME-SCOPED 6/6,
+no selection basis either way); only the straddle's shape was
+mischaracterized for 2 of 6 strata.
+
+States: DECIDED (this amendment: both readings' answers, the
+no-move consequence, the reopen condition). MEASURED: nothing new
+-- no hardware ran; every number is a citation of the two committed
+sessions, re-derived this tick through the classifier. IMPLEMENTED:
+nothing -- no code moves. ACCEPTED DESIGN ONLY: the claim-protocol
+adoption, the ADR-0358 paired statistic, the ADR-0373 instrument
+class. UNMEASURED, named so no reading upgrades: the (op :sum,
+W = 64) cell's status under any cell-level unit (no such unit
+exists); the :sum ordering on any device; every three-way sign on
+non-sm_72 NVIDIA hardware; run 3+ cross-run stability; whether a
+cell-level unit should exist (PROPOSED here); every workgroup row
+(no `:measured?` flag moves; `:arm`/`:unknown` stay provisional
+`:measured? false`). Record:
+`docs/evidence/gpu/cuda-subgroup-preference-question-20261025.txt`.

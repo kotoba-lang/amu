@@ -377,11 +377,27 @@ reduction semantics change with the choice. Implemented with tests;
 UNCOMPILED and UNMEASURED (no nvcc, no NVIDIA execution path, nothing run
 on NVIDIA hardware) [UNCOMPILED CLOSED 2026-10-24 as to one real
 toolchain: the emitted row compiles clean with the real nvcc 11.4
-(V11.4.315) on the fleet's CUDA host xavier, -arch=sm_72 -- 18 .cubin +
-18 .ptx, received bytes sha256-identical to the emitter's,
+(V11.4.315) on the fleet's CUDA host xavier, -arch=sm_72 -- 18
+.cubin + 18 .ptx, received bytes sha256-identical to the emitter's,
 docs/evidence/gpu/cuda-compile-xavier-20261024/; UNMEASURED unchanged and
 this host still has no nvcc], `:measured? false` on every answer, no
 workgroup row touched.
+
+**Amendment (2026-10-25, the question's second reading is DECIDED
+-- ADR-0361, again later the same day).** The CUDA-route question
+above ("whether the CUDA-route row should ever answer
+`:subgroup-reduce`") is CLOSED in BOTH of its readings: reading 1
+(answer it at all) by the 2026-10-23 NVIDIA CUDA-route amendment
+above (rung 2 of the ladder, implemented); reading 2 (answer it IN
+PREFERENCE where `:warp-shuffle-reduce`'s gate holds, e.g. the
+measured (op :sum, W = 64) cell where `:subgroup-reduce` was faster
+in both adopted sessions) is DECIDED NO on this evidence under the
+claim protocol -- a regime-scoped sign cannot choose a variant and
+this channel publishes no per-cell selection unit -- with the
+reopen condition and the named corrections recorded in ADR-0361's
+amendment and `docs/evidence/gpu/cuda-subgroup-preference-question-
+20261025.txt`. Nothing moves: no `:measured?` flag, no workgroup
+row, no selection answer.
 
 ## Intel `:subgroup-reduce` (JUN-59) -- the design
 
