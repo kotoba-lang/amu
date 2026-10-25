@@ -235,6 +235,6 @@ writers finish through descriptor creation or write within a previously
 described view. New writers require an audit of this invariant.
 Keep all vector/item/region limits, five rollback counters, fuel and refusal
 conditions. Native scope reuse, partial old/new ranges and missing/relative
-watermark mutants must pass before adoption. Wasm's context is separate and
+watermark and last-word mutants must pass before adoption. Wasm's context is separate and
 its own offset760 must remain unchanged. Source changes alone do not qualify
 the current root/public/role pins; finish native rebuilding and all gates.
