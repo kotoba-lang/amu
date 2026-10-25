@@ -23,6 +23,7 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "seed/FULL-MANIFEST"
 USER_CHECK = ROOT / "scripts/seed/check-aiueos-user-elf-native.py"
+FS2_PRODUCT = ROOT / "seed/tests/fs2-product.kotoba"
 ROOT_DESCRIPTOR = ROOT / "seed/bootstrap/aarch64-macos/root.json"
 PACKAGER_SOURCE = ROOT / "seed/macos-fs2-runtime-packager.kotoba"
 
@@ -234,6 +235,7 @@ def main(args):
     packager_pin = require_regular(packager, packager_sha)
     manifest_pin = require_regular(MANIFEST)
     checker_pin = require_regular(USER_CHECK)
+    fs2_product_pin = require_regular(FS2_PRODUCT)
     packager_source_pin = require_regular(PACKAGER_SOURCE)
     verify_macho(compiler)
     verify_macho(packager)
@@ -278,8 +280,29 @@ def main(args):
                          expected=1)
     if b"E7101" not in refused.stderr or (output / "effect.elf").exists():
         raise ValueError("undeclared effect was not refused without an artifact")
+
+    # The Mac wrapper must dispatch real bytes-concat/slice calls, not merely
+    # rebuild a compiler whose own source happens not to exercise those slots.
+    fs2_source = output / "fs2-product.kotoba"
+    shutil.copyfile(FS2_PRODUCT, fs2_source)
+    native_run(producer, output, "compile", fs2_source.name,
+               "--target", "aarch64-macos", "--output", "fs2-product.kseed")
+    extracted = native_run(producer, output, "extract-native", "fs2-product.kseed",
+                           "--symbol", "main", "--output", "fs2-product.raw")
+    match = re.search(rb":offset (\d+), :length (\d+), :arity 0}", extracted.stdout)
+    if match is None or int(match.group(2)) != (output / "fs2-product.raw").stat().st_size:
+        raise ValueError("Mac FS2 product main extraction did not match raw bytes")
+    native_run(output / "P1-signed.macho", output, "fs2-product-unsigned.macho",
+               "fs2-product.raw", "fs2-cli-stdio-general", match.group(1).decode())
+    fs2_image_pin = sign(output / "fs2-product-unsigned.macho",
+                         output / "fs2-product-signed.macho")
+    native_run(output / "fs2-product-signed.macho", output, "raw", "fs2-byte-roundtrip.bin")
+    fs2_written = output / "fs2-byte-roundtrip.bin"
+    if fs2_written.read_bytes() != b"\x00\xff\x80":
+        raise ValueError("Mac FS2 B/C and A byte roundtrip changed")
     if (pin(compiler) != compiler_pin or pin(packager) != packager_pin
             or pin(MANIFEST) != manifest_pin or pin(USER_CHECK) != checker_pin
+            or pin(FS2_PRODUCT) != fs2_product_pin
             or pin(PACKAGER_SOURCE) != packager_source_pin
             or (descriptor_pin is not None and pin(ROOT_DESCRIPTOR) != descriptor_pin)
             or pin(output / "full-unity.kotoba") != unity
@@ -295,6 +318,11 @@ def main(args):
               "bootstrapDescriptor": descriptor_pin,
               "userSource": pin(scalar), "userElf": pin(image),
               "effectSource": pin(effect), "undeclaredEffectRefused": True,
+              "fs2ProductRaw": {"status": "PASS_MAC_FS2_RAW_BYTES",
+                                "source": fs2_product_pin,
+                                "container": pin(output / "fs2-product.kseed"),
+                                "raw": pin(output / "fs2-product.raw"),
+                                "image": fs2_image_pin, "stored": pin(fs2_written)},
               "guestExecution": False, "ItonamiTurn": False,
               "releaseAdmission": False, "linuxProcessInThisGate": False,
               "userVerifier": checker_pin, "observer": pin(Path(__file__))}

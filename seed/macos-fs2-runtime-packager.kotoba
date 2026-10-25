@@ -6,6 +6,7 @@
 (def DATA-BYTES 16384)
 (def RAW-START 8192)
 (def RUNTIME-START 2048)
+(def SLICE-SETUP-START 1264)
 (def POOL-SETUP-START 2048)
 (def CONCAT-START 2184)
 (def POOL-EQUAL-START 2556)
@@ -19,7 +20,9 @@
 (def VECTOR-RUNTIME-START 5000)
 (def PURE-RUNTIME-START 6256)
 (def CODEPOINT-FAST-START 7104)
+(def BYTES-SLICE-START 7296)
 (def STDOUT-TYPED-START 7488)
+(def BYTES-CONCAT-START 7872)
 (def FS2-DA-BYTES 736)
 (def FS2-BC-BYTES 776)
 (def FS2-KIND9-BYTES 256)
@@ -130,7 +133,7 @@
    0xf900c668
    ;; The pure helper setup installs four additional ABI callbacks and then
    ;; invokes the existing bounded pool setup at 2048.
-   (bit-or 0x94000000 (quot (- PURE-RUNTIME-START 1204) 4))
+   (bl-direct 1204 SLICE-SETUP-START)
    (bl-direct 1208 (+ RAW-START entry-offset))
    ;; The full compiler is a CLI: propagate its actual exit status after
    ;; check/compile. Short fixed fixtures keep their expected-result check.
@@ -146,6 +149,14 @@
    (if cli-image 0xd503201f (b-lo 51 56))
    (if cli-image 0xd503201f 0xd2800540)
    0xd2800030 0xf2a40010 0xd4001001 0xd4200000]))
+
+;; The wrapper's setup stub preserves LR, runs the existing pure helper
+;; installer, then installs the bytes-slice callback in runtime slot 368.
+(defn- slice-setup-words [] :vector-i64
+  [0xa9bf7bfd
+   (bl-direct (+ SLICE-SETUP-START 4) PURE-RUNTIME-START)
+   (adr8 (+ SLICE-SETUP-START 8) BYTES-SLICE-START)
+   0xf900ba68 0xa8c17bfd 0xd65f03c0])
 
 ;; pair_new(ctx, offset, byte_length): 1-based handle. The context contains
 ;; a count pointer at +288, mmap pair base at +296, and mark base at +304.
@@ -377,7 +388,8 @@
       (append-runtime-words 0 [
        0xd2800168 0xf9000268 0x100007c8 0xf9006668 0x10000b88 0xf9005668 0x10000d48 0xf9005a68
        0x10001108 0xf9006a68 0x91400e68 0x913a2108 0xf9009e68 0x10001468 0xf900b668 0x10001c28
-       0xf900b268 0xd65f03c0 0x00000000 0x00000000 0xaa1f03e0 0xd2a08001 0xd2800062 0xd2820043
+       0xf900b268 (adr8 (+ VECTOR-RUNTIME-START 68) BYTES-CONCAT-START) 0xf900be68 0xd65f03c0
+       0xaa1f03e0 0xd2a08001 0xd2800062 0xd2820043
        0x92800004 0xaa1f03e5 0xd28018b0 0xf2a40010 0xd4001001 0x54000202 0xf91f4260 0xf900a260
        0xaa1f03e0 0xd2a20001 0xd2800062 0xd2820043 0x92800004 0xaa1f03e5 0xd28018b0 0xf2a40010
        0xd4001001 0x54000082 0xf91f4a60 0xf900a660 0xd65f03c0 0xd4200000 0x00000000 0x00000000
@@ -424,6 +436,33 @@
       (vector-assoc! 33 0xd2a80001)
       (vector-assoc! 69 0xd2a10008)
       (vector-assoc! 206 0xd2a1000c)))
+
+;; bytes-concat(ctx, a, b) uses the existing checked vector ABI. The two
+;; source handles are counted, their combined length is bounded to 8 MiB,
+;; and each element is copied into one newly allocated vector in place.
+;; These reviewed words were derived once from bytes-concat.s; the native
+;; packager emits the literal through Kotoba and invokes no assembler.
+(defn- bytes-concat-helper-words [] :vector-i64
+  [0xa9bb7bfd 0xa90153f3 0xa9025bf5 0xa90363f7 0xa9046bf9 0xaa0003f3 0xaa0103f4 0xaa0203f5
+   0xaa1303e0 0xaa1403e1 0xf9405669 0xd63f0120 0xaa0003f6 0xaa1303e0 0xaa1503e1 0xf9405669
+   0xd63f0120 0xaa0003f7 0xab1702da 0x540005e6 0xd2a01008 0xeb08035f 0x54000588 0xaa1303e0
+   0xaa1a03e1 0xf9406669 0xd63f0120 0xaa0003f8 0xd2800019 0xeb16033f 0x540001c2 0xaa1303e0
+   0xaa1403e1 0xaa1903e2 0xf9405a69 0xd63f0120 0xaa0003e3 0xaa1303e0 0xaa1803e1 0xaa1903e2
+   0xf9406a69 0xd63f0120 0x91000739 0x17fffff2 0xeb1a033f 0x540001c2 0xaa1303e0 0xaa1503e1
+   0xcb160322 0xf9405a69 0xd63f0120 0xaa0003e3 0xaa1303e0 0xaa1803e1 0xaa1903e2 0xf9406a69
+   0xd63f0120 0x91000739 0x17fffff2 0xaa1803e0 0xa9446bf9 0xa94363f7 0xa9425bf5 0xa94153f3
+   0xa8c57bfd 0xd65f03c0 0xd4206ec0])
+
+;; bytes-slice(ctx, value, start, end) checks 0 <= start <= end <= count
+;; and copies the selected items into one new vector through the checked
+;; vector ABI. These words are a one-time reviewed derivation of bytes-slice.s.
+(defn- bytes-slice-helper-words [] :vector-i64
+  [0xa9bb7bfd 0xa90153f3 0xa9025bf5 0xa90363f7 0xa9046bf9 0xaa0003f3 0xaa0103f4 0xaa0203f5
+   0xaa0303f6 0xb7f804d5 0xeb1502df 0x54000483 0xaa1303e0 0xaa1403e1 0xf9405669 0xd63f0120
+   0xeb0002df 0x540003c8 0xcb1502d8 0xaa1303e0 0xaa1803e1 0xf9406669 0xd63f0120 0xaa0003f9
+   0xd280001a 0xeb18035f 0x540001c2 0xaa1303e0 0xaa1403e1 0x8b1a02a2 0xf9405a69 0xd63f0120
+   0xaa0003e3 0xaa1303e0 0xaa1903e1 0xaa1a03e2 0xf9406a69 0xd63f0120 0x9100075a 0x17fffff2
+   0xaa1903e0 0xa9446bf9 0xa94363f7 0xa9425bf5 0xa94153f3 0xa8c57bfd 0xd65f03c0 0xd4206d00])
 
 ;; Reviewed AArch64 words derived once from the adjacent assembly record.
 ;; The build path consumes this Kotoba literal; it does not invoke an assembler.
@@ -714,10 +753,12 @@
       (u32-at (+ at 480) 2) (u32-at (+ at 484) 24)
       (words-at (+ at 1024) (wrapper-prefix text-bytes))
       (words-at (+ at 1152) (wrapper-suffix raw-bytes mode entry-offset general))
+      (words-at (+ at SLICE-SETUP-START) (slice-setup-words))
       (words-at (+ at HELPER-START) (pair-helper-words))
       (words-at (+ at LEGACY-TYPED-START) (typed-helper-words))
       (words-at (+ at STDERR-TYPED-START) (stderr-helper-words))
       (words-at (+ at STDOUT-TYPED-START) (stdout-helper-words))
+      (words-at (+ at BYTES-CONCAT-START) (bytes-concat-helper-words))
       (words-at (+ at CLI-RUNTIME-START)
                 (vector-assoc!
                   (vector-assoc! (cli-helper-words CODEPOINT-FAST-START) 6
@@ -734,6 +775,7 @@
       (words-at (+ at PURE-RUNTIME-START) (pure-helper-words))
       (words-at (+ at CODEPOINT-FAST-START)
                 (codepoint-fast-words CODEPOINT-FAST-START))
+      (words-at (+ at BYTES-SLICE-START) (bytes-slice-helper-words))
       (words-at (+ at fs2-start) (fs2-da-helper-words fs2-start))
       (words-at (+ at fs2-start FS2-DA-BYTES)
                 (fs2-bc-helper-words (+ fs2-start FS2-DA-BYTES) fs2-start))
