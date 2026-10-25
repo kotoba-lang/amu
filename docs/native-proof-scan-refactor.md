@@ -40,8 +40,8 @@ old scan oracle. It exercises duplicates, absent and endpoint labels, invalid
 bounds, suffixes, positive/negative accumulators, stale extents and the small-T2
 fallback. CCF reuses that identity but rechecks its own excluded source window and B/C
 operands. Mutants removing duplicate detection, suffix binding, accumulator
-binding, extent freshness, the CCF window, its reserved operands and optional
-heap fallback must compile successfully and then fail semantic
+binding, CCF suffix binding, extent freshness, the CCF window, its reserved
+operands, the top-of-heap release guard and optional heap fallback must compile successfully and then fail semantic
 execution. A deliberate wrong-mode control must also fail.
 
 `scripts/seed/compare-proof-scans.py` stages the baseline revision from Git,
@@ -69,9 +69,23 @@ current-frame and code-prefix facts cannot be keyed on a callee body alone.
 Effectful operations and controller decisions are not memoized by code identity.
 Warm reuse and cold algorithm timings must remain separate.
 
+## Same-host cold compile result
+
+[Native x86 ABBA run40185477832](https://github.com/kotoba-lang/amu/actions/runs/40185477832)
+completed on one AMD EPYC 9V45 host, fixed CPU0, with the same admitted producer,
+original normal core18 input, lock, target and limits. Baseline times were
+1,024.688 /1,000.756 seconds; candidate times were182.958 /183.731 seconds.
+The candidate median is18.10% of baseline (81.90% less time,5.52x). Both cold
+candidate samples are below600 seconds; every output matches the original
+admitted container. The native Amu controller-role image built for adoption is
+byte-identical to the timed candidate. These are this workload's whole-process
+times, not a universal project or workflow build time. See
+[portable process observations](evidence/native-proof-scan-20261025/same-host-x86.json).
+
 ## Status
 
-Candidate only. ARM semantic and nine mutation controls have passed after the heap-boundary
-review repair; same-host
-native x86 comparison and whole-closure qualification are in progress. No root,
-public, controller or consumer pin is adopted by this document.
+Candidate root, public entry and controller pins are staged from source-bound
+native ARM fixed points. The uncached full tier, complete native x86/controller,
+public aliases and shared-component qualification remain required before merge.
+The original native gates are retained, including the TCP/spawn acceptance
+added concurrently on main. Nine guard-removal native controls supplement them.
