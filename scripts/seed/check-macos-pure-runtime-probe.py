@@ -164,6 +164,10 @@ def observe(artifacts, output):
             raise ValueError(f'{name}: packaged pure helper differs from Kotoba source')
         if struct.unpack_from('<I', image, 1204)[0] != 0x94000000 | ((6256-1204)//4):
             raise ValueError(f'{name}: pure helper setup not called')
+        for slot, word_index in ((160, 2), (184, 4), (216, 6), (240, 8)):
+            store = 0xf9000000 | ((slot//8) << 10) | (19 << 5) | 8
+            if struct.unpack_from('<I', image, 6256+word_index*4)[0] != store:
+                raise ValueError(f'{name}: callback slot {slot} not installed')
     if (len(data['full']) != len(data['oldFull'])
             or data['full'][8192:] != data['oldFull'][8192:]):
         raise ValueError('full compiler raw code or size changed')
