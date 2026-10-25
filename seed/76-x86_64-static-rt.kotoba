@@ -1501,6 +1501,14 @@
                 checked (if (> n KXRT-VALUE-MAX) (kxrt-fail) 0)
                 closed (kxrt-sink-close) r (kxrt-fs-source-lock (+ p 6) (- n 6))]
             (kxrt-bytes-raw (kxrt-saddr r) (kxrt-ps r)))
+        ;; KPV1 is also an exact byte frame; route it before FS2 can reject
+        ;; raw bytes. Other byte requests still require the FS2 contract.
+        (and (= id 35) (= rk 8) (= sk 8) (>= (kxrt-vlen req) 6)
+             (kxrt-tok-at (kxrt-vbytes req) 0x3156504b00 0 6))
+          (let [n (kxrt-vlen req) p (kxrt-vbytes req)
+                checked (if (> n KXRT-VALUE-MAX) (kxrt-fail) 0)
+                closed (kxrt-sink-close) r (kxrt-fs-private (+ p 6) (- n 6))]
+            (kxrt-bytes-raw (kxrt-saddr r) (kxrt-ps r)))
         (and (= id 35) (or (not= rk 1) (not= sk 1)
           (and (>= (kxrt-ps req) 5) (kxrt-tok-at (kxrt-saddr req) 0x32534600 0 5))))
           (kxrt-f2-dispatch (if (or (= rk 9) (= rk 10)) 1 rk)
