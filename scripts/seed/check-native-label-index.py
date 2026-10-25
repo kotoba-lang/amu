@@ -1,4 +1,4 @@
-"""Native whole-prefix label-index unit and paired exploratory observations.
+"""Native whole-prefix label-index semantic and mutation controls.
 
 Python stages source bytes and records actual process results. It emits no
 native formats. This unit is not whole compiler/product qualification.
@@ -9,7 +9,6 @@ import json
 import os
 import platform
 import resource
-import statistics
 import subprocess
 import time
 from pathlib import Path
@@ -22,7 +21,7 @@ def pin(path):
     return dict(bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest())
 
 
-def main(compiler, output, controls_only=False):
+def main(compiler, output):
     assert platform.system() == "Linux"
     architecture = platform.machine()
     assert architecture in ("aarch64", "x86_64")
@@ -71,6 +70,8 @@ def main(compiler, output, controls_only=False):
         "duplicate-label": ("(if (= (vector-at out (+ base l)) 0) j -1)", "j"),
         "suffix-query": ("(and (= j 1) (= found 0) (> (glx-base M) 0))", "(and (= found 0) (> (glx-base M) 0))"),
         "accumulator-query": ("(and (= j 1) (= found 0) (> (glx-base M) 0))", "(and (= j 1) (> (glx-base M) 0))"),
+        "ccf-window": ("(or (< position (- i 2)) (> position i))", "true"),
+        "ccf-reserved-operands": ("(= (gn-sir M position IF-B) 0) (= (gn-sir M position IF-C) 0)", "true"),
         "stale-extent": ("(= (vector-at M base) sn)", "true"),
     }
     report["mutationControls"] = []
@@ -98,6 +99,6 @@ if __name__ == "__main__":
     parser.add_argument("--compiler", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--controls-only", action="store_true",
-                        help="run native semantic/mutation controls without repeating ABBA timing")
+                        help="explicitly select semantic/mutation controls (the only supported mode)")
     args = parser.parse_args()
-    main(args.compiler.resolve(), args.output.resolve(), args.controls_only)
+    main(args.compiler.resolve(), args.output.resolve())

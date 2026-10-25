@@ -2496,13 +2496,23 @@
   (cond (= (gn-op M j) OP-FN) 0
    (= (gn-op M j) OP-END) (if (gn-dot-at? M j OP-END f 0 0) j 0)
    :else (ccf-end M (inc j) f (dec left)))))
-(defn- ccf-label-source [M :vector-i64 j :i64 l :i64 i :i64 found :i64] :bool
+(defn- ccf-label-source-scan [M :vector-i64 j :i64 l :i64 i :i64 found :i64] :bool
  (if (= j (vector-at M MM-SIR-N)) (= found 1)
   (let [hit (and (= (gn-op M j) OP-LABEL) (= (gn-sir M j IF-A) l))]
    (and (or (not hit) (and (or (< j (- i 2)) (> j i))
                                (= (gn-sir M j IF-B) 0) (= (gn-sir M j IF-C) 0)))
     (<= (+ found (if hit 1 0)) 1)
-    (ccf-label-source M (inc j) l i (+ found (if hit 1 0)))))))
+    (ccf-label-source-scan M (inc j) l i (+ found (if hit 1 0)))))))
+;; Reuse only the immutable label identity, then recheck this proof's own
+;; excluded source window and both reserved operands. No dynamic CODE/FIX
+;; prefix fact is stored in the source-label table.
+(defn- ccf-label-source [M :vector-i64 j :i64 l :i64 i :i64 found :i64] :bool
+ (if (and (= j 1) (= found 0) (> l 0) (< l MM-LABEL-CAP) (> (glx-base M) 0))
+  (let [position (vector-at M (+ (glx-base M) l))]
+   (and (> position 0) (or (< position (- i 2)) (> position i))
+        (= (gn-sir M position IF-B) 0) (= (gn-sir M position IF-C) 0)))
+  (ccf-label-source-scan M j l i found)))
+
 (defn- ccf-labels [M :vector-i64 j :i64 at :i64] :bool
  (if (= j (vector-at M MM-LABEL-N)) true
   (let [v (vector-at M (+ MM-LABEL-BASE j))]

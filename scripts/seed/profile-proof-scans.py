@@ -4,23 +4,35 @@
 Python stages existing source, invokes the admitted producer, and timestamps
 stderr. It neither emits a native format nor supplies a qualification verdict.
 """
-import argparse, hashlib, json, os, platform, re, subprocess, threading, time
+import argparse, hashlib, json, os, platform, re, struct, subprocess, threading, time
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 def pin(p):
  b=Path(p).read_bytes();return dict(bytes=len(b),sha256=hashlib.sha256(b).hexdigest())
-def main(out,seconds,revision=None):
+def main(out,seconds,revision=None,from_sir=0,ccf_only=False):
  assert platform.system()=="Linux" and platform.machine() in ("x86_64","aarch64")
  out.mkdir(parents=True,exist_ok=False)
  target="x86_64-linux" if platform.machine()=="x86_64" else "aarch64-linux"
  producer=ROOT/"bin/amu" if platform.machine()=="x86_64" else ROOT/"seed/bootstrap/aarch64-linux-static-root.elf"
+ expected_machine=62 if platform.machine()=="x86_64" else 183
+ assert struct.unpack_from("<H",Path("/proc/self/exe").read_bytes(),18)[0]==expected_machine
+ assert struct.unpack_from("<H",producer.read_bytes(),18)[0]==expected_machine
  def read(path):
   if not revision: return (ROOT/path).read_bytes()
   return subprocess.run(['git','show',revision+':'+path],cwd=ROOT,check=True,capture_output=True).stdout
  paths=[p for p in read("seed/CORE-STATIC-MANIFEST").decode().splitlines() if p and not p.startswith("#")]
  source=b"".join(read(p)+b"\n" for p in paths)
  text=source.decode()
- functions=["gn-small-label","gn-op-fn","gn-op-call","qi-admit","pi-admit","ti-admit","rp-admit","rc-admit","gn-call-wrapper","gn-clamp","gn-scalar-mask","gn-affine-reader","mr-reader","di-admit","tc-admit","tb-admit","aw-admit","gn-mask-writer","gn-chain-mode","gn-chain-target","gp-shape"]
+ functions=["gn-small-label","gn-op-fn","gn-op-call","qi-admit","pi-admit","ti-admit","rp-admit","rc-admit","gn-call-wrapper","gn-clamp","gn-scalar-mask","gn-affine-reader","mr-reader","di-admit","tc-admit","tb-admit","aw-admit","gn-mask-writer","gn-chain-mode","gn-chain-target","gp-shape","gn-ins","gn-small-tail","gn-small-end","jt-return","jdag-owner","gn-op-label","gn-op-fuel","gn-chain-step","srloop-entry","btg-entry","ts-entry","jssa-entry","sls-entry","brc-entry","snf-entry"]
+ if ccf_only:
+  functions=["gn-op-cmp","ccf-admit","ccf-code","ccf-fixes","ccf-labels","ccf-functions","ccf-label-source","ccf-owner","ccf-end","bd-edges"]
+ if from_sir:
+  assert not revision, 'late probe currently uses the candidate snapshot'
+  quiet=text[text.index('(defn- gn-ins-quiet '):text.index(';; every instruction from i')]
+  functions += sorted(set(re.findall(r"\(([\w-]+-entry) ", quiet))-set(functions))
+  functions += ['dve-ins','dve-original-ins','gn-ins-quiet','ocb-post','vi-step','gn-op-rt','gn-op-bin']
+  text=text.replace('(mem-alloc M0 (+ gn-a-lp MM-LABEL-CAP 92))','(mem-alloc M0 (+ gn-a-lp MM-LABEL-CAP 93))')
+  text=text.replace('(let [M1 (gn-ins M i (gn-op M i))','(let [current (gn-gs M (+ gn-g-open 92) i) M1 (gn-ins current i (gn-op M i))')
  bindings={p:dict(bytes=len(read(p)),sha256=hashlib.sha256(read(p)).hexdigest()) for p in paths}
  for name in functions:
   match=re.search(r"\(defn- "+re.escape(name)+r" \[([^]]*)\] :(i64|bool|vector-i64)",text)
@@ -31,8 +43,12 @@ def main(out,seconds,revision=None):
   args=match.group(1);names=re.findall(r"([\w-]+) :[\w-]+",args)
   inner="prof-original-"+name
   body=original.replace("("+name+" ","("+inner+" ").replace("(defn- "+name+" ","(defn- "+inner+" ",1)
-  wrapper='(defn- '+name+' ['+args+'] :'+match.group(2)+' (let [b (io-err "B '+name+'\\n") result ('+inner+' '+' '.join(names)+') e (io-err "E '+name+'\\n")] result))\n'
+  active='true' if not from_sir else '(>= (gn-g '+names[0]+' (+ gn-g-open 92)) '+str(from_sir)+')'
+  wrapper='(defn- '+name+' ['+args+'] :'+match.group(2)+' (let [active '+active+' b (if active (io-err "B '+name+'\\n") 0) result ('+inner+' '+' '.join(names)+') e (if active (io-err "E '+name+'\\n") 0)] result))\n'
   text=text[:start]+body+"\n"+wrapper+text[end:]
+ if not revision:
+  marker='(let [module-info (if (= i 1) (io-err (string-concat "MODULE " (string-concat (mem-u2dec (vector-at M MM-SIR-N)) (string-concat " INDEX " (string-concat (mem-u2dec (glx-base M)) "\\n"))))) 0) M1 (gn-ins M i (gn-op M i))'
+  text=text.replace('(let [M1 (gn-ins M i (gn-op M i))', marker, 1)
  unit=out/"probe.kotoba";unit.write_text(text)
  corepaths=[p for p in read("seed/MANIFEST").decode().splitlines() if p and not p.startswith("#")]
  core=out/"core.kotoba";core.write_bytes(b"".join(read(p)+b"\n" for p in corepaths))
@@ -65,4 +81,4 @@ def main(out,seconds,revision=None):
  (out/"observations.json").write_text(json.dumps(report,indent=2)+"\n")
  print(json.dumps(report,indent=2),flush=True)
 if __name__=="__main__":
- p=argparse.ArgumentParser();p.add_argument("--output",type=Path,required=True);p.add_argument("--seconds",type=int,default=240);p.add_argument("--baseline-revision");a=p.parse_args();main(a.output.resolve(),a.seconds,a.baseline_revision)
+ p=argparse.ArgumentParser();p.add_argument("--output",type=Path,required=True);p.add_argument("--seconds",type=int,default=240);p.add_argument("--baseline-revision");p.add_argument("--from-sir",type=int,default=0);p.add_argument("--ccf-only",action="store_true");a=p.parse_args();main(a.output.resolve(),a.seconds,a.baseline_revision,a.from_sir,a.ccf_only)
