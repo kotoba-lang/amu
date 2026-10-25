@@ -100,8 +100,8 @@ still execute on the new pinned root/public images. The mandatory two-slot
 plan adds the zero oracle and all three built/executed mutants on each native ISA.
 No original gate is removed, and the uncached main/full chain remains.
 
-The source/image flags remain candidate/unqualified until fresh full evidence
-passes. DefCID checked producers, SCC/object persistence and an actual PR
+The source/image bytes are now qualified by the fresh complete evidence
+below; each final PR head must still pass mandatory CI. DefCID checked producers, SCC/object persistence and an actual PR
 workflow at most20min remain open. A cache or experiment result is never an
 admission, controller verdict, operation approval or deployment.
 
@@ -137,3 +137,23 @@ and runs that same native Kotoba gate before expensive derivation. Wrong-image
 and wrong-fuel ledgers must be refused with E4002. Python transports source and
 records the native exits; it does not decide numeric correctness. Every later
 full/controller/public/shared/Chrome check remains mandatory.
+
+
+## Exact source/image qualification
+
+[Run40223651906](https://github.com/kotoba-lang/amu/actions/runs/40223651906)
+passed all five mandatory jobs for source990eccb59/head3bb81695c. All three
+actual native x86 compiler generations match the public image. Both ISAs ran
+the original24 label calls/nine mutants/unannotated control and the11 zero
+calls/three executable mutants. The native controller passed24 cases,
+18 refusals and parent-death cleanup; public entry exercised3 aliases and
+90 source-lock boundaries; shared UI and Chrome also passed. Local uncached
+full-v3 and full corpus-v3 passed on the same root. All27 guest containers
+and the native runner equal the preceding runtime candidate bytes.
+
+Controller wall time was338.245s; its Amu rebuild phase was331.551s. Complete
+PR workflow duration was28m13s, so20min remains unqualified. Runner differences
+prevent treating the earlier50m24s and this28m13s as a matched causal speedup.
+Raw native receipt identities and source/image hashes are recorded in
+`qualified-native.json`; that observer summary does not replace native verdicts.
+Final metadata heads require fresh mandatory CI. No deployment is claimed.

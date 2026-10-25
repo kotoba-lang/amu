@@ -225,9 +225,9 @@ never relabel a source/SIR hash as a canonical DefCID. Unknown/unsupported
 values refuse. Native constructors, refusal and built mutation controls are
 mandatory before widening the codec. See `docs/native-incremental-build.md`.
 
-## Native vector zero highwater candidate (JUN-27 / JUN-332)
+## Native vector zero highwater contract (JUN-27 / JUN-332)
 
-The native runtime source candidate tracks an absolute item highwater in
+The native runtime tracks an absolute item highwater in
 private global byte offset760, separately for ARM/x86. It may skip clearing
 only the untouched suffix of its fresh anonymous mapping. Descriptor creation
 raises the highwater; arena rollback must never lower it. Existing item
@@ -235,6 +235,6 @@ writers finish through descriptor creation or write within a previously
 described view. New writers require an audit of this invariant.
 Keep all vector/item/region limits, five rollback counters, fuel and refusal
 conditions. Native scope reuse, partial old/new ranges and missing/relative
-watermark and last-word mutants must pass before adoption. Wasm's context is separate and
-its own offset760 must remain unchanged. Source changes alone do not qualify
+watermark and last-word mutants must pass before adoption. Wasm's context is
+separate and its own offset760 must remain unchanged. Source changes alone do not qualify
 the current root/public/role pins; finish native rebuilding and all gates.
