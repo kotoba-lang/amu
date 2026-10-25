@@ -3,7 +3,11 @@
 This is a research branch, not a production implementation. H23 (query-local
 memo) and H27 (lazy proof operand reads) were screened with the same native
 ARM producer, frozen core18 input, lock, CPU affinity and resource limits.
-Both candidates preserved all four core output containers byte for byte.
+The producer digest is8b795c842333a9c00bb886916c5a003de7729130eb00ddbc00cb3411ecc92478
+(the separately staged native runtime candidate). Both candidates preserved all
+four core output containers byte for byte. Pass that exact image explicitly
+with `--compiler` when reproducing these observations; the research branch's
+default producer is an older image and is not the measured local producer.
 Neither improved the actual compiler workload, so neither is selected.
 
 | Candidate | Baseline median | Candidate median | Ratio | Decision |
