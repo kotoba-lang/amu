@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from pathlib import Path
-import json,hashlib,subprocess,platform,time,resource,os,statistics,runpy,argparse
+import json,hashlib,subprocess,platform,time,resource,os,statistics,runpy,argparse,re
 A=Path(__file__).resolve().parents[2]
 p=argparse.ArgumentParser(description='Native reused-zero loop hoisting experiment, never product qualification');p.add_argument('--output',type=Path,required=True);args=p.parse_args();O=args.output.resolve();O.mkdir(parents=True,exist_ok=False)
 assert platform.system()=='Linux' and platform.machine() in ('aarch64','x86_64')
@@ -26,18 +26,20 @@ def run(name,args,expected=0,arena=False):
  (O/(name+'.stdout')).write_bytes(p.stdout);(O/(name+'.stderr')).write_bytes(p.stderr);row=dict(name=name,exit=p.returncode,seconds=time.monotonic()-t,cpuSeconds=after.ru_utime+after.ru_stime-before.ru_utime-before.ru_stime,minorFaults=after.ru_minflt-before.ru_minflt,loadEnd=os.getloadavg());d['calls'].append(row);save();print(row,flush=True);assert p.returncode==expected,(name,p.returncode,p.stderr[-1000:])
  if arena:
   assert p.stderr.startswith(b'KEXE_ARENA_USE ') and not p.stdout
-  for field in ['pairs','string-pool-bytes','vectors','vector-items','heap-bytes','regions','string-regions']:assert b':'+field.encode()+b' 0' in p.stderr
+  for field in ['pairs','string-pool-bytes','vectors','vector-items','heap-bytes','regions','string-regions']:assert re.search(b':'+field.encode()+rb' 0(?:[ }])',p.stderr)
  else:assert not p.stderr
  return row,p.stderr
+d.update(runtimeChanged=True,compilerAlgorithmChanged=False,sourceWorkloadChanged=False,emulation=False,allowedCPUs=cpus,sourceBindings={p:pin(A/p)for p in paths})
+d['cpuModel']=next((x for x in Path('/proc/cpuinfo').read_text().splitlines()if x.startswith('model name')),'unavailable')
 images={}
 for name,text in texts.items():
  src=O/(name+'-full.kotoba');src.write_text(text);d.setdefault('variants',{})[name]=pin(src);payload=O/(name+'.kseed');engine=O/(name+'-compiler.elf')
  if arm:
   run('container-'+name,[root,'compile',src,'--target','aarch64-macos','--output',payload]);run('pack-'+name,[root,'compile',runner,'--target',target,'--output',engine,'--format','packed','--payload',payload])
  else:run('compiler-'+name,[root,'compile',src,'--target',target,'--output',engine,'--format','static'])
- engine.chmod(0o755)
+ engine.chmod(0o755);d.setdefault('templates',{})[name]=dict(source=pin(src),image=pin(engine))
  for label,source in [('oracle',fixture),('workload',work)]:
-  image=O/(name+'-'+label+'.elf');run('build-'+name+'-'+label,[engine,'compile',source,'--target',target,'--output',image,'--format','static']);image.chmod(0o755);images[(name,label)]=image
+  image=O/(name+'-'+label+'.elf');run('build-'+name+'-'+label,[engine,'compile',source,'--target',target,'--output',image,'--format','static']);image.chmod(0o755);images[(name,label)]=image;d.setdefault('images',{}).setdefault(name,{})[label]=pin(image)
  if name!='mutant-last-word':run('oracle-'+name,[images[(name,'oracle')]])
  else:run('detect-last-word',[images[(name,'workload')]],1)
 for i,name in enumerate(['baseline','candidate','candidate','baseline']):
