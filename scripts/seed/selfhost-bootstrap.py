@@ -202,6 +202,22 @@ def main(out, tier, reuse=None, store=None):
             assert int(re.search(rb":result (-?[0-9]+)", r.stdout)[1]) == case["result"]
         results.append(dict(name=case["name"], **observed))
 
+    # JUN-292: the native TCP/spawn acceptance corpus on the same bootstrap
+    # route. The corpus lives in its own runners (their grant/fixture plumbing
+    # and named refusals predate this gate); this step is the connection the
+    # issue's completion condition asks for: the acceptance corpus executes
+    # through selfhost bootstrap with F and its receipts stay in this report.
+    # --seccomp-if-available mirrors the local gate hosts: where seccomp is
+    # available it is exercised, where it is not the run still executes and
+    # its own receipt says so.
+    io_acceptance = {}
+    for name, script in (("net-runtime", "check-net-runtime.py"),
+                         ("spawn-runtime", "check-spawn-runtime.py")):
+        run.run(name, [sys.executable, ROOT / "scripts/seed" / script,
+                       "--compiler", F, "--output", out / name,
+                       "--target", "aarch64-linux", "--seccomp-if-available"], {})
+        io_acceptance[name] = json.loads((out / name / f"{name}.json").read_text())
+
     # 5. JUN-353: the same cases, and three probes, as wasm32-browser modules
     wasm_dir = out / "wasm32"
     wasm_dir.mkdir()
@@ -346,7 +362,8 @@ def main(out, tier, reuse=None, store=None):
                   adopted=dict(sourceGraph=adopted_pins, runnerStackBytes=int(ADOPTED_STACK), generations=adopted_gens, packed=packed,
                                arityRefusal=arity_refusal, expectedNativeImage=adoption["nativeImageSHA256"]),
                   diagnostic=diagnostic, closure=closure, provenance=provenance,
-                  cases=results, wasm32Browser=wasm32, hardening=hardening, runtimeBoundary=runtime_boundary,
+                  cases=results, ioAcceptance=io_acceptance,
+                  wasm32Browser=wasm32, hardening=hardening, runtimeBoundary=runtime_boundary,
                   steps=[dict(name=c["name"], seconds=c["seconds"], **({"reused": c["reused"]} if "reused" in c else
                                                                      dict(ran=True, **({"key": c["key"]} if "key" in c else {}))))
                          for c in run.calls],
