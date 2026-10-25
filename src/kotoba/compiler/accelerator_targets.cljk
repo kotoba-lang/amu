@@ -222,22 +222,39 @@
 ;; the one-fragment set (the rows that carry no alternates). Fail closed:
 ;; a bare fragment is not a set where alternates exist. Callers lower the
 ;; haystack (substr-hits' contract).
+;; The alt-key row (2026-10-26): the three key walks move from PER-BYTE
+;; recursion to PER-FIELD pipe positions -- the split4 pipe-position
+;; precedent, here ONE `string-find-byte` per field boundary (the dot1
+;; precedent). The replaced walks recursed per key BYTE and trapped the
+;; interpreter's 32-frame budget on long keys -- measured on the kotoba
+;; runtime: a 200-byte alternate => host/stack-exhausted before the fix,
+;; docs/evidence/gpu/w3-alt-key-field-walk-20261026.txt. Contracts
+;; unchanged, pinned: field boundaries answer the index of the first '|'
+;; at or after i, n when absent; empty fields contribute no set; a key
+;; whose fields are all empty is the one-fragment set; bare fragments stay
+;; fail-closed. `string-find-byte` traps on from > n (measured), so the
+;; walk's total i >= n -> n shape is answered ABOVE the primitive (dot1's
+;; exact shape). The empty-field skip is load-bearing: substr-hits answers
+;; TRUE for an empty needle (pinned above), so a field is tested only when
+;; i < j.
+;; RESIDUAL, NAMED: the field walk is O(FIELDS) frames -- a hypothetical
+;; key with very many '|'-fields can still reach the budget (fail-closed;
+;; probed in the boundary sweep of the row's evidence; its own row if it
+;; ever matters).
 #?(:kotoba
    (defn- alt-end [s :string i :i64 n :i64] :i64
-     (if (>= i n) n (if (= (string-code-point-at s i) 124) i (alt-end s (+ i 1) n)))))
+     (if (>= i n) n (let [p (string-find-byte s 124 i)] (if (< p 0) n p)))))
 #?(:kotoba
    (defn- alt-field? [alts :string i :i64 n :i64] :bool
-     (cond (>= i n) false
-           (= (string-code-point-at alts i) 124) (alt-field? alts (+ i 1) n)
-           :else true)))
+     (if (>= i n) false (let [j (alt-end alts i n)] (if (< i j) true (alt-field? alts (+ j 1) n))))))
 #?(:kotoba
    (defn- alt-any-hits [part :string alts :string i :i64 n :i64] :bool
-     (cond (>= i n) false
-           (= (string-code-point-at alts i) 124) (alt-any-hits part alts (+ i 1) n)
-           :else (let [j (alt-end alts i n)]
-                   (if (substr-hits part (string-substring alts i j))
-                     true
-                     (alt-any-hits part alts j n))))))
+     (if (>= i n)
+       false
+       (let [j (alt-end alts i n)]
+         (if (and (< i j) (substr-hits part (string-substring alts i j)))
+           true
+           (alt-any-hits part alts (+ j 1) n))))))
 #?(:kotoba
    (defn- key-hits [part :string frag :string alts :string] :bool
      (if (substr-hits part frag)

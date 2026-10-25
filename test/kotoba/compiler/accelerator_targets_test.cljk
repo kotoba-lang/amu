@@ -390,7 +390,12 @@
   ;; (frames-limit 32) on full names ("apple m1 max"/"m1 max" =>
   ;; host/stack-exhausted, measured before the fix,
   ;; docs/evidence/gpu/w3-key-chain-primitive-20261026.txt). The short
-  ;; spellings keep their pins below unchanged.
+  ;; spellings keep their pins below unchanged. The '|'-key walks are per
+  ;; FIELD now (the alt-key row 2026-10-26): alt-end is one
+  ;; `string-find-byte` per field boundary (the dot1 precedent), so a long
+  ;; alternate key resolves within the budget (MEASURED BEFORE: a 200-byte
+  ;; alternate trapped host/stack-exhausted in the per-byte walks,
+  ;; docs/evidence/gpu/w3-alt-key-field-walk-20261026.txt).
   (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
         arms (str/join "\n" (filter some? (map #(extract-balanced src %)
                                  ["(defn- substr-hits"
@@ -440,7 +445,30 @@
           "a full name that carries no set attaches nothing"))
     (testing "the empty needle keeps the host str/includes? answer (measured parity)"
       (is (true? (sh "ab" ""))
-          "the deleted walk answered true here and the primitive raises empty-string-search-needle -- answered above it"))))
+          "the deleted walk answered true here and the primitive raises empty-string-search-needle -- answered above it"))
+    (testing "the '|'-key walks are per FIELD, not per byte (the alt-key row 2026-10-26)"
+      (is (str/includes? (extract-balanced src "(defn- alt-end") "string-find-byte s 124")
+          "alt-end is one string-find-byte call (the dot1 precedent)")
+      (is (not (str/includes? (extract-balanced src "(defn- alt-end") "string-code-point-at"))
+          "the per-byte scan is gone from alt-end")
+      (is (not (str/includes? (extract-balanced src "(defn- alt-field?") "string-code-point-at"))
+          "the per-byte scan is gone from alt-field?")
+      (is (not (str/includes? (extract-balanced src "(defn- alt-any-hits") "string-code-point-at"))
+          "the per-byte scan is gone from alt-any-hits -- it trapped the 32-frame budget on long keys")
+      (is (str/includes? (extract-balanced src "(defn- alt-any-hits") "(+ j 1)")
+          "the walk advances past the field boundary, not byte by byte"))
+    (testing "long alternate keys resolve within the budget, host-equal"
+      ;; MEASURED BEFORE on this runtime: every one of these TRAPPED
+      ;; host/stack-exhausted in the per-byte walks
+      ;; (docs/evidence/gpu/w3-alt-key-field-walk-20261026.txt)
+      (let [lg (apply str (repeat 200 "a"))]
+        (is (true? (hit (str "y" lg) "y" lg)) "a long first field that hits")
+        (is (false? (hit (str "y" (apply str (repeat 200 "c"))) "y" lg)) "a long field that misses")
+        (is (true? (hit (str "yq" (apply str (repeat 200 "c"))) "y" (str lg "|q")))
+            "the second field after a long first field")
+        (is (false? (hit "xy" "x" (str lg "|"))) "a trailing pipe must not widen the key")
+        (is (true? (hit (str "y" lg) "y" (str "|" lg))) "a leading empty field is skipped")
+        (is (false? (hit "x" "x" (str "|" lg))) "a bare fragment is not a set")))))
 
 (deftest w3-recommend-named-devices-resolve-on-full-names
   ;; The whole W3 dispatch chain (classify-vendor / key-hits / recommend) on
@@ -621,15 +649,16 @@
   ;; docs/evidence/gpu/w3-frame-budget-20261026.txt). The full spellings
   ;; are ALSO host pins in info-answers-parse-into-measured-device-facts.
   ;; NAMED RESIDUAL (not hidden): the numeric walks are GONE (the
-  ;; numeric-walk row 2026-10-26) -- digits? is one `string-parse-i64`
-  ;; verdict, dot1/dot2 one `string-find-byte` each, string->i64 one
-  ;; `parse-long` -- so an adversarial numeric field resolves in budget
-  ;; (measured: every such answer trapped host/stack-exhausted before,
-  ;; docs/evidence/gpu/w3-numeric-walk-primitives-20261026.txt). Still
-  ;; named: alt-end/alt-field?/alt-any-hits walk the '|'-alternate KEY per
-  ;; byte (row-key sized; a hypothetical very long key is fail-closed --
-  ;; its own row), and the digit taxonomy (ok|out-of-range = digits) is
-  ;; PROBED on an adversarial set, not proven.
+  ;; numeric-walk row 2026-10-26) and the '|'-key walks are per FIELD now
+  ;; (the alt-key row 2026-10-26: alt-end is one `string-find-byte` per
+  ;; field boundary, so a long alternate key resolves in budget -- MEASURED
+  ;; BEFORE: a 200-byte alternate trapped host/stack-exhausted in the
+  ;; per-byte walks, docs/evidence/gpu/w3-alt-key-field-walk-20261026.txt).
+  ;; Still named: the field walk is O(FIELDS) frames -- a hypothetical key
+  ;; with very many '|'-fields can still reach the budget (fail-closed;
+  ;; probed in the boundary sweep, never pinned -- trap boundaries are
+  ;; state-dependent) -- and the digit taxonomy (ok|out-of-range = digits)
+  ;; is PROBED on an adversarial set, not proven.
   (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
         arms (str/join "\n" (map #(extract-balanced src %)
                                  ["(defn- none?" "(defn- string->i64"
