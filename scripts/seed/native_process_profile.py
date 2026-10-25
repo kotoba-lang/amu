@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -76,12 +77,25 @@ def observe_controller(argv, *, cwd, env, timeout, output, interval=0.05):
                       children=list(children.values()), parentSample=parent_last)
         atomic_json(output, report)
 
-    # Files prevent pipe backpressure while the observer samples. They carry
-    # the same stdout/stderr bytes the existing gate harness already records.
+    # Keep the original pipe endpoint types. Reader threads drain them while
+    # wait4 remains the sole reaper, so neither backpressure nor communicate()
+    # can interfere with phase sampling or final CPU accounting.
     stdout_path = output.with_suffix(".stdout")
     stderr_path = output.with_suffix(".stderr")
     with stdout_path.open("wb") as stdout, stderr_path.open("wb") as stderr:
-        process = subprocess.Popen(list(map(str, argv)), cwd=cwd, env=env, stdout=stdout, stderr=stderr)
+        process = subprocess.Popen(list(map(str, argv)), cwd=cwd, env=env,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        def drain(source, destination):
+            with source:
+                while True:
+                    block = source.read(65536)
+                    if not block:
+                        return
+                    destination.write(block)
+        readers = [threading.Thread(target=drain, args=(source, destination))
+                   for source, destination in ((process.stdout, stdout), (process.stderr, stderr))]
+        for reader in readers:
+            reader.start()
         last_write = -10.0
         try:
             while True:
@@ -150,6 +164,9 @@ def observe_controller(argv, *, cwd, env, timeout, output, interval=0.05):
             snapshot(time.monotonic() - started, "TIMEOUT" if isinstance(error, subprocess.TimeoutExpired)
                      else "OBSERVER_INTERRUPTED")
             raise
+        finally:
+            for reader in readers:
+                reader.join()
     elapsed = time.monotonic() - started
     total_cpu = final_usage.ru_utime + final_usage.ru_stime
     remaining_cpu = total_cpu - parent_last["selfCPU"] - reaped_cpu

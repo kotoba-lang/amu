@@ -89,9 +89,10 @@ class NativeIterationTests(unittest.TestCase):
         for name in ("amu-selfhost.elf", "kotoba-native.elf"):
             shutil.copy2(sys.executable, self.root / name)
         controller = self.root / "control.py"
-        controller.write_text("""import subprocess,sys,time
+        controller.write_text("""import subprocess,sys,time,stat,os
 from pathlib import Path
 p=Path(__file__).parent
+assert stat.S_ISFIFO(os.fstat(1).st_mode) and stat.S_ISFIFO(os.fstat(2).st_mode)
 spin='import time; end=time.monotonic()+.35\\nwhile time.monotonic()<end: pass'
 time.sleep(.15)
 subprocess.run([p/'amu-selfhost.elf','-c',spin],check=True)
