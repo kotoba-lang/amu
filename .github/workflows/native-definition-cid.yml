@@ -1,0 +1,64 @@
+name: native-definition-cid
+# The bounded native identity codec is qualified independently before it can
+# join the adopted compiler closure. It never replaces selfhost-native gates.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "seed/03-source-sha256.kotoba"
+      - "seed/04-definition-cid.kotoba"
+      - "seed/tests/native-definition-cid.kotoba"
+      - "seed/tests/definition-cid-vectors.json"
+      - "seed/bootstrap/**"
+      - "bin/amu"
+      - "scripts/seed/check-definition-cid-native.py"
+      - ".github/workflows/native-definition-cid.yml"
+  push:
+    branches: [main]
+    paths:
+      - "seed/03-source-sha256.kotoba"
+      - "seed/04-definition-cid.kotoba"
+      - "seed/tests/native-definition-cid.kotoba"
+      - "seed/tests/definition-cid-vectors.json"
+      - "seed/bootstrap/**"
+      - "bin/amu"
+      - "scripts/seed/check-definition-cid-native.py"
+      - ".github/workflows/native-definition-cid.yml"
+permissions:
+  contents: read
+concurrency:
+  group: native-definition-cid-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  codec:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04-arm
+            isa: arm64
+            compiler: seed/bootstrap/aarch64-linux-static-root.elf
+          - runner: ubuntu-latest
+            isa: x86_64
+            compiler: bin/amu
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Verify adopted source and compiler pins
+        run: python3 scripts/seed/check-native-identities.py
+      - name: Native payload-v2 encoding, CIDs and refusal controls
+        run: >-
+          python3 scripts/seed/native_build_queue.py
+          --slot-dir "$RUNNER_TEMP/native-build-slots" --
+          python3 scripts/seed/check-definition-cid-native.py
+          --compiler "$PWD/${{ matrix.compiler }}"
+          --output "$RUNNER_TEMP/definition-cid"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: definition-cid-${{ matrix.isa }}
+          path: ${{ runner.temp }}/definition-cid
+          if-no-files-found: warn

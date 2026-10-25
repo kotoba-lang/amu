@@ -213,3 +213,14 @@ Do not memoize mutable CODE/FIX prefix proofs using query/counts alone.
 the original validator must refuse. Any future reuse needs complete
 write-aware invalidation, including direct memory-vector writes, and a
 fresh native differential/refusal/resource oracle.
+
+## Native incremental identity foundation (JUN-332 / JUN-358)
+
+`seed/04-definition-cid.kotoba` is a bounded payload-v2 codec candidate,
+qualified separately on native ARM/x86 against the pinned canonical bytes
+and CIDs. It is not in the adopted FULL-MANIFEST. A supplied canonical payload
+is not proof of checking, SCC identity, object-cache validity or admission.
+Keep the existing canonical identity authority and all six sealed inputs;
+never relabel a source/SIR hash as a canonical DefCID. Unknown/unsupported
+values refuse. Native constructors, refusal and built mutation controls are
+mandatory before widening the codec. See `docs/native-incremental-build.md`.
