@@ -1,0 +1,566 @@
+;; Native seed extension: x86_64-aiueos-kernel-v1 kernel OBJECT route.
+;; Assemble after 71-x86_64-runtime, before the entry module (72/73). The
+;; adopted 16-module closure, bootstrap and launcher are unchanged.
+;;
+;; Emits the linkable aiueos kernel object ABI that aiueos's fail-closed
+;; `os/aiueos/scripts/verify-kotoba-kernel-object.py` validates: ELF64
+;; ET_REL/EM_X86_64 with no program headers, exactly the seven sections
+;; "" .text .data .rela.text .symtab .strtab .shstrtab, exactly one public
+;; GLOBAL FUNC in .text, one private 80-byte freestanding context in .data,
+;; and exactly one R_X86_64_PC32 addend -4 relocation of the wrapper's
+;; `lea r9,[rip+.data]` against the .data symbol. The wrapper mirrors
+;; kotoba.native.elf64's package-kernel-object shape: load the private
+;; context, replenish the per-call fuel word at context+8, call the local
+;; Kotoba entry, return.
+;;
+;; Boundary (say this, do not round it up): this route emits the object ABI
+;; only. It is not the kernel IMAGE route (boot shim, ISR region, sealed
+;; fuel), it is not the kernel-object entry allowlist or the fuel-tier table
+;; (the public symbol is the source's own single export name and --fuel names
+;; the bound), and no emitted object has run in a kernel. The public symbol is
+;; not silently renamed: the source's export name is the symbol.
+
+;; The wrapper and its one relocation. The context LEA is the only
+;; link-time relocation in the object; the call to the local entry is
+;; patched in-compile like every other call.
+(defn- xo-replenish [M :vector-i64 fuel :i64] :vector-i64
+  (if (<= fuel 2147483647) (xg-bytes (xg-bytes M 0x0841c749 4) fuel 4)
+    (xg-bytes (xg-bytes (xg-bytes M 0xba49 2) fuel 8) 0x0851894d 4)))
+(defn- xo-shim-len [fuel :i64] :i64 (if (<= fuel 2147483647) 29 35))
+(defn- xo-shim [M :vector-i64 fuel :i64 entry :i64] :vector-i64
+  ;; lea r9,[rip+context]; mov qword [r9+8], fuel; sub rsp,8;
+  ;; call entry; add rsp,8; ret.
+  (-> M (xg-bytes 0x0d8d4c 3) (xg-bytes 0 4) (xo-replenish fuel)
+      (xg-bytes 0x08ec8348 4) (xg-rel 0xe8 1 1 entry)
+      (xg-bytes 0x08c48348 4) (xg-byte 0xc3)))
+
+;; ADR 0373: bounded kernel memory windows. The source library below is appended to
+;; the guest source for this route only; its private functions are stubs whose
+;; calls this backend replaces by inline code (the way the static route's kxrt-
+;; intrinsics are), so the shared frontend, checker and lowering are unchanged and
+;; the adopted seed/MANIFEST sources are untouched. M[200] is the first stub's FN
+;; (0 = none). Objects append all six stubs; locked projects append the same
+;; four memory stubs and obtain port writes from their kernel suffix.
+;;
+;;   (kernel-load-u32 base length index)      -> the u32 at base + index
+;;   (kernel-store-u32 base length index v)   -> v, after storing it as a u32
+;;   (kernel-subregion base length offset n)  -> base + offset
+;;   (kernel-load-u32-16k base length index) -> the u32 at base + index, length <= 16384, index % 4 = 0
+;;
+;; Every check is unsigned and traps (ud2) before the access: length <= 512 (the
+;; tier of the plain u32 pair), base non-null, index < length, index + 4 <= length;
+;; subregion: base non-null, offset <= length, n <= length - offset. The byte
+;; sequences are kotoba-native's x86_64.cljk emit-kernel-load-u32 /
+;; emit-kernel-store-u32 / emit-kernel-subregion, and so are the displacements.
+(def XK-INTR-N 6)
+(def XK-WINDOW-N 4)
+(defn- xk-intr-name [k :i64] :string
+  (case k 0 "kernel-load-u32" 1 "kernel-store-u32" 2 "kernel-subregion" 3 "kernel-load-u32-16k"
+          4 "kernel-out-u8" 5 "kernel-out-u32" ""))
+(defn- xk-memory-lib [] :string
+  "\n(defn- kernel-load-u32 [b :i64 n :i64 i :i64] :i64 0)\n(defn- kernel-store-u32 [b :i64 n :i64 i :i64 v :i64] :i64 0)\n(defn- kernel-subregion [b :i64 n :i64 o :i64 l :i64] :i64 b)\n(defn- kernel-load-u32-16k [b :i64 n :i64 i :i64] :i64 0)\n")
+(defn- xk-lib [] :string
+  (string-concat (xk-memory-lib)
+    "\n(defn- kernel-out-u8 [p :i64 v :i64] :i64 v)\n(defn- kernel-out-u32 [p :i64 v :i64] :i64 v)\n"))
+;; Only the object route recognizes the stubs. The static route (seed/75, M[197] > 0) keeps
+;; kxrt-ccall's function id in M[200], so without the M[197] guard the three functions after it
+;; would be taken for the store, subregion and 16 KiB load (found by an independent review).
+(defn- xk-intr [M :vector-i64 f :i64] :i64
+  (let [first (vector-at M 200) k (- f first)]
+    (if (and (= (vector-at M 197) 0) (> first 0) (>= k 0) (< k (if (> (vector-at M 201) 0) XK-WINDOW-N XK-INTR-N))) k -1)))
+(defn- xk-intrinsic [M :vector-i64 k :i64 t :i64] :vector-i64
+  (case k
+    ;; mov rdx,[base]; mov rcx,[length]; mov rax,[index]; cmp rcx,512; ja; test rdx,rdx; jz;
+    ;; cmp rax,rcx; jae; lea rsi,[rax+4]; cmp rsi,rcx; ja; mov eax,[rdx+rax]; jmp +2; ud2
+    0 (-> M (xg-load t 0x958b48) (xg-load (+ t 1) 0x8d8b48) (xg-load (+ t 2) 0x858b48)
+          (xg-bytes 0xf98148 3) (xg-bytes 512 4) (xg-bytes 0x870f 2) (xg-bytes 36 4)
+          (xg-bytes 0xd28548 3) (xg-bytes 0x840f 2) (xg-bytes 27 4)
+          (xg-bytes 0xc83948 3) (xg-bytes 0x830f 2) (xg-bytes 18 4)
+          (xg-bytes 0x04708d48 4) (xg-bytes 0xce3948 3) (xg-bytes 0x870f 2) (xg-bytes 5 4)
+          (xg-bytes 0x02048b 3) (xg-bytes 0x02eb 2) (xg-bytes 0x0b0f 2) (xg-save t))
+    ;; mov rdx,[base]; mov rcx,[length]; mov rdi,[index]; mov rax,[value]; cmp rcx,512; ja;
+    ;; test rdx,rdx; jz; cmp rdi,rcx; jae; lea rsi,[rdi+4]; cmp rsi,rcx; ja; mov [rdx+rdi],eax;
+    ;; jmp +2; ud2 -- rax stays the value
+    1 (-> M (xg-load t 0x958b48) (xg-load (+ t 1) 0x8d8b48) (xg-load (+ t 2) 0xbd8b48)
+          (xg-load (+ t 3) 0x858b48)
+          (xg-bytes 0xf98148 3) (xg-bytes 512 4) (xg-bytes 0x870f 2) (xg-bytes 36 4)
+          (xg-bytes 0xd28548 3) (xg-bytes 0x840f 2) (xg-bytes 27 4)
+          (xg-bytes 0xcf3948 3) (xg-bytes 0x830f 2) (xg-bytes 18 4)
+          (xg-bytes 0x04778d48 4) (xg-bytes 0xce3948 3) (xg-bytes 0x870f 2) (xg-bytes 5 4)
+          (xg-bytes 0x3a0489 3) (xg-bytes 0x02eb 2) (xg-bytes 0x0b0f 2) (xg-save t))
+    ;; mov rdx,[base]; mov rcx,[length]; mov rdi,[offset]; mov rax,[sublen]; test rdx,rdx; jz;
+    ;; cmp rdi,rcx; ja; sub rcx,rdi; cmp rax,rcx; ja; lea rax,[rdx+rdi]; jmp +2; ud2
+    2 (-> M (xg-load t 0x958b48) (xg-load (+ t 1) 0x8d8b48) (xg-load (+ t 2) 0xbd8b48)
+          (xg-load (+ t 3) 0x858b48)
+          (xg-bytes 0xd28548 3) (xg-bytes 0x840f 2) (xg-bytes 27 4)
+          (xg-bytes 0xcf3948 3) (xg-bytes 0x870f 2) (xg-bytes 18 4)
+          (xg-bytes 0xf92948 3) (xg-bytes 0xc83948 3) (xg-bytes 0x870f 2) (xg-bytes 6 4)
+          (xg-bytes 0x3a048d48 4) (xg-bytes 0x02eb 2) (xg-bytes 0x0b0f 2) (xg-save t))
+    ;; the 16 KiB tier: mov rdx,[base]; mov rcx,[length]; mov rax,[index]; cmp rcx,16384; ja; test rdx,rdx;
+    ;; jz; cmp rax,rcx; jae; mov rsi,rcx; sub rsi,rax; cmp rsi,4; jl; test rax,3; ja; mov eax,[rdx+rax];
+    ;; jmp +2; ud2 -- kotoba-native's emit-memwidth-window for u32 at 16384 (aligned, and the
+    ;; non-wrapping length - index >= 4 form machine-ir uses)
+    3 (-> M (xg-load t 0x958b48) (xg-load (+ t 1) 0x8d8b48) (xg-load (+ t 2) 0x858b48)
+          (xg-bytes 0xf98148 3) (xg-bytes 16384 4) (xg-bytes 0x870f 2) (xg-bytes 58 4)
+          (xg-bytes 0xd28548 3) (xg-bytes 0x840f 2) (xg-bytes 49 4)
+          (xg-bytes 0xc83948 3) (xg-bytes 0x830f 2) (xg-bytes 40 4)
+          (xg-bytes 0xce8948 3) (xg-bytes 0xc62948 3) (xg-bytes 0xfe8148 3) (xg-bytes 4 4)
+          (xg-bytes 0x8c0f 2) (xg-bytes 21 4)
+          (xg-bytes 0xc0f748 3) (xg-bytes 3 4) (xg-bytes 0x870f 2) (xg-bytes 8 4)
+          (xg-bytes 0x02048b 3) (xg-bytes 0xe9 1) (xg-bytes 2 4) (xg-bytes 0x0b0f 2) (xg-save t))
+    ;; Port writes take scalars, not a region pair. The instruction truncates
+    ;; the port to DX and leaves the original value in RAX, as the owner ABI.
+    4 (-> M (xg-load t 0x958b48) (xg-load (inc t) 0x858b48) (xg-byte 0xee) (xg-save t))
+    5 (-> M (xg-load t 0x958b48) (xg-load (inc t) 0x858b48) (xg-byte 0xef) (xg-save t))
+    (xg-err M 7101 OP-CALL)))
+;; The selected stubs are the final functions, in id order, named as above. A source that
+;; leaves them out or reorders them (it cannot: the library is appended here) is refused.
+(defn- xk-scan-count [M :vector-i64 S :string count :i64] :vector-i64
+  (let [n (vector-at M MM-FN-N) first (- n count)]
+    (if (or (not= (vector-at M MM-ERR) 0) (<= first 1)) (xg-err M 7102 n)
+      (loop [k 0]
+        (if (= k count) (mem-set M 200 first)
+          (let [f (+ first k) sb (+ MM-SYM-BASE (* (xg-f M f FF-SYM) MM-SYM-W))
+                a (vector-at M (+ sb SF-START)) b (vector-at M (+ sb SF-END))]
+            (if (string=? (string-substring S a b) (xk-intr-name k))
+              (recur (inc k)) (xg-err M 7102 f))))))))
+(defn- xk-scan [M :vector-i64 S :string] :vector-i64
+  (xk-scan-count M S XK-INTR-N))
+
+;; ROOTED BASES (ADR 0373, kotoba-native docs/threat-model.md). Narrowing a window with
+;; (+ base offset), or taking a base out of memory, would conjure a window nothing
+;; checked, so the base operand (the first) of each of the three must be ROOTED:
+;;   - a parameter never assigned in its function: of the exported function (the ABI
+;;     boundary where the kernel hands in a region), or of a private helper when
+;;     EVERY call of that helper passes a rooted value at that position, or
+;;   - the result of kernel-subregion over a rooted base, or
+;;   - a let-bound local with exactly one assignment whose source is rooted.
+;; (ADR 0373 gaps closed: a helper's parameter is rooted only when every call roots it; a literal is not a base; the LENGTH operand
+;; must be the length of the base's own region, not a free number -- see xk-region below.)
+;; Anything else -- a value read from memory, arithmetic, a call result, a branch's
+;; result, a loop variable -- is refused (E7106, detail the SIR index of the call).
+;; SIR is read backwards from the call: the argument temps are allocated stack-wise,
+;; so the instruction that last wrote the base's temp before the call is the base's
+;; own last step. The closed project may cross labels only after proving that
+;; no edge bypasses that definition; object admission retains its basic-block
+;; rule. Any unmodelled write or merged value is refused.
+(defn- xk-fn-start [M :vector-i64 i :i64] :i64
+  (if (<= i 1) 1
+    (if (and (= (xg-get M 4) 2) (= (vector-at M 197) 0)
+             (> (vector-at M 202) 0) (> (vector-at M 206) 0))
+      (vector-at M (+ (vector-at M 206) i))
+      (if (= (xg-si M i IF-OP) OP-FN) i (xk-fn-start M (dec i))))))
+(defn- xk-project-proof? [M :vector-i64] :bool
+  (and (= (xg-get M 4) 2) (= (vector-at M 197) 0) (> (vector-at M 202) 0)))
+(defn- xk-identity-set? [M :vector-i64 j :i64 s :i64] :bool
+  (let [w (xk-writer M j (xg-si M j IF-B))]
+    (and (>= w 0) (= (xg-si M w IF-OP) OP-LGET) (= (xg-si M w IF-B) s))))
+(defn- xk-lsets [M :vector-i64 j :i64 s :i64 cnt :i64] :i64
+  (if (>= j (vector-at M MM-SIR-N)) cnt
+    (let [op (xg-si M j IF-OP)]
+      (if (or (= op OP-FN) (= op OP-END)) cnt
+        (xk-lsets M (inc j) s (if (and (= op OP-LSET) (= (xg-si M j IF-A) s)
+             (or (xk-project-proof? M) (not (xk-identity-set? M j s)))) (inc cnt) cnt))))))
+(defn- xk-first-lset [M :vector-i64 j :i64 s :i64] :i64
+  (if (>= j (vector-at M MM-SIR-N)) -1
+    (let [op (xg-si M j IF-OP)]
+      (cond (or (= op OP-FN) (= op OP-END)) -1
+            (and (= op OP-LSET) (= (xg-si M j IF-A) s)
+             (or (xk-project-proof? M) (not (xk-identity-set? M j s)))) j
+            :else (xk-first-lset M (inc j) s)))))
+;; Lowering may reuse a local slot in disjoint lexical scopes. In a closed
+;; project, use the last assignment only when no edge can enter between that
+;; assignment and this read. This proves dominance without treating a merge
+;; result as a root. Object-profile admission retains its original rule.
+(defn- xk-local-dominates? [M :vector-i64 assigned :i64 read :i64] :bool
+  ;; Emission has completed before project proof. Reuse its label table as
+  ;; bounded scratch, indexing only this function: module label IDs may repeat
+  ;; elsewhere. No recursive provenance query runs while this index is read.
+  (let [start (inc (xk-fn-start M read))
+        indexed (loop [i start]
+                  (let [op (xg-si M i IF-OP)]
+                    (if (or (>= i (vector-at M MM-SIR-N)) (= op OP-END) (= op OP-FN)) M
+                      (let [w (if (= op OP-LABEL)
+                                (mem-set M (+ MM-LABEL-BASE (xg-si M i IF-A)) i) M)]
+                        (recur (inc i))))))]
+    (loop [i start]
+      (let [op (xg-si M i IF-OP)
+            branch (or (= op OP-BR) (= op OP-BRZ) (= op OP-BRNZ))
+            target (if branch (vector-at M (+ MM-LABEL-BASE (xg-si M i (if (= op OP-BR) IF-A IF-B)))) 0)]
+        (cond (or (>= i (vector-at M MM-SIR-N)) (= op OP-END) (= op OP-FN)) true
+              (and (or (<= i assigned) (>= i read)) branch (> target assigned) (< target read)) false
+              :else (recur (inc i)))))))
+(defn- xk-local-set [M :vector-i64 read :i64 slot :i64] :i64
+  (if (not (xk-project-proof? M))
+    (if (= (xk-lsets M (inc (xk-fn-start M read)) slot 0) 1)
+      (xk-first-lset M (inc (xk-fn-start M read)) slot) -1)
+    (let [start (xk-fn-start M read)]
+      (loop [i (dec read)]
+      (cond (<= i start) -1
+            (and (= (xg-si M i IF-OP) OP-LSET) (= (xg-si M i IF-A) slot))
+              (if (xk-local-dominates? M i read) i -1)
+            :else (recur (dec i)))))))
+(defn- xk-identity-lsets? [M :vector-i64 j :i64 s :i64] :bool
+  (loop [i j]
+    (cond (>= i (vector-at M MM-SIR-N)) true
+          (or (= (xg-si M i IF-OP) OP-FN) (= (xg-si M i IF-OP) OP-END)) true
+          (and (= (xg-si M i IF-OP) OP-LSET) (= (xg-si M i IF-A) s))
+            (let [w (xk-writer M i (xg-si M i IF-B))]
+              (if (and (> w 0) (= (xg-si M w IF-OP) OP-LGET) (= (xg-si M w IF-B) s))
+                (recur (inc i)) false))
+          :else (recur (inc i)))))
+(defn- xk-param-slot? [M :vector-i64 j :i64 s :i64] :bool
+  (let [st (xk-fn-start M j) f (xg-si M st IF-A)]
+    (and (>= s 1) (<= s (xg-f M f FF-NPARAMS))
+         (if (= (xg-get M 4) 2)
+           (if (and (> (vector-at M 202) 0) (> (vector-at M 205) 0))
+             (= (vector-at M (+ (vector-at M 205) (* f 16) (dec s))) 1)
+             (xk-identity-lsets? M (inc st) s))
+           (= (xk-lsets M (inc st) s 0) 0)))))
+(defn- xk-writer [M :vector-i64 i :i64 t :i64] :i64
+  (loop [j (dec i) crossed false]
+    (if (< j 1) -1
+      (let [op (xg-si M j IF-OP) a (xg-si M j IF-A) b (xg-si M j IF-B) c (xg-si M j IF-C)]
+        (cond (or (= op OP-FN) (= op OP-END)) -1
+              (or (= op OP-LABEL) (= op OP-BR) (= op OP-BRZ) (= op OP-BRNZ))
+                (if (xk-project-proof? M) (recur (dec j) true) -1)
+              (or (and (or (= op OP-CONST) (= op OP-LGET)) (= a t))
+                  (and (or (= op OP-BIN) (= op OP-CMP) (= op OP-UN) (= op OP-CALL)) (= b t)))
+                (if crossed (if (xk-local-dominates? M j i) j -1) j)
+              (or (= op OP-CONST) (= op OP-LGET) (= op OP-BIN) (= op OP-CMP) (= op OP-UN) (= op OP-CALL)
+                  (= op OP-LSET) (= op OP-FUEL) (= op OP-RET) (= op OP-TRAP)) (recur (dec j) crossed)
+              (or (= a t) (= b t) (= c t)) -1
+              :else (recur (dec j) crossed))))))
+;; A value's SOURCE as a number, 0 when unknown: 2^32 + v for the integer literal v (0 <= v < 2^31: a wider literal is unknown, so it
+;; cannot alias another through masking), 2^33 + s for the unassigned parameter slot s of
+;; its function (through a let-bound local with one assignment). Two temps with the same non-zero source hold the same value.
+(defn- xk-src [M :vector-i64 i :i64 t :i64 depth :i64] :i64
+  (if (> depth 6) 0
+    (let [j (xk-writer M i t)]
+      (if (< j 0) 0
+        (let [op (xg-si M j IF-OP) a (xg-si M j IF-A) b (xg-si M j IF-B)]
+          (cond (= op OP-CONST) (if (and (>= b 0) (< b 2147483648)) (+ 4294967296 b) 0)
+                (= op OP-LGET)
+                  (cond (xk-param-slot? M j b) (+ 8589934592 b)
+                        (and (> b (xg-f M (xg-si M (xk-fn-start M j) IF-A) FF-NPARAMS))
+                             (> (xk-local-set M j b) 0))
+                          (let [k (xk-local-set M j b)]
+                            (if (> k 0) (xk-src M k (xg-si M k IF-B) (inc depth)) 0))
+                        :else 0)
+                :else 0))))))
+;; An explicit paired length and a proven fixed length may describe the same
+;; parameter. Keep source identities unchanged, and compare their values only
+;; through the complete graph's paired+fixed facts for that local function.
+(defn- xk-extent-constant [M :vector-i64 i :i64 source :i64] :i64
+  (cond (and (>= source 4294967296) (< source 8589934592)) source
+        (and (= (xg-get M 4) 2) (= (vector-at M 197) 0)
+             (> (vector-at M 202) 0) (> source 8589934593) (< source 8589934609))
+          (let [f (xg-si M (xk-fn-start M i) IF-A) p (- source 8589934592)
+                at (+ (* f 16) (- p 2))]
+            (if (and (<= p (xg-f M f FF-NPARAMS))
+                     (= (vector-at M (+ (vector-at M 203) at)) 1))
+              (let [v (vector-at M (+ (vector-at M 202) at))] (if (> v 0) v -1)) -1))
+        :else -1))
+(defn- xk-same-extent? [M :vector-i64 i :i64 a :i64 b :i64] :bool
+  (if (= a b) true
+    (let [left (xk-extent-constant M i a) right (xk-extent-constant M i b)]
+      (and (>= left 4294967296) (= left right)))))
+;; Closed project helpers can also have a fixed extent without a redundant
+;; adjacent length parameter. EVERY external call must supply an already
+;; rooted region with that same literal extent. An identity self-call merely
+;; carries that established contract; it cannot seed one or change the base.
+;; This rule does not apply to ordinary object ABI exports or IRQ arguments.
+(defn- xk-fixed-param-region [M :vector-i64 f :i64 b :i64 depth :i64] :i64
+  ;; The closed-project solver freezes both fixed and paired contracts before
+  ;; admission. Its table removes recursive graph walking at a use site.
+  ;; Other profiles retain the original conservative all-caller rule.
+  (if (and (= (xg-get M 4) 2) (= (vector-at M 197) 0) (> (vector-at M 202) 0))
+    (let [r (vector-at M (+ (vector-at M 202) (* f 16) (dec b)))]
+      (if (> r 0) r -1))
+    (loop [c 1 extent -1]
+      (if (>= c (vector-at M MM-SIR-N)) extent
+        (if (and (= (xg-si M c IF-OP) OP-CALL) (= (xg-si M c IF-A) f))
+          (let [t (+ (xg-si M c IF-B) (dec b))
+                self (= (xg-si M (xk-fn-start M c) IF-A) f)
+                same (and self (= (xk-src M c t 0) (+ 8589934592 b)))]
+            (if same (recur (inc c) extent)
+              (let [r (xk-region M c t (inc depth))]
+                (if (and (>= r 4294967296) (< r 8589934592)
+                         (or (= extent -1) (= extent r)))
+                  (recur (inc c) r) -1))))
+          (recur (inc c) extent))))))
+(defn- xk-object-param-region [M :vector-i64 f :i64 b :i64 depth :i64] :i64
+  (let [np (xg-f M f FF-NPARAMS)]
+    (loop [c 1 pairok 1 constant -2]
+      (if (>= c (vector-at M MM-SIR-N))
+        (cond (and (= pairok 1) (<= (inc b) np)) (+ 8589934592 (inc b))
+              (>= constant 4294967296) constant :else -1)
+        (if (and (= (xg-si M c IF-OP) OP-CALL) (= (xg-si M c IF-A) f))
+          (let [r (xk-region M c (+ (xg-si M c IF-B) (dec b)) (inc depth))]
+            (if (< r 0) -1
+              (let [ln (if (<= (inc b) np) (xk-src M c (+ (xg-si M c IF-B) b) 0) 0)
+                    literal (and (>= r 4294967296) (< r 8589934592))]
+                (recur (inc c) (if (and (= pairok 1) (not= ln 0) (= ln r)) 1 0)
+                  (cond (= constant -2) (if literal r -1)
+                        (= constant r) constant :else -1)))))
+          (recur (inc c) pairok constant))))))
+;; The REGION of a base: -1 when the base is not rooted, else the source its length must have. A rooted base is
+;;   - a parameter slot p never assigned: of the exported function (the ABI boundary hands in a region as the pair (base, length),
+;;     the length being parameter p + 1), or of a private helper when EVERY call of it passes a rooted base at p whose length
+;;     (the source of the argument at p + 1) is the length of that base;
+;;   - the result of kernel-subregion over a rooted base, when the length it was given is the parent's length; the new region's
+;;     length is the subregion's n;
+;;   - a let-bound local with one assignment of such a value.
+;; A literal is NOT a base: it would name any absolute address (ADR 0373).
+(defn- xk-region [M :vector-i64 i :i64 t :i64 depth :i64] :i64
+  (if (or (> depth (if (xk-project-proof? M) 24 12))
+          (and (not (xk-project-proof? M))
+               (> (vector-at (mem-set M 198 (inc (vector-at M 198))) 198) 40000))) -1
+    (let [j (xk-writer M i t)]
+      (if (< j 0) -1
+        (let [op (xg-si M j IF-OP) a (xg-si M j IF-A) b (xg-si M j IF-B)]
+          (cond (= op OP-LGET)
+                  (cond (xk-param-slot? M j b)
+                          (let [f (xg-si M (xk-fn-start M j) IF-A)]
+                            (cond (= (xg-f M f FF-EXPORT) 3) (lv-param-region M f b)
+                                  (= (xg-f M f FF-EXPORT) 2) -1
+                                  (= (xg-f M f FF-EXPORT) 1)
+                                    (if (> (inc b) (xg-f M f FF-NPARAMS)) -1 (+ 8589934592 (inc b)))
+                                  :else
+                                    (let [fixed (if (xk-project-proof? M) (xk-fixed-param-region M f b depth) -1)]
+                                      (cond (not (xk-project-proof? M)) (xk-object-param-region M f b depth)
+                                            (>= fixed 0) fixed
+                                            (> (vector-at M 202) 0)
+                                              (if (> (vector-at M (+ (vector-at M 203) (* f 16) (dec b))) 0)
+                                                (+ 8589934592 (inc b)) -1)
+                                            (> (inc b) (xg-f M f FF-NPARAMS)) -1
+                                            :else (loop [c 1]
+                                      (if (>= c (vector-at M MM-SIR-N)) (+ 8589934592 (inc b))
+                                        (if (and (= (xg-si M c IF-OP) OP-CALL) (= (xg-si M c IF-A) f))
+                                          (let [r (xk-region M c (+ (xg-si M c IF-B) (dec b)) (inc depth))
+                                                ln (xk-src M c (+ (xg-si M c IF-B) b) 0)]
+                                            (if (and (>= r 0) (not= ln 0) (= ln r)) (recur (inc c)) -1))
+                                          (recur (inc c)))))))))
+                        (and (> b (xg-f M (xg-si M (xk-fn-start M j) IF-A) FF-NPARAMS))
+                             (> (xk-local-set M j b) 0))
+                          (let [k (xk-local-set M j b)]
+                            (if (> k 0) (xk-region M k (xg-si M k IF-B) (inc depth)) -1))
+                        :else -1)
+                (= op OP-CALL)
+                  (if (= (xk-intr M a) 2)
+                    (let [p (xk-region M j b (inc depth))
+                          l0 (xk-src M j (inc b) 0)
+                          n (xk-src M j (+ b 3) 0)]
+                      (if (and (>= p 0) (not= l0 0) (xk-same-extent? M j l0 p) (not= n 0)) n -1))
+                    (km-owned-region M a j b))
+                :else -1))))))
+(defn- xk-check [M :vector-i64 i :i64] :vector-i64
+  (if (or (not= (vector-at M MM-ERR) 0) (>= i (vector-at M MM-SIR-N))) M
+    (let [op (xg-si M i IF-OP) a (xg-si M i IF-A) b (xg-si M i IF-B)]
+      (if (or (and (= op OP-CALL) (>= (xk-intr M a) 0) (< (xk-intr M a) XK-WINDOW-N)
+                   (let [r (xk-region (mem-set M 198 0) i b 0) ln (xk-src M i (inc b) 0)]
+                     (not (and (>= r 0) (not= ln 0) (xk-same-extent? M i ln r)))))
+              ;; the exported function's parameters are rooted because the kernel hands them in: a guest call of the export would
+              ;; hand them in again with a base of its own making, so nothing in the object may call the export
+              (and (= op OP-CALL) (> (xg-f M a FF-EXPORT) 0)))
+        (xg-err M 7106 i)
+        (xk-check M (inc i))))))
+
+;; Admission. The scalar profile is the x86_64-linux profile 0 subset with a
+;; different export rule: exactly one exported defn, any name, at most five
+;; scalar parameters, scalar result. `main` carries no special meaning.
+(defn- xo-check-fns [M :vector-i64 S :string f :i64] :vector-i64
+  (if (or (not= (vector-at M MM-ERR) 0) (= f (vector-at M MM-FN-N))) M
+    (let [kind (xg-f M f FF-KIND) n (xg-f M f FF-NPARAMS) sym (xg-f M f FF-SYM)
+          sb (+ MM-SYM-BASE (* sym MM-SYM-W)) a (vector-at M (+ sb SF-START)) b (vector-at M (+ sb SF-END))]
+      (cond (= kind FK-DEF) (xo-check-fns M S (inc f))
+            (or (not (or (= kind FK-DEFN) (= kind FK-PRIV)))
+                (< n 0) (> n (if (= (xg-get M 4) 2) 16 5)) (not (xg-types M f 0 n)) (not (xg-type M (xg-f M f FF-RTYPE)))
+                (<= (xg-f M f FF-SIR) 0) (> (xg-frame M f) 4096)) (xg-refuse-fn M S f a b)
+            (= (xg-f M f FF-EXPORT) 1)
+              (if (= (xg-get M 4) 2)
+                (let [name (string-substring S a b) v (iv-vector name) live (lv-id name)]
+                  (cond (string=? name "main")
+                          (if (or (not= (xg-get M 1) 0) (not= n 0)) (xg-err M 7102 f)
+                            (xo-check-fns (xg-set M 1 f) S (inc f)))
+                        (lv-typed? M f live) (xo-check-fns M S (inc f))
+                        (and (>= v 0) (= n 4) (= (xg-f M f FF-RTYPE) TY-I64)
+                             (= (ck-pt M f 0) TY-I64) (= (ck-pt M f 1) TY-I64)
+                             (= (ck-pt M f 2) TY-I64) (= (ck-pt M f 3) TY-I64)) (xo-check-fns M S (inc f))
+                        :else (xg-err M 7102 f)))
+                (if (not= (xg-get M 1) 0) (xg-err M 7102 f) (xo-check-fns (xg-set M 1 f) S (inc f))))
+            :else (xo-check-fns M S (inc f))))))
+
+;; ELF64 ET_REL emission. Layout: header, seven section headers, .text,
+;; .data (the private 80-byte context), .rela.text (one entry), .symtab
+;; (null, public export, context), .strtab, .shstrtab.
+(defn- xo-shdr [M :vector-i64 name :i64 type :i64 flags :i64 addr :i64 off :i64 size :i64 link :i64 info :i64 align :i64 entsize :i64] :vector-i64
+  (-> M (xg-out name 4) (xg-out type 4) (xg-out flags 8) (xg-out addr 8) (xg-out off 8)
+      (xg-out size 8) (xg-out link 4) (xg-out info 4) (xg-out align 8) (xg-out entsize 8)))
+(defn- xo-sym [M :vector-i64 name :i64 info :i64 shndx :i64 value :i64 size :i64] :vector-i64
+  (-> M (xg-out name 4) (xg-out info 1) (xg-out 0 1) (xg-out shndx 2) (xg-out value 8) (xg-out size 8)))
+(defn- xo-elf [M :vector-i64 S :string a :i64 b :i64 shim :i64 fuel :i64] :vector-i64
+  (let [n (- b a) tlen (xg-pos M) text-off 512 data-off (+ text-off tlen)
+        rela-off (+ data-off 80) sym-off (+ rela-off 24) str-off (+ sym-off 72)
+        str-len (+ n 10) shstr-off (+ str-off str-len)]
+    (-> M (mem-set MM-OUT-N 1)
+        (xg-out 0x00010102464c457f 8) (xg-out 0 8)
+        (xg-out 1 2) (xg-out 62 2) (xg-out 1 4) (xg-out 0 8) (xg-out 0 8) (xg-out 64 8)
+        (xg-out 0 4) (xg-out 64 2) (xg-out 0 2) (xg-out 0 2) (xg-out 64 2) (xg-out 7 2) (xg-out 6 2)
+        (xg-out 0 8) (xg-out 0 8) (xg-out 0 8) (xg-out 0 8)
+        (xg-out 0 8) (xg-out 0 8) (xg-out 0 8) (xg-out 0 8)
+        (xo-shdr 1 1 6 0 text-off tlen 0 0 16 0)
+        (xo-shdr 7 1 3 0 data-off 80 0 0 8 0)
+        (xo-shdr 13 4 0x40 0 rela-off 24 4 1 8 24)
+        (xo-shdr 24 2 0 0 sym-off 72 5 2 8 24)
+        (xo-shdr 32 3 0 0 str-off str-len 0 0 1 0)
+        (xo-shdr 40 3 0 0 shstr-off 50 0 0 1 0)
+        (xg-out-code 1)
+        (xg-out 0 8) (xg-out fuel 8) (xg-out 0 8) (xg-out 0 8)
+        (xg-out 0 8) (xg-out 0 8) (xg-out 0 8) (xg-out 0 8)
+        (xg-out 0 8) (xg-out 0 8)
+        ;; The context symbol is LOCAL (P1 review): two objects linked into
+        ;; one kernel must not collide on a global `context`, so locals come
+        ;; first (null, context, export) and sh_info names the first global.
+        (xg-out 3 8) (xg-out 4294967298 8) (xg-out -4 8)
+        (xo-sym 0 0 0 0 0)
+        (xo-sym (+ n 2) 0x01 2 0 80)
+        (xo-sym 1 0x12 1 0 shim)
+        (xg-out 0 1) (out-put-span S a b) (xg-out 0 1) (xg-out 0x747865746e6f63 8)
+        (xg-out 0x2e00747865742e00 8) (xg-out 0x65722e0061746164 8) (xg-out 0x00747865742e616c 8)
+        (xg-out 0x006261746d79732e 8) (xg-out 0x006261747274732e 8) (xg-out 0x617472747368732e 8)
+        (xg-out 0x0062 2))))
+
+(defn- xo-report [M :vector-i64 path :string out :string] :i64
+  (let [e (vector-at M MM-ERR)]
+    (cond (and (> e 0) (< e 7100)) (drv-fail M path)
+          (> e 0) (let [w (io-err (string-concat "seed-x86_64-aiueos-object: E" (string-concat (mem-u2dec e)
+                            (string-concat " unsupported object profile or code limit; detail "
+                              (string-concat (mem-u2dec (vector-at M MM-ERR-N)) "\n")))))] 1)
+          :else (let [n (dec (vector-at M MM-OUT-N)) written (out-write-v M out (+ MM-OUT-BASE 1) n)
+                      w (io-out (string-concat "{:ok true, :target :x86_64-aiueos-kernel-v1, :format :elf64-rel, :text-bytes "
+                               (string-concat (mem-u2dec (xg-pos M))
+                                 (string-concat ", :bytes " (string-concat (mem-u2dec n) "}\n")))))]
+                  (if (= (io-exists out) 1) 0 (drv-fail0 E-WRITE))))))
+
+(defn- xo-build [M :vector-i64 S :string fuel :i64] :vector-i64
+  (let [admitted (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 2 fuel) (xg-set 4 0) (xo-check-fns S 1) (xg-check-sir 1) (xk-scan S) (xk-check 1))]
+    (cond (not= (vector-at admitted MM-ERR) 0) admitted
+          (= (xg-get admitted 1) 0) (xg-err admitted 7102 0)
+          (not= (vector-at admitted MM-CAPS) 0) (xg-err admitted 7101 OP-CAP)
+          :else (let [f (xg-get admitted 1) sym (xg-f admitted f FF-SYM)
+                      sb (+ MM-SYM-BASE (* sym MM-SYM-W))
+                      a (vector-at admitted (+ sb SF-START)) b (vector-at admitted (+ sb SF-END))
+                      generated (-> admitted (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1)
+                                    (xg-index-labels 1) (xo-shim fuel f) (xg-code 1))]
+                  (xo-elf (xg-fix generated 1) S a b (xo-shim-len fuel) fuel)))))
+
+(defn- xo-source [S :string path :string out :string fuel :i64] :i64
+  (let [text (string-concat (string-concat S (ck-r6b-lib S)) (xk-lib)) front (xg-front text)]
+    (if (= (vector-at front MM-ERR) 0) (xo-report (xo-build front text fuel) path out) (drv-fail front path))))
+
+;; JUN-31: the image packaging step, in the same adopted compiler lineage.
+;; This grows the existing scalar/object admission; it does not stand in for
+;; the complete AIUEOS kernel graph. Multiple exports (including ISR and live
+;; ValueRuntime entries), host capabilities and unsupported kernel intrinsics
+;; still refuse. No source is trimmed or rewritten to make that graph pass.
+;; The image ABI matches kotoba.native.elf64's non-live, no-ISR layout:
+;; two PT_LOADs (RX then RW), image-owned stack, GDT/TSS and sealed fuel.
+;; A successful image build is not EFI/GPT or a QEMU boot qualification.
+(def XI-DATA-SIZE 77824)
+(defn- xi-shim [M :vector-i64 entry :i64] :vector-i64
+  ;; 77 bytes. RIP displacements for stack/GDTR/boot-info/context are patched
+  ;; after code size determines the data page; the entry call uses xg-fix.
+  (-> M (xg-byte 0xfa) (xg-bytes 0x258d48 3) (xg-bytes 0 4)
+      (xg-bytes 0xf0e48348 4) (xg-bytes 0x15010f 3) (xg-bytes 0 4)
+      (xg-bytes 0x086a 2) (xg-bytes 0x058d48 3) (xg-bytes 3 4)
+      (xg-bytes 0xcb4850 3) (xg-bytes 0x0010b866 4)
+      (xg-bytes 0xd08ec08ed88e 6) (xg-bytes 0xe88ee08ec031 6)
+      (xg-bytes 0x0028b866 4) (xg-bytes 0xd8000f 3)
+      (xg-bytes 0x3d8948 3) (xg-bytes 0 4)
+      (xg-bytes 0x0d8d4c 3) (xg-bytes 0 4) (xg-rel 0xe8 1 1 entry)
+      (xg-bytes 0xfdebf4fa 4)))
+(defn- xi-patch-shim [M :vector-i64 data :i64 size :i64] :vector-i64
+  (let [relative (- data 4096)]
+    (-> M (xg-patch 4 (- (+ relative size) 8) 4)
+        (xg-patch 15 (- (+ relative 152) 19) 4)
+        (xg-patch 57 (- (+ relative 80) 61) 4)
+        (xg-patch 64 (- relative 68) 4))))
+(defn- xi-phdr [M :vector-i64 flags :i64 off :i64 size :i64] :vector-i64
+  (-> M (xg-out 1 4) (xg-out flags 4) (xg-out off 8)
+      (xg-out (+ 0x100000 off) 8) (xg-out (+ 0x100000 off) 8)
+      (xg-out size 8) (xg-out size 8) (xg-out 4096 8)))
+(defn- xi-data [M :vector-i64 data :i64 fuel :i64 isr-base :i64 size :i64 pci :bool] :vector-i64
+  (let [context (+ 0x100000 data) tss (+ context 168)
+        stack (+ context (if (lv-used? M) 131072 size))]
+    (-> M (xg-pad data) (xg-out 0 8) (xg-out fuel 8)
+        (xg-pad (+ data 96))
+        (xg-out 0 8) (xg-out 0x00af9a000000ffff 8)
+        (xg-out 0x00cf92000000ffff 8) (xg-out 0x00cff2000000ffff 8)
+        (xg-out 0x00affa000000ffff 8)
+        ;; 16-byte available 64-bit TSS descriptor, limit 103.
+        (xg-out 103 2) (xg-out tss 3) (xg-out 0x89 1) (xg-out 0 1)
+        (xg-out (u64-shift-right tss 24) 1) (xg-out (u64-shift-right tss 32) 4) (xg-out 0 4)
+        ;; GDTR (56-byte GDT), then 104-byte TSS with RSP0 and no I/O bitmap.
+        (xg-out 55 2) (xg-out (+ context 96) 8)
+        (xg-pad (+ data 168)) (xg-out 0 4) (xg-out stack 8)
+        (xg-pad (+ data 270)) (xg-out 104 2)
+        (xg-pad (+ data 328)) (xg-out isr-base 8)
+        (xg-out (if pci 0x31494350 0) 8)
+        (xg-out (if (= (xg-get M 4) 2) (+ context (if pci 65536 20480)) 0) 8)
+        (xg-pad (+ data 464)) (xg-out (cond (uv-used? M) UV-MAGIC (lv-used? M) LV-MAGIC :else 0) 8)
+        (lv-data data)
+        (cond-> (uv-used? M) (xg-pad (+ data UV-HANDLER))
+                  (uv-used? M) (xg-out (vector-at M 210) 8))
+        (xg-pad (+ data size)))))
+(defn- xi-elf [M :vector-i64 data :i64 fuel :i64 isr-base :i64 pci :bool] :vector-i64
+  (let [text (xg-pos M) size (cond (uv-used? M) UV-DATA-SIZE (lv-used? M) LV-DATA-SIZE pci 131072 :else XI-DATA-SIZE) names (+ data size) sections (bit-and (+ names 30) -8)]
+    (-> M (mem-set MM-OUT-N 1)
+        (xg-out 0x00010102464c457f 8) (xg-out 0 8)
+        (xg-out 2 2) (xg-out 62 2) (xg-out 1 4) (xg-out 0x101000 8)
+        (xg-out 64 8) (xg-out sections 8) (xg-out 0 4)
+        (xg-out 64 2) (xg-out 56 2) (xg-out 2 2) (xg-out 64 2) (xg-out 4 2) (xg-out 3 2)
+        (xi-phdr 5 4096 text) (xi-phdr 6 data size)
+        (xg-pad 4096) (xg-out-code 1) (xi-data data fuel isr-base size pci)
+        (xg-out 0x2e00747865742e00 8) (xg-out 0x68732e0061746164 8) (xg-out 0x00626174727473 7)
+        (xg-pad sections) (xg-pad (+ sections 64))
+        (xo-shdr 1 1 6 0x101000 4096 text 0 0 16 0)
+        (xo-shdr 7 1 3 (+ 0x100000 data) data size 0 0 4096 0)
+        (xo-shdr 13 3 0 0 names 23 0 0 1 0))))
+(defn- xi-build [M :vector-i64 S :string fuel :i64] :vector-i64
+  (let [admitted (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 2 fuel) (xg-set 4 0)
+                    (xo-check-fns S 1) (xg-check-sir 1) (xk-scan S) (xk-check 1))
+        entry (xg-get admitted 1)]
+    (cond (not= (vector-at admitted MM-ERR) 0) admitted
+          (or (= entry 0) (not= (xg-f admitted entry FF-NPARAMS) 0)) (xg-err admitted 7102 entry)
+          (not= (vector-at admitted MM-CAPS) 0) (xg-err admitted 7101 OP-CAP)
+          :else (let [generated (-> admitted (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1)
+                                    (xg-index-labels 1) (xi-shim entry) (xg-code 1))
+                      end (bit-and (+ (xg-pos generated) 15) -16)
+                      data (max 32768 (bit-and (+ 8191 end) -4096))]
+                  (if (or (>= (+ data XI-DATA-SIZE 280) MM-OUT-CAP) (> (xg-pos generated) 1048576))
+                    (xg-err generated 7104 data)
+                    (xi-elf (xi-patch-shim (xg-fix generated 1) data XI-DATA-SIZE) data fuel 0 false))))))
+(defn- xi-source [S :string path :string out :string fuel :i64] :i64
+  (let [text (string-concat (string-concat S (ck-r6b-lib S)) (xk-lib)) front (xg-front text)
+        image (if (= (vector-at front MM-ERR) 0) (xi-build front text fuel) front)
+        e (vector-at image MM-ERR)]
+    (cond (> e 0) (xo-report image path out)
+          :else (let [n (dec (vector-at image MM-OUT-N)) written (out-write-v image out (+ MM-OUT-BASE 1) n)
+                      w (io-out (string-concat "{:ok true, :target :x86_64-aiueos-kernel-v1, :format :elf64-exec, :bytes "
+                                             (string-concat (mem-u2dec n) "}\n")))]
+                  (if (= (io-exists out) 1) 0 (drv-fail0 E-WRITE))))))
+
+(defn- xo-command [] :i64
+  (let [n (io-argc) src (io-arg 1) explicit (string=? (io-arg 4) "--artifact")
+        shift (if explicit 2 0) kind (if explicit (io-arg 5) "object") out (io-arg (+ 5 shift))
+        fuel (if (= n (+ 8 shift)) (xg-budget (io-arg (+ 7 shift))) 1000000)]
+    (cond (or (not (or (= n (+ 6 shift)) (= n (+ 8 shift))))
+              (not (or (string=? kind "object") (string=? kind "image")))
+              (not (string=? (io-arg (+ 4 shift)) "--output"))
+              (and (= n (+ 8 shift)) (not (string=? (io-arg (+ 6 shift)) "--fuel"))) (< fuel 1)
+              (= (string-length out) 0) (= (io-exists out) 1))
+            (let [w (io-err "seed-x86_64-aiueos-object: E7100 expected compile SOURCE --target x86_64-aiueos-kernel-v1 [--artifact object|image] --output NEW [--fuel POSITIVE_BUDGET]\n")] 2)
+          (= (io-exists src) 0) (drv-fail0 E-READ)
+          (string=? kind "image") (xi-source (drv-read src) src out fuel)
+          :else (xo-source (drv-read src) src out fuel))))

@@ -1,0 +1,150 @@
+;; Native-facing compiler frontend boundary. Full semantic analysis returns
+;; typed HIR/error records inside the linked Kotoba call graph; the narrower
+;; reader/type/expression validators return a bounded scalar summary.
+(ns kotoba.compiler.native-frontend
+  (:export [validate-type-source validate-expression-batch
+            validate-kotoba-expression-source
+            analyze-kotoba-source analyze-project-source lint-kotoba-source])
+  (:require [kotoba.form :as form]
+            [kotoba.compiler.kotoba-reader :as reader]
+            [kotoba.compiler.native-project-linker :as linker]
+            [kotoba.compiler.validate-expr :as validate-expr]
+            [kotoba.compiler.value-type :as value-type]
+            [kotoba.sema :as sema])
+  (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                      [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]
+             :fe/err [:record :fe/err [[:msg :string] [:code :string] [:form [:ref :form/r]]
+                                       [:phase :string] [:data [:ref :form/r]]]]
+             :ana/ir [:record :ana/ir [[:ok :bool] [:val [:ref :form/r]] [:err [:ref :fe/err]]]]
+             :kotoba.reader/out [:record :kotoba.reader/out
+                                 [[:forms [:list [:ref :form/r]]]
+                                  [:err :string]
+                                  [:at :i64]]]
+             :vx/r [:record :vx/r [[:ok :bool] [:code :string] [:msg :string] [:nodes :i64]]]
+             :kotoba.compiler/type-summary [:record :kotoba.compiler/type-summary
+                                            [[:ok :i64]
+                                             [:code :string]
+                                             [:message :string]
+                                             [:nodes :i64]
+                                             [:error-offset :i64]]]}))
+
+(defn- summary [ok :i64 code :string message :string nodes :i64 offset :i64]
+  [:ref :kotoba.compiler/type-summary]
+  (record-new [:ref :kotoba.compiler/type-summary]
+              ok code message nodes offset))
+
+(defn- analysis-options [admit-linked? :bool] [:ref :form/r]
+  (let [empty (form/form-map (form/no-forms))]
+    (if admit-linked?
+      (form/assoc-form empty (form/keyword-form :admit-linked-synthetics?) (form/bool-form true))
+      empty)))
+
+(defn validate-type-source [source :string] [:ref :kotoba.compiler/type-summary]
+  "Read exactly one value-type form, validate it, and return a boundary-safe
+  summary. Reader errors carry their byte offset; semantic diagnostics carry
+  the same code, message, and node count as value-type/validate-type."
+  (let [parsed (reader/read-forms-count-bounded source 64 65536 10000)
+        parse-error (record-get [:ref :kotoba.reader/out] parsed :err)
+        forms (record-get [:ref :kotoba.reader/out] parsed :forms)
+        offset (record-get [:ref :kotoba.reader/out] parsed :at)
+        count (vector-count forms)]
+    (cond
+      (not (string=? parse-error ""))
+      (summary 0 "kotoba.error/reader" parse-error 0 offset)
+
+      (not (= count 1))
+      (summary 0 "kotoba.error/type-source-arity"
+               "source must contain exactly one value type form" 0 0)
+
+      :else
+      (let [type (typed-list-nth [:list [:ref :form/r]] forms 0)
+            result (value-type/validate-type type 0 0)
+            ok (value-type/outcome-ok? result)]
+        (summary (if ok 1 0)
+                 (value-type/outcome-code result)
+                 (value-type/outcome-msg result)
+                 (value-type/outcome-nodes result)
+                 0)))))
+
+(defn validate-expression-batch [batch :string] :string
+  "Validate a batch of desugared Kotoba expressions with the native-safe
+  expression checker. The batch protocol carries locals, function arities,
+  forbidden heads, declared grammar heads, and prior node counts."
+  (validate-expr/run-batch batch))
+
+(defn- validate-expression-source* [source :string]
+  [:ref :kotoba.compiler/type-summary]
+  (let [parsed (reader/read-forms-count-bounded source 256 65536 10000)
+        parse-error (record-get [:ref :kotoba.reader/out] parsed :err)
+        forms (record-get [:ref :kotoba.reader/out] parsed :forms)
+        offset (record-get [:ref :kotoba.reader/out] parsed :at)
+        count (vector-count forms)]
+    (cond
+      (not (string=? parse-error ""))
+      (summary 0 "kotoba.error/reader" parse-error 0 offset)
+
+      (not (= count 1))
+      (summary 0 "kotoba.error/expression-source-arity"
+               "source must contain exactly one expression form" 0 0)
+
+      :else
+      (let [raw (typed-list-nth [:list [:ref :form/r]] forms 0)
+            context (validate-expr/check-context
+                     (form/form-vec (form/no-forms))
+                     (form/form-map (form/no-forms))
+                     (form/form-set (form/no-forms))
+                     (form/form-set (form/no-forms))
+                     (form/vec2 (form/bool-form false) (form/int-form -1)))
+            result (validate-expr/check-form raw context 0)]
+        (summary (if (form/bool-value (form/nth-of result 0)) 1 0)
+                 (form/string-value (form/nth-of result 1))
+                 (form/string-value (form/nth-of result 2))
+                 (form/int-value (form/nth-of result 3))
+                 0)))))
+
+(defn validate-kotoba-expression-source [source :string]
+  [:ref :kotoba.compiler/type-summary]
+  "Read and validate one canonical `.kotoba` core expression."
+  (validate-expression-source* source))
+
+(defn analyze-kotoba-source [source :string] [:ref :ana/ir]
+  "Run the full Kotoba semantic analyzer over canonical `.kotoba` source."
+  (sema/analyze source (form/form-map (form/no-forms))))
+
+(defn- native-project-error [message :string] [:ref :ana/ir]
+  (let [reserved? (= 0 (string-index-of message "symbol uses the reserved __kotoba_ prefix"))]
+    (record-new [:ref :ana/ir]
+                false
+                (form/nil-form)
+                (record-new [:ref :fe/err]
+                            message
+                            (if reserved?
+                              "kotoba.error/subset-reject"
+                              "kotoba.error/native-project-import")
+                            (form/nil-form)
+                            (if reserved? "source" "project")
+                            (form/nil-form)))))
+
+(defn analyze-project-source [source :string dependency-packet :string]
+  [:ref :ana/ir]
+  "Analyze one module in a resolved graph. Alias calls are linked to checked
+  local analysis interfaces under the linker's complete closed typed profile,
+  including explicit supported typed-map interfaces. Unsupported interfaces
+  fail closed; these interfaces are not executable module links."
+  (let [parsed (reader/read-forms-count-bounded source 512 1048576 10000)
+        parse-error (record-get [:ref :kotoba.reader/out] parsed :err)
+        forms (record-get [:ref :kotoba.reader/out] parsed :forms)]
+    (if (not (string=? parse-error ""))
+      (sema/analyze source (form/form-map (form/no-forms)))
+      (let [linked (linker/link-project-forms forms source dependency-packet)
+            link-error (record-get [:ref :native.project.link/result] linked :err)]
+        (if (not (string=? link-error ""))
+          (native-project-error link-error)
+          (sema/analyze-forms
+           (record-get [:ref :native.project.link/result] linked :forms)
+           (analysis-options true)))))))
+
+(defn lint-kotoba-source [source :string] [:ref :ana/ir]
+  "Run semantic analysis and lint findings on canonical `.kotoba` source."
+  (sema/lint source (form/form-map (form/no-forms))))
+

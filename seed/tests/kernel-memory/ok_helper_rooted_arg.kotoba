@@ -1,0 +1,3 @@
+(ns t (:export [f]))
+(defn- h [b :i64 n :i64 i :i64] :i64 (kernel-load-u32 b n i))
+(defn f [b :i64 n :i64 i :i64] :i64 (+ (h b n i) (h (kernel-subregion b n 4 8) 8 0)))

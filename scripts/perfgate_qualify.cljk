@@ -126,6 +126,8 @@
 
 (defn validate-manifest-v2! [manifest]
   (let [claim (:claimContract manifest)
+        reliability-policy (:reliabilityPolicy manifest)
+        minimum-competitive-runs (:minimumCompetitiveRuns reliability-policy)
         required-domain-ids (mapv :id (:requiredDomains manifest))
         required-engines (:requiredEngines manifest)
         required-comparators (:requiredComparators manifest)
@@ -161,6 +163,10 @@
     (require! (and (pos-int? (:evidenceMaxAgeHours claim))
                    (false? (:worldFastestClaimQualified claim)))
               "v2 freshness/world-fastest boundary is invalid" {})
+    (require! (and (pos-int? minimum-competitive-runs)
+                   (>= minimum-competitive-runs 10))
+              "competitive reliability policy must require at least ten runs per domain"
+              {:minimum-competitive-runs minimum-competitive-runs})
     (require! (= ["amu-native"] required-engines)
               "v2 requiredEngines must be exactly [amu-native]"
               {:actual required-engines})
@@ -186,6 +192,7 @@
         required-comparators (:requiredComparators manifest)
         required-engines (:requiredEngines manifest)
         required-targets (:requiredTargets manifest)
+        minimum-competitive-runs (get-in manifest [:reliabilityPolicy :minimumCompetitiveRuns])
         mode (get-in report [:contract :mode])]
     (require! (= (:id manifest) (:suite report)) "report suite does not identify the manifest" {})
     (require! (= manifest-sha (get-in report [:manifest :sha256]))
@@ -210,6 +217,21 @@
               {:required required-domain-ids :actual report-domain-ids})
     (require! (contains? #{"core" "competitive"} mode)
               "report mode is not core or competitive" {:mode mode})
+    (when (= "competitive" mode)
+      (let [requested-runs (get-in report [:contract :requestedMeasurementRunsPerDomain])
+            measured-runs (get-in report [:contract :measurementRunsPerDomain])
+            reported-minimum (get-in report [:contract :minimumCompetitiveRuns])]
+        (require! (= minimum-competitive-runs reported-minimum)
+                  "report competitive run floor differs from the manifest"
+                  {:manifest minimum-competitive-runs :report reported-minimum})
+        (require! (and (pos-int? requested-runs)
+                       (= requested-runs measured-runs)
+                       (>= measured-runs minimum-competitive-runs)
+                       (true? (get-in report [:contract :competitiveRunFloorMet])))
+                  "competitive report did not meet its declared run floor"
+                  {:requested requested-runs :measured measured-runs
+                   :minimum minimum-competitive-runs
+                   :floor-met (get-in report [:contract :competitiveRunFloorMet])})))
     (require! (= (set required-comparators) (set (map name (keys (:externalComparators report)))))
               "report comparator registry is not exact" {})
     (doseq [[required domain] (map vector (:requiredDomains manifest) (:domains report))]
@@ -292,6 +314,27 @@
                        (every? #(= (get-in domain [:knownAnswer :result]) (:result %)) samples))
                   "claim arm failed its recorded known answer"
                   {:domain (:id required) :engine engine}))
+      (when (= "competitive" mode)
+        (let [domain-runs (get-in domain [:contract :runs])
+              samples-per-engine (get-in domain [:contract :samplesPerEngine])
+              measured-runs (get-in report [:contract :measurementRunsPerDomain])]
+          (require! (and (pos-int? domain-runs)
+                         (= domain-runs measured-runs)
+                         (>= domain-runs minimum-competitive-runs))
+                    "competitive domain did not meet the required run floor"
+                    {:domain (:id domain) :runs domain-runs
+                     :minimum minimum-competitive-runs})
+          (require! (and (pos-int? samples-per-engine)
+                         (>= samples-per-engine minimum-competitive-runs))
+                    "competitive domain sample count is below the run floor"
+                    {:domain (:id domain) :samples-per-engine samples-per-engine
+                     :minimum minimum-competitive-runs})
+          (doseq [engine (concat required-engines required-comparators)
+                  :let [samples (get-in domain [:engines (keyword engine) :samples])]]
+            (require! (= samples-per-engine (count samples))
+                      "competitive engine samples do not match the declared sample count"
+                      {:domain (:id domain) :engine engine
+                       :declared samples-per-engine :actual (count samples)}))))
       (doseq [artifact-key (concat [:amuNativeKexe :amuNativeCode :amuNativeProvenance
                                     :nativeBenchmarkRunner :nativeBenchmarkRunnerSource]
                                    (when (= "competitive" mode)

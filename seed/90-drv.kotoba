@@ -26,6 +26,8 @@
   (cond (= (drv-is s 8 4838156518066596434) 1) 1
         ;; R5A: --source-path D (repeatable) and --policy P also take a value
         (string=? s "--source-path") 1
+        (string=? s "--source-lock") 1
+        (string=? s "--source-lock-sha256") 1
         (string=? s "--policy") 1
         (string=? s "--object-dir") 1
         (string=? s "--ns") 1   ; EMIT: compile-kir --emit-module --ns NAME
@@ -313,7 +315,12 @@
         :else "?"))
 
 (defn- drv-slice [path :string a :i64 b :i64] :string
-  (if (> b a) (io-slice path a (- b a)) ""))
+  (if (> b a)
+    ;; Canonical helper expansion can put a diagnostic span beyond the file.
+    ;; Keep the compiler error instead of replacing it with an invalid RANGE.
+    (let [source (io-read-file [0] path)]
+      (if (or (< a 0) (> b (string-length source)))
+        "<generated-source>" (string-substring source a b))) ""))
 
 ;; the text of placeholder kind k
 (defn- drv-ph [k :i64 path :string a :i64 b :i64 n :i64] :string
@@ -405,7 +412,7 @@
 (defn- drv-c0 [S :string path :string mode :i64 out :string] :i64
   (drv-c1 (lx-run (mem-set (mem-new) MM-SRC-LEN (string-length S)) S) S path mode out))
 
-(defn- drv-read [path :string] :string (typed-cap-call :fs/app-data :string :string path))
+(defn- drv-read [path :string] :string (io-fs2-text 65 path ""))
 
 ;; ==== BEGIN R5A project route (owner: agent R5A; module seed/60-proj.kotoba) =========================================
 ;;   compile <entry> [--source-path D ..] [--unpinned] [--policy P] --output X
@@ -436,21 +443,77 @@
     (drv-fail-in M path (if (> (vector-at L pj-k-errmod) 0) (string-concat " in " path) ""))))
 
 (defn- drv-pj-emit [M :vector-i64 L :vector-i64 P :string mode :i64 out :string] :i64
-  (let [S (string-concat (drv-read (pj-p L P (pj-mf L 0 pj-mf-path))) (pj-trailer L P 0))
-        M1 (if (= mode 0) M (out-image M S L pj-img-base (vector-at L pj-k-img)))]
+  (let [S (string-concat (pj-src M L P 0) (pj-trailer L P 0))
+        M1 (if (or (= mode 0) (not (pj-ok M))) M (out-image M S L pj-img-base (vector-at L pj-k-img)))]
     (cond (> (vector-at M1 MM-ERR) 0) (drv-fail0 (vector-at M1 MM-ERR))
           (= mode 0) (let [g (drv-r5b-gate M1 (pj-p L P (pj-mf L 0 pj-mf-path)) (vector-at L pj-k-caps))] (if (< g 0) (drv-ok M1) g))
           ;; R5B: --policy against the capabilities of every module of the project
           :else (let [g (drv-r5b-gate M1 (pj-p L P (pj-mf L 0 pj-mf-path)) (vector-at L pj-k-caps))] (if (< g 0) (drv-emit2 M1 out) g)))))
+
+;; A source-lock occurrence is unique and has a value; values of other flags
+;; are skipped. -1 = absent, -2 = malformed. It never authorizes --unpinned.
+(defn- drv-pj-lock-arg [index :i64 count :i64 found :i64] :i64
+  (cond (>= index count) found
+        (string=? (io-arg index) "--source-lock")
+        (if (or (not= found -1) (>= (+ index 1) count)) -2
+          (drv-pj-lock-arg (+ index 2) count (+ index 1)))
+        (= (drv-flagv (io-arg index)) 1) (drv-pj-lock-arg (+ index 2) count found)
+        :else (drv-pj-lock-arg (+ index 1) count found)))
+(defn- drv-pj-root-argc [index :i64 count :i64 roots :i64] :i64
+  (cond (>= index count) roots
+        (string=? (io-arg index) "--source-path")
+        (if (>= (+ index 1) count) 17 (drv-pj-root-argc (+ index 2) count (+ roots 1)))
+        (= (drv-flagv (io-arg index)) 1) (drv-pj-root-argc (+ index 2) count roots)
+        :else (drv-pj-root-argc (+ index 1) count roots)))
+(defn- drv-pj-lock-roots? [L :vector-i64 P :string text :string] :bool
+  (and (= (ksl-root-count text) (pj-l L pj-k-nroot))
+       (= (drv-pj-root-argc 1 (io-argc) 0) (pj-l L pj-k-nroot))
+       (loop [index 0]
+         (if (>= index (pj-l L pj-k-nroot)) true
+           (and (pj-peq L P (pj-l L (+ pj-k-root0 index)) (ksl-root text index)) (recur (+ index 1)))))))
+;; A caller may bind the lock itself to an immutable digest. Validate the
+;; exact bytes that become the cached lock text, with no second file read.
+(defn- drv-pj-digest-arg [index :i64 count :i64 found :i64] :i64
+  (cond (>= index count) found
+        (string=? (io-arg index) "--source-lock-sha256")
+        (if (or (not= found -1) (>= (+ index 1) count)) -2
+          (drv-pj-digest-arg (+ index 2) count (+ index 1)))
+        (= (drv-flagv (io-arg index)) 1) (drv-pj-digest-arg (+ index 2) count found)
+        :else (drv-pj-digest-arg (+ index 1) count found)))
+(defn- drv-pj-lock-text [bytes :vector-i64] :string
+  (if (and (<= (vector-count bytes) 1048576)
+           (or (and (>= (vector-count bytes) 5) (= (vector-at bytes 0) 75) (= (vector-at bytes 1) 83)
+                    (= (vector-at bytes 2) 76) (= (vector-at bytes 3) 50) (= (vector-at bytes 4) 10) (ksl-utf8? bytes))
+           (loop [index 0]
+             (if (= index (vector-count bytes)) true
+               (let [byte (vector-at bytes index)]
+                 (and (or (= byte 10) (and (>= byte 32) (<= byte 126))) (recur (+ index 1))))))))
+    (string-from-utf8 (bytes-from-vector-i64 bytes)) ""))
+(defn- drv-pj-lock-digest? [text :string] :bool
+  (let [argument (drv-pj-digest-arg 1 (io-argc) -1)]
+    (or (= argument -1)
+        (and (>= argument 0) (= (string-length (io-arg argument)) 64)
+             (ksl-hex? (io-arg argument) 0) (string=? (sh-text text) (io-arg argument))))))
+(defn- drv-pj-lock [M :vector-i64 L :vector-i64 P :string path :string] :string
+  (let [argument (drv-pj-lock-arg 1 (io-argc) -1)]
+    (cond (= argument -1) P
+          (or (= argument -2) (= (pj-l L pj-k-unpinned) 1)) (let [w (pj-err M E-PROJ-UNPINNED 0)] P)
+          :else
+          (let [text (drv-pj-lock-text (io-read-source-lock (io-arg argument)))]
+            (if (and (drv-pj-lock-digest? text) (ksl-valid? text) (string=? (ksl-entry text) path) (drv-pj-lock-roots? L P text))
+              (let [w (-> L (pj-ls pj-k-source-lock 1) (pj-ls pj-k-lock-text (pj-n L)) (pj-ls pj-k-lock-files (ksl-file-count text)))]
+                (pj-padd L P text))
+              (let [w (pj-err M E-PROJ-UNPINNED 0)] P))))))
 
 (defn- drv-pj-compile [M :vector-i64 path :string mode :i64 out :string] :i64
   (let [L (pj-new-l)
         n (io-argc)
         P0 (drv-pj-roots L (pj-new-p L) 1 n)
         w (vector-assoc! L pj-k-unpinned (drv-pj-has 1 n "--unpinned"))
-        P1 (pj-project M L (pj-padd L P0 path) (- (pj-n L) 1))]
+        P-lock (drv-pj-lock M L P0 path)
+        P1 (if (pj-ok M) (pj-project M L (pj-padd L P-lock path) (- (pj-n L) 1)) P-lock)]
     (if (> (vector-at M MM-ERR) 0)
-      (drv-pj-fail M L P1)
+      (if (= (pj-l L pj-k-nmod) 0) (drv-fail-in M path "") (drv-pj-fail M L P1))
       (drv-pj-emit M L P1 mode out))))
 
 ;; argv index of the value after the flag spelled s, -1 when absent
@@ -515,18 +578,31 @@
                     x (io-out (string-concat (pj-p L P1 (pj-mf L m pj-mf-name)) (string-concat " " (string-concat (pj-p L P1 (pj-mf L m pj-mf-path)) "\n"))))]
                 (recur (+ i 1))))))))))
 
-(defn- drv-pj-run [S :string path :string mode :i64 out :string] :i64
-  (let [M (lx-run (mem-set (mem-set (mem-new) MM-QUIET (if (= mode 3) 1 0)) MM-SRC-LEN (string-length S)) S)   ; R6L: mode 3 = 1, quiet
+(defn- drv-single-lock? [source :string path :string] :bool
+  (let [argument (drv-pj-lock-arg 1 (io-argc) -1)]
+    (and (>= argument 0)
+         (let [text (drv-pj-lock-text (io-read-source-lock (io-arg argument)))]
+           (and (drv-pj-lock-digest? text) (ksl-valid? text) (string=? (ksl-entry text) path)
+                (= (ksl-root-count text) 0) (= (ksl-file-count text) 1)
+                (string=? (ksl-hash text path) (sh-text source)))))))
+;; A pin alone must not change a plain unity into a project/interface build.
+;; Verify the exact cached source, then use the same frontend/lowering path.
+;; Imported modules and every declared source root retain the project route.
+(defn- drv-pj-run [original :string path :string mode :i64 out :string] :i64
+  (let [S (string-concat original (ck-r6b-lib original))
+        M (lx-run (mem-set (mem-set (mem-new) MM-QUIET (if (= mode 3) 1 0)) MM-SRC-LEN (string-length S)) S)   ; R6L: mode 3 = 1, quiet
         M1 (if (= (vector-at M MM-ERR) 0) (rd-run M S) M)]
     (if (= (drv-pj-has 1 (io-argc) "--emit-module") 1)
-      (drv-pj-emitmod M1 path out)
-    (if (and (= (vector-at M1 MM-ERR) 0) (or (= (drv-pj-has 1 (io-argc) "--source-path") 1) (= (pj-needed M1 S) 1)))
+      (if (= (drv-pj-has 1 (io-argc) "--source-lock") 1) (drv-fail0 E-PROJ-UNPINNED) (drv-pj-emitmod M1 path out))
+    (if (and (= (vector-at M1 MM-ERR) 0)
+             (or (= (drv-pj-has 1 (io-argc) "--source-path") 1) (= (pj-needed M1 S) 1)))
       (drv-pj-compile M1 path mode out)
-      (drv-c2 M1 S path mode out)))))
+      (if (and (= (drv-pj-has 1 (io-argc) "--source-lock") 1) (not (drv-single-lock? original path)))
+        (drv-fail0 E-PROJ-UNPINNED) (drv-c2 M1 S path mode out))))))
 ;; ==== END R5A project route ===========================================================================================
 
 (defn- drv-run [path :string mode :i64 out :string] :i64
-  (if (= (io-exists path) 1) (let [S0 (drv-read path)] (drv-pj-run (string-concat S0 (ck-r6b-lib S0)) path mode out)) (drv-fail0 E-READ)))   ; R6B: + the source library
+  (if (= (io-exists path) 1) (drv-pj-run (drv-read path) path mode out) (drv-fail0 E-READ)))
 ;; R6L (FOLD, CMD request): compile src into the kseed file out with the flags of argv (--policy, --source-path ..), status 0 /
 ;; 1 (refusal printed) / 2, WITHOUT the ok line; seed.main of the split exports it (gen-split.py) for amu's compile command.
 (defn- drv-compile-file [src :string out :string] :i64 (drv-run src 3 out))
@@ -780,6 +856,12 @@
 
 (defn- drv-cmd [n :i64] :i64
   (cond (< n 1) (drv-usage)
+        ;; Final native project commands cannot opt out of exact input pins.
+        (= (drv-pj-has 1 n "--unpinned") 1) (drv-fail0 E-PROJ-UNPINNED)
+        (and (= (drv-pj-has 1 n "--source-lock-sha256") 1)
+             (= (drv-pj-has 1 n "--source-lock") 0)) (drv-fail0 E-PROJ-UNPINNED)
+        (and (= (drv-pj-has 1 n "--source-lock") 1)
+             (not (or (string=? (io-arg 0) "compile") (string=? (io-arg 0) "check")))) (drv-fail0 E-PROJ-UNPINNED)
         (= (drv-is (io-arg 0) 11 1891999495935608509) 1) (drv-kir n)  ; compile-kir (block above)
         (= (drv-is (io-arg 0) 7 1333288279851460382) 1) (drv-compile n)
         (string=? (io-arg 0) "link") (drv-pj-link n)          ; R5A (60-proj separate mode)
@@ -832,18 +914,22 @@
     :else ""))
 
 (def drv-r5b-m24 16777215)
-(def drv-r5b-m47 140737488355327)
+(def drv-r5b-m47 422212465065983)   ; bits 0..46 plus extension bit 48; bit 47 remains :state
 (def drv-r5b-state 140737488355328)
 
 ;; the catalogue name of capability wire w
 (defn- drv-r5b-wname [w :i64] :string
   (case w 3 ":hash/sha256" 7 ":clock/now" 33 ":env/read" 34 ":fs/browse" 35 ":fs/app-data" 37 ":io/write" 38 ":cli/args"
-        39 ":io/write-error" 41 ":io/read" (mem-u2dec w)))
+        39 ":io/write-error" 41 ":io/read" 42 ":gpu/compute" 20 ":process/spawn"
+        43 ":net/listen" 44 ":net/accept" 45 ":net/dial" 46 ":net/read" 47 ":net/write" (mem-u2dec w)))
 ;; the wire of a capability name (with ':'), -1 when none
 (defn- drv-r5b-wire [s :string] :i64
   (cond (string=? s ":hash/sha256") 3 (string=? s ":clock/now") 7 (string=? s ":env/read") 33 (string=? s ":fs/browse") 34
         (string=? s ":fs/app-data") 35 (string=? s ":fs/app-data-bytes") 35 (string=? s ":io/write") 37 (string=? s ":cli/args") 38
-        (string=? s ":io/write-error") 39 (string=? s ":io/read") 41 :else -1))
+        (string=? s ":io/write-error") 39 (string=? s ":io/read") 41 (string=? s ":gpu/compute") 42
+        (string=? s ":process/spawn") 20
+        (string=? s ":net/listen") 43 (string=? s ":net/accept") 44 (string=? s ":net/dial") 45
+        (string=? s ":net/read") 46 (string=? s ":net/write") 47 :else -1))
 ;; the items of mask m (bit 47 = :state first, then the wires in ascending order), each wrapped by pre/post, as #{..}. R5B rung
 ;; proof (a handler written in the language): the text is the state of handler drv-acc, whose put APPENDS (it was a loop
 ;; accumulator); drv-r5b-items is stateful and self-recursive
@@ -854,8 +940,8 @@
 (defn- drv-r5b-item [x :string pre :string post :string] :string
   (perform :state/put (string-concat (if (= (string-byte-length (perform :state/get)) 2) "" " ") (string-concat pre (string-concat x post)))))
 (defn- drv-r5b-items [m :i64 w :i64 pre :string post :string] :i64
-  (cond (>= w 47) 0
-        (= (bit-and m (i64-shift-left 1 w)) 0) (drv-r5b-items m (inc w) pre post)
+  (cond (>= w 48) 0
+        (= (bit-and m (if (= w 47) 281474976710656 (i64-shift-left 1 w))) 0) (drv-r5b-items m (inc w) pre post)
         :else (do (drv-r5b-item (drv-r5b-wname w) pre post) (drv-r5b-items m (inc w) pre post))))
 (defn- drv-r5b-set [m :i64 pre :string post :string] :string
   (handle (do (if (= (bit-and m drv-r5b-state) 0) "" (drv-r5b-item ":state" pre post))
@@ -938,7 +1024,8 @@
                 j (string-index-of r "]")
                 x (if (< j 0) "" (string-substring r 0 j))
                 w (if (and (> (string-length x) 0) (= (string-code-point-at x 0) 58)) (drv-r5b-wire x) (drv-r5b-num x))]
-            (if (or (< w 0) (>= w 47)) -1 (recur (string-substring r (+ j 1) (string-length r)) (bit-or acc (i64-shift-left 1 w))))))))))
+            (if (or (< w 0) (>= w 48)) -1 (recur (string-substring r (+ j 1) (string-length r))
+                                               (bit-or acc (if (= w 47) 281474976710656 (i64-shift-left 1 w)))))))))))
 ;; -1 when the compile may write its output: no --policy, or every required capability (mask req) is allowed; else the
 ;; refusal is printed (E2177 / E2170) and the exit status is returned
 (defn- drv-r5b-gate [M :vector-i64 path :string req :i64] :i64

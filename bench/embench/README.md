@@ -1,5 +1,9 @@
 # Embench native qualification
 
+For the corrected same-algorithm speed comparison, see the [Embench reproduction package](reproduce-20261015/README.md).
+Its M104 record is an Embench-derived translated-port comparison, not an official score; the earlier M93 figure is retained
+only as historical evidence after the kernel audit.
+
 > **Selfhost status.** The measured artifact below was produced with a
 > GraalVM-built compiler, so under `docs/selfhost-priority.md` it is a
 > *bootstrap-reference* result, not a selfhost result. Selfhost is the top
@@ -48,38 +52,23 @@ means a real algorithmic workload derived from that benchmark is executed but
 the full upstream implementation is not translated. Adapted measurements are
 compiler maturity evidence only.
 
-## JavaScript-independent compiler gate
+## Selfhost compiler gate
 
-Build the standalone compiler with:
+Use canonical Kotoba source and a compiler built and rebuilt by Amu selfhost,
+including the native build, packaging and execution closure required by
+[the current contract](../../docs/selfhost-priority.md). Do not require
+CLJK/CLJC/CLJS, NBB, KBB, Clojure, Java/JVM, GraalVM, Node or a C
+compiler/loader/runtime. Missing native benchmark orchestration is a blocker,
+not permission to use a hosted compiler or C loader.
 
-```sh
-bin/build-native-image
-```
+The old GraalVM builder and its Python staging helper are removed. Their
+standalone Mach-O output did not establish Amu self-reconstruction. Retain
+the recorded corpus, benchmark inputs and historical evidence; port required
+orchestration to Kotoba before recording new selfhost qualification. Record
+compiler generations, source/lock pins, output and runner hashes, process
+traces, results and named refusals on a quiet host.
 
-The build uses Clojure and GraalVM Native Image as build tools. The resulting
-Mach-O compiler has no Node.js, JavaScript, JVM, or Clojure runtime dependency.
-The qualification runner gives the compiler an empty `PATH`, so it cannot
-delegate checking, compilation, or extraction to `node`, `java`, `clojure`, or
-another executable. The recorded `otool -L` output is also checked for Node/JVM
-libraries.
-
-Run all 19 ports and retain raw evidence with:
-
-```sh
-python3 bench/embench/run_native_qualification.py \
-  --compiler /absolute/path/to/amu-native \
-  --runner /absolute/path/to/kexe-benchmark \
-  --upstream /absolute/path/to/embench-iot \
-  --output /absolute/path/to/evidence
-```
-
-The output contains five raw check timings, five compile timings, five native
-execution samples, source/KEXE/raw-code hashes and sizes, compiler and runner
-hashes, target ISA, host details, upstream commit, dependency inspection, JSON,
-and CSV. Every `test-*` export must return exactly `1`; otherwise the command
-fails.
-
-## Current measured artifact
+## Historical measured artifact (not current selfhost qualification)
 
 The 2026-09-29 Apple M4 run used standalone compiler SHA-256
 `59e3081256a116d3f50e864f44178bb35d38f5e07fd86420929c5ae13ad99ba0`

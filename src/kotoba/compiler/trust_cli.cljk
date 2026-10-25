@@ -36,13 +36,18 @@
             [kotoba.compiler.interface :as interface]
             [kotoba.compiler.kexe-indexes :as kexe-indexes]
             [kotoba.compiler.ios-aot :as ios-aot]
+            [kotoba.compiler.packaging.aiueos-disk :as aiueos-disk]
             [kotoba.compiler.packaging.pe32plus :as pe32plus]
             [kotoba.compiler.receipt :as receipt]
             [kotoba.compiler.release :as release]
             [kotoba.compiler.source-path :as source-path]
             [kotoba.compiler.target-names :as target-names]
             [kotoba.verifier :as verifier]
-            [kotoba.verifier.signing :as signing]))
+            [kotoba.verifier.signing :as signing]
+            #?(:cljs ["node:fs" :as node-fs])
+            #?(:cljs ["node:path" :as node-path]))
+  #?(:clj (:import [java.nio.file Files Paths]
+                   [java.text Normalizer Normalizer$Form])))
 
 ;; Every artifact this namespace hands the verifier is read through one of
 ;; these two. `bounded-edn` answers every integer token as a BigInt on Node,
@@ -67,11 +72,12 @@
   `kotoba.compiler.ios-aot` already was."
   #{"keygen" "public-key" "inspect" "trust-key" "trust-runtime"
     "sign" "verify-signed" "verify" "receipt" "verify-receipt" "verify-chain"
-    "sbom" "attest-release" "verify-release" "package-ios"
+    "sbom" "attest-release" "verify-release" "package-ios" "package-macos"
     ;; joined later the same day: `kotoba.compiler.coverage` became portable
     ;; (level-1 leaf), and `package-aiueos-boot` stood only on leaves already
     ;; portable plus `pe32plus`, which always was
-    "coverage" "sign-coverage-evidence" "package-aiueos-boot"})
+    "coverage" "sign-coverage-evidence" "package-aiueos-boot"
+    "package-aiueos-disk-image"})
 
 (defn- option [args flag] (second (drop-while #(not= flag %) args)))
 
@@ -80,6 +86,52 @@
 
 (defn- required [args flag]
   (or (option args flag) (usage! (str "missing " flag))))
+
+(defn- normalized-path [path]
+  ;; Resolve aliases through symlinked parents and, when present, the leaf
+  ;; itself. macOS and Windows commonly use case-insensitive volumes, so fold
+  ;; case there before the package command compares its three destinations.
+  #?(:clj (let [canonical (.getCanonicalPath (java.io.File. path))
+                os-name (.toLowerCase (System/getProperty "os.name" ""))]
+            (cond
+              (.startsWith os-name "mac")
+              (Normalizer/normalize (.toLowerCase canonical java.util.Locale/ROOT)
+                                    Normalizer$Form/NFD)
+              (.startsWith os-name "windows")
+              (.toLowerCase canonical java.util.Locale/ROOT)
+              :else canonical))
+     :cljs (let [absolute (.resolve node-path path)
+                 canonical (if (.existsSync node-fs absolute)
+                             (.realpathSync node-fs absolute)
+                             (.join node-path
+                                    (.realpathSync node-fs (.dirname node-path absolute))
+                                    (.basename node-path absolute)))
+                 platform (.-platform js/process)]
+             (cond
+               (= "darwin" platform)
+               (.normalize (.toLowerCase canonical) "NFD")
+               (= "win32" platform)
+               (.toLowerCase canonical)
+               :else canonical))))
+
+(defn- same-existing-file? [left right]
+  ;; Canonical names do not detect hard links. If both paths already exist,
+  ;; compare filesystem identity too so an output cannot replace an input
+  ;; through a distinct hard-link name.
+  #?(:clj (try
+            (Files/isSameFile (Paths/get left (make-array String 0))
+                              (Paths/get right (make-array String 0)))
+            (catch Exception _ false))
+     :cljs (try
+             (let [left-stat (.statSync node-fs left)
+                   right-stat (.statSync node-fs right)]
+               (and (= (.-dev left-stat) (.-dev right-stat))
+                    (= (.-ino left-stat) (.-ino right-stat))))
+             (catch :default _ false))))
+
+(defn- same-target? [left right]
+  (or (= (normalized-path left) (normalized-path right))
+      (same-existing-file? left right)))
 
 (defn- long-option
   "A decimal integer option, or the fallback when absent. Text that is not
@@ -93,6 +145,11 @@
        (nil? text) (if (some? fallback) fallback (usage! (str "missing " flag)))
        :else (or (parse-long text)
                  (usage! (str flag " must be a decimal integer")))))))
+
+(defn- json-text [value]
+  #?(:cljs (str (.stringify js/JSON (clj->js value) nil 2) "\n")
+     :clj (throw (ex-info "JSON receipts require the Amu/Nbb host"
+                          {:phase :host-implementation}))))
 
 ;; A kernel object or its payload, as `package-aiueos-boot` reads them. The
 ;; JVM branch had no ceiling (`Files/readAllBytes`); 64 MiB is far above any
@@ -128,7 +185,7 @@
         {:ok true :output output :signer (:signer public)})
 
       "inspect"
-      (let [input (source-path/admit! (second args))
+      (let [input (source-path/admit-or-throw! (second args))
             inspected (interface/inspect-source (bounded-edn/read-text-file input))]
         (if-let [output (option args "--output")]
           (do (atomic-output/write-edn! output inspected)
@@ -252,7 +309,7 @@
             now (long-option args "--now")]
         (assoc (release/verify! envelope input sbom trust now) :ok true))
 
-      ;; ── iOS AOT packaging ────────────────────────────────────────────
+      ;; ── Apple AOT packaging ───────────────────────────────────────────
       ;; `ios-aot/package` answers the object as a byte array on the JVM and
       ;; as a vector of unsigned bytes on Node (its own comment says why);
       ;; `atomic-output/write-bytes!` takes a byte source on both hosts.
@@ -269,6 +326,25 @@
         (atomic-output/write-edn! manifest-output (:manifest packaged))
         {:ok true :target (:target input) :entry entry
          :platform platform :output output
+         :manifest-output manifest-output})
+
+      "package-macos"
+      (let [input-path (second args)
+            input (read-kexe input-path)
+            entry (symbol (or (option args "--entry") "main"))
+            output (or (option args "--output") "kotoba-macos-program.o")
+            manifest-output (or (option args "--manifest-output") (str output ".edn"))
+            _ (when (or (same-target? input-path output)
+                        (same-target? input-path manifest-output)
+                        (same-target? output manifest-output))
+                (usage! "package-macos input, object, and manifest paths must be distinct"))
+            packaged (ios-aot/package input entry {:platform :macos})
+            object #?(:clj (:object packaged)
+                      :cljs (js/Uint8Array.from (clj->js (:object packaged))))]
+        (atomic-output/write-bytes! output object)
+        (atomic-output/write-edn! manifest-output (:manifest packaged))
+        {:ok true :target (:target input) :entry entry
+         :platform :macos :output output
          :manifest-output manifest-output})
 
       "coverage"
@@ -297,6 +373,12 @@
             output (or (option args "--output") "BOOTX64.EFI")
             payload-path (option args "--payload")
             k16-preflight? (boolean (some #{"--k16-preflight"} args))
+            ;; `--resident` promised a resident loader that
+            ;; package-embedded-kernel never implemented (it emits one
+            ;; transition loader). Accepting the flag would let a caller
+            ;; believe they deployed something other than what was built.
+            _ (when (some #{"--resident"} args)
+                (usage! "--resident is not implemented: package-embedded-kernel emits one transition loader"))
             ;; Free-text the caller puts on the panel beside the build digest --
             ;; a version, a branch, a date. Deliberately not derived here: this
             ;; packager is byte-compared against a second packaging of the same
@@ -317,5 +399,24 @@
          :k16-preflight? k16-preflight?
          :k16-note k16-note
          :payload-sha256 (:embedded-payload-sha256 packaged)})
+
+      "package-aiueos-disk-image"
+      (let [input (second args)
+            output (or (option args "--output") "aiueos-kotoba-desktop-gpt.img")
+            ;; The receipt is JSON (json-text below), so it must not default to
+            ;; an .edn name that downstream EDN readers would fail to parse.
+            receipt-path (or (option args "--receipt") (str output ".receipt.json"))
+            _ (when (or (same-target? input output)
+                        (same-target? input receipt-path)
+                        (same-target? output receipt-path))
+                (usage! "package-aiueos-disk-image input, disk, and receipt paths must be distinct"))
+            efi (bounded-edn/read-bytes-file input max-kernel-bytes)
+            packaged (aiueos-disk/package efi)]
+        (atomic-output/write-bytes! output (:bytes packaged))
+        (atomic-output/write-text! receipt-path (json-text (:receipt packaged)))
+        {:ok true :profile :aiueos-native-desktop-disk :packager-route :amu-nbb
+         :input input :output output :receipt receipt-path
+         :bytes (get-in packaged [:receipt "disk" "bytes"])
+         :sha256 (get-in packaged [:receipt "disk" "sha256"])})
 
       (usage! (str "not a trust-plane command: " (pr-str command))))))

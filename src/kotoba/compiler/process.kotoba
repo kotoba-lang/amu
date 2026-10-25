@@ -1,0 +1,32 @@
+;; Canonical process boundary: only the sealed native spawn capability acts.
+(ns kotoba.compiler.process
+  {:kotoba/export [run spawn]}
+  (:require [kotoba.compiler.process-wire :as wire])
+  (:capabilities #{:process/spawn})
+  (:schemas {:compiler.process/answer
+             [:record :compiler.process/answer [[:exit :i64] [:out :string]]]}))
+
+(defn spawn [request :string] :string
+  (typed-cap-call :process/spawn :string :string request))
+
+(defn run [program :string args [:list :string]]
+  [:result [:ref :compiler.process/answer] :document]
+  "Encode, execute and decode an explicitly granted program. Provider refusals
+  remain named native traps; no host, shell or successful empty answer replaces them."
+  (let [request (wire/request program args)]
+    (if (not (result-ok?-of [:result :string :document] request))
+      (result-err-of [:result [:ref :compiler.process/answer] :document]
+        (result-error-of [:result :string :document] request (document-null)))
+      (let [answer (spawn (result-value-of [:result :string :document] request ""))
+            exit (wire/answer-exit answer)]
+        (if (not (result-ok?-of [:result :i64 :document] exit))
+          (result-err-of [:result [:ref :compiler.process/answer] :document]
+            (result-error-of [:result :i64 :document] exit (document-null)))
+          (let [out (wire/answer-out answer)]
+            (if (not (result-ok?-of [:result :string :document] out))
+              (result-err-of [:result [:ref :compiler.process/answer] :document]
+                (result-error-of [:result :string :document] out (document-null)))
+              (result-ok-of [:result [:ref :compiler.process/answer] :document]
+                (record-new [:ref :compiler.process/answer]
+                  (result-value-of [:result :i64 :document] exit 0)
+                  (result-value-of [:result :string :document] out ""))))))))))

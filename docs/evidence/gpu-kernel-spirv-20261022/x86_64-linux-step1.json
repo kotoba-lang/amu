@@ -1,0 +1,146 @@
+{
+  "status": "PASS_GPU_KERNEL_SPIRV_BUILD_AND_ORACLE",
+  "target": "x86_64-linux",
+  "compiler": {
+    "bytes": 1294848,
+    "sha256": "cb0a7d02089de33d9d2e0509f2e070f48bb6f335568f4f4aa89c4b9af702a8a6"
+  },
+  "host": [
+    "Linux",
+    "aarch64",
+    "6.15.10-200.fc42.aarch64"
+  ],
+  "imageSeccomp": "if-available",
+  "sources": {
+    "tools/spirv_encode.kotoba": {
+      "bytes": 5677,
+      "sha256": "696c0a5cdcf41a84fe3b326313d075bb3d1dab49dab572ee980143dc785b0baf"
+    },
+    "tools/spirv_check.kotoba": {
+      "bytes": 6992,
+      "sha256": "96502b43d7024d3c923ab161e64ed33712453119f8421d0f915bc34574065f05"
+    },
+    "tools/gpu_kernel_kir1.kotoba": {
+      "bytes": 5430,
+      "sha256": "583ffc9caf227e7e3e47a94f1b0b89912d3f249ce7dd6a7dd365d851761fe0a6"
+    },
+    "tools/gpu_kernel_spirv_test.kotoba": {
+      "bytes": 5351,
+      "sha256": "996638e40686026fd6329518b822dfb28d97a8fbeeb696eba358a0981709a207"
+    }
+  },
+  "casesCounted": 33,
+  "runs": [
+    {
+      "name": "kernel-test",
+      "source": {
+        "bytes": 23242,
+        "sha256": "f771d6893a83ce3158f493d794d4a65075086eb537ab522b97bce299bb5f7438"
+      },
+      "image": {
+        "bytes": 213504,
+        "sha256": "8257a642c3a7abb647f268b59324b2296fdbac56c882c7aae3c1cfd98e758e20"
+      },
+      "result": 0,
+      "fuelUsed": 54854,
+      "cases": 33,
+      "failed": 0,
+      "failLines": []
+    },
+    {
+      "name": "kernel-control",
+      "source": {
+        "bytes": 23242,
+        "sha256": "2d2a452058aa107c3ec6c4eed4b6237395b1a8735045f8fee829e6c184866751"
+      },
+      "image": {
+        "bytes": 213504,
+        "sha256": "37f5064d90f1ee12ecaf2e9f6727445f98b31c113fe2d38f77f5e509e3bf2895"
+      },
+      "result": 1,
+      "fuelUsed": 54856,
+      "cases": 33,
+      "failed": 1,
+      "failLines": [
+        "FAIL label inside an open block => 15 ; want 14"
+      ]
+    }
+  ],
+  "modules": {
+    "kir1-ewise-add-wg256.spv": {
+      "bytes": 1004,
+      "sha256": "4d919a56e7476b17f64d46d647423761c7c4fa51f6e578009afcca0812fd68f9"
+    },
+    "kir1-ewise-add-wg64.spv": {
+      "bytes": 1004,
+      "sha256": "665332d7e4e7c02acbb07b0bfb055323b959e5fea6e6deffdf0859f37e1aef50"
+    },
+    "kir1-ewise-div-wg256.spv": {
+      "bytes": 1004,
+      "sha256": "14f0711d365afec3331c6fc8583466dbea88f276f4e181b5b7246aab0409885f"
+    },
+    "kir1-ewise-div-wg64.spv": {
+      "bytes": 1004,
+      "sha256": "54a8b4422f2a5e491e3e7112b2c3f7c9fcca719bd9ac7de99b39769372a1211b"
+    },
+    "kir1-ewise-mul-wg256.spv": {
+      "bytes": 1004,
+      "sha256": "86eab590ca6ca6064d0859123f6ce62f138458fc336d37fab3fdcbb729684e7d"
+    },
+    "kir1-ewise-mul-wg64.spv": {
+      "bytes": 1004,
+      "sha256": "fbc4cafc525f96eb8951c225788fdd16e4321d7c0a0ca41baead1d483bf429a4"
+    },
+    "kir1-ewise-sub-wg256.spv": {
+      "bytes": 1004,
+      "sha256": "61677a0e3242c1139c14a7bbc9204fa19443da7e149cf1db069f91068269250f"
+    },
+    "kir1-ewise-sub-wg64.spv": {
+      "bytes": 1004,
+      "sha256": "9a5ae597089052dc2cc2610807aeb8c479b1d31da118ca08b09de18107256cd9"
+    }
+  },
+  "cCompilerOrLoader": false,
+  "oracle": {
+    "tool": "SPIRV-Tools v2026.3 unknown hash, 2026-07-22T20:34:54+00:00",
+    "host": [
+      "Darwin",
+      "arm64"
+    ],
+    "modules": {
+      "kir1-ewise-add-wg256.spv": {
+        "spirvVal": "valid (vulkan1.1)",
+        "disassembledSHA256": "38124c6f353e6c55c3b23e8a3053abc7c29766b42470a3b03746c2bbf23ca847"
+      },
+      "kir1-ewise-add-wg64.spv": {
+        "spirvVal": "valid (vulkan1.1)",
+        "disassembledSHA256": "ebf322a5de968e42bdc2ab64772755ce30badd2fc9fa270813f1a8449c0706db"
+      },
+      "kir1-ewise-div-wg256.spv": {
+        "spirvVal": "valid (vulkan1.1)",
+        "disassembledSHA256": "c6caeeebf39bc19ac95d46ddb24a47a86305c0adff6b385eff1f141bc06a7749"
+      },
+      "kir1-ewise-div-wg64.spv": {
+        "spirvVal": "valid (vulkan1.1)",
+        "disassembledSHA256": "310ee1ce5ef05d452565f08b1ad94b39de797db05fdd2cf71ba94e1a4e2c23d7"
+      },
+      "kir1-ewise-mul-wg256.spv": {
+        "spirvVal": "valid (vulkan1.1)",
+        "disassembledSHA256": "112c397033ea657c62cc9a479f44352afbb29295838c8889bb6b3713dd4befc8"
+      },
+      "kir1-ewise-mul-wg64.spv": {
+        "spirvVal": "valid (vulkan1.1)",
+        "disassembledSHA256": "b45464060b7cd5323b8fba26af51a18c72be20e3c9bd7b9b32c790304278c96f"
+      },
+      "kir1-ewise-sub-wg256.spv": {
+        "spirvVal": "valid (vulkan1.1)",
+        "disassembledSHA256": "e53221cce010cb87f3fd2ab86cf45374a9e414dfb390419a35e6eb8c9bad1c12"
+      },
+      "kir1-ewise-sub-wg64.spv": {
+        "spirvVal": "valid (vulkan1.1)",
+        "disassembledSHA256": "4b6e1a54205191ca31f35d80c5ec717b588139f6e4ddb4042dc7a465179c8bc7"
+      }
+    },
+    "note": "test oracle only; not part of the product route"
+  }
+}

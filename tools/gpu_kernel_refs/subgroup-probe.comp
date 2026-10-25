@@ -1,0 +1,8 @@
+// Test probe only (ADR 0372), not a kernel KIR v2 writes: the gpu phase of
+// scripts/seed/check-gpu-kernel-spirv.py dispatches it to record the
+// subgroup size and the number of subgroups of a 64-invocation workgroup.
+#version 450
+#extension GL_KHR_shader_subgroup_basic : enable
+layout(local_size_x = 64) in;
+layout(std430, binding = 0) buffer O { uint o[]; };
+void main() { if (gl_LocalInvocationID.x == 0u) { o[0] = gl_SubgroupSize; o[1] = gl_NumSubgroups; } }

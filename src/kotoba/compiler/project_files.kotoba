@@ -1,0 +1,117 @@
+(ns kotoba.compiler.project-files
+ "Explicit canonical source discovery. This module extracts module metadata;
+ the adopted Amu compiler remains responsible for checking and emission.
+ FS2 keeps traversal no-follow. Relative inputs require the separate sys/cwd
+ grant; no environment, source-extension or hosted resolver fallback exists."
+ (:export [normalize-path namespace-relative load-closed-graph load-closed-graph-checked])
+ (:require [kotoba.form :as f] [kotoba.compiler.module-lock :as lock]))
+
+(defn- get [m [:ref :form/r] key :keyword] [:ref :form/r]
+ (f/form-get m (f/keyword-form key)))
+(defn- assoc [m [:ref :form/r] key :keyword value [:ref :form/r]] [:ref :form/r]
+ (f/assoc-form m (f/keyword-form key) value))
+(defn- empty-map [] [:ref :form/r] (f/form-map (f/no-forms)))
+(defn- width [cp :i64] :i64 (cond (< cp 128) 1 (< cp 2048) 2 (< cp 65536) 3 :else 4))
+(defn- pop-segment [parts [:list [:ref :form/r]]] [:list [:ref :form/r]]
+ (if (= (vector-count parts) 0) (throw :project-files/above-root)
+  (loop [i 0 out (f/no-forms)]
+   (if (= i (- (vector-count parts) 1)) out
+    (recur (+ i 1) (f/append-form out (typed-list-nth [:list [:ref :form/r]] parts i)))))))
+(defn- add-segment [parts [:list [:ref :form/r]] segment :string] [:list [:ref :form/r]]
+ (cond (or (string=? segment "") (string=? segment ".")) parts
+       (string=? segment "..") (pop-segment parts)
+       (>= (vector-count parts) 256) (throw :project-files/path-depth)
+       :else (f/append-form parts (f/string-form segment))))
+(defn- path-segments [absolute :string i :i64 start :i64 out [:list [:ref :form/r]]] [:list [:ref :form/r]]
+ (if (= i (string-length absolute)) (add-segment out (string-substring absolute start i))
+  (let [cp (string-code-point-at absolute i)]
+   (cond (or (< cp 32) (= cp 127)) (throw :project-files/path-control)
+         (= cp 47) (path-segments absolute (+ i 1) (+ i 1) (add-segment out (string-substring absolute start i)))
+         :else (path-segments absolute (+ i (width cp)) start out)))))
+(defn normalize-path [input :string] :string
+ (if (= (string-length input) 0) (throw :project-files/empty-path)
+  (if (> (string-byte-length input) 4095) (throw :project-files/path-budget)
+  (let [absolute (if (= (string-code-point-at input 0) 47) input
+                  (string-concat (typed-cap-call :sys/cwd :string :string "") (string-concat "/" input)))
+        parts (path-segments absolute 1 1 (f/no-forms))
+        path (loop [i 0 out ""]
+               (if (= i (vector-count parts)) (if (= i 0) "/" out)
+                (recur (+ i 1) (string-concat out (string-concat "/" (f/string-value (typed-list-nth [:list [:ref :form/r]] parts i)))))))]
+   (if (> (string-byte-length path) 4095) (throw :project-files/path-budget) path)))))
+(defn- relative-name [namespace :string i :i64 start :i64 out :string] :string
+ (if (= i (string-length namespace))
+  (if (= start i) (throw :project-files/namespace) (string-concat out (string-substring namespace start i)))
+  (let [cp (string-code-point-at namespace i)]
+   (cond (or (< cp 33) (= cp 127) (= cp 47) (= cp 92) (= cp 58)) (throw :project-files/namespace)
+         (= cp 46) (if (= start i) (throw :project-files/namespace)
+                     (relative-name namespace (+ i 1) (+ i 1) (string-concat out (string-concat (string-substring namespace start i) "/"))))
+         (= cp 45) (relative-name namespace (+ i 1) (+ i 1) (string-concat out (string-concat (string-substring namespace start i) "_")))
+         :else (relative-name namespace (+ i (width cp)) start out)))))
+(defn namespace-relative [namespace :string] :string
+ (if (or (= (string-length namespace) 0) (> (string-byte-length namespace) 1024))
+  (throw :project-files/namespace)
+  (relative-name namespace 0 0 "")))
+(defn- stat [path :string] :string
+ (let [reply (typed-cap-call :fs/app-data :string :string
+              (string-concat "\u0000FS2\u0000F" (string-concat path "\u0000")))]
+  (if (and (>= (string-length reply) 5) (string=? (string-substring reply 0 5) "\u0000FS2\u0000"))
+   (string-substring reply 5 (string-length reply)) (throw :project-files/fs2-ack))))
+(defn- kind? [path :string suffix :string] :bool
+ (let [text (stat path) n (string-length text)]
+  (and (> n 2) (string=? (string-substring text (- n 2) n) suffix))))
+(defn- collect-roots [input [:list :string] i :i64 out [:list [:ref :form/r]]] [:list [:ref :form/r]]
+   (if (= i (vector-count input)) out
+    (let [path (normalize-path (typed-list-nth [:list :string] input i)) key (f/string-form path)
+          present (loop [j 0]
+                    (cond (= j (vector-count out)) false
+                          (f/eq key (typed-list-nth [:list [:ref :form/r]] out j)) true
+                          :else (recur (+ j 1))))]
+     (if (not (kind? path " 1")) (throw :project-files/source-root-directory)
+      (collect-roots input (+ i 1) (if present out (f/append-form out key)))))))
+(defn- roots [input [:list :string]] [:list [:ref :form/r]]
+ (if (or (= (vector-count input) 0) (> (vector-count input) 256)) (throw :project-files/source-roots)
+  (collect-roots input 0 (f/no-forms))))
+(defn- find-module [source-roots [:list [:ref :form/r]] relative :string i :i64 found :string] :string
+ (if (= i (vector-count source-roots)) found
+  (let [root (f/string-value (typed-list-nth [:list [:ref :form/r]] source-roots i))
+        path (string-concat root (string-concat (if (string=? root "/") "" "/") relative))]
+   (if (kind? path " 0")
+    (if (or (string=? found "") (string=? found path)) (find-module source-roots relative (+ i 1) path)
+      (throw :project-files/ambiguous-namespace))
+    (find-module source-roots relative (+ i 1) found)))))
+(defn- module-path [source-roots [:list [:ref :form/r]] namespace :string] :string
+ (let [relative (string-concat (namespace-relative namespace) ".kotoba")
+       found (find-module source-roots relative 0 "")]
+  (if (string=? found "") (throw :project-files/missing-module) found)))
+(defn- result-graph [root [:ref :form/r] sources [:ref :form/r] paths [:ref :form/r]] [:ref :form/r]
+ (assoc (assoc (assoc (empty-map) :root root) :sources sources) :paths paths))
+(defn- enqueue [source-roots [:list [:ref :form/r]] requires [:ref :form/r] i :i64 out [:list [:ref :form/r]]] [:list [:ref :form/r]]
+ (if (= i (f/count-of requires)) out
+  (if (>= (vector-count out) 4097) (throw :project-files/edges-budget)
+   (let [dependency (f/nth-of requires i) next (module-path source-roots (f/symbol-value dependency))]
+    (enqueue source-roots requires (+ i 1) (f/append-form out (f/vec2 (f/string-form next) dependency)))))))
+(defn- visit [source-roots [:list [:ref :form/r]] pending [:list [:ref :form/r]] at :i64
+             root [:ref :form/r] sources [:ref :form/r] paths [:ref :form/r] total :i64] [:ref :form/r]
+ (if (= at (vector-count pending)) (result-graph root sources paths)
+  (let [item (typed-list-nth [:list [:ref :form/r]] pending at)
+        path (f/string-value (f/nth-of item 0)) expected (f/nth-of item 1)
+        source (lock/read-source-path path) info (lock/module-info source) declared (get info :namespace)]
+   (cond (and (not (f/is-nil? expected)) (not (f/eq declared expected))) (throw :project-files/namespace-mismatch)
+         (and (f/form-has? paths declared) (not (f/eq (f/form-get paths declared) (f/string-form path))))
+           (throw :project-files/duplicate-namespace)
+         (f/form-has? sources declared) (visit source-roots pending (+ at 1) root sources paths total)
+         (>= (f/count-of sources) 512) (throw :project-files/modules-budget)
+         (> (string-byte-length source) (- 8388608 total)) (throw :project-files/source-budget)
+         :else (let [requires (get info :requires)
+                     queue (enqueue source-roots requires 0 pending)]
+                 (visit source-roots queue (+ at 1) (if (= at 0) declared root)
+                  (f/assoc-form sources declared (f/string-form source)) (f/assoc-form paths declared (f/string-form path))
+                  (+ total (string-byte-length source))))))))
+(defn load-closed-graph [input :string source-paths [:list :string]] [:ref :form/r]
+ (let [source-roots (roots source-paths) path (normalize-path input)]
+  (if (not (kind? path " 0")) (throw :project-files/input-file)
+   (visit source-roots (f/one-form (f/vec2 (f/string-form path) (f/nil-form)))
+     0 (f/nil-form) (empty-map) (empty-map) 0))))
+(defn load-closed-graph-checked [input :string source-paths [:list :string]] [:result [:ref :form/r] :keyword]
+ (try (result-ok-of [:result [:ref :form/r] :keyword] (load-closed-graph input source-paths))
+  (catch :keyword reason (result-err-of [:result [:ref :form/r] :keyword] reason))))

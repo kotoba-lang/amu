@@ -1,7 +1,11 @@
 (ns kotoba.compiler.cli
   {:kotoba/export [*exit* -main error-report exit-code]}
-  (:require [kotoba.io :as kio] [kotoba.compiler.atomic-output :as atomic-output]
+  (:require #?(:clj [kotoba.io :as kio]
+               :cljs [kotoba.io :as kio]
+               :kotoba [kotoba.compiler.posix-path-core :as native-path])
+            [kotoba.compiler.atomic-output :as atomic-output]
             [kotoba.artifact.core :as artifact]
+            [kotoba.compiler.accelerator-pipeline :as accelerator-pipeline]
             [kotoba.compiler.bounded-edn :as bounded-edn]
             [kotoba.compiler.capability-names :as cap-names]
             [kotoba.compiler.core :as compiler]
@@ -23,7 +27,7 @@
             [kotoba.verifier :as verifier]
             [json.data-json :as json]
             [kotoba.lang.text :as str])
-  (:gen-class))
+  #?(:clj (:gen-class)))
 
 (defn- parse-target [s] (target-names/parse s))
 
@@ -35,7 +39,7 @@
 
 (def ^:dynamic *exit* (fn [status] (System/exit status)))
 
-(defn- kotoba-source! [path] (source-path/admit! path))
+(defn- kotoba-source! [path] (source-path/admit-or-throw! path))
 
 (defn- check-definitions
   "Per-definition CIDs for a checked module (ADR 0300).
@@ -107,6 +111,11 @@
     :output 74
     (:execute :native-executor) 69
     :receipt 76
+    ;; `:artifact-target`: a refused artifact target (unknown --artifact kind;
+    ;; a bootloader that is not an x86-64 PE32+ EFI application in the aiueos
+    ;; disk packager) is the caller's input being wrong, answered with the
+    ;; same 65 as the Node table -- the two tables must agree.
+    :artifact-target 65
     70))
 
 (defn- dispatch! [& args]
@@ -277,6 +286,31 @@
                           :root (:root lock) :modules (count (:modules lock))
                           :lock-cid (:lock-cid lock)}))))
 
+    "gpu-compile"
+    ;; Connect the accelerator pipeline in the CLI (JUN-85 emit stage):
+    ;; SPEC.edn + --device DEVICE.edn -> one sealed GPU artifact through
+    ;; vendor dispatch. The workgroup row is the provisional dispatch default
+    ;; (ADR-0355) unless SPEC names one; the printed :measured? says which.
+    (let [spec (bounded-edn/read-file
+                 (or (second args)
+                     (throw (ex-info "gpu-compile needs SPEC.edn" {:phase :usage}))))
+          device (bounded-edn/read-file
+                   (or (option args "--device")
+                       (throw (ex-info "--device <DEVICE.edn> is required" {:phase :usage}))))
+          output (or (option args "--output") "gpu-artifact.edn")
+          _ (when (some #{"--target" "--policy" "--source-path" "--module-lock" "--blocks"} args)
+              (throw (ex-info "gpu-compile takes SPEC.edn --device <DEVICE.edn> [--output <ARTIFACT>]"
+                              {:phase :usage})))
+          {:keys [artifact dispatch]} (accelerator-pipeline/compile-spec spec device)]
+      (atomic-output/write-edn! output artifact)
+      (println (pr-str {:ok true :target (:target dispatch) :vendor (:vendor dispatch)
+                        :workgroup-size (:workgroup-size dispatch)
+                        :workgroup-source (:workgroup-source dispatch)
+                        :measured? (:measured? dispatch)
+                        :kir-sha256 (:kir-sha256 artifact)
+                        :code-sha256 (:code-sha256 artifact)
+                        :output output})))
+
     "compile"
     (let [input (when-not (option args "--module-lock") (kotoba-source! (second args)))
           source-roots (options args "--source-path")
@@ -303,32 +337,32 @@
                     (or (option args "--blocks")
                         (throw (ex-info "--module-lock requires --blocks <dir>"
                                         {:phase :usage})))))
-          ;; No default here since amu ADR 0351 (2026-09-24). This in-process
-          ;; twin is no longer spawned by any launcher (ADR 0347); `bin/amu`
-          ;; and `bin/kotoba` resolve an omitted --target to the HOST's
-          ;; native target before routing, and a JVM-side copy of that host
-          ;; table would be a second answer to keep in step for a route
-          ;; that is being removed. Defaulting to wasm32 here would silently
-          ;; contradict the launchers, so an omitted target is refused.
+          ;; No default here: launchers choose Kototama for direct and worker
+          ;; compile requests. This in-process compatibility entrypoint
+          ;; requires callers to state the target explicitly.
           target (parse-target
                   (or (option args "--target")
-                      (throw (ex-info "--target is required on the in-process CLI; bin/amu defaults an omitted --target to the host's native target (amu ADR 0351)"
+                      (throw (ex-info "--target is required on the in-process CLI; bin/amu defaults compile to Kototama (amu ADR 0354)"
                                       {:phase :usage :problem :compile/missing-target}))))
+          kototama-target? (= target :kototama-core-v1)
+          execution (if kototama-target? :kototama-vm
+                        (:execution (target-profile/profile target)))
           output (or (option args "--output")
                      ;; A locked compile has no input PATH to derive a name
                      ;; from -- that is the point -- so the root namespace
                      ;; names the artifact instead.
                      (str (or input (str (:root locked)))
-                          (case (:execution (target-profile/profile target))
+                          (case execution
                             :wasm ".wasm"
                             :component ".component.wasm"
                             :cljs ".cljs"
                             :javascript ".mjs"
                             :evm ".evm"
+                            :kototama-vm ".kototama"
                             :kernel ".o"
                             :process ".elf"
                             ".kexe")))
-          component-target? (= :component (:execution (target-profile/profile target)))
+          component-target? (= :component execution)
           policy-path (option args "--policy")
           ;; Canonicalised at decode so admission, the emitters and provenance
           ;; all see the wire form whichever spelling the file used: two
@@ -412,6 +446,10 @@
                                             target policy source-opts))]
       (case (:format result)
         :wasm/v1 (atomic-output/write-bytes! output (:bytes result))
+      :kototama/program-v1
+      (do (atomic-output/write-bytes! output (:program-bytes result))
+          (atomic-output/write-text! (str output ".provenance.edn")
+                                     (pr-str (:provenance result))))
         ;; The component artifact is three files: the binary, the WIT world it
         ;; was lifted against, and the admission request kototama needs. They
         ;; are written together so an artifact can never circulate without the
@@ -502,7 +540,7 @@
                                  :inputs-output inputs-output}
                                 (select-keys inputs [:kotoba.compile/inputs]))))))
     "extract-native"
-    (let [artifact (source-path/admit-native-artifact!
+    (let [artifact (source-path/admit-native-artifact-or-throw!
                     (bounded-edn/read-file (second args)) (second args))
           symbol (symbol (or (option args "--symbol") "main"))
           output (or (option args "--output") "program.bin")
@@ -520,8 +558,9 @@
     (apply dispatch! args)
     (catch clojure.lang.ExceptionInfo error
       (let [source (second args)
-            source-name (when (source-path/source-kind source)
-                          (kio/file-name (kio/file source)))
+            source-name (when (source-path/source-kind-present? source)
+                          #?(:kotoba (native-path/basename source)
+                             :default (kio/file-name (kio/file source))))
             report (error-report error source-name)]
         (binding [*out* *err*] (println (pr-str report)))
         (*exit* (exit-code (:error report)))))

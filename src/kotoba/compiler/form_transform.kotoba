@@ -1,0 +1,43 @@
+;; Structural source-form transforms over the native reader's recursive form
+;; record. Unlike the host clojure.walk adapter, this preserves source order,
+;; node tags, spans, and literal payloads as part of the compiler AST.
+(ns kotoba.compiler.form-transform
+  (:export [postwalk-replace prewalk-replace])
+  (:require [kotoba.form :as form])
+  (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                      [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]}))
+
+(defn- prewalk-kids [replacements [:ref :form/r]
+                     node [:ref :form/r]] [:list [:ref :form/r]]
+  (loop [index 0 output (form/no-forms)]
+    (if (>= index (form/count-of node))
+      output
+      (recur (+ index 1)
+             (form/append-form output
+                               (prewalk-replace replacements (form/nth-of node index)))))))
+
+(defn prewalk-replace
+  "Replace matching forms before descending into the replacement. Child order,
+  collection tags, spans, and scalar payloads are preserved."
+  [replacements [:ref :form/r] node [:ref :form/r]] [:ref :form/r]
+  (if (and (form/is-map? replacements) (form/form-has? replacements node))
+    (prewalk-replace replacements (form/form-get replacements node))
+    (form/with-children node (prewalk-kids replacements node))))
+
+(defn- postwalk-kids [replacements [:ref :form/r]
+                      node [:ref :form/r]] [:list [:ref :form/r]]
+  (loop [index 0 output (form/no-forms)]
+    (if (>= index (form/count-of node))
+      output
+      (recur (+ index 1)
+             (form/append-form output
+                               (postwalk-replace replacements (form/nth-of node index)))))))
+
+(defn postwalk-replace
+  "Replace matching forms after recursively transforming their children.
+  Child order, collection tags, spans, and scalar payloads are preserved."
+  [replacements [:ref :form/r] node [:ref :form/r]] [:ref :form/r]
+  (let [rebuilt (form/with-children node (postwalk-kids replacements node))]
+    (if (and (form/is-map? replacements) (form/form-has? replacements rebuilt))
+      (form/form-get replacements rebuilt)
+      rebuilt)))

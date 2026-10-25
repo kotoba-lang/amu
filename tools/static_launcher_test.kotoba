@@ -1,0 +1,90 @@
+(ns static-launcher-test (:export [main]))
+
+;; Tests for the receipt functions of tools/static_launcher.kotoba. No
+;; processes: they check the EDN the launcher writes from its facts.
+;; scripts/seed/check-static-launcher.py builds the unit (this ns line, the
+;; launcher source without its ns line and without its main, then the rest of
+;; this file), compiles it with --format static and runs the image; the
+;; launcher itself is checked end to end by the same script.
+;;
+;; main answers the number of failed cases and prints one FAIL line for each.
+;; CASES is the number of expect calls below; the script counts them in this
+;; source and refuses a run whose CASES line differs. CONTROL 1 makes one
+;; expected answer wrong; the script requires exactly that one failure.
+
+(def CASES 30)
+(def CONTROL 0)
+
+(defn- say [s :string] :i64
+  (let [x (typed-cap-call :io/write :string :string (string-concat s "\n"))] 0))
+
+(defn- expect [what :string got :string want :string] :i64
+  (if (string=? got want) 0
+    (let [x (say (string-concat "FAIL " (string-concat what (string-concat " => " (string-concat got (string-concat " ; want " want))))))] 1)))
+
+(defn- expect-i64 [what :string got :i64 want :i64] :i64
+  (expect what (string-from-i64 got) (string-from-i64 want)))
+
+(defn- sha-a [] :string "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08")
+(defn- sha-b [] :string "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+
+;; ---------------------------------------------------------------------
+;; EDN strings
+
+(defn- strings [] :i64
+  (+ (expect "plain" (quoted "INFO ok") "\"INFO ok\"")
+     (expect "empty" (quoted "") "\"\"")
+     (expect "quote and backslash" (quoted "a\"b\\c") "\"a\\\"b\\\\c\"")
+     (expect "newline, return, tab" (quoted "l1\nl2\r\tx") "\"l1\\nl2\\r\\tx\"")
+     (expect "other control bytes" (quoted (string-from-utf8 (bytes-from-vector-i64 [1 31 127])))
+             (string-concat "\"\\u0001\\u001f" (string-concat (string-from-utf8 (bytes-from-vector-i64 [127])) "\"")))
+     (expect "UTF-8 kept" (quoted "デバイス \"B70\"") "\"デバイス \\\"B70\\\"\"")))
+
+;; ---------------------------------------------------------------------
+;; Verdicts and exit status
+
+(defn- verdicts [] :i64
+  (+ (expect "ok" (verdict "0" "1" "0" "1" "0" "0") ":ok")
+     (expect "ok without provider" (verdict "0" "1" "0" "0" "-1" "0") ":ok")
+     (expect "relay first" (verdict "1" "0" "120" "1" "0" "1") ":relay-failed")
+     (expect "timeout before guest" (verdict "1" "1" "-1" "1" "0" "1") ":timeout")
+     (expect "guest trap" (verdict "0" "1" "120" "1" "0" "0") ":guest-failed")
+     (expect "guest signal" (verdict "0" "1" "-1" "0" "-1" "0") ":guest-failed")
+     (expect "provider exit" (verdict "0" "1" "0" "1" "3" "0") ":provider-failed")
+     (expect "provider killed" (verdict "0" "1" "0" "1" "-1" "1") ":provider-failed")
+     (expect-i64 "status ok" (status-of ":ok") 0)
+     (expect-i64 "status timeout" (status-of ":timeout") 122)
+     (expect-i64 "status other" (status-of ":guest-failed") 1)))
+
+;; ---------------------------------------------------------------------
+;; Parts and the whole line
+
+(defn- parts [] :i64
+  (+ (expect "ended exit" (ended "0" "0") ":exit 0")
+     (expect "ended signal" (ended "-1" "9") ":signal 9")
+     (expect "guest with line"
+             (guest-part (sha-a) "37,38,39,42" "0" "0" "{:status :ok :result 3 :fuel {:initial 5 :remaining 2}}" "4" (sha-b))
+             (string-concat "{:sha256 \"" (string-concat (sha-a) (string-concat "\" :allow \"37,38,39,42\" :exit 0 :report {:status :ok :result 3 :fuel {:initial 5 :remaining 2}} :stdout {:bytes 4 :sha256 \"" (string-concat (sha-b) "\"}}")))))
+     (expect "guest killed, no line"
+             (guest-part (sha-a) "-" "-1" "9" "" "0" (sha-b))
+             (string-concat "{:sha256 \"" (string-concat (sha-a) (string-concat "\" :allow \"-\" :signal 9 :report nil :stdout {:bytes 0 :sha256 \"" (string-concat (sha-b) "\"}}")))))
+     (expect "no provider" (provider-part "0" "" "-1" "0" "0" "0" "") "nil")
+     (expect "provider with report"
+             (provider-part "1" (sha-b) "0" "0" "0" "1" "driver \"x\"\n")
+             (string-concat "{:sha256 \"" (string-concat (sha-b) "\" :exit 0 :killed false :report \"driver \\\"x\\\"\\n\"}")))
+     (expect "provider killed, report invalid"
+             (provider-part "1" (sha-b) "-1" "9" "1" "2" "")
+             (string-concat "{:sha256 \"" (string-concat (sha-b) (if (= CONTROL 1) "\" :signal 9 :killed false :report :invalid}" "\" :signal 9 :killed true :report :invalid}"))))
+     (expect "report overflow" (report-value "3" "") ":overflow")
+     (expect "report none" (report-value "0" "") "nil")
+     (expect "grant" (sha-part "1" (sha-a)) (string-concat "{:sha256 \"" (string-concat (sha-a) "\"}")))
+     (expect "no grant" (sha-part "0" "") "nil")
+     (expect "run" (run-part ":ok" "10" "17" "0" "1")
+             "{:receipt :kotoba.static-launcher/v1 :verdict :ok :wall-seconds 10 :elapsed-ms 17 :timed-out false :relay true")
+     (expect "line" (receipt "{R" "L" "G" "P" "nil") "{R :launcher L :guest G :provider P :grant nil}\n")))
+
+(defn main [] :i64
+  (let [failed (+ (strings) (verdicts) (parts))
+        x (say (string-concat "CASES " (string-from-i64 CASES)))
+        y (say (string-concat "FAILED " (string-from-i64 failed)))]
+    failed))

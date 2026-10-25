@@ -1,0 +1,171 @@
+;; KSL1 exact source manifest. Canonical absolute ASCII paths, ordered roots,
+;; sorted unique .kotoba files and full SHA-256 bytes. No path normalization,
+;; implicit root, mutable source substitution or unpinned admission.
+(defn- ksl-width [cp :i64] :i64 (cond (< cp 128) 1 (< cp 2048) 2 (< cp 65536) 3 :else 4))
+(defn- ksl-end [text :string start :i64] :i64
+  (loop [index start]
+    (cond (>= index (string-length text)) index
+          (= (string-code-point-at text index) 10) index
+          :else (recur (+ index (ksl-width (string-code-point-at text index)))))))
+(defn- ksl-prefix? [text :string start :i64 end :i64 prefix :string] :bool
+  (and (>= (- end start) (string-length prefix))
+       (loop [i 0]
+         (if (= i (string-length prefix)) true
+           (and (= (string-code-point-at text (+ start i)) (string-code-point-at prefix i)) (recur (+ i 1)))))))
+(defn- ksl-path? [path :string] :bool
+  (let [length (string-length path)]
+    (and (> length 0) (<= length 4096) (= (string-code-point-at path 0) 47)
+         (or (= length 1) (not= (string-code-point-at path (- length 1)) 47))
+         (loop [index 1 segment 1]
+           (cond (= index length)
+                 (let [part (string-substring path segment index)]
+                   (and (not (string=? part ".")) (not (string=? part ".."))))
+                 (= (string-code-point-at path index) 47)
+                 (let [part (string-substring path segment index)]
+                   (and (> index segment) (not (string=? part ".")) (not (string=? part ".."))
+                        (recur (+ index 1) (+ index 1))))
+                 (or (< (string-code-point-at path index) 32) (> (string-code-point-at path index) 126)) false
+                 :else (recur (+ index 1) segment))))))
+(defn- ksl-hex? [text :string start :i64] :bool
+  (loop [index 0]
+    (if (= index 64) true
+      (let [code (string-code-point-at text (+ start index))]
+        (and (or (and (>= code 48) (<= code 57)) (and (>= code 97) (<= code 102)))
+             (recur (+ index 1)))))))
+(defn- ksl-source-path? [path :string] :bool
+  (and (ksl-path? path) (>= (string-length path) 8)
+       (string=? (string-substring path (- (string-length path) 7) (string-length path)) ".kotoba")))
+(defn- ksl-file? [text :string start :i64 end :i64] :bool
+  (and (> (- end start) 70) (ksl-prefix? text start end "file ")
+       (= (string-code-point-at text (+ start 69)) 32) (ksl-hex? text (+ start 5))
+       (ksl-source-path? (string-substring text (+ start 70) end))))
+(defn- ksl-root-seen? [text :string start :i64 stop :i64 path :string] :bool
+  (loop [index start]
+    (if (>= index stop) false
+      (let [end (ksl-end text index)]
+        (if (and (ksl-prefix? text index end "root ") (string=? (string-substring text (+ index 5) end) path))
+          true (recur (+ end 1)))))))
+(defn- ksl-valid-v1? [text :string] :bool
+  (let [length (string-length text) entry-end (ksl-end text 5)]
+    (and (>= length 12) (<= length 1048576) (= (string-code-point-at text (- length 1)) 10)
+         (ksl-prefix? text 0 length "KSL1\n") (ksl-prefix? text 5 entry-end "entry ")
+         (ksl-source-path? (string-substring text 11 entry-end))
+         (loop [index (+ entry-end 1) roots 0 files 0 previous ""]
+           (if (>= index length) (> files 0)
+             (let [end (ksl-end text index)]
+               (cond (ksl-prefix? text index end "root ")
+                     (let [path (string-substring text (+ index 5) end)]
+                       (and (= files 0) (< roots 16) (ksl-path? path)
+                            (not (ksl-root-seen? text (+ entry-end 1) index path))
+                            (recur (+ end 1) (+ roots 1) files previous)))
+                     (ksl-file? text index end)
+                     (let [path (string-substring text (+ index 70) end)]
+                       (and (< files 256) (> (string-compare path previous) 0)
+                            (recur (+ end 1) roots (+ files 1) path)))
+                     :else false)))))))
+(defn- ksl-entry [text :string] :string (string-substring text 11 (ksl-end text 5)))
+(defn- ksl-root-count [text :string] :i64
+  (loop [index (+ (ksl-end text 5) 1) count 0]
+    (let [end (ksl-end text index)]
+      (if (ksl-prefix? text index end "root ") (recur (+ end 1) (+ count 1)) count))))
+(defn- ksl-root [text :string wanted :i64] :string
+  (loop [index (+ (ksl-end text 5) 1) count 0]
+    (let [end (ksl-end text index)]
+      (cond (not (ksl-prefix? text index end "root ")) ""
+            (= count wanted) (string-substring text (+ index 5) end)
+            :else (recur (+ end 1) (+ count 1))))))
+(defn- ksl-file-count [text :string] :i64
+  (loop [index (+ (ksl-end text 5) 1) count 0]
+    (if (>= index (string-length text)) count
+      (let [end (ksl-end text index)]
+        (recur (+ end 1) (if (ksl-prefix? text index end "file ") (+ count 1) count))))))
+(defn- ksl-hash [text :string path :string] :string
+  (loop [index (+ (ksl-end text 5) 1)]
+    (if (>= index (string-length text)) ""
+      (let [end (ksl-end text index)]
+        (if (and (ksl-prefix? text index end "file ") (string=? (string-substring text (+ index 70) end) path))
+          (string-substring text (+ index 5) (+ index 69)) (recur (+ end 1)))))))
+(defn- ksl-check-bytes? [text :string path :string bytes :vector-i64] :bool
+  (let [expected (ksl-hash text path)]
+    (and (= (string-length expected) 64) (string=? expected (sh-bytes bytes)))))
+
+;; KSL2 maps canonical namespaces directly to pinned block paths. No root
+;; search is available in this format. The mapping and file records form a
+;; bijection, so neither an unverified mapped path nor an unused input enters
+;; the compiler. The compiler still parses/checks the exact verified bytes.
+(defn- ksl-mapped? [text :string] :bool (ksl-prefix? text 0 (string-length text) "KSL2\n"))
+(defn- ksl-space [text :string start :i64 end :i64] :i64
+  (loop [i start] (cond (>= i end) end (= (string-code-point-at text i) 32) i
+                      :else (recur (+ i (ksl-width (string-code-point-at text i)))))))
+(defn- ksl-path-v2? [path :string] :bool
+  (let [length (string-length path)]
+    (and (> length 0) (<= length 4096) (= (string-code-point-at path 0) 47)
+         (loop [i 1 segment 1]
+           (cond (= i length) (let [part (string-substring path segment i)]
+                               (or (= length 1) (and (> i segment) (not (string=? part ".")) (not (string=? part "..")))))
+                 (= (string-code-point-at path i) 47)
+                 (let [part (string-substring path segment i)]
+                   (and (> i segment) (not (string=? part ".")) (not (string=? part "..")) (recur (+ i 1) (+ i 1))))
+                 (or (< (string-code-point-at path i) 32) (= (string-code-point-at path i) 127)) false
+                 :else (recur (+ i (ksl-width (string-code-point-at path i))) segment))))))
+(defn- ksl-utf8? [bytes :vector-i64] :bool
+  (let [n (vector-count bytes)]
+    (loop [i 0]
+      (if (= i n) true
+        (let [b (vector-at bytes i) width (cond (< b 128) 1 (and (>= b 194) (< b 224)) 2
+                                              (and (>= b 224) (< b 240)) 3 (and (>= b 240) (<= b 244)) 4 :else 0)]
+          (cond (or (< b 0) (> b 255) (= width 0) (> width (- n i))) false
+                (= width 1) (recur (+ i 1))
+                :else (let [second (vector-at bytes (+ i 1))
+                            valid (loop [j 1] (cond (= j width) true
+                              (or (< (vector-at bytes (+ i j)) 128) (> (vector-at bytes (+ i j)) 191)) false :else (recur (+ j 1))))]
+                        (if (and valid (not (and (= b 224) (< second 160))) (not (and (= b 237) (>= second 160)))
+                                       (not (and (= b 240) (< second 144))) (not (and (= b 244) (> second 143))))
+                          (recur (+ i width)) false))))))))
+(defn- ksl-module-name? [text :string start :i64 end :i64] :bool
+  (and (> end start) (<= (- end start) 1024)
+    (loop [i start]
+      (cond (= i end) true
+            (or (< (string-code-point-at text i) 33) (= (string-code-point-at text i) 127)) false
+            :else (recur (+ i (ksl-width (string-code-point-at text i))))))))
+(defn- ksl-module-path [text :string wanted :string] :string
+  (loop [index (+ (ksl-end text 5) 1)]
+    (if (>= index (string-length text)) ""
+      (let [end (ksl-end text index) split (ksl-space text (+ index 7) end)]
+        (if (and (ksl-prefix? text index end "module ") (< split end)
+                 (string=? (string-substring text (+ index 7) split) wanted))
+          (string-substring text (+ split 1) end) (recur (+ end 1)))))))
+(defn- ksl-path-mappings [text :string wanted :string] :i64
+  (loop [index (+ (ksl-end text 5) 1) count 0]
+    (if (>= index (string-length text)) count
+      (let [end (ksl-end text index) split (ksl-space text (+ index 7) end)]
+        (recur (+ end 1)
+          (if (and (ksl-prefix? text index end "module ") (< split end)
+                   (string=? (string-substring text (+ split 1) end) wanted)) (+ count 1) count))))))
+(defn- ksl-valid-v2? [text :string] :bool
+  (let [length (string-length text) entry-end (ksl-end text 5)]
+    (and (>= length 12) (<= length 1048576) (= (string-code-point-at text (- length 1)) 10)
+         (ksl-mapped? text) (ksl-prefix? text 5 entry-end "entry ")
+         (ksl-path-v2? (string-substring text 11 entry-end))
+         (= (ksl-path-mappings text (string-substring text 11 entry-end)) 1)
+         (loop [index (+ entry-end 1) modules 0 files 0 previous-name "" previous-path ""]
+           (if (>= index length) (and (> modules 0) (= modules files))
+             (let [end (ksl-end text index)]
+               (cond (ksl-prefix? text index end "module ")
+                 (let [split (ksl-space text (+ index 7) end)]
+                   (and (= files 0) (< modules 256) (< split end)
+                        (ksl-module-name? text (+ index 7) split)
+                        (> (string-compare (string-substring text (+ index 7) split) previous-name) 0)
+                        (ksl-path-v2? (string-substring text (+ split 1) end))
+                        (= (ksl-path-mappings text (string-substring text (+ split 1) end)) 1)
+                        (= (string-length (ksl-hash text (string-substring text (+ split 1) end))) 64)
+                        (recur (+ end 1) (+ modules 1) files (string-substring text (+ index 7) split) previous-path)))
+                 (and (> (- end index) 70) (ksl-prefix? text index end "file ")
+                      (= (string-code-point-at text (+ index 69)) 32) (ksl-hex? text (+ index 5)))
+                 (let [path (string-substring text (+ index 70) end)]
+                   (and (< files 256) (ksl-path-v2? path) (> (string-compare path previous-path) 0)
+                        (= (ksl-path-mappings text path) 1)
+                        (recur (+ end 1) modules (+ files 1) previous-name path)))
+                 :else false)))))))
+(defn- ksl-valid? [text :string] :bool
+  (if (ksl-mapped? text) (ksl-valid-v2? text) (ksl-valid-v1? text)))

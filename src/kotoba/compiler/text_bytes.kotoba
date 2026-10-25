@@ -1,0 +1,40 @@
+(ns kotoba.compiler.text-bytes
+  "Public text-and-bytes module; implementations live in Kotoba core."
+  {:kotoba/export [byte-at bytes-from-ints bytes-length concat-bytes empty-bytes index-of-byte slice-bytes utf8-bytes utf8-length utf8-text utf8-text-lossy utf8-valid?]}
+  (:require [kotoba.compiler.text-bytes-core :as text-core]))
+
+(defn utf8-length [text :string] :i64
+  (text-core/utf8-length text))
+
+(defn bytes-length [bytes :bytes] :i64
+  (text-core/bytes-length bytes))
+
+(defn utf8-text [bytes :bytes] :string
+  (text-core/utf8-text bytes))
+
+(defn bytes-from-ints [ints :vector-i64] :bytes
+  (text-core/bytes-from-ints ints))
+
+(defn utf8-bytes [text :string] :bytes
+  (text-core/utf8-bytes text))
+
+(defn empty-bytes [] :bytes
+  (text-core/empty-bytes))
+
+(defn concat-bytes [a :bytes b :bytes] :bytes
+  (text-core/concat-bytes a b))
+
+(defn byte-at [bytes :bytes i :i64] :i64
+  (text-core/byte-at bytes i))
+
+(defn slice-bytes [bytes :bytes start :i64 end :i64] :bytes
+  (text-core/slice-bytes bytes start end))
+
+(defn index-of-byte [bytes :bytes b :i64] :i64
+  (text-core/index-of-byte bytes b))
+
+(defn utf8-text-lossy [bytes :bytes] :string
+  (text-core/utf8-text bytes))
+
+(defn utf8-valid? [bytes :bytes] :bool
+  (text-core/utf8-valid? bytes))

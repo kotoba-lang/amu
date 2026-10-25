@@ -1,0 +1,40 @@
+#!/bin/sh
+# NOTE (repo rule): kept as run-sweep-1716.sh.txt because the repository workflow-lint
+# refuses POSIX shell execution files; run with sh <this file>.
+# W=64 TILE-CROSSING BISECTION, PHASE 2 (JUN-58, tick 20261019-1716):
+# grid B (lanes 2,095,104), W=64 fixed. PR #1360 narrowed the crossing to
+# 25..31 tiles and noted that at this lane count only tiles=31 of 25..31 is
+# admissible (2,095,104/64 = 32,736 = 2^5*3*11*31). New cell is n31
+# (chunks=31, L=1984, wg=1056). Same-session anchors n24 (#1360's clean
+# -20,441) and n32 (#1360's clean +4,638) bracket the new point so the sign
+# call is made against same-session neighbors. 3 cycles, order rotated
+# (forward, reversed, rotated). Idempotent: a cell whose log exists is
+# skipped.
+set -e
+TAB=$(printf '\t')
+cd "$(dirname "$0")/../../../.."
+EV=docs/evidence/gpu/tilecross-w64-t31-20261019
+mkdir -p "$EV"
+
+run() { # cycle cell W lanes chunks
+  log="$EV/run-$1-$2.log"
+  if [ -f "$log" ] && grep -q "RESULT${TAB}verified=true" "$log"; then echo "skip $log"; return 0; fi
+  echo "run $log"
+  (date; uptime; time kbb --backend sci scripts/test-gpu-subgroup-reduce-chunksweep.cljk "$3" "$4" "$5") > "$log" 2>&1
+  grep -q "RESULT	verified=true" "$log" || { echo "UNVERIFIED $log"; exit 1; }
+}
+
+# grid B: lanes 2095104 for all three cells
+# cycle 1: forward
+run 1 n31 64 2095104 31
+run 1 n24 64 2095104 24
+run 1 n32 64 2095104 32
+# cycle 2: reversed
+run 2 n32 64 2095104 32
+run 2 n24 64 2095104 24
+run 2 n31 64 2095104 31
+# cycle 3: rotated
+run 3 n24 64 2095104 24
+run 3 n31 64 2095104 31
+run 3 n32 64 2095104 32
+echo SWEEP-COMPLETE

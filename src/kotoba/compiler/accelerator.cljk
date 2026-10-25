@@ -1,24 +1,231 @@
 (ns kotoba.compiler.accelerator
   "Typed, bounded accelerator KIR and deterministic WGSL/CUDA lowering."
-  {:kotoba/export [artifact-format compile-kernel dtypes ewise-operators kernel kir-format lower max-static-elements max-workgroup-size reduction-operators targets validate! validation-errors verify-artifact!]}
+  {:kotoba/export [artifact-format compile-kernel dtypes ewise-operators kernel kernel-variants kir-format lower max-static-elements max-workgroup-size reduction-operators targets validate! validation-errors verify-artifact!]}
   (:require [kotoba.artifact.core :as artifact]))
 
-(def kir-format :kotoba.accelerator-kir/v1)
-(def artifact-format :kotoba.gpu-artifact/v1)
-(def targets #{:wgsl-v1 :cuda-v1 :msl-v1})
-(def dtypes #{:f32})
-(def ewise-operators #{:add :sub :mul :div})
-(def reduction-operators #{:sum :max :min})
-(def max-workgroup-size 1024)
-(def max-static-elements 1073741824)
+;; R6QW3: the Kotoba reading (W3: the scan refused this module E1005 at a '#' fn literal).
+;; The exported constants are 0-argument functions (the export surface names functions only);
+;; the key sets are typed-set-new. kernel's {:keys [...]} parameter is :document with dgk
+;; pulls and its result is document-map (a typed-map value is one value kind; documents
+;; unwrap as [:option :document] -- the walk contract). validate!'s (ex-info msg {:errors ..})
+;; keeps its map literal (the desugar's ex-info case admits one). The host reading is
+;; byte-for-byte; there is no typed-guest consumer, so the shapes follow the
+;; accelerator-targets conventions.
+#?(:kotoba
+   (defn- dgk [d :document k :keyword] :document
+     (option-value-of [:option :document] (document-get d k) (document-null))))
+#?(:kotoba
+   (defn- none? [d :document] :bool
+     (document-equal? d (document-null))))
+;; (vec (keep identity [checks])) as the error walk (a :document vector -- it counts)
+#?(:kotoba
+   (defn- errs-conj [acc :document e :document] :document
+     (if (none? e) acc (document-vector-conj acc e))))
+;; (string? x) / (pos-int? x) / the power-of-two check of validation-errors
+#?(:kotoba
+   (defn- string-kind? [d :document] :bool (= (document-kind d) :string)))
+#?(:kotoba
+   (defn- posint? [d :document] :bool
+     (and (= (document-kind d) :i64) (< 0 (option-value-of [:option :i64] (document-i64-value d) 0)))))
+;; the identifier shape of :kernel/name (the host re-matches "[A-Za-z_][A-Za-z0-9_]*")
+#?(:kotoba
+   (defn- ident? [s :string] :bool
+     (let [n (string-byte-length s)]
+       (and (< 0 n) (ident1? (string-code-point-at s 0)) (ident-rest s 1 n)))))
+#?(:kotoba
+   (defn- ident1? [c :i64] :bool
+     (or (and (>= c 65) (<= c 90)) (and (>= c 97) (<= c 122)) (= c 95))))
+#?(:kotoba
+   (defn- ident-rest [s :string i :i64 n :i64] :bool
+     (if (>= i n)
+       true
+       (let [c (string-code-point-at s i)]
+         (if (or (ident1? c) (and (>= c 48) (<= c 57))) (ident-rest s (+ i 1) n) false)))))
 
+;; the expression pair as a 2-item document vector (the host's [a b] pair)
+#?(:kotoba
+   (defn- expr-pair [a :string b :string] :document
+     (document-vector (document-string a) (document-string b))))
+;; (in-kset? ...) the keyword membership over a typed set (the host's (set kw) predicate)
+#?(:kotoba
+   (defn- in-kset? [ks [:set :keyword] x :document] :bool
+     (typed-set-contains [:set :keyword] ks
+                         (option-value-of [:option :keyword] (document-keyword-value x) :none))))
+
+;; the operator lookup tables of the emitters (the host map invocations) as cond chains
+#?(:kotoba
+   (defn- expr-first [operator :document] :string
+     (cond (document-equal? operator (document-keyword :add)) "x[i] + y[i]"
+           (document-equal? operator (document-keyword :sub)) "x[i] - y[i]"
+           (document-equal? operator (document-keyword :mul)) "x[i] * y[i]"
+           (document-equal? operator (document-keyword :div)) "x[i] / y[i]"
+           :else "")))
+#?(:kotoba
+   (defn- reduce-identity [operator :document] :string
+     (cond (document-equal? operator (document-keyword :sum)) "0.0"
+           (document-equal? operator (document-keyword :max)) "-3.402823466e+38"
+           (document-equal? operator (document-keyword :min)) "3.402823466e+38"
+           :else "0.0")))
+#?(:kotoba
+   (defn- reduce-combine [operator :document] :string
+     (cond (document-equal? operator (document-keyword :sum)) "a+b"
+           (document-equal? operator (document-keyword :max)) "max(a,b)"
+           (document-equal? operator (document-keyword :min)) "min(a,b)"
+           :else "a+b")))
+;; the artifact module calls (kotoba.artifact.core's sha256/seal)
+#?(:kotoba
+   (defn- artifact-sha256 [v :document] :string (artifact/sha256 v)))
+#?(:kotoba
+   (defn- artifact-seal [v :document] :document (artifact/seal v)))
+
+;; the CUDA/MSL operator tables and the expr pair accessors (the host map invocations)
+#?(:kotoba
+   (defn- expr-second [operator :document] :string
+     (cond (document-equal? operator (document-keyword :add)) "x[i] + y[i]"
+           (document-equal? operator (document-keyword :sub)) "x[i] - y[i]"
+           (document-equal? operator (document-keyword :mul)) "x[i] * y[i]"
+           (document-equal? operator (document-keyword :div)) "x[i] / y[i]"
+           :else "")))
+#?(:kotoba
+   (defn- reduce-identity-f [operator :document] :string
+     (cond (document-equal? operator (document-keyword :sum)) "0.0f"
+           (document-equal? operator (document-keyword :max)) "-3.402823466e+38f"
+           (document-equal? operator (document-keyword :min)) "3.402823466e+38f"
+           :else "0.0f")))
+#?(:kotoba
+   (defn- reduce-combine-f [operator :document] :string
+     (cond (document-equal? operator (document-keyword :sum)) "a+b"
+           (document-equal? operator (document-keyword :max)) "fmaxf(a,b)"
+           (document-equal? operator (document-keyword :min)) "fminf(a,b)"
+           :else "a+b")))
+;; the artifact seal check (kotoba.artifact.core's valid-seal?)
+#?(:kotoba
+   (defn- artifact-valid-seal? [v :document] :bool (artifact/valid-seal? v)))
+
+#?(:kotoba
+   (defn kir-format [] :keyword :kotoba.accelerator-kir/v1)
+   :default
+(def kir-format :kotoba.accelerator-kir/v1))
+#?(:kotoba
+   (defn artifact-format [] :keyword :kotoba.gpu-artifact/v1)
+   :default
+(def artifact-format :kotoba.gpu-artifact/v1))
+#?(:kotoba
+   (defn targets [] [:set :keyword]
+     (typed-set-new [:set :keyword] :wgsl-v1 :cuda-v1 :msl-v1))
+   :default
+(def targets #{:wgsl-v1 :cuda-v1 :msl-v1}))
+#?(:kotoba
+   (defn kernel-variants [] [:set :keyword]
+     (typed-set-new [:set :keyword] :baseline :warp-shuffle-reduce))
+   :default
+(def kernel-variants
+  "The emitted-code variants this compiler admits. :baseline is the ADR-0002
+  v1 emission, byte-identical before and after variants existed;
+  :warp-shuffle-reduce is the NVIDIA reduction variant (ADR-0356), UNMEASURED
+  and with no execution path -- the runtime :gpu/compute (wire 42) runs
+  Vulkan only. A variant is a different grouping of the same admitted
+  reduction, never a different meaning."
+  #{:baseline :warp-shuffle-reduce}))
+#?(:kotoba
+   (defn dtypes [] [:set :keyword]
+     (typed-set-new [:set :keyword] :f32))
+   :default
+(def dtypes #{:f32}))
+#?(:kotoba
+   (defn ewise-operators [] [:set :keyword]
+     (typed-set-new [:set :keyword] :add :sub :mul :div))
+   :default
+(def ewise-operators #{:add :sub :mul :div}))
+#?(:kotoba
+   (defn reduction-operators [] [:set :keyword]
+     (typed-set-new [:set :keyword] :sum :max :min))
+   :default
+(def reduction-operators #{:sum :max :min}))
+#?(:kotoba
+   (defn max-workgroup-size [] :i64 1024)
+   :default
+(def max-workgroup-size 1024))
+#?(:kotoba
+   (defn max-static-elements [] :i64 1073741824)
+   :default
+(def max-static-elements 1073741824))
+#?(:kotoba
+   (defn kernel [name :string op :keyword operator :keyword opts :document] :document
+     (let [wg0 (dgk opts :workgroup-size)
+           wg (if (posint? wg0) (option-value-of [:option :i64] (document-i64-value wg0) 256) 256)]
+       (document-map (document-keyword :format) (document-keyword :kotoba.accelerator-kir/v1)
+                     (document-keyword :kernel/name) (document-string name)
+                     (document-keyword :kernel/op) (document-keyword op)
+                     (document-keyword :kernel/operator) (document-keyword operator)
+                     (document-keyword :kernel/dtype) (document-keyword :f32)
+                     (document-keyword :kernel/index-type) (document-keyword :u32)
+                     (document-keyword :kernel/workgroup-size) (document-i64 wg)
+                     (document-keyword :kernel/bounds)
+                     (document-map (document-keyword :elements) (document-keyword :runtime-u32)
+                                   (document-keyword :max-elements) (document-i64 1073741824))
+                     (document-keyword :kernel/effects)
+                     (document-set (document-keyword :gpu/storage-read) (document-keyword :gpu/storage-write)))))
+   :default
 (defn kernel
   [name op operator {:keys [workgroup-size] :or {workgroup-size 256}}]
   {:format kir-format :kernel/name name :kernel/op op :kernel/operator operator
    :kernel/dtype :f32 :kernel/index-type :u32 :kernel/workgroup-size workgroup-size
    :kernel/bounds {:elements :runtime-u32 :max-elements max-static-elements}
-   :kernel/effects #{:gpu/storage-read :gpu/storage-write}})
-
+   :kernel/effects #{:gpu/storage-read :gpu/storage-write}}))
+#?(:kotoba
+   (defn validation-errors [kir :document] :document
+     (let [e0 (errs-conj (document-vector)
+                         (if (document-equal? (dgk kir :format) (document-keyword :kotoba.accelerator-kir/v1))
+                           (document-null)
+                           (document-map (document-keyword :error) (document-keyword :invalid-format))))
+           nm (dgk kir :kernel/name)
+           e1 (errs-conj e0
+                         (if (and (string-kind? nm) (ident? (option-value-of [:option :string] (document-string-value nm) "")))
+                           (document-null)
+                           (document-map (document-keyword :error) (document-keyword :invalid-kernel-name))))
+           kop (dgk kir :kernel/op)
+           e2 (errs-conj e1
+                         (if (or (document-equal? kop (document-keyword :ewise)) (document-equal? kop (document-keyword :reduce)))
+                           (document-null)
+                           (document-map (document-keyword :error) (document-keyword :invalid-kernel-op))))
+           kopr (dgk kir :kernel/operator)
+           e3 (errs-conj e2
+                         (if (or (and (document-equal? kop (document-keyword :ewise)) (in-kset? (ewise-operators) kopr))
+                                 (and (document-equal? kop (document-keyword :reduce)) (in-kset? (reduction-operators) kopr)))
+                           (document-null)
+                           (document-map (document-keyword :error) (document-keyword :invalid-operator)
+                                         (document-keyword :operator) kopr)))
+           e4 (errs-conj e3
+                         (if (in-kset? (dtypes) (dgk kir :kernel/dtype))
+                           (document-null)
+                           (document-map (document-keyword :error) (document-keyword :invalid-dtype))))
+           e5 (errs-conj e4
+                         (if (document-equal? (dgk kir :kernel/index-type) (document-keyword :u32))
+                           (document-null)
+                           (document-map (document-keyword :error) (document-keyword :invalid-index-type))))
+           wg (dgk kir :kernel/workgroup-size)
+           wgv (option-value-of [:option :i64] (document-i64-value wg) 0)
+           e6 (errs-conj e5
+                         (if (and (posint? wg)
+                                  (= 0 (bit-and wgv (- wgv 1)))
+                                  (<= wgv 1024))
+                           (document-null)
+                           (document-map (document-keyword :error) (document-keyword :invalid-workgroup-size))))
+           bnd (dgk kir :kernel/bounds)
+           e7 (errs-conj e6
+                         (if (and (document-equal? (dgk bnd :elements) (document-keyword :runtime-u32))
+                                  (document-equal? (dgk bnd :max-elements) (document-i64 1073741824)))
+                           (document-null)
+                           (document-map (document-keyword :error) (document-keyword :invalid-resource-bounds))))
+           eff (dgk kir :kernel/effects)]
+       (errs-conj e7
+                  (if (and (document-contains eff (document-keyword :gpu/storage-read))
+                           (document-contains eff (document-keyword :gpu/storage-write))
+                           (= 2 (document-count eff)))
+                    (document-null)
+                    (document-map (document-keyword :error) (document-keyword :invalid-effects))))))
+   :default
 (defn validation-errors [kir]
   (vec
    (keep identity
@@ -41,16 +248,53 @@
           (when-not (= {:elements :runtime-u32 :max-elements max-static-elements}
                        (:kernel/bounds kir)) {:error :invalid-resource-bounds})
           (when-not (= #{:gpu/storage-read :gpu/storage-write} (:kernel/effects kir))
-            {:error :invalid-effects})])))
-
+            {:error :invalid-effects})]))))
+#?(:kotoba
+   (defn validate! [kir :document] :document
+     (let [errors (validation-errors kir)]
+       (if (< 0 (document-count errors))
+         (throw (ex-info "invalid accelerator KIR" {:errors errors}))
+         kir)))
+   :default
 (defn validate! [kir]
   (let [errors (validation-errors kir)]
-    (when (seq errors) (throw (ex-info "invalid accelerator KIR" {:errors errors}))) kir))
-
+    (when (seq errors) (throw (ex-info "invalid accelerator KIR" {:errors errors}))) kir)))
+#?(:kotoba
+   (def ^:private expression
+     "the operand spellings as two parallel string tables (a typed map value is one kind)"
+     (document-map (document-keyword :add) (expr-pair "x[i] + y[i]" "x[i] + y[i]")
+                             (document-keyword :sub) (expr-pair "x[i] - y[i]" "x[i] - y[i]")
+                             (document-keyword :mul) (expr-pair "x[i] * y[i]" "x[i] * y[i]")
+                             (document-keyword :div) (expr-pair "x[i] / y[i]" "x[i] / y[i]")))
+   :default
 (def ^:private expression
   {:add ["x[i] + y[i]" "x[i] + y[i]"] :sub ["x[i] - y[i]" "x[i] - y[i]"]
-   :mul ["x[i] * y[i]" "x[i] * y[i]"] :div ["x[i] / y[i]" "x[i] / y[i]"]})
-
+   :mul ["x[i] * y[i]" "x[i] * y[i]"] :div ["x[i] / y[i]" "x[i] / y[i]"]}))
+#?(:kotoba
+   (defn- emit-wgsl [kir :document] :string
+     (let [wg (option-value-of [:option :i64] (document-i64-value (dgk kir :kernel/workgroup-size)) 256)
+           op (dgk kir :kernel/op)
+           operator (dgk kir :kernel/operator)]
+       (if (document-equal? op (document-keyword :ewise))
+         (let [expr (expr-first operator)
+               s1 (string-concat "struct N { value: u32 };\n@group(0) @binding(0) var<storage,read> x: array<f32>;\n" "@group(0) @binding(1) var<storage,read> y: array<f32>;\n")
+               s2 (string-concat s1 "@group(0) @binding(2) var<storage,read_write> z: array<f32>;\n")
+               s3 (string-concat s2 "@group(0) @binding(3) var<uniform> n: N;\n")
+               s4 (string-concat s3 (string-concat (string-concat "@compute @workgroup_size(" (string-from-i64 wg)) ") fn main(@builtin(global_invocation_id) gid: vec3<u32>) {\n"))
+               s5 (string-concat s4 (string-concat "  let i=gid.x; if(i<n.value){ z[i]=" (string-concat expr "; }\n}\n")))]
+           s5)
+         (let [identity (reduce-identity operator)
+               combine (reduce-combine operator)
+               s1 (string-concat "struct N { value: u32 };\n@group(0) @binding(0) var<storage,read> x: array<f32>;\n" "@group(0) @binding(1) var<storage,read_write> parts: array<f32>;\n")
+               s2 (string-concat s1 "@group(0) @binding(2) var<uniform> n: N;\nvar<workgroup> scratch: array<f32,")
+               s3 (string-concat (string-concat s2 (string-from-i64 wg)) ">;\n")
+               s4 (string-concat s3 (string-concat (string-concat (string-concat "fn combine(a:f32,b:f32)->f32{return " combine) ";}\n")
+                                                    (string-concat (string-concat "@compute @workgroup_size(" (string-from-i64 wg)) ") fn main(@builtin(global_invocation_id) gid:vec3<u32>,")))
+               s5 (string-concat s4 "@builtin(local_invocation_id) lid:vec3<u32>,@builtin(workgroup_id) wid:vec3<u32>){\n")
+               s6 (string-concat s5 (string-concat " let i=gid.x; scratch[lid.x]=select(" (string-concat identity ",x[i],i<n.value); workgroupBarrier();\n")))
+               s7 (string-concat s6 (string-concat (string-concat " var stride:u32=" (string-from-i64 (quot wg 2))) "u; loop { if(stride==0u){break;} if(lid.x<stride){scratch[lid.x]=combine(scratch[lid.x],scratch[lid.x+stride]);} workgroupBarrier(); stride=stride/2u;}\n"))]
+           (string-concat s7 " if(lid.x==0u){parts[wid.x]=scratch[0];}\n}\n")))))
+   :default
 (defn- emit-wgsl [kir]
   (let [wg (:kernel/workgroup-size kir) op (:kernel/op kir) operator (:kernel/operator kir)]
     (case op
@@ -72,23 +316,111 @@
              "@builtin(local_invocation_id) lid:vec3<u32>,@builtin(workgroup_id) wid:vec3<u32>){\n"
              " let i=gid.x; scratch[lid.x]=select(" identity ",x[i],i<n.value); workgroupBarrier();\n"
              " var stride:u32=" (/ wg 2) "u; loop { if(stride==0u){break;} if(lid.x<stride){scratch[lid.x]=combine(scratch[lid.x],scratch[lid.x+stride]);} workgroupBarrier(); stride=stride/2u;}\n"
-             " if(lid.x==0u){parts[wid.x]=scratch[0];}\n}\n")))))
-
-(defn- emit-cuda [kir]
+             " if(lid.x==0u){parts[wid.x]=scratch[0];}\n}\n"))))))
+#?(:kotoba
+   (defn- emit-cuda-shuffle-reduce [kir :document] :string
+     (let [operator (dgk kir :kernel/operator)
+           name (option-value-of [:option :string] (document-string-value (dgk kir :kernel/name)) "")
+           identity (reduce-identity-f operator)
+           combine (reduce-combine-f operator)
+           s1 (string-concat (string-concat "__device__ float combine(float a,float b){return " combine) ";}\n")
+           s2 (string-concat s1 (string-concat (string-concat "extern \"C\" __global__ void " name) "(const float* x,float* parts,unsigned int n){\n"))
+           s3 (string-concat s2 " extern __shared__ float s[]; unsigned int i=blockIdx.x*blockDim.x+threadIdx.x; unsigned int l=threadIdx.x; unsigned int lane=l%32, warp=l/32;\n")
+           s4 (string-concat s3 (string-concat " float v=i<n?x[i]:" (string-concat identity ";\n")))
+           s5 (string-concat s4 " for(unsigned int d=16;d>0;d>>=1){v=combine(v,__shfl_down_sync(0xffffffffu,v,d,32));}\n")
+           s6 (string-concat s5 " if(lane==0)s[warp]=v; __syncthreads();\n unsigned int warps=blockDim.x/32;\n")
+           s7 (string-concat s6 (string-concat " if(warp==0){float a=lane<warps?s[lane]:" (string-concat identity ";\n")))
+           s8 (string-concat s7 "  for(unsigned int d=warps/2;d>0;d>>=1){a=combine(a,__shfl_down_sync(0xffffffffu,a,d,warps));}\n")]
+       (string-concat s8 "  if(lane==0)parts[blockIdx.x]=a;}\n}\n")))
+   :default
+(defn- emit-cuda-shuffle-reduce [kir]
+  ;; ADR-0356: NVIDIA warp-shuffle reduction. UNMEASURED -- this emitter has
+  ;; no execution path (wire 42 runs Vulkan only) and nothing here has run on
+  ;; NVIDIA hardware. Assumes a full-warp launch (workgroup-size >= 32, the
+  ;; only shape `select-variant` answers this variant for); every warp is
+  ;; then full and the 0xffffffff masks are honest. sm_70+ for
+  ;; __shfl_down_sync. The reduction groups the same elements as the
+  ;; :baseline tree, in a different order -- f32 :sum may differ in the low
+  ;; bits across variants; :max/:min are order-independent.
+  (let [operator (:kernel/operator kir) name (:kernel/name kir)
+        identity ({:sum "0.0f" :max "-3.402823466e+38f" :min "3.402823466e+38f"} operator)
+        combine ({:sum "a+b" :max "fmaxf(a,b)" :min "fminf(a,b)"} operator)]
+    (str "__device__ float combine(float a,float b){return " combine ";}\n"
+         "extern \"C\" __global__ void " name "(const float* x,float* parts,unsigned int n){\n"
+         " extern __shared__ float s[]; unsigned int i=blockIdx.x*blockDim.x+threadIdx.x; unsigned int l=threadIdx.x; unsigned int lane=l%32, warp=l/32;\n"
+         " float v=i<n?x[i]:" identity ";\n"
+         " for(unsigned int d=16;d>0;d>>=1){v=combine(v,__shfl_down_sync(0xffffffffu,v,d,32));}\n"
+         " if(lane==0)s[warp]=v; __syncthreads();\n"
+         " unsigned int warps=blockDim.x/32;\n"
+         " if(warp==0){float a=lane<warps?s[lane]:" identity ";\n"
+         "  for(unsigned int d=warps/2;d>0;d>>=1){a=combine(a,__shfl_down_sync(0xffffffffu,a,d,warps));}\n"
+         "  if(lane==0)parts[blockIdx.x]=a;}\n}\n"))))
+#?(:kotoba
+   (defn- emit-cuda [kir :document variant :keyword] :string
+     (let [op (dgk kir :kernel/op)
+           operator (dgk kir :kernel/operator)
+           name (option-value-of [:option :string] (document-string-value (dgk kir :kernel/name)) "")
+           wg (option-value-of [:option :i64] (document-i64-value (dgk kir :kernel/workgroup-size)) 256)]
+       (if (document-equal? (document-keyword variant) (document-keyword :warp-shuffle-reduce))
+         (if (and (document-equal? op (document-keyword :reduce)) (and (= (document-kind (dgk kir :kernel/workgroup-size)) :i64) (<= 32 wg)))
+           (emit-cuda-shuffle-reduce kir)
+           (throw (ex-info "kernel variant not applicable" {:variant variant :op op :workgroup-size (dgk kir :kernel/workgroup-size)})))
+         (if (document-equal? op (document-keyword :ewise))
+           (let [s1 (string-concat (string-concat "extern \"C\" __global__ void " name) "(const float* x,const float* y,float* z,unsigned int n){\n")
+                 s2 (string-concat s1 " unsigned int i=blockIdx.x*blockDim.x+threadIdx.x; if(i<n) z[i]=")]
+             (string-concat s2 (string-concat (expr-second operator) "; }\n}\n")))
+           (let [identity (reduce-identity-f operator)
+                 combine (reduce-combine-f operator)
+                 s1 (string-concat (string-concat "extern \"C\" __global__ void " name) "(const float* x,float* parts,unsigned int n){\n")
+                 s2 (string-concat s1 " extern __shared__ float s[]; unsigned int i=blockIdx.x*blockDim.x+threadIdx.x; unsigned int l=threadIdx.x;\n")
+                 s3 (string-concat s2 (string-concat " s[l]=i<n?x[i]:" (string-concat identity "; __syncthreads();\n")))
+                 s4 (string-concat s3 (string-concat " for(unsigned int d=blockDim.x/2;d>0;d>>=1){if(l<d){float a=s[l],b=s[l+d];s[l]=" (string-concat combine ";}__syncthreads();}\n")))]
+             (string-concat s4 " if(l==0)parts[blockIdx.x]=s[0];}\n"))))))
+   :default
+(defn- emit-cuda [kir variant]
   (let [op (:kernel/op kir) operator (:kernel/operator kir) name (:kernel/name kir)]
+    (when (and (= :warp-shuffle-reduce variant)
+               (not (and (= :reduce op)
+                         (let [wg (:kernel/workgroup-size kir)]
+                           (and (int? wg) (>= wg 32))))))
+      (throw (ex-info "kernel variant not applicable"
+                      {:variant variant :op op :workgroup-size (:kernel/workgroup-size kir)})))
     (case op
       :ewise
       (str "extern \"C\" __global__ void " name "(const float* x,const float* y,float* z,unsigned int n){\n"
            " unsigned int i=blockIdx.x*blockDim.x+threadIdx.x; if(i<n) z[i]=" (second (expression operator)) ";\n}\n")
       :reduce
-      (let [identity ({:sum "0.0f" :max "-3.402823466e+38f" :min "3.402823466e+38f"} operator)
-            combine ({:sum "a+b" :max "fmaxf(a,b)" :min "fminf(a,b)"} operator)]
-        (str "extern \"C\" __global__ void " name "(const float* x,float* parts,unsigned int n){\n"
-             " extern __shared__ float s[]; unsigned int i=blockIdx.x*blockDim.x+threadIdx.x; unsigned int l=threadIdx.x;\n"
-             " s[l]=i<n?x[i]:" identity "; __syncthreads();\n"
-             " for(unsigned int d=blockDim.x/2;d>0;d>>=1){if(l<d){float a=s[l],b=s[l+d];s[l]=" combine ";}__syncthreads();}\n"
-             " if(l==0)parts[blockIdx.x]=s[0];\n}\n")))))
-
+      (if (= :warp-shuffle-reduce variant)
+        (emit-cuda-shuffle-reduce kir)
+        (let [identity ({:sum "0.0f" :max "-3.402823466e+38f" :min "3.402823466e+38f"} operator)
+              combine ({:sum "a+b" :max "fmaxf(a,b)" :min "fminf(a,b)"} operator)]
+          (str "extern \"C\" __global__ void " name "(const float* x,float* parts,unsigned int n){\n"
+               " extern __shared__ float s[]; unsigned int i=blockIdx.x*blockDim.x+threadIdx.x; unsigned int l=threadIdx.x;\n"
+               " s[l]=i<n?x[i]:" identity "; __syncthreads();\n"
+               " for(unsigned int d=blockDim.x/2;d>0;d>>=1){if(l<d){float a=s[l],b=s[l+d];s[l]=" combine ";}__syncthreads();}\n"
+               " if(l==0)parts[blockIdx.x]=s[0];\n}\n")))))))
+#?(:kotoba
+   (defn- emit-msl [kir :document] :string
+     (let [op (dgk kir :kernel/op)
+           operator (dgk kir :kernel/operator)
+           name (option-value-of [:option :string] (document-string-value (dgk kir :kernel/name)) "")
+           wg (option-value-of [:option :i64] (document-i64-value (dgk kir :kernel/workgroup-size)) 256)]
+       (if (document-equal? op (document-keyword :ewise))
+         (let [s1 (string-concat "#include <metal_stdlib>\nusing namespace metal;\n"
+                                 (string-concat (string-concat "kernel void " name) "(device const float* x [[buffer(0)]],device const float* y [[buffer(1)]],"))
+               s2 (string-concat s1 "device float* z [[buffer(2)]],constant uint& n [[buffer(3)]],uint i [[thread_position_in_grid]]){\n")]
+           (string-concat s2 (string-concat " if(i<n) z[i]=" (string-concat (expr-second operator) ";}\n"))))
+         (let [identity (reduce-identity-f operator)
+               combine (reduce-combine-f operator)
+               s1 (string-concat "#include <metal_stdlib>\nusing namespace metal;\n"
+                                 (string-concat (string-concat "kernel void " name) "(device const float* x [[buffer(0)]],device float* parts [[buffer(1)]],"))
+               s2 (string-concat s1 "constant uint& n [[buffer(2)]],threadgroup float* s [[threadgroup(0)]],")
+               s3 (string-concat s2 "uint i [[thread_position_in_grid]],uint l [[thread_index_in_threadgroup]],")
+               s4 (string-concat s3 "uint g [[threadgroup_position_in_grid]],uint width [[threads_per_threadgroup]]){\n")
+               s5 (string-concat s4 (string-concat " s[l]=i<n?x[i]:" (string-concat identity "; threadgroup_barrier(mem_flags::mem_threadgroup);\n")))
+               s6 (string-concat s5 (string-concat " for(uint d=width/2;d>0;d>>=1){if(l<d){float a=s[l],b=s[l+d];s[l]=" (string-concat combine ";}threadgroup_barrier(mem_flags::mem_threadgroup);}\n")))]
+           (string-concat s6 " if(l==0)parts[g]=s[0];}\n")))))
+   :default
 (defn- emit-msl [kir]
   (let [op (:kernel/op kir) operator (:kernel/operator kir) name (:kernel/name kir)]
     (case op
@@ -107,30 +439,100 @@
              "uint g [[threadgroup_position_in_grid]],uint width [[threads_per_threadgroup]]){\n"
              " s[l]=i<n?x[i]:" identity "; threadgroup_barrier(mem_flags::mem_threadgroup);\n"
              " for(uint d=width/2;d>0;d>>=1){if(l<d){float a=s[l],b=s[l+d];s[l]=" combine ";}threadgroup_barrier(mem_flags::mem_threadgroup);}\n"
-             " if(l==0)parts[g]=s[0];\n}\n")))))
-
-(defn lower [kir target]
-  (validate! kir)
-  (when-not (targets target) (throw (ex-info "unsupported accelerator target" {:target target :supported targets})))
-  ((case target :wgsl-v1 emit-wgsl :cuda-v1 emit-cuda :msl-v1 emit-msl) kir))
-
-(defn compile-kernel [kir target]
-  (let [code (lower kir target)
-        payload {:format artifact-format :target target :kir kir
-                 :kir-sha256 (artifact/sha256 kir) :code code
-                 :code-sha256 (artifact/sha256 code)
-                 :limits {:max-elements max-static-elements
-                          :workgroup-size (:kernel/workgroup-size kir)}}]
-    (artifact/seal payload)))
-
+             " if(l==0)parts[g]=s[0];\n}\n"))))))
+#?(:kotoba
+   (defn lower [kir :document target :keyword variant :keyword] :string
+     (let [checked (validate! kir)]
+       (if (not (in-kset? (targets) (document-keyword target)))
+         (throw (ex-info "unsupported accelerator target" {:target target :supported (document-set (document-keyword :wgsl-v1) (document-keyword :cuda-v1) (document-keyword :msl-v1))}))
+         (if (not (in-kset? (kernel-variants) (document-keyword variant)))
+           (throw (ex-info "unsupported kernel variant" {:variant variant :supported (document-set (document-keyword :baseline) (document-keyword :warp-shuffle-reduce))}))
+           (if (document-equal? (document-keyword target) (document-keyword :cuda-v1))
+             (emit-cuda kir variant)
+             (if (not (document-equal? (document-keyword variant) (document-keyword :baseline)))
+               (throw (ex-info "kernel variant not applicable" {:variant variant :target target}))
+               (if (document-equal? (document-keyword target) (document-keyword :wgsl-v1))
+                 (emit-wgsl kir)
+                 (emit-msl kir))))))))
+   :default
+(defn lower
+  "Lower one validated KIR to `target`'s source text. `variant` defaults to
+  :baseline, the byte-identical ADR-0002 emission. A non-baseline variant is
+  admitted only where it computes the same admitted reduction; elsewhere
+  this refuses rather than silently answering baseline."
+  ([kir target] (lower kir target :baseline))
+  ([kir target variant]
+   (validate! kir)
+   (when-not (targets target)
+     (throw (ex-info "unsupported accelerator target" {:target target :supported targets})))
+   (when-not (kernel-variants variant)
+     (throw (ex-info "unsupported kernel variant" {:variant variant :supported kernel-variants})))
+   (case target
+     :wgsl-v1 (do (when-not (= :baseline variant)
+                    (throw (ex-info "kernel variant not applicable" {:variant variant :target target})))
+                  (emit-wgsl kir))
+     :msl-v1 (do (when-not (= :baseline variant)
+                   (throw (ex-info "kernel variant not applicable" {:variant variant :target target})))
+                 (emit-msl kir))
+     :cuda-v1 (emit-cuda kir variant)))))
+#?(:kotoba
+   (defn compile-kernel [kir :document target :keyword variant :keyword] :document
+     (let [code (lower kir target variant)
+           payload (document-map (document-keyword :format) (document-keyword :kotoba.gpu-artifact/v1)
+                                 (document-keyword :target) (document-keyword target)
+                                 (document-keyword :kir) kir
+                                 (document-keyword :kir-sha256) (document-string (artifact-sha256 kir))
+                                 (document-keyword :code) (document-string code)
+                                 (document-keyword :code-sha256) (document-string (artifact-sha256 (document-string code)))
+                                 (document-keyword :variant) (document-keyword variant)
+                                 (document-keyword :limits)
+                                 (document-map (document-keyword :max-elements) (document-i64 1073741824)
+                                               (document-keyword :workgroup-size) (dgk kir :kernel/workgroup-size)))]
+       (artifact-seal payload)))
+   :default
+(defn compile-kernel
+  ([kir target] (compile-kernel kir target :baseline))
+  ([kir target variant]
+   (let [code (lower kir target variant)
+         payload {:format artifact-format :target target :kir kir
+                  :kir-sha256 (artifact/sha256 kir) :code code
+                  :code-sha256 (artifact/sha256 code) :variant variant
+                  :limits {:max-elements max-static-elements
+                           :workgroup-size (:kernel/workgroup-size kir)}}]
+     (artifact/seal payload)))))
+#?(:kotoba
+   (defn verify-artifact! [compiled :document] :document
+     (if (not (and (document-equal? (dgk compiled :format) (document-keyword :kotoba.gpu-artifact/v1))
+                   (artifact-valid-seal? compiled)
+                   (in-kset? (targets) (dgk compiled :target))))
+       (throw (ex-info "invalid accelerator artifact envelope" {}))
+       (let [checked (validate! (dgk compiled :kir))
+             variant (if (document-contains compiled (document-keyword :variant)) (dgk compiled :variant) (document-keyword :baseline))]
+         (if (not (or (document-equal? variant (document-keyword :baseline))
+                      (document-equal? variant (document-keyword :warp-shuffle-reduce))
+                      (document-equal? variant (document-keyword :subgroup-reduce))))
+           (throw (ex-info "accelerator artifact carries an unsupported variant label" {:variant variant}))
+           (let [expected-code (lower (dgk compiled :kir) (option-value-of [:option :keyword] (document-keyword-value (dgk compiled :target)) :wgsl-v1) (option-value-of [:option :keyword] (document-keyword-value variant) :baseline))]
+             (if (not (and (document-equal? (dgk compiled :kir-sha256) (document-string (artifact-sha256 (dgk compiled :kir))))
+                           (document-equal? (dgk compiled :code-sha256) (document-string (artifact-sha256 (document-string expected-code))))
+                           (document-equal? (dgk compiled :code) (document-string expected-code))))
+               (throw (ex-info "accelerator artifact regeneration mismatch" {}))
+               compiled))))))
+   :default
 (defn verify-artifact! [compiled]
   (when-not (and (= artifact-format (:format compiled)) (artifact/valid-seal? compiled)
                  (targets (:target compiled)))
     (throw (ex-info "invalid accelerator artifact envelope" {})))
   (validate! (:kir compiled))
-  (let [expected-code (lower (:kir compiled) (:target compiled))]
+  ;; A sealed artifact that predates variants carries no :variant; that is
+  ;; :baseline by definition, and re-lowering must still match exactly.
+  (let [variant (if (contains? compiled :variant) (:variant compiled) :baseline)
+        _ (when-not (contains? #{:baseline :warp-shuffle-reduce :subgroup-reduce} variant)
+            (throw (ex-info "accelerator artifact carries an unsupported variant label"
+                            {:variant variant})))
+        expected-code (lower (:kir compiled) (:target compiled) variant)]
     (when-not (and (= (:kir-sha256 compiled) (artifact/sha256 (:kir compiled)))
                    (= (:code-sha256 compiled) (artifact/sha256 expected-code))
                    (= (:code compiled) expected-code))
       (throw (ex-info "accelerator artifact regeneration mismatch" {}))))
-  compiled)
+  compiled))

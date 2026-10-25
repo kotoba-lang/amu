@@ -68,7 +68,11 @@
 ;; line, never by grepping this file.
 (ns run-tests
   (:require [cljs.test :as t]
+            [kotoba.compiler.accelerator-targets-test]
+            [kotoba.compiler.accelerator-variants-test]
             [kotoba.compiler.accelerator-test]
+            [kotoba.compiler.accelerator-pipeline-test]
+            [kotoba.compiler.accelerator-subgroup-reduce-test]
             [kotoba.compiler.allocation-budget-test]
             [kotoba.compiler.backend-cljs-portable-test]
             [kotoba.compiler.backend-evm-test]
@@ -92,7 +96,6 @@
             [kotoba.compiler.host-profile-test]
             [kotoba.compiler.ios-aot-test]
             [kotoba.compiler.kexe-fs-forms-test]
-            [kotoba.compiler.kexe-loader-forms-test]
             [kotoba.compiler.linux-static-target-test]
             [kotoba.compiler.logic-manifest-test]
             [kotoba.compiler.namespace-reachability-test]
@@ -104,12 +107,16 @@
             [kotoba.compiler.portable-surface-test]
             [kotoba.compiler.provenance-portable-test]
             [kotoba.compiler.receipt-test]
+            [kotoba.compiler.runner-bookkeeping-test]
+            [kotoba.compiler.runner-cap-dispatch-test]
+            [kotoba.compiler.runner-entry-test]
+            [kotoba.compiler.runner-seed-test]
+            [kotoba.compiler.runner-slice-test]
             [kotoba.compiler.schema-test]
             [kotoba.compiler.signing-test]
             [kotoba.compiler.slice-carrier-test]
             [kotoba.compiler.slice-value-test]
             [kotoba.compiler.source-path-test]
-            [kotoba.compiler.string-simd-loader-test]
             [kotoba.compiler.surface-convergence-portable-test]
             [kotoba.compiler.symbol-operation-test]
             [kotoba.compiler.test-profile-test]
@@ -206,7 +213,10 @@
   (when (pos? (+ (or (:fail m) 0) (or (:error m) 0)))
     (set! (.-exitCode js/process) 1)))
 
-(t/run-tests 'kotoba.compiler.accelerator-test
+(t/run-tests 'kotoba.compiler.accelerator-targets-test
+             'kotoba.compiler.accelerator-test
+             'kotoba.compiler.accelerator-pipeline-test
+             'kotoba.compiler.accelerator-subgroup-reduce-test
              'kotoba.compiler.allocation-budget-test
              'kotoba.compiler.backend-cljs-portable-test
              'kotoba.compiler.backend-evm-test
@@ -230,7 +240,6 @@
              'kotoba.compiler.host-profile-test
              'kotoba.compiler.ios-aot-test
              'kotoba.compiler.kexe-fs-forms-test
-             'kotoba.compiler.kexe-loader-forms-test
              'kotoba.compiler.linux-static-target-test
              'kotoba.compiler.logic-manifest-test
              'kotoba.compiler.namespace-reachability-test
@@ -242,12 +251,16 @@
              'kotoba.compiler.portable-surface-test
              'kotoba.compiler.provenance-portable-test
              'kotoba.compiler.receipt-test
+             'kotoba.compiler.runner-bookkeeping-test
+             'kotoba.compiler.runner-cap-dispatch-test
+             'kotoba.compiler.runner-entry-test
+             'kotoba.compiler.runner-seed-test
+             'kotoba.compiler.runner-slice-test
              'kotoba.compiler.schema-test
              'kotoba.compiler.signing-test
              'kotoba.compiler.slice-carrier-test
              'kotoba.compiler.slice-value-test
              'kotoba.compiler.source-path-test
-             'kotoba.compiler.string-simd-loader-test
              'kotoba.compiler.surface-convergence-portable-test
              'kotoba.compiler.symbol-operation-test
              'kotoba.compiler.test-profile-test

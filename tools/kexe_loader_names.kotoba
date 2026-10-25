@@ -2,17 +2,15 @@
   {:kotoba/export [trap-line value-trap-name result-type-name boundary-kind-name boundary-reason-name
                   net-capability-name net-refusal-name net-answer-word]})
 
-;; The fixed text of every trap the POSIX kexe loader names, and the result
-;; type names it admits (superproject adr-2609251400 C1, kind (a): DATA).
-;; scripts/gen-loader-decisions.cljk evaluates these natively and writes the
-;; answers into the generated region of tools/kexe_loader.c, where signal
-;; handlers and the supervisor index them. A separate module from
-;; kexe_loader_decisions.kotoba so the machine code the loader EXECUTES
-;; (that module's) does not carry these strings as dead weight.
+;; Canonical native trap, value, boundary and result vocabularies. Keep all
+;; public names, index domains and exact returned text. The historical
+;; filename does not require a C loader, generated header or Node/KBB driver.
+;; Native profile data and complete native consumers must agree with these
+;; values. Qualification requires actual Amu-produced artifacts and named
+;; refusals; the historical C embedding is provenance only.
 
 ;; ---------------------------------------------------------------------
-;; Trap names. Every KEXE_TRAP line the loader prints whose text is
-;; fixed. The index is the generator's (KEXE_TRAP_LINE_* in C).
+;; Fixed KEXE_TRAP lines. Numeric indices retain the existing data ABI.
 
 (defn trap-line [k] :string
   (cond
