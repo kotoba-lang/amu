@@ -799,10 +799,13 @@
   (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
         arms (str/join "\n" (map #(extract-balanced src %)
                                  ["(defn- none?" "(defn- string->i64" "(defn- digits?"
-                                  "(defn- sg-tokens-doc" "(defn- sg-keyword "
-                                  "(defn- sg-size " "(defn- sg-token-end"
+                                  "(defn- sg-tokens-doc"
+                                  "(defn- sg-size "
                                   "(defn- sg-ops " "(defn- sg-ops-walk" "(defn- sg-pipe"
                                   "(defn device-from-subgroup"]))
+        ;; (sg-keyword and sg-token-end are deleted by the fuel row,
+        ;; 2026-10-26 -- the lookup table and the token-end find are
+        ;; INLINED in sg-ops-walk's loop body; no probe calls them.)
         probe (str "(ns accelerator.targets.w3.sg.probe (:export [main sz dfs]))\n"
                    "(defn main [] :i64 0)\n"
                    arms "\n"
@@ -891,12 +894,16 @@
   ;; budget/frames regardless of the sg-size fix,
   ;; docs/evidence/gpu/w3-pipe-token-end-primitives-20261026.txt). The
   ;; scans are `string-find-byte` (the dot1/alt-end precedent): sg-pipe
-  ;; at most TWO finds (the first '|' from 0, then one after it),
-  ;; sg-token-end ONE find per call (byte 32 = the alt-end shape).
+  ;; at most TWO finds (the first '|' from 0, then one after it), the
+  ;; token-end find ONE find per token step (byte 32 = the alt-end
+  ;; shape, INLINE in sg-ops-walk's loop body since the fuel row,
+  ;; 2026-10-26 -- the sg-token-end `defn-` is deleted).
   ;; PINNED CONTRACTS, unchanged: sg-pipe answers the index of the
   ;; single '|', -1 for none, -2 for more (a trailing pipe is a second
-  ;; pipe -- it splits an empty third field); sg-token-end answers the
-  ;; first byte-32 at or after i, n when absent. The total shapes are
+  ;; pipe -- it splits an empty third field); the token-end shape
+  ;; answers the first byte-32 at or after i, n when absent (contract
+  ;; unchanged; the shape moved inline with the fuel row). The total
+  ;; shapes are
   ;; answered ABOVE the primitive (string-find-byte answers -1 when
   ;; absent and traps on from > n; from = n is never called).
   ;; NAMED THEN, FIXED SINCE (the sg-member? row, 2026-10-26): the
@@ -931,24 +938,30 @@
   ;; and the dedupe-map row (2026-10-26) then removed sg-member?'s
   ;; per-element frames (ONE document-contains over a map shadow, see
   ;; w3-subgroup-dedupe-on-a-shadow-map-not-a-per-element-walk -- the
-  ;; 70-byte cell resolves there). Every trapping cell is measure-only,
-  ;; NEVER pinned (trap boundaries and spellings are state-dependent).
+  ;; 70-byte cell resolves there). The fuel row (2026-10-26) then
+  ;; INLINED the walk's per-token calls (the token-end find, the keyword
+  ;; table, none?'s sentinel test) into the loop body and deleted the
+  ;; sg-token-end / sg-keyword `defn-`s, see
+  ;; w3-subgroup-per-token-fuel-charges-are-inlined. Every trapping cell
+  ;; is measure-only, NEVER pinned (trap boundaries and spellings are
+  ;; state-dependent).
   (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
         arms (str/join "\n" (map #(extract-balanced src %)
                                  ["(defn- none?" "(defn- string->i64" "(defn- digits?"
-                                  "(defn- sg-tokens-doc" "(defn- sg-keyword "
-                                  "(defn- sg-size " "(defn- sg-token-end"
+                                  "(defn- sg-tokens-doc"
+                                  "(defn- sg-size "
                                   "(defn- sg-ops " "(defn- sg-ops-walk" "(defn- sg-pipe"
                                   "(defn device-from-subgroup"]))
-        probe (str "(ns accelerator.targets.w3.pipe.probe (:export [main sp ste dfs]))\n"
+        ;; (sg-keyword and sg-token-end are deleted by the fuel row,
+        ;; 2026-10-26 -- the lookup table and the token-end find are
+        ;; INLINED in sg-ops-walk's loop body; no probe calls them.)
+        probe (str "(ns accelerator.targets.w3.pipe.probe (:export [main sp dfs]))\n"
                    "(defn main [] :i64 0)\n"
                    arms "\n"
                    "(defn sp [s :string] :i64 (sg-pipe s (string-byte-length s)))\n"
-                   "(defn ste [s :string i :i64] :i64 (sg-token-end s i (string-byte-length s)))\n"
                    "(defn dfs [answer :document] :document (device-from-subgroup answer))\n")
         hir (sema/analyze probe)
         sp (fn [s] (str (ir/execute hir 'sp [s])))
-        ste (fn [s i] (str (ir/execute hir 'ste [s i])))
         dfs (fn [s] (ir/execute hir 'dfs [["string" s]]))
         fields-of (fn [doc]
                     (into {} (map (fn [kv] [(get (get kv 0) 1) (get (get kv 1) 1)])
@@ -960,9 +973,6 @@
                     (cond (= 1 (count parts)) -1
                           (= 2 (count parts)) (str/index-of s "|")
                           :else -2)))
-        host-ste (fn [s i]
-                   (let [p (str/index-of s " " i)]
-                     (if (nil? p) (count s) p)))
         long-a (apply str (repeat 200 "a"))
         one-pipe-200 (str (apply str (repeat 150 "a")) "|" (apply str (repeat 49 "b")))
         two-pipe-200 (str (apply str (repeat 100 "a")) "|" (apply str (repeat 50 "b")) "|")]
@@ -981,24 +991,14 @@
                  long-a one-pipe-200 two-pipe-200 (apply str (repeat 1000 "a"))]]
         (is (= (str (host-sp s)) (sp s))
             (str (pr-str s) " answers the host's str/split -1 count reading"))))
-    (testing "the sg-token-end contract on the kotoba runtime (was: a per-token-byte walk)"
-      ;; MEASURED BEFORE (the evidence): the four 200+-byte cells
-      ;; TRAPPED host/stack-exhausted in the walk
-      (doseq [[s i want] [["abc" 0 "3"] ["ab cd" 0 "2"] ["ab cd" 3 "5"]
-                          ["ab  cd" 0 "2"] ["ab  cd" 3 "3"] ["ab  cd" 4 "6"]
-                          [" " 0 "0"] ["" 0 "0"]
-                          [long-a 0 "200"]
-                          [(str (apply str (repeat 150 "a")) " " (apply str (repeat 49 "b"))) 0 "150"]
-                          [(str (apply str (repeat 150 "a")) " " (apply str (repeat 49 "b"))) 151 "200"]
-                          [(apply str (repeat 1000 "a")) 0 "1000"]]]
-        (is (= want (ste s i)) (str (pr-str s) " from " i " keeps the token-end contract")))
-      (doseq [[s i] [["abc" 0] ["ab cd" 0] ["ab cd" 3] ["ab  cd" 0] ["ab  cd" 3] ["ab  cd" 4]
-                     [" " 0] ["" 0] [long-a 0]
-                     [(str (apply str (repeat 150 "a")) " " (apply str (repeat 49 "b"))) 0]
-                     [(str (apply str (repeat 150 "a")) " " (apply str (repeat 49 "b"))) 151]
-                     [(apply str (repeat 1000 "a")) 0]]]
-        (is (= (str (host-ste s i)) (ste s i))
-            (str (pr-str s) " from " i " answers the host's str/index-of reading"))))
+    ;; (the sg-token-end unit table is deleted with the defn-: the
+    ;; token-end shape is INLINE in sg-ops-walk's loop body since the
+    ;; fuel row (2026-10-26) and its contract -- the first byte-32 at or
+    ;; after i, n when absent; tokens are maximal non-32 runs -- is
+    ;; pinned through the walk's token grid in
+    ;; w3-subgroup-ops-walk-is-a-loop-not-a-self-call and through the
+    ;; source pins below. The deleted table held 11 boundary cells and
+    ;; their host readings; the same shapes ride in the walk grid.)
     (testing "the standing e2e pins are byte-identical (no spelling moved)"
       (let [m (fields-of (dfs "8|"))]
         (is (= "8" (str (:subgroup-size m))) "an empty <ops> is the zero-ops fact")
@@ -1031,21 +1031,25 @@
         (is (= {:subgroup-size 42 :subgroup-ops #{:basic}}
                (targets/device-from-subgroup s))
             "HOST parity pin")))
-    (testing "the per-byte scans are deleted and the bodies delegate to the primitive"
+    (testing "the per-byte scans are deleted: sg-pipe delegates, the token-end shape is INLINE"
       (let [pipe-body (extract-balanced src "(defn- sg-pipe")
-            token-end-body (extract-balanced src "(defn- sg-token-end")]
+            walk-body (extract-balanced src "(defn- sg-ops-walk")]
         (is (str/includes? pipe-body "string-find-byte")
             "sg-pipe scans with string-find-byte (the dot1/alt-end precedent)")
         (is (= 2 (count (re-seq #"string-find-byte" pipe-body)))
             "at most TWO finds: the first '|', then one after it")
         (is (not (str/includes? pipe-body "string-code-point-at"))
             "no byte scan remains in sg-pipe")
-        (is (str/includes? token-end-body "string-find-byte")
-            "sg-token-end scans with string-find-byte (the alt-end shape)")
-        (is (= 1 (count (re-seq #"string-find-byte" token-end-body)))
-            "ONE find per call")
-        (is (not (str/includes? token-end-body "string-code-point-at"))
-            "no byte scan remains in sg-token-end")
+        (is (nil? (extract-balanced src "(defn- sg-token-end"))
+            "the token-end defn- is deleted (the fuel row inlined the find)")
+        (is (not (str/includes? src "(defn- sg-token-end"))
+            "and gone from the namespace source under the defn- prefix")
+        (is (= 1 (count (re-seq #"string-find-byte s 32" walk-body)))
+            "ONE find per token step, inline in the walk (the alt-end shape)")
+        (is (str/includes? walk-body "(if (< p 0) n p)")
+            "the total shape (absent -> n) is answered above the primitive, as before")
+        (is (not (str/includes? walk-body "string-code-point-at"))
+            "no byte scan remains in the walk either")
         (is (str/includes? (extract-balanced src "(defn device-from-subgroup") "(sg-pipe s n)")
             "the call site dropped the walk's i/at arguments")))))
 
@@ -1095,10 +1099,13 @@
   (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
         arms (str/join "\n" (map #(extract-balanced src %)
                                  ["(defn- none?" "(defn- string->i64" "(defn- digits?"
-                                  "(defn- sg-tokens-doc" "(defn- sg-keyword "
-                                  "(defn- sg-size " "(defn- sg-token-end"
+                                  "(defn- sg-tokens-doc"
+                                  "(defn- sg-size "
                                   "(defn- sg-ops " "(defn- sg-ops-walk" "(defn- sg-pipe"
                                   "(defn device-from-subgroup"]))
+        ;; (sg-keyword and sg-token-end are deleted by the fuel row,
+        ;; 2026-10-26 -- the lookup table and the token-end find are
+        ;; INLINED in sg-ops-walk's loop body; no probe calls them.)
         probe (str "(ns accelerator.targets.w3.member2.probe (:export [main dfs sops]))\n"
                    "(defn main [] :i64 0)\n"
                    arms "\n"
@@ -1210,8 +1217,10 @@
             "the dedupe verdict is ONE document-contains (the map-key idiom)")
         (is (str/includes? walk-body "document-assoc")
             "and the shadow grows with ONE document-assoc")
-        (is (not (str/includes? walk-body "document-equal?"))
-            "no per-element comparison remains in the walk")
+        (is (= 1 (count (re-seq #"\(document-equal\?" walk-body)))
+            "exactly one comparison remains in the walk: the inline null sentinel")
+        (is (str/includes? walk-body "(document-equal? kw (document-null))")
+            "and it is the unknown-token sentinel (the deleted none? call's own body), not a per-element walk")
         (is (not (str/includes? walk-body "document-vector-at"))
             "no per-element accessor remains either")
         (is (str/includes? ops-body "(document-map)")
@@ -1256,37 +1265,48 @@
   (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
         arms (str/join "\n" (map #(extract-balanced src %)
                                  ["(defn- none?" "(defn- string->i64" "(defn- digits?"
-                                  "(defn- sg-tokens-doc" "(defn- sg-keyword "
-                                  "(defn- sg-size " "(defn- sg-token-end"
+                                  "(defn- sg-tokens-doc"
+                                  "(defn- sg-size "
                                   "(defn- sg-ops " "(defn- sg-ops-walk" "(defn- sg-pipe"
                                   "(defn device-from-subgroup"]))
-        probe (str "(ns accelerator.targets.w3.keyword.probe (:export [main sk dfs]))\n"
+        ;; (sg-keyword and sg-token-end are deleted by the fuel row,
+        ;; 2026-10-26 -- the lookup table and the token-end find are
+        ;; INLINED in sg-ops-walk's loop body; no probe calls them.)
+        probe (str "(ns accelerator.targets.w3.keyword.probe (:export [main sops dfs]))\n"
                    "(defn main [] :i64 0)\n"
                    arms "\n"
-                   "(defn sk [token :string] :document (sg-keyword token))\n"
+                   "(defn sops [field :string] :document (sg-ops field))\n"
                    "(defn dfs [answer :document] :document (device-from-subgroup answer))\n")
         hir (sema/analyze probe)
-        sk (fn [tok] (ir/execute hir 'sk [tok]))
+        sops (fn [field] (ir/execute hir 'sops [field]))
         dfs (fn [s] (ir/execute hir 'dfs [["string" s]]))
         fields-of (fn [doc]
                     (into {} (map (fn [kv] [(get (get kv 0) 1) (get (get kv 1) 1)])
                                   (get doc 1))))
-        ops-set (fn [ops] (set (map #(get % 1) ops)))]
-    (testing "the vocabulary table answers the whole vocabulary 1:1, and nothing else (was: a per-element walk)"
+        ops-set (fn [ops] (set (map #(get % 1) ops)))
+        ops-of (fn [r] (if (= ["null"] r) nil (ops-set (get r 1))))
+        host-ops-of (fn [field] (:subgroup-ops (targets/device-from-subgroup (str "8|" field))))]
+    (testing "the inlined table answers the whole vocabulary 1:1, and nothing else (was: a per-element walk, then a table defn-)"
       ;; MEASURED BEFORE (the evidence): the walk answered the same
       ;; values on every one of these short cells -- the walk's cost was
-      ;; FRAMES, not facts
-      (doseq [[tok want] [["basic" ["keyword" :basic]]
-                          ["vote" ["keyword" :vote]]
-                          ["arithmetic" ["keyword" :arithmetic]]
-                          ["ballot" ["keyword" :ballot]]
-                          ["shuffle" ["keyword" :shuffle]]
-                          ["shuffle-relative" ["keyword" :shuffle-relative]]
-                          ["clustered" ["keyword" :clustered]]
-                          ["quad" ["keyword" :quad]]]]
-        (is (= want (sk tok)) (str tok " maps 1:1 to its keyword document")))
-      (doseq [tok ["vote2" "Basic" "" "basic2" "shuffle-"]]
-        (is (= ["null"] (sk tok)) (str (pr-str tok) " is outside the vocabulary: no fact"))))
+      ;; FRAMES and FUEL, not facts. The lookup is the cond chain INLINE
+      ;; in sg-ops-walk's loop body (the fuel row, 2026-10-26), so the
+      ;; table is observed through the walk on single-token fields
+      (doseq [[tok want] [["basic" #{:basic}]
+                          ["vote" #{:vote}]
+                          ["arithmetic" #{:arithmetic}]
+                          ["ballot" #{:ballot}]
+                          ["shuffle" #{:shuffle}]
+                          ["shuffle-relative" #{:shuffle-relative}]
+                          ["clustered" #{:clustered}]
+                          ["quad" #{:quad}]]]
+        (is (= want (ops-of (sops tok))) (str tok " maps 1:1 to its keyword document"))
+        (is (= want (host-ops-of tok)) (str "HOST parity pin: " tok)))
+      (doseq [tok ["vote2" "Basic" "basic2" "shuffle-"]]
+        (is (nil? (ops-of (sops tok))) (str (pr-str tok) " is outside the vocabulary: no fact"))
+        (is (nil? (host-ops-of tok)) (str "HOST parity pin: " (pr-str tok))))
+      (is (= #{} (ops-of (sops "")))
+          "the empty field is ZERO tokens (the walk test pins the same contract)"))
     (testing "the two named trap cells resolve and answer the host arm (BEFORE: TRAP host/stack-exhausted on BOTH)"
       (is (= ["null"] (dfs "32|basic vote2"))
           "the unknown-token answer (14 bytes) fails closed to no fact, not a trap")
@@ -1314,23 +1334,26 @@
                  "-1|basic" "+3|basic" "0|basic" "12.5|basic" " 32|basic"
                  "32x|basic" "x|basic" "32|basic|extra" "32||basic"]]
         (is (= ["null"] (dfs s)) (str (pr-str s) " must parse to no fact at all"))))
-    (testing "the walk is deleted: the lookup body is a cond table with no recursion"
-      (let [kw-body (extract-balanced src "(defn- sg-keyword ")
-            walk-body (extract-balanced src "(defn- sg-ops-walk")]
-        (is (str/includes? kw-body "cond")
+    (testing "the lookup body is inline in the walk: a cond table with no recursion, no defn-"
+      (let [walk-body (extract-balanced src "(defn- sg-ops-walk")]
+        (is (nil? (extract-balanced src "(defn- sg-keyword "))
+            "the lookup defn- is deleted (the fuel row inlined the table)")
+        (is (not (str/includes? src "(defn- sg-keyword "))
+            "and gone from the namespace source under the defn- prefix")
+        (is (str/includes? walk-body "cond")
             "the lookup is a constant test chain")
-        (is (= 8 (count (re-seq #"\(document-keyword" kw-body)))
+        (is (= 8 (count (re-seq #"\(document-keyword" walk-body)))
             "exactly one answer per vocabulary element")
-        (is (str/includes? kw-body "(document-null)")
+        (is (str/includes? walk-body "(document-null)")
             "and the unknown-token answer above the table")
-        (is (not (str/includes? kw-body "(sg-keyword"))
-            "no self-call: zero recursion frames")
-        (is (not (str/includes? kw-body "document-list-at"))
+        (is (not (str/includes? walk-body "(sg-keyword"))
+            "no call and no self-call: zero recursion frames")
+        (is (not (str/includes? walk-body "document-list-at"))
             "no per-element accessor remains in the lookup")
-        (is (not (str/includes? kw-body "string-code-point-at"))
+        (is (not (str/includes? walk-body "string-code-point-at"))
             "and no byte scan either")
-        (is (str/includes? walk-body "(sg-keyword (string-substring s i j))")
-            "the one call site passes the token alone")
+        (is (str/includes? walk-body "(string-substring s i j)")
+            "the token is sliced inline at the walk's own token positions")
         (is (nil? (extract-balanced src "(defn- sg-keywords-doc"))
             "the walk's answer-column builder is deleted with the walk")
         (is (not (str/includes? src "(defn- sg-keywords-doc"))
@@ -1381,24 +1404,33 @@
   ;; host arm's maps on the AFTER arm. CONTRACT UNCHANGED (the token /
   ;; guard / dedupe / answer-kind grids below are byte-identical
   ;; BEFORE == AFTER == HOST).
-  ;; NAMED, NOT PINNED (measure-only): the loop removes FRAMES, not
-  ;; FUEL -- every user call per token still charges fuel, so a very
-  ;; many-token field can still reach the FUEL budget (MEASURED: the
-  ;; 3-word-cycle field resolves through 160 tokens and TRAPs
-  ;; budget/fuel at 192+). Also named: a document-VECTOR answers at most
-  ;; 8 elements here (the 8-word vocabulary, all-or-nothing) so the
-  ;; measured document-vector element cap (32 elements resolve, 48 trap
-  ;; 'document-vector-too-large') is unreachable in this walk; the bare
-  ;; counting loop's own boundary is state-dependent (resolved 20000
-  ;; standalone in one probe but TRAPped budget/frames at 10000 in a
-  ;; run interleaved with trapping neighbours -- never pinned).
+  ;; NAMED THEN, FIXED NOW (the fuel row, 2026-10-26): the loop removed
+  ;; FRAMES, not FUEL -- the walk still charged one fuel per user call
+  ;; per token (MEASURED on the loop row's AFTER arm: the 3-word-cycle
+  ;; field resolved through 160 tokens and TRAPped budget/fuel at
+  ;; 192+), and the fuel row INLINED the three per-token calls into
+  ;; this loop body (the token-end find, the keyword cond table, none?'s
+  ;; document-equal? sentinel), so the walk charges fuel ONCE per entry
+  ;; and ZERO per token (MEASURED: min-fuel 6 flat at 1/10/100/200
+  ;; tokens -- see w3-subgroup-per-token-fuel-charges-are-inlined and
+  ;; docs/evidence/gpu/w3-per-token-fuel-inlined-20261026.txt). Also
+  ;; named: a document-VECTOR answers at most 8 elements here (the
+  ;; 8-word vocabulary, all-or-nothing) so the measured document-vector
+  ;; element cap (32 elements resolve, 48 trap 'document-vector-too-large')
+  ;; is unreachable in this walk; the bare counting loop's own boundary
+  ;; is state-dependent (resolved 20000 standalone in one probe but
+  ;; TRAPped budget/frames at 10000 in a run interleaved with trapping
+  ;; neighbours -- never pinned).
   (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
         arms (str/join "\n" (map #(extract-balanced src %)
                                  ["(defn- none?" "(defn- string->i64" "(defn- digits?"
-                                  "(defn- sg-tokens-doc" "(defn- sg-keyword "
-                                  "(defn- sg-size " "(defn- sg-token-end"
+                                  "(defn- sg-tokens-doc"
+                                  "(defn- sg-size "
                                   "(defn- sg-ops " "(defn- sg-ops-walk" "(defn- sg-pipe"
                                   "(defn device-from-subgroup"]))
+        ;; (sg-keyword and sg-token-end are deleted by the fuel row,
+        ;; 2026-10-26 -- the lookup table and the token-end find are
+        ;; INLINED in sg-ops-walk's loop body; no probe calls them.)
         probe (str "(ns accelerator.targets.w3.walk.probe (:export [main sops dfs]))\n"
                    "(defn main [] :i64 0)\n"
                    arms "\n"
@@ -1529,3 +1561,112 @@
             "the per-byte separator skip is deleted")
         (is (not (str/includes? walk-body "(+ i 1)"))
             "and with it the frame-per-space-byte advance")))))
+
+(deftest w3-subgroup-per-token-fuel-charges-are-inlined
+  ;; The `:kotoba` SUBGROUP <ops> walk charges FUEL ONCE per entry and
+  ;; ZERO per token (the fuel row, 2026-10-26). This is the loop row's
+  ;; (2026-10-26) named residual: "the loop removes FRAMES, not FUEL --
+  ;; every user call per token still charges fuel ... the many-token
+  ;; wrong-refusal class moved from FRAMES 32 to FUEL 160..192, its own
+  ;; row". The walk charged THREE `defn-` entries per token
+  ;; (sg-token-end / sg-keyword / none?'s sentinel test) and one
+  ;; function entry is one fuel unit (kir.cljc charge! on
+  ;; invoke-function); the three are INLINED into sg-ops-walk's loop
+  ;; body and the two walk-only `defn-`s are DELETED (none? stays:
+  ;; device-from-subgroup and the wg readers still call it).
+  ;; GO/NO-GO GROUND, MEASURED (the row's prims probe; min-fuel = the
+  ;; run's exact charge count): 2 for a bare loop at 1..5000 iterations
+  ;; (loop-helper self-tail re-entry zero-charge, kir.cljc T7.1),
+  ;; exactly 3k+2 for THREE user calls per iteration (5/32/302/1202 at
+  ;; k=1/10/100/400) and 4 CONSTANT for the walk's OP mix and the full
+  ;; inline shape (k=1..2000) -- the charge count is flat in token
+  ;; count. MEASURED (the row's before/after probe, run 1 complete --
+  ;; run 2 was still in flight at this commit, its byte-identity
+  ;; UNVERIFIED and named in the commit message; every number here is
+  ;; run 1's tool output): the real walk's min-fuel is 3k+6 (BEFORE) vs
+  ;; 6 flat (AFTER) on the <ops> parse at 1/10/100/200 tokens
+  ;; (9/36/306/606 vs 6/6/6/6) and 3k+21 vs 21 flat through
+  ;; device-from-subgroup (51/321/621 vs 21/21/21 at 10/100/200).
+  ;; CONTRACT UNCHANGED, pinned: nothing about the token/dedupe/answer
+  ;; contract moved -- the loop/dedupe/keyword tests' grids are
+  ;; byte-identical BEFORE == AFTER == HOST.
+  (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
+        arms (str/join "\n" (map #(extract-balanced src %)
+                                 ["(defn- none?" "(defn- string->i64" "(defn- digits?"
+                                  "(defn- sg-tokens-doc"
+                                  "(defn- sg-size "
+                                  "(defn- sg-ops " "(defn- sg-ops-walk" "(defn- sg-pipe"
+                                  "(defn device-from-subgroup"]))
+        probe (str "(ns accelerator.targets.w3.fuelrow.probe (:export [main sops dfs]))\n"
+                   "(defn main [] :i64 0)\n"
+                   arms "\n"
+                   "(defn sops [field :string] :document (sg-ops field))\n"
+                   "(defn dfs [answer :document] :document (device-from-subgroup answer))\n")
+        hir (sema/analyze probe)
+        sops-f (fn [field fuel] (ir/execute hir 'sops [field] {:fuel fuel}))
+        dfs (fn [s] (ir/execute hir 'dfs [["string" s]]))
+        fields-of (fn [doc]
+                    (into {} (map (fn [kv] [(get (get kv 0) 1) (get (get kv 1) 1)]) (get doc 1))))
+        ops-set (fn [ops] (set (map #(get % 1) ops)))
+        ops-of (fn [r] (if (= ["null"] r) nil (ops-set (get r 1))))
+        token-field (fn [k] (str/join " " (take k (cycle ["basic" "vote" "shuffle"]))))
+        vocab8 ["basic" "vote" "arithmetic" "ballot" "shuffle" "shuffle-relative" "clustered" "quad"]
+        want8 #{:basic :vote :arithmetic :ballot :shuffle :shuffle-relative :clustered :quad}
+        ;; the token set a k-token cycle field actually holds (k=1 is
+        ;; just :basic -- the first pin run was red at exactly this, the
+        ;; test's own expectation wrong, the machine right)
+        want3-of (fn [k] (set (take k (cycle [:basic :vote :shuffle]))))
+        want8-of (fn [k] (set (take k (cycle [:basic :vote :arithmetic :ballot
+                                               :shuffle :shuffle-relative :clustered :quad]))))
+        token-field-8 (fn [k] (str/join " " (take k (cycle vocab8))))]
+    (testing "the per-token FUEL class is GONE (BEFORE: budget/fuel at 192+ tokens)"
+      ;; every cell below TRAPped budget/fuel on the BEFORE arm (the
+      ;; evidence) and answers the host arm's map here
+      (doseq [k [192 256 384 512]]
+        (let [s (str "8|" (token-field k))]
+          (is (= #{:basic :vote :shuffle} (ops-set (:subgroup-ops (fields-of (dfs s)))))
+              (str "the " k "-token 3-word-cycle answer parses -- fuel is flat in token count"))
+          (is (= {:subgroup-size 8 :subgroup-ops #{:basic :vote :shuffle}}
+                 (targets/device-from-subgroup s))
+              (str "HOST parity pin: " k "-token 3-word-cycle"))))
+      (doseq [k [256 512]]
+        (let [s (str "8|" (token-field-8 k))]
+          (is (= want8 (ops-set (:subgroup-ops (fields-of (dfs s)))))
+              (str "the " k "-token 8-word-cycle answer parses -- fuel is flat in token count"))
+          (is (= {:subgroup-size 8 :subgroup-ops want8}
+                 (targets/device-from-subgroup s))
+              (str "HOST parity pin: " k "-token 8-word-cycle")))))
+    (testing "the walk's fuel is FLAT in token count (MEASURED min-fuel 6 at 1/10/100/200 tokens)"
+      ;; the BEFORE arm needed 3k+6 (9/36/306/606, measured) -- one
+      ;; charge per user call per token; the inline walk resolves every
+      ;; token count under the SAME low fuel (24 >= the measured 6 and
+      ;; < 6 + k for every k below -- a per-token charge would fail)
+      (doseq [k [1 10 100 200 400]]
+        (is (= (want3-of k) (ops-of (sops-f (token-field k) 24)))
+            (str "the " k "-token field resolves under one flat fuel budget"))
+        (is (= (want8-of k) (ops-of (sops-f (token-field-8 k) 24)))
+            (str "the 8-word " k "-token field resolves under the same flat fuel budget"))))
+    (testing "the three per-token calls are inlined: no walk-local defn- call remains"
+      (let [walk-body (extract-balanced src "(defn- sg-ops-walk")]
+        (is (nil? (extract-balanced src "(defn- sg-keyword "))
+            "the vocabulary lookup defn- is deleted (inlined cond table)")
+        (is (nil? (extract-balanced src "(defn- sg-token-end"))
+            "the token-end defn- is deleted (inlined find)")
+        (is (not (str/includes? src "(defn- sg-keyword "))
+            "and gone from the namespace source under the defn- prefix")
+        (is (not (str/includes? src "(defn- sg-token-end"))
+            "that one too")
+        (is (not (str/includes? walk-body "(none?"))
+            "the sentinel test is inline, not a none? call")
+        (is (not (str/includes? walk-body "(sg-keyword"))
+            "no keyword call remains in the walk")
+        (is (not (str/includes? walk-body "(sg-token-end"))
+            "no token-end call remains in the walk")
+        (is (= 1 (count (re-seq #"string-find-byte s 32" walk-body)))
+            "the token-end find is inline exactly once")
+        (is (str/includes? walk-body "(if (< p 0) n p)")
+            "with the deleted defn-'s total shape verbatim")
+        (is (str/includes? walk-body "(document-equal? kw (document-null))")
+            "and the sentinel is none?'s own body inline")
+        (is (some? (extract-balanced src "(defn- none?"))
+            "none? stays a defn-: device-from-subgroup and the wg readers still call it")))))

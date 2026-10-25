@@ -1,0 +1,153 @@
+JUN-56 / JUN-55 -- the fuel row: the W3 SUBGROUP <ops> walk charges
+FUEL ONCE per entry, ZERO per token (the three per-token `defn-` calls
+inlined into sg-ops-walk's loop body), 2026-10-26
+
+WHAT THIS ROW IS: the named residual of w3-ops-loop-trampoline-20261026
+("the loop removes FRAMES, not FUEL -- every user call per token still
+charges fuel ... the many-token wrong-refusal class moved from FRAMES
+32 to FUEL 160..192, its own row"). One implementation slice on
+kotoba.compiler.accelerator-targets. NO hardware ran, no GPU, no
+timing -- every number below is a kotoba-language-runtime behavior
+probe (the w3 fact class).
+
+WHAT LANDED (kotoba arm only; the host arm is the parity reference and
+is untouched): the walk charged THREE `defn-` entries per token --
+sg-token-end (ONE string-find-byte), sg-keyword (the cond table),
+none?'s document-equal? sentinel test -- and one function entry is one
+fuel unit (kir.cljc charge! on invoke-function). All three are INLINED
+into sg-ops-walk's loop body (the find + total shape verbatim, the
+cond table, the sentinel test) and the two walk-only `defn-`s
+sg-token-end / sg-keyword are DELETED (none? stays: device-from-subgroup
+and the wg readers still call it). CONTRACT UNCHANGED, pinned: byte 32
+the wire's ONLY separator (the loop's (>= i n) -> acc guard is the
+totality above string-find-byte -- from = n never called, -1 absent ->
+n, the deleted sg-token-end's contract verbatim); the whole vocabulary
+1:1 with the hyphen preserved, a token outside it answers
+(document-null); a duplicate token collapses (the map shadow); the
+ANSWER is the document-VECTOR in first-occurrence order.
+
+INSTRUMENT: the w3 extract-balanced idiom (the arms' OWN text from the
+namespace source, sema/analyze + ir/execute on the kotoba language
+runtime, kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)"
+<scratch probe>; scratch probes never staged). Go/no-go probe
+w3_fuel_prims.cljk (min-fuel = the run's exact charge count: the
+smallest :fuel that resolves IS the total debit). Before/after probe
+w3_fuel_before_after.cljk: BEFORE arm from a sha256-verified git-show
+HEAD dump (scratch/w3_fuel_before_src.cljk, sha256
+be33121972c9f4dc79b337b91387a444c6b45e70def1378d5df91e71eb1c69db --
+verified live this tick equal to `git show HEAD:src/kotoba/compiler/
+accelerator_targets.cljk`, which is the loop row's recorded AFTER hash,
+chain continuity). Parity reference: the host arm's own
+device-from-subgroup.
+
+GO/NO-GO GROUND (w3_fuel_prims.cljk, real run, output verbatim):
+  countup k min-fuel 2 at k=1/10/100/1000/5000 -- a bare loop is
+  CONSTANT (loop-helper self-tail re-entry zero-charge, T7.1).
+  callloop3 k min-fuel 5/32/302/1202 at k=1/10/100/400 -- THREE user
+  calls per iteration are exactly 3k+2.
+  oploop k min-fuel 4 at k=1/10/100/400 -- the walk's OP mix
+  (find-byte/substring/skip-blank/cond tests/document ops) is 4,
+  CONSTANT.
+  walklike k min-fuel 4 at k=1/10/100/400/2000 -- the row's full
+  inline shape (ops + inline table + inline sentinel) is 4 through
+  2000: the base 2 a bare loop charges plus the two seed document
+  constructors, every other head charge-free.
+  determinism: callloop3 100 again 302, walklike 400 again 4.
+  => the charge count is FLAT in token count; a per-token call class
+  is exactly what the 3k+2 row measures.
+
+MEASURED (runtime, no hardware; w3_fuel_run1.txt, COMPLETE, sha256
+568563542162070d9cdb7fef817ec1f8bfd5e7999fc9866207266ab149c99af3,
+149 lines):
+  EXACT FUEL ACCOUNTING (min-fuel = the run's total charge count):
+  sops 1/10/100/200-tokens-3w BEFORE 9/36/306/606 (= 3k+6, one charge
+  per user call per token) vs AFTER 6/6/6/6 (FLAT); dfs 10/100/200
+  BEFORE 51/321/621 (= 3k+21) vs AFTER 21/21/21 (FLAT).
+  THE ROW'S TRAP-GONE CELLS (BEFORE TRAP budget/fuel -> AFTER == HOST):
+  the 3-word-cycle fields at 192/256/384/512 tokens (1217/1622/2433/
+  3242 bytes) and the 8-word-cycle fields at 256/512 tokens (2209/4417
+  bytes) ALL TRAPped budget/fuel on BEFORE (the loop row's measured
+  BEFORE boundary: resolves through 160 tokens, TRAPs at 192+) and all
+  answer the host arm's maps on AFTER.
+  REGRESSION, byte-identical BEFORE == AFTER == HOST on every cell:
+  the 19-cell sg-ops unit grid (incl. the ten guard/unknown cells ->
+  null == nil), the 8-cell dedupe grid, the standing pins (16|shuffle,
+  8|, the 12-cell malformed grid -> null == nil), the previous rows'
+  trap-gone pins (the 70/86/77-byte cells, the 411-byte spaced cell,
+  the 24/32/48/64-token and 32/48/64-token loop-row cells) and the
+  previous rows' resolved cells (106/1006/110/206/200/192/152 bytes --
+  the 110-byte one still 42 #{basic}).
+  AFTER's NEW BOUNDARY, measure-only: the 3-word-cycle field resolves
+  through 8192 tokens (51882 bytes) at default budgets == HOST
+  (1024/2048/4096/8192 all resolved; the boundary is past 8192 at this
+  probe position, never pinned).
+NAMED, NOT VERIFIED (honest gap): probe run 2 was still in flight at
+this commit (run-time budget exhausted) -- the two-run byte-identity
+discipline covers run 1 + run 2 and run 2's comparison lands NEXT
+TICK before any merge-relevant claim; nothing in this row's claims
+rests on run 2. (The interrupted pre-tick's partial run was overwritten
+by this tick's complete run 1 -- named, not hidden.)
+ALSO NAMED (not re-run this tick, run-time budget): the scoped gate's
+two GREEN runs below stand; gpu_regime_classify.py --self-test (pin
+2649/0) and the FULL run-tests.cljk re-verify (RED AT BASE 'Could not
+find namespace: kotoba.form', ADR-0362, outside this diff -- NO green
+full suite claimed) were not taken this tick.
+
+CONSEQUENCE: NOTHING MOVES -- no :measured? flag value, no :shapes
+value, no workgroup row, no selection answer; :arm/:unknown stay
+provisional :measured? false; the SUBGROUP producer (ADR-0371) still
+does not exist, no live wire feeds this. This row removes the per-token
+FUEL wrong-refusal class (192..512-token fields answered a trap, no
+fact, where the host arm answered the fact) and adds no measurement
+claim.
+
+STATES:
+- IMPLEMENTED (code + tests): the three inlined calls + the two deleted
+  defn-s. Tests: w3-subgroup-per-token-fuel-charges-are-inlined (NEW,
+  the row's test): the trap-gone pins (192/256/384/512-3w, 256/512-8w
+  == HOST), the flat-fuel pins (1/10/100/200/400-token fields resolve
+  under ONE {:fuel 24} budget -- 24 >= the measured 6 and < 6+k, so a
+  per-token charge would fail), and the source pins (both defn-s
+  deleted under their prefixes, no (none?/(sg-keyword/(sg-token-end
+  call in the walk, the find inline exactly once, the total shape
+  verbatim, the sentinel inline, none? defn- stays); the pipe/token-end
+  and keyword tests brought to the new state (the deleted defn-s' unit
+  tables removed with their subjects -- the token-end contract is
+  pinned through the walk's token grid and the inline source pins; the
+  keyword table is observed through the walk on single-token fields
+  with HOST parity); the dedupe test's comparison pin re-anchored on
+  the inline sentinel (exactly one (document-equal? in the walk body);
+  the loop test's named-residual prose brought to the new state.
+  NOTE NAMED NOT HIDDEN: gate run 1 of the new test was RED at exactly
+  2 assertions of the new test's own bug (k=1 expects the full cycle
+  set -- the machine right, the test wrong; want-of-k fixed), fixed and
+  GREEN after.
+- DECIDED (contract unchanged): the inlining is an iteration/cost
+  detail; the deleted defn-s' contracts survive verbatim inline.
+- MEASURED: the prims ground table + the run-1 tables above.
+- ACCEPTED DESIGN ONLY (unchanged): ADR-0355's table rules, ADR-0358's
+  key, ADR-0362's subgroup contract, the claim protocol.
+- UNMEASURED, named: run-2 byte-identity (next tick), the boundary past
+  8192 tokens, the loop helper's state-dependent boundary (20000
+  standalone / 10000 interleaved, never pinned), the document-vector
+  element cap's exact value (unreachable here), trap spellings beyond
+  these runs, every workgroup-row question (:arm/:unknown stay
+  provisional :measured? false), anything off this host.
+
+GATES (real runs):
+- Scoped GPU gate (8 GPU-owned namespaces, scratch runner
+  gpu_scoped_gate.cljk):
+    kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+      /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+  -> run 1 RED (2 assertions, the new test's own k=1 bug, above),
+     run 2 GREEN and run 3 GREEN, identical:
+     Ran 122 tests containing 12012 assertions. 0 failures, 0 errors.
+     scoped: 122 tests, 12012 passed, 0 failed, 0 errors
+     (committed pin 121 tests / 11986 assertions; delta = +1 test /
+     +26 assertions). glslang 16.6.0 real-spawn ran (run 1 log).
+- BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head
+  (checked at tick start and re-checked before the push).
+- NAMED, NOT HIDDEN: kbb prints "2 dep(s) are not :local/root ..." on
+  every run -- identical everywhere, unrelated to this diff. The
+  worktree also carries an untracked deps.edn (present at tick start;
+  this row did not create or touch it, and it is not committed).

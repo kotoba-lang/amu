@@ -650,34 +650,10 @@
    "shuffle-relative" :shuffle-relative
    "clustered" :clustered
    "quad" :quad}))
-;; the token -> keyword lookup: ONE non-recursive table body (the
-;; sg-keyword row, 2026-10-26). The replaced sg-keyword walked the
-;; vocabulary one element per RECURSIVE frame (document-list-at over
-;; sg-tokens-doc / sg-keywords-doc per i) and its 8-deep walk stacked
-;; under sg-ops-walk's own per-token/per-space frames -- measured on the
-;; kotoba runtime: the unknown-token "32|basic vote2" (14 bytes) TRAPped
-;; host/stack-exhausted on BOTH arms (the sg-member? row's named
-;; residual, docs/evidence/gpu/w3-sg-member-vector-accumulator-20261026.txt;
-;; this row's probe: w3-sg-keyword-table-20261026.txt). The lookup is the
-;; host arm's map literal (`subgroup-op-tokens`) spelled as a cond
-;; chain: eight constant string tests, zero recursion frames.
-;; CONTRACT UNCHANGED: the whole vocabulary 1:1 with the hyphen
-;; preserved (shuffle-relative -> :shuffle-relative) and a token outside
-;; it answers (document-null) -- unknown fails the whole answer above.
-;; The deleted sg-keywords-doc held only the walk's answer column and is
-;; gone with the walk (sg-tokens-doc stays: sg-token-at, the producer
-;; half, reads it).
-#?(:kotoba
-   (defn- sg-keyword [token :string] :document
-     (cond (= token "basic") (document-keyword :basic)
-           (= token "vote") (document-keyword :vote)
-           (= token "arithmetic") (document-keyword :arithmetic)
-           (= token "ballot") (document-keyword :ballot)
-           (= token "shuffle") (document-keyword :shuffle)
-           (= token "shuffle-relative") (document-keyword :shuffle-relative)
-           (= token "clustered") (document-keyword :clustered)
-           (= token "quad") (document-keyword :quad)
-           :else (document-null))))
+;; (the token -> keyword table and sg-token-end's find moved INLINE into
+;; sg-ops-walk's loop body -- the fuel row, 2026-10-26: the sg-keyword
+;; and sg-token-end `defn-`s charged ONE FUEL per token as function
+;; entries; see the walk's comment below.)
 ;; the <size> field: decimal digits only as an i64, -1 for an empty field, a
 ;; non-digit or a value past i64 (the protocol table's parse-decimal
 ;; contract). The sg-size row (2026-10-26): the replaced sg-size-walk
@@ -698,21 +674,8 @@
        (if (and (< 0 n) (digits? s 0 n))
          (string->i64 s)
          -1))))
-;; the <ops> field's tokens are the wire's tokens: runs of non-space bytes
-;; separated by one or more spaces (byte 32), no other byte separates (the
-;; request grammar's rule), so a separator-only field is also zero tokens.
-;; The pipe/token-end row (2026-10-26): the replaced token walk recursed
-;; per field byte and trapped the interpreter's 32-frame budget
-;; (frames-limit 32) on long tokens -- MEASURED on the kotoba runtime
-;; (docs/evidence/gpu/w3-pipe-token-end-primitives-20261026.txt). The end
-;; is ONE `string-find-byte` (the alt-end shape, byte 32): the first byte
-;; 32 at or after i, n when absent. `string-find-byte` answers -1 when
-;; absent and traps on from > n (measured: the numeric-walk row, dot1's
-;; exact shape), so the walk's i >= n -> n shape is answered ABOVE the
-;; primitive (total contract; callers hold it).
-#?(:kotoba
-   (defn- sg-token-end [s :string i :i64 n :i64] :i64
-     (if (>= i n) n (let [p (string-find-byte s 32 i)] (if (< p 0) n p)))))
+;; (sg-token-end's ONE-find token-end shape is spelled inline in
+;; sg-ops-walk's loop body -- the fuel row, 2026-10-26; see below.)
 ;; the dedupe check over the chain's own accumulator reads a document-MAP
 ;; SHADOW (kw -> true) with ONE `document-contains` (the map-key idiom)
 ;; and grows it with ONE `document-assoc` -- where the check walked the
@@ -775,16 +738,46 @@
 ;; one sg-ops-walk entry + the loop). CONTRACT UNCHANGED, pinned: nothing
 ;; about the token/dedupe/answer contract moved (byte 32 separator, maximal
 ;; non-32 runs, duplicate collapses, document-VECTOR first-occurrence order).
-;; RESIDUAL, NAMED (its own row): the walk still charges FUEL per user call
-;; per token (sg-token-end / sg-keyword / none? + the walk's own re-entry
-;; terms), so a very many-token field can still reach the FUEL budget
-;; (measured on a 2-word dedupe probe shape: 64 tokens resolve, 200 trap
-;; budget/fuel; the real arm's boundary is measured in this row's evidence)
-;; -- a bounded-content refusal, not a fact corruption; boundary probes
-;; measure where. Also named, measure-only: a document-VECTOR answers at
-;; most 8 elements here (the 8-word vocabulary, all-or-nothing) so the
-;; measured document-vector element cap (32 elements resolve, 48 trap
-;; 'document-vector-too-large') is unreachable in this walk.
+;; RESIDUAL THEN, FIXED NOW (the FUEL row, 2026-10-26): the walk
+;; charged FUEL per user call per token -- sg-token-end / sg-keyword /
+;; none? were THREE `defn-` entries per token and one function entry is
+;; one fuel unit (kir.cljc charge! on invoke-function). MEASURED ground
+;; (probe w3_fuel_prims.cljk, min-fuel = the run's exact charge count):
+;; a bare loop is min-fuel 2 at 1..5000 iterations (loop-helper
+;; self-tail re-entry zero-charge, T7.1), THREE user calls per
+;; iteration are min-fuel 3k+2 exactly (5/32/302/1202 at k=1/10/100/
+;; 400), and the walk's OP mix per iteration (string-find-byte /
+;; string-substring / string-skip-blank / the cond table's string tests
+;; / document-equal? / document-contains / document-vector-conj /
+;; document-assoc / document-bool) is min-fuel 4 CONSTANT at 1..400
+;; iterations (the row's full inline shape, walklike: the same 4 through
+;; 2000) -- the base 2 a bare loop charges plus the two seed document
+;; constructors, every other head charge-free. So the three per-token
+;; calls are
+;; INLINED into the loop body below (sg-token-end's find, the sg-keyword
+;; cond table, none?'s document-equal? sentinel test) and the walk
+;; charges fuel ONCE per entry and ZERO per token: the many-token
+;; budget/fuel wrong-refusal class (this row's BEFORE boundary: the
+;; 3-word-cycle field resolves through 160 tokens and TRAPs budget/fuel
+;; at 192+) is GONE, measured in this row's evidence. The deleted
+;; sg-token-end / sg-keyword `defn-`s had no other caller.
+;; CONTRACT UNCHANGED, pinned: byte 32 the wire's ONLY separator (tokens
+;; are maximal non-32 runs; the loop's (>= i n) -> acc guard is the
+;; totality above string-find-byte -- from = n is never called, -1
+;; absent -> n, the deleted sg-token-end's contract verbatim); the whole
+;; vocabulary 1:1 with the hyphen preserved and a token outside it
+;; answers (document-null) -- unknown fails the whole answer above (the
+;; inline test is none?'s own body: document-equal? against
+;; (document-null)); a duplicate token collapses (the map shadow); the
+;; ANSWER is the document-VECTOR in first-occurrence order.
+;; RESIDUAL, NAMED (measure-only): there is no per-token charge of any
+;; kind left in the body under the default budgets (fuel flat, frames
+;; constant, cells/bytes unmetered) -- the walk's new boundary is the
+;; loop helper's own state-dependent one (20000 standalone / 10000 in
+;; an interleaved run, NEVER pinned) plus host memory, measured in this
+;; row's evidence at the named cells. Also named: the document-vector
+;; element cap (32 resolve / 48 trap 'document-vector-too-large') stays
+;; unreachable here (the answer caps at the 8-word vocabulary).
 #?(:kotoba
    (defn- sg-ops [field :string] :document
      (if (or (>= (string-find-byte field 9 0) 0)
@@ -797,14 +790,29 @@
                     (document-vector) (document-map)))))
 #?(:kotoba
    (defn- sg-ops-walk [s :string i :i64 n :i64 acc :document seen :document] :document
-     ;; ONE loop, not a self-call: the desugared `__kotoba_loop_N` helper's
-     ;; self-tail re-entry is zero-charge (no frame per token).
+     ;; ONE loop, no frame per token (the loop row) and NO FUEL per
+     ;; token (the fuel row, 2026-10-26): the three per-token `defn-`
+     ;; calls -- sg-token-end, sg-keyword and none? -- are INLINED here --
+     ;; one function entry is one fuel unit (kir.cljc charge!), every
+     ;; other head this body runs is charge-free (measured: the row's
+     ;; ground, w3_fuel_prims.cljk). The desugared `__kotoba_loop_N`
+     ;; helper's self-tail re-entry is zero-charge (no frame, no fuel).
      (loop [i i acc acc seen seen]
        (if (>= i n)
          acc
-         (let [j (sg-token-end s i n)
-               kw (sg-keyword (string-substring s i j))]
-           (if (none? kw)
+         (let [p (string-find-byte s 32 i)
+               j (if (< p 0) n p)
+               token (string-substring s i j)
+               kw (cond (= token "basic") (document-keyword :basic)
+                        (= token "vote") (document-keyword :vote)
+                        (= token "arithmetic") (document-keyword :arithmetic)
+                        (= token "ballot") (document-keyword :ballot)
+                        (= token "shuffle") (document-keyword :shuffle)
+                        (= token "shuffle-relative") (document-keyword :shuffle-relative)
+                        (= token "clustered") (document-keyword :clustered)
+                        (= token "quad") (document-keyword :quad)
+                        :else (document-null))]
+           (if (document-equal? kw (document-null))
              (document-null)
              (let [dup? (document-contains seen kw)
                    acc2 (if dup? acc (document-vector-conj acc kw))
