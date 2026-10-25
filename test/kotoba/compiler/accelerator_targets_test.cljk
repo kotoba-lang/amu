@@ -383,30 +383,38 @@
   ;; The `:kotoba` reading of the uB5G SET key (key-hits / alt-any-hits /
   ;; alt-field? / alt-end beside substr-hits, ADR-0358 amendment 2026-10-25)
   ;; runs on the kotoba language runtime over the arms' OWN extracted text
-  ;; (the w3 extract-balanced idiom). NAMED CONSTRAINT, not an omission: the
-  ;; interpreter carries a 32-frame budget (frames-limit 32) and the per-byte
-  ;; walks (sub-eq per needle byte, sub-walk2 per haystack position) trap
-  ;; host/stack-exhausted on full device names -- measured on this runtime
-  ;; this tick ("apple m1 max"/"m1 max" traps; the old lower-walk's trap, the
-  ;; ns docstring's named hazard) -- so these pins run the SHORT spellings and
-  ;; the full spellings are the host pins in
-  ;; the-workgroup-device-key-is-a-fragment-set-per-name-part.
+  ;; (the w3 extract-balanced idiom). FULL device names run here now (the
+  ;; key-chain row 2026-10-26): substr-hits is ONE `string-contains?` call --
+  ;; the replaced sub-walk2/sub-eq byte walks recursed per haystack position
+  ;; and per needle byte and trapped the interpreter's 32-frame budget
+  ;; (frames-limit 32) on full names ("apple m1 max"/"m1 max" =>
+  ;; host/stack-exhausted, measured before the fix,
+  ;; docs/evidence/gpu/w3-key-chain-primitive-20261026.txt). The short
+  ;; spellings keep their pins below unchanged.
   (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
-        arms (str/join "\n" (map #(extract-balanced src %)
-                                 ["(defn- sub-eq" "(defn- sub-walk2" "(defn- substr-hits"
+        arms (str/join "\n" (filter some? (map #(extract-balanced src %)
+                                 ["(defn- substr-hits"
                                   "(defn- alt-end" "(defn- alt-field?" "(defn- alt-any-hits"
-                                  "(defn- key-hits"]))
-        probe (str "(ns accelerator.targets.w3.key.probe (:export [main hit]))\n"
+                                  "(defn- key-hits"])))
+        probe (str "(ns accelerator.targets.w3.key.probe (:export [main sh hit]))\n"
                    "(defn main [] :i64 0)\n"
                    arms "\n"
+                   "(defn sh [h :string n :string] :bool (substr-hits h n))\n"
                    "(defn hit [part :string frag :string alts :string] :bool (key-hits part frag alts))")
         hir (sema/analyze probe)
-        hit (fn [part frag alts] (ir/execute hir 'hit [part frag alts]))]
+        hit (fn [part frag alts] (ir/execute hir 'hit [part frag alts]))
+        sh (fn [h n] (ir/execute hir 'sh [h n]))]
     (is (every? string? (map #(extract-balanced src %)
-                             ["(defn- sub-eq" "(defn- key-hits"]))
+                             ["(defn- substr-hits" "(defn- key-hits"]))
         "the W3 arms are extractable from the namespace source")
     (is (str/includes? src "(key-hits (string-ascii-lower")
         "the :kotoba recommend arm keys through key-hits, not bare substr-hits")
+    (is (str/includes? (extract-balanced src "(defn- substr-hits") "string-contains?")
+        "substr-hits delegates to the language primitive, not a hand-rolled walk")
+    (is (not (str/includes? src "(defn- sub-walk2"))
+        "the per-position walk is gone from the namespace source (prose naming it stays legal)")
+    (is (not (str/includes? src "(defn- sub-eq"))
+        "the per-needle-byte walk is gone from the namespace source (prose naming it stays legal)")
     (testing "one name part carries every fragment of one set"
       (is (true? (hit "tx" "x" "a|t")) "the second alternate completes its set")
       (is (true? (hit "ax" "x" "a|t")) "the first alternate completes its set")
@@ -418,7 +426,87 @@
       (is (true? (hit "x" "x" "|")) "fields that are all empty are no alternates")
       (is (true? (hit "x" "x" "")) "the rows without alternates keep the fragment contract"))
     (testing "the haystack is the caller's lowered name (substr-hits' contract)"
-      (is (false? (hit "X" "x" ""))))))
+      (is (false? (hit "X" "x" ""))))
+    (testing "FULL device names resolve within the budget (the 2026-10-26 fix)"
+      (is (true? (hit "apple m1 max" "m1 max" ""))
+          "the measured apple spelling keeps its row flag")
+      (is (true? (hit "nvidia tegra xavier (nvgpu)" "xavier" "agx|tegra"))
+          "the wire-42 INFO receipt's spelling (JUN-85)")
+      (is (true? (hit "nvidia jetson agx xavier" "xavier" "agx|tegra"))
+          "the CUDA channel's spelling of the same host")
+      (is (false? (hit "jetson xavier nx" "xavier" "agx|tegra"))
+          "the NX hole stays closed on full names")
+      (is (false? (hit "apple m1 max" "xavier" "agx|tegra"))
+          "a full name that carries no set attaches nothing"))
+    (testing "the empty needle keeps the host str/includes? answer (measured parity)"
+      (is (true? (sh "ab" ""))
+          "the deleted walk answered true here and the primitive raises empty-string-search-needle -- answered above it"))))
+
+(deftest w3-recommend-named-devices-resolve-on-full-names
+  ;; The whole W3 dispatch chain (classify-vendor / key-hits / recommend) on
+  ;; FULL device names on the kotoba language runtime (the w3 extract-balanced
+  ;; idiom over the arms' OWN text). Before the key-chain row (2026-10-26)
+  ;; this chain trapped host/stack-exhausted on the measured devices' full
+  ;; spellings -- measured on this runtime before the fix
+  ;; (docs/evidence/gpu/w3-key-chain-primitive-20261026.txt), so the flags
+  ;; were pinned on the HOST arm only (the-workgroup-device-key-is-a-fragment-
+  ;; set-per-name-part). Every :measured? answer below is the row flag for
+  ;; the NAMED measured device (uB5G) -- the same answers the host pins,
+  ;; byte for byte; nothing here is a hardware measurement.
+  (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
+        arms (str/join "\n" (filter some? (map #(extract-balanced src %)
+                                 ["(defn- dgk" "(defn- none?" "(defn- frag-vendor" "(defn- frag-doc"
+                                  "(defn- frag-hit2" "(defn- frag-names-doc" "(defn- wg-row"
+                                  "(defn- string-ascii-lower" "(defn- blank-str?"
+                                  "(defn- substr-hits"
+                                  "(defn- alt-end" "(defn- alt-field?" "(defn- alt-any-hits" "(defn- key-hits"
+                                  "(defn- clamp2" "(defn- i64-text"
+                                  "(defn vendor-ids" "(defn- vendor-default-target" "(defn default-target"
+                                  "(defn target-for" "(defn workgroup-defaults"
+                                  "(defn classify-vendor" "(defn recommend"])))
+        probe (str "(ns accelerator.targets.w3.rec.probe (:export [main cv rec]))\n"
+                   "(defn main [] :i64 0)\n"
+                   arms "\n"
+                   "(defn cv [nm :string] :keyword (classify-vendor (document-map (document-keyword :vendor) (document-string nm))))\n"
+                   "(defn rec [nm :string] :document (recommend (document-map (document-keyword :vendor) (document-string nm))))")
+        hir (sema/analyze probe)
+        cv (fn [nm] (ir/execute hir 'cv [nm]))
+        rec (fn [nm] (ir/execute hir 'rec [nm]))
+        fields-of (fn [doc]
+                    (into {} (map (fn [kv] [(get (get kv 0) 1) (get (get kv 1) 1)])
+                                  (get doc 1))))]
+    (testing "classify-vendor answers the host arm's vendor on full names"
+      (is (= :apple (cv "Apple M1 Max")))
+      (is (= :nvidia (cv "NVIDIA GeForce RTX 4090")))
+      (is (= :arm (cv "Mali-G78 MP24")))
+      (is (= :intel (cv "Intel(R) Iris(R) Xe Graphics")))
+      (is (= :unknown (cv "Something Odd"))))
+    (testing "recommend answers the host arm's decision maps on full names"
+      (let [m (fields-of (rec "Apple M1 Max"))]
+        (is (= :apple (:vendor m)))
+        (is (= :msl-v1 (:target m)))
+        (is (= "256" (str (:workgroup-size m))) "the i64 field, whatever its host integer type")
+        (is (true? (:measured? m)) "the measured device keeps its row flag"))
+      (let [m (fields-of (rec "Apple M3"))]
+        (is (= :apple (:vendor m)))
+        (is (false? (:measured? m)) "a named device hardware never measured attaches nothing"))
+      (let [m (fields-of (rec "NVIDIA Tegra Xavier (nvgpu)"))]
+        (is (= :nvidia (:vendor m)))
+        (is (= :cuda-v1 (:target m)))
+        (is (true? (:measured? m)) "the wire-42 INFO receipt's spelling (JUN-85)"))
+      (let [m (fields-of (rec "NVIDIA Jetson AGX Xavier"))]
+        (is (true? (:measured? m)) "the CUDA channel's spelling of the same host"))
+      (let [m (fields-of (rec "Jetson Xavier NX"))]
+        (is (= :unknown (:vendor m)) "the NX spelling classifies as :unknown, host-equal")
+        (is (false? (:measured? m))))
+      (let [m (fields-of (rec "AMD Radeon 680M"))]
+        (is (= :amd (:vendor m)))
+        (is (= "1024" (str (:workgroup-size m))))
+        (is (true? (:measured? m))))
+      (let [m (fields-of (rec "Mali-G78 MP24"))]
+        (is (= :arm (:vendor m)))
+        (is (= "128" (str (:workgroup-size m))) "the provisional :arm row's size")
+        (is (false? (:measured? m)) ":arm stays provisional :measured? false")))))
 
 (deftest w3-split4-conjes-per-field-spans-and-counts-raw
   ;; The `:kotoba` split4 (ADR-0355's INFO 4-field split) on the kotoba

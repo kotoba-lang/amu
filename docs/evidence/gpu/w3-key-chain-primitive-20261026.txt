@@ -1,0 +1,175 @@
+JUN-56 / JUN-55 -- the key-chain row: the W3 arm's classify-vendor /
+key-hits chain resolves FULL device names within the standing 32-frame
+budget (2026-10-26)
+
+WHAT THIS ROW IS: the named follow-up of w3-frame-budget-20261026
+("The classify-vendor / key-hits chain (sub-walk2 / sub-eq / frag-hit2) is
+untouched and keeps its named trap on full device names -- its own row").
+One implementation slice on kotoba.compiler.accelerator-targets. NO
+hardware ran, no GPU, no timing -- every number below is a
+kotoba-language-runtime behavior probe (the w3 fact class).
+
+INSTRUMENT (all runs this tick, scratch probes never staged): the w3
+extract-balanced idiom -- the arms' OWN text extracted from the namespace
+source, sema/analyze + ir/execute on the kotoba language runtime,
+kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" <scratch
+probe>. Scratch probes: w3_key_prim2.cljk (primitive capability),
+w3_key_trap_probe.cljk (before/after, run twice). The BEFORE arm is
+extracted from a git-show HEAD dump of accelerator_targets.cljk
+(scratch/w3_key_before_src.cljk; sha256 verified identical to the working
+tree at probe time:
+6b1886b710c8dcecbb12fa74afc964c502b488ec328b71694ca55fb20bbd313b)
+-- never hand-transcribed. The same probe reads the HOST arm's recommend
+(kotoba.compiler.accelerator-targets on kbb) as the parity reference.
+
+CAPABILITY PROBE (w3_key_prim2.cljk, verbatim):
+  string-contains? "abcd" "bc" -> true   "x" -> false
+                   "ab" "abc" -> false   (needle > haystack)
+                   "apple m1 max" "m1 max" -> true
+                   "nvidia tegra xavier (nvgpu)" "xavier" -> true
+                   "apple m1 max" "xavier" -> false
+                   "abcd" "" -> TRAP empty-string-search-needle
+                   "" ""     -> TRAP empty-string-search-needle
+  string-index-of  "abcd" "bc" -> 1   "abcd" "" -> TRAP (same)
+                   "ab" "abc" -> -1  "apple m1 max" "m1 max" -> 6
+                   "apple m1 max" "xavier" -> -1
+
+WHAT LANDED (code + tests):
+(1) substr-hits = ONE `string-contains?` call. The replaced sub-walk2
+    (per haystack position) and sub-eq (per needle byte) recursed and
+    trapped the budget on full names; the string-fold-ascii /
+    string-skip-blank precedents (2026-10-24/26): a primitive replaces a
+    walk. Both walks DELETED from the namespace.
+(2) PINNED SEMANTIC GUARD (empty needle): the primitive raises
+    empty-string-search-needle on an empty needle (measured above), while
+    the deleted walk and the host str/includes? both answer TRUE for it
+    (measured BEFORE: substr-hits "ab" "" -> true). So substr-hits answers
+    the empty needle ABOVE the primitive (true) -- host parity, pinned in
+    the tests. No current caller passes an empty needle (key-hits is
+    guarded by blank-str?; alt-any-hits only walks non-empty '|'-fields) --
+    the guard is parity, not a caller fix.
+(3) classify-vendor's name path (frag-hit2) is measured UNTRAPPED before
+    this row -- it already searched through the `string-index-of`
+    primitive (the earlier lowercase-fold row). The named trap was the
+    key-hits chain; frag-hit2 required no change (measured, not assumed:
+    cv on all five full names resolved BEFORE and AFTER, host-equal).
+
+MEASURED (runtime behavior, no hardware; BEFORE = the dumped arm, AFTER =
+the fixed arm, HOST = the host arm's recommend, the parity reference):
+
+substr-hits:
+  "ab" "a"                          BEFORE true   AFTER true
+  "ab" "b"                          BEFORE true   AFTER true
+  "ab" "x"                          BEFORE false  AFTER false
+  "ab" ""                           BEFORE true   AFTER true   (parity pin)
+  "apple m1 max" "m1 max"           BEFORE true   AFTER true
+  "apple m1 max" "xavier"           BEFORE false  AFTER false
+  "nvidia tegra xavier (nvgpu)" "xavier"
+                                    BEFORE TRAP host/stack-exhausted
+                                    AFTER  true
+
+key-hits (the named trap class = full names):
+  "apple m1 max" "m1 max" ""                BEFORE TRAP   AFTER true
+  "nvidia tegra xavier (nvgpu)" "xavier" "agx|tegra"
+                                            BEFORE TRAP   AFTER true
+  "nvidia jetson agx xavier" "xavier" "agx|tegra"
+                                            BEFORE TRAP   AFTER true
+  "jetson xavier nx" "xavier" "agx|tegra"   BEFORE TRAP   AFTER false
+  "xavier" "xavier" "agx|tegra"             BEFORE false  AFTER false
+  "agx" "xavier" "agx|tegra"                BEFORE false  AFTER false
+  "apple m1 max" "xavier" "agx|tegra"       BEFORE false  AFTER false
+  the old short pins ("tx"/"ax"/"x"/"a"/"txt" x "x" x "a|t",
+  "x" "x" "a|", "x" "x" "|", "x" "x" "") are byte-identical
+  BEFORE/AFTER (true,false / true / false / false / true / false / true
+  / true) -- no short spelling moved.
+
+recommend e2e (named devices), AFTER == HOST on every case:
+  "Apple M1 Max"            AFTER {:vendor :apple :target :msl-v1
+                                   :workgroup-size 256 :measured? true}
+                                    HOST identical; BEFORE TRAP
+  "Apple M3"                AFTER {:vendor :apple :measured? false}
+                                    HOST identical (both runs)
+  "NVIDIA Tegra Xavier (nvgpu)"
+                            AFTER {:vendor :nvidia :target :cuda-v1
+                                   :workgroup-size 256 :measured? true}
+                                    HOST identical; BEFORE TRAP or
+                                    resolved (see anomaly)
+  "NVIDIA Jetson AGX Xavier" AFTER {:vendor :nvidia :measured? true}
+                                    HOST identical; BEFORE TRAP
+  "Jetson Xavier NX"         AFTER {:vendor :unknown :measured? false}
+                                    HOST identical (both runs)
+  "Mali-G78 MP24"            AFTER {:vendor :arm :workgroup-size 128
+                                   :measured? false} -- :arm stays
+                                    provisional; HOST identical
+  "AMD Radeon 680M"          AFTER {:vendor :amd :workgroup-size 1024
+                                   :measured? true} HOST identical;
+                                    BEFORE TRAP
+
+classify-vendor (full names) BEFORE == AFTER == HOST:
+  "Apple M1 Max" -> :apple   "NVIDIA GeForce RTX 4090" -> :nvidia
+  "Mali-G78 MP24" -> :arm    "Intel(R) Iris(R) Xe Graphics" -> :intel
+  "Something Odd" -> :unknown
+
+REPRODUCIBILITY: the probe ran twice. Every AFTER column is byte-identical
+across the two runs. The BEFORE columns differ in exactly ONE line (run 1
+vs run 2: rec "NVIDIA Tegra Xavier (nvgpu)" resolved in run 1's BEFORE and
+trapped in run 2's) -- the 2026-10-26 named anomaly (trap boundaries are
+run-order/state dependent, interpreter-owned) manifesting again in the
+pre-fix arm only. Nothing about trap boundaries is pinned as behavior.
+
+RESIDUAL, NAMED (not hidden): digits?/digits-all?/parse-walk/dot1/dot2
+still walk per byte of THEIR fields (the frame-budget row's named
+residual, unchanged -- an adversarial numeric field can still reach the
+budget, fail-closed); alt-end/alt-field?/alt-any-hits still walk the
+'|'-alternate KEY string per byte (row-key sized, measured resolving on
+every row key in the table; a hypothetical very long alternate key could
+still reach the budget, fail-closed).
+
+CONSEQUENCE: NOTHING MOVES -- no :measured? flag value, no :shapes value,
+no workgroup row, no selection answer. The :arm/:unknown rows stay
+provisional :measured? false. This row removes a wrong-refusal path (the
+key chain answered no fact at all -- a trap -- for the measured devices'
+own full names); it does not add a measurement claim. The uB5G key
+semantics are UNCHANGED (the same true/false answers on every spelling,
+host-equal).
+
+STATES:
+- IMPLEMENTED (code + tests): substr-hits primitive + empty-needle guard;
+  sub-walk2/sub-eq deleted; tests extended (full-name key pins, the
+  empty-needle parity pin, the primitive-delegation and walk-deleted
+  source pins, and the new w3-recommend-named-devices-resolve-on-full-names
+  e2e over classify-vendor/recommend).
+- DECIDED: the empty-needle reading = the deleted walk's and the host
+  str/includes? answer (true), answered above the primitive.
+- MEASURED: the probe tables above (runtime behavior, no hardware).
+- ACCEPTED DESIGN ONLY (unchanged): ADR-0355's table rules, ADR-0358's
+  key (incl. the 2026-10-25 alternates amendment), the claim protocol.
+- UNMEASURED, named: the walk-free chain under adversarial keys/names
+  beyond these probes, the anomaly's mechanism, every workgroup-row
+  question (:arm/:unknown stay provisional :measured? false), anything off
+  this host.
+
+GATES (real runs):
+- Scoped GPU gate (8 GPU-owned namespaces, scratch runner
+  gpu_scoped_gate.cljk, route 1):
+    kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+      /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+  -> Ran 116 tests containing 11576 assertions. 0 failures, 0 errors.
+     scoped: 116 tests, 11576 passed, 0 failed, 0 errors
+     (committed pin 115 tests / 11544 assertions; delta = this slice's
+     +1 test / +32 assertions). glslang 16.6.0 real-spawn ran.
+  NAMED, NOT HIDDEN: gate run 1 was RED at exactly TWO assertions of the
+  new pins -- my own pins matched "sub-walk2"/"sub-eq" as raw substrings
+  while the new comment prose names the deleted walks (the machine was
+  right, the pin matcher wrong; the 2026-10-25 harness-row idiom: comment
+  text is not code). The pins now match the "(defn- sub-walk2" /
+  "(defn- sub-eq" forms; run 2 is GREEN (log: scratch/w3_key_gate_run1.log
+  / run2.log).
+- gpu_regime_classify.py --self-test -> TOTAL: 2649 assertions passed,
+  0 failed (committed pin 2649/0; no classify code touched).
+- Full run-tests.cljk: RED AT BASE, outside this diff -- "Could not find
+  namespace: kotoba.form" (ADR-0362) fails the run before any test
+  executes (re-verified live this tick since the diff touches .cljk
+  namespaces). The touched namespace's own tests are the scoped gate
+  above. NO green full suite claimed.
+- find docs -name '*.sh' -> 0 files (the no-POSIX-sh evidence rule).

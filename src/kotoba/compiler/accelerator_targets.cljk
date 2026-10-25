@@ -178,20 +178,22 @@
    (defn- blank-str? [s :string] :bool
      (>= (string-skip-blank s 0) (string-byte-length s))))
 ;; the case-insensitive substring search (the host str/includes? on the
-;; lower-cased name part -- callers lower the haystack)
+;; lower-cased name part -- callers lower the haystack). The key-chain row
+;; (2026-10-26): ONE primitive call, no walk. The replaced sub-walk2/sub-eq
+;; recursed per haystack position and per needle byte and trapped the
+;; interpreter's 32-frame budget on FULL device names -- measured on the
+;; kotoba runtime before the fix (key-hits "apple m1 max" "m1 max" ""
+;; => host/stack-exhausted while the short pins resolved,
+;; docs/evidence/gpu/w3-key-chain-primitive-20261026.txt). `string-contains?`
+;; is the primitive the walk spelled by hand (the string-fold-ascii /
+;; string-skip-blank precedents). PINNED: the primitive raises
+;; empty-string-search-needle on an empty needle (measured), while the
+;; deleted walk and the host str/includes? both answer TRUE for it
+;; (measured BEFORE "ab"/"" => true) -- so the empty needle is answered
+;; here, above the primitive, for host parity.
 #?(:kotoba
    (defn- substr-hits [hay :string needle :string] :bool
-     (sub-walk2 hay needle 0 (string-byte-length hay) (string-byte-length needle))))
-#?(:kotoba
-   (defn- sub-walk2 [hay :string needle :string i :i64 n :i64 m :i64] :bool
-     (cond (> (+ i m) n) false
-           (sub-eq hay needle i 0 m) true
-           :else (sub-walk2 hay needle (+ i 1) n m))))
-#?(:kotoba
-   (defn- sub-eq [hay :string needle :string j :i64 k :i64 m :i64] :bool
-     (cond (>= k m) true
-           (= (string-code-point-at hay (+ j k)) (string-code-point-at needle k)) (sub-eq hay needle j (+ k 1) m)
-           :else false)))
+     (if (= 0 (string-byte-length needle)) true (string-contains? hay needle))))
 ;; the uB5G SET key (the :measured-device-alternates row key, ADR-0358
 ;; amendment 2026-10-25): a row's key is a SET of fragment sets -- the
 ;; :measured-device fragment plus ONE alternate per '|'-field of
