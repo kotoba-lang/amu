@@ -33,14 +33,15 @@ def main(compiler, out):
     paths = [p for p in (ROOT / "seed/FULL-MANIFEST").read_text().splitlines()
              if p and not p.startswith("#")]
     env = dict(PATH="/nonexistent", KEXE_STACK_BYTES="8388608",
-               KEXE_CAP_RESOURCES_35=str(out), KEXE_ALLOW="35,39",
+               KEXE_CAP_RESOURCES_35=str(out), KEXE_ALLOW="35,37,38,39",
                KEXE_FUEL="10000000000", KEXE_COMMAND="1")
     report = dict(schema="amu.native-flock-vector.v1", host=[platform.system(), platform.machine()],
                   producer=pin(compiler), fixture=pin(fixture),
                   sourceBindings={p: pin(ROOT / p) for p in paths}, calls=[])
 
     def run(name, argv, expected=0):
-        operation_env = env if name.startswith("build-") else {**env, "KEXE_CAP_RESOURCES_35": str(scope)}
+        operation_env = env if name.startswith("build-") else {
+            **env, "KEXE_CAP_RESOURCES_35": str(scope), "KEXE_ALLOW": "35,38"}
         r = subprocess.run(list(map(str, argv)), cwd=out, env=operation_env,
                            capture_output=True, timeout=900)
         for stream, raw in (("stdout", r.stdout), ("stderr", r.stderr)):
