@@ -1,0 +1,171 @@
+;; Package an Amu-generated string-literal main with ABI-v11 pair_new.
+;; This is the first Darwin runtime slot, not a full compiler runtime.
+(ns seed.macos-pair-runtime-packager (:export [main]))
+
+(def MAX-FS2-VALUE 8388608)
+(def DATA-BYTES 65536)
+(def RAW-START 1536)
+(def HELPER-START 1280)
+
+(defn- byte-at [v :vector-i64 at :i64 value :i64] :vector-i64
+  (vector-assoc! v at (bit-and value 255)))
+
+(defn- u32-at [v :vector-i64 at :i64 value :i64] :vector-i64
+  (-> v
+      (byte-at at value)
+      (byte-at (+ at 1) (u64-shift-right value 8))
+      (byte-at (+ at 2) (u64-shift-right value 16))
+      (byte-at (+ at 3) (u64-shift-right value 24))))
+
+(defn- u64-at [v :vector-i64 at :i64 value :i64] :vector-i64
+  (-> v
+      (u32-at at (bit-and value 4294967295))
+      (u32-at (+ at 4) (u64-shift-right value 32))))
+
+(defn- text-at [v :vector-i64 at :i64 text :string] :vector-i64
+  (let [bytes (vector-i64-from-bytes (string-to-utf8 text))
+        count (vector-count bytes)]
+    (loop [index 0 out v]
+      (if (= index count) out
+        (recur (+ index 1) (byte-at out (+ at index) (vector-at bytes index)))))))
+
+(defn- generated-at [v :vector-i64 at :i64 raw :vector-i64] :vector-i64
+  (loop [i 0 out v]
+    (if (= (+ i 5) (vector-count raw)) out
+      (recur (+ i 1) (byte-at out (+ at i) (vector-at raw (+ i 5)))))))
+
+(defn- words-at [v :vector-i64 at :i64 words :vector-i64] :vector-i64
+  (loop [i 0 out v]
+    (if (= i (vector-count words)) out
+      (recur (inc i) (u32-at out (+ at (* i 4)) (vector-at words i))))))
+
+(defn- adr8 [at :i64 target :i64] :i64
+  (let [delta (- target at)]
+    (bit-or 0x10000008
+      (bit-or (i64-shift-left (bit-and delta 3) 29)
+              (i64-shift-left (quot delta 4) 5)))))
+
+(defn- b-ne [from :i64 target :i64] :i64
+  (bit-or 0x54000001 (i64-shift-left (- target from) 5)))
+
+(defn- wrapper-words [raw-bytes :i64 text-bytes :i64] :vector-i64
+  [(data-adrp text-bytes) 0xd2807d08 0xf90004e8
+   (adr8 1036 HELPER-START) 0xf9001ce8
+   0x910800e8 0xf90090e8 0x914004e8 0xf90094e8
+   0x914014e8 0xf90098e8
+   (adr8 1068 RAW-START) 0xf900c0e8
+   (bit-or 0xd2800008 (i64-shift-left (bit-and raw-bytes 65535) 5))
+   (bit-or 0xf2a00008 (i64-shift-left (u64-shift-right raw-bytes 16) 5))
+   0xf900c4e8 0xaa0703f3
+   (bit-or 0x94000000 (quot (- RAW-START 1092) 4))
+   0xf100041f (b-ne 19 43)
+   0xf9410268 0xf100051f (b-ne 22 43)
+   0xf9480268 0xf101011f (b-ne 25 43)
+   0xf9480668 0xf1000d1f (b-ne 28 43)
+   0xf940c268 0x39410109 0xf101853f (b-ne 32 43)
+   0x39410509 0xf101893f (b-ne 35 43)
+   0x39410909 0xf1018d3f (b-ne 38 43)
+   0xd2800540 0xd2800030 0xf2a40010 0xd4001001 0xd4200000])
+
+;; pair_new(ctx, offset, byte_length): 1-based handle. The context contains
+;; a count pointer at +288, 1024 x 16-byte pairs at +296, and marks at +304.
+;; Exhaustion traps before any write. Other runtime slots remain zero.
+(defn- pair-helper-words [] :vector-i64
+  [0xf9409008 0xf9400109 0xf110013f 0x54000043 0xd4200000
+   0xf940940a 0x8b09114a 0xf9000141 0xf9000542
+   0xf940980b 0x8b09016b 0x3900017f
+   0x91000529 0xf9000109 0xaa0903e0 0xd65f03c0])
+
+;; ADRP x7, __DATA: wrapper PC is in the first 4 KiB page. The target is
+;; 16 KiB-aligned, and the checked image size is far within ADRP's range.
+(defn- data-adrp [text-bytes :i64] :i64
+  (let [pages (quot text-bytes 4096)]
+    (bit-or 0x90000007
+      (bit-or (i64-shift-left (bit-and pages 3) 29)
+              (i64-shift-left (quot pages 4) 5)))))
+
+(defn- body-at [v :vector-i64 at :i64 raw :vector-i64 text-bytes :i64] :vector-i64
+  (let [raw-bytes (- (vector-count raw) 5)
+        total-bytes (+ text-bytes DATA-BYTES)]
+    (-> v
+      ;; mach_header_64: MH_EXECUTE, CPU_TYPE_ARM64, seven commands.
+      ;; Direct-syscall launch uses NOUNDEFS|DYLDLINK|PIE (0x00200005).
+      (u32-at at 4277009103) (u32-at (+ at 4) 16777228)
+      (u32-at (+ at 12) 2) (u32-at (+ at 16) 7)
+      (u32-at (+ at 20) 368) (u32-at (+ at 24) 2097157)
+      ;; LC_SEGMENT_64 __PAGEZERO, __TEXT, __DATA and __LINKEDIT.
+      (u32-at (+ at 32) 25) (u32-at (+ at 36) 72)
+      (text-at (+ at 40) "__PAGEZERO")
+      (u64-at (+ at 64) 4294967296)
+      (u32-at (+ at 104) 25) (u32-at (+ at 108) 72)
+      (text-at (+ at 112) "__TEXT")
+      (u64-at (+ at 128) 4294967296)
+      (u64-at (+ at 136) text-bytes)
+      (u64-at (+ at 152) text-bytes)
+      (u32-at (+ at 160) 5) (u32-at (+ at 164) 5)
+      (u32-at (+ at 176) 25) (u32-at (+ at 180) 72)
+      (text-at (+ at 184) "__DATA")
+      (u64-at (+ at 200) (+ 4294967296 text-bytes))
+      (u64-at (+ at 208) DATA-BYTES)
+      (u64-at (+ at 216) text-bytes)
+      (u64-at (+ at 224) DATA-BYTES)
+      (u32-at (+ at 232) 3) (u32-at (+ at 236) 3)
+      (u32-at (+ at 248) 25) (u32-at (+ at 252) 72)
+      (text-at (+ at 256) "__LINKEDIT")
+      (u64-at (+ at 272) (+ 4294967296 total-bytes))
+      (u64-at (+ at 280) DATA-BYTES)
+      (u64-at (+ at 288) total-bytes)
+      (u32-at (+ at 304) 1) (u32-at (+ at 308) 1)
+      ;; macOS dyld starts LC_MAIN; no C runtime or libSystem load command.
+      (u32-at (+ at 320) 14) (u32-at (+ at 324) 32)
+      (u32-at (+ at 328) 12) (text-at (+ at 332) "/usr/lib/dyld")
+      ;; LC_MAIN enters the wrapper, which calls the extracted function.
+      (u32-at (+ at 352) 2147483688) (u32-at (+ at 356) 24)
+      (u64-at (+ at 360) 1024)
+      ;; LC_BUILD_VERSION: macOS 13.0.0.
+      (u32-at (+ at 376) 50) (u32-at (+ at 380) 24)
+      (u32-at (+ at 384) 1)
+      (u32-at (+ at 388) 851968) (u32-at (+ at 392) 851968)
+      (words-at (+ at 1024) (wrapper-words raw-bytes text-bytes))
+      (words-at (+ at HELPER-START) (pair-helper-words))
+      (generated-at (+ at RAW-START) raw))))
+
+(defn- acknowledged-image? [request :vector-i64 offset :i64 reply :vector-i64 total-bytes :i64] :bool
+  (if (and (= (vector-count reply) (+ total-bytes 5))
+           (= (vector-at reply 0) 0) (= (vector-at reply 1) 70)
+           (= (vector-at reply 2) 83) (= (vector-at reply 3) 50)
+           (= (vector-at reply 4) 0))
+    (loop [i 0]
+      (if (= i total-bytes) true
+        (if (= (vector-at reply (+ i 5)) (vector-at request (+ offset i)))
+          (recur (+ i 1)) false)))
+    false))
+
+(defn main [] :i64
+  (let [path (typed-cap-call :cli/args :string :string "0")
+        raw-path (typed-cap-call :cli/args :string :string "1")
+        fs2-prefix (string-from-utf8 (bytes-from-vector-i64 [0 70 83 50 0]))
+        read-request (string-concat fs2-prefix (string-concat "A" (string-concat raw-path (string-from-utf8 (bytes-from-vector-i64 [0])))))
+        raw (vector-i64-from-bytes
+             (typed-cap-call :fs/app-data :string :bytes read-request))
+        path-bytes (vector-i64-from-bytes (string-to-utf8 path))
+        length (vector-count path-bytes)
+        offset (+ 7 length)
+        raw-bytes (- (vector-count raw) 5)
+        text-bytes (* 16384 (quot (+ RAW-START raw-bytes 16383) 16384))
+        total-bytes (+ text-bytes DATA-BYTES)]
+    (if (or (= length 0) (> length 255)
+            (not= raw-bytes 67) (> (+ offset total-bytes) MAX-FS2-VALUE)
+            (> (+ total-bytes 5) MAX-FS2-VALUE)
+            (not (= (vector-at raw 0) 0)) (not (= (vector-at raw 1) 70))
+            (not (= (vector-at raw 2) 83)) (not (= (vector-at raw 3) 50))
+            (not (= (vector-at raw 4) 0))) 2
+      (let [v0 (vector-alloc (+ offset total-bytes))
+            v1 (-> v0
+                   (byte-at 0 0) (byte-at 1 70) (byte-at 2 83)
+                   (byte-at 3 50) (byte-at 4 0) (byte-at 5 66)
+                   (text-at 6 path)
+                   (byte-at (+ 6 length) 0)
+                   (body-at offset raw text-bytes))
+            response (typed-cap-call :fs/app-data-bytes :bytes :bytes (bytes-from-vector-i64 v1))]
+        (if (acknowledged-image? v1 offset (vector-i64-from-bytes response) total-bytes) 0 3)))))
