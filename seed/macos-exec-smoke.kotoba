@@ -1,6 +1,7 @@
-;; A native Kotoba format probe for an arm64 MH_EXECUTE with one RX segment.
-;; This only tests Mach-O loader admission. It has no Amu runtime, signing,
-;; self-rebuild, or authority to qualify a macOS compiler product.
+;; A native Kotoba format/host-ABI probe for arm64 MH_EXECUTE.
+;; This only tests Mach-O loader admission and the Darwin write/exit syscall
+;; boundary. It has no Amu runtime, signing, self-rebuild, or authority to
+;; qualify a macOS compiler product.
 (ns seed.macos-exec-smoke (:export [main]))
 
 (defn- byte-at [v :vector-i64 at :i64 value :i64] :vector-i64
@@ -61,9 +62,20 @@
       (u32-at (+ at 360) 50) (u32-at (+ at 364) 24)
       (u32-at (+ at 368) 1)
       (u32-at (+ at 372) 851968) (u32-at (+ at 376) 851968)
-      ;; mov x0,#42; ret. dyld/libSystem owns process exit.
-      (u32-at (+ at 1024) 3531605312)
-      (u32-at (+ at 1028) 3596551104)))
+      ;; write(1, "ok\n", 3) through Darwin arm64 x16 + svc #0x80,
+      ;; then exit(42). The message is PC-relative, so ASLR is preserved.
+      (u32-at (+ at 1024) 0xd2800020)
+      (u32-at (+ at 1028) 0x10000141)
+      (u32-at (+ at 1032) 0xd2800062)
+      (u32-at (+ at 1036) 0xd2800090)
+      (u32-at (+ at 1040) 0xf2a04010)
+      (u32-at (+ at 1044) 0xd4001001)
+      (u32-at (+ at 1048) 0xd2800540)
+      (u32-at (+ at 1052) 0xd2800030)
+      (u32-at (+ at 1056) 0xf2a04010)
+      (u32-at (+ at 1060) 0xd4001001)
+      (u32-at (+ at 1064) 0xd65f03c0)
+      (text-at (+ at 1068) "ok\n")))
 
 (defn- acknowledged-image? [request :vector-i64 offset :i64 reply :vector-i64] :bool
   (if (and (= (vector-count reply) 16389)
