@@ -25,6 +25,7 @@ ANNOTATIONS = {
     "lit": ("(defn- ck-r6c-lit [M :vector-i64 S m :i64]", "(defn- ck-r6c-lit [M :vector-i64 S :string m :i64]"),
 }
 SOURCE_SHA = "daa88291555eb738df9d0dd36a1a498d69d550eff89f97931318c20627fb5a8b"
+INPUT_REVISION = "4abac3fd612de050fd7f7a4635deb80ca9a0cb73"
 IMAGE_SHA = {"aarch64": "18c5b8d07c9722fb135127b81b1bb8389fe0b80eef13a06572bee38e4c17facc",
              "x86_64": "378fd3cd99fcd9951654612e2df4e2b055d00bf6c068c1b4eeec325325712591"}
 
@@ -45,14 +46,18 @@ def main(out, workload_file=None):
     if workload_file:
         original = workload_file.read_bytes()
     else:
-        paths = [p for p in (ROOT / "seed/CORE-STATIC-MANIFEST").read_text().splitlines() if p and not p.startswith("#")]
-        original = b"".join((ROOT / p).read_bytes() + b"\n" for p in paths[:-1]) + (ROOT / "seed/tests/native-label-index.kotoba").read_bytes()
+        def frozen(path):
+            return subprocess.run(["git", "show", INPUT_REVISION + ":" + path], cwd=ROOT,
+                                  capture_output=True, check=True).stdout
+        paths = [p for p in frozen("seed/CORE-STATIC-MANIFEST").decode().splitlines() if p and not p.startswith("#")]
+        original = b"".join(frozen(p) + b"\n" for p in paths[:-1]) + frozen("seed/tests/native-label-index.kotoba")
     assert hashlib.sha256(original).hexdigest() == SOURCE_SHA
     affinity = sorted(os.sched_getaffinity(0))
     os.sched_setaffinity(0, {affinity[0]})
     report = dict(schema="amu.native-source-refinement-comparison.v1", nativeVerdictAuthority=False,
                   qualificationReplacement=False, candidateAdopted=False, compilerAlgorithmChanged=False,
                   sourceWorkloadChanged=True, emulation=False, originalSourceSHA256=SOURCE_SHA,
+                  workloadRevision=INPUT_REVISION,
                   producer=pin(producer), host=[platform.system(), host, platform.release()],
                   allowedCPUs=affinity, selectedCPU=affinity[0], variants={}, calls=[])
     cpuinfo = Path("/proc/cpuinfo").read_text()
