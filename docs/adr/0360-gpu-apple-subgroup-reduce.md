@@ -1618,3 +1618,48 @@ namespace: kotoba.form", ADR-0362), no green suite claimed;
 
 Record: `docs/evidence/gpu/metal-counter-bracket-calibration-20261025.txt`
 (+ raw logs in `docs/evidence/gpu/metal-counter-bracket-calibration-20261025/`).
+
+## Amendment 2026-10-25 (the counters channel's classifier-route row): the rules-1+2 machinery lands BEFORE any fold-arms measurement runs
+
+ONE implementation slice (JUN-58): the counters channel's
+rules-1+2 publication route lands in `scripts/gpu_regime_classify.py`
+(`--counters-log`, one log per fresh process, one cell per session) --
+the harness row's named missing piece "the rules-1+2 publication over
+this channel's own metric (the classifier's counters route does not exist
+yet)". NO hardware ran and nothing is timed; every fixture number is
+synthetic. The row runs BEFORE the measurement on the CUDA track's
+registration order (rows (ii) before (iii)): a session analyzed by code
+written after the fact is not a pre-registered analysis.
+
+The route publishes rule 1 (per-run baseline medians of counter_ns, the
+channel's own metric with the calibration row's MEASURED residual named
+in the metric text and never subtracted) and rule 2 (the run's
+paired-median ratio variant_ns/baseline_ns, never re-oriented;
+regime-matched sign per level; channel-scoped sign claims) with GAP-1.15
+carried unchanged. Named fail-closed readings (the CUDA block model): a
+(run, operator) block is usable only when complete, correctness-
+verified (both `verify` lines ok=1), every bracket resolved and
+positive, and no sample re-reads an earlier bracket's raw pair (the
+calibration row's staleness signature); anything else is named and
+excluded; structural corruption raises ValueError. Tests:
+`--self-test` GREEN 2617 assertions / 0 failed (committed pin 2572/0,
+delta +45; run 1 red at one wrong test matcher, named in the record).
+
+States: IMPLEMENTED (code + tests): the route. DECIDED: the fail-closed
+readings; the run unit (one fresh process per log, one cell per
+session); rule 2's unit. MEASURED: nothing. ACCEPTED DESIGN ONLY
+(unchanged): the claim protocol, the narrowing, the second-leg letter,
+ADR-0355's channel rule. PROPOSED (unchanged): the Vulkan-provider
+timestamp route. UNMEASURED, named: every counters-channel per-dispatch
+GPU time and every arm-pair sign (the fold-arms measurement row has not
+run); rules 1+2 ON REAL DATA; whether the second leg fires; anything off
+M1 Max; every workgroup-row question (`:arm`/`:unknown` stay provisional
+`:measured? false` -- no `:measured?` flag, `:shapes` value, selection
+answer or workgroup row moves this tick). Gates: `--self-test` GREEN
+2617/0 (real run); scoped GPU gate NOT RUN (session budget -- the diff
+touches no `.cljk` namespace, the committed 110/11445 pin is
+unre-verified and named NOT green); FULL `run-tests.cljk` NOT RUN
+(documented red at base, ADR-0362), no green suite claimed;
+`find docs -name '*.sh'` -> 0.
+
+Record: `docs/evidence/gpu/metal-counter-classifier-route-20261025.txt`.

@@ -200,6 +200,50 @@ operators):
     order), so this is agreement of pair partitions over a shared key
     index set, not clock identity.
 
+METAL COUNTERS CHANNEL (rules 1 + 2, metric-named):
+
+  The counters channel (the ADR-0360 2026-10-25 counter-channel
+  amendment and its harness/calibration rows) carries rule 1 with the
+  baseline metric NAMED BY THE CHANNEL: counter_ns -- the GPUTimestamp
+  counter-sample delta bracketing one dispatch ([encoder start, encoder
+  end], GPU ns, the AtStageBoundary pass-attachment bracket the
+  instrument prints with its raw pair on every sample line). The 2026-10-
+  25 calibration row MEASURED that this delta carries an additive
+  encoder-boundary residual on this host (counter_ns = T_dispatch +
+  R(grid shape, state) + epsilon), so a level published here is a
+  BRACKET-DELTA level, not a pure kernel time -- the residual is named in
+  the publication, never subtracted (no correction is designed).
+
+  RUN UNIT on this channel: the MSL channel's, unchanged -- ONE FRESH
+  PROCESS (the ADR-0358 protocol: fresh processes, interleaved AB/BA
+  pairs, WARMUP=2 discarded, verified read-back). One --counters-log
+  argument is one run; one session is ONE CELL (every log's (n,
+  workgroup) header must agree -- rules 1/2 classify runs of one cell).
+  Rule 2's unit: the run's paired-median ratio -- median over the run's
+  pairs of the within-pair ratio variant_ns/baseline_ns (the ADR-0358
+  paired-within-run statistic), NEVER re-oriented.
+
+  FAIL-CLOSED READINGS decided where the channel left gaps (named so no
+  later reading silently upgrades): a (run, operator) block is usable
+  only when complete (both arms of exactly its declared pairs),
+  correctness-verified (both arms' `verify` lines ok=1), every bracket
+  resolved (no counter_ns=ERR) and positive, and no sample re-reads an
+  earlier bracket's raw pair (the calibration row's MEASURED staleness
+  signature -- the first occurrence is the fresh one, every byte-
+  identical repeat is stale). Anything else is NAMED and excluded;
+  duplicated samples and malformed `sample`/`verify` lines are
+  measurement errors and raise ValueError. A record whose blocks are all
+  excluded still publishes its named exclusions (rule 2 then reports its
+  own absence), it does not crash.
+
+  Rule 3's boundary stands: counter_ns merges with NEITHER the MSL
+  campaign's command-buffer GPUStartTime->GPUEndTime gpu-ns NOR any host
+  wall-clock (three instruments that all say "ns", never merged), and a
+  counters-channel sign is CHANNEL-SCOPED -- it never flips an MSL
+  command-buffer cell, never flips a WGSL cell and never answers a
+  workgroup row (this channel is neither the wire-42 loader path nor its
+  provider successor, so it can never move an ADR-0355 workgroup row).
+
 WGSL WALL-CLOCK CHANNEL (rule 1, metric-named):
 
   The 2026-10-25 claim-protocol WGSL channel adoption (ADR-0360, "the
@@ -305,6 +349,15 @@ CLI:
         the publication moves no record, no :measured? flag and no
         selection answer (read each instrument log from a path or from
         stdin with '-')
+    python3 scripts/gpu_regime_classify.py --counters-log <log> [<log> ...]
+        print the claim-protocol publication for a Metal counters-channel
+        record: the metric-named rule-1 section (counter_ns, per
+        operator), the rule-2 status token, and the rule-2 sign section
+        (regime-matched sign per level over the run blocks' paired-median
+        ratios) -- ONE LOG PER FRESH PROCESS (the ADR-0358 run unit),
+        every log of ONE cell (n, workgroup); a record whose blocks are
+        all excluded publishes its named exclusions and rule 2's own
+        absence (read each counters log from a path or from stdin with '-')
     python3 scripts/gpu_regime_classify.py --self-test
         unit fixtures + a regression pass over every committed summary.md
         under docs/evidence/ (pinned manual classifications must
@@ -3115,6 +3168,513 @@ def render_cuda_op_census(sessions):
         lines.append("")
         lines.append(render_cuda_named_section(parsed))
     return "\n".join(lines)
+
+
+# ----------------------------- Metal counters channel (rules 1 + 2)
+# The counters channel's rules-1+2 publication (ADR-0360's 2026-10-25
+# counter-channel amendment + harness + calibration rows). The instrument
+# is scripts/gpu-subgroup-reduce-metal-counters.m; its sample lines carry
+# the raw bracket pair and the delta
+# (`sample op=.. pair=.. order=.. arm=.. ts0=.. ts1=.. counter_ns=..`,
+# counter_ns=ERR on an unresolved bracket). METRIC-NAMED: rule 1's
+# baseline metric is counter_ns (the bracket delta; the module docstring
+# carries the channel contract and the named fail-closed readings). The
+# analysis row lands BEFORE any fold-arms measurement runs -- the CUDA
+# track's registration order (rows (ii) before (iii)): a session analyzed
+# by code written after the fact is not a pre-registered analysis.
+#
+# No committed counters instrument log exists yet (the harness smoke and
+# the calibration probes were scratch-only), so --self-test carries unit
+# fixtures only; the corpus self-test joins with the first claim-protocol
+# counters log (the measurement row's own slice).
+
+COUNTERS_OPS = ("sum", "max", "min")
+COUNTERS_ARMS = ("baseline", "variant")
+
+COUNTERS_SAMPLE_RE = re.compile(
+    r"^sample op=(\w+) pair=(\d+) order=([AB]) arm=(\w+) "
+    r"ts0=(\d+) ts1=(\d+) counter_ns=(\d+|ERR)$")
+COUNTERS_VERIFY_RE = re.compile(r"^verify op=(\w+) arm=(\w+) .*ok=(\d+)$")
+COUNTERS_N_RE = re.compile(r"^n=(\d+)$")
+COUNTERS_WG_RE = re.compile(r"^workgroup=(\d+)$")
+COUNTERS_PAIRS_RE = re.compile(r"^pairs=(\d+)$")
+
+COUNTERS_METRIC_TEXT = (
+    "counter_ns -- the GPUTimestamp counter-sample delta bracketing one "
+    "dispatch ([encoder start, encoder end], GPU ns, the AtStageBoundary "
+    "pass-attachment bracket; the instrument prints the raw pair beside "
+    "every delta). The 2026-10-25 calibration row MEASURED that this "
+    "delta carries an additive encoder-boundary residual on this host "
+    "(counter_ns = T_dispatch + R(grid shape, state) + epsilon), so a "
+    "level here is a BRACKET-DELTA level, not a pure kernel time -- the "
+    "residual is named, never subtracted (no correction is designed)")
+
+
+def parse_counters_run(text):
+    """Parse one fresh-process counters log (one ADR-0358 run).
+
+    Returns
+      {"n": int, "workgroup": int, "declared_pairs": int,
+       "blocks": {op: {"declared_pairs": k, "baseline_median": float,
+                       "variant_median": float, "paired_ratio": float,
+                       "pair_ratios": [float, ...]}},   # usable blocks
+       "excluded": [(op, reason), ...]}                  # named, never
+                                                         # dropped
+
+    A (run, operator) block is usable only when it is complete (both arms
+    of exactly its declared pairs), its correctness precondition is
+    verified inside the measurement (both arms' `verify` lines ok=1),
+    every bracket resolved (no counter_ns=ERR) and positive, and no
+    sample re-reads an earlier bracket's raw pair (the calibration row's
+    MEASURED staleness signature: the first occurrence is the fresh one,
+    every byte-identical repeat is stale -- unresolved brackets carry
+    error-sentinel timestamps and never enter the staleness test).
+    Anything else is NAMED and excluded. Duplicated samples and malformed
+    `sample`/`verify` lines are measurement errors and raise ValueError
+    -- never merged, never skipped. The within-pair ratio is
+    variant_ns/baseline_ns and is NEVER re-oriented.
+    """
+    n = wg = declared = None
+    samples = {}
+    verify = {}
+    fresh_pairs = set()
+    stale = set()
+    for line in text.splitlines():
+        m = COUNTERS_N_RE.match(line)
+        if m:
+            n = int(m.group(1))
+            continue
+        m = COUNTERS_WG_RE.match(line)
+        if m:
+            wg = int(m.group(1))
+            continue
+        m = COUNTERS_PAIRS_RE.match(line)
+        if m:
+            declared = int(m.group(1))
+            continue
+        if line.startswith("sample "):
+            m = COUNTERS_SAMPLE_RE.match(line)
+            if not m:
+                raise ValueError(f"malformed sample line: {line}")
+            op, pid, _order, arm, ts0, ts1, delta = m.groups()
+            if op not in COUNTERS_OPS:
+                raise ValueError(
+                    f"unknown operator {op} -- the counters channel names "
+                    f"only {list(COUNTERS_OPS)}")
+            if arm not in COUNTERS_ARMS:
+                raise ValueError(
+                    f"unknown arm {arm} -- the counters channel names "
+                    f"only {list(COUNTERS_ARMS)}")
+            key = (op, int(pid), arm)
+            if key in samples:
+                raise ValueError(
+                    f"duplicate sample for pair {pid} arm {arm} op {op} "
+                    f"-- a measurement error, not a merge candidate")
+            pair = (int(ts0), int(ts1))
+            if delta != "ERR":
+                if pair in fresh_pairs:
+                    stale.add(key)
+                fresh_pairs.add(pair)
+            samples[key] = (delta == "ERR", pair,
+                            None if delta == "ERR" else float(delta))
+            continue
+        if line.startswith("verify "):
+            m = COUNTERS_VERIFY_RE.match(line)
+            if not m:
+                raise ValueError(f"malformed verify line: {line}")
+            op, arm, ok = m.groups()
+            if op not in COUNTERS_OPS or arm not in COUNTERS_ARMS:
+                raise ValueError(
+                    f"verify line outside the channel's identity: {line}")
+            verify[(op, arm)] = verify.get((op, arm), True) and ok == "1"
+            continue
+    if n is None or wg is None:
+        raise ValueError(
+            "counters log carries no n=/workgroup= header -- the run's "
+            "cell is unknown")
+    if declared is None:
+        raise ValueError("counters log carries no pairs= declaration")
+    if not samples:
+        raise ValueError(
+            "no 'sample op=...' lines found in the counters log")
+    blocks = {}
+    excluded = []
+    for op in COUNTERS_OPS:
+        keys = [k for k in samples if k[0] == op]
+        if not keys:
+            continue
+        pids_b = {k[1] for k in keys if k[2] == "baseline"}
+        pids_v = {k[1] for k in keys if k[2] == "variant"}
+        complete = pids_b & pids_v
+        reason = None
+        if (pids_b != pids_v or len(complete) != declared
+                or len(keys) != 2 * declared):
+            reason = (f"incomplete pairs: {len(complete)} complete of "
+                      f"{declared} declared")
+        elif not all(verify.get((op, arm)) for arm in COUNTERS_ARMS):
+            reason = ("correctness precondition not verified (a verify "
+                      "ok=1 line is missing or ok=0 for an arm)")
+        elif any(samples[k][0] for k in keys):
+            reason = ("an unresolved bracket (counter_ns=ERR): "
+                      + ", ".join(f"pair {k[1]} {k[2]}"
+                                  for k in sorted(keys)
+                                  if samples[k][0]))
+        elif any(samples[k][2] <= 0 for k in keys):
+            reason = ("a non-positive bracket delta: "
+                      + ", ".join(f"pair {k[1]} {k[2]}"
+                                  for k in sorted(keys)
+                                  if samples[k][2] <= 0))
+        elif any(k in stale for k in keys):
+            reason = ("a stale bracket pair (byte-identical raw pair "
+                      "re-read -- the calibration row's staleness "
+                      "signature): "
+                      + ", ".join(f"pair {k[1]} {k[2]}"
+                                  for k in sorted(keys) if k in stale))
+        if reason is not None:
+            excluded.append((op, reason))
+            continue
+        pids = sorted(complete)
+        b_vals = [samples[(op, p, "baseline")][2] for p in pids]
+        v_vals = [samples[(op, p, "variant")][2] for p in pids]
+        pair_ratios = [v / b for v, b in zip(v_vals, b_vals)]
+        blocks[op] = {
+            "declared_pairs": declared,
+            "baseline_median": statistics.median(b_vals),
+            "variant_median": statistics.median(v_vals),
+            "paired_ratio": statistics.median(pair_ratios),
+            "pair_ratios": pair_ratios,
+        }
+    return {"n": n, "workgroup": wg, "declared_pairs": declared,
+            "blocks": blocks, "excluded": excluded}
+
+
+def parse_counters_sessions(texts):
+    """Aggregate fresh-process counters logs into one cell's runs.
+
+    texts: [log text, ...] -- one fresh process per entry, in run order
+    (the --counters-log CLI's argument order). Returns
+      {"cell": (n, W),
+       "per_op_medians": {op: {run_index: baseline per-run median}},
+       "per_op_ratios": {op: {run_index: paired-median ratio}},
+       "excluded": [(label, reason), ...],
+       "n_runs": int}
+
+    One session is ONE CELL (rules 1/2 classify runs of one cell): logs
+    whose (n, workgroup) headers disagree refuse the session outright.
+    Run indices are positional (1-based), the MSL channel's unit.
+    """
+    per_op_medians = {}
+    per_op_ratios = {}
+    excluded = []
+    cell = None
+    for run_idx, text in enumerate(texts, start=1):
+        run = parse_counters_run(text)
+        if cell is None:
+            cell = (run["n"], run["workgroup"])
+        elif (run["n"], run["workgroup"]) != cell:
+            raise ValueError(
+                f"run {run_idx}: cell (n={run['n']} "
+                f"W={run['workgroup']}) disagrees with the session's "
+                f"cell (n={cell[0]} W={cell[1]}) -- rules 1/2 classify "
+                f"runs of ONE cell")
+        run_label = f"run {run_idx} (n={run['n']} W={run['workgroup']})"
+        for op, blk in run["blocks"].items():
+            per_op_medians.setdefault(op, {})[run_idx] = blk[
+                "baseline_median"]
+            per_op_ratios.setdefault(op, {})[run_idx] = blk["paired_ratio"]
+        for op, reason in run["excluded"]:
+            excluded.append((f"{op} {run_label}", reason))
+    return {"cell": cell, "per_op_medians": per_op_medians,
+            "per_op_ratios": per_op_ratios, "excluded": excluded,
+            "n_runs": len(texts)}
+
+
+def _counters_run_label(run, cell):
+    return f"run {run} (n={cell[0]} W={cell[1]})"
+
+
+def _counters_ns(v):
+    return f"{v:.1f}"
+
+
+def _counters_excluded_line(excluded):
+    return ("Named and excluded (blocks, never silently dropped): "
+            + "; ".join(f"{label} -- {reason}"
+                        for label, reason in excluded) + ".")
+
+
+def render_counters_rule1_section(parsed, gap_max=GAP_MAX):
+    """The claim-protocol rule-1 section for a Metal counters record.
+
+    parsed: parse_counters_sessions's return. Returns markdown (no
+    trailing newline). Rule 1 ONLY -- nothing here renders a sign verdict
+    (rule 2 publishes in its own section beside this one), and no
+    :measured? flag, selection answer or workgroup row is in scope of
+    this publication (rule 4, unchanged).
+    """
+    cell = parsed["cell"]
+    per_op = parsed["per_op_medians"]
+    lines = []
+    lines.append("## Regime classification (claim protocol rule 1, "
+                 "Metal counters channel)")
+    lines.append("")
+    lines.append("Published by scripts/gpu_regime_classify.py (GAP-1.15). "
+                 "This channel's baseline metric is NAMED BY THE CHANNEL "
+                 "(the 2026-10-25 counter-channel adoption and its "
+                 "harness/calibration rows, ADR-0360): "
+                 + COUNTERS_METRIC_TEXT + ".")
+    lines.append("")
+    lines.append("Run unit on this channel: the MSL channel's, unchanged "
+                 "-- ONE FRESH PROCESS (the ADR-0358 protocol: fresh "
+                 "processes, interleaved AB/BA pairs, WARMUP=2 discarded, "
+                 "verified read-back). One log is one run; the per-run "
+                 "baseline median is the median over that run's resolved "
+                 "baseline-arm counter_ns samples for the operator; rule "
+                 "2's unit is the run's paired-median ratio (median over "
+                 "the run's pairs of the within-pair ratio "
+                 "variant_ns/baseline_ns, NEVER re-oriented).")
+    lines.append("")
+    lines.append("Clustering rule GAP-1.15: per operator, the per-run "
+                 "baseline medians sorted ascending, single-linkage -- "
+                 "the next median joins the current level at <= 1.15x "
+                 "the previous, else it starts a new level. The rule is "
+                 "metric-parametric as written (its 1.15 window derives "
+                 "from the MSL corpus's decided separation and carries "
+                 "unchanged); only the publication names the metric. "
+                 "Rule 2's sign classification is published in its own "
+                 "section beside this one -- this rule-1 section itself "
+                 "renders no sign verdict.")
+    lines.append("")
+    lines.append("Rule 3's boundary stands: counter_ns merges with "
+                 "NEITHER the MSL campaign's command-buffer "
+                 "GPUStartTime->GPUEndTime bracket's gpu-ns NOR any host "
+                 "wall-clock (three instruments that all say \"ns\", "
+                 "never merged). Rule 4 is unchanged: this publication "
+                 "moves no `:measured?` flag, no selection answer and no "
+                 "workgroup row.")
+    lines.append("")
+    if not per_op:
+        lines.append("No usable (run, operator) block in this record.")
+    else:
+        lines.append(f"Cell (every run of this session): n={cell[0]} "
+                     f"W={cell[1]}. Per-run baseline medians (rule 1's "
+                     f"first publication; baseline = the threadgroup-"
+                     f"memory reduce arm):")
+        lines.append("")
+        lines.append("| operator | run | baseline per-run median "
+                     "(counter_ns) |")
+        lines.append("|---|---|---|")
+        for op in sorted(per_op):
+            for run in sorted(per_op[op]):
+                lines.append(f"| {op} | "
+                             f"{_counters_run_label(run, cell)} | "
+                             f"{_counters_ns(per_op[op][run])} |")
+        lines.append("")
+        lines.append("Regime clusters:")
+        lines.append("")
+        lines.append("| operator | level | counter-ns range | runs "
+                     "(baseline per-run median) |")
+        lines.append("|---|---|---|---|")
+        for op in sorted(per_op):
+            levels = level_clusters(per_op[op], gap_max)
+            n = len(levels)
+            for i, lv in enumerate(levels, start=1):
+                tag = _level_tag(i, n)
+                rng = (_counters_ns(lv["lo"]) if lv["lo"] == lv["hi"]
+                       else f"{_counters_ns(lv['lo'])}.."
+                            f"{_counters_ns(lv['hi'])}")
+                members = ", ".join(
+                    f"{_counters_run_label(r, cell)} "
+                    f"({_counters_ns(lv['medians'][r])})"
+                    for r in lv["runs"])
+                lines.append(f"| {op} | {tag} | {rng} | {members} |")
+    if parsed["excluded"]:
+        lines.append("")
+        lines.append(_counters_excluded_line(parsed["excluded"]))
+    return "\n".join(lines)
+
+
+def render_counters_sign_section(parsed, gap_max=GAP_MAX):
+    """The claim-protocol rule-2 section for a Metal counters record.
+
+    parsed: parse_counters_sessions's return -- the rule-1 side; its
+    GAP-1.15 clusters of the per-run baseline medians are the observed
+    regimes of this record.
+
+    Publishes REGIME-MATCHED SIGN PER LEVEL: per operator, the MSL
+    channel's sign_classification machine unchanged (metric-parametric) -
+    - a sign is regime-invariant when every per-run ratio of every
+    observed regime lies on the same side of 1.0; only such a sign may be
+    a selection basis -- plus the cell roll-up. Sign claims are
+    CHANNEL-SCOPED: a counters-channel sign never flips an MSL
+    command-buffer cell, never flips a WGSL cell and never answers a
+    workgroup row. Rule 4 is unchanged -- this publication moves no
+    :measured? flag, no selection answer and no workgroup row. The
+    named-and-excluded blocks carry no sign and are named here too (each
+    section publishes standalone).
+    """
+    cell = parsed["cell"]
+    per_op_med = parsed["per_op_medians"]
+    per_op_ratios = parsed["per_op_ratios"]
+    lines = []
+    lines.append("## Sign classification (claim protocol rule 2, "
+                 "Metal counters channel)")
+    lines.append("")
+    lines.append("Published by scripts/gpu_regime_classify.py from the "
+                 "run blocks' paired-median ratios (rule 2's unit on "
+                 "this channel: median over the run's pairs of the "
+                 "within-pair ratio variant_ns/baseline_ns -- the ADR-0358 "
+                 "paired-within-run statistic, NEVER re-oriented) and "
+                 "the rule-1 regime clusters of the same runs' baseline "
+                 "per-run medians (GAP-1.15, counter-ns). Rule 2: a sign "
+                 "is regime-invariant when every per-run ratio of every "
+                 "observed regime lies on the same side of 1.0 -- only "
+                 "such a sign may be a selection basis; any other sign is "
+                 "regime-scoped and cannot choose a variant. The sign "
+                 "machine is the MSL channel's, unchanged and "
+                 "metric-parametric.")
+    lines.append("")
+    lines.append("Sign claims on this channel are CHANNEL-SCOPED "
+                 "(rule 2 carries in full): a counters-channel sign "
+                 "never flips an MSL command-buffer cell, never flips a "
+                 "WGSL cell and never answers a workgroup row -- this "
+                 "channel is neither the wire-42 loader path nor its "
+                 "provider successor (the 2026-10-25 channel-rule "
+                 "amendment), so it can never move an ADR-0355 "
+                 "workgroup row. Rule 4 is unchanged -- this publication "
+                 "moves no `:measured?` flag, no selection answer and no "
+                 "workgroup row.")
+    lines.append("")
+    if not per_op_ratios:
+        lines.append("No classifiable paired ratio in this record.")
+    else:
+        op_cls = {}
+        op_med = {}
+        for op in sorted(per_op_ratios):
+            med = per_op_med[op]
+            ratios = per_op_ratios[op]
+            if set(med) != set(ratios):
+                raise ValueError(
+                    f"operator {op}: ratio runs and baseline-median runs "
+                    f"disagree -- the block model guarantees one "
+                    f"statistic pair per usable block")
+            op_med[op] = med
+            op_cls[op] = sign_classification(ratios,
+                                             level_clusters(med, gap_max))
+            op_cls[op]["ratios"] = ratios
+        lines.append("Regime-matched sign per level (rule 1's levels; "
+                     "the sign of the paired ratios within each level):")
+        lines.append("")
+        lines.append("| operator | level | runs (paired ratio) | "
+                     "level sign |")
+        lines.append("|---|---|---|---|")
+        for op in sorted(op_cls):
+            cls = op_cls[op]
+            nlevels = len(cls["level_sides"])
+            for ls in cls["level_sides"]:
+                tag = _level_tag(ls["level"], nlevels)
+                runs = ", ".join(
+                    f"{_counters_run_label(r, cell)} ({v:.3f})"
+                    for r, v, _s in ls["runs"])
+                phrase = _wgsl_level_sign_phrase(ls["sides"], ls["runs"])
+                lines.append(f"| {op} | {tag} | {runs} | {phrase} |")
+        lines.append("")
+        lines.append("| operator | verdict | side | detail |")
+        lines.append("|---|---|---|---|")
+        for op in sorted(op_cls):
+            c = op_cls[op]
+            n = sum(c["counts"].values())
+            if c["verdict"] == "regime-invariant":
+                detail = (_side_phrase(c["side"], n)
+                          + "; every observed regime one-sided")
+                side = c["side"]
+            elif c["straddle"] == "no-side":
+                detail = ("every ratio is exactly 1.0 -- no sign exists "
+                          "to claim")
+                side = "none"
+            else:
+                nlevels = len(c["level_sides"])
+                segs = "; ".join(
+                    f"level {ls['level']} "
+                    f"({_level_name(ls['level'], nlevels)}): "
+                    + ", ".join(
+                        f"{_counters_run_label(r, cell)} {v:.3f} "
+                        f"{'above' if s == 'slower' else 'below' if s == 'faster' else 'at'} 1.0"
+                        for r, v, s in ls["runs"])
+                    for ls in c["level_sides"])
+                if c["straddle"] == "by-regime":
+                    detail = ("straddle separates by regime (every "
+                              "regime one-sided, regimes disagree): "
+                              + segs)
+                else:
+                    mixed = [str(ls["level"]) for ls in c["level_sides"]
+                             if len(ls["sides"]) > 1]
+                    detail = (f"straddle within regime "
+                              f"{', '.join(mixed)} (one regime holds "
+                              f"both sides): " + segs)
+                side = "straddles 1.0"
+            lines.append(f"| {op} | {c['verdict']} | {side} | {detail} |")
+        cell_cls = cell_sign_classification(per_op_ratios, op_med, gap_max)
+        n = sum(cell_cls["counts"].values())
+        pooled = (f"{cell_cls['counts']['slower']} above 1.0, "
+                  f"{cell_cls['counts']['faster']} below 1.0"
+                  + (f", {cell_cls['counts']['even']} at 1.0"
+                     if cell_cls["counts"]["even"] else ""))
+        if cell_cls["verdict"] == "regime-invariant":
+            cell_line = (f"Cell (all {n} per-run ratios pooled): "
+                         f"**regime-invariant**, {cell_cls['side']} "
+                         f"({n}/{n} {cell_cls['side']}).")
+        else:
+            bad = sorted(op for op, c in cell_cls["per_op"].items()
+                         if c["verdict"] != "regime-invariant")
+            if bad:
+                tail = ("non-invariant operators: " + ", ".join(bad) + ".")
+            else:
+                tail = ("every operator regime-invariant but on "
+                        "disagreeing sides: "
+                        + ", ".join(f"{op} ({c['side']})"
+                                    for op, c in
+                                    sorted(cell_cls["per_op"].items()))
+                        + ".")
+            cell_line = (f"Cell (all {n} per-run ratios pooled): "
+                         f"**regime-scoped** ({pooled}) -- not a "
+                         f"selection basis; " + tail)
+        lines.append("")
+        lines.append(cell_line)
+    if parsed["excluded"]:
+        lines.append("")
+        lines.append(_counters_excluded_line(parsed["excluded"]))
+    return "\n".join(lines)
+
+
+def render_counters_claim_protocol(texts):
+    """The full claim-protocol publication for a counters-channel record.
+
+    texts: [log text, ...] -- one fresh process per entry (the ADR-0358
+    run unit), every log of ONE cell. The metric-named rule-1 section,
+    the rule-2 status token, and the rule-2 sign section -- or a named
+    rule-2 absence when no usable paired ratio exists (a record without
+    paired ratios carries no sign to classify; its named exclusions still
+    publish). Structural corruption (malformed lines, duplicates, a cell
+    disagreement) propagates as ValueError.
+    """
+    parsed = parse_counters_sessions(texts)
+    out = [render_counters_rule1_section(parsed)]
+    if not parsed["per_op_ratios"]:
+        out.append("claim-protocol-rule2: NOT PUBLISHED -- no usable "
+                   "paired ratio in this record (rule 2's unit on this "
+                   "channel is the run's paired-median ratio) -- a "
+                   "record without paired ratios carries no sign to "
+                   "classify")
+        return "\n\n".join(out)
+    out.append("claim-protocol-rule2: PUBLISHED (regime-matched sign "
+               "per level below; sign claims channel-scoped -- a "
+               "counters-channel sign never flips an MSL command-buffer "
+               "cell, never flips a WGSL cell and never answers a "
+               "workgroup row; rule 4 unchanged: no :measured? flag, no "
+               "selection answer and no workgroup row moves)")
+    out.append(render_counters_sign_section(parsed))
+    return "\n\n".join(out)
 
 
 # ---------------------------------------------------------------- tests
@@ -5942,6 +6502,369 @@ def _self_test_cuda_op_corpus(stats, corpus_root):
             "cuda op corpus: the (sum, W = 64) entry row", stats)
 
 
+def _self_test_counters_unit(stats):
+    # ---- the Metal counters channel's rules-1+2 publication ----
+    # Synthetic counters logs in the instrument's PRINTED shape (header
+    # lines + `sample ... counter_ns=...` + `verify ... ok=...`); the
+    # block model and the fail-closed readings are pinned below. No
+    # committed counters instrument log exists yet (the harness smoke and
+    # the calibration probes were scratch-only), so this is the whole
+    # test surface of the route until the measurement row commits logs.
+
+    def clog(n, wg, pairs, samples, verifies):
+        lines = ["device=Apple M1 Max (fixture)",
+                 "channel=counters (fixture)",
+                 "sampling_points dispatch=0 stage=1 draw=0 tile=0 blit=0",
+                 "simdgroup_size=32",
+                 f"n={n}", f"workgroup={wg}", f"pairs={pairs}",
+                 "warmup=2", "op_order=sum,max,min"]
+        for op, pid, order, arm, ts0, ts1, delta in samples:
+            lines.append(f"sample op={op} pair={pid} order={order} "
+                         f"arm={arm} ts0={ts0} ts1={ts1} "
+                         f"counter_ns={delta}")
+        for op, arm, ok in verifies:
+            lines.append(f"verify op={op} arm={arm} max_abs_vs_ref=0 "
+                         f"max_abs_vs_other=0 bit_exact_vs_ref=1 "
+                         f"bit_exact_vs_other=1 ok={ok}")
+        return "\n".join(lines) + "\n"
+
+    def cpairs(op, vals, ts0):
+        out = []
+        ts = ts0
+        for pid, (b, v) in enumerate(vals):
+            for arm, delta in (("baseline", b), ("variant", v)):
+                out.append((op, pid, "A" if pid % 2 == 0 else "B", arm,
+                            ts, ts + delta, str(delta)))
+                ts += 1000000
+        return out
+
+    def vok(*ops):
+        return [(op, arm, 1) for op in ops for arm in ("baseline",
+                                                       "variant")]
+
+    # ---- the parse: the run's two statistics, never re-oriented ----
+    r1 = clog(1000003, 256, 3,
+              cpairs("sum", [(100000, 80000), (110000, 99000),
+                             (105000, 84000)], 1000)
+              + cpairs("max", [(200000, 220000), (210000, 231000),
+                               (220000, 242000)], 2000000000),
+              vok("sum", "max"))
+    run1 = parse_counters_run(r1)
+    _expect(run1["n"] == 1000003 and run1["workgroup"] == 256
+            and run1["declared_pairs"] == 3,
+            "counters parse: the run's cell and declared pairs", stats)
+    _expect(run1["blocks"]["sum"]["baseline_median"] == 105000.0
+            and run1["blocks"]["sum"]["variant_median"] == 84000.0,
+            "counters parse: per-arm medians over the run's samples",
+            stats)
+    _expect(run1["blocks"]["sum"]["pair_ratios"] == [0.8, 0.9, 0.8]
+            and run1["blocks"]["sum"]["paired_ratio"] == 0.8,
+            "counters parse: rule 2's unit is the paired-median ratio "
+            "(median of the within-pair ratios)", stats)
+    _expect(run1["blocks"]["max"]["paired_ratio"] == 1.1
+            and run1["blocks"]["max"]["paired_ratio"] > 1.0,
+            "counters parse: variant/baseline NEVER re-oriented -- a "
+            "slower variant prices above 1.0", stats)
+    _expect(run1["excluded"] == [],
+            "counters parse: the clean fixture excludes nothing", stats)
+
+    r2 = clog(1000003, 256, 3,
+              cpairs("sum", [(102000, 81600), (103000, 82400),
+                             (104000, 83200)], 4000000000)
+              + cpairs("max", [(215000, 225750), (216000, 226800),
+                               (217000, 227850)], 6000000000),
+              vok("sum", "max"))
+    two = parse_counters_sessions([r1, r2])
+    _expect(two["cell"] == (1000003, 256) and two["n_runs"] == 2,
+            "counters sessions: one cell, run indices positional", stats)
+    _expect(two["per_op_medians"]["sum"] == {1: 105000.0, 2: 103000.0}
+            and two["per_op_ratios"]["max"] == {1: 1.1, 2: 1.05},
+            "counters sessions: per-run statistics keyed by run index",
+            stats)
+
+    # ---- rule 1's publication ----
+    out = render_counters_rule1_section(two)
+    _expect("## Regime classification (claim protocol rule 1, "
+            "Metal counters channel)" in out,
+            "counters rule-1 section title", stats)
+    _expect("GPUTimestamp" in out and "[encoder start, encoder end]" in out
+            and "counter_ns = T_dispatch + R(grid shape, state) + epsilon"
+            in out and "BRACKET-DELTA level, not a pure kernel time" in out,
+            "counters rule 1 names the channel's own metric and the "
+            "MEASURED residual (never subtracted)", stats)
+    _expect("NEITHER" in out and "GPUStartTime" in out
+            and "host wall-clock" in out,
+            "counters rule 1 names rule 3's boundary (three instruments, "
+            "never merged)", stats)
+    _expect("| sum | run 1 (n=1000003 W=256) | 105000.0 |" in
+            out.splitlines(),
+            "counters rule 1's first publication: per-run baseline "
+            "medians", stats)
+    _expect("| sum | 1 (the only observed level) | 103000.0..105000.0 | "
+            "run 1 (n=1000003 W=256) (105000.0), "
+            "run 2 (n=1000003 W=256) (103000.0) |" in out.splitlines(),
+            "counters GAP-1.15: the two sum runs merge into one level",
+            stats)
+    _expect("| max | 1 (the only observed level) | 210000.0..216000.0 | "
+            "run 1 (n=1000003 W=256) (210000.0), "
+            "run 2 (n=1000003 W=256) (216000.0) |" in out.splitlines(),
+            "counters GAP-1.15: the max runs cluster on their own "
+            "medians", stats)
+    _expect("regime-invariant" not in out and "regime-scoped" not in out,
+            "counters rule-1 section renders no sign verdict", stats)
+
+    # two levels + the single-run degenerate level name
+    lv = parse_counters_sessions([
+        clog(1000003, 256, 2,
+             cpairs("sum", [(100000, 90000), (100000, 90000)], 1000),
+             vok("sum")),
+        clog(1000003, 256, 2,
+             cpairs("sum", [(102000, 91800), (102000, 91800)], 3000000),
+             vok("sum")),
+        clog(1000003, 256, 2,
+             cpairs("sum", [(130000, 156000), (130000, 156000)], 5000000),
+             vok("sum")),
+    ])
+    outlv = render_counters_rule1_section(lv)
+    _expect("| sum | 1 (fastest observed) | 100000.0..102000.0 | "
+            "run 1 (n=1000003 W=256) (100000.0), "
+            "run 2 (n=1000003 W=256) (102000.0) |" in outlv.splitlines()
+            and "| sum | 2 (slowest observed) | 130000.0 | "
+            "run 3 (n=1000003 W=256) (130000.0) |" in outlv.splitlines(),
+            "counters GAP-1.15: 100000/102000 merge, 130000 splits",
+            stats)
+    out1 = render_counters_rule1_section(parse_counters_sessions([
+        clog(1, 32, 1, cpairs("min", [(400000, 200000)], 1000),
+             vok("min"))]))
+    _expect("1 (the only observed level)" in out1,
+            "counters single run: degenerate one level, named", stats)
+
+    # ---- rule 2's publication ----
+    out2 = render_counters_sign_section(two)
+    _expect("## Sign classification (claim protocol rule 2, "
+            "Metal counters channel)" in out2,
+            "counters rule-2 section title", stats)
+    _expect("| sum | regime-invariant | faster | all 2 per-run ratios "
+            "below 1.0 (2/2 faster); every observed regime one-sided |"
+            in out2.splitlines(),
+            "counters rule 2: the faster sign at its letter", stats)
+    _expect("| max | regime-invariant | slower | all 2 per-run ratios "
+            "above 1.0 (2/2 slower); every observed regime one-sided |"
+            in out2.splitlines(),
+            "counters rule 2: the slower sign (orientation pinned)",
+            stats)
+    _expect("every operator regime-invariant but on disagreeing sides: "
+            "max (slower), sum (faster)." in out2,
+            "counters cell roll-up: disagreeing invariant sides are "
+            "named, not hidden behind an empty non-invariant list",
+            stats)
+    _expect("never flips an MSL command-buffer cell" in out2
+            and "never flips a WGSL cell" in out2
+            and "never answers a workgroup row" in out2
+            and "wire-42" in out2,
+            "counters rule 2's sign claims are channel-scoped", stats)
+
+    outby = render_counters_sign_section(lv)
+    _expect("straddle separates by regime (every regime one-sided, "
+            "regimes disagree)" in outby,
+            "counters rule 2: the by-regime straddle shape", stats)
+    _expect("| sum | regime-scoped | straddles 1.0 |" in outby,
+            "counters rule 2: a by-regime straddle is regime-scoped",
+            stats)
+    _expect("non-invariant operators: sum." in outby,
+            "counters cell roll-up: the non-invariant operator is named",
+            stats)
+
+    within = parse_counters_sessions([
+        clog(1000003, 256, 1, cpairs("sum", [(100000, 90000)], 1000),
+             vok("sum")),
+        clog(1000003, 256, 1, cpairs("sum", [(102000, 112200)], 3000000),
+             vok("sum"))])
+    outw = render_counters_sign_section(within)
+    _expect("straddle within regime 1 (one regime holds both sides)" in
+            outw,
+            "counters rule 2: the within-regime straddle shape", stats)
+
+    noside = parse_counters_sessions([
+        clog(1000003, 256, 1, cpairs("sum", [(100000, 100000)], 1000),
+             vok("sum")),
+        clog(1000003, 256, 1, cpairs("sum", [(102000, 102000)], 3000000),
+             vok("sum"))])
+    outn = render_counters_sign_section(noside)
+    _expect("every ratio is exactly 1.0 -- no sign exists to claim" in
+            outn,
+            "counters rule 2: the no-side straddle shape", stats)
+
+    both = parse_counters_sessions([
+        clog(1000003, 256, 1,
+             cpairs("sum", [(100000, 80000)], 1000)
+             + cpairs("max", [(200000, 180000)], 3000000),
+             vok("sum", "max")),
+        clog(1000003, 256, 1,
+             cpairs("sum", [(102000, 81600)], 5000000)
+             + cpairs("max", [(204000, 183600)], 7000000),
+             vok("sum", "max"))])
+    outb = render_counters_sign_section(both)
+    _expect("Cell (all 4 per-run ratios pooled): **regime-invariant**, "
+            "faster (4/4 faster)." in outb,
+            "counters cell roll-up: the all-invariant same-side cell",
+            stats)
+
+    # ---- the fail-closed readings ----
+    # (a) an unresolved bracket (counter_ns=ERR) excludes the block and
+    #     names it; error-sentinel timestamps never trigger the
+    #     staleness test
+    err = clog(1000003, 256, 2, [
+        ("sum", 0, "A", "baseline", 1000, 101000, "100000"),
+        ("sum", 0, "A", "variant", 2000, 208000, "80000"),
+        ("sum", 1, "B", "baseline", 3000, 311000, "108000"),
+        ("sum", 1, "B", "variant", 18446744073709551615,
+         18446744073709551615, "ERR"),
+    ], vok("sum"))
+    rerr = parse_counters_run(err)
+    _expect(rerr["blocks"] == {} and len(rerr["excluded"]) == 1
+            and "an unresolved bracket (counter_ns=ERR): pair 1 variant"
+            in rerr["excluded"][0][1]
+            and "stale" not in rerr["excluded"][0][1],
+            "counters fail-closed (a): an ERR bracket excludes the block "
+            "and its sentinel pair is never read as staleness", stats)
+
+    # (b) an incomplete pair set fails the block closed
+    inc = clog(1000003, 256, 3,
+               cpairs("sum", [(100000, 80000), (110000, 99000)], 1000),
+               vok("sum"))
+    rinc = parse_counters_run(inc)
+    _expect(rinc["blocks"] == {}
+            and "incomplete pairs: 2 complete of 3 declared" in
+            rinc["excluded"][0][1],
+            "counters fail-closed (b): incomplete pairs exclude the "
+            "block with its counts", stats)
+
+    # (c) the correctness precondition (both verify lines ok=1)
+    badv = clog(1000003, 256, 1, cpairs("sum", [(100000, 80000)], 1000),
+                [("sum", "baseline", 1), ("sum", "variant", 0)])
+    rbv = parse_counters_run(badv)
+    _expect(rbv["blocks"] == {}
+            and "correctness precondition not verified" in
+            rbv["excluded"][0][1],
+            "counters fail-closed (c1): a verify ok=0 excludes the block",
+            stats)
+    nov = clog(1000003, 256, 1, cpairs("sum", [(100000, 80000)], 1000),
+               [("sum", "baseline", 1)])
+    rnv = parse_counters_run(nov)
+    _expect(rnv["blocks"] == {}
+            and "correctness precondition not verified" in
+            rnv["excluded"][0][1],
+            "counters fail-closed (c2): a missing verify line excludes "
+            "the block", stats)
+
+    # (d) the calibration row's staleness signature: a byte-identical raw
+    #     pair re-read (the first occurrence is the fresh one)
+    stale = clog(1000003, 256, 2, [
+        ("sum", 0, "A", "baseline", 1000, 101000, "100000"),
+        ("sum", 0, "A", "variant", 2000, 208000, "80000"),
+        ("sum", 1, "B", "baseline", 3000, 311000, "108000"),
+        ("sum", 1, "B", "variant", 2000, 208000, "80000"),
+    ], vok("sum"))
+    rst = parse_counters_run(stale)
+    _expect(rst["blocks"] == {}
+            and "a stale bracket pair (byte-identical raw pair re-read"
+            in rst["excluded"][0][1]
+            and "pair 1 variant" in rst["excluded"][0][1],
+            "counters fail-closed (d): a stale raw pair excludes the "
+            "block and names the pair", stats)
+
+    # (e) a non-positive bracket delta is not a dispatch bracket
+    nonp = clog(1000003, 256, 1, [
+        ("sum", 0, "A", "baseline", 1000, 101000, "100000"),
+        ("sum", 0, "A", "variant", 2000, 2000, "0"),
+    ], vok("sum"))
+    rnp = parse_counters_run(nonp)
+    _expect(rnp["blocks"] == {}
+            and "a non-positive bracket delta: pair 0 variant" in
+            rnp["excluded"][0][1],
+            "counters fail-closed (e): a non-positive delta excludes "
+            "the block", stats)
+
+    # structural corruption raises -- never merged, never skipped
+    for label, bad, needle in [
+        ("duplicate sample",
+         clog(1, 32, 1, cpairs("sum", [(1, 1)], 1000)
+              + [("sum", 0, "A", "baseline", 1000, 1001, "1")],
+              vok("sum")), "duplicate sample"),
+        ("malformed sample line",
+         clog(1, 32, 1, [("sum", 0, "A", "baseline", 1000, 1001, "1.5")],
+              vok("sum")), "malformed sample line"),
+        ("malformed verify line",
+         clog(1, 32, 1, cpairs("sum", [(1, 1)], 1000), [])
+         + "verify op=sum arm=baseline\n", "malformed verify line"),
+        ("unknown operator",
+         clog(1, 32, 1, [("bogus", 0, "A", "baseline", 1, 2, "1")], []),
+              "unknown operator"),
+        ("unknown arm",
+         clog(1, 32, 1, [("sum", 0, "A", "warp", 1, 2, "1")], []),
+              "unknown arm"),
+    ]:
+        try:
+            parse_counters_run(bad)
+            raise AssertionError(f"counters: {label} must raise")
+        except ValueError as e:
+            _expect(needle in str(e),
+                    f"counters refusal: {label} names its reason", stats)
+    for label, bad, needle in [
+        ("no n= header",
+         "\n".join(l for l in clog(1, 32, 1,
+                                  cpairs("sum", [(1, 1)], 1000),
+                                  vok("sum")).splitlines()
+                   if not l.startswith("n=")) + "\n",
+         "n=/workgroup= header"),
+        ("no pairs= declaration",
+         "\n".join(l for l in clog(1, 32, 1,
+                                   cpairs("sum", [(1, 1)], 1000),
+                                   vok("sum")).splitlines()
+                   if not l.startswith("pairs=")) + "\n",
+         "pairs= declaration"),
+        ("no sample lines",
+         clog(1, 32, 1, [], vok("sum")), "no 'sample op=...' lines"),
+    ]:
+        try:
+            parse_counters_run(bad)
+            raise AssertionError(f"counters: {label} must raise")
+        except ValueError as e:
+            _expect(needle in str(e),
+                    f"counters refusal: {label} names its reason", stats)
+
+    # one session is ONE cell
+    try:
+        parse_counters_sessions([r1, clog(1000003, 128, 3,
+                                          cpairs("sum", [(1, 1)] * 3,
+                                                 1000),
+                                          vok("sum"))])
+        raise AssertionError("counters: a mixed-cell session must raise")
+    except ValueError as e:
+        _expect("disagrees with the session's cell" in str(e),
+                "counters refusal: the session's cell must be constant",
+                stats)
+
+    # ---- the claim-protocol wrapper ----
+    pub = render_counters_claim_protocol([r1, r2])
+    _expect("claim-protocol-rule2: PUBLISHED" in pub
+            and "## Sign classification (claim protocol rule 2, "
+            "Metal counters channel)" in pub,
+            "counters claim protocol: the rule-2 token and section "
+            "follow rule 1", stats)
+    allx = render_counters_claim_protocol([err])
+    _expect("No usable (run, operator) block in this record." in allx
+            and "Named and excluded" in allx
+            and "sum run 1 (n=1000003 W=256)" in allx,
+            "counters claim protocol: an all-excluded record still "
+            "publishes its named exclusions", stats)
+    _expect("claim-protocol-rule2: NOT PUBLISHED" in allx
+            and "carries no sign to classify" in allx,
+            "counters claim protocol: named rule-2 absence when no "
+            "usable paired ratio exists", stats)
+
+
 def main():
     args = sys.argv[1:]
     if args == ["--self-test"]:
@@ -5967,6 +6890,7 @@ def main():
         _self_test_cuda_cell_corpus(stats, ROOT / "docs" / "evidence")
         _self_test_cuda_op_unit(stats)
         _self_test_cuda_op_corpus(stats, ROOT / "docs" / "evidence")
+        _self_test_counters_unit(stats)
         print(f"TOTAL: {stats['passed']} assertions passed, 0 failed")
         return
     if len(args) == 2 and args[0] == "--wgsl-log":
@@ -5992,6 +6916,11 @@ def main():
             sessions.append((f"s{i}" if a == "-" else f"s{i} ({a})",
                              parse_cuda_pair_blocks(text)))
         print(render_cuda_op_census(sessions))
+        return
+    if len(args) >= 2 and args[0] == "--counters-log":
+        texts = [(sys.stdin.read() if a == "-"
+                  else pathlib.Path(a).read_text()) for a in args[1:]]
+        print(render_counters_claim_protocol(texts))
         return
     if len(args) == 2 and args[0] == "--pairs":
         complete, incomplete = parse_run_log_pairs(
