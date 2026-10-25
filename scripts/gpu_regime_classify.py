@@ -271,6 +271,14 @@ CLI:
         per level over the record's `pair` lines) -- or a named rule-2
         absence when the record carries no paired ratios (read the
         measure-log from a path or from stdin with '-')
+    python3 scripts/gpu_regime_classify.py --cuda-log <paired-log.txt|->
+        print the claim-protocol publication for a CUDA paired-timing
+        record: the metric-named rule-1 section (gpu_ns and host_ns,
+        per (operator x pair-type) stratum, never mixed), the rule-2
+        status token, the rule-2 sign section (regime-matched sign per
+        level over the record's pair blocks), rule 3's raw both-clocks
+        times beside the ratios, and the named-and-excluded census
+        (read the instrument log from a path or from stdin with '-')
     python3 scripts/gpu_regime_classify.py --self-test
         unit fixtures + a regression pass over every committed summary.md
         under docs/evidence/ (pinned manual classifications must
@@ -1914,6 +1922,591 @@ def render_wgsl_claim_protocol(text):
                ":measured? flag and no workgroup row moves)")
     out.append(render_wgsl_sign_section(
         parsed, parse_wgsl_measure_pairs(text)))
+    return "\n\n".join(out)
+
+
+# --------------------------------------------- CUDA paired-timing channel
+# The claim-protocol adoption row for the CUDA paired-timing channel
+# (2026-10-25, ADR-0361 amendment). METRIC-NAMED: rule 1's baseline
+# metric on this channel is gpu_ns (CUDA-event elapsed around the kernel
+# on the GPU timeline -- this channel HAS a GPU-timeline clock, so the
+# protocol's gpu-ns carries at its letter) with host_ns (CLOCK_MONOTONIC
+# submit->completion) as the channel's second metric; the two NEVER mix
+# in one clustering or one claim. The run unit is the MSL channel's own:
+# one fresh process per pair block (PAIRS=20 interleaved pairs, WARMUP=2
+# discarded per arm, alternating AB/BA). The per-run baseline median is
+# the pair block's REFERENCE arm (the paired ratio's denominator) median
+# over its 20 samples, and GAP-1.15 clusters run per (metric x operator
+# x pair-type) -- a stratum whose reference arm is one kernel, so a
+# cluster pools runs whose proxy is the same kernel. SIGN-SCOPED: a
+# CUDA-channel sign never flips an MSL/WGSL cell and never answers a
+# workgroup row; only the CUDA-route selection rows consume it.
+
+CUDA_METRICS = ("gpu_ns", "host_ns")
+
+CUDA_METRIC_TEXT = {
+    "gpu_ns": ("CUDA-event elapsed around the kernel on the GPU timeline "
+               "-- the channel's rule-1 baseline metric"),
+    "host_ns": ("CLOCK_MONOTONIC submit->completion, the stop event's "
+                "host-side record call named as sitting inside the span "
+                "-- the channel's second metric"),
+}
+
+# instrument arm name -> the adoption's KIR variant name
+CUDA_ARM_VARIANT = {
+    "subgroup": ":subgroup-reduce",
+    "warp-shuffle": ":warp-shuffle-reduce",
+    "baseline": ":baseline",
+}
+
+# pair type (the header's `pair=armA,armB`, ratio armA/armB) -> the
+# reference arm (the paired ratio's denominator, rule 1's baseline arm),
+# named by the adoption: :baseline for subgroup/baseline and
+# warp-shuffle/baseline, :subgroup-reduce for warp-shuffle/subgroup.
+CUDA_PAIR_REF = {
+    "subgroup/baseline": "baseline",
+    "warp-shuffle/baseline": "baseline",
+    "warp-shuffle/subgroup": "subgroup",
+}
+
+CUDA_CELL_HEAD_RE = re.compile(
+    r"^-- cell n=(\d+) W=(\d+) op=(\w+) pair=([\w-]+,[\w-]+) "
+    r"shared=([\d,]+)$")
+CUDA_CELL_END_RE = re.compile(
+    r"^cell n=(\d+) W=(\d+) op=(\w+) pair=([\w-]+,[\w-]+) rc=(-?\d+)$")
+CUDA_SAMPLE_RE = re.compile(
+    r"^sample op=(\w+) pair=(\d+) order=(\S) arm=([\w-]+) "
+    r"gpu_ns=([\d.]+) host_ns=([\d.]+)$")
+CUDA_VERIFY_RE = re.compile(r"^verify op=(\w+) arm=([\w-]+) .*ok=(\d+)$")
+CUDA_PAIRS_RE = re.compile(r"^pairs=(\d+)$")
+
+
+def parse_cuda_pair_blocks(text):
+    """Parse the CUDA paired-timing instrument log's pair blocks.
+
+    The run unit on this channel (the adoption's "one fresh process per
+    pair block") is one `-- cell ...` block, closed by its own
+    `cell ... rc=` line. Returns
+
+      {"blocks": [block, ...],              # usable blocks
+       "excluded": [(label, reason), ...],  # named and excluded, never
+                                            # silently dropped
+       "orphan_samples": int}               # sample lines outside any
+                                            # block (the log's smoke
+                                            # block)
+
+    where a usable block is
+
+      {"run": (n, W), "op": op, "pair_type": "armA/armB",
+       "ref": ref_arm, "arms": (armA, armB), "declared_pairs": k,
+       "metrics": {metric: {"ref_median": float,    # rule 1's per-run
+                                          # baseline median (the
+                                          # reference arm's median
+                                          # over its k samples)
+                            "a_median": float, "b_median": float,
+                            "paired_ratio": float,  # rule 2's unit:
+                                          # median over the k within-
+                                          # pair ratios armA/armB (the
+                                          # statistic paired-ratios.txt
+                                          # computes)
+                            "pair_ratios": [float, ...]}}}
+
+    A block is usable only when it is complete (exactly its declared
+    pairs, both arms of every pair), its correctness precondition is
+    verified inside the measurement (both arms' `verify` lines ok=1 --
+    rule 2's precondition, as the instrument records it) and its process
+    exits rc=0. Anything else is NAMED and excluded. Duplicated blocks
+    and duplicated samples are measurement errors and raise ValueError
+    -- never merged. A pair type the adoption does not name raises too
+    (fail closed). Sample lines outside any block are counted, not
+    dropped: the committed campaign log's smoke block is such a region.
+    """
+    raw = []
+    seen = {}
+    cur = None
+    orphans = 0
+    for line in text.splitlines():
+        m = CUDA_CELL_HEAD_RE.match(line)
+        if m:
+            if cur is not None:
+                raise ValueError("a '-- cell' header opened while the "
+                                 f"previous block is still open: {line}")
+            n, w, op = int(m.group(1)), int(m.group(2)), m.group(3)
+            arms = tuple(m.group(4).split(","))
+            if len(arms) != 2 or arms[0] == arms[1]:
+                raise ValueError(f"malformed pair block arms: {line}")
+            pair_type = f"{arms[0]}/{arms[1]}"
+            if pair_type not in CUDA_PAIR_REF:
+                raise ValueError(
+                    f"unknown pair type {pair_type} -- the adoption "
+                    f"names only {sorted(CUDA_PAIR_REF)}")
+            cur = {"run": (n, w), "op": op, "pair_type": pair_type,
+                   "arms": arms, "samples": {}, "verify": {},
+                   "declared_pairs": None, "rc": None}
+            continue
+        m = CUDA_SAMPLE_RE.match(line)
+        if m:
+            if cur is None:
+                orphans += 1
+                continue
+            op, pid, _order, arm, gpu, host = m.groups()
+            if op != cur["op"]:
+                raise ValueError(f"sample op={op} inside a "
+                                 f"{cur['op']} block")
+            if arm not in cur["arms"]:
+                raise ValueError(f"sample arm={arm} not in block arms "
+                                 f"{cur['arms']}")
+            key = (int(pid), arm)
+            if key in cur["samples"]:
+                raise ValueError(f"duplicate sample for pair {pid} "
+                                 f"arm {arm} -- a measurement error, "
+                                 f"not a merge candidate")
+            cur["samples"][key] = {"gpu_ns": float(gpu),
+                                   "host_ns": float(host)}
+            continue
+        m = CUDA_VERIFY_RE.match(line)
+        if m and cur is not None:
+            op, arm, ok = m.groups()
+            if op != cur["op"] or arm not in cur["arms"]:
+                raise ValueError(f"verify line outside its block's "
+                                 f"identity: {line}")
+            cur["verify"][arm] = (cur["verify"].get(arm, True)
+                                  and ok == "1")
+            continue
+        m = CUDA_PAIRS_RE.match(line)
+        if m and cur is not None:
+            cur["declared_pairs"] = int(m.group(1))
+            continue
+        m = CUDA_CELL_END_RE.match(line)
+        if m:
+            if cur is None:
+                raise ValueError(f"cell end line without a block: {line}")
+            if ((int(m.group(1)), int(m.group(2))) != cur["run"]
+                    or m.group(3) != cur["op"]
+                    or m.group(4).replace(",", "/") != cur["pair_type"]):
+                raise ValueError(f"cell end line disagrees with its "
+                                 f"block: {line}")
+            cur["rc"] = int(m.group(5))
+            key = (cur["op"], cur["pair_type"], cur["run"])
+            if key in seen:
+                raise ValueError(f"duplicate pair block {key} -- a "
+                                 f"measurement error, not a merge "
+                                 f"candidate")
+            seen[key] = True
+            raw.append(cur)
+            cur = None
+    if cur is not None:
+        raise ValueError("log ends inside a pair block (no "
+                         "'cell ... rc=' line closes it)")
+    if not raw:
+        raise ValueError("no '-- cell ...' pair blocks found in the "
+                         "CUDA paired-timing log")
+    blocks = []
+    excluded = []
+    for blk in raw:
+        label = (f"{blk['op']} {blk['pair_type']} "
+                 f"n={blk['run'][0]} W={blk['run'][1]}")
+        a, b = blk["arms"]
+        reason = None
+        pids_a = {pid for (pid, arm) in blk["samples"] if arm == a}
+        pids_b = {pid for (pid, arm) in blk["samples"] if arm == b}
+        complete = pids_a & pids_b
+        if blk["rc"] != 0:
+            reason = f"process exited rc={blk['rc']}"
+        elif blk["declared_pairs"] is None:
+            reason = "no pairs= declaration in the block"
+        elif (pids_a != pids_b
+                or len(complete) != blk["declared_pairs"]
+                or len(blk["samples"]) != 2 * blk["declared_pairs"]):
+            reason = (f"incomplete pairs: {len(complete)} complete "
+                      f"of {blk['declared_pairs']} declared")
+        elif not all(blk["verify"].get(arm) for arm in blk["arms"]):
+            reason = ("correctness precondition not verified "
+                      "(a verify ok=1 line is missing for an arm)")
+        if reason is not None:
+            excluded.append((label, reason))
+            continue
+        ref = CUDA_PAIR_REF[blk["pair_type"]]
+        pids = sorted(pids_a)
+        metrics = {}
+        for metric in CUDA_METRICS:
+            a_vals = [blk["samples"][(pid, a)][metric] for pid in pids]
+            b_vals = [blk["samples"][(pid, b)][metric] for pid in pids]
+            pair_ratios = [av / bv for av, bv in zip(a_vals, b_vals)]
+            metrics[metric] = {
+                "ref_median": statistics.median(
+                    a_vals if ref == a else b_vals),
+                "a_median": statistics.median(a_vals),
+                "b_median": statistics.median(b_vals),
+                "paired_ratio": statistics.median(pair_ratios),
+                "pair_ratios": pair_ratios,
+            }
+        blocks.append({"run": blk["run"], "op": blk["op"],
+                       "pair_type": blk["pair_type"], "ref": ref,
+                       "arms": blk["arms"],
+                       "declared_pairs": blk["declared_pairs"],
+                       "metrics": metrics})
+    return {"blocks": blocks, "excluded": excluded,
+            "orphan_samples": orphans}
+
+
+def _cuda_run_label(run):
+    return f"n={run[0]} W={run[1]}"
+
+
+def _cuda_ns(v):
+    return f"{v:.1f}"
+
+
+def _cuda_ratio(v):
+    return f"{v:.4f}"
+
+
+def _cuda_strata(parsed, metric, key):
+    """{(op, pair_type): {run: value}} over usable blocks.
+
+    key: "ref_median" (rule 1's per-run baseline medians) or
+    "paired_ratio" (rule 2's per-run units) -- in the named metric.
+    """
+    out = {}
+    for blk in parsed["blocks"]:
+        out.setdefault((blk["op"], blk["pair_type"]), {})[blk["run"]] = \
+            blk["metrics"][metric][key]
+    return out
+
+
+def render_cuda_rule1_section(parsed, gap_max=GAP_MAX):
+    """The claim-protocol rule-1 section for a CUDA paired-timing record.
+
+    parsed: parse_cuda_pair_blocks's return. Returns markdown (no
+    trailing newline). Rule 1 ONLY -- nothing here renders a sign
+    verdict (rule 2 publishes in its own section beside this one,
+    render_cuda_sign_section), and no :measured? flag or workgroup row
+    is in scope of this publication (rule 4, unchanged).
+    """
+    lines = []
+    lines.append("## Regime classification (claim protocol rule 1, "
+                 "CUDA paired-timing channel)")
+    lines.append("")
+    lines.append("Published by scripts/gpu_regime_classify.py "
+                 "(GAP-1.15) over the paired-timing instrument log. "
+                 "This channel's baseline metric is NAMED BY THE "
+                 "CHANNEL (the 2026-10-25 claim-protocol CUDA "
+                 "adoption, ADR-0361): gpu_ns -- CUDA-event elapsed "
+                 "around the kernel on the GPU timeline -- with "
+                 "host_ns (CLOCK_MONOTONIC submit->completion) as the "
+                 "channel's second metric; the two NEVER mix in one "
+                 "clustering or one claim. A regime here is a cluster "
+                 "of the observed reference-arm per-run median levels "
+                 "in that metric, per (operator x pair-type) stratum "
+                 "-- the reference arm is the paired ratio's "
+                 "denominator (:baseline for subgroup/baseline and "
+                 "warp-shuffle/baseline, :subgroup-reduce for "
+                 "warp-shuffle/subgroup), so a cluster pools runs "
+                 "whose proxy is the same kernel.")
+    lines.append("")
+    lines.append("Run unit on this channel (the adoption's \"one fresh "
+                 "process per pair block\"): one run is one pair block "
+                 "-- (n, W, operator, pair-type) -- the fresh process "
+                 "that sampled PAIRS=20 interleaved pairs (WARMUP=2 "
+                 "discarded per arm, alternating AB/BA order). The "
+                 "per-run baseline median is the pair block's "
+                 "reference-arm median over its 20 samples in the "
+                 "named metric.")
+    lines.append("")
+    lines.append("Clustering rule GAP-1.15: per stratum, the per-run "
+                 "reference-arm medians sorted ascending, "
+                 "single-linkage -- the next median joins the current "
+                 "level at <= 1.15x the previous, else it starts a new "
+                 "level. The rule is metric-parametric as written; "
+                 "only the publication names the metric. Rule 2's sign "
+                 "classification is published in its own section "
+                 "beside this one (regime-matched sign per level over "
+                 "this record's pair blocks) -- this rule-1 section "
+                 "itself renders no sign verdict -- and rule 4 is "
+                 "unchanged: this publication moves no `:measured?` "
+                 "flag and no workgroup row.")
+    for metric in CUDA_METRICS:
+        strata = _cuda_strata(parsed, metric, "ref_median")
+        if not strata:
+            continue
+        lines.append("")
+        lines.append(f"### metric: {metric} -- "
+                     f"{CUDA_METRIC_TEXT[metric]}")
+        for op, pair_type in sorted(strata):
+            runs_med = strata[(op, pair_type)]
+            ref = CUDA_PAIR_REF[pair_type]
+            lines.append("")
+            lines.append(f"#### stratum: op={op} pair={pair_type} "
+                         f"(reference arm: {ref} "
+                         f"{CUDA_ARM_VARIANT[ref]})")
+            lines.append("")
+            lines.append("Per-run reference-arm medians (rule 1's "
+                         "first publication):")
+            lines.append("")
+            lines.append(f"| run (n, W) | reference-arm per-run "
+                         f"median ({metric}) |")
+            lines.append("|---|---|")
+            for run in sorted(runs_med):
+                lines.append(f"| {_cuda_run_label(run)} | "
+                             f"{_cuda_ns(runs_med[run])} |")
+            levels = level_clusters(runs_med, gap_max)
+            nlevels = len(levels)
+            lines.append("")
+            lines.append("Regime clusters:")
+            lines.append("")
+            lines.append(f"| level | {metric} range | runs "
+                         f"(reference-arm per-run median) |")
+            lines.append("|---|---|---|")
+            for i, lv in enumerate(levels, start=1):
+                tag = _level_tag(i, nlevels)
+                rng = (_cuda_ns(lv["lo"]) if lv["lo"] == lv["hi"]
+                       else f"{_cuda_ns(lv['lo'])}..{_cuda_ns(lv['hi'])}")
+                members = ", ".join(
+                    f"{_cuda_run_label(r)} "
+                    f"({_cuda_ns(lv['medians'][r])})"
+                    for r in lv["runs"])
+                lines.append(f"| {tag} | {rng} | {members} |")
+    return "\n".join(lines)
+
+
+def render_cuda_sign_section(parsed, gap_max=GAP_MAX):
+    """The claim-protocol rule-2 section for a CUDA paired-timing record.
+
+    parsed: parse_cuda_pair_blocks's return. Publishes REGIME-MATCHED
+    SIGN PER LEVEL over the record's pair blocks: per metric (gpu_ns and
+    host_ns NEVER mix), per (operator x pair-type) stratum, the MSL
+    channel's sign_classification machine unchanged -- a sign is
+    regime-invariant when every per-run ratio of every observed regime
+    lies on the same side of 1.0; only such a sign may be a selection
+    basis. The per-run ratio is the block's paired-median ratio in the
+    named metric (median over the block's 20 within-pair ratios
+    armA/armB -- the statistic paired-ratios.txt computes) and rule 2's
+    correctness precondition was verified inside the measurement (the
+    parser names and excludes any block whose verify lines are not all
+    ok=1). Sign claims are CHANNEL-SCOPED (the 2026-10-25 adoption): a
+    CUDA-channel sign never flips an MSL/WGSL cell and never answers a
+    workgroup row; only the CUDA-route selection rows consume it. The
+    adoption names NO cross-stratum roll-up -- strata are (metric x
+    operator x pair-type) and a roll-up across strata would be its own
+    design row -- so none is published here. Rule 4 is unchanged: this
+    publication moves no :measured? flag and no workgroup row.
+    """
+    lines = []
+    lines.append("## Sign classification (claim protocol rule 2, "
+                 "CUDA paired-timing channel)")
+    lines.append("")
+    lines.append("Published by scripts/gpu_regime_classify.py from the "
+                 "record's own pair blocks (rule 2's unit on this "
+                 "channel: the per-run ratio is the block's "
+                 "paired-median ratio in the named metric -- median "
+                 "over the block's within-pair ratios armA/armB -- and "
+                 "rule 2's correctness precondition is verified inside "
+                 "the measurement, as the instrument does) and the "
+                 "rule-1 regime clusters of the same runs' "
+                 "reference-arm per-run medians (GAP-1.15). Rule 2: a "
+                 "sign is regime-invariant when every per-run ratio of "
+                 "every observed regime lies on the same side of 1.0 "
+                 "-- only such a sign may be a selection basis; any "
+                 "other sign is regime-scoped and cannot choose a "
+                 "variant. The sign machine is the MSL channel's, "
+                 "unchanged and metric-parametric; gpu_ns and host_ns "
+                 "are TWO metrics of this channel and classify "
+                 "separately, never mixed.")
+    lines.append("")
+    lines.append("Sign claims on this channel are CHANNEL-SCOPED "
+                 "(the 2026-10-25 adoption carries rule 2 in full): "
+                 "a CUDA-channel sign never flips an MSL/WGSL cell "
+                 "and never answers a workgroup row (ADR-0355's "
+                 "2026-10-25 channel rule stands: the instrument "
+                 "channel answers no dispatch row); only the "
+                 "CUDA-route selection rows consume it. Rule 4 is "
+                 "unchanged -- this publication moves no "
+                 "`:measured?` flag and no workgroup row. NO "
+                 "cross-stratum roll-up is published: the adoption "
+                 "defines strata at (metric x operator x pair-type) "
+                 "and names no roll-up across them (a roll-up would "
+                 "be its own design row).")
+    for metric in CUDA_METRICS:
+        strata = _cuda_strata(parsed, metric, "ref_median")
+        ratio_strata = _cuda_strata(parsed, metric, "paired_ratio")
+        if not strata:
+            continue
+        lines.append("")
+        lines.append(f"### metric: {metric} -- "
+                     f"{CUDA_METRIC_TEXT[metric]}")
+        for op, pair_type in sorted(strata):
+            runs_med = strata[(op, pair_type)]
+            ratios = ratio_strata.get((op, pair_type), {})
+            ratios = {r: v for r, v in ratios.items() if r in runs_med}
+            lines.append("")
+            lines.append(f"#### stratum: op={op} pair={pair_type} "
+                         f"(reference arm: {CUDA_PAIR_REF[pair_type]} "
+                         f"{CUDA_ARM_VARIANT[CUDA_PAIR_REF[pair_type]]})")
+            if not ratios:
+                lines.append("")
+                lines.append("No classifiable paired ratios in this "
+                             "stratum.")
+                continue
+            med = {r: runs_med[r] for r in ratios}
+            cls = sign_classification(ratios,
+                                      level_clusters(med, gap_max))
+            nlevels = len(cls["level_sides"])
+            lines.append("")
+            lines.append("Regime-matched sign per level (rule 1's "
+                         "levels of this stratum; the sign of the "
+                         "paired ratios within each level):")
+            lines.append("")
+            lines.append("| level | runs (paired ratio) | level sign |")
+            lines.append("|---|---|---|")
+            for ls in cls["level_sides"]:
+                tag = _level_tag(ls["level"], nlevels)
+                runs = ", ".join(
+                    f"{_cuda_run_label(r)} ({v:.3f})"
+                    for r, v, _s in ls["runs"])
+                phrase = _wgsl_level_sign_phrase(ls["sides"], ls["runs"])
+                lines.append(f"| {tag} | {runs} | {phrase} |")
+            n = sum(cls["counts"].values())
+            if cls["verdict"] == "regime-invariant":
+                detail = (_side_phrase(cls["side"], n)
+                          + "; every observed regime one-sided")
+                side = cls["side"]
+            elif cls["straddle"] == "no-side":
+                detail = ("every ratio is exactly 1.0 -- no sign exists "
+                          "to claim")
+                side = "none"
+            else:
+                segs = "; ".join(
+                    f"level {ls['level']} "
+                    f"({_level_name(ls['level'], nlevels)}): "
+                    + ", ".join(
+                        f"{_cuda_run_label(r)} {v:.3f} "
+                        f"{'above' if s == 'slower' else 'below' if s == 'faster' else 'at'} 1.0"
+                        for r, v, s in ls["runs"])
+                    for ls in cls["level_sides"])
+                if cls["straddle"] == "by-regime":
+                    detail = ("straddle separates by regime (every "
+                              "regime one-sided, regimes disagree): "
+                              + segs)
+                else:
+                    mixed = [str(ls["level"]) for ls in cls["level_sides"]
+                             if len(ls["sides"]) > 1]
+                    detail = (f"straddle within regime "
+                              f"{', '.join(mixed)} (one regime holds "
+                              f"both sides): " + segs)
+                side = "straddles 1.0"
+            lines.append("")
+            lines.append(f"| verdict | side | detail |")
+            lines.append("|---|---|---|")
+            lines.append(f"| {cls['verdict']} | {side} | {detail} |")
+    return "\n".join(lines)
+
+
+def render_cuda_raw_times_section(parsed):
+    """Both clocks' raw per-block times beside the ratios (rule 3).
+
+    Rule 3's named limit for this channel: cross-clock magnitude claims
+    (gpu_ns vs host_ns) are INADMISSIBLE -- different spans (kernel only
+    vs submit->completion, the stop event's host-side record call named
+    as sitting inside the host span) -- so every magnitude publication
+    keeps both clocks' raw per-block times beside the ratios. The named
+    hazard (design reasoning, NOT a measurement): fixed per-dispatch
+    overhead common to both arms biases host_ns paired ratios toward 1
+    -- conservative against win claims -- asymmetric arm overhead not
+    assumed away.
+    """
+    lines = []
+    lines.append("## Raw per-block times beside the ratios (both "
+                 "clocks)")
+    lines.append("")
+    lines.append("Rule 3's publication limit for this channel: "
+                 "cross-clock magnitude claims (gpu_ns vs host_ns) are "
+                 "INADMISSIBLE (different spans -- kernel only vs "
+                 "submit->completion, the stop event's host-side "
+                 "record call named as sitting inside the host span), "
+                 "so every magnitude publication keeps both clocks' "
+                 "raw per-block times beside the ratios. Named hazard "
+                 "(design reasoning, NOT a measurement): fixed "
+                 "per-dispatch overhead common to both arms biases "
+                 "host_ns paired ratios toward 1 -- conservative "
+                 "against win claims -- asymmetric arm overhead not "
+                 "assumed away.")
+    strata = _cuda_strata(parsed, "gpu_ns", "ref_median")
+    by_key = {(b["op"], b["pair_type"], b["run"]): b
+              for b in parsed["blocks"]}
+    for op, pair_type in sorted(strata):
+        ref = CUDA_PAIR_REF[pair_type]
+        a, b_arm = pair_type.split("/")
+        lines.append("")
+        lines.append(f"### op={op} pair={pair_type} (reference arm: "
+                     f"{ref} {CUDA_ARM_VARIANT[ref]})")
+        lines.append("")
+        lines.append(f"| run (n, W) | {a} gpu_ns | {b_arm} gpu_ns | "
+                     f"ratio gpu_ns | {a} host_ns | {b_arm} host_ns | "
+                     f"ratio host_ns |")
+        lines.append("|---|---|---|---|---|---|---|")
+        for run in sorted(strata[(op, pair_type)]):
+            blk = by_key[(op, pair_type, run)]
+            g = blk["metrics"]["gpu_ns"]
+            h = blk["metrics"]["host_ns"]
+            lines.append(
+                f"| {_cuda_run_label(run)} | {_cuda_ns(g['a_median'])} "
+                f"| {_cuda_ns(g['b_median'])} "
+                f"| {_cuda_ratio(g['paired_ratio'])} "
+                f"| {_cuda_ns(h['a_median'])} "
+                f"| {_cuda_ns(h['b_median'])} "
+                f"| {_cuda_ratio(h['paired_ratio'])} |")
+    return "\n".join(lines)
+
+
+def render_cuda_named_section(parsed):
+    """Named-and-excluded data for a CUDA paired-timing record."""
+    lines = ["## Named and excluded (data, never silently dropped)"]
+    lines.append("")
+    if not parsed["excluded"]:
+        lines.append(f"All {len(parsed['blocks'])} pair blocks are "
+                     "complete (their declared pairs, both arms), "
+                     "verified (every verify line ok=1) and rc=0 -- "
+                     "nothing named and excluded.")
+    else:
+        for label, reason in parsed["excluded"]:
+            lines.append(f"- {label}: {reason} -- named and excluded.")
+    if parsed["orphan_samples"]:
+        lines.append("")
+        lines.append(f"{parsed['orphan_samples']} sample lines sit "
+                     "outside any `-- cell` block (the log's smoke "
+                     "block) -- named and excluded.")
+    return "\n".join(lines)
+
+
+def render_cuda_claim_protocol(text):
+    """The full claim-protocol publication for a CUDA paired-timing log.
+
+    The metric-named rule-1 section, the rule-2 status token, the
+    rule-2 sign section (or a named rule-2 absence when the record
+    carries no complete verified pair block), rule 3's raw both-clocks
+    times beside the ratios, and the named-and-excluded census. A
+    duplicated block is a measurement error and propagates as
+    ValueError.
+    """
+    parsed = parse_cuda_pair_blocks(text)
+    out = [render_cuda_rule1_section(parsed)]
+    if not parsed["blocks"]:
+        out.append("claim-protocol-rule2: NOT PUBLISHED -- no complete "
+                   "verified pair block in this record (rule 2's unit "
+                   "on this channel is the block's paired-median "
+                   "ratio) -- a record without paired ratios carries "
+                   "no sign to classify")
+    else:
+        out.append("claim-protocol-rule2: PUBLISHED (regime-matched "
+                   "sign per level below; sign claims channel-scoped "
+                   "-- a CUDA-channel sign never flips an MSL/WGSL "
+                   "cell and never answers a workgroup row; rule 4 "
+                   "unchanged: no :measured? flag and no workgroup "
+                   "row moves)")
+        out.append(render_cuda_sign_section(parsed))
+    out.append(render_cuda_raw_times_section(parsed))
+    out.append(render_cuda_named_section(parsed))
     return "\n\n".join(out)
 
 
@@ -3845,6 +4438,369 @@ def _self_test_wgsl_sign_corpus(stats, corpus_root):
             stats)
 
 
+def _cuda_block_lines(n, w, op, pair_type, pair_vals, rc=0, verify_ok=1,
+                      declared=None):
+    """One CUDA instrument pair block as log lines (test fixture).
+
+    pair_vals: [(gpu_a, gpu_b, host_a, host_b), ...] per pair index,
+    emitted in the instrument's alternating AB/BA order.
+    """
+    a, b = pair_type.split("/")
+    lines = [f"-- cell n={n} W={w} op={op} pair={a},{b} shared=0,0",
+             "device=Fixture sm_00", f"entry=reduce_{op}", f"n={n}",
+             f"workgroup={w}",
+             f"pairs={len(pair_vals) if declared is None else declared}",
+             "warmup=2", f"arms={a},{b}", "shared_a=0 shared_b=0"]
+    for i, (ga, gb, ha, hb) in enumerate(pair_vals):
+        order = "A" if i % 2 == 0 else "B"
+        vals = {a: (ga, ha), b: (gb, hb)}
+        seq = (a, b) if order == "A" else (b, a)
+        for arm in seq:
+            gpu, host = vals[arm]
+            lines.append(f"sample op={op} pair={i} order={order} "
+                         f"arm={arm} gpu_ns={gpu} host_ns={host}")
+    for arm in (a, b):
+        lines.append(f"verify op={op} arm={arm} max_abs_vs_ref=0 "
+                     f"bit_exact_vs_ref=1 ok={verify_ok}")
+    lines.append(f"cell n={n} W={w} op={op} pair={a},{b} rc={rc}")
+    return lines
+
+
+def _self_test_cuda_unit(stats):
+    # ---- the CUDA paired-timing channel's rule-1 + rule-2 publication
+    # (the 2026-10-25 claim-protocol adoption row for this channel,
+    # ADR-0361). Rule 2's unit is the block's paired-median ratio in the
+    # named metric (median over the within-pair ratios armA/armB); the
+    # regimes are rule 1's GAP-1.15 clusters of the SAME runs'
+    # reference-arm per-run medians, per (metric x operator x
+    # pair-type) stratum.
+    #
+    # -- parse exactness: reference-arm medians and paired-median
+    #    ratios, both metrics off one block --
+    blk = _cuda_block_lines(1000003, 32, "sum", "subgroup/baseline",
+                            [(50, 100, 40, 100)] * 3)
+    parsed = parse_cuda_pair_blocks("\n".join(blk))
+    _expect(len(parsed["blocks"]) == 1 and not parsed["excluded"]
+            and parsed["orphan_samples"] == 0,
+            "cuda parse: one complete verified block is usable", stats)
+    rec = parsed["blocks"][0]
+    _expect(rec["run"] == (1000003, 32) and rec["op"] == "sum"
+            and rec["pair_type"] == "subgroup/baseline"
+            and rec["ref"] == "baseline",
+            "cuda parse: block identity and the adoption's reference "
+            "arm (:baseline for subgroup/baseline)", stats)
+    g = rec["metrics"]["gpu_ns"]
+    h = rec["metrics"]["host_ns"]
+    _expect(g["ref_median"] == 100.0 and g["a_median"] == 50.0
+            and g["b_median"] == 100.0 and g["paired_ratio"] == 0.5,
+            "cuda parse gpu_ns: reference-arm median over the block's "
+            "samples + paired-median ratio", stats)
+    _expect(h["ref_median"] == 100.0 and h["paired_ratio"] == 0.4,
+            "cuda parse host_ns: the second metric off the same block",
+            stats)
+
+    # -- the paired-median statistic is mean-of-middles (the statistic
+    #    paired-ratios.txt computes), pinned exactly --
+    blk4 = _cuda_block_lines(1000003, 32, "sum", "subgroup/baseline",
+                             [(100, 100, 100, 100),
+                              (100, 100, 100, 100),
+                              (200, 100, 100, 100),
+                              (200, 100, 100, 100)])
+    rec4 = parse_cuda_pair_blocks("\n".join(blk4))["blocks"][0]
+    _expect(rec4["metrics"]["gpu_ns"]["paired_ratio"] == 1.5,
+            "cuda rule-2 unit: median over 4 within-pair ratios "
+            "[1, 1, 2, 2] is 1.5 (mean of the two middles), not a "
+            "lower-middle pick", stats)
+
+    # -- warp-shuffle/subgroup: the reference arm is :subgroup-reduce
+    #    (the paired ratio's denominator per the adoption) --
+    ws = _cuda_block_lines(1000003, 64, "max", "warp-shuffle/subgroup",
+                           [(150, 100, 150, 100)] * 3)
+    recws = parse_cuda_pair_blocks("\n".join(ws))["blocks"][0]
+    _expect(recws["ref"] == "subgroup"
+            and recws["metrics"]["gpu_ns"]["ref_median"] == 100.0
+            and recws["metrics"]["gpu_ns"]["paired_ratio"] == 1.5,
+            "cuda parse: warp-shuffle/subgroup clusters over the "
+            ":subgroup-reduce arm's medians", stats)
+
+    # -- refusals: measurement errors raise, never merge --
+    try:
+        parse_cuda_pair_blocks("\n".join(blk + blk))
+        raise AssertionError("duplicate pair block must raise")
+    except ValueError:
+        stats["passed"] += 1
+    dup_sample = blk[:-1] + [blk[9]] + [blk[-1]]
+    try:
+        parse_cuda_pair_blocks("\n".join(dup_sample))
+        raise AssertionError("duplicate sample must raise")
+    except ValueError:
+        stats["passed"] += 1
+    try:
+        parse_cuda_pair_blocks("\n".join(
+            _cuda_block_lines(1000003, 32, "sum", "baseline/subgroup",
+                              [(50, 100, 40, 100)] * 3)))
+        raise AssertionError("unknown pair type must raise")
+    except ValueError:
+        stats["passed"] += 1
+    try:
+        parse_cuda_pair_blocks("\n".join(blk[:-1]))
+        raise AssertionError("block without its rc= close must raise")
+    except ValueError:
+        stats["passed"] += 1
+    try:
+        parse_cuda_pair_blocks("sample op=sum pair=0 order=A "
+                               "arm=subgroup gpu_ns=1 host_ns=1")
+        raise AssertionError("log without pair blocks must raise")
+    except ValueError:
+        stats["passed"] += 1
+    bad_end = blk[:-1] + [f"cell n=7 W=32 op=sum pair=subgroup,baseline "
+                          f"rc=0"]
+    try:
+        parse_cuda_pair_blocks("\n".join(bad_end))
+        raise AssertionError("end line disagreeing with its block "
+                             "must raise")
+    except ValueError:
+        stats["passed"] += 1
+
+    # -- named and excluded: incomplete / unverified / nonzero-rc --
+    good = _cuda_block_lines(1000003, 32, "sum", "subgroup/baseline",
+                             [(50, 100, 40, 100)] * 3)
+    inc = _cuda_block_lines(1000003, 64, "sum", "subgroup/baseline",
+                            [(50, 100, 40, 100)] * 3, declared=20)
+    unv = _cuda_block_lines(1000003, 128, "sum", "subgroup/baseline",
+                            [(50, 100, 40, 100)] * 3, verify_ok=0)
+    nrc = _cuda_block_lines(1000003, 256, "sum", "subgroup/baseline",
+                            [(50, 100, 40, 100)] * 3, rc=127)
+    mixed = parse_cuda_pair_blocks("\n".join(good + inc + unv + nrc))
+    _expect(len(mixed["blocks"]) == 1 and len(mixed["excluded"]) == 3,
+            "cuda parse: only the complete verified rc=0 block is "
+            "usable; the other three are excluded, not dropped", stats)
+    reasons = " | ".join(r for _l, r in mixed["excluded"])
+    _expect("incomplete pairs: 3 complete of 20 declared" in reasons
+            and "correctness precondition not verified" in reasons
+            and "process exited rc=127" in reasons,
+            "cuda parse: each exclusion carries its own reason",
+            stats)
+    named_out = render_cuda_named_section(mixed)
+    for label in ("sum subgroup/baseline n=1000003 W=64",
+                  "sum subgroup/baseline n=1000003 W=128",
+                  "sum subgroup/baseline n=1000003 W=256"):
+        _expect(label in named_out,
+                f"cuda named section lists {label}", stats)
+
+    # -- orphan sample lines counted and named (the smoke block shape) --
+    smoke = ["sample op=sum pair=0 order=A arm=subgroup gpu_ns=1 "
+             "host_ns=1",
+             "sample op=sum pair=0 order=A arm=baseline gpu_ns=1 "
+             "host_ns=1"]
+    orph = parse_cuda_pair_blocks("\n".join(smoke + good))
+    _expect(orph["orphan_samples"] == 2
+            and len(orph["blocks"]) == 1,
+            "cuda parse: sample lines outside any block are counted, "
+            "not dropped", stats)
+    _expect("2 sample lines sit outside any `-- cell` block"
+            in render_cuda_named_section(orph),
+            "cuda named section names the orphan sample lines", stats)
+
+    # -- metric separation + by-regime straddle in one fixture: gpu_ns
+    #    carries a by-regime straddle, host_ns is regime-invariant
+    #    faster on the SAME runs -- the two metrics NEVER mix --
+    def v3(a, b_, ha, hb):
+        return [(a, b_, ha, hb)] * 3
+
+    sep = "\n".join(
+        _cuda_block_lines(1000003, 32, "sum", "subgroup/baseline",
+                          v3(50, 100, 40, 100))
+        + _cuda_block_lines(1000003, 64, "sum", "subgroup/baseline",
+                            v3(52, 104, 41.6, 104))
+        + _cuda_block_lines(1000003, 128, "sum", "subgroup/baseline",
+                            v3(400, 200, 80, 200)))
+    separsed = parse_cuda_pair_blocks(sep)
+    r1 = render_cuda_rule1_section(separsed)
+    _expect("| 1 (fastest observed) | 100.0..104.0 | n=1000003 W=32 "
+            "(100.0), n=1000003 W=64 (104.0) |" in r1
+            and "| 2 (slowest observed) | 200.0 | n=1000003 W=128 "
+            "(200.0) |" in r1,
+            "cuda rule 1: GAP-1.15 clusters of the reference-arm "
+            "per-run medians, exact rows", stats)
+    _expect("reference arm: baseline :baseline" in r1,
+            "cuda rule 1: the stratum names its reference kernel",
+            stats)
+    sign = render_cuda_sign_section(separsed)
+    gpu_part = sign.split("### metric: gpu_ns")[1].split(
+        "### metric: host_ns")[0]
+    host_part = sign.split("### metric: host_ns")[1]
+    _expect("| 1 (fastest observed) | n=1000003 W=32 (0.500), "
+            "n=1000003 W=64 (0.500) | one-sided faster (2/2 below "
+            "1.0) |" in gpu_part
+            and "| 2 (slowest observed) | n=1000003 W=128 (2.000) | "
+            "one-sided slower (1/1 above 1.0) |" in gpu_part,
+            "cuda rule 2 gpu_ns: regime-matched sign per level rows",
+            stats)
+    _expect("| regime-scoped | straddles 1.0 | straddle separates by "
+            "regime (every regime one-sided, regimes disagree): "
+            "level 1 (fastest observed): n=1000003 W=32 0.500 below "
+            "1.0, n=1000003 W=64 0.500 below 1.0; level 2 (slowest "
+            "observed): n=1000003 W=128 2.000 above 1.0 |" in gpu_part,
+            "cuda rule 2 gpu_ns: by-regime straddle named", stats)
+    _expect("| regime-invariant | faster | all 3 per-run ratios below "
+            "1.0 (3/3 faster); every observed regime one-sided |"
+            in host_part,
+            "cuda rule 2 host_ns: SAME runs, own metric -- regime-"
+            "invariant faster", stats)
+    _expect("regime-scoped" not in host_part
+            and "regime-invariant" not in gpu_part,
+            "cuda rule 2: the two metrics classify separately, never "
+            "mixed", stats)
+
+    # -- within-regime straddle + no-side --
+    within = "\n".join(
+        _cuda_block_lines(1000003, 32, "max", "warp-shuffle/baseline",
+                          v3(50, 100, 50, 100))
+        + _cuda_block_lines(1000003, 64, "max", "warp-shuffle/baseline",
+                            v3(200, 100, 200, 100)))
+    wsign = render_cuda_sign_section(parse_cuda_pair_blocks(within))
+    _expect("| regime-scoped | straddles 1.0 | straddle within regime "
+            "1 (one regime holds both sides): level 1 (the only "
+            "observed level): n=1000003 W=32 0.500 below 1.0, "
+            "n=1000003 W=64 2.000 above 1.0 |" in wsign,
+            "cuda rule 2: within-regime straddle named", stats)
+    noside = "\n".join(
+        _cuda_block_lines(1000003, 32, "min", "warp-shuffle/subgroup",
+                          v3(100, 100, 100, 100))
+        + _cuda_block_lines(1000003, 64, "min", "warp-shuffle/subgroup",
+                            v3(100, 100, 100, 100)))
+    nsign = render_cuda_sign_section(parse_cuda_pair_blocks(noside))
+    _expect("| regime-scoped | none | every ratio is exactly 1.0 -- "
+            "no sign exists to claim |" in nsign,
+            "cuda rule 2: no-side named", stats)
+
+    # -- pair-type strata separate: opposite signs in one operator,
+    #    and NO cross-stratum roll-up (the adoption names none) --
+    both = "\n".join(
+        _cuda_block_lines(1000003, 32, "sum", "subgroup/baseline",
+                          v3(50, 100, 50, 100))
+        + _cuda_block_lines(1000003, 32, "sum", "warp-shuffle/subgroup",
+                            v3(200, 100, 200, 100)))
+    bsign = render_cuda_sign_section(parse_cuda_pair_blocks(both))
+    _expect("#### stratum: op=sum pair=subgroup/baseline" in bsign
+            and "#### stratum: op=sum pair=warp-shuffle/subgroup"
+            in bsign,
+            "cuda rule 2: one stratum heading per (operator x "
+            "pair-type)", stats)
+    sub_part = bsign.split("#### stratum: op=sum "
+                           "pair=warp-shuffle/subgroup")[0]
+    ws_part = bsign.split("#### stratum: op=sum "
+                          "pair=warp-shuffle/subgroup")[1]
+    _expect("regime-invariant | faster" in sub_part
+            and "regime-invariant | slower" in ws_part,
+            "cuda rule 2: pair-type strata classify independently",
+            stats)
+    _expect("NO cross-stratum roll-up is published" in bsign
+            and "Cell (" not in bsign,
+            "cuda rule 2: no cross-stratum roll-up exists to publish",
+            stats)
+
+    # -- the combined publication: channel scoping, rule 4, raw
+    #    both-clocks times beside the ratios, status token --
+    out = render_cuda_claim_protocol(sep)
+    _expect("claim-protocol-rule2: PUBLISHED" in out,
+            "cuda claim protocol: rule-2 status token", stats)
+    _expect("never flips an MSL/WGSL cell" in out
+            and "never answers a workgroup row" in out
+            and ":measured?" in out,
+            "cuda sign claims are channel-scoped and rule 4 stands",
+            stats)
+    _expect("| run (n, W) | subgroup gpu_ns | baseline gpu_ns | "
+            "ratio gpu_ns | subgroup host_ns | baseline host_ns | "
+            "ratio host_ns |" in out
+            and "| n=1000003 W=32 | 50.0 | 100.0 | 0.5000 | 40.0 | "
+            "100.0 | 0.4000 |" in out,
+            "cuda rule 3: both clocks' raw per-block times beside the "
+            "ratios", stats)
+    _expect("INADMISSIBLE" in out,
+            "cuda rule 3: cross-clock magnitude claims named "
+            "inadmissible", stats)
+
+    # -- rule-2 named absence when every block is excluded --
+    allbad = "\n".join(
+        _cuda_block_lines(1000003, 32, "sum", "subgroup/baseline",
+                          v3(50, 100, 50, 100), rc=1))
+    ab = render_cuda_claim_protocol(allbad)
+    _expect("claim-protocol-rule2: NOT PUBLISHED" in ab
+            and "process exited rc=1" in ab,
+            "cuda claim protocol: a record without a usable block "
+            "publishes no sign and names why", stats)
+
+
+def _self_test_cuda_corpus(stats, corpus_root):
+    # Parse/raw-data pin over the committed 2026-10-25 xavier paired-
+    # timing record (docs/evidence/gpu/cuda-paired-timing-xavier-
+    # 20261025). DELIBERATE BOUNDARY (the adoption row's NOT
+    # RETROACTIVE clause): rules 1+2 are NOT re-derived over this
+    # record's sample lines and NO publication is rendered for it -- it
+    # keeps its RAW-DATA standing and maps onto no row. What is pinned
+    # here is the parse and the raw derive parse the record itself
+    # names re-runnable (paired-ratios.txt): the block census and the
+    # per-block paired-median ratios (both clocks) and gpu min..max.
+    d = corpus_root / "gpu" / "cuda-paired-timing-xavier-20261025"
+    text = (d / "compile-and-run-log.txt").read_text()
+    parsed = parse_cuda_pair_blocks(text)
+    _expect(len(parsed["blocks"]) == 108,
+            f"cuda corpus: 108 usable pair blocks, got "
+            f"{len(parsed['blocks'])}", stats)
+    _expect(not parsed["excluded"],
+            f"cuda corpus: no excluded block, got {parsed['excluded']}",
+            stats)
+    _expect(parsed["orphan_samples"] == 40,
+            f"cuda corpus: the smoke block's 40 sample lines are the "
+            f"named orphans, got {parsed['orphan_samples']}", stats)
+    _expect(all(b["declared_pairs"] == 20 for b in parsed["blocks"]),
+            "cuda corpus: every block declares PAIRS=20", stats)
+    _expect(all(len(b["metrics"]["gpu_ns"]["pair_ratios"]) == 20
+                for b in parsed["blocks"]),
+            "cuda corpus: every block carries 20 within-pair ratios",
+            stats)
+    _expect("regime" not in text.lower(),
+            "the committed xavier paired-timing log stays rule-1 "
+            "EMPTY (the adoption's NOT RETROACTIVE clause)", stats)
+    pr = (d / "paired-ratios.txt").read_text()
+    exp = {}
+    for line in pr.splitlines():
+        m = re.match(r"^n=(\d+) W=(\d+) op=(\w+) pair=([\w/-]+) "
+                     r"gpu=([\d.]+) host=([\d.]+) "
+                     r"gpu_range=([\d.]+)\.\.([\d.]+) pairs=(\d+)$",
+                     line)
+        if m:
+            exp[(int(m.group(1)), int(m.group(2)), m.group(3),
+                 m.group(4))] = (float(m.group(5)), float(m.group(6)),
+                                 float(m.group(7)), float(m.group(8)),
+                                 int(m.group(9)))
+    _expect(len(exp) == 108,
+            f"cuda corpus: paired-ratios.txt carries 108 rows, got "
+            f"{len(exp)}", stats)
+    mism = []
+    for b in parsed["blocks"]:
+        key = (b["run"][0], b["run"][1], b["op"], b["pair_type"])
+        if key not in exp:
+            mism.append(f"{key}: absent from paired-ratios.txt")
+            continue
+        eg, eh, elo, ehi, ep = exp[key]
+        g = b["metrics"]["gpu_ns"]
+        h = b["metrics"]["host_ns"]
+        if (round(g["paired_ratio"], 4) != eg
+                or round(h["paired_ratio"], 4) != eh
+                or round(min(g["pair_ratios"]), 4) != elo
+                or round(max(g["pair_ratios"]), 4) != ehi
+                or len(g["pair_ratios"]) != ep):
+            mism.append(f"{key}: derive parse disagrees")
+    _expect(not mism and len(parsed["blocks"]) == len(exp),
+            "cuda corpus: the rule-2 unit's raw derive parse "
+            "reproduces paired-ratios.txt exactly (108 rows, both "
+            "clocks, gpu min..max) -- raw data only, no verdict"
+            + ("" if not mism else f"; first: {mism[:3]}"), stats)
+
+
 def main():
     args = sys.argv[1:]
     if args == ["--self-test"]:
@@ -3864,12 +4820,19 @@ def main():
         _self_test_wgsl_sign_unit(stats)
         _self_test_wgsl_corpus(stats, ROOT / "docs" / "evidence")
         _self_test_wgsl_sign_corpus(stats, ROOT / "docs" / "evidence")
+        _self_test_cuda_unit(stats)
+        _self_test_cuda_corpus(stats, ROOT / "docs" / "evidence")
         print(f"TOTAL: {stats['passed']} assertions passed, 0 failed")
         return
     if len(args) == 2 and args[0] == "--wgsl-log":
         text = (sys.stdin.read() if args[1] == "-"
                 else pathlib.Path(args[1]).read_text())
         print(render_wgsl_claim_protocol(text))
+        return
+    if len(args) == 2 and args[0] == "--cuda-log":
+        text = (sys.stdin.read() if args[1] == "-"
+                else pathlib.Path(args[1]).read_text())
+        print(render_cuda_claim_protocol(text))
         return
     if len(args) == 2 and args[0] == "--pairs":
         complete, incomplete = parse_run_log_pairs(
