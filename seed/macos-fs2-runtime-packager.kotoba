@@ -23,6 +23,8 @@
 (def FS2-DA-BYTES 720)
 (def FS2-BC-BYTES 776)
 (def FS2-KIND9-BYTES 256)
+(def MAC-PACKAGER-RAW-BYTES 38809)
+(def MAC-PACKAGER-ENTRY-OFFSET 34980)
 
 (defn- byte-at [v :vector-i64 at :i64 value :i64] :vector-i64
   (vector-assoc! v at (bit-and value 255)))
@@ -94,7 +96,8 @@
    0xf9009a60 0xaa1303e7])
 
 (defn- full-compiler-raw? [raw-bytes :i64] :bool
-  (or (= raw-bytes 3254848) (= raw-bytes 3250952)))
+  (or (= raw-bytes 3254848) (= raw-bytes 3250952)
+      (= raw-bytes MAC-PACKAGER-RAW-BYTES)))
 
 (defn- wrapper-suffix [raw-bytes :i64 mode :string] :vector-i64
   [
@@ -113,7 +116,9 @@
    ;; The pure helper setup installs four additional ABI callbacks and then
    ;; invokes the existing bounded pool setup at 2048.
    (bit-or 0x94000000 (quot (- PURE-RUNTIME-START 1204) 4))
-   (bit-or 0x94000000 (quot (- RAW-START 1208) 4))
+   (bl-direct 1208
+     (if (= raw-bytes MAC-PACKAGER-RAW-BYTES)
+       (+ RAW-START MAC-PACKAGER-ENTRY-OFFSET) RAW-START))
    ;; The full compiler is a CLI: propagate its actual exit status after
    ;; check/compile. Short fixed fixtures keep their expected-result check.
    (if (full-compiler-raw? raw-bytes) 0xd2800030 0xf100a81f)
@@ -660,6 +665,7 @@
         total-bytes (+ text-bytes DATA-BYTES)]
     (if (or (= length 0) (> length 255) (not admitted)
             (and (not= raw-bytes 3254848) (not= raw-bytes 3250952)
+                 (not= raw-bytes MAC-PACKAGER-RAW-BYTES)
                  (not= raw-bytes 516)
                  (not= raw-bytes 694) (not= raw-bytes 210)
                  (not= raw-bytes 135) (not= raw-bytes 608)

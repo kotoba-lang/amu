@@ -74,6 +74,8 @@ Mac `extract-native` on each returned identical 3,250,952-byte `main` code,
 SHA-256 `48f724c12ece45c9ba57550932536533a2e340cea27812fb25251678cac97fdd`.
 
 This proves Mac execution and F1=F2=F3 container/code parity for the pinned
-unity source. The Mac executable images were still packaged by an Amu-built
-Linux ARM producer. A Mac-native producer, complete FS2 and native corpus,
-AIUEOS build/boot, and release qualification remain open.
+unity source. The F1 and F2 executable images used here were packaged by an
+Amu-built Linux ARM producer. A later [Mac packager self-rebuild
+diagnostic](../mac-packager-selfhost-20261026/README.md) reproduced those
+unsigned image bytes on Mac. Complete FS2 and native corpus, a Linux-free
+bootstrap, AIUEOS build/boot, and release qualification remain open.
