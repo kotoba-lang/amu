@@ -68,8 +68,39 @@ jobs:
         run: python3 scripts/seed/selfhost-bootstrap.py --output "$RUNNER_TEMP/boot" --tier "$TIER"
       - name: Static launcher (--format launcher, ADR 0371 step 4; arm64, native)
         run: python3 scripts/seed/check-static-launcher.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/launcher"
+      - name: Kototama bounded pure i64 AOT (arm64, native verdict)
+        run: python3 scripts/seed/check-kototama-i64.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/kototama-i64-arm64"
+      - name: Kototama pure i64 receipts (arm64, native verdict)
+        run: python3 scripts/seed/check-kototama-receipt.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/kototama-receipt-arm64"
       - name: Combined compiler (core + Linux targets) from the bootstrap (arm64, native)
         run: python3 scripts/seed/check-one-compiler.py --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/one"
+      - name: Native FS2 forms, kernel errors and journal cleanup (arm64)
+        run: python3 scripts/seed/check-native-fs2.py --compiler "$RUNNER_TEMP/one/F2.elf" --output "$RUNNER_TEMP/fs2-arm"
+      - name: Native typed live ABI and user-context admission (arm64)
+        run: |
+          python3 scripts/seed/check-static-profile-native.py --build "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/static-profile-arm"
+          python3 scripts/seed/check-aiueos-value-call-native.py --build "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/live-call-arm"
+          python3 scripts/seed/check-aiueos-user-native.py --build "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/user-context-arm"
+          python3 scripts/seed/check-aiueos-desktop-regions-native.py --build "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/desktop-regions-arm"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: live-abi-arm-evidence
+          path: |
+            ${{ runner.temp }}/static-profile-arm/native-static-profile.json
+            ${{ runner.temp }}/static-profile-arm/*/calls.json
+            ${{ runner.temp }}/live-call-arm/native-value-call.json
+            ${{ runner.temp }}/live-call-arm/*/calls.json
+            ${{ runner.temp }}/user-context-arm/native-user-context.json
+            ${{ runner.temp }}/user-context-arm/*/calls.json
+            ${{ runner.temp }}/desktop-regions-arm/native-desktop-regions.json
+            ${{ runner.temp }}/desktop-regions-arm/*/calls.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: native-fs2-arm-evidence
+          path: ${{ runner.temp }}/fs2-arm
+          if-no-files-found: warn
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
@@ -79,6 +110,23 @@ jobs:
             ${{ runner.temp }}/one/calls.json
             ${{ runner.temp }}/one/F2.elf
             ${{ runner.temp }}/one/F-x86_64.elf
+          if-no-files-found: warn
+      # Keep the transported compiler files at the artifact root. Adding the
+      # sibling AOT directory above changes upload-artifact's common ancestor.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: kototama-i64-arm64
+          path: |
+            ${{ runner.temp }}/kototama-i64-arm64/report.json
+            ${{ runner.temp }}/kototama-i64-arm64/gate.stdout
+            ${{ runner.temp }}/kototama-i64-arm64/gate.stderr
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: kototama-receipt-arm64
+          path: ${{ runner.temp }}/kototama-receipt-arm64
           if-no-files-found: warn
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -122,8 +170,48 @@ jobs:
           path: ${{ runner.temp }}/one
       - name: Complete native x86 compiler fixed point and CDCI images
         run: python3 scripts/seed/check-complete-x86.py --compiler "$RUNNER_TEMP/one/F-x86_64.elf" --arm-proof "$RUNNER_TEMP/one/one-compiler.json" --output "$RUNNER_TEMP/complete"
+      - name: Native FS2 forms, kernel errors and journal cleanup (x86)
+        run: python3 scripts/seed/check-native-fs2.py --compiler "$RUNNER_TEMP/complete/F3.elf" --output "$RUNNER_TEMP/fs2-x86"
+      - name: Native x86 AIUEOS image ABI and refusal diagnostics
+        run: python3 scripts/seed/check-aiueos-image-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/aiueos-image"
+      - name: Native x86 AIUEOS EFI packaging and refusal diagnostics
+        run: python3 scripts/seed/check-aiueos-boot-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/aiueos-boot"
+      - name: Native x86 locked kernel graph, DMA contracts and private PCI diagnostics
+        shell: bash
+        run: |
+          for suite in project cpu-project memory-project regions boot-region lock isr fixed-extent owned-page owned-window private-context pci-boot pci-private pci-forgery; do
+            python3 "scripts/seed/check-aiueos-$suite-native.py" --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/aiueos-projects/$suite"
+          done
+      - name: Native x86 kernel memory admission and emitted guard diagnostics
+        shell: bash
+        run: |
+          python3 scripts/seed/check-kernel-memory.py --compiler "$RUNNER_TEMP/complete/F2.elf" --work "$RUNNER_TEMP/kernel-memory-admission" --cases seed/tests/kernel-memory | tee "$RUNNER_TEMP/kernel-memory-admission.log"
+          python3 scripts/seed/check-kernel-memory.py --compiler "$RUNNER_TEMP/complete/F2.elf" --work "$RUNNER_TEMP/kernel-memory-guards" | tee "$RUNNER_TEMP/kernel-memory-guards.log"
+      - name: Kototama bounded pure i64 AOT (x86_64, native verdict)
+        run: python3 scripts/seed/check-kototama-i64.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/kototama-i64-x86_64"
+      - name: Kototama pure i64 receipts (x86_64, native verdict)
+        run: python3 scripts/seed/check-kototama-receipt.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/kototama-receipt-x86_64"
       - name: Native x86 clock and entropy (fixed Kotoba guest, refusal and ENOSYS)
         run: python3 scripts/seed/check-native-clock-entropy.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/clock-entropy"
+      - name: Native x86 typed live ABI and user-context admission
+        run: |
+          python3 scripts/seed/check-static-profile-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/static-profile-x86"
+          python3 scripts/seed/check-aiueos-value-call-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/live-call-x86"
+          python3 scripts/seed/check-aiueos-user-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/user-context-x86"
+          python3 scripts/seed/check-aiueos-desktop-regions-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/desktop-regions-x86"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: live-abi-x86-evidence
+          path: |
+            ${{ runner.temp }}/static-profile-x86/native-static-profile.json
+            ${{ runner.temp }}/static-profile-x86/*/calls.json
+            ${{ runner.temp }}/live-call-x86/native-value-call.json
+            ${{ runner.temp }}/live-call-x86/*/calls.json
+            ${{ runner.temp }}/user-context-x86/native-user-context.json
+            ${{ runner.temp }}/user-context-x86/*/calls.json
+            ${{ runner.temp }}/desktop-regions-x86/native-desktop-regions.json
+            ${{ runner.temp }}/desktop-regions-x86/*/calls.json
       - name: Kotoba native controller (Amu selfhost and complete24 Kotoba gate)
         run: python3 scripts/seed/check-native-cdci.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/native-cdci"
       - name: Public native product and aliases
@@ -145,6 +233,27 @@ jobs:
             ${{ runner.temp }}/public-product/public-product.json
             ${{ runner.temp }}/complete/complete-x86.json
             ${{ runner.temp }}/complete/calls.json
+            ${{ runner.temp }}/fs2-x86/native-fs2.json
+            ${{ runner.temp }}/fs2-x86/calls.json
+            ${{ runner.temp }}/fs2-x86/*/receipt.json
+            ${{ runner.temp }}/complete/F1.elf
+            ${{ runner.temp }}/complete/F2.elf
+            ${{ runner.temp }}/complete/F3.elf
+            ${{ runner.temp }}/kernel-memory-admission.log
+            ${{ runner.temp }}/kernel-memory-guards.log
+            ${{ runner.temp }}/aiueos-image/native-image.json
+            ${{ runner.temp }}/aiueos-image/F2/commands.json
+            ${{ runner.temp }}/aiueos-image/F3/commands.json
+            ${{ runner.temp }}/aiueos-boot/native-boot.json
+            ${{ runner.temp }}/aiueos-boot/F2/commands.json
+            ${{ runner.temp }}/aiueos-boot/F3/commands.json
+            ${{ runner.temp }}/aiueos-projects/**/*.json
+            ${{ runner.temp }}/kototama-i64-x86_64/report.json
+            ${{ runner.temp }}/kototama-i64-x86_64/gate.stdout
+            ${{ runner.temp }}/kototama-i64-x86_64/gate.stderr
+            ${{ runner.temp }}/kototama-receipt-x86_64/report.json
+            ${{ runner.temp }}/kototama-receipt-x86_64/gate.stdout
+            ${{ runner.temp }}/kototama-receipt-x86_64/gate.stderr
             ${{ runner.temp }}/clock-entropy/native-clock-entropy.json
             ${{ runner.temp }}/clock-entropy/calls.json
             ${{ runner.temp }}/clock-entropy/enosys-filter.json

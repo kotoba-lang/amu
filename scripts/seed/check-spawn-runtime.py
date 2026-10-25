@@ -216,7 +216,8 @@ def main(compiler, output, target, seccomp_if_available=False):
     e2e("empty-program", guest(lit("", "x")), want_exit=120, stderr_has=[b":signal :SIGILL"])
     e2e("request-over-65536", guest(f'(string-concat "/bin/echo{S}" (dbl "x" 16))'), want_exit=120,
         stderr_has=[b":signal :SIGILL"])
-    e2e("wire-not-granted", guest(lit("/bin/echo")), want_exit=120, stderr_has=[b":signal :SIGILL"],
+    e2e("wire-not-granted", guest(lit("/bin/echo")), want_exit=120,
+        stderr_has=[b"KEXE_CAP {:wire 20 :refused :not-granted}\n", b":signal :SIGILL"],
         env={"KEXE_ALLOW": "37"})
 
     # ---- part 3: the guest stays sandboxed ----

@@ -1,0 +1,103 @@
+{
+  "schema": "amu.native-runtime-bounds-controls.v1",
+  "memoryCompilerSourceCommit": "04623fbc0",
+  "producer": {
+    "bytes": 3269120,
+    "sha256": "1be37ad6a54fa173272e47566baeab6be8455367bd41dcffa14a1cce46d6c902"
+  },
+  "producerProof": {
+    "bytes": 115425,
+    "sha256": "77c2f186e84a85d9733ffc33f1b860dc61ba860449fe479884f86fd8c47b81a4"
+  },
+  "controls": [
+    {
+      "name": "width-crossing",
+      "source": "(ns probe (:export [main]))\n(defn main [] :i64 (let [value (kernel-load-u64-4k 1089536 20 16)] (+ 42 (* 0 value))))\n",
+      "sourcePin": {
+        "bytes": 116,
+        "sha256": "0887fe8c455b091d7064dcd28d5574f3c70f81fcbbc07c62994eb8e026c4a6b6"
+      },
+      "kernel": {
+        "bytes": 110872,
+        "sha256": "159ce07aadcfef12310850a9c52a4478bb18ab41b1324fe1dfb5a4bc25bfd053"
+      },
+      "trace": {
+        "bytes": 204575,
+        "sha256": "94e7a4405fb46a6534b7a5641f61692afa848562b130da7b6c5627fe43466a29"
+      }
+    },
+    {
+      "name": "unaligned",
+      "source": "(ns probe (:export [main]))\n(defn main [] :i64 (let [value (kernel-load-u64-4k 1089536 64 1)] (+ 42 (* 0 value))))\n",
+      "sourcePin": {
+        "bytes": 115,
+        "sha256": "ee3c63e8bf889c3809609beab4acae084a3158695ce228726688ec06ff47c89f"
+      },
+      "kernel": {
+        "bytes": 110872,
+        "sha256": "122e842ced7da9fb7ab9e7a48ee55465a998bec2c5d14d00895fcbb9629e53aa"
+      },
+      "trace": {
+        "bytes": 338211,
+        "sha256": "866388e2392264cbe531e083117917f38cac8d5ca8191d619207c6aa36094f32"
+      }
+    },
+    {
+      "name": "over-tier",
+      "source": "(ns probe (:export [main]))\n(defn main [] :i64 (let [value (kernel-store-u8-64k 1089536 65537 0 42)] (+ 42 (* 0 value))))\n",
+      "sourcePin": {
+        "bytes": 122,
+        "sha256": "19f61a8920fa593138a0665708a8be740d5fc666d9d7c78163cf09865a051013"
+      },
+      "kernel": {
+        "bytes": 110872,
+        "sha256": "ef64db563b33b07164337a94002ee675f8fce63c83fe73753c5c1702c109d320"
+      },
+      "trace": {
+        "bytes": 356293,
+        "sha256": "0a624bf5bb6afb392545b60fb4f81288c065f9dac5a96a83659f3bc174c1d9c1"
+      }
+    },
+    {
+      "name": "negative-index",
+      "source": "(ns probe (:export [main]))\n(defn main [] :i64 (let [value (kernel-load-u8-4k 1089536 64 -1)] (+ 42 (* 0 value))))\n",
+      "sourcePin": {
+        "bytes": 115,
+        "sha256": "5c0690790f9bec1005187bc92bf5b7ef478cd38d17c8b7e7a9765d4cba2f3e22"
+      },
+      "kernel": {
+        "bytes": 110872,
+        "sha256": "44626a0224e798111db24dec2f073a55867ba67264275e7a239371bfd67d155c"
+      },
+      "trace": {
+        "bytes": 334027,
+        "sha256": "c149649e10e91e91fc58b64447dc9c6490fa2d546166fa312c5be92ac2b2ba07"
+      }
+    },
+    {
+      "name": "null-base",
+      "source": "(ns probe (:export [main]))\n(defn main [] :i64 (let [value (kernel-load-u8-4k 0 64 0)] (+ 42 (* 0 value))))\n",
+      "sourcePin": {
+        "bytes": 108,
+        "sha256": "8796b8059b2b65daa7a247e335cec2148e1af133332dcfa54f03399608c36493"
+      },
+      "kernel": {
+        "bytes": 110872,
+        "sha256": "bfa2f1e7b015b6d9fceb9e40b2dac628a3d0d945ecc1e4d45ee68f49500826c1"
+      },
+      "trace": {
+        "bytes": 332639,
+        "sha256": "b1c1f60689d734d90b9666add064408d6805ad988889f9bc97536aa3816c6f43"
+      }
+    }
+  ],
+  "normalAccess": {
+    "observerExit": 1,
+    "passReceiptAbsent": true,
+    "reason": "no #UD at the guard; valid entry separately returns42/fuel999999"
+  },
+  "observer": {
+    "bytes": 4062,
+    "sha256": "f2d55dee5830b66de7b8d5ec8a7988e68ff72f7f56997998598f142a66cb4de3"
+  }
+}
