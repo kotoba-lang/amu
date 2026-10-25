@@ -1,0 +1,93 @@
+;; A native Kotoba format probe for an arm64 MH_EXECUTE with one RX segment.
+;; This only tests Mach-O loader admission. It has no Amu runtime, signing,
+;; self-rebuild, or authority to qualify a macOS compiler product.
+(ns seed.macos-exec-smoke (:export [main]))
+
+(defn- byte-at [v :vector-i64 at :i64 value :i64] :vector-i64
+  (vector-assoc! v at (bit-and value 255)))
+
+(defn- u32-at [v :vector-i64 at :i64 value :i64] :vector-i64
+  (-> v
+      (byte-at at value)
+      (byte-at (+ at 1) (u64-shift-right value 8))
+      (byte-at (+ at 2) (u64-shift-right value 16))
+      (byte-at (+ at 3) (u64-shift-right value 24))))
+
+(defn- u64-at [v :vector-i64 at :i64 value :i64] :vector-i64
+  (-> v
+      (u32-at at (bit-and value 4294967295))
+      (u32-at (+ at 4) (u64-shift-right value 32))))
+
+(defn- text-at [v :vector-i64 at :i64 text :string] :vector-i64
+  (let [bytes (vector-i64-from-bytes (string-to-utf8 text))
+        count (vector-count bytes)]
+    (loop [index 0 out v]
+      (if (= index count) out
+        (recur (+ index 1) (byte-at out (+ at index) (vector-at bytes index)))))))
+
+(defn- body-at [v :vector-i64 at :i64] :vector-i64
+  (-> v
+      ;; mach_header_64: MH_EXECUTE, CPU_TYPE_ARM64, seven commands.
+      ;; Dynamic launch needs NOUNDEFS|DYLDLINK|TWOLEVEL|PIE (0x00200085).
+      (u32-at at 4277009103) (u32-at (+ at 4) 16777228)
+      (u32-at (+ at 12) 2) (u32-at (+ at 16) 7)
+      (u32-at (+ at 20) 352) (u32-at (+ at 24) 2097285)
+      ;; LC_SEGMENT_64 __PAGEZERO, __TEXT and __LINKEDIT.
+      (u32-at (+ at 32) 25) (u32-at (+ at 36) 72)
+      (text-at (+ at 40) "__PAGEZERO")
+      (u64-at (+ at 64) 4294967296)
+      (u32-at (+ at 104) 25) (u32-at (+ at 108) 72)
+      (text-at (+ at 112) "__TEXT")
+      (u64-at (+ at 128) 4294967296)
+      (u64-at (+ at 136) 16384)
+      (u64-at (+ at 152) 16384)
+      (u32-at (+ at 160) 5) (u32-at (+ at 164) 5)
+      (u32-at (+ at 176) 25) (u32-at (+ at 180) 72)
+      (text-at (+ at 184) "__LINKEDIT")
+      (u64-at (+ at 200) 4294983680)
+      (u64-at (+ at 208) 16384)
+      (u64-at (+ at 216) 16384)
+      (u32-at (+ at 232) 1) (u32-at (+ at 236) 1)
+      ;; dyld and libSystem are the only dynamic dependencies.
+      (u32-at (+ at 248) 14) (u32-at (+ at 252) 32)
+      (u32-at (+ at 256) 12) (text-at (+ at 260) "/usr/lib/dyld")
+      (u32-at (+ at 280) 12) (u32-at (+ at 284) 56)
+      (u32-at (+ at 288) 24)
+      (text-at (+ at 304) "/usr/lib/libSystem.B.dylib")
+      ;; LC_MAIN enters the selfhost-produced payload as a plain function.
+      (u32-at (+ at 336) 2147483688) (u32-at (+ at 340) 24)
+      (u64-at (+ at 344) 1024)
+      ;; LC_BUILD_VERSION: macOS 13.0.0.
+      (u32-at (+ at 360) 50) (u32-at (+ at 364) 24)
+      (u32-at (+ at 368) 1)
+      (u32-at (+ at 372) 851968) (u32-at (+ at 376) 851968)
+      ;; mov x0,#42; ret. dyld/libSystem owns process exit.
+      (u32-at (+ at 1024) 3531605312)
+      (u32-at (+ at 1028) 3596551104)))
+
+(defn- acknowledged-image? [request :vector-i64 offset :i64 reply :vector-i64] :bool
+  (if (and (= (vector-count reply) 16389)
+           (= (vector-at reply 0) 0) (= (vector-at reply 1) 70)
+           (= (vector-at reply 2) 83) (= (vector-at reply 3) 50)
+           (= (vector-at reply 4) 0))
+    (loop [i 0]
+      (if (= i 16384) true
+        (if (= (vector-at reply (+ i 5)) (vector-at request (+ offset i)))
+          (recur (+ i 1)) false)))
+    false))
+
+(defn main [] :i64
+  (let [path (typed-cap-call :cli/args :string :string "0")
+        path-bytes (vector-i64-from-bytes (string-to-utf8 path))
+        length (vector-count path-bytes)
+        offset (+ 7 length)]
+    (if (or (= length 0) (> length 255)) 2
+      (let [v0 (vector-alloc (+ offset 16384))
+            v1 (-> v0
+                   (byte-at 0 0) (byte-at 1 70) (byte-at 2 83)
+                   (byte-at 3 50) (byte-at 4 0) (byte-at 5 66)
+                   (text-at 6 path)
+                   (byte-at (+ 6 length) 0)
+                   (body-at offset))
+            response (typed-cap-call :fs/app-data-bytes :bytes :bytes (bytes-from-vector-i64 v1))]
+        (if (acknowledged-image? v1 offset (vector-i64-from-bytes response)) 0 3)))))
