@@ -182,3 +182,17 @@ The default full stage repeats every control and the actual controller.
 it does not change its binary, arguments, environment, limits or verdict.
 Source/image/fixed-point/case/fuel/arena/refusal requirements are unchanged.
 There is no new cache substitution or legacy runtime fallback.
+
+## Immutable SIR label proofs (JUN-332)
+
+`glx-prepare` owns the module-local unique-label index after preparation and
+before emission. It is restricted to SIR larger than the T2 rewrite limit;
+changes to that rewrite scope or any emission-time SIR mutation require
+invalidation/requalification. Keep arbitrary suffix/accumulator scans and the
+CCF excluded window/reserved operands exact. No CODE/FIX prefix proof is cached.
+The index temporarily uses existing heap capacity and a disjoint alen-state
+cell. No-room falls back to original scans, and emission releases/zeroes the
+index. Keep the original G size and all fuel/arena limits.
+The full-prefix native differential oracle and nine successfully built but
+semantically refused guard-removal mutants run on both native ARM and x86
+in the shared two-slot gate plan. Original gate groups remain mandatory.

@@ -132,6 +132,15 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
+          name: label-index-arm64-evidence
+          path: |
+            ${{ runner.temp }}/label-index-arm64/*.json
+            ${{ runner.temp }}/label-index-arm64/*.stdout
+            ${{ runner.temp }}/label-index-arm64/*.stderr
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
           name: one-compiler-receipt
           path: |
             ${{ runner.temp }}/one/one-compiler.json
@@ -257,6 +266,9 @@ jobs:
             ${{ runner.temp }}/x86/runtime-boundary/runtime-boundary.json
             ${{ runner.temp }}/x86/runtime-boundary/calls.json
             ${{ runner.temp }}/x86/raw
+            ${{ runner.temp }}/label-index-x86/*.json
+            ${{ runner.temp }}/label-index-x86/*.stdout
+            ${{ runner.temp }}/label-index-x86/*.stderr
             ${{ runner.temp }}/public-product/public-product.json
             ${{ runner.temp }}/complete/complete-x86.json
             ${{ runner.temp }}/complete/calls.json
