@@ -17,6 +17,7 @@ import threading
 import subprocess
 import time
 from pathlib import Path
+from native_process_profile import observe_controller
 
 ROOT = Path(__file__).resolve().parents[2]
 ENV = {"PATH": "/nonexistent"}
@@ -64,7 +65,7 @@ def controller_pin_metadata(policy):
     return observed
 
 
-def main(complete, out):
+def main(complete, out, stage_name="full"):
     assert platform.system() == "Linux" and platform.machine() == "x86_64"
     proof = json.loads((complete / "complete-x86.json").read_text())
     assert proof["status"] == "PASS_COMPLETE_NATIVE_X86_COMPILER_BUILD"
@@ -120,7 +121,11 @@ def main(complete, out):
 
     def run(name, argv, expected=0, timeout=60, diagnostic=None):
         started = time.monotonic()
-        r = subprocess.run(list(map(str, argv)), env=ENV, cwd=out, capture_output=True, timeout=timeout)
+        if name == "controller-positive":
+            r = observe_controller(argv, env=ENV, cwd=out, timeout=timeout,
+                                   output=out / "controller-profile.json")
+        else:
+            r = subprocess.run(list(map(str, argv)), env=ENV, cwd=out, capture_output=True, timeout=timeout)
         (out / "raw" / (name + ".stdout")).write_bytes(r.stdout)
         (out / "raw" / (name + ".stderr")).write_bytes(r.stderr)
         row = dict(name=name, exit=r.returncode, seconds=round(time.monotonic() - started, 3),
@@ -219,6 +224,16 @@ def main(complete, out):
         assert not running, ("compiler child survived controller death", running)
         assert not (root / "cdci.receipt").exists()
 
+    if stage_name == "preflight":
+        report = dict(status="PASS_NATIVE_CDCI_PREFLIGHT_ONLY", caseCount=24,
+                      refusalCount=len(probes) + 3, parentDeathChildCleanup=True,
+                      fullControllerQualified=False, compilerRebuildCompleted=False,
+                      observerSourceSHA256=pin(Path(__file__)),
+                      controller=proof["cdci"]["controller"], policy=policy)
+        (out / "preflight.json").write_text(json.dumps(report, indent=2) + "\n")
+        print(report["status"], flush=True)
+        return
+
     root, manifest, _ = stage("positive")
     run("controller-positive", [root / "controller.elf", manifest, pin(manifest)], timeout=10900)
     assert pin(root / "rebuilt.kseed") == policy["coreContainerSHA256"]
@@ -236,15 +251,26 @@ def main(complete, out):
                   policy=policy, controllerReceipt=controller_receipt, gateReceipt=gate_receipt,
                   gateReceiptPath="positive/kotoba-gate.receipt", standaloneGateReceipt=standalone_gate_receipt,
                   manifestSHA256=pin(manifest), coreOutputSHA256=pin(root / "rebuilt.kseed"),
+                  controllerProfile=receipt_profile(out / "controller-profile.json"),
                   refusalCount=len(probes)+3, caseCount=24, parentDeathChildCleanup=True,
                   nativeVerdictAuthority=True, CLoader=False, NodeNBBJVMFallback=False)
     (out / "native-cdci.json").write_text(json.dumps(report, indent=2) + "\n")
     print(report["status"], "24 cases", report["refusalCount"], "refusals; parent-death cleanup", flush=True)
 
 
+def receipt_profile(path):
+    report = json.loads(path.read_text())
+    assert report["status"] == "COMPLETED" and report["exit"] == 0
+    assert report["nativeVerdictAuthority"] is False
+    assert report["completePhaseObservation"], "missing controller child phase observations"
+    return dict(path=path.name, sha256=pin(path), elapsedSeconds=report["elapsedSeconds"])
+
+
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--complete", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
+    p.add_argument("--stage", choices=("preflight", "full"), default="full",
+                   help="preflight gives early feedback only; full always repeats it before the native rebuild")
     a = p.parse_args()
-    main(a.complete.resolve(), a.output.resolve())
+    main(a.complete.resolve(), a.output.resolve(), a.stage)

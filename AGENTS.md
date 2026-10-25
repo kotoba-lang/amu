@@ -161,3 +161,24 @@ text/DOM/text-edit goldens must execute on actual x86 Linux. ARM code generation
 alone cannot qualify x86. Source-owner pins live in shared-browser-components.json;
 text's canonical owner is kotoba/lib/kotoba.text, not its archived repository.
 CSSOM/surface/kernel desktop/dapps/persistent restore remain later JUN-93 gates.
+
+## Native iteration scheduling and observations (JUN-332)
+
+Run new heavyweight local native commands through
+`python3 scripts/seed/native_build_queue.py -- <command>`. Its default shared
+admission directory is `~/github/workspaces/codex/native-build-slots-v1`;
+`KOTOBA_NATIVE_SLOT_DIR` selects an existing host-wide directory. Cooperating
+invocations share two slots across worktrees. Existing unmanaged jobs are
+outside that limit; do not stop them or call a busy host quiet. CI uses
+`RUNNER_TEMP/native-build-slots`, two gate groups maximum per runner, with
+the longest derivation admitted first. Use `--jobs 1` for a serial comparison.
+Keep one slot capacity per directory; a mismatch refuses.
+
+Local source/image preflight and locked native project controls run before
+the full bootstrap. `check-native-cdci.py --stage preflight` supplies early
+native24/refusal/parent-death feedback only; it never qualifies the rebuild.
+The default full stage repeats every control and the actual controller.
+`controller-profile.json` observes /proc and wait4 outside the native process;
+it does not change its binary, arguments, environment, limits or verdict.
+Source/image/fixed-point/case/fuel/arena/refusal requirements are unchanged.
+There is no new cache substitution or legacy runtime fallback.

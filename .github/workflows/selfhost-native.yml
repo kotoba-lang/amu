@@ -59,7 +59,27 @@ concurrency:
 permissions:
   contents: read
 jobs:
+  native-preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Observer and admission negative controls
+        run: python3 scripts/seed/test_native_iteration.py -v
+      - name: Source and image identity preflight
+        run: python3 scripts/seed/check-native-identities.py
+      - name: Local locked native project and refusal controls
+        run: python3 scripts/seed/check-x86-project-native.py --compiler "$PWD/bin/amu" --output "$RUNNER_TEMP/local-native-project"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: local-native-preflight
+          path: ${{ runner.temp }}/local-native-project/*.json
+          if-no-files-found: warn
   bootstrap-arm64:
+    needs: native-preflight
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 240
     steps:
@@ -80,29 +100,8 @@ jobs:
           python3 scripts/seed/check-sleep-resume.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/sleep-resume/receipt.json"
       - name: Static runtime spawn, wire 20 (arm64, native)
         run: python3 scripts/seed/check-spawn-runtime.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/spawn"
-      - name: Independent arm64 gates in parallel (launcher, kototama i64+receipt, one-compiler)
-        shell: bash
-        run: |
-          set -uo pipefail
-          mkdir -p "$RUNNER_TEMP/pg"
-          pids=(); names=()
-          bg() { local n="$1"; shift; { set +e; "$@" >"$RUNNER_TEMP/pg/$n.log" 2>&1; local rc=$?; printf "%s\n" "$rc" >"$RUNNER_TEMP/pg/$n.rc"; exit "$rc"; } & pids+=("$!"); names+=("$n"); }
-          bg launcher python3 scripts/seed/check-static-launcher.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/launcher"
-          bg kototama-i64 python3 scripts/seed/check-kototama-i64.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/kototama-i64-arm64"
-          bg kototama-receipt python3 scripts/seed/check-kototama-receipt.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/kototama-receipt-arm64"
-          bg one-compiler python3 scripts/seed/check-one-compiler.py --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/one"
-          fail=0
-          for i in "${!pids[@]}"; do
-            wait_rc=0
-            wait "${pids[$i]}" || wait_rc=$?
-            rc=1
-            if [ -r "$RUNNER_TEMP/pg/${names[$i]}.rc" ]; then rc="$(cat "$RUNNER_TEMP/pg/${names[$i]}.rc")"; fi
-            [ "$wait_rc" = 0 ] || fail=1
-            echo "=== ${names[$i]} rc=$rc"
-            cat "$RUNNER_TEMP/pg/${names[$i]}.log"
-            [ "$rc" = 0 ] || fail=1
-          done
-          exit $fail
+      - name: Independent arm64 gates (bounded native build queue)
+        run: python3 scripts/seed/native_build_queue.py --manifest seed/native-gate-plan.json --phase arm64 --jobs 2 --output "$RUNNER_TEMP/pg-arm64"
       - name: Native FS2 forms, kernel errors and journal cleanup (arm64)
         run: python3 scripts/seed/check-native-fs2.py --compiler "$RUNNER_TEMP/one/F2.elf" --output "$RUNNER_TEMP/fs2-arm"
       - name: Native typed live ABI and user-context admission (arm64)
@@ -189,6 +188,12 @@ jobs:
             ${{ runner.temp }}/runtime/private-store/receipt.json
             ${{ runner.temp }}/runtime/sleep-resume/receipt.json
           if-no-files-found: warn
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: native-scheduling-arm64
+          path: ${{ runner.temp }}/pg-arm64
+          if-no-files-found: warn
   qualify-x86_64:
     needs: bootstrap-arm64
     runs-on: ubuntu-latest
@@ -221,35 +226,8 @@ jobs:
           python3 scripts/seed/check-sleep-resume.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/runtime/sleep-resume/receipt.json"
       - name: Static runtime spawn, wire 20 (x86_64, native)
         run: python3 scripts/seed/check-spawn-runtime.py --compiler "$RUNNER_TEMP/complete/F2.elf" --target x86_64-linux --output "$RUNNER_TEMP/runtime/spawn"
-      - name: Independent x86 gates and the native controller in parallel (complete-based)
-        shell: bash
-        run: |
-          set -uo pipefail
-          mkdir -p "$RUNNER_TEMP/pg"
-          pids=(); names=()
-          bg() { local n="$1"; shift; { set +e; "$@" >"$RUNNER_TEMP/pg/$n.log" 2>&1; local rc=$?; printf "%s\n" "$rc" >"$RUNNER_TEMP/pg/$n.rc"; exit "$rc"; } & pids+=("$!"); names+=("$n"); }
-          bg fs2-x86 python3 scripts/seed/check-native-fs2.py --compiler "$RUNNER_TEMP/complete/F3.elf" --output "$RUNNER_TEMP/fs2-x86"
-          bg aiueos-image python3 scripts/seed/check-aiueos-image-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/aiueos-image"
-          bg aiueos-boot python3 scripts/seed/check-aiueos-boot-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/aiueos-boot"
-          bg aiueos-projects bash -c 'for suite in project cpu-project memory-project regions boot-region lock isr fixed-extent owned-page owned-window private-context pci-boot pci-private pci-forgery; do python3 "scripts/seed/check-aiueos-$suite-native.py" --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/aiueos-projects/$suite" || exit 1; done'
-          bg kernel-memory bash -euo pipefail -c 'python3 scripts/seed/check-kernel-memory.py --compiler "$RUNNER_TEMP/complete/F2.elf" --work "$RUNNER_TEMP/kernel-memory-admission" --cases seed/tests/kernel-memory | tee "$RUNNER_TEMP/kernel-memory-admission.log" && python3 scripts/seed/check-kernel-memory.py --compiler "$RUNNER_TEMP/complete/F2.elf" --work "$RUNNER_TEMP/kernel-memory-guards" | tee "$RUNNER_TEMP/kernel-memory-guards.log"'
-          bg kototama-i64 python3 scripts/seed/check-kototama-i64.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/kototama-i64-x86_64"
-          bg kototama-receipt python3 scripts/seed/check-kototama-receipt.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/kototama-receipt-x86_64"
-          bg clock-entropy python3 scripts/seed/check-native-clock-entropy.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/clock-entropy"
-          bg live-abi bash -c 'python3 scripts/seed/check-static-profile-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/static-profile-x86" && python3 scripts/seed/check-aiueos-value-call-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/live-call-x86" && python3 scripts/seed/check-aiueos-user-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/user-context-x86" && python3 scripts/seed/check-aiueos-desktop-regions-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/desktop-regions-x86"'
-          bg native-cdci python3 scripts/seed/check-native-cdci.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/native-cdci"
-          fail=0
-          for i in "${!pids[@]}"; do
-            wait_rc=0
-            wait "${pids[$i]}" || wait_rc=$?
-            rc=1
-            if [ -r "$RUNNER_TEMP/pg/${names[$i]}.rc" ]; then rc="$(cat "$RUNNER_TEMP/pg/${names[$i]}.rc")"; fi
-            [ "$wait_rc" = 0 ] || fail=1
-            echo "=== ${names[$i]} rc=$rc"
-            cat "$RUNNER_TEMP/pg/${names[$i]}.log"
-            [ "$rc" = 0 ] || fail=1
-          done
-          exit $fail
+      - name: Independent x86 gates (bounded native build queue)
+        run: python3 scripts/seed/native_build_queue.py --manifest seed/native-gate-plan.json --phase x86 --jobs 2 --output "$RUNNER_TEMP/pg-x86"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
@@ -313,10 +291,17 @@ jobs:
             ${{ runner.temp }}/runtime/sleep-resume/receipt.json
             ${{ runner.temp }}/native-cdci/native-cdci.json
             ${{ runner.temp }}/native-cdci/calls.json
+            ${{ runner.temp }}/native-cdci/controller-profile.json
             ${{ runner.temp }}/native-cdci/raw
             ${{ runner.temp }}/native-cdci/positive/cdci.receipt
             ${{ runner.temp }}/native-cdci/positive/kotoba-gate.receipt
             ${{ runner.temp }}/x86/wasm32-browser/wasm32-browser.json
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: native-scheduling-x86
+          path: ${{ runner.temp }}/pg-x86
           if-no-files-found: warn
 
   shared-browser-components:
