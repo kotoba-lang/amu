@@ -1489,11 +1489,13 @@
 ;; passes. Only the exact (start=1, found=0) query uses this table. Duplicate,
 ;; missing and invalid labels keep their original zero result; arbitrary
 ;; suffix/accumulator queries execute the original scan.
-(def glx-state (+ gn-g-open 91))
+;; alen-state is unused above20,000 SIR; the index only exists above
+;; t2-max-sir (131,072). Reuse that disjointly tagged cell, not another G word.
+(def glx-state (+ gn-g-open 89))
 (defn- glx-base [M :vector-i64] :i64
  (if (< (vector-count M) MM-WORDS) 0
   (let [g (vector-at M gn-cell) top (vector-at M MM-HEAP-TOP)
-        size (inc glx-state) sn (vector-at M MM-SIR-N)]
+        size (+ gn-g-open 91) sn (vector-at M MM-SIR-N)]
    (if (or (<= sn t2-max-sir) (> sn MM-SIR-CAP)
            (< g MM-HEAP-BASE) (> g (- MM-HEAP-END size))
            (< top (+ g size)) (> top MM-HEAP-END)) 0
@@ -1502,7 +1504,9 @@
               (= (vector-at M base) sn)) base 0))))))
 (defn- glx-prepare [M :vector-i64] :vector-i64
  (let [sn (vector-at M MM-SIR-N)]
-  (if (or (<= sn t2-max-sir) (> sn MM-SIR-CAP)) M
+  (if (or (not= (vector-at M MM-ERR) 0)
+          (<= sn t2-max-sir) (> sn MM-SIR-CAP)
+          (> (vector-at M MM-HEAP-TOP) (- MM-HEAP-END MM-LABEL-CAP))) M
    (let [m (mem-alloc M MM-LABEL-CAP) base (vector-at m MM-R0)]
     (if (not= (vector-at m MM-ERR) 0) m
      (let [indexed (loop [out m j 1]
@@ -1511,6 +1515,10 @@
          (recur (if (and (= op OP-LABEL) (> l 0) (< l MM-LABEL-CAP))
           (gn-put out (+ base l) (if (= (vector-at out (+ base l)) 0) j -1)) out) (inc j)))))]
       (gn-gs (gn-put indexed base sn) glx-state base)))))))
+(defn- glx-release [M :vector-i64] :vector-i64
+ (let [base (glx-base M)]
+  (if (and (> base 0) (= (vector-at M MM-HEAP-TOP) (+ base MM-LABEL-CAP)))
+   (-> (mem-fill M base MM-LABEL-CAP 0) (gn-gs glx-state 0) (gn-put MM-HEAP-TOP base)) M)))
 (defn- gn-small-label-scan [M :vector-i64 j :i64 l :i64 found :i64] :i64
  (cond (or (<= l 0) (>= l MM-LABEL-CAP)) 0
        (>= j (vector-at M MM-SIR-N)) found
@@ -13531,11 +13539,11 @@
 (defn- gn-run-open [M :vector-i64 first :i64 count :i64] :vector-i64
   (let [top (vector-at M MM-HEAP-TOP)
         M0 (if (< top MM-HEAP-BASE) (gn-put M MM-HEAP-TOP MM-HEAP-BASE) M)
-        M1 (mem-alloc M0 (+ gn-a-lp MM-LABEL-CAP 92))
+        M1 (mem-alloc M0 (+ gn-a-lp MM-LABEL-CAP 91))
         M2 (-> (gn-put M1 gn-cell (vector-at M1 MM-R0))
                (gn-gs gn-g-open first) (gn-gs gn-g-open-n count)
-               (gn-gs di-used 0) (gn-gs di-sites 0) (gn-gs alen-state 0) (gn-gs cpp-state 0) (gn-gs glx-state 0))
-        M3 (if (= (vector-at M2 MM-ERR) 0) (t2-patch-handoffs (gn-loop (glx-prepare (cpp-prepare (alen-prepare (trg-prepare (clw-prepare M2))))) 1)) M2)
+               (gn-gs di-used 0) (gn-gs di-sites 0) (gn-gs alen-state 0) (gn-gs cpp-state 0))
+        M3 (if (= (vector-at M2 MM-ERR) 0) (t2-patch-handoffs (glx-release (gn-loop (glx-prepare (cpp-prepare (alen-prepare (trg-prepare (clw-prepare M2))))) 1))) M2)
         n (vector-at M3 MM-CODE-N)]
     (gn-put M3 MM-R0 (- n 1))))
 

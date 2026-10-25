@@ -11,7 +11,10 @@ The previous unmodified controller spends 99.8% of its wall time in one compiler
 child. Native marker diagnostics now distinguish helper execution from the name
 of the source function being emitted. ARM's 240-second, right-censored probe
 observed 1,560 outer `gn-small-label` calls, with 123.97 seconds in those scans.
-The cold frontend and uninstrumented portions are outside that total. This is
+Actual x86 run40182962542 likewise observed 1,309 calls /111.007 seconds in
+a 240-second censored probe. A follow-up ARM CCF-only probe observed 2,035
+`ccf-label-source` calls /133.657 seconds, versus 141.5 seconds in CCF.
+The cold frontend and uninstrumented portions are outside those totals. This is
 exploratory cost attribution, not an x86 speed result or a qualification verdict.
 
 `glx-prepare` builds a private unique-label table after clw/trg/alen/cpp preparation.
@@ -24,15 +27,21 @@ The table is restricted to SIR counts above `t2-max-sir` and at most SIR capacit
 T2's `t2-fn-mark` and `t2-end` both exclude those large modules, so its private
 SIR rewrites cannot stale this index. clw/trg rewriting finishes before index
 construction. G storage, table extent and SIR extent are checked before lookup.
-The table uses 131,072 existing heap words (1 MiB) plus one new G cell; no heap,
+The table temporarily uses 131,072 existing heap words (1 MiB). The existing
+alen-state cell is reused only in the disjoint large-SIR domain; the original
+G allocation size is retained. If the table does not fit, scans remain unchanged.
+After emission its words are zeroed and its bump allocation is released. No heap,
 fuel, stack or other arena capacity is raised. This internal memory cost must
-remain visible in admission and whole-closure qualification.
+remain visible in admission and whole-closure qualification. The native oracle
+also checks optional no-room fallback, zeroed release and restored heap top.
 
 The native test entry retains the full production core prefix and the independent
 old scan oracle. It exercises duplicates, absent and endpoint labels, invalid
 bounds, suffixes, positive/negative accumulators, stale extents and the small-T2
-fallback. Mutants removing duplicate detection, suffix binding, accumulator
-binding and extent freshness must compile successfully and then fail semantic
+fallback. CCF reuses that identity but rechecks its own excluded source window and B/C
+operands. Mutants removing duplicate detection, suffix binding, accumulator
+binding, extent freshness, the CCF window, its reserved operands and optional
+heap fallback must compile successfully and then fail semantic
 execution. A deliberate wrong-mode control must also fail.
 
 `scripts/seed/compare-proof-scans.py` stages the baseline revision from Git,
@@ -62,6 +71,7 @@ Warm reuse and cold algorithm timings must remain separate.
 
 ## Status
 
-Candidate only. ARM semantic and four mutation controls have passed; same-host
+Candidate only. ARM semantic and seven mutation controls have passed after the heap-boundary
+review repair; same-host
 native x86 comparison and whole-closure qualification are in progress. No root,
 public, controller or consumer pin is adopted by this document.

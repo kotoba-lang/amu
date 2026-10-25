@@ -31,7 +31,7 @@ def main(out,seconds,revision=None,from_sir=0,ccf_only=False):
   quiet=text[text.index('(defn- gn-ins-quiet '):text.index(';; every instruction from i')]
   functions += sorted(set(re.findall(r"\(([\w-]+-entry) ", quiet))-set(functions))
   functions += ['dve-ins','dve-original-ins','gn-ins-quiet','ocb-post','vi-step','gn-op-rt','gn-op-bin']
-  text=text.replace('(mem-alloc M0 (+ gn-a-lp MM-LABEL-CAP 92))','(mem-alloc M0 (+ gn-a-lp MM-LABEL-CAP 93))')
+  text=text.replace('(mem-alloc M0 (+ gn-a-lp MM-LABEL-CAP 91))','(mem-alloc M0 (+ gn-a-lp MM-LABEL-CAP 93))')
   text=text.replace('(let [M1 (gn-ins M i (gn-op M i))','(let [current (gn-gs M (+ gn-g-open 92) i) M1 (gn-ins current i (gn-op M i))')
  bindings={p:dict(bytes=len(read(p)),sha256=hashlib.sha256(read(p)).hexdigest()) for p in paths}
  for name in functions:

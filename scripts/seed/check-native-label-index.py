@@ -72,6 +72,7 @@ def main(compiler, output):
         "accumulator-query": ("(and (= j 1) (= found 0) (> (glx-base M) 0))", "(and (= j 1) (> (glx-base M) 0))"),
         "ccf-window": ("(or (< position (- i 2)) (> position i))", "true"),
         "ccf-reserved-operands": ("(= (gn-sir M position IF-B) 0) (= (gn-sir M position IF-C) 0)", "true"),
+        "optional-heap": ("(> (vector-at M MM-HEAP-TOP) (- MM-HEAP-END MM-LABEL-CAP))", "false"),
         "stale-extent": ("(= (vector-at M base) sn)", "true"),
     }
     report["mutationControls"] = []
