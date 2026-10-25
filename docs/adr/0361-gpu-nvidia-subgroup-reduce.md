@@ -701,3 +701,77 @@ operator-aware selection (PROPOSED, its own row); every workgroup
 row (no `:measured?` flag moves; `:arm`/`:unknown` stay provisional
 `:measured? false`). Record:
 `docs/evidence/gpu/cuda-cell-census-machinery-20261025.txt`.
+
+## Amendment (2026-10-25, fifth the same day: whether a published
+cell verdict may enter the selection surface is DECIDED -- YES,
+under the entry contract)
+
+DECIDED (JUN-57, the row the machinery amendment left standing):
+**a published cell verdict MAY enter `select-variant`'s selection
+surface**, under an entry contract adapted from the ADR-0373 flip
+contract at the cell unit's own shape. Ground: the two committed
+adopted sessions, re-derived byte-exactly this tick (the
+`--cuda-cells` output of each committed measure-log diffs EMPTY
+against the committed `census.txt`, 72 cells each -- nothing
+quoted blind); no hardware ran.
+
+**Entry contract (adopted).** (1) *Unique-winner rule*: entry is
+per (W, shape) group of cells; arm v wins iff for every other arm
+u the (v, u) pair cell is REGIME-INVARIANT with side "v faster";
+anything else -- a scoped pair among the candidates, a cycle, no
+arm beating every rival -- REFUSES and keeps the design ladder's
+answer with no record (the measured-but-scoped refusal at its
+letter). (2) *Both clocks or refuse*: the winner must hold
+identically in `gpu_ns` and `host_ns` (no metric axis exists on
+the record and the answer is metric-agnostic; NAMED AS NEW, the
+flip records ran one clock; rule 3 untouched). (3) *Record shape
+unchanged*: `:device` (the tested device class, xavier sm_72,
+keyed the uB5G name-fragment way), `:channel`, `:route :cuda-v1`,
+`:workgroup-size`, `:operators #{:sum :max :min}` whole,
+`:shapes` (qualifying shapes only), `:evidence` (the group's own
+session's runs + sanctioned cross-day replications; a same-day
+second session is flip-note prose only, ADR-0373's naming rule by
+citation). (4) *Flip and confirm are both entry*: a winner equal
+to the design answer CONFIRMS (answer text unchanged,
+`:measured?` true with the record -- the precedent's kept-
+`:baseline` refutation records already do this); a differing
+winner FLIPS the cell. (5) *Scope*: answer cells of the CUDA route
+only; sign claims stay CHANNEL-SCOPED and DEVICE-SCOPED; no
+workgroup row answers or moves.
+
+**Rejected, named.** (a) single-pair entry -- the three-arm
+ladder would answer a variant measured slower than its own lower
+rung at that W (the (op :sum, W = 64) interaction is the standing
+hazard shape: `:subgroup-reduce` beats `:warp-shuffle-reduce` in
+every :sum run there while its pair against `:baseline` is scoped
+and often slower); (b) metric-split or one-clock entry; (c)
+regime-scoped verdicts as partial basis; (d) per-operator entry
+(the cell-unit row's rejection, restated).
+
+**Entry census over the committed evidence (derived):** winner =
+`:warp-shuffle-reduce` (the design answer) at 10 of 12 (W, shape)
+groups (W = 32/128/256/512/1024 x both shapes), both metrics,
+IDENTICALLY in both sessions; REFUSE at W = 64 both shapes (the
+warp-shuffle/subgroup cell straddles in both metrics and both
+sessions); ZERO flips. The named cross-session cell diff
+(`gpu_ns`, W = 256, subgroup/baseline, n = 1000003) touches no
+entry outcome -- no group's winner reads that pair. Projected
+consequence of the wiring row (its own later row; nothing moves
+today, rule 4): 10 confirming `:measured-cell` records
+(`:measured?` true, no answer text change), W = 64 keeps
+`:measured? false` and no record, no flip anywhere. Reopen (i)
+now reads mechanically: a future group whose unique winner is
+`:subgroup-reduce` (REGIME-INVARIANT FASTER than both rivals,
+both clocks) flips the CUDA-route answer at that W.
+
+**States.** DECIDED: this row (the contract, the rejections, the
+projection). IMPLEMENTED: nothing (no code moves; the wiring is
+its own later row -- until it lands no cell verdict is consumed).
+MEASURED: nothing new (consumed, not re-measured). ACCEPTED DESIGN
+ONLY: the claim-protocol adoption, the cell unit + census
+machinery, ADR-0358, ADR-0373. UNMEASURED, named: every workgroup
+row (`:arm`/`:unknown` stay provisional `:measured? false`); any
+cell verdict on non-xavier hardware; run 3+ / cross-day
+replication; the :sum ordering at W = 64 on any device;
+operator-aware selection (PROPOSED, its own row). Record:
+`docs/evidence/gpu/cuda-cell-selection-surface-20261025.txt`.

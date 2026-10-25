@@ -1,0 +1,205 @@
+JUN-57 -- whether a published cell verdict may enter the selection
+surface -- DECIDED (2026-10-25, the row the cell-census machinery
+amendment left standing: "whether a published cell verdict enters
+the selection surface is its own later row")
+
+The row: the full-census cell publication (ADR-0361's fourth
+amendment) now publishes rule-2 verdicts at (metric, W, pair-type,
+shape) cells, with the selection role named at the unit row ("the
+MSL channel's flip-cell role -- a per-W measured-cell flip of the
+kind :measured-cell records key") but no rule for whether a
+published verdict is ever CONSUMED by select-variant. This row
+decides the entry contract.
+
+Ground: committed artifacts only. NO hardware ran this tick and no
+new sample exists. Both committed adopted sessions were
+re-derived, not quoted blind:
+
+  python3 scripts/gpu_regime_classify.py --cuda-cells
+    docs/evidence/gpu/cuda-claimprotocol-run{1,2}-20261025/measure-log.txt
+  -> exit 0, stderr 0 bytes each, and the output diffs EMPTY against
+    docs/evidence/gpu/cuda-cell-census-run{1,2}-20261025/census.txt
+    (72 cells each). The committed censuses are byte-reproducible
+    from their committed logs.
+
+The record's analysis (unique-winner reading, scratch python in
+Hermes scratch, never staged) runs over the RE-DERIVED censuses.
+
+------------------------------------------------------------------
+Part 1 -- ADOPTED: YES, a published cell verdict may enter the
+selection surface -- under the entry contract below.
+
+(1) UNIQUE-WINNER RULE. The record shape keys (device class,
+    channel, W) -- see (3) -- so entry is decided per (W, shape)
+    GROUP of cells, across pair types. At a group, arm v is the
+    winner iff for every other arm u the (v, u) pair cell at that
+    group is REGIME-INVARIANT with side "v faster" (rule 2 at the
+    cell unit's letter, over the cell's pooled per-run ratios).
+    Anything else REFUSES and the group keeps the design ladder's
+    answer with no record: a scoped/straddled pair among the
+    winner-candidates, a cycle, or no arm beating every rival. This
+    is the measured-but-scoped refusal at its letter (ADR-0373's
+    W = 32 low-band and shape-2 W = 512 refusals by citation: only
+    a regime-robust verdict that names an answer may name one).
+
+(2) BOTH CLOCKS OR REFUSE. The winner must hold identically in the
+    gpu_ns and the host_ns cells of the group; a one-clock winner
+    REFUSES. NAMED AS NEW: the ADR-0373 flip records ran one
+    clock; this channel's instrument prints two, and the answer is
+    metric-agnostic (the record carries no metric axis), so a flip
+    cannot rest on one clock while the other refuses or
+    contradicts. Rule 3's cross-clock magnitude ban is untouched --
+    nothing is compared across clocks; both clocks must merely
+    agree on the sign.
+
+(3) RECORD SHAPE UNCHANGED (the ADR-0373 :measured-cell record's
+    own shape). :device = the tested device class (xavier sm_72
+    here), keyed the uB5G way (device-name-carries? reads
+    :device/:name/:vendor of the descriptor -- an unnamed
+    descriptor is not the tested class); :channel = the CUDA
+    paired-timing channel; :route :cuda-v1 (either spelling);
+    :workgroup-size = the group's W; :operators #{:sum :max :min}
+    as a whole (the unit row's pooling by citation, per-operator
+    entry stays rejected); :shapes = only the shapes whose own
+    group qualifies; :evidence = the group's own session's runs,
+    plus sanctioned cross-day replication runs when any exist --
+    a same-day second session is flip-note PROSE ONLY (ADR-0373's
+    same-day naming rule by citation).
+
+(4) FLIP AND CONFIRM ARE BOTH ENTRY. Where the winner equals the
+    design ladder's answer, the record CONFIRMS: the answer text
+    does not change, :measured? becomes true and carries the
+    record (the precedent already attaches :measured? true to a
+    measurement-backed unchanged answer -- the kept-:baseline
+    records whose :evidence names the refuting :subgroup-reduce
+    runs). Where the winner differs, the record FLIPS the cell
+    (the flip contract's role the unit row named). A refused group
+    keeps :measured? false and no record.
+
+(5) SCOPE. Entry is to select-variant's ANSWER CELLS only. Sign
+    claims stay CHANNEL-SCOPED and DEVICE-SCOPED (a CUDA-cell
+    verdict never flips an MSL or WGSL cell; an xavier verdict
+    never acts past the xavier name class); no workgroup row in
+    kotoba.compiler.accelerator-targets answers or moves
+    (ADR-0355's 2026-10-25 channel rule by citation).
+
+------------------------------------------------------------------
+Part 2 -- REJECTED (named, not hidden):
+
+(a) SINGLE-PAIR ENTRY -- flipping on the one pair cell whose sign
+    opposes the design rung. Rejected: the three-arm ladder would
+    then answer a variant measured SLOWER than its own lower rung
+    at that W -- the answer means "run this variant", so the
+    winner must beat every rival. The standing hazard SHAPE is the
+    (op :sum, W = 64) interaction: :subgroup-reduce beats
+    :warp-shuffle-reduce in every :sum run there (8/8, both
+    sessions) while its pair against :baseline is scoped and often
+    slower -- a single-pair flip could answer :subgroup-reduce at a
+    cell where :baseline is measured faster.
+
+(b) METRIC-SPLIT ENTRY (a record per metric, or a one-clock flip).
+    Rejected: the record keys carry no metric axis and the answer
+    is metric-agnostic; see (2).
+
+(c) REGIME-SCOPED VERDICTS as partial or provisional basis (e.g.
+    "flip now, revise if the other clock disagrees"). Rejected:
+    the precedent's refusal; fail closed to the design ladder.
+
+(d) PER-OPERATOR ENTRY -- already rejected at the cell-unit row
+    (2026-10-25); unchanged and restated by citation.
+
+------------------------------------------------------------------
+Part 3 -- the entry census over the committed evidence (tool
+output below; derived from the two re-derived censuses, run 1 the
+adopted session, run 2 same-day corroboration only). Entry rule
+applied per (W, shape) group, winner required in both metrics:
+
+  W=  32 n=1000003  gpu_ns=warp-shuffle   host_ns=warp-shuffle   entry=warp-shuffle   CONFIRMS design
+  W=  32 n=1048576  gpu_ns=warp-shuffle   host_ns=warp-shuffle   entry=warp-shuffle   CONFIRMS design
+  W=  64 n=1000003  gpu_ns=-              host_ns=-              entry=REFUSE
+  W=  64 n=1048576  gpu_ns=-              host_ns=-              entry=REFUSE
+  W= 128 n=1000003  gpu_ns=warp-shuffle   host_ns=warp-shuffle   entry=warp-shuffle   CONFIRMS design
+  W= 128 n=1048576  gpu_ns=warp-shuffle   host_ns=warp-shuffle   entry=warp-shuffle   CONFIRMS design
+  W= 256 n=1000003  gpu_ns=warp-shuffle   host_ns=warp-shuffle   entry=warp-shuffle   CONFIRMS design
+  W= 256 n=1048576  gpu_ns=warp-shuffle   host_ns=warp-shuffle   entry=warp-shuffle   CONFIRMS design
+  W= 512 n=1000003  gpu_ns=warp-shuffle   host_ns=warp-shuffle   entry=warp-shuffle   CONFIRMS design
+  W= 512 n=1048576  gpu_ns=warp-shuffle   host_ns=warp-shuffle   entry=warp-shuffle   CONFIRMS design
+  W=1024 n=1000003  gpu_ns=warp-shuffle   host_ns=warp-shuffle   entry=warp-shuffle   CONFIRMS design
+  W=1024 n=1048576  gpu_ns=warp-shuffle   host_ns=warp-shuffle   entry=warp-shuffle   CONFIRMS design
+
+  summary: confirms=10 flips=0 refuse=2 (of 12 (W,shape) groups)
+
+IDENTICAL in both sessions (the same 12 rows for run 2). The
+winning groups rest on the winner's own two pair cells
+(warp-shuffle/baseline and warp-shuffle/subgroup, both
+REGIME-INVARIANT FASTER in both metrics); the subgroup/baseline
+pair is read by no group's winner rule -- so the one named
+cross-session cell diff ((gpu_ns, W = 256, subgroup/baseline,
+n = 1000003): run 1 regime-invariant slower, run 2 regime-scoped)
+touches no entry outcome. W = 64 REFUSES in both shapes, both
+metrics, both sessions: the warp-shuffle/subgroup cell straddles
+there (the published verdicts' own text), so no winner exists and
+the design ladder keeps answering.
+
+PROJECTED consequence of the wiring row (NOT this row -- nothing
+moves today): 10 (W, shape) groups would carry confirming
+:measured-cell records (:measured? true, winner = the design
+answer, NO answer text change anywhere); W = 64 both shapes keep
+:measured? false and no record (the refusal); ZERO flips. The
+reopen condition (i) now has a mechanical form: a future group
+whose unique winner is :subgroup-reduce -- :subgroup-reduce
+REGIME-INVARIANT FASTER than :warp-shuffle-reduce AND than
+:baseline at that (W, shape), both clocks -- flips the CUDA-route
+answer at that W.
+
+TODAY: NOTHING MOVES. This row is docs-only (rule 4): no code, no
+:measured? flag (of either surface), no :shapes value, no
+selection answer, no workgroup row.
+
+------------------------------------------------------------------
+States.
+
+DECIDED (this row): the entry contract (Parts 1-2), the entry
+census and its projection (Part 3).
+
+IMPLEMENTED: nothing -- no code moves. The wiring (a CUDA
+flip/confirm predicate and record data in
+kotoba.compiler.accelerator-variants, pinned by its tests) is its
+own later implementation row; until it lands NO cell verdict is
+consumed and every CUDA-route answer keeps :measured? false.
+
+MEASURED: nothing new -- no hardware ran; both committed sessions
+consumed and tool-re-derived, not re-measured.
+
+ACCEPTED DESIGN ONLY: the ADR-0361 claim-protocol adoption, the
+cell unit + its full-census machinery, ADR-0358, ADR-0373.
+
+UNMEASURED, named: every workgroup row (kotoba.compiler.
+accelerator-targets untouched; :arm/:unknown stay provisional
+:measured? false); any cell verdict on non-xavier hardware (all
+cells DEVICE-SCOPED to xavier sm_72); run 3+ / cross-day
+replication (the projection's records would name run 1 only, run 2
+same-day prose); the :sum ordering at W = 64 on any device;
+operator-aware selection (PROPOSED, its own row).
+
+------------------------------------------------------------------
+Gates (real runs, this tick):
+
+- python3 scripts/gpu_regime_classify.py --self-test -> TOTAL:
+  2536 assertions passed, 0 failed (no code touched -- regression
+  pin at the committed 2536).
+- scoped GPU gate (8 GPU-owned test namespaces, scratch runner
+  gpu_scoped_gate.cljk in Hermes scratch, never committed):
+  GREEN -- 106 tests, 11046 assertions, 0 failures, 0 errors
+  (docs-only diff touches no .cljk namespace -- regression pin).
+- FULL run-tests.cljk NOT RUN this slice (no .cljk touched) --
+  documented red at base ('Could not find namespace: kotoba.form',
+  ADR-0362) outside this diff, not re-verified here, no green
+  suite claimed.
+- Census re-derivation diffs EMPTY both sessions (above).
+- find docs -name '*.sh' -> 0 files (the no-POSIX-sh evidence
+  rule).
+
+Evidence: this record + the ADR-0361 amendment. The
+unique-winner analysis script and the re-derived censuses lived in
+Hermes scratch and were never staged. (JUN-55, JUN-57)
