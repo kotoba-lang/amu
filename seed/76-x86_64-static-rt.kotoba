@@ -357,7 +357,8 @@
     (if (or (< n 0) (> n KXRT-VECTOR-MAX) (> n (- KXRT-ITEMS u))) (kxrt-fail)
       (let [high (kxrt-gl 760) stop (if (< high (+ u n)) high (+ u n))
             count (if (> stop u) (- stop u) 0)
-            z (loop [i 0] (if (= i count) 0 (let [w (kxrt-store64 (kxrt-item u i) 0)] (recur (inc i)))))
+            base (kxrt-item u 0) byte-end (+ base (* 8 count))
+            z (loop [cursor base] (if (= cursor byte-end) 0 (let [w (kxrt-store64 cursor 0)] (recur (+ cursor 8)))))
             w (kxrt-gs 64 (+ u n))]
         (kxrt-vnew u n)))))
 (defn- kxrt-vector-at [h :i64 i :i64] :i64
