@@ -132,11 +132,17 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
-          name: one-compiler-receipt
+          name: label-index-arm64-evidence
           path: |
             ${{ runner.temp }}/label-index-arm64/*.json
             ${{ runner.temp }}/label-index-arm64/*.stdout
             ${{ runner.temp }}/label-index-arm64/*.stderr
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: one-compiler-receipt
+          path: |
             ${{ runner.temp }}/one/one-compiler.json
             ${{ runner.temp }}/one/calls.json
             ${{ runner.temp }}/one/F2.elf

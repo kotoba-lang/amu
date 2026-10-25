@@ -55,10 +55,12 @@ separate from rebuilding and qualifying the changed compiler's own source.
 ## Content identity and incremental builds
 
 [Unison's immutable definition identity](https://www.unison-lang.org/docs/the-big-idea/)
-supports reuse of unchanged definitions and their dependencies. Amu already has
-canonical DefCID/SCC source contracts and exact process-input artifact reuse.
-Those are foundations, not proof that the native emitter already persists and
-reuses per-definition native objects.
+supports reuse of unchanged definitions and their dependencies. Kotoba's
+[definition identity contracts](adr/0300-definition-cids-are-computed-by-the-compiler-and-key-the-cache.md)
+specify canonical DefCID/SCC identities; their older hosted Wasm implementation
+is historical context, not an available native fallback. Amu's current process
+artifact reuse binds exact process inputs. Neither establishes that the current
+native emitter computes, persists or reuses per-definition native objects.
 
 This candidate first removes redundant work inside a fresh cold compile. A later
 native incremental path must bind checked IR plus dependency/SCC identities,
