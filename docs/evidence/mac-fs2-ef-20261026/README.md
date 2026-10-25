@@ -38,5 +38,7 @@ Evidence:
   framebuffer without a VNC login or manual key press.
 
 This component does not qualify the complete FS2 wire-35 provider,
-Mac full-compiler F1=F2=F3 fixed point, signed release or physical AIUEOS
-boot. Python only staged and observed these native executions.
+the full compiler's fixed point under this expanded F/E runtime,
+signed release or physical AIUEOS boot. Earlier pinned full-compiler
+F1–F5 fixed-point evidence remains separate. Python only staged and
+observed these native executions.
