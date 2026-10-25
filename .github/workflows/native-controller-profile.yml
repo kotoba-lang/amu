@@ -14,7 +14,7 @@ on:
         required: true
         default: controller
         type: choice
-        options: [controller, proof-scans]
+        options: [controller, proof-scans, proof-comparison]
       derivation-run:
         description: Public Amu run with a source-identical one-compiler-receipt artifact
         required: true
@@ -26,6 +26,31 @@ concurrency:
   group: native-controller-profile-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
+  proof-comparison:
+    if: inputs.mode == 'proof-comparison'
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Native semantic and mutation controls first
+        run: python3 scripts/seed/native_build_queue.py -- python3 scripts/seed/check-native-label-index.py --compiler "$GITHUB_WORKSPACE/bin/amu" --output "$RUNNER_TEMP/label-index" --controls-only
+      - name: Same-host native baseline candidate candidate baseline
+        run: python3 scripts/seed/native_build_queue.py --output "$RUNNER_TEMP/admission.json" -- python3 scripts/seed/compare-proof-scans.py --baseline-revision db6b2f085f627b413a9bc6f80f90ab942481e6b2 --output "$RUNNER_TEMP/comparison"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: native-proof-comparison
+          path: |
+            ${{ runner.temp }}/admission.json
+            ${{ runner.temp }}/label-index/observations.json
+            ${{ runner.temp }}/label-index/*.stderr
+            ${{ runner.temp }}/comparison/observations.json
+            ${{ runner.temp }}/comparison/*.stderr
+            ${{ runner.temp }}/comparison/*.stdout
+          if-no-files-found: error
   proof-scans:
     if: inputs.mode == 'proof-scans'
     runs-on: ubuntu-latest
@@ -48,7 +73,7 @@ jobs:
             ${{ runner.temp }}/proof-scans/*.stdout
           if-no-files-found: error
   measure:
-    if: inputs.mode != 'proof-scans'
+    if: inputs.mode != 'proof-scans' && inputs.mode != 'proof-comparison'
     runs-on: ubuntu-latest
     timeout-minutes: 240
     steps:

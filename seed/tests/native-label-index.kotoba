@@ -1,0 +1,53 @@
+(defn- glx-reference [M :vector-i64 j :i64 l :i64 found :i64] :i64
+ (cond (or (<= l 0) (>= l MM-LABEL-CAP)) 0
+       (>= j (vector-at M MM-SIR-N)) found
+       (and (= (gn-op M j) OP-LABEL) (= (gn-sir M j IF-A) l))
+       (if (> found 0) 0 (glx-reference M (inc j) l j))
+       :else (glx-reference M (inc j) l found)))
+
+;; The full production prefix is retained. The independent oracle above is
+;; byte-identical to the old scan except its private symbol. Test-only entry.
+(defn- glx-op [M :vector-i64 at :i64 label :i64] :vector-i64
+ (-> M (mem-set (+ MM-SIR-BASE (* at MM-SIR-W)) OP-LABEL)
+  (mem-set (+ MM-SIR-BASE (* at MM-SIR-W) IF-A) label)))
+(defn- glx-setup [] :vector-i64
+ (let [m (mem-alloc (mem-new) (+ gn-a-lp MM-LABEL-CAP 92))
+       base (vector-at m MM-R0)]
+  (-> m (mem-set gn-cell base) (mem-set MM-SIR-N (+ t2-max-sir 5))
+   (glx-op 2 1) (glx-op 5 2) (glx-op 7 2)
+   (glx-op t2-max-sir 3) (glx-op (inc t2-max-sir) (dec MM-LABEL-CAP))
+   (glx-op (+ t2-max-sir 2) 0) (glx-op (+ t2-max-sir 3) MM-LABEL-CAP))))
+(defn- glx-anchor [M :vector-i64 j :i64 l :i64 found :i64 expected :i64] :bool
+ (and (= (gn-small-label M j l found) expected) (= (glx-reference M j l found) expected)))
+(defn- glx-grid [M :vector-i64] :bool
+ (loop [l -1]
+  (if (= l 8) true
+   (if (and (glx-anchor M 1 l 0 (glx-reference M 1 l 0))
+            (glx-anchor M 3 l 0 (glx-reference M 3 l 0))
+            (glx-anchor M 6 l 0 (glx-reference M 6 l 0))
+            (glx-anchor M 1 l 8 (glx-reference M 1 l 8))
+            (glx-anchor M 1 l -2 (glx-reference M 1 l -2)))
+     (recur (inc l)) false))))
+(defn- glx-check [] :bool
+ (let [plain (glx-setup) fallback (and (= (glx-base plain) 0) (glx-grid plain))
+       indexed (glx-prepare plain)
+       anchors (and (> (glx-base indexed) 0) (glx-grid indexed)
+        (glx-anchor indexed 1 1 0 2) (glx-anchor indexed 1 2 0 0)
+        (glx-anchor indexed 1 3 0 t2-max-sir)
+        (glx-anchor indexed 1 (dec MM-LABEL-CAP) 0 (inc t2-max-sir))
+        (glx-anchor indexed 1 MM-LABEL-CAP 0 0)
+        (glx-anchor indexed 1 -9223372036854775808 0 0)
+        (glx-anchor indexed 1 9223372036854775807 0 0)
+        (glx-anchor indexed 1 4 -1 -1)
+        (glx-anchor indexed (+ t2-max-sir 5) 1 8 8)
+        (glx-anchor indexed 6 2 0 7))
+       ;; Invalidate by SIR extent; suffix scans still see the changed source.
+       stale (mem-set indexed MM-SIR-N (inc t2-max-sir))
+       stale-ok (and (= (glx-base stale) 0) (glx-anchor stale 1 (dec MM-LABEL-CAP) 0 0))
+       small (-> stale (mem-set MM-SIR-N 9) (gn-gs glx-state 0))
+       small-index (glx-prepare small)
+       small-ok (and (= (glx-base small-index) 0) (glx-anchor small-index 1 2 0 0))
+       bad (gn-gs small-index glx-state -1)]
+  (and fallback anchors stale-ok small-ok (= (glx-base bad) 0))))
+(defn- seed-main [] :i64
+ (if (= (io-argc) 0) (if (glx-check) 0 1) 1))

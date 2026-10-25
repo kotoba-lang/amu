@@ -1484,12 +1484,46 @@
         (= (gn-sir M j IF-B) 0) (= (gn-sir M j IF-C) 0)) j 0)
        (= (gn-op M j) OP-FN) 0
        :else (gn-small-end M (inc j) f (dec work))))
-(defn- gn-small-label [M :vector-i64 j :i64 l :i64 found :i64] :i64
+;; Module-local unique-label index. SIR rewriting T2 is bounded to at most
+;; t2-max-sir records; larger modules keep immutable SIR after the preparation
+;; passes. Only the exact (start=1, found=0) query uses this table. Duplicate,
+;; missing and invalid labels keep their original zero result; arbitrary
+;; suffix/accumulator queries execute the original scan.
+(def glx-state (+ gn-g-open 91))
+(defn- glx-base [M :vector-i64] :i64
+ (if (< (vector-count M) MM-WORDS) 0
+  (let [g (vector-at M gn-cell) top (vector-at M MM-HEAP-TOP)
+        size (inc glx-state) sn (vector-at M MM-SIR-N)]
+   (if (or (<= sn t2-max-sir) (> sn MM-SIR-CAP)
+           (< g MM-HEAP-BASE) (> g (- MM-HEAP-END size))
+           (< top (+ g size)) (> top MM-HEAP-END)) 0
+    (let [base (gn-g M glx-state)]
+     (if (and (>= base (+ g size)) (<= base (- top MM-LABEL-CAP))
+              (= (vector-at M base) sn)) base 0))))))
+(defn- glx-prepare [M :vector-i64] :vector-i64
+ (let [sn (vector-at M MM-SIR-N)]
+  (if (or (<= sn t2-max-sir) (> sn MM-SIR-CAP)) M
+   (let [m (mem-alloc M MM-LABEL-CAP) base (vector-at m MM-R0)]
+    (if (not= (vector-at m MM-ERR) 0) m
+     (let [indexed (loop [out m j 1]
+       (if (>= j sn) out
+        (let [op (gn-op out j) l (gn-sir out j IF-A)]
+         (recur (if (and (= op OP-LABEL) (> l 0) (< l MM-LABEL-CAP))
+          (gn-put out (+ base l) (if (= (vector-at out (+ base l)) 0) j -1)) out) (inc j)))))]
+      (gn-gs (gn-put indexed base sn) glx-state base)))))))
+(defn- gn-small-label-scan [M :vector-i64 j :i64 l :i64 found :i64] :i64
  (cond (or (<= l 0) (>= l MM-LABEL-CAP)) 0
        (>= j (vector-at M MM-SIR-N)) found
        (and (= (gn-op M j) OP-LABEL) (= (gn-sir M j IF-A) l))
-       (if (> found 0) 0 (gn-small-label M (inc j) l j))
-       :else (gn-small-label M (inc j) l found)))
+       (if (> found 0) 0 (gn-small-label-scan M (inc j) l j))
+       :else (gn-small-label-scan M (inc j) l found)))
+(defn- gn-small-label [M :vector-i64 j :i64 l :i64 found :i64] :i64
+ (cond (or (<= l 0) (>= l MM-LABEL-CAP)) 0
+  (and (= j 1) (= found 0) (> (glx-base M) 0))
+   (let [position (vector-at M (+ (glx-base M) l))]
+    (if (> position 0) position 0))
+  :else (gn-small-label-scan M j l found)))
+
 (defn- gn-small-owned [M :vector-i64 start :i64 end :i64 l :i64] :bool
  (let [p (gn-small-label M 1 l 0)] (and (> p start) (< p end))))
 (defn- gn-small-callee [M :vector-i64 f :i64 n :i64] :bool
@@ -13487,11 +13521,11 @@
 (defn- gn-run-open [M :vector-i64 first :i64 count :i64] :vector-i64
   (let [top (vector-at M MM-HEAP-TOP)
         M0 (if (< top MM-HEAP-BASE) (gn-put M MM-HEAP-TOP MM-HEAP-BASE) M)
-        M1 (mem-alloc M0 (+ gn-a-lp MM-LABEL-CAP 91))
+        M1 (mem-alloc M0 (+ gn-a-lp MM-LABEL-CAP 92))
         M2 (-> (gn-put M1 gn-cell (vector-at M1 MM-R0))
                (gn-gs gn-g-open first) (gn-gs gn-g-open-n count)
-               (gn-gs di-used 0) (gn-gs di-sites 0) (gn-gs alen-state 0) (gn-gs cpp-state 0))
-        M3 (if (= (vector-at M2 MM-ERR) 0) (t2-patch-handoffs (gn-loop (cpp-prepare (alen-prepare (trg-prepare (clw-prepare M2)))) 1)) M2)
+               (gn-gs di-used 0) (gn-gs di-sites 0) (gn-gs alen-state 0) (gn-gs cpp-state 0) (gn-gs glx-state 0))
+        M3 (if (= (vector-at M2 MM-ERR) 0) (t2-patch-handoffs (gn-loop (glx-prepare (cpp-prepare (alen-prepare (trg-prepare (clw-prepare M2))))) 1)) M2)
         n (vector-at M3 MM-CODE-N)]
     (gn-put M3 MM-R0 (- n 1))))
 
