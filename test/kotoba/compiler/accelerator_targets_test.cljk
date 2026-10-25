@@ -555,10 +555,15 @@
   ;; docs/evidence/gpu/w3-split4-field-spans-20261026.txt): dot2 answered
   ;; n + (number of '.') -- 7 for "1.2.3", whose second dot sits at 3 --
   ;; and digits?'s base (< 0 n) accepted every empty range inside a
-  ;; non-empty string.
+  ;; non-empty string. The numeric-walk row (2026-10-26,
+  ;; docs/evidence/gpu/w3-numeric-walk-primitives-20261026.txt): the
+  ;; per-byte digits?/digits-all?/dot1/dot2 walks are GONE -- digits? is
+  ;; one `string-parse-i64` verdict and each dot is one `string-find-byte`
+  ;; -- so long digit parts resolve inside the 32-frame budget (measured:
+  ;; the 100-digit third part trapped budget/frames before).
   (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
         arms (str/join "\n" (map #(extract-balanced src %)
-                                 ["(defn- digits?" "(defn- digits-all?" "(defn- version3?"
+                                 ["(defn- digits?" "(defn- version3?"
                                   "(defn- dot1" "(defn- dot2"]))
         probe (str "(ns accelerator.targets.w3.ver.probe (:export [main v3 d2 dg dge]))\n"
                    "(defn main [] :i64 0)\n"
@@ -569,10 +574,18 @@
                    "(defn dge [s :string] :bool (digits? s (string-byte-length s) (string-byte-length s)))")
         hir (sema/analyze probe)
         run (fn [sym s] (ir/execute hir sym [s]))]
-    (is (every? string? (map #(extract-balanced src %) ["(defn- digits-all?" "(defn- dot2"]))
+    (is (every? string? (map #(extract-balanced src %) ["(defn- digits?" "(defn- dot2"]))
         "the W3 validator arms are extractable from the namespace source")
     (is (not (str/includes? (extract-balanced src "(defn- dot2") "(+ 1 (dot2"))
         "the n + dot-count answer shape is gone")
+    (is (nil? (extract-balanced src "(defn- digits-all?"))
+        "the per-byte tail walk is deleted (the numeric-walk row)")
+    (is (str/includes? (extract-balanced src "(defn- digits?") "string-parse-i64")
+        "digits? reads the primitive's verdict, not a byte walk")
+    (is (not (str/includes? (extract-balanced src "(defn- digits?") "string-code-point-at s (+ i 1)"))
+        "no per-byte scan remains inside digits?")
+    (is (str/includes? (extract-balanced src "(defn- dot1") "string-find-byte s 46")
+        "each dot is one string-find-byte call (the split4 precedent)")
     (testing "dot2 is the INDEX of the second dot (n when fewer than two)"
       (is (= "3" (str (run 'd2 "1.2.3"))))
       (is (= "3" (str (run 'd2 "1.2"))) "no second dot answers n"))
@@ -587,7 +600,16 @@
         (is (true? (run 'v3 s)) (str s " is well-formed")))
       (doseq [s ["vulkan" "1..3" "1.2." ".2.3" "1.2" "123" "1.2.3.4" "1.2.3x"
                  "a.2.3" "" "1 .2.3"]]
-        (is (false? (run 'v3 s)) (str (pr-str s) " must not parse as d.d.d"))))))
+        (is (false? (run 'v3 s)) (str (pr-str s) " must not parse as d.d.d"))))
+    (testing "long digit parts stay host-regex true and resolve in budget"
+      ;; the host re-matches "[0-9]+\\.[0-9]+\\.[0-9]+" is TRUE here; the
+      ;; verdict reads ok|out-of-range as digits (overflow is still digits)
+      (is (true? (run 'dg (apply str (repeat 100 "9"))))
+          "100 digits are [0-9]+ whatever the i64 verdict")
+      (is (true? (run 'dg (str (apply str (repeat 100 "0")) "42")))
+          "102-char leading-zero text is [0-9]+")
+      (is (true? (run 'v3 (str "1.2." (apply str (repeat 100 "9")))))
+          "the 104-byte long-part spelling parses (it trapped before)"))))
 
 (deftest w3-device-from-info-parses-like-the-host-arm
   ;; The `:kotoba` device-from-info end to end on the kotoba language
@@ -598,14 +620,20 @@
   ;; pre-row byte walks trapped it -- measured on this runtime,
   ;; docs/evidence/gpu/w3-frame-budget-20261026.txt). The full spellings
   ;; are ALSO host pins in info-answers-parse-into-measured-device-facts.
-  ;; NAMED RESIDUAL (not hidden): digits?/digits-all?/parse-walk still walk
-  ;; per digit, so an adversarial numeric field can still reach the budget
-  ;; (fail-closed: the trap answers, no wrong fact), and the trap boundary
-  ;; is run-order dependent (named in the evidence, never pinned here).
+  ;; NAMED RESIDUAL (not hidden): the numeric walks are GONE (the
+  ;; numeric-walk row 2026-10-26) -- digits? is one `string-parse-i64`
+  ;; verdict, dot1/dot2 one `string-find-byte` each, string->i64 one
+  ;; `parse-long` -- so an adversarial numeric field resolves in budget
+  ;; (measured: every such answer trapped host/stack-exhausted before,
+  ;; docs/evidence/gpu/w3-numeric-walk-primitives-20261026.txt). Still
+  ;; named: alt-end/alt-field?/alt-any-hits walk the '|'-alternate KEY per
+  ;; byte (row-key sized; a hypothetical very long key is fail-closed --
+  ;; its own row), and the digit taxonomy (ok|out-of-range = digits) is
+  ;; PROBED on an adversarial set, not proven.
   (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
         arms (str/join "\n" (map #(extract-balanced src %)
-                                 ["(defn- none?" "(defn- string->i64" "(defn- parse-walk"
-                                  "(defn- split4" "(defn- digits?" "(defn- digits-all?"
+                                 ["(defn- none?" "(defn- string->i64"
+                                  "(defn- split4" "(defn- digits?"
                                   "(defn- version3?" "(defn- dot1" "(defn- dot2"
                                   "(defn- blank-str?"
                                   "(defn device-from-info"]))
@@ -651,4 +679,36 @@
       (doseq [s ["a|vulk|4|1"     "ab|1.2.3|0|1" "ab|1.2.3|4|2"
                  "ab|1.2.3|4|1|"  "ab|1.2.3|4|1|x" "ab|1.2.3|4" "ab|1..3|4|1"
                  "ab|1.2.3|x|1"]]
-        (is (= ["null"] (dfi s)) (str (pr-str s) " must parse to no fact at all"))))))
+        (is (= ["null"] (dfi s)) (str (pr-str s) " must parse to no fact at all"))))
+    (testing "adversarial numeric fields resolve in budget and host-equal"
+      ;; MEASURED BEFORE on this runtime (docs/evidence/gpu/
+      ;; w3-numeric-walk-primitives-20261026.txt): every one of these
+      ;; answers TRAPPED host/stack-exhausted in the numeric walks
+      (let [m (fields-of (dfi "ab|99999999999999999999.2.3|4|1"))]
+        (is (= "99999999999999999999.2.3" (:api-version m)) "a 20-digit version part")
+        (is (= "4" (str (:max-workgroup-x m)))))
+      (let [m (fields-of (dfi (str "ab|1.2." (apply str (repeat 100 "9")) "|4|1")))]
+        (is (= "4" (str (:max-workgroup-x m))) "a 100-digit version part"))
+      (let [m (fields-of (dfi (str "ab|1.2.3|" (apply str (repeat 100 "0")) "42|1")))]
+        (is (= "42" (str (:max-workgroup-x m)))
+            "102-char leading-zero wg text parses 42 (host parse-long parity)")))
+    (testing "digit text that does not fit i64 answers null, never a wrong fact"
+      ;; PINNED SEMANTIC CHANGE (the numeric-walk row): the parse-walk
+      ;; answered the WRONG wrapped value 7766279631452241919 for this
+      ;; text (measured at the string->i64 unit; at this answer depth the
+      ;; walks trapped before the wrong map could materialize) -- the
+      ;; primitive's no-value maps to null, the host arm's parse-long nil
+      ;; maps to the same null
+      (is (= ["null"] (dfi "ab|1.2.3|99999999999999999999|1")))
+      (is (= ["null"] (dfi (str "ab|1.2.3|" (apply str (repeat 1000 "5")) "|1"))))
+      (is (nil? (targets/device-from-info "ab|1.2.3|99999999999999999999|1"))
+          "HOST parity pin: the host arm answers no fact for the same field")
+      (is (nil? (targets/device-from-info (str "ab|1.2.3|" (apply str (repeat 1000 "5")) "|1")))
+          "HOST parity pin (1001-digit field)"))
+    (testing "the numeric walks are deleted and the parse delegates to parse-long"
+      (is (nil? (extract-balanced src "(defn- parse-walk"))
+          "the per-byte parse walk is deleted (the numeric-walk row)")
+      (is (nil? (extract-balanced src "(defn- digits-all?"))
+          "the per-byte tail walk is deleted")
+      (is (str/includes? (extract-balanced src "(defn- string->i64") "parse-long")
+          "string->i64 is one parse-long call (the host arm's own head)"))))

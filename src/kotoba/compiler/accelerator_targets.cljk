@@ -126,23 +126,34 @@
              (< p 0) (document-null)
              :else (split4 s (+ p 1) (+ p 1) n (+ k 1) (document-vector-conj acc (document-string (string-substring s start p))))))))
 ;; digits? = ONE OR MORE ASCII digits in [i, n) -- the host re-matches
-;; "[0-9]+" and an empty range holds no digits. The walk splits at the
-;; first digit: digits? refuses the empty range, digits-all? walks the
-;; tail (vacuously true). The pre-2026-10-26 base (< 0 n) asked whether
-;; the END was positive -- true for every empty range inside a non-empty
-;; string (an empty version part passed) and true only by accident for the
-;; ranges starting at 0 -- measured on the kotoba runtime this tick,
-;; docs/evidence/gpu/w3-split4-field-spans-20261026.txt.
+;; "[0-9]+" and an empty range holds no digits (the 2026-10-26 parity
+;; decision; the pre-2026-10-26 base (< 0 n) asked whether the END was
+;; positive and an empty version part passed). The numeric-walk row
+;; (2026-10-26): ONE primitive call, no walk (the string-fold-ascii /
+;; string-skip-blank / string-contains? precedents). The replaced
+;; digits?/digits-all? walks recursed per byte and trapped the interpreter's
+;; 32-frame budget on long numeric fields -- measured on the kotoba runtime
+;; (parse-walk on the 19-digit i64 max => host/stack-exhausted,
+;; docs/evidence/gpu/w3-numeric-walk-primitives-20261026.txt). The
+;; primitive's VERDICT replaces the byte scan: `string-parse-i64` answers
+;; ok or out-of-range for DIGIT-ONLY text and :parse/malformed for the rest
+;; (measured on the adversarial probe set -- 1..1000 digits, 102/1002-char
+;; leading-zero text; a digit-only string never answered :parse/malformed
+;; THERE -- the taxonomy is probed, not proven), so [0-9]+ = first byte
+;; ASCII digit AND verdict ok|out-of-range. The first-byte check is
+;; load-bearing: the primitive accepts "+5"/"-5" (measured ok 5 / ok -5)
+;; where the host regex does not. digits-all? is DELETED (its only caller
+;; was this walk).
 #?(:kotoba
    (defn- digits? [s :string i :i64 n :i64] :bool
-     (cond (>= i n) false
-           (let [c (string-code-point-at s i)] (and (>= c 48) (<= c 57))) (digits-all? s (+ i 1) n)
-           :else false)))
-#?(:kotoba
-   (defn- digits-all? [s :string i :i64 n :i64] :bool
-     (cond (>= i n) true
-           (let [c (string-code-point-at s i)] (and (>= c 48) (<= c 57))) (digits-all? s (+ i 1) n)
-           :else false)))
+     (if (>= i n)
+       false
+       (let [c (string-code-point-at s i)]
+         (and (>= c 48)
+              (<= c 57)
+              (let [r (string-parse-i64 (string-substring s i n))]
+                (or (result-ok?-of [:result :i64 :keyword] r)
+                    (= :parse/out-of-range (result-error-of [:result :i64 :keyword] r :none)))))))))
 ;; d.d.d with digits in each part (the host re-matches "[0-9]+\.[0-9]+\.[0-9]+")
 #?(:kotoba
    (defn- version3? [s :string] :bool
@@ -151,18 +162,23 @@
             (digits? s (+ 1 (dot1 s 0 n)) (dot2 s 0 n))
             (digits? s (+ 1 (dot2 s 0 n)) n)
             (< (dot1 s 0 n) (dot2 s 0 n))))))
+;; dot1 = the INDEX of the first '.' at or after i (n when absent) and
+;; dot2 the INDEX of the SECOND '.' (n when fewer than two) -- the exact
+;; contracts the walks held, pinned in w3-version3-matches-the-host-regex-
+;; semantics. The numeric-walk row (2026-10-26): ONE `string-find-byte`
+;; call per dot (the split4 `string-index-of-from` precedent), no byte
+;; walk. `string-find-byte` answers -1 when absent and traps on from > n
+;; (measured: "string offset is out of bounds"), so the walk's i >= n -> n
+;; shape is answered ABOVE the primitive (total contract; callers hold
+;; i <= n). The pre-2026-10-26 dot2 answered n + (number of '.') --
+;; measured 7 for "1.2.3" whose second dot sits at 3
+;; (docs/evidence/gpu/w3-split4-field-spans-20261026.txt).
 #?(:kotoba
    (defn- dot1 [s :string i :i64 n :i64] :i64
-     (if (>= i n) n (if (= 46 (string-code-point-at s i)) i (dot1 s (+ i 1) n)))))
-;; dot2 answers the INDEX of the SECOND '.' (n when fewer than two): at the
-;; first '.', the second one is dot1 from the next byte. The pre-2026-10-26
-;; arm answered n + (number of '.') -- measured 7 for "1.2.3" where the
-;; second dot sits at 3 -- so version3? read its own parts out of span and
-;; answered false for every well-formed version (kotoba runtime,
-;; docs/evidence/gpu/w3-split4-field-spans-20261026.txt).
+     (if (>= i n) n (let [p (string-find-byte s 46 i)] (if (< p 0) n p)))))
 #?(:kotoba
    (defn- dot2 [s :string i :i64 n :i64] :i64
-     (if (>= i n) n (if (= 46 (string-code-point-at s i)) (dot1 s (+ i 1) n) (dot2 s (+ i 1) n)))))
+     (let [p (dot1 s i n)] (if (< p n) (dot1 s (+ p 1) n) n))))
 ;; the blank check (host str/blank?) -- ONE primitive, no walk (the
 ;; frame-budget row 2026-10-26): (string-skip-blank s 0) answers the first
 ;; non-C-isspace byte's index (n when every byte is a blank), so a blank
@@ -229,13 +245,21 @@
          (alt-any-hits part alts 0 (string-byte-length alts))
          true)
        false)))
-;; the digits -> i64 parse (host parse-long on a digit string)
+;; the digits -> i64 parse (host parse-long on a digit string). The
+;; numeric-walk row (2026-10-26): the `parse-long` sugar -- the host arm's
+;; OWN head -- ONE call, no walk. The replaced parse-walk recursed per
+;; byte: measured on the kotoba runtime, the 19-digit i64 max trapped
+;; host/stack-exhausted and "99999999999999999999" answered the WRONG
+;; wrapped value 7766279631452241919 (docs/evidence/gpu/
+;; w3-numeric-walk-primitives-20261026.txt). PINNED SEMANTIC CHANGE:
+;; digit text that does not fit i64 answers -1 (the primitive's no-value
+;; shape) instead of a wrapped value -- the host arm's parse-long answers
+;; nil there and its caller maps no-value to "no positive wg", so BOTH
+;; arms answer the same device-from-info (null). Measured parity on the
+;; parseable probes (including 102-char leading-zero text -> 42 on both).
 #?(:kotoba
    (defn- string->i64 [s :string] :i64
-     (parse-walk s 0 (string-byte-length s) 0)))
-#?(:kotoba
-   (defn- parse-walk [s :string i :i64 n :i64 acc :i64] :i64
-     (if (>= i n) acc (parse-walk s (+ i 1) n (+ (* acc 10) (- (string-code-point-at s i) 48))))))
+     (option-value-of [:option :i64] (parse-long s) -1)))
 ;; the largest power of two at or below lim (the host loop (quot sz 2))
 #?(:kotoba
    (defn- clamp2 [sz :i64 lim :i64] :i64
