@@ -18,6 +18,30 @@
               (xg-err M 7103 index)
             :else (xpj-pool-fix (xg-patch M at offset 4) base (inc index))))))
 
+;; The canonical keyword union/table owner records word addresses for A64.
+;; Convert only its recorded position to bytes; retain its union and names.
+(defn- xpj-kw-note [M :vector-i64 L :vector-i64 module :i64] :vector-i64
+  (let [noted (pj-kw-note M L module)
+        address (pj-mf noted module pj-mf-kwt) base (pj-l noted pj-k-base)]
+    (if (= address 0) noted
+      (pj-mset noted module pj-mf-kwt (+ base (quot (- (- address base) 1) 4) 1)))))
+
+;; Every library's keyword printer/parser must use the root's complete union,
+;; including keys introduced by later importers. Tail jumps retain the ABI.
+(defn- xpj-kw-patch [M :vector-i64 L :vector-i64] :vector-i64
+  (let [root (pj-mf L 0 pj-mf-kwt) size (pj-l L pj-k-img)]
+    (loop [module 1]
+      (if (or (= root 0) (not (pj-ok M)) (>= module (pj-l L pj-k-nmod))) L
+        (let [address (pj-mf L module pj-mf-kwt)
+              at (dec address) target (dec root) delta (- target (+ at 5))]
+          (cond (= address 0) (recur (inc module))
+                (or (< at 128) (> (+ at 5) size) (< target 128) (>= target size)
+                    (< delta -2147483648) (> delta 2147483647))
+                  (let [refused (xg-err M 7103 module)] L)
+                :else
+                  (let [opcode (pj-ibset L at 233) branch (pj-put32 L (inc at) delta)]
+                    (recur (inc module)))))))))
+
 (defn- xpj-emit-module [M :vector-i64 L :vector-i64 S :string module :i64] :vector-i64
   (let [admitted (-> M (xs-clear 197) (xg-set 0 0) (xg-set 1 0) (xg-set 4 1)
                     (xg-check-fns S 1) (xg-check-sir 1) (xr-check 1))
@@ -60,7 +84,7 @@
           :else
           (let [lowered (lw-run checked)
                 emitted (if (pj-ok lowered) (xpj-emit-module lowered L source module) lowered)
-                keywords (if (pj-ok emitted) (pj-kw-note emitted L module) L)]
+                keywords (if (pj-ok emitted) (xpj-kw-note emitted L module) L)]
             (cond (not (pj-ok emitted)) P
                   (not (pj-ok (pj-r5b-after emitted L P source module))) P
                   (= module 0) P
@@ -70,7 +94,8 @@
   (let [discovered (pj-discover M L P root)
         reserved (pj-ls L pj-k-img 128)]
     (loop [index 0 pool discovered]
-      (if (or (not (pj-ok M)) (>= index (pj-l L pj-k-nord))) pool
+      (if (or (not (pj-ok M)) (>= index (pj-l L pj-k-nord)))
+        (let [patched (if (pj-ok M) (xpj-kw-patch M L) L)] pool)
         (recur (inc index) (xpj-module M L pool (pj-l L (+ pj-o-base index)) (ck-hint-new)))))))
 
 (defn- xpj-out-text [M :vector-i64 text :string index :i64] :vector-i64

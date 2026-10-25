@@ -14,7 +14,8 @@ removed to reduce the graph. No new comparative performance score is claimed.
 ## Native qualification
 
 `docs/evidence/shared-browser-20261025/` records the transition from the
-qualified complete46 root to complete47: actual ARM Linux main-tier F1=F2,
+qualified complete46 root to complete47. The prior candidate passed actual ARM
+Linux main-tier F1=F2,
 unchanged core G1=G2=G3, packed-core reproduction, Linux closure fixed point,
 24 runtime cases, hardening, capability and named refusal checks. The x86
 image is emitted by this same complete compiler. ARM execution and x86 code
@@ -31,7 +32,9 @@ qualify a new public image. The unchanged controller/gate identities are:
 
 The controller's two roles and fixed24 corpus remain. Python and GitHub Actions
 stage/hash/transport and observe native processes; they do not substitute for
-the controller or the checked-in Kotoba verdicts. Historical hosted/C-loader
+the controller or the checked-in Kotoba verdicts. The keyword-table correction separately has
+ARM F1=F2 and unchanged core reproduction; its complete main-tier follow-up and
+actual native x86/component/controller/public CI must pass before merge. Historical hosted/C-loader
 receipts retain their original source binding and are not current qualification.
 
 ## Locked typed x86 projects

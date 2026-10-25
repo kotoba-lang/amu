@@ -10,7 +10,10 @@ Dependencies compile first. Import stubs are tail jumps to previously emitted
 module entries; argument, return and hidden-context conventions are retained.
 Relative code/pool references move together. Code-base-relative string literal
 offsets additionally receive the module's byte base. Interface offsets are
-converted from the existing AArch64 word units into x86 byte units. A bounded
+converted from the existing AArch64 word units into x86 byte units. Canonical
+keyword-table positions receive the same conversion, and every library table
+tail-jumps to the root union. This keeps printing/parsing keys supplied by
+importers correct across the whole graph. A bounded
 prefix jumps to the root's zero-argument i64 main. Native runner/code formats
 are unchanged; no host compiler, image writer or C loader is introduced.
 

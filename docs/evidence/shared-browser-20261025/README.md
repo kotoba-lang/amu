@@ -1,20 +1,25 @@
 # Shared Browser native foundation, 2026-10-25
 
-The complete47 ARM main-tier bootstrap passes from the qualified complete46
-root: F1=F2, unchanged all18 normal core source/adoption image, G1=G2=G3,
-packed core, Linux closure fixed point and24 runtime cases. Cross-produced
-x86 compiler/controller/gates are byte-bound in arm-cross-candidate.json.
-Actual native x86/controller/public and source-owner component execution must
-pass exact-head CI before merge; the codegen receipt explicitly is not that pass.
+prior-candidate/ retains the first complete47 ARM main-tier proof (F1=F2,
+core G1=G2=G3, packed core, Linux closure,24 cases) and its codegen receipt.
+That candidate's actual x86 CI passed text/project execution but found a DOM
+keyword-table trap. It is historical evidence, not current native qualification.
 
-canonical-text-arm.json uses the current monorepo owner implementation and
-facade, including Unicode whitespace, empty needles and UTF-16/option index-of
-with both arities. dom-text-edit-arm.json's DOM and text-edit cases execute the
-current source-owner native ports, including tree/ops and Japanese/emoji/IME
-editing. Its earlier text case was exploratory against the archived repository;
-use canonical-text-arm.json for text acceptance. None is a hosted parity pass.
+The correction converts canonical keyword-table positions into x86 bytes and
+patches every library table to the final root union. keyword-fixed-point.json
+binds actual ARM F1=F2 and the unchanged all18 normal core source; the new cross
+receipt reproduces the unchanged adopted core container and controller/gates.
+The complete main-tier follow-up runs against an immutable source/root snapshot.
+Actual native x86/controller/public/component CI must pass before merge.
 
-The source-owner revisions and file hashes required by current CI live in
-seed/shared-browser-components.json. This evidence does not qualify the entire
-shared CSSOM graph, kernel desktop replacement, Itonami agent-first dapps,
-broker consent, persistent restart/crash restore or reference hardware.
+canonical-text-arm.json executes current monorepo text and facade, including
+32 Unicode/whitespace/empty-needle/index-of/join assertions. The DOM and text-edit
+cases in dom-text-edit-arm.json execute the actual native ports. That report's
+earlier text case was exploratory against the archived repository; use the
+canonical text report for acceptance. No hosted parity suite is claimed.
+
+Current CI independently checks all source-owner revisions/hashes in
+seed/shared-browser-components.json, then compiles and executes them under
+exact source locks. The project fixture additionally prints library-only keys
+to catch the keyword-table regression. This does not qualify the full CSSOM,
+kernel desktop replacement, dapps, broker consent, persistent restore or hardware.
