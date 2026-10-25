@@ -260,3 +260,119 @@ anything, no WebGPU execution path exists): every answer keeps
 `:measured? false`, no `:shapes` / `:evidence` / flip cell and no
 workgroup row (ADR-0355/0358) is touched. The slice record is
 `docs/evidence/gpu/nvidia-wgsl-route-decision-20261024.txt`.
+
+## Amendment (2026-10-25: the claim-protocol CUDA channel): the
+paired-timing campaign adopts the protocol, metric-named and
+sign-scoped
+
+DECIDED (JUN-57, the row the baseline execute record's HONEST LEFT (b)
+named -- "the claim-protocol adoption row for the CUDA channel ... is
+NOT written, so no rule-2-class sign claim exists for this channel and
+none is made"): **YES -- a CUDA measurement under the claim protocol
+can exist**, by the protocol's own adoption clause ("a later vendor
+campaign adopts it by citation, its own row" -- ADR-0360's
+regime-robust magnitude claim protocol amendment, 2026-10-23; this is
+that row), and the adoption is **metric-named and sign-scoped**, the
+shape the WGSL channel's adoption (ADR-0360, 2026-10-25) established.
+No hardware measurement runs in this slice; the ground is committed
+records and committed instrument text, quoted in the record.
+
+Grounding (facts, not design): the channel's instrument
+(`scripts/gpu-cuda-reduce-timing.cu`, the ADR-0373 instrument kind
+written for the CUDA channel) times every dispatch on TWO clocks and
+prints both on every sample line -- `gpu_ns` "CUDA-event elapsed time
+around the kernel on the GPU timeline" and `host_ns`
+"CLOCK_MONOTONIC around submit -> completion (the launch ...)". Unlike
+the WGSL channel (host clock only), this channel HAS a GPU-timeline
+clock, so rule 1's gpu-ns baseline metric carries at its letter here.
+The run unit the instrument already implements is the MSL channel's:
+one fresh process per pair block, PAIRS = 20 interleaved pairs, WARMUP
+= 2 discarded submits per arm, alternating AB/BA order, the Metal
+instrument's LCG (seed 20261023, reset per process).
+
+Part 1 -- THE ADOPTION CONTRACT (what makes a CUDA-channel record
+claim-protocol):
+
+  (a) Rule 1 carries with the baseline metric NAMED BY THE CHANNEL:
+      the per-run baseline median is the pair block's REFERENCE arm
+      (the denominator of the paired ratio -- `:baseline` for
+      subgroup/baseline and warp-shuffle/baseline, `:subgroup-reduce`
+      for warp-shuffle/subgroup) median over its 20 samples, in the
+      named metric. Two metrics, never mixed in one clustering or one
+      claim: `gpu_ns` (GPU timeline; the protocol's own metric class)
+      and `host_ns` (submit -> completion). A claim-protocol CUDA
+      record publishes, per metric, the per-run baseline medians per
+      operator and the GAP-1.15 regime clusters (the machine is
+      metric-parametric and unchanged; only the publication names the
+      metric). Clusters run per (metric x operator x pair-type) -- a
+      stratum the WGSL adoption did not need (one arm pair per channel
+      there): the reference arm differs by pair-type, and rule 1's
+      baseline is a clock-level proxy, so a cluster pools runs whose
+      proxy is the same kernel. A claim in a metric whose clusters are
+      unpublished is inadmissible.
+  (b) Rule 2 carries IN FULL, unchanged: a regime-invariant sign is
+      the only selection basis. The per-run ratio is the block's
+      paired-median ratio (median over the 20 within-pair ratios
+      armA/armB in the named metric -- the MSL channel's statistic,
+      the one `paired-ratios.txt` already computes), and rule 2's
+      correctness precondition (`:max`/`:min` bit-exact against the
+      double CPU reference, `:sum` within the 0.05 bound) is verified
+      inside the measurement, as the instrument already does. Sign
+      claims are CHANNEL-SCOPED -- a CUDA-channel sign never flips an
+      MSL or WGSL cell and never answers a workgroup row (the
+      row-flip channel stays separate; ADR-0355's 2026-10-25 channel
+      rule stands: the instrument channel answers no dispatch row) --
+      and only the CUDA route's own selection questions consume it
+      (HONEST LEFT (c)'s rows).
+  (c) Rule 3 carries with NAMED LIMITS: magnitude claims stay
+      within-channel, within-metric and regime-matched as written;
+      CROSS-CLOCK magnitude claims (`gpu_ns` vs `host_ns`) are
+      INADMISSIBLE -- the two clocks measure different spans (kernel
+      only vs submit -> completion), the same cross-metric ban the
+      WGSL adoption drew. Named hazard (design reasoning, NOT a
+      measurement): fixed per-dispatch overhead common to both arms
+      biases `host_ns` paired ratios toward 1 -- conservative against
+      win claims (it can hide a real win, it cannot invent one through
+      the common part) -- while asymmetric arm overhead could bias
+      either way and is not assumed away; the instrument's stop event
+      records on the host INSIDE the host span (named in the
+      instrument, not hidden). Every magnitude publication on this
+      channel keeps both clocks' raw per-block times beside the
+      ratios (a record that hides them is inadmissible).
+  (d) Rule 4 carries unchanged: this adoption measures nothing and
+      moves nothing.
+
+Part 2 -- WHAT THE ADOPTION DOES NOT DO: the committed 2026-10-25
+xavier paired-timing run (`docs/evidence/gpu/
+cuda-paired-timing-xavier-20261025/`) stays OUT (no rule-1
+publication -- "regime" appears 0 times in its log -- and it predates
+this adoption; its "RAW DATA, NOT A SIGN CLAIM" standing and its
+maps-onto-no-row ruling stand). `paired-ratios.txt` remains raw data.
+Named, not hidden: re-deriving rules 1 + 2 over that log's own sample
+lines is mechanically possible (the derive parse is re-runnable
+against the committed log) and is REFUSED for this record -- an
+adoption is not retroactive, the same rule the WGSL channel applied to
+its pre-adoption wall-clock read. No workgroup row (ADR-0355/0358),
+`:measured?` flag, `:shapes` value, flip cell or selection answer
+moves; `:arm`/`:unknown` stay provisional `:measured? false`; and this
+adoption touches no MSL/Apple question (ADR-0360's narrowing names the
+M1 Max, which no CUDA record measures).
+
+Named missing pieces before a rule-2-class CUDA sign claim can exist
+(each its own later slice): (i) harness-side rule-1 + rule-2
+publication for the CUDA channel (a parse of the instrument's sample
+lines in the `gpu_regime_classify.py` family) -- UNIMPLEMENTED; (ii) a
+fresh paired-timing session under this adoption publishing both
+sections -- UNMEASURED. Only then does HONEST LEFT (c) -- the
+`:warp-shuffle-reduce` vs `:subgroup-reduce` vs `:baseline` speed
+question -- have claim currency to consume; until then it is answered
+by NO record, as before. UNMEASURED, named so no reading upgrades:
+every CUDA sign/speed verdict; the clock/thermal regime structure of
+the xavier blocks (rule 1's question on this channel -- the committed
+run was one session with no regime control); cross-run stability;
+every workgroup row.
+
+State: ACCEPTED DESIGN ONLY (this amendment). IMPLEMENTED: nothing --
+no code moves in this slice. MEASURED: nothing -- no hardware ran;
+every number quoted here comes from committed records. Record:
+`docs/evidence/gpu/claim-protocol-cuda-channel-20261025.txt`.
