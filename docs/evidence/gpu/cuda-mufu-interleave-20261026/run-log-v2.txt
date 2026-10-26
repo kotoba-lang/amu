@@ -1,0 +1,118 @@
+HOST: xavier USER: root
+DATE-UTC: 2026-10-26T14:13:45Z  DATE-LOCAL: 2026-10-26T23:13:45+0900
+Linux xavier 5.10.120-tegra #1 SMP PREEMPT Tue Aug 1 12:32:50 PDT 2023 aarch64 aarch64 aarch64 GNU/Linux
+=== nvcc --version (verbatim)
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2022 NVIDIA Corporation
+Built on Sun_Oct_23_22:16:07_PDT_2022
+Cuda compilation tools, release 11.4, V11.4.315
+Build cuda_11.4.r11.4/compiler.31964100_0
+=== nvdisasm --version (verbatim)
+nvdisasm: NVIDIA (R) CUDA disassembler
+Copyright (c) 2005-2022 NVIDIA Corporation
+Built on Tue_Sep_13_22:14:23_PDT_2022
+Cuda compilation tools, release 11.4, V11.4.298
+Build cuda_11.4.r11.4/compiler.31809458_0
+=== sha256 of the received files (before any compile)
+86697f03179988bd5bde785a67e99e6483a4013f9070e5551f5fc7b0a5a1d678  ./gpu-mufu-interleave-microbench.cu
+ff8c6720cc4b136a9b76c39bf0966e048cf65facb4347973382927faa847c241  ./mufu_interleave_run.sh
+df4a5d9b8251cd91ce14b08ff33509c9029767a3504b37faa3bb3bb53b43dbef  ./mufu_interleave_verify.py
+=== compile the instrument (run binary + cubin)
+OK-build
+OK-cubin
+=== build diagnostics (verbatim)
+diag diag-build.txt 435 bytes
+gpu-mufu-interleave-microbench.cu(108): warning: variable "cf" was set but never used
+
+gpu-mufu-interleave-microbench.cu(109): warning: variable "cf" was set but never used
+
+gpu-mufu-interleave-microbench.cu(110): warning: variable "cf" was set but never used
+
+gpu-mufu-interleave-microbench.cu(111): warning: variable "cf" was set but never used
+
+gpu-mufu-interleave-microbench.cu(112): warning: variable "cf" was set but never used
+
+diag diag-cubin.txt 435 bytes
+gpu-mufu-interleave-microbench.cu(108): warning: variable "cf" was set but never used
+
+gpu-mufu-interleave-microbench.cu(109): warning: variable "cf" was set but never used
+
+gpu-mufu-interleave-microbench.cu(110): warning: variable "cf" was set but never used
+
+gpu-mufu-interleave-microbench.cu(111): warning: variable "cf" was set but never used
+
+gpu-mufu-interleave-microbench.cu(112): warning: variable "cf" was set but never used
+
+=== disassemble the cubin (nvdisasm -c)
+OK-sass 273 lines
+diag diag-nvdisasm.txt 0 bytes
+=== sha256 of the generated artifacts
+034d802ed283488a3080bde1e76afed2c287ef1de441e24f6f34b98693ed548c  microbench.sass
+3dbb9185938e87015d1275893fd73bcbe7642c9cec70f58e4f71a96408a6c476  gpu-mufu-interleave-microbench.cubin
+d446d58177c3b37d63b9fac4cff5904042cb656dd7beccc33a07d24bef159d87  gpu-mufu-interleave-microbench
+=== SASS verification (python3, body extraction per kernel)
+VERIFY functions found: 6
+VERIFY-FUNCTION lat_n16_fadd total_static=40
+  OPCODES BRA:2 CS2R:2 EXIT:1 FADD.FTZ:16 IADD3:2 IADD3.X:1 IMAD.WIDE.U32:1 ISETP.NE.AND:1 LDG.E.SYS:1 MOV:8 S2R:1 SHFL.IDX:2 STG.E.64.SYS:2
+  BODY total=20 OPCODES BRA:1 FADD.FTZ:16 IADD3:1 ISETP.NE.AND:1 SHFL.IDX:1
+  BODY-VERDICT MATCH FADD*:16 + overhead BRA:1 IADD3:1 ISETP.NE.AND:1 SHFL.IDX:1
+VERIFY-FUNCTION lat_n16_mix total_static=31
+  OPCODES BRA:2 CS2R:2 EXIT:1 IADD3:2 IMAD.MOV.U32:4 IMAD.WIDE.U32:1 IMAD.X:1 ISETP.NE.AND:1 LDG.E.SYS:1 MOV:3 MUFU.RSQ:8 S2R:1 SHFL.IDX:2 STG.E.64.SYS:2
+  BODY total=12 OPCODES BRA:1 IADD3:1 ISETP.NE.AND:1 MUFU.RSQ:8 SHFL.IDX:1
+  BODY-VERDICT DIFFERENT (named MUFU.RCP:8+MUFU.RSQ:8, extras {}, overhead_ok=True)
+VERIFY-FUNCTION lat_n16_rcp total_static=17
+  OPCODES BRA:1 CS2R:2 EXIT:1 IADD3:1 IADD3.X:1 IMAD.MOV.U32:3 IMAD.WIDE.U32:1 LDG.E.SYS:1 MOV:2 S2R:1 SHFL.IDX:1 STG.E.64.SYS:2
+  BODY total=1 OPCODES BRA:1
+  BODY-VERDICT DIFFERENT (named MUFU.RCP:16, extras {}, overhead_ok=False)
+VERIFY-FUNCTION lat_n16_rsq total_static=39
+  OPCODES BRA:2 CS2R:2 EXIT:1 IADD3:2 IMAD.MOV.U32:4 IMAD.WIDE.U32:1 IMAD.X:1 ISETP.NE.AND:1 LDG.E.SYS:1 MOV:3 MUFU.RSQ:16 S2R:1 SHFL.IDX:2 STG.E.64.SYS:2
+  BODY total=20 OPCODES BRA:1 IADD3:1 ISETP.NE.AND:1 MUFU.RSQ:16 SHFL.IDX:1
+  BODY-VERDICT MATCH MUFU.RSQ:16 + overhead BRA:1 IADD3:1 ISETP.NE.AND:1 SHFL.IDX:1
+VERIFY-FUNCTION lat_n1_rsq total_static=24
+  OPCODES BRA:2 CS2R:2 EXIT:1 IADD3:2 IMAD.MOV.U32:4 IMAD.WIDE.U32:1 IMAD.X:1 ISETP.NE.AND:1 LDG.E.SYS:1 MOV:3 MUFU.RSQ:1 S2R:1 SHFL.IDX:2 STG.E.64.SYS:2
+  BODY total=5 OPCODES BRA:1 IADD3:1 ISETP.NE.AND:1 MUFU.RSQ:1 SHFL.IDX:1
+  BODY-VERDICT MATCH MUFU.RSQ:1 + overhead BRA:1 IADD3:1 ISETP.NE.AND:1 SHFL.IDX:1
+VERIFY-FUNCTION lat_n8_rsq total_static=31
+  OPCODES BRA:2 CS2R:2 EXIT:1 IADD3:2 IMAD.MOV.U32:4 IMAD.WIDE.U32:1 IMAD.X:1 ISETP.NE.AND:1 LDG.E.SYS:1 MOV:3 MUFU.RSQ:8 S2R:1 SHFL.IDX:2 STG.E.64.SYS:2
+  BODY total=12 OPCODES BRA:1 IADD3:1 ISETP.NE.AND:1 MUFU.RSQ:8 SHFL.IDX:1
+  BODY-VERDICT MATCH MUFU.RSQ:8 + overhead BRA:1 IADD3:1 ISETP.NE.AND:1 SHFL.IDX:1
+=== run the microbench (3 launches x 6 arms)
+DEVICE name=Xavier clockRate_kHz=1377000 multiProcessorCount=8
+RESULT arm=lat_n16_rsq chain_n=16 units=256 samples=128 min=61560 p10=61560 median=61562 mean=61561.5 p90=61563 max=61563 cyc_per_iter_median=240.4766 cyc_per_iter_mean=240.4746 cyc_per_chainop_at_median=15.0298
+ANCHOR arm=lat_n16_rsq launch=0 x_tid0_bits=1065353216
+RESULT arm=lat_n8_rsq chain_n=8 units=256 samples=128 min=30847 p10=30847 median=30849 mean=30848.5 p90=30850 max=30850 cyc_per_iter_median=120.5039 cyc_per_iter_mean=120.5020 cyc_per_chainop_at_median=15.0630
+ANCHOR arm=lat_n8_rsq launch=0 x_tid0_bits=1065353216
+RESULT arm=lat_n1_rsq chain_n=1 units=256 samples=128 min=7296 p10=7296 median=7298 mean=7297.5 p90=7299 max=7299 cyc_per_iter_median=28.5078 cyc_per_iter_mean=28.5059 cyc_per_chainop_at_median=28.5078
+ANCHOR arm=lat_n1_rsq launch=0 x_tid0_bits=1065353216
+RESULT arm=lat_n16_mix chain_n=16 units=256 samples=128 min=30847 p10=30847 median=30849 mean=30848.5 p90=30850 max=30850 cyc_per_iter_median=120.5039 cyc_per_iter_mean=120.5020 cyc_per_chainop_at_median=7.5315
+ANCHOR arm=lat_n16_mix launch=0 x_tid0_bits=1065353216
+RESULT arm=lat_n16_rcp chain_n=16 units=256 samples=128 min=2 p10=2 median=2 mean=2.0 p90=2 max=2 cyc_per_iter_median=0.0078 cyc_per_iter_mean=0.0078 cyc_per_chainop_at_median=0.0005
+ANCHOR arm=lat_n16_rcp launch=0 x_tid0_bits=1073741824
+RESULT arm=lat_n16_fadd chain_n=16 units=256 samples=128 min=18300 p10=18300 median=18302 mean=18301.5 p90=18303 max=18303 cyc_per_iter_median=71.4922 cyc_per_iter_mean=71.4902 cyc_per_chainop_at_median=4.4683
+ANCHOR arm=lat_n16_fadd launch=0 x_tid0_bits=1166018560
+RESULT arm=lat_n16_rsq chain_n=16 units=256 samples=128 min=61560 p10=61560 median=61562 mean=61561.5 p90=61563 max=61563 cyc_per_iter_median=240.4766 cyc_per_iter_mean=240.4746 cyc_per_chainop_at_median=15.0298
+ANCHOR arm=lat_n16_rsq launch=1 x_tid0_bits=1065353216
+RESULT arm=lat_n8_rsq chain_n=8 units=256 samples=128 min=30847 p10=30847 median=30849 mean=30848.5 p90=30850 max=30850 cyc_per_iter_median=120.5039 cyc_per_iter_mean=120.5020 cyc_per_chainop_at_median=15.0630
+ANCHOR arm=lat_n8_rsq launch=1 x_tid0_bits=1065353216
+RESULT arm=lat_n1_rsq chain_n=1 units=256 samples=128 min=7296 p10=7296 median=7298 mean=7297.5 p90=7299 max=7299 cyc_per_iter_median=28.5078 cyc_per_iter_mean=28.5059 cyc_per_chainop_at_median=28.5078
+ANCHOR arm=lat_n1_rsq launch=1 x_tid0_bits=1065353216
+RESULT arm=lat_n16_mix chain_n=16 units=256 samples=128 min=30847 p10=30847 median=30849 mean=30848.5 p90=30850 max=30850 cyc_per_iter_median=120.5039 cyc_per_iter_mean=120.5020 cyc_per_chainop_at_median=7.5315
+ANCHOR arm=lat_n16_mix launch=1 x_tid0_bits=1065353216
+RESULT arm=lat_n16_rcp chain_n=16 units=256 samples=128 min=2 p10=2 median=2 mean=2.0 p90=2 max=2 cyc_per_iter_median=0.0078 cyc_per_iter_mean=0.0078 cyc_per_chainop_at_median=0.0005
+ANCHOR arm=lat_n16_rcp launch=1 x_tid0_bits=1073741824
+RESULT arm=lat_n16_fadd chain_n=16 units=256 samples=128 min=18300 p10=18300 median=18302 mean=18301.5 p90=18303 max=18303 cyc_per_iter_median=71.4922 cyc_per_iter_mean=71.4902 cyc_per_chainop_at_median=4.4683
+ANCHOR arm=lat_n16_fadd launch=1 x_tid0_bits=1166018560
+RESULT arm=lat_n16_rsq chain_n=16 units=256 samples=128 min=61560 p10=61560 median=61562 mean=61561.5 p90=61563 max=61563 cyc_per_iter_median=240.4766 cyc_per_iter_mean=240.4746 cyc_per_chainop_at_median=15.0298
+ANCHOR arm=lat_n16_rsq launch=2 x_tid0_bits=1065353216
+RESULT arm=lat_n8_rsq chain_n=8 units=256 samples=128 min=30847 p10=30847 median=30849 mean=30848.5 p90=30850 max=30850 cyc_per_iter_median=120.5039 cyc_per_iter_mean=120.5020 cyc_per_chainop_at_median=15.0630
+ANCHOR arm=lat_n8_rsq launch=2 x_tid0_bits=1065353216
+RESULT arm=lat_n1_rsq chain_n=1 units=256 samples=128 min=7296 p10=7296 median=7298 mean=7297.5 p90=7299 max=7299 cyc_per_iter_median=28.5078 cyc_per_iter_mean=28.5059 cyc_per_chainop_at_median=28.5078
+ANCHOR arm=lat_n1_rsq launch=2 x_tid0_bits=1065353216
+RESULT arm=lat_n16_mix chain_n=16 units=256 samples=128 min=30847 p10=30847 median=30849 mean=30848.5 p90=30850 max=30850 cyc_per_iter_median=120.5039 cyc_per_iter_mean=120.5020 cyc_per_chainop_at_median=7.5315
+ANCHOR arm=lat_n16_mix launch=2 x_tid0_bits=1065353216
+RESULT arm=lat_n16_rcp chain_n=16 units=256 samples=128 min=2 p10=2 median=2 mean=2.0 p90=2 max=2 cyc_per_iter_median=0.0078 cyc_per_iter_mean=0.0078 cyc_per_chainop_at_median=0.0005
+ANCHOR arm=lat_n16_rcp launch=2 x_tid0_bits=1073741824
+RESULT arm=lat_n16_fadd chain_n=16 units=256 samples=128 min=18300 p10=18300 median=18302 mean=18301.5 p90=18303 max=18303 cyc_per_iter_median=71.4922 cyc_per_iter_mean=71.4902 cyc_per_chainop_at_median=4.4683
+ANCHOR arm=lat_n16_fadd launch=2 x_tid0_bits=1166018560
+MICROBENCH run complete
+=== microbench run complete

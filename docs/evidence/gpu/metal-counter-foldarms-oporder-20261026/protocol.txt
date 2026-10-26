@@ -1,0 +1,174 @@
+JUN-58 / JUN-55 -- the fold-arms counters OP-ORDER row at the anchor
+cell: RUN PROTOCOL + PREDICTION DECLARATION (written BEFORE the first
+hardware run of this row; the runs fill run-1.txt .. run-6.txt beside
+this file)
+
+ROW: the anchor record's own named UNMEASURED item, verbatim --
+"op-order dependence on this channel"
+(docs/evidence/gpu/metal-counter-foldarms-20261025/record.txt line
+154; carried unchanged in every row's UNMEASURED list since: every
+row fixed op_order=sum,max,min "the anchor row's decision; op-order
+dependence stays UNMEASURED on this channel"). The anchor list item
+("every other W ... and shape 2 ... (R at those grids is unmeasured
+too)") is consumed at its own cells and this row does NOT take one of
+them -- this is the OTHER standing item of the anchor record's
+UNMEASURED list, taken at the anchor cell where the order was fixed.
+
+CELL: n = 1000003, workgroup = 256 -- the ANCHOR CELL exactly (the
+launch shape 3907 x 256), so every reading this row produces is
+same-instrument same-cell comparable with the anchor row's and the
+cross-day row's day-2 readings.
+
+THE ONE CHANGE (named before the runs): the op-order positional of
+the committed instrument is passed as "min,max,sum" -- the EXACT
+REVERSE of the anchor protocol's fixed sum,max,min. Every other
+element of the protocol is the anchor row's, unchanged: same cell, 6
+fresh processes, one ADR-0358 run each, same instrument, same arm
+construction, same committed analysis route. Concretely, the block
+order within every run moves sum FIRST -> LAST, min LAST -> FIRST,
+max stays the middle block. The instrument's argv contract admits any
+comma-separated permutation of sum,max,min (scripts/
+gpu-subgroup-reduce-metal-counters.m: a non-permutation is REFUSED,
+not clamped), and the run header self-declares op_order=min,max,sum
+so every record identifies its order.
+
+SCOPE OF THE ITEM (pre-registered): this row answers op-order
+dependence AT THE ANCHOR CELL at this protocol's letter. The item
+"op-order dependence on this channel" at OTHER cells stays UNMEASURED
+after this row; the record will name the item as measured AT THE
+ANCHOR CELL only.
+
+DAY FACTS: this row's runs execute 2026-10-26 UTC (the run window's
+UTC stamps ride in run-window.txt, captured verbatim around the runs)
+-- the SAME UTC day as the cross-day row's day-2 runs (2026-10-26
+UTC), the W=32/64/128/512/1024 rows and the shape2-W=256/32/64/128/
+512/1024 rows. No cross-day claim of any kind is made or possible
+from this row. (If the captured window says otherwise, the record
+names whatever the window says and this protocol's day sentence is
+corrected in the record, not in this pre-registered file.)
+
+Runs: 6 fresh processes (run-1.txt .. run-6.txt), one ADR-0358 run
+each -- the anchor row's declared process count and protocol unchanged
+(6 fresh processes, 20 interleaved AB/BA pairs per operator per run,
+2 warmup submits per arm discarded, verified untimed read-back).
+
+Instrument: scripts/gpu-subgroup-reduce-metal-counters.m compiled
+fresh this row (unchanged in the tree since the anchor row -- last
+commit touching it is the harness row b3717baf3, before the anchor
+cf631722d; named so the comparison is instrument-constant).
+
+Arms: the fold arms baseline-<op>.metallib vs subgroup-<op>.metallib
+at W=256, built THIS row from the COMMITTED emitters via
+scripts/gpu-subgroup-reduce-metal-measure.cljk --width 256 into a
+FRESH build directory (neither the anchor row's 2026-10-25 build dir
+nor the shape2-W=256 row's is reused -- this row re-derives the
+artifacts and compares, it does not copy them).
+
+REALIZATION CONTROL (checked at build time, recorded in build-shas.txt):
+the W-INDEPENDENT artifacts -- probe.metallib and the counters binary
+-- are sha256-compared against the anchor row's 2026-10-25 build and
+every later row's builds (W=32/64/128/512/1024 and
+shape2-W=256/32/64/128/512/1024). ADDITIONAL FACT CHECK (checked, not
+assumed): this row's W EQUALS the anchor's W = 256 and the emitted
+MSL sees only the width (n and op-order are run-time argv of the
+instrument), so ALL SIX fold-arm metallibs are expected byte-identical
+to the anchor row's 2026-10-25 build AND the shape2-W=256 row's
+2026-10-26 build (the W=256 subgroup shas already reproduced across
+those two builds). If they are, the fold-arm artifacts are named
+op-order-INVARIANT at W = 256 as well (the arms' code does not see
+the order -- the order is dispatch sequencing in the instrument); if
+any differs, the fact is recorded as such and the row names the
+artifact axis moved. All six arm shas are recorded so a later
+cross-day replication of THIS cell can hold its realization fixed.
+
+Analysis: ONLY the committed route --
+scripts/gpu_regime_classify.py --counters-log run-1..6.txt
+(pre-committed in the counters-route row, before any of this data
+exists; its parse does not pin the header's op-order -- the order is
+this row's declared axis, not a parse gate), run twice with the two
+outputs diffed for BYTE IDENTITY, the publication saved verbatim as
+publication.txt. NO analysis code is written this row.
+
+CROSS-CHANNEL NAMED CONTEXT (rule 3 -- context only, magnitudes never
+merged): the MSL command-buffer channel's own historical op-order
+cell and re-session (2026-10-23/24) found order-correlated level
+structure ("identity refuted; :sum -- the operator that ran LAST",
+the dispatch-ramping reading). Those readings belong to another
+instrument and another channel; this row measures its own channel and
+NEVER merges their magnitudes or adopts their mechanism. The
+counters-channel state-shift class's cause is UNMEASURED and this row
+does not attribute it.
+
+PREDICTIONS (registered before the first run; both branches of the
+named question included):
+
+  P0 VALIDITY + REALIZATION: all 6 processes exit 0 with 120/120
+     sample lines resolved and 6/6 verify lines ok=1 each; the run
+     headers declare op_order=min,max,sum in every log; the
+     W-independent artifacts (probe.metallib, counters) are
+     sha256-identical to the anchor's and every prior cell's. If the
+     instrument moved (P0c), the row is named instrument-confounded
+     and no sign verdict is claimed from it.
+
+  P1 THE NAMED QUESTION -- op-order dependence of the rule-2 sign at
+     the anchor cell: what is the fold-arm sign at (n = 1000003,
+     W = 256) per operator and rolled up when the blocks run
+     min,max,sum instead of sum,max,min? BOTH BRANCHES REGISTERED:
+       P1a SIGN OP-ORDER-INVARIANT: the anchor cell's defining sign
+           carries to the reversed order -- every operator is
+           regime-invariant SLOWER at every run of this cell (cell
+           roll-up 18/18 slower, the anchor's rule-2 verdict class
+           reproduced under reversed order) -- the sign is
+           op-order-INDEPENDENT at this cell at this protocol's
+           letter.
+       P1b SIGN OP-ORDER-DEPENDENT: any operator is NOT
+           regime-invariant slower (any run straddling, any
+           regime-scoped verdict, or any faster verdict) -- the
+           anchor cell's sign does not survive the reversed order;
+           named, not explained. If a side-flip appears (any
+           operator's defining sign opposing the anchor's
+           device-level sign, slower), it is named as a THIRD
+           exercising record of the reopen-trigger class (the count
+           would rise 2 -> 3, from the W=32 row's sum side-flip at
+           n = 1000003 and at n = 2^20), unadjudicated; this row
+           registers no reopen claim either way.
+     Whichever branch fires, the per-operator signs, the regime
+     verdict classes and the cell roll-up are published at the
+     route's letter whatever they are (named, not fitted to either
+     branch).
+
+  P2 RULE 1 (named whatever it is) + the position sub-question: the
+     state-shift level structure at this session. Pre-registered
+     sub-question, both branches (the anchor cell found sum ONE level
+     while max/min TWO, with sum running FIRST there):
+       P2a the level split tracks the OPERATOR: sum stays ONE level
+           even running LAST (and max/min keep their multi-level
+           structure).
+       P2b the level split tracks the BLOCK POSITION: sum picks up
+           multi-level structure running LAST (and/or min loses it
+           running FIRST) -- named, not explained; the state-shift
+           cause stays UNMEASURED either way.
+     The route's full rule-1 output is published at its letter
+     whatever it is. R at this grid is NOT decomposed and NOT
+     compared with the anchor's residual figures (unchanged; those
+     belong to 3907 x 256, which is this cell's launch shape -- but
+     no R decomposition is attempted here either).
+
+  P3 MAGNITUDE: per-operator ratio bands published as the route's raw
+     bands at this cell; the band's position relative to the anchor
+     cell's bands (sum 1.216..1.221, max 1.206..1.219, min
+     1.204..1.219) and the cross-day row's day-2 bands (sum
+     1.214..1.221, max 1.197..1.220, min 1.198..1.222) is a raw-band
+     observation at ONE instrument at the SAME cell -- no
+     cross-instrument magnitude claim of any kind (rule 3).
+
+CONSEQUENCE (rule 4, pre-registered): NOTHING MOVES from this row --
+no :measured? flag, no :shapes value, no selection answer, no
+workgroup row (this channel can never move one), no WGSL cell flip,
+no MSL command-buffer cell flip, no cross-instrument magnitude claim.
+The sign stays CHANNEL-SCOPED and M1-Max scoped. The named item moves
+in RECORD STATE only ("op-order dependence on this channel" ->
+"op-order dependence MEASURED AT THE ANCHOR CELL at this protocol's
+letter" -- sign invariant under the reversed order per P1a, or sign
+order-dependent per P1b, named either way; other cells and the
+state-shift cause stay UNMEASURED).

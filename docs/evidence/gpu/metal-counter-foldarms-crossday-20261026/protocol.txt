@@ -1,0 +1,131 @@
+JUN-58 / JUN-55 -- the fold-arms counters CROSS-DAY REPLICATION row:
+RUN PROTOCOL + PREDICTION DECLARATION (written BEFORE the first
+hardware run of this row; the runs fill run-1.txt .. run-6.txt beside
+this file)
+
+ROW: the anchor record's own named UNMEASURED item, verbatim --
+"cross-day replication of this cell" (metal-counter-foldarms-20261025/
+record.txt, UNMEASURED list) -- and the second-leg evaluation's named
+future-revisit trigger class ("a counters-channel record carrying an
+OPPOSING device-level sign (another cell/W or a cross-day replication
+contradicting the anchor cell -- cross-day replication UNMEASURED)").
+This row runs exactly that replication, at the anchor cell, on the
+first UTC day after the anchor record.
+
+DAY FACTS (checked before declaring): the anchor record's run logs were
+written 2026-10-25 (evidence dir mtimes 2026-10-25 22:55-23:03 JST =
+2026-10-25 ~13:55-14:03 UTC); this row's runs execute 2026-10-26 UTC
+(the run window's UTC stamps ride in run-window.txt, captured verbatim
+around the runs). Different UTC days: the replication is CROSS-DAY at
+its letter.
+
+Cell (unchanged, ONE cell = one counters session, the route's own unit):
+  n = 1000003, workgroup = 256 -- the anchor cell exactly.
+
+Runs: 6 fresh processes (run-1.txt .. run-6.txt), one ADR-0358 run
+each -- the anchor row's declared process count and protocol unchanged
+(6 fresh processes, 20 interleaved AB/BA pairs per operator per run, 2
+warmup submits per arm discarded, verified untimed read-back).
+
+Instrument: scripts/gpu-subgroup-reduce-metal-counters.m compiled fresh
+this row (unchanged in the tree since the anchor row -- last commit
+touching it is the harness row b3717baf3, before the anchor cf631722d;
+named so the comparison is instrument-constant). Arms: the fold arms
+baseline-<op>.metallib vs subgroup-<op>.metallib at W=256, built THIS
+row from the COMMITTED emitters via
+scripts/gpu-subgroup-reduce-metal-measure.cljk --width 256 into a FRESH
+build directory (the anchor row's build directory is not reused).
+
+REALIZATION CONTROL (checked at build time, recorded in build-shas.txt):
+the rebuilt metallibs are sha256-compared against the anchor row's
+2026-10-25 build. Identical shas = the realization is held fixed across
+the two days and any behavioral difference is run/day level. If any sha
+differs, the realization MOVED -- the cross-day comparison is named
+realization-confounded and no cross-day verdict is claimed from it
+(branch registered as P0b).
+
+op-order: the instrument default sum,max,min, FIXED (the anchor row's
+decision, unchanged; op-order dependence stays UNMEASURED on this
+channel).
+
+Analysis: ONLY the committed route, scripts/gpu_regime_classify.py
+--counters-log run-1.txt ... run-6.txt (pre-committed in the
+counters-route row, before any of this data exists), run twice with the
+two outputs diffed for byte identity; publication saved verbatim as
+publication.txt. NO analysis code is written this row.
+
+PREDICTIONS (registered before the first run; both branches of the
+named question registered):
+
+P0 (validity):
+  P0a -- all 6 processes exit 0, stderr 0 bytes, 120/120 sample lines
+  resolved each (counter_ns=ERR count 0), 6/6 verify lines ok=1 per run
+  (36 total); the committed route parses the session with ZERO named
+  exclusions; the rebuilt metallibs are sha256-IDENTICAL to the anchor
+  row's build (realization fixed across days).
+  P0b -- if any metallib sha differs: named, and the cross-day question
+  is NOT adjudicated this row (realization-confounded).
+
+P1 (structure): the session headers agree with the anchor cell
+(device=Apple M1 Max, n=1000003, workgroup=256, pairs=20, warmup=2,
+op_order=sum,max,min, simdgroup_size=32); a mixed-cell session would
+refuse (the route's own fail-closed rule).
+
+P2 (THE NAMED QUESTION -- does the cross-day replication REPRODUCE or
+CONTRADICT the anchor cell's rule-2 sign?; both branches registered):
+  P2a REPRODUCE -- rule 2's cell roll-up is "regime-invariant, slower"
+  with all 18 per-run paired-median ratios (variant/baseline, never
+  re-oriented) above 1.0: the anchor's device-level sign holds on day
+  2; "cross-day replication of this cell" closes as REPRODUCED at one
+  additional day; the reopen condition is NOT triggered.
+  P2b CONTRADICT (the second-leg evaluation's registered adversarial
+  branch) -- a regime-invariant FASTER verdict at the cell, or the cell
+  roll-up on the faster side: the record carries an OPPOSING
+  device-level sign, the reopen condition's named trigger FIRES, the
+  narrowing's route-scope question opens adversarially and a revisit
+  becomes owed (still rule 4: nothing moves in this row either way).
+  P2c NEITHER -- any intermediate shape (non-invariant roll-up,
+  regime-scoped verdict, or "slower" with some per-run ratios <= 1.0):
+  named at its own letter, the replication question answers PARTIAL,
+  NO upgrade in either direction; the reopen trigger's letter is an
+  OPPOSING SIGN and a mixed record does not carry one (named now so no
+  later reading upgrades it).
+
+P3 (magnitude, same instrument/channel/cell across days): the 18-ratio
+band is compared against the anchor band (1.204..1.221) as a
+same-instrument cross-day comparison only. Landing in/near the band =
+magnitude-stable; a shifted band is named as drift and is NOT by itself
+a sign flip (the sign question is P2 alone). No cross-instrument
+magnitude is merged (rule 3).
+
+P4 (rule 1 cross-day): the regime-level structure of the baseline
+per-run medians (anchor: sum ONE level; max/min TWO levels, run 5 alone
+fast) -- reproduced or different, named either way; no mechanism.
+
+P5 (state shifts / spikes): the mid-run plateau shifts and the
+one-bracket spike class may or may not appear on day 2; named, never
+explained (cause stays the calibration row's hypothesis; threshold
+stays UNMEASURED).
+
+P6 (falsifier stance / scope): NOTHING in this record moves a
+:measured? flag, a :shapes value, a workgroup row or a selection answer
+(rule 4); the sign stays CHANNEL-SCOPED -- it never flips the MSL
+command-buffer cell, never flips a WGSL cell, never answers a workgroup
+row; the record is counters-channel and M1-Max scoped; magnitudes never
+merge across instruments.
+
+R HANDLING (inherited at its letter, unchanged): raw bracket deltas are
+published; the calibration row's MEASURED residual R (~7.8-8.0 us warm
+/ ~20.6-20.8 us cold at this launch shape) is named in the metric text
+and NEVER subtracted (no correction is designed; the compression
+argument is design reasoning, conservative against a win claim).
+
+Gates declared in advance (regression pins; this row's diff is
+evidence + ADR prose only, no .cljk namespace and no classify code):
+gpu_regime_classify.py --self-test at the committed pin 2649/0; the
+scoped GPU gate (8 GPU-owned namespaces, scratch runner
+gpu_scoped_gate.cljk, never committed) run twice; FULL run-tests.cljk
+run live and reported exactly as it answers (documented RED AT BASE
+'Could not find namespace: kotoba.form', ADR-0362, outside this diff);
+find docs -name '*.sh' -> 0 (the no-POSIX-sh evidence rule);
+BLOCKER-FIRST checked at tick start and re-checked before any push.

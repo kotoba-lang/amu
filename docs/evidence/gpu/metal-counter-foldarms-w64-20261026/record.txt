@@ -1,0 +1,186 @@
+JUN-58 / JUN-55 -- the fold-arms counters W-GRID row: the second
+off-anchor cell (W = 64) -- the W=32 side-flip does NOT continue: at
+W = 64 the sign is back on the anchor's side at every operator
+(regime-invariant, slower, 18/18), so the W-shape of the sign is NOT a
+one-flip shape and stays OPEN
+
+Row taken: the anchor record's named UNMEASURED item, verbatim --
+"every other W (32/64/128/512/1024) and shape 2 (n = 2^20) on this
+channel (R at those grids is unmeasured too)"
+(docs/evidence/gpu/metal-counter-foldarms-20261025/record.txt; carried
+unchanged through the cross-day and W=32 rows' records). ONE CELL AT A
+TIME at the route's own unit: this row takes the list's NEXT width
+after the W=32 row, (n = 1000003, W = 64). ONE measurement slice.
+HARDWARE RAN.
+
+record_written=2026-10-27 (JST); session run 2026-10-26 UTC (run
+window 2026-10-26T20:19:04Z..20:19:05Z, verbatim in run-window.txt).
+NAMED, NOT HIDDEN: this row's UTC day is the SAME UTC day as the
+cross-day row's day-2 runs AND the W=32 row (2026-10-26) -- this row
+makes NO day claim of any kind (it is a W row, not a day row) and its
+record is scoped to the cell.
+
+WHAT RAN (the declared protocol, docs/evidence/gpu/
+metal-counter-foldarms-w64-20261026/protocol.txt -- written BEFORE the
+first run of this row; predictions P0..P3 registered there, both
+branches of the named question included):
+
+  cell: n = 1000003, workgroup = 64 (ONE cell = one counters session,
+  the route's own unit) -- the anchor cell's shape at the list's next
+  unmeasured width.
+  runs: 6 fresh processes (run-1.txt .. run-6.txt), one ADR-0358 run
+  each -- the anchor row's process count and protocol unchanged (6
+  fresh processes, 20 interleaved AB/BA pairs per operator per run, 2
+  warmup submits per arm discarded, verified untimed read-back).
+  instrument: scripts/gpu-subgroup-reduce-metal-counters.m compiled
+  fresh this row (unchanged in the tree since the anchor row -- last
+  commit touching it is the harness row b3717baf3, before the anchor
+  cf631722d; named so the comparison is instrument-constant).
+  arms: baseline-<op>.metallib vs subgroup-<op>.metallib at W=64,
+  built THIS row from the COMMITTED emitters via
+  scripts/gpu-subgroup-reduce-metal-measure.cljk --width 64 into a
+  FRESH build directory (the build/run scripts and all metallibs live
+  in Hermes scratch and are never staged; the build log carries every
+  sha256).
+  op-order: the instrument default sum,max,min, FIXED across all 6
+  runs (the anchor row's decision; op-order dependence stays
+  UNMEASURED on this channel).
+  analysis: ONLY the committed route --
+  scripts/gpu_regime_classify.py --counters-log run-1..6.txt
+  (pre-committed in the counters-route row, before any of this data
+  exists), run twice with the two outputs diffed for BYTE IDENTITY
+  (diff exit 0), the publication saved verbatim as publication.txt
+  (72 lines, sha256 e2abceb1..). NO analysis code was written this
+  row.
+
+VERIFIED (real runs, P0 HOLD at its letter):
+  1. All 6 processes exit 0, stderr 0 bytes, 120/120 sample lines
+     resolved each (counter_ns=ERR count 0 across all 720 samples),
+     6/6 verify lines ok=1 per run (36 total, 0 ok=0) -- the
+     correctness precondition re-verified inside every measurement.
+  2. Run-log headers (every run, checked programmatically 6/6):
+     device=Apple M1 Max, channel=counters (GPUTimestamp counter-sample
+     delta, GPU ns, AtStageBoundary route), sampling_points dispatch=0
+     stage=1 draw=0 tile=0 blit=0, simdgroup_size=32, n=1000003,
+     workgroup=64, pairs=20, warmup=2, op_order=sum,max,min; the
+     header precedes the first sample line in every log.
+  3. The committed route parses the session with ZERO named exclusions
+     (every (run, operator) block usable at its letter -- the
+     publication renders all 18 per-run rows and all levels).
+  4. REALIZATION CONTROL (P0a HOLD, build-shas.txt): the W-INDEPENDENT
+     artifacts are sha256-IDENTICAL to the anchor row's 2026-10-25
+     build AND the W=32 row's build -- probe.metallib 80dbf4fde263..
+     and the counters binary 4cb76bdcc974.. -- so the instrument is
+     constant across all three cells (anchor, W=32, W=64). NAMED
+     ARTIFACT FACT, re-checked here and not assumed: the W=32 row's
+     "the baseline arm's artifact is W-invariant on this emitter" HOLDS
+     at W=64 too -- the three BASELINE metallibs are byte-identical
+     across the anchor's W=256 builds, the W=32 build and this W=64
+     build (2e2f3654.. / 1169a1a8.. / 2cd19335..) -- while the three
+     SUBGROUP metallibs W-move as expected (8514b29d.. / 4ab48d31.. /
+     3c5a8c58..). All six shas recorded so a later cross-day
+     replication of THIS cell can hold its realization fixed.
+
+FINDING (publication.txt is the publication; rules 1+2 at their
+letter over this cell's own session):
+
+  THE NAMED QUESTION IS ANSWERED (P1b, its second clause): the W=32
+  side-flip does NOT continue. Cell roll-up at (n=1000003, W=64):
+  REGIME-INVARIANT, SLOWER (18 of 18 per-run paired-median ratios
+  above 1.0) -- the anchor cell's exact verdict class, and NOT the
+  W=32 cell's regime-scoped one. Per operator (rule 2,
+  variant_ns/baseline_ns, NEVER re-oriented):
+    sum: regime-invariant, SLOWER (6/6 above 1.0, ratios 1.214..1.222;
+         every observed regime one-sided). op=sum is BACK ON THE
+         ANCHOR'S SIDE at W=64: against W=32's regime-invariant
+         FASTER (0.915..0.930) and against the anchor's W=256
+         regime-invariant SLOWER on both days (1.204..1.221 /
+         1.197..1.222).
+    max: regime-invariant, SLOWER (6/6, 1.199..1.218; every observed
+         regime one-sided).
+    min: regime-invariant, SLOWER (6/6, 1.198..1.217; every observed
+         regime one-sided).
+  The measured W-shape of the sign is now THREE cells deep and is NOT
+  a one-flip shape: W=32 (regime-scoped roll-up, sum faster) differs
+  from BOTH W=64 (regime-invariant slower 18/18) and W=256
+  (regime-invariant slower 18/18, two days). W=64 and W=256 agree in
+  verdict class AND their ratio bands overlap (W=64 1.198..1.222 vs
+  the anchor's 1.197..1.222 union across days) -- named as the route's
+  raw bands at this instrument's letter, no cross-instrument claim and
+  no explanation (WHY W=32 alone sits on the other side stays OPEN).
+
+  Rule 1 at this cell (P2, named whatever it is): max THREE levels
+  (29459.0..29646.0 / 38437.5 / 91771.0..91958.5), min THREE
+  (29500.0..29666.0 / 38187.5 / 90916.5..91875.0), sum ONE
+  (91604.5..92271.0). The raw bracket band at this grid (29.5k..92.3k
+  counter_ns per-run medians) is published as the route's raw band: R
+  at this grid is NOT decomposed and NOT compared with the anchor's
+  residual figures (the anchor's ~7.8-8.0us warm / 20.6-20.8us cold
+  belong to the 3907 x 256 launch shape; this cell's shape is
+  different). NAMED OBSERVATION: sum sits at ONE level in all four
+  sessions of this channel so far (anchor day 1, anchor day 2, W=32,
+  W=64) while max/min shift level structure between sessions
+  (2/2, 4/4, 3/4, 3/3) -- recorded as an observation, not explained.
+
+CONSEQUENCE: NOTHING MOVES (rule 4) -- no :measured? flag, no :shapes
+value, no selection answer, no workgroup row (this channel can never
+move one), no WGSL cell flip, no MSL command-buffer cell flip, no
+cross-instrument magnitude claim. The sign stays CHANNEL-SCOPED and
+M1-Max scoped. The named item moves in RECORD STATE only ("every
+other W ... on this channel" UNMEASURED -> W=64 MEASURED at this
+protocol's letter: regime-invariant, slower, 18/18; sum back on the
+anchor side; W-shape not a one-flip shape). The second-leg
+evaluation's reopen trigger class ("a counters-channel record carrying
+an OPPOSING device-level sign at any cell/W/day") is NOT exercised by
+this record (this cell's sign matches the anchor's); W=32's sum
+side-flip remains the single exercising observation and stays
+unadjudicated (this row registers no reopen claim).
+
+UNMEASURED, named so no reading upgrades: W = 128/512/1024 on this
+channel; shape 2 (n = 2^20) at every W; R at every grid (the W=64 raw
+band is not an R decomposition); the W-shape's cause (WHY W=32 alone
+flips side -- the baseline arm's W-invariant artifact and the
+instrument-constant control are facts, not explanations); the
+state-shift cause, threshold and prevalence; day 3+ cross-day
+replications (still 2026-10-26 UTC); op-order dependence on this
+channel; anything off M1 Max; the WGSL route's kernel time; every
+workgroup-row question (:arm/:unknown stay provisional :measured?
+false -- accelerator-targets defaults remain design assumptions, not
+evidence; no :measured? flag, :shapes value, selection answer or
+workgroup row moves this tick).
+
+Gates (real runs, this tick):
+- gpu_regime_classify.py --self-test: TOTAL 2649 assertions passed /
+  0 failed (committed pin 2649/0; no classify code touched --
+  regression pin).
+- Scoped GPU gate (8 GPU-owned namespaces, scratch runner
+  gpu_scoped_gate.cljk in Hermes scratch, never committed): GREEN on
+  run 1 AND run 2 -- 123 tests / 12162 assertions / 0 failures /
+  0 errors (glslang 16.6.0 real-spawn; regression pin at the current
+  committed 123/12162; this diff touches NO .cljk namespace; logs
+  gate-run1.txt / gate-run2.txt).
+- FULL run-tests.cljk RUN LIVE THIS TICK: exit 1, RED AT BASE 'Could
+  not find namespace: kotoba.form' at namespace load (ADR-0362),
+  OUTSIDE this diff (log full-run-tests.txt) -- NO green full suite
+  claimed.
+- find docs -name '*.sh' -> 0 files (the no-POSIX-sh evidence rule;
+  the build/run scripts live in Hermes scratch and are never staged).
+
+BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head at tick
+start and re-checked before this push (open heads at check time:
+bot/amu-gpu-chain-20261026-2 / codex/* / claude/* / kami-native-*);
+chain PR #1612 OPEN and MERGEABLE, the ONE chain PR.
+
+NAMED NOT HIDDEN: the same-UTC-day fact with the cross-day and W=32
+rows (this row makes no day claim); the baseline arm's W-invariant
+metallib fact re-checked at W=64; the W=64 ratio band's overlap with
+the anchor's band is a raw-band observation at one instrument, not a
+stability claim; the run window is one second of wall clock (the
+instrument's dispatches are tiny; wall time is no metric); untracked
+deps.edn (not created by this bot) untouched; kbb '2 dep(s) not
+:local/root' warning (identical everywhere).
+
+Evidence: docs/evidence/gpu/metal-counter-foldarms-w64-20261026/
+(protocol.txt, build-shas.txt, run-window.txt, run-1..6.txt,
+publication.txt, gate-run1.txt, gate-run2.txt, full-run-tests.txt,
+record.txt) + the ADR-0360 W-grid amendment.

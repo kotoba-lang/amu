@@ -1,0 +1,92 @@
+=== P0 VALIDITY
+    v9 committed run-log parse vs v9 CONSUMED pooled values (4dp):
+      ALL 16 MATCH
+    received-file shas in this run's log: cu b98fb39b90ef37a5aac676bbf9af16759213fe6ac422400973f765ad98324079 == local
+                                     verify a917a73760cd4456f4d47a495ab5f5164d81c26e73b630f8c83ea7d77be98789 == local
+    generated microbench.sass sha this run: 9b27b9fa8d4907e356aeed02211d1e0af799436002c2a2ef9eb99747d418bf60
+    v9's generated artifact sha (target):   9b27b9fa8d4907e356aeed02211d1e0af799436002c2a2ef9eb99747d418bf60
+    realization byte-identical to v9: YES
+    P0: HOLD -- this run adjudicates P4/P5
+
+=== anchors (no-fold witnesses; the correct repeat-run check is EQUALITY with v9's anchors)
+    this run: 16 ANCHOR lines; v9 run: 16 ANCHOR lines
+    anchor lines identical to v9's committed run-log: YES (16/16)
+    distinct xbits observed: [1065353216, 1132527616, 1140883456, 1145077760, 1149255680, 1151352832, 1153449984, 1155547136, 1157636096] (M arms 1065353216; F arms carry per-arm accumulated no-fold witnesses)
+
+=== V(w) per-iteration deltas, per launch (med_per_iter, cyc/iter), THIS RUN
+arm   launch0    launch1    launch2    pooled(med of 3)  within-launch min..max
+M1   10.2070    10.1523    10.1289    10.1523         10.1289..10.2070
+M2   22.0586    21.2109    21.1367    21.2109         21.1367..22.0586
+M3   46.2031    46.2148    46.1484    46.2031         46.1484..46.2148
+M4   61.7500    61.1562    61.1250    61.1562         61.1250..61.7500
+M5   77.0273    76.1328    76.1523    76.1523         76.1328..77.0273
+M6   81.3672    81.2266    81.1289    81.2266         81.1289..81.3672
+M7   96.3047    96.2148    96.1523    96.2148         96.1523..96.3047
+M8   111.2734   111.1445   111.2031   111.2031        111.1445..111.2734
+F1   10.8984    10.2578    10.1523    10.2578         10.1523..10.8984
+F2   10.1914    10.1914    10.1367    10.1914         10.1367..10.1914
+F3   14.1484    14.2148    14.2891    14.2148         14.1484..14.2891
+F4   18.2109    18.1328    18.2031    18.2031         18.1328..18.2109
+F5   22.1484    22.2109    22.1484    22.1484         22.1484..22.2109
+F6   26.3047    26.1445    26.1406    26.1445         26.1406..26.3047
+F7   30.1992    30.1289    30.1367    30.1367         30.1289..30.1992
+F8   34.2031    34.1289    34.1445    34.1445         34.1289..34.2031
+
+=== P4: BETWEEN-RUN DELTAS, byte-identical realization (d = v9r pooled - v9 pooled)
+    M1   v9r    10.1523  v9    10.1953  d   -0.0430  within TOL
+    M2   v9r    21.2109  v9    23.4531  d   -2.2422  ~2.3 CLASS
+    M3   v9r    46.2031  v9    48.3945  d   -2.1914  ~2.3 CLASS
+    M4   v9r    61.1562  v9    61.1406  d   +0.0157  within TOL
+    M5   v9r    76.1523  v9    78.3594  d   -2.2071  ~2.3 CLASS
+    M6   v9r    81.2266  v9    81.1445  d   +0.0821  within TOL
+    M7   v9r    96.2148  v9    98.4414  d   -2.2266  ~2.3 CLASS
+    M8   v9r   111.2031  v9   111.1445  d   +0.0586  within TOL
+    F1   v9r    10.2578  v9    10.1484  d   +0.1094  within TOL
+    F2   v9r    10.1914  v9    10.3555  d   -0.1641  within TOL
+    F3   v9r    14.2148  v9    14.1289  d   +0.0859  within TOL
+    F4   v9r    18.2031  v9    18.1641  d   +0.0390  within TOL
+    F5   v9r    22.1484  v9    24.3477  d   -2.1993  ~2.3 CLASS
+    F6   v9r    26.1445  v9    26.2031  d   -0.0586  within TOL
+    F7   v9r    30.1367  v9    30.5391  d   -0.4024  within TOL
+    F8   v9r    34.1445  v9    34.1797  d   -0.0352  within TOL
+    classification: within 11/16, ~2.3 class 5/16, other 0/16
+    class arms: M2 -2.2422; M3 -2.1914; M5 -2.2071; M7 -2.2266; F5 -2.1993
+    P4a (predicted): HOLD -- the shift mode MOVES between byte-identical runs; it is DYNAMIC (run/launch level); a static-realization-only reading is EXCLUDED
+    P4b: FAIL
+
+=== P5: WITHIN-RUN per-launch level shifts (launch value minus the arm's pooled median, THIS RUN)
+    P5: FAIL (0 per-launch shifts in the ~2.3 class)
+
+=== P2: NON-AFFINITY REPRODUCTION (this run)
+    M (k=1..5 subset): +13.9336  -10.0391  +0.0430  -> NON-AFFINE
+    M (k=1..8 full):   +13.9336  -10.0391  +0.0430  -9.9219  +9.9141  -0.0000  -> NON-AFFINE
+    F (k=1..5 subset): +4.0898  -0.0352  -0.0430  -> NON-AFFINE
+    F (k=1..8 full):   +4.0898  -0.0352  -0.0430  +0.0508  -0.0039  +0.0156  -> NON-AFFINE
+    launch-matched sensitivity (nominal pairing; NOT a prediction):
+      launch0: M -> NON-AFFINE (k=1..5) / NON-AFFINE (k=1..8)
+      launch0: F -> NON-AFFINE (k=1..5) / NON-AFFINE (k=1..8)
+      launch1: M -> NON-AFFINE (k=1..5) / NON-AFFINE (k=1..8)
+      launch1: F -> NON-AFFINE (k=1..5) / NON-AFFINE (k=1..8)
+      launch2: M -> NON-AFFINE (k=1..5) / NON-AFFINE (k=1..8)
+      launch2: F -> NON-AFFINE (k=1..5) / NON-AFFINE (k=1..8)
+    P2: HOLD (both families NON-AFFINE over k=1..8, pooled)
+
+=== P3: F PLATEAU (this run)
+    V(F1) 10.2578 vs V(F2) 10.1914 -> delta +0.0664 P3 HOLD (plateau; |delta| <= TOL)
+    (v8's F1>F2 form would read +0.0664 > +1.0; it does not return)
+
+=== between-run first-difference drift (derived, NOT a prediction)
+    M: -2.1992  +0.0508  +2.2070  -2.2227  +2.2891  -2.3086  +2.2852
+    F: -0.2735  +0.2500  -0.0469  -2.2383  +2.1407  -0.3438  +0.3672
+
+=== P0..P6 VERDICT
+    P0: HOLD
+    P1: structural verdicts ride in run-log.txt (the transferred verifier output)
+    P2: HOLD
+    P3: HOLD
+    P4: P4a HOLD / P4b FAIL -- DYNAMIC
+    P5: FAIL
+    P6: no e_MF/e_FM estimator computed anywhere (no mixed arms exist in this instrument);
+        the split STAYS UNMEASURED
+        NOTHING MOVES (rule 4): no record, no :measured? flag, no selection answer, no workgroup row
+    NOTE: same-UTC-day with every earlier probe; cross-day run 3+ does NOT move

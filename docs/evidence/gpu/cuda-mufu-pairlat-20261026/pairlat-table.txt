@@ -1,0 +1,70 @@
+gpu-mufu-pairlat-20261026 -- v4 IN-BINARY ADDITIVITY VALIDATION
+(amu-gpu tick 2026-10-26; JUN-55, JUN-57; PROBE, not a registered
+timing session; instruction chains, not kernels; xavier sm_72,
+nvcc 11.4 V11.4.315 / nvdisasm 11.4 V11.4.298, 3 launches x 128
+threads, 256 iterations/launch; all 7 bodies VERIFIED from nvdisasm,
+all three launches identical medians).
+
+CYC PER ITERATION (median; med/256, all launches identical):
+  arm              body (VERIFIED)                n16       n8
+  lat_n16/n8_rsq     MUFU.RSQ:16 / :8            240.4688  120.4961
+  lat_n16/n8_rsqfadd (MUFU.RSQ+FADD.FTZ):8 / :4  173.4805   89.4805
+  lat_n16/n8_rcpfadd (MUFU.RCP+FADD.FTZ):8 / :4  173.4805   89.4805
+  lat_n16_fadd       FADD.FTZ:16                  71.4844   (no n8 arm)
+
+INTERCEPT-FREE SLOPES (measured):
+  L(MUFU.RSQ) direct        = (240.4688 - 120.4961)/8 = 14.9966 cyc
+    (v2 cross-binary reference 14.9991, CONSUMED at its commit:
+     delta -0.0025 = -0.017%)
+  pair (rsq,fadd)           = (173.4805 -  89.4805)/4 = 21.0000 cyc/pair
+  pair (rcp,fadd)           = (173.4805 -  89.4805)/4 = 21.0000 cyc/pair
+    (v3 cross-binary reference 21.0000, CONSUMED at its commit)
+  L(FADD.FTZ) same-binary   = 71.4844/16              =  4.4678 cyc/op
+    (slope-amortized; v4 carries NO n8 fadd arm -- NAMED limitation;
+     cross-binary refs: v3 4.4658, v2 4.4683, v2-reference 4.4397)
+
+THE ADDITIVITY IDENTITY (the v4 design; FAILS):
+  pair(rsq,fadd) - L(FADD)  = 21.0000 - 4.4678 = 16.5322
+  L(MUFU.RSQ) direct        =                    14.9966
+  residual                  =                  +  1.5356 (+10.24%)
+  robust across every landed fadd reference:
+    - v3 4.4658 -> 16.5342, residual +1.5376
+    - v2 4.4683 -> 16.5317, residual +1.5351
+    - v2-ref 4.4397 -> 16.5603, residual +1.5637
+  Serial dependent latencies DO NOT add across a (MUFU,FADD) pair.
+
+DERIVED (marked): in-pair fadd-leg cost = pair - L(MUFU.RSQ) direct
+  = 21.0000 - 14.9966 = 6.0034 cyc, vs standalone 4.4678 = +1.5356
+  (+34.37%). The identity cannot say WHICH leg re-prices; only that
+  plain additivity fails (residual +1.5356 under the v4 same-binary
+  fadd reading).
+
+RETRACTED (marked): the twenty-sixth amendment's DERIVED
+  L(MUFU.RCP) = 16.5342 (pair(rcp,fadd) - same-binary fadd) rests on
+  the assumption v4 just REFUTED. Under the validated reading it is
+  REFUTED as a latency separation. Bare MUFU.RCP dependent-chain
+  latency is UNMEASURED again (with a refuted derivation on record).
+
+PAIR-FORM EQUALITY (measured distributions):
+  (rsq,fadd) and (rcp,fadd) arms have IDENTICAL sample distributions
+  at both chain lengths (n16: min 44410 / p10 44410 / med 44411 /
+  mean 44410.8 / p90 44411 / max 44411; n8: 22906 / 22906 / 22907 /
+  22906.8 / 22907 / 22907) despite DISTINCT verified spellings
+  (MUFU.RSQ:8 vs MUFU.RCP:8) and DISTINCT anchors (1.7548777f vs
+  1.6180340f). The pair form cannot separate RCP from RSQ on this
+  host; the equality is consistent with (does not prove)
+  L(MUFU.RCP) = L(MUFU.RSQ).
+
+ANCHORS (no-fold witnesses; MUFU approximations not re-derivable
+off-device):
+  lat_n16/n8_rsq      1065353216 = 1.0f   (fixed point of 1/sqrt, 3/3)
+  lat_*_rsqfadd       1071685589 = 1.7548777f (3/3)
+  lat_*_rcpfadd       1070537661 = 1.6180340f (3/3)
+  lat_n16_fadd        1166018560 = 4097.0f EXACT
+    (1.0f + 256*16*1.0f, bits 1166018560, 3/3)
+
+RAW MEDIANS (cyc over 256 iterations, launch 0 = 1 = 2):
+  lat_n16_rsq     61560   lat_n8_rsq     30847
+  lat_n16_rsqfadd 44411   lat_n8_rsqfadd 22907
+  lat_n16_rcpfadd 44411   lat_n8_rcpfadd 22907
+  lat_n16_fadd    18300

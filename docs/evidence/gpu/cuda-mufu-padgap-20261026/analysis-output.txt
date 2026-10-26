@@ -1,0 +1,60 @@
+=== V(w) per-iteration deltas, per launch (med_per_iter, cyc/iter)
+arm   launch0    launch1    launch2    pooled(med of 3)  within-launch min..max
+M       10.7656    10.1484    10.1602     10.1602        10.1445..10.7656
+F       10.1875    10.1641    10.1758     10.1758        10.1602..10.1914
+MM      21.6406    21.1953    21.1719     21.1953        21.1680..21.6445
+FF      10.3047    10.1484    10.1484     10.1484        10.1445..10.3086
+MF      25.3047    25.1602    25.1523     25.1602        25.1484..25.3086
+FM      12.3398    12.2148    12.1641     12.2148        12.1602..12.3438
+MFM     37.1562    37.1484    37.1445     37.1484        37.1406..37.1602
+FMF     31.7148    31.9062    31.1562     31.7148        31.1523..31.9102
+
+=== launch-to-launch spread of the median (max-min over 3 launches, cyc/iter)
+    M    spread   0.6172
+    F    spread   0.0234
+    MM   spread   0.4688
+    FF   spread   0.1562
+    MF   spread   0.1523
+    FM   spread   0.1758
+    MFM  spread   0.0117
+    FMF  spread   0.7500
+=== P1/P2 closures (identity of the edge-additive + entry/exit-constant model)
+    [pooled] C1: V(MFM)=37.1484 vs V(MF)+V(FM)-V(F)=27.1992 -> residual +9.9492 (FAIL)
+    [pooled] C2: V(FMF)=31.7148 vs V(FM)+V(MF)-V(M)=27.2148 -> residual +4.5000 (FAIL)
+    sensitivity, launch-matched indices (arms ran sequentially; pairing is nominal):
+    [launch0] C1: V(MFM)=37.1562 vs V(MF)+V(FM)-V(F)=27.4570 -> residual +9.6992 (FAIL)
+    [launch0] C2: V(FMF)=31.7148 vs V(FM)+V(MF)-V(M)=26.8789 -> residual +4.8359 (FAIL)
+    [launch1] C1: V(MFM)=37.1484 vs V(MF)+V(FM)-V(F)=27.2109 -> residual +9.9375 (FAIL)
+    [launch1] C2: V(FMF)=31.9062 vs V(FM)+V(MF)-V(M)=27.2266 -> residual +4.6797 (FAIL)
+    [launch2] C1: V(MFM)=37.1445 vs V(MF)+V(FM)-V(F)=27.1406 -> residual +10.0039 (FAIL)
+    [launch2] C2: V(FMF)=31.1562 vs V(FM)+V(MF)-V(M)=27.1562 -> residual +4.0000 (FAIL)
+
+=== P3/P4/P5 reproductions of the landed MEASURED cyclic quantities
+    P3: e_MM' = V(MM)-V(M) = 11.0352 vs landed 14.9966 -> delta -3.9614 (FAIL)
+    P4: e_FF' = V(FF)-V(F) = -0.0273 vs landed 4.0 -> delta -4.0273 (FAIL)
+    P5: e_MF+e_FM = 17.0391 vs landed 21.0 -> delta -3.9609 (FAIL)
+
+=== P1/P2 VERDICT: CLOSURES STILL FAIL beyond the named 1.0 cyc tolerance.
+    P6 (pre-registered falsifier stance) TRIGGERS: with the SASS-verified
+    UNFOLDED pad (P7: 16 dependent IMAD in every body), the pad-fold reading
+    -- the v6 realization deviation as the cause of the v6 closure failure --
+    is REFUTED as that cause; the discipline's premise itself is implicated
+    (P6's original wording). The e_MF/e_FM split STAYS UNMEASURED. The
+    estimators below are NOT the split and must not be quoted as one.
+    INADMISSIBLE AS THE SPLIT (P6), shown for completeness only:
+      e_MF = V(MF)-V(F) = 14.9844; e_FM = V(FM)-V(M) = 2.0547;
+      their sum 17.0391 vs the measured cyclic sum 21.0 (delta -3.9609)
+
+=== v7 vs v6 V-table delta (SENSITIVITY, NOT A PREDICTION; deltas named, not attributed)
+    M    v7   10.1602  v6   10.7578  delta -0.5977
+    F    v7   10.1758  v6   10.1445  delta +0.0312
+    MM   v7   21.1953  v6   21.1641  delta +0.0312
+    FF   v7   10.1484  v6   10.1562  delta -0.0078
+    MF   v7   25.1602  v6   25.1914  delta -0.0312
+    FM   v7   12.2148  v6   12.1602  delta +0.0547
+    MFM  v7   37.1484  v6   37.1719  delta -0.0234
+    FMF  v7   31.7148  v6   31.2266  delta +0.4883
+
+=== derived table: V(w) minus the single-op floor candidates (NOT an attribution)
+    V(w) - V(M): F=+0.0156  MM=+11.0352  FF=-0.0117  MF=+15.0000  FM=+2.0547  MFM=+26.9883  FMF=+21.5547
+    V(w) - V(F): M=-0.0156  MM=+11.0195  FF=-0.0273  MF=+14.9844  FM=+2.0391  MFM=+26.9727  FMF=+21.5391

@@ -1,0 +1,198 @@
+	.headerflags	@"EF_CUDA_TEXMODE_UNIFIED EF_CUDA_64BIT_ADDRESS EF_CUDA_SM72 EF_CUDA_VIRTUAL_SM(EF_CUDA_SM72)"
+	.elftype	@"ET_EXEC"
+
+
+//--------------------- .text._Z10lat_n1_rcpPKyPy --------------------------
+	.section	.text._Z10lat_n1_rcpPKyPy,"ax",@progbits
+	.sectioninfo	@"SHI_REGISTERS=10"
+	.align	128
+        .global         _Z10lat_n1_rcpPKyPy
+        .type           _Z10lat_n1_rcpPKyPy,@function
+        .size           _Z10lat_n1_rcpPKyPy,(.L_97 - _Z10lat_n1_rcpPKyPy)
+        .other          _Z10lat_n1_rcpPKyPy,@"STO_CUDA_ENTRY STV_DEFAULT"
+_Z10lat_n1_rcpPKyPy:
+.text._Z10lat_n1_rcpPKyPy:
+        /*0000*/                   IMAD.MOV.U32 R1, RZ, RZ, c[0x0][0x28] ;
+        /*0010*/              @!PT SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+        /*0020*/                   IMAD.MOV.U32 R2, RZ, RZ, c[0x0][0x160] ;
+        /*0030*/                   MOV R3, c[0x0][0x164] ;
+        /*0040*/                   LDG.E.SYS R0, [R2+0x8] ;
+        /*0050*/                   CS2R R4, SR_CLOCKLO ;
+        /*0060*/                   IMAD.MOV.U32 R2, RZ, RZ, RZ ;
+.L_1:
+        /*0070*/              @!PT SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+        /*0080*/                   IADD3 R2, R2, 0x1, RZ ;
+        /*0090*/                   MUFU.RCP R0, R0 ;
+        /*00a0*/                   ISETP.NE.AND P0, PT, R2, 0x100, PT ;
+        /*00b0*/               @P0 BRA `(.L_1) ;
+        /*00c0*/                   CS2R R6, SR_CLOCKLO ;
+        /*00d0*/                   S2R R2, SR_TID.X ;
+        /*00e0*/                   IADD3 R6, P0, -R4, R6, RZ ;
+        /*00f0*/                   MOV R3, 0x8 ;
+        /*0100*/                   MOV R4, R0 ;
+        /*0110*/                   IMAD.X R7, R7, 0x1, ~R5, P0 ;
+        /*0120*/                   IMAD.MOV.U32 R5, RZ, RZ, RZ ;
+        /*0130*/                   IMAD.WIDE.U32 R2, R2, R3, c[0x0][0x168] ;
+        /*0140*/                   STG.E.64.SYS [R2+0x800], R4 ;
+        /*0150*/                   STG.E.64.SYS [R2], R6 ;
+        /*0160*/                   EXIT ;
+.L_2:
+        /*0170*/                   BRA `(.L_2);
+.L_97:
+
+
+//--------------------- .text._Z14lat_n8_rcpfaddPKyPy --------------------------
+	.section	.text._Z14lat_n8_rcpfaddPKyPy,"ax",@progbits
+	.sectioninfo	@"SHI_REGISTERS=11"
+	.align	128
+        .global         _Z14lat_n8_rcpfaddPKyPy
+        .type           _Z14lat_n8_rcpfaddPKyPy,@function
+        .size           _Z14lat_n8_rcpfaddPKyPy,(.L_98 - _Z14lat_n8_rcpfaddPKyPy)
+        .other          _Z14lat_n8_rcpfaddPKyPy,@"STO_CUDA_ENTRY STV_DEFAULT"
+_Z14lat_n8_rcpfaddPKyPy:
+.text._Z14lat_n8_rcpfaddPKyPy:
+        /*0000*/                   MOV R1, c[0x0][0x28] ;
+        /*0010*/              @!PT SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+        /*0020*/                   IMAD.MOV.U32 R2, RZ, RZ, c[0x0][0x160] ;
+        /*0030*/                   MOV R3, c[0x0][0x164] ;
+        /*0040*/                   LDG.E.SYS R8, [R2+0x8] ;
+        /*0050*/                   LDG.E.SYS R0, [R2+0xc] ;
+        /*0060*/                   CS2R R2, SR_CLOCKLO ;
+        /*0070*/                   IMAD.MOV.U32 R4, RZ, RZ, RZ ;
+.L_3:
+        /*0080*/              @!PT SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+        /*0090*/                   MUFU.RCP R5, R8 ;
+        /*00a0*/                   IADD3 R4, R4, 0x1, RZ ;
+        /*00b0*/                   ISETP.NE.AND P0, PT, R4, 0x100, PT ;
+        /*00c0*/                   FADD.FTZ R5, R0, R5 ;
+        /*00d0*/                   MUFU.RCP R5, R5 ;
+        /*00e0*/                   FADD.FTZ R6, R0, R5 ;
+        /*00f0*/                   MUFU.RCP R7, R6 ;
+        /*0100*/                   FADD.FTZ R7, R0, R7 ;
+        /*0110*/                   MUFU.RCP R7, R7 ;
+        /*0120*/                   FADD.FTZ R8, R0, R7 ;
+        /*0130*/               @P0 BRA `(.L_3) ;
+        /*0140*/                   CS2R R6, SR_CLOCKLO ;
+        /*0150*/                   S2R R4, SR_TID.X ;
+        /*0160*/                   IADD3 R6, P0, -R2, R6, RZ ;
+        /*0170*/                   MOV R5, 0x8 ;
+        /*0180*/                   MOV R2, R8 ;
+        /*0190*/                   IMAD.X R7, R7, 0x1, ~R3, P0 ;
+        /*01a0*/                   MOV R3, RZ ;
+        /*01b0*/                   IMAD.WIDE.U32 R4, R4, R5, c[0x0][0x168] ;
+        /*01c0*/                   STG.E.64.SYS [R4+0x800], R2 ;
+        /*01d0*/                   STG.E.64.SYS [R4], R6 ;
+        /*01e0*/                   EXIT ;
+.L_4:
+        /*01f0*/                   BRA `(.L_4);
+.L_98:
+
+
+//--------------------- .text._Z15lat_n16_rcpfaddPKyPy --------------------------
+	.section	.text._Z15lat_n16_rcpfaddPKyPy,"ax",@progbits
+	.sectioninfo	@"SHI_REGISTERS=14"
+	.align	128
+        .global         _Z15lat_n16_rcpfaddPKyPy
+        .type           _Z15lat_n16_rcpfaddPKyPy,@function
+        .size           _Z15lat_n16_rcpfaddPKyPy,(.L_99 - _Z15lat_n16_rcpfaddPKyPy)
+        .other          _Z15lat_n16_rcpfaddPKyPy,@"STO_CUDA_ENTRY STV_DEFAULT"
+_Z15lat_n16_rcpfaddPKyPy:
+.text._Z15lat_n16_rcpfaddPKyPy:
+        /*0000*/                   MOV R1, c[0x0][0x28] ;
+        /*0010*/              @!PT SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+        /*0020*/                   MOV R2, c[0x0][0x160] ;
+        /*0030*/                   MOV R3, c[0x0][0x164] ;
+        /*0040*/                   LDG.E.SYS R8, [R2+0x8] ;
+        /*0050*/                   LDG.E.SYS R0, [R2+0xc] ;
+        /*0060*/                   CS2R R2, SR_CLOCKLO ;
+        /*0070*/                   MOV R4, RZ ;
+.L_5:
+        /*0080*/              @!PT SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+        /*0090*/                   MUFU.RCP R5, R8 ;
+        /*00a0*/                   IADD3 R4, R4, 0x1, RZ ;
+        /*00b0*/                   ISETP.NE.AND P0, PT, R4, 0x100, PT ;
+        /*00c0*/                   FADD.FTZ R5, R0, R5 ;
+        /*00d0*/                   MUFU.RCP R5, R5 ;
+        /*00e0*/                   FADD.FTZ R6, R0, R5 ;
+        /*00f0*/                   MUFU.RCP R7, R6 ;
+        /*0100*/                   FADD.FTZ R7, R0, R7 ;
+        /*0110*/                   MUFU.RCP R7, R7 ;
+        /*0120*/                   FADD.FTZ R9, R0, R7 ;
+        /*0130*/                   MUFU.RCP R9, R9 ;
+        /*0140*/                   FADD.FTZ R10, R0, R9 ;
+        /*0150*/                   MUFU.RCP R11, R10 ;
+        /*0160*/                   FADD.FTZ R11, R0, R11 ;
+        /*0170*/                   MUFU.RCP R11, R11 ;
+        /*0180*/                   FADD.FTZ R5, R0, R11 ;
+        /*0190*/                   MUFU.RCP R5, R5 ;
+        /*01a0*/                   FADD.FTZ R8, R0, R5 ;
+        /*01b0*/               @P0 BRA `(.L_5) ;
+        /*01c0*/                   CS2R R6, SR_CLOCKLO ;
+        /*01d0*/                   S2R R4, SR_TID.X ;
+        /*01e0*/                   MOV R5, 0x8 ;
+        /*01f0*/                   IADD3 R6, P0, -R2, R6, RZ ;
+        /*0200*/                   MOV R2, R8 ;
+        /*0210*/                   IADD3.X R7, ~R3, R7, RZ, P0, !PT ;
+        /*0220*/                   MOV R3, RZ ;
+        /*0230*/                   IMAD.WIDE.U32 R4, R4, R5, c[0x0][0x168] ;
+        /*0240*/                   STG.E.64.SYS [R4+0x800], R2 ;
+        /*0250*/                   STG.E.64.SYS [R4], R6 ;
+        /*0260*/                   EXIT ;
+.L_6:
+        /*0270*/                   BRA `(.L_6);
+.L_99:
+
+
+//--------------------- .text._Z12lat_n16_faddPKyPy --------------------------
+	.section	.text._Z12lat_n16_faddPKyPy,"ax",@progbits
+	.sectioninfo	@"SHI_REGISTERS=12"
+	.align	128
+        .global         _Z12lat_n16_faddPKyPy
+        .type           _Z12lat_n16_faddPKyPy,@function
+        .size           _Z12lat_n16_faddPKyPy,(.L_100 - _Z12lat_n16_faddPKyPy)
+        .other          _Z12lat_n16_faddPKyPy,@"STO_CUDA_ENTRY STV_DEFAULT"
+_Z12lat_n16_faddPKyPy:
+.text._Z12lat_n16_faddPKyPy:
+        /*0000*/                   MOV R1, c[0x0][0x28] ;
+        /*0010*/              @!PT SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+        /*0020*/                   MOV R2, c[0x0][0x160] ;
+        /*0030*/                   MOV R3, c[0x0][0x164] ;
+        /*0040*/                   LDG.E.SYS R0, [R2+0xc] ;
+        /*0050*/                   CS2R R2, SR_CLOCKLO ;
+        /*0060*/                   MOV R9, 0x3f800000 ;
+        /*0070*/                   MOV R4, RZ ;
+.L_7:
+        /*0080*/              @!PT SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+        /*0090*/                   FADD.FTZ R9, R0, R9 ;
+        /*00a0*/                   IADD3 R4, R4, 0x1, RZ ;
+        /*00b0*/                   FADD.FTZ R9, R0, R9 ;
+        /*00c0*/                   ISETP.NE.AND P0, PT, R4, 0x100, PT ;
+        /*00d0*/                   FADD.FTZ R9, R0, R9 ;
+        /*00e0*/                   FADD.FTZ R9, R0, R9 ;
+        /*00f0*/                   FADD.FTZ R9, R0, R9 ;
+        /*0100*/                   FADD.FTZ R9, R0, R9 ;
+        /*0110*/                   FADD.FTZ R9, R0, R9 ;
+        /*0120*/                   FADD.FTZ R9, R0, R9 ;
+        /*0130*/                   FADD.FTZ R9, R0, R9 ;
+        /*0140*/                   FADD.FTZ R9, R0, R9 ;
+        /*0150*/                   FADD.FTZ R9, R0, R9 ;
+        /*0160*/                   FADD.FTZ R9, R0, R9 ;
+        /*0170*/                   FADD.FTZ R9, R0, R9 ;
+        /*0180*/                   FADD.FTZ R9, R0, R9 ;
+        /*0190*/                   FADD.FTZ R9, R0, R9 ;
+        /*01a0*/                   FADD.FTZ R9, R0, R9 ;
+        /*01b0*/               @P0 BRA `(.L_7) ;
+        /*01c0*/                   CS2R R6, SR_CLOCKLO ;
+        /*01d0*/                   S2R R4, SR_TID.X ;
+        /*01e0*/                   MOV R5, 0x8 ;
+        /*01f0*/                   IADD3 R6, P0, -R2, R6, RZ ;
+        /*0200*/                   MOV R2, R9 ;
+        /*0210*/                   IADD3.X R7, ~R3, R7, RZ, P0, !PT ;
+        /*0220*/                   MOV R3, RZ ;
+        /*0230*/                   IMAD.WIDE.U32 R4, R4, R5, c[0x0][0x168] ;
+        /*0240*/                   STG.E.64.SYS [R4+0x800], R2 ;
+        /*0250*/                   STG.E.64.SYS [R4], R6 ;
+        /*0260*/                   EXIT ;
+.L_8:
+        /*0270*/                   BRA `(.L_8);
+.L_100:

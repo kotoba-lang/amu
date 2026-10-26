@@ -1,0 +1,148 @@
+amu-gpu tick 2026-10-26 (UTC day 2026-10-26, one measurement slice):
+JUN-55/JUN-57 -- the twenty-ninth amendment's PROPOSED entry-excluded
+open-chain instrument is IMPLEMENTED, RUN and ADJUDICATED: the split
+e_MF/e_FM is STILL NOT MEASURED. The instrument's own pre-registered
+closures FAIL beyond tolerance, so the falsifier stance P6 triggers:
+the estimators are NOT the split and are not reported as one. This
+slice was STARTED by an interrupted tick earlier this UTC day (the
+remote run completed 2026-10-26T16:17:21Z with its in-log verifier
+extraction failing; the extractor was completed after the run but
+never executed) and is FINISHED here. HARDWARE RAN: instrument v6 (8
+arms x 3 launches x 128 threads x 256 timed instances) on xavier sm_72
+at 2026-10-26T16:17:21Z (DATE-UTC verbatim in run-log.txt). NAMED NOT
+HIDDEN: a PROBE, not a registered timing session (no paired samples,
+no AB/BA), inadmissible under the entry criterion BY KIND, enters
+nothing, moves no record and no :measured? flag; SAME UTC DAY as every
+earlier probe -- NOT a cross-day replication, "cross-day run 3+" does
+not move; it measures INSTRUCTION chains, not kernels.
+
+INSTRUMENT v6 (gpu-mufu-entryexcl-microbench.cu, committed verbatim,
+sha 59affad0..; run-log.txt; microbench-sass.txt sha bbcf4e7d.., 374
+lines, sha matches the remote-generated artifact): the twenty-ninth
+amendment's entry-excluding discipline AS SPEC'D -- one open-chain
+instance of the arm's word per timed region, t0 = clock64(); <word>;
+t1 = clock64(), the entry operand ready before t0 (recurrence across
+iterations: the word's own previous output, verified converged by the
+ANCHOR bit patterns), the tail byte-identical across arms, PAD16
+(16 dependent add.u32 pad ops) between t1 and the next t0. Eight arms
+M/F/MM/FF/MF/FM/MFM/FMF over MUFU.RSQ and FADD.FTZ; operands SYMBOLIC
+(2.0f / 1.0f from global memory); predictions P1..P6 PRE-REGISTERED in
+the instrument header before the first run (closures C1/C2, cyclic
+reproductions P3/P4/P5 against the landed measured e_MM 14.9966 /
+e_FF 4.0000 / sum 21.0000, and the falsifier P6). Two earlier macro
+forms build-failed ("expected a ;" x4, quoted in run-log-v1/v2-
+buildfail.txt); the third form built and ran. VERIFIED (real runs):
+OK-build / OK-cubin / OK-sass 374 lines; build diags 194 bytes = two
+benign "variable cf was declared but never referenced" warnings
+(quoted in run-log.txt); diag-nvdisasm 0 bytes; driver exit 0, stderr
+0 bytes; 24 RESULT lines + 8 ANCHOR lines; device name=Xavier
+clockRate_kHz=1377000 multiProcessorCount=8.
+
+BODIES VERIFIED 8/8 (verifier-output.txt, verbatim). The verifier
+whose output rides in run-log.txt (mufu_entryexcl_verify_transferred.py
+sha 0c63872.., recovered from the remote tree after the run) reported
+NO-LOOP for all eight arms and compared 0 overhead multisets: its BRA
+regex required the branch target at end-of-line, but nvdisasm emits
+"BRA `(.L_N) ;" with a trailing semicolon, so no back-edge ever
+matched (EXTRACTION BUG, named; the run itself was unaffected). The
+completed extractor (mufu_entryexcl_verify_completed.py, run here on
+the archived SASS whose sha matches the remote artifact) recovers all
+eight loop bodies verbatim: CHAIN-VERDICT 8/8 MATCH (every body
+carries exactly its named chain opcodes and ORDER: ee_MF = MUFU then
+FADD, ee_FM = FADD then MUFU, ee_MFM/ee_FMF likewise), CLOCK-WRAP 8/8
+WRAP-OK (exactly two CS2R SR_CLOCKLO per body, the chain strictly
+between them), OVERHEAD-VERDICT IDENTICAL 8/8 (non-chain multiset
+{BRA:1, CS2R:2, IADD3:3, IADD3.X:1, ISETP.NE.AND:1, SHFL.IDX:1}
+everywhere).
+
+THE FINDING (analysis-output.txt; mufu_entryexcl_analysis.py sha
+6f81f368..; two runs byte-identical, output sha f37add66..):
+(1) THE CLOSURES FAIL. C1: V(MFM)=37.1719 vs V(MF)+V(FM)-V(F)=27.2070
+    (residual +9.9648); C2: V(FMF)=31.2266 vs V(FM)+V(MF)-V(M)=26.5938
+    (residual +4.6328) -- pooled over the three launch medians; every
+    launch-matched pairing FAILS the same way (C1 +9.77..+9.99, C2
+    +4.04..+6.24), far beyond the pre-registered 1.0 cyc tolerance.
+(2) P6 TRIGGERS (pre-registered falsifier stance): the entry-excluding
+    discipline's premise does not hold for this realization; the
+    e_MF/e_FM split STAYS UNMEASURED. The estimators (V(MF)-V(F)
+    = 15.0469, V(FM)-V(M) = 1.4023, pooled) are computed in the
+    analysis output under an explicit INADMISSIBLE heading and must
+    NOT be quoted as the split -- their sum 16.4492 already misses the
+    landed measured cyclic sum 21.0000 by -4.5508.
+(3) THE CYCLIC REPRODUCTIONS FAIL TOO (P3/P4/P5): V(MM)-V(M)=10.4063
+    vs landed e_MM 14.9966 (-4.5903); V(FF)-V(F)=0.0117 vs landed
+    e_FF 4.0000 (-3.9883); the estimator sum vs 21.0000 (-4.5508).
+    This instrument's V values are NOT the edge-additive model's V
+    values at any point tested.
+(4) STRUCTURE IN THE DATA, NAMED, NOT ATTRIBUTED: every arm sits on a
+    ~10.14 cyc floor; the single-op arms are floor-bound (V(M)~=V(F)~=V(FF)
+    to 0.02 cyc despite 15/4/8 cyc chain latencies); MF exceeds FM by
+    ~+13 cyc in V (the same op multiset in the opposite order); the M
+    arm's median spreads 2.2266 cyc across launches while MM is
+    EXACTLY launch-stable (21.1641 3/3). Mechanism UNRESOLVED -- no
+    attribution is claimed.
+(5) SASS-VERIFIED DEVIATION between the spec'd discipline and the
+    realization: the design's PAD16 (16 DEPENDENT add.u32) is
+    strength-reduced by ptxas to ONE "IADD3 R6, R6, 0x10" (visible in
+    every verbatim body) -- the inter-iteration gap is 8 instructions,
+    not the 23 the header's readiness argument assumed ("the gap
+    carries ... far more than the longest single-op latency"). Whether
+    the closure failure is the discipline's premise being wrong (P6's
+    own wording) or this realization deviating from the discipline is
+    UNRESOLVED and both readings stay open, named. The twenty-ninth
+    amendment's rank/nullspace identifiability theorem is UNTOUCHED
+    (it is a statement about what is identifiable IF the model's V
+    values are what the instrument returns); what is refuted here is
+    that THIS instrument returns those V values.
+
+CONSEQUENCE: NOTHING MOVES (rule 4) -- no record, no :measured? flag,
+no selection answer, no workgroup row. The named item moves AGAIN IN
+DESIGN STATE ONLY: "identifiable only under the spec'd entry-excluding
+discipline (instrument PROPOSED, not implemented)" becomes
+"instrument IMPLEMENTED and RUN; its pre-registered closures FAIL
+(P6): the split stays UNMEASURED; discipline-premise-vs-realization
+deviation UNRESOLVED (pad fold SASS-verified)". The observable cross
+quantity stands at the measured cyclic sum e_MF + e_FM = 21.0000
+(cross surplus +2.0034), unchanged.
+
+UNMEASURED named: the e_MF/e_FM split (P6 -- this instrument's
+estimators inadmissible), bare MUFU.RCP dependent-chain latency, the
+floor's internal composition (per-form intercept differences
+0.5234/7.4844/5.4805, still unexplained -- and now the ~10.14 cyc
+v6 floor joins them as unattributed), the pure 2-input IADD3/IMAD.IADD
+separations, the 21 surplus ops' costs, the residual W-shape's dynamic
+carrier, noise exceedance, sum TRUE side W=256, cross-day run 3+
+(still 2026-10-26 UTC), non-xavier verdicts, :sum W=64 elsewhere, live
+CUDA selection path, workgroup rows :arm/:unknown provisional
+(:measured? false -- accelerator-targets defaults are design
+assumptions, not evidence).
+
+Gates (honest): scoped GPU gate (the 8 GPU-owned test namespaces via
+the scratch runner gpu_scoped_gate.cljk, same classpath substitution)
+GREEN run 1 AND run 2 (gate-run1.txt / gate-run2.txt, 123 tests /
+12162 assertions / 0 failures / 0 errors, glslang 16.6.0 real-spawn,
+regression pin; the two logs are identical bar the kbb warning line);
+`find docs -name '*.sh'` -> 0. FULL run-tests.cljk RUN LIVE THIS TICK:
+RED AT BASE 'Could not find namespace: kotoba.form' at namespace load
+(ADR-0362), outside this diff -- the documented red-at-base verified
+live, NO green full suite claimed.
+
+BLOCKER-FIRST: 0 open hermes/-head PRs at tick start and re-checked
+before the push; chain PR #1612 OPEN (bot/amu-gpu-chain-20261026-2),
+the ONE chain PR.
+
+NAMED NOT HIDDEN: the interrupted earlier tick left v6 scratch-only
+(no commit) and died mid-verifier; the transferred verifier's
+extraction bug and both build-failed macro forms are quoted; untracked
+deps.edn (not created by this bot) untouched; kbb '2 dep(s) not
+:local/root' warning (identical everywhere); the run.sh transfer
+driver is scratch-only and NOT staged (POSIX .sh ban); all scratch
+instruments kept in Hermes scratch, never staged.
+
+Evidence: docs/evidence/gpu/cuda-mufu-entryexcl-20261026/ (record.txt,
+run-log.txt, microbench-sass.txt, gpu-mufu-entryexcl-microbench.cu,
+mufu_entryexcl_verify_transferred.py,
+mufu_entryexcl_verify_completed.py, verifier-output.txt,
+mufu_entryexcl_analysis.py, analysis-output.txt,
+run-log-v1-buildfail.txt, run-log-v2-buildfail.txt, gate-run1.txt,
+gate-run2.txt) + the ADR-0361 thirtieth amendment. (JUN-55, JUN-57)

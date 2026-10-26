@@ -1,0 +1,146 @@
+amu-gpu tick 2026-10-26 (UTC day 2026-10-26, seventh measurement row of
+the day): JUN-55/JUN-57 -- the standing named unmeasured item "bare
+MUFU.RCP dependent-chain latency" (twenty-fifth amendment: hidden in
+the loop floor; its instrument branch "needs either the floor's
+composition ... or a multi-op recurrence that survives pairwise
+cancellation, e.g. interleaved spellings") takes the INTERLEAVED-
+SPELLING branch and the branch SPLITS TWICE: an RSQ/RCP interleave
+cannot carry MUFU.RCP (the rcp legs compose away -- new toolchain
+fact), an RCP+FADD interleave CAN (bodies VERIFIED), and the same
+instruments MEASURE the first dependent-chain MUFU latencies on this
+host. ONE measurement slice; HARDWARE RAN: v1 (build-failed, named),
+v2 (6-arm instrument) and v3 (4-arm instrument) on xavier sm_72 at
+2026-10-26T14:12:48Z / 14:13:45Z / 14:20:18Z. NAMED NOT HIDDEN: a
+PROBE, not a registered timing session (no paired samples, no AB/BA),
+inadmissible under the entry criterion BY KIND; SAME-UTC-DAY with every
+earlier probe -- NOT a cross-day replication, extends NO record's
+:evidence and enters nothing; it measures INSTRUCTION chains, not
+kernels.
+
+NAMED FAILED ATTEMPT v1 (run-log-v1-buildfail.txt): my PTX spelling
+`rsq.approx.ftz.f32` was REFUSED by ptxas ("Not a name of any known
+instruction: 'rsq'" x35); the PTX mnemonic is `rsqrt.approx.ftz.f32`
+(MUFU.RSQ is the SASS name). v1 log kept verbatim; v2 fixed the
+spelling only.
+
+INSTRUMENT v2 (run-log-v2.txt + microbench-sass-v2.txt, remote tree
+/root/gpu-mufu-interleave-20261026, transferred COPYFILE_DISABLE=1,
+received-file block matched local shas 3/3 (846f97f7.. v1 form,
+86697f03.. after the spelling fix, plus verifier 1bd0e2e1-class);
+microbench.sass 034d802e.. committed verbatim): 6 arms x 3 launches x
+128 threads, clock64() over the loop only, symbolic seed 2.0f from
+global memory. VERIFIED (real runs): OK-build / OK-cubin / OK-sass 273
+lines; build diags = 5 benign "variable cf set but never used" warnings
+(the LATK macro declares cf for the fadd form; quoted in run-log-v2.txt);
+diag-nvdisasm 0 bytes; driver exit 0; stderr 0 bytes; 18 RESULT lines,
+ALL THREE LAUNCHES IDENTICAL medians (deterministic; named caveat: 128
+threads lockstep -- one warp-group draw, not 128 independent samples);
+device name=Xavier clockRate_kHz=1377000 multiProcessorCount=8. SASS
+VERDICTS (verifier output verbatim in run-log-v2.txt):
+  lat_n16_rsq   MATCH {MUFU.RSQ:16, SHFL.IDX:1, IADD3:1, ISETP.NE.AND:1,
+                BRA:1} -- 16 dependent MUFU per body, NO fold.
+  lat_n8_rsq    MATCH {MUFU.RSQ:8 + overhead}.
+  lat_n1_rsq    MATCH {MUFU.RSQ:1 + overhead}.
+  lat_n16_mix   DIFFERENT: realized {MUFU.RSQ:8 + overhead} -- the 8
+                rcp legs of the (rsq,rcp)*8 source COMPOSED AWAY; the
+                body is byte-identical in shape to lat_n8_rsq's and its
+                sample distribution is IDENTICAL (30847..30850 both).
+  lat_n16_rcp   CANCELED: the timed region is the clock pair only
+                (2 cyc total); parity collapse to identity (even count);
+                anchor stays at the seed (bits 1073741824 = 2.0f). The
+                verifier's "BODY total=1 BRA:1" is an extraction
+                artifact of a trailing dead BRA in a loop-free function
+                (named, not hidden).
+  lat_n16_fadd  MATCH FADD.FTZ:16 + overhead.
+
+INSTRUMENT v3 (run-log-v3.txt + microbench-sass-v3.txt, remote tree
+/root/gpu-mufu-rcpfadd-20261026 created fresh, transferred
+COPYFILE_DISABLE=1, received-file block matched local shas 3/3
+(5233b649.. / e7bb6fa9.. / 72c07107..); microbench.sass committed
+verbatim): 4 arms x 3 launches x 128 threads. VERIFIED: OK-build /
+OK-cubin / OK-sass 198 lines; build diags 83 bytes (one benign unused-
+cf warning, quoted in run-log-v3.txt); diag-nvdisasm 0 bytes; driver
+exit 0; stderr 0 bytes; 12 RESULT lines, all three launches identical
+medians. SASS VERDICTS (all MATCH):
+  lat_n16_rcpfadd {MUFU.RCP:8, FADD.FTZ:8 + overhead}
+  lat_n8_rcpfadd  {MUFU.RCP:4, FADD.FTZ:4 + overhead}
+  lat_n16_fadd    {FADD.FTZ:16 + overhead}
+  lat_n1_rcp      {MUFU.RCP:1 + overhead}
+
+THE FINDING (mufu-interleave-table.txt):
+(1) MUFU.RSQ DEPENDENT-CHAIN LATENCY MEASURED -- pure RSQ chains carry
+    16/16 and 8/8 with NO fold (rsq(rsq(x)) = x^(1/4) is no identity):
+    cyc/iter 240.4766 (n=16) / 120.5039 (n=8); intercept-free slope
+    (240.4766 - 120.5039)/8 = 14.9991 cyc per MUFU.RSQ. The first
+    measured dependent-chain MUFU latency on this host.
+(2) NEW TOOLCHAIN FACT -- MUFU-MUFU COMPOSITION: an interleaved
+    (rsq,rcp) dependent chain realizes WITHOUT its rcp legs
+    (MUFU.RSQ:8 only); the pairwise-cancellation characterization
+    (twenty-fifth amendment) is refined: a dependent MUFU.RCP leg
+    survives ONLY where no MUFU-MUFU composition exists in the value
+    flow. Mechanism UNRESOLVED (name, do not guess): whether ptxas
+    normalizes whole-chain compositions or cancels through the
+    interleaved legs.
+(3) BARE MUFU.RCP IN A DEPENDENT CHAIN, FIRST CARRIER FOUND: the
+    (rcp,fadd) interleave realizes {MUFU.RCP:8, FADD.FTZ:8} and
+    {MUFU.RCP:4, FADD.FTZ:4} (bodies VERIFIED); cyc/iter 173.4492
+    (8 pairs) / 89.4492 (4 pairs); intercept-free pair slope
+    (173.4492 - 89.4492)/4 = 21.0000 cyc per (MUFU.RCP + FADD.FTZ)
+    pair -- EXACTLY 21.0000 at both ends.
+(4) SEPARATION, DERIVED (marked): L_RCP = pair slope 21.0000 minus
+    L_FADD 4.4658 (same-binary lat_n16_fadd, slope-amortized) =
+    16.5342 cyc, ASSUMING serial dependent latencies add across the
+    pair. The in-binary validation of that assumption (an (rsq,fadd)
+    pair slope reproducing the pure-RSQ slope through the same
+    subtraction) is DESIGNED as instrument v4 and NOT RUN -- named,
+    started, not finished. Until v4, L_RCP = 16.5342 is DERIVED, not
+    MEASURED.
+(5) FLOOR ANCHORS (all floor-bound, named): lat_n1_rsq 28.5078 cyc/iter
+    (v2), lat_n1_rcp 28.4688 cyc/iter (v3) -- same ~28.5 floor as the
+    twenty-fifth amendment's 28.4766 / 28.4844; one bare MUFU per
+    iteration remains invisible under it (this is why n=1 never prices
+    latency).
+(6) FORM VALIDATION: lat_n16_fadd 4.4683 cyc/instr (v2 binary) /
+    4.4658 (v3 binary) vs v2-reference straight FADD.FTZ 4.4397
+    (CONSUMED at its commit) = +0.64% / +0.59%; consistent with the
+    twenty-fifth amendment's 4.4663 (+0.60%). fadd anchor EXACT (1.0f
+    + 4096 x 1.0f = 4097.0f, bits 1166018560, 3/3 in both binaries).
+
+CONSEQUENCE: NOTHING MOVES (rule 4); the named item moves PARTIALLY
+(dependent-chain latency MEASURED as a 21.0000 cyc pair with FADD and
+as 14.9991 cyc for RSQ alone; RCP alone DERIVED 16.5342; direct
+single-op RCP latency still UNMEASURED -- no carrier leaves it above
+the floor alone).
+
+STATES. MEASURED: the RSQ slope (14.9991), the (rcp,fadd) pair slope
+(21.0000), the (rsq,rcp)-fold body fact, the parity-collapse control,
+the floor anchors, the fadd validation pair, all realized bodies.
+DERIVED (marked): L_RCP 16.5342 (pair minus same-binary fadd, under
+serial additivity), the per-arm amortized per-op readings.
+IMPLEMENTED: nothing (evidence + this amendment). DECIDED: nothing new.
+ACCEPTED DESIGN ONLY (unchanged): the operator-aware contract + pre-
+registration, the row (ii) routes, the entry contract + wiring,
+ADR-0358, ADR-0373. UNMEASURED, named: the in-binary additivity
+validation (v4, designed not run), bare MUFU.RCP latency as a direct
+measurement, the floor's internal composition, the pure 2-input IADD3
+and IMAD.IADD separations, the 21 surplus ops' costs, the residual
+W-shape's dynamic carrier, noise exceedance, sum TRUE side W=256,
+cross-day run 3+ (still 2026-10-26 UTC), non-xavier verdicts, :sum
+W=64 elsewhere, live CUDA selection path, workgroup rows (:arm/:unknown
+provisional :measured? false).
+
+Gates (honest, run-time budget exhausted before the gate stage): the
+scoped GPU gate and find docs -name '*.sh' were NOT re-run this tick
+(NAMED, not hidden; this diff touches NO .cljk namespace -- evidence +
+this amendment only). The find check was taken once during evidence
+staging (0 .sh files under docs at staging time). FULL run-tests.cljk
+NOT run (no .cljk touched) -- documented RED AT BASE 'Could not find
+namespace: kotoba.form' (ADR-0362), outside this diff -- NO green full
+suite claimed. The 2026-10-26 chain-rotation note: chain PR #1611 was
+MERGED at 2026-10-26T13:25:19Z before this tick's push window; per the
+chain rule this tick starts the next chain branch (named
+bot/amu-gpu-chain-20261026-2 -- the literal bot/amu-gpu-chain-YYYYMMDD
+form for today is already taken by the merged chain branch; deviation
+named) carrying forward the previous tick's unlanded commit 46baff124
+(the raw-MUFU.RCP slice, pushed to the merged branch outside any PR)
+plus this row.
