@@ -15,7 +15,8 @@
 (def KM-OWNED-WINDOW 74)
 (def KM-PCI-MMIO 75)
 (def KM-BOOT-PAYLOAD 100)
-(def KM-INTR-N 101)
+(def KM-USER-SLOT 101)
+(def KM-INTR-N 102)
 (def KM-SEALED-SCRATCH 272)
 (def KM-SEALED-PAGES 280)
 
@@ -57,7 +58,7 @@
       63 "kernel-framebuffer-page" 64 "kernel-framebuffer-width" 65 "kernel-framebuffer-height"
       66 "kernel-framebuffer-stride" 67 "kernel-framebuffer-format"
       68 "kernel-browser-surface" 69 "kernel-browser-context" 70 "kernel-native-font"
-      71 "kernel-boot-payload" "")))
+      71 "kernel-boot-payload" 72 "kernel-user-slot" "")))
 (defn- km-arity [k :i64] :i64
   (cond (< k KM-MEM-N) (if (= (bit-and (km-raw k) 1) 0) 3 4)
         (< k (+ KM-MEM-N 2)) 2
@@ -117,6 +118,7 @@
           (or (= (km-intr M f) (+ WG-FIRST 5)) (= (km-intr M f) (+ WG-FIRST 6))) (+ 4294967296 8192)
           (= (km-intr M f) (+ WG-FIRST 7)) (+ 4294967296 WG-FONT-BYTES)
           (= (km-intr M f) KM-BOOT-PAYLOAD) (+ 4294967296 524288)
+          (= (km-intr M f) KM-USER-SLOT) (+ 4294967296 524288)
           (and (>= (km-intr M f) (+ UV-FIRST 2)) (< (km-intr M f) WG-FIRST)) (+ 4294967296 4096)
           :else -1)))
 (defn- km-scan [M :vector-i64 S :string] :vector-i64
@@ -219,6 +221,7 @@
 (defn- km-intrinsic [M :vector-i64 k :i64 t :i64] :vector-i64
   (cond (< k KM-MEM-N) (km-window M k t)
         (= k KM-BOOT-PAYLOAD) (wg-boot-payload M t)
+        (= k KM-USER-SLOT) (wg-user-slot M t)
         (>= k WG-FIRST) (wg-intrinsic M (- k WG-FIRST) t)
         (>= k UV-FIRST) (uv-intrinsic M (- k UV-FIRST) t)
         (= k LV-CALL) (lv-call M t)
