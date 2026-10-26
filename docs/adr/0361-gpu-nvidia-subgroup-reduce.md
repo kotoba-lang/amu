@@ -1788,3 +1788,95 @@ path; every workgroup row (`:arm`/`:unknown` stay provisional
 not find namespace: kotoba.form` (ADR-0362), outside this diff, NO
 green suite claimed; `find docs -name '*.sh'` -> 0 files. Record:
 `docs/evidence/gpu/cuda-kernel-cause-20261026/`.
+
+## Amendment (2026-10-26, the instruction-level why: a SASS-level
+instruction census locates the subgroup op penalty in once-per-thread
+index setup and refutes count scaling for the baseline W=512 step)
+
+MEASURED (JUN-57 -- "the instruction-level why of the subgroup max/min
+penalty and the baseline W=512 per-block step", the sixteenth
+amendment's named first unmeasured item, its "SASS-level instruction
+census" branch; ONE measurement slice). HARDWARE RAN: a static SASS
+census of all 54 emitted CUDA kernels on xavier sm_72 at
+2026-10-26T08:12:00Z (nvcc 11.4 V11.4.315 -cubin, nvdisasm 11.4
+V11.4.298 -c). NAMED, NOT HIDDEN: STATIC disassembly only -- nothing
+is timed, no paired samples exist, inadmissible under the entry
+criterion BY KIND; same UTC day as sessions B/C and the two earlier
+probes -- NOT a cross-day replication (ADR-0373 by citation). It
+enters nothing.
+
+**What ran.** The 54 emitted kernels (3 arms x 6 widths x 3 ops),
+54/54 sha256-matched against the three committed corpora before
+transfer, compiled and disassembled on xavier; a deterministic census
+counted every instruction line per kernel (full opcode histogram + 14
+classes) and the full SASS of all 54 kernels is committed verbatim;
+remote tree created fresh, transferred COPYFILE_DISABLE=1 (55 files,
+0 AppleDouble sidecars, received-file block matched 55/55).
+
+**Verified (real runs).** 54/54 OK-cubin / 0 FAIL, 54/54 OK-sass / 0
+FAIL, 54 CENSUS + 54 OPCODES lines, 54 paired verbatim blocks, every
+diag 0 bytes, driver exit 0, stderr 0 bytes. Parser coverage named:
+the census's 'unparsed' counters (2 per subgroup kernel, 1 per
+baseline/warp-shuffle) are the `@!PT SHFL.IDX PT, RZ, RZ, RZ, RZ`
+reconvergence-barrier lines, excluded from the census totals and
+included in the DERIVED region model.
+
+**Finding.**
+(1) All three arms' SASS is WIDTH-INDEPENDENT byte-for-byte (one
+    binary per (arm, op) across W=32..1024). Every W-shaped timing
+    effect is dynamic; no width enters the generated code.
+(2) The subgroup max/min penalty's instruction-level locus is the
+    ONCE-PER-THREAD code, not the hot loop: sum = 87 static
+    instructions (85 + 2 barriers), max/min = 108 (106 + 2). Per
+    region: prologue 44 vs 47, between 7 vs 25 (+18), fold loop 7 = 7
+    (FADD -> FMNMX only), inner loop 9 = 9 (same substitution). The
+    surplus is a DUPLICATED division-by-32 index derivation -- sum
+    derives threadIdx.x%32 and threadIdx.x/32 from one reciprocal
+    setup; max/min carry three reciprocal setups and re-derive the
+    subgroup indices from scratch. Baseline 34 = 34 per op (FADD <->
+    FMNMX 1:1); warp-shuffle 51 vs 52. The arm whose SASS differs
+    structurally by op is exactly the arm whose measured timing splits
+    by op (sixteenth amendment fact (4)).
+(3) DERIVED (marked): a per-block dynamic count model (trip counts
+    fold=5 at all W>=32, outer=log2(W/32), inner loop x the sg==0
+    warp) predicts max/sum and min/sum instruction ratios
+    1.1694/1.1556/1.1438 at W=128/256/512 against MEASURED time ratios
+    1.1894/1.1708/1.1484 (max) and 1.1866/1.1707/1.1516 (min) --
+    declining shape and 85-95% of the magnitude at count granularity;
+    the residual needs per-instruction latency attribution
+    (UNMEASURED).
+(4) DERIVED (marked): the baseline per-block step (x2.07 then x2.31)
+    is REFUTED as an instruction-count effect -- any
+    W x (P + log2(W) x B) model gives step2 < step1 always
+    (monotonicity checked numerically, 0/41 counterexamples) while the
+    measured steps rise; over byte-identical binaries the rising step
+    is a dynamic runtime effect (named, UNMEASURED).
+
+**Consequence today: NOTHING MOVES** (rule 4). No record, no
+`:measured?` flag, no selection answer, no `:shapes` value and no
+workgroup row; the landed entries stand byte-for-byte. The named item
+moves PARTIALLY: its SASS-census branch MEASURED (1)(2) with the
+count-model half DERIVED (3)(4).
+
+**States.** MEASURED: the SASS census (static counts + byte-identity
+of the 54 emitted kernels; the only measured thing this row). DERIVED:
+the dynamic count model and the monotonicity refutation (marked).
+IMPLEMENTED: nothing (evidence + this amendment only). DECIDED:
+nothing new. ACCEPTED DESIGN ONLY (unchanged): the operator-aware
+contract + pre-registration, the row (ii) routes, the entry contract +
+wiring, ADR-0358, ADR-0373. UNMEASURED, named: why the compiler emits
+the duplicated reciprocal setup for max/min but not sum; the residual
+~0.015-0.02 of the op ratio (FMNMX vs FADD latency -- a throughput
+microbench, its own row); the baseline W=512 rising step's dynamic
+cause (per-phase instrumentation, its own row); the sum ratio's TRUE
+side at W=256; a cross-day run 3+ (still 2026-10-26 UTC); every per-op
+verdict on non-xavier hardware; the `:sum` ordering at W=64 on any
+other device or channel; the landed rows on a live CUDA selection
+path; every workgroup row (`:arm`/`:unknown` stay provisional
+`:measured? false`). Gates: scoped GPU gate GREEN twice
+(123/12162, regression pin, no .cljk touched);
+`gpu_regime_classify.py --self-test` 2649/0 (regression pin); FULL
+`run-tests.cljk` NOT RUN this slice -- documented red at base `Could
+not find namespace: kotoba.form` (ADR-0362), outside this diff, NO
+green suite claimed; `find docs -name '*.sh'` -> 0 files. Record:
+`docs/evidence/gpu/cuda-sass-census-20261026/`.
