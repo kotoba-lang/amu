@@ -127,3 +127,58 @@ is required before adopting this prototype as a qualified foundation.
 This foundation does not persist an object, relocate code, reuse a build,
 replay a verdict, or establish the20min end-to-end CI target. Those remain
 the next dependency steps listed above.
+
+## Persistent native object and relink prototype
+
+The next standalone candidate, still outside FULL-MANIFEST, consists of:
+
+- `seed/07-definition-objects.kotoba`: native normalized object format and
+  build keys, checksum/structure/closure checks, private durable local store.
+- `seed/08-definition-object-emitter.kotoba`: capture and reinstall of the
+  existing xg emitter's unlinked code, local labels and symbolic relocations.
+- `seed/09-definition-build.kotoba`: complete fresh checked identities and
+  scalar target admission, whole-SCC lookup, emission on misses, symbolic
+  reinstall on hits, and fresh original linking/context/ELF construction.
+
+No new code generator replaces xg. On a hit its instruction-emission loop is
+skipped for that function; already linked addresses are never stored. A
+definition relocation names a DefCID plus its source-binding occurrence.
+This distinction preserves the selected binding even when several functions
+have equal semantic CIDs. Declaration names and unrelated declaration moves
+do not order the canonical unit. Fresh normalized SIR/layout and the sorted
+dependency binding closure seal all code-generation inputs for this scalar
+profile. The nine context dimensions remain compiler image, target, ABI,
+layout, options, profile bounds, dependencies/interfaces, resource contract
+and relocation convention. The current invocation constructs fuel afresh.
+
+Native FS2 checks enforce an owner-only 0700 directory and owner 0400 files.
+Writes use private managed staging, complete write/fsync, byte readback,
+exclusive publication and directory fsync. Existing files must match exactly;
+corrupt entries refuse rather than being overwritten. Missing entries rebuild.
+This is a same-principal compiler-owned store, not a remote/untrusted code
+admission authority. Checksums detect corruption; an administrator who can
+replace trusted compiler/store bytes remains in the trust base.
+
+`scripts/seed/check-definition-build-native.py` stages fixed inputs and
+observes native execution only. The native producer performs checking,
+canonical identity production, encoding/store operations, emission and link.
+It compares every candidate ELF with the unchanged `xg-build` reference for
+cold/warm, rename/reorder, unrelated additions, caller/dependency edits,
+equal-CID binding selection, SCC2 and SCC8 atomic reuse/edit cases. The x86
+job additionally executes every emitted positive ELF and verifies all eight
+result bytes, plus a warm fuel-exhaustion trap. Native controls reject all
+nine context changes, malformed/rehashed relocations, linked placeholders,
+unavailable dependencies, corrupt records, broad permissions, symlinks,
+invalid types/effects/checked flags, target refusal and zero fuel. Four
+independently built/executed mutants exercise checksum, private mode,
+placeholder and duplicate-binding resolution guards. ARM constructs x86
+ELFs and compares bytes; it does not emulate their execution.
+
+The observer currently supplies the producer-image digest. The production
+native controller still needs to bind that digest to the actual admitted
+executable; a caller-provided digest is not authority. The full Seed source
+frontend, schemas/effects, larger object/graph bounds and general runtime
+profiles remain open. Scalar structural literal tests do not qualify typed
+literal reinstall. Small fixture cache overhead is not a speedup measurement.
+This candidate neither changes production compiler pins nor establishes the
+10-minute compiler or 20-minute whole-PR CI performance goals.

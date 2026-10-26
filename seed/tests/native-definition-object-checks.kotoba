@@ -1,0 +1,49 @@
+;; Native structural negative controls. These synthetic bodies exercise the
+;; object format; emitted-code parity is independently checked against xg-build.
+(defn- dcv-reloc [offset :i64 kind :i64 target :string] :string
+  (dcp-vec (typed-list-new [:list :string] (dc-int (mem-u2dec offset)) (dc-int (mem-u2dec kind)) target)))
+(defn- dcv-body [unit :string cid :string code :string labels :string relocs :string] :string
+  (dcp-vec (typed-list-new [:list :string] (dc-str unit)
+    (dcp-vec (typed-list-new [:list :string]
+      (dcp-vec (typed-list-new [:list :string] (dc-str cid) (dc-atom "bytes" code) labels relocs)))))))
+(defn- dcv-context [changed :i64] [:list :string]
+  (loop [i 0 out (typed-list-new [:list :string])]
+    (if (= i 9) out
+      (recur (inc i) (typed-list-conj [:list :string] out
+        (sh-text (string-concat (if (= i changed) "changed" "original") (mem-u2dec i))))))))
+(defn- dcv-controls [unit :string cid :string binding :string] :bool
+  (let [members (typed-list-new [:list :string] cid) definitions (typed-list-new [:list :string] binding)
+        empty (typed-list-new [:list :string]) code "00000000000000000000000000000000"
+        labels (dcp-vec (typed-list-new [:list :string] (dc-int "0") (dc-int "16")))
+        relocs (dcp-vec (typed-list-new [:list :string]
+          (dcv-reloc 0 1 (dc-str binding)) (dcv-reloc 4 2 (dc-int "1"))
+          (dcv-reloc 8 3 (dc-str "context")) (dcv-reloc 12 6 (dc-int "0"))))
+        body (dcv-body unit cid code labels relocs) key (dco-key unit members (dcv-context -1))
+        record (dco-record key body)
+        bad-key (dco-key unit members (typed-list-new [:list :string]))]
+    (and (not= key "") (= bad-key "") (dco-body? body unit members definitions empty)
+      (= (dco-unrecord record key) body)
+      (= (dco-unrecord (string-concat record "00") key) "")
+      (loop [i 0]
+        (if (= i 9) true
+          (let [other (dco-key unit members (dcv-context i))]
+            (and (not= other "") (not= key other) (= (dco-unrecord record other) "") (recur (inc i))))))
+      ;; A checksum-valid record still needs the native structure/closure gate.
+      (loop [i 0]
+        (if (= i 11) true
+          (let [bad-code (if (= i 0) "01000000000000000000000000000000" code)
+                bad-labels (if (= i 1) (dcp-vec (typed-list-new [:list :string] (dc-int "17"))) labels)
+                bad-relocs (cond (= i 2) (dcp-vec (typed-list-new [:list :string] (dcv-reloc 13 1 (dc-str binding))))
+                  (= i 3) (dcp-vec (typed-list-new [:list :string] (dcv-reloc 0 7 (dc-str binding))))
+                  (= i 4) (dcp-vec (typed-list-new [:list :string] (dcv-reloc 0 1 (dc-str cid))))
+                  (= i 5) (dcp-vec (typed-list-new [:list :string] (dcv-reloc 0 2 (dc-int "2"))))
+                  (= i 6) (dcp-vec (typed-list-new [:list :string] (dcv-reloc 0 3 (dc-str "other"))))
+                  (= i 7) (dcp-vec (typed-list-new [:list :string] (dcv-reloc 0 4 (dc-str "00"))))
+                  (= i 8) (dcp-vec (typed-list-new [:list :string] (dcv-reloc 0 5 (dc-str "00"))))
+                  (= i 9) (dcp-vec (typed-list-new [:list :string]
+                    (dcv-reloc 0 1 (dc-str binding)) (dcv-reloc 3 1 (dc-str binding))))
+                  :else relocs)
+                bad (dcv-body unit cid bad-code bad-labels bad-relocs)
+                allowed (if (= i 10) empty definitions)
+                rehashed (dco-unrecord (dco-record key bad) key)]
+            (and (= rehashed bad) (not (dco-body? rehashed unit members allowed empty)) (recur (inc i)))))))))
