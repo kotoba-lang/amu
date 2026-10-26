@@ -8,6 +8,10 @@
 (def KP-ENTRY 43) ; L header: global byte offset + 1 of the image entry
 (def KP-ERR-NAME-START 44)
 (def KP-ERR-NAME-END 45)
+;; The v2 image reserves the complete second MiB for kernel RX text. Its
+;; data and user pages move together; v1 retains its byte-for-byte layout.
+(defn- kp-v2? [] :bool (string=? (io-arg 3) "x86_64-aiueos-kernel-v2"))
+(defn- kp-text-cap [] :i64 (if (kp-v2?) 2097152 1048576))
 
 ;; 60-proj records AArch64 interface offsets in words. Convert only the
 ;; newly recorded interface addresses to this backend's byte units; retain
@@ -60,7 +64,9 @@
                          (xg-index-labels 1) (xg-code 1) (xg-fix 1))
                 size (xg-pos code)]
             (cond (not (pj-ok code)) code
-                  (> (+ (pj-l L pj-k-base) size) 1048576) (xg-err code 7104 size)
+                  ;; Report the required cumulative text extent, not this
+                  ;; module's size, so the fixed code/data boundary is visible.
+                  (> (+ (pj-l L pj-k-base) size) (kp-text-cap)) (xg-err code 7104 (+ (pj-l L pj-k-base) size))
                   :else (let [linked (kp-copy-link code L)
                               proof (kg-note code L G S m)
                               marked (if (= m 0) (pj-ls L KP-ENTRY (+ (pj-l L pj-k-base) (xg-f code entry FF-CODE))) L)]
@@ -194,15 +200,15 @@
         table (bit-and (+ program 127) -128) has-isr (or (kp-has-isr? G) (uv-used? M))
         needs-isr (kp-needs-isr? M)
         size (if has-isr (+ table (* IV-STRIDE IV-VECTORS)) program)
-        ;; Keep the v1 user virtual pages stable as kernel text grows. The
-        ;; existing size cap below refuses text that reaches this boundary.
-        data 1048576]
+        ;; The two layouts have distinct RX/data boundaries and user pages.
+        ;; The fixed 0x101000 text entry is shared; v2 data starts at 0x300000.
+        data (kp-text-cap)]
     (cond (not (pj-ok initialized)) initialized
           (and (uv-used? M) (>= (kp-isr-target G 6) 0)) (xg-err M 7102 6)
           (and (uv-used? M) (>= (kp-isr-target G 14) 0)) (xg-err M 7102 14)
           (and (uv-used? M) (>= (kp-isr-target G 13) 0)) (xg-err M 7102 13)
           (and needs-isr (not has-isr)) (xg-err M 7102 (+ KM-ISR-FIRST 4))
-          (or (<= entry 0) (<= global 77) (> size 1048576)
+          (or (<= entry 0) (<= global 77) (> size data)
               (>= (+ data (if pci 131072 XI-DATA-SIZE) 280) MM-OUT-CAP)) (xg-err M 7104 size)
           :else
           (let [entries (if has-isr (kp-isr-table M L G table data) M)

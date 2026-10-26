@@ -316,7 +316,12 @@
         kind (cond (= (lw-nf M req NF-KIND) ND-VEC) 11
                    (= (lw-nf M (lw-next M req) NF-KIND) ND-VEC) 10
                    :else (lw-kind2 (lw-kwcode M req) (lw-kwcode M (lw-next M req))))]
-    (-> M (lw-expr x t 0) (lw-emit OP-CAP wire kind t))))
+    ;; The checker may validate the canonical llm-v1 type, but no native
+    ;; target has a qualified structured wire-11 transport yet. Refuse code
+    ;; generation before an OP-CAP with wire 0 or kind 0 can escape.
+    (if (= (lw-nf M w NF-TYPE) KW-LLM-GENERATE)
+      (lw-fail M E-LOWER-CAP-UNSUPPORTED (lw-pos M w) 11)
+      (-> M (lw-expr x t 0) (lw-emit OP-CAP wire kind t)))))
 
 ;; entry points that reserve the exit label first
 (defn- lw-cond0 [M :vector-i64 a :i64 t :i64 k :i64] :vector-i64

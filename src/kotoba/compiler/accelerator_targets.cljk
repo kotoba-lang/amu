@@ -1,17 +1,28 @@
 (ns kotoba.compiler.accelerator-targets
   "Deterministic GPU vendor classification, accelerator target dispatch and
-  provisional per-vendor workgroup defaults (ADR-0355).
+  per-vendor workgroup defaults (ADR-0355; the measured rows are ADR-0358's,
+  2026-10-19, scoping amendment 2026-10-22).
 
-  One decision table, and no measurement in it yet: the workgroup sizes below
-  are PROVISIONAL design defaults chosen as powers of two that are multiples
-  of each vendor's published execution width. `recommend` marks every answer
-  :measured? false; nothing here may be reported as optimization evidence
-  until hardware measurement replaces a row.
+  One decision table, two row states: :nvidia, :apple, :intel and :amd are
+  MEASURED rows -- a hardware measurement chose each size on one workload
+  shape on one device, named by the row's :measured-device fragment -- and
+  :arm (no Mali hardware) and :unknown (the portable fallback) stay
+  PROVISIONAL design defaults (:measured? false), powers of two that are
+  multiples of each vendor's published execution width. `recommend` answers
+  the row's :measured?: true for a measured row whose fragment names the
+  device, false otherwise. A measured row is evidence for its named device
+  on the recorded workload shape only; the provisional rows are not
+  optimization evidence at all.
+
+  Correction 2026-10-24: this docstring once read \"no measurement in it
+  yet\" and \"`recommend` marks every answer :measured? false\" -- false
+  from 2026-10-19 on. Runtime state and full census of the claim's
+  surface: docs/evidence/gpu/workgroup-prose-rootcause-20261024.txt.
 
   The functions are TOTAL. An unknown vendor or api answers the documented
   fallback instead of throwing -- dispatch time is where a refusal costs the
   most, and a portable default is honest about what it is."
-  {:kotoba/export [classify-vendor default-target device-classes name-vendor-fragments recommend target-for vendor-ids vendors workgroup-default workgroup-defaults]}
+  {:kotoba/export [classify-vendor default-target device-class device-classes name-vendor-fragments recommend target-for vendor-ids vendors workgroup-default workgroup-defaults]}
   (:require [kotoba.lang.text :as str]
             #?(:cljs [kotoba.kir.cljs-i64 :as i64])))
 
@@ -58,41 +69,128 @@
                     (document-string "apple") (document-string "intel") (document-string "iris")
                     (document-string "mali") (document-string "radeon") (document-string "amd"))))
 
-;; the workgroup row builder (the host map rows: size/execution-width/measured?/basis/evidence)
+;; the workgroup row builder (the host map rows:
+;; size/execution-width/measured?/measured-device/measured-device-alternates/
+;; basis/evidence). The measured-device fragment is the uB5G scoping key; an
+;; unmeasured row spells it "" and a blank fragment never matches a name (the
+;; host rows omit both key fields entirely for unmeasured rows -- same
+;; behavior, one spelling each). measured-device-alternates is the key's
+;; '|'-separated alternate-fragment string (ADR-0358 amendment 2026-10-25):
+;; the key is read as a SET -- the fragment plus ONE alternate per field --
+;; and "" spells the one-fragment set (every row but :nvidia today).
 #?(:kotoba
-   (defn- wg-row [size :i64 width :i64 measured :bool basis :string evidence :string] :document
+   (defn- wg-row [size :i64 width :i64 measured :bool mdev :string malts :string basis :string evidence :string] :document
      (document-map (document-keyword :size) (document-i64 size)
                    (document-keyword :execution-width) (document-i64 width)
                    (document-keyword :measured?) (document-bool measured)
+                   (document-keyword :measured-device) (document-string mdev)
+                   (document-keyword :measured-device-alternates) (document-string malts)
                    (document-keyword :basis) (document-string basis)
                    (document-keyword :evidence) (document-string evidence))))
 
+;; the ASCII case fold for device names -- the language primitive
+;; `string-fold-ascii` (contract: "A-Z lowered, nothing else"). The previous
+;; hand-rolled `lower-walk` built its answer with `string-from-i64`, which
+;; renders DECIMAL (the lang-conformance golden for string-from-i64 pins it),
+;; so every name became digit text on this route (verified at runtime
+;; 2026-10-24: "A" -> "97", "AB" -> "9798"; and a six-character name
+;; additionally trapped host/stack-exhausted). The primitive replaces it.
 #?(:kotoba
    (defn- string-ascii-lower [s :string] :string
-     (lower-walk s 0 (string-byte-length s) (string-substring (string-from-i64 7) 0 0))))
-#?(:kotoba
-   (defn- lower-walk [s :string i :i64 n :i64 acc :string] :string
-     (if (>= i n)
-       acc
-       (let [c (string-code-point-at s i)]
-         (lower-walk s (+ i 1) n
-                     (string-concat acc (string-from-i64 (if (and (>= c 65) (<= c 90)) (+ c 32) c))))))))
+     (string-fold-ascii s)))
 
 ;; the device-from-info / recommend helpers: the 4-field split (a document vector of
 ;; the field strings), the digit/version validators, the blank/substring checks, the
 ;; digits->i64 parse, the largest power-of-two at or below the limit and the i64 text.
+;; The field spans are PER-FIELD (start..i at each '|', start..n at the last field):
+;; the pre-2026-10-26 arm conjes PREFIX spans (string-substring s 0 i), which
+;; answered ["a" "a|b" "a|b|c" "a|b|c|d"] for "a|b|c|d" -- probed on the kotoba
+;; runtime this tick, docs/evidence/gpu/w3-split4-field-spans-20261026.txt.
+;; Field counting is the raw '|'-split count (fields = pipes + 1, trailing empty
+;; fields counted -- the host arm's str/split ... -1 reading).
+;; The per-field split walks PIPE POSITIONS, not bytes (the frame-budget row
+;; 2026-10-26): `string-index-of-from` finds each next '|', so the recursion
+;; is O(fields) frames instead of O(bytes) and the interpreter's 32-frame
+;; budget no longer traps full-length answers (measured before the fix on
+;; the kotoba runtime: 13 bytes resolve, 14 ("ab|1.2.3|4|1|x") and the
+;; 26-byte recorded answer trap host/stack-exhausted). The primitive
+;; replaces the byte scan -- the string-fold-ascii precedent above. Span
+;; and count contracts are unchanged: per-field spans (start..p at each
+;; '|', start..n at the last field) and the raw '|'-split count (fields =
+;; pipes + 1, trailing empty fields counted). `string-index-of-from` traps
+;; on from > n, so the walk keeps i <= n (i = p + 1 for a found p < n).
+;; The many-pipe row (2026-10-26): the walk answers MORE-THAN-FOUR ABOVE
+;; its own recursion -- a '|'-boundary FOUND at k = 3 is a fifth field and
+;; answers (document-null) in the cond, before any further recursion --
+;; where the pre-row walk kept walking ONE FRAME PER PIPE and an answer
+;; with many pipes TRAPped instead of answering the contract's total null
+;; (MEASURED on the kotoba runtime, this row's evidence
+;; w3-split4-many-pipe-total-20261026.txt: device-from-info on the
+;; 16..128-pipe answers ALL TRAPped host/stack-exhausted (budget/frames
+;; at the same cells in the earlier go/no-go position) while the host
+;; arm answered nil and the contract says "answers nil, never a throw";
+;; the trap boundary is NON-MONOTONIC and state-dependent as ever -- the
+;; unit walk TRAPped 17 in every run while 16/18 MOVED between runs (16
+;; trapped, 18 resolved in one byte-identical pair; 16 resolved, 18
+;; trapped in the other) and 31..40 TRAPped budget/frames in every run
+;; -- so the class is a trap BOUNDARY, not a fixed depth). CONTRACT UNCHANGED, pinned: exactly four fields (three
+;; '|'-boundaries) answer the four per-field spans; fewer or more answer
+;; (document-null). The new clause fires only where the old walk's ONLY
+;; possible answer was already null (a boundary found at k >= 3 can never
+;; end at k = 3), so every previously resolving input answers the same
+;; bytes -- and the walk is now <= 4 iterations: CONSTANT frames and flat
+;; fuel at ANY pipe count. RESIDUAL, NAMED (as landed): the uB5G
+;; alt-key field walk (alt-field?/alt-any-hits) was O(FIELDS) frames
+;; here -- closed the same day by the alt-loop row (below), whose own
+;; FUEL residual closed the same day too by the alt-fuel row (below).
 #?(:kotoba
-   (defn- split4 [s :string i :i64 n :i64 k :i64 acc :document] :document
-     (cond (and (>= i n) (= k 3)) (document-vector-conj acc (document-string (string-substring s 0 n)))
-           (>= i n) (document-null)
-           (= (string-code-point-at s i) 124)
-           (split4 s (+ i 1) n (+ k 1) (document-vector-conj acc (document-string (string-substring s 0 i))))
-           :else (split4 s (+ i 1) n k acc))))
+   (defn- split4 [s :string start :i64 i :i64 n :i64 k :i64 acc :document] :document
+     (let [p (string-index-of-from s "|" i)]
+       (cond (and (< p 0) (= k 3)) (document-vector-conj acc (document-string (string-substring s start n)))
+             (< p 0) (document-null)
+             (>= k 3) (document-null)
+             :else (split4 s (+ p 1) (+ p 1) n (+ k 1) (document-vector-conj acc (document-string (string-substring s start p))))))))
+;; digits? = ONE OR MORE ASCII digits in [i, n) -- the host re-matches
+;; "[0-9]+" and an empty range holds no digits (the 2026-10-26 parity
+;; decision; the pre-2026-10-26 base (< 0 n) asked whether the END was
+;; positive and an empty version part passed). The numeric-walk row
+;; (2026-10-26): ONE primitive call, no walk (the string-fold-ascii /
+;; string-skip-blank / string-contains? precedents). The replaced
+;; digits?/digits-all? walks recursed per byte and trapped the interpreter's
+;; 32-frame budget on long numeric fields -- measured on the kotoba runtime
+;; (parse-walk on the 19-digit i64 max => host/stack-exhausted,
+;; docs/evidence/gpu/w3-numeric-walk-primitives-20261026.txt). The
+;; primitive's VERDICT replaces the byte scan: `string-parse-i64` answers
+;; ok or out-of-range for DIGIT-ONLY text and :parse/malformed for the
+;; rest -- PROVEN 2026-10-26 by reading the executing helper
+;; (__kotoba_intrinsic_parse_i64, kotoba-sema @ a3303527 -- the pin this
+;; classpath resolves -- frontend.cljk 4159-4183): the two
+;; :parse/malformed arms need a code point outside [48,57] or an
+;; empty-after-sign text, so on non-empty digit-only text they are
+;; UNREACHABLE and the terminal answers ok|out-of-range by construction;
+;; conversely a non-digit code point answers :parse/malformed at its own
+;; step (a multibyte point's first step is >= 128, non-digit, so the scan
+;; never walks into one), so verdict ok|out-of-range IMPLIES all digits
+;; -- confirmed on 482 fresh cells (the full one-char domain 0..255 plus
+;; other-script digits/astral, exhaustive 2-char and 3-char sign
+;; alphabets, the accumulation-flag boundary texts …800..…809), 0
+;; mismatches, two byte-identical runs,
+;; docs/evidence/gpu/w3-digit-taxonomy-20261026.txt). So [0-9]+ = first
+;; byte ASCII digit AND verdict ok|out-of-range is an IDENTITY, both
+;; directions -- the taxonomy is no longer just probed. The first-byte check is
+;; load-bearing: the primitive accepts "+5"/"-5" (measured ok 5 / ok -5)
+;; where the host regex does not. digits-all? is DELETED (its only caller
+;; was this walk).
 #?(:kotoba
    (defn- digits? [s :string i :i64 n :i64] :bool
-     (cond (>= i n) (< 0 n)
-           (let [c (string-code-point-at s i)] (and (>= c 48) (<= c 57))) (digits? s (+ i 1) n)
-           :else false)))
+     (if (>= i n)
+       false
+       (let [c (string-code-point-at s i)]
+         (and (>= c 48)
+              (<= c 57)
+              (let [r (string-parse-i64 (string-substring s i n))]
+                (or (result-ok?-of [:result :i64 :keyword] r)
+                    (= :parse/out-of-range (result-error-of [:result :i64 :keyword] r :none)))))))))
 ;; d.d.d with digits in each part (the host re-matches "[0-9]+\.[0-9]+\.[0-9]+")
 #?(:kotoba
    (defn- version3? [s :string] :bool
@@ -101,42 +199,242 @@
             (digits? s (+ 1 (dot1 s 0 n)) (dot2 s 0 n))
             (digits? s (+ 1 (dot2 s 0 n)) n)
             (< (dot1 s 0 n) (dot2 s 0 n))))))
+;; dot1 = the INDEX of the first '.' at or after i (n when absent) and
+;; dot2 the INDEX of the SECOND '.' (n when fewer than two) -- the exact
+;; contracts the walks held, pinned in w3-version3-matches-the-host-regex-
+;; semantics. The numeric-walk row (2026-10-26): ONE `string-find-byte`
+;; call per dot (the split4 `string-index-of-from` precedent), no byte
+;; walk. `string-find-byte` answers -1 when absent and traps on from > n
+;; (measured: "string offset is out of bounds"), so the walk's i >= n -> n
+;; shape is answered ABOVE the primitive (total contract; callers hold
+;; i <= n). The pre-2026-10-26 dot2 answered n + (number of '.') --
+;; measured 7 for "1.2.3" whose second dot sits at 3
+;; (docs/evidence/gpu/w3-split4-field-spans-20261026.txt).
 #?(:kotoba
    (defn- dot1 [s :string i :i64 n :i64] :i64
-     (if (>= i n) n (if (= 46 (string-code-point-at s i)) i (dot1 s (+ i 1) n)))))
+     (if (>= i n) n (let [p (string-find-byte s 46 i)] (if (< p 0) n p)))))
 #?(:kotoba
    (defn- dot2 [s :string i :i64 n :i64] :i64
-     (if (>= i n) n (if (= 46 (string-code-point-at s i)) (+ 1 (dot2 s (+ i 1) n)) (dot2 s (+ i 1) n)))))
+     (let [p (dot1 s i n)] (if (< p n) (dot1 s (+ p 1) n) n))))
+;; the blank check (host str/blank?) -- ONE primitive, no walk (the
+;; frame-budget row 2026-10-26): (string-skip-blank s 0) answers the first
+;; non-C-isspace byte's index (n when every byte is a blank), so a blank
+;; string is skip >= n. The replaced blank-walk recursed per byte and
+;; trapped the budget on long device names. PINNED SEMANTIC CHANGE: the
+;; walk checked {32, 9, 10, 13} only, so a field of only \v(11)/\f(12)
+;; passed as non-blank (and parsed); string-skip-blank is C isspace (adds
+;; 11 and 12) and rejects it -- the HOST arm's str/blank? reading covers
+;; 11/12 too, so this moves the W3 arm TOWARD host parity. The host
+;; rule's MECHANISM is READ now (the host-blank-mechanism row
+;; 2026-10-26 -- it also CORRECTS the blank row's attribution):
+;; `str/blank?` here is kotoba.lang.text/blank? (this ns's require is
+;; [kotoba.lang.text :as str]) = (or (nil? s) (= "" (trim s))), and
+;; trim strips the named closed set `java-whitespace?` in the same
+;; file (kotoba-lang/text @ 3dcb2ab0, cited by the classpath this gate
+;; resolves): exactly the JVM Character/isWhitespace class written out
+;; -- C0 U+0009..U+000D, the four separators U+001C..U+001F, SPACE,
+;; U+1680, U+2000..U+2006, U+2008..U+200A, U+2028, U+2029, U+205F,
+;; U+3000, DELIBERATELY EXCLUDING the non-breaking spaces
+;; U+00A0/U+2007/U+202F (and U+FEFF is absent too). So the host blank
+;; rule is EVERY-CHAR java-whitespace? -- the JVM class the original
+;; parenthetical named, NOT the every-char /\s/ rule the blank row
+;; attributed (its unit column measured clojure.string/blank?, the
+;; probe's own `str` alias, not this arm's callee; the two differ on
+;; exactly 10 of the 44 domain cells). THE DIVERGENCE CLASS IS
+;; MEASURED AND CORRECTED (host-mechanism row,
+;; docs/evidence/gpu/w3-blank-host-mechanism-20261026.txt, two
+;; byte-identical runs, sha256 c331b523.., arm-rule-match 44/44): the
+;; class is EXACTLY the texts whose chars are all java-whitespace? but
+;; which hold a non-C-isspace byte -- U+001C..U+001F singletons or
+;; runs, {U+1680, U+2000..U+2006, U+2008..U+200A, U+2028, U+2029,
+;; U+205F, U+3000} alone or mixed with C-isspace chars (" " + U+3000
+;; diverges -- the skip stops at the first non-C-isspace byte) -- 23
+;; of 44 cells: the W3 arm answers the six-fact map (permissive at the
+;; FACT) where the host arm answers nil. NBSP, U+2007, U+202F and
+;; U+FEFF -- the blank row's class members -- are PARITY-NONBLANK
+;; (both arms parse; the blank row's OWN recorded run lines show the
+;; host fact there) and U+001C..U+001F are DIVERGENCE, not parity:
+;; membership swap at exactly 10 cells against the blank row's table,
+;; same 8/23/13 class sizes. AND THE DISPATCH DECISION is MEASURED
+;; IDENTICAL on every divergence cell (both arms' `recommend` answer
+;; :unknown / 256 / :measured? false -- an all-whitespace name
+;; matches no key fragment). DECIDED: the byte rule STAYS (the class
+;; is unreachable from the wire as attested -- all 266 recorded INFO
+;; receipt occurrences are ONE ASCII answer -- and the decision is
+;; identical either way; a Unicode-aware blank would walk the class
+;; set per code point -- PROPOSED only, its own row if a live wire
+;; ever carries non-ASCII device names). NAMED, NOT HIDDEN: the host
+;; cells are engine-owned and never pinned (the parse-long precedent);
+;; the receipt charset beyond the recorded receipts is UNMEASURED (the
+;; producer tools/kexe_gpu_vulkan.c is not in the tree at HEAD --
+;; removed at 36479076, JUN-29).
 #?(:kotoba
    (defn- blank-str? [s :string] :bool
-     (blank-walk s 0 (string-byte-length s))))
-#?(:kotoba
-   (defn- blank-walk [s :string i :i64 n :i64] :bool
-     (if (>= i n)
-       true
-       (let [c (string-code-point-at s i)]
-         (if (or (= c 32) (= c 9) (= c 10) (= c 13)) (blank-walk s (+ i 1) n) false)))))
-;; the case-insensitive substring search (the host re-find "(?i)m1 max")
+     (>= (string-skip-blank s 0) (string-byte-length s))))
+;; the case-insensitive substring search (the host str/includes? on the
+;; lower-cased name part -- callers lower the haystack). The key-chain row
+;; (2026-10-26): ONE primitive call, no walk. The replaced sub-walk2/sub-eq
+;; recursed per haystack position and per needle byte and trapped the
+;; interpreter's 32-frame budget on FULL device names -- measured on the
+;; kotoba runtime before the fix (key-hits "apple m1 max" "m1 max" ""
+;; => host/stack-exhausted while the short pins resolved,
+;; docs/evidence/gpu/w3-key-chain-primitive-20261026.txt). `string-contains?`
+;; is the primitive the walk spelled by hand (the string-fold-ascii /
+;; string-skip-blank precedents). PINNED: the primitive raises
+;; empty-string-search-needle on an empty needle (measured), while the
+;; deleted walk and the host str/includes? both answer TRUE for it
+;; (measured BEFORE "ab"/"" => true) -- so the empty needle is answered
+;; here, above the primitive, for host parity.
 #?(:kotoba
    (defn- substr-hits [hay :string needle :string] :bool
-     (sub-walk2 hay needle 0 (string-byte-length hay) (string-byte-length needle))))
+     (if (= 0 (string-byte-length needle)) true (string-contains? hay needle))))
+;; the uB5G SET key (the :measured-device-alternates row key, ADR-0358
+;; amendment 2026-10-25): a row's key is a SET of fragment sets -- the
+;; :measured-device fragment plus ONE alternate per '|'-field of
+;; :measured-device-alternates -- and one name part keeps the row flag only
+;; when it carries every fragment of one set (the nvidia row's
+;; "xavier" + "agx|tegra" is {xavier,agx} / {xavier,tegra}: "xavier" AND
+;; ("agx" OR "tegra"), the key the two attested spellings of its one
+;; measured host share). An empty '|'-field contributes NO set (a trailing
+;; pipe must not widen the key); a key whose fields are all empty ("") is
+;; the one-fragment set (the rows that carry no alternates). Fail closed:
+;; a bare fragment is not a set where alternates exist. Callers lower the
+;; haystack (substr-hits' contract).
+;; The alt-key row (2026-10-26): the three key walks move from PER-BYTE
+;; recursion to PER-FIELD pipe positions -- the split4 pipe-position
+;; precedent, here ONE `string-find-byte` per field boundary (the dot1
+;; precedent). The replaced walks recursed per key BYTE and trapped the
+;; interpreter's 32-frame budget on long keys -- measured on the kotoba
+;; runtime: a 200-byte alternate => host/stack-exhausted before the fix,
+;; docs/evidence/gpu/w3-alt-key-field-walk-20261026.txt. Contracts
+;; unchanged, pinned: field boundaries answer the index of the first '|'
+;; at or after i, n when absent; empty fields contribute no set; a key
+;; whose fields are all empty is the one-fragment set; bare fragments stay
+;; fail-closed. `string-find-byte` traps on from > n (measured), so the
+;; walk's total i >= n -> n shape is answered ABOVE the primitive (dot1's
+;; exact shape). The empty-field skip is load-bearing: substr-hits answers
+;; TRUE for an empty needle (pinned above), so a field is tested only when
+;; i < j.
+;; The alt-loop row (2026-10-26): alt-field? and alt-any-hits iterate
+;; through ONE `loop`/`recur` each (the __kotoba_loop_N trampoline's
+;; zero-charge self-tail re-entry, the sg-ops-walk loop precedent) where
+;; each was an ordinary `defn-` SELF-CALL taking one interpreter frame
+;; per '|'-FIELD -- the alt-key row's O(FIELDS) frame residual (above),
+;; closed. GO/NO-GO GROUND (w3_altloop_gonogo.txt, real run BEFORE this
+;; fix was written into src): the class is present on the walk itself --
+;; at 32 fields every probe cell TRAPped (budget/frames; af-em and
+;; ah-miss spelled host/stack-exhausted in one position) on BOTH arms
+;; while HOST answered the fact for every cell; every cell resolved
+;; through 28 fields. CONTRACTS UNCHANGED, pinned: alt-field? answers
+;; true iff SOME field is non-empty (false on all-empty and empty keys);
+;; alt-any-hits answers true iff some NON-EMPTY field's substring hits
+;; part (empty fields skip -- substr-hits answers TRUE for an empty
+;; needle, pinned above); the advance is still past the boundary
+;; (+ j 1), one alt-end per boundary. RESIDUAL, NAMED (measure-only, as
+;; landed): the loop removes FRAMES, not FUEL -- one alt-end entry per
+;; field (plus one substr-hits entry per non-empty field in
+;; alt-any-hits) still charges fuel against the 512-entry default
+;; (kotoba.compiler.limits :profile/reference), so a hypothetical
+;; many-field key can still reach the FUEL budget (the row's probe
+;; boundary sweep, measure-only, never pinned) and the loop helper's
+;; own boundary is FLAT and DETERMINISTIC (MEASURED 2026-10-26,
+;; docs/evidence/gpu/w3-loop-helper-boundary-20261026.txt: iterations
+;; are neither frames nor fuel -- the historical "state-dependent"
+;; claim was a mis-attribution of a paired selfcall cell; the
+;; loop-helper-boundary row) -- both bounded by the table's own key
+;; strings (3 fields today), unreachable from the wire. The FUEL
+;; residual CLOSED the same day by the alt-fuel row (below).
+;; The alt-fuel row (2026-10-26): the per-FIELD fuel entries are gone
+;; from both loop bodies -- alt-end (walk-only, DELETED) and alt-any-hits'
+;; substr-hits call are INLINED, so each walk charges its ONE entry plus
+;; its ONE loop-helper entry at ANY field count (the sg-ops-walk fuel-row
+;; precedent; go/no-go MEASURED BEFORE: af-em k+2, ah-miss 2k+3, hit-za
+;; 2k+8, hit-em k+4 min-fuel at k = 1/10/100/200 fields -- the named
+;; 512-entry-default residual). The boundary advance spells alt-end's
+;; contract verbatim for the callers' guarded position (i < n above it,
+;; so alt-end's (>= i n) -> n arm is answered by the loop guard and
+;; `string-find-byte` is only called with from < n -- it traps on from >
+;; n, pinned in the alt-key row): (let [p (string-find-byte alts 124 i)
+;; j (if (< p 0) n p)] ...). alt-any-hits' substr-hits call is the
+;; NON-EMPTY needle branch only -- the (< i j) guard makes the substring
+;; range non-empty, where substr-hits IS (string-contains? part needle)
+;; -- so the empty-needle answer (true, pinned above) is unreachable
+;; there and the guard is load-bearing and kept. CONTRACTS UNCHANGED,
+;; pinned: alt-field? answers true iff SOME field is non-empty (false on
+;; all-empty and empty keys); alt-any-hits answers true iff some
+;; NON-EMPTY field's substring hits part (empty fields skip); the advance
+;; is still past the boundary (+ j 1); key-hits' fail-closed set rule
+;; (a bare fragment is not a set where alternates exist) is untouched.
+;; substr-hits STAYS a defn- (key-hits still calls it for the base
+;; fragment). RESIDUAL, NAMED (measure-only): none per field -- the
+;; remaining boundary is the loop helper's own, FLAT and DETERMINISTIC
+;; (the loop-helper-boundary row, 2026-10-26: iterations are neither
+;; frames nor fuel), and the table's keys carry 3 fields today.
 #?(:kotoba
-   (defn- sub-walk2 [hay :string needle :string i :i64 n :i64 m :i64] :bool
-     (cond (> (+ i m) n) false
-           (sub-eq hay needle i 0 m) true
-           :else (sub-walk2 hay needle (+ i 1) n m))))
+   (defn- alt-field? [alts :string i :i64 n :i64] :bool
+     (loop [i i]
+       (if (>= i n) false (let [p (string-find-byte alts 124 i) j (if (< p 0) n p)] (if (< i j) true (recur (+ j 1))))))))
 #?(:kotoba
-   (defn- sub-eq [hay :string needle :string j :i64 k :i64 m :i64] :bool
-     (cond (>= k m) true
-           (= (string-code-point-at hay (+ j k)) (string-code-point-at needle k)) (sub-eq hay needle j (+ k 1) m)
-           :else false)))
-;; the digits -> i64 parse (host parse-long on a digit string)
+   (defn- alt-any-hits [part :string alts :string i :i64 n :i64] :bool
+     (loop [i i]
+       (if (>= i n)
+         false
+         (let [p (string-find-byte alts 124 i)
+               j (if (< p 0) n p)]
+           (if (and (< i j) (string-contains? part (string-substring alts i j)))
+             true
+             (recur (+ j 1))))))))
+#?(:kotoba
+   (defn- key-hits [part :string frag :string alts :string] :bool
+     (if (substr-hits part frag)
+       (if (alt-field? alts 0 (string-byte-length alts))
+         (alt-any-hits part alts 0 (string-byte-length alts))
+         true)
+       false)))
+;; the digits -> i64 parse (host parse-long on a digit string). The
+;; numeric-walk row (2026-10-26): the `parse-long` sugar -- the host arm's
+;; OWN head -- ONE call, no walk. The replaced parse-walk recursed per
+;; byte: measured on the kotoba runtime, the 19-digit i64 max trapped
+;; host/stack-exhausted and "99999999999999999999" answered the WRONG
+;; wrapped value 7766279631452241919 (docs/evidence/gpu/
+;; w3-numeric-walk-primitives-20261026.txt). PINNED SEMANTIC CHANGE:
+;; digit text that does not fit i64 answers -1 (the primitive's no-value
+;; shape) instead of a wrapped value -- the host arm's parse-long answers
+;; nil there and its caller maps no-value to "no positive wg", so BOTH
+;; arms answer the same device-from-info (null). Measured parity on the
+;; parseable probes (including 102-char leading-zero text -> 42 on both).
+;; ENGINE PARSE-LONG BOUNDARY (MEASURED 2026-10-26, two byte-identical
+;; runs, docs/evidence/gpu/w3-parse-long-boundary-20261026.txt): the host
+;; engine's parse-long answers the EXACT value only through 2^53-1
+;; (9007199254740991) and nil at 2^53 (9007199254740992) and above -- so
+;; the arms diverge for a CLASS of texts, not one: every digit text whose
+;; value is in [2^53, i64max] answers the value on the :kotoba arm (its
+;; builtin parse-long holds real i64) and NO FACT on the host arm (parse-long
+;; nil -> "no positive wg" -> nil), on BOTH routes (device-from-info's
+;; maxWgX -- the sg-size row's "unprobed there" question, probed now -- and
+;; device-from-subgroup's size). Fail-closed on the host arm (a missing
+;; fact, never a wrong fact), unreachable from the wire (a wire-42 maxWgX
+;; is a device limit). The class is pinned on the :kotoba contract arm;
+;; the host cells stay named and never pinned (engine-owned).
+;; MECHANISM (READ 2026-10-26, docs/evidence/gpu/
+;; w3-parse-long-mechanism-20261026.txt): the engine's parse-long is
+;; cljs.core/parse-long on the kbb SCI-on-Node engine -- one
+;; (re-matches #"[+-]?\d+") gate, then js/parseInt into a JS Number
+;; answered ONLY inside [js/Number.MIN_SAFE_INTEGER,
+;; js/Number.MAX_SAFE_INTEGER] = [-(2^53-1), 2^53-1] (the running
+;; compiled body in org-babashka-nbb/lib/nbb_core.js and the CLJS
+;; source body, verbatim in the evidence). So the boundary tracks the
+;; SAFE-INTEGER RANGE, not representability (2^53 is exactly
+;; representable and still refused -- measured, now read); malformed
+;; and out-of-range are the SAME nil on that head (fail-closed is the
+;; only observable); a non-string THROWS "Expected string, got: ...".
+;; The class has a negative twin at the UNIT level ([i64min, -2^53]:
+;; exact on the :kotoba arm, nil on the engine -- confirmed on both
+;; signs), unreachable from the wire on either sign (the digits? and
+;; [0-9]+ gates refuse a sign above the parse, both arms).
 #?(:kotoba
    (defn- string->i64 [s :string] :i64
-     (parse-walk s 0 (string-byte-length s) 0)))
-#?(:kotoba
-   (defn- parse-walk [s :string i :i64 n :i64 acc :i64] :i64
-     (if (>= i n) acc (parse-walk s (+ i 1) n (+ (* acc 10) (- (string-code-point-at s i) 48))))))
+     (option-value-of [:option :i64] (parse-long s) -1)))
 ;; the largest power of two at or below lim (the host loop (quot sz 2))
 #?(:kotoba
    (defn- clamp2 [sz :i64 lim :i64] :i64
@@ -155,13 +453,65 @@
   #{:nvidia :apple :intel :arm :amd :unknown}))
 #?(:kotoba
    (defn device-classes [] [:set :keyword]
-     (typed-set-new [:set :keyword] :discrete-gpu :integrated-gpu :unknown))
+     (typed-set-new [:set :keyword] :discrete-gpu :integrated-gpu :virtual-gpu :cpu :other :unknown))
    :default
 (def device-classes
-  "Reserved. The v1 table does not branch on device class yet; when a row
-  needs it (discrete vs integrated memory behavior), it lands with the
-  measurement that justifies the branch."
-  #{:discrete-gpu :integrated-gpu :unknown}))
+  "The device-class vocabulary: one keyword per word of the wire-42 DEVCLASS
+  answer (tools/kexe_gpu_vulkan.c reports the chosen device's
+  VkPhysicalDeviceType as discrete|integrated|virtual|cpu|other), plus
+  :unknown for anything that is not one of those words. Reserved: the v1
+  table does not branch on device class yet; when a row needs it (discrete vs
+  integrated memory behavior), it lands with the measurement that justifies
+  the branch."
+  #{:discrete-gpu :integrated-gpu :virtual-gpu :cpu :other :unknown}))
+;; the DEVCLASS token table (the host device-class-tokens map): the five
+;; loader words and their classes in the guest's two parallel document lists
+;; (a typed vector holds one element kind). Exact word equality, no case
+;; fold -- a word the loader cannot emit is not a class fact.
+#?(:kotoba
+   (defn- dc-tokens-doc [] :document
+     (document-list (document-string "discrete") (document-string "integrated") (document-string "virtual")
+                    (document-string "cpu") (document-string "other")))
+   :default
+(def ^:private device-class-tokens
+  "The DEVCLASS wire words -> device-classes keywords. The loader emits
+  exactly these five lower-case words, so the map is the whole vocabulary and
+  nothing is case-folded: a word the loader cannot emit is not a class fact."
+  {"discrete" :discrete-gpu
+   "integrated" :integrated-gpu
+   "virtual" :virtual-gpu
+   "cpu" :cpu
+   "other" :other}))
+#?(:kotoba
+   (defn- dc-classes-doc [] :document
+     (document-list (document-keyword :discrete-gpu) (document-keyword :integrated-gpu) (document-keyword :virtual-gpu)
+                    (document-keyword :cpu) (document-keyword :other))))
+#?(:kotoba
+   (defn- dc-lookup [token :string i :i64 n :i64] :keyword
+     (if (>= i n)
+       :unknown
+       (let [tx (option-value-of [:option :document] (document-list-at (dc-tokens-doc) i) (document-null))
+             word (option-value-of [:option :string] (document-string-value tx) "")]
+         (if (= token word)
+           (option-value-of [:option :keyword]
+                            (document-keyword-value (option-value-of [:option :document] (document-list-at (dc-classes-doc) i) (document-null)))
+                            :unknown)
+           (dc-lookup token (+ i 1) n))))))
+#?(:kotoba
+   (defn device-class [token :document] :keyword
+     (if (not (= (document-kind token) :string))
+       :unknown
+       (dc-lookup (option-value-of [:option :string] (document-string-value token) "") 0 5)))
+   :default
+(defn device-class
+  "Map one wire-42 DEVCLASS token into `device-classes`. TOTAL: a token
+  outside the loader's five words (nil, blank, a case variant, a keyword)
+  answers :unknown -- a non-fact must not become a specific class. Lossless
+  in the other direction: every loader word keeps its own class. `recommend`
+  does not branch on this; it is the reporting half of device class for the
+  dispatch layers that will (JUN-57..60)."
+  [token]
+  (get device-class-tokens token :unknown)))
 #?(:kotoba
    (defn vendor-ids [] [:map :i64 :keyword]
      (typed-map-new [:map :i64 :keyword]
@@ -260,29 +610,34 @@
    (defn target-for [api :keyword vendor :keyword] :keyword
      (cond (= api :cuda) :cuda-v1
            (= api :metal) :msl-v1
-           (or (= api :vulkan) (= api :webgpu)) :wgsl-v1
+           (= api :vulkan) :glsl-v1
+           (= api :webgpu) :wgsl-v1
            :else (default-target vendor)))
    :default
 (defn target-for
-  "The emission target for an (api, vendor) pair. An api that names its
-  shading language decides outright (:cuda -> :cuda-v1, :metal -> :msl-v1,
-  :vulkan/:webgpu -> :wgsl-v1); a missing or unknown api falls back to the
-  vendor default."
+  "The emission target for an (api, vendor) pair. An api decides its route
+  outright (:cuda -> :cuda-v1, :metal -> :msl-v1, :vulkan -> :glsl-v1,
+  :webgpu -> :wgsl-v1); a missing or unknown api falls back to the vendor
+  default. ADR-0359 decision 3: Vulkan names no shading language -- it opens
+  compiled SPIR-V -- and the only source-to-SPIR-V path this repository owns
+  is glslang from GLSL, so :vulkan answers :glsl-v1. WebGPU keeps its
+  language."
   [api vendor]
   (cond
     (= api :cuda) :cuda-v1
     (= api :metal) :msl-v1
-    (#{:vulkan :webgpu} api) :wgsl-v1
+    (= api :vulkan) :glsl-v1
+    (= api :webgpu) :wgsl-v1
     :else (default-target vendor))))
 #?(:kotoba
    (defn workgroup-defaults [] [:map :keyword :document]
      (typed-map-new [:map :keyword :document]
-                    :nvidia (wg-row 256 32 true "warp width 32; 256 is 8 warps per workgroup" "2026-10-19 Xavier nvgpu, 6 paired runs: 128-1024 flat within 2%, 32 is 22% slower; 256 kept inside the flat band")
-                    :apple (wg-row 256 32 true "SIMD-group width 32" "2026-10-19 Apple M1 Max / MoltenVK, 16 paired runs: 32-1024 medians within ~5% and no size won more than 6/16; 256 kept as the most frequent paired winner")
-                    :intel (wg-row 128 32 true "subgroup width 8/16/32; 128 is a multiple of all three" "2026-10-19 BMG G31 / ANV, 6 paired runs: 32-256 flat within 2% (64 won 4/6 on noise-level margins), 512/1024 marginally slower; 128 kept as the subgroup-safe row inside the flat band")
-                    :arm (wg-row 128 16 false "Mali execution widths 4-32 all divide 128" "")
-                    :amd (wg-row 1024 64 true "wavefront width 64; measurement chose the top of the bound" "2026-10-19 Radeon 680M / RADV, 6 paired runs: 1024 won 5/6 and is 28% faster than the provisional 256 (median 334,528 vs 467,981 ns); 32 slowest")
-                    :unknown (wg-row 256 32 false "portable fallback" "")))
+                    :nvidia (wg-row 256 32 true "xavier" "agx|tegra" "warp width 32; 256 is 8 warps per workgroup" "2026-10-19 Xavier nvgpu, 6 paired runs: 128-1024 flat within 2%, 32 is 22% slower; 256 kept inside the flat band")
+                    :apple (wg-row 256 32 true "m1 max" "" "SIMD-group width 32" "2026-10-19 Apple M1 Max / MoltenVK, 16 paired runs: 32-1024 medians within ~5% and no size won more than 6/16; 256 kept as the most frequent paired winner")
+                    :intel (wg-row 128 32 true "g31" "" "subgroup width 8/16/32; 128 is a multiple of all three" "2026-10-19 BMG G31 / ANV, 6 paired runs: 32-256 flat within 2% (64 won 4/6 on noise-level margins), 512/1024 marginally slower; 128 kept as the subgroup-safe row inside the flat band")
+                    :arm (wg-row 128 16 false "" "" "Mali execution widths 4-32 all divide 128" "")
+                    :amd (wg-row 1024 64 true "680m" "" "wavefront width 64; measurement chose the top of the bound" "2026-10-19 Radeon 680M / RADV, 6 paired runs: 1024 won 5/6 and is 28% faster than the provisional 256 (median 334,528 vs 467,981 ns); 32 slowest")
+                    :unknown (wg-row 256 32 false "" "" "portable fallback" "")))
    :default
 (def workgroup-defaults
   "Per-vendor workgroup rows (ADR-0355). The rows hardware answered for are
@@ -290,19 +645,54 @@
   :unknown stay provisional. :measured? says a hardware measurement chose
   this size -- nothing more. The measurements are one workload shape
   (2^20-thread f32 ewise FMA, 256 FMAs per thread, submit->fence host clock,
-  paired runs) and are not a claim of optimality for every kernel."
+  paired runs) and are not a claim of optimality for every kernel.
+
+  :measured-device (measured rows only) is the case-insensitive name
+  fragment of the ONE device each row's measurement ran on (ADR-0358's host
+  column: Xavier, M1 Max, BMG G31, Radeon 680M). It is the uB5G scoping
+  key: `recommend` reports the row's :measured? for a NAMED device only
+  when the device's name carries this fragment -- the row flag is evidence
+  about the measured device, and a name-fragment match (the same idiom as
+  name-vendor-fragments) is how this table recognises it. A fragment match
+  is deliberately coarse (a name containing the fragment counts as the
+  measured device); it narrows the flag, it never widens it past a named
+  device.
+
+  :measured-device-alternates (measured rows only, ADR-0358 amendment
+  2026-10-25) is the key's '|'-separated alternate-fragment string, and the
+  key is read as a SET: the fragment plus ONE alternate per field, one name
+  part keeping the flag only when it carries every fragment of one set. The
+  :nvidia row's 'agx|tegra' spells the two attested names of its one
+  measured host -- the wire-42 INFO receipt says 'NVIDIA Tegra Xavier
+  (nvgpu)', the CUDA channel says 'NVIDIA Jetson AGX Xavier' -- so the sets
+  are {xavier, agx} / {xavier, tegra} and the row-(iv) transplant
+  ('xavier'+'agx' alone) is refused: it would deny the measured device its
+  flag under its own probe receipt. A row with no alternates ('') keeps the
+  single-fragment contract. The set closes the NX hole fail-closed:
+  'Jetson Xavier NX' (also sm_72) and a bare 'Xavier' attach nothing, while
+  named residuals ('Jetson AGX Xavier Industrial', 'Tegra Xavier NX') ride
+  as NAMED BEHAVIOR, not measurement claims -- the descriptor surface has no
+  device-id axis and none is invented here."
   {:nvidia {:size 256 :execution-width 32 :measured? true
+            :measured-device "xavier"
+            :measured-device-alternates "agx|tegra"
             :basis "warp width 32; 256 is 8 warps per workgroup"
             :evidence "2026-10-19 Xavier nvgpu, 6 paired runs: 128-1024 flat within 2%, 32 is 22% slower; 256 kept inside the flat band"}
    :apple {:size 256 :execution-width 32 :measured? true
+           :measured-device "m1 max"
+           :measured-device-alternates ""
            :basis "SIMD-group width 32"
            :evidence "2026-10-19 Apple M1 Max / MoltenVK, 16 paired runs: 32-1024 medians within ~5% and no size won more than 6/16; 256 kept as the most frequent paired winner"}
    :intel {:size 128 :execution-width 32 :measured? true
+           :measured-device "g31"
+           :measured-device-alternates ""
            :basis "subgroup width 8/16/32; 128 is a multiple of all three"
            :evidence "2026-10-19 BMG G31 / ANV, 6 paired runs: 32-256 flat within 2% (64 won 4/6 on noise-level margins), 512/1024 marginally slower; 128 kept as the subgroup-safe row inside the flat band"}
    :arm {:size 128 :execution-width 16 :measured? false
          :basis "Mali execution widths 4-32 all divide 128"}
    :amd {:size 1024 :execution-width 64 :measured? true
+         :measured-device "680m"
+         :measured-device-alternates ""
          :basis "wavefront width 64; measurement chose the top of the bound"
          :evidence "2026-10-19 Radeon 680M / RADV, 6 paired runs: 1024 won 5/6 and is 28% faster than the provisional 256 (median 334,528 vs 467,981 ns); 32 slowest"}
    :unknown {:size 256 :execution-width 32 :measured? false
@@ -317,7 +707,9 @@
          (option-value-of [:option :i64] (document-i64-value (dgk row :size)) 256))))
    :default
 (defn workgroup-default
-  "The provisional workgroup size for a vendor (a power of two in [32, 1024]).
+  "The workgroup size for a vendor (a power of two in [32, 1024]) -- the
+  row's :size, from a measured row or a provisional one as the row's
+  :measured? flag says (`workgroup-defaults`).
   Total: a vendor outside `vendors` takes the :unknown row."
   [vendor]
   (get-in workgroup-defaults [vendor :size] 256)))
@@ -326,17 +718,17 @@
      (if (not (= (document-kind answer) :string))
        (document-null)
        (let [s (option-value-of [:option :string] (document-string-value answer) "")]
-         (let [f0 (split4 s 0 (string-byte-length s) 0 (document-vector))]
+         (let [f0 (split4 s 0 0 (string-byte-length s) 0 (document-vector))]
            (if (none? f0)
              (document-null)
              (let [fields f0
                    n (document-count fields)]
                (if (not= 4 n)
                  (document-null)
-                 (let [device (option-value-of [:option :string] (document-string-value (option-value-of [:option :document] (document-list-at fields 0) (document-null))) "")
-                       api-version (option-value-of [:option :string] (document-string-value (option-value-of [:option :document] (document-list-at fields 1) (document-null))) "")
-                       max-wg-x (option-value-of [:option :string] (document-string-value (option-value-of [:option :document] (document-list-at fields 2) (document-null))) "")
-                       unified (option-value-of [:option :string] (document-string-value (option-value-of [:option :document] (document-list-at fields 3) (document-null))) "")
+                 (let [device (option-value-of [:option :string] (document-string-value (option-value-of [:option :document] (document-vector-at fields 0) (document-null))) "")
+                       api-version (option-value-of [:option :string] (document-string-value (option-value-of [:option :document] (document-vector-at fields 1) (document-null))) "")
+                       max-wg-x (option-value-of [:option :string] (document-string-value (option-value-of [:option :document] (document-vector-at fields 2) (document-null))) "")
+                       unified (option-value-of [:option :string] (document-string-value (option-value-of [:option :document] (document-vector-at fields 3) (document-null))) "")
                        wg (if (digits? max-wg-x 0 (string-byte-length max-wg-x)) (string->i64 max-wg-x) -1)]
                    (if (and (not (blank-str? device))
                             (version3? api-version)
@@ -354,7 +746,8 @@
   "Parse one wire-42 INFO answer -- \"<device>|<api>|<maxWgX>|<unified>\" as
   tools/kexe_gpu_vulkan.c answers it (deviceName, apiVersion major.minor.patch,
   limits.maxComputeWorkGroupSize[0], deviceType==INTEGRATED_GPU) -- into a
-  device descriptor for `recommend`:
+  device descriptor for `recommend`. The device class is NOT in this answer:
+  it rides the separate DEVCLASS request, and `device-class` maps its word:
   {:vendor <deviceName> :api :vulkan :api-version <string>
    :max-workgroup-x <int> :unified-memory? <bool> :measured? true}.
 
@@ -365,10 +758,15 @@
   result. The wire is Vulkan-only, so :api is always :vulkan here.
 
   Total: an answer that is not exactly four well-formed fields answers nil
-  (a wrong parse must not become a wrong dispatch decision)."
+  (a wrong parse must not become a wrong dispatch decision). The field
+  count is the RAW '|'-split count (str/split ... -1): trailing empty
+  fields count as fields, so four good fields plus a trailing '|' answers
+  nil on BOTH arms (2026-10-26 parity decision; before it the host arm's
+  un-limited str/split dropped trailing empties and parsed such an answer).
+  The :kotoba arm's split4 counts the same way."
   [answer]
   (when (string? answer)
-    (let [fields (str/split answer #"\|")]
+    (let [fields (str/split answer #"\|" -1)]
       (when (= 4 (count fields))
         (let [[device api-version max-wg-x unified] fields
               wg (when (re-matches #"[0-9]+" max-wg-x) (parse-long max-wg-x))]
@@ -382,6 +780,402 @@
              :max-workgroup-x wg
              :unified-memory? (= unified "1")
              :measured? true})))))))
+;; the SUBGROUP answer (ADR-0362 decision 2): "<size>|<ops>", exactly two
+;; '|'-separated fields -- the wire-42 answer whose producer is the ADR 0371
+;; provider track (unimplemented; no live wire feeds it today). The
+;; vocabulary is the eight Vulkan 1.1 core VkSubgroupFeatureFlagBits names,
+;; lower-cased, mapped 1:1 to keywords with the hyphen preserved (the
+;; device-class-tokens idiom). The table is the whole vocabulary: a token
+;; outside it is unknown and, all-or-nothing, fails the whole answer.
+#?(:kotoba
+   (defn- sg-tokens-doc [] :document
+     (document-list (document-string "basic") (document-string "vote") (document-string "arithmetic")
+                    (document-string "ballot") (document-string "shuffle") (document-string "shuffle-relative")
+                    (document-string "clustered") (document-string "quad")))
+   :default
+(def ^:private subgroup-op-tokens
+  "The SUBGROUP answer's <ops> vocabulary (ADR-0362 decision 2): the eight
+  Vulkan 1.1 core VkSubgroupFeatureFlagBits names, lower-cased, mapped 1:1 to
+  keywords with the hyphen preserved (shuffle-relative -> :shuffle-relative).
+  The map is the whole vocabulary: a token outside it is an unknown token and,
+  with decision 4's all-or-nothing rule, fails the WHOLE answer to an absent
+  fact."
+  {"basic" :basic
+   "vote" :vote
+   "arithmetic" :arithmetic
+   "ballot" :ballot
+   "shuffle" :shuffle
+   "shuffle-relative" :shuffle-relative
+   "clustered" :clustered
+   "quad" :quad}))
+;; (the token -> keyword table and sg-token-end's find moved INLINE into
+;; sg-ops-walk's loop body -- the fuel row, 2026-10-26: the sg-keyword
+;; and sg-token-end `defn-`s charged ONE FUEL per token as function
+;; entries; see the walk's comment below.)
+;; the <size> field: decimal digits only as an i64, -1 for an empty field, a
+;; non-digit or a value past i64 (the protocol table's parse-decimal
+;; contract). The sg-size row (2026-10-26): the replaced sg-size-walk
+;; recursed per byte and trapped the interpreter's 32-frame budget
+;; (frames-limit 32) on long digit fields -- measured on the kotoba
+;; runtime (docs/evidence/gpu/w3-sg-size-parse-20261026.txt). The parse
+;; is ONE digits? + ONE string->i64, the exact wg-field idiom
+;; (device-from-info, 2026-10-26 numeric-walk row): digits? answers the
+;; host regex [0-9]+ reading (first byte ASCII digit AND verdict
+;; ok|out-of-range -- PROBED taxonomy, not proven) and string->i64 is one
+;; parse-long (the host arm's OWN head) whose no-value shape (-1) IS this
+;; contract's -1 for a value past i64. The digits? guard is load-bearing
+;; for the signed spellings: parse-long accepts "+5"/"-5" (measured) where
+;; the host regex and the deleted walk refuse them.
+#?(:kotoba
+   (defn- sg-size [s :string] :i64
+     (let [n (string-byte-length s)]
+       (if (and (< 0 n) (digits? s 0 n))
+         (string->i64 s)
+         -1))))
+;; (sg-token-end's ONE-find token-end shape is spelled inline in
+;; sg-ops-walk's loop body -- the fuel row, 2026-10-26; see below.)
+;; the dedupe check over the chain's own accumulator reads a document-MAP
+;; SHADOW (kw -> true) with ONE `document-contains` (the map-key idiom)
+;; and grows it with ONE `document-assoc` -- where the check walked the
+;; answer vector one element per RECURSIVE frame (the deleted sg-member?:
+;; document-equal? per element, its depth stacked under the walk's
+;; per-token frames -- MEASURED: the 70-byte eight-token answer TRAPped
+;; host/stack-exhausted on BOTH arms in the sg-ops row's probe,
+;; docs/evidence/gpu/w3-ops-walk-token-skip-20261026.txt; this row's
+;; evidence, w3-dedupe-map-shadow-20261026.txt, re-measures it). The
+;; shadow mirrors the answer vector 1:1 -- both grow in the same branch
+;; -- so the membership verdict is EXACT, not approximate; the ANSWER is
+;; still the document-VECTOR (first-occurrence order, kind pinned), only
+;; the check's cost changed. Head calls cost no frame (frames = user call
+;; depth, kir.cljk: a trampolined self-tail re-entry is free), so the
+;; per-element frames class is GONE. GO/NO-GO ground, measured (this
+;; row's evidence): `document-set-contains?` TRAPs "document-set-required"
+;; on a document-VECTOR (the direct route onto the vector is closed);
+;; `document-contains` answers the map-key idiom exactly (map{basic:true}
+;; holds basic, not vote) and TRAPs "document-map-required" off-map;
+;; `document-assoc` grows without dropping earlier keys;
+;; `document-merge` TRAPs "document-map-required" on sets (the set-shadow
+;; route is closed -- a document-set has no grow head); `(document-map)`
+;; seeds an empty map. CONTRACT UNCHANGED, pinned: a duplicate token is
+;; the same fact and collapses.
+;; the <ops> walk: TOKEN POSITIONS, not bytes -- a separator RUN costs ONE
+;; `string-skip-blank`, not one recursive frame per space byte (the
+;; sg-keyword row's named residual, 2026-10-26: "sg-ops-walk per token AND
+;; per space byte ... their own rows"). The replaced walk skipped the
+;; separator one BYTE per recursive frame ((string-code-point-at s i) 32 ->
+;; (+ i 1)) and those frames stacked under the per-token frames and
+;; sg-member?'s per-element frames -- measured on the kotoba runtime
+;; (docs/evidence/gpu/w3-sg-keyword-table-20261026.txt: the 31-byte spaced
+;; and 70-byte eight-token answers TRAPped host/stack-exhausted). Now
+;; sg-ops normalizes the entry to a token start and each walk recursion
+;; arg is the NEXT token start -- first non-blank at or after the token
+;; end (measured: string-skip-blank answers i itself when s[i] is
+;; non-blank and n for from = n), so the walk is one frame per TOKEN.
+;; CONTRACT UNCHANGED, pinned: byte 32 is the wire's ONLY separator --
+;; tokens are maximal non-32 runs, one or more spaces separate, a
+;; separator-only field is zero tokens. `string-skip-blank` is C isspace
+;; (measured: it skips \t as well as 32 -- "a \t b" from 1 answers 4),
+;; which would move the separator rule AWAY from host parity, so a field
+;; holding any byte in {9,10,11,12,13} answers (document-null) ABOVE the
+;; walk: exact, not fail-closed -- such a byte sits INSIDE a maximal
+;; non-32 run, whose token then cannot be a vocabulary word (the
+;; vocabulary is [a-z-] text), so the old walk answered the same null
+;; (all-or-nothing, decision 4). On a field with no such byte the skip is
+;; exactly the 32-runs. `string-find-byte` answers -1 for from = n and
+;; traps only on from > n (measured: this row's probe), so the five guard
+;; calls are total on every field including "".
+;; The loop row (2026-10-26): the walk iterates through ONE `loop`/`recur`
+;; -- the frontend desugars the `loop` to a `__kotoba_loop_N` helper whose
+;; self-tail re-entry the KIR interpreter trampolines IN PLACE, zero-charge
+;; (no frame, no fuel -- kir.cljc T7.1/T7.4, read then PROBED here) -- where
+;; the replaced shape was an ordinary `defn-` self-call taking ONE frame per
+;; TOKEN (MEASURED: 32+ token fields trapped budget/frames, the dedupe-map
+;; row's boundary; a bare defn self-recursion exhausts the HOST stack even
+;; earlier -- probe: 24 -- while the loop shape resolves 20000 iterations).
+;; The frame-per-token class is GONE: the walk's depth is now CONSTANT (the
+;; one sg-ops-walk entry + the loop). CONTRACT UNCHANGED, pinned: nothing
+;; about the token/dedupe/answer contract moved (byte 32 separator, maximal
+;; non-32 runs, duplicate collapses, document-VECTOR first-occurrence order).
+;; RESIDUAL THEN, FIXED NOW (the FUEL row, 2026-10-26): the walk
+;; charged FUEL per user call per token -- sg-token-end / sg-keyword /
+;; none? were THREE `defn-` entries per token and one function entry is
+;; one fuel unit (kir.cljc charge! on invoke-function). MEASURED ground
+;; (probe w3_fuel_prims.cljk, min-fuel = the run's exact charge count):
+;; a bare loop is min-fuel 2 at 1..5000 iterations (loop-helper
+;; self-tail re-entry zero-charge, T7.1), THREE user calls per
+;; iteration are min-fuel 3k+2 exactly (5/32/302/1202 at k=1/10/100/
+;; 400), and the walk's OP mix per iteration (string-find-byte /
+;; string-substring / string-skip-blank / the cond table's string tests
+;; / document-equal? / document-contains / document-vector-conj /
+;; document-assoc / document-bool) is min-fuel 4 CONSTANT at 1..400
+;; iterations (the row's full inline shape, walklike: the same 4 through
+;; 2000) -- the base 2 a bare loop charges plus the two seed document
+;; constructors, every other head charge-free. So the three per-token
+;; calls are
+;; INLINED into the loop body below (sg-token-end's find, the sg-keyword
+;; cond table, none?'s document-equal? sentinel test) and the walk
+;; charges fuel ONCE per entry and ZERO per token: the many-token
+;; budget/fuel wrong-refusal class (this row's BEFORE boundary: the
+;; 3-word-cycle field resolves through 160 tokens and TRAPs budget/fuel
+;; at 192+) is GONE, measured in this row's evidence. The deleted
+;; sg-token-end / sg-keyword `defn-`s had no other caller.
+;; CONTRACT UNCHANGED, pinned: byte 32 the wire's ONLY separator (tokens
+;; are maximal non-32 runs; the loop's (>= i n) -> acc guard is the
+;; totality above string-find-byte -- from = n is never called, -1
+;; absent -> n, the deleted sg-token-end's contract verbatim); the whole
+;; vocabulary 1:1 with the hyphen preserved and a token outside it
+;; answers (document-null) -- unknown fails the whole answer above (the
+;; inline test is none?'s own body: document-equal? against
+;; (document-null)); a duplicate token collapses (the map shadow); the
+;; ANSWER is the document-VECTOR in first-occurrence order.
+;; RESIDUAL, NAMED (measure-only): there is no per-token charge of any
+;; kind left in the body under the default budgets (fuel flat, frames
+;; constant, cells/bytes unmetered) -- the walk's new boundary is the
+;; loop helper's own, FLAT and DETERMINISTIC (MEASURED 2026-10-26,
+;; docs/evidence/gpu/w3-loop-helper-boundary-20261026.txt: a bare
+;; counting loop resolves every k 1..40000 in every position measured
+;; -- standalone, after 8 trapping neighbours, with a trapping
+;; neighbour before every cell -- the historical "10000 trap" was the
+;; paired selfcall cell, a mis-attribution; iterations are neither
+;; frames nor fuel) plus host memory. Also named: the document-vector
+;; element cap (32 resolve / 48 trap 'document-vector-too-large') stays
+;; unreachable here (the answer caps at the 8-word vocabulary).
+#?(:kotoba
+   (defn- sg-ops [field :string] :document
+     (if (or (>= (string-find-byte field 9 0) 0)
+             (>= (string-find-byte field 10 0) 0)
+             (>= (string-find-byte field 11 0) 0)
+             (>= (string-find-byte field 12 0) 0)
+             (>= (string-find-byte field 13 0) 0))
+       (document-null)
+       (sg-ops-walk field (string-skip-blank field 0) (string-byte-length field)
+                    (document-vector) (document-map)))))
+#?(:kotoba
+   (defn- sg-ops-walk [s :string i :i64 n :i64 acc :document seen :document] :document
+     ;; ONE loop, no frame per token (the loop row) and NO FUEL per
+     ;; token (the fuel row, 2026-10-26): the three per-token `defn-`
+     ;; calls -- sg-token-end, sg-keyword and none? -- are INLINED here --
+     ;; one function entry is one fuel unit (kir.cljc charge!), every
+     ;; other head this body runs is charge-free (measured: the row's
+     ;; ground, w3_fuel_prims.cljk). The desugared `__kotoba_loop_N`
+     ;; helper's self-tail re-entry is zero-charge (no frame, no fuel).
+     (loop [i i acc acc seen seen]
+       (if (>= i n)
+         acc
+         (let [p (string-find-byte s 32 i)
+               j (if (< p 0) n p)
+               token (string-substring s i j)
+               kw (cond (= token "basic") (document-keyword :basic)
+                        (= token "vote") (document-keyword :vote)
+                        (= token "arithmetic") (document-keyword :arithmetic)
+                        (= token "ballot") (document-keyword :ballot)
+                        (= token "shuffle") (document-keyword :shuffle)
+                        (= token "shuffle-relative") (document-keyword :shuffle-relative)
+                        (= token "clustered") (document-keyword :clustered)
+                        (= token "quad") (document-keyword :quad)
+                        :else (document-null))]
+           (if (document-equal? kw (document-null))
+             (document-null)
+             (let [dup? (document-contains seen kw)
+                   acc2 (if dup? acc (document-vector-conj acc kw))
+                   seen2 (if dup? seen (document-assoc seen kw (document-bool true)))]
+               (recur (string-skip-blank s j) acc2 seen2))))))))
+;; exactly two fields: the index of the single '|', -1 for none, -2 for
+;; more. The pipe/token-end row (2026-10-26): the replaced pipe walk
+;; recursed per ANSWER byte and trapped the budget on every long answer
+;; (MEASURED: 106..110-byte answers trapped budget/frames regardless of
+;; the sg-size fix, docs/evidence/gpu/w3-pipe-token-end-primitives-
+;; 20261026.txt). The scan is at most TWO `string-find-byte` calls (the
+;; dot1/alt-end precedent): the first '|' from 0, then -- only if a first
+;; exists and a byte follows it -- a second '|' after it. The total
+;; shapes (-1 for no pipe; the first index when no byte follows) are
+;; answered ABOVE the primitive (string-find-byte answers -1 when absent
+;; and traps on from > n; from = n is never called -- dot1's i >= n
+;; guard).
+#?(:kotoba
+   (defn- sg-pipe [s :string n :i64] :i64
+     (if (>= 0 n)
+       -1
+       (let [p (string-find-byte s 124 0)]
+         (if (< p 0)
+           -1
+           (if (>= (+ p 1) n)
+             p
+             (let [q (string-find-byte s 124 (+ p 1))]
+               (if (< q 0) p -2))))))))
+#?(:kotoba
+   (defn device-from-subgroup [answer :document] :document
+     (if (not (= (document-kind answer) :string))
+       (document-null)
+       (let [s (option-value-of [:option :string] (document-string-value answer) "")
+             n (string-byte-length s)
+             p (sg-pipe s n)]
+         (if (< p 0)
+           (document-null)
+           (let [size (sg-size (string-substring s 0 p))
+                 ops (sg-ops (string-substring s (+ p 1) n))]
+             (if (and (< 0 size) (not (none? ops)))
+               (document-map (document-keyword :subgroup-size) (document-i64 size)
+                             (document-keyword :subgroup-ops) ops)
+               (document-null)))))))
+   :default
+(defn device-from-subgroup
+  "Parse one wire-42 SUBGROUP answer -- \"<size>|<ops>\", exactly two
+  '|'-separated fields (ADR-0362 decision 2) -- into the two descriptor keys
+  rule 6 (ADR-0356) already consumes (decision 4):
+  {:subgroup-size <positive int> :subgroup-ops #{<keywords>}}. The producer of
+  this answer (the ADR 0371 GPU provider's SUBGROUP reply) does not exist
+  yet, so no live wire feeds this function today.
+
+  <size> is decimal digits only, a positive integer. <ops> is zero or more
+  tokens from `subgroup-op-tokens`, read by the wire's token rule (runs of
+  non-space bytes separated by one or more spaces -- byte 32 is the only
+  separator, the request grammar's rule -- so a separator-only field is also
+  zero tokens). An EMPTY <ops> is a FACT (\"no subgroup operations in
+  compute\"), not a refusal. The answer names a set: a duplicate token is the
+  same fact and collapses.
+
+  TOTAL and all-or-nothing (decision 4): a non-string answer, a field count
+  other than 2, an empty or non-digit <size>, a zero size, a size past the
+  i64 range, or an unknown token makes the WHOLE answer nil -- an absent
+  fact, which rule 6 answers :baseline with. A partially trusted answer must
+  not select a variant."
+  [answer]
+  (when (string? answer)
+    (let [fields (str/split answer #"\|" -1)]
+      (when (= 2 (count fields))
+        (let [[size-text ops-text] fields
+              size (when (re-matches #"[0-9]+" size-text) (parse-long size-text))
+              ops (reduce (fn [acc token]
+                            (if-let [kw (get subgroup-op-tokens token)]
+                              (conj acc kw)
+                              (reduced nil)))
+                          #{}
+                          (remove #(= "" %) (str/split ops-text #" +" -1)))]
+          (when (and size (pos? size) ops)
+            {:subgroup-size size
+             :subgroup-ops ops})))))))
+;; ADR-0362 slice 2's PURE HALF: the producer's answer mapping -- from the
+;; device record the ADR 0371 provider will read (the
+;; VkPhysicalDeviceSubgroupProperties fields as data) to the wire-42
+;; SUBGROUP payload, or to nothing at all (the provider answers the named
+;; refusal gpu/no-compute-subgroups). The bit values are the Vulkan
+;; registry's VkShaderStageFlagBits / VkSubgroupFeatureFlagBits values
+;; (registry.khronos.org refpages, verified 2026-10-23): COMPUTE stage
+;; 0x20; core-eight ops 0x1 0x2 0x4 0x8 0x10 0x20 0x40 0x80 in the
+;; vocabulary order of the table above; partitioned 0x100, rotate 0x200
+;; and rotate-clustered 0x400 are masked off (decision 2).
+#?(:kotoba
+   (defn- sg-compute-stage-bit [] :i64 32)
+   :default
+   (def ^:private subgroup-compute-stage-bit
+     "VK_SHADER_STAGE_COMPUTE_BIT = 0x00000020 (the Vulkan registry's
+  VkShaderStageFlagBits page, verified 2026-10-23). A SUBGROUP answer
+  reports compute-stage facts only, so the producer reads exactly this
+  one stage bit (decision 2: a width that is not a compute-stage fact is
+  not this answer)."
+     0x20))
+#?(:kotoba
+   (defn- sg-bits-doc [] :document
+     (document-list (document-i64 1) (document-i64 2) (document-i64 4) (document-i64 8)
+                    (document-i64 16) (document-i64 32) (document-i64 64) (document-i64 128)))
+   :default
+   (def ^:private subgroup-op-bits
+     "The producer half of `subgroup-op-tokens`: the same eight tokens in the
+  same vocabulary order, each with its VkSubgroupFeatureFlagBits value
+  (the Vulkan registry's VkSubgroupFeatureFlagBits page, verified
+  2026-10-23): basic 0x1, vote 0x2, arithmetic 0x4, ballot 0x8, shuffle
+  0x10, shuffle-relative 0x20, clustered 0x40, quad 0x80. Bits outside
+  the core eight -- partitioned 0x100, rotate 0x200, rotate-clustered
+  0x400 -- answer no token (decision 2 masks them off in v1)."
+     [["basic" 0x1] ["vote" 0x2] ["arithmetic" 0x4] ["ballot" 0x8]
+      ["shuffle" 0x10] ["shuffle-relative" 0x20] ["clustered" 0x40] ["quad" 0x80]]))
+#?(:kotoba
+   (defn- sg-token-at [i :i64] :string
+     (option-value-of [:option :string]
+                      (document-string-value (option-value-of [:option :document] (document-list-at (sg-tokens-doc) i) (document-null)))
+                      "")))
+#?(:kotoba
+   (defn- sg-bits-at [i :i64] :i64
+     (option-value-of [:option :i64]
+                      (document-i64-value (option-value-of [:option :document] (document-list-at (sg-bits-doc) i) (document-null)))
+                      -1)))
+#?(:kotoba
+   (defn- sg-ops-emit [ops-bit :i64 i :i64 acc :string] :string
+     (if (>= i 8)
+       acc
+       (sg-ops-emit ops-bit (+ i 1)
+                    (if (= (sg-bits-at i) (bit-and ops-bit (sg-bits-at i)))
+                      (if (= 0 (string-byte-length acc))
+                        (sg-token-at i)
+                        (string-concat acc (string-concat " " (sg-token-at i))))
+                      acc)))))
+#?(:kotoba
+   (defn subgroup-answer [record :document] :document
+     (let [size-d (dgk record :subgroup-size)
+           stages-d (dgk record :supported-stages)
+           ops-d (dgk record :supported-ops)]
+       (if (and (= (document-kind size-d) :i64)
+                (= (document-kind stages-d) :i64)
+                (= (document-kind ops-d) :i64))
+         (let [size (option-value-of [:option :i64] (document-i64-value size-d) -1)
+               stages (option-value-of [:option :i64] (document-i64-value stages-d) -1)
+               ops-bit (option-value-of [:option :i64] (document-i64-value ops-d) -1)]
+           (if (and (< 0 size) (<= 0 stages) (<= 0 ops-bit)
+                    (= (sg-compute-stage-bit) (bit-and stages (sg-compute-stage-bit))))
+             (document-string (string-concat (string-from-i64 size)
+                                             (string-concat "|" (sg-ops-emit ops-bit 0 ""))))
+             (document-null)))
+         (document-null))))
+   :default
+(defn subgroup-answer
+  "PRODUCER half of one wire-42 SUBGROUP answer (ADR-0362 decisions 2+3):
+  answer the \"<size>|<ops>\" payload for one device record, or nil for
+  the named refusal gpu/no-compute-subgroups -- the provider sends
+  `!gpu/no-compute-subgroups SUBGROUP: ...` on nil (the protocol table's
+  refusal 35), and the consumer treats that refusal exactly like an
+  absent fact (decision 3).
+
+  `record` is the VkPhysicalDeviceSubgroupProperties read the ADR 0371
+  provider will make, as data: {:subgroup-size <int>, :supported-stages
+  <VkShaderStageFlags>, :supported-ops <VkSubgroupFeatureFlags>}. A
+  payload answers exactly when the record reports compute-stage
+  subgroups: the size is a positive integer AND VK_SHADER_STAGE_COMPUTE_BIT
+  (0x20) is set in :supported-stages (decision 2). <ops> is the set
+  tokens of the core eight VkSubgroupFeatureFlagBits bits set in
+  :supported-ops, in the fixed vocabulary order of `subgroup-op-tokens`,
+  space-separated; bits outside the core eight are masked off. An EMPTY
+  <ops> is the legal \"no subgroup operations in compute\" fact
+  (decision 2), not a refusal.
+
+  TOTAL and deterministic (decision 3, ADR-0356 rule 5): any other
+  record shape -- not a map, a non-integer field, a non-positive size, a
+  negative mask -- answers nil (the provider reports no compute-stage
+  subgroups), never a throw; the same record answers the same bytes
+  forever.
+
+  UNMEASURED: this is a pure mapping over vendor-published struct
+  fields. No hardware measured it and it is not optimization evidence.
+  The provider's Vulkan read and wire reply do not exist yet (the ADR
+  0371 track), so no live wire feeds this function today -- and until
+  one does, the consumer sees no facts and every rule-6 row keeps
+  failing closed to :baseline."
+  [record]
+  (when (and (map? record)
+             (integer? (:subgroup-size record))
+             (pos? (:subgroup-size record))
+             (integer? (:supported-stages record))
+             (not (neg? (:supported-stages record)))
+             (integer? (:supported-ops record))
+             (not (neg? (:supported-ops record)))
+             (not (zero? (bit-and (:supported-stages record) subgroup-compute-stage-bit))))
+    (str (:subgroup-size record) "|"
+         (reduce (fn [acc [token bit]]
+                   (if (zero? (bit-and (:supported-ops record) bit))
+                     acc
+                     (if (= "" acc) token (str acc " " token))))
+                 ""
+                 subgroup-op-bits)))))
 #?(:kotoba
    (defn recommend [device :document] :document
      (let [vendor (classify-vendor device)
@@ -395,10 +1189,25 @@
                     (clamp2 (option-value-of [:option :i64] (document-i64-value (dgk row :size)) 256)
                             (option-value-of [:option :i64] (document-i64-value lim) -1))
                     -1)
-           device-name (string-concat (option-value-of [:option :string] (document-string-value (dgk device :device)) "")
-                                      (option-value-of [:option :string] (document-string-value (dgk device :name)) ""))
-           named-device? (not (blank-str? device-name))
-           measured-device? (substr-hits (string-ascii-lower device-name) "m1 max")
+           ;; uB5G: the measured flag is scoped to the measured device (one
+           ;; configuration per measured row, ADR-0358). A descriptor NAMES a
+           ;; device through :device, :name, or the :vendor name key -- the
+           ;; key classify-vendor matches and device-from-info fills with
+           ;; deviceName. A named device keeps the row's measured flag only
+           ;; when ONE name part carries every fragment of one of the row's
+           ;; key sets (the :measured-device fragment plus one '|'-alternate
+           ;; of :measured-device-alternates; the fragment alone where the row
+           ;; carries no alternates -- ADR-0358 amendment 2026-10-25).
+           p-device (option-value-of [:option :string] (document-string-value (dgk device :device)) "")
+           p-name (option-value-of [:option :string] (document-string-value (dgk device :name)) "")
+           p-vendor (option-value-of [:option :string] (document-string-value (dgk device :vendor)) "")
+           named-device? (or (not (blank-str? p-device)) (not (blank-str? p-name)) (not (blank-str? p-vendor)))
+           frag (option-value-of [:option :string] (document-string-value (dgk row :measured-device)) "")
+           malt (option-value-of [:option :string] (document-string-value (dgk row :measured-device-alternates)) "")
+           measured-device? (and (not (blank-str? frag))
+                                 (or (key-hits (string-ascii-lower p-device) frag malt)
+                                     (key-hits (string-ascii-lower p-name) frag malt)
+                                     (key-hits (string-ascii-lower p-vendor) frag malt)))
            basis (if (< 0 probed)
                    (string-concat (option-value-of [:option :string] (document-string-value (dgk row :basis)) "")
                                   (string-concat (string-concat " (bounded by probed device limit " (i64-text (option-value-of [:option :i64] (document-i64-value lim) 0))) ")"))
@@ -408,8 +1217,17 @@
                      (document-keyword :workgroup-size) (document-i64 (if (< 0 probed) probed (option-value-of [:option :i64] (document-i64-value (dgk row :size)) 256)))
                      (document-keyword :execution-width) (document-i64 (option-value-of [:option :i64] (document-i64-value (dgk row :execution-width)) 32))
                      (document-keyword :basis) (document-string basis)
+                     ;; uB5G: a NAMED device must be the measured device (the
+                     ;; row's :measured-device fragment in its name) for the
+                     ;; row's measured flag to apply; an unnamed
+                     ;; (vendor-id-only) descriptor keeps the row-level flag
+                     ;; as the only available signal. An INFO-derived
+                     ;; descriptor (:max-workgroup-x present, from
+                     ;; device-from-info) reports a LIMIT, not a tuning
+                     ;; result, and never transfers the row's measured flag.
                      (document-keyword :measured?) (document-bool (and (document-equal? (dgk row :measured?) (document-bool true))
-                                                                       named-device? measured-device?)))))
+                                                                       (none? lim)
+                                                                       (or (not named-device?) measured-device?))))))
    :default
 (defn recommend
   "A deterministic dispatch decision for one device descriptor
@@ -417,7 +1235,12 @@
   {:vendor :target :workgroup-size :execution-width :basis :measured?}.
   Same descriptor in, same map out, forever. :measured? is the row's: true
   where a hardware measurement (ADR-0358) chose the size, false while the
-  row is still the provisional design default."
+  row is still the provisional design default -- and, for a descriptor that
+  NAMES a device, true only when ONE name part carries every fragment of one
+  of the row's key sets (the :measured-device fragment plus one '|'-alternate
+  of :measured-device-alternates, the fragment alone where the row carries no
+  alternates; uB5G: the flag is evidence about the measured device, not the
+  vendor class)."
   [device]
   (let [vendor (classify-vendor device)
         row (get workgroup-defaults vendor (workgroup-defaults :unknown))
@@ -428,22 +1251,45 @@
                  (when (and (number? lim) (pos? lim))
                    (loop [sz (:size row)]
                      (if (and (<= sz lim) (pos? sz)) sz (recur (quot sz 2))))))
-        ;; uB5G: the measured flag is scoped to the measured device (one M1
-        ;; Max configuration, ADR-0358), not to the vendor class.
-        device-name (str (:device device) (:name device))
-        named-device? (not (clojure.string/blank? device-name))
-        measured-device? (boolean (re-find #"(?i)m1 max" device-name))]
+        ;; uB5G: the measured flag is scoped to the measured device (one
+        ;; configuration per measured row, ADR-0358), not to the vendor
+        ;; class. A descriptor NAMES a device through :device, :name, or the
+        ;; :vendor name key (the key classify-vendor matches and
+        ;; device-from-info fills with deviceName) -- before this scoping the
+        ;; :vendor-only spelling was missed and a named device that hardware
+        ;; never measured ({:vendor \"Apple M3\"}) inherited the row's flag,
+        ;; while the measured NVIDIA device spelled by name (Tegra Xavier)
+        ;; was denied it. Now a named device keeps the row flag only when
+        ;; ONE name part carries every fragment of one of the row's key sets
+        ;; (the :measured-device fragment plus one '|'-alternate of
+        ;; :measured-device-alternates; the fragment alone where the row
+        ;; carries no alternates -- ADR-0358 amendment 2026-10-25),
+        ;; case-insensitively, per name part, the name-vendor-fragments
+        ;; idiom). An UNNAMED (vendor-id-only) descriptor keeps the row-level
+        ;; flag as the only available signal.
+        name-parts (filter #(and (string? %) (not (str/blank? %)))
+                           [(:device device) (:name device) (:vendor device)])
+        named-device? (boolean (seq name-parts))
+        measured-device? (when-let [frag (:measured-device row)]
+                           (let [alts (remove #(= "" %)
+                                              (str/split (or (:measured-device-alternates row) "") #"\|"))]
+                             (boolean (some (fn [part]
+                                              (and (str/includes? (str/lower part) frag)
+                                                   (or (empty? alts)
+                                                       (some #(str/includes? (str/lower part) %) alts))))
+                                            name-parts))))]
     {:vendor vendor
      :target (target-for (:api device) vendor)
      :workgroup-size (or probed (:size row))
      :execution-width (:execution-width row)
      :basis (cond-> (:basis row) probed (str " (bounded by probed device limit " (:max-workgroup-x device) ")"))
-     ;; uB5G: a NAMED device must be the measured device for the row's
-     ;; measured flag to apply; an unnamed (vendor-class) descriptor keeps
-     ;; the row-level flag as the only available signal.
+     ;; uB5G: a NAMED device must be the measured device (the row's
+     ;; :measured-device fragment in its name) for the row's measured flag
+     ;; to apply; an unnamed (vendor-id-only) descriptor keeps the
+     ;; row-level flag as the only available signal.
      ;; An INFO-derived descriptor (:max-workgroup-x present, from
      ;; device-from-info) reports a LIMIT, not a tuning result, and never
      ;; transfers the row's measured flag (the device-from-info contract).
      :measured? (and (boolean (:measured? row))
                      (nil? (:max-workgroup-x device))
-                     (or (not named-device?) measured-device?))})))
+                     (or (not named-device?) (boolean measured-device?)))})))

@@ -1,6 +1,22 @@
 # ADR-0357 -- The ARM row: a subgroup-size-parametric reduce for Mali
 
 - Status: accepted as design. Nothing is implemented; the row is UNMEASURED.
+  [STATUS CORRECTED 2026-10-24 (the debt named in docs/evidence/gpu/
+  adr0356-intel-arm-route-prose-20261024.txt): the "Nothing is implemented"
+  clause is stale on the IMPLEMENTATION axis -- this file's own 2026-10-22
+  amendment below ("the emission and the shared selection row now exist")
+  and ADR-0356's rows table (the `:subgroup-reduce` | arm row, implemented
+  2026-10-22) contradict it, and that amendment predates ADR-0363's WGSL
+  route which this row also rides. The implementation state today: the
+  shared subgroup-size-parametric emission -- the Vulkan/GLSL arm
+  (ADR-0359, commit 53248c112) and the WGSL arm (`emit-wgsl`, commit
+  905a15b5a) -- and the shared selection row (`kotoba.compiler.accelerator-
+  variants`, the `#{:intel :arm ...}` vendor set; `:glsl-v1` and `:wgsl-v1`
+  both carry :arm, checked live this tick) are IMPLEMENTED. The UNMEASURED
+  clause is unchanged and governs: no Mali device exists in this fleet and
+  the measurement contract below has not run. The line above describes the
+  state at adoption, 2026-10-19. Prose only -- nothing but this Status
+  line moves in this correction.]
 - Date: 2026-10-19
 - Tracking: JUN-60 (ARM). Parent JUN-55. This is the design decision that
   ADR-0356 deferred ("ARM (JUN-60) is deliberately not designed in this ADR
@@ -129,6 +145,19 @@ fallback, not a refusal.
   so per rule 3 the selection row must not exist in code until it does.
 - The ADR-0355 workgroup rows are untouched and stay `:measured? false` on
   their own axis; nothing here upgrades them.
+
+Amended 2026-10-22: the state above is the 2026-10-19 snapshot and is
+superseded on the IMPLEMENTATION axis only. The emission and the shared
+selection row now exist -- `kotoba.compiler.accelerator-subgroup-reduce`
+emits the Vulkan/GLSL arm for the (:glsl-v1, :subgroup-reduce) pair
+(ADR-0359 decision 1) with the sealed GLSL -> SPIR-V build step of decision
+2, and `select-variant` (kotoba.compiler.accelerator-variants) answers
+`:subgroup-reduce` for `:arm` and `:intel` under ADR-0356 rule 6 and this
+file's capability precondition (the descriptor must report the fold's
+subgroup ops and a subgroup size dividing `W`; anything else fails closed to
+`:baseline`). Every performance word and this row's `:measured?` stay
+UNMEASURED: no Mali device exists in this fleet and the measurement
+contract below has not been run.
 
 ## Measurement contract (JUN-60)
 

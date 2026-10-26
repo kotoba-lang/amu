@@ -1,0 +1,69 @@
+HOST: xavier USER: root
+DATE-UTC: 2026-10-26T11:30:59Z  DATE-LOCAL: 2026-10-26T20:30:59+0900
+Linux xavier 5.10.120-tegra #1 SMP PREEMPT Tue Aug 1 12:32:50 PDT 2023 aarch64 aarch64 aarch64 GNU/Linux
+=== nvcc --version (verbatim)
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2022 NVIDIA Corporation
+Built on Sun_Oct_23_22:16:07_PDT_2022
+Cuda compilation tools, release 11.4, V11.4.315
+Build cuda_11.4.r11.4/compiler.31964100_0
+=== nvdisasm --version (verbatim)
+nvdisasm: NVIDIA (R) CUDA disassembler
+Copyright (c) 2005-2022 NVIDIA Corporation
+Built on Tue_Sep_13_22:14:23_PDT_2022
+Cuda compilation tools, release 11.4, V11.4.298
+Build cuda_11.4.r11.4/compiler.31809458_0
+=== sha256 of the received files (before any compile)
+5b17532628e11163d54f9a97d5b59e3167a2ad2cc9e5a81e9f077babd6ca7265  ./gpu-int-latency-microbench.cu
+5e537431b31282258a507d2c046b6efe14a0d4dede121b7e760a67749e6ed7c0  ./gpu-int-latency-run-20261026.sh
+b892e723fecb18bb32d5e292ac0cf2bd84f4b90574f95244d7102bb14ee11971  ./int_latency_verify.py
+=== compile the instrument (run binary + cubin)
+OK-build
+OK-cubin
+=== build diagnostics (verbatim byte counts)
+diag diag-build.txt 0 bytes
+diag diag-cubin.txt 0 bytes
+=== disassemble the cubin (nvdisasm -c)
+OK-sass 278 lines
+diag diag-nvdisasm.txt 0 bytes
+=== sha256 of the generated artifacts
+5b91fbde7f1c4f56c337961f63bd187877c6ed5a17c2ad325499830b4a8041b6  microbench.sass
+ca8c98f05c69d72bb8f00eeec78c90c7f717372214ca8eef2c281aeb71c62e31  gpu-int-latency-microbench.cubin
+e3079ddae4a4b8a0e8b9b5e2ee0be260688d2be63e20ba11b2c7f572a23874b8  gpu-int-latency-microbench
+=== SASS verification (python3, per-kernel opcode histograms)
+VERIFY functions found: 5
+VERIFY-FUNCTION latpp_fadd total_static=43
+  OPCODES @!PT:2 BRA:2 CS2R:2 EXIT:1 FADD.FTZ:16 FSETP.NAN.AND:2 IADD3:2 IADD3.X:1 IMAD.WIDE.U32:1 ISETP.NE.AND:1 MOV:7 S2R:1 SEL:2 STG.E.64.SYS:3
+  TARGET-EXACT FADD.FTZ arm=latpp_fadd count=16
+VERIFY-FUNCTION latpp_iadd3 total_static=41
+  OPCODES @!PT:2 BRA:2 CS2R:2 EXIT:1 IADD3:10 IMAD.IADD:8 IMAD.MOV.U32:5 IMAD.WIDE.U32:1 IMAD.X:1 ISETP.NE.AND:1 MOV:4 S2R:1 STG.E.64.SYS:3
+  TARGET-EXACT IADD3 arm=latpp_iadd3 count=10
+VERIFY-FUNCTION latpp_imad total_static=44
+  OPCODES @!PT:2 BRA:2 CS2R:2 EXIT:1 IADD3:2 IADD3.X:1 IMAD:16 IMAD.WIDE.U32:1 ISETP.NE.AND:1 LDG.E.SYS:1 MOV:11 S2R:1 STG.E.64.SYS:3
+  TARGET-EXACT IMAD arm=latpp_imad count=16
+VERIFY-FUNCTION latsym_iadd3 total_static=32
+  OPCODES @!PT:2 BRA:2 CS2R:2 EXIT:1 IADD3:10 IMAD.MOV.U32:8 IMAD.WIDE.U32:1 IMAD.X:1 ISETP.NE.AND:1 LDG.E.SYS:1 S2R:1 STG.E.64.SYS:2
+  TARGET-EXACT IADD3 arm=latsym_iadd3 count=10
+VERIFY-FUNCTION latsym_imad total_static=41
+  OPCODES @!PT:2 BRA:2 CS2R:2 EXIT:1 IADD3:2 IADD3.X:1 IMAD:16 IMAD.WIDE.U32:1 ISETP.NE.AND:1 LDG.E.SYS:2 MOV:8 S2R:1 STG.E.64.SYS:2
+  TARGET-EXACT IMAD arm=latsym_imad count=16
+VERIFY done
+=== run the microbench (3 launches x 5 arms)
+DEVICE name=Xavier clockRate_kHz=1377000 multiProcessorCount=8
+RESULT arm=latpp_fadd mode=latency launch=0 units=2048 instr_per_unit=2 samples=128 min=18440 p10=18440 median=18440 mean=18440.0 p90=18440 max=18440 cyc_per_unit_median=9.0039 cyc_per_instr_median=4.5020
+RESULT arm=latpp_iadd3 mode=latency launch=0 units=2048 instr_per_unit=2 samples=128 min=22023 p10=22023 median=22023 mean=22023.0 p90=22023 max=22023 cyc_per_unit_median=10.7534 cyc_per_instr_median=5.3767
+RESULT arm=latpp_imad mode=latency launch=0 units=2048 instr_per_unit=2 samples=128 min=18290 p10=18290 median=18292 mean=18291.5 p90=18293 max=18293 cyc_per_unit_median=8.9316 cyc_per_instr_median=4.4658
+RESULT arm=latsym_iadd3 mode=latency launch=0 units=4096 instr_per_unit=1 samples=128 min=10098 p10=10098 median=10100 mean=10099.5 p90=10101 max=10101 cyc_per_unit_median=2.4658 cyc_per_instr_median=2.4658
+RESULT arm=latsym_imad mode=latency launch=0 units=4096 instr_per_unit=1 samples=128 min=18290 p10=18290 median=18291 mean=18290.8 p90=18291 max=18291 cyc_per_unit_median=4.4656 cyc_per_instr_median=4.4656
+RESULT arm=latpp_fadd mode=latency launch=1 units=2048 instr_per_unit=2 samples=128 min=18440 p10=18440 median=18440 mean=18440.0 p90=18440 max=18440 cyc_per_unit_median=9.0039 cyc_per_instr_median=4.5020
+RESULT arm=latpp_iadd3 mode=latency launch=1 units=2048 instr_per_unit=2 samples=128 min=22023 p10=22023 median=22023 mean=22023.0 p90=22023 max=22023 cyc_per_unit_median=10.7534 cyc_per_instr_median=5.3767
+RESULT arm=latpp_imad mode=latency launch=1 units=2048 instr_per_unit=2 samples=128 min=18290 p10=18290 median=18292 mean=18291.5 p90=18293 max=18293 cyc_per_unit_median=8.9316 cyc_per_instr_median=4.4658
+RESULT arm=latsym_iadd3 mode=latency launch=1 units=4096 instr_per_unit=1 samples=128 min=10098 p10=10098 median=10100 mean=10099.5 p90=10101 max=10101 cyc_per_unit_median=2.4658 cyc_per_instr_median=2.4658
+RESULT arm=latsym_imad mode=latency launch=1 units=4096 instr_per_unit=1 samples=128 min=18290 p10=18290 median=18291 mean=18290.8 p90=18291 max=18291 cyc_per_unit_median=4.4656 cyc_per_instr_median=4.4656
+RESULT arm=latpp_fadd mode=latency launch=2 units=2048 instr_per_unit=2 samples=128 min=18440 p10=18440 median=18440 mean=18440.0 p90=18440 max=18440 cyc_per_unit_median=9.0039 cyc_per_instr_median=4.5020
+RESULT arm=latpp_iadd3 mode=latency launch=2 units=2048 instr_per_unit=2 samples=128 min=22023 p10=22023 median=22023 mean=22023.0 p90=22023 max=22023 cyc_per_unit_median=10.7534 cyc_per_instr_median=5.3767
+RESULT arm=latpp_imad mode=latency launch=2 units=2048 instr_per_unit=2 samples=128 min=18290 p10=18290 median=18292 mean=18291.5 p90=18293 max=18293 cyc_per_unit_median=8.9316 cyc_per_instr_median=4.4658
+RESULT arm=latsym_iadd3 mode=latency launch=2 units=4096 instr_per_unit=1 samples=128 min=10098 p10=10098 median=10100 mean=10099.5 p90=10101 max=10101 cyc_per_unit_median=2.4658 cyc_per_instr_median=2.4658
+RESULT arm=latsym_imad mode=latency launch=2 units=4096 instr_per_unit=1 samples=128 min=18290 p10=18290 median=18291 mean=18290.8 p90=18291 max=18291 cyc_per_unit_median=4.4656 cyc_per_instr_median=4.4656
+MICROBENCH run complete
+=== microbench run complete

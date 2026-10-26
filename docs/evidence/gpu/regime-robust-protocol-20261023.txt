@@ -1,0 +1,114 @@
+JUN-58 / JUN-55 -- the regime-robust magnitude claim protocol (2026-10-23)
+
+One design-decision slice: the row the shape-2 re-sweep's closing record
+(docs/evidence/gpu-subgroup-reduce-m1max-shape2-resweep-20261023/w512/
+NOTES.md, "Honest LEFT") named as the strengthened case -- "a
+regime-robust magnitude claim protocol -- PROPOSED, decided nowhere, own
+slice if taken". NO hardware measurement was taken in this slice -- it is
+a decision on previously measured ground, and every number below is
+CITED from the records named beside it, not re-measured.
+
+DECISION: the claim rules this campaign's records already practiced ad
+hoc are now the protocol for sign and magnitude claims in this evidence
+family (the gpu-subgroup-reduce measurement records). The regime term is
+a claim-admissibility problem, not a footnote: it was named at every one
+of the ten re-swept cells (shape-1 and shape-2 re-sweeps,
+W = 64/128/256/512/1024), and at the closing cell it quantified as a
+session-mixing effect on the :min median.
+
+Grounds (cited, previously measured):
+- Closing cell (gpu-subgroup-reduce-m1max-shape2-resweep-20261023/w512):
+  :sum/:max reproduce within 0.002/0.003 (1.202/1.195 vs the historical
+  band cell's 1.200/1.192) while :min lands +0.010 above (1.197 vs
+  1.187) -- because this session sat mostly at the slow clock level and
+  the historical cell's :min runs 1-3 sat fast; the medians' regime mixes
+  differ. The SIGN is regime-invariant in both sessions (18/18 slower).
+- W = 1024 shape-2 cell (the same re-sweep): :sum reproduces within
+  0.001, :max/:min land +0.017/+0.016 above -- the widest cross-session
+  deviation of the two series -- bracketed by the named slow-level
+  (1.183..1.184) and intermediate/fast-level (1.168..1.174) run groups.
+- The mechanism is measured directly (gpu-subgroup-reduce-m1max-
+  oporder-20261023, within-pair medians by clock level, W = 32):
+  :sum slow 0.919 / middle 0.932 / fast 1.018, :max 0.917 / 1.029,
+  :min 0.920 / 1.018 -- ratio magnitude AND sign both follow the regime.
+
+THE PROTOCOL (four rules):
+
+1. Regime classification is published, not hidden. Every measurement
+   record publishes each run's baseline per-run median gpu-ns per
+   operator and the regime clusters its session observed (the discrete
+   clock levels; the harness reads no GPU clock, so clusters are the
+   observed baseline-median levels, named by their gpu-ns ranges). A
+   magnitude claim whose record does not publish them is inadmissible.
+
+2. Sign claims are regime-invariant or regime-scoped, and only a
+   regime-invariant sign is a selection basis. "Regime-invariant": every
+   per-run ratio of every observed regime lies on the same side of 1.0
+   (the flip-set cells' 18/18 slower). A sign that follows the regime
+   (the W = 32 straddle) is published regime-scoped and cannot choose a
+   variant -- the standard that kept the LABELED BOOTSTRAP GLSL runs
+   verdict-free and the W = 32 answer decision-locked, now stated once
+   for every cell.
+
+3. Magnitude claims are regime-matched. A magnitude comparison across
+   sessions or cells is drawn within matched regime strata. When the
+   regime mixes differ, the claim names the split ("magnitude splits by
+   clock regime") and attributes the deviation to session mixing -- it
+   is NOT published as a failure to reproduce. The reproduction
+   vocabulary is exactly three phrases: "reproduces in sign strictly"
+   (all per-run ratios hold the historical sign), "magnitude reproduces
+   within <delta>" (matched regime mixes), "magnitude splits by clock
+   regime" (mixed).
+
+4. Nothing here measures anything. No :measured? flag, no workgroup row
+   (ADR-0355/0358), no flip gate and no selection answer moves. The
+   protocol changes what a record may CLAIM, not what any row answers.
+
+State (the honesty rule's three states): ACCEPTED DESIGN ONLY (this
+ADR-0360 amendment). No harness implements regime classification -- the
+records classify manually in NOTES.md -- and harness-side classification
+is UNIMPLEMENTED, its own later slice. The protocol is not "implemented"
+and this file does not make it so.
+
+What moved in the repository (the diff):
+- docs/adr/0360-gpu-apple-subgroup-reduce.md: a new amendment (the
+  regime-robust magnitude claim protocol) records the decision, its four
+  rules, its cited grounds, and the state discipline above.
+- docs/evidence/gpu/regime-robust-protocol-20261023.txt: this record.
+
+What did NOT move (named so nothing is silently upgraded):
+- src/kotoba/compiler/*: untouched. No code namespace in this diff.
+- test/*: untouched.
+- No evidence record is rewritten; the two re-sweep series' records stand
+  as committed (including the named w64/w128 off-by-one COUNT defect,
+  whose correction thread is the w1024/w512 NOTES -- not rewritten).
+
+UNMEASURED, unchanged: shapes beyond the two measured; the GLSL arm at
+every width beyond its LABELED BOOTSTRAP record; every Apple device but
+this M1 Max; W = 32 as a verdict (it is a decision); the NVIDIA/Intel/
+ARM/AMD variant rows entirely; cross-day replication of every cell (needs
+a later-day run -- this is a same-day decision slice); regime
+classification inside the harness (UNIMPLEMENTED by this decision).
+
+Gate (real runs, this host, kbb --backend sci):
+
+  scoped (the 7 GPU-owned test namespaces, scratch runner
+  gpu_scoped_gate.cljk, not in the repo), from the chain worktree root:
+
+    kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+      /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+
+    Ran 88 tests containing 7122 assertions.
+    0 failures, 0 errors.
+
+    scoped: 88 tests, 7122 passed, 0 failed, 0 errors
+
+  (88/7122, unchanged from the previous tick: this diff adds no test and
+  changes no code namespace -- the gate runs to prove nothing broke.)
+
+  full (kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)"
+  run-tests.cljk): RED AT BASE, re-verified this tick, outside this diff
+  -- aborts at NAMESPACE LOAD with "Could not find namespace: kotoba.form"
+  (the W3 port path, documented red at base in ADR 0362 and every prior
+  tick record). This diff touches no namespace on that path. No green
+  full suite is claimed.

@@ -1,0 +1,104 @@
+# JUN-55 / JUN-58 -- docs-only honesty-bracket row (b): the stale
+# ADR-0360 brackets are refreshed (2026-10-25, tick slice)
+
+Row taken: the named LEFT (b) of both the rule-2 slice
+(docs/evidence/gpu/wgsl-rule2-sign-classification-20261025.txt: "ADR-0360's
+bracket text (which still says rule 2 is UNIMPLEMENTED) needs its
+docs-only refresh -- the named LEFT (b) row, next tick") and the run-2
+record (wgsl-claimprotocol-run2-20261025/record.txt: "The ADR-0360
+bracket's stale 'rule 2's WGSL publication stays UNIMPLEMENTED' text is
+still stale -- the docs-only honesty-bracket row (b) ... remains open").
+
+## What changed (DOCS ONLY: one file, three inline dated brackets, no
+code, no record rewritten)
+
+docs/adr/0360-gpu-apple-subgroup-reduce.md, in the [REOPEN VISITED /
+FIRST LEG DEFINED] bracket chain and the two claim-protocol WGSL
+amendments:
+
+1. [FIRST LEG EVALUATED 2026-10-25] -- both missing pieces landed; the
+   reopen condition's first leg ("a fresh run carries a regime-invariant
+   sign") does NOT FIRE from either claim-protocol run: rule 2's verdict
+   is REGIME-SCOPED at every operator and at the cell roll-up in both
+   runs (run 1: single 19 above/14 below/3 at 1.0, batch32 20/15/1;
+   run 2: single 14/18/4, batch32 16/20/0). No reopen; the narrowing
+   stands (conservative :baseline for the named device, no :measured-cell
+   record moves, rule 4). Cross-run regime stability stays UNMEASURED as
+   a property (structures differ: 5 of 6 metric/operator level
+   structures differ in level count).
+2. [BOTH MISSING PIECES LAND 2026-10-25] -- the adoption amendment's
+   part-3 named missing pieces (i) and (ii) are bracketed as landed, and
+   the two named UNMEASURED questions are bracketed as ANSWERED PER RUN,
+   not generalized: the "cluster into more than one regime level at all"
+   question (run 1: batch32 multi-level -- min 2 levels boundary 1.1523x,
+   sum 3 levels boundaries 1.2044x/1.1590x; single effectively
+   single-level -- its sum's second level is one run n=1000003 W=32 at
+   1.1809x; run 2: 5 of 6 structures differ from run 1) and "the sign of
+   any claim-protocol WGSL run" (REGIME-SCOPED everywhere in both runs).
+3. [SUPERSEDED 2026-10-25] -- the stale clause "rule 2's WGSL
+   PUBLICATION stays UNIMPLEMENTED, its own later slice" is bracketed:
+   rule 2's WGSL publication is IMPLEMENTED (render_wgsl_sign_section,
+   combined --wgsl-log publication; wgsl-rule2-sign-classification-
+   20261025.txt). The pinned boundary in the same sentence still holds
+   (the rule-1 SECTION renders no sign verdict; rule 2 publishes beside
+   it). The rule-1 amendment's State paragraph's named UNMEASURED "the
+   WGSL baseline metric's regime structure; any claim-protocol WGSL
+   run's sign" is bracketed as answered per-run; per-kernel GPU time,
+   cross-run stability as a property and every workgroup-row question
+   stay UNMEASURED.
+
+No original text is deleted; every supersession is a dated bracket, the
+[REOPEN VISITED] idiom. ADR-0355's row-flip channel rule untouched (the
+two channels stay apart); no :measured? flag, workgroup row, :shapes
+value or selection answer moves (rule 4).
+
+## VERIFIED (tool output, this slice)
+
+- The bracket's roll-up numbers re-derive from the committed runs' own
+  `pair` lines through `python3 scripts/gpu_regime_classify.py --wgsl-log`
+  over each committed measure-log (exit 0 both):
+    run1: Cell (metric single ...): **regime-scoped** (19 above 1.0,
+          14 below 1.0, 3 at 1.0) ...; Cell (metric batch32 ...):
+          **regime-scoped** (20 above 1.0, 15 below 1.0, 1 at 1.0) ...
+    run2: Cell (metric single ...): **regime-scoped** (14 above 1.0,
+          18 below 1.0, 4 at 1.0) ...; Cell (metric batch32 ...):
+          **regime-scoped** (16 above 1.0, 20 below 1.0) ...
+  matching the bracket text byte for byte.
+- Run-2 re-derivation pin (subset check): every one of the 165 lines of
+  the classifier's --wgsl-log output over the run-2 measure-log is
+  present verbatim in the committed log itself (0 missing) -- the
+  bracket quotes the run's own published text.
+- gpu_regime_classify.py --self-test: see Gates below.
+- The structure numbers in bracket 2 (1.1523x / 1.2044x / 1.1590x /
+  1.1809x run 1; 5-of-6 differ run 2) are quoted from the committed
+  records (wgsl-claimprotocol-run1-20261025/record.txt and
+  wgsl-claimprotocol-run2-20261025/record.txt), not re-measured -- this
+  slice ran no hardware.
+
+## STATE (the three states, named)
+
+- IMPLEMENTED (code + tests): nothing new -- this slice is prose only.
+- ACCEPTED DESIGN ONLY: the refreshed brackets themselves (this slice).
+- MEASURED: nothing new (no hardware ran; every number is re-derived
+  from committed run logs or quoted from committed records).
+- UNMEASURED, unchanged and named: cross-run regime stability as a
+  property (2 uncontrolled runs); any third run's sign; per-kernel GPU
+  time (writeTimestamp refused on this adapter); every workgroup-row
+  question. No :measured? flag or workgroup row moved (rule 4).
+
+## Gates
+
+- Scoped GPU gate (8 GPU-owned namespaces, scratch runner
+  scoped-gpu-gate.cljk -- never committed): Ran 106 tests containing
+  11046 assertions. 0 failures, 0 errors (glslang 16.6.0 real-spawn
+  line in the output). This diff touches no .cljk namespace; the gate
+  is a regression pin, not a change gate.
+- gpu_regime_classify.py --self-test: TOTAL 2448 assertions passed,
+  0 failed (this slice touched no code; regression pin).
+- Full run-tests.cljk: NOT RUN this slice (docs-only diff touches no
+  .cljk namespace). Documented red at base ("Could not find namespace:
+  kotoba.form", ADR-0362) not re-verified here -- no green full suite is
+  claimed.
+- POSIX .sh under docs/: 0 files (find docs -name "*.sh" -type f).
+
+Evidence file itself: .txt, no POSIX .sh anywhere in docs/.

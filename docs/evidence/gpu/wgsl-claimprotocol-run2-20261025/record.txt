@@ -1,0 +1,135 @@
+JUN-55/JUN-58 -- CROSS-RUN STABILITY ROW: claim-protocol WGSL run 2
+-- the regime structure does NOT reproduce across runs (5 of 6
+metric/operator level structures differ in level count), and run 2's
+rule-2 verdict is REGIME-SCOPED everywhere again -- so the ADR-0360
+part-2 reopen first leg ("a fresh run carries a regime-invariant
+sign") does NOT fire from run 2 either
+record_written=2026-10-25 (JST); run_finished=2026-10-25T00:17:56.414Z
+host: darwin 25.4.0 arm64 (Apple M1 Max) -- HARDWARE RAN THIS SLICE
+
+THE ROW (run 1's own named left, wgsl-claimprotocol-run1-20261025):
+"(c) a second run for cross-run stability" -- the run-1 slice answered
+the within-run regime question and named cross-run stability as
+UNMEASURED. This slice measures it as far as two uncontrolled runs can.
+
+WHAT RAN (one measurement slice; no code, no test, no ADR moves):
+
+  node scripts/measure-gpu-reduce-wgsl.mjs \
+    docs/evidence/gpu-subgroup-reduce-wgsl-fix-20261025/shaders \
+    docs/evidence/gpu-baseline-reduce-wgsl-fix-20261025/shaders \
+    > docs/evidence/gpu/wgsl-claimprotocol-run2-20261025/measure-log.txt
+  exit 0 (10.7s wall, run_started 00:17:45.726Z -> run_finished
+  00:17:56.414Z). Same committed emitter bytes, same protocol
+  (single=3w+11r, batch32=2w+7r per arm per cell, arms paired per
+  round with alternating order), 36 cells x 2 arms, on this host's
+  Apple GPU through Chrome 155 HeadlessChrome/Dawn/Metal (adapter
+  apple/metal-3, subgroups present, timestamp-query advertised but
+  writeTimestamp REFUSED again -- the log's gpu-timestamp-write line
+  records the throw verbatim; per-kernel GPU time stays UNMEASURED).
+  This is the FIRST run whose log carries BOTH claim-protocol sections
+  (rules 1 AND 2) published by the harness itself.
+
+VERIFIED (tool output, quoted or re-derived from the committed log):
+
+1. Full claim-protocol record: "claim-protocol-rule1: PUBLISHED (rule
+   2 sign classification also published below ...)" and
+   "claim-protocol-rule2: PUBLISHED (regime-matched sign per level
+   below ...)" -- both sections embedded in this run's own log.
+2. Correctness re-verified inside the measurement: "checks: 72/72 arm
+   answers exact against the CPU reference" (72 `time` lines = 36
+   blocks x 2 arms, 36 `pair` lines -- full protocol coverage).
+3. THE ROW'S QUESTION IS ANSWERED, at the granularity two runs can
+   carry -- the regime STRUCTURE does NOT reproduce. Level counts and
+   boundary gaps (gaps re-derived from the printed cluster ranges by a
+   read-only scratch probe over both committed logs; single-link
+   GAP-1.15 boundaries = min of level k+1 / max of level k):
+
+   metric   op  run1 levels (gaps x)        run2 levels (gaps x)
+   single   max 1 (none)                    1 (none)          SAME-COUNT
+   single   min 1 (none)                    3 (1.1587, 1.3084) DIFFERENT
+   single   sum 2 (1.1809)                  1 (none)           DIFFERENT
+   batch32  max 1 (none)                    2 (1.1938)         DIFFERENT
+   batch32  min 2 (1.1523)                  3 (1.1782, 1.2361) DIFFERENT
+   batch32  sum 3 (1.2044, 1.1590)          2 (1.1988)         DIFFERENT
+
+   5 of 6 structures differ in level count; only single/max is
+   single-level in both. The QUALITATIVE fact reproduces -- batch32
+   carries multi-level regimes in both runs (min and sum multi-level
+   in both; max multi-level only in run 2) -- but no exact level
+   structure or boundary reproduces. Run 1's own marginal splits did
+   NOT survive: its single/sum 2-level split (one run, n=1000003
+   W=32, 1.1809x -- run 1 already flagged "do not read it as a stable
+   regime") collapses to 1 level here; run 2 has its own 1-run top
+   level (single/min 0.7000, n=1048576 W=128) with the same
+   marginal-split hazard shape -- named, not read as a regime.
+4. RULE 2 VERDICT ON RUN 2: REGIME-SCOPED at every operator on both
+   metrics (within-regime straddles everywhere) and at the cell
+   roll-up (single 14 above / 18 below / 4 at 1.0; batch32 16/20/0)
+   -- the same verdict class as run 1. NO regime-invariant sign in
+   either run; therefore the ADR-0360 part-2 reopen first leg ("a
+   fresh run carries a regime-invariant sign") does NOT fire from run
+   2 either. No reopen, no narrowing change: parity is not a fold
+   win, the conservative :baseline answer for the named device stands,
+   no :measured-cell record moves (rule 4).
+5. The sign instability the parity verdict implies is directly visible
+   across runs (scratch probe over both logs' `pair` lines; RAW COUNTS
+   at printed precision, NOT a rule-2 verdict): aggregate
+   single_subgroup_faster 15/36 -> 19/36, batch32 15/36 -> 20/36;
+   per-operator majority sides flip, e.g. single/max (8 above, 2
+   below, 2 at 1.0) -> (4, 7, 1) and batch32/min (7, 5, 0) -> (4, 8,
+   0). No cell's sign is stable across the two runs at this
+   resolution.
+6. Re-derivation pin: running
+   `python3 scripts/gpu_regime_classify.py --wgsl-log <log>` over the
+   committed log file reproduces the embedded rule-1 + rule-2
+   publication byte-identically -- diff over the
+   publication is empty; the only lines in the log's tail not in the
+   derived output are the harness's own claim-protocol-rule1 status
+   line, run_finished and VERDICT, which sit outside the classifier's
+   publication.
+7. Regression pin: gpu_regime_classify.py --self-test GREEN, TOTAL
+   2448 assertions passed / 0 failed (unchanged from the last slice's
+   baseline; this slice touched no code).
+
+WHAT THIS DOES NOT UPGRADE (named so no reading moves):
+
+- Cross-run stability is now MEASURED AS A DIFFERENCE (these two
+  runs) and stays UNMEASURED as a property: neither run controlled
+  clocks or thermals, and 2 runs cannot bound a distribution. A
+  regime-structure claim that survives repeated runs is still
+  UNMEASURED.
+- The ADR-0360 bracket's stale "rule 2's WGSL publication stays
+  UNIMPLEMENTED" text is still stale -- the docs-only honesty-bracket
+  row (b) from the rule-1 slice remains open and is NOT taken here
+  (this slice is the measurement row alone).
+- Per-kernel GPU time: UNMEASURED, unchanged (writeTimestamp refused,
+  re-recorded).
+- Rule 4 unchanged: no :measured? flag, workgroup row, :shapes value
+  or selection answer moves; sign claims are channel-scoped.
+
+STATE: MEASURED -- one fresh claim-protocol WGSL run (wall-clock
+submit->completion, the channel's named metric) with rules 1+2
+published by the run itself, and the two-run structure comparison
+above. IMPLEMENTED: nothing new (the run exercises landed code).
+ACCEPTED DESIGN ONLY: the adoption, the run/ratio unit definitions,
+the reopen bracket. UNMEASURED: cross-run regime stability as a
+property (beyond this measured two-run difference), any third run's
+sign, per-kernel GPU time, every workgroup-row question.
+
+GATES (real runs, this host, this tick):
+1. Scoped GPU gate (8 GPU-owned namespaces, scratch runner
+   scoped-gpu-gate.cljk -- never committed): Ran 106 tests containing
+   11046 assertions. 0 failures, 0 errors (glslang 16.6.0 real-spawn
+   line in the output). This diff touches no .cljk namespace; the gate
+   is a regression pin, not a change gate.
+2. gpu_regime_classify.py --self-test: 2448 assertions passed, 0
+   failed (see 7 above).
+3. Full run-tests.cljk: NOT RUN this slice (evidence-only diff; see
+   1). Documented red at base ("Could not find namespace:
+   kotoba.form", ADR-0362) not re-verified here -- no green full
+   suite is claimed.
+4. POSIX .sh under docs/: 0 files (find docs -name "*.sh" -type f).
+
+Evidence: docs/evidence/gpu/wgsl-claimprotocol-run2-20261025/
+(measure-log.txt; the scratch comparison probe lives outside the repo
+and its output is quoted verbatim in section 3/5 above).

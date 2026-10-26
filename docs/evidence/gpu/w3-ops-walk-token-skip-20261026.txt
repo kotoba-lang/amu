@@ -1,0 +1,168 @@
+JUN-56 / JUN-55 -- the sg-ops row: the W3 SUBGROUP <ops> walk is one
+frame per TOKEN (a separator RUN costs ONE string-skip-blank), not one
+recursive frame per space byte (2026-10-26)
+
+WHAT THIS ROW IS: the named follow-up finding of
+w3-sg-keyword-table-20261026 ("sg-ops-walk per token AND per space
+byte, sg-keyword per vocabulary element -- the spaced '64|  basic
+   shuffle-relative  ' (31 bytes) and the unknown-token '32|basic
+vote2' (14 bytes) still TRAP host/stack-exhausted on BOTH arms ...
+their own rows"). One implementation slice on
+kotoba.compiler.accelerator-targets. NO hardware ran, no GPU, no
+timing -- every number below is a kotoba-language-runtime behavior
+probe (the w3 fact class).
+
+INSTRUMENT (all runs this tick, scratch probes never staged): the w3
+extract-balanced idiom -- the arms' OWN text extracted from the
+namespace source, sema/analyze + ir/execute on the kotoba language
+runtime, kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)"
+<scratch probe>. Two scratch probes: w3_prims_probe1.cljk (the
+primitive semantics this row's design depends on) and
+w3_walk_before_after.cljk (the sg-ops unit grid + the trap-class e2e
+cells + the O(TOKENS) boundary sweep + standing pins + the previous
+rows' regression cells, run TWICE, byte-identical runs: sha256
+bd611a05254b66fc0e215c09c6ee69e8b75c4a8c3cedeb4617aebca0f5a74425
+both). The BEFORE arm is extracted from a sha256-verified git-show HEAD
+dump of accelerator_targets.cljk (scratch/w3_walk_before_src.cljk;
+sha256 666bcab66f16e9ea2cc99cd3d88c05b6b4d17adf2d6d1fe194a659ae33988d98
+-- which is the previous row's AFTER hash, chain continuity; the
+working tree AFTER arm sha256
+d7c3f4ef9bcd30926bc270a8790a848888f6b84bddff0100bb2837fefe78adbe) --
+never hand-transcribed. Parity reference: the host arm's own
+device-from-subgroup.
+
+WHAT LANDED (code + tests), kotoba arm only (the host arm is the parity
+reference and is untouched):
+  sg-ops normalizes the entry to a token start
+  ((string-skip-blank field 0)) and sg-ops-walk's recursion arg is the
+  NEXT token start ((string-skip-blank s j)) -- the replaced walk
+  skipped the separator one BYTE per recursive frame
+  ((string-code-point-at s i) 32 -> (+ i 1)); that per-byte recursion
+  is deleted. CONTRACT UNCHANGED, pinned: byte 32 is the wire's ONLY
+  separator -- tokens are maximal non-32 runs, one or more spaces
+  separate, a separator-only field is zero tokens.
+  LOAD-BEARING GUARD, measured not assumed: string-skip-blank is C
+  isspace (measured below: it skips \t as well as 32), which would
+  move the separator rule AWAY from host parity, so a field holding
+  any byte in {9,10,11,12,13} answers (document-null) ABOVE the walk
+  (five string-find-byte calls, total on every field including "" --
+  measured below: string-find-byte answers -1 for from = n and traps
+  only on from > n). The guard is EXACT, not fail-closed: such a byte
+  sits INSIDE a maximal non-32 run, whose token then cannot be a
+  vocabulary word (the vocabulary is [a-z-] text) and an unknown token
+  already failed the whole answer above (all-or-nothing, decision 4),
+  so the old walk answered the same null -- BEFORE == AFTER measured on
+  every guard cell.
+
+MEASURED (runtime, no hardware; BEFORE = the dumped HEAD walk arm,
+AFTER = the token-position arm, HOST = the host arm; probe ran TWICE,
+byte-identical runs):
+
+primitive semantics this row depends on (w3_prims_probe1.cljk):
+  string-skip-blank answers i itself when s[i] is non-blank ("a" 0 ->
+  0), n for from = n ("a" 1 -> 1, "" 0 -> 0), and skips C-isspace runs
+  beyond 32 ("a \t b" from 1 -> 4, "\ta" 0 -> 1, "a\tb" 1 -> 2).
+  string-find-byte answers -1 for from = n ("ab" 97 2 -> -1, "" 97 0
+  -> -1) and traps ONLY on from > n ("ab" 97 3 -> TRAP string offset
+  out of bounds) -- so the guard's from = 0 calls are total on "".
+  string-substring is byte-indexed and refuses to split a code point
+  ("a\u00e9b" 1 2 -> TRAP; "é x" 0 3 -> "é ") -- token boundaries are
+  byte-32 positions or n and can never split a UTF-8 code point.
+
+sg-ops unit grid (19 cells): BEFORE == AFTER == HOST on every cell --
+  the walk's cost was FRAMES, not facts. "" / " " / "    " -> zero
+  tokens; "basic", "basic shuffle-relative", the spaced "  basic
+  shuffle-relative  ", "basic basic" -> #{basic}, "basic shuffle basic"
+  -> #{basic shuffle}, "vote vote" -> #{vote} (dedupe unchanged);
+  "basic vote2" / "vote2 basic" / "Basic" -> null; and the guard cells
+  "basic\tvote" / "\tbasic" / "basic\n" / "basic\r vote" / "a\vb" /
+  "x\fbasic" / "\t" -> null on BOTH arms == HOST (the guard is exact).
+
+the separator-run trap class is GONE (the row's trap-gone cell):
+  the 411-byte spaced answer "8|" + 200 spaces + "basic" + 200 spaces
+  + "vote" (400 separator bytes) TRAPped host/stack-exhausted BEFORE
+  (400 frames, one per space byte) and answers 8 #{basic vote} == HOST
+  AFTER (two tokens, two frames).
+
+the O(TOKENS) boundary, measure-only (AFTER vs HOST): 2/3/4/6/8-token
+  fields resolve == HOST; 12 tokens TRAP host/stack-exhausted; 16/24
+  resolve == HOST; 32/48/64 TRAP budget/frames. NON-MONOTONIC and
+  state-dependent, named twice over: the same 24-token field resolved
+  at the boundary probe's position while TRAPping host/stack-exhausted
+  at the e2e probe's position IN THE SAME RUN (byte-identical across
+  runs). The 70-byte eight-token answer still TRAPs host/stack-exhausted
+  on BOTH arms (BEFORE == AFTER) -- the per-token frames stack under
+  sg-member?'s per-element frames (their own rows). Never pinned.
+
+regression (no spelling moved, byte-identical BEFORE == AFTER == HOST):
+  the 31-byte spaced two-token answer 64 #{basic shuffle-relative};
+  the 14-byte unknown-token answer null == HOST nil; the canonical
+  25-byte answer, the dedupe cells (32|basic basic -> #{basic},
+  32|basic shuffle basic -> #{basic shuffle}, 8|vote vote -> #{vote}),
+  single-token/empty-ops, the 12-cell malformed grid (all -> null ==
+  HOST nil, "32|basic\tvote" included -- the guard cell at e2e) and
+  the previous rows' long cells (106/1006/110/206/200/192/152 bytes,
+  the 110-byte one still 42 #{basic}).
+
+CONSEQUENCE: NOTHING MOVES -- no :measured? flag value, no :shapes
+value, no workgroup row, no selection answer; :arm/:unknown stay
+provisional :measured? false. The SUBGROUP producer (ADR-0371) still
+does not exist -- no live wire feeds any of this. This row removes the
+separator-run trap class (a wrong-refusal path: long separator runs
+answered a trap, no fact, where the host arm answered the fact) and
+adds no measurement claim.
+
+STATES:
+- IMPLEMENTED (code + tests): sg-ops/sg-ops-walk on the token-position
+  route (the per-space-byte skip deleted; the {9,10,11,12,13} guard
+  above the walk). Tests:
+  w3-subgroup-ops-walk-is-one-frame-per-token (the 19-cell unit grid
+  with HOST parity, the 411-byte trap-gone pin with HOST parity, the
+  standing pins + dedupe + the 12-cell malformed grid + the 110-byte
+  regression cell, and the source pins: five string-find-byte calls in
+  the sg-ops guard, the (document-null) guard answer, the
+  (string-skip-blank field 0) entry, (string-skip-blank s j) per
+  recursion, exactly one self-call, no string-code-point-at, no
+  "(+ i 1)" in either body). The sg-size / pipe-token-end / sg-member? /
+  sg-keyword tests' named-residual prose is brought to the new state.
+- DECIDED (unchanged): byte 32 is the only separator; a {9,10,11,12,13}
+  byte is no fact at all (exact, not fail-closed -- the guard answers
+  what the walk answered).
+- MEASURED: the probe tables above (runtime behavior, no hardware).
+- ACCEPTED DESIGN ONLY (unchanged): ADR-0355's table rules, ADR-0358's
+  key, ADR-0362's subgroup contract, the claim protocol.
+- UNMEASURED, named: the O(TOKENS) walk residual and sg-member?'s
+  per-element frames (their own rows; the 70-byte eight-token answer
+  still traps both arms), the non-monotonic boundary's mechanism (the
+  24-token same-run asymmetry), trap boundaries and spellings beyond
+  these runs (state- and path-dependent, never pinned), every
+  workgroup-row question (:arm/:unknown stay provisional
+  :measured? false), anything off this host.
+
+GATES (real runs):
+- Scoped GPU gate (8 GPU-owned namespaces, scratch runner
+  gpu_scoped_gate.cljk):
+    kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+      /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+  -> run 1 AND run 2 GREEN:
+     Ran 121 tests containing 11947 assertions. 0 failures, 0 errors.
+     scoped: 121 tests, 11947 passed, 0 failed, 0 errors
+     (committed pin 120 tests / 11860 assertions; delta = this slice's
+     +1 test / +87 assertions). glslang 16.6.0 real-spawn ran.
+- gpu_regime_classify.py --self-test -> TOTAL: 2649 assertions passed,
+  0 failed (committed pin 2649/0; no classify code touched).
+- Full run-tests.cljk: RED AT BASE, outside this diff -- "Could not find
+  namespace: kotoba.form" (ADR-0362) fails the run before any test
+  executes (re-verified live this tick, log: scratch/
+  w3_walk_fullsuite.log). The touched namespaces' own tests are the
+  scoped gate above. NO green full suite claimed.
+- find docs -name '*.sh' -> 0 files (the no-POSIX-sh evidence rule).
+- NAMED, NOT HIDDEN: kbb prints "2 dep(s) are not :local/root and are
+  NOT on the classpath (com.google.javascript/closure-compiler-unshaded,
+  org.clojure/tools.reader)" on every kbb run this tick -- identical on
+  every probe and gate run, unrelated to this diff. The worktree also
+  carries an untracked deps.edn (present at tick start; this row did not
+  create or touch it, and it is not committed).
+- BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head
+  (checked at tick start and re-checked before this push); chain PR
+  #1455 OPEN.

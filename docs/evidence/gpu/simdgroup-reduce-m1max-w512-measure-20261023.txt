@@ -1,0 +1,95 @@
+JUN-58 / JUN-55 -- the W = 512 :simdgroup-reduce cell is MEASURED
+(2026-10-23, the W-sweep series' second cell)
+
+ONE measurement: ADR-0373's :simdgroup-reduce row runs at the next W-sweep
+cell -- W = 512 (NOT the ADR-0358 row; that anchor is W = 256, measured
+and flipped earlier the same day), n = 1000003 (the ground shape), this
+host (Apple M1 Max, reported simdgroup size 32), the same conforming
+channel (ADR-0360 question (1)'s native-Metal harness family, the
+emitters' own bytes) and the byte-identical protocol of the W = 256 run
+(6 fresh processes, 20 interleaved AB/BA pairs per operator per run, 2
+warmup submits per arm discarded, verified read-back; the driver is
+invoked exactly as the W = 256 record names, only --workgroup 512 and its
+own --out). Full record:
+docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512/
+{summary.md,run-log.txt,compile-log.txt,shaders/}. The W = 256 record
+(docs/evidence/gpu-simdgroup-reduce-m1max-20261023/) is untouched.
+
+PAIRED MEDIAN RATIOS (:simdgroup-reduce / :baseline gpu ns), W = 512:
+
+  op    this cell    the :subgroup-reduce cell at the same W/shape
+                      (historical record gpu-subgroup-reduce-m1max-
+                       wsweep-20261023/w512, the carve-out's measured
+                       basis at this W)
+  sum   0.815        1.196
+  max   0.823        1.195
+  min   0.824        1.197
+
+Per-run ratios (6 fresh processes): sum 0.815 0.816 0.816 0.815 0.815
+0.814; max 0.824 0.821 0.823 0.822 0.823 0.822; min 0.824 0.824 0.822
+0.822 0.823 0.829. Median gpu ns (120 samples per arm): sum 114667 ->
+93375; max 114625 -> 94250; min 114521 -> 94250. The fresh-process clock
+ramp appears again (run 2's sum block, run 5/6's max/min blocks sit one
+regime down), named in the record's rule-1 table.
+
+FINDING (the record's own claim-protocol machinery, rule 2): all three
+operators classify REGIME-INVARIANT, FASTER -- 18 of 18 per-run ratios
+below 1.0, every observed regime one-sided. The sign contrast with
+:subgroup-reduce at the identical cell reproduces: where the shuffle
+ladder measures ~20% slower than :baseline (1.196/1.195/1.197), the
+simd_sum/simd_max/simd_min intrinsic fold measures ~18% faster
+(0.815/0.823/0.824). At W = 256 the contrast was 1.220/1.217/1.217 vs
+0.790/0.800/0.799. Two cells, same story, one host.
+
+Also published in the record (data, not a claim): cross-operator level
+identity is REFUTED again (11 of 15 run pairs diverge across max/min/sum
+under GAP-1.15 clustering; at W = 256 it was 14 of 15).
+
+Read-back: 36 verify lines (6 per fresh process), ok=1 on every one.
+:max/:min bit-exact vs the CPU reference AND between arms; :sum 1.63e-05
+vs reference, 3.05e-05 between arms (regrouping), as in every cell of
+the family.
+
+STATE HONESTY (nothing moves beyond the measurement itself):
+- The measurement exists. The FLIP does not: no :measured? flag, no
+  :measured-cell record, no selection answer moves in this slice.
+  apple-simdgroup-measured-workgroups stays #{256}; the M1 Max carve-out
+  keeps :baseline at every W but 256. The flip of the W = 512 cell
+  through ADR-0373's flip contract (keys: name fragment "m1 max",
+  reported subgroup size 32, the MSL route, the :simd-reduce gate,
+  W = 512) is its own next slice, and what today's numbers license is
+  exactly that slice's question -- answered there, not here.
+- The rule-2 verdict ("regime-invariant, faster") is the record's
+  published classification; it becomes a selection basis only if and
+  when the flip slice lands.
+- UNMEASURED, named: every W but 256 and 512 for this variant
+  (32/64/128/1024 cells open); shape 2 (n = 2^20) for this variant;
+  every other Apple device; every non-Apple vendor; cross-day
+  replication of both measured cells.
+
+Instrument: no change. The driver, harness and emitters run exactly as
+the W = 256 record documents (--variant simdgroup-reduce, argv[5]
+variant-prefix, the same fixed sum,max,min op order); this slice adds
+only its own record directory.
+
+Gate (real runs, this host, kbb --backend sci):
+- driver auto-wiring self-test: 7 assertions passed, 0 failed.
+- scoped (the GPU-owned test namespaces, scratch runner
+  gpu_scoped_gate.cljk -- not in the repo):
+
+    Ran 100 tests containing 7593 assertions.
+    0 failures, 0 errors.
+
+    scoped: 100 tests, 7593 passed, 0 failed, 0 errors
+
+- full (kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)"
+  run-tests.cljk): RED AT BASE, outside this diff -- fails at NAMESPACE
+  LOAD with "Could not find namespace: kotoba.form" (the W3 port path,
+  documented red at base in ADR 0362 and prior tick records, re-verified
+  this tick). No green full suite is claimed.
+
+LEFT (the next rows): the W = 512 flip slice (ADR-0373's flip contract
+applied to this cell's measured basis); the remaining W cells
+(32/64/128/1024), one cell at a time; shape-2 and cross-day replication
+of both measured cells; the GLSL arm stays blocked on ADR 0371's provider
+route.

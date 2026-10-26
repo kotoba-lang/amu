@@ -1,0 +1,156 @@
+JUN-57 / JUN-84 / JUN-55: the ADR-0356 ROWS TABLE COMPLETION slice -- the
+table carries every DECIDED selection row (the NVIDIA CUDA ladder's second
+rung and the :amd row land in it) -- 2026-10-24, chain worktree, kbb
+--backend sci
+
+WHAT THIS RECORD IS: the slice record of the rows-table completion of
+docs/adr/0356-gpu-kernel-variant-selection.md -- prose only, one
+document, the two rows the table lacked although both decisions and both
+implementations were already committed. It is NOT a measurement: no
+hardware ran in this slice, and every number cited below is a committed
+record's, unchanged and not re-measured.
+
+THE DEFECT (ground truth, real tool output, this tick):
+
+BEFORE this slice, `grep -n "^| " docs/adr/0356-gpu-kernel-variant-
+selection.md` answered 8 table lines -- the 1 header line and exactly 7
+data rows: `:baseline` all; `:warp-shuffle-reduce` nvidia;
+`:subgroup-reduce` intel / arm / apple / nvidia (Vulkan route);
+`:simdgroup-reduce` apple. No row existed for either
+
+  (1) the NVIDIA CUDA ladder's SECOND rung -- `:subgroup-reduce` on
+      `:cuda` / `:cuda-v1` under `:warp-shuffle-reduce`'s precedence
+      (DECIDED 2026-10-23, ADR-0361's amendment, commit 8c5fd7f8;
+      IMPLEMENTED with tests in the same slice). The gap is a NAMED,
+      standing debt: docs/evidence/gpu/row-prose-reconciliation-
+      20261023.txt:31 -- "Named, not hidden (this tick): the rows table
+      still has no row for the NVIDIA CUDA-ladder second rung (recorded
+      in ADR-0361's amendment)." -- unpaid at HEAD (grep verified).
+  (2) the `:amd` row -- the shared subgroup-size-parametric
+      `:subgroup-reduce` on the Vulkan route (RADV) and the WGSL route
+      (DECIDED 2026-10-23, ADR-0364, commit f33adbb5; IMPLEMENTED with
+      tests in the same slice). The amendment that landed the decision
+      is titled "the AMD row joins the table -- ADR-0364", but the
+      table itself never carried the row: `grep -n "amd" docs/adr/
+      0356-...md` found the amendment body (line 397+) and no table
+      line.
+
+WHAT MOVED (the slice's whole scope -- docs/adr/0356-gpu-kernel-variant-
+selection.md's Rows table only; no code namespace, no test namespace, no
+measurement):
+
+- Two data rows added between the `nvidia (Vulkan route)` row and the
+  `:simdgroup-reduce` | apple row:
+  - `:subgroup-reduce` | nvidia (CUDA route, ladder rung 2) -- the
+    ladder `:warp-shuffle-reduce` -> `:subgroup-reduce` -> `:baseline`,
+    total and deterministic; the warp rung keeps precedence (CONFIRMED
+    compute capability 7.0+ and W >= 32), the parametric fold answers
+    only where the warp rung's gate does not reach (rule-6 facts
+    reported, NO compute capability); the two rungs spell the same fold
+    (runtime `warpSize` vs the baked 32). State cell cites ADR-0361's
+    amendment verbatim in substance; the measurement cell is
+    UNCOMPILED (no nvcc on the testing host) + UNMEASURED (nothing has
+    run on NVIDIA hardware; the CUDA emitter has no execution path in
+    this repo).
+  - `:subgroup-reduce` | amd -- the fold on `:vulkan` / `:glsl-v1`
+    (RADV) and `:webgpu` / `:wgsl-v1` (the `:amd` vendor-default
+    target), rules 3 + 6 gate, fail closed included; no
+    compute-capability contract for AMD (an absent capability is not a
+    refusal); the RDNA wave32/wave64 duality is answered by the
+    emission's runtime width query and rule 6's `S | W` gate, not by
+    selection; no AMD-native arm is designed. Measurement cell:
+    UNMEASURED (no AMD hardware has run this variant).
+- Each row carries a dated [ROW ADDED 2026-10-24 ...] bracket naming
+  this slice and stating that the decision and its implementation are
+  older than the row -- the table row is a citation of committed state,
+  not a new decision.
+- AFTER this slice the same grep answers 10 table lines -- the 1 header
+  line and 9 data rows, one per (variant, vendor-route) selection row
+  the ADRs have decided:
+  baseline all; warp-shuffle nvidia; subgroup-reduce intel / arm /
+  apple / nvidia-Vulkan / nvidia-CUDA-rung-2 / amd; simdgroup-reduce
+  apple.
+
+WHAT THIS SLICE DOES NOT LICENSE (named so nothing is silently
+upgraded):
+
+- no `:measured?` flag, `:shapes` value, `:measured-cell` record,
+  selection answer or workgroup row (ADR-0355/0358) moved -- this is
+  prose in a design document; `select-variant` has answered both rows
+  since their own implementation slices (8c5fd7f8, f33adbb5) and is
+  byte-for-byte untouched here;
+- no measurement: the rows' measurement cells are UNMEASURED /
+  UNCOMPILED exactly as their decision records state (no nvcc, no
+  NVIDIA or AMD hardware, no execution path for either emission);
+- the existing 6 data rows are NOT rewritten -- the `:subgroup-reduce`
+  | intel/arm rows' terse route prose ("same emission and selection
+  row as the Intel row") predates ADR-0363's WGSL-route extension
+  (recorded in this ADR's own 2026-10-23 ":wgsl-v1 selection question
+  is DECIDED" amendment); it is not false (it names no route), and
+  widening those cells is NOT taken here -- named, unpaid;
+- prose debt (b) of the `:simdgroup-reduce` family (the W = 128
+  measure record's stale `gpu-simdgroup-reduce-m1max-wsweep-low-
+  20261023/w128` citation) stays named, unpaid -- its own slice.
+
+GATE (real runs, this host, kbb --backend sci, from the chain worktree
+root, 2026-10-24, run for THIS record; the doc-only gate form. The
+gate form's `$(kbb -Spath -M:test)` subshell is broken at this branch's
+HEAD (the origin/main host-manifest retirement / deps.edn retirement;
+the CHANNEL NOTE in
+docs/evidence/gpu/simdgroup-reduce-m1max-shape2-w32-measure-20261024.txt
+names it), so the runs substitute the resolved closure inline -- route
+2, the AMU_KBB_TEST_CLASSPATH content materialized at
+scratch/amu_kbb_test_classpath.txt):
+
+1. python3 scripts/gpu_regime_classify.py --self-test
+   -> TOTAL: 1904 assertions passed, 0 failed.
+2. python3 scripts/gpu-subgroup-reduce-metal-measure.py --self-test
+   -> driver auto-wiring self-test: 12 assertions passed, 0 failed.
+3. Scoped GPU gate (the 8 GPU-owned test namespaces, scratch runner
+   gpu_scoped_gate.cljk, not in the repo):
+     kbb --backend sci --classpath "src:test:<resolved closure>" \
+       /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+   -> Ran 102 tests containing 9774 assertions.
+      0 failures, 0 errors.
+      scoped: 102 tests, 9774 passed, 0 failed, 0 errors
+   (identical counts to the previous tick's -- this diff touches no
+   code or test namespace; run anyway.)
+4. Full suite (run-tests.cljk), same classpath substitution: RED AT
+   BASE, outside this diff, at namespace load on `kotoba.form`
+   ("Error: Could not find namespace: kotoba.form"; the W3 port path,
+   ADR 0362), re-verified live this tick. The run stops at that load;
+   no green full suite is claimed and none is claimed here.
+
+Runs 3 and 4 also discharge the previous commit's owed "next tick's
+first runs" (7781d5bcd ran neither the scoped GPU gate nor the full
+suite; both ran this tick, at this HEAD + this diff).
+
+HONESTY STATE: IMPLEMENTED -- the two selection rows themselves (code
++ tests), since 8c5fd7f8 and f33adbb5, NOT by this slice. This slice is
+prose reconciliation of an accepted design record: the Rows table now
+says what the committed code already did. ACCEPTED DESIGN ONLY -- the
+decisions (ADR-0361's amendment, ADR-0364) this table cites.
+UNCOMPILED -- the CUDA arm (no nvcc) and the WGSL arm (no WGSL
+validator on host). UNMEASURED -- every row of this table except the
+`:simdgroup-reduce` | apple cell's measured M1 Max record; nothing ran
+on NVIDIA or AMD hardware; no `:measured?` flag moved anywhere; the
+workgroup defaults in kotoba.compiler.accelerator-targets are untouched
+(:nvidia/:apple/:intel/:amd measured per ADR-0358, :arm/:unknown
+provisional, :measured? false).
+
+HONEST LEFT (the real remainder after this row):
+
+- The `:subgroup-reduce` | intel/arm rows' route prose widening
+  (naming the WGSL route ADR-0363 added) -- named above, unpaid.
+- Prose debt (b) of the `:simdgroup-reduce` family (the W = 128
+  measure record's stale wsweep-low path) -- named, unpaid.
+- The `:simdgroup-reduce` family's measurement remainder is
+  date-blocked or unmeasurable today: the nine pending cross-day rows
+  (2026-10-25+), the W = 1024 fast-regime ratio at a late block
+  position (UNMEASURED; no session schedules a regime), the shape-2
+  W = 512 later-day DATA run (its own decision row if wanted).
+- SOUL.md backlog item 3 (per-vendor workgroup sweeps replacing the
+  provisional rows) stays BLOCKED on hardware / the ADR-0371 provider;
+  :arm and :unknown workgroup rows remain `:measured? false`.
+- The W3 `string-ascii-lower` residue (reading-level, unverified,
+  named in the 7b6c8409 record) stays open on the W3 track.

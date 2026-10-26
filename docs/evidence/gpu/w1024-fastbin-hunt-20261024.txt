@@ -1,0 +1,108 @@
+JUN-58 / JUN-55: the W = 1024 <= 40k pair-bin HUNT session -- the bin is
+EMPTY again and the row stays UNMEASURED (2026-10-24, chain worktree)
+
+WHAT THIS RECORD IS: the slice record of ONE MEASUREMENT -- the hunt for
+the cell the previous op-order record's HONEST LEFT named UNMEASURED
+("the <= 40k pair-bin ratio at this W"), the pair-level analyzer's
+strict fast bin (pair baseline <= 40,000 ns) at W = 1024. The full
+record is
+docs/evidence/gpu-subgroup-reduce-m1max-oporder-fastbin-20261024/
+w1024-sum-last/ ({summary.md, run-log.txt, compile-log.txt, shaders/})
+plus its NOTES.md; this file is the slice's index and scope statement.
+Every number below is from that committed record (real hardware runs,
+2026-10-24 ~19:24 JST, Apple M1 Max, MSL arms, native-Metal channel).
+
+WHAT RAN: the same instrument as the record whose left row this fills --
+the op-order instrument (:sum LAST, dispatch order max,min,sum),
+:baseline vs :subgroup-reduce, W = 1024, n = 1000003, 12 fresh
+processes (the resweep's named deviation, inherited unchanged; the
+first-6 subset reported for comparability). Byte-identical shaders to
+both earlier W = 1024 cells (`diff -r` empty, both). Host load
+27.23/18.08/16.97 at start (named: busy).
+
+THE FINDING (real measurement):
+- THE SESSION NEVER RAMPED. All 720 pairs sit at the slow plateau or
+  slower; the fastest pair baseline this session is 126,875 ns. The
+  <= 40k pair-bin got ZERO pairs -- again -- and this session added no
+  fast-level pairs at all.
+- One rule-1 level per operator (baseline per-run medians): max
+  128,208..128,583, min 128,208..128,521, sum 128,125..128,500.
+  Paired medians (ADR-0358's statistic): 1.185 (sum) / 1.183 (max) /
+  1.184 (min); first-6 subset 1.185/1.184/1.184. Rule 2 at the single
+  observed level: REGIME-INVARIANT SLOWER (36/36 per-run ratios above
+  1.0).
+- Slow-level reproduction: :sum at the LAST block measures 1.185 for
+  the third max,min,sum session in a row on one day (6-run op-order
+  cell 1.185; resweep slow runs 1-5 1.185; this session 1.185).
+
+NEW STRUCTURAL DATA (level structure only; the harness reads no clock):
+the fresh-process ramp is NOT guaranteed at 12 runs -- 2 of the 5
+sessions at this cell shape saw none (the 6-run op-order cell and this
+one). Host load does not decide it: the resweep ramped at load ~99,
+this session stayed flat at load ~27. What governs the ramp is
+UNMEASURED.
+
+NAMING TENSION, extended (NOTHING silently upgraded): the strict fast
+bin (<= 40,000 pair baseline) sits BELOW every fast-level pair ever
+captured at this W (the resweep's floor 40,375 over its fast-level
+pairs; this session: none). Under the analyzer's strict reading the
+bin's ratio at this W stays UNMEASURED, and the accumulated evidence
+says the bin may be unreachable at this W's observed levels. Strict-bin
+reachability at this W is a design question for its own later slice --
+no reading is moved and no fill claim is made here.
+
+WHAT MOVED IN CODE: nothing (this diff is evidence prose only). The
+record's arrival is asserted by the classifier self-test (below): the
+corpus consumed it (its verdict printed like every record's --
+"identity-holds (0 divergent pairs; levels max 1, min 1, sum 1)"; run-
+level identity here is degenerate, one level per operator, and licenses
+no cross-operator pair naming -- the pair-level identity is REFUTED,
+2563/28,680 key pairs diverge). NO pinned set changed membership (this
+record carries no refinement edge; the :sum-refines-:max exact pin
+still lists exactly its three named records), so no pin needed
+re-statement. Corpus now 56 multi-operator records -- 20 identity-holds
+(3 multi-level), 36 identity-refuted (36 with refinement structure).
+
+WHAT THIS SLICE DOES NOT LICENSE:
+- no `:measured?` flag, no `:measured-cell` :shapes, no selection
+  answer, no workgroup row (ADR-0355/0358) moves;
+- the <= 40k pair-bin ratio at W = 1024 remains UNMEASURED;
+- the nine pending cross-day rows and the shape-2 W = 512 later-day
+  DATA run (2026-10-25+) are untouched and unclaimed;
+- UNMEASURED unchanged elsewhere: shapes beyond the two contract cells;
+  every Apple device but this M1 Max; the GLSL arm (blocked on the
+  wire-42 route, ADR 0371); the NVIDIA/Intel/ARM/AMD variant rows
+  entirely.
+
+GATE (real runs, this host, route-2 classpath, for THIS record):
+1. gpu_regime_classify.py --self-test -> exit 0, TOTAL: 2003
+   assertions passed, 0 failed (corpus 55 -> 56 multi-operator
+   records; no pin red at this record's arrival -- its entry changed no
+   pinned set).
+2. gpu-subgroup-reduce-metal-measure.py --self-test -> exit 0, 12
+   assertions passed, 0 failed.
+3. Scoped GPU gate (8 GPU-owned namespaces, scratch runner
+   gpu_scoped_gate.cljk): Ran 102 tests containing 9774 assertions.
+   0 failures, 0 errors (no .cljk namespace in this diff).
+4. Full run-tests.cljk: RED AT BASE at `kotoba.form` ("Could not find
+   namespace: kotoba.form", the W3 port path, outside this diff),
+   re-verified live this tick. No green full suite is claimed.
+
+HONESTY STATE: MEASURED -- this session's level structure, paired
+ratios and roll-up (named above, this host, this date). UNMEASURED --
+the <= 40k pair-bin ratio (this hunt filled nothing), the ramp's
+governing conditions, everything in the NOT LICENSED list. IMPLEMENTED
+-- nothing new in code. PROPOSED -- nothing new.
+
+HONEST LEFT: the <= 40k pair-bin ratio at this W (started, not
+finished -- moves to the next tick, with the strict-bin reachability
+design sub-row now named); the nine cross-day rows and the shape-2
+W = 512 later-day DATA run (2026-10-25+); SOUL.md backlog item 3
+(blocked on hardware / ADR-0371; `:arm` / `:unknown` rows stay
+`:measured? false`); the W3 `string-ascii-lower` residue.
+
+NOT PUSHED: blocker-first rule in force -- kotoba-lang/amu open PR
+#1553 (hermes/jun31-pe-shim-align, head `hermes/...`) verified open
+this tick (gh pr list), so this commit is kept locally on
+bot/amu-gpu-chain and pushes on the first tick after the blocker PR
+clears. Chain PR #1455 (bot/amu-gpu-chain) stays the one open chain PR.

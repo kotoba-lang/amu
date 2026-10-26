@@ -1,0 +1,148 @@
+JUN-56 / JUN-55 -- W3 SUBGROUP consumer chain, the split4 many-pipe row
+(2026-10-26). ONE implementation slice. NO hardware ran; every number
+below is a kotoba-language-runtime behavior probe or a test gate.
+
+WHAT LANDED in kotoba.compiler.accelerator-targets (kotoba arm only; the
+host arm is the parity reference and is untouched): split4 answers
+MORE-THAN-FOUR ABOVE its own recursion -- a '|'-boundary FOUND at k = 3
+is a fifth field and answers (document-null) in the cond, before any
+further recursion -- where the pre-row walk kept walking ONE FRAME PER
+'|'-BOUNDARY and an answer with many pipes TRAPped instead of answering
+the contract's total null. CONTRACT UNCHANGED, pinned: exactly four
+fields (three '|'-boundaries) answer the four per-field spans; fewer or
+more answer (document-null). The new clause fires only where the old
+walk's ONLY possible answer was already null (a boundary found at k >= 3
+can never end at k = 3), so every previously resolving input answers the
+same bytes -- and the walk is now <= 4 iterations: CONSTANT frames and
+flat fuel at ANY pipe count. RESIDUAL, NAMED (unchanged): the uB5G
+alt-key field walk (alt-field?/alt-any-hits) is still O(FIELDS) frames --
+bounded by the table's own key strings (3 fields today), unreachable
+from the wire; its own row if it ever matters.
+
+INSTRUMENT: the w3 extract-balanced idiom (the arms' OWN text from the
+namespace source, sema/analyze + ir/execute on the kotoba language
+runtime, kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)"
+<scratch probe>; scratch probes never staged). Before/after probe
+scratch/w3_split4mp_before_after.cljk: BEFORE arm from a
+sha256-verified git-show HEAD dump (scratch/w3_split4mp_before_src.cljk,
+sha256 e8db975fec08d05a9f780b032fd640c88cf3663e13bed64f913ab02f7ceeb74b
+-- verified live this tick equal to `git show HEAD:src/kotoba/compiler/
+accelerator_targets.cljk`, chain continuity with the fuel row's tree),
+AFTER = the current worktree src (sha256 of the changed file moved with
+this row). Parity reference: the host arm's own device-from-info and
+(str/split s #"|" -1) for the field count.
+
+GO/NO-GO GROUND (w3_split4mp_gonogo.txt, real run, run BEFORE the fix
+was written into src -- the walk as it stood then): the many-pipe class
+is present on the walk itself -- the dfi 16..64-pipe cells TRAPped
+host/stack-exhausted and the 128-pipe and 4-good-fields+33-more cells
+TRAPped budget/frames on BOTH arms (BEFORE == the then-current src)
+while HOST answered nil for every one -- while the contract says
+"answers nil, never a throw". That run is the class's ground, not an
+after-table (its AFTER column is the unfixed walk).
+
+MEASURED (runtime, no hardware; before/after probe run FOUR times as
+TWO byte-identical pairs):
+  pair 1 (the row's recorded runs): w3_split4mp_run1.txt ==
+  w3_split4mp_run2.txt, COMPLETE 85 lines, sha256
+  3fce2871359c0aac65af2acd2f7590439061d06893b895d1b8ebf89acf92c009.
+  pair 2 (this tick's re-verification, from the same probe and src):
+  w3_split4mp_run3.txt == w3_split4mp_run4.txt, COMPLETE 85 lines,
+  sha256 79b4a0f912866888115d57f421e1b12e74c713379c7f881d88e77c65046e9dd7.
+  The two pairs differ at EXACTLY TWO cells, both in the BEFORE column:
+  the unit walk's 16-pipe and 18-pipe cells SWAP spellings (pair 1: 16
+  TRAP host/stack-exhausted, 18 null; pair 2: 16 null, 18 TRAP
+  host/stack-exhausted). The AFTER column is byte-identical across all
+  four runs. This is the row's named non-monotonic state-dependence
+  MOVING BETWEEN RUNS at the same probe position -- the class is a trap
+  BOUNDARY, not a fixed depth, and both pairs are reported.
+  NAMED, NOT HIDDEN (scratch reconciliation this tick): the on-disk
+  scratch probe carried a stray post-run edit of its last cell (32 z's,
+  label "4-good-fields+32-more") that did not reproduce the recorded
+  runs; this tick restored the recorded shape (33 z's,
+  "4-good-fields+33-more", matching the test's pin) and re-ran twice --
+  every table cited here reproduces from the current probe + current
+  src. The probe's earlier rendering drafts
+  (w3_split4mp_draft_run1/2.txt, pre-byte-comparable map spelling) are
+  superseded and not cited as tables; they independently differ from
+  each other at exactly one cell (the 34-pipe unit cell, budget/frames
+  vs host/stack-exhausted) -- further evidence of the moving boundary.
+
+  THE ROW'S CLASS (unit walk on a k-pipe answer = k+1 fields):
+  contract cells byte-identical BEFORE == AFTER: the 3-pipe answer
+  splits into four spans; the 2-pipe and 4..40-pipe answers are all
+  five-plus fields and answer null on BOTH arms (the contract's
+  four-or-null, where HOST = str/split -1 shows the full field count);
+  the standing four-field shapes (a|b|c|d, ab|1.2.3|4|1, the M1 cell,
+  leading/trailing empty fields, the 106-byte long-field cell) split
+  identically on both arms.
+  THE ROW'S TRAP-GONE CELLS (BEFORE TRAP -> AFTER null == HOST nil):
+  the unit walk TRAPped at 16/17 and 31..40 pipes on BEFORE (16/17
+  host/stack-exhausted, 31..40 budget/frames in both pairs; 16/18's
+  exact split moves, above) and answers null at EVERY k = 2..40 on
+  AFTER; the dfi (device-from-info) cells at 16/24/32/33/40/48/64/128
+  pipes and the 4-good-fields+33-more answer ALL TRAPped
+  host/stack-exhausted on BEFORE (budget/frames at the 128 and +33
+  cells in the earlier go/no-go position) and all answer null on AFTER
+  == HOST nil.
+  REGRESSION, byte-identical BEFORE == AFTER == HOST across all four
+  runs: the device-from-info e2e standing pins (ab|1.2.3|4|1, the M1
+  and Mali-G78 cells, a|1.2.3|4|1) and the 12-cell malformed grid
+  (-> null == HOST nil) plus the previous rows' long cells (the
+  1011-byte 1000-fives cell and the 111-byte 100-nines cell, both
+  still resolving byte-identically).
+
+CONSEQUENCE: NOTHING MOVES -- no :measured? flag value, no :shapes
+value, no workgroup row, no selection answer; :arm/:unknown stay
+provisional :measured? false; the SUBGROUP producer (ADR-0371) still
+does not exist, no live wire feeds this. This row removes the
+many-pipe wrong-refusal class (an answer with many '|'-boundaries
+answered a trap, no fact -- the contract says total null and the host
+arm answers nil) and adds no measurement claim.
+
+STATES:
+- IMPLEMENTED (code + tests): the (>= k 3) (document-null) clause in
+  split4's cond, ABOVE the walk's only self-call. Tests, inside the two
+  existing deftests (gate test COUNT +0): the split4 test's "more than
+  four fields is total" block -- source pins ((>= k 3) present and
+  before the (split4 s (+ p 1) self-call), the k = 4..33 pipe cells ->
+  null, the 33/64/128-pipe cells resolve to null with HOST parity
+  pins, the four-field answer still splits into four spans -- and the
+  device-from-info test's "a many-pipe answer is total end to end"
+  block (16/33/64/128-pipe -> null with HOST parity pins; four good
+  fields plus 33 more fields (37 total) -> null).
+- DECIDED (contract unchanged): exactly four fields or (document-null);
+  the walk is total -- "answers nil, never a throw".
+- MEASURED: the four probe runs (two byte-identical pairs) above + the
+  go/no-go ground.
+- ACCEPTED DESIGN ONLY (unchanged): ADR-0355's table rules, ADR-0358's
+  key, ADR-0362's subgroup contract, the claim protocol.
+- UNMEASURED, named: WHY the 16/18 boundary moves between runs (the
+  mechanism of the state-dependence, never pinned), trap spellings
+  beyond these runs, the uB5G alt-key field walk's O(FIELDS) residual
+  (named above, unreachable from the wire), every workgroup-row
+  question (:arm/:unknown stay provisional :measured? false), anything
+  off this host.
+
+GATES (real runs):
+- Scoped GPU gate (8 GPU-owned namespaces, scratch runner
+  gpu_scoped_gate.cljk):
+    kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+      /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+  -> run 1 GREEN and run 2 GREEN, identical:
+     Ran 122 tests containing 12060 assertions. 0 failures, 0 errors.
+     scoped: 122 tests, 12060 passed, 0 failed, 0 errors
+     (committed pin 122 tests / 12012 assertions; delta = +0 tests /
+     +48 assertions). glslang 16.6.0 real-spawn ran (both run logs).
+- BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head
+  (checked at tick start and re-checked before the push).
+- NAMED, NOT RE-RUN this tick (no classify code touched; run-time
+  budget): gpu_regime_classify.py --self-test (standing pin 2649/0)
+  and the FULL run-tests.cljk re-verify (RED AT BASE 'Could not find
+  namespace: kotoba.form', ADR-0362, outside this diff -- verified
+  live in the earlier 2026-10-26 ticks; NO green full suite claimed).
+- NAMED, NOT HIDDEN: kbb prints "2 dep(s) are not :local/root ..." on
+  every run -- identical everywhere, unrelated to this diff. The
+  worktree also carries an untracked deps.edn (present at tick start;
+  this row did not create or touch it, and it is not committed).
+  find docs -name '*.sh' -> 0 (this row's evidence is .txt).

@@ -1,0 +1,154 @@
+JUN-55/JUN-57 -- the CUDA channel's MISSING PIECE (ii): a fresh
+paired-timing session that publishes rules 1 AND 2 under the ADR-0361
+claim-protocol adoption -- the adoption's precondition for (c) is now
+met, and the rule-2 verdict census of THIS session is published below
+record_written=2026-10-25 (JST); run_started=2026-10-25T03:20:51Z
+(log's own DATE-UTC); run_finished ~03:21:58Z (log mtime)
+host: xavier (Jetson AGX Xavier, L4T R35.4.1, aarch64, sm_72),
+nvcc Cuda compilation tools release 11.4 V11.4.315 (log verbatim)
+-- HARDWARE RAN THIS SLICE
+
+THE ROW (verbatim, the claim-protocol CUDA channel record's part 3 (ii),
+named by the previous tick's machinery slice (i)):
+"every CUDA sign/speed verdict ... needs (ii) a fresh paired-timing
+session publishing both sections under the adoption -- UNMEASURED --
+only then does (c) have claim currency"
+
+WHAT RAN (one measurement slice; no code, no test, no ADR moves):
+the paired-timing run driver (scratch/gpu-cuda-timing-run-20261025.sh,
+Hermes scratch only -- never staged, no POSIX .sh anywhere in docs/)
+over ssh to xavier as root, one fresh session:
+  - remote tree /root/gpu-cuda-timing-20261025 WIPED and re-transferred
+    from the local stage (55 files: the three arms' committed corpora,
+    54 emitted .cu, plus scripts/gpu-cuda-reduce-timing.cu);
+  - instrument compiled OK-instrument (nvcc -arch=sm_72 -O2 -lcuda);
+    corpus 54/54 OK-cubin; all 55 nvcc diagnostics 0 bytes;
+  - smoke block (n=1000003 W=256 op=sum subgroup/baseline) rc=0,
+    excluded as a duplicate of a grid block;
+  - the full grid: 2 shapes (n=1000003/1048576) x 6 widths (W 32..1024)
+    x 3 operators x 3 pair types (subgroup/baseline,
+    warp-shuffle/baseline, warp-shuffle/subgroup) = 108 pair blocks,
+    ONE FRESH PROCESS EACH (the adoption's run unit), PAIRS=20
+    interleaved pairs, WARMUP=2 per arm, AB/BA alternating, LCG seed
+    20261023 reset per process, two clocks per dispatch (gpu_ns
+    CUDA-event GPU timeline + host_ns CLOCK_MONOTONIC submit->completion),
+    untimed verified read-back per arm;
+  - the log piped through scripts/gpu_regime_classify.py --cuda-log
+    (the machinery (i) landed last tick) -> publication.txt (exit 0),
+    which is this record's rule-1 + rule-2 + rule-3 + named sections.
+
+VERIFIED (tool output, quoted or re-derived from the committed log):
+
+1. Run completeness: "=== cells run: 108  failed cells: 0", driver
+   exit 0. 4360 sample lines (4320 grid = 108 blocks x 20 pairs x 2
+   arms, + 40 smoke orphans). Correctness re-verified INSIDE the
+   measurement: 218/218 verify lines ok=1 (0 lines ok=0) -- rule 2's
+   precondition holds for every block.
+2. Corpus integrity: the log's own received-file sha256 block matches
+   the committed corpora + committed instrument EXACTLY, 55/55
+   (re-derived this tick by basename against
+   gpu-subgroup-reduce-cuda-20261023 / gpu-warp-shuffle-reduce-cuda-20261024
+   / gpu-baseline-reduce-cuda-20261025 + scripts/; 0 mismatches,
+   0 missing). Local-stage vs remote received diff empty 55/55.
+3. Publication parse census (publication.txt's own named section):
+   "All 108 pair blocks are complete (their declared pairs, both arms),
+   verified (every verify line ok=1) and rc=0 -- nothing named and
+   excluded." + "40 sample lines sit outside any `-- cell` block (the
+   log's smoke block) -- named and excluded."
+4. RULE 1 PUBLISHED by the run itself (metric-named, never mixed):
+   stratum level structure is IDENTICAL on both metrics --
+   subgroup/baseline and warp-shuffle/baseline strata: 3 levels each
+   (W=32 the slowest cluster, W=1024 the middle, W=64..512 the fast
+   cluster -- the reference-arm kernel's own W cost structure, one
+   kernel per cluster proxy); warp-shuffle/subgroup strata: 2 levels
+   each (W=32 alone slowest, W=64..1024 one fast level). Example
+   (gpu_ns, op=max, subgroup/baseline): level 1 115504..145824 ns
+   (W=64..512), level 2 170096..178320 (W=1024), level 3
+   295872..307888 (W=32).
+5. RULE 2 PUBLISHED -- the verdict census of THIS session, 18 strata
+   (2 metrics x 3 operators x 3 pair types), sign claims CHANNEL-SCOPED
+   (a CUDA sign never flips an MSL/WGSL cell and never answers a
+   workgroup row; rule 4 unchanged):
+   - pair=warp-shuffle/baseline: REGIME-INVARIANT FASTER in 6/6 strata
+     (every operator, both metrics; 12/12 per-run ratios below 1.0 in
+     each) -- warp-shuffle beats :baseline everywhere this session.
+   - pair=warp-shuffle/subgroup: REGIME-INVARIANT FASTER in 4/6
+     (:max and :min, both metrics); REGIME-SCOPED at :sum (both
+     metrics) -- the :sum straddle separates by regime.
+   - pair=subgroup/baseline: REGIME-SCOPED in 6/6 strata -- the
+     straddle separates by regime (the W=32 slowest level is one-sided
+     FASTER for :subgroup-reduce, ratios ~0.92; the fast and middle
+     levels one-sided SLOWER, ratios ~1.03..1.18). No regime-invariant
+     sign exists for :subgroup-reduce vs :baseline anywhere.
+   The two clocks classify SEPARATELY and agree on every stratum's
+   verdict; per rule 3 no cross-clock magnitude claim is made and the
+   raw both-clocks per-block times sit beside every ratio
+   (publication.txt's rule-3 section).
+
+MEASURED (this session, on real hardware):
+  - 4360 paired timing samples (gpu_ns + host_ns) -- the CUDA channel's
+    first timing data TAKEN UNDER the claim-protocol adoption;
+  - the rule-1 regime clusters and the rule-2 verdict census above.
+
+STATE HONESTY (the three states):
+  - IMPLEMENTED (code, unchanged this tick): scripts/gpu_regime_classify.py
+    --cuda-log (machinery (i), landed last tick) + the instrument
+    scripts/gpu-cuda-reduce-timing.cu (measurement instrument, NOT
+    product code, NOT a wire-42 route).
+  - MEASURED: as above -- this session's samples and publication.
+  - ACCEPTED DESIGN ONLY: the ADR-0361 adoption (rules 1-4 as this
+    channel carries them); ADR-0373 instrument class; ADR-0358
+    paired-within-run statistic.
+  - UNMEASURED, named: (c) THE SELECTION ROW -- the
+    :warp-shuffle-reduce vs :subgroup-reduce vs :baseline speed
+    question's ANSWER (which the CUDA-route selection rows consume) is
+    NOT written this tick; it is its own row and now has claim currency
+    (the adoption's (i)+(ii) are both met). The verdict census above is
+    rule-2 claim-protocol output, channel-scoped, not a selection
+    answer; cross-run stability under the adoption (ONE session -- the
+    WGSL channel showed regime structure does not reproduce across
+    runs, so a single session bounds nothing about a distribution);
+    every workgroup row (ADR-0355's 2026-10-25 channel rule: this is
+    the instrument channel, not the row's own wire-42 channel --
+    :arm/:unknown stay provisional :measured? false).
+  - No :measured? flag, workgroup row, :shapes value or selection
+    answer moves (rule 4).
+
+NOT RETROACTIVE, named not hidden: the earlier 2026-10-25 xavier
+paired-timing run (cuda-paired-timing-xavier-20261025/) stays OUT of
+the claim protocol (it predates the adoption, its log carries no
+publication); this record is a separate fresh session and does not
+re-derive anything over that run's samples.
+
+NAMED, NOT HIDDEN (this session's own defects/hazards):
+  - The tar transfer carried 57 macOS AppleDouble `._*` files to the
+    remote tree (the first count read 112 files against 55 staged);
+    they were DELETED remotely before any compile or run (final tree
+    55 files, sha listing 55/55 above), and no `._*` file entered the
+    measurement. The committed evidence carries none.
+  - Session wall time ~67s (03:20:51Z -> ~03:21:58Z) for recompile +
+    108 blocks + smoke: the instrument's kernels are small (n ~ 1e6,
+    sub-ms gpu_ns), so per-block CUDA context init dominates process
+    cost; the per-block medians above are the data, and their
+    structure is what the publication reports.
+
+GATES (real runs, this slice):
+  - gpu_regime_classify.py --self-test: TOTAL 2491 assertions passed,
+    0 failed (no code touched this tick -- regression pin).
+  - Scoped GPU gate (the 8 GPU-owned test namespaces, scratch runner
+    gpu_scoped_gate.cljk, never committed): GREEN -- 106 tests /
+    11046 assertions / 0 failures / 0 errors (glslang 16.6.0
+    real-spawn line). The diff is evidence-only (docs/evidence), no
+    .cljk namespace touched -- the gate is a regression pin.
+  - FULL run-tests.cljk: NOT RUN this slice (evidence-only diff) --
+    named so nothing is implied. Documented red at base ("Could not
+    find namespace: kotoba.form", the W3 port path, ADR-0362), outside
+    this diff, not re-verified here. NO green full suite is claimed.
+  - Evidence hygiene: no POSIX .sh execution file exists anywhere
+    under docs/ (checked this tick before commit); the run driver
+    lived in Hermes scratch and was never staged.
+
+Evidence: docs/evidence/gpu/cuda-claimprotocol-run1-20261025/
+(measure-log.txt = the complete fresh-session log; publication.txt =
+the --cuda-log claim-protocol publication derived from it; this
+record.txt).

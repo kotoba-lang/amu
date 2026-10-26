@@ -1,0 +1,178 @@
+JUN-56 / JUN-55 -- the numeric-walk row: the W3 arm's digits?/dot/parse
+walks collapse onto primitives (2026-10-26)
+
+WHAT THIS ROW IS: the named follow-up residual of
+w3-key-chain-primitive-20261026 ("RESIDUAL, NAMED: digits?/digits-all?/
+parse-walk/dot1/dot2 still walk per byte of THEIR fields ... an
+adversarial numeric field can still reach the budget, fail-closed"). One
+implementation slice on kotoba.compiler.accelerator-targets. NO hardware
+ran, no GPU, no timing -- every number below is a kotoba-language-runtime
+behavior probe (the w3 fact class).
+
+INSTRUMENT (all runs this tick, scratch probes never staged): the w3
+extract-balanced idiom -- the arms' OWN text extracted from the namespace
+source, sema/analyze + ir/execute on the kotoba language runtime,
+kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" <scratch
+probe>. Scratch probes:
+  w3_dot_alt_prim.cljk / w3_dot_alt_prim2.cljk (the row's go/no-go
+    capability probes, run 02:14/02:21 in the row's earlier start),
+  w3_num_taxonomy.cljk (the parse-verdict taxonomy),
+  w3_num_before_after.cljk (before/after, run TWICE). The BEFORE arm is
+extracted from a git-show HEAD dump of accelerator_targets.cljk
+(scratch/w3_num_before_src.cljk; sha256
+95bd6c4f1a3dabe955344525b43037b80be9f7d3879fee71c772f4566268a883;
+the working tree AFTER arm sha256
+23cd94c2bd2bf65ba8090d85cac24e085955cf16f2c324a12ba83f6c82d8b7c9)
+-- never hand-transcribed. The same probe runs the HOST arm's
+device-from-info (kotoba.compiler.accelerator-targets on kbb) as the
+parity reference.
+
+CAPABILITY PROBES (measured):
+  string-find-byte (s b from): "a.c" 46 0 -> 1 / 46 2 -> -1 /
+    46 3(=n) -> -1 / 46 4(>n) -> TRAP "string offset is out of bounds";
+    "" 46 0 -> -1; "hello" 233 0 -> TRAP (needle not ASCII).
+  string-replace-all, string-index-of-from: as expected (empty needles
+    trap empty-string-search-needle / empty-string-replacement-needle).
+  string-parse-i64: EXISTS as a builtin head answering
+    [:result :i64 :keyword] (an i64 parse HEAD does not exist as a plain
+    i64 -> i64 builtin: "string-to-i64"/"i64-from-string"/"string->i64"
+    all REJECTED unknown operation; parse-long is the sugar head that
+    answers [:option :i64]).
+  parse-long (sugar) and string-parse-i64+result heads measured EQUAL on
+    the 10-case go/no-go grid ("1024" 1024, "012" 12, i64max i64max,
+    i64max+1 none, "99999999999999999999" none, "-5" -5, "+5" 5,
+    "" none, "4x" none).
+
+THE PARSE-VERDICT TAXONOMY (w3_num_taxonomy.cljk, verbatim log):
+  string-parse-i64 answers exactly two error keywords on this grid:
+  :parse/malformed and :parse/out-of-range. DIGIT-ONLY text never
+  answered :parse/malformed THERE:
+    "4" ok 4 | "0" ok 0 | "012" ok 12 | "4x" err malformed |
+    "" err malformed | "9223372036854775807" ok i64max |
+    "9223372036854775808" err out-of-range |
+    "99999999999999999999" err out-of-range |
+    100x"9" err out-of-range | (100x"0")+"42" (len 102) ok 42 |
+    (1000x"0")+"42" (len 1002) ok 42 | 1000x"5" err out-of-range |
+    "-5" ok -5 | "+5" ok 5 | " 4" / "4 " / "4\n" / "4\t" err malformed |
+    "0x10" / "0b1" / "1_0" / "1_000" / "4.0" / "4,0" err malformed |
+    "０" / "٤" / "4٤" err malformed.
+  The digits? candidate (bounds guard FIRST, first byte ASCII digit,
+  verdict ok|out-of-range) matched the host re-matches "[0-9]+" on ALL
+  21 probed ranges (incl. mid-string ranges, the empty range false, and
+  the 20/100/102/1000-char digit strings true). UNMEASURED, NAMED: digit
+  text outside these probes (the taxonomy is probed, not proven).
+
+WHAT LANDED (code + tests), kotoba arm only (the host arm is the parity
+reference and is untouched):
+(1) digits? = bounds guard + first-byte ASCII digit + ONE
+    string-parse-i64 verdict (ok OR :parse/out-of-range). The replaced
+    digits?/digits-all? walks recursed per byte; digits-all? is DELETED
+    (its only caller was digits?). The first-byte check is load-bearing:
+    the primitive accepts "+5"/"-5" (ok 5 / ok -5, measured) where the
+    host regex does not.
+(2) dot1/dot2 = ONE string-find-byte call per dot (the split4
+    string-index-of-from precedent). Contracts unchanged (index of the
+    first/second '.', n when absent/fewer -- pinned). The walk's
+    i >= n -> n shape is answered ABOVE the primitive because
+    string-find-byte traps on from > n (measured).
+(3) string->i64 = ONE parse-long call (the host arm's OWN head);
+    parse-walk is DELETED.
+
+MEASURED (runtime, no hardware; BEFORE = the dumped arm, AFTER = the
+fixed arm, HOST = the host arm's device-from-info; probe ran TWICE, the
+two runs BYTE-IDENTICAL -- no trap-boundary anomaly appeared this row):
+
+device-from-info, the standing pins (BEFORE == AFTER == HOST):
+  "ab|1.2.3|4|1" / "Apple M1 Max|1.3.357|1024|1" /
+  "Mali-G78 MP24|1.1.128|256|0" -- six-fact maps, unchanged.
+device-from-info, adversarial numeric fields (the row's residual class):
+  "ab|99999999999999999999.2.3|4|1"
+      BEFORE TRAP host/stack-exhausted  AFTER map == HOST
+  "ab|1.99999999999999999999.3|4|1"
+      BEFORE TRAP  AFTER map == HOST
+  "ab|1.2." + 100x"9" + "|4|1" (len 111)
+      BEFORE TRAP  AFTER map == HOST (api-version keeps the long part)
+  "ab|1.2.3|" + 20x"9" + "|1"
+      BEFORE TRAP  AFTER null == HOST nil
+  "ab|1.2.3|" + (100x"0") + "42|1" (len 113)
+      BEFORE TRAP  AFTER map :max-workgroup-x 42 == HOST
+  "ab|1.2.3|" + 1000x"5" + "|1" (len 1011)
+      BEFORE TRAP  AFTER null == HOST nil
+  malformed grid (8 spellings): null on both arms, unchanged.
+version3? truth table: the 15 pinned shorts byte-identical
+  BEFORE == AFTER == HOST; "99999999999999999999.2.3" true all three;
+  "1.2." + 100x"9" (len 104) BEFORE TRAP budget/frames, AFTER true
+  == HOST true. No AFTER-MISMATCH line in the grid.
+digits? (dg) vs host regex: "4"/"012" true, "4x"/"" false, the 20/100/
+  102-char digit strings true -- BEFORE == AFTER on every case the walk
+  resolved; 100/102-char fields BEFORE TRAP budget/frames, AFTER resolve.
+string->i64 (si) PINNED SEMANTIC CHANGE:
+  "4" 4 == 4 | "012" 12 == 12 |
+  "4x" BEFORE 112 (garbage) AFTER -1 |
+  "" BEFORE 0 AFTER -1 |
+  "99999999999999999999" BEFORE 7766279631452241919 (WRONG wrapped
+      value) AFTER -1 |
+  100x"9" BEFORE TRAP budget/frames AFTER -1 |
+  (100x"0")+"42" BEFORE TRAP AFTER 42.
+  The host arm's parse-long answers nil on the no-value cases and its
+  caller maps that to "no positive wg" -- the same device-from-info null
+  the kotoba arm now answers (both arms pinned in the tests). The garbage
+  on "4x"/"" is unreachable at the arm (digits? gates the call) and is
+  recorded only as the walk's unit behavior.
+
+WHAT THIS DOES NOT CLAIM: the wrong wrapped value is measured at the
+string->i64 UNIT; at the full-answer depth the walks trapped before a
+wrong map could materialize (so at that depth the old arm was
+fail-closed, run-order-dependent trap boundaries named in the older
+evidence). This row removes the trap class and the latent wrong-value
+path; it adds no measurement claim.
+
+RESIDUAL, NAMED (not hidden): alt-end/alt-field?/alt-any-hits still walk
+the '|'-alternate KEY per byte (row-key sized, measured resolving on
+every row key; a hypothetical very long key is fail-closed -- its own
+row). The digits taxonomy is probed, not proven (above). sg-size-walk
+(the subgroup answer's size field) is NOT in this row and still walks
+per byte (named, not hidden).
+
+CONSEQUENCE: NOTHING MOVES -- no :measured? flag value, no :shapes value,
+no workgroup row, no selection answer; :arm/:unknown stay provisional
+:measured? false. This row removes a trap class (wrong-refusal path) and
+a latent wrong-value path; it does not add a measurement claim.
+
+STATES:
+- IMPLEMENTED (code + tests): digits? verdict route + first-byte guard;
+  digits-all? deleted; dot1/dot2 on string-find-byte; string->i64 on
+  parse-long; parse-walk deleted. Tests: the version3 test's truth table
+  kept and extended (long-part pins + walk-deleted source pins + the
+  primitive-delegation pins); the device-from-info test extended (the
+  adversarial numeric-field e2e, the overflow-no-wrong-fact pins with
+  HOST parity pins, the deleted-walk pins).
+- DECIDED: digits? = first byte digit AND verdict ok|out-of-range
+  ([0-9]+ parity); overflow digit text answers no value (-1 / null),
+  never a wrapped fact.
+- MEASURED: the probe tables above (runtime behavior, no hardware).
+- ACCEPTED DESIGN ONLY (unchanged): ADR-0355's table rules, ADR-0358's
+  key, the claim protocol.
+- UNMEASURED, named: digit text outside the taxonomy probes, the
+  walk-free chain under adversarial fields beyond these probes, the
+  '|'-key walks, sg-size-walk, every workgroup-row question (:arm/:unknown
+  stay provisional :measured? false), anything off this host.
+
+GATES (real runs):
+- Scoped GPU gate (8 GPU-owned namespaces, scratch runner
+  gpu_scoped_gate.cljk, route 1):
+    kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+      /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+  -> Ran 116 tests containing 11594 assertions. 0 failures, 0 errors.
+     scoped: 116 tests, 11594 passed, 0 failed, 0 errors
+     (committed pin 116 tests / 11576 assertions; delta = this slice's
+     +18 assertions, 0 new tests). glslang 16.6.0 real-spawn ran.
+     GREEN on run 1 (log: scratch/w3_num_gate_run1.log).
+- gpu_regime_classify.py --self-test -> TOTAL: 2649 assertions passed,
+  0 failed (committed pin 2649/0; no classify code touched).
+- Full run-tests.cljk: RED AT BASE, outside this diff -- "Could not find
+  namespace: kotoba.form" (ADR-0362) fails the run before any test
+  executes (re-verified live this tick since the diff touches .cljk
+  namespaces). The touched namespaces' own tests are the scoped gate
+  above. NO green full suite claimed.
+- find docs -name '*.sh' -> 0 files (the no-POSIX-sh evidence rule).

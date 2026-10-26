@@ -1,0 +1,156 @@
+JUN-56 / JUN-55 -- the sg-member? row: the W3 SUBGROUP chain's dedupe
+check reads its document-VECTOR accumulator with `document-vector-at`
+(2026-10-26)
+
+WHAT THIS ROW IS: the named follow-up finding of
+w3-pipe-token-end-primitives-20261026 ("the dedupe check sg-member?
+calls document-list-at over the chain's own document-VECTOR accumulator
+... TRAPs 'document-list-required' on ANY 2+-token <ops> field ...
+a wrong-refusal path still in the SUBGROUP consumer, its own row"). One
+implementation slice on kotoba.compiler.accelerator-targets. NO hardware
+ran, no GPU, no timing -- every number below is a kotoba-language-runtime
+behavior probe (the w3 fact class).
+
+INSTRUMENT (all runs this tick, scratch probes never staged): the w3
+extract-balanced idiom -- the arms' OWN text extracted from the
+namespace source, sema/analyze + ir/execute on the kotoba language
+runtime, kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)"
+<scratch probe>. Scratch probe: w3_member_before_after.cljk (the
+sg-member? unit mechanism table + the multi-token e2e grid + the
+standing pins + the previous row's regression cells, run TWICE,
+byte-identical runs: sha256 1b47c051a7bc1e519eae2b002aaef5eafc639e3a516ae8d4a4fb4c413d401d7e
+both). The BEFORE arm is extracted from a git-show HEAD dump of
+accelerator_targets.cljk (scratch/w3_member_before_src.cljk; sha256
+c251a55a26c22ce9373b4edc609bb70e64c2d6f36a46731c081c5caa1f0090d8 --
+which is the previous row's AFTER hash, chain continuity; the working
+tree AFTER arm sha256
+1792e93c7619e96d9257be4358bf2ed35059cfa0002b0850936ae658bed6908c) --
+never hand-transcribed. Parity reference: the host arm's own
+device-from-subgroup.
+
+WHAT LANDED (code + tests), kotoba arm only (the host arm is the parity
+reference and is untouched):
+  sg-member? reads the accumulator with `document-vector-at` (the
+  kexe_fs_forms membership idiom) instead of `document-list-at`. The
+  accumulator IS a document-VECTOR (document-vector /
+  document-vector-conj in sg-ops-walk) -- the accessor now matches the
+  accumulator kind. CONTRACT UNCHANGED: true iff one of the
+  accumulator's first n elements is document-equal? to kw, false
+  otherwise (the set-dedupe check above). Nothing else in the chain was
+  touched (sg-ops still seeds (document-vector), sg-ops-walk still
+  conjes document-vector-conj).
+
+MEASURED (runtime, no hardware; BEFORE = the dumped HEAD arm, AFTER =
+the fixed arm, HOST = the host arm; probe ran TWICE, byte-identical
+runs -- no trap-boundary anomaly in the probe this row):
+
+sg-member? unit mechanism (the dedupe check over the chain's own acc
+shapes):
+  empty-vector acc (the single-token path) false
+      -- BEFORE == AFTER (unchanged; the accessor is never called).
+  vector acc n=1 no match false | vector acc n=1 match at k=0 true |
+  vector acc n=2 match at k=1 true | vector acc n=2 no match false
+      -- BEFORE TRAP document-list-required on every one (the
+      document-list-at/document-vector mismatch), AFTER the membership
+      VERDICT on every one. The accessor bug's trap class is GONE.
+  LIST acc n=1 no match: BEFORE false (the list accessor worked on
+  lists), AFTER TRAP "document-vector-required" -- accessor-kind
+  asymmetry, MEASURED, measure-only (the only caller passes the vector;
+  no contract covers the list shape).
+
+device-from-subgroup e2e -- the multi-token shapes (BEFORE TRAP
+document-list-required -> AFTER == HOST on every one the gate pins):
+  "32|basic shuffle-relative" (25 bytes, the canonical answer)
+      -> 32 #{basic shuffle-relative} == HOST
+  "32|basic basic" (14) -> 32 #{basic} == HOST (the dedupe TRUE path:
+      a duplicate token is the same fact and collapses)
+  "32|basic shuffle basic" (22) -> 32 #{basic shuffle} == HOST (the
+      duplicate at k=1 collapses too)
+  "8|vote vote" (11) -> 8 #{vote} == HOST
+  single-token "16|shuffle" and empty-<ops> "8|" byte-identical
+      BEFORE == AFTER == HOST; the 12-cell malformed grid -> null ==
+      HOST nil, byte-identical (no spelling moved).
+  NAMED, NOT PINNED (the recurring context-depth asymmetry): the
+  eight-token answer "8|basic vote arithmetic ballot shuffle
+  shuffle-relative clustered quad" (70 bytes) RESOLVES in the
+  standalone probe's context on BOTH byte-identical runs (the full
+  8-element set == HOST, BEFORE TRAP document-list-required -> AFTER
+  the map) but TRAPped host/stack-exhausted at the scoped gate's
+  context depth on gate run 1 -- trap boundaries are state- and
+  path-dependent (the same asymmetry the pipe/token-end row named for
+  the 26-byte overflow-size cells), so the cell is measure-only and
+  NEVER pinned.
+
+REGRESSION (the previous row's resolved cells stay resolved, byte-
+identical BEFORE == AFTER == HOST): 100-nines|basic (106 bytes) null,
+1000-fives|basic (1006) null, 102-zeros-42|basic (110) 42 #{basic},
+200-nines|basic (206) null, 200-byte no-pipe null, "8|"+190a (192)
+null, 200-byte two-pipe null.
+
+NAMED, NOT HIDDEN (their own rows): the remaining walks keep their own
+trap, RE-MEASURED this row (both probe runs): sg-ops-walk recurses per
+token AND per space byte (its leading skip loop), sg-keyword per
+vocabulary element -- the spaced "64|  basic   shuffle-relative  " (31
+bytes) and the unknown-token "32|basic vote2" (14 bytes) still TRAP
+host/stack-exhausted on BOTH arms (BEFORE == AFTER) while the HOST arm
+answers 64 #{basic shuffle-relative} and nil respectively. Their own
+rows.
+
+CONSEQUENCE: NOTHING MOVES -- no :measured? flag value, no :shapes
+value, no workgroup row, no selection answer; :arm/:unknown stay
+provisional :measured? false. The SUBGROUP producer (ADR-0371) still
+does not exist -- no live wire feeds any of this. This row removes the
+dedupe check's wrong-refusal path (any 2+-token <ops> field answered a
+trap, no fact, where the host arm answered the full map) and adds no
+measurement claim.
+
+STATES:
+- IMPLEMENTED (code + tests): sg-member? on the document-vector-at
+  route (one accessor call replaced; contract unchanged). Tests:
+  w3-subgroup-member-dedupes-on-the-vector-accumulator (the 5-cell
+  unit mechanism grid, the canonical + 3 dedupe e2e pins with HOST
+  parity, the standing pins + the 12-cell malformed grid, and the
+  source pins: document-vector-at in the sg-member? body, no
+  document-list-at in it, the (document-vector) seed and the
+  document-vector-conj grow still pinned -- the accessor matches the
+  acc kind). The pipe/token-end and sg-size tests' named-residual prose
+  is brought to the new state (the eight-token answer's claim demoted
+  to named measure-only per the gate run 1 asymmetry).
+- DECIDED (unchanged): the membership contract (document-equal? over
+  the first n elements); the accumulator is a document-VECTOR; byte 32
+  is the only separator; a duplicate token collapses.
+- MEASURED: the probe tables above (runtime behavior, no hardware).
+- ACCEPTED DESIGN ONLY (unchanged): ADR-0355's table rules, ADR-0358's
+  key, ADR-0362's subgroup contract, the claim protocol.
+- UNMEASURED, named: sg-ops-walk/sg-keyword's per-token / per-space-
+  byte / per-element traps (their own rows), the eight-token answer at
+  any one context depth (context-dependent, never pinned), the
+  accessor-kind asymmetry beyond the one list probe, trap spellings
+  beyond these runs, every workgroup-row question (:arm/:unknown stay
+  provisional :measured? false), anything off this host.
+
+GATES (real runs):
+- Scoped GPU gate (8 GPU-owned namespaces, scratch runner
+  gpu_scoped_gate.cljk):
+    kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+      /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+  -> Ran 119 tests containing 11813 assertions. 0 failures, 0 errors.
+     scoped: 119 tests, 11813 passed, 0 failed, 0 errors
+     (committed pin 118 tests / 11777 assertions; delta = this slice's
+     +1 test / +36 assertions). glslang 16.6.0 real-spawn ran.
+     GREEN on run 1 and run 2 (logs: scratch/w3_member_gate_run1.log,
+     w3_member_gate_run2.log). NAMED NOT HIDDEN: gate run 0 (before the
+     demotion above) was RED at exactly 1 error -- the eight-token dfs
+     call trapped host/stack-exhausted at the gate's context depth
+     (the probe context resolved it twice) -- the cell moved to named
+     measure-only, never pinned.
+- gpu_regime_classify.py --self-test -> TOTAL: 2649 assertions passed,
+  0 failed (committed pin 2649/0; no classify code touched).
+- Full run-tests.cljk: RED AT BASE, outside this diff -- "Could not find
+  namespace: kotoba.form" (ADR-0362) fails the run before any test
+  executes (re-verified live this tick, log: scratch/
+  w3_member_fullsuite.log). The touched namespaces' own tests are the
+  scoped gate above. NO green full suite claimed.
+- find docs -name '*.sh' -> 0 files (the no-POSIX-sh evidence rule).
+- BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head (checked
+  at tick start and re-checked before the push; chain PR #1455 OPEN).
