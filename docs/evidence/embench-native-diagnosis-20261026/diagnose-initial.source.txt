@@ -1,0 +1,135 @@
+#!/usr/bin/env python3
+"""Observe retained full-count artifacts without changing workload or runtime.
+
+This is a diagnostic process-lifetime observation, never a benchmark score.
+Python stages logs and samples /proc; the existing native artifact owns its
+result, resource refusals, metering and arena report.
+"""
+import argparse
+import hashlib
+import json
+import os
+import platform
+import re
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+sys.dont_write_bytecode = True
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parents[2]
+sys.path.insert(0, str(ROOT / "scripts/seed"))
+from native_process_profile import atomic_json, proc_stat
+from native_build import pin, static_elf
+
+
+def classify(code, stdout, stderr, outer_timeout):
+    if outer_timeout:
+        return "observer-timeout"
+    if b"vector-table-exhausted" in stderr:
+        return "native-vector-table-bound"
+    if b"SIGALRM" in stderr:
+        return "diagnostic-wall-bound"
+    if b"KEXE_TRAP" in stderr or code != 0:
+        return "native-execution-refused"
+    if re.findall(rb":result (-?[0-9]+)\b", stdout) != [b"1"]:
+        return "native-correctness-not-one"
+    if not stderr.startswith(b"KEXE_ARENA_USE {") or len(stderr.splitlines()) != 1:
+        return "unexpected-arena-output"
+    return "built-in-correctness-completed"
+
+
+def main(artifacts, output, names, wall):
+    if (platform.system(), platform.machine()) != ("Linux", "x86_64"):
+        raise SystemExit("native Linux x86_64 required")
+    baseline = json.loads((artifacts / "native-build.json").read_text())
+    table = {row["workload"]: row for row in baseline["workloads"]}
+    if baseline.get("iterationProfile") != "m104-counts" or len(table) != 19:
+        raise ValueError("retained registered-count full19 artifact set required")
+    if len(set(names)) != len(names) or not set(names) <= set(table):
+        raise ValueError("duplicate or unknown diagnostic workload")
+    runner = artifacts / "runner.elf"
+    if static_elf(runner) != baseline["nativeRunner"]["image"]:
+        raise ValueError("runner differs from retained observation")
+    if not baseline["fixedPoint"] or len(baseline["compilerGenerations"]) != 3:
+        raise ValueError("native fixed-point record required")
+    for number in (2, 3):
+        if static_elf(artifacts / f"F{number}.elf") != baseline["compiler"]:
+            raise ValueError("retained compiler generation differs")
+    for name in names:
+        if pin(artifacts / (name + ".bin")) != table[name]["payload"]:
+            raise ValueError("retained payload differs: " + name)
+    output.mkdir(mode=0o700, parents=True, exist_ok=False)
+    report = dict(schema="amu.embench.native-diagnostics.v1", status="running",
+                  performanceQualified=False, qualificationReplacement=False,
+                  scope="selected original full-count artifacts, diagnostic only; all19 gate remains open",
+                  baseline=pin(artifacts / "native-build.json"), runner=pin(runner),
+                  observer=pin(Path(__file__)), procObserver=pin(ROOT / "scripts/seed/native_process_profile.py"),
+                  host=[platform.system(), platform.machine(), platform.release()],
+                  protocol=dict(workloads=names, nativeWallSeconds=wall, outerTimeoutSeconds=wall + 15,
+                                sampleIntervalSeconds=0.1, fuel=1000000000000, arenaUse=True,
+                                timing="entire process lifetime including startup and report, not kernel timing"),
+                  cases=[])
+    atomic_json(output / "diagnostics.json", report)
+    for name in names:
+        payload = artifacts / (name + ".bin")
+        argv = [str(runner), str(payload), "0", "0", "x86_64", "-"]
+        env = {"PATH": "/nonexistent", "KEXE_ALLOW": "-", "KEXE_FUEL": "1000000000000",
+               "KEXE_STRUCTURED_REPORT": "1", "KEXE_ARENA_USE": "1",
+               "KEXE_WALL_SECONDS": str(wall), "KEXE_CAP_RESOURCES_35": str(artifacts)}
+        row = dict(workload=name, iterations=table[name]["iterations"], payload=pin(payload),
+                   argv=argv, environment=env, status="running", samples=[])
+        report["cases"].append(row)
+        started = time.monotonic()
+        last_write = -1.0
+        outer_timeout = False
+        with (output / (name + ".stdout")).open("wb") as out, (output / (name + ".stderr")).open("wb") as err:
+            process = subprocess.Popen(argv, cwd=artifacts, env=env, stdout=out, stderr=err)
+            try:
+                while True:
+                    elapsed = time.monotonic() - started
+                    state = proc_stat(process.pid)
+                    if state:
+                        row["samples"].append(dict(seconds=elapsed, **state))
+                    pid, status, usage = os.wait4(process.pid, os.WNOHANG)
+                    if pid:
+                        process.returncode = os.waitstatus_to_exitcode(status)
+                        break
+                    if elapsed > wall + 15:
+                        outer_timeout = True
+                        process.kill()
+                        _, status, usage = os.wait4(process.pid, 0)
+                        process.returncode = os.waitstatus_to_exitcode(status)
+                        break
+                    if elapsed - last_write >= 1:
+                        atomic_json(output / "diagnostics.json", report)
+                        last_write = elapsed
+                    time.sleep(0.1)
+            finally:
+                if process.returncode is None:
+                    process.kill()
+                    os.wait4(process.pid, 0)
+        stdout = (output / (name + ".stdout")).read_bytes()
+        stderr = (output / (name + ".stderr")).read_bytes()
+        row.update(status=classify(process.returncode, stdout, stderr, outer_timeout),
+                   exit=process.returncode, seconds=time.monotonic() - started,
+                   cpuSeconds=usage.ru_utime + usage.ru_stime, maxRSSKiB=usage.ru_maxrss,
+                   stdout=pin(output / (name + ".stdout")), stderr=pin(output / (name + ".stderr")))
+        atomic_json(output / "diagnostics.json", report)
+        print(name, row["status"], "cpu", round(row["cpuSeconds"], 3), "maxRSSKiB", row["maxRSSKiB"], flush=True)
+    report["status"] = "completed-diagnostic-only"
+    atomic_json(output / "diagnostics.json", report)
+    return 0
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--artifacts", type=Path, required=True)
+    parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--workloads", default="aha-mont64,crc32")
+    parser.add_argument("--wall-seconds", type=int, default=120)
+    args = parser.parse_args()
+    if not 1 <= args.wall_seconds <= 600:
+        parser.error("diagnostic wall seconds must be 1..600")
+    raise SystemExit(main(args.artifacts.resolve(), args.out.resolve(), args.workloads.split(","), args.wall_seconds))

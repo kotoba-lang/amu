@@ -6,7 +6,11 @@
 ;; (xa-rt-start) for --format static and runner, or xa-rt-launch for
 ;; --format launcher. static and runner images are the same bytes as before
 ;; the split.
-(defn- xa-rt-core [] :string
+(defn- xa-rt-core [] :string (xa-rt-core-profile 0))
+(defn- xa-rt-core-profile [profile :i64] :string
+  ;; Runtime admission requires its intrinsic stubs first, in ABI order.
+  (string-concat (xa-rt-body) (xs-profile-prelude profile)))
+(defn- xa-rt-body [] :string
 (string-concat "
 ;; x86_64-linux-static runtime. Scalar Kotoba plus the kxrt- intrinsics only:
 ;; no strings, vectors or closures (those would call back into this runtime).
@@ -43,7 +47,7 @@
 (defn- kxrt-gs [k :i64 v :i64] :i64 (kxrt-store64 (+ (kxrt-g) k) v))
 (def KXRT-PAIRS 16777216)
 (def KXRT-POOL 268435456)
-(def KXRT-VECTORS 4194304)
+(def KXRT-REGIONS 4194304)
 (def KXRT-ITEMS 268435456)
 (def KXRT-VECTOR-MAX 33554432)
 (def KXRT-VALUE-MAX 8388608)
@@ -393,7 +397,7 @@
           :else
             (let [t (kxrt-count 272 1) t2 (kxrt-count 280 n)
                   capacity (if (< (* 2 need) 4) 4 (* 2 need))
-                  reserve (and (<= capacity (- KXRT-ITEMS u)) (< (kxrt-gl 704) KXRT-VECTORS))
+                  reserve (and (<= capacity (- KXRT-ITEMS u)) (< (kxrt-gl 704) KXRT-REGIONS))
                   z (kxrt-icopy u off n) y (kxrt-store64 (kxrt-item u n) x)]
               (if reserve
                 (let [id (inc (kxrt-gl 704)) p (kxrt-region id)
@@ -407,7 +411,7 @@
   (let [n (kxrt-vlen h) off (kxrt-voff h) u (kxrt-gl 64) c (kxrt-count 256 1)
         id (kxrt-load64 (kxrt-rmap h)) used (kxrt-gl 704)]
     (cond (>= n KXRT-VECTOR-MAX) (kxrt-fail)
-          (or (< used 0) (> used KXRT-VECTORS) (< id 0) (> id used)) (kxrt-fail)
+          (or (< used 0) (> used KXRT-REGIONS) (< id 0) (> id used)) (kxrt-fail)
           (= id 0) (kxrt-conj-regular off n x)
           :else (let [p (kxrt-region id) fill (kxrt-load64 p) end (kxrt-load64 (+ p 8))]
                   (cond (or (< fill 0) (> fill end) (> end u)) (kxrt-fail)
@@ -1883,7 +1887,7 @@
         m8 (kxrt-gs 120 (kxrt-map 4096)) m9 (kxrt-gs 136 (kxrt-map 65536)) m10 (kxrt-gs 184 (kxrt-map 4096))
         m11 (kxrt-gs 232 (kxrt-map KXRT-VALUE-MAX)) fd (kxrt-gs 112 -1)
         m12 (kxrt-gs 672 (kxrt-map 16384)) m13 (kxrt-gs 688 (kxrt-map (* 8 KXRT-VECTORS)))
-        m14 (kxrt-gs 696 (kxrt-map (* 16 KXRT-VECTORS))) m15 (kxrt-gs 736 (kxrt-map 98304))
+        m14 (kxrt-gs 696 (kxrt-map (* 16 KXRT-REGIONS))) m15 (kxrt-gs 736 (kxrt-map 98304))
         mf2 (kxrt-f2-state) mki (kxrt-ki-init)
         cw (kxrt-syscall 17 (kxrt-gl 184) 4096 0 0 0 0)
         cl (kxrt-gs 192 (if (and (> cw 1) (= (kxrt-load8 (kxrt-gl 184)) 47)) (kxrt-cstrlen (kxrt-gl 184)) 0))
@@ -2411,7 +2415,7 @@
         m8 (kxrt-gs 120 (kxrt-map 4096)) m9 (kxrt-gs 136 (kxrt-map 65536)) m10 (kxrt-gs 184 (kxrt-map 4096))
         m11 (kxrt-gs 232 (kxrt-map KXRT-VALUE-MAX)) fd (kxrt-gs 112 -1)
         m12 (kxrt-gs 672 (kxrt-map 16384)) m13 (kxrt-gs 688 (kxrt-map (* 8 KXRT-VECTORS)))
-        m14 (kxrt-gs 696 (kxrt-map (* 16 KXRT-VECTORS))) m15 (kxrt-gs 736 (kxrt-map 98304))
+        m14 (kxrt-gs 696 (kxrt-map (* 16 KXRT-REGIONS))) m15 (kxrt-gs 736 (kxrt-map 98304))
         mf2 (kxrt-f2-state) mki (kxrt-ki-init)
         v (kxrt-store64 ctx 11)
         d0 (kxrt-store64 (+ ctx 288) (+ (kxrt-g) 8)) d1 (kxrt-store64 (+ ctx 296) (kxrt-gl 0))
