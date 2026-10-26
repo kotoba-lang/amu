@@ -164,6 +164,17 @@ CSSOM/surface/kernel desktop/dapps/persistent restore remain later JUN-93 gates.
 
 ## Native iteration scheduling and observations (JUN-332)
 
+The Apple Silicon diagnostic FS2 runtime now has scoped F metadata and E
+range reads in `seed/macos-fs2-runtime-packager.kotoba`. Check the reviewed
+word derivation and signed probe in
+`docs/evidence/mac-fs2-ef-20261026/README.md` before claiming Mac media
+coverage. Its larger arenas are diagnostic capacities; the full wire-35
+provider, compiler fixed-point requalification on this expanded runtime
+and release remain separate.
+The repository-local Mac bootstrap and its current fixed-point gate are
+tracked separately in JUN-417. Earlier probe receipts retain their exact
+historical pins; source admission of a probe does not qualify its runtime.
+
 Run new heavyweight local native commands through
 `python3 scripts/seed/native_build_queue.py -- <command>`. Its default shared
 admission directory is `~/github/workspaces/codex/native-build-slots-v1`;
