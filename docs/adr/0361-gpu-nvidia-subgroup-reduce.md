@@ -2791,3 +2791,100 @@ is .txt only). FULL run-tests.cljk NOT run (this diff touches NO
 .cljk namespace) -- documented RED AT BASE 'Could not find namespace:
 kotoba.form' (ADR-0362), outside this diff -- NO green full suite
 claimed.
+
+
+## Amendment (2026-10-26 UTC, the e_MF/e_FM split: unidentifiable in
+every entry-included chain form by a potential gauge; the proposed
+open-chain carrier separates only under an entry-excluding timing
+discipline, now spec'd)
+
+The twenty-eighth amendment's forward path -- "the cross-edge split is
+UNIDENTIFIABLE in this form ... an open-chain form would be needed
+(proposed, not implemented)" -- rested on an unexamined premise: that an
+open-chain form separates what cyclic bodies cannot. This amendment
+settles the identifiability question before any hardware time is spent
+on that instrument. NO HARDWARE RAN; NOTHING IS MEASURED HERE. The tick
+executes 2026-10-26T15:45Z UTC (2026-10-27 JST) -- same UTC day as every
+probe, so cross-day run 3+ does not move; this enters no :evidence.
+
+**The analysis.** In the twenty-eighth's own edge-additive frame, every
+measurable quantity of every chain form is a path sum over edge prices
+e_{i,j} (self edges included), entry edges a_i, exit edges b_i, and a
+floor f. An exact rational Gauss-Jordan rank/nullspace computation
+(script committed verbatim as docs/evidence/gpu/
+mufu-split-identifiability-20261026/analysis.py, output verbatim in
+analysis-output.txt, two runs byte-identical, sha256
+be3f55ac...262933) enumerates four measurement families (all words up
+to length 6 over {M,F}, up to 5 over {M,F,U}) and tests identifiability
+of e_MF, e_FM, e_MF+e_FM, e_MF-e_FM in each. Pre-registered predictions
+P1..P4 sat in the script header before the first run.
+
+**What is verified (design analysis, not measurement).**
+(1) Cyclic bodies over {M,F}: rank 3 of 4 edge variables, the null
+    direction {e_MF:-1, e_FM:1} -- the twenty-eighth's rotation-counting
+    result reproduced mechanically; the sum e_MF+e_FM is the only cross
+    quantity cyclic forms return (P1 confirmed).
+(2) Open chains with the entry edge INSIDE the timed region: the split
+    is STILL not identifiable (witness null vector {e_MF:1, e_FM:-1,
+    a_M:-1, b_M:1}). The freedom is a potential gauge -- for any
+    per-node-type potential p, shifting e_{i,j} by p(j)-p(i) with
+    compensating shifts of the entry/exit edges leaves every path sum
+    invariant. Open chains do not break it; they re-seat it on the entry
+    and exit edges. Verdict of P2 confirmed; P2's predicted nullspace
+    dimension was wrong (3, not 2) -- the uncounted direction is the
+    floor-vs-entry trade {a_M:-1, a_F:-1, f:1} (NAMED). Over {M,F,U} the
+    same story with a 3-dim potential gauge (P4 confirmed).
+(3) Open chains with the entry edge EXCLUDED by timing discipline (first
+    operand ready before the timing boundary, sink consumer common to
+    all arms): the gauge collapses to a sink-vs-floor trade that moves no
+    edge price, and the split becomes IDENTIFIABLE (P3 confirmed on the
+    verdict; "full rank" in the prediction was likewise off by that one
+    intercept direction -- NAMED) with the estimators e_MF = V(MF) -
+    V(F), e_FM = V(FM) - V(M).
+(4) Falsifiable closure pre-registered for that future instrument:
+    V(MFM) == V(MF) + V(FM) - V(F), V(FMF) == V(FM) + V(MF) - V(M). If
+    the closures fail, the entry-excluding discipline's premise is wrong
+    and the split stays unmeasured -- it must not be reported.
+(5) The gauge also places the twenty-eighth's unexplained per-form
+    intercept differences (0.5234 / 7.4844 / 5.4805) exactly in the
+    floor-vs-entry freedom; no intercept can resolve them either.
+
+**Consequence.** Nothing moves (rule 4): no record, no :measured? flag,
+no selection answer, no workgroup row. The named item stays UNMEASURED
+and moves in design state only: "unidentifiable in-form" becomes
+"unidentifiable in every entry-included chain form (potential gauge,
+mechanically verified) and identifiable only under the entry-excluding
+discipline (spec'd; estimators and closures pre-registered; instrument
+PROPOSED, not implemented)". The twenty-eighth's forward-path phrasing
+("an open-chain form would be needed") is SUPERSEDED by this corrected
+statement. The observable cross quantity stands at the measured cycle
+sum e_MF + e_FM = 21.0000 (cross surplus +2.0034), unchanged.
+
+**States.** REASONED + MECHANICALLY VERIFIED (not measured): the gauge
+theorem and all rank/nullspace verdicts (evidence
+mufu-split-identifiability-20261026: analysis.py, analysis-output.txt,
+record.txt). MEASURED (standing, unchanged, earlier ticks): e_MM
+14.9966, e_FF 4.0000, e_MF+e_FM 21.0000, cross surplus +2.0034.
+PROPOSED (neither implemented nor run): the entry-excluded open-chain
+instrument. IMPLEMENTED: nothing in src/ or test/. DECIDED: nothing new.
+ACCEPTED DESIGN ONLY (unchanged): the operator-aware contract +
+pre-registration, the row (ii) routes, the entry contract + wiring,
+ADR-0358, ADR-0373. SUPERSEDED (marked): the twenty-eighth's
+open-chain forward-path phrasing. UNMEASURED, named (list carried
+forward intact): the e_MF / e_FM split (now: measurable only via the
+proposed entry-excluded instrument), bare MUFU.RCP dependent-chain
+latency, the floor's internal composition (including the per-form
+intercept differences, now placed in the gauge freedom but still
+unmeasured), the pure 2-input IADD3 and IMAD.IADD separations, the 21
+surplus ops' costs, the residual W-shape's dynamic carrier, noise
+exceedance, sum TRUE side W=256, cross-day run 3+ (still 2026-10-26
+UTC), non-xavier verdicts, :sum W=64 elsewhere, live CUDA selection
+path, workgroup rows (:arm/:unknown provisional :measured? false).
+
+Gates (honest): the scoped GPU gate GREEN on run 1 AND run 2 (123
+tests / 12162 assertions / 0 failures / 0 errors, glslang 16.6.0
+real-spawn, regression pin -- verbatim logs gate-run1.txt /
+gate-run2.txt in the evidence dir); `find docs -name '*.sh'` -> 0.
+FULL run-tests.cljk NOT run (this diff touches NO .cljk namespace) --
+documented RED AT BASE 'Could not find namespace: kotoba.form'
+(ADR-0362), outside this diff -- NO green full suite claimed.
