@@ -247,3 +247,71 @@ root, transport checks, remaining workflow gates and exact-head CI are still
 required before merge/adoption. The former root's metadata is retained in
 history and Git. Earlier receipts continue to describe their actual old-root
 derivation, not a fresh new-root transport pass.
+
+## Repinned-root transport and remaining local x86 gates
+
+The fresh main-tier ARM bootstrap from the new pinned f1a2020f... root passed
+with rootReproduces=true, no reuse/store, queue exit0 in191.618 seconds. A
+fresh paired one-compiler run passed in150.012 seconds. The current checkout's
+transport checker then passed the exact source/root/product/receipt bindings.
+The raw records under arm/arm-repin-r5, arm/arm-one-r5 and arm-transport-r5.json
+are bound to archive SHA256
+d4818f62a00dd1adaa3a9814a2666eba0dc5bdcb8d801e7177518df0ec9221e1.
+The snapshot's short commit spellings and current metadata's expanded hashes
+resolve to the same commits; the compiler's47 source bytes are unchanged.
+
+The native x86 older-closure full tier also passed uncached with exit0 in
+316.614 seconds, including X2=X3,24 cases, runtime boundary/hardening, launcher,
+KX64 generations, scalar/object checks and X0 reproducing the unchanged adopted
+core image. The core compile took177.6 seconds. This X2 is the small selfhost
+closure cbe4625b..., not the complete7f2846b2... product; the latter has its own
+previously recorded three-generation proof. Records under x86/x86-full-r5 and
+the admission file are bound to archive SHA256
+d2f5dd8e198ca502eddb22ba24a00785c6e3f13405a4bb1019223154c294b4a4.
+
+All nine remaining staged x86 checks passed: stdin, durable files/sleep,
+private store, STOP/CONT, spawn, zero-capability user ELF, public-product
+aliases, locked native project and the independently derived experimental
+FS35/CLI38 project candidate. Public-product readback binds the actual three
+aliases to the complete native compiler's three generations, fixed source
+unity, native result42 and named refusals. It is candidate packaging readback,
+not merged-main/public adoption. These records under x86/extras-r5 and
+extras-plan-r5 are bound to archive SHA256
+e201adbd4176ab664e96b7bd9564927cba3c5abf889eaae691676357959c9356.
+
+The original unchanged-standard-profile300-second diagnostic completed all19
+attempts: five built-in correctness completions (CRC32, AES, QRduino, sglib,
+SLRE),13 declared wall bounds and Aha's existing vector-table bound. Retained
+in standard-full19-records-r1.tar.gz with archive SHA256
+ea06971bdfc901ee599147c4fdb1975c6d79df42919febd47f8af7def201de75,
+it remains a diagnostic on the older881c26ff... compiler. A timeout's arena
+fields can match before all iterations finish; they are not full correctness
+or fuel proof and must not be counted as such.
+The compressed archive retains the complete9.8MiB observer JSON (including all
+process samples) and raw outputs byte-for-byte; it is not a reduced summary.
+The expanded readback remains in task scratch rather than adding391,701 raw
+sample lines to the Git diff. Extract into an empty directory to inspect it.
+
+The current x86 candidate's first full-count preparation refused before
+compilation because its historical snapshot lacked the pinned accounting
+reference. The admission exit1 is retained. A new packet uses only already
+present data on that same verification machine; no additional benchmark-source
+transfer occurred and the old snapshots remain unchanged. All fixed hashes
+are checked again before native execution. The new all19 diagnostic is a
+separate run and remains pending, with no result selection or timing claim.
+
+The user explicitly approved transferring native-product.json and the9-gate
+plan to the original dedicated remote /tmp after safety review stopped those
+additional metadata files. No rejected transfer was worked around. A separate
+same-machine copy was initially mistaken for source egress; readlink/stat and
+hash evidence established that both paths already resided on the same Linux
+filesystem before the identical command was retried and allowed.
+
+Linux observer/admission controls pass all7 without skips; Mac runs pass5 and
+explicitly skip2 Linux-only controls. Staging-format5 and proof-record31
+synthetic tests pass, with no promotion to native timing authority.
+Main PR1598's separate definition-object prototype was merged into this branch
+without changing any FULL47 production input or pinned compiler byte. Its
+independent gates and new AGENTS rules are preserved. Exact-head CI (including
+Linux browser/shared consumers), full native accounting/measurement controls,
+same-host C comparison and external reruns remain required.
