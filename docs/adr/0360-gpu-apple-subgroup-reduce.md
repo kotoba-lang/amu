@@ -3074,3 +3074,180 @@ find namespace: kotoba.form" (ADR-0362), outside this diff, no green
 suite claimed; `find docs -name '*.sh'` -> 0).
 
 Record: `docs/evidence/gpu/metal-counter-foldarms-shape2-w128-20261026/`.
+
+## Amendment 2026-10-26 (the counters channel's SHAPE-2 row, sixth and
+final cell): the W = 1024 anchor-side reading REPRODUCES at the second
+shape -- the W = 32 side-flip stays a single-width anomaly at all six
+measured widths of shape 2, and the list item's width axis is CLOSED
+
+The anchor record's counters-channel fold-arms list item, its named
+UNMEASURED item -- "every other W (32/64/128/512/1024) and shape 2
+(n = 2^20) on this channel (R at those grids is unmeasured too)" --
+taken ONE CELL AT A TIME at the route's own unit; the width half of
+the list is CLOSED (the W = 1024 row), the shape item's FIRST cell
+(n = 2^20, W = 256) went to the shape2-W = 256 row (anchor reading
+reproduced), its SECOND cell (n = 2^20, W = 32) to the shape2-W = 32
+row (the W = 32 side-flip class reproduced at the second shape), its
+THIRD cell (n = 2^20, W = 64) to the shape2-W = 64 row (anchor-side
+class reproduced), its FOURTH cell (n = 2^20, W = 128) to the
+shape2-W = 128 row (anchor-side class reproduced) and its FIFTH cell
+(n = 2^20, W = 512) to the shape2-W = 512 row (anchor-side class
+reproduced). This row takes the shape item's SIXTH and FINAL cell, in
+the width order the width half itself used: (n = 2^20 = 1048576,
+W = 1024) -- the top of the admitted width range, the width whose
+n = 1000003 reading sat on the ANCHOR'S side (regime-invariant slower
+18/18, sum 1.183..1.188 / max 1.167..1.185 / min 1.168..1.185, the
+W = 1024 row) at the second shape, so the moved axis is the shape
+alone and the cell is the anchor-side counterpart test of the W = 32
+flip's shape-stability question at the fifth and last anchor-side
+width. The launch shape is 1024 x 1024 (n an exact multiple of W; at
+n = 1000003 the W = 1024 launch was 977 x 1024 PLUS a partial last
+group of 579 elements -- the tail is ABSENT at this cell) and the
+anchor's residual R numbers do not transfer to it. The pre-registered
+device-limit branch (W = 1024 is the top of the admitted range; the
+instrument prints shape=UNUSABLE rather than dispatching when W
+exceeds maxTotalThreadsPerThreadgroup) did NOT fire -- all 6 processes
+ran the full protocol and W = 1024 is a MEASURED usable width at
+n = 2^20 too. HARDWARE RAN: 6 fresh ADR-0358 processes at that cell on
+this M1 Max, run window 2026-10-26T22:33:51Z..22:33:52Z
+(run-window.txt, verbatim) -- the same UTC day as the cross-day row's
+day-2 runs, the W = 32/64/128/512/1024 rows and the shape2-W = 256,
+shape2-W = 32, shape2-W = 64, shape2-W = 128 and shape2-W = 512 rows
+(named; this row makes NO day claim of any kind; it is a SHAPE row).
+The run protocol is the anchor row's, unchanged (6 fresh processes, 20
+interleaved AB/BA pairs per operator, WARMUP=2 discarded, verified
+read-back, op-order sum,max,min fixed); predictions P0..P3 were
+registered in `protocol.txt` BEFORE the first run, both branches of the
+named question included.
+
+**The realization control (P0a HOLD).** Arms rebuilt this row from the
+COMMITTED emitters (`--width 1024`) into a fresh build dir (the W =
+1024 row's build dir not reused -- the artifacts are re-derived and
+compared, not copied); the W-INDEPENDENT artifacts are
+sha256-IDENTICAL to the anchor row's 2026-10-25 build AND the W = 32,
+W = 64, W = 128, W = 512, W = 1024, shape2-W = 256, shape2-W = 32,
+shape2-W = 64, shape2-W = 128 and shape2-W = 512 rows' builds --
+probe.metallib 80dbf4fd.. and the counters binary 4cb76bd.. -- so the
+instrument is constant across all TWELVE cells. ADDITIONAL FACT CHECK,
+this row's shape analogue of the baseline-arm W-invariance check
+(checked, not assumed): ALL SIX fold-arm metallibs are byte-identical
+to the W = 1024 ROW's 2026-10-26 build (baseline 2e2f3654.. /
+1169a1a8.. / 2cd19335.., subgroup d777b42c.. / a66aa670.. /
+322809fe..) -- the fold-arm artifacts are n-INVARIANT at W = 1024
+too, and with this row the n-invariance fact is named at EVERY width of
+the width dimension (W = 32/64/128/256/512/1024); the baseline
+metallibs are additionally byte-identical across ALL TWELVE builds
+(W-invariant and n-invariant). All six shas are recorded
+(build-shas.txt) so a later cross-day replication of THIS cell can
+hold its realization fixed the same way.
+
+**The named question, answered (P1a): the W = 1024 anchor-side reading
+reproduces at the second shape.** Rule 2 at its letter over the
+(n = 2^20, W = 1024) session: roll-up REGIME-INVARIANT, SLOWER (18/18
+per-run paired-median ratios above 1.0) -- every operator
+regime-invariant slower (max 6/6 1.182..1.184, min 6/6 1.183..1.185,
+sum 6/6 1.182..1.184, every observed regime one-sided) -- the anchor
+cell's verdict class carries to n = 2^20 at this width and NO
+side-flip appears here (P1b did not fire). The W-shape at shape 2 is
+now COMPLETE in the width dimension -- all SIX widths measured:
+W = 32 (flip: sum faster 6/6) against W = 64, W = 128, W = 256,
+W = 512 and W = 1024 (anchor side: regime-invariant slower 18/18
+each) -- so the W = 32 side-flip remains a SINGLE-WIDTH anomaly at
+BOTH measured shapes and at EVERY measured width, the W contrast holds
+at every width of shape 2, and the list item's width axis is CLOSED
+(this was its last remaining cell). Only the parenthetical "R at those
+grids" stays UNMEASURED from the anchor's list item.
+
+**Rule 1 at this cell (P2, named whatever it is).** max ONE level
+(132083.5..132562.5), min ONE level (132083.5..132479.0), sum ONE
+level (132104.0..132500.0). The raw bracket band at this grid
+(132.1k..132.6k counter_ns medians) is published as the route's raw
+band -- R at this grid is NOT decomposed and NOT compared with the
+anchor's residual figures (those belong to 3907 x 256). NAMED
+OBSERVATION: this is the FIRST cell of the whole counters campaign
+where every operator sits at exactly ONE level -- the state-shift class
+is entirely ABSENT here (no within-row descent, no level split), after
+every other cell found session-variable structure of TWO to FOUR
+levels at max/min (the shape2-W = 512 row found THREE at max and FOUR
+at min; the W = 1024 row at n = 1000003 found THREE at max, FOUR at
+min, ONE at sum). The level structure continues to be session-variable
+across cells -- here it varies all the way down to absent -- recorded,
+not explained.
+
+**Magnitude (P3).** The shape-2 W = 1024 raw ratio band (1.182..1.185
+pooled across operators) sits INSIDE the W = 1024 row's pooled band
+(1.167..1.188 at n = 1000003) and inside the shape2-W = 512 row's
+pooled band (1.176..1.202), and it is the LOWEST band of all
+anchor-side shape-2 cells (shape2-W = 256 1.223..1.230, shape2-W = 64
+1.223..1.228, shape2-W = 128 1.238..1.240, shape2-W = 512 sum
+1.194..1.202 -- no overlap with any of their sum bands; this row's sum
+1.182..1.184) and it sits BELOW the anchor's union band across days
+(1.197..1.222) with NO overlap -- raw-band observation at one
+instrument (rule 3; no cross-instrument magnitude claim, no magnitude
+invariance claimed across n or across W) -- while at FIXED shape 2 the
+W contrast is total between the two sides (this row's sum 1.182..1.184
+against the shape2-W = 32 row's sum 0.915..0.926).
+
+**Consequence.** Rule 4: NOTHING MOVES -- no `:measured?` flag, no
+`:shapes` value, no selection answer, no workgroup row (this channel
+can never move one), no WGSL cell flip, no MSL command-buffer cell
+flip, no cross-instrument magnitude claim. The sign stays
+CHANNEL-SCOPED and M1-Max scoped. The named item moves in RECORD STATE
+only ("shape 2 (n = 2^20) at W = 1024" UNMEASURED -> MEASURED at this
+protocol's letter, anchor-side class reproduced, roll-up
+regime-invariant slower 18/18; the width dimension at shape 2 CLOSES
+-- all six widths measured at n = 2^20; R at every grid stays
+UNMEASURED). The second-leg evaluation's reopen trigger class ("a
+counters-channel record carrying an OPPOSING device-level sign at any
+cell/W/day") is NOT exercised by this record (this cell's sign matches
+the anchor's) -- the count stays at the shape2-W = 32 row's TWO
+exercising records (the W = 32 row's sum side-flip at n = 1000003 and
+that row's at n = 2^20), both unadjudicated; this row registers no
+reopen claim.
+
+Named, not hidden: the same-day fact (this row shares the UTC day
+2026-10-26 with the cross-day row's day-2 runs, all five W rows and all
+earlier shape2 rows; no day claim rides here); the reopen-trigger count
+staying at 2; the fold-arm artifacts' n-invariance at W = 1024 closing
+the fact at every width (all six arms byte-identical to the W = 1024
+row's build -- checked, not assumed); this row's band sitting below
+every anchor-side shape-2 cell's band and below the anchor's union band
+(raw bands at one instrument, no overlap with the union); the
+state-shift class's first complete ABSENCE (all three operators at ONE
+level) after every other cell showed 2-4 levels; the fifth cell
+(shape2-W = 512)'s commit message referenced "the ADR-0360 shape-2
+amendment" while that commit added no ADR-0360 text (the shape-2
+amendments in this file stopped at the fourth cell; the fifth cell's
+evidence and record live in its own evidence dir) -- named here, not
+re-written; the pre-registered device-limit branch not firing (W =
+1024 measured usable at n = 2^20 too).
+
+States: MEASURED (the (n = 2^20, W = 1024) cell record: 720 resolved
+brackets, the instrument-constant twelve-cell control, rule 2's
+anchor-side verdict, rule 1's single-level regime structure at this
+grid, the raw bracket band, the fold arms' n-invariance at W = 1024,
+the width dimension at shape 2 complete across all six widths).
+IMPLEMENTED: nothing (evidence + prose only). DECIDED: nothing new
+(the protocol is the anchor row's). ACCEPTED DESIGN ONLY (unchanged):
+the claim protocol and its units; the narrowing and reopen condition;
+the second-leg letter; ADR-0355's channel rule. PROPOSED (unchanged):
+the Vulkan-provider timestamp route. UNMEASURED, named: R at every
+grid (this row's raw band is not an R decomposition); the W-shape's
+cause (WHY W = 32 alone flips side -- this row completes the width
+dimension at shape 2 and narrows nothing about the mechanism); the
+partial tail's quantitative role (the two W = 1024 cells differ in the
+partial-last-group fact -- 579-element partial group at n = 1000003,
+none at n = 2^20 -- no tail effect measured either way); the
+state-shift cause, threshold and prevalence (session-variable at every
+cell so far, here entirely absent); day 3+ cross-day replications;
+op-order dependence; anything off M1 Max; the WGSL route's kernel time;
+every workgroup-row question (`:arm`/`:unknown` stay provisional
+`:measured? false` -- no flag, shape, selection answer or workgroup row
+moves this tick).
+
+Gates: see the record (self-test 2649/0 pin; scoped GPU gate GREEN
+123/12162 twice; FULL `run-tests.cljk` RUN LIVE, red at base "Could not
+find namespace: kotoba.form" (ADR-0362), outside this diff, no green
+suite claimed; `find docs -name '*.sh'` -> 0).
+
+Record: `docs/evidence/gpu/metal-counter-foldarms-shape2-w1024-20261026/`.
