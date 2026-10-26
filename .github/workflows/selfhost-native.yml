@@ -72,6 +72,13 @@ jobs:
         run: python3 scripts/seed/check-native-identities.py
       - name: Local locked native project and refusal controls
         run: python3 scripts/seed/check-x86-project-native.py --compiler "$PWD/bin/amu" --output "$RUNNER_TEMP/local-native-project"
+      - name: Derive and qualify experimental FS35/CLI38 project candidate
+        run: |
+          compiler_sha=$(python3 -c 'import json; print(json.load(open("native-product.json"))["image"]["sha256"])')
+          python3 scripts/seed/check-x86-project-fs-native.py \
+            --compiler "$PWD/bin/amu" --compiler-sha256 "$compiler_sha" \
+            --runner "$RUNNER_TEMP/local-native-project/runner.elf" \
+            --output "$RUNNER_TEMP/project-fs-candidate" --derive
       - name: Fresh native Kotoba complete24 gate before expensive derivation
         run: python3 scripts/seed/check-native-kotoba-early.py --compiler "$PWD/bin/amu" --output "$RUNNER_TEMP/early-kotoba"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -87,7 +94,12 @@ jobs:
         if: always()
         with:
           name: local-native-preflight
-          path: ${{ runner.temp }}/local-native-project/*.json
+          path: |
+            ${{ runner.temp }}/local-native-project/*.json
+            ${{ runner.temp }}/project-fs-candidate/*.json
+            ${{ runner.temp }}/project-fs-candidate/*.ksl
+            ${{ runner.temp }}/project-fs-candidate/*.stdout
+            ${{ runner.temp }}/project-fs-candidate/*.stderr
           if-no-files-found: warn
   bootstrap-arm64:
     needs: native-preflight
