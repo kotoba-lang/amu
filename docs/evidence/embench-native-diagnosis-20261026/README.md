@@ -122,3 +122,31 @@ must not be inferred from these completed derivation receipts.
 The one-compiler raw records were read back under arm/arm-one-r2; their
 archive SHA256 is
 987d4a6af9722f464ca2746be6df8db8f1204be7e4e8eb372108e67e3820015f.
+
+## Repaired-source ISA controls and x86 fixed point
+
+The repaired-source eight-group ARM plan completed all eight with exit0:
+runtime-profile, label-proof-index (including the unannotated byte-equivalent
+compiler and all nine built mutants), kototama-receipt, kototama-i64,
+launcher, zero-watermark, CCF filter and flock/vector coexistence.
+The original plan, per-gate exit/log files and raw JSON/stdout/stderr are
+under arm/arm-qualification-r2. Their archive SHA256 is
+3e026f720881266d3eb809e6b8240db5fc232c388527892062fdbca8b5db13fe.
+This is not the remaining ARM runtime/ABI steps or the complete CI workflow.
+
+The repaired x86 complete-compiler gate separately completed with queue
+exit0 in59.088 seconds: native F1=F2=F3 equals the transported ARM-produced
+7f2846b227f54f425bdb16f451cc2b4ecf4d9ba95c45c5f455cd1b87961eabf7
+image, and all role builds,24 cases and public-entry/source-lock refusals
+passed. Records under x86/complete and x86/complete-admission-r3.json were
+downloaded and checked against archive SHA256
+0aaaf1ba884815d81804becd0173908cd3b2b96d71a6c16008ff259b900b0d86.
+The fifteen-group x86 plan and ARM runtime/ABI steps remain distinct runs.
+Neither this build gate nor artifact transport grants the controller verdict,
+public-product adoption, exact-head six-job CI or any comparative score.
+
+Before any new timing, proof-v1 also requires an explicit immutable
+runtimeProfile, resource bounds and verified compiler/image/build-record
+artifacts covering every workload exactly once.31 synthetic verifier tests
+and the control-file gate pass. These strengthen record integrity only:
+native measurement qualification still refuses with exit2.
