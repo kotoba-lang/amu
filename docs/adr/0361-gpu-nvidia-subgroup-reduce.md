@@ -3314,3 +3314,115 @@ gate-run2.txt in the evidence dir); `find docs -name '*.sh'` -> 0.
 FULL run-tests.cljk RUN LIVE THIS TICK: RED AT BASE 'Could not find
 namespace: kotoba.form' at namespace load (ADR-0362), outside this
 diff -- verified live, NO green full suite claimed.
+
+## Amendment (2026-10-26 UTC, the ~2.3 cyc shift mode is CONFIRMED
+DYNAMIC at the first carrier split: instrument v9r, THE
+BYTE-IDENTICAL REPEAT; the static-realization-only reading is
+EXCLUDED and the within-run per-launch manifestation is run-variable)
+
+The thirty-third amendment NAMED the ~2.3 cyc arm-level shift mode as
+the dominant cross-run/cross-launch variability of the instrument
+class, carrier NOT ATTRIBUTED (register allocation, scheduling
+regime, counter interleaving -- untested). This amendment records
+instrument v9r (THE BYTE-IDENTICAL REPEAT): the v9 files run again
+with the realization held FIXED (gpu-mufu-lenext-microbench.cu
+b98fb39b.., mufu_lenext_verify.py a917a737.. byte-identical; only the
+remote driver is new), which splits the carrier space in two -- any
+shift that moves between the two runs is DYNAMIC (run/launch level);
+anything that stayed would have been realization level.
+
+**The one change.** Nothing in the instrument. Validity is itself
+measured (P0): the generated microbench.sass of the repeat is
+sha256-IDENTICAL to v9's generated artifact
+(9b27b9fa8d4907e356aeed02211d1e0af799436002c2a2ef9eb99747d418bf60),
+the received-file shas match 3/3, and v9's committed run-log re-parses
+to the v9 consumed pooled values 16/16. Predictions P0..P6 were
+registered in the run driver's bytes (hashed before compile and run;
+echoed verbatim into run-log.txt) and in the analysis header, both
+written before the first run. Named: the analysis script's ANCHOR
+check was corrected after the run (a wrong constant-xbits expectation
+replaced by the correct v9-equality check, which holds 16/16); no
+prediction text changed.
+
+**Structure verified (P1, SASS-verified).** CHAIN-VERDICT MATCH 16/16,
+CLOCK-WRAP 16/16, PAD-VERDICT 16/16, OVERHEAD-IDENTICAL 16/16. The 16
+ANCHOR lines are identical to v9's. Hardware: xavier sm_72 at
+2026-10-26T18:53:17Z (a PROBE, not a registered timing session --
+inadmissible under the entry criterion BY KIND, enters nothing;
+measures INSTRUCTION chains, not kernels; SAME UTC DAY as every
+earlier probe, "cross-day run 3+" does not move).
+
+**The adjudication (mufu_lenrpt_analysis.py, output verbatim, two
+runs byte-identical).** (1) P4a HOLD / P4b FAIL: the ~2.3 mode MOVES
+BETWEEN BYTE-IDENTICAL RUNS -- per-arm between-run deltas classify
+11/16 within the 1.0 tol, 5/16 in the ~2.3 class (M2 -2.2422, M3
+-2.1914, M5 -2.2071, M7 -2.2266, F5 -2.1993), 0 "other". The mode is
+DYNAMIC at the first carrier split; a static-realization-only reading
+is EXCLUDED. Named not attributed: in this run pair the class moved
+one direction only (all five negative, mean -2.2133, spread 0.0508).
+(2) P5 FAIL: the within-run per-launch manifestation did NOT reproduce
+-- 0 per-launch shifts in the class this run (v9 named ~10), the
+largest launch spread 0.9219 (M2), below the class band; the mode's
+within-run occurrence is itself run-variable. Consistent reading,
+NOT registered and NOT attributed: pooled deltas reflect how many
+launches sat in a shifted state; v9's M3/M7 pooled shifted with tight
+within-run spreads (0.0273/0.4727), so the mode is not only a
+per-launch outlier phenomenon. (3) P2 HOLD: the NON-AFFINITY
+REPRODUCES on the byte-identical re-run (both families NON-AFFINE over
+k=1..8 and k=1..5, pooled AND all launches) -- instrument realization
+differences cannot be the cause of the thirty-second amendment's
+refutation either. (4) P3 HOLD: the F plateau reproduces (V(F1)
+10.2578 vs V(F2) 10.1914, delta +0.0664); the v8 F1>F2 form does not
+return. (5) P6: no e_MF/e_FM estimator exists or is computed (no
+mixed arms); the split STAYS UNMEASURED.
+
+**What is excluded, and what is not.** Excluded (this run): that the
+shift mode is a property of the instrument realization alone
+(static-realization-only). Not excluded: any specific dynamic
+mechanism (register allocation, scheduling regime, counter
+interleaving all remain untested), the twenty-ninth's rank/nullspace
+identifiability theorem (UNTOUCHED). The named question ("does the
+~2.3 mode move with the realization fixed?") is ANSWERED: yes -- it
+is dynamic.
+
+**Consequence.** Nothing moves (rule 4): no record, no :measured?
+flag, no selection answer, no workgroup row. The named item moves in
+design state only: "~2.3 cyc arm-level shift mode NAMED as the
+dominant variability (carrier NOT ATTRIBUTED)" becomes "the shift
+mode is CONFIRMED DYNAMIC at the first carrier split (5/16 arms move
+~-2.21 between byte-identical runs; static-realization-only reading
+EXCLUDED); its within-run per-launch manifestation is run-variable (0
+this run vs v9's ~10; max launch spread 0.9219); the mode's internal
+carrier NOT ATTRIBUTED". The observable cross quantity stands at the
+measured cycle sum e_MF + e_FM = 21.0000 (cross surplus +2.0034),
+unchanged.
+
+**States.** MEASURED (standing, unchanged, earlier ticks): e_MM
+14.9966, e_FF 4.0000, e_MF+e_FM 21.0000, cross surplus +2.0034.
+MEASURED (new, PROBE-grade, enters no record): the v9r V table, the
+between-run delta classification and the shift-mode dynamic verdict
+(evidence cuda-mufu-lenrpt-20261026). REFUTED (this run): that the
+~2.3 cyc shift mode is a static realization property. IMPLEMENTED:
+nothing in src/ or test/. DECIDED: nothing new. ACCEPTED DESIGN ONLY
+(unchanged): the operator-aware contract + pre-registration, the row
+(ii) routes, the entry contract + wiring, ADR-0358, ADR-0373.
+UNMEASURED, named (list carried forward): the e_MF / e_FM split (P6),
+bare MUFU.RCP dependent-chain latency, the floor's internal
+composition (per-form intercepts 0.5234/7.4844/5.4805 and the v6
+~10.14 / v7 ~10.17 cyc floors, all unattributed), the pure 2-input
+IADD3 and IMAD.IADD separations, the 21 surplus ops' costs, the
+residual W-shape's dynamic carrier, the ~2.3 cyc shift mode's
+INTERNAL carrier (now known dynamic; origin not attributed), noise
+exceedance, sum TRUE side W=256, cross-day run 3+ (still 2026-10-26
+UTC), non-xavier verdicts, :sum W=64 elsewhere, live CUDA selection
+path, workgroup rows (:arm/:unknown provisional :measured? false --
+accelerator-targets defaults are design assumptions, not evidence).
+
+Gates (honest): the scoped GPU gate GREEN on run 1 AND run 2 (123
+tests / 12162 assertions / 0 failures / 0 errors, glslang 16.6.0
+real-spawn, regression pin -- verbatim logs gate-run1.txt /
+gate-run2.txt in the evidence dir, byte-identical to each other);
+`find docs -name '*.sh'` -> 0. FULL run-tests.cljk RUN LIVE THIS
+TICK: RED AT BASE 'Could not find namespace: kotoba.form' at
+namespace load (ADR-0362), outside this diff -- verified live, NO
+green full suite claimed.
