@@ -141,9 +141,8 @@
 ;; bytes -- and the walk is now <= 4 iterations: CONSTANT frames and flat
 ;; fuel at ANY pipe count. RESIDUAL, NAMED (as landed): the uB5G
 ;; alt-key field walk (alt-field?/alt-any-hits) was O(FIELDS) frames
-;; here -- closed the same day by the alt-loop row (below); its named
-;; FUEL residual stays, bounded by the table's own key strings (3 fields
-;; today), unreachable from the wire.
+;; here -- closed the same day by the alt-loop row (below), whose own
+;; FUEL residual closed the same day too by the alt-fuel row (below).
 #?(:kotoba
    (defn- split4 [s :string start :i64 i :i64 n :i64 k :i64 acc :document] :document
      (let [p (string-index-of-from s "|" i)]
@@ -278,30 +277,54 @@
 ;; alt-any-hits answers true iff some NON-EMPTY field's substring hits
 ;; part (empty fields skip -- substr-hits answers TRUE for an empty
 ;; needle, pinned above); the advance is still past the boundary
-;; (+ j 1), one alt-end per boundary. RESIDUAL, NAMED (measure-only):
-;; the loop removes FRAMES, not FUEL -- one alt-end entry per field
-;; (plus one substr-hits entry per non-empty field in alt-any-hits)
-;; still charges fuel against the 512-entry default
+;; (+ j 1), one alt-end per boundary. RESIDUAL, NAMED (measure-only, as
+;; landed): the loop removes FRAMES, not FUEL -- one alt-end entry per
+;; field (plus one substr-hits entry per non-empty field in
+;; alt-any-hits) still charges fuel against the 512-entry default
 ;; (kotoba.compiler.limits :profile/reference), so a hypothetical
 ;; many-field key can still reach the FUEL budget (the row's probe
 ;; boundary sweep, measure-only, never pinned) and the loop helper's
 ;; own boundary is state-dependent (the sg-ops-walk precedent) --
 ;; both bounded by the table's own key strings (3 fields today),
-;; unreachable from the wire.
-#?(:kotoba
-   (defn- alt-end [s :string i :i64 n :i64] :i64
-     (if (>= i n) n (let [p (string-find-byte s 124 i)] (if (< p 0) n p)))))
+;; unreachable from the wire. The FUEL residual CLOSED the same day by
+;; the alt-fuel row (below).
+;; The alt-fuel row (2026-10-26): the per-FIELD fuel entries are gone
+;; from both loop bodies -- alt-end (walk-only, DELETED) and alt-any-hits'
+;; substr-hits call are INLINED, so each walk charges its ONE entry plus
+;; its ONE loop-helper entry at ANY field count (the sg-ops-walk fuel-row
+;; precedent; go/no-go MEASURED BEFORE: af-em k+2, ah-miss 2k+3, hit-za
+;; 2k+8, hit-em k+4 min-fuel at k = 1/10/100/200 fields -- the named
+;; 512-entry-default residual). The boundary advance spells alt-end's
+;; contract verbatim for the callers' guarded position (i < n above it,
+;; so alt-end's (>= i n) -> n arm is answered by the loop guard and
+;; `string-find-byte` is only called with from < n -- it traps on from >
+;; n, pinned in the alt-key row): (let [p (string-find-byte alts 124 i)
+;; j (if (< p 0) n p)] ...). alt-any-hits' substr-hits call is the
+;; NON-EMPTY needle branch only -- the (< i j) guard makes the substring
+;; range non-empty, where substr-hits IS (string-contains? part needle)
+;; -- so the empty-needle answer (true, pinned above) is unreachable
+;; there and the guard is load-bearing and kept. CONTRACTS UNCHANGED,
+;; pinned: alt-field? answers true iff SOME field is non-empty (false on
+;; all-empty and empty keys); alt-any-hits answers true iff some
+;; NON-EMPTY field's substring hits part (empty fields skip); the advance
+;; is still past the boundary (+ j 1); key-hits' fail-closed set rule
+;; (a bare fragment is not a set where alternates exist) is untouched.
+;; substr-hits STAYS a defn- (key-hits still calls it for the base
+;; fragment). RESIDUAL, NAMED (measure-only): none per field -- the
+;; remaining boundary is the loop helper's own state-dependent one (the
+;; sg-ops-walk precedent), and the table's keys carry 3 fields today.
 #?(:kotoba
    (defn- alt-field? [alts :string i :i64 n :i64] :bool
      (loop [i i]
-       (if (>= i n) false (let [j (alt-end alts i n)] (if (< i j) true (recur (+ j 1))))))))
+       (if (>= i n) false (let [p (string-find-byte alts 124 i) j (if (< p 0) n p)] (if (< i j) true (recur (+ j 1))))))))
 #?(:kotoba
    (defn- alt-any-hits [part :string alts :string i :i64 n :i64] :bool
      (loop [i i]
        (if (>= i n)
          false
-         (let [j (alt-end alts i n)]
-           (if (and (< i j) (substr-hits part (string-substring alts i j)))
+         (let [p (string-find-byte alts 124 i)
+               j (if (< p 0) n p)]
+           (if (and (< i j) (string-contains? part (string-substring alts i j)))
              true
              (recur (+ j 1))))))))
 #?(:kotoba

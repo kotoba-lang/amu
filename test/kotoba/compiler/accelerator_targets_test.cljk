@@ -381,7 +381,8 @@
 
 (deftest w3-the-device-key-arm-hits-per-name-part-and-per-set
   ;; The `:kotoba` reading of the uB5G SET key (key-hits / alt-any-hits /
-  ;; alt-field? / alt-end beside substr-hits, ADR-0358 amendment 2026-10-25)
+  ;; alt-field? beside substr-hits -- alt-end DELETED by the alt-fuel row,
+  ;; ADR-0358 amendment 2026-10-25)
   ;; runs on the kotoba language runtime over the arms' OWN extracted text
   ;; (the w3 extract-balanced idiom). FULL device names run here now (the
   ;; key-chain row 2026-10-26): substr-hits is ONE `string-contains?` call --
@@ -391,7 +392,7 @@
   ;; host/stack-exhausted, measured before the fix,
   ;; docs/evidence/gpu/w3-key-chain-primitive-20261026.txt). The short
   ;; spellings keep their pins below unchanged. The '|'-key walks are per
-  ;; FIELD now (the alt-key row 2026-10-26): alt-end is one
+  ;; FIELD now (the alt-key row 2026-10-26): the boundary advance is one
   ;; `string-find-byte` per field boundary (the dot1 precedent), so a long
   ;; alternate key resolves within the budget (MEASURED BEFORE: a 200-byte
   ;; alternate trapped host/stack-exhausted in the per-byte walks,
@@ -401,11 +402,19 @@
   ;; '|'-field and TRAPped at 32+ fields (MEASURED BEFORE: budget/frames,
   ;; af-em and ah-miss host/stack-exhausted in one spelling -- every cell
   ;; resolved through 28 fields,
-  ;; docs/evidence/gpu/w3-alt-key-loop-20261026.txt).
+  ;; docs/evidence/gpu/w3-alt-key-loop-20261026.txt). The per-FIELD fuel
+  ;; entries are inlined away (the alt-fuel row 2026-10-26): alt-end
+  ;; (walk-only) DELETED and the boundary advance / the non-empty-needle
+  ;; substring test spelled inside the loop bodies, so a walk charges
+  ;; ONE entry + ONE loop-helper entry at any field count (MEASURED
+  ;; BEFORE: af-em k+2, ah-miss 2k+3, hit-za 2k+8, hit-em k+4 min-fuel at
+  ;; k = 1/10/100/200; the 512-entry default TRAPped the 256+-field
+  ;; cells on budget/fuel,
+  ;; docs/evidence/gpu/w3-alt-key-fuel-inlined-20261026.txt).
   (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
         arms (str/join "\n" (filter some? (map #(extract-balanced src %)
                                  ["(defn- substr-hits"
-                                  "(defn- alt-end" "(defn- alt-field?" "(defn- alt-any-hits"
+                                  "(defn- alt-field?" "(defn- alt-any-hits"
                                   "(defn- key-hits"])))
         probe (str "(ns accelerator.targets.w3.key.probe (:export [main sh hit]))\n"
                    "(defn main [] :i64 0)\n"
@@ -453,16 +462,16 @@
       (is (true? (sh "ab" ""))
           "the deleted walk answered true here and the primitive raises empty-string-search-needle -- answered above it"))
     (testing "the '|'-key walks are per FIELD, not per byte (the alt-key row 2026-10-26)"
-      (is (str/includes? (extract-balanced src "(defn- alt-end") "string-find-byte s 124")
-          "alt-end is one string-find-byte call (the dot1 precedent)")
-      (is (not (str/includes? (extract-balanced src "(defn- alt-end") "string-code-point-at"))
-          "the per-byte scan is gone from alt-end")
       (is (not (str/includes? (extract-balanced src "(defn- alt-field?") "string-code-point-at"))
           "the per-byte scan is gone from alt-field?")
       (is (not (str/includes? (extract-balanced src "(defn- alt-any-hits") "string-code-point-at"))
           "the per-byte scan is gone from alt-any-hits -- it trapped the 32-frame budget on long keys")
       (is (str/includes? (extract-balanced src "(defn- alt-any-hits") "(+ j 1)")
-          "the walk advances past the field boundary, not byte by byte"))
+          "the walk advances past the field boundary, not byte by byte")
+      (is (= 1 (count (re-seq #"string-find-byte alts 124" (extract-balanced src "(defn- alt-field?"))))
+          "alt-field? holds one string-find-byte call per boundary (the dot1 precedent, inlined)")
+      (is (= 1 (count (re-seq #"string-find-byte alts 124" (extract-balanced src "(defn- alt-any-hits"))))
+          "alt-any-hits holds one string-find-byte call per boundary (the dot1 precedent, inlined)"))
     (testing "long alternate keys resolve within the budget, host-equal"
       ;; MEASURED BEFORE on this runtime: every one of these TRAPPED
       ;; host/stack-exhausted in the per-byte walks
@@ -495,18 +504,17 @@
           "the per-field self-call is gone from alt-any-hits")
       (is (str/includes? (extract-balanced src "(defn- alt-any-hits") "(+ j 1)")
           "the advance keeps its past-the-boundary shape (now the recur arg)")
-      (is (str/includes? (extract-balanced src "(defn- alt-field?") "(alt-end alts i n)")
-          "alt-field? keeps one alt-end per field boundary")
-      (is (str/includes? (extract-balanced src "(defn- alt-any-hits") "(alt-end alts i n)")
-          "alt-any-hits keeps one alt-end per field boundary"))
+      (is (not (str/includes? (extract-balanced src "(defn- alt-field?") "(alt-end "))
+          "the alt-end call is gone from alt-field? (inlined by the alt-fuel row)")
+      (is (not (str/includes? (extract-balanced src "(defn- alt-any-hits") "(alt-end "))
+          "the alt-end call is gone from alt-any-hits (inlined by the alt-fuel row)"))
     (testing "many-field keys resolve within the budget, host-equal"
-      ;; MEASURED BEFORE on this runtime: every one of these cells TRAPped
-      ;; (budget/frames / host/stack-exhausted) at 32+ fields
-      ;; (docs/evidence/gpu/w3-alt-key-loop-20261026.txt). The FUEL
-      ;; residual is named and measure-only (never pinned here): the
-      ;; alt-any-hits path charges two entries per non-empty field and
-      ;; TRAPs budget/fuel at 256+ fields on the 512-entry default -- the
-      ;; table's keys carry 3 fields today.
+      ;; MEASURED BEFORE on this runtime: every one of the k >= 32 cells
+      ;; TRAPped (budget/frames / host/stack-exhausted) before the
+      ;; alt-loop row (docs/evidence/gpu/w3-alt-key-loop-20261026.txt),
+      ;; and the 256+-field cells TRAPped budget/fuel before the
+      ;; alt-fuel row (2 entries per field vs the 512-entry default,
+      ;; docs/evidence/gpu/w3-alt-key-fuel-inlined-20261026.txt).
       (let [za (fn [k] (str/join "|" (concat (repeat (dec k) "z") ["a"])))
             em (fn [k] (apply str (repeat (dec k) "|")))]
         (is (false? (hit "x" "x" (za 40))) "a 40-field key that misses answers false")
@@ -514,7 +522,43 @@
         (is (true? (hit "x" "x" (em 40))) "40 empty fields are still no alternates")
         (is (false? (hit "x" "x" (za 128))) "a 128-field key that misses answers false")
         (is (true? (hit "xa" "x" (za 128))) "the 128th field still completes its set")
-        (is (true? (hit "x" "x" (em 128))) "128 empty fields are still no alternates")))))
+        (is (true? (hit "x" "x" (em 128))) "128 empty fields are still no alternates")
+        (is (false? (hit "x" "x" (za 256))) "the 256-field BEFORE trap-gone cell (budget/fuel)")
+        (is (true? (hit "xa" "x" (za 256))) "the 256th field still completes its set")
+        (is (true? (hit "x" "x" (em 256))) "256 empty fields are still no alternates")
+        (is (false? (hit "x" "x" (za 512))) "the 512-field BEFORE trap-gone cell (budget/fuel)")
+        (is (true? (hit "xa" "x" (za 512))) "the 512th field still completes its set")
+        (is (true? (hit "x" "x" (em 512))) "512 empty fields are still no alternates")))
+    (testing "the FUEL residual is closed: flat entries at any field count (the alt-fuel row 2026-10-26)"
+      ;; Source pins: alt-end is DELETED (walk-only) and the loop bodies
+      ;; spell the boundary advance and the non-empty-needle substring
+      ;; test inline -- ZERO user calls inside the loops, so a walk
+      ;; charges ONE entry + ONE loop-helper entry at any field count
+      ;; (MEASURED: af-em 3, ah-miss 3, hit-za 7, hit-em 5 min-fuel FLAT
+      ;; at k = 1/10/100/200,
+      ;; docs/evidence/gpu/w3-alt-key-fuel-inlined-20261026.txt).
+      (is (not (str/includes? src "(defn- alt-end"))
+          "alt-end is gone from the namespace source (prose naming it stays legal)")
+      (is (not (str/includes? (extract-balanced src "(defn- alt-any-hits") "(substr-hits "))
+          "the substr-hits call is inlined in alt-any-hits (the (< i j) guard makes the needle non-empty)")
+      (is (str/includes? (extract-balanced src "(defn- alt-any-hits") "(string-contains? part (string-substring alts i j))")
+          "the non-empty needle path is the primitive, spelled in the loop body")
+      (is (str/includes? (extract-balanced src "(defn- alt-any-hits") "(and (< i j)")
+          "the empty-field skip guard stays load-bearing above the primitive")
+      (is (str/includes? (extract-balanced src "(defn- key-hits") "(substr-hits ")
+          "substr-hits stays a defn- for key-hits' base-fragment check")
+      ;; FLAT-FUEL pins: under a tiny explicit budget that a per-field
+      ;; charge could never satisfy (BEFORE needed 2k+8 for hit-za at
+      ;; k = 400 -> 808 > 24), the 400/2048-field cells resolve and
+      ;; answer their fact.
+      (let [za (fn [k] (str/join "|" (concat (repeat (dec k) "z") ["a"])))
+            em (fn [k] (apply str (repeat (dec k) "|")))
+            hit-f (fn [part frag alts fuel] (ir/execute hir 'hit [part frag alts] {:fuel fuel}))]
+        (is (false? (hit-f "x" "x" (za 400) 24)) "a 400-field miss resolves under {:fuel 24}")
+        (is (true? (hit-f "xa" "x" (za 400) 24)) "the 400th field completes its set under {:fuel 24}")
+        (is (true? (hit-f "x" "x" (em 400) 24)) "400 empty fields resolve under {:fuel 24}")
+        (is (false? (hit-f "x" "x" (za 2048) 24)) "a 2048-field miss resolves under {:fuel 24}")
+        (is (true? (hit-f "xa" "x" (za 2048) 24)) "the 2048th field completes its set under {:fuel 24}")))))
 
 (deftest w3-recommend-named-devices-resolve-on-full-names
   ;; The whole W3 dispatch chain (classify-vendor / key-hits / recommend) on
@@ -533,7 +577,7 @@
                                   "(defn- frag-hit2" "(defn- frag-names-doc" "(defn- wg-row"
                                   "(defn- string-ascii-lower" "(defn- blank-str?"
                                   "(defn- substr-hits"
-                                  "(defn- alt-end" "(defn- alt-field?" "(defn- alt-any-hits" "(defn- key-hits"
+                                  "(defn- alt-field?" "(defn- alt-any-hits" "(defn- key-hits"
                                   "(defn- clamp2" "(defn- i64-text"
                                   "(defn vendor-ids" "(defn- vendor-default-target" "(defn default-target"
                                   "(defn target-for" "(defn workgroup-defaults"
@@ -728,21 +772,22 @@
   ;; are ALSO host pins in info-answers-parse-into-measured-device-facts.
   ;; NAMED RESIDUAL (not hidden): the numeric walks are GONE (the
   ;; numeric-walk row 2026-10-26) and the '|'-key walks are per FIELD now
-  ;; (the alt-key row 2026-10-26: alt-end is one `string-find-byte` per
-  ;; field boundary, so a long alternate key resolves in budget -- MEASURED
-  ;; BEFORE: a 200-byte alternate trapped host/stack-exhausted in the
-  ;; per-byte walks, docs/evidence/gpu/w3-alt-key-field-walk-20261026.txt),
-  ;; and the field walk's O(FIELDS) FRAME residual is CLOSED (the alt-loop
-  ;; row 2026-10-26: alt-field?/alt-any-hits iterate through ONE
+  ;; (the alt-key row 2026-10-26: the boundary advance is one
+  ;; `string-find-byte` per field boundary, so a long alternate key
+  ;; resolves in budget -- MEASURED BEFORE: a 200-byte alternate trapped
+  ;; host/stack-exhausted in the per-byte walks,
+  ;; docs/evidence/gpu/w3-alt-key-field-walk-20261026.txt), and the field
+  ;; walk's O(FIELDS) FRAME residual is CLOSED (the alt-loop row
+  ;; 2026-10-26: alt-field?/alt-any-hits iterate through ONE
   ;; loop/recur each -- MEASURED BEFORE: every cell at 32+ fields TRAPped
   ;; budget/frames / host/stack-exhausted,
-  ;; docs/evidence/gpu/w3-alt-key-loop-20261026.txt). Still named: the
-  ;; field walk's FUEL residual (one alt-end entry per field, the
-  ;; alt-any-hits path two entries per non-empty field -- a hypothetical
-  ;; key with very many '|'-fields can still reach the 512-entry fuel
-  ;; default, measure-only, never pinned) -- and the digit taxonomy
-  ;; (ok|out-of-range = digits) is PROBED on an adversarial set, not
-  ;; proven.
+  ;; docs/evidence/gpu/w3-alt-key-loop-20261026.txt) and its FUEL
+  ;; residual is CLOSED too (the alt-fuel row 2026-10-26: alt-end deleted,
+  ;; the per-field entries inlined -- MEASURED BEFORE: hit-za 2k+8
+  ;; min-fuel, the 256+-field cells TRAPped budget/fuel,
+  ;; docs/evidence/gpu/w3-alt-key-fuel-inlined-20261026.txt). Still named:
+  ;; the digit taxonomy (ok|out-of-range = digits) is PROBED on an
+  ;; adversarial set, not proven.
   (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
         arms (str/join "\n" (map #(extract-balanced src %)
                                  ["(defn- none?" "(defn- string->i64"
