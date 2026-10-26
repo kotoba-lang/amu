@@ -49,9 +49,13 @@ Its signed F2 is
 The new Mac-produced static ARM/x86 candidates are
 `a5b1f69ad391eb79c2e79354de569d859afa338e12c199fb5219b100642a6ae7`
 and `f5f1121bb5226bd830a99072bc9f1f794728e39e82b7cd2ebce1682eacf050df`.
-These new candidates have not yet passed native Linux fixed-point or public
-product CI. The core Mac G1/G2/G3, user-v3 regression and native Darwin smoke
-pass with this new F2.
+At the Mac stage, the core G1/G2/G3, user-v3 regression and native Darwin smoke
+passed with this new F2.
+The independent ARM and x86 fixed-point jobs subsequently passed in
+[run 40291835671](https://github.com/kotoba-lang/amu/actions/runs/40291835671),
+and these exact ARM/x86 candidate bytes are now pinned as the branch bootstrap
+and public image. The full native corpus, controller and public alias gates
+remain pending for this new head.
 
 On the 35-module AIUEOS source, the first F2 reproduced a 4,456,728-byte kernel
 ELF `12397461b3a6ee6ec998ff9bd9a2dc9a838575db65696f84e015cece4185d0a8`,
@@ -64,6 +68,9 @@ segment refused with E7111. The old 31-module source still reproduced its
 original kernel-v1 ELF
 `93b8f315aa564610d423ded13a136d4ceb3a0222afafe1d5114dbab682b4cd15`
 and EFI `5e0dd35830ac0893b0163a2c36b3ef1be79392acce1b922694bc4d2e5c5111c1`.
+The re-pinned Mac F2 reproduced the same 35-module kernel ELF, user ELF, slot
+and EFI hashes. The earlier QEMU observation therefore still refers to the
+same guest image bytes; the new compiler's output was checked independently.
 
 The matching AIUEOS branch records raw GPT/FAT16 and private-QMP QEMU
 evidence. This source change alone does not qualify a release or hardware.
