@@ -544,6 +544,11 @@
   ;; carried its predecessors and device-from-info answered nil for every
   ;; well-formed answer. Evidence (before/after probe runs):
   ;; docs/evidence/gpu/w3-split4-field-spans-20261026.txt.
+  ;; The many-pipe row (2026-10-26): the walk ALSO took one frame per
+  ;; '|'-boundary, so an answer with many pipes TRAPped instead of
+  ;; answering the contract's total null -- a fifth-field boundary is
+  ;; answered ABOVE the recursion now. Evidence:
+  ;; docs/evidence/gpu/w3-split4-many-pipe-total-20261026.txt.
   (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
         arm (extract-balanced src "(defn- split4")
         probe (str "(ns accelerator.targets.w3.split.probe (:export [main sp]))\n"
@@ -573,7 +578,34 @@
       (is (= ["null"] (sp "a|b")) "two fields is not four")
       (is (= ["null"] (sp "a|b|c")) "three fields is not four")
       (is (= ["null"] (sp "a|b|c|d|"))
-          "a trailing empty field COUNTS (str/split ... -1 parity, 2026-10-26)"))))
+          "a trailing empty field COUNTS (str/split ... -1 parity, 2026-10-26)"))
+    (testing "more than four fields is total: answered ABOVE the recursion, never a frame trap"
+      ;; MEASURED BEFORE (the row's evidence,
+      ;; w3-split4-many-pipe-total-20261026.txt): the walk took one frame
+      ;; per '|'-boundary -- the unit walk TRAPped budget/frames at
+      ;; 31..40 pipes and host/stack-exhausted at 17 in every run, with
+      ;; 16/18 MOVING between runs (trapped in one byte-identical pair,
+      ;; resolved in the other; the trap boundary is NON-MONOTONIC and
+      ;; state-dependent) while the host arm answered the field count
+      ;; and the contract says "answers nil, never a throw"
+      (let [guard-i (str/index-of arm "(>= k 3)")
+            call-i (str/index-of arm "(split4 s (+ p 1)")]
+        (is (some? guard-i)
+            "a '|'-boundary found at k = 3 is a fifth field -- (document-null) in the cond")
+        (is (and (some? call-i) (< guard-i call-i))
+            "the guard sits BEFORE the walk's only self-call (<= 4 iterations, any pipe count)"))
+      (doseq [k (range 4 34)]
+        (is (= ["null"] (sp (str/join "|" (repeat (inc k) "a"))))
+            (str "the " k "-pipe answer is five-plus fields -- null")))
+      (doseq [k [33 64 128]]
+        (let [s (str/join "|" (repeat (inc k) "a"))]
+          (is (= ["null"] (sp s))
+              (str "the " k "-pipe answer resolves to null (it TRAPped before the row)"))
+          (is (nil? (targets/device-from-info s))
+              (str "HOST parity pin (" k "-pipe)"))))
+      (is (= ["vector" [["string" "a"] ["string" "a"] ["string" "a"] ["string" "a"]]]
+             (sp (str/join "|" (repeat 4 "a"))))
+          "the four-field answer still splits into four per-field spans"))))
 
 (deftest w3-version3-matches-the-host-regex-semantics
   ;; The `:kotoba` version3? must answer exactly what the host arm's
@@ -709,6 +741,21 @@
                  "ab|1.2.3|4|1|"  "ab|1.2.3|4|1|x" "ab|1.2.3|4" "ab|1..3|4|1"
                  "ab|1.2.3|x|1"]]
         (is (= ["null"] (dfi s)) (str (pr-str s) " must parse to no fact at all"))))
+    (testing "a many-pipe answer is total end to end: null, never a frame trap"
+      ;; MEASURED BEFORE (the many-pipe row's evidence,
+      ;; w3-split4-many-pipe-total-20261026.txt): these answers TRAPped
+      ;; host/stack-exhausted at 16..128 pipes (budget/frames at the same
+      ;; cells in the earlier go/no-go position) on this runtime while
+      ;; the host arm answered nil -- the split4 walk
+      ;; took one frame per '|'-boundary until the row answered a fifth
+      ;; field ABOVE the recursion
+      (doseq [k [16 33 64 128]]
+        (let [s (str/join "|" (repeat (inc k) "a"))]
+          (is (= ["null"] (dfi s))
+              (str "the " k "-pipe answer must parse to no fact at all"))
+          (is (nil? (targets/device-from-info s)) (str "HOST parity pin (" k "-pipe)"))))
+      (is (= ["null"] (dfi (str "ab|1.2.3|4|1|" (str/join "|" (repeat 33 "z")))))
+          "four good fields plus 33 more fields (37 total) -- null, not a throw"))
     (testing "adversarial numeric fields resolve in budget and host-equal"
       ;; MEASURED BEFORE on this runtime (docs/evidence/gpu/
       ;; w3-numeric-walk-primitives-20261026.txt): every one of these

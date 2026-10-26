@@ -119,11 +119,36 @@
 ;; '|', start..n at the last field) and the raw '|'-split count (fields =
 ;; pipes + 1, trailing empty fields counted). `string-index-of-from` traps
 ;; on from > n, so the walk keeps i <= n (i = p + 1 for a found p < n).
+;; The many-pipe row (2026-10-26): the walk answers MORE-THAN-FOUR ABOVE
+;; its own recursion -- a '|'-boundary FOUND at k = 3 is a fifth field and
+;; answers (document-null) in the cond, before any further recursion --
+;; where the pre-row walk kept walking ONE FRAME PER PIPE and an answer
+;; with many pipes TRAPped instead of answering the contract's total null
+;; (MEASURED on the kotoba runtime, this row's evidence
+;; w3-split4-many-pipe-total-20261026.txt: device-from-info on the
+;; 16..128-pipe answers ALL TRAPped host/stack-exhausted (budget/frames
+;; at the same cells in the earlier go/no-go position) while the host
+;; arm answered nil and the contract says "answers nil, never a throw";
+;; the trap boundary is NON-MONOTONIC and state-dependent as ever -- the
+;; unit walk TRAPped 17 in every run while 16/18 MOVED between runs (16
+;; trapped, 18 resolved in one byte-identical pair; 16 resolved, 18
+;; trapped in the other) and 31..40 TRAPped budget/frames in every run
+;; -- so the class is a trap BOUNDARY, not a fixed depth). CONTRACT UNCHANGED, pinned: exactly four fields (three
+;; '|'-boundaries) answer the four per-field spans; fewer or more answer
+;; (document-null). The new clause fires only where the old walk's ONLY
+;; possible answer was already null (a boundary found at k >= 3 can never
+;; end at k = 3), so every previously resolving input answers the same
+;; bytes -- and the walk is now <= 4 iterations: CONSTANT frames and flat
+;; fuel at ANY pipe count. RESIDUAL, NAMED (unchanged): the uB5G alt-key
+;; field walk (alt-field?/alt-any-hits) is still O(FIELDS) frames --
+;; bounded by the table's own key strings (3 fields today), unreachable
+;; from the wire; its own row if it ever matters.
 #?(:kotoba
    (defn- split4 [s :string start :i64 i :i64 n :i64 k :i64 acc :document] :document
      (let [p (string-index-of-from s "|" i)]
        (cond (and (< p 0) (= k 3)) (document-vector-conj acc (document-string (string-substring s start n)))
              (< p 0) (document-null)
+             (>= k 3) (document-null)
              :else (split4 s (+ p 1) (+ p 1) n (+ k 1) (document-vector-conj acc (document-string (string-substring s start p))))))))
 ;; digits? = ONE OR MORE ASCII digits in [i, n) -- the host re-matches
 ;; "[0-9]+" and an empty range holds no digits (the 2026-10-26 parity
