@@ -315,3 +315,54 @@ without changing any FULL47 production input or pinned compiler byte. Its
 independent gates and new AGENTS rules are preserved. Exact-head CI (including
 Linux browser/shared consumers), full native accounting/measurement controls,
 same-host C comparison and external reruns remain required.
+
+## Integration with main PR1599/1600
+
+After draft PR1602 was opened, main advanced to7b2f3aee... . Its full Goal
+envelope emitter changes seed/74, a production input; the SCC minimum/rank/tie
+optimization and its new controls remain outside FULL-MANIFEST. All incoming
+source changes and AGENTS rules were retained. The four conflicts were only
+the compiler/root binaries and JSON metadata. No history rewrite, force push,
+stash drop, shared-worktree change or broad west operation was used.
+
+The existing qualified f1a2020f... root served only as a bootstrap producer.
+Native ARM main regenerated the merged source in209.242 seconds; the separate
+one-compiler derivation passed in148.924 seconds with identical three compiler
+containers and independent packing. Their raw records under arm/arm-merged-r6
+and arm/arm-one-r6 are bound to archive SHA256
+2fda376bd2f523878eedb4f4d6cbb95db659ccaa23fd41c7d99f41af43f101aa.
+The merged source is committed at f08c68fd52125902ba41fa66005a51f1b44ba948;
+its FULL47 unity is3,478,533 bytes, SHA256
+702e8cb3954b8fce5291e6f9a7417cc94bca0119f9f84de8c67945b8db64b761.
+Native-produced ARM root is3,588,608 bytes, SHA256
+97d7297f1f25a84fe655aaa33cfcc77650d4956a83b7af5d37c7bb8abb5a2664;
+its complete x86 output is9,380,352 bytes, SHA256
+c20eb5b113eabfd04555621f058b546854c5f83b52f07fd3d1342474b6b3344f.
+
+These regenerated artifacts resolve the conflict and pass the current
+source/image identity preflight. Native x86 generations are still candidate
+identities until their fresh execution; qualification booleans remain false.
+The merged uncached full run is active. Fresh repinned-root transport, both
+ISA/runtime/controller/public/browser/shared gates and exact-head CI remain
+required for this graph. Earlier passes and the still-running7f2846b2... x86
+full-count diagnostic are not relabelled as c20eb5b1... qualification.
+
+## Warm-seeded reference distinction
+
+Read-only inspection identified a concrete mismatch in the adapter prediction:
+the pinned M104 workload table names tarfind's measuredSymbol as
+benchmark-warmed (arity2) and seedSymbol as warm-seed. The retained historical
+timing-extension.h warms one body, extracts that seed, resets context/fuel and
+arena, then separately calls the measured function and verify in one context.
+The current fixed native-entry probe instead calls bench-verify, which invokes
+benchmark-unchecked and initializes the RNG seed at0. The existing c_reference.py
+also explicitly documents tarfind's data-dependent warm-seeded fuel.
+
+Therefore the18/19 adapter prediction is not a separate native accounting
+verdict and does not prove a compiler fuel regression. Nor does this source
+inspection alone establish the cause of the exact -1 difference: a native
+warm/seed/reset/benchmark/verify control is still required. No C harness was
+executed, compiled or restored as a fallback, no historical expected value was
+edited and no special-case tarfind correction was added. All19-source
+registered-count bench-verify diagnostics remain prerequisites, not the
+warm-seeded measurement contract or a comparable M104 speed result.
