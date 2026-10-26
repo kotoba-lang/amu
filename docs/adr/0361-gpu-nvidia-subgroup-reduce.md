@@ -2888,3 +2888,94 @@ gate-run2.txt in the evidence dir); `find docs -name '*.sh'` -> 0.
 FULL run-tests.cljk NOT run (this diff touches NO .cljk namespace) --
 documented RED AT BASE 'Could not find namespace: kotoba.form'
 (ADR-0362), outside this diff -- NO green full suite claimed.
+
+
+## Amendment (2026-10-26 UTC, the entry-excluded instrument is
+implemented and RUN and its pre-registered closures FAIL: the
+e_MF/e_FM split stays UNMEASURED)
+
+The twenty-ninth amendment ended with the entry-excluded open-chain
+instrument "PROPOSED, not implemented". This amendment records that
+the instrument was IMPLEMENTED (v6, gpu-mufu-entryexcl-microbench.cu,
+committed verbatim in the evidence dir) and RUN on xavier sm_72 at
+2026-10-26T16:17:21Z (8 arms x 3 launches x 128 threads x 256 timed
+instances; a PROBE, not a registered timing session -- inadmissible
+under the entry criterion BY KIND, enters nothing; SAME UTC DAY as
+every earlier probe, so "cross-day run 3+" does not move). The slice
+was started by an interrupted tick and finished by the next.
+
+**Bodies verified 8/8.** The realized loop bodies (verbatim in
+verifier-output.txt) carry exactly their named chains IN ORDER (ee_MF
+= MUFU then FADD; ee_FM = FADD then MUFU; ee_MFM/ee_FMF likewise),
+the chain strictly between two CS2R SR_CLOCKLO reads 8/8, and the
+non-chain overhead multiset IDENTICAL 8/8. NAMED: the verifier whose
+output rides in the remote run log reported NO-LOOP 8/8 -- an
+extraction bug (its BRA regex required the branch target at
+end-of-line; nvdisasm emits "BRA `(.L_N) ;"), not a body defect; the
+transferred and completed extractors are both committed.
+
+**The adjudication (mufu_entryexcl_analysis.py, output verbatim,
+two runs byte-identical).** The closures pre-registered in the
+twenty-ninth amendment FAIL beyond the named 1.0 cyc tolerance:
+C1 V(MFM)=37.1719 vs V(MF)+V(FM)-V(F)=27.2070 (residual +9.9648);
+C2 V(FMF)=31.2266 vs V(FM)+V(MF)-V(M)=26.5938 (residual +4.6328);
+every launch-matched pairing fails the same way. The cyclic
+reproductions fail too: V(MM)-V(M)=10.4063 vs landed e_MM 14.9966;
+V(FF)-V(F)=0.0117 vs landed e_FF 4.0000; the estimator sum 16.4492
+vs the landed cycle sum 21.0000. Per the pre-registered falsifier
+stance P6, the estimators (15.0469 / 1.4023, pooled) are INADMISSIBLE
+and MUST NOT be reported as the split: **the e_MF/e_FM split STAYS
+UNMEASURED**.
+
+**What the data shows, named, not attributed.** Every arm sits on a
+~10.14 cyc floor; the single-op arms are floor-bound; MF exceeds FM
+by ~+13 cyc in V (same op multiset, opposite order); the M arm's
+median spreads 2.2266 cyc across launches while MM is exactly
+launch-stable. Mechanism UNRESOLVED. A SASS-VERIFIED deviation
+between the spec'd discipline and the realization is on record: the
+design's PAD16 (16 DEPENDENT add.u32) is strength-reduced to ONE
+"IADD3 R6, R6, 0x10", so the inter-iteration gap is 8 instructions,
+not the 23 the header's readiness argument assumed. Whether the
+closure failure is the discipline's premise being wrong (P6's own
+wording) or this realization deviating from the discipline is
+UNRESOLVED; both readings stay open. The twenty-ninth's rank/nullspace
+identifiability theorem is UNTOUCHED -- it says what is identifiable
+IF the instrument returns the model's V values; this run shows it
+does not.
+
+**Consequence.** Nothing moves (rule 4): no record, no :measured?
+flag, no selection answer, no workgroup row. The named item moves in
+design state only: "identifiable only under the spec'd entry-excluding
+discipline (instrument PROPOSED, not implemented)" becomes
+"instrument IMPLEMENTED and RUN; pre-registered closures FAIL (P6);
+split UNMEASURED; discipline-premise-vs-realization deviation
+UNRESOLVED (pad fold SASS-verified)". The observable cross quantity
+stands at the measured cycle sum e_MF + e_FM = 21.0000 (cross surplus
++2.0034), unchanged.
+
+**States.** MEASURED (standing, unchanged, earlier ticks): e_MM
+14.9966, e_FF 4.0000, e_MF+e_FM 21.0000, cross surplus +2.0034.
+MEASURED (new, PROBE-grade, enters no record): the v6 V table and its
+closure residuals (evidence cuda-mufu-entryexcl-20261026). REASONED +
+MECHANICALLY VERIFIED (unchanged): the gauge theorem. REFUTED (this
+run): that the v6 instrument returns the edge-additive model's V
+values. IMPLEMENTED: nothing in src/ or test/. DECIDED: nothing new.
+ACCEPTED DESIGN ONLY (unchanged): the operator-aware contract +
+pre-registration, the row (ii) routes, the entry contract + wiring,
+ADR-0358, ADR-0373. UNMEASURED, named (list carried forward): the
+e_MF / e_FM split (P6 -- estimators inadmissible), bare MUFU.RCP
+dependent-chain latency, the floor's internal composition (per-form
+intercepts 0.5234/7.4844/5.4805 and now the v6 ~10.14 cyc floor, all
+unattributed), the pure 2-input IADD3 and IMAD.IADD separations, the
+21 surplus ops' costs, the residual W-shape's dynamic carrier, noise
+exceedance, sum TRUE side W=256, cross-day run 3+ (still 2026-10-26
+UTC), non-xavier verdicts, :sum W=64 elsewhere, live CUDA selection
+path, workgroup rows (:arm/:unknown provisional :measured? false).
+
+Gates (honest): the scoped GPU gate GREEN on run 1 AND run 2 (123
+tests / 12162 assertions / 0 failures / 0 errors, glslang 16.6.0
+real-spawn, regression pin -- verbatim logs gate-run1.txt /
+gate-run2.txt in the evidence dir); `find docs -name '*.sh'` -> 0.
+FULL run-tests.cljk RUN LIVE THIS TICK: RED AT BASE 'Could not find
+namespace: kotoba.form' at namespace load (ADR-0362), outside this
+diff -- verified live, NO green full suite claimed.
