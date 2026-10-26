@@ -179,7 +179,12 @@ def main(args):
         report['mutations'].append(dict(name=name, built=True, executed=True, verdict=message, image=pin(mutant)))
         save()
     full_paths = [p for p in (ROOT / 'seed/FULL-MANIFEST').read_text().splitlines() if p and not p.startswith('#')]
-    assert len(full_paths) == 47
+    # Follow the complete pinned producer closure as native targets grow.
+    # A fixed47 check would reject an adopted added backend or tempt dropping
+    # its source from this observer; the product and unity must match instead.
+    assert len(full_paths) == product['sourceModuleCount']
+    assert len(set(full_paths)) == len(full_paths)
+    assert all(p.startswith('seed/') and '..' not in Path(p).parts for p in full_paths)
     original = b''.join((ROOT / p).read_bytes() + b'\n' for p in full_paths)
     input_path = out / 'whole-compiler.kotoba'
     input_path.write_bytes(original)

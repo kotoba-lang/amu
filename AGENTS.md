@@ -321,8 +321,8 @@ traversal; node9 then means next-member+1, not a live DFS parent. Preserve
 name ordering in canonical groups and source ordering in object bindings.
 
 The shared native graph gate exhausts66067 directed small graphs against
-reachability, covers8191-vertex paths/cycles, freshly imports the unchanged
-FULL47 compiler, checks its edges through independent FF-SIR intervals and
+reachability, covers8191-vertex paths/cycles, freshly imports the complete
+pinned compiler manifest, checks its edges through independent FF-SIR intervals and
 compares complete partitions with an independent observer oracle. Every
 named mutant must actually build/execute and hit its native guard. Existing
 identity/object oracles, SCC<=8 refusal and all selfhost gates remain required.
