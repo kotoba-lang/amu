@@ -273,6 +273,29 @@ def main(args):
                "--output", "scalar.elf")
     image = output / "scalar.elf"
     checker.verify(image.read_bytes())
+    native_run(producer, output, "package-aiueos-user-payload", image.name,
+               "--output", "scalar-slot.bin")
+    slot = output / "scalar-slot.bin"
+    packed = slot.read_bytes()
+    assert len(packed) == 524288
+    assert struct.unpack_from("<QQQ", packed) == (0x0031444c50554941, 1,
+                                                  image.stat().st_size)
+    assert packed[64:64 + image.stat().st_size] == image.read_bytes()
+    assert not any(packed[64 + image.stat().st_size:])
+    existing = native_run(producer, output, "package-aiueos-user-payload",
+                          image.name, "--output", slot.name, expected=2)
+    if b"E7110" not in existing.stderr:
+        raise ValueError("user payload packager did not refuse existing output")
+    missing = native_run(producer, output, "package-aiueos-user-payload",
+                         "missing.elf", "--output", "missing-slot.bin", expected=1)
+    if b"E3" not in missing.stderr or (output / "missing-slot.bin").exists():
+        raise ValueError("user payload packager did not refuse missing input")
+    (output / "oversized.bin").write_bytes(bytes(524225))
+    oversized = native_run(producer, output, "package-aiueos-user-payload",
+                           "oversized.bin", "--output", "oversized-slot.bin",
+                           expected=1)
+    if b"E7112" not in oversized.stderr or (output / "oversized-slot.bin").exists():
+        raise ValueError("user payload packager did not refuse oversized input")
     effect = output / "effect.kotoba"
     effect.write_text(checker.EFFECT)
     refused = native_run(producer, output, "compile", effect.name,
@@ -316,7 +339,7 @@ def main(args):
             or any(pin(ROOT / row["name"]) != {key: row[key] for key in ("bytes", "sha256")}
                    for row in sources)):
         raise ValueError("input changed during Mac gate")
-    report = {"schema": "amu.mac-aiueos-user-target.v2",
+    report = {"schema": "amu.mac-aiueos-user-target.v3",
               "status": "PASS_MAC_NATIVE_USER_TARGET_SELFHOST",
               "compiler": compiler_pin, "packager": packager_pin,
               "manifest": manifest_pin, "source": unity, "sources": sources,
@@ -324,6 +347,10 @@ def main(args):
               "packagerSelfRebuild": packager_rebuild,
               "bootstrapDescriptor": descriptor_pin,
               "userSource": pin(scalar), "userElf": pin(image),
+              "userPayloadSlot": pin(slot),
+              "userPayloadExistingOutputRefused": True,
+              "userPayloadMissingInputRefused": True,
+              "userPayloadOversizedInputRefused": True,
               "effectSource": pin(effect), "undeclaredEffectRefused": True,
               "parameterSource": pin(parameter), "parameterRefused": True,
               "fs2ProductRaw": {"status": "PASS_MAC_FS2_RAW_BYTES",
