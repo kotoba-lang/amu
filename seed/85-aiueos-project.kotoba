@@ -60,7 +60,9 @@
                          (xg-index-labels 1) (xg-code 1) (xg-fix 1))
                 size (xg-pos code)]
             (cond (not (pj-ok code)) code
-                  (> (+ (pj-l L pj-k-base) size) 1048576) (xg-err code 7104 size)
+                  ;; Report the required cumulative text extent, not this
+                  ;; module's size, so the fixed code/data boundary is visible.
+                  (> (+ (pj-l L pj-k-base) size) 1048576) (xg-err code 7104 (+ (pj-l L pj-k-base) size))
                   :else (let [linked (kp-copy-link code L)
                               proof (kg-note code L G S m)
                               marked (if (= m 0) (pj-ls L KP-ENTRY (+ (pj-l L pj-k-base) (xg-f code entry FF-CODE))) L)]
