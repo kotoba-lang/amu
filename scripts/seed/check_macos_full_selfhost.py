@@ -80,7 +80,7 @@ def verify_image(image: Path) -> None:
 def stage_unity(output: Path) -> dict[str, str]:
     paths = [name for name in MANIFEST.read_text().splitlines()
              if name and not name.startswith("#")]
-    if len(paths) != 47 or len(set(paths)) != 47:
+    if len(paths) != 48 or len(set(paths)) != 48:
         raise RuntimeError("FULL-MANIFEST module set changed")
     pieces = [(ROOT / name).read_bytes() + b"\n" for name in paths]
     target = output / "full-unity.kotoba"

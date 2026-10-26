@@ -24,9 +24,14 @@
   "checks": [
     "selfhost-bootstrap.py --tier pr (twice: F1 = F2, then the root reproduces; the artifacts of both runs are the same bytes)",
     "check-static-launcher.py (arm64, with main's root as --previous-root: the static, runner and launcher outputs of both ISAs equal main's)",
-    "check-one-compiler.py (arm64; F1 = F2 = F3, the CDCI gate pins hold)"
+    "check-one-compiler.py (arm64; F1 = F2 = F3, the CDCI gate pins hold)",
+    "macOS (Apple Silicon): check-aiueos-user-macos-native.py (the pinned Mac root rebuilt the 48-module source twice to container 7c8f09e7\u2026, the container the Linux root builds), check-aiueos-user-v3-macos-native.py, check-macos-core-adoption.py, check-macos-exec-smoke-native.py, check-macos-cross-linux-candidates.py (the Mac-built Linux root and x86_64 compiler equal the pinned root 2f7be2a0\u2026 and public image 32a10910\u2026 byte for byte)",
+    "check-macos-cross-linux-native.py --isa aarch64 (arm64 Linux, native)"
   ],
   "verifiedOnEarlierBase": "On gad (native x86_64): main 6deb9969 merged (2026-10-24) and main 7eb52a0e merged (2026-10-25): check-x86_64-native, check-complete-x86 (F1 = F2 = F3), clock-entropy, native CDCI (24 cases, 18 refusals), public product, check-b2-image (with byte identity of the other formats against main's compiler), and on the second base also check-kototama-i64 and main's AIUEOS, FS2, kernel-memory and live-ABI checks, all passed with this branch's compiler. The first base's receipts were committed at f867a7f61 and removed here because the pins moved.",
   "exactFinalHeadPRCI": "pending",
-  "exactMergedMainCI": "pending merge"
+  "exactMergedMainCI": "pending merge",
+  "macosRoot": {
+    "path": "seed/bootstrap/aarch64-macos/amu-full-root.macho"
+  }
 }

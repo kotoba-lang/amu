@@ -10,17 +10,26 @@ public x86_64 image (`bin/amu`, `native-product.json`) are regenerated, as in `p
 * **Root F `2f7be2a0…`** (from main's `06b99a4f…`). F1 = F2, and a second bootstrap with this root reproduces
   it; the artifacts of both runs are the same bytes (`selfhost-bootstrap-aarch64-20261022/`).
 * **Public image `32a10910…`** (`bin/amu` and its two aliases): the x86_64 compiler that the root builds from the full
-  source (`check-one-compiler.py`'s `F-x86_64.elf`). On the earlier base of this branch the native x86_64 fixed point
-  (`check-complete-x86.py`) gave F1 = F2 = F3 = exactly this construction's bytes, so the public image is the
-  cross-built compiler; this head's native fixed point is the CI job's check.
+  source (`check-one-compiler.py`'s `F-x86_64.elf`). The Mac gate builds it independently: the macOS-native
+  fixed point (below) cross-builds the same bytes (`mac-cross.json`: root `2f7be2a0…`, x86_64 full compiler
+  `32a10910…`). On the earlier bases the native x86_64 fixed point (`check-complete-x86.py`) gave F1 = F2 = F3 =
+  this construction's bytes; this head's native fixed point is the CI job's check.
+* **The macOS roots** (`seed/bootstrap/aarch64-macos/`) are re-pinned: the pinned Mach-O compiler rebuilt the 48-module
+  source twice to the container `7c8f09e7…` (the container the Linux root builds, `check-one-compiler.py`), and its
+  signed second generation is the new `amu-full-root.macho`. The packager is unchanged (its fixed point is the same
+  `c6080e0a…`).
 * **Output bytes of the other formats are unchanged.** `check-static-launcher.py` compiles the static, runner and
   launcher images of both ISAs with main's root and with this one, and the bytes are the same
   (`static-launcher-20261022/aarch64-linux.json`).
 
 ## Where the checks ran
 
-* **arm64.** podman machine (applehv, a native arm64 kernel; no emulation): the bootstrap twice, the static
-  launcher (main's root as `--previous-root`) and one-compiler (F1 = F2 = F3; the CDCI gate pins hold).
+* **arm64 Linux.** podman machine (applehv, a native arm64 kernel; no emulation): the bootstrap twice, the static
+  launcher (main's root as `--previous-root`), one-compiler (F1 = F2 = F3; the CDCI gate pins hold), and
+  `check-macos-cross-linux-native.py --isa aarch64` on the Mac-produced root (`mac-cross-native-arm64.json`).
+* **macOS** (Apple Silicon, native): `check-aiueos-user-macos-native.py` (the source fixed point and the user target),
+  `check-aiueos-user-v3-macos-native.py`, `check-macos-core-adoption.py`, `check-macos-exec-smoke-native.py` and
+  `check-macos-cross-linux-candidates.py` (`mac-selfhost.json`, `mac-user-v3.json`, `mac-core.json`, `mac-cross.json`).
 * **x86_64.** None for this head: gad was unreachable when the pins were regenerated after the last merge of main.
   **On two earlier bases** gad (native x86_64, Linux 7.0) ran `check-x86_64-native.py --tier pr`,
   `check-complete-x86.py` (F1 = F2 = F3), `check-native-clock-entropy.py`, `check-native-cdci.py` (24 cases, 18
