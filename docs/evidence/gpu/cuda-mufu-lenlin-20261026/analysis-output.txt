@@ -1,0 +1,63 @@
+=== V(w) per-iteration deltas, per launch (med_per_iter, cyc/iter)
+arm   launch0    launch1    launch2    pooled(med of 3)  within-launch min..max
+M1      13.0781    10.2148    10.2031     10.2148        10.1992..13.0781
+M2      23.4062    23.6016    23.5156     23.5156        23.4023..23.6055
+M3      46.2617    48.4961    46.1953     46.2617        46.1914..48.5000
+M4      61.2227    61.2383    61.2227     61.2227        61.2188..61.2422
+M5      76.2188    76.2266    76.2812     76.2266        76.2148..76.2852
+F1      12.5039    12.5781    12.4766     12.5039        12.4727..12.5820
+F2      10.2266    10.2188    10.2266     10.2266        10.2148..10.2305
+F3      14.3711    14.6211    14.2734     14.3711        14.2695..14.6250
+F4      18.2305    20.5430    18.8359     18.8359        18.2266..20.5469
+F5      24.5039    22.2188    22.3047     22.3047        22.2148..24.5078
+
+=== launch-to-launch spread of the median (max-min over 3 launches, cyc/iter)
+    M1   spread   2.8750
+    M2   spread   0.1953
+    M3   spread   2.3008
+    M4   spread   0.0156
+    M5   spread   0.0625
+    F1   spread   0.1016
+    F2   spread   0.0078
+    F3   spread   0.3477
+    F4   spread   2.3125
+    F5   spread   2.2852
+
+=== length series: first differences D_T(k) = V(T^k) - V(T^(k-1)), k=2..5
+    M: D(M(2))=+13.3008  D(M(3))=+22.7461  D(M(4))=+14.9609  D(M(5))=+15.0039
+    F: D(F(2))=-2.2773  D(F(3))=+4.1445  D(F(4))=+4.4648  D(F(5))=+3.4688
+
+=== second differences (affine test; every |.| <= 1.0 = P1/P2 hold)
+    M: +9.4453  -7.7852  +0.0430  -> NON-AFFINE (P1 FAIL)
+    F: +6.4219  +0.3203  -0.9961  -> NON-AFFINE (P2 FAIL)
+
+=== slopes vs the landed MEASURED cyclic prices (P3/P4; mean of first differences)
+    s_M = 16.5029 vs landed e_MM = 14.9966 -> delta +1.5063 (FAIL)
+    s_F = 2.4502 vs landed e_FF = 4.0 -> delta -1.5498 (FAIL)
+
+=== P5: v7 REPRODUCTION (cross-instrument consistency, NOT a model prediction)
+    V(M1) vs v7 V(M): got +10.2148 vs v7 +10.1602 -> delta +0.0546 (ok)
+    V(F1) vs v7 V(F): got +12.5039 vs v7 +10.1758 -> delta +2.3281 (FAIL)
+    D_M(2) vs v7 V(MM)-V(M): got +13.3008 vs v7 +11.0352 -> delta +2.2656 (FAIL)
+    D_F(2) vs v7 V(FF)-V(F): got -2.2773 vs v7 -0.0273 -> delta -2.2500 (FAIL)
+
+=== sensitivity, launch-matched indices (arms ran sequentially; pairing is nominal; NOT a prediction)
+    launch0: M second-diffs +12.5273/-7.8945/+0.0352 -> NON-AFFINE; F second-diffs +6.4219/-0.2852/+2.4141 -> NON-AFFINE
+    launch1: M second-diffs +11.5078/-12.1523/+2.2461 -> NON-AFFINE; F second-diffs +6.7617/+1.5195/-4.2461 -> NON-AFFINE
+    launch2: M second-diffs +9.3672/-7.6523/+0.0312 -> NON-AFFINE; F second-diffs +6.2969/+0.5156/-1.0937 -> NON-AFFINE
+
+=== P1..P6 VERDICT
+    P1/P2 FAIL (NON-AFFINE): the per-op increment itself depends on the
+    word length. NO edge-additive-plus-end-artifact reading survives the
+    pure-word length series: the measured V is REFUTED as edge-additive
+    in-form at the pure-word level (the discipline's premise is implicated)
+    and the end-artifact class (first/last-op-only deviations) is REFUTED
+    with it. A length-dependent realization effect is named, not
+    attributed. P6: the e_MF/e_FM split stays UNMEASURED.
+    P5 NOT FULLY HELD (see reproduction lines above): the length-1/2 points
+    do not reproduce v7's own numbers within tolerance -- named; this is a
+    cross-instrument consistency fact, not a model prediction.
+
+=== derived table: V(w) minus V(M1) and V(F1) (NOT an attribution)
+    V(w) - V(M1): M2=+13.3008  M3=+36.0469  M4=+51.0078  M5=+66.0117  F1=+2.2891  F2=+0.0117  F3=+4.1562  F4=+8.6211  F5=+12.0898
+    V(w) - V(F1): M1=-2.2891  M2=+11.0117  M3=+33.7578  M4=+48.7188  M5=+63.7227  F2=-2.2773  F3=+1.8672  F4=+6.3320  F5=+9.8008

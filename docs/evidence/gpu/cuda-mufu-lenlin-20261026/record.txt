@@ -1,0 +1,136 @@
+amu-gpu tick 2026-10-26 (UTC day 2026-10-26, one measurement slice):
+JUN-55/JUN-57 -- the thirty-first amendment's UNRESOLVED
+"discipline-premise-vs-further-realization deviation" takes its
+instrument branch: instrument v8 (THE LENGTH-SERIES instrument)
+measures the pure-word length series M^1..M^5 / F^1..F^5 under v7's
+exact discipline, and the series is NON-AFFINE at the pre-registered
+tolerance. NO edge-additive-plus-end-artifact reading survives: the
+measured V is REFUTED as edge-additive in-form at the pure-word level
+(the discipline's premise is implicated) and the end-artifact class
+(first/last-op-only deviations) is REFUTED with it. A length-dependent
+realization effect is NAMED, NOT ATTRIBUTED. The e_MF/e_FM split STAYS
+UNMEASURED. HARDWARE RAN: instrument v8 (10 arms x 3 launches x 128
+threads x 256 timed instances) on xavier sm_72 at
+2026-10-26T18:01:40Z (DATE-UTC verbatim in run-log.txt). NAMED NOT
+HIDDEN: a PROBE, not a registered timing session (no paired samples,
+no AB/BA), inadmissible under the entry criterion BY KIND; it enters
+nothing, moves no record and no :measured? flag; SAME UTC DAY as every
+earlier probe -- NOT a cross-day replication, "cross-day run 3+" does
+not move; it measures INSTRUCTION chains, not kernels.
+
+INSTRUMENT v8 (gpu-mufu-lenlin-microbench.cu, committed verbatim, sha
+3fd41163..; run-log.txt sha f1b83711..; microbench-sass.txt sha
+a2b90ac3.., 662 lines, sha matches the remote-generated artifact):
+v7 with THE ONE CHANGE (named in the header before the first run): the
+arm words. v7 = 8 composition arms (M/F/MM/FF/MF/FM/MFM/FMF); v8 = 10
+pure-word length arms (M^1..M^5, F^1..F^5). EVERY OTHER byte identical
+to v7 (same entry-excluded discipline per the twenty-ninth amendment,
+same RLT=256/NS=128, same symbolic operands 2.0f/1.0f and pad k/c
+0x9E3779B9/0x7F4A7C15 from global memory, same realized PAD16 = 16
+dependent mad.lo.u32, same tails). WHY THE LENGTH SERIES: the
+edge-additive model says V(T^k) = a_T + k*s_T -- AFFINE in length k --
+and affinity survives ANY end-artifact that is a function of the
+first/last op only (it cancels across k). So the series separates the
+thirty-first's two readings: non-affine => the premise is implicated
+and end-artifacts are refuted as the explanation; affine at the landed
+cyclic slope => pure-word prices channel-consistent and the closure
+failure localizes to mixed composition; affine off-slope => interior
+prices channel-dependent. Predictions P1..P7 PRE-REGISTERED in the
+instrument header before the first run (affinity P1/P2, channel
+agreement with the landed cyclic slopes e_MM 14.9966 / e_FF 4.0000
+P3/P4, v7 reproduction P5, falsifier stance P6, structural PAD/CHAIN
+verdicts P7). The remote tree /root/gpu-mufu-lenlin-20261026 was
+created fresh and transferred COPYFILE_DISABLE=1 (3 files via scp;
+received-file block matched local shas 3/3). VERIFIED (real runs):
+OK-build / OK-cubin / OK-sass 662 lines; build diags 470 bytes = five
+benign "variable cf was declared but never referenced" warnings
+(lines 149-153, one per M-only kernel -- cf is referenced only by
+FADD; quoted verbatim in run-log.txt); diag-nvdisasm 0 bytes; driver
+exit 0, stderr 0 bytes; 30 RESULT lines + 10 ANCHOR lines; device
+name=Xavier clockRate_kHz=1377000 multiProcessorCount=8.
+
+BODIES VERIFIED 10/10 (mufu_lenlin_verify.py sha afd25d9d.., the SAME
+file transferred and ran on the remote): CHAIN-VERDICT MATCH 10/10
+(ee_Mk carries exactly k MUFU.RSQ, ee_Fk exactly k FADD*, in order),
+CLOCK-WRAP 10/10 WRAP-OK (chain strictly between the two SR_CLOCKLO
+reads), PAD-VERDICT (P7) 10/10 (exactly 16 IMAD* pad instructions per
+body, 0 inside the timed region, 16 after the t1 clock read),
+OVERHEAD-IDENTICAL 10/10.
+
+THE FINDING (mufu_lenlin_analysis.py sha 629ab14c.., output
+analysis-output.txt sha f99a79af.., two runs byte-identical):
+(1) P1/P2 FAIL -- the length series is NON-AFFINE at the pre-registered
+1.0 cyc tolerance: M second differences +9.4453 / -7.7852 / +0.0430; F
+second differences +6.4219 / +0.3203 / -0.9961. Launch-matched
+sensitivity: NON-AFFINE on ALL THREE launches for both word types (M
+first second-diff +9.37..+12.53, F +6.30..+6.76) -- the verdicts are
+not a pooled-median artifact and sit far above the named noise. The F
+non-affinity is dominated by a within-run STABLE non-monotonicity:
+V(F1) = 12.5039 > V(F2) = 10.2266 (launch spread 0.1016 / 0.0078 --
+one FADD measures SLOWER than two).
+(2) CONSEQUENCE (the pre-registered P1/P2-FAIL branch): NO
+edge-additive-plus-end-artifact reading survives the pure-word length
+series. An artifact that is a function of the first/last op only
+(a hoisted t1 read, an excluded tail latency) cancels across k and
+cannot bend the series -- that class is REFUTED as the explanation.
+The measured V is REFUTED as edge-additive in-form at the pure-word
+level; the discipline's premise is implicated. A length-dependent
+realization effect is NAMED, NOT ATTRIBUTED.
+(3) P3/P4 FAIL on the MEANS of first differences (s_M = 16.5029 vs
+landed e_MM 14.9966, delta +1.5063; s_F = 2.4502 vs landed e_FF
+4.0000, delta -1.5498) -- but with the series non-affine "the slope"
+is not a price; the M first differences at k=4,5 (14.9609 / 15.0039)
+DO sit at the landed cyclic e_MM 14.9966 while k=2,3 (13.3008 /
+22.7461) do not. Named, not attributed.
+(4) P5 PARTIAL FAIL (cross-instrument reproduction -- consistency
+fact, NOT a model prediction): V(M1) = 10.2148 reproduces v7's V(M)
+10.1602 (+0.0546 ok), but V(F1) = 12.5039 misses v7's V(F) 10.1758 by
++2.3281; D_M(2) = 13.3008 misses v7's V(MM)-V(M) 11.0352 by +2.2656;
+D_F(2) = -2.2773 misses v7's V(FF)-V(F) -0.0273 by -2.2500. The same
+word as a different arm set's member: V(M2) = 23.5156 vs v7's V(MM)
+21.1953 (+2.3203) while V(F2) = 10.2266 reproduces v7's V(FF) 10.1484
+(+0.0782). The two instruments' V values are not the same quantities
+even before a model is applied -- named, not attributed.
+(5) P6: the e_MF/e_FM split STAYS UNMEASURED; nothing this run admits
+the estimators (they are not even computed here).
+
+NAMED NOT HIDDEN (noise): launch-to-launch median spreads up to 2.8750
+cyc (M1), 2.3008 (M3), 2.3125 (F4), 2.2852 (F5) -- above v7's max 0.75
+and above the pre-registered 1.0 cyc tolerance for 4 of 10 arms; the
+pooled verdicts are robust to launch choice (the sensitivity runs
+NON-AFFINE on every launch) but individual first differences carry
+that much uncertainty and the pre-registered tolerance is below this
+run's noise floor on those arms.
+
+CONSEQUENCE: NOTHING MOVES (rule 4) -- no record, no :measured? flag,
+no selection answer, no workgroup row; the named item moves in DESIGN
+STATE ONLY ("pad-fold reading REFUTED as the cause;
+premise-vs-further-deviation UNRESOLVED; split UNMEASURED" -> "the
+premise is REFUTED as edge-additive in-form at the pure-word level
+(non-affine length series, end-artifact class refuted);
+length-dependent realization effect NAMED, NOT ATTRIBUTED; split
+UNMEASURED"); the observable cross quantity stands at the measured
+cycle sum e_MF+e_FM = 21.0000 (cross surplus +2.0034), unchanged.
+
+UNMEASURED named: the e_MF/e_FM split (P6), bare MUFU.RCP
+dependent-chain latency, the floor's internal composition (per-form
+intercepts 0.5234/7.4844/5.4805 and the v6 ~10.14 / v7 ~10.17 cyc
+floors, all unattributed), the pure IADD3/IMAD.IADD separations, the
+21 surplus ops' costs, the W-shape carrier, noise exceedance, sum TRUE
+W=256, cross-day run 3+ (still 2026-10-26 UTC), non-xavier verdicts,
+:sum W=64 elsewhere, live CUDA selection path, workgroup rows
+:arm/:unknown provisional (:measured? false -- accelerator-targets
+defaults are design assumptions, not evidence).
+
+Gates (honest): scoped GPU gate GREEN run 1 AND run 2 (123
+tests/12162 assertions/0 failures/0 errors, glslang 16.6.0 real-spawn,
+regression pin; gate-run1.txt / gate-run2.txt); `find docs -name '*.sh'`
+-> 0; FULL run-tests.cljk RUN LIVE THIS TICK: RED AT BASE 'Could not
+find namespace: kotoba.form' at namespace load (ADR-0362), outside
+this diff -- verified live, NO green full suite claimed.
+
+Evidence: docs/evidence/gpu/cuda-mufu-lenlin-20261026/ (record.txt,
+run-log.txt, microbench-sass.txt, gpu-mufu-lenlin-microbench.cu,
+mufu_lenlin_verify.py, mufu_lenlin_analysis.py, analysis-output.txt,
+gate-run1.txt, gate-run2.txt) + the ADR-0361 thirty-second amendment.
+(JUN-55, JUN-57)

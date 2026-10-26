@@ -3074,3 +3074,114 @@ gate-run2.txt in the evidence dir, byte-identical); `find docs -name
 '*.sh'` -> 0. FULL run-tests.cljk RUN LIVE THIS TICK: RED AT BASE
 'Could not find namespace: kotoba.form' at namespace load (ADR-0362),
 outside this diff -- verified live, NO green full suite claimed.
+
+
+## Amendment (2026-10-26 UTC, the premise is REFUTED as edge-additive
+in-form at the pure-word level: the v8 length series is NON-AFFINE and
+the end-artifact class goes with it -- a length-dependent realization
+effect is named, not attributed; the split stays UNMEASURED)
+
+The thirty-first amendment left the closure failure's cause UNRESOLVED
+between the discipline's premise being wrong and a further unexcluded
+realization deviation (the pad fold having been excluded as that
+cause). This amendment records instrument v8 (THE LENGTH-SERIES
+instrument, gpu-mufu-lenlin-microbench.cu, committed verbatim) which
+adjudicates that pair at the pure-word level.
+
+**The one change.** v8 = v7 with the arm words replaced: 8 composition
+arms (M/F/MM/FF/MF/FM/MFM/FMF) -> 10 pure-word length arms (M^1..M^5,
+F^1..F^5). Everything else identical to v7 (entry-excluded discipline,
+realized 16-IMAD pad, symbolic operands, same tails). Predictions
+P1..P7 pre-registered in the instrument header before the first run.
+
+**Why the length series adjudicates.** The edge-additive model says
+V(T^k) = a_T + k*s_T -- AFFINE in the length k -- and affinity survives
+ANY end-artifact that is a function of the first/last op only (a
+hoisted t1 read, an excluded tail latency: such terms cancel across k).
+So: non-affine => the premise is implicated and the end-artifact class
+is refuted as the explanation; affine at the landed cyclic slope =>
+pure-word prices channel-consistent, closure failure localizes to mixed
+composition; affine off-slope => interior prices channel-dependent.
+
+**Structure verified (P7, SASS-verified).** CHAIN-VERDICT MATCH 10/10
+(ee_Mk carries exactly k MUFU.RSQ, ee_Fk exactly k FADD*), CLOCK-WRAP
+10/10, PAD-VERDICT 10/10 (16 IMAD* per body, 0 inside the timed
+region), OVERHEAD-IDENTICAL 10/10. Hardware: xavier sm_72 at
+2026-10-26T18:01:40Z (10 arms x 3 launches x 128 threads x 256 timed
+instances; a PROBE, not a registered timing session -- inadmissible
+under the entry criterion BY KIND, enters nothing; SAME UTC DAY as
+every earlier probe, "cross-day run 3+" does not move).
+
+**The adjudication (mufu_lenlin_analysis.py, output verbatim, two runs
+byte-identical).** P1/P2 FAIL: the series is NON-AFFINE at the named
+1.0 cyc tolerance -- M second differences +9.4453/-7.7852/+0.0430, F
++6.4219/+0.3203/-0.9961; launch-matched NON-AFFINE on all three
+launches for both word types. The F non-affinity is dominated by a
+within-run STABLE non-monotonicity V(F1)=12.5039 > V(F2)=10.2266 (one
+FADD measures SLOWER than two; launch spreads 0.1016/0.0078). P3/P4
+FAIL on the means of first differences (s_M 16.5029 vs landed e_MM
+14.9966; s_F 2.4502 vs landed e_FF 4.0000) -- with the series
+non-affine "the slope" is not a price; the k=4,5 M increments
+(14.9609/15.0039) sit at the landed e_MM while k=2,3 (13.3008/22.7461)
+do not. P5 PARTIAL FAIL (cross-instrument consistency, not a model
+prediction): only V(M1) reproduces v7 (+0.0546); V(F1), D_M(2),
+D_F(2) miss v7's own points by 2.25-2.33 cyc, and V(M2) = 23.5156 vs
+v7's V(MM) 21.1953 (+2.3203) while V(F2) reproduces V(FF) (+0.0782) --
+the two instruments' V values are not the same quantities even before
+a model is applied. P6: the e_MF/e_FM split STAYS UNMEASURED; nothing
+this run admits the estimators.
+
+**What is excluded, and what is not.** Excluded (this run): that the
+measured V is edge-additive in form at the pure-word level, and with it
+every first/last-op-only end-artifact reading (they cannot bend a
+length series). Not excluded: the twenty-ninth's rank/nullspace
+identifiability theorem (UNTOUCHED -- it says what a correctly realized
+entry-excluded discipline would identify; what v6/v7/v8 show is that
+this realization does not return the model's V values at all), nor any
+particular mechanism for the length dependence (register allocation,
+ptxas scheduling shifts at some length, counter interleaving) -- the
+effect is NAMED, NOT ATTRIBUTED. The named question ("is the closure
+failure an end artifact of the timing boundary?") is ANSWERED: no.
+
+**Consequence.** Nothing moves (rule 4): no record, no :measured?
+flag, no selection answer, no workgroup row. The named item moves in
+design state only: "pad-fold reading REFUTED as the cause;
+premise-vs-further-deviation UNRESOLVED; split UNMEASURED" becomes
+"the premise is REFUTED as edge-additive in-form at the pure-word
+level (non-affine length series; end-artifact class refuted);
+length-dependent realization effect NAMED, NOT ATTRIBUTED; split
+UNMEASURED". The observable cross quantity stands at the measured
+cycle sum e_MF + e_FM = 21.0000 (cross surplus +2.0034), unchanged.
+
+**States.** MEASURED (standing, unchanged, earlier ticks): e_MM
+14.9966, e_FF 4.0000, e_MF+e_FM 21.0000, cross surplus +2.0034.
+MEASURED (new, PROBE-grade, enters no record): the v8 V table, its
+second differences and its cross-instrument deltas (evidence
+cuda-mufu-lenlin-20261026). REFUTED (this run): that the measured V is
+edge-additive in form at the pure-word level; that a first/last-op-only
+end artifact explains the v6/v7 closure failure; that v7's length-1/2
+points reproduce across instruments. IMPLEMENTED: nothing in src/ or
+test/. DECIDED: nothing new. ACCEPTED DESIGN ONLY (unchanged): the
+operator-aware contract + pre-registration, the row (ii) routes, the
+entry contract + wiring, ADR-0358, ADR-0373. UNMEASURED, named (list
+carried forward): the e_MF / e_FM split (P6), bare MUFU.RCP
+dependent-chain latency, the floor's internal composition (per-form
+intercepts 0.5234/7.4844/5.4805 and the v6 ~10.14 / v7 ~10.17 cyc
+floors, all unattributed), the pure 2-input IADD3 and IMAD.IADD
+separations, the 21 surplus ops' costs, the residual W-shape's dynamic
+carrier, noise exceedance, sum TRUE side W=256, cross-day run 3+
+(still 2026-10-26 UTC), non-xavier verdicts, :sum W=64 elsewhere, live
+CUDA selection path, workgroup rows (:arm/:unknown provisional
+:measured? false). NAMED NOT HIDDEN (noise): the v8 launch-to-launch
+spreads reach 2.8750 cyc on 4 of 10 arms -- above the pre-registered
+1.0 cyc tolerance there; the non-affinity verdicts are robust to
+launch choice (NON-AFFINE on every launch) but individual first
+differences carry that much uncertainty.
+
+Gates (honest): the scoped GPU gate GREEN on run 1 AND run 2 (123
+tests / 12162 assertions / 0 failures / 0 errors, glslang 16.6.0
+real-spawn, regression pin -- verbatim logs gate-run1.txt /
+gate-run2.txt in the evidence dir); `find docs -name '*.sh'` -> 0.
+FULL run-tests.cljk RUN LIVE THIS TICK: RED AT BASE 'Could not find
+namespace: kotoba.form' at namespace load (ADR-0362), outside this
+diff -- verified live, NO green full suite claimed.
