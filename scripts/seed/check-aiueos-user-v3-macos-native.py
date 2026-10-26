@@ -15,7 +15,7 @@ import struct
 HERE = Path(__file__).resolve().parent
 SOURCE = HERE.parents[1] / "seed/tests/aiueos-user-v3-local-model.kotoba"
 TRAMPOLINE = bytes.fromhex("b8050000004883ec080f054883c408c3")
-ELF_SHA256 = "331a3ed64c5859bc546a36ce9666e1a1e17e31195caca96407def6f63f5cc7b1"
+ELF_SHA256 = "108174e896008ac4b523450acd57d16b2b37ba3eb31f6b21d3ad3874344ca4ec"
 
 
 def load_mac():
@@ -31,7 +31,7 @@ def verify(data):
         raise ValueError("wrong user-v3 ELF size or header")
     if struct.unpack_from("<Q", data, 24)[0] != 0x220000:
         raise ValueError("wrong user-v3 entry")
-    if struct.unpack_from("<Q", data, 64 + 32)[0] != 462:
+    if struct.unpack_from("<Q", data, 64 + 32)[0] != 478:
         raise ValueError("wrong user-v3 executable extent")
     if struct.unpack_from("<Q", data, 120 + 40)[0] != 320:
         raise ValueError("wrong user-v3 writable extent")

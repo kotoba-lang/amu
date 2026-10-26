@@ -576,8 +576,10 @@
 (defn- xu-local-model-call [M :vector-i64 t :i64] :vector-i64
   ;; The only writable envelope is context+128..231, disjoint from the
   ;; private context and the Goal input at context+256. RDI names it for the
-  ;; image-owned syscall5 entry. The call returns zero without an OS request
-  ;; unless the input is the exact 64-byte region and ends in a-z.
+  ;; image-owned syscall5 entry. The version-2 envelope carries the complete
+  ;; 1..51-byte Goal at offset 12, with zero padding through byte 103. The call
+  ;; returns zero without an OS request unless the input is the exact 64-byte
+  ;; region and ends in a-z.
   (let [fail (vector-at M MM-LABEL-N) done (inc fail)]
     (-> M (iv-reserve 2)
         (xg-load t 0x958b48) (xg-load (inc t) 0x8d8b48)
@@ -585,14 +587,15 @@
         (iv-hex "48b8") (xg-bytes 0x221100 8) (iv-hex "4839c2") (xg-rel 0x850f 2 2 fail)
         (iv-hex "8b0283f801") (xg-rel 0x820f 2 2 fail)
         (iv-hex "83f833") (xg-rel 0x870f 2 2 fail)
+        (iv-hex "4189c2")
         (iv-hex "8d40030fb60402")
         (iv-hex "83f861") (xg-rel 0x820f 2 2 fail)
         (iv-hex "83f87a") (xg-rel 0x870f 2 2 fail)
-        (iv-hex "4189c2")
         (iv-hex "498db98000000031c0b90d000000f348ab")
         (iv-hex "41c78180000000") (xg-bytes 1364350539 4)
-        (iv-hex "41c78184000000") (xg-bytes 1537 4)
+        (iv-hex "41c78184000000") (xg-bytes 1538 4)
         (iv-hex "45899188000000")
+        (iv-hex "488d7204498db98c0000004489d1f3a4")
         (iv-hex "498db980000000b830002200ffd04c8b4df8")
         (xg-rel 0xe9 1 2 done)
         (xg-label fail) (iv-hex "31c0")
