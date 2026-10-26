@@ -5,7 +5,7 @@
 ;; Canonical encoding remains 04; alpha/SCC rules mirror osaho's authority.
 ;; A header: error,counter,scope-size,function-count,current-function,phase,
 ;; hash-capacity. Function records contain source map/name, resolved CID slot,
-;; group index+1, dependency bit, component, Tarjan index/low/on-stack/parent.
+;; group index+1, dependency bit and shared sparse-graph traversal metadata.
 (def dcp-fwidth 16)
 (defn- dcp-f [A :vector-i64 f :i64 k :i64] :i64
   (vector-at A (+ 16 (* f dcp-fwidth) k)))
@@ -15,9 +15,9 @@
   (let [z (vector-assoc! A 0 (if (= (vector-at A 0) 0) code (vector-at A 0)))] ""))
 (defn- dcp-bad [A :vector-i64] :string (dcp-fail A 1))
 (defn- dcp-graph [A :vector-i64] :i64 (+ 16 (* (vector-at A 3) dcp-fwidth)))
-(defn- dcp-hash [A :vector-i64] :i64 (+ (dcp-graph A) (* (vector-at A 3) (vector-at A 3))))
+(defn- dcp-hash [A :vector-i64] :i64 (+ (dcp-graph A) (* 3 (vector-at A 11))))
 (defn- dcp-env [A :vector-i64] :i64 (+ (dcp-hash A) (vector-at A 6)))
-(defn- dcp-stack [A :vector-i64] :i64 (+ (dcp-env A) (* 2 dc-nodes)))
+(defn- dcp-stack [A :vector-i64] :i64 (vector-at A 12))
 (defn- dcp-text [M :vector-i64 S :string n :i64] :string
   (let [t (kr-nf M n NF-TOK)]
     (string-substring S (kr-tf M t TF-START) (kr-tf M t TF-END))))
@@ -101,7 +101,8 @@
       (= name "false") "8264626f6f6cf4"
       :else (let [f (dcp-lookup M S A n)]
         (if (< f 0) (if (dcp-pure-op? name) (dcp-sym name) (dcp-bad A))
-          (let [edge (vector-assoc! A (+ (dcp-graph A) (* (vector-at A 4) (vector-at A 3)) f) 1)]
+          (let [edge (if (= (vector-at A 5) 0) (dgg-add A (vector-at A 4) f)
+                       (if (dgg-has? A (vector-at A 4) f) A (dgg-bad A)))]
             (cond (= (vector-at A 5) 0) (dcp-sym name)
               (> (dcp-f A f 3) 0)
                 (dcp-vec (typed-list-new [:list :string] (dc-kw "kotoba.definition/group")

@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-EXTRA = ["seed/04-definition-cid.kotoba", "seed/05-checked-definition.kotoba",
+EXTRA = ["seed/04-definition-cid.kotoba", "seed/05-definition-graph.kotoba", "seed/05-checked-definition.kotoba",
          "seed/06-definition-groups.kotoba", "seed/tests/native-checked-definition-equivalence.kotoba"]
 AUTH = ROOT / "seed/tests/checked-definition-authority"
 ENTRY = r'''
