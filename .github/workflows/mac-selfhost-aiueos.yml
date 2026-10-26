@@ -6,6 +6,7 @@ on:
       - '.github/workflows/mac-selfhost-aiueos.yml'
       - 'scripts/seed/check-aiueos-user-elf-native.py'
       - 'scripts/seed/check-aiueos-user-macos-native.py'
+      - 'scripts/seed/check-aiueos-user-v3-macos-native.py'
       - 'scripts/seed/check-macos-cross-linux-candidates.py'
       - 'scripts/seed/check-macos-cross-linux-native.py'
       - 'scripts/seed/collect-macos-crash-summary.py'
@@ -38,6 +39,12 @@ jobs:
             --output "$RUNNER_TEMP/mac-root-admission.json" -- \
             python3 scripts/seed/check-aiueos-user-macos-native.py \
               --output "$RUNNER_TEMP/mac-root"
+      - name: Check bounded user-v3 local-model target
+        run: |
+          python3 scripts/seed/check-aiueos-user-v3-macos-native.py \
+            --compiler-image "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --compiler-sha256 9aa4cab1c7b365da2fc5709462bd2808612fb4bd289caa278a07e6c384e894fa \
+            --output "$RUNNER_TEMP/mac-user-v3"
       - name: Cross-build Linux compiler candidates from Mac fixed point
         run: |
           python3 scripts/seed/check-macos-cross-linux-candidates.py \
@@ -58,6 +65,13 @@ jobs:
             ${{ runner.temp }}/mac-root-admission.json
             ${{ runner.temp }}/mac-root/mac-aiueos-user-target.json
             ${{ runner.temp }}/mac-root-crash-summary.json
+          if-no-files-found: warn
+      - name: Upload user-v3 Mac receipt
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: mac-aiueos-user-v3
+          path: ${{ runner.temp }}/mac-user-v3/mac-aiueos-user-v3-local-call.json
           if-no-files-found: warn
       - name: Upload Mac-produced Linux candidates
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
