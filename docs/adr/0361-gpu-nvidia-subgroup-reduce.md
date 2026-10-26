@@ -1953,3 +1953,69 @@ this slice (run-time budget closed before the gate step; NO .cljk touched
 FULL `run-tests.cljk` not run (red at base `Could not find namespace:
 kotoba.form`, ADR-0362) -- NO green suite claimed. Record:
 `docs/evidence/gpu/cuda-op-microbench-20261026/`.
+
+## Amendment (2026-10-26, the count-model per-op mix: the issue delta is
+refuted as the residual's dominant carrier, the W-shape is not a per-op
+cost effect)
+
+The eighteenth amendment's named unmeasured item "the residual's
+quantitative attribution (count-model per-op mix, its own row)" lands as
+ONE analysis slice over four committed inputs (the SASS census histograms,
+the committed count model's region counts, the committed medians, the
+microbench's named-pair delta). NO HARDWARE RAN; nothing new is measured;
+everything produced is DERIVED arithmetic (scratch
+`residual_opmix_20261026.py`, output committed verbatim).
+
+**Finding.**
+(1) THE HOT-LOOP MIX DOES NOT GIVE THE IMPLIED SHARES: the dynamic
+    substituted-slot count is 6 per thread at every W (fold loop 1
+    FADD->FMNMX x 5 iters + inner loop 1 x 1), so the actual share is
+    6/145, 6/156, 6/167 = 0.0414/0.0385/0.0359 at W=128/256/512 versus
+    the implied 0.2523/0.1943/0.0585 (max) / 0.2181/0.1931/0.0998 (min)
+    -- the needed share is 6.1x/5.0x/1.6x the actual and the shapes
+    disagree (actual -13% across W, implied -77%). At the measured-cost
+    anchor the substitution predicts +0.28/+0.26/+0.24 pp of the measured
+    +1.71/+1.32/+0.40 pp residual (max): the FMNMX issue-side delta is
+    REFUTED as the dominant carrier (~16% at W=128).
+(2) NO ADDITIVE FIXED-COST MODEL FITS THE W-SHAPE: the per-op mix terms
+    are W-flat per thread while each +1 outer step adds the same 11
+    shared ops to both kernels, so u(W) = K/(rho(W)-1) must advance
+    equally per step; the measured cells advance 1.4x-2.3x unequally
+    (six cells; one near-feasible cell max/shape-2 at 1.074, misfits
+    +0.08..+0.20pp -- named) and fit-two-predict-third misfits reach
+    +2.2pp of ratio. The residual's W-shape is not a per-op cost effect
+    of any fixed cost vector; it is a dynamic runtime effect, the same
+    class as the baseline W=512 rising step.
+(3) The differing code's per-op mix is named at opcode granularity (the
+    substitution pair FADD -2 / FMNMX +2 plus the 21-op once-per-thread
+    surplus: MUFU.RCP +2, I2F +2, F2I +2, IADD3 +3, IMAD.MOV.U32 +3,
+    IMAD.HI.U32 +3, IMAD +1, IMAD.U32 +2, ISETP.GE.U32.AND +2, BRA +1,
+    BMOV.32.CLEAR +1, BSSY +1, BSYNC +1; sum-only PLOP3.LUT -2, SEL -1).
+
+**Consequence today: NOTHING MOVES** (rule 4). The named item moves
+PARTIALLY: the mix half is ANSWERED (the hot-loop mix does not give the
+implied shares), the W-shape's carrier is REFUTED as a per-op cost effect
+and stays UNMEASURED as a dynamic effect (its own row, with the baseline
+step's dynamic cause).
+
+**States.** DERIVED (marked): everything this row produced. MEASURED
+(consumed at their own commits): the histograms, the medians, the
+named-pair delta. IMPLEMENTED: nothing (evidence + this amendment only).
+DECIDED: nothing new. ACCEPTED DESIGN ONLY (unchanged): the
+operator-aware contract + pre-registration, the row (ii) routes, the
+entry contract + wiring, ADR-0358, ADR-0373. UNMEASURED, named: what
+dynamic effect carries the residual's W-shape (per-phase
+instrumentation, its own row); the 21 surplus ops' true per-op costs;
+the inner-loop thread set (inherited assumption); every per-op cost
+except the four valid microbench arms; raw MUFU.RCP cost; per-op integer
+latency on this toolchain; a non-eliminated overhead baseline; the sum
+ratio's TRUE side at W=256; a cross-day run 3+ (still 2026-10-26 UTC);
+every per-op verdict on non-xavier hardware; the `:sum` ordering at W=64
+on any other device or channel; the landed rows on a live CUDA selection
+path; every workgroup row (`:arm`/`:unknown` stay provisional
+`:measured? false`). Gates: scoped GPU gate GREEN twice (123/12162,
+regression pin, no .cljk touched); `gpu_regime_classify.py --self-test`
+2649/0 (regression pin); FULL `run-tests.cljk` not run (red at base
+`Could not find namespace: kotoba.form`, ADR-0362) -- NO green suite
+claimed. Record:
+`docs/evidence/gpu/cuda-residual-opmix-20261026.txt`.
