@@ -294,6 +294,24 @@ refusals and actually built/executed mutants on both ISAs. This is not a
 persistent object store, a build-cache hit, a native admission verdict or
 qualification of the full Seed frontend. See docs/native-incremental-build.md.
 
+## Native definition-object build prototype
+
+`seed/07-definition-objects.kotoba`, `08-definition-object-emitter.kotoba`
+and `09-definition-build.kotoba` remain outside FULL-MANIFEST. This bounded
+pure scalar KIR route captures the original xg emitter's unlinked bytes and
+symbolic fixups and reuses an entire SCC only after complete fresh identity
+and target admission. Preserve reference ELF byte equality, equal-CID binding
+occurrences, all nine build-context seals, private immutable durable storage,
+fresh label/definition resolution and final range/fuel checks. Do not widen
+literal/type/profile bounds from synthetic format checks. Keep the separate
+native object gate and actually built/executed mutants on both ISAs.
+
+The test observer supplies the compiler-image context. This is not a trusted
+production image-binding host, whole Seed cache or CI speed qualification.
+Same-principal compiler/storage administration is trusted; a checksum-valid
+private object is not an untrusted remote code-admission proof. Keep the
+existing uncached full derivation and all qualification gates intact.
+
 ## Native CI derivation and independent ISA qualification
 
 Fresh ARM bootstrap/one-compiler transport precedes separate ARM and x86

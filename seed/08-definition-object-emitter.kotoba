@@ -1,0 +1,172 @@
+;; Bridge checked KIR identities to the existing xg emitter's unlinked bytes.
+;; Fresh frontend and target admission precede every use. The emitter remains
+;; seed/70; these helpers only capture symbolic definitions/local labels/literals.
+(defn- dcn-front [source :string] :vector-i64
+  (let [S (string-concat source (kr-prelude))
+        parsed (rd-run (kr-lex (mem-set (mem-new) MM-SRC-LEN (string-length S)) S) S)
+        translated (kr-run parsed S) named (nm-run translated S) checked (ck-run named S)]
+    (if (= (vector-at checked MM-ERR) 0) (lw-run checked) checked)))
+(defn- dcn-name [M :vector-i64 S :string f :i64] :string
+  (let [sym (xg-f M f FF-SYM)]
+    (string-substring S (nm-sf M sym SF-START) (nm-sf M sym SF-END))))
+(defn- dcn-find [K :vector-i64 S :string A :vector-i64 name :string] :i64
+  (loop [f 0]
+    (cond (= f (vector-at A 3)) -1
+          (= (dcp-text K S (dcp-f A f 1)) name) f
+          :else (recur (inc f)))))
+(defn- dcn-cid [M :vector-i64 K :vector-i64 S :string A :vector-i64 R [:list :string] f :i64] :string
+  (let [index (dcn-find K S A (dcn-name M S f))]
+    (if (< index 0) ""
+      (let [slot (dcp-f A index 2)]
+        (if (<= slot 0) "" (typed-list-nth [:list :string] R (dec slot)))))))
+;; Equal DefCIDs may have several source bindings. Preserve the selected
+;; occurrence for byte-identical linking; unrelated declaration moves do not
+;; change this ordinal. The build layout seal must include these symbols.
+(defn- dcn-binding [A :vector-i64 R [:list :string] f :i64] :string
+  (let [slot (dcp-f A f 2)]
+    (if (<= slot 0) ""
+      (let [cid (typed-list-nth [:list :string] R (dec slot))
+            ordinal (loop [i 0 count 0]
+                      (if (= i f) count
+                        (let [s (dcp-f A i 2)]
+                          (recur (inc i) (+ count (if (and (> s 0)
+                            (= (typed-list-nth [:list :string] R (dec s)) cid)) 1 0))))))]
+        (string-concat cid (string-concat "#" (mem-u2dec ordinal)))))))
+(defn- dcn-end [M :vector-i64 f :i64 field :i64 limit :i64] :i64
+  (loop [next (inc f)]
+    (if (= next (vector-at M MM-FN-N)) limit
+      (let [at (xg-f M next field)]
+        (if (> at 0) (if (= field FF-CODE) (dec at) at) (recur (inc next)))))))
+(defn- dcn-code [M :vector-i64 start :i64 end :i64] :string
+  (cond (>= start end) ""
+        (= (inc start) end) (dc-byte-hex (xg-code-byte M start))
+        :else (let [mid (quot (+ start end) 2)]
+                (string-concat (dcn-code M start mid) (dcn-code M mid end)))))
+(defn- dcn-literal [M :vector-i64 target :i64] :string
+  (if (or (<= target 0) (>= target (vector-at M MM-LIT-N))) ""
+    (let [at (+ MM-LIT-BASE (* target MM-LIT-W)) first (vector-at M (+ at LF-B))
+          count (vector-at M (+ at LF-LEN))]
+      (loop [i 0 out ""]
+        (if (= i count) out
+          (recur (inc i) (string-concat out (dc-byte-hex (vector-at M (+ MM-LITB-BASE first i))))))))))
+(defn- dcn-labels [M :vector-i64 f :i64 L :vector-i64] :string
+  (let [first (xg-f M f FF-SIR) end (dcn-end M f FF-SIR (vector-at M MM-SIR-N))
+        base (dec (xg-f M f FF-CODE))]
+    (loop [label 1 out (typed-list-new [:list :string])]
+      (if (= label (vector-at M MM-LABEL-N)) (dcp-vec out)
+        (let [value (vector-at M (+ MM-LABEL-BASE label)) sir (u64-shift-right value 32)]
+          (if (or (< sir first) (>= sir end)) (recur (inc label) out)
+            (let [offset (- (dec (bit-and value 4294967295)) base)]
+              (if (< offset 0) ""
+                (let [slot (vector-assoc! L label (inc (vector-count out)))]
+                  (recur (inc label) (typed-list-conj [:list :string] out (dc-int (mem-u2dec offset)))))))))))))
+(defn- dcn-relocations [M :vector-i64 K :vector-i64 S :string A :vector-i64 R [:list :string]
+                        f :i64 L :vector-i64] :string
+  (let [base (dec (xg-f M f FF-CODE)) end (dcn-end M f FF-CODE (xg-pos M))]
+    (loop [i 1 out (typed-list-new [:list :string])]
+      (if (= i (vector-at M MM-FIX-N)) (dcp-vec out)
+        (let [at (+ MM-FIX-BASE (* i MM-FIX-W)) offset (vector-at M at)
+              kind (vector-at M (+ at 1)) target (vector-at M (+ at 2))]
+          (if (or (< offset base) (>= offset end)) (recur (inc i) out)
+            (let [symbol (cond (= kind 1)
+                                (let [index (dcn-find K S A (dcn-name M S target))]
+                                  (if (< index 0) "" (dc-str (dcn-binding A R index))))
+                               (or (= kind 2) (= kind 6))
+                                 (if (or (<= target 0) (>= target (vector-count L))
+                                         (<= (vector-at L target) 0)) ""
+                                   (dc-int (mem-u2dec (dec (vector-at L target)))))
+                               (= kind 3) (dc-str "context")
+                               (or (= kind 4) (= kind 5))
+                                 (if (or (<= target 0) (>= target (vector-at M MM-LIT-N))) ""
+                                   (dc-str (dcn-literal M target)))
+                               :else "")]
+              (if (= symbol "") ""
+                (recur (inc i) (typed-list-conj [:list :string] out
+                  (dcp-vec (typed-list-new [:list :string] (dc-int (mem-u2dec (- offset base)))
+                    (dc-int (mem-u2dec kind)) symbol))))))))))))
+(defn- dcn-capture [M :vector-i64 K :vector-i64 S :string A :vector-i64 R [:list :string] f :i64] :string
+  (let [start (dec (xg-f M f FF-CODE)) end (dcn-end M f FF-CODE (xg-pos M))
+        cid (dcn-cid M K S A R f) L (vector-alloc (vector-at M MM-LABEL-N))
+        labels (dcn-labels M f L) relocations (dcn-relocations M K S A R f L)]
+    (if (or (< start 0) (<= end start) (= cid "") (= labels "") (= relocations "")) ""
+      (dcp-vec (typed-list-new [:list :string] (dc-str cid)
+        (dc-atom "bytes" (dcn-code M start end)) labels relocations)))))
+(defn- dcn-label-ids [M :vector-i64 f :i64] :vector-i64
+  (let [first (xg-f M f FF-SIR) end (dcn-end M f FF-SIR (vector-at M MM-SIR-N))
+        count (loop [i 1 n 0]
+                (if (= i (vector-at M MM-LABEL-N)) n
+                  (let [sir (u64-shift-right (vector-at M (+ MM-LABEL-BASE i)) 32)]
+                    (recur (inc i) (+ n (if (and (>= sir first) (< sir end)) 1 0))))))]
+    (loop [i 1 at 0 out (vector-alloc count)]
+      (if (= i (vector-at M MM-LABEL-N)) out
+        (let [sir (u64-shift-right (vector-at M (+ MM-LABEL-BASE i)) 32)]
+          (if (and (>= sir first) (< sir end))
+            (recur (inc i) (inc at) (vector-assoc! out at i))
+            (recur (inc i) at out)))))))
+(defn- dcn-member-node [D :vector-i64 V :vector-i64 cid :string] :i64
+  (let [members (dc-child D (dco-values D 1) 1)]
+    (loop [p (dc-at D (dco-values D members) 3)]
+      (cond (= p 0) 0
+            (= (dco-text D V (dc-child D (dco-values D p) 0)) cid) p
+            :else (recur (dc-at D p 4))))))
+(defn- dcn-target [M :vector-i64 K :vector-i64 S :string A :vector-i64 R [:list :string] binding :string] :i64
+  (let [index (loop [f 0]
+                (cond (= f (vector-at A 3)) -1
+                      (= (dcn-binding A R f) binding) f
+                      :else (recur (inc f))))]
+    (if (< index 0) -1
+      (let [name (dcp-text K S (dcp-f A index 1))]
+        (loop [f 1]
+          (cond (= f (vector-at M MM-FN-N)) -1
+                (= (dcn-name M S f) name) f
+                :else (recur (inc f))))))))
+(defn- dcn-literal-target [M :vector-i64 value :string] :i64
+  (loop [i 1]
+    (cond (= i (vector-at M MM-LIT-N)) -1
+          (= (dcn-literal M i) value) i
+          :else (recur (inc i)))))
+(defn- dcn-install-labels [M :vector-i64 D :vector-i64 V :vector-i64 member :i64 ids :vector-i64 base :i64] :vector-i64
+  (let [labels (dc-child D (dco-values D member) 2)]
+    (if (not= (dc-at D (dco-values D labels) 2) (vector-count ids)) (xg-err M 7103 member)
+      (loop [p (dc-at D (dco-values D labels) 3) i 0 state M]
+        (if (or (= p 0) (not= (vector-at state MM-ERR) 0)) state
+          (let [label (vector-at ids i) at (+ MM-LABEL-BASE label) old (vector-at state at)
+                offset (dco-number D V p MM-OUT-CAP)]
+            (if (or (< offset 0) (not= (bit-and old 4294967295) 0)) (xg-err state 7103 label)
+              (recur (dc-at D p 4) (inc i)
+                (mem-set state at (bit-or old (+ base offset 1)))))))))))
+(defn- dcn-install-relocations [M :vector-i64 K :vector-i64 S :string A :vector-i64 R [:list :string]
+                               D :vector-i64 V :vector-i64 member :i64 ids :vector-i64 base :i64] :vector-i64
+  (let [relocs (dc-child D (dco-values D member) 3)]
+    (loop [p (dc-at D (dco-values D relocs) 3) state M]
+      (if (or (= p 0) (not= (vector-at state MM-ERR) 0)) state
+        (let [items (dco-values D p) kind (dco-number D V (dc-child D items 1) 6)
+              offset (dco-number D V (dc-child D items 0) MM-OUT-CAP)
+              symbol (dc-child D items 2) text (dco-text D V symbol)
+              local (if (and (or (= kind 2) (= kind 6)) (> (vector-count ids) 0))
+                      (dco-number D V symbol (dec (vector-count ids))) -1)
+              target (cond (= kind 1) (dcn-target state K S A R text)
+                           (or (= kind 2) (= kind 6)) (if (< local 0) -1 (vector-at ids local))
+                           (= kind 3) (if (= text "context") 0 -1)
+                           (or (= kind 4) (= kind 5)) (dcn-literal-target state text)
+                           :else -1)
+              slot (vector-at state MM-FIX-N) at (+ MM-FIX-BASE (* slot MM-FIX-W))]
+          (if (or (< offset 0) (< target 0) (>= slot MM-FIX-CAP)) (xg-err state 7103 slot)
+            (recur (dc-at D p 4) (-> state (mem-set at (+ base offset))
+              (mem-set (+ at 1) kind) (mem-set (+ at 2) target) (mem-set MM-FIX-N (inc slot))))))))))
+;; A validated member is placed at its new code base; all targets are freshly
+;; resolved against the current checked graph. xg-fix still checks every final
+;; displacement after every member has been placed. The start/ELF/data and
+;; admission verdict are freshly generated, never stored with an object.
+(defn- dcn-install [M :vector-i64 K :vector-i64 S :string A :vector-i64 R [:list :string]
+                    D :vector-i64 V :vector-i64 member :i64 f :i64] :vector-i64
+  (let [bytes (dc-unhex (dc-text D V (dc-child D (dc-child D (dco-values D member) 1) 1)))
+        base (xg-pos M) ids (dcn-label-ids M f)]
+    (if (or (= (vector-count bytes) 0) (> (+ (vector-at M MM-CODE-N) (vector-count bytes)) (* 8 MM-CODE-CAP)))
+      (xg-err M 7104 base)
+      (let [start (-> M (xg-set 0 f) (mem-set (+ MM-FN-BASE (* f MM-FN-W) FF-CODE) (inc base)))
+            labels (dcn-install-labels start D V member ids base)
+            copied (loop [i 0 state labels]
+                     (if (or (= i (vector-count bytes)) (not= (vector-at state MM-ERR) 0)) state
+                       (recur (inc i) (xg-byte state (vector-at bytes i)))))]
+        (dcn-install-relocations copied K S A R D V member ids base)))))
