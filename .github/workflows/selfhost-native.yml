@@ -152,6 +152,8 @@ jobs:
         run: |
           python3 scripts/seed/check-native-identities.py
           python3 scripts/seed/check-native-arm-transport.py --bootstrap "$RUNNER_TEMP/boot" --one "$RUNNER_TEMP/one" --output "$RUNNER_TEMP/arm-transport.json"
+      - name: Capability-free AIUEOS user ELF ABI and refusals (arm64, native)
+        run: python3 scripts/seed/check-aiueos-user-elf-native.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/aiueos-user-elf-arm"
       - name: Static runtime stdin, wire 41 (arm64, native)
         run: python3 scripts/seed/check-io-read.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/io-read"
       - name: Static runtime durable files and sleep, wires 35 and 7 (arm64, native)
@@ -255,6 +257,8 @@ jobs:
         with:
           name: bootstrap-arm64
           path: ${{ runner.temp }}/boot
+      - name: Capability-free AIUEOS user ELF ABI and refusals (x86_64, native)
+        run: python3 scripts/seed/check-aiueos-user-elf-native.py --compiler "$PWD/bin/amu" --output "$RUNNER_TEMP/aiueos-user-elf-x86"
       - name: Native x86_64 qualification (no loader, no emulation)
         env:
           TIER: ${{ github.event_name == 'pull_request' && 'pr' || github.event_name == 'push' && 'main' || 'full' }}
