@@ -1688,3 +1688,103 @@ red at base `Could not find namespace: kotoba.form` (ADR-0362),
 outside this diff, NO green suite claimed; `find docs -name '*.sh'` ->
 0 files. Record:
 `docs/evidence/gpu/cuda-quartet-widepairs-20261026/`.
+
+## Amendment (2026-10-26, the kernel-level cause: the occupancy branch
+is MEASURED and REFUTED, and the sum parity is a latency-side margin
+minimum of the subgroup arm)
+
+MEASURED (JUN-57 -- "WHY `op=sum` is at parity at W = 256
+specifically", the fifteenth amendment's named first unmeasured item,
+its "occupancy/latency balance ... not probed" branch; ONE measurement
+slice). HARDWARE RAN: one kernel-resource + occupancy probe on xavier
+sm_72 at 2026-10-26T07:39:56Z. NAMED, NOT HIDDEN: this is a
+RESOURCE/OCCUPANCY probe, not a timing session -- it produces no
+paired samples at all and is inadmissible under the entry criterion BY
+KIND; it shares sessions B and C's UTC day (2026-10-26) -- NOT a
+cross-day replication (ADR-0373's same-day rule by citation). It
+enters nothing.
+
+**What ran.** A scratch driver-API probe
+(`gpu-cuda-kernel-usage.cu`, sha256 997cda30.., scratch only, never
+staged): one fresh process per emitted kernel, printing the kernel's
+function attributes and `cuOccupancyMaxActiveBlocksPerMultiprocessor`
+at the EXACT launch configuration the paired-timing instrument uses
+for that arm (block = the emitted W; dynamic shared 0 for
+`:subgroup-reduce` -- its `partials[W]` array is static -- W*4 for
+`:baseline`, W/8 for `:warp-shuffle-reduce`). All 54 EMITTED CUDA
+kernels (3 arms x 6 widths x 3 ops) compiled at `-arch=sm_72 -cubin
+-Xptxas -v`; the ptxas resource lines captured per kernel. Remote
+tree created fresh, transferred `COPYFILE_DISABLE=1` (55 files, 0
+AppleDouble sidecars); the 54 emitted .cu are byte-identical to the
+wide-pairs probe's stage and 54/54 sha256-matched by basename against
+the three COMMITTED corpora before transfer; the remote received-file
+block matched the local stage 55/55 after.
+
+**Verified (real runs).** 54/54 OK-cubin / 0 FAIL, 54/54 OK-usage /
+54/54 `usage-rc=0`, 0 REFUSED/FATAL/UNKNOWN, driver exit 0, driver
+stderr 0 bytes; probe compile diag 0 bytes (the kernel diags are
+non-empty BY DESIGN -- 266 bytes of ptxas info each).
+
+**Finding: the occupancy branch is REFUTED at the measured
+granularity; the parity is a latency-side MARGIN MINIMUM of the
+subgroup arm.**
+(1) Occupancy is IDENTICAL where the ratio moves: every kernel at
+    W in {64,128,256,512,1024} is at 100% warp occupancy in both arms
+    and all three ops (at W=256: 8 blocks/SM x 8 warps = 64 of 64);
+    W=32 is 50% for every arm and op alike. Registers flat across
+    widths (subgroup 16 sum / 15 max,min; baseline 10; warp-shuffle
+    14 at EVERY width), 0 bytes stack frame / 0 spill stores / 0 spill
+    loads for all 54 kernels. The only sum-specific resource anywhere
+    is the subgroup sum kernel's ONE extra register, carried at every
+    width including the neighbours where the ratio is solidly below
+    1.0. Nothing is W=256-specific.
+(2) The parity is latency-side (DERIVED: a parse of the COMMITTED
+    wide-pairs measure-log, 200 samples per arm per cell, smoke
+    orphans excluded): at W=256 subgroup sum is STILL FASTER than
+    baseline sum in absolute median gpu_ns (120128 vs 120752 at
+    n=1000003; 125360 vs 126048 at n=1048576; ratios 0.9948/0.9945)
+    but the margin is ~0.5% vs 3.4-3.6% at W=128 and 6.7-7.3% at
+    W=512 -- a sub-1% edge sits inside the 20-pair noise (the
+    fifteenth amendment's weighted coin) while the neighbours' 3-7%
+    edges cannot flip.
+(3) The margin minimum's shape is the two arms' per-block cost curves
+    (DERIVED): baseline sum steps 14.85 -> 30.85 -> 71.45 ns/block
+    (x2.08, x2.32 over W = 128 -> 256 -> 512) while subgroup sum steps
+    14.3 -> 30.65 -> 66.35 (x2.14, x2.16) -- baseline's serial shared
+    tree degrades disproportionately at W=512 and sits at its best
+    relative point at W=256, where the subgroup arm's cross-subgroup
+    fold buys it almost nothing.
+(4) The operator straddle lives in the SUBGROUP arm only: baseline's
+    absolute medians are op-flat (sum/max/min within ~0.4% at every
+    W) while subgroup's split sum vs max/min by ~12-13% at every W --
+    the quartet's max/min members are above 1.0 because the subgroup
+    arm's max/min variants pay over its own sum variant, not because
+    max/min is slow in absolute terms.
+
+**Consequence today: NOTHING MOVES** (rule 4). No record, no
+`:measured?` flag, no selection answer, no `:shapes` value and no
+workgroup row; the landed entries stand byte-for-byte. The named item
+moves PARTIALLY: its occupancy branch MEASURED and REFUTED; its
+latency branch's margin-minimum shape DERIVED from committed data.
+
+**States.** MEASURED: the kernel-usage probe (the only measured thing
+this row). DERIVED: the absolute per-arm medians and per-block cost
+decomposition (parse of the committed wide-pairs measure-log,
+marked). IMPLEMENTED: nothing (evidence + this amendment only).
+DECIDED: nothing new. ACCEPTED DESIGN ONLY (unchanged): the
+operator-aware contract + pre-registration, the row (ii) routes, the
+entry contract + wiring, ADR-0358, ADR-0373. UNMEASURED, named: the
+instruction-level why of the subgroup max/min penalty and the baseline
+W=512 per-block step (a SASS-level instruction census or per-phase
+instrumentation, its own row if wanted); the sum ratio's TRUE side at
+W=256; a cross-day run 3+ (needs a later UTC day); every per-op
+verdict on non-xavier hardware; the `:sum` ordering at W=64 on any
+other device or channel; the landed rows on a live CUDA selection
+path; every workgroup row (`:arm`/`:unknown` stay provisional
+`:measured? false`). Gates: scoped GPU gate GREEN twice
+(123/12162, regression pin, no .cljk touched);
+`gpu_regime_classify.py --self-test` 2649/0 (regression pin); FULL
+`run-tests.cljk` NOT RUN this slice -- documented red at base `Could
+not find namespace: kotoba.form` (ADR-0362), outside this diff, NO
+green suite claimed; `find docs -name '*.sh'` -> 0 files. Record:
+`docs/evidence/gpu/cuda-kernel-cause-20261026/`.

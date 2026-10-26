@@ -1,0 +1,1640 @@
+HOST: xavier USER: root
+DATE-UTC: 2026-10-26T07:39:56Z  DATE-LOCAL: 2026-10-26T16:39:56+0900
+Linux xavier 5.10.120-tegra #1 SMP PREEMPT Tue Aug 1 12:32:50 PDT 2023 aarch64 aarch64 aarch64 GNU/Linux
+=== nvcc --version (verbatim)
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2022 NVIDIA Corporation
+Built on Sun_Oct_23_22:16:07_PDT_2022
+Cuda compilation tools, release 11.4, V11.4.315
+Build cuda_11.4.r11.4/compiler.31964100_0
+=== sha256 of the received files (before any compile)
+997cda30c9bc4e8d3440606af73df97ce0c247a0a806fa14638f81e6322b83f2  ./gpu-cuda-kernel-usage.cu
+3b1ccbae3445da8b83d7a0bfeac92f4acf10ba8d100c46411d9ebddc26b68dfd  ./shaders/baseline-reduce-w1024-max.emitted.cu
+5d76a5730bd7c0ede60f8b10cc81f6f4887202d69f705a7ccd760a736e2ff0c4  ./shaders/baseline-reduce-w1024-min.emitted.cu
+eb5322568fdebf2728a39c967bf776c623aa924b93fbb56b5164379fb2cf8977  ./shaders/baseline-reduce-w1024-sum.emitted.cu
+3b1ccbae3445da8b83d7a0bfeac92f4acf10ba8d100c46411d9ebddc26b68dfd  ./shaders/baseline-reduce-w128-max.emitted.cu
+5d76a5730bd7c0ede60f8b10cc81f6f4887202d69f705a7ccd760a736e2ff0c4  ./shaders/baseline-reduce-w128-min.emitted.cu
+eb5322568fdebf2728a39c967bf776c623aa924b93fbb56b5164379fb2cf8977  ./shaders/baseline-reduce-w128-sum.emitted.cu
+3b1ccbae3445da8b83d7a0bfeac92f4acf10ba8d100c46411d9ebddc26b68dfd  ./shaders/baseline-reduce-w256-max.emitted.cu
+5d76a5730bd7c0ede60f8b10cc81f6f4887202d69f705a7ccd760a736e2ff0c4  ./shaders/baseline-reduce-w256-min.emitted.cu
+eb5322568fdebf2728a39c967bf776c623aa924b93fbb56b5164379fb2cf8977  ./shaders/baseline-reduce-w256-sum.emitted.cu
+3b1ccbae3445da8b83d7a0bfeac92f4acf10ba8d100c46411d9ebddc26b68dfd  ./shaders/baseline-reduce-w32-max.emitted.cu
+5d76a5730bd7c0ede60f8b10cc81f6f4887202d69f705a7ccd760a736e2ff0c4  ./shaders/baseline-reduce-w32-min.emitted.cu
+eb5322568fdebf2728a39c967bf776c623aa924b93fbb56b5164379fb2cf8977  ./shaders/baseline-reduce-w32-sum.emitted.cu
+3b1ccbae3445da8b83d7a0bfeac92f4acf10ba8d100c46411d9ebddc26b68dfd  ./shaders/baseline-reduce-w512-max.emitted.cu
+5d76a5730bd7c0ede60f8b10cc81f6f4887202d69f705a7ccd760a736e2ff0c4  ./shaders/baseline-reduce-w512-min.emitted.cu
+eb5322568fdebf2728a39c967bf776c623aa924b93fbb56b5164379fb2cf8977  ./shaders/baseline-reduce-w512-sum.emitted.cu
+3b1ccbae3445da8b83d7a0bfeac92f4acf10ba8d100c46411d9ebddc26b68dfd  ./shaders/baseline-reduce-w64-max.emitted.cu
+5d76a5730bd7c0ede60f8b10cc81f6f4887202d69f705a7ccd760a736e2ff0c4  ./shaders/baseline-reduce-w64-min.emitted.cu
+eb5322568fdebf2728a39c967bf776c623aa924b93fbb56b5164379fb2cf8977  ./shaders/baseline-reduce-w64-sum.emitted.cu
+4b8e0e9b2ecb6b921a9c7767bef4fbd499df78130777de6cc0366a62f385fcdb  ./shaders/subgroup-reduce-w1024-max.emitted.cu
+eab0796ab2247cc7bc9b3ae85f41996707ccb1e15fa81ec03bb7b2b294c52ceb  ./shaders/subgroup-reduce-w1024-min.emitted.cu
+a940c9b4d7ae26a904dc27c107a025a99f31c70a420f1210c406cd33691989ae  ./shaders/subgroup-reduce-w1024-sum.emitted.cu
+273a4892b1e32089da88540be71b2eb29f9f5b4eaacecf4f88a2cb1f39b42714  ./shaders/subgroup-reduce-w128-max.emitted.cu
+f6d22617fe07fe3d4707cb046b501ce67ca65de16f11366f197929bfbfebe668  ./shaders/subgroup-reduce-w128-min.emitted.cu
+9521c490665b4577546075f80d83b8ace3c7944de091e885e4283be52e1076e6  ./shaders/subgroup-reduce-w128-sum.emitted.cu
+33618d7476f31e072c47a009da7b51e668ed49992cb2b4721281a550b3505a34  ./shaders/subgroup-reduce-w256-max.emitted.cu
+41104ffaa979cff57d4e1605cb5c08c09c4430d0efd888f9f720b0cc6faad5c0  ./shaders/subgroup-reduce-w256-min.emitted.cu
+ea6353d953a77a18d1c024b9c5882812020af7d2fd91d18e5772a3b3f5a5b395  ./shaders/subgroup-reduce-w256-sum.emitted.cu
+42287ad73bff027d172a3a872cda845e6dbfca33b6dd3d53574984869441c089  ./shaders/subgroup-reduce-w32-max.emitted.cu
+aded5ccc7671edc6f68c1967c18b1e8681e97baad972f18da9e1b66928ca9b5b  ./shaders/subgroup-reduce-w32-min.emitted.cu
+0a96addf9a6c2117ec2525d6784032ea2ae231cefa4a2eeca32000c8abe701f4  ./shaders/subgroup-reduce-w32-sum.emitted.cu
+336f85a238b6ee1e3efde06f9d98e64dccfa1209f7952ed65d438e787fdbd973  ./shaders/subgroup-reduce-w512-max.emitted.cu
+40de28b79e86b68ce30aa3eb3a382938432cfe957195a45e09f1f4b5092db8f4  ./shaders/subgroup-reduce-w512-min.emitted.cu
+6e87c188efb13ed2abdea024c288365f4b683ba8c28bb0b613ee258ee46d6b19  ./shaders/subgroup-reduce-w512-sum.emitted.cu
+01782b799258259650198c33e24e5a7630b497db171871545885c03e1a8a6d5d  ./shaders/subgroup-reduce-w64-max.emitted.cu
+9b6ebca42de633633c2b86570d76fd993cbd6201342b3e0a4369ced27f39712b  ./shaders/subgroup-reduce-w64-min.emitted.cu
+21f2138ea91830a6b2470bc123614051aef3fe36220a31b05ee647d5511d8bec  ./shaders/subgroup-reduce-w64-sum.emitted.cu
+e47b3820f17b8f60b8da95493154441e7558bc8a28e14b09a4271abd9ad1d02f  ./shaders/warp-shuffle-reduce-w1024-max.emitted.cu
+cd4e1029a6135cb343c10ec66247fda448a521dd08e632813f2ded7d9d3637f9  ./shaders/warp-shuffle-reduce-w1024-min.emitted.cu
+35da549aec66b701730d60ad9612baffd21488643616e4b6e1a0ded3a39293a2  ./shaders/warp-shuffle-reduce-w1024-sum.emitted.cu
+e47b3820f17b8f60b8da95493154441e7558bc8a28e14b09a4271abd9ad1d02f  ./shaders/warp-shuffle-reduce-w128-max.emitted.cu
+cd4e1029a6135cb343c10ec66247fda448a521dd08e632813f2ded7d9d3637f9  ./shaders/warp-shuffle-reduce-w128-min.emitted.cu
+35da549aec66b701730d60ad9612baffd21488643616e4b6e1a0ded3a39293a2  ./shaders/warp-shuffle-reduce-w128-sum.emitted.cu
+e47b3820f17b8f60b8da95493154441e7558bc8a28e14b09a4271abd9ad1d02f  ./shaders/warp-shuffle-reduce-w256-max.emitted.cu
+cd4e1029a6135cb343c10ec66247fda448a521dd08e632813f2ded7d9d3637f9  ./shaders/warp-shuffle-reduce-w256-min.emitted.cu
+35da549aec66b701730d60ad9612baffd21488643616e4b6e1a0ded3a39293a2  ./shaders/warp-shuffle-reduce-w256-sum.emitted.cu
+e47b3820f17b8f60b8da95493154441e7558bc8a28e14b09a4271abd9ad1d02f  ./shaders/warp-shuffle-reduce-w32-max.emitted.cu
+cd4e1029a6135cb343c10ec66247fda448a521dd08e632813f2ded7d9d3637f9  ./shaders/warp-shuffle-reduce-w32-min.emitted.cu
+35da549aec66b701730d60ad9612baffd21488643616e4b6e1a0ded3a39293a2  ./shaders/warp-shuffle-reduce-w32-sum.emitted.cu
+e47b3820f17b8f60b8da95493154441e7558bc8a28e14b09a4271abd9ad1d02f  ./shaders/warp-shuffle-reduce-w512-max.emitted.cu
+cd4e1029a6135cb343c10ec66247fda448a521dd08e632813f2ded7d9d3637f9  ./shaders/warp-shuffle-reduce-w512-min.emitted.cu
+35da549aec66b701730d60ad9612baffd21488643616e4b6e1a0ded3a39293a2  ./shaders/warp-shuffle-reduce-w512-sum.emitted.cu
+e47b3820f17b8f60b8da95493154441e7558bc8a28e14b09a4271abd9ad1d02f  ./shaders/warp-shuffle-reduce-w64-max.emitted.cu
+cd4e1029a6135cb343c10ec66247fda448a521dd08e632813f2ded7d9d3637f9  ./shaders/warp-shuffle-reduce-w64-min.emitted.cu
+35da549aec66b701730d60ad9612baffd21488643616e4b6e1a0ded3a39293a2  ./shaders/warp-shuffle-reduce-w64-sum.emitted.cu
+=== compile the usage probe
+OK-probe
+probe-diag 0 bytes
+=== compile the 54 emitted kernels with -Xptxas -v (resource usage per kernel)
+OK-cubin baseline-reduce-w1024-max.emitted
+OK-cubin baseline-reduce-w1024-min.emitted
+OK-cubin baseline-reduce-w1024-sum.emitted
+OK-cubin baseline-reduce-w128-max.emitted
+OK-cubin baseline-reduce-w128-min.emitted
+OK-cubin baseline-reduce-w128-sum.emitted
+OK-cubin baseline-reduce-w256-max.emitted
+OK-cubin baseline-reduce-w256-min.emitted
+OK-cubin baseline-reduce-w256-sum.emitted
+OK-cubin baseline-reduce-w32-max.emitted
+OK-cubin baseline-reduce-w32-min.emitted
+OK-cubin baseline-reduce-w32-sum.emitted
+OK-cubin baseline-reduce-w512-max.emitted
+OK-cubin baseline-reduce-w512-min.emitted
+OK-cubin baseline-reduce-w512-sum.emitted
+OK-cubin baseline-reduce-w64-max.emitted
+OK-cubin baseline-reduce-w64-min.emitted
+OK-cubin baseline-reduce-w64-sum.emitted
+OK-cubin subgroup-reduce-w1024-max.emitted
+OK-cubin subgroup-reduce-w1024-min.emitted
+OK-cubin subgroup-reduce-w1024-sum.emitted
+OK-cubin subgroup-reduce-w128-max.emitted
+OK-cubin subgroup-reduce-w128-min.emitted
+OK-cubin subgroup-reduce-w128-sum.emitted
+OK-cubin subgroup-reduce-w256-max.emitted
+OK-cubin subgroup-reduce-w256-min.emitted
+OK-cubin subgroup-reduce-w256-sum.emitted
+OK-cubin subgroup-reduce-w32-max.emitted
+OK-cubin subgroup-reduce-w32-min.emitted
+OK-cubin subgroup-reduce-w32-sum.emitted
+OK-cubin subgroup-reduce-w512-max.emitted
+OK-cubin subgroup-reduce-w512-min.emitted
+OK-cubin subgroup-reduce-w512-sum.emitted
+OK-cubin subgroup-reduce-w64-max.emitted
+OK-cubin subgroup-reduce-w64-min.emitted
+OK-cubin subgroup-reduce-w64-sum.emitted
+OK-cubin warp-shuffle-reduce-w1024-max.emitted
+OK-cubin warp-shuffle-reduce-w1024-min.emitted
+OK-cubin warp-shuffle-reduce-w1024-sum.emitted
+OK-cubin warp-shuffle-reduce-w128-max.emitted
+OK-cubin warp-shuffle-reduce-w128-min.emitted
+OK-cubin warp-shuffle-reduce-w128-sum.emitted
+OK-cubin warp-shuffle-reduce-w256-max.emitted
+OK-cubin warp-shuffle-reduce-w256-min.emitted
+OK-cubin warp-shuffle-reduce-w256-sum.emitted
+OK-cubin warp-shuffle-reduce-w32-max.emitted
+OK-cubin warp-shuffle-reduce-w32-min.emitted
+OK-cubin warp-shuffle-reduce-w32-sum.emitted
+OK-cubin warp-shuffle-reduce-w512-max.emitted
+OK-cubin warp-shuffle-reduce-w512-min.emitted
+OK-cubin warp-shuffle-reduce-w512-sum.emitted
+OK-cubin warp-shuffle-reduce-w64-max.emitted
+OK-cubin warp-shuffle-reduce-w64-min.emitted
+OK-cubin warp-shuffle-reduce-w64-sum.emitted
+=== ptxas usage lines (verbatim, prefixed by kernel)
+-- ptxas baseline-reduce-w1024-max.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_max' for 'sm_72'
+   ptxas info    : Function properties for reduce_max
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 10 registers, 372 bytes cmem[0]
+-- ptxas baseline-reduce-w1024-min.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_min' for 'sm_72'
+   ptxas info    : Function properties for reduce_min
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 10 registers, 372 bytes cmem[0]
+-- ptxas baseline-reduce-w1024-sum.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_sum' for 'sm_72'
+   ptxas info    : Function properties for reduce_sum
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 10 registers, 372 bytes cmem[0]
+-- ptxas baseline-reduce-w128-max.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_max' for 'sm_72'
+   ptxas info    : Function properties for reduce_max
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 10 registers, 372 bytes cmem[0]
+-- ptxas baseline-reduce-w128-min.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_min' for 'sm_72'
+   ptxas info    : Function properties for reduce_min
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 10 registers, 372 bytes cmem[0]
+-- ptxas baseline-reduce-w128-sum.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_sum' for 'sm_72'
+   ptxas info    : Function properties for reduce_sum
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 10 registers, 372 bytes cmem[0]
+-- ptxas baseline-reduce-w256-max.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_max' for 'sm_72'
+   ptxas info    : Function properties for reduce_max
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 10 registers, 372 bytes cmem[0]
+-- ptxas baseline-reduce-w256-min.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_min' for 'sm_72'
+   ptxas info    : Function properties for reduce_min
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 10 registers, 372 bytes cmem[0]
+-- ptxas baseline-reduce-w256-sum.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_sum' for 'sm_72'
+   ptxas info    : Function properties for reduce_sum
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 10 registers, 372 bytes cmem[0]
+-- ptxas baseline-reduce-w32-max.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_max' for 'sm_72'
+   ptxas info    : Function properties for reduce_max
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 10 registers, 372 bytes cmem[0]
+-- ptxas baseline-reduce-w32-min.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_min' for 'sm_72'
+   ptxas info    : Function properties for reduce_min
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 10 registers, 372 bytes cmem[0]
+-- ptxas baseline-reduce-w32-sum.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_sum' for 'sm_72'
+   ptxas info    : Function properties for reduce_sum
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 10 registers, 372 bytes cmem[0]
+-- ptxas baseline-reduce-w512-max.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_max' for 'sm_72'
+   ptxas info    : Function properties for reduce_max
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 10 registers, 372 bytes cmem[0]
+-- ptxas baseline-reduce-w512-min.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_min' for 'sm_72'
+   ptxas info    : Function properties for reduce_min
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 10 registers, 372 bytes cmem[0]
+-- ptxas baseline-reduce-w512-sum.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_sum' for 'sm_72'
+   ptxas info    : Function properties for reduce_sum
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 10 registers, 372 bytes cmem[0]
+-- ptxas baseline-reduce-w64-max.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_max' for 'sm_72'
+   ptxas info    : Function properties for reduce_max
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 10 registers, 372 bytes cmem[0]
+-- ptxas baseline-reduce-w64-min.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_min' for 'sm_72'
+   ptxas info    : Function properties for reduce_min
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 10 registers, 372 bytes cmem[0]
+-- ptxas baseline-reduce-w64-sum.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_sum' for 'sm_72'
+   ptxas info    : Function properties for reduce_sum
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 10 registers, 372 bytes cmem[0]
+-- ptxas subgroup-reduce-w1024-max.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_max' for 'sm_72'
+   ptxas info    : Function properties for reduce_max
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 15 registers, 4096 bytes smem, 372 bytes cmem[0]
+-- ptxas subgroup-reduce-w1024-min.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_min' for 'sm_72'
+   ptxas info    : Function properties for reduce_min
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 15 registers, 4096 bytes smem, 372 bytes cmem[0]
+-- ptxas subgroup-reduce-w1024-sum.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_sum' for 'sm_72'
+   ptxas info    : Function properties for reduce_sum
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 16 registers, 4096 bytes smem, 372 bytes cmem[0]
+-- ptxas subgroup-reduce-w128-max.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_max' for 'sm_72'
+   ptxas info    : Function properties for reduce_max
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 15 registers, 512 bytes smem, 372 bytes cmem[0]
+-- ptxas subgroup-reduce-w128-min.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_min' for 'sm_72'
+   ptxas info    : Function properties for reduce_min
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 15 registers, 512 bytes smem, 372 bytes cmem[0]
+-- ptxas subgroup-reduce-w128-sum.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_sum' for 'sm_72'
+   ptxas info    : Function properties for reduce_sum
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 16 registers, 512 bytes smem, 372 bytes cmem[0]
+-- ptxas subgroup-reduce-w256-max.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_max' for 'sm_72'
+   ptxas info    : Function properties for reduce_max
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 15 registers, 1024 bytes smem, 372 bytes cmem[0]
+-- ptxas subgroup-reduce-w256-min.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_min' for 'sm_72'
+   ptxas info    : Function properties for reduce_min
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 15 registers, 1024 bytes smem, 372 bytes cmem[0]
+-- ptxas subgroup-reduce-w256-sum.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_sum' for 'sm_72'
+   ptxas info    : Function properties for reduce_sum
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 16 registers, 1024 bytes smem, 372 bytes cmem[0]
+-- ptxas subgroup-reduce-w32-max.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_max' for 'sm_72'
+   ptxas info    : Function properties for reduce_max
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 15 registers, 128 bytes smem, 372 bytes cmem[0]
+-- ptxas subgroup-reduce-w32-min.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_min' for 'sm_72'
+   ptxas info    : Function properties for reduce_min
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 15 registers, 128 bytes smem, 372 bytes cmem[0]
+-- ptxas subgroup-reduce-w32-sum.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_sum' for 'sm_72'
+   ptxas info    : Function properties for reduce_sum
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 16 registers, 128 bytes smem, 372 bytes cmem[0]
+-- ptxas subgroup-reduce-w512-max.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_max' for 'sm_72'
+   ptxas info    : Function properties for reduce_max
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 15 registers, 2048 bytes smem, 372 bytes cmem[0]
+-- ptxas subgroup-reduce-w512-min.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_min' for 'sm_72'
+   ptxas info    : Function properties for reduce_min
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 15 registers, 2048 bytes smem, 372 bytes cmem[0]
+-- ptxas subgroup-reduce-w512-sum.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_sum' for 'sm_72'
+   ptxas info    : Function properties for reduce_sum
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 16 registers, 2048 bytes smem, 372 bytes cmem[0]
+-- ptxas subgroup-reduce-w64-max.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_max' for 'sm_72'
+   ptxas info    : Function properties for reduce_max
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 15 registers, 256 bytes smem, 372 bytes cmem[0]
+-- ptxas subgroup-reduce-w64-min.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_min' for 'sm_72'
+   ptxas info    : Function properties for reduce_min
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 15 registers, 256 bytes smem, 372 bytes cmem[0]
+-- ptxas subgroup-reduce-w64-sum.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_sum' for 'sm_72'
+   ptxas info    : Function properties for reduce_sum
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 16 registers, 256 bytes smem, 372 bytes cmem[0]
+-- ptxas warp-shuffle-reduce-w1024-max.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_max' for 'sm_72'
+   ptxas info    : Function properties for reduce_max
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 14 registers, 372 bytes cmem[0]
+-- ptxas warp-shuffle-reduce-w1024-min.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_min' for 'sm_72'
+   ptxas info    : Function properties for reduce_min
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 14 registers, 372 bytes cmem[0]
+-- ptxas warp-shuffle-reduce-w1024-sum.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_sum' for 'sm_72'
+   ptxas info    : Function properties for reduce_sum
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 14 registers, 372 bytes cmem[0]
+-- ptxas warp-shuffle-reduce-w128-max.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_max' for 'sm_72'
+   ptxas info    : Function properties for reduce_max
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 14 registers, 372 bytes cmem[0]
+-- ptxas warp-shuffle-reduce-w128-min.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_min' for 'sm_72'
+   ptxas info    : Function properties for reduce_min
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 14 registers, 372 bytes cmem[0]
+-- ptxas warp-shuffle-reduce-w128-sum.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_sum' for 'sm_72'
+   ptxas info    : Function properties for reduce_sum
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 14 registers, 372 bytes cmem[0]
+-- ptxas warp-shuffle-reduce-w256-max.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_max' for 'sm_72'
+   ptxas info    : Function properties for reduce_max
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 14 registers, 372 bytes cmem[0]
+-- ptxas warp-shuffle-reduce-w256-min.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_min' for 'sm_72'
+   ptxas info    : Function properties for reduce_min
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 14 registers, 372 bytes cmem[0]
+-- ptxas warp-shuffle-reduce-w256-sum.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_sum' for 'sm_72'
+   ptxas info    : Function properties for reduce_sum
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 14 registers, 372 bytes cmem[0]
+-- ptxas warp-shuffle-reduce-w32-max.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_max' for 'sm_72'
+   ptxas info    : Function properties for reduce_max
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 14 registers, 372 bytes cmem[0]
+-- ptxas warp-shuffle-reduce-w32-min.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_min' for 'sm_72'
+   ptxas info    : Function properties for reduce_min
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 14 registers, 372 bytes cmem[0]
+-- ptxas warp-shuffle-reduce-w32-sum.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_sum' for 'sm_72'
+   ptxas info    : Function properties for reduce_sum
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 14 registers, 372 bytes cmem[0]
+-- ptxas warp-shuffle-reduce-w512-max.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_max' for 'sm_72'
+   ptxas info    : Function properties for reduce_max
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 14 registers, 372 bytes cmem[0]
+-- ptxas warp-shuffle-reduce-w512-min.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_min' for 'sm_72'
+   ptxas info    : Function properties for reduce_min
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 14 registers, 372 bytes cmem[0]
+-- ptxas warp-shuffle-reduce-w512-sum.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_sum' for 'sm_72'
+   ptxas info    : Function properties for reduce_sum
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 14 registers, 372 bytes cmem[0]
+-- ptxas warp-shuffle-reduce-w64-max.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_max' for 'sm_72'
+   ptxas info    : Function properties for reduce_max
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 14 registers, 372 bytes cmem[0]
+-- ptxas warp-shuffle-reduce-w64-min.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_min' for 'sm_72'
+   ptxas info    : Function properties for reduce_min
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 14 registers, 372 bytes cmem[0]
+-- ptxas warp-shuffle-reduce-w64-sum.emitted
+   ptxas info    : 0 bytes gmem
+   ptxas info    : Compiling entry function 'reduce_sum' for 'sm_72'
+   ptxas info    : Function properties for reduce_sum
+       0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+   ptxas info    : Used 14 registers, 372 bytes cmem[0]
+=== diagnostics non-empty check
+diag diag-baseline-reduce-w1024-max.emitted.txt 266 bytes
+diag diag-baseline-reduce-w1024-min.emitted.txt 266 bytes
+diag diag-baseline-reduce-w1024-sum.emitted.txt 266 bytes
+diag diag-baseline-reduce-w128-max.emitted.txt 266 bytes
+diag diag-baseline-reduce-w128-min.emitted.txt 266 bytes
+diag diag-baseline-reduce-w128-sum.emitted.txt 266 bytes
+diag diag-baseline-reduce-w256-max.emitted.txt 266 bytes
+diag diag-baseline-reduce-w256-min.emitted.txt 266 bytes
+diag diag-baseline-reduce-w256-sum.emitted.txt 266 bytes
+diag diag-baseline-reduce-w32-max.emitted.txt 266 bytes
+diag diag-baseline-reduce-w32-min.emitted.txt 266 bytes
+diag diag-baseline-reduce-w32-sum.emitted.txt 266 bytes
+diag diag-baseline-reduce-w512-max.emitted.txt 266 bytes
+diag diag-baseline-reduce-w512-min.emitted.txt 266 bytes
+diag diag-baseline-reduce-w512-sum.emitted.txt 266 bytes
+diag diag-baseline-reduce-w64-max.emitted.txt 266 bytes
+diag diag-baseline-reduce-w64-min.emitted.txt 266 bytes
+diag diag-baseline-reduce-w64-sum.emitted.txt 266 bytes
+diag diag-probe.txt 0 bytes
+diag diag-subgroup-reduce-w1024-max.emitted.txt 283 bytes
+diag diag-subgroup-reduce-w1024-min.emitted.txt 283 bytes
+diag diag-subgroup-reduce-w1024-sum.emitted.txt 283 bytes
+diag diag-subgroup-reduce-w128-max.emitted.txt 282 bytes
+diag diag-subgroup-reduce-w128-min.emitted.txt 282 bytes
+diag diag-subgroup-reduce-w128-sum.emitted.txt 282 bytes
+diag diag-subgroup-reduce-w256-max.emitted.txt 283 bytes
+diag diag-subgroup-reduce-w256-min.emitted.txt 283 bytes
+diag diag-subgroup-reduce-w256-sum.emitted.txt 283 bytes
+diag diag-subgroup-reduce-w32-max.emitted.txt 282 bytes
+diag diag-subgroup-reduce-w32-min.emitted.txt 282 bytes
+diag diag-subgroup-reduce-w32-sum.emitted.txt 282 bytes
+diag diag-subgroup-reduce-w512-max.emitted.txt 283 bytes
+diag diag-subgroup-reduce-w512-min.emitted.txt 283 bytes
+diag diag-subgroup-reduce-w512-sum.emitted.txt 283 bytes
+diag diag-subgroup-reduce-w64-max.emitted.txt 282 bytes
+diag diag-subgroup-reduce-w64-min.emitted.txt 282 bytes
+diag diag-subgroup-reduce-w64-sum.emitted.txt 282 bytes
+diag diag-warp-shuffle-reduce-w1024-max.emitted.txt 266 bytes
+diag diag-warp-shuffle-reduce-w1024-min.emitted.txt 266 bytes
+diag diag-warp-shuffle-reduce-w1024-sum.emitted.txt 266 bytes
+diag diag-warp-shuffle-reduce-w128-max.emitted.txt 266 bytes
+diag diag-warp-shuffle-reduce-w128-min.emitted.txt 266 bytes
+diag diag-warp-shuffle-reduce-w128-sum.emitted.txt 266 bytes
+diag diag-warp-shuffle-reduce-w256-max.emitted.txt 266 bytes
+diag diag-warp-shuffle-reduce-w256-min.emitted.txt 266 bytes
+diag diag-warp-shuffle-reduce-w256-sum.emitted.txt 266 bytes
+diag diag-warp-shuffle-reduce-w32-max.emitted.txt 266 bytes
+diag diag-warp-shuffle-reduce-w32-min.emitted.txt 266 bytes
+diag diag-warp-shuffle-reduce-w32-sum.emitted.txt 266 bytes
+diag diag-warp-shuffle-reduce-w512-max.emitted.txt 266 bytes
+diag diag-warp-shuffle-reduce-w512-min.emitted.txt 266 bytes
+diag diag-warp-shuffle-reduce-w512-sum.emitted.txt 266 bytes
+diag diag-warp-shuffle-reduce-w64-max.emitted.txt 266 bytes
+diag diag-warp-shuffle-reduce-w64-min.emitted.txt 266 bytes
+diag diag-warp-shuffle-reduce-w64-sum.emitted.txt 266 bytes
+=== usage probe over the 54 kernels (one fresh process per kernel)
+-- usage-kernel baseline-reduce-w1024-max
+device=Xavier sm_72
+label=baseline-reduce-w1024-max
+entry=reduce_max
+workgroup=1024
+dyn_shared=4096
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=10
+static_shared=0
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=2
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=16
+OK-usage
+usage-rc=0
+-- usage-kernel baseline-reduce-w1024-min
+device=Xavier sm_72
+label=baseline-reduce-w1024-min
+entry=reduce_min
+workgroup=1024
+dyn_shared=4096
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=10
+static_shared=0
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=2
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=16
+OK-usage
+usage-rc=0
+-- usage-kernel baseline-reduce-w1024-sum
+device=Xavier sm_72
+label=baseline-reduce-w1024-sum
+entry=reduce_sum
+workgroup=1024
+dyn_shared=4096
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=10
+static_shared=0
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=2
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=16
+OK-usage
+usage-rc=0
+-- usage-kernel baseline-reduce-w128-max
+device=Xavier sm_72
+label=baseline-reduce-w128-max
+entry=reduce_max
+workgroup=128
+dyn_shared=512
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=10
+static_shared=0
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=16
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=128
+OK-usage
+usage-rc=0
+-- usage-kernel baseline-reduce-w128-min
+device=Xavier sm_72
+label=baseline-reduce-w128-min
+entry=reduce_min
+workgroup=128
+dyn_shared=512
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=10
+static_shared=0
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=16
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=128
+OK-usage
+usage-rc=0
+-- usage-kernel baseline-reduce-w128-sum
+device=Xavier sm_72
+label=baseline-reduce-w128-sum
+entry=reduce_sum
+workgroup=128
+dyn_shared=512
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=10
+static_shared=0
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=16
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=128
+OK-usage
+usage-rc=0
+-- usage-kernel baseline-reduce-w256-max
+device=Xavier sm_72
+label=baseline-reduce-w256-max
+entry=reduce_max
+workgroup=256
+dyn_shared=1024
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=10
+static_shared=0
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=8
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=64
+OK-usage
+usage-rc=0
+-- usage-kernel baseline-reduce-w256-min
+device=Xavier sm_72
+label=baseline-reduce-w256-min
+entry=reduce_min
+workgroup=256
+dyn_shared=1024
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=10
+static_shared=0
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=8
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=64
+OK-usage
+usage-rc=0
+-- usage-kernel baseline-reduce-w256-sum
+device=Xavier sm_72
+label=baseline-reduce-w256-sum
+entry=reduce_sum
+workgroup=256
+dyn_shared=1024
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=10
+static_shared=0
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=8
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=64
+OK-usage
+usage-rc=0
+-- usage-kernel baseline-reduce-w32-max
+device=Xavier sm_72
+label=baseline-reduce-w32-max
+entry=reduce_max
+workgroup=32
+dyn_shared=128
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=10
+static_shared=0
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=32
+active_warps_per_sm=32
+max_warps_per_sm=64
+occupancy_warps_pct=50.0
+resident_blocks_device=256
+OK-usage
+usage-rc=0
+-- usage-kernel baseline-reduce-w32-min
+device=Xavier sm_72
+label=baseline-reduce-w32-min
+entry=reduce_min
+workgroup=32
+dyn_shared=128
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=10
+static_shared=0
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=32
+active_warps_per_sm=32
+max_warps_per_sm=64
+occupancy_warps_pct=50.0
+resident_blocks_device=256
+OK-usage
+usage-rc=0
+-- usage-kernel baseline-reduce-w32-sum
+device=Xavier sm_72
+label=baseline-reduce-w32-sum
+entry=reduce_sum
+workgroup=32
+dyn_shared=128
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=10
+static_shared=0
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=32
+active_warps_per_sm=32
+max_warps_per_sm=64
+occupancy_warps_pct=50.0
+resident_blocks_device=256
+OK-usage
+usage-rc=0
+-- usage-kernel baseline-reduce-w512-max
+device=Xavier sm_72
+label=baseline-reduce-w512-max
+entry=reduce_max
+workgroup=512
+dyn_shared=2048
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=10
+static_shared=0
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=4
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=32
+OK-usage
+usage-rc=0
+-- usage-kernel baseline-reduce-w512-min
+device=Xavier sm_72
+label=baseline-reduce-w512-min
+entry=reduce_min
+workgroup=512
+dyn_shared=2048
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=10
+static_shared=0
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=4
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=32
+OK-usage
+usage-rc=0
+-- usage-kernel baseline-reduce-w512-sum
+device=Xavier sm_72
+label=baseline-reduce-w512-sum
+entry=reduce_sum
+workgroup=512
+dyn_shared=2048
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=10
+static_shared=0
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=4
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=32
+OK-usage
+usage-rc=0
+-- usage-kernel baseline-reduce-w64-max
+device=Xavier sm_72
+label=baseline-reduce-w64-max
+entry=reduce_max
+workgroup=64
+dyn_shared=256
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=10
+static_shared=0
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=32
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=256
+OK-usage
+usage-rc=0
+-- usage-kernel baseline-reduce-w64-min
+device=Xavier sm_72
+label=baseline-reduce-w64-min
+entry=reduce_min
+workgroup=64
+dyn_shared=256
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=10
+static_shared=0
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=32
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=256
+OK-usage
+usage-rc=0
+-- usage-kernel baseline-reduce-w64-sum
+device=Xavier sm_72
+label=baseline-reduce-w64-sum
+entry=reduce_sum
+workgroup=64
+dyn_shared=256
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=10
+static_shared=0
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=32
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=256
+OK-usage
+usage-rc=0
+-- usage-kernel subgroup-reduce-w1024-max
+device=Xavier sm_72
+label=subgroup-reduce-w1024-max
+entry=reduce_max
+workgroup=1024
+dyn_shared=0
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=15
+static_shared=4096
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=2
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=16
+OK-usage
+usage-rc=0
+-- usage-kernel subgroup-reduce-w1024-min
+device=Xavier sm_72
+label=subgroup-reduce-w1024-min
+entry=reduce_min
+workgroup=1024
+dyn_shared=0
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=15
+static_shared=4096
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=2
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=16
+OK-usage
+usage-rc=0
+-- usage-kernel subgroup-reduce-w1024-sum
+device=Xavier sm_72
+label=subgroup-reduce-w1024-sum
+entry=reduce_sum
+workgroup=1024
+dyn_shared=0
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=16
+static_shared=4096
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=2
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=16
+OK-usage
+usage-rc=0
+-- usage-kernel subgroup-reduce-w128-max
+device=Xavier sm_72
+label=subgroup-reduce-w128-max
+entry=reduce_max
+workgroup=128
+dyn_shared=0
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=15
+static_shared=512
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=16
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=128
+OK-usage
+usage-rc=0
+-- usage-kernel subgroup-reduce-w128-min
+device=Xavier sm_72
+label=subgroup-reduce-w128-min
+entry=reduce_min
+workgroup=128
+dyn_shared=0
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=15
+static_shared=512
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=16
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=128
+OK-usage
+usage-rc=0
+-- usage-kernel subgroup-reduce-w128-sum
+device=Xavier sm_72
+label=subgroup-reduce-w128-sum
+entry=reduce_sum
+workgroup=128
+dyn_shared=0
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=16
+static_shared=512
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=16
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=128
+OK-usage
+usage-rc=0
+-- usage-kernel subgroup-reduce-w256-max
+device=Xavier sm_72
+label=subgroup-reduce-w256-max
+entry=reduce_max
+workgroup=256
+dyn_shared=0
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=15
+static_shared=1024
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=8
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=64
+OK-usage
+usage-rc=0
+-- usage-kernel subgroup-reduce-w256-min
+device=Xavier sm_72
+label=subgroup-reduce-w256-min
+entry=reduce_min
+workgroup=256
+dyn_shared=0
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=15
+static_shared=1024
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=8
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=64
+OK-usage
+usage-rc=0
+-- usage-kernel subgroup-reduce-w256-sum
+device=Xavier sm_72
+label=subgroup-reduce-w256-sum
+entry=reduce_sum
+workgroup=256
+dyn_shared=0
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=16
+static_shared=1024
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=8
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=64
+OK-usage
+usage-rc=0
+-- usage-kernel subgroup-reduce-w32-max
+device=Xavier sm_72
+label=subgroup-reduce-w32-max
+entry=reduce_max
+workgroup=32
+dyn_shared=0
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=15
+static_shared=128
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=32
+active_warps_per_sm=32
+max_warps_per_sm=64
+occupancy_warps_pct=50.0
+resident_blocks_device=256
+OK-usage
+usage-rc=0
+-- usage-kernel subgroup-reduce-w32-min
+device=Xavier sm_72
+label=subgroup-reduce-w32-min
+entry=reduce_min
+workgroup=32
+dyn_shared=0
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=15
+static_shared=128
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=32
+active_warps_per_sm=32
+max_warps_per_sm=64
+occupancy_warps_pct=50.0
+resident_blocks_device=256
+OK-usage
+usage-rc=0
+-- usage-kernel subgroup-reduce-w32-sum
+device=Xavier sm_72
+label=subgroup-reduce-w32-sum
+entry=reduce_sum
+workgroup=32
+dyn_shared=0
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=16
+static_shared=128
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=32
+active_warps_per_sm=32
+max_warps_per_sm=64
+occupancy_warps_pct=50.0
+resident_blocks_device=256
+OK-usage
+usage-rc=0
+-- usage-kernel subgroup-reduce-w512-max
+device=Xavier sm_72
+label=subgroup-reduce-w512-max
+entry=reduce_max
+workgroup=512
+dyn_shared=0
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=15
+static_shared=2048
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=4
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=32
+OK-usage
+usage-rc=0
+-- usage-kernel subgroup-reduce-w512-min
+device=Xavier sm_72
+label=subgroup-reduce-w512-min
+entry=reduce_min
+workgroup=512
+dyn_shared=0
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=15
+static_shared=2048
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=4
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=32
+OK-usage
+usage-rc=0
+-- usage-kernel subgroup-reduce-w512-sum
+device=Xavier sm_72
+label=subgroup-reduce-w512-sum
+entry=reduce_sum
+workgroup=512
+dyn_shared=0
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=16
+static_shared=2048
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=4
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=32
+OK-usage
+usage-rc=0
+-- usage-kernel subgroup-reduce-w64-max
+device=Xavier sm_72
+label=subgroup-reduce-w64-max
+entry=reduce_max
+workgroup=64
+dyn_shared=0
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=15
+static_shared=256
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=32
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=256
+OK-usage
+usage-rc=0
+-- usage-kernel subgroup-reduce-w64-min
+device=Xavier sm_72
+label=subgroup-reduce-w64-min
+entry=reduce_min
+workgroup=64
+dyn_shared=0
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=15
+static_shared=256
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=32
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=256
+OK-usage
+usage-rc=0
+-- usage-kernel subgroup-reduce-w64-sum
+device=Xavier sm_72
+label=subgroup-reduce-w64-sum
+entry=reduce_sum
+workgroup=64
+dyn_shared=0
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=16
+static_shared=256
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=32
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=256
+OK-usage
+usage-rc=0
+-- usage-kernel warp-shuffle-reduce-w1024-max
+device=Xavier sm_72
+label=warp-shuffle-reduce-w1024-max
+entry=reduce_max
+workgroup=1024
+dyn_shared=128
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=14
+static_shared=0
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=2
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=16
+OK-usage
+usage-rc=0
+-- usage-kernel warp-shuffle-reduce-w1024-min
+device=Xavier sm_72
+label=warp-shuffle-reduce-w1024-min
+entry=reduce_min
+workgroup=1024
+dyn_shared=128
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=14
+static_shared=0
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=2
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=16
+OK-usage
+usage-rc=0
+-- usage-kernel warp-shuffle-reduce-w1024-sum
+device=Xavier sm_72
+label=warp-shuffle-reduce-w1024-sum
+entry=reduce_sum
+workgroup=1024
+dyn_shared=128
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=14
+static_shared=0
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=2
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=16
+OK-usage
+usage-rc=0
+-- usage-kernel warp-shuffle-reduce-w128-max
+device=Xavier sm_72
+label=warp-shuffle-reduce-w128-max
+entry=reduce_max
+workgroup=128
+dyn_shared=16
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=14
+static_shared=0
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=16
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=128
+OK-usage
+usage-rc=0
+-- usage-kernel warp-shuffle-reduce-w128-min
+device=Xavier sm_72
+label=warp-shuffle-reduce-w128-min
+entry=reduce_min
+workgroup=128
+dyn_shared=16
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=14
+static_shared=0
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=16
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=128
+OK-usage
+usage-rc=0
+-- usage-kernel warp-shuffle-reduce-w128-sum
+device=Xavier sm_72
+label=warp-shuffle-reduce-w128-sum
+entry=reduce_sum
+workgroup=128
+dyn_shared=16
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=14
+static_shared=0
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=16
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=128
+OK-usage
+usage-rc=0
+-- usage-kernel warp-shuffle-reduce-w256-max
+device=Xavier sm_72
+label=warp-shuffle-reduce-w256-max
+entry=reduce_max
+workgroup=256
+dyn_shared=32
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=14
+static_shared=0
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=8
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=64
+OK-usage
+usage-rc=0
+-- usage-kernel warp-shuffle-reduce-w256-min
+device=Xavier sm_72
+label=warp-shuffle-reduce-w256-min
+entry=reduce_min
+workgroup=256
+dyn_shared=32
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=14
+static_shared=0
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=8
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=64
+OK-usage
+usage-rc=0
+-- usage-kernel warp-shuffle-reduce-w256-sum
+device=Xavier sm_72
+label=warp-shuffle-reduce-w256-sum
+entry=reduce_sum
+workgroup=256
+dyn_shared=32
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=14
+static_shared=0
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=8
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=64
+OK-usage
+usage-rc=0
+-- usage-kernel warp-shuffle-reduce-w32-max
+device=Xavier sm_72
+label=warp-shuffle-reduce-w32-max
+entry=reduce_max
+workgroup=32
+dyn_shared=4
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=14
+static_shared=0
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=32
+active_warps_per_sm=32
+max_warps_per_sm=64
+occupancy_warps_pct=50.0
+resident_blocks_device=256
+OK-usage
+usage-rc=0
+-- usage-kernel warp-shuffle-reduce-w32-min
+device=Xavier sm_72
+label=warp-shuffle-reduce-w32-min
+entry=reduce_min
+workgroup=32
+dyn_shared=4
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=14
+static_shared=0
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=32
+active_warps_per_sm=32
+max_warps_per_sm=64
+occupancy_warps_pct=50.0
+resident_blocks_device=256
+OK-usage
+usage-rc=0
+-- usage-kernel warp-shuffle-reduce-w32-sum
+device=Xavier sm_72
+label=warp-shuffle-reduce-w32-sum
+entry=reduce_sum
+workgroup=32
+dyn_shared=4
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=14
+static_shared=0
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=32
+active_warps_per_sm=32
+max_warps_per_sm=64
+occupancy_warps_pct=50.0
+resident_blocks_device=256
+OK-usage
+usage-rc=0
+-- usage-kernel warp-shuffle-reduce-w512-max
+device=Xavier sm_72
+label=warp-shuffle-reduce-w512-max
+entry=reduce_max
+workgroup=512
+dyn_shared=64
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=14
+static_shared=0
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=4
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=32
+OK-usage
+usage-rc=0
+-- usage-kernel warp-shuffle-reduce-w512-min
+device=Xavier sm_72
+label=warp-shuffle-reduce-w512-min
+entry=reduce_min
+workgroup=512
+dyn_shared=64
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=14
+static_shared=0
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=4
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=32
+OK-usage
+usage-rc=0
+-- usage-kernel warp-shuffle-reduce-w512-sum
+device=Xavier sm_72
+label=warp-shuffle-reduce-w512-sum
+entry=reduce_sum
+workgroup=512
+dyn_shared=64
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=14
+static_shared=0
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=4
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=32
+OK-usage
+usage-rc=0
+-- usage-kernel warp-shuffle-reduce-w64-max
+device=Xavier sm_72
+label=warp-shuffle-reduce-w64-max
+entry=reduce_max
+workgroup=64
+dyn_shared=8
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=14
+static_shared=0
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=32
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=256
+OK-usage
+usage-rc=0
+-- usage-kernel warp-shuffle-reduce-w64-min
+device=Xavier sm_72
+label=warp-shuffle-reduce-w64-min
+entry=reduce_min
+workgroup=64
+dyn_shared=8
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=14
+static_shared=0
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=32
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=256
+OK-usage
+usage-rc=0
+-- usage-kernel warp-shuffle-reduce-w64-sum
+device=Xavier sm_72
+label=warp-shuffle-reduce-w64-sum
+entry=reduce_sum
+workgroup=64
+dyn_shared=8
+dev sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536 max_regs_per_block=65536 max_shared_per_block=49152 max_shared_optin=98304
+regs=14
+static_shared=0
+local_bytes=0
+const_bytes=0
+max_threads_per_block=1024
+ptx_version=72
+binary_version=72
+blocks_per_sm=32
+active_warps_per_sm=64
+max_warps_per_sm=64
+occupancy_warps_pct=100.0
+resident_blocks_device=256
+OK-usage
+usage-rc=0
+=== usage runs complete
