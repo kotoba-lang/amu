@@ -785,9 +785,11 @@
   ;; residual is CLOSED too (the alt-fuel row 2026-10-26: alt-end deleted,
   ;; the per-field entries inlined -- MEASURED BEFORE: hit-za 2k+8
   ;; min-fuel, the 256+-field cells TRAPped budget/fuel,
-  ;; docs/evidence/gpu/w3-alt-key-fuel-inlined-20261026.txt). Still named:
-  ;; the digit taxonomy (ok|out-of-range = digits) is PROBED on an
-  ;; adversarial set, not proven. The engine parse-long boundary class
+  ;; docs/evidence/gpu/w3-alt-key-fuel-inlined-20261026.txt). The digit
+  ;; taxonomy (ok|out-of-range = digits) is PROVEN now (2026-10-26, the
+  ;; executing helper source read + 482 fresh cells, 0 mismatches,
+  ;; docs/evidence/gpu/w3-digit-taxonomy-20261026.txt: digits? IS the
+  ;; host regex [0-9]+, both directions). The engine parse-long boundary class
   ;; [2^53, i64max] is MEASURED now (2026-10-26,
   ;; w3-parse-long-boundary-20261026.txt) -- this wg route diverges the
   ;; same way as the sg route there (the :kotoba arm answers the value,
@@ -939,7 +941,17 @@
   ;; walk refuse them. PINNED CONTRACT, unchanged: the i64 max text is a
   ;; VALUE (not past i64) and the one-past text is -1.
   ;; NAMED, NOT HIDDEN: (a) the parse taxonomy (ok|out-of-range for
-  ;; digit-only text) is PROBED, not proven; (b) ENGINE PARSE-LONG
+  ;; digit-only text) is PROVEN 2026-10-26 by SOURCE READ (the executing
+  ;; helper __kotoba_intrinsic_parse_i64, kotoba-sema @ a3303527 -- the
+  ;; two :parse/malformed arms need a non-digit code point or an
+  ;; empty-after-sign text, so on digit-only text they are unreachable
+  ;; and the terminal answers ok|out-of-range by construction; a
+  ;; non-digit answers :parse/malformed at its own step, so verdict
+  ;; ok|out-of-range <=> ALL ASCII digits -- digits? IS the host regex
+  ;; [0-9]+, both directions) plus 482 fresh confirmation cells with 0
+  ;; mismatches in two byte-identical runs -- pinned in the
+  ;; "digit taxonomy is PROVEN" block below,
+  ;; docs/evidence/gpu/w3-digit-taxonomy-20261026.txt; (b) ENGINE PARSE-LONG
   ;; BOUNDARY -- MEASURED NOW (2026-10-26, two byte-identical probe runs,
   ;; docs/evidence/gpu/w3-parse-long-boundary-20261026.txt): this
   ;; engine's parse-long answers the EXACT value through 2^53-1
@@ -999,16 +1011,20 @@
         ;; (sg-keyword and sg-token-end are deleted by the fuel row,
         ;; 2026-10-26 -- the lookup table and the token-end find are
         ;; INLINED in sg-ops-walk's loop body; no probe calls them.)
-        probe (str "(ns accelerator.targets.w3.sg.probe (:export [main si sz dfs]))\n"
+        probe (str "(ns accelerator.targets.w3.sg.probe (:export [main si sz dfs dg malp]))\n"
                    "(defn main [] :i64 0)\n"
                    arms "\n"
                    "(defn si [s :string] :i64 (string->i64 s))\n"
                    "(defn sz [s :string] :i64 (sg-size s))\n"
-                   "(defn dfs [answer :document] :document (device-from-subgroup answer))\n")
+                   "(defn dfs [answer :document] :document (device-from-subgroup answer))\n"
+                   "(defn dg [s :string] :bool (digits? s 0 (string-byte-length s)))\n"
+                   "(defn malp [s :string] :bool (= :parse/malformed (result-error-of [:result :i64 :keyword] (string-parse-i64 s) :none)))\n")
         hir (sema/analyze probe)
         si (fn [s] (str (ir/execute hir 'si [s])))
         sz (fn [s] (str (ir/execute hir 'sz [s])))
         dfs (fn [s] (ir/execute hir 'dfs [["string" s]]))
+        dg (fn [s] (ir/execute hir 'dg [s]))
+        malp (fn [s] (ir/execute hir 'malp [s]))
         fields-of (fn [doc]
                     (into {} (map (fn [kv] [(get (get kv 0) 1) (get (get kv 1) 1)])
                                   (get doc 1))))
@@ -1084,6 +1100,50 @@
           "and end to end: no fact, contract arm")
       (is (nil? (targets/device-from-subgroup "-9007199254740992|basic"))
           "HOST parity pin: the [0-9]+ gate refuses the same sign"))
+    (testing "the digit taxonomy is PROVEN (source read), pinned on the contract arm (the digit-taxonomy row 2026-10-26)"
+      ;; Residual (a) above is CLOSED by SOURCE READ of the executing
+      ;; helper (__kotoba_intrinsic_parse_i64, kotoba-sema @ a3303527,
+      ;; frontend.cljk 4159-4183): the two :parse/malformed arms need a
+      ;; code point outside [48,57] or an empty-after-sign text -- both
+      ;; unreachable on non-empty digit-only text -- and the terminal is
+      ;; reached only at the end, so verdict ok|out-of-range <=> ALL
+      ;; ASCII digits and digits? IS the host regex [0-9]+ (both
+      ;; directions). Confirmation probe: 482 fresh cells, 0 mismatches,
+      ;; two byte-identical runs
+      ;; (docs/evidence/gpu/w3-digit-taxonomy-20261026.txt). These pins
+      ;; hold OUR functions' behavior (digits? / string->i64 / the
+      ;; verdict digits? delegates to); the helper's TEXT is not pinned
+      ;; (upstream may refactor it -- only its documented verdicts are
+      ;; relied on).
+      (let [one-char (map #(str (char %)) (range 256))]
+        (is (every? (fn [c] (= (boolean (re-matches #"[0-9]+" c)) (boolean (dg c))))
+                    (concat one-char ["\u0660" "\uFF11" "\u00BD" "\u2028"]))
+            "digits? is exactly [0-9]+ over the FULL one-char domain 0..255 (+ other-script chars)"))
+      (is (every? false? (map malp ["0" "9" "0042" "9223372036854775807"
+                                    "9223372036854775808"
+                                    "0000000000000000000000000009223372036854775808"
+                                    (apply str (repeat 1000 "5"))]))
+          "digit-only text NEVER answers :parse/malformed (the taxonomy identity, source-proven)")
+      (is (every? true? (map malp ["5x" "5 " "+-5" "-" "+" "" " 5" "\u0660" "\uFF11"]))
+          "every non-digit text answers :parse/malformed (incl. the sign shapes digits? refuses)")
+      ;; the accumulation-flag boundary (the helper's
+      ;; (and (= acc -922337203685477580) (> d 8)) arm) -- fresh cells
+      (is (= "9223372036854775800" (si "9223372036854775800"))
+          "the …800 text is a value on the contract arm")
+      (is (= "9223372036854775807" (si "9223372036854775807"))
+          "…807 is i64max")
+      (is (= "-1" (si "9223372036854775808"))
+          "…808 is past i64 (out-of-range -> no value)")
+      (is (= "-1" (si "9223372036854775809"))
+          "…809 too")
+      (is (= "-9223372036854775808" (si "-9223372036854775808"))
+          "negative …808 is i64min on the contract arm")
+      (is (= "-1" (si "-9223372036854775809"))
+          "negative …809 is past i64")
+      (is (= "9223372036854775807" (sz "0000000000000000000000000009223372036854775807"))
+          "leading-zero i64max is the value at the route")
+      (is (= "-1" (sz "9223372036854775808"))
+          "the route refuses past i64 (contract, unchanged)"))
     (testing "the e2e answer parse: the size field's facts flow, malformed fails closed"
       (let [m (fields-of (dfs "8|"))]
         (is (= "8" (str (:subgroup-size m))) "an empty <ops> is the zero-ops fact")

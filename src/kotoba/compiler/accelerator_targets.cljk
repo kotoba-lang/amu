@@ -161,11 +161,23 @@
 ;; (parse-walk on the 19-digit i64 max => host/stack-exhausted,
 ;; docs/evidence/gpu/w3-numeric-walk-primitives-20261026.txt). The
 ;; primitive's VERDICT replaces the byte scan: `string-parse-i64` answers
-;; ok or out-of-range for DIGIT-ONLY text and :parse/malformed for the rest
-;; (measured on the adversarial probe set -- 1..1000 digits, 102/1002-char
-;; leading-zero text; a digit-only string never answered :parse/malformed
-;; THERE -- the taxonomy is probed, not proven), so [0-9]+ = first byte
-;; ASCII digit AND verdict ok|out-of-range. The first-byte check is
+;; ok or out-of-range for DIGIT-ONLY text and :parse/malformed for the
+;; rest -- PROVEN 2026-10-26 by reading the executing helper
+;; (__kotoba_intrinsic_parse_i64, kotoba-sema @ a3303527 -- the pin this
+;; classpath resolves -- frontend.cljk 4159-4183): the two
+;; :parse/malformed arms need a code point outside [48,57] or an
+;; empty-after-sign text, so on non-empty digit-only text they are
+;; UNREACHABLE and the terminal answers ok|out-of-range by construction;
+;; conversely a non-digit code point answers :parse/malformed at its own
+;; step (a multibyte point's first step is >= 128, non-digit, so the scan
+;; never walks into one), so verdict ok|out-of-range IMPLIES all digits
+;; -- confirmed on 482 fresh cells (the full one-char domain 0..255 plus
+;; other-script digits/astral, exhaustive 2-char and 3-char sign
+;; alphabets, the accumulation-flag boundary texts …800..…809), 0
+;; mismatches, two byte-identical runs,
+;; docs/evidence/gpu/w3-digit-taxonomy-20261026.txt). So [0-9]+ = first
+;; byte ASCII digit AND verdict ok|out-of-range is an IDENTITY, both
+;; directions -- the taxonomy is no longer just probed. The first-byte check is
 ;; load-bearing: the primitive accepts "+5"/"-5" (measured ok 5 / ok -5)
 ;; where the host regex does not. digits-all? is DELETED (its only caller
 ;; was this walk).

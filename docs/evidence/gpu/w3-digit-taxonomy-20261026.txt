@@ -1,0 +1,160 @@
+W3 DIGIT TAXONOMY -- the source read (JUN-56 follow-up, JUN-55)
+date: 2026-10-26 (JST)
+row: ONE analysis slice + ONE confirmation probe; NO product behavior
+change (the src diff is one comment block; tests grow pins).
+
+closes: the parse-taxonomy residual, named in THREE places:
+  src/kotoba/compiler/accelerator_targets.cljk:163-167
+    "...a digit-only string never answered :parse/malformed THERE -- the
+    taxonomy is probed, not proven"
+  test/.../accelerator_targets_test.cljk:941-942 (sg-size row's residual
+    (a)) "the parse taxonomy (ok|out-of-range for digit-only text) is
+    PROBED, not proven"
+  test/.../accelerator_targets_test.cljk:788-790 (key-arm row) "Still
+    named: the digit taxonomy (ok|out-of-range = digits) is PROBED on an
+    adversarial set, not proven."
+
+WHAT THE SOURCE READ ANSWERED (READ -- verified by tool output below):
+the string-parse-i64 head digits? delegates to is the appended intrinsic
+helper __kotoba_intrinsic_parse_i64, and the executing body IS the
+helper-source TEXT that kotoba-sema appends when a module mentions the
+head. The taxonomy is an IDENTITY, proven from that body:
+  (1) The ONLY two arms that answer :parse/malformed are (a) the
+  empty-after-sign gate (>= start n) -- "" / "+" / "-" -- and (b) the
+  per-step code point outside [48,57]. For a text whose code points are
+  ALL ASCII digits (non-empty, first byte a digit): start = 0 (a digit
+  first byte is neither 45 nor 43), every step passes the [48,57] test,
+  so the loop's ONLY exits are the i >= n terminal, which answers ok or
+  out-of-range by construction. :parse/malformed is UNREACHABLE on
+  digit-only text -- proven, not probed.
+  (2) Conversely the terminal is reached only at i >= n, so any
+  non-digit code point answers :parse/malformed AT ITS OWN STEP, before
+  any range verdict. Verdict ok|out-of-range therefore IMPLIES every
+  code point is an ASCII digit. (A multibyte code point's first step is
+  >= 128 -> non-digit -> malformed at once, so the 1-byte step can never
+  walk into a multibyte character.)
+  (3) digits? (first byte ASCII digit AND verdict ok|out-of-range on the
+  substring) is therefore EXACTLY the host regex [0-9]+ (non-empty) --
+  both directions proven. The first-byte guard is what excludes the sign
+  spellings the primitive itself accepts ("+5"/"-5" are ok at the unit
+  and digits?-false -- measured).
+  (4) The range verdict is exactly i64: the magnitude accumulates
+  NEGATIVE with the overflow test BEFORE each multiply (acc < -2^62*5 or
+  the (= acc -922337203685477580) (> d 8) edge), so no wrap; the
+  terminal answers out-of-range for over, ok(-acc) for positive except
+  acc = -2^63 (the one magnitude past i64max), ok(acc) for negative --
+  [-2^63, 2^63-1] exactly, "-0" and "+0000" answering 0.
+
+THE SOURCE, verbatim (READ-ONLY this tick):
+  WHICH HELPER. kotoba-sema @ a3303527008c7e52b33c08cd580c7dc71eeead60
+  (the pin this classpath resolves -- deps.edn:874), the appended
+  intrinsic-helper-source TEXT, src/kotoba/compiler/frontend.cljk
+  lines 4159-4183 (file sha256
+  a931744ea8ee6f41cb824f71879d56a1b787e6b5c05095519ac79cb5ddcbb8c9):
+    (defn- __kotoba_intrinsic_parse_i64 [s :string] [:result :i64 :keyword]
+      (let [n (string-byte-length s)
+            c0 (if (> n 0) (string-code-point-at s 0) -1)
+            negative (= c0 45)
+            start (if (or (= c0 45) (= c0 43)) 1 0)]
+        (if (>= start n)
+          (result-err-of [:result :i64 :keyword] :parse/malformed)
+          (loop [i start acc 0 over false]
+            (if (>= i n)
+              (if over
+                (result-err-of [:result :i64 :keyword] :parse/out-of-range)
+                (if negative
+                  (result-ok-of [:result :i64 :keyword] acc)
+                  (if (= acc -9223372036854775808)
+                    (result-err-of [:result :i64 :keyword] :parse/out-of-range)
+                    (result-ok-of [:result :i64 :keyword] (- 0 acc)))))
+              (let [c (string-code-point-at s i)]
+                (if (or (< c 48) (> c 57))
+                  (result-err-of [:result :i64 :keyword] :parse/malformed)
+                  (let [d (- c 48)]
+                    (if (or over
+                            (< acc -922337203685477580)
+                            (and (= acc -922337203685477580) (> d 8)))
+                      (recur (+ i 1) acc true)
+                      (recur (+ i 1) (- (* acc 10) d) false))))))))))
+  Its own doc block (frontend.cljk:4049-4058) states the same contract
+  ("err :parse/malformed for any other text, err :parse/out-of-range for
+  a well-formed decimal outside [-2^63, 2^63-1]. Malformed wins...").
+  digits?'s own body (amu src, :kotoba arm, lines 172-181) is the caller
+  this row's claim is about.
+
+THE CONFIRMATION PROBE (MEASURED -- w3_digit_taxonomy.cljk in the
+session scratch dir, never staged; run TWICE byte-identical
+sha256 4e3b6bc39b85bafe5a5e2fac984b57028405ac42d013f9cbbc14cd23fa6f84d4,
+508 lines COMPLETE, both runs): 482 FRESH cells the adversarial set
+(1..1000 digits, 102/1002-char leading-zero text) never probed, each
+cell checked on THREE heads -- the unit verdict (ok / :parse/malformed /
+:parse/out-of-range + value), digits?, and string->i64 -- against the
+source-proven rule spelled as pure string logic on the host runner
+(optional sign, 1+ ASCII digits, lexicographic i64 range test):
+  A. the FULL one-char domain 0..255 (code points as one-char strings)
+     plus U+0660 (Arabic-Indic digit), U+FF11 (fullwidth digit), U+00BD,
+     astral U+1F600, U+2028 -- 261 cells, 261 agree, 0 mismatches.
+     "0".."9" -> ok(digit) and digits?-true; EVERY other code point ->
+     :parse/malformed and digits?-false (incl. the two other-script
+     DIGITS -- the source's "no other script's digits" is proven:
+     [48,57] is checked on the code point).
+  B. exhaustive 2-char over the boundary alphabet [0 1 9 + - x sp .] --
+     64 cells, 64 agree.
+  C. exhaustive 3-char over the sign alphabet [0 9 + - x] -- 125 cells,
+     125 agree (every "+-5"/"-+5"/"--"-shape -> :parse/malformed).
+  D. the accumulation-flag boundary texts (the source's
+     (and (= acc -922337203685477580) (> d 8)) arm) -- 32 cells, 32
+     agree: "9223372036854775800".."...807" -> ok the exact value;
+     "...808"/"...809" -> :parse/out-of-range; negative twins
+     "-...800".."-...808" -> ok (i64min included), "-...809" ->
+     :parse/out-of-range; "+i64max" -> ok; "+000...i64max" -> ok;
+     leading-zero "000...808" -> out-of-range and "-000...808" -> ok;
+     "2^64" and "2^128" -> out-of-range; "+0"/"-0"/"+0000"/"-0000" ->
+     ok 0.
+  E. the sign cells the residual named: "+5"/"-5"/"+0" -> ok at the
+     unit (val 5 / -5 / 0) AND digits?-false (the first-byte guard is
+     load-bearing); "-"/"+"/"+-5"/"-+5" -> :parse/malformed, digits?-false.
+  F. determinism: "9223372036854775808" -> out-of-range, digits?-true,
+     si -1 and "-9223372036854775808" -> ok -9223372036854775808,
+     digits?-false, si i64min -- re-read identical.
+NAMED, NOT HIDDEN: the probe's own first two attempts failed inside my
+harness (attempt 1: a `case` clause keyed on the wrong destructured
+value -- "No matching clause: :err"; attempt 2: one paren too few after
+converting it to `cond` -- "Unmatched delimiter: ]"), both fixed before
+any recorded run; the run-1 log path carries only the final green run
+(the two attempt logs were overwritten at their paths -- nothing cited
+rests on them). The runtime prints a NUL for the cp0 cell (the file is
+therefore binary to grep; read with grep -a).
+
+CONSEQUENCE: NOTHING MOVES -- no :measured? flag value, no :shapes value,
+no workgroup row, no selection answer; :arm/:unknown stay provisional
+:measured? false; the SUBGROUP producer (ADR-0371) still does not exist,
+no live wire feeds this; this row closes the parse-taxonomy residual and
+adds no hardware measurement claim. The taxonomy claim is now a SOURCE
+PROPERTY of the pinned helper (and of digits?/'s dependence on it): if
+kotoba-sema ever changes the helper's verdicts, the digits? pins in the
+gate go red -- intended, the contract is documented upstream.
+
+STATES: READ (the executing helper body, cited above -- which file, which
+pin, which lines, file sha256), MEASURED (the two byte-identical probe
+runs), IMPLEMENTED (tests + prose: the gate gains the taxonomy pins,
+test COUNT +0 -- inside the existing sg-size deftest), DECIDED
+(unchanged: the parse-decimal contract; digits? = [0-9]+ is now an
+identity, not a heuristic), UNMEASURED named (anything off this host;
+the helper's behavior on the JVM/native runtime variants of the kotoba
+language runtime -- this probe ran the kbb/SCI-on-Node runtime only; trap
+spellings beyond these runs; every workgroup-row question).
+
+Gates (real runs): see the commit message for the scoped GPU gate's two
+runs (the gate runs AFTER this file is written, so its numbers ride the
+commit); find docs -name '*.sh' -> 0 (evidence is .txt). NAMED NOT
+HIDDEN: the FULL run-tests.cljk remains RED AT BASE 'Could not find
+namespace: kotoba.form' (ADR-0362) outside this diff -- NO green full
+suite claimed; kbb's "2 dep(s) are not :local/root ..." warning on every
+run (identical everywhere); the untracked deps.edn in this worktree
+(present at tick start, not created or touched by this row, not
+committed).
+
+Evidence: docs/evidence/gpu/w3-digit-taxonomy-20261026.txt
+(the probe and its two run logs live in the session scratch dir; this
+file is the record -- no POSIX .sh anywhere).
