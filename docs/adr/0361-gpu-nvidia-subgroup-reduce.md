@@ -2688,3 +2688,106 @@ is .txt only). FULL run-tests.cljk NOT run (this diff touches NO
 .cljk namespace) -- documented RED AT BASE 'Could not find namespace:
 kotoba.form' (ADR-0362), outside this diff -- NO green full suite
 claimed.
+
+## Amendment (2026-10-26, the cross-edge locus: mixed chains are
+edge-additive, no leg re-prices)
+
+The twenty-seventh amendment's named item "the +1.5356 residual's leg
+locus" takes its instrument branch. Hardware ran: instrument v5 (12
+arms x 3 launches x 128 threads) on xavier sm_72 at 2026-10-26T15:12:22Z
+(DATE-UTC verbatim in the evidence run-log). NAMED NOT HIDDEN: a PROBE,
+not a registered timing session (no paired samples, no AB/BA),
+inadmissible under the entry criterion BY KIND; SAME-UTC-DAY with every
+earlier probe -- the tick began 15:03Z, minutes after v4's 14:49Z run
+-- not a cross-day replication, extends no record's :evidence and
+enters nothing; it measures instruction chains, not kernels.
+
+**The instrument.** All quantities of the edge question in ONE binary:
+pure-RSQ chains (16/8 per iteration), pure-FADD chains (16/8 -- the n8
+arm closing v4's named limitation that its fadd reading was
+slope-amortized from a single length), (rsq,fadd) pair chains (8/4
+pairs), and triple chains (rsq,fadd,fadd) / (rsq,rsq,fadd) /
+(rcp,fadd,fadd) (8/4 triples each); 256 iterations/launch,
+clock64() over the loop only, operands symbolic (the fadd reference
+arms keep v4's 1.0f-literal anchor form). Predictions fixed in the
+instrument header BEFORE the run: c_A == pair_sum + e_FF, c_B == e_MM +
+pair_sum, c_C == c_A. Every body VERIFIED from nvdisasm (12/12 MATCH
+their named chains, including {MUFU.RSQ:16} and {MUFU.RCP:8,
+FADD.FTZ:16} at the triple lengths); OK-build/OK-cubin/OK-sass 648
+lines, build diags 188 bytes each = two benign "variable cf was
+declared but never referenced" warnings for the two RSQ-only LATK
+instances (quoted in the run-log), diag-nvdisasm 0 bytes, driver exit
+0, stderr 0 bytes, 36 RESULT lines, all three launches identical
+medians.
+
+**What is measured (the only measured things here).**
+(1) The F->F slope e_FF = 4.0000 EXACTLY -- intercept-free over 16/8
+    (71.4844 / 39.4844 cyc/iter, shared intercept 7.4844). The
+    4.4678/4.4658/4.4683/4.4397 series is FLOOR-INFLATED PER-OP
+    AMORTIZATION at one length (71.4844/16 = 4.4678), not slopes.
+(2) Triple A (rsq,fadd,fadd) = 24.9981 cyc/triple against the
+    pre-registered prediction pair_sum + e_FF = 25.0000 (residual
+    -0.0019, -0.008%); triple B (rsq,rsq,fadd) = 35.9980 against
+    e_MM + pair_sum = 35.9966 (residual +0.0015, +0.004%) -- both
+    residuals at the instrument's median-quantization scale (one
+    median count = 0.0010 cyc/triple of slope granularity).
+(3) Triple C (rcp,fadd,fadd) = 24.9981 = c_A to the digit, with
+    IDENTICAL sample distributions at both chain lengths
+    (52602..52603 / 27003..27006) despite DISTINCT verified spellings
+    (MUFU.RCP:8 vs MUFU.RSQ:8) and DISTINCT no-fold anchors
+    (2.4142137f vs 2.6180339f).
+(4) Reproductions: e_MM 14.9966 reproduces the twenty-seventh's
+    in-binary 14.9966 exactly; the pair sum 21.0000 reproduces v4
+    exactly with IDENTICAL sample distributions (n16 44410..44411; n8
+    22906..22907) and the pair anchor 1.7548777f.
+
+**The leg question dissolves: no leg re-prices.** EDGE-ADDITIVITY
+holds within the instrument's resolution -- same-pipe edges keep their
+pure-form prices inside mixed chains (c_A - pair_sum = 3.9981 = e_FF;
+c_B - pair_sum = 14.998 ~ e_MM). The twenty-seventh's "which leg
+re-prices" was the wrong frame: the non-additivity is joint on the
+cross-pipe edge pair, e_MF + e_FM = 21.0000 against e_MM + e_FF =
+18.9966, a cross surplus of +2.0034 per pair. The +1.5356 figure is
+SUPERSEDED (it subtracted the amortized 4.4678), and the DERIVED
+"in-pair fadd leg 6.0034" is RETRACTED as a leg cost.
+
+**The cross-edge split is UNIDENTIFIABLE in this form** (design fact,
+REASONED by rotation counting, not a measurement): every loop-carried
+single-accumulator dependent cycle over two node types carries equal
+counts of M->F and F->M transitions, so every slope in this form
+returns their SUM. No instrument of this form prices one cross edge
+alone; an open-chain form would be needed (proposed, not implemented).
+The named item is answered as far as the measurement form permits.
+
+**Consequence.** Nothing moves (rule 4): no record, no :measured? flag,
+no selection answer, no :shapes value, no workgroup row. The named item
+moves SUBSTANTIALLY (locus answered in-form; leg frame dissolved; the
+residual split named unidentifiable).
+
+**States.** MEASURED: the v5 run on xavier -- e_MM 14.9966, e_FF 4.0000,
+cross pair sum 21.0000, c_A 24.9981, c_B 35.9980, c_C 24.9981, all
+realized bodies and anchors, the RCP/RSQ triple distribution identity
+and the pair arms' identity with v4. REASONED (marked): the cross-edge
+split unidentifiability. SUPERSEDED (marked): the +1.5356 residual.
+RETRACTED (marked): the in-pair fadd leg 6.0034. IMPLEMENTED: nothing
+(evidence + this amendment). DECIDED: nothing new. ACCEPTED DESIGN ONLY
+(unchanged): the operator-aware contract + pre-registration, the row
+(ii) routes, the entry contract + wiring, ADR-0358, ADR-0373.
+UNMEASURED, named: the e_MF / e_FM split (unidentifiable in-form),
+bare MUFU.RCP dependent-chain latency (three carrier forms agree with
+equality, no separation), the floor's internal composition (including
+the new per-form intercept differences: rsq-form 0.5234, fadd-form
+7.4844, mixed-form 5.4805/5.4883 -- unexplained), the pure 2-input
+IADD3 and IMAD.IADD separations, the 21 surplus ops' costs, the
+residual W-shape's dynamic carrier, noise exceedance, sum TRUE side
+W=256, cross-day run 3+ (still 2026-10-26 UTC), non-xavier verdicts,
+:sum W=64 elsewhere, live CUDA selection path, workgroup rows
+(:arm/:unknown provisional :measured? false).
+
+Gates (honest): the scoped GPU gate GREEN on run 1 AND run 2 (123
+tests / 12162 assertions / 0 failures / 0 errors, glslang 16.6.0
+real-spawn, regression pin); `find docs -name '*.sh'` -> 0 (evidence
+is .txt only). FULL run-tests.cljk NOT run (this diff touches NO
+.cljk namespace) -- documented RED AT BASE 'Could not find namespace:
+kotoba.form' (ADR-0362), outside this diff -- NO green full suite
+claimed.
