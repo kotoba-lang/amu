@@ -2019,3 +2019,73 @@ regression pin, no .cljk touched); `gpu_regime_classify.py --self-test`
 `Could not find namespace: kotoba.form`, ADR-0362) -- NO green suite
 claimed. Record:
 `docs/evidence/gpu/cuda-residual-opmix-20261026.txt`.
+
+## Amendment (2026-10-26, the inner-loop thread set: warp 0 with
+d-step-participating threads -- the count model's uniform inner charge
+is corrected)
+
+The nineteenth amendment's named unmeasured item "the inner-loop thread
+set (inherited assumption)" lands as ONE analysis slice over committed
+inputs plus ONE source read (the 18 committed subgroup-reduce
+`.emitted.cu` kernels). NO HARDWARE RAN; nothing new is measured;
+everything produced is DERIVED arithmetic (scratch
+`inner_threadset_20261026.py`, output committed verbatim).
+
+**Finding.**
+(1) THE THREAD SET IS WARP 0, PARTICIPANTS d-STEP-RESTRICTED (READ,
+    SASS-confirmed): the inner loop `for (lid = sgid; lid < d;
+    lid += sgsize)` is guarded by `if (sg == 0u)` -- only threads 0..31
+    of the block enter, and a thread runs the body iff sgid < d_step.
+    Body executions per block per outer step = d_step; per kernel =
+    nsg - 1 = W/32 - 1 (0 at W=32, where the outer loop is zero-trip).
+    The committed SASS carries the same predicate (`ISETP.GE.U32.OR P1,
+    PT, R3, 0x20, P1`, R3 = SR_TID.X, then `@P1 BRA .L_7` over the
+    `.L_8` inner body).
+(2) THE COMMITTED MODEL CHARGED THE INNER BODY UNIFORMLY: re-deriving
+    the committed per-thread table reproduces it 6/6 cells and 6/6
+    ratios, exactly and only with a flat +9 (one inner body) per thread
+    at every W -- 9W per block against the source's 9*(nsg-1) (1152 vs
+    27 at W=128; 288 vs 0 at W=32). The committed prose ("inner loop x
+    the sg==0 warp") and the committed arithmetic disagree; the
+    arithmetic fed the ratios and every downstream residual.
+(3) CORRECTED COUNT MODEL (DERIVED): per-block sum = 93W + 11*W*outer +
+    9*(nsg-1); max/min = 114W + 11*W*outer + 9*(nsg-1); corrected
+    max/sum = min/sum ratios 1.22581/1.20165/1.18227/1.16634/1.15299/
+    1.14163 at W = 32..1024.
+(4) THE RESIDUAL SHRINKS ~3x AT W=128 AND FLIPS SIGN AT W=512 (DERIVED
+    over the committed measured means): max/sum measured/count falls
+    from 1.0171/1.0132/1.0040 to 1.00603/1.00382/0.99602; min/sum from
+    1.0148/1.0131/1.0068 to 1.00366/1.00374/0.99879.
+
+**Consequence today: NOTHING MOVES** (rule 4). The named item moves:
+the thread set is ANSWERED (READ + SASS-confirmed) and the model's inner
+attribution is CORRECTED (DERIVED). The nineteenth amendment's
+quantitative attributions (its implied shares, its "~16% at W=128", its
+u(W) misfit arithmetic) were computed on the uncorrected counts and are
+SUPERSEDED by (4); their re-derivation over corrected counts is its own
+row. Its structural facts (byte-identical binaries, opcode census, the
+21-op surplus) stand as MEASURED at their own commits.
+
+**States.** READ (the 18 committed sources + the SASS predicate, cited);
+DERIVED (marked: trip counts, old-model reproduction, corrected counts
+and ratios, corrected residuals); MEASURED (consumed at own commits: the
+static region counts, the model table, the measured ratio means);
+IMPLEMENTED: nothing (evidence + this amendment only). DECIDED: nothing
+new. ACCEPTED DESIGN ONLY (unchanged): the operator-aware contract +
+pre-registration, the row (ii) routes, the entry contract + wiring,
+ADR-0358, ADR-0373. UNMEASURED, named: what dynamic effect carries the
+residual's W-shape (per-phase instrumentation, its own row -- with
+corrected counts the residual is +0.60/+0.38/-0.40% (max) and
++0.37/+0.37/-0.12% (min), smaller and sign-crossing); the 21 surplus
+ops' true per-op costs; raw MUFU.RCP cost; per-op integer latency on
+this toolchain; a non-eliminated overhead baseline; the sum ratio's TRUE
+side at W=256; a cross-day run 3+ (still 2026-10-26 UTC); every per-op
+verdict on non-xavier hardware; the `:sum` ordering at W=64 on any other
+device or channel; the landed rows on a live CUDA selection path; every
+workgroup row (`:arm`/`:unknown` stay provisional `:measured? false`);
+the region parse's per-region boundary derivation (consumed). Gates:
+scoped GPU gate GREEN twice (123/12162, regression pin);
+`gpu_regime_classify.py --self-test` 2649/0 (regression pin); FULL
+`run-tests.cljk` not run (red at base `Could not find namespace:
+kotoba.form`, ADR-0362) -- NO green suite claimed. Record:
+`docs/evidence/gpu/cuda-inner-threadset-20261026.txt`.
