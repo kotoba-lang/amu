@@ -3325,3 +3325,67 @@ find namespace: kotoba.form" (ADR-0362), outside this diff, no green
 suite claimed; `find docs -name '*.sh'` -> 0).
 
 Record: `docs/evidence/gpu/metal-counter-foldarms-oporder-20261026/`.
+
+## Amendment 2026-10-26 (the counters channel's OP-ORDER REPLICATION
+row at the anchor cell): the SIGN reading REPLICATES a second time
+under min,max,sum -- the BLOCK-POSITION reading DOES NOT (no
+one-level operator at the second reversed-order session)
+
+The op-order row's UNMEASURED list named "a second reversed-order
+session (the block-position reading's replication)". This row is that
+replication: the same cell (n = 1000003, W = 256), the same reversed
+order `min,max,sum`, the same instrument, arms and committed analysis
+route, 6 fresh ADR-0358 processes, run window
+2026-10-26T23:20:47Z..23:20:48Z (run-window.txt, verbatim) -- the
+same UTC day as every other counters-channel row (named; NO day
+claim; the cross-day row's day-3 item at `sum,max,min` stays
+UNMEASURED). P0a HOLDS: probe.metallib 80dbf4fd.. and counters
+4cb76bd.. sha256-identical to the anchor's and all twelve later
+builds (FOURTEEN cells), and all six fold-arm metallibs byte-identical
+to the anchor's, shape2-W=256's and first op-order's W=256 builds
+(the artifacts are n- and op-order-invariant at W=256 across FOUR
+builds). All 6 processes exit 0 with 120/120 samples resolved, 6/6
+verify ok=1 each, every header `op_order=min,max,sum` (verified
+programmatically).
+
+**The finding (publication.txt is the publication; the committed
+route, run twice byte-identical, sha ca8f7004..).** (1) THE SIGN
+READING REPLICATES: every operator regime-invariant SLOWER (max 6/6
+1.196..1.219, min 6/6 1.216..1.219, sum 6/6 1.196..1.221), roll-up
+18/18 slower -- the anchor cell's rule-2 verdict class reproduces at
+the second reversed-order session; the sign at this cell is now stable
+across every measured session (two sum-first, two reversed-order).
+No side-flip (P1b did not fire; the reopen-trigger count stays at
+TWO, both unadjudicated). (2) THE BLOCK-POSITION READING DOES NOT
+REPLICATE: the FIRST block (min) is NOT one-level this session (min
+TWO levels 59291.5 / 103416.5..103791.5; max THREE
+32875.0..32917.0 / 44021.0 / 103604.5..103666.5; sum FOUR
+32917.0..33000.0 / 42875.0 / 84396.0 / 103666.5) -- NO operator is
+one-level, a first at the anchor cell. Counts move in record state
+only: "the first block is the one-level block" 4/4 -> 4/5 sessions,
+"sum is the one-level operator" 3/4 -> 3/5. NAMED, NOT EXPLAINED:
+the level VALUES stay session-variable (this session's fast states
+~32.9k in the first reversed-order session's class, not the anchor's
+~54k); a within-row descent appears at max/sum (runs 1-2 slow, run 3
+mid, runs 4-6 fast) while min bounces (slow, fast run 3, slow again);
+the state-shift cause stays UNMEASURED. After five counted
+anchor-cell sessions the regime STRUCTURE is session-variable (each
+session a different level split) and both one-level fits are
+contradicted at least once -- the observed class, not a mechanism.
+(3) The raw bands (pooled 1.196..1.221) sit over the first
+reversed-order session's (1.197..1.220) and overlap the anchor's
+(1.204..1.221) and day-2's (1.197..1.222) unions -- same instrument,
+same cell, raw-band observation only (rule 3); the ratio-vs-state
+pattern reproduces a fourth time. CONSEQUENCE: NOTHING MOVES (rule 4)
+-- no :measured? flag, no selection answer, no workgroup row (this
+channel can never move one), no cell flip anywhere, no
+cross-instrument claim. Op-order dependence at every OTHER cell, a
+third reversed-order session, the state-shift cause, "R at those
+grids", day 3+ at sum,max,min and anything off M1 Max stay UNMEASURED.
+
+Gates: see the record (self-test 2649/0 pin; scoped GPU gate GREEN
+123/12162 twice; FULL `run-tests.cljk` RUN LIVE, red at base "Could
+not find namespace: kotoba.form" (ADR-0362), outside this diff, no
+green suite claimed; `find docs -name '*.sh'` -> 0).
+
+Record: `docs/evidence/gpu/metal-counter-foldarms-oporder-rep2-20261026/`.

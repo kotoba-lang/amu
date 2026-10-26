@@ -1,0 +1,155 @@
+JUN-58 / JUN-55 -- the fold-arms counters OP-ORDER REPLICATION row at
+the anchor cell: RUN PROTOCOL + PREDICTION DECLARATION (written BEFORE
+the first hardware run of this row; the runs fill run-1.txt ..
+run-6.txt beside this file)
+
+ROW: the OP-ORDER row's own named remaining item, verbatim -- "ONE
+reversed-order session exists; its replication is UNMEASURED"
+(docs/evidence/gpu/metal-counter-foldarms-oporder-20261026/record.txt,
+the P2 finding's named-not-hidden sentence; carried in the ADR-0360
+op-order amendment too). This row is that replication: a SECOND
+reversed-order session at the anchor cell. It is NOT a cell of the
+anchor list item (that item's width and shape halves are CLOSED and
+only its "R at those grids" parenthetical stays open) and NOT the
+cross-day row's day-3 item (that protocol fixes the anchor order
+sum,max,min; this row runs min,max,sum -- if a future day-3 cross-day
+session at sum,max,min runs, it remains its own row). ONE measurement
+slice.
+
+CELL: n = 1000003, workgroup = 256 -- the ANCHOR CELL exactly (the
+launch shape 3907 x 256), and the same cell the first reversed-order
+session ran at.
+
+THE ONE CHANGE vs the first reversed-order session: nothing -- this
+row is that session's PROTOCOL REPEATED (same cell, same order
+min,max,sum, same instrument, same arms, same analysis route). The one
+change vs the ANCHOR protocol remains the op-order positional
+"min,max,sum" (the exact reverse of the anchor's sum,max,min: sum
+FIRST -> LAST, min LAST -> FIRST, max stays middle).
+
+WHAT THIS ROW ANSWERS (pre-registered): the REPLICATION of the first
+reversed-order session's two readings at this protocol's letter:
+  (R1) the SIGN reading -- is the 18/18-slower rule-2 verdict class
+       stable across sessions under the reversed order?
+  (R2) the BLOCK-POSITION reading -- is "the FIRST block of the
+       session is the ONE-level block" stable across sessions? (the
+       first session's fit: 4/4 sessions had the first block one-level
+       while "sum is the one-level operator" held only 3/4)
+Neither reading is re-fitted here: whatever this session shows is
+published at the route's letter and named against both readings.
+
+DAY FACTS: this row's runs execute on the UTC day the run window
+stamps say (captured verbatim in run-window.txt around the runs). The
+tick began 2026-10-26T23:16Z, so the window is expected to stamp
+2026-10-26 UTC -- the SAME UTC day as every other counters-channel
+row -- but if the captured window says otherwise, the record names
+whatever the window says and this protocol's day sentence is corrected
+in the record, not in this pre-registered file. NO cross-day claim of
+any kind is made or possible from this row (whatever day it stamps):
+this row's axis is op-order REPLICATION, and the cross-day row's
+day-3 item at sum,max,min stays UNMEASURED after it.
+
+Runs: 6 fresh processes (run-1.txt .. run-6.txt), one ADR-0358 run
+each -- the anchor row's declared process count and protocol unchanged
+(6 fresh processes, 20 interleaved AB/BA pairs per operator per run,
+2 warmup submits per arm discarded, verified untimed read-back).
+
+Instrument: scripts/gpu-subgroup-reduce-metal-counters.m compiled
+fresh this row (unchanged in the tree since the anchor row -- last
+commit touching it is the harness row b3717baf3, before the anchor
+cf631722d; named so the comparison is instrument-constant).
+
+Arms: the fold arms baseline-<op>.metallib vs subgroup-<op>.metallib
+at W=256, built THIS row from the COMMITTED emitters via
+scripts/gpu-subgroup-reduce-metal-measure.cljk --width 256 into a
+FRESH build directory (neither the anchor's, the shape2-W=256's nor
+the first op-order row's build dir is reused -- this row re-derives
+the artifacts and compares, it does not copy them).
+
+REALIZATION CONTROL (checked at build time, recorded in build-shas.txt):
+the W-INDEPENDENT artifacts -- probe.metallib and the counters binary
+-- are sha256-compared against the anchor row's 2026-10-25 build and
+every later row's builds (W=32/64/128/512/1024,
+shape2-W=256/32/64/128/512/1024, and the first op-order row's).
+ADDITIONAL FACT CHECK (checked, not assumed): this row's W EQUALS the
+anchor's W = 256 and the emitted MSL sees only the width (n and
+op-order are run-time argv of the instrument), so ALL SIX fold-arm
+metallibs are expected byte-identical to the anchor's, the
+shape2-W=256's and the first op-order row's W=256 builds. If they
+are, the fold-arm artifacts' W=256 invariance is named once more; if
+any differs, the fact is recorded as such and the row names the
+artifact axis moved. All six arm shas are recorded.
+
+Analysis: ONLY the committed route --
+scripts/gpu_regime_classify.py --counters-log run-1..6.txt
+(pre-committed in the counters-route row, before any of this data
+exists), run twice with the two outputs diffed for BYTE IDENTITY, the
+publication saved verbatim as publication.txt. NO analysis code is
+written this row.
+
+PREDICTIONS (registered before the first run; both branches of each
+named question included):
+
+  P0 VALIDITY + REALIZATION: all 6 processes exit 0 with 120/120
+     sample lines resolved and 6/6 verify lines ok=1 each; the run
+     headers declare op_order=min,max,sum in every log; the
+     W-independent artifacts (probe.metallib, counters) are
+     sha256-identical to the anchor's and every prior row's. If the
+     instrument moved (P0c), the row is named instrument-confounded
+     and no sign verdict is claimed from it.
+
+  P1 THE SIGN REPLICATION (R1), both branches:
+       P1a the first reversed-order session's sign class REPRODUCES:
+           every operator regime-invariant SLOWER at every run (cell
+           roll-up 18/18 slower) -- the sign stays stable across
+           sessions under the reversed order (and under the anchor
+           order: the sign has now been stable across every session
+           of the whole counters campaign at this cell).
+       P1b it does NOT reproduce: any operator is not
+           regime-invariant slower (any straddling run, any
+           regime-scoped verdict, any faster verdict) -- named, not
+           explained; if a side-flip appears it is named as a THIRD
+           exercising record of the reopen-trigger class (the count
+           would rise 2 -> 3), unadjudicated; this row registers no
+           reopen claim either way.
+
+  P2 THE BLOCK-POSITION REPLICATION (R2), both branches -- the level
+     split at this session (rule 1 published at its letter whatever it
+     is):
+       P2a the block-position reading REPLICATES: the FIRST block of
+           the session (min, at order min,max,sum) is the ONE-level
+           operator again (and the later blocks carry multi-level
+           structure) -- "the first block is the one-level block" goes
+           4/4 -> 5/5 sessions, NAMED, NOT EXPLAINED.
+       P2b it does NOT replicate: the one-level property attaches to
+           some other block (e.g. sum one-level again while running
+           LAST), or NO operator is one-level, or the structure
+           differs some other way -- the reading degrades to 4/5 and
+           the session-variable reading strengthens; NAMED, NOT
+           EXPLAINED either way. The state-shift cause, threshold and
+           prevalence stay UNMEASURED whichever branch fires.
+     The level VALUES are pre-registered as expected session-variable
+     (the first reversed-order session's fast states ~32.9k vs the
+     anchor's ~54k): P2 is about WHICH BLOCK is one-level, not about
+     the values; the values are published at the route's letter.
+
+  P3 MAGNITUDE: per-operator ratio bands published as the route's raw
+     bands at this cell; the band's position relative to the first
+     reversed-order session's (max 1.197..1.219, min 1.217..1.218,
+     sum 1.200..1.220), the anchor's (sum 1.216..1.221, max
+     1.206..1.219, min 1.204..1.219) and the cross-day row's day-2
+     bands (sum 1.214..1.221, max 1.197..1.220, min 1.198..1.222) is
+     a raw-band observation at ONE instrument at the SAME cell -- no
+     cross-instrument magnitude claim of any kind (rule 3).
+
+CONSEQUENCE (rule 4, pre-registered): NOTHING MOVES from this row --
+no :measured? flag, no :shapes value, no selection answer, no
+workgroup row (this channel can never move one), no WGSL cell flip,
+no MSL command-buffer cell flip, no cross-instrument magnitude claim.
+The sign stays CHANNEL-SCOPED and M1-Max scoped. The named item moves
+in RECORD STATE only ("a second reversed-order session (the
+block-position reading's replication)" -> MEASURED at this protocol's
+letter, the readings named stable or not, whatever the publication
+says). The cross-day day-3 item at sum,max,min, "R at those grids",
+the state-shift cause, op-order dependence at every OTHER cell and
+anything off M1 Max stay UNMEASURED.
