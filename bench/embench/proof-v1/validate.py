@@ -85,8 +85,10 @@ def main() -> None:
             "portable result bundle fields")
     workloads = schema["properties"]["workloads"]
     require(workloads.get("minItems") == len(WORKLOADS), "manifest requires 19 workloads")
-    require(schema["properties"]["attempts"].get("minItems", 0) >= 380,
-            "manifest requires all paired observations")
+    require(schema["properties"]["attempts"].get("minItems", 0) >= 760,
+            "manifest requires all ABBA/BAAB observations")
+    attempt_required = set(schema["$defs"]["attempt"].get("required", []))
+    require("sequencePosition" in attempt_required, "attempt sequence position required")
 
     print("PROOF_V1_CONTROL PASS")
 

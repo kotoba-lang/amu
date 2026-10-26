@@ -61,7 +61,7 @@
       "uniqueItems": true,
       "items": {"type": "string"}
     },
-    "attempts": {"type": "array", "minItems": 380, "items": {"$ref": "#/$defs/attempt"}},
+    "attempts": {"type": "array", "minItems": 760, "items": {"$ref": "#/$defs/attempt"}},
     "statistics": {
       "type": "object",
       "required": ["complete", "perWorkload", "geometricMean", "confidenceInterval95", "bootstrapSeed"],
@@ -102,11 +102,12 @@
     },
     "attempt": {
       "type": "object",
-      "required": ["workload", "round", "order", "arm", "accepted", "elapsedNs", "cpuQualification", "correctness"],
+      "required": ["workload", "round", "order", "sequencePosition", "arm", "accepted", "elapsedNs", "cpuQualification", "correctness"],
       "properties": {
         "workload": {"type": "string"},
         "round": {"type": "integer", "minimum": 1, "maximum": 10},
         "order": {"enum": ["ABBA", "BAAB"]},
+        "sequencePosition": {"type": "integer", "minimum": 1, "maximum": 4},
         "arm": {"enum": ["kotoba-amu", "c-reference"]},
         "accepted": {"type": "boolean"},
         "elapsedNs": {"type": ["integer", "null"], "minimum": 0},
