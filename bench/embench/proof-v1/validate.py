@@ -89,6 +89,8 @@ def main() -> None:
             "manifest requires all ABBA/BAAB observations")
     attempt_required = set(schema["$defs"]["attempt"].get("required", []))
     require("sequencePosition" in attempt_required, "attempt sequence position required")
+    require({"attemptNumber", "selected"} <= attempt_required,
+            "retry custody and deterministic selection fields required")
 
     print("PROOF_V1_CONTROL PASS")
 

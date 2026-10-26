@@ -36,6 +36,12 @@ path.  It remains historical evidence only.
 * `validate.py` validates all four control files using only Python's standard
   library.  It deliberately does not validate benchmark results that do not yet
   exist.
+* `campaign.py` emits the immutable 760-position ABBA/BAAB schedule and verifies
+  a completed result manifest, including deterministic statistics and a
+  tamper-evident bundle hash. The platform timing driver must consume this
+  schedule verbatim and retain every rejected retry. The schedule has 760
+  positions; each may contain one to three raw attempts, and the first accepted
+  attempt is selected without continuing to search for a faster sample.
 
 Run the control-file gate from the repository root:
 
@@ -48,6 +54,17 @@ Expected output:
 ```text
 PROOF_V1_CONTROL PASS
 ```
+
+Create the timing schedule and verify a completed manifest with:
+
+```sh
+python3 bench/embench/proof-v1/campaign.py schedule --out schedule.json
+python3 bench/embench/proof-v1/campaign.py verify result-manifest.json
+```
+
+The bundle hash is SHA-256 over canonical compact JSON with a trailing newline
+and `bundleSha256` replaced by 64 zeroes. This makes the seal independently
+recomputable without a circular hash definition.
 
 ## Promotion ladder
 

@@ -12,6 +12,7 @@
     "toolchains",
     "artifacts",
     "workloads",
+    "normalization",
     "attempts",
     "statistics",
     "negativeControls",
@@ -61,6 +62,12 @@
       "uniqueItems": true,
       "items": {"type": "string"}
     },
+    "normalization": {
+      "type": "object",
+      "minProperties": 19,
+      "maxProperties": 19,
+      "additionalProperties": {"type": "number", "exclusiveMinimum": 0}
+    },
     "attempts": {"type": "array", "minItems": 760, "items": {"$ref": "#/$defs/attempt"}},
     "statistics": {
       "type": "object",
@@ -102,13 +109,15 @@
     },
     "attempt": {
       "type": "object",
-      "required": ["workload", "round", "order", "sequencePosition", "arm", "accepted", "elapsedNs", "cpuQualification", "correctness"],
+      "required": ["workload", "round", "order", "sequencePosition", "arm", "attemptNumber", "selected", "accepted", "elapsedNs", "cpuQualification", "correctness"],
       "properties": {
         "workload": {"type": "string"},
         "round": {"type": "integer", "minimum": 1, "maximum": 10},
         "order": {"enum": ["ABBA", "BAAB"]},
         "sequencePosition": {"type": "integer", "minimum": 1, "maximum": 4},
         "arm": {"enum": ["kotoba-amu", "c-reference"]},
+        "attemptNumber": {"type": "integer", "minimum": 1, "maximum": 3},
+        "selected": {"type": "boolean"},
         "accepted": {"type": "boolean"},
         "elapsedNs": {"type": ["integer", "null"], "minimum": 0},
         "cpuQualification": {"type": "object"},
