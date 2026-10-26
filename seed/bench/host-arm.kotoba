@@ -51,7 +51,8 @@
           (not= (kxrt-load64 (+ (kxrt-ctx) 40)) 0))
     (kb-refuse 2001) 0))
 (defn- kb-reset [] :i64
-  (let [pure (kb-pure) high (kxrt-gl 760)
+  (let [outside (if (not= (kxrt-load64 (+ (kxrt-g) 20128)) 0) (kb-refuse 2004) 0)
+        pure (kb-pure) high (kxrt-gl 760)
         bounds (if (or (< (kxrt-gl 8) 0) (> (kxrt-gl 8) KXRT-PAIRS)
                        (< (kxrt-gl 32) 0) (> (kxrt-gl 32) KXRT-POOL)
                        (< (kxrt-gl 48) 0) (> (kxrt-gl 48) KXRT-VECTORS)
@@ -67,7 +68,8 @@
         m (kxrt-gs 720 0) n (kxrt-gs 728 0)
         fuel (kxrt-store64 (+ (kxrt-ctx) 8) (kxrt-gl 168))]
     ;; No store to752/760: monotonic clock and physical item highwater persist.
-    (if (not= high (kxrt-gl 760)) (kb-refuse 2003) high)))
+    (if (or (not= high (kxrt-gl 760))
+            (not= (kxrt-load64 (+ (kxrt-ctx) 8)) (kxrt-gl 168))) (kb-refuse 2003) high)))
 (defn- kb-snapshot [p :i64] :i64
   (let [a (kxrt-store64 p (kxrt-gl 8)) b (kxrt-store64 (+ p 8) (kxrt-gl 32))
         c (kxrt-store64 (+ p 16) (kxrt-gl 48)) d (kxrt-store64 (+ p 24) (kxrt-gl 64))
@@ -78,8 +80,13 @@
         l (kxrt-store64 (+ p 88) (kxrt-gl 704)) m (kxrt-store64 (+ p 96) (kxrt-gl 728))
         n (kxrt-store64 (+ p 104) 0) o (kxrt-store64 (+ p 112) 0)
         q (kxrt-store64 (+ p 120) (kxrt-gl 288)) r (kxrt-store64 (+ p 128) 0)] 0))
-(defn- kb-now [] :i64
-  (let [p (+ (kxrt-g) 31000) r (kxrt-syscall 113 4 p 0 0 0 0)
+(defn- kb-phase [expected :i64 next :i64] :i64
+  (let [p (+ (kxrt-g) 20128)]
+    (if (not= (kxrt-load64 p) expected) (kb-refuse 3003)
+      (kxrt-store64 p next))))
+(defn- kb-now [phase :i64] :i64
+  (let [ordered (kb-phase phase (inc phase))
+        p (+ (kxrt-g) 31000) r (kxrt-syscall 113 4 p 0 0 0 0)
         sec (kxrt-load64 p) ns (kxrt-load64 (+ p 8))]
     (if (or (< r 0) (< sec 0) (> sec 9223372035) (< ns 0) (>= ns 1000000000))
       (kb-refuse 3001) (+ (* sec 1000000000) ns))))
@@ -87,19 +94,49 @@
   (let [argv (+ (kxrt-g) 320) x (kxrt-store64 argv a) y (kxrt-store64 (+ argv 8) b)
         z (kxrt-store64 (+ argv 16) 0) u (kxrt-store64 (+ argv 24) 0) v (kxrt-store64 (+ argv 32) 0)]
     (kxrt-call-at address (kxrt-ctx) argv)))
+;; A native fixed oracle, transcribed from the frozen accounting reference
+;; SHA256 6368bd343086a6c88e0645e31dde82bcdf64742c7b4727cdd56103ef72e9b4cc.
+;; It is not generated from this host's observations. Current-use snapshots
+;; are equal before/after the original allocation-free verifiers in all19.
+(defn- kb-expected-fuel [id :i64 verify :bool] :i64
+  (if verify
+    (case id 0 1 1 0 2 34 3 402 4 1002 5 402 6 1 7 770 8 10 9 16 10 66 11 24 12 605 13 0 14 66 15 1 16 22 17 802 18 1 -1)
+    (case id 0 3278897154 1 5709824002 2 7518945281 3 23988731906 4 4602019842 5 27611432517 6 10100834307 7 16599547906 8 22752493571 9 10294394882 10 18180997122 11 3470663682 12 3858038786 13 4238213122 14 20159447042 15 15682841411 16 29713367043 17 25224675330 18 2806009749 -1)))
+(defn- kb-expected-arena [id :i64 field :i64] :i64
+  (case field
+    0 (case id 11 40960 13 7602176 18 8 0)
+    2 (case id 0 50266113 1 0 6 3 8 3 1)
+    3 (case id 0 108265476 1 0 2 32 3 403 4 3309 5 2001 6 2212 7 635 8 290 9 17 10 4096 11 2048 12 1760 13 804 14 169 15 8997 16 541 17 2048 18 39566 -1)
+    4 (case id 0 1670381616 1 0 2 272 3 3240 4 26488 5 16024 6 17744 7 5096 8 2368 9 152 10 32784 11 671760 12 14096 13 121641264 14 1368 15 71992 16 4344 17 16400 18 316672 -1)
+    0))
+(defn- kb-accounting [id :i64 diagnostic :i64 p :i64] :i64
+  (let [ordered (if (not= (kxrt-load64 (+ (kxrt-g) 20128)) 3) (kb-refuse 3003) 0)
+        seed (if (not= (kxrt-load64 (+ p 48)) (if (= id 15) 615896958 0)) (kb-refuse 3201) 0)]
+    (if (= diagnostic 1) 0
+      (if (or (not= (kxrt-load64 (+ p 32)) (kb-expected-fuel id false))
+              (not= (kxrt-load64 (+ p 40)) (kb-expected-fuel id true))) (kb-refuse 3202)
+        (loop [i 0]
+          (if (= i 17) 0
+            (if (or (not= (kxrt-load64 (+ (kxrt-g) 22000 (* i 8))) (kb-expected-arena id i))
+                    (not= (kxrt-load64 (+ (kxrt-g) 22200 (* i 8))) (kb-expected-arena id i)))
+              (kb-refuse 3203) (recur (inc i)))))))))
+(defn- kb-verifier [address :i64 state :i64 count :i64] :i64
+  (let [ordered (kb-phase 2 3)] (kb-invoke address state count)))
 (defn- kb-execute [id :i64 payload :i64 count :i64 diagnostic :i64] :i64
   (let [ctx (kxrt-ctx) benchmark (+ payload (kb-bench id)) verifier (+ payload (kb-verify id))
-        first-reset (kb-reset) warm (kb-invoke benchmark 1 0) warm-ok (kb-pure)
+        first-reset (kb-reset)
+        warm-phase (if (not= (kxrt-load64 (+ (kxrt-g) 20128)) 0) (kb-refuse 3003) 0)
+        warm (kb-invoke benchmark 1 0) warm-ok (kb-pure)
         seed (if (< (kb-seed id) 0) 0 (kb-invoke (+ payload (kb-seed id)) warm 0))
         seed-ok (kb-pure) high (kb-reset)
         initial (kxrt-load64 (+ ctx 8)) argv (+ (kxrt-g) 320)
         x0 (kxrt-store64 argv count) x1 (kxrt-store64 (+ argv 8) seed)
         x2 (kxrt-store64 (+ argv 16) 0) x3 (kxrt-store64 (+ argv 24) 0) x4 (kxrt-store64 (+ argv 32) 0)
-        begin (kb-now)
+        begin (kb-now 0)
         state (kxrt-call-at benchmark ctx argv)
-        end (kb-now) after-bench (kxrt-load64 (+ ctx 8)) bench-ok (kb-pure)
+        end (kb-now 1) after-bench (kxrt-load64 (+ ctx 8)) bench-ok (kb-pure)
         snap1 (kb-snapshot (+ (kxrt-g) 22000))
-        verified (kb-invoke verifier state (if (= (kb-verify-arity id) 2) count 0))
+        verified (kb-verifier verifier state (if (= (kb-verify-arity id) 2) count 0))
         after-verify (kxrt-load64 (+ ctx 8)) verify-ok (kb-pure)
         snap2 (kb-snapshot (+ (kxrt-g) 22200))]
     (if (or (not= verified 1) (< end begin) (> after-bench initial)
@@ -108,7 +145,8 @@
             c (kxrt-store64 (+ p 16) diagnostic) d (kxrt-store64 (+ p 24) (- end begin))
             e (kxrt-store64 (+ p 32) (- initial after-bench)) f (kxrt-store64 (+ p 40) (- after-bench after-verify))
             g (kxrt-store64 (+ p 48) seed) h (kxrt-store64 (+ p 56) high)
-            j (kxrt-store64 (+ p 64) (kxrt-gl 760))] (kb-report)))))
+            j (kxrt-store64 (+ p 64) (kxrt-gl 760))
+            oracle (kb-accounting id diagnostic p)] (kb-report)))))
 
 ;; Read exactly the registered size from a regular non-symlink file once.
 ;; Hash this immutable in-memory snapshot; no path lookup follows admission.

@@ -31,7 +31,7 @@
         (= (io-exists (io-arg 4)) 1) (drv-fail0 E-WRITE)
         :else (let [host (drv-pj-lock-text (io-read-bytes (io-arg 2)))
                     registry (drv-pj-lock-text (io-read-bytes (io-arg 3)))]
-                (if (and (string=? (sh-text host) "14d71453c7b81c097382782d73833f11199ff0fcc6584470c594bac5298f4c83")
+                (if (and (string=? (sh-text host) "c47c0d82e4f487211d5d679315e8126ab59fafc7e84aef80d8fc9e8bf1236ec7")
                          (string=? (sh-text registry) "c2152375e32d162c0ac340a2387818168860ab6f7a74bad4cebaaa765f371b1b"))
                   (let [guest "(ns native-bench (:export [main]))\n(defn main [] :i64 0)\n"
                         rt (string-concat (xa-rt-core-profile 1) (string-concat registry host))
