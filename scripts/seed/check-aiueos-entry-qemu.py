@@ -27,16 +27,24 @@ def pin(path):
 class QmpStdio:
     """Private QMP pipe for the LLM guest gate; no local socket listener."""
 
-    def __init__(self, process):
+    def __init__(self, process, reply_timeout=30):
         self.reader = process.stdout
         self.writer = process.stdin
+        self.reply_timeout = reply_timeout
+        self.pending = b""
 
     def readline(self):
-        ready, _, _ = select.select([self.reader], [], [], 30)
-        assert ready, 'QMP stdio reply timeout'
-        line = self.reader.readline()
-        assert line, 'QMP stdio closed'
-        return line
+        deadline = time.monotonic() + self.reply_timeout
+        while b"\n" not in self.pending:
+            remaining = deadline - time.monotonic()
+            assert remaining > 0, 'QMP stdio reply timeout'
+            ready, _, _ = select.select([self.reader], [], [], remaining)
+            assert ready, 'QMP stdio reply timeout'
+            chunk = os.read(self.reader.fileno(), 4096)
+            assert chunk, 'QMP stdio closed'
+            self.pending += chunk
+        line, _, self.pending = self.pending.partition(b"\n")
+        return line + b"\n"
 
     def write(self, data):
         self.writer.write(data)

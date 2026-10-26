@@ -68,6 +68,10 @@ jobs:
           persist-credentials: false
       - name: Observer and admission negative controls
         run: python3 scripts/seed/test_native_iteration.py -v
+      - name: QMP observer pipe framing and deadline controls
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python3 scripts/seed/test_aiueos_qmp_stdio.py -v
       - name: Source and image identity preflight
         run: python3 scripts/seed/check-native-identities.py
       - name: Local locked native project and refusal controls
