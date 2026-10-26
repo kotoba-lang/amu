@@ -2979,3 +2979,98 @@ gate-run2.txt in the evidence dir); `find docs -name '*.sh'` -> 0.
 FULL run-tests.cljk RUN LIVE THIS TICK: RED AT BASE 'Could not find
 namespace: kotoba.form' at namespace load (ADR-0362), outside this
 diff -- verified live, NO green full suite claimed.
+
+
+## Amendment (2026-10-26 UTC, the pad fold is REFUTED as the cause: v7
+realizes the gap and the closures fail by v6's residuals -- the
+e_MF/e_FM split stays UNMEASURED)
+
+The thirtieth amendment left the closure failure's cause UNRESOLVED
+between two readings: the discipline's premise being wrong (P6's
+wording) or the realization deviating from the discipline (the PAD16
+strength-reduction, SASS-verified: 16 dependent add.u32 folded to ONE
+"IADD3 R6, R6, 0x10", the inter-iteration gap 8 instructions instead
+of the 23 the readiness argument assumed). This amendment records
+instrument v7 (THE PAD-GAP instrument, gpu-mufu-padgap-microbench.cu,
+committed verbatim) which RESOLVES that named question: the pad-fold
+reading is REFUTED as the cause.
+
+**The one change.** v7 = v6 with the pad realized as 16 dependent
+mad.lo.u32 on a separate register with SYMBOLIC multiplier/addend from
+global memory -- the composition p |-> p*k+c is not a mad, so ptxas
+cannot fold the chain. Named deviation: the spec's literal "16
+dependent integer adds" are realized as 16 dependent IMAD (op class
+differs) -- forced (inline asm volatile does not stop ptxas from
+folding add chains; symbolic adds merge pairwise into IADD3's
+three-input add). Everything else is identical to v6. Predictions
+P1..P7 pre-registered in the instrument header before the first run.
+
+**The gap is real (P7, SASS-verified).** Every loop body carries
+exactly 16 IMAD pad instructions ("IMAD R10, R8, R10, R9" -- p = k*p+c,
+dependent through R10), 0 inside the timed region, 16 after the t1
+clock read; bodies 26-28 lines vs v6's ~11. CHAIN-VERDICT MATCH 8/8,
+CLOCK-WRAP 8/8, OVERHEAD IDENTICAL 8/8 (verifier rides verbatim in the
+run log; one extractor this time, the v6 end-of-line BRA-regex
+extraction bug fixed before transfer). Hardware: xavier sm_72 at
+2026-10-26T17:21:12Z (8 arms x 3 launches x 128 threads x 256 timed
+instances; a PROBE, not a registered timing session -- inadmissible
+under the entry criterion BY KIND, enters nothing; SAME UTC DAY as
+every earlier probe, "cross-day run 3+" does not move).
+
+**The adjudication (mufu_padgap_analysis.py, output verbatim, two
+runs byte-identical).** The closures STILL FAIL beyond the named 1.0
+cyc tolerance, by v6's residuals: C1 V(MFM)=37.1484 vs
+V(MF)+V(FM)-V(F)=27.1992 (residual +9.9492; v6 +9.9648); C2
+V(FMF)=31.7148 vs V(FM)+V(MF)-V(M)=27.2148 (residual +4.5000; v6
++4.6328). The cyclic reproductions fail too: V(MM)-V(M)=11.0352 vs
+landed e_MM 14.9966; V(FF)-V(F)=-0.0273 vs landed e_FF 4.0000; the
+estimator sum 17.0391 vs the landed cycle sum 21.0000. Restoring the
+gap did not move the table: v7-vs-v6 pooled V deltas are within 0.06
+cyc on six of eight arms, -0.5977 on the noisiest arm (M) and +0.4883
+on FMF. Per the pre-registered falsifier stance P6, the estimators
+(14.9844 / 2.0547) are INADMISSIBLE and MUST NOT be reported as the
+split: **the e_MF/e_FM split STAYS UNMEASURED**.
+
+**What is excluded, and what is not.** Excluded: the v6 pad fold as
+the cause (SASS-verified folded then, SASS-verified unfolded now, same
+residuals). Not excluded: the discipline's premise itself (P6's
+original wording) or any further unexcluded property of the
+realization -- both readings stay open, but the named question ("is
+the closure failure the pad fold?") is ANSWERED: no. The
+twenty-ninth's rank/nullspace identifiability theorem is UNTOUCHED.
+
+**Consequence.** Nothing moves (rule 4): no record, no :measured?
+flag, no selection answer, no workgroup row. The named item moves in
+design state only: "discipline-premise-vs-realization deviation
+UNRESOLVED (pad fold SASS-verified)" becomes "pad-fold reading
+REFUTED as the cause (v7: gap realized, closures fail by v6's
+residuals); premise-vs-further-deviation UNRESOLVED; split
+UNMEASURED". The observable cross quantity stands at the measured
+cycle sum e_MF + e_FM = 21.0000 (cross surplus +2.0034), unchanged.
+
+**States.** MEASURED (standing, unchanged, earlier ticks): e_MM
+14.9966, e_FF 4.0000, e_MF+e_FM 21.0000, cross surplus +2.0034.
+MEASURED (new, PROBE-grade, enters no record): the v7 V table and its
+closure residuals (evidence cuda-mufu-padgap-20261026). REFUTED (this
+run): that the pad fold caused the v6 closure failure; that the v7
+instrument returns the edge-additive model's V values. IMPLEMENTED:
+nothing in src/ or test/. DECIDED: nothing new. ACCEPTED DESIGN ONLY
+(unchanged): the operator-aware contract + pre-registration, the row
+(ii) routes, the entry contract + wiring, ADR-0358, ADR-0373.
+UNMEASURED, named (list carried forward): the e_MF / e_FM split (P6
+-- estimators inadmissible in v6 AND v7), bare MUFU.RCP dependent-
+chain latency, the floor's internal composition (per-form intercepts
+0.5234/7.4844/5.4805 and the v6 ~10.14 / v7 ~10.17 cyc floors, all
+unattributed), the pure 2-input IADD3 and IMAD.IADD separations, the
+21 surplus ops' costs, the residual W-shape's dynamic carrier, noise
+exceedance, sum TRUE side W=256, cross-day run 3+ (still 2026-10-26
+UTC), non-xavier verdicts, :sum W=64 elsewhere, live CUDA selection
+path, workgroup rows (:arm/:unknown provisional :measured? false).
+
+Gates (honest): the scoped GPU gate GREEN on run 1 AND run 2 (123
+tests / 12162 assertions / 0 failures / 0 errors, glslang 16.6.0
+real-spawn, regression pin -- verbatim logs gate-run1.txt /
+gate-run2.txt in the evidence dir, byte-identical); `find docs -name
+'*.sh'` -> 0. FULL run-tests.cljk RUN LIVE THIS TICK: RED AT BASE
+'Could not find namespace: kotoba.form' at namespace load (ADR-0362),
+outside this diff -- verified live, NO green full suite claimed.
