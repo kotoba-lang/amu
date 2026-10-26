@@ -19,8 +19,11 @@ descriptor-driven Mac gate reproduced F1/F2, then the signed F2 cross-built
 static Linux ARM and x86 compiler candidates with SHA-256
 `24557e872f545e3c23311df51024cfb7176ab87869391fa56b105016413b041d`
 and `40dedac1e41bd550fda76f864a27d6efbb874d59632c9e7f6bc277ea0522e7a1`.
-Those cross-built files are candidates until the independent native ARM/x86
-fixed-point and public product gates pass on this head.
+The independent native ARM and x86 jobs rebuilt these exact candidates byte
+for byte in [run 40289258383](https://github.com/kotoba-lang/amu/actions/runs/40289258383).
+The candidate bytes are now pinned as the branch's ARM bootstrap and x86
+public image. Complete native corpus, controller and public alias qualification
+on this branch remains open until the new product CI passes.
 
 On the 35-module AIUEOS source, that F2 reproduced a 4,456,728-byte kernel
 ELF `12397461b3a6ee6ec998ff9bd9a2dc9a838575db65696f84e015cece4185d0a8`,
