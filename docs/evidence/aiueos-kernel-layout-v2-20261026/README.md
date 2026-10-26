@@ -74,3 +74,12 @@ same guest image bytes; the new compiler's output was checked independently.
 
 The matching AIUEOS branch records raw GPT/FAT16 and private-QMP QEMU
 evidence. This source change alone does not qualify a release or hardware.
+
+## Combined current-main review
+
+The pending statements above describe the historical source revisions named
+in those paragraphs. The current combined-source qualification, regenerated
+Mac/root/public pins, immutable controller/core composition and required
+integrated full/final-head gates are recorded in
+[the integration review](../aiueos-layout-main-review-20261026/README.md).
+Earlier passing and failing runs remain bound to their original source bytes.

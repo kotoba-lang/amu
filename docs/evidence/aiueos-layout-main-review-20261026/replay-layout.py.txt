@@ -1,0 +1,94 @@
+import importlib.util
+import json
+from pathlib import Path
+import shutil
+import hashlib
+import struct
+
+ROOT = Path('/Users/junkawasaki/github/wt/codex/amu-layout-review-20261026')
+OUT = Path('/Users/junkawasaki/github/workspaces/codex/amu-pr-review-20261026-r2/layout-r4')
+OLD = Path('/Users/junkawasaki/github/workspaces/codex/jun450-layout-v2-20261026')
+spec = importlib.util.spec_from_file_location('mac', ROOT/'scripts/seed/check-aiueos-user-macos-native.py')
+gate = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(gate)
+producer = OUT.parent/'mac-default-r1/F2-signed.macho'
+report = json.loads((OUT.parent/'mac-default-r1/mac-aiueos-user-target.json').read_text())
+assert gate.verify_macho(producer) == report['generations'][-1]['signed']
+OUT.mkdir(exist_ok=False)
+rows = []
+for label, name in [('old', 'kernel-user-v3-regression-31'), ('new', 'kernel-user-v4-core-final-3')]:
+    old = OLD/name
+    prior = json.loads((old/'build-state.json').read_text())
+    target = OUT/label
+    shutil.copytree(old/'source', target)
+    for call in prior['calls']:
+        args = call['argv']
+        if '--output' in args:
+            p = target/args[args.index('--output')+1]
+            if p.exists():
+                p.unlink()
+    for path, expected in prior['sourceGraph'].items():
+        assert gate.pin(target/path.lstrip('/')) == expected, path
+    assert gate.pin(target/'kernel.ksl') == prior['sourceLock']
+    calls = []
+    for call in prior['calls']:
+        result = gate.native_run(producer, target, *call['argv'])
+        (target/(call['name']+'.stdout')).write_bytes(result.stdout)
+        (target/(call['name']+'.stderr')).write_bytes(result.stderr)
+        calls.append({'name': call['name'], 'argv': call['argv'], 'exit': result.returncode,
+                      'stdout': gate.pin(target/(call['name']+'.stdout')),
+                      'stderr': gate.pin(target/(call['name']+'.stderr'))})
+    assert gate.pin(target/'KERNEL.ELF') == prior['kernel']
+    assert gate.pin(target/'BOOTX64.EFI') == prior['efi']
+    for a, b in [('KERNEL.ELF','KERNEL.reproduced.ELF'),('BOOTX64.EFI','BOOTX64.reproduced.EFI')]:
+        assert gate.pin(target/a) == gate.pin(target/b)
+    rows.append({'case':label,'sourceReceipt':gate.pin(old/'build-state.json'),
+                 'kernel':prior['kernel'],'efi':prior['efi'],'calls':calls})
+    print('PASS_REPRODUCED',label,prior['kernel']['sha256'],flush=True)
+
+# Native packager controls use newly rebuilt old/new artifacts, never the old EFIs.
+cases=[]
+def run(name,args,expected=0):
+    dst=OUT/'pairings'
+    result=gate.native_run(producer,dst,*args,expected=expected)
+    (dst/(name+'.stdout')).write_bytes(result.stdout)
+    (dst/(name+'.stderr')).write_bytes(result.stderr)
+    output=dst/args[args.index('--output')+1]
+    if expected:
+        assert b'E7111' in result.stderr and not output.exists()
+    else:
+        assert output.is_file() and not result.stderr
+    cases.append({'name':name,'args':args,'exit':result.returncode,
+                  'stdout':gate.pin(dst/(name+'.stdout')),'stderr':gate.pin(dst/(name+'.stderr')),
+                  'artifact':gate.pin(output) if output.exists() else None})
+
+pair=OUT/'pairings';pair.mkdir()
+for label in ['old','new']:
+    for src, suffix in [('KERNEL.ELF','kernel'),('boot-user.elf','elf'),('boot-user-slot.bin','slot')]:
+        shutil.copyfile(OUT/label/src,pair/(label+'-'+suffix))
+shutil.copyfile(OUT/'new/boot-font.bin',pair/'font')
+for label,offsets,value in [('changed-address',(136,144),0x301000),('short-rw',(152,160),2359295)]:
+    raw=bytearray((pair/'new-kernel').read_bytes())
+    for off in offsets:
+        struct.pack_into('<Q',raw,off,value)
+    (pair/label).write_bytes(raw)
+raw=bytearray((pair/'new-elf').read_bytes());struct.pack_into('<Q',raw,24,0x320001)
+(pair/'changed-entry').write_bytes(raw)
+run('changed-user-entry',['package-aiueos-user-payload','changed-entry','--output','bad-slot','--version','v3'],1)
+# The shortened extent still satisfies generic ELF admission; only the dual
+# contract rejects it below. Both size fields and both address aliases agree.
+# The changed address also loses the explicit v2 six-MiB admission bound.
+for kernel in ['short-rw']:
+    run(kernel+'-generic',['package-aiueos-boot',kernel,'--output',kernel+'-generic.EFI',
+                          '--payload','font','--pci-resources','v1'])
+for kernel,slot,ok in [('old-kernel','old-slot',True),('new-kernel','new-slot',True),
+                       ('old-kernel','new-slot',False),('new-kernel','old-slot',False),
+                       ('changed-address','new-slot',False),('short-rw','new-slot',False)]:
+    name=kernel+'-'+slot
+    run(name,['package-aiueos-boot',kernel,'--output',name+'.EFI','--font','font',
+              '--user-slot',slot,'--pci-resources','v1'],0 if ok else 1)
+receipt={'status':'PASS_CURRENT_LAYOUT_REPRODUCTION_AND_REFUSALS','producer':gate.pin(producer),
+         'compilerSource':report['source'],'reproductions':rows,'pairings':cases,
+         'guestExecutionThisRun':False,'realModelQualified':False}
+(OUT/'receipt.json').write_text(json.dumps(receipt,indent=2)+'\n')
+print(receipt['status'],len(cases),flush=True)
