@@ -150,3 +150,38 @@ runtimeProfile, resource bounds and verified compiler/image/build-record
 artifacts covering every workload exactly once.31 synthetic verifier tests
 and the control-file gate pass. These strengthen record integrity only:
 native measurement qualification still refuses with exit2.
+
+## Full-tier, extra ARM checks and actual browser execution
+
+The repaired source also completed the uncached full tier with exit0 in
+834.830 seconds. The receipt explicitly records read=false, store=false and
+no reused calls, and includes the C0-core/C0-Kw/Pw-to-F provenance. It reaches
+the same ARM compiler image as main-r2 and one-compiler-r2. Raw records under
+arm/arm-full-r2 are bound to archive SHA256
+3adb02607b77a2aac7f6e0a8bde791121ebf8487cbc28bf18695f62e170af03d.
+
+The additional eleven ARM runtime/ABI checks all completed with exit0:
+user ELF, stdin, durable files/sleep, private store, STOP/CONT sleep resume,
+spawn, FS2 kernel-fault/cleanup matrix, static profile generation, typed
+value-call admission, user-context admission and desktop-region admission.
+Their staged plan, raw results and terminal schedule live under arm/, bound
+to archive42e51737b1b20c0bebeb9b70eac10c94fff96544c597ade471c6b5c25462cd6d.
+
+The repaired modules were then executed by the repository's actual browser
+harness in native macOS Chrome155.0.8059.86: PASS_WASM32_BROWSER_STATIC_CASES,
+24 cases and4 probes, shared-queue exit0. This uses a disposable local profile,
+not the user's browser profile. It is browser execution of the ARM-produced
+Wasm modules, not Linux/x86 browser execution or an extra native compiler ISA
+qualification. The raw browser receipt and admission record are bound to
+archive6fc9a8f92518c60a420ca640d621a674a94ac74645e2e6c3051a1c71e0a269d4.
+
+Raw stdout retains intentional kernel whitespace (including the Groups line
+in launcher no-new-privs output). The narrowly scoped Git attributes prevent
+line-ending normalization and whitespace lint from rewriting these hashed
+process records; compiler-source checks are not relaxed.
+
+Remaining work includes the terminal x86 gate plan and other x86 workflow
+steps, root/public/transport readback, exact-head six-job CI, current-compiler
+registered-count full19 correctness/accounting, the native timing/negative
+control gate and independent external reruns. No performance score or product
+adoption follows from the completed local qualifications above.
