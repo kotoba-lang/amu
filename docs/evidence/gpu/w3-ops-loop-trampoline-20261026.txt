@@ -1,0 +1,153 @@
+JUN-56 / JUN-55 -- the loop row: the W3 SUBGROUP <ops> walk iterates
+through ONE loop/recur (the __kotoba_loop_N trampoline, zero-charge
+self-tail re-entry), the per-token CALL-FRAME class deleted, 2026-10-26
+
+WHAT THIS ROW IS: the named residual of w3-dedupe-map-shadow-20261026
+("the O(TOKENS) walk residual ... the walk is still one frame per
+TOKEN; 32+ token fields trap budget/frames ... their own rows"). One
+implementation slice on kotoba.compiler.accelerator-targets. NO
+hardware ran, no GPU, no timing -- every number below is a
+kotoba-language-runtime behavior probe (the w3 fact class).
+
+INSTRUMENT (all runs this tick, scratch probes never staged): the w3
+extract-balanced idiom -- the arms' OWN text extracted from the
+namespace source, sema/analyze + ir/execute on the kotoba language
+runtime, kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)"
+<scratch probe>. Go/no-go probes w3_loop_prims.cljk /
+w3_loop_prims2.cljk (the trampoline ground this row's design depends
+on) and w3_loop_before_after.cljk (the unit grid + the row's trap-gone
+cells + the fuel-boundary sweep + dedupe/standing/regression grids,
+run TWICE, byte-identical runs: sha256
+717ba4bb1658f9b3f70a1a2e68768909e789d748b248787c129b88ce7feaeb55
+both). The BEFORE arm is extracted from a sha256-verified git-show HEAD
+dump of accelerator_targets.cljk (scratch/w3_loop_before_src.cljk;
+sha256 bbec16360afef80a19f82f93596cac287893725dc1e37c6f1099e9d0c1afdc65
+-- which is the previous row's AFTER hash, chain continuity -- AFTER
+be33121972c9f4dc79b337b91387a444c6b45e70def1378d5df91e71eb1c69db).
+Parity reference: the host arm's own device-from-subgroup.
+
+GO/NO-GO GROUND (capability probes, measured -- the design's basis):
+  loop/recur in a typed kotoba-arm defn ANALYZES and EXECUTES through
+  sema/analyze + ir/execute (the frontend desugars a `loop` to a
+  `__kotoba_loop_N` helper -- kotoba-sema frontend.cljk
+  *loop-counter*/*loop-helper-names*; the KIR interpreter re-enters a
+  self-tail call to such a helper IN PLACE, zero-charge, no frame no
+  fuel -- kir.cljc T7.1/T7.4, read then probed).
+  MEASURED contrast (w3_loop_prims.cljk): a bare counting loop
+  resolves 2..10000 iterations; the SAME count as an ordinary defn
+  self-recursion TRAPs host/stack-exhausted from 24 (real host stack,
+  before the 32-frame budget is even reached). The loop shape resolves
+  20000 standalone (w3_loop_prims2.cljk) but TRAPped budget/frames at
+  10000 in the interleaved run (probe 1, after 8 trapping neighbours)
+  -- the loop helper's own boundary is state-dependent, NAMED, never
+  pinned.
+  The candidate walk shape (a 3-binding loop with document
+  accumulators + the map-shadow dedupe + the document-vector answer,
+  exactly the sg-ops-walk rewrite) resolves 24/32/64-token fields.
+  A no-dedupe variant grows its answer vector per token and TRAPs
+  'document-vector-too-large' at 64; the element cap measured with a
+  growing probe: 32 elements resolve, 48 trap. UNREACHABLE in the real
+  walk (the answer is capped at the 8-word vocabulary, all-or-nothing)
+  -- named, measure-only.
+
+WHAT LANDED (code + tests), kotoba arm only (the host arm is the parity
+reference and is untouched):
+  sg-ops-walk iterates through ONE `loop`/`recur` (bindings: the walk
+  position i, the answer vector acc, the dedupe map shadow seen) where
+  it was an ordinary `defn-` SELF-CALL -- one interpreter frame per
+  TOKEN. The defn signature and the sg-ops call site are unchanged;
+  the loop helper's self-tail re-entry is the trampolined, zero-charge
+  kind (kir.cljc T7.1/T7.4). CONTRACT UNCHANGED, pinned: byte 32 the
+  only separator; tokens are maximal non-32 runs; the {9,10,11,12,13}
+  guard above the walk is untouched; a duplicate token collapses
+  (the map shadow, the dedupe-map row); the ANSWER is the
+  document-VECTOR in first-occurrence order.
+
+MEASURED (runtime, no hardware; BEFORE = the defn self-call walk
+(HEAD), AFTER = the loop walk, HOST = the host arm; probe ran TWICE,
+byte-identical):
+  THE ROW'S TRAP-GONE CELLS (BEFORE TRAP -> AFTER == HOST):
+    3-word-cycle fields at 24/32/48/64 tokens (153/202/305/406 bytes):
+    ALL TRAPped on BEFORE (24/32/48 host/stack-exhausted, 64
+    budget/frames -- spelling varies by probe position, the recurring
+    state-dependence: the dedupe-map row's run resolved 24 and trapped
+    32+ at ITS position) and all answer 8 #{basic vote shuffle} == HOST
+    on AFTER.
+    8-word-cycle fields at 32/48/64 tokens (277/415/553 bytes): ALL
+    TRAPped on BEFORE (budget/frames) and all answer 8 #{all eight} ==
+    HOST on AFTER. The 24-token cell resolved on both arms (it sits
+    below the BEFORE boundary at this position).
+  regression grids, byte-identical BEFORE == AFTER == HOST on every
+  cell: the 19-cell sg-ops unit grid (token contract + the ten
+  guard/unknown cells -> null == nil), the 8-cell dedupe grid, the
+  standing pins (16|shuffle / 8| and the 12-cell malformed grid ->
+  null == nil), the dedupe row's trap-gone pins (the 70-byte
+  eight-token answer, the 86-byte spaced answer, the 77-byte
+  twelve-token answer) and the previous rows' long cells (106/1006/
+  110/206/200/192/152 bytes -- the 110-byte one still 42 #{basic}).
+  NAMED, NOT PINNED (the FUEL residual, measure-only): the loop
+  removes FRAMES, not FUEL -- every user call per token still charges
+  fuel. Boundary sweep (AFTER): the 3-word-cycle field resolves through
+  160 tokens (1014 bytes) and TRAPs budget/fuel at 192/256/384/512 --
+  the many-token wrong-refusal class moved from FRAMES (32) to FUEL
+  (160..192), its own row.
+
+CONSEQUENCE: NOTHING MOVES -- no :measured? flag value, no :shapes
+value, no workgroup row, no selection answer; :arm/:unknown stay
+provisional :measured? false. The SUBGROUP producer (ADR-0371) still
+does not exist -- no live wire feeds any of this. This row removes the
+per-token frame class (32..64-token fields answered a trap, no fact,
+where the host arm answered the fact) and adds no measurement claim.
+
+STATES:
+- IMPLEMENTED (code + tests): the loop/recur walk (the self-call
+  deleted). Tests: w3-subgroup-ops-walk-is-a-loop-not-a-self-call
+  RENAMES w3-subgroup-ops-walk-is-one-frame-per-token (the old name
+  described the deleted shape; gate test COUNT unchanged at 121): the
+  row's trap-gone pins (24/32/48/64-token 3-word-cycle and 32/48/64
+  8-word-cycle, parsed == HOST), the standing contract/guard/standing/
+  malformed grids (unchanged cells), and the source pins: exactly one
+  (loop [ and one (recur in the walk body, ZERO (sg-ops-walk
+  self-calls, the (string-skip-blank s j) advance kept, no
+  string-code-point-at, no (+ i 1)). The sg-size / pipe-token-end /
+  dedupe / keyword tests' named-residual prose is brought to the new
+  state (the old test name's references updated with it).
+- DECIDED (contract unchanged): nothing about the token/dedupe/answer
+  contract moved; the loop is an iteration detail.
+- MEASURED: the probe tables above (runtime behavior, no hardware).
+- ACCEPTED DESIGN ONLY (unchanged): ADR-0355's table rules, ADR-0358's
+  key, ADR-0362's subgroup contract, the claim protocol.
+- UNMEASURED, named: the FUEL residual's exact mechanism and boundary
+  beyond this sweep (160 resolve / 192 trap at this probe position),
+  the loop helper's own state-dependent boundary (20000 standalone vs
+  10000 trapped in an interleaved run), the document-vector element
+  cap's exact value (32..48, unreachable here), trap boundaries and
+  spellings beyond these runs (state- and path-dependent, never
+  pinned), every workgroup-row question (:arm/:unknown stay
+  provisional :measured? false), anything off this host.
+
+GATES (real runs):
+- Scoped GPU gate (8 GPU-owned namespaces, scratch runner
+  gpu_scoped_gate.cljk):
+    kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+      /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+  -> run 1 GREEN and run 2 GREEN, identical:
+     Ran 121 tests containing 11986 assertions. 0 failures, 0 errors.
+     scoped: 121 tests, 11986 passed, 0 failed, 0 errors
+     (committed pin 121 tests / 11970 assertions; delta = +0 tests
+     (one renamed) / +16 assertions). glslang 16.6.0 real-spawn ran.
+- gpu_regime_classify.py --self-test: TOTAL 2649 assertions passed,
+  0 failed (pin 2649/0).
+- FULL run-tests.cljk RED AT BASE, re-verified live this tick: "Could
+  not find namespace: kotoba.form" (ADR-0362), outside this diff --
+  NO green full suite claimed.
+- find docs -name '*.sh' -> 0 files (no evidence .sh; this file is
+  .txt).
+- NAMED, NOT HIDDEN: kbb prints "2 dep(s) are not :local/root ..." on
+  every kbb run -- identical on every probe and gate run, unrelated to
+  this diff. The worktree also carries an untracked deps.edn (present
+  at tick start; this row did not create or touch it, and it is not
+  committed).
+- BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head
+  (checked at tick start and re-checked before the push; chain PR
+  #1455 OPEN).

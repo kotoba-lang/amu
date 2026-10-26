@@ -1,0 +1,172 @@
+JUN-55/JUN-57 -- row (iii) EVALUATION: THE CROSS-DAY AGREEMENT
+ADJUDICATION -- the twelfth amendment's named next row ("its
+EVALUATION is the named next row"): the cross-day replication pair
+(sessions A + B, both fresh under the seventh amendment's
+pre-registration, on two different UTC days) is adjudicated against
+the entry criterion ("at least TWO fresh sessions UNDER THIS
+REGISTRATION on at least TWO different UTC days agreeing in every
+reading"), and H1/H2 and every per-op entry/flip/confirm verdict are
+DECIDED. NO hardware ran this slice and nothing is re-measured: the
+ground is the two committed admissible measure-logs consumed as
+derivation through the committed pre-registered route.
+
+record_written=2026-10-26 (JST). No POSIX .sh anywhere in docs/.
+
+WHAT RAN (tool output, this tick):
+
+1. THE JOINT CROSS-DAY CENSUS -- the committed pre-registered route
+   over BOTH admissible measure-logs in ONE invocation (the route's
+   own multi-session reading unit: one reading per (session, metric)
+   over the group's three pair blocks; the group's fold = the same
+   unique winner in EVERY reading -- which is exactly the entry
+   criterion's "agreeing in every reading of both" at its letter):
+
+     python3 scripts/gpu_regime_classify.py --cuda-op-census \
+       docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt \
+       docs/evidence/gpu/cuda-registered-sessionB-20261026/measure-log.txt
+
+   -> exit 0, stderr 0 bytes, 448 lines; published verbatim as
+   op-census-joint.txt in this directory (sha256
+   689cbde6a7c6ebdd7b807e2b807e23d1ef227bb4bc737ec6749fb8b0c6e57e24).
+   Sessions parsed: s1 = session A, s2 = session B, each 108 usable
+   pair blocks, 0 excluded, 40 named smoke orphans.
+
+2. SESSION ADMISSIBILITY (the eighth amendment's named fail-closed
+   reading (4): "decided at ENTRY by the wiring row -- the census
+   never reads session admissibility"; decided HERE, the evaluation
+   row) -- the two logs' own DATE-UTC lines (re-read this tick):
+     session A: DATE-UTC: 2026-10-25T08:53:58Z  (UTC day 2026-10-25)
+     session B: DATE-UTC: 2026-10-26T05:09:51Z  (UTC day 2026-10-26)
+   Both sessions are FRESH sessions run UNDER the seventh amendment's
+   registration (their own records: the pre-registered protocol at its
+   letter, the committed instrument and corpora sha256-matched 55/55,
+   analysis only through the committed routes) and they sit on TWO
+   DIFFERENT UTC days. Replication requirement (contract point 4):
+   MET. The two same-day EXPLORATORY sessions stay inadmissible
+   forever (rejection (a)) and enter no count here.
+
+3. THE AGREEMENT ADJUDICATION (verified tool output, joint census):
+   - Full census: 36 (op, W, shape) groups published, 36 folded to a
+     winner, 0 refused -- over 144 readings (36 groups x s1/s2 x
+     gpu_ns/host_ns), i.e. EVERY reading of BOTH sessions agrees
+     one-sided on one unique winner at every group.
+   - Fold census: warp-shuffle 34 / subgroup 2 -- the two subgroup
+     folds being (op :sum, W = 64) at both shapes (n = 1000003 and
+     n = 1048576).
+   - Entry groups (op, W): 18 published, 18 enter at the reading arm,
+     0 refuse; qualifying shapes = 1000003, 1048576 at ALL 18 groups
+     (fail-closed reading (1): a shape qualifies iff every reading at
+     that shape agrees one-sided on one unique winner -- both shapes
+     qualify everywhere; reading (2): two qualifying shapes naming
+     different winners would REFUSE -- never happens, every group's
+     two shapes name the same winner; reading (3): missing pair blocks
+     fail closed -- none, both logs are 108/108 usable).
+   - Cross-check (scratch script adjudication_crosscheck.py, Hermes
+     scratch only, never staged): the joint census's per-group folds
+     equal session A's own published folds at 36/36 groups AND session
+     B's own published folds at 36/36 groups ("A==joint: True",
+     "B==joint: True", 0 disagreeing groups) -- the cross-day
+     agreement holds group-by-group, not only in aggregate.
+
+4. THE CONTRAST GROUP (:sum, W = 64) IN THE JOINT CENSUS (all eight
+   readings -- the pair's full evidence for H1):
+     n=1000003: s1 gpu_ns warp/subgroup 1.0700 (20/20),
+       subgroup/baseline 0.8788 (20/20); s1 host_ns 1.0656 / 0.8912;
+       s2 gpu_ns 1.0705 (17/20) / 0.8937 (19/20); s2 host_ns
+       1.0727 / 0.8962 -- unique winner subgroup in every reading.
+     n=1048576: s1 gpu_ns 1.0905 / 0.8746; s1 host_ns 1.0962 /
+       0.8858; s2 gpu_ns 1.0612 / 0.8993; s2 host_ns 1.0586 /
+       0.8865 -- unique winner subgroup in every reading.
+   (The within-block one-sided counts ride beside every ratio and are
+   consumed NOWHERE -- rejection (d).)
+
+THE ADJUDICATION (DECIDED, this row):
+
+- H1 (registered: at (op :sum, W = 64) on xavier sm_72 on the CUDA
+  route :subgroup-reduce is the unique winner in every qualifying
+  reading): CONFIRMED -- the admissible pair agrees in every reading
+  of both (8/8 readings name :subgroup-reduce the unique winner; the
+  joint fold is subgroup at both shapes).
+- H2 (registered: every other (op, W) group's unique winner is
+  :warp-shuffle-reduce): CONFIRMED -- the other 17 (op, W) groups
+  fold :warp-shuffle-reduce in every reading of both sessions (34/36
+  shape groups).
+- Per-op entry/flip/confirm verdicts (the materialization rule,
+  rejection (e), at its letter -- the per-op layer only ADDS where the
+  pooled layer refused or an admissible per-op winner differs):
+  exactly THREE groups materialize a per-op record:
+    (:sum, 64)  FLIP     -- winner :subgroup-reduce differs from the
+                            design rung-1 answer :warp-shuffle-reduce;
+                            the cell would answer :subgroup-reduce
+                            with the single-op record and
+                            cuda-op-flip-note;
+    (:max, 64)  CONFIRM  -- winner :warp-shuffle-reduce equals the
+                            design answer (answer text frozen); the
+                            pooled layer REFUSED at W = 64 (the cell
+                            straddle had no winner) so the per-op
+                            layer adds;
+    (:min, 64)  CONFIRM  -- likewise.
+  The 15 (op, W) groups at W = 32/128/256/512/1024 x {sum, max, min}
+  materialize NO per-op record (their winner equals the standing
+  pooled answer :warp-shuffle-reduce -- the pooled records stand).
+  The projection of the seventh/tenth amendments (three groups,
+  exactly these) is now A MEASUREMENT-BACKED VERDICT under the
+  registration, no longer a projection.
+
+CONSEQUENCE TODAY: NOTHING MOVES (rule 4). cuda-op-entries STAYS {}
+this tick -- this row decides the verdicts; the surface movement
+(populating the table, the real FLIP at (:sum, 64), the CONFIRM
+records at (:max/:min, 64), the answer-text freeze, the :measured?
+movement the projection names at the W = 64 CONFIRM cells, and the
+flip note on :sum at W = 64) is "the entry it enables" -- the named
+NEXT row, an implementation slice with its own tests. No record, no
+:measured? flag, no selection answer, no :shapes value and no
+workgroup row moves this tick; the ladder
+:baseline -> :warp-shuffle-reduce -> :subgroup-reduce stays
+byte-for-byte and at (op :sum, W = 64) the design-ordered answer
+stands UNCLAIMED until the entry lands.
+
+STATES. DECIDED: this row (admissibility, the agreement adjudication,
+H1 CONFIRMED, H2 CONFIRMED, the three per-op verdicts and the 15
+non-materializations). MEASURED: nothing new (NO hardware ran; the two
+committed sessions CONSUMED as derivation -- their own measurement
+rows stand). IMPLEMENTED: nothing (evidence + the ADR amendment only).
+ACCEPTED DESIGN ONLY: unchanged (the operator-aware contract +
+pre-registration, the row (ii) route set, the entry contract + wiring,
+ADR-0358, ADR-0373). UNMEASURED, named: the entry landing (its own
+next row -- the verdicts are DECIDED but no production answer is
+confirmed or flipped until it lands); run 3+; every per-op verdict on
+non-xavier hardware; the :sum ordering at W = 64 on any other device
+or channel; the flip arm on real selection data (ZERO real flips
+landed); the pooled cell-split difference (session A 48/3/21 vs
+session B 48/1/23 of 72 cells) -- NAMED, outside the registered
+criterion (the criterion reads the (op, W) reading unit, never the
+pooled split) and its cause is UNMEASURED; every workgroup row
+(:arm/:unknown stay provisional :measured? false -- no :measured?
+flag moves this tick).
+
+GATES (real runs): scoped GPU gate (8 GPU-owned namespaces, scratch
+runner gpu_scoped_gate.cljk, never committed) GREEN on run 1 AND run
+2 -- 123 tests / 12154 assertions / 0 failures / 0 errors, exit 0
+both runs (identical to the committed pin 123/12154 -- the diff
+touches NO .cljk namespace, regression pin; glslang 16.6.0
+real-spawn ran in both);
+gpu_regime_classify.py --self-test -> TOTAL 2649 assertions passed,
+0 failed, exit 0 (regression pin 2649/0);
+find docs -name '*.sh' -> 0 files;
+FULL run-tests.cljk re-verified live this tick -> exit 1, RED AT BASE
+'Could not find namespace: kotoba.form' (ADR-0362) at namespace load
+before any test executes, OUTSIDE this diff -- NO green full suite
+claimed.
+
+BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head
+(checked at tick start and re-checked before this push; chain PR
+#1455 OPEN, the ONE chain PR).
+
+NAMED NOT HIDDEN: kbb's "2 dep(s) are not :local/root ..." warning
+on every run (identical everywhere); the untracked deps.edn in this
+worktree (present at tick start, not created or touched by this row,
+not committed).
+
+Record: docs/evidence/gpu/cuda-crossday-adjudication-20261026/
+(this record + op-census-joint.txt). (JUN-55, JUN-57)

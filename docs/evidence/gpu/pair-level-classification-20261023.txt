@@ -1,0 +1,185 @@
+JUN-58 / JUN-55 -- pair-level classification: rule 1's rule at pair
+granularity (2026-10-23)
+
+One IMPLEMENTATION slice: the row the rule-3 auto-wire state paragraph
+named ("UNIMPLEMENTED, unchanged and named: pair-level classification
+(the op-order cell's within-run ramping needs per-pair levels --
+analyze-oporder.py remains the manual instrument)"). NO hardware
+measurement ran in this slice -- every number below is PARSED from the
+committed op-order record (run-log.txt, analyze-oporder.txt) by the
+machinery's own self-tests, not re-measured.
+
+WHAT LANDED (implemented, with tests):
+
+- scripts/gpu_regime_classify.py (pair-level machinery section):
+  - parse_run_log_pairs(text) -> (complete, incomplete): the driver's
+    raw run-log samples keyed (run, op, pair). Incomplete pairs (an arm
+    missing) are NAMED and excluded, never silently dropped -- a ramping
+    clock that loses an arm is data about the run. A duplicate arm
+    raises.
+  - pair_level_classification(pairs): rule 1's OWN clustering rule,
+    unchanged -- GAP-1.15 single-linkage -- applied to the individual
+    pairs' baseline gpu-ns per operator instead of to per-run baseline
+    medians. The named gap this closes: a run's clock can ramp mid-run,
+    so run-level classification is blind to within-run regime changes.
+  - render_pair_level_section(...) + CLI --pairs <run-log.txt>: the
+    publication. Per level: pair count, baseline gpu-ns range, median
+    pair ratio, side counts. The rule-2 machine (sign_classification)
+    runs at pair granularity too but is published as an ANALOGUE only --
+    the section says in its own text "it is not rule 2": rule 2's
+    verdicts stay run-level over per-run ratios and no rule-2 verdict is
+    amended; the analogue cannot choose a variant. Cross-operator level
+    identity is NOT asserted here either. `via` names the publication
+    path (same honesty rule as rule 3's header).
+
+WHAT THIS SLICE DECIDED (the GAP-1.15 ethos: mechanical, visible,
+pinned):
+
+- Pair-level levels use GAP-1.15 single-linkage, NOT the manual
+  instrument's hand buckets (analyze-oporder.py: slow > 80k, middle
+  40k..80k, fast <= 40k). The constant and the rule are rule 1's own;
+  only the granularity changes.
+- Where the machine and the manual instrument's committed prose
+  diverge, the divergence is printed and pinned in --self-test, not bent
+  away (below).
+
+FINDING (machine vs the manual instrument, over the committed op-order
+run-log: 360 complete pairs = 6 runs x 3 ops x 20, 0 incomplete):
+
+1. The two instruments agree exactly on the pair population and the
+   3dp median for EVERY manual bucket row (8 rows, parsed from
+   analyze-oporder.txt itself by the self-test, not transcribed):
+   e.g. sum/slow 61 pairs 0.919, sum/middle 35 0.932, sum/fast 24
+   1.018, max/slow 113 0.917, max/fast 7 1.029, min/slow 86 0.920,
+   min/middle 14 0.993, min/fast 20 1.018. Machine median == manual
+   median for all eight.
+
+2. The manual buckets POOL what the machine splits, named here:
+   - fast is exactly ONE machine plateau for every op (the manual fast
+     bucket IS a machine level: max 7 pairs 35708..36250 @ 1.029,
+     min 20 pairs 35708..37167 @ 1.018, sum 24 pairs 35583..36958 @
+     1.018) -- the manual bucket boundaries coincide with the rule's
+     own split there;
+   - middle splits into 2 machine levels (e.g. sum: 45375..59417 34
+     pairs @ 0.934 and 68625 1 pair @ 0.836);
+   - slow splits into 2..5 machine levels (max: 5; sum: 4; min: 2).
+   The split the manual prose could not see: an ~88k plateau sits
+   between the manual "middle" and "slow" buckets (max 88125..88917 5
+   pairs @ 0.919, sum 88417..89625 5 pairs @ 0.906) -- gap 1.21 to the
+   ~107k plateau, above GAP-1.15, so the machine keeps it separate
+   where the hand buckets pooled it into slow. Both plateaus hold the
+   same side (faster), so the regime story the cell published (fast =
+   variant slower ~1.02; everything else = variant faster ~0.92) is
+   UNCHANGED by the finer classification.
+
+3. The single-pair spikes the NOTES named ("clock/transient glitches in
+   one pair", 0.295..0.784) become their own machine levels at
+   baselines 128k..330k (max: 0.784 / 0.491 / 0.321; sum: 0.295 /
+   0.444; min: 0.306) instead of hiding inside "slow". The slow-plateau
+   medians they were robust to (0.917..0.920) are unchanged.
+
+4. The pair-level sign ANALOGUE is regime-scoped / within-regime for
+   all three ops (max 7 slower/113 faster; min 22/97/1; sum 20/99/1)
+   because single pairs spike to both sides inside one level. This is
+   explicitly NOT a rule-2 verdict (rule 2 over per-run ratios is
+   untouched) -- the per-level medians above carry the regime story the
+   op-order cell asked about.
+
+Rendered section over the real corpus (real output, the --pairs CLI):
+
+  ## Pair-level regime classification (rule 1's rule at pair granularity)
+
+  Published by scripts/gpu_regime_classify.py --pairs: A run's clock
+  can ramp mid-run, so run-level classification is blind to within-run
+  regime changes: this section classifies the individual pairs instead.
+  [GAP-1.15 boilerplate, quoted above]
+  | operator | level | pairs | baseline gpu-ns range | median pair ratio | sides |
+  | max | 1 (fastest observed) | 7 | 35708..36250 | 1.029 | 5/7 slower, 2/7 faster |
+  | max | 2 | 5 | 88125..88917 | 0.919 | 1/5 slower, 4/5 faster |
+  | max | 3 | 104 | 107625..111125 | 0.917 | 1/104 slower, 103/104 faster |
+  | max | 4 | 1 | 128000 | 0.784 | 0/1 slower, 1/1 faster |
+  | max | 5 | 1 | 204250 | 0.491 | 0/1 slower, 1/1 faster |
+  | max | 6 (slowest observed) | 2 | 293625..330375 | 0.321 | 0/2 slower, 2/2 faster |
+  | min | 1 (fastest observed) | 20 | 35708..37167 | 1.018 | 15/20 slower, 4/20 faster, 1/20 at 1.0 |
+  | min | 2 | 5 | 45708..46125 | 0.960 | 0/5 slower, 5/5 faster |
+  | min | 3 | 9 | 58500..59875 | 1.009 | 5/9 slower, 4/9 faster |
+  | min | 4 | 85 | 107208..111167 | 0.920 | 2/85 slower, 83/85 faster |
+  | min | 5 (slowest observed) | 1 | 327417 | 0.306 | 0/1 slower, 1/1 faster |
+  | sum | 1 (fastest observed) | 24 | 35583..36958 | 1.018 | 15/24 slower, 8/24 faster, 1/24 at 1.0 |
+  | sum | 2 | 34 | 45375..59417 | 0.934 | 3/34 slower, 31/34 faster |
+  | sum | 3 | 1 | 68625 | 0.836 | 0/1 slower, 1/1 faster |
+  | sum | 4 | 5 | 88417..89625 | 0.906 | 0/5 slower, 5/5 faster |
+  | sum | 5 | 54 | 107458..110708 | 0.920 | 2/54 slower, 52/54 faster |
+  | sum | 6 | 1 | 173708 | 0.295 | 0/1 slower, 1/1 faster |
+  | sum | 7 (slowest observed) | 1 | 225250 | 0.444 | 0/1 slower, 1/1 faster |
+
+  pair-level analogue for max: regime-scoped (7 slower, 113 faster;
+  straddle within-regime).
+  pair-level analogue for min: regime-scoped (22 slower, 97 faster, 1
+  at 1.0; straddle within-regime).
+  pair-level analogue for sum: regime-scoped (20 slower, 99 faster, 1
+  at 1.0; straddle within-regime).
+
+TESTS (real output):
+
+- python3 scripts/gpu_regime_classify.py --self-test
+    = 1019 assertions, 0 failed (the previous 916 plus 103 pair-level
+    fixtures: unit -- parse complete/incomplete/duplicate-arm, empty
+    refusal, the GAP-1.15 pair boundary on both sides, the
+    variant/baseline ratio, the three sign-analogue shapes, the
+    "not rule 2"/incomplete-pairs/via rendering pins; corpus -- the
+    360/0 pair population, the machine level structure pinned per
+    level (lo/hi/count/median), the sign-analogue pins, and the 8
+    machine-equals-manual bucket relations plus the pool/split
+    divergence pins).
+- python3 scripts/gpu-subgroup-reduce-metal-measure.py --self-test
+    = 7 assertions, 0 failed (the driver's finalize path, unchanged by
+    this diff -- run to prove the import surface held).
+- Scoped GPU gate (the 7 GPU-owned test namespaces, scratch runner
+  gpu_scoped_gate.cljk, not in the repo), from the chain worktree root:
+
+    kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+      /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+
+    Ran 88 tests containing 7122 assertions.
+    0 failures, 0 errors.
+
+    scoped: 88 tests, 7122 passed, 0 failed, 0 errors
+
+  (88/7122, unchanged from base: this diff touches no .cljk namespace.)
+
+- full (kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)"
+  run-tests.cljk): RED AT BASE, re-verified this tick, outside this
+  diff -- aborts at NAMESPACE LOAD with "Could not find namespace:
+  kotoba.form" (the W3 port path, documented red at base in ADR 0362
+  and every prior tick record). This diff touches no namespace on that
+  path. No green full suite is claimed.
+
+WHAT DID NOT MOVE (named so nothing is silently upgraded):
+
+- src/kotoba/compiler/*, test/*: untouched. No code namespace in this
+  diff.
+- No evidence record is rewritten; every committed run-log.txt and
+  summary.md stands. This slice's self-tests READ the committed corpus
+  and write nothing to it.
+- analyze-oporder.py stays the manual instrument, unchanged -- it is no
+  longer the ONLY instrument, and its hand buckets are not reused by
+  the machine.
+- No :measured? flag, no workgroup row (ADR-0355/0358), no flip gate,
+  no selection answer moves (rule 4, untouched). This slice ran no
+  hardware measurement.
+- Rule 2's run-level verdicts are untouched; the pair-level sign
+  classification is an ANALOGUE publication only.
+
+State (the honesty rule's three states): pair-level classification is
+IMPLEMENTED (code + tests). UNIMPLEMENTED, unchanged and named:
+cross-operator level identity (classification stays per operator; a
+:sum level and a :min level are never called one clock level). Rule 4
+remains untouched.
+
+UNMEASURED, unchanged: everything. No new hardware number exists in
+this slice; every figure above is parsed from committed records.
+
+LEFT: cross-day replication of every cell (needs a later-day cron
+tick); cross-operator level identity; the blocked/absent-hardware
+vendor rows (JUN-57/59/60 hardware-free slices remain).

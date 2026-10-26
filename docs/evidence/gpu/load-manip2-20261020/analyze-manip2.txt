@@ -1,0 +1,37 @@
+===== load-manipulation experiment ROUND 2 REG 2 (JUN-58): manipulated CPU load vs SPEEDUP-iqr
+retained runs: 8 of 8;  missing/unverified: none
+arms: I = natural load (pairs 1-2), L = 24 CPU burners (pairs 3-4); per-run iqr is within-run over 32 round-ratios
+dose rule RE-REGISTERED before dispatch: I runs load1<=25.0, L runs load1>=30.0, checked at run START and run END, plus separation clause min(L)-max(I)>=5.0
+pair1 w64t31 [I] [Tue Oct 20 16:22:42 JST 2026]: gap=-129761.7 ns/dispatch  speedup median=1.0910 iqr=0.1476 min=0.7364 max=2.4647  floor/baseline=0.1460  floor/variant=0.1572  load1 start=10.69 end=11.34  vs-1.0=indistinguishable-at-this-noise
+pair1 w64t32 [I] [Tue Oct 20 16:23:36 JST 2026]: gap=-92909.2 ns/dispatch  speedup median=1.0234 iqr=0.1358 min=0.7835 max=1.4763  floor/baseline=0.1083  floor/variant=0.1160  load1 start=11.34 end=12.02  vs-1.0=indistinguishable-at-this-noise
+pair2 w64t31 [I] [Tue Oct 20 17:06:58 JST 2026]: gap=-135990.2 ns/dispatch  speedup median=1.0379 iqr=0.0346 min=0.6333 max=1.1663  floor/baseline=0.0899  floor/variant=0.0926  load1 start=18.09 end=16.43  vs-1.0=indistinguishable-at-this-noise
+pair2 w64t32 [I] [Tue Oct 20 16:24:47 JST 2026]: gap=-30734.4 ns/dispatch  speedup median=1.0160 iqr=0.3178 min=0.3933 max=2.0617  floor/baseline=0.4622  floor/variant=0.5194  load1 start=12.02 end=24.96  vs-1.0=indistinguishable-at-this-noise
+pair3 w64t31 [L] [Tue Oct 20 17:11:57 JST 2026]: gap=-1159.2 ns/dispatch  speedup median=1.0049 iqr=0.1760 min=0.5879 max=2.1056  floor/baseline=0.4011  floor/variant=0.4049  load1 start=67.29 end=58.52  vs-1.0=indistinguishable-at-this-noise
+pair3 w64t32 [L] [Tue Oct 20 17:13:11 JST 2026]: gap=-222277.3 ns/dispatch  speedup median=1.0412 iqr=0.0376 min=0.8012 max=1.1664  floor/baseline=0.0851  floor/variant=0.0881  load1 start=58.52 end=100.33  vs-1.0=indistinguishable-at-this-noise
+pair4 w64t31 [L] [Tue Oct 20 17:19:37 JST 2026]: gap=-296888.7 ns/dispatch  speedup median=1.0516 iqr=0.0400 min=0.9915 max=1.1238  floor/baseline=0.0912  floor/variant=0.0952  load1 start=116.19 end=122.23  vs-1.0=indistinguishable-at-this-noise
+pair4 w64t32 [L] [Tue Oct 20 17:17:15 JST 2026]: gap=-21569.3 ns/dispatch  speedup median=1.0488 iqr=0.2631 min=0.7013 max=1.9195  floor/baseline=0.4400  floor/variant=0.4340  load1 start=100.33 end=116.19  vs-1.0=indistinguishable-at-this-noise
+
+===== per-cell per-arm (primary endpoint)
+w64t31 armI: n=2  iqr=[0.1476, 0.0346]  median_iqr=0.0911  clean(iqr<=0.05)=1/2  signs=-/-  load1 start=[10.69, 18.09] end=[11.34, 16.43]
+w64t31 armL: n=2  iqr=[0.176, 0.04]  median_iqr=0.1080  clean(iqr<=0.05)=1/2  signs=-/-  load1 start=[67.29, 116.19] end=[58.52, 122.23]
+w64t32 armI: n=2  iqr=[0.1358, 0.3178]  median_iqr=0.2268  clean(iqr<=0.05)=0/2  signs=-/-  load1 start=[11.34, 12.02] end=[12.02, 24.96]
+w64t32 armL: n=2  iqr=[0.0376, 0.2631]  median_iqr=0.1504  clean(iqr<=0.05)=1/2  signs=-/-  load1 start=[58.52, 100.33] end=[100.33, 116.19]
+
+===== manipulation check (RE-REGISTERED: I runs load1<=25.0, L runs load1>=30.0, start AND end, separation min(L)-max(I)>=5.0)
+arm I load1 (start,end): [(10.69, 11.34), (11.34, 12.02), (18.09, 16.43), (12.02, 24.96)]  band ok=True (4/4 runs)
+arm L load1 (start,end): [(67.29, 58.52), (58.52, 100.33), (116.19, 122.23), (100.33, 116.19)]  band ok=True (4/4 runs)
+separation min(L)-max(I) = 33.56  ok=True
+DOSE-VALID=True
+
+===== pooled iqr contrast (exact two-sided Mann-Whitney U, exhaustive)
+arm I iqr: [0.1476, 0.1358, 0.0346, 0.3178] (median 0.1417)
+arm L iqr: [0.176, 0.0376, 0.04, 0.2631] (median 0.1080)
+U=8.0 (chance 8.0)  exact two-sided p=70/70 = 1.0000
+
+===== dose-response (descriptive): Spearman rho(load1-start, iqr), exact permutation p
+n=8  rho=-0.0476  exact two-sided p=37694/40320 = 0.9349
+
+===== what this bounds, honestly (pre-registered)
+no clean/dirty separation at w64t32 at this dose and n -> no effect detected; causal direction stays UNMEASURED (a null at n=2 per cell per arm bounds little)
+the transition series is untouched (this is not a cross-tick sign probe); :measured? rows untouched; sign counts above are observational only
+round 1, round-2 registration 1 and round-2 registration 2 are separate and never pooled

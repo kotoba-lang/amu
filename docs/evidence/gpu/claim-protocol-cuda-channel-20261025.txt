@@ -1,0 +1,150 @@
+JUN-55/JUN-57 -- the claim-protocol CUDA channel row is DECIDED:
+a CUDA measurement under the claim protocol CAN exist -- by adoption,
+metric-named, sign-scoped
+record_written=2026-10-25 (JST)
+host: darwin 25.4.0 arm64 -- this slice runs no hardware and needs no
+host fact; every number below is quoted from a committed record.
+
+THE QUESTION (verbatim, the row this slice takes -- HONEST LEFT (b) of
+docs/evidence/gpu/cuda-paired-timing-xavier-20261025/README.md):
+
+  "The claim-protocol adoption row for the CUDA channel -- HONEST LEFT
+   (b), 'sign claims channel-scoped; a CUDA measurement never flips an
+   MSL/WGSL cell' -- is NOT written, so no rule-2-class sign claim
+   exists for this channel and none is made or implied here."
+
+GROUNDING (tool-verified facts read this tick; every command run in the
+worktree, outputs quoted exactly):
+
+1. The protocol's adoption clause exists and names this row's idiom
+   exactly (ADR-0360, "Amendment 2026-10-23 (the regime-robust
+   magnitude claim protocol)"):
+
+     "the claim rules this campaign's records already practiced ad hoc
+      become the protocol for sign and magnitude claims in this
+      evidence family (the gpu-subgroup-reduce measurement records; a
+      later vendor campaign adopts it by citation, its own row)"
+
+   ($ grep -n "adopts it by citation"
+     docs/adr/0360-gpu-apple-subgroup-reduce.md -> lines 536, 1190;
+     1190 is the WGSL channel's own adoption citing the same clause.)
+
+2. The channel's clocks. scripts/gpu-cuda-reduce-timing.cu (the
+   ADR-0373 instrument kind written for the CUDA channel) times every
+   dispatch twice and prints both on every sample line ($ grep -n
+   "PAIRS\|WARMUP\|CLOCK_MONOTONIC\|gpu_ns\|host_ns\|lcg\|20261023"
+   scripts/gpu-cuda-reduce-timing.cu):
+
+     "19://   gpu_ns  -- CUDA-event elapsed time around the kernel on the GPU
+      21://   host_ns -- CLOCK_MONOTONIC around submit -> completion (the launch
+      ...
+      52://   sample op=<op> pair=<p> order=<A|B> arm=<arm> gpu_ns=<g> host_ns=<h>
+      82:#define PAIRS 20               /* interleaved pairs per block (the Metal
+      84:#define WARMUP 2               /* discarded submits per arm (ditto) */
+      86:static uint32_t lcg_state = 20261023u;"
+
+   Unlike the WGSL channel (host clock only), this channel HAS a
+   GPU-timeline clock: gpu_ns is a CUDA-event elapsed time on the GPU
+   timeline -- the same metric class rule 1's gpu-ns baselines are
+   written in (the MSL channel's "Metal GPU timestamps ... host
+   submit->completion ns recorded as secondary"). The run unit the
+   instrument implements is the MSL channel's: one fresh process per
+   pair block (instrument header line 30, "Metal instrument's
+   fresh-process run").
+
+3. The committed run publishes NO rule-1 classification:
+
+     $ grep -c -i "regime" docs/evidence/gpu/cuda-paired-timing-xavier-20261025/compile-and-run-log.txt
+     0
+     $ grep -c -i "regime" docs/evidence/gpu/cuda-paired-timing-xavier-20261025/paired-ratios.txt
+     0
+
+   and its README states its own standing: "NO VERDICT accompanies
+   these numbers ... paired-ratios.txt ... RAW DATA, NOT A SIGN CLAIM".
+   The paired-median ratio it computes (median over the 20 within-pair
+   ratios armA/armB on the named clock) is exactly rule 2's per-run
+   unit on the MSL channel.
+
+DECISION (the design slice; ADR-0361's new amendment is the normative
+text -- this record grounds it):
+
+  (a) Rule 1 carries with the channel-named baseline metric: the pair
+      block's REFERENCE arm (the paired ratio's denominator --
+      :baseline for subgroup/baseline and warp-shuffle/baseline,
+      :subgroup-reduce for warp-shuffle/subgroup) median over its 20
+      samples. Two metrics, never mixed: gpu_ns (rule 1's own metric
+      class, carried at its letter here) and host_ns (secondary, its
+      own clusters). Clusters per (metric x operator x pair-type),
+      GAP-1.15 unchanged -- the reference arm differs by pair-type and
+      the baseline is a clock-level proxy, so a cluster pools runs
+      whose proxy is the same kernel. A claim in a metric whose
+      clusters are unpublished is inadmissible.
+  (b) Rule 2 carries IN FULL, unchanged: regime-invariant sign is the
+      only selection basis; the per-run ratio is the block's
+      paired-median ratio in the named metric; correctness
+      precondition verified inside the measurement (the instrument's
+      verified read-back: 218/218 ok=1 in the committed run). Sign
+      claims CHANNEL-SCOPED: a CUDA-channel sign never flips an MSL or
+      WGSL cell and never answers a workgroup row (ADR-0355's
+      2026-10-25 channel rule: the instrument channel answers no
+      dispatch row); only the CUDA route's own selection questions
+      (HONEST LEFT (c)'s rows) consume it.
+  (c) Rule 3 with NAMED LIMITS: magnitude claims within-channel,
+      within-metric, regime-matched; CROSS-CLOCK magnitude claims
+      (gpu_ns vs host_ns) INADMISSIBLE (different spans: kernel only
+      vs submit -> completion). Named hazard (design reasoning, NOT a
+      measurement): fixed per-dispatch overhead common to both arms
+      biases host_ns paired ratios toward 1 -- conservative against
+      win claims -- asymmetric arm overhead not assumed away; the
+      instrument's stop event records on the host INSIDE the host
+      span (named in the instrument). Every magnitude publication
+      keeps both clocks' raw per-block times beside the ratios.
+  (d) Rule 4 unchanged: this adoption measures nothing and moves
+      nothing.
+
+WHAT THE ADOPTION DOES NOT DO (Part 2 of the amendment): the
+committed 2026-10-25 xavier paired-timing run stays OUT (no rule-1
+publication, predates this adoption -- the same rule the WGSL channel
+applied to its pre-adoption wall-clock read); paired-ratios.txt
+remains RAW DATA. Named, not hidden: re-deriving rules 1 + 2 over
+that log's own sample lines is mechanically possible (the derive
+parse, scratch/derive-cuda-paired-20261025.py, is re-runnable against
+the committed log) and is REFUSED for this record -- an adoption is
+not retroactive. No workgroup row, :measured? flag, :shapes value,
+flip cell or selection answer moves; :arm/:unknown stay provisional
+:measured? false; no MSL/Apple question is touched (ADR-0360's
+narrowing names the M1 Max, which no CUDA record measures).
+
+STATE (the honesty rule's three states):
+
+- ACCEPTED DESIGN ONLY: THIS adoption (the ADR-0361 amendment; this
+  record). The claim protocol itself (rules 1-4) is MSL-channel
+  design, mechanised for rules 1-2 there and adopted for WGSL; its
+  CUDA machinery (i) is UNIMPLEMENTED -- no parse of the instrument's
+  sample lines publishes rule-1 clusters or rule-2 verdicts today.
+- IMPLEMENTED: nothing in this slice -- no code moves.
+- MEASURED: nothing -- no hardware ran in this slice. The committed
+  xavier paired-timing run's numbers (4360 samples) stand unchanged
+  as MEASURED RAW DATA of their own record, outside the claim
+  protocol.
+- UNMEASURED, named: every CUDA sign/speed verdict (needs (i), then a
+  fresh session (ii), then HONEST LEFT (c)); the clock/thermal regime
+  structure of the xavier blocks (rule 1's question on this channel --
+  the committed run was one session, one process per block, no regime
+  control); cross-run stability; every workgroup row.
+
+GATES (real runs, this slice):
+
+- gpu_regime_classify.py --self-test: GREEN -- 2448 assertions / 0
+  failed (this slice touches no code; the run is a regression pin).
+- Scoped GPU gate (the 8 GPU-owned test namespaces, scratch runner
+  gpu_scoped_gate.cljk, not in the repo): GREEN -- 106 tests / 11046
+  assertions / 0 failures / 0 errors. The diff touches no .cljk
+  namespace under test (docs/adr + docs/evidence only) -- the gate is
+  a regression pin.
+- FULL run-tests.cljk: NOT RUN this slice (docs-only diff) -- named
+  so nothing is implied. Documented red at base ("Could not find
+  namespace: kotoba.form", the W3 port path, ADR-0362), outside this
+  diff, not re-verified here. NO green full suite is claimed.
+- Evidence hygiene: no POSIX .sh execution file exists anywhere under
+  docs/ (checked this tick before commit).

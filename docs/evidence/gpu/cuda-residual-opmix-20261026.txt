@@ -1,0 +1,264 @@
+JUN-55/JUN-57 -- the residual's quantitative attribution row: the ADR-0361
+eighteenth amendment's named unmeasured item ("the residual's quantitative
+attribution (count-model per-op mix, its own row)") lands as ONE analysis
+slice over FOUR COMMITTED inputs. NO HARDWARE RAN THIS SLICE, nothing is
+timed, no GPU, no probe -- every MEASURED number consumed here was measured
+at its own commit; everything produced here is DERIVED arithmetic.
+
+record_written=2026-10-26 (JST). NAMED, NOT HIDDEN: same UTC day as every
+2026-10-26 probe -- NOT a cross-day replication, extends NO record's
+:evidence (ADR-0373's same-day rule by citation); this row produces no
+paired samples and is inadmissible under the entry criterion BY KIND; it
+enters nothing and moves no record.
+
+The question (the op-cost-table's own open question, verbatim): "Whether the
+hot-loop mix gives these shares (and what carries the W-shape) is its own
+analysis row (count model per-op mix)."
+
+Inputs (all committed; sha256 printed in the output below):
+  I1 cuda-sass-census-20261026/kernel-sass-census-table.txt (MEASURED static
+     opcode histograms of the 54 emitted kernels)
+  I2 cuda-sass-census-20261026/sass-census-compare.txt (the committed
+     region static counts + count model + its model-vs-measured table)
+  I3 cuda-kernel-cause-20261026/abs-arm-times.txt (MEASURED per-kernel
+     median gpu_ns at W=128/256/512, both shapes n=1000003/1048576)
+  I4 cuda-op-microbench-20261026/op-cost-table.txt (MEASURED named-pair
+     issue-side delta 0.1807 cyc/op, ratio 1.06779)
+
+The instrument: scratch residual_opmix_20261026.py (sha256 cd471fb0..,
+never staged), deterministic arithmetic over I1-I4; its output is
+committed VERBATIM below (run once, 2026-10-26 JST; every parse of I1-I4
+is assert-checked in-script -- histogram totals 85/106, width-invariance,
+count model 6/6 against I2's table, medians 6/6 cells).
+
+================ the scratch script's output, VERBATIM ================
+DERIVED ANALYSIS -- the count-model per-op mix (marked DERIVED throughout;
+the SASS histograms / region counts / medians / microbench delta consumed
+here are MEASURED at their own commits -- nothing new is measured here)
+input I1: /Users/junkawasaki/github/wt/amu-gpu/chain/docs/evidence/gpu/cuda-sass-census-20261026/kernel-sass-census-table.txt
+  sha256=d18657bfb6770fdf3b905570ffadf94fd1253d77b109c97545d6ecd6c55f0b13
+input I2: /Users/junkawasaki/github/wt/amu-gpu/chain/docs/evidence/gpu/cuda-sass-census-20261026/sass-census-compare.txt
+  sha256=3ec0a1fe38e123e740fefb483b8e2a27c3ef7765cbdca40fc1ff2206ccd00b9f
+input I3: /Users/junkawasaki/github/wt/amu-gpu/chain/docs/evidence/gpu/cuda-kernel-cause-20261026/abs-arm-times.txt
+  sha256=86316df0546f793d80cfcf920555e43c0f186bc956bfac16b8137a89b576d574
+input I4: /Users/junkawasaki/github/wt/amu-gpu/chain/docs/evidence/gpu/cuda-op-microbench-20261026/op-cost-table.txt
+  sha256=03bc370276a8843f2bae4da9231a0c319102b5da6b3b56c68468ed9c304ceaba
+
+=== static histogram parse (MEASURED counts, I1) ===
+kernels parsed: 9  -- totals verified 85 (sum) / 106 (max,min)
+  subgroup sum: histogram identical across W=128/256/512: True
+  subgroup max: histogram identical across W=128/256/512: True
+  subgroup min: histogram identical across W=128/256/512: True
+
+=== per-op mix of the DIFFERING code, static (MEASURED diff of I1 histograms) ===
+subgroup max MINUS sum (static, per thread's code):
+    BMOV.32.CLEAR            +1
+    BRA                      +1
+    BSSY                     +1
+    BSYNC                    +1
+    F2I.FTZ.U32.TRUNC.NTZ    +2
+    FADD                     -2
+    FMNMX                    +2
+    I2F.U32.RP               +2
+    IADD3                    +3
+    IMAD                     +1
+    IMAD.HI.U32              +3
+    IMAD.MOV.U32             +3
+    IMAD.U32                 +2
+    ISETP.GE.U32.AND         +2
+    MUFU.RCP                 +2
+    PLOP3.LUT                -2
+    SEL                      -1
+    NET                      +21
+subgroup min MINUS sum (static, per thread's code):
+    BMOV.32.CLEAR            +1
+    BRA                      +1
+    BSSY                     +1
+    BSYNC                    +1
+    F2I.FTZ.U32.TRUNC.NTZ    +2
+    FADD                     -2
+    FMNMX                    +2
+    I2F.U32.RP               +2
+    IADD3                    +3
+    IMAD                     +1
+    IMAD.HI.U32              +3
+    IMAD.MOV.U32             +3
+    IMAD.U32                 +2
+    ISETP.GE.U32.AND         +2
+    MUFU.RCP                 +2
+    PLOP3.LUT                -2
+    SEL                      -1
+    NET                      +21
+
+(the +21 NET is the census's once-per-thread surplus: prologue +3,
+ between +18; the gross diff also carries sum-only PLOP3.LUT:2 SEL:1)
+
+=== committed count model re-derived (cross-check vs I2's table) ===
+     W  outer  sum  max  min | max/sum  min/sum
+     32      0  102  123  123 |  1.2059   1.2059
+     64      1  113  134  134 |  1.1858   1.1858
+    128      2  124  145  145 |  1.1694   1.1694
+    256      3  135  156  156 |  1.1556   1.1556
+    512      4  146  167  167 |  1.1438   1.1438
+   1024      5  157  178  178 |  1.1338   1.1338
+count model reproduces I2's table 6/6 (sum/max per-thread counts exact);
+count ratios at W=128/256/512: 1.1694 1.1556 1.1438
+
+=== measured medians parsed (MEASURED, I3) ===
+  n=1000003 op=max subgroup 128/256/512 = [133376, 140736, 148960]
+  n=1000003 op=min subgroup 128/256/512 = [133136, 140544, 149792]
+  n=1000003 op=sum subgroup 128/256/512 = [112544, 120128, 129936]
+  n=1048576 op=max subgroup 128/256/512 = [139280, 146672, 155856]
+  n=1048576 op=min subgroup 128/256/512 = [138896, 146848, 155856]
+  n=1048576 op=sum subgroup 128/256/512 = [116688, 125360, 135488]
+
+=== microbench named pair (MEASURED, I4): delta=0.1807 cyc/op issue-side,
+    ratio=1.06779 -> delta_rel=0.06779 (latency side 0.99989 -> ~0) ===
+
+=== residual r = measured_ratio/count_ratio - 1 (DERIVED over I2+I3) ===
+     W |      max/sum shape1 shape2 mean |      min/sum shape1 shape2 mean | counts
+   128 | 0.0135 0.0207 0.0171 | 0.0116 0.0179 0.0148 | 1.1694
+   256 | 0.0138 0.0125 0.0132 | 0.0125 0.0137 0.0131 | 1.1556
+   512 | 0.0023 0.0057 0.0040 | 0.0078 0.0057 0.0068 | 1.1438
+  (mean residual max: 0.0171 0.0132 0.0040 )
+  (mean residual min: 0.0148 0.0131 0.0068 )
+
+=== PART 1 -- does the hot-loop mix give the implied shares? ===
+dynamic substituted slots per thread = 6 (fold 1 x 5 iters + inner 1 x 1 iter;
+  census: fold 7=7 and inner 9=9, the only hot-loop difference is FADD -> FMNMX)
+     W | s_actual=n_sub/N_max | s_implied_max | s_implied_min | r_pred(s*d) | r_meas_max | r_meas_min
+   128 | 0.0414 (6/145)        | 0.2523       | 0.2181       | 0.0028     | 0.0171     | 0.0148
+   256 | 0.0385 (6/156)        | 0.1943       | 0.1931       | 0.0026     | 0.0132     | 0.0131
+   512 | 0.0359 (6/167)        | 0.0585       | 0.0998       | 0.0024     | 0.0040     | 0.0068
+  s_actual is 6/145, 6/156, 6/167 = 0.0414/0.0385/0.0359
+  vs implied 0.2525/0.1935/0.0585 (max) -- needed share is 6.1x/5.0x/1.6x the
+  actual and the shapes disagree (actual -13% across W, implied -77%).
+
+=== PART 2 -- additive fixed-cost feasibility (equal-step test) ===
+model: T_sum(W)=A+B*outer, T_max(W)=T_sum(W)+K, K=6*delta+C21 (W-flat);
+  outer(W)=log2(W/32)=2/3/4 at W=128/256/512, each +1 outer adds the same
+  11 shared ops to BOTH kernels -> u(W)=K/(rho(W)-1) must advance EQUALY per step.
+  cell | 1/(rho-1) at 128/256/512 | steps s1,s2 | s2/s1 | verdict
+  max/1000003  | 5.4025 5.8292 6.8301    | 0.4267,1.0009 | 2.346 | INFEASIBLE (s2/s1=2.346)
+  max/1048576  | 5.1650 5.8821 6.6520    | 0.7171,0.7699 | 1.074 | INFEASIBLE (s2/s1=1.074)
+  max/mean     | 5.2811 5.8555 6.7399    | 0.5745,0.8843 | 1.539 | INFEASIBLE (s2/s1=1.539)
+  min/1000003  | 5.4654 5.8840 6.5439    | 0.4186,0.6599 | 1.576 | INFEASIBLE (s2/s1=1.576)
+  min/1048576  | 5.2543 5.8340 6.6520    | 0.5796,0.8180 | 1.411 | INFEASIBLE (s2/s1=1.411)
+  min/mean     | 5.3578 5.8589 6.5975    | 0.5011,0.7386 | 1.474 | INFEASIBLE (s2/s1=1.474)
+
+  fit-two-points-predict-third (u=2*u2-u1 -> rho3_pred = 1+1/(2/(rho2-1)-1/(rho1-1))):
+  cell | fit 128+256 -> pred 512 | fit 128+512 -> pred 256 | fit 256+512 -> pred 128
+  max/1000003  | 1.1598 (meas 1.1464, err +1.34pp) | 1.1635 (meas 1.1716, err -0.81pp) | 1.2071 (meas 1.1851, err +2.20pp)
+  max/1048576  | 1.1515 (meas 1.1503, err +0.12pp) | 1.1692 (meas 1.1700, err -0.08pp) | 1.1956 (meas 1.1936, err +0.20pp)
+  max/mean     | 1.1555 (meas 1.1484, err +0.71pp) | 1.1664 (meas 1.1708, err -0.44pp) | 1.2012 (meas 1.1894, err +1.18pp)
+  min/1000003  | 1.1587 (meas 1.1528, err +0.59pp) | 1.1665 (meas 1.1700, err -0.34pp) | 1.1914 (meas 1.1830, err +0.85pp)
+  min/1048576  | 1.1559 (meas 1.1503, err +0.56pp) | 1.1680 (meas 1.1714, err -0.34pp) | 1.1994 (meas 1.1903, err +0.90pp)
+  min/mean     | 1.1572 (meas 1.1516, err +0.57pp) | 1.1673 (meas 1.1707, err -0.34pp) | 1.1953 (meas 1.1866, err +0.87pp)
+
+=== PART 2b -- W-flat candidates vs the W-shaped residual ===
+  the two per-op mix terms are W-FLAT per thread: substitution 6*delta = 1.0842 cyc, surplus C21 = 21 ops at fixed cost. The measured
+  residual in count-equivalents (r*N_sum, uniform-cost units):
+    max: 2.12 1.78 0.58 at W=128/256/512 (declines 3.7x)
+    min: 1.83 1.77 0.99 at W=128/256/512 (declines 1.9x)
+    substitution equivalent (6*delta_rel) = 0.41 at every W (flat)
+  -> no W-flat per-op excess (neither the FMNMX delta nor any fixed surplus-op
+     cost) can produce a declining residual; the W-shape is a dynamic effect.
+     (near-feasible cell: max/shape-2 n=1048576, s2/s1 = 1.074 -- its
+     fit-predict misfits are +0.08..+0.20pp of ratio, inside the 20-pair median
+     noise; the other five cells are 1.4x-2.3x unequal, misfits up to +2.2pp.)
+
+UNMEASURED, named: what dynamic effect carries the W-shape (per-phase
+  instrumentation, its own row); the surplus ops' true per-op costs; the
+  inner-loop thread set (the committed model counts it on all W threads);
+  every per-op cost except the four valid microbench arms.
+
+sha256 of this script (scratch, never staged): cd471fb004f048297790149c48b64cf4e2a31366cc7bc32762486cabb2578189
+================ end verbatim output ================================
+
+THE FINDING (the named question splits into two answers):
+(1) THE HOT-LOOP MIX DOES NOT GIVE THE IMPLIED SHARES -- the FMNMX
+    issue-side delta is REFUTED as the dominant carrier of the residual.
+    The dynamic substituted-slot count is 6 per thread at every W (the
+    fold loop's 1 FADD->FMNMX x 5 iters + the inner loop's 1 x 1 iter;
+    the census's only hot-loop difference), so the actual share is
+    s = 6/145, 6/156, 6/167 = 0.0414/0.0385/0.0359 at W=128/256/512
+    (nearly W-stable, -13%) against the implied 0.2523/0.1943/0.0585
+    (max) and 0.2181/0.1931/0.0998 (min) -- the needed share is
+    6.1x/5.0x/1.6x the actual and the shapes disagree (implied -77%).
+    At the measured-cost anchor the substitution predicts only
+    +0.28/+0.26/+0.24 percentage points of the measured
+    +1.71/+1.32/+0.40 pp (max). The issue delta explains ~16% of the
+    residual at W=128 and cannot carry its W-shape.
+(2) NO ADDITIVE FIXED-COST MODEL OVER THE COMMITTED COUNT MODEL FITS
+    THE W-SHAPE AT ALL. The per-op mix terms are W-FLAT per thread
+    (substitution 6 x 0.1807 cyc; the 21 once-per-thread surplus ops at
+    any fixed cost) while the outer loop adds the same 11 shared ops to
+    both kernels per W step, so u(W) = K/(rho(W)-1) must advance EQUALLY
+    per step. The measured cells advance 1.4x-2.3x unequally (six
+    cells; equal-step test in the output) and the fit-two-predict-third
+    misfits reach +2.2pp of ratio -- with one near-feasible cell
+    (max/shape-2, s2/s1 = 1.074, misfits +0.08..+0.20pp, inside the
+    20-pair median noise) named rather than hidden. The residual's
+    W-shape is therefore not a per-op cost effect of ANY fixed cost
+    vector -- including the FMNMX delta and the duplicated reciprocal
+    setups' costs -- it is a dynamic runtime effect, in the same class
+    as the baseline W=512 rising step the census already refuted as a
+    count effect.
+(3) The per-op mix of the differing code is now named at opcode
+    granularity (the static diff tables above): the substitution pair
+    (FADD -2 / FMNMX +2, 6 dynamic) plus the 21-op once-per-thread
+    surplus (MUFU.RCP +2, I2F +2, F2I +2, IADD3 +3, IMAD.MOV.U32 +3,
+    IMAD.HI.U32 +3, IMAD +1, IMAD.U32 +2, ISETP.GE.U32.AND +2, BRA +1,
+    BMOV.32.CLEAR +1, BSSY +1, BSYNC +1; sum-only PLOP3.LUT -2,
+    SEL -1) -- consistent with the census's duplicated reciprocal
+    setup (2 extra MUFU.RCP + their I2F/F2I pairs).
+
+CONSEQUENCE: NOTHING MOVES (rule 4) -- no record, no :measured? flag, no
+selection answer, no :shapes value, no workgroup row; the landed entries
+stand byte-for-byte. The named item moves PARTIALLY: the mix half is
+ANSWERED (the hot-loop mix does NOT give the implied shares -- the issue
+delta is refuted as dominant carrier), the W-shape's carrier is REFUTED
+as a per-op cost effect and stays UNMEASURED as a dynamic effect.
+
+STATES: DERIVED (everything this row produced -- the mix tables, the
+shares, the equal-step refutation, the fit misfits; marked). MEASURED
+(consumed, at their own commits): I1's histograms, I3's medians, I4's
+named-pair delta. READ: nothing new. IMPLEMENTED: nothing (evidence +
+ADR-0361 nineteenth amendment only). DECIDED: nothing new. ACCEPTED
+DESIGN ONLY (unchanged): the operator-aware contract + pre-registration,
+the row (ii) routes, the entry contract + wiring, ADR-0358, ADR-0373.
+UNMEASURED, named: what dynamic effect carries the residual's W-shape
+(per-phase instrumentation, its own row -- it joins the baseline W=512
+step's dynamic cause in that class); the 21 surplus ops' true per-op
+costs; the inner-loop thread set (the committed model counts it on all W
+threads -- inherited assumption, not verified); every per-op cost except
+the four valid microbench arms; raw MUFU.RCP cost; per-op integer
+latency on this toolchain; a non-eliminated overhead baseline; the sum
+ratio's TRUE side at W=256; a cross-day run 3+ (still 2026-10-26 UTC);
+every per-op verdict on non-xavier hardware; the :sum ordering at W=64
+on any other device or channel; the landed rows on a live CUDA selection
+path; every workgroup row (:arm/:unknown stay provisional :measured?
+false).
+
+GATES (real runs, this worktree): scoped GPU gate GREEN 123 tests /
+12162 assertions / 0 failures / 0 errors on run 1 AND run 2 (identical
+to the committed pin -- this diff touches NO .cljk namespace, regression
+pin; glslang 16.6.0 real-spawn ran in both runs);
+gpu_regime_classify.py --self-test TOTAL 2649 / 0 failed (regression
+pin); FULL run-tests.cljk NOT re-run this slice (no .cljk touched) --
+documented RED AT BASE 'Could not find namespace: kotoba.form'
+(ADR-0362), outside this diff, NO green full suite claimed; find docs
+-name '*.sh' -> 0 (evidence is .txt).
+
+BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head (checked
+at tick start and re-checked immediately before the push; chain PR #1455
+OPEN, the ONE chain PR).
+
+NAMED NOT HIDDEN: kbb's "2 dep(s) are not :local/root ..." warning on
+every run (identical everywhere); the untracked deps.edn in this worktree
+(present at tick start, not created or touched by this row, not
+committed); the microbench's implied-min shares quoted in I4
+(0.217/0.193/0.101) differ in the third digit from this row's
+re-derivation (0.2181/0.1931/0.0998) -- rounding of the same residuals,
+both printed; the near-feasible max/shape-2 cell is named in finding (2),
+not smoothed away.

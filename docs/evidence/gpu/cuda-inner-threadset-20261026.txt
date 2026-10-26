@@ -1,0 +1,249 @@
+JUN-57 / JUN-55 -- the inner-loop thread set row (the nineteenth amendment's
+named unmeasured item "the inner-loop thread set (inherited assumption)").
+
+ONE analysis slice over COMMITTED inputs + ONE source read. NO hardware ran,
+no GPU, no probe, nothing timed -- every produced number is DERIVED
+arithmetic over committed measurements. Produced by scratch
+inner_threadset_20261026.py (sha256 d7238e02d8e9a38c.., never staged),
+output committed verbatim below. The source read is quoted in it.
+
+THE ROW'S QUESTION: the dynamic instruction-count model
+(cuda-sass-census-20261026/sass-census-compare.txt, seventeenth amendment)
+consumed "the inner-loop thread set" as an inherited assumption. What is it,
+exactly, in the committed source -- and what does the count model look like
+once it is established?
+
+WHAT WAS READ (READ state, cited): the 18 committed subgroup-reduce
+.emitted.cu kernels (docs/evidence/gpu-subgroup-reduce-cuda-20261023/shaders/
+-- 6 widths x 3 operators; the same committed corpora the census's trip
+counts were derived from), parsed for loop structure and asserted 18/18
+structurally identical modulo the four known substitutions (partials[] size,
+combine body, kernel name, identity-element literal). Second attestation:
+the committed verbatim SASS (cuda-sass-census-20261026/kernel-sass-log.txt,
+subgroup-reduce max block) carries the thread-set predicate in compiled form.
+
+THE FINDING:
+(1) THE INNER LOOP'S THREAD SET IS WARP 0, AND ITS PARTICIPANTS ARE
+    d_STEP-RESTRICTED (READ + SASS-confirmed): the inner loop
+    `for (lid = sgid; lid < d; lid += sgsize)` is guarded by `if (sg == 0u)`
+    (source lines 19-22 of each kernel), so only threads 0..31 of the block
+    (sg = threadIdx.x/32 == 0) can execute the body -- and within warp 0 a
+    thread executes the body iff sgid < d_step. The SASS confirms it: the
+    outer-loop body branches over .L_8 for threadIdx.x >= 32
+    (`ISETP.GE.U32.OR P1, PT, R3, 0x20, P1` with R3 = SR_TID.X, then
+    `@P1 BRA .L_7`). Body executions per BLOCK per outer step = d_step (not
+    32, not W); per kernel = sum(d = nsg/2..1) = nsg - 1 = W/32 - 1
+    (0 at W=32 -- at W=32 the outer loop is zero-trip and the body never
+    executes at all).
+(2) THE COMMITTED MODEL CHARGED THE INNER BODY UNIFORMLY, AND THAT IS WHAT
+    ITS NUMBERS SAY: re-deriving the committed per-thread table reproduces it
+    6/6 cells and 6/6 ratios (assert-checked against the committed text
+    lines), and the reproduction is exact only with a flat +9 (one inner body)
+    charged to EVERY thread at EVERY W -- 9W per block. The true source
+    execution count is 9*(nsg-1) per block: 9*128 = 1152 vs 9*3 = 27 at
+    W=128 (42.7x overcount), 288 vs 0 at W=32. The committed prose ("inner
+    loop x the sg==0 warp") and the committed arithmetic disagree; the
+    arithmetic is what fed the ratios and every downstream residual.
+(3) CORRECTED COUNT MODEL (DERIVED): per-block sum = 93W + 11*W*outer +
+    9*(nsg-1); max/min = 114W + 11*W*outer + 9*(nsg-1) (region static counts
+    CONSUMED unchanged from the committed census). Corrected max/sum = min/sum
+    ratios: 1.22581 / 1.20165 / 1.18227 / 1.16634 / 1.15299 / 1.14163 at
+    W = 32/64/128/256/512/1024 (the committed table's 1.2059..1.1338).
+(4) THE MODEL-VS-MEASURED RESIDUAL SHRINKS ~3x AT W=128 AND FLIPS SIGN AT
+    W=512 (DERIVED over the committed measured means): max/sum residual goes
+    from the nineteenth amendment's 1.0171/1.0132/1.0040 to
+    1.00603/1.00382/0.99602 (W=128/256/512); min/sum from
+    1.0148/1.0131/1.0068 to 1.00366/1.00374/0.99879. The old residual was
+    declining-but-positive; the corrected residual is ~2-3x smaller and
+    crosses zero between W=256 and W=512.
+
+CONSEQUENCE: NOTHING MOVES (rule 4) -- no record, no :measured? flag value,
+no selection answer, no :shapes value, no workgroup row; the landed entries
+stand byte-for-byte (the committed count-model table and the nineteenth
+amendment's text are preserved as landed; this row supersedes their
+quantitative use, see NAMED NOT HIDDEN). The named item moves: the
+inner-loop thread set is ANSWERED (warp 0, d_step-participating -- READ +
+SASS-confirmed) and the model's inner attribution is CORRECTED (DERIVED).
+
+STATES: READ (the 18 committed .emitted.cu sources, cited lines; the
+committed SASS predicate, cited block); DERIVED (the trip counts, the old
+model reproduction, the corrected counts and ratios, the corrected residuals
+-- all marked); MEASURED (consumed at their own commits: the census's static
+region counts, the committed model table, the measured ratio means);
+IMPLEMENTED: nothing (evidence + this ADR amendment only); DECIDED: nothing
+new; ACCEPTED DESIGN ONLY (unchanged): the operator-aware contract +
+pre-registration, the row (ii) routes, the entry contract + wiring,
+ADR-0358, ADR-0373.
+
+UNMEASURED, named: what dynamic effect carries the residual's W-shape
+(per-phase instrumentation, its own row -- with corrected counts the residual
+is +0.60/+0.38/-0.40% (max) and +0.37/+0.37/-0.12% (min), smaller and
+sign-crossing; whether any W-shaped dynamic residual remains above the named
+median noise is UNMEASURED); the 21 surplus ops' true per-op costs; raw
+MUFU.RCP cost; per-op integer latency on this toolchain; a non-eliminated
+overhead baseline; the sum ratio's TRUE side at W=256; a cross-day run 3+
+(still 2026-10-26 UTC); every per-op verdict on non-xavier hardware; the
+`:sum` ordering at W=64 on any other device or channel; the landed rows on a
+live CUDA selection path; every workgroup row (`:arm`/`:unknown` stay
+provisional `:measured? false`); the region parse's per-region boundary
+derivation (CONSUMED, not re-derived this row).
+
+NAMED NOT HIDDEN:
+- The nineteenth amendment's quantitative attributions were computed on the
+  UNCORRECTED counts and are SUPERSEDED by (4): fact (1)'s implied shares and
+  its "~16% at W=128" attribution, and fact (2)'s u(W) misfit arithmetic
+  (fit-two-predict-third +2.2pp), rest on residuals 1.0171/1.0132/1.0040 that
+  this row corrects. Their re-derivation over corrected counts is its own
+  row; the nineteenth's structural facts (byte-identical binaries, opcode
+  census, the 21-op surplus) are MEASURED at their own commits and
+  unaffected. Its qualitative class claim ("a dynamic runtime effect") is
+  NOT re-litigated here.
+- The seventeenth amendment's model-vs-measured table (1.1694/1.1556/1.1438)
+  is superseded for residual purposes by the corrected ratios; the committed
+  table remains byte-for-byte as landed.
+- The measured ratio means consumed here are the two-shape means of committed
+  cells (max/sum 1.1851/1.1936 -> 1.1894 etc.); the per-shape spread (named
+  median noise, NOT SMOOTHED) is unchanged and is not re-measured.
+- The inner-loop init instruction (SASS 0x0550 `IMAD.MOV.U32 R5, RZ, RZ, R4`)
+  sits between the committed region labels .L_9 (xfold) and .L_8 (inner); its
+  region membership was NOT re-derived this row (the committed region parse
+  stands). If it is charged per-outer to all W threads it is restricted to the
+  same d_step-participating warp-0 threads -- at most 1 instruction per outer
+  step, UNQUANTIFIED here.
+- The count model remains a per-thread execution-count model at the committed
+  granularity: predicated-off instructions still occupy issue slots at warp
+  granularity and nothing here is a cycle model (unchanged scope).
+- Why the committed scratch script charged the inner body uniformly cannot be
+  read: the scratch script was never staged; only its committed output exists.
+  This row re-derived that output 6/6 from the source instead.
+- kbb's "2 dep(s) are not :local/root ..." warning on every run (identical
+  everywhere); the untracked deps.edn in this worktree (present at tick start,
+  not created or touched by this row, not committed).
+
+GATES (real runs, this worktree): scoped GPU gate GREEN 123 tests / 12162
+assertions / 0 failures / 0 errors on run 1 AND run 2 (identical to the
+committed pin -- this diff touches NO .cljk namespace, regression pin;
+glslang 16.6.0 real-spawn ran in both runs);
+gpu_regime_classify.py --self-test TOTAL 2649 / 0 failed (regression pin);
+FULL run-tests.cljk NOT run this slice (no .cljk touched) -- documented RED
+AT BASE 'Could not find namespace: kotoba.form' (ADR-0362), outside this
+diff -- NO green full suite claimed; find docs -name '*.sh' -> 0 (evidence
+is .txt).
+
+BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head (checked at
+tick start and re-checked immediately before the push; chain PR #1455 OPEN,
+the ONE chain PR).
+
+=== scratch inner_threadset_20261026.py output (verbatim, DERIVED/READ as
+=== marked in its own footer; run 2026-10-26, twice byte-identical)
+
+=== INPUT INTEGRITY (MEASURED at own commits; hashes re-read this run)
+  w  32 sum sha256=0a96addf9a6c2117 bytes=1073
+  w  32 max sha256=42287ad73bff027d bytes=1104
+  w  32 min sha256=aded5ccc7671edc6 bytes=1104
+  w  64 sum sha256=21f2138ea91830a6 bytes=1073
+  w  64 max sha256=01782b7992582596 bytes=1104
+  w  64 min sha256=9b6ebca42de63363 bytes=1104
+  w 128 sum sha256=9521c490665b4577 bytes=1074
+  w 128 max sha256=273a4892b1e32089 bytes=1105
+  w 128 min sha256=f6d22617fe07fe3d bytes=1105
+  w 256 sum sha256=ea6353d953a77a18 bytes=1074
+  w 256 max sha256=33618d7476f31e07 bytes=1105
+  w 256 min sha256=41104ffaa979cff5 bytes=1105
+  w 512 sum sha256=6e87c188efb13ed2 bytes=1074
+  w 512 max sha256=336f85a238b6ee1e bytes=1105
+  w 512 min sha256=40de28b79e86b68c bytes=1105
+  w1024 sum sha256=a940c9b4d7ae26a9 bytes=1075
+  w1024 max sha256=4b8e0e9b2ecb6b92 bytes=1106
+  w1024 min sha256=eab0796ab2247cc7 bytes=1106
+
+=== SOURCE READ: loop structure parsed from the committed .emitted.cu (READ)
+  all 18 kernels: fold loop `d = fold/2 .. 1, d >>= 1` over ALL W threads
+                  outer loop `d = nsg/2 .. 1, d >>= 1` over ALL W threads
+                  inner loop `lid = sgid; lid < d; lid += sgsize` guarded by
+                  `if (sg == 0u)`  <-- THE THREAD SET: sg == threadIdx.x/32 == 0,
+                  i.e. warp 0 of the block = threads 0..31 (of W)
+                  fold = min(32, blockDim) = 32 -> 5 iters at every W
+                  nsg  = ceil(blockDim/32) = W/32 -> outer iters = log2(W/32)
+  structural identity: 18/18 files identical modulo partials[] size,
+  combine body, kernel name, identity-element literal (assert-checked)
+
+=== DERIVED trip counts from the read structure
+  inner body per participating thread: 1 iter iff sgid < d_step (d_step <= 32
+  at every W in 32..1024: nsg <= 32, every outer step d = nsg/2 .. 1 <= 16)
+  inner body executions per BLOCK per outer step = d_step  (not 32, not W)
+  inner body executions per BLOCK per kernel = sum(d=nsg/2..1) = nsg - 1 = W/32 - 1
+    W=  32 nsg=  1 outer=0 inner-body execs/block=  0
+    W=  64 nsg=  2 outer=1 inner-body execs/block=  1
+    W= 128 nsg=  4 outer=2 inner-body execs/block=  3
+    W= 256 nsg=  8 outer=3 inner-body execs/block=  7
+    W= 512 nsg= 16 outer=4 inner-body execs/block= 15
+    W=1024 nsg= 32 outer=5 inner-body execs/block= 31
+
+=== region static counts (CONSUMED from I2, not re-derived):
+  sum: prologue 43 fold 7 between 7 xfold 6 inner 9 xfold-tail 5 epilogue 8 (static total 85)
+  max: prologue 46 fold 7 between 25 xfold 6 inner 9 xfold-tail 5 epilogue 8 (static total 106)
+  min: prologue 46 fold 7 between 25 xfold 6 inner 9 xfold-tail 5 epilogue 8 (static total 106)
+
+=== OLD model re-derivation (inner charged 9 per thread per kernel, uniform):
+    [this is what the committed table did -- reproduced here as an integrity
+     check on this row's understanding of the model]
+    W=  32 outer=0 sum=102 max=123 min=123 | max/sum 1.2059 min/sum 1.2059
+    W=  64 outer=1 sum=113 max=134 min=134 | max/sum 1.1858 min/sum 1.1858
+    W= 128 outer=2 sum=124 max=145 min=145 | max/sum 1.1694 min/sum 1.1694
+    W= 256 outer=3 sum=135 max=156 min=156 | max/sum 1.1556 min/sum 1.1556
+    W= 512 outer=4 sum=146 max=167 min=167 | max/sum 1.1438 min/sum 1.1438
+    W=1024 outer=5 sum=157 max=178 min=178 | max/sum 1.1338 min/sum 1.1338
+    re-derivation MATCHES the committed I3 table 6/6 cells and 6/6 ratios
+    (assert-checked against both the arithmetic and the committed text lines)
+
+=== CORRECTED model (DERIVED): inner body = 9 x (nsg-1) per block
+    per-block sum = 93W + 11*W*outer + 9*(nsg-1)
+    per-block max/min = 114W + 11*W*outer + 9*(nsg-1)
+    W=  32 outer=0 inner/block=   0 sum_blk=  2976 max_blk=  3648 | max/sum 1.22581  min/sum 1.22581
+    W=  64 outer=1 inner/block=   9 sum_blk=  6665 max_blk=  8009 | max/sum 1.20165  min/sum 1.20165
+    W= 128 outer=2 inner/block=  27 sum_blk= 14747 max_blk= 17435 | max/sum 1.18227  min/sum 1.18227
+    W= 256 outer=3 inner/block=  63 sum_blk= 32319 max_blk= 37695 | max/sum 1.16634  min/sum 1.16634
+    W= 512 outer=4 inner/block= 135 sum_blk= 70279 max_blk= 81031 | max/sum 1.15299  min/sum 1.15299
+    W=1024 outer=5 inner/block= 279 sum_blk=151831 max_blk=173335 | max/sum 1.14163  min/sum 1.14163
+
+=== model vs MEASURED (measured means CONSUMED from I3: the two-shape means)
+    W |  meas max/sum | old model | corr model | meas/corr | meas/old
+    128 |    1.1894    |  1.1694   |  1.18227   |  1.00603 |  1.01714
+    256 |    1.1708    |  1.1556   |  1.16634   |  1.00382 |  1.01319
+    512 |    1.1484    |  1.1438   |  1.15299   |  0.99602 |  1.00399
+    W |  meas min/sum | old model | corr model | meas/corr | meas/old
+    128 |    1.1866    |  1.1694   |  1.18227   |  1.00366 |  1.01475
+    256 |    1.1707    |  1.1556   |  1.16634   |  1.00374 |  1.01311
+    512 |    1.1516    |  1.1438   |  1.15299   |  0.99879 |  1.00679
+    (the nineteenth amendment's residuals 1.0171/1.0132/1.0040 are the
+     meas/old column; the corrected residual is the meas/corr column)
+
+=== SASS corroboration (CONSUMED from I4, printed verbatim): the inner-loop
+    thread-set predicate compiled into the committed SASS (subgroup max block)
+            /*04e0*/              @!P1 BRA `(.L_5) ;
+    .L_9:
+            /*04f0*/              @!PT SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+            /*0500*/                   ISETP.GE.U32.AND P1, PT, R4, R10, PT ;
+            /*0510*/                   BMOV.32.CLEAR RZ, B0 ;
+            /*0520*/                   BSSY B0, `(.L_6) ;
+            /*0530*/                   ISETP.GE.U32.OR P1, PT, R3, 0x20, P1 ;
+            /*0540*/               @P1 BRA `(.L_7) ;
+            /*0550*/                   IMAD.MOV.U32 R5, RZ, RZ, R4 ;
+    .L_8:
+            /*0560*/                   IMAD.SHL.U32 R7, R5.reuse, 0x4, RZ ;
+            /*0570*/                   IADD3 R5, R5, 0x20, RZ ;
+            /*0580*/                   IMAD R2, R10, 0x4, R7 ;
+            /*0590*/                   ISETP.GE.U32.AND P1, PT, R5, R10, PT ;
+            /*05a0*/                   LDS.U R9, [R7] ;
+            /*05b0*/                   LDS.U R2, [R2] ;
+            /*05c0*/                   FMNMX R6, R2, R9, !PT ;
+            /*05d0*/                   STS [R7], R6 ;
+            /*05e0*/              @!P1 BRA `(.L_8) ;
+    .L_7:
+    (R3 = SR_TID.X = threadIdx.x; threads with threadIdx.x >= 32 branch over
+     the .L_8 inner loop -- the SASS confirms the source's `if (sg == 0u)`
+
+=== STATES: DERIVED (everything produced above); READ (I1 source structure +
+    the I4 SASS predicate, cited); MEASURED (consumed at own commits: the
+    census counts, the model table, the measured ratio means). No hardware ran.

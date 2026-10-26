@@ -1,0 +1,151 @@
+JUN-57 / JUN-55 -- row (iv) of the operator-aware row's created rows
+LANDS: the narrower device-class key (both entry-contract layers).
+Implementation slice over committed measurements. NO hardware ran this
+tick and nothing was re-measured; every measurement cited is already
+committed. 2026-10-25 (JST); UTC day of this slice: 2026-10-25.
+
+THE ROW (ADR-0361's 2026-10-25 seventh amendment, "New rows created,
+each its own later row: ... (iv) the narrower device-class key"; its
+scope (6) named the ride-along: "the name-fragment key's coarseness
+rides along unchanged (NAMED -- the per-op records widen the
+Xavier-NX-key gap's blast radius; the narrower key is its own later
+row)").
+
+THE DECISION (this row's content -- what "narrower" is):
+
+1. The tested device class is keyed by BOTH name fragments "xavier"
+   and "agx" sitting in ONE name part (case-insensitively -- the uB5G
+   per-name-part idiom of kotoba.compiler.accelerator-targets:
+   evidence about a NAMED device acts on that device's name and never
+   past it) AND the reported compute capability 7.2 exactly. Every
+   key fails closed. This REPLACES the single fragment "xavier"
+   (the same coarse key kotoba.compiler.accelerator-targets' NVIDIA
+   workgroup row still uses, :measured-device "xavier" -- NOT
+   narrowed here, named below).
+
+2. The ground for the fragments is the tested device's own reported
+   name: NVIDIA Jetson AGX Xavier (L4T R35.4.1, sm_72) -- the ONE
+   device where the CUDA route's measurements ran (every committed
+   record.txt names it: cuda-claimprotocol-run{1,2}-20261025,
+   cuda-registered-sessionA-20261025). Its name carries both
+   fragments; the Jetson Xavier NX name ("Jetson Xavier NX", also
+   sm_72) carries "xavier" but not "agx".
+
+3. The narrowed key names BOTH layers' records (row (iv) at its
+   letter "now naming per-op records too"): ONE shared predicate
+   (cuda-tested-class?) keys cuda-entry-cell (pooled) AND
+   cuda-entry-op (per-op). The hole this closes: under the single
+   fragment a Jetson Xavier NX descriptor read as the tested class
+   and would have received every entry-contract record -- pooled AND
+   per-op -- with NO measurement behind it.
+
+4. The fragments must sit in ONE name part. The three name keys
+   (:device, :name, :vendor) are alternate spellings of the device's
+   name, not a fragment kit to be assembled across keys; a
+   descriptor whose parts separately carry "xavier" and "agx" fails
+   closed.
+
+5. Record shape (3) is UNCHANGED: the record's :device label stays
+   "xavier sm_72" byte-for-byte. What narrowed is the KEY deciding
+   which descriptors ARE the class, not the record's text.
+
+REJECTED, NAMED: (a) a negative key ("xavier" and NOT "nx") -- a
+substring blacklist that only names today's known wrong answer; the
+positive requirement excludes the NX without enumerating exclusions;
+(b) exact-name equality -- brittle across producers' spellings
+("NVIDIA Jetson AGX Xavier" vs "Jetson AGX Xavier" vs a vendor-key
+spelling) and against the uB5G per-name-part idiom's tolerance; (c)
+a device-id/UUID/PCI-id key -- the descriptor surface carries
+:device/:name/:vendor strings and :compute-capability, no device-id
+axis exists and none is invented here; it needs a producer fact that
+does not exist (PROPOSED, its own row if a producer ever supplies
+one); (d) narrowing kotoba.compiler.accelerator-targets' workgroup
+rows' :measured-device "xavier" in the same slice -- that table's
+scoping is its own decision (ADR-0355/0358), this row touches the
+entry contract's class key only.
+
+NAMED RESIDUAL, NOT HIDDEN: the key is still NAME-BASED. Any name
+part carrying both fragments with a reported 7.2 still reads as the
+tested class -- "Jetson AGX Xavier Industrial" (also sm_72) is the
+concrete residual. It is PINNED AS BEHAVIOR by the new test (it
+attaches today; pinned so the coarseness is named behavior, not an
+accident) and is not a claim that anything was measured on it.
+
+WHAT LANDED (kotoba.compiler.accelerator_variants):
+- cuda-tested-class-fragments ["xavier" "agx"] -- the key's fragment
+  pair + its decision docstring (replaces the private
+  cuda-measured-fragment "xavier");
+- cuda-tested-class? -- the shared fail-closed predicate (one name
+  part carries BOTH fragments case-insensitively AND the reported
+  compute capability is exactly 7.2), used by BOTH cuda-entry-cell
+  and cuda-entry-op (the two arms' former two-line key checks fold
+  into it);
+- docstrings un-staled at their now-false spots: the ns surface, the
+  select-variant row preamble, cuda-measured-device-class (the
+  "a narrower key is its own later row" spot), cuda-entry-cell and
+  cuda-entry-op key descriptions.
+
+TESTS (test/kotoba/compiler/accelerator_variants_test.cljk):
+- NEW deftest the-tested-class-key-is-the-agx-xavier-name-and-72:
+  the tested device's own name keys the class (three spellings,
+  case-insensitive, record shape (3) byte-identical); a Jetson
+  Xavier NX descriptor (also sm_72) attaches NOTHING on the pooled
+  arm; the narrowed key names the per-op records too (synthetic
+  with-redefs entry -- the real table is empty by rule; NX attaches
+  nothing there either); the NAMED residual ("Jetson AGX Xavier
+  Industrial", 7.2) still attaches -- pinned as named behavior;
+- the pooled arm's "class keys fail closed" case list gains the NX
+  case and the across-parts split case; the per-op arm's fail-closed
+  list gains the same two;
+- the "uB5G name keys all count" cases move to both fragments in the
+  one part naming the device ({:device "AGX Xavier" ...},
+  {:vendor "agx XAVIER" ...} -- key coverage unchanged, class key
+  narrowed).
+
+WHAT THIS CHANGES IN THE SELECTION SURFACE: NOTHING today. The
+narrowed key only REMOVES descriptor classes that were never
+measured (the Xavier-NX-key gap): every real record attaches to the
+tested class exactly as before (its name carries both fragments).
+No record, no :measured? flag, no selection answer, no :shapes value
+and no workgroup row moves for any measured device. The one
+behavioral delta is fail-closed: a descriptor that matched the old
+key and not the new one (Xavier NX; fragments split across parts)
+now attaches no record and keeps :measured? false.
+
+STATES: DECIDED (this row: the narrower key at its letter + its
+rejections); IMPLEMENTED (code + tests): the narrowed key and its
+shared predicate over BOTH entry arms; MEASURED: nothing new (NO
+hardware ran; the two adopted sessions + session A consumed/cited,
+not re-measured); ACCEPTED DESIGN ONLY: the operator-aware contract
++ pre-registration (seventh amendment) and its remaining row (iii)
+second half -- session B and the per-op entry it enables; the entry
+contract + pooled wiring (fifth/sixth amendments); ADR-0358,
+ADR-0373; UNMEASURED, named: session B (cross-day; earliest
+2026-10-26 UTC) and therefore H1/H2 and every per-op
+entry/flip/confirm verdict; every per-op verdict on non-xavier
+hardware; run 3+; the :sum ordering at W = 64 on any device; the
+flip arm on real data (ZERO real flips); the named residual's
+behavior on real hardware (the residual is pinned as key behavior,
+not measured); every workgroup row (:arm/:unknown stay provisional
+:measured? false -- no :measured? flag moves this tick; the
+workgroup rows' own :measured-device "xavier" key stays coarse,
+named).
+
+GATES (real runs, this tick):
+- scoped GPU gate (8 GPU-owned namespaces, scratch runner
+  gpu_scoped_gate.cljk in Hermes scratch, never committed) GREEN
+  109 tests / 11434 assertions / 0 failures / 0 errors (glslang
+  16.6.0 real-spawn; committed pin 108 tests / 11405 assertions,
+  delta = this slice's new deftest + extended case lists);
+- FULL run-tests.cljk RED at base -- "Could not find namespace:
+  kotoba.form" (ADR-0362) fails the run before any test executes,
+  OUTSIDE this diff (re-verified this tick since the diff touches
+  .cljk namespaces; kbb exit 1) -- the touched namespaces' own
+  tests are the scoped gate above, NO green full suite claimed;
+- gpu_regime_classify.py --self-test TOTAL 2572 assertions passed /
+  0 failed (no classify code touched -- regression pin);
+- find docs -name '*.sh' -> 0 files (the no-POSIX-sh evidence
+  rule).
+
+Record: docs/evidence/gpu/cuda-device-class-key-20261025.txt (this
+file) + the ADR-0361 eleventh amendment.

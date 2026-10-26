@@ -1,0 +1,42 @@
+OP-COST TABLE -- v2 instrument (ed49179c..), xavier sm_72,
+run 2026-10-26T09:34:43Z, 3 launches x 128 lockstep threads;
+all three launches identical (deterministic). cyc_per_unit_median:
+
+arm      mode       cyc/unit  cyc/instr  validity
+fadd     latency      4.4397     4.4397  VALID (16 dependent FADD.FTZ per loop iter)
+fmnmx    latency      4.4392     4.4392  VALID (16 dependent FMNMX per loop iter)
+rcp      latency     39.4390    39.4390  VALID-AS-EXPANDED (rcp.approx.f32 realized as MUFU.RCP + 2 FMUL + 2 FSEL + FSETP sequence; raw MUFU.RCP NOT measured)
+cvt      latency     30.0010    15.0005  VALID (16 I2F.U32.RP + 16 F2I.U32.TRUNC.NTZ per iter)
+iadd3    latency      1.6267     1.6267  INVALID (16 add.u32 x,x,1 merged to ONE IADD3 x,x,0x10 per iter; measures loop+SHFL overhead)
+imad     latency      1.6267     1.6267  INVALID (16 mad.lo.u32 x,x,1,c merged to ONE IADD3 per iter; measures loop+SHFL overhead)
+imadhi   latency      4.4392     4.4392  RENAMED (mad.hi.u32 x,x,1,c realized as LEA.HI chain; measures LEA.HI)
+mov      latency      0.0015     0.0015  INVALID (loop eliminated entirely; 6 cycles = nothing)
+fadd     thr          2.6641     2.6641  VALID (16 live FADD.FTZ chains per iter, v2 anchor)
+fmnmx    thr          2.8447     2.8447  VALID (16 live FMNMX chains per iter, v2 anchor)
+rcp      thr         11.2744    11.2744  VALID-AS-EXPANDED (16 expanded rcp sequences per iter; raw MUFU.RCP NOT measured)
+cvt      thr         16.4570     8.2285  VALID (16 I2F + 16 F2I per iter, v2 anchor)
+iadd3    thr          2.8486     2.8486  RENAMED (16 immediate IADD3 chains per iter)
+imad     thr          2.8486     2.8486  RENAMED (mad.lo x,x,1,1 folded to IADD3 chains per iter)
+imadhi   thr          2.8486     2.8486  RENAMED (16 LEA.HI chains per iter)
+mov      thr          0.0059     0.0059  INVALID (loop eliminated entirely)
+
+NAMED PAIR (fmnmx vs fadd), medians over 3 identical launches:
+  latency  fadd=4.4397 fmnmx=4.4392 ratio=0.99989 delta_cycles=-2 over 4096 units
+  thr      fadd=2.6641 fmnmx=2.8447 ratio=1.06779 delta_cycles=+185 over 1024 units
+
+Per-op delta at issue rate (thr, named pair): 0.1807 cyc/op over the 16-op
+loop body ((2913-2728)/64 iters /16 ops). Latency delta: -0.00049 cyc/op.
+
+DERIVED (marked): if the FADD->FMNMX substituted ops are share s of the
+max kernel's dynamic cost, the count-model residual multiplier is
+~1 + s*0.0678 from the issue-side delta (latency side contributes ~0).
+The sixteenth amendment's residual (measured/counts) was
+1.0171/1.0132/1.0040 at W=128/256/512 (max) -- implied s =
+0.252/0.194/0.059 (min: 0.217/0.193/0.101). The issue-side delta is
+the right SIGN and ORDER to be a partial explanation, but the implied
+share is not W-stable, so it does not explain the residual's W-shape.
+Whether the hot-loop mix gives these shares (and what carries the
+W-shape) is its own analysis row (count model per-op mix).
+UNMEASURED: raw MUFU.RCP cost; per-op integer latency (iadd3/imad) on
+this toolchain; a non-eliminated mov overhead baseline; independent
+samples (threads run lockstep; 128 samples are one warp-group draw).

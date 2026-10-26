@@ -1,0 +1,213 @@
+# JUN-58 / JUN-55 -- the counters-channel HARNESS row: the sample bracket
+# is REFUTED at the design letter's API and RE-CARRIED on the device's only
+# supported sampling point (2026-10-25, tick slice)
+
+Row taken: the ADR-0360 2026-10-25 counter-channel amendment's own named
+next row -- "IMPLEMENTED: nothing (no code moved; the harness is its own
+later row)". ONE implementation slice. NO arm-vs-arm measurement ran and
+NO speed question is answered here: the only hardware answers are
+route-capability probes and the instrument's own smoke run, and every
+number below is one of those two fact classes. Nothing here adjudicates
+any claim-protocol question (rules 1/2 unrun; no sign is read).
+
+Host: MacBook Pro, Apple M1 Max, macOS 26.4 (SDK MacOSX26.5.sdk).
+Probes and smoke ran 2026-10-25T11:2xZ via xcrun clang/Metal on this host.
+
+## PART 1 -- the refutation (MEASURED route fact, probe v1)
+
+The design letter's bracket method was the COMPUTE ENCODER's
+sampleCountersInBuffer:atSampleIndex:withBarrier: called before and after
+the dispatch. The SDK already carries the warning (MTLComputeCommandEncoder
+.h, verbatim): "On devices where MTLCounterSamplingPointAtDispatchBoundary
+is unsupported, this method is not available and will generate an error if
+called." The 2026-10-25 probe measured AtDispatchBoundary = 0 on this M1
+Max. The harness row checked the runtime truth. It is WORSE than an error
+-- the framework ASSERTS and aborts the process (probe v1 verbatim):
+
+  device: Apple M1 Max
+  sampling dispatch: 0
+  sampling stage: 1
+  sampling draw: 0
+  sampling tile: 0
+  sampling blit: 0
+  sampleBuffer: OK (no error)
+  -[AGXG13XFamilyComputeContext sampleCountersInBuffer:atSampleIndex:withBarrier:]:1018: failed assertion `MTLComputeCommandEncoder:sampleCountersInBuffer:atSampleIndex:withBarrier not supported on this device'
+  [SIGABRT, exit 134]
+
+The full sampling-point matrix (probe v1, five points this time -- the
+2026-10-25 probe read only dispatch/stage): dispatch=0 stage=1 draw=0
+tile=0 blit=0. On this device exactly ONE sampling point exists:
+MTLCounterSamplingPointAtStageBoundary. The design letter's method is
+therefore not merely slow or lossy here -- it is unencodable, and the
+blit-encoder fallback route (AtBlitBoundary) is closed too (blit=0).
+
+## PART 2 -- the bracket the device supports (MEASURED route fact, probe v2)
+
+AtStageBoundary maps to the pass sample-buffer attachment indices, not to
+any sampleCountersInBuffer: method (MTLComputePass.h, verbatim):
+
+  @property startOfEncoderSampleIndex
+  @abstract The sample index to use to store the sample taken at the start of
+  command encoder processing. ...
+  @discussion On devices where MTLCounterSamplingPointAtStageBoundary is
+  unsupported, this sample index is invalid and must be set to
+  MTLCounterDontSample or creation of a compute pass will fail.
+
+  @property endOfEncoderSampleIndex   (the end-of-encoder counterpart)
+
+Bracket DECIDED with this row (a design correction, named as such): the
+counter pair brackets the dispatch by putting EXACTLY ONE dispatch inside
+a compute encoder created from MTLComputePassDescriptor whose attachment 0
+carries the timestamp counter sample buffer with
+startOfEncoderSampleIndex=0 / endOfEncoderSampleIndex=1; the pair resolves
+through the blit encoder's resolveCounters:inRange:destinationBuffer:
+destinationOffset: and reads back as two MTLCounterResultTimestamp uint64
+values (MTLCounters.h: `typedef struct { uint64_t timestamp; }
+MTLCounterResultTimestamp`). This preserves the amendment's letter -- two
+GPUTimestamp samples bracketing one reduce dispatch, delta in GPU ns --
+and changes only the METHOD: the sample is taken at the encoder's
+stage-boundary processing points instead of by an unencodable in-encoder
+sampling call. Probe v2 verified the bracket end-to-end on this host
+(verbatim, 6 trials of one 256-thread dispatch each; INSTRUMENT
+VERIFICATION -- a trivial kernel, nothing reduce-shaped, no arm):
+
+  device: Apple M1 Max
+  sampling dispatch: 0 stage: 1 draw: 0 tile: 0 blit: 0
+  sampleBuffer: OK (no error)
+  trial 0: start=356048387819458 end=356048387832541 delta=13083
+  trial 1: start=356048400442750 end=356048400452583 delta=9833
+  trial 2: start=356048405180000 end=356048405189500 delta=9500
+  trial 3: start=356048408579750 end=356048408588666 delta=8916
+  trial 4: start=356048414562583 end=356048414571958 delta=9375
+  trial 5: start=356048420611916 end=356048420733750 delta=121834
+
+6/6 brackets resolved to two non-error uint64 samples with positive
+deltas. The delta VALUES are not measurements of anything reduce-shaped
+and are not read for any speed question.
+
+## PART 3 -- the harness (IMPLEMENTED: code + tests)
+
+scripts/gpu-subgroup-reduce-metal-counters.m lands: the counters-channel
+measurement instrument. It carries the MSL campaign instrument's protocol
+unchanged (ADR-0358: fresh-process runs, interleaved AB/BA paired samples,
+WARMUP=2 discarded, verified read-back of the partials) and its argv
+contract unchanged (counters <workdir> [workgroup] [elements] [op-order]
+[variant-prefix], every positional gate a >= test), with the GPU metric
+source replaced by the PART 2 bracket: one dispatch per compute encoder
+bracketed by the pass attachment's start/end-of-encoder GPUTimestamp
+samples, resolved per bracket through the blit encoder, the pair's delta
+printed as counter_ns with the raw pair on every sample line
+(`sample op=.. pair=.. order=.. arm=.. ts0=.. ts1=.. counter_ns=..`; an
+MTLCounterErrorValue sample prints counter_ns=ERR instead of a number).
+The instrument prints its channel declaration and the measured
+sampling-point matrix in its header, so every future record self-identifies
+the instrument. The untimed read-back dispatches use a plain encoder (no
+sampling) -- only timed brackets consume samples.
+
+Pin (tests): the-counters-harness-brackets-through-the-stage-boundary-
+pass-attachment in test/kotoba/compiler/accelerator_variants_test.cljk --
+the refuted message-send form must never appear in the harness (comment
+text is not code: the pin matches `[enc sampleCountersInBuffer:...`, so
+prose naming the refused selector stays legal -- the measure pin's own
+idiom), the working bracket markers must stay (startOfEncoderSampleIndex /
+endOfEncoderSampleIndex / computeCommandEncoderWithDescriptor /
+resolveCounters), no command-buffer bracket may enter (GPUStartTime/
+GPUEndTime banned -- rule 3: this channel merges with neither the command-
+buffer bracket nor any host wall-clock), and the misshape argv-gate class
+stays pinned out (no `if (argc ==`, the four >= gates kept).
+
+Smoke run (INSTRUMENT VERIFICATION ONLY -- no number answers any speed
+question and no sign is read; one fresh process, the 2026-10-23 argv-gate
+smoke workdir's already-committed metallibs at W=256 n=1000003):
+
+  exit=0, stderr 0 bytes, 135 stdout lines = 9 header + 120 sample +
+  6 verify.
+  device=Apple M1 Max
+  channel=counters (GPUTimestamp counter-sample delta, GPU ns; ...)
+  sampling_points dispatch=0 stage=1 draw=0 tile=0 blit=0
+  simdgroup_size=32
+  n=1000003 / workgroup=256 / pairs=20 / warmup=2 / op_order=sum,max,min
+  sample op=sum pair=0 order=A arm=baseline ts0=356303603773458 ts1=356303603877375 counter_ns=103917
+  sample op=sum pair=0 order=A arm=variant ts0=356303604447416 ts1=356303604573875 counter_ns=126459
+  sample op=sum pair=1 order=B arm=variant ts0=356303605750333 ts1=356303605876750 counter_ns=126417
+  (120/120 sample lines resolved; counter_ns=ERR count = 0)
+  verify op=sum arm=baseline max_abs_vs_ref=1.57952309e-05 max_abs_vs_other=3.05175781e-05 bit_exact_vs_ref=0 bit_exact_vs_other=0 ok=1
+  verify op=sum arm=variant max_abs_vs_ref=1.57952309e-05 max_abs_vs_other=3.05175781e-05 bit_exact_vs_ref=0 bit_exact_vs_other=0 ok=1
+  verify op=max arm=baseline max_abs_vs_ref=0 max_abs_vs_other=0 bit_exact_vs_ref=1 bit_exact_vs_other=1 ok=1
+  verify op=max arm=variant max_abs_vs_ref=0 max_abs_vs_other=0 bit_exact_vs_ref=1 bit_exact_vs_other=1 ok=1
+  verify op=min arm=baseline max_abs_vs_ref=0 max_abs_vs_other=0 bit_exact_vs_ref=1 bit_exact_vs_other=1 ok=1
+  verify op=min arm=variant max_abs_vs_ref=0 max_abs_vs_other=0 bit_exact_vs_ref=1 bit_exact_vs_other=1 ok=1
+
+What the smoke licenses: the instrument encodes, brackets, resolves,
+reads back, and verifies correctness on the real arms' metallibs. What it
+NEVER licenses: any arm-vs-arm answer (this is one process of instrument
+verification -- the measurement row's protocol, sessions and rules 1+2
+publication are all ahead), any comparison with the command-buffer
+gpu-ns values of the MSL campaign (rule 3: different instrument), any
+reading of the counter_ns magnitudes (the bracket's calibration is
+UNMEASURED, below).
+
+## STATE (the three states, named)
+
+- IMPLEMENTED (code + tests): scripts/gpu-subgroup-reduce-metal-counters.m
+  and its source pin. Nothing else.
+- DECIDED (this row): the bracket METHOD correction -- the letter's
+  per-dispatch GPUTimestamp pair carries over unchanged, its carrier is
+  the AtStageBoundary pass-attachment start/end-of-encoder samples with
+  one dispatch per compute encoder; the compute-encoder
+  sampleCountersInBuffer: method and the blit-encoder bracket are
+  REFUTED/UNAVAILABLE on the narrowed device's host (probe v1).
+- MEASURED: route-capability facts only -- the five-point sampling matrix,
+  the refutation's verbatim abort, probe v2's 6/6 bracket resolutions,
+  and the smoke run's instrument-verification lines. NO performance
+  measurement; no number answers any speed question; no sign is read.
+- ACCEPTED DESIGN ONLY: the claim protocol and its units; the narrowing
+  and reopen condition; ADR-0355's channel rule; the second-leg letter.
+- PROPOSED (unchanged): the Vulkan-provider timestamp route.
+- UNMEASURED, named: the sample-bracket calibration (whether the delta
+  equals the dispatch's GPU time or carries sampling/encoder-boundary
+  overhead -- with the one-dispatch-per-encoder bracket it now measures
+  [encoder start, encoder end] around the dispatch, and the residual is
+  exactly the calibration question); GPUTimestamp resolution and clock-
+  domain behavior (the smoke's repeated identical deltas already suggest
+  coarse quantization -- named, not read); the sign of any counters-
+  channel arm pair; every per-dispatch GPU time of the fold arms; whether
+  the second leg fires; anything off M1 Max; the WGSL route's kernel
+  time; every workgroup-row question (:arm/:unknown stay provisional
+  :measured? false -- no :measured? flag, :shapes value, selection answer
+  or workgroup row moves this tick).
+
+Rule 4 unchanged. This channel is neither the wire-42 loader path nor its
+provider successor (the 2026-10-25 channel-rule amendment), so it can
+never move an ADR-0355 workgroup row.
+
+## Gates (real runs, this tick)
+
+- Scoped GPU gate (8 GPU-owned namespaces, scratch runner
+  gpu_scoped_gate.cljk in Hermes scratch, never committed): run 1 RED at
+  ONE assertion of the new pin (the refutation regex matched the
+  harness's own prose naming the refused selector -- comment text is not
+  code; the pin now matches the message-send form) and run 2 GREEN:
+  110 tests / 11445 assertions / 0 failures / 0 errors, exit 0 (glslang
+  16.6.0 real-spawn). Committed pin 109 tests / 11434 assertions; delta
+  = this slice's new deftest (+1 test / +11 assertions).
+- FULL run-tests.cljk: RED at base -- 'Could not find namespace:
+  kotoba.form' (ADR-0362) fails the run before any test executes, kbb
+  exit 1, OUTSIDE this diff (re-verified this tick since the diff touches
+  a .cljk namespace). The touched namespace's own tests are the scoped
+  gate above. NO green full suite claimed.
+- gpu_regime_classify.py --self-test: TOTAL 2572 assertions passed /
+  0 failed (no classify code touched -- regression pin).
+- find docs -name '*.sh' -> 0 files (the no-POSIX-sh evidence rule).
+
+## What the measurement row inherits (its own later row)
+
+A counters-channel record of the fold arms on the narrowed device class:
+the instrument is built and smoke-verified; what remains is the run
+protocol (fresh processes, the interleaved pairs the instrument already
+prints), the sample-bracket calibration question, and the rules-1+2
+publication over this channel's own metric (the classifier's counters
+route does not exist yet). On landing it evaluates the second leg against
+its own rules-1+2 record and answers the arm-vs-arm GPU-core speed
+question for the MSL-route fold arms -- channel- and device-scoped,
+never a cross-instrument magnitude claim.

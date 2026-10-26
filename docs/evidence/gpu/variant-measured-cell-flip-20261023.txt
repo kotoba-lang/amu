@@ -1,0 +1,69 @@
+amu-gpu tick 2026-10-23 -- ONE implementation slice: ADR-0360 question (1)'s
+decision reaches the code -- the measured cells flip the honesty lock
+(JUN-58, JUN-55). Evidence log; no POSIX shell files.
+
+WHAT CHANGED (this commit, chain worktree /Users/junkawasaki/github/wt/amu-gpu/chain):
+
+src/kotoba/compiler/accelerator_variants.cljk
+  select-variant gains a per-ANSER-CELL :measured? flip and a
+  :measured-cell record. A cell flips only when every key of the tested
+  device class holds: the narrowed :baseline answer itself, the measured
+  device (uB5G name fragment "m1 max" AND reported subgroup size 32), the
+  measured channel's route (MSL -- :msl-v1/:metal under either spelling),
+  and a workgroup width the channel actually ran (W = 256/512/1024).
+  Every other answer keeps :measured? false and carries no record.
+
+src/kotoba/compiler/accelerator_pipeline.cljk
+  The flip rides into the dispatch report as :variant-measured?, staying a
+  separate axis from the workgroup row's :measured?.
+
+test/kotoba/compiler/accelerator_variants_test.cljk
+  the-measured-cells-flip-the-honesty-lock: the flipped cells carry the
+  full tested-device-class record; MSL W = 32..128 keeps the lock
+  (UNMEASURED); the GLSL arm keeps the lock at every width (PR #1347/#1348
+  are LABELED BOOTSTRAP, not a verdict); the subgroup-size key and the
+  name key both gate the flip; other vendors and the warp row keep it.
+
+test/kotoba/compiler/accelerator_pipeline_test.cljk
+  the-flip-reaches-the-dispatch-report: :variant-measured? true at
+  W = 256 on the measured device, false at W = 64.
+
+WHAT THE TICK RAN (real tool output):
+
+Scoped gate (the 7 GPU-owned test namespaces; scratch runner
+gpu_scoped_gate.cljk, not in the repo), from the chain worktree root:
+
+    kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+      /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+
+    Ran 87 tests containing 6467 assertions.
+    0 failures, 0 errors.
+
+    scoped: 87 tests, 6467 passed, 0 failed, 0 errors
+
+(85 tests / 6336 assertions before this slice; the two new deftests are
+the 87th and the added assertions.)
+
+Full gate (kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)"
+run-tests.cljk): RED AT BASE, outside this diff -- fails at NAMESPACE
+LOAD with "Could not find namespace: kotoba.form", reached through
+kotoba.compiler.js-value-target's :default arm (the W3 port, PR #1486);
+on the kbb route kotoba.form resolves only to src/kotoba/form.kotoba,
+which nbb cannot load. Documented red at base in ADR 0362 and in
+docs/evidence/gpu-subgroup-producer-pure-20261023/full-gate-kbb.txt and
+siblings. This diff touches no namespace on that path.
+
+STATE HONESTY:
+
+- MEASURED (prior ticks, this host, MSL arm only, native-Metal channel):
+  Apple M1 Max at subgroup size 32, W = 256/512/1024, n = 1000003,
+  :sum/:max/:min -- the variant slower than :baseline in every cell
+  (paired median ratios 1.216-1.223 at W = 256, ~1.195 at W = 512,
+  ~1.186 at W = 1024). Evidence:
+  docs/evidence/gpu-subgroup-reduce-m1max-20261023 and
+  docs/evidence/gpu-subgroup-reduce-m1max-wsweep-20261023.
+- IMPLEMENTED (this tick): the flip and its record, with tests.
+- UNMEASURED: MSL W = 32..128 on this device; every other Apple device;
+  the GLSL arm at every width (LABELED BOOTSTRAP corroboration only);
+  NVIDIA/Intel/ARM/AMD rows entirely. Nothing here extends past one
+  device, one channel, three widths, n = 1000003.

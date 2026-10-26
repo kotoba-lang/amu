@@ -1,0 +1,105 @@
+JUN-58 / JUN-55 -- the prose slice: the flip contract's basis text and
+ADR-0360 cite the shape-2 corroboration and the op-order regime
+measurement (2026-10-23).
+
+WHAT CHANGED (prose only; no flag, no :measured-cell set, no workgroup
+row, no selection behavior):
+
+  src/kotoba/compiler/accelerator_variants.cljk
+    apple-measured-workgroups: the W = 32 parenthetical now cites the
+    shape-2 and op-order cells and the measured regime split (slow vs
+    fast within-pair medians: :sum 0.919 vs 1.018, :max 0.917 vs 1.029,
+    :min 0.920 vs 1.018) instead of the pre-op-order inference ("no
+    :sum run exists in the fast regime", ":min ... NOT ESTABLISHED").
+    apple-narrow-note: cites the shape-2 corroboration (n = 2^20, padded
+    tail gone, W = 256 penalty 1.220-1.227 vs shape 1's 1.217-1.220) --
+    the demotion basis is not a padded-tail artifact; the flip contract
+    still keys to n = 1,000,003 and shape 2 is corroboration, not a
+    contract cell.
+    apple-w32-note: the decision note's basis now names the measured
+    :sum fast-regime samples explicitly (op-order cell: :sum slow 0.919
+    / middle 0.932 / fast 1.018 over 24 fast-level pairs) and the
+    shape-2 straddle replication; the W = 32 keep-:baseline decision
+    and the honesty lock are unchanged, their basis strengthened from
+    inference to measurement. Superseded claims ("no :sum run exists in
+    the fast regime", ":min's sign is NOT ESTABLISHED") are replaced,
+    not deleted silently: the note says the scoping is MEASURED.
+
+  docs/adr/0360-gpu-apple-subgroup-reduce.md
+    New amendment section "the second shape and the op-order regime
+    measurement": both cells' numbers, the regime-conditioned table, the
+    FINDING (the W = 32 sign is regime-scoped for all three operators --
+    the slow-regime win is a clock artifact), and a supersession note
+    (claims only) for the low-band DECIDED paragraph. The status line's
+    stale "UNMEASURED" clause gets a bracketed pointer to the
+    measurement amendments that govern.
+
+  test/kotoba/compiler/accelerator_variants_test.cljk
+    The narrowing block asserts the basis cites the shape-2 record; the
+    W = 32 block asserts the decision note cites BOTH the shape-2 and
+    op-order records. Test comments updated to the measured state.
+
+WHAT THE TICK RAN (real tool output):
+
+  scoped gate (the 7 GPU-owned test namespaces, scratch runner
+  gpu_scoped_gate.cljk, not in the repo), from the chain worktree root:
+
+    kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+      /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+
+    Ran 87 tests containing 6818 assertions.
+    0 failures, 0 errors.
+
+    scoped: 87 tests, 6818 passed, 0 failed, 0 errors
+
+  (87 tests / 6512 assertions before this tick; +306 is exactly the
+  added assertions: 300 in the narrowing doseq's new citation check
+  (5 devices x 4 targets x 3 operators x 5 widths) and 6 in the W = 32
+  block (3 operators x 2 citations).)
+
+  full (kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)"
+  run-tests.cljk): RED AT BASE, verified this tick, outside this diff --
+  fails at NAMESPACE LOAD with "Could not find namespace: kotoba.form"
+  (the W3 port path, documented red at base in ADR 0362 and every prior
+  tick record). This diff touches no namespace on that path.
+
+STATE HONESTY (the three states, unchanged where the repo is unchanged):
+- implemented (code + test): the selection rows, the narrowing, the
+  flip set W = 64/128/256/512/1024 on the measured device's MSL cells,
+  and -- this tick -- the basis-text citations with their assertions.
+- MEASURED (this host, M1 Max, MSL arm, native-Metal channel): the
+  shape-2 cell and the op-order cell cite their own records
+  (docs/evidence/gpu-subgroup-reduce-m1max-shape2-20261023,
+  docs/evidence/gpu-subgroup-reduce-m1max-oporder-20261023); nothing new
+  is measured by this tick -- this is a prose slice over existing
+  records.
+- The workgroup defaults in kotoba.compiler.accelerator-targets remain
+  provisional (:measured? false) and no report presents them as
+  optimization evidence.
+- UNMEASURED unchanged: the GLSL arm at every width beyond its LABELED
+  BOOTSTRAP record (no wire-42 execution path, ADR 0371 provider
+  unimplemented), every Apple device but this M1 Max, shapes beyond the
+  two measured, NVIDIA/Intel/ARM/AMD variant rows entirely.
+
+LEFT (the next rows):
+- Whether the flip contract should widen its key beyond n = 1,000,003
+  (shape 2 is corroboration; widening is its own design decision).
+- A cross-regime verdict protocol for W = 32 (what would let the cell's
+  answer move off :baseline honestly: regime-stratified sampling as the
+  standard, or a pinned-clock channel).
+- JUN-57/59/60 hardware-free slices (loader device-class reporting,
+  kernel variants) stay available; the GLSL arm stays blocked on a
+  wire-42 route.
+
+CORRECTION (2026-10-24, later tick): the blanket workgroup-row claim in
+this record -- every/any row of kotoba.compiler.accelerator-targets
+:measured? false / provisional -- is FALSE as written. ADR-0358
+(2026-10-19, uB5G scoping amendment 2026-10-22) measured four of the six
+rows (:nvidia, :apple, :intel, :amd, each scoped to its one
+:measured-device name fragment); only :arm and :unknown remain
+:measured? false. The claim's oldest standing source was the
+accelerator-targets ns docstring, corrected 2026-10-24. Runtime state
+and the full census of this claim's surface:
+docs/evidence/gpu/workgroup-prose-rootcause-20261024.txt. Everything
+else in this record -- its numbers, its "no row moved" claims -- stands
+unchanged.

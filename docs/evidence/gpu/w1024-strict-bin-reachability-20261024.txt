@@ -1,0 +1,228 @@
+JUN-58 / JUN-55: the W = 1024 strict-bin REACHABILITY design slice --
+the <= 40k fast bin is UNREACHED-BY-OBSERVATION at W = 1024 in both
+shapes (12 logs, 5,040 pairs, zero in the bin), REACHED at every other
+W (2026-10-24, chain worktree)
+
+WHAT THIS RECORD IS: the slice record of ONE DESIGN DECISION -- the
+strict-bin reachability sub-row the fastbin-hunt record's HONEST LEFT
+named ("the row moves to the next tick, with a design sub-row now
+named: strict-bin reachability at this W"). NO hardware measurement
+ran in this slice: every number below is a machine parse of committed
+run-log.txt files (read-only census -- nothing in the corpus is
+rewritten or re-measured).
+
+WHAT RAN (machine output over the committed corpus):
+- python3 docs/evidence/gpu/strict-bin-reachability-20261024.py
+  docs/evidence -- the census instrument committed beside this record.
+  Parse rules identical to the manual instrument's (analyze-oporder.py:
+  sample op/pair/arm/gpu_ns lines; a pair is complete when both arms
+  are present; incomplete pairs named, never silently dropped). The
+  strict bins are the manual instrument's ABSOLUTE hand buckets,
+  unchanged: fast 0 < b <= 40000, middle 40000 < b <= 80000, slow
+  b > 80000 (b = the pair's baseline gpu_ns). Every committed
+  run-log.txt under docs/evidence/ is read: 54 logs, 0 incomplete
+  pairs anywhere.
+- Reproducibility: the run above and the pre-commit scratch run diff
+  BYTE-IDENTICAL (empty diff, "REPRODUCIBLE-IDENTICAL").
+- Full census output, verbatim:
+
+strict-bin reachability census over the committed run-log corpus
+(pair-level analyzer's strict bins, the manual instrument's
+absolute hand buckets, analyze-oporder.py, unchanged:
+fast 0 < b <= 40000, middle 40000 < b <= 80000, slow b > 80000;
+b = the pair's baseline gpu_ns. NO hardware measurement ran --
+every number is parsed from committed run-log.txt files,
+read-only.)
+
+PER LOG
+| log | n | W | complete pairs | incomplete | floor baseline ns | fast | middle | slow |
+|---|---|---|---|---|---|---|---|---|
+| gpu-simdgroup-reduce-m1max-20261023/run-log.txt | 1000003 | 256 | 360 | 0 | 32500 | 13 | 93 | 254 |
+| gpu-simdgroup-reduce-m1max-crossday-20261024/w256/run-log.txt | 1000003 | 256 | 360 | 0 | 32667 | 34 | 65 | 261 |
+| gpu-simdgroup-reduce-m1max-crossday-20261024/w512/run-log.txt | 1000003 | 512 | 360 | 0 | 35958 | 42 | 37 | 281 |
+| gpu-simdgroup-reduce-m1max-resweep-20261024/w32/run-log.txt | 1000003 | 32 | 360 | 0 | 35125 | 37 | 68 | 255 |
+| gpu-simdgroup-reduce-m1max-shape2-20261024/w1024/run-log.txt | 1048576 | 1024 | 360 | 0 | 104958 | 0 | 0 | 360 |
+| gpu-simdgroup-reduce-m1max-shape2-20261024/w128/run-log.txt | 1048576 | 128 | 360 | 0 | 98792 | 0 | 0 | 360 |
+| gpu-simdgroup-reduce-m1max-shape2-20261024/w256/run-log.txt | 1048576 | 256 | 360 | 0 | 33375 | 85 | 65 | 210 |
+| gpu-simdgroup-reduce-m1max-shape2-20261024/w32/run-log.txt | 1048576 | 32 | 360 | 0 | 68250 | 0 | 11 | 349 |
+| gpu-simdgroup-reduce-m1max-shape2-20261024/w512/run-log.txt | 1048576 | 512 | 360 | 0 | 37250 | 28 | 31 | 301 |
+| gpu-simdgroup-reduce-m1max-shape2-20261024/w64/run-log.txt | 1048576 | 64 | 360 | 0 | 94000 | 0 | 0 | 360 |
+| gpu-simdgroup-reduce-m1max-wsweep-20261023/w1024/run-log.txt | 1000003 | 1024 | 360 | 0 | 40125 | 0 | 114 | 246 |
+| gpu-simdgroup-reduce-m1max-wsweep-20261023/w128/run-log.txt | 1000003 | 128 | 360 | 0 | 30083 | 130 | 29 | 201 |
+| gpu-simdgroup-reduce-m1max-wsweep-20261023/w32/run-log.txt | 1000003 | 32 | 360 | 0 | 45000 | 0 | 50 | 310 |
+| gpu-simdgroup-reduce-m1max-wsweep-20261023/w512/run-log.txt | 1000003 | 512 | 360 | 0 | 36292 | 20 | 38 | 302 |
+| gpu-simdgroup-reduce-m1max-wsweep-20261023/w64/run-log.txt | 1000003 | 64 | 360 | 0 | 73375 | 0 | 8 | 352 |
+| gpu-subgroup-reduce-m1max-20261023/run-log.txt | 1000003 | 256 | 360 | 0 | 32125 | 40 | 54 | 266 |
+| gpu-subgroup-reduce-m1max-crossday-20261024/w1024/run-log.txt | 1000003 | 1024 | 360 | 0 | 40083 | 0 | 112 | 248 |
+| gpu-subgroup-reduce-m1max-crossday-20261024/w128/run-log.txt | 1000003 | 128 | 360 | 0 | 29875 | 118 | 96 | 146 |
+| gpu-subgroup-reduce-m1max-crossday-20261024/w256/run-log.txt | 1000003 | 256 | 360 | 0 | 32667 | 24 | 69 | 267 |
+| gpu-subgroup-reduce-m1max-crossday-20261024/w512/run-log.txt | 1000003 | 512 | 360 | 0 | 113375 | 0 | 0 | 360 |
+| gpu-subgroup-reduce-m1max-crossday-20261024/w64/run-log.txt | 1000003 | 64 | 360 | 0 | 90750 | 0 | 0 | 360 |
+| gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w1024/run-log.txt | 1048576 | 1024 | 360 | 0 | 130875 | 0 | 0 | 360 |
+| gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w128/run-log.txt | 1048576 | 128 | 360 | 0 | 79375 | 0 | 1 | 359 |
+| gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w256/run-log.txt | 1048576 | 256 | 360 | 0 | 33875 | 46 | 55 | 259 |
+| gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w512/run-log.txt | 1048576 | 512 | 360 | 0 | 117625 | 0 | 0 | 360 |
+| gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w64/run-log.txt | 1048576 | 64 | 360 | 0 | 94583 | 0 | 0 | 360 |
+| gpu-subgroup-reduce-m1max-oporder-20261023/w32-sum-last/run-log.txt | 1000003 | 32 | 360 | 0 | 35583 | 51 | 49 | 260 |
+| gpu-subgroup-reduce-m1max-oporder-20261024/w1024-sum-last/run-log.txt | 1000003 | 1024 | 360 | 0 | 126667 | 0 | 0 | 360 |
+| gpu-subgroup-reduce-m1max-oporder-fastbin-20261024/w1024-sum-last/run-log.txt | 1000003 | 1024 | 720 | 0 | 126875 | 0 | 0 | 720 |
+| gpu-subgroup-reduce-m1max-oporder-resweep-20261024/w1024-sum-last/run-log.txt | 1000003 | 1024 | 720 | 0 | 40292 | 0 | 228 | 492 |
+| gpu-subgroup-reduce-m1max-resweep-20261023/w1024/run-log.txt | 1000003 | 1024 | 360 | 0 | 40500 | 0 | 125 | 235 |
+| gpu-subgroup-reduce-m1max-resweep-20261023/w128/run-log.txt | 1000003 | 128 | 360 | 0 | 30250 | 69 | 62 | 229 |
+| gpu-subgroup-reduce-m1max-resweep-20261023/w256/run-log.txt | 1000003 | 256 | 360 | 0 | 32958 | 2 | 0 | 358 |
+| gpu-subgroup-reduce-m1max-resweep-20261023/w512/run-log.txt | 1000003 | 512 | 360 | 0 | 59500 | 0 | 34 | 326 |
+| gpu-subgroup-reduce-m1max-resweep-20261023/w64/run-log.txt | 1000003 | 64 | 360 | 0 | 29042 | 76 | 17 | 267 |
+| gpu-subgroup-reduce-m1max-shape2-20261023/w256/run-log.txt | 1048576 | 256 | 360 | 0 | 33875 | 26 | 95 | 239 |
+| gpu-subgroup-reduce-m1max-shape2-20261023/w32/run-log.txt | 1048576 | 32 | 360 | 0 | 37125 | 62 | 39 | 259 |
+| gpu-subgroup-reduce-m1max-shape2-band-20261023/misshape-defect-20261023/w1024/run-log.txt | 1000003 | 1024 | 360 | 0 | 103250 | 0 | 0 | 360 |
+| gpu-subgroup-reduce-m1max-shape2-band-20261023/misshape-defect-20261023/w128/run-log.txt | 1000003 | 128 | 360 | 0 | 39333 | 10 | 50 | 300 |
+| gpu-subgroup-reduce-m1max-shape2-band-20261023/misshape-defect-20261023/w512/run-log.txt | 1000003 | 512 | 360 | 0 | 47250 | 0 | 53 | 307 |
+| gpu-subgroup-reduce-m1max-shape2-band-20261023/misshape-defect-20261023/w64/run-log.txt | 1000003 | 64 | 360 | 0 | 90875 | 0 | 0 | 360 |
+| gpu-subgroup-reduce-m1max-shape2-band-20261023/w1024/run-log.txt | 1048576 | 1024 | 360 | 0 | 41542 | 0 | 233 | 127 |
+| gpu-subgroup-reduce-m1max-shape2-band-20261023/w128/run-log.txt | 1048576 | 128 | 360 | 0 | 31917 | 29 | 62 | 269 |
+| gpu-subgroup-reduce-m1max-shape2-band-20261023/w512/run-log.txt | 1048576 | 512 | 360 | 0 | 37375 | 89 | 12 | 259 |
+| gpu-subgroup-reduce-m1max-shape2-band-20261023/w64/run-log.txt | 1048576 | 64 | 360 | 0 | 39583 | 9 | 33 | 318 |
+| gpu-subgroup-reduce-m1max-shape2-resweep-20261023/w1024/run-log.txt | 1048576 | 1024 | 360 | 0 | 54250 | 0 | 44 | 316 |
+| gpu-subgroup-reduce-m1max-shape2-resweep-20261023/w128/run-log.txt | 1048576 | 128 | 360 | 0 | 99042 | 0 | 0 | 360 |
+| gpu-subgroup-reduce-m1max-shape2-resweep-20261023/w256/run-log.txt | 1048576 | 256 | 360 | 0 | 106750 | 0 | 0 | 360 |
+| gpu-subgroup-reduce-m1max-shape2-resweep-20261023/w512/run-log.txt | 1048576 | 512 | 360 | 0 | 48625 | 0 | 42 | 318 |
+| gpu-subgroup-reduce-m1max-shape2-resweep-20261023/w64/run-log.txt | 1048576 | 64 | 360 | 0 | 94250 | 0 | 0 | 360 |
+| gpu-subgroup-reduce-m1max-wsweep-20261023/w1024/run-log.txt | 1000003 | 1024 | 360 | 0 | 126375 | 0 | 0 | 360 |
+| gpu-subgroup-reduce-m1max-wsweep-20261023/w256/run-log.txt | 1000003 | 256 | 360 | 0 | 41917 | 0 | 28 | 332 |
+| gpu-subgroup-reduce-m1max-wsweep-20261023/w512/run-log.txt | 1000003 | 512 | 360 | 0 | 46583 | 0 | 26 | 334 |
+| gpu-subgroup-reduce-m1max-wsweep-low-20261023/w128/run-log.txt | 1000003 | 128 | 360 | 0 | 58583 | 0 | 34 | 326 |
+| gpu-subgroup-reduce-m1max-wsweep-low-20261023/w32/run-log.txt | 1000003 | 32 | 360 | 0 | 35708 | 115 | 14 | 231 |
+| gpu-subgroup-reduce-m1max-wsweep-low-20261023/w64/run-log.txt | 1000003 | 64 | 360 | 0 | 29125 | 113 | 30 | 217 |
+
+PER (n, W) CELL
+| n | W | logs | complete pairs | floor baseline ns | fast-bin pairs | floor minus the 40k boundary (ns) |
+|---|---|---|---|---|---|---|
+| 1000003 | 32 | 4 | 1440 | 35125 | 203 | -4875 |
+| 1000003 | 64 | 5 | 1800 | 29042 | 189 | -10958 |
+| 1000003 | 128 | 5 | 1800 | 29875 | 327 | -10125 |
+| 1000003 | 256 | 6 | 2160 | 32125 | 113 | -7875 |
+| 1000003 | 512 | 6 | 2160 | 35958 | 62 | -4042 |
+| 1000003 | 1024 | 8 | 3600 | 40083 | 0 | +83 |
+| 1048576 | 32 | 2 | 720 | 37125 | 62 | -2875 |
+| 1048576 | 64 | 4 | 1440 | 39583 | 9 | -417 |
+| 1048576 | 128 | 4 | 1440 | 31917 | 29 | -8083 |
+| 1048576 | 256 | 4 | 1440 | 33375 | 157 | -6625 |
+| 1048576 | 512 | 4 | 1440 | 37250 | 117 | -2750 |
+| 1048576 | 1024 | 4 | 1440 | 41542 | 0 | +1542 |
+
+REACHABILITY VERDICTS (observation-level only; whether the
+hardware can ever produce a pair baseline inside a bin is
+UNMEASURED -- the harness reads no clock)
+  n=1000003 W=32: fast bin REACHED (203 pairs in the committed corpus)
+  n=1000003 W=64: fast bin REACHED (189 pairs in the committed corpus)
+  n=1000003 W=128: fast bin REACHED (327 pairs in the committed corpus)
+  n=1000003 W=256: fast bin REACHED (113 pairs in the committed corpus)
+  n=1000003 W=512: fast bin REACHED (62 pairs in the committed corpus)
+  n=1000003 W=1024: fast bin UNREACHED -- every committed pair baseline is above the boundary (floor 40083, +83 ns)
+  n=1048576 W=32: fast bin REACHED (62 pairs in the committed corpus)
+  n=1048576 W=64: fast bin REACHED (9 pairs in the committed corpus)
+  n=1048576 W=128: fast bin REACHED (29 pairs in the committed corpus)
+  n=1048576 W=256: fast bin REACHED (157 pairs in the committed corpus)
+  n=1048576 W=512: fast bin REACHED (117 pairs in the committed corpus)
+  n=1048576 W=1024: fast bin UNREACHED -- every committed pair baseline is above the boundary (floor 41542, +1542 ns)
+
+THE FINDING (machine output over the committed corpus; NO hardware
+measurement in this slice):
+- The strict fast bin at W = 1024 is UNREACHED-BY-OBSERVATION in BOTH
+  contract shapes. n = 1000003: 8 logs / 3,600 complete pairs / ZERO
+  fast-bin pairs / floor 40,083 ns -- just +83 ns above the boundary.
+  n = 1048576: 4 logs / 1,440 pairs / ZERO / floor 41,542 ns (+1,542).
+  W = 1024 total: 12 committed logs, 5,040 pairs, zero in the bin.
+- The closest approach anywhere in the corpus is +83 ns
+  (gpu-subgroup-reduce-m1max-crossday-20261024/w1024, floor 40,083).
+  The fastbin-hunt record's "resweep floor 40,375" figure was a
+  rule-1 level statistic (per-run medians of the fast level); the raw
+  pair floor across the whole corpus is 40,083 -- still above 40,000.
+- The boundary is W-specific, NOT an instrument defect: at every other
+  W the bin is REACHED in both shapes. Fast-bin pair counts per
+  (n, W): n = 1000003 -- w32 203, w64 189, w128 327, w256 113,
+  w512 62; n = 1048576 -- w32 62, w64 9, w128 29, w256 157,
+  w512 117. Corpus total: 1,268 fast-bin pairs outside W = 1024,
+  zero at W = 1024. The shape-1 floor rises with W (35,125 at w32 ..
+  35,958 at w512 .. 40,083 at w1024): the 40k boundary happens to sit
+  just below the observed floor at the largest workgroup.
+
+THE DECISION (ACCEPTED DESIGN ONLY -- ADR-0360's new Amendment
+2026-10-24 (strict-bin reachability at W = 1024); no code namespace
+moved, rule 4 untouched):
+1. A strict bin at a (n, W) cell carries a reachability state computed
+   from the committed corpus census: REACHED (>= 1 committed pair
+   baseline inside the bin at that cell) or UNREACHED-BY-OBSERVATION
+   (zero committed pairs inside it at that cell).
+2. At W = 1024 the strict fast bin is UNREACHED-BY-OBSERVATION (the
+   numbers above). The <= 40k pair-bin ratio at W = 1024 therefore
+   stays UNMEASURED, and the HUNT ROW IS CLOSED by this decision:
+   no further tick runs a session for that bin at that W by default.
+3. Reopen conditions (any one fires and the row returns to the
+   backlog): (a) any committed session -- for any question -- lands a
+   pair baseline <= 40,000 ns at W = 1024; (b) an instrument that
+   reads the GPU clock exists and shows a level at or below the
+   boundary at that W; (c) the owner directs the hunt to resume.
+4. Naming, pinned in the clause: UNREACHED-BY-OBSERVATION is a CORPUS
+   fact, never a hardware claim -- whether the hardware can ever
+   produce a <= 40,000 ns pair baseline at W = 1024 is UNMEASURED
+   (the harness reads no clock). The bins stay the MANUAL instrument's
+   absolute hand buckets; the machine keeps GAP-1.15 and never reuses
+   them (the pair-level classification amendment's decided fact,
+   unchanged). Rule 4 untouched: no :measured? flag, no :measured-cell
+   :shapes, no selection answer, no workgroup row moves.
+
+WHAT THIS SLICE DOES NOT LICENSE:
+- the <= 40k pair-bin RATIO at W = 1024 remains UNMEASURED (closing
+  the hunt row is not filling it; the reopen conditions are the only
+  route back);
+- no :measured? flag, no :measured-cell :shapes, no selection answer,
+  no workgroup row (ADR-0355/0358) moves;
+- the nine pending cross-day rows and the shape-2 W = 512 later-day
+  DATA run (2026-10-25+) are untouched and unclaimed;
+- UNMEASURED unchanged elsewhere: shapes beyond the two contract
+  cells; every Apple device but this M1 Max; the GLSL arm (blocked on
+  the wire-42 route, ADR 0371); the NVIDIA/Intel/ARM/AMD variant rows
+  entirely; the ramp's governing conditions.
+
+GATE (real runs, this host, for THIS record):
+1. The committed census instrument, re-run after being committed
+   beside this record: output diff-identical to the run quoted above
+   (empty diff).
+2. python3 scripts/gpu_regime_classify.py --self-test -> exit 0,
+   TOTAL: 2003 assertions passed, 0 failed (unchanged: this slice adds
+   no summary.md record to the classifier corpus; no pinned set moved).
+3. python3 scripts/gpu-subgroup-reduce-metal-measure.py --self-test ->
+   exit 0, 12 assertions passed, 0 failed.
+4. Scoped GPU gate (8 GPU-owned namespaces, scratch runner
+   gpu_scoped_gate.cljk): 102 tests / 9,774 assertions, 0 failures,
+   0 errors (no .cljk namespace in this diff).
+5. Full run-tests.cljk: RED AT BASE at `kotoba.form` ("Could not find
+   namespace: kotoba.form", the W3 port path, outside this diff),
+   re-verified live this tick. No green full suite is claimed.
+
+HONESTY STATE: ACCEPTED DESIGN ONLY -- the reachability clause
+(ADR-0360's Amendment 2026-10-24). IMPLEMENTED -- the census
+instrument (docs/evidence/gpu/strict-bin-reachability-20261024.py,
+committed with this record; evidence tooling, no compiler namespace
+moved). MEASURED -- nothing new on hardware; every census number is
+PARSED from committed measurements of earlier sessions. UNMEASURED --
+the <= 40k pair-bin ratio at W = 1024 (closed-by-decision, not
+filled), whether the hardware can ever reach the boundary at that W,
+the ramp's governing conditions, everything in the NOT LICENSED list.
+PROPOSED -- nothing new.
+
+HONEST LEFT:
+- the <= 40k pair-bin ratio at W = 1024: CLOSED-BY-DECISION under the
+  reopen conditions above (no longer a per-tick hunt row);
+- the nine cross-day rows and the shape-2 W = 512 later-day DATA run
+  (2026-10-25+);
+- SOUL.md backlog item 3 (blocked on hardware / ADR-0371; `:arm` /
+  `:unknown` rows stay `:measured? false`);
+- the W3 `string-ascii-lower` residue.
+
+NOT PUSHED: blocker-first rule in force -- kotoba-lang/amu open PRs
+with `hermes/` heads re-checked this tick (gh pr list): #1553
+(hermes/jun31-pe-shim-align) is OPEN, so this commit is kept locally
+on bot/amu-gpu-chain and pushes on the first tick after the blocker PR
+clears. Chain PR #1455 (bot/amu-gpu-chain) stays the one open chain PR.

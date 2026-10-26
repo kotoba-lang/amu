@@ -1,0 +1,140 @@
+W3 LOOP HELPER BOUNDARY -- the state-dependent boundary, measured and
+the attribution corrected (JUN-56 follow-up, JUN-55)
+date: 2026-10-26 (JST)
+row: ONE measurement slice + ONE source read. NO hardware ran, no GPU,
+no timing -- every number below is a kotoba-language-runtime behavior
+probe. NO product behavior change in this row.
+
+closes (by measurement, with a correction): the named residual of the
+loop / fuel / alt-loop / alt-fuel / split4 rows --
+  "the loop helper's own state-dependent boundary (20000 standalone /
+   10000 in a run interleaved with trapping neighbours -- never
+   pinned)"
+  named at src/kotoba/compiler/accelerator_targets.cljk (two alt-walk
+  sites + the sg-ops-walk site) and
+  test/.../accelerator_targets_test.cljk (the sg-ops-walk and fuel
+  tests' prose).
+
+INSTRUMENTS (scratch probes never staged; kbb --backend sci
+classpath "src:test:$(kbb -Spath -M:test)" at the worktree root):
+  w3_loopboundary.cljk        -- run 1 and run 2, BYTE-IDENTICAL
+    sha256 e51a2c323a23b3e5fda0fcf7810322d75b1aa29202660a4737db5179d6640361
+    72 lines COMPLETE. Four positions (A standalone ladder / B after 8
+    trapping neighbours / C a trapping neighbour before EVERY cell / D
+    drift) + budget clamps (E) + calibration (F) + neighbour traps (G).
+  w3_loopboundary_flip.cljk   -- run 1 and run 2, BYTE-IDENTICAL
+    sha256 5d6403b80a413a7d77f10be61aee205166248c478177d548750a2431e90b4b71
+    48 lines COMPLETE. Cold/warm fine ladder + 24 identical selfcall
+    traps around one 40000-iteration warm-up.
+  w3_loop_prims.cljk (the HISTORICAL instrument of the loop row's
+    go/no-go) re-run twice today: sha256
+    3922d6122700a80e65b135f689458a40d9848b3d1c1da3b9a4e714ae34b4b33b /
+    22ff5082971485984fcad1c66caf747a1aba228a7d332425e320119be2890769
+    -- the two runs differ at EXACTLY ONE cell (named below).
+  w3_loop_prims2.cljk smoke re-run: countup resolves 5000..20000.
+
+WHAT WAS MEASURED (tool output, the probes above):
+
+(1) THE LOOP HELPER'S BOUNDARY IS FLAT AND DETERMINISTIC. The bare
+counting loop/recur (countup: (loop [i 0] (if (>= i k) i (recur ...))))
+answered the VALUE at every k in {1000, 5000, 9999, 10000, 10001,
+20000, 40000} in EVERY position of the boundary probe -- A standalone,
+B after 8 trapping neighbours (4 host-stack traps + 2 budget/fuel +
+2 document-vector), C with a trapping selfcall before EVERY cell, D
+three repeated 20000 cells -- and in the flip probe's warm-up. NO
+countup cell trapped anywhere. The historical "10000 trapped
+budget/frames in an interleaved run" DOES NOT REPRODUCE in any
+position (both runs byte-identical).
+
+(2) THE CLAMPS PROVE THE SHAPE (depth 2, exactly 2 entries, any k):
+  countup 20000 {:frames 1} -> TRAP budget/frames
+    data {:phase :ir, :trap :budget/frames, :limit 1,
+          :function __kotoba_loop_1, :call-stack [countup __kotoba_loop_1]}
+  countup 20000 {:frames 2} -> 20000 ; countup 40000 {:frames 2} -> 40000
+  countup 10    {:frames 1} -> TRAP budget/frames (same data shape)
+  countup 20000 {:fuel 1}   -> TRAP budget/fuel
+    data {:phase :ir, :trap :budget/fuel, :limit 1,
+          :function __kotoba_loop_1, :call-stack [countup __kotoba_loop_1],
+          :hint "export or loop-helper name; approximate form not tracked"}
+  countup 20000 {:fuel 2} -> 20000 ; 40000 {:fuel 2} -> 40000
+  -- the frames counter is call-DEPTH (kir.cljk:3833-3836,
+  (> (count stack') limit)) and the trampolined self-tail re-entry keeps
+  the stack (kir.cljk:3851-3853) and charges zero fuel (charge? false),
+  so iteration count is in NEITHER budget. READ: osaho
+  e20c9affa6ed3e9fc847146829685365cb47481e src/kotoba/kir.cljk
+  (invoke-function 3801-3860; default-frames 32 at 124; the frames
+  contract comment 103-123; the host-stack wrap 6080-6098).
+
+(3) THE HISTORICAL OBSERVATION WAS A MIS-ATTRIBUTION. The historical
+instrument prints BOTH shapes on one line ("countup(loop) k => ...
+selfcall(defn) k => ..."). Re-run today (twice): at k = 10000 the line
+reads  countup(loop) 10000 => #object[BigInt 10000]
+       selfcall(defn) 10000 => TRAP: budget/frames
+-- the budget/frames trap is the SELFcall (plain defn self-recursion)
+cell; the countup cell answers the value. The loop row's prose
+("TRAPped budget/frames at 10000 ... the loop helper's own boundary is
+state-dependent") read the paired line as one cell. Corrected.
+
+(4) WHAT IS ACTUALLY STATE-DEPENDENT: THE TRAP SPELLING OF THE PLAIN
+defn- SELF-RECURSION (one frame per call), never the loop.
+  - Between two runs of the historical instrument, EXACTLY ONE cell
+    moved: selfcall 1000 -> "TRAP: budget/frames" (run 1) vs
+    "TRAP: host/stack-exhausted" (run 2). Every other cell byte-identical.
+  - Within one boundary-probe run: the first selfcall traps (block B)
+    answered host/stack-exhausted, every later one (blocks C/F/G)
+    answered :budget/frames {:limit 32, :function selfrec,
+    :call-stack [selfrec x8]}.
+  - Across harnesses: the flip probe answered host/stack-exhausted at
+    EVERY selfcall k (24..48 and 10000, cold and warm), while the
+    boundary probe's block F resolved selfcall 24 and trapped
+    :budget/frames at 32/33/48/64.
+  - Deterministic half (source read, kir.cljk:3833-3836): depth > 32 is
+    :budget/frames limit 32. Host half: if the host stack runs out
+    first, the interpreter wraps the raw error as
+    :host/stack-exhausted {:frames-limit 32} (kir.cljk:6096-6097).
+    WHICH answers first is host-state at the call -- never pinned.
+
+(5) ir/host-stack-exhausted? answered FALSE on every :host/stack-exhausted
+TRAP cell ("host-stack? false" in every trap line): the predicate
+classifies RAW host errors (kir.cljk:1563-1594), and the trap is the
+interpreter's own named wrap of one -- so the flag is about the raw
+error, not the named trap. Noted so nobody reads the flag as "not a
+stack problem".
+
+WHAT LANDED (tests + prose; NO product behavior change):
+  test/kotoba/compiler/accelerator_targets_test.cljk gains
+  w3-loop-helper-boundary-is-flat-and-deterministic: the flatness pins
+  (20000 resolves at default budgets; :frames 2 and :fuel 2 admit k = 1
+  and k = 20000 -- depth and entries CONSTANT in iteration count), the
+  one-unit-past pins ({:frames 1} / {:fuel 1} trap with :limit 1 and
+  :call-stack [countup __kotoba_loop_ -- the loop-helper ENTRY, never an
+  iteration), and the self-recursion spelling block explicitly UNPINNED
+  (naming the one-cell movement). Gate test COUNT +1.
+  FINISHED (the follow-up tick, same day): the five prose sites brought
+  to this state -- src/kotoba/compiler/accelerator_targets.cljk 3 sites
+  (the alt-loop fuel paragraph, the alt-fuel RESIDUAL, the sg-ops-walk
+  RESIDUAL -- all now FLAT and DETERMINISTIC with the mis-attribution
+  named) and the test file's 2 sites (the per-token-fuel test's "bare
+  counting loop's own boundary" paragraph and the loop test's
+  "recurring state-dependence" paragraph -- both re-attributed to the
+  plain defn- self-recursion's trap SPELLING, which is the class the
+  measurement found state-dependent). Scoped GPU gate run TWICE after
+  the edit: GREEN 123 tests / 12135 assertions / 0 failures / 0 errors
+  on BOTH runs (previous row's gate 122/12123; delta +1 test / +12
+  assertions -- exactly the new deftest; glslang 16.6.0 real-spawn
+  ran).
+
+STATES: MEASURED (the three instruments' runs and hashes above), READ
+(kir.cljk frames/fuel/trampoline mechanism, cited lines), IMPLEMENTED
+(tests + prose; scoped GPU gate GREEN twice after the edit, 123/12135),
+DECIDED (unchanged contracts; the loop's flatness is the contract the
+walks rely on), UNMEASURED named (WHY the host-stack depth moves
+between positions -- hypothesis: host engine frame-size warm-up, NOT
+measured; the exact depth the host reaches at any position; trap
+spellings beyond these runs; every workgroup-row question -- :arm and
+:unknown stay provisional :measured? false; anything off this host).
+
+CONSEQUENCE: NOTHING MOVES -- no :measured? flag value, no :shapes
+value, no workgroup row, no selection answer. This row closes a
+runtime-boundary residual and corrects a misattribution; it adds no
+hardware measurement claim.

@@ -1,6 +1,8 @@
 (ns kotoba.compiler.accelerator-variants-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.accelerator :as accelerator]
+            [kotoba.compiler.accelerator-targets :as targets]
             [kotoba.compiler.accelerator-variants :as variants]))
 
 (deftest selection-is-total-deterministic-and-unmeasured
@@ -15,7 +17,7 @@
     (let [reduce-kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
           ewise-kir (accelerator/kernel "ewise_add_f32" :ewise :add {:workgroup-size 256})
           subwarp-kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 16})]
-      (doseq [vendor [:apple :intel :arm :amd :unknown :qualcomm]]
+      (doseq [vendor [:apple :intel :arm :nvidia :amd :unknown :qualcomm]]
         (is (= :baseline (:variant (variants/select-variant vendor reduce-kir)))))
       (is (= :baseline (:variant (variants/select-variant :nvidia ewise-kir))))
       (is (= :baseline (:variant (variants/select-variant :nvidia subwarp-kir))))
@@ -49,3 +51,2142 @@
           apple (:variant (variants/select-variant :apple kir))]
       (is (= (accelerator/lower kir :cuda-v1)
              (accelerator/lower kir :cuda-v1 apple))))))
+
+(deftest subgroup-reduce-rows-select-under-their-gates
+  ;; JUN-59 (Intel, ADR-0356), JUN-60 (ARM, ADR-0357), JUN-58 (Apple,
+  ;; ADR-0360), JUN-57 (NVIDIA on the Vulkan route, ADR-0361) and JUN-84
+  ;; (AMD, ADR-0364) selection
+  ;; rows:
+  ;; :subgroup-reduce is answered for a reduce over :sum/:max/:min with
+  ;; W >= 32, on the Vulkan route under either of its two names, on a device
+  ;; descriptor that reports the fold's subgroup ops and a subgroup size
+  ;; that divides W (ADR-0356 rule 6 / ADR-0357's capability precondition).
+  (doseq [vendor [:intel :arm :apple :nvidia :amd]
+          wg [32 64 128 256 512 1024]
+          operator [:sum :max :min]
+          target [:vulkan :glsl-v1]
+          s [4 8 16 32]]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator) "_f32")
+                                  :reduce operator {:workgroup-size wg})
+          device {:subgroup-size s :subgroup-ops #{:basic :shuffle-relative}}
+          answer (variants/select-variant vendor kir target device)]
+      (is (= :subgroup-reduce (:variant answer)))
+      (is (false? (:measured? answer)))
+      (is (string? (:basis answer)))))
+  (testing "the reported subgroup width is taken as the device gives it"
+    (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 1024})]
+      (is (= :subgroup-reduce
+             (:variant (variants/select-variant
+                        :arm kir :vulkan
+                        {:subgroup-size 4 :subgroup-ops #{:basic :shuffle-relative}}))))
+      (is (= :subgroup-reduce
+             (:variant (variants/select-variant
+                        :intel kir :glsl-v1
+                        {:subgroup-size 32
+                         :subgroup-ops #{:basic :shuffle-relative :arithmetic}}))))))
+  (testing "same arguments in, same map out"
+    (let [kir (accelerator/kernel "reduce_max_f32" :reduce :max {:workgroup-size 128})
+          device {:subgroup-size 16 :subgroup-ops #{:basic :shuffle-relative}}]
+      (is (= (variants/select-variant :intel kir :vulkan device)
+             (variants/select-variant :intel kir :vulkan device))))))
+
+(deftest subgroup-reduce-selection-fails-closed-off-its-gates
+  ;; Every missing or malformed fact answers :baseline -- an absence of
+  ;; evidence is not a refusal, and the portable variant is the answer.
+  (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
+        ewise (accelerator/kernel "ewise_add_f32" :ewise :add {:workgroup-size 256})
+        sub-min (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 16})
+        malformed (assoc kir :kernel/dtype :f64)
+        capable {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}]
+    (testing "a device that confirms no subgroup capability"
+      (doseq [device [nil
+                      {}
+                      {:subgroup-size 32}
+                      {:subgroup-ops #{:basic :shuffle-relative}}
+                      {:subgroup-size 32 :subgroup-ops #{:basic}}
+                      {:subgroup-size 32 :subgroup-ops #{:shuffle-relative}}
+                      {:subgroup-size 32 :subgroup-ops :all}
+                      ;; On this JS/SCI host 32.0 IS 32 (one IEEE double),
+                      ;; so the malformed-number case must use a value that
+                      ;; is a number but not an integer.
+                      {:subgroup-size 32.5 :subgroup-ops #{:basic :shuffle-relative}}
+                      {:subgroup-size 0 :subgroup-ops #{:basic :shuffle-relative}}
+                      ;; rule 6: a subgroup size that does not divide W --
+                      ;; which includes one larger than W -- answers
+                      ;; :baseline.
+                      {:subgroup-size 24 :subgroup-ops #{:basic :shuffle-relative}}
+                      {:subgroup-size 512 :subgroup-ops #{:basic :shuffle-relative}}]]
+        (doseq [vendor [:intel :arm :apple :amd] target [:vulkan :glsl-v1]]
+          (is (= :baseline
+                 (:variant (variants/select-variant vendor kir target device)))
+              (str "device " (pr-str device) " must fail closed")))))
+    (testing "a target outside the rows' routes (ADR-0363 moved the WGSL route in for Intel/ARM and ADR-0364 for AMD; the 2026-10-24 NVIDIA WGSL-route decision moved it in for NVIDIA; the ADR-0360 amendment moved the MSL route in for Apple; the 2026-10-24 Apple WGSL-route decision moved it in for Apple too; the ADR-0361 amendment moved the CUDA route in for NVIDIA -- its second rung)"
+      (doseq [target [:cuda :cuda-v1 nil]]
+        (is (= :baseline (:variant (variants/select-variant :intel kir target capable))))
+        (is (= :baseline (:variant (variants/select-variant :arm kir target capable))))
+        (is (= :baseline (:variant (variants/select-variant :apple kir target capable))))
+        (is (= :baseline (:variant (variants/select-variant :amd kir target capable)))))
+      (is (= :baseline (:variant (variants/select-variant :nvidia kir nil capable)))
+          "an absent target names no route, for NVIDIA too")
+      ;; The MSL route carries the Apple row only (the ADR-0360 amendment).
+      (doseq [target [:msl-v1 :metal]]
+        (is (= :baseline (:variant (variants/select-variant :intel kir target capable))))
+        (is (= :baseline (:variant (variants/select-variant :arm kir target capable))))
+        (is (= :baseline (:variant (variants/select-variant :nvidia kir target capable))))
+        (is (= :baseline (:variant (variants/select-variant :amd kir target capable)))))
+      ;; The WGSL route carries all five designed rows' :subgroup-reduce
+      ;; (ADR-0363 for Intel/ARM, ADR-0364 for :amd, the 2026-10-24 NVIDIA
+      ;; WGSL-route decision for :nvidia and the 2026-10-24 Apple WGSL-route
+      ;; decision for :apple (JUN-58's own decision,
+      ;; docs/evidence/gpu/apple-wgsl-route-decision-20261024.txt) -- this
+      ;; spot's :apple refusal pin FLIPPED with that decision and is gone;
+      ;; the positive pins live in each vendor's own route battery
+      ;; (the-apple-row-rides-the-vulkan-msl-and-wgsl-routes for :apple).
+      )
+    (testing "a vendor outside the designed rows"
+      (doseq [vendor [:unknown :qualcomm]]
+        (is (= :baseline (:variant (variants/select-variant vendor kir :vulkan capable))))))
+    (testing "an NVIDIA descriptor whose reported compute capability contradicts the sm_70+ floor (ADR-0361)"
+      (doseq [device [(assoc capable :compute-capability 6.0)
+                      (assoc capable :compute-capability 6.5)
+                      (assoc capable :compute-capability "7.0")
+                      (assoc capable :compute-capability :seven)]
+              target [:vulkan :glsl-v1]]
+        (is (= :baseline (:variant (variants/select-variant :nvidia kir target device)))
+            (str "compute capability " (pr-str (:compute-capability device)) " must fail closed")))
+      (testing "and an absent capability is not a refusal: the reported subgroup facts are the evidence"
+        (doseq [target [:vulkan :glsl-v1]]
+          (is (= :subgroup-reduce (:variant (variants/select-variant :nvidia kir target capable)))))))
+    (testing "a shape outside the emission's row"
+      (is (= :baseline (:variant (variants/select-variant :intel ewise :vulkan capable))))
+      (is (= :baseline (:variant (variants/select-variant :arm sub-min :vulkan capable))))
+      (is (= :baseline (:variant (variants/select-variant :intel malformed :vulkan capable))))
+      (is (= :baseline (:variant (variants/select-variant :intel {} :vulkan capable))))
+      (is (= :baseline (:variant (variants/select-variant :intel nil :vulkan capable)))))))
+
+(deftest the-selected-subgroup-reduce-variant-lowers-seals-and-verifies
+  ;; Rule 3 end to end: what the table selects is exactly what the emitter
+  ;; admits, and the sealed artifact re-lowers byte-identically.
+  (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 128})
+        device {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}
+        selected (:variant (variants/select-variant :arm kir :vulkan device))
+        compiled (accelerator/compile-kernel kir :glsl-v1 selected)]
+    (is (= :subgroup-reduce selected))
+    (is (= :subgroup-reduce (:variant compiled)))
+    (is (str/includes? (:code compiled) "gl_SubgroupSize"))
+    (is (nil? (re-find #"\bd\s*=\s*\d+u" (:code compiled)))
+        "a baked fold width leaked into the selected emission")
+    (is (= compiled (accelerator/verify-artifact! compiled)))))
+
+(deftest each-route-selects-under-either-of-its-names
+  ;; ADR-0359 decision 3: :vulkan and :glsl-v1 name one route, :cuda /
+  ;; :cuda-v1 are the CUDA route's two spellings the same way, :metal /
+  ;; :msl-v1 the MSL route's, and (ADR-0363) :webgpu / :wgsl-v1 the WGSL
+  ;; route's. A caller holding
+  ;; target-for's api answer and a caller holding lower's emitter target
+  ;; select the same variant.
+  (let [reduce-kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
+        capable {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}]
+    (doseq [target [:cuda :cuda-v1]]
+      (is (= :warp-shuffle-reduce
+             (:variant (variants/select-variant :nvidia reduce-kir target
+                                                {:compute-capability 7.0})))))
+    ;; ADR-0361's amendment: the CUDA route's second rung selects under
+    ;; both CUDA spellings too (the warp row above keeps precedence on the
+    ;; same kernel when its gate holds).
+    (doseq [target [:cuda :cuda-v1]]
+      (is (= :subgroup-reduce
+             (:variant (variants/select-variant :nvidia reduce-kir target capable)))))
+    (doseq [vendor [:intel :arm :apple :nvidia :amd] target [:vulkan :glsl-v1]]
+      (is (= :subgroup-reduce
+             (:variant (variants/select-variant vendor reduce-kir target capable)))))
+    (doseq [vendor [:intel :arm :amd :nvidia :apple] target [:webgpu :wgsl-v1]]
+      (is (= :subgroup-reduce
+             (:variant (variants/select-variant vendor reduce-kir target capable)))))
+    (doseq [target [:metal :msl-v1]]
+      (is (= :subgroup-reduce
+             (:variant (variants/select-variant :apple reduce-kir target capable)))))))
+
+(deftest the-apple-row-rides-the-vulkan-msl-and-wgsl-routes
+  ;; ADR-0360 (JUN-58) as amended 2026-10-23 (JUN-58's own decision): the
+  ;; Apple row is the shared subgroup-size-parametric emission on the
+  ;; Vulkan route (MoltenVK is Apple's only EXECUTION route here) AND on
+  ;; the MSL route -- :metal (api) / :msl-v1 (emitter target), one route
+  ;; under two names, the ADR-0359 decision-3 idiom -- AND, since the
+  ;; 2026-10-24 Apple WGSL-route decision (JUN-58's own decision,
+  ;; docs/evidence/gpu/apple-wgsl-route-decision-20261024.txt), on the
+  ;; WGSL route (:webgpu / :wgsl-v1) under the same rules 3 + 6 gate.
+  ;; Rule 3 holds on every route (the MSL arm of the emission landed
+  ;; 2026-10-23 and lower admits (:msl-v1, :subgroup-reduce)), and rule 6
+  ;; is the same descriptor gate on every route -- the keys are the
+  ;; contract, whatever fills them. The measured-device narrowing rides
+  ;; along on the WGSL route (tested in
+  ;; the-apple-row-is-narrowed-on-the-measured-device) and no simdgroup
+  ;; rung exists there (:simdgroup-reduce is MSL emission only, rule 3).
+  ;; UNCOMPILED on the WGSL arm (no validator on this host) and
+  ;; UNMEASURED -- no WebGPU execution path exists.
+  (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
+        ewise (accelerator/kernel "ewise_add_f32" :ewise :add {:workgroup-size 256})
+        malformed (assoc kir :kernel/dtype :f64)
+        capable {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}]
+    (doseq [target [:vulkan :glsl-v1 :metal :msl-v1 :webgpu :wgsl-v1]]
+      (let [answer (variants/select-variant :apple kir target capable)]
+        (is (= :subgroup-reduce (:variant answer)))
+        (is (false? (:measured? answer)))
+        (is (str/includes? (:basis answer) "ADR-0360"))))
+    (testing "the WGSL positive names the 2026-10-24 decision in :basis on both spellings"
+      (doseq [target [:webgpu :wgsl-v1]]
+        (is (str/includes? (:basis (variants/select-variant :apple kir target capable))
+                           "apple-wgsl-route-decision-20261024"))))
+    (doseq [target [:cuda :cuda-v1]]
+      (is (= :baseline (:variant (variants/select-variant :apple kir target capable)))))
+    (testing "the same rule-6 gate fails closed on the MSL route"
+      (doseq [device [nil
+                      {}
+                      {:subgroup-size 32}
+                      {:subgroup-ops #{:basic :shuffle-relative}}
+                      {:subgroup-size 32 :subgroup-ops #{:basic}}
+                      {:subgroup-size 32 :subgroup-ops #{:shuffle-relative}}
+                      {:subgroup-size 24 :subgroup-ops #{:basic :shuffle-relative}}]
+              target [:metal :msl-v1]]
+        (is (= :baseline (:variant (variants/select-variant :apple kir target device)))
+            (str "device " (pr-str device) " must fail closed on the MSL route"))))
+    (testing "rule 3 end to end: the selected variant lowers, seals and verifies on :msl-v1"
+      (let [selected (:variant (variants/select-variant :apple kir :msl-v1 capable))
+            compiled (accelerator/compile-kernel kir :msl-v1 selected)]
+        (is (= :subgroup-reduce selected))
+        (is (= :subgroup-reduce (:variant compiled)))
+        (is (str/includes? (:code compiled) "uint sgsize [[threads_per_simdgroup]]"))
+        (is (str/includes? (:code compiled) "uint fold = min(sgsize, width);"))
+        (is (str/includes? (:code compiled) "simd_shuffle_down"))
+        (is (nil? (re-find #"\bfold = \d+u" (:code compiled)))
+            "a baked fold width leaked into the MSL emission")
+        ;; Metal refuses a kernel named main (Apple metal 32023.883): the
+        ;; MSL arm's entry is the kernel's :kernel/name (the MSL-arm
+        ;; amendment of ADR-0356).
+        (is (str/includes? (:code compiled) "kernel void reduce_sum_f32"))
+        (is (not (str/includes? (:code compiled) "kernel void main")))
+        (is (= compiled (accelerator/verify-artifact! compiled)))))
+    (testing "the same rule-6 gate fails closed on the WGSL route too"
+      (doseq [device [nil
+                      {}
+                      {:subgroup-size 32}
+                      {:subgroup-ops #{:basic :shuffle-relative}}
+                      {:subgroup-size 32 :subgroup-ops #{:basic}}
+                      {:subgroup-size 32 :subgroup-ops #{:shuffle-relative}}
+                      {:subgroup-size 24 :subgroup-ops #{:basic :shuffle-relative}}]
+              target [:webgpu :wgsl-v1]]
+        (is (= :baseline (:variant (variants/select-variant :apple kir target device)))
+            (str "device " (pr-str device) " must fail closed on the WGSL route")))
+      (doseq [target [:webgpu :wgsl-v1]]
+        (is (= :baseline (:variant (variants/select-variant :apple ewise target capable))))
+        (is (= :baseline (:variant (variants/select-variant :apple malformed target capable))))))
+    (testing "no simdgroup rung on the WGSL route: :simd-reduce facts alone answer :baseline there"
+      ;; :simdgroup-reduce is MSL emission only (rule 3): an Apple WGSL
+      ;; descriptor reporting ONLY the simd fold's fact must fail closed,
+      ;; not select a variant the WGSL emitter does not admit.
+      (doseq [target [:webgpu :wgsl-v1]]
+        (is (= :baseline
+               (:variant (variants/select-variant
+                          :apple kir target
+                          {:subgroup-size 32 :subgroup-ops #{:simd-reduce}}))))))
+    (testing "rule 3 end to end on the WGSL route: the selected variant lowers, seals and verifies on :wgsl-v1"
+      (let [selected (:variant (variants/select-variant :apple kir :wgsl-v1 capable))
+            compiled (accelerator/compile-kernel kir :wgsl-v1 selected)]
+        (is (= :subgroup-reduce selected))
+        (is (= :subgroup-reduce (:variant compiled)))
+        (is (nil? (re-find #"d:u32=\d+u" (:code compiled)))
+            "a baked fold width leaked into the WGSL emission")
+        (is (= compiled (accelerator/verify-artifact! compiled)))))
+    (testing "same arguments in, same map out (WGSL route included)"
+      (is (= (variants/select-variant :apple kir :wgsl-v1 capable)
+             (variants/select-variant :apple kir :wgsl-v1 capable))))))
+
+(deftest the-apple-row-is-narrowed-on-the-measured-device
+  ;; ADR-0360's SECOND decision (2026-10-23, JUN-58): what the Apple row
+  ;; selects given the measured cell. The cell REFUTED the row's basis on
+  ;; one named device (Apple M1 Max: the variant slower than :baseline --
+  ;; the MSL arm natively, ADR-0360's measurement amendment, the
+  ;; contract-satisfying channel of question (1)'s decision; the GLSL arm
+  ;; via wire-42/MoltenVK, PR #1347/#1348, as LABELED BOOTSTRAP
+  ;; corroboration), and evidence about a named device acts on that device
+  ;; only (the uB5G idiom of kotoba.compiler.accelerator-targets). So the
+  ;; row is NARROWED: a descriptor naming the measured device answers
+  ;; :baseline for the reduce shape on every Apple route (the WGSL route
+  ;; included since the 2026-10-24 Apple WGSL-route decision -- its arm
+  ;; on this device is UNMEASURED and the conservative answer is the
+  ;; measured one), with the
+  ;; refutation in :basis; every other Apple device keeps the designed row
+  ;; (UNMEASURED).
+  (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
+        capable {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}]
+    (testing "the measured device answers :baseline on every Apple route (WGSL included since the 2026-10-24 Apple WGSL-route decision), at every W"
+      (doseq [device [(assoc capable :vendor "Apple M1 Max")
+                      (assoc capable :name "Apple M1 Max")
+                      (assoc capable :device "Apple M1 Max")
+                      ;; case-insensitive, per name part (uB5G idiom)
+                      (assoc capable :name "apple M1 MAX")
+                      ;; the INFO-derived descriptor shape
+                      (assoc capable :vendor "Apple M1 Max"
+                             :max-workgroup-x 1024 :unified-memory? true)]
+              target [:vulkan :glsl-v1 :metal :msl-v1 :webgpu :wgsl-v1]
+              operator [:sum :max :min]
+              wg [32 64 128 256 512]]
+        (let [k (accelerator/kernel (str "reduce_" (name operator) "_f32")
+                                    :reduce operator {:workgroup-size wg})
+              answer (variants/select-variant :apple k target device)]
+          (is (= :baseline (:variant answer))
+              (str "device " (pr-str device) " W=" wg " " target " must answer :baseline"))
+          ;; The flip (ADR-0360 question (1)'s decision) is per CELL: the
+          ;; MSL route at the verdict-chosen widths only. Every other cell
+          ;; of this narrowing keeps the lock -- MSL W = 32 is the low
+          ;; band's DECIDED cell (measured, but no cross-regime verdict
+          ;; chose the answer) and the GLSL arm is LABELED BOOTSTRAP at
+          ;; every width (the per-cell record is pinned in
+          ;; the-measured-cells-flip-the-honesty-lock).
+          (is (= (and (contains? #{:metal :msl-v1} target)
+                      (contains? #{64 128 256 512 1024} wg))
+                 (:measured? answer))
+              (str "device " (pr-str device) " W=" wg " " target " measured?"))
+          (is (str/includes? (:basis answer) "APPLE ROW NARROWED"))
+          (is (str/includes? (:basis answer) "m1 max"))
+          (is (str/includes? (:basis answer) "ADR-0360"))
+          ;; 2026-10-23 prose slices: the basis text cites the second-shape
+          ;; records (n = 2^20, the padded tail gone) -- the demotion
+          ;; basis is not a padded-tail artifact -- and names the flip
+          ;; contract's WIDENING DECISION: both measured shapes are
+          ;; contract cells now (shape 2's flip-set band, all 15 cells
+          ;; slower), shapes beyond these two stay UNMEASURED.
+          (is (str/includes? (:basis answer)
+                             "docs/evidence/gpu-subgroup-reduce-m1max-shape2-20261023")
+              "the narrowing note must cite the shape-2 evidence")
+          (is (str/includes? (:basis answer) "The flip contract WIDENED")
+              "the narrowing note must name the widening decision"))))
+    (testing "every other Apple device keeps the designed row, UNMEASURED"
+      (doseq [device [(assoc capable :vendor "Apple M3")
+                      (assoc capable :name "Apple M2 Pro")
+                      (assoc capable :device "iPad Pro (M4)")
+                      ;; an UNNAMED descriptor: no name, no evidence
+                      (assoc capable :vendor-id 4203)
+                      capable]
+              target [:vulkan :glsl-v1 :metal :msl-v1 :webgpu :wgsl-v1]]
+        (let [answer (variants/select-variant :apple kir target device)]
+          (is (= :subgroup-reduce (:variant answer))
+              (str "device " (pr-str device) " must keep the designed row"))
+          (is (false? (:measured? answer)))
+          (is (not (str/includes? (:basis answer) "APPLE ROW NARROWED"))
+              "an unrefuted answer carries no narrowing note"))))
+    (testing "the narrowing is Apple's alone: a non-Apple vendor is untouched"
+      (doseq [vendor [:intel :arm :nvidia :amd]]
+        (is (= :subgroup-reduce
+               (:variant (variants/select-variant
+                          vendor kir :vulkan
+                          (assoc capable :name "M1 Max")))))))
+    (testing "a refuted device WITHOUT rule-6 facts is the ordinary fail-closed answer"
+      ;; The narrowing note is the ROW's demotion only: when the gate
+      ;; never held, :baseline is the fail-closed answer and its basis
+      ;; says so -- it must not claim the row was narrowed.
+      (doseq [device [{:vendor "Apple M1 Max"}
+                      {:vendor "Apple M1 Max" :subgroup-size 32}
+                      {:name "Apple M1 Max"
+                       :subgroup-size 24 :subgroup-ops #{:basic :shuffle-relative}}]
+              target [:vulkan :msl-v1]]
+        (let [answer (variants/select-variant :apple kir target device)]
+          (is (= :baseline (:variant answer)))
+          (is (not (str/includes? (:basis answer) "APPLE ROW NARROWED"))))))
+    (testing "same arguments in, same map out"
+      (let [device (assoc capable :vendor "Apple M1 Max")]
+        (is (= (variants/select-variant :apple kir :msl-v1 device)
+               (variants/select-variant :apple kir :msl-v1 device)))))))
+
+(deftest the-msl-ladder-selects-simdgroup-reduce-first
+  ;; ADR-0373 rule 3 step 2 (2026-10-23, JUN-58): the selection predicate
+  ;; lands as the MSL ladder (the ADR-0361 CUDA-ladder idiom). Outside the
+  ;; carved-out measured class, an Apple MSL descriptor reporting the
+  ;; fold's rule-6 fact (:simd-reduce) and a reported SIMD-group width
+  ;; dividing W answers :simdgroup-reduce -- the vendor-native FIRST rung;
+  ;; a descriptor reporting the shuffle fold's facts but not :simd-reduce
+  ;; falls to :subgroup-reduce (the second rung, byte-for-byte the old
+  ;; answer); everything else answers :baseline. The measured-cell
+  ;; carve-out outranks rung 1 EVERYWHERE BUT THIS VARIANT'S OWN FLIP
+  ;; CELLS (the flip slices, 2026-10-23/24): at W = 32, W = 64, W = 128,
+  ;; W = 256,
+  ;; W = 512 and
+  ;; W = 1024 on the measured class
+  ;; (name fragment "m1 max", reported subgroup size 32) the native-Metal
+  ;; measurement of this variant ran there and measured it FASTER than
+  ;; :baseline (apple-simdgroup-flip-note), so each cell answers
+  ;; :simdgroup-reduce, MEASURED. Every other :simdgroup-reduce answer is
+  ;; UNMEASURED (:measured? false).
+  (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
+        both {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative :simd-reduce}}
+        native {:subgroup-size 32 :subgroup-ops #{:simd-reduce}}
+        shuffle-only {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}]
+    (testing "rung 1: the fold's own fact answers first; :basic/:shuffle-relative are the shuffle fold's facts and are NOT required"
+      (doseq [device [both native
+                      ;; a fact set larger than the fold's needs still
+                      ;; selects (the rung-2 idiom, one rule for the gate)
+                      {:subgroup-size 32 :subgroup-ops #{:simd-reduce :arithmetic}}]
+              target [:metal :msl-v1]]
+        (let [answer (variants/select-variant :apple kir target device)]
+          (is (= :simdgroup-reduce (:variant answer))
+              (str "device " (pr-str device) " " target " must take rung 1"))
+          (is (false? (:measured? answer)))
+          (is (nil? (:measured-cell answer)))
+          (is (string? (:basis answer)))
+          (is (contains? variants/variant-bases :simdgroup-reduce)))))
+    (testing "rung 1 covers the whole reduce row: every W of the shape, every operator"
+      (doseq [wg [32 64 128 256 512 1024]
+              operator [:sum :max :min]]
+        (let [k (accelerator/kernel (str "reduce_" (name operator) "_f32")
+                                    :reduce operator {:workgroup-size wg})]
+          (is (= :simdgroup-reduce (:variant (variants/select-variant :apple k :msl-v1 native))))
+          (is (false? (:measured? (variants/select-variant :apple k :msl-v1 native)))))))
+    (testing "rung 2 is byte-for-byte the old answer: the shuffle facts without :simd-reduce"
+      (doseq [target [:metal :msl-v1]]
+        (is (= :subgroup-reduce
+               (:variant (variants/select-variant :apple kir target shuffle-only))))))
+    (testing "the ladder is the MSL route's and Apple's alone"
+      ;; rung 1 does not leak onto the Vulkan route: :simd-reduce alone is
+      ;; no shuffle fold there and fails closed to :baseline; with the
+      ;; shuffle facts present the second rung answers, unchanged.
+      (doseq [target [:vulkan :glsl-v1]]
+        (is (= :baseline (:variant (variants/select-variant :apple kir target native))))
+        (is (= :subgroup-reduce (:variant (variants/select-variant :apple kir target both)))))
+      ;; other vendors stay off the MSL ladder even carrying the fact
+      ;; (row scope, one vendor per decision) -- byte-for-byte their old
+      ;; :baseline answers.
+      (doseq [vendor [:intel :arm :nvidia :amd] device [both native]]
+        (is (= :baseline (:variant (variants/select-variant vendor kir :msl-v1 device))))))
+    (testing "rung 1 fails closed like every row"
+      (doseq [device [{:subgroup-size 24 :subgroup-ops #{:simd-reduce}}
+                      {:subgroup-size 512 :subgroup-ops #{:simd-reduce}}
+                      {:subgroup-size 32.5 :subgroup-ops #{:simd-reduce}}
+                      {:subgroup-size 0 :subgroup-ops #{:simd-reduce}}
+                      {:subgroup-size 32}
+                      {:subgroup-ops #{:simd-reduce}}
+                      {:subgroup-size 32 :subgroup-ops :all}]]
+        (is (not= :simdgroup-reduce
+                  (:variant (variants/select-variant :apple kir :msl-v1 device)))
+            (str "device " (pr-str device) " must fail rung 1 closed")))
+      (doseq [bad [(accelerator/kernel "ewise_add_f32" :ewise :add {:workgroup-size 256})
+                   (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 16})
+                   (assoc kir :kernel/dtype :f64)
+                   {} nil]]
+        (is (not= :simdgroup-reduce
+                  (:variant (variants/select-variant :apple bad :msl-v1 native)))
+            (str "kernel " (pr-str bad) " must fail rung 1 closed"))))
+    (testing "the measured-cell carve-out outranks rung 1 wherever the flip's keys do not hold"
+      ;; After the W = 32 flip the six flip cells are every width the row
+      ;; admits (a power of two in [32, 1024]), so the carve-out's live
+      ;; cells on the class are the flip keys' own refusals: a "m1 max"
+      ;; descriptor whose reported SIMD-group width is not the measured 32
+      ;; (the keys are name AND width; an S = 8/16 report is not the
+      ;; measured class's cell). Rung 1's gate still holds there (the
+      ;; reported width divides W) and the carve-out outranks it.
+      (doseq [device [(assoc native :device "Apple M1 Max"
+                             :subgroup-size 8)
+                      (assoc both :name "Apple M1 Max"
+                             :subgroup-size 16)]
+              target [:metal :msl-v1]
+              wg [32 256]]
+        (let [answer (variants/select-variant
+                      :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                                {:workgroup-size wg})
+                      target device)]
+          (is (= :baseline (:variant answer))
+              (str "device " (pr-str device) " W=" wg " must keep the class's answer"))
+          (is (str/includes? (:basis answer) "THE MEASURED-CELL CARVE-OUT"))
+          (is (str/includes? (:basis answer) "CLOSED to design rows"))))
+      (testing "W = 32, W = 64, W = 128, W = 256, W = 512 and W = 1024 are this variant's OWN flip cells: the carve-out lifts exactly there, MEASURED"
+        ;; the flip slices (the W = 512, W = 1024, W = 128, W = 64 and
+        ;; W = 32
+        ;; cells flipped in
+        ;; their own later slices): the native-Metal measurement of
+        ;; THIS variant ran at W = 32, W = 64, W = 128, W = 256, W = 512
+        ;; and W = 1024 on
+        ;; the
+        ;; measured class and measured
+        ;; it FASTER than :baseline (apple-simdgroup-flip-note), so each
+        ;; cell answers the row with the row's OWN record.
+        (doseq [device [(assoc native :device "Apple M1 Max")
+                        (assoc both :name "Apple M1 Max")]
+                target [:metal :msl-v1]
+                wg [32 64 128 256 512 1024]]
+          (let [answer (variants/select-variant
+                        :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                                  {:workgroup-size wg})
+                        target device)]
+            (is (= :simdgroup-reduce (:variant answer))
+                (str "device " (pr-str device) " " target " W=" wg " must answer the flip"))
+            (is (true? (:measured? answer)))
+            (is (= {:device "m1 max"
+                    :subgroup-size 32
+                    :channel :native-metal
+                    :route :msl-v1
+                    :workgroup-size wg
+                    :operators #{:sum :max :min}
+                    ;; the measured shapes per cell: the ground shape at
+                    ;; every flipped W, and -- at W = 256, W = 1024,
+                    ;; W = 128, W = 64 and W = 32 -- also shape 2 (n =
+                    ;; 2^20, the shape-2 flips of those cells,
+                    ;; 2026-10-24). Shape 2 at W = 512 is
+                    ;; measured-but-REFUSED (rule 2 REGIME-SCOPED) for
+                    ;; this variant and the record names the shapes so no
+                    ;; claim extends past them.
+                    :shapes ({256 [1000003 1048576]
+                              512 [1000003]
+                              1024 [1000003 1048576]
+                              128 [1000003 1048576]
+                              64 [1000003 1048576]
+                              32 [1000003 1048576]}
+                             wg)
+                    ;; each flip cell's record names ITS OWN runs.
+                    :evidence ({256 ["docs/evidence/gpu-simdgroup-reduce-m1max-20261023"
+                                     "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w256"
+                                     "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w256"
+                                     "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w256"]
+                                512 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512"
+                                     "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w512"]
+                                1024 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w1024"
+                                      "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w1024"
+                                      "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w1024"
+                                      "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w1024-shape2"]
+                                128 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w128"
+                                     "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w128"
+                                     "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w128"
+                                     "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w128-shape2"]
+                                64 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w64"
+                                    "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w64"
+                                    "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w64"
+                                    "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w64-shape2"]
+                                32 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w32"
+                                    "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w32"
+                                    "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w32"
+                                    "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w32-shape2"]}
+                               wg)}
+                   (:measured-cell answer))
+                (str "device " (pr-str device) " " target " W=" wg " record"))
+            (is (str/includes? (:basis answer) "THIS VARIANT'S OWN FLIP CELLS"))
+            (is (str/includes? (:basis answer) "REGIME-INVARIANT FASTER"))
+            (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-20261023"))
+            (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w256"))
+            (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w1024"))
+            (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w128"))
+            (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w64"))
+            (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w32"))
+            (is (str/includes? (:basis answer) "0.639/0.656/0.659"))
+            (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w1024"))
+            (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w128"))
+            (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w64"))
+            (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w32")))))
+      (testing "the carve-out note is the row's demotion only, and the flag scope is named"
+        ;; simd-only facts where the flip's keys do not hold (the class
+        ;; name, S = 8 -- not the measured reported width -- at W = 32):
+        ;; the
+        ;; shuffle row's gate never
+        ;; held, so no narrowing note -- and the answer is the carve-out's
+        ;; decision, not a measurement's.
+        (let [answer (variants/select-variant
+                      :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                                {:workgroup-size 32})
+                      :msl-v1 (assoc native :device "Apple M1 Max"
+                                     :subgroup-size 8))]
+          (is (false? (:measured? answer)))
+          (is (nil? (:measured-cell answer)))
+          (is (not (str/includes? (:basis answer) "APPLE ROW NARROWED"))))
+        ;; both fact sets where the flip's keys do not hold (the class
+        ;; name, S = 16, W = 32): the shuffle row's narrowing rides (the
+        ;; name is the refutation's key) and the carve-out note rides
+        ;; along -- its flag-scope clause ("marks the :subgroup-reduce
+        ;; refutation ONLY") names history, not a live cell: since the
+        ;; W = 64 flip no cell carries both the note and a :measured? true
+        ;; flag.
+        (let [answer (variants/select-variant
+                      :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                                {:workgroup-size 32})
+                      :msl-v1 (assoc both :name "Apple M1 Max"
+                                     :subgroup-size 16))]
+          (is (false? (:measured? answer)))
+          (is (nil? (:measured-cell answer)))
+          (is (str/includes? (:basis answer) "APPLE ROW NARROWED"))
+          (is (str/includes? (:basis answer) "marks the :subgroup-reduce refutation ONLY")))
+        ;; shuffle facts ONLY at W = 32 (no :simd-reduce): rung 1 never
+        ;; held, so the shuffle row's narrowing and its DECIDED cell ride
+        ;; byte-for-byte unchanged -- W = 32 is decided for the SHUFFLE
+        ;; fold, not verdict-chosen, so the answer keeps the lock
+        ;; (:measured? false, no record).
+        (let [answer (variants/select-variant
+                      :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                                {:workgroup-size 32})
+                      :msl-v1 (assoc shuffle-only :name "Apple M1 Max"))]
+          (is (false? (:measured? answer)))
+          (is (nil? (:measured-cell answer)))
+          (is (str/includes? (:basis answer) "APPLE ROW NARROWED"))
+          (is (str/includes? (:basis answer) "W = 32, THE DECIDED CELL")))
+        ;; the same descriptor WITH the fold's fact at W = 32 flips now
+        ;; (the W = 32 flip slice, 2026-10-24): the class's last
+        ;; :baseline cell of the W band is gone -- the cell answers the
+        ;; row, MEASURED.
+        (let [answer (variants/select-variant
+                      :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                                {:workgroup-size 32})
+                      :msl-v1 (assoc both :name "Apple M1 Max"))]
+          (is (= :simdgroup-reduce (:variant answer)))
+          (is (true? (:measured? answer)))
+          (is (str/includes? (:basis answer) "THIS VARIANT'S OWN FLIP CELLS")))))
+    (testing "rule 3 end to end: the selected variant lowers, seals and verifies on :msl-v1"
+      (let [selected (:variant (variants/select-variant :apple kir :msl-v1 native))
+            compiled (accelerator/compile-kernel kir :msl-v1 selected)]
+        (is (= :simdgroup-reduce selected))
+        (is (= :simdgroup-reduce (:variant compiled)))
+        (is (str/includes? (:code compiled) "v = simd_sum(v);"))
+        (is (nil? (re-find #"simd_shuffle_down" (:code compiled))))
+        (is (= compiled (accelerator/verify-artifact! compiled)))))
+    (testing "same arguments in, same map out"
+      (is (= (variants/select-variant :apple kir :msl-v1 native)
+             (variants/select-variant :apple kir :msl-v1 native))))))
+
+(deftest the-measured-cells-flip-the-honesty-lock
+  ;; ADR-0360 question (1) DECIDED (2026-10-23, JUN-58) and its flip
+  ;; implemented here: for the MSL arm a native Metal harness that
+  ;; dispatches the emitters' own bytes under the sweep protocol SATISFIES
+  ;; the measurement contract (wire-42 executes SPIR-V through Vulkan and
+  ;; can never run MSL -- the route clause was a deadlock for this arm, not
+  ;; an honesty lock), and the flip is keyed per ANSWER CELL: the tested
+  ;; device class (name fragment "m1 max" AND reported subgroup size 32),
+  ;; the channel's route (MSL), and the widths whose measurement CHOSE the
+  ;; answer (64/128/256/512/1024 -- W = 32 ran under the same channel but
+  ;; its answer is DECIDED, not verdict-chosen). Everything else keeps
+  ;; :measured? false. The flag says a
+  ;; measurement CHOSE this answer (the variant measured SLOWER there) --
+  ;; never that :baseline is optimal.
+  (let [capable {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}
+        m1 (assoc capable :name "Apple M1 Max")]
+    (testing "the flipped cells carry the tested-device-class record"
+      (doseq [target [:metal :msl-v1]
+              wg [64 128 256 512 1024]
+              operator [:sum :max :min]]
+        (let [kir (accelerator/kernel (str "reduce_" (name operator) "_f32")
+                                      :reduce operator {:workgroup-size wg})
+              answer (variants/select-variant :apple kir target m1)]
+          (is (= :baseline (:variant answer)))
+          (is (true? (:measured? answer))
+              (str "W=" wg " " target " " operator " must be flipped"))
+          (is (= {:device "m1 max"
+                  :subgroup-size 32
+                  :channel :native-metal
+                  :route :msl-v1
+                  :workgroup-size wg
+                  :operators #{:sum :max :min}
+                  ;; the widening decision (2026-10-23): the record names
+                  ;; BOTH measured shapes -- n = 1,000,003 and n = 2^20 --
+                  ;; and no claim extends past these two.
+                  :shapes [1000003 1048576]
+                  :evidence ["docs/evidence/gpu-subgroup-reduce-m1max-20261023"
+                             "docs/evidence/gpu-subgroup-reduce-m1max-wsweep-20261023"
+                             "docs/evidence/gpu-subgroup-reduce-m1max-wsweep-low-20261023"
+                             "docs/evidence/gpu-subgroup-reduce-m1max-shape2-20261023"
+                             "docs/evidence/gpu-subgroup-reduce-m1max-shape2-band-20261023"
+                             "docs/evidence/gpu-subgroup-reduce-m1max-crossday-20261024/w256"
+                             "docs/evidence/gpu-subgroup-reduce-m1max-crossday-20261024/w64"
+                             "docs/evidence/gpu-subgroup-reduce-m1max-crossday-20261024/w128"
+                             "docs/evidence/gpu-subgroup-reduce-m1max-crossday-20261024/w512"
+                             "docs/evidence/gpu-subgroup-reduce-m1max-crossday-20261024/w1024"
+                             "docs/evidence/gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w256"
+                             "docs/evidence/gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w64"
+                             "docs/evidence/gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w128"
+                             "docs/evidence/gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w512"
+                             "docs/evidence/gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w1024"]}
+                 (:measured-cell answer))
+              (str "W=" wg " " target " " operator " record")))))
+    (testing "the ten cross-day replication records are named in the flip note and the basis evidence list"
+      ;; The naming slice (2026-10-24,
+      ;; docs/evidence/gpu/subgroup-crossday-naming-20261024.txt): the
+      ;; ten sanctioned cross-day records (the anchor W = 256 and
+      ;; W = 64/128/512/1024 at each measured shape, all later-day
+      ;; 2026-10-24) are named in apple-narrow-note's CROSS-DAY paragraph
+      ;; and in apple-measured-evidence -- corroboration that flipped
+      ;; nothing, never a flip basis of their own.
+      (let [answer (variants/select-variant
+                    :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                              {:workgroup-size 256})
+                    :msl-v1 m1)
+            basis (:basis answer)
+            evidence (:evidence (:measured-cell answer))]
+        (is (str/includes? basis "CROSS-DAY REPLICATION OF THE FLIP")
+            "the flip note carries the cross-day paragraph")
+        (is (str/includes? basis "corroboration that flipped")
+            "the paragraph scopes the records as corroboration that flipped nothing")
+        (is (str/includes? basis "no :measured? flag, no :shapes")
+            "the paragraph moves no :measured? flag and no :shapes value")
+        (is (str/includes? basis "no selection answer and no workgroup row (ADR-0355/0358)")
+            "the paragraph moves no selection answer and no workgroup row")
+        (is (str/includes? basis "sign does NOT reproduce strictly at :max")
+            "the paragraph names the shape-1 w128 row's sign scoping (named, not hidden)")
+        (is (str/includes? basis "DECIDED OUT of this list")
+            "the paragraph defers W = 32 to its own membership decision")
+        (doseq [p ["docs/evidence/gpu-subgroup-reduce-m1max-crossday-20261024/w256"
+                   "docs/evidence/gpu-subgroup-reduce-m1max-crossday-20261024/w64"
+                   "docs/evidence/gpu-subgroup-reduce-m1max-crossday-20261024/w128"
+                   "docs/evidence/gpu-subgroup-reduce-m1max-crossday-20261024/w512"
+                   "docs/evidence/gpu-subgroup-reduce-m1max-crossday-20261024/w1024"
+                   "docs/evidence/gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w256"
+                   "docs/evidence/gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w64"
+                   "docs/evidence/gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w128"
+                   "docs/evidence/gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w512"
+                   "docs/evidence/gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w1024"]]
+          (is (some #(= p %) evidence)
+              (str p " is named in the basis evidence list"))
+          (is (str/includes? basis p)
+              (str p " is named in the flip note prose")))
+        (is (= 15 (count evidence))
+            "the list is the five flip-run records plus the ten cross-day records")
+        (is (not (some #(str/includes? % "resweep") evidence))
+            "the lists name no resweep directory -- the same-day-resweep naming rule applied to this family's lists")))
+    (testing "the W = 32 cell keeps the lock by decision (the low band's one mixed cell)"
+      ;; The low-band measurement (2026-10-23) measured W = 32 and the
+      ;; variant is not slower there -- :sum 0.918 in every fresh process
+      ;; -- but every run sat in the slow clock regime (per-run median
+      ;; gpu-ns 109k -> 36k mid-session). The later shape-2 and op-order
+      ;; cells measured the scoping itself (2026-10-23): the sign follows
+      ;; the clock level for all three operators -- op-order within-pair
+      ;; medians slow vs fast: :sum 0.919 vs 1.018, :max 0.917 vs 1.029,
+      ;; :min 0.920 vs 1.018. A regime-scoped sign is not a selection
+      ;; basis, so the answer stays :baseline for ALL THREE OPERATORS (no
+      ;; operator split), it is a DECISION on measured ground (the basis
+      ;; says so), and it keeps the lock: no regime-robust verdict chose
+      ;; it.
+      (doseq [operator [:sum :max :min]]
+        (let [answer (variants/select-variant
+                      :apple (accelerator/kernel (str "reduce_" (name operator) "_f32")
+                                                :reduce operator
+                                                {:workgroup-size 32})
+                      :msl-v1 m1)]
+          (is (= :baseline (:variant answer))
+              (str "W=32 " operator " must stay :baseline (no operator split)"))
+          (is (false? (:measured? answer))
+              (str "W=32 " operator " must keep the lock"))
+          (is (nil? (:measured-cell answer))
+              (str "W=32 " operator " carries no measured-cell record"))
+          (is (str/includes? (:basis answer) "W = 32, THE DECIDED CELL"))
+          (is (str/includes? (:basis answer) "DECISION on measured ground"))
+          (is (str/includes? (:basis answer) "slow clock regime"))
+          ;; 2026-10-23 prose slice: the decision note's basis names the
+          ;; measured :sum fast-regime samples (the op-order cell) and the
+          ;; second-shape corroboration explicitly.
+          (is (str/includes? (:basis answer)
+                             "docs/evidence/gpu-subgroup-reduce-m1max-shape2-20261023")
+              (str "W=32 " operator " basis must cite the shape-2 cell"))
+          (is (str/includes? (:basis answer)
+                             "docs/evidence/gpu-subgroup-reduce-m1max-oporder-20261023")
+              (str "W=32 " operator " basis must cite the op-order cell"))
+          ;; The membership decision (2026-10-24, named in this family's
+          ;; naming slice): W = 32 is DECIDED OUT of the cross-day
+          ;; replication list at both measured shapes -- it never
+          ;; flipped, so no flip basis exists to corroborate.
+          (is (str/includes? (:basis answer) "W = 32 AND THE CROSS-DAY LIST")
+              (str "W=32 " operator " basis must carry the membership decision paragraph"))
+          (is (str/includes? (:basis answer) "subgroup-w32-leftlist-")
+              (str "W=32 " operator " basis must name the membership decision record"))
+          (is (str/includes? (:basis answer) "DECIDED OUT of the cross-day replication list")
+              (str "W=32 " operator " is decided out of the list, decided not silent")))))
+    (testing "the GLSL arm keeps the lock at every width: LABELED BOOTSTRAP is not a verdict"
+      ;; PR #1347/#1348 measured the same sign, but their own record
+      ;; (docs/evidence/gpu/loadsweep-20261019/README.md) labels the runs
+      ;; LABELED BOOTSTRAP -- an unbalanced replay order biases the ratio
+      ;; beyond drift -- and publishes no verdict. Nothing flips off them.
+      (doseq [target [:vulkan :glsl-v1]
+              wg [32 64 128 256 512 1024]]
+        (let [answer (variants/select-variant
+                      :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                                {:workgroup-size wg})
+                      target m1)]
+          (is (= :baseline (:variant answer)))
+          (is (false? (:measured? answer))
+              (str "W=" wg " " target " must keep the lock"))
+          (is (nil? (:measured-cell answer))))))
+    (testing "the tested device class is the name AND the reported subgroup size"
+      ;; The name matches but the reported subgroup size is not the tested
+      ;; one: the narrowing still acts (the name is the refutation's key)
+      ;; but the flip does not (32 is what the harness measured).
+      (doseq [s [8 16]]
+        (let [answer (variants/select-variant
+                      :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                                {:workgroup-size 256})
+                      :msl-v1 (assoc capable :name "Apple M1 Max"
+                                     :subgroup-size s))]
+          (is (= :baseline (:variant answer)))
+          (is (str/includes? (:basis answer) "APPLE ROW NARROWED"))
+          (is (false? (:measured? answer)))
+          (is (nil? (:measured-cell answer))))))
+    (testing "an unnamed descriptor is never the tested device class"
+      (let [answer (variants/select-variant
+                    :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                              {:workgroup-size 256})
+                    :msl-v1 capable)]
+        (is (= :subgroup-reduce (:variant answer)))
+        (is (false? (:measured? answer)))
+        (is (nil? (:measured-cell answer)))))
+    (testing "other vendors keep the lock at the same cells (the flip is Apple's alone)"
+      (doseq [vendor [:intel :arm :nvidia :amd]]
+        (let [answer (variants/select-variant
+                      vendor (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                                {:workgroup-size 256})
+                      :vulkan (assoc capable :name "Apple M1 Max"))]
+          (is (= :subgroup-reduce (:variant answer)))
+          (is (false? (:measured? answer)))
+          (is (nil? (:measured-cell answer))))))
+    (testing "the warp row keeps the lock too (NVIDIA has no hardware here)"
+      (let [answer (variants/select-variant
+                    :nvidia (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                                {:workgroup-size 256})
+                    :cuda {:compute-capability 7.0})]
+        (is (= :warp-shuffle-reduce (:variant answer)))
+        (is (false? (:measured? answer)))
+        (is (nil? (:measured-cell answer)))))
+    (testing "same arguments in, same map out (the record included)"
+      (let [kir (accelerator/kernel "reduce_max_f32" :reduce :max {:workgroup-size 512})]
+        (is (= (variants/select-variant :apple kir :msl-v1 m1)
+               (variants/select-variant :apple kir :msl-v1 m1)))))))
+
+(deftest the-simdgroup-rows-own-flip-cell-flips-the-honesty-lock
+  ;; JUN-58, the flip slices (2026-10-23/24; the W = 512, W = 1024,
+  ;; W = 128, W = 64 and W = 32
+  ;; cells flipped in their own later slices): ADR-0373's rule-3 step 3,
+  ;; the flip contract applied
+  ;; to :simdgroup-reduce's OWN measured cells. The measurements that ran
+  ;; (docs/evidence/gpu-simdgroup-reduce-m1max-20261023,
+  ;; docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512,
+  ;; .../w1024, .../w128, .../w64 and .../w32)
+  ;; compared :baseline vs THIS variant at SIX cells -- W = 256 (the
+  ;; honesty-lock flip anchor) and W = 512, W = 1024, W = 128, W = 64 and
+  ;; W = 32 (the
+  ;; W-sweep
+  ;; series' second through sixth
+  ;; cells), all n = 1000003 (the flip contract's ground
+  ;; shape) -- on the tested device class (name fragment "m1 max",
+  ;; reported subgroup size 32) through the conforming native-Metal
+  ;; channel, and measured this variant FASTER (paired median ratios
+  ;; 0.790/0.800/0.799 at W = 256, 0.815/0.823/0.824 at W = 512,
+  ;; 0.840/0.847/0.850 at W = 1024, 0.775/0.789/0.789 at W = 128,
+  ;; 0.719/0.728/0.729 at W = 64 and 0.657/0.658/0.650 at W = 32 for
+  ;; :sum/:max/:min, claim-protocol rule 2
+  ;; REGIME-INVARIANT FASTER, 18/18 per-run ratios below 1.0 at each
+  ;; cell). So the
+  ;; flip keys hold exactly there and the cells answer :simdgroup-reduce,
+  ;; MEASURED -- the only answers of this variant that carry :measured?
+  ;; true. The six are every width the row admits (a power of two in
+  ;; [32, 1024]), so the class's W band is flipped end to end and NO
+  ;; admitted W keeps the carve-out at the measured reported width. At
+  ;; W = 32 the contrast with :subgroup-reduce reaches its WEAKER form
+  ;; (that cell measures MIXED for the shuffle ladder -- its min
+  ;; operator's per-run ratios straddle 1.0 -- and only THIS fold is
+  ;; one-sided there); the W = 32 flip rests on this fold's own 18/18.
+  ;; SHAPE-2 FLIP (2026-10-24): the shape-2 series' anchor re-ran
+  ;; W = 256 at n = 2^20 and measured this variant faster again
+  ;; (0.794/0.811/0.812, rule 2 REGIME-INVARIANT FASTER, 18/18), the
+  ;; series' third cell re-ran W = 1024 at n = 2^20 and measured it
+  ;; faster again (0.836/0.843/0.841, rule 2 REGIME-INVARIANT FASTER,
+  ;; 18/18), the series' fourth cell re-ran W = 128 at n = 2^20 and
+  ;; measured it faster again (0.769/0.780/0.780, rule 2
+  ;; REGIME-INVARIANT FASTER, 18/18, cross-operator level identity
+  ;; HOLDS -- the series' first identity-HOLDS cell) and the series'
+  ;; fifth cell re-ran W = 64 at n = 2^20 and measured it faster again
+  ;; (0.721/0.732/0.729, rule 2 REGIME-INVARIANT FASTER, 18/18,
+  ;; identity HOLDS -- the series' second identity-HOLDS cell) and the
+  ;; series' sixth and last cell re-ran W = 32 at n = 2^20 and measured
+  ;; it faster again (0.639/0.656/0.659, rule 2 REGIME-INVARIANT
+  ;; FASTER, 18/18, identity REFUTED 8/15 -- min splits what max and
+  ;; sum pool), so the W = 256, W = 1024, W = 128, W = 64 and W = 32
+  ;; records name BOTH measured shapes (the shape-2 series complete).
+  ;; WHAT THE FLIP DOES NOT LICENSE: shape 2 (n = 2^20) at W = 512 is
+  ;; measured-but-REFUSED (its record's :shapes names the ONE measured
+  ;; shape); the GLSL arm, every
+  ;; other Apple device, every other vendor and cross-day replication
+  ;; beyond its TWO measured cells (the W = 256 anchor and the W = 512
+  ;; cell, both later-day runs on 2026-10-24) stay UNMEASURED.
+  (let [native {:subgroup-size 32 :subgroup-ops #{:simd-reduce}}
+        both {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative :simd-reduce}}
+        m1 (assoc native :device "Apple M1 Max")]
+    (testing "the flip cells answer the row, MEASURED, with the row's OWN record"
+      (doseq [target [:metal :msl-v1]
+              operator [:sum :max :min]
+              device [m1 (assoc both :name "Apple M1 Max")]
+              wg [32 64 128 256 512 1024]]
+        (let [kir (accelerator/kernel (str "reduce_" (name operator) "_f32")
+                                      :reduce operator {:workgroup-size wg})
+              answer (variants/select-variant :apple kir target device)]
+          (is (= :simdgroup-reduce (:variant answer))
+              (str operator " " target " W=" wg " must answer the flip"))
+          (is (true? (:measured? answer))
+              (str operator " " target " W=" wg " must carry the flipped flag"))
+          (is (= {:device "m1 max"
+                  :subgroup-size 32
+                  :channel :native-metal
+                  :route :msl-v1
+                  :workgroup-size wg
+                  :operators #{:sum :max :min}
+                  ;; the measured shapes per cell: the ground shape at
+                  ;; every flipped W, and -- at W = 256, W = 1024,
+                  ;; W = 128, W = 64 and W = 32 -- also shape 2 (the
+                  ;; shape-2 flips of those cells).
+                  :shapes ({256 [1000003 1048576]
+                            512 [1000003]
+                            1024 [1000003 1048576]
+                            128 [1000003 1048576]
+                            64 [1000003 1048576]
+                            32 [1000003 1048576]}
+                           wg)
+                  ;; each flip cell's record names ITS OWN runs (the
+                  ;; W = 512 cell's evidence is the
+                  ;; W-sweep second cell; W = 1024, W = 128,
+                  ;; W = 64 and W = 32 name their W-sweep cell AND their
+                  ;; shape-2 record -- and every owed cell its
+                  ;; cross-day replication records, the naming slice of
+                  ;; 2026-10-25).
+                  :evidence ({256 ["docs/evidence/gpu-simdgroup-reduce-m1max-20261023"
+                                   "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w256"
+                                   "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w256"
+                                   "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w256"]
+                              512 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512"
+                                   "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w512"]
+                              1024 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w1024"
+                                    "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w1024"
+                                    "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w1024"
+                                    "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w1024-shape2"]
+                              128 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w128"
+                                   "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w128"
+                                   "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w128"
+                                   "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w128-shape2"]
+                              64 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w64"
+                                  "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w64"
+                                  "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w64"
+                                  "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w64-shape2"]
+                              32 ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w32"
+                                  "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w32"
+                                  "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w32"
+                                  "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w32-shape2"]}
+                             wg)}
+                 (:measured-cell answer))
+              (str operator " " target " W=" wg " record"))
+          (is (str/includes? (:basis answer) "THIS VARIANT'S OWN FLIP CELLS"))
+          (is (str/includes? (:basis answer) "0.790/0.800/0.799"))
+          (is (str/includes? (:basis answer) "0.815/0.823/0.824"))
+          (is (str/includes? (:basis answer) "0.840/0.847/0.850"))
+          (is (str/includes? (:basis answer) "0.775/0.789/0.789"))
+          (is (str/includes? (:basis answer) "0.719/0.728/0.729"))
+          (is (str/includes? (:basis answer) "0.657/0.658/0.650"))
+          (is (str/includes? (:basis answer) "0.836/0.843/0.841"))
+          (is (str/includes? (:basis answer) "0.769/0.780/0.780"))
+          (is (str/includes? (:basis answer) "0.721/0.732/0.729"))
+          (is (str/includes? (:basis answer) "0.639/0.656/0.659"))
+          (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-20261023"))
+          (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w1024"))
+          (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w128"))
+          (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w64"))
+          (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w32"))
+          (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512"))
+          (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w512"))
+          (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w1024"))
+          (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w128"))
+          (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w64"))
+          (is (str/includes? (:basis answer) "docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w32")))))
+    (testing "the record's :shapes names each cell's OWN measured shapes"
+      ;; W = 256, W = 1024, W = 128, W = 64 and W = 32 name BOTH
+      ;; measured shapes (shape 2 flipped at those cells, 2026-10-24);
+      ;; the one refused width names the ground shape ONLY -- shape 2 is
+      ;; measured-but-REFUSED at W = 512, and no claim extends past the
+      ;; named shapes.
+      (doseq [wg [256 1024 128 64 32]]
+        (is (= [1000003 1048576]
+               (:shapes (:measured-cell (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size wg}) :msl-v1 m1))))
+            (str "W=" wg " names BOTH measured shapes")))
+      (is (= [1000003] (:shapes (:measured-cell (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 512}) :msl-v1 m1))))
+          "W=512 names the ONE measured shape -- no second shape is licensed there"))
+    (testing "every owed cell names its cross-day replication records -- the two 2026-10-24 rows and the nine 2026-10-25 LEFT rows"
+      ;; The record's later-day replications: the TWO 2026-10-24 rows
+      ;; (docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w256
+      ;; and .../w512 -- the honesty-lock flip anchor and the W = 512
+      ;; cell) and the NINE 2026-10-25 LEFT rows
+      ;; (docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/:
+      ;; the shape-1 pairs w32/w64/w128/w1024 and the shape-2 pairs
+      ;; w256/w32-shape2/w64-shape2/w128-shape2/w1024-shape2), all
+      ;; corroboration that flipped nothing (every cell was already
+      ;; flipped on its own basis session). The refused shape-2
+      ;; W = 512 pair owes no row (S5), so W = 512 names the 2026-10-24
+      ;; row only.
+      (is (= ["docs/evidence/gpu-simdgroup-reduce-m1max-20261023"
+              "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w256"
+              "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w256"
+              "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w256"]
+             (:evidence (:measured-cell (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256}) :msl-v1 m1))))
+          "W=256 names both cross-day replication records -- 2026-10-24 third, 2026-10-25 (the shape-2 pair) fourth")
+      (is (= ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512"
+              "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w512"]
+             (:evidence (:measured-cell (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 512}) :msl-v1 m1))))
+          "W=512 names its one cross-day replication record second -- no 2026-10-25 row is owed there (S5)")
+      (doseq [[wg s1 s2] [[32 "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w32"
+                           "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w32-shape2"]
+                          [64 "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w64"
+                           "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w64-shape2"]
+                          [128 "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w128"
+                           "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w128-shape2"]
+                          [1024 "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w1024"
+                           "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w1024-shape2"]]]
+        (let [e (:evidence (:measured-cell (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size wg}) :msl-v1 m1)))]
+          (is (= s1 (nth e 2))
+              (str "W=" wg " names its shape-1 2026-10-25 cross-day record third"))
+          (is (= s2 (nth e 3))
+              (str "W=" wg " names its shape-2 2026-10-25 cross-day record fourth"))))
+      (is (str/includes? (:basis (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256}) :msl-v1 m1))
+                         "CROSS-DAY REPLICATION OF THE ANCHOR CELL")
+          "the flip note carries the anchor cross-day paragraph")
+      (is (str/includes? (:basis (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256}) :msl-v1 m1))
+                         "CROSS-DAY REPLICATION OF THE W = 512 CELL")
+          "the flip note carries the W = 512 cross-day paragraph")
+      (is (str/includes? (:basis (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256}) :msl-v1 m1))
+                         "first non-anchor cross-day row")
+          "the W = 512 paragraph names what the row is")
+      (is (str/includes? (:basis (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256}) :msl-v1 m1))
+                         "every OTHER cell stayed UNMEASURED at that slice")
+          "the anchor paragraph's claim is scoped to its own slice")
+      (is (str/includes? (:basis (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256}) :msl-v1 m1))
+                         "cross-day replication of every remaining")
+          "the W = 512 paragraph's cross-day claim is scoped to its own slice")
+      (is (str/includes? (:basis (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256}) :msl-v1 m1))
+                         "all nine filled 2026-10-25 and named in the")
+          "the W = 512 paragraph's LEFT prose carries the nine rows' closure"))
+    (testing "the nine 2026-10-25 cross-day replication records are named in the flip note and the basis evidence lists"
+      ;; The naming slice (2026-10-25,
+      ;; docs/evidence/gpu/simdgroup-crossday-naming-20261025.txt): the
+      ;; nine LEFT rows (the shape-1 pairs W = 32/64/128/1024 and the
+      ;; shape-2 pairs W = 256/32/64/128/1024, all later-day 2026-10-25)
+      ;; are named in apple-simdgroup-flip-note's CROSS-DAY paragraph
+      ;; and in apple-simdgroup-measured-evidence -- corroboration that
+      ;; flipped nothing, never a flip basis of their own.
+      (let [answer (variants/select-variant
+                    :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                              {:workgroup-size 256})
+                    :msl-v1 m1)
+            basis (:basis answer)]
+        (is (str/includes? basis "CROSS-DAY REPLICATION OF THE FLIP CELLS -- THE NINE LEFT ROWS")
+            "the flip note carries the nine-row cross-day paragraph")
+        (is (str/includes? basis "corroboration that flipped")
+            "the paragraph scopes the records as corroboration that flipped nothing")
+        (is (str/includes? basis "no :measured? flag, no :shapes")
+            "the paragraph moves no :measured? flag and no :shapes value")
+        (is (str/includes? basis "no selection answer and no workgroup row (ADR-0355/0358)")
+            "the paragraph moves no selection answer and no workgroup row")
+        (is (str/includes? basis "the cross-day LEFT list is COMPLETE")
+            "the paragraph closes the LEFT list")
+        (is (str/includes? basis "zero pending rows")
+            "the paragraph names zero pending rows")
+        (is (str/includes? basis "IN SIGN STRICTLY")
+            "the paragraph names the sign reproduction standard every row met")
+        (is (str/includes? basis "0.728/0.865/0.821")
+            "the paragraph cites the shape-1 w32 row's paired medians")
+        (is (str/includes? basis "0.643/0.756/0.819")
+            "the paragraph cites the shape-2 w32 row's paired medians")
+        (doseq [p ["docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w32"
+                   "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w64"
+                   "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w128"
+                   "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w1024"
+                   "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w256"
+                   "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w32-shape2"
+                   "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w64-shape2"
+                   "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w128-shape2"
+                   "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w1024-shape2"]]
+          (is (str/includes? basis p)
+              (str p " is named in the flip note prose")))
+        (is (not (some #(str/includes? % "resweep")
+                       (mapcat #(:evidence (:measured-cell (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size %}) :msl-v1 m1)))
+                               [32 64 128 256 512 1024])))
+            "the lists name no resweep directory -- the same-day-resweep naming rule applied to this family's lists")))
+    (testing "the refusal-scope decision is named in the SHAPE-2 W = 512 paragraph and the cross-day LEFT prose"
+      ;; The naming slice (2026-10-24,
+      ;; docs/evidence/gpu/simdgroup-reduce-w512-scope-naming-20261024.txt):
+      ;; the scope decision
+      ;; (docs/evidence/gpu/simdgroup-reduce-w512-refusal-scope-20261024.txt)
+      ;; is named exactly where its own record said the naming owed -- the
+      ;; flip note's SHAPE-2 W = 512 paragraph and the cross-day LEFT
+      ;; prose -- and the LEFT list reads as the decision narrowed it.
+      (let [basis (:basis (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256}) :msl-v1 m1))]
+        (is (str/includes? basis "docs/evidence/gpu/simdgroup-reduce-w512-refusal-scope-20261024.txt")
+            "the flip note names the refusal-scope decision's record")
+        (is (str/includes? basis "the refusal's scope is the CELL-PAIR (W = 512, n = 2^20)")
+            "the SHAPE-2 W = 512 paragraph names the decided scope")
+        (is (str/includes? basis "the refusal denies SELECTION, not DATA")
+            "S3 is named: selection denied, the data stays citable")
+        (is (str/includes? basis "reopening only by a DECISION row")
+            "S4 is named: no run revisits the refusal")
+        (is (str/includes? basis "the LEFT list, narrowed by the refusal-scope")
+            "the cross-day LEFT prose names the narrowing decision")
+        (is (str/includes? basis "NINE rows: the shape-1 pairs W = 32/64/128/1024 and the")
+            "the LEFT prose names the narrowed nine-row list")
+        (is (str/includes? basis "NO shape-2 W = 512 row is owed")
+            "no shape-2 W = 512 cross-day row is owed -- decided, not silent")))
+    (testing "the W = 32 same-day re-session is named in the flip note prose ONLY -- no basis-evidence list names it"
+      ;; The naming decision (docs/evidence/gpu/same-day-resweep-naming-20261024.txt):
+      ;; flip note prose NAMED in its own scoped paragraph; basis
+      ;; evidence lists NOT NAMED (closed under the flip contract's
+      ;; record kinds -- each cell's own flip runs and its sanctioned
+      ;; cross-day replications; a same-day re-session is neither kind).
+      (let [basis (:basis (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 32}) :msl-v1 m1))]
+        (is (str/includes? basis "SAME-DAY RE-SESSION OF THE W = 32 CELL (shape 1, 2026-10-24): NOT a")
+            "the flip note carries the W = 32 same-day re-session paragraph")
+        (is (str/includes? basis "cross-day replication -- 2026-10-24 is the same calendar day as the")
+            "the paragraph scopes the record as NOT a cross-day replication")
+        (is (str/includes? basis "docs/evidence/gpu-simdgroup-reduce-m1max-resweep-20261024/w32")
+            "the paragraph names the re-session record")
+        (is (str/includes? basis "regime-scoped WITHIN THE DAY")
+            "the paragraph scopes the magnitude phrases to the day")
+        (is (str/includes? basis "it moves no :measured? flag,")
+            "the paragraph moves no :measured? flag")
+        (is (str/includes? basis "no selection answer and no workgroup row (ADR-0355/0358)")
+            "the paragraph moves no selection answer and no workgroup row")
+        (is (str/includes? basis "stay closed under the flip contract's record kinds")
+            "the paragraph states the lists' closed-under reading"))
+      (doseq [wg [32 64 128 256 512 1024]]
+        (is (not (some #(str/includes? % "resweep")
+                       (:evidence (:measured-cell (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size wg}) :msl-v1 m1)))))
+            (str "W=" wg " names no resweep directory -- the lists stay closed under the flip contract's record kinds"))))
+    (testing "the S5 carve-out's decision row (the later-day DATA run at the refused pair) is NAMED in the SHAPE-2 W = 512 paragraph prose ONLY -- non-basis, the refusal UNCHANGED"
+      ;; The naming slice (2026-10-25,
+      ;; docs/evidence/gpu/refused-pair-data-naming-20261025.txt): the
+      ;; record
+      ;; docs/evidence/gpu-simdgroup-reduce-m1max-refused-pair-data-20261025/
+      ;; w512-shape2 is S5's decision row, TAKEN 2026-10-25 -- pure data
+      ;; beside the refusal named (S3), explicitly non-basis, NOT a
+      ;; cross-day replication, and the refusal stands UNCHANGED (S4).
+      (let [basis (:basis (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256}) :msl-v1 m1))]
+        (is (str/includes? basis "THE S5 CARVE-OUT'S DECISION ROW, TAKEN 2026-10-25")
+            "the flip note carries the S5 data-run naming paragraph")
+        (is (str/includes? basis "docs/evidence/gpu-simdgroup-reduce-m1max-refused-pair-data-20261025/")
+            "the naming paragraph names the data-run record's directory")
+        (is (str/includes? basis "w512-shape2)")
+            "the naming paragraph names the data-run record's cell directory")
+        (is (str/includes? basis "DECIDED TAKEN -- decided, not assumed silent")
+            "the carve-out is named DECIDED TAKEN, not assumed silent")
+        (is (str/includes? basis "explicitly NON-BASIS")
+            "the record is scoped explicitly non-basis")
+        (is (str/includes? basis "0.813/0.820/0.822")
+            "the naming paragraph cites the run's paired medians from the record")
+        (is (str/includes? basis "named (S3): no selection role, no flip, no narrowing")
+            "S3 is named: data citable beside the refusal, no selection role")
+        (is (str/includes? basis "S4 is absolute and stands")
+            "S4 is named absolute -- the refusal is unchanged by any run")
+        (is (str/includes? basis "new decision row, not this one")
+            "a further data run is scoped to its own new decision row")
+        (is (str/includes? basis "its own decision row if wanted -- that decision row was")
+            "the refusal-scope prose names the taken decision row at S5")
+        (is (str/includes? basis "replication record -- the nine-row cross-day LEFT list stays COMPLETE")
+            "the record is not a cross-day replication -- the nine-row list stays COMPLETE")
+        (is (str/includes? basis "no basis evidence list names it")
+            "the naming is prose only -- the basis evidence lists stay closed"))
+      ;; closure: the record is named in NO :evidence list at any W
+      (doseq [wg [32 64 128 256 512 1024]]
+        (is (not (some #(str/includes? % "refused-pair-data")
+                       (:evidence (:measured-cell (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size wg}) :msl-v1 m1)))))
+            (str "W=" wg " names no refused-pair-data directory -- the lists stay closed under the flip contract's record kinds")))
+      ;; the refusal is UNCHANGED: W = 512 keeps :shapes [1000003] and
+      ;; its own two records, byte-for-byte
+      (is (= [1000003] (:shapes (:measured-cell (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 512}) :msl-v1 m1))))
+          "W=512 names the one measured shape -- the data run moved no :shapes")
+      (is (= ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512"
+              "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w512"]
+             (:evidence (:measured-cell (variants/select-variant :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 512}) :msl-v1 m1))))
+          "W=512's :evidence is byte-for-byte unchanged -- the data run is named in prose ONLY"))
+    (testing "the flip is SIX cells wide: every width the row admits answers the row on the class"
+      ;; the class's last :baseline cell (W = 32) flipped with this
+      ;; slice: no admitted width (power of two in [32, 1024]) keeps the
+      ;; carve-out at the measured reported width. The carve-out's
+      ;; remaining live cells are the flip keys' own refusals (a
+      ;; mismatched reported SIMD-group width) -- pinned in the next
+      ;; block.
+      (doseq [wg [32 64 128 256 512 1024]]
+        (let [answer (variants/select-variant
+                      :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                                {:workgroup-size wg})
+                      :msl-v1 m1)]
+          (is (= :simdgroup-reduce (:variant answer))
+              (str "W=" wg " must answer the flip"))
+          (is (true? (:measured? answer))
+              (str "W=" wg " must carry the flipped flag"))
+          (is (some? (:measured-cell answer))
+              (str "W=" wg " carries its record")))))
+    (testing "the flip keys are the tested device class AND the reported subgroup size"
+      ;; name matches but the reported subgroup size is not the tested
+      ;; one: no flip (32 is what the harness measured) -- the class
+      ;; keeps :baseline and the lock.
+      (doseq [s [8 16]]
+        (let [answer (variants/select-variant
+                      :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                                {:workgroup-size 256})
+                      :msl-v1 (assoc native :name "Apple M1 Max"
+                                     :subgroup-size s))]
+          (is (= :baseline (:variant answer)))
+          (is (false? (:measured? answer)))
+          (is (nil? (:measured-cell answer))))))
+    (testing "without the fold's rule-6 fact the shuffle row's answer is byte-for-byte unchanged"
+      ;; no :simd-reduce fact: rung 1 never held; at W = 256 the narrowed
+      ;; class keeps :baseline and the :subgroup-reduce record (its
+      ;; :evidence names the :subgroup-reduce runs only -- the flip runs
+      ;; and their sanctioned cross-day replications, never the
+      ;; :simdgroup-reduce family's runs).
+      (let [answer (variants/select-variant
+                    :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                              {:workgroup-size 256})
+                    :msl-v1 (assoc both :name "Apple M1 Max"
+                                   :subgroup-ops #{:basic :shuffle-relative}))]
+        (is (= :baseline (:variant answer)))
+        (is (true? (:measured? answer)))
+        (is (= "docs/evidence/gpu-subgroup-reduce-m1max-shape2-band-20261023"
+               (nth (:evidence (:measured-cell answer)) 4)))
+        (is (= "docs/evidence/gpu-subgroup-reduce-m1max-crossday-shape2-20261024/w1024"
+               (last (:evidence (:measured-cell answer)))))
+        (is (not (str/includes? (str/join (:evidence (:measured-cell answer)))
+                                "simdgroup")))))
+    (testing "an unnamed descriptor is never the tested class: rung 1 answers, UNMEASURED"
+      (let [answer (variants/select-variant
+                    :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                              {:workgroup-size 256})
+                    :msl-v1 native)]
+        (is (= :simdgroup-reduce (:variant answer)))
+        (is (false? (:measured? answer)))
+        (is (nil? (:measured-cell answer)))))
+    (testing "the GLSL arm never flips: its runs are LABELED BOOTSTRAP, not a verdict"
+      (doseq [target [:vulkan :glsl-v1]]
+        (let [answer (variants/select-variant
+                      :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                                {:workgroup-size 256})
+                      target m1)]
+          (is (= :baseline (:variant answer)))
+          (is (false? (:measured? answer)))
+          (is (nil? (:measured-cell answer))))))
+    (testing "same arguments in, same map out (the flip record included)"
+      (is (= (variants/select-variant :apple (accelerator/kernel "reduce_max_f32" :reduce :max {:workgroup-size 256}) :msl-v1 m1)
+             (variants/select-variant :apple (accelerator/kernel "reduce_max_f32" :reduce :max {:workgroup-size 256}) :msl-v1 m1))))))
+
+(deftest the-shape2-w512-scoped-cell-is-refused-as-a-selection-basis
+  ;; The shape-2 series' second cell (W = 512, n = 2^20,
+  ;; docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w512) ran
+  ;; the byte-identical protocol and measured pooled medians
+  ;; 0.812/0.821/0.822 for :sum/:max/:min -- but claim-protocol rule 2
+  ;; classifies the CELL REGIME-SCOPED (:sum and :max are regime-invariant
+  ;; faster, 6/6 each, but :min straddles 1.0 INSIDE one regime -- run 3
+  ;; at 1.054, run 5 at 0.821; 1 of 18 pooled per-run ratios above 1.0).
+  ;; Rule 2's second sentence denies a regime-scoped sign any selection
+  ;; role whatever its shape, so THE CONTRACT'S ANSWER FOR A
+  ;; MEASURED-BUT-SCOPED CELL is the flip's REFUSAL: the cell is measured
+  ;; (its runs are recorded in docs/evidence) but it extends NO
+  ;; :measured-cell record and moves NO :measured? flag. The W = 512
+  ;; record stays :shapes [1000003] with the W-sweep w512 runs as its
+  ;; evidence, and the W = 512 answer stands on the shape-1 cell's
+  ;; REGIME-INVARIANT basis. The contrast is the W = 256 cell's shape-2
+  ;; record (rule 2 REGIME-INVARIANT FASTER at that shape): a shape
+  ;; enters a flip cell's record only on the cell's own rule-2 verdict
+  ;; at that shape.
+  (let [m1 {:subgroup-size 32
+            :subgroup-ops #{:simd-reduce}
+            :device "Apple M1 Max"}]
+    (testing "the W = 512 record extends nothing: :shapes and :evidence name the shape-1 basis only"
+      (let [answer (variants/select-variant
+                    :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                              {:workgroup-size 512})
+                    :msl-v1 m1)]
+        (is (= :simdgroup-reduce (:variant answer))
+            "the refusal removes nothing: the shape-1 flip still answers")
+        (is (true? (:measured? answer))
+            "the refusal moves no flag: W = 512 stands on the shape-1 cell")
+        (is (= [1000003] (:shapes (:measured-cell answer)))
+            "the scoped shape-2 cell must not extend :shapes")
+        (is (= ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512"
+                "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w512"]
+               (:evidence (:measured-cell answer)))
+            "the record names its shape-1 basis runs -- the W-sweep cell and its cross-day replication")
+        (is (not (str/includes? (str/join (:evidence (:measured-cell answer)))
+                                "shape2-20261024/w512"))
+            "the record must not name the refused shape-2 runs")
+        (is (str/includes? (:basis answer) "MEASURED BUT REFUSED AS A SELECTION BASIS")
+            "the refusal is named in the answer's basis")))
+    (testing "the W = 256, W = 1024, W = 128, W = 64 and W = 32 cells are the contrast: their shape-2 verdicts were regime-invariant and extended the records"
+      (let [answer (variants/select-variant
+                    :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                              {:workgroup-size 256})
+                    :msl-v1 m1)]
+        (is (= [1000003 1048576] (:shapes (:measured-cell answer))))
+        (is (= ["docs/evidence/gpu-simdgroup-reduce-m1max-20261023"
+                "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w256"
+                "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w256"
+                "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w256"]
+               (:evidence (:measured-cell answer)))))
+      (let [answer (variants/select-variant
+                    :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                              {:workgroup-size 1024})
+                    :msl-v1 m1)]
+        (is (= [1000003 1048576] (:shapes (:measured-cell answer))))
+        (is (= ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w1024"
+                "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w1024"
+                "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w1024"
+                "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w1024-shape2"]
+               (:evidence (:measured-cell answer)))))
+      (let [answer (variants/select-variant
+                    :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                              {:workgroup-size 128})
+                    :msl-v1 m1)]
+        (is (= [1000003 1048576] (:shapes (:measured-cell answer))))
+        (is (= ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w128"
+                "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w128"
+                "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w128"
+                "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w128-shape2"]
+               (:evidence (:measured-cell answer)))))
+      (let [answer (variants/select-variant
+                    :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                              {:workgroup-size 64})
+                    :msl-v1 m1)]
+        (is (= [1000003 1048576] (:shapes (:measured-cell answer))))
+        (is (= ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w64"
+                "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w64"
+                "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w64"
+                "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w64-shape2"]
+               (:evidence (:measured-cell answer)))))
+      (let [answer (variants/select-variant
+                    :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                              {:workgroup-size 32})
+                    :msl-v1 m1)]
+        (is (= [1000003 1048576] (:shapes (:measured-cell answer))))
+        (is (= ["docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w32"
+                "docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w32"
+                "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w32"
+                "docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261025/w32-shape2"]
+               (:evidence (:measured-cell answer))))))
+    (testing "every flip cell's basis names the contract's scoped-cell answer"
+      (doseq [wg [32 64 128 256 512 1024]]
+        (let [answer (variants/select-variant
+                      :apple (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                                {:workgroup-size wg})
+                      :msl-v1 m1)]
+          (is (str/includes? (:basis answer) "MEASURED BUT REFUSED AS A SELECTION BASIS")
+              (str "W=" wg " basis names the refusal")))))))
+
+(deftest the-measure-harness-argv-gates-carry-no-exact-match-class
+  ;; The measurement instrument (scripts/gpu-subgroup-reduce-metal-measure.m)
+  ;; carried TWO positional gates of the exact-match class (`if (argc == N)`).
+  ;; The first (argc == 4, the shape) went dead the moment the op-order
+  ;; variable made the driver pass five arguments: every driver run silently
+  ;; measured the default shape until a run-log header exposed it (the
+  ;; 2026-10-23 misshape defect, preserved under misshape-defect-20261023/
+  ;; inside docs/evidence/gpu-subgroup-reduce-m1max-shape2-band-20261023/).
+  ;; The second (argc == 5, the op-order) was the residual: harmless with
+  ;; today's single caller, dead the same way the moment a later positional
+  ;; lands behind it. This pin removes the CLASS from the harness -- every
+  ;; positional gate is a >= test -- and fails if an exact-match gate ever
+  ;; returns. Comment text is not code: the match is the `if (argc ==` gate
+  ;; form (the harness comments deliberately spell `NOT argc == N`). The
+  ;; gate list grows with the positionals: [variant-prefix] (argv[5], the
+  ;; ADR-0373 :simdgroup-reduce measurement's arm label) landed behind
+  ;; op-order and carries the same >= gate class (rule 3 step 3).
+  (let [harness (slurp "scripts/gpu-subgroup-reduce-metal-measure.m")]
+    (is (nil? (re-find #"if\s*\(\s*argc\s*==" harness))
+        "the measure harness must carry no exact-match argc gate (the misshape class)")
+    (doseq [gate ["if (argc >= 3)" "if (argc >= 4)" "if (argc >= 5)" "if (argc >= 6)"]]
+      (is (str/includes? harness gate)
+          (str "the measure harness must keep its positional gate " gate)))))
+
+(deftest the-counters-harness-brackets-through-the-stage-boundary-pass-attachment
+  ;; ADR-0360's 2026-10-25 counter-channel design letter named the COMPUTE
+  ;; ENCODER's sampleCountersInBuffer:atSampleIndex:withBarrier: as the
+  ;; bracket method for the GPUTimestamp sample pair. REFUTED live on the
+  ;; narrowed device's host (harness-row probe v1, verbatim in
+  ;; docs/evidence/gpu/metal-counter-channel-harness-20261025.txt): the Metal
+  ;; framework asserts "MTLComputeCommandEncoder:sampleCountersInBuffer:
+  ;; atSampleIndex:withBarrier not supported on this device" and ABORTS at
+  ;; encode time -- the measured sampling-point matrix there is
+  ;; dispatch=0 stage=1 draw=0 tile=0 blit=0 and the SDK ties that method to
+  ;; the unsupported AtDispatchBoundary point. The instrument brackets through
+  ;; the route the device DOES support (AtStageBoundary): the compute pass
+  ;; sample-buffer attachment's startOfEncoderSampleIndex /
+  ;; endOfEncoderSampleIndex with exactly one dispatch per compute encoder,
+  ;; resolved via the blit encoder's resolveCounters:. These pins keep the
+  ;; refuted method out of the instrument and the working bracket in it.
+  ;; Comment text is not code (the measure pin's own idiom): the refutation
+  ;; pin matches the MESSAGE-SEND form (`[enc sampleCountersInBuffer:...`),
+  ;; so naming the refused selector in prose stays legal while no code can
+  ;; ever encode it again.
+  (let [harness (slurp "scripts/gpu-subgroup-reduce-metal-counters.m")]
+    (is (nil? (re-find #"\[\s*[A-Za-z_][A-Za-z0-9_]*\s+sampleCountersInBuffer:" harness))
+        "the counters harness must not encode the refuted compute-encoder sampling method")
+    (is (str/includes? harness "startOfEncoderSampleIndex"))
+    (is (str/includes? harness "endOfEncoderSampleIndex"))
+    (is (str/includes? harness "computeCommandEncoderWithDescriptor"))
+    (is (str/includes? harness "resolveCounters")
+        "the counters harness resolves through the blit encoder's resolveCounters:")
+    (is (nil? (re-find #"GPUStartTime|GPUEndTime" harness))
+        "the counters channel is its own instrument -- no command-buffer bracket")
+    (is (nil? (re-find #"if\s*\(\s*argc\s*==" harness))
+        "the counters harness must carry no exact-match argc gate (the misshape class)")
+    (doseq [gate ["if (argc >= 3)" "if (argc >= 4)" "if (argc >= 5)" "if (argc >= 6)"]]
+      (is (str/includes? harness gate)
+          (str "the counters harness must keep its positional gate " gate)))))
+
+(deftest the-nvidia-row-rides-the-vulkan-cuda-and-wgsl-routes
+  ;; ADR-0361 (JUN-57) as amended 2026-10-23 (JUN-57's own decision): the
+  ;; NVIDIA row is the shared subgroup-size-parametric emission on the
+  ;; Vulkan route (the warp's 32 is queried at runtime like every other
+  ;; width, never baked), carrying the CUDA row's sm_70+ floor fail-closed
+  ;; on a REPORTED compute capability -- and, since the same-day
+  ;; amendment, on the CUDA route as the SECOND rung of that route's
+  ;; ladder: :warp-shuffle-reduce (the CUDA-native row) is checked first
+  ;; and keeps precedence whenever its gate holds; the parametric fold
+  ;; answers only where the warp row's gate does not reach -- a descriptor
+  ;; reporting the rule-6 subgroup facts and NO compute capability. The
+  ;; two rungs spell the same fold (runtime warpSize vs the baked 32), so
+  ;; the ladder changes no reduction semantics. The WGSL route carries the
+  ;; row too since the 2026-10-24 NVIDIA WGSL-route decision (JUN-57's own
+  ;; decision, docs/evidence/gpu/nvidia-wgsl-route-decision-20261024.txt)
+  ;; -- the same rules 3 + 6 gate, the sm_70+ floor included, and no warp
+  ;; rung there (:warp-shuffle-reduce is CUDA emission only). The MSL
+  ;; route does not carry NVIDIA. Everything is UNCOMPILED (the WGSL arm:
+  ;; no WGSL validator on this host) and UNMEASURED (:measured? false --
+  ;; no NVIDIA hardware has run anything).
+  (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
+        capable {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}
+        answer (variants/select-variant :nvidia kir :vulkan capable)]
+    (is (= :subgroup-reduce (:variant answer)))
+    (is (false? (:measured? answer)))
+    (is (str/includes? (:basis answer) "ADR-0361"))
+    (testing "a reported capability at or above the floor still selects"
+      (doseq [target [:vulkan :glsl-v1]]
+        (is (= :subgroup-reduce
+               (:variant (variants/select-variant
+                          :nvidia kir target
+                          (assoc capable :compute-capability 7.0)))))))
+    (testing "the CUDA route's ladder: rung 1 keeps precedence, rung 2 is the amendment"
+      ;; rung 1, unchanged: a CONFIRMED capability answers the warp row.
+      (doseq [target [:cuda :cuda-v1]]
+        (is (= :warp-shuffle-reduce
+               (:variant (variants/select-variant
+                          :nvidia kir target
+                          {:compute-capability 7.0})))))
+      ;; rung 1 keeps precedence where BOTH gates hold on the same kernel.
+      (doseq [target [:cuda :cuda-v1]]
+        (is (= :warp-shuffle-reduce
+               (:variant (variants/select-variant
+                          :nvidia kir target
+                          (assoc capable :compute-capability 7.0))))))
+      ;; rung 2, the extension: rule-6 facts reported, NO compute
+      ;; capability -- the parametric fold, not :baseline.
+      (doseq [target [:cuda :cuda-v1]]
+        (let [second-rung (variants/select-variant :nvidia kir target capable)]
+          (is (= :subgroup-reduce (:variant second-rung)))
+          (is (false? (:measured? second-rung)))
+          (is (str/includes? (:basis second-rung) "ADR-0361")))))
+    (testing "the same rule-6 gate fails closed on the CUDA route"
+      (doseq [device [nil
+                      {}
+                      {:subgroup-size 32}
+                      {:subgroup-ops #{:basic :shuffle-relative}}
+                      {:subgroup-size 32 :subgroup-ops #{:basic}}
+                      {:subgroup-size 32 :subgroup-ops #{:shuffle-relative}}
+                      {:subgroup-size 24 :subgroup-ops #{:basic :shuffle-relative}}
+                      ;; a REPORTED capability binds the sm_70+ floor on
+                      ;; both rungs: below the floor or malformed fails
+                      ;; closed to :baseline.
+                      (assoc capable :compute-capability 6.0)
+                      (assoc capable :compute-capability "7.0")]
+              target [:cuda :cuda-v1]]
+        (is (= :baseline (:variant (variants/select-variant :nvidia kir target device)))
+            (str "device " (pr-str device) " must fail closed on the CUDA route"))))
+    (testing "the MSL route still does not carry NVIDIA"
+      (doseq [target [:msl-v1 :metal]]
+        (is (= :baseline (:variant (variants/select-variant :nvidia kir target capable))))))
+    (testing "the WGSL route carries the row since the 2026-10-24 NVIDIA WGSL-route decision"
+      ;; The same rules 3 + 6 gate on both spellings, :measured? false.
+      (doseq [target [:webgpu :wgsl-v1]]
+        (let [wgsl-answer (variants/select-variant :nvidia kir target capable)]
+          (is (= :subgroup-reduce (:variant wgsl-answer)))
+          (is (false? (:measured? wgsl-answer)))
+          (is (str/includes? (:basis wgsl-answer) "nvidia-wgsl-route-decision-20261024")))
+        ;; The sm_70+ floor binds this rung exactly as it binds every
+        ;; NVIDIA rung: a REPORTED capability below the floor, or a
+        ;; malformed one, fails closed; a CONFIRMED 7.0+ still selects.
+        (is (= :subgroup-reduce
+               (:variant (variants/select-variant
+                          :nvidia kir target
+                          (assoc capable :compute-capability 7.0)))))
+        (doseq [device [(assoc capable :compute-capability 6.0)
+                        (assoc capable :compute-capability 6.5)
+                        (assoc capable :compute-capability "7.0")
+                        (assoc capable :compute-capability :seven)]]
+          (is (= :baseline (:variant (variants/select-variant :nvidia kir target device)))
+              (str "compute capability " (pr-str (:compute-capability device)) " must fail closed on the WGSL route")))
+        ;; The rule-6 gate fails closed without the subgroup facts.
+        (doseq [device [nil
+                        {}
+                        {:subgroup-size 32}
+                        {:subgroup-ops #{:basic :shuffle-relative}}
+                        {:subgroup-size 32 :subgroup-ops #{:basic}}
+                        {:subgroup-size 32 :subgroup-ops #{:shuffle-relative}}
+                        {:subgroup-size 24 :subgroup-ops #{:basic :shuffle-relative}}
+                        {:subgroup-size 512 :subgroup-ops #{:basic :shuffle-relative}}]]
+          (is (= :baseline (:variant (variants/select-variant :nvidia kir target device)))
+              (str "device " (pr-str device) " must fail closed on the WGSL route")))
+        ;; The shape gate is the same one as every route.
+        (is (= :baseline
+               (:variant (variants/select-variant
+                          :nvidia (accelerator/kernel "ewise_add_f32" :ewise :add {:workgroup-size 256})
+                          target capable)))))
+      ;; Same arguments in, same map out.
+      (is (= (variants/select-variant :nvidia kir :wgsl-v1 capable)
+             (variants/select-variant :nvidia kir :wgsl-v1 capable))))
+    (testing "rule 3 end to end: the second rung lowers, seals and verifies on :cuda-v1"
+      (let [selected (:variant (variants/select-variant :nvidia kir :cuda-v1 capable))
+            compiled (accelerator/compile-kernel kir :cuda-v1 selected)]
+        (is (= :subgroup-reduce selected))
+        (is (= :subgroup-reduce (:variant compiled)))
+        (is (str/includes? (:code compiled) "unsigned int sgsize = warpSize;"))
+        (is (str/includes? (:code compiled) "__activemask()"))
+        (is (str/includes? (:code compiled) "__shfl_down_sync(mask, v, d, fold)"))
+        (is (nil? (re-find #"\bd = \d+u" (:code compiled)))
+            "a baked fold width leaked into the CUDA emission")
+        (is (str/includes? (:code compiled) "extern \"C\" __global__ void reduce_sum_f32("))
+        (is (= compiled (accelerator/verify-artifact! compiled)))))))
+
+(deftest the-wgsl-route-carries-the-intel-and-arm-rows
+  ;; ADR-0363 (JUN-59, JUN-60): the WGSL route -- :webgpu (api) and
+  ;; :wgsl-v1 (emitter target), one route under two names exactly like
+  ;; :vulkan/:glsl-v1 (ADR-0359 decision 3) -- selects :subgroup-reduce for
+  ;; Intel and ARM under the same rules 3 + 6 gate the Vulkan route uses.
+  ;; The NVIDIA row joined this route by the 2026-10-24
+  ;; NVIDIA WGSL-route decision (JUN-57's own decision,
+  ;; docs/evidence/gpu/nvidia-wgsl-route-decision-20261024.txt); its pins
+  ;; live in the-nvidia-row-rides-the-vulkan-cuda-and-wgsl-routes. The
+  ;; Apple row joined this route by the 2026-10-24 Apple WGSL-route
+  ;; decision (JUN-58's own decision,
+  ;; docs/evidence/gpu/apple-wgsl-route-decision-20261024.txt); its pins
+  ;; live in the-apple-row-rides-the-vulkan-msl-and-wgsl-routes (that
+  ;; test also names the measured-device narrowing riding along on this
+  ;; route). ADR-0364
+  ;; (2026-10-23) adds the AMD row to this route
+  ;; too; that row is pinned in the-amd-row-rides-the-vulkan-and-wgsl-routes.
+  ;; Everything here is
+  ;; UNCOMPILED (no WGSL validator on this host) and UNMEASURED -- no
+  ;; WebGPU execution path exists and :measured? is false on every answer.
+  (doseq [vendor [:intel :arm]
+          wg [32 64 128 256 512 1024]
+          operator [:sum :max :min]
+          target [:webgpu :wgsl-v1]
+          s [8 16 32]]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator) "_f32")
+                                  :reduce operator {:workgroup-size wg})
+          device {:subgroup-size s :subgroup-ops #{:basic :shuffle-relative}}
+          answer (variants/select-variant vendor kir target device)]
+      (is (= :subgroup-reduce (:variant answer)))
+      (is (false? (:measured? answer)))
+      (is (string? (:basis answer)))))
+  (testing "the same rule-6 gate fails closed on this route too"
+    (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
+          ewise (accelerator/kernel "ewise_add_f32" :ewise :add {:workgroup-size 256})
+          malformed (assoc kir :kernel/dtype :f64)
+          capable {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}]
+      (doseq [device [nil
+                      {}
+                      {:subgroup-size 32 :subgroup-ops #{:basic}}
+                      {:subgroup-size 32 :subgroup-ops #{:shuffle-relative}}
+                      {:subgroup-size 24 :subgroup-ops #{:basic :shuffle-relative}}]
+              target [:webgpu :wgsl-v1]]
+        (doseq [vendor [:intel :arm]]
+          (is (= :baseline (:variant (variants/select-variant vendor kir target device)))
+              (str "device " (pr-str device) " must fail closed on the WGSL route"))))
+      (doseq [target [:webgpu :wgsl-v1]]
+        (is (= :baseline (:variant (variants/select-variant :intel ewise target capable))))
+        (is (= :baseline (:variant (variants/select-variant :arm malformed target capable)))))))
+  (testing "the MSL route answers :baseline for every vendor but Apple (row scope, not rule 3: the MSL emitter has admitted :subgroup-reduce since 2026-10-23, and the ADR-0360 amendment put Apple's row on this route)"
+    (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
+          capable {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}]
+      (doseq [vendor [:intel :arm :nvidia :amd] target [:msl-v1 :metal]]
+        (is (= :baseline (:variant (variants/select-variant vendor kir target capable)))))))
+  (testing "rule 3 end to end: the selected variant lowers, seals and verifies on :wgsl-v1"
+    (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 128})
+          device {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}
+          selected (:variant (variants/select-variant :arm kir :wgsl-v1 device))
+          compiled (accelerator/compile-kernel kir :wgsl-v1 selected)]
+      (is (= :subgroup-reduce selected))
+      (is (= :subgroup-reduce (:variant compiled)))
+      (is (str/includes? (:code compiled) "enable subgroups;"))
+      (is (not (str/includes? (:code compiled) "enable subgroup_id;"))
+          "subgroup_id is a LANGUAGE extension; enable-ing it is a shader-creation error (WGSL spec pin, 2026-10-23)")
+      (is (str/includes? (:code compiled) "for(var d:u32=fold/2u;"))
+      (is (nil? (re-find #"d:u32=\d+u" (:code compiled)))
+          "a baked fold width leaked into the WGSL emission")
+      (is (= compiled (accelerator/verify-artifact! compiled)))))
+  (testing "same arguments in, same map out"
+    (let [kir (accelerator/kernel "reduce_max_f32" :reduce :max {:workgroup-size 128})
+          device {:subgroup-size 16 :subgroup-ops #{:basic :shuffle-relative}}]
+      (is (= (variants/select-variant :intel kir :wgsl-v1 device)
+             (variants/select-variant :intel kir :wgsl-v1 device))))))
+
+(deftest rule-6-reads-the-facts-the-subgroup-answer-parses
+  ;; ADR-0362 decision 4, end to end at the seam it names: the consumer
+  ;; parser's answer is exactly the descriptor rule 6 consumes, and every
+  ;; absent or malformed answer fails closed to :baseline. The parser's
+  ;; producer (slice 2, the ADR 0371 provider's SUBGROUP reply) does not
+  ;; exist yet -- the strings here are parser inputs, not wire readings, and
+  ;; nothing here is a measurement.
+  (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})]
+    (is (= :subgroup-reduce
+           (:variant (variants/select-variant
+                      :apple kir :vulkan
+                      (targets/device-from-subgroup "32|basic shuffle-relative")))))
+    (is (= :subgroup-reduce
+           (:variant (variants/select-variant
+                      :apple kir :msl-v1
+                      (targets/device-from-subgroup "32|basic shuffle-relative"))))
+        "the descriptor keys are the route-agnostic contract: the same parsed facts select on the MSL route")
+    (is (= :subgroup-reduce
+           (:variant (variants/select-variant
+                      :nvidia kir :cuda-v1
+                      (targets/device-from-subgroup "32|basic shuffle-relative"))))
+        "and the same parsed facts select NVIDIA's CUDA-route second rung (no compute capability in a SUBGROUP answer -- the warp row's gate does not reach)")
+    (is (= :subgroup-reduce
+           (:variant (variants/select-variant
+                      :intel kir :glsl-v1
+                      (targets/device-from-subgroup "8|basic shuffle-relative shuffle"))))
+        "a parsed fact set larger than the fold's two ops still selects")
+    (is (= :baseline
+           (:variant (variants/select-variant
+                      :apple kir :vulkan
+                      (targets/device-from-subgroup "32|basic"))))
+        "a fact missing :shuffle-relative fails closed")
+    (is (= :baseline
+           (:variant (variants/select-variant
+                      :apple kir :vulkan
+                      (targets/device-from-subgroup "24|basic shuffle-relative"))))
+        "a subgroup size that does not divide the workgroup fails closed")
+    (is (= :baseline
+           (:variant (variants/select-variant
+                      :apple kir :vulkan
+                      (targets/device-from-subgroup "no|such answer"))))
+        "a malformed answer is an absent fact, and an absent fact is :baseline")
+    (is (nil? (targets/device-from-subgroup "32|basic shuffle-relative simd-reduce"))
+        "the wire-42 SUBGROUP vocabulary is ADR-0362's eight VkSubgroupFeatureFlagBits tokens and does NOT carry :simd-reduce (ADR-0373's named producer gap: a Metal-native probe or provider extension must report the key; an unknown token fails the whole answer)")))
+
+(deftest the-amd-row-rides-the-vulkan-and-wgsl-routes
+  ;; ADR-0364 (JUN-84 / AWAI-40, 2026-10-23): the AMD row is the shared
+  ;; subgroup-size-parametric :subgroup-reduce on the Vulkan route (RADV;
+  ;; the one route that has ever executed anything in this repository) AND
+  ;; on the WGSL route -- :webgpu (api) / :wgsl-v1 (emitter target) --
+  ;; because :wgsl-v1 is :amd's vendor-default emission target (the exact
+  ;; ADR-0363 rationale for Intel/ARM). The RDNA wave32/wave64 duality is
+  ;; answered by the fold's RUNTIME width query (AWAI-40 scope item 1):
+  ;; selection dispatches on no wave and rule 6's S | W gate admits both
+  ;; waves for every KIR-admitted workgroup. AMD has no
+  ;; compute-capability contract (no sm_70+ analogue); the MSL and CUDA
+  ;; routes are other vendors' native routes and answer :baseline.
+  ;; Everything here is UNMEASURED -- no AMD hardware has run this
+  ;; variant and every answer keeps :measured? false.
+  (doseq [target [:vulkan :glsl-v1 :webgpu :wgsl-v1]
+          wg [128 256 512 1024]
+          operator [:sum :max :min]
+          s [32 64]]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator) "_f32")
+                                  :reduce operator {:workgroup-size wg})
+          device {:subgroup-size s :subgroup-ops #{:basic :shuffle-relative}}
+          answer (variants/select-variant :amd kir target device)]
+      (is (= :subgroup-reduce (:variant answer)))
+      (is (false? (:measured? answer)))
+      (is (str/includes? (:basis answer) "ADR-0364"))))
+  (testing "both waves select: s=32 (wave32) and s=64 (wave64) pass the same gate"
+    (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 1024})]
+      (doseq [s [32 64]
+              target [:vulkan :glsl-v1 :webgpu :wgsl-v1]]
+        (is (= :subgroup-reduce
+               (:variant (variants/select-variant
+                          :amd kir target
+                          {:subgroup-size s :subgroup-ops #{:basic :shuffle-relative}})))))))
+  (testing "rule 3 end to end on the Vulkan route: the selected variant lowers, seals and verifies on :glsl-v1"
+    (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 1024})
+          device {:subgroup-size 64 :subgroup-ops #{:basic :shuffle-relative}}
+          selected (:variant (variants/select-variant :amd kir :glsl-v1 device))
+          compiled (accelerator/compile-kernel kir :glsl-v1 selected)]
+      (is (= :subgroup-reduce selected))
+      (is (= :subgroup-reduce (:variant compiled)))
+      (is (str/includes? (:code compiled) "gl_SubgroupSize")
+          "the fold width is a runtime query on the GLSL arm")
+      (is (nil? (re-find #"\bd\s*=\s*\d+u" (:code compiled)))
+          "a baked fold width leaked into the GLSL emission")
+      (is (= compiled (accelerator/verify-artifact! compiled)))))
+  (testing "rule 3 end to end on the WGSL route: the selected variant lowers, seals and verifies on :wgsl-v1"
+    (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 1024})
+          device {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}
+          selected (:variant (variants/select-variant :amd kir :wgsl-v1 device))
+          compiled (accelerator/compile-kernel kir :wgsl-v1 selected)]
+      (is (= :subgroup-reduce selected))
+      (is (= :subgroup-reduce (:variant compiled)))
+      (is (str/includes? (:code compiled) "enable subgroups;"))
+      (is (not (str/includes? (:code compiled) "enable subgroup_id;"))
+          "subgroup_id is a LANGUAGE extension; enable-ing it is a shader-creation error (WGSL spec pin, 2026-10-23)")
+      (is (str/includes? (:code compiled) "for(var d:u32=fold/2u;"))
+      (is (nil? (re-find #"d:u32=\d+u" (:code compiled)))
+          "a baked fold width leaked into the WGSL emission")
+      (is (= compiled (accelerator/verify-artifact! compiled)))))
+  (testing "the same rule-6 gate fails closed on both of the row's routes"
+    (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
+          ewise (accelerator/kernel "ewise_add_f32" :ewise :add {:workgroup-size 256})
+          malformed (assoc kir :kernel/dtype :f64)
+          capable {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}]
+      (doseq [device [nil
+                      {}
+                      {:subgroup-size 32}
+                      {:subgroup-ops #{:basic :shuffle-relative}}
+                      {:subgroup-size 32 :subgroup-ops #{:basic}}
+                      {:subgroup-size 32 :subgroup-ops #{:shuffle-relative}}
+                      {:subgroup-size 24 :subgroup-ops #{:basic :shuffle-relative}}
+                      {:subgroup-size 512 :subgroup-ops #{:basic :shuffle-relative}}]
+              target [:vulkan :glsl-v1 :webgpu :wgsl-v1]]
+        (is (= :baseline (:variant (variants/select-variant :amd kir target device)))
+            (str "device " (pr-str device) " must fail closed on the AMD row's routes")))
+      (doseq [target [:vulkan :glsl-v1 :webgpu :wgsl-v1]]
+        (is (= :baseline (:variant (variants/select-variant :amd ewise target capable))))
+        (is (= :baseline (:variant (variants/select-variant :amd malformed target capable)))))))
+  (testing "the other vendors' native routes answer :baseline for :amd (row scope, not rule 3)"
+    (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
+          capable {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}]
+      (doseq [target [:metal :msl-v1 :cuda :cuda-v1 nil]]
+        (is (= :baseline (:variant (variants/select-variant :amd kir target capable)))))))
+  (testing "same arguments in, same map out"
+    (let [kir (accelerator/kernel "reduce_max_f32" :reduce :max {:workgroup-size 256})
+          device {:subgroup-size 64 :subgroup-ops #{:basic :shuffle-relative}}]
+      (is (= (variants/select-variant :amd kir :vulkan device)
+             (variants/select-variant :amd kir :vulkan device))))))
+
+(deftest the-cuda-cell-entry-wiring-confirms-the-design-answer
+  ;; The wiring row (ADR-0361's 2026-10-25 sixth amendment): the entry
+  ;; contract's flip/confirm application LANDS. The committed entry
+  ;; census (docs/evidence/gpu/cuda-cell-selection-surface-20261025.txt)
+  ;; is 10 CONFIRMS (the unique winner is the design answer,
+  ;; :warp-shuffle-reduce) and 2 REFUSEs (W = 64, both shapes), ZERO
+  ;; flips -- so the wiring attaches 10 confirming :measured-cell records
+  ;; with NO answer text change anywhere, W = 64 keeps :measured? false
+  ;; and no record. Records are DEVICE-SCOPED (xavier sm_72 -- the
+  ;; narrowed class key, row (iv): BOTH name fragments "xavier" +
+  ;; "agx" in ONE name part AND the reported compute capability 7.2,
+  ;; fail closed at every key) and CHANNEL-SCOPED (the CUDA route only). All of it
+  ;; cites committed measurements (run 1 of the two adopted sessions) and
+  ;; re-measures nothing.
+  (let [tested-class {:name "NVIDIA Jetson AGX Xavier" :compute-capability 7.2}
+        expected-record (fn [wg]
+                          {:device "xavier sm_72"
+                           :channel :native-cuda
+                           :route :cuda-v1
+                           :workgroup-size wg
+                           :operators #{:sum :max :min}
+                           :shapes [1000003 1048576]
+                           :evidence ["docs/evidence/gpu/cuda-claimprotocol-run1-20261025"]})]
+    (testing "the entry table is the entry census at its data shape"
+      (is (= #{32 128 256 512 1024} (set (keys variants/cuda-cell-entries))))
+      (is (not (contains? variants/cuda-cell-entries 64))
+          "W = 64 refused in both shapes -- no group entered, no record")
+      (doseq [[wg entry] variants/cuda-cell-entries]
+        (is (= :warp-shuffle-reduce (:winner entry))
+            (str "W=" wg " winner is the design answer -- CONFIRMS, never flips"))
+        (is (= [1000003 1048576] (:shapes entry))
+            (str "W=" wg " names the two qualifying shapes only"))
+        (is (= ["docs/evidence/gpu/cuda-claimprotocol-run1-20261025"] (:evidence entry))
+            (str "W=" wg " evidence is the group's own session's runs; run 2 is a"
+                 " same-day second session and is flip-note prose only"))))
+    (testing "the confirming cells carry the record and freeze the answer text"
+      (doseq [target [:cuda :cuda-v1]
+              wg [32 128 256 512 1024]
+              operator [:sum :max :min]]
+        (let [kir (accelerator/kernel (str "reduce_" (name operator) "_f32")
+                                      :reduce operator {:workgroup-size wg})
+              answer (variants/select-variant :nvidia kir target tested-class)]
+          (is (= :warp-shuffle-reduce (:variant answer))
+              (str "W=" wg " " target " " operator " keeps the design answer"))
+          (is (true? (:measured? answer))
+              (str "W=" wg " " target " " operator " must be confirmed"))
+          (is (= (expected-record wg) (:measured-cell answer))
+              (str "W=" wg " " target " " operator " record"))
+          (is (= (get variants/variant-bases :warp-shuffle-reduce) (:basis answer))
+              (str "W=" wg " " target " " operator
+                   " confirm freezes answer text -- no note appended to :basis"))))
+      (testing "the uB5G name keys all count: :device, :name, :vendor (both fragments in the one part naming the device)"
+        (doseq [device [{:device "AGX Xavier" :compute-capability 7.2}
+                        {:vendor "agx XAVIER" :compute-capability 7.2}]]
+          (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                        {:workgroup-size 256})
+                answer (variants/select-variant :nvidia kir :cuda-v1 device)]
+            (is (= :warp-shuffle-reduce (:variant answer)))
+            (is (= (expected-record 256) (:measured-cell answer)))))))
+    (testing "a refused group keeps the design answer, :measured? false, no record"
+      ;; The pooled W = 64 straddle refusal STANDS (no 64 key -- pinned
+      ;; above), but it is no longer the width's only state: the per-op
+      ;; table's landed entries FILL W = 64 on the tested class (the
+      ;; (:sum, 64) FLIP and (:max/:min, 64) CONFIRMs, pinned in
+      ;; the-cuda-op-entry-wiring-answers-its-operator-at-its-width).
+      ;; A refused group where NO layer keys -- here a descriptor
+      ;; failing the class key at W = 64 -- keeps the design answer,
+      ;; :measured? false, and no record, byte-identical to the
+      ;; pre-entry surface.
+      (is (= #{32 64 128 256 512 1024}
+             (into #{64} (set (keys variants/cuda-cell-entries))))
+          "the pooled table has no hole but the W = 64 refusal")
+      (doseq [target [:cuda :cuda-v1]]
+        (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                      {:workgroup-size 64})
+              answer (variants/select-variant :nvidia kir target
+                                              {:name "NVIDIA Jetson AGX Xavier"
+                                               :compute-capability 7.0})]
+          (is (= :warp-shuffle-reduce (:variant answer)))
+          (is (false? (:measured? answer))
+              (str "W=64 " target " off-class must keep the honesty lock"))
+          (is (nil? (:measured-cell answer))
+              (str "W=64 " target " off-class carries no record")))))
+    (testing "the class keys fail closed: both name fragments in ONE name part AND the reported 7.2"
+      ;; Each case answers the design ladder (rung 1 where its gate holds)
+      ;; and attaches NO record: one key missing is not the tested class.
+      (doseq [[device expected]
+              [[{:name "NVIDIA GA10B" :compute-capability 7.2} :warp-shuffle-reduce]
+               [{:compute-capability 7.2} :warp-shuffle-reduce]
+               [{:name "NVIDIA Jetson AGX Xavier" :compute-capability 7.0} :warp-shuffle-reduce]
+               [{:name "NVIDIA Jetson AGX Xavier" :compute-capability 7.5} :warp-shuffle-reduce]
+               [{:name "NVIDIA Jetson AGX Xavier" :compute-capability "7.2"} :baseline]
+               [{:name "NVIDIA Jetson AGX Xavier"} :baseline]
+               ;; row (iv) -- the narrowed key: a Jetson Xavier NX
+               ;; (also sm_72) carries "xavier" but not "agx" and is
+               ;; NOT the tested class
+               [{:name "Jetson Xavier NX" :compute-capability 7.2} :warp-shuffle-reduce]
+               ;; the fragments must sit in ONE name part (the name
+               ;; keys are alternate spellings, not a fragment kit)
+               [{:device "Xavier" :name "AGX" :compute-capability 7.2} :warp-shuffle-reduce]]]
+        (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                      {:workgroup-size 256})
+              answer (variants/select-variant :nvidia kir :cuda-v1 device)]
+          (is (= expected (:variant answer))
+              (str (pr-str device) " design answer"))
+          (is (false? (:measured? answer))
+              (str (pr-str device) " is not the tested device class"))
+          (is (nil? (:measured-cell answer))
+              (str (pr-str device) " carries no record")))))
+    (testing "rung-2 answer cells can never attach a record"
+      ;; A descriptor reporting NO compute capability is not the tested
+      ;; class (it reports 7.2 by definition), whatever else it names.
+      (let [capable {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}
+            device (assoc capable :name "NVIDIA Jetson AGX Xavier")
+            kir (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                    {:workgroup-size 256})
+            answer (variants/select-variant :nvidia kir :cuda-v1 device)]
+        (is (= :subgroup-reduce (:variant answer)))
+        (is (false? (:measured? answer)))
+        (is (nil? (:measured-cell answer)))))
+    (testing "a CUDA record never acts on another route or another shape (contract point 5)"
+      (let [capable {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}
+            device (merge capable tested-class)
+            kir (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                    {:workgroup-size 256})
+            ewise (accelerator/kernel "ewise_add_f32" :ewise :add
+                                      {:workgroup-size 256})]
+        (doseq [[target expected] [[:vulkan :subgroup-reduce]
+                                   [:glsl-v1 :subgroup-reduce]
+                                   [:webgpu :subgroup-reduce]
+                                   [:wgsl-v1 :subgroup-reduce]
+                                   [:metal :baseline]
+                                   [:msl-v1 :baseline]]]
+          (let [answer (variants/select-variant :nvidia kir target device)]
+            (is (= expected (:variant answer)))
+            (is (false? (:measured? answer))
+                (str target " is not the measured channel's route"))
+            (is (nil? (:measured-cell answer))
+                (str target " carries no record"))))
+        (is (= :baseline (:variant (variants/select-variant :nvidia ewise :cuda-v1 tested-class))))
+        (is (nil? (:measured-cell (variants/select-variant :nvidia ewise :cuda-v1 tested-class)))
+            "the reduce shape is the unit -- no record on a non-reduce kernel")))
+    (testing "the flip arm answers the group's winner (synthetic entry -- the pooled table carries no differing winner)"
+      ;; Contract point 4's second half, exercised by redefining one
+      ;; group's winner: a differing winner FLIPS the cell -- the answer
+      ;; becomes the winner, the record rides it, and the basis is the
+      ;; winner's design rationale plus the flip note. The POOLED table
+      ;; carries no differing winner (its winner census is confirm-only);
+      ;; the one real flip lives in the per-op table and is pinned in
+      ;; the-cuda-op-entry-wiring-answers-its-operator-at-its-width.
+      (with-redefs [variants/cuda-cell-entries
+                    (assoc variants/cuda-cell-entries 256
+                           {:winner :subgroup-reduce
+                            :shapes [1000003 1048576]
+                            :evidence ["docs/evidence/gpu/cuda-claimprotocol-run1-20261025"]})]
+        (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                      {:workgroup-size 256})
+              answer (variants/select-variant :nvidia kir :cuda-v1 tested-class)]
+          (is (= :subgroup-reduce (:variant answer)))
+          (is (true? (:measured? answer)))
+          (is (= (expected-record 256) (:measured-cell answer)))
+          (is (str/starts-with? (:basis answer)
+                                (get variants/variant-bases :subgroup-reduce)))
+          (is (str/includes? (:basis answer)
+                             "MEASURED FLIP (entry contract, ADR-0361 fifth amendment)")))))))
+
+(deftest the-cuda-op-entry-wiring-answers-its-operator-at-its-width
+  ;; The per-op wiring row (row (i), ADR-0361's 2026-10-25 tenth
+  ;; amendment): the per-op entry table + the per-op arm of the entry
+  ;; application + precedence in select-variant LANDS. THE TABLE HAS
+  ;; ENTERED (the 2026-10-26 cross-day agreement adjudication, the
+  ;; thirteenth amendment's named next row -- sessions A + B,
+  ;; 2026-10-25 and 2026-10-26 UTC, both fresh under the registration,
+  ;; agreeing in every reading of both): exactly three groups,
+  ;; (:sum, 64) FLIP and (:max/:min, 64) CONFIRM -- the projection's
+  ;; three groups, now a measurement-backed verdict -- pinned against
+  ;; the REAL table and the REAL answer surface below. The arm and the
+  ;; precedence are additionally exercised by SYNTHETIC entries
+  ;; (with-redefs -- contract behavior isolated from the landed rows).
+  (let [tested-class {:name "NVIDIA Jetson AGX Xavier" :compute-capability 7.2}
+        real-evidence ["docs/evidence/gpu/cuda-registered-sessionA-20261025"
+                       "docs/evidence/gpu/cuda-registered-sessionB-20261026"]
+        synthetic-evidence ["SYNTHETIC (this test's with-redefs) -- contract behavior only"]
+        op-record (fn [op wg evidence]
+                    {:device "xavier sm_72"
+                     :channel :native-cuda
+                     :route :cuda-v1
+                     :workgroup-size wg
+                     :operators #{op}
+                     :shapes [1000003 1048576]
+                     :evidence evidence})
+        entry (fn [winner]
+                {:winner winner
+                 :shapes [1000003 1048576]
+                 :evidence synthetic-evidence})]
+    (testing "the per-op entry table has ENTERED exactly the adjudicated three groups"
+      (is (= {[:sum 64] {:winner :subgroup-reduce
+                         :shapes [1000003 1048576]
+                         :evidence real-evidence}
+              [:max 64] {:winner :warp-shuffle-reduce
+                         :shapes [1000003 1048576]
+                         :evidence real-evidence}
+              [:min 64] {:winner :warp-shuffle-reduce
+                         :shapes [1000003 1048576]
+                         :evidence real-evidence}}
+             variants/cuda-op-entries)
+          "the cross-day pair adjudicated three groups: (:sum, 64) FLIP, (:max/:min, 64) CONFIRM"))
+    (testing "the landed entries move the real answer surface at W = 64 -- the ONE real FLIP at (:sum, 64)"
+      ;; (:sum, 64): the cell answers the entry's winner
+      ;; :subgroup-reduce with the SINGLE-OP record and
+      ;; cuda-op-flip-note in its basis -- the first real flip on the
+      ;; CUDA route. Both targets under either spelling.
+      (doseq [target [:cuda :cuda-v1]]
+        (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                      {:workgroup-size 64})
+              answer (variants/select-variant :nvidia kir target tested-class)]
+          (is (= :subgroup-reduce (:variant answer)) (str target))
+          (is (true? (:measured? answer)) (str target))
+          (is (= (op-record :sum 64 real-evidence) (:measured-cell answer)) (str target))
+          (is (str/starts-with? (:basis answer)
+                                (get variants/variant-bases :subgroup-reduce)) (str target))
+          (is (str/includes? (:basis answer)
+                             "MEASURED FLIP (per-op entry contract, ADR-0361 seventh amendment)")
+              (str target)))))
+    (testing "the landed entries CONFIRM at (:max/:min, 64) -- answer text frozen, :measured? moves true"
+      ;; The two real confirms: the winner equals the design answer,
+      ;; so the answer text is frozen (no note appended to :basis) and
+      ;; the SINGLE-OP record rides -- the :measured? movement the
+      ;; projection named (the pooled straddle refused W = 64 before
+      ;; the entry landed).
+      (doseq [target [:cuda :cuda-v1]
+              operator [:max :min]]
+        (let [kir (accelerator/kernel (str "reduce_" (name operator) "_f32")
+                                      :reduce operator {:workgroup-size 64})
+              answer (variants/select-variant :nvidia kir target tested-class)]
+          (is (= :warp-shuffle-reduce (:variant answer)) (str target))
+          (is (true? (:measured? answer)) (str target))
+          (is (= (op-record operator 64 real-evidence) (:measured-cell answer)) (str target))
+          (is (= (get variants/variant-bases :warp-shuffle-reduce) (:basis answer))
+              (str target " confirm freezes answer text -- no note appended to :basis")))))
+    (testing "the 15 non-materialized groups answer the pooled layer's alone (rejection (e))"
+      ;; At W = 32/128/256/512/1024 every group's winner equals the
+      ;; standing pooled answer, so NO per-op record materializes: the
+      ;; pooled record (:operators whole) stands at its five widths,
+      ;; byte-identical to the pre-entry surface.
+      (doseq [target [:cuda :cuda-v1]
+              operator [:sum :max :min]
+              wg [32 128 256 512 1024]]
+        (let [kir (accelerator/kernel (str "reduce_" (name operator) "_f32")
+                                      :reduce operator {:workgroup-size wg})
+              answer (variants/select-variant :nvidia kir target tested-class)]
+          (is (= :warp-shuffle-reduce (:variant answer)) (str target))
+          (is (true? (:measured? answer)) (str target))
+          (is (= #{:sum :max :min} (:operators (:measured-cell answer)))
+              (str target " the pooled record stands whole -- no per-op record materializes")))))
+    (testing "the per-op arm CONFIRMS at its (op, W) where the pooled layer refused (synthetic entry)"
+      ;; The contract's CONFIRM shape, exercised by synthetic entry
+      ;; (the landed (:max, 64) confirm is pinned above): the pooled
+      ;; layer refused W = 64 and the per-op layer ADDS. The winner
+      ;; equals the design answer, so the answer text is frozen and the
+      ;; record is SINGLE-OP.
+      (with-redefs [variants/cuda-op-entries {[:max 64] (entry :warp-shuffle-reduce)}]
+        (let [max-kir (accelerator/kernel "reduce_max_f32" :reduce :max
+                                          {:workgroup-size 64})
+              answer (variants/select-variant :nvidia max-kir :cuda-v1 tested-class)]
+          (is (= :warp-shuffle-reduce (:variant answer)))
+          (is (true? (:measured? answer)))
+          (is (= (op-record :max 64 synthetic-evidence) (:measured-cell answer)))
+          (is (= (get variants/variant-bases :warp-shuffle-reduce) (:basis answer))
+              "confirm freezes answer text -- no note appended to :basis"))
+        ;; The record keys its operator EXACTLY: :sum/:min at W = 64
+        ;; keep no record under this synthetic table (their groups have
+        ;; no entry in the redef).
+        (doseq [operator [:sum :min]]
+          (let [kir (accelerator/kernel (str "reduce_" (name operator) "_f32")
+                                        :reduce operator {:workgroup-size 64})
+                answer (variants/select-variant :nvidia kir :cuda-v1 tested-class)]
+            (is (= :warp-shuffle-reduce (:variant answer)))
+            (is (false? (:measured? answer)))
+            (is (nil? (:measured-cell answer)))))))
+    (testing "the per-op arm FLIPS its operator at its (op, W) (synthetic entry -- the real flip is pinned above)"
+      ;; The contract's FLIP shape, exercised by synthetic entry (the
+      ;; landed (:sum, 64) flip is pinned above): the cell answers the
+      ;; winner with the SINGLE-OP record and cuda-op-flip-note in its
+      ;; basis.
+      (with-redefs [variants/cuda-op-entries {[:sum 64] (entry :subgroup-reduce)}]
+        (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                      {:workgroup-size 64})
+              answer (variants/select-variant :nvidia kir :cuda-v1 tested-class)]
+          (is (= :subgroup-reduce (:variant answer)))
+          (is (true? (:measured? answer)))
+          (is (= (op-record :sum 64 synthetic-evidence) (:measured-cell answer)))
+          (is (str/starts-with? (:basis answer)
+                                (get variants/variant-bases :subgroup-reduce)))
+          (is (str/includes? (:basis answer)
+                             "MEASURED FLIP (per-op entry contract, ADR-0361 seventh amendment)")))
+        (doseq [operator [:max :min]]
+          (let [kir (accelerator/kernel (str "reduce_" (name operator) "_f32")
+                                        :reduce operator {:workgroup-size 64})
+                answer (variants/select-variant :nvidia kir :cuda-v1 tested-class)]
+            (is (= :warp-shuffle-reduce (:variant answer)))
+            (is (false? (:measured? answer)))
+            (is (nil? (:measured-cell answer)))))))
+    (testing "precedence: the per-op record answers its operator at its W over the pooled record (synthetic entry)"
+      ;; At W = 32 the pooled layer HAS an entry; a synthetic per-op
+      ;; entry for :sum only must answer the :sum cell OVER it (the
+      ;; record's :operators says #{:sum}), while :max/:min keep the
+      ;; pooled record (:operators #{:sum :max :min}) and the pooled
+      ;; answer.
+      (with-redefs [variants/cuda-op-entries {[:sum 32] (entry :subgroup-reduce)}]
+        (let [sum-kir (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                          {:workgroup-size 32})
+              sum-answer (variants/select-variant :nvidia sum-kir :cuda-v1 tested-class)]
+          (is (= :subgroup-reduce (:variant sum-answer)))
+          (is (= (op-record :sum 32 synthetic-evidence) (:measured-cell sum-answer))))
+        (doseq [operator [:max :min]]
+          (let [kir (accelerator/kernel (str "reduce_" (name operator) "_f32")
+                                        :reduce operator {:workgroup-size 32})
+                answer (variants/select-variant :nvidia kir :cuda-v1 tested-class)]
+            (is (= :warp-shuffle-reduce (:variant answer)))
+            (is (true? (:measured? answer)))
+            (is (= #{:sum :max :min} (:operators (:measured-cell answer)))
+                "the pooled record answers where no per-op record applies")))))
+    (testing "the per-op arm's keys fail closed exactly like the pooled arm's (synthetic entry)"
+      (with-redefs [variants/cuda-op-entries {[:sum 256] (entry :subgroup-reduce)}]
+        (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                      {:workgroup-size 256})]
+          ;; not the tested class: both name fragments in one name
+          ;; part AND the reported 7.2 -- fail closed at every key
+          (doseq [device [{:name "NVIDIA Jetson AGX Xavier" :compute-capability 7.0}
+                          {:name "NVIDIA Jetson AGX Xavier" :compute-capability 7.5}
+                          {:name "NVIDIA GA10B" :compute-capability 7.2}
+                          {:name "NVIDIA Jetson AGX Xavier"}
+                          {:compute-capability 7.2}
+                          ;; row (iv) -- the narrowed key names the
+                          ;; per-op records too: a Jetson Xavier NX
+                          ;; (also sm_72) is NOT the tested class
+                          {:name "Jetson Xavier NX" :compute-capability 7.2}
+                          {:device "Xavier" :name "AGX" :compute-capability 7.2}]]
+            (let [answer (variants/select-variant :nvidia kir :cuda-v1 device)]
+              (is (false? (:measured? answer)) (str (pr-str device)))
+              (is (nil? (:measured-cell answer)) (str (pr-str device)))))
+          ;; a rung-2 answer cell can never attach a record (a
+          ;; descriptor reporting NO compute capability is not the
+          ;; tested class -- it reports 7.2 by definition)
+          (let [capable {:subgroup-size 32
+                         :subgroup-ops #{:basic :shuffle-relative}}
+                device (assoc capable :name "NVIDIA Jetson AGX Xavier")
+                answer (variants/select-variant :nvidia kir :cuda-v1 device)]
+            (is (= :subgroup-reduce (:variant answer)))
+            (is (false? (:measured? answer)))
+            (is (nil? (:measured-cell answer))))
+          ;; the measured channel's route only (a CUDA measurement never
+          ;; acts on an MSL/WGSL/GLSL cell)
+          (doseq [target [:metal :msl-v1 :vulkan :glsl-v1 :webgpu :wgsl-v1]]
+            (let [answer (variants/select-variant :nvidia kir target tested-class)]
+              (is (false? (:measured? answer)) (str target))
+              (is (nil? (:measured-cell answer)) (str target))))
+          ;; the reduce op with a keyed operator only
+          (let [ewise (accelerator/kernel "ewise_add_f32" :ewise :add
+                                          {:workgroup-size 256})]
+            (is (nil? (:measured-cell
+                       (variants/select-variant :nvidia ewise :cuda-v1 tested-class))))
+            (is (false? (:measured?
+                         (variants/select-variant :nvidia ewise :cuda-v1 tested-class))))))))))
+
+(deftest the-tested-class-key-is-the-agx-xavier-name-and-72
+  ;; Row (iv) of the operator-aware row's created rows (ADR-0361's
+  ;; 2026-10-25 seventh amendment): the NARROWER device-class key
+  ;; LANDS (the eleventh amendment). The tested class is keyed by BOTH
+  ;; name fragments "xavier" and "agx" in ONE name part
+  ;; (case-insensitively) AND the reported compute capability 7.2 --
+  ;; replacing the single fragment "xavier", under which a Jetson
+  ;; Xavier NX descriptor (also sm_72) read as the tested class and
+  ;; would have received every entry-contract record -- pooled AND
+  ;; per-op (the row names both layers' records) -- with NO
+  ;; measurement behind it. Record shape (3) is UNCHANGED: the
+  ;; record's :device label stays "xavier sm_72"; what narrowed is
+  ;; the KEY deciding which descriptors are the class.
+  (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                {:workgroup-size 256})
+        expected-record {:device "xavier sm_72"
+                         :channel :native-cuda
+                         :route :cuda-v1
+                         :workgroup-size 256
+                         :operators #{:sum :max :min}
+                         :shapes [1000003 1048576]
+                         :evidence ["docs/evidence/gpu/cuda-claimprotocol-run1-20261025"]}
+        synthetic-evidence ["SYNTHETIC (this test's with-redefs) -- contract behavior only"]
+        synthetic-entry {:winner :warp-shuffle-reduce
+                         :shapes [1000003 1048576]
+                         :evidence synthetic-evidence}]
+    (testing "the tested device's own name keys the class (case-insensitive; record shape (3) unchanged)"
+      (doseq [device [{:name "NVIDIA Jetson AGX Xavier" :compute-capability 7.2}
+                      {:name "nvidia Jetson agx XAVIER" :compute-capability 7.2}
+                      {:device "Jetson AGX Xavier" :compute-capability 7.2}]]
+        (let [answer (variants/select-variant :nvidia kir :cuda-v1 device)]
+          (is (= :warp-shuffle-reduce (:variant answer)) (str (pr-str device)))
+          (is (true? (:measured? answer)) (str (pr-str device)))
+          (is (= expected-record (:measured-cell answer)) (str (pr-str device))))))
+    (testing "a Jetson Xavier NX descriptor (also sm_72) is NOT the class -- the pooled arm attaches nothing"
+      (let [answer (variants/select-variant :nvidia kir :cuda-v1
+                                           {:name "Jetson Xavier NX" :compute-capability 7.2})]
+        (is (= :warp-shuffle-reduce (:variant answer)))
+        (is (false? (:measured? answer)))
+        (is (nil? (:measured-cell answer)))))
+    (testing "the narrowed key names the per-op records too (synthetic entry replaces the landed table)"
+      (with-redefs [variants/cuda-op-entries {[:sum 256] synthetic-entry}]
+        (let [nx-answer (variants/select-variant :nvidia kir :cuda-v1
+                                                {:name "Jetson Xavier NX" :compute-capability 7.2})]
+          (is (false? (:measured? nx-answer)))
+          (is (nil? (:measured-cell nx-answer))))
+        (let [answer (variants/select-variant :nvidia kir :cuda-v1
+                                             {:name "NVIDIA Jetson AGX Xavier" :compute-capability 7.2})]
+          (is (true? (:measured? answer)))
+          (is (= (assoc expected-record :operators #{:sum} :evidence synthetic-evidence)
+                 (:measured-cell answer))))))
+    (testing "NAMED RESIDUAL, pinned as behavior: a name carrying both fragments and 7.2 still reads as the class"
+      ;; "Jetson AGX Xavier Industrial" (also sm_72) is the concrete
+      ;; residual of a name-based key: it attaches today -- pinned so
+      ;; the coarseness is NAMED BEHAVIOR, not an accident. The
+      ;; descriptor surface carries no device-id/UUID/PCI-id axis and
+      ;; none is invented here; a device-id key needs a producer fact
+      ;; that does not exist (PROPOSED, its own row if one lands).
+      (let [answer (variants/select-variant :nvidia kir :cuda-v1
+                                           {:name "Jetson AGX Xavier Industrial" :compute-capability 7.2})]
+        (is (= :warp-shuffle-reduce (:variant answer)))
+        (is (true? (:measured? answer)))
+        (is (= expected-record (:measured-cell answer)))))))

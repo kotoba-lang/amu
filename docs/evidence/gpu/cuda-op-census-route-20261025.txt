@@ -1,0 +1,129 @@
+JUN-57 -- row (ii) of the operator-aware selection row's created rows
+LANDS: the per-op census publication route in
+scripts/gpu_regime_classify.py (2026-10-25)
+
+WHAT CHANGED (implementation slice; NO hardware ran this tick and
+nothing was re-measured):
+
+scripts/gpu_regime_classify.py gains the operator-aware selection
+row's pre-registered analysis, in committed code BEFORE any fresh
+session (row iii) is measured -- the seventh amendment fixes the
+admissible sessions' protocol as "the committed classifier routes",
+so a session analyzed by code written after the fact would not be a
+pre-registered analysis; this route is what session A and cross-day
+session B will be analyzed by:
+
+  - cuda_op_census(sessions): the per-op census over one or more
+    CUDA paired-timing sessions. Group = (op, W, shape); one reading
+    = one (session, metric) over the group's three pair blocks; the
+    statistic is the block's paired-median ratio (armA/armB as the
+    block declares it, never re-oriented); v faster than u iff the
+    ratio sits on v's side of 1.0; the reading's unique winner is
+    the arm faster than BOTH rivals; the group's fold is the same
+    unique winner in EVERY reading (unique-winner + both-clocks +
+    CROSS-RUN INVARIANCE -- REGIME-INVARIANCE is replaced at this
+    unit per the registration). Entry group = (op, W) over
+    qualifying shapes (:shapes qualifying-only, the pooled record's
+    own clause): a refused shape is not listed and extends no
+    record; the group ENTERs iff every qualifying shape names one
+    winner. The within-block one-sided count (of the declared pairs,
+    how many within-pair ratios sit on the same side of 1.0 as the
+    block's paired-median ratio) rides beside every ratio and is
+    consumed NOWHERE (registration rejection (d) at its letter).
+  - render_cuda_op_census(sessions): the FULL-CENSUS publication --
+    every (op, W, shape) group published, none cherry-picked; the
+    entry-group table; both metrics' readings kept separate (rule 3,
+    cross-clock magnitude claims INADMISSIBLE); CHANNEL-SCOPED +
+    DEVICE-SCOPED verdicts; rule 4 unchanged -- the publication
+    moves no record, no :measured? flag and no selection answer.
+  - CLI: python3 scripts/gpu_regime_classify.py --cuda-op-census
+    <paired-log.txt> [<paired-log.txt> ...]
+  - tests: _self_test_cuda_op_unit (fixture machinery over synthetic
+    logs) + _self_test_cuda_op_corpus (re-derivation over the two
+    committed 2026-10-25 measure-logs), wired into --self-test.
+
+FOLD SEMANTICS -- the registration's letter plus NAMED fail-closed
+readings where it left a gap (each named so no reading upgrades):
+
+  (1) a shape qualifies iff EVERY reading at that shape (every
+      session x both clocks) agrees one-sided on one unique winner;
+  (2) two qualifying shapes naming different winners REFUSE the
+      entry group outright (one record cannot name two winners and
+      the selection query carries no shape axis -- the fail-closed
+      reading, named here and in the ADR's eighth amendment);
+  (3) a missing pair block fails its reading closed (no unique
+      winner) and is published as a named gap, never dropped;
+  (4) the replication requirement (at least TWO fresh sessions UNDER
+      THE REGISTRATION on at least TWO different UTC days) is NOT
+      derivable from the logs (their contents carry no UTC dates) and
+      is decided at ENTRY, by the wiring row -- this census never
+      reads session admissibility and its verdict column is labeled
+      "reading-arm verdict" for exactly that reason.
+
+VERIFIED (real runs, this tick):
+
+  - python3 scripts/gpu_regime_classify.py --self-test
+    -> TOTAL: 2572 assertions passed, 0 failed
+    (the committed base pin is 2536/0; delta = this slice's
+    fixtures, +36; every pre-existing assertion still green --
+    the --cuda-log / --cuda-cells corpus pins included).
+  - python3 scripts/gpu_regime_classify.py --cuda-op-census
+    docs/evidence/gpu/cuda-claimprotocol-run1-20261025/measure-log.txt
+    docs/evidence/gpu/cuda-claimprotocol-run2-20261025/measure-log.txt
+    -> exit 0, stderr 0 bytes; "Full census: 36 (op, W, shape) groups
+    published (36 folded to a winner, 0 refused)"; "Entry groups: 18
+    published (18 enter, 0 refuse)".
+  - Cross-check against the exploratory scratch derivation (the
+    seventh amendment's consumed census): the route's 36 group folds
+    are byte-identical to the scratch script's (ZERO fold diffs;
+    fold census warp-shuffle 34 / subgroup 2 -- the two being
+    (op sum, W = 64) at both shapes). The committed route now
+    reproduces the exploratory numbers the decision record cites
+    (subgroup/baseline gpu_ns 0.8763/0.8646 at n = 1000003 and
+    0.8715/0.8790 at n = 1048576, one-sided 20/20, 20/20, 19/20,
+    19/20; warp-shuffle/subgroup 1.0848/1.0813 and 1.0683/1.0726) --
+    pinned in the corpus self-test at 4 dp.
+  - scoped GPU gate (8 GPU-owned namespaces, scratch runner
+    gpu_scoped_gate.cljk in Hermes scratch, never committed):
+    GREEN 107 tests / 11240 assertions / 0 failures / 0 errors
+    (glslang 16.6.0 real-spawn) -- the diff touches NO .cljk
+    namespace (Python + docs only), so the gate is a regression pin
+    at the committed 107/11240.
+  - FULL run-tests.cljk NOT RUN this slice (no .cljk touched) --
+    documented red at base ('Could not find namespace: kotoba.form',
+    ADR-0362) outside this diff, not re-verified here, NO green
+    suite claimed.
+  - find docs -name '*.sh' -> 0 files (the no-POSIX-sh evidence
+    rule).
+
+STATES:
+
+  DECIDED (this row): the (ii)-before-(iii) ordering (the
+  pre-registration integrity argument above) and the four fold
+  readings (1)-(4).
+  IMPLEMENTED: the per-op census publication route (row (ii)) --
+  code + tests, this slice. NOTHING else: until the wiring (row i)
+  lands NO per-op record exists and every answer is the current
+  code's; until rows (iii) land NO admissible per-op evidence exists.
+  MEASURED: nothing new (NO hardware ran; the two committed sessions
+  CONSUMED as exploratory derivation and re-derived through the
+  now-committed route -- not re-measured, still inadmissible as
+  entry, ADR-0361 seventh amendment rejection (a) stands).
+  ACCEPTED DESIGN ONLY: the operator-aware contract +
+  pre-registration (seventh amendment) and its remaining rows (i)
+  the wiring, (iii) the measurement rows, (iv) the narrower
+  device-class key.
+  UNMEASURED, named: H1/H2 under admissible sessions (this route
+  answers nothing about them -- the pre-registration is not a
+  measurement and neither is its analysis code); every per-op verdict
+  on non-xavier hardware; run 3+ / cross-day replication; the :sum
+  ordering at W = 64 on any device under any admissible unit (the
+  exploratory numbers remain inadmissible as claims); the flip arm on
+  real data (ZERO real flips); every workgroup row (:arm/:unknown
+  stay provisional :measured? false -- no :measured? flag moves this
+  tick); the name-fragment key's coarseness.
+
+CONSEQUENCE: NOTHING MOVES (rule 4) -- no record, no :measured?
+flag, no selection answer, no :shapes value, no workgroup row. The
+ladder :warp-shuffle-reduce -> :subgroup-reduce -> :baseline stays
+byte-for-byte.

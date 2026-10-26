@@ -1,0 +1,139 @@
+JUN-56 / JUN-55 -- the frame-budget row: the W3 INFO-parse chain fits the
+standing 32-frame budget (2026-10-26)
+
+WHAT THIS ROW IS: the named follow-up of w3-split4-field-spans-20261026
+("the full-answer W3 route on the interpreter stays blocked by the frame
+budget -- its own row"; "whether the frame budget can be lifted (PROPOSED,
+its own row)"). One implementation slice on
+kotoba.compiler.accelerator-targets + the design answer to the lift
+question. NO hardware ran, no GPU, no timing -- every number below is a
+kotoba-language-runtime behavior probe (the w3 fact class).
+
+INSTRUMENT (all runs this tick, scratch probes never staged): the w3
+extract-balanced idiom -- the arms' OWN text extracted from the namespace
+source, sema/analyze + ir/execute on the kotoba language runtime,
+kbb --backend sci --classpath "src:$(kbb -Spath -M:test)" <scratch probe>.
+Scratch probes: w3_prim_probe.cljk (primitive capability), w3_frame_probe.cljk
+(before/after e2e), w3_frame_boundary.cljk (length boundary series, 2 runs),
+w3_frame_iso.cljk (isolated-order check). The BEFORE arm is extracted from a
+git-show HEAD dump of accelerator_targets.cljk
+(scratch/w3_before_src.cljk; sha256 verified identical to the working tree
+at probe time: 10b0cff3ac0627976e9ade64902d30ab4a804e0b06bafb87b17978908cc09980)
+-- never hand-transcribed.
+
+THE DESIGN ANSWER (DECIDED this row): the frame budget is NOT lifted.
+frames-limit 32 is the LANGUAGE runtime's measured budget
+(resources/kotoba/lang/limits.edn: "Interpreter call depth ... 32 lets the
+deterministic budget answer first on the compiler's host for those shapes",
+measured 2026-09-24; its copies live in kotoba-lang/osaho and siblings --
+not GPU-owned). This track fits the budget instead -- the string-fold-ascii
+precedent (2026-10-24): a language primitive replaces a hand-rolled walk.
+
+CAPABILITY PROBE (w3_prim_probe.cljk, verbatim semantics):
+  string-index-of "ab|cd" "|"        -> 2       "abcd" "|"  -> -1
+  string-index-of-from "a|b|c" "|" 0 -> 1   from 2 -> 3   from 5 -> -1
+    from 6 -> TRAP "string offset is out of bounds" (from must be <= n)
+  string-find-byte "a|b|c" 124 2     -> 3       124 5 -> -1
+  string-skip-blank "  ab" 0 -> 2   "ab" 0 -> 0   " " 0 -> 1 (= n)   "" 0 -> 0
+  string-find-blank "a b" 0 -> 1    "ab" 0 -> -1
+  string-contains? "abcd" "bc" -> true   "x" -> false
+  string-split-count "a|b|c|d" "|" -> 4   "a|b|c|d|" "|" -> 5 (raw count)
+
+WHAT LANDED (code + tests):
+(1) split4 walks PIPE POSITIONS via string-index-of-from (O(fields) frames,
+    was O(bytes)); span and count contracts unchanged (per-field spans
+    start..p / start..n; raw '|'-split count, trailing empties count).
+    i = p + 1 <= n holds, so the primitive's from > n trap cannot fire.
+(2) blank-str? = one string-skip-blank (blank-walk DELETED -- it recursed
+    per byte and trapped the budget on long device names).
+PINNED SEMANTIC CHANGE (blank): the deleted walk checked {32, 9, 10, 13},
+so a field of only \v(11)/\f(12) passed as non-blank (and parsed).
+string-skip-blank is C isspace (adds 11 and 12) and REJECTS it -- the host
+arm's str/blank? reading (Character/isWhitespace covers 11/12): this moves
+the W3 arm TOWARD host parity. Non-ASCII whitespace stays the named
+residual (neither arm walks it here; the wire is ASCII).
+
+MEASURED (runtime behavior, no hardware) -- e2e device-from-info, facts
+navigated host-side:
+  "Apple M1 Max|1.3.357|1024|1" (26 bytes, the recorded answer):
+    BEFORE => TRAP: host/stack-exhausted
+    AFTER  => {:vendor "Apple M1 Max", :api :vulkan, :api-version "1.3.357",
+               :max-workgroup-x 1024, :unified-memory? true, :measured? true}
+  "Mali-G78 MP24|1.1.128|256|0" (28 bytes):
+    BEFORE => TRAP: host/stack-exhausted
+    AFTER  => {:vendor "Mali-G78 MP24", ..., :max-workgroup-x 256,
+               :unified-memory? false, :measured? true}
+  short pins ("ab|1.2.3|4|1", "a|1.2.3|4|1") six facts, byte-identical
+    on both arms; the malformed grid ("ab|1.2.3|4|1|", "ab|1.2.3|4|1|x",
+    "ab|1.2.3|4", "ab|1..3|4|1", "ab|1.2.3|x|1", " |1.2.3|4|1",
+    "\v|1.2.3|4|1") answers null on both arms (the \v case after this row;
+    BEFORE accepted "\v" as a device name -- the pinned parity change).
+  split4 AFTER "Apple M1 Max|1.3.357|1024|1" =>
+    ["Apple M1 Max" "1.3.357" "1024" "1"] (BEFORE trapped).
+  blank-str? table (BEFORE walk / AFTER skip-blank):
+    "" true/true   " " true/true   "\t" true/true   "\n" true/true
+    "\r" true/true   "\v" false/TRUE   "\f" false/TRUE
+    "a" false/false   " a " false/false   "Apple M1 Max" false/false
+
+BUDGET BOUNDARY SERIES (BEFORE arm; well-formed 4-field answers padded in
+the device field; trap kind named; run twice, byte-identical):
+  :budget/frames trap at >= 30 bytes via 1-frame dfi wrapper,
+  at >= 28 bytes via 3-frame dfi3 (2 wrapper frames = 2 bytes, ~1 frame
+  per walked byte). 29 bytes dfi resolves, 27 bytes dfi3 resolves.
+  AFTER: NO trap anywhere 11..40 bytes at dfi AND dfi3 (both runs).
+NAMED ANOMALY (unexplained, interpreter-owned, its own row): the BEFORE
+arm traps host/stack-exhausted at 13/14 bytes via dfi3 while 15..27 bytes
+RESOLVE at the same wrapper depth (non-monotonic in length), and the same
+case traps with DIFFERENT names by run order (37-byte dfi3: :budget/frames
+in the boundary run, host/stack-exhausted in the isolated fresh-order run
+w3_frame_iso.cljk, where everything >= 13 bytes traps monotonically). The
+2026-10-26 row's plain-dfi 14-byte trap does not reproduce in this
+harness. Trap boundaries are state-dependent; nothing about them is
+pinned as behavior (the 2026-10-25 key row's idiom).
+
+RESIDUAL, NAMED (not hidden): digits?/digits-all?/parse-walk/dot1/dot2
+still walk per byte of THEIR fields (version and max-wg-x -- bounded by
+field length; realistic fields measured resolving: "1.3.357", "1024");
+an adversarial numeric field can still reach the budget (fail-closed: the
+trap answers, no wrong fact). The classify-vendor / key-hits chain
+(sub-walk2 / sub-eq / frag-hit2) is untouched and keeps its named trap on
+full device names -- its own row.
+
+CONSEQUENCE: NOTHING MOVES -- no :measured? flag, no :shapes value, no
+workgroup row, no selection answer. The :arm/:unknown rows stay
+provisional :measured? false. This row unblocks the full-answer W3 INFO
+parse route only.
+
+STATES:
+- IMPLEMENTED (code + tests): the split4 primitive walk, the blank-str?
+  primitive; tests updated/extended (w3-split4-conjes-per-field-spans-and-
+  counts-raw pins the primitive route + full-length split;
+  w3-device-from-info-parses-like-the-host-arm pins full-length answers,
+  the blank parity and the 5-field null).
+- DECIDED: the budget is not lifted from this track (language-owned, its
+  32 is a measured trap-ordering value); the primitives route; the
+  \v/\f blank reading = host str/blank? parity.
+- MEASURED: the probe tables above (runtime behavior, no hardware).
+- ACCEPTED DESIGN ONLY (unchanged): ADR-0355's table rules, ADR-0358's
+  key, the claim protocol.
+- UNMEASURED, named: adversarial-field behavior, the anomaly's mechanism,
+  every workgroup-row question (:arm/:unknown stay provisional
+  :measured? false), anything off this host.
+
+GATES (real runs):
+- Scoped GPU gate (8 GPU-owned namespaces, scratch runner
+  gpu_scoped_gate.cljk, route 1):
+    kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+      /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+  -> Ran 115 tests containing 11544 assertions. 0 failures, 0 errors.
+     scoped: 115 tests, 11544 passed, 0 failed, 0 errors
+     (committed pin 115 tests / 11528 assertions; delta = this slice's
+     +16 assertions). glslang 16.6.0 real-spawn ran.
+- gpu_regime_classify.py --self-test -> TOTAL: 2649 assertions passed,
+  0 failed (committed pin 2649/0; no classify code touched).
+- Full run-tests.cljk: RED AT BASE, outside this diff -- "Could not find
+  namespace: kotoba.form" (ADR-0362) fails the run before any test
+  executes (kbb exit 1). Re-verified live this tick since the diff touches
+  .cljk namespaces. The touched namespace's own tests are the scoped gate
+  above. NO green full suite claimed.
+- find docs -name '*.sh' -> 0 files (the no-POSIX-sh evidence rule).

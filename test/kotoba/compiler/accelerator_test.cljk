@@ -1,6 +1,8 @@
 (ns kotoba.compiler.accelerator-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.accelerator :as accelerator]
+            [kotoba.compiler.accelerator-subgroup-reduce :as sg]
             [kotoba.artifact.core :as artifact]))
 
 (deftest typed-kir-lowers-deterministically-to-wgsl-and-cuda
@@ -107,3 +109,237 @@
       (let [tampered (artifact/seal (assoc compiled :variant :turbo))]
         (is (thrown-with-msg? Exception #"unsupported kernel variant"
                               (accelerator/verify-artifact! tampered)))))))
+
+(deftest glsl-v1-baseline-lowers-deterministically
+  ;; ADR-0359 decision 1: :glsl-v1 is a fourth emission target. This is the
+  ;; SOURCE text contract only -- the GLSL -> SPIR-V compilation is a
+  ;; separate sealed build step (decision 2, accepted design, not yet
+  ;; implemented). UNMEASURED as an optimization claim: nothing here is a
+  ;; tuning result.
+  (is (contains? accelerator/targets :glsl-v1))
+  (let [ewise (accelerator/kernel "ewise_add_f32" :ewise :add {:workgroup-size 256})
+        ew (accelerator/compile-kernel ewise :glsl-v1)
+        reduce-kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 128})
+        rd (accelerator/compile-kernel reduce-kir :glsl-v1)]
+    (testing "the seal regime covers the GLSL arm like any other emission"
+      (is (= ew (accelerator/verify-artifact! ew)))
+      (is (= rd (accelerator/verify-artifact! rd)))
+      (is (= ew (accelerator/compile-kernel ewise :glsl-v1))))
+    (testing "the KIR hash is target-independent"
+      (is (= (:kir-sha256 ew) (:kir-sha256 (accelerator/compile-kernel ewise :wgsl-v1)))))
+    (testing "GLSL 450 compute, entry main; the kernel name does not appear"
+      (is (str/starts-with? (:code ew) "#version 450\n"))
+      (is (str/includes? (:code ew) "layout(local_size_x = 256) in;"))
+      (is (str/includes? (:code ew) "void main()"))
+      (is (nil? (re-find #"ewise_add_f32" (:code ew)))))
+    (testing "wire-42 ABI: storage buffers only -- n rides a readonly SSBO"
+      (is (str/includes? (:code ew)
+                         "layout(set = 0, binding = 2, std430) writeonly buffer Z { float z[]; };"))
+      (is (str/includes? (:code ew)
+                         "layout(set = 0, binding = 3, std430) readonly buffer N { uint n; };"))
+      (is (str/includes? (:code rd)
+                         "layout(set = 0, binding = 1, std430) writeonly buffer Parts { float parts[]; };"))
+      (is (str/includes? (:code rd)
+                         "layout(set = 0, binding = 2, std430) readonly buffer N { uint n; };"))
+      (is (nil? (re-find #"uniform" (:code ew)))))
+    (testing "the tree reduce carries its barrier cascade and per-workgroup partial"
+      (is (str/includes? (:code rd) "barrier();"))
+      (is (str/includes? (:code rd) "parts[gl_WorkGroupID.x] = scratch[0]")))
+    (testing "emission is deterministic across calls"
+      (is (= (:code rd) (accelerator/lower reduce-kir :glsl-v1))))))
+
+(deftest glsl-v1-subgroup-reduce-routes-to-the-arm-emitter
+  ;; ADR-0359 decision 1: `lower` admits :glsl-v1 for :subgroup-reduce,
+  ;; routed to the existing emit-glsl -- so the seal regime covers that
+  ;; emission like any other. Before this admission NO :subgroup-reduce
+  ;; artifact could verify at all: the verifier's vocabulary named the
+  ;; variant and `lower` refused it ("unsupported kernel variant").
+  (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
+        routed (accelerator/lower kir :glsl-v1 :subgroup-reduce)
+        compiled (accelerator/compile-kernel kir :glsl-v1 :subgroup-reduce)]
+    (testing "the routed bytes ARE the arm emitter's bytes"
+      (is (= (sg/emit-glsl kir) routed)))
+    (testing "a :subgroup-reduce artifact seals and verifies"
+      (is (= :subgroup-reduce (:variant compiled)))
+      (is (= compiled (accelerator/verify-artifact! compiled)))
+      (is (= compiled (accelerator/compile-kernel kir :glsl-v1 :subgroup-reduce))))
+    (testing "relabeling baseline GLSL bytes as the variant fails closed"
+      (let [tampered (artifact/seal (assoc (accelerator/compile-kernel kir :glsl-v1)
+                                           :variant :subgroup-reduce))]
+        (is (thrown-with-msg? Exception #"regeneration mismatch"
+                              (accelerator/verify-artifact! tampered)))))))
+
+(deftest cuda-v1-subgroup-reduce-routes-to-the-arm-emitter
+  ;; The CUDA arm's admission (2026-10-23): `lower` admits :cuda-v1 for
+  ;; :subgroup-reduce, routed to subgroup-reduce/emit-cuda -- so the seal
+  ;; regime covers that emission like any other, and the routed bytes are
+  ;; exactly the arm emitter's bytes. SELECTION does not move: the NVIDIA
+  ;; CUDA-route row keeps :warp-shuffle-reduce and this pair lowers only
+  ;; when asked for by name (ADR-0356 rule 3: emission admission first).
+  (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
+        routed (accelerator/lower kir :cuda-v1 :subgroup-reduce)
+        compiled (accelerator/compile-kernel kir :cuda-v1 :subgroup-reduce)]
+    (testing "the routed bytes ARE the arm emitter's bytes"
+      (is (= (sg/emit-cuda kir) routed)))
+    (testing "a :subgroup-reduce artifact seals and verifies"
+      (is (= :subgroup-reduce (:variant compiled)))
+      (is (= compiled (accelerator/verify-artifact! compiled)))
+      (is (= compiled (accelerator/compile-kernel kir :cuda-v1 :subgroup-reduce))))
+    (testing "relabeling baseline CUDA bytes as the variant fails closed"
+      (let [tampered (artifact/seal (assoc (accelerator/compile-kernel kir :cuda-v1)
+                                           :variant :subgroup-reduce))]
+        (is (thrown-with-msg? Exception #"regeneration mismatch"
+                              (accelerator/verify-artifact! tampered)))))))
+
+(deftest glsl-variants-refuse-where-not-applicable
+  (let [reduce-kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})
+        ewise-kir (accelerator/kernel "ewise_add_f32" :ewise :add {:workgroup-size 256})
+        subwarp-kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 16})]
+    (testing "the GLSL arm admits no CUDA variant"
+      (is (thrown-with-msg? Exception #"kernel variant not applicable"
+                            (accelerator/lower reduce-kir :glsl-v1 :warp-shuffle-reduce))))
+    (testing "the CUDA arm carries the variant since 2026-10-23 (rule 3: the arm's own emission is admitted)"
+      (is (string? (accelerator/lower reduce-kir :cuda-v1 :subgroup-reduce)))
+      (is (thrown-with-msg? Exception #"kernel variant not applicable"
+                            (accelerator/lower ewise-kir :cuda-v1 :subgroup-reduce)))
+      (is (thrown-with-msg? Exception #"kernel variant not applicable"
+                            (accelerator/lower subwarp-kir :cuda-v1 :subgroup-reduce))))
+    (testing "the MSL arm carries the variant since 2026-10-23 (rule 3: the arm's own emission is admitted)"
+      (is (string? (accelerator/lower reduce-kir :msl-v1 :subgroup-reduce)))
+      (is (thrown-with-msg? Exception #"kernel variant not applicable"
+                            (accelerator/lower ewise-kir :msl-v1 :subgroup-reduce)))
+      (is (thrown-with-msg? Exception #"kernel variant not applicable"
+                            (accelerator/lower subwarp-kir :msl-v1 :subgroup-reduce))))
+    (testing "the WGSL arm carries the variant since 2026-10-23 (rule 3: the arm's own emission is admitted)"
+      (is (string? (accelerator/lower reduce-kir :wgsl-v1 :subgroup-reduce)))
+      (is (thrown-with-msg? Exception #"kernel variant not applicable"
+                            (accelerator/lower ewise-kir :wgsl-v1 :subgroup-reduce)))
+      (is (thrown-with-msg? Exception #"kernel variant not applicable"
+                            (accelerator/lower subwarp-kir :wgsl-v1 :subgroup-reduce))))
+    (testing "the variant's own applicability row refuses ewise and sub-warp"
+      (is (thrown-with-msg? Exception #"kernel variant not applicable"
+                            (accelerator/lower ewise-kir :glsl-v1 :subgroup-reduce)))
+      (is (thrown-with-msg? Exception #"kernel variant not applicable"
+                            (accelerator/lower subwarp-kir :glsl-v1 :subgroup-reduce))))))
+
+(deftest glsl-variants-share-one-operator-meaning
+  ;; One GLSL arm, one meaning per operator: the baseline tree and the
+  ;; subgroup fold carry the same combine and the same identity, including
+  ;; the INFINITE extrema neutrals (a finite bound is corrupted by a
+  ;; legitimate +-Inf input in the padded lanes).
+  (doseq [[operator combine identity-text]
+          [[:sum "a+b" "0.0"]
+           [:max "max(a,b)" "uintBitsToFloat(0xFF800000u)"]
+           [:min "min(a,b)" "uintBitsToFloat(0x7F800000u)"]]]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
+                                  {:workgroup-size 128})
+          baseline (accelerator/lower kir :glsl-v1 :baseline)
+          variant (accelerator/lower kir :glsl-v1 :subgroup-reduce)]
+      (is (str/includes? baseline (str "float combine(float a, float b) { return " combine "; }")))
+      (is (str/includes? variant (str "float combine(float a, float b) { return " combine "; }")))
+      (is (str/includes? baseline (str "scratch[lid] = i < n ? x[i] : " identity-text ";")))
+      (is (str/includes? variant (str "float v = i < n ? x[i] : " identity-text ";"))))))
+
+(deftest every-arm-shares-one-operator-meaning
+  ;; One meaning per operator across EVERY emission arm (review P2,
+  ;; completed 2026-10-22, re-founded 2026-10-25 twice): the reduce
+  ;; answers the same value wherever it is emitted -- ADR-0356 rule 2's
+  ;; ordinary-value domain includes +-Inf, so the padded lanes must never
+  ;; distort the fold. The MECHANISM differs per language, and that is
+  ;; part of the pin: GLSL/MSL/CUDA fold the IEEE-754 INFINITE neutral
+  ;; spelled via each language's reinterpretation intrinsic (a finite
+  ;; bound is corrupted by a legitimate +-Inf input -- an all-(-Inf) :max
+  ;; reduction answered -FLT_MAX -- and no infinity literal exists in
+  ;; GLSL); every WGSL arm CANNOT hold that neutral -- the WGSL spec's
+  ;; Finite Math Assumption (15.7.3) makes the infinite const-expression
+  ;; a REQUIRED shader-creation error (Chrome 155's Tint refuses it,
+  ;; "value -inf cannot be represented as 'f32'") -- so since 2026-10-25
+  ;; BOTH WGSL arms carry the clamped-index fill x[min(i,n.value-1u)]
+  ;; (:subgroup-reduce first, the baseline :reduce arm's own slice landed
+  ;; the same day -- before it the baseline arm spelled the refused
+  ;; bitcast neutral and its corpus judged 12/18 refused): out-of-range
+  ;; lanes duplicate an IN-RANGE element and max/min stay exact by
+  ;; idempotence, +-Inf input included. Same meaning, two mechanisms. The
+  ;; finite +-3.402823466e+38 bound must appear in NO arm's bytes: that
+  ;; absence is the mechanical guard against the drift this test exists
+  ;; for.
+  (doseq [[operator ids]
+          [[:sum {:wgsl-fill "select(0.0,x[i],i<n.value)"
+                  :msl "0.0f" :cuda "0.0f" :glsl "0.0"}]
+           [:max {:wgsl-fill "x[min(i,n.value-1u)]"
+                  :msl "as_type<float>(0xFF800000u)"
+                  :cuda "__uint_as_float(0xFF800000u)" :glsl "uintBitsToFloat(0xFF800000u)"}]
+           [:min {:wgsl-fill "x[min(i,n.value-1u)]"
+                  :msl "as_type<float>(0x7F800000u)"
+                  :cuda "__uint_as_float(0x7F800000u)" :glsl "uintBitsToFloat(0x7F800000u)"}]]]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
+                                  {:workgroup-size 128})]
+      (doseq [[code prefix id suffix]
+              [[(accelerator/lower kir :wgsl-v1 :baseline)
+                "scratch[lid.x]=" (:wgsl-fill ids) ";"]
+               [(accelerator/lower kir :msl-v1 :baseline)
+                "s[l]=i<n?x[i]:" (:msl ids) ";"]
+               [(accelerator/lower kir :cuda-v1 :baseline)
+                "s[l]=i<n?x[i]:" (:cuda ids) ";"]
+               [(accelerator/lower kir :cuda-v1 :warp-shuffle-reduce)
+                "float v=i<n?x[i]:" (:cuda ids) ";"]
+               [(accelerator/lower kir :glsl-v1 :baseline)
+                "scratch[lid] = i < n ? x[i] : " (:glsl ids) ";"]
+               [(accelerator/lower kir :glsl-v1 :subgroup-reduce)
+                "float v = i < n ? x[i] : " (:glsl ids) ";"]
+               [(accelerator/lower kir :wgsl-v1 :subgroup-reduce)
+                "var v:f32=" (:wgsl-fill ids) ";"]
+               [(accelerator/lower kir :msl-v1 :subgroup-reduce)
+                "float v = i < n ? x[i] : " (:msl ids) ";"]
+               [(accelerator/lower kir :cuda-v1 :subgroup-reduce)
+                "float v = i < n ? x[i] : " (:cuda ids) ";"]]]
+        (is (str/includes? code (str prefix id suffix)))
+        (is (not (str/includes? code "3.402823466")))))))
+
+(deftest wgsl-baseline-arm-holds-no-infinite-value-in-any-position
+  ;; The fix rule's own mechanical guard for the baseline :reduce WGSL arm
+  ;; (the same tripwire the :subgroup-reduce arm carries): the IEEE-754
+  ;; infinite bit patterns and their bitcast spelling must appear NOWHERE
+  ;; in the emitted bytes. Before 2026-10-25 this arm spelled
+  ;; select(bitcast<f32>(0xFF800000u),x[i],i<n.value) and Chrome 155's
+  ;; Tint refused the whole :max/:min row at shader creation (12/18 of
+  ;; its pre-fix corpus). The refused spelling cannot return unnoticed.
+  (doseq [w [32 64 128 256 512 1024] operator [:sum :max :min]]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
+                                  {:workgroup-size w})
+          code (accelerator/lower kir :wgsl-v1 :baseline)]
+      (is (nil? (re-find #"0xFF800000|0x7F800000|bitcast<f32>|inf" code))
+          (str "an infinite-value spelling leaked into W=" w " "
+               (name operator) ": " (re-find #"0xFF800000|0x7F800000|bitcast<f32>|inf" code)))
+      (is (str/includes? code (if (= operator :sum)
+                                "scratch[lid.x]=select(0.0,x[i],i<n.value);"
+                                "scratch[lid.x]=x[min(i,n.value-1u)];"))
+          (str "the fix rule's fill is missing from W=" w " " (name operator))))))
+
+(deftest lower-routes-every-target-variant-pair-or-refuses-by-name
+  ;; The W3 dual-reading merge (3e14da99) dropped the host reading's
+  ;; :glsl-v1 arm of `lower`, and nothing caught it while the suite was
+  ;; blocked at namespace load on kotoba.form: `lower` fell through `case`
+  ;; with "No matching clause" instead of the named refusals. This pins the
+  ;; routing matrix exhaustively -- every (target, variant) pair either
+  ;; lowers to non-empty text or refuses with the contract's own message,
+  ;; and a bare case fall-through can never satisfy either arm.
+  (let [reduce-kir (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 256})]
+    (doseq [[target variant] [[:wgsl-v1 :baseline]
+                              [:wgsl-v1 :subgroup-reduce]
+                              [:cuda-v1 :baseline]
+                              [:cuda-v1 :warp-shuffle-reduce]
+                              [:cuda-v1 :subgroup-reduce]
+                              [:msl-v1 :baseline]
+                              [:msl-v1 :subgroup-reduce]
+                              [:glsl-v1 :baseline]
+                              [:glsl-v1 :subgroup-reduce]]]
+      (let [code (accelerator/lower reduce-kir target variant)]
+        (is (and (string? code) (pos? (count code)))
+            (str target " " variant " lowers to non-empty text"))))
+    (doseq [[target variant] [[:wgsl-v1 :warp-shuffle-reduce]
+                              [:msl-v1 :warp-shuffle-reduce]
+                              [:glsl-v1 :warp-shuffle-reduce]]]
+      (is (thrown-with-msg? Exception #"kernel variant not applicable"
+                            (accelerator/lower reduce-kir target variant))
+          (str target " " variant " refuses by name")))))

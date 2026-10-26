@@ -1,0 +1,140 @@
+JUN-56 / JUN-55 -- the engine parse-long boundary row: the boundary is
+MEASURED (exact through 2^53-1, nil at 2^53 and above) and the wg route
+is PROBED (it diverges the same way as the sg route)
+(2026-10-26)
+
+WHAT THIS ROW IS: the sg-size row's (w3-sg-size-parse-20261026) named
+residual, carried as "(b) ENGINE PARSE-LONG BOUNDARY ... its own row"
+with TWO open questions: the boundary's MECHANISM was unmeasured (only
+the exact i64-max text was known to answer nil) and whether the wg
+route's device-from-info diverged at that text "the same way" was
+UNPROBED. ONE measurement slice -- no code behavior changed, no
+hardware, no GPU, no timing; every number below is an engine or
+kotoba-language-runtime behavior probe (the w3 fact class).
+
+INSTRUMENT (all runs this tick, scratch probes never staged): scratch
+probe w3_parselong_boundary.cljk -- the w3 extract-balanced idiom: the
+arms' OWN text extracted from the namespace source, sema/analyze +
+ir/execute on the kotoba language runtime, plus the host engine's own
+parse-long and the host arm's own heads. Run:
+  kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+    /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/w3_parselong_boundary.cljk
+Run TWICE, byte-identical (diff -q clean):
+  run 1 w3_plb_run1.txt 209 lines COMPLETE
+       sha256 4be48df7feed0fb37be84ffcba516898d85a9d4c5c12369d6577d5f6547e1963
+  run 2 w3_plb_run2.txt sha256 4be48df7feed0fb37be84ffcba516898d85a9d4c5c12369d6577d5f6547e1963
+Ladder: 21 texts over the 2^52 / 2^53 / 2^54 / i64 / u64 boundaries plus
+the leading-zero shapes and short cells, probed on five surfaces (the
+engine's parse-long; the :kotoba arm's sg-size; the host head map; both
+arms' device-from-info; both arms' device-from-subgroup), plus a
+1..9-ramp around 2^53 and an in-run determinism cell.
+
+MEASURED -- THE BOUNDARY (the row's finding):
+
+  The engine's parse-long answers the EXACT value through 2^53-1 and
+  nil at 2^53 and above. No rounding cell exists at the boundary:
+  "9007199254740989/90/91" (2^53-3..2^53-1) EXACT, "9007199254740992"
+  (2^53) nil, and 2^53+1 / 2^53+2 / 2^54 / 10^16 / 10^17 / i64max-1 /
+  i64max / i64max+1 / u64max / 20-nines all nil. 2^53 IS exactly
+  representable as an IEEE double and is still refused, so the refusal
+  tracks the safe-integer range (2^53-1), not representability.
+  The boundary follows the VALUE, not the text length: 102-char
+  "...000042" answers 42 exactly on every surface; 44 zeros +
+  2^53+1 answers nil on the engine / host arms and the VALUE on the
+  :kotoba arm.
+
+  The divergence is a CLASS, not one text: for every digit text whose
+  value is in [2^53, i64max] the :kotoba arm answers the VALUE and the
+  host arm answers NO FACT. Both routes:
+
+    wg route (device-from-info, maxWgX field) -- THE NAMED UNPROBED
+    QUESTION, ANSWERED: "ab|1.2.3|<t>|1" answers the full six-fact map
+    with :max-workgroup-x = the value on the :kotoba arm for every
+    class text (2^53 / 2^53+1 / 2^53+2 / 2^54 / 10^16 / 10^17 /
+    i64max-1 / i64max / the leading-zero spells), and nil on the host
+    arm at the same cells. Past i64 (i64max+1, u64max, 20 nines) both
+    arms answer no fact (null / nil) -- parity. maxWgX = 0 rejects on
+    both arms (null / nil).
+
+    sg route (device-from-subgroup, <size> field): "<t>|basic"
+    answers {:subgroup-size the-value :subgroup-ops #{:basic}} on the
+    :kotoba arm over the same class and nil on the host arm -- the
+    sg-route divergence the sg-size row named at ONE text is the same
+    class.
+
+  The :kotoba builtin parse-long holds real i64 over the whole ladder:
+  every in-i64 text answers the exact 64-bit value (i64max itself
+  included), i64max+1 / u64max / 20-nines answer the no-value shape
+  (-1). The parse-decimal contract holds on every ladder cell.
+
+DECIDED (prose only; no behavior change, no product code diff): the
+parse-decimal contract stands (max is a value; one past is -1; signed
+spellings refuse). Host-arm parity is scoped to the engine's exact
+integer range (values <= 2^53-1, measured). The class [2^53, i64max] is
+NAMED as an engine-owned divergence: fail-closed on the host arm (a
+missing fact, never a wrong fact), unreachable from the wire (a wire-42
+maxWgX is a device limit -- ADR-0002's bound is [1, 1024] and the
+measured M1 Max INFO receipt carries 1024; a SUBGROUP size is a small
+device fact). The :kotoba arm (the product path) keeps the contract;
+the class cells are now PINNED on the contract arm; the host cells stay
+named and NEVER pinned (engine-owned behavior -- a future engine fix
+must not be blocked by a pin on a wrong answer).
+
+STATES:
+- IMPLEMENTED (tests + prose; NO product behavior change -- the src
+  diff is one comment block): the sg-size contract grid grows the
+  boundary class cells (2^53 / 2^53+1 / i64max-1 -> the value), the
+  parity grid grows the three engine-EXACT cells (2^52-1 / 2^52 /
+  2^53-1) and its comment names the excluded class, the sg e2e pins one
+  class answer (9007199254740993|basic -> the fact), and the dfi test
+  grows "the engine parse-long boundary class" block (five class cells
+  incl. a leading-zero spell -> the value, and one-past-i64 -> total
+  null on both arms); the named-residual prose of both tests and of
+  string->i64 is brought to the measured state. Gate test COUNT +0
+  (122), assertions +14.
+- DECIDED (contract unchanged; the boundary treatment above).
+- MEASURED: the two byte-identical probe runs above (engine + both arms
+  + both routes + the ramp + the in-run determinism cell).
+- ACCEPTED DESIGN ONLY (unchanged): ADR-0355's table rules, ADR-0358's
+  key, ADR-0362's subgroup contract, the claim protocol.
+- UNMEASURED, named: WHY the engine's parse-long range-checks (the
+  engine source was not read this tick -- only the observable boundary
+  is measured); the digit taxonomy probe set (ok|out-of-range = digits)
+  is still PROBED on an adversarial set, not proven; the loop helper's
+  state-dependent boundary; trap spellings beyond these runs; every
+  workgroup-row question (:arm/:unknown stay provisional
+  :measured? false); anything off this host.
+
+CONSEQUENCE: NOTHING MOVES -- no :measured? flag value, no :shapes
+value, no workgroup row, no selection answer; :arm/:unknown stay
+provisional :measured? false. The SUBGROUP producer (ADR-0371) still
+does not exist -- no live wire feeds any of this. This row closes the
+sg-size row's engine-boundary named residual (the mechanism's observable
+boundary measured; the wg route probed) and adds no hardware
+measurement claim.
+
+GATES (real runs):
+- Scoped GPU gate (8 GPU-owned namespaces, scratch runner
+  gpu_scoped_gate.cljk):
+    kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+      /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+  -> run 1 GREEN and run 2 GREEN, identical:
+     Ran 122 tests containing 12105 assertions. 0 failures, 0 errors.
+     scoped: 122 tests, 12105 passed, 0 failed, 0 errors
+     (the previous code row's gate: 122 tests / 12091 assertions;
+     delta = +0 tests / +14 assertions). glslang 16.6.0 real-spawn ran
+     (both run logs).
+- gpu_regime_classify.py --self-test: TOTAL 2649 assertions passed,
+  0 failed (pin 2649/0).
+- FULL run-tests.cljk re-verify (the SOUL.md gate), live this tick:
+  RED AT BASE 'Could not find namespace: kotoba.form' (ADR-0362),
+  outside this diff (scratch/w3_plb_fullsuite.log) -- NO green full
+  suite claimed.
+- BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head
+  (checked at tick start and re-checked before the push; chain PR
+  #1455 OPEN, mergeable=UNKNOWN at check time -- not CONFLICTING).
+- NAMED, NOT HIDDEN: kbb prints "2 dep(s) are not :local/root ..." on
+  every run -- identical everywhere, unrelated to this diff. The
+  worktree also carries an untracked deps.edn (present at tick start;
+  this row did not create or touch it, and it is not committed).
+  find docs -name '*.sh' -> 0 (this row's evidence is .txt).

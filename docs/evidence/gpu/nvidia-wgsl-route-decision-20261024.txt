@@ -1,0 +1,183 @@
+JUN-57 / JUN-55 -- the NVIDIA WGSL-route selection question is DECIDED
+(YES) and the selection row lands (2026-10-24, chain worktree,
+kbb --backend sci)
+
+WHAT THIS SLICE IS: one decision slice with its implementation (the
+ADR-0363 idiom -- "the selection change is implemented with tests"
+in the same slice): the one named UNDECIDED question left open by
+ADR-0356's `:wgsl-v1`-selection amendment is answered for NVIDIA, and
+the selection row that answer names is implemented with tests. NO
+hardware ran in this slice; every number below is a runner's count or a
+committed record's, and nothing here is optimization evidence.
+
+THE QUESTION (the named open row, verbatim sources):
+
+- docs/adr/0356-gpu-kernel-variant-selection.md, the 2026-10-23 ":wgsl-v1
+  selection question is DECIDED" amendment: "...and the Apple and NVIDIA
+  rows stay Vulkan-route-only (their ADRs' scope; extending either is a
+  separate per-vendor decision, undecided)."
+- docs/evidence/gpu-wgsl-route-rows-20261023/NOTES.md:96-98: "PROPOSED
+  (undecided): extending the Apple/NVIDIA rows to the WGSL route ...".
+- The campaign convention the same amendment set: "one vendor per
+  decision" -- so this decision answers NVIDIA only.
+
+THE DECISION (ADR-0361's 2026-10-24 amendment, decided in three parts;
+the full text lives in the ADR):
+
+YES -- the WGSL route (:webgpu / :wgsl-v1, one route two names, the
+ADR-0359 decision-3 idiom) carries NVIDIA's :subgroup-reduce row under
+the SAME rules 3 + 6 gate as the Vulkan route.
+
+  Part 1 -- the row extends, with NO ladder on this route:
+    :warp-shuffle-reduce is CUDA emission only (rule 3: admission first),
+    so the row is the route's first and only variant rung --
+    :subgroup-reduce -> :baseline, total and deterministic. The CUDA
+    ladder's precedence question does not arise here.
+  Part 2 -- the sm_70+ floor rides along, unchanged: it is NVIDIA's
+    row-wide requirement (a REPORTED capability below 7.0, or a malformed
+    one, fails closed to :baseline; an absent capability is not a
+    refusal), and the table's gate is route-agnostic, so it binds this
+    rung exactly as it binds the Vulkan and CUDA rungs. No new fact, key
+    or floor is invented.
+  Part 3 -- the rationale is the AMD row's plus route reality: the WGSL
+    arm is the same runtime-width fold (subgroup_size queried at
+    runtime), so the AMD row's heterogeneity answer ("the RDNA
+    wave32/wave64 duality is answered by the emission's runtime width
+    query and rule 6's S | W gate, not by selection") answers NVIDIA's
+    fixed warp width a fortiori -- 32 is just the reported S. And
+    WebGPU-on-NVIDIA is a deployed surface; a dispatch there previously
+    answered :baseline even where the device reports the fold's facts.
+
+WHAT MOVED (this slice's whole diff):
+
+- src/kotoba/compiler/accelerator_variants.cljk: the WGSL-route cond row's
+  vendor set grows :nvidia (#{:intel :arm :amd} -> #{:intel :arm :amd
+  :nvidia}) with the decision named in the comment; the ns docstring, the
+  variant-bases :subgroup-reduce text and the select-variant docstring
+  name the decision and its record. That is the entire behavior change --
+  one set membership -- because the sm_70+ floor clause and every
+  fail-closed gate are already route-agnostic.
+- test/kotoba/compiler/accelerator_variants_test.cljk: the two pins the
+  decision flips (the "target outside the rows' routes" baseline pin for
+  :nvidia on [:webgpu :wgsl-v1], and the old
+  the-nvidia-row-rides-the-vulkan-and-cuda-routes baseline pin) are
+  updated to the decided behavior; each-route-selects-under-either-of-
+  its-names grows :nvidia in its WGSL vendor set;
+  the-nvidia-row-rides-the-vulkan-and-cuda-routes is RENAMED to
+  the-nvidia-row-rides-the-vulkan-cuda-and-wgsl-routes and grows the WGSL
+  battery (+33 assertions: the positive pin on both spellings with
+  :measured? false and the decision record named in :basis, the sm_70+
+  floor on this rung -- 7.0 selects, 6.0/6.5/"7.0"/:seven fail closed --
+  the rule-6 fail-closed battery, the shape gate, and determinism); the
+  intel/arm WGSL test's docstring names the decision and keeps Apple's
+  question UNDECIDED.
+- docs/adr/0361-gpu-nvidia-subgroup-reduce.md: the decision of record
+  (the amendment above).
+- docs/adr/0356-gpu-kernel-variant-selection.md: the ":wgsl-v1 selection
+  question is DECIDED" amendment's "undecided" clause carries a dated
+  superseding marker as to NVIDIA (Apple's question stays UNDECIDED), and
+  the rows table's nvidia (Vulkan route) row carries the ROUTE PROSE
+  WIDENED 2026-10-24 bracket (the intel/arm bracket idiom).
+- docs/evidence/gpu-nvidia-cuda-route-20261023/NOTES.md: a dated naming-
+  drift CORRECTION bracket (the renamed test; that record's claims are
+  unaffected -- the row's Vulkan and CUDA answers are byte-for-byte
+  unchanged).
+- docs/evidence/gpu/nvidia-wgsl-route-decision-20261024.txt: this record.
+
+WHAT THIS DECISION DOES NOT LICENSE (named so nothing is silently
+upgraded):
+
+- NO measurement ran. No :measured? flag, :shapes value, selection answer
+  outside the WGSL/NVIDIA cell, flip cell or workgroup row (ADR-0355/0358)
+  moved. The four measured workgroup rows and the six flip cells are
+  untouched.
+- UNCOMPILED: the WGSL arm -- no WGSL compiler or validator exists on the
+  testing host (docs/evidence/gpu-wgsl-route-rows-20261023/which-wgsl-
+  tools.txt: `which tint` and every probe came back empty). The emission
+  text remains a test-pinned contract, the same regime as when the arm
+  landed and as the CUDA arm today.
+- UNMEASURED: nothing has run on NVIDIA hardware, and no WebGPU execution
+  path exists in this repository. Every answer this row gives keeps
+  :measured? false. The design assumption (removing most of the barrier
+  cascade wins) stays UNMEASURED on NVIDIA.
+- The Apple row's WGSL question stays UNDECIDED -- one vendor per
+  decision. No :warp-shuffle-reduce rung exists on the WGSL route and
+  none is added. The CUDA route's ladder, the MSL route's rows and every
+  other vendor/route pair are byte-for-byte unchanged.
+- No execution path claim: like every variant in the table, the row has
+  no in-repo execution path (ADR 0371's provider is the replacement
+  track).
+
+STATE (the honesty rule's three states):
+
+- IMPLEMENTED: the selection row (one set membership in
+  kotoba.compiler.accelerator-variants) and its tests -- code + test
+  exist and the gates below are green for every namespace touched.
+- ACCEPTED DESIGN ONLY: the decision itself (this record + ADR-0361's
+  2026-10-24 amendment + ADR-0356's two markers).
+- PROPOSED: nothing new. The Apple row's WGSL extension is UNDECIDED
+  (named, not proposed).
+
+GATE (real runs, this host, this tick, from the chain worktree root;
+classpath substitution as in the recent records -- the gate form's
+$(kbb -Spath -M:test) subshell is broken at this branch's HEAD (the
+origin/main host-manifest/deps.edn retirement), so the runs substitute
+the resolved closure inline from
+/Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/
+amu_kbb_test_classpath.txt):
+
+1. The touched test namespace (targeted runner
+   scratch/targeted_variants_gate.cljk, not in the repo):
+     -> Ran 17 tests containing 8450 assertions.
+        0 failures, 0 errors.
+        targeted: 17 tests, 8450 passed, 0 failed, 0 errors
+   Before-count measured, not assumed: the pre-slice files were taken
+   from git show HEAD into a scratch classpath entry shadowing the
+   worktree copies, same runner:
+     -> Ran 17 tests containing 8417 assertions. 0 failures, 0 errors.
+   (delta +33 assertions = the new WGSL battery; test count unchanged,
+   the rename moved no test.)
+2. The scoped GPU gate (the 8 GPU-owned test namespaces, scratch runner
+   gpu_scoped_gate.cljk, not in the repo):
+   before (run live at HEAD, pre-change, this tick):
+     -> scoped: 104 tests, 9804 passed, 0 failed, 0 errors
+   after:
+     -> Ran 104 tests containing 9837 assertions.
+        0 failures, 0 errors.
+        scoped: 104 tests, 9837 passed, 0 failed, 0 errors
+   (delta +33 assertions, the same battery; no other test moved.)
+3. Harness self-tests (run "named not assumed"):
+     python3 scripts/gpu_regime_classify.py --self-test
+       -> TOTAL: 2003 assertions passed, 0 failed.
+     python3 scripts/gpu-subgroup-reduce-metal-measure.py --self-test
+       -> driver self-test: 17 assertions passed, 0 failed.
+   (both unchanged -- this slice adds a record .txt and no measurement
+   pairs, so no corpus tally or pin moved.)
+4. Full suite (run-tests.cljk, same substituted classpath): RED AT
+   BASE, outside this diff, at namespace load on `kotoba.form` ("Error:
+   Could not find namespace: kotoba.form"; the W3 port path, ADR 0362,
+   the same red every recent record names), re-verified live this tick.
+   The run stops at that load; no green full suite is claimed.
+
+HONEST LEFT (the real remainder after this row):
+
+- The Apple row's WGSL extension stays UNDECIDED -- its own per-vendor
+  decision, undecided here (one vendor per decision).
+- The nine pending :simdgroup-reduce cross-day replication rows
+  (shape-1 W = 32/64/128/1024, shape-2 W = 256/32/64/128/1024) and the
+  shape-2 W = 512 later-day DATA run are 2026-10-25+ rows (the
+  eligibility check, docs/evidence/gpu/crossday-eligibility-stamps-
+  20261024.txt) -- not runnable today.
+- The WGSL arm stays UNCOMPILED on this host (no validator); compiling
+  it on a host that has one is its own future slice (proposed nowhere --
+  named as a tool-absence fact, not a proposal).
+- SOUL.md backlog items 3 and 4 stay open: :arm/:unknown workgroup rows
+  need hardware or are provisional by design; the other JUN-57/59/60
+  hardware-free slices continue.
+
+PUSH STATE: NOT pushed. Blocker-first rule (owner-approved 2026-10-20) in
+force -- kotoba-lang/amu open PRs with hermes/ heads re-checked this
+tick: #1553 (hermes/jun31-pe-shim-align) is OPEN, so this commit is kept
+locally on bot/amu-gpu-chain and pushes on the first tick after the
+blocker PR clears. Chain PR #1455 (bot/amu-gpu-chain) stays the one open
+chain PR; no second chain PR opened.

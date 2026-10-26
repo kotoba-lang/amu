@@ -1,0 +1,142 @@
+JUN-58 / JUN-55: the cross-day eligibility check becomes
+evidence-satisfiable -- the shape-1 W = 1024 escape hatch is UNMET BY
+CONSTRUCTION (its run-log carries no calendar at all), so all nine
+pending :simdgroup-reduce cross-day rows are 2026-10-25+ rows, and the
+measurement instrument now self-dates every fresh-process run
+(2026-10-24, chain worktree)
+
+WHAT THIS RECORD IS: the slice record of ONE eligibility ruling and its
+instrument follow-through. NO hardware measurement ran in this slice:
+every date number below is filesystem or git metadata about COMMITTED
+measurements (not a measurement), and the code that moved is
+measurement tooling (scripts/gpu-subgroup-reduce-metal-measure.py), not
+a compiler namespace.
+
+THE RULING (the shape-1 W = 1024 cross-day row's eligibility):
+The W = 512 cross-day record's NOT LICENSED clause
+(docs/evidence/gpu-simdgroup-reduce-m1max-crossday-20261024/w512/
+NOTES.md) left exactly one named disjunct: "W = 1024 is
+midnight-straddling and needs 2026-10-25+ unless its own run-log shows
+a 2026-10-23 run." This tick checks the disjunct against the artifact
+it names and finds it UNMET -- and unmet by construction, not by bad
+luck:
+
+- grep -c '2026-10-23' on the cell's own run-log.txt and
+  compile-log.txt (docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-
+  20261023/w1024/): 0 and 0.
+- The instrument wrote NO calendar anywhere. grep for
+  datetime/strftime/timestamp over scripts/gpu-subgroup-reduce-metal-
+  measure.py (pre-diff) matches one line of PROSE ("Metal GPU
+  timestamps", the in-kernel timer description) and zero date
+  emissions; the run-log's lines are header, device/simdgroup_size/
+  n/workgroup/pairs/warmup/op_order keys, sample and verify lines --
+  none carries a date (the corpus is uniform here, 54 logs). A run-log
+  written by this instrument therefore CANNOT show what day a run
+  happened: the disjunct as written was unsatisfiable for every cell,
+  past and future, not just this one.
+- What the corpus CAN show about the cell's own session: every w1024
+  artifact (run-log.txt, compile-log.txt, summary.md, shaders/) was
+  BORN 2026-10-24 00:03:29-00:03:36 JST (stat birth times), and the
+  cell's own commit 7a3dcfb04 landed 2026-10-24 00:05:45 +0900. By
+  the same two-signal standard the W = 512 record used to date its
+  cell a 2026-10-23 session (birth 23:20:17, commit 23:22:46), the
+  W = 1024 cell's session reads 2026-10-24 on both signals.
+
+VERDICT: fail closed. The shape-1 W = 1024 cross-day replication is a
+2026-10-25+ row like the other eight. Whether the session actually
+started before midnight is UNDETERMINED and stays UNDETERMINED: no
+artifact carries a clock, and the named condition is documentary -- it
+asks what the run-log SHOWS. Nothing can fill it retroactively.
+
+WHAT MOVED (the slice's whole scope):
+- scripts/gpu-subgroup-reduce-metal-measure.py: STAMP_RE, wallclock()
+  and run_block() land. Every fresh-process run's run-log block now
+  opens with `run_started=<ISO 8601, second resolution, UTC offset>`
+  and closes with `run_finished=<same>`; the `===== fresh-process run
+  N =====` header line and every raw output line stay BYTE-IDENTICAL
+  to every committed cell's run-log (the corpus parsers key on exactly
+  those lines). self_test() gains 5 assertions (12 -> 17): the
+  header's byte-identity, the two stamp lines' positions, wallclock()'s
+  format, and gpu_regime_classify.parse_run_log_pairs reading a
+  stamped block identically to an unstamped one. The docstring's
+  record stage names the stamps and the W = 1024 lesson; the self-test
+  banner drops "auto-wiring" now that the self-test covers more than
+  auto-wiring (the 12 auto-wiring assertions are unchanged).
+- docs/adr/0373-gpu-metal-native-simdgroup-reduce.md: LEFT item 3's
+  cross-day part names this ruling and the stamps (prose only).
+- This record.
+
+WHAT THIS SLICE DOES NOT LICENSE:
+- NO measurement: no GPU ran; no cell is re-measured, no ratio appears
+  here, and the ruling itself measures nothing.
+- No `:measured?` flag moves; no `:measured-cell` record, no selection
+  answer, no workgroup row (ADR-0355/0358) moves. Rule 4 untouched.
+- The nine pending `:simdgroup-reduce` cross-day rows (shape-1
+  W = 32/64/128/1024 and shape-2 W = 256/32/64/128/1024) stay
+  UNMEASURED and pending 2026-10-25+; the shape-2 W = 512 later-day
+  DATA run likewise (2026-10-25+).
+- The <= 40k pair-bin ratio at W = 1024 stays CLOSED-BY-DECISION under
+  the reachability record's reopen conditions; nothing here reopens it.
+- Committed run-logs are untouched. The stamps change FUTURE run-logs
+  only; every "byte-identical protocol" claim over past cells stands
+  (it names protocol parameters and emitted shaders, and neither
+  changes). Cross-day comparisons read parsed numbers, not raw-log
+  text diffs.
+- UNMEASURED unchanged: shapes beyond the two contract cells; every
+  Apple device but this M1 Max; the GLSL arm (blocked on the wire-42
+  route, ADR 0371); the NVIDIA/Intel/ARM/AMD variant rows entirely;
+  the ramp's governing conditions; and now by name whether the w1024
+  session started before midnight (no clock, ever, in that log).
+
+GATE (real runs, this host, for THIS record):
+1. python3 scripts/gpu-subgroup-reduce-metal-measure.py --self-test ->
+   exit 0, "driver self-test: 17 assertions passed, 0 failed" (12
+   before this slice).
+2. python3 scripts/gpu_regime_classify.py --self-test -> exit 0,
+   TOTAL: 2003 assertions passed, 0 failed (classifier untouched).
+3. Census re-run, the reachability record's own gate:
+   python3 docs/evidence/gpu/strict-bin-reachability-20261024.py
+   docs/evidence -> exit 0, 99 lines, output contained VERBATIM in
+   docs/evidence/gpu/w1024-strict-bin-reachability-20261024.txt's
+   quoted run ("diff-identical"; the corpus gained no run-log in this
+   slice). First/last lines match the quoted block.
+4. Stamp tolerance, both corpus run-log parsers: a synthetic log pair
+   differing ONLY in the two stamp lines parses IDENTICALLY under
+   gpu_regime_classify.parse_run_log_pairs (driver self-test
+   assertion 17) and under the census's parse_log (checked this tick
+   over a temp pair: both sides answer
+   (1000003, 1024, {(1, 'sum', 0): {'baseline': 40083.0, 'variant':
+   33729.0}}, {})).
+5. Scoped GPU gate (the 8 GPU-owned test namespaces, scratch runner
+   gpu_scoped_gate.cljk, not in the repo): 102 tests / 9,774
+   assertions, 0 failures, 0 errors (no .cljk namespace in this diff).
+6. Full run-tests.cljk: RED AT BASE at `kotoba.form` ("Error: Could
+   not find namespace: kotoba.form", the W3 port path, outside this
+   diff), re-verified live this tick (exit 1). No green full suite is
+   claimed.
+
+HONESTY STATE: ACCEPTED DESIGN ONLY -- the eligibility ruling and the
+documentary standard it applies (a run's day is what the run-log
+shows). IMPLEMENTED -- run-log self-dating (wallclock/run_block/
+STAMP_RE + 5 self-test assertions) and nothing else; measurement
+tooling only, no compiler namespace moved. MEASURED -- nothing new on
+hardware; the ruling's dates are git/filesystem metadata, not
+measurement. UNMEASURED -- the nine cross-day rows and everything in
+the NOT LICENSED list. PROPOSED -- nothing new.
+
+HONEST LEFT:
+- the nine `:simdgroup-reduce` cross-day rows: 2026-10-25+, all of
+  them (their own sessions read 2026-10-24; the W = 1024 shape-1
+  escape hatch is settled UNMET and joins them). From 2026-10-25 on
+  the eligibility check reads the run-log's own `run_started=` stamps;
+- the shape-2 W = 512 later-day DATA run (2026-10-25+);
+- SOUL.md backlog item 3 (blocked on hardware / ADR-0371; `:arm` /
+  `:unknown` rows stay `:measured? false`);
+- the W3 `string-ascii-lower` residue (reading-level, unverified).
+
+NOT PUSHED: blocker-first rule in force -- kotoba-lang/amu open PRs
+with `hermes/` heads re-checked this tick (gh pr list): #1553
+(hermes/jun31-pe-shim-align) is OPEN, so this commit is kept locally
+on bot/amu-gpu-chain and pushes on the first tick after the blocker PR
+clears. Chain PR #1455 (bot/amu-gpu-chain) stays the one open chain
+PR.

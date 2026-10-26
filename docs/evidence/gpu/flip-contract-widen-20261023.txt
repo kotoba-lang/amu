@@ -1,0 +1,95 @@
+JUN-58 / JUN-55 -- the flip-contract widening decision (2026-10-23)
+
+One design-decision slice: the row the shape-2 band's record
+(docs/evidence/gpu-subgroup-reduce-m1max-shape2-band-20261023/NOTES.md,
+"LEFT (the next rows)") named first. NO hardware measurement was taken in
+this slice -- it is a decision on previously measured ground, and every
+number below is CITED from the records named beside it, not re-measured.
+
+DECISION: the flip contract's shape key WIDENS from the single shape
+n = 1,000,003 to the two MEASURED shapes, n = 1,000,003 and
+n = 2^20 = 1,048,576. Shape 2 is a contract cell now, not corroboration.
+
+Grounds (cited, previously measured):
+- shape-2 flip-set band (gpu-subgroup-reduce-m1max-shape2-band-20261023,
+  this morning's tick): :subgroup-reduce slower than :baseline in all 15
+  width x operator cells -- W = 64/128/512/1024 x :sum/:max/:min,
+  paired within-run median ratios 1.166-1.239 -- the same sign and the
+  same penalty band as shape 1 at every width.
+- W = 256 anchor at shape 2 (gpu-subgroup-reduce-m1max-shape2-20261023):
+  1.220-1.227 against shape 1's 1.217-1.220.
+- shape 1's flip-set cells (gpu-subgroup-reduce-m1max-20261023,
+  -wsweep-20261023, -wsweep-low-20261023): the original contract cells.
+
+What moved in the repository (the diff):
+- src/kotoba/compiler/accelerator_variants.cljk: apple-measured-n
+  (1000003) replaced by apple-measured-shapes [1000003 1048576]; the
+  :measured-cell record's :n field replaced by :shapes; the record's
+  :evidence gains the two shape-2 directories; apple-narrow-note's tail
+  names the widening; apple-w32-note's overfitting clause reads "off the
+  two measured shapes".
+- test/kotoba/compiler/accelerator_variants_test.cljk: the flipped-cell
+  record map pins :shapes [1000003 1048576] and the five evidence
+  directories; a new assertion pins the basis prose phrase "The flip
+  contract WIDENED".
+- docs/adr/0360-gpu-apple-subgroup-reduce.md: the third amendment
+  (2026-10-23) records the decision, its grounds, the supersession of the
+  previous amendment's "still keys to n = 1,000,003 / own later decision"
+  claim, and the unchanged UNMEASURED scope.
+
+What did NOT move (named so nothing is silently upgraded):
+- The flip's gates and behavior: device-name fragment "m1 max" AND
+  reported subgroup size 32, the MSL route, the verdict-chosen widths
+  64/128/256/512/1024. The shape key never gated selection -- it bounded
+  the claim -- so no selection answer changes anywhere.
+- No workgroup row (ADR-0355/0358) moves; no :measured? flag moves beyond
+  the already-flipped cells; W = 32 keeps the honesty lock by decision.
+
+UNMEASURED, unchanged: shapes beyond these two; the GLSL arm at every
+width beyond its LABELED BOOTSTRAP record; every Apple device but this
+M1 Max; W = 32 as a verdict (it is a decision); the NVIDIA/Intel/ARM/AMD
+variant rows entirely.
+
+Gate (real runs, this host, kbb --backend sci):
+
+  scoped (the 7 GPU-owned test namespaces, scratch runner
+  gpu_scoped_gate.cljk, not in the repo), from the chain worktree root:
+
+    kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+      /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+
+    Ran 87 tests containing 7118 assertions.
+    0 failures, 0 errors.
+
+    scoped: 87 tests, 7118 passed, 0 failed, 0 errors
+
+  (7118 vs the previous 6818: the widened record map and the new prose
+  assertion, checked across the flip set's cells -- this diff's own
+  additions, nothing else.)
+
+  full (kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)"
+  run-tests.cljk): RED AT BASE, re-verified this tick, outside this diff
+  -- fails at NAMESPACE LOAD with "Could not find namespace: kotoba.form"
+  (the W3 port path, documented red at base in ADR 0362 and every prior
+  tick record). This diff touches no namespace on that path.
+
+LEFT (the next rows):
+- The residual exact-match gate class in the harness's argv parsing
+  (op-order `argc == 5`; harmless with today's single caller).
+- The GLSL arm stays blocked on a wire-42 execution route (ADR 0371).
+- Per-vendor workgroup sweep (backlog 3): DONE for the four vendors with
+  hardware (ADR-0358, 2026-10-19 -- :nvidia/:apple/:intel/:amd measured,
+  scoped to their named devices); :arm (Mali) and :unknown stay
+  provisional with no hardware to sweep. A re-sweep of a measured row is
+  a MEASUREMENT row, one vendor at a time.
+
+CORRECTION (2026-10-23, later tick): the third item above once read
+"no workgroup row is measured yet -- every row in
+kotoba.compiler.accelerator-targets still carries :measured? false".
+That claim was false when written -- ADR-0358 measured four rows on
+2026-10-19 and those rows carry :measured? true (this file's own green
+gate asserts it in recommend-is-total-deterministic-and-provisional) --
+and it misdirected backlog 3 as untouched. Corrected in place here and
+in argv-gate-class-20261023.txt; the full correction, the runtime dump
+of the table and the gate evidence:
+docs/evidence/gpu/workgroup-row-state-correction-20261023.txt.

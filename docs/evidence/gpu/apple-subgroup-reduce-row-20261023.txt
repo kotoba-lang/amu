@@ -1,0 +1,61 @@
+Apple (JUN-58) kernel-variant row -- ADR-0360
+2026-10-23, amu-gpu chain tick (bot/amu-gpu-chain)
+
+What landed:
+- docs/adr/0360-gpu-apple-subgroup-reduce.md: the Apple row of the variant
+  table, designed and implemented in one slice. The row is the SHARED
+  subgroup-size-parametric :subgroup-reduce emission (ADR-0356's Intel
+  design, ADR-0357's ARM conditions binding unchanged) selected for
+  :apple reduce kernels over :sum/:max/:min, W >= 32, on the Vulkan route
+  (:vulkan / :glsl-v1 -- MoltenVK is Apple's only execution route here),
+  under ADR-0356 rule 6's capability gate. The MSL route stays :baseline
+  (rule 3: the MSL emitter admits :baseline only); a Metal simdgroup row
+  is NOT designed here. The ADR carries the JUN-58 measurement contract
+  and names the open rule-6 contract gap (below).
+- docs/adr/0356-gpu-kernel-variant-selection.md: rows table gains the
+  apple row; one amendment paragraph records the landing and the gap.
+- src/kotoba/compiler/accelerator_variants.cljk: the selection cond admits
+  :apple on the :subgroup-reduce arm; docstrings updated. One honest fix
+  rides along: the docstring claimed the rule-6 descriptor facts
+  (:subgroup-size, :subgroup-ops) are produced by "the wire-42 INFO/DEVCLASS
+  answer of the ADR-0371 provider" -- that is false (INFO is four fields,
+  DEVCLASS one class word, neither carries subgroup facts). The docstring
+  now names the gap and fails closed without the facts.
+- test/kotoba/compiler/accelerator_variants_test.cljk: the Apple row's
+  gates (both Vulkan route spellings, all W, all operators, all tested S),
+  the fail-closed cases extended to :apple, the off-route refusal including
+  :msl-v1 / :metal, :apple moved out of the "no designed row" negative
+  list, and a new deftest pinning the ADR-0360 basis and the MSL refusal.
+
+Verification (kbb --backend sci, the gate's engine and classpath; focused
+runner over the seven GPU-owned namespaces -- the full run-tests.cljk is
+blocked at namespace load by kotoba.form, see below):
+
+  AFTER (this change):
+    Ran 56 tests containing 2195 assertions.
+    0 failures, 0 errors.
+
+  The immediately previous same runner (w3-merge-lower-routing-restore-
+  20261023.txt, AFTER) reported 55 tests / 1727 assertions. The delta is
+  +1 test (the new Apple deftest) plus the :apple additions to the gate
+  and fail-closed doseqs. No BEFORE run of the old tree was taken for
+  this change.
+
+Base red, named not hidden: the full gate
+  kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" run-tests.cljk
+still fails at NAMESPACE LOAD with "Could not find namespace: kotoba.form",
+reached through kotoba.compiler.js-value-target (upstream W3 port, outside
+this diff). No kotoba/form .cljk reading exists in the pinned kotoba-sema
+(a3303527) or anywhere on the stdlib classpath; only .kotoba sources exist
+(amu src/kotoba/form.kotoba). Pre-existing since the W3 merge (3e14da99 /
+eb666622 recorded it); this change does not touch that require chain and
+does not clear it. No namespace in the suite, GPU or otherwise, runs
+through run-tests.cljk until that reading exists.
+
+Measurement status: nothing here is a measurement. The Apple row is
+UNMEASURED -- :measured? false in every answer, and no :measured? flag
+moved anywhere. The workgroup rows keep their ADR-0358 labels untouched.
+ADR-0360's design facts (Metal SIMD-group width 32; MoltenVK's subgroup
+surface per the MoltenVK runtime guide and 1.4.2 notes) are vendor
+documentation, NOT probes of this host: nothing here probed MoltenVK for a
+subgroup size (the probe that could is removed with the loader).

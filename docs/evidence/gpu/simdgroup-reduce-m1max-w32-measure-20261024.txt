@@ -1,0 +1,140 @@
+JUN-58 / JUN-55 -- the W = 32 :simdgroup-reduce cell is MEASURED
+(2026-10-24, the W-sweep series' sixth and last W cell)
+
+ONE measurement: ADR-0373's :simdgroup-reduce row runs at the last
+W-sweep cell -- W = 32, the bottom of the monotone descent below the
+W = 256 anchor (1024 -> 512 -> 256 -> 128 -> 64 -> 32; the W band
+[32, 1024] is now measured end to end), n = 1000003 (the ground shape),
+this host (Apple M1 Max, reported simdgroup size 32), the same
+conforming channel (ADR-0360 question (1)'s native-Metal harness
+family, the emitters' own bytes) and the byte-identical protocol of the
+W = 256/512/1024/128/64 runs (6 fresh processes, 20 interleaved AB/BA
+pairs per operator per run, 2 warmup submits per arm discarded,
+verified read-back; the driver is invoked exactly as the W = 256
+record names, only --workgroup 32 and its own --out
+docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w32). Full
+record:
+docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w32/
+{summary.md,run-log.txt,compile-log.txt,shaders/}. The five earlier
+records (docs/evidence/gpu-simdgroup-reduce-m1max-20261023/ (the
+W = 256 cell) and docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-
+20261023/{w64,w128,w512,w1024}/) are
+untouched.
+
+Note on W = 32 and the SIMD-group width: S = 32 divides W = 32 exactly
+-- one SIMD-group per workgroup, the partials array has one entry and
+the cross-SIMD-group tree degenerates to the single write. The
+mechanical S | W admission holds; this is the fold's most degenerate
+legal cell.
+
+PAIRED MEDIAN RATIOS (:simdgroup-reduce / :baseline gpu ns), W = 32:
+
+  op    this cell    the :subgroup-reduce cell at the same W/shape
+                      (historical record gpu-subgroup-reduce-m1max-
+                       wsweep-low-20261023/w32 -- its ratios are MIXED
+                       and its verdict is regime-scoped; the class's
+                       :baseline answer at this W is the low-band
+                       fail-safe decision's, NOT a verdict-chosen
+                       measurement's)
+  sum   0.657        0.918
+  max   0.658        0.923
+  min   0.650        1.019
+
+Per-run ratios (6 fresh processes): sum 0.679 0.665 0.650 0.642 0.670
+0.640; max 0.747 0.645 0.658 0.670 0.643 0.659; min 0.820 0.677 0.625
+0.660 0.624 0.639. Median gpu ns (120 samples per arm): sum 109312 ->
+69375; max 109458 -> 70854; min 109542 -> 70104. The fresh-process
+clock ramp RETURNS here (absent at W = 64): run 1 sits in its own fast
+rule-1 level for all three operators (baseline 55625 / 56542 / 66521
+vs the 108-114k level of runs 2-6), two levels per operator. Both
+levels are one-sided in the paired ratios (see below).
+
+FINDING (the record's own claim-protocol machinery, rule 2): all three
+operators classify REGIME-INVARIANT, FASTER -- 18 of 18 per-run ratios
+below 1.0, every observed regime one-sided (the fast run-1 level and
+the slow runs 2-6 level alike). The sign contrast with
+:subgroup-reduce at the identical cell reaches the low band in its
+WEAKER form: where the shuffle ladder at W = 32 measures MIXED
+(0.918/0.923/1.019 -- the min operator's per-run ratios straddle 1.0,
+the only cell of the two families' W sweeps over [32, 1024] at the
+ground shape whose per-run ratios straddle 1.0 -- verified this tick
+against all six :simdgroup-reduce and all six :subgroup-reduce W-band
+records; no claim is made about shape-2 or other records), the
+intrinsic fold measures regime-invariant faster.
+The stronger form (both sides one-sided, opposite signs) holds at
+W = 64/128/256/512/1024 only. Six cells, one host:
+
+  W      :simdgroup-reduce (sum/max/min)   :subgroup-reduce (sum/max/min)
+  32     0.657 / 0.658 / 0.650             0.918 / 0.923 / 1.019 (mixed)
+  64     0.719 / 0.728 / 0.729             1.218 / 1.216 / 1.214
+  128    0.775 / 0.789 / 0.789             1.244 / 1.243 / 1.234
+  256    0.790 / 0.800 / 0.799             1.220 / 1.217 / 1.217
+  512    0.815 / 0.823 / 0.824             1.196 / 1.195 / 1.197
+  1024   0.840 / 0.847 / 0.850             1.186 / 1.186 / 1.185
+
+MAGNITUDE TREND, EXTENDED at this sixth cell -- and this is the cell's
+own honest finding beyond the sign: the fold's advantage is now
+monotone across the FULL measured W band [32, 1024] (0.65 -> 0.72 ->
+0.78 -> 0.79 -> 0.82 -> 0.84 ascending with W), and the fold's
+advantage is LARGEST at the smallest W -- exactly the degenerate cell
+where the cross-SIMD-group tree is one write. The W = 64 record's
+correction stands unchanged (the ladder side is NOT monotone below
+W = 128); what this cell adds is only the fold side's bottom anchor.
+(Data on one host, not a fitted trend and not a claim about any
+unmeasured W or any other shape.)
+
+Also published in the record (data, not a claim): cross-operator level
+identity HOLDS here -- 15 of 15 run pairs agree across max/min/sum
+despite the two rule-1 levels (all three operators place run 1 alone
+in the fast level). Rule 4 unchanged, this moves nothing.
+
+Read-back: 36 verify lines (6 per fresh process), ok=1 on every one.
+:max/:min bit-exact vs the CPU reference AND between arms; :sum
+2.15e-06 (baseline) / 1.43e-06 (variant) vs reference, 1.91e-06
+between arms (regrouping; the family's low-bit divergence, consistent
+with every earlier cell).
+
+STATE HONESTY (nothing moves beyond the measurement itself):
+- The measurement exists. The FLIP does not: no :measured? flag, no
+  :measured-cell record, no selection answer moves in this slice.
+  apple-simdgroup-measured-workgroups stays #{64 128 256 512 1024};
+  the M1 Max carve-out keeps :baseline at W = 32 (the low-band
+  decision's answer, :measured? false). The flip of the W = 32 cell
+  through ADR-0373's flip contract (keys: name fragment "m1 max",
+  reported subgroup size 32, the MSL route, the :simd-reduce gate,
+  W = 32) is its own next slice, and what today's numbers license is
+  exactly that slice's question -- answered there, not here. If it
+  lands it completes the class's W band: W = 32 is the class's LAST
+  :baseline cell.
+- The rule-2 verdict ("regime-invariant, faster") is the record's
+  published classification; it becomes a selection basis only if and
+  when the flip slice lands.
+- UNMEASURED, named: shape 2 (n = 2^20) for this variant; every other
+  Apple device; every non-Apple vendor; cross-day replication of all
+  six measured cells.
+
+Instrument: no change. The driver, harness and emitters run exactly as
+the W = 256 record documents (--variant simdgroup-reduce, argv[5]
+variant-prefix, the same fixed sum,max,min op order); this slice adds
+only its own record directory.
+
+Gate (real runs, this host, kbb --backend sci):
+- driver auto-wiring self-test: 7 assertions passed, 0 failed.
+- scoped (the GPU-owned test namespaces, scratch runner
+  gpu_scoped_gate.cljk -- not in the repo):
+
+    Ran 100 tests containing 8470 assertions.
+    0 failures, 0 errors.
+
+    scoped: 100 tests, 8470 passed, 0 failed, 0 errors
+
+- full (kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)"
+  run-tests.cljk): RED AT BASE, outside this diff -- fails at NAMESPACE
+  LOAD with "Could not find namespace: kotoba.form" (the W3 port path,
+  documented red at base in ADR 0362 and prior tick records, re-verified
+  live this tick). No green full suite is claimed.
+
+LEFT (the next rows): the W = 32 flip slice (ADR-0373's flip contract
+applied to this cell's measured basis -- the last flip the W band
+needs); shape-2 and cross-day replication of the six measured cells;
+the GLSL arm stays blocked on ADR 0371's provider route.

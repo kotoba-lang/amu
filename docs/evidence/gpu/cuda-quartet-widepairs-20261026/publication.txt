@@ -1,0 +1,252 @@
+## Regime classification (claim protocol rule 1, CUDA paired-timing channel)
+
+Published by scripts/gpu_regime_classify.py (GAP-1.15) over the paired-timing instrument log. This channel's baseline metric is NAMED BY THE CHANNEL (the 2026-10-25 claim-protocol CUDA adoption, ADR-0361): gpu_ns -- CUDA-event elapsed around the kernel on the GPU timeline -- with host_ns (CLOCK_MONOTONIC submit->completion) as the channel's second metric; the two NEVER mix in one clustering or one claim. A regime here is a cluster of the observed reference-arm per-run median levels in that metric, per (operator x pair-type) stratum -- the reference arm is the paired ratio's denominator (:baseline for subgroup/baseline and warp-shuffle/baseline, :subgroup-reduce for warp-shuffle/subgroup), so a cluster pools runs whose proxy is the same kernel.
+
+Run unit on this channel (the adoption's "one fresh process per pair block"): one run is one pair block -- (n, W, operator, pair-type) -- the fresh process that sampled PAIRS=20 interleaved pairs (WARMUP=2 discarded per arm, alternating AB/BA order). The per-run baseline median is the pair block's reference-arm median over its 20 samples in the named metric.
+
+Clustering rule GAP-1.15: per stratum, the per-run reference-arm medians sorted ascending, single-linkage -- the next median joins the current level at <= 1.15x the previous, else it starts a new level. The rule is metric-parametric as written; only the publication names the metric. Rule 2's sign classification is published in its own section beside this one (regime-matched sign per level over this record's pair blocks) -- this rule-1 section itself renders no sign verdict -- and rule 4 is unchanged: this publication moves no `:measured?` flag and no workgroup row.
+
+### metric: gpu_ns -- CUDA-event elapsed around the kernel on the GPU timeline -- the channel's rule-1 baseline metric
+
+#### stratum: op=max pair=subgroup/baseline (reference arm: baseline :baseline)
+
+Per-run reference-arm medians (rule 1's first publication):
+
+| run (n, W) | reference-arm per-run median (gpu_ns) |
+|---|---|
+| n=1000003 W=128 | 116400.0 |
+| n=1000003 W=256 | 121360.0 |
+| n=1000003 W=512 | 140176.0 |
+| n=1048576 W=128 | 121952.0 |
+| n=1048576 W=256 | 126288.0 |
+| n=1048576 W=512 | 146448.0 |
+
+Regime clusters:
+
+| level | gpu_ns range | runs (reference-arm per-run median) |
+|---|---|---|
+| 1 (the only observed level) | 116400.0..146448.0 | n=1000003 W=128 (116400.0), n=1000003 W=256 (121360.0), n=1000003 W=512 (140176.0), n=1048576 W=128 (121952.0), n=1048576 W=256 (126288.0), n=1048576 W=512 (146448.0) |
+
+#### stratum: op=min pair=subgroup/baseline (reference arm: baseline :baseline)
+
+Per-run reference-arm medians (rule 1's first publication):
+
+| run (n, W) | reference-arm per-run median (gpu_ns) |
+|---|---|
+| n=1000003 W=128 | 116080.0 |
+| n=1000003 W=256 | 121248.0 |
+| n=1000003 W=512 | 140704.0 |
+| n=1048576 W=128 | 120944.0 |
+| n=1048576 W=256 | 126816.0 |
+| n=1048576 W=512 | 146448.0 |
+
+Regime clusters:
+
+| level | gpu_ns range | runs (reference-arm per-run median) |
+|---|---|---|
+| 1 (the only observed level) | 116080.0..146448.0 | n=1000003 W=128 (116080.0), n=1000003 W=256 (121248.0), n=1000003 W=512 (140704.0), n=1048576 W=128 (120944.0), n=1048576 W=256 (126816.0), n=1048576 W=512 (146448.0) |
+
+#### stratum: op=sum pair=subgroup/baseline (reference arm: baseline :baseline)
+
+Per-run reference-arm medians (rule 1's first publication):
+
+| run (n, W) | reference-arm per-run median (gpu_ns) |
+|---|---|
+| n=1000003 W=128 | 116544.0 |
+| n=1000003 W=256 | 120752.0 |
+| n=1000003 W=512 | 139712.0 |
+| n=1048576 W=128 | 120864.0 |
+| n=1048576 W=256 | 126048.0 |
+| n=1048576 W=512 | 146128.0 |
+
+Regime clusters:
+
+| level | gpu_ns range | runs (reference-arm per-run median) |
+|---|---|---|
+| 1 (the only observed level) | 116544.0..146128.0 | n=1000003 W=128 (116544.0), n=1000003 W=256 (120752.0), n=1000003 W=512 (139712.0), n=1048576 W=128 (120864.0), n=1048576 W=256 (126048.0), n=1048576 W=512 (146128.0) |
+
+### metric: host_ns -- CLOCK_MONOTONIC submit->completion, the stop event's host-side record call named as sitting inside the span -- the channel's second metric
+
+#### stratum: op=max pair=subgroup/baseline (reference arm: baseline :baseline)
+
+Per-run reference-arm medians (rule 1's first publication):
+
+| run (n, W) | reference-arm per-run median (host_ns) |
+|---|---|
+| n=1000003 W=128 | 121093.0 |
+| n=1000003 W=256 | 126086.0 |
+| n=1000003 W=512 | 145047.0 |
+| n=1048576 W=128 | 126741.5 |
+| n=1048576 W=256 | 131014.0 |
+| n=1048576 W=512 | 151191.0 |
+
+Regime clusters:
+
+| level | host_ns range | runs (reference-arm per-run median) |
+|---|---|---|
+| 1 (the only observed level) | 121093.0..151191.0 | n=1000003 W=128 (121093.0), n=1000003 W=256 (126086.0), n=1000003 W=512 (145047.0), n=1048576 W=128 (126741.5), n=1048576 W=256 (131014.0), n=1048576 W=512 (151191.0) |
+
+#### stratum: op=min pair=subgroup/baseline (reference arm: baseline :baseline)
+
+Per-run reference-arm medians (rule 1's first publication):
+
+| run (n, W) | reference-arm per-run median (host_ns) |
+|---|---|
+| n=1000003 W=128 | 120709.5 |
+| n=1000003 W=256 | 125621.5 |
+| n=1000003 W=512 | 145559.0 |
+| n=1048576 W=128 | 125878.0 |
+| n=1048576 W=256 | 131606.5 |
+| n=1048576 W=512 | 151063.0 |
+
+Regime clusters:
+
+| level | host_ns range | runs (reference-arm per-run median) |
+|---|---|---|
+| 1 (the only observed level) | 120709.5..151063.0 | n=1000003 W=128 (120709.5), n=1000003 W=256 (125621.5), n=1000003 W=512 (145559.0), n=1048576 W=128 (125878.0), n=1048576 W=256 (131606.5), n=1048576 W=512 (151063.0) |
+
+#### stratum: op=sum pair=subgroup/baseline (reference arm: baseline :baseline)
+
+Per-run reference-arm medians (rule 1's first publication):
+
+| run (n, W) | reference-arm per-run median (host_ns) |
+|---|---|
+| n=1000003 W=128 | 121094.0 |
+| n=1000003 W=256 | 125462.0 |
+| n=1000003 W=512 | 144630.5 |
+| n=1048576 W=128 | 125301.5 |
+| n=1048576 W=256 | 130806.0 |
+| n=1048576 W=512 | 150903.0 |
+
+Regime clusters:
+
+| level | host_ns range | runs (reference-arm per-run median) |
+|---|---|---|
+| 1 (the only observed level) | 121094.0..150903.0 | n=1000003 W=128 (121094.0), n=1000003 W=256 (125462.0), n=1000003 W=512 (144630.5), n=1048576 W=128 (125301.5), n=1048576 W=256 (130806.0), n=1048576 W=512 (150903.0) |
+
+claim-protocol-rule2: PUBLISHED (regime-matched sign per level below; sign claims channel-scoped -- a CUDA-channel sign never flips an MSL/WGSL cell and never answers a workgroup row; rule 4 unchanged: no :measured? flag and no workgroup row moves)
+
+## Sign classification (claim protocol rule 2, CUDA paired-timing channel)
+
+Published by scripts/gpu_regime_classify.py from the record's own pair blocks (rule 2's unit on this channel: the per-run ratio is the block's paired-median ratio in the named metric -- median over the block's within-pair ratios armA/armB -- and rule 2's correctness precondition is verified inside the measurement, as the instrument does) and the rule-1 regime clusters of the same runs' reference-arm per-run medians (GAP-1.15). Rule 2: a sign is regime-invariant when every per-run ratio of every observed regime lies on the same side of 1.0 -- only such a sign may be a selection basis; any other sign is regime-scoped and cannot choose a variant. The sign machine is the MSL channel's, unchanged and metric-parametric; gpu_ns and host_ns are TWO metrics of this channel and classify separately, never mixed.
+
+Sign claims on this channel are CHANNEL-SCOPED (the 2026-10-25 adoption carries rule 2 in full): a CUDA-channel sign never flips an MSL/WGSL cell and never answers a workgroup row (ADR-0355's 2026-10-25 channel rule stands: the instrument channel answers no dispatch row); only the CUDA-route selection rows consume it. Rule 4 is unchanged -- this publication moves no `:measured?` flag and no workgroup row. NO cross-stratum roll-up is published: the adoption defines strata at (metric x operator x pair-type) and names no roll-up across them (a roll-up would be its own design row).
+
+### metric: gpu_ns -- CUDA-event elapsed around the kernel on the GPU timeline -- the channel's rule-1 baseline metric
+
+#### stratum: op=max pair=subgroup/baseline (reference arm: baseline :baseline)
+
+Regime-matched sign per level (rule 1's levels of this stratum; the sign of the paired ratios within each level):
+
+| level | runs (paired ratio) | level sign |
+|---|---|---|
+| 1 (the only observed level) | n=1000003 W=128 (1.146), n=1000003 W=256 (1.161), n=1000003 W=512 (1.065), n=1048576 W=128 (1.142), n=1048576 W=256 (1.163), n=1048576 W=512 (1.066) | one-sided slower (6/6 above 1.0) |
+
+| verdict | side | detail |
+|---|---|---|
+| regime-invariant | slower | all 6 per-run ratios above 1.0 (6/6 slower); every observed regime one-sided |
+
+#### stratum: op=min pair=subgroup/baseline (reference arm: baseline :baseline)
+
+Regime-matched sign per level (rule 1's levels of this stratum; the sign of the paired ratios within each level):
+
+| level | runs (paired ratio) | level sign |
+|---|---|---|
+| 1 (the only observed level) | n=1000003 W=128 (1.150), n=1000003 W=256 (1.160), n=1000003 W=512 (1.066), n=1048576 W=128 (1.146), n=1048576 W=256 (1.161), n=1048576 W=512 (1.067) | one-sided slower (6/6 above 1.0) |
+
+| verdict | side | detail |
+|---|---|---|
+| regime-invariant | slower | all 6 per-run ratios above 1.0 (6/6 slower); every observed regime one-sided |
+
+#### stratum: op=sum pair=subgroup/baseline (reference arm: baseline :baseline)
+
+Regime-matched sign per level (rule 1's levels of this stratum; the sign of the paired ratios within each level):
+
+| level | runs (paired ratio) | level sign |
+|---|---|---|
+| 1 (the only observed level) | n=1000003 W=128 (0.965), n=1000003 W=256 (0.996), n=1000003 W=512 (0.929), n=1048576 W=128 (0.966), n=1048576 W=256 (0.994), n=1048576 W=512 (0.930) | one-sided faster (6/6 below 1.0) |
+
+| verdict | side | detail |
+|---|---|---|
+| regime-invariant | faster | all 6 per-run ratios below 1.0 (6/6 faster); every observed regime one-sided |
+
+### metric: host_ns -- CLOCK_MONOTONIC submit->completion, the stop event's host-side record call named as sitting inside the span -- the channel's second metric
+
+#### stratum: op=max pair=subgroup/baseline (reference arm: baseline :baseline)
+
+Regime-matched sign per level (rule 1's levels of this stratum; the sign of the paired ratios within each level):
+
+| level | runs (paired ratio) | level sign |
+|---|---|---|
+| 1 (the only observed level) | n=1000003 W=128 (1.143), n=1000003 W=256 (1.155), n=1000003 W=512 (1.058), n=1048576 W=128 (1.140), n=1048576 W=256 (1.155), n=1048576 W=512 (1.063) | one-sided slower (6/6 above 1.0) |
+
+| verdict | side | detail |
+|---|---|---|
+| regime-invariant | slower | all 6 per-run ratios above 1.0 (6/6 slower); every observed regime one-sided |
+
+#### stratum: op=min pair=subgroup/baseline (reference arm: baseline :baseline)
+
+Regime-matched sign per level (rule 1's levels of this stratum; the sign of the paired ratios within each level):
+
+| level | runs (paired ratio) | level sign |
+|---|---|---|
+| 1 (the only observed level) | n=1000003 W=128 (1.142), n=1000003 W=256 (1.159), n=1000003 W=512 (1.062), n=1048576 W=128 (1.142), n=1048576 W=256 (1.156), n=1048576 W=512 (1.065) | one-sided slower (6/6 above 1.0) |
+
+| verdict | side | detail |
+|---|---|---|
+| regime-invariant | slower | all 6 per-run ratios above 1.0 (6/6 slower); every observed regime one-sided |
+
+#### stratum: op=sum pair=subgroup/baseline (reference arm: baseline :baseline)
+
+Regime-matched sign per level (rule 1's levels of this stratum; the sign of the paired ratios within each level):
+
+| level | runs (paired ratio) | level sign |
+|---|---|---|
+| 1 (the only observed level) | n=1000003 W=128 (0.968), n=1000003 W=256 (0.996), n=1000003 W=512 (0.931), n=1048576 W=128 (0.969), n=1048576 W=256 (0.994), n=1048576 W=512 (0.929) | one-sided faster (6/6 below 1.0) |
+
+| verdict | side | detail |
+|---|---|---|
+| regime-invariant | faster | all 6 per-run ratios below 1.0 (6/6 faster); every observed regime one-sided |
+
+## Raw per-block times beside the ratios (both clocks)
+
+Rule 3's publication limit for this channel: cross-clock magnitude claims (gpu_ns vs host_ns) are INADMISSIBLE (different spans -- kernel only vs submit->completion, the stop event's host-side record call named as sitting inside the host span), so every magnitude publication keeps both clocks' raw per-block times beside the ratios. Named hazard (design reasoning, NOT a measurement): fixed per-dispatch overhead common to both arms biases host_ns paired ratios toward 1 -- conservative against win claims -- asymmetric arm overhead not assumed away.
+
+### op=max pair=subgroup/baseline (reference arm: baseline :baseline)
+
+| run (n, W) | subgroup gpu_ns | baseline gpu_ns | ratio gpu_ns | subgroup host_ns | baseline host_ns | ratio host_ns |
+|---|---|---|---|---|---|---|
+| n=1000003 W=128 | 133376.0 | 116400.0 | 1.1465 | 138438.0 | 121093.0 | 1.1433 |
+| n=1000003 W=256 | 140736.0 | 121360.0 | 1.1612 | 145334.5 | 126086.0 | 1.1551 |
+| n=1000003 W=512 | 148960.0 | 140176.0 | 1.0654 | 153607.5 | 145047.0 | 1.0575 |
+| n=1048576 W=128 | 139280.0 | 121952.0 | 1.1420 | 144087.0 | 126741.5 | 1.1396 |
+| n=1048576 W=256 | 146672.0 | 126288.0 | 1.1628 | 151415.0 | 131014.0 | 1.1546 |
+| n=1048576 W=512 | 155856.0 | 146448.0 | 1.0660 | 160455.5 | 151191.0 | 1.0631 |
+
+### op=min pair=subgroup/baseline (reference arm: baseline :baseline)
+
+| run (n, W) | subgroup gpu_ns | baseline gpu_ns | ratio gpu_ns | subgroup host_ns | baseline host_ns | ratio host_ns |
+|---|---|---|---|---|---|---|
+| n=1000003 W=128 | 133136.0 | 116080.0 | 1.1495 | 137990.5 | 120709.5 | 1.1418 |
+| n=1000003 W=256 | 140544.0 | 121248.0 | 1.1597 | 145542.0 | 125621.5 | 1.1587 |
+| n=1000003 W=512 | 149792.0 | 140704.0 | 1.0656 | 154919.0 | 145559.0 | 1.0624 |
+| n=1048576 W=128 | 138896.0 | 120944.0 | 1.1461 | 143543.0 | 125878.0 | 1.1417 |
+| n=1048576 W=256 | 146848.0 | 126816.0 | 1.1609 | 151719.0 | 131606.5 | 1.1557 |
+| n=1048576 W=512 | 155856.0 | 146448.0 | 1.0666 | 160775.0 | 151063.0 | 1.0648 |
+
+### op=sum pair=subgroup/baseline (reference arm: baseline :baseline)
+
+| run (n, W) | subgroup gpu_ns | baseline gpu_ns | ratio gpu_ns | subgroup host_ns | baseline host_ns | ratio host_ns |
+|---|---|---|---|---|---|---|
+| n=1000003 W=128 | 112544.0 | 116544.0 | 0.9649 | 117190.0 | 121094.0 | 0.9677 |
+| n=1000003 W=256 | 120128.0 | 120752.0 | 0.9963 | 124966.0 | 125462.0 | 0.9964 |
+| n=1000003 W=512 | 129936.0 | 139712.0 | 0.9294 | 134583.0 | 144630.5 | 0.9314 |
+| n=1048576 W=128 | 116688.0 | 120864.0 | 0.9662 | 121013.0 | 125301.5 | 0.9692 |
+| n=1048576 W=256 | 125360.0 | 126048.0 | 0.9941 | 130086.0 | 130806.0 | 0.9938 |
+| n=1048576 W=512 | 135488.0 | 146128.0 | 0.9297 | 140070.5 | 150903.0 | 0.9289 |
+
+## Named and excluded (data, never silently dropped)
+
+All 18 pair blocks are complete (their declared pairs, both arms), verified (every verify line ok=1) and rc=0 -- nothing named and excluded.
+
+400 sample lines sit outside any `-- cell` block (the log's smoke block) -- named and excluded.

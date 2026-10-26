@@ -1,0 +1,144 @@
+JUN-55/JUN-57 -- the instruction-level why's SASS-CENSUS branch: the
+ADR-0361 sixteenth amendment's named first unmeasured item ("the
+instruction-level why of the subgroup max/min penalty and the baseline
+W=512 per-block step ... a SASS-level instruction census or per-phase
+instrumentation, its own row if wanted") takes its SASS-LEVEL
+INSTRUCTION CENSUS branch. -- HARDWARE RAN THIS SLICE (a static
+disassembly census; NOTHING IS TIMED).
+
+record_written=2026-10-26 (JST); probe run 2026-10-26T08:12:00Z (the
+log's own DATE-UTC). NAMED, NOT HIDDEN: same UTC day as sessions B/C
+and both earlier probes -- NOT a cross-day replication, extends NO
+record's :evidence (ADR-0373's same-day rule by citation). This is a
+STATIC SASS census: no paired samples, inadmissible under the entry
+criterion BY KIND; it enters nothing and moves no record.
+
+host: xavier (Jetson AGX Xavier, L4T R35.4.1, aarch64, sm_72), nvcc
+11.4 V11.4.315, nvdisasm 11.4 V11.4.298 (log verbatim).
+
+WHAT RAN (one measurement slice; no product code, no test, no
+selection surface moves):
+  - all 54 EMITTED CUDA kernels (3 arms x 6 widths x 3 ops) compiled on
+    xavier with nvcc -arch=sm_72 -cubin; every cubin disassembled with
+    nvdisasm -c; a deterministic python3 census (scratch
+    sass_census.py, sha256 02ab9d4e.., never staged) counted every
+    instruction line per kernel (opcode histogram + 14 named classes),
+    and the FULL SASS of all 54 kernels is in the log verbatim;
+  - remote tree /root/gpu-sass-census-20261026 created fresh and
+    transferred COPYFILE_DISABLE=1 (55 files, 0 AppleDouble sidecars);
+    local stage = the kernel-cause probe's stage with EXACTLY ONE swap
+    (usage probe 997cda30.. out, sass_census.py 02ab9d4e.. in --
+    normalized (path, sha256) diff = exactly those two entries); the 54
+    emitted .cu are 54/54 sha256-matched by basename against the THREE
+    COMMITTED corpora before transfer; remote received-file block
+    matched the local stage 55/55 AFTER (checked by tool run this tick).
+
+VERIFIED (tool output):
+  1. Run completeness: 54/54 OK-cubin / 0 FAIL, 54/54 OK-sass / 0
+     FAIL, 54 CENSUS + 54 OPCODES lines, 54 verbatim SASS blocks
+     (begin/end paired), every compile and nvdisasm diag 0 bytes,
+     driver exit 0, driver stderr 0 bytes.
+  2. Parser coverage (named, not hidden): the census's own 'unparsed'
+     counters are 2 per subgroup kernel, 1 per baseline/warp-shuffle
+     kernel, 0 elsewhere -- re-identified this tick from the verbatim
+     SASS as the @!PT SHFL.IDX PT, RZ, RZ, RZ, RZ reconvergence-barrier
+     lines (subgroup: 2) and the one remaining such line / function
+     label in the other arms; these lines are EXCLUDED from the census
+     'total' counters and INCLUDED in the DERIVED region model (the
+     model reads the verbatim SASS directly).
+  3. Analysis outputs (this directory): kernel-sass-log.txt (the
+     verbatim remote log, 317227 bytes), kernel-sass-census-table.txt
+     (the 54 CENSUS + 54 OPCODES lines verbatim), sass-census-compare.txt
+     (the DERIVED analysis, scratch sass_census_compare.py output
+     verbatim; inputs = this log + the COMMITTED
+     cuda-kernel-cause-20261026/abs-arm-times.txt).
+
+THE FINDING (the census locates the subgroup op penalty in the two
+arms' ONCE-PER-THREAD index-setup code and REFUTES instruction-count
+scaling as the cause of the baseline W=512 step):
+  (1) ALL THREE ARMS' SASS IS WIDTH-INDEPENDENT BYTE-FOR-BYTE: every
+      (arm, op) binary is identical across all 6 widths (3 distinct
+      binaries per arm: 1 per op; e.g. baseline sum sha256 0909f119..
+      at W=32..1024). Every W-shaped timing effect is therefore
+      dynamic (loop trip counts / runtime values) -- no width enters
+      the generated code at all.
+  (2) THE SUBGROUP MAX/MIN PENALTY'S INSTRUCTION-LEVEL LOCUS IS THE
+      ONCE-PER-THREAD PROLOGUE + CROSS-FOLD SETUP, NOT THE HOT LOOP:
+      sum is 87 static instructions (85 counted + 2 barriers), max/min
+      are 108 (106 + 2). Per region (from the committed SASS offsets):
+      prologue 44 vs 47, between 7 vs 25 (+18), fold loop 7 = 7
+      (identical shape, only @!P2 FADD -> @!P1 FMNMX), inner loop 9 = 9
+      (same FADD -> FMNMX substitution), xfold/tail/epilogue equal.
+      The +18 in 'between' and +3 in prologue are a DUPLICATED
+      division-by-32 index derivation: sum computes one I2F+MUFU.RCP
+      reciprocal and derives both threadIdx.x%32 and threadIdx.x/32
+      from it; max/min carry THREE reciprocal setups (2 in prologue + 1
+      in 'between') and re-derive the subgroup indices from scratch.
+      Baseline: 34 = 34 static at every op (FADD <-> FMNMX 1:1 only).
+      Warp-shuffle: 51 vs 52 (+1). The arm whose SASS differs
+      structurally by op is EXACTLY the arm whose measured timing
+      splits by op (sixteenth amendment fact (4)).
+  (3) DERIVED (marked): a per-block dynamic count model (once/fold/
+      xfold regions x W threads, inner loop x the sg==0 warp; trip
+      counts fold=5 at all W>=32, outer=log2(W/32)) predicts the
+      max/sum and min/sum instruction ratios 1.1694/1.1556/1.1438 at
+      W=128/256/512 against the MEASURED time ratios 1.1894/1.1708/
+      1.1484 (max) and 1.1866/1.1707/1.1516 (min) -- the declining
+      shape and 85-95% of the magnitude are explained at count
+      granularity; the residual (~0.015-0.02 at W=128/256) needs
+      per-instruction latency attribution (UNMEASURED).
+  (4) DERIVED (marked): the baseline per-block step x2.31 (256->512)
+      vs x2.07 (128->256) is REFUTED as an instruction-count effect:
+      any W x (P + log2(W) x B) model gives step2 < step1 always
+      (monotonicity checked numerically, 0/41 counterexamples in a
+      P/B sweep) while the measured steps RISE; over byte-identical
+      binaries the rising step cannot be code-shape -- it is a dynamic
+      runtime effect (named, UNMEASURED: per-phase instrumentation,
+      its own row).
+
+CONSEQUENCE TODAY: NOTHING MOVES (rule 4) -- no record, no :measured?
+flag, no selection answer, no :shapes value and no workgroup row; the
+landed entries stand byte-for-byte. The named item moves PARTIALLY:
+its SASS-census branch is MEASURED (findings (1)(2)) with the
+count-model half DERIVED (findings (3)(4)).
+
+STATES: MEASURED (the SASS census on xavier -- static instruction
+counts and byte-identity of the 54 emitted kernels; the only measured
+thing this row). DERIVED (the per-block dynamic count model and its
+comparison to the committed medians; the baseline monotonicity
+refutation -- marked). IMPLEMENTED: nothing (evidence + ADR amendment
+only). DECIDED: nothing new. ACCEPTED DESIGN ONLY (unchanged): the
+operator-aware contract + pre-registration, the row (ii) routes, the
+entry contract + wiring, ADR-0358, ADR-0373. UNMEASURED, named: why
+the compiler emits the duplicated reciprocal setup for max/min but not
+sum (compiler behavior, not probed); the residual ~0.015-0.02 of the
+op ratio (per-instruction latency of FMNMX vs FADD -- needs a
+throughput microbench, its own row); the baseline W=512 rising step's
+dynamic cause (per-phase instrumentation, its own row); the sum
+ratio's TRUE side at W=256; a cross-day run 3+ (still 2026-10-26 UTC
+this tick); every per-op verdict on non-xavier hardware; the :sum
+ordering at W=64 on any other device/channel; the landed rows on a
+live CUDA selection path; every workgroup row (:arm/:unknown stay
+provisional :measured? false).
+
+GATES (real runs): scoped GPU gate GREEN 123 tests / 12162 assertions
+/ 0 failures / 0 errors on run 1 AND run 2 (identical to the committed
+pin -- the diff touches NO .cljk namespace, regression pin; glslang
+16.6.0 real-spawn ran in both runs);
+gpu_regime_classify.py --self-test TOTAL 2649 / 0 failed (regression
+pin); FULL run-tests.cljk NOT re-run this slice (no .cljk touched) --
+documented RED AT BASE 'Could not find namespace: kotoba.form'
+(ADR-0362), outside this diff, NO green full suite claimed; find docs
+-name '*.sh' -> 0 (evidence is .txt).
+
+BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head (checked
+at tick start and re-checked before this push; chain PR #1455 OPEN,
+the ONE chain PR).
+
+NAMED NOT HIDDEN: kbb's "2 dep(s) are not :local/root ..." warning on
+every run (identical everywhere); the untracked deps.edn in this
+worktree (present at tick start, not created or touched by this row,
+not committed); the tar transfer's "Ignoring unknown extended header
+keyword 'LIBARCHIVE.xattr.com.apple.provenance'" notices (benign
+macOS metadata; the tree is measured after extraction: 55 files, 0
+AppleDouble sidecars, 55/55 sha256 matched).

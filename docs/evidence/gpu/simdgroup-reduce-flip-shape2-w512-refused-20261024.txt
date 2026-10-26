@@ -1,0 +1,148 @@
+JUN-58 / JUN-55: the SHAPE-2 W = 512 :simdgroup-reduce FLIP slice --
+REFUSED (the flip contract's answer for a measured-but-scoped cell) --
+2026-10-24, chain worktree, kbb --backend sci
+
+WHAT THIS RECORD IS: the slice record of the shape-2 W = 512 flip --
+what the shape-2 W = 512 measurement
+(docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w512, taken
+earlier the same day) licenses under the flip contract (ADR-0360
+question (1)'s decision applied to THIS variant's own cells,
+ADR-0373). The answer is a REFUSAL: the contract's treatment of a
+measured-but-scoped cell, decided and pinned. It is NOT a measurement:
+no hardware ran in this slice. The numbers cited below are the w512
+record's, unchanged and not re-measured.
+
+WHAT THE MEASUREMENT FOUND (the record's own summary.md, verbatim
+facts): paired median ratios 0.812/0.821/0.822 for :sum/:max/:min
+(:simdgroup-reduce / :baseline gpu ns), in family with the shape-1
+same-W record (0.815/0.823/0.824). Claim-protocol rule 2 classifies
+the CELL REGIME-SCOPED, NOT a selection basis: :sum and :max are
+REGIME-INVARIANT FASTER (6/6 per-run ratios below 1.0 each) but :min
+straddles 1.0 INSIDE one regime (level 2 holds both sides -- run 3 at
+1.054, run 5 at 0.821), so the pooled cell is regime-scoped (1 of 18
+per-run ratios above 1.0). This is the first :simdgroup-reduce cell of
+either shape whose cell verdict is not one-sided.
+
+WHAT THE FLIP ANSWERS (the contract's measured-but-scoped cell
+answer): NOTHING MOVES. Rule 2's second sentence ("only such a sign
+may be a selection basis"; a regime-scoped sign is denied any
+selection role whatever its shape) already decides it; this slice
+makes the answer explicit and pins it:
+- the W = 512 :measured-cell record KEEPS :shapes [1000003] and its
+  :evidence keeps the W-sweep w512 runs
+  (docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w512)
+  alone -- the refused shape-2 record is never a contract-satisfying
+  record and names no key;
+- NO :measured? flag moves: the W = 512 answer stays MEASURED on the
+  shape-1 cell's REGIME-INVARIANT basis (the refusal removes nothing);
+- no selection answer moves (selection cannot vary with n), and no
+  workgroup row (ADR-0355/0358) moves.
+THE CONTRACT'S RULE, now explicit in the ADR's measurement-contract
+section and the simd-flip? comment: a shape enters a flip cell's
+record only on the cell's OWN rule-2 verdict at that shape --
+REGIME-INVARIANT FASTER. The contrast is the W = 256 cell's shape-2
+record (0.794/0.811/0.812, rule 2 REGIME-INVARIANT FASTER, 18/18):
+its regime-invariant verdict DID extend that cell to :shapes
+[1000003 1048576]. The reduce shape is selected as a whole
+(:operators #{:sum :max :min}) -- the cell's pooled verdict governs;
+the contract has no per-operator flip and none is invented here
+(:sum and :max's one-sidedness at this cell changes nothing).
+
+WHAT MOVED (the slice's whole scope -- docstrings, comments, one new
+test, the ADR and this record; no map, no lookup and no answer):
+- src/kotoba/compiler/accelerator_variants.cljk: the refusal named in
+  apple-simdgroup-measured-workgroups, apple-simdgroup-measured-shapes,
+  apple-simdgroup-flip-note (the SHAPE-2 W = 512 CELL: MEASURED BUT
+  REFUSED AS A SELECTION BASIS paragraph) and the simd-flip? comment.
+- src/kotoba/compiler/accelerator_simdgroup_reduce.cljk: honesty marks
+  for the refusal (the ns docstring).
+- test/kotoba/compiler/accelerator_variants_test.cljk:
+  the-shape2-w512-scoped-cell-is-refused-as-a-selection-basis (new) --
+  pins the W = 512 record (:shapes [1000003], :evidence naming the
+  W-sweep w512 runs only, the refused record absent), the W = 512
+  answer (:simdgroup-reduce, :measured? true -- the refusal removes
+  nothing), the basis naming the refusal at every flip cell, and the
+  W = 256 contrast (:shapes [1000003 1048576], both records named).
+- docs/adr/0373-gpu-metal-native-simdgroup-reduce.md: the SHAPE-2
+  W = 512 FLIP SLICE (REFUSED) UPDATE in the rule-1 list, the
+  measured-but-scoped clause in the measurement-contract section, the
+  status / split / State / UNMEASURED / LEFT / diff-record /
+  did-not-move lines this flip makes wrong.
+- docs/evidence/gpu/simdgroup-reduce-flip-shape2-w512-refused-20261024.txt:
+  this record.
+
+WHAT THE REFUSAL DOES NOT LICENSE (named so nothing is silently
+upgraded):
+- shape 2 (n = 2^20) at W = 32/64/128/1024: UNMEASURED (the shape-2
+  series' remaining cells) -- each future cell answers by its own
+  rule-2 verdict at that shape;
+- shape 2 at W = 512: measured but NEVER a selection basis (this
+  record's refusal) -- no measured claim covers (W = 512, n = 2^20);
+- every shape beyond the two measured ones at every cell: UNMEASURED;
+- the GLSL arm (:vulkan/:glsl-v1) never flips (LABELED BOOTSTRAP runs
+  are not a verdict);
+- every other Apple device: rung 1 may answer :simdgroup-reduce there,
+  but UNMEASURED (:measured? false);
+- every other vendor: this row is Apple's and the MSL route's alone;
+- cross-day replication of any cell: UNMEASURED;
+- no workgroup row (ADR-0355/0358) moved.
+
+PROSE DEBT, named not hidden: the ADR's older diff-record prose (the
+State section's "only the W = 64, W = 128, W = 256, W = 512 and
+W = 1024 cells have flipped" phrasing and the LEFT section's W-set
+lists) still predates the W = 32 flip slice's deferred reconciliation
+AND this refusal's naming; this slice corrected only the lines its own
+flip makes wrong (the shape-2 W = 512 scope). That reconciliation
+remains owed as its own slice, as the W = 32 flip record named it.
+
+GATE (real runs, this host, kbb --backend sci, from the chain worktree
+root, 2026-10-24, run for THIS record):
+
+1. The two touched test namespaces (targeted run):
+     kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" -e \
+       "(require '[clojure.test :as t] '[kotoba.compiler.accelerator-variants-test] \
+         '[kotoba.compiler.accelerator-simdgroup-reduce-test]) \
+        (t/run-tests 'kotoba.compiler.accelerator-variants-test \
+                     'kotoba.compiler.accelerator-simdgroup-reduce-test)"
+   -> Ran 27 tests containing 7758 assertions.
+      0 failures, 0 errors. (26/7744 before this slice; the new test
+      contributes 1 test / 14 assertions.)
+
+2. The scoped GPU gate (the GPU-owned test namespaces, scratch runner
+   gpu_scoped_gate.cljk, not in the repo):
+     kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+       /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+   -> Ran 101 tests containing 8920 assertions.
+      0 failures, 0 errors.
+      scoped: 101 tests, 8920 passed, 0 failed, 0 errors
+      (100/8906 before this slice.)
+
+3. Full suite (run-tests.cljk): RED AT BASE, outside this diff, at
+   namespace load on `kotoba.form` ("Could not find namespace:
+   kotoba.form"; the W3 port path documented red at base in ADR 0362),
+   re-verified live this tick. The run stops at that load; no green
+   full suite is claimed and none is claimed here.
+
+HONESTY STATE: this slice moved NO :measured? flag and NO record. The
+W = 512 shape-2 measurement is a REAL hardware measurement (its runs
+are recorded in docs/evidence/gpu-simdgroup-reduce-m1max-shape2-
+20261024/w512) and is refused every selection role by rule 2's own
+verdict -- MEASURED is a fact about runs, not a license. Every
+:measured? true answer of :simdgroup-reduce remains backed by the
+shape-1 flip cells' records (and the W = 256 cell's second shape);
+every other answer stays :measured? false (provisional/design), and
+the workgroup defaults in kotoba.compiler.accelerator-targets are
+untouched and remain :measured? false.
+
+CORRECTION (2026-10-24, later tick): the blanket workgroup-row claim in
+this record -- every/any row of kotoba.compiler.accelerator-targets
+:measured? false / provisional -- is FALSE as written. ADR-0358
+(2026-10-19, uB5G scoping amendment 2026-10-22) measured four of the six
+rows (:nvidia, :apple, :intel, :amd, each scoped to its one
+:measured-device name fragment); only :arm and :unknown remain
+:measured? false. The claim's oldest standing source was the
+accelerator-targets ns docstring, corrected 2026-10-24. Runtime state
+and the full census of this claim's surface:
+docs/evidence/gpu/workgroup-prose-rootcause-20261024.txt. Everything
+else in this record -- its numbers, its "no row moved" claims -- stands
+unchanged.

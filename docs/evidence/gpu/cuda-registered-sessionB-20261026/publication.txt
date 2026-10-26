@@ -1,0 +1,916 @@
+## Regime classification (claim protocol rule 1, CUDA paired-timing channel)
+
+Published by scripts/gpu_regime_classify.py (GAP-1.15) over the paired-timing instrument log. This channel's baseline metric is NAMED BY THE CHANNEL (the 2026-10-25 claim-protocol CUDA adoption, ADR-0361): gpu_ns -- CUDA-event elapsed around the kernel on the GPU timeline -- with host_ns (CLOCK_MONOTONIC submit->completion) as the channel's second metric; the two NEVER mix in one clustering or one claim. A regime here is a cluster of the observed reference-arm per-run median levels in that metric, per (operator x pair-type) stratum -- the reference arm is the paired ratio's denominator (:baseline for subgroup/baseline and warp-shuffle/baseline, :subgroup-reduce for warp-shuffle/subgroup), so a cluster pools runs whose proxy is the same kernel.
+
+Run unit on this channel (the adoption's "one fresh process per pair block"): one run is one pair block -- (n, W, operator, pair-type) -- the fresh process that sampled PAIRS=20 interleaved pairs (WARMUP=2 discarded per arm, alternating AB/BA order). The per-run baseline median is the pair block's reference-arm median over its 20 samples in the named metric.
+
+Clustering rule GAP-1.15: per stratum, the per-run reference-arm medians sorted ascending, single-linkage -- the next median joins the current level at <= 1.15x the previous, else it starts a new level. The rule is metric-parametric as written; only the publication names the metric. Rule 2's sign classification is published in its own section beside this one (regime-matched sign per level over this record's pair blocks) -- this rule-1 section itself renders no sign verdict -- and rule 4 is unchanged: this publication moves no `:measured?` flag and no workgroup row.
+
+### metric: gpu_ns -- CUDA-event elapsed around the kernel on the GPU timeline -- the channel's rule-1 baseline metric
+
+#### stratum: op=max pair=subgroup/baseline (reference arm: baseline :baseline)
+
+Per-run reference-arm medians (rule 1's first publication):
+
+| run (n, W) | reference-arm per-run median (gpu_ns) |
+|---|---|
+| n=1000003 W=32 | 295760.0 |
+| n=1000003 W=64 | 129696.0 |
+| n=1000003 W=128 | 116272.0 |
+| n=1000003 W=256 | 120576.0 |
+| n=1000003 W=512 | 140736.0 |
+| n=1000003 W=1024 | 173696.0 |
+| n=1048576 W=32 | 311280.0 |
+| n=1048576 W=64 | 138128.0 |
+| n=1048576 W=128 | 122816.0 |
+| n=1048576 W=256 | 126480.0 |
+| n=1048576 W=512 | 145536.0 |
+| n=1048576 W=1024 | 179616.0 |
+
+Regime clusters:
+
+| level | gpu_ns range | runs (reference-arm per-run median) |
+|---|---|---|
+| 1 (fastest observed) | 116272.0..145536.0 | n=1000003 W=64 (129696.0), n=1000003 W=128 (116272.0), n=1000003 W=256 (120576.0), n=1000003 W=512 (140736.0), n=1048576 W=64 (138128.0), n=1048576 W=128 (122816.0), n=1048576 W=256 (126480.0), n=1048576 W=512 (145536.0) |
+| 2 | 173696.0..179616.0 | n=1000003 W=1024 (173696.0), n=1048576 W=1024 (179616.0) |
+| 3 (slowest observed) | 295760.0..311280.0 | n=1000003 W=32 (295760.0), n=1048576 W=32 (311280.0) |
+
+#### stratum: op=max pair=warp-shuffle/baseline (reference arm: baseline :baseline)
+
+Per-run reference-arm medians (rule 1's first publication):
+
+| run (n, W) | reference-arm per-run median (gpu_ns) |
+|---|---|
+| n=1000003 W=32 | 295056.0 |
+| n=1000003 W=64 | 129536.0 |
+| n=1000003 W=128 | 116816.0 |
+| n=1000003 W=256 | 120448.0 |
+| n=1000003 W=512 | 139984.0 |
+| n=1000003 W=1024 | 173552.0 |
+| n=1048576 W=32 | 310496.0 |
+| n=1048576 W=64 | 136928.0 |
+| n=1048576 W=128 | 122160.0 |
+| n=1048576 W=256 | 126800.0 |
+| n=1048576 W=512 | 145904.0 |
+| n=1048576 W=1024 | 178640.0 |
+
+Regime clusters:
+
+| level | gpu_ns range | runs (reference-arm per-run median) |
+|---|---|---|
+| 1 (fastest observed) | 116816.0..145904.0 | n=1000003 W=64 (129536.0), n=1000003 W=128 (116816.0), n=1000003 W=256 (120448.0), n=1000003 W=512 (139984.0), n=1048576 W=64 (136928.0), n=1048576 W=128 (122160.0), n=1048576 W=256 (126800.0), n=1048576 W=512 (145904.0) |
+| 2 | 173552.0..178640.0 | n=1000003 W=1024 (173552.0), n=1048576 W=1024 (178640.0) |
+| 3 (slowest observed) | 295056.0..310496.0 | n=1000003 W=32 (295056.0), n=1048576 W=32 (310496.0) |
+
+#### stratum: op=max pair=warp-shuffle/subgroup (reference arm: subgroup :subgroup-reduce)
+
+Per-run reference-arm medians (rule 1's first publication):
+
+| run (n, W) | reference-arm per-run median (gpu_ns) |
+|---|---|
+| n=1000003 W=32 | 274112.0 |
+| n=1000003 W=64 | 133664.0 |
+| n=1000003 W=128 | 133232.0 |
+| n=1000003 W=256 | 140160.0 |
+| n=1000003 W=512 | 149728.0 |
+| n=1000003 W=1024 | 179344.0 |
+| n=1048576 W=32 | 289104.0 |
+| n=1048576 W=64 | 141088.0 |
+| n=1048576 W=128 | 140000.0 |
+| n=1048576 W=256 | 146864.0 |
+| n=1048576 W=512 | 156928.0 |
+| n=1048576 W=1024 | 185152.0 |
+
+Regime clusters:
+
+| level | gpu_ns range | runs (reference-arm per-run median) |
+|---|---|---|
+| 1 (fastest observed) | 133232.0..185152.0 | n=1000003 W=64 (133664.0), n=1000003 W=128 (133232.0), n=1000003 W=256 (140160.0), n=1000003 W=512 (149728.0), n=1000003 W=1024 (179344.0), n=1048576 W=64 (141088.0), n=1048576 W=128 (140000.0), n=1048576 W=256 (146864.0), n=1048576 W=512 (156928.0), n=1048576 W=1024 (185152.0) |
+| 2 (slowest observed) | 274112.0..289104.0 | n=1000003 W=32 (274112.0), n=1048576 W=32 (289104.0) |
+
+#### stratum: op=min pair=subgroup/baseline (reference arm: baseline :baseline)
+
+Per-run reference-arm medians (rule 1's first publication):
+
+| run (n, W) | reference-arm per-run median (gpu_ns) |
+|---|---|
+| n=1000003 W=32 | 297568.0 |
+| n=1000003 W=64 | 129280.0 |
+| n=1000003 W=128 | 115712.0 |
+| n=1000003 W=256 | 121376.0 |
+| n=1000003 W=512 | 142160.0 |
+| n=1000003 W=1024 | 173248.0 |
+| n=1048576 W=32 | 308528.0 |
+| n=1048576 W=64 | 136800.0 |
+| n=1048576 W=128 | 121824.0 |
+| n=1048576 W=256 | 126480.0 |
+| n=1048576 W=512 | 147008.0 |
+| n=1048576 W=1024 | 178304.0 |
+
+Regime clusters:
+
+| level | gpu_ns range | runs (reference-arm per-run median) |
+|---|---|---|
+| 1 (fastest observed) | 115712.0..147008.0 | n=1000003 W=64 (129280.0), n=1000003 W=128 (115712.0), n=1000003 W=256 (121376.0), n=1000003 W=512 (142160.0), n=1048576 W=64 (136800.0), n=1048576 W=128 (121824.0), n=1048576 W=256 (126480.0), n=1048576 W=512 (147008.0) |
+| 2 | 173248.0..178304.0 | n=1000003 W=1024 (173248.0), n=1048576 W=1024 (178304.0) |
+| 3 (slowest observed) | 297568.0..308528.0 | n=1000003 W=32 (297568.0), n=1048576 W=32 (308528.0) |
+
+#### stratum: op=min pair=warp-shuffle/baseline (reference arm: baseline :baseline)
+
+Per-run reference-arm medians (rule 1's first publication):
+
+| run (n, W) | reference-arm per-run median (gpu_ns) |
+|---|---|
+| n=1000003 W=32 | 297248.0 |
+| n=1000003 W=64 | 129200.0 |
+| n=1000003 W=128 | 116816.0 |
+| n=1000003 W=256 | 120928.0 |
+| n=1000003 W=512 | 132240.0 |
+| n=1000003 W=1024 | 172944.0 |
+| n=1048576 W=32 | 310976.0 |
+| n=1048576 W=64 | 137168.0 |
+| n=1048576 W=128 | 121520.0 |
+| n=1048576 W=256 | 125856.0 |
+| n=1048576 W=512 | 145120.0 |
+| n=1048576 W=1024 | 179488.0 |
+
+Regime clusters:
+
+| level | gpu_ns range | runs (reference-arm per-run median) |
+|---|---|---|
+| 1 (fastest observed) | 116816.0..145120.0 | n=1000003 W=64 (129200.0), n=1000003 W=128 (116816.0), n=1000003 W=256 (120928.0), n=1000003 W=512 (132240.0), n=1048576 W=64 (137168.0), n=1048576 W=128 (121520.0), n=1048576 W=256 (125856.0), n=1048576 W=512 (145120.0) |
+| 2 | 172944.0..179488.0 | n=1000003 W=1024 (172944.0), n=1048576 W=1024 (179488.0) |
+| 3 (slowest observed) | 297248.0..310976.0 | n=1000003 W=32 (297248.0), n=1048576 W=32 (310976.0) |
+
+#### stratum: op=min pair=warp-shuffle/subgroup (reference arm: subgroup :subgroup-reduce)
+
+Per-run reference-arm medians (rule 1's first publication):
+
+| run (n, W) | reference-arm per-run median (gpu_ns) |
+|---|---|
+| n=1000003 W=32 | 272560.0 |
+| n=1000003 W=64 | 132448.0 |
+| n=1000003 W=128 | 133600.0 |
+| n=1000003 W=256 | 140416.0 |
+| n=1000003 W=512 | 142272.0 |
+| n=1000003 W=1024 | 178816.0 |
+| n=1048576 W=32 | 296624.0 |
+| n=1048576 W=64 | 141584.0 |
+| n=1048576 W=128 | 139856.0 |
+| n=1048576 W=256 | 147456.0 |
+| n=1048576 W=512 | 156592.0 |
+| n=1048576 W=1024 | 185264.0 |
+
+Regime clusters:
+
+| level | gpu_ns range | runs (reference-arm per-run median) |
+|---|---|---|
+| 1 (fastest observed) | 132448.0..185264.0 | n=1000003 W=64 (132448.0), n=1000003 W=128 (133600.0), n=1000003 W=256 (140416.0), n=1000003 W=512 (142272.0), n=1000003 W=1024 (178816.0), n=1048576 W=64 (141584.0), n=1048576 W=128 (139856.0), n=1048576 W=256 (147456.0), n=1048576 W=512 (156592.0), n=1048576 W=1024 (185264.0) |
+| 2 (slowest observed) | 272560.0..296624.0 | n=1000003 W=32 (272560.0), n=1048576 W=32 (296624.0) |
+
+#### stratum: op=sum pair=subgroup/baseline (reference arm: baseline :baseline)
+
+Per-run reference-arm medians (rule 1's first publication):
+
+| run (n, W) | reference-arm per-run median (gpu_ns) |
+|---|---|
+| n=1000003 W=32 | 294400.0 |
+| n=1000003 W=64 | 129552.0 |
+| n=1000003 W=128 | 116432.0 |
+| n=1000003 W=256 | 120560.0 |
+| n=1000003 W=512 | 139200.0 |
+| n=1000003 W=1024 | 163472.0 |
+| n=1048576 W=32 | 313280.0 |
+| n=1048576 W=64 | 136736.0 |
+| n=1048576 W=128 | 122384.0 |
+| n=1048576 W=256 | 125232.0 |
+| n=1048576 W=512 | 145680.0 |
+| n=1048576 W=1024 | 178656.0 |
+
+Regime clusters:
+
+| level | gpu_ns range | runs (reference-arm per-run median) |
+|---|---|---|
+| 1 (fastest observed) | 116432.0..178656.0 | n=1000003 W=64 (129552.0), n=1000003 W=128 (116432.0), n=1000003 W=256 (120560.0), n=1000003 W=512 (139200.0), n=1000003 W=1024 (163472.0), n=1048576 W=64 (136736.0), n=1048576 W=128 (122384.0), n=1048576 W=256 (125232.0), n=1048576 W=512 (145680.0), n=1048576 W=1024 (178656.0) |
+| 2 (slowest observed) | 294400.0..313280.0 | n=1000003 W=32 (294400.0), n=1048576 W=32 (313280.0) |
+
+#### stratum: op=sum pair=warp-shuffle/baseline (reference arm: baseline :baseline)
+
+Per-run reference-arm medians (rule 1's first publication):
+
+| run (n, W) | reference-arm per-run median (gpu_ns) |
+|---|---|
+| n=1000003 W=32 | 298624.0 |
+| n=1000003 W=64 | 129600.0 |
+| n=1000003 W=128 | 117264.0 |
+| n=1000003 W=256 | 120144.0 |
+| n=1000003 W=512 | 137824.0 |
+| n=1000003 W=1024 | 164816.0 |
+| n=1048576 W=32 | 308848.0 |
+| n=1048576 W=64 | 135936.0 |
+| n=1048576 W=128 | 122304.0 |
+| n=1048576 W=256 | 125968.0 |
+| n=1048576 W=512 | 144128.0 |
+| n=1048576 W=1024 | 178528.0 |
+
+Regime clusters:
+
+| level | gpu_ns range | runs (reference-arm per-run median) |
+|---|---|---|
+| 1 (fastest observed) | 117264.0..178528.0 | n=1000003 W=64 (129600.0), n=1000003 W=128 (117264.0), n=1000003 W=256 (120144.0), n=1000003 W=512 (137824.0), n=1000003 W=1024 (164816.0), n=1048576 W=64 (135936.0), n=1048576 W=128 (122304.0), n=1048576 W=256 (125968.0), n=1048576 W=512 (144128.0), n=1048576 W=1024 (178528.0) |
+| 2 (slowest observed) | 298624.0..308848.0 | n=1000003 W=32 (298624.0), n=1048576 W=32 (308848.0) |
+
+#### stratum: op=sum pair=warp-shuffle/subgroup (reference arm: subgroup :subgroup-reduce)
+
+Per-run reference-arm medians (rule 1's first publication):
+
+| run (n, W) | reference-arm per-run median (gpu_ns) |
+|---|---|
+| n=1000003 W=32 | 264272.0 |
+| n=1000003 W=64 | 112528.0 |
+| n=1000003 W=128 | 112592.0 |
+| n=1000003 W=256 | 119872.0 |
+| n=1000003 W=512 | 130704.0 |
+| n=1000003 W=1024 | 154480.0 |
+| n=1048576 W=32 | 276304.0 |
+| n=1048576 W=64 | 121136.0 |
+| n=1048576 W=128 | 118336.0 |
+| n=1048576 W=256 | 125264.0 |
+| n=1048576 W=512 | 135664.0 |
+| n=1048576 W=1024 | 159472.0 |
+
+Regime clusters:
+
+| level | gpu_ns range | runs (reference-arm per-run median) |
+|---|---|---|
+| 1 (fastest observed) | 112528.0..159472.0 | n=1000003 W=64 (112528.0), n=1000003 W=128 (112592.0), n=1000003 W=256 (119872.0), n=1000003 W=512 (130704.0), n=1000003 W=1024 (154480.0), n=1048576 W=64 (121136.0), n=1048576 W=128 (118336.0), n=1048576 W=256 (125264.0), n=1048576 W=512 (135664.0), n=1048576 W=1024 (159472.0) |
+| 2 (slowest observed) | 264272.0..276304.0 | n=1000003 W=32 (264272.0), n=1048576 W=32 (276304.0) |
+
+### metric: host_ns -- CLOCK_MONOTONIC submit->completion, the stop event's host-side record call named as sitting inside the span -- the channel's second metric
+
+#### stratum: op=max pair=subgroup/baseline (reference arm: baseline :baseline)
+
+Per-run reference-arm medians (rule 1's first publication):
+
+| run (n, W) | reference-arm per-run median (host_ns) |
+|---|---|
+| n=1000003 W=32 | 300558.0 |
+| n=1000003 W=64 | 134518.5 |
+| n=1000003 W=128 | 120357.5 |
+| n=1000003 W=256 | 125589.5 |
+| n=1000003 W=512 | 145526.5 |
+| n=1000003 W=1024 | 178312.5 |
+| n=1048576 W=32 | 315663.0 |
+| n=1048576 W=64 | 142823.0 |
+| n=1048576 W=128 | 127062.0 |
+| n=1048576 W=256 | 131110.0 |
+| n=1048576 W=512 | 150359.0 |
+| n=1048576 W=1024 | 184920.0 |
+
+Regime clusters:
+
+| level | host_ns range | runs (reference-arm per-run median) |
+|---|---|---|
+| 1 (fastest observed) | 120357.5..150359.0 | n=1000003 W=64 (134518.5), n=1000003 W=128 (120357.5), n=1000003 W=256 (125589.5), n=1000003 W=512 (145526.5), n=1048576 W=64 (142823.0), n=1048576 W=128 (127062.0), n=1048576 W=256 (131110.0), n=1048576 W=512 (150359.0) |
+| 2 | 178312.5..184920.0 | n=1000003 W=1024 (178312.5), n=1048576 W=1024 (184920.0) |
+| 3 (slowest observed) | 300558.0..315663.0 | n=1000003 W=32 (300558.0), n=1048576 W=32 (315663.0) |
+
+#### stratum: op=max pair=warp-shuffle/baseline (reference arm: baseline :baseline)
+
+Per-run reference-arm medians (rule 1's first publication):
+
+| run (n, W) | reference-arm per-run median (host_ns) |
+|---|---|
+| n=1000003 W=32 | 301102.0 |
+| n=1000003 W=64 | 134550.0 |
+| n=1000003 W=128 | 121526.0 |
+| n=1000003 W=256 | 124086.0 |
+| n=1000003 W=512 | 144695.0 |
+| n=1000003 W=1024 | 177976.0 |
+| n=1048576 W=32 | 314831.0 |
+| n=1048576 W=64 | 141638.0 |
+| n=1048576 W=128 | 127462.0 |
+| n=1048576 W=256 | 131910.0 |
+| n=1048576 W=512 | 151383.0 |
+| n=1048576 W=1024 | 183288.5 |
+
+Regime clusters:
+
+| level | host_ns range | runs (reference-arm per-run median) |
+|---|---|---|
+| 1 (fastest observed) | 121526.0..151383.0 | n=1000003 W=64 (134550.0), n=1000003 W=128 (121526.0), n=1000003 W=256 (124086.0), n=1000003 W=512 (144695.0), n=1048576 W=64 (141638.0), n=1048576 W=128 (127462.0), n=1048576 W=256 (131910.0), n=1048576 W=512 (151383.0) |
+| 2 | 177976.0..183288.5 | n=1000003 W=1024 (177976.0), n=1048576 W=1024 (183288.5) |
+| 3 (slowest observed) | 301102.0..314831.0 | n=1000003 W=32 (301102.0), n=1048576 W=32 (314831.0) |
+
+#### stratum: op=max pair=warp-shuffle/subgroup (reference arm: subgroup :subgroup-reduce)
+
+Per-run reference-arm medians (rule 1's first publication):
+
+| run (n, W) | reference-arm per-run median (host_ns) |
+|---|---|
+| n=1000003 W=32 | 280397.0 |
+| n=1000003 W=64 | 137862.5 |
+| n=1000003 W=128 | 137639.0 |
+| n=1000003 W=256 | 144886.5 |
+| n=1000003 W=512 | 155111.0 |
+| n=1000003 W=1024 | 184776.5 |
+| n=1048576 W=32 | 293294.0 |
+| n=1048576 W=64 | 145735.0 |
+| n=1048576 W=128 | 144134.0 |
+| n=1048576 W=256 | 151527.0 |
+| n=1048576 W=512 | 161063.5 |
+| n=1048576 W=1024 | 190681.0 |
+
+Regime clusters:
+
+| level | host_ns range | runs (reference-arm per-run median) |
+|---|---|---|
+| 1 (fastest observed) | 137639.0..190681.0 | n=1000003 W=64 (137862.5), n=1000003 W=128 (137639.0), n=1000003 W=256 (144886.5), n=1000003 W=512 (155111.0), n=1000003 W=1024 (184776.5), n=1048576 W=64 (145735.0), n=1048576 W=128 (144134.0), n=1048576 W=256 (151527.0), n=1048576 W=512 (161063.5), n=1048576 W=1024 (190681.0) |
+| 2 (slowest observed) | 280397.0..293294.0 | n=1000003 W=32 (280397.0), n=1048576 W=32 (293294.0) |
+
+#### stratum: op=min pair=subgroup/baseline (reference arm: baseline :baseline)
+
+Per-run reference-arm medians (rule 1's first publication):
+
+| run (n, W) | reference-arm per-run median (host_ns) |
+|---|---|
+| n=1000003 W=32 | 302605.5 |
+| n=1000003 W=64 | 134742.0 |
+| n=1000003 W=128 | 120406.0 |
+| n=1000003 W=256 | 125781.5 |
+| n=1000003 W=512 | 151159.0 |
+| n=1000003 W=1024 | 177144.0 |
+| n=1048576 W=32 | 312191.0 |
+| n=1048576 W=64 | 141974.5 |
+| n=1048576 W=128 | 127141.5 |
+| n=1048576 W=256 | 130774.0 |
+| n=1048576 W=512 | 152151.0 |
+| n=1048576 W=1024 | 183256.5 |
+
+Regime clusters:
+
+| level | host_ns range | runs (reference-arm per-run median) |
+|---|---|---|
+| 1 (fastest observed) | 120406.0..152151.0 | n=1000003 W=64 (134742.0), n=1000003 W=128 (120406.0), n=1000003 W=256 (125781.5), n=1000003 W=512 (151159.0), n=1048576 W=64 (141974.5), n=1048576 W=128 (127141.5), n=1048576 W=256 (130774.0), n=1048576 W=512 (152151.0) |
+| 2 | 177144.0..183256.5 | n=1000003 W=1024 (177144.0), n=1048576 W=1024 (183256.5) |
+| 3 (slowest observed) | 302605.5..312191.0 | n=1000003 W=32 (302605.5), n=1048576 W=32 (312191.0) |
+
+#### stratum: op=min pair=warp-shuffle/baseline (reference arm: baseline :baseline)
+
+Per-run reference-arm medians (rule 1's first publication):
+
+| run (n, W) | reference-arm per-run median (host_ns) |
+|---|---|
+| n=1000003 W=32 | 300894.0 |
+| n=1000003 W=64 | 134646.0 |
+| n=1000003 W=128 | 121125.5 |
+| n=1000003 W=256 | 125990.0 |
+| n=1000003 W=512 | 1377999.0 |
+| n=1000003 W=1024 | 176888.0 |
+| n=1048576 W=32 | 315758.5 |
+| n=1048576 W=64 | 142007.0 |
+| n=1048576 W=128 | 127222.0 |
+| n=1048576 W=256 | 130518.0 |
+| n=1048576 W=512 | 150023.0 |
+| n=1048576 W=1024 | 183672.0 |
+
+Regime clusters:
+
+| level | host_ns range | runs (reference-arm per-run median) |
+|---|---|---|
+| 1 (fastest observed) | 121125.5..150023.0 | n=1000003 W=64 (134646.0), n=1000003 W=128 (121125.5), n=1000003 W=256 (125990.0), n=1048576 W=64 (142007.0), n=1048576 W=128 (127222.0), n=1048576 W=256 (130518.0), n=1048576 W=512 (150023.0) |
+| 2 | 176888.0..183672.0 | n=1000003 W=1024 (176888.0), n=1048576 W=1024 (183672.0) |
+| 3 | 300894.0..315758.5 | n=1000003 W=32 (300894.0), n=1048576 W=32 (315758.5) |
+| 4 (slowest observed) | 1377999.0 | n=1000003 W=512 (1377999.0) |
+
+#### stratum: op=min pair=warp-shuffle/subgroup (reference arm: subgroup :subgroup-reduce)
+
+Per-run reference-arm medians (rule 1's first publication):
+
+| run (n, W) | reference-arm per-run median (host_ns) |
+|---|---|
+| n=1000003 W=32 | 277452.5 |
+| n=1000003 W=64 | 137014.5 |
+| n=1000003 W=128 | 138262.5 |
+| n=1000003 W=256 | 145062.5 |
+| n=1000003 W=512 | 1388591.5 |
+| n=1000003 W=1024 | 183592.5 |
+| n=1048576 W=32 | 301374.0 |
+| n=1048576 W=64 | 145703.0 |
+| n=1048576 W=128 | 143926.5 |
+| n=1048576 W=256 | 152007.0 |
+| n=1048576 W=512 | 161495.0 |
+| n=1048576 W=1024 | 190009.0 |
+
+Regime clusters:
+
+| level | host_ns range | runs (reference-arm per-run median) |
+|---|---|---|
+| 1 (fastest observed) | 137014.5..190009.0 | n=1000003 W=64 (137014.5), n=1000003 W=128 (138262.5), n=1000003 W=256 (145062.5), n=1000003 W=1024 (183592.5), n=1048576 W=64 (145703.0), n=1048576 W=128 (143926.5), n=1048576 W=256 (152007.0), n=1048576 W=512 (161495.0), n=1048576 W=1024 (190009.0) |
+| 2 | 277452.5..301374.0 | n=1000003 W=32 (277452.5), n=1048576 W=32 (301374.0) |
+| 3 (slowest observed) | 1388591.5 | n=1000003 W=512 (1388591.5) |
+
+#### stratum: op=sum pair=subgroup/baseline (reference arm: baseline :baseline)
+
+Per-run reference-arm medians (rule 1's first publication):
+
+| run (n, W) | reference-arm per-run median (host_ns) |
+|---|---|
+| n=1000003 W=32 | 298989.5 |
+| n=1000003 W=64 | 133974.0 |
+| n=1000003 W=128 | 120357.5 |
+| n=1000003 W=256 | 125493.5 |
+| n=1000003 W=512 | 144375.0 |
+| n=1000003 W=1024 | 1403088.0 |
+| n=1048576 W=32 | 316750.5 |
+| n=1048576 W=64 | 141478.0 |
+| n=1048576 W=128 | 126854.0 |
+| n=1048576 W=256 | 129670.0 |
+| n=1048576 W=512 | 150326.5 |
+| n=1048576 W=1024 | 183400.5 |
+
+Regime clusters:
+
+| level | host_ns range | runs (reference-arm per-run median) |
+|---|---|---|
+| 1 (fastest observed) | 120357.5..150326.5 | n=1000003 W=64 (133974.0), n=1000003 W=128 (120357.5), n=1000003 W=256 (125493.5), n=1000003 W=512 (144375.0), n=1048576 W=64 (141478.0), n=1048576 W=128 (126854.0), n=1048576 W=256 (129670.0), n=1048576 W=512 (150326.5) |
+| 2 | 183400.5 | n=1048576 W=1024 (183400.5) |
+| 3 | 298989.5..316750.5 | n=1000003 W=32 (298989.5), n=1048576 W=32 (316750.5) |
+| 4 (slowest observed) | 1403088.0 | n=1000003 W=1024 (1403088.0) |
+
+#### stratum: op=sum pair=warp-shuffle/baseline (reference arm: baseline :baseline)
+
+Per-run reference-arm medians (rule 1's first publication):
+
+| run (n, W) | reference-arm per-run median (host_ns) |
+|---|---|
+| n=1000003 W=32 | 303374.0 |
+| n=1000003 W=64 | 134966.5 |
+| n=1000003 W=128 | 121718.0 |
+| n=1000003 W=256 | 125238.0 |
+| n=1000003 W=512 | 142054.5 |
+| n=1000003 W=1024 | 1416129.0 |
+| n=1048576 W=32 | 313406.5 |
+| n=1048576 W=64 | 140918.5 |
+| n=1048576 W=128 | 127622.0 |
+| n=1048576 W=256 | 130678.0 |
+| n=1048576 W=512 | 148966.5 |
+| n=1048576 W=1024 | 183289.0 |
+
+Regime clusters:
+
+| level | host_ns range | runs (reference-arm per-run median) |
+|---|---|---|
+| 1 (fastest observed) | 121718.0..148966.5 | n=1000003 W=64 (134966.5), n=1000003 W=128 (121718.0), n=1000003 W=256 (125238.0), n=1000003 W=512 (142054.5), n=1048576 W=64 (140918.5), n=1048576 W=128 (127622.0), n=1048576 W=256 (130678.0), n=1048576 W=512 (148966.5) |
+| 2 | 183289.0 | n=1048576 W=1024 (183289.0) |
+| 3 | 303374.0..313406.5 | n=1000003 W=32 (303374.0), n=1048576 W=32 (313406.5) |
+| 4 (slowest observed) | 1416129.0 | n=1000003 W=1024 (1416129.0) |
+
+#### stratum: op=sum pair=warp-shuffle/subgroup (reference arm: subgroup :subgroup-reduce)
+
+Per-run reference-arm medians (rule 1's first publication):
+
+| run (n, W) | reference-arm per-run median (host_ns) |
+|---|---|
+| n=1000003 W=32 | 269356.5 |
+| n=1000003 W=64 | 117941.0 |
+| n=1000003 W=128 | 117925.5 |
+| n=1000003 W=256 | 124166.0 |
+| n=1000003 W=512 | 135734.0 |
+| n=1000003 W=1024 | 159703.5 |
+| n=1048576 W=32 | 281341.0 |
+| n=1048576 W=64 | 125685.5 |
+| n=1048576 W=128 | 122533.5 |
+| n=1048576 W=256 | 129253.0 |
+| n=1048576 W=512 | 140182.0 |
+| n=1048576 W=1024 | 164536.0 |
+
+Regime clusters:
+
+| level | host_ns range | runs (reference-arm per-run median) |
+|---|---|---|
+| 1 (fastest observed) | 117925.5..164536.0 | n=1000003 W=64 (117941.0), n=1000003 W=128 (117925.5), n=1000003 W=256 (124166.0), n=1000003 W=512 (135734.0), n=1000003 W=1024 (159703.5), n=1048576 W=64 (125685.5), n=1048576 W=128 (122533.5), n=1048576 W=256 (129253.0), n=1048576 W=512 (140182.0), n=1048576 W=1024 (164536.0) |
+| 2 (slowest observed) | 269356.5..281341.0 | n=1000003 W=32 (269356.5), n=1048576 W=32 (281341.0) |
+
+claim-protocol-rule2: PUBLISHED (regime-matched sign per level below; sign claims channel-scoped -- a CUDA-channel sign never flips an MSL/WGSL cell and never answers a workgroup row; rule 4 unchanged: no :measured? flag and no workgroup row moves)
+
+## Sign classification (claim protocol rule 2, CUDA paired-timing channel)
+
+Published by scripts/gpu_regime_classify.py from the record's own pair blocks (rule 2's unit on this channel: the per-run ratio is the block's paired-median ratio in the named metric -- median over the block's within-pair ratios armA/armB -- and rule 2's correctness precondition is verified inside the measurement, as the instrument does) and the rule-1 regime clusters of the same runs' reference-arm per-run medians (GAP-1.15). Rule 2: a sign is regime-invariant when every per-run ratio of every observed regime lies on the same side of 1.0 -- only such a sign may be a selection basis; any other sign is regime-scoped and cannot choose a variant. The sign machine is the MSL channel's, unchanged and metric-parametric; gpu_ns and host_ns are TWO metrics of this channel and classify separately, never mixed.
+
+Sign claims on this channel are CHANNEL-SCOPED (the 2026-10-25 adoption carries rule 2 in full): a CUDA-channel sign never flips an MSL/WGSL cell and never answers a workgroup row (ADR-0355's 2026-10-25 channel rule stands: the instrument channel answers no dispatch row); only the CUDA-route selection rows consume it. Rule 4 is unchanged -- this publication moves no `:measured?` flag and no workgroup row. NO cross-stratum roll-up is published: the adoption defines strata at (metric x operator x pair-type) and names no roll-up across them (a roll-up would be its own design row).
+
+### metric: gpu_ns -- CUDA-event elapsed around the kernel on the GPU timeline -- the channel's rule-1 baseline metric
+
+#### stratum: op=max pair=subgroup/baseline (reference arm: baseline :baseline)
+
+Regime-matched sign per level (rule 1's levels of this stratum; the sign of the paired ratios within each level):
+
+| level | runs (paired ratio) | level sign |
+|---|---|---|
+| 1 (fastest observed) | n=1000003 W=64 (1.040), n=1000003 W=128 (1.151), n=1000003 W=256 (1.176), n=1000003 W=512 (1.075), n=1048576 W=64 (1.033), n=1048576 W=128 (1.155), n=1048576 W=256 (1.182), n=1048576 W=512 (1.074) | one-sided slower (8/8 above 1.0) |
+| 2 | n=1000003 W=1024 (1.039), n=1048576 W=1024 (1.040) | one-sided slower (2/2 above 1.0) |
+| 3 (slowest observed) | n=1000003 W=32 (0.930), n=1048576 W=32 (0.927) | one-sided faster (2/2 below 1.0) |
+
+| verdict | side | detail |
+|---|---|---|
+| regime-scoped | straddles 1.0 | straddle separates by regime (every regime one-sided, regimes disagree): level 1 (fastest observed): n=1000003 W=64 1.040 above 1.0, n=1000003 W=128 1.151 above 1.0, n=1000003 W=256 1.176 above 1.0, n=1000003 W=512 1.075 above 1.0, n=1048576 W=64 1.033 above 1.0, n=1048576 W=128 1.155 above 1.0, n=1048576 W=256 1.182 above 1.0, n=1048576 W=512 1.074 above 1.0; level 2 (middle level): n=1000003 W=1024 1.039 above 1.0, n=1048576 W=1024 1.040 above 1.0; level 3 (slowest observed): n=1000003 W=32 0.930 below 1.0, n=1048576 W=32 0.927 below 1.0 |
+
+#### stratum: op=max pair=warp-shuffle/baseline (reference arm: baseline :baseline)
+
+Regime-matched sign per level (rule 1's levels of this stratum; the sign of the paired ratios within each level):
+
+| level | runs (paired ratio) | level sign |
+|---|---|---|
+| 1 (fastest observed) | n=1000003 W=64 (0.923), n=1000003 W=128 (0.635), n=1000003 W=256 (0.649), n=1000003 W=512 (0.597), n=1048576 W=64 (0.935), n=1048576 W=128 (0.664), n=1048576 W=256 (0.638), n=1048576 W=512 (0.599) | one-sided faster (8/8 below 1.0) |
+| 2 | n=1000003 W=1024 (0.526), n=1048576 W=1024 (0.529) | one-sided faster (2/2 below 1.0) |
+| 3 (slowest observed) | n=1000003 W=32 (0.877), n=1048576 W=32 (0.882) | one-sided faster (2/2 below 1.0) |
+
+| verdict | side | detail |
+|---|---|---|
+| regime-invariant | faster | all 12 per-run ratios below 1.0 (12/12 faster); every observed regime one-sided |
+
+#### stratum: op=max pair=warp-shuffle/subgroup (reference arm: subgroup :subgroup-reduce)
+
+Regime-matched sign per level (rule 1's levels of this stratum; the sign of the paired ratios within each level):
+
+| level | runs (paired ratio) | level sign |
+|---|---|---|
+| 1 (fastest observed) | n=1000003 W=64 (0.899), n=1000003 W=128 (0.575), n=1000003 W=256 (0.552), n=1000003 W=512 (0.548), n=1000003 W=1024 (0.511), n=1048576 W=64 (0.902), n=1048576 W=128 (0.585), n=1048576 W=256 (0.557), n=1048576 W=512 (0.557), n=1048576 W=1024 (0.500) | one-sided faster (10/10 below 1.0) |
+| 2 (slowest observed) | n=1000003 W=32 (0.948), n=1048576 W=32 (0.956) | one-sided faster (2/2 below 1.0) |
+
+| verdict | side | detail |
+|---|---|---|
+| regime-invariant | faster | all 12 per-run ratios below 1.0 (12/12 faster); every observed regime one-sided |
+
+#### stratum: op=min pair=subgroup/baseline (reference arm: baseline :baseline)
+
+Regime-matched sign per level (rule 1's levels of this stratum; the sign of the paired ratios within each level):
+
+| level | runs (paired ratio) | level sign |
+|---|---|---|
+| 1 (fastest observed) | n=1000003 W=64 (1.035), n=1000003 W=128 (1.159), n=1000003 W=256 (1.164), n=1000003 W=512 (1.070), n=1048576 W=64 (1.035), n=1048576 W=128 (1.163), n=1048576 W=256 (1.162), n=1048576 W=512 (1.086) | one-sided slower (8/8 above 1.0) |
+| 2 | n=1000003 W=1024 (1.048), n=1048576 W=1024 (1.040) | one-sided slower (2/2 above 1.0) |
+| 3 (slowest observed) | n=1000003 W=32 (0.925), n=1048576 W=32 (0.938) | one-sided faster (2/2 below 1.0) |
+
+| verdict | side | detail |
+|---|---|---|
+| regime-scoped | straddles 1.0 | straddle separates by regime (every regime one-sided, regimes disagree): level 1 (fastest observed): n=1000003 W=64 1.035 above 1.0, n=1000003 W=128 1.159 above 1.0, n=1000003 W=256 1.164 above 1.0, n=1000003 W=512 1.070 above 1.0, n=1048576 W=64 1.035 above 1.0, n=1048576 W=128 1.163 above 1.0, n=1048576 W=256 1.162 above 1.0, n=1048576 W=512 1.086 above 1.0; level 2 (middle level): n=1000003 W=1024 1.048 above 1.0, n=1048576 W=1024 1.040 above 1.0; level 3 (slowest observed): n=1000003 W=32 0.925 below 1.0, n=1048576 W=32 0.938 below 1.0 |
+
+#### stratum: op=min pair=warp-shuffle/baseline (reference arm: baseline :baseline)
+
+Regime-matched sign per level (rule 1's levels of this stratum; the sign of the paired ratios within each level):
+
+| level | runs (paired ratio) | level sign |
+|---|---|---|
+| 1 (fastest observed) | n=1000003 W=64 (0.941), n=1000003 W=128 (0.638), n=1000003 W=256 (0.660), n=1000003 W=512 (0.567), n=1048576 W=64 (0.932), n=1048576 W=128 (0.644), n=1048576 W=256 (0.648), n=1048576 W=512 (0.600) | one-sided faster (8/8 below 1.0) |
+| 2 | n=1000003 W=1024 (0.529), n=1048576 W=1024 (0.514) | one-sided faster (2/2 below 1.0) |
+| 3 (slowest observed) | n=1000003 W=32 (0.883), n=1048576 W=32 (0.879) | one-sided faster (2/2 below 1.0) |
+
+| verdict | side | detail |
+|---|---|---|
+| regime-invariant | faster | all 12 per-run ratios below 1.0 (12/12 faster); every observed regime one-sided |
+
+#### stratum: op=min pair=warp-shuffle/subgroup (reference arm: subgroup :subgroup-reduce)
+
+Regime-matched sign per level (rule 1's levels of this stratum; the sign of the paired ratios within each level):
+
+| level | runs (paired ratio) | level sign |
+|---|---|---|
+| 1 (fastest observed) | n=1000003 W=64 (0.927), n=1000003 W=128 (0.603), n=1000003 W=256 (0.555), n=1000003 W=512 (0.529), n=1000003 W=1024 (0.520), n=1048576 W=64 (0.918), n=1048576 W=128 (0.561), n=1048576 W=256 (0.553), n=1048576 W=512 (0.558), n=1048576 W=1024 (0.502) | one-sided faster (10/10 below 1.0) |
+| 2 (slowest observed) | n=1000003 W=32 (0.952), n=1048576 W=32 (0.954) | one-sided faster (2/2 below 1.0) |
+
+| verdict | side | detail |
+|---|---|---|
+| regime-invariant | faster | all 12 per-run ratios below 1.0 (12/12 faster); every observed regime one-sided |
+
+#### stratum: op=sum pair=subgroup/baseline (reference arm: baseline :baseline)
+
+Regime-matched sign per level (rule 1's levels of this stratum; the sign of the paired ratios within each level):
+
+| level | runs (paired ratio) | level sign |
+|---|---|---|
+| 1 (fastest observed) | n=1000003 W=64 (0.894), n=1000003 W=128 (0.962), n=1000003 W=256 (0.996), n=1000003 W=512 (0.933), n=1000003 W=1024 (0.894), n=1048576 W=64 (0.899), n=1048576 W=128 (0.983), n=1048576 W=256 (0.997), n=1048576 W=512 (0.936), n=1048576 W=1024 (0.900) | one-sided faster (10/10 below 1.0) |
+| 2 (slowest observed) | n=1000003 W=32 (0.894), n=1048576 W=32 (0.895) | one-sided faster (2/2 below 1.0) |
+
+| verdict | side | detail |
+|---|---|---|
+| regime-invariant | faster | all 12 per-run ratios below 1.0 (12/12 faster); every observed regime one-sided |
+
+#### stratum: op=sum pair=warp-shuffle/baseline (reference arm: baseline :baseline)
+
+Regime-matched sign per level (rule 1's levels of this stratum; the sign of the paired ratios within each level):
+
+| level | runs (paired ratio) | level sign |
+|---|---|---|
+| 1 (fastest observed) | n=1000003 W=64 (0.932), n=1000003 W=128 (0.651), n=1000003 W=256 (0.648), n=1000003 W=512 (0.592), n=1000003 W=1024 (0.495), n=1048576 W=64 (0.961), n=1048576 W=128 (0.667), n=1048576 W=256 (0.653), n=1048576 W=512 (0.586), n=1048576 W=1024 (0.522) | one-sided faster (10/10 below 1.0) |
+| 2 (slowest observed) | n=1000003 W=32 (0.886), n=1048576 W=32 (0.888) | one-sided faster (2/2 below 1.0) |
+
+| verdict | side | detail |
+|---|---|---|
+| regime-invariant | faster | all 12 per-run ratios below 1.0 (12/12 faster); every observed regime one-sided |
+
+#### stratum: op=sum pair=warp-shuffle/subgroup (reference arm: subgroup :subgroup-reduce)
+
+Regime-matched sign per level (rule 1's levels of this stratum; the sign of the paired ratios within each level):
+
+| level | runs (paired ratio) | level sign |
+|---|---|---|
+| 1 (fastest observed) | n=1000003 W=64 (1.071), n=1000003 W=128 (0.683), n=1000003 W=256 (0.657), n=1000003 W=512 (0.648), n=1000003 W=1024 (0.584), n=1048576 W=64 (1.061), n=1048576 W=128 (0.674), n=1048576 W=256 (0.653), n=1048576 W=512 (0.627), n=1048576 W=1024 (0.580) | mixed sides (2 above 1.0, 8 below 1.0) |
+| 2 (slowest observed) | n=1000003 W=32 (0.991), n=1048576 W=32 (0.994) | one-sided faster (2/2 below 1.0) |
+
+| verdict | side | detail |
+|---|---|---|
+| regime-scoped | straddles 1.0 | straddle within regime 1 (one regime holds both sides): level 1 (fastest observed): n=1000003 W=64 1.071 above 1.0, n=1000003 W=128 0.683 below 1.0, n=1000003 W=256 0.657 below 1.0, n=1000003 W=512 0.648 below 1.0, n=1000003 W=1024 0.584 below 1.0, n=1048576 W=64 1.061 above 1.0, n=1048576 W=128 0.674 below 1.0, n=1048576 W=256 0.653 below 1.0, n=1048576 W=512 0.627 below 1.0, n=1048576 W=1024 0.580 below 1.0; level 2 (slowest observed): n=1000003 W=32 0.991 below 1.0, n=1048576 W=32 0.994 below 1.0 |
+
+### metric: host_ns -- CLOCK_MONOTONIC submit->completion, the stop event's host-side record call named as sitting inside the span -- the channel's second metric
+
+#### stratum: op=max pair=subgroup/baseline (reference arm: baseline :baseline)
+
+Regime-matched sign per level (rule 1's levels of this stratum; the sign of the paired ratios within each level):
+
+| level | runs (paired ratio) | level sign |
+|---|---|---|
+| 1 (fastest observed) | n=1000003 W=64 (1.036), n=1000003 W=128 (1.153), n=1000003 W=256 (1.172), n=1000003 W=512 (1.078), n=1048576 W=64 (1.042), n=1048576 W=128 (1.158), n=1048576 W=256 (1.170), n=1048576 W=512 (1.074) | one-sided slower (8/8 above 1.0) |
+| 2 | n=1000003 W=1024 (1.043), n=1048576 W=1024 (1.040) | one-sided slower (2/2 above 1.0) |
+| 3 (slowest observed) | n=1000003 W=32 (0.925), n=1048576 W=32 (0.929) | one-sided faster (2/2 below 1.0) |
+
+| verdict | side | detail |
+|---|---|---|
+| regime-scoped | straddles 1.0 | straddle separates by regime (every regime one-sided, regimes disagree): level 1 (fastest observed): n=1000003 W=64 1.036 above 1.0, n=1000003 W=128 1.153 above 1.0, n=1000003 W=256 1.172 above 1.0, n=1000003 W=512 1.078 above 1.0, n=1048576 W=64 1.042 above 1.0, n=1048576 W=128 1.158 above 1.0, n=1048576 W=256 1.170 above 1.0, n=1048576 W=512 1.074 above 1.0; level 2 (middle level): n=1000003 W=1024 1.043 above 1.0, n=1048576 W=1024 1.040 above 1.0; level 3 (slowest observed): n=1000003 W=32 0.925 below 1.0, n=1048576 W=32 0.929 below 1.0 |
+
+#### stratum: op=max pair=warp-shuffle/baseline (reference arm: baseline :baseline)
+
+Regime-matched sign per level (rule 1's levels of this stratum; the sign of the paired ratios within each level):
+
+| level | runs (paired ratio) | level sign |
+|---|---|---|
+| 1 (fastest observed) | n=1000003 W=64 (0.934), n=1000003 W=128 (0.649), n=1000003 W=256 (0.655), n=1000003 W=512 (0.603), n=1048576 W=64 (0.929), n=1048576 W=128 (0.671), n=1048576 W=256 (0.657), n=1048576 W=512 (0.608) | one-sided faster (8/8 below 1.0) |
+| 2 | n=1000003 W=1024 (0.537), n=1048576 W=1024 (0.544) | one-sided faster (2/2 below 1.0) |
+| 3 (slowest observed) | n=1000003 W=32 (0.874), n=1048576 W=32 (0.883) | one-sided faster (2/2 below 1.0) |
+
+| verdict | side | detail |
+|---|---|---|
+| regime-invariant | faster | all 12 per-run ratios below 1.0 (12/12 faster); every observed regime one-sided |
+
+#### stratum: op=max pair=warp-shuffle/subgroup (reference arm: subgroup :subgroup-reduce)
+
+Regime-matched sign per level (rule 1's levels of this stratum; the sign of the paired ratios within each level):
+
+| level | runs (paired ratio) | level sign |
+|---|---|---|
+| 1 (fastest observed) | n=1000003 W=64 (0.901), n=1000003 W=128 (0.598), n=1000003 W=256 (0.571), n=1000003 W=512 (0.562), n=1000003 W=1024 (0.525), n=1048576 W=64 (0.905), n=1048576 W=128 (0.596), n=1048576 W=256 (0.564), n=1048576 W=512 (0.569), n=1048576 W=1024 (0.512) | one-sided faster (10/10 below 1.0) |
+| 2 (slowest observed) | n=1000003 W=32 (0.947), n=1048576 W=32 (0.949) | one-sided faster (2/2 below 1.0) |
+
+| verdict | side | detail |
+|---|---|---|
+| regime-invariant | faster | all 12 per-run ratios below 1.0 (12/12 faster); every observed regime one-sided |
+
+#### stratum: op=min pair=subgroup/baseline (reference arm: baseline :baseline)
+
+Regime-matched sign per level (rule 1's levels of this stratum; the sign of the paired ratios within each level):
+
+| level | runs (paired ratio) | level sign |
+|---|---|---|
+| 1 (fastest observed) | n=1000003 W=64 (1.033), n=1000003 W=128 (1.150), n=1000003 W=256 (1.161), n=1000003 W=512 (1.096), n=1048576 W=64 (1.035), n=1048576 W=128 (1.161), n=1048576 W=256 (1.156), n=1048576 W=512 (1.078) | one-sided slower (8/8 above 1.0) |
+| 2 | n=1000003 W=1024 (1.052), n=1048576 W=1024 (1.040) | one-sided slower (2/2 above 1.0) |
+| 3 (slowest observed) | n=1000003 W=32 (0.929), n=1048576 W=32 (0.936) | one-sided faster (2/2 below 1.0) |
+
+| verdict | side | detail |
+|---|---|---|
+| regime-scoped | straddles 1.0 | straddle separates by regime (every regime one-sided, regimes disagree): level 1 (fastest observed): n=1000003 W=64 1.033 above 1.0, n=1000003 W=128 1.150 above 1.0, n=1000003 W=256 1.161 above 1.0, n=1000003 W=512 1.096 above 1.0, n=1048576 W=64 1.035 above 1.0, n=1048576 W=128 1.161 above 1.0, n=1048576 W=256 1.156 above 1.0, n=1048576 W=512 1.078 above 1.0; level 2 (middle level): n=1000003 W=1024 1.052 above 1.0, n=1048576 W=1024 1.040 above 1.0; level 3 (slowest observed): n=1000003 W=32 0.929 below 1.0, n=1048576 W=32 0.936 below 1.0 |
+
+#### stratum: op=min pair=warp-shuffle/baseline (reference arm: baseline :baseline)
+
+Regime-matched sign per level (rule 1's levels of this stratum; the sign of the paired ratios within each level):
+
+| level | runs (paired ratio) | level sign |
+|---|---|---|
+| 1 (fastest observed) | n=1000003 W=64 (0.932), n=1000003 W=128 (0.647), n=1000003 W=256 (0.664), n=1048576 W=64 (0.950), n=1048576 W=128 (0.656), n=1048576 W=256 (0.653), n=1048576 W=512 (0.608) | one-sided faster (7/7 below 1.0) |
+| 2 | n=1000003 W=1024 (0.553), n=1048576 W=1024 (0.519) | one-sided faster (2/2 below 1.0) |
+| 3 | n=1000003 W=32 (0.885), n=1048576 W=32 (0.884) | one-sided faster (2/2 below 1.0) |
+| 4 (slowest observed) | n=1000003 W=512 (0.957) | one-sided faster (1/1 below 1.0) |
+
+| verdict | side | detail |
+|---|---|---|
+| regime-invariant | faster | all 12 per-run ratios below 1.0 (12/12 faster); every observed regime one-sided |
+
+#### stratum: op=min pair=warp-shuffle/subgroup (reference arm: subgroup :subgroup-reduce)
+
+Regime-matched sign per level (rule 1's levels of this stratum; the sign of the paired ratios within each level):
+
+| level | runs (paired ratio) | level sign |
+|---|---|---|
+| 1 (fastest observed) | n=1000003 W=64 (0.916), n=1000003 W=128 (0.616), n=1000003 W=256 (0.567), n=1000003 W=1024 (0.531), n=1048576 W=64 (0.918), n=1048576 W=128 (0.578), n=1048576 W=256 (0.564), n=1048576 W=512 (0.572), n=1048576 W=1024 (0.516) | one-sided faster (9/9 below 1.0) |
+| 2 | n=1000003 W=32 (0.949), n=1048576 W=32 (0.954) | one-sided faster (2/2 below 1.0) |
+| 3 (slowest observed) | n=1000003 W=512 (0.952) | one-sided faster (1/1 below 1.0) |
+
+| verdict | side | detail |
+|---|---|---|
+| regime-invariant | faster | all 12 per-run ratios below 1.0 (12/12 faster); every observed regime one-sided |
+
+#### stratum: op=sum pair=subgroup/baseline (reference arm: baseline :baseline)
+
+Regime-matched sign per level (rule 1's levels of this stratum; the sign of the paired ratios within each level):
+
+| level | runs (paired ratio) | level sign |
+|---|---|---|
+| 1 (fastest observed) | n=1000003 W=64 (0.896), n=1000003 W=128 (0.966), n=1000003 W=256 (0.993), n=1000003 W=512 (0.928), n=1048576 W=64 (0.887), n=1048576 W=128 (0.986), n=1048576 W=256 (1.012), n=1048576 W=512 (0.934) | mixed sides (1 above 1.0, 7 below 1.0) |
+| 2 | n=1048576 W=1024 (0.900) | one-sided faster (1/1 below 1.0) |
+| 3 | n=1000003 W=32 (0.894), n=1048576 W=32 (0.895) | one-sided faster (2/2 below 1.0) |
+| 4 (slowest observed) | n=1000003 W=1024 (0.986) | one-sided faster (1/1 below 1.0) |
+
+| verdict | side | detail |
+|---|---|---|
+| regime-scoped | straddles 1.0 | straddle within regime 1 (one regime holds both sides): level 1 (fastest observed): n=1000003 W=64 0.896 below 1.0, n=1000003 W=128 0.966 below 1.0, n=1000003 W=256 0.993 below 1.0, n=1000003 W=512 0.928 below 1.0, n=1048576 W=64 0.887 below 1.0, n=1048576 W=128 0.986 below 1.0, n=1048576 W=256 1.012 above 1.0, n=1048576 W=512 0.934 below 1.0; level 2 (middle level): n=1048576 W=1024 0.900 below 1.0; level 3 (middle level): n=1000003 W=32 0.894 below 1.0, n=1048576 W=32 0.895 below 1.0; level 4 (slowest observed): n=1000003 W=1024 0.986 below 1.0 |
+
+#### stratum: op=sum pair=warp-shuffle/baseline (reference arm: baseline :baseline)
+
+Regime-matched sign per level (rule 1's levels of this stratum; the sign of the paired ratios within each level):
+
+| level | runs (paired ratio) | level sign |
+|---|---|---|
+| 1 (fastest observed) | n=1000003 W=64 (0.948), n=1000003 W=128 (0.659), n=1000003 W=256 (0.658), n=1000003 W=512 (0.606), n=1048576 W=64 (0.975), n=1048576 W=128 (0.670), n=1048576 W=256 (0.665), n=1048576 W=512 (0.598) | one-sided faster (8/8 below 1.0) |
+| 2 | n=1048576 W=1024 (0.534) | one-sided faster (1/1 below 1.0) |
+| 3 | n=1000003 W=32 (0.887), n=1048576 W=32 (0.889) | one-sided faster (2/2 below 1.0) |
+| 4 (slowest observed) | n=1000003 W=1024 (0.941) | one-sided faster (1/1 below 1.0) |
+
+| verdict | side | detail |
+|---|---|---|
+| regime-invariant | faster | all 12 per-run ratios below 1.0 (12/12 faster); every observed regime one-sided |
+
+#### stratum: op=sum pair=warp-shuffle/subgroup (reference arm: subgroup :subgroup-reduce)
+
+Regime-matched sign per level (rule 1's levels of this stratum; the sign of the paired ratios within each level):
+
+| level | runs (paired ratio) | level sign |
+|---|---|---|
+| 1 (fastest observed) | n=1000003 W=64 (1.073), n=1000003 W=128 (0.696), n=1000003 W=256 (0.667), n=1000003 W=512 (0.647), n=1000003 W=1024 (0.592), n=1048576 W=64 (1.059), n=1048576 W=128 (0.693), n=1048576 W=256 (0.661), n=1048576 W=512 (0.645), n=1048576 W=1024 (0.596) | mixed sides (2 above 1.0, 8 below 1.0) |
+| 2 (slowest observed) | n=1000003 W=32 (0.991), n=1048576 W=32 (0.992) | one-sided faster (2/2 below 1.0) |
+
+| verdict | side | detail |
+|---|---|---|
+| regime-scoped | straddles 1.0 | straddle within regime 1 (one regime holds both sides): level 1 (fastest observed): n=1000003 W=64 1.073 above 1.0, n=1000003 W=128 0.696 below 1.0, n=1000003 W=256 0.667 below 1.0, n=1000003 W=512 0.647 below 1.0, n=1000003 W=1024 0.592 below 1.0, n=1048576 W=64 1.059 above 1.0, n=1048576 W=128 0.693 below 1.0, n=1048576 W=256 0.661 below 1.0, n=1048576 W=512 0.645 below 1.0, n=1048576 W=1024 0.596 below 1.0; level 2 (slowest observed): n=1000003 W=32 0.991 below 1.0, n=1048576 W=32 0.992 below 1.0 |
+
+## Raw per-block times beside the ratios (both clocks)
+
+Rule 3's publication limit for this channel: cross-clock magnitude claims (gpu_ns vs host_ns) are INADMISSIBLE (different spans -- kernel only vs submit->completion, the stop event's host-side record call named as sitting inside the host span), so every magnitude publication keeps both clocks' raw per-block times beside the ratios. Named hazard (design reasoning, NOT a measurement): fixed per-dispatch overhead common to both arms biases host_ns paired ratios toward 1 -- conservative against win claims -- asymmetric arm overhead not assumed away.
+
+### op=max pair=subgroup/baseline (reference arm: baseline :baseline)
+
+| run (n, W) | subgroup gpu_ns | baseline gpu_ns | ratio gpu_ns | subgroup host_ns | baseline host_ns | ratio host_ns |
+|---|---|---|---|---|---|---|
+| n=1000003 W=32 | 273136.0 | 295760.0 | 0.9302 | 277933.0 | 300558.0 | 0.9252 |
+| n=1000003 W=64 | 135072.0 | 129696.0 | 1.0400 | 140038.0 | 134518.5 | 1.0362 |
+| n=1000003 W=128 | 133472.0 | 116272.0 | 1.1511 | 139030.0 | 120357.5 | 1.1534 |
+| n=1000003 W=256 | 141936.0 | 120576.0 | 1.1761 | 147175.0 | 125589.5 | 1.1722 |
+| n=1000003 W=512 | 151248.0 | 140736.0 | 1.0749 | 155975.5 | 145526.5 | 1.0776 |
+| n=1000003 W=1024 | 180080.0 | 173696.0 | 1.0393 | 185929.0 | 178312.5 | 1.0430 |
+| n=1048576 W=32 | 287776.0 | 311280.0 | 0.9274 | 291741.0 | 315663.0 | 0.9289 |
+| n=1048576 W=64 | 141536.0 | 138128.0 | 1.0332 | 146151.0 | 142823.0 | 1.0422 |
+| n=1048576 W=128 | 141648.0 | 122816.0 | 1.1550 | 146263.0 | 127062.0 | 1.1582 |
+| n=1048576 W=256 | 148416.0 | 126480.0 | 1.1817 | 153207.0 | 131110.0 | 1.1705 |
+| n=1048576 W=512 | 157456.0 | 145536.0 | 1.0737 | 162439.5 | 150359.0 | 1.0740 |
+| n=1048576 W=1024 | 186816.0 | 179616.0 | 1.0398 | 192153.0 | 184920.0 | 1.0402 |
+
+### op=max pair=warp-shuffle/baseline (reference arm: baseline :baseline)
+
+| run (n, W) | warp-shuffle gpu_ns | baseline gpu_ns | ratio gpu_ns | warp-shuffle host_ns | baseline host_ns | ratio host_ns |
+|---|---|---|---|---|---|---|
+| n=1000003 W=32 | 259024.0 | 295056.0 | 0.8769 | 263932.0 | 301102.0 | 0.8742 |
+| n=1000003 W=64 | 120304.0 | 129536.0 | 0.9230 | 126021.5 | 134550.0 | 0.9339 |
+| n=1000003 W=128 | 74816.0 | 116816.0 | 0.6347 | 79795.5 | 121526.0 | 0.6491 |
+| n=1000003 W=256 | 78640.0 | 120448.0 | 0.6487 | 82659.5 | 124086.0 | 0.6554 |
+| n=1000003 W=512 | 83280.0 | 139984.0 | 0.5971 | 86596.0 | 144695.0 | 0.6027 |
+| n=1000003 W=1024 | 91600.0 | 173552.0 | 0.5265 | 96212.0 | 177976.0 | 0.5373 |
+| n=1048576 W=32 | 274192.0 | 310496.0 | 0.8822 | 278685.0 | 314831.0 | 0.8834 |
+| n=1048576 W=64 | 128256.0 | 136928.0 | 0.9347 | 131814.0 | 141638.0 | 0.9289 |
+| n=1048576 W=128 | 81776.0 | 122160.0 | 0.6635 | 86708.0 | 127462.0 | 0.6707 |
+| n=1048576 W=256 | 81328.0 | 126800.0 | 0.6380 | 87044.0 | 131910.0 | 0.6566 |
+| n=1048576 W=512 | 88096.0 | 145904.0 | 0.5991 | 92516.0 | 151383.0 | 0.6085 |
+| n=1048576 W=1024 | 94576.0 | 178640.0 | 0.5290 | 99124.5 | 183288.5 | 0.5441 |
+
+### op=max pair=warp-shuffle/subgroup (reference arm: subgroup :subgroup-reduce)
+
+| run (n, W) | warp-shuffle gpu_ns | subgroup gpu_ns | ratio gpu_ns | warp-shuffle host_ns | subgroup host_ns | ratio host_ns |
+|---|---|---|---|---|---|---|
+| n=1000003 W=32 | 260624.0 | 274112.0 | 0.9483 | 266172.0 | 280397.0 | 0.9469 |
+| n=1000003 W=64 | 121552.0 | 133664.0 | 0.8986 | 126630.0 | 137862.5 | 0.9007 |
+| n=1000003 W=128 | 77248.0 | 133232.0 | 0.5755 | 82052.0 | 137639.0 | 0.5982 |
+| n=1000003 W=256 | 78864.0 | 140160.0 | 0.5525 | 83060.0 | 144886.5 | 0.5706 |
+| n=1000003 W=512 | 84480.0 | 149728.0 | 0.5481 | 89492.0 | 155111.0 | 0.5619 |
+| n=1000003 W=1024 | 91408.0 | 179344.0 | 0.5107 | 96388.0 | 184776.5 | 0.5252 |
+| n=1048576 W=32 | 274128.0 | 289104.0 | 0.9562 | 278860.0 | 293294.0 | 0.9487 |
+| n=1048576 W=64 | 128624.0 | 141088.0 | 0.9023 | 132454.0 | 145735.0 | 0.9050 |
+| n=1048576 W=128 | 80592.0 | 140000.0 | 0.5849 | 85348.0 | 144134.0 | 0.5963 |
+| n=1048576 W=256 | 82096.0 | 146864.0 | 0.5568 | 86308.0 | 151527.0 | 0.5638 |
+| n=1048576 W=512 | 87024.0 | 156928.0 | 0.5569 | 91860.0 | 161063.5 | 0.5689 |
+| n=1048576 W=1024 | 93280.0 | 185152.0 | 0.5000 | 98244.5 | 190681.0 | 0.5121 |
+
+### op=min pair=subgroup/baseline (reference arm: baseline :baseline)
+
+| run (n, W) | subgroup gpu_ns | baseline gpu_ns | ratio gpu_ns | subgroup host_ns | baseline host_ns | ratio host_ns |
+|---|---|---|---|---|---|---|
+| n=1000003 W=32 | 274992.0 | 297568.0 | 0.9254 | 279180.5 | 302605.5 | 0.9288 |
+| n=1000003 W=64 | 134352.0 | 129280.0 | 1.0350 | 138934.5 | 134742.0 | 1.0332 |
+| n=1000003 W=128 | 134192.0 | 115712.0 | 1.1588 | 138854.0 | 120406.0 | 1.1496 |
+| n=1000003 W=256 | 141008.0 | 121376.0 | 1.1637 | 145878.0 | 125781.5 | 1.1613 |
+| n=1000003 W=512 | 151776.0 | 142160.0 | 1.0702 | 177752.5 | 151159.0 | 1.0963 |
+| n=1000003 W=1024 | 182256.0 | 173248.0 | 1.0480 | 187576.0 | 177144.0 | 1.0524 |
+| n=1048576 W=32 | 288656.0 | 308528.0 | 0.9378 | 293598.0 | 312191.0 | 0.9360 |
+| n=1048576 W=64 | 142592.0 | 136800.0 | 1.0348 | 146598.0 | 141974.5 | 1.0348 |
+| n=1048576 W=128 | 140192.0 | 121824.0 | 1.1628 | 145863.0 | 127141.5 | 1.1611 |
+| n=1048576 W=256 | 147232.0 | 126480.0 | 1.1616 | 151718.5 | 130774.0 | 1.1555 |
+| n=1048576 W=512 | 157472.0 | 147008.0 | 1.0864 | 163175.0 | 152151.0 | 1.0784 |
+| n=1048576 W=1024 | 186624.0 | 178304.0 | 1.0401 | 191720.0 | 183256.5 | 1.0403 |
+
+### op=min pair=warp-shuffle/baseline (reference arm: baseline :baseline)
+
+| run (n, W) | warp-shuffle gpu_ns | baseline gpu_ns | ratio gpu_ns | warp-shuffle host_ns | baseline host_ns | ratio host_ns |
+|---|---|---|---|---|---|---|
+| n=1000003 W=32 | 260192.0 | 297248.0 | 0.8826 | 264524.5 | 300894.0 | 0.8853 |
+| n=1000003 W=64 | 120960.0 | 129200.0 | 0.9410 | 125413.0 | 134646.0 | 0.9323 |
+| n=1000003 W=128 | 75968.0 | 116816.0 | 0.6380 | 80323.5 | 121125.5 | 0.6470 |
+| n=1000003 W=256 | 79744.0 | 120928.0 | 0.6598 | 84292.0 | 125990.0 | 0.6637 |
+| n=1000003 W=512 | 74768.0 | 132240.0 | 0.5666 | 1320524.0 | 1377999.0 | 0.9573 |
+| n=1000003 W=1024 | 92048.0 | 172944.0 | 0.5292 | 98389.0 | 176888.0 | 0.5529 |
+| n=1048576 W=32 | 272960.0 | 310976.0 | 0.8795 | 279309.0 | 315758.5 | 0.8841 |
+| n=1048576 W=64 | 127152.0 | 137168.0 | 0.9317 | 134518.0 | 142007.0 | 0.9503 |
+| n=1048576 W=128 | 78192.0 | 121520.0 | 0.6443 | 82804.0 | 127222.0 | 0.6561 |
+| n=1048576 W=256 | 82448.0 | 125856.0 | 0.6475 | 86900.0 | 130518.0 | 0.6526 |
+| n=1048576 W=512 | 86624.0 | 145120.0 | 0.5996 | 90948.5 | 150023.0 | 0.6081 |
+| n=1048576 W=1024 | 93280.0 | 179488.0 | 0.5136 | 97988.0 | 183672.0 | 0.5186 |
+
+### op=min pair=warp-shuffle/subgroup (reference arm: subgroup :subgroup-reduce)
+
+| run (n, W) | warp-shuffle gpu_ns | subgroup gpu_ns | ratio gpu_ns | warp-shuffle host_ns | subgroup host_ns | ratio host_ns |
+|---|---|---|---|---|---|---|
+| n=1000003 W=32 | 259456.0 | 272560.0 | 0.9517 | 264988.0 | 277452.5 | 0.9493 |
+| n=1000003 W=64 | 121856.0 | 132448.0 | 0.9272 | 126038.0 | 137014.5 | 0.9159 |
+| n=1000003 W=128 | 79360.0 | 133600.0 | 0.6026 | 84180.0 | 138262.5 | 0.6164 |
+| n=1000003 W=256 | 77952.0 | 140416.0 | 0.5546 | 82211.5 | 145062.5 | 0.5672 |
+| n=1000003 W=512 | 75392.0 | 142272.0 | 0.5293 | 1321677.0 | 1388591.5 | 0.9518 |
+| n=1000003 W=1024 | 92224.0 | 178816.0 | 0.5205 | 96324.5 | 183592.5 | 0.5306 |
+| n=1048576 W=32 | 280576.0 | 296624.0 | 0.9537 | 283885.0 | 301374.0 | 0.9540 |
+| n=1048576 W=64 | 128704.0 | 141584.0 | 0.9177 | 133766.0 | 145703.0 | 0.9182 |
+| n=1048576 W=128 | 79136.0 | 139856.0 | 0.5605 | 83092.0 | 143926.5 | 0.5783 |
+| n=1048576 W=256 | 81872.0 | 147456.0 | 0.5533 | 85780.0 | 152007.0 | 0.5644 |
+| n=1048576 W=512 | 87904.0 | 156592.0 | 0.5584 | 92116.0 | 161495.0 | 0.5719 |
+| n=1048576 W=1024 | 93568.0 | 185264.0 | 0.5017 | 98788.0 | 190009.0 | 0.5156 |
+
+### op=sum pair=subgroup/baseline (reference arm: baseline :baseline)
+
+| run (n, W) | subgroup gpu_ns | baseline gpu_ns | ratio gpu_ns | subgroup host_ns | baseline host_ns | ratio host_ns |
+|---|---|---|---|---|---|---|
+| n=1000003 W=32 | 261920.0 | 294400.0 | 0.8936 | 266668.5 | 298989.5 | 0.8943 |
+| n=1000003 W=64 | 114880.0 | 129552.0 | 0.8937 | 119542.0 | 133974.0 | 0.8962 |
+| n=1000003 W=128 | 111744.0 | 116432.0 | 0.9621 | 116885.0 | 120357.5 | 0.9657 |
+| n=1000003 W=256 | 120176.0 | 120560.0 | 0.9956 | 125717.5 | 125493.5 | 0.9926 |
+| n=1000003 W=512 | 130336.0 | 139200.0 | 0.9326 | 134342.5 | 144375.0 | 0.9276 |
+| n=1000003 W=1024 | 146192.0 | 163472.0 | 0.8943 | 1384671.0 | 1403088.0 | 0.9863 |
+| n=1048576 W=32 | 282480.0 | 313280.0 | 0.8946 | 288205.0 | 316750.5 | 0.8954 |
+| n=1048576 W=64 | 122144.0 | 136736.0 | 0.8993 | 126549.5 | 141478.0 | 0.8865 |
+| n=1048576 W=128 | 119136.0 | 122384.0 | 0.9828 | 124437.5 | 126854.0 | 0.9856 |
+| n=1048576 W=256 | 125648.0 | 125232.0 | 0.9966 | 131062.0 | 129670.0 | 1.0124 |
+| n=1048576 W=512 | 136096.0 | 145680.0 | 0.9361 | 141398.5 | 150326.5 | 0.9341 |
+| n=1048576 W=1024 | 161088.0 | 178656.0 | 0.9000 | 165319.0 | 183400.5 | 0.8999 |
+
+### op=sum pair=warp-shuffle/baseline (reference arm: baseline :baseline)
+
+| run (n, W) | warp-shuffle gpu_ns | baseline gpu_ns | ratio gpu_ns | warp-shuffle host_ns | baseline host_ns | ratio host_ns |
+|---|---|---|---|---|---|---|
+| n=1000003 W=32 | 261728.0 | 298624.0 | 0.8855 | 265948.0 | 303374.0 | 0.8872 |
+| n=1000003 W=64 | 120976.0 | 129600.0 | 0.9320 | 127478.0 | 134966.5 | 0.9481 |
+| n=1000003 W=128 | 76768.0 | 117264.0 | 0.6514 | 80067.5 | 121718.0 | 0.6586 |
+| n=1000003 W=256 | 78352.0 | 120144.0 | 0.6482 | 82691.5 | 125238.0 | 0.6580 |
+| n=1000003 W=512 | 81808.0 | 137824.0 | 0.5924 | 86612.0 | 142054.5 | 0.6060 |
+| n=1000003 W=1024 | 81472.0 | 164816.0 | 0.4949 | 1333309.0 | 1416129.0 | 0.9408 |
+| n=1048576 W=32 | 273664.0 | 308848.0 | 0.8875 | 278477.0 | 313406.5 | 0.8888 |
+| n=1048576 W=64 | 131504.0 | 135936.0 | 0.9612 | 136358.0 | 140918.5 | 0.9746 |
+| n=1048576 W=128 | 81488.0 | 122304.0 | 0.6670 | 86180.0 | 127622.0 | 0.6704 |
+| n=1048576 W=256 | 82704.0 | 125968.0 | 0.6532 | 86308.0 | 130678.0 | 0.6651 |
+| n=1048576 W=512 | 85088.0 | 144128.0 | 0.5860 | 89444.0 | 148966.5 | 0.5985 |
+| n=1048576 W=1024 | 92656.0 | 178528.0 | 0.5215 | 97893.0 | 183289.0 | 0.5338 |
+
+### op=sum pair=warp-shuffle/subgroup (reference arm: subgroup :subgroup-reduce)
+
+| run (n, W) | warp-shuffle gpu_ns | subgroup gpu_ns | ratio gpu_ns | warp-shuffle host_ns | subgroup host_ns | ratio host_ns |
+|---|---|---|---|---|---|---|
+| n=1000003 W=32 | 261632.0 | 264272.0 | 0.9911 | 267884.5 | 269356.5 | 0.9914 |
+| n=1000003 W=64 | 121936.0 | 112528.0 | 1.0705 | 127238.0 | 117941.0 | 1.0727 |
+| n=1000003 W=128 | 76784.0 | 112592.0 | 0.6833 | 81059.5 | 117925.5 | 0.6956 |
+| n=1000003 W=256 | 77952.0 | 119872.0 | 0.6568 | 83107.5 | 124166.0 | 0.6669 |
+| n=1000003 W=512 | 84816.0 | 130704.0 | 0.6485 | 88596.0 | 135734.0 | 0.6468 |
+| n=1000003 W=1024 | 89744.0 | 154480.0 | 0.5839 | 95268.0 | 159703.5 | 0.5920 |
+| n=1048576 W=32 | 274432.0 | 276304.0 | 0.9943 | 279933.0 | 281341.0 | 0.9921 |
+| n=1048576 W=64 | 128848.0 | 121136.0 | 1.0612 | 132998.0 | 125685.5 | 1.0586 |
+| n=1048576 W=128 | 80352.0 | 118336.0 | 0.6744 | 85363.0 | 122533.5 | 0.6928 |
+| n=1048576 W=256 | 81424.0 | 125264.0 | 0.6529 | 85539.5 | 129253.0 | 0.6610 |
+| n=1048576 W=512 | 84784.0 | 135664.0 | 0.6272 | 89700.0 | 140182.0 | 0.6451 |
+| n=1048576 W=1024 | 92800.0 | 159472.0 | 0.5795 | 98293.0 | 164536.0 | 0.5956 |
+
+## Named and excluded (data, never silently dropped)
+
+All 108 pair blocks are complete (their declared pairs, both arms), verified (every verify line ok=1) and rc=0 -- nothing named and excluded.
+
+40 sample lines sit outside any `-- cell` block (the log's smoke block) -- named and excluded.

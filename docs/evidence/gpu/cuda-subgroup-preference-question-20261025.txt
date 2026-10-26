@@ -1,0 +1,183 @@
+WHETHER THE CUDA-ROUTE ROW SHOULD EVER ANSWER :subgroup-reduce --
+DECIDED (both readings), with the reopen condition named (JUN-57)
+
+Date: 2026-10-25 (JST)
+Row: the question ADR-0356 names ("whether the CUDA-route row should
+ever answer :subgroup-reduce") and the 2026-10-25 selection-answer
+record (docs/evidence/gpu/cuda-selection-answer-20261025.txt) left
+open ("whether the CUDA-route row should ever answer :subgroup-reduce
+... this row does NOT decide it: (2)'s :sum gap and (3)'s W=32-only
+wins bear on it and nothing more"). This row consumes exactly that.
+Issues: JUN-55, JUN-57. Decision home: ADR-0361's 2026-10-25
+"again later the same day" amendment.
+
+WHAT THIS ROW IS: a design decision over committed measurements.
+NO hardware ran this tick and no new sample exists. Every number
+below is a citation of a committed artifact, RE-DERIVED this tick
+through the tool path (see GROUND).
+
+GROUND (committed records, reproduced this tick):
+  - run1: docs/evidence/gpu/cuda-claimprotocol-run1-20261025/
+    (measure-log.txt = 4360 timed samples; publication.txt).
+  - run2: docs/evidence/gpu/cuda-claimprotocol-run2-20261025/
+    (same shape).
+  - Reproduction: `python3 scripts/gpu_regime_classify.py --cuda-log
+    <measure-log.txt>` over EACH committed log exits 0, stderr
+    0 bytes, and re-derives the committed publication.txt
+    BYTE-EXACTLY (diff empty, 912 lines each). Every verdict,
+    level row and raw ratio below was read from those RE-PRODUCED
+    publications this tick, not from memory and not from the
+    commit messages.
+
+THE QUESTION'S TWO READINGS, BOTH CLOSED:
+
+Reading 1 -- should the row answer :subgroup-reduce AT ALL (on the
+CUDA route)? CLOSED since 2026-10-23, decided and IMPLEMENTED: the
+ladder :warp-shuffle-reduce -> :subgroup-reduce -> :baseline, rung 2
+answering where the warp gate does not reach (rule-6 subgroup facts
+reported, NO compute capability; a reported cc < 7.0 or malformed
+fails closed on both rungs -- accelerator_variants.cljk
+cuda-cap-ok? / nvidia-floor-ok?, pinned by accelerator-variants-test
+in the scoped gate below). NAMED, NOT HIDDEN -- a citation hazard in
+the selection-answer record: its "(:cuda-v1, :subgroup-reduce) stays
+by-name-only" describes the lower by-name admission and must NOT be
+read as "select-variant never answers :subgroup-reduce on the CUDA
+route" (rung 2 selects it on descriptor facts). Commit messages and
+records stand as history; this row carries the reconciliation.
+
+Reading 2 -- should the row answer :subgroup-reduce IN PREFERENCE
+where the warp gate HOLDS (confirmed cc 7.0+, W >= 32)? DECIDED: NO
+-- on this evidence, under this protocol.
+
+PART 1 -- WHAT THE EVIDENCE SHOWS (sign claims CHANNEL-SCOPED and
+DEVICE-SCOPED to xavier sm_72; the protocol's statistic, the block's
+paired-median ratio; warp/subgroup above 1.0 = :subgroup-reduce
+faster):
+
+  The ONLY measured cell where :subgroup-reduce beats
+  :warp-shuffle-reduce is (op :sum, W = 64):
+    run1 gpu_ns 1.0848 (n=1000003) / 1.0683 (n=1048576),
+         host_ns 1.0874 / 1.0700;
+    run2 gpu_ns 1.081 / 1.073, host_ns 1.070 / 1.070.
+  8/8 per-run ratios above 1.0 -- both shapes, both clocks, both
+  sessions. Every other measured cell has :warp-shuffle-reduce
+  first (at :max/:min every width, the strata's regime-invariant
+  12/12-below verdicts; at :sum W = 32 ratios ~0.99 and W >= 128
+  ratios 0.58..0.69).
+
+  RAW-MEDIAN THREE-ARM CHECK at (op :sum, W = 64) -- RAW DATA,
+  named as outside the protocol's ratio regime (the adoption
+  publishes NO cross-stratum roll-up; these arms sit in different
+  pair blocks / fresh processes):
+    run1, n=1000003: subgroup 111888 (sub/base block) and 111248
+      (warp/sub block); warp 120000 (warp/base) and 120848
+      (warp/sub); baseline 128448 (sub/base) and 128640 (warp/base)
+      -- gpu_ns medians.
+    run1, n=1048576: subgroup 116048 / 115584; warp 129408 /
+      124432; baseline 133472 / 133392.
+    run2, n=1000003: subgroup 111664; warp 120080; baseline
+      127664 (sub/base block) / 129088 (warp/base block).
+  In both sessions, both shapes, the ordering is
+  :subgroup-reduce < :warp-shuffle-reduce < :baseline. This is the
+  reading of the raw times; the arms are cross-process so it bears
+  on the question and, under the protocol, decides nothing.
+
+PART 2 -- WHY NO UNDER THE STANDING PROTOCOL:
+
+  (a) Rule 2 (the adoption's (b), carried at its letter): a
+      regime-invariant sign is the ONLY selection basis. The
+      (op :sum) warp/subgroup stratum is REGIME-SCOPED in both
+      sessions, both metrics, and the straddle is WITHIN regime 1:
+      rule 1's GAP-1.15 clustering pools the W = 64 runs with
+      W = 128..512 (the reference arm :subgroup-reduce's per-run
+      medians at W = 64 and W = 128 are 111248 / 111168 in run1,
+      within the 1.15 window), so the W = 64 cell is NOT its own
+      regime level and its one-sided sign is not a regime-invariant
+      sign anywhere. The reproduced publication's own verdict text:
+      "straddle within regime 1 (one regime holds both sides)".
+      "A regime-scoped sign cannot choose a variant, in either
+      direction" -- the selection-answer record's ruling stands.
+  (b) Per-cell selection units do not exist on this channel. The
+      adoption's rule-2 unit is the (metric x operator x pair-type)
+      stratum and "names no roll-up across them". The Apple
+      flip-cell precedent's "the cell's OWN claim-protocol rule-2
+      verdict at that shape -- REGIME-INVARIANT FASTER" is a
+      DIFFERENT unit this channel has never published. Adopting one
+      is a rule-2 amendment -- its own design row, PROPOSED here
+      and deliberately NOT decided in this row.
+  (c) Scope limits unchanged: ONE NVIDIA device (xavier, L4T
+      R35.4.1, sm_72); two agreeing sessions bind no distribution
+      (run 3+ UNMEASURED); rule 3's cross-clock magnitude ban
+      stands (every ratio above is within one named metric).
+
+PART 3 -- CONSEQUENCE AND REOPEN:
+  NOTHING MOVES. The ladder stays :warp-shuffle-reduce ->
+  :subgroup-reduce -> :baseline byte-for-byte; at (op :sum, W = 64)
+  the design-ordered answer stands UNCLAIMED -- named as unclaimed,
+  not as measured-ordered. No :measured? flag, :shapes value,
+  flip cell or workgroup row moves (rule 4).
+  REOPEN CONDITION (either fires the question again):
+    (i) a cell-level (or other unit-level) rule-2 amendment for
+        this channel, adopted by its own row, and under it a
+        REGIME-INVARIANT FASTER verdict for :subgroup-reduce over
+        :warp-shuffle-reduce at a named (op, W) cell on a named
+        device -- the (op :sum, W = 64) cell is the standing
+        candidate (its runs one-sided in both sessions); or
+    (ii) a stratum-level regime-invariant sign for :subgroup-reduce
+        over :warp-shuffle-reduce in some stratum.
+
+CORRECTION TO THE SELECTION-ANSWER RECORD (re-derivation-grounded;
+the publications reproduced byte-exactly this tick), named not
+hidden: its (3) detail -- "the straddle separates by regime: the
+W = 32 regime is one-sided FASTER for :subgroup-reduce
+(~0.88..0.93), the W >= 64 regimes are one-sided SLOWER
+(~1.03..1.18)" -- holds for the FOUR :max/:min strata (verified in
+the reproduced publications: W = 32 0.919..0.927 faster; W >= 64
+1.027..1.177 slower) but NOT for the two :sum strata. There the
+straddle is WITHIN regime 1: W = 256 sits marginally ABOVE 1.0
+(run1 gpu_ns 1.011 / 1.009, run2 0.992 / 1.003 -- 2-above/6-below
+then 1-above/7-below per the level rows) while W = 64/128/512 and
+the one-sided W = 1024 and W = 32 levels sit below (0.865..0.976).
+The (3) VERDICT is unchanged -- REGIME-SCOPED 6/6, no selection
+basis either way -- only the straddle's shape was mischaracterized
+for 2 of the 6 strata. The record stands as history; this row and
+the ADR-0361 amendment carry the correction.
+
+STATES:
+  - DECIDED (this row): both readings' answers, the no-move
+    consequence, the reopen condition.
+  - MEASURED: nothing new -- no hardware ran. Consumed, not
+    re-measured: the two sessions' signs and raw times (citations,
+    re-derived through the classifier this tick).
+  - IMPLEMENTED: nothing -- no code moves (the scoped gate below is
+    a regression pin over unchanged code).
+  - ACCEPTED DESIGN ONLY: the ADR-0361 claim-protocol adoption, the
+    ADR-0358 paired-within-run statistic, the ADR-0373 instrument
+    class.
+  - UNMEASURED, named so no reading upgrades: the (op :sum, W = 64)
+    cell's status under any cell-level unit (no such unit exists);
+    the :sum ordering between :warp-shuffle-reduce and
+    :subgroup-reduce on ANY device; every three-way sign on any
+    NVIDIA device other than sm_72; run 3+ cross-run stability;
+    whether a cell-level unit should exist (PROPOSED here);
+    every workgroup row (ADR-0355/0358) -- no :measured? flag
+    moves, :arm/:unknown stay provisional :measured? false.
+
+GATES (real runs, this slice):
+  - Reproduction: --cuda-log over each committed log, exit 0,
+    stderr 0 bytes, publications byte-exact (diff empty, 912 lines
+    each) -- quoted above.
+  - gpu_regime_classify.py --self-test: TOTAL 2491 assertions
+    passed, 0 failed (no code touched -- regression pin).
+  - Scoped GPU gate (the 8 GPU-owned test namespaces, scratch
+    runner gpu_scoped_gate.cljk in Hermes scratch, never
+    committed): 106 tests, 11046 assertions, 0 failures, 0 errors
+    (glslang 16.6.0 real-spawn line in the output) -- docs-only
+    diff touches no .cljk namespace.
+  - FULL run-tests.cljk: NOT RUN this slice (docs-only diff) --
+    named so nothing is implied. Documented red at base ("Could
+    not find namespace: kotoba.form", the W3 port path, ADR-0362),
+    outside this diff, not re-verified here. NO green full suite
+    is claimed.
+  - Evidence hygiene: no POSIX .sh execution file anywhere under
+    docs/ (checked before commit); this record is .txt.

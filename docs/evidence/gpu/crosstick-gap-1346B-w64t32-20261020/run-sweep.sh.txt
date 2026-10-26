@@ -1,0 +1,122 @@
+#!/bin/sh
+# CROSS-TICK TWO-BATCH SIGN PROBE (JUN-58, tick 20261020-1403):
+# batch A already exists -- the 1346 tick's batch B logs (13:50:59--13:52:07
+# JST, Oct 20), copied here byte-identical as run-A-*.log (sha256 in
+# README). This script runs batch B NOW, in a later cron tick / fresh
+# process, after batch A ended.
+#
+# WHY CROSS-TICK. The 2254 tick proved a >=30 min gap cannot fit this
+# platform's 1800 s run budget INSIDE one tick (3 evidences); the 2337 tick
+# bounded within-session stability at a 6m52s gap (no flip); the 0006/0530/
+# 0736/0805/0840/0916/0949/1001/1033/1047/1102/1117/1132/1201/1216/1248/1300/1315/1333/1346 ticks hold the
+# cross-tick series
+# (70m26s no flip / 318m29s w64t32 no flip, anchor INCONCLUSIVE under load
+# / 124m20s no flip / 27m27s no flip, chain's first 12/12-IQR-clean
+# comparison / 29m21s flip cell no flip (noise-labeled), anchor
+# INCONCLUSIVE under load / 30m14s flip cell no flip (noise-labeled),
+# anchor sign-unanimous -/-/- clean-vs-noise / 24m33s no flip, both cells
+# sign-unanimous and all-adjudicable / 16m20s flip cell no flip (15th
+# transition), anchor INCONCLUSIVE non-unanimous under chain-heaviest
+# loads / 25m36s flip cell no flip (16th transition), anchor INCONCLUSIVE
+# non-unanimous (batch A non-unanimous) at chain-lowest loads,
+# clean-vs-clean both sides read historic - / 12m52s both cells adjudicate
+# FLIP=no with both batches sign-unanimous (17th transition), chain's
+# shortest cross-tick gap / 14m59s both cells adjudicate FLIP=no with both
+# batches sign-unanimous (18th transition) / 13m51s both cells adjudicate
+# FLIP=no with both batches sign-unanimous (19th transition), chain's
+# second-shortest cross-tick gap / 15m21s flip-cell transition INCONCLUSIVE
+# (analyzer FLIP=YES voided: batch B non-unanimous +/−/+), anchor
+# adjudicated FLIP=no both batches sign-unanimous / 27m27s flip-cell
+# transition INCONCLUSIVE (analyzer FLIP=YES voided: batch A non-unanimous
+# +/−/+ -- the same three-run artifact seen from both sides of one gap),
+# anchor adjudicated FLIP=no both batches sign-unanimous / 11m34s both cells
+# adjudicate FLIP=no with both batches sign-unanimous (20th transition, no
+# flip), flip cell 3/3 IQR-clean all-below in both batches, chain's shortest
+# cross-tick gap / 30m9s both cells adjudicate FLIP=no with both batches
+# sign-unanimous (21st transition, no flip; one flip in twenty-one),
+# series' first >=30min gap (cross-tick only), flip cell 2/3 IQR-clean at
+# series-low loads / 12m32s both cells adjudicate FLIP=no with both batches
+# sign-unanimous (22nd transition, no flip; one flip in twenty-two),
+# chain's second-shortest cross-tick gap / 13m34s both cells adjudicate
+# FLIP=no with both batches sign-unanimous (23rd transition, no flip; one
+# flip in twenty-three), chain's fourth-shortest cross-tick gap / 14m51s
+# both cells adjudicate FLIP=no with both batches sign-unanimous (24th
+# transition, no flip; one flip in twenty-four) / 13m50s both cells adjudicate FLIP=no
+# with both batches sign-unanimous (25th transition, no flip; one
+# flip in twenty-five)). The flip-RATE
+# question needs more cross-session transitions, and each cross-tick batch
+# adds exactly one. This probe is explicitly labeled CROSS-SESSION and
+# cannot isolate "gap" from "session restart"; a FLIP or a no-flip is
+# reported as a cross-tick datum only. A no-flip bounds nothing against a
+# stochastic flip rate.
+#
+# PROBE IDENTITY. The probe bytes are the chain's pinned sha256 3696ca0d...
+# (the 2254/2337/0006/0530/0736/0805/0840/0916/0949/1001/1033/1047/1102/1117/1132/1201/1216/1248/1300/1315/1333/1346
+# runs all used these exact bytes). origin/main's
+# scripts/test-gpu-subgroup-reduce-chunksweep.cljk has SINCE ADVANCED and
+# computes GAP differently -- so batch B runs the PINNED copy
+# scripts/gpu-subgroup-reduce-chunksweep-pinned-3696ca0d.cljk
+# (byte-identical to the chain, verified by sha256 before every use). Its
+# root resolution (script dir / .. = repo root) is why the pinned copy lives
+# under scripts/. Fixtures identical to the chain (w64 a25a6931...,
+# self-printed by every SHAPE line and self-asserted by the probe before
+# dispatch).
+#
+# CHAIN INPUTS AT THIS BASE (the PR #1393 staging rule). This worktree's
+# base is origin/main 005d48fb -- on/after #1393's merge, so the staging
+# rule is NOT a no-op here: test/fixtures/gpu/ in the checkout holds the
+# regenerated post-fix bytes, and
+# `sh scripts/gpu-sign-chain-stage-fixtures.sh.txt` was run from this
+# worktree root before dispatch, restoring the chain's pinned pre-fix bytes
+# over them (all four sha256 re-verified against the archive README's table:
+# w32 0cf6c406..., w64 a25a6931..., w128 c7931718..., w256 087107f9...).
+# The rule's invariant (the probe sees the bytes every prior datum ran) is
+# preserved by that staging step.
+#
+# BASE NOTE. Batch A ran on origin/main 005d48fb (tick 1346's worktree);
+# batch B runs on origin/main 005d48fb -- the delta is EMPTY (same base
+# commit), so the dispatched computation is byte-identical regardless (the
+# SHAPE line's fixture sha256 is the check) and the probe bytes are the
+# chain's pinned bytes.
+#
+# GAP PROVENANCE. The wall-clock window between batch A (last run started
+# 13:52:07 Oct
+# 20) and batch B (first run this tick) carried NO documented amu-gpu GPU
+# dispatch: the 1346 tick's post-dispatch work (analysis, README, commit
+# 13:56:59, push, PR #1416 opened), and this tick's pre-dispatch work (git
+# fetch, worktree creation 14:03, batch-A copies and sha256 checks, script
+# writes, the analyzer carry and its five-line-pair check, the fixture
+# staging run) only. Other sessions' GPU traffic on this host is not ruled
+# out. Recorded as a confound of this datum.
+#
+# SHAPE/PROTOCOL. lanes 2,095,104 for both cells; 3 runs per cell, cell
+# order rotated per run-pair (t31,t32 / t32,t31 / t31,t32); fresh kbb
+# process per run; `date; uptime` recorded per run. Idempotent: a run whose
+# log exists is skipped. Usage: run-sweep.sh.txt B
+set -e
+cd "$(dirname "$0")/../../../.."
+EV=docs/evidence/gpu/crosstick-gap-1346B-w64t32-20261020
+PROBE=scripts/gpu-subgroup-reduce-chunksweep-pinned-3696ca0d.cljk
+mkdir -p "$EV"
+B="$1"
+case "$B" in B) ;; *) echo "usage: $0 B" >&2; exit 2;; esac
+
+# the probe bytes are the chain's or nothing: refuse to run anything else
+echo "3696ca0db0e28c5b41fa5c8551df2ae1302deb190e91722408117a06077ef652  $PROBE" | shasum -a 256 -c - >/dev/null
+
+run() { # pair-pos cell W chunks
+  log="$EV/run-$B-$1-$2.log"
+  if [ -f "$log" ]; then echo "skip $log"; return 0; fi
+  echo "run $log"
+  (date; uptime; time kbb --backend sci "$PROBE" "$3" 2095104 "$4") > "$log" 2>&1
+  grep -q "RESULT	verified=true" "$log" || { echo "UNVERIFIED $log"; exit 1; }
+}
+
+# pair 1: t31,t32   pair 2: t32,t31   pair 3: t31,t32
+run 1 w64t31 64 31
+run 1 w64t32 64 32
+run 2 w64t32 64 32
+run 2 w64t31 64 31
+run 3 w64t31 64 31
+run 3 w64t32 64 32
+echo "BATCH-$B-COMPLETE"

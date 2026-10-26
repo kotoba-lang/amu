@@ -1,0 +1,171 @@
+JUN-58 / JUN-55 -- harness-side regime classification (claim protocol
+rule 1, the GAP-1.15 clustering) -- IMPLEMENTATION slice (2026-10-23)
+
+One row of work: the slice the regime-robust magnitude claim protocol's
+own state paragraph named as the follow-up ("No harness implements
+regime classification -- the records classify manually in NOTES.md --
+and harness-side classification is UNIMPLEMENTED, its own later slice",
+docs/evidence/gpu/regime-robust-protocol-20261023.txt). This slice
+implements RULE 1 ONLY. No new hardware measurement is claimed here --
+the one hardware run below is a wiring smoke test to scratch, explicitly
+not a measurement record.
+
+WHAT MOVED (the diff):
+
+- scripts/gpu_regime_classify.py (new): pure classification functions
+  (level_clusters, parse_summary_per_run_baseline, render_section), the
+  named clustering rule GAP-1.15, a CLI (classify any summary.md), and
+  --self-test (unit fixtures + corpus regression).
+- scripts/gpu-subgroup-reduce-metal-measure.py: the record step appends
+  a "Regime classification (claim protocol rule 1)" section to every
+  summary.md it writes. All timing/protocol behavior untouched.
+- docs/adr/0360-gpu-apple-subgroup-reduce.md: new amendment (rule 1
+  mechanised) with the state discipline below.
+- docs/evidence/gpu/regime-classification-20261023.txt: this record.
+
+WHAT DID NOT MOVE (named so nothing is silently upgraded):
+
+- src/kotoba/compiler/*: untouched. test/*: untouched.
+- No committed evidence record is rewritten; the 28 existing
+  summaries keep their manual NOTES.md classification. The new section
+  appears in records produced from this slice forward.
+- No :measured? flag, workgroup row (ADR-0355/0358), flip gate or
+  selection answer moves (protocol rule 4).
+
+THE RULE (GAP-1.15), and where 1.15 comes from:
+
+  Per operator, the per-run baseline median gpu-ns values sorted
+  ascending, single-linkage: the next value joins the current level at
+  <= 1.15x the previous value, else it starts a new level. Levels are
+  published as gpu-ns ranges with run membership.
+
+  The threshold is the geometric midpoint of the separation window the
+  committed corpus establishes between prose-decided within-level drift
+  and prose-decided between-level steps. The two anchors are exact
+  committed numbers, not rounded estimates:
+
+  - within-level, decided by prose: 38958 / 36229 = 1.0753 -- the
+    wsweep-low-20261023/w32 :max cell's runs 4 and 6 are one "fast
+    regime" in that record's NOTES (":max runs 4/6 0.958/1.017",
+    named as fast-regime runs). Nothing manually placed in one level in
+    the corpus is further apart.
+  - between-level, decided by prose: 118646 / 96125 = 1.2343 -- the
+    shape2-resweep-20261023/w512 :min cell's run 3 (96125) is
+    "dropped" away from the slow level (118646..119312) in that
+    record's NOTES. Nothing manually placed in two levels is closer.
+
+  sqrt(1.0753 * 1.2343) = 1.1519... -> GAP_MAX = 1.15 (rounded down to
+  two decimals; the boundary direction is documented: <= 1.15 merges).
+
+TESTS (real output, this host):
+
+  1. python3 scripts/gpu_regime_classify.py --self-test
+
+     unit fixtures: 13 assertions passed
+     corpus: 28 committed summaries classified under GAP-1.15
+     gaps strictly between the two decided anchors (1.0753 within-level,
+     1.2343 between-level) -- decided by GAP-1.15 alone, named not
+     hidden:
+       gpu-subgroup-reduce-m1max-20261023/summary.md max: 83584 -> 103062  gap 1.233  -> split
+       gpu-subgroup-reduce-m1max-20261023/summary.md min: 83625 -> 102834  gap 1.230  -> split
+       gpu-subgroup-reduce-m1max-oporder-20261023/w32-sum-last/summary.md sum: 45833 -> 56104  gap 1.224  -> split
+       gpu-subgroup-reduce-m1max-resweep-20261023/w128/summary.md min: 77188 -> 95271  gap 1.234  -> split
+       gpu-subgroup-reduce-m1max-resweep-20261023/w512/summary.md min: 92979 -> 114500  gap 1.231  -> split
+       gpu-subgroup-reduce-m1max-shape2-20261023/w256/summary.md max: 66062 -> 75730  gap 1.146  -> merge
+       gpu-subgroup-reduce-m1max-shape2-band-20261023/misshape-defect-20261023/w128/summary.md max: 77375 -> 95438  gap 1.233  -> split
+       gpu-subgroup-reduce-m1max-shape2-band-20261023/w128/summary.md max: 81104 -> 100021  gap 1.233  -> split
+       gpu-subgroup-reduce-m1max-shape2-resweep-20261023/w1024/summary.md min: 68417 -> 81146  gap 1.186  -> split
+       gpu-subgroup-reduce-m1max-shape2-resweep-20261023/w1024/summary.md min: 81146 -> 93771  gap 1.156  -> split
+       gpu-subgroup-reduce-m1max-wsweep-low-20261023/w32/summary.md max: 36229 -> 38958  gap 1.075  -> merge
+       gpu-subgroup-reduce-m1max-wsweep-low-20261023/w64/summary.md max: 29833 -> 34062  gap 1.142  -> merge
+       gpu-subgroup-reduce-m1max-wsweep-low-20261023/w64/summary.md max: 74750 -> 91875  gap 1.229  -> split
+     TOTAL: 606 assertions passed, 0 failed
+
+     What the 606 cover: empty-input refusal; single value; tight
+     cluster; the boundary at exactly 1.15 (merges) and just over
+     (splits); single-linkage chaining (100/114/130 is one level);
+     run-index preservation; the four pinned manual classifications
+     (below); and, over all 28 committed summaries, the invariants
+     (runs are exactly 1..N; every run classified exactly once;
+     within-level gaps <= 1.15; between-level gaps > 1.15).
+
+     The pinned manual classifications, reproduced from the committed
+     summary.md text (NOT hand-fed fixtures):
+     - shape2-resweep-20261023/w512, all three operators: run 3 alone
+       at the fast level, runs 1,2,4,5,6 one slow level -- exactly the
+       NOTES' "runs 1, 2, 4, 5, 6 sit at the slow level; run 3
+       dropped".
+     - shape2-20261023/w32 :max: three levels, run 4 / run 3 /
+       runs 1,2,5,6 -- the NOTES' named "fast level (~37.5k)", "middle
+       level (~48k)", "slow level (~113k)".
+     - shape2-20261023/w32 :sum: all six runs one level -- the NOTES'
+       "all six :sum runs sat at the slow level".
+     - wsweep-low-20261023/w32 :max: runs 4 and 6 one fast level, runs
+       1,2,3,5 one slow level -- the NOTES' ":max runs 4/6" fast-regime
+       grouping.
+
+  2. CLI against a committed record
+     (python3 scripts/gpu_regime_classify.py
+     docs/evidence/gpu-subgroup-reduce-m1max-shape2-resweep-20261023/
+     w512/summary.md) reproduces that cell's manual classification in
+     the rule-1 format:
+
+     | operator | level | gpu-ns range | runs (baseline per-run median) |
+     |---|---|---|---|
+     | max | 1 (fastest observed) | 72542 | 3 (72542) |
+     | max | 2 (slowest observed) | 119166..119500 | 1 (119166), 2 (119208), 4 (119188), 5 (119438), 6 (119500) |
+     | min | 1 (fastest observed) | 96125 | 3 (96125) |
+     | min | 2 (slowest observed) | 118646..119312 | 1 (118646), 2 (118896), 4 (119312), 5 (118875), 6 (119146) |
+     | sum | 1 (fastest observed) | 61917 | 3 (61917) |
+     | sum | 2 (slowest observed) | 118833..119312 | 1 (119312), 2 (118833), 4 (119062), 5 (119062), 6 (119292) |
+
+  3. Driver wiring, exercised end-to-end on real hardware but NOT a
+     measurement record: the driver ran with --runs 1 --workgroup 32
+     --elements 65536 --out <scratch>/regime-wiring-check (scratch, NOT
+     under docs/evidence/, not committed -- one fresh process, a
+     non-historical shape). The summary.md the driver itself wrote
+     carries the new section (single-run output, one level each):
+
+     | operator | level | gpu-ns range | runs (baseline per-run median) |
+     | max | 1 (the only observed level) | 21271 | 1 (21271) |
+     | min | 1 (the only observed level) | 21438 | 1 (21438) |
+     | sum | 1 (the only observed level) | 21229 | 1 (21229) |
+
+     with verified read-back ok=1 on every arm of every operator. This
+     run's numbers support NO claim (1 run, non-historical n = 65536)
+     and are quoted only as proof the wiring runs.
+
+GATE (real runs, this host, kbb --backend sci):
+
+  scoped (the 7 GPU-owned test namespaces, scratch runner
+  gpu_scoped_gate.cljk, not in the repo), from the chain worktree root:
+
+    kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+      /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+
+    Ran 88 tests containing 7122 assertions.
+    0 failures, 0 errors.
+
+    scoped: 88 tests, 7122 passed, 0 failed, 0 errors
+
+  (88/7122, unchanged from base: this diff touches no code namespace.)
+
+  full (kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)"
+  run-tests.cljk): RED AT BASE, re-verified this tick, outside this
+  diff -- aborts at NAMESPACE LOAD with "Could not find namespace:
+  kotoba.form" (the W3 port path, documented red at base in ADR 0362
+  and every prior tick record). This diff touches no namespace on that
+  path. No green full suite is claimed.
+
+STATE (the honesty rule's three states): rule 1 harness-side
+publication = IMPLEMENTED (code + tests above). The claim protocol as a
+whole stays ACCEPTED DESIGN for its other rules. UNIMPLEMENTED harness-
+side, named: rule 2 sign classification (regime-invariant vs
+regime-scoped); rule 3 regime-matched comparison machinery; pair-level
+classification (within-run clock ramps -- analyze-oporder.py stays the
+manual instrument); cross-operator level identity (no clock: the
+harness never asserts that two operators' clusters are one clock
+level). UNMEASURED, unchanged: every measurement fact this campaign has
+ever listed (shapes beyond the two, the GLSL arm everywhere, devices
+other than this M1 Max, W = 32 as a verdict, the NVIDIA/Intel/ARM/AMD
+rows, cross-day replication) -- this slice measured none of them.

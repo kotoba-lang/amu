@@ -1,0 +1,109 @@
+# JUN-58 / JUN-55 -- GPU-timestamp route probe on the WGSL channel
+# (2026-10-25, tick slice; capability measurement, no kernel timing)
+
+Row taken: the run-2 record's own named UNMEASURED -- "per-kernel GPU
+time (writeTimestamp refused, re-recorded)". This slice does NOT measure
+kernel time. It measures the ROUTE CAPABILITY: can this Chrome 155 build
+be made to accept GPU timestamps on the WebGPU compute path at all, by
+any of the plausible enable routes? Answer: NO -- every WebGPU-side
+route is closed on this build, verified by live probe output below.
+Per-kernel GPU time therefore stays UNMEASURED, but its reason is now
+itself MEASURED (route absence, 6 attempts) instead of a single refusal.
+
+Host: MacBook Pro, Apple M1 Max, 32 GB, macOS. Chrome 155.0.8059.86
+(headless, channel 'chrome', --enable-unsafe-webgpu baseline).
+Probes ran 2026-10-25T00:48Z..00:55Z via node + playwright against the
+repo's own node_modules, adapter apple/metal-3 (same Dawn/Metal toolchain
+as the claim-protocol runs).
+
+## Routes probed (each a live browser evaluate, verbatim outcome)
+
+1. pass.writeTimestamp with the device's plain 'timestamp-query' feature
+   (the harness's current route, re-verified unchanged):
+   "UNAVAILABLE -- writeTimestamp threw: TypeError: Failed to execute
+   'writeTimestamp' on 'GPUComputePassEncoder': Use of the
+   writeTimestamp() method on compute pass requires the
+   'chromium-experimental-timestamp-query-inside-passes' feature"
+   -- the adapter advertises 'timestamp-query' but NOT the
+   inside-passes experimental feature.
+
+2. requestDevice UNCONDITIONALLY on
+   ['subgroups','timestamp-query','chromium-experimental-timestamp-query-inside-passes']
+   (in case the feature is requestable but unadvertised), under
+   --enable-features=WebGPUExperimentalFeatures:
+   "requestDevice threw: TypeError: Failed to execute 'requestDevice' on
+   'GPUAdapter': Unsupported feature:
+   chromium-experimental-timestamp-query-inside-passes"
+   adapter-advertises-experimental: false
+
+3. Same unconditional request under
+   --enable-dawn-features=timestamp_query_inside_passes: same
+   "Unsupported feature" refusal. adapter-advertises-experimental: false
+
+4. Same unconditional request under BOTH flags together
+   (--enable-features=WebGPUExperimentalFeatures
+   --enable-dawn-features=timestamp_query_inside_passes): same refusal.
+
+5. GPUQueue.writeTimestamp (the older queue-side API, historically gated
+   behind plain 'timestamp-query'), under the combined dev-flag set
+   (--enable-features=WebGPUDeveloperFeatures,WebGPUExperimentalFeatures
+   --enable-dawn-features=timestamp_query_inside_passes,allow_unsafe_timestamps):
+   "queueWriteTimestampType": "undefined",
+   "queueWriteTimestamp": "NOT A FUNCTION on this build"
+   -- the API does not exist on Chrome 155; nothing to enable.
+
+6. WebGL2 disjoint timer queries (a DIFFERENT channel -- GL/ANGLE
+   command time, not the WGSL compute path), same run:
+   "gl2ExtTimer": true   (EXT_disjoint_timer_query_webgl2 AVAILABLE)
+   "gl2ExtTimer1": false (EXT_disjoint_timer_query absent)
+   "gl2Renderer": "WebKit WebGL", WebGL 2.0 (OpenGL ES 3.0 Chromium).
+
+(Also recorded for context: the probe's device reports
+deviceHasTsFeature: true for plain 'timestamp-query' -- the feature
+token is real, it just does not unlock any write route on this build.)
+
+## STATE (the three states, named)
+
+- MEASURED: the route-capability facts above -- they are build/hardware
+  answers read through a live probe on this host, exactly the class of
+  fact :measured? true is defined to cover ("facts read through a
+  probe"). 6 attempts, each with its verbatim outcome.
+- UNMEASURED (unchanged): actual per-kernel GPU time for any arm on the
+  WGSL channel. No WebGPU route exists on this build; nothing timed.
+- PROPOSED (neither implemented nor accepted): a per-kernel GPU-time
+  route through the wire-42 runtime itself -- Vulkan timestamp queries
+  (VK_QUERY_TYPE_TIMESTAMP) via tools/kexe_gpu_vulkan.c + MoltenVK --
+  which is the only :gpu/compute execution path per the runtime reality
+  line, and would answer for the runtime the WGSL channel cannot answer
+  for. Its own row. The WebGL2 timer route (route 6) is available but
+  measures the GL/ANGLE channel -- a different execution path from the
+  WGSL reduce arms -- so it is NOT a substitute and is not claimed as
+  one.
+
+## Rule 4 / channel scoping
+
+No :measured? flag, workgroup row, :shapes value or selection answer
+moves (rule 4). This is a route-capability probe on the WGSL wall-clock
+channel's toolchain; it adjudicates nothing about regime structure or
+sign (rules 1/2 unchanged; the claim-protocol runs' verdicts stand
+untouched). The run-2 record's named UNMEASURED question is REFINED,
+not answered: per-kernel GPU time remains UNMEASURED, with the reason
+now a measured route absence instead of a bare refusal.
+
+## Gates (real runs, this tick)
+
+- Scoped GPU gate (8 GPU-owned namespaces, scratch runner, never
+  committed): GREEN -- 106 tests / 11046 assertions / 0 failures /
+  0 errors, exit 0 (glslang 16.6.0 real-spawn line in the output). This
+  diff touches no .cljk namespace (docs-only evidence), the gate is a
+  regression pin.
+- gpu_regime_classify.py --self-test: GREEN -- TOTAL 2448 assertions
+  passed, 0 failed (unchanged from the run-2 slice baseline; this slice
+  touched no classifier code).
+- FULL run-tests.cljk: NOT RUN this slice (docs-only diff). Documented
+  red at base ("Could not find namespace: kotoba.form", ADR-0362),
+  outside this diff -- no green full suite is claimed.
+
+Evidence rule: this file is a .txt log. The probe sources are embedded
+in the tick transcript and scratch (never committed); no POSIX .sh
+execution file exists anywhere under docs/ (checked).

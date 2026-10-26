@@ -1,0 +1,144 @@
+JUN-57 (under JUN-55): CUDA paired-timing channel -- the claim-protocol
+machinery (i) LANDS. One tick, one row.
+Date: 2026-10-25 (JST). Branch bot/amu-gpu-chain (chain PR #1455).
+
+WHAT THIS ROW IS
+The claim-protocol adoption row for the CUDA channel (ADR-0361 amendment,
+2026-10-25) left HONEST LEFT (i): "harness-side rule-1+rule-2 publication
+for the CUDA channel -- UNIMPLEMENTED". This slice implements exactly
+that row in scripts/gpu_regime_classify.py: the parse of the
+paired-timing instrument log's pair blocks and the rule-1 + rule-2 +
+rule-3 publication for this channel, plus the CLI route the fresh-session
+run driver pipes its log through (--cuda-log). No hardware ran this tick.
+
+STATE (the three states, kept apart)
+- IMPLEMENTED (code + tests): parse_cuda_pair_blocks,
+  render_cuda_rule1_section, render_cuda_sign_section,
+  render_cuda_raw_times_section, render_cuda_named_section,
+  render_cuda_claim_protocol, the --cuda-log CLI route, and the
+  self-test fixtures + corpus pins in the same file.
+- ACCEPTED DESIGN ONLY (unchanged): the 2026-10-25 adoption row itself
+  (ADR-0361 amendment) -- this machinery carries it out, it does not
+  extend it. No cross-stratum roll-up exists to implement because the
+  adoption names none (a roll-up would be its own design row).
+- MEASURED: nothing (no hardware ran; every number in this record is a
+  fixture value or a value re-derived from committed records).
+- UNMEASURED, named: every CUDA sign/speed verdict -- (ii) a fresh
+  paired-timing session under the adoption that publishes rule 1 +
+  rule 2 by the run itself is UNMEASURED until that session runs, and
+  only then does (c) the :warp-shuffle-reduce vs :subgroup-reduce vs
+  :baseline speed question have claim currency; the clock/thermal
+  regime structure of the xavier blocks; cross-run stability; every
+  workgroup row (the instrument channel answers no dispatch row;
+  :arm/:unknown stay provisional :measured? false).
+- NOT RETROACTIVE (named, not hidden): NO rule-1/rule-2 publication is
+  rendered or claimed for the committed 2026-10-25 xavier paired-timing
+  record. Its RAW-DATA standing and maps-onto-no-row ruling stand. The
+  self-test's corpus pin over that record is parse/raw-data only (the
+  derive parse the adoption names re-runnable); no verdict over it
+  exists in any file this slice touched.
+- No :measured? flag, workgroup row, :shapes value or selection answer
+  moves (rule 4).
+
+THE MACHINE (the adoption's letter, mechanised)
+- METRIC-NAMED: gpu_ns (CUDA-event elapsed around the kernel on the GPU
+  timeline) is rule 1's baseline metric; host_ns (CLOCK_MONOTONIC
+  submit->completion, the stop event's host-side record call named as
+  sitting inside the span) is the channel's second metric. The two NEVER
+  mix in one clustering or one claim.
+- Run unit: one fresh process per pair block -- (n, W, operator,
+  pair-type) -- PAIRS=20 interleaved pairs, WARMUP=2 discarded per arm,
+  alternating AB/BA.
+- Rule 1's per-run baseline median: the pair block's REFERENCE arm (the
+  paired ratio's denominator -- :baseline for subgroup/baseline and
+  warp-shuffle/baseline, :subgroup-reduce for warp-shuffle/subgroup)
+  median over its 20 samples in the named metric. GAP-1.15 clusters run
+  per (metric x operator x pair-type) -- a cluster pools runs whose
+  proxy is the same kernel.
+- Rule 2 in full, unchanged: the per-run ratio is the block's
+  paired-median ratio in the named metric (median over the within-pair
+  ratios armA/armB -- the statistic paired-ratios.txt computes); the
+  correctness precondition is verified inside the measurement -- a block
+  is usable only when both arms' verify lines are ok=1, else it is named
+  and excluded. Regime-invariant sign is the only selection basis.
+- Rule 3: cross-clock magnitude claims (gpu_ns vs host_ns) INADMISSIBLE
+  (different spans); the publication keeps both clocks' raw per-block
+  times beside the ratios; the named hazard (design reasoning, NOT a
+  measurement) -- fixed per-dispatch overhead common to both arms biases
+  host_ns ratios toward 1, conservative against win claims -- rides in
+  the section text.
+- SIGN-SCOPED: a CUDA-channel sign never flips an MSL/WGSL cell and
+  never answers a workgroup row (ADR-0355's 2026-10-25 channel rule
+  stands); only HONEST LEFT (c)'s own CUDA-route selection rows consume
+  it. Rule 4 unchanged.
+
+VERIFIED (tool output, this tick)
+1. python3 scripts/gpu_regime_classify.py --self-test ->
+   TOTAL: 2491 assertions passed, 0 failed (exit 0). The previous
+   committed record pins 2448 at 5c49973ce (quoted, not re-measured);
+   the +43 delta is this slice's fixtures: parse exactness (reference-
+   arm medians + paired-median ratios, both metrics; the warp-shuffle/
+   subgroup reference arm), the paired-median convention pinned EXACTLY
+   (median over 4 within-pair ratios [1, 1, 2, 2] = 1.5 -- mean of the
+   two middles, not a lower-middle pick), refusals (duplicate block,
+   duplicate sample, unknown pair type, unclosed block, no blocks, end
+   line disagreeing with its block), named exclusions (incomplete
+   3-of-20 / verify ok=0 / rc=127, each with its own reason), orphan
+   sample lines counted and named, metric separation (gpu_ns by-regime
+   straddle beside host_ns regime-invariant faster on the SAME runs --
+   exact rows), within-regime straddle + no-side, pair-type strata
+   independent (opposite signs in one operator), NO cross-stratum
+   roll-up, channel scoping + rule 4 text, the raw both-clocks table,
+   and the rule-2 NOT PUBLISHED absence when every block is excluded.
+2. Corpus pin over the committed xavier record (parse/raw-data ONLY):
+   docs/evidence/gpu/cuda-paired-timing-xavier-20261025/ parses to 108
+   usable pair blocks, 0 excluded, 40 orphan sample lines (the smoke
+   block), every block PAIRS=20 with 20 within-pair ratios, and the
+   derived paired-median ratios AND gpu min..max reproduce
+   paired-ratios.txt EXACTLY (108/108 rows, both clocks, round-4). The
+   log still carries no 'regime' string (the NOT RETROACTIVE boundary
+   holds, re-pinned). The statistic convention was established by this
+   reproduction: statistics.median (mean of the two middle values over
+   the 20 pairs); a lower-middle pick disagrees 108/108 (probe output).
+3. CLI route: python3 scripts/gpu_regime_classify.py --cuda-log
+   <scratch fixture log> exits 0 (101 lines) and prints the rule-1
+   sections for BOTH metrics with exact cluster rows ("| 1 (fastest
+   observed) | 100.0..104.0 | n=1000003 W=32 (100.0), n=1000003 W=64
+   (104.0) |" / "| 2 (slowest observed) | 200.0 | n=1000003 W=128
+   (200.0) |"), the rule-2 token (PUBLISHED), per-stratum verdicts
+   (fixture: gpu_ns "| regime-scoped | straddles 1.0 | straddle
+   separates by regime ..." beside host_ns "| regime-invariant |
+   faster | all 3 per-run ratios below 1.0 (3/3 faster) ..."), the raw
+   both-clocks table and the named census ("2 sample lines sit outside
+   any `-- cell` block (the log's smoke block) -- named and
+   excluded."). FIXTURE VALUES, NOT MEASUREMENTS.
+4. Scoped GPU gate (8 GPU-owned namespaces, scratch runner
+   scoped-gpu-gate.cljk, never committed): 106 tests / 11046
+   assertions / 0 failures / 0 errors (glslang 16.6.0 real-spawn line
+   in the output). Counts unchanged vs base -- the diff touches no
+   .cljk namespace under test (regression pin).
+5. FULL run-tests.cljk NOT RUN this slice (script/docs-only diff) --
+   documented red at base ('Could not find namespace: kotoba.form',
+   ADR-0362) outside this diff, not re-verified here; no green suite
+   claimed.
+
+NAMED, NOT HIDDEN
+- Parser hazard found this slice: the instrument's arm name
+  "warp-shuffle" contains a hyphen; an arm pattern of \w+ silently
+  drops those samples (the first probe run mis-parsed every
+  warp-shuffle block to one arm's 20 samples and crashed on empty
+  ratio sets). The parser's arm pattern is [\w-]+ and the corpus pin
+  proves 40 samples per block over all 108.
+- Running --cuda-log over the committed 2026-10-25 xavier log would
+  mechanically produce sections, and that is REFUSED for that record
+  (the adoption's NOT RETROACTIVE clause). It is not done here; no
+  output of it exists.
+
+LEFT (its own row)
+(ii) a fresh paired-timing session on xavier that publishes rule 1 +
+rule 2 by the run itself (the scratch run driver pipes its log through
+--cuda-log) -- UNMEASURED until that session runs. Only then does (c)'s
+speed question have claim currency.
+
+No POSIX .sh anywhere in docs/ (checked after this file landed:
+0 files).

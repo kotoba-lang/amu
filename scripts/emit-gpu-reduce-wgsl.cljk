@@ -1,0 +1,53 @@
+#!/usr/bin/env kbb
+;; EMIT the baseline :reduce WGSL arm's source (accelerator/lower
+;; :wgsl-v1 :baseline) for the JUN-59/JUN-60 validation evidence, straight
+;; from the emitter (never hand-written):
+;;
+;;   kbb --backend sci --classpath "src:test:$AMU_KBB_TEST_CLASSPATH" \
+;;     scripts/emit-gpu-reduce-wgsl.cljk [output-dir]
+;;
+;; Writes <output-dir>/reduce-w<W>-<operator>.emitted.wgsl for W in
+;; {32, 64, 128, 256, 512, 1024} and operator in {sum, max, min} -- the
+;; whole admitted row. Each file is then validated as WGSL by a real
+;; WebGPU implementation's shader-creation step (Google Chrome's
+;; Dawn/Tint, via createShaderModule + getCompilationInfo; the harness is
+;; scripts/validate-gpu-subgroup-reduce-wgsl.mjs and the transcripts live
+;; in docs/evidence/gpu/wgsl-baseline-fix-validate-chrome-20261025/).
+;; That is a TOOLCHAIN fact of what validates, not a measurement: no
+;; WebGPU execution path exists in this repository and no timing or
+;; speedup is claimed or implied.
+;;
+;; Deterministic: same emitter, same bytes. If a run of this script
+;; changes a file, the emitter changed.
+;;
+;; [2026-10-25 (the baseline-arm fix slice): the DEFAULT output path is
+;; the PRE-FIX corpus -- the judged input of this slice's first judgment,
+;; in which the arm still spelled the infinite neutral
+;; (select(bitcast<f32>(0xFF800000u), ...)) and the WGSL Finite Math
+;; Assumption (15.7.3) refused it -- and stays byte-untouched after the
+;; fix. The post-fix corpus is emitted to the explicit output-dir
+;; argument (docs/evidence/gpu-baseline-reduce-wgsl-fix-20261025/shaders)
+;; and judged there.]
+
+(ns emit-gpu-reduce-wgsl
+  (:require [kotoba.compiler.accelerator :as accelerator]))
+
+(def widths [32 64 128 256 512 1024])
+(def operators [:sum :max :min])
+
+(def out-dir
+  (or (first *command-line-args*)
+      "docs/evidence/gpu-baseline-reduce-wgsl-20261025/shaders"))
+
+(defn -main [& _]
+  (doseq [w widths
+          operator operators]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
+                                  {:workgroup-size w})
+          code (accelerator/lower kir :wgsl-v1 :baseline)
+          path (str out-dir "/reduce-w" w "-" (name operator)
+                    ".emitted.wgsl")]
+      (spit path code)
+      (println "WROTE" path (count code) "bytes"))))
+
+(-main)

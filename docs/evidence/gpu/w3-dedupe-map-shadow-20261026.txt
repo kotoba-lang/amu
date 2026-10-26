@@ -1,0 +1,156 @@
+JUN-56 / JUN-55 -- the dedupe-map row: the W3 SUBGROUP <ops> set-dedupe
+check is ONE document-contains over a document-MAP shadow (a per-element
+RECURSIVE walk deleted), 2026-10-26
+
+WHAT THIS ROW IS: the named residual of w3-ops-walk-token-skip-20261026
+("the O(TOKENS) walk residual and sg-member?'s per-element frames
+... the 70-byte eight-token answer still TRAPs host/stack-exhausted on
+BOTH arms ... their own rows"). One implementation slice on
+kotoba.compiler.accelerator-targets. NO hardware ran, no GPU, no timing
+-- every number below is a kotoba-language-runtime behavior probe (the
+w3 fact class).
+
+INSTRUMENT (all runs this tick, scratch probes never staged): the w3
+extract-balanced idiom -- the arms' OWN text extracted from the
+namespace source, sema/analyze + ir/execute on the kotoba language
+runtime, kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)"
+<scratch probe>. Go/no-go probes w3_member2_prims.cljk /
+w3_member2_prims3.cljk (the primitive ground this row's design depends
+on) and w3_member2_before_after.cljk (the dedupe grid + the trap-class
+e2e cells + two boundary sweeps + standing pins + previous rows'
+regression cells, run TWICE, byte-identical runs: sha256
+dcbec8d9d9fa923cc4c288c7ee5e21ddf6ba43981fa62d5035dc3777e17d4590
+both). The BEFORE arm is extracted from a sha256-verified git-show HEAD
+dump of accelerator_targets.cljk (scratch/w3_member2_before_src.cljk;
+sha256 d7c3f4ef9bcd30926bc270a8790a848888f6b84bddff0100bb2837fefe78adbe
+-- which is the previous row's AFTER hash, chain continuity -- AFTER
+bbec16360afef80a19f82f93596cac287893725dc1e37c6f1099e9d0c1afdc65).
+Parity reference: the host arm's own device-from-subgroup.
+
+GO/NO-GO GROUND (capability probes, measured -- the design's basis):
+  document-set-contains? TRAPs "document-set-required" on a
+  document-VECTOR (the direct membership route onto the answer vector
+  is CLOSED; on a document-SET it answers membership correctly).
+  document-contains answers the map-key idiom exactly (map{basic:true}
+  holds basic -> true, vote -> false) and TRAPs "document-map-required"
+  off-map (vector/set kind checks).
+  document-assoc grows the map without dropping earlier keys (assoc
+  vote into map{basic} -> both keys, count 2).
+  document-merge TRAPs "document-map-required" on SETS -- the
+  set-shadow alternative is CLOSED (a document-set has no grow head in
+  the head registry: document-set is construct-only).
+  (document-map) seeds an empty map ["map" []]; membership on it false.
+  bit-and/bit-or work on i64 (the mask route was designed but not
+  needed -- the map shadow is exact without bit arithmetic).
+  frames ground (kir.cljk, read not assumed): frames = interpreter USER
+  call depth (each function entry conjes the name; a trampolined
+  self-tail re-entry is free), default 32 -- head/primitive calls cost
+  no frame.
+
+WHAT LANDED (code + tests), kotoba arm only (the host arm is the parity
+reference and is untouched):
+  sg-ops-walk gains a document-MAP shadow (kw -> true) seeded
+  (document-map) in sg-ops; the dedupe verdict is ONE document-contains
+  and the shadow grows with ONE document-assoc in the same branch that
+  grows the answer (document-vector-conj) -- where the check walked the
+  answer vector one element per RECURSIVE frame (the DELETED
+  sg-member?: document-equal? per element, k -> n recursion, its depth
+  stacked under the walk's per-token frames). CONTRACT UNCHANGED,
+  pinned: a duplicate token is the same fact and collapses; the ANSWER
+  is still the document-VECTOR in first-occurrence order (kind pinned).
+  The shadow mirrors the vector 1:1 (both grow together), so the
+  membership verdict is EXACT, not approximate.
+
+MEASURED (runtime, no hardware; BEFORE = the deleted per-element walk
+arm, AFTER = the shadow-map arm, HOST = the host arm; probe ran TWICE,
+byte-identical):
+  dedupe grid (8 cells): BEFORE == AFTER == HOST on every short cell
+  ("basic basic" #{basic}, "basic shuffle basic" #{basic shuffle},
+  "vote vote", "basic vote basic vote", the 7-token dedupe-heavy field,
+  "quad quad quad", 10x "basic") -- the walk's cost was FRAMES, not
+  facts; the eight-distinct field (the deleted walk's worst case: every
+  member check walked to the end) TRAPped host/stack-exhausted BEFORE
+  and answers the full 8-element set == HOST AFTER.
+  THE ROW'S TRAP-GONE CELLS: the 70-byte eight-token answer
+  "8|basic vote arithmetic ballot shuffle shuffle-relative clustered
+  quad" TRAPped host/stack-exhausted BEFORE and answers 8 #{all eight}
+  == HOST AFTER; the 86-byte spaced eight-token answer same; the
+  77-byte twelve-token answer (3-word cycle) TRAPped BEFORE and answers
+  8 #{basic vote shuffle} == HOST AFTER.
+  boundary re-measured, measure-only: 3-word-cycle fields resolve
+  2..24 tokens == HOST and TRAP budget/frames at 32/48/64 (BEFORE this
+  row the boundary was NON-MONOTONIC -- 12 trapped; this row's two
+  byte-identical runs show no non-monotonic cell); 8-word-cycle fields
+  resolve through 24 tokens AFTER (BEFORE trapped budget/frames at 24)
+  and both arms TRAP budget/frames at 32+ -- the O(TOKENS) walk
+  residual, its own row.
+  regression (no spelling moved, byte-identical BEFORE == AFTER ==
+  HOST): canonical-25, the dedupe cells (14/22/11 bytes), spaced-31,
+  unknown-token-14 -> null == nil, the 12-cell malformed grid ->
+  null == nil, and the previous rows' long cells (106/1006/110/206/200/
+  192/152 bytes, the 110-byte one still 42 #{basic}).
+
+CONSEQUENCE: NOTHING MOVES -- no :measured? flag value, no :shapes
+value, no workgroup row, no selection answer; :arm/:unknown stay
+provisional :measured? false. The SUBGROUP producer (ADR-0371) still
+does not exist -- no live wire feeds any of this. This row removes the
+per-element frames class (the 70-byte/86-byte/77-byte answers answered
+a trap, no fact, where the host arm answered the fact) and adds no
+measurement claim.
+
+STATES:
+- IMPLEMENTED (code + tests): the map-shadow dedupe (document-contains
+  / document-assoc over the (document-map) shadow; sg-member? DELETED).
+  Tests: w3-subgroup-dedupe-on-a-shadow-map-not-a-per-element-walk
+  REPLACES w3-subgroup-member-dedupes-on-the-vector-accumulator (that
+  test's subject -- the accessor match -- is deleted with the check;
+  renamed, the gate's test COUNT is unchanged at 121): the 8-cell
+  dedupe grid with HOST parity + the eight-distinct trap-gone pin, the
+  three trap-gone e2e pins (70/86/77 bytes) with HOST parity, the
+  standing pins + dedupe + malformed grid, and the source pins
+  (extract-balanced "(defn- sg-member?" -> nil, gone under the defn-
+  prefix, document-contains + document-assoc in the walk body, no
+  document-equal?/document-vector-at in it, (document-map) shadow seed,
+  (document-vector) answer seed kept, document-vector-conj grow kept).
+  The sg-size / pipe-token-end / sg-keyword / ops-walk tests' named-
+  residual prose is brought to the new state.
+- DECIDED (contract unchanged): a duplicate token collapses; the answer
+  is the document-VECTOR in first-occurrence order; the shadow is an
+  implementation detail mirroring it 1:1.
+- MEASURED: the probe tables above (runtime behavior, no hardware).
+- ACCEPTED DESIGN ONLY (unchanged): ADR-0355's table rules, ADR-0358's
+  key, ADR-0362's subgroup contract, the claim protocol.
+- UNMEASURED, named: the O(TOKENS) walk residual (the walk is still one
+  frame per token; 32+ token fields trap budget/frames), trap
+  boundaries and spellings beyond these runs (state- and path-
+  dependent, never pinned), every workgroup-row question (:arm/:unknown
+  stay provisional :measured? false), anything off this host.
+
+GATES (real runs):
+- Scoped GPU gate (8 GPU-owned namespaces, scratch runner
+  gpu_scoped_gate.cljk):
+    kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+      /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+  -> run 1 GREEN:
+     Ran 121 tests containing 11970 assertions. 0 failures, 0 errors.
+     scoped: 121 tests, 11970 passed, 0 failed, 0 errors
+     (committed pin 121 tests / 11947 assertions; delta = +0 tests
+     (one renamed) / +23 assertions). glslang 16.6.0 real-spawn ran.
+  NAMED, NOT HIDDEN: a second gate run was NOT taken this tick (the
+  tick's run-time budget ran out after run 1) -- the two-run
+  byte-identical discipline covers the PROBE runs (sha256 above), the
+  gate ran once.
+- NOT RUN this tick (budget): gpu_regime_classify.py --self-test (no
+  classify code touched; previous pin 2649/0) and the full
+  run-tests.cljk re-run (RED AT BASE 'Could not find namespace:
+  kotoba.form' (ADR-0362) outside this diff, re-verified in every
+  earlier 2026-10-26 tick -- NO green full suite claimed).
+- find docs -name '*.sh' -> 0 files checked in earlier ticks this
+  chain; no evidence .sh is added by this row (this file is .txt).
+- NAMED, NOT HIDDEN: kbb prints "2 dep(s) are not :local/root ..." on
+  every kbb run -- identical on every probe and gate run, unrelated to
+  this diff. The worktree also carries an untracked deps.edn (present
+  at tick start; this row did not create or touch it, and it is not
+  committed).
+- BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head
+  (checked at tick start; chain PR #1455 OPEN/MERGEABLE).

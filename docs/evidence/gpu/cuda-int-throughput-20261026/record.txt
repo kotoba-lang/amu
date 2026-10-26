@@ -1,0 +1,169 @@
+amu-gpu tick 2026-10-26 (UTC day 2026-10-26, fourth measurement row of
+the day): JUN-57 -- the ADR-0361 named unmeasured item "integer
+issue-side costs of these spellings (throughput arms not run)" (the
+twenty-second amendment's list) takes its throughput-arm branch: the
+IMAD issue-side cost is MEASURED in two independent chain forms and the
+add side is priced as an IADD3/IMAD.IADD MIX in both forms (the pure
+2-input IADD3 and pure IMAD.IADD issue costs stay UNSEPARATED -- named).
+ONE measurement slice; HARDWARE RAN: the integer throughput microbench
+on xavier sm_72 at 2026-10-26T11:53:12Z. NAMED NOT HIDDEN: a PROBE, not
+a registered timing session (no paired samples, no AB/BA), inadmissible
+under the entry criterion BY KIND; SAME-UTC-DAY with every earlier probe
+-- NOT a cross-day replication, extends NO record's :evidence and enters
+nothing; it measures INSTRUCTION costs, not kernels.
+
+WHAT RAN. 5 throughput arms x 3 launches x 128 threads, clock64() over
+the loop only, 16 chain ops per iteration (unroll 1) x 64 iterations =
+1024 chain ops per thread, 16 INDEPENDENT accumulators per thread (v2's
+THR structure with the latency row's one surviving lesson layered in:
+all operands SYMBOLIC -- c=3u, cm=7u, cf=1.5f from global memory,
+unknowable to ptxas; v2's constant operands had folded the integer
+chains away and its integer thr numbers were invalid as op costs). The
+two named chain forms from the latency row, now in throughput mode:
+STRAIGHT (one chain op per accumulator per iteration) and PING-PONG (8
+pairs, x = f(x, y_new), y = f(y, x_new)). Remote tree
+/root/gpu-int-throughput-20261026 created fresh, transferred
+COPYFILE_DISABLE=1 (3 files, 0 AppleDouble sidecars; received-file block
+matched local shas 3/3; local shas: microbench .cu c5e6db5509dd1489..,
+verifier 8bc4ad00bd01afd1.., driver 1bab83d70410f5bb..). All produced
+artifacts sha256-attested in run-log.txt (microbench.sass
+02297f6b8a97a652.., fetched locally the same tick, committed verbatim as
+microbench-sass.txt).
+
+VERIFIED (real runs): OK-build / OK-cubin / OK-sass 392 lines,
+diag-nvdisasm 0 bytes, driver exit 0, stderr 0 bytes; the two build
+diags are 183 bytes each = two benign nvcc warnings ("variable "cm" was
+set but never used" / "variable "cm" was declared but never referenced"
+-- unused macro parameter in two expansions; the .cu is scratch and not
+committed), the warning text quoted verbatim here;
+SASS verification 5 functions with per-function opcode histograms +
+exact-opcode TARGET counts (run-log.txt VERIFY blocks) and a per-body
+loop histogram (scratch thr_body_analyze.py, counts only, never staged);
+15 RESULT lines (5 arms x 3 launches), ALL THREE LAUNCHES IDENTICAL
+medians (deterministic; named caveat: the 128 threads run lockstep --
+one warp-group draw, not 128 independent samples); device name=Xavier
+clockRate_kHz=1377000 multiProcessorCount=8.
+
+LOOP-BODY COMPOSITION (VERIFIED from microbench-sass.txt; unroll 1, one
+static body per kernel): EVERY arm's body is exactly 20 instructions per
+iteration = 16 chain ops + 1 @!PT SHFL.IDX barrier + 1 counter IADD3 + 1
+ISETP.NE.AND + 1 @P0 BRA, and EVERY arm realized its 16 chain ops 1:1
+(NO folding in any arm). Spellings: thr_imad and thr_pp_imad = 16 x
+IMAD; thr_fadd = 16 x FADD.FTZ; thr_iadd AND thr_pp_iadd = 8 x IADD3
+(x = c + x + RZ) ALTERNATING with 8 x IMAD.IADD (x = c*1 + x) -- the
+8/8 split is identical in both forms.
+
+THE FINDING (cyc per chain op = per realized chain instruction here,
+median of 128 samples; every arm's three launches identical):
+(1) IMAD ISSUE-SIDE COST MEASURED, TWO-FORM BRACKET: straight form
+    (pure 16-IMAD body) 2.7383 cyc/op; ping-pong form (pure 16-IMAD
+    body) 2.8623 -- +0.1240 (+4.53%) for ping-pong. Unlike the latency
+    row's 0.005% agreement, the issue-side cost FORM-DEPENDS by ~4.5%
+    (the two dependency structures schedule differently against 16
+    chains); the issue cost of mad.lo.u32 on sm_72 is bracketed
+    [2.7383, 2.8623] by the two measured forms (DERIVED bracket).
+(2) THE ADD SIDE IS PRICED AS A MIX, PURE SPELLINGS STAY UNSEPARATED:
+    both add arms realized the SAME alternating 8 IADD3 / 8 IMAD.IADD
+    body (VERIFIED) -- the mixed issue cost is 2.0508 (straight) /
+    1.8359 (ping-pong) cyc/op. The additive-mean separation FAILS
+    across forms (DERIVED under the named unverified assumption that a
+    mix prices the mean of its spellings): straight implies
+    cost(IADD3-form)+cost(IMAD.IADD-form) = 4.1016 cyc/pair, ping-pong
+    implies 3.6718 -- one assumption, two sums; within one form there
+    is one equation per two unknowns. Pure 2-input IADD3 and pure
+    IMAD.IADD issue costs are UNSEPARATED -- the latency row's named
+    gap survives on the issue side.
+(3) LATENCY-AND-ISSUE ORDERINGS CONTRAST (latencies CONSUMED at the
+    latency row's commit): the mixed add spellings are SLOWER per op in
+    dependent-chain latency (5.3767 DERIVED mean vs IMAD 4.4657) but
+    FASTER at issue rate (1.84-2.05 vs 2.74-2.86) -- a kernel cost
+    model cannot substitute one for the other.
+(4) MERGE-MECHANISM REFINEMENT (VERIFIED at SASS level, extends the
+    twenty-second amendment's fact (3)): in the throughput form the
+    2:1 pairwise merge does NOT occur -- straight add.u32 chains
+    realized 16/16 separate instructions (the latency straight form
+    folded 2:1 into IADD3 x=x+c+c). The merge needs CONSECUTIVE
+    same-destination writes; interleaved destinations defeat it
+    entirely. NEW SPELLING FACT: the alternating IADD3/IMAD.IADD split
+    is NOT a ping-pong artifact -- it appears 8/8 in the straight
+    16-accumulator body too.
+(5) FORM VALIDATION: thr_fadd 2.8623 cyc/op vs v2's thr fadd reference
+    2.6641 (CONSUMED at its own commit; same 1024-unit semantics) =
+    +0.1982 (+7.44%) -- the thr instrument's FORM SYSTEMATIC is up to
+    ~7.4%, larger than the latency row's +1.40%; v2's arm had a
+    constant operand (c=1.0f) where this row's is symbolic, and the
+    runs are 2h19m apart (clock/thermal drift UNMEASURED).
+NAMED NOT HIDDEN: thr_pp_imad and thr_fadd produced IDENTICAL sample
+distributions (2929/2929/2931/2930.5/2932/2932) -- different opcodes,
+same body instruction count and shape, deterministic lockstep; observed,
+not explained. Sample determinism: min=p10=median=mean=p90=max except
+thr_iadd (2099..2100), thr_imad (2803..2804), thr_pp_imad/thr_fadd
+(2929..2932); thr_pp_iadd constant 1880.
+
+CONSEQUENCE: NOTHING MOVES (rule 4) -- no record, no :measured? flag, no
+selection answer, no :shapes value, no workgroup row; the landed entries
+stand byte-for-byte. The named item moves PARTIALLY (IMAD issue-side
+ANSWERED both forms; add side priced as a mix; the pure IADD3/IMAD.IADD
+issue costs named UNSEPARATED).
+
+STATES. MEASURED (the throughput microbench on xavier -- the only
+measured thing this row): the IMAD issue-side cost (both forms), the
+mixed-spelling add issue-side cost (both forms), the FADD.FTZ issue-side
+cost (form-validation arm), the five loop bodies' realized spellings.
+DERIVED (marked): the two-form brackets, the additive-mean sums
+4.1016/3.6718 (and their inconsistency), the latency-vs-issue ordering
+contrast (over consumed latencies), the +7.44% form systematic.
+IMPLEMENTED: nothing (evidence + ADR amendment only). DECIDED: nothing
+new. ACCEPTED DESIGN ONLY (unchanged): the operator-aware contract +
+pre-registration, the row (ii) routes, the entry contract + wiring,
+ADR-0358, ADR-0373. UNMEASURED, named: the pure 2-input IADD3 and the
+pure IMAD.IADD issue costs (UNSEPARATED -- needs a toolchain realization
+that isolates one spelling, or a different toolchain; same gap as the
+latency row); the pure 2-input IADD3 register-add dependent latency
+(still UNSEPARATED from the latency row); the IMAD.IADD spelling's own
+latency; the 21 surplus ops' true per-op costs (this row prices IMAD and
+brackets the IADD3 family at ISSUE rate -- does NOT close that item);
+raw MUFU.RCP cost; a non-eliminated overhead baseline (every arm's body
+carries the same +4 overhead instructions -- the baseline is a body of
+those 4 alone, not run); the residual W-shape's dynamic carrier
+(per-phase instrumentation, its own row); noise exceedance of the
+corrected residuals; the sum ratio's TRUE side at W=256; a cross-day run
+3+ (still 2026-10-26 UTC); every per-op verdict on non-xavier hardware;
+the :sum ordering at W=64 on any other device or channel; the landed
+rows on a live CUDA selection path; every workgroup row (:arm/:unknown
+stay provisional :measured? false).
+
+GATES (real runs, this worktree): scoped GPU gate (8 GPU-owned
+namespaces, scratch runner gpu_scoped_gate.cljk, never committed) GREEN
+123 tests / 12162 assertions / 0 failures / 0 errors (glslang 16.6.0
+real-spawn) -- the committed pin exactly (this diff touches NO .cljk
+namespace, regression pin); find docs -name '*.sh' -> 0 files (this
+row's evidence is .txt only: record.txt + run-log.txt +
+microbench-sass.txt + int-throughput-table.txt); gpu_regime_classify.py
+--self-test NOT re-run this slice (no classify code touched -- standing
+pin 2649/0, NOT re-verified here); FULL run-tests.cljk NOT run this
+slice (no .cljk touched) -- documented RED AT BASE 'Could not find
+namespace: kotoba.form' (ADR-0362), outside this diff -- NO green full
+suite claimed.
+
+BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head (checked
+at tick start AND re-checked immediately before this push -- 0 both
+times); chain PR #1455 OPEN, the ONE chain PR.
+
+NAMED NOT HIDDEN: kbb's "2 dep(s) are not :local/root ..." warning on
+every run (identical everywhere); the untracked deps.edn in this worktree
+(present at tick start, not created or touched by this row, not
+committed); the tar transfer's "Ignoring unknown extended header keyword
+'LIBARCHIVE.xattr.com.apple.provenance'" notices (benign macOS metadata
+-- the tree is measured after extraction: 3 files, 0 AppleDouble
+sidecars, 3/3 sha256 matched); all scratch instruments
+(gpu-int-throughput-microbench.cu c5e6db5509dd1489..,
+int_throughput_verify.py 8bc4ad00bd01afd1.., run driver
+1bab83d70410f5bb.., thr_body_analyze.py) kept in Hermes scratch, never
+staged; the full v2 SASS (58ed5e7b..) and v2 source (ed49179c..) remain
+on xavier under /root/gpu-op-microbench-20261026/, the latency row's
+artifacts under /root/gpu-int-latency-20261026/.
+
+Evidence: docs/evidence/gpu/cuda-int-throughput-20261026/ (record.txt +
+run-log.txt + microbench-sass.txt + int-throughput-table.txt) + the
+ADR-0361 twenty-third amendment. (JUN-55, JUN-57)

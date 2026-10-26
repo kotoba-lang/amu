@@ -1,0 +1,30 @@
+workflow-lint POSIX-.sh defect fix (JUN-55, tick 20261020-16xx)
+BEFORE: kbb --backend sci scripts/check-workflows.cljk -> Error:
+"workflow-lint: POSIX shell execution files found: (docs/evidence/gpu/
+crosstick-gap-1346B-w64t32-20261020/run-sweep.sh docs/evidence/gpu/
+load-manip-20261020/run-manip.sh docs/evidence/gpu/load-manip2-20261020/
+run-manip2-reg1.sh docs/evidence/gpu/load-manip2-20261020/run-manip2.sh)"
+(the check flags any *.sh path in the tree; the chain PR could never merge)
+FIX: git mv 4 files to *.sh.txt (bytes unchanged; sha256 of run-manip.sh
+still cdb92fa06ece7f5ce3510e4803d3c7a12c5169be3310564611c2477c7b3ccc39),
+reference names updated in READMEs + comments. NOT edited (byte-preserved):
+analyze-manip2.py / analyze-manip2-reg1.py (pre-registered, runs already
+dispatched) and analyze-1403.py (README-recorded machine-checked diff
+property) -- their docstrings still name the pre-rename files.
+AFTER: workflow-lint: 4 workflows and 45 action references use commit
+pins, pinned toolchains, and deduplicated CI
+GATE: kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)"
+run-tests.cljk -> exit 1; 374 tests, 5755 passed, 16 failed, 15 errors.
+norm_gate.py vs docs/evidence/gpu/tilecross-w64-t25t28t30-20261019/gate.log
+(= documented base red, SETS-AND-COUNTS-IDENTICAL vs PR #1369):
+occurrences 31, distinct 13 -> SETS-AND-COUNTS-IDENTICAL. Base red, named:
+ios_aot_test, namespace_reachability_test, native_allocation_budget_test,
+policy_grant_count_test, rebound_row_argument_test,
+row_tuple_element_argument_test, typed_wasm_min_max_test. This diff
+touches no src/test namespace.
+IN-FLIGHT (not this commit): load-manip round-2 reg-2 dispatch killed
+mid-run at run-2-w64t31 attempt1 (untracked attempt1-run-2-w64t31.log,
+3 lines); 3/8 slots verified; gate-log.txt has 1 uncommitted line. The
+measurement slice moves to the next tick.
+BLOCKER-FIRST: PR #1397 hermes/jun30-land-20261020 is open -> push/PR
+skipped this tick; chain branch bot/amu-gpu-chain stays local-only.
