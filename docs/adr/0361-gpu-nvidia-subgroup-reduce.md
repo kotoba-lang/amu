@@ -2436,3 +2436,106 @@ answer, no workgroup row. Gates: scoped GPU gate GREEN 123 tests /
 touched); find docs -name '*.sh' -> 0; full run-tests.cljk not run
 (documented red at base 'Could not find namespace: kotoba.form',
 ADR-0362) -- no green full suite claimed.
+
+## Amendment (2026-10-26, raw MUFU.RCP: realizable bare via the .ftz
+spelling, issue-side priced, dependent-chain latency hidden in the loop
+floor)
+
+The standing named unmeasured item "raw MUFU.RCP cost" (since the
+eighteenth amendment; v2's integrity finding said rcp.approx.f32
+"expands to MUFU.RCP + Newton-refinement pairs (raw MUFU.RCP never
+realized alone)") takes its realizability branch first, and the branch
+PASSES for one spelling and FAILS with a new cancellation fact for the
+others. Evidence: docs/evidence/gpu/cuda-mufu-rcp-20261026/ (record.txt
++ run-log.txt + microbench-sass.txt + mufu-rcp-table.txt +
+probes-run-log.txt + probes-sass.txt). Hardware: xavier sm_72, probe
+stage at 2026-10-26T13:25:28Z, instrument at 2026-10-26T13:32:49Z.
+NAMED NOT HIDDEN: a PROBE, not a registered timing session -- no paired
+samples, no AB/BA, inadmissible under the entry criterion BY KIND;
+same-UTC-day with every earlier probe (2026-10-26 UTC); it measures
+instruction chains, not kernels; it enters nothing and moves no record.
+
+**Realizability (probe stage, four spellings, compile-only).**
+`rcp.approx.ftz.f32` realizes as BARE MUFU.RCP (p1: chain body = 1
+MUFU.RCP + counter/ISETP/BRA, NO guard ops) -- the v2 "never realized
+alone" fact is spelling-specific to `rcp.approx.f32`; the guarded
+expansion (2 FSETP + 2 FSEL + 2 FMUL around the MUFU) survives even
+with a range-proven [1,2) seed (p2_clamp REFUTED as a de-guarding
+route); `div.approx.f32` hoists ONE loop-invariant guarded rcp of the
+divisor + one FMUL per op (p3 -- no per-op MUFU chain); the census's
+bare MUFU.RCP source (the integer-division lowering: I2F -> MUFU.RCP ->
+F2I + IMAD.HI corrections, no guards) is reproduced (p4).
+
+**Cancellation (instrument integrity, measured at SASS level).** ptxas
+cancels rcp.approx.ftz chains in PAIRS (rcp(rcp(x)) -> x): the straight
+n=4 and n=16 arms realize ZERO MUFU and NO LOOP (measured 2 cyc = the
+clock-read pair; anchors stay at the seed), the 16-op ping-pong arm
+collapses to ONE residual MUFU executed once after the loop (its number
+is a loop-floor measurement), the 8-pair throughput arm hoists 8
+residual MUFU out of the loop entirely (its number is a loop-floor
+measurement). This extends the toolchain's merge-mechanism
+characterization (the twenty-first amendment) with a FOURTH class:
+unary involutive-approx ops cancel pairwise, even across asm volatile,
+except as loop-carried recurrences of odd/effective count (lat_n1:
+1 MUFU per iteration x 256 survives; thr_str: 16 per iteration x 64
+survive). A straight MUFU.RCP chain cannot carry more than one
+effective op per loop body through this toolchain.
+
+**What is measured (the only measured things here; 7 arms x 3 launches x
+128 threads, all three launches identical medians).**
+(1) ISSUE-SIDE cost of bare MUFU.RCP: thr_str_rcp body VERIFIED
+    {MUFU.RCP:16 + SHFL/IADD3/ISETP/BRA} per iteration, 16 independent
+    loop-carried recurrences x 64 iterations = 1024 MUFU per thread:
+    137.2656 cyc/iter = 8.5791 cyc per MUFU at 128-thread lockstep.
+    DERIVED reading (marked): 128 lanes / 16 SFU lanes per cycle = 8
+    issue cycles per thread + 0.5791 in-context overhead per MUFU --
+    consistent with SFU throughput 16 MUFU/cycle/SM.
+(2) IN-CONTEXT recurrence cost of one bare MUFU.RCP per loop iteration:
+    lat_n1_rcp body VERIFIED {MUFU.RCP:1 + SHFL/IADD3/ISETP/BRA},
+    28.4766 cyc/iter. NOT separable from the loop floor: the pp16 arm's
+    realized body (5 slots, NO recurrence op) runs 28.4844 cyc/iter --
+    the same floor within 0.0078. The pure dependent-chain latency of
+    bare MUFU.RCP STAYS UNMEASURED (hidden in the floor).
+(3) Form validation: lat_n16_fadd 4.4663 cyc/instr vs v2's
+    straight-chain FADD.FTZ 4.4397 (CONSUMED at its commit) = +0.0266
+    (+0.60%); the fadd anchor is EXACT arithmetic (1.0f + 4096 x 1.0f =
+    4097.0f, bits 1166018560, reproduced 3/3). rcp anchors are no-fold
+    witnesses only (MUFU.RCP's approximation is not re-derivable
+    off-device).
+
+**Consequence.** Nothing moves (rule 4): no record, no :measured? flag,
+no selection answer, no workgroup row. The named item moves PARTIALLY:
+realization ANSWERED (bare MUFU.RCP is realizable via the .ftz
+spelling), issue-side MEASURED (8.5791 cyc per MUFU at 128-thread
+lockstep), dependent-chain latency UNMEASURED (hidden in the loop
+floor -- its instrument branch needs either the floor's composition
+(the oh-baseline row's named open item) or a multi-op recurrence that
+survives pairwise cancellation, e.g. interleaved spellings).
+
+**States.** MEASURED: the probe stage's four realized forms (SASS), the
+thr_str issue-side cost, the lat_n1 in-context recurrence cost, the
+fadd form-validation pair, the cancellation counts. DERIVED (marked):
+the SFU-throughput reading, the +0.60% form delta. IMPLEMENTED: nothing
+(evidence + this amendment). DECIDED: nothing new. ACCEPTED DESIGN ONLY
+(unchanged): the operator-aware contract + pre-registration, the row
+(ii) routes, the entry contract + wiring, ADR-0358, ADR-0373.
+UNMEASURED, named: bare MUFU.RCP's dependent-chain latency (hidden in
+the loop floor), MUFU.RCP's latency/issue cost on every other spelling
+(guarded rcp.approx.f32 sequence is priced as a whole at 39.44 / 11.27
+from v2, CONSUMED), the floor's internal composition, the pure 2-input
+IADD3 and IMAD.IADD separations, the 21 surplus ops' costs, the
+residual W-shape's dynamic carrier, noise exceedance, sum TRUE side
+W=256, cross-day run 3+ (still 2026-10-26 UTC), non-xavier verdicts,
+:sum W=64 elsewhere, live CUDA selection path, workgroup rows
+(:arm/:unknown provisional :measured? false).
+
+Gates (real runs, this worktree): scoped GPU gate (8 GPU-owned
+namespaces, scratch runner gpu_scoped_gate.cljk, never committed)
+GREEN 123 tests / 12162 assertions / 0 failures / 0 errors (glslang
+16.6.0 real-spawn) -- the committed pin exactly (this diff touches NO
+.cljk namespace, regression pin); find docs -name '*.sh' -> 0 (this
+row's evidence is .txt only); gpu_regime_classify.py --self-test NOT
+re-run (no classify code touched -- standing pin 2649/0, NOT
+re-verified here); FULL run-tests.cljk NOT run (no .cljk touched) --
+documented RED AT BASE 'Could not find namespace: kotoba.form'
+(ADR-0362), outside this diff -- NO green full suite claimed.

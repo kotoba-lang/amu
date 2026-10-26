@@ -1,0 +1,120 @@
+amu-gpu tick 2026-10-26 (UTC day 2026-10-26, sixth measurement row of
+the day): JUN-55/JUN-57 -- the standing named unmeasured item "raw
+MUFU.RCP cost" (since the ADR-0361 eighteenth amendment; v2 said
+rcp.approx.f32 "never realized alone" as bare MUFU.RCP) takes its
+REALIZABILITY branch first: bare MUFU.RCP IS realizable through one PTX
+spelling (rcp.approx.ftz.f32), and the row prices its ISSUE SIDE while
+its dependent-chain latency is REFUTED as extractable by this harness
+(hidden in the loop floor). ONE measurement slice; HARDWARE RAN: a
+compile-only probe stage on xavier sm_72 at 2026-10-26T13:25:28Z and the
+7-arm instrument at 2026-10-26T13:32:49Z. NAMED NOT HIDDEN: a PROBE,
+not a registered timing session (no paired samples, no AB/BA),
+inadmissible under the entry criterion BY KIND; SAME-UTC-DAY with every
+earlier probe -- NOT a cross-day replication, extends NO record's
+:evidence and enters nothing; it measures INSTRUCTION chains, not
+kernels.
+
+PROBE STAGE (probes-run-log.txt + probes-sass.txt, compile-only, four
+spellings, 16 chain ops x 256 iters each; received-file block matched
+local shas 1/1, instrument .cu f040bdf2..):
+  p1_ftz       rcp.approx.ftz.f32      -> BARE MUFU.RCP (body = 1
+               MUFU.RCP + counter/ISETP/BRA, NO guards). THE realization
+               path for raw MUFU.RCP.
+  p2_clamp     rcp.approx.f32 with a  -> guards SURVIVE (2 FSETP + 2
+               range-proven [1,2) seed   FSEL + 2 FMUL around the MUFU)
+               -- REFUTED as a de-guarding route.
+  p3_divapprox div.approx.f32 x=x/c   -> ONE loop-invariant guarded rcp
+               of the divisor + 1 FMUL/op -- no per-op MUFU chain.
+  p4_intdiv    C integer division     -> bare MUFU.RCP reproduced inside
+               x/d, symbolic d           the I2F->MUFU.RCP->F2I lowering
+               (the census's source; no guards).
+
+INSTRUMENT v1 (run-log.txt + microbench-sass.txt + mufu-rcp-table.txt;
+remote tree /root/gpu-mufu-rcp-20261026 created fresh, transferred
+COPYFILE_DISABLE=1, 2 files, 0 AppleDouble sidecars, received-file block
+matched local shas 2/2: instrument .cu 3b176384.., verifier
+1bd0e2e1..; microbench.sass 3eba1827.. fetched the same tick, committed
+verbatim): 7 arms x 3 launches x 128 threads, clock64() over the loop
+only, symbolic seed 2.0f from global memory. VERIFIED (real runs):
+OK-build / OK-cubin / OK-sass 335 lines; build diags = 3 benign
+"variable cf set but never used" warnings (the rcp latency macro
+declares cf for the fadd form; quoted here, verbatim in run-log.txt);
+diag-nvdisasm 0 bytes; driver exit 0; stderr 0 bytes; 21 RESULT lines,
+ALL THREE LAUNCHES IDENTICAL medians (deterministic; named caveat: 128
+threads lockstep -- one warp-group draw, not 128 independent samples);
+device name=Xavier clockRate_kHz=1377000 multiProcessorCount=8. SASS
+VERDICTS (verifier output verbatim in run-log.txt):
+  lat_n1_rcp    MATCH {MUFU.RCP:1, SHFL.IDX:1, IADD3:1, ISETP.NE.AND:1,
+                BRA:1} -- bare MUFU.RCP in a loop-carried recurrence
+                (256 dynamic).
+  lat_n4_rcp    CANCELED: 0 MUFU static, NO LOOP -- 2 cyc = clock pair.
+  lat_n16_rcp   CANCELED: 0 MUFU static, NO LOOP -- 2 cyc.
+  lat_pp16_rcp  CANCELED to 1 residual MUFU executed ONCE after the
+                loop; timed loop = 5-slot overhead x 256.
+  lat_n16_fadd  MATCH FADD.FTZ:16 + overhead.
+  thr_str_rcp   MATCH MUFU.RCP:16 + overhead per iteration.
+  thr_pp_rcp    CANCELED: 8 residual MUFU HOISTED out of the loop.
+
+THE FINDING (mufu-rcp-table.txt):
+(1) REALIZATION ANSWERED: bare MUFU.RCP is realizable via
+    rcp.approx.ftz.f32; v2's "never realized alone" is spelling-
+    specific to rcp.approx.f32.
+(2) NEW TOOLCHAIN FACT -- PAIRWISE CANCELLATION: ptxas cancels
+    rcp.approx.ftz chains in pairs (rcp(rcp(x)) -> x), even across asm
+    volatile -- a FOURTH class in the merge-mechanism characterization
+    (twenty-first amendment); a straight MUFU.RCP chain cannot carry
+    more than one effective op per loop body.
+(3) ISSUE-SIDE MEASURED (the named item's issue half): thr_str_rcp
+    (body VERIFIED) 137.2656 cyc/iter = 8.5791 cyc per MUFU at
+    128-thread lockstep. DERIVED reading (marked): 128 lanes / 16 SFU
+    lanes/cycle = 8 issue cyc/thread + 0.5791 in-context overhead per
+    MUFU -- consistent with SFU throughput 16 MUFU/cycle/SM.
+(4) IN-CONTEXT recurrence cost one bare MUFU/iteration: lat_n1_rcp
+    28.4766 cyc/iter -- but the pp16 arm's realized no-recurrence
+    5-slot body runs 28.4844 cyc/iter (the same floor): the pure
+    dependent-chain latency of bare MUFU.RCP STAYS UNMEASURED (hidden
+    in the loop floor).
+(5) FORM VALIDATION: lat_n16_fadd 4.4663 cyc/instr vs v2's
+    straight-chain FADD.FTZ 4.4397 (CONSUMED) = +0.0266 (+0.60%); fadd
+    anchor EXACT (1.0f + 4096 x 1.0f = 4097.0f, bits 1166018560,
+    reproduced 3/3); rcp anchors are no-fold witnesses only.
+
+CONSEQUENCE: NOTHING MOVES (rule 4) -- no record, no :measured? flag,
+no selection answer, no workgroup row. Named item PARTIALLY closed
+(realization ANSWERED; issue-side MEASURED; dependent-chain latency
+UNMEASURED -- named). UNMEASURED named: bare MUFU.RCP dependent-chain
+latency, the floor's internal composition, the pure IADD3/IMAD.IADD
+separations, the 21 surplus ops' costs, the residual W-shape carrier,
+noise exceedance, sum TRUE side W=256, cross-day run 3+, non-xavier
+verdicts, :sum W=64 elsewhere, live CUDA selection path, workgroup rows
+:arm/:unknown provisional.
+
+GATES (real runs, this worktree): scoped GPU gate (8 GPU-owned
+namespaces, scratch runner gpu_scoped_gate.cljk, never committed) --
+result in the commit message and chain PR; find docs -name '*.sh' -> 0
+(this row's evidence is .txt only: record.txt + run-log.txt +
+microbench-sass.txt + mufu-rcp-table.txt + probes-run-log.txt +
+probes-sass.txt); gpu_regime_classify.py --self-test NOT re-run (no
+classify code touched -- standing pin 2649/0, NOT re-verified here);
+FULL run-tests.cljk NOT run (no .cljk touched) -- documented RED AT BASE
+'Could not find namespace: kotoba.form' (ADR-0362), outside this diff
+-- NO green full suite claimed.
+
+BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head (checked
+at tick start AND re-checked immediately before the push); chain PR
+#1611 (branch bot/amu-gpu-chain-20261026) OPEN, the ONE chain PR.
+NAMED NOT HIDDEN: named instrument defects (the lat_n4/lat_n16/pp/thr_pp
+arms' cancellation, reported under their realized bodies ONLY, never as
+op costs); the untracked deps.edn in the worktree (present at tick
+start, not created or touched by this row, not committed); kbb's
+'2 dep(s) are not :local/root' warning on every run (identical
+everywhere); the tar transfer's 'Ignoring unknown extended header
+keyword LIBARCHIVE.xattr.com.apple.provenance' notices (benign macOS
+metadata -- the trees are measured after extraction: 1/1 and 2/2 sha256
+matched); all scratch instruments (mufu_realiz_probes.cu f040bdf2..,
+gpu-mufu-rcp-microbench.cu 3b176384.., mufu_rcp_verify.py 1bd0e2e1..,
+drivers mufu_probe_run.sh / mufu_rcp_run.sh) kept in Hermes scratch,
+never staged; v2's quotes (FADD.FTZ 4.4397, guarded-rcp 39.44/11.27)
+and the oh-baseline floor (26.4766) are CONSUMED at their own commits,
+not re-measured. Evidence: this directory + the ADR-0361 twenty-fifth
+amendment. (JUN-55, JUN-57)
