@@ -92,6 +92,21 @@ jobs:
           python3 -m unittest discover -s bench/embench/proof-v1 -p 'test_*.py' -v
       - name: Source and image identity preflight
         run: python3 scripts/seed/check-native-identities.py
+      - name: B2 loader regression feedback with the pinned public compiler (x86_64, native)
+        run: >-
+          python3 scripts/seed/native_build_queue.py --phase b2-preflight
+          --slot-dir "$RUNNER_TEMP/native-build-slots"
+          --output "$RUNNER_TEMP/b2-libc-preflight-admission.json" --
+          python3 scripts/seed/check-b2-libc.py --compiler "$PWD/bin/amu"
+          --output "$RUNNER_TEMP/b2-libc-preflight"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: b2-loader-native-preflight
+          path: |
+            ${{ runner.temp }}/b2-libc-preflight
+            ${{ runner.temp }}/b2-libc-preflight-admission.json
+          if-no-files-found: warn
       - name: Local locked native project and refusal controls
         run: python3 scripts/seed/check-x86-project-native.py --compiler "$PWD/bin/amu" --output "$RUNNER_TEMP/local-native-project"
       - name: Derive and qualify experimental FS35/CLI38 project candidate
