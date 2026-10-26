@@ -14,6 +14,13 @@ byte-identical F1/F2 container
 The signed F2 SHA-256 was
 `7851ccdb31d462ba34e2097b58a6a26c5c916e1b3ac58889f18d6ff5b3a0f990`.
 This build used no Linux, JVM, Node or C compiler execution.
+The Mac bootstrap image and descriptor are pinned to that fixed point. The
+descriptor-driven Mac gate reproduced F1/F2, then the signed F2 cross-built
+static Linux ARM and x86 compiler candidates with SHA-256
+`24557e872f545e3c23311df51024cfb7176ab87869391fa56b105016413b041d`
+and `40dedac1e41bd550fda76f864a27d6efbb874d59632c9e7f6bc277ea0522e7a1`.
+Those cross-built files are candidates until the independent native ARM/x86
+fixed-point and public product gates pass on this head.
 
 On the 35-module AIUEOS source, that F2 reproduced a 4,456,728-byte kernel
 ELF `12397461b3a6ee6ec998ff9bd9a2dc9a838575db65696f84e015cece4185d0a8`,
