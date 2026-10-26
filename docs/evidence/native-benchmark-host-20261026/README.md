@@ -109,3 +109,57 @@ qualification, native x86/full gates, current root/product pin regeneration
 and exact-head CI are still open. The candidate is not merged, deployed or
 promoted; fullQualification/nativeVerdictAuthority/performanceQualified
 remain false.
+
+## Native ordered/accounting guard and executed mutants — r3
+
+The prerequisite runtime-profile PR1602 merged at `103da1fd338e7663ac4fcf3d215600bbf72f3fa4`
+after15 exact-head checks and the separate uncached full native run passed.
+That merge is not measurement-host or comparative performance qualification.
+
+Final source unity:3,480,399 bytes,
+`a5ba8c64fe848754705c76fb48d02762e4fb9f14ca69de0850b4d7de8e0331ee`.
+Native ARM F1=F2=F3 container:
+`26b1ba28e4456d3b1c35bc1a21987c66f0a73e54fb3e6cd10f4dc5cb549af882`.
+Independently packed ARM image:
+`89260bba93d570ffa1b633f8dd709fe7110b13593381d30768580a25a562b9eb`.
+Native Mac F1=F2 agrees on that exact container; its rebuilt packager/FS2/user
+gates and the updated descriptor's default gate pass. Those are compiler and
+artifact gates, not Mac benchmark execution.
+
+Pinned final host source:
+`c47c0d82e4f487211d5d679315e8126ab59fafc7e84aef80d8fc9e8bf1236ec7`.
+Generated native ARM host:
+`274b77f7896cf92ecf49eebb9a8bf7f2e3c189a1dbff73fd1846dfb535bc91e7`.
+`measurement-host-controls-r4.json` records8/8 factory and17/17 runtime
+refusals and all19 original-count positive executions. The host's own native
+ordered guard and fixed accounting oracle check the warm seed, separate fuel
+and both17-field snapshots. All19 match the original reference exactly.
+Observation SHA-256:
+`f59084ce10949efab8325925bd041b237b8d44894afd572f9db9675ff892fd5d`.
+
+`measurement-mutants-r2.json` records13/13 actually built/executed semantic
+mutants. Each isolated test compiler admits only its particular mutant source
+hash; the production factory whitelist and ordinary guest boundary do not
+change. Each host is invoked with the original registered count. Its native
+guard must refuse with the specified reason, sometimes before the measured
+body is entered. Compiler errors, generic traps and timeouts are not passes.
+Controls cover warm count/seed, missing reset, verifier-inside-clock, missing
+verification, wrong benchmark/verification fuel, both missing snapshots,
+lowered absolute highwater, missing fuel reset, reset-inside-clock and
+warmup-inside-clock. The fixed oracle remains unchanged in every mutant.
+
+`measurement-arm-records-r3.tar.gz` retains exact source/lock/observer copies
+and raw process records for the intermediate11-mutant campaign and final13,
+their full19 positive controls, compiler derivations and Mac/default gates.
+Generated ELF/KSEED/payload/raw/Mach-O binaries are excluded; identities are
+retained and the complete outputs remain in task scratch. Archive SHA-256:
+`e1970cd8ebd2cbe7598459b724d8d0de2847cf7cca89869f783042257c830897`.
+
+The new public x86 image `3ba396d8310fd4d84f805aca3f696ed0503f0fbd990b759f5124a13bda78ec69`
+is only ARM-generated at this checkpoint. Native x86 F1=F2=F3, all existing
+native gates, the public x86 producer's exact ARM host/payload equality,
+uncached full ARM and exact-head CI must still finish. `bench-build` supports
+only its declared ARM target; no x86 measurement host or emulation is claimed.
+Six observer/source golden tests also pass, without replacing native verdicts.
+Qualification flags remain conservative. No C comparison, quiet-host campaign,
+external rerun, official result or broad performance claim follows.

@@ -74,5 +74,39 @@ class SourceControls(unittest.TestCase):
                     self.assertEqual(form(source, f), form(self.host, f))
 
 
+class ReceiptControls(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        spec = importlib.util.spec_from_file_location("host_observer", ROOT / "scripts/seed/check-native-benchmark-host.py")
+        cls.observer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.observer)
+
+    def setUp(self):
+        self.row = dict(schema="KOTOBA_NATIVE_BENCH_CANDIDATE_V1", workloadId=1,
+            iterations=2785280, diagnostic=0, elapsedNs=1, benchmarkFuel=5709824002,
+            verifyFuel=0, warmSeed=0, highwaterAfterReset=0, highwaterAfterVerify=0,
+            benchmarkArena=[0]*17, finalArena=[0]*17, result=1, warmupBodies=1, calls=1,
+            verifyOutsideTiming=True, sameContextVerify=True, resetIncluded=False,
+            performanceQualified=False)
+
+    def valid(self, row):
+        return self.observer.valid_observation(row, 1, 2785280, 0)
+
+    def test_native_record_shape(self):
+        self.assertTrue(self.valid(self.row))
+        for field, value in (("workloadId", True), ("iterations", 2785280.0),
+            ("diagnostic", 1), ("result", True), ("calls", True), ("elapsedNs", -1),
+            ("benchmarkFuel", "5709824002"), ("verifyOutsideTiming", 1),
+            ("performanceQualified", True), ("finalArena", [0]*16), ("finalArena", [False]*17)):
+            with self.subTest(field=field, value=value):
+                self.assertFalse(self.valid({**self.row, field:value}))
+        self.assertFalse(self.valid({**self.row, "unexpected":0}))
+        self.assertFalse(self.valid({k:v for k,v in self.row.items() if k != "warmSeed"}))
+
+    def test_duplicate_fields_refuse(self):
+        with self.assertRaises(ValueError):
+            json.loads('{"result":0,"result":1}', object_pairs_hook=self.observer.unique_fields)
+
+
 if __name__ == "__main__":
     unittest.main()

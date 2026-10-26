@@ -58,6 +58,17 @@ receipt. All argument preparation precedes the benchmark-only interval.
 The host uses native `CLOCK_MONOTONIC_RAW`; Python observes, never supplies
 elapsed time or a successful native verdict.
 
+The host owns an ordered native guard: warmup/reset require the pre-clock
+phase; clock begin/end advance the phase; the original verifier requires the
+closed clock interval and advances the final phase. A native fixed oracle
+then checks the original warm seed, separately measured benchmark/verify fuel,
+and both17-field snapshots against the frozen original accounting reference
+`6368bd343086a6c88e0645e31dde82bcdf64742c7b4727cdd56103ef72e9b4cc`.
+All19 original verifiers are allocation-free, so both current-use snapshots
+equal that fixed reference. Diagnostic profile1 does not claim full-count
+accounting qualification. Source golden tests supplement, but never replace,
+actually executing this native guard.
+
 Reset accepts only the closed pure state: no active scopes, budget/value
 failure, public graph data, keyword intern rows, output, held lock or effect
 grants. It clears used validation/region metadata, scope marks, allocation
@@ -91,6 +102,23 @@ guest/private-runtime boundary tests; all previous native gates and exact-head
 CI. The current public host remains native Linux x86_64; an ARM diagnostic
 producer does not extend public support. Bind final public-compiler-generated
 workload and host artifacts to that qualified compiler before a campaign.
+
+`check-native-benchmark-mutations.py` builds13 isolated test compilers. Each
+admits one exact semantic-mutant host hash instead of the production hash;
+it adds no production whitelist or privileged guest mode. The actual hosts
+then execute original full counts and must give the named native refusal
+for warm count/seed, reset, clock/verifier order, skipped verification, fuel,
+snapshot or highwater errors. A build failure, timeout or generic trap is
+not a successful mutation control. The source golden controls also verify
+that these mutants leave the fixed accounting oracle unchanged.
+
+The native x86 qualification executes the complete public compiler's own
+three-generation fixed point and all existing native gates. It then compiles
+all19 unchanged libraries and the closed ARM host, checking exact equality
+to artifacts actually executed by the ARM qualification. This proves the
+public x86 producer's ARM factory route; it does not advertise a native x86
+measurement host or run ARM code under emulation. `bench-build x86_64-linux`
+continues to refuse, as specified by this factory's target boundary.
 
 Then follow the frozen KOTOBA-140 protocol: declared same-host C comparator,
 host admission, full paired/interleaved repetitions, complete failures,

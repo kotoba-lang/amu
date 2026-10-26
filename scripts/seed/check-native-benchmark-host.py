@@ -21,9 +21,32 @@ C = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(C)
 
 
+def unique_fields(pairs):
+    result = dict(pairs)
+    if len(result) != len(pairs):
+        raise ValueError("duplicate native receipt field")
+    return result
+
+
+def valid_observation(row, index, n, diagnostic):
+    scalars = ("elapsedNs", "benchmarkFuel", "verifyFuel", "warmSeed", "highwaterAfterReset", "highwaterAfterVerify")
+    integers = dict(workloadId=index, iterations=n, diagnostic=diagnostic, result=1, warmupBodies=1, calls=1)
+    flags = dict(verifyOutsideTiming=True, sameContextVerify=True, resetIncluded=False, performanceQualified=False)
+    keys = {"schema", "benchmarkArena", "finalArena", *scalars, *integers, *flags}
+    return (isinstance(row, dict) and set(row) == keys
+        and row["schema"] == "KOTOBA_NATIVE_BENCH_CANDIDATE_V1"
+        and all(type(row[k]) is int and row[k] == value for k, value in integers.items())
+        and all(row[k] is value for k, value in flags.items())
+        and all(type(row[k]) is int and row[k] >= 0 for k in scalars)
+        and all(type(row[k]) is list and len(row[k]) == 17
+                and all(type(v) is int and v >= 0 for v in row[k]) for k in ("benchmarkArena", "finalArena"))
+        and row["highwaterAfterVerify"] >= row["highwaterAfterReset"])
+
+
 def main(a):
-    compiler, machine, target, receipt, sources = C.provenance(a.one.resolve(), None)
-    assert machine == 183
+    compiler, machine, target, receipt, sources = C.provenance(
+        a.one.resolve() if a.one else None, a.complete.resolve() if a.complete else None)
+    assert (machine == 183 and not a.arm_controls) or (machine == 62 and a.arm_controls and a.full_counts)
     corpus = a.corpus.resolve()
     original_report = json.loads((corpus / "observations.json").read_text())
     assert original_report["compiler"] == C.elf(compiler, machine)
@@ -110,6 +133,35 @@ def main(a):
     code, stdout, stderr = run("existing-output", argv, compile_env)
     refusals.append(dict(name="existing-output", passed=code in (1, 2) and C.pin(host) == existing_pin))
 
+    if machine == 62:
+        # Public x86 compiler executes natively, but this closed command emits
+        # only ARM hosts. Bind its exact bytes/exports to the actually executed
+        # ARM qualification; never execute ARM code under x86 emulation.
+        arm = json.loads(a.arm_controls.read_text())
+        assert arm["status"] == "native-candidate-observed" and arm["mode"] == "registered"
+        assert arm["sources"] == sources and arm["hostSource"] == report["hostSource"]
+        assert arm["registry"] == report["registry"] and arm["host"] == report["host"]
+        assert arm["observedWorkloads"] == arm["referenceMatchedWorkloads"] == 19
+        assert len(arm["workloads"]) == 19 and all(r["valid"] and r["exit"] == 0 for r in arm["workloads"])
+        assert all(r["passed"] for r in arm["factoryRefusals"] + arm["runtimeRefusals"])
+        by_name = {r["workload"]: r for r in arm["workloads"]}
+        for row in rows:
+            name, symbol = row["workload"], row["registered"]["measuredSymbol"]
+            exported = {e["name"]: e for e in row["exports"]}
+            payload = corpus / name / (symbol + ".bin")
+            assert C.pin(payload) == exported[symbol]["payload"] == by_name[name]["payload"]
+            assert row["originalSource"] == by_name[name]["source"]
+            report["workloads"].append(dict(workload=name, source=row["originalSource"],
+                payload=C.pin(payload), exports=row["exports"], registered=row["registered"],
+                matchesExecutedArmPayload=True, executedHere=False))
+        assert all(r["passed"] for r in refusals)
+        assert all(C.pin(ROOT / name) == value for name, value in sources.items())
+        report.update(status="PASS_NATIVE_X86_BENCHMARK_FACTORY", factoryRefusals=refusals,
+            armExecutionReference=C.pin(a.arm_controls), emittedArmHostMatches=True,
+            observedWorkloads=19, executedArmHostHere=False, x86MeasurementHostSupported=False)
+        persist()
+        return 0
+
     # Exercise the real pinned host's admission and fuel failures. Keep every
     # failed input/output; never mutate an original source or payload in place.
     crc = rows[1]
@@ -170,22 +222,10 @@ def main(a):
         observation = None
         if code == 0 and not stderr:
             try:
-                observation = json.loads(stdout)
-            except (UnicodeDecodeError, json.JSONDecodeError):
+                observation = json.loads(stdout, object_pairs_hook=unique_fields)
+            except (UnicodeDecodeError, ValueError):
                 pass
-        valid = (isinstance(observation, dict)
-            and observation.get("schema") == "KOTOBA_NATIVE_BENCH_CANDIDATE_V1"
-            and observation.get("workloadId") == index and observation.get("iterations") == n
-            and observation.get("result") == 1 and observation.get("warmupBodies") == 1
-            and observation.get("calls") == 1 and observation.get("verifyOutsideTiming") is True
-            and observation.get("sameContextVerify") is True and observation.get("resetIncluded") is False
-            and observation.get("performanceQualified") is False
-            and all(isinstance(observation.get(k), int) and not isinstance(observation[k], bool)
-                    and observation[k] >= 0 for k in ("elapsedNs", "benchmarkFuel", "verifyFuel", "highwaterAfterReset", "highwaterAfterVerify"))
-            and all(isinstance(observation.get(k), list) and len(observation[k]) == 17
-                    and all(isinstance(v, int) and not isinstance(v, bool) and v >= 0 for v in observation[k])
-                    for k in ("benchmarkArena", "finalArena"))
-            and observation["highwaterAfterVerify"] >= observation["highwaterAfterReset"])
+        valid = valid_observation(observation, index, n, 0 if a.full_counts else 1)
         comparison = None
         if valid and a.full_counts:
             reference = references[name]
@@ -214,7 +254,10 @@ def main(a):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--one", type=Path, required=True)
+    producers = parser.add_mutually_exclusive_group(required=True)
+    producers.add_argument("--one", type=Path)
+    producers.add_argument("--complete", type=Path)
+    parser.add_argument("--arm-controls", type=Path)
     parser.add_argument("--corpus", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--host-source", type=Path)
