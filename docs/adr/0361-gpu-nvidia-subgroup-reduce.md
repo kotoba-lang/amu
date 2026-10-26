@@ -2170,3 +2170,90 @@ gate GREEN twice (123/12162, regression pin);
 `run-tests.cljk` not run (red at base `Could not find namespace:
 kotoba.form`, ADR-0362) -- NO green suite claimed. Record:
 `docs/evidence/gpu/cuda-residual-rederive-20261026.txt`.
+
+## Amendment (2026-10-26, the integer-latency chain forms: IMAD is
+measured across two forms, iadd3 stays unseparated)
+
+The twenty-first amendment's named item "per-op integer latency
+(iadd3/imad) on this toolchain" takes its microbench branch, with the
+item's own parenthetical design problem ("a chain form that survives the
+asm merging is needed") as the row's core. ONE measurement slice;
+HARDWARE RAN: the integer-latency microbench on xavier sm_72 at
+2026-10-26T11:30:59Z. NAMED NOT HIDDEN: a PROBE, not a registered timing
+session (no paired samples, no AB/BA) -- inadmissible under the entry
+criterion BY KIND; same UTC day as every earlier probe (NOT cross-day);
+it measures INSTRUCTIONS, not kernels; enters nothing, extends no
+record's `:evidence`.
+
+**The chain-form design (the row's named problem).** Two candidate forms,
+both with SYMBOLIC operands (c=3u, cm=7u from global memory, unknowable
+to ptxas): STRAIGHT (one dependent accumulator, `x = f(x, m)`) and
+PING-PONG (two accumulators, `x = f(x, y_new)`, `y = f(y, x_new)` --
+strictly serial chain across ops and iterations, consecutive ops write
+different destinations so no two consecutive ops can merge into one
+instruction). A FADD ping-pong arm validates the form against v2's known
+straight-chain latency. Every arm's realized opcode is verified from
+nvdisasm, never assumed.
+
+**Finding.**
+(1) IMAD LATENCY MEASURED, CROSS-FORM CONFIRMED: the ping-pong form
+    realized a pure 16-IMAD chain at 4.4658 cyc/instr and the straight
+    form a pure 16-IMAD chain at 4.4656 -- two independent chain forms
+    agree to 0.0002 cyc/instr (0.0045%), total run cycles within 3 over
+    4096 ops. `mad.lo.u32` dependent-chain latency on sm_72 = 4.4657
+    cyc/op (mean DERIVED; per-form numbers are the measurement). The
+    affine recurrence was NOT folded by ptxas with symbolic multipliers.
+(2) iadd3 NOT SEPARATED (named): the ping-pong chain survived 16/16 with
+    no fold, but ptxas spelled the two alternating updates DIFFERENTLY
+    (8 x `IADD3` for x = y + x interleaved with 8 x `IMAD.IADD` for
+    y = x*1 + y) -- the strict alternating chain measures the mean of two
+    spellings, L(IADD3-form) + L(IMAD.IADD-form) = 10.7534 cyc/pair
+    (DERIVED from the measured 5.3767 cyc/instr). The straight form
+    folded value-preservingly 2:1 EVEN WITH a symbolic operand (16 x
+    `add.u32 x,x,c` -> 8 x `IADD3 R9, R0, R9, R0` = x + c + c, the third
+    IADD3 operand slot carries a second c), measuring 2.4658 cyc per
+    COUNTED op = 4.9316 cyc per REALIZED instruction of the folded
+    double-add form (DERIVED x2). Two equations, three unknowns: the pure
+    2-input IADD3 register-add dependent latency is UNSEPARATED -- no arm
+    realized it alone.
+(3) THE MERGE MECHANISM IS NOW PRECISELY CHARACTERIZED (SASS-level,
+    superseding the eighteenth amendment's integrity shorthand): with
+    CONSTANT operands the chain collapses to one folded instruction (v2's
+    `IADD3 R0,R0,0x10`); with SYMBOLIC operands the same-destination
+    chain merges PAIRWISE via IADD3's three-operand form (2:1); and the
+    two-destination ping-pong form defeats the merge entirely (16/16) at
+    the price of an alternating opcode spelling.
+(4) FORM VALIDATION: the fadd ping-pong arm reproduces v2's straight-
+    chain FADD.FTZ latency within 1.40% (4.5020 vs 4.4397 cyc/instr) --
+    1.40% is this row's named FORM SYSTEMATIC.
+
+**Consequence today: NOTHING MOVES** (rule 4). The named item moves
+PARTIALLY: imad ANSWERED (MEASURED, two forms), iadd3 named NOT
+SEPARATED.
+
+**States.** MEASURED (this probe only): the IMAD chain latencies both
+forms, the mixed alternating-chain mean, the folded double-add chain
+cost, the fadd form-validation pair. DERIVED (marked): the 4.4657 mean,
+the 10.7534 pair sum, the x2 per-realized-instruction figures.
+IMPLEMENTED: nothing (evidence + this amendment only). DECIDED: nothing
+new. ACCEPTED DESIGN ONLY (unchanged): the operator-aware contract +
+pre-registration, the row (ii) routes, the entry contract + wiring,
+ADR-0358, ADR-0373. UNMEASURED, named: the pure 2-input IADD3
+register-add dependent latency (UNSEPARATED); the IMAD.IADD spelling's
+own latency; integer issue-side costs of these spellings (throughput
+arms not run); the 21 surplus ops' true per-op costs (this row prices
+IMAD and brackets the IADD3 family -- does NOT close that item); raw
+MUFU.RCP cost; a non-eliminated overhead baseline; the residual W-shape's
+dynamic carrier (per-phase instrumentation, its own row); noise
+exceedance of the corrected residuals; the sum ratio's TRUE side at
+W=256; a cross-day run 3+ (still 2026-10-26 UTC); every per-op verdict
+on non-xavier hardware; the `:sum` ordering at W=64 on any other device
+or channel; the landed rows on a live CUDA selection path; every
+workgroup row (`:arm`/`:unknown` stay provisional `:measured? false`).
+Gates: scoped GPU gate run 1 GREEN (123/12162, glslang 16.6.0 real-spawn)
+-- run 2, `gpu_regime_classify.py --self-test` and `find docs -name '*.sh'`
+NOT run (run-time budget closed after gate run 1 -- named, not hidden;
+standing pins 2649/0 and 0-files NOT re-verified here); FULL
+`run-tests.cljk` not run (red at base `Could not find namespace:
+kotoba.form`, ADR-0362) -- NO green suite claimed. Record:
+`docs/evidence/gpu/cuda-int-latency-20261026/`.
