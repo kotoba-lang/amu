@@ -16,6 +16,7 @@ import struct
 BASE_FUNCS = ["fx_add", "fx_strlen", "fx_stderr", "fx_weak", "fx_flag", "fx_flag2", "fx_ptr", "fx_ref64", "fx_bss", "fx_missing"]
 VARIANTS = {
     "base": None,
+    "zero-file-bss": None,
     "etexec": "not ET_DYN (a shared object)",
     "tls": "PT_TLS: thread-local storage is slice 2",
     "irelative": "relocation type 37",
@@ -56,6 +57,8 @@ def build(variant="base"):
     text = 0x500
     got_stderr, got_weak, gotplt_strlen, gotplt_missing = 0x1200, 0x1208, 0x1210, 0x1218
     flag, flag2, ptrcell, ref64, string, bss = 0x2000, 0x2008, 0x2010, 0x2018, 0x2020, 0x2800
+    if variant == "zero-file-bss":
+        bss = 0x4008  # valid p_filesz=0 segment, not page-aligned
     init_array, dynamic = 0x1000, 0x1008
     # --- machine code
     code, addr_of = bytearray(), {}
@@ -134,7 +137,7 @@ def build(variant="base"):
     rela_b = b"".join(struct.pack("<QQq", o, (s << 32) | t, a) for o, t, s, a in rela)
     plt_b = b"".join(struct.pack("<QQq", o, (s << 32) | t, a) for o, t, s, a in pltrela)
     # --- layout of the tables in page 0 (after the program headers)
-    nph = 6 if variant == "tls" else 5
+    nph = 6 if variant in ("tls", "zero-file-bss") else 5
     pos = 64 + 56 * nph
     layout = {}
     for name, blob, align in (("gnuhash", gnuhash, 8), ("dynsym", dynsym, 8), ("dynstr", bytes(strtab), 1), ("versym", versym, 2),
@@ -167,6 +170,8 @@ def build(variant="base"):
           (2, 6, dynamic, dynamic, len(dyn_b), len(dyn_b), 8), (0x6474E552, 4, 0x1000, 0x1000, 0x1000, 0x1000, 1), (0x6474E551, 6, 0, 0, 0, 0, 16)]
     if variant == "tls":
         ph.append((7, 4, flag, flag, 8, 8, 8))
+    if variant == "zero-file-bss":
+        ph.append((1, 6, 0x3008, bss, 0, 8, 0x1000))
     for i, (t, f, o, v, fs, ms, al) in enumerate(ph):
         img[64 + 56 * i:64 + 56 * (i + 1)] = struct.pack("<IIQQQQQQ", t, f, o, v, v, fs, ms, al)
     for pos, blob in layout.values():

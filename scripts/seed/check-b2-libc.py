@@ -85,6 +85,8 @@ def main(compiler, output):
         src.write_text(unit(units, test))
         z = subprocess.run([str(producer), "compile", str(src), "--target", "x86_64-linux", "--output", str(img), "--format", "b2"],
                            cwd=art, env=cenv, capture_output=True, timeout=900)
+        (output / (name + "-compile.stdout")).write_bytes(z.stdout)
+        (output / (name + "-compile.stderr")).write_bytes(z.stderr)
         assert z.returncode == 0 and not z.stderr and b":format :b2" in z.stdout, (name, z.returncode, z.stderr[-400:])
         img.chmod(0o755)
         scratch = output / ("scratch-" + name)
@@ -105,27 +107,61 @@ def main(compiler, output):
         bad = [ln for ln in lines if "FAIL" in ln]
         assert z.returncode == 0 and not bad, (name, z.returncode, bad[:5], z.stderr[-300:])
         checks = sum(1 for ln in lines if ln.endswith(" ok"))
-        assert checks > (15 if name == "elf" else 20), (name, checks)
+        assert checks == {"string": 396, "printf": 297, "elf": 19, "libc": 67}[name], (name, checks)
         refusals = {}
         for arg, status, text in modes:
             z2 = subprocess.run([str(img), *dirarg, arg], env=env, capture_output=True, timeout=600)
+            (output / (name + "-" + arg + ".stdout")).write_bytes(z2.stdout)
+            (output / (name + "-" + arg + ".stderr")).write_bytes(z2.stderr)
             assert z2.returncode == status and text.encode() in z2.stderr, (name, arg, z2.returncode, z2.stderr[-300:])
             refusals[arg] = dict(exit=z2.returncode, stderr=z2.stderr.decode(errors="replace").strip().splitlines()[-1][:200])
         if name == "elf":
             maps = re.findall(r"^maps \S+ (\S+) ([0-9a-f]+) ", z.stdout.decode(), re.M)
             assert maps == [("r-xp", "00000000"), ("r--p", "00001000"), ("rw-p", "00002000")], maps
+            # Exercise every original loader check on a valid zero-file PT_LOAD
+            # whose vaddr has a nonzero page offset. The old loader cleared the
+            # still-PROT_NONE reservation before mapping this segment.
+            bssrun = subprocess.run([str(img), str(fixtures["zero-file-bss"])], env=env, capture_output=True, timeout=600)
+            (output / "elf-zero-file-bss.stdout").write_bytes(bssrun.stdout)
+            (output / "elf-zero-file-bss.stderr").write_bytes(bssrun.stderr)
+            assert bssrun.returncode == 0 and b"FAIL" not in bssrun.stdout, (bssrun.returncode, bssrun.stderr[-300:])
+            assert sum(ln.endswith(b" ok") for ln in bssrun.stdout.splitlines()) == 19
+            broken_src, broken_img = art / "elf-bss-clear-mutant.kotoba", art / "elf-bss-clear-mutant.elf"
+            old, broken = "z (if (and (> filesz 0) (> memsz filesz))", "z (if (> memsz filesz)"
+            text = src.read_text()
+            assert text.count(old) == 1
+            broken_src.write_text(text.replace(old, broken))
+            build = subprocess.run([str(producer), "compile", str(broken_src), "--target", "x86_64-linux", "--output", str(broken_img), "--format", "b2"],
+                                   cwd=art, env=cenv, capture_output=True, timeout=900)
+            (output / "elf-bss-mutant-compile.stdout").write_bytes(build.stdout)
+            (output / "elf-bss-mutant-compile.stderr").write_bytes(build.stderr)
+            assert build.returncode == 0 and not build.stderr and b":format :b2" in build.stdout
+            broken_img.chmod(0o755)
+            fault = subprocess.run([str(broken_img), str(fixtures["zero-file-bss"])], env=env, capture_output=True, timeout=600)
+            (output / "elf-bss-mutant.stdout").write_bytes(fault.stdout)
+            (output / "elf-bss-mutant.stderr").write_bytes(fault.stderr)
+            assert fault.returncode == 139 and b"b2: fatal signal 11 at " in fault.stderr, (fault.returncode, fault.stderr[-300:])
             for variant, why in b2_fixture.VARIANTS.items():
                 if why:
                     z2 = subprocess.run([str(img), str(fixtures[variant]), variant], env=env, capture_output=True, timeout=600)
+                    (output / ("elf-variant-" + variant + ".stdout")).write_bytes(z2.stdout)
+                    (output / ("elf-variant-" + variant + ".stderr")).write_bytes(z2.stderr)
                     assert z2.returncode == 127 and why.encode() in z2.stderr and b"b2: refused:" in z2.stderr, (variant, z2.returncode, z2.stderr[-300:])
                     refusals["variant-" + variant] = dict(exit=127, stderr=z2.stderr.decode(errors="replace").strip().splitlines()[-1][:200])
             z2 = subprocess.run([str(img), str(scratch / "libfixture.so.1"), "call-missing"], env=env, capture_output=True, timeout=600)
+            (output / "elf-call-missing.stdout").write_bytes(z2.stdout)
+            (output / "elf-call-missing.stderr").write_bytes(z2.stderr)
             assert z2.returncode == 127 and b"b2: refused: unimplemented import no_such_import: called from " in z2.stderr, z2.stderr[-300:]
             refusals["call-missing"] = dict(exit=127, stderr=z2.stderr.decode(errors="replace").strip().splitlines()[-1][:200])
             z2 = subprocess.run([str(img), str(scratch / "libfixture.so.1"), "relro-write"], env=env, capture_output=True, timeout=600)
+            (output / "elf-relro-write.stdout").write_bytes(z2.stdout)
+            (output / "elf-relro-write.stderr").write_bytes(z2.stderr)
             assert z2.returncode == 139 and b"b2: fatal signal 11 at " in z2.stderr, (z2.returncode, z2.stderr[-300:])
             refusals["relro-write"] = dict(exit=139, stderr=z2.stderr.decode(errors="replace").strip().splitlines()[0][:200])
         rows[name] = dict(image=pin(img), source=pin(src), checks=checks, refusals=refusals)
+        if name == "elf":
+            rows[name]["zeroFileBssChecks"] = 19
+            rows[name]["bssClearMutant"] = dict(image=pin(broken_img), source=pin(broken_src), exit=fault.returncode)
     report = dict(status="PASS_B2_LIBC", compiler=pin(compiler), host=[platform.system(), platform.machine(), platform.release()],
                   units={p.name: pin(p) for p in sorted(B2.glob("*.kotoba"))}, results=rows, cCompilerOrLoader=False)
     (output / "b2-libc.json").write_text(json.dumps(report, indent=2) + "\n")

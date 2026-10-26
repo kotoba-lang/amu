@@ -108,12 +108,15 @@
             (let [m (if (= filesz 0) 0
                       (let [r (sys6 SYS-MMAP (+ bias start) (- (page-up fend) start) prot 18 fd foff)]
                         (if (not= r (+ bias start)) (refuse path (string-concat "mmap of a segment failed: " (dec-str r))) 0)))
-                  ;; bss: the rest of the last file page, then whole anonymous pages
-                  z (if (> memsz filesz) (c-zero (+ bias fend) (- (page-up fend) fend)) 0)
-                  extra (- (page-up (+ vaddr memsz)) (page-up fend))
+                  ;; A zero-file segment has no mapped file page to clear. Map its
+                  ;; first page too, even when vaddr is not page-aligned.
+                  anon-start (if (= filesz 0) start (page-up fend))
+                  ;; bss: the rest of an existing file page, then anonymous pages
+                  z (if (and (> filesz 0) (> memsz filesz)) (c-zero (+ bias fend) (- (page-up fend) fend)) 0)
+                  extra (- (page-up (+ vaddr memsz)) anon-start)
                   x (if (and (> memsz filesz) (> extra 0))
-                      (let [r (sys6 SYS-MMAP (+ bias (page-up fend)) extra prot 50 -1 0)]
-                        (if (not= r (+ bias (page-up fend))) (refuse path "mmap of bss failed") 0))
+                      (let [r (sys6 SYS-MMAP (+ bias anon-start) extra prot 50 -1 0)]
+                        (if (not= r (+ bias anon-start)) (refuse path "mmap of bss failed") 0))
                       0)]
               0))))
 (defn- elf-map-segs [path :string fd :i64 bias :i64 hdr :i64 i :i64 n :i64] :i64

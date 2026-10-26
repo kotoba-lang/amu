@@ -1,5 +1,15 @@
 # Route B2, slice 1: libvulkan.so.1 through the Kotoba loader (ADR 0375, JUN-377)
 
+Review update (2026-10-26): the GPU-host receipt below is historical. The
+loader now also maps zero-file PT_LOAD segments whose virtual address is not
+page-aligned before touching their BSS. The original unit did not handle that
+valid case. Native CI runs all 19 loader checks on that additional fixture
+and builds a mutant that restores the premature clear and must fault by name.
+The original four suite counts and 36 refusal runs remain mandatory. The new
+unit has not been rerun against the physical host's libvulkan; the receipt
+below does not qualify these revised loader bytes. CI retains the sources,
+native test images and raw build/run outputs for independent readback.
+
 An Amu-built static x86_64 image (`--format b2`) maps the system `libvulkan.so.1` itself, binds its libc imports to a
 libc subset written in Kotoba, runs its initializers and calls `vkEnumerateInstanceVersion` and
 `vkEnumerateInstanceExtensionProperties`. There is no `ld.so`, no glibc and no C source in the route: the image's
@@ -16,8 +26,9 @@ gad: Linux 7.0.0-38-generic x86_64, Ubuntu 24.04, glibc 2.39-0ubuntu8.9 (the ora
 * **The unit.** `tools/b2/MANIFEST` (the loader, the libc subset, the probe), compiled with the complete native x86_64
   compiler `85713104…` into a 475,648-byte static image `895f2069…`. That compiler is the complete x86_64 compiler of
   PR #1558's second head (`--format b2`, main 7eb52a0e merged). #1558 merged as `ca65174c7` with the public image
-  `32a10910…` after two more merges of main; the `--format b2` code and the unit are the same, gad was unreachable
-  afterwards, and this receipt was not repeated with the merged image. The tests that need no GPU (below) run in CI
+  `32a10910…` after two more merges of main; at the initial slice-1 PR head the `--format b2` code and unit were the same.
+  The BSS review fix described above subsequently changed the unit. Gad was unreachable
+  afterwards, and this receipt was not repeated with the merged image or revised unit. The tests that need no GPU (below) run in CI
   with the merged compiler.
 * **The result** (`run-default.stdout`, exit 0):
   * `vkEnumerateInstanceVersion` → result 0, version **1.3.275**, the version of the library file;
