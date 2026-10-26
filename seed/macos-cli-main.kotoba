@@ -1,0 +1,13 @@
+;; Diagnostic: real argc, argv[0], argv[1], and out-of-range behavior.
+(ns seed.macos-cli-main (:export [main]))
+
+(defn main [] :i64
+  (let [count (typed-cap-call :cli/args :string :string "")
+        first (typed-cap-call :cli/args :string :string "0")
+        second (typed-cap-call :cli/args :string :string "1")
+        beyond (typed-cap-call :cli/args :string :string "2")]
+    (if (and (string=? count "2")
+             (string=? first "check")
+             (string=? second "fixture.kotoba")
+             (string=? beyond ""))
+      42 43)))

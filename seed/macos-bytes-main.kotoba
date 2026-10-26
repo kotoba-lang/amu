@@ -1,0 +1,17 @@
+;; Bytes conversion copies validated vector words into a distinct arena slice.
+(ns seed.macos-bytes-main (:export [main]))
+
+(defn main [] :i64
+  (let [v0 (vector-alloc 2)
+        v1 (vector-assoc! v0 0 65)
+        source (vector-assoc! v1 1 255)
+        bytes (bytes-from-vector-i64 source)
+        changed (vector-assoc! source 0 66)
+        roundtrip (vector-i64-from-bytes bytes)]
+    (if (and (= (bytes-count bytes) 2)
+             (= (bytes-at bytes 0) 65)
+             (= (bytes-at bytes 1) 255)
+             (= (vector-at changed 0) 66)
+             (= (vector-at roundtrip 0) 65)
+             (= (vector-at roundtrip 1) 255))
+      42 1)))
