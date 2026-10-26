@@ -1,0 +1,78 @@
+HOST: xavier USER: root
+DATE-UTC: 2026-10-26T11:53:12Z  DATE-LOCAL: 2026-10-26T20:53:12+0900
+Linux xavier 5.10.120-tegra #1 SMP PREEMPT Tue Aug 1 12:32:50 PDT 2023 aarch64 aarch64 aarch64 GNU/Linux
+=== nvcc --version (verbatim)
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2022 NVIDIA Corporation
+Built on Sun_Oct_23_22:16:07_PDT_2022
+Cuda compilation tools, release 11.4, V11.4.315
+Build cuda_11.4.r11.4/compiler.31964100_0
+=== nvdisasm --version (verbatim)
+nvdisasm: NVIDIA (R) CUDA disassembler
+Copyright (c) 2005-2022 NVIDIA Corporation
+Built on Tue_Sep_13_22:14:23_PDT_2022
+Cuda compilation tools, release 11.4, V11.4.298
+Build cuda_11.4.r11.4/compiler.31809458_0
+=== sha256 of the received files (before any compile)
+c5e6db5509dd1489ed1016120cf7a3c04b822ee99362afc932200dc97a7378e5  ./gpu-int-throughput-microbench.cu
+1bab83d70410f5bb73325326fcfe1968b1d8ce36b495d6c9f072e3fa8aa0d240  ./gpu-int-throughput-run-20261026.sh
+8bc4ad00bd01afd14ac089a2de512eaa8ecf98f19e33f08643c1928ee6cb0e0a  ./int_throughput_verify.py
+=== compile the instrument (run binary + cubin)
+OK-build
+OK-cubin
+=== build diagnostics (verbatim byte counts)
+diag diag-build.txt 183 bytes
+diag diag-cubin.txt 183 bytes
+=== disassemble the cubin (nvdisasm -c)
+OK-sass 392 lines
+diag diag-nvdisasm.txt 0 bytes
+=== sha256 of the generated artifacts
+02297f6b8a97a6525c5da83fab9a470244bd0db25fb26bb2b4ed2a2f7b06400b  microbench.sass
+e0bc2033083133abd238a45ce31d4800f923f860e45527f8e9502770f6bf90b4  gpu-int-throughput-microbench.cubin
+cc06e67629a591984f74fb5afc6c9f89e50104e30290f31fd084c227a0d7454d  gpu-int-throughput-microbench
+=== SASS verification (python3, per-kernel opcode histograms)
+VERIFY functions found: 5
+VERIFY-FUNCTION thr_fadd total_static=69
+  OPCODES @!PT:2 BRA:2 CS2R:2 EXIT:1 F2I.U64.TRUNC:1 FADD:15 FADD.FTZ:16 IADD3:2 IADD3.X:1 IMAD.WIDE.U32:1 ISETP.NE.AND:1 LDG.E.SYS:1 MOV:21 S2R:1 STG.E.64.SYS:2
+  TARGET-EXACT FADD.FTZ arm=thr_fadd count=16
+  TARGET-EXACT FADD arm=thr_fadd count=15
+VERIFY-FUNCTION thr_iadd total_static=62
+  OPCODES @!PT:2 BRA:2 CS2R:2 EXIT:1 IADD3:17 IADD3.X:1 IMAD.IADD:9 IMAD.MOV.U32:14 IMAD.WIDE.U32:1 ISETP.NE.AND:1 LDG.E.SYS:1 MOV:8 S2R:1 STG.E.64.SYS:2
+  TARGET-EXACT IADD3 arm=thr_iadd count=17
+  TARGET-EXACT IMAD.IADD arm=thr_iadd count=9
+  TARGET-EXACT IMAD arm=thr_iadd count=0
+VERIFY-FUNCTION thr_imad total_static=63
+  OPCODES @!PT:2 BRA:2 CS2R:2 EXIT:1 IADD3:10 IMAD:16 IMAD.MOV.U32:7 IMAD.WIDE.U32:1 IMAD.X:1 ISETP.NE.AND:1 LDG.E.SYS:2 MOV:15 S2R:1 STG.E.64.SYS:2
+  TARGET-EXACT IMAD arm=thr_imad count=16
+  TARGET-EXACT IADD3 arm=thr_imad count=10
+  TARGET-EXACT IMAD.IADD arm=thr_imad count=0
+VERIFY-FUNCTION thr_pp_iadd total_static=59
+  OPCODES @!PT:2 BRA:2 CS2R:2 EXIT:1 IADD3:17 IADD3.X:1 IMAD.IADD:9 IMAD.MOV.U32:13 IMAD.WIDE.U32:1 ISETP.NE.AND:1 MOV:7 S2R:1 STG.E.64.SYS:2
+  TARGET-EXACT IADD3 arm=thr_pp_iadd count=17
+  TARGET-EXACT IMAD.IADD arm=thr_pp_iadd count=9
+  TARGET-EXACT IMAD arm=thr_pp_iadd count=0
+VERIFY-FUNCTION thr_pp_imad total_static=62
+  OPCODES @!PT:2 BRA:2 CS2R:2 EXIT:1 IADD3:10 IMAD:16 IMAD.MOV.U32:7 IMAD.WIDE.U32:1 IMAD.X:1 ISETP.NE.AND:1 LDG.E.SYS:1 MOV:15 S2R:1 STG.E.64.SYS:2
+  TARGET-EXACT IMAD arm=thr_pp_imad count=16
+  TARGET-EXACT IADD3 arm=thr_pp_imad count=10
+  TARGET-EXACT IMAD.IADD arm=thr_pp_imad count=0
+VERIFY done
+=== run the microbench (3 launches x 5 arms)
+DEVICE name=Xavier clockRate_kHz=1377000 multiProcessorCount=8
+RESULT arm=thr_iadd mode=thr launch=0 units=1024 instr_per_unit=1 samples=128 min=2099 p10=2099 median=2100 mean=2099.5 p90=2100 max=2100 cyc_per_unit_median=2.0508 cyc_per_instr_median=2.0508
+RESULT arm=thr_imad mode=thr launch=0 units=1024 instr_per_unit=1 samples=128 min=2803 p10=2803 median=2804 mean=2803.8 p90=2804 max=2804 cyc_per_unit_median=2.7383 cyc_per_instr_median=2.7383
+RESULT arm=thr_pp_iadd mode=thr launch=0 units=1024 instr_per_unit=1 samples=128 min=1880 p10=1880 median=1880 mean=1880.0 p90=1880 max=1880 cyc_per_unit_median=1.8359 cyc_per_instr_median=1.8359
+RESULT arm=thr_pp_imad mode=thr launch=0 units=1024 instr_per_unit=1 samples=128 min=2929 p10=2929 median=2931 mean=2930.5 p90=2932 max=2932 cyc_per_unit_median=2.8623 cyc_per_instr_median=2.8623
+RESULT arm=thr_fadd mode=thr launch=0 units=1024 instr_per_unit=1 samples=128 min=2929 p10=2929 median=2931 mean=2930.5 p90=2932 max=2932 cyc_per_unit_median=2.8623 cyc_per_instr_median=2.8623
+RESULT arm=thr_iadd mode=thr launch=1 units=1024 instr_per_unit=1 samples=128 min=2099 p10=2099 median=2100 mean=2099.5 p90=2100 max=2100 cyc_per_unit_median=2.0508 cyc_per_instr_median=2.0508
+RESULT arm=thr_imad mode=thr launch=1 units=1024 instr_per_unit=1 samples=128 min=2803 p10=2803 median=2804 mean=2803.8 p90=2804 max=2804 cyc_per_unit_median=2.7383 cyc_per_instr_median=2.7383
+RESULT arm=thr_pp_iadd mode=thr launch=1 units=1024 instr_per_unit=1 samples=128 min=1880 p10=1880 median=1880 mean=1880.0 p90=1880 max=1880 cyc_per_unit_median=1.8359 cyc_per_instr_median=1.8359
+RESULT arm=thr_pp_imad mode=thr launch=1 units=1024 instr_per_unit=1 samples=128 min=2929 p10=2929 median=2931 mean=2930.5 p90=2932 max=2932 cyc_per_unit_median=2.8623 cyc_per_instr_median=2.8623
+RESULT arm=thr_fadd mode=thr launch=1 units=1024 instr_per_unit=1 samples=128 min=2929 p10=2929 median=2931 mean=2930.5 p90=2932 max=2932 cyc_per_unit_median=2.8623 cyc_per_instr_median=2.8623
+RESULT arm=thr_iadd mode=thr launch=2 units=1024 instr_per_unit=1 samples=128 min=2099 p10=2099 median=2100 mean=2099.5 p90=2100 max=2100 cyc_per_unit_median=2.0508 cyc_per_instr_median=2.0508
+RESULT arm=thr_imad mode=thr launch=2 units=1024 instr_per_unit=1 samples=128 min=2803 p10=2803 median=2804 mean=2803.8 p90=2804 max=2804 cyc_per_unit_median=2.7383 cyc_per_instr_median=2.7383
+RESULT arm=thr_pp_iadd mode=thr launch=2 units=1024 instr_per_unit=1 samples=128 min=1880 p10=1880 median=1880 mean=1880.0 p90=1880 max=1880 cyc_per_unit_median=1.8359 cyc_per_instr_median=1.8359
+RESULT arm=thr_pp_imad mode=thr launch=2 units=1024 instr_per_unit=1 samples=128 min=2929 p10=2929 median=2931 mean=2930.5 p90=2932 max=2932 cyc_per_unit_median=2.8623 cyc_per_instr_median=2.8623
+RESULT arm=thr_fadd mode=thr launch=2 units=1024 instr_per_unit=1 samples=128 min=2929 p10=2929 median=2931 mean=2930.5 p90=2932 max=2932 cyc_per_unit_median=2.8623 cyc_per_instr_median=2.8623
+MICROBENCH run complete
+=== microbench run complete

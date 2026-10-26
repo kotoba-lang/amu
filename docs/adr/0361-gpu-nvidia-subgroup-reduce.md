@@ -2257,3 +2257,104 @@ standing pins 2649/0 and 0-files NOT re-verified here); FULL
 `run-tests.cljk` not run (red at base `Could not find namespace:
 kotoba.form`, ADR-0362) -- NO green suite claimed. Record:
 `docs/evidence/gpu/cuda-int-latency-20261026/`.
+
+## Amendment (2026-10-26, the integer issue-side costs: the throughput
+arms run -- IMAD priced in two forms, the add spellings stay mixed)
+
+The twenty-second amendment's named item "integer issue-side costs of
+these spellings (throughput arms not run)" takes its throughput-arm
+branch. ONE measurement slice; HARDWARE RAN: the integer throughput
+microbench on xavier sm_72 at 2026-10-26T11:53:12Z. NAMED NOT HIDDEN: a
+PROBE, not a registered timing session (no paired samples, no AB/BA) --
+inadmissible under the entry criterion BY KIND; same UTC day as every
+earlier probe (NOT cross-day); it measures INSTRUCTIONS, not kernels;
+enters nothing, extends no record's `:evidence`.
+
+**Instrument.** 5 arms x 3 launches x 128 threads, clock64() over the
+loop only, 16 chain ops per iteration (unroll 1) x 64 iterations = 1024
+chain ops per thread, 16 INDEPENDENT accumulators per thread (v2's THR
+structure) with the latency row's one surviving lesson layered in: all
+operands SYMBOLIC (c=3u, cm=7u, cf=1.5f from global memory -- v2's
+constant operands had folded the integer chains away). Both
+latency-row chain forms: STRAIGHT (one op per accumulator per
+iteration) and PING-PONG (8 pairs). Every body VERIFIED at exactly 20
+instructions per iteration (16 chain ops + @!PT SHFL.IDX barrier +
+counter IADD3 + ISETP.NE.AND + @P0 BRA); every arm realized its chain
+16/16 with NO fold.
+
+**Finding.**
+(1) IMAD ISSUE-SIDE COST MEASURED (two pure 16-IMAD bodies): straight
+    2.7383 cyc/op, ping-pong 2.8623 -- the issue-side cost FORM-DEPENDS
+    by +4.53% where the two latency forms agreed to 0.005%; the
+    mad.lo.u32 issue cost on sm_72 is bracketed [2.7383, 2.8623]
+    (DERIVED bracket; the per-form numbers are the measurement).
+(2) THE ADD SIDE IS PRICED AS A MIX AND THE PURE SPELLINGS STAY
+    UNSEPARATED: both add arms realized the SAME alternating 8 x IADD3
+    (x = c + x + RZ) / 8 x IMAD.IADD (x = c*1 + x) body (VERIFIED; the
+    8/8 split is NOT a ping-pong artifact -- it appears in the straight
+    16-accumulator body too). Mixed issue cost 2.0508 (straight) /
+    1.8359 (ping-pong) cyc/op. The additive-mean separation FAILS
+    across forms (DERIVED under the named unverified assumption that a
+    mix prices the mean of its spellings' issue costs): straight implies
+    cost(IADD3-form)+cost(IMAD.IADD-form) = 4.1016 cyc/pair, ping-pong
+    implies 3.6718 -- one assumption, two sums; within a form there is
+    one equation per two unknowns. Pure 2-input IADD3 and pure
+    IMAD.IADD issue costs are UNSEPARATED -- the latency row's named
+    gap survives on the issue side.
+(3) LATENCY-AND-ISSUE ORDERINGS CONTRAST (latencies CONSUMED at the
+    latency row's commit): the mixed add spellings are SLOWER per op in
+    dependent-chain latency (5.3767 DERIVED mean vs IMAD 4.4657) but
+    FASTER at issue rate (1.84-2.05 vs 2.74-2.86) -- a kernel cost
+    model cannot substitute one for the other.
+(4) MERGE-MECHANISM REFINEMENT (extends the twenty-second's fact (3),
+    VERIFIED at SASS level): the 2:1 pairwise merge needs CONSECUTIVE
+    same-destination writes -- the throughput form's interleaved
+    destinations defeat it entirely (straight add chains realized
+    16/16 where the latency straight form folded 2:1 into IADD3
+    x=x+c+c).
+(5) FORM VALIDATION: thr_fadd 2.8623 cyc/op vs v2's thr fadd reference
+    2.6641 (CONSUMED at its own commit, same 1024-unit semantics) =
+    +0.1982 (+7.44%) -- the thr instrument's FORM SYSTEMATIC is up to
+    ~7.4%, larger than the latency row's +1.40% (v2's operand was a
+    constant c=1.0f, this row's symbolic; runs 2h19m apart; clock/
+    thermal drift UNMEASURED).
+NAMED NOT HIDDEN: thr_pp_imad and thr_fadd produced IDENTICAL sample
+distributions (2929/2929/2931/2930.5/2932/2932) -- different opcodes,
+same body instruction count and shape, deterministic lockstep; observed,
+not explained.
+
+**Consequence today: NOTHING MOVES** (rule 4). The named item moves
+PARTIALLY: IMAD issue-side ANSWERED (both forms), add side priced as
+a mix, the pure integer spellings named NOT SEPARATED (issue side too).
+
+**States.** MEASURED (this probe only): the IMAD issue-side cost (both
+forms), the mixed-spelling add issue-side cost (both forms), the
+FADD.FTZ issue-side cost (form-validation arm), the five loop bodies'
+realized spellings. DERIVED (marked): the two-form brackets, the
+4.1016/3.6718 pair sums (and their inconsistency), the latency-vs-issue
+ordering contrast, the +7.44% form systematic. IMPLEMENTED: nothing
+(evidence + this amendment only). DECIDED: nothing new. ACCEPTED DESIGN
+ONLY (unchanged): the operator-aware contract + pre-registration, the
+row (ii) routes, the entry contract + wiring, ADR-0358, ADR-0373.
+UNMEASURED, named: the pure 2-input IADD3 and the pure IMAD.IADD issue
+costs (UNSEPARATED -- needs a toolchain realization that isolates one
+spelling, or a different toolchain); the pure 2-input IADD3
+register-add dependent latency (still UNSEPARATED from the latency
+row); the IMAD.IADD spelling's own latency; the 21 surplus ops' true
+per-op costs (this row prices IMAD and brackets the IADD3 family at
+ISSUE rate -- does NOT close that item); raw MUFU.RCP cost; a
+non-eliminated overhead baseline (every arm's body carries the same +4
+overhead instructions -- the baseline is a body of those 4 alone, not
+run); the residual W-shape's dynamic carrier (per-phase instrumentation,
+its own row); noise exceedance of the corrected residuals; the sum
+ratio's TRUE side at W=256; a cross-day run 3+ (still 2026-10-26 UTC);
+every per-op verdict on non-xavier hardware; the `:sum` ordering at
+W=64 on any other device or channel; the landed rows on a live CUDA
+selection path; every workgroup row (`:arm`/`:unknown` stay provisional
+`:measured? false`).
+Gates: scoped GPU gate GREEN (123/12162, glslang 16.6.0 real-spawn);
+`find docs -name '*.sh'` -> 0; `gpu_regime_classify.py --self-test` and
+gate run 2 NOT run (standing pins 2649/0 and 123/12162, named, not
+re-verified this slice); FULL `run-tests.cljk` not run (red at base
+`Could not find namespace: kotoba.form`, ADR-0362) -- NO green suite
+claimed. Record: `docs/evidence/gpu/cuda-int-throughput-20261026/`.

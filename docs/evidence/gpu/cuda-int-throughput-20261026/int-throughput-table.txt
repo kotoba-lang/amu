@@ -1,0 +1,91 @@
+INTEGER THROUGHPUT (ISSUE-SIDE) MICROBENCH -- xavier sm_72, 2026-10-26T11:53:12Z
+amu-gpu tick 2026-10-26, JUN-57. PROBE (inadmissible under the entry
+criterion BY KIND: no paired samples, no AB/BA; same UTC day as every
+earlier probe; instruction costs, not kernels; enters nothing).
+
+Instrument: gpu-int-throughput-microbench.cu (scratch, never staged,
+sha256 c5e6db5509dd1489..). 5 arms x 3 launches x 128 threads,
+clock64() over the loop only, 16 chain ops per iteration (unroll 1)
+x 64 iterations = 1024 chain ops per thread; operands SYMBOLIC
+(c=3u, cm=7u, cf=1.5f from global memory). Every arm's realized opcode
+VERIFIED from nvdisasm (full SASS: microbench-sass.txt, sha256
+02297f6b8a97a652..). All three launches identical medians per arm
+(deterministic; named caveat: 128 threads run lockstep -- one
+warp-group draw, not 128 independent samples).
+
+LOOP-BODY COMPOSITION (VERIFIED, one static body per kernel -- unroll 1;
+20 instructions per iteration in EVERY arm = 16 chain ops + 1 @!PT
+SHFL.IDX barrier + 1 counter IADD3 + 1 ISETP.NE.AND + 1 @P0 BRA):
+
+  arm          body chain ops (realized)         spellings
+  thr_iadd     16/16 realized, NO fold           8 x IADD3 (x=c+x+RZ)
+                                                + 8 x IMAD.IADD (x=c*1+x)
+                                                ALTERNATING, 8/8
+  thr_imad     16/16 realized, NO fold           16 x IMAD (x=x*cm+c)
+  thr_pp_iadd  16/16 realized, NO fold           8 x IADD3 + 8 x IMAD.IADD
+                                                ALTERNATING, 8/8
+  thr_pp_imad  16/16 realized, NO fold           16 x IMAD
+  thr_fadd     16/16 realized, NO fold           16 x FADD.FTZ
+
+  (whole-function histograms incl. prologue/epilogue/anchor sums in
+  run-log.txt VERIFY blocks; body histograms derived by
+  thr_body_analyze.py -- scratch, never staged, counts only.)
+
+MEASURED (per chain op = per realized chain instruction here -- every
+body realized its 16 chain ops 1:1, median of 128 samples, cyc at
+clockRate_kHz=1377000; min..max spans shown; all 3 launches identical):
+
+  arm          median cyc  cyc/op   min..max      per-iteration cyc
+  thr_iadd     2100        2.0508   2099..2100    32.8125
+  thr_imad     2804        2.7383   2803..2804    43.8125
+  thr_pp_iadd  1880        1.8359   1880..1880    29.3750
+  thr_pp_imad  2931        2.8623   2929..2932    45.7969
+  thr_fadd     2931        2.8623   2929..2932    45.7969
+
+  NAMED NOT HIDDEN: thr_pp_imad and thr_fadd produced IDENTICAL sample
+  distributions (min 2929 p10 2929 median 2931 mean 2930.5 p90 2932
+  max 2932 in both) -- different opcodes, same body instruction count
+  and shape, deterministic lockstep; observed, not explained.
+
+DERIVED (marked):
+  - IMAD issue-side cost, two-form bracket: straight 2.7383 vs
+    ping-pong 2.8623 cyc/op (+0.1240, +4.53% for ping-pong).
+  - mixed-spelling add issue-side cost, two-form bracket: straight
+    2.0508 vs ping-pong 1.8359 cyc/op (-0.2149, -10.48% for
+    ping-pong).
+  - additive-mean separation attempt FAILS across forms (named
+    assumption: a mix prices the mean of its two spellings' issue
+    costs -- unverified): straight implies
+    cost(IADD3-form)+cost(IMAD.IADD-form) = 2 x 2.0508 = 4.1016
+    cyc/pair, ping-pong implies 2 x 1.8359 = 3.6718 -- the same two
+    unknowns give different sums in the two forms (the assumption is
+    form-dependent), and within one form there is one equation per two
+    unknowns. Pure 2-input IADD3 and pure IMAD.IADD issue costs stay
+    UNSEPARATED (the latency row's named gap, now confirmed on the
+    issue side).
+  - latency-vs-issue ordering CONTRASTS (latencies CONSUMED at
+    docs/evidence/gpu/cuda-int-latency-20261026/): the mixed add
+    spelling pair is SLOWER in dependent-chain latency (5.3767
+    cyc/op) than IMAD (4.4657) but FASTER at issue rate (1.84-2.05 vs
+    2.74-2.86). Latency and issue-side rankings disagree; a kernel
+    cost model needs both.
+  - FORM SYSTEMATIC of this thr instrument: thr_fadd 2.8623 vs v2's
+    thr fadd reference 2.6641 cyc/unit (CONSUMED at
+    docs/evidence/gpu/cuda-op-microbench-20261026/) = +0.1982
+    (+7.44%) -- larger than the latency row's +1.40%; v2's arm had a
+    constant operand (c=1.0f), this row's is symbolic, and the runs
+    are 2h19m apart (clock/thermal drift UNMEASURED). Cross-row
+    comparisons of thr numbers carry up to ~7.4% form/run systematic.
+
+MERGE-MECHANISM REFINEMENT (VERIFIED at SASS level, extends the
+twenty-second amendment's fact (3)): in the THROUGHPUT form (16
+independent accumulators, one op per destination per iteration) NO
+pairwise merge occurs -- the straight add.u32 chain realized 16/16
+separate instructions, unlike the latency straight form which folded
+2:1 into IADD3 x=x+c+c. The 2:1 merge needs CONSECUTIVE same-destination
+writes; interleaved destinations defeat it entirely. New spelling fact:
+the straight16-accumulator add body splits 8/8 IADD3/IMAD.IADD
+ALTERNATING -- the alternating spelling is not a ping-pong artifact.
+
+NOTHING MOVES (rule 4): no record, no :measured? flag, no selection
+answer, no :shapes value, no workgroup row.
