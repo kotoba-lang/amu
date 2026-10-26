@@ -7,6 +7,7 @@ on:
       - 'scripts/seed/check-aiueos-user-elf-native.py'
       - 'scripts/seed/check-aiueos-user-macos-native.py'
       - 'scripts/seed/check-aiueos-user-v3-macos-native.py'
+      - 'scripts/seed/check-macos-exec-smoke*.py'
       - 'scripts/seed/check-macos-cross-linux-candidates.py'
       - 'scripts/seed/check-macos-cross-linux-native.py'
       - 'scripts/seed/collect-macos-crash-summary.py'
@@ -44,6 +45,14 @@ jobs:
           python3 scripts/seed/check-aiueos-user-v3-macos-native.py \
             --mac-build "$RUNNER_TEMP/mac-root" \
             --output "$RUNNER_TEMP/mac-user-v3"
+      - name: Native Darwin bounded I/O and error refusal probe
+        run: |
+          python3 scripts/seed/native_build_queue.py \
+            --phase mac-exec-smoke \
+            --slot-dir "$RUNNER_TEMP/native-build-slots" -- \
+            python3 scripts/seed/check-macos-exec-smoke-native.py \
+              --mac-build "$RUNNER_TEMP/mac-root" \
+              --output "$RUNNER_TEMP/mac-smoke"
       - name: Cross-build Linux compiler candidates from Mac fixed point
         run: |
           python3 scripts/seed/check-macos-cross-linux-candidates.py \
@@ -63,6 +72,8 @@ jobs:
           path: |
             ${{ runner.temp }}/mac-root-admission.json
             ${{ runner.temp }}/mac-root/mac-aiueos-user-target.json
+            ${{ runner.temp }}/mac-smoke/native-smoke.json
+            ${{ runner.temp }}/mac-smoke/execution/receipt.json
             ${{ runner.temp }}/mac-root-crash-summary.json
           if-no-files-found: warn
       - name: Upload user-v3 Mac receipt

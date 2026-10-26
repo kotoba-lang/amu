@@ -323,6 +323,13 @@ def main(args):
     fs2_written = output / "fs2-byte-roundtrip.bin"
     if fs2_written.read_bytes() != b"\x00\xff\x80":
         raise ValueError("Mac FS2 B/C and A byte roundtrip changed")
+    parameter = output / "parameter.kotoba"
+    parameter.write_text(checker.PARAMETER)
+    refused_parameter = native_run(producer, output, "compile", parameter.name,
+                                   "--target", checker.TARGET, "--output", "parameter.elf",
+                                   expected=1)
+    if b"E7102" not in refused_parameter.stderr or (output / "parameter.elf").exists():
+        raise ValueError("v1 parameter was not refused without an artifact")
     if (pin(compiler) != compiler_pin or pin(packager) != packager_pin
             or pin(MANIFEST) != manifest_pin or pin(USER_CHECK) != checker_pin
             or pin(FS2_PRODUCT) != fs2_product_pin
@@ -345,6 +352,7 @@ def main(args):
               "userPayloadMissingInputRefused": True,
               "userPayloadOversizedInputRefused": True,
               "effectSource": pin(effect), "undeclaredEffectRefused": True,
+              "parameterSource": pin(parameter), "parameterRefused": True,
               "fs2ProductRaw": {"status": "PASS_MAC_FS2_RAW_BYTES",
                                 "source": fs2_product_pin,
                                 "container": pin(output / "fs2-product.kseed"),

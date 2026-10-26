@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "program": "Kotoba/Amu performance proof v1",
+  "claims": [
+    {
+      "id": "amu-embench-translated-port-m104",
+      "track": "compiler-runtime",
+      "status": "historical-author-run",
+      "statement": "Two complete Apple M4 author-run cycles of the corrected same-algorithm M104 translated-port comparison reported Kotoba/C elapsed-time geometric means below 1.0.",
+      "allowedUse": "Technical history with exact host, revision, protocol and limitations.",
+      "prohibitedUse": "Kotoba is faster than C; official Embench score; independently verified result; result for all programs or hosts.",
+      "workloadSet": "all 19 pinned Embench-derived translated ports",
+      "comparator": "pinned upstream Embench C built with the recorded Apple clang and flags on the same host",
+      "correctnessGate": "19/19 exact result, fuel and arena accounting for Kotoba; 19/19 accepted C runs",
+      "promotionRequires": [
+        "claim-grade-author-run",
+        "two-independent-reruns",
+        "complete-unfavorable-results",
+        "upstream-methodology-disposition"
+      ]
+    },
+    {
+      "id": "amu-faster-than-c-universal",
+      "track": "compiler-runtime",
+      "status": "withheld",
+      "statement": "Kotoba/Amu is faster than C.",
+      "allowedUse": "none",
+      "prohibitedUse": "Any unqualified headline, advertisement, sales statement or benchmark summary.",
+      "workloadSet": "undefined universal population",
+      "comparator": "undefined",
+      "correctnessGate": "not satisfiable as a universal claim",
+      "promotionRequires": []
+    },
+    {
+      "id": "kotoba-generated-code-safety",
+      "track": "safety",
+      "status": "requires-separate-proof",
+      "statement": "A named Kotoba execution profile denies undeclared authority and enforces declared resource bounds.",
+      "allowedUse": "Only for a named profile after executable positive and negative controls pass.",
+      "prohibitedUse": "Kotoba is safe; security certification; absence of vulnerabilities.",
+      "workloadSet": "named authority, admission, resource-limit and receipt tests",
+      "comparator": "declared expected allow/deny behavior, not C performance",
+      "correctnessGate": "all positive controls succeed and all undeclared-capability negative controls fail closed",
+      "promotionRequires": [
+        "profile-revision-and-hash",
+        "negative-control-records",
+        "independent-rerun"
+      ]
+    },
+    {
+      "id": "murakumo-inference-performance",
+      "track": "inference",
+      "status": "separate-track",
+      "statement": "A named Murakumo configuration is faster or more efficient than a named inference comparator on a specified workload.",
+      "allowedUse": "Only with exact model, quantization, runtime, host, concurrency, prompt/output lengths, metric, repetitions and comparator.",
+      "prohibitedUse": "Murakumo is faster than existing inference; using an inference result as proof of Kotoba language or Amu compiler speed.",
+      "workloadSet": "must be specified by the inference protocol",
+      "comparator": "must be same-host and same-model, or differences must be explicit",
+      "correctnessGate": "model outputs or accuracy threshold plus the inference protocol's validity checks",
+      "promotionRequires": [
+        "separate-inference-manifest",
+        "same-host-comparison",
+        "independent-rerun"
+      ]
+    }
+  ]
+}

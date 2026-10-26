@@ -1,0 +1,398 @@
+;; Package the full compiler main with Darwin argv, UTF-8 code point and
+;; byte-bounded substring ABI slots. Diagnostic only, not a compiler image.
+(ns seed.macos-substring-runtime-packager (:export [main]))
+
+(def MAX-FS2-VALUE 8388608)
+(def DATA-BYTES 16384)
+(def RAW-START 8192)
+(def RUNTIME-START 2048)
+(def POOL-SETUP-START 2048)
+(def CONCAT-START 2184)
+(def POOL-EQUAL-START 2556)
+(def HELPER-START 1408)
+(def LEGACY-TYPED-START 1536)
+(def STDERR-TYPED-START 2816)
+(def CLI-RUNTIME-START 3216)
+(def TYPED-START 3248)
+(def CODEPOINT-START 4096)
+(def SUBSTRING-START 4672)
+
+(defn- byte-at [v :vector-i64 at :i64 value :i64] :vector-i64
+  (vector-assoc! v at (bit-and value 255)))
+
+(defn- u32-at [v :vector-i64 at :i64 value :i64] :vector-i64
+  (-> v
+      (byte-at at value)
+      (byte-at (+ at 1) (u64-shift-right value 8))
+      (byte-at (+ at 2) (u64-shift-right value 16))
+      (byte-at (+ at 3) (u64-shift-right value 24))))
+
+(defn- u64-at [v :vector-i64 at :i64 value :i64] :vector-i64
+  (-> v
+      (u32-at at (bit-and value 4294967295))
+      (u32-at (+ at 4) (u64-shift-right value 32))))
+
+(defn- text-at [v :vector-i64 at :i64 text :string] :vector-i64
+  (let [bytes (vector-i64-from-bytes (string-to-utf8 text))
+        count (vector-count bytes)]
+    (loop [index 0 out v]
+      (if (= index count) out
+        (recur (+ index 1) (byte-at out (+ at index) (vector-at bytes index)))))))
+
+(defn- generated-at [v :vector-i64 at :i64 raw :vector-i64] :vector-i64
+  (loop [i 0 out v]
+    (if (= (+ i 5) (vector-count raw)) out
+      (recur (+ i 1) (byte-at out (+ at i) (vector-at raw (+ i 5)))))))
+
+(defn- words-at [v :vector-i64 at :i64 words :vector-i64] :vector-i64
+  (loop [i 0 out v]
+    (if (= i (vector-count words)) out
+      (recur (inc i) (u32-at out (+ at (* i 4)) (vector-at words i))))))
+
+(defn- adr8 [at :i64 target :i64] :i64
+  (let [delta (- target at)]
+    (bit-or 0x10000008
+      (bit-or (i64-shift-left (bit-and delta 3) 29)
+              (i64-shift-left (quot delta 4) 5)))))
+
+(defn- b-ne [from :i64 target :i64] :i64
+  (bit-or 0x54000001 (i64-shift-left (- target from) 5)))
+
+(defn- b-lo [from :i64 target :i64] :i64
+  (bit-or 0x54000003 (i64-shift-left (- target from) 5)))
+
+(defn- b-cs [from :i64 target :i64] :i64
+  (bit-or 0x54000002 (i64-shift-left (- target from) 5)))
+
+(defn- wrapper-prefix [text-bytes :i64] :vector-i64
+  [(data-adrp text-bytes) 0xaa0703f3
+   (bit-or 0x94000000 (quot (- CLI-RUNTIME-START 1032) 4))
+   0xd2807d08 0xf9000668
+   (adr8 1044 HELPER-START) 0xf9001e68
+   0x91080268 0xf9009268
+   ;; Darwin mmap(0, 256 MiB, PROT_READ|WRITE, MAP_PRIVATE|ANON, -1, 0).
+   ;; SYS_mmap=197; x16=0x20000c5. Carry reports the syscall error.
+   0xaa1f03e0 0xd2a20001 0xd2800062 0xd2820043 0x92800004
+   0xaa1f03e5 0xd28018b0 0xf2a40010 0xd4001001 (b-cs 18 56)
+   0xf9009660
+   ;; A separate 16 MiB mark arena; all pages begin zeroed.
+   0xaa1f03e0 0xd2a02001 0xd2800062 0xd2820043 0x92800004
+   0xaa1f03e5 0xd28018b0 0xf2a40010 0xd4001001 (b-cs 29 56)
+   0xf9009a60 0xaa1303e7])
+
+(defn- wrapper-suffix [raw-bytes :i64 mode :string] :vector-i64
+  [
+   (adr8 1152 TYPED-START) 0xf9004268
+   (adr8 1160 POOL-EQUAL-START) 0xf9003a68
+   (adr8 1168 CONCAT-START) 0xf9003e68
+   (if (string=? mode "stdout") 0xd2c00408
+     (if (string=? mode "stderr") 0xd2c01008
+       (if (string=? mode "cli") 0xd2c00808
+         (if (string=? mode "cli-stderr") 0xd2c01808 0xd2800008)))) 0xf9000a68
+   (adr8 1184 RAW-START) 0xf900c268
+   (bit-or 0xd2800008 (i64-shift-left (bit-and raw-bytes 65535) 5))
+   (bit-or 0xf2a00008 (i64-shift-left (u64-shift-right raw-bytes 16) 5))
+   0xf900c668
+   (bit-or 0x94000000 (quot (- POOL-SETUP-START 1204) 4))
+   (bit-or 0x94000000 (quot (- RAW-START 1208) 4))
+   (if (= raw-bytes 3254848) 0xf100081f 0xf100a81f) (b-ne 48 56)
+   0xf9410268 0xf100051f (b-lo 51 56)
+   (if (= raw-bytes 3254848) 0xd2800040 0xd2800540)
+   0xd2800030 0xf2a40010 0xd4001001 0xd4200000])
+
+;; pair_new(ctx, offset, byte_length): 1-based handle. The context contains
+;; a count pointer at +288, mmap pair base at +296, and mark base at +304.
+;; The full runtime's 16,777,216-pair bound traps before any write.
+(defn- pair-helper-words [] :vector-i64
+  [0xf9409008 0xf9400109 0xd2a0200a 0xeb0a013f 0x54000043 0xd4200000
+   0xf940940a 0x8b09114a 0xf9000141 0xf9000542
+   0xf940980b 0x8b09016b 0x3900017f
+   0x91000529 0xf9000109 0xaa0903e0 0xd65f03c0])
+
+;; The inherited typed helper handles the earlier wire 37 output diagnostic;
+;; wire 38 is dispatched by cli-helper-words below. Other wires trap.
+;; These fixed AArch64 words are the reviewed diagnostic control's text,
+;; now emitted as Kotoba data. The Mac assembler is not in the build path.
+(defn- typed-helper-words [] :vector-i64
+  [0xf100983f 0x540005a0 0xf100943f 0x540006c1
+   0xf100045f 0x54000681 0xf100047f 0x54000641
+   0xf9400808 0xd2c00409 0xeb09011f 0x540005c1
+   0xb40005a4 0xf9409008 0xf9400109 0xeb09009f
+   0x54000528 0xf9409408 0xd1000484 0x8b041108
+   0xf9400109 0xf940050a 0xf101015f 0x54000448
+   0xb7f80429 0xf940c40b 0xeb0b013f 0x540003c8
+   0xcb09016b 0xeb0b015f 0x54000368 0xf940c00b
+   0x8b090161 0xaa0a03e2 0xa9bf7bf3 0xaa0a03f3
+   0xd2800020 0xd2800090 0xf2a40010 0xd4001001
+   0x54000222 0xeb13001f 0x540001e1 0xd2800000
+   0xa8c17bf3 0xd65f03c0 0xf100045f 0x54000141
+   0xf100047f 0x54000101 0xf81f0ffe 0xd2800001
+   0xd2800002 0xf9401c10 0xd63f0200 0xf84107fe
+   0xd65f03c0 0xd4200020])
+
+;; Reviewed AArch64 pool setup, bounded span resolver, concat and equal.
+;; The assembler was used once to derive these words; final packaging uses
+;; this Kotoba source and the Amu native compiler.
+(defn- append-runtime-words [out :vector-i64 start :i64 words :vector-i64] :vector-i64
+  (loop [i 0 next out]
+    (if (= i (vector-count words)) next
+      (recur (+ i 1) (vector-assoc! next (+ start i) (vector-at words i))))))
+
+(defn- runtime-helper-words [] :vector-i64
+  (-> (vector-alloc 181)
+      (append-runtime-words 0 [
+       0xaa1f03e0 0xd2a20001 0xd2800062 0xd2820043 0x92800004 0xaa1f03e5
+       0xd28018b0 0xf2a40010 0xd4001001 0x54001562 0xf900ca60 0xf900ce7f
+       0xd65f03c0 0xb7f814e2 0xb7f80141 0xf940c408 0xeb08003f 0x54001468
+       0xcb010108 0xeb08005f 0x54001408 0xf940c008 0x8b010100 0xd65f03c0
+       0xaa2103e9 0xf940cc08 0xeb08013f 0x54001328 0xcb090108 0xeb08005f
+       0x540012c8 0xf940c808 0x8b090100 0xd65f03c0 0xd10183ff 0xa9007bfd
+       0xa90153f3 0xa9025bf5 0xa90363f7 0xa9046bf9 0xa90573fb 0xaa0003f3
+       0xf100043f 0x54001123 0xf100045f 0x540010e3 0xf9409268 0xf9400108
+       0xeb08003f 0x54001068 0xeb08005f 0x54001028 0xf9409669 0xd100042a
+       0x8b0a112a 0xa9405955 0xd100044a 0x8b0a112a 0xa9406157 0xb7f80f36])
+      (append-runtime-words 60 [
+       0xb7f80f18 0xab1802d9 0x54000ec6 0xaa1303e0 0xaa1503e1 0xaa1603e2
+       0x97ffffcb 0xaa0003fa 0xaa1303e0 0xaa1703e1 0xaa1803e2 0x97ffffc6
+       0xaa0003fb 0xf940ce7c 0xaa1903f4 0xd280000e 0xb7f80055 0x14000007
+       0xaa3503e8 0x8b160108 0xeb1c011f 0x54000061 0xaa1803f4 0xd280002e
+       0xd2a20008 0xeb08039f 0x54000bc8 0xcb1c0108 0xeb08029f 0x54000b68
+       0xf940ca69 0xb500020e 0x8b1c012a 0xaa1a03eb 0xaa1603ec 0xb40000ac
+       0x3840156d 0x3800154d 0xd100058c 0x17fffffc 0xaa1b03eb 0xaa1803ec
+       0xb400012c 0x3840156d 0x3800154d 0xd100058c 0x17fffffc 0xaa3503fc
+       0x8b1c012a 0x8b16014a 0x17fffff6 0xf940ce68 0x8b140108 0xf900ce68
+       0xaa1303e0 0xaa3c03e1 0xaa1903e2 0xf9401e70 0xd63f0200 0xa9407bfd])
+      (append-runtime-words 120 [
+       0xa94153f3 0xa9425bf5 0xa94363f7 0xa9446bf9 0xa94573fb 0x910183ff
+       0xd65f03c0 0xd10143ff 0xa9007bfd 0xa90153f3 0xa9025bf5 0xa90363f7
+       0xa9046bf9 0xaa0003f3 0xf100043f 0x540005a3 0xf100045f 0x54000563
+       0xf9409268 0xf9400108 0xeb08003f 0x540004e8 0xeb08005f 0x540004a8
+       0xf9409669 0xd100042a 0x8b0a112a 0xa9405554 0xd100044a 0x8b0a112a
+       0xa9405d56 0xaa1303e0 0xaa1403e1 0xaa1503e2 0x97ffff73 0xaa0003f8
+       0xaa1303e0 0xaa1603e1 0xaa1703e2 0x97ffff6e 0xaa0003f9 0xeb1702bf
+       0x54000141 0xb40000f5 0x38401708 0x38401729 0x6b09011f 0x540000a1
+       0xd10006b5 0x17fffffa 0xd2800020 0x14000002 0xd2800000 0xa9407bfd
+       0xa94153f3 0xa9425bf5 0xa94363f7 0xa9446bf9 0x910143ff 0xd65f03c0])
+      (append-runtime-words 180 [
+       0xd4200000])))
+
+;; Wire 39 validates a separate stderr grant, resolves a bounded string
+;; span, writes all bytes through Darwin fd 2, and returns the decimal count
+;; as a pool string. Other wires branch to the earlier typed diagnostic helper.
+;; The reviewed assembly source is evidence only; Amu emits these words.
+(defn- stderr-helper-words [] :vector-i64
+  (-> (vector-alloc 96)
+      (append-runtime-words 0 [
+       0xf1009c3f 0x54000040 0x17fffebe 0xd10243ff 0xa9007bfd 0xa90153f3
+       0xa9025bf5 0xa90363f7 0xa9046bf9 0xa90573fb 0xaa0003f3 0xf100045f
+       0x54000a21 0xf100047f 0x540009e1 0xf9400a68 0xd2c01009 0xea09011f
+       0x54000960 0xf100049f 0x54000923 0xf9409268 0xf9400108 0xeb08009f
+       0x540008a8 0xf9409669 0xd100048a 0x8b0a112a 0xa9400941 0xaa0203f4
+       0xaa1303e0 0x97ffff2e 0xaa0003f5 0xd2800016 0xeb1402df 0x54000220
+       0xd2800040 0x8b1602a1 0xcb160282 0xaa0203f7 0xd2800090 0xf2a40010
+       0xd4001001 0x540000c2 0xb4000620 0xeb17001f 0x540005e8 0x8b0002d6
+       0x17fffff2 0xf100101f 0x54fffe00 0x1400002a 0xaa1403f6 0x910243f7
+       0xd2800158 0x9ad80ad9 0x9b18db3a 0x1100c35a 0x381ffefa 0xaa1903f6])
+      (append-runtime-words 60 [
+       0xb5ffff76 0x910243f8 0xcb170318 0xf940ce76 0xd2a20008 0xeb0802df
+       0x54000368 0xcb160108 0xeb08031f 0x54000308 0xf940ca69 0x8b16012a
+       0xaa1803eb 0xb40000ab 0x384016ec 0x3800154c 0xd100056b 0x17fffffc
+       0x8b1802c8 0xf900ce68 0xaa1303e0 0xaa3603e1 0xaa1803e2 0xf9401e70
+       0xd63f0200 0xa9407bfd 0xa94153f3 0xa9425bf5 0xa94363f7 0xa9446bf9
+       0xa94573fb 0x910243ff 0xd65f03c0 0xd4200000 0xd4200020 0xd4200040])))
+
+;; Preserve Darwin LC_MAIN argc/argv before the wrapper's arena syscalls.
+;; Wire 38 requires its own grant, validates a decimal index or empty count
+;; request, and returns a bounded pool-backed copy of the selected argument.
+;; Other wires branch to the stderr/legacy typed diagnostic handler.
+(defn- cli-helper-words [] :vector-i64
+  (-> (vector-alloc 125)
+      (append-runtime-words 0 [
+       0xf900d260 0xf900d661 0xd65f03c0 0xd503201f 0xd503201f 0xd503201f
+       0xd503201f 0xd503201f 0xf100983f 0x54000040 0x17ffff92 0xd10243ff
+       0xa9007bfd 0xa90153f3 0xa9025bf5 0xa90363f7 0xa9046bf9 0xa90573fb
+       0xaa0003f3 0xf100045f 0x54000cc1 0xf100047f 0x54000c81 0xf9400a68
+       0xd2c00809 0xea09011f 0x54000c00 0xf100049f 0x54000bc3 0xf9409268
+       0xf9400108 0xeb08009f 0x54000b48 0xf9409669 0xd100048a 0x8b0a112a
+       0xa9400941 0xaa0203f4 0xaa1303e0 0x97fffec2 0xaa0003f5 0xb4000454
+       0xf100529f 0x540009e2 0xd2800016 0xd2800017 0xd2800158 0x38776ab9
+       0x7100c33f 0x54000923 0x7100e73f 0x540008e8 0x5100c339 0x9b1866d6
+       0x910006f7 0xeb1402ff 0x54fffee3 0xf940d268 0xf100051f 0x540007e3])
+      (append-runtime-words 60 [
+       0xd1000508 0xeb0802df 0x54000382 0xf940d669 0x910006d6 0xf8767935
+       0xb4000715 0xd2800018 0xd2a01008 0xeb08031f 0x54000688 0x38786aaa
+       0x3400028a 0x91000718 0x17fffffb 0xf940d276 0xf10006df 0x540005a3
+       0xd10006d6 0x910243f5 0xd2800158 0x9ad80ad9 0x9b18db3a 0x1100c35a
+       0x381ffeba 0xaa1903f6 0xb5ffff76 0x910243f8 0xcb150318 0x14000003
+       0x910243f5 0xd2800018 0xf940ce76 0xd2a20008 0xeb0802df 0x54000368
+       0xcb160108 0xeb08031f 0x54000308 0xf940ca69 0x8b16012a 0xaa1803eb
+       0xb40000ab 0x384016ac 0x3800154c 0xd100056b 0x17fffffc 0x8b1802c8
+       0xf900ce68 0xaa1303e0 0xaa3603e1 0xaa1803e2 0xf9401e70 0xd63f0200
+       0xa9407bfd 0xa94153f3 0xa9425bf5 0xa94363f7 0xa9446bf9 0xa94573fb])
+      (append-runtime-words 120 [
+       0x910243ff 0xd65f03c0 0xd4200000 0xd4200020 0xd4200040])
+      ;; LC_MAIN enters here with real argc/argv. Install ABI slots 144 and
+      ;; 136 before running the generated program.
+      (append-runtime-words 2 [(adr8 (+ CLI-RUNTIME-START 8) CODEPOINT-START)
+                               0xf9004a68
+                               (adr8 (+ CLI-RUNTIME-START 16) SUBSTRING-START)
+                               0xf9004668 0xd65f03c0])))
+
+;; string_code_point_at(ctx, pair_handle, byte_offset). Check the handle,
+;; bounds and entire UTF-8 byte sequence before returning a scalar value.
+;; Continuation-byte offsets, overlong forms, surrogates and >U+10FFFF trap.
+;; The final branch reaches the existing bounded string-span resolver at 2100.
+;; Assembly was used to derive/review words; Amu packages this Kotoba vector.
+(defn- codepoint-helper-words [] :vector-i64
+  (-> (vector-alloc 142)
+      (append-runtime-words 0 [
+       0xd10183ff 0xa9007bfd 0xa90153f3 0xa9025bf5 0xa90363f7 0xa9046bf9 0xaa0003f3 0xaa0203f4
+       0xf100043f 0x54001063 0xb7f81054 0xf9409268 0xf9400108 0xeb08003f 0x54000fc8 0xf9409669
+       0xd100042a 0x8b0a112a 0xa9406943 0xb7f80f3a 0xeb1a029f 0x54000ee2 0xaa1303e0 0xaa0303e1
+       0xaa1a03e2 0x94000074 0xaa0003f5 0x92800016 0xd2800017 0xeb1a02ff 0x54000ca2 0x38776aa8
+       0x7102011f 0x54000143 0x7103091f 0x54000d23 0x7103811f 0x54000123 0x7103c11f 0x54000283
+       0x7103d51f 0x54000603 0x14000062 0xaa0803f8 0xd2800039 0x14000051 0x910006e9 0xeb1a013f
+       0x54000b82 0x38696aaa 0x121a054b 0x7102017f 0x54000b01 0x1200110c 0x531a658c 0x1200154a
+       0x2a0a0198 0xd2800059 0x14000044 0x91000ae9])
+      (append-runtime-words 60 [
+       0xeb1a013f 0x540009e2 0xd1000529 0x38696aaa 0x121a054b 0x7102017f 0x54000941 0x7103811f
+       0x54000061 0x7102815f 0x540008c3 0x7103b51f 0x54000061 0x7102815f 0x54000842 0x91000529
+       0x38696aab 0x121a056c 0x7102019f 0x540007a1 0x12000d0c 0x53144d8c 0x1200154a 0x531a654a
+       0x2a0a018c 0x1200156b 0x2a0b0198 0xd2800079 0x14000026 0x91000ee9 0xeb1a013f 0x54000622
+       0xd1000929 0x38696aaa 0x121a054b 0x7102017f 0x54000581 0x7103c11f 0x54000061 0x7102415f
+       0x54000503 0x7103d11f 0x54000061 0x7102415f 0x54000482 0x91000529 0x38696aab 0x121a056c
+       0x7102019f 0x540003e1 0x91000529 0x38696aac 0x121a058d 0x710201bf 0x54000341 0x1200090d
+       0x530e35ad 0x1200154a 0x53144d4a 0x2a0a01ad])
+      (append-runtime-words 120 [
+       0x1200156b 0x531a656b 0x2a0b01ad 0x1200158c 0x2a0c01b8 0xd2800099 0xeb1402ff 0x54000041
+       0xaa1803f6 0x8b1902f7 0x17ffff9b 0xb7f80136 0xaa1603e0 0xa9407bfd 0xa94153f3 0xa9425bf5
+       0xa94363f7 0xa9446bf9 0x910183ff 0xd65f03c0 0xd4200000 0x17fffd80])))
+
+;; string_substring(ctx, pair_handle, start, end) returns a new pair view.
+;; Bounds and both UTF-8 boundaries are checked; a nonempty source is fully
+;; validated by the codepoint helper before the view is minted. The three
+;; final branches call the bounded resolver, codepoint helper and pair_new.
+(defn- substring-helper-words [] :vector-i64
+  (-> (vector-alloc 67)
+      (append-runtime-words 0 [
+       0xd10143ff 0xa9007bfd 0xa90153f3 0xa9025bf5 0xa90363f7 0xa9046bf9 0xaa0003f3 0xaa0103f4
+       0xaa0203f5 0xaa0303f6 0xf100069f 0x54000683 0xb7f80675 0xb7f80656 0xf9409268 0xf9400108
+       0xeb08029f 0x540005c8 0xf9409669 0xd100068a 0x8b0a112a 0xa9406157 0xb7f80538 0xeb1602bf
+       0x540004e8 0xeb1802df 0x540004a8 0xaa1303e0 0xaa1703e1 0xaa1803e2 0x94000022 0xaa0003f9
+       0xb40000b8 0xaa1303e0 0xaa1403e1 0xd2800002 0x9400001d 0xeb1802bf 0x540000a0 0x38756b28
+       0x121a0508 0x7102011f 0x540002a0 0xeb1802df 0x540000a0 0x38766b28 0x121a0508 0x7102011f
+       0x540001e0 0xb7f80077 0x8b1502e1 0x14000002 0xcb1502e1 0xaa1303e0 0xcb1502c2 0x9400000b
+       0xa9407bfd 0xa94153f3 0xa9425bf5 0xa94363f7])
+      (append-runtime-words 60 [
+       0xa9446bf9 0x910143ff 0xd65f03c0 0xd4200000 0x17fffd3d 0x17ffff2f 0x17fffc8e])))
+;; ADRP x7, __DATA: wrapper PC is in the first 4 KiB page. The target is
+;; 16 KiB-aligned, and the checked image size is far within ADRP's range.
+(defn- data-adrp [text-bytes :i64] :i64
+  (let [pages (quot text-bytes 4096)]
+    (bit-or 0x90000007
+      (bit-or (i64-shift-left (bit-and pages 3) 29)
+              (i64-shift-left (quot pages 4) 5)))))
+
+(defn- body-at [v :vector-i64 at :i64 raw :vector-i64 text-bytes :i64 mode :string] :vector-i64
+  (let [raw-bytes (- (vector-count raw) 5)
+        total-bytes (+ text-bytes DATA-BYTES)]
+    (-> v
+      ;; mach_header_64: MH_EXECUTE, CPU_TYPE_ARM64, seven commands.
+      ;; Direct-syscall launch uses NOUNDEFS|DYLDLINK|PIE (0x00200005).
+      (u32-at at 4277009103) (u32-at (+ at 4) 16777228)
+      (u32-at (+ at 12) 2) (u32-at (+ at 16) 7)
+      (u32-at (+ at 20) 368) (u32-at (+ at 24) 2097157)
+      ;; LC_SEGMENT_64 __PAGEZERO, __TEXT, __DATA and __LINKEDIT.
+      (u32-at (+ at 32) 25) (u32-at (+ at 36) 72)
+      (text-at (+ at 40) "__PAGEZERO")
+      (u64-at (+ at 64) 4294967296)
+      (u32-at (+ at 104) 25) (u32-at (+ at 108) 72)
+      (text-at (+ at 112) "__TEXT")
+      (u64-at (+ at 128) 4294967296)
+      (u64-at (+ at 136) text-bytes)
+      (u64-at (+ at 152) text-bytes)
+      (u32-at (+ at 160) 5) (u32-at (+ at 164) 5)
+      (u32-at (+ at 176) 25) (u32-at (+ at 180) 72)
+      (text-at (+ at 184) "__DATA")
+      (u64-at (+ at 200) (+ 4294967296 text-bytes))
+      (u64-at (+ at 208) DATA-BYTES)
+      (u64-at (+ at 216) text-bytes)
+      (u64-at (+ at 224) DATA-BYTES)
+      (u32-at (+ at 232) 3) (u32-at (+ at 236) 3)
+      (u32-at (+ at 248) 25) (u32-at (+ at 252) 72)
+      (text-at (+ at 256) "__LINKEDIT")
+      (u64-at (+ at 272) (+ 4294967296 total-bytes))
+      (u64-at (+ at 280) DATA-BYTES)
+      (u64-at (+ at 288) total-bytes)
+      (u32-at (+ at 304) 1) (u32-at (+ at 308) 1)
+      ;; macOS dyld starts LC_MAIN; no C runtime or libSystem load command.
+      (u32-at (+ at 320) 14) (u32-at (+ at 324) 32)
+      (u32-at (+ at 328) 12) (text-at (+ at 332) "/usr/lib/dyld")
+      ;; LC_MAIN enters the wrapper, which calls the extracted function.
+      (u32-at (+ at 352) 2147483688) (u32-at (+ at 356) 24)
+      (u64-at (+ at 360) 1024)
+      ;; LC_BUILD_VERSION: macOS 13.0.0.
+      (u32-at (+ at 376) 50) (u32-at (+ at 380) 24)
+      (u32-at (+ at 384) 1)
+      (u32-at (+ at 388) 851968) (u32-at (+ at 392) 851968)
+      (words-at (+ at 1024) (wrapper-prefix text-bytes))
+      (words-at (+ at 1152) (wrapper-suffix raw-bytes mode))
+      (words-at (+ at HELPER-START) (pair-helper-words))
+      (words-at (+ at LEGACY-TYPED-START) (typed-helper-words))
+      (words-at (+ at STDERR-TYPED-START) (stderr-helper-words))
+      (words-at (+ at CLI-RUNTIME-START) (cli-helper-words))
+      (words-at (+ at RUNTIME-START) (runtime-helper-words))
+      (words-at (+ at CODEPOINT-START) (codepoint-helper-words))
+      (words-at (+ at SUBSTRING-START) (substring-helper-words))
+      (generated-at (+ at RAW-START) raw))))
+
+(defn- acknowledged-image? [request :vector-i64 offset :i64 reply :vector-i64 total-bytes :i64] :bool
+  (if (and (= (vector-count reply) (+ total-bytes 5))
+           (= (vector-at reply 0) 0) (= (vector-at reply 1) 70)
+           (= (vector-at reply 2) 83) (= (vector-at reply 3) 50)
+           (= (vector-at reply 4) 0))
+    (loop [i 0]
+      (if (= i total-bytes) true
+        (if (= (vector-at reply (+ i 5)) (vector-at request (+ offset i)))
+          (recur (+ i 1)) false)))
+    false))
+
+(defn main [] :i64
+  (let [path (typed-cap-call :cli/args :string :string "0")
+        raw-path (typed-cap-call :cli/args :string :string "1")
+        mode (typed-cap-call :cli/args :string :string "2")
+        admitted (or (string=? mode "stdout")
+                     (string=? mode "stderr")
+                     (string=? mode "cli")
+                     (string=? mode "cli-stderr")
+                     (string=? mode "deny"))
+        fs2-prefix (string-from-utf8 (bytes-from-vector-i64 [0 70 83 50 0]))
+        read-request (string-concat fs2-prefix (string-concat "A" (string-concat raw-path (string-from-utf8 (bytes-from-vector-i64 [0])))))
+        raw (vector-i64-from-bytes
+             (typed-cap-call :fs/app-data :string :bytes read-request))
+        path-bytes (vector-i64-from-bytes (string-to-utf8 path))
+        length (vector-count path-bytes)
+        offset (+ 7 length)
+        raw-bytes (- (vector-count raw) 5)
+        text-bytes (* 16384 (quot (+ RAW-START raw-bytes 16383) 16384))
+        total-bytes (+ text-bytes DATA-BYTES)]
+    (if (or (= length 0) (> length 255) (not admitted)
+            (and (not= raw-bytes 3254848) (not= raw-bytes 516)
+                 (not= raw-bytes 694) (not= raw-bytes 210)
+                 (not= raw-bytes 135) (not= raw-bytes 608)
+                 (not= raw-bytes 610) (not= raw-bytes 202)
+                 (not= raw-bytes 1056) (not= raw-bytes 158))
+            (> (+ offset total-bytes) MAX-FS2-VALUE)
+            (> (+ total-bytes 5) MAX-FS2-VALUE)
+            (not (= (vector-at raw 0) 0)) (not (= (vector-at raw 1) 70))
+            (not (= (vector-at raw 2) 83)) (not (= (vector-at raw 3) 50))
+            (not (= (vector-at raw 4) 0))) 2
+      (let [v0 (vector-alloc (+ offset total-bytes))
+            v1 (-> v0
+                   (byte-at 0 0) (byte-at 1 70) (byte-at 2 83)
+                   (byte-at 3 50) (byte-at 4 0) (byte-at 5 66)
+                   (text-at 6 path)
+                   (byte-at (+ 6 length) 0)
+                   (body-at offset raw text-bytes mode))
+            response (typed-cap-call :fs/app-data-bytes :bytes :bytes (bytes-from-vector-i64 v1))]
+        (if (acknowledged-image? v1 offset (vector-i64-from-bytes response) total-bytes) 0 3)))))

@@ -139,6 +139,14 @@ or Murakumo Cell admission qualification. State/effects, CID-bound cache,
 fresh admission, receipts, recursive methods and runtime arguments remain
 separate gates. See `docs/kototama-i64-aot.md` for exact limits and protocol.
 
+## Scoped flock candidate (AWAI-81)
+
+The wire-35 FLOCK/UNLOCK provider and its local native gate are documented in
+`docs/native-scoped-flock.md`. Keep one cooperative lock per process, preserve
+root/no-symlink checks and the existing seccomp boundary, and never allocate
+the lock path with mmap after seccomp. Local AArch64 gates do not qualify
+x86 host execution, default artifact promotion or release/CDCI selection.
+
 ## Bounded native receipt profile (JUN-370)
 
 `kototama.pure-i64-receipt/v2` retains the v1 language/admission and allows
@@ -163,6 +171,17 @@ text's canonical owner is kotoba/lib/kotoba.text, not its archived repository.
 CSSOM/surface/kernel desktop/dapps/persistent restore remain later JUN-93 gates.
 
 ## Native iteration scheduling and observations (JUN-332)
+
+The Apple Silicon diagnostic FS2 runtime now has scoped F metadata and E
+range reads in `seed/macos-fs2-runtime-packager.kotoba`. Check the reviewed
+word derivation and signed probe in
+`docs/evidence/mac-fs2-ef-20261026/README.md` before claiming Mac media
+coverage. Its larger arenas are diagnostic capacities; the full wire-35
+provider, compiler fixed-point requalification on this expanded runtime
+and release remain separate.
+The repository-local Mac bootstrap and its current fixed-point gate are
+tracked separately in JUN-417. Earlier probe receipts retain their exact
+historical pins; source admission of a probe does not qualify its runtime.
 
 Run new heavyweight local native commands through
 `python3 scripts/seed/native_build_queue.py -- <command>`. Its default shared
@@ -249,3 +268,28 @@ adds131072 comparisons against the original evaluator and four built/executed
 mutants on both ISAs; all previous gates and uncached main/full remain required.
 The candidate must rebuild core/controller/root/public pins and pass fresh
 native qualification before its qualification flags are promoted.
+
+## Native checked identity / SCC prototype
+
+`seed/05-checked-definition.kotoba` and `seed/06-definition-groups.kotoba`
+remain outside FULL-MANIFEST. Preserve the current payload-v2 authority,
+profile6/desugar2, one binder counter, direct dependency CIDs and exhaustive
+scc-v1 minimum over at most eight members. Run native kr/name/check freshly;
+caller-supplied checked flags, unsupported schemas/effects and oversized
+groups refuse without partial identities. Immutable normalized member bytes
+may be reused inside that one identity calculation; only structurally recorded,
+native-created group-reference leaves may change under permutations.
+Keep native full-payload equivalence, independent oracle, version-drift
+refusals and actually built/executed mutants on both ISAs. This is not a
+persistent object store, a build-cache hit, a native admission verdict or
+qualification of the full Seed frontend. See docs/native-incremental-build.md.
+
+## Native CI derivation and independent ISA qualification
+
+Fresh ARM bootstrap/one-compiler transport precedes separate ARM and x86
+qualification jobs. Transport alone is never qualification: all six native
+job executions (including both shared-module matrix entries) must succeed.
+Every previous ARM/x86 gate, uncached main/full tier and fresh controller
+verdict remains required. The ARM artifact includes root and final generations
+for unchanged native producer pin checks after transport. No compiler/image
+bytes, limits, case expectations or native gate commands change in this split.

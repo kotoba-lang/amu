@@ -1,0 +1,309 @@
+;; Native checked KIR entry and scc-v1. No generated address or execution
+;; verdict is cached. Oversized SCCs refuse; names never order the sealed
+;; payload except the authority's tie-breaking enumeration of equal bytes.
+(defn- dcs-empty-effects? [M :vector-i64 S :string map :i64] :bool
+  (let [row (dcp-field M S map ":effects")]
+    (or (= row 0) (and (= (kr-kind M row) ND-SET) (= (kr-count M row) 0)))))
+(defn- dcs-shape? [M :vector-i64 S :string map :i64 function :bool] :bool
+  (and (= (kr-kind M map) ND-MAP)
+    (loop [p (kr-first M map) seen (typed-list-new [:list :string])]
+      (if (= p 0) true
+        (let [v (kr-next M p) name (dcp-text M S p)
+              allowed (if function
+                (or (= name ":name") (= name ":params") (= name ":param-types") (= name ":body")
+                    (= name ":result") (= name ":effects"))
+                (or (= name ":format") (= name ":entry") (= name ":exports") (= name ":signature")
+                    (= name ":effects") (= name ":functions") (= name ":schemas")))]
+          (and (not= v 0) (= (kr-kind M p) ND-KW) allowed (not (dcp-contains seen name))
+            (recur (kr-next M v) (typed-list-conj [:list :string] seen name))))))))
+(defn- dcs-init [M :vector-i64 S :string doc :i64 functions :i64] :vector-i64
+  (let [n (kr-count M functions) cap (loop [v 2] (if (>= v (* 2 n)) v (recur (* v 2))))
+        A (-> (vector-alloc (+ 16 (* n dcp-fwidth) (* n n) cap (* dc-nodes 2) (* n 2) 64))
+              (vector-assoc! 3 n) (vector-assoc! 6 cap))]
+    (loop [p (kr-first M functions) i 0 state A]
+      (if (or (= p 0) (not= (vector-at state 0) 0)) state
+        (let [name (dcp-field M S p ":name") text (if (> name 0) (dcp-text M S name) "")
+              params (dcp-field M S p ":params") body (dcp-field M S p ":body")]
+          (if (or (not (dcs-shape? M S p true)) (not (dcs-empty-effects? M S p))
+                  (not= (kr-kind M name) ND-SYM) (not= (kr-kind M params) ND-VEC) (= body 0)
+                  (dcp-pure-op? text) (= text "let") (= text "nil") (= text "true") (= text "false")
+                  (not= (dcp-lookup M S state name) -1))
+            (vector-assoc! state 0 (if (not (dcs-empty-effects? M S p)) 4 1))
+            (let [a (dcp-put (dcp-put state i 0 p) i 1 name)
+                  slot (loop [j (bit-and (dcp-name-hash M S name) (dec cap))]
+                    (if (= (vector-at a (+ (dcp-hash a) j)) 0) j (recur (bit-and (inc j) (dec cap)))))
+                  b (vector-assoc! a (+ (dcp-hash a) slot) (inc i))]
+              (recur (kr-next M p) (inc i) b))))))))
+(defn- dcs-enter [A :vector-i64 f :i64 parent :i64 depth :i64] :vector-i64
+  (let [index (inc (vector-at A 7)) stack (vector-at A 8)
+        a (-> A (vector-assoc! 7 index) (vector-assoc! 8 (inc stack))
+              (dcp-put f 6 index) (dcp-put f 7 index) (dcp-put f 8 1)
+              (dcp-put f 9 parent) (dcp-put f 10 0))
+        b (vector-assoc! a (+ (dcp-stack a) stack) f)]
+    (vector-assoc! b (+ (dcp-stack b) (vector-at b 3) depth) f)))
+(defn- dcs-components [A :vector-i64] :vector-i64
+  (loop [start 0 state A]
+    (cond (= start (vector-at state 3)) state
+      (> (dcp-f state start 6) 0) (recur (inc start) state)
+      :else
+      (let [entered (dcs-enter state start -1 0)
+            complete (loop [depth 1 a entered]
+              (if (= depth 0) a
+                (let [n (vector-at a 3) f (vector-at a (+ (dcp-stack a) n (dec depth)))
+                      next (loop [w (dcp-f a f 10)]
+                        (cond (= w n) n (> (vector-at a (+ (dcp-graph a) (* f n) w)) 0) w
+                          :else (recur (inc w))))]
+                  (if (< next n)
+                    (let [advanced (dcp-put a f 10 (inc next))]
+                      (cond (= (dcp-f advanced next 6) 0)
+                              (recur (inc depth) (dcs-enter advanced next f depth))
+                            (> (dcp-f advanced next 8) 0)
+                              (recur depth (dcp-put advanced f 7
+                                (if (< (dcp-f advanced next 6) (dcp-f advanced f 7))
+                                  (dcp-f advanced next 6) (dcp-f advanced f 7))))
+                            :else (recur depth advanced)))
+                    (let [parent (dcp-f a f 9)
+                          linked (if (< parent 0) a (dcp-put a parent 7
+                            (if (< (dcp-f a f 7) (dcp-f a parent 7)) (dcp-f a f 7) (dcp-f a parent 7))))
+                          popped (if (not= (dcp-f linked f 7) (dcp-f linked f 6)) linked
+                            (let [component (inc (vector-at linked 9)) set (vector-assoc! linked 9 component)]
+                              (loop [b set]
+                                (let [top (dec (vector-at b 8)) member (vector-at b (+ (dcp-stack b) top))
+                                      c (-> b (vector-assoc! 8 top) (dcp-put member 8 0) (dcp-put member 5 component))]
+                                  (if (= member f) c (recur c))))))]
+                      (recur (dec depth) popped))))))]
+        (recur (inc start) complete)))))
+(defn- dcs-members [M :vector-i64 S :string A :vector-i64 component :i64] :vector-i64
+  (let [count (loop [i 0 n 0] (if (= i (vector-at A 3)) n
+                (recur (inc i) (+ n (if (= (dcp-f A i 5) component) 1 0)))))
+        C (vector-alloc count)]
+    (loop [f 0 at 0 out C]
+      (if (= f (vector-at A 3)) out
+        (if (not= (dcp-f A f 5) component) (recur (inc f) at out)
+          (let [next (loop [j at v out]
+            (if (and (> j 0) (> (string-compare (dcp-text M S (dcp-f A (vector-at v (dec j)) 1))
+                                                       (dcp-text M S (dcp-f A f 1))) 0))
+              (recur (dec j) (vector-assoc! v j (vector-at v (dec j))))
+              (vector-assoc! v j f)))]
+            (recur (inc f) (inc at) next)))))))
+(defn- dcs-factorial [n :i64] :i64
+  (loop [i 2 value 1] (if (> i n) value (recur (inc i) (* value i)))))
+(defn- dcs-permutation [A :vector-i64 C :vector-i64 rank :i64] :vector-i64
+  (let [n (vector-count C)]
+    (loop [i 0 remaining rank used 0 state A]
+      (if (= i n) state
+        (let [factor (dcs-factorial (- n i 1)) choice (quot remaining factor)
+              pos (loop [j 0 left choice]
+                (if (= (bit-and used (i64-shift-left 1 j)) 0)
+                  (if (= left 0) j (recur (inc j) (dec left))) (recur (inc j) left)))
+              f (vector-at C pos)]
+          (recur (inc i) (rem remaining factor) (bit-or used (i64-shift-left 1 pos))
+            (dcp-put state f 3 (inc i))))))))
+(defn- dcs-at-index [A :vector-i64 C :vector-i64 index :i64] :i64
+  (loop [i 0] (if (= (dcp-f A (vector-at C i) 3) (inc index)) (vector-at C i) (recur (inc i)))))
+(defn- dcs-group-payload [M :vector-i64 S :string A :vector-i64 C :vector-i64 R [:list :string] rank :i64] :string
+  (let [perm (dcs-permutation A C rank) clear (dcp-clear-deps A)
+        members (loop [i 0 out (typed-list-new [:list :string])]
+          (if (= i (vector-count C)) out
+            (let [f (dcs-at-index A C i) params (dcp-params M S A f)
+                  body (dcp-form M S A (dcp-field M S (dcp-f A f 0) ":body") R 0)
+                  interface (dcp-interface M S A f)]
+              (recur (inc i) (typed-list-conj [:list :string] out
+                (dcp-map (typed-list-new [:list :string] (dc-entry "body" body)
+                  (dc-entry "interface" interface) (dc-entry "params" params))))))))]
+    (dcp-payload (dcp-map (typed-list-new [:list :string] (dc-entry "members" (dcp-vec members))
+      (dc-entry "op" (dc-kw "kotoba.definition/recursive-group"))))
+      (dcp-map (typed-list-new [:list :string] (dc-entry "arity" (dc-int (mem-u2dec (vector-count C))))
+        (dc-entry "result" (dc-kw "kotoba.definition/group")))) (dcp-deps A R))))
+(defn- dcs-best [M :vector-i64 S :string A :vector-i64 C :vector-i64 R [:list :string]] :i64
+  (loop [rank 1 best 0]
+    (if (or (= rank (dcs-factorial (vector-count C))) (not= (vector-at A 0) 0)) best
+      (let [chosen (arena-scope
+              (let [candidate (dcs-group-payload M S A C R rank)
+                    previous (dcs-group-payload M S A C R best)]
+                (if (< (string-compare candidate previous) 0) rank best)))]
+        (recur (inc rank) chosen)))))
+(defn- dcs-member-payload [M :vector-i64 S :string A :vector-i64 f :i64 group :string index :i64] :string
+  (dcp-payload (dcp-map (typed-list-new [:list :string] (dc-entry "index" (dc-int (mem-u2dec index)))
+    (dc-entry "op" (dc-kw "kotoba.definition/group-member")))) (dcp-interface M S A f)
+    (dcp-vec (typed-list-new [:list :string] (dc-str group)))))
+;; Prepare immutable member bytes once. Only native-created group-reference
+;; integer leaves may change under a permutation. Source-authored reference
+;; tags are refused in 05, so literal data cannot masquerade as these holes.
+(defn- dcs-hole-base [member :i64 count :i64] :i64 (+ count (* member dc-nodes 2)))
+(defn- dcs-holes [A :vector-i64 template :string H :vector-i64 member :i64 count :i64] :bool
+  (let [V (dc-unhex template)]
+    (if (= (vector-count V) 0) false
+      (let [D (dc-read (-> (vector-alloc (+ 8 (* dc-nodes 5)))
+                    (vector-assoc! 2 1) (vector-assoc! 3 (vector-count V))) V 0)]
+        (if (or (not= (vector-at D 1) 0) (not= (vector-at D 0) (vector-count V)) (not (dc-normal? D V 1))) false
+          (loop [node 1 holes 0 previous -1]
+            (if (= node (vector-at D 2)) (let [save (vector-assoc! H member holes)] true)
+              (let [items (dc-child D node 1)]
+                (if (and (dc-tag? D V node "vec") (dc-array? D items 2)
+                         (dc-key? D V (dc-child D items 0) "kotoba.definition/group"))
+                  (let [index (dc-child D items 1) text-node (dc-child D index 1)
+                        at (dc-at D text-node 1) length (dc-at D text-node 2)
+                        original (if (and (= (dc-at D text-node 0) 1) (= length 1)) (- (vector-at V at) 48) -1)]
+                    (if (or (not (dc-tag? D V index "int")) (< original 0) (>= original count)
+                            (<= at previous) (>= holes dc-nodes)) false
+                      (let [p (+ (dcs-hole-base member count) (* holes 2))
+                            a (vector-assoc! H p at) b (vector-assoc! H (inc p) original)]
+                        (recur (inc node) (inc holes) at))))
+                  (recur (inc node) holes previous))))))))))
+(defn- dcs-templates [M :vector-i64 S :string A :vector-i64 C :vector-i64 R [:list :string] H :vector-i64] [:list :string]
+  (let [initial (dcs-permutation A C 0) clear (dcp-clear-deps A) count (vector-count C)]
+    (loop [i 0 out (typed-list-new [:list :string])]
+      (if (or (= i count) (not= (vector-at A 0) 0))
+        (typed-list-conj [:list :string] out (dcp-deps A R))
+        (let [f (vector-at C i) params (dcp-params M S A f)
+              body (dcp-form M S A (dcp-field M S (dcp-f A f 0) ":body") R 0)
+              interface (dcp-interface M S A f)
+              template (dcp-map (typed-list-new [:list :string] (dc-entry "body" body)
+                (dc-entry "interface" interface) (dc-entry "params" params)))
+              valid (arena-scope (dcs-holes A template H i count))]
+          (if valid (recur (inc i) (typed-list-conj [:list :string] out template))
+            (let [bad (dcp-fail A 7)] out)))))))
+(defn- dcs-render [A :vector-i64 C :vector-i64 template :string H :vector-i64 member :i64] :string
+  (loop [i 0 cursor 0 out ""]
+    (if (= i (vector-at H member)) (string-concat out (string-substring template cursor (string-length template)))
+      (let [p (+ (dcs-hole-base member (vector-count C)) (* i 2)) at (* 2 (vector-at H p))
+            original (vector-at H (inc p)) f (vector-at C original) index (dec (dcp-f A f 3))]
+        (if (or (< at cursor) (> (+ at 2) (string-length template)) (< index 0) (>= index (vector-count C)))
+          (dcp-bad A)
+          (recur (inc i) (+ at 2) (string-concat out
+            (string-concat (string-substring template cursor at) (dc-byte-hex (+ 48 index))))))))))
+(defn- dcs-fast-payload [A :vector-i64 C :vector-i64 T [:list :string] H :vector-i64 rank :i64] :string
+  (let [permutation (dcs-permutation A C rank) count (vector-count C)
+        members (loop [i 0 out (typed-list-new [:list :string])]
+          (if (= i count) out
+            (let [f (dcs-at-index A C i) original (loop [j 0]
+                    (if (= (vector-at C j) f) j (recur (inc j))))]
+              (recur (inc i) (typed-list-conj [:list :string] out
+                (dcs-render A C (typed-list-nth [:list :string] T original) H original))))))]
+    (dcp-payload (dcp-map (typed-list-new [:list :string] (dc-entry "members" (dcp-vec members))
+      (dc-entry "op" (dc-kw "kotoba.definition/recursive-group"))))
+      (dcp-map (typed-list-new [:list :string] (dc-entry "arity" (dc-int (mem-u2dec count)))
+        (dc-entry "result" (dc-kw "kotoba.definition/group")))) (typed-list-nth [:list :string] T count))))
+(defn- dcs-best-fast [A :vector-i64 C :vector-i64 T [:list :string] H :vector-i64] :i64
+  (loop [rank 1 best 0]
+    (if (or (= rank (dcs-factorial (vector-count C))) (not= (vector-at A 0) 0)) best
+      (let [chosen (arena-scope
+              (let [candidate (dcs-fast-payload A C T H rank) previous (dcs-fast-payload A C T H best)]
+                (if (< (string-compare candidate previous) 0) rank best)))]
+        (recur (inc rank) chosen)))))
+;; Canonical CBOR member values are self-delimiting: two complete member
+;; encodings cannot be a proper prefix of one another. The group wrapper,
+;; interface and external dependencies are invariant across permutations.
+;; Compare only through the first differing member, without rebuilding the
+;; common wrapper or the remaining members. Still visit every permutation.
+(defn- dcs-mapping [A :vector-i64 C :vector-i64 rank :i64] :vector-i64
+  (let [set (dcs-permutation A C rank) n (vector-count C)]
+    (loop [i 0 out (vector-alloc (* 2 n))]
+      (if (= i n) out
+        (let [index (dec (dcp-f A (vector-at C i) 3))
+              a (vector-assoc! out index i)]
+          (recur (inc i) (vector-assoc! a (+ n i) index)))))))
+(defn- dcs-render-mapping [A :vector-i64 template :string H :vector-i64 member :i64 P :vector-i64] :string
+  (let [n (quot (vector-count P) 2)]
+    (loop [i 0 cursor 0 out ""]
+      (if (= i (vector-at H member)) (string-concat out (string-substring template cursor (string-length template)))
+        (let [p (+ (dcs-hole-base member n) (* i 2)) at (* 2 (vector-at H p))
+              original (vector-at H (inc p)) index (vector-at P (+ n original))]
+          (if (or (< at cursor) (> (+ at 2) (string-length template)) (< index 0) (>= index n))
+            (dcp-bad A)
+            (recur (inc i) (+ at 2) (string-concat out
+              (string-concat (string-substring template cursor at) (dc-byte-hex (+ 48 index)))))))))))
+(defn- dcs-rank-compare [A :vector-i64 C :vector-i64 T [:list :string] H :vector-i64 left :i64 right :i64] :i64
+  (let [L (dcs-mapping A C left) R (dcs-mapping A C right)]
+    (loop [i 0]
+      (if (= i (vector-count C)) 0
+        (let [l (vector-at L i) r (vector-at R i)
+              x (dcs-render-mapping A (typed-list-nth [:list :string] T l) H l L)
+              y (dcs-render-mapping A (typed-list-nth [:list :string] T r) H r R)
+              compared (string-compare x y)]
+          (if (= compared 0) (recur (inc i)) compared))))))
+(defn- dcs-best-prefix [A :vector-i64 C :vector-i64 T [:list :string] H :vector-i64] :i64
+  (loop [rank 1 best 0]
+    (if (or (= rank (dcs-factorial (vector-count C))) (not= (vector-at A 0) 0)) best
+      (let [chosen (arena-scope (if (< (dcs-rank-compare A C T H rank best) 0) rank best))]
+        (recur (inc rank) chosen)))))
+(defn- dcs-resolve-group [M :vector-i64 S :string A :vector-i64 C :vector-i64 R [:list :string]] [:list :string]
+  (let [H (vector-alloc (+ (vector-count C) (* 2 dc-nodes (vector-count C))))
+        T (dcs-templates M S A C R H)]
+    (if (not= (vector-at A 0) 0) R
+      (let [best (dcs-best-prefix A C T H)
+            ok (arena-scope (dcp-keep-cid A (dcs-fast-payload A C T H best)))]
+      (if (not ok) R
+      (let [group (dcp-saved-cid A) group-slot (inc (vector-count R))
+            with-group (typed-list-conj [:list :string] R group)]
+        (loop [i 0 out with-group]
+          (if (or (= i (vector-count C)) (not= (vector-at A 0) 0)) out
+            (let [f (vector-at C i) index (dec (dcp-f A f 3))
+                  member-ok (arena-scope (dcp-keep-cid A (dcs-member-payload M S A f group index)))]
+              (if (not member-ok) out
+                (let [slot (dcp-put A f 2 (inc (vector-count out)))
+                      metadata (-> A (dcp-put f 12 group-slot) (dcp-put f 13 index))]
+                  (recur (inc i) (typed-list-conj [:list :string] out (dcp-saved-cid A))))))))))))))
+(defn- dcs-resolve [M :vector-i64 S :string A :vector-i64] [:list :string]
+  (let [phase (vector-assoc! A 5 1)]
+    (loop [component 1 R (typed-list-new [:list :string])]
+      (if (or (> component (vector-at A 9)) (not= (vector-at A 0) 0)) R
+        (let [C (dcs-members M S A component) n (vector-count C)]
+          (if (> n 8) (let [bad (dcp-fail A 6)] R)
+            (let [f (vector-at C 0)
+                  recursive (or (> n 1) (> (vector-at A (+ (dcp-graph A) (* f (vector-at A 3)) f)) 0))
+                  next (if recursive (dcs-resolve-group M S A C R)
+                    (if (arena-scope (dcp-keep-cid A (dcp-function-payload M S A f R)))
+                      (let [slot (dcp-put A f 2 (inc (vector-count R)))]
+                        (typed-list-conj [:list :string] R (dcp-saved-cid A))) R))
+                  clear (loop [i 0 state A] (if (= i n) state
+                    (recur (inc i) (dcp-put state (vector-at C i) 3 0))))]
+              (recur (inc component) next))))))))
+(defn- dcs-native-checked? [S :string] :bool
+  (arena-scope
+    (let [text (string-concat S (kr-prelude))
+          parsed (rd-run (kr-lex (mem-set (mem-new) MM-SRC-LEN (string-length text)) text) text)
+          lowered (kr-run parsed text) named (nm-run lowered text) checked (ck-run named text)]
+      (= (vector-at checked MM-ERR) 0))))
+(defn- dcs-produce [M :vector-i64 S :string doc :i64] :i64
+  (let [functions (dcp-field M S doc ":functions") schemas (dcp-field M S doc ":schemas")
+        format (dcp-text M S (dcp-field M S doc ":format")) count (kr-count M functions)]
+    (cond (or (not (dcs-shape? M S doc false))
+            (not (or (= format ":kotoba.kir/v3") (= format ":kotoba.kir/v4")))
+            (not= (kr-kind M functions) ND-VEC) (= count 0) (>= count MM-FN-CAP)) 1
+      (not (dcs-empty-effects? M S doc)) 4
+      (and (> schemas 0) (or (not= (kr-kind M schemas) ND-MAP) (> (kr-count M schemas) 0))) 5
+      (not (dcs-native-checked? S)) 8
+      :else
+      (let [A (dcs-init M S doc functions)
+            graph (loop [f 0 state A]
+              (if (or (= f count) (not= (vector-at state 0) 0)) state
+                (let [walked (arena-scope
+                        (let [params (dcp-params M S state f)
+                              body (dcp-form M S state (dcp-field M S (dcp-f state f 0) ":body")
+                                      (typed-list-new [:list :string]) 0)]
+                          (and (> (string-length params) 0) (> (string-length body) 0))))]
+                  (if walked (recur (inc f) state) (vector-assoc! state 0 1)))))
+            components (if (= (vector-at graph 0) 0) (dcs-components graph) graph)
+            R (dcs-resolve M S components)]
+        (cond (not= (vector-at A 0) 0) (vector-at A 0)
+          (loop [f 0] (if (= f count) false (or (= (dcp-f A f 2) 0) (recur (inc f))))) 3
+          :else
+          (let [header (io-out "DCP1 6 2\n")]
+            (loop [f 0]
+              (if (= f count) 0
+                (let [cid (typed-list-nth [:list :string] R (dec (dcp-f A f 2)))
+                      group (if (> (dcp-f A f 12) 0)
+                              (typed-list-nth [:list :string] R (dec (dcp-f A f 12))) "-")
+                      name-part (string-concat (dcp-text M S (dcp-f A f 1)) " ")
+                      cid-part (string-concat cid " ") group-part (string-concat group " ")
+                      index-part (string-concat (mem-u2dec (if (> (dcp-f A f 12) 0) (dcp-f A f 13) -1)) "\n")
+                      write (io-out (string-concat name-part
+                        (string-concat cid-part (string-concat group-part index-part))))]
+                  (recur (inc f)))))))))))
+(defn- dcs-run [S :string] :i64
+  (let [M (rd-run (lx-run (mem-set (mem-new) MM-SRC-LEN (string-length S)) S) S)
+        root (vector-at M MM-ROOT)]
+    (if (or (not= (vector-at M MM-ERR) 0) (not= (kr-count M root) 1)) 1
+      (dcs-produce M S (kr-first M root)))))

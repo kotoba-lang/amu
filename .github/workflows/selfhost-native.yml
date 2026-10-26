@@ -101,6 +101,59 @@ jobs:
         env:
           TIER: ${{ github.event_name == 'pull_request' && 'pr' || github.event_name == 'push' && 'main' || 'full' }}
         run: python3 scripts/seed/selfhost-bootstrap.py --output "$RUNNER_TEMP/boot" --tier "$TIER"
+      - name: Fresh one-compiler derivation before independent ISA qualification
+        run: python3 scripts/seed/native_build_queue.py --manifest seed/native-gate-plan.json --phase derive-arm64 --jobs 2 --output "$RUNNER_TEMP/pg-derive-arm64"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: one-compiler-receipt
+          path: |
+            ${{ runner.temp }}/one/one-compiler.json
+            ${{ runner.temp }}/one/calls.json
+            ${{ runner.temp }}/one/F2.elf
+            ${{ runner.temp }}/one/F-x86_64.elf
+          if-no-files-found: warn
+      # Keep the transported compiler files at the artifact root. Adding the
+      # sibling AOT directory above changes upload-artifact's common ancestor.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bootstrap-arm64
+          path: |
+            ${{ runner.temp }}/boot/selfhost-bootstrap.json
+            ${{ runner.temp }}/boot/root.elf
+            ${{ runner.temp }}/boot/F*.elf
+            ${{ runner.temp }}/boot/runtime-boundary/runtime-boundary.json
+            ${{ runner.temp }}/boot/runtime-boundary/calls.json
+            ${{ runner.temp }}/boot/calls.json
+            ${{ runner.temp }}/boot/S-x86_64.elf
+            ${{ runner.temp }}/boot/R-x86_64.elf
+            ${{ runner.temp }}/boot/selfhost-unity.kotoba
+            ${{ runner.temp }}/boot/wasm32/*.wasm
+          if-no-files-found: error
+      # a separate artifact: another path in the one above would move its root
+      # (the qualify job expects boot/ at the top)
+  qualify-arm64:
+    needs: bootstrap-arm64
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: bootstrap-arm64
+          path: ${{ runner.temp }}/boot
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: one-compiler-receipt
+          path: ${{ runner.temp }}/one
+      - name: Verify current source/image/receipt bindings before transported native execution
+        run: |
+          python3 scripts/seed/check-native-identities.py
+          python3 scripts/seed/check-native-arm-transport.py --bootstrap "$RUNNER_TEMP/boot" --one "$RUNNER_TEMP/one" --output "$RUNNER_TEMP/arm-transport.json"
+      - name: Capability-free AIUEOS user ELF ABI and refusals (arm64, native)
+        run: python3 scripts/seed/check-aiueos-user-elf-native.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/aiueos-user-elf-arm"
       - name: Static runtime stdin, wire 41 (arm64, native)
         run: python3 scripts/seed/check-io-read.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/io-read"
       - name: Static runtime durable files and sleep, wires 35 and 7 (arm64, native)
@@ -148,6 +201,9 @@ jobs:
             ${{ runner.temp }}/ccf-filter-arm64/*.json
             ${{ runner.temp }}/ccf-filter-arm64/*.stdout
             ${{ runner.temp }}/ccf-filter-arm64/*.stderr
+            ${{ runner.temp }}/flock-vector-arm64/*.json
+            ${{ runner.temp }}/flock-vector-arm64/*.stdout
+            ${{ runner.temp }}/flock-vector-arm64/*.stderr
             ${{ runner.temp }}/zero-watermark-arm64/*.json
             ${{ runner.temp }}/zero-watermark-arm64/*.stdout
             ${{ runner.temp }}/zero-watermark-arm64/*.stderr
@@ -155,18 +211,6 @@ jobs:
             ${{ runner.temp }}/label-index-arm64/*.stdout
             ${{ runner.temp }}/label-index-arm64/*.stderr
           if-no-files-found: warn
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
-        with:
-          name: one-compiler-receipt
-          path: |
-            ${{ runner.temp }}/one/one-compiler.json
-            ${{ runner.temp }}/one/calls.json
-            ${{ runner.temp }}/one/F2.elf
-            ${{ runner.temp }}/one/F-x86_64.elf
-          if-no-files-found: warn
-      # Keep the transported compiler files at the artifact root. Adding the
-      # sibling AOT directory above changes upload-artifact's common ancestor.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
@@ -182,22 +226,6 @@ jobs:
           name: kototama-receipt-arm64
           path: ${{ runner.temp }}/kototama-receipt-arm64
           if-no-files-found: warn
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: bootstrap-arm64
-          path: |
-            ${{ runner.temp }}/boot/selfhost-bootstrap.json
-            ${{ runner.temp }}/boot/F1.elf
-            ${{ runner.temp }}/boot/runtime-boundary/runtime-boundary.json
-            ${{ runner.temp }}/boot/runtime-boundary/calls.json
-            ${{ runner.temp }}/boot/calls.json
-            ${{ runner.temp }}/boot/S-x86_64.elf
-            ${{ runner.temp }}/boot/R-x86_64.elf
-            ${{ runner.temp }}/boot/selfhost-unity.kotoba
-            ${{ runner.temp }}/boot/wasm32/*.wasm
-          if-no-files-found: error
-      # a separate artifact: another path in the one above would move its root
-      # (the qualify job expects boot/ at the top)
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: static-launcher-arm64
@@ -232,6 +260,8 @@ jobs:
         with:
           name: bootstrap-arm64
           path: ${{ runner.temp }}/boot
+      - name: Capability-free AIUEOS user ELF ABI and refusals (x86_64, native)
+        run: python3 scripts/seed/check-aiueos-user-elf-native.py --compiler "$PWD/bin/amu" --output "$RUNNER_TEMP/aiueos-user-elf-x86"
       - name: Native x86_64 qualification (no loader, no emulation)
         env:
           TIER: ${{ github.event_name == 'pull_request' && 'pr' || github.event_name == 'push' && 'main' || 'full' }}
@@ -286,6 +316,9 @@ jobs:
             ${{ runner.temp }}/ccf-filter-x86/*.json
             ${{ runner.temp }}/ccf-filter-x86/*.stdout
             ${{ runner.temp }}/ccf-filter-x86/*.stderr
+            ${{ runner.temp }}/flock-vector-x86/*.json
+            ${{ runner.temp }}/flock-vector-x86/*.stdout
+            ${{ runner.temp }}/flock-vector-x86/*.stderr
             ${{ runner.temp }}/zero-watermark-x86/*.json
             ${{ runner.temp }}/zero-watermark-x86/*.stdout
             ${{ runner.temp }}/zero-watermark-x86/*.stderr

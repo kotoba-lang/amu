@@ -4,17 +4,6 @@
   "phases": {
     "arm64": [
       {
-        "name": "one-compiler",
-        "argv": [
-          "python3",
-          "scripts/seed/check-one-compiler.py",
-          "--bootstrap",
-          "@TEMP@/boot",
-          "--output",
-          "@TEMP@/one"
-        ]
-      },
-      {
         "name": "label-proof-index",
         "argv": [
           "python3",
@@ -79,6 +68,17 @@
           "@TEMP@/boot/F1.elf",
           "--output",
           "@TEMP@/ccf-filter-arm64"
+        ]
+      },
+      {
+        "name": "flock-vector",
+        "argv": [
+          "python3",
+          "scripts/seed/check-native-flock-vector.py",
+          "--compiler",
+          "@TEMP@/boot/F1.elf",
+          "--output",
+          "@TEMP@/flock-vector-arm64"
         ]
       }
     ],
@@ -218,6 +218,30 @@
           "@TEMP@/complete/F3.elf",
           "--output",
           "@TEMP@/ccf-filter-x86"
+        ]
+      },
+      {
+        "name": "flock-vector",
+        "argv": [
+          "python3",
+          "scripts/seed/check-native-flock-vector.py",
+          "--compiler",
+          "@TEMP@/complete/F2.elf",
+          "--output",
+          "@TEMP@/flock-vector-x86"
+        ]
+      }
+    ],
+    "derive-arm64": [
+      {
+        "name": "one-compiler",
+        "argv": [
+          "python3",
+          "scripts/seed/check-one-compiler.py",
+          "--bootstrap",
+          "@TEMP@/boot",
+          "--output",
+          "@TEMP@/one"
         ]
       }
     ]

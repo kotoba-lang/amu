@@ -1,0 +1,122 @@
+{
+  "schema": "amu.darwin-openat-root-fd-control.v1",
+  "status": "PASS_ROOT_FD_BENEATH_SYMLINK_REFUSAL",
+  "host": {
+    "os": "Darwin",
+    "arch": "arm64",
+    "macOS": "26.4"
+  },
+  "assemblySha256": "a59df87f6e056f88287e76fa7a3fefdf4e7b7b3c71c5c8f859e05dc13d29d207",
+  "observerSha256": "4feef9b8df480f513a6babba1528de6d5d557aaf364e764a01518bd6517e944d",
+  "signedProgramSha256": "3f6d19a1b18437c22c5f91bd9e6f44c1db955c3dcfb6034a1cfa34c76a579787",
+  "flags": [
+    "O_RESOLVE_BENEATH",
+    "O_NOFOLLOW_ANY",
+    "O_NONBLOCK",
+    "O_CLOEXEC"
+  ],
+  "cases": [
+    {
+      "case": "root-file",
+      "path": "ok.txt",
+      "exit": 42,
+      "meaning": "read-K",
+      "stdoutHex": "",
+      "stderrHex": ""
+    },
+    {
+      "case": "nested-file",
+      "path": "sub/ok.txt",
+      "exit": 42,
+      "meaning": "read-K",
+      "stdoutHex": "",
+      "stderrHex": ""
+    },
+    {
+      "case": "file-symlink",
+      "path": "file-link",
+      "exit": 62,
+      "meaning": "ELOOP",
+      "stdoutHex": "",
+      "stderrHex": ""
+    },
+    {
+      "case": "directory-symlink",
+      "path": "dir-link/ok.txt",
+      "exit": 62,
+      "meaning": "ELOOP",
+      "stdoutHex": "",
+      "stderrHex": ""
+    },
+    {
+      "case": "parent-escape",
+      "path": "../outside.txt",
+      "exit": 107,
+      "meaning": "ENOTCAPABLE",
+      "stdoutHex": "",
+      "stderrHex": ""
+    },
+    {
+      "case": "absolute-path",
+      "path": "<granted-root>/ok.txt",
+      "exit": 107,
+      "meaning": "ENOTCAPABLE",
+      "stdoutHex": "",
+      "stderrHex": ""
+    },
+    {
+      "case": "absent-file",
+      "path": "absent.txt",
+      "exit": 2,
+      "meaning": "ENOENT",
+      "stdoutHex": "",
+      "stderrHex": ""
+    },
+    {
+      "case": "absent-grant",
+      "path": "ok.txt",
+      "exit": 9,
+      "meaning": "EBADF",
+      "stdoutHex": "",
+      "stderrHex": ""
+    },
+    {
+      "case": "regular-file-grant",
+      "path": "ok.txt",
+      "exit": 20,
+      "meaning": "ENOTDIR",
+      "stdoutHex": "",
+      "stderrHex": ""
+    }
+  ],
+  "mutations": [
+    {
+      "name": "without-resolve-beneath",
+      "sourceSha256": "85e0484f0fd1d39dd4fffd77154fe317424ce1c529d4cf8484505128e99735b7",
+      "signedProgramSha256": "70d2dcf173196e719ca139c1232036eeccc55793443333dd93108b655e6beeaa",
+      "observed": {
+        "case": "without-resolve-beneath",
+        "path": "../outside.txt",
+        "exit": 42,
+        "meaning": "read-K",
+        "stdoutHex": "",
+        "stderrHex": ""
+      }
+    },
+    {
+      "name": "without-no-follow-any",
+      "sourceSha256": "03264c3977af3d7b3f6c921daef7391db0cc46190cc183558110c92f5f2aa5d0",
+      "signedProgramSha256": "f760adf2daa4be3c9a268fd950f9c53004ab42afc46ada47645136a3246307b3",
+      "observed": {
+        "case": "without-no-follow-any",
+        "path": "file-link",
+        "exit": 42,
+        "meaning": "read-K",
+        "stdoutHex": "",
+        "stderrHex": ""
+      }
+    }
+  ],
+  "qualification": "one-time syscall control; not an Amu-built provider",
+  "productProviderImplemented": false
+}

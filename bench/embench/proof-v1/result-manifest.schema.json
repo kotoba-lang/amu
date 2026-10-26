@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kotoba-lang.org/schema/amu-embench-proof-result-v1.json",
+  "title": "Kotoba/Amu Embench proof result bundle",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "protocolId",
+    "runner",
+    "repository",
+    "host",
+    "toolchains",
+    "artifacts",
+    "workloads",
+    "normalization",
+    "attempts",
+    "statistics",
+    "negativeControls",
+    "qualification",
+    "bundleSha256"
+  ],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "protocolId": {"const": "kotoba-amu-embench-proof-v1"},
+    "runner": {
+      "type": "object",
+      "required": ["kind", "organizationDisclosure", "supportReceived"],
+      "properties": {
+        "kind": {"enum": ["project", "external-independent"]},
+        "organizationDisclosure": {"type": "string"},
+        "supportReceived": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "repository": {
+      "type": "object",
+      "required": ["url", "commit", "dirty"],
+      "properties": {
+        "url": {"type": "string"},
+        "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "dirty": {"const": false}
+      },
+      "additionalProperties": false
+    },
+    "host": {
+      "type": "object",
+      "required": ["hardware", "architecture", "os", "logicalCpuCount", "powerPolicy"],
+      "properties": {
+        "hardware": {"type": "string"},
+        "architecture": {"type": "string"},
+        "os": {"type": "string"},
+        "logicalCpuCount": {"type": "integer", "minimum": 1},
+        "powerPolicy": {"type": "string"}
+      }
+    },
+    "toolchains": {"type": "object", "required": ["amu", "c"]},
+    "artifacts": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/hashedArtifact"}},
+    "workloads": {
+      "type": "array",
+      "minItems": 19,
+      "maxItems": 19,
+      "uniqueItems": true,
+      "items": {"type": "string"}
+    },
+    "normalization": {
+      "type": "object",
+      "minProperties": 19,
+      "maxProperties": 19,
+      "additionalProperties": {"type": "number", "exclusiveMinimum": 0}
+    },
+    "attempts": {"type": "array", "minItems": 760, "items": {"$ref": "#/$defs/attempt"}},
+    "statistics": {
+      "type": "object",
+      "required": ["complete", "perWorkload", "geometricMean", "confidenceInterval95", "bootstrapSeed"],
+      "properties": {
+        "complete": {"type": "boolean"},
+        "perWorkload": {"type": "array", "minItems": 19, "maxItems": 19},
+        "geometricMean": {"type": ["number", "null"]},
+        "confidenceInterval95": {
+          "type": ["array", "null"],
+          "prefixItems": [{"type": "number"}, {"type": "number"}],
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "bootstrapSeed": {"type": "integer"}
+      }
+    },
+    "negativeControls": {"type": "array", "minItems": 7},
+    "qualification": {
+      "type": "object",
+      "required": ["status", "reasons", "evidenceLevel"],
+      "properties": {
+        "status": {"enum": ["qualified", "rejected"]},
+        "reasons": {"type": "array", "items": {"type": "string"}},
+        "evidenceLevel": {"enum": ["claim-grade-author-run", "independently-rerun"]}
+      }
+    },
+    "bundleSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  },
+  "$defs": {
+    "hashedArtifact": {
+      "type": "object",
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      },
+      "additionalProperties": false
+    },
+    "attempt": {
+      "type": "object",
+      "required": ["workload", "round", "order", "sequencePosition", "arm", "attemptNumber", "selected", "accepted", "elapsedNs", "cpuQualification", "correctness"],
+      "properties": {
+        "workload": {"type": "string"},
+        "round": {"type": "integer", "minimum": 1, "maximum": 10},
+        "order": {"enum": ["ABBA", "BAAB"]},
+        "sequencePosition": {"type": "integer", "minimum": 1, "maximum": 4},
+        "arm": {"enum": ["kotoba-amu", "c-reference"]},
+        "attemptNumber": {"type": "integer", "minimum": 1, "maximum": 3},
+        "selected": {"type": "boolean"},
+        "accepted": {"type": "boolean"},
+        "elapsedNs": {"type": ["integer", "null"], "minimum": 0},
+        "cpuQualification": {"type": "object"},
+        "correctness": {"type": "object"}
+      }
+    }
+  }
+}
