@@ -12,6 +12,15 @@ The same signed Mac F2 produced [static ARM/x86 cross candidates](mac-cross.json
 without an ELF interpreter. Those Linux-target images were generated, not
 executed or qualified by this Mac gate.
 
+The [native ARM bootstrap run](https://github.com/kotoba-lang/amu/actions/runs/40266481132)
+regenerated `F2.elf` from the prior checked-in root and matched the Mac ARM
+candidate exactly (`4a614fb717d897ae7e42dfcc9948321e9dc6345f4318294c2202123f370ae0c6`).
+Its ARM qualification job then stopped before execution because the previous
+root descriptor still pinned `bc9c295119b597a6de8356d8ad2a1421e94ad514e4aef091150e624dfdbff756`.
+The source-bound candidate has therefore been staged as the new root for the
+next exact-head run. The x86 native fixed point and complete ARM/x86 gates
+remain to be read back before qualifying either staged image.
+
 The AIUEOS kernel and QEMU gate separately verify the guest call, full Goal
 envelope, one-use local choice, restore, and modified-slot refusal. This Amu
 gate only proves native compiler output. It does not qualify canonical
