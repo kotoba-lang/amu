@@ -1513,3 +1513,94 @@ kotoba.form` (ADR-0362), outside this diff, NO green suite claimed;
 `gpu_regime_classify.py --self-test` 2649/0 (regression pin, not
 re-run); `find docs -name '*.sh'` -> 0 files. Record:
 `docs/evidence/gpu/cuda-op-entry-landing-20261026.txt`.
+
+## Amendment (2026-10-26, run 3+: fresh session C reproduces the
+fold census exactly, and the pooled cell-split difference's locus
+is a named quartet that moves no entry outcome)
+
+MEASURED (JUN-57 -- "run 3+", the entry-landing row's named first
+unmeasured item; ONE measurement slice). HARDWARE RAN: one fresh
+paired-timing session on xavier sm_72 at 2026-10-26T06:39:05Z under
+the seventh amendment's PROTOCOL at its letter (the run driver is
+byte-identical to session B's except the comment's session letter
+and the working directory -- diff run this tick: exactly those two
+lines). NAMED, NOT HIDDEN: session C shares session B's UTC day
+(2026-10-26) -- under contract point 4 it is NOT a cross-day
+replication, extends no record's `:evidence` and licenses nothing a
+same-day session may not (ADR-0373's same-day rule by citation).
+Its role is RUN-3 ROBUSTNESS: a third independent sample of the
+session-to-session variance the entry pair could not see.
+
+**Verified (real runs).** 108 cells run / 0 failed (driver exit 0,
+stderr 0 bytes), 218/218 verify lines ok=1, 4360 sample lines
+(4320 grid + 40 smoke orphans named and excluded), 54/54 OK-cubin,
+55 nvcc diagnostics 0 bytes, instrument OK; corpus integrity 55/55
+sha256 against the committed corpora + committed instrument by
+basename at BOTH ends (the local stage before transfer, the log's
+received-file block after), the received block byte-identical to
+session B's; the log analyzed ONLY by the committed routes, all
+exit 0, stderr 0 bytes (910 / 2069 / 367 lines).
+
+**Finding (1): run 3 reproduces the fold census exactly.** 36
+(op, W, shape) groups, 36 folded, 0 refused, fold census
+warp-shuffle 34 / subgroup 2 (the two = (`:sum`, 64) at both
+shapes). Cross-session comparison over the three committed op
+censuses (scratch, never staged): 36/36 group folds IDENTICAL in
+sessions A, B and C -- ZERO groups disagree in any session. At the
+landed FLIP's cell run 3 again folds `:subgroup-reduce` in every
+reading (n=1000003: warp/subgroup 1.0843/1.0786, subgroup/baseline
+0.8729/0.8874; n=1048576: 1.0870/1.0913, 0.8674/0.8870 --
+gpu_ns/host_ns, one-sided 14..18 of 20); at (`:max`/`:min`, 64) all
+four groups fold `:warp-shuffle-reduce` again.
+
+**Finding (2): the pooled cell-split difference's locus is a named
+quartet.** Pooled splits A 48/3/21, B 48/1/23, C 48/1/23 of 72 --
+session C equals session B. The ONLY cells whose rule-2 class
+differs in any session are exactly four: the (pair
+subgroup/baseline, W = 256) quartet, both metrics x both shapes
+(gpu_ns/1000003: A slower, B scoped, C scoped; gpu_ns/1048576: A
+slower, B scoped, C slower; host_ns/1000003: A slower, B scoped, C
+scoped; host_ns/1048576: A scoped, B slower, C scoped). The 48
+regime-invariant faster cells are identical in all three sessions
+and the other 68 cells never change class. The instability is NOT
+diffuse session noise: it is this quartet straddling the
+slower/scoped boundary. The PHYSICAL CAUSE remains UNMEASURED (more
+sessions or wider pair counts; run 3 is same-UTC-day with B).
+
+**Finding (3): the quartet moves no entry outcome.** A scratch
+unique-winner derivation over the pooled cells per session (the
+entry contract's rule at (W, shape) groups, both clocks) gives the
+IDENTICAL map in A, B and C -- `:warp-shuffle-reduce` at W =
+32/128/256/512/1024 both shapes, no winner at W = 64 both shapes --
+exactly the landed `cuda-cell-entries` table; and zero (op, W)
+group folds differ. The landed table (pooled and per-op) is
+corroborated by run 3 and contradicted nowhere.
+
+**Consequence today: NOTHING MOVES** (rule 4). No record, no
+`:measured?` flag, no selection answer, no `:shapes` value and no
+workgroup row; the landed entries stand byte-for-byte. Run 3
+reproducing every fold does NOT re-adjudicate anything: the entries
+rest on the A+B pair at the criterion's letter, this amendment
+records the robustness measurement and the quartet's locus.
+
+**States.** MEASURED: session C (the only measured thing this
+row). DERIVED: the cross-session comparisons (scratch over the
+three committed censuses). IMPLEMENTED: nothing (evidence + this
+amendment only). DECIDED: nothing new. ACCEPTED DESIGN ONLY
+(unchanged): the operator-aware contract + pre-registration, the
+row (ii) routes, the entry contract + wiring, ADR-0358, ADR-0373.
+UNMEASURED, named: the quartet's physical cause; a cross-day run
+3+ (a session on a later UTC day would be a sanctioned cross-day
+replication and could extend the landed entries' `:evidence`, its
+own row); every per-op verdict on non-xavier hardware; the `:sum`
+ordering at W = 64 on any other device or channel; the landed rows
+on a live CUDA selection path (only xavier hardware runs it);
+every workgroup row (`:arm`/`:unknown` stay provisional
+`:measured? false`). Gates: scoped GPU gate GREEN twice (numbers
+above -- regression pin, no .cljk touched);
+`gpu_regime_classify.py --self-test` 2649/0 (regression pin,
+re-run live); FULL `run-tests.cljk` NOT RUN this slice (no .cljk
+touched) -- documented red at base `Could not find namespace:
+kotoba.form` (ADR-0362), outside this diff, NO green suite
+claimed; `find docs -name '*.sh'` -> 0 files. Record:
+`docs/evidence/gpu/cuda-registered-sessionC-20261026/`.
