@@ -18,8 +18,23 @@ candidate exactly (`4a614fb717d897ae7e42dfcc9948321e9dc6345f4318294c2202123f370a
 Its ARM qualification job then stopped before execution because the previous
 root descriptor still pinned `bc9c295119b597a6de8356d8ad2a1421e94ad514e4aef091150e624dfdbff756`.
 The source-bound candidate has therefore been staged as the new root for the
-next exact-head run. The x86 native fixed point and complete ARM/x86 gates
-remain to be read back before qualifying either staged image.
+next exact-head run.
+
+The [new-head native run](https://github.com/kotoba-lang/amu/actions/runs/40267772245)
+on `b1d3e1f8ae71d72ffb8fa8457b346501c60213eb` completed successfully.
+ARM bootstrap reproduced the pinned root
+`4a614fb717d897ae7e42dfcc9948321e9dc6345f4318294c2202123f370ae0c6`;
+the combined compiler returned F1=F2=F3 with container
+`e340265239c5ba6a619ff96bfa192f75dbd6a26c1cfa24d8dde12f577e708f2e`.
+The ARM transport gate bound the current source, root, compiler and receipts.
+The native x86 compiler returned F1=F2=F3
+`7010e5d9230ba8c45d16b54fffebad628d4de20ad97d349dfde23c479cd505a9`,
+identical to `bin/amu`. The x86 controller passed 24 cases, 18 refusals and
+parent-death cleanup; the public product gate exercised all three aliases,
+pinned check/compile, native execution and named refusals. The independent
+ARM and x86 qualification jobs and the Mac selfhost, checked-definition and
+definition-CID workflows all finished green on that head. A later metadata
+commit must be read back on its own head before the PR is merged.
 
 The AIUEOS kernel and QEMU gate separately verify the guest call, full Goal
 envelope, one-use local choice, restore, and modified-slot refusal. This Amu
