@@ -47,8 +47,31 @@ def verify(data):
 
 def main(args):
     mac = load_mac()
-    compiler = args.compiler_image.resolve(strict=True)
-    compiler_pin = mac.require_regular(compiler, args.compiler_sha256)
+    if args.mac_build:
+        if args.compiler_image or args.compiler_sha256:
+            raise ValueError("choose the Mac build receipt or an explicit compiler pin")
+        build = args.mac_build.resolve(strict=True)
+        receipt = build / "mac-aiueos-user-target.json"
+        mac.require_regular(receipt)
+        root = json.loads((HERE.parents[1] / "seed/bootstrap/aarch64-macos/root.json").read_text())
+        report = json.loads(receipt.read_text())
+        generations = report.get("generations", [])
+        if (report.get("status") != "PASS_MAC_NATIVE_USER_TARGET_SELFHOST"
+                or report.get("source") != root["fullSource"]
+                or len(generations) < 2
+                or generations[-1]["container"] != generations[-2]["container"]
+                or generations[-1]["container"]["sha256"] !=
+                root["expectedFixedPoint"]["compilerContainerSha256"]):
+            raise ValueError("Mac root receipt does not bind the current fixed point")
+        compiler = build / f"F{generations[-1]['number']}-signed.macho"
+        compiler_pin = mac.require_regular(compiler, generations[-1]["signed"]["sha256"])
+        if compiler_pin != generations[-1]["signed"]:
+            raise ValueError("Mac root compiler size changed")
+    else:
+        if not args.compiler_image or not args.compiler_sha256:
+            raise ValueError("explicit compiler requires path and SHA-256 pin")
+        compiler = args.compiler_image.resolve(strict=True)
+        compiler_pin = mac.require_regular(compiler, args.compiler_sha256)
     mac.verify_macho(compiler)
     source_pin = mac.require_regular(SOURCE)
     output = args.output.resolve()
@@ -88,7 +111,8 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--compiler-image", type=Path, required=True)
-    parser.add_argument("--compiler-sha256", required=True)
+    parser.add_argument("--mac-build", type=Path)
+    parser.add_argument("--compiler-image", type=Path)
+    parser.add_argument("--compiler-sha256")
     parser.add_argument("--output", type=Path, required=True)
     main(parser.parse_args())
