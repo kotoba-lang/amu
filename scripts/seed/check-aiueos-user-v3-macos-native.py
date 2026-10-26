@@ -16,6 +16,16 @@ HERE = Path(__file__).resolve().parent
 SOURCE = HERE.parents[1] / "seed/tests/aiueos-user-v3-local-model.kotoba"
 TRAMPOLINE = bytes.fromhex("b8050000004883ec080f054883c408c3")
 ELF_SHA256 = "108174e896008ac4b523450acd57d16b2b37ba3eb31f6b21d3ad3874344ca4ec"
+LLM_SOURCE = """(ns aiueos-user-v3-llm (:export [main]))
+(defn main [request :i64 request-bytes :i64] :i64
+  (llm/generate request))
+"""
+LLM_DECLARED_SOURCE = """(ns aiueos-user-v3-llm
+  (:export [main])
+  (:capabilities #{:llm/generate}))
+(defn main [request :i64 request-bytes :i64] :i64
+  (llm/generate request))
+"""
 
 
 def load_mac():
@@ -95,13 +105,33 @@ def main(args):
                              "--output", "forbidden-v2.elf", expected=1)
     if (output / "forbidden-v2.elf").exists() or not refused.stderr:
         raise ValueError("v2 target accepted the v3-only operation")
+    # Preserve the measured gap as a fail-closed baseline. This is not a kit
+    # qualification: the target still lacks a typed request/result ABI and a
+    # declared-capability manifest. JUN-444 must replace both refusals with
+    # a positive whole-kit gate when that path is implemented.
+    llm_refusals = {}
+    for name, text, diagnostic in (
+            ("llm-undeclared", LLM_SOURCE, b"E2115"),
+            ("llm-declared", LLM_DECLARED_SOURCE, b"E2004")):
+        candidate = output / (name + ".kotoba")
+        artifact = output / (name + ".elf")
+        candidate.write_text(text)
+        result = mac.native_run(compiler, output, "compile", candidate.name,
+                                "--target", "x86_64-aiueos-user-v3",
+                                "--output", artifact.name, expected=1)
+        if diagnostic not in result.stderr or artifact.exists():
+            raise ValueError(f"{name} did not refuse without an ELF")
+        llm_refusals[name] = {"source": mac.pin(candidate),
+                              "diagnostic": diagnostic.decode(),
+                              "artifactAbsent": True}
     if mac.pin(source) != source_pin or mac.pin(compiler) != compiler_pin:
         raise ValueError("qualification inputs changed")
     report = {"schema": "amu.mac-aiueos-user-v3-local-call.v1",
               "status": "PASS_MAC_NATIVE_USER_V3_LOCAL_CALL_ELF",
               "compiler": compiler_pin, "source": source_pin,
               "elf": results[0], "reproducedElf": results[1],
-              "v2Refusal": True, "observer": mac.pin(Path(__file__)),
+              "v2Refusal": True, "llmKitRefusals": llm_refusals,
+              "observer": mac.pin(Path(__file__)),
               "guestExecution": False, "externalOperation": False,
               "agentLoop": False, "linuxProcessInThisGate": False}
     (output / "mac-aiueos-user-v3-local-call.json").write_text(
