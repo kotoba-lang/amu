@@ -68,7 +68,7 @@
       "maxProperties": 19,
       "additionalProperties": {"type": "number", "exclusiveMinimum": 0}
     },
-    "attempts": {"type": "array", "minItems": 760, "items": {"$ref": "#/$defs/attempt"}},
+    "attempts": {"type": "array", "minItems": 760, "maxItems": 2280, "items": {"$ref": "#/$defs/attempt"}},
     "statistics": {
       "type": "object",
       "required": ["complete", "perWorkload", "geometricMean", "confidenceInterval95", "bootstrapSeed"],
@@ -82,17 +82,20 @@
           "minItems": 2,
           "maxItems": 2
         },
-        "bootstrapSeed": {"type": "integer"}
+        "bootstrapSeed": {"const": 104}
       }
     },
-    "negativeControls": {"type": "array", "minItems": 7},
+    "negativeControls": {"type": "array", "minItems": 7, "maxItems": 7,
+      "items": {"type": "object", "required": ["name", "status", "evidencePath"],
+        "properties": {"name": {"type": "string"}, "status": {"enum": ["pending", "passed", "failed"]},
+          "evidencePath": {"type": ["string", "null"]}}, "additionalProperties": false}},
     "qualification": {
       "type": "object",
       "required": ["status", "reasons", "evidenceLevel"],
       "properties": {
         "status": {"enum": ["qualified", "rejected"]},
         "reasons": {"type": "array", "items": {"type": "string"}},
-        "evidenceLevel": {"enum": ["claim-grade-author-run", "independently-rerun"]}
+        "evidenceLevel": {"enum": ["unqualified", "claim-grade-author-run", "independently-rerun"]}
       }
     },
     "bundleSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
@@ -109,7 +112,7 @@
     },
     "attempt": {
       "type": "object",
-      "required": ["workload", "round", "order", "sequencePosition", "arm", "attemptNumber", "selected", "accepted", "elapsedNs", "cpuQualification", "correctness"],
+      "required": ["workload", "round", "order", "sequencePosition", "arm", "attemptNumber", "selected", "accepted", "reasons", "elapsedNs", "cpuQualification", "correctness"],
       "properties": {
         "workload": {"type": "string"},
         "round": {"type": "integer", "minimum": 1, "maximum": 10},
@@ -119,9 +122,15 @@
         "attemptNumber": {"type": "integer", "minimum": 1, "maximum": 3},
         "selected": {"type": "boolean"},
         "accepted": {"type": "boolean"},
+        "reasons": {"type": "array", "items": {"type": "string"}},
         "elapsedNs": {"type": ["integer", "null"], "minimum": 0},
-        "cpuQualification": {"type": "object"},
-        "correctness": {"type": "object"}
+        "cpuQualification": {"type": "object", "required": ["passed", "preIdlePercent", "duringIdlePercent", "backgroundIdlePercent", "thermalState"],
+          "properties": {"passed": {"type": "boolean"},
+            "preIdlePercent": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+            "duringIdlePercent": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+            "backgroundIdlePercent": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+            "thermalState": {"enum": ["nominal", "non-nominal", "unknown"]}}},
+        "correctness": {"type": "object", "required": ["passed"], "properties": {"passed": {"type": "boolean"}}}
       }
     }
   }

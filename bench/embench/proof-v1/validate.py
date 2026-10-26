@@ -52,6 +52,15 @@ def main() -> None:
     require(protocol["timing"].get("adaptiveRetry") is False, "adaptive retry forbidden")
     require(protocol["statistics"].get("crossHostAverageForbidden") is True, "cross-host average forbidden")
     require(len(protocol.get("negativeControls", [])) >= 7, "seven negative controls required")
+    require(protocol["sourcePolicy"].get("nativeSelfhostRequired") is True and
+            protocol["sourcePolicy"].get("nativeLoaderlessExecutionRequired") is True and
+            protocol["sourcePolicy"].get("historicalCLoaderAllowedForNewCampaign") is False,
+            "new campaigns must use native selfhost and loaderless execution")
+    require(protocol["statistics"].get("bootstrapReplicates") == 10000 and
+            protocol["statistics"].get("bootstrapSeed") == 104 and
+            protocol["statistics"].get("bootstrapMethod") ==
+            "fixed-19-stratified-resampling-of-10-paired-round-ratios-within-each-workload",
+            "fixed workload paired bootstrap parameters required")
 
     require(evidence.get("schemaVersion") == 1, "evidence index schemaVersion")
     evidence_ids = {item.get("id") for item in evidence.get("evidence", [])}
