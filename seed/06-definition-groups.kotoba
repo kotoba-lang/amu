@@ -266,7 +266,7 @@
           parsed (rd-run (kr-lex (mem-set (mem-new) MM-SRC-LEN (string-length text)) text) text)
           lowered (kr-run parsed text) named (nm-run lowered text) checked (ck-run named text)]
       (= (vector-at checked MM-ERR) 0))))
-(defn- dcs-produce [M :vector-i64 S :string doc :i64] :i64
+(defn- dcs-input-status [M :vector-i64 S :string doc :i64] :i64
   (let [functions (dcp-field M S doc ":functions") schemas (dcp-field M S doc ":schemas")
         format (dcp-text M S (dcp-field M S doc ":format")) count (kr-count M functions)]
     (cond (or (not (dcs-shape? M S doc false))
@@ -275,7 +275,14 @@
       (not (dcs-empty-effects? M S doc)) 4
       (and (> schemas 0) (or (not= (kr-kind M schemas) ND-MAP) (> (kr-count M schemas) 0))) 5
       (not (dcs-native-checked? S)) 8
-      :else
+      :else 0)))
+;; Structured, freshly checked graph for native build consumers. It produces
+;; neither output nor authority. Callers must refuse an error before resolving
+;; CIDs; the same guard is used by the original line-oriented producer.
+(defn- dcs-plan [M :vector-i64 S :string doc :i64] :vector-i64
+  (let [status (dcs-input-status M S doc) functions (dcp-field M S doc ":functions")
+        count (kr-count M functions)]
+    (if (not= status 0) (vector-assoc! (vector-alloc 16) 0 status)
       (let [A (dcs-init M S doc functions)
             graph (loop [f 0 state A]
               (if (or (= f count) (not= (vector-at state 0) 0)) state
@@ -285,8 +292,11 @@
                                       (typed-list-new [:list :string]) 0)]
                           (and (> (string-length params) 0) (> (string-length body) 0))))]
                   (if walked (recur (inc f) state) (vector-assoc! state 0 1)))))
-            components (if (= (vector-at graph 0) 0) (dcs-components graph) graph)
-            R (dcs-resolve M S components)]
+            components (if (= (vector-at graph 0) 0) (dcs-components graph) graph)]
+        components))))
+(defn- dcs-produce [M :vector-i64 S :string doc :i64] :i64
+  (let [A (dcs-plan M S doc) count (vector-at A 3)
+        R (if (= (vector-at A 0) 0) (dcs-resolve M S A) (typed-list-new [:list :string]))]
         (cond (not= (vector-at A 0) 0) (vector-at A 0)
           (loop [f 0] (if (= f count) false (or (= (dcp-f A f 2) 0) (recur (inc f))))) 3
           :else
@@ -301,7 +311,7 @@
                       index-part (string-concat (mem-u2dec (if (> (dcp-f A f 12) 0) (dcp-f A f 13) -1)) "\n")
                       write (io-out (string-concat name-part
                         (string-concat cid-part (string-concat group-part index-part))))]
-                  (recur (inc f)))))))))))
+                  (recur (inc f)))))))))
 (defn- dcs-run [S :string] :i64
   (let [M (rd-run (lx-run (mem-set (mem-new) MM-SRC-LEN (string-length S)) S) S)
         root (vector-at M MM-ROOT)]

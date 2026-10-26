@@ -1,0 +1,177 @@
+;; Native relocatable definition objects. A build key is distinct from DefCID:
+;; callers first run 06's native checking and resolve the complete CID graph.
+;; The nine context digests seal compiler image, target, ABI, layout, options,
+;; profile, dependency interfaces, resource proof and relocation convention.
+;; No linked address, execution verdict, grant or approval is stored here.
+(defn- dco-digest? [s :string] :bool
+  (and (= (string-length s) 64) (dc-hex? s)))
+(defn- dco-key [unit :string members [:list :string] context [:list :string]] :string
+  (if (or (not (dc-cid? unit)) (< (vector-count members) 1) (> (vector-count members) 8)
+          (not= (vector-count context) 9)) ""
+    (let [valid (loop [i 0]
+                  (if (= i 9) true
+                    (and (dco-digest? (typed-list-nth [:list :string] context i)) (recur (inc i)))))
+          cids (loop [i 0 out (typed-list-new [:list :string])]
+                 (if (= i (vector-count members)) out
+                   (let [cid (typed-list-nth [:list :string] members i)]
+                     (if (or (not (dc-cid? cid)) (dcp-contains out (dc-str cid)))
+                       (typed-list-new [:list :string])
+                       (recur (inc i) (typed-list-conj [:list :string] out (dc-str cid)))))))
+          seals (loop [i 0 out (typed-list-new [:list :string])]
+                  (if (= i 9) out
+                    (recur (inc i) (typed-list-conj [:list :string] out
+                      (dc-str (typed-list-nth [:list :string] context i))))))]
+      (if (or (not valid) (not= (vector-count cids) (vector-count members))) ""
+        (let [material (dcp-vec (typed-list-new [:list :string]
+                         (dc-kw "kotoba.native-definition-object/key-v1") (dc-str unit)
+                         (dcp-vec cids) (dcp-vec seals)))]
+          (if (= (string-length material) 0) "" (sh-bytes (dc-unhex material))))))))
+(defn- dco-number [D :vector-i64 V :vector-i64 n :i64 maximum :i64] :i64
+  (let [text (dc-text D V (dc-child D n 1))]
+    (if (or (not (dc-tag? D V n "int")) (not (dc-decimal? text))
+            (= (string-length text) 0) (< (string-code-point-at text 0) 48)) -1
+      (loop [i 0 value 0]
+        (if (= i (string-length text)) value
+          (let [digit (- (string-code-point-at text i) 48)]
+            (if (or (> digit maximum) (> value (quot (- maximum digit) 10))) -1
+              (recur (inc i) (+ (* value 10) digit)))))))))
+(defn- dco-values [D :vector-i64 n :i64] :i64 (dc-child D n 1))
+(defn- dco-text [D :vector-i64 V :vector-i64 n :i64] :string
+  (if (dc-tag? D V n "str") (dc-text D V (dc-child D n 1)) ""))
+(defn- dco-binding? [text :string] :bool
+  (and (>= (string-length text) 61) (<= (string-length text) 65)
+    (dc-cid? (string-substring text 0 59)) (= (string-code-point-at text 59) 35)
+    (let [ordinal (string-substring text 60 (string-length text))]
+      (and (dc-decimal? ordinal) (>= (string-code-point-at ordinal 0) 48)
+        (<= (mem-parse-dec ordinal 0 (string-length ordinal)) MM-FN-CAP)))))
+(defn- dco-labels? [D :vector-i64 V :vector-i64 labels :i64 bytes :i64] :bool
+  (and (dc-tag? D V labels "vec")
+    (loop [p (dc-at D (dco-values D labels) 3)]
+      (if (= p 0) true
+        (and (>= (dco-number D V p bytes) 0) (recur (dc-at D p 4)))))))
+(defn- dco-zero? [code :string offset :i64 width :i64] :bool
+  (and (>= offset 0) (<= (* 2 (+ offset width)) (string-length code))
+    (loop [i 0]
+      (if (= i (* 2 width)) true
+        (and (= (string-code-point-at code (+ (* 2 offset) i)) 48) (recur (inc i)))))))
+;; Relocations are [member-relative offset, kind, symbolic target]. Kinds are
+;; existing xg fixups: definition CID#occurrence, local ordinal, context, literal bytes,
+;; RIP-relative literal bytes, and short local ordinal. Never a final address.
+(defn- dco-relocations? [D :vector-i64 V :vector-i64 relocs :i64 code :string labels :i64
+                         definitions [:list :string] literals [:list :string]] :bool
+  (and (dc-tag? D V relocs "vec")
+    (loop [p (dc-at D (dco-values D relocs) 3) end 0]
+      (if (= p 0) true
+        (let [items (dco-values D p) at (dc-child D items 0) kind (dc-child D items 1)
+              target (dc-child D items 2) k (dco-number D V kind 6)
+              offset (dco-number D V at (quot (string-length code) 2)) width (if (= k 6) 1 4)
+              text (dco-text D V target)]
+          (and (dc-tag? D V p "vec") (dc-array? D items 3) (> k 0) (>= offset end)
+            (dco-zero? code offset width)
+            (cond (= k 1) (and (dco-binding? text) (dcp-contains definitions text))
+                  (or (= k 2) (= k 6))
+                    (and (> labels 0) (>= (dco-number D V target (dec labels)) 0))
+                  (= k 3) (= text "context")
+                  (or (= k 4) (= k 5)) (and (dc-hex? text) (dcp-contains literals text))
+                  :else false)
+            (recur (dc-at D p 4) (+ offset width))))))))
+(defn- dco-member? [D :vector-i64 V :vector-i64 member :i64 cid :string
+                    definitions [:list :string] literals [:list :string]] :bool
+  (let [items (dco-values D member) code-node (dc-child D items 1)
+        code (dc-text D V (dc-child D code-node 1)) labels (dc-child D items 2)
+        relocs (dc-child D items 3)]
+    (and (dc-cid? cid) (dc-tag? D V member "vec") (dc-array? D items 4)
+      (= (dco-text D V (dc-child D items 0)) cid)
+      (dc-tag? D V code-node "bytes") (> (string-length code) 0) (dc-hex? code)
+      (dco-labels? D V labels (quot (string-length code) 2))
+      (dco-relocations? D V relocs code (dc-at D (dco-values D labels) 2) definitions literals))))
+(defn- dco-body? [body :string unit :string members [:list :string]
+                  definitions [:list :string] literals [:list :string]] :bool
+  (let [V (dc-unhex body)]
+    (if (or (= (vector-count V) 0) (not (dc-cid? unit))
+            (< (vector-count members) 1) (> (vector-count members) 8)) false
+      (let [D (dc-read (-> (vector-alloc (+ 8 (* dc-nodes 5)))
+                      (vector-assoc! 2 1) (vector-assoc! 3 (vector-count V))) V 0)
+            items (dco-values D 1) objects (dc-child D items 1)]
+        (and (= (vector-at D 1) 0) (= (vector-at D 0) (vector-count V)) (dc-normal? D V 1)
+          (dc-tag? D V 1 "vec") (dc-array? D items 2)
+          (= (dco-text D V (dc-child D items 0)) unit)
+          (dc-tag? D V objects "vec")
+          (= (dc-at D (dco-values D objects) 2) (vector-count members))
+          (loop [p (dc-at D (dco-values D objects) 3) i 0]
+            (if (= p 0) (= i (vector-count members))
+              (and (dco-member? D V p (typed-list-nth [:list :string] members i) definitions literals)
+                (recur (dc-at D p 4) (inc i))))))))))
+(defn- dco-record [key :string body :string] :string
+  (if (or (not (dco-digest? key)) (= (vector-count (dc-unhex body)) 0)) ""
+    (string-concat "KDO1\n" (string-concat key (string-concat "\n"
+      (string-concat (sh-text body) (string-concat "\n" body)))))))
+(defn- dco-unrecord [record :string key :string] :string
+  (if (or (not (dco-digest? key)) (< (string-length record) 137)
+          (> (string-length record) (+ 135 (* dc-limit 2)))
+          (not= (string-substring record 0 5) "KDO1\n")
+          (not= (string-substring record 5 69) key)
+          (not= (string-code-point-at record 69) 10)
+          (not= (string-code-point-at record 134) 10)) ""
+    (let [body (string-substring record 135 (string-length record))]
+      (if (= (sh-text body) (string-substring record 70 134)) body ""))))
+(defn- dco-path [directory :string key :string] :string
+  (if (or (not (dco-digest? key)) (= (string-length directory) 0)) ""
+    (string-concat directory (string-concat "/" (string-concat key ".kdo")))))
+(defn- dco-field [text :string wanted :i64] :string
+  (loop [at 0 index 0]
+    (if (>= at (string-length text)) ""
+      (let [end (loop [i at]
+                  (if (or (= i (string-length text)) (= (string-code-point-at text i) 32)) i
+                    (recur (inc i))))]
+        (if (= index wanted) (string-substring text at end) (recur (inc end) (inc index)))))))
+;; This is a local compiler-owned store, not an untrusted remote artifact
+;; authority. Enforce a private owner directory and immutable owner files.
+;; Same-principal compiler/storage administration remains in the trust base.
+(defn- dco-private? [path :string directory :bool] :bool
+  (let [metadata (io-fs2-text 79 path "") owner (io-fs2-text 80 path "")
+        uid (dco-field owner 0) current (dco-field owner 1)]
+    (and (= (dco-field metadata 0) (if directory "448" "256"))
+      (= (dco-field metadata 3) (if directory "1" "0"))
+      (> (string-length uid) 0) (= uid current))))
+(defn- dco-load [directory :string key :string unit :string members [:list :string]
+                 definitions [:list :string] literals [:list :string]] :string
+  (let [path (dco-path directory key)]
+    (if (or (= path "") (not (dco-private? directory true))
+            (= (io-exists path) 0) (not (dco-private? path false))) ""
+      (let [body (dco-unrecord (io-fs2-text 65 path "") key)]
+        (if (dco-body? body unit members definitions literals) body "")))))
+(defn- dco-managed [form :i64 path :string tail :string bytes :bytes] :string
+  (let [request (typed-list-new [:list :bytes] (string-to-utf8
+                   (string-concat (io-fs2-header form path) tail)) bytes)
+        response (typed-cap-call :fs/app-data [:list :bytes] [:list :bytes] request)]
+    (if (not= (vector-count response) 1) ""
+      (let [raw (typed-list-nth [:list :bytes] response 0)]
+        (if (or (< (bytes-count raw) 5)
+                (not= (string-from-utf8 (bytes-slice raw 0 5)) (io-fs2-prefix))) ""
+          (string-from-utf8 (bytes-slice raw 5 (bytes-count raw))))))))
+;; Private managed staging, exclusive publication and directory durability.
+;; An existing entry must be byte-identical; this never overwrites it. Provider
+;; refusals/cleanup remain authoritative, including no-follow and scope checks.
+(defn- dco-store [directory :string key :string body :string unit :string members [:list :string]
+                  definitions [:list :string] literals [:list :string]] :bool
+  (let [path (dco-path directory key) record (dco-record key body)]
+    (cond (or (= path "") (= record "") (not (dco-private? directory true))
+              (not (dco-body? body unit members definitions literals))) false
+      (= (io-exists path) 1)
+        (and (dco-private? path false) (= (io-fs2-text 65 path "") record)
+          (= (io-fs2-text 77 directory "") "1"))
+      :else
+      (let [stage (dco-managed 82 directory "" (bytes-empty))]
+        (if (= stage "") false
+          (let [file (string-concat stage "/0.tmp")
+                wrote (dco-managed 81 file "0400\u0000" (string-to-utf8 record))
+                verified (and (= wrote "1") (= (io-fs2-text 65 file "") record))
+                published (if verified (io-fs2-text 84 file path) "0")
+                durable (if (= published "1") (io-fs2-text 77 directory "") "0")
+                discard (dco-managed 83 stage "" (bytes-empty))]
+            (and (= discard "1")
+              (if (= published "1") (= durable "1")
+                (and verified (= (io-exists path) 1) (dco-private? path false)
+                  (= (io-fs2-text 65 path "") record)
+                  (= (io-fs2-text 77 directory "") "1"))))))))))
