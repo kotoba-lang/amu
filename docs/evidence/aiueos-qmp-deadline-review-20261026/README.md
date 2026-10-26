@@ -22,3 +22,14 @@ model execution, wire-11 provider dispatch or trusted human consent.
 
 The production compiler/root pins are unchanged by the review repair.
 Exact-head Mac and native Linux CI remain separate merge gates.
+
+## Current 21-check integration
+
+The subsequent `b60907aa43e08531e69d571e970e6cd7db02c2c2` update is
+preserved. The repaired observer reran the updated native-produced UTF-8
+fixture: all 12 header and 9 request/component checks passed. The non-LLM
+negative guest still failed at the receipt assertion. Current observer and
+fixture pins, compiler lineage and firmware are in
+`observations-current.json`; the earlier 17-check record remains historical.
+UTF-8 component checks do not qualify region aliasing, production host model
+policy, provider dispatch, model semantics or trusted human consent.
