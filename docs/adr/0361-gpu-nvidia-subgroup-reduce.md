@@ -2359,80 +2359,56 @@ re-verified this slice); FULL `run-tests.cljk` not run (red at base
 `Could not find namespace: kotoba.form`, ADR-0362) -- NO green suite
 claimed. Record: `docs/evidence/gpu/cuda-int-throughput-20261026/`.
 
-## Amendment (2026-10-26, the overhead baseline: the +4 body is not
-realizable standalone and not additively separable)
+## Amendment (2026-10-26, overhead-baseline probes and a saturation hypothesis)
 
-The twenty-third amendment's named unmeasured item ("a non-eliminated
-overhead baseline (every arm's body carries the same +4 overhead
-instructions -- the baseline is a body of those 4 alone, not run)") is
-answered by measurement, and the answer rejects the instrument the item
-imagined. Evidence: docs/evidence/gpu/cuda-oh-baseline-20261026/
-(record.txt + run-log.txt + microbench-sass.txt + oh-baseline-table.txt).
-Hardware: xavier sm_72, probe at 2026-10-26T13:00:56Z. NAMED NOT HIDDEN:
-a PROBE, not a registered timing session -- no paired samples, no AB/BA,
-inadmissible under the entry criterion BY KIND; same-UTC-day with every
-earlier probe; it measures loop bodies, not kernels; it enters nothing
-and moves no record.
+The twenty-third amendment's proposed standalone +4 overhead baseline was
+not realized by the two constructions tried with nvcc 11.4 / ptxas on
+Xavier sm_72. Explicit PTX using the SASS-only PT/RZ names was rejected;
+anchored empty loops were eliminated or iteration-grouped. These are
+results about those constructions, not proof that every possible
+instrument is unrealizable. The standalone baseline remains unmeasured.
 
-**What is measured (the only measured thing here).** Three arms x 3
-launches x 128 threads, REPT=256, straight dependent symbolic IMAD
-chains (mad.lo.u32, c=3u, cm=7u from global memory) of n in {1, 4, 16}
-per iteration inside the landed loop shape; every realized body VERIFIED
-from nvdisasm as {@!PT SHFL.IDX:1, IMAD:n, IADD3:1, ISETP.NE.AND:1,
-BRA:1}; the chain executed exactly n x 256 times per arm (anchor
-arithmetic reproduces the printed x_tid0 3/3). Per-iteration totals
-(median of 128 samples, all three launches identical):
-T(1) = 26.4766, T(4) = 26.4766, T(16) = 71.4492 cyc/iter.
+Evidence: `docs/evidence/gpu/cuda-oh-baseline-20261026/`. The raw run log
+and disassembled cubin are retained. This was a probe at
+2026-10-26T13:00:56Z, without paired AB/BA samples or cross-day replication.
+It enters no registered timing record and changes no selection decision.
 
-**Realizability (measured, refutations).** A standalone body of the +4
-alone cannot be produced through nvcc 11.4 / ptxas on sm_72: (a) the
-explicit PTX spelling is refused ('Unknown symbol PT', 'Unknown symbol
-RZ' x4 -- PTX has no PT/RZ registers; the landed `@!PT SHFL.IDX PT, RZ,
-RZ, RZ, RZ` is not spellable from PTX source); (b) empty-body counter
-loops are closed-formed when the trip count is constant (zero loop
-instructions; the exit counter becomes `IMAD.MOV.U32 R8, RZ, RZ, 0x40`)
-and iteration-grouped when it is symbolic (main loop counts by 0x10 per
-branch + by-4/by-1 peels). The @!PT SHFL.IDX appears at function entry
-and at every loop header with no PTX source anywhere: it is
-ptxas-inserted, and so is the landed bodies' barrier.
+**Measurements.** Three dependent symbolic IMAD chains of n in {1,4,16}
+were each launched three times, with REPT=256 and 128 lockstep thread
+samples per launch. The printed median total loop cycles were 6778, 6778
+and 18291 respectively; divided by 256, T(1)=T(4)=26.4766 and
+T(16)=71.4492 cycles/iteration. The 128 thread samples are correlated,
+not 128 independent experimental replicates. The retained cubin has the
+expected n IMAD instructions and the four loop-control instructions in
+each body. The cubin and run binary were separate builds with the same
+source and flags; disassembly of the actually executed binary was not
+retained. The instrument source is hash-attested in the log but is not
+part of this committed evidence, limiting independent reproduction.
 
-**The pricing.** The additive-intercept model the row was designed
-around (T(n) = n*L + OH) is REFUTED by T(1) = T(4) exactly (identical
-distributions) where it demands +3L; fitted over (T1, T16) it predicts
-T(4) = 35.4711 against 26.4766 measured (+8.9945 cyc/iter misfit). A
-saturation reading fits all three points exactly (PROPOSED, not
-measured): T(n) = max(n*L, C) with L = 4.4656, C = 26.4766 (4L =
-17.8623 < C < 16L = 71.4492). Operationally: the +4 loop-close body
-costs 26.4766 cyc/iter in context when the chain hides in its shadow,
-and 0 visible cost at 16 chain ops -- T(16)/16 = 4.4656 reproduces the
-latency row's straight-IMAD quote (CONSUMED at its commit) to printed
-precision.
+**Derived checks.** The recurrence x := 7x+3 modulo 2^32, starting at 3,
+reproduces the three printed anchors after n*256 steps. The affine model
+T(n)=n*L+OH cannot fit these three medians: fitting n=1 and n=16 predicts
+T(4)=35.4711, a misfit of 8.9945 cycles/iteration. This rejects that exact
+fit for this probe; it does not identify individual instruction costs.
 
-**Consequence for the landed quotes.** The 16-chain-body per-op quotes
-carried no visible overhead inflation (the +4 rides in the chain's
-shadow); the correction this item was imagined to supply is unnecessary
-at n=16 and inapplicable as a constant below it, where the 26.4766
-loop-close floor dominates. Any future small-body measurement reports
-against that floor.
+**Hypothesis.** T(n)=max(n*L,C), with L=T(16)/16=4.4656 and
+C=T(1)=26.4766, is consistent with the three points to printed precision.
+The model is proposed, not independently measured. C is the measured
+cost of the complete n=1/n=4 loop bodies; attributing it to the +4 alone
+requires the hypothesis. Likewise, equality to the earlier n=16 quote
+repeats a total with the same loop overhead and cannot establish zero
+marginal overhead. The standalone +4 cost, its internal composition and
+possible overhead inflation at n=16 remain unmeasured. No correction to
+the landed quotes is justified by this evidence alone.
 
-**States.** MEASURED: T(1)/T(4)/T(16), the three realized bodies, the
-anchor executions, probe A's refusal diag, probe B's two SASS forms.
-DERIVED (marked): cyc/iter conversions, anchor arithmetic, the additive
-fit and its misfit, the saturation fit's pointwise consistency.
-PROPOSED: the saturation reading itself. IMPLEMENTED: nothing (evidence
-+ this amendment). DECIDED: nothing new. UNMEASURED, named: the floor's
-internal composition (which of SHFL / counter IADD3 / ISETP / taken-BRA
-carries the 26.4766 -- per-phase instrumentation, its own row), and the
-twenty-third amendment's standing named list (pure 2-input IADD3 and
-IMAD.IADD issue and latency separations, the 21 surplus ops' per-op
-costs, raw MUFU.RCP, the residual W-shape's dynamic carrier, noise
-exceedance, sum TRUE side W=256, cross-day run 3+, non-xavier verdicts,
-:sum W=64 elsewhere, live CUDA selection path, workgroup rows :arm and
-:unknown provisional :measured? false).
+The earlier interpretation in `record.txt` and the table is retained as
+historical experiment reporting, subject to this review qualification.
+The twenty-third amendment's other unmeasured items remain open, including
+pure IADD3/IMAD.IADD costs, raw MUFU.RCP, the residual W-shape carrier,
+noise exceedance, sum TRUE W=256, cross-day replication, non-Xavier
+results, the live CUDA selection path and provisional workgroup rows.
 
-Nothing moves (rule 4): no record, no :measured? flag, no selection
-answer, no workgroup row. Gates: scoped GPU gate GREEN 123 tests /
-12162 assertions / 0 failures / 0 errors (regression pin; no .cljk
-touched); find docs -name '*.sh' -> 0; full run-tests.cljk not run
-(documented red at base 'Could not find namespace: kotoba.form',
-ADR-0362) -- no green full suite claimed.
+No runtime or compiler source changes. The author's reported scoped GPU
+suite (123 tests / 12162 assertions) is a legacy hosted result, not a
+native Amu qualification; it was not rerun in review. The full legacy
+suite was not run and no full/native green suite is claimed.
