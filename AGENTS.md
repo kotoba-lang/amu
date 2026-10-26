@@ -171,6 +171,9 @@ word derivation and signed probe in
 coverage. Its larger arenas are diagnostic capacities; the full wire-35
 provider, compiler fixed-point requalification on this expanded runtime
 and release remain separate.
+The repository-local Mac bootstrap and its current fixed-point gate are
+tracked separately in JUN-417. Earlier probe receipts retain their exact
+historical pins; source admission of a probe does not qualify its runtime.
 
 Run new heavyweight local native commands through
 `python3 scripts/seed/native_build_queue.py -- <command>`. Its default shared

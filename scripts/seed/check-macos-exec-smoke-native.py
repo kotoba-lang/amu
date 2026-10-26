@@ -25,10 +25,13 @@ def module(name, file):
 def main(mac_build, out):
     gate = module("mac_native", "check-aiueos-user-macos-native.py")
     observer = module("mac_smoke", "check-macos-exec-smoke.py")
-    report = json.loads((mac_build / "mac-aiueos-user-target.json").read_text())
-    descriptor = json.loads((ROOT / "seed/bootstrap/aarch64-macos/root.json").read_text())
+    report_path = mac_build / "mac-aiueos-user-target.json"
+    descriptor_path = ROOT / "seed/bootstrap/aarch64-macos/root.json"
+    report_pin, descriptor_pin = gate.pin(report_path), gate.pin(descriptor_path)
+    report = json.loads(report_path.read_text())
+    descriptor = json.loads(descriptor_path.read_text())
     assert report["status"] == "PASS_MAC_NATIVE_USER_TARGET_SELFHOST"
-    assert report["bootstrapDescriptor"] == gate.pin(ROOT / "seed/bootstrap/aarch64-macos/root.json")
+    assert report["bootstrapDescriptor"] == descriptor_pin
     assert report["source"] == descriptor["fullSource"]
     row = report["generations"][-1]
     producer = mac_build / f"F{row['number']}-signed.macho"
@@ -53,7 +56,13 @@ def main(mac_build, out):
     gate.native_run(emitter, out, "", expected=2)
     assert gate.pin(source) == source_pin
     observed = observer.check(out / "smoke-unsigned.macho", out / "execution")
+    assert gate.verify_macho(producer) == row["signed"]
+    assert gate.pin(packager) == {key: descriptor["packager"][key] for key in ("bytes", "sha256")}
+    assert gate.pin(source) == source_pin
+    assert gate.pin(report_path) == report_pin and gate.pin(descriptor_path) == descriptor_pin
     result = dict(schema="amu.mac-native-exec-smoke.v1", status="PASS_MAC_NATIVE_EXEC_SMOKE",
+                  bootstrapReport=report_pin, bootstrapDescriptor=descriptor_pin,
+                  observer=gate.pin(Path(__file__)),
                   compiler=gate.pin(producer), packager=gate.pin(packager),
                   source=source_pin, emitter=gate.pin(emitter),
                   image=gate.pin(out / "smoke-unsigned.macho"), observation=observed,
