@@ -1294,3 +1294,74 @@ OUTSIDE this diff (re-verified this tick since the diff touches
 `gpu_regime_classify.py --self-test` 2572/0 (regression pin); `find
 docs -name '*.sh'` -> 0 files. Record:
 `docs/evidence/gpu/cuda-device-class-key-20261025.txt`.
+
+## Amendment (2026-10-26: row (iii) second half LANDS -- FRESH
+SESSION B, the cross-day replication pair's second session)
+
+MEASURED (JUN-57, the second half of the seventh amendment's row
+"(iii) the measurement rows"). HARDWARE RAN: one fresh paired-timing
+session on xavier sm_72 at 2026-10-26T05:09:51Z (UTC day 2026-10-26,
+a DIFFERENT UTC day from session A's 2026-10-25 -- the registration's
+cross-day constraint at its letter), analyzed ONLY by the committed
+pre-registered routes (row (ii) before row (iii), at its letter).
+
+**What ran.** The registered protocol verbatim: the ADR-0358
+instrument class, the full 108-block grid (2 shapes x 6 widths x 3
+operators x 3 pair types), one fresh process per block, PAIRS=20
+interleaved, WARMUP=2 per arm, AB/BA alternating, LCG seed 20261023
+reset per process, gpu_ns CUDA-event + host_ns CLOCK_MONOTONIC,
+untimed verified read-back, correctness re-verified inside the
+measurement. The run driver (Hermes scratch only, never staged) is
+byte-identical to session A's driver except the comment's session
+letter and the working directory; the fresh remote tree carried 55
+files (54 committed emitted corpora + the committed instrument), 0
+sidecars, and the log's received-file sha256 block re-derives 55/55
+against the committed corpora + instrument. Verified: 108/108 cells
+run, 0 failed (driver exit 0), 218/218 verify lines ok=1, 4360
+sample lines (4320 grid + 40 named smoke orphans), all three
+committed routes exit 0 with 0-byte stderr.
+
+**Session B's reading-arm verdicts (the record; nothing entered).**
+Per-op census: 36 (op, W, shape) groups, 36 folded / 0 refused,
+fold census warp-shuffle 34 / subgroup 2 -- exactly session A's
+split, the two subgroup folds being (op :sum, W = 64) at both
+shapes. The contrast group's session-B readings: subgroup unique
+winner in both clocks of both shapes (n=1000003: warp/subgroup
+1.0705/1.0727, subgroup/baseline 0.8937/0.8962; n=1048576:
+1.0612/1.0586 and 0.8993/0.8865 -- gpu_ns/host_ns, each reading's
+one-sided count 13..19 of 20). H2's confirm cells (:max/:min,
+W = 64) fold warp-shuffle in every session-B reading. Pooled cell
+census: 72/72 verdicts -- session B 48 faster / 1 slower / 23
+regime-scoped vs session A's 48/3/21 (NAMED: the pooled split is
+not identical across the pair; the registered criterion reads the
+(op, W) reading unit and never the pooled split).
+
+**Status and consequence: NOTHING MOVES (rule 4).** H1/H2 stay
+NOT ADJUDICATED by this record: the pair now exists but the entry
+criterion ("agreeing in every reading of both") is decided in the
+evaluation row -- this amendment records the measurement only. No
+record, no `:measured?` flag, no selection answer, no `:shapes`
+value and no workgroup row moves; at (op `:sum`, W = 64) the
+design-ordered answer stands UNCLAIMED. Row (iii) is complete at
+the measurement letter; its EVALUATION is the named next row.
+
+**States.** MEASURED: session B (the only measured thing this
+row). IMPLEMENTED: nothing (evidence + this amendment only).
+DECIDED: nothing new. ACCEPTED DESIGN ONLY (unchanged): the
+operator-aware contract + pre-registration (seventh amendment) and
+its remaining evaluation row, the row (ii) route set, the entry
+contract + wiring, ADR-0358, ADR-0373. UNMEASURED, named: the
+cross-day agreement adjudication and therefore H1/H2 and every
+per-op entry/flip/confirm verdict; run 3+; every per-op verdict on
+non-xavier hardware; the `:sum` ordering at W = 64 on any other
+device; the flip arm on real data (ZERO real flips); the pooled
+cell-split difference's cause; every workgroup row (`:arm`/
+`:unknown` stay provisional `:measured? false`). Gates: scoped GPU
+gate GREEN (docs-only diff -- regression pin at the committed
+count, the run's numbers in the commit message); FULL
+`run-tests.cljk` NOT RUN this slice (no .cljk touched) --
+documented red at base `Could not find namespace: kotoba.form`
+(ADR-0362), outside this diff, NO green suite claimed;
+`gpu_regime_classify.py --self-test` 2649/0 (regression pin); `find
+docs -name '*.sh'` -> 0 files. Record:
+`docs/evidence/gpu/cuda-registered-sessionB-20261026/`.
