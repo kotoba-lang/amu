@@ -58,6 +58,19 @@ def arena(raw):
     return {k.decode(): int(v) for k, v in pairs}
 
 
+def entry_offset(extracted, payload):
+    header = re.fullmatch(rb'\{:ok true, :output "([^"\r\n]+)", :offset ([0-9]+), :length ([0-9]+), :arity 0\}\n', extracted)
+    assert header and header[1].decode() == str(payload) and int(header[3]) == payload.stat().st_size
+    offset = int(header[2])
+    assert 0 <= offset < payload.stat().st_size and offset % 4 == 0
+    return offset
+
+
+def verify_bundle_data(package, entry):
+    assert pin(entry)["sha256"] == ENTRY_SHA
+    assert all(pin(package / name)["sha256"] == digest for name, digest in DATA_PINS.items())
+
+
 def provenance(one, complete):
     arch = platform.machine()
     assert platform.system() == "Linux" and arch in ("aarch64", "x86_64")
@@ -95,8 +108,7 @@ def provenance(one, complete):
 def main(args):
     compiler, machine, target, receipt, sources = provenance(args.one, args.complete)
     package, entry, out = args.package.resolve(), args.entry.resolve(), args.output.resolve()
-    assert pin(entry)["sha256"] == ENTRY_SHA
-    assert all(pin(package / name)["sha256"] == digest for name, digest in DATA_PINS.items())
+    verify_bundle_data(package, entry)
     table_path = package / "round-sa-m104-20261015/expected/measured-images.json"
     count_path = package / "round-sa-m104-20261015/workloads.json"
     reference_path = package / "round-sa-m104-20261015/records/round/expected-accounting-mw.json"
@@ -195,22 +207,24 @@ def main(args):
             save()
             continue
         if machine == 183:
-            code, _, stderr = call(name + "-extract", [compiler, "extract-native", image,
+            code, extracted, stderr = call(name + "-extract", [compiler, "extract-native", image,
                                        "--symbol", "main", "--output", payload], compile_env)
             if code or stderr or not payload.is_file():
                 row.update(status="rejected-native-extract")
                 save()
                 continue
+            offset = entry_offset(extracted, payload)
         else:
             header, raw = image.read_bytes().split(b"\n\n", 1)
             match = re.fullmatch(rb"KX64V1 x86_64-linux sysv-ctx-v11 ([0-9]+) 0", header)
             assert match and len(raw) == int(match[1]) and raw[0] == 0xe9
             payload.write_bytes(raw)
-        row.update(image=pin(image), payload=pin(payload), status="running")
+            offset = 0
+        row.update(image=pin(image), payload=pin(payload), entryOffset=offset, status="running")
         save()
         env = dict(PATH="/nonexistent", KEXE_ALLOW="-", KEXE_FUEL="1000000000000",
                    KEXE_STRUCTURED_REPORT="1", KEXE_ARENA_USE="1", KEXE_WALL_SECONDS=str(args.wall_seconds))
-        code, stdout, stderr = call(name + "-run", [runner, payload, "0", "0",
+        code, stdout, stderr = call(name + "-run", [runner, payload, str(offset), "0",
                    "aarch64" if machine == 183 else "x86_64", "-"], env, args.wall_seconds + 15)
         result = re.fullmatch(rb"\{:status :ok :result 1 :fuel \{:initial ([0-9]+) :remaining ([0-9]+)\}\}\n", stdout)
         counters = arena(stderr)

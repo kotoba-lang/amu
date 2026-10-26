@@ -152,6 +152,19 @@ The native runtime's named arena refusal is recorded separately. Neither
 probe grants a proof-v1 aggregate. The complete native observations are in
 [`docs/evidence/embench-native-preparation-20261026/`](../../../docs/evidence/embench-native-preparation-20261026/).
 
+The approved opt-in `large-vectors-v1` candidate is being qualified separately
+in [the native diagnosis evidence](../../../docs/evidence/embench-native-diagnosis-20261026/README.md).
+Its `scripts/seed/check-embench-native-candidate.py` observer requires a native
+Linux ARM one-compiler or x86 complete-compiler receipt and an explicitly named
+runtime profile. Original source/count/reference tables remain hash pinned.
+The existing ARM adopted-core route completes all19 registered-count workloads
+with result1 and all17 final-arena fields matching, but one predicted total
+fuel differs by1 and the observer exits2. This is not separate benchmark/verify
+accounting, qualification of the public x86 benchmark route or a timing result.
+The prior standard-profile vector refusal and wall-bound observations remain
+part of the record. Neither this candidate nor the new observer promotes any
+claim or removes the pending native measurement gate.
+
 The bundle hash is SHA-256 over canonical compact JSON with a trailing newline
 and `bundleSha256` replaced by 64 zeroes. This makes the seal independently
 recomputable without a circular hash definition.

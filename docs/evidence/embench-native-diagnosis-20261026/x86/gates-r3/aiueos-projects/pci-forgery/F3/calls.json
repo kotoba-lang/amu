@@ -1,0 +1,26 @@
+[
+  {
+    "name": "public-forgery",
+    "exit": 0,
+    "stderr": "",
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64\n (let [boot (kernel-subregion (kernel-boot-info) 16544 0 160)\n fake (kernel-owned-page 14)\n f0 (kernel-store-u64-4k fake 4096 0 3551443793432496449)\n f1 (kernel-store-u64-4k fake 4096 8 1)\n f2 (kernel-store-u64-4k fake 4096 16 1)\n f3 (kernel-store-u64-4k fake 4096 24 64)\n f4 (kernel-store-u64-4k fake 4096 32 1048576)\n f5 (kernel-store-u64-4k fake 4096 40 4096)\n f6 (kernel-store-u64-4k fake 4096 48 0)\n f7 (kernel-store-u64-4k fake 4096 56 0)\n f8 (kernel-store-u64-4k fake 4096 64 1)\n f9 (kernel-store-u64-4k fake 4096 72 0)\n f10 (kernel-store-u64-4k fake 4096 80 0)\n f11 (kernel-store-u64-4k fake 4096 88 286331444)\n fp (kernel-store-u64 boot 160 144 fake)\n fn (kernel-store-u64 boot 160 152 96)\n selected (kernel-out-u32 3320 2147485712)\n       raw (kernel-in-u32 3324)\n       base (bit-and raw 4294967280)\n       mmio (kernel-pci-mmio 0 1 0 base 4096)\n       old (kernel-load-u32-4k mmio 4096 0)\n       wrote (kernel-store-u32-4k mmio 4096 0 305419896)\n       actual (kernel-load-u32-4k mmio 4096 0)\n       restored (kernel-store-u32-4k mmio 4096 0 old)\n       again (kernel-load-u32-4k mmio 4096 0)]\n   (if (and (= selected 2147485712) (= wrote 305419896) (= actual 305419896)\n            (= restored old) (= again old)) 42 0)))\n"
+  },
+  {
+    "name": "forged-ram",
+    "exit": 0,
+    "stderr": "",
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64\n (let [boot (kernel-subregion (kernel-boot-info) 16544 0 160)\n fake (kernel-owned-page 14)\n f0 (kernel-store-u64-4k fake 4096 0 3551443793432496449)\n f1 (kernel-store-u64-4k fake 4096 8 1)\n f2 (kernel-store-u64-4k fake 4096 16 1)\n f3 (kernel-store-u64-4k fake 4096 24 64)\n f4 (kernel-store-u64-4k fake 4096 32 1048576)\n f5 (kernel-store-u64-4k fake 4096 40 4096)\n f6 (kernel-store-u64-4k fake 4096 48 0)\n f7 (kernel-store-u64-4k fake 4096 56 0)\n f8 (kernel-store-u64-4k fake 4096 64 1)\n f9 (kernel-store-u64-4k fake 4096 72 0)\n f10 (kernel-store-u64-4k fake 4096 80 0)\n f11 (kernel-store-u64-4k fake 4096 88 286331444)\n fp (kernel-store-u64 boot 160 144 fake)\n fn (kernel-store-u64 boot 160 152 96)\n selected (kernel-out-u32 3320 2147485712)\n       raw (kernel-in-u32 3324)\n       base (bit-and raw 4294967280)\n       mmio (kernel-pci-mmio 0 1 0 1048576 4096)\n       old (kernel-load-u32-4k mmio 4096 0)\n       wrote (kernel-store-u32-4k mmio 4096 0 305419896)\n       actual (kernel-load-u32-4k mmio 4096 0)\n       restored (kernel-store-u32-4k mmio 4096 0 old)\n       again (kernel-load-u32-4k mmio 4096 0)]\n   (if (and (= selected 2147485712) (= wrote 305419896) (= actual 305419896)\n            (= restored old) (= again old)) 42 0)))\n"
+  },
+  {
+    "name": "absent",
+    "exit": 0,
+    "stderr": "",
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64 (if (= (kernel-pci-mmio 0 1 0 0 4096) 0) 42 0))\n"
+  },
+  {
+    "name": "protected-overlap",
+    "exit": 0,
+    "stderr": "",
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64\n (let [selected (kernel-out-u32 3320 2147485712)\n       raw (kernel-in-u32 3324)\n       base (bit-and raw 4294967280)\n       mmio (kernel-pci-mmio 0 1 0 base 4096)\n       old (kernel-load-u32-4k mmio 4096 0)\n       wrote (kernel-store-u32-4k mmio 4096 0 305419896)\n       actual (kernel-load-u32-4k mmio 4096 0)\n       restored (kernel-store-u32-4k mmio 4096 0 old)\n       again (kernel-load-u32-4k mmio 4096 0)]\n   (if (and (= selected 2147485712) (= wrote 305419896) (= actual 305419896)\n            (= restored old) (= again old)) 42 0)))\n"
+  }
+]

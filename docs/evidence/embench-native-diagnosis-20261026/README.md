@@ -185,3 +185,65 @@ steps, root/public/transport readback, exact-head six-job CI, current-compiler
 registered-count full19 correctness/accounting, the native timing/negative
 control gate and independent external reruns. No performance score or product
 adoption follows from the completed local qualifications above.
+
+## Terminal x86 plan and full-count ARM diagnostic
+
+The repaired x86 plan is now terminal COMPLETED/exit0 for all15 groups,
+including native CDCI with all24 cases, its18 refusal controls and parent-death
+control. The schedule and raw format records are under x86/gates-r3. The
+downloaded archive SHA256 is
+cca3d8c794fa26a15309e747d2b191916aad4a08ed5464e10c99d47c3cc87624.
+Only JSON/stdout/stderr/log/rc records were extracted into this repository;
+runtime images and fixture symlinks were not copied. This plan is distinct
+from the older-closure x86 full tier, additional IO/private-store/spawn steps,
+the public aliases, transport readback, browser workflow and exact-head CI.
+
+The new check-embench-native-candidate.py is only a staging/process observer.
+It requires native Linux and validates either the current ARM one-compiler
+receipt or the x86 three-generation complete receipt against the source and
+actual static ELF images. Its metadata tables and entry template are hash
+pinned. The original19 workload library bytes and registered M104 counts
+remain unchanged. Python does not compile, provide a loader, judge native
+timing or replace the native controller. Every workload uses the same
+explicit generic runtime profile and no workload-dispatch special case.
+
+The first ARM one-body probe (r2) used offset0 rather than the actual entry
+offset reported by extract-native. All19 builds succeeded, but the observer
+rejected execution:15 returned0 without calling the entry and four trapped.
+Those failed observations are retained, not counted as compiler failures or
+successful workload executions. The offset is now parsed from the canonical
+extract report, checked against payload size/alignment/arity, and preserved.
+The corrected r3 one-body run completed all19 with result1 and exit0. Its
+exact observer source is retained as candidate-embench/observer-r3.py, SHA256
+0a8e43e527a31ccbf36100615a3bc1b1736d58a1cbc45fa2a767dfbff12a57c3.
+Five synthetic observer-format controls include nonzero offsets, malformed
+reports, exact17-counter parsing and modified-entry refusal; these are not
+native compiler or timing qualification.
+
+The r4 run then executed all19 unchanged registered M104 iteration counts
+through the existing locked adopted-core AArch64 route, with the new ARM
+compiler f1a2020f... and explicit large-vectors-v1. All19 returned1 and all19
+matched every one of the17 historical final-arena fields. The declared
+historical benchmarkFuel+verifyFuel+2 adapter prediction matched18/19:
+tarfind used15682841413 versus predicted15682841414. Consequently this run
+correctly exits2. Neither the prediction nor reference/workload bytes were
+changed to turn this discrepancy into a pass. Separate benchmark and verify
+fuel measurement remains required; the adapter sum is not that measurement.
+
+The failed r2, corrected r3, full-count r4 and admission records are retained
+under candidate-embench, bound to archive SHA256
+db009db684ac58223e68954d21efdc60429247aec392f9e9eca0ee350541da73.
+The r2 observer source is commit f4545e4d13cc1f7e5f0536dc39ecc2b380c15bb7;
+the r4 observer is SHA256
+de11440fdc9bba4a5a73b06fd7ac539b4f1d6a91a72018a860da07b0234fda0d.
+There is no C comparator, quiet-host timing, independent rerun or official
+Embench/SPEC submission in these observations. They do not qualify the public
+x86 compiler's benchmark route or imply a speedup between different hosts.
+
+The branch now stages the actually native-produced ARM root and x86 compiler
+bytes with their matching FULL47 unity pins. Identity preflight passes.
+Qualification flags remain false; a fresh bootstrap from the newly pinned
+root, transport checks, remaining workflow gates and exact-head CI are still
+required before merge/adoption. The former root's metadata is retained in
+history and Git. Earlier receipts continue to describe their actual old-root
+derivation, not a fresh new-root transport pass.
