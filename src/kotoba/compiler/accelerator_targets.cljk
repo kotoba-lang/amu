@@ -225,34 +225,47 @@
 ;; passed as non-blank (and parsed); string-skip-blank is C isspace (adds
 ;; 11 and 12) and rejects it -- the HOST arm's str/blank? reading covers
 ;; 11/12 too, so this moves the W3 arm TOWARD host parity. The host
-;; rule's MECHANISM is MEASURED now (the blank / non-ASCII whitespace
-;; row 2026-10-26): this engine's str/blank? is the EVERY-CHAR /\s/ RULE
-;; (the /\s column equals the host answer on all 44 domain cells) -- NOT
-;; the JVM Character/isWhitespace the earlier parenthetical named. They
-;; agree on the C isspace set (pinned below) and disagree on exactly the
-;; class named next plus the ASCII controls 0x1c-0x1f, where THIS engine
-;; answers NON-BLANK (parity with the W3 arm) where a JVM would answer
-;; blank -- so the 0x1c-0x1f texts are PARITY cells here, not divergence.
-;; THE NON-ASCII WHITESPACE RESIDUAL IS MEASURED (same row,
-;; docs/evidence/gpu/w3-blank-nonascii-whitespace-20261026.txt, two
-;; byte-identical runs, sha256 273da584..): the divergence class is
-;; EXACTLY the texts whose chars are all /\s/ but which contain a
-;; non-C-isspace byte -- any text over {U+00A0 NBSP, U+1680,
-;; U+2000..U+200A, U+2028, U+2029, U+202F, U+205F, U+3000, U+FEFF},
-;; possibly mixed with C-isspace chars (" " + U+3000 diverges -- the
-;; skip stops at the first non-C-isspace byte). On every class cell the
-;; W3 arm answers the six-fact map (permissive at the FACT) where the
-;; host arm answers nil -- and the DISPATCH DECISION is MEASURED
-;; IDENTICAL on every class cell (both arms' `recommend` answer
-;; :unknown / 256 / :measured? false -- an all-whitespace name matches
-;; no key fragment). DECIDED: the byte rule STAYS (the class is
-;; unreachable from the wire as attested -- all 266 recorded INFO
+;; rule's MECHANISM is READ now (the host-blank-mechanism row
+;; 2026-10-26 -- it also CORRECTS the blank row's attribution):
+;; `str/blank?` here is kotoba.lang.text/blank? (this ns's require is
+;; [kotoba.lang.text :as str]) = (or (nil? s) (= "" (trim s))), and
+;; trim strips the named closed set `java-whitespace?` in the same
+;; file (kotoba-lang/text @ 3dcb2ab0, cited by the classpath this gate
+;; resolves): exactly the JVM Character/isWhitespace class written out
+;; -- C0 U+0009..U+000D, the four separators U+001C..U+001F, SPACE,
+;; U+1680, U+2000..U+2006, U+2008..U+200A, U+2028, U+2029, U+205F,
+;; U+3000, DELIBERATELY EXCLUDING the non-breaking spaces
+;; U+00A0/U+2007/U+202F (and U+FEFF is absent too). So the host blank
+;; rule is EVERY-CHAR java-whitespace? -- the JVM class the original
+;; parenthetical named, NOT the every-char /\s/ rule the blank row
+;; attributed (its unit column measured clojure.string/blank?, the
+;; probe's own `str` alias, not this arm's callee; the two differ on
+;; exactly 10 of the 44 domain cells). THE DIVERGENCE CLASS IS
+;; MEASURED AND CORRECTED (host-mechanism row,
+;; docs/evidence/gpu/w3-blank-host-mechanism-20261026.txt, two
+;; byte-identical runs, sha256 c331b523.., arm-rule-match 44/44): the
+;; class is EXACTLY the texts whose chars are all java-whitespace? but
+;; which hold a non-C-isspace byte -- U+001C..U+001F singletons or
+;; runs, {U+1680, U+2000..U+2006, U+2008..U+200A, U+2028, U+2029,
+;; U+205F, U+3000} alone or mixed with C-isspace chars (" " + U+3000
+;; diverges -- the skip stops at the first non-C-isspace byte) -- 23
+;; of 44 cells: the W3 arm answers the six-fact map (permissive at the
+;; FACT) where the host arm answers nil. NBSP, U+2007, U+202F and
+;; U+FEFF -- the blank row's class members -- are PARITY-NONBLANK
+;; (both arms parse; the blank row's OWN recorded run lines show the
+;; host fact there) and U+001C..U+001F are DIVERGENCE, not parity:
+;; membership swap at exactly 10 cells against the blank row's table,
+;; same 8/23/13 class sizes. AND THE DISPATCH DECISION is MEASURED
+;; IDENTICAL on every divergence cell (both arms' `recommend` answer
+;; :unknown / 256 / :measured? false -- an all-whitespace name
+;; matches no key fragment). DECIDED: the byte rule STAYS (the class
+;; is unreachable from the wire as attested -- all 266 recorded INFO
 ;; receipt occurrences are ONE ASCII answer -- and the decision is
-;; identical either way; a Unicode-aware blank would walk the class set
-;; per code point -- PROPOSED only, its own row if a live wire ever
-;; carries non-ASCII device names). NAMED, NOT HIDDEN: the host cells
-;; are engine-owned and never pinned (the parse-long precedent); the
-;; receipt charset beyond the recorded receipts is UNMEASURED (the
+;; identical either way; a Unicode-aware blank would walk the class
+;; set per code point -- PROPOSED only, its own row if a live wire
+;; ever carries non-ASCII device names). NAMED, NOT HIDDEN: the host
+;; cells are engine-owned and never pinned (the parse-long precedent);
+;; the receipt charset beyond the recorded receipts is UNMEASURED (the
 ;; producer tools/kexe_gpu_vulkan.c is not in the tree at HEAD --
 ;; removed at 36479076, JUN-29).
 #?(:kotoba
