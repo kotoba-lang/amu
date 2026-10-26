@@ -14,7 +14,7 @@ stdout, waits with a wall-time kill and writes one EDN receipt line
   `--previous-root` was main's root, F `06b99a4f…`.
 * `x86_64-linux.json`: the same check on a native x86_64 kernel (gad, Linux 7.0, no emulation). It ran through
   `check-x86_64-native.py --tier pr`, as the `qualify-x86_64` job of `selfhost-native.yml` does, with the x86_64
-  compiler X2 that the pinned root builds. It is from the earlier base of the B2 branch (main `7eb52a0e`, see
+  compiler X2 that the pinned root builds. It is from an earlier base of the B2 branch (main `6deb9969`, see
   `b2-image-20261024/`) and is not refreshed for the current head: the PR's native x86_64 job runs the check.
 * Both receipts include the scripted provider's report of its environment:
   exactly `MESA_SHADER_CACHE_DISABLE=true` and

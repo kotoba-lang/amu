@@ -22,12 +22,14 @@ public x86_64 image (`bin/amu`, `native-product.json`) are regenerated, as in `p
 * **arm64.** podman machine (applehv, a native arm64 kernel; no emulation): the bootstrap twice, the static
   launcher (main's root as `--previous-root`) and one-compiler (F1 = F2 = F3; the CDCI gate pins hold).
 * **x86_64.** None for this head: gad was unreachable when the pins were regenerated after the last merge of main.
-  **On the earlier base** (main `7eb52a0e`, merged into this branch on 2026-10-25) gad (native x86_64, Linux 7.0)
-  ran `check-x86_64-native.py --tier pr`, `check-complete-x86.py` (F1 = F2 = F3), `check-native-clock-entropy.py`,
-  `check-native-cdci.py` (24 cases, 18 refusals), `check-public-native-product.py`, main's `check-kototama-i64.py`,
-  its AIUEOS, FS2, kernel-memory and live-ABI checks, and `check-b2-image.py` with this branch's compiler: all passed.
-  Those receipts were committed at `f867a7f61` and removed here, because the pins they describe moved. The x86_64
-  checks of this head are the PR's native x86_64 job (the `b2-image` gate is in `seed/native-gate-plan.json`).
+  **On two earlier bases** gad (native x86_64, Linux 7.0) ran `check-x86_64-native.py --tier pr`,
+  `check-complete-x86.py` (F1 = F2 = F3), `check-native-clock-entropy.py`, `check-native-cdci.py` (24 cases, 18
+  refusals), `check-public-native-product.py` and `check-b2-image.py` with this branch's compiler: with main
+  `6deb9969` merged (2026-10-24; its receipts were committed at `f867a7f61` and removed here, because the pins they
+  describe moved, except `static-launcher-20261022/x86_64-linux.json`) and again with main `7eb52a0e` merged
+  (2026-10-25), together with main's `check-kototama-i64.py` and its AIUEOS, FS2, kernel-memory and live-ABI checks
+  (all passed; no receipts kept). The x86_64 checks of this head are the PR's native x86_64 job (the `b2-image` gate
+  is in `seed/native-gate-plan.json`).
 * **Not run here:** `check-wasm32-browser.py` (no Chrome on gad); CI runs it.
 
 ## What `check-b2-image.py` shows
