@@ -34,3 +34,12 @@ this review does not claim a new QEMU run. Parent source containment is recorded
 
 Full workflow: https://github.com/kotoba-lang/amu/actions/runs/40306976023
 Native Mac/ISA workflow: https://github.com/kotoba-lang/amu/actions/runs/40306876007
+
+The integrated full ARM bootstrap completed126 fresh steps with cache reads
+and writes disabled. C0 reproduced the selected18 core native image c5028498,
+then Kw/Pw reproduced compiler container6d5b83a6. Three adopted-core generations
+agree, all54 staged source/manifest entries match, and the one-compiler route
+passes30 source-lock controls. The public product's three-alias90-control gate
+is verified separately on x86. arm-full-readback.json records this completed
+ARM phase; independent ISA and final-head workflow completion remain the
+merge conditions above.
