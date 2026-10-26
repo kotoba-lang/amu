@@ -55,7 +55,8 @@ class QmpStdio:
         self.reader.close()
 
 
-def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalog=False, stack_exhaustion=False, pci_catalog=False, pci_private=False, pci_private_forgery=False, dma_snapshot=False, value_context=False, value_call=False, llm_header=False):
+def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalog=False, stack_exhaustion=False, pci_catalog=False, pci_private=False, pci_private_forgery=False, dma_snapshot=False, value_context=False, value_call=False, llm_header=False, llm_result=False):
+    llm_header = llm_header or llm_result
     assert sum([dma_snapshot,value_context,value_call,llm_header]) <= 1, 'select one functional receipt'
     pci_private = pci_private or pci_private_forgery or dma_snapshot or value_context or value_call or llm_header
     pci_catalog = pci_catalog or pci_private
@@ -248,6 +249,7 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
                        snapshot=pin(Path('dma-snapshot.bin')),four2048ByteBuffers=True,
                        invalidIndexSizeAndAliasPreserveSnapshot=True,exactFuelParity=False)
         llm = None
+        llm_result_receipt = None
         if llm_header:
             scratch, pages = struct.unpack_from('<QQ', private, 272)
             assert scratch > 0 and pages == 15
@@ -276,6 +278,27 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
                                prompt=pin(Path('llm-request-prompt.bin')),
                                aliasingQualified=False, utf8ComponentValidated=True,
                                hostPolicyQualified=False, providerDispatch=False)
+            if llm_result:
+                assert hmp(f"pmemsave 0x{scratch+12*4096:x} 48 llm-result-receipt.bin") == ""
+                assert hmp(f"pmemsave 0x{scratch+7*4096:x} 64 llm-result-header.bin") == ""
+                assert hmp(f"pmemsave 0x{scratch+8*4096:x} 2 llm-result-text.bin") == ""
+                assert hmp(f"pmemsave 0x{scratch+9*4096:x} 4 llm-result-finish.bin") == ""
+                result_checks = struct.unpack('<6Q', Path('llm-result-receipt.bin').read_bytes())
+                result_header = Path('llm-result-header.bin').read_bytes()
+                assert result_checks == (1,)*6, result_checks
+                assert struct.unpack_from('<8I', result_header) == (
+                    827477067, 1, 11, 1, 2, 4, 0, 0)
+                assert struct.unpack_from('<2Q', result_header, 32) == (7, 1)
+                assert struct.unpack_from('<4I', result_header, 48) == (0, 6, 0, 0)
+                assert Path('llm-result-text.bin').read_bytes() == b'ok'
+                assert Path('llm-result-finish.bin').read_bytes() == b'stop'
+                llm_result_receipt = dict(
+                    checks=list(result_checks), receipt=pin(Path('llm-result-receipt.bin')),
+                    header=pin(Path('llm-result-header.bin')),
+                    text=pin(Path('llm-result-text.bin')),
+                    finishReason=pin(Path('llm-result-finish.bin')),
+                    resultCodecComponent=True, providerDispatch=False,
+                    userValueLowering=False)
         else:
             llm_request = None
         value = None
@@ -334,7 +357,7 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
         report = dict(status="PASS_NATIVE_STACK_LIMIT_QEMU" if stack_exhaustion else "PASS_AIUEOS_ENTRY_QEMU", observer=pin(Path(__file__).resolve()), efi=pin(efi), kernel=pin(kernel),
                       firmware=pin(firmware), qemuVersion=subprocess.check_output([str(qemu), "--version"]).decode().splitlines()[0],
                       result=None if stack_exhaustion else 42, pc=hex(expected_pc), remainingFuel=fuel,
-                      expectedRemainingFuel=None if stack_exhaustion or dma_snapshot or value_context or value_call or llm_header else remaining_fuel, bootInfoVersion=6 if pci_catalog else 5, pciResources=pci, dmaSnapshot=dma, llmHeader=llm, llmRequest=llm_request, valueContext=value, valueCall=live_call,
+                      expectedRemainingFuel=None if stack_exhaustion or dma_snapshot or value_context or value_call or llm_header else remaining_fuel, bootInfoVersion=6 if pci_catalog else 5, pciResources=pci, dmaSnapshot=dma, llmHeader=llm, llmRequest=llm_request, llmResult=llm_result_receipt, valueContext=value, valueCall=live_call,
                       observedPublicMapTypes=memory_types, firmwareMap=pin(Path("firmware-map.bin")), sealedCatalog=catalog,
                       framebuffer=dict(base=fb, bytes=fbsize, width=width, height=height, stride=stride, pixelFormat=pixel_format),
                       completeKernel=False, desktop=False, input=False, gpt=False, physicalHardware=False,
@@ -373,6 +396,7 @@ if __name__ == "__main__":
     p.add_argument("--value-context", action="store_true")
     p.add_argument("--value-call", action="store_true")
     p.add_argument("--llm-header", action="store_true")
+    p.add_argument("--llm-result", action="store_true")
     a = p.parse_args()
     main(*(getattr(a, n).resolve() for n in ("efi", "kernel", "qemu", "firmware", "output")), remaining_fuel=a.remaining_fuel,
-         sealed_catalog=a.sealed_catalog, stack_exhaustion=a.stack_exhaustion, pci_catalog=a.pci_catalog, pci_private=a.pci_private, pci_private_forgery=a.pci_private_forgery, dma_snapshot=a.dma_snapshot, value_context=a.value_context, value_call=a.value_call, llm_header=a.llm_header)
+         sealed_catalog=a.sealed_catalog, stack_exhaustion=a.stack_exhaustion, pci_catalog=a.pci_catalog, pci_private=a.pci_private, pci_private_forgery=a.pci_private_forgery, dma_snapshot=a.dma_snapshot, value_context=a.value_context, value_call=a.value_call, llm_header=a.llm_header, llm_result=a.llm_result)
