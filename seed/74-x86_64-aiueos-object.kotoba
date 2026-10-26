@@ -610,6 +610,8 @@
               (xg-check-fns S 1) (xg-check-sir 1))]
     (cond (not= (vector-at a MM-ERR) 0) a
           (= (xg-get a 1) 0) (xg-err a 7102 0)
+          (not= (xg-f a (xg-get a 1) FF-NPARAMS) 0)
+            (xg-err a 7102 (xg-get a 1))
           (not= (vector-at a MM-CAPS) 0) (xg-err a 7101 OP-CAP)
           :else (let [g (-> a (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1)
                             (xg-index-labels 1) (xu-entry (xg-get a 1))

@@ -16,6 +16,8 @@ from pathlib import Path
 SOURCE = "(ns aiueos-user-scalar (:export [main]))\n(defn main [] :i64 42)\n"
 EFFECT = ("(ns aiueos-user-effect (:export [main]))\n"
           "(defn main [] :i64 (let [x (typed-cap-call :io/write :string :string \"denied\")] 42))\n")
+PARAMETER = ("(ns aiueos-user-parameter (:export [main]))\n"
+             "(defn main [goal :i64] :i64 goal)\n")
 TARGET = "x86_64-aiueos-user-v1"
 
 
@@ -75,12 +77,15 @@ def main(compiler, out):
         raise AssertionError("bitmap-1 mutation was accepted")
     compile_case("effect", EFFECT, expected=1)
     assert "E7101" in cases[-1]["stderr"], cases[-1]
+    compile_case("parameter", PARAMETER, expected=1)
+    assert "E7102" in cases[-1]["stderr"], cases[-1]
     compile_case("format", SOURCE, ("--format", "static"), expected=1)
     assert "E1 usage" in cases[-1]["stderr"], cases[-1]
     report = {"status": "PASS_AIUEOS_ZERO_CAP_USER_ELF_NATIVE",
               "compiler": pin(compiler), "source": pin(out / "scalar.kotoba"),
               "image": pin(image), "target": TARGET, "cases": cases,
-              "bitmap1Rejected": True, "guestExecution": False,
+              "bitmap1Rejected": True, "parameterRefused": True,
+              "guestExecution": False,
               "signedAppAdmission": False, "itonamiTurn": False}
     (out / "aiueos-user-elf-native.json").write_text(json.dumps(report, indent=2) + "\n")
     print(report["status"], report["image"]["sha256"][:16])
