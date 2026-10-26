@@ -208,6 +208,55 @@ The bundle hash is SHA-256 over canonical compact JSON with a trailing newline
 and `bundleSha256` replaced by 64 zeroes. This makes the seal independently
 recomputable without a circular hash definition.
 
+## Independent Linux C-reference preparation
+
+The C comparator is a separate declared arm of `protocol.json`, not a compiler,
+runtime, loader, fallback or CDCI role for Kotoba. On an actual Linux host,
+with the pinned Embench source available locally and an explicitly selected
+native C compiler:
+
+```sh
+python3 bench/embench/proof-v1/prepare_c_reference.py --upstream /absolute/path/to/embench-iot --out /absolute/path/to/new-c-preparation --cc /usr/bin/gcc --expected-arch aarch64
+```
+
+The output directory must not exist or sit inside the upstream source tree.
+No sources or toolchains are downloaded or installed. `--expected-arch` must
+match the actual native Linux host; `x86_64` is a separate candidate mode,
+not qualification inferred from ARM execution. The executed preparation in
+[this evidence packet](../../../docs/evidence/embench-linux-c-reference-20261026/README.md)
+is ARM only. Rebuild and qualify on the intended comparison host; do not reuse
+another host's binaries or preparation records as paired campaign samples.
+
+The stager verifies all40 frozen upstream input hashes, refuses extra or
+missing C/header inputs (including ignored files), and refuses symlinks.
+It copies those exact inputs and GPL-3.0-or-later notices into a private
+snapshot before building all19 original C workloads. The existing pinned
+timing board is retained. Required flags remain `-O2 -std=gnu11
+-DWARMUP_HEAT=1 -DGLOBAL_SCALE_FACTOR=32768`; no body, count or verifier is
+changed in positive builds. The compiler is selected explicitly, hashed and
+recorded with its version, command lines, a sanitized environment, output
+ELF identity and all raw build/runtime streams. C-side dynamic linking is
+recorded as C-reference-only; it is never a Kotoba loader or a C-free claim.
+Each upstream local scale factor must match the frozen registered mapping.
+The C scale count and Kotoba registered count/normalization are recorded
+explicitly, without changing either arm's counts.
+
+Every build/correctness failure is retained, including timeout or launch
+failure, and all19 positive rows are attempted. The original upstream main's
+verification exit and empty runtime stderr own C correctness. A separate
+CRC32 expected-value-only mutation must actually fail verification; its timed
+body, flags and counts stay unchanged. It never enters a positive workload.
+
+Exit0 means all19 C preparation observations and that isolated control were
+consistent. It does not grant native Kotoba authority, host admission,
+algorithm equivalence, a paired statistic, or the complete protocol controls.
+Raw `EMBENCH_NS` frames are correctness diagnostics, not admitted timing
+samples. `performanceQualified`, `campaignReady`, `fullQualification`,
+`nativeVerdictAuthority`, `sameAlgorithmQualified`, and
+`protocolNegativeControlsComplete` remain false. The C compiler runs only in
+this explicit comparator preparation, not in mandatory native selfhost CI.
+
+
 ## Promotion ladder
 
 1. `historical-author-run`: retained and reproducible, but not a current public
