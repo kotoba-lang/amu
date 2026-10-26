@@ -215,7 +215,7 @@ The system `libvulkan.so.1` (1.3.275, Ubuntu 24.04) loads through the Kotoba loa
 `docs/evidence/b2-slice1-libvulkan-20261024/`.
 
 **What was built.**
-* **The seed (PR 1, #1558, `--format b2`, seed module 84, context word 408 = 5).**
+* **The seed (PR 1, #1558, `--format b2`, seed module 98, context word 408 = 5).**
   * **E1.** A guest function named `cx-NAME[-VERSION]` gets a SysV entry thunk, and the image carries a table of the
     exports by name and glibc symbol version. The thunk maps the C arguments (six registers and the stack) onto up to 16
     Kotoba parameters, sets r9 = the context, gives the callee its own fuel budget and restores the caller's meter,

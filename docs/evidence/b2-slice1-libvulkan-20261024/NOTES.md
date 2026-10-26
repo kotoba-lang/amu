@@ -14,7 +14,11 @@ gad: Linux 7.0.0-38-generic x86_64, Ubuntu 24.04, glibc 2.39-0ubuntu8.9 (the ora
 ## What ran (`scripts/seed/check-b2-libvulkan.py`, `b2-libvulkan.json`)
 
 * **The unit.** `tools/b2/MANIFEST` (the loader, the libc subset, the probe), compiled with the complete native x86_64
-  compiler `85713104…` (the public image of PR #1558, `--format b2`) into a 475,648-byte static image `895f2069…`.
+  compiler `85713104…` into a 475,648-byte static image `895f2069…`. That compiler is the complete x86_64 compiler of
+  PR #1558's second head (`--format b2`, main 7eb52a0e merged). #1558 merged as `ca65174c7` with the public image
+  `32a10910…` after two more merges of main; the `--format b2` code and the unit are the same, gad was unreachable
+  afterwards, and this receipt was not repeated with the merged image. The tests that need no GPU (below) run in CI
+  with the merged compiler.
 * **The result** (`run-default.stdout`, exit 0):
   * `vkEnumerateInstanceVersion` → result 0, version **1.3.275**, the version of the library file;
   * `vkEnumerateInstanceExtensionProperties` → result 0, 4 extensions: `VK_EXT_debug_report` 10, `VK_EXT_debug_utils` 2,
@@ -59,4 +63,4 @@ gad: Linux 7.0.0-38-generic x86_64, Ubuntu 24.04, glibc 2.39-0ubuntu8.9 (the ora
 * The stub page for unresolved imports is mapped read-write and its code slots are read-execute except while a stub is
   written.
 
-The temporary directories on gad (`/tmp/claude-b2-slice1`) were removed after the run.
+The temporary directories on gad (`/tmp/claude-b2-slice1`) were removed after the runs.

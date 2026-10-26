@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The libc subset of route B2's Kotoba loader (ADR 0375, JUN-377): tools/b2/00..70 and their tests.
 
---compiler is an Amu-produced compiler from the current sources that has --format b2 (seed module 84); it writes
+--compiler is an Amu-produced compiler from the current sources that has --format b2 (seed module 98); it writes
 x86_64 images. The tests call the exported libc functions from Kotoba directly (no C, no libvulkan), on an
 x86_64 Linux kernel:
   string_t  memset memcpy memmove strlen strcmp strncmp strchr strrchr strstr strncpy strncat strcspn strtok_r,

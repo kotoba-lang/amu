@@ -1,7 +1,7 @@
 # tools/b2 -- route B2: the Kotoba loader and libc subset (ADR 0375, JUN-377)
 
 Route B2 loads the platform's GPU stack with an Amu-built program instead of the system's `ld.so`: a static
-x86_64 image (`--format b2`, seed module 84) maps a vendor shared object itself, binds the object's libc imports to
+x86_64 image (`--format b2`, seed module 98) maps a vendor shared object itself, binds the object's libc imports to
 the functions of this directory, and calls into it. No C source, no C compiler, no system loader and no system
 libc is part of the route. The vendor driver's code still runs in the process, as under any loader.
 
