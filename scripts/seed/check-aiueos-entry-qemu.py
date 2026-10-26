@@ -243,15 +243,15 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
         if llm_header:
             scratch, pages = struct.unpack_from('<QQ', private, 272)
             assert scratch > 0 and pages == 15
-            assert hmp(f"pmemsave 0x{scratch+4096:x} 136 llm-header-receipt.bin") == ""
+            assert hmp(f"pmemsave 0x{scratch+4096:x} 168 llm-header-receipt.bin") == ""
             assert hmp(f"pmemsave 0x{scratch:x} 64 llm-header.bin") == ""
             assert hmp(f"pmemsave 0x{scratch+8192:x} 5 llm-request-model.bin") == ""
             assert hmp(f"pmemsave 0x{scratch+12288:x} 5 llm-selected-model.bin") == ""
             assert hmp(f"pmemsave 0x{scratch+24576:x} 5 llm-request-prompt.bin") == ""
-            checks = struct.unpack('<17Q', Path('llm-header-receipt.bin').read_bytes())
+            checks = struct.unpack('<21Q', Path('llm-header-receipt.bin').read_bytes())
             header = Path('llm-header.bin').read_bytes()
             assert checks[:12] == (1,)*12, checks
-            assert checks[12:] == (1,)*5, checks
+            assert checks[12:] == (1,)*9, checks
             assert struct.unpack_from('<10I', header) == (
                 827149387, 1, 11, 5, 0, 5, 16, 0, 10, 64)
             assert header[40:] == bytes(24), 'header mutation was not restored'
@@ -266,7 +266,7 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
                                model=pin(Path('llm-request-model.bin')),
                                selectedModelFixture=pin(Path('llm-selected-model.bin')),
                                prompt=pin(Path('llm-request-prompt.bin')),
-                               aliasingQualified=False, utf8Qualified=False,
+                               aliasingQualified=False, utf8ComponentValidated=True,
                                hostPolicyQualified=False, providerDispatch=False)
         else:
             llm_request = None
