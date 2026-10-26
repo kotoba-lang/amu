@@ -359,6 +359,22 @@
 ;; fact, never a wrong fact), unreachable from the wire (a wire-42 maxWgX
 ;; is a device limit). The class is pinned on the :kotoba contract arm;
 ;; the host cells stay named and never pinned (engine-owned).
+;; MECHANISM (READ 2026-10-26, docs/evidence/gpu/
+;; w3-parse-long-mechanism-20261026.txt): the engine's parse-long is
+;; cljs.core/parse-long on the kbb SCI-on-Node engine -- one
+;; (re-matches #"[+-]?\d+") gate, then js/parseInt into a JS Number
+;; answered ONLY inside [js/Number.MIN_SAFE_INTEGER,
+;; js/Number.MAX_SAFE_INTEGER] = [-(2^53-1), 2^53-1] (the running
+;; compiled body in org-babashka-nbb/lib/nbb_core.js and the CLJS
+;; source body, verbatim in the evidence). So the boundary tracks the
+;; SAFE-INTEGER RANGE, not representability (2^53 is exactly
+;; representable and still refused -- measured, now read); malformed
+;; and out-of-range are the SAME nil on that head (fail-closed is the
+;; only observable); a non-string THROWS "Expected string, got: ...".
+;; The class has a negative twin at the UNIT level ([i64min, -2^53]:
+;; exact on the :kotoba arm, nil on the engine -- confirmed on both
+;; signs), unreachable from the wire on either sign (the digits? and
+;; [0-9]+ gates refuse a sign above the parse, both arms).
 #?(:kotoba
    (defn- string->i64 [s :string] :i64
      (option-value-of [:option :i64] (parse-long s) -1)))

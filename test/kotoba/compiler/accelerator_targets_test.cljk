@@ -792,7 +792,14 @@
   ;; w3-parse-long-boundary-20261026.txt) -- this wg route diverges the
   ;; same way as the sg route there (the :kotoba arm answers the value,
   ;; the host arm fails closed with no fact); the class is pinned on the
-  ;; contract arm below and the host cells stay named, never pinned.
+  ;; contract arm below and the host cells stay named, never pinned. Its
+  ;; MECHANISM is READ now (2026-10-26,
+  ;; w3-parse-long-mechanism-20261026.txt: cljs.core/parse-long --
+  ;; js/parseInt answered only inside [MIN_SAFE_INTEGER,
+  ;; MAX_SAFE_INTEGER], so the boundary tracks the safe-integer range;
+  ;; the class has a negative twin at the unit, unreachable from the
+  ;; wire on either sign -- pinned in the sg-size test's sign-side
+  ;; block).
   (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
         arms (str/join "\n" (map #(extract-balanced src %)
                                  ["(defn- none?" "(defn- string->i64"
@@ -947,6 +954,13 @@
   ;; wrong fact), unreachable from the wire (a wire-42 maxWgX is a device
   ;; limit). The class cells ARE pinned on the :kotoba contract arm; the
   ;; host cells are named in these pins' comments and never pinned;
+  ;; the MECHANISM is READ now too (2026-10-26,
+  ;; w3-parse-long-mechanism-20261026.txt): the engine head is
+  ;; cljs.core/parse-long -- js/parseInt into a JS Number admitted
+  ;; only inside [MIN_SAFE_INTEGER, MAX_SAFE_INTEGER] -- and the
+  ;; class has a negative twin at the unit ([i64min, -2^53], pinned
+  ;; in the sign-side block below), unreachable from the wire on
+  ;; either sign;
   ;; (c) the SUBGROUP chain's
   ;; OTHER walks still trap multi-token / long answers on this runtime
   ;; (sg-pipe walks the answer per byte; sg-token-end/sg-ops-walk walk
@@ -985,12 +999,14 @@
         ;; (sg-keyword and sg-token-end are deleted by the fuel row,
         ;; 2026-10-26 -- the lookup table and the token-end find are
         ;; INLINED in sg-ops-walk's loop body; no probe calls them.)
-        probe (str "(ns accelerator.targets.w3.sg.probe (:export [main sz dfs]))\n"
+        probe (str "(ns accelerator.targets.w3.sg.probe (:export [main si sz dfs]))\n"
                    "(defn main [] :i64 0)\n"
                    arms "\n"
+                   "(defn si [s :string] :i64 (string->i64 s))\n"
                    "(defn sz [s :string] :i64 (sg-size s))\n"
                    "(defn dfs [answer :document] :document (device-from-subgroup answer))\n")
         hir (sema/analyze probe)
+        si (fn [s] (str (ir/execute hir 'si [s])))
         sz (fn [s] (str (ir/execute hir 'sz [s])))
         dfs (fn [s] (ir/execute hir 'dfs [["string" s]]))
         fields-of (fn [doc]
@@ -1040,6 +1056,34 @@
                  "32x" " 32" "-1" "+3" "12.5" "x" "5 " "32\t" "5\n" "0x1f"]]
         (is (= (str (host-sz s)) (sz s))
             (str (pr-str s) " parses the same on the host arm's own heads"))))
+    (testing "the mechanism row: the sign-side unit class, refused at the route"
+      ;; READ + MEASURED 2026-10-26 (docs/evidence/gpu/
+      ;; w3-parse-long-mechanism-20261026.txt): the engine's parse-long
+      ;; is cljs.core/parse-long (js/parseInt + the
+      ;; [MIN_SAFE_INTEGER, MAX_SAFE_INTEGER] check), so the boundary
+      ;; row's class has a negative twin at the string->i64 UNIT:
+      ;; [i64min, -2^53] answers the exact value on the :kotoba arm
+      ;; (real i64) and nil on the engine. These pins are the CONTRACT
+      ;; arm only; the engine cells stay named and never pinned
+      ;; (engine-owned -- an upstream CLJS/nbb change must not be
+      ;; blocked by a pin on the old answer).
+      (is (= "-9007199254740991" (si "-9007199254740991"))
+          "MIN_SAFE-side value is exact on the contract arm")
+      (is (= "-9007199254740992" (si "-9007199254740992"))
+          "-(2^53) is a VALUE on the contract arm (the engine answers nil there -- named, never pinned)")
+      (is (= "-9223372036854775808" (si "-9223372036854775808"))
+          "i64min is exact on the contract arm")
+      (is (= "-1" (si "4x"))
+          "malformed text is still the no-value shape at the unit")
+      ;; at the ROUTE both arms refuse a sign ABOVE the parse (the
+      ;; digits? and [0-9]+ gates), so the unit class is unreachable
+      ;; from the wire on either sign -- measured on both arms
+      (is (= "-1" (sz "-9007199254740992"))
+          "a sign refuses above the digits? gate, contract arm")
+      (is (= ["null"] (dfs "-9007199254740992|basic"))
+          "and end to end: no fact, contract arm")
+      (is (nil? (targets/device-from-subgroup "-9007199254740992|basic"))
+          "HOST parity pin: the [0-9]+ gate refuses the same sign"))
     (testing "the e2e answer parse: the size field's facts flow, malformed fails closed"
       (let [m (fields-of (dfs "8|"))]
         (is (= "8" (str (:subgroup-size m))) "an empty <ops> is the zero-ops fact")
