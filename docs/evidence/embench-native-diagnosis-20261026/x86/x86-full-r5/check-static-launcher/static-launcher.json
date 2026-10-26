@@ -1,0 +1,747 @@
+{
+  "status": "PASS_STATIC_LAUNCHER",
+  "target": "x86_64-linux",
+  "host": [
+    "Linux",
+    "x86_64",
+    "7.0.0-31-generic"
+  ],
+  "executionNative": true,
+  "guestSeccomp": "required",
+  "compiler": {
+    "bytes": 2351616,
+    "sha256": "cbe4625b9854fa147e107ca211cbb594139a92cdc9c5a3b02a55a0e3567a62bd"
+  },
+  "sources": {
+    "tools/static_launcher.kotoba": {
+      "bytes": 6458,
+      "sha256": "6ca3cfd61f0bd0bce035bfc5dbc4565450cd9ac35ac2c134180bf5add96f4211"
+    },
+    "tools/static_launcher_test.kotoba": {
+      "bytes": 5359,
+      "sha256": "260a6f39720a1cd0229341d46da0c8461394c729f813965fea28126be83b4cfe"
+    }
+  },
+  "gpuGuestCompiler": "product",
+  "providerScaffolding": "python3 3.12.3 (test only)",
+  "results": {
+    "receiptUnit": {
+      "casesCounted": 30,
+      "receipt-test": {
+        "image": {
+          "bytes": 418304,
+          "sha256": "1b1b825bf821d192aa12695bc4ba4abb0c920cfad32f2cb11dd736d94c158edf"
+        },
+        "failed": 0,
+        "failLines": []
+      },
+      "receipt-control": {
+        "image": {
+          "bytes": 418304,
+          "sha256": "b3593c2ec8f0f1a832e3a6ca050ddf795ade35c10735dd68b84c75cfd1325bd6"
+        },
+        "failed": 1,
+        "failLines": [
+          "FAIL provider killed, report invalid => {:sha256 \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\" :signal 9 :killed true :report :invalid} ; want {:sha256 \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\" :signal 9 :killed false :report :invalid}"
+        ]
+      }
+    },
+    "launcherImage": {
+      "bytes": 467456,
+      "sha256": "6350f25a424c790430ef093172b35a9a9ba3e85b964d8f2f41dfaba0199241b9"
+    },
+    "runs": {
+      "hello": {
+        "exit": 0,
+        "receipt": "{:receipt :kotoba.static-launcher/v1 :verdict :ok :wall-seconds 10 :elapsed-ms 0 :timed-out false :relay true :launcher {:sha256 \"6350f25a424c790430ef093172b35a9a9ba3e85b964d8f2f41dfaba0199241b9\"} :guest {:sha256 \"dd0a9b7fa8ed051cca6258b15c4c78b8d481c46323e955f51ed73f80b77007b3\" :allow \"37,38,39\" :exit 0 :report {:status :ok :result 3 :fuel {:initial 9007199254740991 :remaining 9007199254740990 :metered false}} :stdout {:bytes 107 :sha256 \"67e767dc6dbc77651f0c93ad907739f5437ed5ba5f3e273dca805e2a93878788\"}} :provider nil :grant nil}",
+        "stdout": "hello\n{:status :ok :result 3 :fuel {:initial 9007199254740991 :remaining 9007199254740990 :metered false}}\n",
+        "stderr": ""
+      },
+      "trap": {
+        "exit": 1,
+        "receipt": "{:receipt :kotoba.static-launcher/v1 :verdict :guest-failed :wall-seconds 10 :elapsed-ms 0 :timed-out false :relay true :launcher {:sha256 \"6350f25a424c790430ef093172b35a9a9ba3e85b964d8f2f41dfaba0199241b9\"} :guest {:sha256 \"e9d91704778d3290c43cb6eb00159599011748682f65b7dcaca7556b3dbc54b4\" :allow \"37,38,39\" :exit 120 :report {:status :trap :exit 120 :fuel {:initial 9007199254740991 :remaining 9007199254740990 :metered false}} :stdout {:bytes 103 :sha256 \"9e2fe3eeffc7a55e6b9d0734104a43d4b7e903c5800630d3bf09d1ca11e50331\"}} :provider nil :grant nil}",
+        "stdout": "{:status :trap :exit 120 :fuel {:initial 9007199254740991 :remaining 9007199254740990 :metered false}}\n",
+        "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+      },
+      "args": {
+        "exit": 0,
+        "receipt": "{:receipt :kotoba.static-launcher/v1 :verdict :ok :wall-seconds 10 :elapsed-ms 0 :timed-out false :relay true :launcher {:sha256 \"6350f25a424c790430ef093172b35a9a9ba3e85b964d8f2f41dfaba0199241b9\"} :guest {:sha256 \"409e5b638ea16ba26b1d717293c35d506eb8ab49750798a9fff21252c8c5d506\" :allow \"37,38,39\" :exit 0 :report {:status :ok :result 0 :fuel {:initial 9007199254740991 :remaining 9007199254740987 :metered false}} :stdout {:bytes 116 :sha256 \"216a43e6f14b093e38c9e4642426c0bfa3a8203232968b1c7d6b25bb39902799\"}} :provider nil :grant nil}",
+        "stdout": "2|first|second\n{:status :ok :result 0 :fuel {:initial 9007199254740991 :remaining 9007199254740987 :metered false}}\n",
+        "stderr": ""
+      },
+      "environment": {
+        "exit": 0,
+        "receipt": "{:receipt :kotoba.static-launcher/v1 :verdict :ok :wall-seconds 10 :elapsed-ms 0 :timed-out false :relay true :launcher {:sha256 \"6350f25a424c790430ef093172b35a9a9ba3e85b964d8f2f41dfaba0199241b9\"} :guest {:sha256 \"886e5fa8be716b03eeda48856e0f04493f2969fc148fb7812594ffac647fa050\" :allow \"37,38,39\" :exit 0 :report nil :stdout {:bytes 108 :sha256 \"ec0606a8227e98a475e94c188e86d86c4dd358c0610016f189bd2becc197699d\"}} :provider nil :grant nil}",
+        "stdout": "KEXE_ALLOW=37,38,39\nKEXE_STRUCTURED_REPORT=1\nKEXE_WALL_SECONDS=10\nKEXE_FUEL=777777\nKEXE_STACK_BYTES=2097152\n",
+        "stderr": ""
+      },
+      "descriptors": {
+        "exit": 0,
+        "receipt": "{:receipt :kotoba.static-launcher/v1 :verdict :ok :wall-seconds 10 :elapsed-ms 0 :timed-out false :relay true :launcher {:sha256 \"6350f25a424c790430ef093172b35a9a9ba3e85b964d8f2f41dfaba0199241b9\"} :guest {:sha256 \"2726eb35864608ff34969fbf45ef4afcbba95eefed5ce5653c9c0124c4cd26cf\" :allow \"37,38,39\" :exit 0 :report nil :stdout {:bytes 8 :sha256 \"e169bdf59fac30d230f7d21be511d04dc8cc61e5edb1d8255758bc220ba3d4c7\"}} :provider nil :grant nil}",
+        "stdout": "0\n1\n2\n3\n",
+        "stderr": ""
+      },
+      "no-new-privs": {
+        "exit": 0,
+        "receipt": "{:receipt :kotoba.static-launcher/v1 :verdict :ok :wall-seconds 10 :elapsed-ms 0 :timed-out false :relay true :launcher {:sha256 \"6350f25a424c790430ef093172b35a9a9ba3e85b964d8f2f41dfaba0199241b9\"} :guest {:sha256 \"0d5c6788b9e87eb2f6672ae7dd1fb1fc9e4d13b930d988f28e4c040ff5b79c19\" :allow \"37,38,39\" :exit 0 :report nil :stdout {:bytes 1537 :sha256 \"f991fef8de61d3277acd5cbb273bd1c0f834956ad25189d70c88ca88d13c6c1f\"}} :provider nil :grant nil}",
+        "stdout": ",00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000001\nMems_allowed_list:\t0\nvoluntary_ctxt_switches:\t0\nnonvoluntary_ctxt_switches:\t0\nx86_Thread_features:\t\nx86_Thread_features_locked:\t\n",
+        "stderr": ""
+      },
+      "wall": {
+        "exit": 122,
+        "receipt": "{:receipt :kotoba.static-launcher/v1 :verdict :timeout :wall-seconds 2 :elapsed-ms 2002 :timed-out true :relay true :launcher {:sha256 \"6350f25a424c790430ef093172b35a9a9ba3e85b964d8f2f41dfaba0199241b9\"} :guest {:sha256 \"8ac215ec4c1ce4a9c23a10cd3e5898d60419bdfab1ac7444d6bdd1690701de24\" :allow \"37,38,39\" :signal 9 :report nil :stdout {:bytes 0 :sha256 \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"}} :provider nil :grant nil}",
+        "stdout": "",
+        "stderr": ""
+      },
+      "provider": {
+        "exit": 0,
+        "receipt": "{:receipt :kotoba.static-launcher/v1 :verdict :ok :wall-seconds 10 :elapsed-ms 13 :timed-out false :relay true :launcher {:sha256 \"6350f25a424c790430ef093172b35a9a9ba3e85b964d8f2f41dfaba0199241b9\"} :guest {:sha256 \"a02f05e856efad8a2d3934a5fca222b5b0e3f329a9be2268675a508b9a8945f0\" :allow \"37,38,39,42\" :exit 0 :report {:status :ok :result 25 :fuel {:initial 9007199254740991 :remaining 9007199254740990 :metered false}} :stdout {:bytes 102 :sha256 \"4ac5ce904ddfe1b0e8ec25d614d523e8e9ba8c7da02cdcfe72d8b2dc5b377959\"}} :provider {:sha256 \"e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f\" :exit 0 :killed false :report \"fds=0,1,2,3,4 grant=c464b04dad123527d2c0d4a0ee1dc357534a55c5659e1273d315cf498b0bace0 requests=INFO env=MESA_SHADER_CACHE_DISABLE=true;VK_LOADER_LAYERS_DISABLE=~all~\"} :grant {:sha256 \"c464b04dad123527d2c0d4a0ee1dc357534a55c5659e1273d315cf498b0bace0\"}}",
+        "stdout": "{:status :ok :result 25 :fuel {:initial 9007199254740991 :remaining 9007199254740990 :metered false}}\n",
+        "stderr": ""
+      },
+      "provider-descriptors": {
+        "exit": 0,
+        "receipt": "{:receipt :kotoba.static-launcher/v1 :verdict :ok :wall-seconds 10 :elapsed-ms 13 :timed-out false :relay true :launcher {:sha256 \"6350f25a424c790430ef093172b35a9a9ba3e85b964d8f2f41dfaba0199241b9\"} :guest {:sha256 \"2726eb35864608ff34969fbf45ef4afcbba95eefed5ce5653c9c0124c4cd26cf\" :allow \"37,38,39,42\" :exit 0 :report nil :stdout {:bytes 12 :sha256 \"9d6093db34ed3db1834973eb10698ddb099971d39ac0e4707485d5f5aa5b0595\"}} :provider {:sha256 \"e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f\" :exit 0 :killed false :report \"fds=0,1,2,3,4 grant=c464b04dad123527d2c0d4a0ee1dc357534a55c5659e1273d315cf498b0bace0 requests= env=MESA_SHADER_CACHE_DISABLE=true;VK_LOADER_LAYERS_DISABLE=~all~\"} :grant {:sha256 \"c464b04dad123527d2c0d4a0ee1dc357534a55c5659e1273d315cf498b0bace0\"}}",
+        "stdout": "0\n1\n2\n3\n4\n5\n",
+        "stderr": ""
+      },
+      "provider-environment": {
+        "exit": 0,
+        "receipt": "{:receipt :kotoba.static-launcher/v1 :verdict :ok :wall-seconds 10 :elapsed-ms 12 :timed-out false :relay true :launcher {:sha256 \"6350f25a424c790430ef093172b35a9a9ba3e85b964d8f2f41dfaba0199241b9\"} :guest {:sha256 \"886e5fa8be716b03eeda48856e0f04493f2969fc148fb7812594ffac647fa050\" :allow \"37,38,39,42\" :exit 0 :report nil :stdout {:bytes 95 :sha256 \"230b95bd0a07f03394b335378b38ea31f4ee3e10e1f601d4f5fdb6ddfe7e8ea4\"}} :provider {:sha256 \"e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f\" :exit 0 :killed false :report \"fds=0,1,2,3,4 grant=c464b04dad123527d2c0d4a0ee1dc357534a55c5659e1273d315cf498b0bace0 requests= env=MESA_SHADER_CACHE_DISABLE=true;VK_LOADER_LAYERS_DISABLE=~all~\"} :grant {:sha256 \"c464b04dad123527d2c0d4a0ee1dc357534a55c5659e1273d315cf498b0bace0\"}}",
+        "stdout": "KEXE_ALLOW=37,38,39,42\nKEXE_STRUCTURED_REPORT=1\nKEXE_WALL_SECONDS=10\nKEXE_CAP_RESOURCES_42=3,4\n",
+        "stderr": ""
+      },
+      "provider-crash": {
+        "exit": 1,
+        "receipt": "{:receipt :kotoba.static-launcher/v1 :verdict :guest-failed :wall-seconds 10 :elapsed-ms 15 :timed-out false :relay true :launcher {:sha256 \"6350f25a424c790430ef093172b35a9a9ba3e85b964d8f2f41dfaba0199241b9\"} :guest {:sha256 \"a02f05e856efad8a2d3934a5fca222b5b0e3f329a9be2268675a508b9a8945f0\" :allow \"37,38,39,42\" :exit 120 :report {:status :trap :exit 120 :fuel {:initial 9007199254740991 :remaining 9007199254740990 :metered false}} :stdout {:bytes 103 :sha256 \"9e2fe3eeffc7a55e6b9d0734104a43d4b7e903c5800630d3bf09d1ca11e50331\"}} :provider {:sha256 \"e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f\" :exit 3 :killed false :report nil} :grant {:sha256 \"c464b04dad123527d2c0d4a0ee1dc357534a55c5659e1273d315cf498b0bace0\"}}",
+        "stdout": "{:status :trap :exit 120 :fuel {:initial 9007199254740991 :remaining 9007199254740990 :metered false}}\n",
+        "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+      },
+      "provider-linger": {
+        "exit": 1,
+        "receipt": "{:receipt :kotoba.static-launcher/v1 :verdict :provider-failed :wall-seconds 20 :elapsed-ms 5018 :timed-out false :relay true :launcher {:sha256 \"6350f25a424c790430ef093172b35a9a9ba3e85b964d8f2f41dfaba0199241b9\"} :guest {:sha256 \"a02f05e856efad8a2d3934a5fca222b5b0e3f329a9be2268675a508b9a8945f0\" :allow \"37,38,39,42\" :exit 0 :report {:status :ok :result 25 :fuel {:initial 9007199254740991 :remaining 9007199254740990 :metered false}} :stdout {:bytes 102 :sha256 \"4ac5ce904ddfe1b0e8ec25d614d523e8e9ba8c7da02cdcfe72d8b2dc5b377959\"}} :provider {:sha256 \"e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f\" :signal 9 :killed true :report \"fds=0,1,2,3,4 grant=c464b04dad123527d2c0d4a0ee1dc357534a55c5659e1273d315cf498b0bace0 requests=INFO env=MESA_SHADER_CACHE_DISABLE=true;VK_LOADER_LAYERS_DISABLE=~all~\"} :grant {:sha256 \"c464b04dad123527d2c0d4a0ee1dc357534a55c5659e1273d315cf498b0bace0\"}}",
+        "stdout": "{:status :ok :result 25 :fuel {:initial 9007199254740991 :remaining 9007199254740990 :metered false}}\n",
+        "stderr": ""
+      },
+      "provider-invalid-report": {
+        "exit": 0,
+        "receipt": "{:receipt :kotoba.static-launcher/v1 :verdict :ok :wall-seconds 10 :elapsed-ms 13 :timed-out false :relay true :launcher {:sha256 \"6350f25a424c790430ef093172b35a9a9ba3e85b964d8f2f41dfaba0199241b9\"} :guest {:sha256 \"a02f05e856efad8a2d3934a5fca222b5b0e3f329a9be2268675a508b9a8945f0\" :allow \"37,38,39,42\" :exit 0 :report {:status :ok :result 25 :fuel {:initial 9007199254740991 :remaining 9007199254740990 :metered false}} :stdout {:bytes 102 :sha256 \"4ac5ce904ddfe1b0e8ec25d614d523e8e9ba8c7da02cdcfe72d8b2dc5b377959\"}} :provider {:sha256 \"e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f\" :exit 0 :killed false :report :invalid} :grant {:sha256 \"c464b04dad123527d2c0d4a0ee1dc357534a55c5659e1273d315cf498b0bace0\"}}",
+        "stdout": "{:status :ok :result 25 :fuel {:initial 9007199254740991 :remaining 9007199254740990 :metered false}}\n",
+        "stderr": ""
+      },
+      "provider-overflow-report": {
+        "exit": 0,
+        "receipt": "{:receipt :kotoba.static-launcher/v1 :verdict :ok :wall-seconds 10 :elapsed-ms 12 :timed-out false :relay true :launcher {:sha256 \"6350f25a424c790430ef093172b35a9a9ba3e85b964d8f2f41dfaba0199241b9\"} :guest {:sha256 \"a02f05e856efad8a2d3934a5fca222b5b0e3f329a9be2268675a508b9a8945f0\" :allow \"37,38,39,42\" :exit 0 :report {:status :ok :result 25 :fuel {:initial 9007199254740991 :remaining 9007199254740990 :metered false}} :stdout {:bytes 102 :sha256 \"4ac5ce904ddfe1b0e8ec25d614d523e8e9ba8c7da02cdcfe72d8b2dc5b377959\"}} :provider {:sha256 \"e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f\" :exit 0 :killed false :report :overflow} :grant {:sha256 \"c464b04dad123527d2c0d4a0ee1dc357534a55c5659e1273d315cf498b0bace0\"}}",
+        "stdout": "{:status :ok :result 25 :fuel {:initial 9007199254740991 :remaining 9007199254740990 :metered false}}\n",
+        "stderr": ""
+      }
+    },
+    "sealedWhileWaiting": {
+      "seccompField": "2",
+      "enforced": true
+    },
+    "refusals": {
+      "no-arguments": {
+        "exit": 2,
+        "stderr": "kexe-launcher: usage: WALL ALLOW GRANT PROVIDER [ARG ...] -- GUEST [ARG ...]"
+      },
+      "no-guest": {
+        "exit": 2,
+        "stderr": "kexe-launcher: usage: WALL ALLOW GRANT PROVIDER [ARG ...] -- GUEST [ARG ...]"
+      },
+      "wall-zero": {
+        "exit": 2,
+        "stderr": "kexe-launcher: WALL must be 1..86400 seconds"
+      },
+      "wall-over": {
+        "exit": 2,
+        "stderr": "kexe-launcher: WALL must be 1..86400 seconds"
+      },
+      "grant-without-provider": {
+        "exit": 2,
+        "stderr": "kexe-launcher: usage: WALL ALLOW GRANT PROVIDER [ARG ...] -- GUEST [ARG ...]"
+      },
+      "provider-args-without-provider": {
+        "exit": 2,
+        "stderr": "kexe-launcher: usage: WALL ALLOW GRANT PROVIDER [ARG ...] -- GUEST [ARG ...]"
+      },
+      "allow-42-without-provider": {
+        "exit": 2,
+        "stderr": "kexe-launcher: ALLOW must be wire ids 0..255 or -, with 42 exactly when a provider is given"
+      },
+      "provider-without-42": {
+        "exit": 2,
+        "stderr": "kexe-launcher: ALLOW must be wire ids 0..255 or -, with 42 exactly when a provider is given"
+      },
+      "allow-invalid": {
+        "exit": 2,
+        "stderr": "kexe-launcher: ALLOW must be wire ids 0..255 or -, with 42 exactly when a provider is given"
+      },
+      "allow-over-255": {
+        "exit": 2,
+        "stderr": "kexe-launcher: ALLOW must be wire ids 0..255 or -, with 42 exactly when a provider is given"
+      },
+      "guest-missing": {
+        "exit": 1,
+        "stderr": "kexe-launcher: cannot read an input: guest"
+      },
+      "grant-empty": {
+        "exit": 1,
+        "stderr": "kexe-launcher: an input is empty or too large: grant"
+      },
+      "provider-missing": {
+        "exit": 1,
+        "stderr": "kexe-launcher: cannot read an input: provider"
+      },
+      "guest-not-an-image": {
+        "exit": 1,
+        "stderr": "kexe-launcher: a child could not be started: guest"
+      },
+      "provider-not-an-image": {
+        "exit": 1,
+        "stderr": "kexe-launcher: a child could not be started: provider"
+      }
+    }
+  },
+  "calls": [
+    {
+      "name": "receipt-test-compile",
+      "argv": [
+        "compiler.elf",
+        "compile",
+        "receipt-test.kotoba",
+        "--target",
+        "x86_64-linux",
+        "--output",
+        "receipt-test.elf",
+        "--format",
+        "static"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "receipt-test",
+      "argv": [
+        "receipt-test.elf"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "receipt-control-compile",
+      "argv": [
+        "compiler.elf",
+        "compile",
+        "receipt-control.kotoba",
+        "--target",
+        "x86_64-linux",
+        "--output",
+        "receipt-control.elf",
+        "--format",
+        "static"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "receipt-control",
+      "argv": [
+        "receipt-control.elf"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "launcher-compile",
+      "argv": [
+        "compiler.elf",
+        "compile",
+        "launcher.kotoba",
+        "--target",
+        "x86_64-linux",
+        "--output",
+        "launcher.elf",
+        "--format",
+        "launcher"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "guest-hello-compile",
+      "argv": [
+        "compiler.elf",
+        "compile",
+        "guest-hello.kotoba",
+        "--target",
+        "x86_64-linux",
+        "--output",
+        "guest-hello.elf",
+        "--format",
+        "static"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "guest-trap-compile",
+      "argv": [
+        "compiler.elf",
+        "compile",
+        "guest-trap.kotoba",
+        "--target",
+        "x86_64-linux",
+        "--output",
+        "guest-trap.elf",
+        "--format",
+        "static"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "guest-args-compile",
+      "argv": [
+        "compiler.elf",
+        "compile",
+        "guest-args.kotoba",
+        "--target",
+        "x86_64-linux",
+        "--output",
+        "guest-args.elf",
+        "--format",
+        "static"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "guest-gpu-compile",
+      "argv": [
+        "compiler.elf",
+        "compile",
+        "guest-gpu.kotoba",
+        "--target",
+        "x86_64-linux",
+        "--output",
+        "guest-gpu.elf",
+        "--format",
+        "static"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "launch-hello",
+      "argv": [
+        "launcher.elf",
+        "10",
+        "37,38,39",
+        "-",
+        "-",
+        "--",
+        "guest-hello.elf"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "launch-trap",
+      "argv": [
+        "launcher.elf",
+        "10",
+        "37,38,39",
+        "-",
+        "-",
+        "--",
+        "guest-trap.elf"
+      ],
+      "exit": 1
+    },
+    {
+      "name": "launch-args",
+      "argv": [
+        "launcher.elf",
+        "10",
+        "37,38,39",
+        "-",
+        "-",
+        "--",
+        "guest-args.elf",
+        "first",
+        "second"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "launch-environment",
+      "argv": [
+        "launcher.elf",
+        "10",
+        "37,38,39",
+        "-",
+        "-",
+        "--",
+        "/usr/bin/env"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "launch-descriptors",
+      "argv": [
+        "launcher.elf",
+        "10",
+        "37,38,39",
+        "-",
+        "-",
+        "--",
+        "/usr/bin/ls",
+        "-1",
+        "/proc/self/fd"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "launch-no-new-privs",
+      "argv": [
+        "launcher.elf",
+        "10",
+        "37,38,39",
+        "-",
+        "-",
+        "--",
+        "/usr/bin/cat",
+        "/proc/self/status"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "launch-wall",
+      "argv": [
+        "launcher.elf",
+        "2",
+        "37,38,39",
+        "-",
+        "-",
+        "--",
+        "/usr/bin/sleep",
+        "30"
+      ],
+      "exit": 122
+    },
+    {
+      "name": "launch-provider",
+      "argv": [
+        "launcher.elf",
+        "10",
+        "37,38,39,42",
+        "grant.edn",
+        "/usr/bin/python3",
+        "-I",
+        "-B",
+        "provider.py",
+        "serve",
+        "--",
+        "guest-gpu.elf"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "launch-provider-descriptors",
+      "argv": [
+        "launcher.elf",
+        "10",
+        "37,38,39,42",
+        "grant.edn",
+        "/usr/bin/python3",
+        "-I",
+        "-B",
+        "provider.py",
+        "serve",
+        "--",
+        "/usr/bin/ls",
+        "-1",
+        "/proc/self/fd"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "launch-provider-environment",
+      "argv": [
+        "launcher.elf",
+        "10",
+        "37,38,39,42",
+        "grant.edn",
+        "/usr/bin/python3",
+        "-I",
+        "-B",
+        "provider.py",
+        "serve",
+        "--",
+        "/usr/bin/env"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "launch-provider-crash",
+      "argv": [
+        "launcher.elf",
+        "10",
+        "37,38,39,42",
+        "grant.edn",
+        "/usr/bin/python3",
+        "-I",
+        "-B",
+        "provider.py",
+        "crash",
+        "--",
+        "guest-gpu.elf"
+      ],
+      "exit": 1
+    },
+    {
+      "name": "launch-provider-linger",
+      "argv": [
+        "launcher.elf",
+        "20",
+        "37,38,39,42",
+        "grant.edn",
+        "/usr/bin/python3",
+        "-I",
+        "-B",
+        "provider.py",
+        "linger",
+        "--",
+        "guest-gpu.elf"
+      ],
+      "exit": 1
+    },
+    {
+      "name": "launch-provider-invalid-report",
+      "argv": [
+        "launcher.elf",
+        "10",
+        "37,38,39,42",
+        "grant.edn",
+        "/usr/bin/python3",
+        "-I",
+        "-B",
+        "provider.py",
+        "invalid",
+        "--",
+        "guest-gpu.elf"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "launch-provider-overflow-report",
+      "argv": [
+        "launcher.elf",
+        "10",
+        "37,38,39,42",
+        "grant.edn",
+        "/usr/bin/python3",
+        "-I",
+        "-B",
+        "provider.py",
+        "overflow",
+        "--",
+        "guest-gpu.elf"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "refuse-no-arguments",
+      "argv": [
+        "launcher.elf"
+      ],
+      "exit": 2
+    },
+    {
+      "name": "refuse-no-guest",
+      "argv": [
+        "launcher.elf",
+        "10",
+        "37",
+        "-",
+        "-",
+        "--"
+      ],
+      "exit": 2
+    },
+    {
+      "name": "refuse-wall-zero",
+      "argv": [
+        "launcher.elf",
+        "0",
+        "37",
+        "-",
+        "-",
+        "--",
+        "guest-hello.elf"
+      ],
+      "exit": 2
+    },
+    {
+      "name": "refuse-wall-over",
+      "argv": [
+        "launcher.elf",
+        "86401",
+        "37",
+        "-",
+        "-",
+        "--",
+        "guest-hello.elf"
+      ],
+      "exit": 2
+    },
+    {
+      "name": "refuse-grant-without-provider",
+      "argv": [
+        "launcher.elf",
+        "10",
+        "37",
+        "grant.edn",
+        "-",
+        "--",
+        "guest-hello.elf"
+      ],
+      "exit": 2
+    },
+    {
+      "name": "refuse-provider-args-without-provider",
+      "argv": [
+        "launcher.elf",
+        "10",
+        "37",
+        "-",
+        "-",
+        "x",
+        "--",
+        "guest-hello.elf"
+      ],
+      "exit": 2
+    },
+    {
+      "name": "refuse-allow-42-without-provider",
+      "argv": [
+        "launcher.elf",
+        "10",
+        "37,42",
+        "-",
+        "-",
+        "--",
+        "guest-hello.elf"
+      ],
+      "exit": 2
+    },
+    {
+      "name": "refuse-provider-without-42",
+      "argv": [
+        "launcher.elf",
+        "10",
+        "37",
+        "grant.edn",
+        "/usr/bin/python3",
+        "-I",
+        "-B",
+        "provider.py",
+        "serve",
+        "--",
+        "guest-gpu.elf"
+      ],
+      "exit": 2
+    },
+    {
+      "name": "refuse-allow-invalid",
+      "argv": [
+        "launcher.elf",
+        "10",
+        "37,,38",
+        "-",
+        "-",
+        "--",
+        "guest-hello.elf"
+      ],
+      "exit": 2
+    },
+    {
+      "name": "refuse-allow-over-255",
+      "argv": [
+        "launcher.elf",
+        "10",
+        "256",
+        "-",
+        "-",
+        "--",
+        "guest-hello.elf"
+      ],
+      "exit": 2
+    },
+    {
+      "name": "refuse-guest-missing",
+      "argv": [
+        "launcher.elf",
+        "10",
+        "37",
+        "-",
+        "-",
+        "--",
+        "missing.elf"
+      ],
+      "exit": 1
+    },
+    {
+      "name": "refuse-grant-empty",
+      "argv": [
+        "launcher.elf",
+        "10",
+        "37,42",
+        "empty.edn",
+        "/usr/bin/python3",
+        "-I",
+        "-B",
+        "provider.py",
+        "serve",
+        "--",
+        "guest-gpu.elf"
+      ],
+      "exit": 1
+    },
+    {
+      "name": "refuse-provider-missing",
+      "argv": [
+        "launcher.elf",
+        "10",
+        "37,42",
+        "grant.edn",
+        "missing",
+        "--",
+        "guest-gpu.elf"
+      ],
+      "exit": 1
+    },
+    {
+      "name": "refuse-guest-not-an-image",
+      "argv": [
+        "launcher.elf",
+        "10",
+        "37",
+        "-",
+        "-",
+        "--",
+        "not-an-image"
+      ],
+      "exit": 1
+    },
+    {
+      "name": "refuse-provider-not-an-image",
+      "argv": [
+        "launcher.elf",
+        "10",
+        "37,42",
+        "grant.edn",
+        "not-an-image",
+        "--",
+        "guest-gpu.elf"
+      ],
+      "exit": 1
+    }
+  ],
+  "cCompilerOrLoader": false,
+  "notCovered": [
+    "a relay failure (the launcher's stdout closed): the receipt cannot be written either",
+    "the Vulkan provider and its grant format (ADR 0371 steps 5-6); the grant here is opaque bytes"
+  ]
+}

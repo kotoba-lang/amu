@@ -232,34 +232,35 @@
                       data (bit-and (+ 8191 (xg-pos g)) -4096)]
                   (if (>= (+ data XS-CTX-BYTES 1) MM-OUT-CAP) (xg-err g 7104 data)
                     (xa-elf (xa-fix (xg-set g 3 data) 1)))))))
-(defn- xa-write [M :vector-i64 out :string] :i64
+(defn- xa-write [M :vector-i64 out :string profile :i64] :i64
   (let [n (dec (vector-at M MM-OUT-N)) written (out-write-v M out (+ MM-OUT-BASE 1) n)
-        w (io-out (string-concat "{:ok true, :target :aarch64-linux, :format " (string-concat (cond (= (xg-get M 2) 1) ":runner" (= (xg-get M 2) 2) ":packed" (= (xg-get M 2) 4) ":launcher" :else ":static") (string-concat ", :code-bytes "
-                   (string-concat (mem-u2dec (xg-pos M)) (string-concat ", :bytes " (string-concat (mem-u2dec n) "}\n")))))))]
+        format (cond (= (xg-get M 2) 1) ":runner" (= (xg-get M 2) 2) ":packed" (= (xg-get M 2) 4) ":launcher" :else ":static")
+        w (io-out (xs-write-record ":aarch64-linux" format (xg-pos M) n profile))]
     (if (= (io-exists out) 1) 0 (drv-fail0 E-WRITE))))
 ;; compile SRC --target aarch64-linux --output NEW --format static|runner|launcher
 ;; compile SRC --target aarch64-linux --output NEW --format packed --payload KSEED
 ;;   (SRC is the runner source; KSEED a container whose `main` takes no arguments)
-(defn- xa-compile [src :string out :string mode :i64 V :vector-i64 cs :i64 cl :i64 off :i64] :i64
+(defn- xa-compile [src :string out :string mode :i64 V :vector-i64 cs :i64 cl :i64 off :i64 profile :i64] :i64
   (let [original (drv-read src) guest (string-concat original (ck-r6b-lib original))
         ;; --format launcher (mode 4): the runtime ends with xa-rt-launch, not the standard start
-        rt (if (= mode 4) (string-concat (xa-rt-core) (xa-rt-launch)) (xa-rt-src))
+        rt (string-concat (xa-rt-core-profile profile) (if (= mode 4) (xa-rt-launch) (xa-rt-start)))
         s (string-concat guest rt) m (xa-build (xg-front s) s (string-length guest) mode V cs cl off)]
-    (if (not= (vector-at m MM-ERR) 0) (xg-report m src out) (xa-write m out))))
-(defn- xa-packed [src :string out :string kseed :string] :i64
+    (if (not= (vector-at m MM-ERR) 0) (xg-report m src out) (xa-write m out profile))))
+(defn- xa-packed [src :string out :string kseed :string profile :i64] :i64
   (let [V (io-read-bytes kseed) H (out-load-hdr (mem-new) V (out-v-len V) "main") e (vector-at H MM-ERR)]
     (cond (= e 5002) (drv-fail0 E-NOSYM)
           (> e 0) (drv-fail0 e)
           (not= (vector-at H MM-R3) 0)
             (let [w (io-err "seed-aarch64-linux: E7105 the packed payload's main must take no arguments\n")] 1)
-          :else (xa-compile src out 2 V (vector-at H MM-R1) (vector-at H MM-R2) (vector-at H MM-R0)))))
+          :else (xa-compile src out 2 V (vector-at H MM-R1) (vector-at H MM-R2) (vector-at H MM-R0) profile))))
 (defn- xa-command [] :i64
   (let [src (io-arg 1) out (io-arg 5) fmt (io-arg 7)
-        mode (cond (string=? fmt "static") 0 (string=? fmt "runner") 1 (string=? fmt "packed") 2 (string=? fmt "launcher") 4 :else -1)]
-    (cond (or (not= (io-argc) (if (= mode 2) 10 8)) (not (string=? (io-arg 4) "--output")) (not (string=? (io-arg 6) "--format"))
+        mode (cond (string=? fmt "static") 0 (string=? fmt "runner") 1 (string=? fmt "packed") 2 (string=? fmt "launcher") 4 :else -1)
+        profile (xs-runtime-profile (if (= mode 2) 10 8))]
+    (cond (or (< profile 0) (not (string=? (io-arg 4) "--output")) (not (string=? (io-arg 6) "--format"))
               (and (= mode 2) (not (string=? (io-arg 8) "--payload")))
               (< mode 0) (= (string-length out) 0) (= (io-exists out) 1))
             (let [w (io-err "seed-aarch64-linux: E7100 expected compile SOURCE --target aarch64-linux --output NEW --format static|runner|packed|launcher [--payload KSEED]\n")] 2)
           (= (io-exists src) 0) (drv-fail0 E-READ)
-          (= mode 2) (if (= (io-exists (io-arg 9)) 0) (drv-fail0 E-READ) (xa-packed src out (io-arg 9)))
-          :else (xa-compile src out mode (vector-alloc 1) 0 0 0))))
+          (= mode 2) (if (= (io-exists (io-arg 9)) 0) (drv-fail0 E-READ) (xa-packed src out (io-arg 9) profile))
+          :else (xa-compile src out mode (vector-alloc 1) 0 0 0 profile))))

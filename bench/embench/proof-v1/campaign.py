@@ -267,6 +267,7 @@ def verify_manifest(manifest: dict, bundle_dir: Path) -> None:
     require(manifest.get("workloads") == workload_names(), "workload list must be the sorted full-19 set")
     require(manifest.get("bundleSha256") == sealed_hash(manifest), "bundle hash mismatch")
     verify_artifacts(manifest, bundle_dir)
+    verify_runtime_profile(manifest, bundle_dir)
     controls = manifest["negativeControls"]
     expected_controls = json.loads((ROOT / "protocol.json").read_text())["negativeControls"]
     require([row["name"] for row in controls] == expected_controls, "negative control names/order differ")
@@ -289,6 +290,51 @@ def verify_manifest(manifest: dict, bundle_dir: Path) -> None:
             "native measurement qualification is pending; records cannot grant claim-grade status")
     require(qualification.get("reasons") == calculated["rejectionReasons"] + [PENDING_NATIVE_GATE],
             "rejection reasons differ")
+
+
+def verify_runtime_profile(manifest: dict, bundle_dir: Path) -> None:
+    """Bind declared resources to hashed build records, never grant provenance.
+
+    A native measurement gate must still authenticate compiler generations,
+    executed images and their actual resource/refusal behavior.
+    """
+    import re
+    profile = manifest["runtimeProfile"]
+    limit = {"standard-v1": 4194304, "large-vectors-v1": 67108864}[profile["id"]]
+    require(profile["vectorDescriptors"] == limit, "runtime profile/vector descriptor mismatch")
+    formats = {"x86_64-linux": {"static", "kx64-runner", "launcher"},
+               "aarch64-linux": {"static", "runner", "launcher", "packed"}}
+    require(profile["format"] in formats[profile["target"]], "runtime profile target/format mismatch")
+    architectures = {"x86_64-linux": {"x86_64", "AMD64"},
+                     "aarch64-linux": {"aarch64", "arm64"}}
+    require(manifest["host"]["architecture"] in architectures[profile["target"]],
+            "runtime profile does not match execution host architecture")
+    artifacts = {item["path"]: item for item in manifest["artifacts"]}
+
+    def bound(artifact):
+        require(artifacts.get(artifact["path"]) == artifact,
+                "runtime profile must reference a verified artifact")
+        return bundle_dir / artifact["path"]
+
+    bound(profile["compilerArtifact"])
+    covered = []
+    for binding in profile["executableBindings"]:
+        covered.extend(binding["workloads"])
+        image, record = bound(binding["image"]), bound(binding["buildRecord"])
+        require(len({image, record, bound(profile["compilerArtifact"])}) == 3,
+                "runtime profile compiler/image/build record must be distinct")
+        match = re.fullmatch(
+            rb"\{:ok true, :target :([a-z0-9_-]+), :format :([a-z0-9_-]+), :code-bytes ([0-9]+), "
+            rb":bytes ([0-9]+), :runtime-profile :([a-z0-9_-]+), :vector-descriptors ([0-9]+)\}\n",
+            record.read_bytes())
+        require(match is not None, "runtime profile build record is not canonical")
+        target, fmt, code_bytes, size, name, vectors = match.groups()
+        require((target.decode(), fmt.decode(), name.decode(), int(vectors)) ==
+                (profile["target"], profile["format"], profile["id"], limit),
+                "runtime profile build record disagrees with descriptor")
+        require(0 < int(code_bytes) < int(size) == image.stat().st_size,
+                "runtime profile build record image size mismatch")
+    require(sorted(covered) == workload_names(), "runtime profile bindings must cover all19 exactly once")
 
 
 def main() -> None:

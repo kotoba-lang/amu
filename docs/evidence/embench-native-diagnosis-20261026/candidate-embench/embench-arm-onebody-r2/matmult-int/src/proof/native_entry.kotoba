@@ -1,0 +1,7 @@
+;; The staging tool replaces only the embench.workload namespace token with
+;; the pinned original workload's namespace. The library stays byte-identical.
+;; This one-body correctness probe asserts no timing or accounting result.
+(ns proof.native-entry
+  (:require [embench.matmult-full :as workload])
+  (:export [main]))
+(defn main [] :i64 (workload/bench-verify 1))

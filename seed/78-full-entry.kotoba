@@ -18,6 +18,8 @@
     (cond (full-native?)
           (or (string=? flag "--target") (string=? flag "--output") (string=? flag "--format")
               (string=? flag "--payload") (string=? flag "--fuel")
+              (and (or (= (full-target? "x86_64-linux") 1) (= (full-target? "aarch64-linux") 1))
+                   (string=? flag "--runtime-profile"))
               (and (= (full-target? "x86_64-aiueos-kernel-v1") 1) (string=? flag "--artifact"))
               (and (or (= (full-target? "x86_64-aiueos-kernel-v1") 1)
                        (= (full-target? "x86_64-linux") 1))

@@ -1,0 +1,68 @@
+[
+  {
+    "name": "sealed-window",
+    "exit": 0,
+    "stderr": "",
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64\n (let [h (kernel-subregion (kernel-boot-info) 16544 0 160)\n       original (kernel-load-u64 h 160 80)\n       changed (kernel-store-u64 h 160 80 0)\n       w (kernel-owned-window 1 12288)\n       page (kernel-owned-page 1)\n       last (kernel-subregion w 12288 8192 4096)\n       third (kernel-owned-page 3)\n       saved (kernel-load-u64-16k w 12288 12280)\n       write (kernel-store-u64-16k w 12288 12280 42)\n       readback (kernel-load-u64-4k last 4096 4088)\n       restored (kernel-store-u64-16k w 12288 12280 saved)\n       metadata (kernel-store-u64 h 160 80 original)]\n  (if (and (= changed 0) (= w page) (= last third) (= write 42)\n           (= readback 42) (= restored saved) (= metadata original)) 42 0)))\n"
+  },
+  {
+    "name": "zero",
+    "exit": 0,
+    "stderr": "",
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64 (if (> (kernel-owned-window 0 0) 0) 42 0))\n"
+  },
+  {
+    "name": "unaligned",
+    "exit": 0,
+    "stderr": "",
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64 (if (> (kernel-owned-window 0 4095) 0) 42 0))\n"
+  },
+  {
+    "name": "negative-size",
+    "exit": 0,
+    "stderr": "",
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64 (if (> (kernel-owned-window 0 -4096) 0) 42 0))\n"
+  },
+  {
+    "name": "too-wide",
+    "exit": 0,
+    "stderr": "",
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64 (if (> (kernel-owned-window 0 65536) 0) 42 0))\n"
+  },
+  {
+    "name": "cross-end",
+    "exit": 0,
+    "stderr": "",
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64 (if (> (kernel-owned-window 14 8192) 0) 42 0))\n"
+  },
+  {
+    "name": "invalid-slot",
+    "exit": 0,
+    "stderr": "",
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64 (if (> (kernel-owned-window 15 4096) 0) 42 0))\n"
+  },
+  {
+    "name": "negative-slot",
+    "exit": 0,
+    "stderr": "",
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64 (if (> (kernel-owned-window -1 4096) 0) 42 0))\n"
+  },
+  {
+    "name": "valid-window",
+    "exit": 0,
+    "stderr": "",
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64 (if (> (kernel-owned-window 0 61440) 0) 42 0))\n"
+  },
+  {
+    "name": "wrong-length",
+    "exit": 1,
+    "stderr": "region instruction 40\n  writer 37\n  parameter slot 4\n  region extent source 4294979584\n  caller main\n    use 40\n    writer 37\n    writer op 4\n    writer operand 4\n    local assignments 1\n  caller main\n    use 24\n    writer 23\n    writer op 13\n    writer operand 0\n  supplied extent source 4294983680\nkernel project in /tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/aiueos-projects/owned-window/F2/entry.kotoba:\nkernel function main:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 40\n",
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64\n (let [h (kernel-subregion (kernel-boot-info) 16544 0 160)\n       original (kernel-load-u64 h 160 80)\n       changed (kernel-store-u64 h 160 80 0)\n       w (kernel-owned-window 1 12288)\n       page (kernel-owned-page 1)\n       last (kernel-subregion w 12288 8192 4096)\n       third (kernel-owned-page 3)\n       saved (kernel-load-u64-16k w 16384 12280)\n       write (kernel-store-u64-16k w 12288 12280 42)\n       readback (kernel-load-u64-4k last 4096 4088)\n       restored (kernel-store-u64-16k w 12288 12280 saved)\n       metadata (kernel-store-u64 h 160 80 original)]\n  (if (and (= changed 0) (= w page) (= last third) (= write 42)\n           (= readback 42) (= restored saved) (= metadata original)) 42 0)))\n"
+  },
+  {
+    "name": "computed-root",
+    "exit": 1,
+    "stderr": "region instruction 42\n  writer 39\n  parameter slot 0\n  region extent source unknown\n  caller main\n    use 42\n    writer 39\n    writer op 6\n    writer operand 0\n  supplied extent source 4294979584\nkernel project in /tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/aiueos-projects/owned-window/F2/entry.kotoba:\nkernel function main:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 42\n",
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64\n (let [h (kernel-subregion (kernel-boot-info) 16544 0 160)\n       original (kernel-load-u64 h 160 80)\n       changed (kernel-store-u64 h 160 80 0)\n       w (kernel-owned-window 1 12288)\n       page (kernel-owned-page 1)\n       last (kernel-subregion w 12288 8192 4096)\n       third (kernel-owned-page 3)\n       saved (kernel-load-u64-16k (+ w 0) 12288 12280)\n       write (kernel-store-u64-16k w 12288 12280 42)\n       readback (kernel-load-u64-4k last 4096 4088)\n       restored (kernel-store-u64-16k w 12288 12280 saved)\n       metadata (kernel-store-u64 h 160 80 original)]\n  (if (and (= changed 0) (= w page) (= last third) (= write 42)\n           (= readback 42) (= restored saved) (= metadata original)) 42 0)))\n"
+  }
+]
