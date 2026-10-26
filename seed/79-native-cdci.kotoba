@@ -15,3 +15,28 @@
                   (let [text (string-concat guest (string-concat common role)) m (xs-build (xg-front text) text (string-length guest) 3)]
                     (if (= (vector-at m MM-ERR) 0) (xs-write m (io-arg 5)) (xg-report m (io-arg 2) (io-arg 5))))
                   (drv-fail0 E-PROJ-UNPINNED)))))
+
+;; Separate closed measurement factory, not a third CDCI role and not a
+;; general privileged guest build mode. Both files must match reviewed bytes;
+;; the runtime core and harmless guest entry are compiler-owned.
+;; bench-build aarch64-linux HOST REGISTRY NEW --runtime-profile large-vectors-v1
+;; x86 measurement payload admission is deliberately not qualified yet.
+(defn- xb-command [] :i64
+  (cond (or (not= (io-argc) 7)
+            (not (string=? (io-arg 1) "aarch64-linux"))
+            (not (string=? (io-arg 5) "--runtime-profile"))
+            (not (string=? (io-arg 6) "large-vectors-v1"))
+            (= (string-length (io-arg 4)) 0)) (drv-usage)
+        (or (= (io-exists (io-arg 2)) 0) (= (io-exists (io-arg 3)) 0)) (drv-fail0 E-READ)
+        (= (io-exists (io-arg 4)) 1) (drv-fail0 E-WRITE)
+        :else (let [host (drv-pj-lock-text (io-read-bytes (io-arg 2)))
+                    registry (drv-pj-lock-text (io-read-bytes (io-arg 3)))]
+                (if (and (string=? (sh-text host) "14d71453c7b81c097382782d73833f11199ff0fcc6584470c594bac5298f4c83")
+                         (string=? (sh-text registry) "c2152375e32d162c0ac340a2387818168860ab6f7a74bad4cebaaa765f371b1b"))
+                  (let [guest "(ns native-bench (:export [main]))\n(defn main [] :i64 0)\n"
+                        rt (string-concat (xa-rt-core-profile 1) (string-concat registry host))
+                        text (string-concat guest rt)
+                        m (xa-build (xg-front text) text (string-length guest) 0 (vector-alloc 1) 0 0 0)]
+                    (if (= (vector-at m MM-ERR) 0) (xa-write m (io-arg 4) 1)
+                      (xg-report m (io-arg 2) (io-arg 4))))
+                  (drv-fail0 E-PROJ-UNPINNED)))))
