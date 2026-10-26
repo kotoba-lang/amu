@@ -3295,9 +3295,9 @@ later blocks carry multi-level structure (max THREE levels
 32937.5..33125.0 / 42729.5 / 103479.0..103792.0; sum THREE
 32916.5..33104.5 / 63958.5 / 103729.0..103750.0). At the anchor order
 the one-level operator was sum (first block), also at the cross-day
-row's day-2 session: across FOUR sessions the FIRST block is the
-one-level block 4/4, while "sum is the one-level operator" holds only
-3/4 -- the level split tracks the block POSITION at this cell, NAMED,
+row's day-2 session: across THREE sessions the FIRST block is the
+one-level block 3/3, while "sum is the one-level operator" holds only
+2/3 -- the level split tracks the block POSITION at this cell, NAMED,
 NOT EXPLAINED (the state-shift cause stays UNMEASURED; level values
 stay session-variable -- this session's fast states ~32.9k are faster
 than the anchor session's ~54k). ONE reversed-order session exists;
@@ -3313,7 +3313,7 @@ cross-instrument claim. The named item moves in RECORD STATE only:
 "op-order dependence on this channel" -> "MEASURED AT THE ANCHOR
 CELL: sign op-order-INDEPENDENT (18/18 slower under both orders),
 regime structure op-order-DEPENDENT in the block-position form (the
-first block is the one-level block, 4/4 sessions)"; op-order
+first block is the one-level block, 3/3 sessions)"; op-order
 dependence at every OTHER cell, the state-shift cause, "R at those
 grids", day 3+ and anything off M1 Max stay UNMEASURED. The MSL
 command-buffer channel's historical op-order cell stays its own
@@ -3362,13 +3362,13 @@ TWO levels 59291.5 / 103416.5..103791.5; max THREE
 32875.0..32917.0 / 44021.0 / 103604.5..103666.5; sum FOUR
 32917.0..33000.0 / 42875.0 / 84396.0 / 103666.5) -- NO operator is
 one-level, a first at the anchor cell. Counts move in record state
-only: "the first block is the one-level block" 4/4 -> 4/5 sessions,
-"sum is the one-level operator" 3/4 -> 3/5. NAMED, NOT EXPLAINED:
+only: "the first block is the one-level block" 3/3 -> 3/4 sessions,
+"sum is the one-level operator" 2/3 -> 2/4. NAMED, NOT EXPLAINED:
 the level VALUES stay session-variable (this session's fast states
 ~32.9k in the first reversed-order session's class, not the anchor's
 ~54k); a within-row descent appears at max/sum (runs 1-2 slow, run 3
 mid, runs 4-6 fast) while min bounces (slow, fast run 3, slow again);
-the state-shift cause stays UNMEASURED. After five counted
+the state-shift cause stays UNMEASURED. After four counted
 anchor-cell sessions the regime STRUCTURE is session-variable (each
 session a different level split) and both one-level fits are
 contradicted at least once -- the observed class, not a mechanism.
