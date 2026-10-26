@@ -120,6 +120,10 @@ public x86 producer's ARM factory route; it does not advertise a native x86
 measurement host or run ARM code under emulation. `bench-build x86_64-linux`
 continues to refuse, as specified by this factory's target boundary.
 
+Owner confirmed this scoped merge on2026-10-26. Native x86 measurement-host
+implementation/execution is tracked separately in KOTOBA-152; it is not
+inferred from a public x86 compiler emitting ARM code.
+
 Then follow the frozen KOTOBA-140 protocol: declared same-host C comparator,
 host admission, full paired/interleaved repetitions, complete failures,
 uncertainty and external reproduction/independent reruns. Native rebuilds,

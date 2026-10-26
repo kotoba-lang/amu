@@ -275,11 +275,14 @@ Owner approved a separate hash-pinned native measurement-host factory on
 2026-10-26. This is not a third CDCI role or a public privileged guest mode.
 Keep ordinary guest/private-runtime refusals, the original19 libraries and
 registered counts, every resource limit and offset760 physical highwater.
-Only exact pinned host/registry source may enter this factory. The initial
-ARM implementation is a candidate; x86 payload admission, both ISA fixed
-points, refusal/mutation controls, full accounting and all native CI gates
-remain mandatory before qualification. Do not promote descriptors or make
-timing/performance claims from source or export admission.
+Only exact pinned host/registry source may enter this factory. Owner scope
+decision2026-10-26: qualify the declared ARM host through both native ARM and
+native x86 compilers, with exact equality to the host/payloads actually run
+on ARM. A native x86 measurement host and x86 payload admission are separate
+follow-up work, not support implied by that equality. Both ISA compiler fixed
+points, native refusal/mutation controls, full accounting and all native CI
+remain mandatory before this scoped qualification. Do not promote descriptors
+or make timing/performance claims from source or export admission.
 
 ## Native instruction-class filter qualification
 

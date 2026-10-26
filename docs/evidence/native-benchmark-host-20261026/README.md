@@ -163,3 +163,27 @@ only its declared ARM target; no x86 measurement host or emulation is claimed.
 Six observer/source golden tests also pass, without replacing native verdicts.
 Qualification flags remain conservative. No C comparison, quiet-host campaign,
 external rerun, official result or broad performance claim follows.
+
+## Uncached full native ARM — terminal success
+
+`measurement-full-r1.json` and `measurement-full-r1-calls.json` record the
+native full tier with no content reuse: read=false, store=false, reused=[].
+It completed successfully in832.4 seconds; rootReproduces=true and native
+cold C0→Kw→Pw→F reproduces the same container26b1ba28 and root89260bba.
+All24 cases, unchanged adopted-core generations, native closure fixed point,
+runtime boundary, capabilities and hardening gates pass. Wasm modules were
+compiled, not browser-executed, in this ARM gate; the separate x86 browser CI
+must execute them. No C compiler/loader, JVM/Node fallback or emulation was
+used. Full report SHA-256:
+`65d79c5f83b78f69a0a06fc38091bacded2a37d15b8c18f813316e94351de720`.
+The complete source/raw record archive, with generated-binary exclusions,
+is `measurement-full-records-r1.tar.gz`, SHA-256:
+`7c6d082a0c1545ad44c12a3070ca3202f10bc017f0f6dc4628797131fa12b4a4`.
+
+Owner confirmed the merge scope: the declared ARM host is qualified through
+both native ISA compilers and exact equality to native ARM executions.
+A native x86 measurement host is the separate KOTOBA-152 follow-up and is
+not claimed here. Both ISA fixed points, all previous native gates and the
+public-x86 factory's exact host/payload equality must finish on the final PR
+head before merge. Source unity and actual compiler/host artifact hashes
+above are unchanged by this evidence/scope checkpoint.
