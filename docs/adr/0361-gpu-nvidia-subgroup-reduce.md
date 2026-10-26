@@ -2089,3 +2089,84 @@ scoped GPU gate GREEN twice (123/12162, regression pin);
 `run-tests.cljk` not run (red at base `Could not find namespace:
 kotoba.form`, ADR-0362) -- NO green suite claimed. Record:
 `docs/evidence/gpu/cuda-inner-threadset-20261026.txt`.
+
+## Amendment (2026-10-26, the nineteenth's attributions re-derived over
+the corrected counts: PART 1 and PART 2b move, PART 2 stands)
+
+The twentieth amendment's named item "the nineteenth amendment's
+quantitative attributions ... their re-derivation over corrected counts
+is its own row" lands as ONE analysis slice over six committed inputs.
+NO HARDWARE RAN; nothing new is measured; everything produced is DERIVED
+arithmetic (scratch `residual_rederive_20261026.py`, output committed
+verbatim). MACHINERY CHECK FIRST: the nineteenth's four committed tables
+reproduce at printed precision 3/3 + 3/3 + 6/6 + 6/6 + 3/3 from the
+primary inputs, and the corrected model reproduces the twentieth's
+committed table 6/6 -- assert-checked.
+
+**Finding.**
+(1) THE IMPLIED SHARES SHRINK ~3x AND THE "~16% AT W=128" VERDICT SPLITS
+    PER W: with corrected counts AND the corrected numerator (the inner
+    substitution executes nsg-1 times per BLOCK on the warp-0
+    d-participants, not once per thread), s_actual falls to
+    0.03688/0.03414/0.03178 at W = 128/256/512 and the corrected residual
+    is +0.60/+0.38/-0.40% (max), +0.37/+0.37/-0.12% (min). The implied
+    share falls from 0.2523/0.1943/0.0585 to +0.0884/+0.0561/-0.0591
+    (max); needed/actual collapses from 6.1x/5.0x/1.6x to
+    2.40x/1.64x/-1.86x (max), 1.48x/1.61x/-0.57x (min). The measured
+    issue delta now covers +41.7%/+60.8%/-53.8% of the corrected max
+    residual (nineteenth's own anchor arithmetic at its counts:
+    16.4%/19.7%/60.0%) -- the "REFUTED as dominant carrier (~16% at
+    W=128)" verdict does NOT survive intact: at W=256 (and min at W=128)
+    the issue delta is the dominant carrier of the corrected residual,
+    refuted only as SOLE carrier; at W=512 the corrected residual is
+    NEGATIVE and no positive W-flat carrier fits it at all.
+(2) THE u(W) EQUAL-STEP / FIT-PREDICT ARITHMETIC IS COUNT-FREE AND
+    STANDS (and the twentieth's supersession note over-scoped it --
+    named): the equal-step table consumes only measured ratios
+    (reproduced 6/6 from I3 alone), and its premise survives the
+    correction -- the corrected per-thread-mean counts advance
+    11.0352/11.0176 per outer step (expected step ratio 0.9984; the old
+    model's exactly 11/11) against measured u-step ratios
+    2.346/1.074/1.576/1.411. The six INFEASIBLE verdicts and the
+    fit-two-predict-third misfits (+0.08..+2.2pp) stand UNCHANGED.
+(3) THE COUNT-EQUIVALENT VIEW MOVES AND TURNS SIGN-CROSSING: r*N_sum
+    falls from 2.12/1.78/0.58 (max) and 1.83/1.77/0.99 (min) to
+    +0.690/+0.480/-0.550 and +0.426/+0.470/-0.169; the substitution
+    equivalent falls from 0.41 to 0.3405-0.3409. Corrected residual
+    minus substitution prediction is +0.44/+0.25/-0.77pp (max): still
+    not W-flat, still sign-crossing -- the class claim ("a dynamic
+    runtime effect") SURVIVES, its magnitude at W=128/256 is now largely
+    within the substitution's measured cost plus the named per-shape
+    noise.
+(4) NOISE FRAMING: the per-shape spread (named median noise, NOT
+    SMOOTHED, unchanged by the correction) is 0.72/0.13/0.34pp (max)
+    against corrected means of 0.60/0.38/-0.40pp -- at W=128 and W=512
+    the corrected mean sits INSIDE its own per-shape spread; at W=256 it
+    is ~2.9x its spread.
+
+**Consequence today: NOTHING MOVES** (rule 4). The named item moves: the
+re-derivation is DONE (DERIVED), with the nineteenth's verdicts split
+into (1) moved / (2) standing / (3) moved.
+
+**States.** DERIVED (marked): everything this row produced. MEASURED
+(consumed at own commits): I1 histograms, I3 medians, I4 named-pair
+delta. READ: nothing new. IMPLEMENTED: nothing (evidence + this
+amendment only). DECIDED: nothing new. ACCEPTED DESIGN ONLY (unchanged):
+the operator-aware contract + pre-registration, the row (ii) routes, the
+entry contract + wiring, ADR-0358, ADR-0373. UNMEASURED, named: what
+dynamic effect carries the residual's W-shape (per-phase
+instrumentation, its own row -- the W=512 sign flip is now its cleanest
+residue); whether any corrected residual exceeds the named per-shape
+median noise (scale quantified in (4)); the 21 surplus ops' true per-op
+costs; raw MUFU.RCP cost; per-op integer latency on this toolchain; a
+non-eliminated overhead baseline; the sum ratio's TRUE side at W=256; a
+cross-day run 3+ (still 2026-10-26 UTC); every per-op verdict on
+non-xavier hardware; the `:sum` ordering at W=64 on any other device or
+channel; the landed rows on a live CUDA selection path; every workgroup
+row (`:arm`/`:unknown` stay provisional `:measured? false`); the region
+parse's per-region boundary derivation (CONSUMED). Gates: scoped GPU
+gate GREEN twice (123/12162, regression pin);
+`gpu_regime_classify.py --self-test` 2649/0 (regression pin); FULL
+`run-tests.cljk` not run (red at base `Could not find namespace:
+kotoba.form`, ADR-0362) -- NO green suite claimed. Record:
+`docs/evidence/gpu/cuda-residual-rederive-20261026.txt`.
