@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 import re
+import select
 import shutil
 import socket
 import struct
@@ -23,9 +24,32 @@ def pin(path):
     return dict(bytes=len(b), sha256=hashlib.sha256(b).hexdigest())
 
 
-def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalog=False, stack_exhaustion=False, pci_catalog=False, pci_private=False, pci_private_forgery=False, dma_snapshot=False, value_context=False, value_call=False):
-    assert sum([dma_snapshot,value_context,value_call]) <= 1, 'select one functional receipt'
-    pci_private = pci_private or pci_private_forgery or dma_snapshot or value_context or value_call
+class QmpStdio:
+    """Private QMP pipe for the LLM guest gate; no local socket listener."""
+
+    def __init__(self, process):
+        self.reader = process.stdout
+        self.writer = process.stdin
+
+    def readline(self):
+        ready, _, _ = select.select([self.reader], [], [], 30)
+        assert ready, 'QMP stdio reply timeout'
+        line = self.reader.readline()
+        assert line, 'QMP stdio closed'
+        return line
+
+    def write(self, data):
+        self.writer.write(data)
+        self.writer.flush()
+
+    def close(self):
+        self.writer.close()
+        self.reader.close()
+
+
+def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalog=False, stack_exhaustion=False, pci_catalog=False, pci_private=False, pci_private_forgery=False, dma_snapshot=False, value_context=False, value_call=False, llm_header=False):
+    assert sum([dma_snapshot,value_context,value_call,llm_header]) <= 1, 'select one functional receipt'
+    pci_private = pci_private or pci_private_forgery or dma_snapshot or value_context or value_call or llm_header
     pci_catalog = pci_catalog or pci_private
     assert not (pci_catalog and (sealed_catalog or stack_exhaustion)), "select one versioned fixture"
     assert 0 <= remaining_fuel <= 9007199254740991
@@ -52,24 +76,30 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
             "-drive", "file=fat:rw:esp,format=raw", "-boot", "order=c", "-nic", "none",
             "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", "-display", "none",
             "-serial", "file:serial.log", "-debugcon", "file:debug.log", "-no-reboot",
-            "-qmp", "unix:qmp.sock,server=on,wait=off",
+            "-qmp", "stdio" if llm_header else "unix:qmp.sock,server=on,wait=off",
             "-d", "int", "-D", "exceptions.log"]
     (output / "command.json").write_text(json.dumps(args, indent=2) + "\n")
     old_cwd = Path.cwd()
     os.chdir(output)  # Keep the Unix socket name below macOS's path limit.
     log = open("qemu.log", "wb")
-    proc = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT)
+    proc = (subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                             stderr=log, bufsize=0) if llm_header else
+            subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT))
     conn, stream, next_id = None, None, 0
     try:
         end = time.monotonic() + 90
-        while not Path("qmp.sock").exists():
+        if llm_header:
             assert proc.poll() is None, ("QEMU exited", proc.returncode)
-            assert time.monotonic() < end, "QMP startup timeout"
-            time.sleep(0.2)
-        conn = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        conn.settimeout(10)
-        conn.connect("qmp.sock")
-        stream = conn.makefile("rwb", buffering=0)
+            stream = QmpStdio(proc)
+        else:
+            while not Path("qmp.sock").exists():
+                assert proc.poll() is None, ("QEMU exited", proc.returncode)
+                assert time.monotonic() < end, "QMP startup timeout"
+                time.sleep(0.2)
+            conn = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            conn.settimeout(10)
+            conn.connect("qmp.sock")
+            stream = conn.makefile("rwb", buffering=0)
         assert "QMP" in json.loads(stream.readline())
 
         def call(command, arguments=None):
@@ -110,7 +140,7 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
         # The original literal-only probe preserves 1024. Call-bearing locked
         # fixtures supply their exact source-charge expectation explicitly.
         assert boot > 0
-        if stack_exhaustion or dma_snapshot or value_context or value_call:
+        if stack_exhaustion or dma_snapshot or value_context or value_call or llm_header:
             assert 0 < fuel < 1000000, fuel  # Bounded budget, not exact fuel parity.
         else:
             assert fuel == remaining_fuel, (fuel, remaining_fuel)
@@ -209,6 +239,22 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
             dma = dict(checks=list(checks),receipt=pin(Path('dma-receipt.bin')),
                        snapshot=pin(Path('dma-snapshot.bin')),four2048ByteBuffers=True,
                        invalidIndexSizeAndAliasPreserveSnapshot=True,exactFuelParity=False)
+        llm = None
+        if llm_header:
+            scratch, pages = struct.unpack_from('<QQ', private, 272)
+            assert scratch > 0 and pages == 15
+            assert hmp(f"pmemsave 0x{scratch+4096:x} 96 llm-header-receipt.bin") == ""
+            assert hmp(f"pmemsave 0x{scratch:x} 64 llm-header.bin") == ""
+            checks = struct.unpack('<12Q', Path('llm-header-receipt.bin').read_bytes())
+            header = Path('llm-header.bin').read_bytes()
+            assert checks == (1,)*12, checks
+            assert struct.unpack_from('<10I', header) == (
+                827149387, 1, 11, 5, 0, 5, 16, 0, 10, 64)
+            assert header[40:] == bytes(24), 'header mutation was not restored'
+            llm = dict(checks=list(checks), receipt=pin(Path('llm-header-receipt.bin')),
+                       header=pin(Path('llm-header.bin')), wire=11,
+                       providerDispatch=False, modelExecution=False,
+                       exactFuelParity=False)
         value = None
         if value_context:
             scratch, pages = struct.unpack_from('<QQ', private, 272)
@@ -265,7 +311,7 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
         report = dict(status="PASS_NATIVE_STACK_LIMIT_QEMU" if stack_exhaustion else "PASS_AIUEOS_ENTRY_QEMU", observer=pin(Path(__file__).resolve()), efi=pin(efi), kernel=pin(kernel),
                       firmware=pin(firmware), qemuVersion=subprocess.check_output([str(qemu), "--version"]).decode().splitlines()[0],
                       result=None if stack_exhaustion else 42, pc=hex(expected_pc), remainingFuel=fuel,
-                      expectedRemainingFuel=None if stack_exhaustion or dma_snapshot or value_context or value_call else remaining_fuel, bootInfoVersion=6 if pci_catalog else 5, pciResources=pci, dmaSnapshot=dma, valueContext=value, valueCall=live_call,
+                      expectedRemainingFuel=None if stack_exhaustion or dma_snapshot or value_context or value_call or llm_header else remaining_fuel, bootInfoVersion=6 if pci_catalog else 5, pciResources=pci, dmaSnapshot=dma, llmHeader=llm, valueContext=value, valueCall=live_call,
                       observedPublicMapTypes=memory_types, firmwareMap=pin(Path("firmware-map.bin")), sealedCatalog=catalog,
                       framebuffer=dict(base=fb, bytes=fbsize, width=width, height=height, stride=stride, pixelFormat=pixel_format),
                       completeKernel=False, desktop=False, input=False, gpt=False, physicalHardware=False,
@@ -303,6 +349,7 @@ if __name__ == "__main__":
     p.add_argument("--dma-snapshot", action="store_true")
     p.add_argument("--value-context", action="store_true")
     p.add_argument("--value-call", action="store_true")
+    p.add_argument("--llm-header", action="store_true")
     a = p.parse_args()
     main(*(getattr(a, n).resolve() for n in ("efi", "kernel", "qemu", "firmware", "output")), remaining_fuel=a.remaining_fuel,
-         sealed_catalog=a.sealed_catalog, stack_exhaustion=a.stack_exhaustion, pci_catalog=a.pci_catalog, pci_private=a.pci_private, pci_private_forgery=a.pci_private_forgery, dma_snapshot=a.dma_snapshot, value_context=a.value_context, value_call=a.value_call)
+         sealed_catalog=a.sealed_catalog, stack_exhaustion=a.stack_exhaustion, pci_catalog=a.pci_catalog, pci_private=a.pci_private, pci_private_forgery=a.pci_private_forgery, dma_snapshot=a.dma_snapshot, value_context=a.value_context, value_call=a.value_call, llm_header=a.llm_header)
