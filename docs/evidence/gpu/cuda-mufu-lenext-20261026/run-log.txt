@@ -1,0 +1,691 @@
+HOST: xavier USER: root
+DATE-UTC: 2026-10-26T18:24:24Z  DATE-LOCAL: 2026-10-27T03:24:24+0900
+Linux xavier 5.10.120-tegra #1 SMP PREEMPT Tue Aug 1 12:32:50 PDT 2023 aarch64 aarch64 aarch64 GNU/Linux
+=== nvcc --version (verbatim)
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2022 NVIDIA Corporation
+Built on Sun_Oct_23_22:16:07_PDT_2022
+Cuda compilation tools, release 11.4, V11.4.315
+Build cuda_11.4.r11.4/compiler.31964100_0
+=== nvdisasm --version (verbatim)
+nvdisasm: NVIDIA (R) CUDA disassembler
+Copyright (c) 2005-2022 NVIDIA Corporation
+Built on Tue_Sep_13_22:14:23_PDT_2022
+Cuda compilation tools, release 11.4, V11.4.298
+Build cuda_11.4.r11.4/compiler.31809458_0
+=== sha256 of the received files (before any compile)
+b98fb39b90ef37a5aac676bbf9af16759213fe6ac422400973f765ad98324079  ./gpu-mufu-lenext-microbench.cu
+5f60189eeb6c0d51f9c10b749429b411aa43afefdeb662a14db2d51ce77dcb79  ./mufu_lenext_run.sh
+a917a73760cd4456f4d47a495ab5f5164d81c26e73b630f8c83ea7d77be98789  ./mufu_lenext_verify.py
+=== compile the instrument (run binary + cubin)
+OK-build
+OK-cubin
+=== build diagnostics (verbatim)
+diag diag-build.txt 752 bytes
+gpu-mufu-lenext-microbench.cu(150): warning: variable "cf" was declared but never referenced
+
+gpu-mufu-lenext-microbench.cu(151): warning: variable "cf" was declared but never referenced
+
+gpu-mufu-lenext-microbench.cu(152): warning: variable "cf" was declared but never referenced
+
+gpu-mufu-lenext-microbench.cu(153): warning: variable "cf" was declared but never referenced
+
+gpu-mufu-lenext-microbench.cu(154): warning: variable "cf" was declared but never referenced
+
+gpu-mufu-lenext-microbench.cu(155): warning: variable "cf" was declared but never referenced
+
+gpu-mufu-lenext-microbench.cu(156): warning: variable "cf" was declared but never referenced
+
+gpu-mufu-lenext-microbench.cu(157): warning: variable "cf" was declared but never referenced
+
+diag diag-cubin.txt 752 bytes
+gpu-mufu-lenext-microbench.cu(150): warning: variable "cf" was declared but never referenced
+
+gpu-mufu-lenext-microbench.cu(151): warning: variable "cf" was declared but never referenced
+
+gpu-mufu-lenext-microbench.cu(152): warning: variable "cf" was declared but never referenced
+
+gpu-mufu-lenext-microbench.cu(153): warning: variable "cf" was declared but never referenced
+
+gpu-mufu-lenext-microbench.cu(154): warning: variable "cf" was declared but never referenced
+
+gpu-mufu-lenext-microbench.cu(155): warning: variable "cf" was declared but never referenced
+
+gpu-mufu-lenext-microbench.cu(156): warning: variable "cf" was declared but never referenced
+
+gpu-mufu-lenext-microbench.cu(157): warning: variable "cf" was declared but never referenced
+
+=== disassemble the cubin (nvdisasm -c)
+OK-sass 1079 lines
+diag diag-nvdisasm.txt 0 bytes
+=== sha256 of the generated artifacts
+9b27b9fa8d4907e356aeed02211d1e0af799436002c2a2ef9eb99747d418bf60  microbench.sass
+d466b319c7067c4a4c4af35fa94cbaa4e6ef2b0fa5d811a414fb11e90f27dce7  gpu-mufu-lenext-microbench.cubin
+9ffdd5a7c6eb16c8653388b518a0cce61fcac02fc331902433a93aa550d402ff  gpu-mufu-lenext-microbench
+=== SASS verification (python3, loop-body extraction per kernel)
+=== per-function loop-body extraction (nvdisasm -c of the length-extension cubin)
+--- ee_M1: loop body (26 lines), verbatim mnemonics:
+    .L_31:
+    SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+    CS2R R2, SR_CLOCKLO ;
+    MUFU.RSQ R0, R0 ;
+    CS2R R4, SR_CLOCKLO ;
+    IMAD R10, R8, R10, R9.reuse ;
+    IADD3 R11, R11, 0x1, RZ ;
+    IADD3 R6, P1, P2, R4, R6, -R2 ;
+    IMAD R10, R8.reuse, R10, R9 ;
+    ISETP.NE.AND P0, PT, R11, 0x100, PT ;
+    IADD3.X R7, R5, R7, ~R3, P1, P2 ;
+    IMAD R10, R8, R10, R9 ;
+    IMAD R10, R8, R10, R9 ;
+    IMAD R10, R8, R10, R9 ;
+    IMAD R10, R8, R10, R9 ;
+    IMAD R10, R8, R10, R9 ;
+    IMAD R10, R8, R10, R9 ;
+    IMAD R10, R8, R10, R9 ;
+    IMAD R10, R8, R10, R9 ;
+    IMAD R10, R8, R10, R9 ;
+    IMAD R10, R8, R10, R9 ;
+    IMAD R10, R8, R10, R9 ;
+    IMAD R10, R8, R10, R9 ;
+    IMAD R10, R8, R10, R9 ;
+    IMAD R10, R8, R10, R9 ;
+    BRA `(.L_31) ;
+    CHAIN-VERDICT ee_M1: expected {'MUFU.RSQ': 1} realized {'MUFU.RSQ': 1} -> MATCH
+    WRAP-OK (chain strictly between the two SR_CLOCKLO reads)
+    PAD-VERDICT OK (16 IMAD* pad instructions in body, expect 16, 0 inside the timed region (expect 0), 16 after t1 (expect 16))
+--- ee_M2: loop body (27 lines), verbatim mnemonics:
+    .L_29:
+    SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+    CS2R R2, SR_CLOCKLO ;
+    MUFU.RSQ R0, R0 ;
+    MUFU.RSQ R0, R0 ;
+    CS2R R4, SR_CLOCKLO ;
+    IMAD R10, R8, R10, R9.reuse ;
+    IADD3 R11, R11, 0x1, RZ ;
+    IADD3 R6, P1, P2, R4, R6, -R2 ;
+    IMAD R10, R8, R10, R9 ;
+    ISETP.NE.AND P0, PT, R11, 0x100, PT ;
+    IADD3.X R7, R5, R7, ~R3, P1, P2 ;
+    IMAD R10, R8, R10, R9 ;
+    IMAD R10, R8, R10, R9 ;
+    IMAD R10, R8, R10, R9 ;
+    IMAD R10, R8, R10, R9 ;
+    IMAD R10, R8, R10, R9 ;
+    IMAD R10, R8, R10, R9 ;
+    IMAD R10, R8, R10, R9 ;
+    IMAD R10, R8, R10, R9 ;
+    IMAD R10, R8, R10, R9 ;
+    IMAD R10, R8, R10, R9 ;
+    IMAD R10, R8, R10, R9 ;
+    IMAD R10, R8, R10, R9 ;
+    IMAD R10, R8, R10, R9 ;
+    IMAD R10, R8, R10, R9 ;
+    BRA `(.L_29) ;
+    CHAIN-VERDICT ee_M2: expected {'MUFU.RSQ': 2} realized {'MUFU.RSQ': 2} -> MATCH
+    WRAP-OK (chain strictly between the two SR_CLOCKLO reads)
+    PAD-VERDICT OK (16 IMAD* pad instructions in body, expect 16, 0 inside the timed region (expect 0), 16 after t1 (expect 16))
+--- ee_M3: loop body (28 lines), verbatim mnemonics:
+    .L_27:
+    SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+    CS2R R2, SR_CLOCKLO ;
+    MUFU.RSQ R4, R0 ;
+    MUFU.RSQ R4, R4 ;
+    MUFU.RSQ R0, R4 ;
+    CS2R R4, SR_CLOCKLO ;
+    IMAD R10, R6, R10, R9 ;
+    IADD3 R11, R11, 0x1, RZ ;
+    IADD3 R8, P1, P2, R4, R8, -R2 ;
+    IMAD R10, R6.reuse, R10, R9 ;
+    ISETP.NE.AND P0, PT, R11, 0x100, PT ;
+    IADD3.X R7, R5, R7, ~R3, P1, P2 ;
+    IMAD R10, R6, R10, R9 ;
+    IMAD R10, R6, R10, R9 ;
+    IMAD R10, R6, R10, R9 ;
+    IMAD R10, R6, R10, R9 ;
+    IMAD R10, R6, R10, R9 ;
+    IMAD R10, R6, R10, R9 ;
+    IMAD R10, R6, R10, R9 ;
+    IMAD R10, R6, R10, R9 ;
+    IMAD R10, R6, R10, R9 ;
+    IMAD R10, R6, R10, R9 ;
+    IMAD R10, R6, R10, R9 ;
+    IMAD R10, R6, R10, R9 ;
+    IMAD R10, R6, R10, R9 ;
+    IMAD R10, R6, R10, R9 ;
+    BRA `(.L_27) ;
+    CHAIN-VERDICT ee_M3: expected {'MUFU.RSQ': 3} realized {'MUFU.RSQ': 3} -> MATCH
+    WRAP-OK (chain strictly between the two SR_CLOCKLO reads)
+    PAD-VERDICT OK (16 IMAD* pad instructions in body, expect 16, 0 inside the timed region (expect 0), 16 after t1 (expect 16))
+--- ee_M4: loop body (29 lines), verbatim mnemonics:
+    .L_25:
+    SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+    CS2R R2, SR_CLOCKLO ;
+    MUFU.RSQ R4, R0 ;
+    MUFU.RSQ R4, R4 ;
+    MUFU.RSQ R5, R4 ;
+    MUFU.RSQ R0, R5 ;
+    CS2R R4, SR_CLOCKLO ;
+    IMAD R10, R6, R10, R11 ;
+    IADD3 R8, R8, 0x1, RZ ;
+    IADD3 R7, P1, P2, R4, R7, -R2 ;
+    IMAD R10, R6, R10, R11 ;
+    ISETP.NE.AND P0, PT, R8, 0x100, PT ;
+    IADD3.X R9, R5, R9, ~R3, P1, P2 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    BRA `(.L_25) ;
+    CHAIN-VERDICT ee_M4: expected {'MUFU.RSQ': 4} realized {'MUFU.RSQ': 4} -> MATCH
+    WRAP-OK (chain strictly between the two SR_CLOCKLO reads)
+    PAD-VERDICT OK (16 IMAD* pad instructions in body, expect 16, 0 inside the timed region (expect 0), 16 after t1 (expect 16))
+--- ee_M5: loop body (30 lines), verbatim mnemonics:
+    .L_23:
+    SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+    CS2R R2, SR_CLOCKLO ;
+    MUFU.RSQ R4, R0 ;
+    MUFU.RSQ R4, R4 ;
+    MUFU.RSQ R5, R4 ;
+    MUFU.RSQ R5, R5 ;
+    MUFU.RSQ R0, R5 ;
+    CS2R R4, SR_CLOCKLO ;
+    IMAD R10, R6, R10, R11 ;
+    IADD3 R8, R8, 0x1, RZ ;
+    IADD3 R7, P1, P2, R4, R7, -R2 ;
+    IMAD R10, R6, R10, R11 ;
+    ISETP.NE.AND P0, PT, R8, 0x100, PT ;
+    IADD3.X R9, R5, R9, ~R3, P1, P2 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    BRA `(.L_23) ;
+    CHAIN-VERDICT ee_M5: expected {'MUFU.RSQ': 5} realized {'MUFU.RSQ': 5} -> MATCH
+    WRAP-OK (chain strictly between the two SR_CLOCKLO reads)
+    PAD-VERDICT OK (16 IMAD* pad instructions in body, expect 16, 0 inside the timed region (expect 0), 16 after t1 (expect 16))
+--- ee_M6: loop body (31 lines), verbatim mnemonics:
+    .L_21:
+    SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+    CS2R R2, SR_CLOCKLO ;
+    MUFU.RSQ R4, R6 ;
+    MUFU.RSQ R4, R4 ;
+    MUFU.RSQ R5, R4 ;
+    MUFU.RSQ R5, R5 ;
+    MUFU.RSQ R12, R5 ;
+    MUFU.RSQ R6, R12 ;
+    CS2R R4, SR_CLOCKLO ;
+    IMAD R10, R0, R10, R11 ;
+    IADD3 R8, R8, 0x1, RZ ;
+    IADD3 R7, P1, P2, R4, R7, -R2 ;
+    IMAD R10, R0, R10, R11 ;
+    ISETP.NE.AND P0, PT, R8, 0x100, PT ;
+    IADD3.X R9, R5, R9, ~R3, P1, P2 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    BRA `(.L_21) ;
+    CHAIN-VERDICT ee_M6: expected {'MUFU.RSQ': 6} realized {'MUFU.RSQ': 6} -> MATCH
+    WRAP-OK (chain strictly between the two SR_CLOCKLO reads)
+    PAD-VERDICT OK (16 IMAD* pad instructions in body, expect 16, 0 inside the timed region (expect 0), 16 after t1 (expect 16))
+--- ee_M7: loop body (32 lines), verbatim mnemonics:
+    .L_19:
+    SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+    CS2R R2, SR_CLOCKLO ;
+    MUFU.RSQ R4, R8 ;
+    MUFU.RSQ R4, R4 ;
+    MUFU.RSQ R5, R4 ;
+    MUFU.RSQ R5, R5 ;
+    MUFU.RSQ R12, R5 ;
+    MUFU.RSQ R12, R12 ;
+    MUFU.RSQ R8, R12 ;
+    CS2R R4, SR_CLOCKLO ;
+    IMAD R10, R0, R10, R11 ;
+    IADD3 R6, R6, 0x1, RZ ;
+    IADD3 R7, P1, P2, R4, R7, -R2 ;
+    IMAD R10, R0, R10, R11 ;
+    ISETP.NE.AND P0, PT, R6, 0x100, PT ;
+    IADD3.X R9, R5, R9, ~R3, P1, P2 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    BRA `(.L_19) ;
+    CHAIN-VERDICT ee_M7: expected {'MUFU.RSQ': 7} realized {'MUFU.RSQ': 7} -> MATCH
+    WRAP-OK (chain strictly between the two SR_CLOCKLO reads)
+    PAD-VERDICT OK (16 IMAD* pad instructions in body, expect 16, 0 inside the timed region (expect 0), 16 after t1 (expect 16))
+--- ee_M8: loop body (33 lines), verbatim mnemonics:
+    .L_17:
+    SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+    CS2R R2, SR_CLOCKLO ;
+    MUFU.RSQ R4, R8 ;
+    MUFU.RSQ R4, R4 ;
+    MUFU.RSQ R5, R4 ;
+    MUFU.RSQ R5, R5 ;
+    MUFU.RSQ R12, R5 ;
+    MUFU.RSQ R12, R12 ;
+    MUFU.RSQ R13, R12 ;
+    MUFU.RSQ R8, R13 ;
+    CS2R R4, SR_CLOCKLO ;
+    IMAD R10, R0, R10, R11 ;
+    IADD3 R6, R6, 0x1, RZ ;
+    IADD3 R7, P1, P2, R4, R7, -R2 ;
+    IMAD R10, R0, R10, R11 ;
+    ISETP.NE.AND P0, PT, R6, 0x100, PT ;
+    IADD3.X R9, R5, R9, ~R3, P1, P2 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    IMAD R10, R0, R10, R11 ;
+    BRA `(.L_17) ;
+    CHAIN-VERDICT ee_M8: expected {'MUFU.RSQ': 8} realized {'MUFU.RSQ': 8} -> MATCH
+    WRAP-OK (chain strictly between the two SR_CLOCKLO reads)
+    PAD-VERDICT OK (16 IMAD* pad instructions in body, expect 16, 0 inside the timed region (expect 0), 16 after t1 (expect 16))
+--- ee_F1: loop body (26 lines), verbatim mnemonics:
+    .L_15:
+    SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+    CS2R R2, SR_CLOCKLO ;
+    FADD.FTZ R0, R9, R0 ;
+    CS2R R4, SR_CLOCKLO ;
+    IMAD R10, R8, R10, R11.reuse ;
+    IADD3 R12, R12, 0x1, RZ ;
+    IADD3 R6, P1, P2, R4, R6, -R2 ;
+    IMAD R10, R8, R10, R11 ;
+    ISETP.NE.AND P0, PT, R12, 0x100, PT ;
+    IADD3.X R7, R5, R7, ~R3, P1, P2 ;
+    IMAD R10, R8, R10, R11 ;
+    IMAD R10, R8, R10, R11 ;
+    IMAD R10, R8, R10, R11 ;
+    IMAD R10, R8, R10, R11 ;
+    IMAD R10, R8, R10, R11 ;
+    IMAD R10, R8, R10, R11 ;
+    IMAD R10, R8, R10, R11 ;
+    IMAD R10, R8, R10, R11 ;
+    IMAD R10, R8, R10, R11 ;
+    IMAD R10, R8, R10, R11 ;
+    IMAD R10, R8, R10, R11 ;
+    IMAD R10, R8, R10, R11 ;
+    IMAD R10, R8, R10, R11 ;
+    IMAD R10, R8, R10, R11 ;
+    BRA `(.L_15) ;
+    CHAIN-VERDICT ee_F1: expected {'FADD*': 1} realized {'FADD*': 1} -> MATCH
+    WRAP-OK (chain strictly between the two SR_CLOCKLO reads)
+    PAD-VERDICT OK (16 IMAD* pad instructions in body, expect 16, 0 inside the timed region (expect 0), 16 after t1 (expect 16))
+--- ee_F2: loop body (27 lines), verbatim mnemonics:
+    .L_13:
+    SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+    CS2R R2, SR_CLOCKLO ;
+    FADD.FTZ R0, R9, R0 ;
+    FADD.FTZ R0, R9, R0 ;
+    CS2R R4, SR_CLOCKLO ;
+    IMAD R10, R6, R10, R11.reuse ;
+    IADD3 R12, R12, 0x1, RZ ;
+    IADD3 R8, P1, P2, R4, R8, -R2 ;
+    IMAD R10, R6, R10, R11 ;
+    ISETP.NE.AND P0, PT, R12, 0x100, PT ;
+    IADD3.X R7, R5, R7, ~R3, P1, P2 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    IMAD R10, R6, R10, R11 ;
+    BRA `(.L_13) ;
+    CHAIN-VERDICT ee_F2: expected {'FADD*': 2} realized {'FADD*': 2} -> MATCH
+    WRAP-OK (chain strictly between the two SR_CLOCKLO reads)
+    PAD-VERDICT OK (16 IMAD* pad instructions in body, expect 16, 0 inside the timed region (expect 0), 16 after t1 (expect 16))
+--- ee_F3: loop body (28 lines), verbatim mnemonics:
+    .L_11:
+    SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+    CS2R R2, SR_CLOCKLO ;
+    FADD.FTZ R0, R9, R0 ;
+    FADD.FTZ R0, R9, R0 ;
+    FADD.FTZ R0, R9, R0 ;
+    CS2R R4, SR_CLOCKLO ;
+    IMAD R8, R6, R8, R13.reuse ;
+    IADD3 R10, R10, 0x1, RZ ;
+    IADD3 R7, P1, P2, R4, R7, -R2 ;
+    IMAD R8, R6, R8, R13 ;
+    ISETP.NE.AND P0, PT, R10, 0x100, PT ;
+    IADD3.X R11, R5, R11, ~R3, P1, P2 ;
+    IMAD R8, R6, R8, R13 ;
+    IMAD R8, R6, R8, R13 ;
+    IMAD R8, R6, R8, R13 ;
+    IMAD R8, R6, R8, R13 ;
+    IMAD R8, R6, R8, R13 ;
+    IMAD R8, R6, R8, R13 ;
+    IMAD R8, R6, R8, R13 ;
+    IMAD R8, R6, R8, R13 ;
+    IMAD R8, R6, R8, R13 ;
+    IMAD R8, R6, R8, R13 ;
+    IMAD R8, R6, R8, R13 ;
+    IMAD R8, R6, R8, R13 ;
+    IMAD R8, R6, R8, R13 ;
+    IMAD R8, R6, R8, R13 ;
+    BRA `(.L_11) ;
+    CHAIN-VERDICT ee_F3: expected {'FADD*': 3} realized {'FADD*': 3} -> MATCH
+    WRAP-OK (chain strictly between the two SR_CLOCKLO reads)
+    PAD-VERDICT OK (16 IMAD* pad instructions in body, expect 16, 0 inside the timed region (expect 0), 16 after t1 (expect 16))
+--- ee_F4: loop body (29 lines), verbatim mnemonics:
+    .L_9:
+    SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+    CS2R R2, SR_CLOCKLO ;
+    FADD.FTZ R0, R7, R0 ;
+    FADD.FTZ R0, R7, R0 ;
+    FADD.FTZ R0, R7, R0 ;
+    FADD.FTZ R0, R7, R0 ;
+    CS2R R4, SR_CLOCKLO ;
+    IMAD R12, R6, R12, R13.reuse ;
+    IADD3 R8, R8, 0x1, RZ ;
+    IADD3 R9, P1, P2, R4, R9, -R2 ;
+    IMAD R12, R6, R12, R13 ;
+    ISETP.NE.AND P0, PT, R8, 0x100, PT ;
+    IADD3.X R11, R5, R11, ~R3, P1, P2 ;
+    IMAD R12, R6, R12, R13 ;
+    IMAD R12, R6, R12, R13 ;
+    IMAD R12, R6, R12, R13 ;
+    IMAD R12, R6, R12, R13 ;
+    IMAD R12, R6, R12, R13 ;
+    IMAD R12, R6, R12, R13 ;
+    IMAD R12, R6, R12, R13 ;
+    IMAD R12, R6, R12, R13 ;
+    IMAD R12, R6, R12, R13 ;
+    IMAD R12, R6, R12, R13 ;
+    IMAD R12, R6, R12, R13 ;
+    IMAD R12, R6, R12, R13 ;
+    IMAD R12, R6, R12, R13 ;
+    IMAD R12, R6, R12, R13 ;
+    BRA `(.L_9) ;
+    CHAIN-VERDICT ee_F4: expected {'FADD*': 4} realized {'FADD*': 4} -> MATCH
+    WRAP-OK (chain strictly between the two SR_CLOCKLO reads)
+    PAD-VERDICT OK (16 IMAD* pad instructions in body, expect 16, 0 inside the timed region (expect 0), 16 after t1 (expect 16))
+--- ee_F5: loop body (30 lines), verbatim mnemonics:
+    .L_7:
+    SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+    CS2R R2, SR_CLOCKLO ;
+    FADD.FTZ R0, R7, R0 ;
+    FADD.FTZ R0, R7, R0 ;
+    FADD.FTZ R0, R7, R0 ;
+    FADD.FTZ R0, R7, R0 ;
+    FADD.FTZ R0, R7, R0 ;
+    CS2R R4, SR_CLOCKLO ;
+    IMAD R12, R6, R12, R13.reuse ;
+    IADD3 R8, R8, 0x1, RZ ;
+    IADD3 R9, P1, P2, R4, R9, -R2 ;
+    IMAD R12, R6, R12, R13 ;
+    ISETP.NE.AND P0, PT, R8, 0x100, PT ;
+    IADD3.X R11, R5, R11, ~R3, P1, P2 ;
+    IMAD R12, R6, R12, R13 ;
+    IMAD R12, R6, R12, R13 ;
+    IMAD R12, R6, R12, R13 ;
+    IMAD R12, R6, R12, R13 ;
+    IMAD R12, R6, R12, R13 ;
+    IMAD R12, R6, R12, R13 ;
+    IMAD R12, R6, R12, R13 ;
+    IMAD R12, R6, R12, R13 ;
+    IMAD R12, R6, R12, R13 ;
+    IMAD R12, R6, R12, R13 ;
+    IMAD R12, R6, R12, R13 ;
+    IMAD R12, R6, R12, R13 ;
+    IMAD R12, R6, R12, R13 ;
+    IMAD R12, R6, R12, R13 ;
+    BRA `(.L_7) ;
+    CHAIN-VERDICT ee_F5: expected {'FADD*': 5} realized {'FADD*': 5} -> MATCH
+    WRAP-OK (chain strictly between the two SR_CLOCKLO reads)
+    PAD-VERDICT OK (16 IMAD* pad instructions in body, expect 16, 0 inside the timed region (expect 0), 16 after t1 (expect 16))
+--- ee_F6: loop body (31 lines), verbatim mnemonics:
+    .L_5:
+    SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+    CS2R R2, SR_CLOCKLO ;
+    FADD.FTZ R5, R0, R8 ;
+    FADD.FTZ R5, R0, R5 ;
+    FADD.FTZ R5, R0, R5 ;
+    FADD.FTZ R5, R0, R5 ;
+    FADD.FTZ R5, R0, R5 ;
+    FADD.FTZ R8, R0, R5 ;
+    CS2R R4, SR_CLOCKLO ;
+    IMAD R12, R6, R12, R11.reuse ;
+    IADD3 R10, R10, 0x1, RZ ;
+    IADD3 R7, P1, P2, R4, R7, -R2 ;
+    IMAD R12, R6, R12, R11 ;
+    ISETP.NE.AND P0, PT, R10, 0x100, PT ;
+    IADD3.X R9, R5, R9, ~R3, P1, P2 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    BRA `(.L_5) ;
+    CHAIN-VERDICT ee_F6: expected {'FADD*': 6} realized {'FADD*': 6} -> MATCH
+    WRAP-OK (chain strictly between the two SR_CLOCKLO reads)
+    PAD-VERDICT OK (16 IMAD* pad instructions in body, expect 16, 0 inside the timed region (expect 0), 16 after t1 (expect 16))
+--- ee_F7: loop body (32 lines), verbatim mnemonics:
+    .L_3:
+    SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+    CS2R R2, SR_CLOCKLO ;
+    FADD.FTZ R5, R0, R8 ;
+    FADD.FTZ R5, R0, R5 ;
+    FADD.FTZ R5, R0, R5 ;
+    FADD.FTZ R5, R0, R5 ;
+    FADD.FTZ R5, R0, R5 ;
+    FADD.FTZ R5, R0, R5 ;
+    FADD.FTZ R8, R0, R5 ;
+    CS2R R4, SR_CLOCKLO ;
+    IMAD R12, R6, R12, R11.reuse ;
+    IADD3 R10, R10, 0x1, RZ ;
+    IADD3 R7, P1, P2, R4, R7, -R2 ;
+    IMAD R12, R6, R12, R11 ;
+    ISETP.NE.AND P0, PT, R10, 0x100, PT ;
+    IADD3.X R9, R5, R9, ~R3, P1, P2 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    BRA `(.L_3) ;
+    CHAIN-VERDICT ee_F7: expected {'FADD*': 7} realized {'FADD*': 7} -> MATCH
+    WRAP-OK (chain strictly between the two SR_CLOCKLO reads)
+    PAD-VERDICT OK (16 IMAD* pad instructions in body, expect 16, 0 inside the timed region (expect 0), 16 after t1 (expect 16))
+--- ee_F8: loop body (33 lines), verbatim mnemonics:
+    .L_1:
+    SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+    CS2R R2, SR_CLOCKLO ;
+    FADD.FTZ R5, R0, R10 ;
+    FADD.FTZ R5, R0, R5 ;
+    FADD.FTZ R5, R0, R5 ;
+    FADD.FTZ R5, R0, R5 ;
+    FADD.FTZ R5, R0, R5 ;
+    FADD.FTZ R5, R0, R5 ;
+    FADD.FTZ R5, R0, R5 ;
+    FADD.FTZ R10, R0, R5 ;
+    CS2R R4, SR_CLOCKLO ;
+    IMAD R12, R6, R12, R11.reuse ;
+    IADD3 R8, R8, 0x1, RZ ;
+    IADD3 R7, P1, P2, R4, R7, -R2 ;
+    IMAD R12, R6, R12, R11 ;
+    ISETP.NE.AND P0, PT, R8, 0x100, PT ;
+    IADD3.X R9, R5, R9, ~R3, P1, P2 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    IMAD R12, R6, R12, R11 ;
+    BRA `(.L_1) ;
+    CHAIN-VERDICT ee_F8: expected {'FADD*': 8} realized {'FADD*': 8} -> MATCH
+    WRAP-OK (chain strictly between the two SR_CLOCKLO reads)
+    PAD-VERDICT OK (16 IMAD* pad instructions in body, expect 16, 0 inside the timed region (expect 0), 16 after t1 (expect 16))
+=== non-chain overhead multiset per arm (the common floor's instructions)
+    ee_M1: {'BRA': 1, 'CS2R': 2, 'IADD3': 2, 'IADD3.X': 1, 'IMAD': 16, 'ISETP.NE.AND': 1, 'SHFL.IDX': 1}
+    ee_M2: {'BRA': 1, 'CS2R': 2, 'IADD3': 2, 'IADD3.X': 1, 'IMAD': 16, 'ISETP.NE.AND': 1, 'SHFL.IDX': 1}
+    ee_M3: {'BRA': 1, 'CS2R': 2, 'IADD3': 2, 'IADD3.X': 1, 'IMAD': 16, 'ISETP.NE.AND': 1, 'SHFL.IDX': 1}
+    ee_M4: {'BRA': 1, 'CS2R': 2, 'IADD3': 2, 'IADD3.X': 1, 'IMAD': 16, 'ISETP.NE.AND': 1, 'SHFL.IDX': 1}
+    ee_M5: {'BRA': 1, 'CS2R': 2, 'IADD3': 2, 'IADD3.X': 1, 'IMAD': 16, 'ISETP.NE.AND': 1, 'SHFL.IDX': 1}
+    ee_M6: {'BRA': 1, 'CS2R': 2, 'IADD3': 2, 'IADD3.X': 1, 'IMAD': 16, 'ISETP.NE.AND': 1, 'SHFL.IDX': 1}
+    ee_M7: {'BRA': 1, 'CS2R': 2, 'IADD3': 2, 'IADD3.X': 1, 'IMAD': 16, 'ISETP.NE.AND': 1, 'SHFL.IDX': 1}
+    ee_M8: {'BRA': 1, 'CS2R': 2, 'IADD3': 2, 'IADD3.X': 1, 'IMAD': 16, 'ISETP.NE.AND': 1, 'SHFL.IDX': 1}
+    ee_F1: {'BRA': 1, 'CS2R': 2, 'IADD3': 2, 'IADD3.X': 1, 'IMAD': 16, 'ISETP.NE.AND': 1, 'SHFL.IDX': 1}
+    ee_F2: {'BRA': 1, 'CS2R': 2, 'IADD3': 2, 'IADD3.X': 1, 'IMAD': 16, 'ISETP.NE.AND': 1, 'SHFL.IDX': 1}
+    ee_F3: {'BRA': 1, 'CS2R': 2, 'IADD3': 2, 'IADD3.X': 1, 'IMAD': 16, 'ISETP.NE.AND': 1, 'SHFL.IDX': 1}
+    ee_F4: {'BRA': 1, 'CS2R': 2, 'IADD3': 2, 'IADD3.X': 1, 'IMAD': 16, 'ISETP.NE.AND': 1, 'SHFL.IDX': 1}
+    ee_F5: {'BRA': 1, 'CS2R': 2, 'IADD3': 2, 'IADD3.X': 1, 'IMAD': 16, 'ISETP.NE.AND': 1, 'SHFL.IDX': 1}
+    ee_F6: {'BRA': 1, 'CS2R': 2, 'IADD3': 2, 'IADD3.X': 1, 'IMAD': 16, 'ISETP.NE.AND': 1, 'SHFL.IDX': 1}
+    ee_F7: {'BRA': 1, 'CS2R': 2, 'IADD3': 2, 'IADD3.X': 1, 'IMAD': 16, 'ISETP.NE.AND': 1, 'SHFL.IDX': 1}
+    ee_F8: {'BRA': 1, 'CS2R': 2, 'IADD3': 2, 'IADD3.X': 1, 'IMAD': 16, 'ISETP.NE.AND': 1, 'SHFL.IDX': 1}
+OVERHEAD-VERDICT: IDENTICAL 16/16
+CHAIN-VERDICT-ALL: MATCH 16/16
+CLOCK-WRAP-VERDICT-ALL: WRAP-OK 16/16
+PAD-VERDICT-ALL (P7): 16/16 IMAD pad ops 16/16
+=== run the microbench (3 launches x 16 arms)
+device name=Xavier clockRate_kHz=1377000 multiProcessorCount=8
+RESULT arm=M1 launch=0 n=128 med_acc=2772 med_per_iter=10.828125 mean_per_iter=10.827148 min_per_iter=10.824219 max_per_iter=10.828125 p10_per_iter=10.824219 p90_per_iter=10.828125 accmod_min=211 accmod_max=212
+RESULT arm=M1 launch=1 n=128 med_acc=2610 med_per_iter=10.195312 mean_per_iter=10.194336 min_per_iter=10.191406 max_per_iter=10.195312 p10_per_iter=10.191406 p90_per_iter=10.195312 accmod_min=49 accmod_max=50
+RESULT arm=M1 launch=2 n=128 med_acc=2597 med_per_iter=10.144531 mean_per_iter=10.143555 min_per_iter=10.140625 max_per_iter=10.144531 p10_per_iter=10.140625 p90_per_iter=10.144531 accmod_min=36 accmod_max=37
+ANCHOR arm=M1 xbits=1065353216 (0x3f800000, no-fold witness only) pad_final=278335495
+RESULT arm=M2 launch=0 n=128 med_acc=5410 med_per_iter=21.132812 mean_per_iter=21.133789 min_per_iter=21.128906 max_per_iter=21.136719 p10_per_iter=21.128906 p90_per_iter=21.136719 accmod_min=33 accmod_max=35
+RESULT arm=M2 launch=1 n=128 med_acc=6004 med_per_iter=23.453125 mean_per_iter=23.454102 min_per_iter=23.449219 max_per_iter=23.457031 p10_per_iter=23.449219 p90_per_iter=23.457031 accmod_min=115 accmod_max=117
+RESULT arm=M2 launch=2 n=128 med_acc=6017 med_per_iter=23.503906 mean_per_iter=23.504883 min_per_iter=23.500000 max_per_iter=23.507812 p10_per_iter=23.500000 p90_per_iter=23.507812 accmod_min=128 accmod_max=130
+ANCHOR arm=M2 xbits=1065353216 (0x3f800000, no-fold witness only) pad_final=278335495
+RESULT arm=M3 launch=0 n=128 med_acc=12393 med_per_iter=48.410156 mean_per_iter=48.411133 min_per_iter=48.406250 max_per_iter=48.414062 p10_per_iter=48.406250 p90_per_iter=48.414062 accmod_min=104 accmod_max=106
+RESULT arm=M3 launch=1 n=128 med_acc=12389 med_per_iter=48.394531 mean_per_iter=48.395508 min_per_iter=48.390625 max_per_iter=48.398438 p10_per_iter=48.390625 p90_per_iter=48.398438 accmod_min=100 accmod_max=102
+RESULT arm=M3 launch=2 n=128 med_acc=12386 med_per_iter=48.382812 mean_per_iter=48.383789 min_per_iter=48.378906 max_per_iter=48.386719 p10_per_iter=48.378906 p90_per_iter=48.386719 accmod_min=97 accmod_max=99
+ANCHOR arm=M3 xbits=1065353216 (0x3f800000, no-fold witness only) pad_final=278335495
+RESULT arm=M4 launch=0 n=128 med_acc=15652 med_per_iter=61.140625 mean_per_iter=61.141602 min_per_iter=61.136719 max_per_iter=61.144531 p10_per_iter=61.136719 p90_per_iter=61.144531 accmod_min=35 accmod_max=37
+RESULT arm=M4 launch=1 n=128 med_acc=15657 med_per_iter=61.160156 mean_per_iter=61.161133 min_per_iter=61.156250 max_per_iter=61.164062 p10_per_iter=61.156250 p90_per_iter=61.164062 accmod_min=40 accmod_max=42
+RESULT arm=M4 launch=2 n=128 med_acc=15648 med_per_iter=61.125000 mean_per_iter=61.125977 min_per_iter=61.121094 max_per_iter=61.128906 p10_per_iter=61.121094 p90_per_iter=61.128906 accmod_min=31 accmod_max=33
+ANCHOR arm=M4 xbits=1065353216 (0x3f800000, no-fold witness only) pad_final=278335495
+RESULT arm=M5 launch=0 n=128 med_acc=19495 med_per_iter=76.152344 mean_per_iter=76.153320 min_per_iter=76.148438 max_per_iter=76.156250 p10_per_iter=76.148438 p90_per_iter=76.156250 accmod_min=38 accmod_max=40
+RESULT arm=M5 launch=1 n=128 med_acc=20118 med_per_iter=78.585938 mean_per_iter=78.586914 min_per_iter=78.582031 max_per_iter=78.589844 p10_per_iter=78.582031 p90_per_iter=78.589844 accmod_min=149 accmod_max=151
+RESULT arm=M5 launch=2 n=128 med_acc=20060 med_per_iter=78.359375 mean_per_iter=78.360352 min_per_iter=78.355469 max_per_iter=78.363281 p10_per_iter=78.355469 p90_per_iter=78.363281 accmod_min=91 accmod_max=93
+ANCHOR arm=M5 xbits=1065353216 (0x3f800000, no-fold witness only) pad_final=278335495
+RESULT arm=M6 launch=0 n=128 med_acc=22350 med_per_iter=87.304688 mean_per_iter=87.305664 min_per_iter=87.300781 max_per_iter=87.308594 p10_per_iter=87.300781 p90_per_iter=87.308594 accmod_min=77 accmod_max=79
+RESULT arm=M6 launch=1 n=128 med_acc=20769 med_per_iter=81.128906 mean_per_iter=81.129883 min_per_iter=81.125000 max_per_iter=81.132812 p10_per_iter=81.125000 p90_per_iter=81.132812 accmod_min=32 accmod_max=34
+RESULT arm=M6 launch=2 n=128 med_acc=20773 med_per_iter=81.144531 mean_per_iter=81.145508 min_per_iter=81.140625 max_per_iter=81.148438 p10_per_iter=81.140625 p90_per_iter=81.148438 accmod_min=36 accmod_max=38
+ANCHOR arm=M6 xbits=1065353216 (0x3f800000, no-fold witness only) pad_final=278335495
+RESULT arm=M7 launch=0 n=128 med_acc=25191 med_per_iter=98.402344 mean_per_iter=98.403320 min_per_iter=98.398438 max_per_iter=98.406250 p10_per_iter=98.398438 p90_per_iter=98.406250 accmod_min=102 accmod_max=104
+RESULT arm=M7 launch=1 n=128 med_acc=25201 med_per_iter=98.441406 mean_per_iter=98.442383 min_per_iter=98.437500 max_per_iter=98.445312 p10_per_iter=98.437500 p90_per_iter=98.445312 accmod_min=112 accmod_max=114
+RESULT arm=M7 launch=2 n=128 med_acc=25312 med_per_iter=98.875000 mean_per_iter=98.875977 min_per_iter=98.871094 max_per_iter=98.878906 p10_per_iter=98.871094 p90_per_iter=98.878906 accmod_min=223 accmod_max=225
+ANCHOR arm=M7 xbits=1065353216 (0x3f800000, no-fold witness only) pad_final=278335495
+RESULT arm=M8 launch=0 n=128 med_acc=28438 med_per_iter=111.085938 mean_per_iter=111.086914 min_per_iter=111.082031 max_per_iter=111.089844 p10_per_iter=111.082031 p90_per_iter=111.089844 accmod_min=21 accmod_max=23
+RESULT arm=M8 launch=1 n=128 med_acc=29016 med_per_iter=113.343750 mean_per_iter=113.344727 min_per_iter=113.339844 max_per_iter=113.347656 p10_per_iter=113.339844 p90_per_iter=113.347656 accmod_min=87 accmod_max=89
+RESULT arm=M8 launch=2 n=128 med_acc=28453 med_per_iter=111.144531 mean_per_iter=111.145508 min_per_iter=111.140625 max_per_iter=111.148438 p10_per_iter=111.140625 p90_per_iter=111.148438 accmod_min=36 accmod_max=38
+ANCHOR arm=M8 xbits=1065353216 (0x3f800000, no-fold witness only) pad_final=278335495
+RESULT arm=F1 launch=0 n=128 med_acc=2598 med_per_iter=10.148438 mean_per_iter=10.149414 min_per_iter=10.144531 max_per_iter=10.152344 p10_per_iter=10.144531 p90_per_iter=10.152344 accmod_min=37 accmod_max=39
+RESULT arm=F1 launch=1 n=128 med_acc=3161 med_per_iter=12.347656 mean_per_iter=12.348633 min_per_iter=12.343750 max_per_iter=12.351562 p10_per_iter=12.343750 p90_per_iter=12.351562 accmod_min=88 accmod_max=90
+RESULT arm=F1 launch=2 n=128 med_acc=2598 med_per_iter=10.148438 mean_per_iter=10.149414 min_per_iter=10.144531 max_per_iter=10.152344 p10_per_iter=10.144531 p90_per_iter=10.152344 accmod_min=37 accmod_max=39
+ANCHOR arm=F1 xbits=1132527616 (0x43810000, no-fold witness only) pad_final=278335495
+RESULT arm=F2 launch=0 n=128 med_acc=2651 med_per_iter=10.355469 mean_per_iter=10.356445 min_per_iter=10.351562 max_per_iter=10.359375 p10_per_iter=10.351562 p90_per_iter=10.359375 accmod_min=90 accmod_max=92
+RESULT arm=F2 launch=1 n=128 med_acc=3179 med_per_iter=12.417969 mean_per_iter=12.418945 min_per_iter=12.414062 max_per_iter=12.421875 p10_per_iter=12.414062 p90_per_iter=12.421875 accmod_min=106 accmod_max=108
+RESULT arm=F2 launch=2 n=128 med_acc=2595 med_per_iter=10.136719 mean_per_iter=10.137695 min_per_iter=10.132812 max_per_iter=10.140625 p10_per_iter=10.132812 p90_per_iter=10.140625 accmod_min=34 accmod_max=36
+ANCHOR arm=F2 xbits=1140883456 (0x44008000, no-fold witness only) pad_final=278335495
+RESULT arm=F3 launch=0 n=128 med_acc=3663 med_per_iter=14.308594 mean_per_iter=14.309570 min_per_iter=14.304688 max_per_iter=14.312500 p10_per_iter=14.304688 p90_per_iter=14.312500 accmod_min=78 accmod_max=80
+RESULT arm=F3 launch=1 n=128 med_acc=3617 med_per_iter=14.128906 mean_per_iter=14.129883 min_per_iter=14.125000 max_per_iter=14.132812 p10_per_iter=14.125000 p90_per_iter=14.132812 accmod_min=32 accmod_max=34
+RESULT arm=F3 launch=2 n=128 med_acc=3617 med_per_iter=14.128906 mean_per_iter=14.129883 min_per_iter=14.125000 max_per_iter=14.132812 p10_per_iter=14.125000 p90_per_iter=14.132812 accmod_min=32 accmod_max=34
+ANCHOR arm=F3 xbits=1145077760 (0x44408000, no-fold witness only) pad_final=278335495
+RESULT arm=F4 launch=0 n=128 med_acc=4650 med_per_iter=18.164062 mean_per_iter=18.165039 min_per_iter=18.160156 max_per_iter=18.167969 p10_per_iter=18.160156 p90_per_iter=18.167969 accmod_min=41 accmod_max=43
+RESULT arm=F4 launch=1 n=128 med_acc=4645 med_per_iter=18.144531 mean_per_iter=18.145508 min_per_iter=18.140625 max_per_iter=18.148438 p10_per_iter=18.140625 p90_per_iter=18.148438 accmod_min=36 accmod_max=38
+RESULT arm=F4 launch=2 n=128 med_acc=5235 med_per_iter=20.449219 mean_per_iter=20.450195 min_per_iter=20.445312 max_per_iter=20.453125 p10_per_iter=20.445312 p90_per_iter=20.453125 accmod_min=114 accmod_max=116
+ANCHOR arm=F4 xbits=1149255680 (0x44804000, no-fold witness only) pad_final=278335495
+RESULT arm=F5 launch=0 n=128 med_acc=6233 med_per_iter=24.347656 mean_per_iter=24.348633 min_per_iter=24.343750 max_per_iter=24.351562 p10_per_iter=24.343750 p90_per_iter=24.351562 accmod_min=88 accmod_max=90
+RESULT arm=F5 launch=1 n=128 med_acc=6250 med_per_iter=24.414062 mean_per_iter=24.415039 min_per_iter=24.410156 max_per_iter=24.417969 p10_per_iter=24.410156 p90_per_iter=24.417969 accmod_min=105 accmod_max=107
+RESULT arm=F5 launch=2 n=128 med_acc=5665 med_per_iter=22.128906 mean_per_iter=22.129883 min_per_iter=22.125000 max_per_iter=22.132812 p10_per_iter=22.125000 p90_per_iter=22.132812 accmod_min=32 accmod_max=34
+ANCHOR arm=F5 xbits=1151352832 (0x44a04000, no-fold witness only) pad_final=278335495
+RESULT arm=F6 launch=0 n=128 med_acc=6693 med_per_iter=26.144531 mean_per_iter=26.145508 min_per_iter=26.140625 max_per_iter=26.148438 p10_per_iter=26.140625 p90_per_iter=26.148438 accmod_min=36 accmod_max=38
+RESULT arm=F6 launch=1 n=128 med_acc=6712 med_per_iter=26.218750 mean_per_iter=26.219727 min_per_iter=26.214844 max_per_iter=26.222656 p10_per_iter=26.214844 p90_per_iter=26.222656 accmod_min=55 accmod_max=57
+RESULT arm=F6 launch=2 n=128 med_acc=6708 med_per_iter=26.203125 mean_per_iter=26.204102 min_per_iter=26.199219 max_per_iter=26.207031 p10_per_iter=26.199219 p90_per_iter=26.207031 accmod_min=51 accmod_max=53
+ANCHOR arm=F6 xbits=1153449984 (0x44c04000, no-fold witness only) pad_final=278335495
+RESULT arm=F7 launch=0 n=128 med_acc=7818 med_per_iter=30.539062 mean_per_iter=30.540039 min_per_iter=30.535156 max_per_iter=30.542969 p10_per_iter=30.535156 p90_per_iter=30.542969 accmod_min=137 accmod_max=139
+RESULT arm=F7 launch=1 n=128 med_acc=7712 med_per_iter=30.125000 mean_per_iter=30.125977 min_per_iter=30.121094 max_per_iter=30.128906 p10_per_iter=30.121094 p90_per_iter=30.128906 accmod_min=31 accmod_max=33
+RESULT arm=F7 launch=2 n=128 med_acc=8297 med_per_iter=32.410156 mean_per_iter=32.411133 min_per_iter=32.406250 max_per_iter=32.414062 p10_per_iter=32.406250 p90_per_iter=32.414062 accmod_min=104 accmod_max=106
+ANCHOR arm=F7 xbits=1155547136 (0x44e04000, no-fold witness only) pad_final=278335495
+RESULT arm=F8 launch=0 n=128 med_acc=8750 med_per_iter=34.179688 mean_per_iter=34.180664 min_per_iter=34.175781 max_per_iter=34.183594 p10_per_iter=34.175781 p90_per_iter=34.183594 accmod_min=45 accmod_max=47
+RESULT arm=F8 launch=1 n=128 med_acc=8740 med_per_iter=34.140625 mean_per_iter=34.141602 min_per_iter=34.136719 max_per_iter=34.144531 p10_per_iter=34.136719 p90_per_iter=34.144531 accmod_min=35 accmod_max=37
+RESULT arm=F8 launch=2 n=128 med_acc=8830 med_per_iter=34.492188 mean_per_iter=34.493164 min_per_iter=34.488281 max_per_iter=34.496094 p10_per_iter=34.488281 p90_per_iter=34.496094 accmod_min=125 accmod_max=127
+ANCHOR arm=F8 xbits=1157636096 (0x45002000, no-fold witness only) pad_final=278335495
+run complete
+=== microbench run complete

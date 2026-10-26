@@ -3185,3 +3185,132 @@ gate-run2.txt in the evidence dir); `find docs -name '*.sh'` -> 0.
 FULL run-tests.cljk RUN LIVE THIS TICK: RED AT BASE 'Could not find
 namespace: kotoba.form' at namespace load (ADR-0362), outside this
 diff -- verified live, NO green full suite claimed.
+
+
+## Amendment (2026-10-26 UTC, the non-affinity REPRODUCES and EXTENDS
+to k=8 while the v8 F1>F2 non-monotonicity is RUN-SPECIFIC: instrument
+v9, THE LENGTH-EXTENSION; a ~2.3 cyc arm-level shift mode is NAMED as
+the dominant variability)
+
+The thirty-second amendment REFUTED the measured V as edge-additive
+in-form at the pure-word level (non-affine length series k=1..5) and
+named two follow-ups this amendment takes in ONE instrument: the
+scope of the refutation (is the non-affinity range-limited?) and the
+status of the named within-run stable non-monotonicity V(F1) >
+V(F2) (stable effect vs run-specific). Instrument v9
+(gpu-mufu-lenext-microbench.cu, committed verbatim).
+
+**The one change.** v9 = v8 with the series range extended: 10 arms
+M^1..M^5 / F^1..F^5 -> 16 arms M^1..M^8 / F^1..F^8. Everything else
+identical to v8 (entry-excluded discipline, realized 16-IMAD pad,
+symbolic operands, same tails, 3 launches x 128 threads x 256 timed
+instances). Predictions P1..P7 pre-registered in the instrument header
+before the first run: v8 reproduction of the shared arms (P1, noise-
+limited-arm caveat registered IN HEADER), the F1>F2 non-monotonicity
+reproduction (P2), non-affinity extension over k=1..8 (P3), channel
+agreement of the extended means with the landed cyclic slopes (P4/P5),
+falsifier stance (P6), structural verdicts (P7).
+
+**Structure verified (P7, SASS-verified).** CHAIN-VERDICT MATCH 16/16
+(ee_Mk carries exactly k MUFU.RSQ, ee_Fk exactly k FADD*, in order),
+CLOCK-WRAP 16/16, PAD-VERDICT 16/16 (16 IMAD* per body, 0 inside the
+timed region, 16 after t1), OVERHEAD-IDENTICAL 16/16. Hardware:
+xavier sm_72 at 2026-10-26T18:24:24Z (a PROBE, not a registered
+timing session -- inadmissible under the entry criterion BY KIND,
+enters nothing; measures INSTRUCTION chains, not kernels; SAME UTC DAY
+as every earlier probe, "cross-day run 3+" does not move).
+
+**The adjudication (mufu_lenext_analysis.py, output verbatim, two runs
+byte-identical).** (1) P3 HOLD: the NON-AFFINITY EXTENDS -- both
+families NON-AFFINE over the full k=1..8 range (M second differences
++11.6836/-12.1953/+4.4727/-14.4336/+14.5117/-4.5938; F
++3.5664/+0.2617/+2.1484/-4.3281/+2.4805/-0.6953) and over the k=1..5
+subset, launch-matched NON-AFFINE on all three launches, both
+families, both ranges. The thirty-second amendment's refutation is NOT
+range-limited and reproduces on a fresh run. (2) P2 FAIL: the F1>F2
+non-monotonicity DOES NOT REPRODUCE (v9 V(F1) 10.1484 < V(F2)
+10.3555, delta -0.2070); v8's "one FADD measures SLOWER than two" is
+DOWNGRADED from within-run stable to RUN-SPECIFIC (named). What does
+reproduce is the F plateau at low k -- V(F1) ~= V(F2) (v9 delta
++0.2070; v7's V(F) 10.1758 ~= V(FF) 10.1484 has the same shape) -- the
+F first difference at k=2 is +0.2070 against +3.6406..+6.1836 at
+k=3..8, itself non-affine. (3) P1 6/10: individual V points reproduce
+v8 within the 1.0 cyc tolerance only to a ~2.3 cyc mode -- F1 -2.3555,
+F5 +2.0430, M3 +2.1328, M5 +2.1328 fail (the other six within 0.68,
+including two of the four header-named v8-noise-limited arms). (4)
+P4/P5 HOLD, against v8: the extended means sit within tolerance of the
+landed cyclic slopes (s_M 14.4213 vs e_MM 14.9966, delta -0.5753; s_F
+3.4330 vs e_FF 4.0000, delta -0.5670) where v8's k=1..5 means failed
+(+1.5063/-1.5498) -- but the series is non-affine, so per the
+thirty-second amendment's own caveat "the slope is not a price": these
+holds are consistency of the AVERAGES over k=2..8, NOT per-op prices
+and NOT a model validation. (5) P6: the e_MF/e_FM split STAYS
+UNMEASURED; the estimators are not computed.
+
+**NAMED NOT ATTRIBUTED: the ~2.3 cyc arm-level shift mode.** The
+P1-failure magnitudes (+2.04..+2.36) are the magnitude class of the
+thirty-second amendment's v7-vs-v8 cross-instrument deltas (+2.27 to
++2.33), and the SAME class appears inside v9 as per-launch level
+shifts on individual arms -- M2 launch0 21.1328 vs 23.4531/23.5039
+(-2.32), F2 launch1 12.4180 vs 10.3555/10.1367 (+2.28), F1 launch1
+12.3477 (+2.20), F4 launch2 20.4492 (+2.29), F5 launch2 22.1289
+(-2.22), F7 launch2 32.4102 (+2.28..2.31), M5 launch0 76.1523
+(-2.21), M8 launch1 113.3438 (+2.20..2.26). A ~2.3 cyc per-arm
+shift mode is therefore NAMED as the dominant cross-run/cross-launch
+variability of this instrument class (it covers the v7-vs-v8 "+2.3"
+anomalies and the P1 failures in one stroke); its carrier is NOT
+ATTRIBUTED (register allocation, scheduling regime, counter
+interleaving -- untested here). Named outside the class: M6's launch0
+shift +6.1758 (87.3047 vs 81.1289/81.1445).
+
+**What is excluded, and what is not.** Excluded (this run): that the
+non-affinity is range-limited to k<=5; that v8's F1>F2
+non-monotonicity is a stable property of the arm pair; that individual
+V points reproduce across runs at the 1.0 cyc tolerance. Not excluded:
+the twenty-ninth's rank/nullspace identifiability theorem (UNTOUCHED),
+any particular mechanism for the length dependence or the shift mode.
+The named question ("is the pure-word non-affinity a k<=5 artifact?")
+is ANSWERED: no.
+
+**Consequence.** Nothing moves (rule 4): no record, no :measured?
+flag, no selection answer, no workgroup row. The named item moves in
+design state only: "the premise is REFUTED as edge-additive in-form at
+the pure-word level (non-affine length series; end-artifact class
+refuted); length-dependent realization effect NAMED, NOT ATTRIBUTED;
+split UNMEASURED" becomes "the non-affinity REPRODUCES and EXTENDS to
+k=8 (both families, every launch); the F1>F2 non-monotonicity is
+run-specific (the F1~=F2 plateau reproduces); a ~2.3 cyc arm-level
+shift mode is NAMED as the dominant variability (not attributed);
+split UNMEASURED". The observable cross quantity stands at the
+measured cycle sum e_MF + e_FM = 21.0000 (cross surplus +2.0034),
+unchanged.
+
+**States.** MEASURED (standing, unchanged, earlier ticks): e_MM
+14.9966, e_FF 4.0000, e_MF+e_FM 21.0000, cross surplus +2.0034.
+MEASURED (new, PROBE-grade, enters no record): the v9 V table, its
+first/second differences to k=8 and the shift-mode quantification
+(evidence cuda-mufu-lenext-20261026). REFUTED (this run): that the
+pure-word non-affinity is range-limited; that v8's F1>F2
+non-monotonicity is stable; that individual V points reproduce across
+runs within 1.0 cyc. IMPLEMENTED: nothing in src/ or test/. DECIDED:
+nothing new. ACCEPTED DESIGN ONLY (unchanged): the operator-aware
+contract + pre-registration, the row (ii) routes, the entry contract +
+wiring, ADR-0358, ADR-0373. UNMEASURED, named (list carried forward):
+the e_MF / e_FM split (P6), bare MUFU.RCP dependent-chain latency,
+the floor's internal composition (per-form intercepts 0.5234/7.4844/
+5.4805 and the v6 ~10.14 / v7 ~10.17 cyc floors, all unattributed),
+the pure 2-input IADD3 and IMAD.IADD separations, the 21 surplus ops'
+costs, the residual W-shape's dynamic carrier, the ~2.3 cyc shift
+mode's carrier, noise exceedance, sum TRUE side W=256, cross-day run
+3+ (still 2026-10-26 UTC), non-xavier verdicts, :sum W=64 elsewhere,
+live CUDA selection path, workgroup rows (:arm/:unknown provisional
+:measured? false -- accelerator-targets defaults are design
+assumptions, not evidence).
+
+Gates (honest): the scoped GPU gate GREEN on run 1 AND run 2 (123
+tests / 12162 assertions / 0 failures / 0 errors, glslang 16.6.0
+real-spawn, regression pin -- verbatim logs gate-run1.txt /
+gate-run2.txt in the evidence dir); `find docs -name '*.sh'` -> 0.
+FULL run-tests.cljk RUN LIVE THIS TICK: RED AT BASE 'Could not find
+namespace: kotoba.form' at namespace load (ADR-0362), outside this
+diff -- verified live, NO green full suite claimed.
