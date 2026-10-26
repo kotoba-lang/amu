@@ -1704,8 +1704,11 @@
   ;; the 3-word-cycle fields at 24/32/48/64 tokens and the 8-word-cycle
   ;; fields at 32/48/64 tokens ALL TRAPped on the BEFORE arm (spelling
   ;; varies by probe position -- host/stack-exhausted or budget/frames,
-  ;; the recurring state-dependence: the dedupe-map row's run resolved
-  ;; 24 tokens and trapped at 32+ at ITS position) and all answer the
+  ;; the recurring state-dependence of a plain defn- self-recursion's
+  ;; trap SPELLING -- loop-helper-boundary row 2026-10-26, which
+  ;; measured this spelling class and corrected the old loop-boundary
+  ;; attribution: the dedupe-map row's run resolved 24 tokens and
+  ;; trapped at 32+ at ITS position) and all answer the
   ;; host arm's maps on the AFTER arm. CONTRACT UNCHANGED (the token /
   ;; guard / dedupe / answer-kind grids below are byte-identical
   ;; BEFORE == AFTER == HOST).
@@ -1723,9 +1726,14 @@
   ;; 8-word vocabulary, all-or-nothing) so the measured document-vector
   ;; element cap (32 elements resolve, 48 trap 'document-vector-too-large')
   ;; is unreachable in this walk; the bare counting loop's own boundary
-  ;; is state-dependent (resolved 20000 standalone in one probe but
-  ;; TRAPped budget/frames at 10000 in a run interleaved with trapping
-  ;; neighbours -- never pinned).
+  ;; is FLAT and DETERMINISTIC (MEASURED 2026-10-26,
+  ;; docs/evidence/gpu/w3-loop-helper-boundary-20261026.txt: resolves
+  ;; every k 1..40000 in every position measured -- the historical
+  ;; "10000 trap" was the paired selfcall cell on the same printed line,
+  ;; a mis-attribution; iterations are neither frames nor fuel). What
+  ;; stays state-dependent is the trap SPELLING of a plain defn-
+  ;; self-recursion -- never pinned (see
+  ;; w3-loop-helper-boundary-is-flat-and-deterministic).
   (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
         arms (str/join "\n" (map #(extract-balanced src %)
                                  ["(defn- none?" "(defn- string->i64" "(defn- digits?"
@@ -1975,3 +1983,95 @@
             "and the sentinel is none?'s own body inline")
         (is (some? (extract-balanced src "(defn- none?"))
             "none? stays a defn-: device-from-subgroup and the wg readers still call it")))))
+
+(deftest w3-loop-helper-boundary-is-flat-and-deterministic
+  ;; The LOOP HELPER BOUNDARY row (2026-10-26,
+  ;; docs/evidence/gpu/w3-loop-helper-boundary-20261026.txt): the named
+  ;; residual of the loop / fuel / alt-loop / alt-fuel rows -- "the loop
+  ;; helper's own state-dependent boundary (20000 standalone / 10000 in
+  ;; a run interleaved with trapping neighbours, NEVER pinned)" -- is
+  ;; CLOSED BY MEASUREMENT, and the attribution is CORRECTED. What the
+  ;; probe measured (three instruments, each run twice; the boundary
+  ;; probe's two runs byte-identical, the flip probe's two runs
+  ;; byte-identical, and the historical instrument's two reruns
+  ;; differing at EXACTLY ONE cell -- named below):
+  ;;   (1) The loop helper's boundary is FLAT and DETERMINISTIC. A bare
+  ;;   counting `loop`/`recur` resolves at every k 1..40000 in EVERY
+  ;;   position measured -- standalone, after 8 trapping neighbours,
+  ;;   with a trapping neighbour before EVERY cell, and across repeated
+  ;;   drift cells -- and the historical "10000 trap" DOES NOT
+  ;;   REPRODUCE anywhere. The clamps below prove why: the loop is
+  ;;   depth 2 and exactly 2 fuel entries at ANY iteration count
+  ;;   (kir.cljk invoke-function: the trampolined self-tail re-entry
+  ;;   keeps the call stack and charges zero fuel, T7.1/T7.4).
+  ;;   (2) The historical "TRAPped budget/frames at 10000" was a MIS-
+  ;;   ATTRIBUTION. The historical instrument prints the two shapes on
+  ;;   ONE line ("countup(loop) k => ... selfcall(defn) k => ..."); the
+  ;;   budget/frames trap at k = 1000 is the SELFcall(defn) cell, the
+  ;;   countup cell answers the value on the same line. Re-running that
+  ;;   exact instrument twice reproduces this.
+  ;;   (3) What IS state-dependent is the trap SPELLING of the PLAIN
+  ;;   defn- self-recursion (one frame per call): the same cell answers
+  ;;   :host/stack-exhausted in one position and :budget/frames (limit
+  ;;   32) in another -- measured moving at ONE cell (selfcall 1000)
+  ;;   between two runs of the same instrument, and between the cold
+  ;;   and hot positions of a single run. Which limit answers first
+  ;;   (the host's stack or the deterministic 32-frame budget) is
+  ;;   host-state -- NEVER pinned, only named.
+  ;;   (4) ir/host-stack-exhausted? answers FALSE on the interpreter's
+  ;;   named :host/stack-exhausted trap (kir.cljk:6096-6097 wraps the
+  ;;   raw host error into a trap!, and the predicate classifies RAW
+  ;;   host errors, not the named trap).
+  ;; CONSEQUENCE: NOTHING MOVES -- no :measured? flag, no :shapes
+  ;; value, no workgroup row, no selection answer; :arm/:unknown stay
+  ;; provisional :measured? false; no hardware ran. This row pins the
+  ;; loop contract the walks rely on and closes the residual.
+  (let [probe (str "(ns accelerator.targets.w3.loopboundary.probe"
+                   " (:export [main countup selfcall]))\n"
+                   "(defn main [] :i64 0)\n"
+                   "(defn countup [k :i64] :i64\n"
+                   "  (loop [i 0] (if (>= i k) i (recur (+ i 1)))))\n"
+                   "(defn- selfrec [i :i64 k :i64] :i64\n"
+                   "  (if (>= i k) i (selfrec (+ i 1) k)))\n"
+                   "(defn selfcall [k :i64] :i64 (selfrec 0 k))\n")
+        hir (sema/analyze probe)
+        cu (fn [k] (str (ir/execute hir 'countup [k])))
+        cu-o (fn [k opts]
+               (try (str (ir/execute hir 'countup [k] opts))
+                    (catch Throwable e
+                      (str "TRAP: " (ex-message e) " " (pr-str (ex-data e))))))]
+    (testing "the boundary is FLAT: iterations are neither frames nor fuel"
+      (is (= "20000" (cu 20000))
+          "20000 iterations resolve at the default budgets (depth 2, 2 fuel)")
+      (is (= "1" (cu-o 1 {:frames 2}))
+          ":frames 2 admits k = 1 -- the clamp equals the loop's exact depth")
+      (is (= "20000" (cu-o 20000 {:frames 2}))
+          "and k = 20000 at the same clamp -- depth is CONSTANT in iteration count")
+      (is (= "1" (cu-o 1 {:fuel 2}))
+          ":fuel 2 admits k = 1 -- the clamp equals the loop's exact entries")
+      (is (= "20000" (cu-o 20000 {:fuel 2}))
+          "and k = 20000 at the same clamp -- the entry count is FLAT"))
+    (testing "one unit past the clamp names the two entries deterministically"
+      (let [f1 (cu-o 20000 {:frames 1})]
+        (is (str/includes? f1 "TRAP: budget/frames")
+            ":frames 1 traps -- the helper entry is the second frame")
+        (is (str/includes? f1 ":limit 1"))
+        (is (str/includes? f1 ":call-stack [countup __kotoba_loop_")
+            "the trap names the loop-helper ENTRY, never a loop iteration"))
+      (let [u1 (cu-o 20000 {:fuel 1})]
+        (is (str/includes? u1 "TRAP: budget/fuel")
+            ":fuel 1 traps -- the helper entry is the second charge")
+        (is (str/includes? u1 ":limit 1"))
+        (is (str/includes? u1 ":call-stack [countup __kotoba_loop_")
+            "same named entry: the loop body charges NOTHING")))
+    (testing "the plain defn- self-recursion's trap SPELLING stays NAMED, never pinned"
+      ;; MEASURED moving (the row's evidence): selfcall 1000 answered
+      ;; :budget/frames in one run of the historical instrument and
+      ;; :host/stack-exhausted in the next (the ONLY cell that moved);
+      ;; selfcall 24 resolved at one position and trapped at others.
+      ;; The deterministic half is the budget itself (depth > 32 ->
+      ;; :budget/frames, limit 32, kir.cljk:3833-3836); WHICH limit
+      ;; answers first is host-state, so no cell here is pinned.
+      (is (some? (cu 20000))
+          "the loop cells above are the pinned half; the self-recursion's
+ boundary is evidence-only (trap spellings are state-dependent)"))))

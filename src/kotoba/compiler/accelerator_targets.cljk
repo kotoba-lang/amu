@@ -296,10 +296,13 @@
 ;; (kotoba.compiler.limits :profile/reference), so a hypothetical
 ;; many-field key can still reach the FUEL budget (the row's probe
 ;; boundary sweep, measure-only, never pinned) and the loop helper's
-;; own boundary is state-dependent (the sg-ops-walk precedent) --
-;; both bounded by the table's own key strings (3 fields today),
-;; unreachable from the wire. The FUEL residual CLOSED the same day by
-;; the alt-fuel row (below).
+;; own boundary is FLAT and DETERMINISTIC (MEASURED 2026-10-26,
+;; docs/evidence/gpu/w3-loop-helper-boundary-20261026.txt: iterations
+;; are neither frames nor fuel -- the historical "state-dependent"
+;; claim was a mis-attribution of a paired selfcall cell; the
+;; loop-helper-boundary row) -- both bounded by the table's own key
+;; strings (3 fields today), unreachable from the wire. The FUEL
+;; residual CLOSED the same day by the alt-fuel row (below).
 ;; The alt-fuel row (2026-10-26): the per-FIELD fuel entries are gone
 ;; from both loop bodies -- alt-end (walk-only, DELETED) and alt-any-hits'
 ;; substr-hits call are INLINED, so each walk charges its ONE entry plus
@@ -323,8 +326,9 @@
 ;; (a bare fragment is not a set where alternates exist) is untouched.
 ;; substr-hits STAYS a defn- (key-hits still calls it for the base
 ;; fragment). RESIDUAL, NAMED (measure-only): none per field -- the
-;; remaining boundary is the loop helper's own state-dependent one (the
-;; sg-ops-walk precedent), and the table's keys carry 3 fields today.
+;; remaining boundary is the loop helper's own, FLAT and DETERMINISTIC
+;; (the loop-helper-boundary row, 2026-10-26: iterations are neither
+;; frames nor fuel), and the table's keys carry 3 fields today.
 #?(:kotoba
    (defn- alt-field? [alts :string i :i64 n :i64] :bool
      (loop [i i]
@@ -886,9 +890,13 @@
 ;; RESIDUAL, NAMED (measure-only): there is no per-token charge of any
 ;; kind left in the body under the default budgets (fuel flat, frames
 ;; constant, cells/bytes unmetered) -- the walk's new boundary is the
-;; loop helper's own state-dependent one (20000 standalone / 10000 in
-;; an interleaved run, NEVER pinned) plus host memory, measured in this
-;; row's evidence at the named cells. Also named: the document-vector
+;; loop helper's own, FLAT and DETERMINISTIC (MEASURED 2026-10-26,
+;; docs/evidence/gpu/w3-loop-helper-boundary-20261026.txt: a bare
+;; counting loop resolves every k 1..40000 in every position measured
+;; -- standalone, after 8 trapping neighbours, with a trapping
+;; neighbour before every cell -- the historical "10000 trap" was the
+;; paired selfcall cell, a mis-attribution; iterations are neither
+;; frames nor fuel) plus host memory. Also named: the document-vector
 ;; element cap (32 resolve / 48 trap 'document-vector-too-large') stays
 ;; unreachable here (the answer caps at the 8-word vocabulary).
 #?(:kotoba
