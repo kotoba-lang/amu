@@ -1,0 +1,222 @@
+JUN-58 / JUN-55 -- the fold-arms counters OP-ORDER row at the anchor
+cell: the anchor record's named UNMEASURED item "op-order dependence
+on this channel" is MEASURED AT THE ANCHOR CELL -- the SIGN is
+op-order-INDEPENDENT (the anchor's 18/18-slower verdict class
+REPRODUCES under the reversed order min,max,sum) while the REGIME
+STRUCTURE is op-order-DEPENDENT in the block-position form (the
+one-level property follows the FIRST block of the session) (2026-10-26
+UTC, tick slice)
+
+Row taken: the anchor record's own named UNMEASURED item, verbatim --
+"op-order dependence on this channel"
+(metal-counter-foldarms-20261025/record.txt line 154, carried
+unchanged in every row's UNMEASURED list since -- every row fixed
+op_order=sum,max,min "the anchor row's decision; op-order dependence
+stays UNMEASURED on this channel"). This is NOT a cell of the anchor
+list item ("every other W ... and shape 2 ... (R at those grids ...)")--
+that item's width and shape halves are CLOSED (the W=1024 and
+shape2-W=1024 rows) and only its "R at those grids" parenthetical
+stays open; this row takes the OTHER standing item of the anchor
+record's UNMEASURED list. ONE measurement slice. HARDWARE RAN.
+
+THE ONE CHANGE (pre-registered in protocol.txt before the first run):
+the instrument's op-order positional passed as "min,max,sum" -- the
+EXACT REVERSE of the anchor protocol's fixed sum,max,min. sum moves
+FIRST -> LAST, min LAST -> FIRST, max stays middle. Everything else is
+the anchor row's protocol, unchanged: same cell (n = 1000003,
+W = 256 -- the anchor cell exactly), 6 fresh processes one ADR-0358
+run each, same instrument, same arm construction from the COMMITTED
+emitters, same committed analysis route. The committed instrument's
+argv contract admits any comma-separated permutation of sum,max,min
+(a non-permutation is REFUSED); the run header self-declares
+op_order=min,max,sum.
+
+DAY FACTS (tool output, run-window.txt verbatim): run window
+2026-10-26T22:54:30Z .. 2026-10-26T22:54:31Z -- the SAME UTC day as
+the cross-day row's day-2 runs and the W=32/64/128/512/1024 and
+shape2-W=256/32/64/128/512/1024 rows. No cross-day claim of any kind
+rides this row.
+
+WHAT RAN: the anchor row's declared protocol UNCHANGED except the
+named one change -- 6 fresh processes (run-1.txt..run-6.txt), 20
+interleaved AB/BA pairs per operator per run, 2 warmup submits per arm
+discarded, verified untimed read-back; instrument
+scripts/gpu-subgroup-reduce-metal-counters.m compiled fresh (unchanged
+in the tree since the anchor row; last commit touching it is the
+harness row b3717baf3), arms baseline-<op>.metallib vs
+subgroup-<op>.metallib at W=256 built THIS row from the COMMITTED
+emitters via scripts/gpu-subgroup-reduce-metal-measure.cljk --width
+256 into a FRESH build dir (neither the anchor's 2026-10-25 dir nor
+the shape2-W=256 row's reused -- artifacts re-derived and compared,
+not copied). Predictions P0..P3 (both branches of the named question,
+including the pre-registered block-position sub-question P2a/P2b)
+written to protocol.txt BEFORE the first run.
+
+REALIZATION CONTROL (P0a HOLD, build-shas.txt): the W-INDEPENDENT
+artifacts are sha256-IDENTICAL to the anchor row's 2026-10-25 build
+AND the W=32, W=64, W=128, W=512, W=1024, shape2-W=256, shape2-W=32,
+shape2-W=64, shape2-W=128, shape2-W=512 and shape2-W=1024 rows'
+builds -- probe.metallib 80dbf4fde263.. and the counters binary
+ITSELF 4cb76bdcc974.. -- so the instrument is CONSTANT across all
+THIRTEEN cells. NAMED ARTIFACT FACT (checked, not assumed): ALL SIX
+fold-arm metallibs are byte-identical to BOTH the anchor row's
+2026-10-25 build AND the shape2-W=256 row's 2026-10-26 build
+(baseline 2e2f3654.. / 1169a1a8.. / 2cd19335.., subgroup a8de6377.. /
+bda54358.. / a2046b53..) -- the fold-arm artifacts are n- AND
+op-order-INVARIANT at W=256 (the arms' code sees neither n nor the
+run's op order; both are run-time argv of the instrument); the
+baseline metallibs are additionally byte-identical across ALL
+THIRTEEN builds (W-invariant and n-invariant). All six shas recorded
+for a later cross-day replication of THIS cell.
+
+VERIFIED (real runs): all 6 processes exit 0, stderr 0 bytes, 120/120
+sample lines resolved each (counter_ns=ERR sample count 0 across all
+720 samples), 6/6 verify lines ok=1 per run (36 total, 0 ok=0);
+run-log headers verified programmatically in every log (device=Apple
+M1 Max, channel=counters AtStageBoundary, sampling_points dispatch=0
+stage=1 draw=0 tile=0 blit=0, simdgroup_size=32, n=1000003,
+workgroup=256, pairs=20, warmup=2, op_order=min,max,sum; the anchor's
+op_order=sum,max,min present in NO header; header precedes first
+sample 6/6). The committed route parses the session with ZERO named
+exclusions (every (run, operator) block usable at its letter).
+
+ANALYSIS: ONLY scripts/gpu_regime_classify.py --counters-log
+run-1..6.txt, run TWICE with the outputs BYTE-IDENTICAL (diff exit
+0), publication saved verbatim (72 lines, sha256 19ea1157..); NO
+analysis code written this row.
+
+THE FINDING (publication.txt is the publication):
+
+  (1) P1a FIRES -- THE NAMED QUESTION IS ANSWERED AT ITS FIRST HALF:
+  THE SIGN IS OP-ORDER-INDEPENDENT AT THIS CELL. Under the reversed
+  order every operator is REGIME-INVARIANT SLOWER (max 6/6
+  1.197..1.219, min 6/6 1.217..1.218, sum 6/6 1.200..1.220), every
+  observed regime one-sided, cell roll-up "regime-invariant, slower
+  (18/18 slower)" -- the anchor cell's rule-2 verdict class
+  REPRODUCES exactly at min,max,sum. No side-flip appears (P1b did not
+  fire) -- the reopen-trigger class is NOT exercised by this record
+  and the count STAYS at the shape2-W=32 row's TWO exercising records
+  (the W=32 sum side-flip at n=1000003 and at n=2^20), both
+  unadjudicated; this row registers no reopen claim.
+
+  (2) P2b FIRES -- THE REGIME STRUCTURE IS OP-ORDER-DEPENDENT AT THIS
+  CELL, IN THE BLOCK-POSITION FORM. With min FIRST, min is the
+  ONE-LEVEL operator (103521.0..103854.0, all 6 runs) and the later
+  blocks carry multi-level structure -- max THREE levels
+  (32937.5..33125.0 / 42729.5 / 103479.0..103792.0), sum THREE
+  (32916.5..33104.5 / 63958.5 / 103729.0..103750.0). At the anchor
+  order (sum FIRST) the one-level operator was sum (ONE level, all 6
+  runs) with max/min TWO; at the cross-day row's day-2 session (also
+  sum FIRST) sum was again the one-level operator with max/min FOUR.
+  Across those FOUR sessions the FIRST block is the one-level block
+  4/4 while an operator-specific reading ("sum is the one-level
+  operator") holds only 3/4 -- so the level split tracks the block
+  POSITION at this cell at these sessions, NAMED, NOT EXPLAINED (the
+  state-shift cause, threshold and prevalence stay UNMEASURED; the
+  level VALUES stay session-variable -- this session's fast states
+  ~32.9k are faster than anything the anchor session saw (~54k) and
+  sit in the day-2 class). NAMED NOT HIDDEN: this is ONE
+  reversed-order session against THREE sum,max,min sessions -- the
+  position reading is the fit to these four sessions, not a measured
+  mechanism, and one more reversed-order session reproducing (or not)
+  is UNMEASURED.
+
+  (3) P3 -- the raw ratio bands under the reversed order (max
+  1.197..1.219, min 1.217..1.218, sum 1.200..1.220; pooled
+  1.197..1.220) sit INSIDE the cross-day row's day-2 union band
+  (1.197..1.222) and OVERLAP the anchor's band (1.204..1.221) at
+  1.204..1.220 -- same instrument, same cell, raw-band observation
+  only, no cross-instrument magnitude claim (rule 3) and no magnitude
+  invariance claimed across orders. The anchor's ratio-vs-state
+  pattern REPRODUCES a third time at this cell: the fast-state
+  per-run ratios are slightly LOWER (max level-1 1.197..1.200 and
+  level-2 1.208 vs the slow level-3 1.216..1.219; sum fast
+  1.200..1.203 vs slow 1.220), still on the slower side -- and min,
+  one-level slow here, carries the tightest single-operator band of
+  the counters campaign (1.217..1.218 over 6 runs).
+
+CONSEQUENCE (rule 4, unchanged): NOTHING MOVES -- no :measured? flag,
+no :shapes value, no selection answer, no workgroup row (this channel
+can never move one), no WGSL cell flip, no MSL command-buffer cell
+flip, no cross-instrument magnitude claim. The sign stays
+CHANNEL-SCOPED at the route's own letter and M1-Max scoped. The named
+item moves in RECORD STATE only ("op-order dependence on this
+channel" -> "op-order dependence MEASURED AT THE ANCHOR CELL: the
+SIGN is op-order-INDEPENDENT (18/18 slower under both orders) and the
+REGIME STRUCTURE is op-order-DEPENDENT in the block-position form
+(the first block is the one-level block, 4/4 sessions); op-order
+dependence at every OTHER cell and the state-shift cause stay
+UNMEASURED").
+
+CROSS-CHANNEL NAMED CONTEXT (rule 3 -- context only, magnitudes never
+merged): the MSL command-buffer channel's own historical op-order
+cell and re-session (2026-10-23/24) named order-correlated level
+structure there ("identity refuted; :sum -- the operator that ran
+LAST", the dispatch-ramping reading). This row measures its own
+channel and never merges their magnitudes or adopts their mechanism;
+the block-position observation above is this channel's own, taken at
+this protocol's letter.
+
+STATES (the three states, named):
+- MEASURED (this row): the reversed-order (min,max,sum) 6-run
+  counters record at the anchor cell (n = 1000003, W = 256) --
+  720 resolved brackets (run-1..6.txt), the realization control
+  (build-shas.txt, artifacts identical across all THIRTEEN builds),
+  rule 2's op-order-INDEPENDENT sign (18/18 slower, the anchor class
+  reproduced), rule 1's op-order-DEPENDENT level structure (min ONE /
+  max THREE / sum THREE -- the first-block one-level property, 4/4
+  sessions across two orders), the ratio-vs-state pattern's third
+  reproduction at this cell.
+- IMPLEMENTED: nothing (evidence + prose only; no code, no .cljk).
+- DECIDED (this row): nothing new -- the declared protocol is the
+  anchor row's plus the pre-registered one-change op-order.
+- ACCEPTED DESIGN ONLY (unchanged): the claim protocol and its units;
+  the ADR-0360 narrowing and reopen condition (NOT triggered here);
+  the second-leg letter; ADR-0355's channel rule.
+- PROPOSED (unchanged): the Vulkan-provider timestamp route.
+- UNMEASURED, named so no reading upgrades: op-order dependence at
+  every OTHER cell (this row answers the anchor cell only); a second
+  reversed-order session reproducing the block-position reading; the
+  state-shift cause, threshold and prevalence; "R at those grids" (the
+  anchor list item's last remaining parenthetical) and the residual's
+  internal decomposition and absolute clock domain; day 3+ cross-day
+  replications (still 2026-10-26 UTC); the W-shape's cause (the W=32
+  side-flip's mechanism); the partial tail's quantitative role;
+  anything off M1 Max; the WGSL route's kernel time; every
+  workgroup-row question (:arm/:unknown stay provisional :measured?
+  false -- no :measured? flag, :shapes value, selection answer or
+  workgroup row moves this tick; this channel can never move one).
+
+Gates (real runs, this tick):
+- gpu_regime_classify.py --self-test: TOTAL 2649 assertions passed /
+  0 failed (committed pin 2649/0; no classify code touched --
+  regression pin; log classify-selftest.txt).
+- Scoped GPU gate (8 GPU-owned namespaces, scratch runner
+  gpu_scoped_gate.cljk, never committed): GREEN 123 tests / 12162
+  assertions / 0 failures / 0 errors on run 1 AND run 2 (glslang
+  16.6.0 real-spawn; the diff touches no .cljk namespace -- the
+  committed 123/12162 pin holds; logs gate-run1.txt / gate-run2.txt).
+- FULL run-tests.cljk RUN LIVE THIS TICK: exit 1, RED AT BASE 'Could
+  not find namespace: kotoba.form' at namespace load (ADR-0362),
+  outside this diff (log full-run-tests.txt) -- NO green full suite
+  claimed.
+- find docs -name '*.sh' -> 0 files (the no-POSIX-sh evidence rule).
+- BLOCKER-FIRST: zero open kotoba-lang/amu PRs with a hermes/ head
+  (checked at tick start and re-checked before the push; chain PR
+  #1612 OPEN and MERGEABLE, the ONE chain PR).
+
+NAMED NOT HIDDEN: the same-UTC-day fact with the cross-day and every
+W/shape2 row (no day claim rides this row); the one-second run window
+(wall time is no metric); the reversed-order session being ONE session
+(the block-position reading's replication is UNMEASURED); the
+reopen-trigger count staying at 2; untracked deps.edn (not created by
+this bot) untouched; kbb's "2 dep(s) are not :local/root ..." warning
+on every run (identical everywhere); the build/run/gate scripts live
+in Hermes scratch and are never staged (POSIX .sh ban; all logs
+staged are .txt).
+
+Evidence: docs/evidence/gpu/metal-counter-foldarms-oporder-20261026/
+(protocol.txt, build-shas.txt, run-window.txt, run-1..6.txt,
+publication.txt, classify-selftest.txt, gate-run1.txt, gate-run2.txt,
+full-run-tests.txt, record.txt) + the ADR-0360 op-order amendment.
+(JUN-55, JUN-58)

@@ -3251,3 +3251,77 @@ find namespace: kotoba.form" (ADR-0362), outside this diff, no green
 suite claimed; `find docs -name '*.sh'` -> 0).
 
 Record: `docs/evidence/gpu/metal-counter-foldarms-shape2-w1024-20261026/`.
+
+## Amendment 2026-10-26 (the counters channel's OP-ORDER row at the
+anchor cell): the anchor record's "op-order dependence on this
+channel" is MEASURED AT THE ANCHOR CELL -- the SIGN is
+op-order-INDEPENDENT, the REGIME STRUCTURE is op-order-DEPENDENT in
+the block-position form
+
+The anchor record's counters-channel UNMEASURED list carried "op-order
+dependence on this channel" (record.txt line 154) through every row
+since -- every row fixed `op_order=sum,max,min` "the anchor row's
+decision". This row answers it AT THE ANCHOR CELL (n = 1000003,
+W = 256) with the ONE CHANGE declared in `protocol.txt` before any
+run: the committed instrument's op-order positional passed as
+`min,max,sum`, the exact reverse of the anchor protocol -- sum FIRST
+-> LAST, min LAST -> FIRST, max stays middle. Everything else is the
+anchor row's protocol unchanged. HARDWARE RAN: 6 fresh ADR-0358
+processes on this M1 Max, run window 2026-10-26T22:54:30Z..22:54:31Z
+(run-window.txt, verbatim) -- the same UTC day as the cross-day row's
+day-2 runs and the W/shape2 rows (named; NO day claim rides this
+row). The realization control P0a HOLDS: the W-independent artifacts
+(probe.metallib 80dbf4fd.., counters 4cb76bd..) are sha256-identical
+to the anchor's and all eleven later builds (THIRTEEN cells with this
+one), and ALL SIX fold-arm metallibs are byte-identical to BOTH the
+anchor row's and the shape2-W=256 row's W=256 builds -- the fold-arm
+artifacts are n- AND op-order-INVARIANT at W=256 (checked, not
+assumed; both n and the order are run-time argv of the instrument).
+All 6 processes exit 0 with 120/120 samples resolved and 6/6 verify
+ok=1 each; every header self-declares `op_order=min,max,sum` (the
+anchor's order in no header), verified programmatically.
+
+**The finding (publication.txt is the publication; the committed
+route, run twice byte-identical, sha 19ea1157..).** (1) THE SIGN IS
+OP-ORDER-INDEPENDENT AT THIS CELL: under the reversed order every
+operator is regime-invariant SLOWER (max 6/6 1.197..1.219, min 6/6
+1.217..1.218, sum 6/6 1.200..1.220), cell roll-up 18/18 slower -- the
+anchor cell's rule-2 verdict class reproduces exactly; no side-flip
+(P1b did not fire; the reopen-trigger count stays at the shape2-W=32
+row's TWO exercising records, both unadjudicated). (2) THE REGIME
+STRUCTURE IS OP-ORDER-DEPENDENT, IN THE BLOCK-POSITION FORM: with min
+FIRST, min is the ONE-level operator (103521.0..103854.0) and the
+later blocks carry multi-level structure (max THREE levels
+32937.5..33125.0 / 42729.5 / 103479.0..103792.0; sum THREE
+32916.5..33104.5 / 63958.5 / 103729.0..103750.0). At the anchor order
+the one-level operator was sum (first block), also at the cross-day
+row's day-2 session: across FOUR sessions the FIRST block is the
+one-level block 4/4, while "sum is the one-level operator" holds only
+3/4 -- the level split tracks the block POSITION at this cell, NAMED,
+NOT EXPLAINED (the state-shift cause stays UNMEASURED; level values
+stay session-variable -- this session's fast states ~32.9k are faster
+than the anchor session's ~54k). ONE reversed-order session exists;
+its replication is UNMEASURED. (3) The raw bands (pooled 1.197..1.220)
+sit inside the cross-day row's day-2 union band (1.197..1.222) and
+overlap the anchor's (1.204..1.221) -- same instrument, same cell,
+raw-band observation only (rule 3); the anchor's ratio-vs-state
+pattern (fast-state ratios slightly lower, still slower side)
+reproduces a third time at this cell. CONSEQUENCE: NOTHING MOVES
+(rule 4) -- no :measured? flag, no selection answer, no workgroup row
+(this channel can never move one), no cell flip anywhere, no
+cross-instrument claim. The named item moves in RECORD STATE only:
+"op-order dependence on this channel" -> "MEASURED AT THE ANCHOR
+CELL: sign op-order-INDEPENDENT (18/18 slower under both orders),
+regime structure op-order-DEPENDENT in the block-position form (the
+first block is the one-level block, 4/4 sessions)"; op-order
+dependence at every OTHER cell, the state-shift cause, "R at those
+grids", day 3+ and anything off M1 Max stay UNMEASURED. The MSL
+command-buffer channel's historical op-order cell stays its own
+instrument's record (rule 3: magnitudes never merged).
+
+Gates: see the record (self-test 2649/0 pin; scoped GPU gate GREEN
+123/12162 twice; FULL `run-tests.cljk` RUN LIVE, red at base "Could not
+find namespace: kotoba.form" (ADR-0362), outside this diff, no green
+suite claimed; `find docs -name '*.sh'` -> 0).
+
+Record: `docs/evidence/gpu/metal-counter-foldarms-oporder-20261026/`.
