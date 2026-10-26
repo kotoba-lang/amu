@@ -2511,7 +2511,91 @@ GREEN 123 tests / 12162 assertions / 0 failures / 0 errors (glslang
 16.6.0 real-spawn) -- the committed pin exactly (this diff touches NO
 .cljk namespace, regression pin); find docs -name '*.sh' -> 0 (this
 row's evidence is .txt only); gpu_regime_classify.py --self-test NOT
-re-run (no classify code touched -- standing pin 2649/0, NOT
-re-verified here); FULL run-tests.cljk NOT run (no .cljk touched) --
+re-run (no classify code touched -- standing pin
+2649/0, NOT re-verified here); FULL run-tests.cljk NOT run (no .cljk
+touched) -- documented RED AT BASE 'Could not find namespace: kotoba.form'
+(ADR-0362), outside this diff -- NO green full suite claimed.
+
+## Amendment (2026-10-26, interleaved spellings: MUFU.RSQ measured, the
+(rsq,rcp) interleave folds its rcp legs away, the (rcp,fadd) interleave
+carries bare MUFU.RCP)
+
+The twenty-fifth amendment's named unmeasured item "bare MUFU.RCP's
+dependent-chain latency" takes its named instrument branch ("a
+multi-op recurrence that survives pairwise cancellation, e.g.
+interleaved spellings") and the branch SPLITS TWICE. Evidence:
+docs/evidence/gpu/cuda-mufu-interleave-20261026/ (record.txt +
+run-log-v1-buildfail.txt + run-log-v2.txt + run-log-v3.txt +
+microbench-sass-v2.txt + microbench-sass-v3.txt +
+mufu-interleave-table.txt). Hardware: xavier sm_72 at
+2026-10-26T14:12:48Z (v1, build-failed -- named), 14:13:45Z (v2),
+14:20:18Z (v3). NAMED NOT HIDDEN: a PROBE, not a registered timing
+session -- no paired samples, no AB/BA, inadmissible under the entry
+criterion BY KIND; same-UTC-day with every earlier probe (2026-10-26
+UTC); it measures instruction chains, not kernels; it enters nothing
+and moves no record.
+
+**Realizability (v2, SASS-verified).** A pure `rsqrt.approx.ftz.f32`
+chain carries 16/16 and 8/8 dependent MUFU.RSQ with no fold (a named
+failed attempt v1 is retained: the PTX mnemonic `rsq.*` does not exist,
+quoted). An interleaved (rsq,rcp)*8 chain realizes WITHOUT its rcp
+legs -- body {MUFU.RSQ:8 + overhead}, byte-identical in shape and
+sample distribution to the 8-RSQ arm: the pairwise-cancellation
+characterization is refined -- a dependent MUFU.RCP leg survives ONLY
+where no MUFU-MUFU composition exists in the value flow (mechanism
+unresolved, named). The straight 16-RCP control collapses to identity
+(loop-free, 2 cyc, anchor at seed) as the twenty-fifth amendment found.
+An interleaved (rcp,fadd)*k chain (v3) DOES carry its rcp legs: bodies
+VERIFIED {MUFU.RCP:8, FADD.FTZ:8} and {MUFU.RCP:4, FADD.FTZ:4}.
+
+**What is measured (the only measured things here).**
+(1) MUFU.RSQ dependent-chain latency: intercept-free slope over
+    chain lengths 16/8 = 14.9991 cyc per MUFU.RSQ (the first measured
+    dependent-chain MUFU latency on this host).
+(2) The (MUFU.RCP + FADD.FTZ) dependent pair: intercept-free slope over
+    8/4 pairs = 21.0000 cyc per pair (exact at both ends).
+(3) The floor anchors: 1 MUFU/iteration stays floor-bound (28.5078 /
+    28.4688 cyc/iter, the same ~28.5 floor as the twenty-fifth
+    amendment's readings) -- n=1 never prices latency.
+(4) Form validation: straight FADD.FTZ 4.4683 / 4.4658 cyc/instr vs
+    v2's 4.4397 (CONSUMED) = +0.64% / +0.59%; fadd anchor exact
+    (4097.0f, bits 1166018560, 3/3).
+
+**Separation (DERIVED, marked).** L(MUFU.RCP) = 21.0000 - 4.4658
+(same-binary fadd arm) = 16.5342 cyc, ASSUMING serial dependent
+latencies add across the pair. The in-binary validation of that
+assumption (an (rsq,fadd) pair slope put through the same subtraction
+must reproduce the measured 14.9991) is DESIGNED as instrument v4 and
+NOT RUN -- named, started, not finished. Until v4 lands, 16.5342 is
+DERIVED, not MEASURED.
+
+**Consequence.** Nothing moves (rule 4): no record, no :measured? flag,
+no selection answer, no workgroup row. The named item moves PARTIALLY:
+dependent-chain latency MEASURED as the 21.0000 cyc (rcp,fadd) pair and
+14.9991 cyc for MUFU.RSQ alone; bare MUFU.RCP alone is DERIVED 16.5342
+and UNMEASURED as a direct single-op reading (no carrier leaves one
+MUFU.RCP above the loop floor).
+
+**States.** MEASURED: the RSQ slope, the (rcp,fadd) pair slope, the
+(rsq,rcp) fold fact, the parity-collapse control, the floor anchors,
+the fadd validation pair, every realized body. DERIVED (marked):
+L(MUFU.RCP) 16.5342 and the amortized per-op readings. IMPLEMENTED:
+nothing (evidence + this amendment). DECIDED: nothing new. ACCEPTED
+DESIGN ONLY (unchanged): the operator-aware contract + pre-registration,
+the row (ii) routes, the entry contract + wiring, ADR-0358, ADR-0373.
+UNMEASURED, named: the v4 in-binary additivity validation (designed,
+not run), bare MUFU.RCP latency as a direct measurement, the floor's
+internal composition, the pure 2-input IADD3 and IMAD.IADD separations,
+the 21 surplus ops' costs, the residual W-shape's dynamic carrier,
+noise exceedance, sum TRUE side W=256, cross-day run 3+ (still
+2026-10-26 UTC), non-xavier verdicts, :sum W=64 elsewhere, live CUDA
+selection path, workgroup rows (:arm/:unknown provisional :measured?
+false).
+
+Gates (honest): the run-time budget closed before the gate stage -- the
+scoped GPU gate and `find docs -name '*.sh'` were NOT re-run this tick
+(NAMED, not hidden; the find check was taken once at evidence staging:
+0 .sh under docs; this diff touches NO .cljk namespace -- evidence +
+this amendment only). FULL run-tests.cljk NOT run (no .cljk touched) --
 documented RED AT BASE 'Could not find namespace: kotoba.form'
 (ADR-0362), outside this diff -- NO green full suite claimed.
