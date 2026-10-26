@@ -565,70 +565,99 @@
           (string=? kind "image") (xi-source (drv-read src) src out fuel)
           :else (xo-source (drv-read src) src out fuel))))
 
-;; The first selfhost AIUEOS CPL3 image uses the existing user ELF v1
-;; envelope. This is intentionally the closed scalar slice: no Linux runtime,
-;; raw cap-call, heap, or undeclared host transport is smuggled into a user
-;; image. This image advertises no capabilities. The current AIUEOS loader
-;; admits only the historical bitmap 60 and must gain an explicit zero-cap
-;; branch before this candidate can execute there. A richer Itonami ABI needs
-;; a separately versioned image.
-(defn- xu-header [M :vector-i64] :vector-i64
+;; The selfhost AIUEOS CPL3 user-v1 ELF is the zero-argument scalar slice.
+;; User-v2 keeps the same zero-capability context and result slot but passes
+;; a bounded, OS-filled 64-byte Goal request region to a two-i64 main.
+;; Neither version grants Linux runtime, raw cap-call, heap or host transport.
+;; AIUEOS must admit and populate v2 separately; compiler success is not a
+;; user turn or a guest execution result.
+(defn- xu-input-lib [] :string
+  "\n(defn- kernel-load-u32 [b :i64 n :i64 i :i64] :i64 0)\n")
+(defn- xu-header [M :vector-i64 v2 :bool] :vector-i64
   (-> M (xg-out 0x00010102464c457f 8) (xg-out 0 8)
       (xg-out 2 2) (xg-out 62 2) (xg-out 1 4) (xg-out 0x220000 8)
       (xg-out 64 8) (xg-out 0 8) (xg-out 0 4) (xg-out 64 2)
       (xg-out 56 2) (xg-out 2 2) (xg-out 0 2) (xg-out 0 2) (xg-out 0 2)))
-(defn- xu-rx [M :vector-i64] :vector-i64
+(defn- xu-rx [M :vector-i64 v2 :bool] :vector-i64
   (let [n (xg-pos M)]
     (-> M (xg-out 1 4) (xg-out 5 4) (xg-out 4096 8)
-        (xg-out 0x220000 8) (xg-out 0x220000 8)
+        (xg-out 0x220000 8)
+        (xg-out 0x220000 8)
         (xg-out n 8) (xg-out n 8) (xg-out 4096 8))))
-(defn- xu-rw [M :vector-i64] :vector-i64
+(defn- xu-rw [M :vector-i64 v2 :bool] :vector-i64
   (-> M (xg-out 1 4) (xg-out 6 4) (xg-out 8192 8)
-      (xg-out 0x221000 8) (xg-out 0x221000 8)
-      (xg-out 88 8) (xg-out 88 8) (xg-out 4096 8)))
-(defn- xu-context [M :vector-i64] :vector-i64
+      (xg-out 0x221000 8)
+      (xg-out 0x221000 8)
+      (xg-out 88 8) (xg-out (if v2 320 88) 8) (xg-out 4096 8)))
+(defn- xu-context [M :vector-i64 v2 :bool] :vector-i64
   (-> M (xg-out 0 8) (xg-out 256 8) (xg-out 0 1)
       (xg-out 0 8) (xg-out 0 8) (xg-out 0 8)
-      (xg-out 0 7) (xg-out 0x220020 8)
+      (xg-out 0 7) (xg-out (if v2 0x220030 0x220020) 8)
       (xg-out 0 8) (xg-out 0 8) (xg-out 0 8) (xg-out 0 8)))
-(defn- xu-image [M :vector-i64] :vector-i64
-  (-> M (mem-set MM-OUT-N 1) (xu-header) (xu-rx) (xu-rw)
-      (xg-pad 4096) (xg-out-code 1) (xg-pad 8192) (xu-context)))
+(defn- xu-image [M :vector-i64 v2 :bool] :vector-i64
+  (-> M (mem-set MM-OUT-N 1) (xu-header v2) (xu-rx v2) (xu-rw v2)
+      (xg-pad 4096) (xg-out-code 1) (xg-pad 8192) (xu-context v2)))
 (defn- xu-nops [M :vector-i64 end :i64] :vector-i64
   (if (or (not= (vector-at M MM-ERR) 0) (>= (xg-pos M) end)) M
     (xu-nops (xg-byte M 0x90) end)))
-(defn- xu-entry [M :vector-i64 entry :i64] :vector-i64
-  (-> M (xg-rel 0x0d8d4c 3 3 0) (xg-rel 0xe8 1 1 entry)
+(defn- xu-input-args [M :vector-i64] :vector-i64
+  ;; RDI = request+256; RSI = 64. R9 remains the private context pointer.
+  (-> M (xg-bytes 0x00000100b98d49 7) (xg-bytes 0x40be 5)))
+(defn- xu-entry [M :vector-i64 entry :i64 v2 :bool] :vector-i64
+  (-> M (xg-rel 0x0d8d4c 3 3 0)
+      (cond-> v2 (xu-input-args))
+      (xg-rel 0xe8 1 1 entry)
       (xg-rel 0x058948 3 3 0) (xg-bytes 0x90f3 2)
-      (xg-bytes 0xfceb 2) (xu-nops 32)
+      (xg-bytes 0xfceb 2) (xu-nops (if v2 48 32))
       ;; syscall 5 trampoline remains sealed even for an effect-free image.
       (xg-bytes 0x000005b8 4) (xg-byte 0x00)
       (xg-bytes 0x507f8b48 4) (xg-bytes 0xc3050f 3)
-      (xu-nops 64)))
-(defn- xu-build [M :vector-i64 S :string] :vector-i64
-  (let [a (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 2 256) (xg-set 4 0)
-              (xg-check-fns S 1) (xg-check-sir 1))]
-    (cond (not= (vector-at a MM-ERR) 0) a
-          (= (xg-get a 1) 0) (xg-err a 7102 0)
-          (not= (vector-at a MM-CAPS) 0) (xg-err a 7101 OP-CAP)
-          :else (let [g (-> a (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1)
-                            (xg-index-labels 1) (xu-entry (xg-get a 1))
+      (xu-nops (if v2 80 64))))
+(defn- xu-main? [M :vector-i64 S :string] :bool
+  (let [f (xg-get M 1)
+        sym (xg-f M f FF-SYM)
+        sb (+ MM-SYM-BASE (* sym MM-SYM-W))]
+    (string=? (string-substring S (vector-at M (+ sb SF-START))
+                (vector-at M (+ sb SF-END))) "main")))
+(defn- xu-build [M :vector-i64 S :string v2 :bool] :vector-i64
+  (let [base (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 2 256) (xg-set 4 0))
+        checked (if v2 (xo-check-fns base S 1) (xg-check-fns base S 1))
+        a (xg-check-sir checked 1)
+        b (if v2 (xk-check (xk-scan-count a S 1) 1) a)]
+    (cond (not= (vector-at b MM-ERR) 0) b
+          (= (xg-get b 1) 0) (xg-err b 7102 0)
+          (not (xu-main? b S)) (xg-err b 7102 (xg-get b 1))
+          (not= (xg-f b (xg-get b 1) FF-NPARAMS) (if v2 2 0))
+            (xg-err b 7102 (xg-get b 1))
+          (and v2 (or (not= (xg-f b (xg-get b 1) FF-RTYPE) TY-I64)
+                      (not= (ck-pt b (xg-get b 1) 0) TY-I64)
+                      (not= (ck-pt b (xg-get b 1) 1) TY-I64)))
+            (xg-err b 7102 (xg-get b 1))
+          (not= (vector-at b MM-CAPS) 0) (xg-err b 7101 OP-CAP)
+          :else (let [g (-> b (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1)
+                            (xg-index-labels 1) (xu-entry (xg-get b 1) v2)
                             (xg-code 1))]
                   (if (or (> (xg-pos g) 4096) (>= 8281 MM-OUT-CAP))
                     (xg-err g 7104 (xg-pos g))
-                    (xu-image (xg-fix (xg-set g 3 8192) 1)))))))
+                    (xu-image (xg-fix (xg-set g 3 8192) 1) v2))))))
 (defn- xu-command [] :i64
-  (let [src (io-arg 1) out (io-arg 5)]
+  (let [src (io-arg 1) out (io-arg 5)
+        v2 (string=? (io-arg 3) "x86_64-aiueos-user-v2")]
     (cond (or (not= (io-argc) 6) (not (string=? (io-arg 4) "--output"))
               (= (string-length out) 0) (= (io-exists out) 1))
           (drv-fail0 E-USAGE)
           (= (io-exists src) 0) (drv-fail0 E-READ)
-          :else (let [s (drv-read src) front (xg-front s)
-                      image (if (= (vector-at front MM-ERR) 0) (xu-build front s) front)]
+          :else (let [source (drv-read src)
+                      s (if v2 (string-concat source (xu-input-lib)) source)
+                      front (xg-front s)
+                      image (if (= (vector-at front MM-ERR) 0) (xu-build front s v2) front)]
                   (if (not= (vector-at image MM-ERR) 0)
                     (xo-report image src out)
                     (let [n (dec (vector-at image MM-OUT-N))
                           written (out-write-v image out (+ MM-OUT-BASE 1) n)
-                          w (io-out (string-concat "{:ok true, :target :x86_64-aiueos-user-v1, :format :elf64-exec, :bytes "
-                                                   (string-concat (mem-u2dec n) "}\n")))]
+                          target (if v2 ":x86_64-aiueos-user-v2" ":x86_64-aiueos-user-v1")
+                          w (io-out (string-concat "{:ok true, :target "
+                                    (string-concat target
+                                      (string-concat ", :format :elf64-exec, :bytes "
+                                        (string-concat (mem-u2dec n) "}\n")))))]
                       (if (= (io-exists out) 1) 0 (drv-fail0 E-WRITE))))))))
