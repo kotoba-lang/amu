@@ -1880,3 +1880,76 @@ path; every workgroup row (`:arm`/`:unknown` stay provisional
 not find namespace: kotoba.form` (ADR-0362), outside this diff, NO
 green suite claimed; `find docs -name '*.sh'` -> 0 files. Record:
 `docs/evidence/gpu/cuda-sass-census-20261026/`.
+
+## Amendment (2026-10-26, the op-cost microbench: the residual's named
+candidate splits by mode)
+
+The seventeenth amendment's named unmeasured item "the residual ~0.015-0.02
+of the op ratio (FMNMX vs FADD latency -- a throughput microbench, its own
+row)" takes its microbench branch and moves PARTIALLY: the LATENCY half is
+REFUTED (equal at measurement granularity) and the ISSUE-SIDE half is
+MEASURED (FMNMX +6.78% over FADD at issue rate). HARDWARE RAN: the opcode
+latency/throughput microbench on xavier sm_72, two runs (v1
+2026-10-26T08:51:18Z, v2 2026-10-26T09:34:43Z). NAMED NOT HIDDEN: a PROBE,
+not a registered timing session (no paired samples, no AB/BA),
+inadmissible under the entry criterion BY KIND; same UTC day as the earlier
+probes -- NOT a cross-day replication (ADR-0373 by citation). It measures
+instruction costs, not kernels; it enters nothing.
+
+**What ran.** 8 opcode arms x 2 modes (latency = one dependent
+accumulator, 4096 units; thr = 16 independent accumulators, 1024 units),
+clock64(), 3 launches x 128 threads, nvcc 11.4 V11.4.315 at sm_72. The
+v1->v2 delta is exactly the instrument's THR anchor fix (v1 stored only
+x0; x1..x15 dead asm was eliminated -- see integrity findings) and the
+verifier's function-parse fix; the LAT macros are byte-identical across
+runs.
+
+**Verified (real runs).** v2: OK-build / OK-cubin / OK-sass 1162 lines,
+diags 0 bytes (bar the benign 2190-byte warning set), SASS census 16/16
+functions with opcode histograms, 48 RESULT lines, all 3 launches
+identical (deterministic); v1's transcript and full SASS (780 lines) are
+committed verbatim.
+
+**Finding.**
+(1) Latency REFUTED as the residual's mechanism: dependent-chain FADD.FTZ
+    4.4397 cyc vs FMNMX 4.4392 cyc per unit (ratio 0.99989).
+(2) Issue side CONFIRMED as a real asymmetry: 16 independent live chains
+    per loop iteration, identical loop overhead, timed region = the loop:
+    fadd 2.6641 vs fmnmx 2.8447 cyc/unit (ratio 1.06779; +0.1807 cyc/op).
+(3) DERIVED (marked): residual ~= 1 + s*0.0678 fits the sixteenth
+    amendment's residual 1.0171/1.0132/1.0040 (W=128/256/512, max) at
+    s = 0.252/0.194/0.059 -- right sign and order, but s is not W-stable,
+    so the issue delta does not carry the residual's W-shape; the
+    quantitative attribution is its own analysis row.
+(4) INSTRUMENT INTEGRITY (verified in the committed SASS): this toolchain
+    eliminates dead asm volatile outputs (v1 thr x1..x15), merges 16
+    same-iteration asm ops on one accumulator into one instruction even
+    across asm volatile (lat iadd3/imad bodies folded to a single
+    x += 0x10), eliminates no-op mov loops entirely, expands
+    rcp.approx.f32 to MUFU.RCP + Newton-refinement pairs (raw MUFU.RCP
+    never realized alone), and rewrites mad.hi.u32 to LEA.HI / mad.lo
+    (const 1) to IADD3. Arms affected are invalid or renamed as measured.
+
+**Consequence today: NOTHING MOVES** (rule 4). No record, no `:measured?`
+flag, no selection answer, no `:shapes` value and no workgroup row; the
+landed entries stand byte-for-byte. The named item moves PARTIALLY.
+
+**States.** MEASURED: the v2 microbench (the named pair's latency and
+issue-side costs; the valid arms' costs). DERIVED (marked): the residual
+attribution sketch. IMPLEMENTED: nothing (evidence + this amendment only).
+DECIDED: nothing new. ACCEPTED DESIGN ONLY (unchanged): the operator-aware
+contract + pre-registration, the row (ii) routes, the entry contract +
+wiring, ADR-0358, ADR-0373. UNMEASURED, named: the residual's
+quantitative attribution (count-model per-op mix, its own row); raw
+MUFU.RCP cost; per-op integer latency on this toolchain (a chain form that
+survives the asm merging); a non-eliminated overhead baseline; the baseline
+W=512 rising step's dynamic cause; the sum ratio's TRUE side at W=256; a
+cross-day run 3+ (still 2026-10-26 UTC); every per-op verdict on non-xavier
+hardware; the `:sum` ordering at W=64 on any other device or channel; the
+landed rows on a live CUDA selection path; every workgroup row
+(`:arm`/`:unknown` stay provisional `:measured? false`). Gates: NOT RUN
+this slice (run-time budget closed before the gate step; NO .cljk touched
+-- the committed pin 123/12162 is EXPECTED unchanged, NOT VERIFIED here);
+FULL `run-tests.cljk` not run (red at base `Could not find namespace:
+kotoba.form`, ADR-0362) -- NO green suite claimed. Record:
+`docs/evidence/gpu/cuda-op-microbench-20261026/`.
