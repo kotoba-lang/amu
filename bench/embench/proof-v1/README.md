@@ -101,6 +101,17 @@ attempt array must follow schedule order, with contiguous CPU-only retries.
 Rejected workloads retain an explicit per-workload row and produce no
 aggregate or confidence interval.
 
+Before any proof-v1 timing, the manifest also requires one explicit native
+runtimeProfile with fixed resource bounds, the actual compiler artifact, and
+image/build-record bindings covering all19 workloads exactly once. One shared
+runner or separate packed images may be bound; mixing profiles within one
+campaign is not allowed. Each referenced byte stream must be a verified
+bundle artifact. The canonical build record must match the declared
+target/format/profile/capacity and actual image size. Unknown profiles, silent
+default widening, increased growth-row limits and mismatched host ISAs refuse.
+These are record-integrity checks, not native compiler provenance or runtime
+qualification; the native measurement gate remains pending and exits2.
+
 Run synthetic verifier tests with:
 
 ```sh

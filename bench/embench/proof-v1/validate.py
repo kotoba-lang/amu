@@ -98,8 +98,16 @@ def main() -> None:
 
     require(schema.get("$schema", "").endswith("2020-12/schema"), "JSON Schema draft")
     required = set(schema.get("required", []))
-    require({"attempts", "negativeControls", "qualification", "bundleSha256"} <= required,
+    require({"attempts", "runtimeProfile", "negativeControls", "qualification", "bundleSha256"} <= required,
             "portable result bundle fields")
+    policy = protocol["runtimePolicy"]
+    require(policy["profileRequired"] and policy["nativeQualificationStillRequired"] and
+            not policy["automaticProfileSelectionAllowed"] and not policy["profileMixingWithinCampaignAllowed"],
+            "explicit immutable native runtime profile policy")
+    require(policy["allowedProfiles"] == ["standard-v1", "large-vectors-v1"] and
+            policy["defaultProfile"] == "standard-v1" and
+            policy["compilerRuntimeAndBuildRecordArtifactsRequired"] and policy["all19ExecutableBindingsRequired"],
+            "native runtime profile identity and artifact policy")
     workloads = schema["properties"]["workloads"]
     require(workloads.get("minItems") == len(WORKLOADS), "manifest requires 19 workloads")
     require(schema["properties"]["attempts"].get("minItems", 0) >= 760,

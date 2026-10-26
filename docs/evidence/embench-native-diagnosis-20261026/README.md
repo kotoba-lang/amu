@@ -70,8 +70,55 @@ the same program result but has4,194,305 rows instead of4,194,304; the
 independent fixed arena-count comparison detects that resource-contract
 violation. This is supplemental observation, not a native controller verdict.
 
-All ARM execution, full native main/full/role/controller/public gates,
+At the x86-only checkpoint, ARM execution, full native main/full/role/controller/public gates,
 six terminal CI jobs and complete registered-count Embench qualification
-remain open. These processes share a host with diagnostic work and do not
+remained open. These processes share a host with diagnostic work and do not
 establish quiet-host performance. Python stages bytes and observes native
 results; it is not a substitute compiler, runtime or native verdict.
+
+## ARM continuation and Wasm shared-region repair
+
+arm/ retains failed main-r1 calls/raw output, the pre-repair ARM profile
+observations, and the complete repaired main-r2 receipt/raw output.
+Archive SHA256:
+2e6a4c62dd3c1b4f8e4655fa79737fc61e37eb93715bc1f2bb4b8b1bd30a9aba.
+
+The existing Apple-Silicon VM and the selected local Python image were
+checked as native aarch64 Linux (image81c0aac584c3e136c75a8da272f5d08e45e1f2ae00701fbce768f490dd22164b).
+An existing amd64 image was identified and excluded, not counted as an ARM
+qualification. Containers use no network, read-only source snapshots and the
+shared two-slot admission directory. No existing service was stopped.
+
+The pre-repair candidate's ARM profile observations completed all87 calls
+and six built/executed mutants with queue exit0 in151.118 seconds. However,
+main-r1 separately failed E2102 at the first required Wasm compilation:
+Wasm cuts vector/conj code from the native runtime and its head did not yet
+define the newly separated KXRT-REGIONS constant. That overall main run is
+failed, despite its successful native24 cases and profile controls.
+
+Commit8b5c9f80f defines Wasm KXRT-REGIONS as its existing524,288 bound and
+uses it for the same-size growth-row mapping. Wasm offset760, memory layout
+and every resource bound remain unchanged. The repair requires fresh
+qualification; the older profile pass is not relabelled as new-source proof.
+
+The repaired source's main-r2 completed with PASS_LOADERLESS_SELFHOST_BOOTSTRAP,
+queue exit0 in240.323 seconds: ARM F1=F2, unchanged adopted core G1/G2/G3,
+packed-core reproduction, Linux closure fixed point, all24 native cases,
+hardening/capability/refusal corpus, and required Wasm module compilation.
+The image has no Chrome, so this receipt explicitly says Wasm compiled,
+not browser-executed. Browser execution remains required elsewhere.
+
+The repaired ARM image SHA256 is
+f1a2020faf01a51522fb19c20fa0998cc1d17b96d1b64907394d5ee9ced83441
+(3,588,608 bytes). Its one-compiler derivation separately completed in140.829
+seconds with three identical containers and identical packing by the
+independent native producers. It emits the current x86 candidate SHA256
+7f2846b227f54f425bdb16f451cc2b4ecf4d9ba95c45c5f455cd1b87961eabf7
+(9,380,352 bytes). The full uncached derivation and the eight ARM gate groups
+are executing from the immutable repaired snapshot. Their pending state,
+x86 execution, controller/public checks, exact-head CI and full19 correctness
+must not be inferred from these completed derivation receipts.
+
+The one-compiler raw records were read back under arm/arm-one-r2; their
+archive SHA256 is
+987d4a6af9722f464ca2746be6df8db8f1204be7e4e8eb372108e67e3820015f.

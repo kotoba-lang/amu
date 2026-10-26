@@ -23,6 +23,12 @@ class CampaignTest(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.bundle = Path(self.temp.name)
         (self.bundle / "fixture.txt").write_text("synthetic verifier fixture\n")
+        (self.bundle / "compiler.bin").write_bytes(b"synthetic compiler\n")
+        (self.bundle / "runtime.bin").write_bytes(b"synthetic runtime\n")
+        size = (self.bundle / "runtime.bin").stat().st_size
+        (self.bundle / "runtime.build.stdout").write_text(
+            "{:ok true, :target :x86_64-linux, :format :kx64-runner, :code-bytes 1, "
+            f":bytes {size}, :runtime-profile :standard-v1, :vector-descriptors 4194304" + "}\n")
 
     def test_schedule_is_complete_and_balanced(self):
         schedule = C.make_schedule()
@@ -51,9 +57,18 @@ class CampaignTest(unittest.TestCase):
             "protocolId": "kotoba-amu-embench-proof-v1",
             "runner": {"kind": "project", "organizationDisclosure": "synthetic fixture", "supportReceived": "none"},
             "repository": {"url": "https://github.com/kotoba-lang/amu", "commit": "0" * 40, "dirty": False},
-            "host": {"hardware": "synthetic", "architecture": "synthetic", "os": "synthetic",
+            "host": {"hardware": "synthetic", "architecture": "x86_64", "os": "synthetic",
                      "logicalCpuCount": 1, "powerPolicy": "synthetic"},
             "toolchains": {"amu": {}, "c": {}},
+            "runtimeProfile": {
+                "id": "standard-v1", "target": "x86_64-linux", "format": "kx64-runner",
+                "vectorDescriptors": 4194304, "growthRegionRows": 4194304,
+                "vectorItems": 268435456, "individualVectorLength": 33554432,
+                "pairs": 16777216, "stringPoolBytes": 268435456,
+                "compilerArtifact": self.artifact("compiler.bin"),
+                "executableBindings": [{"workloads": list(workloads), "image": self.artifact("runtime.bin"),
+                                        "buildRecord": self.artifact("runtime.build.stdout")}]
+            },
             "artifacts": [{"path": "fixture.txt", "sha256": hashlib.sha256((self.bundle / "fixture.txt").read_bytes()).hexdigest()}],
             "workloads": workloads,
             "normalization": factors,
@@ -64,8 +79,86 @@ class CampaignTest(unittest.TestCase):
             "qualification": {"status": "rejected", "reasons": [C.PENDING_NATIVE_GATE], "evidenceLevel": "unqualified"},
             "bundleSha256": C.ZERO_HASH,
         }
+        result["artifacts"].extend(self.artifact(name) for name in
+                                   ("compiler.bin", "runtime.bin", "runtime.build.stdout"))
         self.calculate(result)
         return result
+
+    def artifact(self, name):
+        return {"path": name, "sha256": hashlib.sha256((self.bundle / name).read_bytes()).hexdigest()}
+
+    def test_runtime_profile_cannot_silently_widen_default(self):
+        manifest = self.manifest()
+        manifest["runtimeProfile"]["vectorDescriptors"] = 67108864
+        with self.assertRaisesRegex(ValueError, "profile/vector descriptor mismatch"):
+            self.verify(manifest)
+
+    def test_runtime_profile_rejects_region_broadening(self):
+        manifest = self.manifest()
+        manifest["runtimeProfile"]["growthRegionRows"] = 67108864
+        with self.assertRaisesRegex(ValueError, "constant mismatch"):
+            self.verify(manifest)
+
+    def test_runtime_profile_must_match_build_record(self):
+        manifest = self.manifest()
+        manifest["runtimeProfile"].update(id="large-vectors-v1", vectorDescriptors=67108864)
+        with self.assertRaisesRegex(ValueError, "build record disagrees"):
+            self.verify(manifest)
+
+    def test_runtime_profile_must_bind_verified_bytes(self):
+        manifest = self.manifest()
+        manifest["runtimeProfile"]["compilerArtifact"]["sha256"] = "0" * 64
+        with self.assertRaisesRegex(ValueError, "verified artifact"):
+            self.verify(manifest)
+
+    def test_runtime_profile_must_cover_all19_exactly_once(self):
+        manifest = self.manifest()
+        manifest["runtimeProfile"]["executableBindings"][0]["workloads"].pop()
+        with self.assertRaisesRegex(ValueError, "cover all19 exactly once"):
+            self.verify(manifest)
+
+    def test_runtime_profile_must_match_host(self):
+        manifest = self.manifest()
+        manifest["host"]["architecture"] = "aarch64"
+        with self.assertRaisesRegex(ValueError, "execution host architecture"):
+            self.verify(manifest)
+
+    def test_runtime_profile_is_required(self):
+        manifest = self.manifest()
+        del manifest["runtimeProfile"]
+        with self.assertRaisesRegex(ValueError, "missing required"):
+            self.verify(manifest)
+
+    def test_large_runtime_profile_still_cannot_grant_qualification(self):
+        manifest = self.manifest()
+        manifest["runtimeProfile"].update(id="large-vectors-v1", vectorDescriptors=67108864)
+        record = self.bundle / "runtime.build.stdout"
+        record.write_text(record.read_text().replace(":standard-v1", ":large-vectors-v1").replace("4194304", "67108864"))
+        artifact = self.artifact(record.name)
+        manifest["runtimeProfile"]["executableBindings"][0]["buildRecord"] = artifact
+        manifest["artifacts"] = [artifact if row["path"] == record.name else row for row in manifest["artifacts"]]
+        self.verify(manifest)
+        self.assertEqual("rejected", manifest["qualification"]["status"])
+        self.assertIn(C.PENDING_NATIVE_GATE, manifest["qualification"]["reasons"])
+
+    def test_runtime_profile_rejects_unknown_name(self):
+        manifest = self.manifest()
+        manifest["runtimeProfile"]["id"] = "automatic"
+        with self.assertRaisesRegex(ValueError, "enum mismatch"):
+            self.verify(manifest)
+
+    def test_runtime_profile_rejects_wrong_target_format(self):
+        manifest = self.manifest()
+        manifest["runtimeProfile"]["format"] = "packed"
+        with self.assertRaisesRegex(ValueError, "target/format mismatch"):
+            self.verify(manifest)
+
+    def test_runtime_profile_rejects_duplicate_workload_bindings(self):
+        manifest = self.manifest()
+        manifest["runtimeProfile"]["executableBindings"].append(
+            copy.deepcopy(manifest["runtimeProfile"]["executableBindings"][0]))
+        with self.assertRaisesRegex(ValueError, "cover all19 exactly once"):
+            self.verify(manifest)
 
     def calculate(self, result):
         stats = C.summarize(result)
