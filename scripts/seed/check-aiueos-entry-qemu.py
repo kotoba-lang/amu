@@ -243,18 +243,33 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
         if llm_header:
             scratch, pages = struct.unpack_from('<QQ', private, 272)
             assert scratch > 0 and pages == 15
-            assert hmp(f"pmemsave 0x{scratch+4096:x} 96 llm-header-receipt.bin") == ""
+            assert hmp(f"pmemsave 0x{scratch+4096:x} 136 llm-header-receipt.bin") == ""
             assert hmp(f"pmemsave 0x{scratch:x} 64 llm-header.bin") == ""
-            checks = struct.unpack('<12Q', Path('llm-header-receipt.bin').read_bytes())
+            assert hmp(f"pmemsave 0x{scratch+8192:x} 5 llm-request-model.bin") == ""
+            assert hmp(f"pmemsave 0x{scratch+12288:x} 5 llm-selected-model.bin") == ""
+            assert hmp(f"pmemsave 0x{scratch+24576:x} 5 llm-request-prompt.bin") == ""
+            checks = struct.unpack('<17Q', Path('llm-header-receipt.bin').read_bytes())
             header = Path('llm-header.bin').read_bytes()
-            assert checks == (1,)*12, checks
+            assert checks[:12] == (1,)*12, checks
+            assert checks[12:] == (1,)*5, checks
             assert struct.unpack_from('<10I', header) == (
                 827149387, 1, 11, 5, 0, 5, 16, 0, 10, 64)
             assert header[40:] == bytes(24), 'header mutation was not restored'
-            llm = dict(checks=list(checks), receipt=pin(Path('llm-header-receipt.bin')),
+            assert Path('llm-request-model.bin').read_bytes() == b'local'
+            assert Path('llm-selected-model.bin').read_bytes() == b'local'
+            assert Path('llm-request-prompt.bin').read_bytes() == b'hello'
+            llm = dict(checks=list(checks[:12]), receipt=pin(Path('llm-header-receipt.bin')),
                        header=pin(Path('llm-header.bin')), wire=11,
                        providerDispatch=False, modelExecution=False,
                        exactFuelParity=False)
+            llm_request = dict(checks=list(checks[12:]),
+                               model=pin(Path('llm-request-model.bin')),
+                               selectedModelFixture=pin(Path('llm-selected-model.bin')),
+                               prompt=pin(Path('llm-request-prompt.bin')),
+                               aliasingQualified=False, utf8Qualified=False,
+                               hostPolicyQualified=False, providerDispatch=False)
+        else:
+            llm_request = None
         value = None
         if value_context:
             scratch, pages = struct.unpack_from('<QQ', private, 272)
@@ -311,7 +326,7 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
         report = dict(status="PASS_NATIVE_STACK_LIMIT_QEMU" if stack_exhaustion else "PASS_AIUEOS_ENTRY_QEMU", observer=pin(Path(__file__).resolve()), efi=pin(efi), kernel=pin(kernel),
                       firmware=pin(firmware), qemuVersion=subprocess.check_output([str(qemu), "--version"]).decode().splitlines()[0],
                       result=None if stack_exhaustion else 42, pc=hex(expected_pc), remainingFuel=fuel,
-                      expectedRemainingFuel=None if stack_exhaustion or dma_snapshot or value_context or value_call or llm_header else remaining_fuel, bootInfoVersion=6 if pci_catalog else 5, pciResources=pci, dmaSnapshot=dma, llmHeader=llm, valueContext=value, valueCall=live_call,
+                      expectedRemainingFuel=None if stack_exhaustion or dma_snapshot or value_context or value_call or llm_header else remaining_fuel, bootInfoVersion=6 if pci_catalog else 5, pciResources=pci, dmaSnapshot=dma, llmHeader=llm, llmRequest=llm_request, valueContext=value, valueCall=live_call,
                       observedPublicMapTypes=memory_types, firmwareMap=pin(Path("firmware-map.bin")), sealedCatalog=catalog,
                       framebuffer=dict(base=fb, bytes=fbsize, width=width, height=height, stride=stride, pixelFormat=pixel_format),
                       completeKernel=False, desktop=False, input=False, gpt=False, physicalHardware=False,
