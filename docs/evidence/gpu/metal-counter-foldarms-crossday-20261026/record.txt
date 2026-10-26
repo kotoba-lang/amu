@@ -1,0 +1,178 @@
+JUN-58 / JUN-55 -- the fold-arms counters CROSS-DAY REPLICATION row:
+the anchor cell's named UNMEASURED item "cross-day replication of this
+cell" is CLOSED BY MEASUREMENT -- the rule-2 sign REPRODUCES on day 2
+(regime-invariant, slower, 18/18) while the rule-1 regime structure
+does NOT (the state-shift class is day-variable) (2026-10-26 UTC, tick
+slice)
+
+Row taken: the anchor record's own named UNMEASURED item, verbatim --
+"cross-day replication of this cell" (metal-counter-foldarms-20261025/
+record.txt) -- and the second-leg evaluation's named future-revisit
+trigger class ("a cross-day replication of the anchor cell
+contradicting it -- cross-day replication is UNMEASURED"). ONE
+measurement slice. HARDWARE RAN.
+
+DAY FACTS (tool output, run-window.txt verbatim): the anchor record's
+runs were written 2026-10-25 (evidence dir mtimes 2026-10-25 22:55-23:03
+JST = ~13:55-14:03 UTC); this row's run window is 2026-10-26T19:23:48Z ..
+2026-10-26T19:23:49Z (captured verbatim around the runs). Different UTC
+days -- the replication is CROSS-DAY at its letter.
+
+WHAT RAN (the declared protocol, protocol.txt -- written BEFORE the
+first run of this row, predictions P0..P6 registered there):
+
+  cell: n = 1000003, workgroup = 256 -- the anchor cell exactly
+  (headers verified in every run log: device=Apple M1 Max, sampling
+  points dispatch=0 stage=1 draw=0 tile=0 blit=0, simdgroup_size=32,
+  pairs=20, warmup=2).
+  runs: 6 fresh processes (run-1.txt .. run-6.txt), one ADR-0358 run
+  each -- the anchor row's declared protocol unchanged.
+  instrument: scripts/gpu-subgroup-reduce-metal-counters.m compiled
+  fresh this row (unchanged in the tree since the anchor row; last
+  commit touching it is the harness row b3717baf3, before the anchor
+  cf631722d).
+  arms: the fold arms at W=256, built THIS row from the COMMITTED
+  emitters via scripts/gpu-subgroup-reduce-metal-measure.cljk --width
+  256 into a FRESH build dir (the anchor row's build dir untouched).
+  analysis: ONLY the committed route -- scripts/gpu_regime_classify.py
+  --counters-log run-1..6.txt -- run twice, the two outputs
+  BYTE-IDENTICAL (diff exit 0); publication saved verbatim as
+  publication.txt (sha256 489d16c7..). NO analysis code written.
+
+REALIZATION CONTROL (P0a HOLD, build-shas.txt): the rebuilt artifacts
+are sha256-IDENTICAL to the anchor row's 2026-10-25 build on all 8
+files (6 metallibs + probe.metallib + the counters binary -- the binary
+itself byte-identical, 4cb76bdc..): the realization is held FIXED
+across the two days, so every behavioral difference below is run/day
+level, not realization level. P0b did not trigger.
+
+VERIFIED (real runs): all 6 processes exit 0, stderr 0 bytes, 120/120
+sample lines resolved each (counter_ns=ERR count 0 across all 720
+samples), 6/6 verify lines ok=1 per run (36 total, 0 ok=0). The
+committed route parses the session with ZERO named exclusions (every
+(run, operator) block usable at its letter). P1 HOLD.
+
+FINDING (the published claim-protocol record -- publication.txt is the
+publication):
+
+  THE NAMED QUESTION, P2a HOLD: THE SIGN REPRODUCES CROSS-DAY. Rule 2
+  at its letter over day-2 data: REGIME-INVARIANT, SLOWER at every
+  operator and at the cell -- all 18 per-run paired-median ratios above
+  1.0 (sum 1.214..1.221, max 1.197..1.220, min 1.198..1.222), every
+  observed regime one-sided, cell roll-up "regime-invariant, slower
+  (18/18 slower)". The anchor cell's device-level sign (subgroup-reduce
+  SLOWER than baseline at (n=1000003, W=256)) HOLDS on the second day:
+  "cross-day replication of this cell" closes as REPRODUCED at one
+  additional day (day 3+ stays UNMEASURED). P2b (the second-leg
+  evaluation's registered adversarial branch -- an OPPOSING device-level
+  sign triggering the reopen condition) did NOT fire: no record here
+  carries a faster side. The reopen condition is NOT triggered and the
+  narrowing's route scope STANDS unchanged. Sign scope at its letter
+  (the route's own text): CHANNEL-SCOPED -- never flips the MSL
+  command-buffer cell, never flips a WGSL cell, never answers a
+  workgroup row.
+
+  P3 (magnitude, same instrument/channel/cell across days): the day-2
+  band 1.197..1.222 vs the anchor band 1.204..1.221 -- overlapping,
+  magnitude-STABLE. Named, reproduced within the record: the
+  ratio-vs-state pattern of the anchor (fast-state ratios slightly
+  LOWER, still slower side) returns -- day-2 fast-state per-run ratios
+  1.197..1.212 vs slow-state 1.216..1.222 (anchor: fast 1.204-1.206 vs
+  slow 1.217-1.219). Cross-instrument magnitudes are never merged
+  (rule 3); this comparison is same-instrument same-cell across days.
+
+  P4 (rule 1 cross-day): THE REGIME STRUCTURE DOES NOT REPRODUCE (named
+  either way, per the declaration) -- day 2 shows FOUR levels at max
+  (32937.5 / 53958.0 / 78541.5 / 103521.0..103583.5) and FOUR at min
+  (32917.0 / 42708.0..42854.5 / 83687.5 / 103520.5) against the
+  anchor's TWO (a single fast run at ~54k and the slow ~103.6k level);
+  sum reproduces ONE level both days (day-2 102833.5..103854.0). The
+  state-shift class is DAY-VARIABLE and stronger on day 2 (multiple
+  runs/blocks sat in faster states; the faster levels 32.9k/42.8k are
+  FASTER than anything the anchor saw) -- and the arm-pair sign is
+  invariant across every one of those states.
+
+  P5 (raw-log observations, named not explained): mid-run plateau walks
+  reproduce (run-2's min baseline block walks 103.5k -> 83.5k at pair 7
+  -> 63.8k/64.0k at pairs 13-14 -> back to 83.5k; run-4's max baseline
+  block is flat fast at ~32.9k across all 20 pairs -- the process sits
+  in a fast state for the whole block). The one-bracket spike class
+  reproduces at reduced frequency: 5 samples >= 200k on day 2 (largest
+  run-6 max baseline 721583; also run-6 min 344500/287042/202958/
+  298667) against the anchor's class ~200k-871k. No mechanism is
+  measured; the cause stays the calibration row's hypothesis and the
+  work threshold stays UNMEASURED.
+
+  R HANDLING (inherited at its letter): raw bracket deltas published;
+  the MEASURED residual R (~7.8-8.0 us warm / ~20.6-20.8 us cold at
+  this launch shape) named in the metric text, NEVER subtracted (the
+  compression argument is design reasoning, conservative against a win
+  claim; nothing here corrects for it).
+
+WHAT THIS ROW DOES NOT DO (rule 4, unchanged): no :measured? flag, no
+:shapes value, no selection answer and no workgroup row moves; the
+narrowing is unchanged (parity is not a fold win; the conservative
+:baseline answer for the named device stands); this counters sign can
+never answer a workgroup row (the 2026-10-25 channel-rule amendment).
+
+STATES (the three states, named):
+- MEASURED (this row): the cross-day replication record -- 6 fresh
+  processes / 720 resolved brackets (run-1..6.txt + run-window.txt),
+  the realization control (build-shas.txt, 8/8 identical), rule 2's
+  cross-day REPRODUCTION (18/18 slower, band 1.197..1.222), rule 1's
+  NON-reproduced regime structure (4/4/1 levels vs the anchor's 2/2/1),
+  the ratio-vs-state pattern reproduction, the day-2 walk/spike
+  observations.
+- IMPLEMENTED: nothing (evidence + prose only; no code, no .cljk).
+- DECIDED (this row): nothing new -- the declared protocol is the
+  anchor row's, unchanged.
+- ACCEPTED DESIGN ONLY (unchanged): the claim protocol and its units;
+  the ADR-0360 narrowing and reopen condition (NOT triggered here); the
+  second-leg letter; ADR-0355's channel rule.
+- PROPOSED (unchanged): the Vulkan-provider timestamp route.
+- UNMEASURED, named so no reading upgrades: day 3+ cross-day
+  replications; every other W (32/64/128/512/1024) and shape 2
+  (n = 2^20) on this channel (and R at those grids); the residual's
+  internal decomposition and the absolute clock domain; the state-shift
+  cause, threshold AND its day-to-day prevalence (named this row:
+  day-variable); op-order dependence on this channel; anything off
+  M1 Max; the WGSL route's kernel time; every workgroup-row question
+  (:arm/:unknown stay provisional :measured? false -- no :measured?
+  flag, :shapes value, selection answer or workgroup row moves this
+  tick; this channel can never move one).
+
+Gates (real runs, this tick):
+- gpu_regime_classify.py --self-test: TOTAL 2649 assertions passed /
+  0 failed (committed pin 2649/0; no classify code touched --
+  regression pin; log classify-selftest.txt).
+- Scoped GPU gate (8 GPU-owned namespaces, scratch runner
+  gpu_scoped_gate.cljk, never committed): GREEN 123 tests / 12162
+  assertions / 0 failures / 0 errors on run 1 AND run 2 (glslang
+  16.6.0 real-spawn; the diff touches no .cljk namespace -- regression
+  pin at the current committed 123/12162; logs crossday-gate-run1.txt
+  / crossday-gate-run2.txt).
+- FULL run-tests.cljk RUN LIVE THIS TICK: exit 1, RED AT BASE 'Could
+  not find namespace: kotoba.form' at namespace load (ADR-0362),
+  outside this diff (log full-run-tests.txt) -- NO green full suite
+  claimed.
+- find docs -name '*.sh' -> 0 files (the no-POSIX-sh evidence rule).
+- BLOCKER-FIRST: zero open kotoba-lang/amu PRs with a hermes/ head
+  (checked at tick start and re-checked before the push; chain PR
+  #1612 OPEN and MERGEABLE, the ONE chain PR).
+
+NAMED NOT HIDDEN: the regime structure divergence is the record's one
+non-reproduction (named above: the sign reproduced, the states did
+not); the run window is 1 second of
+wall clock (the instrument's dispatches are tiny; wall time is not a
+metric here); untracked deps.edn in the worktree (present at tick
+start, not created or touched by this row, not committed); kbb's
+"2 dep(s) are not :local/root ..." warning on every run (identical
+everywhere).
+
+Evidence: docs/evidence/gpu/metal-counter-foldarms-crossday-20261026/
+{protocol.txt, build-shas.txt, run-window.txt, run-1.txt..run-6.txt,
+publication.txt, classify-selftest.txt, crossday-gate-run1.txt,
+crossday-gate-run2.txt, full-run-tests.txt, record.txt} + the ADR-0360
+cross-day replication amendment. The build/run/gate scripts, the
+metallibs and the instrument binary lived in Hermes scratch and were
+never staged (the harness-row precedent).

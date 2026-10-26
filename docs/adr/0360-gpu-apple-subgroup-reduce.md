@@ -1852,3 +1852,99 @@ documented red at base "Could not find namespace: kotoba.form"
 (ADR-0362), no green suite claimed; `find docs -name '*.sh'` -> 0).
 
 Record: `docs/evidence/gpu/second-leg-evaluation-20261025.txt`.
+
+## Amendment 2026-10-26 (the counters channel's CROSS-DAY REPLICATION
+row): the anchor cell's sign REPRODUCES on day 2 (regime-invariant,
+slower, 18/18) and the rule-1 regime structure does NOT -- the
+state-shift class is day-variable
+
+ONE measurement slice (JUN-58): the anchor record's own named
+UNMEASURED item -- "cross-day replication of this cell" -- is CLOSED BY
+MEASUREMENT at one additional day, and the second-leg evaluation's
+named future-revisit trigger class ("a cross-day replication of the
+anchor cell contradicting it") is adjudicated: the replication does NOT
+contradict. HARDWARE RAN: 6 fresh ADR-0358 processes at the anchor
+cell (n = 1000003, W = 256) on this M1 Max, run window
+2026-10-26T19:23:48Z..19:23:49Z (run-window.txt, verbatim) against the
+anchor record's 2026-10-25 UTC runs -- different UTC days at the
+protocol's letter. The run protocol is the anchor row's, unchanged;
+predictions P0..P6 were registered in `protocol.txt` BEFORE the first
+run.
+
+**The realization control (P0a HOLD).** The arms and instrument were
+rebuilt this row from the COMMITTED emitters into a fresh build dir and
+sha256-compared against the anchor row's build: 8/8 files IDENTICAL
+(6 metallibs + probe.metallib + the counters binary itself,
+4cb76bdc..). The realization is held fixed across the two days, so
+every difference below is run/day level.
+
+**The named question, answered: the sign REPRODUCES (P2a HOLD).**
+Rule 2 at its letter over day-2 data: REGIME-INVARIANT, SLOWER at every
+operator and the cell -- all 18 per-run paired-median ratios above 1.0
+(sum 1.214..1.221, max 1.197..1.220, min 1.198..1.222), every observed
+regime one-sided, roll-up "regime-invariant, slower (18/18 slower)".
+The anchor cell's device-level sign holds on the second day; the
+registered adversarial branch (P2b -- an OPPOSING device-level sign
+firing the reopen condition) did NOT occur. The reopen condition is NOT
+triggered; the narrowing's route scope STANDS. Magnitude (P3): the
+day-2 band overlaps the anchor band (1.204..1.221) -- stable -- and the
+anchor's ratio-vs-state pattern reproduces (fast-state ratios slightly
+lower, still the slower side: day-2 fast 1.197..1.212 vs slow
+1.216..1.222).
+
+**The regime structure does NOT reproduce (P4, named).** Day 2 shows
+FOUR rule-1 levels at max (32937.5 / 53958.0 / 78541.5 /
+103521.0..103583.5) and FOUR at min (32917.0 / 42708.0..42854.5 /
+83687.5 / 103520.5) against the anchor's TWO (one fast run ~54k, the
+slow ~103.6k level); sum reproduces ONE level both days. The state-shift
+class is DAY-VARIABLE and stronger on day 2 (faster levels than the
+anchor ever saw), and the arm-pair sign is invariant across every
+observed state. Raw-log observations (P5, named, never explained):
+mid-run plateau walks reproduce (run-2's min baseline block walks
+103.5k -> 83.5k -> 63.8k/64.0k -> 83.5k; run-4's max block flat fast
+~32.9k for all 20 pairs); the one-bracket spike class reproduces at
+reduced frequency (5 samples >= 200k, largest 721583, against the
+anchor's ~200k-871k class). The cause stays the calibration row's
+hypothesis; the threshold and the day-to-day prevalence stay UNMEASURED.
+
+**Consequence.** Rule 4: NOTHING MOVES -- no `:measured?` flag, no
+`:shapes` value, no selection answer, no workgroup row (this channel
+can never move one), no WGSL cell flip, no MSL command-buffer cell
+flip, no cross-instrument magnitude claim. The sign stays
+CHANNEL-SCOPED and M1-Max scoped. Reopen condition status: unchanged
+and NOT triggered by this record; the future-revisit list keeps its
+shape (a claim-protocol WGSL measurement carrying a regime-invariant
+sign; a counters-channel record carrying an OPPOSING device-level sign
+at any cell/W/day; a WGSL-arm GPU-core-timestamp measurement waiting on
+the Vulkan-provider route) -- this replication record carries no
+opposing sign and is not a trigger.
+
+Named, not hidden: the rule-1 divergence is real (the states did not
+reproduce; the sign did); day 3+ replications are UNMEASURED -- the
+closure is scoped to one additional day; the run window is one second
+of wall clock (the instrument's dispatches are tiny; wall time is no
+metric); the realization control's own artifact (build-shas.txt) is
+committed as a .txt log.
+
+States: MEASURED (the cross-day replication record: 720 resolved
+brackets, the realization control, rule 2's cross-day reproduction,
+rule 1's non-reproduced regime structure, the walk/spike
+observations). IMPLEMENTED: nothing (evidence + prose only). DECIDED:
+nothing new (the protocol is the anchor row's). ACCEPTED DESIGN ONLY
+(unchanged): the claim protocol and its units; the narrowing and reopen
+condition; the second-leg letter; ADR-0355's channel rule. PROPOSED
+(unchanged): the Vulkan-provider timestamp route. UNMEASURED, named:
+day 3+ cross-day replications; every other W and shape 2 on this
+channel (and R at those grids); the residual's decomposition and the
+absolute clock domain; the state-shift cause, threshold and prevalence;
+op-order dependence; anything off M1 Max; the WGSL route's kernel time;
+every workgroup-row question (`:arm`/`:unknown` stay provisional
+`:measured? false` -- no flag, shape, selection answer or workgroup row
+moves this tick).
+
+Gates: see the record (self-test 2649/0 pin; scoped GPU gate GREEN
+123/12162 twice; FULL `run-tests.cljk` RUN LIVE, red at base "Could not
+find namespace: kotoba.form" (ADR-0362), outside this diff, no green
+suite claimed; `find docs -name '*.sh'` -> 0).
+
+Record: `docs/evidence/gpu/metal-counter-foldarms-crossday-20261026/`.
