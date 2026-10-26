@@ -52,6 +52,15 @@ def main() -> None:
     require(protocol["timing"].get("adaptiveRetry") is False, "adaptive retry forbidden")
     require(protocol["statistics"].get("crossHostAverageForbidden") is True, "cross-host average forbidden")
     require(len(protocol.get("negativeControls", [])) >= 7, "seven negative controls required")
+    require(protocol["sourcePolicy"].get("nativeSelfhostRequired") is True and
+            protocol["sourcePolicy"].get("nativeLoaderlessExecutionRequired") is True and
+            protocol["sourcePolicy"].get("historicalCLoaderAllowedForNewCampaign") is False,
+            "new campaigns must use native selfhost and loaderless execution")
+    require(protocol["statistics"].get("bootstrapReplicates") == 10000 and
+            protocol["statistics"].get("bootstrapSeed") == 104 and
+            protocol["statistics"].get("bootstrapMethod") ==
+            "fixed-19-stratified-resampling-of-10-paired-round-ratios-within-each-workload",
+            "fixed workload paired bootstrap parameters required")
 
     require(evidence.get("schemaVersion") == 1, "evidence index schemaVersion")
     evidence_ids = {item.get("id") for item in evidence.get("evidence", [])}
@@ -78,6 +87,14 @@ def main() -> None:
     require(rejected_record.get("acceptedKotoba") == 0 and rejected_record.get("acceptedC") == 0,
             "rejected M1 acceptance drift")
     require(rejected_record.get("geometricMean") is None, "rejected M1 run cannot expose a geometric mean")
+    for item in evidence["evidence"]:
+        if item["id"].startswith("native-"):
+            require(item.get("ratioKotobaElapsedOverC") is None, "native preparation has no performance ratio")
+            record = load_from_repository(item["path"])
+            require(record.get("performanceQualified") is False, "native preparation is unqualified")
+            expected = 0 if item["id"] == "native-full-count-rejected-20261026" else 19
+            require(record.get("acceptedWorkloads") == expected and len(record.get("workloads", [])) == 19,
+                    "native preparation acceptance/coverage drift")
 
     require(schema.get("$schema", "").endswith("2020-12/schema"), "JSON Schema draft")
     required = set(schema.get("required", []))
