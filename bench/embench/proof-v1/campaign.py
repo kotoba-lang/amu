@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import itertools
 import json
 import math
 import random
@@ -21,10 +22,13 @@ ROOT = Path(__file__).resolve().parent
 ZERO_HASH = "0" * 64
 ARM_FOR = {"A": "kotoba-amu", "B": "c-reference"}
 ORDERS = ("ABBA", "BAAB") * 5
+BOOTSTRAP_SAMPLES = 10000
+BOOTSTRAP_SEED = 104
+PENDING_NATIVE_GATE = "native-measurement-gate-pending"
 
 
 def canonical_bytes(value: dict) -> bytes:
-    return (json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n").encode()
+    return (json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n").encode()
 
 
 def sealed_hash(manifest: dict) -> str:
@@ -82,19 +86,30 @@ def _percentile(values: list[float], p: float) -> float:
     return ordered[lower] * (upper - index) + ordered[upper] * (index - lower)
 
 
-def summarize(manifest: dict, *, bootstrap_samples: int = 10000) -> dict:
+def summarize(manifest: dict) -> dict:
     schedule = make_schedule()
     attempts = manifest.get("attempts", [])
-    expected_keys = {_attempt_key(event) for event in schedule["events"]}
-    actual_keys = [_attempt_key(item) for item in attempts]
     require(760 <= len(attempts) <= 2280, "manifest must retain 760 scheduled positions and at most three attempts each")
-    require(set(actual_keys) == expected_keys, "attempts do not cover the fixed schedule")
+    groups = [(key, list(rows)) for key, rows in itertools.groupby(attempts, key=_attempt_key)]
+    require([key for key, _ in groups] == [_attempt_key(event) for event in schedule["events"]],
+            "attempts do not follow the fixed schedule")
     selected = []
-    for key in expected_keys:
-        rows = [item for item in attempts if _attempt_key(item) == key]
+    for key, rows in groups:
         numbers = [item.get("attemptNumber") for item in rows]
-        require(numbers == list(range(1, len(rows) + 1)), f"non-contiguous attempt numbers for {key}")
+        require(all(type(number) is int for number in numbers) and
+                numbers == list(range(1, len(rows) + 1)), f"non-contiguous attempt numbers for {key}")
         require(len(rows) <= 3, f"more than three attempts for {key}")
+        for index, item in enumerate(rows):
+            require(type(item.get("accepted")) is bool and type(item.get("selected")) is bool,
+                    f"attempt acceptance/selection must be booleans for {key}")
+            require(item.get("reasons") == [] if item["accepted"] else bool(item.get("reasons")),
+                    f"acceptance and rejection reasons disagree for {key}")
+            if index < len(rows) - 1:
+                require(not item["accepted"], f"attempts continued after acceptance for {key}")
+                require(item.get("reasons") == ["cpu-qualification"] and
+                        item.get("correctness", {}).get("passed") is True and
+                        item.get("cpuQualification", {}).get("passed") is False,
+                        f"retry is allowed only for CPU qualification for {key}")
         accepted_indexes = [index for index, item in enumerate(rows) if item.get("accepted")]
         selected_rows = [item for item in rows if item.get("selected")]
         if accepted_indexes:
@@ -109,22 +124,28 @@ def summarize(manifest: dict, *, bootstrap_samples: int = 10000) -> dict:
     ratios = []
     per_workload = []
     normalization = manifest.get("normalization", {})
+    expected_normalization = {row["workload"]: 4 / row["multiplier"] for row in json.loads(
+        (ROOT.parent / "reproduce-20261015/round-sa-m104-20261015/workloads.json").read_text())}
+    require(normalization == expected_normalization, "normalization differs from the pinned iteration counts")
     for workload in workload_names():
         accepted = [item for item in selected if item["workload"] == workload]
+        summary = {"workload": workload, "acceptedPositions": len(accepted), "pairedRatios": [], "medianRatio": None}
+        per_workload.append(summary)
         if len(accepted) != 40:
             reasons.append(f"{workload}: accepted {len(accepted)}/40")
             continue
-        if not all(item.get("elapsedNs", 0) > 0 for item in accepted):
-            reasons.append(f"{workload}: missing positive elapsed time")
+        if not all(type(item.get("elapsedNs")) is int and item["elapsedNs"] >= 1000000000
+                   for item in accepted):
+            reasons.append(f"{workload}: elapsed time below the one-second floor or invalid")
             continue
         if not all(item.get("correctness", {}).get("passed") is True for item in accepted):
             reasons.append(f"{workload}: correctness did not pass")
             continue
-        if not all(item.get("cpuQualification", {}).get("passed") is True for item in accepted):
+        if not all(cpu_passes(item.get("cpuQualification", {})) for item in accepted):
             reasons.append(f"{workload}: CPU qualification did not pass")
             continue
         factor = normalization.get(workload)
-        if not isinstance(factor, (int, float)) or factor <= 0:
+        if type(factor) not in (int, float) or not math.isfinite(factor) or factor <= 0:
             reasons.append(f"{workload}: invalid normalization factor")
             continue
         paired = []
@@ -136,18 +157,21 @@ def summarize(manifest: dict, *, bootstrap_samples: int = 10000) -> dict:
             paired.append(factor * statistics.median(a) / statistics.median(b))
         ratio = statistics.median(paired)
         ratios.append(ratio)
-        per_workload.append({"workload": workload, "pairedRatios": paired, "medianRatio": ratio})
+        summary.update(pairedRatios=paired, medianRatio=ratio)
 
     complete = len(ratios) == 19 and not reasons
     geometric_mean = math.exp(statistics.mean(math.log(value) for value in ratios)) if complete else None
     seed = manifest.get("statistics", {}).get("bootstrapSeed")
-    require(isinstance(seed, int), "statistics.bootstrapSeed must be an integer")
+    require(type(seed) is int and seed == BOOTSTRAP_SEED, "statistics.bootstrapSeed must be the preregistered 104")
     ci = None
     if complete:
         rng = random.Random(seed)
         boot = []
-        for _ in range(bootstrap_samples):
-            sample = [ratios[rng.randrange(len(ratios))] for _ in ratios]
+        for _ in range(BOOTSTRAP_SAMPLES):
+            # The 19 workloads are a fixed corpus, not samples from a workload
+            # population. Resample paired rounds WITHIN each workload instead.
+            sample = [statistics.median(rng.choices(row["pairedRatios"], k=10))
+                      for row in per_workload]
             boot.append(math.exp(statistics.mean(math.log(value) for value in sample)))
         ci = [_percentile(boot, 0.025), _percentile(boot, 0.975)]
     return {
@@ -160,20 +184,111 @@ def summarize(manifest: dict, *, bootstrap_samples: int = 10000) -> dict:
     }
 
 
-def verify_manifest(manifest: dict) -> None:
+def cpu_passes(cpu: dict) -> bool:
+    names = ("preIdlePercent", "duringIdlePercent", "backgroundIdlePercent")
+    return (cpu.get("passed") is True and all(
+        type(cpu.get(name)) in (int, float) and math.isfinite(cpu[name]) and 70 <= cpu[name] <= 100
+        for name in names) and cpu.get("thermalState") == "nominal")
+
+
+def check_schema(value, schema: dict, root: dict, location: str = "manifest") -> None:
+    """Validate the checked-in schema's deliberately small vocabulary.
+
+    Unsupported keywords fail closed rather than silently skipping a constraint.
+    This keeps verification offline and does not require pip dependencies.
+    """
+    supported = {"$schema", "$id", "$ref", "$defs", "title", "description", "type", "const", "enum",
+                 "required", "properties", "additionalProperties", "items", "prefixItems", "minItems",
+                 "maxItems", "uniqueItems", "minProperties", "maxProperties", "minimum", "maximum",
+                 "exclusiveMinimum", "pattern"}
+    require(not set(schema) - supported, f"unsupported schema keyword at {location}")
+    if "$ref" in schema:
+        require(schema["$ref"].startswith("#/$defs/"), "only local definition references are supported")
+        check_schema(value, root["$defs"][schema["$ref"].split("/")[-1]], root, location)
+        return
+    if "const" in schema:
+        require(type(value) is type(schema["const"]) and value == schema["const"], f"constant mismatch at {location}")
+    if "enum" in schema:
+        require(any(type(value) is type(entry) and value == entry for entry in schema["enum"]),
+                f"enum mismatch at {location}")
+    kinds = {"object": type(value) is dict, "array": type(value) is list,
+             "string": type(value) is str, "integer": type(value) is int,
+             "number": type(value) in (int, float) and math.isfinite(value),
+             "boolean": type(value) is bool, "null": value is None}
+    types = schema.get("type", list(kinds))
+    if isinstance(types, str):
+        types = [types]
+    require(any(kinds[kind] for kind in types), f"type mismatch at {location}")
+    if type(value) is dict:
+        require(set(schema.get("required", [])) <= set(value), f"missing required fields at {location}")
+        require(schema.get("minProperties", 0) <= len(value) <= schema.get("maxProperties", math.inf),
+                f"property count at {location}")
+        for key, entry in value.items():
+            child = schema.get("properties", {}).get(key, schema.get("additionalProperties", {}))
+            require(child is not False, f"unexpected field at {location}.{key}")
+            if child is not True:
+                check_schema(entry, child, root, location + "." + key)
+    if type(value) is list:
+        require(schema.get("minItems", 0) <= len(value) <= schema.get("maxItems", math.inf), f"array length at {location}")
+        if schema.get("uniqueItems"):
+            require(len({json.dumps(entry, sort_keys=True) for entry in value}) == len(value), f"duplicate at {location}")
+        for index, entry in enumerate(value):
+            prefix = schema.get("prefixItems", [])
+            child = prefix[index] if index < len(prefix) else schema.get("items", {})
+            check_schema(entry, child, root, f"{location}[{index}]")
+    if type(value) in (int, float):
+        require(math.isfinite(value), f"nonfinite value at {location}")
+        require(schema.get("minimum", -math.inf) <= value <= schema.get("maximum", math.inf), f"number bounds at {location}")
+        require(value > schema.get("exclusiveMinimum", -math.inf), f"exclusive minimum at {location}")
+    if type(value) is str and "pattern" in schema:
+        import re
+        require(re.search(schema["pattern"], value) is not None, f"pattern mismatch at {location}")
+
+
+def verify_artifacts(manifest: dict, bundle_dir: Path) -> None:
+    paths = set()
+    bundle_dir = bundle_dir.resolve()
+    for artifact in manifest["artifacts"]:
+        relative = Path(artifact["path"])
+        require(not relative.is_absolute() and ".." not in relative.parts and relative.parts,
+                "artifact must have a bounded relative path")
+        require(relative.as_posix() not in paths, "duplicate artifact path")
+        paths.add(relative.as_posix())
+        path = bundle_dir / relative
+        require(path.resolve().is_relative_to(bundle_dir), "artifact escapes bundle directory")
+        require(not path.is_symlink() and path.is_file(), f"missing artifact: {relative}")
+        require(hashlib.sha256(path.read_bytes()).hexdigest() == artifact["sha256"], f"artifact hash mismatch: {relative}")
+
+
+def verify_manifest(manifest: dict, bundle_dir: Path) -> None:
+    schema = json.loads((ROOT / "result-manifest.schema.json").read_text())
+    check_schema(manifest, schema, schema)
     require(manifest.get("protocolId") == "kotoba-amu-embench-proof-v1", "protocol ID mismatch")
     require(manifest.get("workloads") == workload_names(), "workload list must be the sorted full-19 set")
     require(manifest.get("bundleSha256") == sealed_hash(manifest), "bundle hash mismatch")
+    verify_artifacts(manifest, bundle_dir)
+    controls = manifest["negativeControls"]
+    expected_controls = json.loads((ROOT / "protocol.json").read_text())["negativeControls"]
+    require([row["name"] for row in controls] == expected_controls, "negative control names/order differ")
+    paths = {row["path"] for row in manifest["artifacts"]}
+    for control in controls:
+        if control["status"] in ("passed", "failed"):
+            require(control["evidencePath"] in paths, "executed control must reference a verified artifact")
+        else:
+            require(control["evidencePath"] is None, "pending control cannot have an execution artifact")
     calculated = summarize(manifest)
     require(manifest.get("statistics") == {key: calculated[key] for key in (
         "complete", "perWorkload", "geometricMean", "confidenceInterval95", "bootstrapSeed"
     )}, "statistics differ from deterministic recomputation")
     qualification = manifest.get("qualification", {})
-    if calculated["complete"]:
-        require(qualification.get("status") == "qualified", "complete result must be qualified")
-    else:
-        require(qualification.get("status") == "rejected", "incomplete result must be rejected")
-        require(qualification.get("reasons") == calculated["rejectionReasons"], "rejection reasons differ")
+    # Record validation does not prove native selfhost, process closure,
+    # same-algorithm equivalence or executable negative controls. No qualified
+    # result may pass this entry until that native measurement gate is wired.
+    require(qualification.get("status") == "rejected" and
+            qualification.get("evidenceLevel") == "unqualified",
+            "native measurement qualification is pending; records cannot grant claim-grade status")
+    require(qualification.get("reasons") == calculated["rejectionReasons"] + [PENDING_NATIVE_GATE],
+            "rejection reasons differ")
 
 
 def main() -> None:
@@ -192,8 +307,9 @@ def main() -> None:
             print(value, end="")
     else:
         manifest = json.loads(args.manifest.read_text())
-        verify_manifest(manifest)
-        print("PROOF_V1_RESULT PASS")
+        verify_manifest(manifest, args.manifest.parent)
+        print("PROOF_V1_RECORDS PASS; QUALIFICATION REJECTED: " + PENDING_NATIVE_GATE)
+        raise SystemExit(2)
 
 
 if __name__ == "__main__":

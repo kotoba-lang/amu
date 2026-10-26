@@ -19,11 +19,13 @@
     (loop [i 1]
       (cond (>= i (vector-at M MM-SIR-N)) false
             (and (= (xg-si M i IF-OP) OP-CALL)
-                 (>= (km-intr M (xg-si M i IF-A)) WG-FIRST)) true
+                 (>= (km-intr M (xg-si M i IF-A)) WG-FIRST)
+                 (< (km-intr M (xg-si M i IF-A)) KM-BOOT-PAYLOAD)) true
             :else (recur (inc i))))))
 (defn- wg-seal [M :vector-i64 fail :i64] :vector-i64
-  (let [scan (vector-at M MM-LABEL-N) next (inc scan) found (+ scan 2)]
-    (-> M (iv-reserve 3)
+  (let [scan (vector-at M MM-LABEL-N) next (inc scan)
+        found (+ scan 2) payload-ok (+ scan 3)]
+    (-> M (iv-reserve 4)
         (iv-mem 139 1 9 80) (iv-mem 139 10 1 112) (iv-mem 139 11 1 120)
         (iv-hex "4981fa00100000") (xg-rel 0x820f 2 2 fail)
         (iv-hex "49f7c2ff0f0000") (xg-rel 0x850f 2 2 fail)
@@ -53,7 +55,9 @@
         ;; Padding is emitted by a native font utility, never borrowed RAM.
         (iv-mem 139 1 9 80) (iv-mem 139 8 1 96)
         (iv-hex "488d81c06000004939c0") (xg-rel 0x850f 2 2 fail)
-        (iv-hex "4881796800000800") (xg-rel 0x850f 2 2 fail)
+        (iv-hex "4881796800000800") (xg-rel 0x840f 2 2 payload-ok)
+        (iv-hex "4881796800001000") (xg-rel 0x850f 2 2 fail)
+        (xg-label payload-ok)
         (iv-hex "41813841495546") (xg-rel 0x850f 2 2 fail)
         (iv-hex "4183780401") (xg-rel 0x850f 2 2 fail)
         (iv-hex "418b400883f801") (xg-rel 0x820f 2 2 fail)
@@ -74,4 +78,39 @@
                    (= k 6) (uv-context guarded WG-CONTEXT 0)
                    :else (iv-mem guarded 139 0 9 WG-FONT))]
     (-> code (xg-rel 0xe9 1 2 done) (xg-label trap) (iv-hex "faf4ebfd")
+        (xg-label done) (xg-save t))))
+
+;; A separate, fixed 512 KiB boot-payload region. The v6/PCI boot packager
+;; places exactly that many bytes at boot-info + 0x60c0. The guard checks the
+;; paired pointer and extent before returning a region root; the caller must
+;; still validate the payload format, digest and authority before execution.
+(defn- wg-boot-payload [M :vector-i64 t :i64] :vector-i64
+  (let [trap (vector-at M MM-LABEL-N) done (inc trap)]
+    (-> M (iv-reserve 2) (uv-require trap)
+        (iv-mem 139 1 9 80) (iv-hex "4885c9") (xg-rel 0x840f 2 2 trap)
+        (iv-hex "48b8") (xg-bytes 0x544f4f4245554941 8)
+        (iv-hex "483901") (xg-rel 0x850f 2 2 trap)
+        (iv-hex "4883790806") (xg-rel 0x850f 2 2 trap)
+        (iv-mem 139 8 1 96)
+        (iv-hex "488d81c06000004939c0") (xg-rel 0x850f 2 2 trap)
+        (iv-hex "4881796800000800") (xg-rel 0x850f 2 2 trap)
+        (iv-hex "4c89c0") (xg-rel 0xe9 1 2 done)
+        (xg-label trap) (iv-hex "0f0b")
+        (xg-label done) (xg-save t))))
+
+;; The dual-payload profile retains the font at the first 512 KiB and exposes
+;; only the second 512 KiB as a user-slot region. A caller must still check
+;; the slot header, whole app digest and admission policy before copying code.
+(defn- wg-user-slot [M :vector-i64 t :i64] :vector-i64
+  (let [trap (vector-at M MM-LABEL-N) done (inc trap)]
+    (-> M (iv-reserve 2) (uv-require trap)
+        (iv-mem 139 1 9 80) (iv-hex "4885c9") (xg-rel 0x840f 2 2 trap)
+        (iv-hex "48b8") (xg-bytes 0x544f4f4245554941 8)
+        (iv-hex "483901") (xg-rel 0x850f 2 2 trap)
+        (iv-hex "4883790806") (xg-rel 0x850f 2 2 trap)
+        (iv-mem 139 8 1 96)
+        (iv-hex "488d81c06000004939c0") (xg-rel 0x850f 2 2 trap)
+        (iv-hex "4881796800001000") (xg-rel 0x850f 2 2 trap)
+        (iv-hex "498d8000000800") (xg-rel 0xe9 1 2 done)
+        (xg-label trap) (iv-hex "0f0b")
         (xg-label done) (xg-save t))))
