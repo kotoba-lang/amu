@@ -1,0 +1,123 @@
+;; All six directory APIs. Complete native provider/caller qualification is open.
+(ns kotoba.compiler.fs-tree
+  {:kotoba/export [directory? entries exists? kind make-directories! remove-tree!]}
+  (:require [kotoba.compiler.filesystem :as fs]
+            [kotoba.compiler.posix-path :as path]))
+
+(defn- fs-error [message :string dir :string] :document
+  (document-map (document-keyword :phase) (document-keyword :fs)
+                (document-keyword :message) (document-string message)
+                (document-keyword :dir) (document-string dir)))
+(defn- decimal-field? [text :string start :i64 end :i64] :bool
+  (if (>= start end) false
+    (let [bytes (string-to-utf8 text)]
+      (loop [index start]
+        (if (>= index end) true
+          (let [byte (bytes-at bytes index)]
+            (if (or (< byte 48) (> byte 57)) false (recur (+ index 1)))))))))
+(defn- metadata-kind [dir :string answer :string maximum :i64] [:result [:option :i64] :document]
+  (if (= answer "")
+    (result-ok-of [:result [:option :i64] :document] (option-none-of [:option :i64]))
+    (let [size (string-byte-length answer)
+          a (string-find-byte answer 32 0)
+          b (if (< a 0) -1 (string-find-byte answer 32 (+ a 1)))
+          c (if (< b 0) -1 (string-find-byte answer 32 (+ b 1)))]
+      (if (and (> a 0) (> b (+ a 1)) (> c (+ b 1)) (= size (+ c 2))
+               (decimal-field? answer 0 a) (decimal-field? answer (+ a 1) b)
+               (decimal-field? answer (+ b 1) c))
+        (let [digit (- (bytes-at (string-to-utf8 answer) (+ c 1)) 48)]
+          (if (and (>= digit 0) (<= digit maximum))
+            (result-ok-of [:result [:option :i64] :document] (option-some-of [:option :i64] digit))
+            (result-err-of [:result [:option :i64] :document] (fs-error "invalid filesystem metadata kind" dir))))
+        (result-err-of [:result [:option :i64] :document] (fs-error "malformed filesystem metadata" dir))))))
+
+(defn exists? [dir :string] [:result :bool :document]
+  (let [answer (fs/app-data 5 dir "")]
+    (if (not (result-ok?-of [:result :string :document] answer))
+      (result-err-of [:result :bool :document]
+        (result-error-of [:result :string :document] answer (document-null)))
+      (result-ok-of [:result :bool :document]
+        (not= (result-value-of [:result :string :document] answer "") "")))))
+
+(defn directory? [dir :string] [:result :bool :document]
+  (let [answer (fs/app-data 5 dir "")]
+    (if (not (result-ok?-of [:result :string :document] answer))
+      (result-err-of [:result :bool :document]
+        (result-error-of [:result :string :document] answer (document-null)))
+      (let [parsed (metadata-kind dir (result-value-of [:result :string :document] answer "") 1)]
+        (if (not (result-ok?-of [:result [:option :i64] :document] parsed))
+          (result-err-of [:result :bool :document]
+            (result-error-of [:result [:option :i64] :document] parsed (document-null)))
+          (result-ok-of [:result :bool :document]
+            (= (option-value-of [:option :i64]
+                 (result-value-of [:result [:option :i64] :document] parsed (option-none-of [:option :i64])) -1) 1)))))))
+
+(defn kind [dir :string] [:result [:option :i64] :document]
+  (let [answer (fs/app-data 14 dir "")]
+    (if (not (result-ok?-of [:result :string :document] answer))
+      (result-err-of [:result [:option :i64] :document]
+        (result-error-of [:result :string :document] answer (document-null)))
+      (metadata-kind dir (result-value-of [:result :string :document] answer "") 3))))
+
+(defn entries [dir :string] [:result [:list :string] :document]
+  (fs/browse dir))
+
+(defn- mkdir-one! [dir :string] [:result :bool :document]
+  (let [answer (fs/app-data 8 dir "")]
+    (if (not (result-ok?-of [:result :string :document] answer))
+      (result-err-of [:result :bool :document]
+        (result-error-of [:result :string :document] answer (document-null)))
+      (let [value (result-value-of [:result :string :document] answer "")]
+        (cond
+          (= value "1") (result-ok-of [:result :bool :document] true)
+          (not= value "0") (result-err-of [:result :bool :document] (fs-error "malformed filesystem mutation answer" dir))
+          :else (let [present (directory? dir)]
+                  (if (not (result-ok?-of [:result :bool :document] present)) present
+                    (if (result-value-of [:result :bool :document] present false) present
+                      (result-err-of [:result :bool :document] (fs-error "directory could not be created" dir))))))))))
+
+(defn make-directories! [dir :string] [:result :bool :document]
+  (let [parent (path/dirname dir)]
+    (if (= parent dir)
+      (mkdir-one! dir)
+      (let [present (exists? parent)]
+        (if (not (result-ok?-of [:result :bool :document] present)) present
+          (if (result-value-of [:result :bool :document] present false)
+            (mkdir-one! dir)
+            (let [made (make-directories! parent)]
+              (if (not (result-ok?-of [:result :bool :document] made)) made (mkdir-one! dir)))))))))
+
+(defn- force-mutation! [form :i64 dir :string] [:result :bool :document]
+  (let [answer (fs/app-data form dir "")]
+    (if (not (result-ok?-of [:result :string :document] answer))
+      (result-err-of [:result :bool :document]
+        (result-error-of [:result :string :document] answer (document-null)))
+      (let [value (result-value-of [:result :string :document] answer "")]
+        (if (or (= value "0") (= value "1"))
+          (result-ok-of [:result :bool :document] true)
+          (result-err-of [:result :bool :document] (fs-error "malformed filesystem mutation answer" dir)))))))
+
+(defn remove-tree! [dir :string] [:result :bool :document]
+  "Force ordinary unlink/rmdir failures; never swallow protocol/authority traps.
+  Inspect the root too: final symlinks and files are unlinked, never traversed."
+  (let [root (kind dir)]
+    (if (not (result-ok?-of [:result [:option :i64] :document] root))
+      (result-err-of [:result :bool :document]
+        (result-error-of [:result [:option :i64] :document] root (document-null)))
+      (let [value (result-value-of [:result [:option :i64] :document] root (option-none-of [:option :i64]))]
+        (if (not (option-some?-of [:option :i64] value))
+          (result-ok-of [:result :bool :document] true)
+          (if (not= (option-value-of [:option :i64] value -1) 1)
+            (force-mutation! 9 dir)
+            (let [listed (entries dir)]
+              (if (not (result-ok?-of [:result [:list :string] :document] listed))
+                (result-err-of [:result :bool :document]
+                  (result-error-of [:result [:list :string] :document] listed (document-null)))
+                (let [names (result-value-of [:result [:list :string] :document] listed (typed-list-new [:list :string]))]
+                  (loop [index 0]
+                    (if (>= index (vector-count names))
+                      (force-mutation! 10 dir)
+                      (let [child (string-concat (string-concat dir "/") (typed-list-nth [:list :string] names index))
+                            removed (remove-tree! child)]
+                        (if (not (result-ok?-of [:result :bool :document] removed)) removed
+                          (recur (+ index 1)))))))))))))))

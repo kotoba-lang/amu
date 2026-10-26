@@ -34,8 +34,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 WRAPPERS = {
-    "seed/76-x86_64-static-rt.kotoba": ["xs-rt-core", "xs-rt-start", "xs-rt-launch", "xs-rt-pstart"],
-    "seed/77-aarch64-static-rt.kotoba": ["xa-rt-core", "xa-rt-start", "xa-rt-launch"],
+    "seed/76-x86_64-static-rt.kotoba": ["xs-rt-body", "xs-rt-start", "xs-rt-launch", "xs-rt-pstart"],
+    "seed/77-aarch64-static-rt.kotoba": ["xa-rt-body", "xa-rt-start", "xa-rt-launch"],
 }
 PAIRS = {0x28: 0x29, 0x5B: 0x5D, 0x7B: 0x7D}
 CLOSES = {0x29, 0x5D, 0x7D}
@@ -87,7 +87,11 @@ def check(name, data):
             continue
         # invariant 4a: the open quote starts its line, after a bare defn line
         ls, le = line_bounds(data, open_q)
-        if data[ls:open_q].strip():
+        prefix = data[ls:open_q].strip()
+        # Core body appends the existing canonical FS2/keyword source.
+        # Accept only that exact constructor, not arbitrary surrounding code.
+        composite = k == 0 and expected[k].endswith("-body")
+        if prefix != (b"(string-concat" if composite else b""):
             errs.append(f"{where}: open quote at {open_q} is not the first byte on its line")
         prev = data[:ls].rstrip()
         pl = prev.rfind(b"\n") + 1
@@ -101,7 +105,8 @@ def check(name, data):
         if data[cl:close_q].strip():
             errs.append(f"{where}: close quote at {close_q} is not the first byte on its line")
         tail = data[close_q + 1:ce]
-        if tail.strip() != b")":
+        expected_tail = b"(string-concat (linux-fs2-src) (linux-keyword-src))))" if composite else b")"
+        if tail.strip() != expected_tail:
             errs.append(f"{where}: close quote at {close_q} is not followed by the wrapper's ')': {tail[:20]!r}")
         # invariant 2: no raw quote/backslash inside the embedded region
         region = data[open_q + 1:close_q]

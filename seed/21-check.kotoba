@@ -2088,6 +2088,7 @@
                 37 KW-IO-WRITE 38 KW-CLI-ARGS 39 KW-IO-WRITE-ERROR 40 KW-SYS-CWD
                 20 KW-PROCESS-SPAWN 23 KW-ENTROPY-DRAW   ; R6B
                 42 KW-GPU-COMPUTE   ; ADR 0371
+                11 KW-LLM-GENERATE
                 43 KW-NET-LISTEN 44 KW-NET-ACCEPT 45 KW-NET-DIAL 46 KW-NET-READ 47 KW-NET-WRITE
                 0)))
 (defn- ck-wire-ok [k :i64] :i64
@@ -2097,6 +2098,7 @@
         (= k KW-HASH-SHA256) 1 (= k KW-CLOCK-NOW) 1 (= k KW-ENV-READ) 1 (= k KW-FS-BROWSE) 1 (= k KW-IO-READ) 1
         (= k KW-PROCESS-SPAWN) 1 (= k KW-ENTROPY-DRAW) 1   ; R6B: wires 20 23 (:string :string)
         (= k KW-GPU-COMPUTE) 1   ; ADR 0371: wire 42 (:string :string)
+        (= k KW-LLM-GENERATE) 1   ; exact llm-v1 nominal request/result only
         (= k KW-NET-LISTEN) 1 (= k KW-NET-ACCEPT) 1 (= k KW-NET-DIAL) 1
         (= k KW-NET-READ) 1 (= k KW-NET-WRITE) 1
         :else 0))
@@ -2105,15 +2107,62 @@
 ;; (ND-KW kinds are checked by the caller)
 (defn- ck-cap-chunks? [M :vector-i64 ty :i64] :bool
   (and (= (ck-tcon M ty) TC-LIST) (= (ck-ta M ty) TY-BYTES)))
+;; Wire 11 is admitted only for the kit's exact nominal fields, not just
+;; arbitrary values with record and variant constructors.
+(defn- ck-cap-name [M :vector-i64 symbol :i64] :i64
+  (if (> symbol 0) (nm-sf M symbol SF-HASH) 0))
+(defn- ck-cap-rec? [M :vector-i64 ty :i64 name-hash :i64 fields :i64] :bool
+  (let [b (ck-blk M ty)]
+    (and (> b 0) (= (ck-cap-name M (- ty TY-REC-BASE)) name-hash)
+         (= (ck-blk-n M b) fields))))
+(defn- ck-cap-field? [M :vector-i64 b :i64 i :i64 name-hash :i64 ty :i64] :bool
+  (and (= (ck-cap-name M (ck-blk-key M b i)) name-hash)
+       (= (ck-blk-ty M b i) ty)))
+(defn- ck-cap-llm-request? [M :vector-i64 ty :i64] :bool
+  (let [b (ck-blk M ty)]
+    (and (ck-cap-rec? M ty 447538322484631420 5)
+         (ck-cap-field? M b 0 -4216471642750950718 TY-KW)
+         (ck-cap-field? M b 1 6963064803141065796 TY-STR)
+         (ck-cap-field? M b 2 8794527437218635523 TY-STR)
+         (ck-cap-field? M b 3 -1655608618108567266 TY-I64)
+         (ck-cap-field? M b 4 -4772464895520918359 TY-I64))))
+(defn- ck-cap-llm-usage? [M :vector-i64 ty :i64] :bool
+  (let [b (ck-blk M ty)]
+    (and (ck-cap-rec? M ty -1199056634067394862 2)
+         (ck-cap-field? M b 0 -935755027668008332 TY-I64)
+         (ck-cap-field? M b 1 -3646776778409696375 TY-I64))))
+(defn- ck-cap-llm-completion? [M :vector-i64 ty :i64] :bool
+  (let [b (ck-blk M ty)]
+    (and (ck-cap-rec? M ty 320800225274603325 3)
+         (ck-cap-field? M b 0 5116013626915490134 TY-STR)
+         (ck-cap-field? M b 1 -7490641412579181975 TY-KW)
+         (= (ck-cap-name M (ck-blk-key M b 2)) -2106737206575650240)
+         (ck-cap-llm-usage? M (ck-blk-ty M b 2)))))
+(defn- ck-cap-llm-error? [M :vector-i64 ty :i64] :bool
+  (let [b (ck-blk M ty)]
+    (and (ck-cap-rec? M ty -21647350367364453 3)
+         (ck-cap-field? M b 0 5578532699502447468 TY-KW)
+         (ck-cap-field? M b 1 6923805021426042572 TY-STR)
+         (ck-cap-field? M b 2 -1910211600911982559 TY-BOOL))))
+(defn- ck-cap-llm-result? [M :vector-i64 ty :i64] :bool
+  (let [b (ck-r6m-vblk M ty)]
+    (and (> b 0) (= (ck-cap-name M (ck-ta M ty)) -2278521537401533030)
+         (= (vector-at M b) 2)
+         (= (ck-cap-name M (vector-at M (+ b 1))) -6513413320054399913)
+         (= (ck-cap-name M (vector-at M (+ b 3))) -7901840684610240199)
+         (ck-cap-llm-completion? M (ck-r6m-payty M b 0))
+         (ck-cap-llm-error? M (ck-r6m-payty M b 1)))))
 ;; Parse the declared types with the same type checker as function signatures.
 ;; The FS2 catalogue adds string/bytes, string/list<bytes>, and segmented
 ;; list<bytes>/list<bytes>; unrelated capabilities remain string/string.
 (defn- ck-cap-shape? [M :vector-i64 wk :i64 request :i64 result :i64] :bool
+  (if (= wk KW-LLM-GENERATE)
+    (and (ck-cap-llm-request? M request) (ck-cap-llm-result? M result))
   (if (or (= wk KW-FS-APP-DATA) (= wk KW-FS-APP-DATA-BYTES))
     (or (and (= request TY-STR) (or (= result TY-STR) (= result TY-BYTES) (ck-cap-chunks? M result)))
         (and (= request TY-BYTES) (= result TY-BYTES))
         (and (ck-cap-chunks? M request) (ck-cap-chunks? M result)))
-    (and (= request TY-STR) (= result TY-STR))))
+    (and (= request TY-STR) (= result TY-STR)))))
 
 (defn- ck-cap [M :vector-i64 n :i64 fx :i64] :vector-i64
   (let [h (nm-first M n)
@@ -4156,6 +4205,7 @@
     KW-CLI-ARGS 38 KW-IO-WRITE-ERROR 39 KW-SYS-CWD 40 KW-IO-READ 41
     KW-PROCESS-SPAWN 20 KW-ENTROPY-DRAW 23   ; R6B
     KW-GPU-COMPUTE 42   ; ADR 0371
+    KW-LLM-GENERATE 11
     KW-NET-LISTEN 43 KW-NET-ACCEPT 44 KW-NET-DIAL 45 KW-NET-READ 46 KW-NET-WRITE 47
     -1))
 (defn- ck-wire-bit [w :i64] :i64
@@ -5781,12 +5831,12 @@
 ;; way and any other value v is (__r6-todoc v) (R6B: by its type). R6B's desugaring then folds them (ck-r6b-ds codes 2 and 5;
 ;; keyword literal keys become (document-keyword :k)). The run-time value is the canonical text, so it equals stage-0's
 ;; constant byte for byte. Elsewhere a map literal keeps its R3/R4B meaning (typed map, or record of a keyword-keyed literal).
-(defn- ck-r6c-doctail [M :vector-i64 S c :i64] :vector-i64   ; R6C rung proof: S unannotated (refined to :string)
+(defn- ck-r6c-doctail [M :vector-i64 S :string c :i64] :vector-i64   ; unannotated inference is retained in the full-prefix native gate
   (let [r (nm-nth M c 3)]
     (if (and (= (nm-kind M r) ND-KW) (= (nm-head-of M r) KW-DOCUMENT) (pos? (ck-r6b-sym M S "document-map")))
       (ck-r6c-dt M S (nm-nth M c 4))
       M)))
-(defn- ck-r6c-dt [M :vector-i64 S b :i64] :vector-i64
+(defn- ck-r6c-dt [M :vector-i64 S :string b :i64] :vector-i64
   (let [hd (nm-form-head M b)]
     (cond (or (= (nm-kind M b) ND-MAP) (= (nm-kind M b) ND-VEC)) (ck-r6c-lit M S b)
           ;; R6F: a reference to an opaque constant def (R6D inlines it at check time) in a :document tail is the literal,
@@ -5800,7 +5850,7 @@
 (defn- ck-r6c-last [M :vector-i64 b :i64] :i64
   (loop [x (nm-first M b)] (if (zero? (nm-next M x)) x (recur (nm-next M x)))))
 ;; literal node m (map or vector) becomes the list (document-map|document-vector ..) in place; R0 untouched
-(defn- ck-r6c-lit [M :vector-i64 S m :i64] :vector-i64
+(defn- ck-r6c-lit [M :vector-i64 S :string m :i64] :vector-i64
   (let [ismap (= (nm-kind M m) ND-MAP)
         tok (nm-nf M m NF-TOK)
         s (ck-r6b-sym M S (if ismap "document-map" "document-vector"))

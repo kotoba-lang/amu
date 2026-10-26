@@ -1,0 +1,162 @@
+{:kotoba.lang.elaboration-pipeline/version 1
+ :kotoba.lang.elaboration-pipeline/authority "kotoba-lang/kotoba-lang"
+ :kotoba.lang.elaboration-pipeline/status :w1-named-operation-elaboration
+ :kotoba.lang.elaboration-pipeline/workspace-adr
+ "90-docs/adr/2607279200-kotoba-clojure-shaped-safety-elaboration-migration.edn"
+ :kotoba.lang.elaboration-pipeline/migration-plan
+ "docs/kotoba-centered-migration-plan.md"
+ :kotoba.lang.elaboration-pipeline/code-identity
+ "lang/code-identity.edn"
+ :kotoba.lang.elaboration-pipeline/source-surface-authority
+ "lang/guest-grammar.edn"
+ :kotoba.lang.elaboration-pipeline/surface-status
+ "lang/surface-status.edn"
+ :kotoba.lang.elaboration-pipeline/capability-catalog
+ "lang/capability-catalog.edn"
+ :kotoba.lang.elaboration-pipeline/typed-eval
+ "lang/typed-eval.edn"
+
+ ;; Contract versions sealed into definition identity and release artifacts.
+ ;;
+ ;; Every entry that restates a number another file declares is checked against
+ ;; it by `kotoba.lang.grammar-authority` — a copy nothing compares is a copy
+ ;; waiting to drift. That is not hypothetical: this map said language-profile 4
+ ;; while lang/surface-status.edn said profile-version 6, and the stale one was
+ ;; the number a definition CID would seal, so a definition compiled under
+ ;; profile 6 would have claimed the identity of one compiled under profile 4.
+ ;;
+ ;; :desugar-contract, :typed-kir, :semantic-cid and :portable-effect are
+ ;; PRIMARY here — no other file declares them, so this map is their authority
+ ;; and there is nothing to compare them to. Raise :desugar-contract whenever
+ ;; the elaboration below changes shape; that is what stops a definition CID
+ ;; claiming semantic equivalence across a desugar change.
+ ;;
+ ;; :desugar-contract IS the number sealed as :definition/desugar-contract-version
+ ;; (lang/code-identity.edn, :identities :definition-cid :canonical-input).
+ ;; Read it from HERE, at [:contract-versions :desugar-contract], the way
+ ;; :profile-version is read from lang/guest-grammar.edn — one site, no second
+ ;; spelling inside this file to drift against.
+ ;;
+ ;; Measured 2026-09-02: nothing read it. kotoba-lang/amu pinned 1 under a test
+ ;; named desugar-contract-version-is-pinned-because-no-authority-declares-one,
+ ;; and kotoba-lang/codebase defaulted to 1, while this map had said 2 since
+ ;; e0e9204 (2026-09-01) — the commit that moved `eval` out of :forbidden-heads
+ ;; and into the desugar table, which is exactly the shape change the rule
+ ;; above says to raise this number for. So the gap was never "no authority
+ ;; declares one"; it was "the authority is not read", and it had already
+ ;; drifted by one bump.
+ ;;
+ ;; lang/code-identity-vectors.edn is NOT evidence of the current value. A
+ ;; vector carries :desugar-contract-version as an INPUT and pins the CID it
+ ;; produces; :pure-const carries 1 and :desugar-contract-2 carries 2, on
+ ;; purpose, to prove the number is sealed. Both stay true whatever this map
+ ;; says, so the vectors do not move when it is raised.
+ :contract-versions
+ {:language-profile 6
+  :guest-grammar 2
+  :surface-status 1
+  :desugar-contract 2
+  :typed-kir 1
+  :capability-catalog 1
+  :semantic-cid 1
+  :elaboration-pipeline 1
+  :code-identity 1
+  :typed-eval 1
+  :portable-effect 1}
+
+ :pipeline
+ [{:id :closed-reader
+   :owner "kotoba-lang/amu + kotoba-lang/kotoba"
+   :input :source-text
+   :output :forms
+   :rules [:closed-edn-subset :fail-closed-on-unknown-reader-macro]}
+  {:id :bounded-pure-desugar
+   :owner "kotoba-lang/amu"
+   :input :forms
+   :output :core-forms
+   :rules [:registered-defdesugar-only :node-depth-bounded :no-host-ops]}
+  {:id :name-module-resolution
+   :owner "kotoba-lang/amu"
+   :input :core-forms
+   :output :resolved-graph
+   :rules [:closed-require-export :no-ambient-require]}
+  {:id :type-schema-inference
+   :owner "kotoba-lang/amu"
+   :input :resolved-graph
+   :output :typed-graph
+   :rules [:closed-schemas :fail-closed-on-mismatch]}
+  {:id :interprocedural-effect-inference
+   :owner "kotoba-lang/amu"
+   :input :typed-graph
+   :output :effect-typed-graph
+   :rules [:fixpoint-over-calls :declaration-is-ceiling-not-floor]}
+  {:id :implicit-ability-elaboration
+   :owner "kotoba-lang/amu"
+   :input :effect-typed-graph
+   :output :ability-elaborated-graph
+   :rules [:named-ops-to-typed-abilities :no-user-facing-numeric-ids]}
+  {:id :typed-hir-kir
+   :owner "kotoba-lang/amu"
+   :input :ability-elaborated-graph
+   :output :typed-kir
+   :rules [:deterministic-encoding]}
+  {:id :definition-cid
+   :owner "kotoba-lang/kotoba-lang + kotoba-lang/kotoba"
+   :input :typed-kir
+   :output :definition-identity
+   :rules [:alpha-rename-independent :contract-versions-sealed]}
+  {:id :typed-eval-admission
+   :owner "kotoba-lang/codebase + kotoba-lang/kotoba"
+   :input :definition-identity
+   :output :admission-identity
+   :rules [:cid-only-resolution :exact-interface-and-effect-row
+           :current-authority-subset :finite-fuel
+           :strictly-decreasing-eval-depth :persist-result-value-cid]}
+  {:id :target-lowering
+   :owner "kotoba-lang/amu"
+   :input :typed-kir
+   :output :artifact
+   :targets #{:restricted-esm :wasm-component}
+   :rules [:exact-imports :deny-by-default-admission]}
+  {:id :host-binding
+   :owner "kototama + selected host"
+   :input :artifact
+   :output :admitted-execution
+   :rules [:grant-policy-intersection :quota-deadline-revocation-receipt]}]
+
+ :source-programming-model
+ {:keeps #{:def :defn :ns :let :if :loop-recur :map :vector :set
+           :destructuring :higher-order-functions :records :protocols
+           :bounded-pure-desugar}
+  :not-user-facing #{:numeric-capability-id :wit-import-syntax
+                     :portable-effect-envelope :provider-callback
+                     :host-object}
+  :explicit-capability-values-only-for #{:attenuation :delegation
+                                        :resource-scope :quota :deadline}}
+
+ :vendored-consumers
+ ["resources/kotoba/lang/guest-grammar.edn"
+  "resources/kotoba/lang/capability-catalog.edn"
+  "resources/kotoba/lang/elaboration-pipeline.edn"
+  "../amu/resources/kotoba/lang/guest-grammar.edn"
+  "../amu/resources/kotoba/lang/elaboration-pipeline.edn"
+  "../kotoba/resources/kotoba/lang/guest-grammar.edn"
+  "../grammar/resources/kotoba/lang/guest-grammar.edn"]
+
+ :portable-backends #{:compiler :kotoba-wasm :kotoba-cljs}
+
+ :w1-slice
+ {:status :implemented-partial
+  :compiler-ops ["friendly namespaced call heads" "effect ceilings on defn"
+                 "source-operation metadata" "named-operations on HIR"]
+  :fixtures ["examples/w1-pure.kotoba" "examples/w1-effect-named.kotoba"
+             "examples/w1-denial-ceiling.kotoba"]
+  :tests ["test/kotoba/compiler/w1_elaboration_test.clj"]
+  :note "Scalar cap-call path first; typed-cap-call friendly sugar remains follow-up."}
+
+ :w0-exit-gate
+ ["guest-grammar.edn is the only source-surface authority"
+  "every compiler-admitted form is classified by surface-status.edn"
+  "portable claims require full backend set and conformance evidence or remain partial"
+  "vendored consumer copies byte-match the authority"
+  "contract versions are recorded in elaboration-pipeline.edn"]}
