@@ -8,6 +8,9 @@ The source-bound Mac selfhost [root receipt](mac-root.json) rebuilt the complete
 reproduced ELF SHA-256
 `108174e896008ac4b523450acd57d16b2b37ba3eb31f6b21d3ad3874344ca4ec`
 twice and refused the v3-only operation on the v2 target.
+The same signed Mac F2 produced [static ARM/x86 cross candidates](mac-cross.json)
+without an ELF interpreter. Those Linux-target images were generated, not
+executed or qualified by this Mac gate.
 
 The AIUEOS kernel and QEMU gate separately verify the guest call, full Goal
 envelope, one-use local choice, restore, and modified-slot refusal. This Amu
