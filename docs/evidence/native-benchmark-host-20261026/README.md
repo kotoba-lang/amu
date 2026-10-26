@@ -187,3 +187,30 @@ not claimed here. Both ISA fixed points, all previous native gates and the
 public-x86 factory's exact host/payload equality must finish on the final PR
 head before merge. Source unity and actual compiler/host artifact hashes
 above are unchanged by this evidence/scope checkpoint.
+
+## Merged scope and terminal CI readback
+
+PR1606 merged as `9fea26ca5282a982ed1fc0c533a706fde0fcc114`.
+The final reviewed head was `0e2a27a5689d0aa64f0f917ffce12b2e5a285e3d`;
+the merge tree equals that head tree. All16 final-head checks succeeded,
+including all7 native workflow jobs in
+[40287198642](https://github.com/kotoba-lang/amu/actions/runs/40287198642).
+The merge's main native workflow
+[40290414642](https://github.com/kotoba-lang/amu/actions/runs/40290414642)
+also completed successfully with all7 jobs. Earlier checkpoint text above
+retains the state at each attempt; its pending work is not the final CI state.
+
+Actual ARM controls retained original-count19/19,8 factory/17 runtime refusals
+and13 native named-guard semantic mutation detections. Actual x86 compiler
+F1=F2=F3 and the complete existing native gates passed. Its factory produced
+the identical ARM host and all19 ARM payload bytes. This closes the owner's
+declared ARM-host/both-producer merge scope only; native x86 measurement-host
+execution remains KOTOBA-152.
+
+The proof-v1 [retained-record auditor](../../../bench/embench/proof-v1/audit_measurement_records.py)
+can check the raw streams in this packet or the pinned run's
+`native-benchmark-arm-evidence` artifact. It is an unsigned-record audit, not
+binary replay or an execution/qualification authority. A later source graph
+does not inherit these results; the auditor reports checkout identity
+separately. No C comparison, host admission, repeated paired campaign,
+independent external rerun, official score or public speed claim is established.
