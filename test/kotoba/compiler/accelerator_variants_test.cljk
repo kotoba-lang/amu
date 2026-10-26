@@ -1821,23 +1821,29 @@
             (is (= :warp-shuffle-reduce (:variant answer)))
             (is (= (expected-record 256) (:measured-cell answer)))))))
     (testing "a refused group keeps the design answer, :measured? false, no record"
-      ;; W = 64's groups REFUSED (the warp-shuffle/subgroup cell straddles
-      ;; -- no winner exists) and it is the width's ONLY state: the valid
-      ;; rung-1 width band is exactly 32/64/128/256/512/1024 (a positive
-      ;; power of two, the warp floor .. max-workgroup-size), and the
-      ;; table carries every one of them but 64.
+      ;; The pooled W = 64 straddle refusal STANDS (no 64 key -- pinned
+      ;; above), but it is no longer the width's only state: the per-op
+      ;; table's landed entries FILL W = 64 on the tested class (the
+      ;; (:sum, 64) FLIP and (:max/:min, 64) CONFIRMs, pinned in
+      ;; the-cuda-op-entry-wiring-answers-its-operator-at-its-width).
+      ;; A refused group where NO layer keys -- here a descriptor
+      ;; failing the class key at W = 64 -- keeps the design answer,
+      ;; :measured? false, and no record, byte-identical to the
+      ;; pre-entry surface.
       (is (= #{32 64 128 256 512 1024}
              (into #{64} (set (keys variants/cuda-cell-entries))))
-          "the table has no hole but the W = 64 refusal")
+          "the pooled table has no hole but the W = 64 refusal")
       (doseq [target [:cuda :cuda-v1]]
         (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum
                                       {:workgroup-size 64})
-              answer (variants/select-variant :nvidia kir target tested-class)]
+              answer (variants/select-variant :nvidia kir target
+                                              {:name "NVIDIA Jetson AGX Xavier"
+                                               :compute-capability 7.0})]
           (is (= :warp-shuffle-reduce (:variant answer)))
           (is (false? (:measured? answer))
-              (str "W=64 " target " must keep the honesty lock"))
+              (str "W=64 " target " off-class must keep the honesty lock"))
           (is (nil? (:measured-cell answer))
-              (str "W=64 " target " carries no record")))))
+              (str "W=64 " target " off-class carries no record")))))
     (testing "the class keys fail closed: both name fragments in ONE name part AND the reported 7.2"
       ;; Each case answers the design ladder (rung 1 where its gate holds)
       ;; and attaches NO record: one key missing is not the tested class.
@@ -1897,12 +1903,14 @@
         (is (= :baseline (:variant (variants/select-variant :nvidia ewise :cuda-v1 tested-class))))
         (is (nil? (:measured-cell (variants/select-variant :nvidia ewise :cuda-v1 tested-class)))
             "the reduce shape is the unit -- no record on a non-reduce kernel")))
-    (testing "the flip arm answers the group's winner (synthetic entry -- ZERO real flips)"
+    (testing "the flip arm answers the group's winner (synthetic entry -- the pooled table carries no differing winner)"
       ;; Contract point 4's second half, exercised by redefining one
       ;; group's winner: a differing winner FLIPS the cell -- the answer
       ;; becomes the winner, the record rides it, and the basis is the
-      ;; winner's design rationale plus the flip note. No committed entry
-      ;; carries a differing winner, so no production answer is flipped.
+      ;; winner's design rationale plus the flip note. The POOLED table
+      ;; carries no differing winner (its winner census is confirm-only);
+      ;; the one real flip lives in the per-op table and is pinned in
+      ;; the-cuda-op-entry-wiring-answers-its-operator-at-its-width.
       (with-redefs [variants/cuda-cell-entries
                     (assoc variants/cuda-cell-entries 256
                            {:winner :subgroup-reduce
@@ -1922,50 +1930,95 @@
 (deftest the-cuda-op-entry-wiring-answers-its-operator-at-its-width
   ;; The per-op wiring row (row (i), ADR-0361's 2026-10-25 tenth
   ;; amendment): the per-op entry table + the per-op arm of the entry
-  ;; application + precedence in select-variant LANDS. The table is
-  ;; EMPTY BY RULE today (the seventh amendment's replication
-  ;; requirement is HALF MET -- fresh session A ran under the
-  ;; registration on 2026-10-25 UTC and its readings enter NOTHING, the
-  ;; earliest admissible session B is 2026-10-26 UTC or later), so no
-  ;; production answer moves: every CUDA-route answer is the pooled
-  ;; layer's alone. The arm and the precedence are exercised by
-  ;; SYNTHETIC entries (with-redefs -- ZERO real per-op entries exist,
-  ;; so no production answer is confirmed or flipped by this row).
+  ;; application + precedence in select-variant LANDS. THE TABLE HAS
+  ;; ENTERED (the 2026-10-26 cross-day agreement adjudication, the
+  ;; thirteenth amendment's named next row -- sessions A + B,
+  ;; 2026-10-25 and 2026-10-26 UTC, both fresh under the registration,
+  ;; agreeing in every reading of both): exactly three groups,
+  ;; (:sum, 64) FLIP and (:max/:min, 64) CONFIRM -- the projection's
+  ;; three groups, now a measurement-backed verdict -- pinned against
+  ;; the REAL table and the REAL answer surface below. The arm and the
+  ;; precedence are additionally exercised by SYNTHETIC entries
+  ;; (with-redefs -- contract behavior isolated from the landed rows).
   (let [tested-class {:name "NVIDIA Jetson AGX Xavier" :compute-capability 7.2}
-        synthetic-evidence ["SYNTHETIC (this test's with-redefs) -- no admissible per-op entry exists"]
-        op-record (fn [op wg]
+        real-evidence ["docs/evidence/gpu/cuda-registered-sessionA-20261025"
+                       "docs/evidence/gpu/cuda-registered-sessionB-20261026"]
+        synthetic-evidence ["SYNTHETIC (this test's with-redefs) -- contract behavior only"]
+        op-record (fn [op wg evidence]
                     {:device "xavier sm_72"
                      :channel :native-cuda
                      :route :cuda-v1
                      :workgroup-size wg
                      :operators #{op}
                      :shapes [1000003 1048576]
-                     :evidence synthetic-evidence})
+                     :evidence evidence})
         entry (fn [winner]
                 {:winner winner
                  :shapes [1000003 1048576]
                  :evidence synthetic-evidence})]
-    (testing "the per-op entry table is EMPTY BY RULE -- the cross-day pair is incomplete"
-      (is (= {} variants/cuda-op-entries)
-          "replication half-met: session A alone, session B earliest 2026-10-26 UTC")
-      ;; With no entry the per-op arm keys nothing and every answer is
-      ;; the pooled layer's alone: the pooled record (:operators whole)
-      ;; stands at its five widths, W = 64 keeps the honesty lock.
+    (testing "the per-op entry table has ENTERED exactly the adjudicated three groups"
+      (is (= {[:sum 64] {:winner :subgroup-reduce
+                         :shapes [1000003 1048576]
+                         :evidence real-evidence}
+              [:max 64] {:winner :warp-shuffle-reduce
+                         :shapes [1000003 1048576]
+                         :evidence real-evidence}
+              [:min 64] {:winner :warp-shuffle-reduce
+                         :shapes [1000003 1048576]
+                         :evidence real-evidence}}
+             variants/cuda-op-entries)
+          "the cross-day pair adjudicated three groups: (:sum, 64) FLIP, (:max/:min, 64) CONFIRM"))
+    (testing "the landed entries move the real answer surface at W = 64 -- the ONE real FLIP at (:sum, 64)"
+      ;; (:sum, 64): the cell answers the entry's winner
+      ;; :subgroup-reduce with the SINGLE-OP record and
+      ;; cuda-op-flip-note in its basis -- the first real flip on the
+      ;; CUDA route. Both targets under either spelling.
+      (doseq [target [:cuda :cuda-v1]]
+        (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum
+                                      {:workgroup-size 64})
+              answer (variants/select-variant :nvidia kir target tested-class)]
+          (is (= :subgroup-reduce (:variant answer)) (str target))
+          (is (true? (:measured? answer)) (str target))
+          (is (= (op-record :sum 64 real-evidence) (:measured-cell answer)) (str target))
+          (is (str/starts-with? (:basis answer)
+                                (get variants/variant-bases :subgroup-reduce)) (str target))
+          (is (str/includes? (:basis answer)
+                             "MEASURED FLIP (per-op entry contract, ADR-0361 seventh amendment)")
+              (str target)))))
+    (testing "the landed entries CONFIRM at (:max/:min, 64) -- answer text frozen, :measured? moves true"
+      ;; The two real confirms: the winner equals the design answer,
+      ;; so the answer text is frozen (no note appended to :basis) and
+      ;; the SINGLE-OP record rides -- the :measured? movement the
+      ;; projection named (the pooled straddle refused W = 64 before
+      ;; the entry landed).
+      (doseq [target [:cuda :cuda-v1]
+              operator [:max :min]]
+        (let [kir (accelerator/kernel (str "reduce_" (name operator) "_f32")
+                                      :reduce operator {:workgroup-size 64})
+              answer (variants/select-variant :nvidia kir target tested-class)]
+          (is (= :warp-shuffle-reduce (:variant answer)) (str target))
+          (is (true? (:measured? answer)) (str target))
+          (is (= (op-record operator 64 real-evidence) (:measured-cell answer)) (str target))
+          (is (= (get variants/variant-bases :warp-shuffle-reduce) (:basis answer))
+              (str target " confirm freezes answer text -- no note appended to :basis")))))
+    (testing "the 15 non-materialized groups answer the pooled layer's alone (rejection (e))"
+      ;; At W = 32/128/256/512/1024 every group's winner equals the
+      ;; standing pooled answer, so NO per-op record materializes: the
+      ;; pooled record (:operators whole) stands at its five widths,
+      ;; byte-identical to the pre-entry surface.
       (doseq [target [:cuda :cuda-v1]
               operator [:sum :max :min]
-              wg [32 64 128 256 512 1024]]
+              wg [32 128 256 512 1024]]
         (let [kir (accelerator/kernel (str "reduce_" (name operator) "_f32")
                                       :reduce operator {:workgroup-size wg})
               answer (variants/select-variant :nvidia kir target tested-class)]
-          (is (= :warp-shuffle-reduce (:variant answer)))
-          (if (= 64 wg)
-            (do (is (false? (:measured? answer)))
-                (is (nil? (:measured-cell answer))))
-            (do (is (true? (:measured? answer)))
-                (is (= #{:sum :max :min} (:operators (:measured-cell answer)))
-                    "the pooled record stands whole -- no per-op record applies"))))))
+          (is (= :warp-shuffle-reduce (:variant answer)) (str target))
+          (is (true? (:measured? answer)) (str target))
+          (is (= #{:sum :max :min} (:operators (:measured-cell answer)))
+              (str target " the pooled record stands whole -- no per-op record materializes")))))
     (testing "the per-op arm CONFIRMS at its (op, W) where the pooled layer refused (synthetic entry)"
-      ;; (:max, 64) is where the projection names a CONFIRM: the pooled
+      ;; The contract's CONFIRM shape, exercised by synthetic entry
+      ;; (the landed (:max, 64) confirm is pinned above): the pooled
       ;; layer refused W = 64 and the per-op layer ADDS. The winner
       ;; equals the design answer, so the answer text is frozen and the
       ;; record is SINGLE-OP.
@@ -1975,11 +2028,12 @@
               answer (variants/select-variant :nvidia max-kir :cuda-v1 tested-class)]
           (is (= :warp-shuffle-reduce (:variant answer)))
           (is (true? (:measured? answer)))
-          (is (= (op-record :max 64) (:measured-cell answer)))
+          (is (= (op-record :max 64 synthetic-evidence) (:measured-cell answer)))
           (is (= (get variants/variant-bases :warp-shuffle-reduce) (:basis answer))
               "confirm freezes answer text -- no note appended to :basis"))
         ;; The record keys its operator EXACTLY: :sum/:min at W = 64
-        ;; keep the honesty lock (their groups have no entry).
+        ;; keep no record under this synthetic table (their groups have
+        ;; no entry in the redef).
         (doseq [operator [:sum :min]]
           (let [kir (accelerator/kernel (str "reduce_" (name operator) "_f32")
                                         :reduce operator {:workgroup-size 64})
@@ -1987,18 +2041,18 @@
             (is (= :warp-shuffle-reduce (:variant answer)))
             (is (false? (:measured? answer)))
             (is (nil? (:measured-cell answer)))))))
-    (testing "the per-op arm FLIPS its operator at its (op, W) (synthetic entry -- ZERO real flips)"
-      ;; The projection's (:sum, 64) shape, exercised by synthetic
-      ;; entry: the cell answers the winner with the SINGLE-OP record
-      ;; and cuda-op-flip-note in its basis. No real entry exists, so no
-      ;; production answer is flipped.
+    (testing "the per-op arm FLIPS its operator at its (op, W) (synthetic entry -- the real flip is pinned above)"
+      ;; The contract's FLIP shape, exercised by synthetic entry (the
+      ;; landed (:sum, 64) flip is pinned above): the cell answers the
+      ;; winner with the SINGLE-OP record and cuda-op-flip-note in its
+      ;; basis.
       (with-redefs [variants/cuda-op-entries {[:sum 64] (entry :subgroup-reduce)}]
         (let [kir (accelerator/kernel "reduce_sum_f32" :reduce :sum
                                       {:workgroup-size 64})
               answer (variants/select-variant :nvidia kir :cuda-v1 tested-class)]
           (is (= :subgroup-reduce (:variant answer)))
           (is (true? (:measured? answer)))
-          (is (= (op-record :sum 64) (:measured-cell answer)))
+          (is (= (op-record :sum 64 synthetic-evidence) (:measured-cell answer)))
           (is (str/starts-with? (:basis answer)
                                 (get variants/variant-bases :subgroup-reduce)))
           (is (str/includes? (:basis answer)
@@ -2021,7 +2075,7 @@
                                           {:workgroup-size 32})
               sum-answer (variants/select-variant :nvidia sum-kir :cuda-v1 tested-class)]
           (is (= :subgroup-reduce (:variant sum-answer)))
-          (is (= (op-record :sum 32) (:measured-cell sum-answer))))
+          (is (= (op-record :sum 32 synthetic-evidence) (:measured-cell sum-answer))))
         (doseq [operator [:max :min]]
           (let [kir (accelerator/kernel (str "reduce_" (name operator) "_f32")
                                         :reduce operator {:workgroup-size 32})
@@ -2095,7 +2149,7 @@
                          :operators #{:sum :max :min}
                          :shapes [1000003 1048576]
                          :evidence ["docs/evidence/gpu/cuda-claimprotocol-run1-20261025"]}
-        synthetic-evidence ["SYNTHETIC (this test's with-redefs) -- no admissible per-op entry exists"]
+        synthetic-evidence ["SYNTHETIC (this test's with-redefs) -- contract behavior only"]
         synthetic-entry {:winner :warp-shuffle-reduce
                          :shapes [1000003 1048576]
                          :evidence synthetic-evidence}]
@@ -2113,7 +2167,7 @@
         (is (= :warp-shuffle-reduce (:variant answer)))
         (is (false? (:measured? answer)))
         (is (nil? (:measured-cell answer)))))
-    (testing "the narrowed key names the per-op records too (synthetic entry -- the table is empty by rule)"
+    (testing "the narrowed key names the per-op records too (synthetic entry replaces the landed table)"
       (with-redefs [variants/cuda-op-entries {[:sum 256] synthetic-entry}]
         (let [nx-answer (variants/select-variant :nvidia kir :cuda-v1
                                                 {:name "Jetson Xavier NX" :compute-capability 7.2})]

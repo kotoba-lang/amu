@@ -1208,33 +1208,51 @@
   its letter): the per-op layer only ADDS where the pooled layer
   refused or an admissible per-op winner differs -- at the 15 (op, W)
   groups whose winner equals the standing pooled answer NO per-op
-  record materializes (the pooled record stands), so a full
-  reproduction of the exploratory census would populate exactly three
-  groups: (:sum, 64) FLIP and (:max/:min, 64) CONFIRM (the projection,
-  NOT a measurement). TODAY THIS TABLE IS EMPTY BY RULE, NOT BY
-  OVERSIGHT: the replication requirement is HALF MET -- fresh session A
-  ran under the registration on 2026-10-25 UTC (session A's readings
-  enter NOTHING, they await the pair) and the earliest admissible
-  session B is 2026-10-26 UTC or later -- so ZERO groups have entered
-  and every CUDA-route answer today is the pooled layer's alone. The
-  first entry lands only when an admissible cross-day pair exists and
-  agrees in every reading of both (contract point 5 scope unchanged:
-  CUDA route only, sign claims CHANNEL-SCOPED and DEVICE-SCOPED to the
-  tested class, no workgroup row answers or moves). Each map value:
+  record materializes (the pooled record stands), so the census
+  populates exactly three groups. THE TABLE HAS ENTERED (the
+  2026-10-26 cross-day agreement adjudication, ADR-0361's thirteenth
+  amendment -- sessions A + B, 2026-10-25 and 2026-10-26 UTC, both
+  fresh under the registration, agreeing in every reading of both; the
+  projection's three groups, now a MEASUREMENT-BACKED verdict under
+  the registration, no longer a projection): (:sum, 64) FLIP (the
+  winner :subgroup-reduce differs from the design rung-1 answer -- the
+  cell answers the winner with this table's record and
+  cuda-op-flip-note) and (:max, 64) and (:min, 64) CONFIRM (the winner
+  equals the design answer -- answer text frozen, :measured? true with
+  the record -- the pooled layer refused at W = 64, so the per-op
+  layer adds); both shapes (1000003/1048576) qualify at every entered
+  group and the 15 (op, W) groups at W = 32/128/256/512/1024 x
+  {sum, max, min} materialize NO record (winner = standing pooled
+  answer -- rejection (e) at its letter). Contract point 5 scope
+  unchanged: CUDA route only, sign claims CHANNEL-SCOPED and
+  DEVICE-SCOPED to the tested class (xavier sm_72), no workgroup row
+  answers or moves. Each map value:
   :winner the group's unique winner (equal to the standing answer
   CONFIRMS -- answer text frozen; differing FLIPS -- the cell answers
   the winner with the record and cuda-op-flip-note), :shapes
   qualifying-only, :evidence the entry's own record kinds (the
   qualifying sessions' runs -- a same-day second session is flip-note
-  PROSE ONLY, ADR-0373's naming rule by citation)."  {})
+  PROSE ONLY, ADR-0373's naming rule by citation)."
+  {[:sum 64] {:winner :subgroup-reduce
+              :shapes [1000003 1048576]
+              :evidence ["docs/evidence/gpu/cuda-registered-sessionA-20261025"
+                         "docs/evidence/gpu/cuda-registered-sessionB-20261026"]}
+   [:max 64] {:winner :warp-shuffle-reduce
+              :shapes [1000003 1048576]
+              :evidence ["docs/evidence/gpu/cuda-registered-sessionA-20261025"
+                         "docs/evidence/gpu/cuda-registered-sessionB-20261026"]}
+   [:min 64] {:winner :warp-shuffle-reduce
+              :shapes [1000003 1048576]
+              :evidence ["docs/evidence/gpu/cuda-registered-sessionA-20261025"
+                         "docs/evidence/gpu/cuda-registered-sessionB-20261026"]}})
 
 (def ^:private cuda-op-flip-note
   "The note a FLIPPED per-op cell carries in its :basis -- the
-  operator-aware entry contract's flip arm (seventh amendment). No
-  real per-op entry exists today (cuda-op-entries is empty by rule --
-  the cross-day pair is incomplete), so no answer carries this note
-  yet; it exists so the flip arm is implemented, not invented at first
-  need. It names the flip's ground (the (op, W) group's unique winner
+  operator-aware entry contract's flip arm (seventh amendment). ONE
+  real per-op entry carries a differing winner today -- (:sum, 64)
+  answers it, the FIRST real flip on the CUDA route, landed from the
+  2026-10-26 cross-day adjudication -- so the :sum cells at W = 64 on
+  the tested class carry this note. It names the flip's ground (the (op, W) group's unique winner
   under the per-op entry rule) and its scope: THIS operator only, the
   measured shapes named in the :measured-cell record this answer
   carries, DEVICE-SCOPED and CHANNEL-SCOPED (xavier sm_72 on the CUDA
@@ -1815,14 +1833,16 @@
          ;; cuda-tested-class?), the CUDA route, and the reduce op; the pooled
          ;; arm adds an ENTERED (W, shape) group and the per-op arm an
          ;; ENTERED (op, W) group -- everything else is REFUSE and this
-         ;; binding is nil (W = 64's pooled straddle groups, any other
-         ;; device class, any other route, rung-2 answer cells -- the
-         ;; design ladder's answer stands with no record; and
-         ;; cuda-op-entries is EMPTY BY RULE today -- the cross-day pair
-         ;; is incomplete -- so the per-op arm keys nothing yet).
-         ;; :confirm freezes the answer text and attaches the record;
-         ;; :flip answers the entry's winner (no real entry carries a
-         ;; differing winner today).
+         ;; binding is nil (any other device class, any other route,
+         ;; rung-2 answer cells -- the design ladder's answer stands
+         ;; with no record; at W = 64 only the per-op table's three
+         ;; entered groups (:sum/:max/:min) key anything -- the pooled
+         ;; straddle refused W = 64 and the 15 non-materialized (op, W)
+         ;; groups key nothing per-op).
+         ;; :confirm freezes the answer text and attaches the record
+         ;; ((:max, 64) and (:min, 64) are the two real confirms);
+         ;; :flip answers the entry's winner ((:sum, 64) is the ONE
+         ;; real differing winner -- the first real flip on this route).
          cuda-entry (or (cuda-entry-op dev route kir variant)
                         (cuda-entry-cell dev route kir variant))
          entry-flip? (= :flip (:outcome cuda-entry))

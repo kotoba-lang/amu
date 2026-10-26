@@ -1455,3 +1455,61 @@ committed count, the run's numbers in the commit message);
 kotoba.form` (ADR-0362), outside this diff, NO green suite claimed;
 `find docs -name '*.sh'` -> 0 files. Record:
 `docs/evidence/gpu/cuda-crossday-adjudication-20261026/`.
+
+## Amendment (2026-10-26, the entry landing: `cuda-op-entries` ENTERS
+-- the (:sum, 64) FLIP and the (:max/:min, 64) CONFIRM records reach
+the selection surface)
+
+IMPLEMENTED (JUN-57, the thirteenth amendment's named next row -- "the
+entry it enables", its own implementation slice). NO hardware ran and
+nothing is re-measured: the landed entries consume the two committed
+admissible measure-logs (sessions A + B) whose cross-day agreement the
+previous row adjudicated. `cuda-op-entries` is POPULATED with exactly
+the three materialized groups at the adjudication's verdicts --
+(`:sum`, 64) `:winner :subgroup-reduce` (FLIP), (`:max`, 64) and
+(`:min`, 64) `:winner :warp-shuffle-reduce` (CONFIRM) -- each with
+`:shapes [1000003 1048576]` (qualifying-only) and `:evidence` the two
+qualifying sessions' runs (`cuda-registered-sessionA-20261025`,
+`cuda-registered-sessionB-20261026`). The 15 (op, W) groups whose
+winner equals the standing pooled answer materialize NO record
+(rejection (e)) and are absent from the table.
+
+**The surface movement (verified tool output).** On the tested class
+(`xavier sm_72`, CUDA route, reduce shape), (`:sum`, 64) now answers
+`:subgroup-reduce` -- the FIRST REAL FLIP on the CUDA route -- with
+the single-op record and `cuda-op-flip-note` in `:basis`;
+(`:max`, 64) and (`:min`, 64) answer `:warp-shuffle-reduce` with the
+single-op record, answer text FROZEN, and `:measured?` MOVES TRUE (the
+projection's named `:measured?` movement -- the pooled straddle's
+W = 64 refusal left those cells unclaimed until now). The 15
+non-materialized groups are byte-identical to the pre-entry surface
+(pooled whole record at W = 32/128/256/512/1024). The pooled W = 64
+refusal stands (`cuda-cell-entries` keeps no 64 key); a cell where no
+layer keys keeps the design answer, `:measured? false`, no record.
+
+**Tests.** The empty-table pin is replaced by the real-table pin
+(exactly the three groups at value) plus real-surface pins for the
+flip, the two confirms and the 15 non-materialized groups; the
+synthetic (with-redefs) contract blocks remain and their prose is
+re-scoped; the pooled wiring test's refusal pin moved off the tested
+class at W = 64 (the landed entries fill that cell). Gate: scoped GPU
+gate GREEN 123 tests / 12162 assertions / 0 failures / 0 errors twice
+(previous 123/12154; delta +0 tests / +8 assertions).
+
+**States.** IMPLEMENTED: this row (the table, the surface, the
+tests). MEASURED: nothing new (NO hardware; the entry's numbers are
+the two committed sessions', consumed as the entry's basis). DECIDED:
+nothing new (the verdicts were the previous row's). ACCEPTED DESIGN
+ONLY (unchanged): the operator-aware contract + pre-registration, the
+row (ii) routes, ADR-0358, ADR-0373. UNMEASURED, named: run 3+; every
+per-op verdict on non-xavier hardware; the `:sum` ordering at W = 64
+on any other device or channel; the pooled cell-split difference's
+cause; every workgroup row (`:arm`/`:unknown` stay provisional
+`:measured? false` -- no workgroup row moves); the landed rows on a
+live CUDA selection path (only xavier hardware can run it). Gates:
+scoped GPU gate GREEN twice (numbers above); FULL `run-tests.cljk`
+re-verify documented red at base `Could not find namespace:
+kotoba.form` (ADR-0362), outside this diff, NO green suite claimed;
+`gpu_regime_classify.py --self-test` 2649/0 (regression pin, not
+re-run); `find docs -name '*.sh'` -> 0 files. Record:
+`docs/evidence/gpu/cuda-op-entry-landing-20261026.txt`.
