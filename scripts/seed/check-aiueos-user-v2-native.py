@@ -43,11 +43,11 @@ def verify(blob):
     require(len(blob) == 8280, "unexpected user-v2 image length")
     header = struct.unpack_from("<16sHHIQQQIHHHHHH", blob)
     require(header == (b"\x7fELF\x02\x01\x01" + bytes(9), 2, 62, 1,
-                       0x1E1000, 64, 0, 0, 64, 56, 2, 0, 0, 0), "ELF identity")
+                       0x220000, 64, 0, 0, 64, 56, 2, 0, 0, 0), "ELF identity")
     rx, rw = (struct.unpack_from("<IIQQQQQQ", blob, 64 + 56 * i) for i in range(2))
-    require(rx[:5] == (1, 5, 4096, 0x1E1000, 0x1E1000), "RX segment identity")
+    require(rx[:5] == (1, 5, 4096, 0x220000, 0x220000), "RX segment identity")
     require(80 < rx[5] == rx[6] <= 4096 and rx[7] == 4096, "RX segment bounds")
-    require(rw == (1, 6, 8192, 0x1E2000, 0x1E2000, 88, 320, 4096), "RW segment contract")
+    require(rw == (1, 6, 8192, 0x221000, 0x221000, 88, 320, 4096), "RW segment contract")
     require(not any(blob[176:4096]) and not any(blob[4096 + rx[5]:8192]),
             "ELF padding")
     prefix = bytes.fromhex(
@@ -61,7 +61,7 @@ def verify(blob):
     require(blob[4096 + 60:4096 + 80] == bytes([0x90]) * 20, "trampoline padding")
     context = bytearray(88)
     struct.pack_into("<Q", context, 8, 256)
-    struct.pack_into("<Q", context, 48, 0x1E1030)
+    struct.pack_into("<Q", context, 48, 0x220030)
     require(blob[8192:] == context, "v2 image must not bake in Goal or authority")
 
 

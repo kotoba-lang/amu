@@ -9,13 +9,13 @@ populates the region, and executes it at CPL3.
 
 | Item | v2 contract |
 | --- | --- |
-| ELF | x86-64 `ET_EXEC`, entry `0x1e1000`, one RX and one RW `PT_LOAD` |
-| RX page | file offset `4096`, virtual address `0x1e1000`, at most 4096 bytes |
-| RW page | file offset `8192`, virtual address `0x1e2000`, 88 file bytes and 320 memory bytes |
-| Private context | first 88 bytes at `0x1e2000`; result is an i64 at offset 0 |
-| Goal request | 64 bytes at `0x1e2100` (RW page offset 256), absent from the ELF file and initially zero |
-| Entry | exactly `main(request :i64, request-bytes :i64) :i64`; RDI is `0x1e2100`, RSI is 64 |
-| Host call | sealed syscall-5 trampoline at `0x1e1030`; capability bitmap stays zero |
+| ELF | x86-64 `ET_EXEC`, entry `0x220000`, one RX and one RW `PT_LOAD` |
+| RX page | file offset `4096`, virtual address `0x220000`, at most 4096 bytes |
+| RW page | file offset `8192`, virtual address `0x221000`, 88 file bytes and 320 memory bytes |
+| Private context | first 88 bytes at `0x221000`; result is an i64 at offset 0 |
+| Goal request | 64 bytes at `0x221100` (RW page offset 256), absent from the ELF file and initially zero |
+| Entry | exactly `main(request :i64, request-bytes :i64) :i64`; RDI is `0x221100`, RSI is 64 |
+| Host call | sealed syscall-5 trampoline at `0x220030`; capability bitmap stays zero |
 
 The intended OS-to-user input format is a little-endian u32 byte length at
 offset 0, followed by at most 60 Goal bytes at offset 4. The OS must reject a
@@ -24,6 +24,11 @@ before starting the user program. The compiler only reserves and passes the
 region; it cannot establish that the current OS has written a Goal. Text
 encoding, admission identity and approval for later external operations must
 be defined and verified on the OS/Itonami side.
+
+The v2 virtual addresses match the C-free AIUEOS native ValueRuntime domain
+pages. The older v1 compiler image targets `0x1e1000`/`0x1e2000`; its
+diagnostic execution on a different loader is separate evidence. The v2
+address change is intentional and does not rewrite v1 artifacts.
 
 The compiler appends only the private `kernel-load-u32` intrinsic. Its emitted
 machine code checks the base, 512-byte maximum extent and four-byte access
@@ -59,9 +64,10 @@ records the exact local run. Python stages and observes; Kotoba/Amu native
 artifacts compile and package. The Mac gate launches no Linux, JVM, Node or C
 compiler process.
 
-AIUEOS must separately add a v2 validator/loader rule, copy the 64-byte Goal
-request into the mapped user RW page, bind it to the selected author/session,
-and prove positive and refusal cases in a fresh QEMU CPL3 boot. The current
-v1 verifier and scalar QEMU result do not prove those steps. A real Itonami
-turn additionally needs trusted per-operation approval, a model/tool effect,
-receipt, durable workspace and reboot continuation on the same image.
+A separate C-free AIUEOS diagnostic entry now copies this pinned v2 ELF and
+writes a fixed `a b` Goal fixture to the mapped RW page; fresh QEMU boots
+observed CPL3 result 3 and two admission refusals. That does not establish a
+general v2 validator, live Itonami UI Goal ingress, selected author/session
+binding or signed app release admission. A real Itonami turn additionally
+needs trusted per-operation approval, a model/tool effect, receipt, durable
+workspace and reboot continuation on the same image.

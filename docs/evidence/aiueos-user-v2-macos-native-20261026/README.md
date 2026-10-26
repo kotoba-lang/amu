@@ -8,14 +8,14 @@ The signed input compiler SHA-256 was
 the signed native packager SHA-256 was
 `2ee308409db572c08733a4b0a28fc1908c8b15c44b045cf78e671ff798439ad0`.
 The exact 47-module source unity SHA-256 was
-`4d4887f14e66794e2b21708e90bdd48e3f7c18ca36c8a9e650bb81784a491300`.
+`69f4ce642b52914058f5e6d40d0251a24225e81827524ace181b83ca7687f7e5`.
 F1 and F2 native compiler containers were identical, SHA-256
-`8abe2443263ea671dbf20f01ccfb356ee7e0e6c1c4033bdd68d57fde20ca5d5c`.
+`28aa01596a7bc0d62b18b0b835a487e414dab44462e065aef4b59673684a373c`.
 The v1 scalar ELF remained byte-identical at SHA-256
 `7f5a8c0a31b5bdf191410f007973413d16e497a20ae7fe86c734b9fea85808b1`.
 
 F2 produced the 8,280-byte [v2 Goal ELF](v2-goal.elf), SHA-256
-`548bf54f7a6776e1d943d88d4cddca4e169948de89e678c108af6249f7d58eca`.
+`d1cd47b63ec90df52f6763f63c9410d2a032266412be3dd49238db8ecdf61248`.
 The independent host observer checked the entry shim, two i64 arguments,
 RX/RW segments, 64-byte BSS Goal region, zero-capability context and sealed
 trampoline. A constant two-argument program also compiled. Wrong arity,
@@ -40,7 +40,8 @@ PYTHONDONTWRITEBYTECODE=1 python3 scripts/seed/native_build_queue.py -- \
 ```
 
 This is a compiler and artifact gate run on macOS without a Linux, JVM, Node
-or C compiler process. It does not execute the v2 ELF in an AIUEOS guest.
-The current AIUEOS v1 loader still needs a separately versioned v2 rule and
-Goal write path; trusted approval, model/tool execution, durable Itonami turn,
-release and physical hardware qualification remain open.
+or C compiler process. A separate C-free AIUEOS diagnostic QEMU gate now
+executes the same v2 ELF at `0x220000` and reads a fixed Goal fixture. That
+guest gate does not qualify live Itonami Goal ingress, generic/signed v2 app
+admission, trusted approval, model/tool execution, durable Itonami turn,
+release or physical hardware.
