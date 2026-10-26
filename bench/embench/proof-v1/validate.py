@@ -92,6 +92,16 @@ def main() -> None:
             require(item.get("ratioKotobaElapsedOverC") is None, "native preparation has no performance ratio")
             record = load_from_repository(item["path"])
             require(record.get("performanceQualified") is False, "native preparation is unqualified")
+            if item["classification"] == "native-registered-accounting-no-performance":
+                require(record.get("status") == "native-candidate-observed" and
+                        record.get("mode") == "registered" and
+                        record.get("observedWorkloads") == record.get("referenceMatchedWorkloads") == 19 and
+                        len(record.get("workloads", [])) == 19,
+                        "native measurement record coverage/accounting drift")
+                require(record.get("nativeVerdictAuthority") is False and
+                        record.get("fullQualification") is False,
+                        "observer records do not grant native/performance authority")
+                continue
             expected = 0 if item["id"] == "native-full-count-rejected-20261026" else 19
             require(record.get("acceptedWorkloads") == expected and len(record.get("workloads", [])) == 19,
                     "native preparation acceptance/coverage drift")

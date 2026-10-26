@@ -33,6 +33,7 @@ on:
       - "native-product.json"
       - "seed/**"
       - "scripts/seed/**"
+      - "bench/embench/proof-v1/**"
       - "tools/gpu_*.kotoba"
       - "tools/spirv_*.kotoba"
       - "tools/static_launcher*.kotoba"
@@ -47,6 +48,7 @@ on:
       - "native-product.json"
       - "seed/**"
       - "scripts/seed/**"
+      - "bench/embench/proof-v1/**"
       - "tools/gpu_*.kotoba"
       - "tools/spirv_*.kotoba"
       - "tools/static_launcher*.kotoba"
@@ -80,6 +82,12 @@ jobs:
         env:
           PYTHONDONTWRITEBYTECODE: "1"
         run: python3 scripts/seed/test_native_benchmark_host.py -v
+      - name: Proof record audits (not native verdict or performance qualification)
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          python3 bench/embench/proof-v1/validate.py
+          python3 -m unittest discover -s bench/embench/proof-v1 -p 'test_*.py' -v
       - name: Source and image identity preflight
         run: python3 scripts/seed/check-native-identities.py
       - name: Local locked native project and refusal controls
