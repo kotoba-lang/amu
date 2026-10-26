@@ -139,6 +139,14 @@ or Murakumo Cell admission qualification. State/effects, CID-bound cache,
 fresh admission, receipts, recursive methods and runtime arguments remain
 separate gates. See `docs/kototama-i64-aot.md` for exact limits and protocol.
 
+## Scoped flock candidate (AWAI-81)
+
+The wire-35 FLOCK/UNLOCK provider and its local native gate are documented in
+`docs/native-scoped-flock.md`. Keep one cooperative lock per process, preserve
+root/no-symlink checks and the existing seccomp boundary, and never allocate
+the lock path with mmap after seccomp. Local AArch64 gates do not qualify
+x86 host execution, default artifact promotion or release/CDCI selection.
+
 ## Bounded native receipt profile (JUN-370)
 
 `kototama.pure-i64-receipt/v2` retains the v1 language/admission and allows
