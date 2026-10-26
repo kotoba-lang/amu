@@ -1,0 +1,249 @@
+{
+  "status": "PASS_B2_LIBC",
+  "compiler": {
+    "bytes": 8819200,
+    "sha256": "85713104fd62b5e73d3ab46a3807f2af6faebf047420c29e0d6dcb4fd9c4b518"
+  },
+  "host": [
+    "Linux",
+    "x86_64",
+    "7.0.0-38-generic"
+  ],
+  "units": {
+    "00-base.kotoba": {
+      "bytes": 7096,
+      "sha256": "e116a5362ca9f5d64acce4ac7e92e1cb95d2a5651347368d24fc18261038b274"
+    },
+    "10-string.kotoba": {
+      "bytes": 12452,
+      "sha256": "2920059d68b782a62f27ce7d462e04d0f856fcb5bbadddc5d5640c4d5d99e922"
+    },
+    "20-printf.kotoba": {
+      "bytes": 27898,
+      "sha256": "b59c551e267c5dd7e4208943d74a227e6d51376a038a0daf9f457652d024e21d"
+    },
+    "30-malloc.kotoba": {
+      "bytes": 3330,
+      "sha256": "37b6132933e0b08f56151ce883f51be83466cedc4e46573421e5c2f157a6b5f7"
+    },
+    "40-stdio.kotoba": {
+      "bytes": 8175,
+      "sha256": "dc0244da2bdd44c48070b57e5b511c3215bac2d901f6053d076e747ace61bbe6"
+    },
+    "50-elf.kotoba": {
+      "bytes": 21489,
+      "sha256": "0fc6352dfc4a27395695d1cd0844842ed66fd83c059adbc2d767c2c6244c2c35"
+    },
+    "60-fault.kotoba": {
+      "bytes": 3671,
+      "sha256": "93d451081f664b2ff3e02ac70a776fc06a33ce3a259acaf278f900ba0f28a98b"
+    },
+    "70-init.kotoba": {
+      "bytes": 1916,
+      "sha256": "3d9815fa8b14cf067d15f2d9d72dbd69a3d3191bf8f012cdef3e231e148e7370"
+    },
+    "90-vk-probe.kotoba": {
+      "bytes": 3241,
+      "sha256": "a56e83f67a5241f5c62821ed8f170d470493bf99c49aadbbaed3e42a8095aa3d"
+    }
+  },
+  "results": {
+    "string": {
+      "image": {
+        "bytes": 414208,
+        "sha256": "c4b8a1f82b02e67cde5c0cf03f83ad2d0474a2aa7ddd92a6d70a233679d431cd"
+      },
+      "source": {
+        "bytes": 51195,
+        "sha256": "af5b010f927ec40056d7021fdbea36073e6e728c7f198f83b53c03e560f93328"
+      },
+      "checks": 396,
+      "refusals": {
+        "overflow-memcpy": {
+          "exit": 127,
+          "stderr": "b2: refused: buffer overflow detected: __memcpy_chk"
+        },
+        "overflow-memset": {
+          "exit": 127,
+          "stderr": "b2: refused: buffer overflow detected: __memset_chk"
+        },
+        "overflow-strncpy": {
+          "exit": 127,
+          "stderr": "b2: refused: buffer overflow detected: __strncpy_chk"
+        },
+        "overflow-strcat": {
+          "exit": 127,
+          "stderr": "b2: refused: buffer overflow detected: __strcat_chk"
+        },
+        "overflow-strncat": {
+          "exit": 127,
+          "stderr": "b2: refused: buffer overflow detected: __strncat_chk"
+        },
+        "invalid-base": {
+          "exit": 127,
+          "stderr": "b2: refused: __isoc23_strtol: invalid base (EINVAL; there is no errno)"
+        },
+        "invalid-base-1": {
+          "exit": 127,
+          "stderr": "b2: refused: __isoc23_strtol: invalid base (EINVAL; there is no errno)"
+        },
+        "memcpy-huge": {
+          "exit": 127,
+          "stderr": "b2: refused: memcpy: size exceeds the address space"
+        },
+        "strtok-null": {
+          "exit": 127,
+          "stderr": "b2: refused: strtok_r: no string to continue from"
+        }
+      }
+    },
+    "printf": {
+      "image": {
+        "bytes": 508416,
+        "sha256": "8d7edbfbb83646a086296f98aa99f1a36cd3ccc36dbf4b5bcb0db5e8666650e4"
+      },
+      "source": {
+        "bytes": 70419,
+        "sha256": "1a832024aae8f4e7cfc2b064477046e5d498031259cd43544abd97dfecfa998b"
+      },
+      "checks": 297,
+      "refusals": {
+        "overflow-chk": {
+          "exit": 127,
+          "stderr": "b2: refused: buffer overflow detected: __snprintf_chk"
+        },
+        "vchk": {
+          "exit": 127,
+          "stderr": "b2: refused: buffer overflow detected: __vsnprintf_chk"
+        },
+        "float": {
+          "exit": 127,
+          "stderr": "b2: refused: printf: unsupported conversion %f"
+        },
+        "pct-n": {
+          "exit": 127,
+          "stderr": "b2: refused: printf: unsupported conversion %n"
+        },
+        "positional": {
+          "exit": 127,
+          "stderr": "b2: refused: printf: unsupported conversion: positional arguments (%N$)"
+        },
+        "wide-s": {
+          "exit": 127,
+          "stderr": "b2: refused: printf: unsupported conversion %ls"
+        },
+        "scan-float": {
+          "exit": 127,
+          "stderr": "b2: refused: sscanf: unsupported conversion %f"
+        },
+        "scan-p": {
+          "exit": 127,
+          "stderr": "b2: refused: sscanf: unsupported conversion %p"
+        },
+        "scan-wide": {
+          "exit": 127,
+          "stderr": "b2: refused: sscanf: unsupported conversion %ls"
+        }
+      }
+    },
+    "elf": {
+      "image": {
+        "bytes": 479744,
+        "sha256": "f3e19728f3ccdc73961da5a64ae0c7a480343d320f87c518d00084483bdd1494"
+      },
+      "source": {
+        "bytes": 89704,
+        "sha256": "bf0353751b67964841fe4560bb07d4ecb83090639023e3f42150ce5ae1258cf2"
+      },
+      "checks": 19,
+      "refusals": {
+        "variant-etexec": {
+          "exit": 127,
+          "stderr": "b2: refused: fixture: not ET_DYN (a shared object)"
+        },
+        "variant-tls": {
+          "exit": 127,
+          "stderr": "b2: refused: fixture: PT_TLS: thread-local storage is slice 2"
+        },
+        "variant-irelative": {
+          "exit": 127,
+          "stderr": "b2: refused: /tmp/claude-b2-slice1/libc-f/scratch-elf/libfixture-irelative.so.1: relocation type 37"
+        },
+        "variant-unknown-reloc": {
+          "exit": 127,
+          "stderr": "b2: refused: /tmp/claude-b2-slice1/libc-f/scratch-elf/libfixture-unknown-reloc.so.1: relocation type 99"
+        },
+        "variant-needed": {
+          "exit": 127,
+          "stderr": "b2: refused: fixture: needed library not available in slice 1: libnot-there.so.9"
+        },
+        "variant-textrel": {
+          "exit": 127,
+          "stderr": "b2: refused: fixture: DT_TEXTREL (text relocations)"
+        },
+        "variant-relr": {
+          "exit": 127,
+          "stderr": "b2: refused: fixture: DT_RELR (packed relative relocations) is not supported yet"
+        },
+        "variant-version": {
+          "exit": 127,
+          "stderr": "b2: refused: import strlen: this image has it at another symbol version than GLIBC_2.99999 (needed by /tmp/claude-b2-slice1/libc-f/scratch-elf/libfixture-version.so.1)"
+        },
+        "variant-not-elf": {
+          "exit": 127,
+          "stderr": "b2: refused: fixture: not an ELF file"
+        },
+        "variant-short": {
+          "exit": 127,
+          "stderr": "b2: refused: fixture: file shorter than an ELF header"
+        },
+        "call-missing": {
+          "exit": 127,
+          "stderr": "b2: refused: unimplemented import no_such_import: called from /tmp/claude-b2-slice1/libc-f/scratch-elf/libfixture.so.1 (nothing in this image implements it)"
+        },
+        "relro-write": {
+          "exit": 139,
+          "stderr": "b2: fatal signal 11 at 0x470baf"
+        }
+      }
+    },
+    "libc": {
+      "image": {
+        "bytes": 504320,
+        "sha256": "165a58ad342c130bf770b2bee63b21d8c60b8d5a2f022ff220a57ac25a47dc75"
+      },
+      "source": {
+        "bytes": 99244,
+        "sha256": "76624ad02e32747560ab9ba364eb4fc757227d2fed1097e650a7f8042b7332ae"
+      },
+      "checks": 67,
+      "refusals": {
+        "mutex-twice": {
+          "exit": 127,
+          "stderr": "b2: refused: pthread_mutex_lock: the mutex is already held (one thread: it would never be released)"
+        },
+        "fopen-write": {
+          "exit": 127,
+          "stderr": "b2: refused: fopen: only read modes are supported: w"
+        },
+        "abort": {
+          "exit": 134,
+          "stderr": "b2: abort() called by the loaded library"
+        },
+        "stack-chk": {
+          "exit": 134,
+          "stderr": "b2: stack smashing detected in the loaded library"
+        },
+        "free-wild": {
+          "exit": 127,
+          "stderr": "b2: refused: free: invalid pointer 0x728c21700020"
+        },
+        "unresolved": {
+          "exit": 127,
+          "stderr": "b2: refused: unimplemented import no_such_import: called from /test/libfake.so (nothing in this image implements it)"
+        }
+      }
+    }
+  },
+  "cCompilerOrLoader": false
+}

@@ -1,0 +1,141 @@
+;; tools/b2/40-stdio.kotoba -- stdio, directories, the environment, qsort and mutexes for the loaded library
+;; (ADR 0375, JUN-377). Unbuffered, read-only files; everything outside what libvulkan uses refuses by name.
+
+;; ---- FILE ------------------------------------------------------------------------------------------------------
+;; A FILE is 32 bytes: 0 the descriptor, 8 end-of-file, 16 error. fopen takes read modes only.
+(def FILE-SIZE 32)
+(def ST-FILES 12288)     ;; three FILE blocks for fd 0, 1, 2 (96 bytes) at ST-FILES, then the stderr cell
+(def ST-STDERR-OBJ 12400) ;; the data object stderr: a cell holding &FILE(fd 2)
+(def AT-FDCWD -100)
+
+(defn- file-init [] :i64
+  (let [base (+ (kxrt-b-state) ST-FILES)
+        a (s64 base 0) b (s64 (+ base 32) 1) c (s64 (+ base 64) 2)
+        d (s64 (+ (kxrt-b-state) ST-STDERR-OBJ) (+ base 64))]
+    (st! ST-STDERR-CELL (+ (kxrt-b-state) ST-STDERR-OBJ))))
+(defn- file-new [fd :i64] :i64
+  (let [f (malloc-alloc FILE-SIZE)]
+    (if (= f 0) 0 (let [a (s64 f fd) b (s64 (+ f 8) 0) c (s64 (+ f 16) 0)] f))))
+(defn- file-fd [f :i64] :i64 (l64 f))
+
+(defn- cx-fopen-GLIBC_2.2.5 [path :i64 mode :i64] :i64
+  (let [m0 (l8 mode)]
+    (if (or (not= m0 114) (c-has? mode 43)) (refuse "fopen" (string-concat "only read modes are supported: " (c-str mode)))
+      (let [fd (sys4 SYS-OPENAT AT-FDCWD path 524288 0)]
+        (if (< fd 0) 0
+          (let [f (file-new fd)] (if (= f 0) (let [z (sys1 SYS-CLOSE fd)] 0) f)))))))
+;; the NUL-ended string at p contains the byte c
+(defn- c-has? [p :i64 c :i64] :bool
+  (loop [i 0] (let [x (l8 (+ p i))] (cond (= x 0) false (= x c) true :else (recur (inc i))))))
+(defn- cx-fclose-GLIBC_2.2.5 [f :i64] :i64
+  (let [r (sys1 SYS-CLOSE (file-fd f)) z (if (< (file-fd f) 3) 0 (malloc-free f))] (if (< r 0) -1 0)))
+;; up to n bytes into a, fewer only at the end of the file or on an error
+(defn- file-read [f :i64 a :i64 n :i64] :i64
+  (loop [k 0]
+    (if (>= k n) k
+      (let [r (sys3 SYS-READ (file-fd f) (+ a k) (- n k))]
+        (cond (> r 0) (recur (+ k r))
+              (= r 0) (let [z (s64 (+ f 8) 1)] k)
+              (= r -4) (recur k)
+              :else (let [z (s64 (+ f 16) 1)] k))))))
+(defn- cx-fread-GLIBC_2.2.5 [ptr :i64 size :i64 n :i64 f :i64] :i64
+  (if (or (= size 0) (= n 0)) 0
+    (quot (file-read f ptr (* size n)) size)))
+(defn- cx-__fread_chk-GLIBC_2.7 [ptr :i64 ptrlen :i64 size :i64 n :i64 f :i64] :i64
+  (if (and (not= ptrlen -1) (> (* size n) ptrlen)) (refuse "buffer overflow detected" "__fread_chk")
+    (cx-fread-GLIBC_2.2.5 ptr size n f)))
+(defn- cx-fseek-GLIBC_2.2.5 [f :i64 off :i64 whence :i64] :i64
+  (let [r (sys3 SYS-LSEEK (file-fd f) off (i32 whence)) z (s64 (+ f 8) 0)] (if (< r 0) -1 0)))
+(defn- cx-ftell-GLIBC_2.2.5 [f :i64] :i64
+  (let [r (sys3 SYS-LSEEK (file-fd f) 0 1)] (if (< r 0) -1 r)))
+(defn- cx-feof-GLIBC_2.2.5 [f :i64] :i64 (if (= (l64 (+ f 8)) 0) 0 1))
+(defn- file-write [f :i64 a :i64 n :i64] :i64
+  (loop [k 0]
+    (if (>= k n) k
+      (let [r (sys3 SYS-WRITE (file-fd f) (+ a k) (- n k))]
+        (cond (> r 0) (recur (+ k r)) (= r -4) (recur k) :else -1)))))
+(defn- cx-fputs-GLIBC_2.2.5 [s :i64 f :i64] :i64
+  (if (< (file-write f s (c-strlen s)) 0) -1 1))
+(defn- cx-fputc-GLIBC_2.2.5 [c :i64 f :i64] :i64
+  (let [m (+ (kxrt-b-state) ST-OUT) z (s8 m c)]
+    (if (< (file-write f m 1) 0) -1 (bit-and c 255))))
+
+;; ---- directories -----------------------------------------------------------------------------------------------
+;; A DIR is 32 bytes: 0 the descriptor, 8 the getdents64 buffer (32 KiB), 16 the read position, 24 the length.
+;; readdir returns the glibc struct dirent (d_ino, d_off, d_reclen, d_type, d_name) as the kernel wrote it.
+(def DIR-BUF 32768)
+(defn- cx-opendir-GLIBC_2.2.5 [path :i64] :i64
+  (let [fd (sys4 SYS-OPENAT AT-FDCWD path 722944 0)]
+    (if (< fd 0) 0
+      (let [d (malloc-alloc 32) buf (malloc-alloc DIR-BUF)]
+        (if (or (= d 0) (= buf 0)) (let [z (sys1 SYS-CLOSE fd)] 0)
+          (let [a (s64 d fd) b (s64 (+ d 8) buf) c (s64 (+ d 16) 0) e (s64 (+ d 24) 0)] d))))))
+(defn- cx-readdir-GLIBC_2.2.5 [d :i64] :i64
+  (let [fill (if (>= (l64 (+ d 16)) (l64 (+ d 24)))
+               (let [n (sys3 SYS-GETDENTS64 (l64 d) (l64 (+ d 8)) DIR-BUF)
+                     a (s64 (+ d 16) 0) b (s64 (+ d 24) (if (> n 0) n 0))] n)
+               1)]
+    (if (<= fill 0) 0
+      (let [e (+ (l64 (+ d 8)) (l64 (+ d 16))) z (s64 (+ d 16) (+ (l64 (+ d 16)) (l16 (+ e 16))))] e))))
+(defn- cx-closedir-GLIBC_2.2.5 [d :i64] :i64
+  (let [r (sys1 SYS-CLOSE (l64 d)) a (malloc-free (l64 (+ d 8))) b (malloc-free d)] (if (< r 0) -1 0)))
+
+;; ---- files by name, the environment ----------------------------------------------------------------------------
+(defn- cx-access-GLIBC_2.2.5 [path :i64 mode :i64] :i64
+  (if (< (sys2 SYS-ACCESS path (i32 mode)) 0) -1 0))
+(defn- cx-readlink-GLIBC_2.2.5 [path :i64 buf :i64 size :i64] :i64
+  (let [r (sys3 SYS-READLINK path buf size)] (if (< r 0) -1 r)))
+;; the value of NAME in the environment vector, or 0
+(defn- env-find [name :i64] :i64
+  (let [n (c-strlen name)]
+    (loop [p (st ST-ENVP)]
+      (let [e (l64 p)]
+        (cond (= e 0) 0
+              (and (c-prefix? e name n) (= (l8 (+ e n)) 61)) (+ e (inc n))
+              :else (recur (+ p 8)))))))
+(defn- c-prefix? [a :i64 b :i64 n :i64] :bool
+  (loop [i 0] (cond (= i n) true (= (l8 (+ a i)) (l8 (+ b i))) (recur (inc i)) :else false)))
+(defn- cx-getenv-GLIBC_2.2.5 [name :i64] :i64 (env-find name))
+(defn- cx-secure_getenv-GLIBC_2.17 [name :i64] :i64 (env-find name))
+
+;; ---- qsort -------------------------------------------------------------------------------------------------------
+;; A stable insertion sort (the callers sort short lists); the comparator is C code, called through
+;; kxrt-b-ccall with the two element addresses. Elements move through one temporary of `size` bytes.
+(defn- sort-cmp [argv :i64 cmp :i64 a :i64 b :i64] :i64
+  (let [x (s64 argv a) y (s64 (+ argv 8) b)] (i32 (kxrt-b-ccall cmp argv))))
+(defn- sort-shift [base :i64 size :i64 j :i64 argv :i64 cmp :i64 tmp :i64] :i64
+  ;; move element j-1 up while it is greater than tmp; the final hole index
+  (loop [j j]
+    (if (and (> j 0) (> (sort-cmp argv cmp (+ base (* size (dec j))) tmp) 0))
+      (let [z (c-copy (+ base (* size j)) (+ base (* size (dec j))) size)] (recur (dec j)))
+      j)))
+(defn- cx-qsort-GLIBC_2.2.5 [base :i64 n :i64 size :i64 cmp :i64] :i64
+  (if (or (< n 2) (= size 0)) 0
+    (let [argv (malloc-alloc 128) tmp (malloc-alloc size)]
+      (if (or (= argv 0) (= tmp 0)) (refuse "qsort" "out of memory")
+        (let [z (c-zero argv 128)
+              y (loop [i 1]
+                  (if (>= i n) 0
+                    (let [c (c-copy tmp (+ base (* size i)) size)
+                          hole (sort-shift base size i argv cmp tmp)
+                          d (if (= hole i) 0 (c-copy (+ base (* size hole)) tmp size))]
+                      (recur (inc i)))))
+              f1 (malloc-free argv) f2 (malloc-free tmp)]
+          0)))))
+
+;; ---- mutexes (one thread) -----------------------------------------------------------------------------------------
+;; pthread_mutex_t is 40 bytes; word 0 is the lock flag. A lock that is already held cannot be released by
+;; anyone else in a single thread: it refuses by name instead of hanging.
+(defn- cx-pthread_mutex_init-GLIBC_2.2.5 [m :i64 attr :i64] :i64 (let [z (c-zero m 40)] 0))
+(defn- cx-pthread_mutex_destroy-GLIBC_2.2.5 [m :i64] :i64 0)
+(defn- cx-pthread_mutex_lock-GLIBC_2.2.5 [m :i64] :i64
+  (if (not= (l32 m) 0) (refuse "pthread_mutex_lock" "the mutex is already held (one thread: it would never be released)")
+    (let [z (s32 m 1)] 0)))
+(defn- cx-pthread_mutex_unlock-GLIBC_2.2.5 [m :i64] :i64 (let [z (s32 m 0)] 0))
+
+;; ---- process ----------------------------------------------------------------------------------------------------------
+(defn- cx-abort-GLIBC_2.2.5 [] :i64
+  (let [w (warn "b2: abort() called by the loaded library")] (sys1 SYS-EXIT-GROUP 134)))
+(defn- cx-__stack_chk_fail-GLIBC_2.4 [] :i64
+  (let [w (warn "b2: stack smashing detected in the loaded library")] (sys1 SYS-EXIT-GROUP 134)))
+(defn- cx-__cxa_finalize-GLIBC_2.2.5 [d :i64] :i64 0)
