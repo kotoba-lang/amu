@@ -1,0 +1,12 @@
+(ns seed.profile-region-bound (:export [main]))
+;; Each fork consumes one private growth row until the existing row limit;
+;; the final iteration must use exact-size copying, not enlarge that limit.
+(defn main [] :i64
+  (loop [i 0]
+    (if (= i 4194305) 0
+      (let [base (vector-alloc 1) blocker (vector-alloc 1)
+            next (vector-conj base i)]
+        (if (and (= (vector-count blocker) 1) (= (vector-at blocker 0) 0)
+                 (= (vector-count next) 2) (= (vector-at next 0) 0)
+                 (= (vector-at next 1) i))
+          (recur (inc i)) 1)))))

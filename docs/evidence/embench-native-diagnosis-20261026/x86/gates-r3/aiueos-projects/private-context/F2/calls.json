@@ -1,0 +1,26 @@
+[
+  {
+    "name": "catalog",
+    "exit": 0,
+    "stderr": "",
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64\n (let [m (kernel-subregion (kernel-boot-info) 16544 160 16384)\n       state (kernel-owned-page 14)\n       kind (kernel-load-u32-16k m 16384 0)\n       base (kernel-load-u64-16k m 16384 8)\n       pages (kernel-load-u64-16k m 16384 24)\n       k (kernel-store-u64-4k state 4096 0 kind)\n       b (kernel-store-u64-4k state 4096 8 base)\n       p (kernel-store-u64-4k state 4096 16 pages)\n       forged-kind (kernel-store-u32-16k m 16384 0 11)\n       forged-base (kernel-store-u64-16k m 16384 8 4096)\n       forged-pages (kernel-store-u64-16k m 16384 24 16)]\n  (if (and (= k kind) (= b base) (= p pages) (= forged-kind 11)\n           (= forged-base 4096) (= forged-pages 16)) 42 0)))\n"
+  },
+  {
+    "name": "retired-classification",
+    "exit": 1,
+    "stderr": "seed: E2101 unknown or unsupported form 'kernel-firmware-mmio' (byte 48)\n",
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64 (kernel-firmware-mmio 4096 512))\n"
+  },
+  {
+    "name": "stack-exhaustion",
+    "exit": 0,
+    "stderr": "",
+    "sourceText": "(ns entry (:export [main]))\n(defn- deep [n :i64] :i64 (if (= n 0) 42 (+ 1 (deep (- n 1)))))\n(defn main [] :i64 (if (> (kernel-owned-page 0) 0) (deep 10000) 0))\n"
+  },
+  {
+    "name": "shallow-stack",
+    "exit": 0,
+    "stderr": "",
+    "sourceText": "(ns entry (:export [main]))\n(defn- deep [n :i64] :i64 (if (= n 0) 42 (+ 1 (deep (- n 1)))))\n(defn main [] :i64 (if (> (kernel-owned-page 0) 0) (deep 0) 0))\n"
+  }
+]

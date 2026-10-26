@@ -10,6 +10,7 @@
     "repository",
     "host",
     "toolchains",
+    "runtimeProfile",
     "artifacts",
     "workloads",
     "normalization",
@@ -54,6 +55,38 @@
       }
     },
     "toolchains": {"type": "object", "required": ["amu", "c"]},
+    "runtimeProfile": {
+      "type": "object",
+      "required": ["id", "target", "format", "vectorDescriptors", "growthRegionRows",
+                   "vectorItems", "individualVectorLength", "pairs", "stringPoolBytes",
+                   "compilerArtifact", "executableBindings"],
+      "properties": {
+        "id": {"enum": ["standard-v1", "large-vectors-v1"]},
+        "target": {"enum": ["x86_64-linux", "aarch64-linux"]},
+        "format": {"enum": ["static", "runner", "kx64-runner", "launcher", "packed"]},
+        "vectorDescriptors": {"enum": [4194304, 67108864]},
+        "growthRegionRows": {"const": 4194304},
+        "vectorItems": {"const": 268435456},
+        "individualVectorLength": {"const": 33554432},
+        "pairs": {"const": 16777216},
+        "stringPoolBytes": {"const": 268435456},
+        "compilerArtifact": {"$ref": "#/$defs/hashedArtifact"},
+        "executableBindings": {
+          "type": "array", "minItems": 1, "maxItems": 19,
+          "items": {
+            "type": "object", "required": ["workloads", "image", "buildRecord"],
+            "properties": {
+              "workloads": {"type": "array", "minItems": 1, "maxItems": 19,
+                            "uniqueItems": true, "items": {"type": "string"}},
+              "image": {"$ref": "#/$defs/hashedArtifact"},
+              "buildRecord": {"$ref": "#/$defs/hashedArtifact"}
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
     "artifacts": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/hashedArtifact"}},
     "workloads": {
       "type": "array",

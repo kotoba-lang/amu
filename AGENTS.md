@@ -258,6 +258,16 @@ watermark and last-word mutants must pass before adoption. Wasm's context is
 separate and its own offset760 must remain unchanged. Source changes alone do not qualify
 the current root/public/role pins; finish native rebuilding and all gates.
 
+Owner-approved exception (2026-10-26, KOTOBA-144): an explicit
+`--runtime-profile large-vectors-v1` may select67,108,864 vector descriptors
+for a native Linux artifact. The default `standard-v1` remains4,194,304.
+Keep private growth-region rows at4,194,304, all item/pair/string/individual
+vector limits, rollback/highwater checks, authority, fuel and refusals.
+Never infer this profile from workload names, failures or speed. Unknown,
+malformed and duplicate profile declarations refuse. This is implementation
+approval only: both ISA gates, rebuilt root/public/roles and new executed
+boundary/mutation controls remain required before adoption or measurement.
+
 
 ## Native instruction-class filter qualification
 

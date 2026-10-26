@@ -1,0 +1,16 @@
+{
+  "schema": "amu.native-gate-plan.v1",
+  "phases": {
+    "x86-extra": [
+      {"name":"io-read","argv":["python3","scripts/seed/check-io-read.py","--compiler","@TEMP@/complete/F2.elf","--target","x86_64-linux","--output","@TEMP@/extras-r5/io-read"]},
+      {"name":"durable-sleep","argv":["python3","scripts/seed/check-durable-sleep.py","--compiler","@TEMP@/complete/F2.elf","--target","x86_64-linux","--output","@TEMP@/extras-r5/durable-sleep"]},
+      {"name":"private-store","argv":["python3","scripts/seed/check-private-store.py","--compiler","@TEMP@/complete/F2.elf","--output","@TEMP@/extras-r5/private-store"]},
+      {"name":"sleep-resume","argv":["python3","scripts/seed/check-sleep-resume.py","--compiler","@TEMP@/complete/F2.elf","--output","@TEMP@/extras-r5/sleep-resume/receipt.json"]},
+      {"name":"spawn","argv":["python3","scripts/seed/check-spawn-runtime.py","--compiler","@TEMP@/complete/F2.elf","--target","x86_64-linux","--output","@TEMP@/extras-r5/spawn"]},
+      {"name":"user-elf","argv":["python3","scripts/seed/check-aiueos-user-elf-native.py","--compiler","@TEMP@/complete/F3.elf","--output","@TEMP@/extras-r5/user-elf"]},
+      {"name":"public-product","argv":["python3","scripts/seed/check-public-native-product.py","--product","@TEMP@/source-r3","--complete","@TEMP@/complete","--output","@TEMP@/extras-r5/public-product"]},
+      {"name":"project","argv":["python3","scripts/seed/check-x86-project-native.py","--compiler","@TEMP@/complete/F3.elf","--output","@TEMP@/extras-r5/project"]},
+      {"name":"project-fs-candidate","argv":["python3","scripts/seed/check-x86-project-fs-native.py","--compiler","@TEMP@/complete/F3.elf","--compiler-sha256","7f2846b227f54f425bdb16f451cc2b4ecf4d9ba95c45c5f455cd1b87961eabf7","--runner","@TEMP@/extras-r5/project/runner.elf","--derive","--output","@TEMP@/extras-r5/project-fs-candidate"]}
+    ]
+  }
+}

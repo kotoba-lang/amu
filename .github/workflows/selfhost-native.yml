@@ -72,6 +72,10 @@ jobs:
         env:
           PYTHONDONTWRITEBYTECODE: "1"
         run: python3 scripts/seed/test_aiueos_qmp_stdio.py -v
+      - name: Benchmark staging observer format controls (not timing qualification)
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python3 scripts/seed/test_embench_candidate.py -v
       - name: Source and image identity preflight
         run: python3 scripts/seed/check-native-identities.py
       - name: Local locked native project and refusal controls
@@ -220,6 +224,9 @@ jobs:
             ${{ runner.temp }}/flock-vector-arm64/*.json
             ${{ runner.temp }}/flock-vector-arm64/*.stdout
             ${{ runner.temp }}/flock-vector-arm64/*.stderr
+            ${{ runner.temp }}/runtime-profile-arm64/*.json
+            ${{ runner.temp }}/runtime-profile-arm64/*.stdout
+            ${{ runner.temp }}/runtime-profile-arm64/*.stderr
             ${{ runner.temp }}/zero-watermark-arm64/*.json
             ${{ runner.temp }}/zero-watermark-arm64/*.stdout
             ${{ runner.temp }}/zero-watermark-arm64/*.stderr
@@ -335,6 +342,9 @@ jobs:
             ${{ runner.temp }}/flock-vector-x86/*.json
             ${{ runner.temp }}/flock-vector-x86/*.stdout
             ${{ runner.temp }}/flock-vector-x86/*.stderr
+            ${{ runner.temp }}/runtime-profile-x86/*.json
+            ${{ runner.temp }}/runtime-profile-x86/*.stdout
+            ${{ runner.temp }}/runtime-profile-x86/*.stderr
             ${{ runner.temp }}/zero-watermark-x86/*.json
             ${{ runner.temp }}/zero-watermark-x86/*.stdout
             ${{ runner.temp }}/zero-watermark-x86/*.stderr
