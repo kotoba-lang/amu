@@ -223,10 +223,38 @@
 ;; trapped the budget on long device names. PINNED SEMANTIC CHANGE: the
 ;; walk checked {32, 9, 10, 13} only, so a field of only \v(11)/\f(12)
 ;; passed as non-blank (and parsed); string-skip-blank is C isspace (adds
-;; 11 and 12) and rejects it -- the HOST arm's str/blank? reading
-;; (Character/isWhitespace covers 11/12), so this moves the W3 arm TOWARD
-;; host parity. Non-ASCII whitespace stays the named residual (neither arm
-;; walks it here; the wire is ASCII).
+;; 11 and 12) and rejects it -- the HOST arm's str/blank? reading covers
+;; 11/12 too, so this moves the W3 arm TOWARD host parity. The host
+;; rule's MECHANISM is MEASURED now (the blank / non-ASCII whitespace
+;; row 2026-10-26): this engine's str/blank? is the EVERY-CHAR /\s/ RULE
+;; (the /\s column equals the host answer on all 44 domain cells) -- NOT
+;; the JVM Character/isWhitespace the earlier parenthetical named. They
+;; agree on the C isspace set (pinned below) and disagree on exactly the
+;; class named next plus the ASCII controls 0x1c-0x1f, where THIS engine
+;; answers NON-BLANK (parity with the W3 arm) where a JVM would answer
+;; blank -- so the 0x1c-0x1f texts are PARITY cells here, not divergence.
+;; THE NON-ASCII WHITESPACE RESIDUAL IS MEASURED (same row,
+;; docs/evidence/gpu/w3-blank-nonascii-whitespace-20261026.txt, two
+;; byte-identical runs, sha256 273da584..): the divergence class is
+;; EXACTLY the texts whose chars are all /\s/ but which contain a
+;; non-C-isspace byte -- any text over {U+00A0 NBSP, U+1680,
+;; U+2000..U+200A, U+2028, U+2029, U+202F, U+205F, U+3000, U+FEFF},
+;; possibly mixed with C-isspace chars (" " + U+3000 diverges -- the
+;; skip stops at the first non-C-isspace byte). On every class cell the
+;; W3 arm answers the six-fact map (permissive at the FACT) where the
+;; host arm answers nil -- and the DISPATCH DECISION is MEASURED
+;; IDENTICAL on every class cell (both arms' `recommend` answer
+;; :unknown / 256 / :measured? false -- an all-whitespace name matches
+;; no key fragment). DECIDED: the byte rule STAYS (the class is
+;; unreachable from the wire as attested -- all 266 recorded INFO
+;; receipt occurrences are ONE ASCII answer -- and the decision is
+;; identical either way; a Unicode-aware blank would walk the class set
+;; per code point -- PROPOSED only, its own row if a live wire ever
+;; carries non-ASCII device names). NAMED, NOT HIDDEN: the host cells
+;; are engine-owned and never pinned (the parse-long precedent); the
+;; receipt charset beyond the recorded receipts is UNMEASURED (the
+;; producer tools/kexe_gpu_vulkan.c is not in the tree at HEAD --
+;; removed at 36479076, JUN-29).
 #?(:kotoba
    (defn- blank-str? [s :string] :bool
      (>= (string-skip-blank s 0) (string-byte-length s))))

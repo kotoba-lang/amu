@@ -1,0 +1,172 @@
+W3 BLANK / NON-ASCII WHITESPACE PARITY -- the class, measured
+(JUN-56 follow-up, JUN-55)
+date: 2026-10-26 (JST)
+row: ONE measurement slice + one reachability scan. NO hardware ran, no
+GPU, no timing -- every number below is a kotoba-language-runtime
+behavior probe. NO product behavior change (the src diff is comment
+prose; tests grow pins).
+
+closes (by measurement): the named residual of the frame-budget row,
+one site:
+  src/kotoba/compiler/accelerator_targets.cljk (blank-str? comment)
+    "Non-ASCII whitespace stays the named residual (neither arm walks
+     it here; the wire is ASCII)."
+
+QUESTION: the W3 arm's blank rule is ONE `string-skip-blank` (C isspace
+on BYTES); the host arm's is `str/blank?` (this engine's own rule on
+CHARS). WHERE do they diverge, and does the divergence ever change a
+dispatch decision? The class could not be stated without measuring THIS
+engine's str/blank? (a JVM's Character/isWhitespace and a JS /\s/
+disagree on NBSP/U+2007/U+202F/U+FEFF/U+0085/U+001C-0x1F, and the host
+arm runs on the kbb SCI-on-Node engine, not a JVM).
+
+INSTRUMENT (scratch probe never staged; kbb --backend sci
+classpath "src:test:$(kbb -Spath -M:test)" at the worktree root):
+  w3_blank_nonascii.cljk  -- run 1 and run 2, BYTE-IDENTICAL
+    sha256 273da584bed4a8fd4ef0804c8995835bea6b5a7746cae7acce6e1c7b98762ee9
+    257 lines COMPLETE. 44 domain cells (the whitespace-relevant code
+    points: the C isspace set, the controls 0x01/0x1C-0x1F, U+0085,
+    U+00A0, U+1680, U+2000..U+200A, U+2028/U+2029, U+202F, U+205F,
+    U+3000, U+FEFF, U+200B, U+180E, plus repeats and C/non-C mixes)
+    on four surfaces: (A) the unit -- W3 blank-str? on the kotoba
+    runtime (the w3 extract-balanced idiom, the arm's OWN source text)
+    vs host str/blank? vs every-char /\s/ (attribution column);
+    (B) the route -- both arms' device-from-info on "<dev>|1.2.3|4|1";
+    (C) the dispatch consequence -- both arms' recommend on every
+    divergence cell; (D) an in-run determinism re-read.
+
+WHAT WAS MEASURED (tool output, the probe above):
+
+(1) THIS ENGINE'S str/blank? IS THE EVERY-CHAR /\s/ RULE. The /\s
+attribution column equals the host answer on ALL 44 cells. The old
+prose parenthetical "(Character/isWhitespace covers 11/12)" mis-attributes
+the mechanism: the VT/FF coverage is real under both rules (pinned) but
+the rules are NOT the same one -- a JVM Character/isWhitespace would
+answer BLANK for 0x1C-0x1F and NON-BLANK for NBSP/U+2007/U+202F/FEFF,
+where this engine answers the exact opposite on every one of those
+cells. The mechanism is ATTRIBUTED BY MEASUREMENT (the /\s column);
+the engine's str/blank? implementation source was not read.
+
+(2) THE UNIT, three exact classes (44 cells):
+  PARITY-BLANK (8): "", " ", \t, \n, \v, \f, \r, "  " -- the C isspace
+    set and its runs. Both arms blank.
+  PARITY-NONBLANK (13): \u0001, \u001c, \u001d, \u001e, \u001f,
+    \u001c\u001c, \u0085 NEL, \u200b ZWSP, \u180e MVS, "lsep+a",
+    "a+lsep", "a", "ab". Notably the ASCII controls 0x1C-0x1F are
+    PARITY here (this engine answers non-blank; a JVM would say blank --
+    named, off-engine) and NEL/ZWSP/MVS are non-blank under both rules.
+  DIVERGE (23): every text whose chars are ALL /\s/ but which contains
+    a non-C-isspace byte -- the singletons \u00a0 NBSP, \u1680 OGHAM,
+    \u2000..\u200a (all 11, INCLUDING \u2007 FIGURE SPACE), \u2028
+    LSEP, \u2029 PSEP, \u202f NNBSP, \u205f MMSP, \u3000 IDEOGRAPHIC,
+    \ufeff BOM, plus repeats ("nbsp nbsp", "lsep x3") and MIXES
+    (" \u3000", "\u3000 " -- the W3 skip stops at the first
+    non-C-isspace byte). W3 says NON-BLANK, host says BLANK on every
+    one. The class membership is EXACTLY {U+00A0, U+1680,
+    U+2000..U+200A, U+2028, U+2029, U+202F, U+205F, U+3000, U+FEFF}
+    texts (possibly mixed with C isspace chars) -- every class member
+    is NON-ASCII on this engine, so the residual's "non-ASCII
+    whitespace" characterization is CONFIRMED.
+
+(3) THE ROUTE MAPS THE UNIT 1:1 (both arms' device-from-info):
+  every DIVERGE cell -> the :kotoba arm answers the six-fact map
+    {:vendor <the whitespace text>, :api :vulkan, :api-version "1.2.3",
+     :max-workgroup-x 4, :unified-memory? true, :measured? true}
+    where the HOST arm answers nil -- permissive at the FACT on the
+    W3 arm;
+  every PARITY-BLANK cell -> null / nil on both arms;
+  every PARITY-NONBLANK cell -> the fact on both arms.
+
+(4) THE DISPATCH DECISION IS IDENTICAL EITHER WAY (section C, all 23
+divergence cells, both arms): recommend answers
+  {:vendor :unknown, :target :wgsl-v1, :workgroup-size 256,
+   :measured? false}
+on BOTH arms for every class cell -- an all-whitespace name matches no
+key fragment, so the W3 arm's extra fact can never select a row. The
+divergence is a FACT-SHAPE divergence, never a decision divergence.
+
+(5) THE "wire is ASCII" CLAIM, RE-SCOPED by tool output: a scan of
+docs/evidence finds 266 recorded wire-42 INFO receipt occurrences,
+ONE distinct answer "Apple M1 Max|1.3.357|1024|1" -- ALL ASCII
+(python scan output in the tick log). The producer
+tools/kexe_gpu_vulkan.c is NOT in the tree at HEAD (git ls-files: not
+present; git log: removed at 36479076 "Remove the product C loader and
+its hosts", JUN-29), so the receipt charset is attested ONLY by the
+recorded receipts -- UNMEASURED beyond them. The reachability defense
+holds as far as the attested wire goes; it does not make the class
+empty.
+
+WHAT LANDED (prose + tests, no product behavior change):
+- accelerator_targets.cljk blank-str? comment: the residual sentence
+  replaced by the measured state above (the mechanism correction -- the
+  engine rule is /\s/, not Character/isWhitespace -- the exact class
+  membership, the fact-vs-nil direction, the identical decision, and
+  the reachability re-scope).
+- accelerator_targets_test.cljk: the w3-device-from-info deftest grows
+  "the blank rule is byte-level C isspace -- the non-ASCII whitespace
+  class is MEASURED named divergence" (gate test COUNT +0 / +18
+  assertions: 4 C-isspace parity pins on the contract arm, 4
+  parity-nonblank attribution pins (0x1C/0085/200B/180E -> the fact on
+  the W3 arm), 5 divergence-class pins (NBSP/LSEP/IDSP/BOM/sp+idsp ->
+  the FACT on the contract arm, NAMED divergence), 5 consequence pins
+  (the dispatch decision identical -- :unknown/256/:measured? false));
+  the deftest's residual-prose paragraph notes the closure.
+
+DECIDED (prose only): the byte-level C isspace rule STAYS (one
+`string-skip-blank`). The class is unreachable from the wire as
+attested (all-ASCII receipts) and the dispatch decision is measured
+identical either way, so a Unicode-aware blank (walk the class set per
+code point in one loop/recur) buys nothing today -- PROPOSED as its own
+row if a live wire ever carries non-ASCII device names. The contract
+"a blank device field rejects (the host str/blank? reading)" is
+RE-SCOPED to the measured engine rule on the wire-ASCII domain; the
+non-ASCII class rides as NAMED divergence (fact on W3, nil on host,
+decision identical).
+
+CONSEQUENCE: NOTHING MOVES -- no :measured? flag value, no :shapes
+value, no workgroup row, no selection answer; :arm/:unknown stay
+provisional :measured? false; the SUBGROUP producer (ADR-0371) still
+does not exist, no live wire feeds this; this row closes a parsing
+residual and corrects a mechanism attribution, and adds no hardware
+measurement claim.
+
+STATES:
+- MEASURED: the two byte-identical probe runs (hash above), the 44-cell
+  unit/route tables, the 23-cell consequence table, the 266-receipt
+  charset scan.
+- READ (verified tool output): git ls-files / git log for the producer
+  source's absence; the recorded receipts.
+- IMPLEMENTED: tests + prose (gate test count +0 / +18 assertions).
+- DECIDED: the byte rule stays (above).
+- PROPOSED: the Unicode-aware blank-str? (not implemented).
+- UNMEASURED, named: the engine's str/blank? implementation source
+  (the rule is attributed by measurement, not read); the JVM rule's
+  runtime behavior on this class (attributed by spec reading, NOT run
+  on a JVM); the receipt charset beyond the 266 recorded occurrences
+  (producer absent from the tree); trap spellings beyond these runs;
+  every workgroup-row question; anything off this host.
+
+GATES (real runs):
+- Scoped GPU gate (8 GPU-owned namespaces, scratch runner
+  gpu_scoped_gate.cljk):
+    kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+      /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+  -> run 1 GREEN and run 2 GREEN, identical:
+     Ran 123 tests containing 12153 assertions. 0 failures, 0 errors.
+     scoped: 123 tests, 12153 passed, 0 failed, 0 errors
+     (the previous row's gate: 123 tests / 12135 assertions;
+     delta = +0 tests / +18 assertions -- exactly the new pins;
+     glslang 16.6.0 real-spawn ran in run 1).
+- gpu_regime_classify.py --self-test: TOTAL 2649 assertions passed,
+  0 failed (pin 2649/0).
+- FULL run-tests.cljk re-verify (the SOUL.md gate), live this tick:
+  RED AT BASE 'Could not find namespace: kotoba.form' (ADR-0362),
+  outside this diff (scratch/w3_blank_fullsuite.log) -- NO green
+  full suite claimed.
+- BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head
+  (checked at tick start and re-checked before the push).
+- NAMED, NOT HIDDEN: kbb prints "2 dep(s) are not :local/root ..." on
+  every run -- identical everywhere, unrelated to this diff. The
+  worktree also carries an untracked deps.edn (present at tick start;
+  this row did not create or touch it, and it is not committed).
+  find docs -name '*.sh' -> 0 (this row's evidence is .txt).

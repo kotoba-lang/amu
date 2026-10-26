@@ -801,7 +801,12 @@
   ;; MAX_SAFE_INTEGER], so the boundary tracks the safe-integer range;
   ;; the class has a negative twin at the unit, unreachable from the
   ;; wire on either sign -- pinned in the sg-size test's sign-side
-  ;; block).
+  ;; block). The blank / non-ASCII whitespace residual is MEASURED now
+  ;; (2026-10-26, w3-blank-nonascii-whitespace-20261026.txt: the host
+  ;; engine's str/blank? is the every-char /\s/ rule, and the divergence
+  ;; class is exactly the all-/\s/ texts holding a non-C-isspace byte --
+  ;; NAMED divergence pinned in the blank block below, with the dispatch
+  ;; decision measured identical either way).
   (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
         arms (str/join "\n" (map #(extract-balanced src %)
                                  ["(defn- none?" "(defn- string->i64"
@@ -847,6 +852,44 @@
         (is (= ["null"] (dfi s)) (str (pr-str s) " is a blank device name")))
       (is (= "a\u000bb" (:vendor (fields-of (dfi "a\u000bb|1.2.3|4|1"))))
           "a NON-blank field holding a \u000b byte still parses (only all-blank rejects)"))
+    (testing "the blank rule is byte-level C isspace -- the non-ASCII whitespace class is MEASURED named divergence"
+      ;; THE BLANK / NON-ASCII WHITESPACE ROW (2026-10-26,
+      ;; docs/evidence/gpu/w3-blank-nonascii-whitespace-20261026.txt,
+      ;; two byte-identical probe runs, sha256 273da584..): the unit and
+      ;; the route were measured over the whole whitespace-relevant
+      ;; domain (44 cells). The C isspace set is PARITY (below). The
+      ;; DIVERGENCE CLASS is exactly the texts whose chars are all /\s/
+      ;; but which contain a non-C-isspace byte -- {U+00A0, U+1680,
+      ;; U+2000..U+200A, U+2028, U+2029, U+202F, U+205F, U+3000, U+FEFF}
+      ;; alone or mixed with C-isspace chars: the W3 arm answers the
+      ;; six-fact map (permissive at the FACT) where the host arm
+      ;; answers nil. The class cells are PINNED on the contract arm as
+      ;; the W3 arm's MEASURED answer; the host cells are named here
+      ;; and NEVER pinned (engine-owned -- this engine's str/blank? is
+      ;; the every-char /\s/ rule, measured; the parse-long precedent).
+      ;; The ASCII controls 0x1c-0x1f are PARITY-NONBLANK on this
+      ;; engine (a JVM would answer blank there -- named, off-engine).
+      ;; The DISPATCH DECISION is identical either way (the consequence
+      ;; pins below): no row matches an all-whitespace name.
+      (doseq [s ["\n|1.2.3|4|1" "\u000c|1.2.3|4|1" "\r|1.2.3|4|1" "  |1.2.3|4|1"]]
+        (is (= ["null"] (dfi s))
+            (str (pr-str s) " is a C-isspace blank device -- rejected like the cells above")))
+      (doseq [[dev label] [["\u001c" "FS 001c"] ["\u0085" "NEL 0085"]
+                           ["\u200b" "ZWSP 200b"] ["\u180e" "MVS 180e"]]]
+        (is (= dev (:vendor (fields-of (dfi (str dev "|1.2.3|4|1")))))
+            (str label " is NON-blank on the W3 arm -- parity with the host arm on this engine")))
+      (doseq [[dev label] [["\u00a0" "NBSP"] ["\u2028" "line separator"]
+                           ["\u3000" "ideographic space"] ["\ufeff" "BOM"]
+                           [" \u3000" "sp + idsp"]]]
+        (is (= dev (:vendor (fields-of (dfi (str dev "|1.2.3|4|1")))))
+            (str label " answers the FACT on the W3 arm -- NAMED divergence (the host arm answers nil there)")))
+      (doseq [[dev label] [["\u00a0" "NBSP"] ["\u2028" "line separator"]
+                           ["\u3000" "ideographic space"] ["\ufeff" "BOM"]
+                           [" \u3000" "sp + idsp"]]]
+        (is (= {:vendor :unknown :target :wgsl-v1 :workgroup-size 256 :measured? false}
+               (select-keys (targets/recommend {:vendor dev})
+                            [:vendor :target :workgroup-size :measured?]))
+            (str label ": the dispatch decision is IDENTICAL either way -- no row matches an all-whitespace name"))))
     (testing "malformed answers parse to null, never a throw or a wrong fact"
       (doseq [s ["a|vulk|4|1"     "ab|1.2.3|0|1" "ab|1.2.3|4|2"
                  "ab|1.2.3|4|1|"  "ab|1.2.3|4|1|x" "ab|1.2.3|4" "ab|1..3|4|1"
