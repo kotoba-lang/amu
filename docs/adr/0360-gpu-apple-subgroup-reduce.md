@@ -1948,3 +1948,115 @@ find namespace: kotoba.form" (ADR-0362), outside this diff, no green
 suite claimed; `find docs -name '*.sh'` -> 0).
 
 Record: `docs/evidence/gpu/metal-counter-foldarms-crossday-20261026/`.
+
+## Amendment 2026-10-26 (the counters channel's W-GRID row): the first
+off-anchor cell (W = 32) answers the sign's W-dependence -- the sign is
+W-DEPENDENT, and op=sum FLIPS side across W (regime-invariant faster at
+W = 32 against regime-invariant slower at W = 256)
+
+ONE measurement slice (JUN-58): the anchor record's own named
+UNMEASURED item -- "every other W (32/64/128/512/1024) and shape 2
+(n = 2^20) on this channel (R at those grids is unmeasured too)" --
+taken ONE CELL AT A TIME at the route's own unit; this row takes the
+list's FIRST width: (n = 1000003, W = 32). HARDWARE RAN: 6 fresh
+ADR-0358 processes at that cell on this M1 Max, run window
+2026-10-26T20:03:19Z..20:03:20Z (run-window.txt, verbatim) -- the same
+UTC day as the cross-day row (named; this row makes NO day claim of any
+kind; it is a W row). The run protocol is the anchor row's, unchanged
+(6 fresh processes, 20 interleaved AB/BA pairs per operator, WARMUP=2
+discarded, verified read-back, op-order sum,max,min fixed);
+predictions P0..P3 were registered in `protocol.txt` BEFORE the first
+run, both branches of the named question included.
+
+**The realization control (P0a HOLD).** Arms rebuilt this row from the
+COMMITTED emitters (`--width 32`) into a fresh build dir; the
+W-INDEPENDENT artifacts are sha256-IDENTICAL to the anchor row's
+2026-10-25 build -- probe.metallib 80dbf4fd.. and the counters binary
+4cb76bd.. -- so the instrument is constant across the two cells. A
+named artifact fact rides the control: the three BASELINE metallibs are
+byte-identical to the anchor's W = 256 builds (the baseline arm's
+artifact is W-invariant on this emitter), while the three SUBGROUP
+metallibs W-move as expected (the subgroup arm embeds the width). All
+six shas are recorded (build-shas.txt) so a later cross-day replication
+of THIS cell can hold its realization fixed the same way.
+
+**The named question, answered: the sign is W-DEPENDENT (P1b).** Rule 2
+at its letter over the W = 32 session, cell roll-up: **regime-scoped**
+(5 of 18 per-run paired-median ratios above 1.0, 13 below -- not a
+selection basis), against the anchor cell's "regime-invariant, slower
+(18/18)" on both days. Per operator:
+
+- **sum: regime-invariant, FASTER (6/6)** -- all per-run ratios below
+  1.0 (0.915..0.930), every observed regime one-sided. This is a SIDE
+  FLIP across W at one operator: the same pair (subgroup-reduce vs the
+  threadgroup-memory baseline), the same instrument and host, is
+  regime-invariant SLOWER at W = 256 (1.204..1.221 on day 1,
+  1.197..1.222 on day 2) and regime-invariant FASTER at W = 32.
+- **max: regime-scoped** (straddles 1.0 WITHIN regime 1: 0.992/1.017/
+  1.012 in the fast level; one-sided faster 0.910..0.921 in the two
+  slow levels).
+- **min: regime-scoped** (straddle SEPARATES by regime: fast level
+  one-sided SLOWER 1.007..1.031, the three slower levels one-sided
+  faster 0.917..0.918).
+
+No W-invariant reading of this channel's fold-arm sign survives this
+cell; the W-shape of the sign is OPEN (named, not explained). The
+anchor's sign keeps its scope exactly as recorded (the anchor cell, two
+days); it is not contradicted at its own cell -- the contradiction is
+across cells, which is precisely the shape the anchor's list invited.
+
+**Rule 1 at this cell (P2, named whatever it is).** The state-shift
+class is W-variable too: max THREE levels (36020.5..36188.0 /
+46292.0 / 108875.0..109521.0), min FOUR (36084.0..36167.0 /
+44979.0 / 88729.0 / 108958.5), sum ONE (108562.5..109437.5). The raw
+bracket band at this grid (36.0k..109.5k counter_ns medians) is
+published as the route's raw band -- R at this grid is NOT decomposed
+and NOT compared with the anchor's residual figures (the anchor's
+~7.8-8.0us warm / ~20.6-20.8us cold belong to the 3907 x 256 launch
+shape; this cell's shape is different).
+
+**Consequence.** Rule 4: NOTHING MOVES -- no `:measured?` flag, no
+`:shapes` value, no selection answer, no workgroup row (this channel
+can never move one), no WGSL cell flip, no MSL command-buffer cell
+flip, no cross-instrument magnitude claim. The sign stays
+CHANNEL-SCOPED and M1-Max scoped; the sum side-flip is a counters-
+channel statement about this cell only. The named item moves in RECORD
+STATE only: "every other W ... on this channel" UNMEASURED -> W = 32
+MEASURED at this protocol's letter (sign W-DEPENDENT; sum side-flip
+named); W = 64/128/512/1024, shape 2 (n = 2^20) and R at every grid
+stay UNMEASURED. The reopen condition's trigger class ("a
+counters-channel record carrying an OPPOSING device-level sign at any
+cell/W/day") is exercised by this record's sum side-flip at a DIFFERENT
+CELL -- named as exactly that observation; the second-leg evaluation's
+route-scope narrowing answered the DEVICE premise at the anchor cell
+and this row does not re-open it (its own protocol registers no reopen
+claim).
+
+Named, not hidden: the same-day fact (this row and the cross-day row
+share the UTC day 2026-10-26; no day claim rides here); the baseline
+arm's W-invariant metallib fact (above); the fast-level max straddle
+(0.992..1.017) is a within-level mixed-side band, thinner than the
+slow-level separation.
+
+States: MEASURED (the W = 32 cell record: 720 resolved brackets, the
+instrument-constant control, rule 2's W-dependence verdict, rule 1's
+W = 32 regime structure, the raw bracket band). IMPLEMENTED: nothing
+(evidence + prose only). DECIDED: nothing new (the protocol is the
+anchor row's). ACCEPTED DESIGN ONLY (unchanged): the claim protocol and
+its units; the narrowing and reopen condition; the second-leg letter;
+ADR-0355's channel rule. PROPOSED (unchanged): the Vulkan-provider
+timestamp route. UNMEASURED, named: W = 64/128/512/1024 on this
+channel; shape 2 (n = 2^20) at every W; R at every grid (the W = 32
+raw band is not an R decomposition); the W-shape's cause; the state-
+shift cause, threshold and prevalence (now named W-variable as well as
+day-variable); day 3+ cross-day replications; op-order dependence;
+anything off M1 Max; the WGSL route's kernel time; every workgroup-row
+question (`:arm`/`:unknown` stay provisional `:measured? false` -- no
+flag, shape, selection answer or workgroup row moves this tick).
+
+Gates: see the record (self-test 2649/0 pin; scoped GPU gate GREEN
+123/12162 twice; FULL `run-tests.cljk` RUN LIVE, red at base "Could not
+find namespace: kotoba.form" (ADR-0362), outside this diff, no green
+suite claimed; `find docs -name '*.sh'` -> 0).
+
+Record: `docs/evidence/gpu/metal-counter-foldarms-w32-20261026/`.
