@@ -1604,3 +1604,87 @@ touched) -- documented red at base `Could not find namespace:
 kotoba.form` (ADR-0362), outside this diff, NO green suite
 claimed; `find docs -name '*.sh'` -> 0 files. Record:
 `docs/evidence/gpu/cuda-registered-sessionC-20261026/`.
+
+## Amendment (2026-10-26, the quartet's physical cause: a wide
+pair-count probe shows the W = 256 `op=sum` block sitting at parity
+with 1.0, and the registered-sample class flip is a weighted coin)
+
+MEASURED (JUN-57 -- "the quartet's physical cause", the fourteenth
+amendment's named first unmeasured item, its "wider pair counts"
+branch; ONE measurement slice). HARDWARE RAN: one wide-pair-count
+mechanism probe on xavier sm_72 at 2026-10-26T07:09:19Z. NAMED, NOT
+HIDDEN: this is a PROBE, not a registered session -- it deviates from
+the seventh amendment's protocol on purpose and is INADMISSIBLE under
+the entry criterion BY DESIGN: (1) PAIRS = 200 (registered: 20), the
+instrument a scratch one-line variant of the committed one (`#define
+PAIRS 20` -> `200`, the only changed line; variant sha256 d36e9701..
+vs committed 0a1c9f35..); (2) a PARTIAL grid: only pair type
+subgroup/baseline at W = 128/256/512 x 3 operators x 2 shapes = 18
+pair blocks (the quartet's W = 256 plus the two widths whose cells
+never moved in any session, as controls). It shares sessions B and C's
+UTC day (2026-10-26) -- NOT a cross-day replication (ADR-0373's
+same-day rule by citation). It enters nothing.
+
+**Verified (real runs).** 18 cells run / 0 failed (driver exit 0,
+stderr 0 bytes), 7600 sample lines (7200 grid + 400 smoke orphans
+named and excluded), 19/19 `pairs=200` declarations, 38/38 verify
+lines ok=1, 18/18 OK-cubin, 19/19 nvcc diagnostics 0 bytes,
+instrument OK; corpus 55/55 files with the normalized (path, sha256)
+diff vs session C's stage = EXACTLY ONE entry (the instrument); the
+log analyzed ONLY through the committed routes (`--cuda-cells`,
+`--cuda-log`, both exit 0, stderr 0 bytes). `--cuda-op-census` not
+run (its reading unit is a group's three pair blocks; this probe
+measures one pair type) -- named.
+
+**Finding: the quartet's physical cause is MEASURED as mechanism.**
+(1) At (subgroup/baseline, W = 256) the cell is an OPERATOR STRADDLE
+whose `op=sum` member sits AT PARITY: `op=max`/`op=min` are solidly
+above 1.0 in every session and the probe (1.1445..1.1817; 192..198 of
+200 probe pairs above), while `op=sum`'s median straddles 1.0 (the
+three registered sessions' 20-pair medians span 0.9861..1.0124, both
+sides populated; the probe's 200-pair medians 0.9938..0.9964 with
+111..125 of 200 pair ratios below 1.0 and 73..88 above).
+(2) The cell class flips on the sum median's side and nothing else --
+the 12 registered quartet cells are predicted by the sum side alone
+(A: three sums above -> 3 `slower` + 1 `scoped`; B: one above -> 1
+`slower`; C: one above -> 1 `slower`), reproducing the pooled splits
+A 48/3/21, B 48/1/23, C 48/1/23.
+(3) At the registered sample size the flip is a WEIGHTED COIN
+(DERIVED bootstrap over the probe's committed-parser output, B=10000):
+P(cell class `slower`) = 0.262 / 0.295 / 0.112 / 0.161 at the four
+W = 256 (metric, shape) cells -- the observed flip density (5 slower
+sightings in 12 registered quartet cells) sits inside it; the W =
+128/512 controls cannot move (P = 0.000..0.003) and reproduce their
+every-session class at PAIRS = 200.
+(4) No session-level regime drift is needed: the max/min medians are
+stable to ~2% across sessions, and the bootstrap's 20-pair median 95%
+ranges at the sum blocks cover the registered spread.
+
+**Consequence today: NOTHING MOVES** (rule 4). No record, no
+`:measured?` flag, no selection answer, no `:shapes` value and no
+workgroup row; the landed entries stand byte-for-byte (this probe
+contradicts nothing and is inadmissible by design). The quartet's
+physical cause moves UNMEASURED -> MEASURED (mechanism).
+
+**States.** MEASURED: the probe run (the only measured thing this
+row). DERIVED: the bootstrap and the committed-census extract (both
+marked, scratch). IMPLEMENTED: nothing (evidence + this amendment
+only). DECIDED: nothing new. ACCEPTED DESIGN ONLY (unchanged): the
+operator-aware contract + pre-registration, the row (ii) routes, the
+entry contract + wiring, ADR-0358, ADR-0373. UNMEASURED, named: WHY
+`op=sum` is at parity at W = 256 specifically (kernel-level cause --
+occupancy/latency balance of the subgroup-reduce sum variant -- not
+probed); the sum ratio's TRUE side at W = 256 (the probe resolves
+parity within ~+/-1%: medians 0.9938..0.9964 below 1.0 but bootstrap
+median 95% ranges reach above 1.0); a cross-day run 3+ (needs a later
+UTC day); every per-op verdict on non-xavier hardware; the `:sum`
+ordering at W = 64 on any other device or channel; the landed rows on
+a live CUDA selection path (only xavier hardware runs it); every
+workgroup row (`:arm`/`:unknown` stay provisional `:measured? false`).
+Gates: scoped GPU gate GREEN twice (123/12162, regression pin, no
+.cljk touched); `gpu_regime_classify.py --self-test` 2649/0
+(regression pin); FULL `run-tests.cljk` NOT RUN this slice -- documented
+red at base `Could not find namespace: kotoba.form` (ADR-0362),
+outside this diff, NO green suite claimed; `find docs -name '*.sh'` ->
+0 files. Record:
+`docs/evidence/gpu/cuda-quartet-widepairs-20261026/`.

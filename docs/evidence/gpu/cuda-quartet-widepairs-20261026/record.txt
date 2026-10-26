@@ -1,0 +1,166 @@
+JUN-55/JUN-57 -- the pooled cell-split quartet's PHYSICAL CAUSE probe:
+a WIDE-PAIR-COUNT mechanism measurement (PAIRS=200) of the
+(subgroup/baseline, W = 256) quartet plus its W = 128/512 control
+widths on xavier sm_72. -- HARDWARE RAN THIS SLICE.
+
+record_written=2026-10-26 (JST); probe run 2026-10-26T07:09:19Z (the
+log's own DATE-UTC). NAMED, NOT HIDDEN: the probe's UTC day (2026-10-26)
+is the SAME UTC day as sessions B and C's -- under contract point 4 it
+is NOT a cross-day replication, it extends NO record's :evidence and
+licenses nothing a same-day session may not (ADR-0373's same-day rule
+by citation).
+
+host: xavier (Jetson AGX Xavier, L4T R35.4.1, aarch64, sm_72),
+nvcc Cuda compilation tools release 11.4 V11.4.315 (log verbatim),
+"device=Xavier sm_72" on every instrument invocation (19/19).
+
+THE ROW (the fourteenth amendment's named residual "the quartet's
+physical cause ... needs more sessions or wider pair counts" -- this
+run takes the WIDER PAIR COUNTS branch):
+
+WHAT RAN (one measurement slice; no code, no test, no selection
+surface moves):
+  - a PROBE, NOT a registered session. Named deviations from the
+    ADR-0361 seventh-amendment protocol; EACH one makes the run
+    INADMISSIBLE under the entry criterion BY DESIGN -- this run
+    enters nothing:
+      (1) PAIRS = 200 (the registered constant is 20). The instrument
+          is a scratch one-line variant of the committed
+          scripts/gpu-cuda-reduce-timing.cu: exactly the line
+          "#define PAIRS 20" -> "#define PAIRS 200" (diff run this
+          tick: exactly one line); the variant's carried comment text
+          "(the Metal instrument's constant, unchanged)" is the
+          committed line's own and is STALE in the variant -- named,
+          the only semantic difference is the constant. Committed
+          instrument sha256 0a1c9f35.., variant sha256 d36e9701..
+          (both printed by the tool run). The variant and the run
+          driver live in Hermes scratch only and are never staged
+          (no POSIX .sh anywhere in docs/);
+      (2) a PARTIAL grid: only pair type subgroup/baseline at
+          W = 128/256/512 x {sum, max, min} x both shapes = 18 pair
+          blocks (the quartet's W = 256 plus the two widths whose
+          cells never changed class in any session, as controls).
+  - everything else is the registered protocol at its letter: one
+    fresh process per pair block, WARMUP = 2 per arm, AB/BA
+    alternating, LCG seed 20261023 reset per process, gpu_ns
+    CUDA-event + host_ns CLOCK_MONOTONIC, untimed verified read-back,
+    correctness re-verified inside the measurement; one smoke block
+    kept (rc=0, its 400 sample lines are orphans, named and excluded);
+  - remote tree /root/gpu-cuda-timing-quartetw-20261026 created fresh
+    (rm -rf first) and transferred from the local stage with
+    COPYFILE_DISABLE=1; the local stage is session C's stage with the
+    instrument replaced: 55 files, normalized (path, sha256) diff vs
+    session C's stage = EXACTLY ONE entry (the instrument
+    0a1c9f35 -> d36e9701), the 54 emitted .cu byte-identical; remote
+    received-file block 55 files, 0 AppleDouble sidecars, its
+    instrument sha d36e9701 = the variant;
+  - probe driver (scratch/gpu-cuda-timing-run-quartetw-20261026.sh):
+    instrument OK-instrument, 18/18 OK-cubin (the probe's named
+    subset), 19/19 nvcc diagnostics 0 bytes.
+
+VERIFIED (tool output):
+  1. Run completeness: "=== cells run: 18  failed cells: 0", driver
+     exit 0, driver stderr 0 bytes. 7600 sample lines (7200 grid =
+     18 blocks x 200 pairs x 2 arms, + 400 smoke orphans named and
+     excluded by the committed parser), 19/19 pairs=200 declarations
+     (18 grid blocks + the smoke), 0 pairs=20 lines, 38/38 verify
+     lines ok=1 (0 ok=0).
+  2. Analysis ONLY through the committed routes against this
+     directory's measure-log.txt:
+       python3 scripts/gpu_regime_classify.py --cuda-cells -> cell-census.txt
+       python3 scripts/gpu_regime_classify.py --cuda-log   -> publication.txt
+     both exit 0, stderr 0 bytes (355 / 252 lines). The
+     --cuda-op-census route is NOT run: its reading unit is a group's
+     THREE pair blocks and this probe measures one pair type -- named,
+     not hidden.
+  3. Cell census: 12/12 cells published with a full operator pool, all
+     12 regime-scoped (within-regime straddle) at PAIRS=200.
+
+THE FINDING (the quartet's physical cause is MEASURED as mechanism):
+  (1) THE QUARTET'S CELL IS AN OPERATOR STRADDLE WHOSE SUM MEMBER SITS
+      AT PARITY. At (subgroup/baseline, W=256) in EVERY session and in
+      the probe, op=max and op=min are solidly ABOVE 1.0 (subgroup
+      slower than baseline: 1.1445..1.1817 across the three registered
+      sessions' 20-pair medians; 1.1546..1.1628 at the probe's
+      200-pair medians; 192..198 of 200 probe pairs above) while
+      op=sum sits ON the 1.0 boundary: the three sessions' 20-pair
+      medians span 0.9861..1.0124 (both sides populated), the probe's
+      200-pair medians are 0.9938..0.9964 (n=1000003 gpu/host
+      0.9963/0.9964, n=1048576 0.9941/0.9938) with 111..125 of 200
+      pair ratios below 1.0 and 73..88 above -- a near-symmetric
+      straddle at parity, NOT a one-sided population.
+  (2) THE CLASS FLIPS ON THE SUM MEDIAN'S SIDE AND NOTHING ELSE. The
+      cell is "regime-invariant slower" iff all three ops' medians are
+      above 1.0, i.e. iff the op=sum median is (max/min never move);
+      "regime-scoped" otherwise. The 12 quartet cells across A/B/C are
+      predicted by the sum side alone, exactly: A's sums 1.0099 /
+      1.0019 / 1.0022 above and 0.9990 below -> 3 slower + 1 scoped;
+      B's 1.0124 above -> 1 slower (host/1048576), rest scoped; C's
+      1.0007 above -> 1 slower (gpu/1048576), rest scoped (see
+      baseline-extract.txt, extracted verbatim from the committed
+      censuses). The pooled splits A 48/3/21, B 48/1/23, C 48/1/23
+      follow.
+  (3) AT THE REGISTERED SAMPLE SIZE THE FLIP IS A WEIGHTED COIN
+      (DERIVED bootstrap, scratch over the probe's committed-parser
+      output, B=10000, seed 20261026): P(20-pair median > 1.0) at the
+      W=256 sum blocks is 0.259 / 0.286 (n=1000003 gpu/host) and
+      0.117 / 0.158 (n=1048576), and the joint P(cell class "slower")
+      is 0.262 / 0.295 / 0.112 / 0.161 -- so a "slower" sighting at
+      these cells is expected in roughly one to three registered
+      sessions' cells out of ten, exactly the observed flip density
+      (5 slower sightings in 12 registered quartet cells). At the
+      control widths the class CANNOT move: P(cell "slower") =
+      0.000..0.003 at W=128 and 0.000 at W=512 (sum 20-pair median
+      95% ranges entirely below 1.0, max/min entirely above) -- the
+      controls reproduce their every-session class at PAIRS=200.
+  (4) NO SESSION-LEVEL REGIME DRIFT IS NEEDED. The max/min medians at
+      W=256 are stable across sessions to within ~2% and the probe's
+      200-pair medians sit inside the registered sessions' spread; the
+      bootstrap's 20-pair median 95% ranges at the W=256 sum blocks
+      (e.g. [0.9833, 1.0103], [0.9803, 1.0098]) COVER the observed
+      registered spread -- sampling noise at parity explains the
+      quartet in full.
+
+CONSEQUENCE: NOTHING MOVES (rule 4) -- no record, no :measured? flag,
+no selection answer, no :shapes value, no workgroup row; the landed
+entries stand byte-for-byte (they rest on the (op, W) folds of the A+B
+pair and this probe contradicts nothing). The quartet's physical cause
+moves from UNMEASURED to MEASURED (mechanism); the probe itself is a
+named inadmissible diagnostic and enters no :evidence.
+
+STATES: MEASURED (the probe run -- the only measured thing this row);
+DERIVED (the bootstrap and the baseline extract, scratch, named);
+IMPLEMENTED: nothing (evidence + ADR amendment only); DECIDED: nothing
+new. ACCEPTED DESIGN ONLY (unchanged): the operator-aware contract +
+pre-registration, the row (ii) routes, the entry contract + wiring,
+ADR-0358, ADR-0373. UNMEASURED, named: WHY op=sum is at parity at
+W=256 specifically (the kernel-level cause -- occupancy/latency
+balance of the subgroup-reduce sum variant at W=256 -- was not
+probed); the sum ratio's TRUE side at W=256 (the probe resolves
+parity within ~+/-1%: the 200-pair medians are 0.9938..0.9964 below
+1.0 but the bootstrap median 95% ranges reach above 1.0 -- the probe
+does not resolve the side beyond parity); a cross-day run 3+ (still
+needs a later UTC day); every per-op verdict on non-xavier hardware;
+the :sum ordering at W = 64 on any other device or channel; the landed
+rows on a live CUDA selection path; every workgroup row (:arm/:unknown
+stay provisional :measured? false).
+
+Gates (real runs): scoped GPU gate GREEN 123 tests / 12162 assertions
+/ 0 failures / 0 errors on run 1 AND run 2 (identical to the committed
+pin -- the diff touches NO .cljk namespace, regression pin);
+gpu_regime_classify.py --self-test TOTAL 2649 / 0 failed (regression
+pin -- no classify code touched); FULL run-tests.cljk NOT re-run this
+slice (no .cljk touched) -- documented RED AT BASE 'Could not find
+namespace: kotoba.form' (ADR-0362), outside this diff -- NO green
+full suite claimed; find docs -name '*.sh' -> 0 (evidence is .txt).
+BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head (checked
+at tick start and re-checked before this push; chain PR #1455 OPEN,
+the ONE chain PR). NAMED NOT HIDDEN: kbb's "2 dep(s) are not
+:local/root ..." warning on every run (identical everywhere); the
+untracked deps.edn in this worktree (present at tick start, not
+created or touched by this row, not committed).
+
+Evidence: docs/evidence/gpu/cuda-quartet-widepairs-20261026/
+(measure-log.txt + cell-census.txt + publication.txt through the
+committed routes + bootstrap-analysis.txt + baseline-extract.txt, the
+two DERIVED ones marked) + the ADR-0361 fifteenth amendment.
