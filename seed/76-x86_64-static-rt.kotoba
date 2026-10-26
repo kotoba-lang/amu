@@ -2584,3 +2584,69 @@
         e3 (kxrt-arena-use)]
     (if (= (kxrt-gl 160) 1) (let [z (kxrt-report r)] 0) (bit-and r 255))))
 ")
+;; --format b2 (seed/98): xs-rt-core, then this text.
+(defn- xs-rt-b2 [] :string
+"
+;; ---- route B2: --format b2, context word 408 = 5 (ADR 0375, seed/98) ----
+;; Appended after the runtime core in place of the standard start. The static entry stub calls
+;; kxrt-start(sp). No signal handlers, limits or seccomp here, as in the platform-linked image: the
+;; program loads a vendor library and what that code does is what the process does; the GPU provider
+;; confines itself after device creation (ADR 0371 Decision 5). A runtime refusal traps (SIGILL).
+;; Environment: KEXE_ALLOW (default 35,37,38,39) and KEXE_FUEL, as in a static image.
+;; The extended intrinsics (E2) are consecutive and in this order; seed/98 replaces their calls with
+;; inline code.
+(defn- kxrt-load16 [a :i64] :i64 0)
+(defn- kxrt-load32 [a :i64] :i64 0)
+(defn- kxrt-store16 [a :i64 v :i64] :i64 0)
+(defn- kxrt-store32 [a :i64 v :i64] :i64 0)
+(defn- kxrt-ccall [fp :i64 argv :i64] :i64 0)
+;; The platform API: the program may call these kxrt-b- functions and no other runtime function (seed/98
+;; checks its calls by name). Addresses are i64 and nothing is checked, as in C. 16- and 32-bit loads
+;; zero-extend. kxrt-b-ccall takes the 14 words of kxrt-ccall (seed/75): rdi rsi rdx rcx r8 r9, then
+;; 8 stack words; the C function runs on the image stack. kxrt-b-syscall is the raw system call
+;; (-errno on failure). kxrt-b-argc and kxrt-b-argv exclude the program name; kxrt-b-envp is the
+;; environment vector. kxrt-b-exports is the export table of seed/98 (0 when there is none).
+;; kxrt-b-state is the program's own 32 KiB, zero at start (context + 32768, inside the RW segment).
+(defn- kxrt-b-ccall [fp :i64 argv :i64] :i64 (kxrt-ccall fp argv))
+(defn- kxrt-b-load8 [a :i64] :i64 (kxrt-load8 a))
+(defn- kxrt-b-load16 [a :i64] :i64 (kxrt-load16 a))
+(defn- kxrt-b-load32 [a :i64] :i64 (kxrt-load32 a))
+(defn- kxrt-b-load64 [a :i64] :i64 (kxrt-load64 a))
+(defn- kxrt-b-store8 [a :i64 v :i64] :i64 (kxrt-store8 a v))
+(defn- kxrt-b-store16 [a :i64 v :i64] :i64 (kxrt-store16 a v))
+(defn- kxrt-b-store32 [a :i64 v :i64] :i64 (kxrt-store32 a v))
+(defn- kxrt-b-store64 [a :i64 v :i64] :i64 (kxrt-store64 a v))
+(defn- kxrt-b-syscall [n :i64 a :i64 b :i64 c :i64 d :i64 e :i64 f :i64] :i64 (kxrt-syscall n a b c d e f))
+(defn- kxrt-b-argc [] :i64 (kxrt-gl 72))
+(defn- kxrt-b-argv [] :i64 (kxrt-gl 80))
+(defn- kxrt-b-envp [] :i64 (kxrt-gl 88))
+(defn- kxrt-b-exports [] :i64 (kxrt-load64 (+ (kxrt-ctx) 416)))
+(defn- kxrt-b-state [] :i64 (+ (kxrt-ctx) 32768))
+(defn- kxrt-b-alloc [n :i64] :i64 (kxrt-syscall 9 0 n 3 34 -1 0))
+(defn- kxrt-b-exit [code :i64] :i64 (kxrt-exit code))
+(defn- kxrt-start [sp :i64] :i64
+  (let [ctx (kxrt-ctx) argc (kxrt-load64 sp)
+        a (kxrt-gs 72 (if (> argc 0) (dec argc) 0)) b (kxrt-gs 80 (+ sp 16)) c (kxrt-gs 88 (+ sp (* 8 (+ argc 2))))
+        m0 (kxrt-gs 0 (kxrt-map (* KXRT-PAIRS 16))) m1 (kxrt-gs 16 (kxrt-map KXRT-PAIRS))
+        m2 (kxrt-gs 24 (kxrt-map KXRT-POOL)) m3 (kxrt-gs 40 (kxrt-map (* KXRT-VECTORS 16)))
+        m4 (kxrt-gs 56 (kxrt-map (* KXRT-ITEMS 8))) m5 (kxrt-gs 96 (kxrt-map 65536))
+        m6 (kxrt-gs 200 (kxrt-map 16384)) m7 (kxrt-gs 208 (kxrt-map 8192))
+        m8 (kxrt-gs 120 (kxrt-map 4096)) m9 (kxrt-gs 136 (kxrt-map 65536)) m10 (kxrt-gs 184 (kxrt-map 4096))
+        m11 (kxrt-gs 232 (kxrt-map KXRT-VALUE-MAX)) fd (kxrt-gs 112 -1)
+        m12 (kxrt-gs 672 (kxrt-map 16384)) m13 (kxrt-gs 688 (kxrt-map (* 8 KXRT-VECTORS)))
+        m14 (kxrt-gs 696 (kxrt-map (* 16 KXRT-VECTORS))) m15 (kxrt-gs 736 (kxrt-map 98304))
+        cw (kxrt-syscall 79 (kxrt-gl 184) 4096 0 0 0 0)
+        cl (kxrt-gs 192 (if (and (> cw 1) (= (kxrt-load8 (kxrt-gl 184)) 47)) (kxrt-cstrlen (kxrt-gl 184)) 0))
+        v (kxrt-store64 ctx 11)
+        d0 (kxrt-store64 (+ ctx 288) (+ (kxrt-g) 8)) d1 (kxrt-store64 (+ ctx 296) (kxrt-gl 0))
+        d2 (kxrt-store64 (+ ctx 304) (kxrt-gl 16)) d3 (kxrt-store64 (+ ctx 312) (+ (kxrt-g) 48))
+        d4 (kxrt-store64 (+ ctx 320) (kxrt-gl 40)) d5 (kxrt-store64 (+ ctx 328) (kxrt-gl 56))
+        al (kxrt-allow (kxrt-env 0x4c4c415f4558454b 0x3d574f 0 11))
+        cm (kxrt-gs 240 1)
+        f0 (kxrt-gs 168 (kxrt-fuel (kxrt-env 0x4555465f4558454b 0x3d4c 0 10)))
+        f1 (kxrt-store64 (+ ctx 8) (kxrt-gl 168))
+        r (kxrt-call-main ctx)
+        e1 (if (= (kxrt-sink-close) 1) 0 (kxrt-fail))
+        e2 (if (= (kxrt-flush) 1) 0 (kxrt-fail))]
+    (kxrt-exit (bit-and r 255))))
+")

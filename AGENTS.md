@@ -80,7 +80,7 @@ BAR catalog starts at context20480. The v2 live ABI and v3 private user/desktop 
 versioned queue/arena/capability/domain regions, with native admission and
 actual guest receipts; full scheduling and shared Browser remain separate.
 
-- The complete candidate uses `seed/FULL-MANIFEST` (47 modules), retaining
+- The complete candidate uses `seed/FULL-MANIFEST` (48 modules), retaining
   every adopted core module. Static OUT is 12MiB because the complete
   TCP/spawn image exceeded the old 8MiB bound. The complete static profile
   also uses LitB1MiB and TOK786432 and NODE786432 and MM-WORDS31,064,064 (<2^25). Heap size, expected results,

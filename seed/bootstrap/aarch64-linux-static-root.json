@@ -1,33 +1,73 @@
 {
   "schema": "amu.seed.static-root.v1",
   "image": {
-    "bytes": 3596800,
-    "sha256": "06b99a4fed27e4fe93d6b95fdbcea64744ae1535d0f8833f8ae848fc764c8692"
+    "bytes": 3609088,
+    "sha256": "2f7be2a08fdbebe0d82a8a4ffb71e8597fda52d727e9653548fba4c1f5ef4f85"
   },
   "target": "aarch64-linux",
   "format": "packed",
   "sourceManifest": "seed/FULL-MANIFEST",
   "sourceUnity": {
-    "bytes": 3486020,
-    "sha256": "0c24d2019b21e4d1135f01592d0b7ba220b6fd026ba35014290b02178a039e18"
+    "bytes": 3502559,
+    "sha256": "5254afb12561ee609e8cd27420c6c5ddbb3e2e484cab5311b3674a1f11b04d05"
   },
-  "sourceCommit": "577c042bf831e5f8b3ab5af1b5227fba4e61a3c5",
-  "sourceCommitBase": "d2bd36b3e04383323b10c0f81e9953a2faded768",
+  "sourceCommitBase": "e2428ce59c9d852db591039772f5aa2d736ef362",
   "producedBy": {
-    "how": "Source-bound Mac F1=F2 independently regenerated the combined current-main and layout-v2 source, then emitted ARM and x86 candidates. Linux qualification is pending.",
-    "date": "2026-10-26",
-    "previousRoot": {
-      "bytes": 3592704,
-      "sha256": "a5b1f69ad391eb79c2e79354de569d859afa338e12c199fb5219b100642a6ae7"
-    },
-    "container": {
-      "bytes": 3281459,
-      "sha256": "6d5b83a66125817f31a4049144d4d90b45e2ebae064fa69585dffdb882c8a0df"
-    },
-    "evidence": "docs/evidence/aiueos-layout-main-review-20261026/README.md"
+    "how": "C-free, on arm64 Linux (no C compiler or loader, no emulation): the previous root (main's, 06b99a4f) compiled seed/FULL-MANIFEST from this source to F1 and packed it; F1 rebuilt and packed itself to F2 = F1 (= this image). Re-pinned because this source adds the route B2 image format (ADR 0375, JUN-377): seed module 83 (E1 SysV entry thunks and the export table, E2 16/32-bit loads and stores, the kxrt-b- API), its dispatch in seed/70 and seed/75, and xs-rt-b2 in seed/76. The static, runner and launcher outputs are unchanged.",
+    "date": "2026-10-24",
+    "timeZone": "Asia/Tokyo",
+    "previousRoot": "06b99a4fed27e4fe93d6b95fdbcea64744ae1535d0f8833f8ae848fc764c8692",
+    "chain": {
+      "F1.kseed": {
+        "bytes": 3295843,
+        "sha256": "7c8f09e70ca7943622b3660cb910806243fc21fbcaa048339644677ac61ee616"
+      },
+      "F1.elf": {
+        "bytes": 3609088,
+        "sha256": "2f7be2a08fdbebe0d82a8a4ffb71e8597fda52d727e9653548fba4c1f5ef4f85"
+      },
+      "F2.kseed": {
+        "bytes": 3295843,
+        "sha256": "7c8f09e70ca7943622b3660cb910806243fc21fbcaa048339644677ac61ee616"
+      },
+      "F2.elf": {
+        "bytes": 3609088,
+        "sha256": "2f7be2a08fdbebe0d82a8a4ffb71e8597fda52d727e9653548fba4c1f5ef4f85"
+      }
+    }
   },
-  "verification": "Source-bound Mac F1=F2 and independent native ARM/x86 fixed points reproduce this complete combined graph. Current controller and role composition is proven separately. Integrated uncached full run40306976023 and final-head native CI are mandatory before merging; no release, real-model or current-core performance qualification follows.",
+  "verification": "This source's native artifacts are indexed by docs/evidence/b2-image-20261024/current-scope.json (root, the complete x86_64 public image, the CDCI roles). Exact-head PR CI, merge and main CI are separate gates.",
   "history": [
+    {
+      "schema": "amu.seed.static-root.v1",
+      "image": {
+        "bytes": 3596800,
+        "sha256": "06b99a4fed27e4fe93d6b95fdbcea64744ae1535d0f8833f8ae848fc764c8692"
+      },
+      "target": "aarch64-linux",
+      "format": "packed",
+      "sourceManifest": "seed/FULL-MANIFEST",
+      "sourceUnity": {
+        "bytes": 3486020,
+        "sha256": "0c24d2019b21e4d1135f01592d0b7ba220b6fd026ba35014290b02178a039e18"
+      },
+      "sourceCommit": "577c042bf831e5f8b3ab5af1b5227fba4e61a3c5",
+      "sourceCommitBase": "d2bd36b3e04383323b10c0f81e9953a2faded768",
+      "producedBy": {
+        "how": "Source-bound Mac F1=F2 independently regenerated the combined current-main and layout-v2 source, then emitted ARM and x86 candidates. Linux qualification is pending.",
+        "date": "2026-10-26",
+        "previousRoot": {
+          "bytes": 3592704,
+          "sha256": "a5b1f69ad391eb79c2e79354de569d859afa338e12c199fb5219b100642a6ae7"
+        },
+        "container": {
+          "bytes": 3281459,
+          "sha256": "6d5b83a66125817f31a4049144d4d90b45e2ebae064fa69585dffdb882c8a0df"
+        },
+        "evidence": "docs/evidence/aiueos-layout-main-review-20261026/README.md"
+      },
+      "verification": "Source-bound Mac F1=F2 and independent native ARM/x86 fixed points reproduce this complete combined graph. Current controller and role composition is proven separately. Integrated uncached full run40306976023 and final-head native CI are mandatory before merging; no release, real-model or current-core performance qualification follows."
+    },
     {
       "schema": "amu.seed.static-root.v1",
       "image": {
@@ -4751,5 +4791,6 @@
         }
       ]
     }
-  ]
+  ],
+  "sourceCommit": "6ea0ed0985ba2edc4d0ba4f11e5f1e3e32f7dbc7"
 }
