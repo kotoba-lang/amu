@@ -1,0 +1,262 @@
+[
+  {
+    "name": "fixed-helper",
+    "exit": 0,
+    "stderr": "",
+    "sources": {
+      "entry.kotoba": "(ns entry (:require [lib.bridge :as b]) (:export [main]))\n(defn main [] :i64\n (let [p (kernel-owned-page 0) saved (kernel-load-u64-4k p 4096 0)\n       write (kernel-store-u64-4k p 4096 0 42)\n       value (b/through p 0)\n       restored (kernel-store-u64-4k p 4096 0 saved)]\n  (if (and (= write 42) (= value 42) (= restored saved)) 42 0)))\n",
+      "lib/bridge.kotoba": "(ns lib.bridge (:require [lib.memory :as m]) (:export [through]))\n(defn through [base :i64 index :i64] :i64 (m/read base index))\n",
+      "lib/memory.kotoba": "(ns lib.memory (:export [read]))\n(defn- leaf [base :i64 index :i64] :i64 (kernel-load-u64-4k base 4096 index))\n(defn read [base :i64 index :i64] :i64 (leaf base index))\n"
+    }
+  },
+  {
+    "name": "identity-recursion",
+    "exit": 0,
+    "stderr": "",
+    "sources": {
+      "entry.kotoba": "(ns entry (:require [lib.bridge :as b]) (:export [main]))\n(defn main [] :i64\n (let [p (kernel-owned-page 0) saved (kernel-load-u64-4k p 4096 0)\n       write (kernel-store-u64-4k p 4096 0 42)\n       value (b/through p 0)\n       restored (kernel-store-u64-4k p 4096 0 saved)]\n  (if (and (= write 42) (= value 42) (= restored saved)) 42 0)))\n",
+      "lib/bridge.kotoba": "(ns lib.bridge (:require [lib.memory :as m]) (:export [through]))\n(defn through [base :i64 index :i64] :i64 (m/read base index))\n",
+      "lib/memory.kotoba": "(ns lib.memory (:export [read]))\n(defn- leaf [base :i64 index :i64 remaining :i64] :i64\n (if (= remaining 0) (kernel-load-u64-4k base 4096 index)\n  (leaf base index (- remaining 1))))\n(defn read [base :i64 index :i64] :i64 (leaf base index 3))\n"
+    }
+  },
+  {
+    "name": "identity-nontail-recursion",
+    "exit": 0,
+    "stderr": "",
+    "sources": {
+      "entry.kotoba": "(ns entry (:require [lib.bridge :as b]) (:export [main]))\n(defn main [] :i64\n (let [p (kernel-owned-page 0) saved (kernel-load-u64-4k p 4096 0)\n       write (kernel-store-u64-4k p 4096 0 42)\n       value (b/through p 0)\n       restored (kernel-store-u64-4k p 4096 0 saved)]\n  (if (and (= write 42) (= value 42) (= restored saved)) 42 0)))\n",
+      "lib/bridge.kotoba": "(ns lib.bridge (:require [lib.memory :as m]) (:export [through]))\n(defn through [base :i64 index :i64] :i64 (m/read base index))\n",
+      "lib/memory.kotoba": "(ns lib.memory (:export [read]))\n(defn- leaf [base :i64 index :i64 remaining :i64] :i64\n (if (= remaining 0) (kernel-load-u64-4k base 4096 index)\n  (+ 0 (leaf base index (- remaining 1)))))\n(defn read [base :i64 index :i64] :i64 (leaf base index 3))\n"
+    }
+  },
+  {
+    "name": "disjoint-local-scopes",
+    "exit": 0,
+    "stderr": "",
+    "sources": {
+      "entry.kotoba": "(ns entry (:require [lib.bridge :as b]) (:export [main]))\n(defn main [] :i64\n (if (= (kernel-rdtsc) 0)\n  (let [p (kernel-owned-page 0) saved (kernel-load-u64-4k p 4096 0)\n        write (kernel-store-u64-4k p 4096 0 42) value (b/through p 0)\n        restored (kernel-store-u64-4k p 4096 0 saved)]\n   (if (and (= write 42) (= value 42) (= restored saved)) 42 0))\n  (let [p (kernel-owned-page 1) saved (kernel-load-u64-4k p 4096 0)\n        write (kernel-store-u64-4k p 4096 0 42) value (b/through p 0)\n        restored (kernel-store-u64-4k p 4096 0 saved)]\n   (if (and (= write 42) (= value 42) (= restored saved)) 42 0))))\n",
+      "lib/bridge.kotoba": "(ns lib.bridge (:require [lib.memory :as m]) (:export [through]))\n(defn through [base :i64 index :i64] :i64 (m/read base index))\n",
+      "lib/memory.kotoba": "(ns lib.memory (:export [read]))\n(defn- leaf [base :i64 index :i64] :i64 (kernel-load-u64-4k base 4096 index))\n(defn read [base :i64 index :i64] :i64 (leaf base index))\n"
+    }
+  },
+  {
+    "name": "separate-ready-six-arguments",
+    "exit": 0,
+    "stderr": "",
+    "sources": {
+      "entry.kotoba": "(ns entry (:require [lib.bridge :as b]) (:export [main]))\n(defn main [] :i64\n (let [p (kernel-owned-page 0) saved (kernel-load-u64-4k p 4096 0)\n       write (kernel-store-u64-4k p 4096 0 42)\n       value (b/through p 0)\n       restored (kernel-store-u64-4k p 4096 0 saved)]\n  (if (and (= write 42) (= value 42) (= restored saved)) 42 0)))\n",
+      "lib/bridge.kotoba": "(ns lib.bridge (:require [lib.memory :as m]) (:export [through]))\n(defn- resident [base :i64 index :i64 a :i64 b :i64 ready :i64 remaining :i64] :i64\n (if (= remaining 0) (if (= ready 1) (m/read base index) 42)\n  (resident base index a b ready (- remaining 1))))\n(defn through [base :i64 index :i64] :i64\n (let [ready (if (= index 0) 1 0)] (resident base index 0 0 ready 3)))\n",
+      "lib/memory.kotoba": "(ns lib.memory (:export [read]))\n(defn- leaf [base :i64 index :i64] :i64 (kernel-load-u64-4k base 4096 index))\n(defn read [base :i64 index :i64] :i64 (leaf base index))\n"
+    }
+  },
+  {
+    "name": "rooted-mutual-recursion",
+    "exit": 0,
+    "stderr": "",
+    "sources": {
+      "entry.kotoba": "(ns entry (:require [lib.bridge :as b]) (:export [main]))\n(defn main [] :i64\n (let [p (kernel-owned-page 0) saved (kernel-load-u64-4k p 4096 0)\n       write (kernel-store-u64-4k p 4096 0 42)\n       value (b/through p 0)\n       restored (kernel-store-u64-4k p 4096 0 saved)]\n  (if (and (= write 42) (= value 42) (= restored saved)) 42 0)))\n",
+      "lib/bridge.kotoba": "(ns lib.bridge (:require [lib.memory :as m]) (:export [through]))\n(defn through [base :i64 index :i64] :i64 (m/read base index))\n",
+      "lib/memory.kotoba": "(ns lib.memory (:export [read]))\n(defn- leaf [base :i64 index :i64 remaining :i64] :i64\n (if (= remaining 0) (kernel-load-u64-4k base 4096 index)\n  (other base index (- remaining 1))))\n(defn- other [base :i64 index :i64 remaining :i64] :i64\n (if (= remaining 0) (kernel-load-u64-4k base 4096 index)\n  (leaf base index (- remaining 1))))\n(defn read [base :i64 index :i64] :i64 (leaf base index 3))\n"
+    }
+  },
+  {
+    "name": "rooted-mutual-nontail",
+    "exit": 0,
+    "stderr": "",
+    "sources": {
+      "entry.kotoba": "(ns entry (:require [lib.bridge :as b]) (:export [main]))\n(defn main [] :i64\n (let [p (kernel-owned-page 0) saved (kernel-load-u64-4k p 4096 0)\n       write (kernel-store-u64-4k p 4096 0 42)\n       value (b/through p 0)\n       restored (kernel-store-u64-4k p 4096 0 saved)]\n  (if (and (= write 42) (= value 42) (= restored saved)) 42 0)))\n",
+      "lib/bridge.kotoba": "(ns lib.bridge (:require [lib.memory :as m]) (:export [through]))\n(defn through [base :i64 index :i64] :i64 (m/read base index))\n",
+      "lib/memory.kotoba": "(ns lib.memory (:export [read]))\n(defn- leaf [base :i64 index :i64 remaining :i64] :i64\n (if (= remaining 0) (kernel-load-u64-4k base 4096 index)\n  (+ 0 (other base index (- remaining 1)))))\n(defn- other [base :i64 index :i64 remaining :i64] :i64\n (if (= remaining 0) (kernel-load-u64-4k base 4096 index)\n  (leaf base index (- remaining 1))))\n(defn read [base :i64 index :i64] :i64 (leaf base index 3))\n"
+    }
+  },
+  {
+    "name": "fixed-and-paired-length",
+    "exit": 0,
+    "stderr": "",
+    "sources": {
+      "entry.kotoba": "(ns entry (:require [lib.bridge :as b]) (:export [main]))\n(defn main [] :i64\n (let [p (kernel-owned-page 0) saved (kernel-load-u64-4k p 4096 0)\n       write (kernel-store-u64-4k p 4096 0 42)\n       value (b/through p 0)\n       restored (kernel-store-u64-4k p 4096 0 saved)]\n  (if (and (= write 42) (= value 42) (= restored saved)) 42 0)))\n",
+      "lib/bridge.kotoba": "(ns lib.bridge (:require [lib.memory :as m]) (:export [through]))\n(defn through [base :i64 index :i64] :i64 (m/read base 4096 index))\n",
+      "lib/memory.kotoba": "(ns lib.memory (:export [read]))\n(defn- leaf [base :i64 length :i64 index :i64] :i64\n (kernel-load-u64-4k base length index))\n(defn read [base :i64 length :i64 index :i64] :i64 (leaf base length index))\n"
+    }
+  },
+  {
+    "name": "uncalled-paired-diagnostic",
+    "exit": 0,
+    "stderr": "",
+    "sources": {
+      "entry.kotoba": "(ns entry (:require [lib.bridge :as b]) (:export [main]))\n(defn main [] :i64\n (let [p (kernel-owned-page 0) saved (kernel-load-u64-4k p 4096 0)\n       write (kernel-store-u64-4k p 4096 0 42)\n       value (b/through p 0)\n       restored (kernel-store-u64-4k p 4096 0 saved)]\n  (if (and (= write 42) (= value 42) (= restored saved)) 42 0)))\n",
+      "lib/bridge.kotoba": "(ns lib.bridge (:require [lib.memory :as m]) (:export [through]))\n(defn through [base :i64 index :i64] :i64 (m/read base index))\n",
+      "lib/memory.kotoba": "(ns lib.memory (:export [read]))\n(defn- leaf [base :i64 index :i64] :i64 (kernel-load-u64-4k base 4096 index))\n(defn read [base :i64 index :i64] :i64 (leaf base index))\n\n(defn- diagnostic [parent :i64 bytes :i64] :i64\n (let [page (kernel-subregion parent bytes 0 4096)] (leaf page 0)))\n"
+    }
+  },
+  {
+    "name": "wrong-extent",
+    "exit": 1,
+    "stderr": "region instruction 7\n  writer 4\n  parameter slot 1\n  region extent source 4294971392\n  caller leaf\n    use 7\n    writer 4\n    writer op 4\n    writer operand 1\n  supplied extent source 4294967360\n  caller read\n    instruction 15\n    region extent source 4294971392\nkernel project in /tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/aiueos-projects/fixed-extent/F3/lib/memory.kotoba:\nkernel function leaf:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 7\n",
+    "sources": {
+      "entry.kotoba": "(ns entry (:require [lib.bridge :as b]) (:export [main]))\n(defn main [] :i64\n (let [p (kernel-owned-page 0) saved (kernel-load-u64-4k p 4096 0)\n       write (kernel-store-u64-4k p 4096 0 42)\n       value (b/through p 0)\n       restored (kernel-store-u64-4k p 4096 0 saved)]\n  (if (and (= write 42) (= value 42) (= restored saved)) 42 0)))\n",
+      "lib/bridge.kotoba": "(ns lib.bridge (:require [lib.memory :as m]) (:export [through]))\n(defn through [base :i64 index :i64] :i64 (m/read base index))\n",
+      "lib/memory.kotoba": "(ns lib.memory (:export [read]))\n(defn- leaf [base :i64 index :i64] :i64 (kernel-load-u64-4k base 64 index))\n(defn read [base :i64 index :i64] :i64 (leaf base index))\n"
+    }
+  },
+  {
+    "name": "literal-caller",
+    "exit": 1,
+    "stderr": "region instruction 7\n  writer 4\n  parameter slot 1\n  region extent source unknown\n  caller leaf\n    use 7\n    writer 4\n    writer op 4\n    writer operand 1\n  caller read\n    use 15\n    writer 13\n    writer op 4\n    writer operand 1\n  caller through\n    use 23\n    writer 21\n    writer op 4\n    writer operand 1\n  caller main\n    use 45\n    writer 43\n    writer op 3\n    writer operand 4096\n  supplied extent source 4294971392\n  caller read\n    instruction 15\n    region extent source unknown\nkernel project in /tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/aiueos-projects/fixed-extent/F3/lib/memory.kotoba:\nkernel function leaf:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 7\n",
+    "sources": {
+      "entry.kotoba": "(ns entry (:require [lib.bridge :as b]) (:export [main]))\n(defn main [] :i64\n (let [p (kernel-owned-page 0) saved (kernel-load-u64-4k p 4096 0)\n       write (kernel-store-u64-4k p 4096 0 42)\n       value (b/through 4096 0)\n       restored (kernel-store-u64-4k p 4096 0 saved)]\n  (if (and (= write 42) (= value 42) (= restored saved)) 42 0)))\n",
+      "lib/bridge.kotoba": "(ns lib.bridge (:require [lib.memory :as m]) (:export [through]))\n(defn through [base :i64 index :i64] :i64 (m/read base index))\n",
+      "lib/memory.kotoba": "(ns lib.memory (:export [read]))\n(defn- leaf [base :i64 index :i64] :i64 (kernel-load-u64-4k base 4096 index))\n(defn read [base :i64 index :i64] :i64 (leaf base index))\n"
+    }
+  },
+  {
+    "name": "computed-caller",
+    "exit": 1,
+    "stderr": "region instruction 7\n  writer 4\n  parameter slot 1\n  region extent source unknown\n  caller leaf\n    use 7\n    writer 4\n    writer op 4\n    writer operand 1\n  caller read\n    use 15\n    writer 13\n    writer op 4\n    writer operand 1\n  caller through\n    use 23\n    writer 21\n    writer op 4\n    writer operand 1\n  caller main\n    use 47\n    writer 45\n    writer op 6\n    writer operand 0\n  supplied extent source 4294971392\n  caller read\n    instruction 15\n    region extent source unknown\nkernel project in /tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/aiueos-projects/fixed-extent/F3/lib/memory.kotoba:\nkernel function leaf:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 7\n",
+    "sources": {
+      "entry.kotoba": "(ns entry (:require [lib.bridge :as b]) (:export [main]))\n(defn main [] :i64\n (let [p (kernel-owned-page 0) saved (kernel-load-u64-4k p 4096 0)\n       write (kernel-store-u64-4k p 4096 0 42)\n       value (b/through (+ p 0) 0)\n       restored (kernel-store-u64-4k p 4096 0 saved)]\n  (if (and (= write 42) (= value 42) (= restored saved)) 42 0)))\n",
+      "lib/bridge.kotoba": "(ns lib.bridge (:require [lib.memory :as m]) (:export [through]))\n(defn through [base :i64 index :i64] :i64 (m/read base index))\n",
+      "lib/memory.kotoba": "(ns lib.memory (:export [read]))\n(defn- leaf [base :i64 index :i64] :i64 (kernel-load-u64-4k base 4096 index))\n(defn read [base :i64 index :i64] :i64 (leaf base index))\n"
+    }
+  },
+  {
+    "name": "second-forged-caller",
+    "exit": 1,
+    "stderr": "region instruction 7\n  writer 4\n  parameter slot 1\n  region extent source unknown\n  caller leaf\n    use 7\n    writer 4\n    writer op 4\n    writer operand 1\n  caller read\n    use 15\n    writer 13\n    writer op 4\n    writer operand 1\n  caller bad\n    use 31\n    writer 29\n    writer op 3\n    writer operand 4096\n  supplied extent source 4294971392\n  caller read\n    instruction 15\n    region extent source unknown\nkernel project in /tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/aiueos-projects/fixed-extent/F3/lib/memory.kotoba:\nkernel function leaf:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 7\n",
+    "sources": {
+      "entry.kotoba": "(ns entry (:require [lib.bridge :as b]) (:export [main]))\n(defn main [] :i64\n (let [p (kernel-owned-page 0) saved (kernel-load-u64-4k p 4096 0)\n       write (kernel-store-u64-4k p 4096 0 42)\n       value (b/through p 0)\n       restored (kernel-store-u64-4k p 4096 0 saved)]\n  (if (and (= write 42) (= value 42) (= restored saved)) 42 0)))\n",
+      "lib/bridge.kotoba": "(ns lib.bridge (:require [lib.memory :as m]) (:export [through]))\n(defn through [base :i64 index :i64] :i64 (m/read base index))\n\n(defn- bad [] :i64 (m/read 4096 0))\n",
+      "lib/memory.kotoba": "(ns lib.memory (:export [read]))\n(defn- leaf [base :i64 index :i64] :i64 (kernel-load-u64-4k base 4096 index))\n(defn read [base :i64 index :i64] :i64 (leaf base index))\n"
+    }
+  },
+  {
+    "name": "mixed-extents",
+    "exit": 1,
+    "stderr": "region instruction 7\n  writer 4\n  parameter slot 1\n  region extent source unknown\n  caller leaf\n    use 7\n    writer 4\n    writer op 4\n    writer operand 1\n  caller read\n    use 15\n    writer 13\n    writer op 4\n    writer operand 1\n  caller through\n    use 23\n    writer 21\n    writer op 4\n    writer operand 1\n  supplied extent source 4294971392\n  caller read\n    instruction 15\n    region extent source unknown\nkernel project in /tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/aiueos-projects/fixed-extent/F3/lib/memory.kotoba:\nkernel function leaf:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 7\n",
+    "sources": {
+      "entry.kotoba": "(ns entry (:require [lib.bridge :as b]) (:export [main]))\n(defn main [] :i64\n (let [p (kernel-owned-page 0) saved (kernel-load-u64-4k p 4096 0)\n       write (kernel-store-u64-4k p 4096 0 42)\n       other (b/through (kernel-owned-window 0 8192) 0) value (b/through p 0)\n       restored (kernel-store-u64-4k p 4096 0 saved)]\n  (if (and (= write 42) (= value 42) (= restored saved)) 42 0)))\n",
+      "lib/bridge.kotoba": "(ns lib.bridge (:require [lib.memory :as m]) (:export [through]))\n(defn through [base :i64 index :i64] :i64 (m/read base index))\n",
+      "lib/memory.kotoba": "(ns lib.memory (:export [read]))\n(defn- leaf [base :i64 index :i64] :i64 (kernel-load-u64-4k base 4096 index))\n(defn read [base :i64 index :i64] :i64 (leaf base index))\n"
+    }
+  },
+  {
+    "name": "recursive-pointer-change",
+    "exit": 1,
+    "stderr": "region instruction 11\n  writer 8\n  parameter slot 1\n  region extent source unknown\n  caller leaf\n    use 11\n    writer 8\n    writer op 4\n    writer operand 1\n    local assignments 1\n  caller leaf\n    use 21\n    writer 16\n    writer op 6\n    writer operand 0\n  supplied extent source 4294971392\n  caller read\n    instruction 35\n    region extent source 4294971392\nkernel project in /tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/aiueos-projects/fixed-extent/F3/lib/memory.kotoba:\nkernel function leaf:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 11\n",
+    "sources": {
+      "entry.kotoba": "(ns entry (:require [lib.bridge :as b]) (:export [main]))\n(defn main [] :i64\n (let [p (kernel-owned-page 0) saved (kernel-load-u64-4k p 4096 0)\n       write (kernel-store-u64-4k p 4096 0 42)\n       value (b/through p 0)\n       restored (kernel-store-u64-4k p 4096 0 saved)]\n  (if (and (= write 42) (= value 42) (= restored saved)) 42 0)))\n",
+      "lib/bridge.kotoba": "(ns lib.bridge (:require [lib.memory :as m]) (:export [through]))\n(defn through [base :i64 index :i64] :i64 (m/read base index))\n",
+      "lib/memory.kotoba": "(ns lib.memory (:export [read]))\n(defn- leaf [base :i64 index :i64 remaining :i64] :i64\n (if (= remaining 0) (kernel-load-u64-4k base 4096 index)\n  (leaf (+ base 8) index (- remaining 1))))\n(defn read [base :i64 index :i64] :i64 (leaf base index 3))\n"
+    }
+  },
+  {
+    "name": "unseeded-recursion",
+    "exit": 1,
+    "stderr": "region instruction 11\n  writer 8\n  parameter slot 1\n  region extent source 8589934594\n  caller leaf\n    use 11\n    writer 8\n    writer op 4\n    writer operand 1\n  supplied extent source 4294971392\n  caller read\n    instruction 33\n    region extent source 8589934594\nkernel project in /tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/aiueos-projects/fixed-extent/F3/lib/memory.kotoba:\nkernel function leaf:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 11\n",
+    "sources": {
+      "entry.kotoba": "(ns entry (:require [lib.bridge :as b]) (:export [main]))\n(defn main [] :i64 42)\n",
+      "lib/bridge.kotoba": "(ns lib.bridge (:require [lib.memory :as m]) (:export [through]))\n(defn through [base :i64 index :i64] :i64 (m/read base index))\n",
+      "lib/memory.kotoba": "(ns lib.memory (:export [read]))\n(defn- leaf [base :i64 index :i64 remaining :i64] :i64\n (if (= remaining 0) (kernel-load-u64-4k base 4096 index)\n  (leaf base index (- remaining 1))))\n(defn read [base :i64 index :i64] :i64 (leaf base index 3))\n"
+    }
+  },
+  {
+    "name": "forged-disjoint-scope",
+    "exit": 1,
+    "stderr": "region instruction 7\n  writer 4\n  parameter slot 1\n  region extent source unknown\n  caller leaf\n    use 7\n    writer 4\n    writer op 4\n    writer operand 1\n  caller read\n    use 15\n    writer 13\n    writer op 4\n    writer operand 1\n  caller through\n    use 23\n    writer 21\n    writer op 4\n    writer operand 1\n  caller main\n    use 92\n    writer 90\n    writer op 4\n    writer operand 1\n    local assignments 2\n  caller main\n    use 35\n    writer 34\n    writer op 13\n    writer operand 0\n  supplied extent source 4294971392\n  caller read\n    instruction 15\n    region extent source unknown\nkernel project in /tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/aiueos-projects/fixed-extent/F3/lib/memory.kotoba:\nkernel function leaf:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 7\n",
+    "sources": {
+      "entry.kotoba": "(ns entry (:require [lib.bridge :as b]) (:export [main]))\n(defn main [] :i64\n (if (= (kernel-rdtsc) 0)\n  (let [p (kernel-owned-page 0) saved (kernel-load-u64-4k p 4096 0)\n        write (kernel-store-u64-4k p 4096 0 42) value (b/through p 0)\n        restored (kernel-store-u64-4k p 4096 0 saved)]\n   (if (and (= write 42) (= value 42) (= restored saved)) 42 0))\n  (let [p 4096 saved (kernel-load-u64-4k p 4096 0)\n        write (kernel-store-u64-4k p 4096 0 42) value (b/through p 0)\n        restored (kernel-store-u64-4k p 4096 0 saved)]\n   (if (and (= write 42) (= value 42) (= restored saved)) 42 0))))\n",
+      "lib/bridge.kotoba": "(ns lib.bridge (:require [lib.memory :as m]) (:export [through]))\n(defn through [base :i64 index :i64] :i64 (m/read base index))\n",
+      "lib/memory.kotoba": "(ns lib.memory (:export [read]))\n(defn- leaf [base :i64 index :i64] :i64 (kernel-load-u64-4k base 4096 index))\n(defn read [base :i64 index :i64] :i64 (leaf base index))\n"
+    }
+  },
+  {
+    "name": "computed-disjoint-scope",
+    "exit": 1,
+    "stderr": "region instruction 7\n  writer 4\n  parameter slot 1\n  region extent source unknown\n  caller leaf\n    use 7\n    writer 4\n    writer op 4\n    writer operand 1\n  caller read\n    use 15\n    writer 13\n    writer op 4\n    writer operand 1\n  caller through\n    use 23\n    writer 21\n    writer op 4\n    writer operand 1\n  caller main\n    use 95\n    writer 93\n    writer op 4\n    writer operand 1\n    local assignments 2\n  caller main\n    use 35\n    writer 34\n    writer op 13\n    writer operand 0\n  supplied extent source 4294971392\n  caller read\n    instruction 15\n    region extent source unknown\nkernel project in /tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/aiueos-projects/fixed-extent/F3/lib/memory.kotoba:\nkernel function leaf:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 7\n",
+    "sources": {
+      "entry.kotoba": "(ns entry (:require [lib.bridge :as b]) (:export [main]))\n(defn main [] :i64\n (if (= (kernel-rdtsc) 0)\n  (let [p (kernel-owned-page 0) saved (kernel-load-u64-4k p 4096 0)\n        write (kernel-store-u64-4k p 4096 0 42) value (b/through p 0)\n        restored (kernel-store-u64-4k p 4096 0 saved)]\n   (if (and (= write 42) (= value 42) (= restored saved)) 42 0))\n  (let [p (+ (kernel-owned-page 1) 0) saved (kernel-load-u64-4k p 4096 0)\n        write (kernel-store-u64-4k p 4096 0 42) value (b/through p 0)\n        restored (kernel-store-u64-4k p 4096 0 saved)]\n   (if (and (= write 42) (= value 42) (= restored saved)) 42 0))))\n",
+      "lib/bridge.kotoba": "(ns lib.bridge (:require [lib.memory :as m]) (:export [through]))\n(defn through [base :i64 index :i64] :i64 (m/read base index))\n",
+      "lib/memory.kotoba": "(ns lib.memory (:export [read]))\n(defn- leaf [base :i64 index :i64] :i64 (kernel-load-u64-4k base 4096 index))\n(defn read [base :i64 index :i64] :i64 (leaf base index))\n"
+    }
+  },
+  {
+    "name": "branch-result-base",
+    "exit": 1,
+    "stderr": "region instruction 7\n  writer 4\n  parameter slot 1\n  region extent source unknown\n  caller leaf\n    use 7\n    writer 4\n    writer op 4\n    writer operand 1\n  caller read\n    use 15\n    writer 13\n    writer op 4\n    writer operand 1\n  caller through\n    use 23\n    writer 21\n    writer op 4\n    writer operand 1\n  caller main\n    use 54\n    writer 52\n    writer op 4\n    writer operand 1\n    local assignments 1\n  caller main\n    use 40\n    writer unknown\n  supplied extent source 4294971392\n  caller read\n    instruction 15\n    region extent source unknown\nkernel project in /tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/aiueos-projects/fixed-extent/F3/lib/memory.kotoba:\nkernel function leaf:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 7\n",
+    "sources": {
+      "entry.kotoba": "(ns entry (:require [lib.bridge :as b]) (:export [main]))\n(defn main [] :i64\n (let [p (if (= (kernel-rdtsc) 0) (kernel-owned-page 0) (kernel-owned-page 1)) saved (kernel-load-u64-4k p 4096 0)\n       write (kernel-store-u64-4k p 4096 0 42)\n       value (b/through p 0)\n       restored (kernel-store-u64-4k p 4096 0 saved)]\n  (if (and (= write 42) (= value 42) (= restored saved)) 42 0)))\n",
+      "lib/bridge.kotoba": "(ns lib.bridge (:require [lib.memory :as m]) (:export [through]))\n(defn through [base :i64 index :i64] :i64 (m/read base index))\n",
+      "lib/memory.kotoba": "(ns lib.memory (:export [read]))\n(defn- leaf [base :i64 index :i64] :i64 (kernel-load-u64-4k base 4096 index))\n(defn read [base :i64 index :i64] :i64 (leaf base index))\n"
+    }
+  },
+  {
+    "name": "inline-ready-branch",
+    "exit": 0,
+    "stderr": "",
+    "sources": {
+      "entry.kotoba": "(ns entry (:require [lib.bridge :as b]) (:export [main]))\n(defn main [] :i64\n (let [p (kernel-owned-page 0) saved (kernel-load-u64-4k p 4096 0)\n       write (kernel-store-u64-4k p 4096 0 42)\n       value (b/through p 0)\n       restored (kernel-store-u64-4k p 4096 0 saved)]\n  (if (and (= write 42) (= value 42) (= restored saved)) 42 0)))\n",
+      "lib/bridge.kotoba": "(ns lib.bridge (:require [lib.memory :as m]) (:export [through]))\n(defn- resident [base :i64 index :i64 a :i64 b :i64 ready :i64 remaining :i64] :i64\n (if (= remaining 0) (if (= ready 1) (m/read base index) 42)\n  (resident base index a b ready (- remaining 1))))\n(defn through [base :i64 index :i64] :i64\n (resident base index 0 0 (if (= index 0) 1 0) 3))\n",
+      "lib/memory.kotoba": "(ns lib.memory (:export [read]))\n(defn- leaf [base :i64 index :i64] :i64 (kernel-load-u64-4k base 4096 index))\n(defn read [base :i64 index :i64] :i64 (leaf base index))\n"
+    }
+  },
+  {
+    "name": "unseeded-mutual",
+    "exit": 1,
+    "stderr": "region instruction 11\n  writer 8\n  parameter slot 1\n  region extent source 8589934594\n  caller leaf\n    use 11\n    writer 8\n    writer op 4\n    writer operand 1\n  supplied extent source 4294971392\n  caller other\n    instruction 41\n    region extent source 8589934594\n  caller read\n    instruction 51\n    region extent source 8589934594\nkernel project in /tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/aiueos-projects/fixed-extent/F3/lib/memory.kotoba:\nkernel function leaf:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 11\n",
+    "sources": {
+      "entry.kotoba": "(ns entry (:require [lib.bridge :as b]) (:export [main]))\n(defn main [] :i64 42)\n",
+      "lib/bridge.kotoba": "(ns lib.bridge (:require [lib.memory :as m]) (:export [through]))\n(defn through [base :i64 index :i64] :i64 (m/read base index))\n",
+      "lib/memory.kotoba": "(ns lib.memory (:export [read]))\n(defn- leaf [base :i64 index :i64 remaining :i64] :i64\n (if (= remaining 0) (kernel-load-u64-4k base 4096 index)\n  (other base index (- remaining 1))))\n(defn- other [base :i64 index :i64 remaining :i64] :i64\n (if (= remaining 0) (kernel-load-u64-4k base 4096 index)\n  (leaf base index (- remaining 1))))\n(defn read [base :i64 index :i64] :i64 (leaf base index 3))\n"
+    }
+  },
+  {
+    "name": "forged-mutual-caller",
+    "exit": 1,
+    "stderr": "region instruction 11\n  writer 8\n  parameter slot 1\n  region extent source unknown\n  caller leaf\n    use 11\n    writer 8\n    writer op 4\n    writer operand 1\n  caller other\n    use 41\n    writer 36\n    writer op 4\n    writer operand 1\n  caller leaf\n    use 19\n    writer 14\n    writer op 4\n    writer operand 1\n  caller other\n    use 41\n    writer 36\n    writer op 4\n    writer operand 1\n  caller leaf\n    use 19\n    writer 14\n    writer op 4\n    writer operand 1\n  caller other\n    use 41\n    writer 36\n    writer op 4\n    writer operand 1\n  caller leaf\n    use 19\n    writer 14\n    writer op 4\n    writer operand 1\n  caller other\n    use 41\n    writer 36\n    writer op 4\n    writer operand 1\n  caller leaf\n    use 19\n    writer 14\n    writer op 4\n    writer operand 1\n  caller other\n    use 41\n    writer 36\n    writer op 4\n    writer operand 1\n  caller leaf\n    use 19\n    writer 14\n    writer op 4\n    writer operand 1\n  caller other\n    use 41\n    writer 36\n    writer op 4\n    writer operand 1\n  caller leaf\n    use 19\n    writer 14\n    writer op 4\n    writer operand 1\n  caller other\n    use 41\n    writer 36\n    writer op 4\n    writer operand 1\n  caller leaf\n    use 19\n    writer 14\n    writer op 4\n    writer operand 1\n  supplied extent source 4294971392\n  caller other\n    instruction 41\n    region extent source unknown\n  caller read\n    instruction 51\n    region extent source 4294971392\nkernel project in /tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/aiueos-projects/fixed-extent/F3/lib/memory.kotoba:\nkernel function leaf:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 11\n",
+    "sources": {
+      "entry.kotoba": "(ns entry (:require [lib.bridge :as b]) (:export [main]))\n(defn main [] :i64\n (let [p (kernel-owned-page 0) saved (kernel-load-u64-4k p 4096 0)\n       write (kernel-store-u64-4k p 4096 0 42)\n       value (b/through p 0)\n       restored (kernel-store-u64-4k p 4096 0 saved)]\n  (if (and (= write 42) (= value 42) (= restored saved)) 42 0)))\n",
+      "lib/bridge.kotoba": "(ns lib.bridge (:require [lib.memory :as m]) (:export [through]))\n(defn through [base :i64 index :i64] :i64 (m/read base index))\n",
+      "lib/memory.kotoba": "(ns lib.memory (:export [read]))\n(defn- leaf [base :i64 index :i64 remaining :i64] :i64\n (if (= remaining 0) (kernel-load-u64-4k base 4096 index)\n  (other base index (- remaining 1))))\n(defn- other [base :i64 index :i64 remaining :i64] :i64\n (if (= remaining 0) (kernel-load-u64-4k base 4096 index)\n  (leaf base index (- remaining 1))))\n(defn read [base :i64 index :i64] :i64 (leaf base index 3))\n\n(defn- bad [] :i64 (other 4096 0 3))\n"
+    }
+  },
+  {
+    "name": "computed-mutual-edge",
+    "exit": 1,
+    "stderr": "region instruction 11\n  writer 8\n  parameter slot 1\n  region extent source unknown\n  caller leaf\n    use 11\n    writer 8\n    writer op 4\n    writer operand 1\n  caller other\n    use 43\n    writer 38\n    writer op 4\n    writer operand 1\n  caller leaf\n    use 21\n    writer 16\n    writer op 6\n    writer operand 0\n  supplied extent source 4294971392\n  caller other\n    instruction 43\n    region extent source unknown\n  caller read\n    instruction 53\n    region extent source 4294971392\nkernel project in /tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/aiueos-projects/fixed-extent/F3/lib/memory.kotoba:\nkernel function leaf:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 11\n",
+    "sources": {
+      "entry.kotoba": "(ns entry (:require [lib.bridge :as b]) (:export [main]))\n(defn main [] :i64\n (let [p (kernel-owned-page 0) saved (kernel-load-u64-4k p 4096 0)\n       write (kernel-store-u64-4k p 4096 0 42)\n       value (b/through p 0)\n       restored (kernel-store-u64-4k p 4096 0 saved)]\n  (if (and (= write 42) (= value 42) (= restored saved)) 42 0)))\n",
+      "lib/bridge.kotoba": "(ns lib.bridge (:require [lib.memory :as m]) (:export [through]))\n(defn through [base :i64 index :i64] :i64 (m/read base index))\n",
+      "lib/memory.kotoba": "(ns lib.memory (:export [read]))\n(defn- leaf [base :i64 index :i64 remaining :i64] :i64\n (if (= remaining 0) (kernel-load-u64-4k base 4096 index)\n  (other (+ base 8) index (- remaining 1))))\n(defn- other [base :i64 index :i64 remaining :i64] :i64\n (if (= remaining 0) (kernel-load-u64-4k base 4096 index)\n  (leaf base index (- remaining 1))))\n(defn read [base :i64 index :i64] :i64 (leaf base index 3))\n"
+    }
+  },
+  {
+    "name": "lying-paired-length",
+    "exit": 1,
+    "stderr": "region instruction 7\n  writer 4\n  parameter slot 1\n  region extent source 4294971392\n  caller leaf\n    use 7\n    writer 4\n    writer op 4\n    writer operand 1\n  supplied extent source 8589934594\n  caller read\n    instruction 16\n    region extent source 4294971392\nkernel project in /tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/aiueos-projects/fixed-extent/F3/lib/memory.kotoba:\nkernel function leaf:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 7\n",
+    "sources": {
+      "entry.kotoba": "(ns entry (:require [lib.bridge :as b]) (:export [main]))\n(defn main [] :i64\n (let [p (kernel-owned-page 0) saved (kernel-load-u64-4k p 4096 0)\n       write (kernel-store-u64-4k p 4096 0 42)\n       value (b/through p 0)\n       restored (kernel-store-u64-4k p 4096 0 saved)]\n  (if (and (= write 42) (= value 42) (= restored saved)) 42 0)))\n",
+      "lib/bridge.kotoba": "(ns lib.bridge (:require [lib.memory :as m]) (:export [through]))\n(defn through [base :i64 index :i64] :i64 (m/read base 64 index))\n",
+      "lib/memory.kotoba": "(ns lib.memory (:export [read]))\n(defn- leaf [base :i64 length :i64 index :i64] :i64\n (kernel-load-u64-4k base length index))\n(defn read [base :i64 length :i64 index :i64] :i64 (leaf base length index))\n"
+    }
+  },
+  {
+    "name": "assigned-parameter-rebase",
+    "exit": 1,
+    "stderr": "region instruction 18\n  writer 14\n  parameter slot 1\n  region extent source unknown\n  caller leaf\n    use 18\n    writer 14\n    writer op 4\n    writer operand 1\n    local assignments 1\n  caller leaf\n    use 23\n    writer 18\n    writer op 13\n    writer operand 0\n  caller leaf\n    use 18\n    writer 14\n    writer op 4\n    writer operand 1\n    local assignments 1\n  caller leaf\n    use 23\n    writer 18\n    writer op 13\n    writer operand 0\n  caller leaf\n    use 18\n    writer 14\n    writer op 4\n    writer operand 1\n    local assignments 1\n  caller leaf\n    use 23\n    writer 18\n    writer op 13\n    writer operand 0\n  caller leaf\n    use 18\n    writer 14\n    writer op 4\n    writer operand 1\n    local assignments 1\n  caller leaf\n    use 23\n    writer 18\n    writer op 13\n    writer operand 0\n  caller leaf\n    use 18\n    writer 14\n    writer op 4\n    writer operand 1\n    local assignments 1\n  caller leaf\n    use 23\n    writer 18\n    writer op 13\n    writer operand 0\n  caller leaf\n    use 18\n    writer 14\n    writer op 4\n    writer operand 1\n    local assignments 1\n  caller leaf\n    use 23\n    writer 18\n    writer op 13\n    writer operand 0\n  caller leaf\n    use 18\n    writer 14\n    writer op 4\n    writer operand 1\n    local assignments 1\n  caller leaf\n    use 23\n    writer 18\n    writer op 13\n    writer operand 0\n  caller leaf\n    use 18\n    writer 14\n    writer op 4\n    writer operand 1\n    local assignments 1\n  supplied extent source 4294971392\n  caller read\n    instruction 37\n    region extent source 4294971392\nkernel project in /tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/aiueos-projects/fixed-extent/F3/lib/memory.kotoba:\nkernel function leaf:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 18\n",
+    "sources": {
+      "entry.kotoba": "(ns entry (:require [lib.bridge :as b]) (:export [main]))\n(defn main [] :i64\n (let [p (kernel-owned-page 0) saved (kernel-load-u64-4k p 4096 0)\n       write (kernel-store-u64-4k p 4096 0 42)\n       value (b/through p 0)\n       restored (kernel-store-u64-4k p 4096 0 saved)]\n  (if (and (= write 42) (= value 42) (= restored saved)) 42 0)))\n",
+      "lib/bridge.kotoba": "(ns lib.bridge (:require [lib.memory :as m]) (:export [through]))\n(defn through [base :i64 index :i64] :i64 (m/read base index))\n",
+      "lib/memory.kotoba": "(ns lib.memory (:export [read]))\n(defn- leaf [base :i64 index :i64 remaining :i64] :i64\n (if (= remaining 0) (kernel-load-u64-4k base 4096 index)\n  (leaf (kernel-subregion base 4096 0 4096) index (- remaining 1))))\n(defn read [base :i64 index :i64] :i64 (leaf base index 3))\n"
+    }
+  },
+  {
+    "name": "forged-diagnostic-caller",
+    "exit": 1,
+    "stderr": "region instruction 25\n  writer 21\n  parameter slot 1\n  region extent source unknown\n  caller diagnostic\n    use 25\n    writer 21\n    writer op 4\n    writer operand 1\n  caller bad\n    use 37\n    writer 35\n    writer op 3\n    writer operand 4096\n  supplied extent source 8589934594\n  caller bad\n    instruction 37\n    region extent source unknown\nkernel project in /tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/aiueos-projects/fixed-extent/F3/lib/memory.kotoba:\nkernel function diagnostic:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 25\n",
+    "sources": {
+      "entry.kotoba": "(ns entry (:require [lib.bridge :as b]) (:export [main]))\n(defn main [] :i64\n (let [p (kernel-owned-page 0) saved (kernel-load-u64-4k p 4096 0)\n       write (kernel-store-u64-4k p 4096 0 42)\n       value (b/through p 0)\n       restored (kernel-store-u64-4k p 4096 0 saved)]\n  (if (and (= write 42) (= value 42) (= restored saved)) 42 0)))\n",
+      "lib/bridge.kotoba": "(ns lib.bridge (:require [lib.memory :as m]) (:export [through]))\n(defn through [base :i64 index :i64] :i64 (m/read base index))\n",
+      "lib/memory.kotoba": "(ns lib.memory (:export [read]))\n(defn- leaf [base :i64 index :i64] :i64 (kernel-load-u64-4k base 4096 index))\n(defn read [base :i64 index :i64] :i64 (leaf base index))\n\n(defn- diagnostic [parent :i64 bytes :i64] :i64\n (let [page (kernel-subregion parent bytes 0 4096)] (leaf page 0)))\n\n(defn- bad [] :i64 (diagnostic 4096 4096))\n"
+    }
+  }
+]

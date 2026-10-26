@@ -101,6 +101,17 @@ attempt array must follow schedule order, with contiguous CPU-only retries.
 Rejected workloads retain an explicit per-workload row and produce no
 aggregate or confidence interval.
 
+Before any proof-v1 timing, the manifest also requires one explicit native
+runtimeProfile with fixed resource bounds, the actual compiler artifact, and
+image/build-record bindings covering all19 workloads exactly once. One shared
+runner or separate packed images may be bound; mixing profiles within one
+campaign is not allowed. Each referenced byte stream must be a verified
+bundle artifact. The canonical build record must match the declared
+target/format/profile/capacity and actual image size. Unknown profiles, silent
+default widening, increased growth-row limits and mismatched host ISAs refuse.
+These are record-integrity checks, not native compiler provenance or runtime
+qualification; the native measurement gate remains pending and exits2.
+
 Run synthetic verifier tests with:
 
 ```sh
@@ -140,6 +151,58 @@ within that bound. It does not establish an incorrect output or a C comparison.
 The native runtime's named arena refusal is recorded separately. Neither
 probe grants a proof-v1 aggregate. The complete native observations are in
 [`docs/evidence/embench-native-preparation-20261026/`](../../../docs/evidence/embench-native-preparation-20261026/).
+
+Those preparation commands retain the original diagnostic route, not the new
+split-accounting measurement host. Its earlier capacity/wall/fuel failures
+remain [historical native diagnosis evidence](../../../docs/evidence/embench-native-diagnosis-20261026/README.md),
+not current measurement-host results.
+
+## Merged ARM measurement host and retained-record audit
+
+The explicit `large-vectors-v1` runtime profile merged in PR1602. The separate
+closed measurement host merged in [PR1606](https://github.com/kotoba-lang/amu/pull/1606)
+at `9fea26ca5282a982ed1fc0c533a706fde0fcc114`. Its exact-head native workflow
+[40287198642](https://github.com/kotoba-lang/amu/actions/runs/40287198642)
+and post-merge main workflow
+[40290414642](https://github.com/kotoba-lang/amu/actions/runs/40290414642)
+completed successfully. The [measurement evidence](../../../docs/evidence/native-benchmark-host-20261026/README.md)
+retains earlier failures as well as final original-count19/19, separate fuel,
+both17-field arena snapshots, 8 factory/17 runtime refusals and13 actually
+built/executed semantic mutants. The native host owns its ordered/accounting
+guards. Python does not own that verdict.
+
+Both actual ISA compilers produced identical ARM host/payload bytes, and the
+host ran natively on ARM. This is **not** an x86 measurement-host execution;
+that host remains KOTOBA-152. Compiler qualification, host execution, retained
+record integrity and comparative campaign qualification are separate facts.
+
+After obtaining the `native-benchmark-arm-evidence` artifact from the pinned
+run, audit its retained `benchmark-arm/host` directory locally:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 bench/embench/proof-v1/audit_measurement_records.py /absolute/path/to/benchmark-arm/host
+```
+
+This read-only command makes no network request, launches no compiler or
+benchmark, and emits no timings or score. Exit0 means only that all19 retained
+raw records and25 refusal records are consistent with the reviewed byte
+graph, original source/count pins and independent accounting reference.
+It checks raw stream digests, strict native receipts, invocation counts and
+source/host/payload identity instead of trusting stored success booleans.
+`sourceGraphCurrent` explicitly reports whether that reviewed graph still
+matches the checkout. `observerSourceCurrent` distinguishes the earlier
+reviewed observer snapshot from the current observer; neither silently
+inherits qualification from the other. A consistent historical record need
+not match a later checkout. Unknown byte graphs require a new reviewed anchor.
+
+These are unsigned process observations, not binary replay, signed execution
+proof or an independent rerun. The command always emits `campaignReady=false`,
+`performanceQualified=false` and `nativeVerdictAuthority=false`. Its fixture
+and tamper tests are record-integrity tests, not the seven actual-binary
+protocol controls. `campaign.py verify` still exits2 with the pending native
+campaign gate: same-host C builds/equivalence, host admission, all760 scheduled
+positions, paired statistics, and actual protocol controls remain open.
+No counts, timing floors, resource limits or promotion rules changed.
 
 The bundle hash is SHA-256 over canonical compact JSON with a trailing newline
 and `bundleSha256` replaced by 64 zeroes. This makes the seal independently

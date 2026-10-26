@@ -33,6 +33,7 @@ on:
       - "native-product.json"
       - "seed/**"
       - "scripts/seed/**"
+      - "bench/embench/proof-v1/**"
       - "tools/gpu_*.kotoba"
       - "tools/spirv_*.kotoba"
       - "tools/static_launcher*.kotoba"
@@ -47,6 +48,7 @@ on:
       - "native-product.json"
       - "seed/**"
       - "scripts/seed/**"
+      - "bench/embench/proof-v1/**"
       - "tools/gpu_*.kotoba"
       - "tools/spirv_*.kotoba"
       - "tools/static_launcher*.kotoba"
@@ -72,6 +74,20 @@ jobs:
         env:
           PYTHONDONTWRITEBYTECODE: "1"
         run: python3 scripts/seed/test_aiueos_qmp_stdio.py -v
+      - name: Benchmark staging observer format controls (not timing qualification)
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python3 scripts/seed/test_embench_candidate.py -v
+      - name: Closed benchmark factory and immutable oracle source controls
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python3 scripts/seed/test_native_benchmark_host.py -v
+      - name: Proof record audits (not native verdict or performance qualification)
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          python3 bench/embench/proof-v1/validate.py
+          python3 -m unittest discover -s bench/embench/proof-v1 -p 'test_*.py' -v
       - name: Source and image identity preflight
         run: python3 scripts/seed/check-native-identities.py
       - name: Local locked native project and refusal controls
@@ -127,6 +143,12 @@ jobs:
             ${{ runner.temp }}/one/one-compiler.json
             ${{ runner.temp }}/one/calls.json
             ${{ runner.temp }}/one/F2.elf
+            ${{ runner.temp }}/one/F1.elf
+            ${{ runner.temp }}/one/F1.kseed
+            ${{ runner.temp }}/one/F2.kseed
+            ${{ runner.temp }}/one/F3.kseed
+            ${{ runner.temp }}/one/full.kotoba
+            ${{ runner.temp }}/one/runner.kotoba
             ${{ runner.temp }}/one/F-x86_64.elf
           if-no-files-found: warn
       # Keep the transported compiler files at the artifact root. Adding the
@@ -182,6 +204,30 @@ jobs:
         run: python3 scripts/seed/check-spawn-runtime.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/spawn"
       - name: Independent arm64 gates (bounded native build queue)
         run: python3 scripts/seed/native_build_queue.py --manifest seed/native-gate-plan.json --phase arm64 --jobs 2 --output "$RUNNER_TEMP/pg-arm64"
+      - name: Unchanged original19 library/export provenance (ARM native producer)
+        run: python3 scripts/seed/native_build_queue.py --jobs 1 --output "$RUNNER_TEMP/benchmark-arm-stage-admission.json" -- python3 scripts/seed/stage-native-benchmark-corpus.py --one "$RUNNER_TEMP/one" --out "$RUNNER_TEMP/benchmark-arm/corpus"
+      - name: Closed measurement host, original full counts and native accounting oracle
+        run: python3 scripts/seed/native_build_queue.py --jobs 1 --output "$RUNNER_TEMP/benchmark-arm-host-admission.json" -- python3 scripts/seed/check-native-benchmark-host.py --one "$RUNNER_TEMP/one" --corpus "$RUNNER_TEMP/benchmark-arm/corpus" --output "$RUNNER_TEMP/benchmark-arm/host" --full-counts
+      - name: Actually built and executed timing/accounting/reset/highwater mutants
+        run: python3 scripts/seed/native_build_queue.py --jobs 1 --output "$RUNNER_TEMP/benchmark-arm-mutants-admission.json" -- python3 scripts/seed/check-native-benchmark-mutations.py --one "$RUNNER_TEMP/one" --controls "$RUNNER_TEMP/benchmark-arm/host" --output "$RUNNER_TEMP/benchmark-arm/mutations"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: native-benchmark-arm-evidence
+          path: |
+            ${{ runner.temp }}/benchmark-arm/**/observations.json
+            ${{ runner.temp }}/benchmark-arm/**/*.stdout
+            ${{ runner.temp }}/benchmark-arm/**/*.stderr
+            ${{ runner.temp }}/benchmark-arm/**/*.kotoba
+            ${{ runner.temp }}/benchmark-arm/**/*.ksl
+            ${{ runner.temp }}/benchmark-arm/*/observer.py
+            ${{ runner.temp }}/benchmark-arm-*-admission.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: native-benchmark-arm-host-reference
+          path: ${{ runner.temp }}/benchmark-arm/host/observations.json
+          if-no-files-found: error
       - name: Native FS2 forms, kernel errors and journal cleanup (arm64)
         run: python3 scripts/seed/check-native-fs2.py --compiler "$RUNNER_TEMP/one/F2.elf" --output "$RUNNER_TEMP/fs2-arm"
       - name: Native typed live ABI and user-context admission (arm64)
@@ -220,6 +266,9 @@ jobs:
             ${{ runner.temp }}/flock-vector-arm64/*.json
             ${{ runner.temp }}/flock-vector-arm64/*.stdout
             ${{ runner.temp }}/flock-vector-arm64/*.stderr
+            ${{ runner.temp }}/runtime-profile-arm64/*.json
+            ${{ runner.temp }}/runtime-profile-arm64/*.stdout
+            ${{ runner.temp }}/runtime-profile-arm64/*.stderr
             ${{ runner.temp }}/zero-watermark-arm64/*.json
             ${{ runner.temp }}/zero-watermark-arm64/*.stdout
             ${{ runner.temp }}/zero-watermark-arm64/*.stderr
@@ -335,6 +384,9 @@ jobs:
             ${{ runner.temp }}/flock-vector-x86/*.json
             ${{ runner.temp }}/flock-vector-x86/*.stdout
             ${{ runner.temp }}/flock-vector-x86/*.stderr
+            ${{ runner.temp }}/runtime-profile-x86/*.json
+            ${{ runner.temp }}/runtime-profile-x86/*.stdout
+            ${{ runner.temp }}/runtime-profile-x86/*.stderr
             ${{ runner.temp }}/zero-watermark-x86/*.json
             ${{ runner.temp }}/zero-watermark-x86/*.stdout
             ${{ runner.temp }}/zero-watermark-x86/*.stderr
@@ -388,6 +440,41 @@ jobs:
           path: ${{ runner.temp }}/pg-x86
           if-no-files-found: warn
 
+  qualify-benchmark-x86-factory:
+    needs: [qualify-arm64, qualify-x86_64]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: x86_64-native-receipt
+          path: ${{ runner.temp }}/native-proof
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: native-benchmark-arm-host-reference
+          path: ${{ runner.temp }}/arm-host-reference
+      - name: Stage original19 through the actual fixed-point public x86 compiler
+        run: |
+          chmod 700 "$RUNNER_TEMP/native-proof/complete/F3.elf"
+          python3 scripts/seed/native_build_queue.py --jobs 1 --output "$RUNNER_TEMP/benchmark-x86-stage-admission.json" -- python3 scripts/seed/stage-native-benchmark-corpus.py --complete "$RUNNER_TEMP/native-proof/complete" --out "$RUNNER_TEMP/benchmark-x86/corpus"
+      - name: Native x86 factory and exact equality to the executed ARM host/payloads
+        run: python3 scripts/seed/native_build_queue.py --jobs 1 --output "$RUNNER_TEMP/benchmark-x86-factory-admission.json" -- python3 scripts/seed/check-native-benchmark-host.py --complete "$RUNNER_TEMP/native-proof/complete" --arm-controls "$RUNNER_TEMP/arm-host-reference/observations.json" --corpus "$RUNNER_TEMP/benchmark-x86/corpus" --output "$RUNNER_TEMP/benchmark-x86/factory" --full-counts
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: native-benchmark-x86-factory-evidence
+          path: |
+            ${{ runner.temp }}/benchmark-x86/**/observations.json
+            ${{ runner.temp }}/benchmark-x86/**/*.stdout
+            ${{ runner.temp }}/benchmark-x86/**/*.stderr
+            ${{ runner.temp }}/benchmark-x86/**/*.kotoba
+            ${{ runner.temp }}/benchmark-x86/**/*.ksl
+            ${{ runner.temp }}/benchmark-x86/*/observer.py
+            ${{ runner.temp }}/benchmark-x86-*-admission.json
+          if-no-files-found: error
   shared-browser-components:
     name: Shared text / DOM / text-edit (${{ matrix.target }})
     runs-on: ${{ matrix.runner }}

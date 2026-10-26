@@ -92,14 +92,32 @@ def main() -> None:
             require(item.get("ratioKotobaElapsedOverC") is None, "native preparation has no performance ratio")
             record = load_from_repository(item["path"])
             require(record.get("performanceQualified") is False, "native preparation is unqualified")
+            if item["classification"] == "native-registered-accounting-no-performance":
+                require(record.get("status") == "native-candidate-observed" and
+                        record.get("mode") == "registered" and
+                        record.get("observedWorkloads") == record.get("referenceMatchedWorkloads") == 19 and
+                        len(record.get("workloads", [])) == 19,
+                        "native measurement record coverage/accounting drift")
+                require(record.get("nativeVerdictAuthority") is False and
+                        record.get("fullQualification") is False,
+                        "observer records do not grant native/performance authority")
+                continue
             expected = 0 if item["id"] == "native-full-count-rejected-20261026" else 19
             require(record.get("acceptedWorkloads") == expected and len(record.get("workloads", [])) == 19,
                     "native preparation acceptance/coverage drift")
 
     require(schema.get("$schema", "").endswith("2020-12/schema"), "JSON Schema draft")
     required = set(schema.get("required", []))
-    require({"attempts", "negativeControls", "qualification", "bundleSha256"} <= required,
+    require({"attempts", "runtimeProfile", "negativeControls", "qualification", "bundleSha256"} <= required,
             "portable result bundle fields")
+    policy = protocol["runtimePolicy"]
+    require(policy["profileRequired"] and policy["nativeQualificationStillRequired"] and
+            not policy["automaticProfileSelectionAllowed"] and not policy["profileMixingWithinCampaignAllowed"],
+            "explicit immutable native runtime profile policy")
+    require(policy["allowedProfiles"] == ["standard-v1", "large-vectors-v1"] and
+            policy["defaultProfile"] == "standard-v1" and
+            policy["compilerRuntimeAndBuildRecordArtifactsRequired"] and policy["all19ExecutableBindingsRequired"],
+            "native runtime profile identity and artifact policy")
     workloads = schema["properties"]["workloads"]
     require(workloads.get("minItems") == len(WORKLOADS), "manifest requires 19 workloads")
     require(schema["properties"]["attempts"].get("minItems", 0) >= 760,
