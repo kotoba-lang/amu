@@ -183,6 +183,13 @@ def main(args):
                          expected=1)
     if b"E7101" not in refused.stderr or (output / "effect.elf").exists():
         raise ValueError("undeclared effect was not refused without an artifact")
+    parameter = output / "parameter.kotoba"
+    parameter.write_text(checker.PARAMETER)
+    refused_parameter = native_run(producer, output, "compile", parameter.name,
+                                   "--target", checker.TARGET, "--output", "parameter.elf",
+                                   expected=1)
+    if b"E7102" not in refused_parameter.stderr or (output / "parameter.elf").exists():
+        raise ValueError("v1 parameter was not refused without an artifact")
     if (pin(compiler) != compiler_pin or pin(packager) != packager_pin
             or pin(MANIFEST) != manifest_pin or pin(USER_CHECK) != checker_pin
             or pin(output / "full-unity.kotoba") != unity
@@ -196,6 +203,7 @@ def main(args):
               "generations": rows, "fixedPointGeneration": len(rows),
               "userSource": pin(scalar), "userElf": pin(image),
               "effectSource": pin(effect), "undeclaredEffectRefused": True,
+              "parameterSource": pin(parameter), "parameterRefused": True,
               "guestExecution": False, "ItonamiTurn": False,
               "releaseAdmission": False, "linuxProcessInThisGate": False,
               "userVerifier": checker_pin, "observer": pin(Path(__file__))}
