@@ -87,6 +87,14 @@ def main() -> None:
     require(rejected_record.get("acceptedKotoba") == 0 and rejected_record.get("acceptedC") == 0,
             "rejected M1 acceptance drift")
     require(rejected_record.get("geometricMean") is None, "rejected M1 run cannot expose a geometric mean")
+    for item in evidence["evidence"]:
+        if item["id"].startswith("native-"):
+            require(item.get("ratioKotobaElapsedOverC") is None, "native preparation has no performance ratio")
+            record = load_from_repository(item["path"])
+            require(record.get("performanceQualified") is False, "native preparation is unqualified")
+            expected = 0 if item["id"] == "native-full-count-rejected-20261026" else 19
+            require(record.get("acceptedWorkloads") == expected and len(record.get("workloads", [])) == 19,
+                    "native preparation acceptance/coverage drift")
 
     require(schema.get("$schema", "").endswith("2020-12/schema"), "JSON Schema draft")
     required = set(schema.get("required", []))

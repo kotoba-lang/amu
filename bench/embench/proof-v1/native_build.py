@@ -38,7 +38,7 @@ def static_elf(path):
     return pin(path)
 
 
-def main(output):
+def main(output, iteration_profile="one-body"):
     if (platform.system(), platform.machine()) != ("Linux", "x86_64"):
         raise SystemExit("native Linux x86_64 host required; no emulation or legacy loader fallback")
     output.mkdir(mode=0o700, parents=True, exist_ok=False)
@@ -60,8 +60,8 @@ def main(output):
               "sources": {path: pin(REPO / path) for path in paths},
               "entry": pin(HERE / "native-entry.kotoba"),
               "compilerGenerations": [pin(compiler)], "calls": [], "workloads": [],
-              "iterations": 1, "performanceQualified": False,
-              "evidenceLimit": "one-body built-in correctness only; timing, independent accounting and process-trace gates pending"}
+              "iterationProfile": iteration_profile, "performanceQualified": False,
+              "evidenceLimit": "built-in correctness only; timing, independent accounting and process-trace gates pending"}
 
     def save():
         (output / "native-build.json").write_text(json.dumps(report, indent=2) + "\n")
@@ -115,6 +115,11 @@ def main(output):
     table = json.loads((PACKAGE / "round-sa-m104-20261015/expected/measured-images.json").read_text())
     if len(table) != 19:
         raise ValueError("complete 19-workload table required")
+    workload_rows = json.loads((PACKAGE / "round-sa-m104-20261015/workloads.json").read_text())
+    counts = {row["workload"]: row["n"] for row in workload_rows}
+    if set(counts) != set(table):
+        raise ValueError("registered workload counts differ from pinned source set")
+    report["iterationTable"] = pin(PACKAGE / "round-sa-m104-20261015/workloads.json")
     entry = (HERE / "native-entry.kotoba").read_bytes()
     for workload in sorted(table):
         original = PACKAGE / "ports" / f"official-{workload}.kotoba"
@@ -132,13 +137,15 @@ def main(output):
         source.parent.mkdir()
         # No original source/exports are edited; use the compiler's existing
         # locked module linker to import the workload into a distinct entry.
-        source.write_bytes(entry.replace(b"[embench.workload :as", b"[" + namespace[1] + b" :as"))
+        iterations = 1 if iteration_profile == "one-body" else counts[workload]
+        source.write_bytes(entry.replace(b"[embench.workload :as", b"[" + namespace[1] + b" :as").replace(
+            b"(workload/bench-verify 1)", f"(workload/bench-verify {iterations})".encode()))
         lock = output / f"{workload}.ksl"
         lock.write_text(f"KSL1\nentry {source}\nroot {source_root}\n" +
                         "".join(f"file {pin(path)['sha256']} {path}\n" for path in sorted((source, library))))
         image = output / f"{workload}.kx64"
         row = {"workload": workload, "originalSource": pin(original), "stagedSource": pin(library), "entrySource": pin(source),
-               "sourceLock": pin(lock), "accepted": False, "result": None}
+               "sourceLock": pin(lock), "iterations": iterations, "accepted": False, "result": None}
         report["workloads"].append(row)
         code, _, stderr = observe(workload + "-compile",
                                  [current, "compile", source, "--target", "x86_64-linux", "--output", image,
@@ -158,7 +165,7 @@ def main(output):
         row["image"] = pin(image)
         row["payload"] = pin(payload)
         code, stdout, stderr = observe(workload + "-run", [runner, payload, "0", "0", "x86_64", "-"],
-                                      {"PATH": "/nonexistent", "KEXE_ALLOW": "-", "KEXE_FUEL": "1000000000",
+                                      {"PATH": "/nonexistent", "KEXE_ALLOW": "-", "KEXE_FUEL": "1000000000000",
                                        "KEXE_CAP_RESOURCES_35": str(output),
                                        "KEXE_STRUCTURED_REPORT": "1", "KEXE_WALL_SECONDS": "30"}, timeout=45)
         values = re.findall(rb":result (-?[0-9]+)\b", stdout)
@@ -176,5 +183,6 @@ def main(output):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", required=True, type=Path)
+    parser.add_argument("--iteration-profile", choices=("one-body", "m104-counts"), default="one-body")
     args = parser.parse_args()
-    raise SystemExit(main(args.out.resolve()))
+    raise SystemExit(main(args.out.resolve(), args.iteration_profile))

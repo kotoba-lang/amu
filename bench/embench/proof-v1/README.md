@@ -48,6 +48,8 @@ path.  It remains historical evidence only.
   source-locked `kx64-v1` builds. `native-entry.kotoba` supplies the fixed entry.
   All original declarations and function bodies are retained. Every refusal,
   failure and raw process log remains in the output.
+* `verify_native_records.py` checks the retained native observations and process
+  trace. It preserves the failed full-count result as part of the record.
 
 Run the control-file gate from the repository root:
 
@@ -114,6 +116,7 @@ On an actual native Linux x86_64 host with this checkout, run:
 
 ```sh
 python3 bench/embench/proof-v1/native_build.py --out /absolute/path/to/new-observation-directory
+python3 bench/embench/proof-v1/native_build.py --iteration-profile m104-counts --out /absolute/path/to/another-new-directory
 ```
 
 The directory must not exist. The script uses only the pinned native compiler
@@ -128,6 +131,15 @@ benchmark/verify fuel and arena accounting, process-trace qualification,
 quiet-host timing, C comparator equivalence, or a performance score. All of
 those remain required before the pending native measurement gate can admit
 any result as claim-grade.
+
+The second command executes each workload's original registered M104 count.
+It retains the same fixed 30-second diagnostic wall budget per execution and
+a one-trillion-unit fuel budget; these are recorded through the pinned
+preparation source. A wall-budget refusal says that the probe did not complete
+within that bound. It does not establish an incorrect output or a C comparison.
+The native runtime's named arena refusal is recorded separately. Neither
+probe grants a proof-v1 aggregate. The complete native observations are in
+[`docs/evidence/embench-native-preparation-20261026/`](../../../docs/evidence/embench-native-preparation-20261026/).
 
 The bundle hash is SHA-256 over canonical compact JSON with a trailing newline
 and `bundleSha256` replaced by 64 zeroes. This makes the seal independently
