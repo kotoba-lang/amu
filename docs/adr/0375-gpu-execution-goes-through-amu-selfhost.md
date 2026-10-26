@@ -1,7 +1,8 @@
 # ADR-0375 -- GPU execution goes through Amu selfhost: a Kotoba loader, native drivers and WebGPU
 
 - Status: **accepted direction** (the owner, 2026-10-24). The owner set the
-  order the same day: B, then W, then C. Nothing here is implemented.
+  order the same day: B, then W, then C. Route B2's slice 1 is implemented
+  (JUN-377, below); nothing else here is.
 - Date: 2026-10-24
 - Amends: ADR 0374 (where GPU execution lives) and ADR 0371 (the provider
   route).
@@ -206,6 +207,46 @@ first target, and RADV adds libLLVM's closure. So step 1 above becomes:
 E1–E5 are changes to the seed (the compiler and runtime). Each slice that
 changes the seed regenerates and verifies the root, product, gate and
 controller pins, as #1522 did.
+
+### Slice 1: done (2026-10-24, JUN-377)
+
+The system `libvulkan.so.1` (1.3.275, Ubuntu 24.04) loads through the Kotoba loader on gad (RADV host), with no
+`ld.so` and no glibc in the process, and reports its instance version and instance extensions. Receipt:
+`docs/evidence/b2-slice1-libvulkan-20261024/`.
+
+**What was built.**
+* **The seed (PR 1, #1558, `--format b2`, seed module 98, context word 408 = 5).**
+  * **E1.** A guest function named `cx-NAME[-VERSION]` gets a SysV entry thunk, and the image carries a table of the
+    exports by name and glibc symbol version. The thunk maps the C arguments (six registers and the stack) onto up to 16
+    Kotoba parameters, sets r9 = the context, gives the callee its own fuel budget and restores the caller's meter,
+    and keeps the stack 16-aligned. `seed/X86_64-LINUX-ABI` has the exact bytes.
+  * **E2.** `kxrt-load16`, `kxrt-load32`, `kxrt-store16`, `kxrt-store32`.
+  * **E4, the TCB part,** needed no seed change: the program sets the FS base with `arch_prctl` and writes the TCB
+    (`fs:0` and `fs:0x10` = itself, a random canary at `fs:0x28`).
+  * Outgoing calls are `kxrt-ccall`, now admitted in this format.
+  * The program reaches the runtime only through `kxrt-b-` functions (E7101 otherwise). No sandbox is installed: the
+    loaded code's behavior is the process's behavior; the provider confines itself after device creation (Decision 5 of
+    ADR 0371). The static, runner and launcher outputs are byte-identical to before.
+* **The loader and libc subset (PR 2, `tools/b2`).** In Kotoba, about 1,700 lines plus 1,400 lines of tests:
+  * **The libc subset.** The 61 symbols libvulkan imports: 56 are exported by the image, 3 are weak references bound
+    to 0, `stderr` is a data object of the image, and `pow` is a stub that refuses by name (not reached).
+  * **The ELF loader.** It maps the segments file-backed (`/proc/self/maps` names the file), applies RELATIVE, 64,
+    GLOB_DAT and JUMP_SLOT relocations (123, 5 and 56 for libvulkan), resolves versioned symbols (versym, verneed),
+    and runs `DT_INIT` and `init_array`. It serves `dlopen`, `dlsym`, `dlerror` and `dlclose`, and binds every import
+    nothing implements to a stub that refuses by name.
+  * **No ICD.** `dlopen` answers only for an object already loaded, so the loader reads each ICD manifest and then
+    fails to open each driver.
+
+**Measured on gad.** The instance version is 1.3.275 and the four loader-provided instance extensions are
+`VK_EXT_debug_report`, `VK_EXT_debug_utils`, `VK_KHR_portability_enumeration` and `VK_LUNARG_direct_driver_loading`.
+These equal what the same two calls give through the system's own loader with the drivers hidden (the oracle, a
+comparison only). With `VK_LOADER_DEBUG`, the loader is seen reading eight manifests through the Kotoba `opendir`,
+`fopen`, `fread` and `sscanf`, and `dlopen` of each driver refusing by name.
+
+**What this does not show.** Slice 2's needs are untouched: TLS for libstdc++ and libgcc_s (E4 in full, `__tls_get_addr`,
+TPOFF/DTPMOD/DTPOFF), the C++ runtime's initialization and GNU_UNIQUE symbols, floating-point arguments (E5), loading
+a dependency from disk, and threads (E3: a context and a fuel word per thread). Everything that is not there refuses
+by name.
 
 ## Consequences
 

@@ -1,0 +1,102 @@
+REVIEW QUALIFICATION (2026-10-26; supersedes the interpretations below).
+The standalone +4 baseline was not realized by the two attempted constructions;
+this is not a proof of general impossibility. T(1), T(4) and T(16) are measured
+whole-loop totals. The attribution of C to overhead alone and of zero overhead
+to n=16 are model-dependent hypotheses, not independently measured costs.
+Reproducing the earlier n=16 total repeats the same overhead and cannot isolate
+it. The three-point saturation fit does not prove that model uniquely. Raw
+run-log.txt and microbench-sass.txt are unchanged. The instrument source is
+hash-attested but not committed; the disassembled cubin and executed binary
+were separate builds. No timing record or selector is promoted. See the revised
+ADR-0361 amendment for the accepted scope. The text below is historical reporting.
+
+oh-baseline table -- amu-gpu tick 2026-10-26, the OVERHEAD BASELINE row
+(JUN-57, ADR-0361 named item "a non-eliminated overhead baseline").
+Probe run on xavier sm_72 at 2026-10-26T13:00:56Z; v5 instrument
+(gpu-oh-baseline-microbench.cu sha256 a79ad8e952043710.., scratch,
+never staged); 3 launches x 128 threads; REPT=256 iterations; chain =
+straight dependent symbolic IMAD (mad.lo.u32 x = x*cm + c, c=3u, cm=7u
+from global memory); clock64() over the loop only. Every number in the
+MEASURED block is printed by the run (run-log.txt RESULT/ANCHOR lines);
+every number in the DERIVED block is arithmetic over those, marked.
+
+MEASURED (median of 128 samples; all three launches identical):
+
+arm     chain_n  realized loop body (VERIFIED, microbench-sass.txt)         median  cyc/iter_med  cyc/chainop_med
+oh_n1   1        {@!PT SHFL.IDX:1, IMAD:1, IADD3:1, ISETP.NE.AND:1, BRA:1}    6778      26.4766         26.4766
+oh_n4   4        {@!PT SHFL.IDX:1, IMAD:4, IADD3:1, ISETP.NE.AND:1, BRA:1}    6778      26.4766          6.6191
+oh_n16  16       {@!PT SHFL.IDX:1, IMAD:16, IADD3:1, ISETP.NE.AND:1, BRA:1}  18291      71.4492          4.4656
+
+sample statistics (identical in all three launches; 128 thread samples,
+lockstep -- one warp-group draw, not 128 independent samples):
+oh_n1  min=6776 p10=6776 median=6778 mean=6777.2 p90=6778 max=6778
+oh_n4  min=6776 p10=6776 median=6778 mean=6777.2 p90=6778 max=6778
+oh_n16 min=18290 p10=18290 median=18291 mean=18290.8 p90=18291 max=18291
+
+Named observation, not explained: oh_n1 and oh_n4 -- DIFFERENT realized
+bodies (5 vs 8 static instructions) -- produced IDENTICAL sample
+distributions (all six statistics equal). Same class as the thr row's
+thr_pp_imad/thr_fadd identity, there over same-shaped bodies; here the
+instruction counts differ.
+
+MEASURED (realizability probes, run-log.txt sections 1-2):
+probe A (explicit-PTX +4 spelling): REFUSED by ptxas -- 'Unknown symbol
+PT', 'Unknown symbol RZ' (x4), 'Predicate expression expected',
+'Arguments mismatch for instruction shfl'; diag-realiz-a.txt 741 bytes
+verbatim in run-log.txt. The landed @!PT SHFL.IDX PT, RZ, RZ, RZ, RZ is
+NOT spellable from PTX source (PTX has no PT/RZ registers).
+probe B (empty-body counter loops, counter anchored): constant trip (64)
+CLOSED-FORMED by ptxas -- zero loop instructions, exit counter is a
+constant `IMAD.MOV.U32 R8, RZ, RZ, 0x40`; symbolic trip (n from memory)
+kept loops but GROUPED iterations -- main loop .L_5 counts by 0x10 per
+branch (IADD3 R2,R2,-0x10 / IADD3 R4,R4,0x10 / ISETP.GT.AND / @P1 BRA)
+with by-4 (.L_3) and by-1 (.L_7) remainder peels. SASS verbatim in
+run-log.txt section 2. The @!PT SHFL.IDX barrier appears at function
+entry AND at every loop header of both probes -- ptxas-inserted, no PTX
+source (CONFIRMS the v3 hypothesis; the landed bodies' SHFL is likewise
+ptxas-inserted).
+CONSEQUENCE: a standalone body of the +4 alone is NOT REALIZABLE through
+this toolchain (both constructions REFUTED). The +4 can only be priced
+in context.
+
+DERIVED (arithmetic over the MEASURED medians, python3, printed in this
+table's construction):
+cyc/iter: T(1)=6778/256=26.4766  T(4)=6778/256=26.4766  T(16)=18291/256=71.4492
+ANCHOR CHECK -- each body's chain executed EXACTLY chain_n x 256 times
+(x = 3u; x := 7x+3 mod 2^32 per chain op; computed from the .cu
+semantics vs the printed ANCHOR):
+oh_n1  k=256  computed=2222224387 printed=2222224387 MATCH
+oh_n4  k=1024 computed=890359811  printed=890359811  MATCH
+oh_n16 k=4096 computed=138887171  printed=138887171  MATCH
+
+MODEL COMPARISON (the v5 design's named assumption, tested):
+(1) ADDITIVE INTERCEPT T(n) = n*L + OH -- REFUTED. T(4) - T(1) = 0.0000
+    where the additive model demands 3*L. Fitted over (T1, T16): L =
+    2.9982, OH = 23.4784; the fitted model PREDICTS T(4) = 35.4711
+    against measured 26.4766 -- misfit +8.9945 cyc/iter, and it
+    under-prices the n16 chain-op rate (2.9982 vs the latency row's
+    4.4657). One model, three refutations.
+(2) LATENCY-FLOOR / SATURATION T(n) = max(n*L, C) -- CONSISTENT at all
+    three points with L = 4.4656, C = 26.4766: n=1 -> max(4.4656,
+    26.4766) = 26.4766 = T(1) EXACT; n=4 -> max(17.8623, 26.4766) =
+    26.4766 = T(4) EXACT; n=16 -> max(71.4492, 26.4766) = 71.4492 =
+    T(16) EXACT. The consistency is DERIVED over measured points; the
+    model itself is a PROPOSED reading, not a measurement.
+
+CROSS-CHECKS (CONSUMED at their own commits, not re-measured):
+T(16)/16 = 4.4656 cyc/instr reproduces the latency row's straight-IMAD
+dependent-chain quote 4.4656 (and brackets its ping-pong 4.4658) to the
+printed precision -- the n=16 arm replicates that arm's construction
+(REP=256, same 16-IMAD straight chain). Under reading (2) that quote is
+the pure chain cost L with the +4 body FULLY HIDDEN in the chain's
+shadow at n=16 -- which is why the latency row's quotes carried no
+visible overhead inflation.
+
+WHAT THE +4 COSTS, operationally: C = 26.4766 cyc/iter is the measured
+per-iteration cost of the landed +4 loop-close body ({@!PT SHFL.IDX,
+counter IADD3, ISETP.NE.AND, @P0 BRA}) in context with the chain in its
+shadow (T(1) = T(4) = C exactly). NAMED NOT HIDDEN: C's INTERNAL
+composition (which of the 4 instructions, or the taken-branch redirect,
+carries the 26.4766) is UNMEASURED -- per-phase instrumentation, its own
+row; ~6.6 cyc per overhead instruction if flat, but the flatness is not
+measured either.

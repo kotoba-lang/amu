@@ -1,0 +1,35 @@
+;; tools/b2/70-init.kotoba -- the start-up of a B2 program that uses this libc subset (ADR 0375, JUN-377): the process
+;; state the libc functions read (argc, argv, envp), the standard streams, the thread control block and the
+;; fault reporter. A program calls (b2-init) first.
+;;
+;; argv for the loaded object's initializers is the program's own: the program name first, as the dynamic
+;; linker passes it (kxrt-b-argv excludes the name, so the vector starts one word below it).
+
+(defn- b2-init [] :i64
+  (let [argc (kxrt-b-argc) argv (kxrt-b-argv)
+        a (st! ST-ARGC (inc argc)) b (st! ST-ARGV (- argv 8)) c (st! ST-ENVP (kxrt-b-envp))
+        d (file-init) e (tcb-init) f (fault-install)]
+    0))
+
+
+;; the lines of /proc/self/maps that name `needle`, to stdout (the proof that the segments are file-backed)
+(defn- line-has? [p :i64 n :i64 needle :string] :bool
+  (let [k (string-length needle)]
+    (loop [i 0]
+      (cond (> (+ i k) n) false
+            (loop [j 0] (cond (= j k) true (= (l8 (+ p i j)) (string-code-point-at needle j)) (recur (inc j)) :else false)) true
+            :else (recur (inc i))))))
+(defn- show-maps [needle :string] :i64
+  (let [buf (malloc-alloc 262144) fd (sys4 SYS-OPENAT AT-FDCWD (st-str "/proc/self/maps") 524288 0)
+        n (if (< fd 0) 0 (let [r (sys3 SYS-READ fd buf 262143)] (if (< r 0) 0 r)))
+        c (sys1 SYS-CLOSE fd)]
+    (loop [i 0 start 0 shown 0]
+      (cond (>= i n) (let [z (malloc-free buf)] shown)
+            (= (l8 (+ buf i)) 10)
+              (let [hit (line-has? (+ buf start) (- i start) needle)
+                    w (if hit (say (string-concat "maps " (str-at (+ buf start) (- i start)))) 0)]
+                (recur (inc i) (inc i) (if hit (inc shown) shown)))
+            :else (recur (inc i) start shown)))))
+;; a C string for a literal, in the message scratch
+(defn- st-str [s :string] :i64 (let [m (+ (kxrt-b-state) 24576) z (put-str m s)] m))
+

@@ -1,0 +1,267 @@
+;; tools/b2/10-string.kotoba -- the string, ctype and strtol part of the libc subset of route B2 (ADR 0375, JUN-377).
+;;
+;; Exports (cx-NAME-VERSION, the symbol and glibc version the system libvulkan.so.1 imports): memset memcpy
+;; memmove strlen strcmp strncmp strchr strrchr strstr strncpy strncat strcspn strtok_r, the fortified
+;; __memcpy_chk __memset_chk __strncpy_chk __strcat_chk __strncat_chk, __ctype_tolower_loc and
+;; __isoc23_strtol. Everything is byte-oriented, locale C, with the C semantics of glibc.
+;;
+;; There is no errno in this libc. __isoc23_strtol therefore sets none: an overflow saturates to
+;; LONG_MAX / LONG_MIN and cannot be told apart from the exact value by the caller. A base outside
+;; 0 and 2..36 (glibc: EINVAL, return 0) is refused, since the caller could not learn of it.
+;; A fortified call that would write more than the destination size is refused ("buffer overflow
+;; detected", exit 127), as __chk_fail aborts in glibc. A size_t of 2^63 or more given to memset,
+;; memcpy, memmove or the padding of strncpy cannot be a valid length and is refused.
+;;
+;; State area: this file owns bytes 4096..8191 of (kxrt-b-state). The files of other slices must not use them.
+
+(def str-ST-CTYPE-TAB 4096)   ;; 384 int32 entries (index -128..255), 1536 bytes: 4096..5631
+(def str-ST-CTYPE-CELL 5632)  ;; the cell __ctype_tolower_loc returns: a pointer to entry 0 of the table (4096 + 1536 <= 5632)
+(def str-ST-CTYPE-FLAG 5640)  ;; 1 when the table is filled
+(def str-ST-STRTOL-END 5648)  ;; scratch for the end pointer when the caller passes a NULL endptr
+(def str-LONG-MAX 0x7FFFFFFFFFFFFFFF)
+(def str-LONG-MIN -9223372036854775808)
+
+;; ---- helpers -----------------------------------------------------------------------------------------
+;; a < b as unsigned 64-bit numbers
+(defn- str-ult [a :i64 b :i64] :bool (< (bit-xor a str-LONG-MIN) (bit-xor b str-LONG-MIN)))
+
+;; a length of 2^63 or more cannot be valid
+(defn- str-size [n :i64 what :string] :i64
+  (if (< n 0) (refuse what "size exceeds the address space") n))
+
+;; n copies of the byte b at d; d
+(defn- str-fill [d :i64 b :i64 n :i64] :i64
+  (let [bb (bit-and b 255)
+        w (* bb 0x0101010101010101)
+        m (str-size n "memset")
+        k (loop [i 0] (if (> (+ i 8) m) i (let [z (s64 (+ d i) w)] (recur (+ i 8)))))
+        r (loop [j k] (if (>= j m) 0 (let [z (s8 (+ d j) bb)] (recur (inc j)))))]
+    d))
+
+;; n bytes from s to d, first byte first (right for d below s, or no overlap); d
+(defn- str-copy-fwd [d :i64 s :i64 n :i64] :i64
+  (let [m (str-size n "memcpy")
+        k (loop [i 0] (if (> (+ i 8) m) i (let [z (s64 (+ d i) (l64 (+ s i)))] (recur (+ i 8)))))
+        r (loop [j k] (if (>= j m) 0 (let [z (s8 (+ d j) (l8 (+ s j)))] (recur (inc j)))))]
+    d))
+
+;; n bytes from s to d, last byte first (right for d above s); d
+(defn- str-copy-bwd [d :i64 s :i64 n :i64] :i64
+  (let [m (str-size n "memmove")
+        k (loop [i m] (if (< i 8) i (let [z (s64 (+ d (- i 8)) (l64 (+ s (- i 8))))] (recur (- i 8)))))
+        r (loop [j k] (if (<= j 0) 0 (let [z (s8 (+ d (dec j)) (l8 (+ s (dec j))))] (recur (dec j)))))]
+    d))
+
+;; the number of bytes of s before its NUL, at most n (n unsigned: -1 is no limit)
+(defn- str-strnlen [s :i64 n :i64] :i64
+  (loop [i 0]
+    (cond (not (str-ult i n)) i
+          (= (l8 (+ s i)) 0) i
+          :else (recur (inc i)))))
+
+;; the byte c (not 0) occurs in the C string cs
+(defn- str-in-set? [cs :i64 c :i64] :bool
+  (loop [q cs] (let [x (l8 q)] (cond (= x 0) false (= x c) true :else (recur (inc q))))))
+
+;; strspn: the length of the initial run of bytes of s that are in cs
+(defn- str-spn [s :i64 cs :i64] :i64
+  (loop [i 0] (let [x (l8 (+ s i))] (if (and (not= x 0) (str-in-set? cs x)) (recur (inc i)) i))))
+
+;; strcspn: the length of the initial run of bytes of s that are not in cs
+(defn- str-cspn [s :i64 cs :i64] :i64
+  (loop [i 0] (let [x (l8 (+ s i))] (if (or (= x 0) (str-in-set? cs x)) i (recur (inc i))))))
+
+;; the C string nd is a prefix of the C string p
+(defn- str-prefix? [p :i64 nd :i64] :bool
+  (loop [i 0]
+    (let [y (l8 (+ nd i))]
+      (cond (= y 0) true
+            (not= y (l8 (+ p i))) false
+            :else (recur (inc i))))))
+
+;; a fortified call writing need bytes into a destination of have bytes (have unsigned: -1 is unknown)
+(defn- str-chk [what :string need :i64 have :i64] :i64
+  (if (str-ult have need) (refuse "buffer overflow detected" what) 0))
+
+;; strncpy: copy at most n bytes of s, pad with NULs up to n; d
+(defn- str-strncpy [d :i64 s :i64 n :i64] :i64
+  (let [len (str-strnlen s n)
+        a (str-copy-fwd d s len)
+        b (if (str-ult len n) (str-fill (+ d len) 0 (- n len)) 0)]
+    d))
+
+;; strncat: append at most n bytes of s to d, then a NUL; d
+(defn- str-strncat [d :i64 s :i64 n :i64] :i64
+  (let [dl (c-strlen d)
+        sl (str-strnlen s n)
+        a (str-copy-fwd (+ d dl) s sl)
+        b (s8 (+ d (+ dl sl)) 0)]
+    d))
+
+;; ---- memory ---------------------------------------------------------------------------------------------
+(defn- cx-memset-GLIBC_2.2.5 [s :i64 c :i64 n :i64] :i64 (str-fill s c n))
+(defn- cx-memcpy-GLIBC_2.14 [d :i64 s :i64 n :i64] :i64 (str-copy-fwd d s n))
+(defn- cx-memmove-GLIBC_2.2.5 [d :i64 s :i64 n :i64] :i64
+  (cond (< d s) (str-copy-fwd d s n)
+        (= d s) d
+        :else (str-copy-bwd d s n)))
+
+;; ---- strings ----------------------------------------------------------------------------------------------
+(defn- cx-strlen-GLIBC_2.2.5 [s :i64] :i64 (c-strlen s))
+
+;; the unsigned bytes decide; the result is the difference of the first differing pair
+(defn- cx-strcmp-GLIBC_2.2.5 [a :i64 b :i64] :i64
+  (loop [i 0]
+    (let [x (l8 (+ a i)) y (l8 (+ b i))]
+      (cond (not= x y) (- x y)
+            (= x 0) 0
+            :else (recur (inc i))))))
+
+(defn- cx-strncmp-GLIBC_2.2.5 [a :i64 b :i64 n :i64] :i64
+  (loop [i 0]
+    (if (not (str-ult i n)) 0
+      (let [x (l8 (+ a i)) y (l8 (+ b i))]
+        (cond (not= x y) (- x y)
+              (= x 0) 0
+              :else (recur (inc i)))))))
+
+;; the terminating NUL is part of the string: strchr(s, 0) is the end
+(defn- cx-strchr-GLIBC_2.2.5 [s :i64 c :i64] :i64
+  (let [ch (bit-and c 255)]
+    (loop [p s]
+      (let [x (l8 p)]
+        (cond (= x ch) p
+              (= x 0) 0
+              :else (recur (inc p)))))))
+
+(defn- cx-strrchr-GLIBC_2.2.5 [s :i64 c :i64] :i64
+  (let [ch (bit-and c 255)]
+    (loop [p s lastp 0]
+      (let [x (l8 p) hit (if (= x ch) p lastp)]
+        (if (= x 0) hit (recur (inc p) hit))))))
+
+(defn- cx-strstr-GLIBC_2.2.5 [h :i64 nd :i64] :i64
+  (if (= (l8 nd) 0) h
+    (loop [p h]
+      (cond (= (l8 p) 0) 0
+            (str-prefix? p nd) p
+            :else (recur (inc p))))))
+
+(defn- cx-strncpy-GLIBC_2.2.5 [d :i64 s :i64 n :i64] :i64 (str-strncpy d s n))
+(defn- cx-strncat-GLIBC_2.2.5 [d :i64 s :i64 n :i64] :i64 (str-strncat d s n))
+(defn- cx-strcspn-GLIBC_2.2.5 [s :i64 reject :i64] :i64 (str-cspn s reject))
+
+;; strtok_r as in glibc: a NULL s continues from *saveptr; leading delimiters are skipped; the token is
+;; ended by overwriting its delimiter with NUL; *saveptr is left after it (at the end when there is no more)
+(defn- cx-strtok_r-GLIBC_2.2.5 [s0 :i64 delim :i64 save :i64] :i64
+  (let [s (if (= s0 0) (l64 save) s0)
+        z (if (= s 0) (refuse "strtok_r" "no string to continue from") 0)]
+    (if (= (l8 s) 0)
+      (let [w (s64 save s)] 0)
+      (let [b (+ s (str-spn s delim))]
+        (if (= (l8 b) 0)
+          (let [w (s64 save b)] 0)
+          (let [e (+ b (str-cspn b delim))]
+            (if (= (l8 e) 0)
+              (let [w (s64 save e)] b)
+              (let [w1 (s8 e 0) w2 (s64 save (inc e))] b))))))))
+
+;; ---- fortified variants ----------------------------------------------------------------------------
+(defn- cx-__memcpy_chk-GLIBC_2.3.4 [d :i64 s :i64 n :i64 dstlen :i64] :i64
+  (let [c (str-chk "__memcpy_chk" n dstlen)] (str-copy-fwd d s n)))
+
+(defn- cx-__memset_chk-GLIBC_2.3.4 [s :i64 c :i64 n :i64 dstlen :i64] :i64
+  (let [k (str-chk "__memset_chk" n dstlen)] (str-fill s c n)))
+
+;; strncpy writes exactly n bytes
+(defn- cx-__strncpy_chk-GLIBC_2.3.4 [d :i64 s :i64 n :i64 dstlen :i64] :i64
+  (let [k (str-chk "__strncpy_chk" n dstlen)] (str-strncpy d s n)))
+
+;; strcat writes the whole of s and its NUL after the string at d
+(defn- cx-__strcat_chk-GLIBC_2.3.4 [d :i64 s :i64 dstlen :i64] :i64
+  (let [dl (c-strlen d)
+        sl (c-strlen s)
+        k (str-chk "__strcat_chk" (+ dl (+ sl 1)) dstlen)
+        a (str-copy-fwd (+ d dl) s (inc sl))]
+    d))
+
+;; strncat writes the string at d, the appended bytes (at most n, fewer when s is shorter) and a NUL
+(defn- cx-__strncat_chk-GLIBC_2.3.4 [d :i64 s :i64 n :i64 dstlen :i64] :i64
+  (let [dl (c-strlen d)
+        sl (str-strnlen s n)
+        k (str-chk "__strncat_chk" (+ dl (+ sl 1)) dstlen)]
+    (str-strncat d s n)))
+
+;; ---- ctype ----------------------------------------------------------------------------------------------
+;; glibc's C-locale tolower table: entry i (-128..255) is tolower(i & 255); only A..Z change
+(defn- str-ctype-init [] :i64
+  (let [tab (+ (kxrt-b-state) str-ST-CTYPE-TAB)
+        z (loop [k 0]
+            (if (>= k 384) 0
+              (let [c (bit-and (- k 128) 255)
+                    v (if (and (>= c 65) (<= c 90)) (+ c 32) c)
+                    w (s32 (+ tab (* 4 k)) v)]
+                (recur (inc k)))))
+        cell (s64 (+ (kxrt-b-state) str-ST-CTYPE-CELL) (+ tab 512))
+        flag (st! str-ST-CTYPE-FLAG 1)]
+    0))
+
+;; the address of a cell holding a pointer to entry 0 of the table
+(defn- cx-__ctype_tolower_loc-GLIBC_2.3 [] :i64
+  (let [z (if (= (st str-ST-CTYPE-FLAG) 0) (str-ctype-init) 0)]
+    (+ (kxrt-b-state) str-ST-CTYPE-CELL)))
+
+;; ---- strtol ---------------------------------------------------------------------------------------------
+(defn- str-space? [c :i64] :bool (or (= c 32) (and (>= c 9) (<= c 13))))
+
+(defn- str-skip-space [p :i64] :i64
+  (loop [q p] (if (str-space? (l8 q)) (recur (inc q)) q)))
+
+;; the value of the digit byte c (0-9, a-z, A-Z), or 99 when c is none of them
+(defn- str-digit [c :i64] :i64
+  (cond (and (>= c 48) (<= c 57)) (- c 48)
+        (and (>= c 97) (<= c 122)) (- c 87)
+        (and (>= c 65) (<= c 90)) (- c 55)
+        :else 99))
+
+;; The digits from s in base b (2..36). The magnitude accumulates as a negative number, so that LONG_MIN
+;; is reachable without an unsigned type; limit is the most negative value allowed. *ep gets the end
+;; of the number; with no digit it gets the byte of the 0x / 0b prefix when pfx is 1 (glibc: "0x" followed by
+;; no digit is the number 0 ending at the x), else nptr. Returns the value, saturated on overflow.
+(defn- str-strtol-digits [s :i64 b :i64 neg :i64 ep :i64 nptr :i64 pfx :i64] :i64
+  (let [limit (if (= neg 1) str-LONG-MIN (- 0 str-LONG-MAX))
+        cutoff (quot limit b)
+        cutlim (- 0 (rem limit b))]
+    (loop [p s acc 0 ovf 0]
+      (let [d (str-digit (l8 p))]
+        (cond (>= d b)
+              (if (= p s)
+                (let [w (s64 ep (if (= pfx 1) (dec s) nptr))] 0)
+                (let [w (s64 ep p)]
+                  (cond (= ovf 1) (if (= neg 1) str-LONG-MIN str-LONG-MAX)
+                        (= neg 1) acc
+                        :else (- 0 acc))))
+              (= ovf 1) (recur (inc p) acc 1)
+              (or (< acc cutoff) (and (= acc cutoff) (> d cutlim))) (recur (inc p) acc 1)
+              :else (recur (inc p) (- (* acc b) d) 0))))))
+
+;; strtol of the C23 family: base 0 also knows 0b / 0B (binary); base 2 accepts the prefix too
+(defn- cx-__isoc23_strtol-GLIBC_2.38 [nptr :i64 endptr :i64 base0 :i64] :i64
+  (let [base (i32 base0)
+        ep (if (= endptr 0) (+ (kxrt-b-state) str-ST-STRTOL-END) endptr)
+        z (if (or (< base 0) (or (= base 1) (> base 36))) (refuse "__isoc23_strtol" "invalid base (EINVAL; there is no errno)") 0)
+        p0 (str-skip-space nptr)
+        c0 (l8 p0)
+        neg (if (= c0 45) 1 0)
+        p1 (if (or (= c0 45) (= c0 43)) (inc p0) p0)
+        zero (if (= (l8 p1) 48) 1 0)
+        c1 (bit-or (l8 (+ p1 1)) 32)
+        hex (if (and (= zero 1) (and (or (= base 0) (= base 16)) (= c1 120))) 1 0)
+        bin (if (and (= zero 1) (and (= hex 0) (and (or (= base 0) (= base 2)) (= c1 98)))) 1 0)
+        pfx (bit-or hex bin)
+        s (if (= pfx 1) (+ p1 2) p1)
+        b (cond (= hex 1) 16
+                (= bin 1) 2
+                (= base 0) (if (= zero 1) 8 10)
+                :else base)]
+    (str-strtol-digits s b neg ep nptr pfx)))
