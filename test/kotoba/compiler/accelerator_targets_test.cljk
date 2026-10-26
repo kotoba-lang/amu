@@ -395,7 +395,13 @@
   ;; `string-find-byte` per field boundary (the dot1 precedent), so a long
   ;; alternate key resolves within the budget (MEASURED BEFORE: a 200-byte
   ;; alternate trapped host/stack-exhausted in the per-byte walks,
-  ;; docs/evidence/gpu/w3-alt-key-field-walk-20261026.txt).
+  ;; docs/evidence/gpu/w3-alt-key-field-walk-20261026.txt). The field
+  ;; walks iterate through ONE loop/recur each (the alt-loop row
+  ;; 2026-10-26): the replaced per-field SELF-CALLs took one frame per
+  ;; '|'-field and TRAPped at 32+ fields (MEASURED BEFORE: budget/frames,
+  ;; af-em and ah-miss host/stack-exhausted in one spelling -- every cell
+  ;; resolved through 28 fields,
+  ;; docs/evidence/gpu/w3-alt-key-loop-20261026.txt).
   (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
         arms (str/join "\n" (filter some? (map #(extract-balanced src %)
                                  ["(defn- substr-hits"
@@ -468,7 +474,47 @@
             "the second field after a long first field")
         (is (false? (hit "xy" "x" (str lg "|"))) "a trailing pipe must not widen the key")
         (is (true? (hit (str "y" lg) "y" (str "|" lg))) "a leading empty field is skipped")
-        (is (false? (hit "x" "x" (str "|" lg))) "a bare fragment is not a set")))))
+        (is (false? (hit "x" "x" (str "|" lg))) "a bare fragment is not a set")))
+    (testing "the '|'-field walks are ONE loop each, not a self-call (the alt-loop row 2026-10-26)"
+      ;; The alt-key row's named O(FIELDS) FRAME residual is CLOSED: the
+      ;; replaced walks took one interpreter frame per '|'-field and
+      ;; TRAPped at 32+ fields (MEASURED BEFORE on this runtime,
+      ;; docs/evidence/gpu/w3-alt-key-loop-20261026.txt -- the go/no-go
+      ;; run taken BEFORE the fix).
+      (is (= 1 (count (re-seq #"\(loop \[" (extract-balanced src "(defn- alt-field?"))))
+          "alt-field? iterates through exactly one loop")
+      (is (= 1 (count (re-seq #"\(recur " (extract-balanced src "(defn- alt-field?"))))
+          "alt-field? has exactly one recur")
+      (is (not (str/includes? (extract-balanced src "(defn- alt-field?") "(alt-field? "))
+          "the per-field self-call is gone from alt-field?")
+      (is (= 1 (count (re-seq #"\(loop \[" (extract-balanced src "(defn- alt-any-hits"))))
+          "alt-any-hits iterates through exactly one loop")
+      (is (= 1 (count (re-seq #"\(recur " (extract-balanced src "(defn- alt-any-hits"))))
+          "alt-any-hits has exactly one recur")
+      (is (not (str/includes? (extract-balanced src "(defn- alt-any-hits") "(alt-any-hits "))
+          "the per-field self-call is gone from alt-any-hits")
+      (is (str/includes? (extract-balanced src "(defn- alt-any-hits") "(+ j 1)")
+          "the advance keeps its past-the-boundary shape (now the recur arg)")
+      (is (str/includes? (extract-balanced src "(defn- alt-field?") "(alt-end alts i n)")
+          "alt-field? keeps one alt-end per field boundary")
+      (is (str/includes? (extract-balanced src "(defn- alt-any-hits") "(alt-end alts i n)")
+          "alt-any-hits keeps one alt-end per field boundary"))
+    (testing "many-field keys resolve within the budget, host-equal"
+      ;; MEASURED BEFORE on this runtime: every one of these cells TRAPped
+      ;; (budget/frames / host/stack-exhausted) at 32+ fields
+      ;; (docs/evidence/gpu/w3-alt-key-loop-20261026.txt). The FUEL
+      ;; residual is named and measure-only (never pinned here): the
+      ;; alt-any-hits path charges two entries per non-empty field and
+      ;; TRAPs budget/fuel at 256+ fields on the 512-entry default -- the
+      ;; table's keys carry 3 fields today.
+      (let [za (fn [k] (str/join "|" (concat (repeat (dec k) "z") ["a"])))
+            em (fn [k] (apply str (repeat (dec k) "|")))]
+        (is (false? (hit "x" "x" (za 40))) "a 40-field key that misses answers false")
+        (is (true? (hit "xa" "x" (za 40))) "the 40th field still completes its set")
+        (is (true? (hit "x" "x" (em 40))) "40 empty fields are still no alternates")
+        (is (false? (hit "x" "x" (za 128))) "a 128-field key that misses answers false")
+        (is (true? (hit "xa" "x" (za 128))) "the 128th field still completes its set")
+        (is (true? (hit "x" "x" (em 128))) "128 empty fields are still no alternates")))))
 
 (deftest w3-recommend-named-devices-resolve-on-full-names
   ;; The whole W3 dispatch chain (classify-vendor / key-hits / recommend) on
@@ -685,12 +731,18 @@
   ;; (the alt-key row 2026-10-26: alt-end is one `string-find-byte` per
   ;; field boundary, so a long alternate key resolves in budget -- MEASURED
   ;; BEFORE: a 200-byte alternate trapped host/stack-exhausted in the
-  ;; per-byte walks, docs/evidence/gpu/w3-alt-key-field-walk-20261026.txt).
-  ;; Still named: the field walk is O(FIELDS) frames -- a hypothetical key
-  ;; with very many '|'-fields can still reach the budget (fail-closed;
-  ;; probed in the boundary sweep, never pinned -- trap boundaries are
-  ;; state-dependent) -- and the digit taxonomy (ok|out-of-range = digits)
-  ;; is PROBED on an adversarial set, not proven.
+  ;; per-byte walks, docs/evidence/gpu/w3-alt-key-field-walk-20261026.txt),
+  ;; and the field walk's O(FIELDS) FRAME residual is CLOSED (the alt-loop
+  ;; row 2026-10-26: alt-field?/alt-any-hits iterate through ONE
+  ;; loop/recur each -- MEASURED BEFORE: every cell at 32+ fields TRAPped
+  ;; budget/frames / host/stack-exhausted,
+  ;; docs/evidence/gpu/w3-alt-key-loop-20261026.txt). Still named: the
+  ;; field walk's FUEL residual (one alt-end entry per field, the
+  ;; alt-any-hits path two entries per non-empty field -- a hypothetical
+  ;; key with very many '|'-fields can still reach the 512-entry fuel
+  ;; default, measure-only, never pinned) -- and the digit taxonomy
+  ;; (ok|out-of-range = digits) is PROBED on an adversarial set, not
+  ;; proven.
   (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
         arms (str/join "\n" (map #(extract-balanced src %)
                                  ["(defn- none?" "(defn- string->i64"

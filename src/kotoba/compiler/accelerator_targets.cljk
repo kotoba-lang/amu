@@ -139,10 +139,11 @@
 ;; possible answer was already null (a boundary found at k >= 3 can never
 ;; end at k = 3), so every previously resolving input answers the same
 ;; bytes -- and the walk is now <= 4 iterations: CONSTANT frames and flat
-;; fuel at ANY pipe count. RESIDUAL, NAMED (unchanged): the uB5G alt-key
-;; field walk (alt-field?/alt-any-hits) is still O(FIELDS) frames --
-;; bounded by the table's own key strings (3 fields today), unreachable
-;; from the wire; its own row if it ever matters.
+;; fuel at ANY pipe count. RESIDUAL, NAMED (as landed): the uB5G
+;; alt-key field walk (alt-field?/alt-any-hits) was O(FIELDS) frames
+;; here -- closed the same day by the alt-loop row (below); its named
+;; FUEL residual stays, bounded by the table's own key strings (3 fields
+;; today), unreachable from the wire.
 #?(:kotoba
    (defn- split4 [s :string start :i64 i :i64 n :i64 k :i64 acc :document] :document
      (let [p (string-index-of-from s "|" i)]
@@ -262,24 +263,47 @@
 ;; exact shape). The empty-field skip is load-bearing: substr-hits answers
 ;; TRUE for an empty needle (pinned above), so a field is tested only when
 ;; i < j.
-;; RESIDUAL, NAMED: the field walk is O(FIELDS) frames -- a hypothetical
-;; key with very many '|'-fields can still reach the budget (fail-closed;
-;; probed in the boundary sweep of the row's evidence; its own row if it
-;; ever matters).
+;; The alt-loop row (2026-10-26): alt-field? and alt-any-hits iterate
+;; through ONE `loop`/`recur` each (the __kotoba_loop_N trampoline's
+;; zero-charge self-tail re-entry, the sg-ops-walk loop precedent) where
+;; each was an ordinary `defn-` SELF-CALL taking one interpreter frame
+;; per '|'-FIELD -- the alt-key row's O(FIELDS) frame residual (above),
+;; closed. GO/NO-GO GROUND (w3_altloop_gonogo.txt, real run BEFORE this
+;; fix was written into src): the class is present on the walk itself --
+;; at 32 fields every probe cell TRAPped (budget/frames; af-em and
+;; ah-miss spelled host/stack-exhausted in one position) on BOTH arms
+;; while HOST answered the fact for every cell; every cell resolved
+;; through 28 fields. CONTRACTS UNCHANGED, pinned: alt-field? answers
+;; true iff SOME field is non-empty (false on all-empty and empty keys);
+;; alt-any-hits answers true iff some NON-EMPTY field's substring hits
+;; part (empty fields skip -- substr-hits answers TRUE for an empty
+;; needle, pinned above); the advance is still past the boundary
+;; (+ j 1), one alt-end per boundary. RESIDUAL, NAMED (measure-only):
+;; the loop removes FRAMES, not FUEL -- one alt-end entry per field
+;; (plus one substr-hits entry per non-empty field in alt-any-hits)
+;; still charges fuel against the 512-entry default
+;; (kotoba.compiler.limits :profile/reference), so a hypothetical
+;; many-field key can still reach the FUEL budget (the row's probe
+;; boundary sweep, measure-only, never pinned) and the loop helper's
+;; own boundary is state-dependent (the sg-ops-walk precedent) --
+;; both bounded by the table's own key strings (3 fields today),
+;; unreachable from the wire.
 #?(:kotoba
    (defn- alt-end [s :string i :i64 n :i64] :i64
      (if (>= i n) n (let [p (string-find-byte s 124 i)] (if (< p 0) n p)))))
 #?(:kotoba
    (defn- alt-field? [alts :string i :i64 n :i64] :bool
-     (if (>= i n) false (let [j (alt-end alts i n)] (if (< i j) true (alt-field? alts (+ j 1) n))))))
+     (loop [i i]
+       (if (>= i n) false (let [j (alt-end alts i n)] (if (< i j) true (recur (+ j 1))))))))
 #?(:kotoba
    (defn- alt-any-hits [part :string alts :string i :i64 n :i64] :bool
-     (if (>= i n)
-       false
-       (let [j (alt-end alts i n)]
-         (if (and (< i j) (substr-hits part (string-substring alts i j)))
-           true
-           (alt-any-hits part alts (+ j 1) n))))))
+     (loop [i i]
+       (if (>= i n)
+         false
+         (let [j (alt-end alts i n)]
+           (if (and (< i j) (substr-hits part (string-substring alts i j)))
+             true
+             (recur (+ j 1))))))))
 #?(:kotoba
    (defn- key-hits [part :string frag :string alts :string] :bool
      (if (substr-hits part frag)
