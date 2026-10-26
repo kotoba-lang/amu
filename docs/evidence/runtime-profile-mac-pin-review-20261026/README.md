@@ -31,3 +31,12 @@ The first-files path-filter limitation is tracked in JUN-358. The current
 review requires explicit fixed-head Mac/native cross results, not an absent
 registered check. Kit execution, agent/model semantics, release and physical
 hardware remain unqualified.
+
+After merging main's reviewed QMP change, the same source-bound native Mac
+compiler also refused undeclared/declared `llm/generate` attempts with
+E2115/E2004 and no ELF. `mac-kit-refusals-current.json` records that current
+observer result. Both QMP pipe and benchmark-staging preflight controls are
+retained when resolving the shared workflow conflict. The Mac workflow also
+tracks the shared native workflow path so this evidence-heavy profile change
+starts its Mac checks automatically; a general complete-path selector remains
+tracked in JUN-358.
