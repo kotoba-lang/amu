@@ -27,17 +27,20 @@
             phase (vector-assoc! A 5 1) R (typed-list-new [:list :string])
             H (vector-alloc (+ n (* 2 dc-nodes n))) T (dcs-templates M S A C R H)
             total (dcs-factorial n)
+            ;; Preserve the original all-rank n1..4 and six-rank SCC8 pairs.
+            ;; New n5..7 families also sample full-payload render pairs; every
+            ;; family still compares root rank with the ALL-permutation minimum.
             pairs (if (not= (vector-count C) n) false
               (loop [i 0]
-                (if (= i (if (= n 8) 6 total)) true
-                  (let [rank (if (not= n 8) i
-                               (cond (= i 0) 0 (= i 1) 1 (= i 2) 20159
-                                     (= i 3) 20160 (= i 4) 40318 :else 40319))]
+                (if (= i (if (> n 4) 6 total)) true
+                  (let [rank (if (<= n 4) i
+                               (cond (= i 0) 0 (= i 1) 1 (= i 2) (dec (quot total 2))
+                                     (= i 3) (quot total 2) (= i 4) (- total 2) :else (dec total)))]
                     (and (dce-pair M S A C T H rank 0)
                          (dce-pair M S A C T H rank (dec total)) (recur (inc i)))))))
-            best (dcs-best-prefix A C T H)]
-        (and (= (vector-at A 0) 0) pairs
-          (or (= n 8) (= best (dcs-best M S A C R))))))))
+            best (dcs-best-prefix A C T H) root-best (dcs-best-root A C T H)]
+        (and (= (vector-at A 0) 0) pairs (= root-best best)
+          (or (> n 5) (= best (dcs-best M S A C R))))))))
 (defn- dce-version [S :string name :string nested :string expected :i64] :bool
   (arena-scope
     (let [M (rd-run (lx-run (mem-set (mem-new) MM-SRC-LEN (string-length S)) S) S)

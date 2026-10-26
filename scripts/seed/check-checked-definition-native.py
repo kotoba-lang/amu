@@ -201,6 +201,38 @@ def main(compiler, out, benchmark_scc=False):
         p.write_text(module([function(chr(97 + i), "(if (= x 0) 1 (" + chr(97 + (i - 1) % n) +
                                       " (- x 1)))") for i in range(n)]))
         assert run("equivalence-ties-" + str(n), [producer, "equivalence", p]) == "PASS_NATIVE_SCC_EQUIVALENCE\n"
+    # Compare the fixed-root minimum/rank with the unchanged exhaustive native
+    # oracle. Every family has a cycle through all members, plus distinct
+    # reference orders, repeated holes, lexical binders and symmetry ties.
+    for n in range(2, 9):
+        for family in ["cycle", "symmetric", "multiple", "let"]:
+            fs = []
+            for i in range(n):
+                nxt, other = "f" + str((i - 1) % n), "f" + str((i * 7 + n) % n)
+                base = "7" if family == "symmetric" else str(n - i)
+                body = "(" + nxt + " (- x 1))"
+                if family == "multiple":
+                    body = "(+ (" + other + " (- x 2)) " + body + ")"
+                if family == "let":
+                    body = "(let [y (- x 1)] (+ (" + nxt + " y) (" + nxt + " y)))"
+                fs.append(function("f" + str(i), "(if (= x 0) " + base + " " + body + ")"))
+            name = "root-equivalence-" + family + str(n)
+            p = out / (name + ".kir")
+            p.write_text(module(fs))
+            sources[name] = p
+            assert run(name, [producer, "equivalence", p]) == "PASS_NATIVE_SCC_EQUIVALENCE\n"
+    for n in [2, 4, 6, 8]:
+        fs = []
+        for i in range(n):
+            call = "(f" + str((i + 1) % n) + " (- x 1))"
+            body = ("(if (= x 0) " + str(i) + " (if " + call + " 1 2))" if i % 2 == 0
+                    else "(if (= x 0) false (= " + call + " 0))")
+            fs.append(function("f" + str(i), body, result=":i64" if i % 2 == 0 else ":bool"))
+        name = "root-equivalence-interface" + str(n)
+        p = out / (name + ".kir")
+        p.write_text(module(fs))
+        sources[name] = p
+        assert run(name, [producer, "equivalence", p]) == "PASS_NATIVE_SCC_EQUIVALENCE\n"
     negatives = {
         "wrong-type": module([function("main", "42", "", "", ":bool")]),
         "unresolved": module([function("main", "(missing x)")]),
@@ -222,12 +254,20 @@ def main(compiler, out, benchmark_scc=False):
         ("scc-bound", "(if (> n 8) (let [bad (dcp-fail A 6)] R)",
          "(if (> n 9) (let [bad (dcp-fail A 6)] R)", "cycle9-refused", "accept"),
         ("group-reference", "index (dec (dcp-f A f 3))]", "index original]", "cycle2-rename", "different"),
+        ("root-reference-order", "target (vector-at H (+ (dcs-hole-base original n) (* 2 j) 1))",
+         "target (vector-at H (+ (dcs-hole-base original n) (* 2 (- (vector-at H original) j 1)) 1))",
+         "root-equivalence-multiple8", "equivalence-reject"),
+        ("root-stable-tie", "(and (= compared 0) (< rank best))", "(and (= compared 0) (> rank best))",
+         "root-equivalence-symmetric8", "equivalence-reject"),
     ]
     for name, old, new, probe, detection in mutations:
         occurrences = original.count(old)
         assert occurrences == (2 if name == "binder-counter" else 1), (name, occurrences)
         image = build("mutant-" + name, original.replace(old, new))
-        got = produce("detect-" + name, sources[probe].read_text(), image=image)
+        if detection == "equivalence-reject":
+            assert not run("detect-" + name, [image, "equivalence", sources[probe]], 1)
+        else:
+            got = produce("detect-" + name, sources[probe].read_text(), image=image)
         if detection == "different":
             correct = golden("binders") if name == "binder-counter" else two["b"][0]
             assert got["main" if name == "binder-counter" else "z"][0] != correct
@@ -240,13 +280,13 @@ def main(compiler, out, benchmark_scc=False):
         allowed = sorted(os.sched_getaffinity(0))
         assert allowed
         os.sched_setaffinity(0, {allowed[0]})
-        anchor = "let [best (dcs-best-prefix A C T H)\n            ok"
-        replacement = "let [best (dcs-best-fast A C T H)\n            ok"
+        anchor = "let [best (dcs-best-root A C T H)\n            ok"
+        replacement = "let [best (dcs-best-prefix A C T H)\n            ok"
         assert original.count(anchor) == 1
         baseline = build("scc-template-baseline", original.replace(anchor, replacement))
         expected_output = (out / "cycle8.stdout").read_text()
         timings = {"baseline": [], "candidate": []}
-        benchmark = dict(scope="SCC8 identity; all40320 permutations in both variants",
+        benchmark = dict(scope="SCC8 identity; exhaustive40320 baseline vs8 fixed-root candidates",
                          allowedCPUs=allowed, pinnedCPU=allowed[0], quietHostQualified=False,
                          input=pin(sources["cycle8"]), baseline=pin(baseline), candidate=pin(producer),
                          baselineSource=pin(out / "scc-template-baseline.kotoba"),
@@ -264,7 +304,8 @@ def main(compiler, out, benchmark_scc=False):
         os.sched_setaffinity(0, set(allowed))
     report.update(status="PASS_NATIVE_CHECKED_DEFINITION", independentOraclePassed=True,
                   nativeTypeCheckingRequired=True, nativeAuthorityVersionsChecked=True,
-                  scc8LastPermutationOracle=True, scc9Refused=True, nativeSccEquivalence=True)
+                  scc8LastPermutationOracle=True, scc9Refused=True, nativeSccEquivalence=True,
+                  fixedRootEquivalenceFamilies=32, stablePermutationTiePreserved=True)
     save()
     print(report["status"], flush=True)
 

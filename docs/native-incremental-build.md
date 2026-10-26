@@ -92,8 +92,9 @@ option binders and recursive SCCs of at most eight functions. A single
 left-to-right binder counter survives scope restoration. Direct references
 become dependency CIDs; recursive references become canonical member indices.
 Native iterative Tarjan traversal orders the dependency components. SCC
-identity still searches every member permutation and chooses the least
-canonical payload, including the authority's deterministic tie behavior.
+identity is the least canonical payload over member permutations, including
+the authority's deterministic tie behavior. The retained exhaustive search
+is the oracle for the fixed-root candidate described below.
 Unknown fields, nonempty effect rows, schema references, callable/custom
 types, map/set expressions, source loops and other unsupported forms refuse.
 The native Seed source frontend, full schema closure and effect-name bridge
@@ -110,8 +111,8 @@ once and record only native-created group-reference integer leaves as holes
 in immutable canonical bytes. Then compare permutations through the first
 differing member. Complete canonical CBOR values cannot be proper prefixes
 of one another, and the remaining group wrapper/interface/dependencies do
-not vary, so this preserves full-payload ordering. It neither prunes the
-permutation search nor caches mutable emission proofs.
+not vary, so this preserves full-payload ordering. This prefix reference still
+visits every permutation and never caches mutable emission proofs.
 
 The separate native gate compares against independently hand-authored native
 payloads, including an SCC8 whose canonical winner is permutation40319.
@@ -127,6 +128,32 @@ is required before adopting this prototype as a qualified foundation.
 This foundation does not persist an object, relocate code, reuse a build,
 replay a verdict, or establish the20min end-to-end CI target. Those remain
 the next dependency steps listed above.
+
+## Fixed-root SCC minimum candidate
+
+The next search candidate fixes each possible first member, then scans that
+member's structurally recorded group-reference holes in canonical byte order.
+Assign each first-seen target the least unused index and process assigned
+members in index order. Strong connectivity ensures that an assigned member
+remains unprocessed until every member is assigned. For a fixed first member,
+any competing permutation first differs by assigning a larger encoded index
+at that hole, so it cannot have smaller bytes. The minimum of these root
+candidates is therefore the exhaustive scc-v1 minimum. Equal payloads retain
+the least original factoradic rank, preserving member identity tie behavior.
+
+This argument applies to the admitted indices0..7, whose encoded decimal
+bytes are strictly ordered. It does not authorize a larger SCC, variable-width
+index rewriting, schema/effect bridge or changed resource quota. The existing
+SCC9 refusal and original full-payload/prefix searches remain. Native tests
+compare every root minimum/rank with the all-permutation minimum across32
+cycle/symmetry/multiple-reference/let/interface families. Existing all-rank
+n1..4 payload comparisons and the original six SCC8 ranks remain unchanged;
+new n5..7 cases sample full-payload render pairs while still searching every
+permutation for their minimum. The independent SCC8 last-permutation golden
+and four original executed mutants remain, with reference-order and stable-tie
+mutants added. The timing observer compares40320 baseline permutations with
+eight candidates on the same native host and input, retaining all output bytes.
+This is bounded identity search qualification, not whole-compiler speed proof.
 
 ## Persistent native object and relink prototype
 

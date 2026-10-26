@@ -283,8 +283,10 @@ native qualification before its qualification flags are promoted.
 
 `seed/05-checked-definition.kotoba` and `seed/06-definition-groups.kotoba`
 remain outside FULL-MANIFEST. Preserve the current payload-v2 authority,
-profile6/desugar2, one binder counter, direct dependency CIDs and exhaustive
-scc-v1 minimum over at most eight members. Run native kr/name/check freshly;
+profile6/desugar2, one binder counter, direct dependency CIDs and the exact
+scc-v1 minimum/rank/tie over at most eight members. The fixed-root traversal
+must match the retained native exhaustive minimum; do not widen its one-byte
+index/graph/codec bounds from a small-group speed result. Run native kr/name/check freshly;
 caller-supplied checked flags, unsupported schemas/effects and oversized
 groups refuse without partial identities. Immutable normalized member bytes
 may be reused inside that one identity calculation; only structurally recorded,
