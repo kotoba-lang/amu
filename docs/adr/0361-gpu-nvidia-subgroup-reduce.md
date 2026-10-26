@@ -2358,3 +2358,57 @@ gate run 2 NOT run (standing pins 2649/0 and 123/12162, named, not
 re-verified this slice); FULL `run-tests.cljk` not run (red at base
 `Could not find namespace: kotoba.form`, ADR-0362) -- NO green suite
 claimed. Record: `docs/evidence/gpu/cuda-int-throughput-20261026/`.
+
+## Amendment (2026-10-26, overhead-baseline probes and a saturation hypothesis)
+
+The twenty-third amendment's proposed standalone +4 overhead baseline was
+not realized by the two constructions tried with nvcc 11.4 / ptxas on
+Xavier sm_72. Explicit PTX using the SASS-only PT/RZ names was rejected;
+anchored empty loops were eliminated or iteration-grouped. These are
+results about those constructions, not proof that every possible
+instrument is unrealizable. The standalone baseline remains unmeasured.
+
+Evidence: `docs/evidence/gpu/cuda-oh-baseline-20261026/`. The raw run log
+and disassembled cubin are retained. This was a probe at
+2026-10-26T13:00:56Z, without paired AB/BA samples or cross-day replication.
+It enters no registered timing record and changes no selection decision.
+
+**Measurements.** Three dependent symbolic IMAD chains of n in {1,4,16}
+were each launched three times, with REPT=256 and 128 lockstep thread
+samples per launch. The printed median total loop cycles were 6778, 6778
+and 18291 respectively; divided by 256, T(1)=T(4)=26.4766 and
+T(16)=71.4492 cycles/iteration. The 128 thread samples are correlated,
+not 128 independent experimental replicates. The retained cubin has the
+expected n IMAD instructions and the four loop-control instructions in
+each body. The cubin and run binary were separate builds with the same
+source and flags; disassembly of the actually executed binary was not
+retained. The instrument source is hash-attested in the log but is not
+part of this committed evidence, limiting independent reproduction.
+
+**Derived checks.** The recurrence x := 7x+3 modulo 2^32, starting at 3,
+reproduces the three printed anchors after n*256 steps. The affine model
+T(n)=n*L+OH cannot fit these three medians: fitting n=1 and n=16 predicts
+T(4)=35.4711, a misfit of 8.9945 cycles/iteration. This rejects that exact
+fit for this probe; it does not identify individual instruction costs.
+
+**Hypothesis.** T(n)=max(n*L,C), with L=T(16)/16=4.4656 and
+C=T(1)=26.4766, is consistent with the three points to printed precision.
+The model is proposed, not independently measured. C is the measured
+cost of the complete n=1/n=4 loop bodies; attributing it to the +4 alone
+requires the hypothesis. Likewise, equality to the earlier n=16 quote
+repeats a total with the same loop overhead and cannot establish zero
+marginal overhead. The standalone +4 cost, its internal composition and
+possible overhead inflation at n=16 remain unmeasured. No correction to
+the landed quotes is justified by this evidence alone.
+
+The earlier interpretation in `record.txt` and the table is retained as
+historical experiment reporting, subject to this review qualification.
+The twenty-third amendment's other unmeasured items remain open, including
+pure IADD3/IMAD.IADD costs, raw MUFU.RCP, the residual W-shape carrier,
+noise exceedance, sum TRUE W=256, cross-day replication, non-Xavier
+results, the live CUDA selection path and provisional workgroup rows.
+
+No runtime or compiler source changes. The author's reported scoped GPU
+suite (123 tests / 12162 assertions) is a legacy hosted result, not a
+native Amu qualification; it was not rerun in review. The full legacy
+suite was not run and no full/native green suite is claimed.

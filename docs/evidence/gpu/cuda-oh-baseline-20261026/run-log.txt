@@ -1,0 +1,228 @@
+HOST: xavier USER: root
+DATE-UTC: 2026-10-26T13:00:56Z  DATE-LOCAL: 2026-10-26T22:00:56+0900
+Linux xavier 5.10.120-tegra #1 SMP PREEMPT Tue Aug 1 12:32:50 PDT 2023 aarch64 aarch64 aarch64 GNU/Linux
+=== nvcc --version (verbatim)
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2022 NVIDIA Corporation
+Built on Sun_Oct_23_22:16:07_PDT_2022
+Cuda compilation tools, release 11.4, V11.4.315
+Build cuda_11.4.r11.4/compiler.31964100_0
+=== nvdisasm --version (verbatim)
+nvdisasm: NVIDIA (R) CUDA disassembler
+Copyright (c) 2005-2022 NVIDIA Corporation
+Built on Tue_Sep_13_22:14:23_PDT_2022
+Cuda compilation tools, release 11.4, V11.4.298
+Build cuda_11.4.r11.4/compiler.31809458_0
+=== sha256 of the received files (before any compile)
+a79ad8e952043710de85a6e0f0eaf81cb9cb30715a9356ed0ebf5a1cff3a197d  ./gpu-oh-baseline-microbench.cu
+4fae36e74e06d225c636f8729d88660aab683ff24e5cb0bc34023250da36490c  ./oh_baseline_verify.py
+e5f3b53ea356184726034f84f2616fc5d6291224d4304d802ee81324c1afb579  ./oh_realiz_a.cu
+fad2a09a5d170e4460d973a22b01f7d9fb31c34a131afa54f562513b20227567  ./oh_realiz_b.cu
+=== realizability probe A: explicit-PTX +4 spelling (expect REFUSED)
+FAIL-realiz-a
+diag-realiz-a.txt 741 bytes
+ptxas /tmp/tmpxft_000808ba_00000000-6_oh_realiz_a.ptx, line 33; error   : Predicate expression expected
+ptxas /tmp/tmpxft_000808ba_00000000-6_oh_realiz_a.ptx, line 33; error   : Arguments mismatch for instruction 'shfl'
+ptxas /tmp/tmpxft_000808ba_00000000-6_oh_realiz_a.ptx, line 33; error   : Unknown symbol 'PT'
+ptxas /tmp/tmpxft_000808ba_00000000-6_oh_realiz_a.ptx, line 33; error   : Unknown symbol 'RZ'
+ptxas /tmp/tmpxft_000808ba_00000000-6_oh_realiz_a.ptx, line 33; error   : Unknown symbol 'RZ'
+ptxas /tmp/tmpxft_000808ba_00000000-6_oh_realiz_a.ptx, line 33; error   : Unknown symbol 'RZ'
+ptxas /tmp/tmpxft_000808ba_00000000-6_oh_realiz_a.ptx, line 33; error   : Unknown symbol 'RZ'
+ptxas fatal   : Ptx assembly aborted due to errors
+=== realizability probe B: empty-body counter loops (SASS verbatim)
+OK-realiz-b
+diag-realiz-b.txt 0 bytes
+	.headerflags	@"EF_CUDA_TEXMODE_UNIFIED EF_CUDA_64BIT_ADDRESS EF_CUDA_SM72 EF_CUDA_VIRTUAL_SM(EF_CUDA_SM72)"
+	.elftype	@"ET_EXEC"
+
+
+//--------------------- .text._Z4ps64PKyPy        --------------------------
+	.section	.text._Z4ps64PKyPy,"ax",@progbits
+	.sectioninfo	@"SHI_REGISTERS=12"
+	.align	128
+        .global         _Z4ps64PKyPy
+        .type           _Z4ps64PKyPy,@function
+        .size           _Z4ps64PKyPy,(.L_54 - _Z4ps64PKyPy)
+        .other          _Z4ps64PKyPy,@"STO_CUDA_ENTRY STV_DEFAULT"
+_Z4ps64PKyPy:
+.text._Z4ps64PKyPy:
+        /*0000*/                   IMAD.MOV.U32 R1, RZ, RZ, c[0x0][0x28] ;
+        /*0010*/              @!PT SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+        /*0020*/                   IMAD.MOV.U32 R2, RZ, RZ, c[0x0][0x160] ;
+        /*0030*/                   IMAD.MOV.U32 R3, RZ, RZ, c[0x0][0x164] ;
+        /*0040*/                   LDG.E.SYS R2, [R2] ;
+        /*0050*/                   CS2R R4, SRZ ;
+        /*0060*/                   CS2R R6, SR_CLOCKLO ;
+        /*0070*/                   ISETP.NE.AND P0, PT, R2, RZ, PT ;
+        /*0080*/              @!P0 BRA `(.L_1) ;
+        /*0090*/                   IADD3 R0, R2.reuse, -0x1, RZ ;
+        /*00a0*/                   IMAD.MOV.U32 R4, RZ, RZ, RZ ;
+        /*00b0*/                   LOP3.LUT R3, R2, 0x3, RZ, 0xc0, !PT ;
+        /*00c0*/                   ISETP.GE.U32.AND P0, PT, R0, 0x3, PT ;
+        /*00d0*/              @!P0 BRA `(.L_2) ;
+        /*00e0*/                   IMAD.IADD R2, R2, 0x1, -R3 ;
+        /*00f0*/                   IMAD.MOV.U32 R4, RZ, RZ, RZ ;
+        /*0100*/                   ISETP.GT.AND P0, PT, R2, RZ, PT ;
+        /*0110*/              @!P0 BRA `(.L_3) ;
+        /*0120*/                   ISETP.GT.AND P1, PT, R2, 0xc, PT ;
+        /*0130*/                   PLOP3.LUT P0, PT, PT, PT, PT, 0x80, 0x0 ;
+        /*0140*/              @!P1 BRA `(.L_4) ;
+        /*0150*/                   PLOP3.LUT P0, PT, PT, PT, PT, 0x8, 0x0 ;
+.L_5:
+        /*0160*/              @!PT SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+        /*0170*/                   IADD3 R2, R2, -0x10, RZ ;
+        /*0180*/                   IADD3 R4, R4, 0x10, RZ ;
+        /*0190*/                   ISETP.GT.AND P1, PT, R2, 0xc, PT ;
+        /*01a0*/               @P1 BRA `(.L_5) ;
+.L_4:
+        /*01b0*/                   ISETP.GT.AND P1, PT, R2, 0x4, PT ;
+        /*01c0*/               @P1 PLOP3.LUT P0, PT, PT, PT, PT, 0x8, 0x0 ;
+        /*01d0*/               @P1 IADD3 R2, R2, -0x8, RZ ;
+        /*01e0*/               @P1 IADD3 R4, R4, 0x8, RZ ;
+        /*01f0*/                   ISETP.NE.OR P0, PT, R2, RZ, P0 ;
+        /*0200*/              @!P0 BRA `(.L_2) ;
+.L_3:
+        /*0210*/              @!PT SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+        /*0220*/                   IADD3 R2, R2, -0x4, RZ ;
+        /*0230*/                   IADD3 R4, R4, 0x4, RZ ;
+        /*0240*/                   ISETP.NE.AND P0, PT, R2, RZ, PT ;
+        /*0250*/               @P0 BRA `(.L_3) ;
+.L_2:
+        /*0260*/                   ISETP.NE.AND P0, PT, R3, RZ, PT ;
+        /*0270*/              @!P0 BRA `(.L_6) ;
+.L_7:
+        /*0280*/              @!PT SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+        /*0290*/                   IADD3 R3, R3, -0x1, RZ ;
+        /*02a0*/                   IADD3 R4, R4, 0x1, RZ ;
+        /*02b0*/                   ISETP.NE.AND P0, PT, R3, RZ, PT ;
+        /*02c0*/               @P0 BRA `(.L_7) ;
+.L_6:
+        /*02d0*/                   IMAD.MOV.U32 R5, RZ, RZ, RZ ;
+.L_1:
+        /*02e0*/                   CS2R R8, SR_CLOCKLO ;
+        /*02f0*/                   S2R R2, SR_TID.X ;
+        /*0300*/                   IADD3 R6, P0, -R6, R8, RZ ;
+        /*0310*/                   IMAD.MOV.U32 R3, RZ, RZ, 0x8 ;
+        /*0320*/                   IMAD.X R7, R9, 0x1, ~R7, P0 ;
+        /*0330*/                   IMAD.WIDE.U32 R2, R2, R3, c[0x0][0x168] ;
+        /*0340*/                   STG.E.64.SYS [R2+0x800], R4 ;
+        /*0350*/                   STG.E.64.SYS [R2], R6 ;
+        /*0360*/                   EXIT ;
+.L_8:
+        /*0370*/                   BRA `(.L_8);
+.L_54:
+
+
+//--------------------- .text._Z4pi64PKyPy        --------------------------
+	.section	.text._Z4pi64PKyPy,"ax",@progbits
+	.sectioninfo	@"SHI_REGISTERS=12"
+	.align	128
+        .global         _Z4pi64PKyPy
+        .type           _Z4pi64PKyPy,@function
+        .size           _Z4pi64PKyPy,(.L_55 - _Z4pi64PKyPy)
+        .other          _Z4pi64PKyPy,@"STO_CUDA_ENTRY STV_DEFAULT"
+_Z4pi64PKyPy:
+.text._Z4pi64PKyPy:
+        /*0000*/                   MOV R1, c[0x0][0x28] ;
+        /*0010*/              @!PT SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+        /*0020*/                   CS2R R4, SR_CLOCKLO ;
+        /*0030*/                   CS2R R6, SR_CLOCKLO ;
+        /*0040*/                   S2R R2, SR_TID.X ;
+        /*0050*/                   MOV R3, 0x8 ;
+        /*0060*/                   IMAD.MOV.U32 R8, RZ, RZ, 0x40 ;
+        /*0070*/                   IADD3 R4, P0, -R4, R6, RZ ;
+        /*0080*/                   MOV R9, 0x0 ;
+        /*0090*/                   IMAD.X R5, R7, 0x1, ~R5, P0 ;
+        /*00a0*/                   IMAD.WIDE.U32 R2, R2, R3, c[0x0][0x168] ;
+        /*00b0*/                   STG.E.64.SYS [R2+0x800], R8 ;
+        /*00c0*/                   STG.E.64.SYS [R2], R4 ;
+        /*00d0*/                   EXIT ;
+.L_9:
+        /*00e0*/                   BRA `(.L_9);
+.L_55:
+=== compile the instrument (run binary + cubin)
+OK-build
+OK-cubin
+=== build diagnostics (verbatim)
+diag diag-build.txt 0 bytes
+diag diag-cubin.txt 0 bytes
+=== disassemble the cubin (nvdisasm -c)
+OK-sass 143 lines
+diag diag-nvdisasm.txt 0 bytes
+=== sha256 of the generated artifacts
+2b34319462a9512c5afd7247b1ea02fe0533221c26a2ed26a6c362ea3999c1f7  microbench.sass
+9502969d2ceaf477abceb9b1e4c80c1460fbc41007635ee9ba018f53062bdd50  gpu-oh-baseline-microbench.cubin
+1e63482e07813d78ad59ca9052590d8bf18351ece4dae06e108b28fe16e17e2b  gpu-oh-baseline-microbench
+=== SASS verification (python3, body extraction per kernel)
+VERIFY functions found: 3
+VERIFY-FUNCTION oh_n1 total_static=26
+  OPCODES BRA:2 CS2R:2 EXIT:1 IADD3:2 IMAD:1 IMAD.MOV.U32:4 IMAD.WIDE.U32:1 IMAD.X:1 ISETP.NE.AND:1 LDG.E.SYS:2 MOV:4 S2R:1 SHFL.IDX:2 STG.E.64.SYS:2
+  BODY label=.L_5 instr=5
+    BODY-INS @!PT SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+    BODY-INS IADD3 R2, R2, 0x1, RZ ;
+    BODY-INS IMAD R8, R7, R8, R0 ;
+    BODY-INS ISETP.NE.AND P0, PT, R2, 0x100, PT ;
+    BODY-INS @P0 BRA `(.L_5) ;
+  BODY-OPCODES BRA:1 IADD3:1 IMAD:1 ISETP.NE.AND:1 SHFL.IDX:1
+  BODY-VERDICT MATCH-CHAIN-N1
+VERIFY-FUNCTION oh_n16 total_static=41
+  OPCODES BRA:2 CS2R:2 EXIT:1 IADD3:2 IADD3.X:1 IMAD:16 IMAD.WIDE.U32:1 ISETP.NE.AND:1 LDG.E.SYS:2 MOV:8 S2R:1 SHFL.IDX:2 STG.E.64.SYS:2
+  BODY label=.L_1 instr=20
+    BODY-INS @!PT SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+    BODY-INS IMAD R8, R5, R8, R0 ;
+    BODY-INS IADD3 R4, R4, 0x1, RZ ;
+    BODY-INS IMAD R8, R5, R8, R0 ;
+    BODY-INS ISETP.NE.AND P0, PT, R4, 0x100, PT ;
+    BODY-INS IMAD R8, R5, R8, R0 ;
+    BODY-INS IMAD R8, R5, R8, R0 ;
+    BODY-INS IMAD R8, R5, R8, R0 ;
+    BODY-INS IMAD R8, R5, R8, R0 ;
+    BODY-INS IMAD R8, R5, R8, R0 ;
+    BODY-INS IMAD R8, R5, R8, R0 ;
+    BODY-INS IMAD R8, R5, R8, R0 ;
+    BODY-INS IMAD R8, R5, R8, R0 ;
+    BODY-INS IMAD R8, R5, R8, R0 ;
+    BODY-INS IMAD R8, R5, R8, R0 ;
+    BODY-INS IMAD R8, R5, R8, R0 ;
+    BODY-INS IMAD R8, R5, R8, R0 ;
+    BODY-INS IMAD R8, R5, R8, R0 ;
+    BODY-INS IMAD R8, R5, R8, R0 ;
+    BODY-INS @P0 BRA `(.L_1) ;
+  BODY-OPCODES BRA:1 IADD3:1 IMAD:16 ISETP.NE.AND:1 SHFL.IDX:1
+  BODY-VERDICT MATCH-CHAIN-N16
+VERIFY-FUNCTION oh_n4 total_static=29
+  OPCODES BRA:2 CS2R:2 EXIT:1 IADD3:2 IMAD:4 IMAD.MOV.U32:2 IMAD.WIDE.U32:1 IMAD.X:1 ISETP.NE.AND:1 LDG.E.SYS:2 MOV:6 S2R:1 SHFL.IDX:2 STG.E.64.SYS:2
+  BODY label=.L_3 instr=8
+    BODY-INS @!PT SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+    BODY-INS IADD3 R2, R2, 0x1, RZ ;
+    BODY-INS IMAD R8, R7, R8, R0 ;
+    BODY-INS ISETP.NE.AND P0, PT, R2, 0x100, PT ;
+    BODY-INS IMAD R8, R7, R8, R0 ;
+    BODY-INS IMAD R8, R7, R8, R0 ;
+    BODY-INS IMAD R8, R7, R8, R0 ;
+    BODY-INS @P0 BRA `(.L_3) ;
+  BODY-OPCODES BRA:1 IADD3:1 IMAD:4 ISETP.NE.AND:1 SHFL.IDX:1
+  BODY-VERDICT MATCH-CHAIN-N4
+VERIFY done
+=== run the microbench (3 launches x 3 arms)
+DEVICE name=Xavier clockRate_kHz=1377000 multiProcessorCount=8
+RESULT arm=oh_n1 mode=ohsep chain_n=1 units=256 samples=128 min=6776 p10=6776 median=6778 mean=6777.2 p90=6778 max=6778 cyc_per_iter_median=26.4766 cyc_per_iter_mean=26.4736 cyc_per_chainop_at_median=26.4766
+ANCHOR arm=oh_n1 launch=0 x_tid0=2222224387
+RESULT arm=oh_n4 mode=ohsep chain_n=4 units=256 samples=128 min=6776 p10=6776 median=6778 mean=6777.2 p90=6778 max=6778 cyc_per_iter_median=26.4766 cyc_per_iter_mean=26.4736 cyc_per_chainop_at_median=6.6191
+ANCHOR arm=oh_n4 launch=0 x_tid0=890359811
+RESULT arm=oh_n16 mode=ohsep chain_n=16 units=256 samples=128 min=18290 p10=18290 median=18291 mean=18290.8 p90=18291 max=18291 cyc_per_iter_median=71.4492 cyc_per_iter_mean=71.4482 cyc_per_chainop_at_median=4.4656
+ANCHOR arm=oh_n16 launch=0 x_tid0=138887171
+RESULT arm=oh_n1 mode=ohsep chain_n=1 units=256 samples=128 min=6776 p10=6776 median=6778 mean=6777.2 p90=6778 max=6778 cyc_per_iter_median=26.4766 cyc_per_iter_mean=26.4736 cyc_per_chainop_at_median=26.4766
+ANCHOR arm=oh_n1 launch=1 x_tid0=2222224387
+RESULT arm=oh_n4 mode=ohsep chain_n=4 units=256 samples=128 min=6776 p10=6776 median=6778 mean=6777.2 p90=6778 max=6778 cyc_per_iter_median=26.4766 cyc_per_iter_mean=26.4736 cyc_per_chainop_at_median=6.6191
+ANCHOR arm=oh_n4 launch=1 x_tid0=890359811
+RESULT arm=oh_n16 mode=ohsep chain_n=16 units=256 samples=128 min=18290 p10=18290 median=18291 mean=18290.8 p90=18291 max=18291 cyc_per_iter_median=71.4492 cyc_per_iter_mean=71.4482 cyc_per_chainop_at_median=4.4656
+ANCHOR arm=oh_n16 launch=1 x_tid0=138887171
+RESULT arm=oh_n1 mode=ohsep chain_n=1 units=256 samples=128 min=6776 p10=6776 median=6778 mean=6777.2 p90=6778 max=6778 cyc_per_iter_median=26.4766 cyc_per_iter_mean=26.4736 cyc_per_chainop_at_median=26.4766
+ANCHOR arm=oh_n1 launch=2 x_tid0=2222224387
+RESULT arm=oh_n4 mode=ohsep chain_n=4 units=256 samples=128 min=6776 p10=6776 median=6778 mean=6777.2 p90=6778 max=6778 cyc_per_iter_median=26.4766 cyc_per_iter_mean=26.4736 cyc_per_chainop_at_median=6.6191
+ANCHOR arm=oh_n4 launch=2 x_tid0=890359811
+RESULT arm=oh_n16 mode=ohsep chain_n=16 units=256 samples=128 min=18290 p10=18290 median=18291 mean=18290.8 p90=18291 max=18291 cyc_per_iter_median=71.4492 cyc_per_iter_mean=71.4482 cyc_per_chainop_at_median=4.4656
+ANCHOR arm=oh_n16 launch=2 x_tid0=138887171
+MICROBENCH run complete
+=== microbench run complete
