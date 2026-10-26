@@ -346,6 +346,19 @@
 ;; nil there and its caller maps no-value to "no positive wg", so BOTH
 ;; arms answer the same device-from-info (null). Measured parity on the
 ;; parseable probes (including 102-char leading-zero text -> 42 on both).
+;; ENGINE PARSE-LONG BOUNDARY (MEASURED 2026-10-26, two byte-identical
+;; runs, docs/evidence/gpu/w3-parse-long-boundary-20261026.txt): the host
+;; engine's parse-long answers the EXACT value only through 2^53-1
+;; (9007199254740991) and nil at 2^53 (9007199254740992) and above -- so
+;; the arms diverge for a CLASS of texts, not one: every digit text whose
+;; value is in [2^53, i64max] answers the value on the :kotoba arm (its
+;; builtin parse-long holds real i64) and NO FACT on the host arm (parse-long
+;; nil -> "no positive wg" -> nil), on BOTH routes (device-from-info's
+;; maxWgX -- the sg-size row's "unprobed there" question, probed now -- and
+;; device-from-subgroup's size). Fail-closed on the host arm (a missing
+;; fact, never a wrong fact), unreachable from the wire (a wire-42 maxWgX
+;; is a device limit). The class is pinned on the :kotoba contract arm;
+;; the host cells stay named and never pinned (engine-owned).
 #?(:kotoba
    (defn- string->i64 [s :string] :i64
      (option-value-of [:option :i64] (parse-long s) -1)))

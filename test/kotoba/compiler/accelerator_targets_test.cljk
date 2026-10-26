@@ -787,7 +787,12 @@
   ;; min-fuel, the 256+-field cells TRAPped budget/fuel,
   ;; docs/evidence/gpu/w3-alt-key-fuel-inlined-20261026.txt). Still named:
   ;; the digit taxonomy (ok|out-of-range = digits) is PROBED on an
-  ;; adversarial set, not proven.
+  ;; adversarial set, not proven. The engine parse-long boundary class
+  ;; [2^53, i64max] is MEASURED now (2026-10-26,
+  ;; w3-parse-long-boundary-20261026.txt) -- this wg route diverges the
+  ;; same way as the sg route there (the :kotoba arm answers the value,
+  ;; the host arm fails closed with no fact); the class is pinned on the
+  ;; contract arm below and the host cells stay named, never pinned.
   (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
         arms (str/join "\n" (map #(extract-balanced src %)
                                  ["(defn- none?" "(defn- string->i64"
@@ -878,6 +883,28 @@
           "HOST parity pin: the host arm answers no fact for the same field")
       (is (nil? (targets/device-from-info (str "ab|1.2.3|" (apply str (repeat 1000 "5")) "|1")))
           "HOST parity pin (1001-digit field)"))
+    (testing "the engine parse-long boundary class: a value on the :kotoba arm, fail-closed host"
+      ;; MEASURED 2026-10-26 (docs/evidence/gpu/
+      ;; w3-parse-long-boundary-20261026.txt): the engine's parse-long
+      ;; answers the exact value through 2^53-1 and nil at 2^53 and
+      ;; above, so this wg route's maxWgX field diverges for the whole
+      ;; class [2^53, i64max] exactly as the sg route's size field does
+      ;; (the sg-size row's "unprobed there" question, probed now): the
+      ;; :kotoba arm answers the fact with the value, the host arm
+      ;; answers nil (a missing fact -- fail-closed, never a wrong fact;
+      ;; unreachable from the wire, where maxWgX is a device limit).
+      ;; The class cells are PINNED on the contract arm; the host cells
+      ;; are named here and NEVER pinned (engine-owned).
+      (doseq [[s want] [["ab|1.2.3|9007199254740992|1" "9007199254740992"]
+                        ["ab|1.2.3|9007199254740993|1" "9007199254740993"]
+                        ["ab|1.2.3|9223372036854775806|1" "9223372036854775806"]
+                        ["ab|1.2.3|9223372036854775807|1" "9223372036854775807"]
+                        [(str "ab|1.2.3|" (apply str (repeat 44 "0"))
+                              "9007199254740993|1") "9007199254740993"]]]
+        (is (= want (str (:max-workgroup-x (fields-of (dfi s)))))
+            (str (pr-str s) " is a VALUE on the :kotoba arm (the class follows the value, not the text length)")))
+      (is (= ["null"] (dfi "ab|1.2.3|9223372036854775808|1"))
+          "one past i64 is still total null on both arms"))
     (testing "the numeric walks are deleted and the parse delegates to parse-long"
       (is (nil? (extract-balanced src "(defn- parse-walk"))
           "the per-byte parse walk is deleted (the numeric-walk row)")
@@ -906,13 +933,21 @@
   ;; VALUE (not past i64) and the one-past text is -1.
   ;; NAMED, NOT HIDDEN: (a) the parse taxonomy (ok|out-of-range for
   ;; digit-only text) is PROBED, not proven; (b) ENGINE PARSE-LONG
-  ;; BOUNDARY (measured twice, byte-identical runs): this engine's
-  ;; parse-long answers nil for the exact i64-max text -- so the HOST
-  ;; arm's own heads (re-matches + parse-long) answer NO FACT at exactly
-  ;; that one text while the contract and the :kotoba arm answer the
-  ;; value. Engine-owned, pre-existing since the numeric-walk row's wg
-  ;; route (unprobed there), its own row -- the host cell is named in
-  ;; these pins' comments and never pinned; (c) the SUBGROUP chain's
+  ;; BOUNDARY -- MEASURED NOW (2026-10-26, two byte-identical probe runs,
+  ;; docs/evidence/gpu/w3-parse-long-boundary-20261026.txt): this
+  ;; engine's parse-long answers the EXACT value through 2^53-1
+  ;; (9007199254740991) and nil at 2^53 (9007199254740992) and above --
+  ;; so the divergence is a CLASS, not one text: for every digit text
+  ;; whose value is in [2^53, i64max] the HOST arm's own heads
+  ;; (re-matches + parse-long) answer NO FACT while the contract and the
+  ;; :kotoba arm answer the value, on BOTH routes (the sg route here and
+  ;; the wg route's device-from-info -- the previously unprobed question,
+  ;; probed now and diverging identically). Engine-owned (the engine's
+  ;; integer range), fail-closed on the host arm (a missing fact, never a
+  ;; wrong fact), unreachable from the wire (a wire-42 maxWgX is a device
+  ;; limit). The class cells ARE pinned on the :kotoba contract arm; the
+  ;; host cells are named in these pins' comments and never pinned;
+  ;; (c) the SUBGROUP chain's
   ;; OTHER walks still trap multi-token / long answers on this runtime
   ;; (sg-pipe walks the answer per byte; sg-token-end/sg-ops-walk walk
   ;; per token/space byte -- MEASURED: "32|basic shuffle-relative" traps
@@ -971,6 +1006,15 @@
       ;; overflow and the 104-char leading-zero text TRAPPED in the walk;
       ;; the walk answered the contract on the short cells
       (doseq [[s want] [["" "-1"] ["0" "0"] ["32" "32"] ["042" "42"] ["0000" "0"]
+                        ;; the engine parse-long boundary class (measured
+                        ;; 2026-10-26, w3-parse-long-boundary-20261026.txt):
+                        ;; values in [2^53, i64max] are VALUES on the
+                        ;; contract arm even though the host engine's
+                        ;; parse-long answers nil there (its cells are
+                        ;; named in the parity grid below and never pinned)
+                        ["9007199254740992" "9007199254740992"]
+                        ["9007199254740993" "9007199254740993"]
+                        ["9223372036854775806" "9223372036854775806"]
                         ["9223372036854775807" "9223372036854775807"]
                         ["9223372036854775808" "-1"]
                         ["99999999999999999999" "-1"]
@@ -981,10 +1025,15 @@
                         ["12.5" "-1"] ["x" "-1"] ["5 " "-1"] ["32\t" "-1"]
                         ["5\n" "-1"] ["0x1f" "-1"]]]
         (is (= want (sz s)) (str (pr-str s) " keeps the parse-decimal contract"))))
-    (testing "host-head parity everywhere except the named engine max cell"
-      ;; the i64-max text is EXCLUDED here on purpose: this engine's
-      ;; parse-long answers nil for it (named above, its own row)
+    (testing "host-head parity through the engine's exact integer range"
+      ;; EXCLUDED here on purpose: every text whose value is in
+      ;; [2^53, i64max] -- this engine's parse-long answers nil for the
+      ;; whole class (MEASURED 2026-10-26: exact through 2^53-1, nil at
+      ;; 2^53 and above; w3-parse-long-boundary-20261026.txt), so the
+      ;; host heads answer -1 where the contract and the :kotoba arm
+      ;; answer the value. Named, never pinned -- engine-owned.
       (doseq [s ["" "0" "32" "042" "0000"
+                 "4503599627370495" "4503599627370496" "9007199254740991"
                  "9223372036854775808" "99999999999999999999"
                  (apply str (repeat 100 "9")) (apply str (repeat 1000 "5"))
                  (str (apply str (repeat 102 "0")) "42")
@@ -995,6 +1044,14 @@
       (let [m (fields-of (dfs "8|"))]
         (is (= "8" (str (:subgroup-size m))) "an empty <ops> is the zero-ops fact")
         (is (= #{} (ops-set (:subgroup-ops m)))))
+      ;; the engine parse-long boundary class, end to end on the contract
+      ;; arm (MEASURED 2026-10-26): a value in [2^53, i64max] is a fact
+      ;; here; the host arm answers nil for the same answer (named, never
+      ;; pinned -- w3-parse-long-boundary-20261026.txt)
+      (let [m (fields-of (dfs "9007199254740993|basic"))]
+        (is (= "9007199254740993" (str (:subgroup-size m)))
+            "the class text is a VALUE on the :kotoba arm, not a refusal")
+        (is (= #{:basic} (ops-set (:subgroup-ops m)))))
       (let [m (fields-of (dfs "16|shuffle"))]
         (is (= "16" (str (:subgroup-size m))))
         (is (= #{:shuffle} (ops-set (:subgroup-ops m)))))
