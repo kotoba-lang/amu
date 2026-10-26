@@ -266,11 +266,13 @@
 (defn- dcs-best-root [A :vector-i64 C :vector-i64 T [:list :string] H :vector-i64] :i64
  (loop [root 0 best -1]
   (if (= root (vector-count C)) best
-   (let [rank (dcs-root-order C H root)
-         compared (if (or (< best 0) (< rank 0)) 0 (dcs-rank-compare A C T H rank best))]
-    (cond (< rank 0) -1
-      (or (< best 0) (< compared 0) (and (= compared 0) (< rank best))) (recur (inc root) rank)
-      :else (recur (inc root) best))))))
+   (let [chosen (arena-scope
+          (let [rank (dcs-root-order C H root)
+                compared (if (or (< best 0) (< rank 0)) 0 (dcs-rank-compare A C T H rank best))]
+           (cond (< rank 0) -1
+             (or (< best 0) (< compared 0) (and (= compared 0) (< rank best))) rank
+             :else best)))]
+    (if (< chosen 0) -1 (recur (inc root) chosen))))))
 
 (defn- dcs-resolve-group [M :vector-i64 S :string A :vector-i64 C :vector-i64 R [:list :string]] [:list :string]
   (let [H (vector-alloc (+ (vector-count C) (* 2 dc-nodes (vector-count C))))
