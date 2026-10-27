@@ -1,0 +1,63 @@
+name: native-checked-source
+# This is a bounded identity bridge, not whole-compiler cache admission.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "seed/**"
+      - "bin/amu"
+      - "native-product.json"
+      - "scripts/seed/check-checked-source-native.py"
+      - ".github/workflows/native-checked-source.yml"
+  push:
+    branches: [main]
+    paths:
+      - "seed/**"
+      - "bin/amu"
+      - "native-product.json"
+      - "scripts/seed/check-checked-source-native.py"
+      - ".github/workflows/native-checked-source.yml"
+permissions:
+  contents: read
+concurrency:
+  group: native-checked-source-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  source:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04-arm
+            isa: arm64
+            compiler: seed/bootstrap/aarch64-linux-static-root.elf
+          - runner: ubuntu-latest
+            isa: x86_64
+            compiler: bin/amu
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Verify adopted compiler source and image pins
+        run: python3 scripts/seed/check-native-identities.py
+      - name: Native checked source, independent KIR payloads and executed mutants
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: >-
+          python3 scripts/seed/native_build_queue.py
+          --phase native-checked-source
+          --slot-dir "$RUNNER_TEMP/native-build-slots"
+          --output "$RUNNER_TEMP/source-admission.json" --
+          python3 scripts/seed/check-checked-source-native.py
+          --compiler "$PWD/${{ matrix.compiler }}"
+          --output "$RUNNER_TEMP/checked-source"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: native-checked-source-${{ matrix.isa }}
+          path: |
+            ${{ runner.temp }}/checked-source
+            ${{ runner.temp }}/source-admission.json
+          if-no-files-found: error
