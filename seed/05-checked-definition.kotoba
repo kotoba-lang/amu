@@ -25,9 +25,12 @@
   (vector-at A (+ (dcp-effects-base A) f)))
 (defn- dcp-fx-put [A :vector-i64 f :i64 mask :i64] :vector-i64
   (vector-assoc! A (+ (dcp-effects-base A) f) mask))
+(defn- dcp-resource [A :vector-i64] :i64
+  (vector-at A (+ (dcp-effects-base A) (vector-at A 3))))
 (defn- dcp-effect-layout? [A :vector-i64] :bool
   (and (= (vector-at A 14) 1) (= (vector-at A 13) 0) (= (vector-at A 15) 0)
-       (<= (+ (dcp-effects-base A) (vector-at A 3)) (vector-count A))
+       (< (+ (dcp-effects-base A) (vector-at A 3)) (vector-count A))
+       (dip-valid? (dcp-resource A))
        (loop [f 0]
          (if (= f (vector-at A 3)) true (and (= (dgg-f A f 15) 0) (recur (inc f)))))))
 (defn- dcp-text [M :vector-i64 S :string n :i64] :string
@@ -123,8 +126,8 @@
 ;; This walk runs only after the original kr/name/check admission. Direct
 ;; capability calls are joined with the already sealed definition graph;
 ;; declaration rows must equal this inferred transitive row, not mint it.
-(defn- dcp-direct-effects [M :vector-i64 S :string n :i64 depth :i64] :i64
-  (if (or (= n 0) (> depth 64)) -1
+(defn- dcp-direct-effects [M :vector-i64 S :string A :vector-i64 n :i64 depth :i64] :i64
+  (if (or (= n 0) (> depth (dip-expression-depth (dcp-resource A)))) -1
     (let [kind (kr-kind M n)
           cap (and (= kind ND-LIST) (= (dcp-text M S (kr-first M n)) "typed-cap-call"))
           id (dcp-child M n 1) wire (kr-nf M id NF-AUX)
@@ -133,13 +136,13 @@
       (if (or (< own 0) (not (or (= kind ND-LIST) (= kind ND-VEC) (= kind ND-MAP) (= kind ND-SET)))) own
         (loop [p (kr-first M n) mask own]
           (if (= p 0) mask
-            (let [child (dcp-direct-effects M S p (inc depth))]
+            (let [child (dcp-direct-effects M S A p (inc depth))]
               (if (< child 0) -1 (recur (kr-next M p) (bit-or mask child))))))))))
 (defn- dcp-effects [M :vector-i64 S :string A :vector-i64 doc :i64] :vector-i64
   (let [ready (if (dcp-effect-layout? A) A (vector-assoc! A 0 9))
         direct (loop [f 0]
         (if (or (= f (vector-at A 3)) (not= (vector-at A 0) 0)) A
-          (let [mask (dcp-direct-effects M S (dcp-field M S (dcp-f A f 0) ":body") 0)
+          (let [mask (dcp-direct-effects M S A (dcp-field M S (dcp-f A f 0) ":body") 0)
                 save (if (< mask 0) (vector-assoc! A 0 4) (dcp-fx-put A f mask))]
             (recur (inc f)))))
         closed (loop [round 0]
@@ -245,7 +248,7 @@
           (dcp-list (typed-list-new [:list :string] (dcp-sym name) type value (dcp-vec branches)))))
       :else (dcp-bad A))))
 (defn- dcp-form [M :vector-i64 S :string A :vector-i64 n :i64 R [:list :string] depth :i64] :string
-  (cond (or (= n 0) (> depth 64) (not= (vector-at A 0) 0)) (dcp-bad A)
+  (cond (or (= n 0) (> depth (dip-expression-depth (dcp-resource A))) (not= (vector-at A 0) 0)) (dcp-bad A)
     (= (kr-kind M n) ND-INT) (dc-int (mem-u2dec (kr-nf M n NF-AUX)))
     (= (kr-kind M n) ND-STR) (dc-str (dcp-string M n))
     (= (kr-kind M n) ND-KW)
@@ -304,7 +307,7 @@
       (dc-entry "op" (dc-kw "kotoba.definition/function")) (dc-entry "params" params))) interface (dcp-deps A R) (dcp-fx A f))))
 (defn- dcp-cid-buffer [A :vector-i64] :i64 (+ (dcp-stack A) (* 2 (vector-at A 3))))
 (defn- dcp-keep-cid [A :vector-i64 hex :string] :bool
-  (let [cid (if (= (vector-at A 0) 0) (dc-definition-cid hex) "")]
+  (let [cid (if (= (vector-at A 0) 0) (dc-definition-cid-resource hex (dcp-resource A)) "")]
     (if (not= (string-length cid) 59) (let [bad (dcp-fail A 7)] false)
       (loop [i 0]
         (if (= i 59) true

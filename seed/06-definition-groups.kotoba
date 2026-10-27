@@ -16,12 +16,15 @@
                     (= name ":effects") (= name ":functions") (= name ":schemas")))]
           (and (not= v 0) (= (kr-kind M p) ND-KW) allowed (not (dcp-contains seen name))
             (recur (kr-next M v) (typed-list-conj [:list :string] seen name))))))))
-(defn- dcs-init [M :vector-i64 S :string doc :i64 functions :i64] :vector-i64
+(defn- dcs-init-resource [M :vector-i64 S :string doc :i64 functions :i64 resource :i64] :vector-i64
   (let [n (kr-count M functions) cap (loop [v 2] (if (>= v (* 2 n)) v (recur (* v 2))))
         edges (vector-at M MM-NODE-N)
-        a (-> (vector-alloc (+ 16 (* n dcp-fwidth) (* edges 3) cap (* dc-nodes 2) (* n 3) 64))
+        a (-> (vector-alloc (+ 16 (* n dcp-fwidth) (* edges 3) cap (* dc-nodes 2) (* n 3) 65))
               (vector-assoc! 3 n) (vector-assoc! 6 cap) (vector-assoc! 11 edges))
-        A (dgg-init a n edges (+ (dcp-env a) (* 2 dc-nodes)))]
+        allocated (dgg-init a n edges (+ (dcp-env a) (* 2 dc-nodes)))
+        A (if (dip-valid? resource)
+            (vector-assoc! allocated (+ (dcp-effects-base allocated) n) resource)
+            (vector-assoc! allocated 0 10))]
     (loop [p (kr-first M functions) i 0 state A]
       (if (or (= p 0) (not= (vector-at state 0) 0)) state
         (let [name (dcp-field M S p ":name") text (if (> name 0) (dcp-text M S name) "")
@@ -36,6 +39,8 @@
                     (if (= (vector-at a (+ (dcp-hash a) j)) 0) j (recur (bit-and (inc j) (dec cap)))))
                   b (vector-assoc! a (+ (dcp-hash a) slot) (inc i))]
               (recur (kr-next M p) (inc i) b))))))))
+(defn- dcs-init [M :vector-i64 S :string doc :i64 functions :i64] :vector-i64
+  (dcs-init-resource M S doc functions 0))
 (defn- dcs-components [A :vector-i64] :vector-i64 (dgg-components A))
 (defn- dcs-members [M :vector-i64 S :string A :vector-i64 component :i64] :vector-i64
   (let [head (dgg-member-head A component)
@@ -100,7 +105,7 @@
   (let [V (dc-unhex template)]
     (if (= (vector-count V) 0) false
       (let [D (dc-read (-> (vector-alloc (+ 8 (* dc-nodes 5)))
-                    (vector-assoc! 2 1) (vector-assoc! 3 (vector-count V))) V 0)]
+                    (vector-assoc! 2 1) (vector-assoc! 3 (vector-count V)) (vector-assoc! 5 (dcp-resource A))) V 0)]
         (if (or (not= (vector-at D 1) 0) (not= (vector-at D 0) (vector-count V)) (not (dc-normal? D V 1))) false
           (loop [node 1 holes 0 previous -1]
             (if (= node (vector-at D 2)) (let [save (vector-assoc! H member holes)] true)
@@ -291,11 +296,11 @@
 ;; Structured, freshly checked graph for native build consumers. It produces
 ;; neither output nor authority. Callers must refuse an error before resolving
 ;; CIDs; the same guard is used by the original line-oriented producer.
-(defn- dcs-plan [M :vector-i64 S :string doc :i64] :vector-i64
-  (let [status (dcs-input-status M S doc) functions (dcp-field M S doc ":functions")
+(defn- dcs-plan-resource [M :vector-i64 S :string doc :i64 resource :i64] :vector-i64
+  (let [status (if (dip-valid? resource) (dcs-input-status M S doc) 10) functions (dcp-field M S doc ":functions")
         count (kr-count M functions)]
     (if (not= status 0) (vector-assoc! (vector-alloc 16) 0 status)
-      (let [A (dcs-init M S doc functions)
+      (let [A (dcs-init-resource M S doc functions resource)
             graph (loop [f 0 state A]
               (if (or (= f count) (not= (vector-at state 0) 0)) state
                 (let [walked (arena-scope
@@ -307,8 +312,9 @@
             components (if (= (vector-at graph 0) 0) (dcs-components graph) graph)
             effects (if (= (vector-at components 0) 0) (dcp-effects M S components doc) components)]
         effects))))
-(defn- dcs-produce [M :vector-i64 S :string doc :i64] :i64
-  (let [A (dcs-plan M S doc) count (vector-at A 3)
+(defn- dcs-plan [M :vector-i64 S :string doc :i64] :vector-i64 (dcs-plan-resource M S doc 0))
+(defn- dcs-produce-resource [M :vector-i64 S :string doc :i64 resource :i64] :i64
+  (let [A (dcs-plan-resource M S doc resource) count (vector-at A 3)
         R (if (= (vector-at A 0) 0) (dcs-resolve M S A) (typed-list-new [:list :string]))]
         (cond (not= (vector-at A 0) 0) (vector-at A 0)
           (loop [f 0] (if (= f count) false (or (= (dcp-f A f 2) 0) (recur (inc f))))) 3
@@ -325,8 +331,10 @@
                       write (io-out (string-concat name-part
                         (string-concat cid-part (string-concat group-part index-part))))]
                   (recur (inc f)))))))))
-(defn- dcs-run [S :string] :i64
+(defn- dcs-produce [M :vector-i64 S :string doc :i64] :i64 (dcs-produce-resource M S doc 0))
+(defn- dcs-run-resource [S :string resource :i64] :i64
   (let [M (rd-run (lx-run (mem-set (mem-new) MM-SRC-LEN (string-length S)) S) S)
         root (vector-at M MM-ROOT)]
     (if (or (not= (vector-at M MM-ERR) 0) (not= (kr-count M root) 1)) 1
-      (dcs-produce M S (kr-first M root)))))
+      (dcs-produce-resource M S (kr-first M root) resource))))
+(defn- dcs-run [S :string] :i64 (dcs-run-resource S 0))
