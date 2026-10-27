@@ -172,3 +172,50 @@ recorded the loader's wire-42 answer "Intel(R) Graphics (BMG
 G31)|1.4.318|1024|0" -- byte-identical to this probe's derived INFO
 mapping; this row's account-dependence probe is confirmatory of that
 record, not a new mechanism.
+
+## Dated note (2026-10-27, JUN-59 measurement: subgroup 8/16/32, first session)
+
+The probe note's "future row" ran at its own named INSTRUMENT channel
+(a standalone instrument on raw ANV, not the loader path, not the
+ADR-0371 provider): three fresh processes on aiueos-6600hs-1 (BMG G31
+/ ANV) over forced subgroup sizes via VK_EXT_subgroup_size_control.
+MEASURED at that channel: forced S=8 is NOT REALIZABLE (minSubgroupSize
+= 16 -- the issue's 8/16/32 question narrows to 16 vs 32 + default=32
+here); probe-verified S forcing (54/54 cell-runs), bit-exact
+correctness (54/54), and the device's first gpu_ns samples -- which
+PIN AT THE TIMESTAMP FLOOR (median 31 ticks = 1614.6 ns at every
+(op, W, S) cell; the S=16-vs-32 difference is below the quantum at
+n = 1000003), so the narrowed P1 (S=32 strictly fastest) is REFUTED at
+all six cells as ties and the S=16-vs-32 timing question stays
+UNRESOLVED above the floor. Rule 4 binds: no row moves, no `:measured?`
+flag moves, the provisional `:arm`/`:unknown` rows stay provisional,
+and the channel question of the probe note stays UNDECIDED. Evidence:
+`docs/evidence/gpu/anv-subgroupsize-81632-20261027/` (record.txt is the
+finding; publication.txt is produced only by analysis.py over the
+committed run logs).
+
+## Dated note (2026-10-27, JUN-59 measurement: subgroup 16-vs-32 floor-lifting rerun)
+
+The first session's named residual -- "S=16-vs-32 above the floor stays
+UNRESOLVED; a floor-lifting rerun (larger n and/or several dispatches
+per timestamp bracket) is PROPOSED" -- ran at its batched-bracket
+option (BATCH=64 dispatches per timestamp bracket, same cells, same
+host, same INSTRUMENT channel). MEASURED at that channel: the floor is
+lifted at every cell (pooled median brackets 229k..277k ticks = 3,583..
+4,333 ticks/dispatch, i.e. 7,400-9,000x session 1's 31-tick
+single-dispatch bracket), probe-verified forcing (54/54) and bit-exact
+correctness (316,440 workgroup results) hold, and at the batched
+steady-state metric S=32 is faster than S=16 by 397..1,139 ns/dispatch
+(0.2..0.6%) at 5 of 6 (op, W) pooled cells -- CONSISTENT in all three
+runs at (sum,256),(max,256),(min,128),(min,256), RUN-SENSITIVE at
+(sum,128),(max,128) where run-1 reverses the sign. Also MEASURED
+(derived arithmetic over the two sessions' committed logs): the batched
+per-dispatch figure (186.6..225.7 us) is ~116-140x session 1's
+single-dispatch bracket median -- session 1's single-dispatch bracket
+did NOT capture dispatch work (the mechanism of the discrepancy is
+UNMEASURED; session 1's record is not rewritten). Rule 4 binds: no row
+moves, no `:measured?` flag moves, the provisional `:arm`/`:unknown`
+rows stay provisional, and no vendor optimization exists for Intel.
+Evidence: `docs/evidence/gpu/anv-subgroupsize-batch64-20261027/`
+(record.txt is the finding; publication.txt is produced only by
+analysis.py over the committed run logs).

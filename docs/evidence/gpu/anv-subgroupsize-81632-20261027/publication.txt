@@ -1,0 +1,277 @@
+# publication -- JUN-59 subgroup 8/16/32, FIRST session, INSTRUMENT
+# channel (raw ANV on aiueos-6600hs-1; not the removed wire-42 loader
+# path, not the ADR-0371 provider). Produced ONLY by analysis.py over
+# run-1.txt run-2.txt run-3.txt -- no hand analysis, no other route.
+# Rule 4 binds in full: NO workgroup row, NO :measured? flag, NO
+# selection answer moves anywhere from this publication.
+
+== 0. inputs (sha256, verbatim) ==
+07d09adce77a01ad8cfcae5031e8514af91c67b8f0573b8daebb7e1bceaaaa80  run-1.txt
+afdca0b677db5c805da44db52f2f17fbe31dd93b63b173945e3e407f02c841d2  run-2.txt
+53aeab092ec6f243ac3fcf461ce0a19d2d6bf2ae1c6d122fc8b7c160d1a28f99  run-3.txt
+analysis.py sha256 ab38436f1df2668c46bada1b4d335d846b5228651418f0991de8226f95ce0f2b
+
+== 1. structural checks (all must hold; fail-closed) ==
+run-1.txt  cells=24 samples=450 exit=0 structure=ok
+run-2.txt  cells=24 samples=450 exit=0 structure=ok
+run-3.txt  cells=24 samples=450 exit=0 structure=ok
+cross-run header+CELL identity: ok
+
+== 2. fail-closed table (S=8 cells; named, never dropped silently) ==
+device facts: subgroupSize=32 minSubgroupSize=16 maxSubgroupSize=32 --
+forced S=8 is NOT REALIZABLE on this device (8 < minSubgroupSize=16).
+named FAIL cells (idx, op, W, forced, void_reason), identical in every run:
+  idx=0 op=sum wg=128 forced=8 pipeline=FAIL void=1 void_reason=pipeline-create-failed
+  idx=4 op=max wg=128 forced=8 pipeline=FAIL void=1 void_reason=pipeline-create-failed
+  idx=8 op=min wg=128 forced=8 pipeline=FAIL void=1 void_reason=pipeline-create-failed
+  idx=12 op=sum wg=256 forced=8 pipeline=FAIL void=1 void_reason=pipeline-create-failed
+  idx=16 op=max wg=256 forced=8 pipeline=FAIL void=1 void_reason=pipeline-create-failed
+  idx=20 op=min wg=256 forced=8 pipeline=FAIL void=1 void_reason=pipeline-create-failed
+count: 6 of 24 cells; excluded from every timing table below with
+this reason; the S=8 half of P1 is NOT EVALUABLE (named, not hidden).
+
+== 3. P2 forcing reality (probe readback per cell per run) ==
+run-1.txt idx=1 forced=16 probe_size=16(want 16) probe_nsub=8(want 8) probe_wg=128(want 128) void=0 reason='' P2=ok
+run-1.txt idx=2 forced=32 probe_size=32(want 32) probe_nsub=4(want 4) probe_wg=128(want 128) void=0 reason='' P2=ok
+run-1.txt idx=3 forced=default probe_size=32(want 32) probe_nsub=4(want 4) probe_wg=128(want 128) void=0 reason='' P2=ok
+run-1.txt idx=5 forced=16 probe_size=16(want 16) probe_nsub=8(want 8) probe_wg=128(want 128) void=0 reason='' P2=ok
+run-1.txt idx=6 forced=32 probe_size=32(want 32) probe_nsub=4(want 4) probe_wg=128(want 128) void=0 reason='' P2=ok
+run-1.txt idx=7 forced=default probe_size=32(want 32) probe_nsub=4(want 4) probe_wg=128(want 128) void=0 reason='' P2=ok
+run-1.txt idx=9 forced=16 probe_size=16(want 16) probe_nsub=8(want 8) probe_wg=128(want 128) void=0 reason='' P2=ok
+run-1.txt idx=10 forced=32 probe_size=32(want 32) probe_nsub=4(want 4) probe_wg=128(want 128) void=0 reason='' P2=ok
+run-1.txt idx=11 forced=default probe_size=32(want 32) probe_nsub=4(want 4) probe_wg=128(want 128) void=0 reason='' P2=ok
+run-1.txt idx=13 forced=16 probe_size=16(want 16) probe_nsub=16(want 16) probe_wg=256(want 256) void=0 reason='' P2=ok
+run-1.txt idx=14 forced=32 probe_size=32(want 32) probe_nsub=8(want 8) probe_wg=256(want 256) void=0 reason='' P2=ok
+run-1.txt idx=15 forced=default probe_size=32(want 32) probe_nsub=8(want 8) probe_wg=256(want 256) void=0 reason='' P2=ok
+run-1.txt idx=17 forced=16 probe_size=16(want 16) probe_nsub=16(want 16) probe_wg=256(want 256) void=0 reason='' P2=ok
+run-1.txt idx=18 forced=32 probe_size=32(want 32) probe_nsub=8(want 8) probe_wg=256(want 256) void=0 reason='' P2=ok
+run-1.txt idx=19 forced=default probe_size=32(want 32) probe_nsub=8(want 8) probe_wg=256(want 256) void=0 reason='' P2=ok
+run-1.txt idx=21 forced=16 probe_size=16(want 16) probe_nsub=16(want 16) probe_wg=256(want 256) void=0 reason='' P2=ok
+run-1.txt idx=22 forced=32 probe_size=32(want 32) probe_nsub=8(want 8) probe_wg=256(want 256) void=0 reason='' P2=ok
+run-1.txt idx=23 forced=default probe_size=32(want 32) probe_nsub=8(want 8) probe_wg=256(want 256) void=0 reason='' P2=ok
+run-2.txt idx=1 forced=16 probe_size=16(want 16) probe_nsub=8(want 8) probe_wg=128(want 128) void=0 reason='' P2=ok
+run-2.txt idx=2 forced=32 probe_size=32(want 32) probe_nsub=4(want 4) probe_wg=128(want 128) void=0 reason='' P2=ok
+run-2.txt idx=3 forced=default probe_size=32(want 32) probe_nsub=4(want 4) probe_wg=128(want 128) void=0 reason='' P2=ok
+run-2.txt idx=5 forced=16 probe_size=16(want 16) probe_nsub=8(want 8) probe_wg=128(want 128) void=0 reason='' P2=ok
+run-2.txt idx=6 forced=32 probe_size=32(want 32) probe_nsub=4(want 4) probe_wg=128(want 128) void=0 reason='' P2=ok
+run-2.txt idx=7 forced=default probe_size=32(want 32) probe_nsub=4(want 4) probe_wg=128(want 128) void=0 reason='' P2=ok
+run-2.txt idx=9 forced=16 probe_size=16(want 16) probe_nsub=8(want 8) probe_wg=128(want 128) void=0 reason='' P2=ok
+run-2.txt idx=10 forced=32 probe_size=32(want 32) probe_nsub=4(want 4) probe_wg=128(want 128) void=0 reason='' P2=ok
+run-2.txt idx=11 forced=default probe_size=32(want 32) probe_nsub=4(want 4) probe_wg=128(want 128) void=0 reason='' P2=ok
+run-2.txt idx=13 forced=16 probe_size=16(want 16) probe_nsub=16(want 16) probe_wg=256(want 256) void=0 reason='' P2=ok
+run-2.txt idx=14 forced=32 probe_size=32(want 32) probe_nsub=8(want 8) probe_wg=256(want 256) void=0 reason='' P2=ok
+run-2.txt idx=15 forced=default probe_size=32(want 32) probe_nsub=8(want 8) probe_wg=256(want 256) void=0 reason='' P2=ok
+run-2.txt idx=17 forced=16 probe_size=16(want 16) probe_nsub=16(want 16) probe_wg=256(want 256) void=0 reason='' P2=ok
+run-2.txt idx=18 forced=32 probe_size=32(want 32) probe_nsub=8(want 8) probe_wg=256(want 256) void=0 reason='' P2=ok
+run-2.txt idx=19 forced=default probe_size=32(want 32) probe_nsub=8(want 8) probe_wg=256(want 256) void=0 reason='' P2=ok
+run-2.txt idx=21 forced=16 probe_size=16(want 16) probe_nsub=16(want 16) probe_wg=256(want 256) void=0 reason='' P2=ok
+run-2.txt idx=22 forced=32 probe_size=32(want 32) probe_nsub=8(want 8) probe_wg=256(want 256) void=0 reason='' P2=ok
+run-2.txt idx=23 forced=default probe_size=32(want 32) probe_nsub=8(want 8) probe_wg=256(want 256) void=0 reason='' P2=ok
+run-3.txt idx=1 forced=16 probe_size=16(want 16) probe_nsub=8(want 8) probe_wg=128(want 128) void=0 reason='' P2=ok
+run-3.txt idx=2 forced=32 probe_size=32(want 32) probe_nsub=4(want 4) probe_wg=128(want 128) void=0 reason='' P2=ok
+run-3.txt idx=3 forced=default probe_size=32(want 32) probe_nsub=4(want 4) probe_wg=128(want 128) void=0 reason='' P2=ok
+run-3.txt idx=5 forced=16 probe_size=16(want 16) probe_nsub=8(want 8) probe_wg=128(want 128) void=0 reason='' P2=ok
+run-3.txt idx=6 forced=32 probe_size=32(want 32) probe_nsub=4(want 4) probe_wg=128(want 128) void=0 reason='' P2=ok
+run-3.txt idx=7 forced=default probe_size=32(want 32) probe_nsub=4(want 4) probe_wg=128(want 128) void=0 reason='' P2=ok
+run-3.txt idx=9 forced=16 probe_size=16(want 16) probe_nsub=8(want 8) probe_wg=128(want 128) void=0 reason='' P2=ok
+run-3.txt idx=10 forced=32 probe_size=32(want 32) probe_nsub=4(want 4) probe_wg=128(want 128) void=0 reason='' P2=ok
+run-3.txt idx=11 forced=default probe_size=32(want 32) probe_nsub=4(want 4) probe_wg=128(want 128) void=0 reason='' P2=ok
+run-3.txt idx=13 forced=16 probe_size=16(want 16) probe_nsub=16(want 16) probe_wg=256(want 256) void=0 reason='' P2=ok
+run-3.txt idx=14 forced=32 probe_size=32(want 32) probe_nsub=8(want 8) probe_wg=256(want 256) void=0 reason='' P2=ok
+run-3.txt idx=15 forced=default probe_size=32(want 32) probe_nsub=8(want 8) probe_wg=256(want 256) void=0 reason='' P2=ok
+run-3.txt idx=17 forced=16 probe_size=16(want 16) probe_nsub=16(want 16) probe_wg=256(want 256) void=0 reason='' P2=ok
+run-3.txt idx=18 forced=32 probe_size=32(want 32) probe_nsub=8(want 8) probe_wg=256(want 256) void=0 reason='' P2=ok
+run-3.txt idx=19 forced=default probe_size=32(want 32) probe_nsub=8(want 8) probe_wg=256(want 256) void=0 reason='' P2=ok
+run-3.txt idx=21 forced=16 probe_size=16(want 16) probe_nsub=16(want 16) probe_wg=256(want 256) void=0 reason='' P2=ok
+run-3.txt idx=22 forced=32 probe_size=32(want 32) probe_nsub=8(want 8) probe_wg=256(want 256) void=0 reason='' P2=ok
+run-3.txt idx=23 forced=default probe_size=32(want 32) probe_nsub=8(want 8) probe_wg=256(want 256) void=0 reason='' P2=ok
+P2 verdict: HOLDS (0 deviations; any deviation VOIDS that cell's timing)
+
+== 4. P3 correctness (VERIFY readback, bit-exact CPU reference) ==
+run-1.txt idx=0 checked=0 mismatch=0 ok=0 note=pipeline-failed
+run-1.txt idx=1 checked=7813 mismatch=0 ok=1 P3=ok
+run-1.txt idx=2 checked=7813 mismatch=0 ok=1 P3=ok
+run-1.txt idx=3 checked=7813 mismatch=0 ok=1 P3=ok
+run-1.txt idx=4 checked=0 mismatch=0 ok=0 note=pipeline-failed
+run-1.txt idx=5 checked=7813 mismatch=0 ok=1 P3=ok
+run-1.txt idx=6 checked=7813 mismatch=0 ok=1 P3=ok
+run-1.txt idx=7 checked=7813 mismatch=0 ok=1 P3=ok
+run-1.txt idx=8 checked=0 mismatch=0 ok=0 note=pipeline-failed
+run-1.txt idx=9 checked=7813 mismatch=0 ok=1 P3=ok
+run-1.txt idx=10 checked=7813 mismatch=0 ok=1 P3=ok
+run-1.txt idx=11 checked=7813 mismatch=0 ok=1 P3=ok
+run-1.txt idx=12 checked=0 mismatch=0 ok=0 note=pipeline-failed
+run-1.txt idx=13 checked=3907 mismatch=0 ok=1 P3=ok
+run-1.txt idx=14 checked=3907 mismatch=0 ok=1 P3=ok
+run-1.txt idx=15 checked=3907 mismatch=0 ok=1 P3=ok
+run-1.txt idx=16 checked=0 mismatch=0 ok=0 note=pipeline-failed
+run-1.txt idx=17 checked=3907 mismatch=0 ok=1 P3=ok
+run-1.txt idx=18 checked=3907 mismatch=0 ok=1 P3=ok
+run-1.txt idx=19 checked=3907 mismatch=0 ok=1 P3=ok
+run-1.txt idx=20 checked=0 mismatch=0 ok=0 note=pipeline-failed
+run-1.txt idx=21 checked=3907 mismatch=0 ok=1 P3=ok
+run-1.txt idx=22 checked=3907 mismatch=0 ok=1 P3=ok
+run-1.txt idx=23 checked=3907 mismatch=0 ok=1 P3=ok
+run-2.txt idx=0 checked=0 mismatch=0 ok=0 note=pipeline-failed
+run-2.txt idx=1 checked=7813 mismatch=0 ok=1 P3=ok
+run-2.txt idx=2 checked=7813 mismatch=0 ok=1 P3=ok
+run-2.txt idx=3 checked=7813 mismatch=0 ok=1 P3=ok
+run-2.txt idx=4 checked=0 mismatch=0 ok=0 note=pipeline-failed
+run-2.txt idx=5 checked=7813 mismatch=0 ok=1 P3=ok
+run-2.txt idx=6 checked=7813 mismatch=0 ok=1 P3=ok
+run-2.txt idx=7 checked=7813 mismatch=0 ok=1 P3=ok
+run-2.txt idx=8 checked=0 mismatch=0 ok=0 note=pipeline-failed
+run-2.txt idx=9 checked=7813 mismatch=0 ok=1 P3=ok
+run-2.txt idx=10 checked=7813 mismatch=0 ok=1 P3=ok
+run-2.txt idx=11 checked=7813 mismatch=0 ok=1 P3=ok
+run-2.txt idx=12 checked=0 mismatch=0 ok=0 note=pipeline-failed
+run-2.txt idx=13 checked=3907 mismatch=0 ok=1 P3=ok
+run-2.txt idx=14 checked=3907 mismatch=0 ok=1 P3=ok
+run-2.txt idx=15 checked=3907 mismatch=0 ok=1 P3=ok
+run-2.txt idx=16 checked=0 mismatch=0 ok=0 note=pipeline-failed
+run-2.txt idx=17 checked=3907 mismatch=0 ok=1 P3=ok
+run-2.txt idx=18 checked=3907 mismatch=0 ok=1 P3=ok
+run-2.txt idx=19 checked=3907 mismatch=0 ok=1 P3=ok
+run-2.txt idx=20 checked=0 mismatch=0 ok=0 note=pipeline-failed
+run-2.txt idx=21 checked=3907 mismatch=0 ok=1 P3=ok
+run-2.txt idx=22 checked=3907 mismatch=0 ok=1 P3=ok
+run-2.txt idx=23 checked=3907 mismatch=0 ok=1 P3=ok
+run-3.txt idx=0 checked=0 mismatch=0 ok=0 note=pipeline-failed
+run-3.txt idx=1 checked=7813 mismatch=0 ok=1 P3=ok
+run-3.txt idx=2 checked=7813 mismatch=0 ok=1 P3=ok
+run-3.txt idx=3 checked=7813 mismatch=0 ok=1 P3=ok
+run-3.txt idx=4 checked=0 mismatch=0 ok=0 note=pipeline-failed
+run-3.txt idx=5 checked=7813 mismatch=0 ok=1 P3=ok
+run-3.txt idx=6 checked=7813 mismatch=0 ok=1 P3=ok
+run-3.txt idx=7 checked=7813 mismatch=0 ok=1 P3=ok
+run-3.txt idx=8 checked=0 mismatch=0 ok=0 note=pipeline-failed
+run-3.txt idx=9 checked=7813 mismatch=0 ok=1 P3=ok
+run-3.txt idx=10 checked=7813 mismatch=0 ok=1 P3=ok
+run-3.txt idx=11 checked=7813 mismatch=0 ok=1 P3=ok
+run-3.txt idx=12 checked=0 mismatch=0 ok=0 note=pipeline-failed
+run-3.txt idx=13 checked=3907 mismatch=0 ok=1 P3=ok
+run-3.txt idx=14 checked=3907 mismatch=0 ok=1 P3=ok
+run-3.txt idx=15 checked=3907 mismatch=0 ok=1 P3=ok
+run-3.txt idx=16 checked=0 mismatch=0 ok=0 note=pipeline-failed
+run-3.txt idx=17 checked=3907 mismatch=0 ok=1 P3=ok
+run-3.txt idx=18 checked=3907 mismatch=0 ok=1 P3=ok
+run-3.txt idx=19 checked=3907 mismatch=0 ok=1 P3=ok
+run-3.txt idx=20 checked=0 mismatch=0 ok=0 note=pipeline-failed
+run-3.txt idx=21 checked=3907 mismatch=0 ok=1 P3=ok
+run-3.txt idx=22 checked=3907 mismatch=0 ok=1 P3=ok
+run-3.txt idx=23 checked=3907 mismatch=0 ok=1 P3=ok
+P3 verdict: HOLDS (mismatch=0 at every cell of every run) (0 mismatching cells across all runs)
+
+== 5. timing table (gpu_ns = vkCmdWriteTimestamp dispatch bracket;
+    host_ns = CLOCK_MONOTONIC submit->completion; never mixed) ==
+per cell per run: n=sample count, absent=gpu_ticks==0 samples (named,
+excluded from gpu_ns medians), gpu_ns min/median/max, host_ns min/median/max.
+run-1 idx=1 op=sum wg=128 S=16 n=25 absent=0 gpu_ns 1562.5/1614.6/2812.5 host_ns 344613/352678.0/401960
+run-1 idx=2 op=sum wg=128 S=32 n=25 absent=0 gpu_ns 1614.6/1666.7/2864.6 host_ns 341808/350524.0/401038
+run-1 idx=3 op=sum wg=128 S=default n=25 absent=0 gpu_ns 1562.5/1614.6/2604.2 host_ns 344022/351586.0/392232
+run-1 idx=5 op=max wg=128 S=16 n=25 absent=0 gpu_ns 1614.6/1666.7/2760.4 host_ns 341447/352387.0/415566
+run-1 idx=6 op=max wg=128 S=32 n=25 absent=0 gpu_ns 1562.5/1614.6/2604.2 host_ns 344933/350664.0/390157
+run-1 idx=7 op=max wg=128 S=default n=25 absent=0 gpu_ns 1614.6/1614.6/2708.3 host_ns 344492/350885.0/390729
+run-1 idx=9 op=min wg=128 S=16 n=25 absent=0 gpu_ns 1562.5/1614.6/2812.5 host_ns 347418/352668.0/405797
+run-1 idx=10 op=min wg=128 S=32 n=25 absent=0 gpu_ns 1562.5/1614.6/2760.4 host_ns 343471/351356.0/392162
+run-1 idx=11 op=min wg=128 S=default n=25 absent=0 gpu_ns 1562.5/1614.6/2864.6 host_ns 343851/349432.0/398854
+run-1 idx=13 op=sum wg=256 S=16 n=25 absent=0 gpu_ns 1562.5/1614.6/2760.4 host_ns 284170/289550.0/328293
+run-1 idx=14 op=sum wg=256 S=32 n=25 absent=0 gpu_ns 1562.5/1614.6/2552.1 host_ns 285763/290852.0/327942
+run-1 idx=15 op=sum wg=256 S=default n=25 absent=0 gpu_ns 1614.6/1614.6/2864.6 host_ns 287756/291834.0/332370
+run-1 idx=17 op=max wg=256 S=16 n=25 absent=0 gpu_ns 1562.5/1614.6/2708.3 host_ns 286284/290242.0/327961
+run-1 idx=18 op=max wg=256 S=32 n=25 absent=0 gpu_ns 1562.5/1614.6/2552.1 host_ns 287336/291885.0/337750
+run-1 idx=19 op=max wg=256 S=default n=25 absent=0 gpu_ns 1562.5/1614.6/2864.6 host_ns 287636/291584.0/332530
+run-1 idx=21 op=min wg=256 S=16 n=25 absent=0 gpu_ns 1562.5/1614.6/2708.3 host_ns 283529/291735.0/334684
+run-1 idx=22 op=min wg=256 S=32 n=25 absent=0 gpu_ns 1614.6/1614.6/2552.1 host_ns 288719/292496.0/325708
+run-1 idx=23 op=min wg=256 S=default n=25 absent=0 gpu_ns 1562.5/1614.6/2760.4 host_ns 288428/291974.0/330948
+run-2 idx=1 op=sum wg=128 S=16 n=25 absent=0 gpu_ns 1562.5/1614.6/1718.7 host_ns 343381/352267.0/362446
+run-2 idx=2 op=sum wg=128 S=32 n=25 absent=0 gpu_ns 1562.5/1614.6/1770.8 host_ns 345765/352407.0/360282
+run-2 idx=3 op=sum wg=128 S=default n=25 absent=0 gpu_ns 1614.6/1614.6/1770.8 host_ns 345214/352467.0/359751
+run-2 idx=5 op=max wg=128 S=16 n=25 absent=0 gpu_ns 1562.5/1614.6/1770.8 host_ns 347468/354772.0/362095
+run-2 idx=6 op=max wg=128 S=32 n=25 absent=0 gpu_ns 1562.5/1614.6/1666.7 host_ns 347258/351766.0/360372
+run-2 idx=7 op=max wg=128 S=default n=25 absent=0 gpu_ns 1562.5/1614.6/1666.7 host_ns 347488/353239.0/358218
+run-2 idx=9 op=min wg=128 S=16 n=25 absent=0 gpu_ns 1562.5/1614.6/1666.7 host_ns 345314/354040.0/358779
+run-2 idx=10 op=min wg=128 S=32 n=25 absent=0 gpu_ns 1614.6/1614.6/1666.7 host_ns 346396/351205.0/358379
+run-2 idx=11 op=min wg=128 S=default n=25 absent=0 gpu_ns 1614.6/1614.6/1718.7 host_ns 349071/352096.0/357046
+run-2 idx=13 op=sum wg=256 S=16 n=25 absent=0 gpu_ns 1562.5/1614.6/1666.7 host_ns 288468/291163.0/295852
+run-2 idx=14 op=sum wg=256 S=32 n=25 absent=0 gpu_ns 1562.5/1614.6/1666.7 host_ns 287897/294589.0/297905
+run-2 idx=15 op=sum wg=256 S=default n=25 absent=0 gpu_ns 1562.5/1614.6/1770.8 host_ns 288187/292987.0/296132
+run-2 idx=17 op=max wg=256 S=16 n=25 absent=0 gpu_ns 1562.5/1614.6/1666.7 host_ns 288969/292736.0/298466
+run-2 idx=18 op=max wg=256 S=32 n=25 absent=0 gpu_ns 1562.5/1614.6/1666.7 host_ns 289530/293107.0/298617
+run-2 idx=19 op=max wg=256 S=default n=25 absent=0 gpu_ns 1562.5/1614.6/1718.7 host_ns 287917/293487.0/300571
+run-2 idx=21 op=min wg=256 S=16 n=25 absent=0 gpu_ns 1562.5/1614.6/1718.7 host_ns 288297/291844.0/297044
+run-2 idx=22 op=min wg=256 S=32 n=25 absent=0 gpu_ns 1562.5/1614.6/1718.7 host_ns 288849/293708.0/303456
+run-2 idx=23 op=min wg=256 S=default n=25 absent=0 gpu_ns 1614.6/1614.6/1770.8 host_ns 290141/293026.0/298827
+run-3 idx=1 op=sum wg=128 S=16 n=25 absent=0 gpu_ns 1562.5/1614.6/1718.7 host_ns 345554/353640.0/363498
+run-3 idx=2 op=sum wg=128 S=32 n=25 absent=0 gpu_ns 1562.5/1614.6/1666.7 host_ns 346927/351586.0/358118
+run-3 idx=3 op=sum wg=128 S=default n=25 absent=0 gpu_ns 1562.5/1614.6/1666.7 host_ns 346817/351746.0/356415
+run-3 idx=5 op=max wg=128 S=16 n=25 absent=0 gpu_ns 1562.5/1614.6/1666.7 host_ns 347628/353118.0/359731
+run-3 idx=6 op=max wg=128 S=32 n=25 absent=0 gpu_ns 1562.5/1614.6/1718.7 host_ns 345845/354902.0/358458
+run-3 idx=7 op=max wg=128 S=default n=25 absent=0 gpu_ns 1562.5/1614.6/1770.8 host_ns 345445/352538.0/358288
+run-3 idx=9 op=min wg=128 S=16 n=25 absent=0 gpu_ns 1562.5/1614.6/1666.7 host_ns 343250/352407.0/359451
+run-3 idx=10 op=min wg=128 S=32 n=25 absent=0 gpu_ns 1562.5/1614.6/1718.7 host_ns 345895/352518.0/362887
+run-3 idx=11 op=min wg=128 S=default n=25 absent=0 gpu_ns 1562.5/1614.6/1666.7 host_ns 346917/350354.0/359050
+run-3 idx=13 op=sum wg=256 S=16 n=25 absent=0 gpu_ns 1614.6/1614.6/1718.7 host_ns 284080/291023.0/295481
+run-3 idx=14 op=sum wg=256 S=32 n=25 absent=0 gpu_ns 1562.5/1614.6/1718.7 host_ns 289159/293327.0/297255
+run-3 idx=15 op=sum wg=256 S=default n=25 absent=0 gpu_ns 1562.5/1614.6/1718.7 host_ns 287666/292816.0/298637
+run-3 idx=17 op=max wg=256 S=16 n=25 absent=0 gpu_ns 1562.5/1614.6/1666.7 host_ns 287807/292155.0/298728
+run-3 idx=18 op=max wg=256 S=32 n=25 absent=0 gpu_ns 1614.6/1614.6/1718.7 host_ns 288107/292565.0/302925
+run-3 idx=19 op=max wg=256 S=default n=25 absent=0 gpu_ns 1562.5/1614.6/1770.8 host_ns 287777/292585.0/296593
+run-3 idx=21 op=min wg=256 S=16 n=25 absent=0 gpu_ns 1614.6/1614.6/1718.7 host_ns 283769/290963.0/296684
+run-3 idx=22 op=min wg=256 S=32 n=25 absent=0 gpu_ns 1562.5/1614.6/1718.7 host_ns 290261/292526.0/298957
+run-3 idx=23 op=min wg=256 S=default n=25 absent=0 gpu_ns 1562.5/1614.6/1718.7 host_ns 288678/292976.0/297826
+
+== 6. P1 (stage/barrier count), evaluated at its letter ==
+(sum, W=128): per-run gpu_ns medians by S: S=16 [1614.6, 1614.6, 1614.6]  S=32 [1666.7, 1614.6, 1614.6]  S=default [1614.6, 1614.6, 1614.6]
+  pooled median S=16 1614.6 | S=32 1614.6 | default 1614.6 -- S=32 strictly below S=16: NO (EQUAL medians (tie -- no S=32 advantage measured)); fastest measured cell: TIE(S=16,S=32,S=default)
+  S=8 half: NOT EVALUABLE (pipeline=FAIL, no samples).
+(sum, W=256): per-run gpu_ns medians by S: S=16 [1614.6, 1614.6, 1614.6]  S=32 [1614.6, 1614.6, 1614.6]  S=default [1614.6, 1614.6, 1614.6]
+  pooled median S=16 1614.6 | S=32 1614.6 | default 1614.6 -- S=32 strictly below S=16: NO (EQUAL medians (tie -- no S=32 advantage measured)); fastest measured cell: TIE(S=16,S=32,S=default)
+  S=8 half: NOT EVALUABLE (pipeline=FAIL, no samples).
+(max, W=128): per-run gpu_ns medians by S: S=16 [1666.7, 1614.6, 1614.6]  S=32 [1614.6, 1614.6, 1614.6]  S=default [1614.6, 1614.6, 1614.6]
+  pooled median S=16 1614.6 | S=32 1614.6 | default 1614.6 -- S=32 strictly below S=16: NO (EQUAL medians (tie -- no S=32 advantage measured)); fastest measured cell: TIE(S=16,S=32,S=default)
+  S=8 half: NOT EVALUABLE (pipeline=FAIL, no samples).
+(max, W=256): per-run gpu_ns medians by S: S=16 [1614.6, 1614.6, 1614.6]  S=32 [1614.6, 1614.6, 1614.6]  S=default [1614.6, 1614.6, 1614.6]
+  pooled median S=16 1614.6 | S=32 1614.6 | default 1614.6 -- S=32 strictly below S=16: NO (EQUAL medians (tie -- no S=32 advantage measured)); fastest measured cell: TIE(S=16,S=32,S=default)
+  S=8 half: NOT EVALUABLE (pipeline=FAIL, no samples).
+(min, W=128): per-run gpu_ns medians by S: S=16 [1614.6, 1614.6, 1614.6]  S=32 [1614.6, 1614.6, 1614.6]  S=default [1614.6, 1614.6, 1614.6]
+  pooled median S=16 1614.6 | S=32 1614.6 | default 1614.6 -- S=32 strictly below S=16: NO (EQUAL medians (tie -- no S=32 advantage measured)); fastest measured cell: TIE(S=16,S=32,S=default)
+  S=8 half: NOT EVALUABLE (pipeline=FAIL, no samples).
+(min, W=256): per-run gpu_ns medians by S: S=16 [1614.6, 1614.6, 1614.6]  S=32 [1614.6, 1614.6, 1614.6]  S=default [1614.6, 1614.6, 1614.6]
+  pooled median S=16 1614.6 | S=32 1614.6 | default 1614.6 -- S=32 strictly below S=16: NO (EQUAL medians (tie -- no S=32 advantage measured)); fastest measured cell: TIE(S=16,S=32,S=default)
+  S=8 half: NOT EVALUABLE (pipeline=FAIL, no samples).
+P1 verdict (letter: S=32 median strictly below BOTH S=8's and S=16's at
+every (op, W)): NOT EVALUABLE AT ITS FULL LETTER -- the S=8 comparison
+has no timing on this device (fail-closed, named). At the NARROWED
+letter (S=32 strictly below S=16 at every (op, W)) P1 IS REFUTED AT: [('sum', '128', False, 'TIE(S=16,S=32,S=default)'), ('sum', '256', False, 'TIE(S=16,S=32,S=default)'), ('max', '128', False, 'TIE(S=16,S=32,S=default)'), ('max', '256', False, 'TIE(S=16,S=32,S=default)'), ('min', '128', False, 'TIE(S=16,S=32,S=default)'), ('min', '256', False, 'TIE(S=16,S=32,S=default)')].
+This is a design-reasoning check at the INSTRUMENT channel; it is NOT
+an optimization claim and no selection answer may move from it.
+
+== 7. P4 cross-run order (per-cell gpu_ns medians' ORDER by S,
+    identical across the three fresh processes?) ==
+orders are strict orders of the per-run medians; EXACT TIES are broken
+by the S label lexicographically (16 < 32 < default) -- an all-tie cell
+therefore always prints 16>32>default and is NAMED degenerate in the
+per-cell line below (its order carries no rank information).
+(sum, W=128): run-1 16>default>32 | run-2 16>32>default | run-3 16>32>default -- DIFFERS
+(sum, W=256): run-1 16>32>default | run-2 16>32>default | run-3 16>32>default -- IDENTICAL  [ALL-TIE CELL, order degenerate]
+(max, W=128): run-1 32>default>16 | run-2 16>32>default | run-3 16>32>default -- DIFFERS
+(max, W=256): run-1 16>32>default | run-2 16>32>default | run-3 16>32>default -- IDENTICAL  [ALL-TIE CELL, order degenerate]
+(min, W=128): run-1 16>32>default | run-2 16>32>default | run-3 16>32>default -- IDENTICAL  [ALL-TIE CELL, order degenerate]
+(min, W=256): run-1 16>32>default | run-2 16>32>default | run-3 16>32>default -- IDENTICAL  [ALL-TIE CELL, order degenerate]
+P4 verdict: FAILURES NAMED: [('sum', '128', [['16', 'default', '32'], ['16', '32', 'default'], ['16', '32', 'default']]), ('max', '128', [['32', 'default', '16'], ['16', '32', 'default'], ['16', '32', 'default']])]
+
+== 8. scope (rule 4, verbatim from protocol.txt) ==
+CHANNEL: INSTRUMENT channel -- a standalone measurement instrument on
+raw ANV, neither the removed wire-42 loader path nor its ADR-0371
+provider successor. Rule 4 binds in full: no workgroup row moves (no
+:measured? flag, no :size, no :shapes, no selection answer -- the :intel
+row 128 / :measured? true / key "g31" keeps its ADR-0358 provenance),
+and this session is NOT the basis-replacing baseline-vs-variant
+contract named in accelerator-subgroup-reduce.cljk (that contract is its
+own future row and its own channel question). :arm/:unknown stay
+provisional :measured? false.
+UNMEASURED named: every W outside {128,256}; shape 2; any
+baseline-vs-variant sign; cross-day replication; anything off this
+host; the S=8 cells' timing (not realizable here); every workgroup-row
+question.
