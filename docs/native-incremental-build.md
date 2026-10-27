@@ -100,6 +100,70 @@ types, map/set expressions, source loops and other unsupported forms refuse.
 The native Seed source frontend, full schema closure and effect-name bridge
 are still required before this can cover the production compiler graph.
 
+### Shared sparse graph and complete compiler input
+
+`seed/05-definition-graph.kotoba` replaces the identity producer's dense
+matrix and its private Tarjan traversal. The same implementation imports
+the complete freshly checked/lowered Seed compiler for the independent
+`native-definition-graph` gate. There is one graph implementation in both
+paths. Object binding selection walks the SCC's actual edges; component
+membership uses an index instead of scanning every definition for every SCC.
+Canonical group name sorting and object binding source order are preserved.
+
+The graph stores bounded `(target,next,owner)` rows, validates the entire
+append history before traversal, and seals further insertions. The iterative
+algorithm retains unused/isolated definitions. After traversal, the DFS
+workspace becomes component heads and node9 becomes next-member+1; complete
+membership coverage is checked independently. These are transient native
+plans, not cached proofs over mutable CODE/FIX or authority-bearing flags.
+All per-vector, item, descriptor, stack, fuel and runtime-profile limits
+remain unchanged.
+
+For the current pinned FULL48 input (3502559 bytes, SHA256
+`5254afb12561ee609e8cd27420c6c5ddbb3e2e484cab5311b3674a1f11b04d05`),
+the native function table contains6537 entries:5147 executable entries,
+1387 constants and three stateful templates. The known call/address graph
+has53077 references and6246 components. Its array uses276913 words.
+A dense matrix alone would require42732369 words,
+exceeding the existing33554432-element per-vector bound. This demonstrates
+that the actual compiler graph now fits; it is not a compiler speed ratio
+or proof of whole-compiler object reuse. Both native Linux ISA reports from
+CI40417377813 have identical raw graph output and bind that exact input.
+The earlier FULL47 `a5ba8c64` measurement (6485 entries,52861 references,
+6194 components,275329 graph words) remains historical evidence, not the
+current pinned-manifest qualification.
+
+SIR does not preserve source dependencies of inlined constants or the origins
+of stateful specializations. Those vertices remain explicitly unresolved,
+along with every indirect call owner. Current input has one indirect call
+in `lw-times`, whose three callback sites also need their checked closure/ABI
+contract. The graph's `directOnly` observation stays false. No source/SIR hash
+is relabelled a DefCID, and no execution/admission verdict is inferred.
+
+On both native Linux ISAs the graph gate exhausts all66067 directed graphs
+through four vertices against native reachability, including loops and
+duplicate edges; checks8191-vertex paths/cycles and malformed/partial/frozen
+plans; and builds/executes nine semantic mutants. For the current FULL48 input,
+an independent native oracle walks each checked function's FF-SIR interval
+backwards and matches every imported edge. An independent observer Kosaraju
+pass compares every component. Ill-typed source and claimed-checked input
+refuse before emitting a graph. The original identity/CID/full-payload and
+object/ELF/fresh-admission gates continue to run separately.
+
+The generic graph supports large components; the canonical identity route
+still refuses SCCs above eight and retains its existing codec/profile bounds.
+Complete checked-KIR production, canonical large-group identity, literal and
+runtime objects, immutable producer-image binding and actual whole-compiler
+cold/warm mutation builds remain required. The uncached main/full tier and
+the20-minute CI goal are not replaced by this graph qualification.
+
+An exploratory Mac probe of the known-call graph is recorded separately.
+The current diagnostic Mac packager crashes even for the minimal
+`(arena-scope true)` case while the no-scope control exits0. The native Linux
+scope/oracle tests remain intact; the Mac scope tests are not counted as
+passing or silently rewritten without scope. See JUN-417 for that runtime
+qualification gap. Source acceptance does not qualify the Mac arena ABI.
+
 The producer seals profile6 and desugar2, matching the vendored immutable
 kotoba-lang authority snapshot recorded under
 `seed/tests/checked-definition-authority/`. The qualification image reads

@@ -313,6 +313,27 @@ qualification of the full Seed frontend. See docs/native-incremental-build.md.
 
 ## Native definition-object build prototype
 
+The identity/object prototypes share `seed/05-definition-graph.kotoba` with
+the complete checked Seed SIR call-graph observer. Keep sparse append-history
+validation, all vertices, iterative traversal, member-index coverage and the
+sealed-write refusal. The DFS workspace becomes component heads after
+traversal; node9 then means next-member+1, not a live DFS parent. Preserve
+name ordering in canonical groups and source ordering in object bindings.
+
+The shared native graph gate exhausts66067 directed small graphs against
+reachability, covers8191-vertex paths/cycles, freshly imports the complete
+pinned compiler manifest, checks its edges through independent FF-SIR intervals and
+compares complete partitions with an independent observer oracle. Every
+named mutant must actually build/execute and hit its native guard. Existing
+identity/object oracles, SCC<=8 refusal and all selfhost gates remain required.
+
+SIR omits inlined constants and stateful templates. Retain those declarations
+as explicit unresolved vertices, and record every CALLI owner. A direct-only
+call graph is never a canonical identity or admission proof. The complete
+source/checked-KIR bridge, larger-SCC identity, literal/type/effect handling
+and trusted producer-image binding remain separate requirements. Do not
+accept a persisted graph or a caller's checked/sealed flag as a fresh plan.
+
 `seed/07-definition-objects.kotoba`, `08-definition-object-emitter.kotoba`
 and `09-definition-build.kotoba` remain outside FULL-MANIFEST. This bounded
 pure scalar KIR route captures the original xg emitter's unlinked bytes and

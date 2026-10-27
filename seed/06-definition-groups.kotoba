@@ -18,8 +18,10 @@
             (recur (kr-next M v) (typed-list-conj [:list :string] seen name))))))))
 (defn- dcs-init [M :vector-i64 S :string doc :i64 functions :i64] :vector-i64
   (let [n (kr-count M functions) cap (loop [v 2] (if (>= v (* 2 n)) v (recur (* v 2))))
-        A (-> (vector-alloc (+ 16 (* n dcp-fwidth) (* n n) cap (* dc-nodes 2) (* n 2) 64))
-              (vector-assoc! 3 n) (vector-assoc! 6 cap))]
+        edges (vector-at M MM-NODE-N)
+        a (-> (vector-alloc (+ 16 (* n dcp-fwidth) (* edges 3) cap (* dc-nodes 2) (* n 2) 64))
+              (vector-assoc! 3 n) (vector-assoc! 6 cap) (vector-assoc! 11 edges))
+        A (dgg-init a n edges (+ (dcp-env a) (* 2 dc-nodes)))]
     (loop [p (kr-first M functions) i 0 state A]
       (if (or (= p 0) (not= (vector-at state 0) 0)) state
         (let [name (dcp-field M S p ":name") text (if (> name 0) (dcp-text M S name) "")
@@ -34,58 +36,21 @@
                     (if (= (vector-at a (+ (dcp-hash a) j)) 0) j (recur (bit-and (inc j) (dec cap)))))
                   b (vector-assoc! a (+ (dcp-hash a) slot) (inc i))]
               (recur (kr-next M p) (inc i) b))))))))
-(defn- dcs-enter [A :vector-i64 f :i64 parent :i64 depth :i64] :vector-i64
-  (let [index (inc (vector-at A 7)) stack (vector-at A 8)
-        a (-> A (vector-assoc! 7 index) (vector-assoc! 8 (inc stack))
-              (dcp-put f 6 index) (dcp-put f 7 index) (dcp-put f 8 1)
-              (dcp-put f 9 parent) (dcp-put f 10 0))
-        b (vector-assoc! a (+ (dcp-stack a) stack) f)]
-    (vector-assoc! b (+ (dcp-stack b) (vector-at b 3) depth) f)))
-(defn- dcs-components [A :vector-i64] :vector-i64
-  (loop [start 0 state A]
-    (cond (= start (vector-at state 3)) state
-      (> (dcp-f state start 6) 0) (recur (inc start) state)
-      :else
-      (let [entered (dcs-enter state start -1 0)
-            complete (loop [depth 1 a entered]
-              (if (= depth 0) a
-                (let [n (vector-at a 3) f (vector-at a (+ (dcp-stack a) n (dec depth)))
-                      next (loop [w (dcp-f a f 10)]
-                        (cond (= w n) n (> (vector-at a (+ (dcp-graph a) (* f n) w)) 0) w
-                          :else (recur (inc w))))]
-                  (if (< next n)
-                    (let [advanced (dcp-put a f 10 (inc next))]
-                      (cond (= (dcp-f advanced next 6) 0)
-                              (recur (inc depth) (dcs-enter advanced next f depth))
-                            (> (dcp-f advanced next 8) 0)
-                              (recur depth (dcp-put advanced f 7
-                                (if (< (dcp-f advanced next 6) (dcp-f advanced f 7))
-                                  (dcp-f advanced next 6) (dcp-f advanced f 7))))
-                            :else (recur depth advanced)))
-                    (let [parent (dcp-f a f 9)
-                          linked (if (< parent 0) a (dcp-put a parent 7
-                            (if (< (dcp-f a f 7) (dcp-f a parent 7)) (dcp-f a f 7) (dcp-f a parent 7))))
-                          popped (if (not= (dcp-f linked f 7) (dcp-f linked f 6)) linked
-                            (let [component (inc (vector-at linked 9)) set (vector-assoc! linked 9 component)]
-                              (loop [b set]
-                                (let [top (dec (vector-at b 8)) member (vector-at b (+ (dcp-stack b) top))
-                                      c (-> b (vector-assoc! 8 top) (dcp-put member 8 0) (dcp-put member 5 component))]
-                                  (if (= member f) c (recur c))))))]
-                      (recur (dec depth) popped))))))]
-        (recur (inc start) complete)))))
+(defn- dcs-components [A :vector-i64] :vector-i64 (dgg-components A))
 (defn- dcs-members [M :vector-i64 S :string A :vector-i64 component :i64] :vector-i64
-  (let [count (loop [i 0 n 0] (if (= i (vector-at A 3)) n
-                (recur (inc i) (+ n (if (= (dcp-f A i 5) component) 1 0)))))
+  (let [head (dgg-member-head A component)
+        count (loop [cursor head n 0]
+                (if (= cursor 0) n (recur (dgg-f A (dec cursor) 9) (inc n))))
         C (vector-alloc count)]
-    (loop [f 0 at 0 out C]
-      (if (= f (vector-at A 3)) out
-        (if (not= (dcp-f A f 5) component) (recur (inc f) at out)
-          (let [next (loop [j at v out]
-            (if (and (> j 0) (> (string-compare (dcp-text M S (dcp-f A (vector-at v (dec j)) 1))
-                                                       (dcp-text M S (dcp-f A f 1))) 0))
-              (recur (dec j) (vector-assoc! v j (vector-at v (dec j))))
-              (vector-assoc! v j f)))]
-            (recur (inc f) (inc at) next)))))))
+    (loop [cursor head at 0 out C]
+      (if (= cursor 0) out
+        (let [f (dec cursor)
+              next (loop [j at v out]
+                     (if (and (> j 0) (> (string-compare (dcp-text M S (dcp-f A (vector-at v (dec j)) 1))
+                                                                       (dcp-text M S (dcp-f A f 1))) 0))
+                       (recur (dec j) (vector-assoc! v j (vector-at v (dec j))))
+                       (vector-assoc! v j f)))]
+          (recur (dgg-f A f 9) (inc at) next))))))
 (defn- dcs-factorial [n :i64] :i64
   (loop [i 2 value 1] (if (> i n) value (recur (inc i) (* value i)))))
 (defn- dcs-permutation [A :vector-i64 C :vector-i64 rank :i64] :vector-i64
@@ -299,7 +264,7 @@
         (let [C (dcs-members M S A component) n (vector-count C)]
           (if (> n 8) (let [bad (dcp-fail A 6)] R)
             (let [f (vector-at C 0)
-                  recursive (or (> n 1) (> (vector-at A (+ (dcp-graph A) (* f (vector-at A 3)) f)) 0))
+                  recursive (or (> n 1) (dgg-has? A f f))
                   next (if recursive (dcs-resolve-group M S A C R)
                     (if (arena-scope (dcp-keep-cid A (dcp-function-payload M S A f R)))
                       (let [slot (dcp-put A f 2 (inc (vector-count R)))]

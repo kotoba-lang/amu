@@ -21,14 +21,20 @@
           (recur (inc i) (typed-list-conj [:list :string] out
             (typed-list-nth [:list :string] R (dec (dcp-f A f 2))))))))))
 (defn- dcb-definitions [A :vector-i64 C :vector-i64 R [:list :string]] [:list :string]
-  (loop [f 0 out (typed-list-new [:list :string])]
-    (if (= f (vector-at A 3)) out
-      (let [used (loop [i 0]
-                   (if (= i (vector-count C)) false
-                     (let [member (vector-at C i)]
-                       (or (= member f) (> (vector-at A (+ (dcp-graph A) (* member (vector-at A 3)) f)) 0)
-                         (recur (inc i))))))]
-        (recur (inc f) (if used (typed-list-conj [:list :string] out (dcn-binding A R f)) out))))))
+  (let [clear (loop [f 0 state A]
+                (if (= f (vector-at state 3)) state (recur (inc f) (dcp-put state f 11 0))))
+        marked (loop [i 0 state clear]
+                 (if (= i (vector-count C)) state
+                   (let [member (vector-at C i) own (dcp-put state member 11 1)
+                         dependencies (loop [edge (dgg-f own member 14) out own]
+                                        (if (= edge 0) out
+                                          (recur (dgg-edge out edge 1)
+                                            (dcp-put out (dgg-edge out edge 0) 11 1))))]
+                     (recur (inc i) dependencies))))]
+    (loop [f 0 out (typed-list-new [:list :string])]
+      (if (= f (vector-at marked 3)) out
+        (recur (inc f) (if (> (dcp-f marked f 11) 0)
+                        (typed-list-conj [:list :string] out (dcn-binding marked R f)) out))))))
 (defn- dcb-unit [A :vector-i64 C :vector-i64 R [:list :string]] :string
   (let [f (vector-at C 0) slot (if (> (dcp-f A f 12) 0) (dcp-f A f 12) (dcp-f A f 2))]
     (if (<= slot 0) "" (typed-list-nth [:list :string] R (dec slot)))))
