@@ -1,0 +1,148 @@
+JUN-59 -- session 11 record: COST-CALIBRATED JOINT DOSE (the vc-fatness
+knob), INSTRUMENT channel. 2026-10-27. Chain PR #1636
+(bot/amu-gpu-chain-20261027-10).
+
+1. ROW QUESTION (session 10's named residual, ONE observable axis):
+
+     AT FIXED DISPATCH COUNT B=2, IS THE CAPTURE REACHABLE BY THE
+     JOINT GRID x FATNESS DOSE AT COST-CALIBRATED FATNESS -- the same
+     (WORK_MUL=8 grid x ITERMUL=8 fat workgroups) joint dose of
+     session 10, but with the fatness knob made cost-real by the
+     coherent volatile qualifier (each ITERMUL iteration's x[] load a
+     real access the compiler cannot CSE away)?
+
+   NAMED LIMITATION (frozen in advance): host_ns is a HOST-side proxy
+   of bracketed cost; the GPU-side cost inside a B=2 bracket is
+   UNOBSERVABLE (the bracket undercounts at B<=2 -- the phenomenon
+   under study). "Cost-calibrated" = calibrated on the host_ns proxy
+   and on the design of genuinely iterated accesses, NOT on the
+   bracketed GPU timeline.
+
+2. DERIVATION (chain of custody): ONE derivation edit, SHADER-side (the
+   C instrument = the archived session-8 snapshot, digest 5c7cf2d5...,
+   NO C edit; all 3 binaries byte-identical to session 8's same-flag
+   binaries -- build-census-s11.txt): the itervc8 sources = session 9's
+   committed iter8 files + EXACTLY ONE memory-qualifier edit (the X
+   buffer declaration gains coherent volatile; 1 hunk per file, 6
+   files -- instrument-derivation.diff.txt). Two-level inverse check
+   (derivation-census.txt): strip the qualifier edit -> session 9's
+   iter8 bytes 6/6 EXACT; strip the 3-line ITERMUL edit -> base bytes
+   6/6 EXACT; base census 6/6 MATCH vs session 2's committed census.
+   Manifests: cases-s11-a.txt cell lines a BYTE-COPY of session 10's
+   cases-s10-a.txt (byte-equal to session 9's -- checked);
+   cases-s11-i8vc.txt = the same lines with only the measured spv name
+   changed to .emitted.itervc8.spv (relation checked programmatically).
+   NAMED, NOT HIDDEN: the qualifier spelling was compile-smoked on the
+   host toolchain BEFORE the protocol freeze (14:01:00Z, throwaway dir,
+   1 file, rc=0, zero runs) -- the session-9 D2 lesson applied.
+
+3. CHAIN OF CUSTODY (host-verify-s11.txt): corpus 16/16 digests MATCH
+   session 2's committed census (parsed programmatically; checked
+   host-side via sha256sum -c); instrument + manifests + 6 itervc8
+   sources local-vs-host MATCH (9/9); inverse checks 6/6 + 6/6; base
+   census 6/6 -- GO at 2026-10-27T14:02:31Z, BEFORE any build or run.
+
+4. HARDWARE RAN (MEASURED): 15 fresh processes (5 arms x 3 runs), run
+   window 2026-10-27T14:03:29Z..14:03:46Z, rc=0 15/15, stderr 0 bytes
+   15/15, 450 SAMPLE lines each; headers byte-identical across all runs
+   outside the # n= knob line; every run's batch=/work_mul=/n= fields ==
+   its arm's (B, M, 1,000,003*M), barrier_n=0; every CELL's spv= name
+   carries its arm's set suffix (analysis-s11.py checks all fields);
+   forcing reality 270/270; VERIFY mismatch 0 everywhere (frozen
+   INVALIDATION criterion did not fire -- the vc qualifier changed no
+   stored value); S=8 fail-closed 90/90. Host: aiueos-6600hs-1 (BMG
+   G31 / ANV), 1 tick = 52.083 ns. NAMED: the first 15 run attempts
+   (14:03:05Z) died rc=127 on a wrong relative binary path, zero
+   samples, preserved host-side (run-window.txt).
+
+5. FINDINGS (publication-s11.txt, produced ONLY by analysis-s11.py over
+   the committed run logs, the recorded publication run twice
+   byte-identical -- diff exit 0):
+
+   (a) C1 ARCHIVED CONTROL REPLICATION fired branch (a) -- c2 FLOOR
+       (31 ticks), c8 = 32,926 vs committed 32,915 (+0.03%), inside
+       the frozen +/-5%.
+   (b) C2 GRID KNOB CONTROL REPLICATION fired branch (a) -- g8 FLOOR
+       (31 ticks, sessions 8/10 committed reading).
+   (c) V1 VC-REALIZATION FIRED BRANCH (b) -- THE DERIVATION FAILED ITS
+       DESIGN CLAIM: f8vc host_ns 791,927 / c2 678,796 = 1.17x, inside
+       the CSE'd/marginal band (session 9's non-vc I=8: 1.14x..1.57x;
+       session 10's f8: 1.18x). The coherent volatile qualifier did NOT
+       make the per-workgroup fatness cost-real on this host. Per the
+       frozen letter, the cost-calibrated joint dose STAYS UNMEASURED
+       (named) and K2 is read nominally only.
+   (d) V2 fired branch (a) -- f8vc is FLOOR (31 ticks at all 18
+       cells): the qualifier alone at B=2 does not reach the capture.
+   (e) K1 fired branch (b) -- cost calibration NOT achieved: (i) V1
+       did not fire; (ii) gfvc host_ns 4,080,951 < 2x c8 host_ns
+       4,810,712 (the frozen in-session anchor).
+   (f) K2 fired branch (a) AS FROZEN, NOMINAL-ONLY reading -- gfvc
+       (B=2, M=8, I=8-vc = 128 nominal units) is FLOOR (32 ticks at
+       all 18 cells) while c8 (8 units, 8 dispatches) is CAPTURED:
+       the capture at B=2 is not reachable by the joint dose even with
+       the fatness loop's loads made volatile-coherent; but since the
+       fatness cost never realized (V1(b)), this closes the NOMINAL
+       axis only -- the genuinely cost-calibrated joint dose remains
+       UNMEASURED, and this session MEASURES WHY the previous closure
+       could not be upgraded: the fatness knob's marginal realization
+       SURVIVES the coherent volatile qualifier.
+   (g) X2 REALIZATION (descriptive): g8/c2 5.59x, f8vc/c2 1.17x,
+       gfvc/c2 6.01x, gfvc/g8 1.08x. Named comparison (committed
+       numbers, not new): session 9's non-vc realization 1.14x..1.57x,
+       session 10's f8 1.18x -- the vc qualifier moved the realization
+       by nothing measurable at this resolution.
+   (h) DESCRIPTIVE POST-HOC ARTIFACT CHECK (spv-inspect-vcflags.txt,
+       NOT a GPU measurement, NOT a frozen letter): the executed
+       itervc8 spv DO carry the Volatile + Coherent decorations
+       (OpMemberDecorate %X 0 Volatile/Coherent + OpDecorate %__0
+       Volatile/Coherent; 4 decorations) while the non-vc iter8 spv
+       carry 0 (both 43 OpLoads) -- the derivation design IS
+       instantiated in the compiled bytes the runs loaded. So V1(b) is
+       NOT explained by a missing qualifier at the SPIR-V level; WHY
+       the realized cost stays marginal (driver-JIT behaviour, cost
+       hidden under the bracket floor, load cost small vs fixed submit
+       cost) stays UNMEASURED.
+
+   RULE 4: NOTHING MOVES -- no workgroup row, no :measured? flag, no
+   selection answer; accelerator-targets defaults remain provisional
+   design assumptions (:measured? false); this is NOT the
+   basis-replacing baseline-vs-variant contract of
+   accelerator-subgroup-reduce.cljk; NO vendor optimization exists for
+   Intel and none is claimed.
+
+   UNMEASURED named: any causal mechanism for the undercount, the
+   capture or the onset; WHY the vc qualifier realizes nothing more
+   than the non-vc loop (the measured negative above only); the
+   GPU-side cost inside a B=2 bracket (unobservable on this
+   instrument); any genuinely COST-CALIBRATED joint dose at B=2 (the
+   row residual survives this session, narrowed: not reachable via
+   this fatness-cost route); any codegen difference between the
+   iter1/iter8/itervc8 spv and archived spv beyond the wrapper and
+   qualifier; any (M,I) outside {(1,1),(8,1),(1,8),(8,8)} x {vc,non-vc}
+   as tested; M or I in {2..7,9+}; any B outside {2,8}; B in {4,5,6,7}
+   at any (M,I); any N>0; session 2's run-1 dip cause; cross-day
+   replication; S=8 timing; every W outside {128,256}; shape 2; BT
+   ordering; any baseline-vs-variant sign; isolated single-dispatch
+   timing; non-empty barriers; anything off this host.
+
+   STATES: emitter arm/dispatch/selection rows IMPLEMENTED (code +
+   tests, unchanged -- this diff touches NO .cljk namespace); the
+   itervc8 derivation + analysis-s11.py validated by complete runs;
+   MEASURED only what publication-s11.txt sections 1-4 say.
+
+6. Gates (real runs this tick): gpu_regime_classify.py --self-test
+   TOTAL 2649 assertions/0 failed (pin); scoped GPU gate GREEN 123
+   tests / 12162 assertions / 0 failures / 0 errors run 1 AND run 2
+   (scratch runner gpu_scoped_gate.cljk, never committed); FULL
+   run-tests.cljk RUN LIVE THIS TICK: exit 1, RED AT BASE 'Could not
+   find namespace: kotoba.form' at namespace load (ADR-0362, outside
+   this diff) -- NO green full suite claimed; find this evidence dir
+   -name '*.sh' -> 0.
+
+7. CHAIN: this commit lands on the ONE open chain branch
+   bot/amu-gpu-chain-20261027-10 (chain PR #1636), commit + push only.
+   BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head at
+   tick start and re-checked immediately before this push.
+
+Evidence: docs/evidence/gpu/anv-costcal-20261027/ + the ADR-0355 dated
+note. (JUN-55, JUN-59)

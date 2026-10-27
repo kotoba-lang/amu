@@ -1,0 +1,207 @@
+JUN-59 session 20 -- THE NDIV=2 DISPATCH LADDER (fixed per-dispatch
+work n=500,001 = 1/2 grid), publication
+Produced ONLY by analysis-s20.py over the 27 committed run logs in this
+directory (run-<tag>-r<R>.txt); protocol.txt was frozen before the
+first run. Arms = binary compile-time (BATCH, NDIV); the ladder rungs
+w2..w8 carry NDIV=2 so every rung has the same per-dispatch work
+n = 1,000,003//2 = 500,001 (0.4999995 units) and total nominal work
+B*500,001/1,000,003 = 0.9999990..3.9999960 (computed in
+derivation-census-s20.txt). c2/c8 are the archived environment
+controls (totals 2.0 and 8.0). ZERO derivation this session: the
+instrument is session 19's committed NDIV-derived source byte-identical
+(digest a5e539f0... -- derivation-census-s20.txt); the a-set manifest
+runs the ARCHIVED measured spv (16-digest corpus).
+The row question (protocol section 0): at FIXED per-dispatch work (1/2
+grid), where does the capture turn on as B rises 2 -> 8 -- at the
+discrete B=2 -> B=3 step (the later-onset of sessions 18/19 is specific
+to per-dispatch work <= 1/4 and the B=3 capture threshold in
+per-dispatch work sits in (1/4, 1/3]), or later (the later-onset shape
+extends to 1/2 -- which would make the B=3 class-vs-per-dispatch-work
+picture NON-MONOTONE across the measured grid points, since B=3 is
+CAPTURED at 1/3 and 1.0)? Protocol L2: dispatch count and TOTAL work
+co-vary with B here BY CONSTRUCTION (total = B*0.5); the signatures are
+observational discriminators among named hypotheses, never a mechanism.
+1 tick = timestampPeriod = 52.083 ns.
+
+1. INTEGRITY (computed over the 27 logs):
+   runs parsed: 27 (9 arms x 3 runs); cell map identical across runs: True
+   headers byte-identical across all runs outside the # n= knob line: True
+   header batch=/work_mul=/ndiv= == run's (B,1,NDIV) and n == 1,000,003//NDIV; every SAMPLE batch=/work_mul=/ndiv= == (B,1,NDIV): True
+   every CELL spv= name is an archived .emitted.spv (no .iter -- the corpus is byte-identical this session): True
+   SAMPLE lines: 450 per run (18 ok cells x 25 rounds) in 27/27 runs: True
+   VERIFY mismatch total over all runs: 0 (per-arm: c2=0, w2=0, w3=0, w4=0, w5=0, w6=0, w7=0, w8=0, c8=0) -- bit-exact correctness re-check inside every run; frozen INVALIDATION criterion (protocol section 5): >0 in any run makes that run DEFECTIVE and the arm INVALID
+   forcing reality (pipeline-ok cell-runs where probe_size==forced and probe_nsub==wg/forced): 486/486
+   S=8 cells fail-closed (pipeline=FAIL, forced=8): 162 cell-runs (6 per run x 27 runs = 162 expected)
+
+2. THE MEASURED BRACKETS (pooled median gpu_ticks over 3 runs x 25 rounds per cell):
+   each row: (sum,128,S=16) exact value, per-run median band at that cell,
+   then min..max over the 18 pipeline-ok cells; host_ns at (sum,128,S=16)
+
+   arm  B  NDIV     n        total-nominal  (sum,128,16)   run-median band    min..max over 18 cells   host_ns
+   c2  2  1      1000003      2.000000          31           31..31              31..32           828254
+   w2  2  2       500001      0.999999          31           31..32              31..32           563461
+   w3  3  2       500001      1.499999        2739         2704..2782          1959..2849         714162
+   w4  4  2       500001      1.999998        6227         6220..6233          4635..6261         710495
+   w5  5  2       500001      2.499998        9907         9876..9932          7136..9907         898415
+   w6  6  2       500001      2.999997       13456        13361..13527         9642..13521       1077489
+   w7  7  2       500001      3.499997       16919        16896..16990        11960..16964       1254960
+   w8  8  2       500001      3.999996       20254        20208..20324        14385..20300       1428414
+   c8  8  1      1000003      8.000000       32874        32855..32904        25232..32874       2400106
+
+3. PRE-REGISTERED LETTERS (thresholds frozen in protocol.txt section 3:
+   FLOOR <= 100 ticks at all 18 cells; CAPTURED >= 1000 ticks at all 18;
+   anything else INTERMEDIATE/MIXED):
+
+   class c2 (B=2, NDIV=1, n=1000003, 2.000000 nominal units): FLOOR
+   class w2 (B=2, NDIV=2, n=500001, 0.999999 nominal units): FLOOR
+   class w3 (B=3, NDIV=2, n=500001, 1.499999 nominal units): CAPTURED
+   class w4 (B=4, NDIV=2, n=500001, 1.999998 nominal units): CAPTURED
+   class w5 (B=5, NDIV=2, n=500001, 2.499998 nominal units): CAPTURED
+   class w6 (B=6, NDIV=2, n=500001, 2.999997 nominal units): CAPTURED
+   class w7 (B=7, NDIV=2, n=500001, 3.499997 nominal units): CAPTURED
+   class w8 (B=8, NDIV=2, n=500001, 3.999996 nominal units): CAPTURED
+   class c8 (B=8, NDIV=1, n=1000003, 8.000000 nominal units): CAPTURED
+
+   C1 ARCHIVED CONTROL REPLICATION (numeric agreement with the committed
+   value at the control's OWN (B,NDIV) -- the a-set runs the ARCHIVED
+   spv bytes through the byte-identical session-19 instrument, so this
+   pins the environment as well):
+     c2 satisfies FLOOR (committed floor band 31..32 at B=2): True
+     c8 (sum,128,16) pooled median 32874 within +/-5% of committed 32915 (session 4 pooled median): True
+     VERDICT: branch (a) both controls satisfy their criteria --
+     the W letters are evaluated against the row question.
+
+   C2 CROSSING ANCHOR REPLICATION (w2 is the committed x2 knob pair
+   BATCH=2,NDIV=2; its rebuilt binary is BYTE-IDENTICAL to session 17's
+   anv-xt-x2 (0fe9f403...) -- build-census-s20.txt):
+     w2 (sum,128,16) pooled median 31 within +/-5% of committed x2 32 (session 17 pooled median (the NDIV=B crossing rung x2)): True
+     w2 class FLOOR (committed x2 class FLOOR)
+     VERDICT: branch (a) -- the foot rung replicates the NDIV=B
+     crossing's same grid point and the NDIV=2 column joins the NDIV=B
+     ladder there.
+
+   W1 THE ROW QUESTION (the class pattern of the ladder at fixed
+   per-dispatch work n=500,001 (0.5 units) -- CLASSES =
+   (class(w2), class(w3), class(w4), class(w5), class(w6), class(w7),
+   class(w8)) in rising B order; w2 is the C2 anchor (committed x2);
+   dispatch count and TOTAL work co-vary with B BY CONSTRUCTION,
+   protocol L2):
+     CLASSES = ('FLOOR', 'CAPTURED', 'CAPTURED', 'CAPTURED', 'CAPTURED', 'CAPTURED', 'CAPTURED')
+     VERDICT: branch (a) ONSET-AT-3 -- w2 FLOOR and w3..w8 all
+     CAPTURED: at per-dispatch work 1/2 the capture-class transition
+     sits at the SAME discrete B=2 -> B=3 step as at NDIV=1 (session
+     7/16) and NDIV=B (session 17), so the later-onset shape of
+     sessions 18/19 is specific to per-dispatch work <= 1/4 among the
+     measured grid points and the B=3 capture threshold in
+     per-dispatch work sits in (1/4, 1/3] with 1/2 above it (the five
+     measured B=3 grid points -- 1.0 and 1/3 CAPTURED, 1/2 as measured
+     here, 1/4 and 1/8 INTERMEDIATE/MIXED -- stand; nothing between
+     them is interpolated, L5); 'B=2 never captures' extends to
+     n=500,001 at total work 1.0. ONE session; dispatch count and
+     total work co-vary here by construction (L2); NO causal
+     mechanism is claimed or measured.
+
+   W2 THE NDIV=2 DOSE CURVE (pre-registered, descriptive; pooled
+   medians at (sum,128,S=16) over w2..w8; the last four columns are the
+   named comparisons against the COMMITTED NDIV=1 same-B value, the
+   COMMITTED session-17 NDIV=B same-B value, the COMMITTED session-19
+   NDIV=4 same-B value and the COMMITTED session-18 NDIV=8 same-B value
+   (quote-only, protocol L7 -- all sit at DIFFERENT total-work levels:
+   B units, ~1.0, B/4, B/8 vs B/2 units here) -- no linearity claim, no
+   interpolation):
+
+   B   bracket  per-dispatch  total     NDIV=1 ref (ratio)   NDIV=B ref (ratio)   NDIV=4 ref (ratio)   NDIV=8 ref (ratio)
+   2        31       15.5  1.0000  c2     31 (1.000)   x2     32 (0.969)   z2     31 (1.000)   y2     31 (1.000)
+   3      2739      913.0  1.5000  b3   5520 (0.496)   x3   1578 (1.736)   z3   1140 (2.403)   y3    599 (4.573)
+   4      6227     1556.8  2.0000  b4  11680 (0.533)   x4   3108 (2.004)   z4   3112 (2.001)   y4   1497 (4.160)
+   5      9907     1981.4  2.5000  b5  17386 (0.570)   x5   4012 (2.469)   z5   5021 (1.973)   y5   2496 (3.969)
+   6     13456     2242.7  3.0000  b6  22730 (0.592)   x6   4738 (2.840)   z6   7065 (1.905)   y6   3476 (3.871)
+   7     16919     2417.0  3.5000  b7  28037 (0.603)   x7   5191 (3.259)   z7   9008 (1.878)   y7   4463 (3.791)
+   8     20254     2531.8  4.0000  c8  32915 (0.615)   x8   5458 (3.711)   z8  10988 (1.843)   y8   5419 (3.738)
+     VERDICT: branch (a) the pooled medians are non-decreasing in B
+     along the fixed-per-dispatch-work ladder.
+     Descriptive either way; the four comparison columns are quote-only
+     (L7) and sit at different total-work levels -- the ratio columns
+     compare across total-work levels and are named comparisons only.
+
+   W3 THE CROSS TABLE (descriptive; protocol L7 quote-only rows marked;
+   NO interpolation, NO claim between grid points; L2 applies to row
+   (v) -- dispatch count and total work co-vary with B there):
+
+   row (i) COMMITTED NDIV=1 B-ladder (quote-only; totals = B units):
+     B2=31  B3=5520  B4=11680  B5=17386  B6=22730  B7=28037  B8=32915
+   row (ii) COMMITTED NDIV=B constant-total, session 17 (quote-only;
+     totals ~1.0):
+     B2=32  B3=1578  B4=3108  B5=4012  B6=4738  B7=5191  B8=5458
+   row (iii) COMMITTED NDIV=8, session 18 (quote-only; totals = B/8
+     units):
+     B2=31  B3=599  B4=1497  B5=2496  B6=3476  B7=4463  B8=5419
+   row (iv) COMMITTED NDIV=4, session 19 (quote-only; totals = B/4
+     units):
+     B2=31  B3=1140  B4=3112  B5=5021  B6=7065  B7=9008  B8=10988
+   row (v) THIS session, NDIV=2 at fixed per-dispatch work (the ONLY
+     measured row; totals = B/2 units):
+     B2=31  B3=2739  B4=6227  B5=9907  B6=13456  B7=16919  B8=20254
+   equal-total shape comparisons (quote-only vs measured, NO mechanism):
+     total 1.0 units: w2 (2 dispatches x 500,001) = 31 ticks measured
+       -- itself the committed x2 grid point (C2 anchor) --
+       vs z4 (4 x 250,000, session 19) = 3,112 ticks CAPTURED (quote-only)
+       vs y8 (8 x 125,000, session 18) = 5,419 ticks CAPTURED (quote-only)
+     total 2.0 units: w4 (4 dispatches x 500,001) = 6227 ticks measured
+       vs z8 (8 x 250,000, session 19) = 10,988 ticks CAPTURED (quote-only)
+       vs c2 (2 x 1,000,003, committed control) = 31 ticks FLOOR (quote-only)
+
+   X1 REALIZATION (descriptive, from the same runs' host_ns, no new
+   measurement; vs committed same-knob host_ns where they exist -- c2/c8:
+   sessions 17, 18 and 19; w2: session 17's x2; host_ns is not a C
+   criterion and is the HOST-side proxy -- protocol L3):
+     c2: host_ns 828254 vs session-17 679458 (1.219x); vs session-18 680159 (1.218x); vs session-19 676171 (1.225x); per-dispatch host_ns 414127
+     w2: host_ns 563461 vs session-17 x2 394546 (1.428x); per-dispatch host_ns 281730
+     w3: host_ns 714162 (no prior committed value at this (B,NDIV) -- first measured here); per-dispatch host_ns 238054
+     w4: host_ns 710495 (no prior committed value at this (B,NDIV) -- first measured here); per-dispatch host_ns 177624
+     w5: host_ns 898415 (no prior committed value at this (B,NDIV) -- first measured here); per-dispatch host_ns 179683
+     w6: host_ns 1077489 (no prior committed value at this (B,NDIV) -- first measured here); per-dispatch host_ns 179582
+     w7: host_ns 1254960 (no prior committed value at this (B,NDIV) -- first measured here); per-dispatch host_ns 179280
+     w8: host_ns 1428414 (no prior committed value at this (B,NDIV) -- first measured here); per-dispatch host_ns 178552
+     c8: host_ns 2400106 vs session-17 2395127 (1.002x); vs session-18 2385078 (1.006x); vs session-19 2399435 (1.000x); per-dispatch host_ns 300013
+
+4. DERIVED (arithmetic over section 2, no new measurement):
+   c2: bracket 31 ticks = 1.61 us; host_ns 828254; 2.000000 nominal units (n=1000003); vs committed 31 (sessions 1-19 floor band 31..32): +0.00%; vs session-17 32: -3.12%; vs session-18 32: -3.12%; vs session-19 31: +0.00%
+   w2: bracket 31 ticks = 1.61 us; host_ns 563461; 0.999999 nominal units (n=500001); vs committed x2 32 (session 17 pooled median (the NDIV=B crossing rung x2)): -3.12%
+   w3: bracket 2739 ticks = 142.66 us; host_ns 714162; 1.499999 nominal units (n=500001) (first measurement of this (B,NDIV) pair anywhere in the series)
+   w4: bracket 6227 ticks = 324.32 us; host_ns 710495; 1.999998 nominal units (n=500001) (first measurement of this (B,NDIV) pair anywhere in the series)
+   w5: bracket 9907 ticks = 515.99 us; host_ns 898415; 2.499998 nominal units (n=500001) (first measurement of this (B,NDIV) pair anywhere in the series)
+   w6: bracket 13456 ticks = 700.83 us; host_ns 1077489; 2.999997 nominal units (n=500001) (first measurement of this (B,NDIV) pair anywhere in the series)
+   w7: bracket 16919 ticks = 881.19 us; host_ns 1254960; 3.499997 nominal units (n=500001) (first measurement of this (B,NDIV) pair anywhere in the series)
+   w8: bracket 20254 ticks = 1054.89 us; host_ns 1428414; 3.999996 nominal units (n=500001) (first measurement of this (B,NDIV) pair anywhere in the series)
+   c8: bracket 32874 ticks = 1712.18 us; host_ns 2400106; 8.000000 nominal units (n=1000003); vs committed 32915 (session 4 pooled median): -0.12%; vs session-17 32868: +0.02%; vs session-18 32830: +0.13%; vs session-19 32830: +0.13%
+
+5. RULE 4 -- NOTHING MOVES: no workgroup row, no :measured? flag, no selection
+   answer; accelerator-targets defaults remain provisional design assumptions
+   (:measured? false). This is NOT the baseline-vs-variant contract of
+   accelerator-subgroup-reduce.cljk. NO vendor optimization exists for Intel
+   and none is claimed. No causal mechanism is claimed by any letter above.
+
+6. UNMEASURED (named): any causal mechanism (for the undercount, the
+   capture, the onset, any B-axis transition at 1/2 per-dispatch work,
+   the dose curve's shape, the session-to-session movement, or the d160
+   spike); WHY capture turns on where it does; the B=3 capture threshold
+   in per-dispatch work BETWEEN the measured grid points 1/8 and 1.0 (and
+   between 1/2 and every other measured point -- L5, no interpolation);
+   whether the operative axis is dispatch count, total work, per-dispatch
+   work, grid size, or bracketed submission shape (protocol L2 -- dispatch
+   count and total work co-vary here by construction; the signatures
+   discriminate among the NAMED hypotheses only); the GPU-side cost inside
+   a B<=2 bracket (protocol L3); anything between adjacent ladder rungs
+   (L5); any B outside {2,3,4,5,6,7,8}; any (B,NDIV) pair with NDIV
+   outside {1,2,4,8} and NDIV != B (the rest of session 17's L10 grid --
+   this session closes the NDIV=2 column only, L8); any per-dispatch work
+   outside 500,001/1,000,003; any WORK_MUL value; any n outside the arm
+   values this session; the NDIV=1 B-ladder, the NDIV=B crossing, the
+   NDIV=8 ladder and the NDIV=4 ladder this session (L7 -- quote-only);
+   CROSS-UTC-DAY replication (L4); any cross-session stability of the w3
+   ..w8 readings (first measured here; w2 replicates the committed x2
+   value if C2 holds); session 2's run-1 dip cause; S=8 timing; every W
+   outside {128,256}; shape 2; BT ordering; any baseline-vs-variant sign;
+   isolated single-dispatch timing; non-empty barriers; anything off this
+   host.

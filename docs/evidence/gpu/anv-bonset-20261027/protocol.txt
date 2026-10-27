@@ -1,0 +1,149 @@
+JUN-59 -- session 7 protocol: B-ONSET LOCALIZATION (BONSET).
+INSTRUMENT channel. Frozen BEFORE the first run (2026-10-27T11:51Z, this
+tick). This file is written once and never rewritten.
+
+0. ROW QUESTION (from session 6's named residual, verbatim scope):
+   "why capture turns on between B=2 and B=4" -- sessions 4-6 MEASURED
+   that the batch instrument's GPU bracket (ts1..ts2 around B dispatches)
+   is at the 31-tick FLOOR at B in {1,2} and CAPTURED at B=4 and above
+   (per-dispatch converging to a flat band 3,455.69..4,369.81 ticks for
+   B>=16), and session 6 showed the bracket tracks DISPATCH content, not
+   bracketed command count. NO causal mechanism has been claimed or
+   measured, and this session does NOT test one. It measures ONE
+   narrower, observable question:
+
+     AT WHICH BATCH COUNT B DOES THE BRACKET LEAVE THE FLOOR -- IS THE
+     ONSET BETWEEN B=2 AND B=3, BETWEEN B=3 AND B=4, OR DOES AN
+     INTERMEDIATE STATE EXIST AT B=3?
+
+   knob: none new. The independent variable is the existing compile-time
+   BATCH knob alone (BARRIER_N fixed at 0). Whatever the answer, no
+   mechanism is claimed: the onset location is an OBSERVABLE, not an
+   explanation.
+
+1. INSTRUMENT DERIVATION (chain of custody):
+   base = the archived session-6 derived source
+     docs/evidence/gpu/anv-cmdcount-20261027/gpu-subgroup-reduce-anv-cmdcount.c.txt
+     (digest 9847b0f1fa139d284d909ddc53e8e25af0b750126f31b8bcae2ed12c16326977,
+     re-verified in host-verify)
+   derivation = ZERO edits. The session-6 snapshot already parameterizes
+   BATCH (since session 4) and BARRIER_N; this session uses it
+   BYTE-IDENTICAL (archived here as
+   gpu-subgroup-reduce-anv-bonset.c.txt, same digest) and varies ONLY
+   the -DBATCH=<B> compile-time value at build time. There is no
+   instrument-derivation.diff.txt because there is no diff; the absence
+   is asserted by the digest equality recorded in host-verify-s7.txt.
+   Sessions 1/2/4/5/6 instruments stay byte-stable.
+
+2. ARMS (one binary per arm; tag = b<B>n0; N=0 for every arm):
+   b1n0  B=1  floor control (committed floor 31 ticks)
+   b2n0  B=2  floor control (committed floor 31 ticks)
+   b3n0  B=3  THE ONSET PROBE (the only unmeasured integer in (2,4))
+   b4n0  B=4  capture control (committed 11,674 ticks, session 4)
+   b5n0  B=5  post-onset growth (new)
+   b6n0  B=6  post-onset growth (new)
+   b8n0  B=8  capture control (committed 32,915 ticks, session 4)
+   BATCH and BARRIER_N are compile-time; the header prints batch= and
+   barrier_n=. One binary per arm = 7 binaries,
+   gcc -O2 -DBATCH=<B> -DBARRIER_N=0 -o anv-bon-<tag> ... -lvulkan,
+   same host. B=7 is NOT run and stays UNMEASURED.
+
+3. CELLS / RUN UNIT (unchanged from sessions 1-6):
+   the same 24 cell lines (byte-copy, cases-s7.txt): op {sum,max,min}
+   x W {128,256} x forced S {8,16,32,default}; S=8 fails-closed
+   (minSubgroupSize=16), 18 pipeline-ok cells carry timing samples.
+   One fresh process per run; the instrument's internal protocol
+   (WARMUP 3, ROUNDS 25, seeded LCG-shuffled interleave, SEED 20261027,
+   N_ELEMENTS 1000003) is UNCHANGED. Runs: 3 fresh processes per arm
+   = 7 arms x 3 runs = 21 processes.
+   Metric per sample: gpu_ticks = ts2 - ts1 (1 tick = timestampPeriod
+   = 52.083 ns on this device, from the instrument header), host_ns.
+   Every SAMPLE's batch= field must equal its run's B and every run's
+   header barrier_n= field must be 0 (checked by analysis-s7.py).
+
+4. CLASSIFICATION THRESHOLDS (frozen from COMMITTED values only, before
+   any run; this is the fix for session 6's named defect -- no absolute
+   capture threshold is borrowed from another B's band):
+   FLOOR        := pooled median bracket <= 100 ticks at ALL 18 cells
+                   (committed floor band across sessions 1-6: 25..32
+                   ticks; 100 is >3x that ceiling).
+   CAPTURED     := pooled median bracket >= 1000 ticks at ALL 18 cells
+                   (the smallest committed captured value anywhere is
+                   8,968 ticks -- session 6's b4n0 per-run band low end
+                   at the reference cell -- so 1000 is <= 1/8 of any
+                   captured value; a captured call at 1000 is
+                   conservative by construction).
+   INTERMEDIATE := anything else (mixed cell classes, or the reference
+                   cell pooled median in (100, 1000)) -- reported
+                   quantified cell-by-cell, never forced into
+                   FLOOR/CAPTURED.
+   Reference cell for headline numbers: idx=1 (op=sum, W=128,
+   forced=16). Pooled median = median over the 25 rounds x 3 runs = 75
+   samples per cell per arm.
+
+5. PRE-REGISTERED LETTERS (both branches named BEFORE the first run;
+   the analysis route is analysis-s7.py over the 21 committed run logs
+   ONLY, run twice byte-identical -- diff exit 0; publication-s7.txt is
+   produced only by that script):
+
+   O1 ONSET LOCALIZATION (the row question): classify b1n0..b8n0 per
+      the section-4 thresholds.
+      (a) b3n0 CAPTURED and b2n0 FLOOR -> capture turns on strictly
+          between B=2 and B=3 (the committed "between 2 and 4" band is
+          narrowed on the low side).
+      (b) b3n0 FLOOR and b4n0 CAPTURED -> capture turns on strictly
+          between B=3 and B=4 (the committed band is narrowed on the
+          high side).
+      (c) b3n0 INTERMEDIATE or cell-mixed -> an intermediate state
+          exists at B=3; the onset is a band, not a point; report
+          per-dispatch figures cell-by-cell.
+      (d) O3 branch (b) fires -> O1's interpretation is flagged; the
+          discrepancy's cause stays UNMEASURED.
+
+   O2 POST-ONSET GROWTH (descriptive, no branch): per-dispatch derived
+      figure (pooled median bracket / B) for every arm at the reference
+      cell and the 18-cell table, compared against the committed
+      anchors -- B=4 per-dispatch 2,918 (session 4), flat band
+      3,455.69..4,369.81 ticks/dispatch for B>=16 (session 4). Is the
+      per-dispatch figure already at the flat band at onset, or does it
+      climb from the B=4 value toward the band? Counts/ratios only.
+
+   O3 CONTROL REPLICATION (prerequisite; the acceptance criteria are
+      NUMERIC AGREEMENT WITH THE COMMITTED VALUE AT EACH CONTROL'S OWN
+      B -- not an absolute capture threshold; this is the named fix for
+      session 6's C1 defect):
+      b1n0 and b2n0 satisfy FLOOR; b4n0 reference-cell pooled median
+      within +/-5% of 11,674 (session 4; sessions 5-6 measured 11,678
+      and 11,632 for the same knob, all within 0.4%); b8n0 within
+      +/-5% of 32,915 (session 4).
+      (a) all four satisfy -> O1-O2 are evaluated against the row.
+      (b) any fails -> named replication discrepancy; O1 interpretation
+          flagged per O1(d); cause UNMEASURED.
+
+   O4 B-DOSE (descriptive only, no branch): host_ns and gpu_ticks
+      pooled medians per B at the reference cell -- this session's own
+      B-curve. Counts only.
+
+6. RULE 4 -- NOTHING MOVES: no workgroup row, no :measured? flag, no
+   :size/:shapes, no selection answer. accelerator-targets defaults
+   remain provisional design assumptions (:measured? false). This is
+   NOT the basis-replacing baseline-vs-variant contract of
+   accelerator-subgroup-reduce.cljk. NO vendor optimization exists for
+   Intel and none is claimed.
+
+7. GATES (real runs this tick): gpu_regime_classify.py --self-test
+   (committed pin 2649 assertions / 0 failures); scoped GPU gate (the
+   8 accelerator test namespaces; scratch runner, never committed;
+   expected pin 123 tests / 12162 assertions); FULL run-tests.cljk run
+   live this tick (the suite's base state is red 'Could not find
+   namespace: kotoba.form' at namespace load, ADR-0362, outside every
+   amu-gpu diff -- recorded live, no green full suite claimed);
+   find this evidence dir -name '*.sh' -> 0.
+
+8. UNMEASURED (named in advance): any causal mechanism for the
+   undercount OR the capture OR the onset location; WHY capture turns
+   on where it does; B=7; any B outside {1,2,3,4,5,6,8}; any N>0 at
+   these B; session 2's run-1 dip cause; cross-day replication; S=8
+   timing; every W outside {128,256}; shape 2; any baseline-vs-variant
+   sign; BT ordering; isolated single-dispatch timing; anything about
+   non-empty barriers; anything off this host.

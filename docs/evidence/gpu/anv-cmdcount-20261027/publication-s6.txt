@@ -1,0 +1,99 @@
+JUN-59 session 6 -- COMMAND-COUNT DISCRIMINATOR (CMD-COUNT), publication
+Produced ONLY by analysis-s6.py over the 21 committed run logs in this
+directory (run-<tag>-r<R>.txt); protocol.txt was frozen before the
+first run. Arms = the (BATCH, BARRIER_N) compile-time pair; BARRIER_N
+empty global execution barriers sit between ts1 and the BATCH dispatches.
+1 tick = timestampPeriod = 52.083 ns on this device.
+
+1. INTEGRITY (computed over the 21 logs):
+   runs parsed: 21 (7 arms x 3 runs); cell map identical across runs: True
+   headers byte-identical across all runs outside the # n= knob line: True
+   header batch=/barrier_n= fields == run's arm everywhere; every SAMPLE batch= field == run's B: True
+   SAMPLE lines: 450 per run (18 ok cells x 25 rounds) in 21/21 runs: True
+   VERIFY mismatch total over all runs: 0 (bit-exact correctness re-check)
+   forcing reality (pipeline-ok cell-runs where probe_size==forced and probe_nsub==wg/forced): 378/378
+   S=8 cells fail-closed (pipeline=FAIL, forced=8): 126 cell-runs (6 per run x 21 runs = 126 expected)
+
+2. THE MEASURED BRACKETS (pooled median gpu_ticks over 3 runs x 25 rounds per cell):
+   each row: (sum,128,S=16) exact value, then min..max over the 18 pipeline-ok cells
+   host_ns = pooled median host submit->completion at (sum,128,S=16)
+
+   arm    B  N  (sum,128,16)   min..max over 18 cells    host_ns(sum,128,16)
+   b1n0  1  0          31           31..31             354241
+   b1n1  1  1          31           31..31             354171
+   b1n2  1  2          31           31..31             354852
+   b1n3  1  3          31           31..31             354612
+   b2n2  2  2          31           31..32             678055
+   b4n0  4  0       11632         8968..11632         1274327
+   b1n7  1  7          31           31..31             352408
+
+3. PRE-REGISTERED LETTERS (thresholds frozen in protocol.txt):
+
+   C1 CONTROL REPLICATION (b1n0 floor / b4n0 capture vs sessions 4-5):
+     b1n0: all 18 cells pooled median <= 100 ticks (the floor): True
+     b4n0: all 18 cells pooled median >= 100000 ticks (captured band): False
+     VERDICT: branch (b) NOT REPRODUCED -- C2-C4 reported but NOT EVALUABLE against
+     the sessions-4-5 row; the divergence is named, its cause stays UNMEASURED.
+
+   C2 BARRIER REMOVABILITY AT B=1 (pooled median bracket per arm):
+     arm b1n0: min..max over 18 cells = 31..31 ticks; lifts (>1000 at all 18): control
+     arm b1n1: min..max over 18 cells = 31..31 ticks; lifts (>1000 at all 18): False
+     arm b1n2: min..max over 18 cells = 31..31 ticks; lifts (>1000 at all 18): False
+     arm b1n3: min..max over 18 cells = 31..31 ticks; lifts (>1000 at all 18): False
+     arm b1n7: min..max over 18 cells = 31..31 ticks; lifts (>1000 at all 18): False
+     VERDICT: branch (b) -- the small-B undercount is NOT removable by up to 7 empty global
+     barriers between ts1 and the dispatches; whatever removes it is not empty bracketed
+     commands; the row question is narrowed, the mechanism stays UNMEASURED.
+
+   C3 EQUAL-COUNT COMPOSITION (bracket holds 6 commands in all three arms:
+     b1n3 = 1 dispatch + 3 barriers, b2n2 = 2 dispatches + 2 barriers,
+     b4n0 = 4 dispatches + 0 barriers; ratios of pooled medians per cell):
+     ('sum', 128, '16'): b1n3/b4n0 = 0.00, b2n2/b4n0 = 0.00
+     ('sum', 128, '32'): b1n3/b4n0 = 0.00, b2n2/b4n0 = 0.00
+     ('sum', 128, 'default'): b1n3/b4n0 = 0.00, b2n2/b4n0 = 0.00
+     ('max', 128, '16'): b1n3/b4n0 = 0.00, b2n2/b4n0 = 0.00
+     ('max', 128, '32'): b1n3/b4n0 = 0.00, b2n2/b4n0 = 0.00
+     ('max', 128, 'default'): b1n3/b4n0 = 0.00, b2n2/b4n0 = 0.00
+     ('min', 128, '16'): b1n3/b4n0 = 0.00, b2n2/b4n0 = 0.00
+     ('min', 128, '32'): b1n3/b4n0 = 0.00, b2n2/b4n0 = 0.00
+     ('min', 128, 'default'): b1n3/b4n0 = 0.00, b2n2/b4n0 = 0.00
+     ('sum', 256, '16'): b1n3/b4n0 = 0.00, b2n2/b4n0 = 0.00
+     ('sum', 256, '32'): b1n3/b4n0 = 0.00, b2n2/b4n0 = 0.00
+     ('sum', 256, 'default'): b1n3/b4n0 = 0.00, b2n2/b4n0 = 0.00
+     ('max', 256, '16'): b1n3/b4n0 = 0.00, b2n2/b4n0 = 0.00
+     ('max', 256, '32'): b1n3/b4n0 = 0.00, b2n2/b4n0 = 0.00
+     ('max', 256, 'default'): b1n3/b4n0 = 0.00, b2n2/b4n0 = 0.00
+     ('min', 256, '16'): b1n3/b4n0 = 0.00, b2n2/b4n0 = 0.00
+     ('min', 256, '32'): b1n3/b4n0 = 0.00, b2n2/b4n0 = 0.00
+     ('min', 256, 'default'): b1n3/b4n0 = 0.00, b2n2/b4n0 = 0.00
+     cells with b1n3/b4n0 in [0.5,2.0]: 0/18; cells with b2n2/b4n0 in [0.5,2.0]: 0/18
+     b1n3 floors (<=100 at all 18): True; b2n2 floors: True; b4n0 captures (>=100000 at all 18): False
+     VERDICT: INCONCLUSIVE, quantified cell-by-cell above.
+
+   C4 DOSE (descriptive only): B=1 arms, pooled median bracket at (sum,128,16):
+     b1n0: 31 ticks (host_ns 354241)
+     b1n1: 31 ticks (host_ns 354171)
+     b1n2: 31 ticks (host_ns 354852)
+     b1n3: 31 ticks (host_ns 354612)
+     b1n7: 31 ticks (host_ns 352408)
+
+4. DERIVED (arithmetic over section 2, no new measurement):
+   b1n0: bracket 31 ticks = 1.61 us; per-dispatch 31.0 ticks
+   b1n1: bracket 31 ticks = 1.61 us; per-dispatch 31.0 ticks
+   b1n2: bracket 31 ticks = 1.61 us; per-dispatch 31.0 ticks
+   b1n3: bracket 31 ticks = 1.61 us; per-dispatch 31.0 ticks
+   b2n2: bracket 31 ticks = 1.61 us; per-dispatch 15.5 ticks
+   b4n0: bracket 11632 ticks = 605.83 us; per-dispatch 2908.0 ticks
+   b1n7: bracket 31 ticks = 1.61 us; per-dispatch 31.0 ticks
+
+5. RULE 4 -- NOTHING MOVES: no workgroup row, no :measured? flag, no selection
+   answer; accelerator-targets defaults remain provisional design assumptions
+   (:measured? false). This is NOT the baseline-vs-variant contract of
+   accelerator-subgroup-reduce.cljk. NO vendor optimization exists for Intel
+   and none is claimed. No causal mechanism is claimed by any letter above.
+
+6. UNMEASURED (named): any causal mechanism for the undercount or the capture;
+   session 2's run-1 dip cause; cross-day replication; S=8 timing; every W
+   outside {128,256}; shape 2; any baseline-vs-variant sign; BT ordering;
+   isolated single-dispatch timing; any B outside the arms above; any N outside
+   {0,1,2,3,7}; anything about non-empty barriers; anything off this host.

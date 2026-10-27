@@ -1,0 +1,46 @@
+== JUN-59 session 16 derivation census (THE DISPATCH-COUNT LADDER) ==
+ZERO derivation edits this session (the strongest custody position in
+the chain -- named as such): the instrument is session 15's committed
+NDIV-derived source used BYTE-IDENTICAL; the new arms are new -D BATCH
+values only (BATCH 3,4,5,6,7 at NDIV=1 -- the instrument already
+parameterizes BATCH at compile time); the shader corpus is the archived
+byte-verified set.
+
+instrument byte-copy (session 15 committed -> session 16 committed): a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556  gpu-subgroup-reduce-anv-ndiv.c.txt
+session-15 committed instrument digest (re-sha256 local):          a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556  (MATCH)
+session-8 base snapshot digest (re-sha256 local, chain anchor):    5c7cf2d50f6e365187a35a772279ca17cead1c223fb687cc39bda454035762f3  gpu-subgroup-reduce-anv-workmul.c.txt
+inverse check: NOT APPLICABLE this session -- ZERO derivation edits
+(there is nothing to strip; byte-identity IS the custody).
+
+== knob arithmetic pin (WORK_MUL=1; n = floor(1,000,003 * WORK_MUL / NDIV)) ==
+arm    BATCH  NDIV   n=floor(1000003/NDIV)  wg(W=128)  wg(W=256)  total nominal
+c2     2      1       1000003                 7813       3907       2.00000
+b3     3      1       1000003                 7813       3907       3.00000
+b4     4      1       1000003                 7813       3907       4.00000
+b5     5      1       1000003                 7813       3907       5.00000
+b6     6      1       1000003                 7813       3907       6.00000
+b7     7      1       1000003                 7813       3907       7.00000
+c8     8      1       1000003                 7813       3907       8.00000
+(arithmetic checked programmatically this tick. NDIV=1 in every arm: the
+independent variable is the DISPATCH COUNT alone at fixed per-dispatch
+work; n is the SAME 1,000,003 grid in every arm -- protocol L4.)
+
+== manifest ==
+cases-s16-a.txt: the 24 cell lines are a BYTE-COPY of session 15's
+cases-s15-a.txt cell lines (checked programmatically in this tick's
+generator: EXACT; byte-equal to session 14's and session 13's a-set
+cell lines too).
+expected-corpus.sha256: regenerated programmatically from session 2's
+committed census (anv-subgroupsize-batch64-20261027/compile-toolchain.txt,
+16 digest lines parsed programmatically, sorted by path) -- byte-equal
+to session 15's file: YES.
+
+== build replication pin (declared in protocol section 2; checked at build time) ==
+c2 and c8 (BATCH,NDIV) = (2,1) and (8,1) were built and run in sessions
+1-15; every session-16 c2/c8 binary is expected BYTE-IDENTICAL to
+session 15's same-flag binary (parsing session 15's committed
+build-census-s15.txt programmatically, never transcribed) -- 2 pins.
+b3..b7 (BATCH 3..7, NDIV=1) are NEW knob values: NO prior binary
+exists, so NO byte-identity pin applies to them (named, not hidden);
+their custody is the byte-identical source + the compile flags + C1's
+numeric control replication.

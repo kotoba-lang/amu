@@ -1,0 +1,142 @@
+JUN-59 -- session 12 record: WORK-DOWN LOCALIZER at fixed B=8 (the NDIV
+knob), INSTRUMENT channel. 2026-10-27. Chain PR #1636
+(bot/amu-gpu-chain-20261027-10).
+
+1. ROW QUESTION (the reverse axis of sessions 8-11, ONE observable
+   axis -- sessions 8-11 pushed per-dispatch work UP at B<=2 and never
+   reached the capture; the capture at B=8 had only ever been measured
+   at ONE per-dispatch work level):
+
+     AT FIXED DISPATCH COUNT B=8, IS THE CAPTURED BRACKET REMOVABLE BY
+     SHRINKING THE PER-DISPATCH WORK -- 8 dispatches of a 1/8-, 1/256-
+     or 1/4096-times grid (n = 125,000 / 3,906 / 244) as against the
+     captured c8 control's 8 dispatches of n = 1,000,003?
+
+2. DERIVATION (chain of custody): ONE derivation edit this session,
+   C-side (NO shader derivation -- the shaders take n from the N
+   uniform, so the 16-digest corpus is used byte-identical): the NDIV
+   instrument = session 8's committed snapshot (digest 5c7cf2d5...,
+   re-verified) + the 3-hunk work-down knob of
+   instrument-derivation.diff.txt (H1 the knob + N_ELEMENTS division,
+   integer floor; H2/H3 the ndiv= knob-identity prints). Inverse check
+   (derivation-census.txt, produced programmatically this tick): strip
+   the 3 hunks -> session-8 snapshot bytes EXACT. Manifest
+   cases-s12-a.txt = the 24 a-set cell lines a BYTE-COPY of session
+   11's cases-s11-a.txt cell lines (checked programmatically); ALL 5
+   arms run this one manifest. expected-corpus.sha256 regenerated
+   programmatically from the committed census (byte-equal to session
+   11's file).
+
+3. CHAIN OF CUSTODY (host-verify-s12.txt): corpus 16/16 digests MATCH
+   session 2's committed census (parsed programmatically, never
+   transcribed; checked host-side via sha256sum -c) + instrument +
+   manifest + census expectation local-vs-host MATCH 3/3 -- GO at
+   2026-10-27T14:29:30Z, BEFORE the builds and ALL runs (TIMELINE in
+   host-verify-s12.txt says so). NAMED, NOT HIDDEN: the derived source
+   was compile-smoked pre-freeze (14:27:36Z, throwaway dir, rc=0, host
+   digest MATCH local, zero runs -- the session-9 D2 lesson; a first
+   smoke attempt 14:27:18Z failed on a local file-name mistake, zero
+   compiles, zero runs); the first host checksum attempt (14:29:01Z)
+   re-ran from inside shaders/ and failed on path resolution only --
+   re-run from the root before any build/run.
+
+4. HARDWARE RAN (MEASURED): 15 fresh processes (5 arms x 3 runs), run
+   window 2026-10-27T14:30:00Z..2026-10-27T14:30:07Z, rc=0 15/15,
+   stderr 0 bytes 15/15 (host-side wc -c total 0), 450 SAMPLE lines
+   each; every run's batch=/work_mul=/ndiv=/n= == its arm's (B, 1,
+   NDIV, floor(1,000,003/NDIV)) -- exact n 1,000,003 / 125,000 /
+   3,906 / 244 as the frozen protocol L2 named; every CELL's spv= is
+   an archived .emitted.spv (no .iter -- byte-identical corpus);
+   forcing reality 270/270; VERIFY mismatch 0 everywhere (per-arm
+   0/0/0/0/0 -- the knob edit corrupted nothing; the frozen
+   INVALIDATION criterion did not fire); S=8 fail-closed 90/90. Host:
+   aiueos-6600hs-1 (BMG G31 / ANV), 1 tick = 52.083 ns. Per-run
+   transcript (host date -u, rc) in run-window.txt.
+
+5. FINDINGS (publication-s12.txt, produced ONLY by analysis-s12.py
+   over the committed run logs, the recorded publication run twice
+   byte-identical -- diff exit 0):
+
+   (a) C1 ARCHIVED CONTROL REPLICATION fired branch (a) -- c2 FLOOR
+       (31 ticks, band 31..32), c8 = 32,669 vs committed 32,915
+       (-0.75%), inside the frozen +/-5%. The NDIV edit at NDIV=1 is
+       pinned to archived behaviour (numeric agreement at the
+       control's OWN settings -- the session-7 fix).
+   (b) W1 THE ROW QUESTION fired branch (a) AS FROZEN -- d8 (B=8,
+       n=125,000, 1.0 total nominal unit -- HALF the c2 control's 2.0
+       units which FLOOR) is CAPTURED (pooled median (sum,128,S=16)
+       5,465 ticks, run-median band 5,438..5,520, min..max 3,705..5,487
+       over the 18 cells): the capture at B=8 is NOT REMOVABLE at 1/8
+       per-dispatch work. As frozen, branch (a)'s strong reading is
+       scoped to d8; W2's measured content below BOUNDS that reading.
+   (c) W2 (pre-registered, descriptive) THE WORK AXIS RE-ENTERS FROM
+       THE OTHER SIDE: the work-down dose curve at B=8 shows the
+       capture DIES between NDIV=8 and NDIV=256 -- d256 (n=3,906,
+       0.03125 nominal units, 31 workgroups at wg=128 / 16 at wg=256
+       -- a real grid, NOT the protocol-L4 near-empty case) is FLOOR
+       (34 ticks, run-median band 33..34) and d4096 (n=244) is FLOOR
+       (34, L4 ambiguity named below). So the capture at B=8 requires
+       per-dispatch work ABOVE a threshold inside the (3,906 .. 125,000]
+       element band at B=8 (2 grid points named; no interpolation, no
+       linearity claim): NEITHER dispatch count alone (this session's
+       d256/d4096 removal) NOR work alone (sessions 8-11: up to 128
+       nominal units at B<=2 never captures) suffices. The sessions
+       8-11 phrasing "dispatch count stays implicated" NARROWS:
+       dispatch count >= 3 (session 7's onset) is NECESSARY but not
+       sufficient; a per-dispatch work dependence exists at fixed B=8
+       and was invisible from the B<=2 side. Observable only; NO
+       causal mechanism claimed or measured.
+   (d) W3 (descriptive): total-work parity inverts again -- d8 (1.0
+       total nominal unit, 8 dispatches) 5,465 ticks CAPTURED vs c2
+       (2.0 units, 2 dispatches) 31 ticks FLOOR (ratio 176.3).
+   (e) X1 (descriptive realization, host_ns): c8 3.710x c2, d8 0.893x
+       c2 (d8/c8 = 0.24x for 1/8 the per-dispatch work -- descriptive
+       only, NO linearity claim), d256 0.118x, d4096 0.104x; host_ns
+       is the HOST-side proxy (frozen L3).
+
+   RULE 4: NOTHING MOVES -- no workgroup row, no :measured? flag, no
+   selection answer; accelerator-targets defaults remain provisional
+   design assumptions (:measured? false); this is NOT the
+   basis-replacing baseline-vs-variant contract of
+   accelerator-subgroup-reduce.cljk; NO vendor optimization exists for
+   Intel and none is claimed.
+
+   UNMEASURED named: any causal mechanism (for the undercount, the
+   capture, the onset, or the work-down removal); WHY capture turns on
+   where it does; the exact per-dispatch work threshold location
+   inside the (3,906..125,000] element band at B=8; whether the
+   threshold is on n, workgroup count (31..977), or grid shape; the
+   GPU-side cost inside a B<=2 bracket (unobservable on this
+   instrument); the protocol-L4 ambiguity at d4096 (n=244): its FLOOR
+   cannot be separated between the undercount phenomenon and plain
+   timestamp resolution at near-empty grids (the d256 removal does NOT
+   carry this ambiguity); any NDIV outside {1,8,256,4096}; any B
+   outside {2,8}; B in {3,4,5,6,7} at any shrunk grid; any WORK_MUL>1
+   this session; any n outside the four L2 values; anything between the
+   four grid points; whether ANY n at B=2 captures (the down side at
+   B=2 is untested -- sessions 8-11 only scaled work UP); session 2's
+   run-1 dip cause; cross-day replication; S=8 timing; every W outside
+   {128,256}; shape 2; BT ordering; any baseline-vs-variant sign;
+   non-empty barriers; anything off this host.
+
+   STATES: emitter arm/dispatch/selection rows IMPLEMENTED (code +
+   tests, unchanged -- this diff touches NO .cljk namespace); the NDIV
+   instrument derivation + analysis-s12.py validated by complete runs;
+   MEASURED only what publication-s12.txt sections 1-4 say.
+
+6. Gates (real runs this tick): gpu_regime_classify.py --self-test
+   TOTAL 2649 assertions/0 failed (pin); scoped GPU gate GREEN 123
+   tests / 12162 assertions / 0 failures / 0 errors run 1 AND run 2
+   (scratch runner gpu_scoped_gate.cljk, never committed); FULL
+   run-tests.cljk RUN LIVE THIS TICK: exit 1, RED AT BASE 'Could not
+   find namespace: kotoba.form' at namespace load (ADR-0362, outside
+   this diff) -- NO green full suite claimed; find this evidence dir
+   -name '*.sh' -> 0.
+
+7. CHAIN: this commit lands on the ONE open chain branch
+   bot/amu-gpu-chain-20261027-10 (chain PR #1636), commit + push only.
+   BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head at
+   tick start and re-checked immediately before this push.
+
+Evidence: docs/evidence/gpu/anv-workdown-20261027/ + the ADR-0355 dated
+note. (JUN-55, JUN-59)

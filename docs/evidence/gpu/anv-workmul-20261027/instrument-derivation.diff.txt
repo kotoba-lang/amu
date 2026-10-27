@@ -1,0 +1,69 @@
+JUN-59 session 8 (WORKDOSE) instrument derivation diff.
+Base: the archived session-7 snapshot
+  docs/evidence/gpu/anv-bonset-20261027/gpu-subgroup-reduce-anv-bonset.c.txt
+  (itself the byte-identical session-6 snapshot; sessions 1/2/4/5/6/7
+  instruments stay byte-stable)
+  digest 9847b0f1fa139d284d909ddc53e8e25af0b750126f31b8bcae2ed12c16326977
+Derived: docs/evidence/gpu/anv-workmul-20261027/gpu-subgroup-reduce-anv-workmul.c.txt
+  digest 5c7cf2d50f6e365187a35a772279ca17cead1c223fb687cc39bda454035762f3
+Hunks (the derivation is ONE parameterization edit -- the work-dose
+knob -- in 4 hunks):
+  H1 the WORK_MUL knob + N_ELEMENTS scaling (behavioural; WORK_MUL=1
+     reproduces the archived N_ELEMENTS 1000003u exactly)
+  H2 PARTS_CAP derived from N_ELEMENTS so parts[] carries one slot per
+     workgroup at any WORK_MUL (at WORK_MUL=1: 7813 = the wg=128 group
+     count; the archived literal 8192 was >= it -- in-bounds as before)
+  H3/H4 knob-identity prints (work_mul= in the header line and in
+     every SAMPLE line)
+The shader corpus (shaders/) is UNTOUCHED -- the same 16 digests.
+--- unified diff follows ---
+--- gpu-subgroup-reduce-anv-bonset.c (session-7 archived snapshot, digest 9847b0f1...)
++++ gpu-subgroup-reduce-anv-workmul.c (session-8 derived instrument)
+@@ -57,8 +57,23 @@
+ #include <vulkan/vulkan.h>
+ 
+ #define MAX_CELLS 64
+-#define N_ELEMENTS 1000003u
+-#define PARTS_CAP 8192u
++/* session 8 (WORKDOSE, 2026-10-27) work-dose knob -- the ONLY derivation
++ * edit on top of the archived session-6/7 snapshot (digest 9847b0f1...;
++ * see instrument-derivation.diff.txt). WORK_MUL scales N_ELEMENTS, so the
++ * per-dispatch grid (groups = ceil(N_ELEMENTS/wg)) and the total
++ * dispatched work scale by WORK_MUL while every workgroup's wg-sized
++ * chunk and the shader bytes stay identical. Default 1 = the archived
++ * behaviour. Knob identity: the header prints work_mul= and n=, and
++ * every SAMPLE prints work_mul=. */
++#ifndef WORK_MUL
++#define WORK_MUL 1
++#endif
++#define N_ELEMENTS (1000003u * (uint32_t)WORK_MUL)
++/* one parts[] slot per workgroup at the smallest cell W (128); scales
++ * with WORK_MUL through N_ELEMENTS. At WORK_MUL=1 this is 7813 = the
++ * wg=128 group count (the archived literal 8192 was >= it; observable
++ * behaviour at WORK_MUL=1 unchanged). */
++#define PARTS_CAP ((N_ELEMENTS + 127u) / 128u)
+ #define WARMUP 3
+ #define ROUNDS 25
+ #ifndef BATCH
+@@ -543,8 +558,8 @@
+            size_control_feature, size_control_full, min_sub, max_sub, required_stages);
+     printf("# timestampPeriod=%.3f timestampComputeAndGraphics=%d\n", timestamp_period,
+            timestamp_compute_graphics);
+-    printf("# n=%u rounds=%d warmup=%d batch=%d barrier_n=%d seed=%u metric=gpu_ns (vkCmdWriteTimestamp BATCH-dispatch bracket; per_dispatch_ns=gpu_ns/batch) +host_ns (CLOCK_MONOTONIC submit->completion)\n",
+-           N_ELEMENTS, ROUNDS, WARMUP, BATCH, BARRIER_N, SEED);
++    printf("# n=%u rounds=%d warmup=%d batch=%d barrier_n=%d work_mul=%d seed=%u metric=gpu_ns (vkCmdWriteTimestamp BATCH-dispatch bracket; per_dispatch_ns=gpu_ns/batch) +host_ns (CLOCK_MONOTONIC submit->completion)\n",
++           N_ELEMENTS, ROUNDS, WARMUP, BATCH, BARRIER_N, WORK_MUL, SEED);
+ 
+     /* ---- pipelines + probe verification ---- */
+     for (int i = 0; i < ncells; i++) {
+@@ -618,8 +633,8 @@
+             if (!c->pipeline_ok) continue;
+             uint64_t ticks = 0, host = 0;
+             submit_timed(c->pipeline, playout, dset, c->groups, &ticks, &host);
+-            printf("SAMPLE round=%d idx=%d batch=%d gpu_ticks=%llu gpu_ns=%.1f per_dispatch_ns=%.2f host_ns=%llu\n",
+-                   r, order[k], BATCH, (unsigned long long)ticks,
++            printf("SAMPLE round=%d idx=%d batch=%d work_mul=%d gpu_ticks=%llu gpu_ns=%.1f per_dispatch_ns=%.2f host_ns=%llu\n",
++                   r, order[k], BATCH, WORK_MUL, (unsigned long long)ticks,
+                    (double)ticks * (double)timestamp_period,
+                    (double)ticks * (double)timestamp_period / (double)BATCH,
+                    (unsigned long long)host);

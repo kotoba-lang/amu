@@ -1,0 +1,82 @@
+== JUN-59 session 25 derivation census -- THE B=3 PER-DISPATCH-WORK ==
+== THRESHOLD BISECT, FIFTH CUT ==
+== (1) BISECT GRID ARITHMETIC (computed programmatically) ==
+bracket (frozen at session 24): (250,000, 255,208] n-units
+exact floor midpoint: n = (250,000+255,208)//2 = 252,604
+  (bracket midpoint 252,604.0 IS an integer this time)
+per-dispatch work: 252,604/1,000,003 = 0.2526032
+gcd(252,604, 1,000,003) = 1 -> every knob pair is a floor approximation
+== (2) KNOB REACHABILITY (exhaustive search, sessions 21-24 search box ==
+== WORK_MUL 1..2,048 x NDIV 1..8,192; (1,000,003*WORK_MUL)//NDIV ==
+== == 252,604) ==
+pairs found: 41
+smallest: (97, 384) -- THE bisect pair used by mid/b2m
+full list (WORK_MUL, NDIV), ascending WORK_MUL:
+  (97,384) (194,768) (291,1152) (388,1536) (485,1920) (582,2304)
+  (679,2688) (776,3072) (873,3456) (970,3840) (1067,4224) (1164,4608)
+  (1261,4992) (1358,5376) (1455,5760) (1552,6144) (1649,6528) (1746,6912)
+  (1843,7296) (1940,7680) (2037,8064)
+  (+ their 2x multiples 194..2037 -> 20 pairs with WORK_MUL in 1..2,048
+   and NDIV = 2*384*k, k=1..10 map to the same n -- 41 total in the box;
+   the exhaustive enumeration above is recorded by the search script run
+   in this tick; count 41, smallest (97,384))
+NAMED, NOT HIDDEN: unlike session 24's cut, the smallest pair's
+same-ratio double IS inside the search box -- 13 of the 41 in-box pairs
+have their same-ratio double in-box ((97,384)->(194,768), (194,768)->
+(388,1536), ...). The eq3 arm uses the double of the bisect pair,
+(194, 768): (1,000,003*194)//768 = 252,604 (floor(2x/2) == floor(x)).
+== (3) ZERO DERIVATION EDITS (the strongest custody position in the ==
+== chain -- named as such) ==
+the instrument is session 24's committed NDIV-derived source used
+BYTE-IDENTICAL:
+  gpu-subgroup-reduce-anv-ndiv.c digest a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556
+  (session 24 committed copy == session 25 committed copy, re-sha256
+   local; local-vs-host MATCH recorded in host-verify-s25.txt)
+expected-corpus.sha256: BYTE-COPY of session 24's
+  eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4
+  (byte-copy chain back to session 2's committed compile-toolchain.txt
+   census)
+manifest cases-s25-a.txt cell lines (24): BYTE-COPY of session 24's
+  cases-s24-a.txt cell lines
+  873025d650afae2329ab2c05c2048931a5263976b9bfb585d3665b7018c32200
+  (byte-equal to sessions 9-24's a-set cell lines)
+== (4) KNOB ARITHMETIC PIN (all 7 arms; n = (1,000,003*WM)//NDIV) ==
+  c2  (2,1,1)        n=1,000,003  total=2.0000000  per-dispatch=1.0000000
+  lo  (3,1,4)        n=250,000    total=0.7499978  per-dispatch=0.2499993
+  mid (3,97,384)     n=252,604    total=0.7578097  per-dispatch=0.2526032
+  eq3 (3,194,768)    n=252,604    total=0.7578097  per-dispatch=0.2526032
+  hi  (3,1213,4753)  n=255,208    total=0.7656217  per-dispatch=0.2552072
+  b2m (2,97,384)     n=252,604    total=0.5052065  per-dispatch=0.2526032
+  c8  (8,1,1)        n=1,000,003  total=8.0000000  per-dispatch=1.0000000
+== (5) BUILD REPLICATION PINS (declared in protocol.txt section 2 in ==
+== advance; prior committed build censuses parsed programmatically) ==
+  anv-bb-c2  == e5ed903e5b9dfd64... (sessions 13-24's c2 binary digest)
+  anv-bb-c8  == 480925e58d28e7d3... (sessions 13-24's c8 binary digest)
+  anv-bb-lo  == efc6f4ee344737f8... (session 19's anv-n4-z3 digest;
+               == session 24's lo)
+  anv-bb-hi  == 123e8f739a92b51a... (session 24's anv-bb-mid digest --
+               hi IS session 24's mid knob pair (3,1213,4753); this
+               session is the FIRST cross-session replication of that
+               knob pair)
+  mid/eq3/b2m ((3,97,384), (3,194,768), (2,97,384)) are NEW knob
+  triples with NO prior binary (named, not hidden).
+== (6) FROZEN CROSS-SESSION REFERENCE VALUES (QUOTE-ONLY L7; embedded ==
+== as named constants in analysis-s25.py -- never this session's ==
+== measurements) ==
+  committed controls: c2 31 (floor band 31..32), c8 32,915 (session 4)
+  session-24 same-knob values: c2 32, c8 32,679, lo 1,141, mid 1,166,
+    eq3 1,157, hi 1,186, b2m 31
+  hi knob pair (3,1213,4753) = session 24's mid: 1,166 (class CAPTURED;
+    18-cell min 1,000 -- exactly at the frozen >=1000 threshold; CARRIES
+    session 24's pre-registered C3 (b) flagged risk)
+  lo knob pair (3,1,4) committed z3: 1,140 (session 19; class
+    INTERMEDIATE/MIXED); in-session replications s21 1,162 / s22 1,141 /
+    s23 1,129 / s24 1,141
+  the B=3 class-vs-per-dispatch-work row before this session (nine grid
+  points): 125,000 -> 599 INTERMEDIATE/MIXED (s18); 250,000 -> 1,140
+  INTERMEDIATE/MIXED (s19); 255,208 -> 1,166 CAPTURED (s24); 260,417 ->
+  1,186 CAPTURED (s23); 270,834 -> 1,224 CAPTURED (s22); 291,667 ->
+  1,330 CAPTURED (s21); 333,334 -> 1,578 CAPTURED (s17); 500,001 ->
+  2,739 CAPTURED (s20); 1,000,003 -> 5,520 CAPTURED (sessions 7/16)
+  session-24 host_ns (quote-only): c2 680,860; c8 2,393,875; lo
+  305,931; mid 309,938; eq3 310,779; hi 315,258; b2m 232,344

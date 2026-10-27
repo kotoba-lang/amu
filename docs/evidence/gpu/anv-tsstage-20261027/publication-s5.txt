@@ -1,0 +1,110 @@
+JUN-59 session 5 -- TIMESTAMP-STAGE DISCRIMINATOR (TS-STAGE), publication
+Produced ONLY by analysis-s5.py over the 36 committed run logs in this
+directory (run-<arm>-b<B>-r<R>.txt); protocol.txt was frozen before the
+first run. Arms: tb=(TOP,BOTTOM) control, tt=(TOP,TOP), bb=(BOTTOM,BOTTOM)
+of the two vkCmdWriteTimestamp endpoints around the BATCH dispatches.
+1 tick = timestampPeriod = 52.083 ns on this device.
+
+1. INTEGRITY (computed over the 36 logs):
+   runs parsed: 36 (3 arms x 4 B x 3 runs); cell map identical across runs: True
+   headers byte-identical within each B and across arms (arm not printed): True
+   header batch= field == run's B everywhere; every SAMPLE batch= field == run's B: True
+   SAMPLE lines: 450 per run (18 ok cells x 25 rounds) in 36/36 runs: True
+   VERIFY mismatch total over all runs: 0 (bit-exact correctness re-check)
+   forcing reality (pipeline-ok cell-runs where probe_size==forced and probe_nsub==wg/forced): 648/648
+   S=8 cells fail-closed (pipeline=FAIL, forced=8): 216 cell-runs (6 per run x 36 runs = 216)
+
+2. THE MEASURED BRACKETS (pooled median gpu_ticks over 3 runs x 25 rounds per cell):
+   each row: (sum,128,S=16) exact value, then min..max over the 18 pipeline-ok cells
+   host_ns = pooled median host submit->completion at (sum,128,S=16)
+
+   arm  B    (sum,128,16)   min..max over 18 cells    host_ns(sum,128,16)
+   tb  B=1           31           31..31             356395
+   tb  B=2           31           31..32             678175
+   tb  B=4        11678         8981..11700         1277093
+   tb  B=64      276996       229099..277789       15256447
+   tt  B=1           25           25..25             358388
+   tt  B=2           25           25..26             678516
+   tt  B=4         6454         6373..6454          1272834
+   tt  B=64      259604       219149..260029       15254974
+   bb  B=1           26           25..26             358349
+   bb  B=2           26           26..26             673587
+   bb  B=4        11677         8978..11683         1279607
+   bb  B=64      277714       229248..278224       15234676
+
+3. PRE-REGISTERED LETTERS (thresholds frozen in protocol.txt):
+
+   L1 CONTROL REPLICATION (arm tb vs session 4's shape):
+     B=1: all 18 cells pooled median <= 100 ticks (the 31-tick floor): True
+     B=64: all 18 cells pooled median >= 100000 ticks (captured band): True
+     VERDICT: branch (a) REPRODUCED -- L2-L4 are evaluated against the row question.
+
+   L2 TS2-STAGE DEPENDENCE OF THE LARGE-B CAPTURE (B=64, ratio tb/tt per cell):
+     cells with ratio >= 5 (tt collapses): 0/18
+     cells with ratio <= 2 (tt tracks tb): 18/18
+     ('sum', 128, '16'): tb/tt = 1.07
+     ('sum', 128, '32'): tb/tt = 1.07
+     ('sum', 128, 'default'): tb/tt = 1.07
+     ('max', 128, '16'): tb/tt = 1.06
+     ('max', 128, '32'): tb/tt = 1.07
+     ('max', 128, 'default'): tb/tt = 1.07
+     ('min', 128, '16'): tb/tt = 1.07
+     ('min', 128, '32'): tb/tt = 1.07
+     ('min', 128, 'default'): tb/tt = 1.07
+     ('sum', 256, '16'): tb/tt = 1.05
+     ('sum', 256, '32'): tb/tt = 1.04
+     ('sum', 256, 'default'): tb/tt = 1.05
+     ('max', 256, '16'): tb/tt = 1.05
+     ('max', 256, '32'): tb/tt = 1.05
+     ('max', 256, 'default'): tb/tt = 1.05
+     ('min', 256, '16'): tb/tt = 1.05
+     ('min', 256, '32'): tb/tt = 1.05
+     ('min', 256, 'default'): tb/tt = 1.05
+     VERDICT: branch (b) -- the capture does NOT depend on ts2's stage placement among {TOP,BOTTOM}.
+
+   L3 FLOOR REMOVABILITY AT B=1 (pooled median bracket per arm):
+     arm tb: min..max over 18 cells = 31..31 ticks
+     arm tt: min..max over 18 cells = 25..25 ticks
+     arm bb: min..max over 18 cells = 25..26 ticks
+     tt lifts the floor (all cells > 1000): False
+     bb lifts the floor (all cells > 1000): False
+     VERDICT: branch (b) -- the small-B undercount is NOT removable by the stage placements
+     tested here ((TOP,BOTTOM),(TOP,TOP),(BOTTOM,BOTTOM)); the row question is narrowed,
+     the mechanism stays UNMEASURED.
+
+   L4 TS1-SIDE (descriptive only): B=64 ratio bb/tb per cell:
+     ('sum', 128, '16'): bb/tb = 1.00  (tb=276996, bb=277714)
+     ('sum', 128, '32'): bb/tb = 1.00  (tb=276969, bb=276549)
+     ('sum', 128, 'default'): bb/tb = 1.00  (tb=277001, bb=276408)
+     ('max', 128, '16'): bb/tb = 1.00  (tb=276816, bb=277333)
+     ('max', 128, '32'): bb/tb = 1.00  (tb=276989, bb=277084)
+     ('max', 128, 'default'): bb/tb = 1.00  (tb=276084, bb=276627)
+     ('min', 128, '16'): bb/tb = 1.00  (tb=277789, bb=278224)
+     ('min', 128, '32'): bb/tb = 1.00  (tb=277329, bb=276395)
+     ('min', 128, 'default'): bb/tb = 1.00  (tb=276362, bb=277207)
+     ('sum', 256, '16'): bb/tb = 1.00  (tb=231019, bb=230712)
+     ('sum', 256, '32'): bb/tb = 1.00  (tb=229099, bb=229395)
+     ('sum', 256, 'default'): bb/tb = 1.00  (tb=229251, bb=229303)
+     ('max', 256, '16'): bb/tb = 1.00  (tb=230810, bb=230809)
+     ('max', 256, '32'): bb/tb = 1.00  (tb=229109, bb=229248)
+     ('max', 256, 'default'): bb/tb = 1.00  (tb=229270, bb=229323)
+     ('min', 256, '16'): bb/tb = 1.00  (tb=230861, bb=230732)
+     ('min', 256, '32'): bb/tb = 1.00  (tb=229146, bb=229431)
+     ('min', 256, 'default'): bb/tb = 1.00  (tb=229229, bb=229435)
+
+4. DERIVED (arithmetic over section 2, no new measurement):
+   arm tb B=64 (sum,128,16): bracket 276996 ticks = 14426.8 us per 64-dispatch bracket; per-dispatch 4328.1 ticks
+   arm tt B=64 (sum,128,16): bracket 259604 ticks = 13521.0 us per 64-dispatch bracket; per-dispatch 4056.3 ticks
+   arm bb B=64 (sum,128,16): bracket 277714 ticks = 14464.2 us per 64-dispatch bracket; per-dispatch 4339.3 ticks
+   arm tb B=1 (sum,128,16): bracket 31 ticks = 1.61 us; host_ns median 356395 ns (the undercount scale)
+
+5. RULE 4 -- NOTHING MOVES: no workgroup row, no :measured? flag, no selection
+   answer; accelerator-targets defaults remain provisional design assumptions
+   (:measured? false). This is NOT the baseline-vs-variant contract of
+   accelerator-subgroup-reduce.cljk. NO vendor optimization exists for Intel
+   and none is claimed. No causal mechanism is claimed by any letter above.
+
+6. UNMEASURED (named): any causal mechanism for the undercount or the capture;
+   session 2's run-1 dip cause; cross-day replication; S=8 timing; every W
+   outside {128,256}; shape 2; any baseline-vs-variant sign; BT ordering;
+   isolated single-dispatch timing; anything off this host.

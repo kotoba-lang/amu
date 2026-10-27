@@ -1,0 +1,157 @@
+JUN-59 -- session 9 record: PER-WORKGROUP-FATNESS DISCRIMINATOR (ITERMUL),
+INSTRUMENT channel. 2026-10-27. Chain PR #1636 (bot/amu-gpu-chain-20261027-10).
+
+1. ROW QUESTION (session 8's frozen NAMED LIMITATION, ONE observable axis):
+   session 8 could not separate "more work" from "bigger grid" (one knob
+   scaled both). This session asks ONE narrower question and tests NO
+   causal mechanism:
+
+     AT FIXED DISPATCH COUNT B=2 AND CONSTANT GRID (the archived
+     n = 1,000,003, WORK_MUL=1), IS THE CAPTURE REACHABLE BY FAT
+     PER-WORKGROUP WORK?
+
+   knob: the compile-time ITERMUL knob, baked into DERIVED SHADER
+   SOURCES (the instrument is byte-identical session-8, NO C edit): the
+   reduce body re-runs ITERMUL times per workgroup; each iteration
+   recomputes the same reduction from the same x[] and the parts[] write
+   is idempotent inside the loop, so the stored value is bit-identical at
+   any I (re-checked inside every run: VERIFY mismatch 0 over all runs).
+   The grid is the archived grid at every arm. 1 nominal work unit = one
+   dispatch of the archived grid at ITERMUL=1 cost; (B,I) = B*I units.
+
+2. SHADER DERIVATION (chain of custody): base = the 6 committed measured
+   shaders (digests re-verified 6/6 against session 2's census BEFORE
+   deriving); derivation = ONE systematic 3-line edit per (shader, I)
+   pair (D1 #define ITERMUL <I>, D2 the wrapper loop after `void main()
+   {`, D3 the wrapper close before main's closing brace). Inverse check
+   (strip the 3 inserted unique lines -> base bytes) 18/18 EXACT
+   (shader-derivation-census.txt). 18 derived sources archived under
+   shaders-derived/; exemplar diff + digests in shader-derivation.diff.txt.
+   The compiled iter*.spv use the same toolchain/command as the corpus
+   (glslangValidator -S comp -V --target-env vulkan1.2, glslang
+   11:15.1.0). The corpus (16 digests) is UNTOUCHED and re-verified; the
+   a-set arms run the ARCHIVED measured spv, the f-sets run the derived
+   spv. cases-s9-a.txt cell lines are a BYTE-COPY of cases-s8.txt's; each
+   f-set manifest's lines are the a-set lines with ONLY the measured spv
+   name changed (all checked programmatically). Sessions 1-8 instruments
+   and shaders stay byte-stable.
+
+3. CHAIN OF CUSTODY (host-verify-s9.txt): corpus 16/16 digests MATCH
+   session 2's census (parsed programmatically, never transcribed);
+   instrument local-vs-host MATCH (5c7cf2d5..., byte-identical session-8);
+   manifests + 18 derived sources local-vs-host MATCH; inverse check
+   18/18 -- GO at 2026-10-27T13:03:04Z, BEFORE the successful builds and
+   ALL runs.
+
+4. HARDWARE RAN (MEASURED): 30 fresh processes (10 arms x 3 runs), run
+   window 2026-10-27T13:03:36Z..2026-10-27T13:03:54Z, rc=0 30/30, stderr
+   0 bytes 30/30 (host-side wc -c total 0), 450 SAMPLE lines each;
+   headers byte-identical across all runs outside the # n= knob line;
+   every run's batch= == its arm's B, work_mul=1, barrier_n=0,
+   n=1,000,003; every CELL's spv= name carries its arm's shader-set
+   suffix (analysis-s9.py checks all fields); forcing reality 540/540;
+   VERIFY mismatch 0 everywhere (the ITERMUL loop did not change any
+   stored value); S=8 fail-closed 180/180. Host: aiueos-6600hs-1 (BMG
+   G31 / ANV), 1 tick = 52.083 ns. Per-run transcript (host date -u, rc):
+   a1  r1-3 rc=0 13:03:36Z   f1b2 r1-3 rc=0 13:03:42-43Z
+   a2  r1-3 rc=0 13:03:37Z   f1b8 r1-3 rc=0 13:03:44-49Z
+   a3  r1-3 rc=0 13:03:38-39Z f3b1 r1-3 rc=0 13:03:50Z
+   a8  r1-3 rc=0 13:03:40-42Z f3b2 r1-3 rc=0 13:03:51-52Z
+   f8b1 r1-3 rc=0 13:03:52-53Z f8b2 r1-3 rc=0 13:03:53-54Z
+   (seconds granular per run; full transcript in the tick record)
+
+5. FINDINGS (publication-s9.txt, produced ONLY by analysis-s9.py over the
+   committed run logs, the recorded publication run twice byte-identical
+   -- diff exit 0):
+
+   (a) C1 ARCHIVED CONTROL REPLICATION fired branch (a) -- a1/a2 FLOOR
+       (31 ticks), a3 = 5,531 vs committed 5,520 (+0.20%), a8 = 32,745
+       vs committed 32,915 (-0.52%), both inside the frozen +/-5%. The
+       a-set runs the ARCHIVED spv bytes through the byte-identical
+       instrument.
+   (b) C2 DERIVATION CONTROL fired branch (a) -- f1b2 FLOOR (32 ticks);
+       f1b8 = 32,993 vs committed 32,915 (+0.24%): the wrapper
+       derivation + iter1 codegen is pinned at I=1 inside the frozen
+       bands.
+   (c) W1 fired branch (a) AS FROZEN (NOMINAL-I reading) -- f3b2 and
+       f8b2 are FLOOR (31..32 ticks at all 18 cells) while a8b8 (8
+       nominal units) is CAPTURED: capture at B=2 is not reachable by up
+       to 8 NOMINAL ITERMUL body executions at constant grid. With
+       session 8's grid axis (also unreachable at B=2), dispatch count
+       stays implicated. Observable only; NO causal mechanism claimed.
+   (d) W1 REALIZATION BOUND, NAMED, NOT HIDDEN (computed from the same
+       runs' host_ns, no new measurement): the knob's COST realization
+       is MARGINAL AND NON-MONOTONE -- host_ns f3b1 559,503 (1.57x a1)
+       > f8b1 404,335 (1.14x a1); f3b2 872,878 (1.28x a2), f8b2
+       789,934 (1.16x a2) for nominal I=3x/8x. The frozen protocol
+       named in advance that cost scaling with I is uncalibrated; so
+       branch (c) closes the NOMINAL-I axis only and a genuinely
+       cost-8x-heavier workgroup at B=2 stays UNMEASURED (session 8's
+       grid axis WAS cost-realized: its committed b2m8 host_ns
+       3,143,995 vs b2m1 678,375 = 4.63x).
+   (e) W2 (descriptive): equal nominal work splits hard by shape --
+       3 units as one fat dispatch (f3b1) 31 ticks FLOOR vs 3 thin
+       dispatches (a3) 5,531 CAPTURED (bracket ratio 0.006); 8 units
+       f8b1 31 vs a8 32,745 (ratio 0.001); derivation delta f1b8/a8
+       bracket ratio 1.008.
+   (f) W3 (descriptive): no single-dispatch arm captures -- a1/f3b1/
+       f8b1 all FLOOR at 31 ticks.
+   (g) W4 (descriptive): host_ns per nominal unit falls with I by
+       definition (a1 356,064 ns/unit -> f8b2 49,371 ns/unit); counts
+       only, no linearity claim.
+
+   RULE 4: NOTHING MOVES -- no workgroup row, no :measured? flag, no
+   selection answer; accelerator-targets defaults remain provisional
+   design assumptions (:measured? false); this is NOT the
+   basis-replacing baseline-vs-variant contract of
+   accelerator-subgroup-reduce.cljk; NO vendor optimization exists for
+   Intel and none is claimed.
+
+   UNMEASURED named: any causal mechanism for the undercount, the
+   capture or the onset; WHY capture turns on where it does; the
+   ITERMUL knob's cost realization (marginal, non-monotone; WHY
+   UNMEASURED); any genuinely cost-8x per-workgroup work at B=2; any
+   codegen difference between iter1 spv and archived spv beyond the
+   wrapper; GRID x FATNESS interaction (M>1 with I>1); any I outside
+   {1,3,8}; any (B,I) outside the ten arms; B in {4,5,6,7} at any I;
+   any N>0; session 2's run-1 dip cause; cross-day replication; S=8
+   timing; every W outside {128,256}; shape 2; BT ordering; any
+   baseline-vs-variant sign; isolated single-dispatch timing;
+   non-empty barriers; anything off this host.
+
+   NAMED, NOT HIDDEN (authoring): (i) the protocol-frozen D2 wrapper
+   spelling `it < (uint)ITERMUL` is not valid GLSL -- build attempt #1
+   (12:59:58Z, after verify #1, ZERO runs) failed 18/18 compiles rc=2;
+   the wrapper was fixed to constructor syntax `it < uint(ITERMUL)`
+   (same semantics) and sources were re-derived, re-uploaded and
+   re-verified before the successful build; protocol.txt itself stays
+   byte-frozen and is NOT rewritten (letters/branches/thresholds
+   untouched); shader-derivation.diff.txt and host-verify-s9.txt carry
+   the correction; (ii) analysis-s9.py's first draft stated W1's
+   verdict without the section-(d) realization bound; after reading the
+   W4 host_ns values the bound was added BEFORE the recorded
+   publication (the recorded publication is the final script run twice
+   byte-identical); (iii) the 4 instrument binaries are byte-identical
+   to session 8's same-flag binaries (extra pin).
+
+   STATES: emitter arm/dispatch/selection rows IMPLEMENTED (code +
+   tests, unchanged -- this diff touches NO .cljk namespace); the
+   itrmul shader derivation + analysis-s9.py validated by complete
+   runs; MEASURED only what publication-s9.txt sections 1-4 say.
+
+6. Gates (real runs this tick): gpu_regime_classify.py --self-test
+   TOTAL 2649 assertions/0 failed (pin); scoped GPU gate GREEN 123
+   tests / 12162 assertions / 0 failures / 0 errors run 1 AND run 2
+   (scratch runner gpu_scoped_gate.cljk, never committed); FULL
+   run-tests.cljk RUN LIVE THIS TICK: exit 1, RED AT BASE 'Could not
+   find namespace: kotoba.form' at namespace load (ADR-0362, outside
+   this diff) -- NO green full suite claimed; find this evidence dir
+   -name '*.sh' -> 0.
+
+7. CHAIN: this commit lands on the ONE open chain branch
+   bot/amu-gpu-chain-20261027-10 (chain PR #1636), commit + push only.
+   BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head at
+   tick start and re-checked immediately before this push.
+
+Evidence: docs/evidence/gpu/anv-itrmul-20261027/ + the ADR-0355 dated
+note. (JUN-55, JUN-59)

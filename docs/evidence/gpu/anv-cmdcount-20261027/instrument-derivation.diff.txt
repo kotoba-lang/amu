@@ -1,0 +1,39 @@
+--- ../anv-tsstage-20261027/gpu-subgroup-reduce-anv-tsstage.c.txt	2026-10-27 19:56:42
++++ gpu-subgroup-reduce-anv-cmdcount.c.txt	2026-10-27 20:25:25
+@@ -69,6 +69,9 @@
+ #endif
+ #ifndef TS2_STAGE
+ #define TS2_STAGE VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT
++#endif
++#ifndef BARRIER_N
++#define BARRIER_N 0
+ #endif
+ #define SEED 20261027u
+ 
+@@ -279,6 +282,15 @@
+     vkchk(vkBeginCommandBuffer(cmd, &bi), "vkBeginCommandBuffer");
+     vkCmdResetQueryPool(cmd, querypool, 0, 2);
+     vkCmdWriteTimestamp(cmd, TS1_STAGE, querypool, 0);
++    /* session 6 COMMAND-COUNT knob (derivation from the session-5
++       source, see instrument-derivation.diff.txt): BARRIER_N empty
++       global execution barriers (zero memory/buffer/image
++       dependencies) between ts1 and the BATCH dispatches -- bracketed
++       command count without bracketed GPU work. */
++    for (int k = 0; k < BARRIER_N; k++)
++        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
++                             VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0,
++                             0, NULL, 0, NULL, 0, NULL);
+     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, p);
+     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, NULL);
+     /* BATCH consecutive dispatches inside one bracket (floor lifting):
+@@ -531,8 +543,8 @@
+            size_control_feature, size_control_full, min_sub, max_sub, required_stages);
+     printf("# timestampPeriod=%.3f timestampComputeAndGraphics=%d\n", timestamp_period,
+            timestamp_compute_graphics);
+-    printf("# n=%u rounds=%d warmup=%d batch=%d seed=%u metric=gpu_ns (vkCmdWriteTimestamp BATCH-dispatch bracket; per_dispatch_ns=gpu_ns/batch) +host_ns (CLOCK_MONOTONIC submit->completion)\n",
+-           N_ELEMENTS, ROUNDS, WARMUP, BATCH, SEED);
++    printf("# n=%u rounds=%d warmup=%d batch=%d barrier_n=%d seed=%u metric=gpu_ns (vkCmdWriteTimestamp BATCH-dispatch bracket; per_dispatch_ns=gpu_ns/batch) +host_ns (CLOCK_MONOTONIC submit->completion)\n",
++           N_ELEMENTS, ROUNDS, WARMUP, BATCH, BARRIER_N, SEED);
+ 
+     /* ---- pipelines + probe verification ---- */
+     for (int i = 0; i < ncells; i++) {

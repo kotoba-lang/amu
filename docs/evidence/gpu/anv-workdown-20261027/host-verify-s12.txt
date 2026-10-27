@@ -1,0 +1,69 @@
+== host-verify (JUN-59 WORK-DOWN LOCALIZER at fixed B=8, session 12) ==
+== expectation source: session 2's committed compile-toolchain.txt sha256 ==
+== census (parsed programmatically from that committed file, never ==
+== transcribed; the same 16 lines are checked host-side via ==
+== `sha256sum -c expected-corpus.sha256`). ONE derivation this session ==
+== (C-side): the NDIV instrument = session 8's committed snapshot + the ==
+== 3 hunks of instrument-derivation.diff.txt. NO shader derivation -- ==
+== the corpus is used byte-identical. ==
+shaders/probe-w128.glsl: OK
+shaders/probe-w128.spv: OK
+shaders/probe-w256.glsl: OK
+shaders/probe-w256.spv: OK
+shaders/subgroup-reduce-w128-max.emitted.glsl: OK
+shaders/subgroup-reduce-w128-max.emitted.spv: OK
+shaders/subgroup-reduce-w128-min.emitted.glsl: OK
+shaders/subgroup-reduce-w128-min.emitted.spv: OK
+shaders/subgroup-reduce-w128-sum.emitted.glsl: OK
+shaders/subgroup-reduce-w128-sum.emitted.spv: OK
+shaders/subgroup-reduce-w256-max.emitted.glsl: OK
+shaders/subgroup-reduce-w256-max.emitted.spv: OK
+shaders/subgroup-reduce-w256-min.emitted.glsl: OK
+shaders/subgroup-reduce-w256-min.emitted.spv: OK
+shaders/subgroup-reduce-w256-sum.emitted.glsl: OK
+shaders/subgroup-reduce-w256-sum.emitted.spv: OK
+== corpus digest check (host-side, 16 files incl. the 8 compiled spv): 16/16 ==
+MATCH  gpu-subgroup-reduce-anv-ndiv.c: local=a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556 host=a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556
+MATCH  cases-s12-a.txt: local=9dfc547ac8e0bb806e86aa3631553b949058efaa2bdb635646f3f0a4da38c17f host=9dfc547ac8e0bb806e86aa3631553b949058efaa2bdb635646f3f0a4da38c17f
+MATCH  expected-corpus.sha256: local=eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4 host=eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4
+== instrument + manifest + census-expectation local-vs-host: 3/3 MATCH ==
+== inverse check (strip the 3 NDIV hunks -> session-8 snapshot bytes): ==
+== EXACT, and the snapshot digest re-sha256 MATCH (5c7cf2d5... local ==
+== re-verified) -- derivation-census.txt (produced programmatically ==
+== this tick). ==
+== NAMED, NOT HIDDEN (authoring): the first host-side checksum attempt ==
+== (14:29:01Z) re-ran sha256sum -c from inside shaders/ (the census ==
+== paths are workdir-root-relative) and failed 16/16 on path resolution ==
+== only; the check was re-run from the root at 14:29:30Z (the 16 OK ==
+== lines above). Zero builds, zero runs happened before the successful ==
+== verify. ==
+TIMELINE (named, not hidden): the chain of custody ran BEFORE any run.
+Host-side steps, all on murakumo-ci-6600hs (aiueos-6600hs-1), workdir
+~/anv-workdown-20261027:
+  2026-10-27T14:27:18Z  first pre-protocol smoke attempt FAILED rc=1
+                        (local file-name mistake in the throwaway dir
+                        ~/anv-ndiv-smoke: the upload name did not match
+                        the compile name) -- ZERO compiles, ZERO runs
+  2026-10-27T14:27:36Z  PRE-PROTOCOL compile smoke (throwaway dir
+                        ~/anv-ndiv-smoke, gcc -O2 -DBATCH=2 -DNDIV=1,
+                        rc=0, host digest a5e539f0... MATCH local,
+                        ZERO runs, ZERO timing -- the session-9 D2
+                        lesson applied by design)
+  2026-10-27T14:29Z     protocol.txt frozen (this file's session)
+  2026-10-27T14:28:53Z  cp -a of session 11's verified corpus copy
+                        (shaders/ -- 100 files: the 16 corpus files +
+                        84 carried-forward extras from the session
+                        chain, incl. 12 iter8/itervc8 derived spv;
+                        extras UNUSED by this session's manifest --
+                        named, not hidden)
+  2026-10-27T14:29:30Z  upload complete (instrument + manifest +
+                        census expectation) and THIS verify: corpus
+                        16/16 + local-vs-host 3/3 -- GO
+  2026-10-27T14:29:51Z  builds: 5 gcc binaries (one per (BATCH, NDIV)
+                        arm pair; build-census-s12.txt)
+  2026-10-27T14:30:00Z..14:30:07Z  the 15 runs (strictly after this
+                        verify -- run-window.txt)
+host timestamp at this verify: 2026-10-27T14:29:30Z
+SESSION GO/NO-GO: GO (corpus 16/16 + instrument + manifest + census
+expectation all MATCH local-vs-host; inverse check EXACT; snapshot
+digest MATCH; manifest cell-line byte-copy checked -- derivation-census.txt)

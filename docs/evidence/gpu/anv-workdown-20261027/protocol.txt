@@ -1,0 +1,173 @@
+JUN-59 -- session 12 protocol: WORK-DOWN LOCALIZER at fixed B=8 (the NDIV
+knob). INSTRUMENT channel. Frozen BEFORE the first run (2026-10-27T14:29Z,
+this tick). This file is written once and never rewritten.
+
+0. ROW QUESTION (the reverse axis of sessions 8-11, ONE observable axis):
+   sessions 8-11 pushed per-dispatch work UP at fixed B=2 (up to 128
+   nominal work units per 2-dispatch bracket, grid-only and joint doses,
+   nominal and volatile-coherent fatness) and never reached the capture;
+   the capture at B=8 has only ever been measured at the single
+   per-dispatch work level of the archived grid (n = 1,000,003). The
+   named residual that this session tests -- is the capture at B=8
+   REMOVABLE by lack of work -- narrows the "dispatch count stays
+   implicated" reading from the other direction:
+
+     AT FIXED DISPATCH COUNT B=8, IS THE CAPTURED BRACKET REMOVABLE BY
+     SHRINKING THE PER-DISPATCH WORK -- 8 dispatches of a 1/8-, 1/256-
+     or 1/4096-times grid (n = 125,000 / 3,906 / 244) as against the
+     captured c8 control's 8 dispatches of n = 1,000,003?
+
+   knobs: ONE compile-time knob on the C instrument -- NDIV divides
+   N_ELEMENTS (session-8 snapshot + the 3-hunk edit of
+   instrument-derivation.diff.txt; NDIV default 1 reproduces the
+   archived N_ELEMENTS arithmetic exactly). The shaders take n from
+   the N uniform (binding 2), so the shader corpus is used
+   BYTE-IDENTICAL (no shader derivation this session). Every run's
+   header and every SAMPLE line print ndiv= (knob identity).
+
+   NAMED LIMITATIONS (frozen in advance):
+   (L1) the nominal work unit is a DEFINITION (n / 1,000,003 per
+        dispatch), not a cost claim; total nominal work = B * n /
+        1,000,003.
+   (L2) NDIV divides by integer floor: exact n values at WORK_MUL=1
+        are 1,000,003 / 125,000 / 3,906 / 244 for NDIV 1/8/256/4096
+        (1,000,003 is not divisible by 8/256/4096); the d8 arm's total
+        nominal work is therefore 0.999997 of 1 unit, not exactly 1.
+   (L3) host_ns is a HOST-side proxy of bracketed cost (submit+wait);
+        the GPU-side cost inside a B<=2 bracket is unobservable on this
+        instrument (the phenomenon under study) and stays UNMEASURED.
+   (L4) the d4096 arm (n = 244) dispatches 2 workgroups (wg=128) or 1
+        (wg=256) per dispatch -- a nearly empty grid. If its bracket
+        floors, the work threshold (if any) localizes ABOVE 244
+        elements per dispatch at B=8, but whether such a floor is the
+        undercount phenomenon or plain timestamp resolution at
+        near-empty grids is UNMEASURED and cannot be separated on this
+        instrument; named, not hidden.
+
+1. DERIVATION (chain of custody): ONE derivation edit this session,
+   C-side (NO shader derivation):
+
+   instrument = session 8's committed snapshot
+     docs/evidence/gpu/anv-workmul-20261027/gpu-subgroup-reduce-anv-workmul.c.txt
+     (digest 5c7cf2d5..., re-verified below) with the 3-hunk NDIV edit
+     (H1 the knob + N_ELEMENTS division; H2/H3 the ndiv= knob-identity
+     prints) -> gpu-subgroup-reduce-anv-ndiv.c (committed this
+     session). Inverse check (derivation-census.txt, produced
+     programmatically this tick): strip the 3 hunks -> session-8
+     snapshot bytes EXACT; snapshot digest re-sha256 MATCH.
+   NAMED, NOT HIDDEN: the derived source was compile-smoked on the
+   host toolchain BEFORE this freeze (2026-10-27T14:27:36Z, throwaway
+   dir ~/anv-ndiv-smoke, gcc -O2 -DBATCH=2 -DNDIV=1 rc=0, host digest
+   a5e539f0... MATCH local, ZERO runs, ZERO timing -- the session-9 D2
+   lesson applied by design; a first smoke attempt at 14:27:18Z failed
+   rc=1 on a local file-name mistake in the throwaway dir, zero
+   compiles, zero runs -- corrected before this freeze).
+   corpus = the 16 measured/probe files, cp -a'd forward along the
+   session chain and re-verified 16/16 against the session-2 census
+   BEFORE any run (sha256sum -c expected-corpus.sha256, regenerated
+   programmatically from the committed census, byte-equal to session
+   11's file).
+   manifests = cases-s12-a.txt, the 24 a-set cell lines a BYTE-COPY
+   of session 11's cases-s11-a.txt cell lines (checked
+   programmatically). ALL 5 arms run this one manifest (the archived
+   measured spv).
+
+2. ARMS (5 arms, 3 runs each = 15 fresh processes). Binary = the
+   compile-time (BATCH, NDIV) pair. The header prints batch=/work_mul=/
+   ndiv=/n= and every SAMPLE prints batch=/work_mul=/ndiv=, so every
+   run log carries its knob identity.
+
+   tag    B  NDIV     n         per-dispatch nominal   total nominal
+   c2     2  1        1,000,003 1.000                  2.000
+   c8     8  1        1,000,003 1.000                  8.000
+   d8     8  8          125,000 0.125                  1.000 (L2: 0.999997)
+   d256   8  256         3,906 0.003906                0.03125
+   d4096  8  4096          244 0.000244                0.00195
+
+   c2/c8 are the ARCHIVED CONTROL anchors (same a-set bytes; the
+   binaries carry the NDIV edit at NDIV=1 -- C1 pins that edit to
+   archived behaviour). d8/d256/d4096 are the work-down probe arms.
+
+3. CLASSIFICATION (frozen thresholds, derived from committed values
+   only): a bracket is FLOOR if the pooled median gpu_ticks over 3 runs
+   x 25 rounds is <= 100 ticks at ALL 18 pipeline-ok cells; CAPTURED if
+   >= 1000 at ALL 18; otherwise INTERMEDIATE/MIXED. (Same thresholds as
+   sessions 7-11; committed floor band 31..32 ticks, committed
+   captured anchor 32,915 ticks at c8.) 1 tick = timestampPeriod =
+   52.083 ns on this device.
+
+4. PRE-REGISTERED LETTERS (BOTH branches of each named in advance):
+
+   C1 ARCHIVED CONTROL REPLICATION (numeric agreement at the control's
+      OWN (B,NDIV); the a-set + NDIV=1 pins the derivation edit):
+      branch (a): c2 satisfies FLOOR AND c8 (sum,128,S=16) pooled
+      median within +/-5% of the committed 32,915 (session 4 pooled
+      median) -> C1 passes and W1-W3 are evaluated against the row
+      question. branch (b): either criterion fails -> replication
+      discrepancy (bearing on the environment/derivation pin), W1-W3
+      interpretation FLAGGED; cause UNMEASURED.
+
+   W1 THE ROW QUESTION (capture removability at B=8 by work-down; the
+      class of d8 -- 8 dispatches at 1/8 per-dispatch work, 1.0 total
+      nominal unit, HALF the c2 control's 2.0 total units which FLOOR):
+      branch (a): d8 is CAPTURED -> the capture at B=8 is NOT REMOVABLE
+      at 1/8 per-dispatch work: with sessions 8-11 (work UP at B=2,
+      unreachable) the capture is not a total-work threshold from
+      EITHER direction; dispatch count stays implicated in the strong
+      sense. Observable only; NO causal mechanism claimed.
+      branch (b): d8 is FLOOR -> the capture at B=8 IS REMOVABLE by
+      work-down: a PER-DISPATCH work threshold exists at B=8 inside
+      the (1/8, 1] nominal-unit band (2 grid points; no interpolation,
+      no linearity claim); the capture needs BOTH dispatch count >= 3
+      (session 7's onset) AND per-dispatch work above that threshold,
+      and the sessions 8-11 reading narrows to "not reachable by total
+      work at B<=2" with the work axis re-entering at fixed B.
+      branch (c): INTERMEDIATE/MIXED -> cell-quantified in the
+      publication's section 2; mechanism UNMEASURED.
+
+   W2 WORK-DOWN DOSE CURVE (descriptive, at B=8): the classes and
+      bracket/host_ns figures of d8, d256, d4096 against the c8 anchor;
+      where (if anywhere) the class dies as per-dispatch work shrinks
+      8x..4096x. The linear-work expectation (bracket ~ c8/NDIV) is
+      reported ONLY as a descriptive comparison; NO linearity claim.
+
+   W3 TOTAL-WORK PARITY (descriptive): d8 (8 dispatches x 1/8 unit =
+      1.0 total nominal unit, L2) vs c2 (2 dispatches x 1 unit = 2.0
+      total): bracket ratio and classes; observable only, NO mechanism
+      claimed.
+
+   X1 REALIZATION (descriptive, from the same runs' host_ns, no new
+      measurement): host_ns factors vs c2 in-session at
+      (sum,128,S=16); per-dispatch host_ns = host_ns/B; no linearity
+      claim; host_ns is the HOST-side proxy (L3).
+
+5. INVALIDATION (frozen): the instrument's VERIFY step re-checks every
+   cell's stored values bit-exact against a CPU reference INSIDE every
+   run (over integer-valued inputs, any n). VERIFY mismatch > 0 in any
+   run -> that run's NDIV derivation is DEFECTIVE for the affected arm
+   (buffer sizing / PARTS_CAP / reference follow the knob; a mismatch
+   means the knob edit corrupted them), the arm is INVALID, and no
+   letter against it is evaluable. EXPECTED: mismatch 0 everywhere.
+
+6. ANALYSIS ROUTE (frozen): analysis-s12.py parses ONLY the 15
+   committed run logs in this directory (run-<tag>-r<R>.txt) and
+   writes publication-s12.txt; deterministic (running it twice yields
+   byte-identical output -- diff-checked). Integrity gates inside the
+   analysis: header byte-identity across runs outside the # n= knob
+   line; header batch=/work_mul=/ndiv= == the arm's (B,1,NDIV) and
+   n == floor(1,000,003/NDIV); every SAMPLE's batch=/work_mul=/ndiv=
+   fields == the arm; every CELL's spv= name is an archived .emitted.spv
+   (no .iter suffix -- the corpus is byte-identical this session);
+   450 SAMPLE lines per run (18 ok cells x 25 rounds); forcing reality
+   (probe_size==forced, probe_nsub==wg/forced); S=8 fail-closed
+   (pipeline=FAIL, forced=8) counted (6 per run x 15 = 90 expected).
+
+7. UNMEASURED named in advance: any causal mechanism (for the
+   undercount, the capture, the onset, or any work-down transition);
+   WHY capture turns on where it does; the GPU-side cost inside a B<=2
+   bracket (L3); the L4 ambiguity at near-empty grids; any NDIV outside
+   {1,8,256,4096}; any B outside {2,8}; any WORK_MUL > 1 this session;
+   any n outside the four L2 values; anything between the four grid
+   points; session 2's run-1 dip cause; cross-day replication; S=8
+   timing; every W outside {128,256}; shape 2; BT ordering; any
+   baseline-vs-variant sign; non-empty barriers; anything off this host.

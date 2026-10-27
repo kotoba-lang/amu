@@ -1,0 +1,155 @@
+JUN-59 -- session 10 protocol: GRID x FATNESS INTERACTION (the JOINT
+knob at B=2). INSTRUMENT channel. Frozen BEFORE the first run
+(2026-10-27T13:22:00Z, this tick). This file is written once and never
+rewritten.
+
+0. ROW QUESTION (the GRID x FATNESS interaction that sessions 8 and 9
+   both named UNMEASURED, narrowed to ONE observable axis): sessions 8
+   and 9 each tested ONE knob at fixed B=2 and found the capture out of
+   reach: session 8's grid axis (WORK_MUL, cost-realized, up to 16
+   nominal units) and session 9's fatness axis (ITERMUL, nominal, up to
+   16 nominal units). NEITHER session tested the two knobs TOGETHER.
+   This session asks ONE narrower, observable question:
+
+     AT FIXED DISPATCH COUNT B=2, IS THE CAPTURE REACHABLE BY THE
+     JOINT GRID x FATNESS DOSE -- the biggest work dose the two
+     proven knobs can jointly produce inside one 2-dispatch bracket
+     (WORK_MUL=8 grid x ITERMUL=8 fat workgroups = 128 nominal work
+     units)?
+
+   knobs: the compile-time WORK_MUL knob of the instrument (the
+   byte-identical session-8 snapshot, NO C edit; scales N_ELEMENTS,
+   n = 1,000,003*M) AND the compile-time ITERMUL knob baked into
+   DERIVED SHADER SOURCES (the byte-identical session-9 iter8
+   derivation, reused, not re-derived -- see section 1). The stored
+   value is bit-identical at any (M,I), re-checked inside every run by
+   the instrument's VERIFY step. 1 nominal work unit = one dispatch of
+   the archived grid at ITERMUL=1 cost; an (M,I) arm at B=2 runs 2
+   dispatches of an M-times grid at I-times per-workgroup cost = 2*M*I
+   nominal units. Whatever the answer, no mechanism is claimed.
+
+   NAMED LIMITATION (frozen in advance): the NOMINAL unit count is a
+   definition, not a cost claim. Session 8's M knob WAS cost-realized
+   (host_ns 4.63x at nominal 8x); session 9's I knob was MARGINAL AND
+   NON-MONOTONE (host_ns 1.14x..1.57x at nominal 3x/8x). The joint
+   knob's cost realization is NOT calibrated in advance (X2 reports
+   host_ns per arm; no linearity is claimed). A genuinely cost-calibrated
+   joint dose stays UNMEASURED and is named again below.
+
+1. DERIVATION (chain of custody): NO new derivation this session --
+   every input is a byte-reuse of a committed, custody-checked artifact:
+
+   instrument = the archived session-8 snapshot, BYTE-IDENTICAL, NO C
+   edit:
+     docs/evidence/gpu/anv-workmul-20261027/gpu-subgroup-reduce-anv-workmul.c.txt
+     (digest 5c7cf2d5..., re-verified local-vs-host below),
+   iter8 shader sources = the session-9 committed derived sources,
+   BYTE-IDENTICAL, reused not re-derived:
+     docs/evidence/gpu/anv-itrmul-20261027/shaders-derived/*.iter8.glsl
+     (6 files; inverse check re-run this session: strip the 3 inserted
+     unique lines -> base bytes, 6/6; base census 6/6 vs session 2's
+     committed compile-toolchain.txt census, parsed programmatically),
+   corpus = the 16 measured/probe files, cp -a'd forward along the
+   session chain and re-verified 16/16 against the same session-2
+   census BEFORE any run,
+   manifests = cases-s10-a.txt (a-set cell lines, a BYTE-COPY of
+   session 9's cases-s9-a.txt cell lines) and cases-s10-i8.txt (cell
+   lines = the same lines with only the measured spv name changed to
+   the iter8 spv -- the same relation cases-s9-f8.txt had; all checked
+   programmatically).
+   The compiled iter8 spv are REBUILT this session with the corpus
+   toolchain/command (glslangValidator -S comp -V --target-env
+   vulkan1.2, glslang 11:15.1.0) and their digests compared against
+   session 9's built iter8 spv digests (recorded in
+   build-census-s9.txt) as a reproducibility pin; any mismatch is
+   NAMED, NOT HIDDEN, before any run.
+
+2. ARMS (5 arms, 3 runs each = 15 fresh processes). Binary = the
+   compile-time (BATCH, WORK_MUL) pair; shader set selects the
+   manifest. The header prints batch=/work_mul=/n= and every SAMPLE
+   prints batch=/work_mul=, so every run log carries its knob identity.
+
+   c2  = (B=2, M=1, a-set)  floor control      [committed 31]
+   c8  = (B=8, M=1, a-set)  capture control    [committed 32,915,
+                                                 session 4 pooled median]
+   g8  = (B=2, M=8, a-set)  grid control       [session 8's b2m8: FLOOR,
+                                                 committed 31..32 band]
+   f8  = (B=2, M=1, iter8)  fatness control    [session 9's f8b2: FLOOR,
+                                                 31..32 band]
+   gf  = (B=2, M=8, iter8)  PROBE, JOINT DOSE  [new: 128 nominal units]
+
+   Binaries (3): anv-gf-b2m1 (-DBATCH=2 -DWORK_MUL=1), anv-gf-b8m1
+   (-DBATCH=8 -DWORK_MUL=1), anv-gf-b2m8 (-DBATCH=2 -DWORK_MUL=8);
+   all -DBARRIER_N=0. f8 reuses anv-gf-b2m1 (the a-set/iter8 split is
+   the manifest); gf reuses anv-gf-b2m8.
+
+3. PRE-REGISTERED LETTERS. Classification thresholds FROZEN (the
+   session-7 thresholds, kept): FLOOR <= 100 ticks at all 18
+   pipeline-ok cells (pooled median over 3 runs x 25 rounds per cell);
+   CAPTURED >= 1000 ticks at all 18; anything else INTERMEDIATE/MIXED.
+   Both branches of every verdict named BEFORE the run.
+
+   C1 ARCHIVED CONTROL REPLICATION (prerequisite; the a-set runs the
+   ARCHIVED measured spv bytes, so this also pins the untouched
+   instrument + corpus):
+     criterion: c2 satisfies FLOOR class AND c8's pooled median at
+     (sum,128,S=16) is within +/-5% of committed 32,915.
+     (a) both hold -> controls replicate; X1 is evaluated against the
+         row question.
+     (b) any discrepancy -> X1 interpretation FLAGGED (bearing on the
+         environment, not the derivation); cause UNMEASURED.
+
+   C2 KNOB CONTROL REPLICATION (prerequisite; the M and I knobs at
+   their own committed readings):
+     criterion: g8 satisfies FLOOR class (session 8's committed b2m8
+     reading) AND f8 satisfies FLOOR class (session 9's committed f8b2
+     reading).
+     (a) both hold -> the joint arm's knobs are pinned at their
+         single-knob readings.
+     (b) any discrepancy -> X1 interpretation FLAGGED; cause
+         UNMEASURED.
+
+   X1 JOINT DOSE AT B=2 (the row question; the class of gf):
+     (a) gf FLOOR -> the capture at B=2 is NOT reachable even by the
+         joint grid x fatness dose (128 nominal units, 64x the
+         captured c8 control's nominal 8, inside a 2-dispatch
+         bracket); with sessions 8 and 9, the capture is not a
+         total-work threshold on any knob combination tested to date;
+         dispatch count stays implicated. Observable only; NO causal
+         mechanism claimed or measured.
+     (b) gf CAPTURED -> the capture at B=2 IS reachable by the joint
+         dose: the 2->3 onset is a work-dose threshold that neither
+         knob reaches alone at up to 8x but the joint dose crosses.
+         Observable only; NO causal mechanism claimed or measured.
+     (c) otherwise INTERMEDIATE/MIXED -> the joint-dose answer is
+         cell-quantified in the publication's section 2; mechanism
+         UNMEASURED.
+
+   X2 REALIZATION (descriptive, computed from the same runs' host_ns;
+   NO new measurement and NO linearity claim): host_ns at
+   (sum,128,S=16) for every arm; ratios g8/c2 (grid knob), f8/c2
+   (fatness knob), gf/c2 (joint knob); the joint knob's cost
+   realization is reported as measured and whatever it is, it does not
+   change X1's NOMINAL reading -- a genuinely cost-calibrated joint
+   dose stays UNMEASURED and named.
+
+4. INTEGRITY expectations (checked by the analysis over the 15 logs):
+   450 SAMPLE lines per run (18 ok cells x 25 rounds); every run's
+   header batch= == its arm's B, work_mul= == its arm's M, n ==
+   1,000,003*M, barrier_n=0; every SAMPLE's batch=/work_mul= match
+   the arm; every CELL's spv= name carries its arm's set suffix
+   (a-set: archived .emitted.spv with no .iter; i8-set:
+   .emitted.iter8.spv); VERIFY mismatch 0 over all runs (the ITERMUL
+   loop must not change the stored value); forcing reality at every
+   pipeline-ok cell-run; the 6 S=8 cells fail closed (pipeline=FAIL).
+
+5. RULE 4 is frozen in advance: whatever fires, NOTHING MOVES -- no
+   workgroup row, no :measured? flag, no selection answer.
+   accelerator-targets defaults remain provisional design assumptions
+   (:measured? false). NO vendor optimization exists for Intel and
+   none is claimed.
+
+6. ANALYSIS ROUTE: analysis-s10.py over the 15 committed run logs in
+   this directory only (run-<tag>-r<R>.txt), producing
+   publication-s10.txt; the recorded publication is the final script
+   run twice, byte-identical (diff exit 0). No other input.

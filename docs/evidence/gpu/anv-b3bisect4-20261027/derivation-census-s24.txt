@@ -1,0 +1,74 @@
+== JUN-59 session 24 derivation census (THE B=3 PER-DISPATCH-WORK ==
+== THRESHOLD BISECT, FOURTH CUT) ==
+== computed programmatically (this file is the OUTPUT of the scratch ==
+== generator; every value below is computed, none transcribed) ==
+
+-- byte-copy custody (ZERO derivation edits this session) --
+session-23 committed instrument: a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556
+session-24 copy instrument:      a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556
+BYTE-COPY MATCH: True
+session-23 committed expected-corpus.sha256: eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4
+session-24 copy expected-corpus.sha256:      eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4
+BYTE-COPY MATCH: True
+manifest cell lines: 24; byte-equal to s23's cell lines: True
+cases-s24-a.txt digest: 5e8f7dca4e399173b4b152313036056c0468888fda27f44f60454138db684ced
+cases-s23-a.txt digest (committed): d947ad7f1d0b70c0b30df40babce17991c54e8474c3750ea0080a8c3c1f43c3c
+
+-- knob arithmetic (arm table, protocol.txt section 0; N_ELEMENTS =
+-- (1000003*WORK_MUL)/NDIV, integer floor) --
+tag  BATCH  WORK_MUL  NDIV  n          total-nominal (B*n/1,000,003)
+c2   2      1         1     1000003    2.000000
+lo   3      1         4     250000     0.749998
+mid   3      1213      4753  255208     0.765622
+eq3   3      2426      9506  255208     0.765622
+hi   3      25        96    260417     0.781249
+b2m   2      1213      4753  255208     0.510414
+c8   8      1         1     1000003    8.000000
+bracket (250,000, 260,417] exact midpoint: (250000+260417)/2 = 255208.5
+floor midpoint: (250000+260417)//2 = 255208
+floor midpoint reachable at the knob? pairs (WM<=2048, NDIV<=8192) with (1,000,003*WM)//NDIV == 255208: 18 -- REACHABLE
+smallest such pair: (1213, 4753) ((1,000,003*1213)//4753 = 255208)
+NAMED, NOT HIDDEN: pairs whose same-ratio double is also within the (WM<=2048, NDIV<=8192) box: 0 -- ZERO, unlike session 23's cut. The eq3 arm uses the double pair (2426,9506) anyway: the box is a SEARCH convenience, not a source limit (the source takes any ints; N_ELEMENTS is the only knob-derived quantity, L8). The double is inside the wider search box (WM<=8192, NDIV<=32768): 486 pairs map to 255208 there, 104 of which have their double also in that box (smallest (1213, 4753)).
+mid work-unit: 255208/1,000,003 = 0.2552072; b2m total work 2*255208/1,000,003 = 0.5104145; mid total 3*255208/1,000,003 = 0.7656217
+the eq3 double pair (2426,9506) maps to n = 255208 (floor(2x/2) == floor(x))
+7 arms x 3 runs = 21 fresh processes (the arm table governs: count it: 7 rows)
+
+-- build replication pins (prior censuses parsed programmatically) --
+session-23 committed anv-bb-c2 digest: e5ed903e5b9dfd64168e2d8ddea9d8efb573273e7594afcaca71f3f70bb9c489 -> c2 rebuild pin (== sessions 13-22's chain)
+session-23 committed anv-bb-c8 digest: 480925e58d28e7d318456703c6959548e9b9c33e375c3e0fefe688e844d37807 -> c8 rebuild pin (== sessions 13-22's chain)
+session-23 committed anv-bb-lo digest: efc6f4ee344737f82dee8e9f759f02f4951c32a0c622946ea92f025eac00989d -> lo (BATCH=3,NDIV=4) rebuild pin
+session-19 committed anv-n4-z3 digest: efc6f4ee344737f82dee8e9f759f02f4951c32a0c622946ea92f025eac00989d (== s23 lo: True)
+session-23 committed anv-bb-mid digest: 91ee6f3c1915d03dd5c40c28f20b84a71dbfe532161c74ffe3ac1966bbc39500 -> hi (BATCH=3,WORK_MUL=25,NDIV=96) rebuild pin -- hi IS session 23's mid knob pair (25,96): the FIRST cross-session replication of that knob pair (part of session 23's 'cross-session stability of mid/eq3/b2m' residual)
+session-22 committed anv-bb-mid digest: e0f22e91a639bdb4c9f1825a258580bba9491cdc7712040f7d8eb61a5960395e (== s23 hi pin: False -- note the s22 mid knob pair (13,48) is NOT an arm this session; named, not hidden)
+mid (BATCH=3,WORK_MUL=1213,NDIV=4753), eq3 (BATCH=3,WORK_MUL=2426,NDIV=9506),
+b2m (BATCH=2,WORK_MUL=1213,NDIV=4753) = NEW knob triples -- no prior binary
+exists for them, so no byte-identity pin applies (named, not hidden).
+
+-- frozen cross-session reference values (QUOTE-ONLY, protocol L7; also
+-- embedded as named constants in analysis-s24.py) --
+committed controls parsed from s23 census: c2 31 (floor band 31..32), c8 32915 (session 4 pooled median)
+session-23 same-knob (RE-COMPUTED here from s23's committed run logs,
+pooled median at cell idx=1 (sum,128,S=16) over 3 runs x 25 rounds):
+  s23 c2: gpu_ticks 32, host_ns 678063
+  s23 c8: gpu_ticks 32652, host_ns 2380546
+  s23 lo: gpu_ticks 1129, host_ns 305159
+  s23 hi: gpu_ticks 1229, host_ns 325467
+  s23 mid: gpu_ticks 1186, host_ns 314966
+  s23 eq3: gpu_ticks 1190, host_ns 315348
+  s23 b2m: gpu_ticks 31, host_ns 235118
+  s23 mid 18-cell min..max: 1026..1486; s23 lo 18-cell min..max: 974..1407
+committed z3 knob pair (BATCH=3,NDIV=4) parsed from s23 census: 1140 (session 19; class INTERMEDIATE/MIXED; 18-cell range 991..1414); host_ns 305240
+committed x3 knob pair (BATCH=3,NDIV=3) parsed from s23 census: 1578 (session 17; class CAPTURED)
+the B=3 class-vs-per-dispatch-work row after session 23 (quote-only except
+session 24's own points), assembled here from the s23 census + s23's
+recomputed values:
+  1/8 125000 -> 599 INTERMEDIATE/MIXED (session 18);
+  1/4 250000 -> 1140 INTERMEDIATE/MIXED (session 19);
+  0.2604162 260417 -> 1186 CAPTURED (session 23);
+  0.2708332 270834 -> 1224 CAPTURED (session 22);
+  0.2916657 291667 -> 1330 CAPTURED (session 21);
+  1/3 333334 -> 1578 CAPTURED (session 17);
+  1/2 500001 -> 2739 CAPTURED (session 20);
+  1.0 1000003 -> 5520 CAPTURED (sessions 7/16)
+session 8's B=2 dose arms (quote-only): b2m3/b2m8 FLOOR (31)
+session-23's b2m (B=2 at the (25,96) grid) FLOOR (31); session-22's b2m FLOOR (32); session-21's b2m FLOOR (31) -- 'B=2 never captures' quote context

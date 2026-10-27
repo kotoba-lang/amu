@@ -1,0 +1,106 @@
+JUN-59 session 8 -- WORK-DOSE DISCRIMINATOR (WORKMUL), publication
+Produced ONLY by analysis-s8.py over the 24 committed run logs in this
+directory (run-<tag>-r<R>.txt); protocol.txt was frozen before the
+first run. Arms = the (BATCH, WORK_MUL) compile-time pair (BARRIER_N=0
+everywhere; the instrument is the archived session-7 snapshot with the
+single WORK_MUL knob derivation, 4 hunks, instrument-derivation.diff.txt).
+1 work unit = one dispatch of the archived grid (n=1,000,003); an (B,M)
+arm runs B dispatches of an M-times grid = B*M work units.
+1 tick = timestampPeriod = 52.083 ns on this device.
+
+1. INTEGRITY (computed over the 24 logs):
+   runs parsed: 24 (8 arms x 3 runs); cell map identical across runs: True
+   headers byte-identical across all runs outside the # n= knob line: True
+   header batch=/work_mul= fields == run's (B,M), barrier_n=0, n=1,000,003*M; every SAMPLE batch=/work_mul= == run's (B,M): True
+   SAMPLE lines: 450 per run (18 ok cells x 25 rounds) in 24/24 runs: True
+   VERIFY mismatch total over all runs: 0 (bit-exact correctness re-check, inside every run)
+   forcing reality (pipeline-ok cell-runs where probe_size==forced and probe_nsub==wg/forced): 432/432
+   S=8 cells fail-closed (pipeline=FAIL, forced=8): 144 cell-runs (6 per run x 24 runs = 144 expected)
+
+2. THE MEASURED BRACKETS (pooled median gpu_ticks over 3 runs x 25 rounds per cell):
+   each row: (sum,128,S=16) exact value, per-run median band at that cell,
+   then min..max over the 18 pipeline-ok cells; host_ns at (sum,128,S=16)
+
+   arm    B  M  units  (sum,128,16)   run-median band    min..max over 18 cells   host_ns
+   b1m1  1  1     1          31           31..31              31..31           351736
+   b2m1  2  1     2          31           31..32              31..32           678375
+   b3m1  3  1     3        5546         5532..5561          4252..5546         960712
+   b8m1  8  1     8       32896        32813..33034        25218..32918       2452475
+   b1m3  1  3     3          31           31..31              31..31           794903
+   b1m8  1  8     8          31           31..31              31..31          2140152
+   b2m3  2  3     6          31           31..32              31..32          1477997
+   b2m8  2  8    16          31           31..32              31..32          3143995
+
+3. PRE-REGISTERED LETTERS (thresholds frozen in protocol.txt section 4:
+   FLOOR <= 100 ticks at all 18 cells; CAPTURED >= 1000 ticks at all 18;
+   anything else INTERMEDIATE/MIXED):
+
+   class b1m1 (B=1, M=1, 1 units): FLOOR
+   class b2m1 (B=2, M=1, 2 units): FLOOR
+   class b3m1 (B=3, M=1, 3 units): CAPTURED
+   class b8m1 (B=8, M=1, 8 units): CAPTURED
+   class b1m3 (B=1, M=3, 3 units): FLOOR
+   class b1m8 (B=1, M=8, 8 units): FLOOR
+   class b2m3 (B=2, M=3, 6 units): FLOOR
+   class b2m8 (B=2, M=8, 16 units): FLOOR
+
+   C1 CONTROL REPLICATION (numeric agreement with the committed value at
+   each control's OWN (B,M) -- the session-7 fix, kept; b3m1/b8m1 at
+   WORK_MUL=1 also pin the derivation edit to the archived behaviour):
+     b1m1 and b2m1 satisfy FLOOR: True
+     b3m1 (sum,128,16) pooled median 5546 within +/-5% of committed 5520 (session 7 pooled median): True
+     b8m1 (sum,128,16) pooled median 32896 within +/-5% of committed 32915 (session 4 pooled median): True
+     VERDICT: branch (a) all four controls satisfy their criteria --
+     W1-W4 are evaluated against the row question.
+
+   W1 WORK-DOSE AT B=2 (the row question): classes of b2m3 and b2m8 above.
+     VERDICT: branch (a) -- b2m3 and b2m8 are FLOOR while the b8m1
+     control (8 work units) is captured: capture at B=2 is NOT reachable
+     by up to 8x per-dispatch work (b2m8 carries 16 work units inside
+     the bracket -- twice b8m1's 8 units). The capture is not a
+     total-work threshold on this axis; dispatch count stays implicated.
+     Observable only; NO causal mechanism claimed or measured.
+
+   W2 EQUAL-TOTAL-WORK PAIRS (descriptive; same total work inside the
+   bracket, different dispatch count):
+     3 units: b1m3 (1 dispatch) 31 ticks / FLOOR / host_ns 794903  vs  b3m1 (3 dispatches) 5546 ticks / CAPTURED / host_ns 960712  bracket ratio 0.006
+     8 units: b1m8 (1 dispatch) 31 ticks / FLOOR / host_ns 2140152  vs  b8m1 (8 dispatches) 32896 ticks / CAPTURED / host_ns 2452475  bracket ratio 0.001
+
+   W3 SINGLE-DISPATCH WORK-DOSE (descriptive; B=1 only):
+     b1m1 (M=1): bracket 31 ticks / FLOOR; host_ns 351736
+     b1m3 (M=3): bracket 31 ticks / FLOOR; host_ns 794903
+     b1m8 (M=8): bracket 31 ticks / FLOOR; host_ns 2140152
+
+   W4 HOST TIME PER WORK UNIT (descriptive; host_ns / (B*M) at (sum,128,16)):
+     b1m1: host_ns 351736 / 1 units = 351736 ns/unit
+     b2m1: host_ns 678375 / 2 units = 339188 ns/unit
+     b3m1: host_ns 960712 / 3 units = 320237 ns/unit
+     b8m1: host_ns 2452475 / 8 units = 306559 ns/unit
+     b1m3: host_ns 794903 / 3 units = 264968 ns/unit
+     b1m8: host_ns 2140152 / 8 units = 267519 ns/unit
+     b2m3: host_ns 1477997 / 6 units = 246333 ns/unit
+     b2m8: host_ns 3143995 / 16 units = 196500 ns/unit
+
+4. DERIVED (arithmetic over section 2, no new measurement):
+   b1m1: bracket 31 ticks = 1.61 us; vs committed 31 (sessions 1-7 floor): +0.00%
+   b2m1: bracket 31 ticks = 1.61 us; vs committed 31 (sessions 1-7 floor): +0.00%
+   b3m1: bracket 5546 ticks = 288.85 us; vs committed 5520 (session 7 pooled median): +0.47%
+   b8m1: bracket 32896 ticks = 1713.32 us; vs committed 32915 (session 4 pooled median): -0.06%
+   b1m3: bracket 31 ticks = 1.61 us; (no committed anchor at this (B,M) -- new)
+   b1m8: bracket 31 ticks = 1.61 us; (no committed anchor at this (B,M) -- new)
+   b2m3: bracket 31 ticks = 1.61 us; (no committed anchor at this (B,M) -- new)
+   b2m8: bracket 31 ticks = 1.61 us; (no committed anchor at this (B,M) -- new)
+
+5. RULE 4 -- NOTHING MOVES: no workgroup row, no :measured? flag, no selection
+   answer; accelerator-targets defaults remain provisional design assumptions
+   (:measured? false). This is NOT the baseline-vs-variant contract of
+   accelerator-subgroup-reduce.cljk. NO vendor optimization exists for Intel
+   and none is claimed. No causal mechanism is claimed by any letter above.
+
+6. UNMEASURED (named): any causal mechanism for the undercount, the capture,
+   or the onset location; WHY capture turns on where it does; 'more work' vs
+   'bigger grid' (the frozen named limitation -- WORK_MUL scales both); any M
+   outside {1,3,8}; any (B,M) outside the eight arms; B=7; any N>0; session
+   2's run-1 dip cause; cross-day replication; S=8 timing; every W outside
+   {128,256}; shape 2; any baseline-vs-variant sign; BT ordering; isolated
+   single-dispatch timing; non-empty barriers; anything off this host.

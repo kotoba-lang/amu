@@ -1,0 +1,65 @@
+== JUN-59 session 22 derivation census (THE B=3 PER-DISPATCH-WORK ==
+== THRESHOLD BISECT, SECOND CUT) ==
+== computed programmatically (this file is the OUTPUT of the scratch ==
+== generator; every value below is computed, none transcribed) ==
+
+-- byte-copy custody (ZERO derivation edits this session) --
+session-21 committed instrument: a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556
+session-22 copy instrument:      a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556
+BYTE-COPY MATCH: True
+session-21 committed expected-corpus.sha256: eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4
+session-22 copy expected-corpus.sha256:      eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4
+BYTE-COPY MATCH: True
+manifest cell lines: 24; byte-equal to s21's cell lines: True
+cases-s22-a.txt digest: c710f57c32f683285f55ac5ed6b7cd8555640ed84805353840dc45426f554503
+cases-s21-a.txt digest (committed): 8be54b1611148f655e31c31cd99b9da3ba567911c8ebaa8385feba78d931cdeb
+
+-- knob arithmetic (arm table, protocol.txt section 0; N_ELEMENTS =
+-- (1000003*WORK_MUL)/NDIV, integer floor) --
+tag  BATCH  WORK_MUL  NDIV  n          total-nominal (B*n/1,000,003)
+c2   2      1         1     1000003    2.000000
+lo   3      1         4     250000     0.749998
+mid   3      13         48    270834     0.812500
+eq3   3      26         96    270834     0.812500
+hi   3      7         24    291667     0.874998
+b2m   2      13         48    270834     0.541666
+c8   8      1         1     1000003    8.000000
+bracket (250,000, 291,667] exact midpoint: (250000+291667)/2 = 270833.5
+floor midpoint: (250000+291667)//2 = 270833
+EXACT floor midpoint reachable at the knob? pairs (WM<=2048, NDIV<=8192) with (1,000,003*WM)//NDIV == 270833: 0 -- UNREACHABLE
+nearest reachable grid point: 270834 at (WORK_MUL,NDIV)=(13,48) ((1,000,003*13)//48 = 270834) -- 1 n-unit above the exact floor midpoint
+session-21 record.txt section 8 parenthetical check: (1,000,003*9)//33 = 272728 (the record says 270,833 -- ARITHMETIC SLIP, named not erased)
+7 arms x 3 runs = 21 fresh processes (the arm table governs: count it: 7 rows)
+
+-- build replication pins (prior censuses parsed programmatically) --
+session-21 committed anv-bb-c2 digest: e5ed903e5b9dfd64168e2d8ddea9d8efb573273e7594afcaca71f3f70bb9c489 -> c2 rebuild pin (== sessions 13-20's chain)
+session-21 committed anv-bb-c8 digest: 480925e58d28e7d318456703c6959548e9b9c33e375c3e0fefe688e844d37807 -> c8 rebuild pin (== sessions 13-20's chain)
+session-19 committed anv-n4-z3 digest: efc6f4ee344737f82dee8e9f759f02f4951c32a0c622946ea92f025eac00989d -> lo (BATCH=3,NDIV=4) rebuild pin
+session-21 committed anv-bb-lo digest: efc6f4ee344737f82dee8e9f759f02f4951c32a0c622946ea92f025eac00989d (== s19 z3: True)
+session-17 committed anv-xt-x3 digest: 2d5a5121df09d9cddffece2ee3a9db0d00eb039bd8892fb1cd1e7050e7555118 (reference only, not an arm this session)
+session-21 committed anv-bb-mid digest: 01520e3ad2b698c8f3e9a1889e87c9a3d62b097c8ef154f83b143481c7f2f08b -> hi (BATCH=3,WORK_MUL=7,NDIV=24) rebuild pin -- hi IS session 21's mid knob pair: the FIRST cross-session replication of that pair
+mid (BATCH=3,WORK_MUL=13,NDIV=48), eq3 (BATCH=3,WORK_MUL=26,NDIV=96),
+b2m (BATCH=2,WORK_MUL=13,NDIV=48) = NEW knob triples -- no prior binary
+exists for them, so no byte-identity pin applies (named, not hidden).
+
+-- frozen cross-session reference values (QUOTE-ONLY, protocol L7; also
+-- embedded as named constants in analysis-s22.py) --
+committed controls parsed from s21 census: c2 31 (floor band 31..32), c8 32915 (session 4 pooled median)
+session-21 same-knob (RE-COMPUTED here from s21's committed run logs,
+pooled median at cell idx=1 (sum,128,S=16) over 3 runs x 25 rounds):
+  s21 c2: gpu_ticks 32, host_ns 681121
+  s21 c8: gpu_ticks 32837, host_ns 2449739
+  s21 lo: gpu_ticks 1162, host_ns 966683
+  s21 hi: gpu_ticks 1567, host_ns 385760
+  s21 mid: gpu_ticks 1330, host_ns 350855
+  s21 b2m: gpu_ticks 31, host_ns 257069
+  s21 eq: gpu_ticks 31, host_ns 675690
+committed z3 knob pair (BATCH=3,NDIV=4) parsed from s21 census: 1140 (session 19; class INTERMEDIATE/MIXED; 18-cell range 991..1414); host_ns 305240
+committed x3 knob pair (BATCH=3,NDIV=3) parsed from s21 census: 1578 (session 17; class CAPTURED); host_ns 385278
+the B=3 class-vs-per-dispatch-work row (quote-only except this session's
+lo/mid/hi), parsed from s21's committed census:
+  1.0 -> 5520 CAPTURED (sessions 7/16);
+    1/2 -> 2739 CAPTURED (session 20); 1/3 -> 1578 CAPTURED (session 17);
+    1/4 -> 1140 INTERMEDIATE/MIXED (session 19); 1/8 -> 599
+    INTERMEDIATE/MIXED (session 18)
+session 8's B=2 dose arms (quote-only): b2m3/b2m8 FLOOR (31)

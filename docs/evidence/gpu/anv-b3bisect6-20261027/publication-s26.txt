@@ -1,0 +1,170 @@
+JUN-59 session 26 -- THE B=3 PER-DISPATCH-WORK THRESHOLD BISECT,
+SIXTH CUT (one new grid point at n = 253,906 -- the EXACT floor
+midpoint of the session-25 bracket (252,604, 255,208], reachable at
+the knob -- 18 in-box pairs, smallest (1024,4033); exactly 1 pair
+has its same-ratio double in-box -- and it is the smallest -- so eq3
+IS in-box this cut), publication
+Produced ONLY by analysis-s26.py over the 21 committed run logs in this
+directory (run-<tag>-r<R>.txt); protocol.txt was frozen before the
+first run. Arms = binary compile-time (BATCH, WORK_MUL, NDIV); n =
+(1,000,003*WORK_MUL)/NDIV (integer floor). lo/hi re-run the frozen
+bracket-end knob pairs in-session (n=252,604 = (1,000,003*97)//384 =
+session 25's mid pair (97,384); n=255,208 = (1,000,003*1213)//4753 =
+session 24's mid / session 25's hi pair (1213,4753)); mid is THE
+bisect point n = (1,000,003*1024)//4033 = 253,906 = (252,604+
+255,208)//2 (the smallest of 18 knob pairs mapping to it in the
+WM<=2,048 x NDIV<=8,192 search box -- derivation-census-s26.txt); eq3
+is the same-ratio (2048,8066) pair-representation check at mid's grid
+(the double of (1024,4033) -- in-box this cut); b2m is the B=2
+control at the bisect n. c2/c8 are the archived environment controls.
+ZERO derivation this session: the instrument is session 25's committed
+NDIV-derived source byte-identical (digest a5e539f0... --
+derivation-census-s26.txt); the a-set manifest runs the ARCHIVED
+measured spv (16-digest corpus).
+The row question (protocol section 0): AT FIXED DISPATCH COUNT B=3,
+WHERE IN (252,604, 255,208] DOES THE B=3 CLASS FLIP FROM
+INTERMEDIATE/MIXED TO CAPTURED? -- mid CAPTURED narrows the flip to
+(252,604, 253,906]; mid INTERMEDIATE/MIXED narrows it to (253,906,
+255,208]; mid FLOOR is a pre-named non-monotone contradiction and is
+not resolved here. Protocol L2: at fixed B=3 the per-dispatch grid n
+and TOTAL nominal work co-vary BY CONSTRUCTION (total =
+3*n/1,000,003); the letters are observational discriminators among
+named hypotheses, never a mechanism. 1 tick = timestampPeriod =
+52.083 ns.
+
+1. INTEGRITY (computed over the 21 logs):
+   runs parsed: 21 (7 arms x 3 runs); cell map identical across runs: True
+   headers byte-identical across all runs outside the # n= knob line: True
+   header batch=/work_mul=/ndiv= == run's (B,WM,NDIV) and n == (1,000,003*WM)//NDIV; every SAMPLE batch=/work_mul=/ndiv= == (B,WM,NDIV): True
+   every CELL spv= name is an archived .emitted.spv (no .iter -- the corpus is byte-identical this session): True
+   SAMPLE lines: 450 per run (18 ok cells x 25 rounds) in 21/21 runs: True
+   VERIFY mismatch total over all runs: 0 (per-arm: c2=0, lo=0, mid=0, eq3=0, hi=0, b2m=0, c8=0) -- bit-exact correctness re-check inside every run; frozen INVALIDATION criterion (protocol section 4): >0 in any run makes that run DEFECTIVE and the arm INVALID
+   forcing reality (pipeline-ok cell-runs where probe_size==forced and probe_nsub==wg/forced): 378/378
+   S=8 cells fail-closed (pipeline=FAIL, forced=8): 126 cell-runs (6 per run x 21 runs = 126 expected)
+
+2. THE MEASURED BRACKETS (pooled median gpu_ticks over 3 runs x 25 rounds per cell):
+   each row: (sum,128,S=16) exact value, per-run median band at that cell,
+   then min..max over the 18 pipeline-ok cells; host_ns at (sum,128,S=16)
+
+   arm  B  WM  NDIV     n        total-nominal  (sum,128,16)   run-median band    min..max over 18 cells   host_ns
+   c2  2  1  1      1000003      2.000000          32           31..32              31..32           680499
+   lo  3  97  384     252604      0.757810        1141         1129..1166           990..1426         308936
+   mid  3  1024  4033    253906      0.761716        1129         1128..1130          1001..1435         309848
+   eq3  3  2048  8066    253906      0.761716        1145         1130..1165           985..1443         310509
+   hi  3  1213  4753    255208      0.765622        1156         1149..1169          1003..1447         310950
+   b2m  2  1024  4033    253906      0.507810          32           32..32              32..32           233185
+   c8  8  1  1      1000003      8.000000       32714        32584..32840        25145..32764       2380500
+
+3. PRE-REGISTERED LETTERS (thresholds frozen in protocol.txt section 4:
+   FLOOR <= 100 ticks at all 18 cells; CAPTURED >= 1000 ticks at all 18;
+   anything else INTERMEDIATE/MIXED):
+
+   class c2 (B=2, WM=1, NDIV=1, n=1000003, 2.000000 nominal units): FLOOR
+   class lo (B=3, WM=97, NDIV=384, n=252604, 0.757810 nominal units): INTERMEDIATE/MIXED
+   class mid (B=3, WM=1024, NDIV=4033, n=253906, 0.761716 nominal units): CAPTURED
+   class eq3 (B=3, WM=2048, NDIV=8066, n=253906, 0.761716 nominal units): INTERMEDIATE/MIXED
+   class hi (B=3, WM=1213, NDIV=4753, n=255208, 0.765622 nominal units): CAPTURED
+   class b2m (B=2, WM=1024, NDIV=4033, n=253906, 0.507810 nominal units): FLOOR
+   class c8 (B=8, WM=1, NDIV=1, n=1000003, 8.000000 nominal units): CAPTURED
+
+   C1 ARCHIVED CONTROL REPLICATION (numeric agreement with the committed
+   value at the control's OWN (B,WORK_MUL,NDIV) -- the a-set runs the
+   ARCHIVED spv bytes through the byte-identical session-26 instrument,
+   so this pins the environment as well):
+     c2 satisfies FLOOR (committed floor band 31..32 at B=2): True
+     c8 (sum,128,16) pooled median 32714 within +/-5% of committed 32915 (session 4 pooled median): True
+     VERDICT: branch (a) both controls satisfy their criteria --
+     the W letters are evaluated against the row question.
+
+   C2 BRACKET ANCHOR REPLICATION (lo is session 25's mid knob pair
+   BATCH=3,WORK_MUL=97,NDIV=384 -- rebuilt binary BYTE-IDENTICAL to
+   session 25's anv-bb-mid (d2be0a8a...) -- build-census-s26.txt;
+   lo is ALSO the (97,384) pair's FIRST cross-session replication;
+   hi is session 25's hi knob pair BATCH=3,WORK_MUL=1213,NDIV=4753 --
+   rebuilt binary BYTE-IDENTICAL to session 25's anv-bb-hi (123e8f73...)
+   == session 24's anv-bb-mid):
+     lo (sum,128,16) pooled median 1141 within +/-5% of session-25's 1153 (session 25 pooled median (its bisect arm mid, the (97,384) pair -- first measured there)): True
+     lo class INTERMEDIATE/MIXED (session-25 class INTERMEDIATE/MIXED): True
+     NAMED, NOT HIDDEN: lo's expected class INTERMEDIATE/MIXED carries session
+     25's threshold-sensitivity risk (its 18-cell min was 994, below the frozen
+     1000 boundary); if lo classifies CAPTURED here, C2 fires (b) and W1 is
+     FLAGGED at its frozen letter.
+     hi (sum,128,16) pooled median 1156 within +/-5% of session-25's 1166 (session 25 pooled median (its hi arm, the (1213,4753) pair)): True
+     hi class CAPTURED (session-25 class CAPTURED): True
+     NAMED, NOT HIDDEN: hi's expected class CAPTURED carries the named
+     threshold-sensitivity risk (its 18-cell min sat at 1005 in session 25 and
+     1000 in session 24, at/above the frozen boundary); if hi classifies
+     INTERMEDIATE/MIXED here, C2 fires (b) and W1 is FLAGGED at its frozen letter.
+     VERDICT: branch (a) -- both bracket ends replicate IN-SESSION
+     (at a byte-identical rebuilt binary each) and W1's bracket
+     narrowing is valid at its letter.
+
+   C3 PAIR-REPRESENTATION CHECK (eq3 is the (2048,8066) pair at
+   n = 253,906 == mid's grid and B=3 -- the same ratio 1024/4033 in a
+   different (WORK_MUL,NDIV) representation; NEW knob pairs, protocol L8;
+   NAMED, NOT HIDDEN: the double sits INSIDE the WM<=2,048 search box
+   this cut (exactly 1 of 18 in-box pairs has its double in-box);
+   session 24's C3 fired (b) at its grid (same-ratio class-split at the
+   frozen 1000-tick boundary), session 25's fired (a) at its grid;
+   whether a split recurs here is MEASURED HERE):
+     eq3 class INTERMEDIATE/MIXED == mid class CAPTURED: False
+     eq3 (sum,128,16) pooled median 1145 within +/-5% of mid 1129: True
+     VERDICT: branch (b) -- the same-ratio representation matters at
+     this grid; the contradiction stands as measured content, is NOT
+     resolved here, and mid/b2m carry the flagged risk.
+
+   W1 THE ROW QUESTION (the bisect: class(mid) at B=3, n=253,906 =
+   the EXACT floor midpoint of (252,604, 255,208] -- reachable at the
+   knob, derivation-census-s26.txt; the bracket ends are this
+   session's lo/hi -- C2 governs their validity):
+     class(mid) = CAPTURED (mid (sum,128,16) pooled median 1129,
+     18-cell min..max 1001..1435)
+     VERDICT: branch (a) MID-CAPTURED -- the B=3 class flip sits in
+     (252,604, 253,906] n-units = (0.2526032, 0.2539052] work-units
+     among measured grid points -- the bracket's LOWER half; the flip
+     threshold in per-dispatch work sits in (0.2526032, 0.2539052].
+     ONE session; L2 co-variation binds at fixed B=3; nothing between
+     grid points is interpolated (L5); NO causal mechanism is claimed
+     or measured.
+     b2m (B=2 control at the bisect n) class FLOOR (b2m (sum,128,16)
+     pooled median 32): 'B=2 never captures' extends to n=253,906 at total work 0.5078105.
+
+   W2 (pre-registered, descriptive) THE B=3 CLASS-VS-PER-DISPATCH-
+   WORK ROW: this session's three B=3 points placed on the committed
+   row as ELEVEN grid points (the committed points QUOTE-ONLY L7;
+   NO interpolation (L5); class granularity only):
+
+     n          work-unit     ticks  class                source
+     125000     1/8             599  INTERMEDIATE/MIXED   session 18 (quote-only)
+     250000     1/4            1140  INTERMEDIATE/MIXED   session 19 (quote-only)
+     252604     0.2526032      1153  INTERMEDIATE/MIXED   session 25 (quote-only)
+     255208     0.2552072      1166  CAPTURED             session 24 (quote-only)
+     260417     0.2604162      1186  CAPTURED             session 23 (quote-only)
+     270834     0.2708332      1224  CAPTURED             session 22 (quote-only)
+     291667     0.2916657      1330  CAPTURED             session 21 (quote-only)
+     333334     1/3            1578  CAPTURED             session 17 (quote-only)
+     500001     1/2            2739  CAPTURED             session 20 (quote-only)
+     1000003    1.0            5520  CAPTURED             sessions 7/16 (quote-only)
+     252604     0.2526032      1141  INTERMEDIATE/MIXED   this session (== session-25 mid knob)
+     253906     0.2539052      1129  CAPTURED             THIS SESSION (the bisect point)
+     255208     0.2552072      1156  CAPTURED             this session (== session-24 mid / session-25 hi knob)
+
+   W3 (pre-registered, descriptive) THE PAIRED EQUAL-GRID COMPARISONS:
+     (i) mid vs eq3 (identical n=253,906 and B=3; differ only in the
+         (WORK_MUL,NDIV) representation (1024,4033) vs (2048,8066)): 1129 vs 1145 at (sum,128,16); classes CAPTURED vs INTERMEDIATE/MIXED
+     (ii) mid vs b2m (identical n=253,906 and pair (1024,4033); differ only
+         in B 3 vs 2): 1129 vs 32; classes CAPTURED vs FLOOR
+     (iii) lo vs mid vs hi (identical B=3; differ only in n/pair): 1141 / 1129 / 1156; classes INTERMEDIATE/MIXED / CAPTURED / CAPTURED
+
+   X1 (descriptive, host_ns at (sum,128,S=16)):
+     c2 680499, lo 308936, mid 309848, eq3 310509, hi 310950, b2m 233185, c8 2380500
+     lo 308936 = 0.621x session-25's same-knob mid (497,217 -- the (97,384) pair's FIRST cross-session host_ns
+     comparison); its GPU bracket replicates per C2. hi 310950 = 0.666x session 25's same-knob hi (466,550; session-24's same-knob mid 309,938 = 1.003x); c2 680499 = 0.784x session 25's (867,889); c8 2380500 = 0.887x session 25's (2,683,986).
+     mid 309848, eq3 310509, b2m 233185 first
+     measured here (their knob pairs are new). host_ns is the HOST-side
+     proxy (L3), not a C criterion; any excursion is NAMED, NOT HIDDEN
+     and its cause is UNMEASURED.
+
+4. VERDICT SUMMARY: C1 (a)=True; C2 (a)=True; C3 (a)=False; W1 (a).
+   The named-hypothesis discrimination of the row question is as W1
+   states; WHY is UNMEASURED and NO causal mechanism is claimed.

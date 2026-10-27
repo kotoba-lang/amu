@@ -1,0 +1,160 @@
+JUN-59 -- session 30: THE ANCHOR-CLASS SETTLING BAR (DESIGN slice).
+Frozen pre-registration, written once and never rewritten (freeze
+stamp 2026-10-27T23:40:56Z). The decision procedure is the committed
+evaluator settle-bar-eval.py in this directory (frozen fixture set,
+settle-bar-selftest.txt).
+
+0. ROW QUESTION (ONE row: ONE design decision -- no measurement this
+   tick): DESIGN AND FREEZE THE SETTLING BAR FOR THE FROZEN CLASS OF
+   THE (1024,4033) ANCHOR KNOB PAIR at n=253,906, B=3 -- the upper
+   anchor of the flip bracket (252,604, 253,906] -- BEFORE ANY
+   CROSS-UTC-DAY READING EXISTS. Session 29's W1 (a) named this row
+   ("the anchor-class settling bar ... is NOT met by same-UTC-day
+   data" and "the DESIGN of the anchor-class settling bar (the named
+   next row: a bar that reads classes at this threshold must first
+   name its block-variability floor)"). PRE-REGISTRATION INTEGRITY is
+   the reason this row comes first: a bar written after the readings
+   it judges is post-hoc. This freeze stamp is on UTC day 2026-10-27
+   (the same day as sessions 2-29); the first cross-UTC-day tick
+   becomes reachable at 2026-10-28T00:00Z on this profile's 15-minute
+   cron cadence (ticks after the UTC day roll run natively on day
+   2026-10-28 -- no tick needs to wait across the roll). THE BAR IS
+   FROZEN NOW, BEFORE THOSE READINGS EXIST.
+
+   NAMED, NOT HIDDEN: this slice measures NOTHING new. Every measured
+   number below is QUOTE-ONLY (L7 equivalent) from sessions 26-29's
+   committed evidence (cross-checked programmatically in
+   derivation-census-s30.txt against the committed publications). The
+   bisect cut, the (2048,8066) twin, the NDIV=3,5,6,... columns and
+   cross-UTC-day replication stay OPEN and are NOT taken.
+
+1. THE MEASURED FLOOR THIS BAR STANDS ON (quote-only; session 29's
+   committed anv-b3blockvar-20261027/ unless noted):
+
+   (F1) WITHIN-SESSION BLOCK-VARIABILITY FLOOR (s29 C2 (a), MEASURED
+        there): four 3-run blocks of the (1024,4033) pair at
+        n=253,906, B=3, one byte-identical binary all classify the
+        SAME (INTERMEDIATE/MIXED) at in-band medians 1,130 / 1,144 /
+        1,143 / 1,151. So at the frozen estimator unit (3 fresh
+        processes pooled over 25 rounds per cell) the class is STABLE
+        within one session at block granularity. The bar's reading
+        unit is therefore the 3-run block, NOT a single run.
+   (F2) THE MIN-STATISTIC WANDER (s29 W3, MEASURED there): the 12
+        per-run 18-cell minima span 971..1,001 with ONE per-run
+        minimum at/above the frozen 1,000 boundary (r3, 1,001); the
+        seven known block-unit minima (s26 1,001 / s27 976 / s28 991 /
+        s29 blocks 993 / 979 / 985 / 993) all sit within 25 ticks of
+        the boundary. The class boundary sits INSIDE the measured
+        noise floor of the minimum statistic. Any bar that reads
+        classes at this threshold must carry this floor -- and does.
+   (F3) THE CROSS-SESSION LEDGER (s26-28, MEASURED there, at
+        byte-identical rebuilt binaries a6c31b6c...): 1,129 CAPTURED
+        (min 1,001, s26) / 1,132 INTERMEDIATE/MIXED (min 976, s27) /
+        1,131 INTERMEDIATE/MIXED (min 991, s28) -- a 0.27% median
+        span flipping class at the frozen threshold. One CAPTURED,
+        two MIXED: the bar must not pre-judge which class it settles
+        to.
+
+2. THE BAR (frozen; this is ACCEPTED DESIGN ONLY -- it is not code in
+   the compiler and it is not a measurement):
+
+   READING: one 3-run block -- 3 fresh processes pooled over 25
+   rounds per cell, the frozen estimator unit of every cross-session
+   reading in (F3) -- at the anchor knob triple (BATCH=3,
+   WORK_MUL=1024, NDIV=4033, n=253,906 = (1,000,003*1024)//4033,
+   computed programmatically) at a byte-identical rebuilt binary with
+   the session's build replication pin verified, in a session where:
+   (i) the frozen C1 archived-control replication fired branch (a)
+   (both c2 and c8 satisfy their criteria); (ii) VERIFY mismatch is 0
+   everywhere (the frozen INVALIDATION criterion of the measurement
+   protocol, adopted here); (iii) the custody GO stamp precedes the
+   builds and the runs. A reading carries its UTC day and its session
+   evidence directory.
+
+   COUNTED: the FIRST qualifying reading of each UTC day, in ledger
+   order. Later qualifying same-UTC-day sessions are NAMED DESCRIPTIVE
+   CONTENT and do NOT advance the bar -- the L4 axis (the UTC day) is
+   the last unmeasured replication axis and the bar must span it;
+   same-day multiplicity was shown by sessions 26-29 to flip class and
+   is inside the named noise floor (F2). A FLAGGED session (see below)
+   consumes NO day slot: the day's first later qualifying session may
+   still count.
+
+   FLAGGED (not counted; named in the ledger): C1 fired (b), or VERIFY
+   mismatch > 0, or the build pin is not byte-identical, or the
+   custody GO is missing/after the builds. The session is recorded and
+   adds no reading.
+
+   VERDICT over the first four COUNTED readings (the evaluator's
+   procedure; order of checks is part of the freeze):
+   (V1) CONTRADICTION -- any COUNTED reading classifies FLOOR, or any
+        COUNTED median is out of band. Out of band := NOT within +/-5%
+        of EACH frozen numeric reference (1,129 / 1,132 / 1,131 --
+        session 29's IN-BAND definition, adopted here). Pre-named
+        contradiction / out-of-band; measured content; the bar does
+        not resolve it and does not discard the reading.
+   (V2) UNSETTLED -- four COUNTED readings exist but their classes
+        split (CAPTURED vs INTERMEDIATE/MIXED), or they are one class
+        but their medians are not mutually within 5% (max/min - 1 >
+        0.05). The class is UNSTABLE at the frozen threshold across
+        UTC days as well; the threshold-artifact-vs-representation
+        probe (the (2048,8066) twin -- the REPRESENTATION side that
+        sessions 24/26's C3 (b) splits left open) takes priority. NO
+        SILENT EXTENSION: a split at four does NOT extend to eight by
+        default. Any extension is a NEW pre-registered bar, never a
+        re-roll.
+   (V3) SETTLED c -- four COUNTED readings from four distinct UTC
+        days, all classifying the same class c (CAPTURED or
+        INTERMEDIATE/MIXED), every median in band and mutually within
+        5%. The anchor's class at the frozen threshold is SETTLED to
+        c.
+   (V4) PENDING n/4 -- fewer than four COUNTED readings. The bar
+        reports progress and settles nothing.
+
+   WHAT THE BAR SETTLES: ONLY the frozen class of the (1024,4033)
+   anchor at n=253,906, B=3 at the frozen section-4 threshold (FLOOR
+   <= 100 ticks at all 18 pipeline-ok cells; CAPTURED >= 1000 at all
+   18; anything else INTERMEDIATE/MIXED). It does NOT narrow the flip
+   bracket (252,604, 253,906] -- no branch of any verdict narrows it;
+   it does NOT interpolate between grid points; it does NOT judge the
+   (2048,8066) twin; it does NOT touch any Rule 4 row or :measured?
+   flag; and it claims NO causal mechanism. A SETTLED class re-opens
+   the bisect only through a NEW pre-registered cut session (whose
+   direction depends on the settled class -- that dependency is named
+   there, not here).
+
+   COST (named in advance): at least four qualifying UTC days (one
+   COUNTED reading per day); FLAGGED days do not count and do not
+   shorten the count. The number FOUR is a DESIGN CHOICE, not a
+   measured constant: it matches the count of the measured
+   within-session floor (F1, four blocks) and is fixed before any
+   cross-UTC-day reading exists. Whether four is ENOUGH is UNMEASURED
+   (the bar can return UNSETTLED; see V2).
+
+3. LETTERS FOR BAR-EXECUTING SESSIONS (frozen): the evaluator's
+   verdict string is the session's bar letter; the session's own C1 /
+   custody / pin checks remain prerequisites in its record. The ledger
+   is append-only: each session appends its candidate readings with
+   day/session/class/median/min/flag and the evaluator re-derives the
+   verdict from the full ledger deterministically (never from a
+   hand-written verdict).
+
+4. NAMED LIMITATIONS OF THIS DESIGN (frozen):
+   (D1) the bar reads classes at a threshold whose boundary sits
+        inside the measured min-statistic noise floor (F2). V2 exists
+        because of this; a SETTLED verdict means "stable at this
+        threshold at this unit", not "the regime is physically
+        discrete".
+   (D2) one reading per UTC day discards same-day multiplicity by
+        design; same-day readings remain DESCRIPTIVE evidence and are
+        named, never deleted.
+   (D3) the in-band references (1,129 / 1,132 / 1,131) are the
+        three same-UTC-day cross-session readings themselves. If a
+        future qualifying reading is genuinely out of that band, the
+        bar reports CONTRADICTION rather than moving the band. The
+        band moves only through a NEW pre-registered bar.
+   (D4) four days is a floor, not a promise: FLAGGED days and UNSETTLED
+        verdicts both lengthen the road; no budget is claimed.
+   (D5) nothing here is measured. This file is ACCEPTED DESIGN ONLY;
+        the measured content it cites is quote-only (derivation
+        census).

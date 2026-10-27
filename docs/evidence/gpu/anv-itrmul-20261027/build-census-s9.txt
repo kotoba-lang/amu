@@ -1,0 +1,76 @@
+== date -u (builds) ==
+Build attempt #1 (2026-10-27T12:59:58Z..13:00:00Z) is named in
+host-verify-s9.txt: 18/18 derived shader compiles FAILED rc=2 on the
+protocol-frozen `(uint)ITERMUL` cast spelling (glslang syntax error); the
+4 gcc binaries built rc=0; NO run had happened. The wrapper was fixed to
+constructor syntax (named pre-run authoring fix, shader-derivation.diff.txt
++ record.txt), sources re-derived/re-uploaded/re-verified (verify #2 GO at
+2026-10-27T13:03:04Z), and the census below is the SUCCESSFUL build at
+2026-10-27T13:03:20Z..13:03:22Z, after verify #2 and before the runs.
+== host ==
+aiueos-6600hs (aiueos-6600hs-1, tailscale 100.98.24.37), user murakumo-ci
+(groups include render). Workdir ~/anv-itrmul-20261027, runs cwd=shaders/
+(manifests passed as ../cases-s9-{a,f1,f3,f8}.txt).
+== uname ==
+Linux aiueos-6600hs 7.0.0-31-generic #31~24.04.1-Ubuntu SMP PREEMPT_DYNAMIC x86_64
+== glslangValidator --version (first 3 lines) ==
+Glslang Version: 11:15.1.0
+ESSL Version: OpenGL ES GLSL 3.20 glslang Khronos. 15.1.0
+GLSL Version: 4.60 glslang Khronos. 15.1.0
+== gcc --version (first line) ==
+gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+== shader compiles: glslangValidator -S comp -V --target-env vulkan1.2
+== shaders-derived/<f>.glsl -o shaders/<f>.spv (18 derived ITERMUL
+== sources; wrapper it < uint(ITERMUL) after the named pre-run fix) ==
+shaders-derived/*.glsl -> shaders/*.spv rc=0 (18/18)
+== instrument builds (4 binaries; arm = compile-time BATCH; WORK_MUL=1,
+== BARRIER_N=0 everywhere; the source is the byte-identical session-8
+== snapshot, digest 5c7cf2d5... re-verified in host-verify-s9.txt) ==
+$ gcc -O2 -DBATCH=<B> -DWORK_MUL=1 -DBARRIER_N=0 -o anv-itr-b<B> gpu-subgroup-reduce-anv-workmul.c -lvulkan
+build anv-itr-b1 -DBATCH=1 -DWORK_MUL=1 -DBARRIER_N=0 rc=0
+build anv-itr-b2 -DBATCH=2 -DWORK_MUL=1 -DBARRIER_N=0 rc=0
+build anv-itr-b3 -DBATCH=3 -DWORK_MUL=1 -DBARRIER_N=0 rc=0
+build anv-itr-b8 -DBATCH=8 -DWORK_MUL=1 -DBARRIER_N=0 rc=0
+== arm decode (tag = <set>b<B>; the header prints batch=/barrier_n=/
+== work_mul=/n= and every CELL prints its spv= name, so every run log
+== carries its knob identity; analysis-s9.py checks the fields) ==
+a1 = (B=1, a-set) 1 unit floor control (committed 31 ticks)
+a2 = (B=2, a-set) 2 units floor control (committed 31 ticks)
+a3 = (B=3, a-set) 3 units capture control (committed 5,520, session 7)
+a8 = (B=8, a-set) 8 units capture control (committed 32,915, session 4)
+f1b2 = (B=2, iter1) 2 units derivation control at the row B
+f1b8 = (B=8, iter1) 8 units derivation control at captured scale
+f3b1 = (B=1, iter3) 3 units PROBE (equal nominal work to a3, one dispatch)
+f3b2 = (B=2, iter3) 6 units PROBE (row question at 3x fatness)
+f8b1 = (B=1, iter8) 8 units PROBE (equal nominal work to a8, one dispatch)
+f8b2 = (B=2, iter8) 16 units PROBE (row question at 8x fatness)
+== sha256 of the built spv + binaries + the uploaded sources (captured
+== after the builds, before the runs) ==
+(iter1 spv) 32929eb46a4b9565... w128-max / d170d78ab56b99b4... w128-min /
+cb9820ab04b6e3e4... w128-sum / 45f48143af19c221... w256-max /
+a469c967dcc781a8... w256-min / 957eae47dd93d234... w256-sum
+(iter3 spv) 98af55a891f88c74... w128-max / 23cc70bc04a4f7f2... w128-min /
+a182acfb3a3c41a8... w128-sum / f2774b8955b010b3... w256-max /
+6bce689d6aa77b25... w256-min / 2d6e4ea3b88ae224... w256-sum
+(iter8 spv) 41b25b27f11cbc02... w128-max / cd10e1d090153360... w128-min /
+d05d75f03123d06c... w128-sum / 4b3a3bf66880fa20... w256-max /
+48fbd7235ebff714... w256-min / 5732ad9fd173e34c... w256-sum
+(FULL digests of all 18 iter spv are in the tick transcript's build
+census; abbreviated here only for width)
+021dd5ab1aa74ff280f3de806992173ab9761395593f106c4f78b5e38a8dd5ed  anv-itr-b1
+efbc1ba8243fcda3da05253426796e32a19cd4cccce627a1a679bd6976a64fb6  anv-itr-b2
+4fd000ae4ac13359591b856be33a450a02525540a15b3ee15f8eacfe481139c2  anv-itr-b3
+d2c41daed283136185c6b1ff3dc2112bda2a74ee4b2106c5ebd971c990bfd6e0  anv-itr-b8
+(NAMED, NOT HIDDEN: these 4 binary digests are BYTE-IDENTICAL to session
+8's same-flag binaries anv-wm-b{1,2,3,8}m1 -- same source, same flags,
+same compiler -- an extra pin that the instrument is unchanged)
+5c7cf2d50f6e365187a35a772279ca17cead1c223fb687cc39bda454035762f3  gpu-subgroup-reduce-anv-workmul.c
+39f0a3a5c97808098d0165e08a4b056be2151168af7dbfaeb3a0c18143a5d4fb  cases-s9-a.txt
+fb113289da33670ef63e7169a53007ef6f516a1356061c6a4a3c91e6802ee005  cases-s9-f1.txt
+33956a7cb438fa241784c4d53b4e2f1bdaa42a7bcb8da24bcf2204cd378344fc  cases-s9-f3.txt
+2e7b4e34b98188ded8950bc6030f5122aa10c6327b4a8f521226c44360648f0a  cases-s9-f8.txt
+== run window (recorded live by date -u around the run loop; the full
+== per-run rc/timestamp transcript is quoted in record.txt) ==
+2026-10-27T13:03:36Z .. 2026-10-27T13:03:54Z, 30 fresh processes
+(10 arms x 3 runs), rc=0 30/30, stderr 0 bytes 30/30 (host-side wc -c
+total 0), 450 SAMPLE lines each (verified in publication-s9.txt section 1).
