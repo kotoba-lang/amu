@@ -74,6 +74,7 @@ jobs:
         run: |
           python3 scripts/seed/test_native_iteration.py -v
           python3 scripts/seed/test_native_preflight_projects.py -v
+          python3 scripts/seed/test_native_gate_shard.py -v
       - name: QMP observer pipe framing and deadline controls
         env:
           PYTHONDONTWRITEBYTECODE: "1"
@@ -399,8 +400,18 @@ jobs:
             ${{ runner.temp }}/aiueos-user-elf-x86
           if-no-files-found: error
 
-  qualify-x86_64:
+  qualify-x86-shards:
     needs: derive-x86_64
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: core
+            receipt: x86_64-native-receipt
+            schedule: native-scheduling-x86
+          - shard: extensions
+            receipt: x86_64-native-extension-receipt
+            schedule: native-scheduling-x86-extensions
     runs-on: ubuntu-latest
     timeout-minutes: 240
     steps:
@@ -431,9 +442,11 @@ jobs:
       - name: Static runtime spawn, wire 20 (x86_64, native)
         run: python3 scripts/seed/check-spawn-runtime.py --compiler "$RUNNER_TEMP/complete/F2.elf" --target x86_64-linux --output "$RUNNER_TEMP/runtime/spawn"
       - name: Independent x86 gates (bounded native build queue)
-        run: python3 scripts/seed/native_build_queue.py --manifest seed/native-gate-plan.json --phase x86 --jobs 2 --output "$RUNNER_TEMP/pg-x86"
+        run: |
+          python3 scripts/seed/native_gate_shard.py --manifest seed/native-gate-plan.json --shard "${{ matrix.shard }}" --output "$RUNNER_TEMP/x86-shard-plan.json"
+          python3 scripts/seed/native_build_queue.py --manifest "$RUNNER_TEMP/x86-shard-plan.json" --phase x86 --jobs 2 --output "$RUNNER_TEMP/pg-x86"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
+        if: always() && matrix.shard == 'core'
         with:
           name: live-abi-x86-evidence
           path: |
@@ -452,7 +465,7 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
-          name: x86_64-native-receipt
+          name: ${{ matrix.receipt }}
           path: |
             ${{ runner.temp }}/x86/x86_64-native.json
             ${{ runner.temp }}/x86/check-static-launcher/static-launcher.json
@@ -522,8 +535,37 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
+          name: ${{ matrix.schedule }}
+          path: |
+            ${{ runner.temp }}/pg-x86
+            ${{ runner.temp }}/x86-shard-plan.json
+            ${{ runner.temp }}/x86-shard-plan.coverage.json
+          if-no-files-found: warn
+
+  qualify-x86_64:
+    needs: qualify-x86-shards
+    if: always() && !cancelled()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
           name: native-scheduling-x86
-          path: ${{ runner.temp }}/pg-x86
+          path: ${{ runner.temp }}/x86-shards/core
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: native-scheduling-x86-extensions
+          path: ${{ runner.temp }}/x86-shards/extensions
+      - name: Require all17 original native gates and argv at capacity2 per runner
+        run: python3 scripts/seed/native_gate_shard.py --manifest seed/native-gate-plan.json --verify-root "$RUNNER_TEMP/x86-shards" --output "$RUNNER_TEMP/x86-partition-review.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: native-x86-partition-review
+          path: ${{ runner.temp }}/x86-partition-review.json
           if-no-files-found: warn
 
   qualify-benchmark-x86-factory:
