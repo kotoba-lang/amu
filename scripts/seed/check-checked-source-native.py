@@ -131,6 +131,21 @@ def main(compiler, out):
         "do": ("(defn main [x :i64] :i64 (+ x 1) (* x 2))", [function("main", "(do (+ x 1) (* x 2))")]),
         "self": ("(defn f [x :i64] :i64 (if (= x 0) 1 (f (- x 1))))", [function("f", "(if (= x 0) 1 (f (- x 1)))")]),
         "recur": ("(defn f [x :i64] :i64 (if (= x 0) 1 (recur (- x 1))))", [function("f", "(if (= x 0) 1 (f (- x 1)))")]),
+        "cond-one": ("(defn f [x :i64] :i64 (cond (< x 0) 11 :else 22))",
+                     [function("f", "(if (< x 0) 11 22)")]),
+        "cond-many": ("(defn f [x :i64] :i64 (cond (< x 0) 11 (= x 0) 22 (> x 9) 33 :else 44))",
+                      [function("f", "(if (< x 0) 11 (if (= x 0) 22 (if (> x 9) 33 44)))")]),
+        "cond-else": ("(defn f [x :i64] :i64 (cond :else x))", [function("f", "x")]),
+        "cond-keyword-value": ("(defn f [x :bool] :keyword (cond x :else :else :done))",
+                               [function("f", "(if x :else :done)", "x", ":bool", ":keyword")]),
+        "cond-string-value": ('(defn f [x :bool] :string (cond x "yes" :else "no"))',
+                              [function("f", '(if x "yes" "no")', "x", ":bool", ":string")]),
+        "cond-recur": ("(defn f [x :i64] :i64 (cond (= x 0) 1 :else (recur (dec x))))",
+                       [function("f", "(if (= x 0) 1 (f (- x 1)))")]),
+        "cond-binding": ("(defn f [x :i64] :i64 (cond (< x 0) (let [x 1] x) :else (let [a x] (inc a))))",
+                         [function("f", "(if (< x 0) (let [x 1] x) (let [a x] (+ a 1)))")]),
+        "string-equality": ("(defn f [a :string b :string] :bool (= a b))",
+                            [function("f", "(string=? a b)", "a b", ":string :string", ":bool")]),
     }
     for ty in [":string", ":bytes", ":vector-i64"]:
         cases["type-" + ty[1:]] = (f"(defn f [x {ty}] {ty} x)", [function("f", "x", "x", ty, ty)])
@@ -167,6 +182,7 @@ def main(compiler, out):
         assert observed[name][fn][0] == expected
     assert observed["constant-reference"]["f"] == observed["leaf"]["f"] != observed["constant-edit"]["f"]
     assert observed["recur"] == observed["self"] and observed["sugar"] == observed["inferred"] == observed["leaf"]
+    assert observed["cond-recur"] == observed["self"]
     for name in composite_types:
         assert observed[name]["f"][0] == run("independent-type-" + name, [type_oracle, name])[0].strip()
     assert observed["type-table-reordered"]["f"] == observed["list-i64"]["f"]
@@ -184,6 +200,13 @@ def main(compiler, out):
         "computed-def": "(def value (+ 1 2)) (defn main [] :i64 value)",
         "constant-alias": "(def a 1) (def b a) (defn main [] :i64 b)",
         "claimed-checked": "{:checked true :functions []}",
+        "cond-missing-else": "(defn f [x :bool] :i64 (cond x 1))",
+        "cond-misplaced-else": "(defn f [x :bool] :i64 (cond :else 1 x 2))",
+        "cond-odd": "(defn f [x :bool] :i64 (cond x 1 :else))",
+        "cond-unreachable-unknown": "(defn f [] :i64 (cond :else 1 false (unknown 2)))",
+        # The existing KIR reader reserves this sugar spelling. Do not bypass
+        # its fresh check to admit a Seed-only shadowed function name.
+        "cond-shadowed": "(defn cond [x :i64 y :i64] :i64 (+ x y)) (defn main [] :i64 (cond 1 2))",
     }
     for name, source in negatives.items():
         src = out / (name + ".input")
@@ -205,6 +228,8 @@ def main(compiler, out):
         ("composite-constructor", 'TC-LIST ":list"', 'TC-LIST ":option"', "list-string", False),
         ("composite-child", '(dsb-type M C a (inc depth))', '":i64"', "list-string", False),
         ("composite-right", '(dsb-type M C b (inc depth))', '":i64"', "map-keyword-string", False),
+        ("cond-test", '(dsb-expr M S C p depth)', '"true"', "cond-many", False),
+        ("string-equality", 'HD-STRING-EQ "string=?"', 'HD-STRING-EQ "="', "string-equality", False),
     ]
     bridge = (ROOT / BRIDGE).read_text()
     assert text.count(bridge) == 1
