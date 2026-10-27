@@ -18,7 +18,8 @@
     (loop [i 1]
       (cond (>= i (vector-at M MM-SIR-N)) false
             (and (= (xg-si M i IF-OP) OP-CALL)
-                 (>= (km-intr M (xg-si M i IF-A)) LV-FIRST)) true
+                 (>= (km-intr M (xg-si M i IF-A)) LV-FIRST)
+                 (< (km-intr M (xg-si M i IF-A)) UV-FIRST)) true
             :else (recur (inc i)))))))
 (defn- lv-guard [M :vector-i64 trap :i64] :vector-i64
   (let [version (vector-at M MM-LABEL-N)]

@@ -15,6 +15,25 @@ import struct
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 SOURCE = b'(ns layout-probe (:export [main]))\n(defn main [] :i64 42)\n'
+WINDOW_SOURCE = b'''(ns request-window-probe
+  (:export [main aiueos-value-runtime-entry aiueos-value-runtime-syscall-plan
+            aiueos-value-runtime-publish-domain aiueos-value-runtime-provider-status
+            aiueos-value-runtime-capability-grant aiueos-value-runtime-provider-claim
+            aiueos-value-runtime-provider-complete aiueos-value-runtime-cas-verify]))
+(defn aiueos-value-runtime-entry [a :i64 b :i64 c :i64 d :i64 e :i64] :i64 0)
+(defn aiueos-value-runtime-syscall-plan [a :i64 b :i64 c :i64 d :i64 e :i64] :i64 0)
+(defn aiueos-value-runtime-publish-domain [a :i64] :i64 0)
+(defn aiueos-value-runtime-provider-status [a :i64 b :i64] :i64 0)
+(defn aiueos-value-runtime-capability-grant [a :i64 b :i64 c :i64 d :i64 e :i64] :i64 0)
+(defn aiueos-value-runtime-provider-claim [] :i64 0)
+(defn aiueos-value-runtime-provider-complete [a :i64 b :i64 c :i64 d :i64 e :i64] :i64 0)
+(defn aiueos-value-runtime-cas-verify [a :i64 b :i64 c :i64 d :i64 e :i64] :i64 0)
+(defn main [] :i64
+  (let [request (kernel-value-domain-request-page 73)
+        final-page (kernel-subregion request 262144 196608 65536)]
+    (if (= request 0) 0
+      (kernel-load-u8-64k final-page 65536 65535))))
+'''
 
 
 def sha(raw):
@@ -100,6 +119,25 @@ def main(args):
     v3 = compile_with(compiler, 'v3', 'new-v3')
     layout = image_layout(v3.read_bytes(), 0x400000)
     compile_with(old, 'v3', 'old-v3-refused', expected=2)
+    # Compiler-only control: the linked exports below are inert fixtures, not
+    # a guest ValueRuntime. The final byte of v5's 64-page RW window must be
+    # statically rooted; the same source must fail under the v2 extent.
+    (out / 'fixture/window.kotoba').write_bytes(WINDOW_SOURCE)
+    window_lock = (f'KSL1\nentry /fixture/window.kotoba\nroot /fixture\n'
+                   f'file {sha(WINDOW_SOURCE)} /fixture/window.kotoba\n').encode()
+    (out / 'window.ksl').write_bytes(window_lock)
+    window_args = ['--artifact', 'image', '--fuel', '1000000', '--source-path', '/fixture',
+                   '--source-lock', 'window.ksl',
+                   '--source-lock-sha256', sha(window_lock)]
+    mac.native_run(compiler, out, 'compile', '/fixture/window.kotoba', '--target',
+                   'x86_64-aiueos-kernel-v3', *window_args, '--output', 'window-v3.elf')
+    window_v3 = out / 'window-v3.elf'
+    image_layout(window_v3.read_bytes(), 0x400000)
+    refused_window = mac.native_run(compiler, out, 'compile', '/fixture/window.kotoba',
+                                    '--target', 'x86_64-aiueos-kernel-v2', *window_args,
+                                    '--output', 'window-v2.elf', expected=1)
+    if b'E7106' not in refused_window.stderr or (out / 'window-v2.elf').exists():
+        raise ValueError('v2 admitted the 256 KiB request extent')
     mac.native_run(compiler, out, 'package-aiueos-boot', v3.name,
                    '--output', 'kernel-v3.efi')
     slot = args.user_v5_slot.read_bytes()
@@ -158,6 +196,10 @@ def main(args):
                'source': {'bytes': len(SOURCE), 'sha256': sha(SOURCE)},
                'sourceLock': mac.pin(out / 'fixture.ksl'), 'legacy': legacy,
                'kernelV3': mac.pin(v3), 'efiV3': mac.pin(out / 'kernel-v3.efi'),
+               'windowSource': {'bytes': len(WINDOW_SOURCE), 'sha256': sha(WINDOW_SOURCE)},
+               'windowSourceLock': mac.pin(out / 'window.ksl'),
+               'windowKernelV3': mac.pin(window_v3), 'windowV2ExtentRefused': True,
+               'windowGuestExecution': False,
                'layout': layout, 'oldCompilerV3Refused': True,
                'dualSlotV4RefusedForScalar': True,
                'guestV5Admission': True, 'guestExecution': False,

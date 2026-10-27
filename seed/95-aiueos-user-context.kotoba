@@ -39,23 +39,31 @@
     (loop [i 1]
       (cond (>= i (vector-at M MM-SIR-N)) false
             (and (= (xg-si M i IF-OP) OP-CALL)
-                 (>= (km-intr M (xg-si M i IF-A)) UV-FIRST)) true
+                 (>= (km-intr M (xg-si M i IF-A)) UV-FIRST)
+                 (< (km-intr M (xg-si M i IF-A)) WG-FIRST)) true
             :else (recur (inc i))))))
 (defn- uv-context [M :vector-i64 offset :i64 reg :i64] :vector-i64
   (-> M (iv-hex (case reg 0 "498d81" 1 "498d89" 2 "498d91" 7 "498db9" "498db1"))
       (xg-bytes offset 4)))
 ;; ECX is a checked domain slot. RAX returns its image-owned page address.
-;; Only the request constructor accepts the earlier v2 supervisor layout.
+;; The v5 request region spans 64 RW pages. A v3 image must not fall back to
+;; a one-page legacy context while its static request extent is 256 KiB.
 (defn- uv-page-address [M :vector-i64 role :i64] :vector-i64
   (let [v3 (vector-at M MM-LABEL-N) done (inc v3)]
-    (-> M (iv-reserve 2) (iv-hex "4981b9") (xg-bytes 464 4) (xg-bytes (uv-magic) 4)
-        (xg-rel 0x840f 2 2 v3)
-        (iv-hex "89c848c1e00c4c01c84805") (xg-bytes LV-REQUEST-PAGES 4)
-        (xg-rel 0xe9 1 2 done)
-        (xg-label v3)
-        (iv-hex (if (uv-v5?) "89c84869c0003004004c01c84805" "89c848c1e00e4c01c84805"))
-        (xg-bytes (+ UV-USER (* (if (and (uv-v5?) (= role 3)) 66 role) 4096)) 4)
-        (xg-label done))))
+    (if (uv-v5?)
+      (-> M (iv-reserve 2) (iv-hex "4981b9") (xg-bytes 464 4) (xg-bytes UV-V5-MAGIC 4)
+          (xg-rel 0x850f 2 2 v3)
+          (iv-hex "89c84869c0003004004c01c84805")
+          (xg-bytes (+ UV-USER (* (if (= role 3) 66 role) 4096)) 4)
+          (xg-rel 0xe9 1 2 done)
+          (xg-label v3) (iv-hex "31c0") (xg-label done))
+      (-> M (iv-reserve 2) (iv-hex "4981b9") (xg-bytes 464 4) (xg-bytes (uv-magic) 4)
+          (xg-rel 0x840f 2 2 v3)
+          (iv-hex "89c848c1e00c4c01c84805") (xg-bytes LV-REQUEST-PAGES 4)
+          (xg-rel 0xe9 1 2 done)
+          (xg-label v3) (iv-hex "89c848c1e00e4c01c84805")
+          (xg-bytes (+ UV-USER (* role 4096) 4096) 4)
+          (xg-label done)))))
 (defn- uv-or-arena [M :vector-i64 k :i64] :vector-i64
   (if (= k 11) (uv-page-address M 1)
     (-> M (iv-hex "89c848c1e00c4c01c84805") (xg-bytes LV-ARENAS 4))))
