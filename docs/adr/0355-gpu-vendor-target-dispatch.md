@@ -148,3 +148,21 @@ false`). REOPEN CONDITION: a row run on the row's own channel
 (JUN-57..60, blocked on the ADR-0371 provider) is new evidence, as is
 a future amendment that names a new row channel with its own paired
 size protocol. Nothing else reopens the mapping.
+
+## Dated note (2026-10-27, JUN-59 probe: the Intel host's ANV step)
+
+The Intel issue's named first step -- "is ANV/mesa usable for
+measurement at all?" -- is ANSWERED YES at the fleet's one Intel host
+(aiueos-6600hs-1; the 2026-10-18 note's "vulkaninfo shows only
+llvmpipe, ANV suspected unsupported" does not reproduce). ANV (Mesa
+25.2.8, `xe` kernel driver) enumerates "Intel(R) Graphics (BMG G31)"
+(8086:e223, DISCRETE_GPU) with compute-stage subgroups (size 32, all
+eight core VkSubgroupFeatureFlagBits) and maxComputeWorkGroupSize
+1024; the llvmpipe-only view is exactly the view of an account without
+`/dev/dri/renderD128` access (nobody: llvmpipe only, render-node open
+denied; aiueos/root: both devices). PROBED host facts, not
+optimization evidence: no timing ran, no row moves, and a subgroup
+8/16/32 measurement on this host is a future row whose channel
+standing under the 2026-10-25 rule is UNDECIDED. Evidence:
+`docs/evidence/gpu/intel-anv-probe-20261027/` (record.txt is the
+finding).
