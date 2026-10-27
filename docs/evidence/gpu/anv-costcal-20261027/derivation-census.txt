@@ -1,0 +1,43 @@
+== derivation census (JUN-59 COST-CALIBRATED JOINT DOSE, session 11) ==
+== expectation source: session 2's committed compile-toolchain.txt ==
+== sha256 census (parsed programmatically from that committed file, ==
+== never transcribed). NEW derivation this session: the itervc8 ==
+== sources = session 9's committed iter8 files with ONE memory- ==
+== qualifier edit (coherent volatile on the X buffer) so the ITERMUL ==
+== loop's per-iteration loads are real accesses. Two-level inverse ==
+== check below: strip the qualifier edit -> session 9's iter8 bytes ==
+== (6/6); strip the 3 ITERMUL lines -> base bytes (6/6); base census ==
+== 6/6 vs session 2's census. ==
+OK   shaders/probe-w128.glsl expected=cffc3f4558d830fbcabf5ada4c1f4752ed7a2ec680f652d06628684f9038601c got=cffc3f4558d830fbcabf5ada4c1f4752ed7a2ec680f652d06628684f9038601c
+OK   shaders/probe-w256.glsl expected=1d1ba71130e7e1b890e560a309d98689e446f208b3fe17424038cdb2377e4352 got=1d1ba71130e7e1b890e560a309d98689e446f208b3fe17424038cdb2377e4352
+OK   shaders/subgroup-reduce-w128-max.emitted.glsl expected=94420e5b4b1d2ba93ffd1f41851b693de4e6be594c39532d8fb7076e60372bdf got=94420e5b4b1d2ba93ffd1f41851b693de4e6be594c39532d8fb7076e60372bdf
+OK   shaders/subgroup-reduce-w128-min.emitted.glsl expected=c21e5035078070f12de178314163f7412d944422f8b122c011699fa224eb11af got=c21e5035078070f12de178314163f7412d944422f8b122c011699fa224eb11af
+OK   shaders/subgroup-reduce-w128-sum.emitted.glsl expected=b49362463cd5954ed739237d7d16a3d4e421f32597bc09c3ead78346dab73564 got=b49362463cd5954ed739237d7d16a3d4e421f32597bc09c3ead78346dab73564
+OK   shaders/subgroup-reduce-w256-max.emitted.glsl expected=06a3fd20d8a361a1c39a80cac9ade63490a478cf27baf77a4099e1a1987d5de4 got=06a3fd20d8a361a1c39a80cac9ade63490a478cf27baf77a4099e1a1987d5de4
+OK   shaders/subgroup-reduce-w256-min.emitted.glsl expected=22e838220e8eb34a1172fd74134533e87d3c9f8538dfff55a08326a4a6fb28cb got=22e838220e8eb34a1172fd74134533e87d3c9f8538dfff55a08326a4a6fb28cb
+OK   shaders/subgroup-reduce-w256-sum.emitted.glsl expected=fc50a68abcd1b04aaebb88801f6c93a570c01feab3ed3073661f715abca4b20c got=fc50a68abcd1b04aaebb88801f6c93a570c01feab3ed3073661f715abca4b20c
+== corpus glsl digest check (local, session-2 dir): 8/8 ==
+== the 8 corpus .spv live only in the host corpus copy (compiled ==
+== artifacts, never committed); verified 16/16 host-side in ==
+== host-verify-s11.txt against this same census. ==
+INV1-OK INV2-OK BASE-OK subgroup-reduce-w128-max.emitted.itervc8.glsl derived_sha=30af9c8d72693eacad056f25b42ea4ab51a80c97b7483aa526f067be4a5486ff base_sha=94420e5b4b1d2ba93ffd1f41851b693de4e6be594c39532d8fb7076e60372bdf
+INV1-OK INV2-OK BASE-OK subgroup-reduce-w128-min.emitted.itervc8.glsl derived_sha=f11a4f01d353742a329834fb34eba586b7931ab2963da922d6524cb0a2e7b213 base_sha=c21e5035078070f12de178314163f7412d944422f8b122c011699fa224eb11af
+INV1-OK INV2-OK BASE-OK subgroup-reduce-w128-sum.emitted.itervc8.glsl derived_sha=9ce40dddd8ef2e04339ae44e0a8b3702e21ec11a90031857ff41e6f0c452a51d base_sha=b49362463cd5954ed739237d7d16a3d4e421f32597bc09c3ead78346dab73564
+INV1-OK INV2-OK BASE-OK subgroup-reduce-w256-max.emitted.itervc8.glsl derived_sha=7351f3fa72737be4ae5988c18e166aae071797b147c0cd26d72f7fd94c3faeff base_sha=06a3fd20d8a361a1c39a80cac9ade63490a478cf27baf77a4099e1a1987d5de4
+INV1-OK INV2-OK BASE-OK subgroup-reduce-w256-min.emitted.itervc8.glsl derived_sha=3f36fa1f084331bd38ab1437d21bc8c5e706330362782cf7873e646d43d73f84 base_sha=22e838220e8eb34a1172fd74134533e87d3c9f8538dfff55a08326a4a6fb28cb
+INV1-OK INV2-OK BASE-OK subgroup-reduce-w256-sum.emitted.itervc8.glsl derived_sha=4b1f670de8740be6e0d24475ff68570a1eafebf9af9c22696a45469549952a49 base_sha=fc50a68abcd1b04aaebb88801f6c93a570c01feab3ed3073661f715abca4b20c
+== inverse check 1 (strip the qualifier edit -> session 9 iter8 bytes): 6/6 ==
+== inverse check 2 (strip the 3-line ITERMUL edit -> base bytes): 6/6 ==
+== base census 6/6 (derived files' bases vs session 2 census): 6/6 ==
+cases-s11-a.txt cell lines byte-copy of cases-s10-a.txt cell lines: YES
+cases-s11-i8vc.txt cell lines = a-set lines with only the measured spv name changed to .emitted.itervc8.spv: YES
+== local digests (to be compared local-vs-host in host-verify-s11.txt) ==
+5c7cf2d50f6e365187a35a772279ca17cead1c223fb687cc39bda454035762f3  gpu-subgroup-reduce-anv-workmul.c (local archived session-8 snapshot)
+322e1364ed9c5dd4db3bafb88c35635495172f9d613755b9e4e1667accd7d4b7  cases-s11-a.txt
+1ec74798037d2fc83006a44484cd418344e756247583cdf819534e7179c486f7  cases-s11-i8vc.txt
+30af9c8d72693eacad056f25b42ea4ab51a80c97b7483aa526f067be4a5486ff  shaders-derived/subgroup-reduce-w128-max.emitted.itervc8.glsl
+f11a4f01d353742a329834fb34eba586b7931ab2963da922d6524cb0a2e7b213  shaders-derived/subgroup-reduce-w128-min.emitted.itervc8.glsl
+9ce40dddd8ef2e04339ae44e0a8b3702e21ec11a90031857ff41e6f0c452a51d  shaders-derived/subgroup-reduce-w128-sum.emitted.itervc8.glsl
+7351f3fa72737be4ae5988c18e166aae071797b147c0cd26d72f7fd94c3faeff  shaders-derived/subgroup-reduce-w256-max.emitted.itervc8.glsl
+3f36fa1f084331bd38ab1437d21bc8c5e706330362782cf7873e646d43d73f84  shaders-derived/subgroup-reduce-w256-min.emitted.itervc8.glsl
+4b1f670de8740be6e0d24475ff68570a1eafebf9af9c22696a45469549952a49  shaders-derived/subgroup-reduce-w256-sum.emitted.itervc8.glsl

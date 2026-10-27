@@ -1,0 +1,53 @@
+== JUN-59 session 11 build census ==
+Build window (host timeline, host-verify-s11.txt): builds ran after the
+verify GO (2026-10-27T14:02:31Z) and before the first run
+(2026-10-27T14:03:29Z, run-window.txt). Build timestamps
+2026-10-27T14:02:45Z (host date -u, captured in the build transcript).
+== host ==
+aiueos-6600hs (aiueos-6600hs-1, tailscale 100.98.24.37), user murakumo-ci
+(groups include render). Workdir ~/anv-costcal-20261027, runs cwd=shaders/
+(manifests passed as ../cases-s11-{a,i8vc}.txt; binaries ../anv-cc-<tag>).
+== toolchains (from session 2's committed compile-toolchain.txt record of
+== the same host/toolchain; not re-printed this session) ==
+glslangValidator: Glslang Version: 11:15.1.0
+gcc: gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+== shader compiles: glslangValidator -S comp -V --target-env vulkan1.2 ==
+== shaders-derived/*.itervc8.glsl -> shaders/<f>.spv (6 derived ==
+== ITERMUL=8 + coherent-volatile sources, this session's derivation) ==
+spv subgroup-reduce-w128-max.emitted.itervc8 rc=0
+spv subgroup-reduce-w128-min.emitted.itervc8 rc=0
+spv subgroup-reduce-w128-sum.emitted.itervc8 rc=0
+spv subgroup-reduce-w256-max.emitted.itervc8 rc=0
+spv subgroup-reduce-w256-min.emitted.itervc8 rc=0
+spv subgroup-reduce-w256-sum.emitted.itervc8 rc=0
+== FIRST BUILD of this derivation (no prior build exists to pin against;
+== these digests are the committed build artifact) ==
+267a9b5ba69da79dc339a879ea391f132d03dcc0763c54423563a56a2fc6866f  shaders/subgroup-reduce-w128-max.emitted.itervc8.spv
+47e88be62aea5b6a947181acc4a8fa1076ee01b64ae0dfde6deec41b85ff48d0  shaders/subgroup-reduce-w128-min.emitted.itervc8.spv
+2c8138385f22db740720717fcf460d60c81d306a517375795dc7a9b7b29e86f4  shaders/subgroup-reduce-w128-sum.emitted.itervc8.spv
+9713aabedb4ef33334ddb040dd8203044e748b38c5e2cf073bf2795a3615e461  shaders/subgroup-reduce-w256-max.emitted.itervc8.spv
+a14bcefcbb48e1303e4bff118e0d41a46b3c6b061a68864894f2895a506c3c36  shaders/subgroup-reduce-w256-min.emitted.itervc8.spv
+01b512bfe76d73580e043454e4fbeb948423d2c4c37b6018f92b39fccdb1a32f  shaders/subgroup-reduce-w256-sum.emitted.itervc8.spv
+== instrument builds (3 binaries; arm = the compile-time (BATCH, WORK_MUL)
+== pair; BARRIER_N=0 for every arm; the source is the archived session-8
+== snapshot, digest 5c7cf2d5... re-verified in host-verify-s11.txt) ==
+$ gcc -O2 -DBATCH=<B> -DWORK_MUL=<M> -DBARRIER_N=0 -o anv-cc-<tag> gpu-subgroup-reduce-anv-workmul.c -lvulkan
+build anv-cc-b2m1 -DBATCH=2 -DWORK_MUL=1 -DBARRIER_N=0 rc=0
+build anv-cc-b8m1 -DBATCH=8 -DWORK_MUL=1 -DBARRIER_N=0 rc=0
+build anv-cc-b2m8 -DBATCH=2 -DWORK_MUL=8 -DBARRIER_N=0 rc=0
+== arm decode (tag; the header prints batch=/work_mul=/n= and every SAMPLE
+== prints batch=/work_mul=, so every run log carries its knob identity;
+== analysis-s11.py checks the fields) ==
+c2   = (B=2, M=1, a-set)    floor control (committed 31)
+c8   = (B=8, M=1, a-set)    capture control (committed 32,915, session 4)
+g8   = (B=2, M=8, a-set)    grid control (sessions 8/10: FLOOR 31..32)
+f8vc = (B=2, M=1, itervc8)  vc-fatness control (new)
+gfvc = (B=2, M=8, itervc8)  PROBE, COST-CALIBRATED JOINT DOSE candidate
+== sha256 of the binaries (real build output) ==
+efbc1ba8243fcda3da05253426796e32a19cd4cccce627a1a679bd6976a64fb6  anv-cc-b2m1
+d2c41daed283136185c6b1ff3dc2112bda2a74ee4b2106c5ebd971c990bfd6e0  anv-cc-b8m1
+476db4853b3c77103f0a052feacdc5391cfc29c3a74ecbe8e30f7a8ace7a3f19  anv-cc-b2m8
+== EXTRA PIN (comparison of committed numbers -- build-census-s8.txt --
+== to this build's real sha256 output): all 3 binaries are byte-identical
+== to session 8's same-flag binaries (anv-wm-b2m1 efbc1ba8..., anv-wm-b8m1
+== d2c41dae..., anv-wm-b2m8 476db485...) ==

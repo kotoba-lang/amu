@@ -1,0 +1,197 @@
+JUN-59 -- session 11 protocol: COST-CALIBRATED JOINT DOSE (the vc-fatness
+knob). INSTRUMENT channel. Frozen BEFORE the first run (2026-10-27T14:02Z,
+this tick). This file is written once and never rewritten.
+
+0. ROW QUESTION (session 10's named residual, ONE observable axis):
+   session 10 found the capture at B=2 unreachable by the NOMINAL joint
+   grid x fatness dose (gf = 128 nominal units, FLOOR) -- but named,
+   not hidden, that the fatness knob's cost realization was MARGINAL
+   (gf/g8 = 1.07x host_ns; the ITERMUL loop re-runs the reduce body I
+   times but its realized cost is consistent with the compiler CSE-ing
+   the loop-invariant loads), so "a genuinely COST-CALIBRATED joint
+   dose at B=2 stays UNMEASURED". This session builds the dose whose
+   cost is genuinely realized and asks ONE narrower question:
+
+     AT FIXED DISPATCH COUNT B=2, IS THE CAPTURE REACHABLE BY THE
+     JOINT GRID x FATNESS DOSE AT COST-CALIBRATED FATNESS -- the
+     same (WORK_MUL=8 grid x ITERMUL=8 fat workgroups) joint dose of
+     session 10, but with the fatness knob made cost-real by the
+     coherent volatile qualifier (each ITERMUL iteration's x[] load is
+     a real access the compiler cannot CSE away)?
+
+   knobs: the compile-time WORK_MUL knob of the instrument (the
+   byte-identical session-8 snapshot, NO C edit; n = 1,000,003*M) AND
+   the ITERMUL=8 knob baked into this session's DERIVED SHADER SOURCES
+   (the itervc8 set: session 9's committed iter8 derivation with ONE
+   further edit -- the X buffer declaration gains coherent volatile --
+   see section 1). The stored value is bit-identical at any (M, vc),
+   re-checked inside every run by the instrument's VERIFY step.
+
+   NAMED LIMITATION (frozen in advance): host_ns is a HOST-side proxy
+   of bracketed cost (submit + wait). The GPU-side cost inside a B=2
+   bracket is UNOBSERVABLE -- the bracket undercounts at B<=2, which
+   is the phenomenon under study. "Cost-calibrated" here means
+   calibrated on the host_ns proxy AND on the design of genuinely
+   iterated accesses (the volatile loads), NOT on the bracketed GPU
+   timeline. A GPU-side cost calibration at B=2 is impossible in
+   principle on this instrument and stays UNMEASURED (named again
+   below). host_ns realization is whatever V1/X2 measure; no
+   linearity is claimed.
+
+1. DERIVATION (chain of custody): ONE derivation edit this session,
+   SHADER-side (the C instrument is byte-identical):
+
+   instrument = the archived session-8 snapshot, BYTE-IDENTICAL, NO C
+   edit:
+     docs/evidence/gpu/anv-workmul-20261027/gpu-subgroup-reduce-anv-workmul.c.txt
+     (digest 5c7cf2d5..., re-verified local-vs-host below),
+   itervc8 shader sources = session 9's committed iter8 sources
+   (docs/evidence/gpu/anv-itrmul-20261027/shaders-derived/*.iter8.glsl)
+   with EXACTLY ONE memory-qualifier edit (the X buffer declaration
+   line gains coherent volatile; 1 hunk per file, 6 files --
+   instrument-derivation.diff.txt). Two-level inverse check
+   (derivation-census.txt, produced programmatically this tick):
+   strip the qualifier edit -> session 9's iter8 bytes 6/6 EXACT;
+   strip the 3-line ITERMUL edit -> base bytes 6/6 EXACT; base census
+   6/6 MATCH vs session 2's committed census.
+   corpus = the 16 measured/probe files, cp -a'd forward along the
+   session chain and re-verified 16/16 against the session-2 census
+   BEFORE any run.
+   manifests = cases-s11-a.txt (a-set cell lines, a BYTE-COPY of
+   session 10's cases-s10-a.txt, itself byte-equal to session 9's --
+   checked programmatically) and cases-s11-i8vc.txt (the same cell
+   lines with only the measured spv name changed to the itervc8 spv;
+   the relation checked programmatically).
+   The compiled itervc8 spv are BUILT this session with the corpus
+   toolchain/command (glslangValidator -S comp -V --target-env
+   vulkan1.2, glslang 11:15.1.0); their digests are recorded in
+   build-census-s11.txt as the committed build artifact (no prior
+   build exists to pin against -- first build of this derivation).
+   NAMED, NOT HIDDEN: the qualifier spelling was compile-smoked on the
+   host toolchain BEFORE this freeze (2026-10-27T14:01:00Z, throwaway
+   dir ~/anv-vcglsl-smoke, one file, rc=0, zero runs, zero timing) --
+   the session-9 D2 lesson (a frozen invalid GLSL spelling) is
+   avoided by design.
+
+2. ARMS (5 arms, 3 runs each = 15 fresh processes). Binary = the
+   compile-time (BATCH, WORK_MUL) pair; shader set selects the
+   manifest. The header prints batch=/work_mul=/n= and every SAMPLE
+   prints batch=/work_mul=, so every run log carries its knob identity.
+
+   c2   = (B=2, M=1, a-set)  floor control      [committed 31; s10: 32]
+   c8   = (B=8, M=1, a-set)  capture control    [committed 32,915,
+                                                  session 4 pooled median]
+   g8   = (B=2, M=8, a-set)  grid control       [session 8/10 committed
+                                                  b2m8: FLOOR, 31..32 band]
+   f8vc = (B=2, M=1, itervc8) vc-fatness control [new; session 9's
+                                                  non-vc f8b2: FLOOR,
+                                                  host_ns 803,299 (s10)]
+   gfvc = (B=2, M=8, itervc8) PROBE, the COST-CALIBRATED JOINT DOSE
+                                                  candidate [new]
+
+   Binaries (3): anv-cc-b2m1 (-DBATCH=2 -DWORK_MUL=1), anv-cc-b8m1
+   (-DBATCH=8 -DWORK_MUL=1), anv-cc-b2m8 (-DBATCH=2 -DWORK_MUL=8);
+   all -DBARRIER_N=0. f8vc reuses anv-cc-b2m1 (the a-set/itervc8 split
+   is the manifest); gfvc reuses anv-cc-b2m8.
+
+3. PRE-REGISTERED LETTERS. Classification thresholds FROZEN (the
+   session-7 thresholds, kept): FLOOR <= 100 ticks at all 18
+   pipeline-ok cells (pooled median over 3 runs x 25 rounds per cell);
+   CAPTURED >= 1000 ticks at all 18; anything else INTERMEDIATE/MIXED.
+   Both branches of every verdict named BEFORE the run.
+
+   C1 ARCHIVED CONTROL REPLICATION (prerequisite; the a-set runs the
+   ARCHIVED measured spv bytes, so this also pins the untouched
+   instrument + corpus):
+     criterion: c2 satisfies FLOOR class AND c8's pooled median at
+     (sum,128,S=16) is within +/-5% of committed 32,915.
+     (a) both hold -> controls replicate; V1-K2 are evaluated against
+         the row question.
+     (b) any discrepancy -> interpretation FLAGGED (bearing on the
+         environment, not the derivation); cause UNMEASURED.
+
+   C2 GRID KNOB CONTROL REPLICATION (prerequisite; the M knob at its
+   committed reading):
+     criterion: g8 satisfies FLOOR class (session 8/10 committed b2m8
+     reading, FLOOR 31..32 band).
+     (a) holds -> the grid knob is pinned at its committed reading.
+     (b) discrepancy -> interpretation FLAGGED; cause UNMEASURED.
+
+   V1 VC-REALIZATION (the derivation's design claim; the realization
+   of the vc-fatness knob, f8vc's host_ns / c2's host_ns at
+   (sum,128,S=16)):
+     criterion: >= 3.0x. Rationale frozen in advance: session 9's
+     NON-vc I=8 realized 1.14x..1.57x and session 10's f8 1.18x
+     (marginal band <= ~1.6x); nominal I=8 is 8x; >= 3.0x is >= 37.5%
+     of nominal and separates a genuinely realized iterated-load cost
+     from the CSE'd/marginal band.
+     (a) >= 3.0x -> the vc-fatness knob is COST-REALIZING as designed;
+         K1(ii) is evaluated and, with it, the cost-calibrated reading
+         of K2.
+     (b) < 3.0x -> the vc derivation FAILED to realize cost; the
+         cost-calibrated joint dose stays UNMEASURED (named), the
+         measured factors are reported, and K2 is read nominally only.
+
+   V2 FATNESS-ONLY CLASS (the class of f8vc):
+     (a) FLOOR -> the qualifier alone at B=2 does not reach the
+         capture; consistent with the dispatch-count reading.
+     (b) CAPTURED or INTERMEDIATE/MIXED -> the qualifier alone moves
+         the bracket class at B=2 (new observable; the classes stand
+         as measured content; mechanism UNMEASURED).
+
+   K1 COST CALIBRATION (the joint dose's cost status, pre-registered):
+     the joint dose gfvc is COST-CALIBRATED (frozen definition) iff
+     BOTH (i) V1 fired branch (a), and (ii) gfvc's host_ns >= 2x the
+     c8 control's host_ns in-session (the dose's realized bracketed
+     cost is at least twice the captured bracket's own).
+     (a) both -> gfvc is read AT CALIBRATED COST in K2.
+     (b) any fails -> the cost-calibrated dose stays UNMEASURED and
+         named; K2 is read nominally only.
+
+   K2 THE ROW QUESTION (the class of gfvc):
+     (a) gfvc FLOOR while c8 CAPTURED -> the capture at B=2 is NOT
+         reachable even by the joint dose at cost-calibrated fatness
+         (with K1(a): on the realized-cost axis up to the measured
+         gfvc/c2 factor); with sessions 8-10 the capture is not a
+         total-work or total-cost threshold on any knob tested to
+         date; dispatch count stays implicated. Observable only; NO
+         causal mechanism claimed or measured.
+     (b) gfvc CAPTURED -> the capture at B=2 IS reachable at
+         calibrated cost: the 2->3 onset is a cost threshold that the
+         nominal doses of sessions 8-10 never crossed. Observable
+         only; NO causal mechanism claimed or measured.
+     (c) otherwise INTERMEDIATE/MIXED -> cell-quantified in the
+         publication's section 2; mechanism UNMEASURED.
+
+   INVALIDATION CRITERION (frozen): if VERIFY mismatch > 0 in ANY
+   run (the vc qualifier or the ITERMUL loop changed a stored value),
+   the affected arm's derivation is DEFECTIVE: the arm is INVALID,
+   named, not hidden, and no letter is interpretable from it.
+
+   X2 REALIZATION (descriptive, computed from the same runs' host_ns;
+   NO new measurement and NO linearity claim): host_ns at
+   (sum,128,S=16) for every arm; ratios g8/c2, f8vc/c2, gfvc/c2,
+   gfvc/g8, gfvc/f8vc, and the committed-number comparison (session 8
+   grid 4.63x; session 9 non-vc fatness 1.14x..1.57x; session 10 f8
+   1.18x, g8 5.55x, gf 5.92x).
+
+4. INTEGRITY expectations (checked by the analysis over the 15 logs):
+   450 SAMPLE lines per run (18 ok cells x 25 rounds); every run's
+   header batch= == its arm's B, work_mul= == its arm's M, n ==
+   1,000,003*M, barrier_n=0; every SAMPLE's batch=/work_mul= match
+   the arm; every CELL's spv= name carries its arm's set suffix
+   (a-set: archived .emitted.spv with no .iter; itervc8-set:
+   .emitted.itervc8.spv); VERIFY mismatch 0 over all runs (frozen
+   INVALIDATION criterion above); forcing reality at every
+   pipeline-ok cell-run; the 6 S=8 cells fail closed (pipeline=FAIL).
+
+5. RULE 4 is frozen in advance: whatever fires, NOTHING MOVES -- no
+   workgroup row, no :measured? flag, no selection answer.
+   accelerator-targets defaults remain provisional design assumptions
+   (:measured? false). NO vendor optimization exists for Intel and
+   none is claimed.
+
+6. ANALYSIS ROUTE: analysis-s11.py over the 15 committed run logs in
+   this directory only (run-<tag>-r<R>.txt), producing
+   publication-s11.txt; the recorded publication is the final script
+   run twice, byte-identical (diff exit 0). No other input.

@@ -430,3 +430,37 @@ optimization exists for Intel. Evidence:
 `docs/evidence/gpu/anv-gridfat-20261027/` (record.txt is the finding;
 publication-s10.txt is produced only by analysis-s10.py over the
 committed run logs).
+
+## Dated note (2026-10-27, JUN-59 measurement: COST-CALIBRATED JOINT
+## DOSE, session 11)
+
+Session 11 (INSTRUMENT channel) tests session 10's named residual: at
+fixed B=2, is the capture reachable by the joint grid x fatness dose
+at COST-CALIBRATED fatness? The itervc8 derivation (session 9's
+committed iter8 sources + ONE coherent volatile qualifier edit on the
+X buffer, two-level inverse check 6/6 + 6/6, base census 6/6) makes
+the ITERMUL loop's per-iteration loads real accesses. 15 fresh
+processes (5 arms x 3 runs; custody GO before any build/run; binaries
+byte-identical to session 8's same-flag builds; VERIFY mismatch 0).
+MEASURED at the INSTRUMENT channel: C1 and C2 replicate (c8 +0.03% of
+committed 32,915); V1 fired branch (b) -- THE DERIVATION FAILED ITS
+DESIGN CLAIM: f8vc/c2 host_ns = 1.17x, inside the CSE'd/marginal band
+(session 9 non-vc 1.14x..1.57x; session 10 f8 1.18x) -- the coherent
+volatile qualifier does NOT make the per-workgroup fatness cost-real
+on this host; a post-hoc descriptive spv inspection confirms the
+Volatile/Coherent decorations ARE in the executed bytes (4
+decorations; non-vc contrast 0), so the marginal realization is not
+explained by a missing qualifier at the SPIR-V level. K1 branch (b):
+cost calibration not achieved (gfvc host_ns 4,080,951 < 2x c8
+4,810,712 in-session anchor). K2 branch (a) AS FROZEN, NOMINAL-ONLY:
+gfvc (128 nominal units, 2 dispatches) FLOOR (32 ticks) while c8 (8
+units, 8 dispatches) CAPTURED (32,926) -- the row residual (a
+genuinely cost-calibrated joint dose at B=2) SURVIVES this session,
+narrowed: it is not reachable via the volatile-fatness cost route, and
+WHY the fatness knob's realization stays marginal is the named next
+question. Observable only; NO causal mechanism is claimed or
+measured. Rule 4 binds: no row moves, no `:measured?` flag moves, and
+no vendor optimization exists for Intel. Evidence:
+`docs/evidence/gpu/anv-costcal-20261027/` (record.txt is the finding;
+publication-s11.txt is produced only by analysis-s11.py over the
+committed run logs).
