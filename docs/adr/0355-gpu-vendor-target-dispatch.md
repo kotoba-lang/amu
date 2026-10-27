@@ -496,3 +496,38 @@ mechanism is claimed or measured. Rule 4 binds: no row moves, no
 Evidence: `docs/evidence/gpu/anv-workdown-20261027/` (record.txt is
 the finding; publication-s12.txt is produced only by analysis-s12.py
 over the committed run logs).
+
+## Dated note (2026-10-27, JUN-59 measurement: WORK-THRESHOLD BISECT at
+## fixed B=8, session 13)
+
+Session 13 (INSTRUMENT channel) bisects session 12's named residual
+("the exact per-dispatch work threshold location inside the
+(3,906..125,000] element band at B=8"): three new ladder rungs NDIV
+{32,64,128} (n = 31,250 / 15,625 / 7,812) between session 12's d8
+(CAPTURED) and d256 (FLOOR). ZERO derivation edits -- the instrument is
+session 12's committed NDIV-derived source byte-identical (digest
+a5e539f0...; the four rebuilt arms reproduce session 12's binaries
+byte-for-byte -- extra build pin); the new arms are new -D values only.
+21 fresh processes (7 arms x 3 runs; custody GO before any build/run;
+VERIFY mismatch 0; n identity exact per the frozen L2 values). MEASURED
+at the INSTRUMENT channel: C1 and C2 replicate (c8 -0.03% of committed
+32,915; d8 -0.62% of session 12's 5,465; d256 FLOOR). W1 fired branch
+(c) AS FROZEN -- ALL THREE bisect rungs are INTERMEDIATE/MIXED (d32
+1,050, d64 403, d128 167 ticks at (sum,128,S=16)): the ladder descends
+d8 CAPTURED -> d32/d64/d128 INTERMEDIATE -> d256 FLOOR, so at class
+granularity the capture is NOT killed at a single ladder step; the
+CAPTURED-class boundary narrows to (31,250..125,000] and the
+FLOOR-class boundary to (3,906..7,812] (one named adjacent rung pair
+each; no interpolation). W2 (pre-registered, descriptive): the B=8
+bracket descends monotonically with per-dispatch work (32,906 / 5,431 /
+1,050 / 403 / 167 / 34 at NDIV 1/8/32/64/128/256), within -22%..+32%
+of the linear-work comparison c8/NDIV at the top rungs and below it at
+the bottom two -- descriptive over 6 grid points, NO linearity claim.
+W3 (descriptive): total-work parity inverts at every rung (d128: 1/32
+of c2's total work in 8 dispatches = 5.2x c2's floored bracket).
+Observable only; NO causal mechanism is claimed or measured. Rule 4
+binds: no row moves, no `:measured?` flag moves, and no vendor
+optimization exists for Intel. Evidence:
+`docs/evidence/gpu/anv-workthresh-20261027/` (record.txt is the
+finding; publication-s13.txt is produced only by analysis-s13.py over
+the committed run logs).
