@@ -110,6 +110,44 @@ VkPhysicalDeviceSubgroupProperties values, the data `subgroup-answer` and
 - Blocker-first: 0 open kotoba-lang/amu PRs with a hermes/ head at tick
   start and re-checked before the push (see commit message).
 
+## 7. CORRECTION (2026-10-27, after the push -- NAMED, NOT HIDDEN)
+
+This record's first draft (section 1) said the 2026-10-18 llvmpipe-only
+observation's cause is UNMEASURED and framed the account-dependence as this
+row's discriminating probe. WRONG AS FRAMED, corrected here without
+rewriting the text above: the Linear issue (AWAI-38) carries a LATER
+2026-10-18 comment (23:50Z, comment id 67075311) that already documented
+the mechanism AND the fix -- "ANV は未対応ではなく /dev/dri/renderD128 の
+権限不足だった (Permission denied -> VK_ERROR_INCOMPATIBLE_DRIVER);
+usermod -aG render murakumo-ci で解決" -- and recorded a wire-42 probe
+answer on aiueos-6600hs-1 of exactly "Intel(R) Graphics (BMG
+G31)|1.4.318|1024|0" (hex receipt noted there). So:
+
+- The cause of the 2026-10-18 llvmpipe-only view WAS MEASURED THEN (render
+  node permission denied for the probe account), in the issue channel; this
+  row's account-by-account enumeration (user-views.txt) RE-CONFIRMS that
+  mechanism from committed tool output and adds the exact per-account
+  enumeration (root / aiueos / nobody) -- it is CONFIRMATORY, not a new
+  mechanism discovery. What stays UNMEASURED: nothing about the old
+  observation's mechanism; the only history gap is that no repo-committed
+  transcript of the 2026-10-18 probe exists (the record is the Linear
+  comment).
+- The INFO mapping cross-check PINS: this row's derived four-field INFO
+  string ("Intel(R) Graphics (BMG G31)|1.4.318|1024|0", section 2, derived
+  from raw Vulkan by the documented mapping) is BYTE-IDENTICAL to the
+  loader's actual 2026-10-18 wire-42 answer recorded in the issue -- the
+  mapping is validated against a real loader receipt from this host, and
+  the loader DID execute on this host on 2026-10-18 (before the loader
+  removal). Named as cross-check only; no row moves (rule 4, section 3
+  unchanged).
+- Section 1's "the 'ANV unsupported' hypothesis is REFUTED at this host's
+  current state" stands as this row's own tool-verified reading of today's
+  state; it was already refuted in the issue channel on 2026-10-18 by the
+  comment above. This row re-derives it from fresh probe transcripts
+  committed to the repo.
+
+A correction comment was posted to AWAI-38 with this same content.
+
 ## 6. NAMED, NOT HIDDEN
 
 - The probe ran as root over tailscale SSH (the account the fleet's tailnet

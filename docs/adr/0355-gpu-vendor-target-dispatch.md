@@ -165,4 +165,10 @@ optimization evidence: no timing ran, no row moves, and a subgroup
 8/16/32 measurement on this host is a future row whose channel
 standing under the 2026-10-25 rule is UNDECIDED. Evidence:
 `docs/evidence/gpu/intel-anv-probe-20261027/` (record.txt is the
-finding).
+finding). Correction (same day, record.txt section 7): the issue channel
+had ALREADY measured the 2026-10-18 llvmpipe-only view as a render-node
+permission failure (fixed then by `usermod -aG render murakumo-ci`) and
+recorded the loader's wire-42 answer "Intel(R) Graphics (BMG
+G31)|1.4.318|1024|0" -- byte-identical to this probe's derived INFO
+mapping; this row's account-dependence probe is confirmatory of that
+record, not a new mechanism.
