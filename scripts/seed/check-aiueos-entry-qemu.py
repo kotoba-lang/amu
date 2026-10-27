@@ -344,7 +344,7 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
                 ('llm-digest-selected.bin', scratch + 14*4096 + 256, 6),
                 ('llm-digest-result.bin', scratch + 14*4096 + 512, 64),
                 ('llm-digest-ticket.bin', scratch + (11*4096 if llm_admission else 14*4096 + 128), 72),
-                ('llm-digest-receipt.bin', scratch + 12*4096, 128 if llm_admission else 112),
+                ('llm-digest-receipt.bin', scratch + 12*4096, 136 if llm_admission else 112),
             )
             for name, address, size in captures:
                 assert hmp(f'pmemsave 0x{address:x} {size} {name}') == ''
@@ -354,7 +354,7 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
             prompt = Path('llm-digest-prompt.bin').read_bytes()
             first = Path('llm-digest-first.bin').read_bytes()
             changed = Path('llm-digest-changed.bin').read_bytes()
-            checks = struct.unpack('<16Q' if llm_admission else '<14Q',
+            checks = struct.unpack('<17Q' if llm_admission else '<14Q',
                                    Path('llm-digest-receipt.bin').read_bytes())
             expected_header = struct.pack('<10I', 827149387, 1, 11, 6, 6144,
                                           6144, 16, 0, 12294, 64) + bytes(24)
@@ -364,7 +364,7 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
             assert Path('llm-digest-result.bin').read_bytes() == b'Z' * 64
             assert Path('llm-digest-ticket.bin').read_bytes() == bytes(72)
             assert system == b's' * 6144 and prompt == b'p' * 6144
-            assert checks == (1,)*(16 if llm_admission else 14), checks
+            assert checks == (1,)*(17 if llm_admission else 14), checks
             assert first == hashlib.sha256(header + model + system + prompt).digest()
             changed_prompt = b'q' + prompt[1:]
             assert changed == hashlib.sha256(header + model + system + changed_prompt).digest()
