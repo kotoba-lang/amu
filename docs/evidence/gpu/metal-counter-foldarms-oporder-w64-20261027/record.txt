@@ -1,0 +1,224 @@
+JUN-58 / JUN-55 -- the fold-arms counters OP-ORDER AT-OTHER-CELLS
+row, SECOND OTHER CELL (n = 1000003, W = 64): the W-grid row's verdict
+class REPRODUCES under the reversed order at its letter (roll-up
+REGIME-INVARIANT SLOWER 18/18, every operator regime-invariant slower
+-- the cell's sign is op-order-INDEPENDENT at W = 64, the second
+cell's cross-order datapoint AGREES) while the regime structure again
+does NOT reproduce (ALL THREE operators ONE level -- the state-shift
+class entirely absent, the THIRD all-one-level cell of the campaign)
+
+Row taken: the named UNMEASURED item carried by every record since
+the anchor row, verbatim -- "op-order dependence at every OTHER cell"
+(docs/evidence/gpu/metal-counter-foldarms-oporder-w32-20261027/
+record.txt, the UNMEASURED named list; its FIRST cell went to that
+row). The item is consumed ONE CELL AT A TIME, at the route's own
+unit, in the width order the width half itself used (W = 32 first,
+W = 64 second): this row takes the item's SECOND cell, (n = 1000003,
+W = 64). ONE measurement slice. HARDWARE RAN.
+
+DAY FACTS (tool output, run-window.txt verbatim): this row's run
+window is 2026-10-27T01:21:04Z .. 2026-10-27T01:21:06Z (captured
+verbatim around the runs) -- the SAME UTC day as every other
+counters-channel row (the W=32 first other cell's runs were 31
+minutes earlier the same UTC day). NO day claim of any kind rides
+this row: its axis is the op-order question at one other cell, not
+the calendar. The day-4+ cross-day item needs 2026-10-28 UTC and
+stays UNMEASURED after this row.
+
+BOOKKEEPING BASE NAMED: this row's branch fast-forwarded to the
+owner's correction commit ee52caed7 ("Correct unchanged sum
+classification in GPU evidence summary") before any work this tick --
+the W=32 first cell's class-change bookkeeping quoted below is the
+CORRECTED one ("max and min change class while sum remains faster",
+not the pre-correction "every operator flipped").
+
+WHAT RAN (the declared protocol, protocol.txt -- written BEFORE the
+first run of this row, predictions P0..P3 registered there):
+
+  cell: n = 1000003, workgroup = 64 -- the anchor shape's n at the
+  width half's second off-anchor width (the W-grid row's cell exactly;
+  headers verified programmatically in every run log, 6/6 ok:
+  device=Apple M1 Max, channel=counters, sampling_points dispatch=0
+  stage=1 draw=0 tile=0 blit=0, simdgroup_size=32, n=1000003,
+  workgroup=64, pairs=20, warmup=2, op_order=min,max,sum; the header
+  precedes the first sample line in every log).
+  runs: 6 fresh processes (run-1.txt .. run-6.txt), one ADR-0358 run
+  each (20 interleaved AB/BA pairs per operator per run, 2 warmup
+  submits per arm discarded, verified untimed read-back) -- the anchor
+  row's declared protocol unchanged.
+  instrument: scripts/gpu-subgroup-reduce-metal-counters.m compiled
+  fresh (unchanged in the tree since the anchor row; last commit
+  touching it is the harness row b3717baf3, before the anchor
+  cf631722d).
+  arms: the fold arms baseline-<op>.metallib vs subgroup-<op>.metallib
+  at W=64, built THIS row from the COMMITTED emitters via
+  scripts/gpu-subgroup-reduce-metal-measure.cljk --width 64 into a
+  FRESH build dir (no earlier row's build dir reused -- artifacts
+  re-derived and compared, not copied).
+  op-order: min,max,sum -- the reversed order (the one change vs the
+  W-grid row at this cell, which ran the instrument default
+  sum,max,min).
+  analysis: ONLY the committed route --
+  scripts/gpu_regime_classify.py --counters-log run-1..6.txt, run
+  TWICE with outputs BYTE-IDENTICAL (diff exit 0), publication saved
+  verbatim as publication.txt (64 lines, sha256 6d66dee2..). NO
+  analysis code written this row.
+
+REALIZATION CONTROL (P0a HOLD, build-shas.txt): ALL EIGHT artifacts
+(6 fold-arm metallibs + probe.metallib + counters binary 4cb76bdcc974..)
+sha256-IDENTICAL to BOTH prior W=64 builds of the campaign (the
+W-grid row's and the shape-2 W=64 row's 2026-10-26 builds) -- grand
+total identical=16 differs=0 -- so the fold-arm artifacts are
+n-INVARIANT at W=64 across THREE builds and the instrument is
+CONSTANT across the campaign; every behavioral difference below is
+run/session level, not realization level. P0b did not trigger.
+
+VERIFIED (real runs): all 6 processes exit 0, stderr 0 bytes, 120/120
+sample lines resolved each (counter_ns=ERR 0 across all 720 samples),
+6/6 verify ok=1 per run (36 total, 0 ok=0), headers verified
+programmatically in every log (fields above, header precedes first
+sample 6/6); the committed route parses with ZERO named exclusions.
+
+FINDING (publication.txt is the publication; rules 1+2 at their
+letter over this cell's own session):
+
+  (1) P1a FIRES -- THE NAMED QUESTION IS ANSWERED: the W-grid row's
+  verdict class REPRODUCES under the reversed order at this cell.
+  Cell roll-up at (n = 1000003, W = 64): REGIME-INVARIANT, SLOWER
+  (18 of 18 per-run paired-median ratios above 1.0) -- the W-grid
+  order's exact verdict class at this cell. Per operator (rule 2,
+  variant_ns/baseline_ns, NEVER re-oriented):
+    max: regime-invariant, SLOWER (6/6 above 1.0, 1.215..1.217).
+    min: regime-invariant, SLOWER (6/6, 1.215..1.218).
+    sum: regime-invariant, SLOWER (6/6, 1.217..1.223).
+  The cell's sign is op-order-INDEPENDENT at its letter at W = 64 --
+  the second cell's cross-order datapoint AGREES with the W-grid
+  order. Contrast the W = 32 first other cell, where the class MOVED
+  (roll-up REGIME-SCOPED 5/18-above -> REGIME-INVARIANT FASTER 18/18;
+  max and min change class while sum remains faster) and the move is
+  confounded with the session. NAMED, NOT EXPLAINED: why the class
+  moved at W = 32 but reproduces at W = 64 is UNMEASURED (at W = 32
+  one session per order; at W = 64 the class agreement is a clean
+  cross-order datapoint). No side-flip (P1b did not fire) and nothing
+  intermediate (P2c did not fire). REOPEN BOOKKEEPING (rule 4 -- NO
+  reopen claim from this row): the reopen-trigger class ("a
+  counters-channel record carrying an OPPOSING device-level sign at
+  any cell/W/day") is NOT exercised by this record (this cell's sign
+  matches the anchor's) -- the count STAYS at THREE exercising
+  records (the W=32 sum side-flips at n=1000003 and n=2^20, and the
+  W=32 first other cell's 18/18-faster record), per-cell the
+  exercising cells stay 2 (W = 32 at both n) -- named both ways (3
+  per record / 2 per cell) in case a later row recounts differently;
+  all unadjudicated; the pre-registered P1a "stays at 3" branch holds.
+
+  (2) P2b FIRES -- THE STRUCTURE DOES NOT REPRODUCE: ALL THREE
+  operators ONE level (max ONE 92000.0..92271.0 / min ONE
+  92062.5..92354.0 / sum ONE 91833.0..92353.5, raw band 91.8k..92.4k
+  counter_ns per-run medians) against the W-grid row's max THREE
+  (29459.0..29646.0 / 38437.5 / 91771.0..91958.5) / min THREE
+  (29500.0..29666.0 / 38187.5 / 90916.5..91875.0) / sum ONE
+  (91604.5..92271.0) at 29.5k..92.3k -- NO fast state appears this
+  session, the state-shift class entirely ABSENT, the THIRD
+  all-one-level cell of the counters campaign (after the shape-2
+  W=1024 cell and the W=32 first other cell). NAMED, NOT EXPLAINED:
+  BOTH reversed-order other-cell sessions so far found all-one-level
+  structure (W=32 109.0k..109.8k, W=64 91.8k..92.4k) while the
+  W-grid order's sessions at the same cells carried multi-level
+  structure (W=32 max THREE / min FOUR / sum ONE at 36.0k..109.5k;
+  W=64 max THREE / min THREE / sum ONE at 29.5k..92.3k) -- recorded
+  as an observed class, NOT a mechanism, and confounded with the
+  session at W=32 only; at THIS cell the sign class reproduced
+  exactly while the structure again did not, so the structure's
+  session-variability does NOT require a class move. The state-shift
+  cause/threshold/prevalence stay UNMEASURED.
+
+  (3) P3 -- the pooled raw band 1.215..1.223 sits slightly ABOVE the
+  W-grid row's pooled band at this cell (1.198..1.222), overlapping
+  at 1.215..1.222, and overlaps the shape-2 W=64 row's pooled band
+  (1.215..1.228) fully at this row's range; per operator vs the
+  W-grid row: max 1.215..1.217 (was 1.199..1.218), min 1.215..1.218
+  (was 1.198..1.217), sum 1.217..1.223 (was 1.214..1.222; the
+  shape-2 W=64 sum band 1.223..1.228 overlaps at 1.223). The W = 32
+  first other cell's reversed-order band (0.915..0.921) is a
+  cross-WIDTH raw-band observation only (the flip width vs this
+  anchor-side width -- total side contrast, no magnitude claim across
+  widths). Same instrument, raw-band observation only, rule 3: no
+  cross-instrument magnitude claim of any kind and no magnitude
+  invariance claimed across orders, sessions or widths.
+
+CONSEQUENCE: NOTHING MOVES (rule 4) -- no :measured? flag, no
+:shapes value, no selection answer, no workgroup row (this channel
+can never move one), no WGSL cell flip, no MSL command-buffer cell
+flip, no cross-instrument magnitude claim. The sign stays
+CHANNEL-SCOPED at the route's own letter and M1-Max scoped. The named
+item moves in RECORD STATE only ("op-order dependence at every OTHER
+cell" -> "MEASURED at TWO cells (n = 1000003, W = 32 and W = 64):
+W=32 -- the flip's SIDE at sum op-order-INDEPENDENT (faster under
+both orders), the flip widens to all operators under the reversed
+order, the verdict class and regime structure MOVE between the two
+orders' sessions (confounded with session); W=64 -- the sign class
+op-order-INDEPENDENT at its letter (regime-invariant slower 18/18
+under BOTH orders), the regime structure again all-one-level; the
+item's other NINE cells stay UNMEASURED").
+
+UNMEASURED named so no reading upgrades: day 4+ cross-day
+replications (calendar-blocked until 2026-10-28 UTC); op-order
+dependence at the item's other NINE cells (W=128/512/1024 at
+n=1000003 and all six shape-2 cells); the W=32 class move's cause
+(op-order vs session); the regime structure's session-variability
+cause (both reversed-order other-cell sessions all-one-level --
+cause UNMEASURED, observed class only); the state-shift
+cause/threshold/prevalence; "R at those grids" and the residual's
+internal decomposition and absolute clock domain; the W-shape's cause
+(the W=32 side-flip stays UNADJUDICATED -- this row's W=64 agreement
+narrows nothing about why W=32 alone flips); the partial tail's
+quantitative role; anything off M1 Max; the WGSL route's kernel time;
+every workgroup-row question (:arm/:unknown stay provisional
+:measured? false -- accelerator-targets defaults remain design
+assumptions, not evidence).
+
+CROSS-CHANNEL CONTEXT (rule 3, never merged): the MSL command-buffer
+channel's historical op-order cell/re-session stays its own
+instrument's record; this row adopted none of its magnitudes or
+mechanism.
+
+Gates (real runs, this tick):
+- gpu_regime_classify.py --self-test: TOTAL 2649 assertions passed /
+  0 failed (committed pin 2649/0; no classify code touched --
+  regression pin).
+- Scoped GPU gate (8 GPU-owned namespaces, scratch runner
+  gpu_scoped_gate.cljk in Hermes scratch, never committed): GREEN on
+  run 1 AND run 2 -- 123 tests / 12162 assertions / 0 failures /
+  0 errors (the committed 123/12162 pin holds; the diff touches NO
+  .cljk namespace; logs gate-run1.txt / gate-run2.txt).
+- FULL run-tests.cljk RUN LIVE THIS TICK: exit 1, RED AT BASE 'Could
+  not find namespace: kotoba.form' at namespace load (ADR-0362),
+  OUTSIDE this diff (log full-run-tests.txt) -- NO green full suite
+  claimed.
+- find docs -name '*.sh' -> 0 files (the no-POSIX-sh evidence rule;
+  the build/run scripts live in Hermes scratch and are never staged).
+
+BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head at tick
+start and re-checked before this push (open heads at check time:
+codex/*, claude/*, kami-native-*); the ONE chain PR #1618
+(bot/amu-gpu-chain-20261027-3) OPEN at tick start and still the ONE
+chain PR -- this commit rides it (the chain-branch rule: commit +
+push to the open chain PR, never a new PR).
+
+NAMED NOT HIDDEN: the two-second run window (wall time is no metric);
+the same-UTC-day fact with every other counters row (no day axis in
+this row at all); the owner's correction commit ee52caed7 as this
+row's bookkeeping base (named above); the exercising-record count
+named BOTH ways (3 per record / 2 per cell); the W=32-vs-W=64
+contrast (class move confounded with session at W=32, clean class
+agreement at W=64) as an observed class, not a mechanism; untracked
+deps.edn (not created by this bot) untouched; kbb '2 dep(s) not
+:local/root' warning (identical everywhere); the build/run/gate
+scripts live in Hermes scratch and are never staged (POSIX .sh ban;
+all logs staged are .txt).
+
+Evidence: docs/evidence/gpu/metal-counter-foldarms-oporder-w64-20261027/
+(protocol.txt, build-shas.txt, run-window.txt, run-1..6.txt,
+publication.txt, classify-selftest.txt, gate-run1.txt, gate-run2.txt,
+full-run-tests.txt, record.txt) + the ADR-0360 at-other-cells
+second-cell amendment. (JUN-55, JUN-58)
