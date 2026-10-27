@@ -61,3 +61,11 @@
                   id (dcp-field M S entry ":compiler-wire-id")]
               (and (or (= name "") (and (= (kr-kind M id) ND-INT) (= (kr-nf M id NF-AUX) wire)))
                 (recur (inc wire) (+ count (if (= name "") 0 1)))))))))))
+(defn- dfx-graph-owned? [S :string] :bool
+  (let [M (rd-run (lx-run (mem-set (mem-new) MM-SRC-LEN (string-length S)) S) S)
+        A (dcs-plan M S (kr-first M (vector-at M MM-ROOT)))]
+    (and (= (vector-at A 0) 0) (= (vector-at A 14) 1)
+         (= (vector-at A 13) 0) (= (vector-at A 15) 0)
+         (loop [f 0]
+           (if (= f (vector-at A 3)) true
+             (and (= (dgg-f A f 15) 0) (recur (inc f))))))))

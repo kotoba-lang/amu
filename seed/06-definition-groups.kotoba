@@ -19,7 +19,7 @@
 (defn- dcs-init [M :vector-i64 S :string doc :i64 functions :i64] :vector-i64
   (let [n (kr-count M functions) cap (loop [v 2] (if (>= v (* 2 n)) v (recur (* v 2))))
         edges (vector-at M MM-NODE-N)
-        a (-> (vector-alloc (+ 16 (* n dcp-fwidth) (* edges 3) cap (* dc-nodes 2) (* n 2) 64))
+        a (-> (vector-alloc (+ 16 (* n dcp-fwidth) (* edges 3) cap (* dc-nodes 2) (* n 3) 64))
               (vector-assoc! 3 n) (vector-assoc! 6 cap) (vector-assoc! 11 edges))
         A (dgg-init a n edges (+ (dcp-env a) (* 2 dc-nodes)))]
     (loop [p (kr-first M functions) i 0 state A]
@@ -91,7 +91,7 @@
 (defn- dcs-member-payload [M :vector-i64 S :string A :vector-i64 f :i64 group :string index :i64] :string
   (dcp-payload-effects (dcp-map (typed-list-new [:list :string] (dc-entry "index" (dc-int (mem-u2dec index)))
     (dc-entry "op" (dc-kw "kotoba.definition/group-member")))) (dcp-interface M S A f)
-    (dcp-vec (typed-list-new [:list :string] (dc-str group))) (dcp-f A f 15)))
+    (dcp-vec (typed-list-new [:list :string] (dc-str group))) (dcp-fx A f)))
 ;; Prepare immutable member bytes once. Only native-created group-reference
 ;; integer leaves may change under a permutation. Source-authored reference
 ;; tags are refused in 05, so literal data cannot masquerade as these holes.

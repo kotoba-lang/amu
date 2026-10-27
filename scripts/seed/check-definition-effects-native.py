@@ -27,6 +27,8 @@ ENTRY = '''
                cid (dc-definition-cid payload) out (io-out (string-concat cid "\\n"))]
            (if (= (string-length cid) 59) 0 1))
        (and (= (io-argc) 2) (= (io-arg 0) "source")) (dsb-source (io-fs2-text 65 (io-arg 1) "") false)
+       (and (= (io-argc) 2) (= (io-arg 0) "graph"))
+         (if (dfx-graph-owned? (io-fs2-text 65 (io-arg 1) "")) 0 1)
        (and (= (io-argc) 2) (= (io-arg 0) "kir"))
          (let [status (dcs-run (io-fs2-text 65 (io-arg 1) ""))]
            (if (= status 0) 0 (let [e (io-err (string-concat "DCP:E" (string-concat (mem-u2dec status) "\\n")))] 1)))
@@ -102,6 +104,7 @@ def main(compiler, out):
         if wire == 11: continue  # exact nominal request/result remain required
         row = effects(wire); body = f'(typed-cap-call {wire} :string :string x)'
         produce(f'kir-{wire}', module([fn('f', body, row)], row))
+        run(f'graph-owned-{wire}', [producer, 'graph', sources[f'kir-{wire}'][1]])
         produce(f'source-{wire}', f'(ns effect) (defn f [x :string] :string (typed-cap-call :{name} :string :string x))\n', 'source')
         oracle = run(f'oracle-{wire}', [producer, 'oracle', wire, name, 'leaf']).stdout.decode().strip()
         assert observed[f'kir-{wire}']['f'][0] == observed[f'source-{wire}']['f'][0] == oracle
@@ -150,6 +153,10 @@ def main(compiler, out):
         ('inference-guard', '(dcp-effects M S components doc)', 'components', 'refuse-missing-function-row', 'admission'),
         ('group-row', '(dcp-group-effects A C)', '0', 'self', 'mismatch'),
         ('helper-effect-borrow', '(dsb-effect-mask M (nm-nth M node 2))', '(ck-f2 M (vector-at C 3) FN2-FX)', 'source-mixed-loop', 'refusal'),
+        ('graph-effect-alias',
+         '(defn- dcp-fx [A :vector-i64 f :i64] :i64\n  (vector-at A (+ (dcp-effects-base A) f)))\n(defn- dcp-fx-put [A :vector-i64 f :i64 mask :i64] :vector-i64\n  (vector-assoc! A (+ (dcp-effects-base A) f) mask))',
+         '(defn- dcp-fx [A :vector-i64 f :i64] :i64 (dcp-f A f 15))\n(defn- dcp-fx-put [A :vector-i64 f :i64 mask :i64] :vector-i64 (dcp-put A f 15 mask))',
+         'kir-37', 'refusal'),
     ]
     for name, old, new, probe, detection in mutations:
         assert old in unity
@@ -159,7 +166,7 @@ def main(compiler, out):
         else:
             lane, src = sources[probe]
             p = run('detect-' + name, [mutant, lane, src], 1 if detection == 'refusal' else 0)
-            if detection == 'refusal': assert not p.stdout and p.stderr.startswith(b'DSB:')
+            if detection == 'refusal': assert not p.stdout and p.stderr.startswith((b'DSB:', b'DCP:'))
             elif detection == 'mismatch': assert rows(p.stdout) != observed[probe]
             else: assert p.stdout.startswith(b'DCP1')
         report['mutations'].append(dict(name=name, image=pin(mutant), built=True, executed=True, detected=True))
@@ -167,6 +174,7 @@ def main(compiler, out):
                   independentLeafOracles=18, transitiveCaller=True, independentRecursiveGroup=True,
                   sourceSugar=True, sourceLoop=True, sourceTransitive=True, bytePayloadPrimaryName=True,
                   loopHelperOwnEffectRow=True,
+                  graphOwnedMetadataUnchanged=True,
                   atomicRefusals=len(negatives))
     assert all(pin(ROOT / p) == v for p, v in report['modules'].items())
     save(); print(report['status'], flush=True)

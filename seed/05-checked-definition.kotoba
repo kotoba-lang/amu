@@ -18,6 +18,18 @@
 (defn- dcp-hash [A :vector-i64] :i64 (+ (dcp-graph A) (* 3 (vector-at A 11))))
 (defn- dcp-env [A :vector-i64] :i64 (+ (dcp-hash A) (vector-at A 6)))
 (defn- dcp-stack [A :vector-i64] :i64 (vector-at A 12))
+;; Graph node15 belongs to unresolved flags. Effects use a disjoint private
+;; tail after both traversal stacks and the64-word transient CID buffer.
+(defn- dcp-effects-base [A :vector-i64] :i64 (+ (dcp-stack A) (* 2 (vector-at A 3)) 64))
+(defn- dcp-fx [A :vector-i64 f :i64] :i64
+  (vector-at A (+ (dcp-effects-base A) f)))
+(defn- dcp-fx-put [A :vector-i64 f :i64 mask :i64] :vector-i64
+  (vector-assoc! A (+ (dcp-effects-base A) f) mask))
+(defn- dcp-effect-layout? [A :vector-i64] :bool
+  (and (= (vector-at A 14) 1) (= (vector-at A 13) 0) (= (vector-at A 15) 0)
+       (<= (+ (dcp-effects-base A) (vector-at A 3)) (vector-count A))
+       (loop [f 0]
+         (if (= f (vector-at A 3)) true (and (= (dgg-f A f 15) 0) (recur (inc f)))))))
 (defn- dcp-text [M :vector-i64 S :string n :i64] :string
   (let [t (kr-nf M n NF-TOK)]
     (string-substring S (kr-tf M t TF-START) (kr-tf M t TF-END))))
@@ -124,32 +136,34 @@
             (let [child (dcp-direct-effects M S p (inc depth))]
               (if (< child 0) -1 (recur (kr-next M p) (bit-or mask child))))))))))
 (defn- dcp-effects [M :vector-i64 S :string A :vector-i64 doc :i64] :vector-i64
-  (let [direct (loop [f 0]
+  (let [ready (if (dcp-effect-layout? A) A (vector-assoc! A 0 9))
+        direct (loop [f 0]
         (if (or (= f (vector-at A 3)) (not= (vector-at A 0) 0)) A
           (let [mask (dcp-direct-effects M S (dcp-field M S (dcp-f A f 0) ":body") 0)
-                save (if (< mask 0) (vector-assoc! A 0 4) (dcp-put A f 15 mask))]
+                save (if (< mask 0) (vector-assoc! A 0 4) (dcp-fx-put A f mask))]
             (recur (inc f)))))
         closed (loop [round 0]
           (if (not= (vector-at A 0) 0) A
           (if (> round (vector-at A 3)) (vector-assoc! A 0 4)
             (let [changes (loop [f 0 count 0]
               (if (= f (vector-at A 3)) count
-                (let [old (dcp-f A f 15)
+                (let [old (dcp-fx A f)
                       mask (loop [edge (dgg-f A f 14) acc old]
                         (if (= edge 0) acc
-                          (recur (dgg-edge A edge 1) (bit-or acc (dcp-f A (dgg-edge A edge 0) 15)))))
-                      save (dcp-put A f 15 mask)]
+                          (recur (dgg-edge A edge 1) (bit-or acc (dcp-fx A (dgg-edge A edge 0))))))
+                      save (dcp-fx-put A f mask)]
                   (recur (inc f) (+ count (if (= old mask) 0 1))))))]
               (if (= changes 0) A (recur (inc round)))))))
         checked (loop [f 0 union 0]
           (cond (not= (vector-at A 0) 0) A
             (= f (vector-at A 3))
               (if (= union (dcp-effect-mask M S doc)) A (vector-assoc! A 0 4))
-            (not= (dcp-f A f 15) (dcp-effect-mask M S (dcp-f A f 0))) (vector-assoc! A 0 4)
-            :else (recur (inc f) (bit-or union (dcp-f A f 15)))))] A))
+            (not= (dcp-fx A f) (dcp-effect-mask M S (dcp-f A f 0))) (vector-assoc! A 0 4)
+            :else (recur (inc f) (bit-or union (dcp-fx A f)))))]
+    (if (dcp-effect-layout? A) A (vector-assoc! A 0 9))))
 (defn- dcp-group-effects [A :vector-i64 C :vector-i64] :i64
   (loop [i 0 mask 0]
-    (if (= i (vector-count C)) mask (recur (inc i) (bit-or mask (dcp-f A (vector-at C i) 15))))))
+    (if (= i (vector-count C)) mask (recur (inc i) (bit-or mask (dcp-fx A (vector-at C i)))))))
 (defn- dcp-pure-op? [s :string] :bool
   (or (= s "+") (= s "-") (= s "*") (= s "quot") (= s "rem")
       (= s "=") (= s "not=") (= s "<") (= s ">") (= s "<=") (= s ">=")
@@ -287,7 +301,7 @@
         body (dcp-form M S A (dcp-field M S (dcp-f A f 0) ":body") R 0)
         interface (dcp-interface M S A f)]
     (dcp-payload-effects (dcp-map (typed-list-new [:list :string] (dc-entry "body" body)
-      (dc-entry "op" (dc-kw "kotoba.definition/function")) (dc-entry "params" params))) interface (dcp-deps A R) (dcp-f A f 15))))
+      (dc-entry "op" (dc-kw "kotoba.definition/function")) (dc-entry "params" params))) interface (dcp-deps A R) (dcp-fx A f))))
 (defn- dcp-cid-buffer [A :vector-i64] :i64 (+ (dcp-stack A) (* 2 (vector-at A 3))))
 (defn- dcp-keep-cid [A :vector-i64 hex :string] :bool
   (let [cid (if (= (vector-at A 0) 0) (dc-definition-cid hex) "")]
