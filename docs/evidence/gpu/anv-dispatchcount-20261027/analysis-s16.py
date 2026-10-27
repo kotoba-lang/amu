@@ -34,6 +34,18 @@ COMMITTED_SRC = {"c2": "sessions 1-15 floor band 31..32",
 # session-15 same-knob committed values (protocol section 3)
 S15_REF = {"c2": 32, "c8": 32950}
 S15_HOST = {"c2": 681050, "c8": 3073033}
+# session-7 committed values (anv-bonset-20261027/publication-s7.txt) --
+# CORRECTION (named, not hidden): the protocol's framing that the rungs
+# between the endpoints "have never been measured" is WRONG against the
+# chain's own history; session 7 measured B in {1,2,3,4,5,6,8} at full
+# work and already narrowed the capture onset to the discrete B=2 -> B=3
+# step. These are comparison values only, never this session's
+# measurements. B=7 is the ONLY rung of the integer ladder B=1..8 that
+# had never been measured before this session (session 7's own named
+# residual was "B=7").
+S7_REF = {"b3": 5520, "b4": 11680, "b5": 17386, "b6": 22730, "c8": 32951}
+S7_HOST = {"c2": 679998, "b3": 960432, "b4": 1279136, "b5": 1582402,
+           "b6": 1863736, "c8": 3038388}
 # the B=8 work-down ladder committed values (quote-only, protocol L7)
 WORKDOWN = [("d8", 8, 8, 5465, "session 12 (5,431 at session 13)"),
             ("d32", 8, 32, 1050, "session 13"),
@@ -91,12 +103,20 @@ P("spv, 16-digest corpus -- ZERO derivation this session: the instrument")
 P("is session 15's committed NDIV-derived source byte-identical, digest")
 P("a5e539f0... -- derivation-census.txt).")
 P("The independent variable is the DISPATCH COUNT B at fixed per-dispatch")
-P("work: every arm runs B dispatches of the SAME n = 1,000,003 grid (the")
-P("first measurement of B in {3,4,5,6,7} anywhere in the series; B=2 and")
-P("B=8 are the committed control endpoints). Protocol L4: B and total")
-P("nominal work co-vary here (B * 1.0 units). 1 nominal work unit = one")
-P("dispatch of the archived grid (a DEFINITION, not a cost claim -- L1).")
-P("1 tick = timestampPeriod = 52.083 ns.")
+P("work: every arm runs B dispatches of the SAME n = 1,000,003 grid.")
+P("CORRECTION (named, not hidden; see record.txt section 8): the")
+P("protocol's framing that the rungs between the B=2 and B=8 endpoints")
+P("had never been measured is WRONG against the chain's own history --")
+P("session 7 (anv-bonset-20261027) measured B in {1,2,3,4,5,6,8} at full")
+P("work and already narrowed the capture onset to the discrete B=2 -> B=3")
+P("step (committed b3 5,520 / b4 11,680 / b5 17,386 / b6 22,730). The")
+P("genuinely new content of this session is B=7 (the only rung of the")
+P("integer ladder B=1..8 never measured before -- session 7's own named")
+P("residual) plus an independent same-day REPLICATION of session 7's")
+P("committed readings at b3..b6 (compared in section 4). Protocol L4: B")
+P("and total nominal work co-vary here (B * 1.0 units). 1 nominal work")
+P("unit = one dispatch of the archived grid (a DEFINITION, not a cost")
+P("claim -- L1). 1 tick = timestampPeriod = 52.083 ns.")
 P("")
 
 # ---- load everything, integrity checks ----
@@ -298,17 +318,25 @@ all_equal = len(set(vec)) == 1
 if all_cap:
     w1 = "(a)"
     P("     VERDICT: branch (a) CAPTURE-AT-3 -- all five new rungs are")
-    P("     CAPTURED-class: the capture turns on already at B=3 at full work")
-    P("     on this session's runs. ONE session; no boundary between rungs is")
-    P("     claimed (L5); no cross-session stability of the b3..b7 readings is")
-    P("     claimed (L8); NO causal mechanism is claimed or measured.")
+    P("     CAPTURED-class: B=3 is already captured at full work (a")
+    P("     REPLICATION of session 7's committed b3 5,520 reading --")
+    P("     section 4 -- which had already narrowed the onset to the")
+    P("     discrete B=2 -> B=3 step), and b7 (28,037) completes the")
+    P("     integer ladder B=1..8 at CAPTURED-class above B=2. ONE session;")
+    P("     no boundary between rungs is claimed (L5); no cross-session")
+    P("     stability is claimed for the b7 reading (first measured here)")
+    P("     beyond the committed-value comparisons of section 4; NO causal")
+    P("     mechanism is claimed or measured.")
 elif all_floor:
     w1 = "(c)"
     P("     VERDICT: branch (c) NO-CAPTURE-BELOW-8 -- all five new rungs are")
     P("     FLOOR-class: capture needs more than 7 dispatches at full work on")
-    P("     this session's runs. ONE session; no boundary between rungs is")
-    P("     claimed (L5); no cross-session stability is claimed (L8); NO")
-    P("     causal mechanism is claimed or measured.")
+    P("     this session's runs (NOTABLY this would contradict session 7's")
+    P("     committed b3..b6 CAPTURED readings -- the section-4 comparison")
+    P("     would then show a cross-session class discrepancy). ONE session;")
+    P("     no boundary between rungs is claimed (L5); no cross-session")
+    P("     stability is claimed (L8); NO causal mechanism is claimed or")
+    P("     measured.")
 elif (not all_equal) and nondec:
     w1 = "(b)"
     P("     VERDICT: branch (b) B-GRADIENT -- the class vector is not all-equal")
@@ -316,8 +344,8 @@ elif (not all_equal) and nondec:
     P("     INTERMEDIATE/MIXED < CAPTURED: capture strengthens with dispatch")
     P("     count at fixed per-dispatch work on this session's runs. ONE")
     P("     session; no boundary between rungs is claimed (L5); no")
-    P("     cross-session stability is claimed (L8); NO causal mechanism is")
-    P("     claimed or measured.")
+    P("     cross-session stability is claimed beyond the section-4")
+    P("     comparisons (L8); NO causal mechanism is claimed or measured.")
 else:
     w1 = "(d)"
     P("     VERDICT: branch (d) otherwise -- quantified per rung from the class")
@@ -325,7 +353,8 @@ else:
     P("     non-{FLOOR,CAPTURED} plateau or a non-monotone class vector). The")
     P("     measured classes stand as content. ONE session; no boundary")
     P("     between rungs is claimed (L5); no cross-session stability is")
-    P("     claimed (L8); NO causal mechanism is claimed or measured.")
+    P("     claimed beyond the section-4 comparisons (L8); NO causal")
+    P("     mechanism is claimed or measured.")
 P("")
 
 # W2 the B-dose curve
@@ -376,8 +405,10 @@ for tag in TAGS:
     line = f"     {tag}: host_ns {h:.0f}"
     if tag in S15_HOST:
         line += f" vs session-15 {S15_HOST[tag]} ({h/S15_HOST[tag]:.3f}x)"
+    elif tag in S7_HOST:
+        line += f" vs session-7 {S7_HOST[tag]} ({h/S7_HOST[tag]:.3f}x)"
     else:
-        line += " (no prior committed value at this B)"
+        line += " (no prior committed value at this B -- first measured here)"
     line += f"; per-dispatch host_ns {h/ARMB[tag]:.0f}"
     P(line)
 P("")
@@ -396,8 +427,11 @@ for tag in TAGS:
     if tag in S15_REF:
         d15 = (v - S15_REF[tag]) / S15_REF[tag] * 100
         line += f"; vs session-15 {S15_REF[tag]}: {d15:+.2f}%"
-    if tag not in COMMITTED and tag not in S15_REF:
-        line += " (first measurement of this B anywhere in the series)"
+    if tag in S7_REF:
+        d7 = (v - S7_REF[tag]) / S7_REF[tag] * 100
+        line += f"; vs session-7 {S7_REF[tag]}: {d7:+.2f}%"
+    if tag not in COMMITTED and tag not in S15_REF and tag not in S7_REF:
+        line += " (first measurement of this B anywhere in the series -- the only rung of B=1..8 previously unmeasured)"
     P(line)
 P("")
 
@@ -419,7 +453,9 @@ unm = [
     "   outside {2,3,4,5,6,7,8}; any NDIV>1 this session (L10); any WORK_MUL",
     "   > 1; any n outside 1,000,003 this session (L2); the work-down ladder",
     "   this session (L7); CROSS-UTC-DAY replication (L8); any cross-session",
-    "   stability of the b3..b7 readings (first measured here); session 2's",
+    "   stability of the b7 reading (first measured here; the b3..b6 readings",
+    "   replicate session 7's committed values, section 4); any B outside",
+    "   {2,3,4,5,6,7,8} this session; session 2's",
     "   run-1 dip cause; S=8 timing; every W outside {128,256}; shape 2; BT",
     "   ordering; any baseline-vs-variant sign; isolated single-dispatch",
     "   timing; non-empty barriers; anything off this host.",

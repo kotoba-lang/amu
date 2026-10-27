@@ -8,12 +8,20 @@ spv, 16-digest corpus -- ZERO derivation this session: the instrument
 is session 15's committed NDIV-derived source byte-identical, digest
 a5e539f0... -- derivation-census.txt).
 The independent variable is the DISPATCH COUNT B at fixed per-dispatch
-work: every arm runs B dispatches of the SAME n = 1,000,003 grid (the
-first measurement of B in {3,4,5,6,7} anywhere in the series; B=2 and
-B=8 are the committed control endpoints). Protocol L4: B and total
-nominal work co-vary here (B * 1.0 units). 1 nominal work unit = one
-dispatch of the archived grid (a DEFINITION, not a cost claim -- L1).
-1 tick = timestampPeriod = 52.083 ns.
+work: every arm runs B dispatches of the SAME n = 1,000,003 grid.
+CORRECTION (named, not hidden; see record.txt section 8): the
+protocol's framing that the rungs between the B=2 and B=8 endpoints
+had never been measured is WRONG against the chain's own history --
+session 7 (anv-bonset-20261027) measured B in {1,2,3,4,5,6,8} at full
+work and already narrowed the capture onset to the discrete B=2 -> B=3
+step (committed b3 5,520 / b4 11,680 / b5 17,386 / b6 22,730). The
+genuinely new content of this session is B=7 (the only rung of the
+integer ladder B=1..8 never measured before -- session 7's own named
+residual) plus an independent same-day REPLICATION of session 7's
+committed readings at b3..b6 (compared in section 4). Protocol L4: B
+and total nominal work co-vary here (B * 1.0 units). 1 nominal work
+unit = one dispatch of the archived grid (a DEFINITION, not a cost
+claim -- L1). 1 tick = timestampPeriod = 52.083 ns.
 
 1. INTEGRITY (computed over the 21 logs):
    runs parsed: 21 (7 arms x 3 runs); cell map identical across runs: True
@@ -64,10 +72,15 @@ dispatch of the archived grid (a DEFINITION, not a cost claim -- L1).
    class(b6), class(b7)) in rising B order at NDIV=1):
      CLASSES = ('CAPTURED', 'CAPTURED', 'CAPTURED', 'CAPTURED', 'CAPTURED')
      VERDICT: branch (a) CAPTURE-AT-3 -- all five new rungs are
-     CAPTURED-class: the capture turns on already at B=3 at full work
-     on this session's runs. ONE session; no boundary between rungs is
-     claimed (L5); no cross-session stability of the b3..b7 readings is
-     claimed (L8); NO causal mechanism is claimed or measured.
+     CAPTURED-class: B=3 is already captured at full work (a
+     REPLICATION of session 7's committed b3 5,520 reading --
+     section 4 -- which had already narrowed the onset to the
+     discrete B=2 -> B=3 step), and b7 (28,037) completes the
+     integer ladder B=1..8 at CAPTURED-class above B=2. ONE session;
+     no boundary between rungs is claimed (L5); no cross-session
+     stability is claimed for the b7 reading (first measured here)
+     beyond the committed-value comparisons of section 4; NO causal
+     mechanism is claimed or measured.
 
    W2 THE B-DOSE CURVE (pre-registered, descriptive; pooled medians at
    (sum,128,S=16) over B=2..8 at NDIV=1; the linear-in-B column is the
@@ -104,21 +117,21 @@ dispatch of the archived grid (a DEFINITION, not a cost claim -- L1).
    the only arms with prior values; host_ns is not a C criterion and is
    the HOST-side proxy -- protocol L3):
      c2: host_ns 681672 vs session-15 681050 (1.001x); per-dispatch host_ns 340836
-     b3: host_ns 959710 (no prior committed value at this B); per-dispatch host_ns 319903
-     b4: host_ns 1275168 (no prior committed value at this B); per-dispatch host_ns 318792
-     b5: host_ns 1565010 (no prior committed value at this B); per-dispatch host_ns 313002
-     b6: host_ns 1872563 (no prior committed value at this B); per-dispatch host_ns 312094
-     b7: host_ns 2835069 (no prior committed value at this B); per-dispatch host_ns 405010
+     b3: host_ns 959710 vs session-7 960432 (0.999x); per-dispatch host_ns 319903
+     b4: host_ns 1275168 vs session-7 1279136 (0.997x); per-dispatch host_ns 318792
+     b5: host_ns 1565010 vs session-7 1582402 (0.989x); per-dispatch host_ns 313002
+     b6: host_ns 1872563 vs session-7 1863736 (1.005x); per-dispatch host_ns 312094
+     b7: host_ns 2835069 (no prior committed value at this B -- first measured here); per-dispatch host_ns 405010
      c8: host_ns 2401681 vs session-15 3073033 (0.782x); per-dispatch host_ns 300210
 
 4. DERIVED (arithmetic over section 2, no new measurement):
    c2: bracket 32 ticks = 1.67 us; host_ns 681672; 2.00000 nominal units (n=1000003); vs committed 31 (sessions 1-15 floor band 31..32): +3.23%; vs session-15 32: +0.00%
-   b3: bracket 5555 ticks = 289.32 us; host_ns 959710; 3.00000 nominal units (n=1000003) (first measurement of this B anywhere in the series)
-   b4: bracket 11656 ticks = 607.08 us; host_ns 1275168; 4.00000 nominal units (n=1000003) (first measurement of this B anywhere in the series)
-   b5: bracket 17251 ticks = 898.48 us; host_ns 1565010; 5.00000 nominal units (n=1000003) (first measurement of this B anywhere in the series)
-   b6: bracket 22762 ticks = 1185.51 us; host_ns 1872563; 6.00000 nominal units (n=1000003) (first measurement of this B anywhere in the series)
-   b7: bracket 28037 ticks = 1460.25 us; host_ns 2835069; 7.00000 nominal units (n=1000003) (first measurement of this B anywhere in the series)
-   c8: bracket 32955 ticks = 1716.40 us; host_ns 2401681; 8.00000 nominal units (n=1000003); vs committed 32915 (session 4 pooled median): +0.12%; vs session-15 32950: +0.02%
+   b3: bracket 5555 ticks = 289.32 us; host_ns 959710; 3.00000 nominal units (n=1000003); vs session-7 5520: +0.63%
+   b4: bracket 11656 ticks = 607.08 us; host_ns 1275168; 4.00000 nominal units (n=1000003); vs session-7 11680: -0.21%
+   b5: bracket 17251 ticks = 898.48 us; host_ns 1565010; 5.00000 nominal units (n=1000003); vs session-7 17386: -0.78%
+   b6: bracket 22762 ticks = 1185.51 us; host_ns 1872563; 6.00000 nominal units (n=1000003); vs session-7 22730: +0.14%
+   b7: bracket 28037 ticks = 1460.25 us; host_ns 2835069; 7.00000 nominal units (n=1000003) (first measurement of this B anywhere in the series -- the only rung of B=1..8 previously unmeasured)
+   c8: bracket 32955 ticks = 1716.40 us; host_ns 2401681; 8.00000 nominal units (n=1000003); vs committed 32915 (session 4 pooled median): +0.12%; vs session-15 32950: +0.02%; vs session-7 32951: +0.01%
 
 5. RULE 4 -- NOTHING MOVES: no workgroup row, no :measured? flag, no selection
    answer; accelerator-targets defaults remain provisional design assumptions
@@ -136,7 +149,9 @@ dispatch of the archived grid (a DEFINITION, not a cost claim -- L1).
    outside {2,3,4,5,6,7,8}; any NDIV>1 this session (L10); any WORK_MUL
    > 1; any n outside 1,000,003 this session (L2); the work-down ladder
    this session (L7); CROSS-UTC-DAY replication (L8); any cross-session
-   stability of the b3..b7 readings (first measured here); session 2's
+   stability of the b7 reading (first measured here; the b3..b6 readings
+   replicate session 7's committed values, section 4); any B outside
+   {2,3,4,5,6,7,8} this session; session 2's
    run-1 dip cause; S=8 timing; every W outside {128,256}; shape 2; BT
    ordering; any baseline-vs-variant sign; isolated single-dispatch
    timing; non-empty barriers; anything off this host.
