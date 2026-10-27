@@ -16,7 +16,9 @@
 (def KM-PCI-MMIO 75)
 (def KM-BOOT-PAYLOAD 100)
 (def KM-USER-SLOT 101)
-(def KM-INTR-N 102)
+(def KM-RDRAND 102)
+(def KM-RDSEED 103)
+(def KM-INTR-N 104)
 (def KM-SEALED-SCRATCH 272)
 (def KM-SEALED-PAGES 280)
 
@@ -58,7 +60,8 @@
       63 "kernel-framebuffer-page" 64 "kernel-framebuffer-width" 65 "kernel-framebuffer-height"
       66 "kernel-framebuffer-stride" 67 "kernel-framebuffer-format"
       68 "kernel-browser-surface" 69 "kernel-browser-context" 70 "kernel-native-font"
-      71 "kernel-boot-payload" 72 "kernel-user-slot" "")))
+      71 "kernel-boot-payload" 72 "kernel-user-slot"
+      73 "kernel-rdrand" 74 "kernel-rdseed" "")))
 (defn- km-arity [k :i64] :i64
   (cond (< k KM-MEM-N) (if (= (bit-and (km-raw k) 1) 0) 3 4)
         (< k (+ KM-MEM-N 2)) 2
@@ -219,10 +222,20 @@
         (iv-hex "48c1e00c4801d0") (xg-rel 0x820f 2 2 trap)
         (xg-rel 0xe9 1 2 end) (xg-label trap) (iv-hex "0f0b")
         (xg-label end) (xg-save t))))
+;; RDRAND/RDSEED (JUN-482): mov ecx,10; L: rdrand|rdseed rax; jc done; dec ecx;
+;; jnz L; xor eax,eax; done. The result is the 64-bit value, or 0 when the
+;; source reported failure ten times in a row (CF clear): callers must treat
+;; 0 as "no entropy" and fail closed. Only rax and rcx are used, both scratch
+;; in this runtime like the RDTSC and CPUID intrinsics.
+(defn- km-entropy [M :vector-i64 opcode :i64 t :i64] :vector-i64
+  (-> M (xg-bytes 0xab9 5) (xg-bytes opcode 4) (xg-bytes 0x0672 2)
+        (xg-bytes 0xc9ff 2) (xg-bytes 0xf675 2) (xg-bytes 0xc031 2) (xg-save t)))
 (defn- km-intrinsic [M :vector-i64 k :i64 t :i64] :vector-i64
   (cond (< k KM-MEM-N) (km-window M k t)
         (= k KM-BOOT-PAYLOAD) (wg-boot-payload M t)
         (= k KM-USER-SLOT) (wg-user-slot M t)
+        (= k KM-RDRAND) (km-entropy M 0xf0c70f48 t)
+        (= k KM-RDSEED) (km-entropy M 0xf8c70f48 t)
         (>= k WG-FIRST) (wg-intrinsic M (- k WG-FIRST) t)
         (>= k UV-FIRST) (uv-intrinsic M (- k UV-FIRST) t)
         (= k LV-CALL) (lv-call M t)
