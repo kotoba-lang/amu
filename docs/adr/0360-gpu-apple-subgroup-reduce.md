@@ -3921,3 +3921,98 @@ not find namespace: kotoba.form" (ADR-0362), outside this diff, no
 green suite claimed; `find docs -name '*.sh'` -> 0).
 
 Record: `docs/evidence/gpu/metal-counter-foldarms-oporder-w1024-20261027/`.
+
+## Amendment 2026-10-27 (the counters channel's OP-ORDER
+AT-OTHER-CELLS row, SHAPE-2 HALF'S FIRST CELL (n = 2^20 = 1048576 at
+W = 256)): the shape-2 W = 256 row's verdict class REPRODUCES under
+the reversed order at its letter (regime-invariant SLOWER 18/18) --
+the cell's sign is op-order-INDEPENDENT -- while the regime structure
+does NOT reproduce at level-count resolution and the difference is
+exactly the FIRST-BLOCK swap (the one-level operator moves with the
+session's first block in both this cell's sessions)
+
+Every record since the anchor row named "op-order dependence at every
+OTHER cell" as UNMEASURED. Its n = 1000003 half closed at the W=1024
+row; only the six shape-2 cells remained. ORDER DECLARED THIS ROW
+(no prior row declared the shape-2 half's order): the shape-2 half is
+consumed in the order the anchor list's shape item itself used -- the
+anchor width W = 256 FIRST, then W = 32 / 64 / 128 / 512 / 1024 in
+the width order the width half itself used. This row consumes the
+shape-2 half's FIRST cell, (n = 2^20 = 1048576, W = 256), ONE CELL AT
+A TIME at the route's own unit: 6 fresh ADR-0358 processes, run
+window 2026-10-27T02:37:20Z..02:37:21Z (run-window.txt, verbatim) --
+the SAME UTC day as every other counters row; NO day claim; day 4+
+needs 2026-10-28 UTC and stays UNMEASURED. P0a HOLDS: ALL EIGHT
+artifacts sha256-identical to ALL SEVEN prior W = 256 builds of the
+campaign (the anchor's, both cross-day rows', the first op-order's,
+rep2's, rep3's and the shape-2 W = 256 row's; grand total
+identical=56 differs=0) -- the W = 256 fold-arm artifacts are n- AND
+op-order-INVARIANT across EIGHT builds and the instrument is CONSTANT
+across the campaign. All 6 processes exit 0 with 120/120 samples
+resolved, 6/6 verify ok=1 each, every header
+`n=1048576 workgroup=256 op_order=min,max,sum` (verified
+programmatically 6/6).
+
+**The finding (publication.txt is the publication; the committed
+route, run twice byte-identical, sha baa5ee85..).** (1) P1a FIRES --
+THE SIGN CLASS REPRODUCES: every operator regime-invariant SLOWER
+(max 6/6 1.204..1.227, min 6/6 1.218..1.227, sum 6/6 1.209..1.227),
+roll-up 18/18 slower -- the cell's sign is op-order-INDEPENDENT at
+(n = 2^20, W = 256) and the shape-2 half's first cross-order
+datapoint AGREES with the sum-first order. No side-flip; the
+reopen-trigger count STAYS at THREE exercising records (3 per record
+/ 2 per cell), all unadjudicated. (2) P2b FIRES -- the structure does
+NOT reproduce at level-count resolution: this session max THREE
+(34104.5..34167.0 / 44500.5 / 107312.0..107500.0), min ONE
+(107062.0..107604.0), sum THREE (33979.5..34125.0 / 44145.5 /
+107187.5..107479.5), raw band 34.0k..107.6k -- against the shape-2
+W = 256 row's max THREE / min THREE / sum ONE at 33.96k..107.4k.
+NAMED, NOT EXPLAINED -- AND NOTABLY STRUCTURED: the level-count
+difference is EXACTLY the FIRST-BLOCK swap -- the one-level operator
+moves with the session's first block in BOTH this cell's sessions
+(sum ONE at the sum-first baseline session, 106208.5..107333.0; min
+ONE at this min-first session, 107062.0..107604.0), the one level the
+SLOW level both times, max THREE in both. The block-position FORM's
+cell-level counterpart PRESENTS at this cell 2/2 sessions (observed
+class, NOT a mechanism; the anchor cell's counted bookkeeping is
+UNMOVED -- "the first block is the one-level block" 4/6 counted
+anchor-cell sessions, "sum is the one-level operator" 2/6). ALSO
+NAMED: this session's split (min 1 / max 3 / sum 3) matches the
+anchor cell's first and third reversed-order sessions' splits
+exactly; the level VALUES sit in the same state bands as the baseline
+session (~34.1k / ~44.1..44.5k / ~107.1..107.6k vs ~34.0k / ~44.2k /
+~107.2..107.4k) -- the state-shift class PRESENTS again in BOTH this
+cell's sessions at matching value bands, unlike the n = 1000003
+other cells' all-one-level reversed-order sessions; the state-shift
+cause/threshold/prevalence stay UNMEASURED. (3) P3: per-operator raw
+ratio bands (max 1.204..1.227, min 1.218..1.227, sum 1.209..1.227,
+pooled 1.204..1.227) against the shape-2 W = 256 row's (max
+1.206..1.228, min 1.208..1.227, sum 1.223..1.230, pooled
+1.206..1.230) -- overlaps 1.206..1.227 / 1.218..1.227 / 1.223..1.227
+/ 1.206..1.227; NAMED: this row's max lower edge 1.204 extends below
+the baseline's 1.206 and this row's sum upper edge 1.227 sits below
+the baseline's 1.230 (raw bands only). The anchor cell's
+reversed-order pooled bands (1.197..1.220, 1.196..1.221, 1.198..1.220)
+are same-width CROSS-SHAPE raw-band observations (overlap
+1.204..1.220 / 1.204..1.221 / 1.204..1.220); the five n = 1000003
+other cells' reversed-order bands (0.915..0.921, 1.215..1.223,
+1.239..1.247, 1.191..1.198, 1.171..1.186) are cross-WIDTH raw-band
+observations only. Rule 3: no cross-instrument claim, no magnitude
+invariance across orders, sessions, shapes or widths. The anchor's
+ratio-vs-state pattern (fast-state ratios slightly lower, still
+slower) PRESENTS at this cell too.
+CONSEQUENCE: NOTHING MOVES (rule 4) -- no `:measured?` flag, no
+selection answer, no workgroup row, no cell flip anywhere, no
+cross-instrument claim. Day 4+ cross-day replications, op-order
+dependence at the item's OTHER FIVE cells (shape-2 W = 32/64/128/512/
+1024), the W=32 class move's cause, the structure's session-variability
+cause, the first-block swap's cause, the state-shift cause, "R at
+those grids", the W-shape's cause (the side-flip stays unadjudicated)
+and anything off M1 Max stay UNMEASURED.
+
+Gates: see the record (self-test 2649/0 pin; scoped GPU gate GREEN
+123/12162 twice; FULL `run-tests.cljk` RUN LIVE, red at base "Could
+not find namespace: kotoba.form" (ADR-0362), outside this diff, no
+green suite claimed; `find docs -name '*.sh'` -> 0).
+
+Record: `docs/evidence/gpu/metal-counter-foldarms-oporder-shape2-w256-20261027/`.
