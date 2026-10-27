@@ -273,3 +273,28 @@ profiles remain open. Scalar structural literal tests do not qualify typed
 literal reinstall. Small fixture cache overhead is not a speedup measurement.
 This candidate neither changes production compiler pins nor establishes the
 10-minute compiler or 20-minute whole-PR CI performance goals.
+
+## Generic collection source bridge
+
+The checked-source prototype preserves freshly resolved `count`, `nth` and
+`conj` operations, including the three-argument default and variadic append.
+It retains their checked collection/item types; it does not substitute vector
+operations for overloaded operations. The existing primitive `nth` reservation
+is retained, with `count` and `conj` added to the same closed vocabulary.
+
+The source-vectors native gate adds 30 independent payload-v2 oracle triples
+over vectors, typed lists (including nested lists), sets and map counts. All
+prior cases remain. Source/KIR execution compares default/present/negative
+indices, persistent append and aliasing, typed values and loop captures. Five
+fixed supporting entries construct map/set arguments for executing bridged
+functions; these entries do not qualify their constructors for identity.
+New controls cover wrong arity/type/result, reserved names, runtime bounds,
+and built/executed count-erasure, default-erasure and mutating-conj variants.
+The same gate runs on native ARM and x86; qualification requires both actual
+reports and source/image readback, not the existence of the workflow.
+
+The complete pinned FULL48 input still refuses atomically at `try`/`catch`.
+These forms need the canonical abort-to-result lowering and control-effect
+contract, rather than an ordinary primitive spelling. This prototype remains
+outside FULL-MANIFEST; whole-source identity, resource equivalence, larger
+SCCs, trusted image admission and production persistent reuse remain open.

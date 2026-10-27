@@ -84,6 +84,9 @@ def main(compiler, out):
     list_paths = oracle_paths[:-1] + ['seed/tests/native-source-list-oracle.kotoba']
     list_oracle = build('independent-list-oracle','\n'.join((ROOT/p).read_text() for p in list_paths))
     report.update(listOracle=pin(list_oracle),listOracleModules={p:pin(ROOT/p) for p in list_paths})
+    collection_paths = oracle_paths[:-1] + ['seed/tests/native-source-collection-oracle.kotoba']
+    collection_oracle = build('independent-collection-oracle','\n'.join((ROOT/p).read_text() for p in collection_paths))
+    report.update(collectionOracle=pin(collection_oracle),collectionOracleModules={p:pin(ROOT/p) for p in collection_paths})
     specs = {
         'alloc':('(defn f [x :i64] :vector-i64 (vector-alloc x))',function('(vector-alloc x)','x',':i64')),
         'conj':('(defn f [v :vector-i64 x :i64] :vector-i64 (vector-conj v x))',function('(vector-conj v x)')),
@@ -120,6 +123,23 @@ def main(compiler, out):
             name='list-'+operation+'-'+element
             specs[name]=('(defn f ['+typed+'] '+result+' '+body+')',function(body,params,types,result))
             list_specs[name]=(operation,element)
+    collection_specs = {}
+    collections = {'vector-i64':(':vector-i64',':i64'), 'list-i64':('[:list :i64]',':i64'),
+                   'list-string':('[:list :string]',':string'), 'list-bool':('[:list :bool]',':bool'),
+                   'list-list-i64':('[:list [:list :i64]]','[:list :i64]'),
+                   'set-i64':('[:set :i64]',':i64'), 'map-i64-string':('[:map :i64 :string]',':string')}
+    for kind,(collection,item) in collections.items():
+        ops = ['count'] if kind=='map-i64-string' else ['count','nth','conj','conj-two'] if kind=='set-i64' else ['count','nth','nth-default','conj','conj-two']
+        for operation in ops:
+            head = {'nth-default':'nth','conj-two':'conj'}.get(operation,operation)
+            params = 'v' if operation=='count' else 'v i d' if operation=='nth-default' else 'v i' if operation=='nth' else 'v x y' if operation=='conj-two' else 'v x'
+            types = [collection] + ([':i64'] if head=='nth' else []) + ([item] if operation in ['nth-default','conj'] else [item,item] if operation=='conj-two' else [])
+            typed = ' '.join(p+' '+ty for p,ty in zip(params.split(),types))
+            result = ':i64' if operation=='count' else item if head=='nth' else collection
+            body = '('+head+' '+params+')'
+            name = 'generic-'+kind+'-'+operation
+            specs[name] = ('(defn f ['+typed+'] '+result+' '+body+')',function(body,params,' '.join(types),result))
+            collection_specs[name] = (operation,kind)
     observed,inputs = {},{}
     for name,(source,kir) in specs.items():
         source_path,kir_path = out/(name+'.input'),out/(name+'.kir')
@@ -127,11 +147,14 @@ def main(compiler, out):
         kir_path.write_text(module([kir]))
         a=run('source-'+name,[producer,'source',source_path]).stdout
         b=run('reference-'+name,[producer,'reference',kir_path]).stdout
-        oracle_argv=[list_oracle,*list_specs[name]] if name in list_specs else [buffer_oracle if name in buffer_specs else oracle,name]
+        oracle_argv=[collection_oracle,*collection_specs[name]] if name in collection_specs else [list_oracle,*list_specs[name]] if name in list_specs else [buffer_oracle if name in buffer_specs else oracle,name]
         expected=run('oracle-'+name,oracle_argv).stdout.decode().strip()
         assert rows(a)==rows(b) and rows(a)['f'][0]==expected
         observed[name]=rows(a);inputs[name]=source_path
     assert observed['assoc']['f'][0] != observed['assoc!']['f'][0]
+    for operation,kind in [('unknown','list-i64'),('nth-default','set-i64'),('conj','map-i64-string'),('count','typo')]:
+        result=run('collection-oracle-refuse-'+operation+'-'+kind,[collection_oracle,operation,kind],1)
+        assert not result.stdout and not result.stderr
     negatives = {
         'arity':('source','(ns invalid) (defn f [v :vector-i64] :vector-i64 (vector-assoc! v 0))'),
         'value-type':('source','(ns invalid) (defn f [v :vector-i64 s :string] :vector-i64 (vector-assoc! v 0 s))'),
@@ -161,6 +184,18 @@ def main(compiler, out):
         'list-constructor-refinement':('source','(ns invalid) (defn f [] [:list :option-i64] (typed-list-new [:list :option-i64]))'),
         'list-reserved-name':('reference',module([function('0','','',':i64','typed-list-new')])),
         'list-arity65':('source','(ns invalid) (defn f [] [:list :i64] (typed-list-new [:list :i64] '+' '.join(map(str,range(65)))+'))'),
+        'generic-count-arity':('source','(ns invalid) (defn f [v :vector-i64] :i64 (count v 0))'),
+        'generic-count-value':('source','(ns invalid) (defn f [v :i64] :i64 (count v))'),
+        'generic-nth-index':('source','(ns invalid) (defn f [v [:list :string]] :string (nth v "0"))'),
+        'generic-nth-default':('source','(ns invalid) (defn f [v [:list :string]] :string (nth v 0 42))'),
+        'generic-nth-map':('source','(ns invalid) (defn f [v [:map :i64 :string]] :string (nth v 0))'),
+        'generic-nth-set-default':('source','(ns invalid) (defn f [v [:set :i64]] :i64 (nth v 0 42))'),
+        'generic-conj-arity':('source','(ns invalid) (defn f [v :vector-i64] :vector-i64 (conj v))'),
+        'generic-conj-element':('source','(ns invalid) (defn f [v [:list :string]] [:list :string] (conj v 42))'),
+        'generic-conj-map':('source','(ns invalid) (defn f [v [:map :i64 :string]] [:map :i64 :string] (conj v 42))'),
+        'generic-conj-result':('source','(ns invalid) (defn f [v :vector-i64] :i64 (conj v 42))'),
+        'generic-reserved-count':('reference',module([function('0','','',':i64','count')])),
+        'generic-reserved-conj':('reference',module([function('0','','',':i64','conj')])),
     }
     for name,(lane,text) in negatives.items():
         p=out/('refuse-'+name+'.input');p.write_text(text)
@@ -210,6 +245,19 @@ def main(compiler, out):
         'list-nested':('(let [v (typed-list-new [:list :i64] 42) w (typed-list-new [:list [:list :i64]] v)] (typed-list-nth [:list :i64] (typed-list-nth [:list [:list :i64]] w 0) 0))',42),
         'list-loop':('(loop [i 0 v (typed-list-new [:list :i64])] (if (< i 2) (recur (inc i) (typed-list-conj [:list :i64] v (+ 20 i))) (+ (typed-list-nth [:list :i64] v 0) (typed-list-nth [:list :i64] v 1))))',41),
         'list-arity64':('(typed-list-nth [:list :i64] (typed-list-new [:list :i64] '+' '.join(map(str,range(64)))+') 63)',63),
+        'generic-vector-count':('(count [19 23])',2),
+        'generic-list-count':('(count (typed-list-new [:list :string] "one" "two"))',2),
+        'generic-vector-nth':('(nth [19 23] 1)',23),
+        'generic-vector-default':('(nth [19] 2 42)',42),
+        'generic-vector-negative-default':('(nth [19] -1 42)',42),
+        'generic-vector-present-default':('(nth [19 23] 1 42)',23),
+        'generic-string-default':('(string-length (nth (typed-list-new [:list :string]) 0 "hello"))',5),
+        'generic-bool-default':('(if (nth (typed-list-new [:list :bool]) 0 true) 42 9)',42),
+        'generic-list-present-default':('(if (nth (typed-list-new [:list :bool] false) 0 true) 9 42)',42),
+        'generic-nested-default':('(nth (nth (typed-list-new [:list [:list :i64]]) 0 (typed-list-new [:list :i64] 42)) 0)',42),
+        'generic-vector-conj':('(let [v [19] w (conj v 0 23)] (if (and (= (count v) 1) (= (nth v 0) 19) (= (count w) 3)) (+ (nth w 0) (nth w 2)) 9))',42),
+        'generic-list-conj':('(let [v (typed-list-new [:list :string] "one") w (conj v "hello" "world")] (if (= (count v) 1) (+ (string-length (nth w 1)) (string-length (nth w 2))) 9))',10),
+        'generic-list-loop':('(loop [i 0 v (typed-list-new [:list :i64])] (if (< i 2) (recur (inc i) (conj v (+ 20 i))) (+ (nth v 0) (nth v 1))))',41),
     }
     execution_inputs={}
     def select(raw):
@@ -232,6 +280,28 @@ def main(compiler, out):
             result=run('execute-'+name+'-'+lane,[image],expected,execution_env={})
             assert not result.stdout and not result.stderr
             report['executions'].append(dict(name=name,lane=lane,image=pin(image),expectedI64=expected))
+    # Only f crosses the identity bridge here. These fixed supporting main
+    # bodies construct real map/set values for execution with the unchanged
+    # native checker/backend; their constructors have no bridge/CID claim.
+    parameter_programs = {
+        'map-count':('generic-map-i64-string-count','(f (typed-map-new [:map :i64 :string] 1 "one" 2 "two"))',2),
+        'set-count':('generic-set-i64-count','(f (typed-set-new [:set :i64] 19 23))',2),
+        'set-nth':('generic-set-i64-nth','(f (typed-set-new [:set :i64] 42) 0)',42),
+        'set-conj':('generic-set-i64-conj','(let [v (typed-set-new [:set :i64] 19) w (f v 23)] (if (and (= (count v) 1) (= (count w) 2)) 42 9))',42),
+        'set-conj-two':('generic-set-i64-conj-two','(let [v (typed-set-new [:set :i64] 19) w (f v 19 23)] (if (and (= (count v) 1) (= (count w) 2)) 42 9))',42),
+    }
+    for name,(probe,body,expected) in parameter_programs.items():
+        original=specs[probe][0]
+        text='(ns collection-parameter-runtime (:export [main])) '+original+' (defn main [] :i64 '+body+')\n'
+        raw=run('serialize-parameter-'+name,[producer,'kir',inputs[probe]]).stdout.decode().strip()
+        assert raw.endswith(']}')
+        selected=(raw[:-2]+' '+function(body,'','',':i64','main')+']}\n').encode()
+        source=build('execute-parameter-'+name+'-source',text)
+        kir=kir_image('execute-parameter-'+name+'-kir',selected)
+        for lane,image in [('source',source),('kir',kir)]:
+            result=run('execute-parameter-'+name+'-'+lane,[image],expected,execution_env={})
+            assert not result.stdout and not result.stderr
+            report['executions'].append(dict(name='parameter-'+name,lane=lane,image=pin(image),expectedI64=expected,supportingEntryFixtureBeyondBridge=True))
     # Preserve the existing runtime's explicit empty-needle refusal (<=nm0),
     # range checks and named UTF-8 guards, on both original source and KIR.
     refused_programs = {
@@ -241,6 +311,8 @@ def main(compiler, out):
         'utf8-truncated':('(string-byte-length (string-from-utf8 (bytes-from-vector-i64 [227 129])))', b':utf8/truncated'),
         'utf8-overlong':('(string-byte-length (string-from-utf8 (bytes-from-vector-i64 [192 128])))', b':utf8/overlong'),
         'list-nth-range':('(typed-list-nth [:list :i64] (typed-list-new [:list :i64]) 0)', b':signal :SIGILL'),
+        'generic-vector-nth-range':('(nth [42] 1)', b':signal :SIGILL'),
+        'generic-list-nth-negative':('(nth (typed-list-new [:list :i64] 42) -1)', b':signal :SIGILL'),
     }
     for name,(body,reason) in refused_programs.items():
         text='(ns vector-refusal (:export [main])) (defn main [] :i64 '+body+')\n'
@@ -283,6 +355,28 @@ def main(compiler, out):
     result=run('detect-list-type-erasure',[image,'source',inputs['list-new-string']],1)
     assert not result.stdout and result.stderr==b'DSB:IDENTITY:8\n'
     report['mutations'].append(dict(name='list-type-erasure',image=pin(image),built=True,executed=True,atomicFreshTypeRefusal=True))
+    for name,old,new,probe,runtime in [
+        ('generic-count-erasure','HD-GCOUNT "count"','HD-GCOUNT "vector-count"','generic-vector-i64-count',None),
+        ('generic-conj-mutation','HD-CONJ "conj"','HD-CONJ "vector-assoc!"','generic-vector-i64-conj-two','generic-vector-conj'),
+    ]:
+        assert unity.count(old)==1
+        image=build('mutant-'+name,unity.replace(old,new))
+        result=run('detect-cid-'+name,[image,'source',inputs[probe]])
+        assert rows(result.stdout)!=observed[probe]
+        mutation=dict(name=name,image=pin(image),built=True,executed=True,cidMismatch=True)
+        if runtime:
+            raw=run('serialize-mutant-'+name,[image,'kir',execution_inputs[runtime]]).stdout
+            guest=kir_image('mutant-guest-'+name,raw)
+            result=run('execute-mutant-'+name,[guest],9,execution_env={})
+            assert not result.stdout and not result.stderr
+            mutation.update(guest=pin(guest),semanticsMismatch=True,aliasingMismatch=True)
+        report['mutations'].append(mutation)
+    old='HD-NTH "nth"'
+    assert unity.count(old)==1
+    image=build('mutant-generic-default-erasure',unity.replace(old,'HD-NTH "vector-at"'))
+    result=run('detect-generic-default-erasure',[image,'source',inputs['generic-vector-i64-nth-default']],1)
+    assert not result.stdout and result.stderr.startswith(b'DSB:IDENTITY:')
+    report['mutations'].append(dict(name='generic-default-erasure',image=pin(image),built=True,executed=True,atomicFreshTypeRefusal=True))
     whole=out/'whole-compiler.input'
     whole.write_bytes(b''.join((ROOT/p).read_bytes()+b'\n' for p in full))
     assert pin(whole)==product['sourceUnity']
@@ -290,8 +384,10 @@ def main(compiler, out):
     assert not result.stdout and result.stderr.startswith(b'DSB:')
     report.update(status='PASS_NATIVE_SOURCE_VECTOR_OPERATIONS',matchedSourceKirCases=len(specs),
                   independentPayloadOracles=len(specs),atomicRefusals=len(negatives),
+                  genericCollectionPayloadOracles=len(collection_specs),collectionOracleRefusals=4,
+                  parameterizedCollectionExecutions=len(parameter_programs)*2,
                   aliasingDistinguished=True,wholeInput=pin(whole),wholeCompilerRefusal=result.stderr.decode().strip())
-    assert all(pin(ROOT/p)==v for p,v in {**report['modules'],**report['oracleModules'],**report['bufferOracleModules'],**report['listOracleModules'],**report['executionCompilerModules']}.items())
+    assert all(pin(ROOT/p)==v for p,v in {**report['modules'],**report['oracleModules'],**report['bufferOracleModules'],**report['listOracleModules'],**report['collectionOracleModules'],**report['executionCompilerModules']}.items())
     save();print(report['status'],flush=True)
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--compiler',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
