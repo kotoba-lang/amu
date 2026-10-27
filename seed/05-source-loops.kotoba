@@ -1,19 +1,22 @@
 ;; Checked-source loops -> canonical recursive helpers. C shares the bridge's
-;; first four words, followed by current helper,count,node count,record base.
+;; first four words, followed by current helper,count,node count,record base,
+;; and explicitly selected resource profile. Node mapping starts at9.
 ;; A node-indexed map and bounded helper records contain checked node IDs only;
 ;; no source name lookup decides a local binding. Captures retain the reference
 ;; frontend's original-name ordering, then normal alpha normalization applies.
 (def dsl-width 68)
 (defn- dsl-bad [C :vector-i64 n :i64] :i64 (let [bad (dsb-bad C 3 n)] 1))
-(defn- dsl-new [M :vector-i64] :vector-i64
-  (if (not= (vector-at M MM-ERR) 0) (vector-alloc 8)
+(defn- dsl-new-resource [M :vector-i64 resource :i64] :vector-i64
+  (if (not= (vector-at M MM-ERR) 0) (vector-alloc 9)
     (let [nodes (vector-at M MM-NODE-N)
           loops (loop [n 1 count 0]
             (if (= n nodes) count (recur (inc n) (+ count
               (if (and (= (nm-kind M n) ND-LIST) (= (nm-nf M n NF-RES) HD-LOOP)) 1 0)))))
-          words (+ 8 nodes (* loops dsl-width))]
-      (if (> words 33554432) (-> (vector-alloc 8) (vector-assoc! 0 3) (vector-assoc! 1 words))
-        (-> (vector-alloc words) (vector-assoc! 6 nodes) (vector-assoc! 7 (+ 8 nodes)))))))
+          words (+ 9 nodes (* loops dsl-width))]
+      (if (or (not (dip-valid? resource)) (> words 33554432))
+        (-> (vector-alloc 9) (vector-assoc! 0 3) (vector-assoc! 1 words))
+        (-> (vector-alloc words) (vector-assoc! 6 nodes) (vector-assoc! 7 (+ 9 nodes)) (vector-assoc! 8 resource))))))
+(defn- dsl-new [M :vector-i64] :vector-i64 (dsl-new-resource M 0))
 (defn- dsl-record [C :vector-i64 id :i64] :i64 (+ (vector-at C 7) (* (dec id) dsl-width)))
 (defn- dsl-name [id :i64] :string (string-concat "__kotoba_loop_" (mem-u2dec id)))
 (defn- dsl-slot [M :vector-i64 n :i64] :i64
@@ -63,7 +66,7 @@
                   put (if (> slot 0) (vector-assoc! B slot (vector-at U (inc (* 2 i)))) B)] (recur (dec i)))))] 0))
 (defn- dsl-free [M :vector-i64 S :string C :vector-i64 B :vector-i64 record :i64 n :i64 depth :i64] :i64
   (let [kind (nm-kind M n)]
-    (cond (or (= n 0) (> depth 64)) (dsl-bad C n)
+    (cond (or (= n 0) (> depth (dip-expression-depth (vector-at C 8)))) (dsl-bad C n)
       (not= (vector-at C 0) 0) 1
       (and (= kind ND-SYM) (> (dsl-slot M n) 0)) (dsl-capture M S C B record n)
       (and (= kind ND-LIST) (or (= (nm-nf M n NF-RES) HD-LET) (= (nm-nf M n NF-RES) HD-LOOP)))
@@ -77,16 +80,16 @@
                      (and (or (= (nm-ff M f FF-KIND) FK-DEFN) (= (nm-ff M f FF-KIND) FK-PRIV))
                           (not (ck-r6f-cdef-fn? M f)) (= (dsb-name M S f) (dsl-name id))) true
                      :else (recur (inc f))))]
-    (if (or (> (+ record dsl-width) (vector-count C)) (> count 64) collision (not= (vector-at C (+ 8 n)) 0))
+    (if (or (> (+ record dsl-width) (vector-count C)) (> count 64) collision (not= (vector-at C (+ 9 n)) 0))
       (dsl-bad C n)
-      (let [a (-> C (vector-assoc! 5 id) (vector-assoc! (+ 8 n) id) (vector-assoc! record n)
+      (let [a (-> C (vector-assoc! 5 id) (vector-assoc! (+ 9 n) id) (vector-assoc! record n)
                    (vector-assoc! (+ record 1) owner) (vector-assoc! (+ record 2) count))
             B (vector-alloc (inc (nm-ff M owner FF-NSLOTS))) U (vector-alloc (* 2 count))
             marks (loop [p (nm-first M (nm-nth M n 1)) i 0]
                     (if (= p 0) 0 (let [mark (dsl-mark M C B U p i)] (recur (nm-next M (nm-next M p)) (inc i)))))]
         (dsl-free M S C B record (nm-nth M n 2) 0)))))
 (defn- dsl-visit [M :vector-i64 S :string C :vector-i64 n :i64 owner :i64 depth :i64] :i64
-  (cond (or (= n 0) (> depth 64)) (dsl-bad C n)
+  (cond (or (= n 0) (> depth (dip-expression-depth (vector-at C 8)))) (dsl-bad C n)
     (not= (vector-at C 0) 0) 1
     :else
       (let [kind (nm-kind M n)
@@ -110,7 +113,7 @@
                      (dsb-type M C (nm-nf M node NF-TYPE) 0) (dsb-local M C node))]
           (recur (inc i) (string-concat out (string-concat " " value))))))))
 (defn- dsl-call [M :vector-i64 S :string C :vector-i64 n :i64 depth :i64] :string
-  (let [id (vector-at C (+ 8 n))]
+  (let [id (vector-at C (+ 9 n))]
     (if (<= id 0) (dsb-bad C 3 n)
       (let [inits (loop [p (nm-first M (nm-nth M n 1)) out ""]
                     (if (or (= p 0) (not= (vector-at C 0) 0)) out

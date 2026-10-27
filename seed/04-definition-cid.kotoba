@@ -5,10 +5,20 @@
 ;; grant capabilities, cache a verdict, or implement the SCC producer.
 ;; Bounded first profile: ASCII text, 64 KiB block, 8192 nodes, depth 64.
 ;; Non-ASCII, unknown tags and noncanonical values refuse; never coerce.
-;; D header: cursor, error, next node, byte length, last node.
+;; Resource profile0 is the unchanged standard envelope. Profile1 is an
+;; explicitly selected compiler-identity candidate: AST128/codec288, retaining
+;; type64,8192 nodes,64KiB blocks and SCC8. It grants no execution authority.
+;; D header: cursor,error,next node,byte length,last node,resource profile.
 ;; Each node: kind (1 text, 2 array, 3 false, 4 true), start, count, child, next.
 (def dc-limit 65536)
 (def dc-nodes 8192)
+(defn- dip-valid? [resource :i64] :bool (or (= resource 0) (= resource 1)))
+(defn- dip-expression-depth [resource :i64] :i64 (case resource 0 64 1 128 -1))
+(defn- dip-codec-depth [resource :i64] :i64 (case resource 0 64 1 288 -1))
+(defn- dip-context [resource :i64] :string
+  (case resource
+    0 (sh-text "KIDP1\nstandard-v1\nexpr=64\ncodec=64\ntype=64\nnodes=8192\nbytes=65536\nscc=8\n")
+    1 (sh-text "KIDP1\ncompiler-v1\nexpr=128\ncodec=288\ntype=64\nnodes=8192\nbytes=65536\nscc=8\n") ""))
 (defn- dc-at [D :vector-i64 n :i64 k :i64] :i64 (vector-at D (+ 8 (* n 5) k)))
 (defn- dc-put [D :vector-i64 n :i64 k :i64 v :i64] :vector-i64
   (vector-assoc! D (+ 8 (* n 5) k) v))
@@ -37,7 +47,8 @@
               (-> D (vector-assoc! 0 (+ p size)) (vector-assoc! 4 value)))))))
 (defn- dc-read [D :vector-i64 V :vector-i64 depth :i64] :vector-i64
   (let [p (vector-at D 0) n (vector-at D 2)]
-    (if (or (not= (vector-at D 1) 0) (> depth 64) (>= n dc-nodes) (>= p (vector-at D 3))) (dc-bad D)
+    (if (or (not= (vector-at D 1) 0) (> depth (dip-codec-depth (vector-at D 5)))
+            (>= n dc-nodes) (>= p (vector-at D 3))) (dc-bad D)
       (let [b (vector-at V p) major (quot b 32)
             d (dc-length (-> D (vector-assoc! 0 (+ p 1)) (vector-assoc! 2 (+ n 1))) V (bit-and b 31))
             len (vector-at d 4) at (vector-at d 0)]
@@ -175,11 +186,11 @@
                                   (bit-and (u64-shift-right (vector-at V (quot position 8)) (- 7 (rem position 8))) 1) 0)]
                           (recur (+ j 1) (+ (* v 2) x)))))]
           (recur (+ bit 5) (string-concat out (string-substring alphabet digit (+ digit 1)))))))))
-(defn- dc-definition-cid [hex :string] :string
+(defn- dc-definition-cid-resource [hex :string resource :i64] :string
   (let [V (dc-unhex hex)]
     (if (= (vector-count V) 0) ""
       (let [D (dc-read (-> (vector-alloc (+ 8 (* dc-nodes 5)))
-                          (vector-assoc! 2 1) (vector-assoc! 3 (vector-count V))) V 0)]
+                          (vector-assoc! 2 1) (vector-assoc! 3 (vector-count V)) (vector-assoc! 5 resource)) V 0)]
         (if (or (not= (vector-at D 1) 0) (not= (vector-at D 0) (vector-count V))
                 (not (dc-payload? D V 1))) ""
           (let [digest (dc-unhex (sh-bytes V))
@@ -187,6 +198,7 @@
                       (if (= i 32) out (recur (+ i 1) (vector-assoc! out (+ i 4) (vector-at digest i)))))]
             (dc-base32 (-> cid (vector-assoc! 0 1) (vector-assoc! 1 113)
                               (vector-assoc! 2 18) (vector-assoc! 3 32)))))))))
+(defn- dc-definition-cid [hex :string] :string (dc-definition-cid-resource hex 0))
 
 ;; Native constructors for the same tagged value domain. Fragments are hex
 ;; only to avoid a second binary arena; source strings never become code.
@@ -200,12 +212,17 @@
         (< n 65536) (string-concat (dc-byte-hex (+ major 25))
                       (string-concat (dc-byte-hex (quot n 256)) (dc-byte-hex (bit-and n 255))))
         :else (string-concat (dc-byte-hex (+ major 26)) "00010000")))
+(defn- dc-ascii-range [V :vector-i64 first :i64 end :i64] :string
+  (cond (= first end) ""
+    (= (inc first) end) (if (>= (vector-at V first) 128) "" (dc-byte-hex (vector-at V first)))
+    :else (let [mid (quot (+ first end) 2)
+                left (dc-ascii-range V first mid) right (dc-ascii-range V mid end)]
+            (if (or (= left "") (= right "")) "" (string-concat left right)))))
 (defn- dc-string-bytes [text :string] :string
   (let [V (vector-i64-from-bytes (string-to-utf8 text)) n (vector-count V)]
     (if (> n dc-limit) ""
-      (loop [i 0 out (dc-head 96 n)]
-        (cond (= i n) out (>= (vector-at V i) 128) ""
-              :else (recur (+ i 1) (string-concat out (dc-byte-hex (vector-at V i)))))))))
+      (let [bytes (dc-ascii-range V 0 n)]
+        (if (and (> n 0) (= bytes "")) "" (string-concat (dc-head 96 n) bytes))))))
 (defn- dc-atom [tag :string value :string] :string
   (let [v (dc-string-bytes value)]
     (if (= (string-length v) 0) "" (string-concat "82" (string-concat (dc-string-bytes tag) v)))))
@@ -227,11 +244,11 @@
                                        (dc-sort-key D nodes value pairs)) 0))
     (dc-insert D V nodes (vector-assoc! order at (vector-at order (- at 1))) (- at 1) value pairs)
     (vector-assoc! order at value)))
-(defn- dc-sorted-values [values [:list :string] pairs :bool] :string
+(defn- dc-sorted-values-resource [values [:list :string] pairs :bool resource :i64] :string
   (let [raw (dc-values values) V (dc-unhex raw)]
     (if (= (vector-count V) 0) ""
       (let [D (dc-read (-> (vector-alloc (+ 8 (* dc-nodes 5)))
-                          (vector-assoc! 2 1) (vector-assoc! 3 (vector-count V))) V 0)
+                          (vector-assoc! 2 1) (vector-assoc! 3 (vector-count V)) (vector-assoc! 5 resource)) V 0)
             n (vector-count values)]
         (if (or (not= (vector-at D 1) 0) (not= (vector-at D 0) (vector-count V))) ""
           (let [nodes (loop [i 0 p (dc-at D 1 3) out (vector-alloc n)]
@@ -250,16 +267,23 @@
                     (if (and (> i 0) (= (dc-compare D V (dc-sort-key D nodes (vector-at order (- i 1)) pairs)
                                                        (dc-sort-key D nodes (vector-at order i) pairs)) 0)) ""
                       (recur (+ i 1) (string-concat out (typed-list-nth [:list :string] values (vector-at order i)))))))))))))))
-(defn- dc-collection [tag :string values [:list :string] sorted :bool] :string
-  (let [items (if sorted (dc-sorted-values values (= tag "map")) (dc-values values))]
+(defn- dc-sorted-values [values [:list :string] pairs :bool] :string
+  (dc-sorted-values-resource values pairs 0))
+(defn- dc-collection-resource [tag :string values [:list :string] sorted :bool resource :i64] :string
+  (let [items (if (not (dip-valid? resource)) ""
+                (if sorted (dc-sorted-values-resource values (= tag "map") resource) (dc-values values)))]
     (if (= (string-length items) 0) "" (string-concat "82" (string-concat (dc-string-bytes tag) items)))))
+(defn- dc-collection [tag :string values [:list :string] sorted :bool] :string
+  (dc-collection-resource tag values sorted 0))
 (defn- dc-pair [key :string value :string] :string
   (if (or (= (string-length key) 0) (= (string-length value) 0)) "" (string-concat "82" (string-concat key value))))
 (defn- dc-entry [name :string value :string] :string (dc-pair (dc-kw name) value))
-(defn- dc-payload [profile :string desugar :string kir :string effects :string interface :string dependencies :string] :string
-  (dc-collection "map"
+(defn- dc-payload-resource [profile :string desugar :string kir :string effects :string interface :string dependencies :string resource :i64] :string
+  (dc-collection-resource "map"
     (typed-list-new [:list :string]
       (dc-entry "typed-kir" kir) (dc-entry "profile-version" (dc-int profile))
       (dc-entry "interface" interface) (dc-entry "effect-row" effects)
       (dc-entry "dependencies" dependencies) (dc-entry "desugar-contract-version" (dc-int desugar))
-      (dc-entry "kotoba.definition-identity/version" (dc-int "2"))) true))
+      (dc-entry "kotoba.definition-identity/version" (dc-int "2"))) true resource))
+(defn- dc-payload [profile :string desugar :string kir :string effects :string interface :string dependencies :string] :string
+  (dc-payload-resource profile desugar kir effects interface dependencies 0))

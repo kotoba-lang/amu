@@ -2,16 +2,16 @@
 ;; by the test observer; it is not yet bound to a production native controller.
 ;; This entry is outside FULL-MANIFEST and does not change the adopted compiler.
 (defn- xg-default [] :i64 (drv-fail0 E-USAGE))
-(defn- seed-main [] :i64
+(defn- dcb-test-entry [resource :i64 arguments :i64] :i64
   (let [mode (io-arg 0) fuel (xg-budget (io-arg 5))]
-    (if (or (not= (io-argc) 6) (not (or (= mode "cold") (= mode "cached") (= mode "reference") (= mode "controls")))
+    (if (or (not (dip-valid? resource)) (not= (io-argc) arguments) (not (or (= mode "cold") (= mode "cached") (= mode "reference") (= mode "controls")))
             (not (dco-digest? (io-arg 3))) (< fuel 1) (= (string-length (io-arg 4)) 0)
             (= (io-exists (io-arg 4)) 1)) 2
       (let [S (drv-read (io-arg 1))
             K (rd-run (lx-run (mem-set (mem-new) MM-SRC-LEN (string-length S)) S) S)
             root (vector-at K MM-ROOT)]
         (if (or (not= (vector-at K MM-ERR) 0) (not= (kr-count K root) 1)) 1
-          (let [A (dcs-plan K S (kr-first K root))
+          (let [A (dcs-plan-resource K S (kr-first K root) resource)
                 R (if (= (vector-at A 0) 0) (dcs-resolve K S A) (typed-list-new [:list :string]))]
             (if (not= (vector-at A 0) 0)
               (let [error (io-err (string-concat "DCB:E_IDENTITY " (string-concat (mem-u2dec (vector-at A 0)) "\n")))] 1)
@@ -21,3 +21,4 @@
                     (if (dcv-controls (dcb-unit A C R) (typed-list-nth [:list :string] R (dec (dcp-f A f 2)))
                           (dcn-binding A R f)) (let [out (io-out "PASS_NATIVE_OBJECT_CONTROLS\n")] 0) 1))
                 :else (dcb-build K S A R (io-arg 2) (io-arg 3) (= mode "cached") fuel (io-arg 1) (io-arg 4))))))))))
+(defn- seed-main [] :i64 (dcb-test-entry 0 6))

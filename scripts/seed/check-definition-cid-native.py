@@ -129,7 +129,7 @@ def main(compiler, out):
         "complete-block": ("(not= (vector-at D 0) (vector-count V))\n                (not (dc-payload? D V 1))",
                            "false\n                (not (dc-payload? D V 1))", "trailing"),
         "block-bound": ("(> (string-length s) (* dc-limit 2))", "false", None),
-        "depth-bound": ("(> depth 64)", "false", None),
+        "depth-bound": ("(> depth (dip-codec-depth (vector-at D 5)))", "false", None),
     }
     report["mutationControls"] = []
     for name, (old, new, probe) in mutations.items():

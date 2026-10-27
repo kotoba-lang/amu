@@ -142,7 +142,7 @@
 ;; branch order and tail recur; do not copy the old cond token into KIR.
 (defn- dsb-cond [M :vector-i64 S :string C :vector-i64 p :i64 depth :i64] :string
   (let [value (nm-next M p) next (nm-next M value)]
-    (cond (or (= p 0) (= value 0) (> depth 64) (not= (vector-at C 0) 0)) (dsb-bad C 3 p)
+    (cond (or (= p 0) (= value 0) (> depth (dip-expression-depth (vector-at C 8))) (not= (vector-at C 0) 0)) (dsb-bad C 3 p)
       (= (nm-kind M p) ND-KW)
         (if (and (= (nm-head-of M p) KW-ELSE) (= next 0))
           (dsb-expr M S C value depth) (dsb-bad C 3 p))
@@ -178,7 +178,7 @@
                           (dsl-capture-text M C (vector-at C 4) false) "") ")")))))))
 (defn- dsb-expr [M :vector-i64 S :string C :vector-i64 n :i64 depth :i64] :string
   (let [kind (nm-kind M n) r (nm-nf M n NF-RES) tag (quot r RES-SCALE)]
-    (cond (or (= n 0) (> depth 64) (not= (vector-at C 0) 0)) (dsb-bad C 3 n)
+    (cond (or (= n 0) (> depth (dip-expression-depth (vector-at C 8))) (not= (vector-at C 0) 0)) (dsb-bad C 3 n)
       (= kind ND-INT) (mem-u2dec (nm-nf M n NF-AUX))
       (= kind ND-STR) (dsb-quote C (dcp-string M n))
       (= kind ND-KW) (dcp-text M S n)
@@ -227,11 +227,12 @@
       (string-concat "{:format :kotoba.kir/v4 :entry nil :exports [] :effects "
         (string-concat (dsb-effect-text (vector-at M MM-CAPS)) (string-concat " :functions ["
           (string-concat values (string-concat helpers "]}\n"))))))))
-(defn- dsb-source [source :string emit-kir :bool] :i64
+(defn- dsb-source-resource [source :string emit-kir :bool resource :i64] :i64
   (let [S (string-concat source (ck-r6b-lib source)) front (dsb-front-h S (ck-hint-new))
         M (if (= (vector-at front MM-ERR) 0) (dsb-effects front) front)
-        C (dsl-new M)]
-    (cond (not= (vector-at M MM-ERR) 0)
+        C (dsl-new-resource M resource)]
+    (cond (not (dip-valid? resource)) (let [out (io-err "DSB:PROFILE\n")] 1)
+          (not= (vector-at M MM-ERR) 0)
             (let [out (io-err (string-concat "DSB:SOURCE:" (string-concat (mem-u2dec (vector-at M MM-ERR)) "\n")))] 1)
           (not= (bit-and (vector-at M MM-CAPS)
                     (bit-not (loop [wire 0 mask 0]
@@ -245,5 +246,6 @@
                       (string-concat ":" (string-concat (mem-u2dec (vector-at C 1)) "\n")))))] 1)
               (if emit-kir
                 (if (dcs-native-checked? K) (let [out (io-out K)] 0) (let [out (io-err "DSB:KIR\n")] 1))
-                (let [status (dcs-run K)]
+                (let [status (dcs-run-resource K resource)]
                   (if (= status 0) 0 (let [out (io-err (string-concat "DSB:IDENTITY:" (string-concat (mem-u2dec status) "\n")))] 1)))))))))
+(defn- dsb-source [source :string emit-kir :bool] :i64 (dsb-source-resource source emit-kir 0))

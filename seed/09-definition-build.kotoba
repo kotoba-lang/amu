@@ -91,10 +91,11 @@
                            (dc-str (typed-list-nth [:list :string] defs i))) defs))))
         profile (dcp-vec (typed-list-new [:list :string] (dc-int (mem-u2dec MM-CODE-CAP))
           (dc-int (mem-u2dec MM-FIX-CAP)) (dc-int (mem-u2dec MM-LABEL-CAP))
-          (dc-int (mem-u2dec MM-OUT-CAP)) (dc-int (mem-u2dec dc-limit)) (dc-int (mem-u2dec dc-nodes))))
+          (dc-int (mem-u2dec MM-OUT-CAP)) (dc-int (mem-u2dec dc-limit)) (dc-int (mem-u2dec dc-nodes))
+          (dc-str (dip-context (dcp-resource A)))))
         resource (dcp-vec (typed-list-new [:list :string] (dc-int "4096") (dc-int "5")
-          (dc-int (mem-u2dec (vector-at M MM-CAPS))) (dc-str layout)))]
-    (if (or (= layout "") (not (dco-digest? compiler))) (typed-list-new [:list :string])
+          (dc-int (mem-u2dec (vector-at M MM-CAPS))) (dc-str layout) (dc-str (dip-context (dcp-resource A)))))]
+    (if (or (= layout "") (not (dco-digest? compiler)) (not (dip-valid? (dcp-resource A)))) (typed-list-new [:list :string])
       (typed-list-new [:list :string] compiler (sh-text "x86_64-linux-scalar")
         (sh-text "sysv-r9-context-scalar-v1") (sh-text layout) (sh-text "xg-one-tail64-v1")
         (sh-text profile) (sh-text dependencies) (sh-text resource) (sh-text "def-cid-occurrence-v1")))))
