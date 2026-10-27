@@ -464,3 +464,35 @@ no vendor optimization exists for Intel. Evidence:
 `docs/evidence/gpu/anv-costcal-20261027/` (record.txt is the finding;
 publication-s11.txt is produced only by analysis-s11.py over the
 committed run logs).
+
+## Dated note (2026-10-27, JUN-59 measurement: WORK-DOWN LOCALIZER at
+## fixed B=8, session 12)
+
+Session 12 (INSTRUMENT channel) runs the reverse axis of sessions
+8-11: at fixed dispatch count B=8, is the captured bracket REMOVABLE
+by shrinking the per-dispatch work? One C-side derivation (session 8's
+snapshot + the 3-hunk NDIV knob, inverse check -> snapshot bytes
+EXACT; NO shader derivation -- the corpus is byte-identical) gives 8
+dispatches of n = 125,000 / 3,906 / 244 against the captured c8
+control's n = 1,000,003. 15 fresh processes (5 arms x 3 runs; custody
+GO before any build/run; VERIFY mismatch 0; n identity exact per the
+frozen L2 values). MEASURED at the INSTRUMENT channel: C1 replicates
+(c2 FLOOR 31; c8 -0.75% of committed 32,915). W1 fired branch (a) as
+frozen: d8 (1/8 per-dispatch work, 1.0 total nominal unit -- HALF the
+floored c2 control's 2.0) is CAPTURED (5,465 ticks). W2 (pre-
+registered, descriptive) BOUNDS that reading: the capture DIES between
+NDIV=8 and NDIV=256 -- d256 (n=3,906, a real 31/16-workgroup grid) is
+FLOOR (34 ticks) and d4096 (n=244, protocol-L4 near-empty ambiguity
+named) is FLOOR. So the capture requires per-dispatch work ABOVE a
+threshold inside the (3,906..125,000] element band at B=8 (2 grid
+points; no interpolation): NEITHER dispatch count alone (this
+session's removal) NOR work alone (sessions 8-11) suffices; dispatch
+count >= 3 is necessary but not sufficient, and the per-dispatch work
+dependence was invisible from the B<=2 side. W3 (descriptive): d8
+(1.0 total unit, 8 dispatches) 5,465 ticks CAPTURED vs c2 (2.0 units,
+2 dispatches) 31 FLOOR (ratio 176.3). Observable only; NO causal
+mechanism is claimed or measured. Rule 4 binds: no row moves, no
+`:measured?` flag moves, and no vendor optimization exists for Intel.
+Evidence: `docs/evidence/gpu/anv-workdown-20261027/` (record.txt is
+the finding; publication-s12.txt is produced only by analysis-s12.py
+over the committed run logs).
