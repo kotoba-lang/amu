@@ -41,8 +41,34 @@ def main(args):
     native = load("mac_user_gate", HERE / "check-aiueos-user-macos-native.py")
     v2 = load("user_v2", HERE / "check-aiueos-user-v2-native.py")
     v3 = load("user_v3", HERE / "check-aiueos-user-v3-macos-native.py")
-    compiler = args.compiler_image.resolve(strict=True)
-    original = native.require_regular(compiler, args.compiler_sha256)
+    if args.mac_build:
+        if args.compiler_sha256:
+            raise ValueError("choose Mac build or explicit compiler pin")
+        build = args.mac_build.resolve(strict=True)
+        if build.is_symlink() or not build.is_dir():
+            raise ValueError("regular Mac build directory required")
+        descriptor_path = HERE.parents[1] / "seed/bootstrap/aarch64-macos/root.json"
+        descriptor = json.loads(descriptor_path.read_text())
+        report = json.loads((build / "mac-aiueos-user-target.json").read_text())
+        generations = report.get("generations", [])
+        if (report.get("status") != "PASS_MAC_NATIVE_USER_TARGET_SELFHOST"
+                or report.get("source") != descriptor["fullSource"]
+                or report.get("bootstrapDescriptor") != native.pin(descriptor_path)
+                or len(generations) < 2
+                or any(generations[-1][key] != generations[-2][key]
+                       for key in ("container", "raw", "unsigned"))
+                or generations[-1]["container"]["sha256"] !=
+                descriptor["expectedFixedPoint"]["compilerContainerSha256"]):
+            raise ValueError("Mac build is not the current source fixed point")
+        compiler = build / f"F{generations[-1]['number']}-signed.macho"
+        original = native.require_regular(compiler, generations[-1]["signed"]["sha256"])
+        if original != generations[-1]["signed"]:
+            raise ValueError("Mac compiler image size changed")
+    else:
+        if not args.compiler_sha256:
+            raise ValueError("explicit compiler requires a SHA-256 pin")
+        compiler = args.compiler_image.resolve(strict=True)
+        original = native.require_regular(compiler, args.compiler_sha256)
     native.verify_macho(compiler)
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
@@ -138,7 +164,9 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--compiler-image", type=Path, required=True)
-    parser.add_argument("--compiler-sha256", required=True)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--compiler-image", type=Path)
+    source.add_argument("--mac-build", type=Path)
+    parser.add_argument("--compiler-sha256")
     parser.add_argument("--output", type=Path, required=True)
     main(parser.parse_args())
