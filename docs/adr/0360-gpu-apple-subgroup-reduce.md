@@ -4414,3 +4414,107 @@ not find namespace: kotoba.form" (ADR-0362), outside this diff, no
 green suite claimed; `find docs -name '*.sh'` -> 0).
 
 Record: `docs/evidence/gpu/metal-counter-foldarms-oporder-shape2-w512-20261027/`.
+
+## Amendment 2026-10-27 (the counters channel's OP-ORDER
+AT-OTHER-CELLS row, SHAPE-2 HALF'S SIXTH CELL (n = 2^20 = 1048576 at
+W = 1024), CLOSING THE WHOLE ITEM): the baseline's verdict class
+REPRODUCES exactly at its letter (roll-up regime-invariant slower
+18/18) so the cell's sign is op-order-INDEPENDENT at (2^20, 1024) --
+AND the regime structure REPRODUCES at level-count resolution for the
+FIRST time in the item (all THREE operators ONE level at both orders)
+and the first-block check is DEGENERATE AT BOTH SESSIONS (all three
+operators one-level at each session)
+
+This row consumes the shape-2 half's SIXTH cell, (n = 2^20 =
+1048576, W = 1024), ONE CELL AT A TIME at the route's own unit: 6
+fresh ADR-0358 processes, run window
+2026-10-27T04:36:02Z..04:36:04Z (run-window.txt, verbatim) -- the
+same UTC day as the 2026-10-27 op-order-at-other-cells series (the
+compared shape-2 baseline ran on 2026-10-26 UTC); NO day claim; day
+4+ needs 2026-10-28 UTC and stays UNMEASURED. P0a HOLDS: ALL EIGHT
+artifacts sha256-identical to ALL THREE prior W = 1024 builds of the
+campaign (the W-grid row's and the shape-2 W = 1024 row's 2026-10-26
+builds, the first op-order W = 1024 row's 2026-10-27 build; grand
+total identical=24 differs=0) -- the W = 1024 fold-arm artifacts are
+n- AND op-order-INVARIANT across FOUR builds and the instrument is
+CONSTANT across the campaign. The device-limit branch did NOT fire
+(W = 1024 sits at the top of the admitted range and dispatched). All
+6 processes exit 0 with 120/120 samples resolved, 6/6 verify ok=1
+each, every header `n=1048576 workgroup=1024 op_order=min,max,sum`
+(verified programmatically 6/6).
+
+THE FINDING: (1) P1a FIRES -- the sign class REPRODUCES (roll-up
+regime-invariant slower 18/18: max 6/6 1.182..1.184, min 6/6
+1.182..1.184, sum 6/6 1.181..1.185; every observed regime one-sided)
+and THE ITEM CLOSES HERE: "op-order dependence at every OTHER cell" is
+MEASURED at ELEVEN cells (n = 1000003 at W = 32/64/128/512/1024 and
+n = 2^20 at W = 256/32/64/128/512/1024), both halves COMPLETE, no
+cell remaining. At the item's letter the baseline verdict class
+REPRODUCED at TEN of the ELEVEN cells; the single named class move is
+W = 32 at n = 1000003 (plus the (2^20, W = 32) per-operator swap
+where the roll-up class reproduced) -- both W = 32 exceptions
+confounded with their sessions (one session per order per cell); why
+W = 32 alone moves is UNMEASURED. RB2 holds (this record carries no
+one-sided-faster sign; exercising set stays 4 records / 2 cells, all
+unadjudicated; NO reopen claim from this row). (2) P2a FIRES -- the
+FIRST structure reproduction of the item: max ONE
+132291.5..132583.0 / min ONE 132312.5..132667.0 / sum ONE
+132270.5..132708.5, raw band 132.3k..132.7k -- against the baseline's
+all-one-level 132.1k..132.5k (max ONE 132083.5..132562.5 / min ONE
+132083.5..132479.0 / sum ONE 132104.0..132500.0). NAMED, NOT
+EXPLAINED: the raw band shifts slightly up under the reversed order
+(overlap 132.3k..132.5k; the outer edges unmatched) -- raw bands, not
+a mechanism. FIRST-BLOCK FORM: DEGENERATE AT BOTH SESSIONS (all three
+operators one-level at each session; no uniquely one-level operator;
+cell count 0/2 exclusive presentations plus 2 degenerate sessions --
+NAMED so this is NOT read as a disconfirmation of the form's unmeasured
+cause). This cell is the campaign's FIRST where the all-one-level
+presentation reproduces ACROSS ORDERS. NAMED, NOT HIDDEN: the
+aggregate all-one-level session count is named with DIFFERENT
+memberships in the committed records (the shape-2 W = 512 row's
+record named five as the four n = 1000003 reversed-order sessions
+plus the (2^20, W = 128) reversed session; the owner-corrected
+(2^20, W = 128) record names its own fifth after the shape-2 W = 1024
+baseline session plus the n = 1000003 W = 32/64/128 reversed-order
+sessions) -- this row moves NO aggregate count (UNADJUDICATED) and
+records its own fact only: THIS session is all-one-level and BOTH
+sessions of this cell are all-one-level -- observed classes, NOT a
+mechanism. (3) P3: per-operator raw ratio bands (max 1.182..1.184,
+min 1.182..1.184, sum 1.181..1.185, pooled 1.181..1.185) against the
+shape-2 W = 1024 row's (max 1.182..1.184, min 1.183..1.185, sum
+1.182..1.184, pooled 1.182..1.185): max bands IDENTICAL; min overlap
+1.183..1.184; sum the baseline's whole band INSIDE this row's; pooled
+overlap 1.182..1.185 (this row's 1.181 lower edge unmatched). The
+n = 1000003 W = 1024 reversed-order pooled band (1.171..1.186) and
+the W = 1024 W-grid row's pooled band at n = 1000003 (1.167..1.188)
+are cross-n same-width raw-band observations at ONE instrument (this
+row's pooled band inside both); the other shape-2 cells' reversed-order
+pooled bands (W = 256: 1.204..1.227, W = 32: 0.913..1.014,
+W = 64: 1.209..1.226, W = 128: 1.233..1.241, W = 512: 1.177..1.200)
+are cross-width same-shape raw-band observations. Rule 3: no
+cross-instrument claim, no magnitude invariance across orders,
+sessions, shapes, widths or n. CONSEQUENCE: NOTHING MOVES (rule 4) --
+no `:measured?` flag, no selection answer, no workgroup row, no cell
+flip anywhere, no cross-instrument claim. Day 4+ cross-day
+replications, the W = 32 class move's and operator-swap's causes
+(op-order vs session), the regime structure's session-variability
+cause (with this cell's reproduction named beside it), the
+all-one-level sessions' cause, the first-block form's cause, the
+state-shift cause, "R at those grids", the W-shape's cause (the
+side-flips stay unadjudicated) and anything off M1 Max stay
+UNMEASURED.
+
+NAMED, NOT HIDDEN (the record carries the full naming): chain PR
+#1622 (bot/amu-gpu-chain-20261027-5) MERGED mid-tick at
+2026-10-27T04:34:01Z (0bbc3b455) with the owner's correction commits
+b4c9eef19/46a689f67 aboard; this row's protocol/record as first
+drafted re-carried the corrected-away "SAME UTC day as every other
+counters row" phrase and were corrected BEFORE push; this commit
+rides the next chain branch bot/amu-gpu-chain-20261027-6.
+
+Gates: see the record (self-test 2649/0 pin; scoped GPU gate GREEN
+123/12162 twice; FULL `run-tests.cljk` RUN LIVE, red at base "Could
+not find namespace: kotoba.form" (ADR-0362), outside this diff, no
+green suite claimed; `find docs -name '*.sh'` -> 0).
+
+Record: `docs/evidence/gpu/metal-counter-foldarms-oporder-shape2-w1024-20261027/`.
