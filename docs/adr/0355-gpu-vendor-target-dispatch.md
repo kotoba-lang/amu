@@ -965,3 +965,35 @@ moves, and no vendor optimization exists for Intel.
 Evidence: `docs/evidence/gpu/anv-b3bisect4-20261027/` (record.txt is
 the finding; publication-s24.txt is produced only by analysis-s24.py
 over the committed run logs).
+
+## 2026-10-27 -- session 25 (JUN-59): the B=3 threshold bisect, fifth cut
+
+The session-24 residual "the flip location inside (250,000, 255,208]"
+is taken at n = 252,604 = (250,000+255,208)//2 -- the exact floor
+midpoint (bracket midpoint 252,604.0, an integer) IS reachable at the
+knob (41 (1,000,003\*WORK_MUL)//NDIV == 252,604 pairs in the sessions
+21-24 search box; smallest (97,384); 13 of the 41 have their
+same-ratio double in-box, so the eq3 arm uses the in-box double
+(194,768)). With both bracket ends replicating IN-SESSION at
+byte-identical rebuilt binaries (lo == committed z3 knob 1,159 vs
+1,140 INTERMEDIATE/MIXED; hi == session 24's (1213,4753) knob 1,166 vs
+1,166 CAPTURED -- the pair's first cross-session replication, exact at
+the median), mid is INTERMEDIATE/MIXED (1,153; 18-cell range
+994..1,411), so THE B=3 CLASS FLIP SITS IN (252,604, 255,208] n-units
+= (0.2526032, 0.2552072] work-units -- the session-24 bracket is cut
+to its UPPER half (the first cut in this bisect that moves the lower
+bound up). The pre-registered C3 pair-representation check fired
+branch (a): the same-ratio twin (194,768) is class-identical to mid
+(97,384) at this grid (1,147 vs 1,153) -- session 24's same-grid
+class split did NOT recur here and its threshold-artifact-vs-
+representation question stays unresolved. NAMED, NOT HIDDEN: the
+mid/hi class split at this bracket is a frozen-1000-tick-threshold
+split within a narrow 18-cell min band (994..1,005) at overlapping
+medians. "B=2 never captures" extends to n=252,604 (b2m FLOOR 31).
+The B=3 class-vs-per-dispatch-work row now stands at ten grid points
+(class granularity only). Rule 4 binds: no row moves, no `:measured?`
+flag moves, and no vendor optimization exists for Intel.
+
+Evidence: `docs/evidence/gpu/anv-b3bisect5-20261027/` (record.txt is
+the finding; publication-s25.txt is produced only by analysis-s25.py
+over the committed run logs).
