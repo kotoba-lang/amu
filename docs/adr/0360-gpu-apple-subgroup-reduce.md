@@ -4518,3 +4518,162 @@ not find namespace: kotoba.form" (ADR-0362), outside this diff, no
 green suite claimed; `find docs -name '*.sh'` -> 0).
 
 Record: `docs/evidence/gpu/metal-counter-foldarms-oporder-shape2-w1024-20261027/`.
+
+## Amendment 2026-10-27 (the counters channel's RE-SESSION
+DECONFOUNDING row, FIRST SESSION (n = 1000003 = the W-grid cell at
+W = 32, op order min,max,sum)): the verdict class MOVES at FIXED
+op-order and FIXED UTC day -- the class is SESSION-VARIABLE at fixed
+order, op-order is REFUTED as the sole driver of the W = 32 class
+move, and the item's question "op-order vs session" answers SESSION at
+this cell (three sessions, three distinct classes)
+
+ONE measurement slice (JUN-58): the closed op-order item's named
+residue -- "the W = 32 n = 1000003 class move's cause (op-order vs
+session)" -- is consumed ONE SESSION AT A TIME and its FIRST session
+is MEASURED. The named confound removed: at (n = 1000003, W = 32)
+exactly one session existed per op-order (the W-grid row's
+default-order session C1 and the op-order W = 32 row's reversed-order
+session C2), so the C1 -> C2 class move could not be attributed. THIS
+ROW RE-SESSIONS the reversed order (min,max,sum) at the same cell on
+the same UTC day as C2 -- the only comparison in which the SESSION is
+the sole varying factor (the declared design decision, written to
+protocol.txt BEFORE the run). HARDWARE RAN: 6 fresh ADR-0358
+processes, run window 2026-10-27T05:12:56Z..05:12:57Z (run-window.txt,
+verbatim) -- the same UTC day as the C2 session (2026-10-27T00:50Z,
+hours apart; named, no day claim rides this row) and cross-day against
+the C1 session (2026-10-26 UTC -- day and session confounded in that
+comparison, no day claim; day 4+ stays calendar-blocked until
+2026-10-28 UTC). The anchor row's declared protocol unchanged (6
+fresh processes, 20 interleaved AB/BA pairs per operator, WARMUP=2
+discarded, verified read-back), instrument compiled fresh (unchanged
+since b3717baf3), arms at W = 32 built THIS row from the COMMITTED
+emitters into a fresh build dir, protocol + predictions P0..P3 and the
+RB branches written to protocol.txt BEFORE the first run.
+
+REALIZATION CONTROL (P0a HOLD, build-shas.txt): ALL EIGHT artifacts
+sha256-IDENTICAL to ALL FOUR prior W = 32 builds of the campaign (the
+W-grid row's and the shape-2 W = 32 row's 2026-10-26 builds, the first
+op-order W = 32 row's and the op-order shape-2 W = 32 row's
+2026-10-27 builds; grand total identical=32 differs=0) -- the W = 32
+fold-arm artifacts are n- AND op-order-INVARIANT across FIVE builds
+and the instrument is CONSTANT across the campaign. P0b did not
+trigger. VERIFIED: all 6 processes exit 0, stderr 0 bytes, 120/120
+samples resolved (counter_ns=ERR 0 across 720 samples), 6/6 verify
+ok=1 each, headers verified programmatically 6/6 (device=Apple M1
+Max, channel=counters, n=1000003, workgroup=32, pairs=20, warmup=2,
+op_order=min,max,sum, the default order absent). ANALYSIS: ONLY
+scripts/gpu_regime_classify.py --counters-log run-1..6.txt, run twice
+byte-identical (diff exit 0), publication saved verbatim (76 lines,
+sha256 461f442a..); NO analysis code written this row.
+
+THE FINDING (publication.txt is the publication): (1) P1b FIRES AT
+ITS LETTER -- THE CLASS MOVES AT FIXED OP-ORDER AND FIXED DAY. This
+session (min,max,sum): max REGIME-SCOPED straddle (0.916..1.007, four
+levels), min REGIME-INVARIANT FASTER (6/6, 0.917..0.979, two levels),
+sum REGIME-SCOPED straddle (0.914..1.014, three levels), roll-up
+REGIME-SCOPED (2 of 18 above 1.0) -- against the C2 session (same
+order, same UTC day): max/min/sum ALL regime-invariant faster 6/6
+(0.916..0.920 / 0.915..0.921 / 0.915..0.921), roll-up
+REGIME-INVARIANT FASTER 18/18. EVERY operator's class but min moves
+and the roll-up class moves (18/18-faster -> 2/18-above) between two
+same-order same-day sessions -- the class is SESSION-VARIABLE at fixed
+op-order, op-order is REFUTED as the sole driver of the C1 -> C2
+move, and the item's question answers SESSION at this cell (named, not
+explained: WHICH session-level factor moves the class stays
+UNMEASURED). THREE sessions at this cell now read THREE DISTINCT
+classes (S1 default order: roll-up 5/18-above, max scoped, min
+scoped, sum inv-faster; S2 reversed: all inv-faster 18/18; this
+session: roll-up 2/18-above, max scoped, min inv-faster, sum scoped)
+-- the re-session's class is not C1 either. THE FLIP'S SIDE DOES NOT
+REPRODUCE (the pre-registered side sub-question's second branch): sum
+is NOT one-sided faster this session (it straddles 1.014 above at the
+36k-class run) -- the FIRST non-reproducing side reading at the cell;
+the closed item's "flip's SIDE at sum op-order-INDEPENDENT" letter
+stands at its own letter (one session per order) while the side's
+SESSION stability is now measured as NOT reproducing (one-sided faster
+at S1 and S2, straddling at S3). REOPEN BOOKKEEPING (rule 4 -- NO
+reopen claim from this row): RB1 FIRES at the trigger class's letter
+(this record carries a one-sided-faster sign -- min 6/6 faster) so the
+exercising-RECORD count goes 4 -> 5 while the exercising CELLS STAY at
+2 (this cell is already exercising), named both ways (5 records / 2
+cells), all unadjudicated. (2) P2b FIRES -- the structure does NOT
+reproduce (this session: max FOUR 36291.5 / 68916.5 / 89292.0 /
+109187.5..109541.5, min TWO 59187.5 / 109208.5..109458.5, sum THREE
+36125.0 / 88875.0..89125.0 / 109146.0..109354.0, raw band
+36.1k..109.5k -- against C2's ALL-ONE-LEVEL at 109.0k..109.8k);
+fast/mid states PRESENT this session while C2 was slow-state-only.
+FIRST-BLOCK FORM: NO presentation (min, this session's first block, is
+NOT one-level -- no operator is one-level at all); NAMED, NOT HIDDEN:
+the pre-registered check listed three branches (unique-one-level-min /
+all-one-level / unique-but-not-min) and this session presents a
+FOURTH class it had no branch for (no one-level operator) -- named per
+the campaign's precedent, the pre-registered file not rewritten; the
+cell now shows all three named presentation classes across its three
+sessions (S1 sum one-level at the SUM-first order = the form's fit, S2
+all-one-level degenerate, this session none) and the aggregate
+all-one-level session count stays UNMOVED (UNADJUDICATED) -- observed
+classes, NOT a mechanism. NAMED ASSOCIATION, NOT EXPLAINED: EVERY
+above-1.0 per-run ratio at this cell across all THREE sessions rides a
+~36k-class fast-state run (7 of the 8 named 36k-class runs above 1.0:
+S1 max runs 5/6 and min runs 4/5/6, this session max run 6 and sum
+run 6; the eighth, S1 max run 4, reads 0.992) while EVERY other run
+(mid classes 44.9k..89.3k and the 108.5k..109.8k slow class at all
+three sessions) reads below 1.0 (0.910..0.983) -- and the only
+fast-state-FREE session (C2) is the only all-regime-invariant-faster
+session; the state-shift cause/threshold/prevalence stay UNMEASURED,
+this is a named association at ONE cell, not a mechanism. (3) P3 --
+per-operator raw ratio bands (max 0.916..1.007, min 0.917..0.979, sum
+0.914..1.014, pooled 0.914..1.014) against C2's (pooled 0.915..0.921
+-- C2's whole band INSIDE this row's) and C1's (pooled 0.910..1.031 --
+this row's whole band INSIDE C1's); min vs C2 overlap 0.917..0.921
+(both edges unmatched beyond it); sum vs C1 overlap 0.915..0.930
+(this row's 0.914..0.915 and 0.930..1.014 unmatched); the (2^20,
+W = 32) reversed-order pooled band (0.913..1.014) is cross-shape
+same-width context only (rule 3 -- no cross-instrument magnitude
+claim, no magnitude invariance across orders, sessions, shapes,
+widths or n).
+
+CONSEQUENCE: NOTHING MOVES (rule 4) -- no :measured? flag, no
+:shapes value, no selection answer, no workgroup row (this channel can
+never move one), no WGSL cell flip, no MSL command-buffer cell flip,
+no cross-instrument magnitude claim. The sign stays CHANNEL-SCOPED and
+M1-Max scoped. The named item moves in record state only ("the W = 32
+n = 1000003 class move's cause (op-order vs session)" -> session 1
+MEASURED at (n = 1000003, W = 32, min,max,sum): P1b -- the class is
+session-variable at fixed op-order and fixed day, op-order REFUTED as
+the sole driver, the answer at this cell is SESSION; the flip's side's
+first non-reproducing reading named; the item's remaining half: the
+(2^20, W = 32) operator-swap's cause -- the next session is DECLARED
+at this row: the reversed-order (min,max,sum) re-session at (2^20,
+W = 32); the (n = 1000003, W = 32) default-order re-session is folded
+into the standing session-variability items, not needed for this
+cell's letter). UNMEASURED named: day 4+ cross-day replications
+(calendar-blocked until 2026-10-28 UTC); the (2^20, W = 32)
+operator-class swap's cause; the session-level driver's identity (the
+named 36k-class association is not a mechanism); the regime
+structure's session-variability cause; the all-one-level sessions'
+cause; the first-block form's cause; the state-shift
+cause/threshold/prevalence; "R at those grids" and the residual's
+internal decomposition and absolute clock domain; the W-shape's cause
+(the side-flips stay unadjudicated -- this row adds a fifth exercising
+record at the record letter and the side's first non-reproducing
+session); the partial tail's quantitative role; anything off M1 Max;
+the WGSL route's kernel time; every workgroup-row question
+(`:arm`/`:unknown` stay provisional `:measured? false`).
+
+NAMED, NOT HIDDEN: the one-second run window (wall time is no
+metric); the same-UTC-day comparison with C2 and the cross-day
+comparison with C1 (day and session confounded there -- no day claim
+rides this row in any branch); the pre-registration's missing
+fourth first-block branch (named above); untracked deps.edn (not
+created by this bot) untouched; kbb '2 dep(s) not :local/root' warning
+(identical everywhere); the build/run/gate scripts live in Hermes
+scratch and are never staged (POSIX .sh ban; all logs staged are
+.txt).
+
+Gates: see the record (self-test 2649/0 pin; scoped GPU gate GREEN
+123/12162 twice; FULL `run-tests.cljk` RUN LIVE, red at base "Could
+not find namespace: kotoba.form" (ADR-0362), outside this diff, no
+green suite claimed; `find docs -name '*.sh'` -> 0).
+
+Record: `docs/evidence/gpu/metal-counter-foldarms-oporder-rep-w32-20261027/`.
