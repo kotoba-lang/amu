@@ -6,11 +6,12 @@ This is a closing record, not a new qualification or performance claim.
 
 ## Landed scope
 
-PRs #1628, #1630, #1631, #1632 and #1633 were merged and independently
-read back. The observed remote/local main ref was
-`b9947e306f1ce73b7e8b66a7756ef0bf576e4a2e`.
-Their clean owned task worktrees and local branches were removed after
+PRs #1628, #1630, #1631, #1632, #1633 and #1634 were merged and independently
+read back. #1634 merged as
+`7b7f0892167670f8c0102f8e48ca8e70b6148592`.
+The earlier five clean owned task worktrees and local branches were removed after
 ancestry/content verification; other owners' work and four stashes remain.
+The #1634 and closing-record worktrees are removed after their final readback.
 
 The #1630 final native run 40480745902 completed in 29m08s with all six
 workflows successful and 39 artifact groups audited. Every original x86
@@ -18,7 +19,7 @@ gate row/argv remains; the split uses two shards, two builds per runner,
 and refuses a later shard-job failure. This is scheduling evidence, not
 a same-host compiler improvement or the requested <=20-minute result.
 
-## Current candidate
+## Newly integrated prototype
 
 PR #1634, head `a70d2c1afb446a42ec1fdc84dd7b50f564a341d1`, preserves
 checked generic collection identities. Native ARM/x86 source qualification
@@ -27,11 +28,13 @@ refusals, 16 runtime refusals and nine built/executed mutants per ISA.
 Source, primitive, effect, resource, namespace and graph artifact audits
 passed against this frozen head. All previous cases remain mandatory.
 
-At the closing observation, full native run 40489282446 was still executing
-x86 core qualification job 122146304487. Five workflows were successful.
-Inspect that same run before restarting, merging, or claiming completion.
-Retain the draft until its terminal native proof and remaining artifacts
-have passed review. This prototype remains outside FULL-MANIFEST.
+Full native run 40489282446 subsequently completed successfully in 30m27s;
+the source workflow took 19m28s. All six native workflows passed. All 39
+artifact groups were downloaded and digest-verified; nine independent
+source-bound audits passed, including original19, native24/refusal18,
+controller receipts and all17 x86 gate rows. #1634 was then reviewed and
+merged. This prototype remains outside FULL-MANIFEST, and CI20 is unmet.
+The post-merge main-tier run is separate and is not claimed passed here.
 
 Production FULL48 sourceUnity remains
 `5254afb12561ee609e8cd27420c6c5ddbb3e2e484cab5311b3674a1f11b04d05`;
@@ -62,8 +65,8 @@ The scratch directories are not production runtime inputs.
 
 ## Resume order and acceptance
 
-1. Finish #1634 terminal CI, immutable artifact audit, review/merge/readback
-   and owned cleanup. Preserve the full native controller/core/public gates.
+1. Inspect the separate post-merge main-tier run before treating the new
+   main as freshly qualified; preserve every native gate and uncached tier.
 2. Bind abort-to-result identities to fresh original-source facts. `:abort`
    is a non-propagating control effect: a catching caller does not inherit
    its callee's abort row. External checked flags are not source proof.
