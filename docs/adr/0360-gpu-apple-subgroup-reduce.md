@@ -3389,3 +3389,65 @@ not find namespace: kotoba.form" (ADR-0362), outside this diff, no
 green suite claimed; `find docs -name '*.sh'` -> 0).
 
 Record: `docs/evidence/gpu/metal-counter-foldarms-oporder-rep2-20261026/`.
+
+## Amendment 2026-10-27 (the counters channel's CROSS-DAY REPLICATION
+row, DAY 3): the sign REPRODUCES on the third distinct UTC day
+(regime-invariant, slower, 18/18) while the regime structure again
+does not (a fifth distinct level split; no one-level operator a second
+session running)
+
+The cross-day record's UNMEASURED list named "day 3+ cross-day
+replications at sum,max,min". This row is day 3 of the anchor cell's
+cross-day series: the same cell (n = 1000003, W = 256), the same
+instrument, arms, run protocol and committed analysis route, the
+anchor order sum,max,min fixed, 6 fresh ADR-0358 processes, run window
+2026-10-27T00:01:51Z..2026-10-27T00:01:52Z (run-window.txt, verbatim)
+-- P-day HOLDS: three different UTC days (2026-10-25, 2026-10-26,
+2026-10-27), so the replication is CROSS-DAY at day 3 at its letter.
+P0a HOLDS: probe.metallib 80dbf4fd.. and counters 4cb76bd..
+sha256-identical to the anchor's, the day-2 row's and all later
+builds (grand total identical=32 differs=0 across the compared
+builds), and all six fold-arm metallibs byte-identical to the anchor
+row's and the day-2 row's W=256 builds -- the realization is held
+fixed across the three days. All 6 processes exit 0 with 120/120
+samples resolved, 6/6 verify ok=1 each, every header
+`op_order=sum,max,min` (verified programmatically 6/6).
+
+**The finding (publication.txt is the publication; the committed
+route, run twice byte-identical, sha 36426238..).** (1) THE SIGN
+REPRODUCES ON DAY 3: every operator regime-invariant SLOWER (max 6/6
+1.195..1.219, min 6/6 1.198..1.219, sum 6/6 1.214..1.221), roll-up
+18/18 slower -- the anchor cell's rule-2 verdict class reproduces at
+the third distinct UTC day; no side-flip (the reopen-trigger count
+stays at TWO, both unadjudicated). (2) THE REGIME STRUCTURE AGAIN DOES
+NOT REPRODUCE: a NEW level split -- max TWO (33041.5..33062.5 /
+103500.0..103771.0), min THREE (32917.0..33062.5 / 54062.5 /
+103625.0..103771.0), sum TWO (83437.5 / 103604.0..103792.0) -- and NO
+operator is one-level, the SECOND anchor-cell session with no
+one-level operator and the first sum-first session with none. Counts
+move in record state only: "the first block is the one-level block"
+3/4 -> 3/5 sessions, "sum is the one-level operator" 2/4 -> 2/5.
+NAMED, NOT EXPLAINED: the level VALUES stay session-variable (fast
+states ~33.0k in the reversed-order sessions' class, the sum fast
+state a new value ~83.4k); a within-row descent at max and min (slow
+runs 1-3 / 1-2, fast runs 4-6, min with a mid state at run 3); the
+state-shift cause stays UNMEASURED. After five counted anchor-cell
+sessions the regime STRUCTURE is session-variable (every session a
+different split) and both one-level fits are contradicted at least
+twice -- the observed class, not a mechanism. (3) The pooled raw band
+(1.195..1.221) overlaps the anchor's (1.204..1.221) and day-2's
+(1.197..1.222) bands with the fast edge extending 0.002 below day-2's
+-- same instrument, same cell, raw-band observation only (rule 3);
+the ratio-vs-state pattern reproduces. CONSEQUENCE: NOTHING MOVES
+(rule 4) -- no :measured? flag, no selection answer, no workgroup row,
+no cell flip anywhere, no cross-instrument claim. Day 4+, a third
+reversed-order session, op-order dependence at every other cell, the
+state-shift cause, "R at those grids", the W-shape's cause and
+anything off M1 Max stay UNMEASURED.
+
+Gates: see the record (self-test 2649/0 pin; scoped GPU gate GREEN
+123/12162 twice; FULL `run-tests.cljk` RUN LIVE, red at base "Could
+not find namespace: kotoba.form" (ADR-0362), outside this diff, no
+green suite claimed; `find docs -name '*.sh'` -> 0).
+
+Record: `docs/evidence/gpu/metal-counter-foldarms-crossday-day3-20261027/`.
