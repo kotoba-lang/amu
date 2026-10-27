@@ -932,3 +932,36 @@ points (class granularity only). Rule 4 binds: no row moves, no
 Evidence: `docs/evidence/gpu/anv-b3bisect3-20261027/` (record.txt is
 the finding; publication-s23.txt is produced only by analysis-s23.py
 over the committed run logs).
+
+## 2026-10-27 -- session 24 (JUN-59): the B=3 threshold bisect, fourth cut
+
+The session-23 residual "the flip location inside (250,000, 260,417]"
+is taken at n = 255,208 = (250,000+260,417)//2 -- the exact floor
+midpoint (bracket midpoint 255,208.5, not an integer) IS reachable at
+the knob (18 (1,000,003\*WORK_MUL)//NDIV == 255,208 pairs in the
+sessions 21-23 search box; smallest (1213,4753); ZERO of the 18 have
+their same-ratio double in-box, so the eq3 arm uses the double
+(2426,9506) outside that box -- a search convenience, not a source
+limit). With both bracket ends replicating IN-SESSION at
+byte-identical rebuilt binaries (lo == committed z3 knob 1,141 vs
+1,140 INTERMEDIATE/MIXED; hi == session 23's (25,96) knob 1,186 vs
+1,186 CAPTURED -- the pair's first cross-session replication), mid is
+CAPTURED (1,166; 18-cell min 1,000 -- exactly at the frozen >=1000
+threshold), so THE B=3 CLASS FLIP SITS IN (250,000, 255,208] n-units
+= (0.2499993, 0.2552072] work-units -- the session-23 bracket is cut
+to its lower half. NAMED, NOT HIDDEN: the pre-registered C3
+pair-representation check fired branch (b) -- the same-ratio twin
+(2426,9506) at the identical grid classifies INTERMEDIATE/MIXED
+(18-cell min 994) while mid classifies CAPTURED (18-cell min EXACTLY
+1,000) at medians within 0.8% (1,157 vs 1,166): the same-ratio
+representation flips the class AT the frozen 1000-tick boundary at
+this grid and B; the contradiction stands as measured content, is not
+resolved here, and mid/b2m carry the frozen letter's flagged risk.
+"B=2 never captures" extends to n=255,208 (b2m FLOOR 31). The B=3
+class-vs-per-dispatch-work row now stands at nine grid points (class
+granularity only). Rule 4 binds: no row moves, no `:measured?` flag
+moves, and no vendor optimization exists for Intel.
+
+Evidence: `docs/evidence/gpu/anv-b3bisect4-20261027/` (record.txt is
+the finding; publication-s24.txt is produced only by analysis-s24.py
+over the committed run logs).

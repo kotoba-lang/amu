@@ -1,0 +1,46 @@
+JUN-59 session 24 run window (host-side, aiueos-6600hs / aiueos-6600hs-1).
+THE B=3 PER-DISPATCH-WORK THRESHOLD BISECT, FOURTH CUT (B=3 at
+n=250,000/255,208/260,417 -- lo/mid/hi + eq3/b2m/c2/c8).
+21 fresh processes (7 arms x 3 runs -- the protocol section 0 arm
+table's 7 rows govern the count). Per-run transcript (host date -u,
+taken immediately BEFORE the run invocation, seconds granular; rc,
+stderr byte count and line counts captured by the driver), verbatim
+from the driver's per-run steps (each run's stdout/stderr preserved
+verbatim in run-<tag>-r<R>.txt / .stderr.txt):
+  c2-r1 rc=0 host-date=2026-10-27T20:41:24Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  c2-r2 rc=0 host-date=2026-10-27T20:41:25Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  c2-r3 rc=0 host-date=2026-10-27T20:41:25Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  lo-r1 rc=0 host-date=2026-10-27T20:41:25Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  lo-r2 rc=0 host-date=2026-10-27T20:41:25Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  lo-r3 rc=0 host-date=2026-10-27T20:41:26Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  mid-r1 rc=0 host-date=2026-10-27T20:41:26Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  mid-r2 rc=0 host-date=2026-10-27T20:41:26Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  mid-r3 rc=0 host-date=2026-10-27T20:41:26Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  eq3-r1 rc=0 host-date=2026-10-27T20:41:26Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  eq3-r2 rc=0 host-date=2026-10-27T20:41:27Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  eq3-r3 rc=0 host-date=2026-10-27T20:41:27Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  hi-r1 rc=0 host-date=2026-10-27T20:41:27Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  hi-r2 rc=0 host-date=2026-10-27T20:41:27Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  hi-r3 rc=0 host-date=2026-10-27T20:41:27Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  b2m-r1 rc=0 host-date=2026-10-27T20:41:27Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  b2m-r2 rc=0 host-date=2026-10-27T20:41:28Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  b2m-r3 rc=0 host-date=2026-10-27T20:41:28Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  c8-r1 rc=0 host-date=2026-10-27T20:41:28Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  c8-r2 rc=0 host-date=2026-10-27T20:41:29Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  c8-r3 rc=0 host-date=2026-10-27T20:41:30Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+run window: 2026-10-27T20:41:24Z .. 2026-10-27T20:41:30Z (per-run stamps above; seconds
+granularity, named not hidden).
+Every transcript row prints the captured rc token (the session-22 $rcc
+typo stays fixed), rc=0 21/21. Independently, every one of the 21 stdout
+logs terminates with the instrument's own "# done cells=24" line
+(tail='...' column, 21/21) and stderr is 0 bytes 21/21.
+TIMESTAMPS CROSS-CHECK (computed here from the host file mtimes): each
+transcript stamp is <= its file mtime (the stamp is taken before the
+invocation; mtime is when the run's stdout closed), every mtime within
+~3 seconds of its stamp: 21/21 (worst delta 1.5s) -- no
+contradiction.
+Runs are fresh processes: the driver invokes ../anv-bb-<tag> once per
+run from cwd=shaders/.
+Host: aiueos-6600hs-1 (Intel BMG G31 / ANV, device e223, api 1.4.318),
+1 tick = 52.083 ns. Sessions 2-23 all ran on UTC day 2026-10-27; this
+session too (protocol L4: cross-UTC-day replication NOT reachable).
