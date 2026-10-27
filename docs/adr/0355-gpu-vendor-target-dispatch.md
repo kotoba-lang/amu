@@ -363,3 +363,35 @@ scales work and grid size together. Rule 4 binds: no row moves, no
 Evidence: `docs/evidence/gpu/anv-workmul-20261027/` (record.txt is the
 finding; publication-s8.txt is produced only by analysis-s8.py over
 the committed run logs).
+
+## Dated note (2026-10-27, JUN-59 measurement: per-workgroup-fatness
+## discriminator)
+
+Session 9 (INSTRUMENT channel) removes session 8's frozen named
+limitation on ONE axis: the new ITERMUL knob is baked into DERIVED
+SHADER sources (the reduce body re-runs ITERMUL times per workgroup;
+stored values stay bit-identical, VERIFY mismatch 0 over all runs; the
+instrument is the byte-identical session-8 snapshot; the grid is the
+archived grid at every arm). Custody: base census 6/6 + inverse check
+18/18 (strip the 3-line edit -> base bytes) + corpus 16/16 + local-
+vs-host all MATCH before any run. 30 fresh processes (10 (B,I) arms,
+3 runs each). MEASURED at the INSTRUMENT channel: C1 archived controls
+replicate (a3 +0.20%, a8 -0.52% of committed, inside +/-5%); C2 pins
+the derivation at I=1 (f1b8 +0.24% of committed 32,915); W1 branch (a)
+as frozen (NOMINAL-I): capture at B=2 is not reachable by up to 8
+nominal ITERMUL body executions at constant grid (f3b2/f8b2 both at
+the 31-tick floor at all 18 cells, 16 nominal units inside f8b2's
+bracket -- twice the captured a8b8 control). NAMED, NOT HIDDEN: the
+knob's COST realization is marginal and non-monotone (host_ns f3b1
+1.57x a1 > f8b1 1.14x a1; f3b2 1.28x a2; f8b2 1.16x a2 for nominal
+3x/8x) -- so the frozen W1 wording is nominal-only and a genuinely
+cost-8x-heavier workgroup at B=2 stays UNMEASURED; session 8's grid
+axis WAS cost-realized (4.63x host growth at nominal 8x). On the two
+separated axes: grid-total-work cost-realized and unreachable at B=2
+(session 8); per-workgroup-body nominal-only and unreachable at B=2
+(this session); dispatch count implicated on both. Observable only; NO
+causal mechanism is claimed or measured. Rule 4 binds: no row moves,
+no `:measured?` flag moves, and no vendor optimization exists for
+Intel. Evidence: `docs/evidence/gpu/anv-itrmul-20261027/` (record.txt
+is the finding; publication-s9.txt is produced only by analysis-s9.py
+over the committed run logs).

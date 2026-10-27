@@ -1,0 +1,37 @@
+JUN-59 session 9 -- ITERMUL shader derivation, base census check
+== expectation source: session 2's compile-toolchain.txt sha256 census ==
+== (parsed programmatically, never transcribed) ==
+OK   base subgroup-reduce-w128-sum.emitted.glsl expected=b49362463cd5954ed739237d7d16a3d4e421f32597bc09c3ead78346dab73564 got=b49362463cd5954ed739237d7d16a3d4e421f32597bc09c3ead78346dab73564
+OK   base subgroup-reduce-w128-max.emitted.glsl expected=94420e5b4b1d2ba93ffd1f41851b693de4e6be594c39532d8fb7076e60372bdf got=94420e5b4b1d2ba93ffd1f41851b693de4e6be594c39532d8fb7076e60372bdf
+OK   base subgroup-reduce-w128-min.emitted.glsl expected=c21e5035078070f12de178314163f7412d944422f8b122c011699fa224eb11af got=c21e5035078070f12de178314163f7412d944422f8b122c011699fa224eb11af
+OK   base subgroup-reduce-w256-sum.emitted.glsl expected=fc50a68abcd1b04aaebb88801f6c93a570c01feab3ed3073661f715abca4b20c got=fc50a68abcd1b04aaebb88801f6c93a570c01feab3ed3073661f715abca4b20c
+OK   base subgroup-reduce-w256-max.emitted.glsl expected=06a3fd20d8a361a1c39a80cac9ade63490a478cf27baf77a4099e1a1987d5de4 got=06a3fd20d8a361a1c39a80cac9ade63490a478cf27baf77a4099e1a1987d5de4
+OK   base subgroup-reduce-w256-min.emitted.glsl expected=22e838220e8eb34a1172fd74134533e87d3c9f8538dfff55a08326a4a6fb28cb got=22e838220e8eb34a1172fd74134533e87d3c9f8538dfff55a08326a4a6fb28cb
+== base census: 6/6 MATCH ==
+
+== inverse check: strip the 3 inserted unique lines -> base bytes ==
+OK   subgroup-reduce-w128-max.emitted.iter1.glsl -> subgroup-reduce-w128-max.emitted.glsl (base 94420e5b4b1d2ba9...; derived 8f4337c855795565...)
+OK   subgroup-reduce-w128-max.emitted.iter3.glsl -> subgroup-reduce-w128-max.emitted.glsl (base 94420e5b4b1d2ba9...; derived fc013069673e6f4f...)
+OK   subgroup-reduce-w128-max.emitted.iter8.glsl -> subgroup-reduce-w128-max.emitted.glsl (base 94420e5b4b1d2ba9...; derived e093f8e55bc778b5...)
+OK   subgroup-reduce-w128-min.emitted.iter1.glsl -> subgroup-reduce-w128-min.emitted.glsl (base c21e5035078070f1...; derived 0399fe738d1fb00a...)
+OK   subgroup-reduce-w128-min.emitted.iter3.glsl -> subgroup-reduce-w128-min.emitted.glsl (base c21e5035078070f1...; derived 40278c37968e538b...)
+OK   subgroup-reduce-w128-min.emitted.iter8.glsl -> subgroup-reduce-w128-min.emitted.glsl (base c21e5035078070f1...; derived c2838b6130955b8f...)
+OK   subgroup-reduce-w128-sum.emitted.iter1.glsl -> subgroup-reduce-w128-sum.emitted.glsl (base b49362463cd5954e...; derived 3f78f0769a18f36f...)
+OK   subgroup-reduce-w128-sum.emitted.iter3.glsl -> subgroup-reduce-w128-sum.emitted.glsl (base b49362463cd5954e...; derived 22f219dc7f32a909...)
+OK   subgroup-reduce-w128-sum.emitted.iter8.glsl -> subgroup-reduce-w128-sum.emitted.glsl (base b49362463cd5954e...; derived bb51f35f334229d1...)
+OK   subgroup-reduce-w256-max.emitted.iter1.glsl -> subgroup-reduce-w256-max.emitted.glsl (base 06a3fd20d8a361a1...; derived 79703aa116b27011...)
+OK   subgroup-reduce-w256-max.emitted.iter3.glsl -> subgroup-reduce-w256-max.emitted.glsl (base 06a3fd20d8a361a1...; derived c4447432ec2225ea...)
+OK   subgroup-reduce-w256-max.emitted.iter8.glsl -> subgroup-reduce-w256-max.emitted.glsl (base 06a3fd20d8a361a1...; derived 4d3c2c556b2f07a0...)
+OK   subgroup-reduce-w256-min.emitted.iter1.glsl -> subgroup-reduce-w256-min.emitted.glsl (base 22e838220e8eb34a...; derived 0ef4f7d1cd8501c6...)
+OK   subgroup-reduce-w256-min.emitted.iter3.glsl -> subgroup-reduce-w256-min.emitted.glsl (base 22e838220e8eb34a...; derived 4e1ae1bc71fb4b00...)
+OK   subgroup-reduce-w256-min.emitted.iter8.glsl -> subgroup-reduce-w256-min.emitted.glsl (base 22e838220e8eb34a...; derived 2a26bf757c06f3df...)
+OK   subgroup-reduce-w256-sum.emitted.iter1.glsl -> subgroup-reduce-w256-sum.emitted.glsl (base fc50a68abcd1b04a...; derived 0fe1a71ccba62f00...)
+OK   subgroup-reduce-w256-sum.emitted.iter3.glsl -> subgroup-reduce-w256-sum.emitted.glsl (base fc50a68abcd1b04a...; derived 85752708f5746f4d...)
+OK   subgroup-reduce-w256-sum.emitted.iter8.glsl -> subgroup-reduce-w256-sum.emitted.glsl (base fc50a68abcd1b04a...; derived b0ecc382c11df4ca...)
+== inverse check: 18/18 ALL EXACT -- derivation is exactly the 3-line edit ==
+
+== manifest cell-line checks ==
+cases-s9-a.txt cell lines byte-copy of cases-s8.txt cell lines: YES
+cases-s9-f1.txt cell lines = a-set lines with only the measured spv name changed to .iter1: YES
+cases-s9-f3.txt cell lines = a-set lines with only the measured spv name changed to .iter3: YES
+cases-s9-f8.txt cell lines = a-set lines with only the measured spv name changed to .iter8: YES
