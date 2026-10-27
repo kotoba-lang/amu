@@ -1032,3 +1032,37 @@ points (class granularity only). Rule 4 binds: no row moves, no
 Evidence: `docs/evidence/gpu/anv-b3bisect6-20261027/` (record.txt is
 the finding; publication-s26.txt is produced only by analysis-s26.py
 over the committed run logs).
+
+## 2026-10-27 -- session 27 (JUN-59): the B=3 threshold bisect, seventh cut
+
+The session-26 residual "the flip location inside (252,604, 253,906]"
+is taken at n = 253,255 = (252,604+253,906)//2 -- the exact floor
+midpoint (bracket midpoint 253,255.0, an integer) IS reachable at the
+knob (35 (1,000,003\*WORK_MUL)//NDIV == 253,255 pairs in the sessions
+21-26 search box; smallest (214,845); 9 of the 35 have their
+same-ratio double in-box -- including the smallest -- so the eq3 arm
+uses the in-box double (428,1690)). The cut is FLAGGED at its frozen
+letter: the upper bracket anchor ((1024,4033) at n=253,906, rebuilt
+BYTE-IDENTICAL to session 26's binary) flipped class ACROSS SESSIONS
+-- CAPTURED in session 26 (18-cell min 1,001) to INTERMEDIATE/MIXED
+here (min 976) at medians within 0.27% (1,129 vs 1,132) -- so the
+pre-registered C2 letter fired (b) exactly as written and W1 is (d)
+FLAGGED: NO bracket narrowing is claimed and the flip location stays
+inside (252,604, 253,906]. The measured classes stand as content:
+mid (B=3, n=253,255) INTERMEDIATE/MIXED (1,136; 18-cell 988..1,446);
+the same-ratio twin (428,1690) agrees at that grid (C3 (a), 1,134 vs
+1,136) -- the threshold-artifact-vs-representation scoreboard is now
+two splitting grids (sessions 24, 26) and two agreeing grids
+(sessions 25, 27), UNRESOLVED; "B=2 never captures" extends to
+n=253,255 (b2m FLOOR 32). NAMED, NOT HIDDEN: the same grid n=253,906
+now carries two readings of different class across sessions at a
+byte-identical binary, and the frozen-1000-tick-threshold class
+instability near the boundary is measured both as a same-ratio twin
+split (session 26) and as a cross-session single-pair flip (this
+session). The B=3 class-vs-per-dispatch-work row stands at twelve
+grid points (class granularity only). Rule 4 binds: no row moves, no
+`:measured?` flag moves, and no vendor optimization exists for Intel.
+
+Evidence: `docs/evidence/gpu/anv-b3bisect7-20261027/` (record.txt is
+the finding; publication-s27.txt is produced only by analysis-s27.py
+over the committed run logs).
