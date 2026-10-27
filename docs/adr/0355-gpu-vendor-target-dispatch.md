@@ -614,3 +614,39 @@ mechanism is claimed or measured. Rule 4 binds: no row moves, no
 Evidence: `docs/evidence/gpu/anv-sessrepl-20261027/` (record.txt is
 the finding; publication-s15.txt is produced only by analysis-s15.py
 over the committed run logs).
+
+## Dated note (2026-10-27, JUN-59 measurement: THE DISPATCH-COUNT
+## LADDER at fixed per-dispatch work, session 16)
+
+Session 16 (INSTRUMENT channel) takes session 15's named residual "any
+B outside {2,8}": at fixed per-dispatch work (NDIV=1, the same
+n=1,000,003 grid in every arm) the whole dispatch-count ladder B=2..8
+is measured -- the first measurement of B in {3,4,5,6,7} anywhere in
+the series (the "dispatch count >= 3" reading had been an inference
+from the two endpoints only). ZERO derivation edits -- the instrument
+is session 15's committed NDIV-derived source byte-identical (digest
+a5e539f0...); the new arms are NEW -D BATCH values only; the c2/c8
+rebuilt binaries reproduce session 15's binaries byte-for-byte (2/2
+build pins; b3..b7 are new knob values with no prior binary -- named).
+21 fresh processes (7 arms x 3 runs; custody GO 16:26:58Z before any
+build/run; VERIFY mismatch 0; forcing reality 378/378). MEASURED at
+the INSTRUMENT channel: C1 replicates (c2 FLOOR 32; c8 32,955 =
++0.12% of committed 32,915) and W1 fires branch (a) CAPTURE-AT-3 --
+ALL FIVE new rungs are CAPTURED-class (b3 5,555 / b4 11,656 / b5
+17,251 / b6 22,762 / b7 28,037 ticks at (sum,128,S=16), all 18 cells
+>= 1000): with the committed c2 FLOOR endpoint at the same
+per-dispatch work, the capture-class transition at full work sits at
+the DISCRETE B=2 -> B=3 step -- B=2 does not capture, B=3 already
+does. W2 (pre-registered, descriptive) the B-dose curve is monotone
+non-decreasing (32 / 5,555 / 11,656 / 17,251 / 22,762 / 28,037 /
+32,955 over B=2..8), below the named linear-in-B comparison at every
+new rung (0.450x..0.973x) and converging at the top (1.001x) --
+descriptive, NO linearity claim. Protocol L4 names the remaining
+ambiguity: B and total nominal work co-vary in this design, so whether
+the threshold is on dispatch count or on total work is UNMEASURED and
+needs a crossing design. Observable only; NO causal mechanism is
+claimed or measured. Rule 4 binds: no row moves, no `:measured?` flag
+moves, and no vendor optimization exists for Intel. Evidence:
+`docs/evidence/gpu/anv-dispatchcount-20261027/` (record.txt is the
+finding; publication-s16.txt is produced only by analysis-s16.py over
+the committed run logs).
