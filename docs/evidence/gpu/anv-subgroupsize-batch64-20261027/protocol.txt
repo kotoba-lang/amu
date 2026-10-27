@@ -1,0 +1,108 @@
+PROTOCOL -- JUN-59 subgroup 16-vs-32 FLOOR-LIFTING rerun (batched
+dispatch bracket), SECOND session (2026-10-27). Written BEFORE the first
+run of this session; nothing here is rewritten after the runs. The run
+transcript is run-1.txt / run-2.txt / run-3.txt and the analysis is
+publication.txt, produced only by analysis.py over those logs.
+
+WHAT THIS SESSION IS. The FIRST session's named residual
+(anv-subgroupsize-81632-20261027/record.txt: "the row question
+S=16-vs-32 ABOVE the floor stays UNRESOLVED (a floor-lifting rerun --
+larger n and/or several dispatches per timestamp bracket -- is PROPOSED,
+its own future row)"). Same row question, same cells, same host
+(aiueos-6600hs-1, BMG G31 / ANV), same INSTRUMENT channel; the ONLY
+change is the timing bracket: BATCH=64 consecutive dispatches per
+timestamp bracket instead of one.
+
+WHAT RUNS. The same committed emitter bytes (the 6
+subgroup-reduce-w{128,256}-{sum,max,min}.emitted.glsl files from
+scripts/emit-gpu-subgroup-reduce-glsl.cljk, re-emitted twice
+byte-identically at this session's start -- sha256 census; plus the 2
+instrument-local probe shaders), compiled by the instrument host's own
+glslangValidator (tool identity verbatim in compile-toolchain.txt).
+scripts/gpu-subgroup-reduce-anv-subgroupsize-batch.c (the batch
+instrument, DERIVED from the first session's instrument which stays
+byte-stable) dispatches them on the ANV device. n = 1000003, WARMUP = 3,
+ROUNDS = 25, SEED = 20261027, cells = the same 24 as session 1
+(cases.txt: 3 ops x 2 W x 4 S-forcing). Data: identical LCG stream,
+integer-valued floats 0..1023, exact f32 folds, bit-exact verify.
+
+METRIC NAMED. gpu_ns = the vkCmdWriteTimestamp bracket
+(TOP_OF_PIPE -> BOTTOM_OF_PIPE, timestampPeriod 52.083 ns/tick) around
+BATCH=64 back-to-back vkCmdDispatch calls in ONE command buffer (no
+barriers between them; the 64 writes to parts[] are idempotent
+same-value WAW). This is STEADY-STATE BATCHED THROUGHPUT for 64
+dispatches, NOT isolated single-dispatch latency. per_dispatch_ns =
+gpu_ns / 64; the per-dispatch quantum is 52.083/64 = 0.81 ns. host_ns =
+CLOCK_MONOTONIC submit->completion beside it, never mixed with gpu_ns.
+
+PRE-REGISTERED PREDICTIONS (fixed here, before any run):
+
+P1b (barrier-count design reasoning, above the floor): at fixed
+   (op, W) the per_dispatch_ns median is NON-INCREASING in forced S
+   (ADR-0356's tree: log2(W/S) cross-subgroup write-barrier stages vs
+   barrier-free intra-subgroup shuffle rounds). At this device S=8 has
+   no timing (fail-closed, minSubgroupSize=16), so the NARROWED letter
+   is: S=32's median strictly below S=16's at every (op, W). Any
+   (op, W) where it is not NAMED refutes P1b at that cell (the same
+   clause session 1's P1 carried). This is a design-reasoning check at
+   the INSTRUMENT channel, NOT an optimization claim: nothing here may
+   move a selection answer.
+
+P2b (forcing reality): probe gl_SubgroupSize equals the forced size at
+   every forced cell and the device-reported subgroupSize at every
+   default cell; probe gl_NumSubgroups = W / probe_size. Any deviation
+   VOIDS that cell's timing with the void named, never dropped silently.
+
+P3b (correctness): mismatch = 0 at every measured cell of every run
+   (bit-exact CPU integer reference, verified inside the run).
+
+P4b (cross-run order): the per-cell per_dispatch_ns medians' ORDER by S
+   at fixed (op, W) is IDENTICAL across the three fresh processes at
+   every (op, W). A failure is recorded as channel session-variability
+   at its letter and is NOT hidden (session 1's P4 failed at 2 of 6
+   cells at the floor, tie-degenerate).
+
+FLOOR-LIFT SUCCESS CONDITION (the session's enabling question,
+pre-registered): the batch route LIFTS THE FLOOR iff the pooled median
+bracket gpu_ticks at every measured cell is >= 248 ticks (= 8 x session
+1's 31-tick single-dispatch floor median) -- i.e. the bracket is
+dominated by dispatch work, not fixed submit overhead. A cell below
+248 ticks is NAMED floor-not-lifted; its S comparison is void with that
+reason (published, never dropped). If EVERY measured cell fails the
+condition, the S=16-vs-32 question stays UNRESOLVED at this route too
+and is so named.
+
+INTERPRETATION REGISTERED IN ADVANCE: if S=16 and S=32 tie again above
+the floor (P1b refuted everywhere), the row question resolves as "no
+measurable S=16-vs-32 timing difference at W in {128,256} on BMG G31 /
+ANV, neither at isolated single-dispatch (session 1, pinned at the
+floor) nor at batched steady state (this session, per-dispatch quantum
+0.81 ns)" -- and under rule 4 no row moves either way. If S=32 is
+strictly faster somewhere, that is MEASURED EVIDENCE at the INSTRUMENT
+channel only, and under rule 4 it still moves no row by itself (it is
+not the accelerator-subgroup-reduce.cljk baseline-vs-variant contract).
+
+FAIL-CLOSED BRANCHES (named, never silent): pipeline creation with
+requiredSubgroupSize fails -> CELL pipeline=FAIL, no samples (this is
+how every S=8 cell behaves on this device); probe mismatch -> CELL
+void=1 with void_reason; timestamp query failure -> gpu_ticks=0 in that
+SAMPLE (named absent in analysis).
+
+CHANNEL NAMED (the 2026-10-25 ADR-0355 channel rule): INSTRUMENT
+channel -- a standalone measurement instrument on raw ANV, neither the
+removed wire-42 loader path nor its ADR-0371 provider successor (which
+does not answer INFO yet). RULE 4 BINDS IN FULL: no workgroup row moves
+(no :measured? flag, no :size, no :shapes, no selection answer -- the
+:intel row 128 / :measured? true / key "g31" keeps its ADR-0358
+provenance), and this session is NOT the basis-replacing
+baseline-vs-variant contract named in accelerator-subgroup-reduce.cljk
+(that contract is its own future row). :arm/:unknown stay provisional
+:measured? false.
+
+STATES AT REGISTRATION: emitter arm, dispatch table, device-class,
+selection rows IMPLEMENTED (code + tests, unchanged by this session);
+this session MEASURES only what its logs say. UNMEASURED named in
+advance: every W outside {128,256}, shape 2, isolated single-dispatch
+timing above any floor (this session measures batched throughput only),
+every op-order/data-dependence question, any baseline-vs-variant sign,
+cross-day replication, anything off this host.

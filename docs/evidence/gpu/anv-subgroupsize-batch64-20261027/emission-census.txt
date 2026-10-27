@@ -1,0 +1,35 @@
+CORPUS CHAIN OF CUSTODY -- JUN-59 batch64 floor-lifting session, 2026-10-27
+
+Route: scripts/emit-gpu-subgroup-reduce-glsl.cljk (committed emitter, public
+route) run from the worktree root via
+  kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" scripts/emit-gpu-subgroup-reduce-glsl.cljk
+TWO runs this session; both WROTE the same 6 files (1206/1236 bytes), and
+`git diff --stat | wc -l` = 0 after both runs -- the re-emission is
+BYTE-IDENTICAL to the committed corpus (the corpus is emitter bytes, never
+hand-written). The 2 probe shaders are instrument-local (the verification
+channel), copied as-is. (The kbb "2 dep(s) are not :local/root" warning is
+identical on every kbb run in this repo and is named everywhere.)
+
+sha256 census of the emitter corpus
+(docs/evidence/gpu/anv-subgroupsize-81632-20261027/shaders/):
+cffc3f4558d830fbcabf5ada4c1f4752ed7a2ec680f652d06628684f9038601c  probe-w128.glsl
+1d1ba71130e7e1b890e560a309d98689e446f208b3fe17424038cdb2377e4352  probe-w256.glsl
+94420e5b4b1d2ba93ffd1f41851b693de4e6be594c39532d8fb7076e60372bdf  subgroup-reduce-w128-max.emitted.glsl
+c21e5035078070f12de178314163f7412d944422f8b122c011699fa224eb11af  subgroup-reduce-w128-min.emitted.glsl
+b49362463cd5954ed739237d7d16a3d4e421f32597bc09c3ead78346dab73564  subgroup-reduce-w128-sum.emitted.glsl
+06a3fd20d8a361a1c39a80cac9ade63490a478cf27baf77a4099e1a1987d5de4  subgroup-reduce-w256-max.emitted.glsl
+22e838220e8eb34a1172fd74134533e87d3c9f8538dfff55a08326a4a6fb28cb  subgroup-reduce-w256-min.emitted.glsl
+fc50a68abcd1b04aaebb88801f6c93a570c01feab3ed3073661f715abca4b20c  subgroup-reduce-w256-sum.emitted.glsl
+
+sha256 census of this session's committed copies (shaders/ in this dir):
+cffc3f4558d830fbcabf5ada4c1f4752ed7a2ec680f652d06628684f9038601c  probe-w128.glsl
+1d1ba71130e7e1b890e560a309d98689e446f208b3fe17424038cdb2377e4352  probe-w256.glsl
+94420e5b4b1d2ba93ffd1f41851b693de4e6be594c39532d8fb7076e60372bdf  subgroup-reduce-w128-max.emitted.glsl
+c21e5035078070f12de178314163f7412d944422f8b122c011699fa224eb11af  subgroup-reduce-w128-min.emitted.glsl
+b49362463cd5954ed739237d7d16a3d4e421f32597bc09c3ead78346dab73564  subgroup-reduce-w128-sum.emitted.glsl
+06a3fd20d8a361a1c39a80cac9ade63490a478cf27baf77a4099e1a1987d5de4  subgroup-reduce-w256-max.emitted.glsl
+22e838220e8eb34a1172fd74134533e87d3c9f8538dfff55a08326a4a6fb28cb  subgroup-reduce-w256-min.emitted.glsl
+fc50a68abcd1b04aaebb88801f6c93a570c01feab3ed3073661f715abca4b20c  subgroup-reduce-w256-sum.emitted.glsl
+
+PAIR CHECK: 8/8 files byte-identical between the emitter corpus and this
+session's copies (the two censuses above are equal line-for-line).

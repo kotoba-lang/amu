@@ -1,0 +1,46 @@
+== date -u ==
+2026-10-27T09:12:28Z
+== host ==
+aiueos-6600hs (aiueos-6600hs-1, tailscale 100.98.24.37), user murakumo-ci
+(groups include render -- render-node access; the instrument does not need
+root). Workdir ~/anv-batch64-20261027.
+== glslangValidator --version (first 3 lines) ==
+Glslang Version: 11:15.1.0
+ESSL Version: OpenGL ES GLSL 3.20 glslang Khronos. 15.1.0
+GLSL Version: 4.60 glslang Khronos. 15.1.0
+== gcc --version ==
+gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+== shader compiles: glslangValidator -S comp -V --target-env vulkan1.2 <f> -o <f%.glsl>.spv ==
+shaders/probe-w128.glsl rc=0
+shaders/probe-w256.glsl rc=0
+shaders/subgroup-reduce-w128-max.emitted.glsl rc=0
+shaders/subgroup-reduce-w128-min.emitted.glsl rc=0
+shaders/subgroup-reduce-w128-sum.emitted.glsl rc=0
+shaders/subgroup-reduce-w256-max.emitted.glsl rc=0
+shaders/subgroup-reduce-w256-min.emitted.glsl rc=0
+shaders/subgroup-reduce-w256-sum.emitted.glsl rc=0
+== instrument compile ==
+$ gcc -O2 -o anv-subgroupsize-batch gpu-subgroup-reduce-anv-subgroupsize-batch.c -lvulkan
+gcc rc=0
+== sha256 of uploaded .glsl (must match emission-census.txt's pair census) ==
+cffc3f4558d830fbcabf5ada4c1f4752ed7a2ec680f652d06628684f9038601c  shaders/probe-w128.glsl
+1d1ba71130e7e1b890e560a309d98689e446f208b3fe17424038cdb2377e4352  shaders/probe-w256.glsl
+94420e5b4b1d2ba93ffd1f41851b693de4e6be594c39532d8fb7076e60372bdf  shaders/subgroup-reduce-w128-max.emitted.glsl
+c21e5035078070f12de178314163f7412d944422f8b122c011699fa224eb11af  shaders/subgroup-reduce-w128-min.emitted.glsl
+b49362463cd5954ed739237d7d16a3d4e421f32597bc09c3ead78346dab73564  shaders/subgroup-reduce-w128-sum.emitted.glsl
+06a3fd20d8a361a1c39a80cac9ade63490a478cf27baf77a4099e1a1987d5de4  shaders/subgroup-reduce-w256-max.emitted.glsl
+22e838220e8eb34a1172fd74134533e87d3c9f8538dfff55a08326a4a6fb28cb  shaders/subgroup-reduce-w256-min.emitted.glsl
+fc50a68abcd1b04aaebb88801f6c93a570c01feab3ed3073661f715abca4b20c  shaders/subgroup-reduce-w256-sum.emitted.glsl
+== sha256 of .spv (host glslang 11:15.1.0; IDENTICAL to session 1's
+   compile-toolchain.txt census 8/8 -- same toolchain, same bytes) ==
+a1f0dccc4557bc5fb17e8f89170cc53cc9f6db3b42817a4a5de217f0a034ca1a  shaders/probe-w128.spv
+1691be2b85c46aa79dc1d86460c84a8992f743ff4be06927c8c850519ddbbd9d  shaders/probe-w256.spv
+e3eb4aeba6f4c471f1f11dcc3aba15a522c76cf09e63959f77c6e4ba6c49bebc  shaders/subgroup-reduce-w128-max.emitted.spv
+bb1a3755995e88bc70ac2957a86d478561a265ec831a2a7eaef52d9967e7fde2  shaders/subgroup-reduce-w128-min.emitted.spv
+30ed70141e1d567b40f62d54c0c38af33ca8dca77d4147d4d5bb50712dc4766f  shaders/subgroup-reduce-w128-sum.emitted.spv
+5a9b5fa3ec13f0f93e018310572960f1cfbb9f63890b3aaf8ac3a4f19b694251  shaders/subgroup-reduce-w256-max.emitted.spv
+f7755d83d6c44d27a304f301ed2184e01d90d07958ee93dacc42daa7f6433d9b  shaders/subgroup-reduce-w256-min.emitted.spv
+0ffc22f8d2449b04951a55bb7b9f8993c40098d3104e9cb9204fa42f09c3b9a8  shaders/subgroup-reduce-w256-sum.emitted.spv
+== instrument source / binary sha256 (captured after build, before the runs) ==
+34d56fa11831cbb3ea0ef61a5580f10689ae6af25f15912d731182e6efd51e06  gpu-subgroup-reduce-anv-subgroupsize-batch.c (host copy; the local scripts/ copy is byte-identical, same sha256 re-derived in the worktree)
+cc7e07b5d76c32104da5b1abe45a1579b6e6a3695356c0b72b44126137766cfd  anv-subgroupsize-batch (host gcc 13.3.0 -O2 -lvulkan binary)
