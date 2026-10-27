@@ -31,7 +31,7 @@
               params (dcp-field M S p ":params") body (dcp-field M S p ":body")]
           (if (or (not (dcs-shape? M S p true)) (< (dcp-effect-mask M S p) 0)
                   (not= (kr-kind M name) ND-SYM) (not= (kr-kind M params) ND-VEC) (= body 0)
-                  (dcp-pure-op? text) (= text "typed-cap-call") (= text "let") (= text "nil") (= text "true") (= text "false")
+                  (dcp-primitive-op? text) (= text "typed-cap-call") (= text "let") (= text "nil") (= text "true") (= text "false")
                   (not= (dcp-lookup M S state name) -1))
             (vector-assoc! state 0 (if (< (dcp-effect-mask M S p) 0) 4 1))
             (let [a (dcp-put (dcp-put state i 0 p) i 1 name)
