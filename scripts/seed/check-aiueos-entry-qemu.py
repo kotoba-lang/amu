@@ -55,12 +55,12 @@ class QmpStdio:
         self.reader.close()
 
 
-def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalog=False, stack_exhaustion=False, pci_catalog=False, pci_private=False, pci_private_forgery=False, dma_snapshot=False, value_context=False, value_call=False, llm_header=False, llm_result=False, llm_keyword_text=False, llm_ticket=False, llm_digest=False):
+def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalog=False, stack_exhaustion=False, pci_catalog=False, pci_private=False, pci_private_forgery=False, dma_snapshot=False, value_context=False, value_call=False, llm_header=False, llm_result=False, llm_keyword_text=False, llm_ticket=False, llm_digest=False, llm_admission=False):
     llm_header = llm_header or llm_result or llm_ticket
-    llm_private = llm_header or llm_digest
+    llm_private = llm_header or llm_digest or llm_admission
     assert not llm_keyword_text or llm_result, 'keyword text requires a result receipt'
     assert not llm_ticket or llm_result, 'ticket receipt requires the request/result probe'
-    assert sum([dma_snapshot,value_context,value_call,llm_header,llm_digest]) <= 1, 'select one functional receipt'
+    assert sum([dma_snapshot,value_context,value_call,llm_header,llm_digest,llm_admission]) <= 1, 'select one functional receipt'
     pci_private = pci_private or pci_private_forgery or dma_snapshot or value_context or value_call or llm_private
     pci_catalog = pci_catalog or pci_private
     assert not (pci_catalog and (sealed_catalog or stack_exhaustion)), "select one versioned fixture"
@@ -99,7 +99,7 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
             subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT))
     conn, stream, next_id = None, None, 0
     try:
-        end = time.monotonic() + (300 if llm_digest else 90)
+        end = time.monotonic() + (300 if llm_digest or llm_admission else 90)
         if llm_private:
             assert proc.poll() is None, ("QEMU exited", proc.returncode)
             stream = QmpStdio(proc)
@@ -152,7 +152,7 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
         # The original literal-only probe preserves 1024. Call-bearing locked
         # fixtures supply their exact source-charge expectation explicitly.
         assert boot > 0
-        if llm_digest:
+        if llm_digest or llm_admission:
             assert 0 < fuel < remaining_fuel, (fuel, remaining_fuel)
         elif stack_exhaustion or dma_snapshot or value_context or value_call or llm_header:
             assert 0 < fuel < 1000000, fuel  # Bounded budget, not exact fuel parity.
@@ -331,7 +331,7 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
         else:
             llm_request = None
         llm_digest_receipt = None
-        if llm_digest:
+        if llm_digest or llm_admission:
             scratch, pages = struct.unpack_from('<QQ', private, 272)
             assert scratch > 0 and pages == 15
             captures = (
@@ -343,8 +343,8 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
                 ('llm-digest-changed.bin', scratch + 13*4096, 32),
                 ('llm-digest-selected.bin', scratch + 14*4096 + 256, 6),
                 ('llm-digest-result.bin', scratch + 14*4096 + 512, 64),
-                ('llm-digest-ticket.bin', scratch + 14*4096 + 128, 72),
-                ('llm-digest-receipt.bin', scratch + 12*4096, 112),
+                ('llm-digest-ticket.bin', scratch + (11*4096 if llm_admission else 14*4096 + 128), 72),
+                ('llm-digest-receipt.bin', scratch + 12*4096, 128 if llm_admission else 112),
             )
             for name, address, size in captures:
                 assert hmp(f'pmemsave 0x{address:x} {size} {name}') == ''
@@ -354,7 +354,8 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
             prompt = Path('llm-digest-prompt.bin').read_bytes()
             first = Path('llm-digest-first.bin').read_bytes()
             changed = Path('llm-digest-changed.bin').read_bytes()
-            checks = struct.unpack('<14Q', Path('llm-digest-receipt.bin').read_bytes())
+            checks = struct.unpack('<16Q' if llm_admission else '<14Q',
+                                   Path('llm-digest-receipt.bin').read_bytes())
             expected_header = struct.pack('<10I', 827149387, 1, 11, 6, 6144,
                                           6144, 16, 0, 12294, 64) + bytes(24)
             assert header == expected_header, 'wire-11 header not restored'
@@ -363,7 +364,7 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
             assert Path('llm-digest-result.bin').read_bytes() == b'Z' * 64
             assert Path('llm-digest-ticket.bin').read_bytes() == bytes(72)
             assert system == b's' * 6144 and prompt == b'p' * 6144
-            assert checks == (1,)*14, checks
+            assert checks == (1,)*(16 if llm_admission else 14), checks
             assert first == hashlib.sha256(header + model + system + prompt).digest()
             changed_prompt = b'q' + prompt[1:]
             assert changed == hashlib.sha256(header + model + system + changed_prompt).digest()
@@ -382,7 +383,11 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
                 independentlyRootedBytes=12288, fullRequestBytes=12358,
                 rejectsLengthMismatchesAndRegionAliases=True,
                 shapeAndDigestSameCall=True,
-                fullDigestBindsOneUseTicket=True, hostAdmission=False,
+                fullDigestBindsOneUseTicket=True,
+                freshRequestAtConsumeComponent=llm_admission,
+                denialAndBudgetRevokeComponent=llm_admission,
+                changedProcessAndModelRefusedComponent=llm_admission,
+                hostAdmission=False,
                 userCall=False, providerDispatch=False)
         value = None
         if value_context:
@@ -483,6 +488,7 @@ if __name__ == "__main__":
     p.add_argument("--llm-keyword-text", action="store_true")
     p.add_argument("--llm-ticket", action="store_true")
     p.add_argument("--llm-digest", action="store_true")
+    p.add_argument("--llm-admission", action="store_true")
     a = p.parse_args()
     main(*(getattr(a, n).resolve() for n in ("efi", "kernel", "qemu", "firmware", "output")), remaining_fuel=a.remaining_fuel,
-         sealed_catalog=a.sealed_catalog, stack_exhaustion=a.stack_exhaustion, pci_catalog=a.pci_catalog, pci_private=a.pci_private, pci_private_forgery=a.pci_private_forgery, dma_snapshot=a.dma_snapshot, value_context=a.value_context, value_call=a.value_call, llm_header=a.llm_header, llm_result=a.llm_result, llm_keyword_text=a.llm_keyword_text, llm_ticket=a.llm_ticket, llm_digest=a.llm_digest)
+         sealed_catalog=a.sealed_catalog, stack_exhaustion=a.stack_exhaustion, pci_catalog=a.pci_catalog, pci_private=a.pci_private, pci_private_forgery=a.pci_private_forgery, dma_snapshot=a.dma_snapshot, value_context=a.value_context, value_call=a.value_call, llm_header=a.llm_header, llm_result=a.llm_result, llm_keyword_text=a.llm_keyword_text, llm_ticket=a.llm_ticket, llm_digest=a.llm_digest, llm_admission=a.llm_admission)
