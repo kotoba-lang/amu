@@ -1,0 +1,44 @@
+== JUN-59 session 28 derivation census (THE (1024,4033) ANCHOR-CLASS ==
+== RECURRENCE READ) -- every value below computed in ==
+== this script (scratch generator, never committed). ==
+
+knob arithmetic: n = (1,000,003*WORK_MUL)//NDIV (integer floor)
+  c2 B=2 WM=1 NDIV=1 n=1000003 per-dispatch 1.0000000 total 2.0000000
+  hi B=3 WM=1024 NDIV=4033 n=253906 per-dispatch 0.2539052 total 0.7617157
+  tw B=3 WM=2048 NDIV=8066 n=253906 per-dispatch 0.2539052 total 0.7617157
+  c8 B=8 WM=1 NDIV=1 n=1000003 per-dispatch 1.0000000 total 8.0000000
+  hi/tw identical grid: True (n=253,906)
+  (2048,8066) is the exact same-ratio double of (1024,4033): True
+  gcd(253906, 1,000,003) = 1 -- every knob pair is a floor approximation of the grid
+
+manifest: cases-s28-a.txt
+  cell lines byte-copy of cases-s27-a.txt cell lines: True (24 lines)
+  cases-s27-a.txt sha256: 3a5d13423fc5d418fb98dcc0da913e6eb890a0e8dd4d56df0c29dc64529597e7
+  cases-s28-a.txt sha256: 36ab0cb38554be8b925018c9fe9bac0bd448f4a04c9170e4d9f2639cdd67ad40
+instrument: session 27's committed NDIV-derived source byte-identical (byte-copy)
+  gpu-subgroup-reduce-anv-ndiv.c sha256 (== session 27's committed .c.txt): a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556 (byte-copy identity True)
+expected-corpus.sha256 byte-copy of session 27's: local sha256 eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4 (s27 file sha256 eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4 -- byte-copy identity True)
+
+BUILD REPLICATION PINS (declared in protocol.txt section 2 in advance;
+prior censuses parsed programmatically here). ALL FOUR arms have a prior
+binary (the strongest pin position in the chain -- named as such):
+  anv-bb-c2 expected e5ed903e5b9dfd64168e2d8ddea9d8efb573273e7594afcaca71f3f70bb9c489 (== sessions 13-27's c2)
+  anv-bb-c8 expected 480925e58d28e7d318456703c6959548e9b9c33e375c3e0fefe688e844d37807 (== sessions 13-27's c8)
+  anv-bb-hi expected a6c31b6c5c5663084fa4193f0d5c0098f65882b814a92fa9e85cef940cf63b9c (== session 27's anv-bb-hi == session 26's anv-bb-mid a6c31b6c5c5663084fa4193f0d5c0098f65882b814a92fa9e85cef940cf63b9c; equal True; the (1024,4033) pair's SECOND cross-session rebuild)
+  anv-bb-tw expected bb901eb5b1e98940c53b3ecaeccad2b8d410967952659f9902668de32c4524b0 (== session 26's anv-bb-eq3, the (2048,8066) pair's FIRST cross-session rebuild)
+
+frozen cross-session reference values (QUOTE-ONLY L7; recomputed here
+from sessions 26/27's committed run logs -- never this session's
+measurements):
+  session-26 mid ((3,1024,4033), this session's hi knob): pooled median 1129 CAPTURED (18-cell 1001..1435); host_ns 309848
+  session-26 eq3 ((3,2048,8066), this session's tw knob): pooled median 1145 INTERMEDIATE/MIXED (18-cell 985..1443); host_ns 310509
+  session-27 hi ((3,1024,4033)): pooled median 1132 INTERMEDIATE/MIXED (18-cell 976..1437); host_ns 310008
+  session-27 controls: c2 pooled median 31 FLOOR host_ns 672684; c8 pooled median 32871 CAPTURED host_ns 2397482
+  session-26 controls: c2 pooled median 32 host_ns 680499; c8 pooled median 32714 host_ns 2380500
+  the (1024,4033) pair's two prior readings: 1129 CAPTURED (min 1001) / 1132 INTERMEDIATE/MIXED (min 976)
+    -- NAMED, NOT HIDDEN: the s27 class flip happened at a byte-identical rebuilt binary at
+    medians within 0.27%; the expected class for the third reading is NOT pre-judged
+  the (2048,8066) pair's one prior reading: 1145 INTERMEDIATE/MIXED (min 985) (session 26)
+  prior C3 pair-representation outcomes (quote-only): s24 (b) SPLIT, s25 (a) AGREE,
+    s26 (b) SPLIT (at THIS grid and pair-pair: min 1001 vs 985), s27 (a) AGREE
+    -- two splitting grids and two agreeing grids; threshold-artifact-vs-representation UNRESOLVED

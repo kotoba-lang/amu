@@ -1066,3 +1066,35 @@ grid points (class granularity only). Rule 4 binds: no row moves, no
 Evidence: `docs/evidence/gpu/anv-b3bisect7-20261027/` (record.txt is
 the finding; publication-s27.txt is produced only by analysis-s27.py
 over the committed run logs).
+
+## 2026-10-27 -- session 28 (JUN-59): the (1024,4033) anchor-class
+recurrence read
+
+The session-27 residual "the recurrence rate of the (1024,4033)
+cross-session class flip -- one flip observed, no rate measured" is
+taken at the pair's THIRD reading (n=253,906 = (1,000,003\*1024)//4033,
+B=3, binary rebuilt BYTE-IDENTICAL to session 26's), with the
+same-ratio twin (2048,8066)'s SECOND reading alongside and ZERO
+derivation edits / ZERO new knob pairs. THE FLIP RECURS: the reading
+sequence at a byte-identical binary and indistinguishable medians
+(1,129 / 1,132 / 1,131 -- a 0.27% span) is CAPTURED (session 26,
+18-cell min 1,001) / INTERMEDIATE/MIXED (session 27, min 976) /
+INTERMEDIATE/MIXED (this session, min 991), so the pre-registered C2
+letter fired (b) and W1 is (b): the anchor's class is UNSTABLE across
+sessions at the frozen 1000-tick boundary (all three minima within 25
+ticks of it) and NO bracket narrowing is claimed -- the flip location
+stays inside (252,604, 253,906]. NAMED, NOT HIDDEN: one session adds
+one reading; the recurrence RATE stays a multi-session quantity (3
+readings: 1 CAPTURED / 2 MIXED -- the sequence, not a rate). The
+same-ratio twin agrees at the grid this time (C3 (a), 1,141 vs 1,131,
+both INTERMEDIATE/MIXED -- session 26's same-pair split at this grid
+did NOT recur), so the threshold-artifact-vs-representation scoreboard
+reads two splitting grids (sessions 24, 26) and three agreeing grids
+(sessions 25, 27, 28), UNRESOLVED. Controls replicate (C1 (a): c2
+FLOOR 32, c8 32,899 vs committed 32,915). Rule 4 binds: no row moves,
+no `:measured?` flag moves, and no vendor optimization exists for
+Intel.
+
+Evidence: `docs/evidence/gpu/anv-b3anchorrec-20261027/` (record.txt is
+the finding; publication-s28.txt is produced only by analysis-s28.py
+over the committed run logs).
