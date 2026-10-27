@@ -4312,3 +4312,103 @@ not find namespace: kotoba.form" (ADR-0362), outside this diff, no
 green suite claimed; `find docs -name '*.sh'` -> 0).
 
 Record: `docs/evidence/gpu/metal-counter-foldarms-oporder-shape2-w128-20261027/`.
+
+## Amendment 2026-10-27 (the counters channel's OP-ORDER
+AT-OTHER-CELLS row, SHAPE-2 HALF'S FIFTH CELL (n = 2^20 = 1048576 at
+W = 512)): the baseline's verdict class REPRODUCES exactly at its
+letter (roll-up regime-invariant slower 18/18) so the cell's sign is
+op-order-INDEPENDENT at (2^20, 512) -- while the regime structure does
+NOT reproduce at level-count resolution (max THREE reproduces, min
+FOUR -> TWO, sum THREE reproduces) and the FIRST-BLOCK FORM HAS NO
+PRESENTATION AT EITHER SESSION of this cell (neither session has any
+one-level operator)
+
+This row consumes the shape-2 half's FIFTH cell, (n = 2^20 =
+1048576, W = 512), ONE CELL AT A TIME at the route's own unit: 6
+fresh ADR-0358 processes, run window
+2026-10-27T04:18:41Z..04:18:42Z (run-window.txt, verbatim) -- the
+SAME UTC day as every other counters row; NO day claim; day 4+ needs
+2026-10-28 UTC and stays UNMEASURED. P0a HOLDS: ALL EIGHT artifacts
+sha256-identical to ALL THREE prior W = 512 builds of the campaign
+(the W-grid row's and the shape-2 W = 512 row's 2026-10-26 builds, the
+first op-order W = 512 row's 2026-10-27 build; grand total
+identical=24 differs=0) -- the W = 512 fold-arm artifacts are n- AND
+op-order-INVARIANT across FOUR builds and the instrument is CONSTANT
+across the campaign. All 6 processes exit 0 with 120/120 samples
+resolved, 6/6 verify ok=1 each, every header
+`n=1048576 workgroup=512 op_order=min,max,sum` (verified
+programmatically 6/6).
+
+**The finding (publication.txt is the publication; the committed
+route, run twice byte-identical, sha 4c9b58ad..).** (1) P1a FIRES:
+THE SIGN CLASS REPRODUCES -- roll-up REGIME-INVARIANT SLOWER 18/18
+(max 6/6 1.177..1.196 / min 6/6 1.181..1.198 / sum 6/6 1.185..1.200,
+every observed regime one-sided) -- the cell's sign is
+op-order-INDEPENDENT at (2^20, 512) and the shape-2 half's fifth
+cross-order datapoint AGREES with the sum-first order (the W = 32
+class moves at both n stay the named exceptions against W = 64, W =
+128, W = 256 and W = 512 reproducing at both shapes; why W = 32 alone
+moves is UNMEASURED). No side-flip. REOPEN BOOKKEEPING (rule 4 -- NO
+reopen claim from this row): RB2 FIRES -- no one-sided-faster sign
+anywhere (all 18/18 slower), so the exercising-record count STAYS at
+4 and the exercising CELLS STAY at 2 (W = 32 at both n), named both
+ways (4 records / 2 cells), all unadjudicated -- the pre-registered
+RB2 branch holds. (2) P2b FIRES -- the structure does NOT reproduce
+at level-count resolution: this session max THREE
+(37666.5..37854.5 / 96292.0 / 119250.0), min TWO
+(37792.0 / 119000.0..119458.0), sum THREE
+(37708.0..37791.5 / 72958.5 / 119354.5), raw band 37.7k..119.5k --
+against the shape-2 W = 512 row's max THREE
+(37666.5..37750.0 / 49312.5 / 119312.5..119375.0) / min FOUR
+(37562.5..37792.0 / 48729.5 / 96500.0 / 119625.0) / sum THREE
+(37895.5 / 67874.5 / 118729.0..119250.0) at 37.6k..119.6k (max THREE
+reproduces, min FOUR -> TWO, sum THREE reproduces). The session is
+MULTI-LEVEL with fast/mid states present (the (2^20, W = 128) row's
+all-one-level presentation does NOT extend here -- the all-one-level
+session count STAYS at five). NAMED, NOT EXPLAINED: the fast and slow
+bands overlap the baseline's while the baseline's 48.7k/49.3k and
+67.9k mid levels have NO counterpart this session and this session's
+72958.5 (sum) and 96292.0 (max) mid levels sit where the baseline
+showed 67874.5 (sum) and 96500.0 (min, different operator) -- raw
+bands and observed classes, not a mechanism. FIRST-BLOCK FORM: NO
+presentation at EITHER session of this cell -- NEITHER session has
+ANY one-level operator, so the pre-registered check's presentation
+condition cannot fire at this cell at all (cell count named both
+ways: 0/2 sessions, baseline and this session both structurally
+non-presenting -- NAMED so this is NOT read as a disconfirmation of
+the form's cause, which stays UNMEASURED; the exclusive-form counts
+elsewhere stay (2^20, 256) 2/2, (2^20, 32) 2/2, (2^20, 64) 2/2,
+(2^20, 128) 1/2 + 1 degenerate, anchor 4/6 counted sessions; observed
+classes, NOT a mechanism; the anchor cell's counted bookkeeping is
+UNMOVED). (3) P3: per-operator raw ratio bands (max 1.177..1.196,
+min 1.181..1.198, sum 1.185..1.200, pooled 1.177..1.200) against the
+shape-2 W = 512 row's (max 1.176..1.196, min 1.176..1.194, sum
+1.194..1.202, pooled 1.176..1.202) -- max and pooled: this row's
+whole bands INSIDE the baseline's (the baseline's 1.176..1.177 lower
+edges unmatched); min overlap 1.181..1.194 (baseline's 1.176..1.181
+and this row's 1.194..1.198 unmatched); sum overlap 1.194..1.200
+(this row's 1.185..1.194 and the baseline's 1.200..1.202 unmatched)
+-- raw bands, not a mechanism. The n = 1000003 W = 512 reversed-order
+pooled band (1.191..1.198) and the W = 512 W-grid row's pooled band
+(1.175..1.198) are cross-n same-width raw-band observations at ONE
+instrument; the (2^20, W = 256), (2^20, W = 32), (2^20, W = 64) and
+(2^20, W = 128) reversed-order pooled bands (1.204..1.227,
+0.913..1.014, 1.209..1.226, 1.233..1.241) are cross-width same-shape
+raw-band observations. Rule 3: no cross-instrument claim, no
+magnitude invariance across orders, sessions, shapes, widths or n.
+CONSEQUENCE: NOTHING MOVES (rule 4) -- no `:measured?` flag, no
+selection answer, no workgroup row, no cell flip anywhere, no
+cross-instrument claim. Day 4+ cross-day replications, op-order
+dependence at the item's OTHER ONE cell (shape-2 W = 1024 at
+n = 2^20), the class moves' causes (op-order vs session), the
+all-one-level sessions' cause, the first-block form's cause, the
+state-shift cause, "R at those grids", the W-shape's cause (the
+side-flips stay unadjudicated) and anything off M1 Max stay
+UNMEASURED.
+
+Gates: see the record (self-test 2649/0 pin; scoped GPU gate GREEN
+123/12162 twice; FULL `run-tests.cljk` RUN LIVE, red at base "Could
+not find namespace: kotoba.form" (ADR-0362), outside this diff, no
+green suite claimed; `find docs -name '*.sh'` -> 0).
+
+Record: `docs/evidence/gpu/metal-counter-foldarms-oporder-shape2-w512-20261027/`.
