@@ -764,3 +764,48 @@ exists for Intel.
 Evidence: `docs/evidence/gpu/anv-ndiv8ladder-20261027/` (record.txt is
 the finding; publication-s18.txt is produced only by analysis-s18.py
 over the committed run logs).
+
+## Dated note (2026-10-27, JUN-59 measurement: THE NDIV=4 DISPATCH
+## LADDER at fixed per-dispatch work, session 19)
+
+Session 19 closes the NDIV=4 column of the (B,NDIV) grid at fixed
+per-dispatch work (n = 250,000 = 1/4 grid in every z arm; B ladder
+z2..z8 + archived c2/c8 controls). ZERO derivation edits -- the
+instrument is session 18's committed NDIV-derived source byte-identical
+(digest a5e539f0...). Custody GO 17:55:10Z before any build/run
+(corpus 16/16 + 3/3 local-vs-host MATCH); z4's rebuilt binary is
+BYTE-IDENTICAL to session 17's anv-xt-x4 (== the committed x4 knob
+pair) and c2/c8 to session 18's/17's (3/3 build pins). 27 fresh
+processes 17:55:50Z..17:55:59Z, VERIFY mismatch 0, forcing 486/486.
+MEASURED at the INSTRUMENT channel: C1 replicates (c2 FLOOR 31, band
+31..32; c8 32,830 = -0.26% of committed 32,915) and C2 replicates (z4
+= x4's knob pair: 3,112 vs committed x4 3,108 = +0.13%, CAPTURED as
+committed -- the NDIV=4 column and the NDIV=B ladder join at that grid
+point). W1 fires branch (c) RISE-GRADIENT / LATER-ONSET: the class
+vector at fixed per-dispatch work 0.25 units is (FLOOR,
+INTERMEDIATE/MIXED, CAPTURED, CAPTURED, CAPTURED, CAPTURED, CAPTURED)
+over z2..z8 (z2 31 FLOOR; z3 1,140 INTERMEDIATE/MIXED, 18-cell range
+991..1,414; z4..z8 3,112 / 5,021 / 7,065 / 9,008 / 10,988
+CAPTURED-class at all 18 cells; z4 the C2 anchor) -- THE
+CAPTURE-CLASS TRANSITION DOES NOT SIT AT THE DISCRETE B=2 -> B=3 STEP
+AT 1/4 PER-DISPATCH WORK EITHER: B=3 is INTERMEDIATE here, where
+NDIV=1 (5,520) and NDIV=B (1,578) are CAPTURED-class at B=3 and
+NDIV=8 (599) is INTERMEDIATE/MIXED. Among the measured grid points
+the B=3 capture threshold in per-dispatch work sits ABOVE 1/4 --
+between 1/4 (INTERMEDIATE, measured here) and 1/3 (CAPTURED, session
+17) -- and nothing between grid points is interpolated (L5). Session
+18's later-onset shape REPRODUCES at a second per-dispatch-work
+level: per-dispatch work INTERACTS with the dispatch count among the
+named hypotheses at two grid points now; the session-17
+"dispatch-count signature" holds only at per-dispatch work >= 1/3
+among measured grid points (observable only, NO causal mechanism is
+claimed or measured). "B=2 never captures" extends to n=250,000 at
+total work 0.5 (z2 FLOOR 31). W2 (descriptive) the NDIV=4 dose curve
+is non-decreasing (31 -> 10,988 over B=2..8); W3's named equal-total
+shape comparisons split across the FLOOR/CAPTURED divide at totals
+0.5, 1.0 and 2.0 (quote-only vs measured). Rule 4 binds: no row
+moves, no `:measured?` flag moves, and no vendor optimization exists
+for Intel.
+Evidence: `docs/evidence/gpu/anv-ndiv4ladder-20261027/` (record.txt is
+the finding; publication-s19.txt is produced only by analysis-s19.py
+over the committed run logs).
