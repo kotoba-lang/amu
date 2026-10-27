@@ -1820,7 +1820,17 @@ first leg can still fire); a counters-channel record carrying an
 OPPOSING device-level sign (another cell/W, or a cross-day replication
 of the anchor cell contradicting it -- cross-day replication is
 UNMEASURED); a WGSL-arm GPU-core-timestamp measurement (waits on the
-Vulkan-provider route).
+Vulkan-provider route). [SECOND TRIGGER CLASS FIRED 2026-10-27 -- the
+W = 32 side-flips' adjudication (record
+`docs/evidence/gpu/counter-foldarms-reopen-adjudication-20261027/`):
+two committed counters records carry an OPPOSING device-level sign at
+another cell/W (cell roll-up regime-invariant FASTER 18/18 at
+(n = 1000003, W = 32) and (n = 2^20, W = 32); 6 records / 2 cells
+exercise the RB working letter), the REOPEN CLAIM REGISTERS and the
+narrowing's device-premise basis is contradicted at W = 32 at the
+records' letters -- the conservative `:baseline` answer STANDS (rule
+4) and the refutation's W-scope enters the open items; see the
+2026-10-27 adjudication amendment below.]
 
 Named, not hidden: the fired record is ONE cell (n = 1000003, W = 256)
 on ONE day on ONE device -- the confirm verdict is scoped to that
@@ -4803,3 +4813,112 @@ not find namespace: kotoba.form" (ADR-0362), outside this diff, no
 green suite claimed; `find docs -name '*.sh'` -> 0).
 
 Record: `docs/evidence/gpu/metal-counter-foldarms-oporder-rep-shape2-w32-20261027/`.
+
+## Amendment 2026-10-27 (the counters channel's REOPEN-TRIGGER
+ADJUDICATION row): the W = 32 side-flips are ADJUDICATED at the
+trigger class's letter -- the trigger FIRES under both readings of
+"sign" and the REOPEN CLAIM REGISTERS; the narrowing's device-premise
+basis is contradicted at W = 32 at the counters channel's letters and
+the conservative `:baseline` answer STANDS (rule 4)
+
+ONE decision/analysis slice (JUN-58): the adjudication the two
+re-session rows named and deferred ("adjudication and any reopen claim
+need their own row") runs here, ONCE, at the trigger class's letter.
+NO hardware ran and nothing is re-measured (MEASURED: nothing new).
+The six exercising records' committed publications are reproduced
+BYTE-FOR-BYTE through the committed route only
+(`--counters-log run-1..6.txt` in each record's own evidence dir --
+6/6 diffs exit 0, sha256 pairs in the record). The criteria are the
+committed letters verbatim (the trigger class's letter; the
+future-revisit list; the RB working letter registered at the trigger
+class's letter in every protocol since the W-grid row; the second-leg
+fire-criterion precedent "a leg fires when its letter condition is met
+AND its record carries a regime-invariant rule-2 sign"; rule 4) --
+no criterion is fitted to the data.
+
+**The exercising set at its letters: 6 records / 2 cells.** (1) the
+W-grid row's W = 32 cell (n = 1000003): roll-up regime-scoped 5/13,
+sum regime-invariant faster 6/6; (2) the shape-2 W = 32 row
+(n = 2^20): roll-up regime-scoped 5/13, sum 6/6; (3) the op-order
+W = 32 row (n = 1000003): roll-up REGIME-INVARIANT FASTER 18/18; (4)
+the op-order shape-2 W = 32 row (n = 2^20): roll-up regime-scoped
+5/13, min 6/6; (5) the first re-session (n = 1000003): roll-up
+regime-scoped 2/16, min 6/6; (6) the second re-session (n = 2^20):
+roll-up REGIME-INVARIANT FASTER 18/18. Named, not hidden: the first
+re-session's protocol called record 4 one of "the (2^20, W = 32)
+op-order row's 18/18-faster records" -- at its record letter record 4
+is min 6/6 with a regime-scoped roll-up; the descriptor is imprecise,
+the count held under the working letter, no prior text is rewritten
+(the naming precedent).
+
+**VERDICT: the trigger FIRES and the REOPEN CLAIM REGISTERS.** Under
+the strict reading (the record's device-level rule-2 sign = the cell
+roll-up, regime-invariant and opposing, per the fire-criterion
+precedent): records 3 and 6 -- 2 records / 2 cells. Under the working
+letter (a one-sided-faster sign at any operator 6/6 or the roll-up
+18/18): all 6 records / 2 cells. The letter says "a counters-channel
+record ... at any cell/W/day" and both cells are "another cell/W" in
+the future-revisit list's first alternative; the verdict is
+reading-robust, both counts are named, and each exercising record
+spends its one visit as a trigger (one visit per record -- 6
+working-letter visits / 2 strict-letter visits, both named). NOT
+CLAIMED, named so the fire is not overread: that the fold is FASTER at
+W = 32 -- the W = 32 sign is SESSION-VARIABLE (2 of 6 sessions
+regime-invariant faster at the roll-up, 4 of 6 regime-scoped each with
+a regime-invariant-faster operator); no stable W = 32 sign exists.
+
+**The claim's revisit (the narrowing, the second-leg split applied).**
+(2a) DEVICE PREMISE: REACHED and CONTRADICTED at W = 32 at the
+records' letters -- the refutation's blanket sign ("it measured slower
+than `:baseline`") does not hold at W = 32, while the anchor-side sign
+(slower) reproduces at every measured session at
+W = 64/128/256/512/1024; in the corpus at its letter the refutation is
+W-CONDITIONAL (5 of 6 measured widths) AND session-conditional at
+W = 32; WHY W = 32 alone differs stays UNMEASURED (the W-shape's
+cause). (2b) ROUTE RESIDUAL: UNREACHABLE from this channel, unchanged
+(rule 2's channel scoping; WebGPU timestamp routes CLOSED) --
+UNMEASURED, unchanged.
+
+**CONSEQUENCE: NOTHING MOVES (rule 4).** No `:measured?` flag, no
+`:shapes` value, no selection answer (the "m1 max" fragment KEEPS
+ANSWERING `:baseline` -- the conservative fail-closed answer stands;
+no `:measured-cell` record moves; every WGSL answer keeps
+`:measured? false`), no workgroup row (this channel can never move
+one), no WGSL cell flip, no MSL command-buffer cell flip, no
+cross-instrument magnitude claim. SELECTION-SCOPE QUESTION NAMED OPEN
+(this channel cannot move it): the refutation's letter ("the refuted
+variant is not selected on the device that refuted it on any route
+that spells the same fold" -- device-keyed, W-unscoped) is contradicted
+at W = 32 at the counters channel's letters; whether the refutation's
+letter, the narrowing's `:basis` or any selection scope becomes
+W-conditional is UNDECIDED and its evaluation needs its own row(s) on
+a channel licensed to move selection scope (which channel --
+UNDECIDED; proposed here, not decided). The named item "the W = 32
+side-flips stay UNADJUDICATED" CLOSES at its letter (adjudicated:
+trigger fires, claim registers). UNMEASURED, named: the reopened
+selection-scope question; the W = 32 sign's session-variability cause;
+the W-shape's cause; the regime structure's session-variability cause;
+the all-one-level sessions' cause and the aggregate all-one-level
+session count's membership (STILL UNADJUDICATED -- its adjudication is
+its own row, NOT taken here); the first-block form's cause; the
+state-shift cause/threshold/prevalence; "R at those grids" and the
+residual's decomposition and absolute clock domain; the partial tail's
+quantitative role; day 4+ cross-day replications (calendar-blocked
+until 2026-10-28 UTC); anything off M1 Max; the WGSL route's kernel
+time; every workgroup-row question (`:arm`/`:unknown` stay provisional
+`:measured? false`).
+
+States: DECIDED (the adjudication, the verdict, the claim's
+registration and its consequence at this channel's letter). MEASURED:
+nothing new (no hardware ran). IMPLEMENTED: nothing (docs-only).
+ACCEPTED DESIGN ONLY (unchanged): the claim protocol, the narrowing
+(its ANSWER unchanged, its device-premise basis contradicted at W = 32
+at this channel's letters), the reopen condition and its bookkeeping,
+ADR-0355's channel rule. PROPOSED: the Vulkan-provider timestamp route
+(unchanged); the selection-scope question's channel (undecided).
+Gates: see the record (self-test 2649/0 pin; scoped GPU gate GREEN
+123/12162 twice; FULL `run-tests.cljk` RUN LIVE, red at base "Could
+not find namespace: kotoba.form" (ADR-0362), outside this diff, no
+green suite claimed; `find docs -name '*.sh'` -> 0).
+
+Record: `docs/evidence/gpu/counter-foldarms-reopen-adjudication-20261027/`.
