@@ -172,3 +172,24 @@ recorded the loader's wire-42 answer "Intel(R) Graphics (BMG
 G31)|1.4.318|1024|0" -- byte-identical to this probe's derived INFO
 mapping; this row's account-dependence probe is confirmatory of that
 record, not a new mechanism.
+
+## Dated note (2026-10-27, JUN-59 measurement: subgroup 8/16/32, first session)
+
+The probe note's "future row" ran at its own named INSTRUMENT channel
+(a standalone instrument on raw ANV, not the loader path, not the
+ADR-0371 provider): three fresh processes on aiueos-6600hs-1 (BMG G31
+/ ANV) over forced subgroup sizes via VK_EXT_subgroup_size_control.
+MEASURED at that channel: forced S=8 is NOT REALIZABLE (minSubgroupSize
+= 16 -- the issue's 8/16/32 question narrows to 16 vs 32 + default=32
+here); probe-verified S forcing (54/54 cell-runs), bit-exact
+correctness (54/54), and the device's first gpu_ns samples -- which
+PIN AT THE TIMESTAMP FLOOR (median 31 ticks = 1614.6 ns at every
+(op, W, S) cell; the S=16-vs-32 difference is below the quantum at
+n = 1000003), so the narrowed P1 (S=32 strictly fastest) is REFUTED at
+all six cells as ties and the S=16-vs-32 timing question stays
+UNRESOLVED above the floor. Rule 4 binds: no row moves, no `:measured?`
+flag moves, the provisional `:arm`/`:unknown` rows stay provisional,
+and the channel question of the probe note stays UNDECIDED. Evidence:
+`docs/evidence/gpu/anv-subgroupsize-81632-20261027/` (record.txt is the
+finding; publication.txt is produced only by analysis.py over the
+committed run logs).
