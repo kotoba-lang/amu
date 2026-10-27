@@ -4922,3 +4922,87 @@ not find namespace: kotoba.form" (ADR-0362), outside this diff, no
 green suite claimed; `find docs -name '*.sh'` -> 0).
 
 Record: `docs/evidence/gpu/counter-foldarms-reopen-adjudication-20261027/`.
+
+## Amendment 2026-10-27 (the counters channel's AGGREGATE
+ALL-ONE-LEVEL SESSION COUNT MEMBERSHIP ADJUDICATION row): the
+membership REGISTERS -- EIGHT of the THIRTY corpus sessions at this
+row's letter -- and BOTH prior "five" namings under-counted by one at
+their own letters (the correct count at both letters was SIX)
+
+ONE decision/analysis slice (JUN-58; NO HARDWARE RAN -- MEASURED:
+nothing new; analysis of committed logs only): the item "the
+aggregate all-one-level session count's membership (STILL
+UNADJUDICATED -- prior records name it inconsistently); its
+adjudication is its own row, NOT taken here" is consumed ONCE at its
+letter. Criteria quoted VERBATIM before the census ran (all-one-level
+session letter C1 "the session is ALL-ONE-LEVEL (fast/mid states
+entirely ABSENT, slow-state-only)"; the first-block degenerate branch
+letter C2 "all THREE operators one-level"; GAP-1.15's clustering
+letter C3), applied mechanically: all-one-level iff each of
+max/min/sum has exactly ONE regime level in the session's rule-1
+publication. Session unit: ONE ROW = ONE SESSION (the unit the "five"
+namings count); the anchor-cell first-block bookkeeping (4/6 counted
+anchor-cell sessions, "sum is the one-level operator" 2/6) is a
+different quantity on its own axis and stays UNMOVED. Corpus: the 30
+claim-protocol sessions with committed publications; the 2026-10-25
+bracket-calibration row is named OUT (no publication, predates the
+claim protocol). Two pre-registered readings (the letter; the
+committed route re-run on the committed run logs) COINCIDE at 30/30
+BYTE-IDENTICAL reproductions.
+
+THE VERDICT (adjudication.txt is the adjudication): the canonical
+membership is M1..M8 -- the shape-2 W = 1024 baseline session (2^20,
+2026-10-26T22:33:51Z), the n = 1000003 reversed-order W = 32/64/128/512
+sessions (2026-10-27T00:50:39Z / 01:21:04Z / 01:51:29Z / 02:04:45Z),
+the (2^20, W = 128) reversed session (03:51:57Z), the (2^20, W = 1024)
+reversed session (04:36:02Z) and the (2^20, W = 32) reversed
+re-session (05:40:35Z) -- COUNT EIGHT of THIRTY, registered at THIS
+ROW'S LETTER ONLY (later letters re-derive it by the same criteria).
+Naming (A) (the shape-2 W = 512 row's record, session 04:18:41Z,
+"five as the four n = 1000003 reversed-order sessions plus the (2^20,
+W = 128) reversed session") UNDER-COUNTED BY ONE at its letter (six
+was correct): it omitted the shape-2 W = 1024 baseline session. Naming
+(B) (the owner-corrected (2^20, W = 128) record, session 03:51:57Z,
+"its own fifth after the shape-2 W = 1024 baseline session plus the
+n = 1000003 W = 32/64/128 reversed-order sessions") UNDER-COUNTED BY
+ONE at its letter too: it omitted the (1000003, W = 512) reversed
+session. NAMED, NOT HIDDEN: "the fifth all-one-level session of the
+campaign" attached to the (2^20, W = 128) reversed session is wrong at
+the canonical letter (it is the sixth by run order), and "the n =
+1000003 reversed-order sessions ... land all-one-level" overstates
+(four of five -- the (1000003, W = 1024) reversed session is
+multi-level). Cross-check (consistency only): the W = 32 all-one-level
+set {the (1000003, W = 32) reversed session, the (2^20, W = 32)
+reversed re-session} matches the standing association's 2/2 and the
+four multi-level W = 32 sessions its 4/4 -- no correction there.
+
+CONSEQUENCE: RECORD STATE ONLY (rule 4). Nothing else moves; the
+anchor-cell first-block bookkeeping and every per-cell first-block
+form count stay UNMOVED; the reopened selection-scope question is
+untouched. UNMEASURED named: WHY sessions land all-one-level (the
+cause); the W = 32 sign's session-variability cause; the W-shape's
+cause; the regime structure's session-variability cause; the
+first-block form's cause; the state-shift cause/threshold/prevalence;
+"R at those grids" and the residual's decomposition and absolute
+clock domain; the partial tail's quantitative role; day 4+ cross-day
+replications (calendar-blocked until 2026-10-28 UTC); anything off
+M1 Max; the WGSL route's kernel time; every workgroup-row question
+(`:arm`/`:unknown` stay provisional `:measured? false`).
+
+NAMED, NOT HIDDEN: the first census harness attempt globbed
+run-*.txt and swept run-window.txt into the run list; the committed
+route correctly refused those lists (parse_counters_run, "counters
+log carries no n=/workgroup= header -- the run's cell is unknown");
+with the committed invocation all 30 sessions reproduce
+byte-identical -- the defect is the harness's glob, not the route or
+any log. States: DECIDED (the membership and the count at this row's
+letter). MEASURED: nothing new. IMPLEMENTED: nothing (docs-only).
+ACCEPTED DESIGN ONLY (unchanged): the claim protocol, GAP-1.15
+clustering, the channel rules. PROPOSED (unchanged): the
+Vulkan-provider timestamp route; the selection-scope question's
+channel. Gates: see the record (self-test 2649/0 pin; scoped GPU gate
+GREEN 123/12162 twice; FULL `run-tests.cljk` RUN LIVE, red at base
+"Could not find namespace: kotoba.form" (ADR-0362), outside this
+diff, no green suite claimed; `find docs -name '*.sh'` -> 0).
+
+Record: `docs/evidence/gpu/counter-foldarms-allonelevel-adjudication-20261027/`.

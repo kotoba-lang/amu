@@ -167,15 +167,22 @@
 (defn- dcp-group-effects [A :vector-i64 C :vector-i64] :i64
   (loop [i 0 mask 0]
     (if (= i (vector-count C)) mask (recur (inc i) (bit-or mask (dcp-fx A (vector-at C i)))))))
-(defn- dcp-pure-op? [s :string] :bool
+;; Reserved native intrinsics are identities, not a claim of purity. In
+;; particular assoc and assoc! must retain distinct aliasing semantics.
+(defn- dcp-primitive-op? [s :string] :bool
   (or (= s "+") (= s "-") (= s "*") (= s "quot") (= s "rem")
       (= s "=") (= s "not=") (= s "<") (= s ">") (= s "<=") (= s ">=")
       (= s "if") (= s "do") (= s "not") (= s "and") (= s "or")
       (= s "inc") (= s "dec") (= s "bit-and") (= s "bit-or") (= s "bit-xor")
       (= s "bit-not") (= s "i64-shift-left") (= s "i64-shift-right") (= s "u64-shift-right")
       (= s "vector-new") (= s "vector-count") (= s "vector-at") (= s "nth")
+      (= s "vector-alloc") (= s "vector-conj") (= s "vector-assoc") (= s "vector-assoc!")
       (= s "string-length") (= s "string-byte-length") (= s "string=?")
       (= s "string-concat") (= s "string-substring") (= s "string-code-point-at")
+      (= s "string-compare") (= s "string-index-of") (= s "string-from-utf8")
+      (= s "bytes-from-vector-i64") (= s "vector-i64-from-bytes")
+      (= s "bytes-empty") (= s "bytes-count") (= s "bytes-at")
+      (= s "bytes-concat") (= s "bytes-slice")
       (= s "pair") (= s "pair-first") (= s "pair-second")
       (= s "result-ok-of") (= s "result-err-of") (= s "result-ok?-of")
       (= s "result-value-of") (= s "result-error-of") (= s "option-some-of")
@@ -187,7 +194,7 @@
       (= name "true") "8264626f6f6cf5"
       (= name "false") "8264626f6f6cf4"
       :else (let [f (dcp-lookup M S A n)]
-        (if (< f 0) (if (or (dcp-pure-op? name) (= name "typed-cap-call")) (dcp-sym name) (dcp-bad A))
+        (if (< f 0) (if (or (dcp-primitive-op? name) (= name "typed-cap-call")) (dcp-sym name) (dcp-bad A))
           (let [edge (if (= (vector-at A 5) 0) (dgg-add A (vector-at A 4) f)
                        (if (dgg-has? A (vector-at A 4) f) A (dgg-bad A)))]
             (cond (= (vector-at A 5) 0) (dcp-sym name)

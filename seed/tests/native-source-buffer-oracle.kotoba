@@ -1,0 +1,42 @@
+;; Independent canonical payloads built only with04's generic constructors.
+;; No source bridge, checked normalizer or supplied KIR contributes an ID.
+(defn- dbo-types [op :string] :vector-i64
+  ;; Type codes:1 i64,2 string,3 vector-i64,4 bytes. Result then arguments.
+  (cond (= op "bytes-from-vector-i64") [4 3]
+    (= op "vector-i64-from-bytes") [3 4]
+    (= op "string-from-utf8") [2 4]
+    (or (= op "string-compare") (= op "string-index-of")) [1 2 2]
+    (= op "bytes-empty") [4]
+    (= op "bytes-count") [1 4]
+    (= op "bytes-at") [1 4 1]
+    (= op "bytes-concat") [4 4 4]
+    (= op "bytes-slice") [4 4 1 1]
+    :else []))
+(defn- dbo-type [code :i64] :string
+  (dc-kw (case code 1 "i64" 2 "string" 3 "vector-i64" 4 "bytes" "")))
+(defn- dbo-vector [items [:list :string]] :string (dc-collection "vec" items false))
+(defn- dbo-payload [op :string] :string
+  (let [T (dbo-types op) count (dec (vector-count T))
+        params (loop [i 0 xs (typed-list-new [:list :string])]
+          (if (>= i count) xs (recur (inc i) (typed-list-conj [:list :string] xs
+            (dc-atom "sym" (string-concat "k" (mem-u2dec i)))))))
+        types (loop [i 0 xs (typed-list-new [:list :string])]
+          (if (>= i count) xs (recur (inc i) (typed-list-conj [:list :string] xs (dbo-type (vector-at T (inc i)))))))
+        args (loop [i 0 xs (typed-list-new [:list :string] (dc-atom "sym" op))]
+          (if (>= i count) xs (recur (inc i) (typed-list-conj [:list :string] xs (typed-list-nth [:list :string] params i)))))
+        kir (dc-collection "map" (typed-list-new [:list :string]
+          (dc-entry "body" (dc-collection "list" args false))
+          (dc-entry "params" (dbo-vector params))
+          (dc-entry "op" (dc-kw "kotoba.definition/function"))) true)]
+    (if (< count 0) ""
+      (dc-payload "6" "2" kir
+        (dc-collection "set" (typed-list-new [:list :string]) true)
+        (dc-collection "map" (typed-list-new [:list :string]
+          (dc-entry "arity" (dc-int (mem-u2dec count)))
+          (dc-entry "params" (dbo-vector types))
+          (dc-entry "result" (dbo-type (vector-at T 0)))) true)
+        (dbo-vector (typed-list-new [:list :string]))))))
+(defn- seed-main [] :i64
+  (if (not= (io-argc) 1) 2
+    (let [cid (dc-definition-cid (dbo-payload (io-arg 0)))]
+      (if (= cid "") 1 (let [out (io-out (string-concat cid "\n"))] 0)))))

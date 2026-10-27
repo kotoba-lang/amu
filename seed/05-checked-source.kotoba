@@ -122,6 +122,14 @@
     HD-BIT-AND "bit-and" HD-BIT-OR "bit-or" HD-BIT-XOR "bit-xor"
     HD-BIT-NOT "bit-not" HD-SHL "i64-shift-left" HD-SSHR "i64-shift-right"
     HD-USHR "u64-shift-right" HD-VECTOR-AT "vector-at" HD-VECTOR-COUNT "vector-count"
+    HD-VECTOR-ALLOC "vector-alloc" HD-VECTOR-CONJ "vector-conj"
+    HD-VECTOR-ASSOC "vector-assoc" HD-VECTOR-ASSOC-BANG "vector-assoc!"
+    HD-BYTES-FROM-VECTOR-I64 "bytes-from-vector-i64"
+    HD-VECTOR-I64-FROM-BYTES "vector-i64-from-bytes"
+    HD-BYTES-EMPTY "bytes-empty" HD-BYTES-COUNT "bytes-count" HD-BYTES-AT "bytes-at"
+    HD-BYTES-CONCAT "bytes-concat" HD-BYTES-SLICE "bytes-slice"
+    HD-STRING-FROM-UTF8 "string-from-utf8"
+    HD-STRING-COMPARE "string-compare" HD-STRING-INDEX-OF "string-index-of"
     HD-STRING-LENGTH "string-length" HD-STRING-BYTE-LENGTH "string-byte-length"
     HD-STRING-CONCAT "string-concat" HD-STRING-SUBSTRING "string-substring"
     HD-STRING-CODE-POINT-AT "string-code-point-at" HD-STRING-EQ "string=?" ""))
@@ -189,6 +197,8 @@
       ;; Literal def values are checked by the signature pass, not ck-expr.
       (and (= kind ND-SYM) (= (nm-head-of M n) HD-TRUE)) "true"
       (and (= kind ND-SYM) (= (nm-head-of M n) HD-FALSE)) "false"
+      (and (= kind ND-VEC) (= (nm-nf M n NF-TYPE) TY-VEC))
+        (string-concat "[" (string-concat (dsb-seq M S C (nm-first M n) (inc depth)) "]"))
       (= kind ND-LIST) (dsb-call M S C n (inc depth))
       :else (dsb-bad C 3 n))))
 (defn- dsb-params [M :vector-i64 C :vector-i64 p :i64 types :bool] :string

@@ -10,6 +10,7 @@ on:
       - "scripts/seed/check-checked-source-native.py"
       - "scripts/seed/check-definition-effects-native.py"
       - "scripts/seed/check-identity-resource-native.py"
+      - "scripts/seed/check-source-vectors-native.py"
       - ".github/workflows/native-checked-source.yml"
   push:
     branches: [main]
@@ -20,6 +21,7 @@ on:
       - "scripts/seed/check-checked-source-native.py"
       - "scripts/seed/check-definition-effects-native.py"
       - "scripts/seed/check-identity-resource-native.py"
+      - "scripts/seed/check-source-vectors-native.py"
       - ".github/workflows/native-checked-source.yml"
 permissions:
   contents: read
@@ -60,6 +62,7 @@ jobs:
           # use separate fixture/cache directories and retain every control.
           gates = [
               ("checked-source", "check-checked-source-native.py", "checked-source"),
+              ("source-vectors", "check-source-vectors-native.py", "source-vectors"),
               ("identity-resource", "check-identity-resource-native.py", "identity-resource"),
               ("definition-effects", "check-definition-effects-native.py", "definition-effects"),
           ]
@@ -94,7 +97,8 @@ jobs:
               assert report["jobs"] == report["capacity"] == 2
               names = {"checked-source": "source-admission.json",
                        "identity-resource": "identity-resource-admission.json",
-                       "definition-effects": "effects-admission.json"}
+                       "definition-effects": "effects-admission.json",
+                       "source-vectors": "source-vectors-admission.json"}
               for gate in report["gates"]:
                   admission = dict(schema="amu.native-build-admission.v1", **gate)
                   (root / names[gate["name"]]).write_text(json.dumps(admission) + "\n")
@@ -112,6 +116,8 @@ jobs:
             ${{ runner.temp }}/effects-admission.json
             ${{ runner.temp }}/identity-resource
             ${{ runner.temp }}/identity-resource-admission.json
+            ${{ runner.temp }}/source-vectors
+            ${{ runner.temp }}/source-vectors-admission.json
             ${{ runner.temp }}/source-identity-plan.json
             ${{ runner.temp }}/source-identity-schedule
           if-no-files-found: error
