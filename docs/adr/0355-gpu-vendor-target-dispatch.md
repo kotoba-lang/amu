@@ -531,3 +531,43 @@ optimization exists for Intel. Evidence:
 `docs/evidence/gpu/anv-workthresh-20261027/` (record.txt is the
 finding; publication-s13.txt is produced only by analysis-s13.py over
 the committed run logs).
+
+## Dated note (2026-10-27, JUN-59 measurement: FLOOR-BOUNDARY BISECT at
+## fixed B=8, session 14)
+
+Session 14 (INSTRUMENT channel) bisects session 13's FLOOR-class
+boundary residual ("the class boundaries' exact locations inside
+(31,250..125,000] and (3,906..7,812]", lower half): three new fine
+ladder rungs NDIV {160,192,224} (n = 6,250 / 5,208 / 4,464) between
+session 13's d128 (INTERMEDIATE/MIXED) and d256 (FLOOR). ZERO
+derivation edits -- the instrument is session 13's committed
+NDIV-derived source byte-identical (digest a5e539f0...; the four
+rebuilt anchors reproduce session 13's binaries byte-for-byte -- extra
+build pin); the new arms are new -D values only. 21 fresh processes
+(7 arms x 3 runs; custody GO 15:24:51Z before any build/run; VERIFY
+mismatch 0; n identity exact per the frozen L2 values). MEASURED at
+the INSTRUMENT channel: C1 replicates (c2 FLOOR 31; c8 +0.13% of
+committed 32,915) but C2 FIRED BRANCH (b) -- THE BOUNDING ANCHORS DID
+NOT REPLICATE at session 13's own settings: d128 192 vs committed 167
+(+14.97%, outside the frozen +/-5%) and d256 CHANGED CLASS (committed
+FLOOR 34 -> INTERMEDIATE/MIXED 55 ticks at (sum,128,S=16); 18-cell
+spread 55..123). W1 is therefore FLAGGED / NOT EVALUABLE at its
+letter; the measured classes stand as content: ALL FIVE fine-ladder
+rungs are INTERMEDIATE/MIXED this session, so no FLOOR rung exists on
+the ladder and NO boundary narrowing is claimed. W2 (pre-registered,
+descriptive): the fine-ladder dose curve is NOT monotone in these runs
+(d128 192 -> d160 285 UP with a tight 279..292 run-median band ->
+d192 84 -> d224 56 -> d256 55); session 13's monotone descent does
+not extend to the fine ladder at d160 here. THE FINDING OF THE TICK:
+the FLOOR-class boundary at B=8 is not reproducible at class
+granularity across two same-day sessions ~31 minutes apart under
+byte-identical instrument/manifest/corpus/binaries -- any boundary
+claim narrower than the (3,906..7,812] band is unsupported, and the
+class-threshold reading of this boundary is itself session-sensitive
+(bottom-rung host_ns moved +13%..+48% in the same setup; cause
+UNMEASURED). Observable only; NO causal mechanism is claimed or
+measured. Rule 4 binds: no row moves, no `:measured?` flag moves, and
+no vendor optimization exists for Intel. Evidence:
+`docs/evidence/gpu/anv-floorbisect-20261027/` (record.txt is the
+finding; publication-s14.txt is produced only by analysis-s14.py over
+the committed run logs).

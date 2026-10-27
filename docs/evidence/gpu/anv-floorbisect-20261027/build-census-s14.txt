@@ -1,0 +1,50 @@
+== JUN-59 session 14 build census ==
+Build window (host timeline): builds ran after the verify GO (2026-10-27T15:24:51Z) and
+before the first run (run-window.txt).
+== host ==
+aiueos-6600hs (aiueos-6600hs-1, tailscale 100.98.24.37), user murakumo-ci
+(groups include render). Workdir ~/anv-floorbisect-20261027, runs
+cwd=shaders/ (manifest passed as ../cases-s14-a.txt; binaries
+../anv-fb-<tag>).
+== toolchains (from session 2's committed compile-toolchain.txt record of
+== the same host/toolchain; not re-printed this session) ==
+gcc: gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+(glslangValidator NOT used this session -- ZERO derivation; the corpus
+spv are the archived byte-verified artifacts and the instrument is
+session 13's committed source byte-identical.)
+== binary compiles: gcc -O2 -DBATCH=<B> -DNDIV=<D> -o anv-fb-<tag>
+== gpu-subgroup-reduce-anv-ndiv.c -lvulkan  (7 arms, one binary each) ==
+build c2 (BATCH=2 NDIV=1) rc=0 @2026-10-27T15:24:52Z
+build c8 (BATCH=8 NDIV=1) rc=0 @2026-10-27T15:24:53Z
+build d128 (BATCH=8 NDIV=128) rc=0 @2026-10-27T15:24:54Z
+build d160 (BATCH=8 NDIV=160) rc=0 @2026-10-27T15:24:54Z
+build d192 (BATCH=8 NDIV=192) rc=0 @2026-10-27T15:24:56Z
+build d224 (BATCH=8 NDIV=224) rc=0 @2026-10-27T15:24:56Z
+build d256 (BATCH=8 NDIV=256) rc=0 @2026-10-27T15:24:57Z
+e5ed903e5b9dfd64168e2d8ddea9d8efb573273e7594afcaca71f3f70bb9c489  anv-fb-c2
+480925e58d28e7d318456703c6959548e9b9c33e375c3e0fefe688e844d37807  anv-fb-c8
+bf9b583d29260d72ebf3dfbd06188d4b43fb7be9eabb357dc042bbb953c178c0  anv-fb-d128
+642647bcece75e1ac287381f9ed721364d67a38a92be376f24fac2439533ec01  anv-fb-d160
+bd60d77c8b7a961ae76833ec5e974aeffb289d8cc231b83aa7a844915c67d9fa  anv-fb-d192
+c98adea2e163b0bfaf6a243259f7a336b77c447c8b0ad5e9ad61c719cb15c97b  anv-fb-d224
+5bab5654084d058dff6271307b8302f085d7700e94616e64348192635cf6a059  anv-fb-d256
+== source digest re-check at build time (host): ==
+a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556  gpu-subgroup-reduce-anv-ndiv.c
+== BUILD PIN (extra, observed this tick, not pre-registered): the four ==
+== rebuilt arms whose (BATCH,NDIV) pair also exists in session 13's ==
+== build census are compared BYTE-FOR-BYTE to session 13's same-flag ==
+== binaries (parsing session 13's committed build-census-s13.txt, never ==
+== transcribed): ==
+== BYTE-IDENTICAL: anv-fb-c2 e5ed903e5b9dfd64... vs session-13 anv-wt-c2 e5ed903e5b9dfd64... ==
+== BYTE-IDENTICAL: anv-fb-c8 480925e58d28e7d3... vs session-13 anv-wt-c8 480925e58d28e7d3... ==
+== BYTE-IDENTICAL: anv-fb-d128 bf9b583d29260d72... vs session-13 anv-wt-d128 bf9b583d29260d72... ==
+== d160 is a FIRST build of its (BATCH,NDIV) pair (no prior binary ==
+== to pin against); its pin is the custody chain (ZERO derivation ==
+== edits + C1/C2 numeric replication). ==
+== d192 is a FIRST build of its (BATCH,NDIV) pair (no prior binary ==
+== to pin against); its pin is the custody chain (ZERO derivation ==
+== edits + C1/C2 numeric replication). ==
+== d224 is a FIRST build of its (BATCH,NDIV) pair (no prior binary ==
+== to pin against); its pin is the custody chain (ZERO derivation ==
+== edits + C1/C2 numeric replication). ==
+== BYTE-IDENTICAL: anv-fb-d256 5bab5654084d058d... vs session-13 anv-wt-d256 5bab5654084d058d... ==

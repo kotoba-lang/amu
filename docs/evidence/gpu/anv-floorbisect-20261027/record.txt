@@ -1,0 +1,166 @@
+JUN-59 -- session 14 record: FLOOR-BOUNDARY BISECT at fixed B=8 (the
+NDIV fine ladder). INSTRUMENT channel. 2026-10-27 (UTC; the tick runs
+2026-10-28 JST). Chain PR #1636 (bot/amu-gpu-chain-20261027-10).
+
+1. ROW QUESTION (ONE observable axis -- session 13's named residual,
+   "the class boundaries' exact locations inside (31,250..125,000] and
+   (3,906..7,812]"; this session takes the FLOOR-class boundary half
+   of it):
+
+     AT FIXED DISPATCH COUNT B=8, WHERE INSIDE THE (3,906..7,812]
+     ELEMENT BAND DOES THE BRACKET RETURN TO FLOOR -- 8 dispatches of a
+     1/160-, 1/192- or 1/224-times grid (n = 6,250 / 5,208 / 4,464) on
+     the fine NDIV ladder {128, 160, 192, 224, 256} (n = 7,812 ..
+     3,906)?
+
+2. DERIVATION (chain of custody): ZERO derivation edits this session
+   (the strongest custody position in the chain -- named as such). The
+   instrument is session 13's committed NDIV-derived source used
+   BYTE-IDENTICAL (digest a5e539f0..., re-verified local-vs-host; the
+   NDIV knob already parameterizes this axis); the new bisect arms are
+   new compile-time -D NDIV values only. The shader corpus is used
+   byte-identical (16-digest corpus; NO shader derivation). Manifest
+   cases-s14-a.txt = the 24 a-set cell lines a BYTE-COPY of session
+   13's cases-s13-a.txt cell lines (checked programmatically); ALL 7
+   arms run this one manifest. expected-corpus.sha256 regenerated
+   programmatically from session 2's committed census (byte-equal to
+   session 13's). Knob arithmetic pin: n = 1,000,003 // NDIV gives the
+   six protocol-L2 values exactly; workgroup counts ceil(n/W) recorded
+   in derivation-census.txt.
+
+3. CHAIN OF CUSTODY (host-verify-s14.txt): corpus 16/16 digests MATCH
+   session 2's committed census (parsed programmatically, never
+   transcribed; checked host-side via sha256sum -c) + instrument +
+   manifest + census expectation local-vs-host MATCH 3/3 -- GO at
+   2026-10-27T15:24:51Z, BEFORE the builds and ALL runs (TIMELINE in
+   host-verify-s14.txt says so). NAMED, NOT HIDDEN: one pre-freeze
+   compile smoke of a NEW knob value (2026-10-27T15:24Z, throwaway dir
+   ~/anv-fb-smoke, gcc -O2 -DBATCH=8 -DNDIV=160, rc=0, host source
+   digest a5e539f0... MATCH local, zero runs -- the session-9 D2
+   lesson applied by design even though the source is byte-identical
+   to session 13's built-and-run source). EXTRA BUILD PIN (observed,
+   not pre-registered): the four rebuilt anchors c2/c8/d128/d256 are
+   BYTE-IDENTICAL to session 13's same-flag binaries
+   (build-census-s14.txt; session 13's committed build census parsed
+   programmatically); d160/d192/d224 are first builds of their
+   (BATCH,NDIV) pairs.
+
+4. HARDWARE RAN (MEASURED): 21 fresh processes (7 arms x 3 runs), run
+   window 2026-10-27T15:24:58Z..2026-10-27T15:25:32Z (per-run host date -u and rc in
+   run-window.txt), rc=0 21/21, stderr 0 bytes 21/21, 450 SAMPLE lines
+   each; every run's batch=/work_mul=/ndiv=/n= == its arm's
+   (B,1,NDIV,floor(1,000,003/NDIV)); every CELL's spv= is an archived
+   .emitted.spv (byte-identical corpus); forcing reality 378/378;
+   VERIFY mismatch 0 everywhere (per-arm 0x7); S=8 fail-closed
+   126/126. Host: aiueos-6600hs-1 (BMG G31 / ANV), 1 tick = 52.083 ns.
+
+5. FINDINGS (publication-s14.txt, produced ONLY by analysis-s14.py
+   over the committed run logs, recorded run twice byte-identical --
+   diff exit 0):
+
+   (a) C1 ARCHIVED CONTROL REPLICATION fired branch (a) -- c2 FLOOR
+       (31 ticks, run-median band 31..31), c8 = 32,957 vs committed
+       32,915 (+0.13%), inside the frozen +/-5%. The top of the
+       environment pin holds.
+
+   (b) C2 BOUNDARY ANCHOR REPLICATION fired branch (b) AS FROZEN --
+       THE TWO RUNGS THAT BOUND THE BISECT DID NOT REPLICATE at
+       session 13's OWN (B,NDIV) settings: d128 (sum,128,S=16) pooled
+       median 192 vs session-13 committed 167 = +14.97% (outside the
+       frozen +/-5%; class still INTERMEDIATE/MIXED, which matches),
+       and d256 CHANGED CLASS -- committed FLOOR (34 ticks) but
+       INTERMEDIATE/MIXED here (55 at (sum,128,S=16); min..max over
+       the 18 cells 55..123, i.e. cells above the frozen 100-tick
+       FLOOR ceiling). The FLOOR-class boundary's session-13 anchor
+       does not hold.
+
+   (c) W1 THE ROW QUESTION is FLAGGED / NOT EVALUABLE at its letter by
+       the C2 discrepancy (frozen branch text): the measured class
+       assignments stand as content -- ALL FIVE fine-ladder rungs are
+       INTERMEDIATE/MIXED this session (d128 192, d160 285, d192 84,
+       d224 56, d256 55 ticks at (sum,128,S=16)). This session's runs
+       contain NO FLOOR rung anywhere on the ladder, so NO boundary
+       narrowing is claimed: the FLOOR-class boundary is NOT located
+       by this session, and the (3,906..7,812] band stays as session
+       13 left it -- with the new, named caveat that its lower anchor
+       (d256 FLOOR) did not replicate ~31 minutes later in a
+       byte-identical setup.
+
+   (d) W2 (pre-registered, descriptive) THE FINE-LADDER DOSE CURVE IS
+       NOT MONOTONE in this session's runs: d128 192 -> d160 285 (UP,
+       run-median band 279..292 -- tight and repeatable WITHIN the
+       session) -> d192 84 -> d224 56 -> d256 55. Session 13's
+       monotone descent over its six rungs does NOT extend to the
+       fine ladder at d160 here. Descriptive only; the linear-work
+       comparison c8/NDIV over-predicts the bottom rungs and
+       under-predicts d160; NO linearity claim, no interpolation.
+
+   (e) W3 (descriptive): parity inverts again -- d160 (1/40 of c2's
+       total nominal work, 8 dispatches) 9.19x c2's floored bracket,
+       d192 2.71x, d224 1.81x.
+
+   (f) X1 (descriptive realization, host_ns): c8 3.593x c2; d128
+       0.134x, d160 0.168x, d192 0.159x, d224 0.162x, d256 0.179x.
+       NAMED, NOT HIDDEN: the bottom rungs' host_ns is systematically
+       ABOVE session 13's same-knob readings (d128 80,501 -> 91,050
+       +13%; d256 82,303 -> 121,587 +48%) while the binaries,
+       manifest, corpus and instrument are byte-identical (the build
+       pin says so) -- so the session-to-session movement sits in the
+       run environment/host state, cause UNMEASURED; host_ns is not a
+       C criterion, and neither are the brackets of (b) driven by any
+       measured cause here.
+
+   THE FINDING OF THIS TICK, in one line: the FLOOR-class boundary at
+   B=8 is NOT reproducible at class granularity across two same-day
+   sessions 31 minutes apart under byte-identical instrument,
+   manifest, corpus and binaries -- d256 flips FLOOR -> INTERMEDIATE/
+   MIXED (34 -> 55 ticks at (sum,128,S=16)) and d128 moves +15%, so
+   any boundary claim narrower than the (3,906..7,812] band is
+   unsupported, and the class-threshold reading of this boundary is
+   itself session-sensitive. Observable only; NO causal mechanism is
+   claimed or measured.
+
+   RULE 4: NOTHING MOVES -- no workgroup row, no :measured? flag, no
+   selection answer; accelerator-targets defaults remain provisional
+   design assumptions (:measured? false); this is NOT the
+   basis-replacing baseline-vs-variant contract of
+   accelerator-subgroup-reduce.cljk; NO vendor optimization exists for
+   Intel and none is claimed.
+
+   UNMEASURED named: any causal mechanism (for the undercount, the
+   capture, the onset, any work-down transition, the descent's shape,
+   the d256 class flip, the d128 movement, the d160 spike, or the
+   boundary's existence as a boundary); WHY capture turns on where it
+   does; whether the boundary is on n, workgroup count or grid shape
+   (protocol L4 -- n and workgroup count co-vary); the class
+   boundaries' exact locations inside (31,250..125,000] and
+   (3,906..7,812]; anything between fine-ladder rungs (L5); any NDIV
+   outside {1,8,32,64,128,160,192,224,256}; any B outside {2,8}; any
+   WORK_MUL>1; any n outside the twelve L2 values; d8/d32/d64 this
+   session (L7); session 2's run-1 dip cause; cross-day replication
+   (this session and session 13 share the UTC day); S=8 timing; every
+   W outside {128,256}; shape 2; BT ordering; any baseline-vs-variant
+   sign; isolated single-dispatch timing; non-empty barriers; anything
+   off this host.
+
+   STATES: emitter arm/dispatch/selection rows IMPLEMENTED (code +
+   tests, unchanged -- this diff touches NO .cljk namespace); the
+   byte-identical instrument reuse + analysis-s14.py validated by
+   complete runs; MEASURED only what publication-s14.txt sections 1-4
+   say.
+
+6. Gates (real runs this tick): gpu_regime_classify.py --self-test
+   TOTAL 2649/0 (pin); scoped GPU gate GREEN 123 tests / 12162
+   assertions / 0 failures / 0 errors run 1 AND run 2 (scratch runner
+   gpu_scoped_gate.cljk, never committed); FULL run-tests.cljk RUN
+   LIVE THIS TICK: exit 1, RED AT BASE 'Could not find namespace:
+   kotoba.form' at namespace load (ADR-0362, outside this diff) -- NO
+   green full suite claimed; find this evidence dir -name '*.sh' -> 0.
+
+7. CHAIN: this commit lands on the ONE open chain branch
+   bot/amu-gpu-chain-20261027-10 (chain PR #1636), commit + push
+   only. BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head
+   at tick start and re-checked immediately before this push.
+
+Evidence: docs/evidence/gpu/anv-floorbisect-20261027/ + the ADR-0355
+dated note. (JUN-55, JUN-59)
