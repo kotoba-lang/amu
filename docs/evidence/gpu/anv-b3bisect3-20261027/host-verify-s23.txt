@@ -1,0 +1,49 @@
+== host-verify (JUN-59 THE B=3 PER-DISPATCH-WORK THRESHOLD BISECT, ==
+== THIRD CUT, session 23) ==
+== expectation source: session 2's committed compile-toolchain.txt sha256 ==
+== (anv-subgroupsize-batch64-20261027/compile-toolchain.txt; census ==
+== consumed via session 22's committed expected-corpus.sha256, itself a ==
+== byte-copy chain back to that census -- byte-copy identity recorded in ==
+== derivation-census-s23.txt). ZERO derivation edits this ==
+== session: the instrument is session 22's committed NDIV-derived source ==
+== used BYTE-IDENTICAL; the arms are (BATCH,WORK_MUL,NDIV) triples of ==
+== the source's existing knobs. ==
+== corpus sha256sum -c (cwd = workdir root; the census paths are ==
+== workdir-relative) ==
+== corpus sha256sum -c (cwd = workdir root; the census paths are ==
+== workdir-relative) ==
+shaders/probe-w128.glsl: OK
+shaders/probe-w128.spv: OK
+shaders/probe-w256.glsl: OK
+shaders/probe-w256.spv: OK
+shaders/subgroup-reduce-w128-max.emitted.glsl: OK
+shaders/subgroup-reduce-w128-max.emitted.spv: OK
+shaders/subgroup-reduce-w128-min.emitted.glsl: OK
+shaders/subgroup-reduce-w128-min.emitted.spv: OK
+shaders/subgroup-reduce-w128-sum.emitted.glsl: OK
+shaders/subgroup-reduce-w128-sum.emitted.spv: OK
+shaders/subgroup-reduce-w256-max.emitted.glsl: OK
+shaders/subgroup-reduce-w256-max.emitted.spv: OK
+shaders/subgroup-reduce-w256-min.emitted.glsl: OK
+shaders/subgroup-reduce-w256-min.emitted.spv: OK
+shaders/subgroup-reduce-w256-sum.emitted.glsl: OK
+shaders/subgroup-reduce-w256-sum.emitted.spv: OK
+corpus_rc=0
+== corpus digest check (host-side, 16 files incl. the 8 compiled spv): 16/16 ==
+MATCH/FAIL lines below are computed here from the local digests and the
+host-side sha256sum output:
+MATCH  gpu-subgroup-reduce-anv-ndiv.c: local=a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556 host=a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556
+MATCH  cases-s23-a.txt: local=d947ad7f1d0b70c0b30df40babce17991c54e8474c3750ea0080a8c3c1f43c3c host=d947ad7f1d0b70c0b30df40babce17991c54e8474c3750ea0080a8c3c1f43c3c
+MATCH  expected-corpus.sha256: local=eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4 host=eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4
+== instrument + manifest + census-expectation local-vs-host: 3/3 MATCH ==
+== instrument byte-identity (session-22 committed file re-sha256 local ==
+== == the uploaded host copy == the session-23 committed copy): ==
+== a5e539f0... MATCH (derivation-census-s23.txt records the byte-copy) ==
+== inverse check: NOT APPLICABLE this session -- ZERO derivation edits ==
+== (there is nothing to strip; byte-identity IS the custody). ==
+pre-GO compile smoke (throwaway dir ~/anv-b33-smoke): both NEW
+(WORK_MUL,NDIV) pairs (25,96) and (50,192) compiled rc=0/0, build stderr 0 bytes both (smoke-a.err/smoke-b.err, wc 0/0), host source digest MATCH, zero runs; the smoke prints its own
+host timestamp 2026-10-27T20:09:09Z.
+GO compile -- BEFORE the builds (20:09:21Z..20:09:22Z) and ALL 21 runs
+(20:09:42Z..20:09:49Z; run-window.txt).
+TIMELINE (named, not hidden): the chain of custody ran BEFORE any run.

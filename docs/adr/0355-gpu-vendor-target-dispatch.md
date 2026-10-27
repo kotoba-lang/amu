@@ -908,3 +908,27 @@ and no vendor optimization exists for Intel.
 Evidence: `docs/evidence/gpu/anv-b3bisect2-20261027/` (record.txt is
 the finding; publication-s22.txt is produced only by analysis-s22.py
 over the committed run logs).
+
+## 2026-10-27 -- session 23 (JUN-59): the B=3 threshold bisect, third cut
+
+The session-22 residual "the flip location inside (250,000, 270,834]"
+is taken at n = 260,417 = (250,000+270,834)//2 -- this time the EXACT
+floor midpoint of the bracket IS reachable at the knob (81
+(1,000,003\*WORK_MUL)//NDIV == 260,417 pairs; smallest (25,96), its
+double (50,192) the eq3 arm). With both bracket ends replicating
+IN-SESSION at byte-identical rebuilt binaries (lo == committed z3 knob
+1,129 vs 1,140 INTERMEDIATE/MIXED; hi == session 22's (13,48) knob
+1,229 vs 1,224 CAPTURED -- the pair's first cross-session replication),
+mid is CAPTURED (1,186; 18-cell min 1,026), so THE B=3 CLASS FLIP
+SITS IN (250,000, 260,417] n-units = (0.2499993, 0.2604162]
+work-units -- the session-22 bracket is cut to its lower half.
+"B=2 never captures" extends to n=260,417 (b2m FLOOR 31). C3 (branch
+(a)): the same-ratio pair (50,192) is behaviourally equivalent to
+(25,96) at the bisect grid (1,190 vs 1,186). The B=3
+class-vs-per-dispatch-work row now stands at eight monotone grid
+points (class granularity only). Rule 4 binds: no row moves, no
+`:measured?` flag moves, and no vendor optimization exists for Intel.
+
+Evidence: `docs/evidence/gpu/anv-b3bisect3-20261027/` (record.txt is
+the finding; publication-s23.txt is produced only by analysis-s23.py
+over the committed run logs).
