@@ -809,3 +809,49 @@ for Intel.
 Evidence: `docs/evidence/gpu/anv-ndiv4ladder-20261027/` (record.txt is
 the finding; publication-s19.txt is produced only by analysis-s19.py
 over the committed run logs).
+
+## Dated note (2026-10-27, JUN-59 measurement: THE NDIV=2 DISPATCH
+## LADDER at fixed per-dispatch work, session 20)
+
+Session 20 closes the NDIV=2 column of the (B,NDIV) grid at fixed
+per-dispatch work (n = 500,001 = 1/2 grid in every w arm; B ladder
+w2..w8 + archived c2/c8 controls). ZERO derivation edits -- the
+instrument is session 19's committed NDIV-derived source byte-identical
+(digest a5e539f0...). Custody GO 18:24:57Z before any build/run
+(corpus 16/16 + 3/3 local-vs-host MATCH); w2's rebuilt binary is
+BYTE-IDENTICAL to session 17's anv-xt-x2 (== the committed x2 knob
+pair) and c2/c8 to session 19's/18's/17's (3/3 build pins). 27 fresh
+processes 18:25:31Z..18:25:45Z, VERIFY mismatch 0, forcing 486/486.
+MEASURED at the INSTRUMENT channel: C1 replicates (c2 FLOOR 31; c8
+32,874 = -0.12% of committed 32,915) and C2 replicates (w2 = x2's
+knob pair: 31 vs committed x2 32 = -3.12%, FLOOR as committed -- the
+NDIV=2 column and the NDIV=B ladder join at that grid point). W1
+fires branch (a) ONSET-AT-3: the class vector at fixed per-dispatch
+work 0.5 units is (FLOOR, CAPTURED, CAPTURED, CAPTURED, CAPTURED,
+CAPTURED, CAPTURED) over w2..w8 (w2 31 FLOOR; w3 2,739; w4..w8 6,227
+/ 9,907 / 13,456 / 16,919 / 20,254 CAPTURED-class at all 18 cells; w2
+the C2 anchor) -- AT PER-DISPATCH WORK 1/2 THE CAPTURE-CLASS
+TRANSITION SITS AT THE SAME DISCRETE B=2 -> B=3 STEP as at NDIV=1
+(sessions 7/16) and NDIV=B (session 17). The later-onset shape of
+sessions 18/19 is specific to per-dispatch work <= 1/4 among the
+measured grid points; the B=3 capture threshold in per-dispatch work
+sits in (1/4, 1/3] with 1/2 above it -- five B=3 grid points now
+stand: 1.0 (5,520), 1/2 (2,739) and 1/3 (1,578) CAPTURED, 1/4
+(1,140) and 1/8 (599) INTERMEDIATE/MIXED, a monotone picture across
+the measured grid points (L5: nothing between grid points is
+interpolated; observable only, NO causal mechanism is claimed or
+measured). "B=2 never captures" extends to n=500,001 at total work
+1.0 (w2 FLOOR 31). W2 (descriptive) the NDIV=2 dose curve is
+non-decreasing (31 -> 20,254 over B=2..8); W3's named equal-total
+shape comparisons split across the FLOOR/CAPTURED divide at totals
+1.0 and 2.0 (quote-only vs measured). NAMED, NOT HIDDEN: X1's
+host-side proxy excursion at the two B=2 arms (c2 host_ns 828,254 =
+1.22x sessions 17-19; w2 563,461 = 1.43x session-17's x2) while their
+GPU brackets replicate in-band and c8's host_ns is flat -- host_ns is
+not a C criterion (L3), cause UNMEASURED. Rule 4 binds: no row moves,
+no `:measured?` flag moves, and no vendor optimization exists for
+Intel.
+
+Evidence: `docs/evidence/gpu/anv-ndiv2ladder-20261027/` (record.txt is
+the finding; publication-s20.txt is produced only by analysis-s20.py
+over the committed run logs).

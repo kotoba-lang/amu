@@ -1,0 +1,66 @@
+== host-verify (JUN-59 THE NDIV=2 DISPATCH LADDER, session 20) ==
+== expectation source: session 2's committed compile-toolchain.txt sha256 ==
+== (anv-subgroupsize-batch64-20261027/compile-toolchain.txt; census ==
+== consumed via session 19's committed expected-corpus.sha256, itself a ==
+== byte-copy chain back to that census -- byte-copy identity recorded in ==
+== derivation-census-s20.txt). ZERO derivation edits this ==
+== session: the instrument is session 19's committed NDIV-derived source ==
+== used BYTE-IDENTICAL; the ladder rungs are new (BATCH,NDIV=2) pairs ==
+== of the source's existing knobs. ==
+== corpus sha256sum -c (cwd = workdir root; the census paths are ==
+== workdir-relative) ==
+shaders/probe-w128.glsl: OK
+shaders/probe-w128.spv: OK
+shaders/probe-w256.glsl: OK
+shaders/probe-w256.spv: OK
+shaders/subgroup-reduce-w128-max.emitted.glsl: OK
+shaders/subgroup-reduce-w128-max.emitted.spv: OK
+shaders/subgroup-reduce-w128-min.emitted.glsl: OK
+shaders/subgroup-reduce-w128-min.emitted.spv: OK
+shaders/subgroup-reduce-w128-sum.emitted.glsl: OK
+shaders/subgroup-reduce-w128-sum.emitted.spv: OK
+shaders/subgroup-reduce-w256-max.emitted.glsl: OK
+shaders/subgroup-reduce-w256-max.emitted.spv: OK
+shaders/subgroup-reduce-w256-min.emitted.glsl: OK
+shaders/subgroup-reduce-w256-min.emitted.spv: OK
+shaders/subgroup-reduce-w256-sum.emitted.glsl: OK
+shaders/subgroup-reduce-w256-sum.emitted.spv: OK
+corpus_rc=0
+== corpus digest check (host-side, 16 files incl. the 8 compiled spv): 16/16 ==
+MATCH  gpu-subgroup-reduce-anv-ndiv.c: local=a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556 host=a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556
+MATCH  cases-s20-a.txt: local=70d9359dce5398ec7a135cd1be3b28d27533f183708cf1bc4f3472dc5585c682 host=70d9359dce5398ec7a135cd1be3b28d27533f183708cf1bc4f3472dc5585c682
+MATCH  expected-corpus.sha256: local=eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4 host=eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4
+== instrument + manifest + census-expectation local-vs-host: 3/3 MATCH ==
+== instrument byte-identity (session-19 committed file re-sha256 local ==
+== == the uploaded host copy == the session-20 committed copy): ==
+== a5e539f0... MATCH (derivation-census-s20.txt records the byte-copy) ==
+== inverse check: NOT APPLICABLE this session -- ZERO derivation edits ==
+== (there is nothing to strip; byte-identity IS the custody). ==
+TIMELINE (named, not hidden): the chain of custody ran BEFORE any run.
+Host-side steps, all on murakumo-ci-6600hs (aiueos-6600hs-1), workdir
+~/anv-ndiv2ladder-20261027:
+  2026-10-27T18:24:38Z  mkdir + cp -a of session 19's verified corpus
+                        copy (shaders/ -- 100 files: the 16 corpus
+                        files + the same staged set sessions 3-19
+                        used)
+  2026-10-27T18:24:38Z..18:24:57Z
+                        scp of instrument + manifest +
+                        expected-corpus (digests checked above), then
+                        custody: corpus sha256sum -c from the workdir
+                        root 16/16 OK, local-vs-host 3/3 MATCH
+                        (single attempt)
+  2026-10-27T18:24:57Z  pre-GO compile smoke (NAMED, NOT HIDDEN; the
+                        session-9 D2 lesson applied by design -- and
+                        the session-19 smoke step's missing separate
+                        timestamp is CORRECTED here: the smoke prints
+                        its own host timestamp):
+                        throwaway dir ~/anv-n2-smoke, gcc -O2
+                        -DBATCH=3 -DNDIV=2 (NEW knob pair -- NDIV=2
+                        has never been compiled at BATCH!=2 in this
+                        series), rc=0, build stderr 0 bytes, host
+                        source digest a5e539f0... MATCH local, ZERO
+                        runs, ZERO timing
+  2026-10-27T18:24:57Z  GO (custody complete) -- BEFORE the builds
+                        (18:25:30Z..18:25:31Z) and ALL 27 runs
+                        (18:25:31Z..18:25:45Z); run-window.txt and
+                        build-census-s20.txt carry those transcripts

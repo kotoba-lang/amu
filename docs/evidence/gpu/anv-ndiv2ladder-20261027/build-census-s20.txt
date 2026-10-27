@@ -1,0 +1,54 @@
+== JUN-59 session 20 build census (THE NDIV=2 DISPATCH LADDER) ==
+Build window (host timeline): builds ran after the verify GO
+(2026-10-27T18:24:57Z) and before the first run (run-window.txt:
+18:25:31Z).
+== host ==
+aiueos-6600hs (aiueos-6600hs-1, tailscale 100.98.24.37), user murakumo-ci
+(groups include render). Workdir ~/anv-ndiv2ladder-20261027, runs
+cwd=shaders/ (manifest passed as ../cases-s20-a.txt; binaries
+../anv-n2-<tag>).
+== toolchains (from session 2's committed compile-toolchain.txt record of
+== the same host/toolchain; not re-printed this session) ==
+gcc: gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+(glslangValidator NOT used this session -- ZERO derivation; the corpus
+spv are the archived byte-verified artifacts and the instrument is
+session 19's committed source byte-identical.)
+== binary compiles: gcc -O2 -DBATCH=<B> -DNDIV=<D> -o anv-n2-<tag>
+== gpu-subgroup-reduce-anv-ndiv.c -lvulkan  (9 arms, one binary each) ==
+build c2 (BATCH=2 NDIV=1) rc=0 @2026-10-27T18:25:30Z
+build w2 (BATCH=2 NDIV=2) rc=0 @2026-10-27T18:25:30Z
+build w3 (BATCH=3 NDIV=2) rc=0 @2026-10-27T18:25:30Z
+build w4 (BATCH=4 NDIV=2) rc=0 @2026-10-27T18:25:30Z
+build w5 (BATCH=5 NDIV=2) rc=0 @2026-10-27T18:25:30Z
+build w6 (BATCH=6 NDIV=2) rc=0 @2026-10-27T18:25:30Z
+build w7 (BATCH=7 NDIV=2) rc=0 @2026-10-27T18:25:31Z
+build w8 (BATCH=8 NDIV=2) rc=0 @2026-10-27T18:25:31Z
+build c8 (BATCH=8 NDIV=1) rc=0 @2026-10-27T18:25:31Z
+build stderr byte counts: 0 9/9 (build-<tag>.err, committed)
+e5ed903e5b9dfd64168e2d8ddea9d8efb573273e7594afcaca71f3f70bb9c489  anv-n2-c2
+0fe9f4032e0cf15e9ab1ae36e2934305ecf2d6fa77423afb52f4dbbc017430df  anv-n2-w2
+10cb4ec05827bbc83b019de3502fae4869d9b434293b9d57a97e87c93acaa9da  anv-n2-w3
+929387d8d76efa816435c925be1ff3e64a39386e302e92cff6ad7d443b942c95  anv-n2-w4
+82726732958e604e00380e58e981b5c288b376dee2d9e9940568b1a8eebcaeeb  anv-n2-w5
+60f74039715ddaaf007eb2f8f43900b9bc9e9c2b291a4347d8668a8f941f3124  anv-n2-w6
+a4c5fbba5a5e72ecf006f7e8430cd57b650512cfd5da1206f9322f84ba484779  anv-n2-w7
+1eca96d8834b3d13585cf7374038233e63a715f5d07166652693588340a540e0  anv-n2-w8
+480925e58d28e7d318456703c6959548e9b9c33e375c3e0fefe688e844d37807  anv-n2-c8
+BUILD REPLICATION PIN (declared in protocol.txt section 2 in advance;
+prior censuses parsed programmatically -- derivation-census-s20.txt):
+  BYTE-IDENTICAL: anv-n2-c2 e5ed903e5b9dfd64... == session-19 anv-n4-c2
+    e5ed903e5b9dfd64... == session-18 anv-n8-c2 == session-17 anv-xt-c2
+    (== session-16 anv-fb-c2 == session-13 anv-wt-c2) -> True
+  BYTE-IDENTICAL: anv-n2-c8 480925e58d28e7d3... == session-19
+    anv-n4-c8 480925e58d28e7d3... == session-18 anv-n8-c8 == session-17
+    anv-xt-c8 -> True
+  BYTE-IDENTICAL: anv-n2-w2 0fe9f4032e0cf15e... == session-17
+    anv-xt-x2 0fe9f4032e0cf15e... (the NDIV=B crossing rung x2, same
+    (BATCH=2,NDIV=2) knob pair) -> True
+  3/3 pins hold.
+NEW KNOB PAIR (no prior binary in the series -- no byte-identity pin
+applies, named, not hidden; their custody is the byte-identical
+source + the compile flags + C1/C2's numeric replication):
+  w3, w4, w5, w6, w7, w8 -- NDIV=2 has previously been compiled only
+  at BATCH=2 (session 17 anv-xt-x2); (BATCH,NDIV=2) at BATCH 3..8 are
+  firsts anywhere in the series.

@@ -1,0 +1,198 @@
+JUN-59 -- session 20 record: THE NDIV=2 DISPATCH LADDER (fixed
+per-dispatch work at 1/2 grid). INSTRUMENT channel.
+2026-10-27 (UTC; the tick runs 2026-10-28 JST). Chain PR #1636
+(bot/amu-gpu-chain-20261027-10).
+
+1. ROW QUESTION (ONE observable axis: THE DISPATCH COUNT at fixed
+   per-dispatch work -- session 19's named residual "any (B,NDIV) pair
+   with NDIV outside {1,4,8} and NDIV != B -- the rest of L10's grid"
+   and "any per-dispatch work outside 250,000/1,000,003" are reachable
+   this tick and the NDIV=2 column of that grid is taken; sessions
+   15-19's named residual "cross-day replication" is NOT reachable
+   this tick: the UTC day is still 2026-10-27 at tick time, protocol
+   L4 named not hidden):
+
+     AT FIXED PER-DISPATCH WORK (NDIV=2: n = 500,001 elements = 1/2
+     of the full grid, identical in every w arm), WHERE DOES THE
+     CAPTURE TURN ON AS THE DISPATCH COUNT RISES 2 -> 8 -- at the
+     discrete B=2 -> B=3 step (so the later-onset of sessions 18/19 is
+     specific to per-dispatch work <= 1/4 among the measured grid
+     points and the B=3 capture threshold in per-dispatch work sits in
+     (1/4, 1/3], with 1/2 above it), or later than B=3 (so the
+     later-onset shape extends to 1/2 -- named in advance: that would
+     make the B=3 class-vs-per-dispatch-work picture NON-MONOTONE
+     across the measured grid points, since B=3 is CAPTURED at 1/3
+     and 1.0)?
+
+   The committed series had measured the B ladder at NDIV=1 (sessions
+   7/16: onset at the discrete B=2 -> B=3 step), the B ladder at
+   NDIV=B (session 17: same onset at constant total work), the B
+   ladder at NDIV=4 (session 19: gradual onset -- z3 INTERMEDIATE at
+   1/4), the B ladder at NDIV=8 (session 18: gradual onset -- y3
+   INTERMEDIATE at 1/8), and the work-down ladder at B=8 (sessions
+   12-15). The B=3 class as a function of per-dispatch work was
+   measured only at 1.0 (CAPTURED), 1/3 (CAPTURED), 1/4
+   (INTERMEDIATE/MIXED) and 1/8 (INTERMEDIATE/MIXED). The NDIV=2
+   column of the (B,NDIV) grid was measured only at (2,2).
+
+2. DERIVATION (chain of custody): ZERO derivation edits this session
+   (the strongest custody position in the chain -- named as such). The
+   instrument is session 19's committed NDIV-derived source used
+   BYTE-IDENTICAL (digest a5e539f0..., re-verified local-vs-host). The
+   ladder rungs are NEW (BATCH, NDIV=2) pairs of the source's existing
+   knobs (NDIV=2 had never been compiled at BATCH != 2 in this series).
+   The shader corpus is used byte-identical (16-digest corpus).
+   Manifest cases-s20-a.txt = the 24 cell lines a BYTE-COPY of session
+   19's cases-s19-a.txt cell lines (checked programmatically; byte-
+   equal to sessions 9-19's a-set). expected-corpus.sha256 a byte-copy
+   of session 19's committed file. Knob arithmetic pin (n = 1,000,003//2
+   = 500,001 in every w arm; totals 0.9999990..3.9999960) computed
+   programmatically (derivation-census-s20.txt).
+
+3. CHAIN OF CUSTODY (host-verify-s20.txt): corpus 16/16 MATCH vs
+   session 2's committed census (checked host-side via sha256sum -c
+   from the workdir root) + instrument + manifest + census expectation
+   local-vs-host MATCH 3/3 -- GO at 2026-10-27T18:24:57Z, BEFORE the
+   builds and ALL 27 runs (TIMELINE in host-verify-s20.txt says so).
+   NAMED, NOT HIDDEN: one pre-GO compile smoke of a NEW knob pair
+   (throwaway dir ~/anv-n2-smoke, gcc -O2 -DBATCH=3 -DNDIV=2, rc=0,
+   stderr 0 bytes, host source digest MATCH, zero runs -- the
+   session-9 D2 lesson applied by design; the session-19 smoke step's
+   missing separate timestamp is CORRECTED here: the smoke prints its
+   own host timestamp 2026-10-27T18:24:57Z). BUILD REPLICATION PIN
+   (declared in the protocol in advance; prior censuses parsed
+   programmatically): c2 and c8 rebuilt binaries BYTE-IDENTICAL to
+   session 19's same-flag binaries (== session 18's == session 17's ==
+   session 16's == session 13's) AND w2 BYTE-IDENTICAL to session
+   17's anv-xt-x2 (0fe9f403...) -- 3/3; w3..w8 are NEW knob pairs with
+   NO prior binary (named, not hidden).
+
+4. HARDWARE RAN (MEASURED): 27 fresh processes (9 arms x 3 runs), run
+   window 2026-10-27T18:25:31Z..18:25:45Z, rc=0 27/27, stderr 0 bytes
+   27/27, 450 SAMPLE + 24 VERIFY lines each; every run's
+   batch=/work_mul=/ndiv=/n= == its arm's (B,1,2,500,001; controls
+   (B,1,1,1,000,003)); forcing reality 486/486; VERIFY mismatch 0
+   everywhere (per-arm 0x9); S=8 fail-closed 162/162. Host:
+   aiueos-6600hs-1 (BMG G31 / ANV), 1 tick = 52.083 ns. Session 19 ran
+   17:55:50Z..17:55:59Z -- this session runs ~30 minutes after session
+   19, ALL on UTC day 2026-10-27.
+
+5. FINDINGS (publication-s20.txt, produced ONLY by analysis-s20.py
+   over the committed run logs, recorded run twice byte-identical --
+   diff exit 0):
+
+   (a) C1 ARCHIVED CONTROL REPLICATION fired branch (a) -- c2 FLOOR
+       (31 ticks, band 31..31), c8 32,874 vs committed 32,915
+       (-0.12%), inside the frozen +/-5%. The environment pin holds.
+
+   (b) C2 CROSSING ANCHOR REPLICATION fired branch (a) -- w2 (the
+       committed x2 knob pair BATCH=2,NDIV=2) = 31 vs committed x2 32
+       (-3.12%, run-median band 31..32), class FLOOR as committed,
+       rebuilt binary BYTE-IDENTICAL to session 17's anv-xt-x2
+       (section 3) -- the NDIV=2 column and the NDIV=B crossing
+       ladder join at that grid point.
+
+   (c) W1 THE ROW QUESTION fired branch (a) ONSET-AT-3 -- the class
+       vector at fixed per-dispatch work 0.5 units is (FLOOR,
+       CAPTURED, CAPTURED, CAPTURED, CAPTURED, CAPTURED, CAPTURED)
+       over (w2..w8): w2 (B=2, n=500,001, total 1.0) FLOOR (31), w3
+       (B=3, total 1.5) CAPTURED (2,739; run-median band 2,704..2,782;
+       18-cell min 1,959 -- CAPTURED at all 18 pipeline-ok cells),
+       w4 6,227 / w5 9,907 / w6 13,456 / w7 16,919 / w8 20,254
+       CAPTURED-class at all 18 cells (w2 the C2 anchor). AT
+       PER-DISPATCH WORK 1/2 THE CAPTURE-CLASS TRANSITION SITS AT THE
+       SAME DISCRETE B=2 -> B=3 STEP as at NDIV=1 (sessions 7/16) and
+       NDIV=B (session 17): the later-onset shape of sessions 18/19
+       is specific to per-dispatch work <= 1/4 AMONG THE MEASURED GRID
+       POINTS, and the B=3 capture threshold in per-dispatch work sits
+       in (1/4, 1/3] with 1/2 above it -- the five measured B=3 grid
+       points are 1.0 (5,520 CAPTURED), 1/2 (2,739 CAPTURED, this
+       session), 1/3 (1,578 CAPTURED), 1/4 (1,140 INTERMEDIATE/MIXED),
+       1/8 (599 INTERMEDIATE/MIXED), a MONOTONE picture across the
+       measured grid points (nothing between them is interpolated,
+       L5). AND "B=2 never captures" extends to n=500,001 at total
+       work 1.0 (w2 FLOOR 31). ONE session; protocol L2 binds:
+       dispatch count and TOTAL nominal work co-vary with B BY
+       CONSTRUCTION at fixed per-dispatch work (total = B/2 units), so
+       the discrimination is among the named hypotheses only; NO
+       causal mechanism is claimed or measured.
+
+   (d) W2 (pre-registered, descriptive) THE NDIV=2 DOSE CURVE fired
+       branch (a) NON-DECREASING -- 31 / 2,739 / 6,227 / 9,907 /
+       13,456 / 16,919 / 20,254 ticks over B=2..8; the named
+       quote-only comparison columns (committed NDIV=1, NDIV=B,
+       NDIV=4, NDIV=8 same-B) sit at DIFFERENT total-work levels
+       (ratios 0.496..0.615 of NDIV=1; 0.969..3.711 of NDIV=B;
+       1.000..2.403 of NDIV=4; 1.000..4.573 of NDIV=8 at the same B)
+       -- named cross-total-work comparisons ONLY, no linearity claim,
+       no interpolation.
+
+   (e) W3 (descriptive) THE CROSS TABLE: the measured NDIV=2 row
+       alongside the four committed quote-only rows on the B axis
+       (five per-dispatch-work levels: 1.0, 1/2, 1/3, 1/4, 1/8); NO
+       interpolation. The named equal-total shape comparisons both
+       SPLIT across the FLOOR/CAPTURED divide: total 1.0 -- w2
+       (2x500,001) 31 FLOOR measured (itself the committed x2 grid
+       point) vs z4 (4x250,000) 3,112 CAPTURED and y8 (8x125,000)
+       5,419 CAPTURED (quote-only); total 2.0 -- w4 (4x500,001) 6,227
+       CAPTURED measured vs z8 (8x250,000) 10,988 CAPTURED and c2
+       (2x1,000,003) 31 FLOOR (quote-only). Named comparisons only,
+       NO mechanism.
+
+   (f) X1 (descriptive, host_ns): c2 828,254 = 1.22x sessions
+       17/18/19's same-knob readings (676,171..680,159) and w2
+       563,461 = 1.43x session-17's x2 (394,546) -- NAMED, NOT
+       HIDDEN: a HOST-side proxy excursion at the two B=2 arms this
+       session while their GPU brackets replicate exactly/in-band
+       (c2 31 = +0.00% of committed; w2 31 = -3.12% of committed x2)
+       and c8's host_ns is flat (2,400,106 = 1.000x..1.006x of
+       sessions 17-19) -- host_ns is the HOST-side proxy (L3), not a
+       C criterion, cause UNMEASURED. w3..w8 host_ns first measured
+       here (714,162..1,428,414; per-dispatch host_ns ~178k..180k
+       flat for w4..w8 -- measured numbers, no claim).
+
+6. NAMED DEFECTS OF THIS SESSION (named, not hidden): none -- the arm
+   table (9 rows: c2, w2..w8, c8) and the run count (27) agree in the
+   frozen protocol text, and the session-19 "smoke step has no
+   separate timestamp" defect is CORRECTED here (the smoke prints its
+   own host timestamp).
+
+7. THE TICK'S FINDING IN ONE LINE: at FIXED per-dispatch work 1/2 the
+   capture-class transition sits AT the discrete B=2 -> B=3 step (w2
+   FLOOR 31 -> w3..w8 CAPTURED 2,739..20,254) -- the later-onset shape
+   of sessions 18/19 is specific to per-dispatch work <= 1/4 among
+   measured grid points, the B=3 capture threshold in per-dispatch
+   work sits in (1/4, 1/3] with 1/2 above it (B=3 grid points now
+   five: 1.0, 1/2, 1/3 CAPTURED; 1/4, 1/8 INTERMEDIATE/MIXED -- a
+   monotone picture), and "B=2 never captures" extends to n=500,001
+   at total work 1.0. WHY is UNMEASURED and NO causal mechanism is
+   claimed.
+
+8. RULE 4 unchanged: NOTHING MOVES -- no workgroup row, no :measured?
+   flag, no selection answer; accelerator-targets defaults remain
+   provisional (:measured? false); NO vendor optimization exists for
+   Intel and none is claimed. UNMEASURED named accordingly (any
+   causal mechanism; anything beyond the named-hypothesis
+   discrimination; L2 co-variation binds at this fixed per-dispatch
+   work; cross-UTC-day replication L4; the B=3 per-dispatch-work
+   threshold BETWEEN grid points (in (1/4, 1/3] at best, L5); any
+   cross-session stability of w3..w8 (first measured here); any
+   (B,NDIV) with NDIV outside {1,2,4,8} and NDIV != B -- the rest of
+   L10's grid (NDIV=3,5,6,... columns stay open); any per-dispatch
+   work outside 500,001/1,000,003; between rungs L5; the GPU-side
+   cost inside a B<=2 bracket L3; the B=2-arms host_ns excursion this
+   session (X1); session 2's run-1 dip; d160 spike; y6's host_ns
+   outlier; x8/d8 host_ns drop; anything off this host). Gates (real
+   runs this tick): gpu_regime_classify.py --self-test TOTAL 2649/0
+   (pin); scoped GPU gate GREEN 123 tests / 12162 assertions / 0
+   failures / 0 errors run 1 AND run 2 (scratch runner
+   gpu_scoped_gate.cljk, never committed); FULL run-tests.cljk RUN
+   LIVE THIS TICK: exit 1, RED AT BASE 'Could not find namespace:
+   kotoba.form' at namespace load (ADR-0362, outside this diff --
+   this diff touches NO .cljk namespace) -- NO green full suite
+   claimed; find this evidence dir -name '*.sh' -> 0. CHAIN: this
+   commit lands on the ONE open chain branch bot/amu-gpu-chain-20261027-10
+   (chain PR #1636), commit + push only. BLOCKER-FIRST: 0 open
+   kotoba-lang/amu PRs with a hermes/ head, re-checked immediately
+   before this push. Evidence: docs/evidence/gpu/anv-ndiv2ladder-20261027/
+   + the ADR-0355 dated note. (JUN-55, JUN-59)
