@@ -1,0 +1,133 @@
+=== per-function loop-body extraction (nvdisasm -c of the entry-excluded cubin)
+--- ee_M: loop body (11 lines), verbatim mnemonics:
+    .L_15:
+    SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+    CS2R R2, SR_CLOCKLO ;
+    MUFU.RSQ R0, R0 ;
+    CS2R R4, SR_CLOCKLO ;
+    IADD3 R7, R7, 0x1, RZ ;
+    IADD3 R8, P1, P2, R4, R8, -R2 ;
+    ISETP.NE.AND P0, PT, R7, 0x100, PT ;
+    IADD3 R6, R6, 0x10, RZ ;
+    IADD3.X R9, R5, R9, ~R3, P1, P2 ;
+    BRA `(.L_15) ;
+    CHAIN-VERDICT ee_M: expected {'MUFU.RSQ': 1} realized {'MUFU.RSQ': 1} -> MATCH
+    WRAP-OK (chain strictly between the two SR_CLOCKLO reads)
+--- ee_F: loop body (11 lines), verbatim mnemonics:
+    .L_13:
+    SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+    CS2R R2, SR_CLOCKLO ;
+    FADD.FTZ R7, R0, R7 ;
+    CS2R R4, SR_CLOCKLO ;
+    IADD3 R8, R8, 0x1, RZ ;
+    IADD3 R11, P1, P2, R4, R11, -R2 ;
+    ISETP.NE.AND P0, PT, R8, 0x100, PT ;
+    IADD3 R6, R6, 0x10, RZ ;
+    IADD3.X R9, R5, R9, ~R3, P1, P2 ;
+    BRA `(.L_13) ;
+    CHAIN-VERDICT ee_F: expected {'FADD*': 1} realized {'FADD*': 1} -> MATCH
+    WRAP-OK (chain strictly between the two SR_CLOCKLO reads)
+--- ee_MM: loop body (12 lines), verbatim mnemonics:
+    .L_11:
+    SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+    CS2R R2, SR_CLOCKLO ;
+    MUFU.RSQ R0, R0 ;
+    MUFU.RSQ R0, R0 ;
+    CS2R R4, SR_CLOCKLO ;
+    IADD3 R7, R7, 0x1, RZ ;
+    IADD3 R8, P1, P2, R4, R8, -R2 ;
+    ISETP.NE.AND P0, PT, R7, 0x100, PT ;
+    IADD3 R6, R6, 0x10, RZ ;
+    IADD3.X R9, R5, R9, ~R3, P1, P2 ;
+    BRA `(.L_11) ;
+    CHAIN-VERDICT ee_MM: expected {'MUFU.RSQ': 2} realized {'MUFU.RSQ': 2} -> MATCH
+    WRAP-OK (chain strictly between the two SR_CLOCKLO reads)
+--- ee_FF: loop body (12 lines), verbatim mnemonics:
+    .L_9:
+    SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+    CS2R R2, SR_CLOCKLO ;
+    FADD.FTZ R7, R0, R7 ;
+    FADD.FTZ R7, R0, R7 ;
+    CS2R R4, SR_CLOCKLO ;
+    IADD3 R8, R8, 0x1, RZ ;
+    IADD3 R11, P1, P2, R4, R11, -R2 ;
+    ISETP.NE.AND P0, PT, R8, 0x100, PT ;
+    IADD3 R6, R6, 0x10, RZ ;
+    IADD3.X R9, R5, R9, ~R3, P1, P2 ;
+    BRA `(.L_9) ;
+    CHAIN-VERDICT ee_FF: expected {'FADD*': 2} realized {'FADD*': 2} -> MATCH
+    WRAP-OK (chain strictly between the two SR_CLOCKLO reads)
+--- ee_MF: loop body (12 lines), verbatim mnemonics:
+    .L_7:
+    SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+    CS2R R2, SR_CLOCKLO ;
+    MUFU.RSQ R5, R6 ;
+    FADD.FTZ R6, R0, R5 ;
+    CS2R R4, SR_CLOCKLO ;
+    IADD3 R7, R7, 0x1, RZ ;
+    IADD3 R8, P1, P2, R4, R8, -R2 ;
+    ISETP.NE.AND P0, PT, R7, 0x100, PT ;
+    IADD3 R10, R10, 0x10, RZ ;
+    IADD3.X R9, R5, R9, ~R3, P1, P2 ;
+    BRA `(.L_7) ;
+    CHAIN-VERDICT ee_MF: expected {'MUFU.RSQ': 1, 'FADD*': 1} realized {'MUFU.RSQ': 1, 'FADD*': 1} -> MATCH
+    WRAP-OK (chain strictly between the two SR_CLOCKLO reads)
+--- ee_FM: loop body (12 lines), verbatim mnemonics:
+    .L_5:
+    SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+    CS2R R2, SR_CLOCKLO ;
+    FADD.FTZ R7, R0, R7 ;
+    MUFU.RSQ R7, R7 ;
+    CS2R R4, SR_CLOCKLO ;
+    IADD3 R8, R8, 0x1, RZ ;
+    IADD3 R11, P1, P2, R4, R11, -R2 ;
+    ISETP.NE.AND P0, PT, R8, 0x100, PT ;
+    IADD3 R6, R6, 0x10, RZ ;
+    IADD3.X R9, R5, R9, ~R3, P1, P2 ;
+    BRA `(.L_5) ;
+    CHAIN-VERDICT ee_FM: expected {'MUFU.RSQ': 1, 'FADD*': 1} realized {'FADD*': 1, 'MUFU.RSQ': 1} -> MATCH
+    WRAP-OK (chain strictly between the two SR_CLOCKLO reads)
+--- ee_MFM: loop body (13 lines), verbatim mnemonics:
+    .L_3:
+    SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+    CS2R R2, SR_CLOCKLO ;
+    MUFU.RSQ R5, R6 ;
+    FADD.FTZ R5, R0, R5 ;
+    MUFU.RSQ R6, R5 ;
+    CS2R R4, SR_CLOCKLO ;
+    IADD3 R7, R7, 0x1, RZ ;
+    IADD3 R8, P1, P2, R4, R8, -R2 ;
+    ISETP.NE.AND P0, PT, R7, 0x100, PT ;
+    IADD3 R10, R10, 0x10, RZ ;
+    IADD3.X R9, R5, R9, ~R3, P1, P2 ;
+    BRA `(.L_3) ;
+    CHAIN-VERDICT ee_MFM: expected {'MUFU.RSQ': 2, 'FADD*': 1} realized {'MUFU.RSQ': 2, 'FADD*': 1} -> MATCH
+    WRAP-OK (chain strictly between the two SR_CLOCKLO reads)
+--- ee_FMF: loop body (13 lines), verbatim mnemonics:
+    .L_1:
+    SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+    CS2R R2, SR_CLOCKLO ;
+    FADD.FTZ R4, R0, R7 ;
+    MUFU.RSQ R7, R4 ;
+    FADD.FTZ R7, R0, R7 ;
+    CS2R R4, SR_CLOCKLO ;
+    IADD3 R8, R8, 0x1, RZ ;
+    IADD3 R11, P1, P2, R4, R11, -R2 ;
+    ISETP.NE.AND P0, PT, R8, 0x100, PT ;
+    IADD3 R6, R6, 0x10, RZ ;
+    IADD3.X R9, R5, R9, ~R3, P1, P2 ;
+    BRA `(.L_1) ;
+    CHAIN-VERDICT ee_FMF: expected {'MUFU.RSQ': 1, 'FADD*': 2} realized {'FADD*': 2, 'MUFU.RSQ': 1} -> MATCH
+    WRAP-OK (chain strictly between the two SR_CLOCKLO reads)
+=== non-chain overhead multiset per arm (the common floor's instructions)
+    ee_M: {'BRA': 1, 'CS2R': 2, 'IADD3': 3, 'IADD3.X': 1, 'ISETP.NE.AND': 1, 'SHFL.IDX': 1}
+    ee_F: {'BRA': 1, 'CS2R': 2, 'IADD3': 3, 'IADD3.X': 1, 'ISETP.NE.AND': 1, 'SHFL.IDX': 1}
+    ee_MM: {'BRA': 1, 'CS2R': 2, 'IADD3': 3, 'IADD3.X': 1, 'ISETP.NE.AND': 1, 'SHFL.IDX': 1}
+    ee_FF: {'BRA': 1, 'CS2R': 2, 'IADD3': 3, 'IADD3.X': 1, 'ISETP.NE.AND': 1, 'SHFL.IDX': 1}
+    ee_MF: {'BRA': 1, 'CS2R': 2, 'IADD3': 3, 'IADD3.X': 1, 'ISETP.NE.AND': 1, 'SHFL.IDX': 1}
+    ee_FM: {'BRA': 1, 'CS2R': 2, 'IADD3': 3, 'IADD3.X': 1, 'ISETP.NE.AND': 1, 'SHFL.IDX': 1}
+    ee_MFM: {'BRA': 1, 'CS2R': 2, 'IADD3': 3, 'IADD3.X': 1, 'ISETP.NE.AND': 1, 'SHFL.IDX': 1}
+    ee_FMF: {'BRA': 1, 'CS2R': 2, 'IADD3': 3, 'IADD3.X': 1, 'ISETP.NE.AND': 1, 'SHFL.IDX': 1}
+OVERHEAD-VERDICT: IDENTICAL 8/8
+CHAIN-VERDICT-ALL: MATCH 8/8
+CLOCK-WRAP-VERDICT-ALL: WRAP-OK 8/8

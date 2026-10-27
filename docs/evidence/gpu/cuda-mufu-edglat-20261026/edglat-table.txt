@@ -1,0 +1,106 @@
+amu-gpu tick 2026-10-26 -- instrument v5, the CROSS-EDGE LOCUS table
+(JUN-55, JUN-57). HARDWARE: xavier sm_72, run 2026-10-26T15:12:22Z (see
+run-log.txt DATE-UTC). PROBE, not a registered timing session (no paired
+samples, no AB/BA) -- inadmissible under the entry criterion BY KIND,
+enters nothing, moves no record and no :measured? flag; measures
+INSTRUCTION chains, not kernels; SAME-UTC-DAY with every earlier probe
+(not a cross-day replication). All bodies VERIFIED from nvdisasm (12/12
+MATCH, verifier output verbatim in run-log.txt). 36 RESULT lines, ALL
+THREE LAUNCHES IDENTICAL medians per arm. Device name=Xavier
+clockRate_kHz=1377000 multiProcessorCount=8. clock64() over the loop
+only, 256 iterations/launch, 128 threads (samples=128 per launch).
+
+ARMS: realized bodies (chain per iteration) and sample distributions
+min/p10/median/mean/p90/max in clock cycles over 256 iterations
+(identical across the three launches):
+
+  lat_n16_rsq      {MUFU.RSQ:16}        61558/61558/61560/61559.5/61561/61561   cyc/iter med 240.4688
+  lat_n8_rsq       {MUFU.RSQ:8}         30845/30845/30847/30846.5/30848/30848   cyc/iter med 120.4961
+  lat_n16_fadd     {FADD.FTZ:16}        18298/18298/18300/18299.5/18301/18301   cyc/iter med  71.4844
+  lat_n8_fadd      {FADD.FTZ:8}         10106/10106/10108/10107.5/10109/10109   cyc/iter med  39.4844
+  lat_n16_rsqfadd  {MUFU.RSQ:8,FADD.FTZ:8}    44410/44410/44411/44410.8/44411/44411   cyc/iter med 173.4805
+  lat_n8_rsqfadd   {MUFU.RSQ:4,FADD.FTZ:4}    22906/22906/22907/22906.8/22907/22907   cyc/iter med  89.4805
+  lat_n24_rsqfadd2 {MUFU.RSQ:8,FADD.FTZ:16}   52602/52602/52603/52602.8/52603/52603   cyc/iter med 205.4805
+  lat_n12_rsqfadd2 {MUFU.RSQ:4,FADD.FTZ:8}    27003/27003/27005/27004.2/27006/27006   cyc/iter med 105.4883
+  lat_n24_rsq2fadd {MUFU.RSQ:16,FADD.FTZ:8}   75130/75130/75131/75130.8/75131/75131   cyc/iter med 293.4805
+  lat_n12_rsq2fadd {MUFU.RSQ:8,FADD.FTZ:4}    38267/38267/38269/38268.2/38270/38270   cyc/iter med 149.4883
+  lat_n24_rcpfadd2 {MUFU.RCP:8,FADD.FTZ:16}   52602/52602/52603/52602.8/52603/52603   cyc/iter med 205.4805
+  lat_n12_rcpfadd2 {MUFU.RCP:4,FADD.FTZ:8}    27003/27003/27005/27004.2/27006/27006   cyc/iter med 105.4883
+
+SLOPES (intercept-free, from the cyc/iter medians above):
+
+  e_MM   M->M edge  (T(n16)-T(n8))/8 over the rsq arms        = 14.9966
+  e_FF   F->F edge  (T(n16)-T(n8))/8 over the fadd arms       =  4.0000
+  XPAIR  cross pair (T(n16)-T(n8))/4 over the (rsq,fadd) arms = 21.0000
+  c_A    (rsq,fadd,fadd)  (T(n24)-T(n12))/4                   = 24.9981
+  c_B    (rsq,rsq,fadd)   (T(n24)-T(n12))/4                   = 35.9980
+  c_C    (rcp,fadd,fadd)  (T(n24)-T(n12))/4                   = 24.9981
+
+EDGE-ADDITIVITY PREDICTIONS vs MEASURED (predictions were fixed in the
+instrument header before the run):
+
+  pred c_A = XPAIR + e_FF = 25.0000 ; measured 24.9981 ; residual -0.0019 (-0.0078%)
+  pred c_B = e_MM + XPAIR = 35.9966 ; measured 35.9980 ; residual +0.0015 (+0.0041%)
+  pred c_C = c_A          = 24.9981 ; measured 24.9981 ; residual +0.0000
+
+  The residuals (-0.0019 / +0.0015 cyc per triple) sit at the
+  instrument's median-quantization scale (medians are integer cycle
+  counts over 256 iterations, so one count = 0.0039 cyc/iter = 0.0010
+  cyc/triple of slope granularity). EDGE-ADDITIVITY IS CONSISTENT WITH
+  THE DATA at this resolution: same-pipe edges keep their pure-form
+  prices inside mixed chains.
+
+NON-ADDITIVITY IS JOINTLY ON THE CROSS EDGES:
+
+  XPAIR - (e_MM + e_FF) = 21.0000 - 18.9966 = +2.0034 per (M->F + F->M)
+  pair. The twenty-seventh amendment's +1.5356 residual is SUPERSEDED:
+  it subtracted the floor-inflated AMORTIZED fadd figure 4.4678 (=
+  71.4844/16 at the single length n16) instead of the F->F slope. With
+  v5's new n8 fadd arm (v4's named limitation CLOSED) the intercept-free
+  e_FF is 4.0000 and the cross surplus is +2.0034.
+
+IDENTIFIABILITY (design fact, reasoned -- NOT a measurement): within the
+loop-carried single-accumulator dependent-chain form every landed
+instrument uses, the split of XPAIR into the M->F edge and the F->M edge
+is UNIDENTIFIABLE: any closed dependence cycle over two node types
+carries equal counts of M->F and F->M transitions, so every slope in
+this form returns their SUM. No instrument of this form can price one
+cross edge alone; an open-chain form would be needed (proposed, not
+implemented).
+
+RCP vs RSQ, third carrier form: (rcp,fadd,fadd) and (rsq,fadd,fadd)
+carry IDENTICAL sample distributions at both chain lengths (52602..52603
+/ 27003..27006, c_C == c_A to the digit) despite DISTINCT verified
+spellings (MUFU.RCP:8 vs MUFU.RSQ:8) and DISTINCT no-fold anchors
+(2.6180339f vs 2.4142137f -- see ANCHOR lines in run-log.txt). Third form fails to separate; consistent with (not proof
+of) L(MUFU.RCP) = L(MUFU.RSQ).
+
+REPRODUCTIONS (marked): e_MM 14.9966 reproduces the twenty-seventh
+amendment's in-binary 14.9966 EXACTLY (v2's 14.9991, CONSUMED, to
+-0.017%). XPAIR 21.0000 reproduces v4's 21.0000 exactly, with the pair
+arms' sample distributions IDENTICAL to v4's verbatim ranges (n16
+44410..44411; n8 22906..22907). The amortized n16 fadd figure
+71.4844/16 = 4.4678 is IDENTICAL to v4's 4.4678 (same binary form); the
+4.4397..4.4683 series remains what it always was -- amortized per-op
+readings at one length (form validation among amortized figures stands;
+they are not slopes).
+
+ANCHORS (3/3 identical every arm): fadd arms EXACT --
+lat_n16_fadd x_tid0_bits=1166018560 = 4097.0f (1.0f + 4096 x 1.0f);
+lat_n8_fadd x_tid0_bits=1157632000 = 2049.0f (1.0f + 2048 x 1.0f).
+MUFU arms: NO-FOLD WITNESSES ONLY (approximations are not re-derivable
+off-device) -- the chain executed and moved the value off the 2.0f
+seed: rsq arms 1065353216 = 1.0f at both lengths (rsqrt's fixed point,
+reached from 2.0f only through the realized chain), pair arm
+1071685589 = 1.7548777f at both lengths (reproduces v4's pair anchor),
+triple B 1074667692 = 2.2207441f, triple A 1076334046 = 2.6180339f,
+triple C 1075479162 = 2.4142137f. The (rsq,fadd,fadd) and
+(rcp,fadd,fadd) anchors are DISTINCT (2.6180339f vs 2.4142137f) while
+their timings and sample distributions are identical.
+
+BUILD DIAGNOSTICS: diag-build.txt = diag-cubin.txt = 188 bytes, two
+benign warnings each (quoted verbatim in run-log.txt):
+  gpu-mufu-edglat-microbench.cu(139): warning: variable "cf" was declared but never referenced
+  gpu-mufu-edglat-microbench.cu(140): warning: variable "cf" was declared but never referenced
+(the two RSQ-only LATK instantiations; cf feeds only FADD). diag-nvdisasm
+0 bytes. Driver exit 0, stderr 0 bytes.

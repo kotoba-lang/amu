@@ -2412,3 +2412,1017 @@ No runtime or compiler source changes. The author's reported scoped GPU
 suite (123 tests / 12162 assertions) is a legacy hosted result, not a
 native Amu qualification; it was not rerun in review. The full legacy
 suite was not run and no full/native green suite is claimed.
+
+## Amendment (2026-10-26, raw MUFU.RCP: realizable bare via the .ftz
+spelling, issue-side priced, dependent-chain latency hidden in the loop
+floor)
+
+The standing named unmeasured item "raw MUFU.RCP cost" (since the
+eighteenth amendment; v2's integrity finding said rcp.approx.f32
+"expands to MUFU.RCP + Newton-refinement pairs (raw MUFU.RCP never
+realized alone)") takes its realizability branch first, and the branch
+PASSES for one spelling and FAILS with a new cancellation fact for the
+others. Evidence: docs/evidence/gpu/cuda-mufu-rcp-20261026/ (record.txt
++ run-log.txt + microbench-sass.txt + mufu-rcp-table.txt +
+probes-run-log.txt + probes-sass.txt). Hardware: xavier sm_72, probe
+stage at 2026-10-26T13:25:28Z, instrument at 2026-10-26T13:32:49Z.
+NAMED NOT HIDDEN: a PROBE, not a registered timing session -- no paired
+samples, no AB/BA, inadmissible under the entry criterion BY KIND;
+same-UTC-day with every earlier probe (2026-10-26 UTC); it measures
+instruction chains, not kernels; it enters nothing and moves no record.
+
+**Realizability (probe stage, four spellings, compile-only).**
+`rcp.approx.ftz.f32` realizes as BARE MUFU.RCP (p1: chain body = 1
+MUFU.RCP + counter/ISETP/BRA, NO guard ops) -- the v2 "never realized
+alone" fact is spelling-specific to `rcp.approx.f32`; the guarded
+expansion (2 FSETP + 2 FSEL + 2 FMUL around the MUFU) survives even
+with a range-proven [1,2) seed (p2_clamp REFUTED as a de-guarding
+route); `div.approx.f32` hoists ONE loop-invariant guarded rcp of the
+divisor + one FMUL per op (p3 -- no per-op MUFU chain); the census's
+bare MUFU.RCP source (the integer-division lowering: I2F -> MUFU.RCP ->
+F2I + IMAD.HI corrections, no guards) is reproduced (p4).
+
+**Cancellation (instrument integrity, measured at SASS level).** ptxas
+cancels rcp.approx.ftz chains in PAIRS (rcp(rcp(x)) -> x): the straight
+n=4 and n=16 arms realize ZERO MUFU and NO LOOP (measured 2 cyc = the
+clock-read pair; anchors stay at the seed), the 16-op ping-pong arm
+collapses to ONE residual MUFU executed once after the loop (its number
+is a loop-floor measurement), the 8-pair throughput arm hoists 8
+residual MUFU out of the loop entirely (its number is a loop-floor
+measurement). This extends the toolchain's merge-mechanism
+characterization (the twenty-first amendment) with a FOURTH class:
+unary involutive-approx ops cancel pairwise, even across asm volatile,
+except as loop-carried recurrences of odd/effective count (lat_n1:
+1 MUFU per iteration x 256 survives; thr_str: 16 per iteration x 64
+survive). A straight MUFU.RCP chain cannot carry more than one
+effective op per loop body through this toolchain.
+
+**What is measured (the only measured things here; 7 arms x 3 launches x
+128 threads, all three launches identical medians).**
+(1) ISSUE-SIDE cost of bare MUFU.RCP: thr_str_rcp body VERIFIED
+    {MUFU.RCP:16 + SHFL/IADD3/ISETP/BRA} per iteration, 16 independent
+    loop-carried recurrences x 64 iterations = 1024 MUFU per thread:
+    137.2656 cyc/iter = 8.5791 cyc per MUFU at 128-thread lockstep.
+    DERIVED reading (marked): 128 lanes / 16 SFU lanes per cycle = 8
+    issue cycles per thread + 0.5791 in-context overhead per MUFU --
+    consistent with SFU throughput 16 MUFU/cycle/SM.
+(2) IN-CONTEXT recurrence cost of one bare MUFU.RCP per loop iteration:
+    lat_n1_rcp body VERIFIED {MUFU.RCP:1 + SHFL/IADD3/ISETP/BRA},
+    28.4766 cyc/iter. NOT separable from the loop floor: the pp16 arm's
+    realized body (5 slots, NO recurrence op) runs 28.4844 cyc/iter --
+    the same floor within 0.0078. The pure dependent-chain latency of
+    bare MUFU.RCP STAYS UNMEASURED (hidden in the floor).
+(3) Form validation: lat_n16_fadd 4.4663 cyc/instr vs v2's
+    straight-chain FADD.FTZ 4.4397 (CONSUMED at its commit) = +0.0266
+    (+0.60%); the fadd anchor is EXACT arithmetic (1.0f + 4096 x 1.0f =
+    4097.0f, bits 1166018560, reproduced 3/3). rcp anchors are no-fold
+    witnesses only (MUFU.RCP's approximation is not re-derivable
+    off-device).
+
+**Consequence.** Nothing moves (rule 4): no record, no :measured? flag,
+no selection answer, no workgroup row. The named item moves PARTIALLY:
+realization ANSWERED (bare MUFU.RCP is realizable via the .ftz
+spelling), issue-side MEASURED (8.5791 cyc per MUFU at 128-thread
+lockstep), dependent-chain latency UNMEASURED (hidden in the loop
+floor -- its instrument branch needs either the floor's composition
+(the oh-baseline row's named open item) or a multi-op recurrence that
+survives pairwise cancellation, e.g. interleaved spellings).
+
+**States.** MEASURED: the probe stage's four realized forms (SASS), the
+thr_str issue-side cost, the lat_n1 in-context recurrence cost, the
+fadd form-validation pair, the cancellation counts. DERIVED (marked):
+the SFU-throughput reading, the +0.60% form delta. IMPLEMENTED: nothing
+(evidence + this amendment). DECIDED: nothing new. ACCEPTED DESIGN ONLY
+(unchanged): the operator-aware contract + pre-registration, the row
+(ii) routes, the entry contract + wiring, ADR-0358, ADR-0373.
+UNMEASURED, named: bare MUFU.RCP's dependent-chain latency (hidden in
+the loop floor), MUFU.RCP's latency/issue cost on every other spelling
+(guarded rcp.approx.f32 sequence is priced as a whole at 39.44 / 11.27
+from v2, CONSUMED), the floor's internal composition, the pure 2-input
+IADD3 and IMAD.IADD separations, the 21 surplus ops' costs, the
+residual W-shape's dynamic carrier, noise exceedance, sum TRUE side
+W=256, cross-day run 3+ (still 2026-10-26 UTC), non-xavier verdicts,
+:sum W=64 elsewhere, live CUDA selection path, workgroup rows
+(:arm/:unknown provisional :measured? false).
+
+Gates (real runs, this worktree): scoped GPU gate (8 GPU-owned
+namespaces, scratch runner gpu_scoped_gate.cljk, never committed)
+GREEN 123 tests / 12162 assertions / 0 failures / 0 errors (glslang
+16.6.0 real-spawn) -- the committed pin exactly (this diff touches NO
+.cljk namespace, regression pin); find docs -name '*.sh' -> 0 (this
+row's evidence is .txt only); gpu_regime_classify.py --self-test NOT
+re-run (no classify code touched -- standing pin
+2649/0, NOT re-verified here); FULL run-tests.cljk NOT run (no .cljk
+touched) -- documented RED AT BASE 'Could not find namespace: kotoba.form'
+(ADR-0362), outside this diff -- NO green full suite claimed.
+
+## Amendment (2026-10-26, interleaved spellings: MUFU.RSQ measured, the
+(rsq,rcp) interleave folds its rcp legs away, the (rcp,fadd) interleave
+carries bare MUFU.RCP)
+
+The twenty-fifth amendment's named unmeasured item "bare MUFU.RCP's
+dependent-chain latency" takes its named instrument branch ("a
+multi-op recurrence that survives pairwise cancellation, e.g.
+interleaved spellings") and the branch SPLITS TWICE. Evidence:
+docs/evidence/gpu/cuda-mufu-interleave-20261026/ (record.txt +
+run-log-v1-buildfail.txt + run-log-v2.txt + run-log-v3.txt +
+microbench-sass-v2.txt + microbench-sass-v3.txt +
+mufu-interleave-table.txt). Hardware: xavier sm_72 at
+2026-10-26T14:12:48Z (v1, build-failed -- named), 14:13:45Z (v2),
+14:20:18Z (v3). NAMED NOT HIDDEN: a PROBE, not a registered timing
+session -- no paired samples, no AB/BA, inadmissible under the entry
+criterion BY KIND; same-UTC-day with every earlier probe (2026-10-26
+UTC); it measures instruction chains, not kernels; it enters nothing
+and moves no record.
+
+**Realizability (v2, SASS-verified).** A pure `rsqrt.approx.ftz.f32`
+chain carries 16/16 and 8/8 dependent MUFU.RSQ with no fold (a named
+failed attempt v1 is retained: the PTX mnemonic `rsq.*` does not exist,
+quoted). An interleaved (rsq,rcp)*8 chain realizes WITHOUT its rcp
+legs -- body {MUFU.RSQ:8 + overhead}, byte-identical in shape and
+sample distribution to the 8-RSQ arm: the pairwise-cancellation
+characterization is refined -- a dependent MUFU.RCP leg survives ONLY
+where no MUFU-MUFU composition exists in the value flow (mechanism
+unresolved, named). The straight 16-RCP control collapses to identity
+(loop-free, 2 cyc, anchor at seed) as the twenty-fifth amendment found.
+An interleaved (rcp,fadd)*k chain (v3) DOES carry its rcp legs: bodies
+VERIFIED {MUFU.RCP:8, FADD.FTZ:8} and {MUFU.RCP:4, FADD.FTZ:4}.
+
+**What is measured (the only measured things here).**
+(1) MUFU.RSQ dependent-chain latency: intercept-free slope over
+    chain lengths 16/8 = 14.9991 cyc per MUFU.RSQ (the first measured
+    dependent-chain MUFU latency on this host).
+(2) The (MUFU.RCP + FADD.FTZ) dependent pair: intercept-free slope over
+    8/4 pairs = 21.0000 cyc per pair (exact at both ends).
+(3) The floor anchors: 1 MUFU/iteration stays floor-bound (28.5078 /
+    28.4688 cyc/iter, the same ~28.5 floor as the twenty-fifth
+    amendment's readings) -- n=1 never prices latency.
+(4) Form validation: straight FADD.FTZ 4.4683 / 4.4658 cyc/instr vs
+    v2's 4.4397 (CONSUMED) = +0.64% / +0.59%; fadd anchor exact
+    (4097.0f, bits 1166018560, 3/3).
+
+**Separation (DERIVED, marked).** L(MUFU.RCP) = 21.0000 - 4.4658
+(same-binary fadd arm) = 16.5342 cyc, ASSUMING serial dependent
+latencies add across the pair. The in-binary validation of that
+assumption (an (rsq,fadd) pair slope put through the same subtraction
+must reproduce the measured 14.9991) is DESIGNED as instrument v4 and
+NOT RUN -- named, started, not finished. Until v4 lands, 16.5342 is
+DERIVED, not MEASURED.
+
+**Consequence.** Nothing moves (rule 4): no record, no :measured? flag,
+no selection answer, no workgroup row. The named item moves PARTIALLY:
+dependent-chain latency MEASURED as the 21.0000 cyc (rcp,fadd) pair and
+14.9991 cyc for MUFU.RSQ alone; bare MUFU.RCP alone is DERIVED 16.5342
+and UNMEASURED as a direct single-op reading (no carrier leaves one
+MUFU.RCP above the loop floor).
+
+**States.** MEASURED: the RSQ slope, the (rcp,fadd) pair slope, the
+(rsq,rcp) fold fact, the parity-collapse control, the floor anchors,
+the fadd validation pair, every realized body. DERIVED (marked):
+L(MUFU.RCP) 16.5342 and the amortized per-op readings. IMPLEMENTED:
+nothing (evidence + this amendment). DECIDED: nothing new. ACCEPTED
+DESIGN ONLY (unchanged): the operator-aware contract + pre-registration,
+the row (ii) routes, the entry contract + wiring, ADR-0358, ADR-0373.
+UNMEASURED, named: the v4 in-binary additivity validation (designed,
+not run), bare MUFU.RCP latency as a direct measurement, the floor's
+internal composition, the pure 2-input IADD3 and IMAD.IADD separations,
+the 21 surplus ops' costs, the residual W-shape's dynamic carrier,
+noise exceedance, sum TRUE side W=256, cross-day run 3+ (still
+2026-10-26 UTC), non-xavier verdicts, :sum W=64 elsewhere, live CUDA
+selection path, workgroup rows (:arm/:unknown provisional :measured?
+false).
+
+Gates (honest): the run-time budget closed before the gate stage -- the
+scoped GPU gate and `find docs -name '*.sh'` were NOT re-run this tick
+(NAMED, not hidden; the find check was taken once at evidence staging:
+0 .sh under docs; this diff touches NO .cljk namespace -- evidence +
+this amendment only). FULL run-tests.cljk NOT run (no .cljk touched) --
+documented RED AT BASE 'Could not find namespace: kotoba.form'
+(ADR-0362), outside this diff -- NO green full suite claimed.
+
+## Amendment (2026-10-26, the in-binary additivity validation RUNS and
+FAILS: serial dependent latencies do not add across a (MUFU,FADD) pair,
+and the L(MUFU.RCP) separation is RETRACTED)
+
+The twenty-sixth amendment's named unfinished slice -- "the in-binary
+additivity validation (instrument v4, designed) NOT RUN -- named,
+started, not finished" -- takes its instrument branch. Hardware ran:
+instrument v4 (7 arms x 3 launches x 128 threads) on xavier sm_72 at
+2026-10-26T14:49:33Z. NAMED NOT HIDDEN: a PROBE, not a registered
+timing session (no paired samples, no AB/BA), inadmissible under the
+entry criterion BY KIND; same-UTC-day with every earlier probe -- not
+a cross-day replication, extends no record's :evidence and enters
+nothing; it measures instruction chains, not kernels.
+
+**The instrument.** All quantities of the separation in ONE binary:
+pure-RSQ chains (16/8 per iteration), (rsq,fadd) pair chains (8/4
+pairs), (rcp,fadd) pair chains (8/4 pairs), one 16-FADD validation
+arm; clock64() over the loop only, 256 iterations/launch, operands
+symbolic. Every body VERIFIED from nvdisasm (all seven MATCH their
+named chains: {MUFU.RSQ:16}, {MUFU.RSQ:8}, {MUFU.RSQ:8,FADD.FTZ:8},
+{MUFU.RSQ:4,FADD.FTZ:4}, {MUFU.RCP:8,FADD.FTZ:8},
+{MUFU.RCP:4,FADD.FTZ:4}, {FADD.FTZ:16} -- plus the landed +4 loop
+overhead); OK-build/OK-cubin/OK-sass 361 lines, diag-nvdisasm 0
+bytes, driver exit 0, stderr 0 bytes, 21 RESULT lines, all three
+launches identical medians.
+
+**What is measured (the only measured things here).**
+(1) L(MUFU.RSQ) direct, intercept-free over 16/8 = 14.9966 cyc --
+    reproduces v2's 14.9991 (CONSUMED at its commit) to -0.017%.
+(2) The (rsq,fadd) pair slope = 21.0000 cyc/pair (exact at both
+    ends) -- and the (rcp,fadd) pair slope = 21.0000 cyc/pair, the
+    two pair arms carrying IDENTICAL sample distributions at both
+    chain lengths (n16 44410..44411, n8 22906..22907) despite
+    distinct verified spellings (MUFU.RSQ:8 vs MUFU.RCP:8) and
+    distinct no-fold anchors (1.7548777f vs 1.6180340f).
+(3) The same-binary FADD.FTZ reading 4.4678 cyc/op (slope-amortized;
+    v4 carries no n8 fadd arm -- named limitation).
+
+**The validation identity FAILS.** The v4 design: pair(rsq,fadd) put
+through the same subtraction must reproduce the directly measured
+MUFU.RSQ slope. It returns 21.0000 - 4.4678 = 16.5322 against the
+direct 14.9966 -- residual +1.5356 cyc (+10.24%), robust across every
+landed fadd reference (+1.5351..+1.5637 for v3 4.4658 / v2 4.4683 /
+v2-reference 4.4397). Serial dependent latencies DO NOT add across a
+(MUFU,FADD) pair: the pair costs 21.0000 while its parts measured
+alone sum to 19.4644. Which leg re-prices (the MUFU leg in-pair, the
+fadd leg in-pair, or the cross-pipe transitions) is UNRESOLVED --
+named, not guessed; a DERIVED (marked) reading prices the in-pair
+fadd leg at 6.0034 cyc (+34.37% over standalone 4.4678).
+
+**Separation RETRACTED.** The twenty-sixth amendment's DERIVED
+L(MUFU.RCP) = 16.5342 (pair(rcp,fadd) minus same-binary fadd) rests
+on the exact assumption this run refutes. It is REFUTED as a latency
+separation and RETRACTED. Bare MUFU.RCP dependent-chain latency is
+UNMEASURED again. New supporting evidence: the pair form cannot
+separate RCP from RSQ at all on this host (fact (2) above) -- the
+equality is consistent with (not proof of) L(MUFU.RCP) = L(MUFU.RSQ).
+
+**Consequence.** Nothing moves (rule 4): no record, no :measured?
+flag, no selection answer, no :shapes value, no workgroup row. The
+named item moves PARTIALLY (the validation ran and its identity is
+refuted; the separation is retracted; the pair-form equality is new
+evidence).
+
+**States.** MEASURED: the v4 run on xavier -- the pure-RSQ slope,
+both pair slopes, the same-binary fadd reading, the pair-form
+distribution equality, all realized bodies and anchors. DERIVED
+(marked): the identity residual +1.5356, the in-pair fadd-leg cost
+6.0034. RETRACTED (marked): the 16.5342 L(MUFU.RCP) separation.
+IMPLEMENTED: nothing (evidence + this amendment). DECIDED: nothing
+new. ACCEPTED DESIGN ONLY (unchanged): the operator-aware contract +
+pre-registration, the row (ii) routes, the entry contract + wiring,
+ADR-0358, ADR-0373. UNMEASURED, named: bare MUFU.RCP dependent-chain
+latency (separation refuted), the +1.5356 residual's leg locus, a
+carrier that separates RCP from RSQ, the floor's internal
+composition, the pure 2-input IADD3 and IMAD.IADD separations, the 21
+surplus ops' costs, the residual W-shape's dynamic carrier, noise
+exceedance, sum TRUE side W=256, cross-day run 3+ (still 2026-10-26
+UTC), non-xavier verdicts, :sum W=64 elsewhere, live CUDA selection
+path, workgroup rows (:arm/:unknown provisional :measured? false).
+
+Gates (honest): the scoped GPU gate GREEN on run 1 AND run 2 (123
+tests / 12162 assertions / 0 failures / 0 errors, glslang 16.6.0
+real-spawn, regression pin); `find docs -name '*.sh'` -> 0 (evidence
+is .txt only). FULL run-tests.cljk NOT run (this diff touches NO
+.cljk namespace) -- documented RED AT BASE 'Could not find namespace:
+kotoba.form' (ADR-0362), outside this diff -- NO green full suite
+claimed.
+
+## Amendment (2026-10-26, the cross-edge locus: mixed chains are
+edge-additive, no leg re-prices)
+
+The twenty-seventh amendment's named item "the +1.5356 residual's leg
+locus" takes its instrument branch. Hardware ran: instrument v5 (12
+arms x 3 launches x 128 threads) on xavier sm_72 at 2026-10-26T15:12:22Z
+(DATE-UTC verbatim in the evidence run-log). NAMED NOT HIDDEN: a PROBE,
+not a registered timing session (no paired samples, no AB/BA),
+inadmissible under the entry criterion BY KIND; SAME-UTC-DAY with every
+earlier probe -- the tick began 15:03Z, minutes after v4's 14:49Z run
+-- not a cross-day replication, extends no record's :evidence and
+enters nothing; it measures instruction chains, not kernels.
+
+**The instrument.** All quantities of the edge question in ONE binary:
+pure-RSQ chains (16/8 per iteration), pure-FADD chains (16/8 -- the n8
+arm closing v4's named limitation that its fadd reading was
+slope-amortized from a single length), (rsq,fadd) pair chains (8/4
+pairs), and triple chains (rsq,fadd,fadd) / (rsq,rsq,fadd) /
+(rcp,fadd,fadd) (8/4 triples each); 256 iterations/launch,
+clock64() over the loop only, operands symbolic (the fadd reference
+arms keep v4's 1.0f-literal anchor form). Predictions fixed in the
+instrument header BEFORE the run: c_A == pair_sum + e_FF, c_B == e_MM +
+pair_sum, c_C == c_A. Every body VERIFIED from nvdisasm (12/12 MATCH
+their named chains, including {MUFU.RSQ:16} and {MUFU.RCP:8,
+FADD.FTZ:16} at the triple lengths); OK-build/OK-cubin/OK-sass 648
+lines, build diags 188 bytes each = two benign "variable cf was
+declared but never referenced" warnings for the two RSQ-only LATK
+instances (quoted in the run-log), diag-nvdisasm 0 bytes, driver exit
+0, stderr 0 bytes, 36 RESULT lines, all three launches identical
+medians.
+
+**What is measured (the only measured things here).**
+(1) The F->F slope e_FF = 4.0000 EXACTLY -- intercept-free over 16/8
+    (71.4844 / 39.4844 cyc/iter, shared intercept 7.4844). The
+    4.4678/4.4658/4.4683/4.4397 series is FLOOR-INFLATED PER-OP
+    AMORTIZATION at one length (71.4844/16 = 4.4678), not slopes.
+(2) Triple A (rsq,fadd,fadd) = 24.9981 cyc/triple against the
+    pre-registered prediction pair_sum + e_FF = 25.0000 (residual
+    -0.0019, -0.008%); triple B (rsq,rsq,fadd) = 35.9980 against
+    e_MM + pair_sum = 35.9966 (residual +0.0015, +0.004%) -- both
+    residuals at the instrument's median-quantization scale (one
+    median count = 0.0010 cyc/triple of slope granularity).
+(3) Triple C (rcp,fadd,fadd) = 24.9981 = c_A to the digit, with
+    IDENTICAL sample distributions at both chain lengths
+    (52602..52603 / 27003..27006) despite DISTINCT verified spellings
+    (MUFU.RCP:8 vs MUFU.RSQ:8) and DISTINCT no-fold anchors
+    (2.4142137f vs 2.6180339f).
+(4) Reproductions: e_MM 14.9966 reproduces the twenty-seventh's
+    in-binary 14.9966 exactly; the pair sum 21.0000 reproduces v4
+    exactly with IDENTICAL sample distributions (n16 44410..44411; n8
+    22906..22907) and the pair anchor 1.7548777f.
+
+**The leg question dissolves: no leg re-prices.** EDGE-ADDITIVITY
+holds within the instrument's resolution -- same-pipe edges keep their
+pure-form prices inside mixed chains (c_A - pair_sum = 3.9981 = e_FF;
+c_B - pair_sum = 14.998 ~ e_MM). The twenty-seventh's "which leg
+re-prices" was the wrong frame: the non-additivity is joint on the
+cross-pipe edge pair, e_MF + e_FM = 21.0000 against e_MM + e_FF =
+18.9966, a cross surplus of +2.0034 per pair. The +1.5356 figure is
+SUPERSEDED (it subtracted the amortized 4.4678), and the DERIVED
+"in-pair fadd leg 6.0034" is RETRACTED as a leg cost.
+
+**The cross-edge split is UNIDENTIFIABLE in this form** (design fact,
+REASONED by rotation counting, not a measurement): every loop-carried
+single-accumulator dependent cycle over two node types carries equal
+counts of M->F and F->M transitions, so every slope in this form
+returns their SUM. No instrument of this form prices one cross edge
+alone; an open-chain form would be needed (proposed, not implemented).
+The named item is answered as far as the measurement form permits.
+
+**Consequence.** Nothing moves (rule 4): no record, no :measured? flag,
+no selection answer, no :shapes value, no workgroup row. The named item
+moves SUBSTANTIALLY (locus answered in-form; leg frame dissolved; the
+residual split named unidentifiable).
+
+**States.** MEASURED: the v5 run on xavier -- e_MM 14.9966, e_FF 4.0000,
+cross pair sum 21.0000, c_A 24.9981, c_B 35.9980, c_C 24.9981, all
+realized bodies and anchors, the RCP/RSQ triple distribution identity
+and the pair arms' identity with v4. REASONED (marked): the cross-edge
+split unidentifiability. SUPERSEDED (marked): the +1.5356 residual.
+RETRACTED (marked): the in-pair fadd leg 6.0034. IMPLEMENTED: nothing
+(evidence + this amendment). DECIDED: nothing new. ACCEPTED DESIGN ONLY
+(unchanged): the operator-aware contract + pre-registration, the row
+(ii) routes, the entry contract + wiring, ADR-0358, ADR-0373.
+UNMEASURED, named: the e_MF / e_FM split (unidentifiable in-form),
+bare MUFU.RCP dependent-chain latency (three carrier forms agree with
+equality, no separation), the floor's internal composition (including
+the new per-form intercept differences: rsq-form 0.5234, fadd-form
+7.4844, mixed-form 5.4805/5.4883 -- unexplained), the pure 2-input
+IADD3 and IMAD.IADD separations, the 21 surplus ops' costs, the
+residual W-shape's dynamic carrier, noise exceedance, sum TRUE side
+W=256, cross-day run 3+ (still 2026-10-26 UTC), non-xavier verdicts,
+:sum W=64 elsewhere, live CUDA selection path, workgroup rows
+(:arm/:unknown provisional :measured? false).
+
+Gates (honest): the scoped GPU gate GREEN on run 1 AND run 2 (123
+tests / 12162 assertions / 0 failures / 0 errors, glslang 16.6.0
+real-spawn, regression pin); `find docs -name '*.sh'` -> 0 (evidence
+is .txt only). FULL run-tests.cljk NOT run (this diff touches NO
+.cljk namespace) -- documented RED AT BASE 'Could not find namespace:
+kotoba.form' (ADR-0362), outside this diff -- NO green full suite
+claimed.
+
+
+## Amendment (2026-10-26 UTC, the e_MF/e_FM split: unidentifiable in
+every entry-included chain form by a potential gauge; the proposed
+open-chain carrier separates only under an entry-excluding timing
+discipline, now spec'd)
+
+The twenty-eighth amendment's forward path -- "the cross-edge split is
+UNIDENTIFIABLE in this form ... an open-chain form would be needed
+(proposed, not implemented)" -- rested on an unexamined premise: that an
+open-chain form separates what cyclic bodies cannot. This amendment
+settles the identifiability question before any hardware time is spent
+on that instrument. NO HARDWARE RAN; NOTHING IS MEASURED HERE. The tick
+executes 2026-10-26T15:45Z UTC (2026-10-27 JST) -- same UTC day as every
+probe, so cross-day run 3+ does not move; this enters no :evidence.
+
+**The analysis.** In the twenty-eighth's own edge-additive frame, every
+measurable quantity of every chain form is a path sum over edge prices
+e_{i,j} (self edges included), entry edges a_i, exit edges b_i, and a
+floor f. An exact rational Gauss-Jordan rank/nullspace computation
+(script committed verbatim as docs/evidence/gpu/
+mufu-split-identifiability-20261026/analysis.py, output verbatim in
+analysis-output.txt, two runs byte-identical, sha256
+be3f55ac...262933) enumerates four measurement families (all words up
+to length 6 over {M,F}, up to 5 over {M,F,U}) and tests identifiability
+of e_MF, e_FM, e_MF+e_FM, e_MF-e_FM in each. Pre-registered predictions
+P1..P4 sat in the script header before the first run.
+
+**What is verified (design analysis, not measurement).**
+(1) Cyclic bodies over {M,F}: rank 3 of 4 edge variables, the null
+    direction {e_MF:-1, e_FM:1} -- the twenty-eighth's rotation-counting
+    result reproduced mechanically; the sum e_MF+e_FM is the only cross
+    quantity cyclic forms return (P1 confirmed).
+(2) Open chains with the entry edge INSIDE the timed region: the split
+    is STILL not identifiable (witness null vector {e_MF:1, e_FM:-1,
+    a_M:-1, b_M:1}). The freedom is a potential gauge -- for any
+    per-node-type potential p, shifting e_{i,j} by p(j)-p(i) with
+    compensating shifts of the entry/exit edges leaves every path sum
+    invariant. Open chains do not break it; they re-seat it on the entry
+    and exit edges. Verdict of P2 confirmed; P2's predicted nullspace
+    dimension was wrong (3, not 2) -- the uncounted direction is the
+    floor-vs-entry trade {a_M:-1, a_F:-1, f:1} (NAMED). Over {M,F,U} the
+    same story with a 3-dim potential gauge (P4 confirmed).
+(3) Open chains with the entry edge EXCLUDED by timing discipline (first
+    operand ready before the timing boundary, sink consumer common to
+    all arms): the gauge collapses to a sink-vs-floor trade that moves no
+    edge price, and the split becomes IDENTIFIABLE (P3 confirmed on the
+    verdict; "full rank" in the prediction was likewise off by that one
+    intercept direction -- NAMED) with the estimators e_MF = V(MF) -
+    V(F), e_FM = V(FM) - V(M).
+(4) Falsifiable closure pre-registered for that future instrument:
+    V(MFM) == V(MF) + V(FM) - V(F), V(FMF) == V(FM) + V(MF) - V(M). If
+    the closures fail, the entry-excluding discipline's premise is wrong
+    and the split stays unmeasured -- it must not be reported.
+(5) The gauge also places the twenty-eighth's unexplained per-form
+    intercept differences (0.5234 / 7.4844 / 5.4805) exactly in the
+    floor-vs-entry freedom; no intercept can resolve them either.
+
+**Consequence.** Nothing moves (rule 4): no record, no :measured? flag,
+no selection answer, no workgroup row. The named item stays UNMEASURED
+and moves in design state only: "unidentifiable in-form" becomes
+"unidentifiable in every entry-included chain form (potential gauge,
+mechanically verified) and identifiable only under the entry-excluding
+discipline (spec'd; estimators and closures pre-registered; instrument
+PROPOSED, not implemented)". The twenty-eighth's forward-path phrasing
+("an open-chain form would be needed") is SUPERSEDED by this corrected
+statement. The observable cross quantity stands at the measured cycle
+sum e_MF + e_FM = 21.0000 (cross surplus +2.0034), unchanged.
+
+**States.** REASONED + MECHANICALLY VERIFIED (not measured): the gauge
+theorem and all rank/nullspace verdicts (evidence
+mufu-split-identifiability-20261026: analysis.py, analysis-output.txt,
+record.txt). MEASURED (standing, unchanged, earlier ticks): e_MM
+14.9966, e_FF 4.0000, e_MF+e_FM 21.0000, cross surplus +2.0034.
+PROPOSED (neither implemented nor run): the entry-excluded open-chain
+instrument. IMPLEMENTED: nothing in src/ or test/. DECIDED: nothing new.
+ACCEPTED DESIGN ONLY (unchanged): the operator-aware contract +
+pre-registration, the row (ii) routes, the entry contract + wiring,
+ADR-0358, ADR-0373. SUPERSEDED (marked): the twenty-eighth's
+open-chain forward-path phrasing. UNMEASURED, named (list carried
+forward intact): the e_MF / e_FM split (now: measurable only via the
+proposed entry-excluded instrument), bare MUFU.RCP dependent-chain
+latency, the floor's internal composition (including the per-form
+intercept differences, now placed in the gauge freedom but still
+unmeasured), the pure 2-input IADD3 and IMAD.IADD separations, the 21
+surplus ops' costs, the residual W-shape's dynamic carrier, noise
+exceedance, sum TRUE side W=256, cross-day run 3+ (still 2026-10-26
+UTC), non-xavier verdicts, :sum W=64 elsewhere, live CUDA selection
+path, workgroup rows (:arm/:unknown provisional :measured? false).
+
+Gates (honest): the scoped GPU gate GREEN on run 1 AND run 2 (123
+tests / 12162 assertions / 0 failures / 0 errors, glslang 16.6.0
+real-spawn, regression pin -- verbatim logs gate-run1.txt /
+gate-run2.txt in the evidence dir); `find docs -name '*.sh'` -> 0.
+FULL run-tests.cljk NOT run (this diff touches NO .cljk namespace) --
+documented RED AT BASE 'Could not find namespace: kotoba.form'
+(ADR-0362), outside this diff -- NO green full suite claimed.
+
+
+## Amendment (2026-10-26 UTC, the entry-excluded instrument is
+implemented and RUN and its pre-registered closures FAIL: the
+e_MF/e_FM split stays UNMEASURED)
+
+The twenty-ninth amendment ended with the entry-excluded open-chain
+instrument "PROPOSED, not implemented". This amendment records that
+the instrument was IMPLEMENTED (v6, gpu-mufu-entryexcl-microbench.cu,
+committed verbatim in the evidence dir) and RUN on xavier sm_72 at
+2026-10-26T16:17:21Z (8 arms x 3 launches x 128 threads x 256 timed
+instances; a PROBE, not a registered timing session -- inadmissible
+under the entry criterion BY KIND, enters nothing; SAME UTC DAY as
+every earlier probe, so "cross-day run 3+" does not move). The slice
+was started by an interrupted tick and finished by the next.
+
+**Bodies verified 8/8.** The realized loop bodies (verbatim in
+verifier-output.txt) carry exactly their named chains IN ORDER (ee_MF
+= MUFU then FADD; ee_FM = FADD then MUFU; ee_MFM/ee_FMF likewise),
+the chain strictly between two CS2R SR_CLOCKLO reads 8/8, and the
+non-chain overhead multiset IDENTICAL 8/8. NAMED: the verifier whose
+output rides in the remote run log reported NO-LOOP 8/8 -- an
+extraction bug (its BRA regex required the branch target at
+end-of-line; nvdisasm emits "BRA `(.L_N) ;"), not a body defect; the
+transferred and completed extractors are both committed.
+
+**The adjudication (mufu_entryexcl_analysis.py, output verbatim,
+two runs byte-identical).** The closures pre-registered in the
+twenty-ninth amendment FAIL beyond the named 1.0 cyc tolerance:
+C1 V(MFM)=37.1719 vs V(MF)+V(FM)-V(F)=27.2070 (residual +9.9648);
+C2 V(FMF)=31.2266 vs V(FM)+V(MF)-V(M)=26.5938 (residual +4.6328);
+every launch-matched pairing fails the same way. The cyclic
+reproductions fail too: V(MM)-V(M)=10.4063 vs landed e_MM 14.9966;
+V(FF)-V(F)=0.0117 vs landed e_FF 4.0000; the estimator sum 16.4492
+vs the landed cycle sum 21.0000. Per the pre-registered falsifier
+stance P6, the estimators (15.0469 / 1.4023, pooled) are INADMISSIBLE
+and MUST NOT be reported as the split: **the e_MF/e_FM split STAYS
+UNMEASURED**.
+
+**What the data shows, named, not attributed.** Every arm sits on a
+~10.14 cyc floor; the single-op arms are floor-bound; MF exceeds FM
+by ~+13 cyc in V (same op multiset, opposite order); the M arm's
+median spreads 2.2266 cyc across launches while MM is exactly
+launch-stable. Mechanism UNRESOLVED. A SASS-VERIFIED deviation
+between the spec'd discipline and the realization is on record: the
+design's PAD16 (16 DEPENDENT add.u32) is strength-reduced to ONE
+"IADD3 R6, R6, 0x10", so the inter-iteration gap is 8 instructions,
+not the 23 the header's readiness argument assumed. Whether the
+closure failure is the discipline's premise being wrong (P6's own
+wording) or this realization deviating from the discipline is
+UNRESOLVED; both readings stay open. The twenty-ninth's rank/nullspace
+identifiability theorem is UNTOUCHED -- it says what is identifiable
+IF the instrument returns the model's V values; this run shows it
+does not.
+
+**Consequence.** Nothing moves (rule 4): no record, no :measured?
+flag, no selection answer, no workgroup row. The named item moves in
+design state only: "identifiable only under the spec'd entry-excluding
+discipline (instrument PROPOSED, not implemented)" becomes
+"instrument IMPLEMENTED and RUN; pre-registered closures FAIL (P6);
+split UNMEASURED; discipline-premise-vs-realization deviation
+UNRESOLVED (pad fold SASS-verified)". The observable cross quantity
+stands at the measured cycle sum e_MF + e_FM = 21.0000 (cross surplus
++2.0034), unchanged.
+
+**States.** MEASURED (standing, unchanged, earlier ticks): e_MM
+14.9966, e_FF 4.0000, e_MF+e_FM 21.0000, cross surplus +2.0034.
+MEASURED (new, PROBE-grade, enters no record): the v6 V table and its
+closure residuals (evidence cuda-mufu-entryexcl-20261026). REASONED +
+MECHANICALLY VERIFIED (unchanged): the gauge theorem. REFUTED (this
+run): that the v6 instrument returns the edge-additive model's V
+values. IMPLEMENTED: nothing in src/ or test/. DECIDED: nothing new.
+ACCEPTED DESIGN ONLY (unchanged): the operator-aware contract +
+pre-registration, the row (ii) routes, the entry contract + wiring,
+ADR-0358, ADR-0373. UNMEASURED, named (list carried forward): the
+e_MF / e_FM split (P6 -- estimators inadmissible), bare MUFU.RCP
+dependent-chain latency, the floor's internal composition (per-form
+intercepts 0.5234/7.4844/5.4805 and now the v6 ~10.14 cyc floor, all
+unattributed), the pure 2-input IADD3 and IMAD.IADD separations, the
+21 surplus ops' costs, the residual W-shape's dynamic carrier, noise
+exceedance, sum TRUE side W=256, cross-day run 3+ (still 2026-10-26
+UTC), non-xavier verdicts, :sum W=64 elsewhere, live CUDA selection
+path, workgroup rows (:arm/:unknown provisional :measured? false).
+
+Gates (honest): the scoped GPU gate GREEN on run 1 AND run 2 (123
+tests / 12162 assertions / 0 failures / 0 errors, glslang 16.6.0
+real-spawn, regression pin -- verbatim logs gate-run1.txt /
+gate-run2.txt in the evidence dir); `find docs -name '*.sh'` -> 0.
+FULL run-tests.cljk RUN LIVE THIS TICK: RED AT BASE 'Could not find
+namespace: kotoba.form' at namespace load (ADR-0362), outside this
+diff -- verified live, NO green full suite claimed.
+
+
+## Amendment (2026-10-26 UTC, the pad fold is REFUTED as the cause: v7
+realizes the gap and the closures fail by v6's residuals -- the
+e_MF/e_FM split stays UNMEASURED)
+
+The thirtieth amendment left the closure failure's cause UNRESOLVED
+between two readings: the discipline's premise being wrong (P6's
+wording) or the realization deviating from the discipline (the PAD16
+strength-reduction, SASS-verified: 16 dependent add.u32 folded to ONE
+"IADD3 R6, R6, 0x10", the inter-iteration gap 8 instructions instead
+of the 23 the readiness argument assumed). This amendment records
+instrument v7 (THE PAD-GAP instrument, gpu-mufu-padgap-microbench.cu,
+committed verbatim) which RESOLVES that named question: the pad-fold
+reading is REFUTED as the cause.
+
+**The one change.** v7 = v6 with the pad realized as 16 dependent
+mad.lo.u32 on a separate register with SYMBOLIC multiplier/addend from
+global memory -- the composition p |-> p*k+c is not a mad, so ptxas
+cannot fold the chain. Named deviation: the spec's literal "16
+dependent integer adds" are realized as 16 dependent IMAD (op class
+differs) -- forced (inline asm volatile does not stop ptxas from
+folding add chains; symbolic adds merge pairwise into IADD3's
+three-input add). Everything else is identical to v6. Predictions
+P1..P7 pre-registered in the instrument header before the first run.
+
+**The gap is real (P7, SASS-verified).** Every loop body carries
+exactly 16 IMAD pad instructions ("IMAD R10, R8, R10, R9" -- p = k*p+c,
+dependent through R10), 0 inside the timed region, 16 after the t1
+clock read; bodies 26-28 lines vs v6's ~11. CHAIN-VERDICT MATCH 8/8,
+CLOCK-WRAP 8/8, OVERHEAD IDENTICAL 8/8 (verifier rides verbatim in the
+run log; one extractor this time, the v6 end-of-line BRA-regex
+extraction bug fixed before transfer). Hardware: xavier sm_72 at
+2026-10-26T17:21:12Z (8 arms x 3 launches x 128 threads x 256 timed
+instances; a PROBE, not a registered timing session -- inadmissible
+under the entry criterion BY KIND, enters nothing; SAME UTC DAY as
+every earlier probe, "cross-day run 3+" does not move).
+
+**The adjudication (mufu_padgap_analysis.py, output verbatim, two
+runs byte-identical).** The closures STILL FAIL beyond the named 1.0
+cyc tolerance, by v6's residuals: C1 V(MFM)=37.1484 vs
+V(MF)+V(FM)-V(F)=27.1992 (residual +9.9492; v6 +9.9648); C2
+V(FMF)=31.7148 vs V(FM)+V(MF)-V(M)=27.2148 (residual +4.5000; v6
++4.6328). The cyclic reproductions fail too: V(MM)-V(M)=11.0352 vs
+landed e_MM 14.9966; V(FF)-V(F)=-0.0273 vs landed e_FF 4.0000; the
+estimator sum 17.0391 vs the landed cycle sum 21.0000. Restoring the
+gap did not move the table: v7-vs-v6 pooled V deltas are within 0.06
+cyc on six of eight arms, -0.5977 on the noisiest arm (M) and +0.4883
+on FMF. Per the pre-registered falsifier stance P6, the estimators
+(14.9844 / 2.0547) are INADMISSIBLE and MUST NOT be reported as the
+split: **the e_MF/e_FM split STAYS UNMEASURED**.
+
+**What is excluded, and what is not.** Excluded: the v6 pad fold as
+the cause (SASS-verified folded then, SASS-verified unfolded now, same
+residuals). Not excluded: the discipline's premise itself (P6's
+original wording) or any further unexcluded property of the
+realization -- both readings stay open, but the named question ("is
+the closure failure the pad fold?") is ANSWERED: no. The
+twenty-ninth's rank/nullspace identifiability theorem is UNTOUCHED.
+
+**Consequence.** Nothing moves (rule 4): no record, no :measured?
+flag, no selection answer, no workgroup row. The named item moves in
+design state only: "discipline-premise-vs-realization deviation
+UNRESOLVED (pad fold SASS-verified)" becomes "pad-fold reading
+REFUTED as the cause (v7: gap realized, closures fail by v6's
+residuals); premise-vs-further-deviation UNRESOLVED; split
+UNMEASURED". The observable cross quantity stands at the measured
+cycle sum e_MF + e_FM = 21.0000 (cross surplus +2.0034), unchanged.
+
+**States.** MEASURED (standing, unchanged, earlier ticks): e_MM
+14.9966, e_FF 4.0000, e_MF+e_FM 21.0000, cross surplus +2.0034.
+MEASURED (new, PROBE-grade, enters no record): the v7 V table and its
+closure residuals (evidence cuda-mufu-padgap-20261026). REFUTED (this
+run): that the pad fold caused the v6 closure failure; that the v7
+instrument returns the edge-additive model's V values. IMPLEMENTED:
+nothing in src/ or test/. DECIDED: nothing new. ACCEPTED DESIGN ONLY
+(unchanged): the operator-aware contract + pre-registration, the row
+(ii) routes, the entry contract + wiring, ADR-0358, ADR-0373.
+UNMEASURED, named (list carried forward): the e_MF / e_FM split (P6
+-- estimators inadmissible in v6 AND v7), bare MUFU.RCP dependent-
+chain latency, the floor's internal composition (per-form intercepts
+0.5234/7.4844/5.4805 and the v6 ~10.14 / v7 ~10.17 cyc floors, all
+unattributed), the pure 2-input IADD3 and IMAD.IADD separations, the
+21 surplus ops' costs, the residual W-shape's dynamic carrier, noise
+exceedance, sum TRUE side W=256, cross-day run 3+ (still 2026-10-26
+UTC), non-xavier verdicts, :sum W=64 elsewhere, live CUDA selection
+path, workgroup rows (:arm/:unknown provisional :measured? false).
+
+Gates (honest): the scoped GPU gate GREEN on run 1 AND run 2 (123
+tests / 12162 assertions / 0 failures / 0 errors, glslang 16.6.0
+real-spawn, regression pin -- verbatim logs gate-run1.txt /
+gate-run2.txt in the evidence dir, byte-identical); `find docs -name
+'*.sh'` -> 0. FULL run-tests.cljk RUN LIVE THIS TICK: RED AT BASE
+'Could not find namespace: kotoba.form' at namespace load (ADR-0362),
+outside this diff -- verified live, NO green full suite claimed.
+
+
+## Amendment (2026-10-26 UTC, the premise is REFUTED as edge-additive
+in-form at the pure-word level: the v8 length series is NON-AFFINE and
+the end-artifact class goes with it -- a length-dependent realization
+effect is named, not attributed; the split stays UNMEASURED)
+
+The thirty-first amendment left the closure failure's cause UNRESOLVED
+between the discipline's premise being wrong and a further unexcluded
+realization deviation (the pad fold having been excluded as that
+cause). This amendment records instrument v8 (THE LENGTH-SERIES
+instrument, gpu-mufu-lenlin-microbench.cu, committed verbatim) which
+adjudicates that pair at the pure-word level.
+
+**The one change.** v8 = v7 with the arm words replaced: 8 composition
+arms (M/F/MM/FF/MF/FM/MFM/FMF) -> 10 pure-word length arms (M^1..M^5,
+F^1..F^5). Everything else identical to v7 (entry-excluded discipline,
+realized 16-IMAD pad, symbolic operands, same tails). Predictions
+P1..P7 pre-registered in the instrument header before the first run.
+
+**Why the length series adjudicates.** The edge-additive model says
+V(T^k) = a_T + k*s_T -- AFFINE in the length k -- and affinity survives
+ANY end-artifact that is a function of the first/last op only (a
+hoisted t1 read, an excluded tail latency: such terms cancel across k).
+So: non-affine => the premise is implicated and the end-artifact class
+is refuted as the explanation; affine at the landed cyclic slope =>
+pure-word prices channel-consistent, closure failure localizes to mixed
+composition; affine off-slope => interior prices channel-dependent.
+
+**Structure verified (P7, SASS-verified).** CHAIN-VERDICT MATCH 10/10
+(ee_Mk carries exactly k MUFU.RSQ, ee_Fk exactly k FADD*), CLOCK-WRAP
+10/10, PAD-VERDICT 10/10 (16 IMAD* per body, 0 inside the timed
+region), OVERHEAD-IDENTICAL 10/10. Hardware: xavier sm_72 at
+2026-10-26T18:01:40Z (10 arms x 3 launches x 128 threads x 256 timed
+instances; a PROBE, not a registered timing session -- inadmissible
+under the entry criterion BY KIND, enters nothing; SAME UTC DAY as
+every earlier probe, "cross-day run 3+" does not move).
+
+**The adjudication (mufu_lenlin_analysis.py, output verbatim, two runs
+byte-identical).** P1/P2 FAIL: the series is NON-AFFINE at the named
+1.0 cyc tolerance -- M second differences +9.4453/-7.7852/+0.0430, F
++6.4219/+0.3203/-0.9961; launch-matched NON-AFFINE on all three
+launches for both word types. The F non-affinity is dominated by a
+within-run STABLE non-monotonicity V(F1)=12.5039 > V(F2)=10.2266 (one
+FADD measures SLOWER than two; launch spreads 0.1016/0.0078). P3/P4
+FAIL on the means of first differences (s_M 16.5029 vs landed e_MM
+14.9966; s_F 2.4502 vs landed e_FF 4.0000) -- with the series
+non-affine "the slope" is not a price; the k=4,5 M increments
+(14.9609/15.0039) sit at the landed e_MM while k=2,3 (13.3008/22.7461)
+do not. P5 PARTIAL FAIL (cross-instrument consistency, not a model
+prediction): only V(M1) reproduces v7 (+0.0546); V(F1), D_M(2),
+D_F(2) miss v7's own points by 2.25-2.33 cyc, and V(M2) = 23.5156 vs
+v7's V(MM) 21.1953 (+2.3203) while V(F2) reproduces V(FF) (+0.0782) --
+the two instruments' V values are not the same quantities even before
+a model is applied. P6: the e_MF/e_FM split STAYS UNMEASURED; nothing
+this run admits the estimators.
+
+**What is excluded, and what is not.** Excluded (this run): that the
+measured V is edge-additive in form at the pure-word level, and with it
+every first/last-op-only end-artifact reading (they cannot bend a
+length series). Not excluded: the twenty-ninth's rank/nullspace
+identifiability theorem (UNTOUCHED -- it says what a correctly realized
+entry-excluded discipline would identify; what v6/v7/v8 show is that
+this realization does not return the model's V values at all), nor any
+particular mechanism for the length dependence (register allocation,
+ptxas scheduling shifts at some length, counter interleaving) -- the
+effect is NAMED, NOT ATTRIBUTED. The named question ("is the closure
+failure an end artifact of the timing boundary?") is ANSWERED: no.
+
+**Consequence.** Nothing moves (rule 4): no record, no :measured?
+flag, no selection answer, no workgroup row. The named item moves in
+design state only: "pad-fold reading REFUTED as the cause;
+premise-vs-further-deviation UNRESOLVED; split UNMEASURED" becomes
+"the premise is REFUTED as edge-additive in-form at the pure-word
+level (non-affine length series; end-artifact class refuted);
+length-dependent realization effect NAMED, NOT ATTRIBUTED; split
+UNMEASURED". The observable cross quantity stands at the measured
+cycle sum e_MF + e_FM = 21.0000 (cross surplus +2.0034), unchanged.
+
+**States.** MEASURED (standing, unchanged, earlier ticks): e_MM
+14.9966, e_FF 4.0000, e_MF+e_FM 21.0000, cross surplus +2.0034.
+MEASURED (new, PROBE-grade, enters no record): the v8 V table, its
+second differences and its cross-instrument deltas (evidence
+cuda-mufu-lenlin-20261026). REFUTED (this run): that the measured V is
+edge-additive in form at the pure-word level; that a first/last-op-only
+end artifact explains the v6/v7 closure failure; that v7's length-1/2
+points reproduce across instruments. IMPLEMENTED: nothing in src/ or
+test/. DECIDED: nothing new. ACCEPTED DESIGN ONLY (unchanged): the
+operator-aware contract + pre-registration, the row (ii) routes, the
+entry contract + wiring, ADR-0358, ADR-0373. UNMEASURED, named (list
+carried forward): the e_MF / e_FM split (P6), bare MUFU.RCP
+dependent-chain latency, the floor's internal composition (per-form
+intercepts 0.5234/7.4844/5.4805 and the v6 ~10.14 / v7 ~10.17 cyc
+floors, all unattributed), the pure 2-input IADD3 and IMAD.IADD
+separations, the 21 surplus ops' costs, the residual W-shape's dynamic
+carrier, noise exceedance, sum TRUE side W=256, cross-day run 3+
+(still 2026-10-26 UTC), non-xavier verdicts, :sum W=64 elsewhere, live
+CUDA selection path, workgroup rows (:arm/:unknown provisional
+:measured? false). NAMED NOT HIDDEN (noise): the v8 launch-to-launch
+spreads reach 2.8750 cyc on 4 of 10 arms -- above the pre-registered
+1.0 cyc tolerance there; the non-affinity verdicts are robust to
+launch choice (NON-AFFINE on every launch) but individual first
+differences carry that much uncertainty.
+
+Gates (honest): the scoped GPU gate GREEN on run 1 AND run 2 (123
+tests / 12162 assertions / 0 failures / 0 errors, glslang 16.6.0
+real-spawn, regression pin -- verbatim logs gate-run1.txt /
+gate-run2.txt in the evidence dir); `find docs -name '*.sh'` -> 0.
+FULL run-tests.cljk RUN LIVE THIS TICK: RED AT BASE 'Could not find
+namespace: kotoba.form' at namespace load (ADR-0362), outside this
+diff -- verified live, NO green full suite claimed.
+
+
+## Amendment (2026-10-26 UTC, the non-affinity REPRODUCES and EXTENDS
+to k=8 while the v8 F1>F2 non-monotonicity is RUN-SPECIFIC: instrument
+v9, THE LENGTH-EXTENSION; a ~2.3 cyc arm-level shift mode is NAMED as
+the dominant variability)
+
+The thirty-second amendment REFUTED the measured V as edge-additive
+in-form at the pure-word level (non-affine length series k=1..5) and
+named two follow-ups this amendment takes in ONE instrument: the
+scope of the refutation (is the non-affinity range-limited?) and the
+status of the named within-run stable non-monotonicity V(F1) >
+V(F2) (stable effect vs run-specific). Instrument v9
+(gpu-mufu-lenext-microbench.cu, committed verbatim).
+
+**The one change.** v9 = v8 with the series range extended: 10 arms
+M^1..M^5 / F^1..F^5 -> 16 arms M^1..M^8 / F^1..F^8. Everything else
+identical to v8 (entry-excluded discipline, realized 16-IMAD pad,
+symbolic operands, same tails, 3 launches x 128 threads x 256 timed
+instances). Predictions P1..P7 pre-registered in the instrument header
+before the first run: v8 reproduction of the shared arms (P1, noise-
+limited-arm caveat registered IN HEADER), the F1>F2 non-monotonicity
+reproduction (P2), non-affinity extension over k=1..8 (P3), channel
+agreement of the extended means with the landed cyclic slopes (P4/P5),
+falsifier stance (P6), structural verdicts (P7).
+
+**Structure verified (P7, SASS-verified).** CHAIN-VERDICT MATCH 16/16
+(ee_Mk carries exactly k MUFU.RSQ, ee_Fk exactly k FADD*, in order),
+CLOCK-WRAP 16/16, PAD-VERDICT 16/16 (16 IMAD* per body, 0 inside the
+timed region, 16 after t1), OVERHEAD-IDENTICAL 16/16. Hardware:
+xavier sm_72 at 2026-10-26T18:24:24Z (a PROBE, not a registered
+timing session -- inadmissible under the entry criterion BY KIND,
+enters nothing; measures INSTRUCTION chains, not kernels; SAME UTC DAY
+as every earlier probe, "cross-day run 3+" does not move).
+
+**The adjudication (mufu_lenext_analysis.py, output verbatim, two runs
+byte-identical).** (1) P3 HOLD: the NON-AFFINITY EXTENDS -- both
+families NON-AFFINE over the full k=1..8 range (M second differences
++11.6836/-12.1953/+4.4727/-14.4336/+14.5117/-4.5938; F
++3.5664/+0.2617/+2.1484/-4.3281/+2.4805/-0.6953) and over the k=1..5
+subset, launch-matched NON-AFFINE on all three launches, both
+families, both ranges. The thirty-second amendment's refutation is NOT
+range-limited and reproduces on a fresh run. (2) P2 FAIL: the F1>F2
+non-monotonicity DOES NOT REPRODUCE (v9 V(F1) 10.1484 < V(F2)
+10.3555, delta -0.2070); v8's "one FADD measures SLOWER than two" is
+DOWNGRADED from within-run stable to RUN-SPECIFIC (named). What does
+reproduce is the F plateau at low k -- V(F1) ~= V(F2) (v9 delta
++0.2070; v7's V(F) 10.1758 ~= V(FF) 10.1484 has the same shape) -- the
+F first difference at k=2 is +0.2070 against +3.6406..+6.1836 at
+k=3..8, itself non-affine. (3) P1 6/10: individual V points reproduce
+v8 within the 1.0 cyc tolerance only to a ~2.3 cyc mode -- F1 -2.3555,
+F5 +2.0430, M3 +2.1328, M5 +2.1328 fail (the other six within 0.68,
+including two of the four header-named v8-noise-limited arms). (4)
+P4/P5 HOLD, against v8: the extended means sit within tolerance of the
+landed cyclic slopes (s_M 14.4213 vs e_MM 14.9966, delta -0.5753; s_F
+3.4330 vs e_FF 4.0000, delta -0.5670) where v8's k=1..5 means failed
+(+1.5063/-1.5498) -- but the series is non-affine, so per the
+thirty-second amendment's own caveat "the slope is not a price": these
+holds are consistency of the AVERAGES over k=2..8, NOT per-op prices
+and NOT a model validation. (5) P6: the e_MF/e_FM split STAYS
+UNMEASURED; the estimators are not computed.
+
+**NAMED NOT ATTRIBUTED: the ~2.3 cyc arm-level shift mode.** The
+P1-failure magnitudes (+2.04..+2.36) are the magnitude class of the
+thirty-second amendment's v7-vs-v8 cross-instrument deltas (+2.27 to
++2.33), and the SAME class appears inside v9 as per-launch level
+shifts on individual arms -- M2 launch0 21.1328 vs 23.4531/23.5039
+(-2.32), F2 launch1 12.4180 vs 10.3555/10.1367 (+2.28), F1 launch1
+12.3477 (+2.20), F4 launch2 20.4492 (+2.29), F5 launch2 22.1289
+(-2.22), F7 launch2 32.4102 (+2.28..2.31), M5 launch0 76.1523
+(-2.21), M8 launch1 113.3438 (+2.20..2.26). A ~2.3 cyc per-arm
+shift mode is therefore NAMED as the dominant cross-run/cross-launch
+variability of this instrument class (it covers the v7-vs-v8 "+2.3"
+anomalies and the P1 failures in one stroke); its carrier is NOT
+ATTRIBUTED (register allocation, scheduling regime, counter
+interleaving -- untested here). Named outside the class: M6's launch0
+shift +6.1758 (87.3047 vs 81.1289/81.1445).
+
+**What is excluded, and what is not.** Excluded (this run): that the
+non-affinity is range-limited to k<=5; that v8's F1>F2
+non-monotonicity is a stable property of the arm pair; that individual
+V points reproduce across runs at the 1.0 cyc tolerance. Not excluded:
+the twenty-ninth's rank/nullspace identifiability theorem (UNTOUCHED),
+any particular mechanism for the length dependence or the shift mode.
+The named question ("is the pure-word non-affinity a k<=5 artifact?")
+is ANSWERED: no.
+
+**Consequence.** Nothing moves (rule 4): no record, no :measured?
+flag, no selection answer, no workgroup row. The named item moves in
+design state only: "the premise is REFUTED as edge-additive in-form at
+the pure-word level (non-affine length series; end-artifact class
+refuted); length-dependent realization effect NAMED, NOT ATTRIBUTED;
+split UNMEASURED" becomes "the non-affinity REPRODUCES and EXTENDS to
+k=8 (both families, every launch); the F1>F2 non-monotonicity is
+run-specific (the F1~=F2 plateau reproduces); a ~2.3 cyc arm-level
+shift mode is NAMED as the dominant variability (not attributed);
+split UNMEASURED". The observable cross quantity stands at the
+measured cycle sum e_MF + e_FM = 21.0000 (cross surplus +2.0034),
+unchanged.
+
+**States.** MEASURED (standing, unchanged, earlier ticks): e_MM
+14.9966, e_FF 4.0000, e_MF+e_FM 21.0000, cross surplus +2.0034.
+MEASURED (new, PROBE-grade, enters no record): the v9 V table, its
+first/second differences to k=8 and the shift-mode quantification
+(evidence cuda-mufu-lenext-20261026). REFUTED (this run): that the
+pure-word non-affinity is range-limited; that v8's F1>F2
+non-monotonicity is stable; that individual V points reproduce across
+runs within 1.0 cyc. IMPLEMENTED: nothing in src/ or test/. DECIDED:
+nothing new. ACCEPTED DESIGN ONLY (unchanged): the operator-aware
+contract + pre-registration, the row (ii) routes, the entry contract +
+wiring, ADR-0358, ADR-0373. UNMEASURED, named (list carried forward):
+the e_MF / e_FM split (P6), bare MUFU.RCP dependent-chain latency,
+the floor's internal composition (per-form intercepts 0.5234/7.4844/
+5.4805 and the v6 ~10.14 / v7 ~10.17 cyc floors, all unattributed),
+the pure 2-input IADD3 and IMAD.IADD separations, the 21 surplus ops'
+costs, the residual W-shape's dynamic carrier, the ~2.3 cyc shift
+mode's carrier, noise exceedance, sum TRUE side W=256, cross-day run
+3+ (still 2026-10-26 UTC), non-xavier verdicts, :sum W=64 elsewhere,
+live CUDA selection path, workgroup rows (:arm/:unknown provisional
+:measured? false -- accelerator-targets defaults are design
+assumptions, not evidence).
+
+Gates (honest): the scoped GPU gate GREEN on run 1 AND run 2 (123
+tests / 12162 assertions / 0 failures / 0 errors, glslang 16.6.0
+real-spawn, regression pin -- verbatim logs gate-run1.txt /
+gate-run2.txt in the evidence dir); `find docs -name '*.sh'` -> 0.
+FULL run-tests.cljk RUN LIVE THIS TICK: RED AT BASE 'Could not find
+namespace: kotoba.form' at namespace load (ADR-0362), outside this
+diff -- verified live, NO green full suite claimed.
+
+## Amendment (2026-10-26 UTC, the ~2.3 cyc shift mode is CONFIRMED
+DYNAMIC at the first carrier split: instrument v9r, THE
+BYTE-IDENTICAL REPEAT; the static-realization-only reading is
+EXCLUDED and the within-run per-launch manifestation is run-variable)
+
+The thirty-third amendment NAMED the ~2.3 cyc arm-level shift mode as
+the dominant cross-run/cross-launch variability of the instrument
+class, carrier NOT ATTRIBUTED (register allocation, scheduling
+regime, counter interleaving -- untested). This amendment records
+instrument v9r (THE BYTE-IDENTICAL REPEAT): the v9 files run again
+with the realization held FIXED (gpu-mufu-lenext-microbench.cu
+b98fb39b.., mufu_lenext_verify.py a917a737.. byte-identical; only the
+remote driver is new), which splits the carrier space in two -- any
+shift that moves between the two runs is DYNAMIC (run/launch level);
+anything that stayed would have been realization level.
+
+**The one change.** Nothing in the instrument. Validity is itself
+measured (P0): the generated microbench.sass of the repeat is
+sha256-IDENTICAL to v9's generated artifact
+(9b27b9fa8d4907e356aeed02211d1e0af799436002c2a2ef9eb99747d418bf60),
+the received-file shas match 3/3, and v9's committed run-log re-parses
+to the v9 consumed pooled values 16/16. Predictions P0..P6 were
+registered in the run driver's bytes (hashed before compile and run;
+echoed verbatim into run-log.txt) and in the analysis header, both
+written before the first run. Named: the analysis script's ANCHOR
+check was corrected after the run (a wrong constant-xbits expectation
+replaced by the correct v9-equality check, which holds 16/16); no
+prediction text changed.
+
+**Structure verified (P1, SASS-verified).** CHAIN-VERDICT MATCH 16/16,
+CLOCK-WRAP 16/16, PAD-VERDICT 16/16, OVERHEAD-IDENTICAL 16/16. The 16
+ANCHOR lines are identical to v9's. Hardware: xavier sm_72 at
+2026-10-26T18:53:17Z (a PROBE, not a registered timing session --
+inadmissible under the entry criterion BY KIND, enters nothing;
+measures INSTRUCTION chains, not kernels; SAME UTC DAY as every
+earlier probe, "cross-day run 3+" does not move).
+
+**The adjudication (mufu_lenrpt_analysis.py, output verbatim, two
+runs byte-identical).** (1) P4a HOLD / P4b FAIL: the ~2.3 mode MOVES
+BETWEEN BYTE-IDENTICAL RUNS -- per-arm between-run deltas classify
+11/16 within the 1.0 tol, 5/16 in the ~2.3 class (M2 -2.2422, M3
+-2.1914, M5 -2.2071, M7 -2.2266, F5 -2.1993), 0 "other". The mode is
+DYNAMIC at the first carrier split; a static-realization-only reading
+is EXCLUDED. Named not attributed: in this run pair the class moved
+one direction only (all five negative, mean -2.2133, spread 0.0508).
+(2) P5 FAIL: the within-run per-launch manifestation did NOT reproduce
+-- 0 per-launch shifts in the class this run (v9 named ~10), the
+largest launch spread 0.9219 (M2), below the class band; the mode's
+within-run occurrence is itself run-variable. Consistent reading,
+NOT registered and NOT attributed: pooled deltas reflect how many
+launches sat in a shifted state; v9's M3/M7 pooled shifted with tight
+within-run spreads (0.0273/0.4727), so the mode is not only a
+per-launch outlier phenomenon. (3) P2 HOLD: the NON-AFFINITY
+REPRODUCES on the byte-identical re-run (both families NON-AFFINE over
+k=1..8 and k=1..5, pooled AND all launches) -- instrument realization
+differences cannot be the cause of the thirty-second amendment's
+refutation either. (4) P3 HOLD: the F plateau reproduces (V(F1)
+10.2578 vs V(F2) 10.1914, delta +0.0664); the v8 F1>F2 form does not
+return. (5) P6: no e_MF/e_FM estimator exists or is computed (no
+mixed arms); the split STAYS UNMEASURED.
+
+**What is excluded, and what is not.** Excluded (this run): that the
+shift mode is a property of the instrument realization alone
+(static-realization-only). Not excluded: any specific dynamic
+mechanism (register allocation, scheduling regime, counter
+interleaving all remain untested), the twenty-ninth's rank/nullspace
+identifiability theorem (UNTOUCHED). The named question ("does the
+~2.3 mode move with the realization fixed?") is ANSWERED: yes -- it
+is dynamic.
+
+**Consequence.** Nothing moves (rule 4): no record, no :measured?
+flag, no selection answer, no workgroup row. The named item moves in
+design state only: "~2.3 cyc arm-level shift mode NAMED as the
+dominant variability (carrier NOT ATTRIBUTED)" becomes "the shift
+mode is CONFIRMED DYNAMIC at the first carrier split (5/16 arms move
+~-2.21 between byte-identical runs; static-realization-only reading
+EXCLUDED); its within-run per-launch manifestation is run-variable (0
+this run vs v9's ~10; max launch spread 0.9219); the mode's internal
+carrier NOT ATTRIBUTED". The observable cross quantity stands at the
+measured cycle sum e_MF + e_FM = 21.0000 (cross surplus +2.0034),
+unchanged.
+
+**States.** MEASURED (standing, unchanged, earlier ticks): e_MM
+14.9966, e_FF 4.0000, e_MF+e_FM 21.0000, cross surplus +2.0034.
+MEASURED (new, PROBE-grade, enters no record): the v9r V table, the
+between-run delta classification and the shift-mode dynamic verdict
+(evidence cuda-mufu-lenrpt-20261026). REFUTED (this run): that the
+~2.3 cyc shift mode is a static realization property. IMPLEMENTED:
+nothing in src/ or test/. DECIDED: nothing new. ACCEPTED DESIGN ONLY
+(unchanged): the operator-aware contract + pre-registration, the row
+(ii) routes, the entry contract + wiring, ADR-0358, ADR-0373.
+UNMEASURED, named (list carried forward): the e_MF / e_FM split (P6),
+bare MUFU.RCP dependent-chain latency, the floor's internal
+composition (per-form intercepts 0.5234/7.4844/5.4805 and the v6
+~10.14 / v7 ~10.17 cyc floors, all unattributed), the pure 2-input
+IADD3 and IMAD.IADD separations, the 21 surplus ops' costs, the
+residual W-shape's dynamic carrier, the ~2.3 cyc shift mode's
+INTERNAL carrier (now known dynamic; origin not attributed), noise
+exceedance, sum TRUE side W=256, cross-day run 3+ (still 2026-10-26
+UTC), non-xavier verdicts, :sum W=64 elsewhere, live CUDA selection
+path, workgroup rows (:arm/:unknown provisional :measured? false --
+accelerator-targets defaults are design assumptions, not evidence).
+
+Gates (honest): the scoped GPU gate GREEN on run 1 AND run 2 (123
+tests / 12162 assertions / 0 failures / 0 errors, glslang 16.6.0
+real-spawn, regression pin -- verbatim logs gate-run1.txt /
+gate-run2.txt in the evidence dir, byte-identical to each other);
+`find docs -name '*.sh'` -> 0. FULL run-tests.cljk RUN LIVE THIS
+TICK: RED AT BASE 'Could not find namespace: kotoba.form' at
+namespace load (ADR-0362), outside this diff -- verified live, NO
+green full suite claimed.

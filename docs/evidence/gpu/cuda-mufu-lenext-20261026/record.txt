@@ -1,0 +1,153 @@
+amu-gpu tick 2026-10-26 (UTC) -- JUN-55 / JUN-57 -- instrument v9 of
+the interleaved-spelling MUFU row: THE LENGTH-EXTENSION.
+
+THE NAMED ITEM: the ADR-0361 thirty-second amendment's "length-
+dependent realization effect NAMED, NOT ATTRIBUTED" (the v8 length
+series refuted the measured V as edge-additive in-form at the pure-
+word level) and the v8-named within-run stable non-monotonicity
+V(F1) = 12.5039 > V(F2) = 10.2266. ONE measurement slice: instrument
+v9 extends the series to k = 1..8 and adjudicates (a) the scope of
+the non-affinity refutation and (b) whether the F1>F2 effect is
+stable or run-specific.
+
+WHAT RAN (THE ONE CHANGE, named): v9 = v8 with the series range
+extended -- 10 pure-word length arms M^1..M^5 / F^1..F^5 -> 16 arms
+M^1..M^8 / F^1..F^8. EVERY OTHER byte identical to v8 (entry-
+excluded open-chain discipline t0=clock64(); <word>; t1=clock64(),
+entry operand ready before t0 via recurrence, PAD16 = 16 dependent
+mad.lo.u32 with symbolic multiplier/addend between t1 and the next
+t0, RLT=256 / NS=128, symbolic operands x=2.0f / cf=1.0f from global
+memory, same tails). Predictions P1..P7 PRE-REGISTERED in the
+instrument header before the first run (v8 reproduction with a
+header-named noise-limited-arm caveat, F non-monotonicity
+reproduction, non-affinity extension, channel agreement of the
+extended means, falsifier stance, structural verdicts).
+
+HARDWARE RAN: instrument v9, 16 arms x 3 launches x 128 threads x
+256 timed instances, on xavier sm_72 at 2026-10-26T18:24:24Z,
+DATE-UTC verbatim in run-log.txt. PROBE not a registered timing
+session -- inadmissible under the entry criterion BY KIND, enters
+nothing, moves no record and no :measured? flag (rule 4); measures
+INSTRUCTION chains, not kernels; SAME UTC DAY with every earlier
+probe (cross-day run 3+ does NOT move).
+
+TRANSFER: remote tree /root/gpu-mufu-lenext-20261026 created fresh,
+3 files transferred COPYFILE_DISABLE=1, received-file block matched
+local shas 3/3 (b98fb39b.. cu / a917a737.. verify / 5f60189e.. run
+driver).
+
+VERIFIED (real runs): OK-build / OK-cubin / OK-sass 1079 lines;
+build diags 752 bytes = eight benign "variable cf was declared but
+never referenced" warnings (one per M-only kernel -- cf is referenced
+only by FADD; quoted verbatim in run-log.txt), diag-nvdisasm 0 bytes;
+driver exit 0, stderr 0 bytes; 48 RESULT + 16 ANCHOR lines; device
+name=Xavier clockRate_kHz=1377000 multiProcessorCount=8;
+microbench.sass sha256 9b27b9fa8d4907e356aeed02211d1e0af799436002c2a2ef9eb99747d418bf60
+committed verbatim as microbench-sass.txt.
+
+BODIES VERIFIED 16/16 (mufu_lenext_verify.py a917a73760cd4456f4d47a495ab5f5164d81c26e73b630f8c83ea7d77be98789,
+the SAME file transferred and run): CHAIN-VERDICT MATCH 16/16
+(ee_Mk carries exactly k MUFU.RSQ, ee_Fk exactly k FADD*, in
+order), CLOCK-WRAP 16/16 (chain strictly between the two SR_CLOCKLO
+reads), PAD-VERDICT (P7) 16/16 (exactly 16 IMAD* per body, 0 inside
+the timed region, 16 after t1), OVERHEAD-IDENTICAL 16/16. P7 HOLDS
+COMPLETELY: the run adjudicates.
+
+THE FINDING (mufu_lenext_analysis.py 91957afaf9264d301ff4aa94b4afaa24b77a6c8acd0901f4d8f14ddfc594e31b,
+output 6552bad5ecd23a7bcfa5afb679c0f2646d6b24f5d01d8c92fbeca0974b3cc1d9
+= analysis-output.txt, two runs byte-identical):
+
+(1) P3 HOLD -- THE NON-AFFINITY EXTENDS TO k=8. Both families
+NON-AFFINE over the full range (M second differences +11.6836 /
+-12.1953 / +4.4727 / -14.4336 / +14.5117 / -4.5938; F +3.5664 /
++0.2617 / +2.1484 / -4.3281 / +2.4805 / -0.6953) and over the k=1..5
+subset; launch-matched NON-AFFINE on all three launches, both
+families, both ranges. The thirty-second amendment's refutation (the
+measured V is REFUTED as edge-additive in-form at the pure-word
+level) is NOT range-limited and reproduces on a fresh run.
+
+(2) P2 FAIL -- THE F1>F2 NON-MONOTONICITY DOES NOT REPRODUCE. v9:
+V(F1) = 10.1484 < V(F2) = 10.3555 (delta -0.2070). v8's "one FADD
+measures SLOWER than two" is DOWNGRADED from within-run stable to
+RUN-SPECIFIC (named). What reproduces is the F plateau at low k:
+V(F1) ~= V(F2) (v9 delta +0.2070; v7's V(F) 10.1758 ~= V(FF)
+10.1484 has the same shape) -- the F first difference at k=2 is
++0.2070 against +3.6406..+6.1836 at k=3..8, itself non-affine.
+
+(3) P1 6/10 -- cross-run reproduction of individual V points is
+limited to a ~2.3 cyc mode: F1 -2.3555, F5 +2.0430, M3 +2.1328, M5
++2.1328 fail v8's values; the other six within 0.68 (including two
+of the four header-named v8-noise-limited arms).
+
+(4) P4/P5 HOLD, against v8: the extended means sit within the 1.0
+cyc tolerance of the landed cyclic slopes (s_M = 14.4213 vs e_MM
+14.9966, delta -0.5753; s_F = 3.4330 vs e_FF 4.0000, delta -0.5670)
+where v8's k=1..5 means failed (+1.5063 / -1.5498). BUT the series is
+non-affine, so per the thirty-second amendment's own caveat "the
+slope is not a price": these holds are consistency of the AVERAGES
+over k=2..8 with the landed cyclic prices, NOT per-op prices and NOT
+a model validation.
+
+(5) P6: the e_MF/e_FM split STAYS UNMEASURED; the estimators are NOT
+computed here.
+
+NAMED NOT ATTRIBUTED: the ~2.3 cyc arm-level shift mode. The P1-
+failure magnitudes (+2.04..+2.36) are the magnitude class of the
+thirty-second amendment's v7-vs-v8 cross-instrument deltas (+2.27 to
++2.33), and the SAME class appears inside v9 as per-launch level
+shifts on individual arms -- M2 launch0 21.1328 vs 23.4531/23.5039
+(-2.32), F2 launch1 12.4180 vs 10.3555/10.1367 (+2.28), F1 launch1
+12.3477 (+2.20), F4 launch2 20.4492 (+2.29), F5 launch2 22.1289
+(-2.22), F7 launch2 32.4102 (+2.28..2.31), M5 launch0 76.1523
+(-2.21), M8 launch1 113.3438 (+2.20..2.26). A ~2.3 cyc per-arm
+shift mode is NAMED as the dominant cross-run/cross-launch
+variability of this instrument class (it covers the v7-vs-v8 "+2.3"
+anomalies and the P1 failures in one stroke); its carrier is NOT
+ATTRIBUTED (register allocation, scheduling regime, counter
+interleaving -- untested here). Named outside the class: M6's
+launch0 shift +6.1758 (87.3047 vs 81.1289/81.1445).
+
+CONSEQUENCE: NOTHING MOVES (rule 4) -- no record, no :measured?
+flag, no selection answer, no workgroup row. The named item moves in
+DESIGN STATE ONLY ("the premise is REFUTED as edge-additive in-form
+at the pure-word level; length-dependent realization effect NAMED,
+NOT ATTRIBUTED; split UNMEASURED" -> "the non-affinity REPRODUCES and
+EXTENDS to k=8 (both families, every launch); the F1>F2 non-
+monotonicity is run-specific (the F1~=F2 plateau reproduces); a
+~2.3 cyc arm-level shift mode is NAMED as the dominant variability
+(not attributed); split UNMEASURED"). The observable cross quantity
+stands at the measured cycle sum e_MF+e_FM = 21.0000 (cross surplus
++2.0034), unchanged. The twenty-ninth's rank/nullspace
+identifiability theorem is UNTOUCHED.
+
+UNMEASURED named: the e_MF/e_FM split (P6), bare MUFU.RCP
+dependent-chain latency, the floor's internal composition (per-form
+intercepts 0.5234/7.4844/5.4805 and the v6 ~10.14 / v7 ~10.17 cyc
+floors, all unattributed), the pure IADD3/IMAD.IADD separations, the
+21 surplus ops' costs, the W-shape carrier, the ~2.3 cyc shift
+mode's carrier, noise exceedance, sum TRUE W=256, cross-day run 3+
+(still 2026-10-26 UTC), non-xavier verdicts, :sum W=64 elsewhere,
+live CUDA selection path, workgroup rows :arm/:unknown provisional
+(:measured? false -- accelerator-targets defaults are design
+assumptions, not evidence).
+
+Gates (honest): scoped GPU gate GREEN run 1 AND run 2 (123
+tests/12162 assertions/0 failures/0 errors, glslang 16.6.0 real-spawn,
+regression pin; gate-run1.txt / gate-run2.txt); `find docs -name
+'*.sh'` -> 0; FULL run-tests.cljk RUN LIVE THIS TICK: RED AT BASE
+'Could not find namespace: kotoba.form' at namespace load
+(ADR-0362), outside this diff -- verified live, NO green full suite
+claimed.
+
+NAMED NOT HIDDEN: the eight benign cf build warnings (quoted);
+M6's +6.18 launch0 shift outside the ~2.3 class; untracked deps.edn
+(not created by this bot) untouched; kbb '2 dep(s) not :local/root'
+warning (identical everywhere); the run.sh driver and the transfer
+script stay in Hermes scratch, never staged (POSIX .sh ban); all
+scratch instruments kept in Hermes scratch.
+
+Evidence: docs/evidence/gpu/cuda-mufu-lenext-20261026/ (record.txt,
+run-log.txt, microbench-sass.txt, gpu-mufu-lenext-microbench.cu,
+mufu_lenext_verify.py, mufu_lenext_analysis.py, analysis-output.txt,
+gate-run1.txt, gate-run2.txt) + the ADR-0361 thirty-third amendment.
+(JUN-55, JUN-57)

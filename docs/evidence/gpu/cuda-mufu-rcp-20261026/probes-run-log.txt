@@ -1,0 +1,32 @@
+HOST: xavier USER: root
+DATE-UTC: 2026-10-26T13:25:28Z  DATE-LOCAL: 2026-10-26T22:25:28+0900
+Linux xavier 5.10.120-tegra #1 SMP PREEMPT Tue Aug 1 12:32:50 PDT 2023 aarch64 aarch64 aarch64 GNU/Linux
+=== nvcc --version (verbatim)
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2022 NVIDIA Corporation
+Built on Sun_Oct_23_22:16:07_PDT_2022
+Cuda compilation tools, release 11.4, V11.4.315
+Build cuda_11.4.r11.4/compiler.31964100_0
+=== sha256 of the received files (before any compile)
+f040bdf2dcb3b4861d1e1d9bd2a86ad871b86b86b5b88b8ef8a3bb3d26dcac28  ./mufu_realiz_probes.cu
+=== compile the probe batch (4 spellings, 16 chain ops x 256 iters each)
+OK-build
+OK-cubin
+=== build diagnostics (verbatim)
+diag diag-build.txt 0 bytes
+diag diag-cubin.txt 0 bytes
+=== disassemble the cubin (nvdisasm -c)
+OK-sass 199 lines
+diag diag-nvdisasm.txt 0 bytes
+=== sha256 of the generated artifacts
+e6687350ee9758d307bdb3345b13ab82baa4a15afd7eb2118406e8e4b70ea417  probes.sass
+d27e7d2e167d3e400beb5329c4830bc7cc075810174b0980ecffed8441a17695  mufu-realiz-probes.cubin
+536e3eb8d19d4724454d32e9e8a58c0cdcb880609d56f73c73836569d8514698  mufu-realiz-probes
+=== run the probes (anchor check only, no timing)
+DEVICE name=Xavier clockRate_kHz=1377000 multiProcessorCount=8
+PROBERESULT probe=p1_ftz anchor=1069547520
+PROBERESULT probe=p2_clamp anchor=1069547520
+PROBERESULT probe=p3_divapprox anchor=0
+PROBERESULT probe=p4_intdiv anchor=5
+PROBE run complete
+=== probe stage complete

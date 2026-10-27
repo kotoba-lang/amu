@@ -1,0 +1,116 @@
+HOST: xavier USER: root
+DATE-UTC: 2026-10-26T14:49:33Z  DATE-LOCAL: 2026-10-26T23:49:33+0900
+Linux xavier 5.10.120-tegra #1 SMP PREEMPT Tue Aug 1 12:32:50 PDT 2023 aarch64 aarch64 aarch64 GNU/Linux
+=== nvcc --version (verbatim)
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2022 NVIDIA Corporation
+Built on Sun_Oct_23_22:16:07_PDT_2022
+Cuda compilation tools, release 11.4, V11.4.315
+Build cuda_11.4.r11.4/compiler.31964100_0
+=== nvdisasm --version (verbatim)
+nvdisasm: NVIDIA (R) CUDA disassembler
+Copyright (c) 2005-2022 NVIDIA Corporation
+Built on Tue_Sep_13_22:14:23_PDT_2022
+Cuda compilation tools, release 11.4, V11.4.298
+Build cuda_11.4.r11.4/compiler.31809458_0
+=== sha256 of the received files (before any compile)
+3903028b713455b95e5117ebc68425e1f72a869c42a014f8121a720a9b468624  ./gpu-mufu-pairlat-microbench.cu
+33438c532c4c1a258c34a4e5d1045ee54237c8157f78b5490a9cf6b88c2ead5e  ./mufu_pairlat_run.sh
+8c40d49b34a290f6ce9ca95ab287bf1a88eb13c0de607d8d96343e1ec6cbc31d  ./mufu_pairlat_verify.py
+=== compile the instrument (run binary + cubin)
+OK-build
+OK-cubin
+=== build diagnostics (verbatim)
+diag diag-build.txt 190 bytes
+gpu-mufu-pairlat-microbench.cu(100): warning: variable "cf" was declared but never referenced
+
+gpu-mufu-pairlat-microbench.cu(101): warning: variable "cf" was declared but never referenced
+
+diag diag-cubin.txt 190 bytes
+gpu-mufu-pairlat-microbench.cu(100): warning: variable "cf" was declared but never referenced
+
+gpu-mufu-pairlat-microbench.cu(101): warning: variable "cf" was declared but never referenced
+
+=== disassemble the cubin (nvdisasm -c)
+OK-sass 361 lines
+diag diag-nvdisasm.txt 0 bytes
+=== sha256 of the generated artifacts
+7da06097e95f76e13d8e2ccc3e784d0b27ddae1d84d8ed02ba707edd4ebfdc8b  microbench.sass
+e0328e91fd787d49ef0bc670bcb9581f1c4d5082c0ad01f817b54b37c8aeb7f3  gpu-mufu-pairlat-microbench.cubin
+a2493cf464ad151a864d6824d10f61e36e036ee84184474dc2480c80009b0e62  gpu-mufu-pairlat-microbench
+=== SASS verification (python3, body extraction per kernel)
+VERIFY functions found: 7
+VERIFY-FUNCTION lat_n16_fadd total_static=40
+  OPCODES BRA:2 CS2R:2 EXIT:1 FADD.FTZ:16 IADD3:2 IADD3.X:1 IMAD.WIDE.U32:1 ISETP.NE.AND:1 LDG.E.SYS:1 MOV:8 S2R:1 SHFL.IDX:2 STG.E.64.SYS:2
+  BODY total=20 OPCODES BRA:1 FADD.FTZ:16 IADD3:1 ISETP.NE.AND:1 SHFL.IDX:1
+  BODY-VERDICT MATCH FADD*:16 + overhead BRA:1 IADD3:1 ISETP.NE.AND:1 SHFL.IDX:1
+VERIFY-FUNCTION lat_n16_rcpfadd total_static=40
+  OPCODES BRA:2 CS2R:2 EXIT:1 FADD.FTZ:8 IADD3:2 IADD3.X:1 IMAD.WIDE.U32:1 ISETP.NE.AND:1 LDG.E.SYS:2 MOV:7 MUFU.RCP:8 S2R:1 SHFL.IDX:2 STG.E.64.SYS:2
+  BODY total=20 OPCODES BRA:1 FADD.FTZ:8 IADD3:1 ISETP.NE.AND:1 MUFU.RCP:8 SHFL.IDX:1
+  BODY-VERDICT MATCH FADD*:8+MUFU.RCP:8 + overhead BRA:1 IADD3:1 ISETP.NE.AND:1 SHFL.IDX:1
+VERIFY-FUNCTION lat_n16_rsq total_static=39
+  OPCODES BRA:2 CS2R:2 EXIT:1 IADD3:2 IMAD.MOV.U32:4 IMAD.WIDE.U32:1 IMAD.X:1 ISETP.NE.AND:1 LDG.E.SYS:1 MOV:3 MUFU.RSQ:16 S2R:1 SHFL.IDX:2 STG.E.64.SYS:2
+  BODY total=20 OPCODES BRA:1 IADD3:1 ISETP.NE.AND:1 MUFU.RSQ:16 SHFL.IDX:1
+  BODY-VERDICT MATCH MUFU.RSQ:16 + overhead BRA:1 IADD3:1 ISETP.NE.AND:1 SHFL.IDX:1
+VERIFY-FUNCTION lat_n16_rsqfadd total_static=40
+  OPCODES BRA:2 CS2R:2 EXIT:1 FADD.FTZ:8 IADD3:2 IADD3.X:1 IMAD.WIDE.U32:1 ISETP.NE.AND:1 LDG.E.SYS:2 MOV:7 MUFU.RSQ:8 S2R:1 SHFL.IDX:2 STG.E.64.SYS:2
+  BODY total=20 OPCODES BRA:1 FADD.FTZ:8 IADD3:1 ISETP.NE.AND:1 MUFU.RSQ:8 SHFL.IDX:1
+  BODY-VERDICT MATCH FADD*:8+MUFU.RSQ:8 + overhead BRA:1 IADD3:1 ISETP.NE.AND:1 SHFL.IDX:1
+VERIFY-FUNCTION lat_n8_rcpfadd total_static=32
+  OPCODES BRA:2 CS2R:2 EXIT:1 FADD.FTZ:4 IADD3:2 IMAD.MOV.U32:2 IMAD.WIDE.U32:1 IMAD.X:1 ISETP.NE.AND:1 LDG.E.SYS:2 MOV:5 MUFU.RCP:4 S2R:1 SHFL.IDX:2 STG.E.64.SYS:2
+  BODY total=12 OPCODES BRA:1 FADD.FTZ:4 IADD3:1 ISETP.NE.AND:1 MUFU.RCP:4 SHFL.IDX:1
+  BODY-VERDICT MATCH FADD*:4+MUFU.RCP:4 + overhead BRA:1 IADD3:1 ISETP.NE.AND:1 SHFL.IDX:1
+VERIFY-FUNCTION lat_n8_rsq total_static=31
+  OPCODES BRA:2 CS2R:2 EXIT:1 IADD3:2 IMAD.MOV.U32:4 IMAD.WIDE.U32:1 IMAD.X:1 ISETP.NE.AND:1 LDG.E.SYS:1 MOV:3 MUFU.RSQ:8 S2R:1 SHFL.IDX:2 STG.E.64.SYS:2
+  BODY total=12 OPCODES BRA:1 IADD3:1 ISETP.NE.AND:1 MUFU.RSQ:8 SHFL.IDX:1
+  BODY-VERDICT MATCH MUFU.RSQ:8 + overhead BRA:1 IADD3:1 ISETP.NE.AND:1 SHFL.IDX:1
+VERIFY-FUNCTION lat_n8_rsqfadd total_static=32
+  OPCODES BRA:2 CS2R:2 EXIT:1 FADD.FTZ:4 IADD3:2 IMAD.MOV.U32:2 IMAD.WIDE.U32:1 IMAD.X:1 ISETP.NE.AND:1 LDG.E.SYS:2 MOV:5 MUFU.RSQ:4 S2R:1 SHFL.IDX:2 STG.E.64.SYS:2
+  BODY total=12 OPCODES BRA:1 FADD.FTZ:4 IADD3:1 ISETP.NE.AND:1 MUFU.RSQ:4 SHFL.IDX:1
+  BODY-VERDICT MATCH FADD*:4+MUFU.RSQ:4 + overhead BRA:1 IADD3:1 ISETP.NE.AND:1 SHFL.IDX:1
+=== run the microbench (3 launches x 7 arms)
+DEVICE name=Xavier clockRate_kHz=1377000 multiProcessorCount=8
+RESULT arm=lat_n16_rsq chain_n=16 units=256 samples=128 min=61558 p10=61558 median=61560 mean=61559.5 p90=61561 max=61561 cyc_per_iter_median=240.4688 cyc_per_iter_mean=240.4668 cyc_per_chainop_at_median=15.0293
+ANCHOR arm=lat_n16_rsq launch=0 x_tid0_bits=1065353216
+RESULT arm=lat_n8_rsq chain_n=8 units=256 samples=128 min=30845 p10=30845 median=30847 mean=30846.5 p90=30848 max=30848 cyc_per_iter_median=120.4961 cyc_per_iter_mean=120.4941 cyc_per_chainop_at_median=15.0620
+ANCHOR arm=lat_n8_rsq launch=0 x_tid0_bits=1065353216
+RESULT arm=lat_n16_rsqfadd chain_n=16 units=256 samples=128 min=44410 p10=44410 median=44411 mean=44410.8 p90=44411 max=44411 cyc_per_iter_median=173.4805 cyc_per_iter_mean=173.4795 cyc_per_chainop_at_median=10.8425
+ANCHOR arm=lat_n16_rsqfadd launch=0 x_tid0_bits=1071685589
+RESULT arm=lat_n8_rsqfadd chain_n=8 units=256 samples=128 min=22906 p10=22906 median=22907 mean=22906.8 p90=22907 max=22907 cyc_per_iter_median=89.4805 cyc_per_iter_mean=89.4795 cyc_per_chainop_at_median=11.1851
+ANCHOR arm=lat_n8_rsqfadd launch=0 x_tid0_bits=1071685589
+RESULT arm=lat_n16_rcpfadd chain_n=16 units=256 samples=128 min=44410 p10=44410 median=44411 mean=44410.8 p90=44411 max=44411 cyc_per_iter_median=173.4805 cyc_per_iter_mean=173.4795 cyc_per_chainop_at_median=10.8425
+ANCHOR arm=lat_n16_rcpfadd launch=0 x_tid0_bits=1070537661
+RESULT arm=lat_n8_rcpfadd chain_n=8 units=256 samples=128 min=22906 p10=22906 median=22907 mean=22906.8 p90=22907 max=22907 cyc_per_iter_median=89.4805 cyc_per_iter_mean=89.4795 cyc_per_chainop_at_median=11.1851
+ANCHOR arm=lat_n8_rcpfadd launch=0 x_tid0_bits=1070537661
+RESULT arm=lat_n16_fadd chain_n=16 units=256 samples=128 min=18298 p10=18298 median=18300 mean=18299.5 p90=18301 max=18301 cyc_per_iter_median=71.4844 cyc_per_iter_mean=71.4824 cyc_per_chainop_at_median=4.4678
+ANCHOR arm=lat_n16_fadd launch=0 x_tid0_bits=1166018560
+RESULT arm=lat_n16_rsq chain_n=16 units=256 samples=128 min=61558 p10=61558 median=61560 mean=61559.5 p90=61561 max=61561 cyc_per_iter_median=240.4688 cyc_per_iter_mean=240.4668 cyc_per_chainop_at_median=15.0293
+ANCHOR arm=lat_n16_rsq launch=1 x_tid0_bits=1065353216
+RESULT arm=lat_n8_rsq chain_n=8 units=256 samples=128 min=30845 p10=30845 median=30847 mean=30846.5 p90=30848 max=30848 cyc_per_iter_median=120.4961 cyc_per_iter_mean=120.4941 cyc_per_chainop_at_median=15.0620
+ANCHOR arm=lat_n8_rsq launch=1 x_tid0_bits=1065353216
+RESULT arm=lat_n16_rsqfadd chain_n=16 units=256 samples=128 min=44410 p10=44410 median=44411 mean=44410.8 p90=44411 max=44411 cyc_per_iter_median=173.4805 cyc_per_iter_mean=173.4795 cyc_per_chainop_at_median=10.8425
+ANCHOR arm=lat_n16_rsqfadd launch=1 x_tid0_bits=1071685589
+RESULT arm=lat_n8_rsqfadd chain_n=8 units=256 samples=128 min=22906 p10=22906 median=22907 mean=22906.8 p90=22907 max=22907 cyc_per_iter_median=89.4805 cyc_per_iter_mean=89.4795 cyc_per_chainop_at_median=11.1851
+ANCHOR arm=lat_n8_rsqfadd launch=1 x_tid0_bits=1071685589
+RESULT arm=lat_n16_rcpfadd chain_n=16 units=256 samples=128 min=44410 p10=44410 median=44411 mean=44410.8 p90=44411 max=44411 cyc_per_iter_median=173.4805 cyc_per_iter_mean=173.4795 cyc_per_chainop_at_median=10.8425
+ANCHOR arm=lat_n16_rcpfadd launch=1 x_tid0_bits=1070537661
+RESULT arm=lat_n8_rcpfadd chain_n=8 units=256 samples=128 min=22906 p10=22906 median=22907 mean=22906.8 p90=22907 max=22907 cyc_per_iter_median=89.4805 cyc_per_iter_mean=89.4795 cyc_per_chainop_at_median=11.1851
+ANCHOR arm=lat_n8_rcpfadd launch=1 x_tid0_bits=1070537661
+RESULT arm=lat_n16_fadd chain_n=16 units=256 samples=128 min=18298 p10=18298 median=18300 mean=18299.5 p90=18301 max=18301 cyc_per_iter_median=71.4844 cyc_per_iter_mean=71.4824 cyc_per_chainop_at_median=4.4678
+ANCHOR arm=lat_n16_fadd launch=1 x_tid0_bits=1166018560
+RESULT arm=lat_n16_rsq chain_n=16 units=256 samples=128 min=61558 p10=61558 median=61560 mean=61559.5 p90=61561 max=61561 cyc_per_iter_median=240.4688 cyc_per_iter_mean=240.4668 cyc_per_chainop_at_median=15.0293
+ANCHOR arm=lat_n16_rsq launch=2 x_tid0_bits=1065353216
+RESULT arm=lat_n8_rsq chain_n=8 units=256 samples=128 min=30845 p10=30845 median=30847 mean=30846.5 p90=30848 max=30848 cyc_per_iter_median=120.4961 cyc_per_iter_mean=120.4941 cyc_per_chainop_at_median=15.0620
+ANCHOR arm=lat_n8_rsq launch=2 x_tid0_bits=1065353216
+RESULT arm=lat_n16_rsqfadd chain_n=16 units=256 samples=128 min=44410 p10=44410 median=44411 mean=44410.8 p90=44411 max=44411 cyc_per_iter_median=173.4805 cyc_per_iter_mean=173.4795 cyc_per_chainop_at_median=10.8425
+ANCHOR arm=lat_n16_rsqfadd launch=2 x_tid0_bits=1071685589
+RESULT arm=lat_n8_rsqfadd chain_n=8 units=256 samples=128 min=22906 p10=22906 median=22907 mean=22906.8 p90=22907 max=22907 cyc_per_iter_median=89.4805 cyc_per_iter_mean=89.4795 cyc_per_chainop_at_median=11.1851
+ANCHOR arm=lat_n8_rsqfadd launch=2 x_tid0_bits=1071685589
+RESULT arm=lat_n16_rcpfadd chain_n=16 units=256 samples=128 min=44410 p10=44410 median=44411 mean=44410.8 p90=44411 max=44411 cyc_per_iter_median=173.4805 cyc_per_iter_mean=173.4795 cyc_per_chainop_at_median=10.8425
+ANCHOR arm=lat_n16_rcpfadd launch=2 x_tid0_bits=1070537661
+RESULT arm=lat_n8_rcpfadd chain_n=8 units=256 samples=128 min=22906 p10=22906 median=22907 mean=22906.8 p90=22907 max=22907 cyc_per_iter_median=89.4805 cyc_per_iter_mean=89.4795 cyc_per_chainop_at_median=11.1851
+ANCHOR arm=lat_n8_rcpfadd launch=2 x_tid0_bits=1070537661
+RESULT arm=lat_n16_fadd chain_n=16 units=256 samples=128 min=18298 p10=18298 median=18300 mean=18299.5 p90=18301 max=18301 cyc_per_iter_median=71.4844 cyc_per_iter_mean=71.4824 cyc_per_chainop_at_median=4.4678
+ANCHOR arm=lat_n16_fadd launch=2 x_tid0_bits=1166018560
+MICROBENCH run complete
+=== microbench run complete

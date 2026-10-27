@@ -1,0 +1,67 @@
+amu-gpu tick 2026-10-26 -- raw MUFU.RCP slice, table of measured cells
+(xavier sm_72, nvcc 11.4; cyc/iter = median loop cycles / units; units =
+loop iterations; chain ops per iteration named per arm). ALL THREE
+LAUNCHES IDENTICAL MEDIANS (deterministic; 128 threads lockstep -- one
+warp-group draw per launch, not 128 independent samples).
+
+REALIZED BODIES (VERIFIED from nvdisasm, verifier output in run-log.txt):
+  lat_n1_rcp    MATCH MUFU.RCP:1 + {SHFL.IDX,IADD3,ISETP.NE.AND,BRA} --
+                bare MUFU.RCP in a loop-carried recurrence (256 dynamic)
+  lat_n4_rcp    CANCELED: 0 MUFU static, NO LOOP (body = clock-read pair
+                only) -- measured 2 cyc = the pair
+  lat_n16_rcp   CANCELED: 0 MUFU static, NO LOOP -- measured 2 cyc
+  lat_pp16_rcp  CANCELED to 1 residual MUFU.RCP executed ONCE after the
+                loop; timed loop = {SHFL,IADD3,IMAD.MOV,ISETP,BRA} x 256
+                (a loop-floor measurement, NOT a 16-chain latency)
+  lat_n16_fadd  MATCH FADD.FTZ:16 + overhead (form-validation arm)
+  thr_str_rcp   MATCH MUFU.RCP:16 + overhead per iteration (16
+                independent loop-carried recurrences)
+  thr_pp_rcp    CANCELED: 8 residual MUFU.RCP HOISTED out of the loop
+                (executed once); timed loop = 8 x IMAD.MOV + overhead
+                (a loop-floor measurement, NOT an issue cost)
+
+MEASURED CELLS (median of 128 samples per launch; 3 launches identical;
+min/max as printed in run-log.txt):
+  arm=lat_n1_rcp    median=7290  cyc_per_iter=28.4766 cyc_per_chainop=28.4766 min=7288 max=7291
+  arm=lat_n4_rcp    median=2     cyc_per_iter=0.0078  cyc_per_chainop=0.0020  min=2    max=2
+  arm=lat_n16_rcp   median=2     cyc_per_iter=0.0078  cyc_per_chainop=0.0005  min=2    max=2
+  arm=lat_pp16_rcp  median=7292  cyc_per_iter=28.4844 cyc_per_chainop=1.7803  min=7290 max=7293
+  arm=lat_n16_fadd  median=18294 cyc_per_iter=71.4609 cyc_per_chainop=4.4663  min=18292 max=18295
+  arm=thr_str_rcp   median=8785  cyc_per_iter=137.2656 cyc_per_chainop=8.5791 min=8784 max=8785
+  arm=thr_pp_rcp    median=1967  cyc_per_iter=30.7344 cyc_per_chainop=1.9209  min=1965 max=1968
+  (each row repeats identically for launch=0,1,2 in run-log.txt)
+
+KEY QUOTES:
+  raw MUFU.RCP ISSUE-SIDE cost, 128-thread lockstep (thr_str_rcp, body
+  VERIFIED MUFU.RCP:16/iter, 16 independent recurrences x 64 iters):
+    8.5791 cyc per MUFU (137.2656 cyc/iter / 16). DERIVED reading
+    (marked, not measured): 128 lanes / 16 SFU lanes per cycle = 8 cyc
+    issue per thread + 0.5791 in-context overhead per MUFU -- consistent
+    with SFU throughput 16 MUFU/cycle/SM.
+  one bare MUFU.RCP per loop iteration in the loop-carried recurrence
+  (lat_n1_rcp, body VERIFIED): 28.4766 cyc/iter. NOT separable from the
+  loop floor: lat_pp16_rcp's realized body (no recurrence op, 5 slots)
+  runs 28.4844 cyc/iter -- the same floor within 0.0078 cyc/iter. The
+  pure dependent-chain latency of bare MUFU.RCP STAYS UNMEASURED (hidden
+  in the loop floor; the floor's internal composition is the oh-baseline
+  row's named open item).
+  form validation: lat_n16_fadd 4.4663 cyc/instr vs v2's straight-chain
+  FADD.FTZ 4.4397 (CONSUMED at its commit) = +0.0266 cyc (+0.60%) --
+  harness form validated within the row's named form systematic.
+
+ANCHORS (bits -> float, re-derived in-tick by tool run):
+  arm=lat_n1_rcp   bits=1073741824 -> 2.0
+  arm=lat_n4_rcp   bits=1073741824 -> 2.0
+  arm=lat_n16_rcp  bits=1073741824 -> 2.0
+  arm=lat_pp16_rcp bits=1065353216 -> 1.0
+  arm=lat_n16_fadd bits=1166018560 -> 4097.0
+  arm=thr_str_rcp  bits=0 (witness only)
+  arm=thr_pp_rcp   bits=4160749568 (witness only)
+  fadd anchor EXACT CHECK: x0=1.0f + 4096 x 1.0f = 4097.0f, bits
+  1166018560 -- REPRODUCED EXACTLY (3/3 launches).
+  rcp anchors are NO-FOLD WITNESSES ONLY (MUFU.RCP's approximation is not
+  re-derivable off-device; no exact anchor arithmetic claimed):
+    lat_n1/n4/n16 = 2.0f (even-count rcp chain of 2.0f returns the seed;
+    n4/n16 equally consistent with TOTAL cancellation -- the SASS shows
+    the cancellation); lat_pp16 x = 1.0f = rcp(1.0f), matching its
+    realized single-residual-MUFU form (2/2).
