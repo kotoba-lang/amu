@@ -6,6 +6,7 @@ qualification. Original KIR identity/SCC/object gates remain independent.
 """
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import platform
@@ -446,6 +447,19 @@ def main(compiler, out):
                   wholeCompilerRefusal=stderr.strip())
     report.update(independentTypePayloadOracles=len(composite_types))
     assert all(pin(ROOT / p) == v for p, v in {**report["modules"], **report["oracleModules"], **report["typeOracleModules"], **report["executionCompilerModules"]}.items())
+    namespace_observer = ROOT / 'scripts/seed/check-source-namespace-native.py'
+    spec = importlib.util.spec_from_file_location('native_source_namespace', namespace_observer)
+    namespace = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(namespace)
+    report['status'] = 'RUNNING_NATIVE_SOURCE_NAMESPACE'
+    report['namespaceObserver'] = pin(namespace_observer)
+    save()
+    report['namespaceQualification'] = namespace.qualify(
+        compiler, out/'namespace', paths,
+        sorted(p for p in out.glob('*.input') if p != whole), whole,
+        len(cases)+len(execution_cases()), len(negatives))
+    assert pin(namespace_observer) == report['namespaceObserver']
+    report['status'] = 'PASS_NATIVE_CHECKED_SOURCE_BRIDGE'
     save()
     print(report["status"], len(cases), flush=True)
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage vector/byte/string fixtures; native checking, identities and executions decide."""
+"""Stage vector/list/byte/string fixtures; native checks, identities and executions decide."""
 import argparse
 import hashlib
 import json
@@ -81,6 +81,9 @@ def main(compiler, out):
     buffer_paths = oracle_paths[:-1] + ['seed/tests/native-source-buffer-oracle.kotoba']
     buffer_oracle = build('independent-buffer-oracle','\n'.join((ROOT/p).read_text() for p in buffer_paths))
     report.update(bufferOracle=pin(buffer_oracle),bufferOracleModules={p:pin(ROOT/p) for p in buffer_paths})
+    list_paths = oracle_paths[:-1] + ['seed/tests/native-source-list-oracle.kotoba']
+    list_oracle = build('independent-list-oracle','\n'.join((ROOT/p).read_text() for p in list_paths))
+    report.update(listOracle=pin(list_oracle),listOracleModules={p:pin(ROOT/p) for p in list_paths})
     specs = {
         'alloc':('(defn f [x :i64] :vector-i64 (vector-alloc x))',function('(vector-alloc x)','x',':i64')),
         'conj':('(defn f [v :vector-i64 x :i64] :vector-i64 (vector-conj v x))',function('(vector-conj v x)')),
@@ -103,6 +106,20 @@ def main(compiler, out):
     for op,(typed,params,types,result) in buffer_specs.items():
         body='('+op+(' '+params if params else '')+')'
         specs[op]=('(defn f ['+typed+'] '+result+' '+body+')',function(body,params,types,result))
+    list_specs = {}
+    elements = {'i64': ':i64', 'string': ':string', 'bool': ':bool', 'list-i64': '[:list :i64]'}
+    for element,item in elements.items():
+        collection='[:list '+item+']'
+        for operation in ['empty','new','nth','conj']:
+            if operation=='empty': typed=params=types='';result=collection
+            elif operation=='new': typed='x '+item;params='x';types=item;result=collection
+            elif operation=='nth': typed='v '+collection+' i :i64';params='v i';types=collection+' :i64';result=item
+            else: typed='v '+collection+' x '+item;params='v x';types=collection+' '+item;result=collection
+            op='typed-list-'+('new' if operation=='empty' else operation)
+            body='('+op+' '+collection+(' '+params if params else '')+')'
+            name='list-'+operation+'-'+element
+            specs[name]=('(defn f ['+typed+'] '+result+' '+body+')',function(body,params,types,result))
+            list_specs[name]=(operation,element)
     observed,inputs = {},{}
     for name,(source,kir) in specs.items():
         source_path,kir_path = out/(name+'.input'),out/(name+'.kir')
@@ -110,7 +127,8 @@ def main(compiler, out):
         kir_path.write_text(module([kir]))
         a=run('source-'+name,[producer,'source',source_path]).stdout
         b=run('reference-'+name,[producer,'reference',kir_path]).stdout
-        expected=run('oracle-'+name,[buffer_oracle if name in buffer_specs else oracle,name]).stdout.decode().strip()
+        oracle_argv=[list_oracle,*list_specs[name]] if name in list_specs else [buffer_oracle if name in buffer_specs else oracle,name]
+        expected=run('oracle-'+name,oracle_argv).stdout.decode().strip()
         assert rows(a)==rows(b) and rows(a)['f'][0]==expected
         observed[name]=rows(a);inputs[name]=source_path
     assert observed['assoc']['f'][0] != observed['assoc!']['f'][0]
@@ -134,11 +152,23 @@ def main(compiler, out):
         'slice-end-type':('source','(ns invalid) (defn f [b :bytes] :bytes (bytes-slice b 0 true))'),
         'concat-right-type':('source','(ns invalid) (defn f [b :bytes v :vector-i64] :bytes (bytes-concat b v))'),
         'buffer-reserved-name':('reference',module([function('0','b',':bytes',':i64','bytes-count')])),
+        'list-wrong-element':('source','(ns invalid) (defn f [s :string] [:list :i64] (typed-list-new [:list :i64] s))'),
+        'list-wrong-constructor':('source','(ns invalid) (defn f [] [:list :i64] (typed-list-new [:set :i64]))'),
+        'list-nth-index':('source','(ns invalid) (defn f [v [:list :i64]] :i64 (typed-list-nth [:list :i64] v "0"))'),
+        'list-nth-arity':('source','(ns invalid) (defn f [v [:list :i64]] :i64 (typed-list-nth [:list :i64] v))'),
+        'list-conj-element':('source','(ns invalid) (defn f [v [:list :i64]] [:list :i64] (typed-list-conj [:list :i64] v true))'),
+        'list-result-refinement':('source','(ns invalid) (defn f [v [:list :option-i64]] [:list :option-i64] (typed-list-conj [:list :option-i64] v (option-some-of [:option :i64] 1)))'),
+        'list-constructor-refinement':('source','(ns invalid) (defn f [] [:list :option-i64] (typed-list-new [:list :option-i64]))'),
+        'list-reserved-name':('reference',module([function('0','','',':i64','typed-list-new')])),
+        'list-arity65':('source','(ns invalid) (defn f [] [:list :i64] (typed-list-new [:list :i64] '+' '.join(map(str,range(65)))+'))'),
     }
     for name,(lane,text) in negatives.items():
         p=out/('refuse-'+name+'.input');p.write_text(text)
         result=run('refuse-'+name,[producer,lane,p],1)
         assert not result.stdout and result.stderr.startswith((b'DSB:',b'DCP:'))
+        if name=='list-constructor-refinement':
+            # dsb-type refuses the nested CT-OPTION refinement with code2.
+            assert result.stderr.startswith(b'DSB:BRIDGE:2:')
     full = [p for p in (ROOT/'seed/FULL-MANIFEST').read_text().splitlines() if p and not p.startswith('#')]
     execution_path='seed/tests/native-source-loop-execution.kotoba'
     parts=[]
@@ -172,6 +202,14 @@ def main(compiler, out):
         'compare-prefix':('(if (< (string-compare "a" "ab") 0) 42 7)',42),
         'index-match':('(if (= (string-index-of "abc" "b") 1) 42 9)',42),
         'index-missing':('(if (= (string-index-of "abc" "z") -1) 42 9)',42),
+        'list-empty':('(vector-count (typed-list-new [:list :i64]))',0),
+        'list-order':('(let [v (typed-list-new [:list :i64] 19 23)] (+ (typed-list-nth [:list :i64] v 0) (typed-list-nth [:list :i64] v 1)))',42),
+        'list-persistent-conj':('(let [v (typed-list-new [:list :i64] 19) w (typed-list-conj [:list :i64] v 23)] (if (and (= (vector-count v) 1) (= (vector-count w) 2)) (+ (typed-list-nth [:list :i64] w 0) (typed-list-nth [:list :i64] w 1)) 9))',42),
+        'list-string':('(string-length (typed-list-nth [:list :string] (typed-list-new [:list :string] "one" "hello") 1))',5),
+        'list-bool':('(if (typed-list-nth [:list :bool] (typed-list-new [:list :bool] false true) 1) 42 9)',42),
+        'list-nested':('(let [v (typed-list-new [:list :i64] 42) w (typed-list-new [:list [:list :i64]] v)] (typed-list-nth [:list :i64] (typed-list-nth [:list [:list :i64]] w 0) 0))',42),
+        'list-loop':('(loop [i 0 v (typed-list-new [:list :i64])] (if (< i 2) (recur (inc i) (typed-list-conj [:list :i64] v (+ 20 i))) (+ (typed-list-nth [:list :i64] v 0) (typed-list-nth [:list :i64] v 1))))',41),
+        'list-arity64':('(typed-list-nth [:list :i64] (typed-list-new [:list :i64] '+' '.join(map(str,range(64)))+') 63)',63),
     }
     execution_inputs={}
     def select(raw):
@@ -202,6 +240,7 @@ def main(compiler, out):
         'byte-slice-range':('(bytes-count (bytes-slice (bytes-from-vector-i64 [42]) 0 2))', b':bytes/slice-bounds'),
         'utf8-truncated':('(string-byte-length (string-from-utf8 (bytes-from-vector-i64 [227 129])))', b':utf8/truncated'),
         'utf8-overlong':('(string-byte-length (string-from-utf8 (bytes-from-vector-i64 [192 128])))', b':utf8/overlong'),
+        'list-nth-range':('(typed-list-nth [:list :i64] (typed-list-new [:list :i64]) 0)', b':signal :SIGILL'),
     }
     for name,(body,reason) in refused_programs.items():
         text='(ns vector-refusal (:export [main])) (defn main [] :i64 '+body+')\n'
@@ -238,6 +277,12 @@ def main(compiler, out):
     result=run('detect-bytes-type-erasure',[image,'source',inputs['bytes-from-vector-i64']],1)
     assert not result.stdout and result.stderr.startswith(b'DSB:IDENTITY:')
     report['mutations'].append(dict(name='bytes-type-erasure',image=pin(image),built=True,executed=True,atomicFreshTypeRefusal=True))
+    old='type (dsb-type M C ty 0)'
+    assert unity.count(old)==1
+    image=build('mutant-list-type-erasure',unity.replace(old,'type "[:list :i64]"'))
+    result=run('detect-list-type-erasure',[image,'source',inputs['list-new-string']],1)
+    assert not result.stdout and result.stderr==b'DSB:IDENTITY:8\n'
+    report['mutations'].append(dict(name='list-type-erasure',image=pin(image),built=True,executed=True,atomicFreshTypeRefusal=True))
     whole=out/'whole-compiler.input'
     whole.write_bytes(b''.join((ROOT/p).read_bytes()+b'\n' for p in full))
     assert pin(whole)==product['sourceUnity']
@@ -246,7 +291,7 @@ def main(compiler, out):
     report.update(status='PASS_NATIVE_SOURCE_VECTOR_OPERATIONS',matchedSourceKirCases=len(specs),
                   independentPayloadOracles=len(specs),atomicRefusals=len(negatives),
                   aliasingDistinguished=True,wholeInput=pin(whole),wholeCompilerRefusal=result.stderr.decode().strip())
-    assert all(pin(ROOT/p)==v for p,v in {**report['modules'],**report['oracleModules'],**report['bufferOracleModules'],**report['executionCompilerModules']}.items())
+    assert all(pin(ROOT/p)==v for p,v in {**report['modules'],**report['oracleModules'],**report['bufferOracleModules'],**report['listOracleModules'],**report['executionCompilerModules']}.items())
     save();print(report['status'],flush=True)
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--compiler',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
