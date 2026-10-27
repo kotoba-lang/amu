@@ -25,7 +25,7 @@
 (def UV-ACTIVE 32832)
 (def UV-HANDLER 30400)
 (def UV-FAULT 33024)
-(defn- uv-v5? [] :bool (kp-v3?))
+(defn- uv-v5? [] :bool (string=? (io-arg 3) "x86_64-aiueos-kernel-v3"))
 (defn- uv-magic [] :i64 (if (uv-v5?) UV-V5-MAGIC UV-MAGIC))
 (defn- uv-pml4 [] :i64 (if (uv-v5?) UV-V5-PML4 UV-PML4))
 (defn- uv-pdpt [] :i64 (if (uv-v5?) UV-V5-PDPT UV-PDPT))
