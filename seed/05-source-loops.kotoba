@@ -74,12 +74,12 @@
       (= kind ND-LIST) (dsl-free-seq M S C B record (nm-next M (nm-first M n)) (inc depth))
       (or (= kind ND-VEC) (= kind ND-MAP) (= kind ND-SET)) (dsl-free-seq M S C B record (nm-first M n) (inc depth))
       :else 0)))
-(defn- dsl-register [M :vector-i64 S :string C :vector-i64 n :i64 owner :i64] :i64
+(defn- dsl-register [M :vector-i64 S :string C :vector-i64 n :i64 owner :i64 can-collide :bool] :i64
   (let [id (inc (vector-at C 5)) record (dsl-record C id) count (quot (nm-count M (nm-nth M n 1)) 2)
-        collision (loop [f 1] (cond (= f (vector-at M MM-FN-N)) false
+        collision (and can-collide (loop [f 1] (cond (= f (vector-at M MM-FN-N)) false
                      (and (or (= (nm-ff M f FF-KIND) FK-DEFN) (= (nm-ff M f FF-KIND) FK-PRIV))
                           (not (ck-r6f-cdef-fn? M f)) (= (dsb-name M S f) (dsl-name id))) true
-                     :else (recur (inc f))))]
+                     :else (recur (inc f)))))]
     (if (or (> (+ record dsl-width) (vector-count C)) (> count 64) collision (not= (vector-at C (+ 9 n)) 0))
       (dsl-bad C n)
       (let [a (-> C (vector-assoc! 5 id) (vector-assoc! (+ 9 n) id) (vector-assoc! record n)
@@ -88,7 +88,7 @@
             marks (loop [p (nm-first M (nm-nth M n 1)) i 0]
                     (if (= p 0) 0 (let [mark (dsl-mark M C B U p i)] (recur (nm-next M (nm-next M p)) (inc i)))))]
         (dsl-free M S C B record (nm-nth M n 2) 0)))))
-(defn- dsl-visit [M :vector-i64 S :string C :vector-i64 n :i64 owner :i64 depth :i64] :i64
+(defn- dsl-visit [M :vector-i64 S :string C :vector-i64 n :i64 owner :i64 depth :i64 can-collide :bool] :i64
   (cond (or (= n 0) (> depth (dip-expression-depth (vector-at C 8)))) (dsl-bad C n)
     (not= (vector-at C 0) 0) 1
     :else
@@ -96,15 +96,27 @@
             children (if (or (= kind ND-LIST) (= kind ND-VEC) (= kind ND-MAP) (= kind ND-SET))
               (loop [p (nm-first M n)]
                 (if (or (= p 0) (not= (vector-at C 0) 0)) 0
-                  (let [walk (dsl-visit M S C p owner (inc depth))] (recur (nm-next M p))))) 0)]
+                  (let [walk (dsl-visit M S C p owner (inc depth) can-collide)] (recur (nm-next M p))))) 0)]
         (if (and (= (vector-at C 0) 0) (= kind ND-LIST) (= (nm-nf M n NF-RES) HD-LOOP))
-          (arena-scope (dsl-register M S C n owner)) 0))))
+          (arena-scope (dsl-register M S C n owner can-collide)) 0))))
+;; M/S are freshly checked and read-only throughout this plan. Establish
+;; absence once; a matching prefix conservatively retains every original
+;; exact-name collision scan. Nothing is persisted or accepted from C/the
+;; caller, and this is not a proof of mutable CODE/FIX prefixes.
+(defn- dsl-helper-namespace? [M :vector-i64 S :string] :bool
+  (loop [f 1]
+    (cond (= f (vector-at M MM-FN-N)) false
+      (and (or (= (nm-ff M f FF-KIND) FK-DEFN) (= (nm-ff M f FF-KIND) FK-PRIV))
+           (not (ck-r6f-cdef-fn? M f))
+           (dsb-starts? (dsb-name M S f) "__kotoba_loop_")) true
+      :else (recur (inc f)))))
 (defn- dsl-plan [M :vector-i64 S :string C :vector-i64] :i64
+  (let [can-collide (dsl-helper-namespace? M S)]
   (loop [f 1]
     (if (or (= f (vector-at M MM-FN-N)) (not= (vector-at C 0) 0)) 0
       (let [kind (nm-ff M f FF-KIND)
             walk (if (or (= kind FK-DEFN) (= kind FK-PRIV))
-                   (dsl-visit M S C (nm-nth M (nm-ff M f FF-NODE) 4) f 0) 0)] (recur (inc f))))))
+                   (dsl-visit M S C (nm-nth M (nm-ff M f FF-NODE) 4) f 0 can-collide) 0)] (recur (inc f)))))))
 (defn- dsl-capture-text [M :vector-i64 C :vector-i64 id :i64 types :bool] :string
   (let [record (dsl-record C id)]
     (loop [i 0 out ""]
