@@ -22,7 +22,9 @@
 (defn- eb-admit? [V :vector-i64] :bool
   (let [n (vector-count V) ph (eb-le V 32 8) entry (eb-le V 24 8)
         rw (eb-le V (+ ph 80) 8)]
-    (and (>= n 176) (<= n (if (= rw 0x300000) 6291456 4194304))
+    (and (>= n 176) (<= n (cond (= rw 0x400000) 7340032
+                                  (= rw 0x300000) 6291456
+                                  :else 4194304))
          (= (eb-le V 0 8) 0x00010102464c457f)
          (= (eb-le V 8 8) 0) (= (eb-le V 16 2) 2) (= (eb-le V 18 2) 62)
          (= (eb-le V 20 4) 1) (= (eb-le V 48 4) 0)

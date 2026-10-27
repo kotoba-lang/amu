@@ -8,6 +8,7 @@ on:
       - 'scripts/seed/check-aiueos-user-elf-native.py'
       - 'scripts/seed/check-aiueos-user-macos-native.py'
       - 'scripts/seed/check-aiueos-user-v3-macos-native.py'
+      - 'scripts/seed/check-aiueos-kernel-v3-layout-macos-native.py'
       - 'scripts/seed/check-macos-exec-smoke*.py'
       - 'scripts/seed/check-macos-cross-linux-candidates.py'
       - 'scripts/seed/check-macos-cross-linux-native.py'
@@ -54,6 +55,12 @@ jobs:
           python3 scripts/seed/check-aiueos-user-v5-layout-macos-native.py \
             --mac-build "$RUNNER_TEMP/mac-root" \
             --output "$RUNNER_TEMP/mac-user-v5"
+      - name: Check candidate kernel-v3 layout and guest slot refusal
+        run: |
+          python3 scripts/seed/check-aiueos-kernel-v3-layout-macos-native.py \
+            --mac-build "$RUNNER_TEMP/mac-root" \
+            --user-v5-slot "$RUNNER_TEMP/mac-user-v5/user-v5.slot" \
+            --output "$RUNNER_TEMP/mac-kernel-v3"
       - name: Verify the selected 18-module core adoption on Mac
         run: |
           python3 scripts/seed/check-macos-core-adoption.py \
@@ -103,6 +110,13 @@ jobs:
         with:
           name: mac-aiueos-user-v5-layout
           path: ${{ runner.temp }}/mac-user-v5/mac-aiueos-user-v5-layout.json
+          if-no-files-found: warn
+      - name: Upload kernel-v3 layout receipt
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: mac-aiueos-kernel-v3-layout
+          path: ${{ runner.temp }}/mac-kernel-v3/mac-aiueos-kernel-v3-layout.json
           if-no-files-found: warn
       - name: Upload selected core adoption receipt
         if: always()
