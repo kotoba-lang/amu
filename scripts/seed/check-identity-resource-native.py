@@ -6,6 +6,7 @@ import json
 import platform
 import struct
 import subprocess
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -76,10 +77,11 @@ def main(compiler, out):
     def save():
         (out / 'observations.json').write_text(json.dumps(report, indent=2) + '\n')
     def run(name, argv, code=0, environment=env):
+        started = time.monotonic()
         p = subprocess.run(list(map(str, argv)), cwd=out, env=environment, capture_output=True, timeout=300)
         for stream in ['stdout', 'stderr']:
             (out / (name + '.' + stream)).write_bytes(getattr(p, stream))
-        report['calls'].append(dict(name=name, exit=p.returncode, stdout=pin(out / (name + '.stdout')), stderr=pin(out / (name + '.stderr'))))
+        report['calls'].append(dict(name=name, exit=p.returncode, seconds=time.monotonic() - started, stdout=pin(out / (name + '.stdout')), stderr=pin(out / (name + '.stderr'))))
         save()
         if code is not None: assert p.returncode == code, (name, p.returncode, p.stdout[-200:], p.stderr[-400:])
         return p
