@@ -3524,3 +3524,79 @@ not find namespace: kotoba.form" (ADR-0362), outside this diff, no
 green suite claimed; `find docs -name '*.sh'` -> 0).
 
 Record: `docs/evidence/gpu/metal-counter-foldarms-oporder-rep3-20261027/`.
+
+## Amendment 2026-10-27 (the counters channel's OP-ORDER
+AT-OTHER-CELLS row, FIRST OTHER CELL (n = 1000003, W = 32)): the
+side-flip's SIDE is op-order-INDEPENDENT at its cell (sum FASTER under
+BOTH orders) while the verdict class MOVES (all three operators
+regime-invariant faster 18/18) and the regime structure does NOT
+reproduce (ALL THREE operators ONE level -- the state-shift class
+entirely absent)
+
+Every record since the anchor row named "op-order dependence at every
+OTHER cell" as UNMEASURED. This row consumes that item's FIRST cell
+(n = 1000003, W = 32 -- the width half's first off-anchor cell, and
+the side-flip cell), ONE CELL AT A TIME at the route's own unit: 6
+fresh ADR-0358 processes, run window
+2026-10-27T00:50:39Z..00:50:40Z (run-window.txt, verbatim) -- the
+SAME UTC day as every other counters row; NO day claim; day 4+ needs
+2026-10-28 UTC and stays UNMEASURED. P0a HOLDS: ALL EIGHT artifacts
+(6 fold-arm metallibs + probe.metallib + counters) sha256-identical
+to BOTH prior W=32 builds (the W-grid row's and the shape-2 W=32
+row's; grand total identical=16 differs=0) -- the fold-arm artifacts
+are n-invariant at W=32 across THREE builds and the instrument is
+CONSTANT across the campaign. All 6 processes exit 0 with 120/120
+samples resolved, 6/6 verify ok=1 each, every header
+`op_order=min,max,sum` (verified programmatically 6/6).
+
+**The finding (publication.txt is the publication; the committed
+route, run twice byte-identical, sha 432ea2ec..).** (1) THE VERDICT
+CLASS MOVES, P1b FIRES AT ITS LETTER -- but the flip's SIDE is
+op-order-INDEPENDENT: every operator regime-invariant FASTER (max 6/6
+0.916..0.920, min 6/6 0.915..0.921, sum 6/6 0.915..0.921), roll-up
+18/18 faster -- against the W-grid row's same-cell reading under
+sum,max,min (roll-up REGIME-SCOPED 5/18 above 1.0; max and min
+regime-scoped with fast-level straddles up to 1.017/1.031; sum
+regime-invariant faster 0.915..0.930). max and min change class and
+the roll-up changes class; sum STAYS regime-invariant faster under
+BOTH orders -- the side-flip's FIRST cross-order datapoint, and it
+agrees -- and under the reversed order the flip WIDENS from sum-only
+to all three operators. NAMED, NOT EXPLAINED: the class move is
+confounded with the session and the regime-structure move (one
+session per order at this cell); op-order-driven vs session-driven is
+UNMEASURED. REOPEN BOOKKEEPING (rule 4 -- no reopen claim from this
+row): at the trigger class's letter ("a counters-channel record
+carrying an OPPOSING device-level sign at any cell/W/day") THIS
+record exercises the class (18/18 faster), so the count goes 2 -> 3
+exercising records, all unadjudicated; per-cell the exercising cells
+stay 2 (W = 32 at both n). NAMED, NOT HIDDEN: this row's
+pre-registered predictions said the count would "stay at 2" in both
+P1 branches -- wrong at the class's letter once the flip landed; the
+pre-registered file is not rewritten (it predates the data), the
+correction lives in the record. (2) P2b FIRES -- the structure does
+NOT reproduce: ALL THREE operators ONE level (max
+109250.0..109562.5, min 109041.5..109750.0, sum
+109187.5..109520.5; raw band 109.0k..109.8k) against the W-grid
+row's max THREE / min FOUR / sum ONE (36.0k..109.5k) -- NO fast
+state appears at this session, the state-shift class entirely ABSENT
+(the second all-one-level cell of the counters campaign after the
+shape-2 W=1024 cell); the W-grid row's fast-state straddle class had
+no regime to straddle. The state-shift cause stays UNMEASURED. (3)
+P3: pooled band 0.915..0.921 sits inside the W-grid row's sum band
+(0.915..0.930) and overlaps the shape-2 W=32 row's (0.915..0.926) --
+same instrument, same width, raw-band observation only (rule 3).
+CONSEQUENCE: NOTHING MOVES (rule 4) -- no `:measured?` flag, no
+selection answer, no workgroup row (this channel can never move one),
+no cell flip anywhere, no cross-instrument claim. Day 4+ cross-day
+replications, op-order dependence at the item's OTHER TEN cells, the
+class move's cause, the state-shift cause, "R at those grids", the
+W-shape's cause (the side-flip stays unadjudicated -- this row adds
+an agreeing cross-order datapoint and a third exercising record at
+the record letter) and anything off M1 Max stay UNMEASURED.
+
+Gates: see the record (self-test 2649/0 pin; scoped GPU gate GREEN
+123/12162 twice; FULL `run-tests.cljk` RUN LIVE, red at base "Could
+not find namespace: kotoba.form" (ADR-0362), outside this diff, no
+green suite claimed; `find docs -name '*.sh'` -> 0).
+
+Record: `docs/evidence/gpu/metal-counter-foldarms-oporder-w32-20261027/`.
