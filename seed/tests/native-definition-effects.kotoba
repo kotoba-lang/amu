@@ -1,0 +1,63 @@
+;; Independent hand-authored effect payloads through 04's generic encoder.
+;; No 05/06 normalizer, inferred mask or payload builder supplies this oracle.
+(defn- dfx-map [xs [:list :string]] :string (dc-collection "map" xs true))
+(defn- dfx-vec [xs [:list :string]] :string (dc-collection "vec" xs false))
+(defn- dfx-list [xs [:list :string]] :string (dc-collection "list" xs false))
+(defn- dfx-sym [s :string] :string (dc-atom "sym" s))
+(defn- dfx-interface [] :string
+  (dfx-map (typed-list-new [:list :string] (dc-entry "arity" (dc-int "1"))
+    (dc-entry "params" (dfx-vec (typed-list-new [:list :string] (dc-kw "string"))))
+    (dc-entry "result" (dc-kw "string")))))
+(defn- dfx-cap [wire :i64] :string
+  (dfx-list (typed-list-new [:list :string] (dfx-sym "typed-cap-call") (dc-int (mem-u2dec wire))
+    (dc-kw "string") (dc-kw "string") (dfx-sym "k0"))))
+(defn- dfx-payload [body :string name :string deps [:list :string]] :string
+  (dc-payload "6" "2"
+    (dfx-map (typed-list-new [:list :string] (dc-entry "op" (dc-kw "kotoba.definition/function"))
+      (dc-entry "params" (dfx-vec (typed-list-new [:list :string] (dfx-sym "k0")))) (dc-entry "body" body)))
+    (dc-collection "set" (typed-list-new [:list :string] (dc-kw name)) true)
+    (dfx-interface) (dfx-vec deps)))
+(defn- dfx-leaf [wire :i64 name :string] :string
+  (dfx-payload (dfx-cap wire) name (typed-list-new [:list :string])))
+(defn- dfx-caller [wire :i64 name :string] :string
+  (let [cid (dc-definition-cid (dfx-leaf wire name))
+        ref (dfx-vec (typed-list-new [:list :string] (dc-kw "kotoba.definition/ref") (dc-str cid)))]
+    (dfx-payload (dfx-list (typed-list-new [:list :string] ref (dfx-sym "k0")))
+      name (typed-list-new [:list :string] (dc-str cid)))))
+(defn- dfx-self-body [wire :i64] :string
+  (dfx-list (typed-list-new [:list :string] (dfx-sym "if")
+    (dfx-list (typed-list-new [:list :string] (dfx-sym "=")
+      (dfx-list (typed-list-new [:list :string] (dfx-sym "string-length") (dfx-sym "k0"))) (dc-int "0")))
+    (dfx-cap wire)
+    (dfx-list (typed-list-new [:list :string]
+      (dfx-vec (typed-list-new [:list :string] (dc-kw "kotoba.definition/group") (dc-int "0"))) (dc-str ""))))))
+(defn- dfx-self-group [wire :i64 name :string] :string
+  (let [member (dfx-map (typed-list-new [:list :string]
+          (dc-entry "params" (dfx-vec (typed-list-new [:list :string] (dfx-sym "k0"))))
+          (dc-entry "body" (dfx-self-body wire)) (dc-entry "interface" (dfx-interface))))]
+    (dc-payload "6" "2"
+      (dfx-map (typed-list-new [:list :string] (dc-entry "op" (dc-kw "kotoba.definition/recursive-group"))
+        (dc-entry "members" (dfx-vec (typed-list-new [:list :string] member)))))
+      (dc-collection "set" (typed-list-new [:list :string] (dc-kw name)) true)
+      (dfx-map (typed-list-new [:list :string] (dc-entry "arity" (dc-int "1"))
+        (dc-entry "result" (dc-kw "kotoba.definition/group")))) (dfx-vec (typed-list-new [:list :string])))))
+(defn- dfx-self-member [wire :i64 name :string] :string
+  (let [group (dc-definition-cid (dfx-self-group wire name))]
+    (dc-payload "6" "2"
+      (dfx-map (typed-list-new [:list :string] (dc-entry "op" (dc-kw "kotoba.definition/group-member"))
+        (dc-entry "index" (dc-int "0"))))
+      (dc-collection "set" (typed-list-new [:list :string] (dc-kw name)) true)
+      (dfx-interface) (dfx-vec (typed-list-new [:list :string] (dc-str group))))))
+(defn- dfx-catalog [S :string] :bool
+  (if (not= (sh-text S) "3b16d81521865cff714b509cace94bb168e66a606eb9f3ed02ba83a75acb590c") false
+    (let [M (rd-run (lx-run (mem-set (mem-new) MM-SRC-LEN (string-length S)) S) S)
+          root (vector-at M MM-ROOT) map (kr-first M root)
+          capabilities (dcp-field M S map ":capabilities")]
+      (and (= (vector-at M MM-ERR) 0) (= (kr-count M root) 1)
+        (loop [wire 0 count 0]
+          (if (= wire 48) (= count 19)
+            (let [name (dcp-effect-name wire)
+                  entry (dcp-field M S capabilities (string-concat ":" name))
+                  id (dcp-field M S entry ":compiler-wire-id")]
+              (and (or (= name "") (and (= (kr-kind M id) ND-INT) (= (kr-nf M id NF-AUX) wire)))
+                (recur (inc wire) (+ count (if (= name "") 0 1)))))))))))

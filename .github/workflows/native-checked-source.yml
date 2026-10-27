@@ -8,6 +8,7 @@ on:
       - "bin/amu"
       - "native-product.json"
       - "scripts/seed/check-checked-source-native.py"
+      - "scripts/seed/check-definition-effects-native.py"
       - ".github/workflows/native-checked-source.yml"
   push:
     branches: [main]
@@ -16,6 +17,7 @@ on:
       - "bin/amu"
       - "native-product.json"
       - "scripts/seed/check-checked-source-native.py"
+      - "scripts/seed/check-definition-effects-native.py"
       - ".github/workflows/native-checked-source.yml"
 permissions:
   contents: read
@@ -53,6 +55,17 @@ jobs:
           python3 scripts/seed/check-checked-source-native.py
           --compiler "$PWD/${{ matrix.compiler }}"
           --output "$RUNNER_TEMP/checked-source"
+      - name: Native named effect rows, pinned catalog and independent payloads
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: >-
+          python3 scripts/seed/native_build_queue.py
+          --phase native-definition-effects
+          --slot-dir "$RUNNER_TEMP/native-build-slots"
+          --output "$RUNNER_TEMP/effects-admission.json" --
+          python3 scripts/seed/check-definition-effects-native.py
+          --compiler "$PWD/${{ matrix.compiler }}"
+          --output "$RUNNER_TEMP/definition-effects"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
@@ -60,4 +73,6 @@ jobs:
           path: |
             ${{ runner.temp }}/checked-source
             ${{ runner.temp }}/source-admission.json
+            ${{ runner.temp }}/definition-effects
+            ${{ runner.temp }}/effects-admission.json
           if-no-files-found: error

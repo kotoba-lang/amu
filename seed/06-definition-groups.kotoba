@@ -26,11 +26,11 @@
       (if (or (= p 0) (not= (vector-at state 0) 0)) state
         (let [name (dcp-field M S p ":name") text (if (> name 0) (dcp-text M S name) "")
               params (dcp-field M S p ":params") body (dcp-field M S p ":body")]
-          (if (or (not (dcs-shape? M S p true)) (not (dcs-empty-effects? M S p))
+          (if (or (not (dcs-shape? M S p true)) (< (dcp-effect-mask M S p) 0)
                   (not= (kr-kind M name) ND-SYM) (not= (kr-kind M params) ND-VEC) (= body 0)
-                  (dcp-pure-op? text) (= text "let") (= text "nil") (= text "true") (= text "false")
+                  (dcp-pure-op? text) (= text "typed-cap-call") (= text "let") (= text "nil") (= text "true") (= text "false")
                   (not= (dcp-lookup M S state name) -1))
-            (vector-assoc! state 0 (if (not (dcs-empty-effects? M S p)) 4 1))
+            (vector-assoc! state 0 (if (< (dcp-effect-mask M S p) 0) 4 1))
             (let [a (dcp-put (dcp-put state i 0 p) i 1 name)
                   slot (loop [j (bit-and (dcp-name-hash M S name) (dec cap))]
                     (if (= (vector-at a (+ (dcp-hash a) j)) 0) j (recur (bit-and (inc j) (dec cap)))))
@@ -76,10 +76,10 @@
               (recur (inc i) (typed-list-conj [:list :string] out
                 (dcp-map (typed-list-new [:list :string] (dc-entry "body" body)
                   (dc-entry "interface" interface) (dc-entry "params" params))))))))]
-    (dcp-payload (dcp-map (typed-list-new [:list :string] (dc-entry "members" (dcp-vec members))
+    (dcp-payload-effects (dcp-map (typed-list-new [:list :string] (dc-entry "members" (dcp-vec members))
       (dc-entry "op" (dc-kw "kotoba.definition/recursive-group"))))
       (dcp-map (typed-list-new [:list :string] (dc-entry "arity" (dc-int (mem-u2dec (vector-count C))))
-        (dc-entry "result" (dc-kw "kotoba.definition/group")))) (dcp-deps A R))))
+        (dc-entry "result" (dc-kw "kotoba.definition/group")))) (dcp-deps A R) (dcp-group-effects A C))))
 (defn- dcs-best [M :vector-i64 S :string A :vector-i64 C :vector-i64 R [:list :string]] :i64
   (loop [rank 1 best 0]
     (if (or (= rank (dcs-factorial (vector-count C))) (not= (vector-at A 0) 0)) best
@@ -89,9 +89,9 @@
                 (if (< (string-compare candidate previous) 0) rank best)))]
         (recur (inc rank) chosen)))))
 (defn- dcs-member-payload [M :vector-i64 S :string A :vector-i64 f :i64 group :string index :i64] :string
-  (dcp-payload (dcp-map (typed-list-new [:list :string] (dc-entry "index" (dc-int (mem-u2dec index)))
+  (dcp-payload-effects (dcp-map (typed-list-new [:list :string] (dc-entry "index" (dc-int (mem-u2dec index)))
     (dc-entry "op" (dc-kw "kotoba.definition/group-member")))) (dcp-interface M S A f)
-    (dcp-vec (typed-list-new [:list :string] (dc-str group)))))
+    (dcp-vec (typed-list-new [:list :string] (dc-str group))) (dcp-f A f 15)))
 ;; Prepare immutable member bytes once. Only native-created group-reference
 ;; integer leaves may change under a permutation. Source-authored reference
 ;; tags are refused in 05, so literal data cannot masquerade as these holes.
@@ -146,10 +146,10 @@
                     (if (= (vector-at C j) f) j (recur (inc j))))]
               (recur (inc i) (typed-list-conj [:list :string] out
                 (dcs-render A C (typed-list-nth [:list :string] T original) H original))))))]
-    (dcp-payload (dcp-map (typed-list-new [:list :string] (dc-entry "members" (dcp-vec members))
+    (dcp-payload-effects (dcp-map (typed-list-new [:list :string] (dc-entry "members" (dcp-vec members))
       (dc-entry "op" (dc-kw "kotoba.definition/recursive-group"))))
       (dcp-map (typed-list-new [:list :string] (dc-entry "arity" (dc-int (mem-u2dec count)))
-        (dc-entry "result" (dc-kw "kotoba.definition/group")))) (typed-list-nth [:list :string] T count))))
+        (dc-entry "result" (dc-kw "kotoba.definition/group")))) (typed-list-nth [:list :string] T count) (dcp-group-effects A C))))
 (defn- dcs-best-fast [A :vector-i64 C :vector-i64 T [:list :string] H :vector-i64] :i64
   (loop [rank 1 best 0]
     (if (or (= rank (dcs-factorial (vector-count C))) (not= (vector-at A 0) 0)) best
@@ -284,7 +284,7 @@
     (cond (or (not (dcs-shape? M S doc false))
             (not (or (= format ":kotoba.kir/v3") (= format ":kotoba.kir/v4")))
             (not= (kr-kind M functions) ND-VEC) (= count 0) (>= count MM-FN-CAP)) 1
-      (not (dcs-empty-effects? M S doc)) 4
+      (< (dcp-effect-mask M S doc) 0) 4
       (and (> schemas 0) (or (not= (kr-kind M schemas) ND-MAP) (> (kr-count M schemas) 0))) 5
       (not (dcs-native-checked? S)) 8
       :else 0)))
@@ -304,8 +304,9 @@
                                       (typed-list-new [:list :string]) 0)]
                           (and (> (string-length params) 0) (> (string-length body) 0))))]
                   (if walked (recur (inc f) state) (vector-assoc! state 0 1)))))
-            components (if (= (vector-at graph 0) 0) (dcs-components graph) graph)]
-        components))))
+            components (if (= (vector-at graph 0) 0) (dcs-components graph) graph)
+            effects (if (= (vector-at components 0) 0) (dcp-effects M S components doc) components)]
+        effects))))
 (defn- dcs-produce [M :vector-i64 S :string doc :i64] :i64
   (let [A (dcs-plan M S doc) count (vector-at A 3)
         R (if (= (vector-at A 0) 0) (dcs-resolve M S A) (typed-list-new [:list :string]))]

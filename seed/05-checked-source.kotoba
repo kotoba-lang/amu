@@ -6,7 +6,7 @@
 ;;
 ;; The bridge preserves scalar/word and closed parametric interfaces and the
 ;; expression heads below. Loops use 05-source-loops; closures, state, schemas, type refinements and
-;; capabilities still refuse atomically. They must be bridged before the whole
+;; unregistered capabilities still refuse atomically. They must be bridged before the whole
 ;; compiler can use this entry. The source fuel/arena proof is a separate build
 ;; context; KIR identity alone does not qualify source-route object reuse.
 ;; Seed represents boolean defs as computed-def thunks. Only their literal
@@ -24,6 +24,34 @@
         c (if (= (vector-at b MM-ERR) 0) (nm-run b S) b)
         d (if (= (vector-at c MM-ERR) 0) (ck-run-h c S H) c)]
     (if (ck-hint-again? H d) (dsb-front-h S H) d)))
+(defn- dsb-effects [M :vector-i64] :vector-i64
+  (let [direct (loop [f 1]
+      (if (= f (vector-at M MM-FN-N)) M
+        (let [save (ck-f2-set M f FN2-FX (ck-f2 M f FN2-CAPS))] (recur (inc f)))))]
+    (ck-r5b-fx direct)))
+(defn- dsb-effect-mask [M :vector-i64 n :i64] :i64
+  (let [kind (nm-kind M n) h (nm-first M n) resolution (nm-nf M h NF-RES)
+        own (cond (= (nm-nf M n NF-RES) HD-TYPED-CAP-CALL)
+                    (ck-wire-bit (ck-kw-wire (nm-nf M (nm-next M h) NF-TYPE)))
+                  (= (quot resolution RES-SCALE) RES-FN) (ck-f2 M (rem resolution RES-SCALE) FN2-FX)
+                  :else 0)]
+    (if (or (= kind ND-LIST) (= kind ND-VEC) (= kind ND-MAP) (= kind ND-SET))
+      (loop [p h mask own]
+        (if (= p 0) mask (recur (nm-next M p) (bit-or mask (dsb-effect-mask M p))))) 0)))
+(defn- dsb-effect-text [mask :i64] :string
+  (let [values (loop [wire 0 out ""]
+      (if (= wire 48) out
+        (recur (inc wire) (if (and (not= (dcp-effect-name wire) "") (not= (bit-and mask (ck-wire-bit wire)) 0))
+          (string-concat out (string-concat " [:cap/call " (string-concat (mem-u2dec wire) "]"))) out))))]
+    (string-concat "#{" (string-concat values "}"))))
+(defn- dsb-cap [M :vector-i64 S :string C :vector-i64 n :i64 depth :i64] :string
+  (let [wire (ck-kw-wire (nm-nf M (nm-nth M n 1) NF-TYPE)) argument (nm-nth M n 4)
+        request (dsb-type M C (nm-nf M argument NF-TYPE) 0) result (dsb-type M C (nm-nf M n NF-TYPE) 0)
+        body (dsb-expr M S C argument depth)]
+    (if (= (dcp-effect-name wire) "") (dsb-bad C 3 n)
+      (string-concat "(typed-cap-call " (string-concat (mem-u2dec wire)
+        (string-concat " " (string-concat request (string-concat " " (string-concat result
+          (string-concat " " (string-concat body ")")))))))))))
 (defn- dsb-name [M :vector-i64 S :string f :i64] :string
   (let [s (nm-ff M f FF-SYM)]
     (string-substring S (nm-sf M s SF-START) (nm-sf M s SF-END))))
@@ -141,6 +169,7 @@
           (string-concat "(let [" (string-concat (dsb-bindings M S C (nm-first M v) depth)
             (string-concat "] " (string-concat (dsb-expr M S C body depth) ")"))))))
       (= hd HD-COND) (dsb-cond M S C (nm-next M h) depth)
+      (= hd HD-TYPED-CAP-CALL) (dsb-cap M S C n depth)
       (= hd HD-LOOP) (dsl-call M S C n depth)
       (= (string-length op) 0) (dsb-bad C 3 n)
       :else (string-concat "(" (string-concat op
@@ -177,7 +206,8 @@
     (string-concat "{:name " (string-concat (dsb-name M S f)
       (string-concat " :params [" (string-concat names (string-concat "] :param-types ["
         (string-concat types (string-concat "] :result " (string-concat result
-          (string-concat " :effects #{} :body " (string-concat body "}"))))))))))))
+          (string-concat " :effects " (string-concat (dsb-effect-text (ck-f2 M f FN2-FX))
+            (string-concat " :body " (string-concat body "}"))))))))))))))
 (defn- dsb-kir [M :vector-i64 S :string C :vector-i64] :string
   (let [salt (vector-assoc! C 2 (dsb-salt M S)) plan (dsl-plan M S C)
         values (loop [f 1 out "" count 0]
@@ -194,14 +224,20 @@
                         (recur (inc f) (string-concat out (string-concat " " value)) (inc count)))))))
         helpers (dsl-helpers M S C)]
     (if (not= (vector-at C 0) 0) ""
-      (string-concat "{:format :kotoba.kir/v4 :entry nil :exports [] :effects #{} :functions ["
-        (string-concat values (string-concat helpers "]}\n"))))))
+      (string-concat "{:format :kotoba.kir/v4 :entry nil :exports [] :effects "
+        (string-concat (dsb-effect-text (vector-at M MM-CAPS)) (string-concat " :functions ["
+          (string-concat values (string-concat helpers "]}\n"))))))))
 (defn- dsb-source [source :string emit-kir :bool] :i64
-  (let [S (string-concat source (ck-r6b-lib source)) M (dsb-front-h S (ck-hint-new))
+  (let [S (string-concat source (ck-r6b-lib source)) front (dsb-front-h S (ck-hint-new))
+        M (if (= (vector-at front MM-ERR) 0) (dsb-effects front) front)
         C (dsl-new M)]
     (cond (not= (vector-at M MM-ERR) 0)
             (let [out (io-err (string-concat "DSB:SOURCE:" (string-concat (mem-u2dec (vector-at M MM-ERR)) "\n")))] 1)
-          (not= (vector-at M MM-CAPS) 0) (let [out (io-err "DSB:EFFECT\n")] 1)
+          (not= (bit-and (vector-at M MM-CAPS)
+                    (bit-not (loop [wire 0 mask 0]
+                      (if (= wire 48) mask (recur (inc wire) (bit-or mask
+                        (if (= (dcp-effect-name wire) "") 0 (ck-wire-bit wire)))))))) 0)
+            (let [out (io-err "DSB:EFFECT\n")] 1)
           :else
           (let [K (dsb-kir M S C)]
             (if (not= (vector-at C 0) 0)

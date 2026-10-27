@@ -132,7 +132,8 @@
     (string-concat " {:name " (string-concat (dsl-name id) (string-concat " :params ["
       (string-concat names (string-concat "] :param-types [" (string-concat types
         (string-concat "] :result " (string-concat result
-          (string-concat " :effects #{} :body " (string-concat body "}"))))))))))))
+          (string-concat " :effects " (string-concat (dsb-effect-text (dsb-effect-mask M (nm-nth M node 2)))
+            (string-concat " :body " (string-concat body "}"))))))))))))))
 (defn- dsl-helpers [M :vector-i64 S :string C :vector-i64] :string
   (loop [id 1 out ""]
     (if (or (> id (vector-at C 5)) (not= (vector-at C 0) 0)) out
