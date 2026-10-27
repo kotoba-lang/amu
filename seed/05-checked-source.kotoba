@@ -160,6 +160,17 @@
               no (dsb-cond M S C next (inc depth))]
           (string-concat "(if " (string-concat test (string-concat " "
             (string-concat yes (string-concat " " (string-concat no ")"))))))))))
+;; ck-targ stores the resolved constructor on the explicit type argument.
+;; It is syntax, not an untyped value vector. Reify its checked closed type;
+;; dsb-type keeps nominal types and tuple/refinement variants refused.
+(defn- dsb-typed-list [M :vector-i64 S :string C :vector-i64 n :i64 depth :i64] :string
+  (let [argument (nm-nth M n 1) ty (nm-nf M argument NF-TYPE)
+        op (case (nm-nf M n NF-RES) HD-LIST-NEW "typed-list-new"
+             HD-LIST-NTH "typed-list-nth" HD-LIST-CONJ "typed-list-conj" "")
+        type (dsb-type M C ty 0)]
+    (if (or (= argument 0) (= op "") (not= (ck-tcon M ty) TC-LIST)) (dsb-bad C 3 n)
+      (string-concat "(" (string-concat op (string-concat " " (string-concat type
+        (string-concat (dsb-seq M S C (nm-nth M n 2) depth) ")"))))))))
 (defn- dsb-call [M :vector-i64 S :string C :vector-i64 n :i64 depth :i64] :string
   (let [h (nm-first M n) hd (nm-nf M n NF-RES) r (nm-nf M h NF-RES)
         fi (rem r RES-SCALE)
@@ -177,6 +188,8 @@
           (string-concat "(let [" (string-concat (dsb-bindings M S C (nm-first M v) depth)
             (string-concat "] " (string-concat (dsb-expr M S C body depth) ")"))))))
       (= hd HD-COND) (dsb-cond M S C (nm-next M h) depth)
+      (or (= hd HD-LIST-NEW) (= hd HD-LIST-NTH) (= hd HD-LIST-CONJ))
+        (dsb-typed-list M S C n depth)
       (= hd HD-TYPED-CAP-CALL) (dsb-cap M S C n depth)
       (= hd HD-LOOP) (dsl-call M S C n depth)
       (= (string-length op) 0) (dsb-bad C 3 n)
