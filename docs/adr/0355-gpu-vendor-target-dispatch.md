@@ -337,3 +337,29 @@ mechanism is claimed or measured. Rule 4 binds: no row moves, no
 Evidence: `docs/evidence/gpu/anv-bonset-20261027/` (record.txt is the
 finding; publication-s7.txt is produced only by analysis-s7.py over
 the committed run logs).
+
+## Dated note (2026-10-27, JUN-59 measurement: work-dose discriminator)
+
+Session 7's named residual -- WHY capture turns on between B=2 and B=3
+-- is narrowed on ONE observable axis: is the capture a total-work
+threshold at all? The instrument is the archived session-7 snapshot
+with a single parameterization edit (the WORK_MUL work-dose knob, 4
+hunks, instrument-derivation.diff.txt; WORK_MUL=1 reproduces the
+archived behaviour and the controls pin it); 24 fresh processes
+(8 (B,M) arms, 3 runs each); custody entirely before any run.
+MEASURED at the INSTRUMENT channel: capture at B=2 is NOT reachable by
+up to 8x per-dispatch work -- b2m3 (6 work units) and b2m8 (16 work
+units, twice the captured b8m1 control's 8) both sit at the 31-tick
+floor at all 18 cells while host_ns shows up to 3,143,995 ns of real
+work. Equal-total-work pairs split hard by dispatch count: 3 units as
+1 dispatch = 31 ticks vs 3 dispatches = 5,546 ticks (captured); 8
+units as 1 dispatch = 31 ticks vs 8 dispatches = 32,896 ticks
+(captured) -- up to three orders of magnitude apart at equal total
+work. On this axis the capture is not a total-work threshold; dispatch
+count stays implicated. Observable only; NO causal mechanism is
+claimed or measured, and the frozen named limitation stands: one knob
+scales work and grid size together. Rule 4 binds: no row moves, no
+`:measured?` flag moves, and no vendor optimization exists for Intel.
+Evidence: `docs/evidence/gpu/anv-workmul-20261027/` (record.txt is the
+finding; publication-s8.txt is produced only by analysis-s8.py over
+the committed run logs).
