@@ -4111,3 +4111,98 @@ not find namespace: kotoba.form" (ADR-0362), outside this diff, no
 green suite claimed; `find docs -name '*.sh'` -> 0).
 
 Record: `docs/evidence/gpu/metal-counter-foldarms-oporder-shape2-w32-20261027/`.
+
+## Amendment 2026-10-27 (the counters channel's OP-ORDER
+AT-OTHER-CELLS row, SHAPE-2 HALF'S THIRD CELL (n = 2^20 = 1048576 at
+W = 64)): the baseline's verdict class REPRODUCES exactly at its
+letter (roll-up regime-invariant slower 18/18) so the cell's sign is
+op-order-INDEPENDENT at (2^20, 64) -- while the regime structure does
+NOT reproduce (min THREE -> ONE, sum ONE -> FOUR) and the FIRST-BLOCK
+FORM PRESENTS 2/2 SESSIONS at the structure level (the one-level
+operator is the session's first block at the slow level) and the named
+sum-one-level streak at W = 64 BREAKS
+
+This row consumes the shape-2 half's THIRD cell, (n = 2^20 = 1048576,
+W = 64), ONE CELL AT A TIME at the route's own unit: 6 fresh ADR-0358
+processes, run window 2026-10-27T03:35:01Z..03:35:03Z (run-window.txt,
+verbatim) -- the SAME UTC day as every other counters row; NO day
+claim; day 4+ needs 2026-10-28 UTC and stays UNMEASURED. P0a HOLDS:
+ALL EIGHT artifacts sha256-identical to ALL THREE prior W = 64 builds
+of the campaign (the W-grid row's and the shape-2 W = 64 row's
+2026-10-26 builds, the first op-order W = 64 row's 2026-10-27 build;
+grand total identical=24 differs=0) -- the W = 64 fold-arm artifacts
+are n- AND op-order-INVARIANT across FOUR builds and the instrument
+is CONSTANT across the campaign. All 6 processes exit 0 with 120/120
+samples resolved, 6/6 verify ok=1 each, every header
+`n=1048576 workgroup=64 op_order=min,max,sum` (verified
+programmatically 6/6).
+
+**The finding (publication.txt is the publication; the committed
+route, run twice byte-identical, sha b9a6230b..).** (1) P1a FIRES:
+THE SIGN CLASS REPRODUCES -- roll-up REGIME-INVARIANT SLOWER 18/18
+(max 6/6 1.213..1.222 / min 6/6 1.217..1.221 / sum 6/6 1.209..1.226,
+every observed regime one-sided) -- the cell's sign is
+op-order-INDEPENDENT at (2^20, 64) and the shape-2 half's third
+cross-order datapoint AGREES with the sum-first order (the W = 32
+class moves at both n stay the named exceptions against W = 64 and
+W = 256 reproducing at both shapes; why W = 32 alone moves is
+UNMEASURED). No side-flip. REOPEN BOOKKEEPING (rule 4 -- NO reopen
+claim from this row): RB2 FIRES -- no one-sided-faster sign anywhere
+(all 18/18 slower), so the exercising-record count STAYS at 4 and the
+exercising CELLS STAY at 2 (W = 32 at both n), named both ways
+(4 records / 2 cells), all unadjudicated -- the pre-registered RB2
+branch holds. (2) P2b FIRES -- the structure does NOT reproduce at
+level-count resolution: this session max TWO (39750.0 /
+95187.5..95833.5), min ONE (94896.0..95916.5), sum FOUR (30625.0 /
+39729.0 / 76917.0 / 95521.0..95812.5), raw band 30.6k..95.9k --
+against the shape-2 W = 64 row's max TWO / min THREE / sum ONE at
+39.7k..95.9k (max TWO reproduces; min THREE -> ONE; sum ONE -> FOUR).
+THE FIRST-BLOCK FORM PRESENTS AT THIS CELL 2/2 SESSIONS at the
+structure level: the one-level operator is the session's FIRST BLOCK
+at the SLOW level in both sessions (sum ONE 95334.0..95645.5 at the
+sum-first baseline; min ONE 94896.0..95916.5 at this min-first
+session) -- the same first-block swap seen at (2^20, 256) and
+(2^20, 32) -- and the sign-level counterpart has NOTHING TO MOVE at
+this cell (both sessions all-slower; NAMED so its absence is not read
+as a disconfirmation). Observed classes, NOT a mechanism; the anchor
+cell's counted bookkeeping is UNMOVED (its axis is counted anchor-cell
+sessions). ALSO NAMED: the named sum-one-level streak at W = 64 BREAKS
+here (sum ONE in both prior W = 64 cells at both shapes -> sum FOUR
+this session); this session's split (min 1 / max 2 / sum 4) matches NO
+prior session's split at any measured cell named in this campaign's
+records; the level VALUES show the state-shift class PRESENTING again
+(a NEW fastest level 30625.0 BELOW the baseline session's fastest band
+39708.5..49916.5 with no counterpart there; mid 39729.0 / 76917.0 vs
+the baseline's 77625.0..79146.0; slow bands overlapping at
+94896.0..95916.5 vs 95291.5..95937.5) -- raw bands, not a mechanism;
+the state-shift cause/threshold/prevalence stay UNMEASURED. (3) P3:
+per-operator raw ratio bands (max 1.213..1.222, min 1.217..1.221, sum
+1.209..1.226, pooled 1.209..1.226) against the shape-2 W = 64 row's
+(max 1.218..1.223, min 1.215..1.224, sum 1.223..1.228, pooled
+1.215..1.228) -- max overlap 1.218..1.222 with this row's 1.213..1.218
+lower part UNMATCHED; min whole band inside; sum overlap 1.223..1.226
+with this row's 1.209..1.223 lower part AND the baseline's
+1.226..1.228 upper part UNMATCHED; pooled overlap 1.215..1.226 (this
+row's 1.209..1.215 and the baseline's 1.226..1.228 unmatched) --
+raw bands, not a mechanism. The n = 1000003 W = 64 reversed-order
+pooled band (1.215..1.223) and the W = 64 W-grid row's pooled band
+(1.198..1.222) are cross-n same-width raw-band observations at ONE
+instrument; the (2^20, W = 256) and (2^20, W = 32) reversed-order
+pooled bands (1.204..1.227, 0.913..1.014) are cross-width same-shape
+raw-band observations. Rule 3: no cross-instrument claim, no magnitude
+invariance across orders, sessions, shapes, widths or n.
+CONSEQUENCE: NOTHING MOVES (rule 4) -- no `:measured?` flag, no
+selection answer, no workgroup row, no cell flip anywhere, no
+cross-instrument claim. Day 4+ cross-day replications, op-order
+dependence at the item's OTHER THREE cells (shape-2 W = 128/512/1024
+at n = 2^20), the class moves' causes (op-order vs session), the
+first-block form's cause, the state-shift cause, "R at those grids",
+the W-shape's cause (the side-flips stay unadjudicated) and anything
+off M1 Max stay UNMEASURED.
+
+Gates: see the record (self-test 2649/0 pin; scoped GPU gate GREEN
+123/12162 twice; FULL `run-tests.cljk` RUN LIVE, red at base "Could
+not find namespace: kotoba.form" (ADR-0362), outside this diff, no
+green suite claimed; `find docs -name '*.sh'` -> 0).
+
+Record: `docs/evidence/gpu/metal-counter-foldarms-oporder-shape2-w64-20261027/`.
