@@ -10,6 +10,7 @@ on:
       - "scripts/seed/check-checked-source-native.py"
       - "scripts/seed/check-definition-effects-native.py"
       - "scripts/seed/check-identity-resource-native.py"
+      - "scripts/seed/check-source-vectors-native.py"
       - ".github/workflows/native-checked-source.yml"
   push:
     branches: [main]
@@ -20,6 +21,7 @@ on:
       - "scripts/seed/check-checked-source-native.py"
       - "scripts/seed/check-definition-effects-native.py"
       - "scripts/seed/check-identity-resource-native.py"
+      - "scripts/seed/check-source-vectors-native.py"
       - ".github/workflows/native-checked-source.yml"
 permissions:
   contents: read
@@ -79,6 +81,17 @@ jobs:
           python3 scripts/seed/check-identity-resource-native.py
           --compiler "$PWD/${{ matrix.compiler }}"
           --output "$RUNNER_TEMP/identity-resource"
+      - name: Native vector identities and executed mutable and immutable alias controls
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: >-
+          python3 scripts/seed/native_build_queue.py
+          --phase native-source-vectors
+          --slot-dir "$RUNNER_TEMP/native-build-slots"
+          --output "$RUNNER_TEMP/source-vectors-admission.json" --
+          python3 scripts/seed/check-source-vectors-native.py
+          --compiler "$PWD/${{ matrix.compiler }}"
+          --output "$RUNNER_TEMP/source-vectors"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
@@ -90,4 +103,6 @@ jobs:
             ${{ runner.temp }}/effects-admission.json
             ${{ runner.temp }}/identity-resource
             ${{ runner.temp }}/identity-resource-admission.json
+            ${{ runner.temp }}/source-vectors
+            ${{ runner.temp }}/source-vectors-admission.json
           if-no-files-found: error
