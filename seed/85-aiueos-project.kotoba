@@ -8,10 +8,13 @@
 (def KP-ENTRY 43) ; L header: global byte offset + 1 of the image entry
 (def KP-ERR-NAME-START 44)
 (def KP-ERR-NAME-END 45)
-;; The v2 image reserves the complete second MiB for kernel RX text. Its
-;; data and user pages move together; v1 retains its byte-for-byte layout.
+;; v2 reserves the second MiB for kernel RX text. v3 keeps that text limit,
+;; then leaves a separate MiB before data so the next user region can grow.
+;; v1 and v2 keep their byte-for-byte layouts.
 (defn- kp-v2? [] :bool (string=? (io-arg 3) "x86_64-aiueos-kernel-v2"))
-(defn- kp-text-cap [] :i64 (if (kp-v2?) 2097152 1048576))
+(defn- kp-v3? [] :bool (string=? (io-arg 3) "x86_64-aiueos-kernel-v3"))
+(defn- kp-text-cap [] :i64 (if (or (kp-v2?) (kp-v3?)) 2097152 1048576))
+(defn- kp-data-offset [] :i64 (if (kp-v3?) 3145728 (kp-text-cap)))
 
 ;; 60-proj records AArch64 interface offsets in words. Convert only the
 ;; newly recorded interface addresses to this backend's byte units; retain
@@ -200,9 +203,9 @@
         table (bit-and (+ program 127) -128) has-isr (or (kp-has-isr? G) (uv-used? M))
         needs-isr (kp-needs-isr? M)
         size (if has-isr (+ table (* IV-STRIDE IV-VECTORS)) program)
-        ;; The two layouts have distinct RX/data boundaries and user pages.
-        ;; The fixed 0x101000 text entry is shared; v2 data starts at 0x300000.
-        data (kp-text-cap)]
+        ;; The fixed 0x101000 entry is shared. v2 data starts at 0x300000;
+        ;; v3 data starts at 0x400000, beyond the unchanged 2 MiB text cap.
+        data (kp-data-offset)]
     (cond (not (pj-ok initialized)) initialized
           (and (uv-used? M) (>= (kp-isr-target G 6) 0)) (xg-err M 7102 6)
           (and (uv-used? M) (>= (kp-isr-target G 14) 0)) (xg-err M 7102 14)
