@@ -395,3 +395,38 @@ no `:measured?` flag moves, and no vendor optimization exists for
 Intel. Evidence: `docs/evidence/gpu/anv-itrmul-20261027/` (record.txt
 is the finding; publication-s9.txt is produced only by analysis-s9.py
 over the committed run logs).
+
+## Dated note (2026-10-27, JUN-59 measurement: GRID x FATNESS
+## interaction)
+
+Session 10 (INSTRUMENT channel) tests the GRID x FATNESS interaction
+that sessions 8 and 9 both named UNMEASURED: at fixed B=2, is the
+capture reachable by the JOINT dose of the two proven knobs (WORK_MUL
+grid x ITERMUL per-workgroup fatness)? Everything is a byte-reuse of
+committed custody-checked artifacts (instrument = the session-8
+snapshot, NO C edit; iter8 sources = session 9's committed derivation,
+inverse check re-run 6/6; the rebuilt iter8 spv byte-identical to
+session 9's build; all 3 binaries byte-identical to session 8's
+same-flag binaries; corpus 16/16 MATCH, custody entirely before any
+run). 15 fresh processes (5 arms x 3 runs). MEASURED at the INSTRUMENT
+channel: C1 and C2 replicate (c8 -0.62% of committed 32,915; both
+knob controls FLOOR at their single-knob readings); X1 branch (a) as
+frozen (NOMINAL reading): the joint arm gf (B=2, M=8, I=8 -- 128
+nominal work units, 64x the captured control's nominal 8) sits at the
+same 31..32-tick FLOOR at all 18 cells while the c8 control (8
+nominal units, 8 dispatches) is CAPTURED at 32,710 ticks. With
+session 8 (grid axis alone, cost-realized 4.63x, unreachable) and
+session 9 (fatness axis alone, nominal, unreachable), the capture is
+not a total-work threshold on ANY knob combination tested to date;
+dispatch count stays implicated. NAMED, NOT HIDDEN: the joint knob's
+cost realization is marginal over the grid knob alone (host_ns gf/c2
+5.92x for nominal 64x; gf/g8 = 1.07x -- the fatness knob adds ~7%
+realized cost; the grid knob realizes 5.55x here vs session 8's
+committed 4.63x), so branch (c) closes the NOMINAL joint axis only
+and a genuinely COST-CALIBRATED joint dose at B=2 stays UNMEASURED.
+Observable only; NO causal mechanism is claimed or measured. Rule 4
+binds: no row moves, no `:measured?` flag moves, and no vendor
+optimization exists for Intel. Evidence:
+`docs/evidence/gpu/anv-gridfat-20261027/` (record.txt is the finding;
+publication-s10.txt is produced only by analysis-s10.py over the
+committed run logs).
