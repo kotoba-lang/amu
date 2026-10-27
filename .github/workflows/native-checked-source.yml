@@ -48,50 +48,63 @@ jobs:
           persist-credentials: false
       - name: Verify adopted compiler source and image pins
         run: python3 scripts/seed/check-native-identities.py
-      - name: Native checked source, independent KIR payloads and executed mutants
+      - name: Stage independent source identity gate plan
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+          NATIVE_COMPILER: ${{ matrix.compiler }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          compiler = str(Path.cwd() / os.environ["NATIVE_COMPILER"])
+          # Admit the longest derivation first. These independent observers
+          # use separate fixture/cache directories and retain every control.
+          gates = [
+              ("checked-source", "check-checked-source-native.py", "checked-source"),
+              ("identity-resource", "check-identity-resource-native.py", "identity-resource"),
+              ("definition-effects", "check-definition-effects-native.py", "definition-effects"),
+              ("source-vectors", "check-source-vectors-native.py", "source-vectors"),
+          ]
+          rows = [dict(name=name, argv=["python3", "scripts/seed/" + script,
+                  "--compiler", compiler, "--output", "@TEMP@/" + output])
+                  for name, script, output in gates]
+          plan = dict(schema="amu.native-gate-plan.v1", phases={"source-identity": rows})
+          (Path(os.environ["RUNNER_TEMP"]) / "source-identity-plan.json").write_text(json.dumps(plan) + "\n")
+          PY
+      - name: Native source, effect and resource controls through the shared two-slot plan
         env:
           PYTHONDONTWRITEBYTECODE: "1"
         run: >-
           python3 scripts/seed/native_build_queue.py
-          --phase native-checked-source
+          --manifest "$RUNNER_TEMP/source-identity-plan.json"
+          --phase source-identity --jobs 2
           --slot-dir "$RUNNER_TEMP/native-build-slots"
-          --output "$RUNNER_TEMP/source-admission.json" --
-          python3 scripts/seed/check-checked-source-native.py
-          --compiler "$PWD/${{ matrix.compiler }}"
-          --output "$RUNNER_TEMP/checked-source"
-      - name: Native named effect rows, pinned catalog and independent payloads
+          --output "$RUNNER_TEMP/source-identity-schedule"
+      - name: Retain completed gate admission records
+        if: always()
         env:
           PYTHONDONTWRITEBYTECODE: "1"
-        run: >-
-          python3 scripts/seed/native_build_queue.py
-          --phase native-definition-effects
-          --slot-dir "$RUNNER_TEMP/native-build-slots"
-          --output "$RUNNER_TEMP/effects-admission.json" --
-          python3 scripts/seed/check-definition-effects-native.py
-          --compiler "$PWD/${{ matrix.compiler }}"
-          --output "$RUNNER_TEMP/definition-effects"
-      - name: Explicit identity resource profiles and native persistent object parity
-        env:
-          PYTHONDONTWRITEBYTECODE: "1"
-        run: >-
-          python3 scripts/seed/native_build_queue.py
-          --phase native-identity-resource
-          --slot-dir "$RUNNER_TEMP/native-build-slots"
-          --output "$RUNNER_TEMP/identity-resource-admission.json" --
-          python3 scripts/seed/check-identity-resource-native.py
-          --compiler "$PWD/${{ matrix.compiler }}"
-          --output "$RUNNER_TEMP/identity-resource"
-      - name: Native vector identities and executed mutable and immutable alias controls
-        env:
-          PYTHONDONTWRITEBYTECODE: "1"
-        run: >-
-          python3 scripts/seed/native_build_queue.py
-          --phase native-source-vectors
-          --slot-dir "$RUNNER_TEMP/native-build-slots"
-          --output "$RUNNER_TEMP/source-vectors-admission.json" --
-          python3 scripts/seed/check-source-vectors-native.py
-          --compiler "$PWD/${{ matrix.compiler }}"
-          --output "$RUNNER_TEMP/source-vectors"
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          schedule = root / "source-identity-schedule/schedule.json"
+          if schedule.exists():
+              report = json.loads(schedule.read_text())
+              assert report["jobs"] == report["capacity"] == 2
+              names = {"checked-source": "source-admission.json",
+                       "identity-resource": "identity-resource-admission.json",
+                       "definition-effects": "effects-admission.json",
+                       "source-vectors": "source-vectors-admission.json"}
+              for gate in report["gates"]:
+                  admission = dict(schema="amu.native-build-admission.v1", **gate)
+                  (root / names[gate["name"]]).write_text(json.dumps(admission) + "\n")
+              if report["status"] == "COMPLETED":
+                  assert {gate["name"] for gate in report["gates"]} == set(names)
+          PY
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
@@ -105,4 +118,6 @@ jobs:
             ${{ runner.temp }}/identity-resource-admission.json
             ${{ runner.temp }}/source-vectors
             ${{ runner.temp }}/source-vectors-admission.json
+            ${{ runner.temp }}/source-identity-plan.json
+            ${{ runner.temp }}/source-identity-schedule
           if-no-files-found: error
