@@ -4,8 +4,8 @@
 ;; names come from its slots; globals come from its resolved FN records. Sugar
 ;; is serialized by the checked head code, never by a stale source token.
 ;;
-;; The first bridge preserves the scalar/word interfaces and closed expression
-;; heads below. Loops, closures, state, schemas, parametric refinements and
+;; The bridge preserves scalar/word and closed parametric interfaces and the
+;; expression heads below. Loops, closures, state, schemas, type refinements and
 ;; capabilities still refuse atomically. They must be bridged before the whole
 ;; compiler can use this entry. The source fuel/arena proof is a separate build
 ;; context; KIR identity alone does not qualify source-route object reuse.
@@ -44,10 +44,29 @@
             (> slot (nm-ff M (vector-at C 3) FF-NSLOTS)))
       (dsb-bad C 3 n)
       (string-concat (dsb-prefix (vector-at C 2)) (mem-u2dec slot)))))
-(defn- dsb-type [C :vector-i64 ty :i64] :string
-  (case ty TY-I64 ":i64" TY-BOOL ":bool" TY-STR ":string"
-    TY-VEC ":vector-i64" TY-BYTES ":bytes" TY-KW ":keyword"
-    (dsb-bad C 2 ty)))
+;; CT-LIST also represents fixed-length tuples, and CT-OPTION's second field
+;; distinguishes :option-i64 from [:option :i64]. Never erase those refinements.
+;; A checked table index is not a canonical type spelling or a portable ID.
+(defn- dsb-type [M :vector-i64 C :vector-i64 ty :i64 depth :i64] :string
+  (cond (or (> depth 64) (not= (vector-at C 0) 0)) (dsb-bad C 2 ty)
+    (< ty TY-COMP-BASE)
+      (case ty TY-I64 ":i64" TY-BOOL ":bool" TY-STR ":string"
+        TY-VEC ":vector-i64" TY-BYTES ":bytes" TY-KW ":keyword"
+        (dsb-bad C 2 ty))
+    (or (= (vector-at M MM-CT) 0) (= ty TY-COMP-BASE)
+        (>= (- ty TY-COMP-BASE) (vector-at M (+ (vector-at M MM-CT) CT-N)))) (dsb-bad C 2 ty)
+    :else
+      (let [ctor (ck-tcon M ty) a (ck-ta M ty) b (ck-tb M ty)
+            unary (or (= ctor TC-LIST) (= ctor TC-SET) (= ctor TC-OPTION))
+            binary (or (= ctor TC-MAP) (= ctor TC-RESULT))
+            name (case ctor TC-LIST ":list" TC-SET ":set" TC-OPTION ":option"
+                            TC-MAP ":map" TC-RESULT ":result" "")]
+        (if (or (not (or unary binary)) (and unary (not= b 0))
+                (<= a 0) (and binary (<= b 0))) (dsb-bad C 2 ty)
+          (let [left (dsb-type M C a (inc depth))
+                right (if binary (string-concat " " (dsb-type M C b (inc depth))) "")]
+            (string-concat "[" (string-concat name
+              (string-concat " " (string-concat left (string-concat right "]"))))))))))
 (defn- dsb-literal? [M :vector-i64 n :i64] :bool
   (let [kind (nm-kind M n)]
     (or (= kind ND-INT) (= kind ND-STR) (= kind ND-KW)
@@ -126,14 +145,14 @@
 (defn- dsb-params [M :vector-i64 C :vector-i64 p :i64 types :bool] :string
   (loop [n (nm-first M p) out "" count 0]
     (if (or (= n 0) (not= (vector-at C 0) 0)) out
-      (let [t (nm-next M n) value (if types (dsb-type C (nm-nf M n NF-TYPE)) (dsb-local M C n))]
+      (let [t (nm-next M n) value (if types (dsb-type M C (nm-nf M n NF-TYPE) 0) (dsb-local M C n))]
         (if (or (= t 0) (= (nm-head-of M n) HD-AMP)) (dsb-bad C 3 n)
           (recur (nm-next M t) (string-concat out (string-concat " " value)) (inc count)))))))
 (defn- dsb-function [M :vector-i64 S :string C :vector-i64 f :i64] :string
   (let [node (nm-ff M f FF-NODE) params (nm-nth M node 2)
         set-f (vector-assoc! C 3 f)
         names (dsb-params M C params false) types (dsb-params M C params true)
-        result (dsb-type C (nm-ff M f FF-RTYPE))
+        result (dsb-type M C (nm-ff M f FF-RTYPE) 0)
         body (dsb-expr M S C (nm-nth M node 4) 0)]
     (string-concat "{:name " (string-concat (dsb-name M S f)
       (string-concat " :params [" (string-concat names (string-concat "] :param-types ["
