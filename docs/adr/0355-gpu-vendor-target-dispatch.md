@@ -313,3 +313,27 @@ and no vendor optimization exists for Intel. Evidence:
 `docs/evidence/gpu/anv-cmdcount-20261027/` (record.txt is the
 finding; publication-s6.txt is produced only by analysis-s6.py over
 the committed run logs).
+
+## Dated note (2026-10-27, JUN-59 measurement: B-onset localization)
+
+Session 6's named residual -- "why capture turns on between B=2 and
+B=4" -- is narrowed on its observable axis: the batch-bracket onset
+grid. The instrument is the archived session-6 snapshot used
+BYTE-IDENTICAL (zero derivation edits; only the -DBATCH build value
+varies, BARRIER_N=0); 21 fresh processes (B in {1,2,3,4,5,6,8}, 3 runs
+each); custody entirely before any run. MEASURED at the INSTRUMENT
+channel: capture turns on STRICTLY BETWEEN B=2 AND B=3 -- b2n0 sits at
+the 31-tick floor (band 31..32) while b3n0 is captured (pooled median
+5,520 ticks at (sum,128,S=16), 4,254..5,526 over the 18 cells). The
+controls reproduce the committed anchors to +0.05% (B=4: 11,680 vs
+11,674) and +0.11% (B=8: 32,951 vs 32,915), and this session's
+pre-registered control criteria are numeric per-B agreement (the named
+fix for session 6's frozen-threshold defect). The per-dispatch derived
+figure is a SEPARATE transition: 1,840 (B=3) and 2,920 (B=4) sit below
+the committed flat band 3,455.69..4,369.81 ticks/dispatch, entering it
+by B=5 (3,477) and staying inside at B=6,8. Observable only; NO causal
+mechanism is claimed or measured. Rule 4 binds: no row moves, no
+`:measured?` flag moves, and no vendor optimization exists for Intel.
+Evidence: `docs/evidence/gpu/anv-bonset-20261027/` (record.txt is the
+finding; publication-s7.txt is produced only by analysis-s7.py over
+the committed run logs).

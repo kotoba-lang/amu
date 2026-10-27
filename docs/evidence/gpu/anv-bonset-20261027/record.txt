@@ -1,0 +1,142 @@
+JUN-59 -- session 7 record: B-ONSET LOCALIZATION (BONSET),
+INSTRUMENT channel. 2026-10-27. Chain PR #1636
+(bot/amu-gpu-chain-20261027-10).
+
+1. ROW QUESTION (session 6's named residual, narrowed): AT WHICH BATCH
+   COUNT B DOES THE BRACKET LEAVE THE FLOOR -- is the onset between
+   B=2 and B=3, between B=3 and B=4, or is there an intermediate state
+   at B=3? Observable-dependence scope only -- NO causal mechanism is
+   tested or claimed.
+
+2. INSTRUMENT DERIVATION (chain of custody): base = the archived
+   session-6 snapshot (9847b0f1..., re-sha256 MATCH in host-verify);
+   derivation = ZERO edits -- the session-6 instrument already
+   parameterizes BATCH (since session 4) and BARRIER_N, and this
+   session uses it BYTE-IDENTICAL (the archived copy
+   gpu-subgroup-reduce-anv-bonset.c.txt carries the same digest); the
+   only varying quantity is the -DBATCH=<B> build-time value, with
+   BARRIER_N=0 for every arm. There is no instrument-derivation.diff
+   because there is no diff; the absence is asserted by the digest
+   equality in host-verify-s7.txt. Sessions 1/2/4/5/6 instruments stay
+   byte-stable. cases-s7.txt cell lines are a BYTE-COPY of session 6's
+   (24 cells, diff exit 0 verified in the derivation step; only the
+   manifest's comment header names this session).
+
+3. CHAIN OF CUSTODY (host-verify-s7.txt, ALL of it before ANY run):
+   corpus 16/16 digests MATCH session 2's committed
+   compile-toolchain.txt census (parsed programmatically from that
+   committed file, never transcribed); instrument + manifest
+   local-vs-host MATCH (9847b0f1... / e7fc3061...); the instrument is
+   byte-identical to the session-6 base (YES). GO.
+
+4. HARDWARE RAN (MEASURED): 21 fresh processes (7 arms x 3 runs), run
+   window 2026-10-27T11:53:24Z..2026-10-27T11:53:38Z, rc=0 21/21,
+   stderr 0 bytes 21/21, 450 SAMPLE lines each (18 pipeline-ok cells
+   x 25 rounds); headers byte-identical across all runs outside the
+   # n= knob line; every run's batch= field == its arm and barrier_n=0
+   everywhere; forcing reality 378/378; VERIFY mismatch 0 everywhere;
+   S=8 fail-closed 126/126. Host: aiueos-6600hs-1 (BMG G31 / ANV),
+   1 tick = 52.083 ns. Per-run transcript (host date -u, rc):
+   run b1n0 r1 rc=0 2026-10-27T11:53:24Z
+   run b1n0 r2 rc=0 2026-10-27T11:53:24Z
+   run b1n0 r3 rc=0 2026-10-27T11:53:24Z
+   run b2n0 r1 rc=0 2026-10-27T11:53:25Z
+   run b2n0 r2 rc=0 2026-10-27T11:53:25Z
+   run b2n0 r3 rc=0 2026-10-27T11:53:25Z
+   run b3n0 r1 rc=0 2026-10-27T11:53:26Z
+   run b3n0 r2 rc=0 2026-10-27T11:53:26Z
+   run b3n0 r3 rc=0 2026-10-27T11:53:27Z
+   run b4n0 r1 rc=0 2026-10-27T11:53:27Z
+   run b4n0 r2 rc=0 2026-10-27T11:53:28Z
+   run b4n0 r3 rc=0 2026-10-27T11:53:28Z
+   run b5n0 r1 rc=0 2026-10-27T11:53:29Z
+   run b5n0 r2 rc=0 2026-10-27T11:53:30Z
+   run b5n0 r3 rc=0 2026-10-27T11:53:30Z
+   run b6n0 r1 rc=0 2026-10-27T11:53:31Z
+   run b6n0 r2 rc=0 2026-10-27T11:53:32Z
+   run b6n0 r3 rc=0 2026-10-27T11:53:33Z
+   run b8n0 r1 rc=0 2026-10-27T11:53:35Z
+   run b8n0 r2 rc=0 2026-10-27T11:53:36Z
+   run b8n0 r3 rc=0 2026-10-27T11:53:38Z
+
+5. FINDINGS (publication-s7.txt, produced ONLY by analysis-s7.py over
+   the committed run logs, run twice byte-identical -- diff exit 0):
+
+   (a) O3 CONTROL REPLICATION fired branch (a) -- all four controls
+       satisfy their frozen criteria (b1n0/b2n0 FLOOR at 31 ticks;
+       b4n0 11,680 vs committed 11,674 = +0.05%; b8n0 32,951 vs
+       committed 32,915 = +0.11%; both inside the frozen +/-5%).
+       NAMED, NOT HIDDEN: unlike session 6's C1, the criteria here are
+       numeric agreement with the committed value at each control's own
+       B, frozen before the run -- session 6's threshold defect is not
+       repeated. O1-O2 are therefore evaluated against the row.
+
+   (b) O1 fired branch (a) AS FROZEN: b3n0 is CAPTURED (pooled median
+       5,520 ticks at (sum,128,S=16), per-run band 5,499..5,544,
+       min..max 4,254..5,526 over the 18 cells) while b2n0 sits at the
+       FLOOR (31 ticks, band 31..32). CAPTURE TURNS ON STRICTLY
+       BETWEEN B=2 AND B=3: the committed "between 2 and 4" onset band
+       is NARROWED on the low side to the single integer step 2 -> 3.
+       Observable only; NO causal mechanism is claimed or measured.
+
+   (c) O2 (descriptive): the per-dispatch derived figure climbs through
+       the onset and only reaches the committed flat band above it --
+       B=3 1,840.0, B=4 2,920.0 (reproducing committed 2,918), B=5
+       3,477.2 (inside the committed flat band 3,455.69..4,369.81),
+       B=6 3,788.3 (inside), B=8 4,118.9 (inside). So capture onset
+       (B=3) and per-dispatch convergence (B>=5) are DIFFERENT
+       transitions on this instrument; where the per-dispatch figure
+       enters the band is between B=4 and B=5 (this session's numbers,
+       2 grid points, no interpolation claim).
+
+   (d) O4 (descriptive): this session's own B-curve at (sum,128,S=16):
+       bracket ticks 31 / 31 / 5,520 / 11,680 / 17,386 / 22,730 /
+       32,951 and host_ns 355,253 / 679,998 / 960,432 / 1,279,136 /
+       1,582,402 / 1,863,736 / 3,038,388 for B = 1/2/3/4/5/6/8. The
+       host_ns curve rises smoothly through B=2 (679,998 ns of real
+       work under a floor-pinned bracket) while the bracket jumps
+       31 -> 5,520 between B=2 and B=3; the bracket is not linear at
+       onset. Counts/ratios only.
+
+   RULE 4: NOTHING MOVES -- no workgroup row, no :measured? flag, no
+   selection answer; accelerator-targets defaults remain provisional
+   design assumptions (:measured? false); this is NOT the
+   basis-replacing baseline-vs-variant contract of
+   accelerator-subgroup-reduce.cljk; NO vendor optimization exists for
+   Intel and none is claimed.
+
+   UNMEASURED named: any causal mechanism for the undercount, the
+   capture, or the onset location; WHY capture turns on where it does;
+   B=7; any B outside {1,2,3,4,5,6,8}; any N>0 at these B; session 2's
+   run-1 dip cause; cross-day replication; S=8 timing; every W outside
+   {128,256}; shape 2; BT ordering; any baseline-vs-variant sign;
+   isolated single-dispatch timing; non-empty barriers; anything off
+   this host.
+
+   NAMED, NOT HIDDEN (authoring): analysis-s7.py's first draft printed
+   "vs committed floor None" for the three new B values (B=3,5,6);
+   the wording was fixed to "(no committed anchor at this B -- new)"
+   BEFORE the recorded publication; the recorded publication-s7.txt is
+   produced by the final script, run twice byte-identical (diff exit
+   0). The pre-fix output existed only in the tick transcript.
+
+6. STATES: emitter arm/dispatch/selection rows IMPLEMENTED (code +
+   tests, unchanged -- this diff touches NO .cljk namespace); the
+   bonset instrument use + analysis-s7.py validated by complete runs;
+   MEASURED only what publication-s7.txt sections 1-4 say.
+
+7. Gates (real runs this tick): gpu_regime_classify.py --self-test
+   TOTAL 2649 assertions/0 failed (pin); scoped GPU gate GREEN 123
+   tests / 12162 assertions / 0 failures / 0 errors run 1 AND run 2
+   (scratch runner gpu_scoped_gate.cljk, never committed); FULL
+   run-tests.cljk RUN LIVE THIS TICK: exit 1, RED AT BASE 'Could not
+   find namespace: kotoba.form' at namespace load (ADR-0362, outside
+   this diff) -- NO green full suite claimed;
+   find docs/evidence/gpu/anv-bonset-20261027 -name '*.sh' -> 0.
+
+8. CHAIN: this commit lands on the ONE open chain branch
+   bot/amu-gpu-chain-20261027-10 (chain PR #1636), commit + push only.
+   BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head at
+   tick start and re-checked immediately before this push.
+   Evidence: docs/evidence/gpu/anv-bonset-20261027/ + the ADR-0355
+   dated note. (JUN-55, JUN-59)
