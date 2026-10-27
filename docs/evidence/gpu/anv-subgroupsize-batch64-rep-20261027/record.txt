@@ -1,0 +1,155 @@
+JUN-59 subgroup 16-vs-32 sign REPLICATION (batch64 route) -- THIRD
+measurement session, INSTRUMENT channel, COMPLETE except the named
+full-suite gate (section 8) (2026-10-27). One tick, one measurement
+slice. All numbers below are real tool output; nothing unmeasured is
+reported as measured.
+
+THE ROW: session 2's named residual (record.txt of
+anv-subgroupsize-batch64-20261027, sections 4d/6: "(sum,128),(max,128)
+-- run-1 reverses the sign there ... The pooled P1b verdicts at those
+two cells are therefore RUN-SENSITIVE and are NOT reported as stable ...
+the cause of 4d's run-1 anomaly [is] UNMEASURED"). This session is the
+PRE-REGISTERED replication of the per-run sign question: SIX new fresh
+processes of the BYTE-IDENTICAL instrument, same 24 cells, same host
+(aiueos-6600hs-1, BMG G31 / ANV), same INSTRUMENT channel, same batch64
+metric. Protocol (protocol.txt) frozen BEFORE the first run and never
+rewritten; the analysis route is analysis-rep.py over run-rep-1..6.txt
+only (section 7 is DERIVED arithmetic over session 2's committed logs).
+Rule 4 binds in full.
+
+1. WHAT CHANGED IN THE TREE (the diff):
+   - docs/evidence/gpu/anv-subgroupsize-batch64-rep-20261027/ (this
+     dir: protocol.txt, cases-rep.txt, host-verify.txt, run-window.txt,
+     run-rep-1..6.txt + .stderr.txt, analysis-rep.py,
+     publication-rep.txt, classify-selftest.txt, gate-run1/2.txt,
+     record.txt) and the ADR-0355 dated note. NO .cljk namespace is
+     touched; NO source or instrument file is touched. The instrument
+     is used BYTE-IDENTICAL to session 2: local
+     scripts/gpu-subgroup-reduce-anv-subgroupsize-batch.c sha256
+     34d56fa11831cbb3ea0ef61a5580f10689ae6af25f15912d731182e6efd51e06
+     and the session-1 parent instrument stays byte-stable (sha256
+     b409f753a958c3e6a9dcee662b620ad11593ab6bd6cda213fafa93df4579d987,
+     re-derived this tick).
+
+2. CHAIN OF CUSTODY (host-verify.txt, before any run): the host-side
+   instrument binary, instrument source and the 8 .glsl + 8 .spv
+   corpus were sha256-checked against SESSION 2's committed
+   compile-toolchain.txt census -- the expectation source is that
+   committed file itself, parsed programmatically, never transcribed:
+   18/18 digests MATCH (host binary cc7e07b5... as recorded). Any
+   mismatch would have stopped the session per protocol; none did.
+
+3. THE RUNS (HARDWARE RAN -- MEASURED): SIX fresh processes
+   (run-rep-1..6.txt), run windows 2026-10-27T09:43:43Z..09:44:27Z
+   (named for identity; wall time is no metric), each ~7-8 s.
+   INSTRUMENT-EXIT=0 6/6, stderr 0 bytes 6/6. Each log 507 lines = 8
+   header + 24 CELL + 450 SAMPLE (18 pipeline-ok cells x 25 rounds; the
+   6 named S=8 FAIL cells carry none, fail-closed as in sessions 1-2) +
+   24 VERIFY + done + exit line. Headers byte-identical across all 6
+   runs (verified programmatically, publication-rep.txt section 1).
+   No failed stubs this session (all 6 runs clean on first attempt).
+
+4. THE FINDING (publication-rep.txt is the publication; produced ONLY
+   by analysis-rep.py over run-rep-1..6.txt, run TWICE byte-identical
+   -- diff exit 0; analysis-rep.py sha256
+   b27fb804b4c873654dcd8021dbc271498d1f054e6e7125adf8462c7e0ecab41d,
+   publication-rep.txt sha256
+   52d74c3482674de63435a905d18dbf0d885dd21605212396f3d6dc70f7e7936c):
+   a. P1r (sign recurrence, the row question): at BOTH session-2
+      RUN-SENSITIVE cells (sum,128) and (max,128) -- and at all four
+      other (op, W) cells -- the six new runs are CONSISTENT:
+      32faster 6/6 every cell (SIGN = median(S=32) < median(S=16) per
+      run, the pre-registered definition). The run-1-type sign reversal
+      DID NOT REPRODUCE in six same-day fresh processes. Per the
+      pre-registered letter this is "not reproduced in six fresh
+      same-day runs" -- NOT called absent (rare or cross-day recurrence
+      is not excluded by six same-day processes).
+   b. P2r (the dip): NO DIP-RUN in the six (pre-defined: >= 1000 ticks
+      below the median-of-six arm median). Per-run med gpu_ticks of the
+      (sum,128,16) arm: 280235/278547/277818/278113/277951/278999
+      (median-of-six 278330); (max,128,16): 279834/277892/277973/
+      278380/279075/279068 (median-of-six 278724). Session 2's run-1
+      dip magnitude (~3-4k ticks below its runs 2/3) has no counterpart
+      here; the CAUSE of that dip stays UNMEASURED (this protocol could
+      only re-observe or not).
+   c. P3r HOLDS: forcing reality 108/108 pipeline-ok cell-runs
+      (probe_size == forced size, 32 at default; probe_nsub == W/size);
+      correctness mismatch=0 across every VERIFY line of all 6 runs.
+   d. P4r HOLDS: the batch64 floor stays lifted at every measured arm
+      (pooled median brackets 229,384..278,880 ticks over 150 samples
+      per arm, far above the pre-registered 248-tick condition).
+   e. DERIVED cross-session (section 7, arithmetic over session 2's
+      committed logs -- NOT this session's measurement): across the 9
+      processes now on record, (sum,128) and (max,128) are 32faster in
+      8/9 (the sole contrary run is session 2's run-1); the other four
+      cells are 32faster 9/9.
+
+5. RULE 4 -- NOTHING MOVES: no workgroup row, no :measured? flag, no
+   :size/:shapes, no selection answer (the :intel row 128 /
+   :measured? true / key "g31" keeps its ADR-0358 provenance; :arm/
+   :unknown stay provisional :measured? false -- accelerator-targets
+   defaults remain design assumptions, not evidence). This is NOT the
+   basis-replacing baseline-vs-variant contract of
+   accelerator-subgroup-reduce.cljk. NO vendor optimization exists for
+   Intel and none is claimed. The finding changes STATUS IN WORDS ONLY:
+   the pooled verdicts at (sum,128)/(max,128) gain a six-run same-day
+   CONSISTENT replication and are still not called stable in general
+   (session 2's run-1 stands on the record; the anomaly's cause is
+   UNMEASURED; cross-day is UNMEASURED).
+
+6. STATES: IMPLEMENTED (code + tests, unchanged by this diff -- it
+   touches NO .cljk namespace): the emitter arm, dispatch table,
+   device-class, subgroup-answer, variant selection. VALIDATED by
+   complete runs this session: the batch64 instrument (re-used
+   byte-identical, 18/18 digests) + analysis-rep.py (complete runs,
+   byte-identical). MEASURED (this session's logs only): section 4.
+   UNMEASURED named: the cause of session 2's run-1 dip and of any
+   future dip, cross-day replication, isolated single-dispatch timing
+   above any floor, S=8 timing (not realizable), every W outside
+   {128,256}, shape 2, any baseline-vs-variant sign, anything off this
+   host.
+
+7. NAMED, NOT HIDDEN:
+   - The scratch scoped-gate runner's first draft deref'd this
+     engine's :report-counters as an atom ("No protocol method
+     IDeref.-deref defined for type object: {:test 0, ...}") -- the
+     gate itself RAN GREEN in that very attempt (123 tests / 12162
+     assertions / 0 failures / 0 errors printed by the engine's own
+     summary) and only the post-run summary line failed; the runner
+     was fixed to the proven :end-run-tests summary hook (the pattern
+     in kotoba-lang/mail-a2a and toshokan-patents run-tests runners)
+     BEFORE the recorded gate-run1/2.txt. The scratch runner
+     gpu_scoped_gate.cljk is NOT committed (removed from the worktree
+     after the gates).
+   - The host-verify expectations are PARSED from session 2's committed
+     compile-toolchain.txt rather than transcribed (a hand-transcribed
+     digest table was drafted and discarded unread-by-hardware for
+     exactly this reason: literal preservation).
+   - The FULL run-tests.cljk gate was NOT RUN this tick (the tick's
+     time budget ended before it); it is the ONE named gap in this
+     session's gate set. The suite's last observed state is the parent
+     commit's live run (log
+     anv-subgroupsize-batch64-20261027/full-run-tests.txt: exit 1, RED
+     AT BASE 'Could not find namespace: kotoba.form' at namespace load
+     -- ADR-0362, outside this diff). NO green full suite is claimed,
+     and this session's claim is only the scoped green below.
+
+8. GATES (real runs this tick):
+   - gpu_regime_classify.py --self-test: "TOTAL: 2649 assertions
+     passed, 0 failed" (committed pin 2649/0; no classify code
+     touched; log classify-selftest.txt).
+   - scoped GPU gate (8 GPU-owned namespaces, scratch runner, never
+     committed): GREEN 123 tests / 12162 assertions / 0 failures / 0
+     errors on run 1 AND run 2 (exit 0 both; the diff touches NO
+     .cljk namespace -- the committed 123/12162 pin holds; logs
+     gate-run1/2.txt).
+   - FULL run-tests.cljk: NOT RUN this tick (named above, section 7).
+   - find this dir -name '*.sh' -> 0 (the no-POSIX-sh evidence rule;
+     this dir holds .txt/.py only).
+REVIEW CORRECTION (2026-10-27): analysis-rep.py now locates the repository
+from its own file instead of the author's worktree absolute path. Running
+it from a separate checkout reproduces publication-rep.txt byte-for-byte
+(SHA-256 52d74c3482674de63435a905d18dbf0d885dd21605212396f3d6dc70f7e7936c).
+The fixed logs, protocol and publication are unchanged. This is an analysis
+reproducibility repair; no hardware or native qualification was rerun.
+

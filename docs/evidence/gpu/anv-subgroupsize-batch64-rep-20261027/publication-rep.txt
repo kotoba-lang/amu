@@ -1,0 +1,120 @@
+PUBLICATION -- JUN-59 subgroup 16-vs-32 sign REPLICATION
+(batch64 route), session 3 (2026-10-27). Produced ONLY by
+analysis-rep.py over run-rep-1..6.txt (the committed logs of THIS
+session); the cross-session section 7 is DERIVED arithmetic over
+session 2's committed logs and says so. Rule 4 binds: no row moves.
+
+1. RUN IDENTITY (programmatic)
+   header lines: 8 per run; byte-identical across all 6 runs: YES
+   # instrument=anv-subgroupsize-batch v2-batch64 (JUN-59 subgroup 16-vs-32 floor-lifting rerun, 2026-10-27)
+   # device_name=Intel(R) Graphics (BMG G31) vendor=8086 device=e223 api=1.4.318
+   # maxComputeWorkGroupSize=1024,1024,1024
+   # subgroupSize=32 subgroupStages=00003fff subgroupOps=000006ff
+   # subgroupSizeControl: feature=1 computeFullSubgroups=1 min=16 max=32 requiredStages=000000e0
+   # timestampPeriod=52.083 timestampComputeAndGraphics=1
+   # n=1000003 rounds=25 warmup=3 batch=64 seed=20261027 metric=gpu_ns (vkCmdWriteTimestamp BATCH-dispatch bracket; per_dispatch_ns=gpu_ns/batch) +host_ns (CLOCK_MONOTONIC submit->completion)
+   # done cells=24
+   run-rep-1: INSTRUMENT-EXIT=0 run=1 stderr_bytes=0 | cells=24 pipeline-ok=18 samples=450 verify-lines=24
+   run-rep-2: INSTRUMENT-EXIT=0 run=2 stderr_bytes=0 | cells=24 pipeline-ok=18 samples=450 verify-lines=24
+   run-rep-3: INSTRUMENT-EXIT=0 run=3 stderr_bytes=0 | cells=24 pipeline-ok=18 samples=450 verify-lines=24
+   run-rep-4: INSTRUMENT-EXIT=0 run=4 stderr_bytes=0 | cells=24 pipeline-ok=18 samples=450 verify-lines=24
+   run-rep-5: INSTRUMENT-EXIT=0 run=5 stderr_bytes=0 | cells=24 pipeline-ok=18 samples=450 verify-lines=24
+   run-rep-6: INSTRUMENT-EXIT=0 run=6 stderr_bytes=0 | cells=24 pipeline-ok=18 samples=450 verify-lines=24
+
+2. P3r (FORCING REALITY + CORRECTNESS)
+   forcing reality: 108/108 pipeline-ok cell-runs verify (probe_size
+   == forced size (32 at default), probe_nsub == W/size)
+   correctness: total mismatch across all VERIFY lines of all 6
+   runs = 0  -> HOLDS (mismatch=0 everywhere)
+
+3. PER-RUN ARM MEDIANS (per_dispatch_ns; gpu_ticks in parens)
+   med(r, op, W, S) per protocol.txt; 25 samples per arm per run
+   (sum,W=128,S=16) r1:228055.82(280235)  r2:226682.12(278547)  r3:226088.86(277818)  r4:226328.93(278113)  r5:226197.10(277951)  r6:227049.96(278999)
+   (sum,W=128,S=32) r1:226757.81(278640)  r2:225435.38(277015)  r3:225181.47(276703)  r4:224280.59(275596)  r5:225560.70(277169)  r6:226710.61(278582)
+   (sum,W=128,S=default) r1:226455.07(278268)  r2:226328.12(278112)  r3:225747.88(277399)  r4:224302.57(275623)  r5:225648.59(277277)  r6:224515.78(275885)
+   (sum,W=256,S=16) r1:188287.76(231368)  r2:188153.48(231203)  r3:187900.39(230892)  r4:187972.00(230980)  r5:187814.94(230787)  r6:187829.59(230805)
+   (sum,W=256,S=32) r1:186986.49(229769)  r2:186671.54(229382)  r3:186893.71(229655)  r4:186784.66(229521)  r5:186529.94(229208)  r6:186945.80(229719)
+   (sum,W=256,S=default) r1:186969.40(229748)  r2:187069.49(229871)  r3:186643.88(229348)  r4:186285.80(228908)  r5:186722.00(229444)  r6:186728.51(229452)
+   (max,W=128,S=16) r1:227729.49(279834)  r2:226149.08(277892)  r3:226215.00(277973)  r4:226546.22(278380)  r5:227111.81(279075)  r6:227106.11(279068)
+   (max,W=128,S=32) r1:226758.62(278641)  r2:226029.45(277745)  r3:226083.17(277811)  r4:224436.03(275787)  r5:225791.82(277453)  r6:226040.03(277758)
+   (max,W=128,S=default) r1:226330.56(278115)  r2:225672.20(277306)  r3:226163.73(277910)  r4:223610.83(274773)  r5:225875.65(277556)  r6:225985.51(277691)
+   (max,W=256,S=16) r1:188038.73(231062)  r2:187762.85(230723)  r3:187909.34(230903)  r4:187816.56(230789)  r5:187715.65(230665)  r6:187675.78(230616)
+   (max,W=256,S=32) r1:186694.33(229410)  r2:186843.26(229593)  r3:186730.95(229455)  r4:186472.16(229137)  r5:186888.02(229648)  r6:186720.37(229442)
+   (max,W=256,S=default) r1:186823.73(229569)  r2:186821.28(229566)  r3:186667.48(229377)  r4:186542.15(229223)  r5:186625.16(229325)  r6:186683.75(229397)
+   (min,W=128,S=16) r1:227540.68(279602)  r2:227167.15(279143)  r3:227005.20(278944)  r4:226238.60(278002)  r5:226328.12(278112)  r6:226891.27(278804)
+   (min,W=128,S=32) r1:226637.36(278492)  r2:225887.04(277570)  r3:225893.55(277578)  r4:225513.50(277111)  r5:226061.19(277784)  r6:225922.85(277614)
+   (min,W=128,S=default) r1:227359.21(279379)  r2:225965.98(277667)  r3:225875.65(277556)  r4:225301.10(276850)  r5:225535.48(277138)  r6:224883.62(276337)
+   (min,W=256,S=16) r1:188247.88(231319)  r2:188000.48(231015)  r3:188044.43(231069)  r4:187796.22(230764)  r5:187749.83(230707)  r6:188062.33(231091)
+   (min,W=256,S=32) r1:186765.95(229498)  r2:186861.97(229616)  r3:186891.27(229652)  r4:186719.56(229441)  r5:186620.28(229319)  r6:186761.88(229493)
+   (min,W=256,S=default) r1:186912.43(229678)  r2:187144.36(229963)  r3:186795.24(229534)  r4:186392.41(229039)  r5:186494.95(229165)  r6:186737.46(229463)
+
+4. P1r (SIGN RECURRENCE) -- sign per run at each (op, W)
+   SIGN(r, op, W) = 32faster iff med(S=32) < med(S=16), else
+   16faster-or-tie (protocol.txt's named definition)
+   (sum,W=128) r1:32faster  r2:32faster  r3:32faster  r4:32faster  r5:32faster  r6:32faster
+   (sum,W=256) r1:32faster  r2:32faster  r3:32faster  r4:32faster  r5:32faster  r6:32faster
+   (max,W=128) r1:32faster  r2:32faster  r3:32faster  r4:32faster  r5:32faster  r6:32faster
+   (max,W=256) r1:32faster  r2:32faster  r3:32faster  r4:32faster  r5:32faster  r6:32faster
+   (min,W=128) r1:32faster  r2:32faster  r3:32faster  r4:32faster  r5:32faster  r6:32faster
+   (min,W=256) r1:32faster  r2:32faster  r3:32faster  r4:32faster  r5:32faster  r6:32faster
+
+   P1r verdicts (the two session-2 RUN-SENSITIVE cells first):
+   (sum,W=128) [SESSION-2-RUN-SENSITIVE] CONSISTENT (32faster 6/6)
+   (max,W=128) [SESSION-2-RUN-SENSITIVE] CONSISTENT (32faster 6/6)
+   (sum,W=256) [session-2-consistent] CONSISTENT (32faster 6/6)
+   (max,W=256) [session-2-consistent] CONSISTENT (32faster 6/6)
+   (min,W=128) [session-2-consistent] CONSISTENT (32faster 6/6)
+   (min,W=256) [session-2-consistent] CONSISTENT (32faster 6/6)
+
+5. P2r (THE DIP) -- per-run med gpu_ticks of the (op, W=128, S=16) arms
+   DIP-RUN pre-defined: >= 1000 ticks below the median of the six
+   runs' medians at that arm (protocol.txt)
+   (sum,128,16) per-run med gpu_ticks: r1:280235 r2:278547 r3:277818 r4:278113 r5:277951 r6:278999 | median-of-six=278330.00
+   (sum,128) dip classification: no DIP-RUN in the six
+   (max,128,16) per-run med gpu_ticks: r1:279834 r2:277892 r3:277973 r4:278380 r5:279075 r6:279068 | median-of-six=278724.00
+   (max,128) dip classification: no DIP-RUN in the six
+
+6. P4r (FLOOR STILL LIFTED) -- pooled median bracket gpu_ticks per
+   measured (op, W, S) arm over all 6 runs x 25 rounds; condition
+   >= 248 ticks (session 2's pre-registered floor-lift threshold)
+   (sum,W=128,S=16) pooled median 278486.50 ticks over 150 samples: ok
+   (sum,W=128,S=32) pooled median 277579.00 ticks over 150 samples: ok
+   (sum,W=128,S=default) pooled median 277632.00 ticks over 150 samples: ok
+   (sum,W=256,S=16) pooled median 230980.00 ticks over 150 samples: ok
+   (sum,W=256,S=32) pooled median 229607.50 ticks over 150 samples: ok
+   (sum,W=256,S=default) pooled median 229392.50 ticks over 150 samples: ok
+   (max,W=128,S=16) pooled median 278880.00 ticks over 150 samples: ok
+   (max,W=128,S=32) pooled median 277694.50 ticks over 150 samples: ok
+   (max,W=128,S=default) pooled median 277493.50 ticks over 150 samples: ok
+   (max,W=256,S=16) pooled median 230820.00 ticks over 150 samples: ok
+   (max,W=256,S=32) pooled median 229434.00 ticks over 150 samples: ok
+   (max,W=256,S=default) pooled median 229384.50 ticks over 150 samples: ok
+   (min,W=128,S=16) pooled median 278770.50 ticks over 150 samples: ok
+   (min,W=128,S=32) pooled median 277727.00 ticks over 150 samples: ok
+   (min,W=128,S=default) pooled median 277508.50 ticks over 150 samples: ok
+   (min,W=256,S=16) pooled median 230964.50 ticks over 150 samples: ok
+   (min,W=256,S=32) pooled median 229476.50 ticks over 150 samples: ok
+   (min,W=256,S=default) pooled median 229458.00 ticks over 150 samples: ok
+   P4r: HOLDS (every measured cell >= 248 ticks)
+
+7. DERIVED CROSS-SESSION (arithmetic over session 2's committed
+   logs anv-subgroupsize-batch64-20261027/run-1..3.txt -- NOT a
+   measurement of this session; the logs are read for arithmetic
+   only and are not rewritten)
+   (sum,W=128) s2r1:16faster-or-tie  s2r2:32faster  s2r3:32faster  r1:32faster  r2:32faster  r3:32faster  r4:32faster  r5:32faster  r6:32faster | 32faster in 8/9
+   (sum,W=256) s2r1:32faster  s2r2:32faster  s2r3:32faster  r1:32faster  r2:32faster  r3:32faster  r4:32faster  r5:32faster  r6:32faster | 32faster in 9/9
+   (max,W=128) s2r1:16faster-or-tie  s2r2:32faster  s2r3:32faster  r1:32faster  r2:32faster  r3:32faster  r4:32faster  r5:32faster  r6:32faster | 32faster in 8/9
+   (max,W=256) s2r1:32faster  s2r2:32faster  s2r3:32faster  r1:32faster  r2:32faster  r3:32faster  r4:32faster  r5:32faster  r6:32faster | 32faster in 9/9
+   (min,W=128) s2r1:32faster  s2r2:32faster  s2r3:32faster  r1:32faster  r2:32faster  r3:32faster  r4:32faster  r5:32faster  r6:32faster | 32faster in 9/9
+   (min,W=256) s2r1:32faster  s2r2:32faster  s2r3:32faster  r1:32faster  r2:32faster  r3:32faster  r4:32faster  r5:32faster  r6:32faster | 32faster in 9/9
+
+8. STATES / UNMEASURED (echo of protocol.txt, unchanged)
+   MEASURED: only sections 2-6 above, from THIS session's six
+   committed logs. UNMEASURED (named, unchanged): the cause of any
+   dip (including session 2's run-1 dip), cross-day replication,
+   every W outside {128,256}, shape 2, isolated single-dispatch
+   timing above any floor, any baseline-vs-variant sign, anything
+   off this host. RULE 4: no workgroup row, no :measured? flag, no
+   :size/:shapes, no selection answer moves on this evidence.
+   NO vendor optimization exists for Intel and none is claimed.
+   END.

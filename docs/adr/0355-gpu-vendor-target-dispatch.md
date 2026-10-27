@@ -219,3 +219,29 @@ rows stay provisional, and no vendor optimization exists for Intel.
 Evidence: `docs/evidence/gpu/anv-subgroupsize-batch64-20261027/`
 (record.txt is the finding; publication.txt is produced only by
 analysis.py over the committed run logs).
+
+## Dated note (2026-10-27, JUN-59 measurement: subgroup 16-vs-32 sign
+replication, batch64 route)
+
+The floor-lifting rerun's named residual -- "(sum,128),(max,128)
+RUN-SENSITIVE, run-1 reverses the sign, pooled verdicts NOT reported as
+stable, cause UNMEASURED" -- is REPLICATED at the same cells, host and
+INSTRUMENT channel with six new fresh processes of the byte-identical
+instrument (18/18 corpus+binary digests re-verified against session 2's
+committed census before any run). MEASURED at that channel: the sign is
+CONSISTENT 32faster 6/6 at ALL SIX (op, W) cells including the two
+run-sensitive ones -- the run-1-type reversal DID NOT REPRODUCE in six
+same-day fresh processes (pre-registered letter: "not reproduced", NOT
+called absent; rare and cross-day recurrence not excluded) -- no
+DIP-RUN appears (per-run (op,128,16) med gpu_ticks within ~2.4k ticks
+of the median-of-six), forcing reality 108/108 and bit-exact
+correctness hold, and the batch64 floor stays lifted everywhere.
+Derived arithmetic over the nine processes now on record (the 6 new +
+session 2's 3, publication-rep.txt section 7): the two cells are
+32faster in 8/9, the sole contrary run being session 2's run-1, whose
+cause stays UNMEASURED. Rule 4 binds: no row moves, no `:measured?`
+flag moves, the provisional `:arm`/`:unknown` rows stay provisional,
+and no vendor optimization exists for Intel. Evidence:
+`docs/evidence/gpu/anv-subgroupsize-batch64-rep-20261027/` (record.txt
+is the finding; publication-rep.txt is produced only by analysis-rep.py
+over the committed run logs).
