@@ -881,3 +881,30 @@ optimization exists for Intel.
 Evidence: `docs/evidence/gpu/anv-b3bisect-20261027/` (record.txt is
 the finding; publication-s21.txt is produced only by analysis-s21.py
 over the committed run logs).
+
+## 2026-10-27 -- session 22 (JUN-59): the B=3 threshold bisect, second cut
+
+The session-21 residual "the flip location inside (250,000, 291,667]"
+is taken at n = 270,834 = (1,000,003\*13)//48 -- the nearest reachable
+grid point to the exact floor midpoint 270,833 (unreachable at the
+knob; session 21's record parenthetical "(1,000,003\*9)//33" is an
+arithmetic slip, 272,728 != 270,833 -- named, not erased). With both
+bracket ends replicating IN-SESSION at byte-identical rebuilt binaries
+(lo == committed z3 knob 1,141 vs 1,140 INTERMEDIATE/MIXED; hi ==
+session 21's (7,24) knob 1,320 vs 1,330 CAPTURED -- the pair's first
+cross-session replication), mid is CAPTURED (1,224; 18-cell min
+1,061), so THE B=3 CLASS FLIP SITS IN (250,000, 270,834] n-units =
+(0.2499993, 0.2708332] work-units -- the session-21 bracket is cut to
+its lower half. "B=2 never captures" extends to n=270,834 (b2m FLOOR
+32). C3 (branch (a)): the same-ratio pair (26,96) is behaviourally
+equivalent to (13,48) at the bisect grid (1,218 vs 1,224). The B=3
+class-vs-per-dispatch-work row now stands at seven monotone grid
+points (class granularity only). NAMED, NOT HIDDEN: X1's lo host_ns
+excursion of session 21 (966,683) has reverted here (302,655 =
+0.992x session 19's z3) -- host_ns is not a C criterion (L3), cause
+UNMEASURED. Rule 4 binds: no row moves, no `:measured?` flag moves,
+and no vendor optimization exists for Intel.
+
+Evidence: `docs/evidence/gpu/anv-b3bisect2-20261027/` (record.txt is
+the finding; publication-s22.txt is produced only by analysis-s22.py
+over the committed run logs).
