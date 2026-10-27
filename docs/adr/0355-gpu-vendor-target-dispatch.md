@@ -245,3 +245,24 @@ and no vendor optimization exists for Intel. Evidence:
 `docs/evidence/gpu/anv-subgroupsize-batch64-rep-20261027/` (record.txt
 is the finding; publication-rep.txt is produced only by analysis-rep.py
 over the committed run logs).
+
+## Dated note (2026-10-27, JUN-59 measurement: batch-bracket scaling)
+
+Sessions 2-3's named residual -- "isolated single-dispatch timing above
+any floor" and the mechanism of the session-1-vs-session-2 per-dispatch
+discrepancy UNMEASURED -- is narrowed by the BRACKET-VS-B CURVE of the
+batch instrument (B in {1,2,4,8,16,32,64}, the only independent
+variable; one binary per B; the archived session-2 source with exactly
+one edit). MEASURED at the INSTRUMENT channel: the 31-tick floor of
+session 1 is REPRODUCED at B<=2 (31 ticks at all 18 arms at B=1) while
+the same runs' host_ns shows 351,956 ns of real work; capture turns on
+between B=2 and B=4; the DERIVED per-dispatch figure converges to a
+flat band 3,455.69..4,369.81 ticks (B>=16) containing session 2's
+3,583..4,333. The S=32-vs-16 sign is 32faster at every evaluable
+(B>=4) cell (3/3 runs, one 2/3 split at (min,256) B=4); B<=2 is
+floor-pinned and NOT EVALUABLE. WHY the small-B bracket undercounts
+stays UNMEASURED (no causal mechanism claimed). Rule 4 binds: no row
+moves, no `:measured?` flag moves, and no vendor optimization exists
+for Intel. Evidence: `docs/evidence/gpu/anv-batchscale-20261027/`
+(record.txt is the finding; publication-s4.txt is produced only by
+analysis-s4.py over the committed run logs).
