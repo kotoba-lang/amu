@@ -314,7 +314,7 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
                     ticket_state = Path('llm-ticket-state.bin').read_bytes()
                     ticket_checks = struct.unpack('<12Q', Path('llm-ticket-receipt.bin').read_bytes())
                     assert ticket_checks == (1,)*12, ticket_checks
-                    assert struct.unpack_from('<Q', ticket_state)[0] == 0, 'consumed ticket remained live'
+                    assert ticket_state == bytes(72), 'consumed ticket retained host-owned state'
                     assert Path('llm-ticket-digest.bin').read_bytes() == struct.pack(
                         '<8I', 0x12345678, 0x23456789, 0x3456789a, 0x456789ab,
                         0x56789abc, 0x6789abcd, 0x789abcde, 0x89abcdef)
@@ -322,7 +322,8 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
                         checks=list(ticket_checks), receipt=pin(Path('llm-ticket-receipt.bin')),
                         state=pin(Path('llm-ticket-state.bin')),
                         digest=pin(Path('llm-ticket-digest.bin')),
-                        oneUseAndBindingComponent=True, trustedApproval=False,
+                        oneUseAndBindingComponent=True, erasedOnConsume=True,
+                        trustedApproval=False,
                         providerDispatch=False, userCall=False)
         else:
             llm_request = None
