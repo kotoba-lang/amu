@@ -1,0 +1,116 @@
+JUN-59 -- session 5 protocol: TIMESTAMP-STAGE DISCRIMINATOR (TS-STAGE)
+INSTRUMENT channel. Frozen BEFORE the first run (2026-10-27, this tick).
+This file is written once and never rewritten.
+
+0. ROW QUESTION (from session 4's named residual, verbatim scope):
+   "WHY the small-B bracket undercounts" -- session 4 MEASURED that the
+   batch instrument's GPU bracket (ts1..ts2 around B dispatches) is
+   31 ticks (FLOOR) at B<=2 at all 18 pipeline-ok cells while the SAME
+   runs' host_ns shows 351,956 ns of real work at B=1, and that capture
+   turns on between B=2 and B=4 (per-dispatch flat band 3,455..4,370
+   ticks for B>=16). NO causal mechanism has been claimed or measured.
+   This session does NOT test a causal mechanism. It measures ONE
+   narrower, observable question:
+
+     IS THE SMALL-B UNDERCOUNT (AND THE LARGE-B CAPTURE) REMOVABLE BY
+     THE PIPELINE-STAGE PLACEMENT OF THE TWO TIMESTAMP ENDPOINTS?
+
+   The instrument brackets its BATCH dispatches between
+     ts1: vkCmdWriteTimestamp(..., VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, .., 0)
+     ts2: vkCmdWriteTimestamp(..., VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, .., 1)
+   (the archived session-4 source, lines 275/284). Both endpoints'
+   stages are compile-time parameters in this session's derived
+   instrument. Whatever the answer, no mechanism is claimed: a stage
+   placement that changes the bracket is an OBSERVABLE DEPENDENCE, not
+   an explanation.
+
+1. INSTRUMENT DERIVATION (chain of custody):
+   base = the archived session-4 derived source
+     docs/evidence/gpu/anv-batchscale-20261027/gpu-subgroup-reduce-anv-batchscale.c.txt
+     (digest recorded there as 1b287b4d..., re-verified in host-verify)
+   derivation = ONE parameterization edit: the two hard-coded stage
+   constants at the two vkCmdWriteTimestamp call sites become macros
+   TS1_STAGE / TS2_STAGE with #ifndef defaults EXACTLY equal to the
+   archived values (TOP_OF_PIPE / BOTTOM_OF_PIPE). Nothing else changes.
+   The exact diff is instrument-derivation.diff.txt. Sessions 1/2/4
+   instruments stay byte-stable.
+
+2. ARMS (one binary per (arm, B); arm = the (ts1 stage, ts2 stage) pair):
+   TB  control  = (TOP, BOTTOM)  -- the archived bracket, defaults only
+   TT  variant  = (TOP, TOP)     -DTS2_STAGE=VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT
+   BB  variant  = (BOTTOM, BOTTOM) -DTS1_STAGE=VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT
+   (BT is excluded by design: ts2-before-ts1 ordering is a different
+   question and the instrument's ts[1] >= ts[0] guard would void it.)
+   BATCH values: B in {1, 2, 4, 64} = floor (B=1), pin (B=2), first
+   captured point (B=4), flat-band point (B=64). One binary per
+   (arm, B) = 12 binaries, gcc -O2 -D... -lvulkan, same host.
+
+3. CELLS / RUN UNIT (unchanged from sessions 1-4):
+   the same 24 cell lines (byte-copy, cases-s5.txt): op {sum,max,min}
+   x W {128,256} x forced S {8,16,32,default}; S=8 fails-closed
+   (minSubgroupSize=16), 18 pipeline-ok cells carry timing samples.
+   One fresh process per run; the instrument's internal protocol
+   (WARMUP 3, ROUNDS 25, seeded LCG-shuffled interleave, SEED 20261027,
+   N_ELEMENTS 1000003) is UNCHANGED. Runs: 3 fresh processes per
+   (arm, B) = 3 arms x 4 B x 3 runs = 36 processes.
+   Metric per sample: gpu_ticks = ts2 - ts1 (1 tick = timestampPeriod
+   = 52.083 ns on this device, from the instrument header), host_ns.
+
+4. PRE-REGISTERED LETTERS (both branches named BEFORE the first run;
+   the analysis route is analysis-s5.py over the 36 committed run logs
+   ONLY, run twice byte-identical -- diff exit 0; publication-s5.txt is
+   produced only by that script):
+
+   L1 CONTROL REPLICATION (prerequisite for L2-L4): arm TB reproduces
+      session 4's shape -- at B=1 the pooled median bracket is at the
+      31-tick floor (pooled median <= 100 ticks) at all 18 cells; at
+      B=64 the pooled median is >= 100,000 ticks at all 18 cells.
+      (a) reproduced -> L2-L4 are evaluated against the row question.
+      (b) not reproduced -> L2-L4 are still reported but marked NOT
+          EVALUABLE against the session-4 row; the divergence is named
+          and its cause stays UNMEASURED.
+
+   L2 TS2-STAGE DEPENDENCE OF THE LARGE-B CAPTURE (B=64): ratio
+      TB/TT of pooled median bracket across the 18 cells.
+      (a) TT collapses: ratio >= 5 at >= 15 of 18 cells -> the captured
+          large-B bracket DEPENDS on ts2's BOTTOM_OF_PIPE placement
+          (observable dependence only; no mechanism claimed).
+      (b) TT tracks TB: ratio <= 2 at >= 15 of 18 cells -> the capture
+          does NOT depend on ts2's stage placement among {TOP,BOTTOM}.
+      otherwise -> INCONCLUSIVE, quantified cell-by-cell.
+
+   L3 FLOOR REMOVABILITY AT B=1: the B=1 pooled median bracket of TT
+      and BB against the 31-tick floor.
+      (a) an arm lifts the floor: pooled median > 1000 ticks at ALL 18
+          cells -> the small-B undercount IS removable by that stage
+          placement (name the arm; no mechanism claimed).
+      (b) no arm lifts the floor: all arms' pooled medians <= 100
+          ticks at all 18 cells -> the small-B undercount is NOT
+          removable by the stage placements tested here; the row
+          question is narrowed, mechanism stays UNMEASURED.
+      otherwise -> quantified, not classified.
+
+   L4 TS1-SIDE (descriptive only, no branch): at B=64, the BB/TB ratio
+      of pooled medians, cell by cell. Reported as counts/ratios only.
+
+5. RULE 4 -- NOTHING MOVES: no workgroup row, no :measured? flag, no
+   :size/:shapes, no selection answer. accelerator-targets defaults
+   remain provisional design assumptions (:measured? false). This is
+   NOT the basis-replacing baseline-vs-variant contract of
+   accelerator-subgroup-reduce.cljk. NO vendor optimization exists for
+   Intel and none is claimed.
+
+6. GATES (real runs this tick): gpu_regime_classify.py --self-test
+   (committed pin 2649 assertions / 0 failures); scoped GPU gate (the
+   8 accelerator test namespaces; scratch runner, never committed;
+   expected pin 123 tests / 12162 assertions); FULL run-tests.cljk run
+   live this tick (the suite's base state is red 'Could not find
+   namespace: kotoba.form' at namespace load, ADR-0362, outside every
+   amu-gpu diff -- recorded live, no green full suite claimed);
+   find this evidence dir -name '*.sh' -> 0.
+
+7. UNMEASURED (named in advance): any causal mechanism for the
+   undercount OR the capture; session 2's run-1 dip cause; cross-day
+   replication; S=8 timing; every W outside {128,256}; shape 2; any
+   baseline-vs-variant sign; anything off this host; anything about
+   BT ordering; isolated single-dispatch timing.

@@ -1,0 +1,506 @@
+# instrument=anv-subgroupsize-batch v2-batch64 (JUN-59 subgroup 16-vs-32 floor-lifting rerun, 2026-10-27)
+# device_name=Intel(R) Graphics (BMG G31) vendor=8086 device=e223 api=1.4.318
+# maxComputeWorkGroupSize=1024,1024,1024
+# subgroupSize=32 subgroupStages=00003fff subgroupOps=000006ff
+# subgroupSizeControl: feature=1 computeFullSubgroups=1 min=16 max=32 requiredStages=000000e0
+# timestampPeriod=52.083 timestampComputeAndGraphics=1
+# n=1000003 rounds=25 warmup=3 batch=2 seed=20261027 metric=gpu_ns (vkCmdWriteTimestamp BATCH-dispatch bracket; per_dispatch_ns=gpu_ns/batch) +host_ns (CLOCK_MONOTONIC submit->completion)
+CELL idx=0 spv=subgroup-reduce-w128-sum.emitted.spv op=sum wg=128 forced=8 probe_size=-1 probe_nsub=-1 probe_wg=-1 pipeline=FAIL void=1 void_reason=pipeline-create-failed
+CELL idx=1 spv=subgroup-reduce-w128-sum.emitted.spv op=sum wg=128 forced=16 probe_size=16 probe_nsub=8 probe_wg=128 pipeline=ok void=0 void_reason=
+CELL idx=2 spv=subgroup-reduce-w128-sum.emitted.spv op=sum wg=128 forced=32 probe_size=32 probe_nsub=4 probe_wg=128 pipeline=ok void=0 void_reason=
+CELL idx=3 spv=subgroup-reduce-w128-sum.emitted.spv op=sum wg=128 forced=default probe_size=32 probe_nsub=4 probe_wg=128 pipeline=ok void=0 void_reason=
+CELL idx=4 spv=subgroup-reduce-w128-max.emitted.spv op=max wg=128 forced=8 probe_size=-1 probe_nsub=-1 probe_wg=-1 pipeline=FAIL void=1 void_reason=pipeline-create-failed
+CELL idx=5 spv=subgroup-reduce-w128-max.emitted.spv op=max wg=128 forced=16 probe_size=16 probe_nsub=8 probe_wg=128 pipeline=ok void=0 void_reason=
+CELL idx=6 spv=subgroup-reduce-w128-max.emitted.spv op=max wg=128 forced=32 probe_size=32 probe_nsub=4 probe_wg=128 pipeline=ok void=0 void_reason=
+CELL idx=7 spv=subgroup-reduce-w128-max.emitted.spv op=max wg=128 forced=default probe_size=32 probe_nsub=4 probe_wg=128 pipeline=ok void=0 void_reason=
+CELL idx=8 spv=subgroup-reduce-w128-min.emitted.spv op=min wg=128 forced=8 probe_size=-1 probe_nsub=-1 probe_wg=-1 pipeline=FAIL void=1 void_reason=pipeline-create-failed
+CELL idx=9 spv=subgroup-reduce-w128-min.emitted.spv op=min wg=128 forced=16 probe_size=16 probe_nsub=8 probe_wg=128 pipeline=ok void=0 void_reason=
+CELL idx=10 spv=subgroup-reduce-w128-min.emitted.spv op=min wg=128 forced=32 probe_size=32 probe_nsub=4 probe_wg=128 pipeline=ok void=0 void_reason=
+CELL idx=11 spv=subgroup-reduce-w128-min.emitted.spv op=min wg=128 forced=default probe_size=32 probe_nsub=4 probe_wg=128 pipeline=ok void=0 void_reason=
+CELL idx=12 spv=subgroup-reduce-w256-sum.emitted.spv op=sum wg=256 forced=8 probe_size=-1 probe_nsub=-1 probe_wg=-1 pipeline=FAIL void=1 void_reason=pipeline-create-failed
+CELL idx=13 spv=subgroup-reduce-w256-sum.emitted.spv op=sum wg=256 forced=16 probe_size=16 probe_nsub=16 probe_wg=256 pipeline=ok void=0 void_reason=
+CELL idx=14 spv=subgroup-reduce-w256-sum.emitted.spv op=sum wg=256 forced=32 probe_size=32 probe_nsub=8 probe_wg=256 pipeline=ok void=0 void_reason=
+CELL idx=15 spv=subgroup-reduce-w256-sum.emitted.spv op=sum wg=256 forced=default probe_size=32 probe_nsub=8 probe_wg=256 pipeline=ok void=0 void_reason=
+CELL idx=16 spv=subgroup-reduce-w256-max.emitted.spv op=max wg=256 forced=8 probe_size=-1 probe_nsub=-1 probe_wg=-1 pipeline=FAIL void=1 void_reason=pipeline-create-failed
+CELL idx=17 spv=subgroup-reduce-w256-max.emitted.spv op=max wg=256 forced=16 probe_size=16 probe_nsub=16 probe_wg=256 pipeline=ok void=0 void_reason=
+CELL idx=18 spv=subgroup-reduce-w256-max.emitted.spv op=max wg=256 forced=32 probe_size=32 probe_nsub=8 probe_wg=256 pipeline=ok void=0 void_reason=
+CELL idx=19 spv=subgroup-reduce-w256-max.emitted.spv op=max wg=256 forced=default probe_size=32 probe_nsub=8 probe_wg=256 pipeline=ok void=0 void_reason=
+CELL idx=20 spv=subgroup-reduce-w256-min.emitted.spv op=min wg=256 forced=8 probe_size=-1 probe_nsub=-1 probe_wg=-1 pipeline=FAIL void=1 void_reason=pipeline-create-failed
+CELL idx=21 spv=subgroup-reduce-w256-min.emitted.spv op=min wg=256 forced=16 probe_size=16 probe_nsub=16 probe_wg=256 pipeline=ok void=0 void_reason=
+CELL idx=22 spv=subgroup-reduce-w256-min.emitted.spv op=min wg=256 forced=32 probe_size=32 probe_nsub=8 probe_wg=256 pipeline=ok void=0 void_reason=
+CELL idx=23 spv=subgroup-reduce-w256-min.emitted.spv op=min wg=256 forced=default probe_size=32 probe_nsub=8 probe_wg=256 pipeline=ok void=0 void_reason=
+SAMPLE round=0 idx=10 batch=2 gpu_ticks=30 gpu_ns=1562.5 per_dispatch_ns=781.25 host_ns=686471
+SAMPLE round=0 idx=21 batch=2 gpu_ticks=30 gpu_ns=1562.5 per_dispatch_ns=781.25 host_ns=547010
+SAMPLE round=0 idx=19 batch=2 gpu_ticks=32 gpu_ns=1666.7 per_dispatch_ns=833.33 host_ns=543103
+SAMPLE round=0 idx=9 batch=2 gpu_ticks=30 gpu_ns=1562.5 per_dispatch_ns=781.25 host_ns=688715
+SAMPLE round=0 idx=7 batch=2 gpu_ticks=32 gpu_ns=1666.7 per_dispatch_ns=833.33 host_ns=682533
+SAMPLE round=0 idx=2 batch=2 gpu_ticks=30 gpu_ns=1562.5 per_dispatch_ns=781.25 host_ns=679347
+SAMPLE round=0 idx=15 batch=2 gpu_ticks=31 gpu_ns=1614.6 per_dispatch_ns=807.29 host_ns=549535
+SAMPLE round=0 idx=11 batch=2 gpu_ticks=30 gpu_ns=1562.5 per_dispatch_ns=781.25 host_ns=677123
+SAMPLE round=0 idx=1 batch=2 gpu_ticks=30 gpu_ns=1562.5 per_dispatch_ns=781.25 host_ns=696368
+SAMPLE round=0 idx=23 batch=2 gpu_ticks=30 gpu_ns=1562.5 per_dispatch_ns=781.25 host_ns=552380
+SAMPLE round=0 idx=13 batch=2 gpu_ticks=33 gpu_ns=1718.7 per_dispatch_ns=859.37 host_ns=547822
+SAMPLE round=0 idx=17 batch=2 gpu_ticks=31 gpu_ns=1614.6 per_dispatch_ns=807.29 host_ns=554825
+SAMPLE round=0 idx=5 batch=2 gpu_ticks=30 gpu_ns=1562.5 per_dispatch_ns=781.25 host_ns=697340
+SAMPLE round=0 idx=14 batch=2 gpu_ticks=30 gpu_ns=1562.5 per_dispatch_ns=781.25 host_ns=551138
+SAMPLE round=0 idx=6 batch=2 gpu_ticks=30 gpu_ns=1562.5 per_dispatch_ns=781.25 host_ns=680981
+SAMPLE round=0 idx=3 batch=2 gpu_ticks=31 gpu_ns=1614.6 per_dispatch_ns=807.29 host_ns=690368
+SAMPLE round=0 idx=18 batch=2 gpu_ticks=30 gpu_ns=1562.5 per_dispatch_ns=781.25 host_ns=546790
+SAMPLE round=0 idx=22 batch=2 gpu_ticks=30 gpu_ns=1562.5 per_dispatch_ns=781.25 host_ns=541049
+SAMPLE round=1 idx=19 batch=2 gpu_ticks=29 gpu_ns=1510.4 per_dispatch_ns=755.21 host_ns=559534
+SAMPLE round=1 idx=3 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=670802
+SAMPLE round=1 idx=6 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=667685
+SAMPLE round=1 idx=17 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=542301
+SAMPLE round=1 idx=7 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=668286
+SAMPLE round=1 idx=21 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=542593
+SAMPLE round=1 idx=2 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=663588
+SAMPLE round=1 idx=1 batch=2 gpu_ticks=24 gpu_ns=1250.0 per_dispatch_ns=625.00 host_ns=684216
+SAMPLE round=1 idx=5 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=681371
+SAMPLE round=1 idx=23 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=547721
+SAMPLE round=1 idx=14 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=537212
+SAMPLE round=1 idx=13 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=537622
+SAMPLE round=1 idx=11 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=664710
+SAMPLE round=1 idx=10 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=669860
+SAMPLE round=1 idx=18 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=536420
+SAMPLE round=1 idx=15 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=531552
+SAMPLE round=1 idx=22 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=532814
+SAMPLE round=1 idx=9 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=674889
+SAMPLE round=2 idx=1 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=682794
+SAMPLE round=2 idx=14 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=541410
+SAMPLE round=2 idx=10 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=662926
+SAMPLE round=2 idx=5 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=684497
+SAMPLE round=2 idx=6 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=663057
+SAMPLE round=2 idx=19 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=537302
+SAMPLE round=2 idx=22 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=534858
+SAMPLE round=2 idx=7 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=663928
+SAMPLE round=2 idx=23 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=529388
+SAMPLE round=2 idx=13 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=539446
+SAMPLE round=2 idx=3 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=651235
+SAMPLE round=2 idx=9 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=687352
+SAMPLE round=2 idx=18 batch=2 gpu_ticks=24 gpu_ns=1250.0 per_dispatch_ns=625.00 host_ns=537232
+SAMPLE round=2 idx=17 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=552240
+SAMPLE round=2 idx=11 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=655262
+SAMPLE round=2 idx=15 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=537072
+SAMPLE round=2 idx=2 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=657626
+SAMPLE round=2 idx=21 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=541019
+SAMPLE round=3 idx=23 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=533185
+SAMPLE round=3 idx=21 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=544125
+SAMPLE round=3 idx=5 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=686651
+SAMPLE round=3 idx=1 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=688665
+SAMPLE round=3 idx=14 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=536621
+SAMPLE round=3 idx=2 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=663458
+SAMPLE round=3 idx=11 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=659290
+SAMPLE round=3 idx=3 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=662937
+SAMPLE round=3 idx=17 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=530780
+SAMPLE round=3 idx=10 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=662105
+SAMPLE round=3 idx=15 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=537803
+SAMPLE round=3 idx=22 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=532844
+SAMPLE round=3 idx=18 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=527414
+SAMPLE round=3 idx=6 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=659800
+SAMPLE round=3 idx=7 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=671592
+SAMPLE round=3 idx=19 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=531111
+SAMPLE round=3 idx=9 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=680249
+SAMPLE round=3 idx=13 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=537352
+SAMPLE round=4 idx=5 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=686761
+SAMPLE round=4 idx=1 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=676011
+SAMPLE round=4 idx=14 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=533425
+SAMPLE round=4 idx=2 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=668577
+SAMPLE round=4 idx=21 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=535960
+SAMPLE round=4 idx=23 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=533595
+SAMPLE round=4 idx=10 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=669599
+SAMPLE round=4 idx=9 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=682593
+SAMPLE round=4 idx=17 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=539767
+SAMPLE round=4 idx=15 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=536941
+SAMPLE round=4 idx=18 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=530299
+SAMPLE round=4 idx=19 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=533566
+SAMPLE round=4 idx=7 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=661294
+SAMPLE round=4 idx=22 batch=2 gpu_ticks=24 gpu_ns=1250.0 per_dispatch_ns=625.00 host_ns=533996
+SAMPLE round=4 idx=6 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=668157
+SAMPLE round=4 idx=3 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=668487
+SAMPLE round=4 idx=13 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=539486
+SAMPLE round=4 idx=11 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=664720
+SAMPLE round=5 idx=21 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=538574
+SAMPLE round=5 idx=1 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=678936
+SAMPLE round=5 idx=10 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=674748
+SAMPLE round=5 idx=15 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=540688
+SAMPLE round=5 idx=22 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=527003
+SAMPLE round=5 idx=5 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=678456
+SAMPLE round=5 idx=18 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=533986
+SAMPLE round=5 idx=14 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=535669
+SAMPLE round=5 idx=13 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=539937
+SAMPLE round=5 idx=9 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=685057
+SAMPLE round=5 idx=19 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=538254
+SAMPLE round=5 idx=23 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=537282
+SAMPLE round=5 idx=3 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=667976
+SAMPLE round=5 idx=6 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=666884
+SAMPLE round=5 idx=2 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=651766
+SAMPLE round=5 idx=7 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=677974
+SAMPLE round=5 idx=17 batch=2 gpu_ticks=24 gpu_ns=1250.0 per_dispatch_ns=625.00 host_ns=542962
+SAMPLE round=5 idx=11 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=671572
+SAMPLE round=6 idx=10 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=669899
+SAMPLE round=6 idx=15 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=535418
+SAMPLE round=6 idx=22 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=527685
+SAMPLE round=6 idx=23 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=535709
+SAMPLE round=6 idx=1 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=675170
+SAMPLE round=6 idx=7 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=665221
+SAMPLE round=6 idx=18 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=536250
+SAMPLE round=6 idx=2 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=679778
+SAMPLE round=6 idx=6 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=669559
+SAMPLE round=6 idx=17 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=538414
+SAMPLE round=6 idx=5 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=674348
+SAMPLE round=6 idx=3 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=669108
+SAMPLE round=6 idx=9 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=683765
+SAMPLE round=6 idx=19 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=536410
+SAMPLE round=6 idx=14 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=538164
+SAMPLE round=6 idx=21 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=531502
+SAMPLE round=6 idx=13 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=536801
+SAMPLE round=6 idx=11 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=671492
+SAMPLE round=7 idx=9 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=679387
+SAMPLE round=7 idx=23 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=529648
+SAMPLE round=7 idx=5 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=677704
+SAMPLE round=7 idx=6 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=668517
+SAMPLE round=7 idx=10 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=665932
+SAMPLE round=7 idx=19 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=531401
+SAMPLE round=7 idx=17 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=535098
+SAMPLE round=7 idx=18 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=534287
+SAMPLE round=7 idx=7 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=661193
+SAMPLE round=7 idx=14 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=538123
+SAMPLE round=7 idx=22 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=537593
+SAMPLE round=7 idx=11 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=667885
+SAMPLE round=7 idx=21 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=537773
+SAMPLE round=7 idx=3 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=658679
+SAMPLE round=7 idx=13 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=535279
+SAMPLE round=7 idx=15 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=533726
+SAMPLE round=7 idx=1 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=670170
+SAMPLE round=7 idx=2 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=666663
+SAMPLE round=8 idx=7 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=657276
+SAMPLE round=8 idx=23 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=540980
+SAMPLE round=8 idx=14 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=547431
+SAMPLE round=8 idx=10 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=668066
+SAMPLE round=8 idx=17 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=537092
+SAMPLE round=8 idx=6 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=678536
+SAMPLE round=8 idx=15 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=537232
+SAMPLE round=8 idx=3 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=668446
+SAMPLE round=8 idx=21 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=534737
+SAMPLE round=8 idx=9 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=683335
+SAMPLE round=8 idx=13 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=539476
+SAMPLE round=8 idx=11 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=668107
+SAMPLE round=8 idx=5 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=677203
+SAMPLE round=8 idx=1 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=683034
+SAMPLE round=8 idx=19 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=533605
+SAMPLE round=8 idx=2 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=661854
+SAMPLE round=8 idx=18 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=543664
+SAMPLE round=8 idx=22 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=543374
+SAMPLE round=9 idx=23 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=529017
+SAMPLE round=9 idx=21 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=534787
+SAMPLE round=9 idx=7 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=663548
+SAMPLE round=9 idx=10 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=668828
+SAMPLE round=9 idx=1 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=681511
+SAMPLE round=9 idx=18 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=530810
+SAMPLE round=9 idx=6 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=680559
+SAMPLE round=9 idx=9 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=688084
+SAMPLE round=9 idx=2 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=655843
+SAMPLE round=9 idx=13 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=544095
+SAMPLE round=9 idx=14 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=531472
+SAMPLE round=9 idx=22 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=536010
+SAMPLE round=9 idx=5 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=678846
+SAMPLE round=9 idx=17 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=538415
+SAMPLE round=9 idx=3 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=661143
+SAMPLE round=9 idx=15 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=531963
+SAMPLE round=9 idx=11 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=670130
+SAMPLE round=9 idx=19 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=540899
+SAMPLE round=10 idx=13 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=531972
+SAMPLE round=10 idx=6 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=676201
+SAMPLE round=10 idx=3 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=666533
+SAMPLE round=10 idx=17 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=535279
+SAMPLE round=10 idx=14 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=532874
+SAMPLE round=10 idx=9 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=680289
+SAMPLE round=10 idx=7 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=665561
+SAMPLE round=10 idx=21 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=533174
+SAMPLE round=10 idx=18 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=531552
+SAMPLE round=10 idx=22 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=529808
+SAMPLE round=10 idx=10 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=649472
+SAMPLE round=10 idx=5 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=681691
+SAMPLE round=10 idx=1 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=670340
+SAMPLE round=10 idx=15 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=538605
+SAMPLE round=10 idx=2 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=674989
+SAMPLE round=10 idx=19 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=529468
+SAMPLE round=10 idx=11 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=670902
+SAMPLE round=10 idx=23 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=534216
+SAMPLE round=11 idx=13 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=537252
+SAMPLE round=11 idx=6 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=674478
+SAMPLE round=11 idx=7 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=660592
+SAMPLE round=11 idx=21 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=542432
+SAMPLE round=11 idx=9 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=682814
+SAMPLE round=11 idx=3 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=664189
+SAMPLE round=11 idx=10 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=665461
+SAMPLE round=11 idx=1 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=680189
+SAMPLE round=11 idx=2 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=662086
+SAMPLE round=11 idx=11 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=674738
+SAMPLE round=11 idx=19 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=530329
+SAMPLE round=11 idx=5 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=682183
+SAMPLE round=11 idx=14 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=536961
+SAMPLE round=11 idx=15 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=535779
+SAMPLE round=11 idx=18 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=529958
+SAMPLE round=11 idx=22 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=532414
+SAMPLE round=11 idx=23 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=534928
+SAMPLE round=11 idx=17 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=539166
+SAMPLE round=12 idx=23 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=527324
+SAMPLE round=12 idx=5 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=675089
+SAMPLE round=12 idx=7 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=662636
+SAMPLE round=12 idx=19 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=532353
+SAMPLE round=12 idx=3 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=664339
+SAMPLE round=12 idx=14 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=533325
+SAMPLE round=12 idx=18 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=532473
+SAMPLE round=12 idx=21 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=540038
+SAMPLE round=12 idx=2 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=658308
+SAMPLE round=12 idx=22 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=540188
+SAMPLE round=12 idx=15 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=527534
+SAMPLE round=12 idx=17 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=537773
+SAMPLE round=12 idx=11 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=657356
+SAMPLE round=12 idx=6 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=668627
+SAMPLE round=12 idx=13 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=534547
+SAMPLE round=12 idx=9 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=679748
+SAMPLE round=12 idx=1 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=678516
+SAMPLE round=12 idx=10 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=659611
+SAMPLE round=13 idx=15 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=532413
+SAMPLE round=13 idx=5 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=674738
+SAMPLE round=13 idx=14 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=530069
+SAMPLE round=13 idx=13 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=540689
+SAMPLE round=13 idx=22 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=533345
+SAMPLE round=13 idx=19 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=532483
+SAMPLE round=13 idx=6 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=658188
+SAMPLE round=13 idx=21 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=540989
+SAMPLE round=13 idx=18 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=536951
+SAMPLE round=13 idx=10 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=669339
+SAMPLE round=13 idx=11 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=663537
+SAMPLE round=13 idx=3 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=668857
+SAMPLE round=13 idx=1 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=674639
+SAMPLE round=13 idx=23 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=534847
+SAMPLE round=13 idx=7 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=659049
+SAMPLE round=13 idx=2 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=663197
+SAMPLE round=13 idx=9 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=669328
+SAMPLE round=13 idx=17 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=539276
+SAMPLE round=14 idx=3 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=678215
+SAMPLE round=14 idx=10 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=665301
+SAMPLE round=14 idx=22 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=534056
+SAMPLE round=14 idx=17 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=541009
+SAMPLE round=14 idx=13 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=535058
+SAMPLE round=14 idx=9 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=680660
+SAMPLE round=14 idx=21 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=537032
+SAMPLE round=14 idx=7 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=668948
+SAMPLE round=14 idx=6 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=673055
+SAMPLE round=14 idx=23 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=535479
+SAMPLE round=14 idx=14 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=538445
+SAMPLE round=14 idx=11 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=666774
+SAMPLE round=14 idx=1 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=675410
+SAMPLE round=14 idx=19 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=526542
+SAMPLE round=14 idx=5 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=676442
+SAMPLE round=14 idx=18 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=542582
+SAMPLE round=14 idx=15 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=531982
+SAMPLE round=14 idx=2 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=667325
+SAMPLE round=15 idx=21 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=538906
+SAMPLE round=15 idx=13 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=543624
+SAMPLE round=15 idx=7 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=660542
+SAMPLE round=15 idx=23 batch=2 gpu_ticks=27 gpu_ns=1406.2 per_dispatch_ns=703.12 host_ns=534417
+SAMPLE round=15 idx=18 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=530880
+SAMPLE round=15 idx=22 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=533796
+SAMPLE round=15 idx=14 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=534437
+SAMPLE round=15 idx=19 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=537513
+SAMPLE round=15 idx=10 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=660092
+SAMPLE round=15 idx=17 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=544716
+SAMPLE round=15 idx=1 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=678866
+SAMPLE round=15 idx=15 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=539387
+SAMPLE round=15 idx=2 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=661644
+SAMPLE round=15 idx=5 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=678766
+SAMPLE round=15 idx=6 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=662837
+SAMPLE round=15 idx=9 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=684096
+SAMPLE round=15 idx=11 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=663818
+SAMPLE round=15 idx=3 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=670511
+SAMPLE round=16 idx=18 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=528656
+SAMPLE round=16 idx=15 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=532533
+SAMPLE round=16 idx=9 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=679477
+SAMPLE round=16 idx=3 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=666313
+SAMPLE round=16 idx=1 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=672384
+SAMPLE round=16 idx=13 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=538074
+SAMPLE round=16 idx=7 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=667114
+SAMPLE round=16 idx=11 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=674318
+SAMPLE round=16 idx=2 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=670280
+SAMPLE round=16 idx=19 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=538865
+SAMPLE round=16 idx=5 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=677934
+SAMPLE round=16 idx=14 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=535038
+SAMPLE round=16 idx=10 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=668387
+SAMPLE round=16 idx=17 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=534146
+SAMPLE round=16 idx=23 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=530981
+SAMPLE round=16 idx=6 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=672023
+SAMPLE round=16 idx=21 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=541550
+SAMPLE round=16 idx=22 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=532313
+SAMPLE round=17 idx=11 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=666693
+SAMPLE round=17 idx=21 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=535930
+SAMPLE round=17 idx=13 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=541631
+SAMPLE round=17 idx=15 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=539606
+SAMPLE round=17 idx=1 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=672594
+SAMPLE round=17 idx=14 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=538044
+SAMPLE round=17 idx=3 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=673116
+SAMPLE round=17 idx=10 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=670310
+SAMPLE round=17 idx=5 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=683004
+SAMPLE round=17 idx=18 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=530940
+SAMPLE round=17 idx=6 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=667374
+SAMPLE round=17 idx=2 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=682162
+SAMPLE round=17 idx=23 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=532173
+SAMPLE round=17 idx=17 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=534517
+SAMPLE round=17 idx=19 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=535589
+SAMPLE round=17 idx=22 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=537793
+SAMPLE round=17 idx=9 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=676291
+SAMPLE round=17 idx=7 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=671192
+SAMPLE round=18 idx=11 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=671532
+SAMPLE round=18 idx=17 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=538214
+SAMPLE round=18 idx=22 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=536621
+SAMPLE round=18 idx=18 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=540187
+SAMPLE round=18 idx=2 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=670040
+SAMPLE round=18 idx=23 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=533595
+SAMPLE round=18 idx=9 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=674598
+SAMPLE round=18 idx=6 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=665391
+SAMPLE round=18 idx=5 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=681621
+SAMPLE round=18 idx=13 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=546530
+SAMPLE round=18 idx=7 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=673947
+SAMPLE round=18 idx=1 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=680509
+SAMPLE round=18 idx=14 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=528446
+SAMPLE round=18 idx=3 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=670480
+SAMPLE round=18 idx=19 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=533886
+SAMPLE round=18 idx=21 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=539517
+SAMPLE round=18 idx=15 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=531301
+SAMPLE round=18 idx=10 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=664910
+SAMPLE round=19 idx=22 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=526502
+SAMPLE round=19 idx=13 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=538856
+SAMPLE round=19 idx=17 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=538965
+SAMPLE round=19 idx=9 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=682683
+SAMPLE round=19 idx=2 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=668217
+SAMPLE round=19 idx=23 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=537863
+SAMPLE round=19 idx=6 batch=2 gpu_ticks=24 gpu_ns=1250.0 per_dispatch_ns=625.00 host_ns=654170
+SAMPLE round=19 idx=11 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=670371
+SAMPLE round=19 idx=21 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=530249
+SAMPLE round=19 idx=10 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=665712
+SAMPLE round=19 idx=7 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=657616
+SAMPLE round=19 idx=5 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=682122
+SAMPLE round=19 idx=1 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=678115
+SAMPLE round=19 idx=18 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=535849
+SAMPLE round=19 idx=14 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=535078
+SAMPLE round=19 idx=19 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=533495
+SAMPLE round=19 idx=3 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=659139
+SAMPLE round=19 idx=15 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=533726
+SAMPLE round=20 idx=7 batch=2 gpu_ticks=27 gpu_ns=1406.2 per_dispatch_ns=703.12 host_ns=666493
+SAMPLE round=20 idx=9 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=687212
+SAMPLE round=20 idx=14 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=528025
+SAMPLE round=20 idx=6 batch=2 gpu_ticks=24 gpu_ns=1250.0 per_dispatch_ns=625.00 host_ns=662636
+SAMPLE round=20 idx=10 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=661294
+SAMPLE round=20 idx=1 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=678135
+SAMPLE round=20 idx=22 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=529517
+SAMPLE round=20 idx=5 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=672555
+SAMPLE round=20 idx=18 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=536661
+SAMPLE round=20 idx=3 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=663367
+SAMPLE round=20 idx=2 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=672404
+SAMPLE round=20 idx=15 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=534237
+SAMPLE round=20 idx=21 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=536300
+SAMPLE round=20 idx=19 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=534798
+SAMPLE round=20 idx=23 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=529628
+SAMPLE round=20 idx=11 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=670601
+SAMPLE round=20 idx=13 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=536019
+SAMPLE round=20 idx=17 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=541640
+SAMPLE round=21 idx=7 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=664219
+SAMPLE round=21 idx=14 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=532393
+SAMPLE round=21 idx=18 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=533195
+SAMPLE round=21 idx=23 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=526181
+SAMPLE round=21 idx=13 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=537884
+SAMPLE round=21 idx=2 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=664880
+SAMPLE round=21 idx=9 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=677003
+SAMPLE round=21 idx=21 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=540649
+SAMPLE round=21 idx=11 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=670270
+SAMPLE round=21 idx=5 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=661734
+SAMPLE round=21 idx=19 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=531151
+SAMPLE round=21 idx=22 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=541781
+SAMPLE round=21 idx=1 batch=2 gpu_ticks=24 gpu_ns=1250.0 per_dispatch_ns=625.00 host_ns=677153
+SAMPLE round=21 idx=15 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=537011
+SAMPLE round=21 idx=3 batch=2 gpu_ticks=27 gpu_ns=1406.2 per_dispatch_ns=703.12 host_ns=664780
+SAMPLE round=21 idx=6 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=666834
+SAMPLE round=21 idx=17 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=537933
+SAMPLE round=21 idx=10 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=660121
+SAMPLE round=22 idx=22 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=535529
+SAMPLE round=22 idx=6 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=665451
+SAMPLE round=22 idx=7 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=655983
+SAMPLE round=22 idx=3 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=666524
+SAMPLE round=22 idx=13 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=536991
+SAMPLE round=22 idx=17 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=537462
+SAMPLE round=22 idx=2 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=660593
+SAMPLE round=22 idx=15 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=533144
+SAMPLE round=22 idx=5 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=670521
+SAMPLE round=22 idx=18 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=538554
+SAMPLE round=22 idx=10 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=661344
+SAMPLE round=22 idx=19 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=534817
+SAMPLE round=22 idx=9 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=674037
+SAMPLE round=22 idx=23 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=532263
+SAMPLE round=22 idx=14 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=530860
+SAMPLE round=22 idx=1 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=677674
+SAMPLE round=22 idx=11 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=658959
+SAMPLE round=22 idx=21 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=540598
+SAMPLE round=23 idx=22 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=528596
+SAMPLE round=23 idx=13 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=537562
+SAMPLE round=23 idx=23 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=538565
+SAMPLE round=23 idx=10 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=675390
+SAMPLE round=23 idx=7 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=663458
+SAMPLE round=23 idx=19 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=545287
+SAMPLE round=23 idx=14 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=528857
+SAMPLE round=23 idx=11 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=669188
+SAMPLE round=23 idx=3 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=661073
+SAMPLE round=23 idx=21 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=537352
+SAMPLE round=23 idx=1 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=692181
+SAMPLE round=23 idx=5 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=678706
+SAMPLE round=23 idx=17 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=536460
+SAMPLE round=23 idx=2 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=663969
+SAMPLE round=23 idx=6 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=658689
+SAMPLE round=23 idx=18 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=537102
+SAMPLE round=23 idx=15 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=531722
+SAMPLE round=23 idx=9 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=682873
+SAMPLE round=24 idx=18 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=531001
+SAMPLE round=24 idx=5 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=676431
+SAMPLE round=24 idx=19 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=532554
+SAMPLE round=24 idx=15 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=537342
+SAMPLE round=24 idx=10 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=662245
+SAMPLE round=24 idx=14 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=538915
+SAMPLE round=24 idx=21 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=532754
+SAMPLE round=24 idx=3 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=674729
+SAMPLE round=24 idx=17 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=536751
+SAMPLE round=24 idx=13 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=537993
+SAMPLE round=24 idx=11 batch=2 gpu_ticks=24 gpu_ns=1250.0 per_dispatch_ns=625.00 host_ns=670170
+SAMPLE round=24 idx=9 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=680329
+SAMPLE round=24 idx=1 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=673717
+SAMPLE round=24 idx=6 batch=2 gpu_ticks=26 gpu_ns=1354.2 per_dispatch_ns=677.08 host_ns=670020
+SAMPLE round=24 idx=2 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=657587
+SAMPLE round=24 idx=7 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=661113
+SAMPLE round=24 idx=22 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=527715
+SAMPLE round=24 idx=23 batch=2 gpu_ticks=25 gpu_ns=1302.1 per_dispatch_ns=651.04 host_ns=533415
+VERIFY idx=0 checked=0 mismatch=0 ok=0 note=pipeline-failed
+VERIFY idx=1 checked=7813 mismatch=0 ok=1
+VERIFY idx=2 checked=7813 mismatch=0 ok=1
+VERIFY idx=3 checked=7813 mismatch=0 ok=1
+VERIFY idx=4 checked=0 mismatch=0 ok=0 note=pipeline-failed
+VERIFY idx=5 checked=7813 mismatch=0 ok=1
+VERIFY idx=6 checked=7813 mismatch=0 ok=1
+VERIFY idx=7 checked=7813 mismatch=0 ok=1
+VERIFY idx=8 checked=0 mismatch=0 ok=0 note=pipeline-failed
+VERIFY idx=9 checked=7813 mismatch=0 ok=1
+VERIFY idx=10 checked=7813 mismatch=0 ok=1
+VERIFY idx=11 checked=7813 mismatch=0 ok=1
+VERIFY idx=12 checked=0 mismatch=0 ok=0 note=pipeline-failed
+VERIFY idx=13 checked=3907 mismatch=0 ok=1
+VERIFY idx=14 checked=3907 mismatch=0 ok=1
+VERIFY idx=15 checked=3907 mismatch=0 ok=1
+VERIFY idx=16 checked=0 mismatch=0 ok=0 note=pipeline-failed
+VERIFY idx=17 checked=3907 mismatch=0 ok=1
+VERIFY idx=18 checked=3907 mismatch=0 ok=1
+VERIFY idx=19 checked=3907 mismatch=0 ok=1
+VERIFY idx=20 checked=0 mismatch=0 ok=0 note=pipeline-failed
+VERIFY idx=21 checked=3907 mismatch=0 ok=1
+VERIFY idx=22 checked=3907 mismatch=0 ok=1
+VERIFY idx=23 checked=3907 mismatch=0 ok=1
+# done cells=24

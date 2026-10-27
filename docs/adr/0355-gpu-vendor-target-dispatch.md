@@ -266,3 +266,23 @@ moves, no `:measured?` flag moves, and no vendor optimization exists
 for Intel. Evidence: `docs/evidence/gpu/anv-batchscale-20261027/`
 (record.txt is the finding; publication-s4.txt is produced only by
 analysis-s4.py over the committed run logs).
+
+## Dated note (2026-10-27, JUN-59 measurement: timestamp-stage discriminator)
+
+Session 4's named residual -- WHY the small-B bracket undercounts -- is
+NARROWED by the TS-STAGE discriminator (the two vkCmdWriteTimestamp
+bracket endpoints' pipeline stages as the only independent variable:
+tb=(TOP,BOTTOM) control, tt=(TOP,TOP), bb=(BOTTOM,BOTTOM) x BATCH
+{1,2,4,64}, 36 fresh processes, one parameterization edit of the
+session-4 instrument). MEASURED at the INSTRUMENT channel: the control
+arm reproduces session 4 exactly (31-tick floor at B=1, captured band
+at B=64); the large-B capture does NOT depend on ts2's stage placement
+(tt tracks tb, ratio 1.04..1.07 at 18/18 cells); the B=1 floor is NOT
+removable by any of the three stage placements (all arms floor at
+25..31 ticks); bb/tb = 1.00 at B=64. The small-B undercount is
+invariant to the endpoint stage placements tested; the mechanism stays
+UNMEASURED (no causal mechanism claimed). Rule 4 binds: no row moves,
+no `:measured?` flag moves, and no vendor optimization exists for
+Intel. Evidence: `docs/evidence/gpu/anv-tsstage-20261027/` (record.txt
+is the finding; publication-s5.txt is produced only by analysis-s5.py
+over the committed run logs).
