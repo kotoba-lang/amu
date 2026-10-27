@@ -286,3 +286,30 @@ no `:measured?` flag moves, and no vendor optimization exists for
 Intel. Evidence: `docs/evidence/gpu/anv-tsstage-20261027/` (record.txt
 is the finding; publication-s5.txt is produced only by analysis-s5.py
 over the committed run logs).
+
+## Dated note (2026-10-27, JUN-59 measurement: command-count discriminator)
+
+Session 5's named residual -- WHY the small-B bracket undercounts -- is
+tested on the observable axis "bracketed COMMAND COUNT vs bracketed
+DISPATCH work" (the BARRIER_N knob: up to 7 empty global execution
+barriers between ts1 and the BATCH dispatches; 21 fresh processes; ONE
+parameterization edit of the session-5 instrument; custody entirely
+before any run). MEASURED at the INSTRUMENT channel: at B=1 the
+bracket stays at the 31-tick floor at 18/18 cells for N = 0,1,2,3,7
+(host_ns ~354 us unchanged) -- empty bracketed commands do not lift
+the floor; at EQUAL total bracketed command count (6 commands) the
+arms split by >300x: 1 dispatch + 3 barriers = 31 ticks, 2 + 2 = 31,
+4 dispatches + 0 barriers = 8,968..11,632 -- the bracket tracks
+dispatch content, not command count (observable only; no mechanism
+claimed). NAMED, NOT HIDDEN: the frozen C1 capture threshold
+(>= 100,000 ticks) was the session-5 B=64 band applied to a
+four-dispatch control (session 4's committed B=4 value: 11,674;
+session 5's tb B=4: 11,678; measured here: 11,632, reproducing that
+point to 0.4%) -- C1 fired branch (b) on the threshold, and per the
+frozen protocol C2-C3 are reported but carry NOT EVALUABLE standing;
+the defect is in the protocol I froze, disclosed as such, not
+retro-fixed. Rule 4 binds: no row moves, no `:measured?` flag moves,
+and no vendor optimization exists for Intel. Evidence:
+`docs/evidence/gpu/anv-cmdcount-20261027/` (record.txt is the
+finding; publication-s6.txt is produced only by analysis-s6.py over
+the committed run logs).

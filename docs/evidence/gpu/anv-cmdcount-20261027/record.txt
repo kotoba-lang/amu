@@ -1,0 +1,126 @@
+JUN-59 -- session 6 record: COMMAND-COUNT DISCRIMINATOR (CMD-COUNT),
+INSTRUMENT channel. 2026-10-27. Chain PR #1636
+(bot/amu-gpu-chain-20261027-10).
+
+1. ROW QUESTION (session 5's named residual, narrowed): IS THE SMALL-B
+   UNDERCOUNT (AND THE LARGE-B CAPTURE) A FUNCTION OF THE COUNT OF
+   COMMANDS INSIDE THE BRACKET, OR OF THE DISPATCH COMMANDS (REAL
+   WORK) INSIDE IT? Observable-dependence scope only -- NO causal
+   mechanism is tested or claimed.
+
+2. INSTRUMENT DERIVATION (chain of custody): base = the archived
+   session-5 snapshot (d376e431..., re-sha256 MATCH in host-verify);
+   derivation = ONE parameterization edit, the BARRIER_N knob (macro
+   default 0 = archived behaviour; a loop of N empty global execution
+   barriers -- zero memory/buffer/image dependencies -- between ts1 and
+   the BATCH dispatches; the knob prints in the header # n= line).
+   instrument-derivation.diff.txt is the exact diff; sessions 1/2/4/5
+   instruments stay byte-stable. cases-s6.txt cell lines are a
+   BYTE-COPY of session 5's (24 cells, diff exit 0 verified in the
+   derivation step).
+
+3. CHAIN OF CUSTODY (host-verify-s6.txt, ALL of it before ANY run):
+   corpus 16/16 digests MATCH session 2's committed
+   compile-toolchain.txt census (parsed programmatically from that
+   committed file, never transcribed); derived source + manifest
+   local-vs-host MATCH (9847b0f1... / 2c5fcd4a...). GO.
+
+4. HARDWARE RAN (MEASURED): 21 fresh processes (7 arms x 3 runs), run
+   window 2026-10-27T11:27:25Z..11:27:31Z, rc=0 21/21, stderr 0 bytes
+   21/21, 450 SAMPLE lines each (18 pipeline-ok cells x 25 rounds);
+   headers byte-identical across all runs outside the # n= knob line;
+   every run's batch=/barrier_n= fields == its arm; forcing reality
+   378/378; VERIFY mismatch 0 everywhere; S=8 fail-closed 126/126.
+   Host: aiueos-6600hs-1 (BMG G31 / ANV), 1 tick = 52.083 ns.
+
+5. FINDINGS (publication-s6.txt, produced ONLY by analysis-s6.py over
+   the committed run logs, run twice byte-identical -- diff exit 0):
+
+   (a) C1 CONTROL REPLICATION fired branch (b) AS FROZEN: b1n0
+       reproduced the floor (31 ticks at 18/18 cells, host_ns 354,241)
+       but the frozen capture threshold for b4n0 (>= 100,000 ticks)
+       was NOT met (measured 11,632 at (sum,128,S=16), band
+       8,968..11,632). NAMED, NOT HIDDEN: the threshold is the
+       defect, not the instrument -- I froze >= 100,000 (the session-5
+       B=64 captured band 229,099..277,789) as the capture criterion
+       for a FOUR-dispatch arm whose committed session-4 value is
+       B4 = 11,674 and whose committed session-5 control value is
+       tb B=4 = 11,678 (band 8,981..11,700). The measured b4n0
+       reproduces that B=4 point to 0.4% (11,632 vs 11,678, bands and
+       host_ns 1,274,327 vs 1,277,093 likewise) -- comparison of
+       committed numbers, no new measurement. The C1 threshold was
+       mis-calibrated at freeze time (a B=64 scale used for a B=4
+       control); protocol.txt is frozen and NOT rewritten; the letter
+       as frozen fired (b), and per the frozen protocol C2-C4 below
+       are reported but marked NOT EVALUABLE against the
+       sessions-4-5 row. Cause of the threshold defect: my design
+       error, not a hardware or instrument fact.
+
+   (b) C2 BARRIER REMOVABILITY AT B=1 (reported, NOT EVALUABLE per
+       (a)): all five B=1 arms sit at the 31-tick floor at 18/18
+       cells regardless of N in {0,1,2,3,7} (dose flat; host_ns
+       352,408..354,852 unchanged) -- the measured content: up to 7
+       empty global barriers between ts1 and the dispatch do not move
+       the bracket at all. As frozen the verdict is branch (b): the
+       small-B undercount is NOT removable by up to 7 empty global
+       barriers; whatever removes it is not empty bracketed commands.
+
+   (c) C3 EQUAL-COUNT COMPOSITION (reported, NOT EVALUABLE per (a),
+       INCONCLUSIVE as frozen because b4n0 missed the frozen
+       >= 100,000 capture criterion): measured content -- at EQUAL
+       total bracketed command count (6 commands = 2 binds + B
+       dispatches + N barriers) the arms split by more than 300x:
+       b1n3 (1 dispatch + 3 barriers) 31 ticks, b2n2 (2 + 2) 31
+       ticks (band 31..32), b4n0 (4 dispatches) 8,968..11,632. The
+       bracket tracks DISPATCH content, not bracketed command count
+       (observable only; no mechanism claimed).
+
+   (d) C4 (descriptive): the B=1 dose curve is flat at 31 ticks for
+       N = 0,1,2,3,7.
+
+   (e) NAMED, NOT HIDDEN: C1's mis-calibration is the session's one
+       protocol defect and it downgrades the standing of C2-C3 per my
+       own frozen letter; the measured numbers themselves are
+       complete (integrity section: 21/21 runs, 0 mismatches).
+
+6. RULE 4 -- NOTHING MOVES: no workgroup row, no :measured? flag, no
+   selection answer; accelerator-targets defaults remain provisional
+   design assumptions (:measured? false); this is NOT the
+   basis-replacing baseline-vs-variant contract of
+   accelerator-subgroup-reduce.cljk; NO vendor optimization exists for
+   Intel and none is claimed.
+
+7. UNMEASURED (named): any causal mechanism for the undercount or the
+   capture; why the capture turns on between B=2 and B=4; session 2's
+   run-1 dip cause; cross-day replication; S=8 timing; every W outside
+   {128,256}; shape 2; BT ordering; any baseline-vs-variant sign;
+   isolated single-dispatch timing; any B outside {1,2,4}; any N
+   outside {0,1,2,3,7}; non-empty barriers; anything off this host.
+
+8. STATES: emitter arm/dispatch/selection rows IMPLEMENTED (code +
+   tests, unchanged -- this diff touches NO .cljk namespace); the
+   cmdcount instrument + analysis-s6.py validated by complete runs;
+   MEASURED only what publication-s6.txt sections 1-4 say.
+
+9. GATES (real runs this tick): gpu_regime_classify.py --self-test
+   TOTAL 2649 assertions / 0 failed (pin; classify-selftest.txt);
+   scoped GPU gate GREEN 123 tests / 12162 assertions / 0 failures / 0
+   errors run 1 AND run 2 (scratch runner gpu_scoped_gate.cljk, NOT
+   committed -- it lives outside the repo); FULL run-tests.cljk RUN
+   LIVE THIS TICK: exit 1, RED AT BASE "Could not find namespace:
+   kotoba.form" at namespace load (ADR-0362, outside this diff -- this
+   diff touches NO .cljk namespace) -- NO green full suite claimed
+   (gate-full-run-tests.txt); find this dir -name '*.sh' -> 0.
+
+10. CHAIN / BLOCKER-FIRST: this commit lands on the ONE open chain
+    branch bot/amu-gpu-chain-20261027-10 (chain PR #1636). 0 open
+    kotoba-lang/amu PRs with a hermes/ head at tick start and
+    re-checked immediately before the push.
+
+Evidence: docs/evidence/gpu/anv-cmdcount-20261027/ (protocol.txt,
+cases-s6.txt, gpu-subgroup-reduce-anv-cmdcount.c.txt,
+instrument-derivation.diff.txt, host-verify-s6.txt, build-census-s6.txt,
+run-window.txt, run-<tag>-r<1..3>.txt + .stderr.txt for 7 tags,
+analysis-s6.py, publication-s6.txt, classify-selftest.txt, gate-run1.txt,
+gate-run2.txt, gate-full-run-tests.txt, record.txt) + the ADR-0355
+dated note.
