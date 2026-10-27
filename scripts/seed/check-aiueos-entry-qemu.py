@@ -341,7 +341,10 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
                 ('llm-digest-prompt.bin', scratch + 4*4096, 6144),
                 ('llm-digest-first.bin', scratch + 10*4096, 32),
                 ('llm-digest-changed.bin', scratch + 13*4096, 32),
-                ('llm-digest-receipt.bin', scratch + 12*4096, 48),
+                ('llm-digest-selected.bin', scratch + 14*4096 + 256, 6),
+                ('llm-digest-result.bin', scratch + 14*4096 + 512, 64),
+                ('llm-digest-ticket.bin', scratch + 14*4096 + 128, 72),
+                ('llm-digest-receipt.bin', scratch + 12*4096, 112),
             )
             for name, address, size in captures:
                 assert hmp(f'pmemsave 0x{address:x} {size} {name}') == ''
@@ -351,13 +354,16 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
             prompt = Path('llm-digest-prompt.bin').read_bytes()
             first = Path('llm-digest-first.bin').read_bytes()
             changed = Path('llm-digest-changed.bin').read_bytes()
-            checks = struct.unpack('<6Q', Path('llm-digest-receipt.bin').read_bytes())
+            checks = struct.unpack('<14Q', Path('llm-digest-receipt.bin').read_bytes())
             expected_header = struct.pack('<10I', 827149387, 1, 11, 6, 6144,
                                           6144, 16, 0, 12294, 64) + bytes(24)
             assert header == expected_header, 'wire-11 header not restored'
             assert model == b':local'
+            assert Path('llm-digest-selected.bin').read_bytes() == model
+            assert Path('llm-digest-result.bin').read_bytes() == b'Z' * 64
+            assert Path('llm-digest-ticket.bin').read_bytes() == bytes(72)
             assert system == b's' * 6144 and prompt == b'p' * 6144
-            assert checks == (1,)*6, checks
+            assert checks == (1,)*14, checks
             assert first == hashlib.sha256(header + model + system + prompt).digest()
             changed_prompt = b'q' + prompt[1:]
             assert changed == hashlib.sha256(header + model + system + changed_prompt).digest()
@@ -365,13 +371,18 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
             llm_digest_receipt = dict(
                 checks=list(checks), header=pin(Path('llm-digest-header.bin')),
                 model=pin(Path('llm-digest-model.bin')),
+                selectedModel=pin(Path('llm-digest-selected.bin')),
                 system=pin(Path('llm-digest-system.bin')),
                 prompt=pin(Path('llm-digest-prompt.bin')),
+                result=pin(Path('llm-digest-result.bin')),
+                erasedTicket=pin(Path('llm-digest-ticket.bin')),
                 first=pin(Path('llm-digest-first.bin')),
                 changed=pin(Path('llm-digest-changed.bin')),
                 receipt=pin(Path('llm-digest-receipt.bin')),
                 independentlyRootedBytes=12288, fullRequestBytes=12358,
-                rejectsLengthMismatches=True, hostAdmission=False,
+                rejectsLengthMismatchesAndRegionAliases=True,
+                shapeAndDigestSameCall=True,
+                fullDigestBindsOneUseTicket=True, hostAdmission=False,
                 userCall=False, providerDispatch=False)
         value = None
         if value_context:
