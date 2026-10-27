@@ -55,8 +55,9 @@ class QmpStdio:
         self.reader.close()
 
 
-def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalog=False, stack_exhaustion=False, pci_catalog=False, pci_private=False, pci_private_forgery=False, dma_snapshot=False, value_context=False, value_call=False, llm_header=False, llm_result=False):
+def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalog=False, stack_exhaustion=False, pci_catalog=False, pci_private=False, pci_private_forgery=False, dma_snapshot=False, value_context=False, value_call=False, llm_header=False, llm_result=False, llm_keyword_text=False):
     llm_header = llm_header or llm_result
+    assert not llm_keyword_text or llm_result, 'keyword text requires a result receipt'
     assert sum([dma_snapshot,value_context,value_call,llm_header]) <= 1, 'select one functional receipt'
     pci_private = pci_private or pci_private_forgery or dma_snapshot or value_context or value_call or llm_header
     pci_catalog = pci_catalog or pci_private
@@ -255,18 +256,21 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
             assert scratch > 0 and pages == 15
             assert hmp(f"pmemsave 0x{scratch+4096:x} 168 llm-header-receipt.bin") == ""
             assert hmp(f"pmemsave 0x{scratch:x} 64 llm-header.bin") == ""
-            assert hmp(f"pmemsave 0x{scratch+8192:x} 5 llm-request-model.bin") == ""
-            assert hmp(f"pmemsave 0x{scratch+12288:x} 5 llm-selected-model.bin") == ""
+            model_bytes = 6 if llm_keyword_text else 5
+            assert hmp(f"pmemsave 0x{scratch+8192:x} {model_bytes} llm-request-model.bin") == ""
+            assert hmp(f"pmemsave 0x{scratch+12288:x} {model_bytes} llm-selected-model.bin") == ""
             assert hmp(f"pmemsave 0x{scratch+24576:x} 5 llm-request-prompt.bin") == ""
             checks = struct.unpack('<21Q', Path('llm-header-receipt.bin').read_bytes())
             header = Path('llm-header.bin').read_bytes()
             assert checks[:12] == (1,)*12, checks
             assert checks[12:] == (1,)*9, checks
             assert struct.unpack_from('<10I', header) == (
-                827149387, 1, 11, 5, 0, 5, 16, 0, 10, 64)
+                827149387, 1, 11, model_bytes, 0, 5, 16, 0,
+                model_bytes + 5, 64)
             assert header[40:] == bytes(24), 'header mutation was not restored'
-            assert Path('llm-request-model.bin').read_bytes() == b'local'
-            assert Path('llm-selected-model.bin').read_bytes() == b'local'
+            expected_model = b':local' if llm_keyword_text else b'local'
+            assert Path('llm-request-model.bin').read_bytes() == expected_model
+            assert Path('llm-selected-model.bin').read_bytes() == expected_model
             assert Path('llm-request-prompt.bin').read_bytes() == b'hello'
             llm = dict(checks=list(checks[:12]), receipt=pin(Path('llm-header-receipt.bin')),
                        header=pin(Path('llm-header.bin')), wire=11,
@@ -282,16 +286,18 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
                 assert hmp(f"pmemsave 0x{scratch+12*4096:x} 48 llm-result-receipt.bin") == ""
                 assert hmp(f"pmemsave 0x{scratch+7*4096:x} 64 llm-result-header.bin") == ""
                 assert hmp(f"pmemsave 0x{scratch+8*4096:x} 2 llm-result-text.bin") == ""
-                assert hmp(f"pmemsave 0x{scratch+9*4096:x} 4 llm-result-finish.bin") == ""
+                finish_bytes = 5 if llm_keyword_text else 4
+                assert hmp(f"pmemsave 0x{scratch+9*4096:x} {finish_bytes} llm-result-finish.bin") == ""
                 result_checks = struct.unpack('<6Q', Path('llm-result-receipt.bin').read_bytes())
                 result_header = Path('llm-result-header.bin').read_bytes()
                 assert result_checks == (1,)*6, result_checks
                 assert struct.unpack_from('<8I', result_header) == (
-                    827477067, 1, 11, 1, 2, 4, 0, 0)
+                    827477067, 1, 11, 1, 2, finish_bytes, 0, 0)
                 assert struct.unpack_from('<2Q', result_header, 32) == (7, 1)
-                assert struct.unpack_from('<4I', result_header, 48) == (0, 6, 0, 0)
+                assert struct.unpack_from('<4I', result_header, 48) == (0, 2 + finish_bytes, 0, 0)
                 assert Path('llm-result-text.bin').read_bytes() == b'ok'
-                assert Path('llm-result-finish.bin').read_bytes() == b'stop'
+                expected_finish = b':stop' if llm_keyword_text else b'stop'
+                assert Path('llm-result-finish.bin').read_bytes() == expected_finish
                 llm_result_receipt = dict(
                     checks=list(result_checks), receipt=pin(Path('llm-result-receipt.bin')),
                     header=pin(Path('llm-result-header.bin')),
@@ -397,6 +403,7 @@ if __name__ == "__main__":
     p.add_argument("--value-call", action="store_true")
     p.add_argument("--llm-header", action="store_true")
     p.add_argument("--llm-result", action="store_true")
+    p.add_argument("--llm-keyword-text", action="store_true")
     a = p.parse_args()
     main(*(getattr(a, n).resolve() for n in ("efi", "kernel", "qemu", "firmware", "output")), remaining_fuel=a.remaining_fuel,
-         sealed_catalog=a.sealed_catalog, stack_exhaustion=a.stack_exhaustion, pci_catalog=a.pci_catalog, pci_private=a.pci_private, pci_private_forgery=a.pci_private_forgery, dma_snapshot=a.dma_snapshot, value_context=a.value_context, value_call=a.value_call, llm_header=a.llm_header, llm_result=a.llm_result)
+         sealed_catalog=a.sealed_catalog, stack_exhaustion=a.stack_exhaustion, pci_catalog=a.pci_catalog, pci_private=a.pci_private, pci_private_forgery=a.pci_private_forgery, dma_snapshot=a.dma_snapshot, value_context=a.value_context, value_call=a.value_call, llm_header=a.llm_header, llm_result=a.llm_result, llm_keyword_text=a.llm_keyword_text)
