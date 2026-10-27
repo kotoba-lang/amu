@@ -11,6 +11,10 @@ name: selfhost-native
 #                         modules; x86_64: X2, cases, hardening, and the
 #                         wasm32-browser modules in headless Chrome (JUN-353:
 #                         the arm64 image has no Chrome or Chromium).
+#                         On both kernels in every tier: the static runtimes'
+#                         stdin (wire 41), durable files and sleep (35, 7) and
+#                         spawn (20) checks, with their refusal and seccomp
+#                         controls (JUN-354, JUN-357, JUN-359, JUN-360).
 #   push to main -> main: + G2/G3 through the runner, the packed core P, the
 #                         Linux selfhost closure fixed point; x86_64: X3, the
 #                         KX64V1 runner, the scalar and aiueos suites.
@@ -29,9 +33,11 @@ on:
       - "native-product.json"
       - "seed/**"
       - "scripts/seed/**"
+      - "bench/embench/proof-v1/**"
       - "tools/gpu_*.kotoba"
       - "tools/spirv_*.kotoba"
       - "tools/static_launcher*.kotoba"
+      - "tools/b2/**"
       - "runtime/wasm32-browser-static-*"
       - ".github/workflows/selfhost-native.yml"
   pull_request:
@@ -43,9 +49,11 @@ on:
       - "native-product.json"
       - "seed/**"
       - "scripts/seed/**"
+      - "bench/embench/proof-v1/**"
       - "tools/gpu_*.kotoba"
       - "tools/spirv_*.kotoba"
       - "tools/static_launcher*.kotoba"
+      - "tools/b2/**"
       - "runtime/wasm32-browser-static-*"
       - ".github/workflows/selfhost-native.yml"
 concurrency:
@@ -55,7 +63,95 @@ concurrency:
 permissions:
   contents: read
 jobs:
+  native-preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Observer and admission negative controls
+        run: |
+          python3 scripts/seed/test_native_iteration.py -v
+          python3 scripts/seed/test_native_preflight_projects.py -v
+          python3 scripts/seed/test_native_gate_shard.py -v
+      - name: QMP observer pipe framing and deadline controls
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python3 scripts/seed/test_aiueos_qmp_stdio.py -v
+      - name: Benchmark staging observer format controls (not timing qualification)
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python3 scripts/seed/test_embench_candidate.py -v
+      - name: Closed benchmark factory and immutable oracle source controls
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python3 scripts/seed/test_native_benchmark_host.py -v
+      - name: Proof record audits (not native verdict or performance qualification)
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          python3 bench/embench/proof-v1/validate.py
+          python3 -m unittest discover -s bench/embench/proof-v1 -p 'test_*.py' -v
+      - name: Source and image identity preflight
+        run: python3 scripts/seed/check-native-identities.py
+      - name: Independent native preflight controls through the shared two-slot plan
+        run: >-
+          python3 scripts/seed/native_build_queue.py
+          --manifest seed/native-preflight-plan.json --phase preflight --jobs 2
+          --slot-dir "$RUNNER_TEMP/native-build-slots"
+          --output "$RUNNER_TEMP/preflight-schedule"
+      - name: Retain the actual B2 preflight admission
+        if: always()
+        run: |
+          python3 - <<'PY_GATE'
+          import json
+          import os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          path = root / "preflight-schedule/schedule.json"
+          if path.exists():
+              report = json.loads(path.read_text())
+              assert report["jobs"] == report["capacity"] == 2
+              for row in report["gates"]:
+                  if row["name"] == "b2-preflight":
+                      (root / "b2-libc-preflight-admission.json").write_text(json.dumps(
+                          dict(schema="amu.native-build-admission.v1", **row)) + "\n")
+              if report["status"] == "COMPLETED":
+                  assert {row["name"] for row in report["gates"]} == {
+                      "local-project-fs", "early-kotoba", "b2-preflight"}
+          PY_GATE
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: b2-loader-native-preflight
+          path: |
+            ${{ runner.temp }}/b2-libc-preflight
+            ${{ runner.temp }}/b2-libc-preflight-admission.json
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: early-native-kotoba24
+          path: |
+            ${{ runner.temp }}/early-kotoba/*.json
+            ${{ runner.temp }}/early-kotoba/*.stdout
+            ${{ runner.temp }}/early-kotoba/*.stderr
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: local-native-preflight
+          path: |
+            ${{ runner.temp }}/local-native-project/*.json
+            ${{ runner.temp }}/project-fs-candidate/*.json
+            ${{ runner.temp }}/project-fs-candidate/*.ksl
+            ${{ runner.temp }}/project-fs-candidate/*.stdout
+            ${{ runner.temp }}/project-fs-candidate/*.stderr
+            ${{ runner.temp }}/preflight-schedule
+          if-no-files-found: warn
   bootstrap-arm64:
+    needs: native-preflight
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 240
     steps:
@@ -66,12 +162,8 @@ jobs:
         env:
           TIER: ${{ github.event_name == 'pull_request' && 'pr' || github.event_name == 'push' && 'main' || 'full' }}
         run: python3 scripts/seed/selfhost-bootstrap.py --output "$RUNNER_TEMP/boot" --tier "$TIER"
-      - name: Static launcher (--format launcher, ADR 0371 step 4; arm64, native)
-        run: python3 scripts/seed/check-static-launcher.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/launcher"
-      - name: Kototama bounded pure i64 AOT (arm64, native verdict)
-        run: python3 scripts/seed/check-kototama-i64.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/kototama-i64-arm64"
-      - name: Combined compiler (core + Linux targets) from the bootstrap (arm64, native)
-        run: python3 scripts/seed/check-one-compiler.py --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/one"
+      - name: Fresh one-compiler derivation before independent ISA qualification
+        run: python3 scripts/seed/native_build_queue.py --manifest seed/native-gate-plan.json --phase derive-arm64 --jobs 2 --output "$RUNNER_TEMP/pg-derive-arm64"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
@@ -80,24 +172,23 @@ jobs:
             ${{ runner.temp }}/one/one-compiler.json
             ${{ runner.temp }}/one/calls.json
             ${{ runner.temp }}/one/F2.elf
+            ${{ runner.temp }}/one/F1.elf
+            ${{ runner.temp }}/one/F1.kseed
+            ${{ runner.temp }}/one/F2.kseed
+            ${{ runner.temp }}/one/F3.kseed
+            ${{ runner.temp }}/one/full.kotoba
+            ${{ runner.temp }}/one/runner.kotoba
             ${{ runner.temp }}/one/F-x86_64.elf
           if-no-files-found: warn
       # Keep the transported compiler files at the artifact root. Adding the
       # sibling AOT directory above changes upload-artifact's common ancestor.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
-        with:
-          name: kototama-i64-arm64
-          path: |
-            ${{ runner.temp }}/kototama-i64-arm64/report.json
-            ${{ runner.temp }}/kototama-i64-arm64/gate.stdout
-            ${{ runner.temp }}/kototama-i64-arm64/gate.stderr
-          if-no-files-found: warn
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: bootstrap-arm64
           path: |
             ${{ runner.temp }}/boot/selfhost-bootstrap.json
+            ${{ runner.temp }}/boot/root.elf
+            ${{ runner.temp }}/boot/F*.elf
             ${{ runner.temp }}/boot/runtime-boundary/runtime-boundary.json
             ${{ runner.temp }}/boot/runtime-boundary/calls.json
             ${{ runner.temp }}/boot/calls.json
@@ -108,12 +199,171 @@ jobs:
           if-no-files-found: error
       # a separate artifact: another path in the one above would move its root
       # (the qualify job expects boot/ at the top)
+  qualify-arm64:
+    needs: bootstrap-arm64
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: bootstrap-arm64
+          path: ${{ runner.temp }}/boot
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: one-compiler-receipt
+          path: ${{ runner.temp }}/one
+      - name: Verify current source/image/receipt bindings before transported native execution
+        run: |
+          python3 scripts/seed/check-native-identities.py
+          python3 scripts/seed/check-native-arm-transport.py --bootstrap "$RUNNER_TEMP/boot" --one "$RUNNER_TEMP/one" --output "$RUNNER_TEMP/arm-transport.json"
+      - name: Capability-free AIUEOS user ELF ABI and refusals (arm64, native)
+        run: python3 scripts/seed/check-aiueos-user-elf-native.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/aiueos-user-elf-arm"
+      - name: Static runtime stdin, wire 41 (arm64, native)
+        run: python3 scripts/seed/check-io-read.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/io-read"
+      - name: Static runtime durable files and sleep, wires 35 and 7 (arm64, native)
+        run: python3 scripts/seed/check-durable-sleep.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/durable-sleep"
+      - name: Native private store and STOP/CONT sleep resume (arm64)
+        run: |
+          python3 scripts/seed/check-private-store.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/private-store"
+          python3 scripts/seed/check-sleep-resume.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/sleep-resume/receipt.json"
+      - name: Static runtime spawn, wire 20 (arm64, native)
+        run: python3 scripts/seed/check-spawn-runtime.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/spawn"
+      - name: Independent arm64 gates (bounded native build queue)
+        run: python3 scripts/seed/native_build_queue.py --manifest seed/native-gate-plan.json --phase arm64 --jobs 2 --output "$RUNNER_TEMP/pg-arm64"
+      - name: Native FS2 forms, kernel errors and journal cleanup (arm64)
+        run: python3 scripts/seed/check-native-fs2.py --compiler "$RUNNER_TEMP/one/F2.elf" --output "$RUNNER_TEMP/fs2-arm"
+      - name: Native typed live ABI and user-context admission (arm64)
+        run: |
+          python3 scripts/seed/check-static-profile-native.py --build "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/static-profile-arm"
+          python3 scripts/seed/check-aiueos-value-call-native.py --build "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/live-call-arm"
+          python3 scripts/seed/check-aiueos-user-native.py --build "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/user-context-arm"
+          python3 scripts/seed/check-aiueos-desktop-regions-native.py --build "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/desktop-regions-arm"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: live-abi-arm-evidence
+          path: |
+            ${{ runner.temp }}/static-profile-arm/native-static-profile.json
+            ${{ runner.temp }}/static-profile-arm/*/calls.json
+            ${{ runner.temp }}/live-call-arm/native-value-call.json
+            ${{ runner.temp }}/live-call-arm/*/calls.json
+            ${{ runner.temp }}/user-context-arm/native-user-context.json
+            ${{ runner.temp }}/user-context-arm/*/calls.json
+            ${{ runner.temp }}/desktop-regions-arm/native-desktop-regions.json
+            ${{ runner.temp }}/desktop-regions-arm/*/calls.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: native-fs2-arm-evidence
+          path: ${{ runner.temp }}/fs2-arm
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: label-index-arm64-evidence
+          path: |
+            ${{ runner.temp }}/ccf-filter-arm64/*.json
+            ${{ runner.temp }}/ccf-filter-arm64/*.stdout
+            ${{ runner.temp }}/ccf-filter-arm64/*.stderr
+            ${{ runner.temp }}/flock-vector-arm64/*.json
+            ${{ runner.temp }}/flock-vector-arm64/*.stdout
+            ${{ runner.temp }}/flock-vector-arm64/*.stderr
+            ${{ runner.temp }}/runtime-profile-arm64/*.json
+            ${{ runner.temp }}/runtime-profile-arm64/*.stdout
+            ${{ runner.temp }}/runtime-profile-arm64/*.stderr
+            ${{ runner.temp }}/zero-watermark-arm64/*.json
+            ${{ runner.temp }}/zero-watermark-arm64/*.stdout
+            ${{ runner.temp }}/zero-watermark-arm64/*.stderr
+            ${{ runner.temp }}/label-index-arm64/*.json
+            ${{ runner.temp }}/label-index-arm64/*.stdout
+            ${{ runner.temp }}/label-index-arm64/*.stderr
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: kototama-i64-arm64
+          path: |
+            ${{ runner.temp }}/kototama-i64-arm64/report.json
+            ${{ runner.temp }}/kototama-i64-arm64/gate.stdout
+            ${{ runner.temp }}/kototama-i64-arm64/gate.stderr
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: kototama-receipt-arm64
+          path: ${{ runner.temp }}/kototama-receipt-arm64
+          if-no-files-found: warn
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: static-launcher-arm64
           path: ${{ runner.temp }}/launcher/static-launcher.json
           if-no-files-found: error
-  qualify-x86_64:
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: runtime-checks-arm64
+          path: |
+            ${{ runner.temp }}/runtime/io-read/io-read.json
+            ${{ runner.temp }}/runtime/durable-sleep/durable-sleep.json
+            ${{ runner.temp }}/runtime/spawn/spawn-runtime.json
+            ${{ runner.temp }}/runtime/private-store/receipt.json
+            ${{ runner.temp }}/runtime/sleep-resume/receipt.json
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: native-scheduling-arm64
+          path: ${{ runner.temp }}/pg-arm64
+          if-no-files-found: warn
+  qualify-benchmark-arm:
+    needs: bootstrap-arm64
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: bootstrap-arm64
+          path: ${{ runner.temp }}/boot
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: one-compiler-receipt
+          path: ${{ runner.temp }}/one
+      - name: Verify current source/image/receipt bindings before transported native execution
+        run: |
+          python3 scripts/seed/check-native-identities.py
+          python3 scripts/seed/check-native-arm-transport.py --bootstrap "$RUNNER_TEMP/boot" --one "$RUNNER_TEMP/one" --output "$RUNNER_TEMP/arm-transport.json"
+      - name: Unchanged original19 library/export provenance (ARM native producer)
+        run: python3 scripts/seed/native_build_queue.py --jobs 1 --output "$RUNNER_TEMP/benchmark-arm-stage-admission.json" -- python3 scripts/seed/stage-native-benchmark-corpus.py --one "$RUNNER_TEMP/one" --out "$RUNNER_TEMP/benchmark-arm/corpus"
+      - name: Closed measurement host, original full counts and native accounting oracle
+        run: python3 scripts/seed/native_build_queue.py --jobs 1 --output "$RUNNER_TEMP/benchmark-arm-host-admission.json" -- python3 scripts/seed/check-native-benchmark-host.py --one "$RUNNER_TEMP/one" --corpus "$RUNNER_TEMP/benchmark-arm/corpus" --output "$RUNNER_TEMP/benchmark-arm/host" --full-counts
+      - name: Actually built and executed timing/accounting/reset/highwater mutants
+        run: python3 scripts/seed/native_build_queue.py --jobs 1 --output "$RUNNER_TEMP/benchmark-arm-mutants-admission.json" -- python3 scripts/seed/check-native-benchmark-mutations.py --one "$RUNNER_TEMP/one" --controls "$RUNNER_TEMP/benchmark-arm/host" --output "$RUNNER_TEMP/benchmark-arm/mutations"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: native-benchmark-arm-evidence
+          path: |
+            ${{ runner.temp }}/benchmark-arm/**/observations.json
+            ${{ runner.temp }}/benchmark-arm/**/*.stdout
+            ${{ runner.temp }}/benchmark-arm/**/*.stderr
+            ${{ runner.temp }}/benchmark-arm/**/*.kotoba
+            ${{ runner.temp }}/benchmark-arm/**/*.ksl
+            ${{ runner.temp }}/benchmark-arm/*/observer.py
+            ${{ runner.temp }}/benchmark-arm-*-admission.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: native-benchmark-arm-host-reference
+          path: ${{ runner.temp }}/benchmark-arm/host/observations.json
+          if-no-files-found: error
+
+  derive-x86_64:
     needs: bootstrap-arm64
     runs-on: ubuntu-latest
     timeout-minutes: 240
@@ -125,6 +375,8 @@ jobs:
         with:
           name: bootstrap-arm64
           path: ${{ runner.temp }}/boot
+      - name: Capability-free AIUEOS user ELF ABI and refusals (x86_64, native)
+        run: python3 scripts/seed/check-aiueos-user-elf-native.py --compiler "$PWD/bin/amu" --output "$RUNNER_TEMP/aiueos-user-elf-x86"
       - name: Native x86_64 qualification (no loader, no emulation)
         env:
           TIER: ${{ github.event_name == 'pull_request' && 'pr' || github.event_name == 'push' && 'main' || 'full' }}
@@ -135,23 +387,77 @@ jobs:
           path: ${{ runner.temp }}/one
       - name: Complete native x86 compiler fixed point and CDCI images
         run: python3 scripts/seed/check-complete-x86.py --compiler "$RUNNER_TEMP/one/F-x86_64.elf" --arm-proof "$RUNNER_TEMP/one/one-compiler.json" --output "$RUNNER_TEMP/complete"
-      - name: Native x86 AIUEOS image ABI and refusal diagnostics
-        run: python3 scripts/seed/check-aiueos-image-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/aiueos-image"
-      - name: Native x86 AIUEOS EFI packaging and refusal diagnostics
-        run: python3 scripts/seed/check-aiueos-boot-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/aiueos-boot"
-      - name: Native x86 kernel memory admission and emitted guard diagnostics
-        shell: bash
-        run: |
-          python3 scripts/seed/check-kernel-memory.py --compiler "$RUNNER_TEMP/complete/F2.elf" --work "$RUNNER_TEMP/kernel-memory-admission" --cases seed/tests/kernel-memory | tee "$RUNNER_TEMP/kernel-memory-admission.log"
-          python3 scripts/seed/check-kernel-memory.py --compiler "$RUNNER_TEMP/complete/F2.elf" --work "$RUNNER_TEMP/kernel-memory-guards" | tee "$RUNNER_TEMP/kernel-memory-guards.log"
-      - name: Kototama bounded pure i64 AOT (x86_64, native verdict)
-        run: python3 scripts/seed/check-kototama-i64.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/kototama-i64-x86_64"
-      - name: Native x86 clock and entropy (fixed Kotoba guest, refusal and ENOSYS)
-        run: python3 scripts/seed/check-native-clock-entropy.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/clock-entropy"
-      - name: Kotoba native controller (Amu selfhost and complete24 Kotoba gate)
-        run: python3 scripts/seed/check-native-cdci.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/native-cdci"
       - name: Public native product and aliases
         run: python3 scripts/seed/check-public-native-product.py --product "$GITHUB_WORKSPACE" --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/public-product"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: native-x86-derivation
+          path: |
+            ${{ runner.temp }}/complete
+            ${{ runner.temp }}/x86
+            ${{ runner.temp }}/public-product
+            ${{ runner.temp }}/aiueos-user-elf-x86
+          if-no-files-found: error
+
+  qualify-x86-shards:
+    needs: derive-x86_64
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: core
+            receipt: x86_64-native-receipt
+            schedule: native-scheduling-x86
+          - shard: extensions
+            receipt: x86_64-native-extension-receipt
+            schedule: native-scheduling-x86-extensions
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: bootstrap-arm64
+          path: ${{ runner.temp }}/boot
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: native-x86-derivation
+          path: ${{ runner.temp }}
+      - name: Verify current source and public image before transported native gates
+        run: |
+          python3 scripts/seed/check-native-identities.py
+          python3 scripts/seed/check-public-native-product.py --product "$GITHUB_WORKSPACE" --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/transported-public-product"
+          chmod 700 "$RUNNER_TEMP/complete/F1.elf" "$RUNNER_TEMP/complete/F2.elf" "$RUNNER_TEMP/complete/F3.elf"
+      - name: Static runtime stdin, wire 41 (x86_64, native)
+        run: python3 scripts/seed/check-io-read.py --compiler "$RUNNER_TEMP/complete/F2.elf" --target x86_64-linux --output "$RUNNER_TEMP/runtime/io-read"
+      - name: Static runtime durable files and sleep, wires 35 and 7 (x86_64, native)
+        run: python3 scripts/seed/check-durable-sleep.py --compiler "$RUNNER_TEMP/complete/F2.elf" --target x86_64-linux --output "$RUNNER_TEMP/runtime/durable-sleep"
+      - name: Native private store and STOP/CONT sleep resume (x86_64)
+        run: |
+          python3 scripts/seed/check-private-store.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/runtime/private-store"
+          python3 scripts/seed/check-sleep-resume.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/runtime/sleep-resume/receipt.json"
+      - name: Static runtime spawn, wire 20 (x86_64, native)
+        run: python3 scripts/seed/check-spawn-runtime.py --compiler "$RUNNER_TEMP/complete/F2.elf" --target x86_64-linux --output "$RUNNER_TEMP/runtime/spawn"
+      - name: Independent x86 gates (bounded native build queue)
+        run: |
+          python3 scripts/seed/native_gate_shard.py --manifest seed/native-gate-plan.json --shard "${{ matrix.shard }}" --output "$RUNNER_TEMP/x86-shard-plan.json"
+          python3 scripts/seed/native_build_queue.py --manifest "$RUNNER_TEMP/x86-shard-plan.json" --phase x86 --jobs 2 --output "$RUNNER_TEMP/pg-x86"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && matrix.shard == 'core'
+        with:
+          name: live-abi-x86-evidence
+          path: |
+            ${{ runner.temp }}/static-profile-x86/native-static-profile.json
+            ${{ runner.temp }}/static-profile-x86/*/calls.json
+            ${{ runner.temp }}/live-call-x86/native-value-call.json
+            ${{ runner.temp }}/live-call-x86/*/calls.json
+            ${{ runner.temp }}/user-context-x86/native-user-context.json
+            ${{ runner.temp }}/user-context-x86/*/calls.json
+            ${{ runner.temp }}/desktop-regions-x86/native-desktop-regions.json
+            ${{ runner.temp }}/desktop-regions-x86/*/calls.json
       # JUN-353: F's wasm32-browser modules of the runtime cases, in the image's
       # Chrome (static page, Worker host, DevTools protocol on a pipe; no Node)
       - name: wasm32-browser cases in headless Chrome
@@ -159,16 +465,34 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
-          name: x86_64-native-receipt
+          name: ${{ matrix.receipt }}
           path: |
             ${{ runner.temp }}/x86/x86_64-native.json
             ${{ runner.temp }}/x86/check-static-launcher/static-launcher.json
             ${{ runner.temp }}/x86/runtime-boundary/runtime-boundary.json
             ${{ runner.temp }}/x86/runtime-boundary/calls.json
             ${{ runner.temp }}/x86/raw
+            ${{ runner.temp }}/ccf-filter-x86/*.json
+            ${{ runner.temp }}/ccf-filter-x86/*.stdout
+            ${{ runner.temp }}/ccf-filter-x86/*.stderr
+            ${{ runner.temp }}/flock-vector-x86/*.json
+            ${{ runner.temp }}/flock-vector-x86/*.stdout
+            ${{ runner.temp }}/flock-vector-x86/*.stderr
+            ${{ runner.temp }}/runtime-profile-x86/*.json
+            ${{ runner.temp }}/runtime-profile-x86/*.stdout
+            ${{ runner.temp }}/runtime-profile-x86/*.stderr
+            ${{ runner.temp }}/zero-watermark-x86/*.json
+            ${{ runner.temp }}/zero-watermark-x86/*.stdout
+            ${{ runner.temp }}/zero-watermark-x86/*.stderr
+            ${{ runner.temp }}/label-index-x86/*.json
+            ${{ runner.temp }}/label-index-x86/*.stdout
+            ${{ runner.temp }}/label-index-x86/*.stderr
             ${{ runner.temp }}/public-product/public-product.json
             ${{ runner.temp }}/complete/complete-x86.json
             ${{ runner.temp }}/complete/calls.json
+            ${{ runner.temp }}/fs2-x86/native-fs2.json
+            ${{ runner.temp }}/fs2-x86/calls.json
+            ${{ runner.temp }}/fs2-x86/*/receipt.json
             ${{ runner.temp }}/complete/F1.elf
             ${{ runner.temp }}/complete/F2.elf
             ${{ runner.temp }}/complete/F3.elf
@@ -180,16 +504,178 @@ jobs:
             ${{ runner.temp }}/aiueos-boot/native-boot.json
             ${{ runner.temp }}/aiueos-boot/F2/commands.json
             ${{ runner.temp }}/aiueos-boot/F3/commands.json
+            ${{ runner.temp }}/aiueos-projects/**/*.json
             ${{ runner.temp }}/kototama-i64-x86_64/report.json
             ${{ runner.temp }}/kototama-i64-x86_64/gate.stdout
             ${{ runner.temp }}/kototama-i64-x86_64/gate.stderr
+            ${{ runner.temp }}/kototama-receipt-x86_64/report.json
+            ${{ runner.temp }}/kototama-receipt-x86_64/gate.stdout
+            ${{ runner.temp }}/kototama-receipt-x86_64/gate.stderr
+            ${{ runner.temp }}/b2-image/b2-image.json
+            ${{ runner.temp }}/b2-libc/b2-libc.json
+            ${{ runner.temp }}/b2-libc/*.stdout
+            ${{ runner.temp }}/b2-libc/*.stderr
+            ${{ runner.temp }}/b2-libc/artifacts
             ${{ runner.temp }}/clock-entropy/native-clock-entropy.json
             ${{ runner.temp }}/clock-entropy/calls.json
             ${{ runner.temp }}/clock-entropy/enosys-filter.json
+            ${{ runner.temp }}/runtime/io-read/io-read.json
+            ${{ runner.temp }}/runtime/durable-sleep/durable-sleep.json
+            ${{ runner.temp }}/runtime/spawn/spawn-runtime.json
+            ${{ runner.temp }}/runtime/private-store/receipt.json
+            ${{ runner.temp }}/runtime/sleep-resume/receipt.json
             ${{ runner.temp }}/native-cdci/native-cdci.json
             ${{ runner.temp }}/native-cdci/calls.json
+            ${{ runner.temp }}/native-cdci/controller-profile.json
             ${{ runner.temp }}/native-cdci/raw
             ${{ runner.temp }}/native-cdci/positive/cdci.receipt
             ${{ runner.temp }}/native-cdci/positive/kotoba-gate.receipt
             ${{ runner.temp }}/x86/wasm32-browser/wasm32-browser.json
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: ${{ matrix.schedule }}
+          path: |
+            ${{ runner.temp }}/pg-x86
+            ${{ runner.temp }}/x86-shard-plan.json
+            ${{ runner.temp }}/x86-shard-plan.coverage.json
+          if-no-files-found: warn
+
+  qualify-x86_64:
+    needs: qualify-x86-shards
+    if: always() && !cancelled()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: native-scheduling-x86
+          path: ${{ runner.temp }}/x86-shards/core
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: native-scheduling-x86-extensions
+          path: ${{ runner.temp }}/x86-shards/extensions
+      - name: Require all17 original native gates and argv at capacity2 per runner
+        run: python3 scripts/seed/native_gate_shard.py --manifest seed/native-gate-plan.json --verify-root "$RUNNER_TEMP/x86-shards" --workflow-result "${{ needs.qualify-x86-shards.result }}" --output "$RUNNER_TEMP/x86-partition-review.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: native-x86-partition-review
+          path: ${{ runner.temp }}/x86-partition-review.json
+          if-no-files-found: warn
+
+  qualify-benchmark-x86-factory:
+    needs: [qualify-benchmark-arm, derive-x86_64]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: native-x86-derivation
+          path: ${{ runner.temp }}/native-proof
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: native-benchmark-arm-host-reference
+          path: ${{ runner.temp }}/arm-host-reference
+      - name: Stage original19 through the actual fixed-point public x86 compiler
+        run: |
+          chmod 700 "$RUNNER_TEMP/native-proof/complete/F3.elf"
+          python3 scripts/seed/native_build_queue.py --jobs 1 --output "$RUNNER_TEMP/benchmark-x86-stage-admission.json" -- python3 scripts/seed/stage-native-benchmark-corpus.py --complete "$RUNNER_TEMP/native-proof/complete" --out "$RUNNER_TEMP/benchmark-x86/corpus"
+      - name: Native x86 factory and exact equality to the executed ARM host/payloads
+        run: python3 scripts/seed/native_build_queue.py --jobs 1 --output "$RUNNER_TEMP/benchmark-x86-factory-admission.json" -- python3 scripts/seed/check-native-benchmark-host.py --complete "$RUNNER_TEMP/native-proof/complete" --arm-controls "$RUNNER_TEMP/arm-host-reference/observations.json" --corpus "$RUNNER_TEMP/benchmark-x86/corpus" --output "$RUNNER_TEMP/benchmark-x86/factory" --full-counts
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: native-benchmark-x86-factory-evidence
+          path: |
+            ${{ runner.temp }}/benchmark-x86/**/observations.json
+            ${{ runner.temp }}/benchmark-x86/**/*.stdout
+            ${{ runner.temp }}/benchmark-x86/**/*.stderr
+            ${{ runner.temp }}/benchmark-x86/**/*.kotoba
+            ${{ runner.temp }}/benchmark-x86/**/*.ksl
+            ${{ runner.temp }}/benchmark-x86/*/observer.py
+            ${{ runner.temp }}/benchmark-x86-*-admission.json
+          if-no-files-found: error
+  shared-browser-components:
+    name: Shared text / DOM / text-edit (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04-arm
+            target: arm64
+          - runner: ubuntu-latest
+            target: x86_64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: kotoba-lang/browser
+          ref: 6e3ca4e768d886060abe7bff70da07cf36f5dabc
+          path: _shared/browser
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: kotoba-lang/dom-gpu
+          ref: c0be10ca6b0089e5fbe061eb76a6c23e61f61b22
+          path: _shared/dom
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: kotoba-lang/kotoba
+          ref: b7719f723fbf94f11e19dcda12641f682e324e62
+          path: _shared/text
+          persist-credentials: false
+      - name: Verify source owner pins and native compiler bytes
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, subprocess
+          from pathlib import Path
+          pins = json.loads(Path('seed/shared-browser-components.json').read_text())
+          for name, owner in pins['repositories'].items():
+              root = Path('_shared') / name
+              assert subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'], text=True).strip() == owner['revision']
+              for path, digest in owner['files'].items():
+                  assert hashlib.sha256((root / path).read_bytes()).hexdigest() == digest, (name, path)
+          arm = os.environ['TARGET'] == 'arm64'
+          image = Path('seed/bootstrap/aarch64-linux-static-root.elf' if arm else 'bin/amu')
+          meta = json.loads(Path('seed/bootstrap/aarch64-linux-static-root.json' if arm else 'native-product.json').read_text())
+          assert hashlib.sha256(image.read_bytes()).hexdigest() == meta['image']['sha256']
+          PY
+      - name: Locked typed x86 project and refusal controls
+        if: matrix.target == 'x86_64'
+        run: python3 scripts/seed/check-x86-project-native.py --compiler "$PWD/bin/amu" --output "$RUNNER_TEMP/x86-project"
+      - name: Execute actual shared modules (ARM)
+        if: matrix.target == 'arm64'
+        run: |
+          python3 _shared/browser/scripts/check-shared-native.py --compiler "$PWD/seed/bootstrap/aarch64-linux-static-root.elf" --target arm64 --runner-source "$PWD/seed/x86_64-kx64-runner.kotoba" --browser "$PWD/_shared/browser" --dom "$PWD/_shared/dom" --text "$PWD/_shared/text/lib/kotoba.text" --output "$RUNNER_TEMP/shared-components"
+      - name: Execute actual shared modules (x86)
+        if: matrix.target == 'x86_64'
+        run: |
+          python3 _shared/browser/scripts/check-shared-native.py --compiler "$PWD/bin/amu" --target x86_64 --runner "$RUNNER_TEMP/x86-project/runner.elf" --browser "$PWD/_shared/browser" --dom "$PWD/_shared/dom" --text "$PWD/_shared/text/lib/kotoba.text" --output "$RUNNER_TEMP/shared-components"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: shared-components-${{ matrix.target }}
+          path: |
+            ${{ runner.temp }}/shared-components/*.json
+            ${{ runner.temp }}/shared-components/*.stdout
+            ${{ runner.temp }}/shared-components/*.stderr
+            ${{ runner.temp }}/shared-components/*.ksl
+            ${{ runner.temp }}/x86-project/*.json
+            ${{ runner.temp }}/x86-project/*.stdout
+            ${{ runner.temp }}/x86-project/*.stderr
           if-no-files-found: warn

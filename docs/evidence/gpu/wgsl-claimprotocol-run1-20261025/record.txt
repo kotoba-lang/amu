@@ -1,0 +1,116 @@
+JUN-55/JUN-58 -- MISSING PIECE (ii): the fresh claim-protocol WGSL run
+-- rule 1 PUBLISHED on real hardware, and the named UNMEASURED question
+(do the WGSL host-clock baselines cluster into >1 regime level at all)
+is ANSWERED: YES on batch32, no on single
+record_written=2026-10-25 (JST); run_finished=2026-10-24T23:34:16.394Z
+host: darwin 25.4.0 arm64 (Apple M1 Max) -- HARDWARE RAN THIS SLICE
+
+THE ROW (verbatim, the claim-protocol WGSL channel record's part 3 (ii)):
+"(ii) a fresh WGSL run of the narrowed device's two fold arms whose
+record satisfies rules 1 + 2. UNMEASURED -- no hardware ran in this
+slice."
+
+WHAT RAN (one measurement slice; no code, no test, no ADR moves):
+
+  node scripts/measure-gpu-reduce-wgsl.mjs
+    > docs/evidence/gpu/wgsl-claimprotocol-run1-20261025/measure-log.txt
+  exit 0 (7.1s wall). Committed emitter bytes of both WGSL reduce arms
+  on this host's Apple GPU through Chrome 155 HeadlessChrome/Dawn/Metal
+  (adapter apple/metal-3, subgroups present, timestamp-query advertised
+  but writeTimestamp still REFUSED -- the log's gpu-timestamp-write line
+  records the throw verbatim; per-kernel GPU time stays UNMEASURED).
+  Protocol unchanged: single=3w+11r, batch32=2w+7r per arm per cell,
+  arms paired per round with alternating order; 36 cells (shapes
+  1000003/1048576 x W 32..1024 x sum/max/min) x 2 arms.
+
+VERIFIED (tool output, quoted or re-derived from the committed log):
+
+1. Rule 1 IS published by the run itself (last tick's piece (i) working
+   on its first fresh run): "claim-protocol-rule1: PUBLISHED (rule 1
+   only -- rule 2 sign classification UNIMPLEMENTED on this channel;
+   no :measured? flag or workgroup row moves)" -- so this log IS a
+   claim-protocol record (rule 1 of it).
+2. Correctness re-verified inside the measurement: "checks: 72/72 arm
+   answers exact against the CPU reference".
+3. THE NAMED QUESTION IS ANSWERED -- the rule-1 section's own clusters,
+   per metric (the two metrics never mix):
+   - single: max 1 level (0.3350..0.5050), min 1 level (0.3400..0.4750),
+     sum 2 levels (0.3750..0.4700 + 0.5550). The sum split is ONE run
+     (n=1000003 W=32) at a 1.1809x boundary (0.4700 -> 0.5550) -- a
+     marginal split, one sample; do not read it as a stable regime.
+   - batch32: max 1 level (0.0484..0.1048), min 2 levels (boundary
+     0.0545 -> 0.0628 = 1.1523x, marginal over GAP-1.15's 1.15 window),
+     sum 3 levels (boundaries 0.0597 -> 0.0719 = 1.2044x and
+     0.0786 -> 0.0911 = 1.1590x). The sum/multi-level structure on
+     batch32 is the one observed split with a >1.16x boundary and
+     multiple runs on both sides; it is still ONE run of the session,
+     no clock/thermal control.
+   So: the 2026-10-25 record's single-level hazard ("if the session is
+   single-level, rule 2's regime-invariance degenerates to the
+   protocol's own single-level standard ... the 2026-10-25 read would
+   have FAILED") is NOT the shape of this fresh session on batch32 --
+   multi-level regimes DO exist here -- while single is single-level
+   for 2 of 3 operators (the third a 1-run marginal split).
+4. Re-derivation pin: piping the log's own `time` lines through
+   `python3 scripts/gpu_regime_classify.py --wgsl-log <log>` reproduces
+   the embedded rule-1 section byte-identically (7336 chars both sides,
+   diff empty) -- the section re-derives from the carrier text exactly.
+5. Boundary gaps above are re-derived from the log's printed medians
+   (scratch probe over the cluster table): 1.1809x, 1.1523x, 1.2044x,
+   1.1590x -- four level boundaries total across both metrics.
+6. This run's raw sign counts (log's own aggregate line, NOT a rule-2
+   verdict): "aggregate pairs=36 single_subgroup_faster=15
+   batch32_subgroup_faster=15 (paired-median ratio < 1)" -- parity
+   again on both metrics, ratios straddling 1. NO SIGN CLAIM is made
+   here: rule 2's WGSL publication is UNIMPLEMENTED and rule 2's
+   regime-matched verdict on this multi-level batch32 session CANNOT be
+   read off the aggregate counts (a regime-invariant sign must hold
+   within every regime level, and the levels differ in speed).
+
+WHAT THIS DOES NOT UPGRADE (named so no reading moves):
+
+- Rule 2's sign classification is still UNIMPLEMENTED on this channel
+  (its own later slice, the record's part 3 (ii) requires rules 1 + 2
+  for the reopen condition's first leg). The first leg of the ADR-0360
+  part-2 REOPEN CONDITION therefore does NOT fire from this run alone:
+  this log satisfies rule 1; rule 2's publication must land first. No
+  reopen, no narrowing change: parity is not a fold win, the
+  conservative :baseline answer for the named device stands.
+- Per-kernel GPU time: UNMEASURED, unchanged (writeTimestamp refused;
+  this run re-attempted and re-recorded the refusal).
+- One run, uncontrolled clocks. Marginal boundaries (1.1523x, 1.1590x,
+  1.1809x) are one-sample or near-window splits; only the batch32 sum
+  structure (1.2044x and 1.1590x with runs on both sides of each) is a
+  candidate regime structure, and cross-run stability is UNMEASURED.
+- Rule 4 unchanged: no :measured? flag, no workgroup row, no :shapes
+  value, no selection answer moves. The ADR-0355 row-flip channel rule
+  untouched -- this read is claim-protocol WGSL channel evidence only.
+
+STATE (the honesty rule's three states):
+
+- MEASURED: one fresh claim-protocol WGSL run on this host (wall-clock
+  submit->completion, the channel's named metric). Rule-1 clusters on
+  this session, per metric, published by the run and re-derived from
+  the log. The named question "do the baselines cluster into >1 regime
+  level at all" is answered for THIS session: batch32 yes (min 2
+  levels, sum 3 levels), single effectively no (1 level for max/min;
+  sum's 2nd level a 1-run marginal split). Cross-run stability
+  UNMEASURED.
+- IMPLEMENTED: nothing new this slice (no code moved; the run exercises
+  last slice's pieces (i) -- that is verification of landed code, not
+  new implementation).
+- ACCEPTED DESIGN ONLY: the claim-protocol WGSL adoption + rule 2's
+  unit definitions + the reopen bracket (record + ADR-0360 amendment).
+- UNMEASURED: rule 2's sign verdict on this channel (publication
+  UNIMPLEMENTED), per-kernel GPU time (refused), cross-run regime
+  stability, every workgroup-row question.
+
+LEFT (its own later slices): (a) rule 2's WGSL publication
+(regime-matched sign per level; the run's `pair` lines are its raw
+material) -- only after (a) can the reopen condition's first leg be
+evaluated; (b) the ADR-0360/record honesty brackets for the now-answered
+regime-structure question (docs-only slice); (c) a second run for
+cross-run stability of the batch32 sum levels.
+
+Evidence: docs/evidence/gpu/wgsl-claimprotocol-run1-20261025/
+(measure-log.txt; no POSIX .sh anywhere in docs/).

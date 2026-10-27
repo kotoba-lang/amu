@@ -1,0 +1,89 @@
+(ns selfhost.compile-route
+  {:kotoba/export [main test-unlocked-builders test-locked-builders
+                   test-locked-modules test-option-values test-project-routes
+                   test-lock-like-data]}
+  (:require [kotoba.compiler.selfhost-route :as route]))
+
+(defn- no-arguments [] [:list :string]
+  (typed-list-new [:list :string]))
+
+(defn- one-argument [a :string] [:list :string]
+  (typed-list-conj [:list :string] (no-arguments) a))
+
+(defn- two-arguments [a :string b :string] [:list :string]
+  (typed-list-conj [:list :string] (one-argument a) b))
+
+(defn- three-arguments [a :string b :string c :string] [:list :string]
+  (typed-list-conj [:list :string] (two-arguments a b) c))
+
+(defn- selected? [command :string arguments [:list :string] expected :keyword] :bool
+  (= (route/dispatch command arguments) expected))
+
+(defn test-unlocked-builders [] :i64
+  (if (and (selected? "compile" (no-arguments) :seed-builder)
+           (selected? "compile-kir" (no-arguments) :seed-builder)
+           (selected? "link" (no-arguments) :seed-builder)
+           (selected? "extract-native" (no-arguments) :seed-builder)
+           (selected? "modules" (no-arguments) :seed-builder))
+    1 0))
+
+(defn- locked-builder? [command :string] :bool
+  (and
+    (selected? command (two-arguments "--module-lock" "/input/lock") :unsupported-locked-builder)
+    (selected? command (two-arguments "--blocks" "/input/blocks") :unsupported-locked-builder)
+    (selected? command (one-argument "--module-lock=/input/lock") :unsupported-locked-builder)
+    (selected? command (one-argument "--blocks=/input/blocks") :unsupported-locked-builder)
+    (selected? command (one-argument "--module-lock") :unsupported-locked-builder)
+    (selected? command (one-argument "--blocks") :unsupported-locked-builder)))
+
+(defn test-locked-builders [] :i64
+  (if (and (locked-builder? "compile") (locked-builder? "compile-kir")
+           (locked-builder? "link") (locked-builder? "extract-native"))
+    1 0))
+
+(defn test-locked-modules [] :i64
+  (if (and
+       (selected? "modules" (two-arguments "--module-lock" "/input/lock") :native-project)
+       (selected? "modules" (two-arguments "--blocks" "/input/blocks") :native-project)
+       (selected? "modules" (one-argument "--module-lock=/input/lock") :native-project)
+       (selected? "modules" (one-argument "--blocks=/input/blocks") :native-project)
+       (selected? "modules" (one-argument "--module-lock") :native-project))
+    1 0))
+
+(defn- value-is-data? [option :string] :bool
+  (and
+    (selected? "compile" (two-arguments option "--module-lock") :seed-builder)
+    (selected? "compile" (two-arguments option "--blocks") :seed-builder)
+    (selected? "modules" (two-arguments option "--module-lock") :seed-builder)
+    (selected? "compile" (three-arguments option "--blocks" "--module-lock") :unsupported-locked-builder)))
+
+(defn test-option-values [] :i64
+  (if (and (value-is-data? "--target") (value-is-data? "--output")
+           (value-is-data? "--symbol") (value-is-data? "--source-path")
+           (value-is-data? "--policy") (value-is-data? "--object-dir")
+           (value-is-data? "--ns"))
+    1 0))
+
+(defn test-project-routes [] :i64
+  (if (and
+       (selected? "check" (no-arguments) :native-project)
+       (selected? "check" (two-arguments "--module-lock" "/input/lock") :native-project)
+       (selected? "check-entry" (two-arguments "--blocks" "/input/blocks") :native-project)
+       (selected? "compare-hir" (no-arguments) :native-project)
+       (selected? "unknown-command" (one-argument "--module-lock") :native-project))
+    1 0))
+
+(defn test-lock-like-data [] :i64
+  (if (and
+       (selected? "compile" (one-argument "./--module-lock") :seed-builder)
+       (selected? "compile" (one-argument "/入力/--blocks.kotoba") :seed-builder)
+       (selected? "compile" (two-arguments "--module-locking" "--blocksize") :seed-builder)
+       (selected? "compile" (two-arguments "--output" "--module-lock=/tmp/result") :seed-builder)
+       (selected? "modules" (one-argument "--blocks/") :seed-builder))
+    1 0))
+
+(defn main [] :i64
+  (if (and (= (test-unlocked-builders) 1) (= (test-locked-builders) 1)
+           (= (test-locked-modules) 1) (= (test-option-values) 1)
+           (= (test-project-routes) 1) (= (test-lock-like-data) 1))
+    0 1))

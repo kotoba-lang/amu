@@ -1,0 +1,121 @@
+JUN-58 / JUN-55 -- rule 3 auto-wired: the measurement driver publishes
+the comparison itself (2026-10-23)
+
+One IMPLEMENTATION slice: the row the claim-protocol state paragraph
+named after rules 1-3 landed ("UNIMPLEMENTED, unchanged and named:
+driver auto-wiring of --compare"). NO hardware measurement ran in this
+slice -- every number below is PARSED from committed summary.md records
+by the machinery's own self-tests, not re-measured.
+
+WHAT LANDED (implemented, with tests):
+
+- scripts/gpu_regime_classify.py:
+  - render_rule3_section() gains `via`: the publication path named in
+    the section header. Default unchanged ("Published by
+    scripts/gpu_regime_classify.py --compare: ...", pinned by test) -- a
+    section never claims a publication path it did not take.
+  - append_comparison_section(hist_text, hist_label, new_text,
+    new_label, gap_max, via): the auto-wiring primitive. Returns the new
+    record's text with the rule-3 section appended as its final
+    section, drawn from EXACTLY the text being published; the
+    single-record sections stand byte-identical as prefix and the
+    appended section is byte-identical to what `--compare <hist> <new>`
+    prints for the same pair (modulo `via`). The single-record parsers
+    (per-run baselines, per-run ratios, published medians) round-trip
+    through the appended text -- the rule-3 tables match none of their
+    row shapes -- so an auto-wired record stays loadable as the NEXT
+    comparison's historical side.
+
+- scripts/gpu-subgroup-reduce-metal-measure.py (the measurement
+  driver):
+  - --compare-historical HIST.md: a prior record's summary.md, read
+    once, never modified. With it, the summary the driver writes
+    additionally carries the rule-3 regime-matched comparison against
+    that record -- no manual --compare consumption step remains.
+  - finalize_summary(summary_text, compare_historical, new_label): the
+    exact function main() calls; without the flag the text passes
+    through unchanged. The section's `via` names THIS driver as the
+    publication path ("the measurement driver's --compare-historical
+    auto-wiring (scripts/gpu-subgroup-reduce-metal-measure.py; rule-3
+    machinery: scripts/gpu_regime_classify.py)").
+  - --self-test: hardware-free exercise of the finalize path over two
+    committed corpus records (no GPU, no Metal, no measurement).
+
+VERIFIED (real output on this host):
+
+  python3 scripts/gpu_regime_classify.py --self-test
+    TOTAL: 916 assertions passed, 0 failed
+
+  (916 = the previous 908 plus 8 auto-wire fixtures: the pinned default
+  --compare header phrase, the via substitution, the additive-append
+  prefix property, the appended-section-equals--compare-output property,
+  the three parser round-trips, and the appended-record-stays-loadable
+  property. All over the REAL corpus pair shape2-band/w512 ->
+  shape2-resweep/w512.)
+
+  python3 scripts/gpu-subgroup-reduce-metal-measure.py --self-test
+    driver auto-wiring self-test: 7 assertions passed, 0 failed
+
+  (7: no-flag passthrough, prefix property, section equality with
+  render_rule3_section under the driver's via, the via name appearing,
+  the three parser round-trips. Same real corpus pair.)
+
+  Auto-wired section over the real corpus pair (real output, excerpt):
+
+    ## Regime-matched comparison (claim protocol rule 3)
+    Published by the measurement driver's --compare-historical
+    auto-wiring (scripts/gpu-subgroup-reduce-metal-measure.py; rule-3
+    machinery: scripts/gpu_regime_classify.py):
+    **docs/evidence/gpu-subgroup-reduce-m1max-shape2-band-20261023/w512/summary.md**
+    (historical) against
+    **docs/evidence/gpu-subgroup-reduce-m1max-shape2-resweep-20261023/w512/summary.md**.
+    [rule-3 boilerplate, unchanged]
+    Cell: sign -- reproduces in sign strictly (every operator);
+    magnitude -- magnitude splits by clock regime (mixed: max, min).
+
+  Scoped GPU gate (the 7 GPU-owned test namespaces, scratch runner
+  gpu_scoped_gate.cljk, not in the repo), from the chain worktree root:
+
+    kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+      /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+
+    Ran 88 tests containing 7122 assertions.
+    0 failures, 0 errors.
+
+    scoped: 88 tests, 7122 passed, 0 failed, 0 errors
+
+  (88/7122, unchanged from base: this diff touches no .cljk namespace --
+  the gate runs to prove nothing broke.)
+
+  full (kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)"
+  run-tests.cljk): RED AT BASE, re-verified this tick, outside this diff
+  -- aborts at NAMESPACE LOAD with "Could not find namespace:
+  kotoba.form" (the W3 port path, documented red at base in ADR 0362
+  and every prior tick record). This diff touches no namespace on that
+  path. No green full suite is claimed.
+
+WHAT DID NOT MOVE (named so nothing is silently upgraded):
+- src/kotoba/compiler/*, test/*: untouched. No code namespace in this
+  diff.
+- No evidence record is rewritten; every committed summary.md stands.
+  The auto-wire test READS two committed records and writes nothing.
+- No :measured? flag, no workgroup row (ADR-0355/0358), no flip gate,
+  no selection answer moves (rule 4, untouched). This slice ran no
+  hardware measurement.
+- The --compare CLI is unchanged and still works; auto-wiring is an
+  additional publication path, not a replacement.
+
+State (the honesty rule's three states): rules 1, 2 and 3's harness-side
+publication, INCLUDING driver auto-wiring of the rule-3 comparison, is
+IMPLEMENTED (code + tests). UNIMPLEMENTED, unchanged and named:
+pair-level classification (the op-order cell's within-run ramping needs
+per-pair levels -- analyze-oporder.py remains the manual instrument);
+cross-operator level identity.
+
+UNMEASURED, unchanged: everything. No new hardware number exists in
+this slice; every figure above is parsed from committed records.
+
+LEFT: cross-day replication of every cell (needs a later-day cron tick);
+pair-level classification; cross-operator level identity; the
+blocked/absent-hardware vendor rows (JUN-57/59/60 hardware-free slices
+remain).

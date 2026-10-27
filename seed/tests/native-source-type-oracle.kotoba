@@ -1,0 +1,33 @@
+;; Hand-assembled interface identity payloads; no source/KIR reader or bridge.
+;; Canonical map sorting is independent of the producer's ordered fixed maps.
+(defn- dto-vec [xs [:list :string]] :string (dc-collection "vec" xs false))
+(defn- dto-unary [head :string a :string] :string
+  (dto-vec (typed-list-new [:list :string] (dc-kw head) a)))
+(defn- dto-binary [head :string a :string b :string] :string
+  (dto-vec (typed-list-new [:list :string] (dc-kw head) a b)))
+(defn- dto-type [name :string] :string
+  (cond (= name "list-i64") (dto-unary "list" (dc-kw "i64"))
+    (= name "list-string") (dto-unary "list" (dc-kw "string"))
+    (= name "option-bool") (dto-unary "option" (dc-kw "bool"))
+    (= name "result-string-bytes") (dto-binary "result" (dc-kw "string") (dc-kw "bytes"))
+    (= name "map-keyword-string") (dto-binary "map" (dc-kw "keyword") (dc-kw "string"))
+    (= name "set-keyword") (dto-unary "set" (dc-kw "keyword"))
+    (= name "nested") (dto-unary "list" (dto-binary "result"
+                        (dto-unary "option" (dc-kw "string"))
+                        (dto-binary "map" (dc-kw "keyword") (dto-unary "list" (dc-kw "bytes")))))
+    :else ""))
+(defn- dto-payload [ty :string] :string
+  (let [body (dc-atom "sym" "k0")
+        params (dto-vec (typed-list-new [:list :string] body))
+        form (dc-collection "map" (typed-list-new [:list :string]
+               (dc-entry "op" (dc-kw "kotoba.definition/function"))
+               (dc-entry "params" params) (dc-entry "body" body)) true)
+        interface (dc-collection "map" (typed-list-new [:list :string]
+                    (dc-entry "result" ty) (dc-entry "arity" (dc-int "1"))
+                    (dc-entry "params" (dto-vec (typed-list-new [:list :string] ty)))) true)]
+    (dc-payload "6" "2" form (dc-collection "set" (typed-list-new [:list :string]) true)
+      interface (dto-vec (typed-list-new [:list :string])))))
+(defn- seed-main [] :i64
+  (if (not= (io-argc) 1) 2
+    (let [ty (dto-type (io-arg 0)) cid (if (= ty "") "" (dc-definition-cid (dto-payload ty)))]
+      (if (= cid "") 1 (let [out (io-out (string-concat cid "\n"))] 0)))))

@@ -1,0 +1,36 @@
+== date -u (builds) ==
+UNCAPTURED -- the build terminal output carried no timestamp; the builds are
+bounded above by the first run's start 2026-10-27T10:57:42Z (run-window.txt)
+and below by the source upload in the same terminal call. Not measured, so
+not asserted.
+== host ==
+aiueos-6600hs (aiueos-6600hs-1, tailscale 100.98.24.37), user murakumo-ci
+(groups include render). Workdir ~/anv-tsstage-20261027, runs cwd=shaders/.
+== gcc --version (first line) ==
+gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+== instrument builds (12 binaries; the derived source is ONE parameterization
+== edit of the session-4 archived snapshot -- instrument-derivation.diff.txt;
+== arm = the (TS1_STAGE, TS2_STAGE) compile-time pair of the two bracket
+== endpoints; defaults = the archived (TOP_OF_PIPE, BOTTOM_OF_PIPE)) ==
+$ gcc -O2 -DBATCH=<B> <arm flags> -o anv-tsst-<arm>-b<B> gpu-subgroup-reduce-anv-tsstage.c -lvulkan
+build anv-tsst-tb-b1 -DBATCH=1  rc=0
+build anv-tsst-tb-b2 -DBATCH=2  rc=0
+build anv-tsst-tb-b4 -DBATCH=4  rc=0
+build anv-tsst-tb-b64 -DBATCH=64  rc=0
+build anv-tsst-tt-b1 -DBATCH=1 -DTS2_STAGE=VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT rc=0
+build anv-tsst-tt-b2 -DBATCH=2 -DTS2_STAGE=VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT rc=0
+build anv-tsst-tt-b4 -DBATCH=4 -DTS2_STAGE=VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT rc=0
+build anv-tsst-tt-b64 -DBATCH=64 -DTS2_STAGE=VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT rc=0
+build anv-tsst-bb-b1 -DBATCH=1 -DTS1_STAGE=VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT rc=0
+build anv-tsst-bb-b2 -DBATCH=2 -DTS1_STAGE=VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT rc=0
+build anv-tsst-bb-b4 -DBATCH=4 -DTS1_STAGE=VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT rc=0
+build anv-tsst-bb-b64 -DBATCH=64 -DTS1_STAGE=VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT rc=0
+== arm decode (the header does NOT print the arm; arm identity is this record
+== and the run-window.txt run->binary mapping; headers are byte-identical
+== across arms at the same B except batch=, checked by analysis-s5.py) ==
+tb = (TOP_OF_PIPE, BOTTOM_OF_PIPE) = the archived bracket (control)
+tt = (TOP_OF_PIPE, TOP_OF_PIPE)
+bb = (BOTTOM_OF_PIPE, BOTTOM_OF_PIPE)
+== sha256 of the uploaded instrument + manifest ==
+d376e43116e7fbd4cb4bbe293f8ae858dd53bfec2fe1bb795a5e8e9ca7f73e99  gpu-subgroup-reduce-anv-tsstage.c
+9b0a494ef909aeacd7491fa4fdd1198ae59d2377c5cba5b55ffecd637ee9f3cd  cases-s5.txt

@@ -1,0 +1,32 @@
+== JUN-59 session 14 derivation census (FLOOR-BOUNDARY BISECT at fixed B=8) ==
+ZERO derivation edits this session (the strongest custody position in
+the chain -- named as such): the instrument is session 13's committed
+NDIV-derived source used BYTE-IDENTICAL; the new arms are new compile-time
+-D NDIV values only; the shader corpus is the archived byte-verified set.
+
+instrument byte-copy (session 13 committed -> session 14 committed): a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556  gpu-subgroup-reduce-anv-ndiv.c
+session-13 committed instrument digest (re-sha256 local):        a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556  (MATCH)
+session-8 base snapshot digest (re-sha256 local, chain anchor):  5c7cf2d50f6e365187a35a772279ca17cead1c223fb687cc39bda454035762f3  gpu-subgroup-reduce-anv-workmul.c
+inverse check: NOT APPLICABLE this session -- ZERO derivation edits
+(there is nothing to strip; byte-identity IS the custody).
+
+== knob arithmetic pin (WORK_MUL=1; n = floor(1,000,003 * WORK_MUL / NDIV)) ==
+arm    BATCH  NDIV   n=floor(1000003/NDIV)  wg(W=128)  wg(W=256)
+c2     2      1       1000003                 7813       3907
+c8     8      1       1000003                 7813       3907
+d128   8      128        7812                   62         31
+d160   8      160        6250                   49         25
+d192   8      192        5208                   41         21
+d224   8      224        4464                   35         18
+d256   8      256        3906                   31         16
+
+The three NEW bisect rungs d160/d192/d224 sit between session 13's
+d128 (n=7,812, committed class INTERMEDIATE/MIXED) and d256 (n=3,906,
+committed class FLOOR) -- the (3,906..7,812] FLOOR-class boundary band.
+n values: 1,000,003//160 = 6,250; //192 = 5,208; //224 = 4,464 (L2 floor).
+
+== manifest ==
+cases-s14-a.txt: the 24 a-set cell lines are a BYTE-COPY of session 13's
+cases-s13-a.txt cell lines (checked programmatically in this script).
+expected-corpus.sha256: regenerated from session 2's committed census,
+byte-equal to session 13's file (checked).

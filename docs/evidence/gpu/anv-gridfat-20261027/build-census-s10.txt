@@ -1,0 +1,50 @@
+== date -u (builds) ==
+Bounded by the host timeline: builds ran after the verify GO
+(2026-10-27T13:24:27Z) and before the first run (2026-10-27T13:24:58Z,
+run-window.txt). Build window 2026-10-27T13:24:42Z..13:24:43Z.
+== host ==
+aiueos-6600hs (aiueos-6600hs-1, tailscale 100.98.24.37), user murakumo-ci
+(groups include render). Workdir ~/anv-gridfat-20261027, runs cwd=shaders/
+(manifests passed as ../cases-s10-{a,i8}.txt).
+== uname ==
+Linux aiueos-6600hs 7.0.0-31-generic #31~24.04.1-Ubuntu SMP PREEMPT_DYNAMIC x86_64
+== glslangValidator --version (first line) ==
+Glslang Version: 11:15.1.0
+== gcc --version (first line) ==
+gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+== shader compiles: glslangValidator -S comp -V --target-env vulkan1.2 ==
+== shaders-derived/*.iter8.glsl -o shaders/<f>.spv (6 derived ITERMUL=8 ==
+== sources, byte-reuses of session 9's committed derivation) ==
+shaders-derived/*.iter8.glsl -> shaders/*.iter8.spv rc=0 (6/6)
+== REPRODUCIBILITY PIN: the 6 rebuilt iter8 spv are byte-identical to ==
+== session 9's built iter8 spv (see host-verify-s10.txt; diff exit 0). ==
+== instrument builds (3 binaries; arm = the compile-time (BATCH, WORK_MUL)
+== pair; BARRIER_N=0 for every arm; the source is the archived session-8 ==
+== snapshot, digest 5c7cf2d5... re-verified in host-verify-s10.txt) ==
+$ gcc -O2 -DBATCH=<B> -DWORK_MUL=<M> -DBARRIER_N=0 -o anv-gf-<tag> gpu-subgroup-reduce-anv-workmul.c -lvulkan
+build anv-gf-b2m1 -DBATCH=2 -DWORK_MUL=1 -DBARRIER_N=0 rc=0
+build anv-gf-b8m1 -DBATCH=8 -DWORK_MUL=1 -DBARRIER_N=0 rc=0
+build anv-gf-b2m8 -DBATCH=2 -DWORK_MUL=8 -DBARRIER_N=0 rc=0
+== arm decode (tag; the header prints batch=/work_mul=/n= and every SAMPLE ==
+== prints batch=/work_mul=, so every run log carries its knob identity; ==
+== analysis-s10.py checks the fields) ==
+c2 = (B=2, M=1, a-set)   floor control (committed 31)
+c8 = (B=8, M=1, a-set)   capture control (committed 32,915, session 4)
+g8 = (B=2, M=8, a-set)   grid control (session 8's b2m8: FLOOR 31..32)
+f8 = (B=2, M=1, iter8)   fatness control (session 9's f8b2: FLOOR 31..32)
+gf = (B=2, M=8, iter8)   PROBE JOINT DOSE (2*8*8 = 128 nominal units)
+== sha256 of the rebuilt iter8 spv + the binaries ==
+41b25b27f11cbc02ce4ed213687549a684eb4792cf17c4c6fad60447e34edb34  shaders/subgroup-reduce-w128-max.emitted.iter8.spv
+cd10e1d09015336017ae6dd72e5c54a82721a68f81ee2d5d208e06e10956fcea  shaders/subgroup-reduce-w128-min.emitted.iter8.spv
+d05d75f03123d06c231d11983a44590d94231ad778c23d7ec4fb621434c91ebc  shaders/subgroup-reduce-w128-sum.emitted.iter8.spv
+4b3a3bf66880fa20ba3a1abd4b0b74a3c450b7a820bc7d8cddeeee9cd2559838  shaders/subgroup-reduce-w256-max.emitted.iter8.spv
+48fbd7235ebff714f513c6e9fc7a0d79ef0332f8bf882b2b2a8e93d392d05f18  shaders/subgroup-reduce-w256-min.emitted.iter8.spv
+5732ad9fd173e34c0089aff4f19528a91bb27dedaf5d5018bcccdc5b0786f8b1  shaders/subgroup-reduce-w256-sum.emitted.iter8.spv
+021dd5ab1aa74ff280f3de806992173ab9761395593f106c4f78b5e38a8dd5ed  (session-8 b1m1, NOT used here)
+efbc1ba8243fcda3da05253426796e32a19cd4cccce627a1a679bd6976a64fb6  anv-gf-b2m1
+d2c41daed283136185c6b1ff3dc2112bda2a74ee4b2106c5ebd971c990bfd6e0  anv-gf-b8m1
+476db4853b3c77103f0a052feacdc5391cfc29c3a74ecbe8e30f7a8ace7a3f19  anv-gf-b2m8
+== EXTRA PIN (comparison of committed numbers to this build's real ==
+== sha256 output): all 3 binaries are byte-identical to session 8's ==
+== same-flag binaries (build-census-s8.txt: anv-wm-b2m1 efbc1ba8..., ==
+== anv-wm-b8m1 d2c41dae..., anv-wm-b2m8 476db485...). ==

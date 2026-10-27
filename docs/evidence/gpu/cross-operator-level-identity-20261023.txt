@@ -1,0 +1,163 @@
+JUN-58 / JUN-55 -- cross-operator level identity: the rule-1 run
+partition, tested across operators (2026-10-23)
+
+One IMPLEMENTATION slice: the row the pair-level state paragraph named
+("UNIMPLEMENTED, unchanged and named: cross-operator level identity
+(classification stays per operator; a :sum level and a :min level are
+never called one clock level)"). NO hardware measurement ran in this
+slice -- every number below is PARSED from committed summary.md text by
+the machinery's own self-tests (or printed by the CLI over committed
+records), not re-measured. No committed record is rewritten; this
+slice's self-tests READ the corpus and write nothing to it.
+
+WHAT LANDED (implemented, with tests):
+
+- scripts/gpu_regime_classify.py, cross-operator identity machinery:
+  - cross_operator_level_identity(per_op): the mechanical test. Rule 1
+    classifies per operator, leaving the cross-operator question open
+    (is a run's regime operator-independent?). The test is PARTITION
+    AGREEMENT: for every run pair, every operator must agree on whether
+    the two runs sit in the same rule-1 level (GAP-1.15, applied per
+    operator). Agreement on every pair -> "identity holds"; any
+    divergent pair -> "identity refuted", the pairs NAMED with every
+    operator's relation (same-level / split-level). The disagreement's
+    shape is published too: partition refinement between every operator
+    pair (equal partitions / one refines the other / cross-cutting).
+    Refuses < 2 operators, < 2 runs, and a run-set mismatch across
+    operators.
+  - render_identity_section(...) + render_section() wiring: the
+    publication. The section is appended to the single-record output
+    (and therefore to every future summary.md the measurement driver
+    writes) when the record has at least two operators. `via` names the
+    publication path (rule 3's honesty rule, applied here too).
+  - The stale "NOT asserted" prose in the rule-1 header, the rule-2
+    header and the pair-level header is updated to say exactly what is
+    and is not asserted now (see WHAT IT DOES NOT DO below).
+
+WHAT THIS SLICE DECIDED (the GAP-1.15 ethos: mechanical, visible,
+pinned):
+
+- Identity is partition agreement at RUN level, nothing more. The
+  harness reads no GPU clock: "identity" is agreement of the run
+  partitions, not verified clock identity. Where identity holds, a
+  record's prose MAY name one level across operators; where it refutes,
+  per-operator level names stay operator-scoped (one operator's fastest
+  level is not another's).
+- Rule 4 stands, unchanged and restated in the section's own text: the
+  identity verdict is a publication fact. It changes no rule-2 verdict
+  (the rule-2 cell row is still only the admissibility roll-up), no
+  rule-3 phrase, no selection answer, no :measured? flag, no workgroup
+  row.
+
+WHAT IT DOES NOT DO (named so nothing is silently upgraded):
+
+- Clock identity is never asserted.
+- Pair-level cross-operator identity is NOT tested (the pair-level
+  section's levels are never compared across operators).
+- No rule-2 verdict, rule-3 phrase, selection answer, :measured? flag
+  or workgroup row moves. The 88-test scoped GPU gate is byte-unchanged
+  because no .cljk namespace is in this diff.
+
+FINDING (machine over the committed corpus; 28 multi-operator records,
+printed per record by --self-test):
+
+1. Cross-operator level identity MOSTLY REFUTES: 9 of 28 records hold
+   (and only 2 of those hold with multi-level partitions -- the other 7
+   hold trivially, every operator seeing one level), 19 of 28 refute.
+
+2. But every refuted record's disagreement has REFINEMENT STRUCTURE:
+   19/19 refuted records carry a strict partition-refinement edge (an
+   operator whose partition strictly refines another's). No record in
+   the corpus shows pure crossing with no refinement edge at all. This
+   is asserted over every refuted record -- a future record that breaks
+   it fails the self-test and surfaces instead of hiding.
+
+3. The closing cell (shape2-resweep w512) HOLDS, and thereby LICENSES
+   its own cross-operator prose: all three operators' partitions are
+   {3} / {1,2,4,5,6}, so that record's cross-operator fast/slow naming
+   ("this session's run 3 sat fast/intermediate"; "fast-level :max
+   1.026 / :min 1.021-1.026 vs slow ~0.92") is mechanically licensed
+   (CLI output over the committed summary.md: "identity holds -- the
+   rule-1 run partition is identical across max, min, sum (all 15 run
+   pairs agree)").
+
+4. wsweep-low w32 -- the W = 32 regime story's home cell -- REFUTES:
+   13 of 15 run pairs diverge. The record's "runs 4/6 one fast regime"
+   prose is :max's partition alone ([4,6] vs [1,2,3,5]); :min splits
+   [3,4,5,6]/[2]/[1], :sum pools all six runs, and :max and :min
+   CROSS-CUT (neither refines). The cross-operator "the fast regime"
+   naming of that cell is NOT mechanically licenseable; the regime
+   story there stays per-operator.
+
+5. The op-order cell (w32-sum-last) is the corpus's ONLY record where
+   :sum's partition is the finest (:sum refines both :max and :min;
+   :max pools all six runs into one level). :sum ran LAST in that
+   cell's operator order -- the within-run ramping the pair-level slice
+   named shows up at run level in the operator that ran last.
+
+   Per-record verdicts (all 28, machine output): see the --self-test
+   transcript below; the tally line is
+   "28 multi-operator records -- 9 identity-holds (2 of them
+   multi-level), 19 identity-refuted (19 with refinement structure)".
+
+TESTS (real output):
+
+- python3 scripts/gpu_regime_classify.py --self-test
+    = 1074 assertions, 0 failed (the previous 1019 plus 55 identity
+    fixtures: unit -- refusal shapes (< 2 operators / < 2 runs /
+    run-set mismatch), the GAP-1.15 identity boundary on both sides,
+    identical/strict-refining/cross-cutting partitions, the named
+    divergent pairs, rendering (holds/refuted wording, refinement
+    shape, rule-4 disclaimer, via), render_section integration
+    (>= 2 operators in / 1 operator out), parser round-trip through a
+    record carrying the identity section; corpus -- multi-operator
+    floor, shared run sets, tally floors, the refinement-structure
+    claim over every refuted record, the three named-record pins
+    (closing cell holds with {3}/{1,2,4,5,6}; wsweep-low w32 refutes
+    with 13 divergent pairs and max/min cross-cut; op-order cell
+    refutes with :sum finest -- the corpus's only such record), and the
+    per-record verdict enumeration printed).
+- python3 scripts/gpu-subgroup-reduce-metal-measure.py --self-test
+    = 7 assertions, 0 failed (the driver's finalize path, unchanged by
+    this diff -- run to prove the import surface held).
+- Scoped GPU gate (the 7 GPU-owned test namespaces, scratch runner
+  gpu_scoped_gate.cljk, not in the repo), from the chain worktree root:
+
+    kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+      /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+
+    Ran 88 tests containing 7122 assertions.
+    0 failures, 0 errors.
+
+  (88/7122, unchanged from base: this diff touches no .cljk namespace.)
+- full (kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)"
+  run-tests.cljk): RED AT BASE, re-verified this tick, outside this
+  diff -- aborts at NAMESPACE LOAD with "Could not find namespace:
+  kotoba.form" (the W3 port path, the documented red at base in ADR
+  0362 and every prior tick record). This diff touches no namespace on
+  that path. No green full suite is claimed.
+
+WHAT DID NOT MOVE (named so nothing is silently upgraded):
+
+- src/kotoba/compiler/*, test/*: untouched. No code namespace in this
+  diff.
+- No committed evidence record is rewritten. The CLI and self-tests
+  READ committed summary.md text only.
+- No :measured? flag, no workgroup row (ADR-0355/0358), no flip gate,
+  no selection answer moves (rule 4, restated in the section text).
+  This slice ran no hardware measurement.
+- Rule 2's run-level verdicts and the rule-2 cell roll-up are
+  untouched; the identity verdict never re-scopes them.
+
+State (the honesty rule's three states): cross-operator level identity
+is IMPLEMENTED (code + tests). Still NOT asserted, named: clock
+identity (no clock is read) and pair-level cross-operator identity.
+Rule 4 remains untouched.
+
+UNMEASURED, unchanged: everything. No new hardware number exists in
+this slice; every figure above is parsed from committed records.
+
+LEFT: cross-day replication of every cell (needs a later-day cron
+tick); pair-level cross-operator identity (not tested, not claimed);
+the blocked/absent-hardware vendor rows (JUN-57/59/60 hardware-free
+slices remain).

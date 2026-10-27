@@ -1,0 +1,225 @@
+
+;; Receipt formatting is scalar and occurs only after successful verification.
+(defn- kb-array [b :i64 i :i64 p :i64] :i64
+  (let [open (kxrt-store8 (+ b i) 91)]
+    (loop [k 0 at (inc i)]
+      (if (= k 17) (let [close (kxrt-store8 (+ b at) 93)] (inc at))
+        (let [comma (if (> k 0) (kxrt-store8 (+ b at) 44) 0) start (if (> k 0) (inc at) at)
+              len (kxrt-dec (+ b start) (kxrt-load64 (+ p (* k 8))))] (recur (inc k) (+ start len)))))))
+(defn- kb-report [] :i64
+  (let [b (+ (kxrt-g) 24000) p (+ (kxrt-g) 20000)
+        prefix (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b 0 0x616d65686373227b 8) 0x424f544f4b223a22 8) 0x45564954414e5f41 8) 0x435f48434e45425f 8) 0x4554414449444e41 8) 0x2c2231565f 5)
+        k0 (kxrt-w b (kxrt-w b prefix 0x616f6c6b726f7722 8) 0x3a22644964 5) v0 (+ k0 (kxrt-sdec (+ b k0) (kxrt-load64 (+ p 0))))
+        k1 (kxrt-w b (kxrt-w b v0 0x746172657469222c 8) 0x3a22736e6f69 6) v1 (+ k1 (kxrt-sdec (+ b k1) (kxrt-load64 (+ p 8))))
+        k2 (kxrt-w b (kxrt-w b v1 0x6f6e67616964222c 8) 0x3a2263697473 6) v2 (+ k2 (kxrt-sdec (+ b k2) (kxrt-load64 (+ p 16))))
+        k3 (kxrt-w b (kxrt-w b v2 0x657370616c65222c 8) 0x3a22734e64 5) v3 (+ k3 (kxrt-sdec (+ b k3) (kxrt-load64 (+ p 24))))
+        k4 (kxrt-w b (kxrt-w b (kxrt-w b v3 0x6d68636e6562222c 8) 0x226c6575466b7261 8) 0x3a 1) v4 (+ k4 (kxrt-sdec (+ b k4) (kxrt-load64 (+ p 32))))
+        k5 (kxrt-w b (kxrt-w b v4 0x796669726576222c 8) 0x3a226c657546 6) v5 (+ k5 (kxrt-sdec (+ b k5) (kxrt-load64 (+ p 40))))
+        k6 (kxrt-w b (kxrt-w b v5 0x65536d726177222c 8) 0x3a226465 4) v6 (+ k6 (kxrt-sdec (+ b k6) (kxrt-load64 (+ p 48))))
+        k7 (kxrt-w b (kxrt-w b (kxrt-w b v6 0x617768676968222c 8) 0x7265746641726574 8) 0x3a227465736552 7) v7 (+ k7 (kxrt-sdec (+ b k7) (kxrt-load64 (+ p 56))))
+        k8 (kxrt-w b (kxrt-w b (kxrt-w b v7 0x617768676968222c 8) 0x7265746641726574 8) 0x3a22796669726556 8) v8 (+ k8 (kxrt-sdec (+ b k8) (kxrt-load64 (+ p 64))))
+        a (kxrt-w b (kxrt-w b (kxrt-w b v8 0x6d68636e6562222c 8) 0x616e6572416b7261 8) 0x3a22 2) aa (kb-array b a (+ (kxrt-g) 22000))
+        z (kxrt-w b (kxrt-w b aa 0x416c616e6966222c 8) 0x3a22616e6572 6) zz (kb-array b z (+ (kxrt-g) 22200))
+        tail (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b zz 0x746c75736572222c 8) 0x726177222c313a22 8) 0x6569646f4270756d 8) 0x6163222c313a2273 8) 0x222c313a22736c6c 8) 0x754f796669726576 8) 0x6d69546564697374 8) 0x7572743a22676e69 8) 0x43656d6173222c65 8) 0x6556747865746e6f 8) 0x72743a2279666972 8) 0x65736572222c6575 8) 0x6564756c636e4974 8) 0x65736c61663a2264 8) 0x726f66726570222c 8) 0x61755165636e616d 8) 0x3a2264656966696c 8) 0xa7d65736c6166 7)
+        sent (kxrt-write-all 1 b tail)] (if (= sent 1) 0 1)))
+;; Privileged closed ARM measurement host, never appended to ordinary guests.
+;; Uses only the existing scalar runtime and exact original payload registry.
+;; Command: HOST ID PAYLOAD N PROFILE, PROFILE=0 registered / 1 diagnostic-one.
+;; G+20000..20127: receipt; G+22000/G+22200: 17-field snapshots;
+;; G+30000..31000 SHA; mappings and offset760 are never repurposed.
+(defn- kb-refuse [code :i64] :i64
+  (let [b (+ (kxrt-g) 24000) i (kxrt-w b 0 0x3a4553554645524b 8)
+        n (+ i (kxrt-dec (+ b i) code)) z (kxrt-store8 (+ b n) 10)
+        w (kxrt-write-all 2 b (inc n))] (kxrt-exit 2)))
+(defn- kb-argnum [index :i64] :i64
+  (let [p (kxrt-arg index) n (kxrt-cstrlen p)]
+    (if (or (> n 15) (not (kxrt-digits? p n))) (kb-refuse 1001)
+      (kxrt-parse p n))))
+(defn- kb-zero [p :i64 n :i64] :i64
+  (loop [i 0] (if (= i n) 0 (let [v (kxrt-store8 (+ p i) 0)] (recur (inc i))))))
+(defn- kb-pure [] :i64
+  (if (or (not= (kxrt-load64 (kxrt-ctx)) 11) (not= (kxrt-gl 680) 0)
+          (not= (kxrt-gl 216) 0) (not= (kxrt-gl 224) 0)
+          (not= (kxrt-gl 104) 0) (not= (kxrt-gl 112) -1)
+          (not= (kxrt-gl 744) 0) (not= (kxrt-gl 656) 0)
+          ;; The current shared keyword module owns776(pointer)/784(count).
+          ;; Never mistake its initialized pointer for a held FS lock.
+          (<= (kxrt-gl 776) 0) (not= (kxrt-gl 784) 0) (not= (kxrt-gl 792) 0)
+          (not= (kxrt-load64 (+ (kxrt-ctx) 16)) 0)
+          (not= (kxrt-load64 (+ (kxrt-ctx) 24)) 0)
+          (not= (kxrt-load64 (+ (kxrt-ctx) 32)) 0)
+          (not= (kxrt-load64 (+ (kxrt-ctx) 40)) 0))
+    (kb-refuse 2001) 0))
+(defn- kb-reset [] :i64
+  (let [outside (if (not= (kxrt-load64 (+ (kxrt-g) 20128)) 0) (kb-refuse 2004) 0)
+        pure (kb-pure) high (kxrt-gl 760)
+        bounds (if (or (< (kxrt-gl 8) 0) (> (kxrt-gl 8) KXRT-PAIRS)
+                       (< (kxrt-gl 32) 0) (> (kxrt-gl 32) KXRT-POOL)
+                       (< (kxrt-gl 48) 0) (> (kxrt-gl 48) KXRT-VECTORS)
+                       (< (kxrt-gl 64) 0) (> (kxrt-gl 64) high) (> high KXRT-ITEMS)
+                       (< (kxrt-gl 704) 0) (> (kxrt-gl 704) KXRT-REGIONS)) (kb-refuse 2002) 0)
+        pairs (kb-zero (kxrt-gl 16) (kxrt-gl 8))
+        regions (kb-zero (kxrt-gl 688) (* 8 (kxrt-gl 48)))
+        rows (kb-zero (kxrt-gl 696) (* 16 (kxrt-gl 704)))
+        marks (kb-zero (kxrt-gl 672) 16384)
+        a (kxrt-gs 8 0) b (kxrt-gs 32 0) c (kxrt-gs 48 0) d (kxrt-gs 64 0)
+        e (kxrt-gs 704 0) f (kxrt-gs 256 0) g (kxrt-gs 264 0) h (kxrt-gs 272 0)
+        j (kxrt-gs 280 0) k (kxrt-gs 288 0) l (kxrt-gs 712 0)
+        m (kxrt-gs 720 0) n (kxrt-gs 728 0)
+        fuel (kxrt-store64 (+ (kxrt-ctx) 8) (kxrt-gl 168))]
+    ;; No store to752/760: monotonic clock and physical item highwater persist.
+    (if (or (not= high (kxrt-gl 760))
+            (not= (kxrt-load64 (+ (kxrt-ctx) 8)) (kxrt-gl 168))) (kb-refuse 2003) high)))
+(defn- kb-snapshot [p :i64] :i64
+  (let [a (kxrt-store64 p (kxrt-gl 8)) b (kxrt-store64 (+ p 8) (kxrt-gl 32))
+        c (kxrt-store64 (+ p 16) (kxrt-gl 48)) d (kxrt-store64 (+ p 24) (kxrt-gl 64))
+        e (kxrt-store64 (+ p 32) (+ (* 16 (kxrt-gl 8)) (kxrt-gl 32) (* 16 (kxrt-gl 48)) (* 8 (kxrt-gl 64))))
+        f (kxrt-store64 (+ p 40) (kxrt-gl 256)) g (kxrt-store64 (+ p 48) (kxrt-gl 264))
+        h (kxrt-store64 (+ p 56) (kxrt-gl 712)) i (kxrt-store64 (+ p 64) (kxrt-gl 272))
+        j (kxrt-store64 (+ p 72) (kxrt-gl 280)) k (kxrt-store64 (+ p 80) (kxrt-gl 720))
+        l (kxrt-store64 (+ p 88) (kxrt-gl 704)) m (kxrt-store64 (+ p 96) (kxrt-gl 728))
+        n (kxrt-store64 (+ p 104) 0) o (kxrt-store64 (+ p 112) 0)
+        q (kxrt-store64 (+ p 120) (kxrt-gl 288)) r (kxrt-store64 (+ p 128) 0)] 0))
+(defn- kb-phase [expected :i64 next :i64] :i64
+  (let [p (+ (kxrt-g) 20128)]
+    (if (not= (kxrt-load64 p) expected) (kb-refuse 3003)
+      (kxrt-store64 p next))))
+(defn- kb-now [phase :i64] :i64
+  (let [ordered (kb-phase phase (inc phase))
+        p (+ (kxrt-g) 31000) r (kxrt-syscall 113 4 p 0 0 0 0)
+        sec (kxrt-load64 p) ns (kxrt-load64 (+ p 8))]
+    (if (or (< r 0) (< sec 0) (> sec 9223372035) (< ns 0) (>= ns 1000000000))
+      (kb-refuse 3001) (+ (* sec 1000000000) ns))))
+(defn- kb-invoke [address :i64 a :i64 b :i64] :i64
+  (let [argv (+ (kxrt-g) 320) x (kxrt-store64 argv a) y (kxrt-store64 (+ argv 8) b)
+        z (kxrt-store64 (+ argv 16) 0) u (kxrt-store64 (+ argv 24) 0) v (kxrt-store64 (+ argv 32) 0)]
+    (kxrt-call-at address (kxrt-ctx) argv)))
+;; A native fixed oracle, transcribed from the frozen accounting reference
+;; SHA256 6368bd343086a6c88e0645e31dde82bcdf64742c7b4727cdd56103ef72e9b4cc.
+;; It is not generated from this host's observations. Current-use snapshots
+;; are equal before/after the original allocation-free verifiers in all19.
+(defn- kb-expected-fuel [id :i64 verify :bool] :i64
+  (if verify
+    (case id 0 1 1 0 2 34 3 402 4 1002 5 402 6 1 7 770 8 10 9 16 10 66 11 24 12 605 13 0 14 66 15 1 16 22 17 802 18 1 -1)
+    (case id 0 3278897154 1 5709824002 2 7518945281 3 23988731906 4 4602019842 5 27611432517 6 10100834307 7 16599547906 8 22752493571 9 10294394882 10 18180997122 11 3470663682 12 3858038786 13 4238213122 14 20159447042 15 15682841411 16 29713367043 17 25224675330 18 2806009749 -1)))
+(defn- kb-expected-arena [id :i64 field :i64] :i64
+  (case field
+    0 (case id 11 40960 13 7602176 18 8 0)
+    2 (case id 0 50266113 1 0 6 3 8 3 1)
+    3 (case id 0 108265476 1 0 2 32 3 403 4 3309 5 2001 6 2212 7 635 8 290 9 17 10 4096 11 2048 12 1760 13 804 14 169 15 8997 16 541 17 2048 18 39566 -1)
+    4 (case id 0 1670381616 1 0 2 272 3 3240 4 26488 5 16024 6 17744 7 5096 8 2368 9 152 10 32784 11 671760 12 14096 13 121641264 14 1368 15 71992 16 4344 17 16400 18 316672 -1)
+    0))
+(defn- kb-accounting [id :i64 diagnostic :i64 p :i64] :i64
+  (let [ordered (if (not= (kxrt-load64 (+ (kxrt-g) 20128)) 3) (kb-refuse 3003) 0)
+        seed (if (not= (kxrt-load64 (+ p 48)) (if (= id 15) 615896958 0)) (kb-refuse 3201) 0)]
+    (if (= diagnostic 1) 0
+      (if (or (not= (kxrt-load64 (+ p 32)) (kb-expected-fuel id false))
+              (not= (kxrt-load64 (+ p 40)) (kb-expected-fuel id true))) (kb-refuse 3202)
+        (loop [i 0]
+          (if (= i 17) 0
+            (if (or (not= (kxrt-load64 (+ (kxrt-g) 22000 (* i 8))) (kb-expected-arena id i))
+                    (not= (kxrt-load64 (+ (kxrt-g) 22200 (* i 8))) (kb-expected-arena id i)))
+              (kb-refuse 3203) (recur (inc i)))))))))
+(defn- kb-verifier [address :i64 state :i64 count :i64] :i64
+  (let [ordered (kb-phase 2 3)] (kb-invoke address state count)))
+(defn- kb-execute [id :i64 payload :i64 count :i64 diagnostic :i64] :i64
+  (let [ctx (kxrt-ctx) benchmark (+ payload (kb-bench id)) verifier (+ payload (kb-verify id))
+        first-reset (kb-reset)
+        warm-phase (if (not= (kxrt-load64 (+ (kxrt-g) 20128)) 0) (kb-refuse 3003) 0)
+        warm (kb-invoke benchmark 1 0) warm-ok (kb-pure)
+        seed (if (< (kb-seed id) 0) 0 (kb-invoke (+ payload (kb-seed id)) warm 0))
+        seed-ok (kb-pure) high (kb-reset)
+        initial (kxrt-load64 (+ ctx 8)) argv (+ (kxrt-g) 320)
+        x0 (kxrt-store64 argv count) x1 (kxrt-store64 (+ argv 8) seed)
+        x2 (kxrt-store64 (+ argv 16) 0) x3 (kxrt-store64 (+ argv 24) 0) x4 (kxrt-store64 (+ argv 32) 0)
+        begin (kb-now 0)
+        state (kxrt-call-at benchmark ctx argv)
+        end (kb-now 1) after-bench (kxrt-load64 (+ ctx 8)) bench-ok (kb-pure)
+        snap1 (kb-snapshot (+ (kxrt-g) 22000))
+        verified (kb-verifier verifier state (if (= (kb-verify-arity id) 2) count 0))
+        after-verify (kxrt-load64 (+ ctx 8)) verify-ok (kb-pure)
+        snap2 (kb-snapshot (+ (kxrt-g) 22200))]
+    (if (or (not= verified 1) (< end begin) (> after-bench initial)
+            (> after-verify after-bench) (< after-verify 0) (< (kxrt-gl 760) high)) (kb-refuse 3002)
+      (let [p (+ (kxrt-g) 20000) a (kxrt-store64 p id) b (kxrt-store64 (+ p 8) count)
+            c (kxrt-store64 (+ p 16) diagnostic) d (kxrt-store64 (+ p 24) (- end begin))
+            e (kxrt-store64 (+ p 32) (- initial after-bench)) f (kxrt-store64 (+ p 40) (- after-bench after-verify))
+            g (kxrt-store64 (+ p 48) seed) h (kxrt-store64 (+ p 56) high)
+            j (kxrt-store64 (+ p 64) (kxrt-gl 760))
+            oracle (kb-accounting id diagnostic p)] (kb-report)))))
+
+;; Read exactly the registered size from a regular non-symlink file once.
+;; Hash this immutable in-memory snapshot; no path lookup follows admission.
+(defn- kb-load [id :i64 path :i64] :i64
+  (let [fd (kxrt-open-path path (kxrt-f2-flags 0) 0) st (+ (kxrt-gl 200) 8192)
+        opened (if (< fd 0) (kb-refuse 1002) 0)
+        stat (kxrt-f2-sys 2 fd st 0 0 0 0)
+        n (kb-bytes id)
+        valid (if (or (< stat 0) (not= (bit-and (kxrt-f2-mode st) 61440) 32768)
+                      (not= (kxrt-load64 (+ st 48)) n)) (kb-refuse 1003) 0)
+        length (bit-and (+ n 4095) -4096) p (kxrt-map length)
+        read (kxrt-read-all fd p n) extra (kxrt-syscall 63 fd (+ st 128) 1 0 0 0)
+        closed (kxrt-close fd)
+        complete (if (or (= read 0) (not= extra 0) (< closed 0)) (kb-refuse 1004) 0)
+        hex (kb-sha p n)
+        matched (loop [i 0] (if (= i 8) true
+                  (and (= (kxrt-load64 (+ hex (* i 8))) (kb-hash-word id i)) (recur (inc i)))))
+        pinned (if (not matched) (kb-refuse 1005) 0)
+        sealed (kxrt-syscall 226 p length 5 0 0 0)
+        protected (if (< sealed 0) (kb-refuse 1006) 0)
+        code (kxrt-store64 (+ (kxrt-ctx) 384) p)
+        bytes (kxrt-store64 (+ (kxrt-ctx) 392) n)] p))
+
+;; Same arena sizes, context v11, trap handlers, limits and sandbox as the
+;; native runtime. No KEXE_ALLOW, scope, network, GPU, spawn or IO grant is
+;; imported. Files are read before the filter, benchmark has zero effects.
+(defn- kxrt-start [sp :i64] :i64
+  (let [ctx (kxrt-ctx) argc (kxrt-load64 sp)
+        a (kxrt-gs 72 (if (> argc 0) (dec argc) 0))
+        b (kxrt-gs 80 (+ sp 16)) c (kxrt-gs 88 (+ sp (* 8 (+ argc 2))))
+        m0 (kxrt-gs 0 (kxrt-map (* KXRT-PAIRS 16))) m1 (kxrt-gs 16 (kxrt-map KXRT-PAIRS))
+        m2 (kxrt-gs 24 (kxrt-map KXRT-POOL)) m3 (kxrt-gs 40 (kxrt-map (* KXRT-VECTORS 16)))
+        m4 (kxrt-gs 56 (kxrt-map (* KXRT-ITEMS 8))) m5 (kxrt-gs 96 (kxrt-map 65536))
+        m6 (kxrt-gs 200 (kxrt-map 16384)) m7 (kxrt-gs 208 (kxrt-map 8192))
+        m8 (kxrt-gs 120 (kxrt-map 4096)) m9 (kxrt-gs 136 (kxrt-map 65536))
+        m10 (kxrt-gs 184 (kxrt-map 4096)) m11 (kxrt-gs 232 (kxrt-map KXRT-VALUE-MAX))
+        fd (kxrt-gs 112 -1) m12 (kxrt-gs 672 (kxrt-map 16384))
+        m13 (kxrt-gs 688 (kxrt-map (* 8 KXRT-VECTORS)))
+        m14 (kxrt-gs 696 (kxrt-map (* 16 KXRT-REGIONS))) m15 (kxrt-gs 736 (kxrt-map 98304))
+        mf2 (kxrt-f2-state) mki (kxrt-ki-init)
+        v (kxrt-store64 ctx 11)
+        d0 (kxrt-store64 (+ ctx 288) (+ (kxrt-g) 8)) d1 (kxrt-store64 (+ ctx 296) (kxrt-gl 0))
+        d2 (kxrt-store64 (+ ctx 304) (kxrt-gl 16)) d3 (kxrt-store64 (+ ctx 312) (+ (kxrt-g) 48))
+        d4 (kxrt-store64 (+ ctx 320) (kxrt-gl 40)) d5 (kxrt-store64 (+ ctx 328) (kxrt-gl 56))
+        args (if (not= argc 5) (kb-refuse 1001) 0)
+        id (kb-argnum 0) count (kb-argnum 2) diagnostic (kb-argnum 3)
+        bounded (if (or (< id 0) (>= id 19) (> diagnostic 1)
+                        (not= count (if (= diagnostic 1) 1 (kb-n id)))) (kb-refuse 1001) 0)
+        payload (kb-load id (kxrt-arg 1))
+        f0 (kxrt-gs 168 (kxrt-fuel (kxrt-env 0x4555465f4558454b 0x3d4c 0 10)))
+        metered (if (not= (kxrt-gl 176) 1) (kb-refuse 1007) 0)
+        f1 (kxrt-store64 (+ ctx 8) (kxrt-gl 168))
+        act (+ (kxrt-gl 200) 8192) alt (kxrt-gs 248 (kxrt-map 65536)) ss (+ act 64)
+        a0 (kxrt-store64 ss (kxrt-gl 248)) a1 (kxrt-store64 (+ ss 8) 0) a2 (kxrt-store64 (+ ss 16) 65536)
+        a3 (if (< (kxrt-syscall 132 ss 0 0 0 0 0) 0) (kxrt-die) 0)
+        s0 (kxrt-store64 act (kxrt-load64 (+ ctx 400))) s1 (kxrt-store64 (+ act 8) 2348810240)
+        s2 (kxrt-store64 (+ act 16) (kxrt-load64 (+ ctx 400))) s3 (kxrt-store64 (+ act 24) 0)
+        g1 (kxrt-signal 4 act) g2 (kxrt-signal 5 act) g3 (kxrt-signal 7 act) g4 (kxrt-signal 8 act)
+        g5 (kxrt-signal 11 act) g6 (kxrt-signal 14 act) g7 (kxrt-signal 24 act) g8 (kxrt-signal 31 act)
+        g9 (kxrt-signal 2 act) g10 (kxrt-signal 15 act)
+        lim (kxrt-limits sp) sb (kxrt-sandbox)
+        result (kb-execute id payload count diagnostic)] (kxrt-exit result)))
+(defn- kb-sha [a :i64 n :i64] :i64
+  (let [s (+ (kxrt-g) 30000) h s w (+ s 64) tail (+ s 576) hex (+ s 704)
+        z (loop [i 0] (if (= i 8) 0 (let [v (kxrt-store64 (+ h (* i 8)) (kxrt-sha-h0 i))] (recur (+ i 1)))))
+        done (loop [d 0] (if (> (+ d 64) n) d (let [v (kxrt-sha-block h w (+ a d))] (recur (+ d 64)))))
+        rest (- n done) c (kxrt-copy tail (+ a done) rest) v (kxrt-store8 (+ tail rest) 128)
+        padded (if (<= (+ rest 1) 56) 64 128)
+        zz (loop [i (+ rest 1)] (if (= i padded) 0 (let [v (kxrt-store8 (+ tail i) 0)] (recur (+ i 1)))))
+        lb (loop [i 0] (if (= i 8) 0 (let [v (kxrt-store8 (+ tail (- padded 1 i)) (bit-and (u64-shift-right (* n 8) (* i 8)) 255))] (recur (+ i 1)))))
+        b1 (kxrt-sha-block h w tail) b2 (if (= padded 128) (kxrt-sha-block h w (+ tail 64)) 0)
+        render (loop [i 0] (if (= i 64) 0
+          (let [word (kxrt-load64 (+ h (* (quot i 8) 8))) digit (bit-and (u64-shift-right word (* (- 7 (- i (* (quot i 8) 8))) 4)) 15)
+                v (kxrt-store8 (+ hex i) (+ digit (if (< digit 10) 48 87)))] (recur (+ i 1)))))
+        end (kxrt-store8 (+ hex 64) 0)] hex))
+

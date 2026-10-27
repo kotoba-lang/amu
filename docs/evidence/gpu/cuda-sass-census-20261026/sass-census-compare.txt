@@ -1,0 +1,142 @@
+DERIVED analysis (arithmetic over two committed inputs -- this tick's kernel-sass-log.txt census and the previous tick's committed cuda-kernel-cause-20261026/abs-arm-times.txt; NO new hardware ran for this file). Produced by scratch sass_census_compare.py, output verbatim:
+
+DERIVED ANALYSIS -- over two committed inputs (marked DERIVED throughout)
+input 1 (MEASURED this tick): /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu-sass-census-log-20261026.txt
+input 2 (DERIVED previous tick, consumed): /Users/junkawasaki/github/wt/amu-gpu/chain/docs/evidence/gpu/cuda-kernel-cause-20261026/abs-arm-times.txt
+
+=== census digest (MEASURED counts, from the log's CENSUS lines)
+kernels: 54
+
+=== byte-identity of SASS across widths, per (arm, op) [MEASURED]
+  baseline               op=max distinct sha256 over 6 widths: 1 (BYTE-IDENTICAL across widths)
+  baseline               op=min distinct sha256 over 6 widths: 1 (BYTE-IDENTICAL across widths)
+  baseline               op=sum distinct sha256 over 6 widths: 1 (BYTE-IDENTICAL across widths)
+  subgroup               op=max distinct sha256 over 6 widths: 1 (BYTE-IDENTICAL across widths)
+  subgroup               op=min distinct sha256 over 6 widths: 1 (BYTE-IDENTICAL across widths)
+  subgroup               op=sum distinct sha256 over 6 widths: 1 (BYTE-IDENTICAL across widths)
+  warp-shuffle           op=max distinct sha256 over 6 widths: 1 (BYTE-IDENTICAL across widths)
+  warp-shuffle           op=min distinct sha256 over 6 widths: 1 (BYTE-IDENTICAL across widths)
+  warp-shuffle           op=sum distinct sha256 over 6 widths: 1 (BYTE-IDENTICAL across widths)
+=== byte-identity across ops (width-invariant => 3 distinct binaries per arm)
+  baseline               op=max sha256=0f1e25242b1cbdcf
+  baseline               op=min sha256=fe12aaa794281589
+  baseline               op=sum sha256=0909f1191b7da10b
+  subgroup               op=max sha256=7f58a300ebfc9dfa
+  subgroup               op=min sha256=91f4b0f266ebddac
+  subgroup               op=sum sha256=c73fa2ff4bf61789
+  warp-shuffle           op=max sha256=6f0fe13e8f5aa0bc
+  warp-shuffle           op=min sha256=2cc4c0241c9dd158
+  warp-shuffle           op=sum sha256=97cddfccfefd26f7
+
+=== parser coverage [MEASURED counters in the CENSUS lines]
+  total unparsed lines over 54 kernels: 72
+  per-kernel unparsed: baseline-reduce-w1024-max.emitted=1, baseline-reduce-w1024-min.emitted=1, baseline-reduce-w1024-sum.emitted=1, baseline-reduce-w128-max.emitted=1, baseline-reduce-w128-min.emitted=1, baseline-reduce-w128-sum.emitted=1, baseline-reduce-w256-max.emitted=1, baseline-reduce-w256-min.emitted=1, baseline-reduce-w256-sum.emitted=1, baseline-reduce-w32-max.emitted=1, baseline-reduce-w32-min.emitted=1, baseline-reduce-w32-sum.emitted=1, baseline-reduce-w512-max.emitted=1, baseline-reduce-w512-min.emitted=1, baseline-reduce-w512-sum.emitted=1, baseline-reduce-w64-max.emitted=1, baseline-reduce-w64-min.emitted=1, baseline-reduce-w64-sum.emitted=1, subgroup-reduce-w1024-max.emitted=2, subgroup-reduce-w1024-min.emitted=2, subgroup-reduce-w1024-sum.emitted=2, subgroup-reduce-w128-max.emitted=2, subgroup-reduce-w128-min.emitted=2, subgroup-reduce-w128-sum.emitted=2, subgroup-reduce-w256-max.emitted=2, subgroup-reduce-w256-min.emitted=2, subgroup-reduce-w256-sum.emitted=2, subgroup-reduce-w32-max.emitted=2, subgroup-reduce-w32-min.emitted=2, subgroup-reduce-w32-sum.emitted=2, subgroup-reduce-w512-max.emitted=2, subgroup-reduce-w512-min.emitted=2, subgroup-reduce-w512-sum.emitted=2, subgroup-reduce-w64-max.emitted=2, subgroup-reduce-w64-min.emitted=2, subgroup-reduce-w64-sum.emitted=2, warp-shuffle-reduce-w1024-max.emitted=1, warp-shuffle-reduce-w1024-min.emitted=1, warp-shuffle-reduce-w1024-sum.emitted=1, warp-shuffle-reduce-w128-max.emitted=1, warp-shuffle-reduce-w128-min.emitted=1, warp-shuffle-reduce-w128-sum.emitted=1, warp-shuffle-reduce-w256-max.emitted=1, warp-shuffle-reduce-w256-min.emitted=1, warp-shuffle-reduce-w256-sum.emitted=1, warp-shuffle-reduce-w32-max.emitted=1, warp-shuffle-reduce-w32-min.emitted=1, warp-shuffle-reduce-w32-sum.emitted=1, warp-shuffle-reduce-w512-max.emitted=1, warp-shuffle-reduce-w512-min.emitted=1, warp-shuffle-reduce-w512-sum.emitted=1, warp-shuffle-reduce-w64-max.emitted=1, warp-shuffle-reduce-w64-min.emitted=1, warp-shuffle-reduce-w64-sum.emitted=1
+  census-unparsed lines by kind (re-identified from the verbatim SASS):
+    subgroup-reduce-w256-sum.emitted -> ['/*0010*/              @!PT SHFL.IDX PT, RZ, RZ, RZ, RZ ;', '/*03a0*/              @!PT SHFL.IDX PT, RZ, RZ, RZ, RZ ;']
+    subgroup-reduce-w256-max.emitted -> ['/*0010*/              @!PT SHFL.IDX PT, RZ, RZ, RZ, RZ ;', '/*04f0*/              @!PT SHFL.IDX PT, RZ, RZ, RZ, RZ ;']
+    baseline-reduce-w256-sum.emitted -> ['/*0010*/              @!PT SHFL.IDX PT, RZ, RZ, RZ, RZ ;']
+    warp-shuffle-reduce-w256-sum.emitted -> ['/*0010*/              @!PT SHFL.IDX PT, RZ, RZ, RZ, RZ ;']
+
+=== per-region static instruction counts [MEASURED, region boundaries
+    named from the committed SASS labels; loop trip counts are DERIVED
+    from the committed .emitted.cu source structure]
+  subgroup-reduce sum (incl @!PT SHFL.IDX barriers): total static 85
+     prologue(once)         43
+     fold(per-iter)         7
+     between(once)          7
+     xfold(per-outer)       6
+     inner(per-inner)       9
+     xfold-tail(per-outer)  5
+     epilogue(once)         8
+  subgroup-reduce max: total static 106
+     prologue(once)         46
+     fold(per-iter)         7
+     between(once)          25
+     xfold(per-outer)       6
+     inner(per-inner)       9
+     xfold-tail(per-outer)  5
+     epilogue(once)         8
+  subgroup-reduce min: total static 106
+     prologue(once)         46
+     fold(per-iter)         7
+     between(once)          25
+     xfold(per-outer)       6
+     inner(per-inner)       9
+     xfold-tail(per-outer)  5
+     epilogue(once)         8
+  baseline-reduce sum: total static 34
+     0x0000 IMAD.MOV.U32 R1, RZ, RZ, c[0x0][0x28] ;
+     0x0020 S2R R6, SR_CTAID.X ;
+     0x0030 MOV R0, RZ ;
+     0x0040 S2R R7, SR_TID.X ;
+     0x0050 IMAD R2, R6, c[0x0][0x0], R7 ;
+     0x0060 ISETP.GE.U32.AND P0, PT, R2, c[0x0][0x170], PT ;
+     0x0070 IMAD.MOV.U32 R3, RZ, RZ, 0x4 ;
+     0x0080 IMAD.WIDE.U32 R2, R2, R3, c[0x0][0x160] ;
+     0x0090 LDG.E.SYS R0, [R2] ;
+     0x00a0 IMAD.MOV.U32 R4, RZ, RZ, c[0x0][0x0] ;
+     0x00b0 SHF.L.U32 R5, R7.reuse, 0x2, RZ ;
+     0x00c0 ISETP.NE.AND P0, PT, R7, RZ, PT ;
+     0x00d0 SHF.R.U32.HI R4, RZ, 0x1, R4 ;
+     0x00e0 ISETP.NE.AND P1, PT, R4, RZ, PT ;
+     0x00f0 STS [R5], R0 ;
+     0x0100 BAR.SYNC 0x0 ;
+     0x0110 BRA `(.L_1) ;
+     0x0120 ISETP.GE.U32.AND P1, PT, R7, R4, PT ;
+     0x0130 IMAD R2, R4, 0x4, R5 ;
+     0x0140 LDS.U R0, [R5] ;
+     0x0150 SHF.R.U32.HI R4, RZ, 0x1, R4 ;
+     0x0160 LDS.U R3, [R2] ;
+     0x0170 FADD R0, R0, R3 ;
+     0x0180 STS [R5], R0 ;
+     0x0190 BAR.SYNC 0x0 ;
+     0x01a0 ISETP.NE.AND P1, PT, R4, RZ, PT ;
+     0x01b0 BRA `(.L_2) ;
+     0x01c0 EXIT ;
+     0x01d0 LDS.U R5, [RZ] ;
+     0x01e0 MOV R3, 0x4 ;
+     0x01f0 IMAD.WIDE.U32 R2, R6, R3, c[0x0][0x168] ;
+     0x0200 STG.E.SYS [R2], R5 ;
+     0x0210 EXIT ;
+     0x0220 BRA `(.L_3);
+
+=== DERIVED dynamic instruction-count model (arithmetic over the census)
+    trip counts from the committed source: fold loop d = 32/2..1 (5 iters
+    at every W >= 32); cross-fold outer d = nsg/2..1 (log2(W/32) iters,
+    0 at W=32); inner loop 1 iter for W <= 2048; baseline tree loop
+    log2(W) iters. Per-block count = W x per-thread count.
+
+  subgroup arm, per-W per-thread instruction counts (DERIVED):
+     W  outer  sum  max  min | max/sum  min/sum
+     32      0   102   123   123 |  1.2059   1.2059
+     64      1   113   134   134 |  1.1858   1.1858
+    128      2   124   145   145 |  1.1694   1.1694
+    256      3   135   156   156 |  1.1556   1.1556
+    512      4   146   167   167 |  1.1438   1.1438
+   1024      5   157   178   178 |  1.1338   1.1338
+
+=== MEASURED time ratios (consumed from the committed abs-arm-times.txt)
+     W  op | sub_gpu per-block ratios max/sum, min/sum (both shapes)
+    128    | max/sum 1.1851 1.1936  min/sum 1.1830 1.1903
+    256    | max/sum 1.1716 1.1700  min/sum 1.1700 1.1714
+    512    | max/sum 1.1464 1.1503  min/sum 1.1528 1.1503
+
+=== DERIVED model vs measured (the census's answer at count granularity)
+     W | model max/sum | meas max/sum | model min/sum | meas min/sum
+    128 |    1.1694    |    1.1894    |    1.1694    |    1.1866
+    256 |    1.1556    |    1.1708    |    1.1556    |    1.1707
+    512 |    1.1438    |    1.1484    |    1.1438    |    1.1516
+
+  baseline arm W-scaling check (DERIVED): per-block count model
+  W x (prologue + log2(W) x tree-loop-body) predicts steps
+  2*(P+8B)/(P+7B) and 2*(P+9B)/(P+8B); the second is ALWAYS below the
+  first for any P,B >= 0. Measured baseline sum per-block steps are
+  x2.07 (128->256) and x2.31 (256->512) -- RISING. No instruction-count
+  model over these byte-identical binaries can produce a rising step.
+  (checked: model monotonicity, output above)
+
+=== DERIVED monotonicity sweep: ratio2/ratio1 for P/B in [0,40]
+  P/B values where model step2 > step1: NONE (0/41)
+
+=== sha256 of this analysis file is computed at commit time by the
+    record; this script is scratch and never staged.

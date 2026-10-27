@@ -1,0 +1,132 @@
+JUN-59/JUN-60 -- infinite-neutral probes, real-toolchain validation (2 toolchains)
+run-at: 2026-10-24T15:45:32.720Z
+host: darwin 25.4.0 arm64
+node: v26.0.0
+corpus: /Users/junkawasaki/github/wt/amu-gpu/chain/docs/evidence/gpu/wgsl-inf-neutral-fixquestion-20261025/probes
+files: 9 (sorted)
+toolchain-1: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36
+adapter-info: {"vendor":"apple","architecture":"metal-3"}
+default-limits: {"maxComputeWorkgroupSizeX":256,"maxComputeInvocationsPerWorkgroup":256}
+--- p00-control-finite-bitcast.wgsl (472 bytes)
+[Chrome/Tint] compile-info: ok
+[Chrome/Tint] pipeline: created; pipeline-error: none
+[Chrome/Tint] VERDICT: VALIDATES CLEAN
+--- p01-const-decl-neg-inf.wgsl (439 bytes)
+[Chrome/Tint] compile-info: error
+  msg error@7:18 value -inf cannot be represented as 'f32'
+[Chrome/Tint] pipeline: created; pipeline-error: GPUValidationError: [Invalid ShaderModule (unlabeled)] is invalid due to a previous error.
+ - While validating compute stage ([Invalid ShaderModule (unlabeled)], entryPoint: "main").
+ - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor]).
+
+[Chrome/Tint] VERDICT: DOES NOT VALIDATE CLEAN
+--- p02-let-init-neg-inf.wgsl (436 bytes)
+[Chrome/Tint] compile-info: error
+  msg error@7:11 value -inf cannot be represented as 'f32'
+[Chrome/Tint] pipeline: created; pipeline-error: GPUValidationError: [Invalid ShaderModule (unlabeled)] is invalid due to a previous error.
+ - While validating compute stage ([Invalid ShaderModule (unlabeled)], entryPoint: "main").
+ - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor]).
+
+[Chrome/Tint] VERDICT: DOES NOT VALIDATE CLEAN
+--- p03-var-init-neg-inf.wgsl (373 bytes)
+[Chrome/Tint] compile-info: error
+  msg error@6:16 value -inf cannot be represented as 'f32'
+[Chrome/Tint] pipeline: created; pipeline-error: GPUValidationError: [Invalid ShaderModule (unlabeled)] is invalid due to a previous error.
+ - While validating compute stage ([Invalid ShaderModule (unlabeled)], entryPoint: "main").
+ - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor]).
+
+[Chrome/Tint] VERDICT: DOES NOT VALIDATE CLEAN
+--- p04-arm-shape-select-neg-inf.wgsl (691 bytes)
+[Chrome/Tint] compile-info: error
+  msg error@12:20 value -inf cannot be represented as 'f32'
+[Chrome/Tint] pipeline: created; pipeline-error: GPUValidationError: [Invalid ShaderModule (unlabeled)] is invalid due to a previous error.
+ - While validating compute stage ([Invalid ShaderModule (unlabeled)], entryPoint: "main").
+ - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor]).
+
+[Chrome/Tint] VERDICT: DOES NOT VALIDATE CLEAN
+--- p05-runtime-masked-neg-inf.wgsl (1122 bytes)
+[Chrome/Tint] compile-info: ok
+[Chrome/Tint] pipeline: created; pipeline-error: none
+[Chrome/Tint] VERDICT: VALIDATES CLEAN
+--- p06-let-init-pos-inf.wgsl (362 bytes)
+[Chrome/Tint] compile-info: error
+  msg error@6:11 value inf cannot be represented as 'f32'
+[Chrome/Tint] pipeline: created; pipeline-error: GPUValidationError: [Invalid ShaderModule (unlabeled)] is invalid due to a previous error.
+ - While validating compute stage ([Invalid ShaderModule (unlabeled)], entryPoint: "main").
+ - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor]).
+
+[Chrome/Tint] VERDICT: DOES NOT VALIDATE CLEAN
+--- p07-hexfloat-inf.wgsl (651 bytes)
+[Chrome/Tint] compile-info: error
+  msg error@10:16 value 340282366920938463463374607431768211456.0 cannot be represented as 'f32'
+[Chrome/Tint] pipeline: created; pipeline-error: GPUValidationError: [Invalid ShaderModule (unlabeled)] is invalid due to a previous error.
+ - While validating compute stage ([Invalid ShaderModule (unlabeled)], entryPoint: "main").
+ - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor]).
+
+[Chrome/Tint] VERDICT: DOES NOT VALIDATE CLEAN
+--- p08-control-const-finite-bitcast.wgsl (715 bytes)
+[Chrome/Tint] compile-info: ok
+[Chrome/Tint] pipeline: created; pipeline-error: none
+[Chrome/Tint] VERDICT: VALIDATES CLEAN
+===
+summary (Chrome/Tint): 9 files, 3 validate clean, 6 do not
+======== Deno/Naga judgment of the same corpus ========
+toolchain-2: Deno 2.7.14 / V8 14.7.173.20-rusty / bundled wgpu-Naga (deno --unstable-webgpu)
+run-at: 2026-10-24T15:45:35.593Z
+corpus: /Users/junkawasaki/github/wt/amu-gpu/chain/docs/evidence/gpu/wgsl-inf-neutral-fixquestion-20261025/probes
+files: 9 (sorted)
+--- p00-control-finite-bitcast.wgsl (472 bytes)
+  compile-info: ok
+  VERDICT: VALIDATES CLEAN
+--- p01-const-decl-neg-inf.wgsl (439 bytes)
+  msg error@7:18 
+Shader '' parsing error: Not implemented as constant expression: bitcast built-in function
+  ┌─ wgsl:7:18
+  │
+7 │   const k: f32 = bitcast<f32>(0xFF800000u);
+  │                  ^^^^^^^^^^^^^^^^^^^^^^^^^ see msg
+
+
+  compile-info: error
+  VERDICT: DOES NOT VALIDATE CLEAN
+--- p02-let-init-neg-inf.wgsl (436 bytes)
+  compile-info: ok
+  VERDICT: VALIDATES CLEAN
+--- p03-var-init-neg-inf.wgsl (373 bytes)
+  compile-info: ok
+  VERDICT: VALIDATES CLEAN
+--- p04-arm-shape-select-neg-inf.wgsl (691 bytes)
+  compile-info: ok
+  VERDICT: VALIDATES CLEAN
+--- p05-runtime-masked-neg-inf.wgsl (1122 bytes)
+  compile-info: ok
+  VERDICT: VALIDATES CLEAN
+--- p06-let-init-pos-inf.wgsl (362 bytes)
+  compile-info: ok
+  VERDICT: VALIDATES CLEAN
+--- p07-hexfloat-inf.wgsl (651 bytes)
+  msg error@10:16 
+Shader '' parsing error: the concrete type `f32` cannot represent the abstract value `3.402823669209385e38` accurately
+   ┌─ wgsl:10:16
+   │
+10 │   let k: f32 = 0x1p128;
+   │                ^^^^^^^ see msg
+
+
+  compile-info: error
+  VERDICT: DOES NOT VALIDATE CLEAN
+--- p08-control-const-finite-bitcast.wgsl (715 bytes)
+  msg error@11:18 
+Shader '' parsing error: Not implemented as constant expression: bitcast built-in function
+   ┌─ wgsl:11:18
+   │
+11 │   const k: f32 = bitcast<f32>(0x7F7FFFFFu);
+   │                  ^^^^^^^^^^^^^^^^^^^^^^^^^ see msg
+
+
+  compile-info: error
+  VERDICT: DOES NOT VALIDATE CLEAN
+===
+summary (Deno/Naga): 9 files, 6 validate clean, 3 do not
+toolchain-fact only: nothing executed on a GPU, UNMEASURED unchanged.
+deno-judge exit code: 0
+toolchain-fact only: nothing executed on a GPU, UNMEASURED unchanged.

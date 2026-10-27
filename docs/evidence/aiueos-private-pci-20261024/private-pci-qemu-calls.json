@@ -1,0 +1,93 @@
+[
+  {
+    "name": "access",
+    "expectedExit": 0,
+    "exit": 0,
+    "stdout": "PASS_AIUEOS_ENTRY_QEMU native-produced EFI -> native-produced kernel -> result 42; full OS gate open\n",
+    "stderr": ""
+  },
+  {
+    "name": "public-forgery",
+    "expectedExit": 0,
+    "exit": 0,
+    "stdout": "PASS_AIUEOS_ENTRY_QEMU native-produced EFI -> native-produced kernel -> result 42; full OS gate open\n",
+    "stderr": ""
+  },
+  {
+    "name": "absent",
+    "expectedExit": 0,
+    "exit": 0,
+    "stdout": "PASS_AIUEOS_ENTRY_QEMU native-produced EFI -> native-produced kernel -> result 42; full OS gate open\n",
+    "stderr": ""
+  },
+  {
+    "name": "stack",
+    "expectedExit": 0,
+    "exit": 0,
+    "stdout": "PASS_NATIVE_STACK_LIMIT_QEMU bounded stack halt with intact catalog\n",
+    "stderr": ""
+  },
+  {
+    "name": "shallow",
+    "expectedExit": 0,
+    "exit": 0,
+    "stdout": "PASS_AIUEOS_ENTRY_QEMU native-produced EFI -> native-produced kernel -> result 42; full OS gate open\n",
+    "stderr": ""
+  },
+  {
+    "name": "interrupt",
+    "expectedExit": 0,
+    "exit": 0,
+    "stdout": "PASS_AIUEOS_ENTRY_QEMU native-produced EFI -> native-produced kernel -> result 42; full OS gate open\n",
+    "stderr": ""
+  },
+  {
+    "name": "wrong-identity",
+    "expectedExit": 0,
+    "exit": 0,
+    "stdout": "PASS_NATIVE_KERNEL_GUARD_QEMU 0x1012a5\n",
+    "stderr": ""
+  },
+  {
+    "name": "outside-bar",
+    "expectedExit": 0,
+    "exit": 0,
+    "stdout": "PASS_NATIVE_KERNEL_GUARD_QEMU 0x1012ce\n",
+    "stderr": ""
+  },
+  {
+    "name": "oversized",
+    "expectedExit": 0,
+    "exit": 0,
+    "stdout": "PASS_NATIVE_KERNEL_GUARD_QEMU 0x1011ef\n",
+    "stderr": ""
+  },
+  {
+    "name": "zero-bytes",
+    "expectedExit": 0,
+    "exit": 0,
+    "stdout": "PASS_NATIVE_KERNEL_GUARD_QEMU 0x1011ef\n",
+    "stderr": ""
+  },
+  {
+    "name": "ram",
+    "expectedExit": 0,
+    "exit": 0,
+    "stdout": "PASS_NATIVE_KERNEL_GUARD_QEMU 0x1012a8\n",
+    "stderr": ""
+  },
+  {
+    "name": "protected-overlap",
+    "expectedExit": 0,
+    "exit": 0,
+    "stdout": "PASS_NATIVE_KERNEL_GUARD_QEMU 0x103a02\n",
+    "stderr": ""
+  },
+  {
+    "name": "guard-valid-negative",
+    "expectedExit": 1,
+    "exit": 1,
+    "stdout": "",
+    "stderr": "Traceback (most recent call last):\n  File \"/Users/junkawasaki/github/wt/codex/amu-aiueos-kernel-20261024/scripts/seed/check-aiueos-guard-qemu.py\", line 127, in <module>\n    main(*(getattr(a, n).resolve() for n in ('efi','kernel','qemu','firmware','output')), guard_kind=a.guard_kind)\n    ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/junkawasaki/github/wt/codex/amu-aiueos-kernel-20261024/scripts/seed/check-aiueos-guard-qemu.py\", line 103, in main\n    assert event, ('no #UD at the native window guard', hex(expected))\n           ^^^^^\nAssertionError: ('no #UD at the native window guard', '0x1012a5')\n"
+  }
+]

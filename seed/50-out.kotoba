@@ -75,11 +75,16 @@
         (out-put M1 (+ 48 (- n (* q 10))))))))
 
 ;; bytes a..b-1 of the string S
+(defn- out-put-cp [M :vector-i64 cp :i64] :vector-i64
+  (cond (< cp 128) (out-put M cp)
+        (< cp 2048) (out-put (out-put M (mem-cp-byte cp 0)) (mem-cp-byte cp 1))
+        (< cp 65536) (out-put (out-put (out-put M (mem-cp-byte cp 0)) (mem-cp-byte cp 1)) (mem-cp-byte cp 2))
+        :else (out-put (out-put (out-put (out-put M (mem-cp-byte cp 0)) (mem-cp-byte cp 1)) (mem-cp-byte cp 2)) (mem-cp-byte cp 3))))
 (defn- out-put-span [M :vector-i64 S :string a :i64 b :i64] :vector-i64
   (if (>= a b)
     M
-    (let [M1 (out-put M (string-code-point-at S a))]
-      (out-put-span M1 S (+ a 1) b))))
+    (let [cp (string-code-point-at S a) M1 (out-put-cp M cp)]
+      (out-put-span M1 S (+ a (mem-cpw cp)) b))))
 
 ;; LITB bytes a..b-1
 (defn- out-put-litb [M :vector-i64 a :i64 b :i64] :vector-i64
@@ -322,12 +327,15 @@
       (if (< q 0) -1 (out-skip M (+ q 1) (- k 1))))))
 
 ;; do n bytes at p equal the bytes k.. of sym? 1/0
+(defn- out-name-cp? [M :vector-i64 p :i64 cp :i64] :bool
+  (loop [i 0] (cond (= i (mem-cpw cp)) true
+                    (not= (out-byte M (+ p i)) (mem-cp-byte cp i)) false :else (recur (+ i 1)))))
 (defn- out-name-eq [M :vector-i64 p :i64 sym :string k :i64 n :i64] :i64
   (if (<= n 0)
     1
-    (if (= (out-byte M p) (string-code-point-at sym k))
-      (out-name-eq M (+ p 1) sym (+ k 1) (- n 1))
-      0)))
+    (let [cp (string-code-point-at sym k) w (mem-cpw cp)]
+      (if (and (<= w n) (out-name-cp? M p cp))
+        (out-name-eq M (+ p w) sym (+ k w) (- n w)) 0))))
 
 ;; the export line at p names sym (the name ends at the first space)? 1/0
 (defn- out-line-match [M :vector-i64 p :i64 sym :string] :i64
@@ -465,10 +473,11 @@
 ;; (KEXE_VECTOR_ITEMS), so a request vector per piece would cost as many items as the data. R = "<path><token tw>" + m slots.
 (def out-wchunk 262144)
 (defn- out-rq-new [path :string tw :i64 m :i64] :vector-i64
-  (io-bput-tok (io-bput-str (vector-alloc (+ (string-length path) (+ (io-tokn tw) m))) path 0 (string-length path) 0) (string-length path) tw))
+  (let [header (io-fs2-header (if (= tw 0) 66 67) path) n (string-length header)]
+    (io-bput-str (vector-alloc (+ n m)) header 0 n 0)))
 ;; send R (its data R[d .. d+m), R exactly d+m long): one request, or, when the data spells a loader token, 02-io's cut pieces
 (defn- out-rq-send [R :vector-i64 path :string tw :i64 d :i64 m :i64] :i64
-  (if (= (io-cut R d (+ d m)) (+ d m)) (io-bsend R) (io-pieces R path d (+ d m) tw)))
+  (io-bsend R))
 
 ;; out-write-v V path a n -> n : V[a .. a+n) (low 8 bits per item) to the file path as raw bytes: the first piece written
 ;; ("WRITE"), the rest appended; each request stays far below the loader's 8 MiB bytes value (io-write-bytes sends the whole
@@ -478,7 +487,7 @@
     (loop [i a tw 0]
       (let [e (if (< (+ i out-wchunk) (+ a n)) (+ i out-wchunk) (+ a n))
             m (- e i)
-            d (+ (string-length path) (io-tokn tw))
+            d (+ (string-length path) 7)
             R (if (and (= tw 1) (= m out-wchunk)) RF (out-rq-new path tw m))
             z (out-rq-send (io-bput-words R V i e (- d i)) path tw d m)]
         (if (>= e (+ a n)) n (recur e 1))))))

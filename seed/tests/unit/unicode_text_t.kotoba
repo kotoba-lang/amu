@@ -1,0 +1,9 @@
+;; Unity input: 00-ns, 01-mem, this fixture. Byte vectors are the independent
+;; FNV byte stream, including two-, three- and four-byte scalar values.
+(defn- seed-main [] :i64
+ (let [text "xé例🧪z" data (vector-i64 195 169 228 190 139 240 159 167 170)
+       expected (mem-hash-words data 0 9)
+       target (vector-alloc 9) copied (mem-put-bytes target text 1 10 0)]
+  (if (and (= (mem-hash-str text 1 10) expected) (= (mem-hash-words copied 0 9) expected)
+           (= (mem-span-eq "例🧪例🧪" 0 7 7) 1)
+           (= (mem-span-eq "例🧪例別" 0 7 6) 0)) 0 91)))

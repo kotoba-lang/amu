@@ -1,0 +1,367 @@
+## Per-operator census (operator-aware selection, CUDA paired-timing channel)
+
+Published by scripts/gpu_regime_classify.py under the per-operator reading unit the operator-aware selection row adopted (ADR-0361's 2026-10-25 seventh amendment): a group is (op, W, shape) and one reading is one (session, metric) over the group's three pair blocks. The statistic is the block's paired-median ratio (median over the block's within-pair ratios armA/armB as the block declares it -- the ratio is never re-oriented); v is faster than u in a reading iff the ratio sits on v's side of 1.0, and a reading's unique winner is the arm faster than BOTH rivals. The group's fold is the same unique winner in EVERY reading (every session x both clocks x every qualifying shape) -- the entry rule's reading arm: unique-winner + both-clocks + CROSS-RUN INVARIANCE replaces REGIME-INVARIANCE at this unit (the regime machine has no pool here); anything else REFUSES. Winner names are the instrument's arm names (CUDA_ARM_VARIANT maps them to the KIR variants). The within-block one-sided count beside every ratio (of the declared pairs, how many within-pair ratios sit on the same side of 1.0 as the block's paired-median ratio) is a robustness fact reported and consumed NOWHERE.
+
+FULL CENSUS: every (op, W, shape) group of the records' scan grid is published, none cherry-picked. Metrics classify separately and never mix (rule 3 unchanged; cross-clock magnitude claims are INADMISSIBLE). A verdict belongs to the sessions that measured it and stays CHANNEL-SCOPED and DEVICE-SCOPED (a CUDA-channel sign never flips an MSL/WGSL cell and never answers a workgroup row; ADR-0355's 2026-10-25 channel rule stands). Rule 4 is unchanged -- this publication moves no record, no :measured? flag and no selection answer: entry into the selection surface is the wiring row's job, and the replication requirement (at least TWO fresh sessions UNDER THE REGISTRATION on at least TWO different UTC days) is decided there, not here -- these logs' contents carry no UTC dates and this census never reads session admissibility.
+
+Sessions: 1
+  s1: s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) -- usable pair blocks 108, excluded 0, orphan sample lines 40
+
+Full census: 36 (op, W, shape) groups published (36 folded to a winner, 0 refused).
+
+### group: op=max W=32 n=1000003
+
+| reading | warp-shuffle/subgroup | warp-shuffle/baseline | subgroup/baseline | unique winner |
+|---|---|---|---|---|
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) gpu_ns | 0.9555 (17/20 one-sided) | 0.8804 (20/20 one-sided) | 0.9312 (20/20 one-sided) | warp-shuffle |
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) host_ns | 0.9577 (16/20 one-sided) | 0.8820 (20/20 one-sided) | 0.9316 (20/20 one-sided) | warp-shuffle |
+
+fold: warp-shuffle -- the same unique winner in every reading
+
+### group: op=max W=32 n=1048576
+
+| reading | warp-shuffle/subgroup | warp-shuffle/baseline | subgroup/baseline | unique winner |
+|---|---|---|---|---|
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) gpu_ns | 0.9528 (20/20 one-sided) | 0.8769 (20/20 one-sided) | 0.9268 (20/20 one-sided) | warp-shuffle |
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) host_ns | 0.9546 (19/20 one-sided) | 0.8779 (20/20 one-sided) | 0.9266 (20/20 one-sided) | warp-shuffle |
+
+fold: warp-shuffle -- the same unique winner in every reading
+
+### group: op=max W=64 n=1000003
+
+| reading | warp-shuffle/subgroup | warp-shuffle/baseline | subgroup/baseline | unique winner |
+|---|---|---|---|---|
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) gpu_ns | 0.9012 (18/20 one-sided) | 0.9332 (17/20 one-sided) | 1.0447 (18/20 one-sided) | warp-shuffle |
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) host_ns | 0.9006 (18/20 one-sided) | 0.9373 (17/20 one-sided) | 1.0443 (17/20 one-sided) | warp-shuffle |
+
+fold: warp-shuffle -- the same unique winner in every reading
+
+### group: op=max W=64 n=1048576
+
+| reading | warp-shuffle/subgroup | warp-shuffle/baseline | subgroup/baseline | unique winner |
+|---|---|---|---|---|
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) gpu_ns | 0.9045 (18/20 one-sided) | 0.9401 (17/20 one-sided) | 1.0298 (15/20 one-sided) | warp-shuffle |
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) host_ns | 0.8994 (18/20 one-sided) | 0.9300 (17/20 one-sided) | 1.0261 (15/20 one-sided) | warp-shuffle |
+
+fold: warp-shuffle -- the same unique winner in every reading
+
+### group: op=max W=128 n=1000003
+
+| reading | warp-shuffle/subgroup | warp-shuffle/baseline | subgroup/baseline | unique winner |
+|---|---|---|---|---|
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) gpu_ns | 0.5633 (20/20 one-sided) | 0.6516 (20/20 one-sided) | 1.1405 (20/20 one-sided) | warp-shuffle |
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) host_ns | 0.5673 (20/20 one-sided) | 0.6755 (20/20 one-sided) | 1.1481 (20/20 one-sided) | warp-shuffle |
+
+fold: warp-shuffle -- the same unique winner in every reading
+
+### group: op=max W=128 n=1048576
+
+| reading | warp-shuffle/subgroup | warp-shuffle/baseline | subgroup/baseline | unique winner |
+|---|---|---|---|---|
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) gpu_ns | 0.5801 (20/20 one-sided) | 0.6495 (20/20 one-sided) | 1.1605 (19/20 one-sided) | warp-shuffle |
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) host_ns | 0.5946 (20/20 one-sided) | 0.6667 (20/20 one-sided) | 1.1648 (19/20 one-sided) | warp-shuffle |
+
+fold: warp-shuffle -- the same unique winner in every reading
+
+### group: op=max W=256 n=1000003
+
+| reading | warp-shuffle/subgroup | warp-shuffle/baseline | subgroup/baseline | unique winner |
+|---|---|---|---|---|
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) gpu_ns | 0.5596 (20/20 one-sided) | 0.6495 (20/20 one-sided) | 1.1724 (19/20 one-sided) | warp-shuffle |
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) host_ns | 0.5717 (20/20 one-sided) | 0.6684 (20/20 one-sided) | 1.1560 (19/20 one-sided) | warp-shuffle |
+
+fold: warp-shuffle -- the same unique winner in every reading
+
+### group: op=max W=256 n=1048576
+
+| reading | warp-shuffle/subgroup | warp-shuffle/baseline | subgroup/baseline | unique winner |
+|---|---|---|---|---|
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) gpu_ns | 0.5652 (20/20 one-sided) | 0.6567 (20/20 one-sided) | 1.1568 (19/20 one-sided) | warp-shuffle |
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) host_ns | 0.5755 (20/20 one-sided) | 0.6634 (20/20 one-sided) | 1.1445 (18/20 one-sided) | warp-shuffle |
+
+fold: warp-shuffle -- the same unique winner in every reading
+
+### group: op=max W=512 n=1000003
+
+| reading | warp-shuffle/subgroup | warp-shuffle/baseline | subgroup/baseline | unique winner |
+|---|---|---|---|---|
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) gpu_ns | 0.5549 (20/20 one-sided) | 0.5921 (20/20 one-sided) | 1.0741 (19/20 one-sided) | warp-shuffle |
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) host_ns | 0.5764 (20/20 one-sided) | 0.6051 (20/20 one-sided) | 1.0790 (18/20 one-sided) | warp-shuffle |
+
+fold: warp-shuffle -- the same unique winner in every reading
+
+### group: op=max W=512 n=1048576
+
+| reading | warp-shuffle/subgroup | warp-shuffle/baseline | subgroup/baseline | unique winner |
+|---|---|---|---|---|
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) gpu_ns | 0.5493 (20/20 one-sided) | 0.5922 (20/20 one-sided) | 1.0712 (17/20 one-sided) | warp-shuffle |
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) host_ns | 0.5573 (20/20 one-sided) | 0.6016 (20/20 one-sided) | 1.0689 (17/20 one-sided) | warp-shuffle |
+
+fold: warp-shuffle -- the same unique winner in every reading
+
+### group: op=max W=1024 n=1000003
+
+| reading | warp-shuffle/subgroup | warp-shuffle/baseline | subgroup/baseline | unique winner |
+|---|---|---|---|---|
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) gpu_ns | 0.5114 (20/20 one-sided) | 0.5222 (20/20 one-sided) | 1.0390 (18/20 one-sided) | warp-shuffle |
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) host_ns | 0.5235 (20/20 one-sided) | 0.5392 (20/20 one-sided) | 1.0393 (17/20 one-sided) | warp-shuffle |
+
+fold: warp-shuffle -- the same unique winner in every reading
+
+### group: op=max W=1024 n=1048576
+
+| reading | warp-shuffle/subgroup | warp-shuffle/baseline | subgroup/baseline | unique winner |
+|---|---|---|---|---|
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) gpu_ns | 0.5029 (20/20 one-sided) | 0.5276 (20/20 one-sided) | 1.0381 (18/20 one-sided) | warp-shuffle |
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) host_ns | 0.5131 (20/20 one-sided) | 0.5376 (20/20 one-sided) | 1.0359 (17/20 one-sided) | warp-shuffle |
+
+fold: warp-shuffle -- the same unique winner in every reading
+
+### group: op=min W=32 n=1000003
+
+| reading | warp-shuffle/subgroup | warp-shuffle/baseline | subgroup/baseline | unique winner |
+|---|---|---|---|---|
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) gpu_ns | 0.9568 (20/20 one-sided) | 0.8744 (20/20 one-sided) | 0.9319 (19/20 one-sided) | warp-shuffle |
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) host_ns | 0.9535 (20/20 one-sided) | 0.8763 (20/20 one-sided) | 0.9359 (19/20 one-sided) | warp-shuffle |
+
+fold: warp-shuffle -- the same unique winner in every reading
+
+### group: op=min W=32 n=1048576
+
+| reading | warp-shuffle/subgroup | warp-shuffle/baseline | subgroup/baseline | unique winner |
+|---|---|---|---|---|
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) gpu_ns | 0.9554 (19/20 one-sided) | 0.8949 (20/20 one-sided) | 0.9421 (17/20 one-sided) | warp-shuffle |
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) host_ns | 0.9554 (19/20 one-sided) | 0.8967 (20/20 one-sided) | 0.9349 (19/20 one-sided) | warp-shuffle |
+
+fold: warp-shuffle -- the same unique winner in every reading
+
+### group: op=min W=64 n=1000003
+
+| reading | warp-shuffle/subgroup | warp-shuffle/baseline | subgroup/baseline | unique winner |
+|---|---|---|---|---|
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) gpu_ns | 0.9023 (17/20 one-sided) | 0.9382 (18/20 one-sided) | 1.0187 (16/20 one-sided) | warp-shuffle |
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) host_ns | 0.8927 (18/20 one-sided) | 0.9455 (17/20 one-sided) | 1.0205 (15/20 one-sided) | warp-shuffle |
+
+fold: warp-shuffle -- the same unique winner in every reading
+
+### group: op=min W=64 n=1048576
+
+| reading | warp-shuffle/subgroup | warp-shuffle/baseline | subgroup/baseline | unique winner |
+|---|---|---|---|---|
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) gpu_ns | 0.9156 (19/20 one-sided) | 0.9243 (18/20 one-sided) | 1.0364 (17/20 one-sided) | warp-shuffle |
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) host_ns | 0.9132 (19/20 one-sided) | 0.9287 (18/20 one-sided) | 1.0407 (18/20 one-sided) | warp-shuffle |
+
+fold: warp-shuffle -- the same unique winner in every reading
+
+### group: op=min W=128 n=1000003
+
+| reading | warp-shuffle/subgroup | warp-shuffle/baseline | subgroup/baseline | unique winner |
+|---|---|---|---|---|
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) gpu_ns | 0.5777 (20/20 one-sided) | 0.6659 (19/20 one-sided) | 1.1520 (19/20 one-sided) | warp-shuffle |
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) host_ns | 0.5887 (20/20 one-sided) | 0.6784 (18/20 one-sided) | 1.1533 (19/20 one-sided) | warp-shuffle |
+
+fold: warp-shuffle -- the same unique winner in every reading
+
+### group: op=min W=128 n=1048576
+
+| reading | warp-shuffle/subgroup | warp-shuffle/baseline | subgroup/baseline | unique winner |
+|---|---|---|---|---|
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) gpu_ns | 0.5538 (20/20 one-sided) | 0.6574 (20/20 one-sided) | 1.1584 (19/20 one-sided) | warp-shuffle |
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) host_ns | 0.5615 (19/20 one-sided) | 0.6707 (20/20 one-sided) | 1.1506 (19/20 one-sided) | warp-shuffle |
+
+fold: warp-shuffle -- the same unique winner in every reading
+
+### group: op=min W=256 n=1000003
+
+| reading | warp-shuffle/subgroup | warp-shuffle/baseline | subgroup/baseline | unique winner |
+|---|---|---|---|---|
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) gpu_ns | 0.5667 (20/20 one-sided) | 0.6715 (20/20 one-sided) | 1.1580 (19/20 one-sided) | warp-shuffle |
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) host_ns | 0.5684 (18/20 one-sided) | 0.6776 (20/20 one-sided) | 1.1566 (19/20 one-sided) | warp-shuffle |
+
+fold: warp-shuffle -- the same unique winner in every reading
+
+### group: op=min W=256 n=1048576
+
+| reading | warp-shuffle/subgroup | warp-shuffle/baseline | subgroup/baseline | unique winner |
+|---|---|---|---|---|
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) gpu_ns | 0.5522 (20/20 one-sided) | 0.6490 (20/20 one-sided) | 1.1649 (18/20 one-sided) | warp-shuffle |
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) host_ns | 0.5686 (20/20 one-sided) | 0.6617 (20/20 one-sided) | 1.1459 (18/20 one-sided) | warp-shuffle |
+
+fold: warp-shuffle -- the same unique winner in every reading
+
+### group: op=min W=512 n=1000003
+
+| reading | warp-shuffle/subgroup | warp-shuffle/baseline | subgroup/baseline | unique winner |
+|---|---|---|---|---|
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) gpu_ns | 0.5730 (20/20 one-sided) | 0.6051 (20/20 one-sided) | 1.0806 (18/20 one-sided) | warp-shuffle |
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) host_ns | 0.5811 (20/20 one-sided) | 0.5846 (20/20 one-sided) | 1.0742 (19/20 one-sided) | warp-shuffle |
+
+fold: warp-shuffle -- the same unique winner in every reading
+
+### group: op=min W=512 n=1048576
+
+| reading | warp-shuffle/subgroup | warp-shuffle/baseline | subgroup/baseline | unique winner |
+|---|---|---|---|---|
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) gpu_ns | 0.5755 (20/20 one-sided) | 0.5929 (20/20 one-sided) | 1.0838 (17/20 one-sided) | warp-shuffle |
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) host_ns | 0.5772 (20/20 one-sided) | 0.6025 (20/20 one-sided) | 1.0837 (17/20 one-sided) | warp-shuffle |
+
+fold: warp-shuffle -- the same unique winner in every reading
+
+### group: op=min W=1024 n=1000003
+
+| reading | warp-shuffle/subgroup | warp-shuffle/baseline | subgroup/baseline | unique winner |
+|---|---|---|---|---|
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) gpu_ns | 0.5078 (20/20 one-sided) | 0.5165 (20/20 one-sided) | 1.0333 (15/20 one-sided) | warp-shuffle |
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) host_ns | 0.5236 (20/20 one-sided) | 0.5317 (20/20 one-sided) | 1.0316 (15/20 one-sided) | warp-shuffle |
+
+fold: warp-shuffle -- the same unique winner in every reading
+
+### group: op=min W=1024 n=1048576
+
+| reading | warp-shuffle/subgroup | warp-shuffle/baseline | subgroup/baseline | unique winner |
+|---|---|---|---|---|
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) gpu_ns | 0.5032 (20/20 one-sided) | 0.5208 (20/20 one-sided) | 1.0457 (17/20 one-sided) | warp-shuffle |
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) host_ns | 0.5233 (20/20 one-sided) | 0.5324 (20/20 one-sided) | 1.0405 (17/20 one-sided) | warp-shuffle |
+
+fold: warp-shuffle -- the same unique winner in every reading
+
+### group: op=sum W=32 n=1000003
+
+| reading | warp-shuffle/subgroup | warp-shuffle/baseline | subgroup/baseline | unique winner |
+|---|---|---|---|---|
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) gpu_ns | 0.9924 (14/20 one-sided) | 0.8852 (20/20 one-sided) | 0.8889 (20/20 one-sided) | warp-shuffle |
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) host_ns | 0.9870 (16/20 one-sided) | 0.8922 (20/20 one-sided) | 0.8936 (20/20 one-sided) | warp-shuffle |
+
+fold: warp-shuffle -- the same unique winner in every reading
+
+### group: op=sum W=32 n=1048576
+
+| reading | warp-shuffle/subgroup | warp-shuffle/baseline | subgroup/baseline | unique winner |
+|---|---|---|---|---|
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) gpu_ns | 0.9995 (11/20 one-sided) | 0.8861 (20/20 one-sided) | 0.8958 (20/20 one-sided) | warp-shuffle |
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) host_ns | 0.9951 (13/20 one-sided) | 0.8853 (20/20 one-sided) | 0.8967 (20/20 one-sided) | warp-shuffle |
+
+fold: warp-shuffle -- the same unique winner in every reading
+
+### group: op=sum W=64 n=1000003
+
+| reading | warp-shuffle/subgroup | warp-shuffle/baseline | subgroup/baseline | unique winner |
+|---|---|---|---|---|
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) gpu_ns | 1.0700 (20/20 one-sided) | 0.9328 (18/20 one-sided) | 0.8788 (20/20 one-sided) | subgroup |
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) host_ns | 1.0656 (20/20 one-sided) | 0.9378 (19/20 one-sided) | 0.8912 (20/20 one-sided) | subgroup |
+
+fold: subgroup -- the same unique winner in every reading
+
+### group: op=sum W=64 n=1048576
+
+| reading | warp-shuffle/subgroup | warp-shuffle/baseline | subgroup/baseline | unique winner |
+|---|---|---|---|---|
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) gpu_ns | 1.0905 (18/20 one-sided) | 0.9354 (19/20 one-sided) | 0.8746 (19/20 one-sided) | subgroup |
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) host_ns | 1.0962 (18/20 one-sided) | 0.9367 (19/20 one-sided) | 0.8858 (19/20 one-sided) | subgroup |
+
+fold: subgroup -- the same unique winner in every reading
+
+### group: op=sum W=128 n=1000003
+
+| reading | warp-shuffle/subgroup | warp-shuffle/baseline | subgroup/baseline | unique winner |
+|---|---|---|---|---|
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) gpu_ns | 0.6761 (20/20 one-sided) | 0.6653 (20/20 one-sided) | 0.9722 (15/20 one-sided) | warp-shuffle |
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) host_ns | 0.6871 (20/20 one-sided) | 0.6715 (20/20 one-sided) | 0.9565 (15/20 one-sided) | warp-shuffle |
+
+fold: warp-shuffle -- the same unique winner in every reading
+
+### group: op=sum W=128 n=1048576
+
+| reading | warp-shuffle/subgroup | warp-shuffle/baseline | subgroup/baseline | unique winner |
+|---|---|---|---|---|
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) gpu_ns | 0.6741 (20/20 one-sided) | 0.6604 (20/20 one-sided) | 0.9763 (12/20 one-sided) | warp-shuffle |
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) host_ns | 0.6815 (19/20 one-sided) | 0.6711 (20/20 one-sided) | 0.9742 (11/20 one-sided) | warp-shuffle |
+
+fold: warp-shuffle -- the same unique winner in every reading
+
+### group: op=sum W=256 n=1000003
+
+| reading | warp-shuffle/subgroup | warp-shuffle/baseline | subgroup/baseline | unique winner |
+|---|---|---|---|---|
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) gpu_ns | 0.6453 (20/20 one-sided) | 0.6594 (20/20 one-sided) | 1.0099 (11/20 one-sided) | warp-shuffle |
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) host_ns | 0.6574 (20/20 one-sided) | 0.6648 (20/20 one-sided) | 1.0022 (10/20 one-sided) | warp-shuffle |
+
+fold: warp-shuffle -- the same unique winner in every reading
+
+### group: op=sum W=256 n=1048576
+
+| reading | warp-shuffle/subgroup | warp-shuffle/baseline | subgroup/baseline | unique winner |
+|---|---|---|---|---|
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) gpu_ns | 0.6548 (20/20 one-sided) | 0.6603 (20/20 one-sided) | 1.0019 (11/20 one-sided) | warp-shuffle |
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) host_ns | 0.6646 (20/20 one-sided) | 0.6758 (20/20 one-sided) | 0.9990 (11/20 one-sided) | warp-shuffle |
+
+fold: warp-shuffle -- the same unique winner in every reading
+
+### group: op=sum W=512 n=1000003
+
+| reading | warp-shuffle/subgroup | warp-shuffle/baseline | subgroup/baseline | unique winner |
+|---|---|---|---|---|
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) gpu_ns | 0.6338 (20/20 one-sided) | 0.5954 (20/20 one-sided) | 0.9442 (17/20 one-sided) | warp-shuffle |
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) host_ns | 0.6451 (20/20 one-sided) | 0.6091 (20/20 one-sided) | 0.9448 (15/20 one-sided) | warp-shuffle |
+
+fold: warp-shuffle -- the same unique winner in every reading
+
+### group: op=sum W=512 n=1048576
+
+| reading | warp-shuffle/subgroup | warp-shuffle/baseline | subgroup/baseline | unique winner |
+|---|---|---|---|---|
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) gpu_ns | 0.6321 (20/20 one-sided) | 0.6082 (20/20 one-sided) | 0.9264 (16/20 one-sided) | warp-shuffle |
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) host_ns | 0.6508 (20/20 one-sided) | 0.6247 (20/20 one-sided) | 0.9355 (16/20 one-sided) | warp-shuffle |
+
+fold: warp-shuffle -- the same unique winner in every reading
+
+### group: op=sum W=1024 n=1000003
+
+| reading | warp-shuffle/subgroup | warp-shuffle/baseline | subgroup/baseline | unique winner |
+|---|---|---|---|---|
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) gpu_ns | 0.5877 (20/20 one-sided) | 0.5285 (20/20 one-sided) | 0.9074 (17/20 one-sided) | warp-shuffle |
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) host_ns | 0.5973 (20/20 one-sided) | 0.5365 (20/20 one-sided) | 0.9128 (17/20 one-sided) | warp-shuffle |
+
+fold: warp-shuffle -- the same unique winner in every reading
+
+### group: op=sum W=1024 n=1048576
+
+| reading | warp-shuffle/subgroup | warp-shuffle/baseline | subgroup/baseline | unique winner |
+|---|---|---|---|---|
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) gpu_ns | 0.5827 (20/20 one-sided) | 0.5214 (20/20 one-sided) | 0.9128 (18/20 one-sided) | warp-shuffle |
+| s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt) host_ns | 0.5889 (20/20 one-sided) | 0.5335 (20/20 one-sided) | 0.9193 (16/20 one-sided) | warp-shuffle |
+
+fold: warp-shuffle -- the same unique winner in every reading
+
+## Entry groups (op, W): the fold across shapes
+
+| op | W | qualifying shapes | winner | reading-arm verdict |
+|---|---|---|---|---|
+| max | 32 | 1000003, 1048576 | warp-shuffle | enter |
+| max | 64 | 1000003, 1048576 | warp-shuffle | enter |
+| max | 128 | 1000003, 1048576 | warp-shuffle | enter |
+| max | 256 | 1000003, 1048576 | warp-shuffle | enter |
+| max | 512 | 1000003, 1048576 | warp-shuffle | enter |
+| max | 1024 | 1000003, 1048576 | warp-shuffle | enter |
+| min | 32 | 1000003, 1048576 | warp-shuffle | enter |
+| min | 64 | 1000003, 1048576 | warp-shuffle | enter |
+| min | 128 | 1000003, 1048576 | warp-shuffle | enter |
+| min | 256 | 1000003, 1048576 | warp-shuffle | enter |
+| min | 512 | 1000003, 1048576 | warp-shuffle | enter |
+| min | 1024 | 1000003, 1048576 | warp-shuffle | enter |
+| sum | 32 | 1000003, 1048576 | warp-shuffle | enter |
+| sum | 64 | 1000003, 1048576 | subgroup | enter |
+| sum | 128 | 1000003, 1048576 | warp-shuffle | enter |
+| sum | 256 | 1000003, 1048576 | warp-shuffle | enter |
+| sum | 512 | 1000003, 1048576 | warp-shuffle | enter |
+| sum | 1024 | 1000003, 1048576 | warp-shuffle | enter |
+
+Entry groups: 18 published (18 enter, 0 refuse). The verdict is the entry rule's READING ARM ONLY -- the replication requirement (two fresh registration sessions on two different UTC days) is decided at entry, and no record exists until it is met.
+
+Named and excluded blocks (s1 (docs/evidence/gpu/cuda-registered-sessionA-20261025/measure-log.txt)) leave named gaps in this census; the record's own named census:
+
+## Named and excluded (data, never silently dropped)
+
+All 108 pair blocks are complete (their declared pairs, both arms), verified (every verify line ok=1) and rc=0 -- nothing named and excluded.
+
+40 sample lines sit outside any `-- cell` block (the log's smoke block) -- named and excluded.

@@ -1,0 +1,186 @@
+JUN-58 / JUN-55 -- the fold-arms counters OP-ORDER AT-OTHER-CELLS
+row, SECOND OTHER CELL (n = 1000003 at W = 64, op order min,max,sum):
+RUN PROTOCOL + PREDICTION DECLARATION (written BEFORE the first
+hardware run of this row; the runs fill run-1.txt .. run-6.txt beside
+this file)
+
+ROW: the named UNMEASURED item carried by every record since the
+anchor row, verbatim -- "op-order dependence at every OTHER cell"
+(docs/evidence/gpu/metal-counter-foldarms-oporder-w32-20261027/
+record.txt, the UNMEASURED named list -- its FIRST cell went to that
+row). The item is consumed ONE CELL AT A TIME, at the route's own unit
+(one cell = one counters session), in the width order the width half
+itself used (W = 32 was the width half's first off-anchor cell, W = 64
+its second): this row takes the item's SECOND cell, (n = 1000003,
+W = 64). It is NOT a cross-day cell (day 4+ needs 2026-10-28 UTC --
+this tick runs 2026-10-27 UTC, the same UTC day as every other
+counters row, so no day claim of any kind rides this row) and NOT an
+anchor-list cell (that item's width/shape halves are CLOSED; only its
+"R at those grids" parenthetical stays open). ONE measurement slice.
+
+CELL: n = 1000003, workgroup = 64 -- the anchor shape's n at the
+width half's second off-anchor width (the W-grid row's cell exactly).
+
+THE ONE CHANGE vs the W-grid row (metal-counter-foldarms-w64-20261026):
+the op-order positional "min,max,sum" (the W-grid row ran the
+instrument default sum,max,min). THE ONE CHANGE vs the W=32 first
+other cell (metal-counter-foldarms-oporder-w32-20261027): the cell
+(W = 64 instead of W = 32). Everything else is the anchor row's
+declared protocol: 6 fresh processes, one ADR-0358 run each, 20
+interleaved AB/BA pairs per operator per run, 2 warmup submits per arm
+discarded, verified untimed read-back; the same instrument, the same
+committed emitters, the same committed analysis route.
+
+WHAT THIS ROW ANSWERS (pre-registered):
+
+  (R1) SIGN OP-ORDER DEPENDENCE AT THIS CELL -- is the fold-arm sign's
+  rule-2 verdict class at (n = 1000003, W = 64) the same under
+  min,max,sum as it was under sum,max,min? At the W-grid row (order
+  sum,max,min) this cell read: cell roll-up REGIME-INVARIANT SLOWER
+  (18 of 18 per-run paired-median ratios above 1.0); sum
+  regime-invariant SLOWER (6/6, 1.214..1.222); max regime-invariant
+  SLOWER (6/6, 1.199..1.218); min regime-invariant SLOWER (6/6,
+  1.198..1.217). NOT a side-flip cell at its measured order: unlike
+  W = 32 (whose sum flip is one of the reopen-trigger class's
+  exercising records), this cell sat on the anchor's side at every
+  operator at the W-grid row.
+
+  (R2) THE REGIME STRUCTURE AT THIS CELL UNDER THE REVERSED ORDER --
+  rule 1 published at its letter whatever it is (at the W-grid row,
+  order sum,max,min: max THREE levels 29459.0..29646.0 / 38437.5 /
+  91771.0..91958.5, min THREE 29500.0..29666.0 / 38187.5 /
+  90916.5..91875.0, sum ONE 91604.5..92271.0, raw bracket band
+  29.5k..92.3k counter_ns per-run medians).
+
+CONTEXT NAMED, NOT FITTED: at the W=32 first other cell the reversed
+order moved the verdict class (roll-up REGIME-SCOPED 5/18-above ->
+REGIME-INVARIANT FASTER 18/18; max and min change class while sum
+remains faster -- the owner-corrected bookkeeping in that row's
+record) while the flip's SIDE stayed put. Whether anything like that
+happens at W = 64 is exactly R1; the predictions below cover both
+branches and no branch is re-fitted after the fact.
+
+DAY FACTS: this row's runs execute on the UTC day the run window
+stamps say (captured verbatim in run-window.txt around the runs). The
+tick began 2026-10-27T01:15Z, so the window is expected to stamp
+2026-10-27 UTC -- the SAME UTC day as every other counters-channel
+row -- but the record names whatever the window says. NO cross-day
+claim of any kind is made or possible from this row; day 4+ stays
+UNMEASURED after it.
+
+Runs: 6 fresh processes (run-1.txt .. run-6.txt), one ADR-0358 run
+each -- the anchor row's declared process count and protocol unchanged.
+
+Instrument: scripts/gpu-subgroup-reduce-metal-counters.m compiled
+fresh this row (unchanged in the tree since the anchor row -- last
+commit touching it is the harness row b3717baf3, before the anchor
+cf631722d; named so the comparison is instrument-constant).
+
+Arms: the fold arms baseline-<op>.metallib vs subgroup-<op>.metallib
+at W=64, built THIS row from the COMMITTED emitters via
+scripts/gpu-subgroup-reduce-metal-measure.cljk --width 64 into a
+FRESH build directory (no earlier row's build dir is reused -- this
+row re-derives the artifacts and compares, it does not copy them).
+
+REALIZATION CONTROL (checked at build time, recorded in build-shas.txt):
+ALL EIGHT artifacts (the six fold-arm metallibs + probe.metallib +
+the counters binary) are sha256-compared against BOTH prior W=64
+builds of this campaign: the W-grid row's 2026-10-26 build and the
+shape-2 W=64 row's 2026-10-26 build. Expected: all IDENTICAL (the
+shape-2 W=64 row named the fold-arm artifacts n-INVARIANT at W=64;
+the W-independent artifacts are instrument-constant across the whole
+campaign). If the instrument moved (P0c), the row is named
+instrument-confounded and no sign verdict is claimed from it; if any
+fold-arm metallib differs, the fact is recorded as such and the row
+names the artifact axis moved. All shas are recorded.
+
+Analysis: ONLY the committed route --
+scripts/gpu_regime_classify.py --counters-log run-1..6.txt
+(pre-committed in the counters-route row, before any of this data
+exists), run twice with the two outputs diffed for BYTE IDENTITY, the
+publication saved verbatim as publication.txt. NO analysis code is
+written this row.
+
+PREDICTIONS (registered before the first run; both branches of each
+named question included):
+
+  P0 VALIDITY + REALIZATION: all 6 processes exit 0 with 120/120
+     sample lines resolved and 6/6 verify lines ok=1 each; the run
+     headers declare n=1000003, workgroup=64, op_order=min,max,sum in
+     every log; every artifact is sha256-identical to both prior W=64
+     builds. If the instrument moved (P0c), the row is named
+     instrument-confounded and no sign verdict is claimed from it.
+
+  P1 THE SIGN READING (R1), both branches (rule 2 at its letter, every
+     operator, plus the roll-up; variant_ns/baseline_ns NEVER
+     re-oriented):
+       P1a the W-grid row's verdict class REPRODUCES under the
+           reversed order at this cell (the same per-operator classes:
+           all three operators regime-invariant slower, roll-up
+           regime-invariant slower 18/18) -- the cell's sign is
+           op-order-INDEPENDENT at its letter at W = 64 too, and the
+           second cell's cross-order datapoint AGREES with the W-grid
+           order. Named as evidence bearing on the reopen-trigger's
+           unadjudicated exercising records -- but this row registers
+           NO reopen claim either way (rule 4); if no side-flip
+           appears the exercising-record count STAYS at THREE (3 per
+           record letter / 2 per cell letter) and their unadjudicated
+           status is unchanged by this row.
+       P1b the verdict class MOVES under the reversed order (any
+           operator's class changes, or the roll-up class changes,
+           whatever direction) -- the cell's sign is op-order-DEPENDENT
+           at its letter at this cell too, named not explained and
+           confounded with the session exactly as at the W=32 first
+           cell (one session per order at this cell). Two sub-branches
+           registered: (b1) if a SIDE-FLIP appears (any operator's 6/6
+           ratios land one-sided on the FASTER side here where the
+           W-grid order had them slower), this cell becomes a NEW
+           exercising record of the reopen-trigger class ("a
+           counters-channel record carrying an OPPOSING device-level
+           sign at any cell/W/day") -- the count would go 3 -> 4 at
+           the RECORD letter and the exercising CELLS 2 -> 3 (W=32 at
+           both n plus W=64) -- still NO reopen claim from this row
+           (rule 4), all unadjudicated; (b2) if the class moves with
+           NO side change (e.g. slower 18/18 -> slower but
+           regime-scoped), the count stays 3 and the move is a class
+           letter move only.
+       Whatever fires is published at the route's letter; no branch is
+       re-fitted after the fact.
+
+  P2 THE REGIME STRUCTURE (R2), both branches -- the level split at
+     this session (rule 1 published at its letter whatever it is):
+       P2a the W-grid row's structure REPRODUCES (max THREE / min
+           THREE / sum ONE at level-count resolution).
+       P2b it does NOT reproduce -- a different split, named not
+           explained (the structure has been session-variable at every
+           cell measured so far; the level VALUES are pre-registered as
+           expected session-variable).
+     P2 is about the level COUNTS and which operator is one-level, not
+     the values; the values are published at the route's letter. The
+     state-shift cause/threshold/prevalence stay UNMEASURED whichever
+     branch fires.
+
+  P3 MAGNITUDE: per-operator ratio bands published as the route's raw
+     bands at this cell; their position relative to the W-grid row's
+     bands (sum 1.214..1.222, max 1.199..1.218, min 1.198..1.217,
+     pooled 1.198..1.222) and the shape-2 W=64 row's bands (sum
+     1.223..1.228, pooled 1.215..1.228 at n = 2^20) is a raw-band
+     observation at ONE instrument at the SAME width -- and the W=32
+     first other cell's reversed-order band (0.915..0.921) is a
+     cross-WIDTH raw-band observation only -- no cross-instrument
+     magnitude claim of any kind (rule 3), no magnitude invariance
+     claimed across orders, sessions or widths.
+
+CONSEQUENCE (rule 4, pre-registered): NOTHING MOVES from this row --
+no :measured? flag, no :shapes value, no selection answer, no
+workgroup row (this channel can never move one), no WGSL cell flip, no
+MSL command-buffer cell flip, no cross-instrument magnitude claim.
+The sign stays CHANNEL-SCOPED and M1-Max scoped. The named item moves
+in RECORD STATE only ("op-order dependence at every OTHER cell" ->
+"MEASURED at TWO cells (n = 1000003, W = 32 and W = 64): <whatever
+the publication says>; the item's other NINE cells stay UNMEASURED").
+Day 4+ cross-day replications, "R at those grids", the state-shift
+cause, the W-shape's cause (the W=32 side-flip stays unadjudicated
+whatever this row shows -- a reopen claim needs its own row), the
+partial tail's quantitative role and anything off M1 Max stay
+UNMEASURED.

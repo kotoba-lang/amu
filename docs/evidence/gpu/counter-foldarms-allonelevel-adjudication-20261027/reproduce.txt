@@ -1,0 +1,278 @@
+REPRODUCTION / CENSUS LOG -- the aggregate all-one-level session
+count's membership adjudication (JUN-58, 2026-10-27, NO HARDWARE:
+analysis of committed logs only)
+
+Method (scratch harness census_allonelevel_20261027.py, never
+staged): for every session of the corpus (one session = one evidence
+row with a committed publication.txt), (a) read the session's rule-1
+"Regime clusters" level counts from its committed publication.txt
+(R1, the letter) and (b) re-run the COMMITTED route
+scripts/gpu_regime_classify.py --counters-log run-1..6.txt on the
+session's committed run logs (R2, the route now) and diff R2's
+output against the committed publication.txt.
+
+Two census runs, outputs BYTE-IDENTICAL (diff exit 0; each run
+sha256 = cdf60c03bc843bb583f2fcf7b1da3f50d30f698ebd5fd6dfe73b1e20d723b4d0).
+Verdict of the reproduction: 30 of 30 sessions reproduce
+BYTE-IDENTICAL through the committed route (R2 = R1 for every
+session), so the two pre-registered readings coincide and the
+membership below is single.
+
+NAMED, NOT HIDDEN (harness defect, first attempt only): the first
+census harness attempt globbed run-*.txt for the run list, which
+sweeps run-window.txt into the log list; the committed route
+correctly refused those lists -- ValueError "counters log carries no
+n=/workgroup= header -- the run's cell is unknown" -- at
+parse_counters_run (scripts/gpu_regime_classify.py), exit 1, for 29
+of 30 sessions (the 2026-10-25 anchor row has no run-window.txt and
+parsed under both invocations). The mechanism is the harness's glob,
+NOT the route and NOT any log: with the committed invocation (cwd =
+the session's directory, exactly run-1..6.txt) every session
+reproduces byte-identical. The census below is the fixed harness's
+output; no analysis code was written beyond this harness.
+
+Below: the census run output, verbatim.
+census basis: one session = one evidence row with a committed publication.txt
+criterion: a session is ALL-ONE-LEVEL iff every operator (max,min,sum) has exactly ONE level
+
+metal-counter-foldarms-20261025
+   cell: n=1000003 W=256
+   publication sha16=f351332322a311d1 version=GAP-1.15
+   levels (publication): {'max': 2, 'min': 2, 'sum': 1}  ALL-ONE-LEVEL=False
+   reproduction: route exit 0 BYTE-IDENTICAL sha=f351332322a311d1
+   levels (route now): {'max': 2, 'min': 2, 'sum': 1}  ALL-ONE-LEVEL=False
+   run-window first line: no run-window
+
+metal-counter-foldarms-crossday-20261026
+   cell: n=1000003 W=256
+   publication sha16=489d16c7be0eb75e version=GAP-1.15
+   levels (publication): {'max': 4, 'min': 4, 'sum': 1}  ALL-ONE-LEVEL=False
+   reproduction: route exit 0 BYTE-IDENTICAL sha=489d16c7be0eb75e
+   levels (route now): {'max': 4, 'min': 4, 'sum': 1}  ALL-ONE-LEVEL=False
+   run-window first line: run window start (UTC, verbatim): 2026-10-26T19:23:48Z
+
+metal-counter-foldarms-crossday-day3-20261027
+   cell: n=1000003 W=256
+   publication sha16=36426238acc30524 version=GAP-1.15
+   levels (publication): {'max': 2, 'min': 3, 'sum': 2}  ALL-ONE-LEVEL=False
+   reproduction: route exit 0 BYTE-IDENTICAL sha=36426238acc30524
+   levels (route now): {'max': 2, 'min': 3, 'sum': 2}  ALL-ONE-LEVEL=False
+   run-window first line: run window start (UTC, verbatim): 2026-10-27T00:01:51Z
+
+metal-counter-foldarms-oporder-20261026
+   cell: n=1000003 W=256
+   publication sha16=19ea115700183d9c version=GAP-1.15
+   levels (publication): {'max': 3, 'min': 1, 'sum': 3}  ALL-ONE-LEVEL=False
+   reproduction: route exit 0 BYTE-IDENTICAL sha=19ea115700183d9c
+   levels (route now): {'max': 3, 'min': 1, 'sum': 3}  ALL-ONE-LEVEL=False
+   run-window first line: run window start (UTC, verbatim): 2026-10-26T22:54:30Z
+
+metal-counter-foldarms-oporder-rep-shape2-w32-20261027
+   cell: n=1048576 W=32
+   publication sha16=a412dc893d637846 version=GAP-1.15
+   levels (publication): {'max': 1, 'min': 1, 'sum': 1}  ALL-ONE-LEVEL=True
+   reproduction: route exit 0 BYTE-IDENTICAL sha=a412dc893d637846
+   levels (route now): {'max': 1, 'min': 1, 'sum': 1}  ALL-ONE-LEVEL=True
+   run-window first line: run window start (UTC, verbatim): 2026-10-27T05:40:35Z
+
+metal-counter-foldarms-oporder-rep-w32-20261027
+   cell: n=1000003 W=32
+   publication sha16=461f442aea03a5b8 version=GAP-1.15
+   levels (publication): {'max': 4, 'min': 2, 'sum': 3}  ALL-ONE-LEVEL=False
+   reproduction: route exit 0 BYTE-IDENTICAL sha=461f442aea03a5b8
+   levels (route now): {'max': 4, 'min': 2, 'sum': 3}  ALL-ONE-LEVEL=False
+   run-window first line: run window start (UTC, verbatim): 2026-10-27T05:12:56Z
+
+metal-counter-foldarms-oporder-rep2-20261026
+   cell: n=1000003 W=256
+   publication sha16=ca8f70045f166f54 version=GAP-1.15
+   levels (publication): {'max': 3, 'min': 2, 'sum': 4}  ALL-ONE-LEVEL=False
+   reproduction: route exit 0 BYTE-IDENTICAL sha=ca8f70045f166f54
+   levels (route now): {'max': 3, 'min': 2, 'sum': 4}  ALL-ONE-LEVEL=False
+   run-window first line: run window start (UTC, verbatim): 2026-10-26T23:20:47Z
+
+metal-counter-foldarms-oporder-rep3-20261027
+   cell: n=1000003 W=256
+   publication sha16=1bd885df1419c628 version=GAP-1.15
+   levels (publication): {'max': 3, 'min': 1, 'sum': 3}  ALL-ONE-LEVEL=False
+   reproduction: route exit 0 BYTE-IDENTICAL sha=1bd885df1419c628
+   levels (route now): {'max': 3, 'min': 1, 'sum': 3}  ALL-ONE-LEVEL=False
+   run-window first line: run window start (UTC, verbatim): 2026-10-27T00:20:00Z
+
+metal-counter-foldarms-oporder-shape2-w1024-20261027
+   cell: n=1048576 W=1024
+   publication sha16=e1d5a396f626c368 version=GAP-1.15
+   levels (publication): {'max': 1, 'min': 1, 'sum': 1}  ALL-ONE-LEVEL=True
+   reproduction: route exit 0 BYTE-IDENTICAL sha=e1d5a396f626c368
+   levels (route now): {'max': 1, 'min': 1, 'sum': 1}  ALL-ONE-LEVEL=True
+   run-window first line: run window start (UTC, verbatim): 2026-10-27T04:36:02Z
+
+metal-counter-foldarms-oporder-shape2-w128-20261027
+   cell: n=1048576 W=128
+   publication sha16=87a3ea9290ba8701 version=GAP-1.15
+   levels (publication): {'max': 1, 'min': 1, 'sum': 1}  ALL-ONE-LEVEL=True
+   reproduction: route exit 0 BYTE-IDENTICAL sha=87a3ea9290ba8701
+   levels (route now): {'max': 1, 'min': 1, 'sum': 1}  ALL-ONE-LEVEL=True
+   run-window first line: run window start (UTC, verbatim): 2026-10-27T03:51:57Z
+
+metal-counter-foldarms-oporder-shape2-w256-20261027
+   cell: n=1048576 W=256
+   publication sha16=baa5ee85f0061548 version=GAP-1.15
+   levels (publication): {'max': 3, 'min': 1, 'sum': 3}  ALL-ONE-LEVEL=False
+   reproduction: route exit 0 BYTE-IDENTICAL sha=baa5ee85f0061548
+   levels (route now): {'max': 3, 'min': 1, 'sum': 3}  ALL-ONE-LEVEL=False
+   run-window first line: run window start (UTC, verbatim): 2026-10-27T02:37:20Z
+
+metal-counter-foldarms-oporder-shape2-w32-20261027
+   cell: n=1048576 W=32
+   publication sha16=d381982fb73a6ab6 version=GAP-1.15
+   levels (publication): {'max': 3, 'min': 1, 'sum': 3}  ALL-ONE-LEVEL=False
+   reproduction: route exit 0 BYTE-IDENTICAL sha=d381982fb73a6ab6
+   levels (route now): {'max': 3, 'min': 1, 'sum': 3}  ALL-ONE-LEVEL=False
+   run-window first line: run window start (UTC, verbatim): 2026-10-27T03:08:37Z
+
+metal-counter-foldarms-oporder-shape2-w512-20261027
+   cell: n=1048576 W=512
+   publication sha16=4c9b58ad8f9c9ed9 version=GAP-1.15
+   levels (publication): {'max': 3, 'min': 2, 'sum': 3}  ALL-ONE-LEVEL=False
+   reproduction: route exit 0 BYTE-IDENTICAL sha=4c9b58ad8f9c9ed9
+   levels (route now): {'max': 3, 'min': 2, 'sum': 3}  ALL-ONE-LEVEL=False
+   run-window first line: run window start (UTC, verbatim): 2026-10-27T04:18:41Z
+
+metal-counter-foldarms-oporder-shape2-w64-20261027
+   cell: n=1048576 W=64
+   publication sha16=b9a6230bc83013e9 version=GAP-1.15
+   levels (publication): {'max': 2, 'min': 1, 'sum': 4}  ALL-ONE-LEVEL=False
+   reproduction: route exit 0 BYTE-IDENTICAL sha=b9a6230bc83013e9
+   levels (route now): {'max': 2, 'min': 1, 'sum': 4}  ALL-ONE-LEVEL=False
+   run-window first line: run window start (UTC, verbatim): 2026-10-27T03:35:01Z
+
+metal-counter-foldarms-oporder-w1024-20261027
+   cell: n=1000003 W=1024
+   publication sha16=974564a45719244c version=GAP-1.15
+   levels (publication): {'max': 2, 'min': 1, 'sum': 4}  ALL-ONE-LEVEL=False
+   reproduction: route exit 0 BYTE-IDENTICAL sha=974564a45719244c
+   levels (route now): {'max': 2, 'min': 1, 'sum': 4}  ALL-ONE-LEVEL=False
+   run-window first line: run window start (UTC, verbatim): 2026-10-27T02:18:44Z
+
+metal-counter-foldarms-oporder-w128-20261027
+   cell: n=1000003 W=128
+   publication sha16=48009de8ccc13f56 version=GAP-1.15
+   levels (publication): {'max': 1, 'min': 1, 'sum': 1}  ALL-ONE-LEVEL=True
+   reproduction: route exit 0 BYTE-IDENTICAL sha=48009de8ccc13f56
+   levels (route now): {'max': 1, 'min': 1, 'sum': 1}  ALL-ONE-LEVEL=True
+   run-window first line: run window start (UTC, verbatim): 2026-10-27T01:51:29Z
+
+metal-counter-foldarms-oporder-w32-20261027
+   cell: n=1000003 W=32
+   publication sha16=432ea2ec404eb039 version=GAP-1.15
+   levels (publication): {'max': 1, 'min': 1, 'sum': 1}  ALL-ONE-LEVEL=True
+   reproduction: route exit 0 BYTE-IDENTICAL sha=432ea2ec404eb039
+   levels (route now): {'max': 1, 'min': 1, 'sum': 1}  ALL-ONE-LEVEL=True
+   run-window first line: run window start (UTC, verbatim): 2026-10-27T00:50:39Z
+
+metal-counter-foldarms-oporder-w512-20261027
+   cell: n=1000003 W=512
+   publication sha16=b979b603e25d2916 version=GAP-1.15
+   levels (publication): {'max': 1, 'min': 1, 'sum': 1}  ALL-ONE-LEVEL=True
+   reproduction: route exit 0 BYTE-IDENTICAL sha=b979b603e25d2916
+   levels (route now): {'max': 1, 'min': 1, 'sum': 1}  ALL-ONE-LEVEL=True
+   run-window first line: run window start (UTC, verbatim): 2026-10-27T02:04:45Z
+
+metal-counter-foldarms-oporder-w64-20261027
+   cell: n=1000003 W=64
+   publication sha16=6d66dee21f9e8cac version=GAP-1.15
+   levels (publication): {'max': 1, 'min': 1, 'sum': 1}  ALL-ONE-LEVEL=True
+   reproduction: route exit 0 BYTE-IDENTICAL sha=6d66dee21f9e8cac
+   levels (route now): {'max': 1, 'min': 1, 'sum': 1}  ALL-ONE-LEVEL=True
+   run-window first line: run window start (UTC, verbatim): 2026-10-27T01:21:04Z
+
+metal-counter-foldarms-shape2-20261026
+   cell: n=1048576 W=256
+   publication sha16=bd7539cc312bd661 version=GAP-1.15
+   levels (publication): {'max': 3, 'min': 3, 'sum': 1}  ALL-ONE-LEVEL=False
+   reproduction: route exit 0 BYTE-IDENTICAL sha=bd7539cc312bd661
+   levels (route now): {'max': 3, 'min': 3, 'sum': 1}  ALL-ONE-LEVEL=False
+   run-window first line: run window start (UTC, verbatim): 2026-10-26T21:19:06Z
+
+metal-counter-foldarms-shape2-w1024-20261026
+   cell: n=1048576 W=1024
+   publication sha16=e6b412499031e6a0 version=GAP-1.15
+   levels (publication): {'max': 1, 'min': 1, 'sum': 1}  ALL-ONE-LEVEL=True
+   reproduction: route exit 0 BYTE-IDENTICAL sha=e6b412499031e6a0
+   levels (route now): {'max': 1, 'min': 1, 'sum': 1}  ALL-ONE-LEVEL=True
+   run-window first line: run window start (UTC, verbatim): 2026-10-26T22:33:51Z
+
+metal-counter-foldarms-shape2-w128-20261026
+   cell: n=1048576 W=128
+   publication sha16=5dafb65283c5562f version=GAP-1.15
+   levels (publication): {'max': 3, 'min': 3, 'sum': 1}  ALL-ONE-LEVEL=False
+   reproduction: route exit 0 BYTE-IDENTICAL sha=5dafb65283c5562f
+   levels (route now): {'max': 3, 'min': 3, 'sum': 1}  ALL-ONE-LEVEL=False
+   run-window first line: run window start (UTC, verbatim): 2026-10-26T22:05:05Z
+
+metal-counter-foldarms-shape2-w32-20261026
+   cell: n=1048576 W=32
+   publication sha16=9992b3efa11a8aba version=GAP-1.15
+   levels (publication): {'max': 3, 'min': 3, 'sum': 1}  ALL-ONE-LEVEL=False
+   reproduction: route exit 0 BYTE-IDENTICAL sha=9992b3efa11a8aba
+   levels (route now): {'max': 3, 'min': 3, 'sum': 1}  ALL-ONE-LEVEL=False
+   run-window first line: run window start (UTC, verbatim): 2026-10-26T21:35:39Z
+
+metal-counter-foldarms-shape2-w512-20261026
+   cell: n=1048576 W=512
+   publication sha16=6c9e68932361bd21 version=GAP-1.15
+   levels (publication): {'max': 3, 'min': 4, 'sum': 3}  ALL-ONE-LEVEL=False
+   reproduction: route exit 0 BYTE-IDENTICAL sha=6c9e68932361bd21
+   levels (route now): {'max': 3, 'min': 4, 'sum': 3}  ALL-ONE-LEVEL=False
+   run-window first line: run window start (UTC, verbatim): 2026-10-26T22:20:30Z
+
+metal-counter-foldarms-shape2-w64-20261026
+   cell: n=1048576 W=64
+   publication sha16=d7c693806b5534db version=GAP-1.15
+   levels (publication): {'max': 2, 'min': 3, 'sum': 1}  ALL-ONE-LEVEL=False
+   reproduction: route exit 0 BYTE-IDENTICAL sha=d7c693806b5534db
+   levels (route now): {'max': 2, 'min': 3, 'sum': 1}  ALL-ONE-LEVEL=False
+   run-window first line: run window start (UTC, verbatim): 2026-10-26T21:48:59Z
+
+metal-counter-foldarms-w1024-20261026
+   cell: n=1000003 W=1024
+   publication sha16=505dc67c9aea1834 version=GAP-1.15
+   levels (publication): {'max': 3, 'min': 4, 'sum': 1}  ALL-ONE-LEVEL=False
+   reproduction: route exit 0 BYTE-IDENTICAL sha=505dc67c9aea1834
+   levels (route now): {'max': 3, 'min': 4, 'sum': 1}  ALL-ONE-LEVEL=False
+   run-window first line: run window start (UTC, verbatim): 2026-10-26T21:04:50Z
+
+metal-counter-foldarms-w128-20261026
+   cell: n=1000003 W=128
+   publication sha16=0c32b81729521d3a version=GAP-1.15
+   levels (publication): {'max': 3, 'min': 4, 'sum': 2}  ALL-ONE-LEVEL=False
+   reproduction: route exit 0 BYTE-IDENTICAL sha=0c32b81729521d3a
+   levels (route now): {'max': 3, 'min': 4, 'sum': 2}  ALL-ONE-LEVEL=False
+   run-window first line: run window start (UTC, verbatim): 2026-10-26T20:33:59Z
+
+metal-counter-foldarms-w32-20261026
+   cell: n=1000003 W=32
+   publication sha16=afe19c940fe5d775 version=GAP-1.15
+   levels (publication): {'max': 3, 'min': 4, 'sum': 1}  ALL-ONE-LEVEL=False
+   reproduction: route exit 0 BYTE-IDENTICAL sha=afe19c940fe5d775
+   levels (route now): {'max': 3, 'min': 4, 'sum': 1}  ALL-ONE-LEVEL=False
+   run-window first line: run window start (UTC, verbatim): 2026-10-26T20:03:19Z
+
+metal-counter-foldarms-w512-20261026
+   cell: n=1000003 W=512
+   publication sha16=c9f8bca09a68d125 version=GAP-1.15
+   levels (publication): {'max': 2, 'min': 3, 'sum': 3}  ALL-ONE-LEVEL=False
+   reproduction: route exit 0 BYTE-IDENTICAL sha=c9f8bca09a68d125
+   levels (route now): {'max': 2, 'min': 3, 'sum': 3}  ALL-ONE-LEVEL=False
+   run-window first line: run window start (UTC, verbatim): 2026-10-26T20:47:51Z
+
+metal-counter-foldarms-w64-20261026
+   cell: n=1000003 W=64
+   publication sha16=e2abceb1211c43ff version=GAP-1.15
+   levels (publication): {'max': 3, 'min': 3, 'sum': 1}  ALL-ONE-LEVEL=False
+   reproduction: route exit 0 BYTE-IDENTICAL sha=e2abceb1211c43ff
+   levels (route now): {'max': 3, 'min': 3, 'sum': 1}  ALL-ONE-LEVEL=False
+   run-window first line: run window start (UTC, verbatim): 2026-10-26T20:19:04Z
+
+SESSIONS IN CORPUS: 30; ALL-ONE-LEVEL at publication letters: 8

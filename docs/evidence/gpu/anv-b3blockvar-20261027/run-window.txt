@@ -1,0 +1,69 @@
+JUN-59 session 29 run window (host-side, aiueos-6600hs / aiueos-6600hs-1).
+THE WITHIN-SESSION BLOCK-VARIABILITY READ OF THE (1024,4033) ANCHOR
+(four 3-run blocks of (3,1024,4033) at n=253,906, B=3 within ONE
+session + controls c2/c8 bracketing the hi window).
+protocol.txt freeze stamp 2026-10-27T23:09:19Z (frozen BEFORE the
+first run; this run window starts after it).
+18 fresh processes (c2 3 + hi 12 + c8 3 -- the protocol section 0 arm
+table's 3 rows govern the count; run order frozen: c2 r1-3, hi r1-12,
+c8 r1-3). Per-run transcript (host date -u, taken immediately BEFORE
+the run invocation, seconds granular; rc, stderr byte count and line
+counts captured by the driver), verbatim from the driver's per-run
+steps (each run's stdout/stderr preserved verbatim in
+run-<tag>-r<R>.txt / .stderr.txt):
+  c2-r1 rc=0 host-date=2026-10-27T23:12:08Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  c2-r2 rc=0 host-date=2026-10-27T23:12:08Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  c2-r3 rc=0 host-date=2026-10-27T23:12:09Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  hi-r1 rc=0 host-date=2026-10-27T23:12:09Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  hi-r2 rc=0 host-date=2026-10-27T23:12:09Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  hi-r3 rc=0 host-date=2026-10-27T23:12:09Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  hi-r4 rc=0 host-date=2026-10-27T23:12:10Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  hi-r5 rc=0 host-date=2026-10-27T23:12:10Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  hi-r6 rc=0 host-date=2026-10-27T23:12:10Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  hi-r7 rc=0 host-date=2026-10-27T23:12:10Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  hi-r8 rc=0 host-date=2026-10-27T23:12:10Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  hi-r9 rc=0 host-date=2026-10-27T23:12:10Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  hi-r10 rc=0 host-date=2026-10-27T23:12:11Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  hi-r11 rc=0 host-date=2026-10-27T23:12:11Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  hi-r12 rc=0 host-date=2026-10-27T23:12:11Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  c8-r1 rc=0 host-date=2026-10-27T23:12:11Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  c8-r2 rc=0 host-date=2026-10-27T23:12:12Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  c8-r3 rc=0 host-date=2026-10-27T23:12:13Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+rc=0 18/18 printed AND 18/18 '# done cells=24' (tail column above).
+NAMED, NOT HIDDEN: the FIRST driver pass's per-run grep counters
+printed empty/incorrect count tokens (a quoting slip in the driver's
+inline grep, 'grep: ": No such file or directory') -- the rc, host-date
+and tail columns above come from that first pass and are unaffected;
+the samples/verifies/cells counts were re-derived by a SECOND clean
+host-side pass over the finished run logs (450/24/24 in 18/18) and
+that second pass is what this file records. The slip is named, not
+hidden (the session-22 driver's $rcc echo slip is the prior art).
+host-file-mtime cross-check (stat -c '%y' on the host run logs vs the
+per-run host-date stamps):
+  run-c2-r1.txt: host-date 2026-10-27T23:12:08Z mtime 2026-10-27T23:12:08Z delta 0s
+  run-c2-r2.txt: host-date 2026-10-27T23:12:08Z mtime 2026-10-27T23:12:09Z delta 1s
+  run-c2-r3.txt: host-date 2026-10-27T23:12:09Z mtime 2026-10-27T23:12:09Z delta 0s
+  run-hi-r1.txt: host-date 2026-10-27T23:12:09Z mtime 2026-10-27T23:12:09Z delta 0s
+  run-hi-r2.txt: host-date 2026-10-27T23:12:09Z mtime 2026-10-27T23:12:09Z delta 0s
+  run-hi-r3.txt: host-date 2026-10-27T23:12:09Z mtime 2026-10-27T23:12:10Z delta 1s
+  run-hi-r4.txt: host-date 2026-10-27T23:12:10Z mtime 2026-10-27T23:12:10Z delta 0s
+  run-hi-r5.txt: host-date 2026-10-27T23:12:10Z mtime 2026-10-27T23:12:10Z delta 0s
+  run-hi-r6.txt: host-date 2026-10-27T23:12:10Z mtime 2026-10-27T23:12:10Z delta 0s
+  run-hi-r7.txt: host-date 2026-10-27T23:12:10Z mtime 2026-10-27T23:12:10Z delta 0s
+  run-hi-r8.txt: host-date 2026-10-27T23:12:10Z mtime 2026-10-27T23:12:10Z delta 0s
+  run-hi-r9.txt: host-date 2026-10-27T23:12:10Z mtime 2026-10-27T23:12:11Z delta 1s
+  run-hi-r10.txt: host-date 2026-10-27T23:12:11Z mtime 2026-10-27T23:12:11Z delta 0s
+  run-hi-r11.txt: host-date 2026-10-27T23:12:11Z mtime 2026-10-27T23:12:11Z delta 0s
+  run-hi-r12.txt: host-date 2026-10-27T23:12:11Z mtime 2026-10-27T23:12:11Z delta 0s
+  run-c8-r1.txt: host-date 2026-10-27T23:12:11Z mtime 2026-10-27T23:12:12Z delta 1s
+  run-c8-r2.txt: host-date 2026-10-27T23:12:12Z mtime 2026-10-27T23:12:13Z delta 1s
+  run-c8-r3.txt: host-date 2026-10-27T23:12:13Z mtime 2026-10-27T23:12:14Z delta 1s
+18/18 consistent (worst delta 1s -- seconds granularity of the stamp).
+Build window: 2026-10-27T23:11:55Z..23:11:56Z (3 compiles, rc=0 3/3,
+build stderr 0 bytes 3/3 -- build-census-s29.txt). GO stamp
+2026-10-27T23:11:43Z precedes the build window and the run window.
+Run window: 2026-10-27T23:12:08Z..23:12:13Z (18 fresh processes).
+Session 28 ran 22:43:32Z..22:43:38Z -- this session runs ~29 minutes
+after session 28, ALL on UTC day 2026-10-27 (protocol L4 named, not
+hidden: cross-UTC-day replication is NOT reached this tick -- the
+freeze stamp and this run window sit before the UTC day's end).

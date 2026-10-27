@@ -1484,12 +1484,54 @@
         (= (gn-sir M j IF-B) 0) (= (gn-sir M j IF-C) 0)) j 0)
        (= (gn-op M j) OP-FN) 0
        :else (gn-small-end M (inc j) f (dec work))))
-(defn- gn-small-label [M :vector-i64 j :i64 l :i64 found :i64] :i64
+;; Module-local unique-label index. SIR rewriting T2 is bounded to at most
+;; t2-max-sir records; larger modules keep immutable SIR after the preparation
+;; passes. Only the exact (start=1, found=0) query uses this table. Duplicate,
+;; missing and invalid labels keep their original zero result; arbitrary
+;; suffix/accumulator queries execute the original scan.
+;; alen-state is unused above20,000 SIR; the index only exists above
+;; t2-max-sir (131,072). Reuse that disjointly tagged cell, not another G word.
+(def glx-state (+ gn-g-open 89))
+(defn- glx-base [M :vector-i64] :i64
+ (if (< (vector-count M) MM-WORDS) 0
+  (let [g (vector-at M gn-cell) top (vector-at M MM-HEAP-TOP)
+        size (+ gn-g-open 91) sn (vector-at M MM-SIR-N)]
+   (if (or (<= sn t2-max-sir) (> sn MM-SIR-CAP)
+           (< g MM-HEAP-BASE) (> g (- MM-HEAP-END size))
+           (< top (+ g size)) (> top MM-HEAP-END)) 0
+    (let [base (gn-g M glx-state)]
+     (if (and (>= base (+ g size)) (<= base (- top MM-LABEL-CAP))
+              (= (vector-at M base) sn)) base 0))))))
+(defn- glx-prepare [M :vector-i64] :vector-i64
+ (let [sn (vector-at M MM-SIR-N)]
+  (if (or (not= (vector-at M MM-ERR) 0)
+          (<= sn t2-max-sir) (> sn MM-SIR-CAP)
+          (> (vector-at M MM-HEAP-TOP) (- MM-HEAP-END MM-LABEL-CAP))) M
+   (let [m (mem-alloc M MM-LABEL-CAP) base (vector-at m MM-R0)]
+    (if (not= (vector-at m MM-ERR) 0) m
+     (let [indexed (loop [out m j 1]
+       (if (>= j sn) out
+        (let [op (gn-op out j) l (gn-sir out j IF-A)]
+         (recur (if (and (= op OP-LABEL) (> l 0) (< l MM-LABEL-CAP))
+          (gn-put out (+ base l) (if (= (vector-at out (+ base l)) 0) j -1)) out) (inc j)))))]
+      (gn-gs (gn-put indexed base sn) glx-state base)))))))
+(defn- glx-release [M :vector-i64] :vector-i64
+ (let [base (glx-base M)]
+  (if (and (> base 0) (= (vector-at M MM-HEAP-TOP) (+ base MM-LABEL-CAP)))
+   (-> (mem-fill M base MM-LABEL-CAP 0) (gn-gs glx-state 0) (gn-put MM-HEAP-TOP base)) M)))
+(defn- gn-small-label-scan [M :vector-i64 j :i64 l :i64 found :i64] :i64
  (cond (or (<= l 0) (>= l MM-LABEL-CAP)) 0
        (>= j (vector-at M MM-SIR-N)) found
        (and (= (gn-op M j) OP-LABEL) (= (gn-sir M j IF-A) l))
-       (if (> found 0) 0 (gn-small-label M (inc j) l j))
-       :else (gn-small-label M (inc j) l found)))
+       (if (> found 0) 0 (gn-small-label-scan M (inc j) l j))
+       :else (gn-small-label-scan M (inc j) l found)))
+(defn- gn-small-label [M :vector-i64 j :i64 l :i64 found :i64] :i64
+ (cond (or (<= l 0) (>= l MM-LABEL-CAP)) 0
+  (and (= j 1) (= found 0) (> (glx-base M) 0))
+   (let [position (vector-at M (+ (glx-base M) l))]
+    (if (> position 0) position 0))
+  :else (gn-small-label-scan M j l found)))
+
 (defn- gn-small-owned [M :vector-i64 start :i64 end :i64 l :i64] :bool
  (let [p (gn-small-label M 1 l 0)] (and (> p start) (< p end))))
 (defn- gn-small-callee [M :vector-i64 f :i64 n :i64] :bool
@@ -2462,13 +2504,23 @@
   (cond (= (gn-op M j) OP-FN) 0
    (= (gn-op M j) OP-END) (if (gn-dot-at? M j OP-END f 0 0) j 0)
    :else (ccf-end M (inc j) f (dec left)))))
-(defn- ccf-label-source [M :vector-i64 j :i64 l :i64 i :i64 found :i64] :bool
+(defn- ccf-label-source-scan [M :vector-i64 j :i64 l :i64 i :i64 found :i64] :bool
  (if (= j (vector-at M MM-SIR-N)) (= found 1)
   (let [hit (and (= (gn-op M j) OP-LABEL) (= (gn-sir M j IF-A) l))]
    (and (or (not hit) (and (or (< j (- i 2)) (> j i))
                                (= (gn-sir M j IF-B) 0) (= (gn-sir M j IF-C) 0)))
     (<= (+ found (if hit 1 0)) 1)
-    (ccf-label-source M (inc j) l i (+ found (if hit 1 0)))))))
+    (ccf-label-source-scan M (inc j) l i (+ found (if hit 1 0)))))))
+;; Reuse only the immutable label identity, then recheck this proof's own
+;; excluded source window and both reserved operands. No dynamic CODE/FIX
+;; prefix fact is stored in the source-label table.
+(defn- ccf-label-source [M :vector-i64 j :i64 l :i64 i :i64 found :i64] :bool
+ (if (and (= j 1) (= found 0) (> l 0) (< l MM-LABEL-CAP) (> (glx-base M) 0))
+  (let [position (vector-at M (+ (glx-base M) l))]
+   (and (> position 0) (or (< position (- i 2)) (> position i))
+        (= (gn-sir M position IF-B) 0) (= (gn-sir M position IF-C) 0)))
+  (ccf-label-source-scan M j l i found)))
+
 (defn- ccf-labels [M :vector-i64 j :i64 at :i64] :bool
  (if (= j (vector-at M MM-LABEL-N)) true
   (let [v (vector-at M (+ MM-LABEL-BASE j))]
@@ -2499,26 +2551,32 @@
                    (or (> entry 0) (ccf-label-source M 1 target i 0))))))]
      (and ok (<= (+ found (if call 1 0)) 1)
       (ccf-fixes M (inc j) at f i (+ found (if call 1 0)))))))))
+;; The immutable high-byte mask is a superset of all PC-relative classes.
+;; It skips only ordinary words; every candidate class retains its full check.
 (defn- ccf-code [M :vector-i64 j :i64 at :i64] :bool
  (if (= j at) true
   (let [w (vector-at M (+ MM-CODE-BASE j))]
-   (if (or (< w 0) (> w 4294967295)) false
-    (let [b26 (= (bit-and w 2080374784) 335544320)
-          b19 (or (= (bit-and w 4278190096) 1409286144) (= (bit-and w 2113929216) 872415232))
-          b14 (= (bit-and w 2113929216) 905969664)
-          lit (= (bit-and w 989855744) 402653184)
-          adr (= (bit-and w 2667577344) 268435456)
-          adrp (= (bit-and w 2667577344) 2415919104)
-          delta (cond b26 (cfr-signed (bit-and w 67108863) 33554432 67108864)
-                   (or b19 lit) (cfr-signed (bit-and (u64-shift-right w 5) 524287) 262144 524288)
-                   b14 (cfr-signed (bit-and (u64-shift-right w 5) 16383) 8192 16384)
-                   :else 0)
-          adelta (if adr (cfr-signed (+ (* 4 (bit-and (u64-shift-right w 5) 524287))
-                       (bit-and (u64-shift-right w 29) 3)) 1048576 2097152) 0)]
-     (and (not adrp)
-      (not (and (or b26 b19 b14 lit) (>= (+ j delta) at)))
-      (not (and adr (>= (+ (* 4 (dec j)) adelta) (* 4 (dec at)))))
-      (ccf-code M (inc j) at)))))))
+   (and (>= w 0) (<= w 4294967295)
+    (if (= (bit-and (u64-shift-right 67835469688274944 (bit-and (u64-shift-right w 24) 63)) 1) 0)
+      (ccf-code M (inc j) at)
+     (let [page (bit-and w 2667577344)]
+     (and (not= page 2415919104)
+      (cond (= page 268435456)
+        (< (+ (* 4 (dec j))
+              (cfr-signed (+ (* 4 (bit-and (u64-shift-right w 5) 524287))
+                            (bit-and (u64-shift-right w 29) 3)) 1048576 2097152))
+           (* 4 (dec at)))
+       (= (bit-and w 2080374784) 335544320)
+        (< (+ j (cfr-signed (bit-and w 67108863) 33554432 67108864)) at)
+       :else
+        (let [short (bit-and w 2113929216)]
+         (cond (or (= (bit-and w 4278190096) 1409286144) (= short 872415232)
+                   (= (bit-and w 989855744) 402653184))
+           (< (+ j (cfr-signed (bit-and (u64-shift-right w 5) 524287) 262144 524288)) at)
+          (= short 905969664)
+           (< (+ j (cfr-signed (bit-and (u64-shift-right w 5) 16383) 8192 16384)) at)
+          :else true)))
+      (ccf-code M (inc j) at))))))))
 ;; Preserve direct returned-value comparison across the exact fuel reload.
 ;; The existing whole-prefix label/fix/reference checks cover both suffix
 ;; words. LDR x8 does not read/write x0 or flags; x9 is overwritten by CSET.
@@ -13491,7 +13549,7 @@
         M2 (-> (gn-put M1 gn-cell (vector-at M1 MM-R0))
                (gn-gs gn-g-open first) (gn-gs gn-g-open-n count)
                (gn-gs di-used 0) (gn-gs di-sites 0) (gn-gs alen-state 0) (gn-gs cpp-state 0))
-        M3 (if (= (vector-at M2 MM-ERR) 0) (t2-patch-handoffs (gn-loop (cpp-prepare (alen-prepare (trg-prepare (clw-prepare M2)))) 1)) M2)
+        M3 (if (= (vector-at M2 MM-ERR) 0) (t2-patch-handoffs (glx-release (gn-loop (glx-prepare (cpp-prepare (alen-prepare (trg-prepare (clw-prepare M2))))) 1))) M2)
         n (vector-at M3 MM-CODE-N)]
     (gn-put M3 MM-R0 (- n 1))))
 

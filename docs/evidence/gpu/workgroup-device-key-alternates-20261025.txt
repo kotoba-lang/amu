@@ -1,0 +1,93 @@
+# Workgroup rows: the :measured-device key becomes a fragment SET (2026-10-25)
+
+Row: JUN-56 (workgroup rows' :measured-device key), the implementation the
+2026-10-25 12:41Z started-not-finished row DECIDED. One implementation slice:
+NO hardware ran, nothing re-measured.
+
+## The change (kotoba.compiler.accelerator-targets, both reader branches)
+
+- New row key :measured-device-alternates ('|'-separated string, parallel row
+  shapes across the two readers; the wg-row builder gains the key). The :nvidia
+  row carries "agx|tegra"; :apple/:intel/:amd carry "" (no evidenced siblings,
+  the 2026-10-25 decision's rejection); :arm/:unknown stay key-less (host) /
+  "" (kotoba row builder), unchanged.
+- The key is read as a SET: the :measured-device fragment plus ONE alternate
+  per non-empty '|'-field; a NAMED device keeps the row flag only when ONE
+  name part carries every fragment of one set. nvidia = {xavier,agx} /
+  {xavier,tegra}: "xavier" AND ("agx" OR "tegra").
+- Kotoba arm: new key-hits / alt-any-hits / alt-field? / alt-end string walks
+  beside substr-hits; recommend keys each name part through key-hits. Host arm:
+  the same semantics (str/split on '|', empty fields contribute no set).
+- Semantics pinned both sides: a trailing pipe must not widen the key
+  ("agx|" behaves as "agx"); an all-empty key ("", "|") is the one-fragment
+  set.
+
+## Ground (the reason the row-(iv) transplant was refused)
+
+- The wire-42 INFO receipt for the NVIDIA measurement host (JUN-85,
+  2026-10-18) reports the device name `NVIDIA Tegra Xavier (nvgpu)`.
+- The CUDA channel's reported name for the SAME physical host is
+  `NVIDIA Jetson AGX Xavier` (row (iv)'s ground, commit 8fd09de4c).
+- Row (iv)'s single-set key ("xavier"+"agx" in one name part) would REFUSE the
+  workgroup channel's own attested name -- denying the measured device its
+  flag under its own probe receipt. The alternate sets accept both spellings.
+
+## Pinned behavior (tests, both arms)
+
+- KEEP: "NVIDIA Tegra Xavier (nvgpu)" (INFO receipt), "NVIDIA Jetson AGX
+  Xavier" (CUDA channel), case-insensitive spelling.
+- ATTACH NOTHING (row-(iv) hole closed, fail closed): "Jetson Xavier NX"
+  (also sm_72), bare "Xavier", "AGX" alone (every fragment of one set), an
+  across-parts split ({:device "AGX" :name "Xavier"}).
+- NAMED RESIDUALS ride as named BEHAVIOR, never measurement claims:
+  "Jetson AGX Xavier Industrial", "Tegra Xavier NX" (the descriptor surface
+  has no device-id axis and none is invented here).
+- Rows without alternates keep the single-fragment contract ("Apple M1 Max",
+  "Intel(R) Graphics (BMG G31)", "AMD Radeon 680M" keep; "Apple M3" stays out).
+
+## Rejected, named
+
+- Bare "xavier" single-fragment key (the NX hole).
+- Row-(iv) transplant ("xavier"+"agx" only) -- refuses the INFO receipt name.
+- A negative key ("xavier" and NOT "nx") -- a substring blacklist.
+- Exact-name equality -- brittle across producers' spellings, against the
+  uB5G idiom's tolerance.
+- A device-id key -- needs a producer fact that does not exist (PROPOSED).
+- Narrowing :apple/:intel/:amd without evidenced siblings.
+
+## Gates (real runs, 2026-10-25)
+
+- Scoped GPU gate (8 GPU-owned namespaces, scratch runner gpu_scoped_gate.cljk,
+  classpath route 2 AMU_KBB_TEST_CLASSPATH): GREEN 112 tests / 11479
+  assertions / 0 failures / 0 errors (committed pin 110/11445; delta = this
+  slice's +2 tests / +34 assertions). glslang 16.6.0 real-spawn ran.
+- gpu_regime_classify.py --self-test: TOTAL 2649 assertions passed / 0 failed
+  (committed pin 2649/0 -- regression pin, no classify code touched).
+- FULL run-tests.cljk: RED AT BASE -- 'Could not find namespace: kotoba.form'
+  (ADR-0362, W3 port) fails the run before any test executes, OUTSIDE this
+  diff (re-verified this tick since the diff touches .cljk namespaces).
+  NO green full suite claimed; the touched namespaces' own tests are the
+  scoped gate above.
+- find docs -name '*.sh' -> 0 files (the no-POSIX-sh evidence rule).
+
+## States / UNMEASURED
+
+- IMPLEMENTED (code + tests): the set key, both readers + wg-row builder.
+- DECIDED (2026-10-25, this row): the set semantics and the rejections above.
+- MEASURED: NOTHING -- no hardware ran, nothing re-measured. The workgroup
+  rows' :measured? values, :sizes and :shapes do NOT move; the key only
+  narrows WHICH descriptor names read the standing row flag (the delta is
+  fail-closed: descriptor classes never measured now attach nothing).
+- UNMEASURED, named: every workgroup row question as before -- :arm/:unknown
+  stay provisional :measured? false; no row's measurement is re-run; the
+  named residuals are behavior pins, not measurements.
+- Named observation OUTSIDE this diff (its own row, still unprobed at
+  runtime): the kotoba arm's split4 conjes (string-substring s 0 i) prefix
+  spans per '|'-field instead of per-field spans (traced from source), which
+  would make the kotoba-arm device-from-info parse null for every multi-field
+  answer. Not probed, not claimed, not fixed here.
+- Named constraint (measured this tick): the KIR interpreter's 32-frame
+  budget (frames-limit 32) traps the per-byte walks on full device names
+  ("host/stack-exhausted"; "apple m1 max"/"m1 max" traps -- the old
+  lower-walk's trap). The W3-arm pins therefore run SHORT spellings and the
+  full spellings are pinned on the host arm; both arms share the semantics.

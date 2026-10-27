@@ -1,0 +1,170 @@
+JUN-56 / JUN-55 -- the alt-key row: the W3 arm's '|'-alternate KEY walks
+move from per-byte to per-field (2026-10-26)
+
+WHAT THIS ROW IS: the named follow-up residual of
+w3-numeric-walk-primitives-20261026 ("RESIDUAL, NAMED (not hidden):
+alt-end/alt-field?/alt-any-hits still walk the '|'-alternate KEY per byte
+(row-key sized ... a hypothetical very long key is fail-closed -- its own
+row)"). One implementation slice on kotoba.compiler.accelerator-targets.
+NO hardware ran, no GPU, no timing -- every number below is a
+kotoba-language-runtime behavior probe (the w3 fact class).
+
+INSTRUMENT (all runs this tick, scratch probes never staged): the w3
+extract-balanced idiom -- the arms' OWN text extracted from the namespace
+source, sema/analyze + ir/execute on the kotoba language runtime,
+kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" <scratch
+probe>. Scratch probe: w3_alt_before_after.cljk (before/after + the
+field-count boundary sweep, run TWICE). The BEFORE arm is extracted from
+a git-show HEAD dump of accelerator_targets.cljk (scratch/
+w3_alt_before_src.cljk; sha256
+23cd94c2bd2bf65ba8090d85cac24e085955cf16f2c324a12ba83f6c82d8b7c9;
+the working tree AFTER arm sha256
+74e9832acd28b6d00dad865f02e1127de0b1ca5cb1b83cf2b59ca32a4db010a7)
+-- never hand-transcribed. The parity reference is the HOST arm's key
+formula, read verbatim from recommend's body (accelerator_targets.cljk
+966-972: the fragment must hit AND (no non-empty '|'-field OR some
+non-empty field hits)); the host lowercases at its call sites and the
+arm's contract is the same (callers lower), so the grid runs lowered
+strings on both sides.
+
+WHAT LANDED (code + tests), kotoba arm only (the host arm is the parity
+reference and is untouched):
+(1) alt-end = ONE `string-find-byte s 124 i` (the dot1 precedent). The
+    replaced per-byte scan recursed one frame per key byte. Contract
+    unchanged, pinned: the index of the first '|' at or after i, n when
+    absent. `string-find-byte` traps on from > n (measured in the
+    numeric-walk row) so the walk's total i >= n -> n shape is answered
+    ABOVE the primitive (dot1's exact shape).
+(2) alt-field? / alt-any-hits = PER-FIELD recursion through alt-end (the
+    split4 pipe-position precedent: O(FIELDS) frames, was O(BYTES)). The
+    field test is guarded by i < j -- load-bearing: substr-hits answers
+    TRUE for an empty needle (pinned in the key-chain row), so an empty
+    field must never be tested; empty fields contribute no set exactly as
+    before (a trailing pipe must not widen the key; an all-empty key is
+    the one-fragment set; a bare fragment is fail-closed where alternates
+    exist). Recursion advances past the boundary (j + 1), one frame per
+    field boundary instead of one per byte.
+No function was renamed or deleted -- the uB5G SET-key contracts are
+pinned unchanged.
+
+MEASURED (runtime, no hardware; BEFORE = the dumped HEAD arm, AFTER =
+the fixed arm, HOST = the host arm's key formula; probe ran TWICE):
+
+key-hits, the standing pins (BEFORE == AFTER == HOST, byte-identical,
+no spelling moved):
+  "tx"/"x"/"a|t" true | "ax"/"x"/"a|t" true | "x"/"x"/"a|t" false
+  "a"/"x"/"a" false | "txt"/"x"/"a|t" true
+  "x"/"x"/"a|" false (trailing pipe no widen) | "x"/"x"/"|" true
+  "x"/"x"/"" true | "X"/"x"/"" false
+  "nvidia tegra xavier (nvgpu)"/"xavier"/"agx|tegra" true (JUN-85 receipt)
+  "nvidia jetson agx xavier"/"xavier"/"agx|tegra" true (CUDA channel)
+  "jetson xavier nx"/"xavier"/"agx|tegra" false (NX hole closed)
+  "apple m1 max"/"xavier"/"agx|tegra" false
+  "apple m1 max"/"m1 max"/"" true
+
+key-hits, adversarial long keys (the row's residual class; 200-byte
+alternates) -- all six TRAPped host/stack-exhausted BEFORE and resolve
+AFTER == HOST:
+  long-first-field-hits   (part "y"+200a, frag "y", alts 200a)
+      BEFORE TRAP  AFTER true  == HOST
+  long-field-misses       (part "y"+200c, frag "y", alts 200a)
+      BEFORE TRAP  AFTER false == HOST
+  second-field-after-long-first (part "yq"+200c, alts 200a+"|q")
+      BEFORE TRAP  AFTER true  == HOST
+  trailing-pipe-no-widen  (part "xy", frag "x", alts 200a+"|")
+      BEFORE TRAP  AFTER false == HOST
+  leading-pipe-skipped    (part "y"+200a, alts "|"+200a)
+      BEFORE TRAP  AFTER true  == HOST
+  bare-fragment-not-a-set (part "x", frag "x", alts "|"+200a)
+      BEFORE TRAP  AFTER false == HOST
+
+unit contracts (BEFORE == AFTER on every case the walks resolved):
+  alt-end: "a|t" 0 -> 1 / "a|t" 2 -> 3 / "ab" 0 -> 2 (n) / "" 0 -> 0 /
+    "a|" 0 -> 1 / "|a" 0 -> 0 -- identical both arms;
+    200a+"|q" 0 -> 200 and 200a 0 -> 200: BEFORE TRAP, AFTER 200.
+  alt-field?: "a|t" true / "" false / "|" false / "||" false /
+    200a true / "|"+200a true / 200a+"|" true -- identical both arms.
+  alt-any-hits: hit-first/hit-second/miss/empty-field-only identical
+    both arms ("x"/"|" -> false: an empty field is never tested);
+    long-hit (part "y"+200a) and long-miss (part "y"+200c): BEFORE TRAP
+    budget/frames, AFTER true / false.
+
+FIELD-COUNT BOUNDARY (MEASURE-ONLY, never pinned -- trap boundaries are
+state-dependent; key = k one-byte fields "z|...|z|a", miss part "x",
+hit-last part "xa"):
+  k = 1..12 (len 1..23): BEFORE and AFTER both resolve all columns.
+  k = 16..24 (len 31..47): BEFORE ah TRAPs budget/frames; AFTER resolves
+    (false == HOST miss, true == HOST hit-last).
+  k = 32..64 (len 63..127): AFTER ah TRAPs budget/frames too -- the
+    NAMED O(FIELDS) residual is real: the field walk still reaches the
+    32-frame budget on a key with very many '|'-fields (fail-closed).
+  alt-field? answers true at the FIRST non-empty field and so stayed
+  true even at k = 64 on both arms (early exit); its deep walk fires
+  only on all-empty (all-'|') keys -- those stay fail-closed, probed at
+  "|"/"||" only this tick.
+
+NAMED ANOMALY (recurring, interpreter-owned): the two runs' AFTER
+columns are byte-identical but the BEFORE columns differ in exactly ONE
+cell -- ah long-hit trapped as "budget/frames" in run 1 and
+"host/stack-exhausted" in run 2 (the same case, a different trap
+spelling by run order). Trap boundaries and spellings stay
+state-dependent, never pinned as behavior.
+
+RESIDUAL, NAMED (not hidden): the field walk is O(FIELDS) frames (above)
+-- a hypothetical key with very many '|'-fields can still reach the
+budget, fail-closed; an all-'|' long key walks every empty field (its
+deep walk was probed at "|"/"||" only). sg-size-walk (the subgroup
+answer's size field) still walks per byte (named, not hidden, its own
+row). The digit taxonomy (ok|out-of-range = digits) stays PROBED, not
+proven. Nothing about the anomaly mechanism is measured.
+
+CONSEQUENCE: NOTHING MOVES -- no :measured? flag value, no :shapes value,
+no workgroup row, no selection answer; :arm/:unknown stay provisional
+:measured? false. The real row keys ("agx|tegra" and "") always resolved
+on both arms; this row removes a trap class on adversarial keys (a
+wrong-refusal path: the key chain answered a trap, no fact) and adds no
+measurement claim.
+
+STATES:
+- IMPLEMENTED (code + tests): the three bodies on primitive/per-field
+  routes (alt-end on string-find-byte; alt-field?/alt-any-hits advance
+  per field boundary with the i < j empty-field guard). Tests: the uB5G
+  set-key test extended (the long-key pins x6 with the BEFORE-trap
+  record, the per-arm source pins: string-find-byte in alt-end, no
+  string-code-point-at in any of the three arms, the (+ j 1) field
+  advance) and the device-from-info test's named-residual prose brought
+  to the new state.
+- DECIDED: the set-key contracts are unchanged (field boundaries, empty
+  fields contribute no set, one-fragment set, fail-closed bare
+  fragments); the empty field is never tested (substr-hits' empty-needle
+  true).
+- MEASURED: the probe tables above (runtime behavior, no hardware).
+- ACCEPTED DESIGN ONLY (unchanged): ADR-0355's table rules, ADR-0358's
+  key, the claim protocol.
+- UNMEASURED, named: keys beyond these probes (the all-'|' long key, the
+  field-count boundary beyond k = 24..32), the trap anomaly mechanism,
+  sg-size-walk, every workgroup-row question (:arm/:unknown stay
+  provisional :measured? false), anything off this host.
+
+GATES (real runs):
+- Scoped GPU gate (8 GPU-owned namespaces, scratch runner
+  gpu_scoped_gate.cljk):
+    kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+      /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+  -> Ran 116 tests containing 11605 assertions. 0 failures, 0 errors.
+     scoped: 116 tests, 11605 passed, 0 failed, 0 errors
+     (committed pin 116 tests / 11594 assertions; delta = this slice's
+     +11 assertions, 0 new tests). glslang 16.6.0 real-spawn ran.
+     GREEN on run 1 (log: scratch/w3_alt_gate_run1.log).
+- gpu_regime_classify.py --self-test -> TOTAL: 2649 assertions passed,
+  0 failed (committed pin 2649/0; no classify code touched).
+- Full run-tests.cljk: RED AT BASE, outside this diff -- "Could not find
+  namespace: kotoba.form" (ADR-0362) fails the run before any test
+  executes (re-verified live this tick since the diff touches .cljk
+  namespaces, log: scratch/w3_alt_fullsuite.log). The touched
+  namespaces' own tests are the scoped gate above. NO green full suite
+  claimed.
+- find docs -name '*.sh' -> 0 files (the no-POSIX-sh evidence rule).
+- BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head (checked
+  at tick start and re-checked before the push; chain PR #1455
+  OPEN/MERGEABLE, mergeStateStatus UNSTABLE).

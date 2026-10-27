@@ -1,0 +1,127 @@
+JUN-56 / JUN-55 -- the W3 arm's INFO-parse parity row (2026-10-26)
+
+WHAT THIS ROW IS: the named follow-up of the workgroup-device-key-alternates
+row (2026-10-25, "(a) the kotoba arm's split4 prefix-span observation ...
+unprobed at runtime, its own row"). It started 2026-10-26 00:20-00:23 JST
+(scratch probes split4_probe{,2,3,4}.cljk + the uncommitted src edit) and is
+finished here. One implementation slice on kotoba.compiler.accelerator-targets:
+the :kotoba (W3) arm of device-from-info parses the wire-42 INFO answer with
+the SAME contract as the host arm. NOTHING measured in the hardware sense --
+every number below is a kotoba-language-runtime behavior probe (the fact
+class the w3 string-fold row established); no GPU ran, no timing ran.
+
+INSTRUMENT (all runs this tick, verbatim outputs below): the w3
+extract-balanced idiom -- the arm's OWN text extracted from the namespace
+source, sema/analyze + ir/execute on the kotoba language runtime, kbb
+--backend sci --classpath "src:$(kbb -Spath -M:test)" <scratch probe>.
+Probes lived in Hermes scratch and were never staged (the harness-row
+precedent). The BEFORE arm is extracted from a `git show HEAD:` dump of
+accelerator_targets.cljk (never hand-transcribed).
+
+THE BUGS (all four answer-path defects of one parse chain):
+
+(1) split4 PREFIX SPANS -- the arm conjed (string-substring s 0 i) at each
+    '|', so every field carried its predecessors. Verbatim (probe5 BEFORE):
+      "a|b|c|d" => ["vector" [["string" "a"] ["string" "a|b"] ["string" "a|b|c"] ["string" "a|b|c|d"]]]
+      "ab|1.2.3|4|1" => ["vector" [["string" "ab"] ["string" "ab|1.2.3"] ["string" "ab|1.2.3|4"] ["string" "ab|1.2.3|4|1"]]]
+    Consequence measured on the runtime: the api-version field always
+    contained '|'-text, version3? failed, and device-from-info answered
+    NIL for every well-formed answer. FIXED: per-field spans (start..i at
+    each '|', start..n at the last field). Verbatim (probe5 AFTER):
+      "a|b|c|d" => ["vector" [["string" "a"] ["string" "b"] ["string" "c"] ["string" "d"]]]
+      "ab|1.2.3|4|1" => ["vector" [["string" "ab"] ["string" "1.2.3"] ["string" "4"] ["string" "1"]]]
+    Field count = raw '|'-split count (fields = pipes + 1, trailing empty
+    fields counted -- the host arm's str/split ... -1 reading, the
+    2026-10-26 parity decision): "a|b" / "a|b|c" / "a|b|c|d|" all => ["null"].
+
+(2) document-list-at on a VECTOR -- the arm read its split fields through
+    document-list-at where split4 conjes a document VECTOR. FIXED to
+    document-vector-at (fields 0..3).
+
+(3) dot2 = n + (number of '.') -- NOT the second dot's index. Verbatim
+    (probe4, BEFORE): dot1 "1.2.3" => 1, dot2 "1.2.3" => 7 (the second dot
+    sits at 3), version3? "1.2.3" => false, version3? "1.3.357" => false,
+    version3? "vulkan" => false. So version3? answered FALSE for every
+    well-formed version -- the second reason device-from-info answered nil.
+    FIXED: at the first '.', dot2 = dot1 from the next byte. Verbatim
+    (probe5 AFTER): dot2 "1.2.3" => 3, dot2 "1.2" => 3 (= n, fewer than two
+    dots).
+
+(4) digits?'s base (< 0 n) -- asked whether the END index was positive, so
+    EVERY empty range [i, n) inside a non-empty string passed as "digits"
+    (an empty version part would pass), and 0-start ranges passed only by
+    accident. FIXED: digits? = ONE OR MORE ASCII digits in [i, n) (the
+    host's re-matches "[0-9]+"), split at the first digit: digits? refuses
+    the empty range, new digits-all? walks the tail. Verbatim (probe5):
+    digits? "4" => true, digits? "" => false, digits? empty-range
+    (s len len) => false.
+
+AFTER, version3? truth table (probe5, verbatim) -- exactly the host arm's
+re-matches "[0-9]+\.[0-9]+\.[0-9]+" semantics (3 non-empty digit parts
+around exactly two dots):
+  true:  "1.2.3" "1.3.357" "01.02.03" "12.34.56"
+  false: "vulkan" "1..3" "1.2." ".2.3" "1.2" "123" "1.2.3.4" "1.2.3x"
+         "a.2.3" "" "1 .2.3"
+
+E2E device-from-info on the kotoba runtime (probe5, verbatim):
+  "ab|1.2.3|4|1" => ["map" [[[keyword :api] [keyword :vulkan]]
+    [[keyword :api-version] [string "1.2.3"]]
+    [[keyword :max-workgroup-x] [i64 4]] [[keyword :measured?] [bool true]]
+    [[keyword :unified-memory?] [bool true]]
+    [[keyword :vendor] [string "ab"]]]]
+  "a|1.2.3|4|1"  => same map, vendor "a" (a non-blank one-byte device parses)
+  "a|vulk|4|1" "ab|1.2.3|0|1" "ab|1.2.3|4|2" "ab|1.2.3|4|1|"
+  "ab|1.2.3|4" "ab|1..3|4|1" "ab|1.2.3|x|1"  => ["null"] each
+The six map facts are the host arm's six facts byte for byte (vendor, api
+:vulkan, api-version, max-workgroup-x, unified-memory?, measured? true).
+
+NAMED CONSTRAINT (MEASURED this tick, not an omission): the KIR
+interpreter's 32-frame budget (frames-limit 32) traps the per-byte walks on
+FULL-LENGTH answers -- verbatim: 13 bytes ("ab|1.2.3|4|1|") resolve,
+14 bytes ("ab|1.2.3|4|1|x") => "TRAP: host/stack-exhausted", and the
+recorded 26-byte M1 Max answer ("Apple M1 Max|1.3.357|1024|1") => "TRAP:
+host/stack-exhausted". An extraction wrapper of two extra frames over the
+e2e traps at 12 bytes. So the W3 e2e pins run SHORT answers (<= 13 bytes)
+and the full spellings are the HOST pins (which always parsed). The
+full-answer W3 route on the interpreter stays blocked by the frame budget
+-- its own row (the 2026-10-25 key row's named hazard, now measured for
+this chain too). The tests navigate the returned document HOST-SIDE
+(extraction inside the runtime would add frames).
+
+GATES (real runs this tick):
+- Scoped GPU gate (8 GPU-owned namespaces, scratch runner
+  gpu_scoped_gate.cljk, route 1 `kbb -Spath -M:test`):
+    kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+      /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+  -> Ran 115 tests containing 11528 assertions. 0 failures, 0 errors.
+     scoped: 115 tests, 11528 passed, 0 failed, 0 errors
+     (committed pin 112 tests / 11479 assertions; delta = this slice's
+     +3 deftests / +49 assertions). glslang 16.6.0 real-spawn ran.
+- gpu_regime_classify.py --self-test -> TOTAL: 2649 assertions passed,
+  0 failed (committed pin 2649/0; no classify code touched).
+- Full run-tests.cljk: RED AT BASE, outside this diff -- "Could not find
+  namespace: kotoba.form" (ADR-0362) fails the run before any test
+  executes (kbb exit 1). Re-verified live this tick since the diff touches
+  .cljk namespaces. The touched namespace's own tests are the scoped gate
+  above. NO green full suite claimed.
+- find docs -name '*.sh' -> 0 files (the no-POSIX-sh evidence rule).
+
+STATES:
+- IMPLEMENTED (code + tests): split4 per-field spans + raw-count, the
+  document-vector-at read, dot2 second-dot index, digits?/digits-all?
+  one-or-more semantics; tests w3-split4-conjes-per-field-spans-and-counts-raw,
+  w3-version3-matches-the-host-regex-semantics,
+  w3-device-from-info-parses-like-the-host-arm + 2 host parity pins
+  (trailing-'|' raw count; empty version part).
+- MEASURED (runtime behavior, no hardware): the before/after probe tables
+  above, the frame-budget trap boundaries (13 resolve / 14 traps / 26
+  traps).
+- DECIDED: the 2026-10-26 raw '|'-split count parity (trailing empties
+  count on BOTH arms).
+- NOTHING MOVES: no :measured? flag, no :shapes value, no workgroup row,
+  no selection answer. The :arm/:unknown rows stay provisional
+  :measured? false. This is a parser-parity slice only.
+- UNMEASURED, named: the full-answer device-from-info route on the W3
+  runtime (frame budget, above); every workgroup-row question; anything
+  off this host; whether the frame budget can be lifted (PROPOSED, its own
+  row).

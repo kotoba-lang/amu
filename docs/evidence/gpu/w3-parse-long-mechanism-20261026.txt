@@ -1,0 +1,207 @@
+W3 ENGINE PARSE-LONG MECHANISM -- the source read (JUN-56 follow-up, JUN-55)
+date: 2026-10-26 (JST)
+row: ONE analysis slice + ONE confirmation probe; NO product behavior change.
+closes: the parse-long boundary row's named residual
+  "UNMEASURED, named: WHY the engine's parse-long range-checks (the engine
+  source was not read this tick -- only the observable boundary is
+  measured)" (docs/evidence/gpu/w3-parse-long-boundary-20261026.txt:100-102).
+
+WHAT THE SOURCE READ ANSWERED (READ -- verified by tool output below):
+the host engine's parse-long is ClojureScript's cljs.core/parse-long,
+running on the kbb engine (SCI-on-Node). Its body parses the text with
+js/parseInt into a JS Number (an IEEE double) and answers that Number
+ONLY when it lies inside [js/Number.MIN_SAFE_INTEGER,
+js/Number.MAX_SAFE_INTEGER] = [-(2^53-1), 2^53-1]; outside that closed
+range it answers nil, exactly like malformed text. A non-string input
+THROWS "Expected string, got: ...". So the boundary row's measured
+refusal at 2^53 (which IS exactly representable as a double) tracks the
+SAFE-INTEGER RANGE CHECK in the source, not representability and not an
+i64 range: the engine head's integer range is [-(2^53-1), 2^53-1].
+The ':kotoba arm's builtin parse-long holds real i64' (boundary row) is
+therefore an ARM property, and the host arm's fail-closed reading is
+engine-owned at the level of one upstream function body (upstream
+intent of the check -- CLJS design -- was not read and is NOT claimed).
+
+THE SOURCE, verbatim (all files READ-ONLY this tick):
+(1) WHICH ENGINE. kotoba-lang/kotoba @ 686ee02aa04b005d7acb7fea75c534f5014a68b2
+    bin/kbb, its own header comment:
+      "kbb --backend sci [--classpath <cp>] <script.cljk> [args...]
+          Clojure-shaped .cljk scripts ... They run directly on the kbb
+          ENGINE, a SCI-on-Node host whose classpath resolver finds
+          `.cljk` (kotoba-lang/org-babashka-nbb)."
+    and "Engine resolution ... 2. $KBB_HOME/../org-babashka-nbb/cli.js".
+    Engine checkout /Users/junkawasaki/github/kotoba-lang/org-babashka-nbb
+    @ 1675e6aab65d5a99e37840cc5012bc2eca6f4a07.
+(2) WHICH VAR. org-babashka-nbb src/nbb/core.cljs:793 (inside the
+    (sci/init {:namespaces {'clojure.core (merge ... map):
+      "'parse-long (sci/copy-var parse-long core-ns)"
+    The ns (src/nbb/core.cljs:1-2) is (ns nbb.core (:refer-clojure
+    :exclude [load-file time]) ...) -- `parse-long` there is
+    cljs.core/parse-long.
+(3) THE RUNNING BODY. org-babashka-nbb/lib/nbb_core.js (the compiled
+    engine cli.js loads), verbatim:
+      CQa=$APP.$s(function(a){if(typeof a==="string"){var b=$APP.oj(/[+-]?\d+/,a);return $APP.k(b)?(a=parseInt(a),a<=Number.MAX_SAFE_INTEGER&&a>=Number.MIN_SAFE_INTEGER?a:null):b}throw Error(nl(a));},CGa,...
+    with the docstring 'Parse string of decimal digits with optional
+    leading -/+ and return an integer value, or nil if parse fails' and
+    metadata "cljs/core.cljs" 12243 on the adjacent parse-double var
+    (CGa is the parse-long symbol: lib/nbb_core.js
+     CGa=new $APP.l(null,"parse-long","parse-long",-331085761,null)).
+(4) THE SOURCE BODY. clojurescript-1.12.134.jar cljs/core.cljs:12231
+    (shasum -a 256 of the extracted file 35344afe7d6a56a6...):
+      (defn ^number parse-long
+        "Parse string of decimal digits with optional leading -/+ and return an
+        integer value, or nil if parse fails"
+        [s]
+        (if (string? s)
+          (and (re-matches #"[+-]?\d+" s)
+               (let [i (js/parseInt s)]
+                 (when (and (<= i js/Number.MAX_SAFE_INTEGER)
+                            (>= i js/Number.MIN_SAFE_INTEGER))
+                   i)))
+          (throw (js/Error. (parsing-err s)))))
+    The body is BYTE-IDENTICAL in clojurescript-1.11.132.jar
+    cljs/core.cljs:12230 (diff: only parsing-err's str/str_ spelling),
+    so the mechanism does not hinge on the CLJS version on disk.
+
+WHAT THE MECHANISM PREDICTS (each prediction is a cell below):
+  P1 the sign side has the SAME boundary at -2^53: MIN_SAFE_INTEGER is
+     -(2^53-1), so "-9007199254740992" (exactly representable!) is
+     refused while "-9007199254740991" answers the value;
+  P2 a leading '+' is regex-legal ("+[2^53-1]" answers the value);
+  P3 malformed text and out-of-range text are INDISTINGUISHABLE on this
+     head (both nil) -- the host arm can only fail closed;
+  P4 a non-string THROWS (it is not a nil);
+  P5 the :kotoba arm's string->i64 (its builtin parse-long holds real
+     i64) answers the exact value across the whole i64 range on BOTH
+     signs -- so the boundary row's divergence class [2^53, i64max] has
+     a negative twin [i64min, -2^53] at the UNIT level;
+  P6 the wire routes refuse a sign ABOVE the gates (digits? on the
+     :kotoba arm, re-matches #"[0-9]+" on the host arm), so both unit
+     classes are unreachable from the wire.
+
+MEASURED (the confirmation probe w3_parselong_mechanism.cljk -- the w3
+extract-balanced idiom on the kotoba language runtime + the host
+engine's own heads; run TWICE, the two runs BYTE-IDENTICAL:
+w3_plmech_run1.txt / w3_plmech_run2.txt sha256
+fabcd2943ae9006b56b1d90752fe6607f5a39b8a1319e625d4900ad32e850210
+both 68 lines COMPLETE; verbatim log:)
+
+=== A. ENGINE parse-long on the source-predicted cells ===
+pl 2^53-1 anchor "9007199254740991" -> 9007199254740991
+pl 2^53 anchor "9007199254740992" -> nil
+pl -1 short "-1" -> -1
+pl -5 short "-5" -> -5
+pl +5 short "+5" -> 5
+pl -(2^53-2) "-9007199254740990" -> -9007199254740990
+pl -(2^53-1) = MIN_SAFE "-9007199254740991" -> -9007199254740991
+pl -(2^53) PREDICTED NIL "-9007199254740992" -> nil
+pl -(2^53+1) PREDICTED NIL "-9007199254740993" -> nil
+pl i64min PREDICTED NIL "-9223372036854775808" -> nil
+pl +(2^53-1) PREDICTED VALUE "+9007199254740991" -> 9007199254740991
+pl +(2^53) PREDICTED NIL "+9007199254740992" -> nil
+pl empty PREDICTED NIL "" -> nil
+pl trailing garbage PREDICTED NIL "4x" -> nil
+pl leading space PREDICTED NIL " 4" -> nil
+pl exponent PREDICTED NIL "1e3" -> nil
+pl hex PREDICTED NIL "0x10" -> nil
+pl double sign PREDICTED NIL "--5" -> nil
+pl mixed sign PREDICTED NIL "+-5" -> nil
+pl underscore PREDICTED NIL "1_000" -> nil
+pl decimal point PREDICTED NIL "4.0" -> nil
+
+=== A2. non-string inputs THROW (source: parsing-err) ===
+pl non-string 42 -> TRAP: Expected string, got: number
+pl non-string nil -> TRAP: Expected string, got: nil
+pl non-string 1.5 -> TRAP: Expected string, got: number
+
+=== B. :kotoba arm string->i64 (real i64) on the same texts ===
+(both probe arms, sg-arm and dfi-arm, answered EQUAL on every cell;
+the :kotoba i64 answers are BigInt objects, printed #object[BigInt N])
+si "9007199254740991" -> 9007199254740991 (exact)
+si "9007199254740992" -> 9007199254740992 (exact -- the engine refuses)
+si "-1" -> -1 | "-5" -> -5 | "+5" -> 5
+si "-9007199254740990" -> -9007199254740990 (exact)
+si "-9007199254740991" -> -9007199254740991 (exact)
+si "-9007199254740992" -> -9007199254740992 (exact -- the engine refuses)
+si "-9007199254740993" -> -9007199254740993 (exact)
+si "-9223372036854775808" -> -9223372036854775808 (i64min exact)
+si "+9007199254740991" -> 9007199254740991 | "+9007199254740992" -> 9007199254740992
+si "" / "4x" / " 4" / "1e3" / "0x10" / "--5" / "+-5" / "1_000" / "4.0"
+   -> -1 (the no-value shape, every one)
+
+=== C. route surface: a sign refuses ABOVE the gates, both arms ===
+dfi -(2^53) "ab|1.2.3|-9007199254740992|1" KOTOBA => null HOST => nil
+dfs -(2^53) "-9007199254740992|basic" KOTOBA => null HOST => nil
+dfi -(2^53-1) "ab|1.2.3|-9007199254740991|1" KOTOBA => null HOST => nil
+dfs -(2^53-1) "-9007199254740991|basic" KOTOBA => null HOST => nil
+dfi +(2^53-1) "ab|1.2.3|+9007199254740991|1" KOTOBA => null HOST => nil
+dfs +(2^53-1) "+9007199254740991|basic" KOTOBA => null HOST => nil
+
+=== D. determinism cell: -(2^53) and 2^53 re-read (both routes) ===
+pl "-9007199254740992" -> nil
+si "-9007199254740992" -> -9007199254740992
+dfi KOTOBA => null
+dfs KOTOBA => null
+pl "9007199254740992" -> nil
+si "9007199254740992" -> 9007199254740992
+
+PREDICTIONS CONFIRMED: P1..P6 all hold on every cell above. The
+boundary row's tables are unchanged (its probe stands); this row adds
+the sign side, the non-string traps and the mechanism.
+
+WHAT LANDED (prose + tests, no product behavior change):
+- src/kotoba/compiler/accelerator_targets.cljk: the string->i64 comment
+  block gains the MECHANISM paragraph (READ, cited to this evidence);
+- test/kotoba/compiler/accelerator_targets_test.cljk:
+  w3-subgroup-size-is-one-parse-not-a-byte-walk gains the sign-side unit
+  pins on the :kotoba contract arm (string->i64 via a new `si` probe
+  wrapper: -(2^53-1) / -(2^53) / i64min answer the exact value, "4x" ->
+  -1) and one route pin (sz "-9007199254740992" -> "-1", a sign refuses
+  above the digits? gate); the engine cells stay named, NEVER pinned
+  (engine-owned: an upstream CLJS/nbb change must not be blocked by a
+  pin on the old answer). The named-residual prose of both tests and of
+  string->i64 is brought to the read state.
+
+CONSEQUENCE: NOTHING MOVES -- no :measured? flag value, no :shapes
+value, no workgroup row, no selection answer; :arm/:unknown stay
+provisional :measured? false; the SUBGROUP producer (ADR-0371) still
+does not exist, no live wire feeds this; this row closes the boundary
+row's mechanism residual and adds no hardware measurement claim.
+
+STATES:
+- READ (this row): the engine source above -- WHICH engine, WHICH var,
+  the running compiled body, the CLJS source body (two versions on
+  disk byte-identical in the parse-long body).
+- MEASURED (this row): the two byte-identical confirmation runs above.
+  The boundary row's measurement stands unchanged.
+- IMPLEMENTED (this row): tests + prose only (the sign-side pins and
+  the named-residual prose; no src behavior change -- the src diff is
+  one comment block).
+- DECIDED (unchanged): the parse-decimal contract (max is a value, one
+  past is -1); host-arm parity scoped to the engine's exact integer
+  range -- now READ as [-(2^53-1), 2^53-1] and named on both signs;
+  fail-closed on the host arm (a missing fact, never a wrong fact).
+- UNMEASURED, named: WHY upstream CLJS chose the safe-integer check
+  (design intent, source of intent not read); the digit taxonomy probe
+  set (ok|out-of-range = digits) still PROBED on an adversarial set,
+  not proven; the loop helper's state-dependent boundary; trap spellings
+  beyond these runs; every workgroup-row question; anything off this
+  host.
+
+Gates (real runs): scoped GPU gate GREEN 122 tests / 12112 assertions /
+0 failures / 0 errors on run 1 AND run 2 (previous row's gate
+122/12105; delta +0 tests / +7 assertions -- exactly the seven new
+pins; glslang 16.6.0 real-spawn ran); find docs -name '*.sh' -> 0
+(evidence is .txt). NAMED NOT HIDDEN (not re-run this tick, no
+classify code touched / run-time budget): gpu_regime_classify.py
+--self-test (standing pin 2649/0) and the FULL run-tests.cljk re-verify
+(RED AT BASE 'Could not find namespace: kotoba.form', ADR-0362,
+outside this diff -- verified live in the earlier 2026-10-26 ticks;
+NO green full suite claimed); kbb's "2 dep(s) are not :local/root ..."
+warning on every run (identical everywhere); the untracked deps.edn in
+this worktree (present at tick start, not created or touched by this
+row, not committed).
+
+Evidence: docs/evidence/gpu/w3-parse-long-mechanism-20261026.txt
+(the probe and its two run logs live in the session scratch dir; this
+file is the record -- no POSIX .sh anywhere).

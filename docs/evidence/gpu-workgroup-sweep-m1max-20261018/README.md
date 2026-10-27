@@ -56,3 +56,10 @@ row-tuple-element-argument-test (9), ios-aot-test (3), typed-wasm-min-max-test
 (1), rebound-row-argument-test (1), native-allocation-budget-test (1),
 namespace-reachability-test (1). This diff touches only
 `scripts/test-gpu-workgroup-sweep.cljk`, which the suite does not load.
+
+CORRECTION NOTE (2026-10-24, later tick): true when written
+(2026-10-18, before ADR-0358); the state moved the next day -- ADR-0358
+(2026-10-19) measured four of the six rows (:nvidia, :apple, :intel,
+:amd, each scoped to its one :measured-device name fragment), and only
+:arm/:unknown stay :measured? false. Census:
+docs/evidence/gpu/workgroup-prose-rootcause-20261024.txt.

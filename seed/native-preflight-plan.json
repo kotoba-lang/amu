@@ -1,0 +1,22 @@
+{
+  "schema": "amu.native-gate-plan.v1",
+  "phases": {
+    "preflight": [
+      {
+        "name": "local-project-fs",
+        "argv": ["python3", "scripts/seed/native_preflight_projects.py",
+                 "--compiler", "bin/amu", "--temporary", "@TEMP@"]
+      },
+      {
+        "name": "early-kotoba",
+        "argv": ["python3", "scripts/seed/check-native-kotoba-early.py",
+                 "--compiler", "bin/amu", "--output", "@TEMP@/early-kotoba"]
+      },
+      {
+        "name": "b2-preflight",
+        "argv": ["python3", "scripts/seed/check-b2-libc.py",
+                 "--compiler", "bin/amu", "--output", "@TEMP@/b2-libc-preflight"]
+      }
+    ]
+  }
+}

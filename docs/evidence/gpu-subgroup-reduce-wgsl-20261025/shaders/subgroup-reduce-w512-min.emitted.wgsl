@@ -1,0 +1,16 @@
+enable subgroups;
+struct N { value: u32 };
+@group(0) @binding(0) var<storage,read> x: array<f32>;
+@group(0) @binding(1) var<storage,read_write> parts: array<f32>;
+@group(0) @binding(2) var<uniform> n: N;
+var<workgroup> partials: array<f32, 512>;
+fn combine(a:f32,b:f32)->f32{return min(a,b);}
+@compute @workgroup_size(512) fn main(@builtin(global_invocation_id) gid:vec3<u32>,@builtin(workgroup_id) wid:vec3<u32>,@builtin(subgroup_invocation_id) sgid:u32,@builtin(subgroup_size) sgsize:u32,@builtin(subgroup_id) sg:u32,@builtin(num_subgroups) nsg:u32){
+  let i=gid.x; var v:f32=select(bitcast<f32>(0x7F800000u),x[i],i<n.value);
+  let fold=min(sgsize,512u);
+  for(var d:u32=fold/2u;d>0u;d=d>>1u){let s=subgroupShuffleDown(v,d);if(sgid+d<fold){v=combine(v,s);}}
+  if(sgid==0u){partials[sg]=v;}
+  workgroupBarrier();
+  for(var e:u32=nsg/2u;e>0u;e=e>>1u){if(sg==0u){for(var lid:u32=sgid;lid<e;lid=lid+sgsize){partials[lid]=combine(partials[lid],partials[lid+e]);}}workgroupBarrier();}
+  if(sg==0u&&sgid==0u){parts[wid.x]=partials[0];}
+}

@@ -1,0 +1,55 @@
+#!/usr/bin/env kbb
+;; EMIT the :baseline CUDA arm's reduce source for the JUN-57 HONEST LEFT
+;; row (a) -- "the :baseline CUDA arm's emission and the paired-timing
+;; protocol" -- straight from the emitter (never hand-written):
+;;
+;;   kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" scripts/emit-gpu-baseline-reduce-cuda.cljk
+;;
+;; Writes docs/evidence/gpu-baseline-reduce-cuda-20261025/shaders/
+;; baseline-reduce-w<W>-<operator>.emitted.cu for W in
+;; {32, 64, 128, 256, 512, 1024} and operator in {sum, max, min} -- the
+;; whole admitted row, the same 18-cell corpus shape the :subgroup-reduce
+;; and :warp-shuffle-reduce corpora carry, so the paired-timing protocol
+;; (its own later row) can pair :baseline against either arm on identical
+;; cell provenance.
+;;
+;; The :baseline arm is the ADR-0002 v1 emission (accelerator.cljk's
+;; emit-cuda :reduce path): one shared-memory tree fold per workgroup,
+;; W NEVER baked into the bytes -- the fold reads blockDim.x and the
+;; scratch is `extern __shared__ float s[]`, sized at launch. So the arm's
+;; emission is WORKGROUP-SIZE-PARAMETRIC and the six width files of one
+;; operator are byte-identical by construction -- a property the corpus
+;; record (sha256 per file) states and checks, never assumes. At launch
+;; the arm needs W*4 bytes of DYNAMIC shared memory (the verify
+;; instrument's <shared-bytes> argument).
+;;
+;; UNCOMPILED on this host: no nvcc exists here. [COMPILED+EXECUTED
+;; 2026-10-25 on the fleet's CUDA host xavier: these exact bytes
+;; (sha256-identical) compile clean with the real nvcc 11.4 (V11.4.315),
+;; -arch=sm_72, and pass the correctness instrument -- the run record
+;; docs/evidence/gpu/cuda-baseline-execute-xavier-20261025/.] They are
+;; the emitter's bytes recorded as text contracts; no timing, speedup or
+;; speed claim is recorded anywhere: the instrument records NO timing by
+;; design and every CUDA speed question stays UNMEASURED.
+;;
+;; Deterministic: same emitter, same bytes. If a run of this script
+;; changes a file, the emitter changed.
+
+(ns emit-gpu-baseline-reduce-cuda
+  (:require [kotoba.compiler.accelerator :as accelerator]))
+
+(def widths [32 64 128 256 512 1024])
+(def operators [:sum :max :min])
+
+(defn -main [& _]
+  (doseq [w widths
+          operator operators]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
+                                  {:workgroup-size w})
+          code (accelerator/lower kir :cuda-v1 :baseline)
+          path (str "docs/evidence/gpu-baseline-reduce-cuda-20261025/shaders/"
+                    "baseline-reduce-w" w "-" (name operator) ".emitted.cu")]
+      (spit path code)
+      (println "WROTE" path (count code) "bytes"))))
+
+(-main)

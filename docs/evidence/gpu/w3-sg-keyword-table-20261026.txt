@@ -1,0 +1,141 @@
+JUN-56 / JUN-55 -- the sg-keyword row: the W3 SUBGROUP <ops> vocabulary
+lookup is ONE non-recursive table body, not a per-element walk (2026-10-26)
+
+WHAT THIS ROW IS: the named follow-up finding of
+w3-sg-member-vector-accumulator-20261026 ("the remaining walks keep
+their own trap -- sg-ops-walk per token AND per space byte, sg-keyword
+per vocabulary element -- the spaced '64|  basic   shuffle-relative  '
+(31 bytes) and the unknown-token '32|basic vote2' (14 bytes) still TRAP
+host/stack-exhausted on BOTH arms ... their own rows"). One
+implementation slice on kotoba.compiler.accelerator-targets. NO hardware
+ran, no GPU, no timing -- every number below is a kotoba-language-runtime
+behavior probe (the w3 fact class).
+
+INSTRUMENT (all runs this tick, scratch probes never staged): the w3
+extract-balanced idiom -- the arms' OWN text extracted from the
+namespace source, sema/analyze + ir/execute on the kotoba language
+runtime, kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)"
+<scratch probe>. Scratch probe: w3_keyword_before_after.cljk (the
+sg-keyword unit table + the two named trap cells + standing pins + the
+previous rows' regression cells, run TWICE, byte-identical runs:
+sha256 39f7b73a45864fed1cdaaa99dda9031530af5aa772c7f0ae660b0fad7a16ee4f
+both). The BEFORE arm is extracted from a git-show HEAD dump of
+accelerator_targets.cljk (scratch/w3_keyword_before_src.cljk; sha256
+1792e93c7619e96d9257be4358bf2ed35059cfa0002b0850936ae658bed6908c --
+which is the previous row's AFTER hash, chain continuity; the working
+tree AFTER arm sha256
+666bcab66f16e9ea2cc99cd3d88c05b6b4d17adf2d6d1fe194a659ae33988d98) --
+never hand-transcribed. Parity reference: the host arm's own
+device-from-subgroup.
+
+WHAT LANDED (code + tests), kotoba arm only (the host arm is the parity
+reference and is untouched):
+  sg-keyword is ONE non-recursive table body -- a cond chain of eight
+  constant string tests answering the vocabulary's keyword document,
+  (document-null) above the table -- the host arm's map literal
+  (subgroup-op-tokens) spelled for the kotoba arm. The replaced
+  sg-keyword walked the vocabulary one element per RECURSIVE frame
+  (document-list-at over sg-tokens-doc / sg-keywords-doc per i, 8 deep)
+  and that walk stacked under sg-ops-walk's own per-token/per-space
+  frames. CONTRACT UNCHANGED: the whole vocabulary 1:1 with the hyphen
+  preserved ("shuffle-relative" -> :shuffle-relative); a token outside
+  it answers the null document (unknown fails the whole answer above).
+  The deleted sg-keywords-doc held only the walk's answer column and is
+  gone with the walk (sg-tokens-doc stays: sg-token-at, the producer
+  half, reads it). The one call site (sg-ops-walk) passes the token
+  alone. Nothing else in the chain was touched.
+
+MEASURED (runtime, no hardware; BEFORE = the dumped HEAD arm, AFTER =
+the table arm, HOST = the host arm; probe ran TWICE, byte-identical
+runs -- no trap-boundary anomaly in the probe this row):
+
+sg-keyword unit table (13 cells): every one of the eight vocabulary
+tokens answers its keyword document and "vote2"/"Basic"/""/"basic2"/
+"shuffle-" answer the null document -- BEFORE == AFTER on every cell
+(the walk answered the SAME facts on these short tokens; the walk's
+cost was FRAMES, not facts).
+
+device-from-subgroup e2e -- the sg-member? row's two named trap cells
+(BEFORE TRAP host/stack-exhausted -> AFTER == HOST on both):
+  "32|basic vote2" (14 bytes, the unknown-token answer)
+      -> null == HOST nil (fails closed to no fact, not a trap)
+  "64|  basic   shuffle-relative  " (31 bytes, the spaced two-token
+      answer) -> 64 #{basic shuffle-relative} == HOST
+  NAMED, NOT PINNED: the eight-token answer "8|basic vote arithmetic
+  ballot shuffle shuffle-relative clustered quad" (70 bytes) still
+  TRAPs host/stack-exhausted on BOTH arms (BEFORE == AFTER, both probe
+  runs) -- the sg-ops-walk per-token/per-space frames and the
+  sg-member? per-element frames are their own rows -- never pinned.
+
+REGRESSION (no spelling moved, byte-identical BEFORE == AFTER == HOST):
+the canonical "32|basic shuffle-relative" (25) 32 #{basic
+shuffle-relative}; the dedupe cells "32|basic basic" (14) 32 #{basic}
+and "32|basic shuffle basic" (22) 32 #{basic shuffle}; "8|vote vote"
+(11) 8 #{vote}; single-token "16|shuffle" 16 #{shuffle} and empty-<ops>
+"8|" 8 #{}; the 12-cell malformed grid -> null == HOST nil;
+100-nines|basic (106) null, 1000-fives|basic (1006) null,
+102-zeros-42|basic (110) 42 #{basic}, 200-nines|basic (206) null,
+200-byte no-pipe null, "8|"+190a (192) null, 152-byte two-pipe null.
+
+CONSEQUENCE: NOTHING MOVES -- no :measured? flag value, no :shapes
+value, no workgroup row, no selection answer; :arm/:unknown stay
+provisional :measured? false. The SUBGROUP producer (ADR-0371) still
+does not exist -- no live wire feeds any of this. This row removes the
+vocabulary walk's trap class (a wrong-refusal path: the two named cells
+answered a trap, no fact, where the host arm answered the fact) and
+adds no measurement claim.
+
+STATES:
+- IMPLEMENTED (code + tests): sg-keyword on the table route (the walk
+  and its answer-column builder deleted; call site updated; contract
+  unchanged). Tests:
+  w3-subgroup-keyword-lookup-is-a-table-not-a-walk (the 13-cell unit
+  table with HOST-facing contract values, the two trap-gone e2e pins
+  with HOST parity, the standing pins + dedupe regression + the
+  12-cell malformed grid, and the source pins: cond in the body, 8
+  document-keyword answers + the document-null above them, no
+  self-call, no document-list-at, no string-code-point-at, the one-arg
+  call site, sg-keywords-doc deleted under the defn- prefix,
+  sg-tokens-doc kept). The sg-size / pipe-token-end / sg-member? tests'
+  named-residual prose is brought to the new state.
+- DECIDED (unchanged): the vocabulary is the whole table 1:1; an
+  unknown token is no fact; byte 32 is the only separator.
+- MEASURED: the probe tables above (runtime behavior, no hardware).
+- ACCEPTED DESIGN ONLY (unchanged): ADR-0355's table rules, ADR-0358's
+  key, ADR-0362's subgroup contract, the claim protocol.
+- UNMEASURED, named: sg-ops-walk's per-token/per-space frames and
+  sg-member?'s per-element frames (their own rows; the eight-token
+  answer still traps), trap boundaries and spellings beyond these runs
+  (state- and path-dependent, never pinned), every workgroup-row
+  question (:arm/:unknown stay provisional :measured? false), anything
+  off this host.
+
+GATES (real runs):
+- Scoped GPU gate (8 GPU-owned namespaces, scratch runner
+  gpu_scoped_gate.cljk):
+    kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+      /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+  -> run 1 RED at exactly 2 assertions of the NEW test's own bug (the
+     "earlier rows" grid listed the two VALID shapes "16|shuffle" /
+     "8|" as malformed -- the machine right, the test wrong; same class
+     as the sg-size row's gate run 1); run 2 and run 3 GREEN:
+     Ran 120 tests containing 11860 assertions. 0 failures, 0 errors.
+     scoped: 120 tests, 11860 passed, 0 failed, 0 errors
+     (committed pin 119 tests / 11813 assertions; delta = this slice's
+     +1 test / +47 assertions). glslang 16.6.0 real-spawn ran.
+- gpu_regime_classify.py --self-test -> TOTAL: 2649 assertions passed,
+  0 failed (committed pin 2649/0; no classify code touched).
+- Full run-tests.cljk: RED AT BASE, outside this diff -- "Could not find
+  namespace: kotoba.form" (ADR-0362) fails the run before any test
+  executes (re-verified live this tick, log: scratch/
+  w3_keyword_fullsuite.log). The touched namespaces' own tests are the
+  scoped gate above. NO green full suite claimed.
+- find docs -name '*.sh' -> 0 files (the no-POSIX-sh evidence rule).
+- NAMED, NOT HIDDEN: kbb prints "2 dep(s) are not :local/root and are
+  NOT on the classpath (com.google.javascript/closure-compiler-unshaded,
+  org.clojure/tools.reader)" on every kbb run this tick -- identical on
+  every probe and gate run, unrelated to this diff. The worktree also
+  carries an untracked deps.edn (present at tick start; this row did not
+  create or touch it, and it is not committed).
+- BLOCKER-FIRST: checked at tick start and re-checked before the push
+  (counts in the report); chain PR OPEN.

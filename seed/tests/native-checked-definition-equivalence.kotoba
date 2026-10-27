@@ -1,0 +1,54 @@
+;; Test-only native comparison against the original full-payload builder.
+;; Neither the host observer nor the optimized comparator supplies this oracle.
+(defn- dce-sign [v :i64] :i64 (cond (< v 0) -1 (> v 0) 1 :else 0))
+(defn- dce-pair [M :vector-i64 S :string A :vector-i64 C :vector-i64 T [:list :string] H :vector-i64 left :i64 right :i64] :bool
+  (arena-scope
+    (let [R (typed-list-new [:list :string])
+          old-left (dcs-group-payload M S A C R left) old-right (dcs-group-payload M S A C R right)
+          new-left (dcs-fast-payload A C T H left) new-right (dcs-fast-payload A C T H right)]
+      (and (= (vector-at A 0) 0) (= old-left new-left) (= old-right new-right)
+        (= (dce-sign (string-compare old-left old-right))
+           (dce-sign (dcs-rank-compare A C T H left right)))))))
+(defn- dce-run [S :string] :bool
+  (let [M (rd-run (lx-run (mem-set (mem-new) MM-SRC-LEN (string-length S)) S) S)
+        doc (kr-first M (vector-at M MM-ROOT)) functions (dcp-field M S doc ":functions")
+        n (kr-count M functions)]
+    (if (or (not (dcs-native-checked? S)) (not= (vector-at M MM-ERR) 0) (< n 1) (> n 8)) false
+      (let [A (dcs-init M S doc functions)
+            graph (loop [f 0]
+              (if (= f n) A
+                (let [walked (arena-scope
+                        (let [params (dcp-params M S A f)
+                              body (dcp-form M S A (dcp-field M S (dcp-f A f 0) ":body")
+                                      (typed-list-new [:list :string]) 0)]
+                          (and (> (string-length params) 0) (> (string-length body) 0))))]
+                  (recur (inc f)))))
+            components (dcs-components graph) C (dcs-members M S A 1)
+            phase (vector-assoc! A 5 1) R (typed-list-new [:list :string])
+            H (vector-alloc (+ n (* 2 dc-nodes n))) T (dcs-templates M S A C R H)
+            total (dcs-factorial n)
+            ;; Preserve the original all-rank n1..4 and six-rank SCC8 pairs.
+            ;; New n5..7 families also sample full-payload render pairs; every
+            ;; family still compares root rank with the ALL-permutation minimum.
+            pairs (if (not= (vector-count C) n) false
+              (loop [i 0]
+                (if (= i (if (> n 4) 6 total)) true
+                  (let [rank (if (<= n 4) i
+                               (cond (= i 0) 0 (= i 1) 1 (= i 2) (dec (quot total 2))
+                                     (= i 3) (quot total 2) (= i 4) (- total 2) :else (dec total)))]
+                    (and (dce-pair M S A C T H rank 0)
+                         (dce-pair M S A C T H rank (dec total)) (recur (inc i)))))))
+            best (dcs-best-prefix A C T H) root-best (dcs-best-root A C T H)]
+        (and (= (vector-at A 0) 0) pairs (= root-best best)
+          (or (> n 5) (= best (dcs-best M S A C R))))))))
+(defn- dce-version [S :string name :string nested :string expected :i64] :bool
+  (arena-scope
+    (let [M (rd-run (lx-run (mem-set (mem-new) MM-SRC-LEN (string-length S)) S) S)
+          root (vector-at M MM-ROOT) map (kr-first M root)
+          container (if (= nested "") map (dcp-field M S map nested))
+          value (dcp-field M S container name)]
+      (and (= (vector-at M MM-ERR) 0) (= (kr-count M root) 1)
+           (= (kr-kind M value) ND-INT) (= (kr-nf M value NF-AUX) expected)))))
+(defn- dce-authority [grammar :string elaboration :string] :bool
+  (and (dce-version grammar ":kotoba.lang.guest-grammar/profile-version" "" 6)
+       (dce-version elaboration ":desugar-contract" ":contract-versions" 2)))

@@ -1,0 +1,155 @@
+JUN-58 / JUN-55 -- the same-day re-session naming decision (2026-10-24)
+
+One design-decision slice: the question the W = 32 re-session record
+deferred, answered. NO hardware measurement was taken in this slice --
+it is a decision on previously recorded ground, and every number below
+is CITED from the records named beside it, not re-measured.
+
+THE QUESTION (verbatim, the deferring record's own terms --
+docs/evidence/gpu-simdgroup-reduce-m1max-resweep-20261024/w32/NOTES.md,
+"What this slice does NOT license"):
+
+  "Whether same-day re-session records are named in the flip note /
+  basis evidence lists at all is a decision this tick does not make; if
+  made, the naming is its own slice."
+
+THE DECISION, two loci, two answers:
+
+1. FLIP NOTE PROSE (kotoba.compiler.accelerator-variants'
+   apple-simdgroup-flip-note): NAMED. A same-day re-session record is
+   named in its own scoped paragraph, in the cross-day paragraph
+   pattern, carrying exactly the scoping its own record carries:
+   - it is NOT a cross-day replication (the contract's temporal row is
+     later-day-only: "Cross-day replication of any cell needs a
+     later-day run (a cron tick on another day), not more same-day
+     sessions");
+   - it extends no :measured-cell record's :shapes (a re-session runs
+     the shapes the cell already carries);
+   - it moves no :measured? flag, no selection answer and no workgroup
+     row (ADR-0355/0358);
+   - its magnitude phrases are regime-scoped WITHIN THE DAY (its own
+     finding, below). Named, not hidden -- the campaign's rule is that
+     a real session is recorded and scoped, never omitted.
+
+2. BASIS EVIDENCE LISTS (apple-simdgroup-measured-evidence and the
+   :measured-cell :evidence maps): NOT NAMED. The lists are closed
+   under the flip contract's record kinds: each cell's own
+   contract-satisfying flip runs (one per measured shape) and its
+   sanctioned cross-day replication runs (corroboration that "flipped
+   nothing"). A same-day re-session is neither kind: the protocol
+   excludes same-day sessions from the temporal row, it flips nothing,
+   and it extends no shape. Its sign corroboration duplicates the sign
+   basis the cell's own flip run already carries. The naming
+   implementation slice tightens the lists' docstrings to say "the
+   flip contract's record kinds" explicitly, so the closed-under
+   reading is stated rather than inferred.
+
+GROUNDS (cited, previously recorded -- no measurement ran here):
+
+G1. The protocol's own words (the record's cross-day rule, quoted in
+    the anchor replication record's NOTES): "Cross-day replication of
+    any cell needs a later-day run (a cron tick on another day), not
+    more same-day sessions." A same-day re-session is a record kind
+    OUTSIDE the contract's rows by the record's own protocol; the
+    lists name the contract's rows.
+
+G2. The W = 32 re-session's own measured facts
+    (docs/evidence/gpu-simdgroup-reduce-m1max-resweep-20261024/w32):
+    the sign replicates same-day (rule 2 REGIME-INVARIANT FASTER,
+    18/18 per-run ratios below 1.0 in both sessions) but the magnitude
+    and the regime structure do NOT -- raw paired medians moved 0.021
+    (:sum) / 0.033 (:max) / 0.081 (:min) within one calendar day
+    (0.636/0.691/0.731 vs the wsweep session's 0.657/0.658/0.650) and
+    the cross-operator level identity flipped from HOLDS (wsweep: 0/15
+    divergent run pairs) to REFUTED (the re-session: 12/15). A
+    same-day second session therefore licenses nothing the first did
+    not, and its own finding is exactly the magnitude instability that
+    a "basis evidence" position would misread as license.
+
+G3. The lists' semantics as last widened (the cross-day naming slices,
+    2026-10-24: the anchor's and the W = 512 cell's): the lists moved
+    from "flip basis" to "flip basis + the contract's SANCTIONED
+    cross-day replication (it flipped nothing)". The widening names
+    the contract's own replication row -- not "every run that ever
+    happened". A same-day re-session is not that row.
+
+G4. De facto state, verified this tick (search over src/: 0 matches
+    for "resweep"): no same-day resweep record of EITHER family
+    (docs/evidence/gpu-subgroup-reduce-m1max-resweep-20261023/ or
+    docs/evidence/gpu-simdgroup-reduce-m1max-resweep-20261024/) is
+    named anywhere in code today. The decision turns an inherited
+    silence into a decided policy; it removes no existing name.
+
+WHAT THIS DECISION DOES NOT LICENSE (named so nothing is silently
+upgraded):
+
+- It is ACCEPTED DESIGN ONLY as of this slice: decision record + the
+  ADR-0373 measurement-contract paragraph and diff/LEFT rows. No code
+  namespace changed and no test changed in this diff. The NAMING
+  IMPLEMENTATION -- the flip note's W = 32 SAME-DAY RE-SESSION
+  paragraph (scoped exactly as (1) names), the (2) docstring
+  tightening, and tests pinning that no basis-evidence list names a
+  resweep directory -- is its own later slice, per the deferring
+  record's own "if made, the naming is its own slice". Until it lands,
+  the flip note's silence about the W = 32 re-session is a PENDING
+  IMPLEMENTATION of a decided policy -- not an undecided question and
+  not a hidden record (the record is committed under docs/evidence/).
+- No :measured? flag, :shapes value, selection answer or workgroup row
+  (ADR-0355/0358) moves. The W = 32 cell keeps exactly what its two
+  flip slices gave it (:shapes [1000003 1048576], measured on the
+  two shapes' own REGIME-INVARIANT verdicts).
+- The :subgroup-reduce family's resweep records
+  (docs/evidence/gpu-subgroup-reduce-m1max-resweep-20261023/, ADR-0360's
+  campaign) stay as that campaign's amendments left them; this
+  decision answers the :simdgroup-reduce flip note / basis evidence
+  question the W = 32 record asked. The same rule would govern that
+  family's lists; applying it there is that family's own slice.
+- The shape-2 W = 512 REGIME-SCOPED refusal stands as ADR-0373's
+  measurement-contract section pins it (a measured-but-scoped cell is
+  never a selection basis; no re-run revisits a refusal).
+
+STATE (the honesty rule's three states):
+
+- IMPLEMENTED: nothing in this slice (no code, no tests).
+- ACCEPTED DESIGN ONLY: the naming policy above (this record + ADR-0373).
+- PROPOSED: the naming implementation's exact paragraph text (decided
+  only where this record scopes it).
+
+GATE (this slice changed no code namespace; real runs, this host, this
+tick, from the chain worktree root):
+
+1. python3 scripts/gpu_regime_classify.py --self-test
+   -> TOTAL: 1562 assertions passed, 0 failed.
+2. python3 scripts/gpu-subgroup-reduce-metal-measure.py --self-test
+   -> driver auto-wiring self-test: 12 assertions passed, 0 failed.
+3. Scoped GPU gate (the 8 GPU-owned test namespaces, scratch runner
+   gpu_scoped_gate.cljk, not in the repo; classpath route 2,
+   `AMU_KBB_TEST_CLASSPATH` -- route 1 `kbb -Spath -M:test` fails at
+   the tree root since the merge 7b8f6488 retired deps.edn):
+     kbb --backend sci --classpath "src:test:$AMU_KBB_TEST_CLASSPATH" \
+       /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+   -> Ran 101 tests containing 9707 assertions.
+      0 failures, 0 errors.
+      scoped: 101 tests, 9707 passed, 0 failed, 0 errors
+4. Full suite (run-tests.cljk): RED AT BASE, outside this diff, at
+   namespace load on `kotoba.form` ("Could not find namespace:
+   kotoba.form"; the W3 port path documented red at base in ADR 0362
+   and named in every prior tick record), re-verified this tick. No
+   green full suite is claimed.
+
+HONEST LEFT (the real remainder after this row):
+
+- The naming implementation slice (per this decision): the W = 32
+  SAME-DAY RE-SESSION paragraph in apple-simdgroup-flip-note, the
+  basis-lists docstring tightening, and their tests.
+- The cross-day replication rows, per-cell eligibility (the W = 32
+  re-session record's correction: eligibility is per cell's OWN
+  session date, not the directory's date suffix): W = 32/64/128 and
+  the shape-2 cells need 2026-10-25+; W = 1024 is midnight-straddling
+  and its run-log carries no date stamps, so it is treated as needing
+  2026-10-25+ (the naming slices of 2026-10-24 09:41 carried that
+  eligibility check; unchanged here). The W = 256 anchor and W = 512
+  cross-day rows are MEASURED (2026-10-24).
+- The shape-2 W = 512 REGIME-SCOPED refusal: resolving it is a
+  protocol decision on the refusal's scope, not a re-run -- undecided
+  here.

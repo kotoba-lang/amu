@@ -1,0 +1,76 @@
+JUN-59 session 9 -- shader derivation diff (the ITERMUL knob)
+
+ONE systematic edit applied to each of the 6 committed measured-shader
+bases (corpus digests re-verified against session 2's census first):
+  D1  #define ITERMUL <I> after the #version line
+  D2  `for (uint it = 0u; it < uint(ITERMUL); it++) { /* ITERMUL wrapper */`
+      after `void main() {`
+  D3  `} /* ITERMUL wrapper end */` before main's closing brace
+The reduce body re-runs ITERMUL times; each iteration recomputes the same
+reduction from the same x[] and the parts[] write is inside the loop
+(idempotent, same value every iteration), so the final stored value is
+bit-identical to the archived value at any ITERMUL (re-checked inside
+every run by the instrument's VERIFY step, mismatch count must be 0).
+The wrapper loop bound is compile-time constant -> barrier() stays in
+uniform control flow. The inverse check (strip the 3 lines -> base
+bytes) passes 18/18 (see shader-derivation-census.txt).
+
+NAMED, NOT HIDDEN (pre-run authoring fix): the frozen protocol.txt
+section 1 spells the D2 wrapper `it < (uint)ITERMUL`. The first
+compile attempt (after host-verify GO, before ANY run) failed for
+all 18 derived sources: glslang 11:15.1.0 rejects the C-style cast
+spelling (syntax error, rc=2; also rejects `(uint)(ITERMUL)`); only
+constructor syntax compiles. The wrapper was changed to
+`it < uint(ITERMUL)` -- same semantics (uint comparison against the
+compile-time constant), the ONLY deviation from the frozen spelling.
+protocol.txt itself is byte-frozen and NOT rewritten (the pre-
+registered letters, branches and thresholds are untouched); this
+note and record.txt carry the correction. Zero runs had happened
+when the fix was made (the run window starts after the successful
+rebuild, see build-census-s9.txt).
+
+Exemplar full diff (base w128-sum -> iter3), the other 17 files are the
+same 3-line edit at their own base and ITERMUL value:
+
+--- /Users/junkawasaki/github/wt/amu-gpu/chain/docs/evidence/gpu/anv-subgroupsize-batch64-20261027/shaders/subgroup-reduce-w128-sum.emitted.glsl	2026-10-27 18:11:51
++++ /Users/junkawasaki/github/wt/amu-gpu/chain/docs/evidence/gpu/anv-itrmul-20261027/shaders-derived/subgroup-reduce-w128-sum.emitted.iter3.glsl	2026-10-27 22:02:20
+@@ -1,4 +1,5 @@
+ #version 450
++#define ITERMUL 3  /* JUN-59 session 9 knob: per-workgroup fatness */
+ #extension GL_KHR_shader_subgroup_basic : require
+ #extension GL_KHR_shader_subgroup_shuffle_relative : require
+ layout(local_size_x = 128) in;
+@@ -8,6 +9,7 @@
+ shared float partials[128];
+ float combine(float a, float b) { return a+b; }
+ void main() {
++  for (uint it = 0u; it < uint(ITERMUL); it++) { /* ITERMUL wrapper */
+   uint i = gl_GlobalInvocationID.x;
+   float v = i < n ? x[i] : 0.0;
+   uint fold = min(gl_SubgroupSize, gl_WorkGroupSize.x);
+@@ -26,4 +28,5 @@
+     barrier();
+   }
+   if (gl_SubgroupID == 0u && gl_SubgroupInvocationID == 0u) { parts[gl_WorkGroupID.x] = partials[0]; }
++  } /* ITERMUL wrapper end */
+ }
+
+== derived file digests (18 files) ==
+8f4337c855795565386633270fdb5e42b7cf4927a7b6237387d456e67d63e17f  shaders-derived/subgroup-reduce-w128-max.emitted.iter1.glsl
+fc013069673e6f4fc80acdcd094c11f7d6a9ec28e9aa5be5c908d82f1a2660d7  shaders-derived/subgroup-reduce-w128-max.emitted.iter3.glsl
+e093f8e55bc778b512337021e5a8d514594e11310115f2a5c26fb565526fb09b  shaders-derived/subgroup-reduce-w128-max.emitted.iter8.glsl
+0399fe738d1fb00ad5352563607ef21453b83703887ce8b8df06d94103006a94  shaders-derived/subgroup-reduce-w128-min.emitted.iter1.glsl
+40278c37968e538ba785503db6edd0bacf0501d0745dabd4f118df071c2eb520  shaders-derived/subgroup-reduce-w128-min.emitted.iter3.glsl
+c2838b6130955b8fbcc85b11fa29a65f07dfee215e1cac14603bb27cadc1a08b  shaders-derived/subgroup-reduce-w128-min.emitted.iter8.glsl
+3f78f0769a18f36f55dfe6e80b414c03fc23cb657f07cee4a364172646ac1849  shaders-derived/subgroup-reduce-w128-sum.emitted.iter1.glsl
+22f219dc7f32a909574c9ebf6959d7b6d170afe44ba6ced412ee0135201b78c8  shaders-derived/subgroup-reduce-w128-sum.emitted.iter3.glsl
+bb51f35f334229d1df5480454e5a480bd23bde02ea5bb5d6869a33bb091b66c3  shaders-derived/subgroup-reduce-w128-sum.emitted.iter8.glsl
+79703aa116b2701166e977f88cbd1c60c8db051b7a2159e873969fa7164cec70  shaders-derived/subgroup-reduce-w256-max.emitted.iter1.glsl
+c4447432ec2225ea522620b2fc866546f4b3b8f16b6ee9e4a6d227805e63826b  shaders-derived/subgroup-reduce-w256-max.emitted.iter3.glsl
+4d3c2c556b2f07a08156a18e6fc020cc68bcd92d05f8864a2289ffb6a43f49d5  shaders-derived/subgroup-reduce-w256-max.emitted.iter8.glsl
+0ef4f7d1cd8501c63c11e0f4d672a6b83098823b10e4b0522539146fd1aa0761  shaders-derived/subgroup-reduce-w256-min.emitted.iter1.glsl
+4e1ae1bc71fb4b00901318e47c4a1afea0d9e0abafa913d7704dd3f8cac975c4  shaders-derived/subgroup-reduce-w256-min.emitted.iter3.glsl
+2a26bf757c06f3df2096e428ef6e0a6d4cc303c614b172e688c20ca3da1f9d6c  shaders-derived/subgroup-reduce-w256-min.emitted.iter8.glsl
+0fe1a71ccba62f0090eae3c5e0c39371826d71b9c5cc9f3f5118c75d328d7f8d  shaders-derived/subgroup-reduce-w256-sum.emitted.iter1.glsl
+85752708f5746f4d850ab393dead749cac74339d5882e6819a601bf643377395  shaders-derived/subgroup-reduce-w256-sum.emitted.iter3.glsl
+b0ecc382c11df4ca43f4ca4611c0a71473675431f90241b98b0f13aecc1ecec2  shaders-derived/subgroup-reduce-w256-sum.emitted.iter8.glsl

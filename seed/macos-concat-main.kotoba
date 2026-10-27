@@ -1,0 +1,14 @@
+;; Diagnostic: code spans, pool allocation, tail append, and exact equality.
+(ns seed.macos-concat-main (:export [main]))
+
+(defn main [] :i64
+  (let [arg (typed-cap-call :cli/args :string :string "0")
+        first (string-concat "ab" "cd")
+        tail (string-concat first "ef")
+        fresh (string-concat "ab" "cd")]
+    (if (and (string=? arg "")
+             (string=? first "abcd")
+             (string=? tail "abcdef")
+             (not (string=? tail "abcdeg"))
+             (string=? fresh first))
+      42 43)))

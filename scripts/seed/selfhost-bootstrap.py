@@ -66,7 +66,7 @@ CASES = "seed/static-cases.json"
 FLOAT_CASES = "seed/float-cases.json"
 WASM_CHECK = "scripts/seed/check-wasm32-browser.py"
 # 00-ns-static is 00-ns with the static profile's capacities (seed/MEMORY-MAP).
-STATIC_CAPACITIES = re.compile(rb"\(def MM-(WORDS|(TOK|CODE|FIX|LITB|OUT)-CAP|(NODE|SYM|HASH|FN|SCOPE|SIR|LABEL|CODE|FIX|LIT|LITB|EXP|OUT|HEAP)-BASE|HEAP-END) [0-9]+\)")
+STATIC_CAPACITIES = re.compile(rb"\(def MM-(WORDS|(TOK|NODE|CODE|FIX|LITB|OUT)-CAP|(NODE|SYM|HASH|FN|SCOPE|SIR|LABEL|CODE|FIX|LIT|LITB|EXP|OUT|HEAP)-BASE|HEAP-END) [0-9]+\)")
 # The adopted compiler was qualified on a host whose main stack is 8 MiB; the
 # runtime's default (1 MiB, the old loader's limit) is too small for it.
 ADOPTED_STACK = "8388608"
@@ -83,7 +83,7 @@ def static_capacity_layout():
     constants = lambda b: {k.decode(): int(v) for k, v in re.findall(rb"\(def (MM-[A-Z0-9-]+) ([0-9]+)\)", b)}
     a, b = constants(normal), constants(static)
     assert a.keys() == b.keys()
-    overrides = dict(TOK=786432, CODE=2097152, FIX=262144, LITB=1048576, OUT=12582912)
+    overrides = dict(TOK=786432, NODE=786432, CODE=2097152, FIX=262144, LITB=1048576, OUT=12582912)
     regions = "TOK NODE SYM HASH FN SCOPE SIR LABEL CODE FIX LIT LITB EXP OUT".split()
     for name in regions:
         assert b[f"MM-{name}-W"] == a[f"MM-{name}-W"]
@@ -99,7 +99,7 @@ def static_capacity_layout():
     strip = lambda raw: STATIC_CAPACITIES.sub(b"", b"".join(line for line in raw.splitlines(True)
         if not line.startswith((b";; seed/00-ns-static", b";; CORE-STATIC", b";; (CODE, FIX", b";; (TOK, CODE, FIX"))))
     assert strip(normal) == strip(static), "static source differs beyond checked capacities"
-    return dict(words=b["MM-WORDS"], tokenCapacity=b["MM-TOK-CAP"],
+    return dict(words=b["MM-WORDS"], tokenCapacity=b["MM-TOK-CAP"], nodeCapacity=b["MM-NODE-CAP"],
                 literalBytes=b["MM-LITB-CAP"], outputBytes=b["MM-OUT-CAP"],
                 heapWords=b["MM-HEAP-END"]-b["MM-HEAP-BASE"])
 
@@ -202,6 +202,22 @@ def main(out, tier, reuse=None, store=None):
             assert int(re.search(rb":result (-?[0-9]+)", r.stdout)[1]) == case["result"]
         results.append(dict(name=case["name"], **observed))
 
+    # JUN-292: the native TCP/spawn acceptance corpus on the same bootstrap
+    # route. The corpus lives in its own runners (their grant/fixture plumbing
+    # and named refusals predate this gate); this step is the connection the
+    # issue's completion condition asks for: the acceptance corpus executes
+    # through selfhost bootstrap with F and its receipts stay in this report.
+    # --seccomp-if-available mirrors the local gate hosts: where seccomp is
+    # available it is exercised, where it is not the run still executes and
+    # its own receipt says so.
+    io_acceptance = {}
+    for name, script in (("net-runtime", "check-net-runtime.py"),
+                         ("spawn-runtime", "check-spawn-runtime.py")):
+        run.run(name, [sys.executable, ROOT / "scripts/seed" / script,
+                       "--compiler", F, "--output", out / name,
+                       "--target", "aarch64-linux", "--seccomp-if-available"], {})
+        io_acceptance[name] = json.loads((out / name / f"{name}.json").read_text())
+
     # 5. JUN-353: the same cases, and three probes, as wasm32-browser modules
     wasm_dir = out / "wasm32"
     wasm_dir.mkdir()
@@ -281,6 +297,7 @@ def main(out, tier, reuse=None, store=None):
                       {"KEXE_CAP_RESOURCES_35": str(roots[1])}, success=False)
     assert granted.returncode == 7, ("sha256 vectors", granted.returncode)
     assert refused.returncode == 120 and b"SIGILL" in refused.stderr
+    assert b"KEXE_CAP {:wire 3 :refused :not-granted}\n" in refused.stderr, refused.stderr[-300:]
     assert outside.returncode != 0 and not (roots[1] / "x.elf").exists()
     capabilities = dict(sha256Vectors=len(vectors), granted=granted.returncode, refused=refused.returncode,
                         scopeRoots=len(roots), sourceUnderRoot=3, outsideRootsExit=outside.returncode)
@@ -345,7 +362,8 @@ def main(out, tier, reuse=None, store=None):
                   adopted=dict(sourceGraph=adopted_pins, runnerStackBytes=int(ADOPTED_STACK), generations=adopted_gens, packed=packed,
                                arityRefusal=arity_refusal, expectedNativeImage=adoption["nativeImageSHA256"]),
                   diagnostic=diagnostic, closure=closure, provenance=provenance,
-                  cases=results, wasm32Browser=wasm32, hardening=hardening, runtimeBoundary=runtime_boundary,
+                  cases=results, ioAcceptance=io_acceptance,
+                  wasm32Browser=wasm32, hardening=hardening, runtimeBoundary=runtime_boundary,
                   steps=[dict(name=c["name"], seconds=c["seconds"], **({"reused": c["reused"]} if "reused" in c else
                                                                      dict(ran=True, **({"key": c["key"]} if "key" in c else {}))))
                          for c in run.calls],

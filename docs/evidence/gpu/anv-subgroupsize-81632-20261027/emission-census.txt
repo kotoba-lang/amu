@@ -1,0 +1,47 @@
+== emission census (emitter bytes -> corpus), JUN-59 subgroup 8/16/32 session ==
+== local: shasum -a 256 shaders/*.glsl (sort) -- the COMMITTED emitter route ==
+06a3fd20d8a361a1c39a80cac9ade63490a478cf27baf77a4099e1a1987d5de4  shaders/subgroup-reduce-w256-max.emitted.glsl
+1d1ba71130e7e1b890e560a309d98689e446f208b3fe17424038cdb2377e4352  shaders/probe-w256.glsl
+22e838220e8eb34a1172fd74134533e87d3c9f8538dfff55a08326a4a6fb28cb  shaders/subgroup-reduce-w256-min.emitted.glsl
+94420e5b4b1d2ba93ffd1f41851b693de4e6be594c39532d8fb7076e60372bdf  shaders/subgroup-reduce-w128-max.emitted.glsl
+b49362463cd5954ed739237d7d16a3d4e421f32597bc09c3ead78346dab73564  shaders/subgroup-reduce-w128-sum.emitted.glsl
+c21e5035078070f12de178314163f7412d944422f8b122c011699fa224eb11af  shaders/subgroup-reduce-w128-min.emitted.glsl
+cffc3f4558d830fbcabf5ada4c1f4752ed7a2ec680f652d06628684f9038601c  shaders/probe-w128.glsl
+fc50a68abcd1b04aaebb88801f6c93a570c01feab3ed3073661f715abca4b20c  shaders/subgroup-reduce-w256-sum.emitted.glsl
+== two consecutive runs of scripts/emit-gpu-subgroup-reduce-glsl.cljk ==
+== (kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)") ==
+run 1: rc=0, WROTE 6 files 1206/1236 bytes (see WROTE lines below)
+WROTE docs/evidence/gpu/anv-subgroupsize-81632-20261027/shaders/subgroup-reduce-w128-sum.emitted.glsl 1206 bytes
+WROTE docs/evidence/gpu/anv-subgroupsize-81632-20261027/shaders/subgroup-reduce-w128-max.emitted.glsl 1236 bytes
+WROTE docs/evidence/gpu/anv-subgroupsize-81632-20261027/shaders/subgroup-reduce-w128-min.emitted.glsl 1236 bytes
+WROTE docs/evidence/gpu/anv-subgroupsize-81632-20261027/shaders/subgroup-reduce-w256-sum.emitted.glsl 1206 bytes
+WROTE docs/evidence/gpu/anv-subgroupsize-81632-20261027/shaders/subgroup-reduce-w256-max.emitted.glsl 1236 bytes
+WROTE docs/evidence/gpu/anv-subgroupsize-81632-20261027/shaders/subgroup-reduce-w256-min.emitted.glsl 1236 bytes
+run 2: rc=0, same WROTE lines
+WROTE docs/evidence/gpu/anv-subgroupsize-81632-20261027/shaders/subgroup-reduce-w128-sum.emitted.glsl 1206 bytes
+WROTE docs/evidence/gpu/anv-subgroupsize-81632-20261027/shaders/subgroup-reduce-w128-max.emitted.glsl 1236 bytes
+WROTE docs/evidence/gpu/anv-subgroupsize-81632-20261027/shaders/subgroup-reduce-w128-min.emitted.glsl 1236 bytes
+WROTE docs/evidence/gpu/anv-subgroupsize-81632-20261027/shaders/subgroup-reduce-w256-sum.emitted.glsl 1206 bytes
+WROTE docs/evidence/gpu/anv-subgroupsize-81632-20261027/shaders/subgroup-reduce-w256-max.emitted.glsl 1236 bytes
+WROTE docs/evidence/gpu/anv-subgroupsize-81632-20261027/shaders/subgroup-reduce-w256-min.emitted.glsl 1236 bytes
+== determinism: sha256 census before / after run 1 / after run 2 -- diffs EMPTY ==
+diff(before, after1) rc=0
+diff(after1, after2) rc=0
+== the instrument host compiled THESE bytes: its shaders/ copies ==
+06a3fd20d8a361a1c39a80cac9ade63490a478cf27baf77a4099e1a1987d5de4  subgroup-reduce-w256-max.emitted.glsl
+1d1ba71130e7e1b890e560a309d98689e446f208b3fe17424038cdb2377e4352  probe-w256.glsl
+22e838220e8eb34a1172fd74134533e87d3c9f8538dfff55a08326a4a6fb28cb  subgroup-reduce-w256-min.emitted.glsl
+94420e5b4b1d2ba93ffd1f41851b693de4e6be594c39532d8fb7076e60372bdf  subgroup-reduce-w128-max.emitted.glsl
+b49362463cd5954ed739237d7d16a3d4e421f32597bc09c3ead78346dab73564  subgroup-reduce-w128-sum.emitted.glsl
+c21e5035078070f12de178314163f7412d944422f8b122c011699fa224eb11af  subgroup-reduce-w128-min.emitted.glsl
+cffc3f4558d830fbcabf5ada4c1f4752ed7a2ec680f652d06628684f9038601c  probe-w128.glsl
+fc50a68abcd1b04aaebb88801f6c93a570c01feab3ed3073661f715abca4b20c  subgroup-reduce-w256-sum.emitted.glsl
+== host .spv re-derived now (compare compile-toolchain.txt sha256 census) ==
+0ffc22f8d2449b04951a55bb7b9f8993c40098d3104e9cb9204fa42f09c3b9a8  subgroup-reduce-w256-sum.emitted.spv
+1691be2b85c46aa79dc1d86460c84a8992f743ff4be06927c8c850519ddbbd9d  probe-w256.spv
+30ed70141e1d567b40f62d54c0c38af33ca8dca77d4147d4d5bb50712dc4766f  subgroup-reduce-w128-sum.emitted.spv
+5a9b5fa3ec13f0f93e018310572960f1cfbb9f63890b3aaf8ac3a4f19b694251  subgroup-reduce-w256-max.emitted.spv
+a1f0dccc4557bc5fb17e8f89170cc53cc9f6db3b42817a4a5de217f0a034ca1a  probe-w128.spv
+bb1a3755995e88bc70ac2957a86d478561a265ec831a2a7eaef52d9967e7fde2  subgroup-reduce-w128-min.emitted.spv
+e3eb4aeba6f4c471f1f11dcc3aba15a522c76cf09e63959f77c6e4ba6c49bebc  subgroup-reduce-w128-max.emitted.spv
+f7755d83d6c44d27a304f301ed2184e01d90d07958ee93dacc42daa7f6433d9b  subgroup-reduce-w256-min.emitted.spv

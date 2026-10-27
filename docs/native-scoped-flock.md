@@ -34,3 +34,16 @@ selection and x86 host execution are not promoted by this change.
 The later [AArch64 scalar-depth candidate](native-scalar-depth.md) keeps the
 same filesystem lock contract. Its fresh lock result is recorded alongside
 the scope-boundary receipt.
+
+## Current-main integration candidate
+
+The FD uses private global792, disjoint from the absolute vector item
+highwater at760, private-store journal at768, path length at776 and path
+pointer at784. The original branch reused760 and cannot be merged unchanged
+with the later zero-highwater runtime. The new native fixture combines
+acquire/reentry/wrong and normalized unlock, release/reacquire, scope and
+symlink refusals with dirty/reused vector regions and an outer live value.
+A successfully compiled and executed old-slot mutant must return failure.
+Both native ISAs run this gate in addition to the existing zeroing controls.
+New source/root/public/controller images require current native qualification;
+the historical full31 receipt above does not qualify this combined source.

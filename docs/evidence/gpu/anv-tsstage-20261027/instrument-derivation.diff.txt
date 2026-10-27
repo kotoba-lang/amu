@@ -1,0 +1,33 @@
+--- a/gpu-subgroup-reduce-anv-batchscale.c (session-4 archived snapshot, base)
++++ b/gpu-subgroup-reduce-anv-tsstage.c (session-5 derived instrument)
+@@ -64,6 +64,12 @@
+ #ifndef BATCH
+ #define BATCH 64
+ #endif
++#ifndef TS1_STAGE
++#define TS1_STAGE VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT
++#endif
++#ifndef TS2_STAGE
++#define TS2_STAGE VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT
++#endif
+ #define SEED 20261027u
+ 
+ typedef struct {
+@@ -272,7 +278,7 @@
+     bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+     vkchk(vkBeginCommandBuffer(cmd, &bi), "vkBeginCommandBuffer");
+     vkCmdResetQueryPool(cmd, querypool, 0, 2);
+-    vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, querypool, 0);
++    vkCmdWriteTimestamp(cmd, TS1_STAGE, querypool, 0);
+     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, p);
+     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, NULL);
+     /* BATCH consecutive dispatches inside one bracket (floor lifting):
+@@ -281,7 +287,7 @@
+        dispatches; per-dispatch cost = bracket / BATCH. */
+     for (int b = 0; b < BATCH; b++)
+         vkCmdDispatch(cmd, groups, 1, 1);
+-    vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, querypool, 1);
++    vkCmdWriteTimestamp(cmd, TS2_STAGE, querypool, 1);
+     vkEndCommandBuffer(cmd);
+     VkSubmitInfo si;
+     memset(&si, 0, sizeof si);

@@ -1,0 +1,61 @@
+== JUN-59 session 21 derivation census (THE B=3 PER-DISPATCH-WORK ==
+== THRESHOLD BISECT) ==
+== computed programmatically (this file is the OUTPUT of the scratch ==
+== generator; every value below is computed, none transcribed) ==
+
+-- byte-copy custody (ZERO derivation edits this session) --
+instrument session-20 committed: a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556
+instrument session-21 copy:      a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556
+BYTE-COPY MATCH: True
+expected-corpus.sha256 s20 committed: eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4
+expected-corpus.sha256 s21 copy:      eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4
+BYTE-COPY MATCH: True
+manifest cell lines: 24; byte-equal to s20's cell lines: True
+(== s19's == sessions 9-18's a-set; checked by diff of the extracted
+cell-line blocks of cases-s20-a.txt and cases-s21-a.txt -- exit 0)
+cases-s21-a.txt digest: 8be54b1611148f655e31c31cd99b9da3ba567911c8ebaa8385feba78d931cdeb
+cases-s20-a.txt digest (committed): 70d9359dce5398ec7a135cd1be3b28d27533f183708cf1bc4f3472dc5585c682
+
+-- knob arithmetic (arm table, protocol.txt section 2; N_ELEMENTS =
+-- (1000003*WORK_MUL)/NDIV, integer floor) --
+tag  BATCH  WORK_MUL  NDIV  n          total-nominal (B*n/1,000,003)
+c2   2      1         1     1000003    2.000000
+c8   8      1         1     1000003    8.000000
+eq   2      2         2     1000003    2.000000
+lo   3      1         4     250000     0.749998
+hi   3      1         3     333334     0.999999
+mid  3      7         24    291667     0.874998
+b2m  2      7         24    291667     0.583332
+bracket (250,000, 333,334] floor midpoint: (250,000+333,334)//2 = 291,667
+  == (1,000,003*7)//24 = 291,667 (the mid/b2m grid point is EXACTLY the
+  floor midpoint of the frozen bracket)
+7 arms x 3 runs = 21 fresh processes (the arm table governs; count it: 7 rows)
+
+-- build replication pins (prior censuses parsed programmatically) --
+session-17 committed anv-xt-x3 digest: 2d5a5121df09d9cddffece2ee3a9db0d00eb039bd8892fb1cd1e7050e7555118  -> hi (BATCH=3,NDIV=3) rebuild pin
+session-19 committed anv-n4-z3 digest: efc6f4ee344737f82dee8e9f759f02f4951c32a0c622946ea92f025eac00989d  -> lo (BATCH=3,NDIV=4) rebuild pin
+session-20 committed anv-n2-c2 digest: e5ed903e5b9dfd64168e2d8ddea9d8efb573273e7594afcaca71f3f70bb9c489  -> c2 rebuild pin
+session-20 committed anv-n2-c8 digest: 480925e58d28e7d318456703c6959548e9b9c33e375c3e0fefe688e844d37807  -> c8 rebuild pin
+(== the session 13/16/17/18/19 committed c2/c8 digests -- the chain of
+byte-identical control binaries is unbroken since session 13)
+eq (BATCH=2,WORK_MUL=2,NDIV=2), mid (BATCH=3,WORK_MUL=7,NDIV=24),
+b2m (BATCH=2,WORK_MUL=7,NDIV=24) = NEW knob triples -- WORK_MUL!=1
+with NDIV!=1 has never been compiled in this series (WORK_MUL>1 was
+previously compiled only at NDIV=1, sessions 8-11; the NDIV-series
+sessions 12-20 compiled WORK_MUL=1 only). No prior binary exists for
+them, so no byte-identity pin applies (named, not hidden).
+
+-- frozen cross-session reference values (QUOTE-ONLY, protocol L7; also
+-- embedded as named constants in analysis-s21.py) --
+committed controls: c2 31 (floor band 31..32), c8 32915 (session 4 pooled median)
+session-20 same-knob: c2 31, c8 32874; host_ns 828254 / 2400106
+committed z3 knob pair (BATCH=3,NDIV=4): 1140 (session 19; class
+  INTERMEDIATE/MIXED; 18-cell range 991..1414); host_ns 305240
+committed x3 knob pair (BATCH=3,NDIV=3): 1578 (session 17; class
+  CAPTURED); host_ns 385278
+the B=3 class-vs-per-dispatch-work row (quote-only except this
+  session's lo/mid/hi): 1.0 -> 5520 CAPTURED (sessions 7/16);
+  1/2 -> 2739 CAPTURED (session 20); 1/3 -> 1578 CAPTURED (session 17);
+  1/4 -> 1140 INTERMEDIATE/MIXED (session 19); 1/8 -> 599
+  INTERMEDIATE/MIXED (session 18)
+session 8's B=2 dose arms (quote-only): b2m3/b2m8 FLOOR (31)

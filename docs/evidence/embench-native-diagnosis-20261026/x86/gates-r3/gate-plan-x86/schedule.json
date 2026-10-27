@@ -1,0 +1,322 @@
+{
+  "schema": "amu.native-gate-scheduling.v1",
+  "nativeVerdictAuthority": false,
+  "qualificationReplacement": false,
+  "jobs": 1,
+  "capacity": 2,
+  "phase": "x86",
+  "status": "COMPLETED",
+  "gates": [
+    {
+      "name": "runtime-profile",
+      "argv": [
+        "python3",
+        "scripts/seed/check-native-runtime-profile.py",
+        "--compiler",
+        "/tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/complete/F3.elf",
+        "--output",
+        "/tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/runtime-profile-x86"
+      ],
+      "slot": 0,
+      "capacity": 2,
+      "queuedSeconds": 0.00020928122103214264,
+      "exit": 0,
+      "runSeconds": 132.02528965706006,
+      "totalSeconds": 132.0255149868317,
+      "workerQueueSeconds": 0.00017244182527065277,
+      "slotQueueSeconds": 3.683939576148987e-05,
+      "startSeconds": 0.0007637455128133297,
+      "endSeconds": 132.02649619802833
+    },
+    {
+      "name": "label-proof-index",
+      "argv": [
+        "python3",
+        "scripts/seed/check-native-label-index.py",
+        "--compiler",
+        "/tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/complete/F3.elf",
+        "--output",
+        "/tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/label-index-x86",
+        "--controls-only"
+      ],
+      "slot": 0,
+      "capacity": 2,
+      "queuedSeconds": 132.0258785551414,
+      "exit": 0,
+      "runSeconds": 209.23547283886,
+      "totalSeconds": 209.23576613608748,
+      "workerQueueSeconds": 132.02578097302467,
+      "slotQueueSeconds": 9.758211672306061e-05,
+      "startSeconds": 132.02663678023964,
+      "endSeconds": 341.2625691862777
+    },
+    {
+      "name": "native-cdci",
+      "argv": [
+        "python3",
+        "scripts/seed/check-native-cdci.py",
+        "--complete",
+        "/tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/complete",
+        "--output",
+        "/tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/native-cdci"
+      ],
+      "slot": 0,
+      "capacity": 2,
+      "queuedSeconds": 341.2618515971117,
+      "exit": 0,
+      "runSeconds": 191.69813283719122,
+      "totalSeconds": 191.69831006834283,
+      "workerQueueSeconds": 341.2618297757581,
+      "slotQueueSeconds": 2.182135358452797e-05,
+      "startSeconds": 341.26261786744,
+      "endSeconds": 532.9611847740598
+    },
+    {
+      "name": "aiueos-projects",
+      "argv": [
+        "bash",
+        "-c",
+        "for suite in project cpu-project memory-project regions boot-region lock isr fixed-extent owned-page owned-window private-context pci-boot pci-private pci-forgery; do python3 \"scripts/seed/check-aiueos-$suite-native.py\" --complete \"$RUNNER_TEMP/complete\" --output \"$RUNNER_TEMP/aiueos-projects/$suite\" || exit 1; done"
+      ],
+      "slot": 0,
+      "capacity": 2,
+      "queuedSeconds": 532.9604592714459,
+      "exit": 0,
+      "runSeconds": 141.15193042904139,
+      "totalSeconds": 141.15207823505625,
+      "workerQueueSeconds": 532.9604418282397,
+      "slotQueueSeconds": 1.7443206161260605e-05,
+      "startSeconds": 532.961229769513,
+      "endSeconds": 674.113792235963
+    },
+    {
+      "name": "kototama-receipt",
+      "argv": [
+        "python3",
+        "scripts/seed/check-kototama-receipt.py",
+        "--compiler",
+        "/tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/complete/F2.elf",
+        "--output",
+        "/tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/kototama-receipt-x86_64"
+      ],
+      "slot": 0,
+      "capacity": 2,
+      "queuedSeconds": 674.113062735647,
+      "exit": 0,
+      "runSeconds": 9.734028469771147,
+      "totalSeconds": 9.734226880129427,
+      "workerQueueSeconds": 674.1130365463905,
+      "slotQueueSeconds": 2.6189256459474564e-05,
+      "startSeconds": 674.1138433925807,
+      "endSeconds": 683.8483527293429
+    },
+    {
+      "name": "live-abi",
+      "argv": [
+        "bash",
+        "-c",
+        "python3 scripts/seed/check-static-profile-native.py --complete \"$RUNNER_TEMP/complete\" --output \"$RUNNER_TEMP/static-profile-x86\" && python3 scripts/seed/check-aiueos-value-call-native.py --complete \"$RUNNER_TEMP/complete\" --output \"$RUNNER_TEMP/live-call-x86\" && python3 scripts/seed/check-aiueos-user-native.py --complete \"$RUNNER_TEMP/complete\" --output \"$RUNNER_TEMP/user-context-x86\" && python3 scripts/seed/check-aiueos-desktop-regions-native.py --complete \"$RUNNER_TEMP/complete\" --output \"$RUNNER_TEMP/desktop-regions-x86\""
+      ],
+      "slot": 0,
+      "capacity": 2,
+      "queuedSeconds": 683.8476100717671,
+      "exit": 0,
+      "runSeconds": 19.801181826740503,
+      "totalSeconds": 19.801336555276066,
+      "workerQueueSeconds": 683.8475915179588,
+      "slotQueueSeconds": 1.8553808331489563e-05,
+      "startSeconds": 683.8483940251172,
+      "endSeconds": 703.6500247600488
+    },
+    {
+      "name": "kernel-memory",
+      "argv": [
+        "bash",
+        "-euo",
+        "pipefail",
+        "-c",
+        "python3 scripts/seed/check-kernel-memory.py --compiler \"$RUNNER_TEMP/complete/F2.elf\" --work \"$RUNNER_TEMP/kernel-memory-admission\" --cases seed/tests/kernel-memory | tee \"$RUNNER_TEMP/kernel-memory-admission.log\" && python3 scripts/seed/check-kernel-memory.py --compiler \"$RUNNER_TEMP/complete/F2.elf\" --work \"$RUNNER_TEMP/kernel-memory-guards\" | tee \"$RUNNER_TEMP/kernel-memory-guards.log\""
+      ],
+      "slot": 0,
+      "capacity": 2,
+      "queuedSeconds": 703.6492919432931,
+      "exit": 0,
+      "runSeconds": 25.166830577887595,
+      "totalSeconds": 25.16704952577129,
+      "workerQueueSeconds": 703.6492622471415,
+      "slotQueueSeconds": 2.9696151614189148e-05,
+      "startSeconds": 703.6500788312405,
+      "endSeconds": 728.8174575222656
+    },
+    {
+      "name": "kototama-i64",
+      "argv": [
+        "python3",
+        "scripts/seed/check-kototama-i64.py",
+        "--compiler",
+        "/tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/complete/F2.elf",
+        "--output",
+        "/tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/kototama-i64-x86_64"
+      ],
+      "slot": 0,
+      "capacity": 2,
+      "queuedSeconds": 728.816728991922,
+      "exit": 0,
+      "runSeconds": 6.01022177003324,
+      "totalSeconds": 6.010383551940322,
+      "workerQueueSeconds": 728.8166897287592,
+      "slotQueueSeconds": 3.926316276192665e-05,
+      "startSeconds": 728.8175182752311,
+      "endSeconds": 734.8282029200345
+    },
+    {
+      "name": "aiueos-image",
+      "argv": [
+        "python3",
+        "scripts/seed/check-aiueos-image-native.py",
+        "--complete",
+        "/tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/complete",
+        "--output",
+        "/tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/aiueos-image"
+      ],
+      "slot": 0,
+      "capacity": 2,
+      "queuedSeconds": 734.8275018618442,
+      "exit": 0,
+      "runSeconds": 0.6474231970496476,
+      "totalSeconds": 0.6476416760124266,
+      "workerQueueSeconds": 734.8274428918958,
+      "slotQueueSeconds": 5.8969948440790176e-05,
+      "startSeconds": 734.8282934091985,
+      "endSeconds": 735.476181065198
+    },
+    {
+      "name": "fs2-x86",
+      "argv": [
+        "python3",
+        "scripts/seed/check-native-fs2.py",
+        "--compiler",
+        "/tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/complete/F3.elf",
+        "--output",
+        "/tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/fs2-x86"
+      ],
+      "slot": 0,
+      "capacity": 2,
+      "queuedSeconds": 735.4754724618979,
+      "exit": 0,
+      "runSeconds": 5.603957617189735,
+      "totalSeconds": 5.604152792133391,
+      "workerQueueSeconds": 735.4754102663137,
+      "slotQueueSeconds": 6.219558417797089e-05,
+      "startSeconds": 735.4762666039169,
+      "endSeconds": 741.0806717691012
+    },
+    {
+      "name": "aiueos-boot",
+      "argv": [
+        "python3",
+        "scripts/seed/check-aiueos-boot-native.py",
+        "--complete",
+        "/tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/complete",
+        "--output",
+        "/tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/aiueos-boot"
+      ],
+      "slot": 0,
+      "capacity": 2,
+      "queuedSeconds": 741.0799215887673,
+      "exit": 0,
+      "runSeconds": 1.947316178586334,
+      "totalSeconds": 1.947489502839744,
+      "workerQueueSeconds": 741.0798991969787,
+      "slotQueueSeconds": 2.239178866147995e-05,
+      "startSeconds": 741.0807180847041,
+      "endSeconds": 743.0285226069391
+    },
+    {
+      "name": "clock-entropy",
+      "argv": [
+        "python3",
+        "scripts/seed/check-native-clock-entropy.py",
+        "--compiler",
+        "/tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/complete/F2.elf",
+        "--output",
+        "/tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/clock-entropy"
+      ],
+      "slot": 0,
+      "capacity": 2,
+      "queuedSeconds": 743.0278164199553,
+      "exit": 0,
+      "runSeconds": 0.6904903599061072,
+      "totalSeconds": 0.6906910450197756,
+      "workerQueueSeconds": 743.0277532921173,
+      "slotQueueSeconds": 6.312783807516098e-05,
+      "startSeconds": 743.0286156209186,
+      "endSeconds": 743.719577933196
+    },
+    {
+      "name": "zero-watermark",
+      "argv": [
+        "python3",
+        "scripts/seed/check-native-zero-watermark.py",
+        "--compiler",
+        "/tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/complete/F3.elf",
+        "--output",
+        "/tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/zero-watermark-x86"
+      ],
+      "slot": 0,
+      "capacity": 2,
+      "queuedSeconds": 743.718858380802,
+      "exit": 0,
+      "runSeconds": 48.43116462184116,
+      "totalSeconds": 48.4314181371592,
+      "workerQueueSeconds": 743.7187980278395,
+      "slotQueueSeconds": 6.035296246409416e-05,
+      "startSeconds": 743.7196634928696,
+      "endSeconds": 792.1514035812579
+    },
+    {
+      "name": "ccf-filter",
+      "argv": [
+        "python3",
+        "scripts/seed/check-native-ccf-filter.py",
+        "--compiler",
+        "/tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/complete/F3.elf",
+        "--output",
+        "/tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/ccf-filter-x86"
+      ],
+      "slot": 0,
+      "capacity": 2,
+      "queuedSeconds": 792.1506616356783,
+      "exit": 0,
+      "runSeconds": 67.28216869570315,
+      "totalSeconds": 67.28233986720443,
+      "workerQueueSeconds": 792.1506191468798,
+      "slotQueueSeconds": 4.248879849910736e-05,
+      "startSeconds": 792.1514707459137,
+      "endSeconds": 859.4341910439543
+    },
+    {
+      "name": "flock-vector",
+      "argv": [
+        "python3",
+        "scripts/seed/check-native-flock-vector.py",
+        "--compiler",
+        "/tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/complete/F2.elf",
+        "--output",
+        "/tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/flock-vector-x86"
+      ],
+      "slot": 0,
+      "capacity": 2,
+      "queuedSeconds": 859.4334195037372,
+      "exit": 0,
+      "runSeconds": 16.56739201117307,
+      "totalSeconds": 16.56785104982555,
+      "workerQueueSeconds": 859.4333998067304,
+      "slotQueueSeconds": 1.9697006791830063e-05,
+      "startSeconds": 859.4342339239083,
+      "endSeconds": 876.0022615431808
+    }
+  ],
+  "seconds": 876.0028773942031,
+  "exit": 0
+}

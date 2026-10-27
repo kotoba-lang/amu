@@ -110,7 +110,9 @@
 (defn- nm-hash [S :string a :i64 b :i64] :i64
   (loop [i a h -3750763034362895579]
     (if (< i b)
-      (recur (+ i 1) (* (bit-xor h (string-code-point-at S i)) 1099511628211))
+      (let [cp (string-code-point-at S i)]
+        (if (< cp 128) (recur (+ i 1) (* (bit-xor h cp) 1099511628211))
+          (recur (+ i (mem-cpw cp)) (mem-hash-cp h cp))))
       h)))
 
 ;; word j of the span packed little-endian, 8 bytes per word, zero beyond b.
@@ -525,6 +527,7 @@
         1717924410 KW-REF  ; :ref
         8314046669413118778 KW-SCHEMAS  ; :schemas
         7233174017630234938 KW-IO-READ  ; :io/read
+        7239363981473313594 KW-SYS-CWD  ; :sys/cwd
         111550525633338 KW-STATE  ; :state
         8319383698820982074 KW-EFFECTS  ; :effects
         30521766018904890 KW-SYMBOL  ; :symbol
@@ -591,6 +594,10 @@
       (case w0
         7885630528033941306 KW-GPU-COMPUTE  ; :gpu/compute
         0)
+      435744240229
+      (case w0
+        7954877770216795194 KW-LLM-GENERATE  ; :llm/generate
+        0)
       7234932
       (case w0
         8316297137988398650 KW-NET-LISTEN  ; :net/listen
@@ -619,8 +626,10 @@
 ;; END GENERATED SPELLINGS
 
 ;; SF-HEAD value of a new spelling S[a..b).
+(defn- nm-ascii-span? [S :string a :i64 b :i64] :bool
+  (loop [i a] (cond (>= i b) true (> (string-code-point-at S i) 127) false :else (recur (+ i 1)))))
 (defn- nm-spelling-code [S :string a :i64 b :i64] :i64
-  (if (> (- b a) 24)
+  (if (or (> (- b a) 24) (not (nm-ascii-span? S a b)))
     0
     (let [w0 (nm-pack S a b 0) w1 (nm-pack S a b 1) w2 (nm-pack S a b 2)]
       (if (= (string-code-point-at S a) 58)
@@ -635,7 +644,8 @@
   (if (= (- b1 a1) (- b2 a2))
     (loop [i 0]
       (cond (= (+ a1 i) b1) 1
-            (= (string-code-point-at S (+ a1 i)) (string-code-point-at S (+ a2 i))) (recur (+ i 1))
+            (= (string-code-point-at S (+ a1 i)) (string-code-point-at S (+ a2 i)))
+              (recur (+ i (mem-cpw (string-code-point-at S (+ a1 i)))))
             :else 0))
     0))
 
@@ -872,7 +882,7 @@
 ;;   a top-level `nil` (what #?(:kotoba nil :default ..) reads as) is unlinked;
 ;;   `clojure.core/f` interns as `f` (nm-intern-nodes; on the project route 60-proj has narrowed the token already).
 (defn- nm-r6b-core [a :i64 b :i64 S :string] :i64
-  (if (and (> b (+ a 13)) (= (string-code-point-at S a) 99) (= (string-code-point-at S (+ a 12)) 47)
+  (if (and (> b (+ a 13)) (= (string-code-point-at S a) 99) (nm-ascii-span? S a (+ a 13)) (= (string-code-point-at S (+ a 12)) 47)
            (string=? (string-substring S a (+ a 13)) "clojure.core/"))
     (+ a 13)
     a))

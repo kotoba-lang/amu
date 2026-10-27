@@ -1,0 +1,81 @@
+JUN-58 / JUN-55 -- the low band's selection question DECIDED (2026-10-23)
+
+ONE design decision + implementation slice (the slice ADR-0360's low-band
+amendment named and left open): whether the narrowing's W = 32 cell should
+answer :subgroup-reduce, and how the honesty-lock flip set follows.
+
+DECISION (recorded in ADR-0360, reached code in accelerator_variants):
+
+  W = 32 keeps answering :baseline for ALL THREE OPERATORS on the measured
+  device (m1 max fragment + reported subgroup size 32, MSL route). The
+  demotion there changes status: it was the fail-safe on unmeasured ground,
+  it is now a DECISION on measured ground. The cell's only not-slower signs
+  are scoped to the slow clock regime the device sat in while every :sum
+  run happened (per-run median gpu-ns 109k -> 36k; no :sum run exists in
+  the fast regime), :max's win follows the regime, :min's sign (1.019) is
+  NOT ESTABLISHED. A regime-scoped sign is not a selection basis (the
+  standard that keeps the LABELED BOOTSTRAP GLSL runs verdict-free), and
+  an operator-split answer at one cell off one shape is overfitting. The
+  answer keeps the honesty lock (:measured? false, no :measured-cell): no
+  cross-regime verdict chose it; the decision did.
+
+  W = 64 and W = 128 JOIN the flip set: their measurement chose the
+  demotion (all three operators 1.20-1.25, the penalty band of W >= 256).
+  Flipped widths are now W = 64/128/256/512/1024; the :measured-cell
+  record's evidence list gains the low-band directory.
+
+WHAT CHANGED (code + tests):
+  src/kotoba/compiler/accelerator_variants.cljk
+    apple-measured-workgroups #{256 512 1024} -> #{64 128 256 512 1024};
+    apple-measured-evidence + the low-band dir; apple-narrow-note tail
+    rewritten (the "MSL W = 32..128 is UNMEASURED" clause is superseded);
+    new apple-w32-note (the decision text, appended to the W = 32 cell's
+    :basis); select-variant docstring + ns docstring follow.
+  src/kotoba/compiler/accelerator_pipeline.cljk  docstring follows.
+  docs/adr/0360-gpu-apple-subgroup-reduce.md    the decision paragraph.
+  test/kotoba/compiler/accelerator_variants_test.cljk
+    the flip-set pin #{256 512 1024} -> #{64 128 256 512 1024}, the pinned
+    :measured-cell record gains the low-band dir, the stale label "the
+    unmeasured MSL widths keep the lock (UNMEASURED)" replaced by the
+    W = 32 decision block (all three operators: :baseline, lock kept, no
+    record, basis names the decision).
+  test/kotoba/compiler/accelerator_pipeline_test.cljk
+    the end-to-end lock pin moved from W = 64 (now flipped) to W = 32.
+
+VERIFICATION (runner output, not paraphrase):
+
+  Scoped GPU gate (the seven GPU-owned namespaces, same engine and
+  classpath as the full gate, kbb --backend sci):
+    BEFORE this diff: Ran 87 tests containing 6467 assertions.
+                      0 failures, 0 errors.
+    AFTER  this diff: Ran 87 tests containing 6512 assertions.
+                      0 failures, 0 errors.
+    (the +45 assertions are the W = 32 decision block and the widened
+    flip-set sweep; both runs are real runs of this host's kbb.)
+
+  Base red, named not hidden: the full gate
+    kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" run-tests.cljk
+  still fails at NAMESPACE LOAD with "Could not find namespace: kotoba.form"
+  (reached through kotoba.compiler.js-value-target; upstream W3 port,
+  outside this diff; ADR 0362). Unchanged by this diff and not cleared by
+  it. No namespace in the full suite, GPU or otherwise, runs through
+  run-tests.cljk until that reading exists; the scoped runner is the
+  honest gate for GPU-owned namespaces until then.
+
+STATE HONESTY:
+- IMPLEMENTED (this slice): the W = 32 decision cell (code + tests), the
+  flip-set extension to W = 64/128, the ADR decision paragraph.
+- MEASURED (unchanged from the low-band record, 2026-10-23, this host,
+  MSL arm, native-Metal channel): W = 32..1024 on Apple M1 Max.
+  docs/evidence/gpu-subgroup-reduce-m1max-wsweep-low-20261023/.
+- UNMEASURED (unchanged): the GLSL arm at W > 256 and every GLSL cell as
+  verdict (LABELED BOOTSTRAP); every other Apple device; NVIDIA / Intel /
+  ARM / AMD rows entirely (no hardware has run a variant there). No
+  workgroup row (ADR-0355/0358) moved; the provisional :arm/:unknown rows
+  are untouched and still :measured? false.
+
+LEFT (the next rows): the W = 32 fast-regime :sum measurement (a rerun
+that captures :sum under the fast clock would decide the cell by verdict
+instead of decision -- needs a way to hold the clock regime, currently
+UNMEASURED and unplanned); JUN-57/59/60 hardware-free slices; the GLSL
+arm at W > 256 stays blocked on a wire-42 route (ADR 0371 provider).

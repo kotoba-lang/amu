@@ -1,0 +1,111 @@
+;; Qualification driver, not a public compiler command or cache admission.
+;; Use the adopted KIR reader, name/type/lower passes and actual static backend.
+;; The reviewed runtime is parsed in the same source buffer, detached while
+;; kr-run consumes its closed prelude, then joined to the emitted Seed tree.
+;; Preserve runtime literal records before kr-run compacts the guest records;
+;; decoded bytes and tokens stay in the original immutable source buffer.
+(defn- dsx-literals [M :vector-i64] :vector-i64
+  (let [words (* (vector-at M MM-LIT-N) MM-LIT-W)]
+    (loop [i 0 out (vector-alloc words)]
+      (if (= i words) out (recur (inc i) (vector-assoc! out i (vector-at M (+ MM-LIT-BASE i))))))))
+(defn- dsx-restore-literals [M :vector-i64 saved :vector-i64 first-node :i64 last-node :i64] :vector-i64
+  (loop [n first-node state M]
+    (if (or (= n last-node) (not= (vector-at state MM-ERR) 0)) state
+      (if (= (nm-kind state n) ND-STR)
+        (let [old (* (nm-nf state n NF-AUX) MM-LIT-W) fresh (vector-at state MM-LIT-N)]
+          (if (or (>= fresh MM-LIT-CAP) (> (+ old MM-LIT-W) (vector-count saved)))
+            (mem-set state MM-ERR E-HEAP-REGION)
+            (let [copied (loop [i 0 a state]
+                    (if (= i MM-LIT-W) a
+                      (recur (inc i) (mem-set a (+ MM-LIT-BASE (* fresh MM-LIT-W) i)
+                                      (if (= i LF-POOL) 0 (vector-at saved (+ old i)))))))]
+              (recur (inc n) (nm-set-nf (mem-set copied MM-LIT-N (inc fresh)) n NF-AUX fresh)))))
+        (recur (inc n) state)))))
+(defn- dsx-front-h [S :string cut :i64 H :vector-i64] :vector-i64
+  (let [parsed (rd-run (kr-lex (mem-set (mem-new) MM-SRC-LEN (string-length S)) S) S)
+        root (vector-at parsed MM-ROOT) prelude (+ kr-np 1 kr-decb kr-ndec)
+        runtime (nm-nth parsed root prelude) last (nm-nth parsed root (dec prelude))
+        old-end (vector-at parsed MM-NODE-N) old-count (nm-count parsed root)
+        saved (dsx-literals parsed)
+        boundary (and (> runtime 0) (> last 0)
+                      (>= (nm-tf parsed (nm-nf parsed runtime NF-TOK) TF-START) cut)
+                      (< (nm-tf parsed (nm-nf parsed last NF-TOK) TF-START) cut))
+        detached (if boundary (nm-set-nf (nm-set-nf parsed last NF-NEXT 0) root NF-AUX prelude)
+                     (mem-set parsed MM-ERR E-READ-EOF))
+        lowered (kr-run detached S)
+        restored (if (= (vector-at lowered MM-ERR) 0)
+                   (dsx-restore-literals lowered saved runtime old-end) lowered)
+        new-root (vector-at restored MM-ROOT)
+        tail (loop [n (nm-first restored new-root)]
+               (if (or (= n 0) (= (nm-next restored n) 0)) n (recur (nm-next restored n))))
+        guest-count (loop [n (nm-first restored new-root) count 0]
+                      (if (= n 0) count (recur (nm-next restored n) (inc count))))
+        joined (cond (not= (vector-at restored MM-ERR) 0) restored
+                     (and (> runtime 0) (> tail 0))
+                       (nm-set-nf (nm-set-nf restored tail NF-NEXT runtime) new-root NF-AUX
+                         (+ guest-count (- old-count prelude)))
+                     :else (mem-set restored MM-ERR E-READ-EOF))
+        named (if (= (vector-at joined MM-ERR) 0) (nm-run joined S) joined)
+        checked (if (= (vector-at named MM-ERR) 0) (ck-run-h named S H) named)]
+    (if (ck-hint-again? H checked) (dsx-front-h S cut H)
+      (if (= (vector-at checked MM-ERR) 0) (lw-run checked) checked))))
+(defn- dsx-number [value :i64] :i64 (io-err (string-concat (mem-u2dec value) " ")))
+(defn- dsx-resource [M :vector-i64 S :string cut :i64 route :string] :i64
+  (loop [f 1]
+    (if (= f (vector-at M MM-FN-N)) 0
+      (let [start (nm-ff M f FF-SIR)
+            emit (if (and (> start 0) (< (xs-def-start M f) cut))
+              (let [end (loop [g (inc f)]
+                          (cond (= g (vector-at M MM-FN-N)) (vector-at M MM-SIR-N)
+                                (> (nm-ff M g FF-SIR) 0) (nm-ff M g FF-SIR) :else (recur (inc g))))
+                    sym (nm-ff M f FF-SYM)
+                    name (string-substring S (nm-sf M sym SF-START) (nm-sf M sym SF-END))
+                    tag (io-err (string-concat "DSX-FN " (string-concat route (string-concat " " (string-concat name " ")))))
+                    a (dsx-number (nm-ff M f FF-NPARAMS)) b (dsx-number (nm-ff M f FF-NSLOTS))
+                    c (dsx-number (nm-ff M f FF-DEPTH)) d (dsx-number (nm-ff M f FF-FUEL))
+                    e (dsx-number (lw-sx-entry M f)) nl (io-err "\n")]
+                (loop [i start]
+                  (if (= i end) 0
+                    (let [charge (if (= (xg-si M i IF-OP) OP-FUEL)
+                          (let [t (io-err (string-concat "DSX-FUEL " (string-concat route
+                                           (string-concat " " (string-concat name " ")))))
+                                value (dsx-number (- i start)) last (io-err "\n")] 0) 0)]
+                      (recur (inc i)))))) 0)]
+        (recur (inc f))))))
+(defn- dsx-literal [M :vector-i64 n :i64 offset :i64] :i64
+  (let [id (nm-nf M n NF-AUX) p (+ MM-LIT-BASE (* id MM-LIT-W))
+        begin (vector-at M (+ p LF-B)) length (vector-at M (+ p LF-LEN))]
+    (if (or (<= id 0) (>= id (vector-at M MM-LIT-N)) (< begin 0) (< length 0)
+            (> (+ begin length) (vector-at M MM-LITB-N))) 1
+      (let [bytes (loop [i 0 a (vector-alloc length)]
+                    (if (= i length) a (recur (inc i) (vector-assoc! a i (vector-at M (+ MM-LITB-BASE begin i))))))
+            hash (sh-bytes bytes) tag (io-err "DSX-RTL ") a (dsx-number offset) b (dsx-number length)
+            value (io-err (string-concat hash "\n"))] 0))))
+(defn- dsx-runtime-literals [M :vector-i64 cut :i64] :i64
+  (let [seen (vector-alloc (vector-at M MM-TOK-N))]
+    (loop [n 1]
+      (if (= n (vector-at M MM-NODE-N)) 0
+        (let [tok (nm-nf M n NF-TOK) position (nm-tf M tok TF-START)
+              status (if (and (= (nm-kind M n) ND-STR) (>= position cut) (= (vector-at seen tok) 0))
+                       (let [mark (vector-assoc! seen tok 1)] (arena-scope (dsx-literal M n (- position cut)))) 0)]
+          (if (not= status 0) 1 (recur (inc n))))))))
+(defn- seed-main [] :i64
+  (if (or (not= (io-argc) 4) (not (or (= (io-arg 0) "source") (= (io-arg 0) "kir") (= (io-arg 0) "probe")))) 2
+    (let [K (io-fs2-text 65 (io-arg 1) "") output (io-arg 2) arm (= (io-arg 3) "aarch64-linux")
+          probe (= (io-arg 0) "probe") kir (not (= (io-arg 0) "source"))
+          prefix (string-concat K (if kir (kr-prelude) (ck-r6b-lib K)))
+          ;; Only the AST/literal test uses this private fixture. It never
+          ;; reaches a backend or qualifies a changed production runtime.
+          runtime (if probe "\n(defn- dsx-literal-probe [] :string \"runtime-literal-probe\")\n"
+                      (if arm (xa-rt-src) (xs-rt-src))) S (string-concat prefix runtime)
+          M (if kir (dsx-front-h S (string-length prefix) (ck-hint-new)) (xg-front S))
+          literals (if (= (vector-at M MM-ERR) 0) (dsx-runtime-literals M (string-length prefix)) 1)
+          resources (if (and (not probe) (= (vector-at M MM-ERR) 0) (= literals 0))
+                      (dsx-resource M S (string-length prefix) (io-arg 0)) 0)
+          image (cond (not= (vector-at M MM-ERR) 0) M
+                      (not= literals 0) (mem-set M MM-ERR E-HEAP-REGION)
+                      probe M
+                      arm (xa-build M S (string-length prefix) 0 (vector-alloc 1) 0 0 0)
+                      :else (xs-build M S (string-length prefix) 0))]
+      (if (not= (vector-at image MM-ERR) 0) (drv-fail image (io-arg 1))
+        (if probe 0 (if arm (xa-write image output 0) (xs-write-profile image output 0)))))))

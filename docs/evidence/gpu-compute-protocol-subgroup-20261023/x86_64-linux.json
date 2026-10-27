@@ -1,0 +1,67 @@
+{
+  "status": "PASS_GPU_COMPUTE_PROTOCOL_V1",
+  "target": "x86_64-linux",
+  "compiler": {
+    "bytes": 1294848,
+    "sha256": "f19ab1c48b54e8ae032f26563b99695c38bd10de8ab7305407fc8fd05ace8eba"
+  },
+  "host": [
+    "Linux",
+    "aarch64",
+    "6.15.10-200.fc42.aarch64"
+  ],
+  "executionNative": false,
+  "imageSeccomp": "if-available",
+  "sources": {
+    "tools/gpu_compute_protocol.kotoba": {
+      "bytes": 18492,
+      "sha256": "2ebf76023f7c9823a504a21da83dddcd7e2d6cf6a2d90a2bce3333c0987fd785"
+    },
+    "tools/gpu_compute_protocol_test.kotoba": {
+      "bytes": 11891,
+      "sha256": "f25ffe2b12b02ab79cda290c3de4824492347c7fa741b3352b1f5311d9111b83"
+    }
+  },
+  "casesCounted": 114,
+  "runs": [
+    {
+      "name": "protocol-test",
+      "source": {
+        "bytes": 30289,
+        "sha256": "027414cbb53fedd860d4f7d5c58963059ece24dc042c626857ccc1c2e1f3364b"
+      },
+      "image": {
+        "bytes": 233984,
+        "sha256": "e86f6ae90b3660784e04143825d30ff17142837915186987a4c032b4358c4fde"
+      },
+      "result": 0,
+      "fuelUsed": 7547,
+      "cases": 114,
+      "failed": 0,
+      "failLines": []
+    },
+    {
+      "name": "protocol-control",
+      "source": {
+        "bytes": 30289,
+        "sha256": "886210d105fd9b86c1bdb3f058769a8d122dfc7a0ab4b781a3c6f02312a7b5c9"
+      },
+      "image": {
+        "bytes": 233984,
+        "sha256": "441e36167a557933b112138f62183f619e0230c80a46c528ec6e81175212b6ce"
+      },
+      "result": 1,
+      "fuelUsed": 7549,
+      "cases": 114,
+      "failed": 1,
+      "failLines": [
+        "FAIL ALLOC 0 => !gpu/zero-length ALLOC <bytes> ; want !gpu/zero-length WRONG"
+      ]
+    }
+  ],
+  "cCompilerOrLoader": false,
+  "notCovered": [
+    "refusal 3 (request-too-long): a runtime value cannot exceed one; frames are checked by the runtime and provider (ADR 0371 steps 2 and 6)",
+    "refusals 19..35 are named and formatted here and decided by the provider (ADR 0371 step 6)"
+  ]
+}

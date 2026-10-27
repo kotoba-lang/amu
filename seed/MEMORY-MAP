@@ -124,6 +124,19 @@
 ;; TOK growth (2026-10-23): full29 x86 generation after the kernel helper guard reached E101 region1
 ;; at 655360 tokens. The static profile raises TOK by131072 entries and shifts every later region by524288 words.
 ;; MM-WORDS29491200 stays below2^25; table widths, normal core, heap size, grants, results and fuel remain unchanged.
+;; The complete44 public static build also appends its native runtime. It
+;; exceeds NODE589824 (E101 region4). Grow only the static NODE capacity;
+;; the normal adopted18 source, widths and heap size remain unchanged.
+;; These six rows are consumed by seed/gen-static-ns.kotoba. That native
+;; generator derives every downstream base and checks the2^25 vector bound.
+;; BEGIN STATIC OVERRIDES
+;; [:s MM-TOK-CAP 786432]
+;; [:s MM-NODE-CAP 786432]
+;; [:s MM-CODE-CAP 2097152]
+;; [:s MM-FIX-CAP 262144]
+;; [:s MM-LITB-CAP 1048576]
+;; [:s MM-OUT-CAP 12582912]
+;; END STATIC OVERRIDES
 ;; Historical LITB growth (2026-10-23, JUN-353): the combined compiler (seed/FULL-MANIFEST) reached 523 KiB of literal bytes and
 ;; vector-literal tables (lowering adds the tables to the same region); MM-LITB-CAP 1048576 (+524288), every later base,
 ;; MM-HEAP-END and MM-WORDS +524288 (MM-WORDS 24772608, heap size unchanged).
@@ -231,7 +244,11 @@
   ;; EXP: one per exported FN, in (:export [...]) order (42-layout).
   [:c EF-FN 0] [:c EF-OFFSET 1 "byte offset of the entry from the code start"] [:c EF-ARITY 2] [:c EF-SPARE 3]
   ;; OUT: one byte (0..255) per word: the kseed container being written (50-out).
-  ;; HEAP: words MM-HEAP-BASE..MM-HEAP-END-1, bump-allocated by `mem-alloc`, never freed.
+  ;; HEAP: words MM-HEAP-BASE..MM-HEAP-END-1, bump-allocated by `mem-alloc`.
+  ;; General allocations are never freed. 41-a64gen alone may rewind its private
+  ;; glx label-index block after emission, only while that block is still the
+  ;; current heap top and after zeroing every word. Later allocations forbid
+  ;; that rewind. This keeps the fresh-zero contract across project resets.
   ]
 
  ;; ---------------------------------------------------------------------------------------------------------
@@ -260,7 +277,8 @@
               "60-proj: reads M[MM-CAPS] and FN2 after a module's compile (namespace :capabilities, stateful library exports)"]
   "30-lower" [:SIR :MM-SIR-N :MM-LABEL-N :MM-MAX-DEPTH "FN fields FF-SIR FF-DEPTH" :MM-ERR* "(E30nn)"]
   "40-a64enc" ["nothing: pure functions i64 -> i64"]
-  "41-a64gen" [:CODE "(append)" :MM-CODE-N :FIX :MM-FIX-N :LABEL "FN field FF-CODE" :MM-ERR* "(E41nn)"]
+  "41-a64gen" [:CODE "(append)" :MM-CODE-N :FIX :MM-FIX-N :LABEL "FN field FF-CODE" :MM-ERR* "(E41nn)"
+               "its private G and HEAP blocks" :MM-HEAP-TOP "(glx may zero/release only its own top block as above)"]
   "42-layout" [:CODE "(patch fixups in place)" "LIT field LF-POOL" :EXP :MM-EXP-N :MM-POOL-OFF :MM-CODE-BYTES :MM-ERR* "(E42nn)"]
   "50-out"   [:OUT :MM-OUT-N :MM-ERR* "(E50nn)"]
   "every module" ["MM-R0..MM-R3 as return registers (rule L4)" "its own MM-STAT slots"]}

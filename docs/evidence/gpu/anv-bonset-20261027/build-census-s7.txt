@@ -1,0 +1,49 @@
+== date -u (builds) ==
+Bounded by the host timeline: builds ran after the source upload
+(2026-10-27T11:52:28Z) and before the first run (2026-10-27T11:53:24Z,
+the run window recorded in record.txt). The census below was captured at
+2026-10-27T11:53:03Z, immediately after the builds.
+== host ==
+aiueos-6600hs (aiueos-6600hs-1, tailscale 100.98.24.37), user murakumo-ci
+(groups include render). Workdir ~/anv-bonset-20261027, runs cwd=shaders/
+(manifest passed as ../cases-s7.txt).
+== uname ==
+Linux aiueos-6600hs 7.0.0-31-generic #31~24.04.1-Ubuntu SMP PREEMPT_DYNAMIC Mon Aug 10 09:38:02 UTC 2 x86_64 x86_64 x86_64 GNU/Linux
+== gcc --version (first line) ==
+gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+== instrument builds (7 binaries; ZERO derivation edits -- the archived
+== session-6 snapshot used byte-identical (digest 9847b0f1... re-verified
+== in host-verify-s7.txt); arm = the BATCH compile-time value;
+== BARRIER_N=0 for every arm) ==
+$ gcc -O2 -DBATCH=<B> -DBARRIER_N=0 -o anv-bon-<tag> gpu-subgroup-reduce-anv-bonset.c -lvulkan
+build anv-bon-b1n0 -DBATCH=1 -DBARRIER_N=0 rc=0
+build anv-bon-b2n0 -DBATCH=2 -DBARRIER_N=0 rc=0
+build anv-bon-b3n0 -DBATCH=3 -DBARRIER_N=0 rc=0
+build anv-bon-b4n0 -DBATCH=4 -DBARRIER_N=0 rc=0
+build anv-bon-b5n0 -DBATCH=5 -DBARRIER_N=0 rc=0
+build anv-bon-b6n0 -DBATCH=6 -DBARRIER_N=0 rc=0
+build anv-bon-b8n0 -DBATCH=8 -DBARRIER_N=0 rc=0
+== arm decode (the header prints batch=, so every run log carries its own
+== knob identity; analysis-s7.py checks the field) ==
+b1n0 = (B=1, N=0) floor control (the archived behaviour, defaults only)
+b2n0 = (B=2, N=0) floor control (committed floor)
+b3n0 = (B=3, N=0) THE ONSET PROBE (the only unmeasured integer in (2,4))
+b4n0 = (B=4, N=0) capture control (committed 11,674, session 4)
+b5n0 = (B=5, N=0) post-onset growth (new)
+b6n0 = (B=6, N=0) post-onset growth (new)
+b8n0 = (B=8, N=0) capture control (committed 32,915, session 4)
+== sha256 of the uploaded instrument + manifest + binaries (captured after
+== the builds, before the runs) ==
+9847b0f1fa139d284d909ddc53e8e25af0b750126f31b8bcae2ed12c16326977  gpu-subgroup-reduce-anv-bonset.c
+e7fc30619f1be403806a12365033f7df75f7a58eee4ac3b5e5b397210e750096  cases-s7.txt
+5d9a01589afafb8bb90276e19492b23d610bcc4c98a7bc3e07e9b23c76009819  anv-bon-b1n0
+3f6812b54da51228d6d396e5b1f6b172d23331923b1534cfedbb45d2a560f87d  anv-bon-b2n0
+de8db45afc325cf247f9ecb166a5fbda25a5435e388ee161519a660f8305f9ca  anv-bon-b3n0
+d2ed80d1acb0074814cee1b333135aac23275eaac677795b4fe4fa7675dc0a31  anv-bon-b4n0
+42b8b25aa978c75f4459448dbe005742dc3778de73cc6d8e2649e9cca436f745  anv-bon-b5n0
+9b386ff641b0097eabe9c3051ed9838598d5b1343d8afaf2440ae5e12407447c  anv-bon-b6n0
+33c9e08ee0763b7735cc962f7f25cda86fc0830723757f6156ddc5085bd083b6  anv-bon-b8n0
+== run window (recorded live by date -u around the run loop; the full
+== per-run rc/timestamp transcript is quoted in record.txt) ==
+2026-10-27T11:53:24Z .. 2026-10-27T11:53:38Z, 21 fresh processes
+(7 arms x 3 runs), rc=0 21/21, stderr 0 bytes 21/21, 450 SAMPLE lines each.

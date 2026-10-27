@@ -1,0 +1,206 @@
+;; Shared native dependency graph. This computes components, never identities
+;; or admission. DCP embeds this layout in its own checked metadata arena;
+;; the complete Seed frontend imports the same graph implementation.
+;; Header: 0 error,3 vertices,7 discovery,8 stack,9 components,10 edges,
+;; 11 edge capacity,12 stack base,13 unresolved indirect calls,14 sealed,
+;; 15 non-emitting declarations whose dependencies need the KIR bridge.
+;; Node width16: 5 component,6 index,7 low,8 active,9 parent,10 cursor,
+;; 14 adjacency head,15 unresolved flags (4*indirect-count + kind):
+;; kind0 code,1 constant,2 stateful template. Unknown kinds refuse.
+;; Other fields belong to DCP/the fresh SIR importer.
+;; Edges are (target,next,owner), numbered1..edges, with next<edge.
+;; Both stacks have n entries. After traversal the DFS stack becomes component
+;; heads and node9 becomes next-member+1. No n*n storage or recursive stack.
+(defn- dgg-f [G :vector-i64 f :i64 k :i64] :i64
+  (vector-at G (+ 16 (* f 16) k)))
+(defn- dgg-put [G :vector-i64 f :i64 k :i64 v :i64] :vector-i64
+  (vector-assoc! G (+ 16 (* f 16) k) v))
+(defn- dgg-edges [G :vector-i64] :i64 (+ 16 (* (vector-at G 3) 16)))
+(defn- dgg-edge [G :vector-i64 e :i64 k :i64] :i64
+  (vector-at G (+ (dgg-edges G) (* (dec e) 3) k)))
+(defn- dgg-bad [G :vector-i64] :vector-i64
+  (vector-assoc! G 0 (if (= (vector-at G 0) 0) 9 (vector-at G 0))))
+(defn- dgg-counts? [n :i64 cap :i64] :bool
+  (and (>= n 0) (< n MM-FN-CAP) (>= cap 0) (<= cap MM-NODE-CAP)))
+(defn- dgg-layout? [G :vector-i64] :bool
+  (and (>= (vector-count G) 16)
+    (let [n (vector-at G 3) cap (vector-at G 11) stack (vector-at G 12)]
+      (and (dgg-counts? n cap) (>= (vector-at G 10) 0) (<= (vector-at G 10) cap)
+           (>= stack (+ 16 (* n 16) (* cap 3)))
+           (<= stack (- (vector-count G) (* n 2)))))))
+(defn- dgg-init [G :vector-i64 n :i64 cap :i64 stack :i64] :vector-i64
+  (if (< (vector-count G) 16) (vector-assoc! (vector-alloc 16) 0 9)
+    (let [a (-> G (vector-assoc! 3 n) (vector-assoc! 11 cap) (vector-assoc! 12 stack))]
+      (if (dgg-layout? a) a (dgg-bad a)))))
+(defn- dgg-new [n :i64 cap :i64] :vector-i64
+  (if (not (dgg-counts? n cap)) (vector-assoc! (vector-alloc 16) 0 9)
+    (let [stack (+ 16 (* n 16) (* cap 3))]
+      (dgg-init (vector-alloc (+ stack (* n 2))) n cap stack))))
+(defn- dgg-add [G :vector-i64 from :i64 to :i64] :vector-i64
+  (if (not (dgg-layout? G)) (vector-assoc! (vector-alloc 16) 0 9)
+    (if (not= (vector-at G 0) 0) G
+      (let [n (vector-at G 3) used (vector-at G 10)]
+        (if (or (not= (vector-at G 14) 0) (< from 0) (>= from n) (< to 0) (>= to n)
+                (>= used (vector-at G 11))) (dgg-bad G)
+          (let [head (dgg-f G from 14) e (inc used) at (+ (dgg-edges G) (* used 3))]
+            (if (or (< head 0) (> head used)
+                    (and (> head 0) (not= (dgg-edge G head 2) from))) (dgg-bad G)
+              (-> G (vector-assoc! at to) (vector-assoc! (inc at) head)
+                    (vector-assoc! (+ at 2) from) (vector-assoc! 10 e) (dgg-put from 14 e)))))))))
+(defn- dgg-has? [G :vector-i64 from :i64 to :i64] :bool
+  (and (dgg-layout? G) (= (vector-at G 0) 0)
+    (>= from 0) (< from (vector-at G 3)) (>= to 0) (< to (vector-at G 3))
+    (loop [e (dgg-f G from 14)]
+      (cond (= e 0) false (< e 0) false (> e (vector-at G 10)) false
+        (not= (dgg-edge G e 2) from) false
+        (= (dgg-edge G e 0) to) true
+        :else (let [next (dgg-edge G e 1)]
+                (and (>= next 0) (< next e) (recur next)))))))
+;; Verify the complete append history before traversal. Node cursors are
+;; temporary last-edge witnesses here and are reset before Tarjan. Every
+;; allocated edge belongs to exactly one chain; orphan/aliased/cyclic links
+;; and precomputed traversal state refuse. No partial component verdict.
+(defn- dgg-valid? [G :vector-i64] :bool
+  (and (dgg-layout? G) (= (vector-at G 0) 0) (= (vector-at G 14) 0)
+    (= (vector-at G 7) 0) (= (vector-at G 8) 0) (= (vector-at G 9) 0)
+    (>= (vector-at G 13) 0) (<= (vector-at G 13) MM-SIR-CAP)
+    (>= (vector-at G 15) 0) (<= (vector-at G 15) (vector-at G 3))
+    (loop [f 0 indirect 0 constants 0]
+      (if (= f (vector-at G 3)) (and (= indirect (vector-at G 13)) (= constants (vector-at G 15)))
+        (and (= (dgg-f G f 5) 0) (= (dgg-f G f 6) 0) (= (dgg-f G f 7) 0)
+             (= (dgg-f G f 8) 0) (= (dgg-f G f 9) 0) (= (dgg-f G f 10) 0)
+             (>= (dgg-f G f 14) 0) (<= (dgg-f G f 14) (vector-at G 10))
+             (>= (dgg-f G f 15) 0) (<= (dgg-f G f 15) (+ (* MM-SIR-CAP 4) 2))
+             (< (rem (dgg-f G f 15) 4) 3)
+             (recur (inc f) (+ indirect (quot (dgg-f G f 15) 4))
+                    (+ constants (if (> (rem (dgg-f G f 15) 4) 0) 1 0))))))
+    (loop [e 1]
+      (if (> e (vector-at G 10)) true
+        (let [target (dgg-edge G e 0) next (dgg-edge G e 1) owner (dgg-edge G e 2)]
+          (and (>= target 0) (< target (vector-at G 3)) (>= next 0) (< next e)
+               (>= owner 0) (< owner (vector-at G 3)) (= next (dgg-f G owner 10))
+               (let [witness (dgg-put G owner 10 e)] (recur (inc e)))))))
+    (loop [f 0]
+      (if (= f (vector-at G 3)) true
+        (and (= (dgg-f G f 14) (dgg-f G f 10))
+             (let [clear (dgg-put G f 10 0)] (recur (inc f))))))))
+(defn- dgg-enter [G :vector-i64 f :i64 parent :i64 depth :i64] :vector-i64
+  (let [index (inc (vector-at G 7)) top (vector-at G 8) stack (vector-at G 12)]
+    (-> G (vector-assoc! 7 index) (vector-assoc! 8 (inc top))
+          (dgg-put f 6 index) (dgg-put f 7 index) (dgg-put f 8 1)
+          (dgg-put f 9 parent) (dgg-put f 10 (dgg-f G f 14))
+          (vector-assoc! (+ stack top) f)
+          (vector-assoc! (+ stack (vector-at G 3) depth) f))))
+(defn- dgg-tarjan [G :vector-i64] :vector-i64
+  (if (not (dgg-layout? G)) (vector-assoc! (vector-alloc 16) 0 9)
+    (if (not (dgg-valid? G)) (dgg-bad G)
+      (loop [start 0 state (vector-assoc! G 14 1)]
+        (cond (= start (vector-at state 3)) state
+          (> (dgg-f state start 6) 0) (recur (inc start) state)
+          :else
+          (let [entered (dgg-enter state start -1 0)
+                complete (loop [depth 1 a entered]
+                  (if (= depth 0) a
+                    (let [f (vector-at a (+ (vector-at a 12) (vector-at a 3) (dec depth)))
+                          edge (dgg-f a f 10)]
+                      (if (> edge 0)
+                        (let [target (dgg-edge a edge 0) advanced (dgg-put a f 10 (dgg-edge a edge 1))]
+                          (cond (= (dgg-f advanced target 6) 0)
+                                  (recur (inc depth) (dgg-enter advanced target f depth))
+                                (> (dgg-f advanced target 8) 0)
+                                  (recur depth (dgg-put advanced f 7
+                                    (min (dgg-f advanced target 6) (dgg-f advanced f 7))))
+                                :else (recur depth advanced)))
+                        (let [parent (dgg-f a f 9)
+                              linked (if (< parent 0) a
+                                       (dgg-put a parent 7 (min (dgg-f a f 7) (dgg-f a parent 7))))
+                              popped (if (not= (dgg-f linked f 7) (dgg-f linked f 6)) linked
+                                (let [component (inc (vector-at linked 9)) set (vector-assoc! linked 9 component)]
+                                  (loop [b set]
+                                    (let [top (dec (vector-at b 8)) member (vector-at b (+ (vector-at b 12) top))
+                                          c (-> b (vector-assoc! 8 top) (dgg-put member 8 0) (dgg-put member 5 component))]
+                                      (if (= member f) c (recur c))))))]
+                          (recur (dec depth) popped))))))]
+            (recur (inc start) complete)))))))
+(defn- dgg-member-head [G :vector-i64 component :i64] :i64
+  (if (or (<= component 0) (> component (vector-at G 9))) 0
+    (vector-at G (+ (vector-at G 12) (vector-at G 3) (dec component)))))
+(defn- dgg-index-members [G :vector-i64] :vector-i64
+  (if (or (< (vector-at G 9) 0) (> (vector-at G 9) (vector-at G 3))) (dgg-bad G)
+    (let [base (+ (vector-at G 12) (vector-at G 3))
+          clear (loop [i 0 state G]
+                  (if (= i (vector-at state 3)) state
+                    (recur (inc i) (vector-assoc! state (+ base i) 0))))]
+      (loop [f 0 state clear]
+        (if (or (= f (vector-at state 3)) (not= (vector-at state 0) 0)) state
+          (let [component (dgg-f state f 5)]
+            (if (or (<= component 0) (> component (vector-at state 9))) (dgg-bad state)
+              (let [at (+ base (dec component))
+                    current (dgg-put state f 9 (vector-at state at))]
+                (recur (inc f) (vector-assoc! current at (inc f)))))))))))
+(defn- dgg-members-valid? [G :vector-i64] :bool
+  (and (dgg-layout? G) (= (vector-at G 0) 0) (= (vector-at G 14) 1)
+       (= (vector-at G 7) (vector-at G 3))
+       (>= (vector-at G 9) 0) (<= (vector-at G 9) (vector-at G 3))
+    (let [seen (vector-alloc (vector-at G 3))]
+      (loop [component 1 total 0]
+        (if (> component (vector-at G 9)) (= total (vector-at G 3))
+          (let [count (loop [cursor (dgg-member-head G component) count 0]
+                        (cond (= cursor 0) count
+                          (or (< cursor 0) (> cursor (vector-at G 3)) (>= count (vector-at G 3))) -1
+                          :else (let [f (dec cursor)]
+                                  (if (or (not= (dgg-f G f 5) component) (> (vector-at seen f) 0)) -1
+                                    (let [mark (vector-assoc! seen f 1)]
+                                      (recur (dgg-f G f 9) (inc count)))))))]
+            (and (> count 0) (recur (inc component) (+ total count)))))))))
+(defn- dgg-components [G :vector-i64] :vector-i64
+  (let [C (dgg-tarjan G)]
+    (if (not= (vector-at C 0) 0) C
+      (let [indexed (dgg-index-members C)]
+        (if (dgg-members-valid? indexed) indexed (dgg-bad indexed))))))
+;; Freshly checked/lowered SIR import. This does not bridge SIR to canonical
+;; KIR or turn a successful checker flag into a DefCID/admission verdict.
+;; Every function remains, including unused declarations. CALLI owners are
+;; recorded explicitly: unknown dynamic targets never become empty edges.
+;; FK-DEF/stateful-template declarations retain vertices even without OP-FN.
+;; Source dependencies and specialization origins are not recovered from SIR;
+;; neither kind can silently masquerade as an independent empty function.
+(defn- dgg-from-sir [M :vector-i64] :vector-i64
+  (if (not= (vector-at M MM-ERR) 0) (vector-assoc! (dgg-new 0 0) 0 8)
+    (let [n (dec (vector-at M MM-FN-N)) count (vector-at M MM-SIR-N)]
+      (if (or (< n 0) (>= n MM-FN-CAP) (< count 1) (> count MM-SIR-CAP))
+        (vector-assoc! (dgg-new 0 0) 0 9)
+        (let [capacity (loop [i 1 edges 0]
+                        (if (= i count) edges
+                          (recur (inc i) (+ edges (if (or (= (gn-op M i) OP-CALL)
+                                                                       (= (gn-op M i) OP-FADDR)) 1 0)))))
+              graph (loop [i 1 owner -1 G (dgg-new n capacity)]
+                (if (or (= i count) (not= (vector-at G 0) 0))
+                  (if (and (= i count) (not= owner -1)) (dgg-bad G) G)
+                  (let [op (gn-op M i) a (gn-sir M i IF-A) b (gn-sir M i IF-B)]
+                    (cond (= op OP-FN)
+                            (if (or (not= owner -1) (<= a 0) (> a n) (not= (dgg-f G (dec a) 0) 0))
+                              (dgg-bad G)
+                              (recur (inc i) (dec a) (dgg-put G (dec a) 0 1)))
+                          (= op OP-END) (if (< owner 0) (dgg-bad G) (recur (inc i) -1 G))
+                          (or (= op OP-CALL) (= op OP-FADDR))
+                            (recur (inc i) owner (dgg-add G owner (dec (if (= op OP-CALL) a b))))
+                          (= op OP-CALLI)
+                            (if (< owner 0) (dgg-bad G)
+                              (recur (inc i) owner
+                                (-> G (vector-assoc! 13 (inc (vector-at G 13)))
+                                      (dgg-put owner 15 (+ 4 (dgg-f G owner 15))))))
+                          :else (recur (inc i) owner G)))))]
+          (let [declarations (loop [f 0 G graph]
+                               (if (or (= f n) (not= (vector-at G 0) 0)) G
+                                 (if (= (dgg-f G f 0) 1) (recur (inc f) G)
+                                   (let [kind (cond (= (gn-fnf M (inc f) FF-KIND) FK-DEF) 1
+                                                    (lw-tmpl? M (inc f)) 2 :else 0)]
+                                     (if (> kind 0)
+                                       (recur (inc f) (-> G (dgg-put f 0 (inc kind)) (dgg-put f 15 kind)
+                                                         (vector-assoc! 15 (inc (vector-at G 15)))))
+                                       (dgg-bad G))))))]
+            (if (not= (vector-at declarations 0) 0) declarations (dgg-components declarations))))))))
+(defn- dgg-direct-only? [G :vector-i64] :bool
+  (and (dgg-layout? G) (= (vector-at G 0) 0) (= (vector-at G 14) 1)
+       (= (vector-at G 7) (vector-at G 3)) (= (vector-at G 13) 0) (= (vector-at G 15) 0)))

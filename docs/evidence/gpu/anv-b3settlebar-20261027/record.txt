@@ -1,0 +1,137 @@
+JUN-59 -- session 30 record: THE ANCHOR-CLASS SETTLING BAR (DESIGN
+slice -- ONE design decision; NOTHING is measured this tick).
+2026-10-27 (UTC; the tick runs 2026-10-28 JST). Chain PR #1636
+(bot/amu-gpu-chain-20261027-10).
+
+1. ROW QUESTION (ONE row): DESIGN AND FREEZE THE SETTLING BAR FOR THE
+   FROZEN CLASS OF THE (1024,4033) ANCHOR KNOB PAIR at n=253,906, B=3
+   (the upper anchor of the flip bracket (252,604, 253,906]) BEFORE
+   ANY CROSS-UTC-DAY READING EXISTS. This is session 29's named next
+   row (W1 (a): "the anchor-class settling bar ... is NOT met by
+   same-UTC-day data" / Rule-4 residual "the DESIGN of the
+   anchor-class settling bar (the named next row: a bar that reads
+   classes at this threshold must first name its block-variability
+   floor)"). PRE-REGISTRATION INTEGRITY is why it precedes the
+   measurement: the bar is frozen at 2026-10-27T23:40:56Z, on the same
+   UTC day as sessions 2-29, while the first cross-UTC-day tick
+   becomes reachable at 2026-10-28T00:00Z on this profile's 15-minute
+   cron cadence (ticks after the UTC day roll run natively on day
+   2026-10-28; no tick ever needs to wait across the roll). A bar
+   written after the readings it judges is post-hoc; this one is
+   frozen before a single cross-UTC-day reading exists. The bisect
+   cut, the (2048,8066) twin, the NDIV=3,5,6,... columns and
+   cross-UTC-day replication stay OPEN and are NOT taken.
+
+2. WHAT CHANGED (three files, all in this evidence directory):
+   (a) settle-bar.txt -- the frozen bar (written once, freeze stamp
+       2026-10-27T23:40:56Z): the measured floor it stands on (F1 the
+       s29 within-session block-variability floor, F2 the min-statistic
+       wander, F3 the cross-session ledger), the READING unit (one
+       3-run block at the frozen estimator unit, byte-identical build
+       pin, C1 (a), VERIFY 0, custody GO), the COUNTED rule (FIRST
+       qualifying reading of each UTC day -- the L4 axis must be
+       spanned; same-day multiplicity is named descriptive content and
+       does not advance the bar), FLAGGED sessions (C1 (b), VERIFY
+       mismatch, broken pin, missing GO -- recorded, no reading, no day
+       slot consumed), the four verdicts V1 CONTRADICTION (FLOOR or
+       out-of-band median) / V2 UNSETTLED (class split or medians not
+       mutually within 5%; NO SILENT EXTENSION to eight readings -- an
+       extension is a NEW pre-registered bar, never a re-roll) / V3
+       SETTLED (four counted readings, four distinct UTC days, one
+       class, in band) / V4 PENDING n/4, WHAT THE BAR SETTLES (only the
+       anchor's frozen class; it never narrows the flip bracket, never
+       interpolates, never judges the twin, never touches Rule 4), and
+       the COST (at least four qualifying UTC days; the number FOUR is
+       a DESIGN CHOICE matching the measured four-block floor, not a
+       measured constant).
+   (b) settle-bar-eval.py -- the bar's deterministic decision
+       procedure as evidence-scoped tooling (NOT compiler code, not
+       wired into any namespace) with a FROZEN fixture set (11
+       fixtures, 38 assertions) covering every verdict branch, FLAGGED
+       exclusion, day-slot non-consumption and same-day-duplicate
+       exclusion.
+   (c) derivation-census-s30.txt -- every measured number settle-bar.txt
+       cites, RECOMPUTED from sessions 26-29's committed run logs by a
+       scratch generator (never committed).
+
+3. VERIFIED BY TOOL OUTPUT (all real runs this tick):
+   (a) settle-bar-eval.py --self-test: TOTAL 38 assertions passed,
+       0 failed; run twice byte-identical (diff exit 0).
+   (b) derivation-census-s30.txt: s26 mid 1,129 (min 1,001) / s27 hi
+       1,132 (min 976) / s28 hi 1,131 (min 991) all reproduce the
+       published integers (match True on every row); s29 blocks A-D
+       1,130 / 1,144 / 1,143 / 1,151 with minima 993 / 979 / 985 /
+       993; the 12 per-run minima recompute to 977/988/1001/971/990/
+       977/980/985/979/997/974/993 (span 971..1,001, ONLY r3 at/above
+       the frozen 1,000 boundary -- s29's published content); the 12-
+       run pooled median 1,142 (match True, NAMED DIFFERENT ESTIMATOR);
+       n = (1,000,003*1024)//4033 = 253,906 and gcd(253,906,1,000,003)
+       = 1 (computed); the four cited block medians are all within
+       +/-5% of each frozen reference 1,129 / 1,132 / 1,131 (True).
+   (c) Gates (real runs this tick): gpu_regime_classify.py --self-test
+       TOTAL 2649/0 (pin); scoped GPU gate GREEN 123 tests / 12,162
+       assertions / 0 failures / 0 errors recorded run 1 AND run 2
+       (scratch runner scoped-gpu-gate.cljk, created, run, deleted
+       this tick -- never committed); FULL run-tests.cljk RUN LIVE THIS
+       TICK: exit 1, RED AT BASE 'Could not find namespace: kotoba.form'
+       at namespace load (ADR-0362, outside this diff -- this diff
+       touches NO .cljk namespace) -- NO green full suite claimed; find
+       this evidence dir -name '*.sh' -> 0.
+
+4. NAMED DEFECTS OF THIS TICK (named, not hidden): the scratch census
+   generator's FIRST DRAFT mis-indexed the SAMPLE columns (it quoted
+   the ndiv field as gpu_ticks, so every row read 4033). The
+   generator's own published-integer cross-check caught it (match
+   False on every row) and the index was corrected BEFORE any value
+   was quoted -- the committed derivation-census-s30.txt records the
+   corrected run only. No defect touches a frozen artifact: settle-bar.txt
+   was frozen at 23:40:56Z and is not rewritten.
+
+5. STATES (the three states, exactly):
+   ACCEPTED DESIGN ONLY: the settling bar itself (settle-bar.txt
+   pre-registration + the ADR-0355 dated note). Not implemented in
+   the compiler; not a measurement.
+   IMPLEMENTED: nothing in the compiler. The bar's evaluator exists
+   only as evidence-scoped tooling with a frozen self-test (it decides
+   ledgers; it is not wired into any namespace and changes no
+   compiler behavior).
+   MEASURED: NOTHING NEW THIS TICK. Every measured number in this
+   record is quote-only (re-derived in the census from committed run
+   logs of sessions 26-29). Provisional workgroup defaults in
+   kotoba.compiler.accelerator-targets remain provisional
+   (:measured? false) -- not optimization evidence. RULE 4 unchanged:
+   NOTHING MOVES -- no workgroup row, no :measured? flag, no selection
+   answer; NO vendor optimization exists for Intel and none is
+   claimed.
+
+6. UNMEASURED (named): every cross-UTC-day quantity -- the first
+   cross-UTC-day reading of the anchor becomes reachable at the ticks
+   after 2026-10-28T00:00Z and the bar (now frozen) is what judges it;
+   whether FOUR qualifying days is ENOUGH (the bar can return
+   UNSETTLED; V2 exists for that and the representation-side probe --
+   the (2048,8066) twin, the open half of the sessions 24/26 C3 (b)
+   splits -- is the named priority in that case); the
+   threshold-artifact-vs-representation question itself; why the class
+   flips across sessions at byte-identical binaries; the flip location
+   inside (252,604, 253,906]; any causal mechanism; anything off the
+   ANV host.
+
+7. THE TICK'S FINDING IN ONE LINE: the anchor-class settling bar is
+   FROZEN PRE-REGISTRATION at 2026-10-27T23:40:56Z -- before any
+   cross-UTC-day reading exists -- with its measured block-variability
+   floor named (F1 four-block within-session stability, F2 the
+   min-statistic wander 971..1,001 at run granularity) and a
+   deterministic frozen evaluator (38/0 self-test, run-twice diff
+   exit 0): four qualifying UTC days, one counted reading per day, one
+   class at the frozen threshold settles the anchor; a split is
+   UNSETTLED with no silent extension; nothing in Rule 4 moves and
+   nothing is measured here.
+
+8. CHAIN: this commit lands on the ONE open chain branch
+   bot/amu-gpu-chain-20261027-10 (chain PR #1636), commit + push only.
+   BLOCKER-FIRST: open kotoba-lang/amu PRs with a hermes/ head
+   re-checked immediately before this push (the count is recorded in
+   the tick report and the chain commit message). Linear: JUN-59 (the
+   com-junkawasaki issue reused for this track), tick comment recorded
+   there. Evidence: docs/evidence/gpu/anv-b3settlebar-20261027/ + the
+   ADR-0355 dated note. (JUN-55, JUN-59)

@@ -1,0 +1,144 @@
+JUN-56 / JUN-55 -- W3 uB5G alt-key chain, the alt-loop row (2026-10-26).
+ONE implementation slice. NO hardware ran; every number below is a
+kotoba-language-runtime behavior probe or a test gate.
+
+WHAT LANDED in kotoba.compiler.accelerator-targets (kotoba arm only; the
+host arm is the parity reference and is untouched): alt-field? and
+alt-any-hits -- the uB5G '|'-alternate KEY field walks -- iterate
+through ONE `loop`/`recur` each (the __kotoba_loop_N trampoline's
+zero-charge self-tail re-entry, the sg-ops-walk loop precedent) where
+each was an ordinary `defn-` SELF-CALL taking one interpreter frame per
+'|'-FIELD. This closes the alt-key row's named O(FIELDS) frame residual
+(the same-day residual carried by the split4 many-pipe row: "its own row
+if it ever matters" -- this is that row). CONTRACTS UNCHANGED, pinned:
+alt-field? answers true iff SOME field is non-empty (false on all-empty
+and empty keys); alt-any-hits answers true iff some NON-EMPTY field's
+substring hits part (empty fields skip -- substr-hits answers TRUE for
+an empty needle); the advance is still past the boundary (+ j 1), one
+alt-end per boundary; key-hits' fail-closed set rule (a bare fragment is
+not a set where alternates exist) is untouched. The replaced walks took
+one frame per field and TRAPped at 32+ fields -- the fail-closed trap
+was a wrong-refusal class on any hypothetical many-field key.
+
+INSTRUMENT: the w3 extract-balanced idiom (the arms' OWN text from the
+namespace source, sema/analyze + ir/execute on the kotoba language
+runtime, kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)"
+<scratch probe>; scratch probes never staged). Before/after probe
+scratch/w3_altloop_before_after.cljk: BEFORE arm from a git-show HEAD
+dump (scratch/w3_altloop_before_src.cljk, sha256
+34b7672aa651926bc2940cbe5c4236a20cae1acbb6b2d80d55e393edc3a59912 --
+verified live equal to `git show HEAD:src/kotoba/compiler/
+accelerator_targets.cljk` (diff -q clean), chain continuity with the
+split4 row's tree), AFTER = the current worktree src (sha256
+9ae7927f54dcf4e223319b3c6bb0702f5cbf483613cf19a95c80096285cd9b24).
+Parity reference: the host arm's key formula read verbatim from
+recommend's body (fragment hits AND (no non-empty field OR some
+non-empty field hits)).
+
+GO/NO-GO GROUND (w3_altloop_gonogo.txt, real run, run BEFORE the fix
+was written into src -- BOTH probe arms were then the unfixed walk,
+sha256 bf9345be53a30c2add9f736b2a13d8060e7103139781d538284231e1b6fa57db,
+66 lines COMPLETE): the O(FIELDS) class is present on the walk itself --
+at 32 fields every one of the five sweep cells (af-em, ah-miss,
+ah-hit-last, hit-za, hit-em) TRAPped on BOTH arms (budget/frames;
+af-em and ah-miss spelled host/stack-exhausted in that run) while HOST
+answered the fact for every cell -- and every cell resolved through 28
+fields. That run is the class's ground, not an after-table.
+
+MEASURED (runtime, no hardware; the before/after probe run TWICE,
+byte-identical): w3_altloop_run1.txt == w3_altloop_run2.txt, COMPLETE
+66 lines, sha256
+9505602711696393c1b95052af3c40b8d446ee0b289857a72755c27dc9629c0b
+(diff -q clean, shasum -a 256 both).
+  THE ROW'S TRAP-GONE CELLS (BEFORE TRAP -> AFTER == HOST), the
+  field-count sweep (za[k] = k fields, last "a"; em[k] = k empty
+  fields): at k = 32/40/64/96/128/160/192 fields ALL FIVE cells
+  (af-em -> false, ah-miss -> false, ah-hit-last -> true, hit-za ->
+  false, hit-em -> true) TRAPped on BEFORE (budget/frames; at k = 32
+  ah-miss and af-em spelled host/stack-exhausted) and all answer their
+  HOST fact on AFTER. The 32-field class boundary itself (k = 1..28
+  resolve, 32+ trapped on BEFORE) is measured, never pinned (trap
+  boundaries are state-dependent).
+  AFTER's NEW NAMED RESIDUAL, MEASURE-ONLY (the loop removes FRAMES,
+  not FUEL -- one alt-end entry per field, the alt-any-hits path a
+  substr-hits entry per non-empty field, vs the 512-entry reference
+  default): the ah paths (ah-miss/ah-hit-last) and hit-za now answer
+  TRAP: budget/fuel at k = 256/320 fields (2 entries per field) while
+  af-em and hit-em still resolve there (1 entry per field) and trap
+  budget/fuel at k = 512+; k = 1024/2048 trap budget/fuel on every
+  AFTER cell. The frame class is GONE at every k (no budget/frames and
+  no host/stack-exhausted anywhere in the AFTER column); the fuel
+  boundary is exactly the entry arithmetic and is measure-only, never
+  pinned -- the table's keys carry 3 fields today, unreachable from the
+  wire.
+  REGRESSION, byte-identical BEFORE == AFTER == HOST (and the two runs
+  identical): the 14 standing key-hits pins (incl. the JUN-85 wire-42
+  spelling, the NX hole, the set-fail-closed cells, the empty-key
+  one-fragment-set cells), the alt-key row's 6 long-key cells (200-byte
+  fields), the unit grids (alt-end 5+2 cells incl. the 200-byte keys,
+  alt-field? 7 cells, alt-any-hits 6 cells), and every sweep cell at
+  k = 1..28. Zero AFTER-MISMATCH lines in either run (grep -c = 0).
+
+CONSEQUENCE: NOTHING MOVES -- no :measured? flag value, no :shapes
+value, no workgroup row, no selection answer; :arm/:unknown stay
+provisional :measured? false; the SUBGROUP producer (ADR-0371) still
+does not exist, no live wire feeds this. This row removes the
+many-field frame wrong-refusal class (a hypothetical key with 32+
+'|'-fields answered a trap, no fact, where the host arm answers the
+fact) and adds no measurement claim.
+
+STATES:
+- IMPLEMENTED (code + tests): alt-field?/alt-any-hits each ONE
+  loop/recur (the self-call deleted from each body; signatures and
+  callers unchanged). Tests, inside the two existing deftests (gate
+  test COUNT +0): the key-arm test's "the '|'-field walks are ONE loop
+  each, not a self-call" block (source pins: exactly one (loop [ and
+  one (recur per body, ZERO self-calls, the (+ j 1) advance kept, one
+  alt-end per boundary kept) and "many-field keys resolve within the
+  budget, host-equal" block (40/128-field za and em cells, the BEFORE
+  trap-gone cells at k >= 32, == HOST) -- plus the test prose of the
+  key-arm and device-from-info tests brought to the new state (the
+  O(FIELDS) residual CLOSED, the FUEL residual named).
+- DECIDED (contracts unchanged): the field-walk verdicts are exact and
+  total; the walk shape is a cost detail.
+- MEASURED: the go/no-go ground + the two byte-identical probe runs.
+- ACCEPTED DESIGN ONLY (unchanged): ADR-0355's table rules, ADR-0358's
+  key, ADR-0362's subgroup contract, the claim protocol.
+- UNMEASURED, named: the fuel residual's exact boundary cells (the
+  sweep's k = 256/320/512 brackets are measured; the precise field
+  counts between are not), the loop helper's own state-dependent
+  boundary (the sg-ops-walk precedent), trap spellings beyond these
+  runs, the digit taxonomy probe set, every workgroup-row question
+  (:arm/:unknown stay provisional :measured? false), anything off this
+  host.
+
+GATES (real runs):
+- Scoped GPU gate (8 GPU-owned namespaces, scratch runner
+  gpu_scoped_gate.cljk):
+    kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+      /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+  -> run 1 GREEN and run 2 GREEN, identical:
+     Ran 122 tests containing 12075 assertions. 0 failures, 0 errors.
+     scoped: 122 tests, 12075 passed, 0 failed, 0 errors
+     (the previous code row's gate: 122 tests / 12060 assertions;
+     delta = +0 tests / +15 assertions). glslang 16.6.0 real-spawn ran
+     (both run logs).
+  NAMED, NOT HIDDEN: gate ATTEMPT 1 failed at analysis on my own new
+  test code's paren error (the four re-seq pins closed their (is ...)
+  one paren early, floating the message strings and closing the test's
+  enclosing `let` before the next block -- "Unable to resolve symbol:
+  src"); fixed before any GREEN run. The attempt-1 log was overwritten
+  at its path by the green re-run (named, not hidden); no claim here
+  rests on it.
+- BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head
+  (checked at tick start and re-checked before the push).
+- FULL run-tests.cljk re-verify (the SOUL.md gate), live this tick:
+  RED AT BASE 'Could not find namespace: kotoba.form' (ADR-0362),
+  outside this diff (scratch/w3_altloop_fullsuite.log) -- NO green
+  full suite claimed. gpu_regime_classify.py --self-test NOT re-run
+  this tick (no classify code touched; standing pin 2649/0).
+- NAMED, NOT HIDDEN: kbb prints "2 dep(s) are not :local/root ..." on
+  every run -- identical everywhere, unrelated to this diff. The
+  worktree also carries an untracked deps.edn (present at tick start;
+  this row did not create or touch it, and it is not committed).
+  find docs -name '*.sh' -> 0 (this row's evidence is .txt).

@@ -1,0 +1,25 @@
+;; tools/b2/tests/image_helpers.kotoba -- helpers of the --format b2 image tests (scripts/seed/check-b2-image.py).
+;; They use the kxrt-b- API directly, so the tests do not depend on the loader's base (tools/b2/00-base.kotoba).
+(defn- put-str [a :i64 s :string] :i64
+  (let [n (string-length s)
+        z (loop [i 0] (if (= i n) 0 (let [w (kxrt-b-store8 (+ a i) (string-code-point-at s i))] (recur (inc i)))))]
+    n))
+(defn- dec-len [v :i64] :i64 (if (< v 10) 1 (inc (dec-len (quot v 10)))))
+(defn- put-dec [a :i64 v :i64] :i64
+  (if (< v 0)
+    (let [w (kxrt-b-store8 a 45)] (inc (put-dec (inc a) (- 0 v))))
+    (let [n (dec-len v)
+          z (loop [i (dec n) x v] (if (< i 0) 0 (let [w (kxrt-b-store8 (+ a i) (+ 48 (- x (* 10 (quot x 10)))))] (recur (dec i) (quot x 10)))))]
+      n)))
+(defn- say [s :string] :i64
+  (let [m (kxrt-b-alloc 4096) n (put-str m s) z (kxrt-b-store8 (+ m n) 10) w (kxrt-b-syscall 1 1 m (inc n) 0 0 0)] n))
+(defn- say-int [v :i64] :i64
+  (let [m (kxrt-b-alloc 4096) n (put-dec m v) z (kxrt-b-store8 (+ m n) 10) w (kxrt-b-syscall 1 1 m (inc n) 0 0 0)] n))
+(defn- hexv [c :i64] :i64 (if (< c 58) (- c 48) (- c 87)))
+;; hex text -> bytes at a; returns the byte count
+(defn- put-hex [a :i64 s :string] :i64
+  (let [n (quot (string-length s) 2)
+        z (loop [i 0] (if (= i n) 0
+            (let [w (kxrt-b-store8 (+ a i) (+ (* 16 (hexv (string-code-point-at s (* 2 i)))) (hexv (string-code-point-at s (inc (* 2 i))))))]
+              (recur (inc i)))))]
+    n))

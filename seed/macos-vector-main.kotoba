@@ -1,0 +1,12 @@
+;; Exercise zero-filled vector allocation, count, affine store and indexed read.
+(ns seed.macos-vector-main (:export [main]))
+
+(defn main [] :i64
+  (let [empty (vector-alloc 0)
+        initial (vector-alloc 2)
+        written (vector-assoc! initial 0 41)]
+    (if (and (= (vector-count empty) 0)
+             (= (vector-count written) 2)
+             (= (vector-at written 0) 41)
+             (= (vector-at written 1) 0))
+      42 1)))

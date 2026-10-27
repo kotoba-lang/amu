@@ -1,0 +1,111 @@
+JUN-59 subgroup 16-vs-32 FLOOR-LIFTING rerun (batch64, INSTRUMENT channel) -- publication
+PRODUCED ONLY by analysis.py over run-1.txt / run-2.txt / run-3.txt (the committed logs; nothing hand-entered).
+protocol.txt is the pre-registration; its P1b/P2b/P3b/P4b letters and the floor-lift success condition adjudicate below.
+
+1. RUN IDENTITY (verified programmatically):
+   3 fresh processes, INSTRUMENT-EXIT=0 3/3, stderr 0 bytes 3/3 (run-N.stderr.txt, sha256 e3b0c442... = empty).
+   Headers byte-identical across runs; verbatim:
+     # instrument=anv-subgroupsize-batch v2-batch64 (JUN-59 subgroup 16-vs-32 floor-lifting rerun, 2026-10-27)
+     # device_name=Intel(R) Graphics (BMG G31) vendor=8086 device=e223 api=1.4.318
+     # maxComputeWorkGroupSize=1024,1024,1024
+     # subgroupSize=32 subgroupStages=00003fff subgroupOps=000006ff
+     # subgroupSizeControl: feature=1 computeFullSubgroups=1 min=16 max=32 requiredStages=000000e0
+     # timestampPeriod=52.083 timestampComputeAndGraphics=1
+     # n=1000003 rounds=25 warmup=3 batch=64 seed=20261027 metric=gpu_ns (vkCmdWriteTimestamp BATCH-dispatch bracket; per_dispatch_ns=gpu_ns/batch) +host_ns (CLOCK_MONOTONIC submit->completion)
+     # done cells=24
+   Structure: 24 CELL + 450 SAMPLE (18 pipeline-ok cells x 25 rounds) + 24 VERIFY per log; every SAMPLE carries batch=64 and gpu_ticks>0.
+
+2. P2b (forcing reality):
+   54/54 measured cell-runs: probe gl_SubgroupSize EXACTLY the forced size at forced cells (16/32), EXACTLY 32 at default cells; gl_NumSubgroups x gl_SubgroupSize == W at every cell.
+   P2b HOLDS 54/54 (18 cells x 3 runs). No voids.
+
+3. P3b (correctness):
+   mismatch=0 at every measured cell of every run (316440 workgroup results verified in total across runs, bit-exact CPU integer reference). P3b HOLDS.
+
+4. FLOOR-LIFT SUCCESS CONDITION (pre-registered): pooled median bracket gpu_ticks >= 248 (= 8 x session 1's 31-tick floor) at every measured cell.
+   cell (op,W,S)            n        median     verdict
+   max,128,16               75       277066 ticks LIFTED
+   max,128,32               75       276100 ticks LIFTED
+   max,128,default          75       276861 ticks LIFTED
+   max,256,16               75       230878 ticks LIFTED
+   max,256,32               75       229479 ticks LIFTED
+   max,256,default          75       229286 ticks LIFTED
+   min,128,16               75       277286 ticks LIFTED
+   min,128,32               75       276798 ticks LIFTED
+   min,128,default          75       277121 ticks LIFTED
+   min,256,16               75       230649 ticks LIFTED
+   min,256,32               75       229386 ticks LIFTED
+   min,256,default          75       229257 ticks LIFTED
+   sum,128,16               75       276390 ticks LIFTED
+   sum,128,32               75       277097 ticks LIFTED
+   sum,128,default          75       276109 ticks LIFTED
+   sum,256,16               75       230698 ticks LIFTED
+   sum,256,32               75       229440 ticks LIFTED
+   sum,256,default          75       229293 ticks LIFTED
+   FLOOR LIFTED at every measured cell: the brackets are dominated by dispatch work (median >= 8x the single-dispatch floor), per-dispatch quantum = 0.81 ns.
+
+5. TIMING (per (op, W, S); medians over raw gpu_ticks; pooled = 75 samples = 3 runs x 25 rounds):
+   cell (op,W,S)          per-run medians (ticks)  pooled median              min..max bracket ticks
+   max,128,16             273865/277793/278838     277066 ticks (14430428.5 ns bracket, 225475.44 ns/dispatch) 266749..281377
+   max,128,32             276364/273817/276499     276100 ticks (14380116.3 ns bracket, 224689.32 ns/dispatch) 266331..279222
+   max,128,default        277149/276845/276861     276861 ticks (14419751.5 ns bracket, 225308.62 ns/dispatch) 266794..281024
+   max,256,16             230878/230811/231044     230878 ticks (12024818.9 ns bracket, 187887.79 ns/dispatch) 226459..232295
+   max,256,32             229625/229623/229353     229479 ticks (11951954.8 ns bracket, 186749.29 ns/dispatch) 226335..232658
+   max,256,default        229207/228936/229430     229286 ticks (11941902.7 ns bracket, 186592.23 ns/dispatch) 225983..231871
+   min,128,16             278265/275905/278410     277286 ticks (14441886.7 ns bracket, 225654.48 ns/dispatch) 265814..281042
+   min,128,32             278115/274436/277103     276798 ticks (14416470.2 ns bracket, 225257.35 ns/dispatch) 266559..282175
+   min,128,default        278124/275952/277257     277121 ticks (14433293.0 ns bracket, 225520.20 ns/dispatch) 267061..279077
+   min,256,16             231043/230475/230600     230649 ticks (12012891.9 ns bracket, 187701.44 ns/dispatch) 226738..232640
+   min,256,32             229541/229323/229416     229386 ticks (11947111.0 ns bracket, 186673.61 ns/dispatch) 226388..230809
+   min,256,default        229254/228805/229545     229257 ticks (11940392.3 ns bracket, 186568.63 ns/dispatch) 226250..235413
+   sum,128,16             274269/277344/278627     276390 ticks (14395220.4 ns bracket, 224925.32 ns/dispatch) 266105..281124
+   sum,128,32             277691/276301/276241     277097 ticks (14432043.1 ns bracket, 225500.67 ns/dispatch) 266740..279906
+   sum,128,default        275461/276109/276238     276109 ticks (14380585.0 ns bracket, 224696.64 ns/dispatch) 266588..279709
+   sum,256,16             230762/230670/230540     230698 ticks (12015443.9 ns bracket, 187741.31 ns/dispatch) 225601..232803
+   sum,256,32             229572/229193/229233     229440 ticks (11949923.5 ns bracket, 186717.55 ns/dispatch) 226765..231213
+   sum,256,default        229498/229196/229461     229293 ticks (11942267.3 ns bracket, 186597.93 ns/dispatch) 226370..231454
+
+6. P1b (barrier-count design reasoning, above the floor): at fixed (op, W), S=32's pooled median per-dispatch strictly below S=16's. S=8 has no timing (fail-closed, minSubgroupSize=16) -- its half is NOT EVALUABLE, named.
+   (sum, W=128): S=16 276390 ticks (14395220.4 ns bracket, 224925.32 ns/dispatch) | S=32 277097 ticks (14432043.1 ns bracket, 225500.67 ns/dispatch) | default(=32) 276109 ticks (14380585.0 ns bracket, 224696.64 ns/dispatch)
+      -> REFUTED at this cell: REVERSED (S=16 faster by 707 ticks = 575.35 ns/dispatch)
+   (sum, W=256): S=16 230698 ticks (12015443.9 ns bracket, 187741.31 ns/dispatch) | S=32 229440 ticks (11949923.5 ns bracket, 186717.55 ns/dispatch) | default(=32) 229293 ticks (11942267.3 ns bracket, 186597.93 ns/dispatch)
+      -> HOLDS (S=32 faster by 1258 ticks = 1023.76 ns/dispatch)
+   (max, W=128): S=16 277066 ticks (14430428.5 ns bracket, 225475.44 ns/dispatch) | S=32 276100 ticks (14380116.3 ns bracket, 224689.32 ns/dispatch) | default(=32) 276861 ticks (14419751.5 ns bracket, 225308.62 ns/dispatch)
+      -> HOLDS (S=32 faster by 966 ticks = 786.13 ns/dispatch)
+   (max, W=256): S=16 230878 ticks (12024818.9 ns bracket, 187887.79 ns/dispatch) | S=32 229479 ticks (11951954.8 ns bracket, 186749.29 ns/dispatch) | default(=32) 229286 ticks (11941902.7 ns bracket, 186592.23 ns/dispatch)
+      -> HOLDS (S=32 faster by 1399 ticks = 1138.50 ns/dispatch)
+   (min, W=128): S=16 277286 ticks (14441886.7 ns bracket, 225654.48 ns/dispatch) | S=32 276798 ticks (14416470.2 ns bracket, 225257.35 ns/dispatch) | default(=32) 277121 ticks (14433293.0 ns bracket, 225520.20 ns/dispatch)
+      -> HOLDS (S=32 faster by 488 ticks = 397.13 ns/dispatch)
+   (min, W=256): S=16 230649 ticks (12012891.9 ns bracket, 187701.44 ns/dispatch) | S=32 229386 ticks (11947111.0 ns bracket, 186673.61 ns/dispatch) | default(=32) 229257 ticks (11940392.3 ns bracket, 186568.63 ns/dispatch)
+      -> HOLDS (S=32 faster by 1263 ticks = 1027.83 ns/dispatch)
+   P1b HOLDS at 5 of 6 (op, W) cells; REFUTED at 1 (named above).
+
+6b. PER-RUN SIGNS of (S=32 vs S=16) at each (op, W) -- derived from the same logs; a pooled-median verdict whose per-run signs disagree is NAMED as run-sensitive, not reported as stable:
+   (sum, W=128): S16faster(+3422) / S32faster(+1043) / S32faster(+2386) -> RUN-SENSITIVE (sign disagrees across runs)
+   (sum, W=256): S32faster(+1190) / S32faster(+1477) / S32faster(+1307) -> CONSISTENT (S=32 faster in all 3 runs)
+   (max, W=128): S16faster(+2499) / S32faster(+3976) / S32faster(+2339) -> RUN-SENSITIVE (sign disagrees across runs)
+   (max, W=256): S32faster(+1253) / S32faster(+1188) / S32faster(+1691) -> CONSISTENT (S=32 faster in all 3 runs)
+   (min, W=128): S32faster(+150) / S32faster(+1469) / S32faster(+1307) -> CONSISTENT (S=32 faster in all 3 runs)
+   (min, W=256): S32faster(+1502) / S32faster(+1152) / S32faster(+1184) -> CONSISTENT (S=32 faster in all 3 runs)
+
+7. P4b (cross-run order of pooled per-cell medians by S at fixed (op, W)):
+   (sum, W=128): DIFFERS order 16,default,32 / default,32,16 / default,32,16
+   (sum, W=256): DIFFERS order default,32,16 / 32,default,16 / 32,default,16
+   (max, W=128): DIFFERS order 16,32,default / 32,default,16 / 32,default,16
+   (max, W=256): DIFFERS order default,32,16 / default,32,16 / 32,default,16
+   (min, W=128): DIFFERS order 32,default,16 / 32,16,default / 32,default,16
+   (min, W=256): DIFFERS order default,32,16 / default,32,16 / 32,default,16
+   P4b: IDENTICAL at 0 of 6 cells; DIFFERS at 6 (any difference is tie-degenerate session-variability at its letter, not hidden).
+
+8. CROSS-RUN / CROSS-SESSION OBSERVATIONS (named, cause UNMEASURED):
+   run-1.txt: max bracket gpu_ticks = 281427 (14657562.4 ns bracket)
+   run-2.txt: max bracket gpu_ticks = 281377 (14654958.3 ns bracket)
+   run-3.txt: max bracket gpu_ticks = 282175 (14696520.5 ns bracket)
+   - CROSS-SESSION (derived arithmetic over the two sessions' committed logs): the batched bracket's per-dispatch steady-state figure here (186569..225654 ns/dispatch across pooled medians, section 5) is ~116-140x session 1's single-dispatch bracket median (1614.6 ns). Session 1's single-dispatch bracket therefore did NOT capture dispatch work -- what it did capture is UNMEASURED (the mechanism of the discrepancy is named UNMEASURED; both sessions' logs stand as taken). Every S=16-vs-32 comparison in THIS publication is internal to this session's one bracket route and is unaffected by the discrepancy.
+   - run-1's W=128 S=16 medians sit ~3-4k ticks below runs 2/3's (section 6b shows the sign flips); OBSERVED ONLY, cause UNMEASURED (a first-process effect was named in session 1 too).
+   - host_ns is recorded in the logs beside gpu_ns and is never mixed with it; no host_ns claim is made here.
+
+9. WHAT THIS PUBLICATION DOES NOT SAY (named):
+   - No workgroup row moves. Rule 4 binds in full: no :measured? flag, no :size/:shapes, no selection answer moves (the :intel row 128 / :measured? true / key "g31" keeps its ADR-0358 provenance; :arm/:unknown stay provisional :measured? false).
+   - This is the INSTRUMENT channel, NOT the accelerator-subgroup-reduce.cljk baseline-vs-variant contract; no vendor optimization exists for Intel and none is claimed.
+   - UNMEASURED: isolated single-dispatch timing above any floor (this session measures batched steady-state throughput only), every W outside {128,256}, shape 2, any baseline-vs-variant sign, cross-day replication, anything off this host, S=8 timing (not realizable on this device).

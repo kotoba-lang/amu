@@ -1,0 +1,111 @@
+JUN-59 session 12 -- WORK-DOWN LOCALIZER at fixed B=8 (the NDIV knob), publication
+Produced ONLY by analysis-s12.py over the 15 committed run logs in this
+directory (run-<tag>-r<R>.txt); protocol.txt was frozen before the
+first run. Arms = binary compile-time (BATCH, NDIV); all arms run the
+same a-set manifest (the ARCHIVED measured spv, 16-digest corpus -- NO
+shader derivation this session). The instrument is session 8's
+committed snapshot + the 3-hunk NDIV edit (inverse check -> snapshot
+bytes EXACT -- derivation-census.txt).
+1 nominal work unit = one dispatch of the archived grid (n = 1,000,003);
+an arm at B with NDIV=D runs B dispatches of a 1/D grid (integer floor
+n -- protocol L2) = B * n / 1,000,003 total nominal units (a DEFINITION,
+not a cost claim -- protocol L1). 1 tick = timestampPeriod = 52.083 ns.
+
+1. INTEGRITY (computed over the 15 logs):
+   runs parsed: 15 (5 arms x 3 runs); cell map identical across runs: True
+   headers byte-identical across all runs outside the # n= knob line: True
+   header batch=/work_mul=/ndiv= == run's (B,1,NDIV), barrier_n=0, n=floor(1,000,003/NDIV); every SAMPLE batch=/work_mul=/ndiv= == (B,1,NDIV): True
+   every CELL spv= name is an archived .emitted.spv (no .iter -- the corpus is byte-identical this session): True
+   SAMPLE lines: 450 per run (18 ok cells x 25 rounds) in 15/15 runs: True
+   VERIFY mismatch total over all runs: 0 (per-arm: c2=0, c8=0, d8=0, d256=0, d4096=0) -- bit-exact correctness re-check inside every run; frozen INVALIDATION criterion (protocol section 5): >0 in any run makes that run's NDIV derivation DEFECTIVE and the arm INVALID
+   forcing reality (pipeline-ok cell-runs where probe_size==forced and probe_nsub==wg/forced): 270/270
+   S=8 cells fail-closed (pipeline=FAIL, forced=8): 90 cell-runs (6 per run x 15 runs = 90 expected)
+
+2. THE MEASURED BRACKETS (pooled median gpu_ticks over 3 runs x 25 rounds per cell):
+   each row: (sum,128,S=16) exact value, per-run median band at that cell,
+   then min..max over the 18 pipeline-ok cells; host_ns at (sum,128,S=16)
+
+   arm    B  NDIV     n        nominal-tot  (sum,128,16)   run-median band    min..max over 18 cells   host_ns
+   c2  2  1      1000003     2.00000          31           31..32              31..32           680018
+   c8  8  1      1000003     8.00000       32669        32591..32781        25167..32791       2522985
+   d8  8  8       125000     1.00000        5465         5438..5520          3705..5487         607422
+   d256  8  256       3906     0.03125          34           33..34              33..68            80501
+   d4096  8  4096       244     0.00195          34           33..34              33..34            70401
+
+3. PRE-REGISTERED LETTERS (thresholds frozen in protocol.txt section 3:
+   FLOOR <= 100 ticks at all 18 cells; CAPTURED >= 1000 ticks at all 18;
+   anything else INTERMEDIATE/MIXED):
+
+   class c2 (B=2, NDIV=1, n=1000003, 2.00000 nominal units): FLOOR
+   class c8 (B=8, NDIV=1, n=1000003, 8.00000 nominal units): CAPTURED
+   class d8 (B=8, NDIV=8, n=125000, 1.00000 nominal units): CAPTURED
+   class d256 (B=8, NDIV=256, n=3906, 0.03125 nominal units): FLOOR
+   class d4096 (B=8, NDIV=4096, n=244, 0.00195 nominal units): FLOOR
+
+   C1 ARCHIVED CONTROL REPLICATION (numeric agreement with the committed
+   value at the control's OWN (B,NDIV) -- the a-set runs the ARCHIVED
+   spv bytes and NDIV=1 reproduces the archived N_ELEMENTS arithmetic
+   exactly (protocol section 1), so this pins the derivation edit to
+   archived behaviour as well as the environment):
+     c2 satisfies FLOOR (committed floor band 31..32 at B=2): True
+     c8 (sum,128,16) pooled median 32669 within +/-5% of committed 32915 (session 4 pooled median): True
+     VERDICT: branch (a) both controls satisfy their criteria --
+     W1-W3 are evaluated against the row question.
+
+   W1 THE ROW QUESTION (capture removability at B=8 by work-down; the
+   class of d8 -- 8 dispatches of n=125,000 = 1.0 total nominal unit,
+   HALF the c2 control's 2.0 total units which FLOOR):
+     VERDICT: branch (a) -- d8 is CAPTURED: the capture at B=8 is NOT
+     REMOVABLE at 1/8 per-dispatch work. With sessions 8-11 (work UP
+     at B<=2, never reaching the capture) the capture is not a
+     total-work threshold from EITHER direction; dispatch count stays
+     implicated in the strong sense. Observable only; NO causal
+     mechanism claimed or measured.
+
+   W2 WORK-DOWN DOSE CURVE (descriptive, at B=8): classes and bracket
+   figures as per-dispatch work shrinks; the linear-work expectation
+   (bracket ~ c8/NDIV) is a descriptive comparison ONLY -- NO
+   linearity claim, no interpolation:
+     d8: class CAPTURED, bracket 5465 ticks (c8/8 = 4084 ticks if linear in work); host_ns 607422
+     d256: class FLOOR, bracket 34 ticks (c8/256 = 128 ticks if linear in work); host_ns 80501
+     d4096: class FLOOR, bracket 34 ticks (c8/4096 = 8 ticks if linear in work); host_ns 70401
+
+   W3 TOTAL-WORK PARITY (descriptive): d8 (1.0 total nominal unit, 8
+   dispatches) vs c2 (2.0 total units, 2 dispatches):
+     d8 bracket 5465 ticks / c2 bracket 31 ticks = 176.290
+     classes: d8 CAPTURED vs c2 FLOOR -- observable split only; NO mechanism claimed.
+
+   X1 REALIZATION (descriptive, computed from section 2's host_ns values,
+   NO new measurement and NO linearity claim; host_ns is the HOST-side
+   proxy -- protocol L3):
+     c2: host_ns 680018 = 1.000x c2; per-dispatch host_ns 340009
+     c8: host_ns 2522985 = 3.710x c2; per-dispatch host_ns 315373
+     d8: host_ns 607422 = 0.893x c2; per-dispatch host_ns 75928
+     d256: host_ns 80501 = 0.118x c2; per-dispatch host_ns 10063
+     d4096: host_ns 70401 = 0.104x c2; per-dispatch host_ns 8800
+
+4. DERIVED (arithmetic over section 2, no new measurement):
+   c2: bracket 31 ticks = 1.61 us; host_ns 680018; 2.00000 nominal units (n=1000003); vs committed 31 (sessions 1-11 floor band 31..32): +0.00%
+   c8: bracket 32669 ticks = 1701.50 us; host_ns 2522985; 8.00000 nominal units (n=1000003); vs committed 32915 (session 4 pooled median): -0.75%
+   d8: bracket 5465 ticks = 284.63 us; host_ns 607422; 1.00000 nominal units (n=125000) (no committed anchor at this NDIV -- new)
+   d256: bracket 34 ticks = 1.77 us; host_ns 80501; 0.03125 nominal units (n=3906) (no committed anchor at this NDIV -- new)
+   d4096: bracket 34 ticks = 1.77 us; host_ns 70401; 0.00195 nominal units (n=244) (no committed anchor at this NDIV -- new)
+
+5. RULE 4 -- NOTHING MOVES: no workgroup row, no :measured? flag, no selection
+   answer; accelerator-targets defaults remain provisional design assumptions
+   (:measured? false). This is NOT the baseline-vs-variant contract of
+   accelerator-subgroup-reduce.cljk. NO vendor optimization exists for Intel
+   and none is claimed. No causal mechanism is claimed by any letter above.
+
+6. UNMEASURED (named): any causal mechanism for the undercount, the capture,
+   the onset location, or any work-down transition; WHY capture turns on where
+   it does; the GPU-side cost inside a B<=2 bracket (unobservable on this
+   instrument -- protocol L3); any NDIV outside {1,8,256,4096}; any B outside
+   {2,8}; any WORK_MUL > 1 this session; any n outside the four protocol-L2
+   values; anything between the four grid points; session 2's run-1 dip cause;
+   the L4 ambiguity AT d4096 (n=244): its FLOOR cannot be separated
+   between the undercount phenomenon and plain timestamp resolution at
+   near-empty grids on this instrument (protocol L4) -- named, not hidden;
+   cross-day replication; S=8 timing; every W outside {128,256}; shape 2; BT
+   ordering; any baseline-vs-variant sign; non-empty barriers; anything off
+   this host.

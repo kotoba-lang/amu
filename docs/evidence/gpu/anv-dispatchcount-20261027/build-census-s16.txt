@@ -1,0 +1,47 @@
+== JUN-59 session 16 build census (THE DISPATCH-COUNT LADDER) ==
+Build window (host timeline): builds ran after the verify GO
+(2026-10-27T16:26:58Z) and before the first run (run-window.txt:
+16:27:24Z).
+== host ==
+aiueos-6600hs (aiueos-6600hs-1, tailscale 100.98.24.37), user murakumo-ci
+(groups include render). Workdir ~/anv-dispatchcount-20261027, runs
+cwd=shaders/ (manifest passed as ../cases-s16-a.txt; binaries
+../anv-fb-<tag>).
+== toolchains (captured this session, 2026-10-27T16:30:20Z) ==
+gcc: gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+(glslangValidator NOT used this session -- ZERO derivation; the corpus
+spv are the archived byte-verified artifacts and the instrument is
+session 15's committed source byte-identical.)
+== binary compiles: gcc -O2 -DBATCH=<B> -DNDIV=1 -o anv-fb-<tag>
+== gpu-subgroup-reduce-anv-ndiv.c -lvulkan  (7 arms, one binary each) ==
+build c2 (BATCH=2 NDIV=1) rc=0 @2026-10-27T16:27:09Z
+build b3 (BATCH=3 NDIV=1) rc=0 @2026-10-27T16:27:09Z
+build b4 (BATCH=4 NDIV=1) rc=0 @2026-10-27T16:27:10Z
+build b5 (BATCH=5 NDIV=1) rc=0 @2026-10-27T16:27:10Z
+build b6 (BATCH=6 NDIV=1) rc=0 @2026-10-27T16:27:10Z
+build b7 (BATCH=7 NDIV=1) rc=0 @2026-10-27T16:27:10Z
+build c8 (BATCH=8 NDIV=1) rc=0 @2026-10-27T16:27:10Z
+e5ed903e5b9dfd64168e2d8ddea9d8efb573273e7594afcaca71f3f70bb9c489  anv-fb-c2
+9eb25818deeb13f3eca827c33dbb7f983c4b89311020c2ab5e52b1010c52c6dc  anv-fb-b3
+d716b9c7c1a78f543fcbe894abc721ff4cbd11847eb1bcd45d6b8913107046bb  anv-fb-b4
+9c104365024ebcc2d3f06e83b3cea5fd54a4cc7e8a0235e239eae22d49eaaac2  anv-fb-b5
+c2ec2489ca86b708ecea9a5237230fa707902e47b7ffd30c0fcd2ad122f752f9  anv-fb-b6
+e557d68e413ab2b57ab0d539c374e004475413e0f2a595482c44e8de31d45d87  anv-fb-b7
+480925e58d28e7d318456703c6959548e9b9c33e375c3e0fefe688e844d37807  anv-fb-c8
+== source digest re-check at build time (host): ==
+a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556  gpu-subgroup-reduce-anv-ndiv.c
+== build stderr: 0 bytes all 7 (build-<tag>.err, host wc -c) ==
+== BUILD REPLICATION PIN (declared in protocol section 2) ==
+session-15 committed build census parsed programmatically (never
+transcribed).
+BYTE-IDENTICAL: anv-fb-c2 e5ed903e5b9dfd64... == session-15 anv-fb-c2 e5ed903e5b9dfd64... -> True
+BYTE-IDENTICAL: anv-fb-c8 480925e58d28e7d3... == session-15 anv-fb-c8 480925e58d28e7d3... -> True
+NEW KNOB VALUE: anv-fb-b3 9eb25818deeb13f3... (no session-15 binary at BATCH=3 -- NO byte-identity pin applies; named, not hidden)
+NEW KNOB VALUE: anv-fb-b4 d716b9c7c1a78f54... (no session-15 binary at BATCH=4 -- NO byte-identity pin applies; named, not hidden)
+NEW KNOB VALUE: anv-fb-b5 9c104365024ebcc2... (no session-15 binary at BATCH=5 -- NO byte-identity pin applies; named, not hidden)
+NEW KNOB VALUE: anv-fb-b6 c2ec2489ca86b708... (no session-15 binary at BATCH=6 -- NO byte-identity pin applies; named, not hidden)
+NEW KNOB VALUE: anv-fb-b7 e557d68e413ab2b5... (no session-15 binary at BATCH=7 -- NO byte-identity pin applies; named, not hidden)
+== 2/2 pins hold (c2/c8 byte-identical to session 15's same-flag ==
+== binaries); b3..b7 are NEW knob values and carry no pin by design ==
+== (their custody is the byte-identical source + the compile flags + ==
+== C1's numeric control replication). ==

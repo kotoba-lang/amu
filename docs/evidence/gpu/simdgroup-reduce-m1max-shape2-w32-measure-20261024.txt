@@ -1,0 +1,167 @@
+JUN-58 / JUN-55 -- the shape-2 W = 32 :simdgroup-reduce cell is
+MEASURED (2026-10-24, the shape-2 series' sixth and last cell)
+
+ONE measurement: ADR-0373's :simdgroup-reduce row runs at the LAST
+unmeasured shape-2 cell -- n = 2^20 = 1,048,576 at W = 32, this host
+(Apple M1 Max, reported simdgroup size 32), the same conforming channel
+(ADR-0360 question (1)'s native-Metal harness family, the emitters'
+own bytes) and the byte-identical protocol of every earlier cell of
+this variant (6 fresh processes, 20 interleaved AB/BA pairs per
+operator per run, 2 warmup submits per arm discarded, verified
+read-back). The driver is invoked exactly as the shape-2 records name,
+only --workgroup 32 and its own --out:
+
+  python3 scripts/gpu-subgroup-reduce-metal-measure.py \
+    --runs 6 --workgroup 32 --elements 1048576 \
+    --variant simdgroup-reduce \
+    --out docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w32
+
+(--op-order omitted: the driver's default IS the fixed sum,max,min
+order every earlier shape-2 cell used; run-log.txt records
+op_order=sum,max,min.) Full record:
+docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w32/
+{summary.md,run-log.txt,compile-log.txt,shaders/}. Every other
+shape-2 cell (w256 anchor, w512, w1024, w128, w64), the six W-sweep
+records and every earlier record are untouched.
+
+S = 32 divides W = 32 exactly -- one SIMD-group per workgroup, the
+partials array has one entry, the cross-SIMD-group tree degenerates to
+the single write (the same note the shape-1 W = 32 record carries).
+The emitted shaders are byte-identical to the shape-1 same-W cell's
+(`diff -r` over the two shaders/ trees is empty, checked this tick):
+the emitted bytes are shape-independent by design and only n changed.
+
+CHANNEL NOTE (real, named, nothing measured moves because of it): the
+origin/main merge at this branch's run-time HEAD (7b8f6488) retired
+the host manifests ("Replace public launchers with the selfhosted
+native product and retire host manifests"; deps.edn deleted, archived
+empty under docs/evidence/legacy-public-entry-20261023/). Verified
+this tick: `kbb -Spath -M:test` at the tree root now FAILS ("kbb: no
+deps.edn ..."), so the SOUL.md gate command as written cannot run at
+HEAD and the driver's emit step died on its first attempt this tick.
+The driver gained a named two-route resolution
+(scripts/gpu-subgroup-reduce-metal-measure.py,
+resolve_test_classpath): route 1 is the historical `kbb -Spath -M:test`
+at the tree root (unchanged for any tree that has a deps.edn);
+route 2 is $AMU_KBB_TEST_CLASSPATH -- the SAME kbb resolution taken
+against the retired deps.edn content (its git-history blob
+materialized outside the tree) and absolutized (249 dependency
+entries, every directory present). The dependency closure (the
+.gitlibs shas) is identical to route 1's; the fallback route is named
+verbatim in compile-log.txt and is never silent; if neither route
+resolves the driver FATALs rather than run thin. The two Maven
+coordinates kbb never resolves (closure-compiler-unshaded,
+tools.reader) are named in the run-log exactly as in every earlier
+cell. The measured channel itself -- engine, emitters, harness,
+protocol -- is otherwise unchanged.
+
+PAIRED MEDIAN RATIOS (:simdgroup-reduce / :baseline gpu ns), W = 32:
+
+  op    shape 2       shape 1, same W        the shape-2 anchor
+        (this cell)   (the W-sweep record)   (W = 256, same shape)
+  sum   0.639         0.657                  0.794
+  max   0.656         0.658                  0.811
+  min   0.659         0.650                  0.812
+
+(the shape-1 same-W column is
+docs/evidence/gpu-simdgroup-reduce-m1max-wsweep-20261023/w32.)
+
+Per-run ratios (6 fresh processes): sum 0.628 0.642 0.631 0.656 0.635
+0.643; max 0.657 0.655 0.656 0.642 0.599 0.665; min 0.642 0.645 0.673
+0.636 0.720 0.716. Median gpu ns (120 samples per arm): sum 114042 ->
+72916; max 113938 -> 73292; min 113708 -> 72375.
+
+FINDING (the record's own claim-protocol machinery, rule 2): this cell
+is REGIME-INVARIANT FASTER -- 18/18 per-run ratios below 1.0, every
+observed regime one-sided, all three operators 6/6. Rule 1 sees ONE
+level for :max (112000..114625) and :sum (113500..116125) but TWO for
+:min (runs 5-6 in a fast level at 91646..92500, runs 1-4 at
+113771..114438) -- the fresh-process clock ramp, present in :min's
+runs only; both :min levels are one-sided faster in the paired ratios
+(0.720 0.716 fast, 0.642 0.645 0.673 0.636 slow). Cross-operator
+level identity is therefore REFUTED (8 of 15 run pairs diverge: min
+splits what max and sum pool) -- the shape-2 series' FOURTH
+identity-refuted cell (anchor W = 256 8/15, W = 512 11/15 plus the
+:min straddle, W = 1024 5/15) against two identity-HOLDS cells
+(W = 128, W = 64). The refutation's shape mirrors the anchor's count
+but through :min alone. Unlike the W = 512 shape-2 cell (rule 2
+REGIME-SCOPED, its flip refused), this cell's rule-2 verdict is
+selection-grade; what the flip contract makes of it is its own next
+slice.
+
+The opposite-sign contrast with `:subgroup-reduce` at the IDENTICAL
+cell (same shape, same W, same host) holds in its family form: the
+shuffle ladder's shape-2 W = 32 record
+(docs/evidence/gpu-subgroup-reduce-m1max-shape2-20261023/w32) measures
+near parity and straddling (0.919/0.921/0.918; per-run max 1.026 and
+min 1.021 1.026 above 1.0) while THIS fold is one-sided faster at
+18/18 (0.639/0.656/0.659). Medians are in family with the shape-1
+same-W record (0.657/0.658/0.650, within ~1.8 ratio points).
+
+Read-back: 36 verify lines (6 per fresh process), ok=1 on every one.
+:max/:min bit-exact vs the CPU reference AND between arms; :sum
+2.15e-06 (baseline) / 1.43e-06 (variant) vs reference, 1.91e-06
+between arms (regrouping; the family's low-bit divergence, consistent
+with every earlier cell).
+
+STATE HONESTY (nothing moves beyond the measurement itself):
+- The measurement exists. The FLIP does not: no :measured? flag, no
+  :measured-cell record, no selection answer moves in this slice. The
+  shape-2 flip of the W = 32 cell through ADR-0373's flip contract is
+  its own next slice. apple-simdgroup-measured-shapes keeps
+  W = 32 [1000003]; this record's shape is not in any flip key yet.
+- With this cell the shape-2 series covers the W band [32, 1024] end
+  to end (w32 w64 w128 w256 w512 w1024 -- the series complete). Shape
+  2 at W = 512 stays measured-but-REFUSED (rule 2 REGIME-SCOPED).
+  Every shape beyond the two named in the flip keys is UNMEASURED
+  everywhere. Cross-day replication of every cell is UNMEASURED. No
+  workgroup row moved.
+- The classpath fallback is IMPLEMENTED (code + test: the driver's
+  self-test block exercises route 2 and the FATAL path). What the gate
+  becomes after the host-manifest retirement (the kbb route's
+  successor) is NOT decided here and NOT proposed here; the SOUL.md
+  gate command as written is broken at HEAD, and that fact is reported
+  rather than papered over.
+- The prose debt named in the W = 64 measure record (the W = 128
+  record's wsweep-low citation) stands, not rewritten here.
+
+GATE (real runs, this host, from the chain worktree root, 2026-10-24,
+run for THIS record):
+
+1. Driver auto-wiring + classpath-resolution self-test:
+     python3 scripts/gpu-subgroup-reduce-metal-measure.py --self-test
+   -> 12 assertions passed, 0 failed. (7 pre-existing auto-wiring
+   assertions plus 5 new this tick: the route-2 fallback, its named
+   log line, the FATAL exit-2 path, the FATAL text, and a live-root
+   non-empty resolution. The count grew with this tick's driver
+   change; no assertion was removed.)
+
+2. Classifier self-test (the gate convention the 2026-10-24 corpus-pin
+   fix slice set: docs/evidence additions ARE read by the harness
+   corpus pins, so every evidence-adding slice runs this):
+     python3 scripts/gpu_regime_classify.py --self-test
+   -> TOTAL: 1469 assertions passed, 0 failed. The new record is
+   ingested and named (gpu-simdgroup-reduce-m1max-shape2-20261024/w32:
+   identity-refuted, 8 divergent pairs; levels max 1, min 2, sum 1);
+   corpus tally 40 multi-operator records -- 13 identity-holds (3 of
+   them multi-level), 27 identity-refuted (27 with refinement
+   structure). NO PIN MOVED and none needed: the tally pins are floors
+   and this record adds no refinement structure.
+
+3. The scoped GPU gate (the GPU-owned test namespaces, scratch runner
+   gpu_scoped_gate.cljk, not in the repo), run anyway (no .cljk in
+   this diff) WITH THE NAMED CLASSPATH SUBSTITUTION -- the SOUL.md
+   form's `$(kbb -Spath -M:test)` subshell fails at HEAD (channel
+   note above), so the resolved closure is substituted inline:
+     kbb --backend sci --classpath "src:test:<resolved closure>" \
+       /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+   -> Ran 101 tests containing 9430 assertions.
+      0 failures, 0 errors.
+      scoped: 101 tests, 9430 passed, 0 failed, 0 errors
+
+4. Full suite (run-tests.cljk), same classpath substitution: RED AT
+   BASE, outside this diff, at namespace load on `kotoba.form`
+   ("Could not find namespace: kotoba.form"; the W3 port path
+   documented red at base in ADR 0362), re-verified live this tick.
+   The run stops at that load; no green full suite is claimed and none
+   is claimed here.

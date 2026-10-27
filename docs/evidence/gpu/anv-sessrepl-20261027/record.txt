@@ -1,0 +1,182 @@
+JUN-59 -- session 15 record: THE SESSION-REPLICATION TRIPLE (third
+same-day session at the boundary anchors). INSTRUMENT channel.
+2026-10-27 (UTC; the tick runs 2026-10-28 JST). Chain PR #1636
+(bot/amu-gpu-chain-20261027-10).
+
+1. ROW QUESTION (ONE observable axis: SESSION IDENTITY at fixed
+   everything -- session 14's named residual "cross-day replication" is
+   NOT reachable this tick: all sessions still share the UTC day
+   2026-10-27 at tick time (protocol L8, named not hidden), so the
+   reachable replication axis is taken. Session 14's headline finding
+   was the SESSION-SENSITIVITY ITSELF, established at TWO same-day
+   sessions ~31 minutes apart; this session is the THIRD point):
+
+     AT BYTE-IDENTICAL SETUP (same instrument source bytes, same
+     manifest bytes, same corpus, same rebuilt-byte-identical
+     binaries), DO THE SESSION-14 ANOMALIES REPRODUCE AT A THIRD
+     SAME-DAY SESSION -- (i) does d256 read INTERMEDIATE/MIXED again
+     (session 14) or FLOOR (session 13)? (ii) does d128 land in
+     session 14's +/-5% band around 192, session 13's around 167, or
+     outside both? (iii) does the d160 spike (bracket ABOVE both
+     neighbours) reproduce?
+
+2. DERIVATION (chain of custody): ZERO derivation edits this session
+   (the strongest custody position in the chain -- named as such). The
+   instrument is session 14's committed NDIV-derived source used
+   BYTE-IDENTICAL (digest a5e539f0..., re-verified local-vs-host); the
+   arms are the SAME seven (BATCH,NDIV) pairs sessions 13-14 already
+   built and ran -- NO new knob value exists this session. The shader
+   corpus is used byte-identical (16-digest corpus). Manifest
+   cases-s15-a.txt = the 24 cell lines a BYTE-COPY of session 14's
+   cases-s14-a.txt cell lines (checked programmatically; byte-equal to
+   session 13's and sessions 9-12's a-set). expected-corpus.sha256
+   regenerated programmatically from session 2's committed census
+   (byte-equal to session 14's file). Knob arithmetic pin (n =
+   1,000,003//NDIV) checked programmatically for all seven arms.
+
+3. CHAIN OF CUSTODY (host-verify-s15.txt): corpus 16/16 MATCH vs
+   session 2's committed census (parsed programmatically, never
+   transcribed; checked host-side via sha256sum -c) + instrument +
+   manifest + census expectation local-vs-host MATCH 3/3 -- GO at
+   2026-10-27T15:54:29Z, BEFORE the builds and ALL runs (TIMELINE in
+   host-verify-s15.txt says so). NAMED, NOT HIDDEN: one pre-freeze
+   compile smoke (2026-10-27T15:54:28Z, throwaway dir ~/anv-sr-smoke,
+   gcc -O2 -DBATCH=8 -DNDIV=160, rc=0, host source digest a5e539f0...
+   MATCH local, ZERO runs -- the session-9 D2 lesson applied by design
+   even though the source is byte-identical to session 14's
+   built-and-run source and no new knob value is introduced). BUILD
+   REPLICATION PIN (declared in the protocol in advance): all seven
+   rebuilt binaries are BYTE-IDENTICAL to session 14's same-flag
+   binaries (build-census-s15.txt; session 14's committed build census
+   parsed programmatically) -- 7/7, so the realization is byte-stable
+   across sessions 13-15 and every session-to-session difference sits
+   in the run environment/host state.
+
+4. HARDWARE RAN (MEASURED): 21 fresh processes (7 arms x 3 runs), run
+   window 2026-10-27T15:55:02Z..2026-10-27T15:55:09Z (per-run host
+   date -u and rc in run-window.txt), rc=0 21/21, stderr 0 bytes
+   21/21, 450 SAMPLE lines + 24 VERIFY lines each; every run's
+   batch=/work_mul=/ndiv=/n= == its arm's (B,1,NDIV,floor(1,000,003/
+   NDIV)); every CELL's spv= is an archived .emitted.spv (byte-identical
+   corpus); forcing reality 378/378; VERIFY mismatch 0 everywhere
+   (per-arm 0x7); S=8 fail-closed 126/126. Host: aiueos-6600hs-1
+   (BMG G31 / ANV), 1 tick = 52.083 ns. Session 13 ran 14:53:30Z..
+   14:53:38Z, session 14 ran 15:24:58Z..15:25:32Z -- this third point
+   sits ~30 minutes after session 14 and ~62 minutes after session 13,
+   ALL THREE on UTC day 2026-10-27.
+
+5. FINDINGS (publication-s15.txt, produced ONLY by analysis-s15.py
+   over the committed run logs, recorded run twice byte-identical --
+   diff exit 0):
+
+   (a) C1 ARCHIVED CONTROL REPLICATION fired branch (a) -- c2 FLOOR
+       (32 ticks, run-median band 31..32), c8 = 32,950 vs committed
+       32,915 (+0.11%), inside the frozen +/-5%. The environment pin
+       holds at the third point.
+
+   (b) C2 CROSS-SESSION ANCHOR PLACEMENT fired the s13 branches at
+       BOTH anchors -- the third point lands EXACTLY ON SESSION 13'S
+       COMMITTED READINGS: d256 branch (a) class FLOOR (pooled median
+       34 ticks = +0.00% of session 13's committed 34) and d128 branch
+       (a) 167 = +0.00% of session 13's committed 167. Session 14's
+       divergence (d128 192, d256 INTERMEDIATE 55) does NOT reproduce
+       at this time point.
+
+   (c) W1 THE ROW QUESTION fired branch (a) S13-LIKE: both anchors
+       join session 13's reading; the session-14 divergence is the
+       OUTLIER at 2 of 3 same-day sessions (sessions 13 and 15 agree
+       at both anchors to +0.00%; session 14 diverged at both). The
+       session-sensitivity finding is CONFIRMED but ASYMMETRIC -- the
+       three-session spread is centered on session 13's reading, and
+       NO causal mechanism is claimed or measured for why session 14
+       diverged. Three same-day sessions bind no distribution; the
+       boundary is NOT narrowed by this session at its letter.
+
+   (d) W2 THE d160 SPIKE REPLICATION fired branch (a) SPIKE
+       REPRODUCES -- d160 (177) sits ABOVE both neighbours (d128 167,
+       d192 56) in this session's runs, the second session to show the
+       non-monotone shape (s14: 285 > 192 and > 84) -- but its
+       MAGNITUDE is session-variable: 285 (s14) -> 177 here (-37.89%,
+       far outside the frozen +/-5% band 270.8..299.2 around s14's
+       285). The spike SHAPE reproduces at 2/2 sessions that ran d160;
+       its height does not. No mechanism claimed.
+
+   (e) W3 (descriptive) THE THREE-SESSION SPREAD -- this session's
+       whole lower ladder sits at or BELOW session 13's class: d192 56
+       (FLOOR), d224 35 (FLOOR), d256 34 (FLOOR), d128 167
+       (INTERMEDIATE/MIXED), d160 177 (INTERMEDIATE/MIXED). At THIS
+       session's classes the ladder is monotone with the FLOOR rungs a
+       suffix (d192 and below), which at these rungs alone would place
+       the FLOOR-class boundary inside (5,208..6,250] -- but NO
+       boundary narrowing is claimed: the class picture of the band is
+       session-variable across the three sessions (s13: FLOOR boundary
+       inside (3,906..7,812]; s14: NO FLOOR rung on the ladder at all;
+       s15: monotone with FLOOR from d192 down), so any FLOOR-boundary
+       reading at B=8 remains session-unsupported. Session-13 has no
+       committed d160/d192/d224 (first measured in s14) -- named, not
+       hidden. NO linearity claim.
+
+   (f) X1 (descriptive realization, host_ns): the bottom rungs' host_ns
+       moved BACK DOWN to session 13's values (d128 80,330 vs s13's
+       80,501 = 1.00x; d256 82,374 vs s13's 82,303 = 1.00x) after
+       session 14's +13%/+48% excursion -- 0.68x..0.88x of session
+       14's same-knob readings -- while c8's host_ns rose to 1.26x of
+       session 14's. Binaries/manifest/corpus/instrument byte-identical
+       (7/7 build pins): the session-to-session movement sits in the
+       run environment/host state, cause UNMEASURED; host_ns is not a
+       C criterion.
+
+   THE FINDING OF THIS TICK, in one line: the third same-day
+   replication point lands exactly on session 13's anchor readings
+   (d128 167, d256 34 FLOOR, both +0.00%) under byte-identical
+   setup -- session 14's divergence is the outlier at 2 of 3 sessions,
+   the d160 spike SHAPE reproduces at 2/2 with session-variable
+   magnitude (285 -> 177), and the class picture of the boundary band
+   differs in all three sessions, so the boundary stays un-narrowed
+   and its class reading is confirmed session-sensitive -- now with a
+   named center (2 of 3 sessions agree at the anchors). Observable
+   only; NO causal mechanism is claimed or measured.
+
+   RULE 4: NOTHING MOVES -- no workgroup row, no :measured? flag, no
+   selection answer; accelerator-targets defaults remain provisional
+   design assumptions (:measured? false); this is NOT the
+   basis-replacing baseline-vs-variant contract of
+   accelerator-subgroup-reduce.cljk; NO vendor optimization exists for
+   Intel and none is claimed.
+
+   UNMEASURED named: any causal mechanism (for the undercount, the
+   capture, the onset, any work-down transition, the descent's shape,
+   the d256 class flip, the d128 movement, the d160 spike, the
+   boundary's existence as a boundary, the session-to-session movement
+   itself, or WHY session 14 diverged); WHY capture turns on where it
+   does; whether the boundary is on n, workgroup count or grid shape
+   (L4); the class boundaries' exact locations; anything between
+   ladder rungs (L5); any NDIV outside {1,128,160,192,224,256}; any B
+   outside {2,8}; any WORK_MUL>1; d8/d32/d64 this session (L7);
+   CROSS-UTC-DAY replication (L8 -- all three sessions share the UTC
+   day); any fourth session; session 2's run-1 dip cause; S=8 timing;
+   every W outside {128,256}; shape 2; BT ordering; any
+   baseline-vs-variant sign; isolated single-dispatch timing;
+   non-empty barriers; anything off this host.
+
+   STATES: emitter arm/dispatch/selection rows IMPLEMENTED (code +
+   tests, unchanged -- this diff touches NO .cljk namespace); the
+   byte-identical instrument reuse + analysis-s15.py validated by
+   complete runs; MEASURED only what publication-s15.txt sections 1-4
+   say.
+
+6. Gates (real runs this tick): gpu_regime_classify.py --self-test
+   TOTAL 2649/0 (pin); scoped GPU gate GREEN 123 tests / 12162
+   assertions / 0 failures / 0 errors run 1 AND run 2 (scratch runner
+   gpu_scoped_gate.cljk, never committed); FULL run-tests.cljk RUN
+   LIVE THIS TICK: exit 1, RED AT BASE 'Could not find namespace:
+   kotoba.form' at namespace load (ADR-0362, outside this diff) -- NO
+   green full suite claimed; find this evidence dir -name '*.sh' -> 0.
+
+7. CHAIN: this commit lands on the ONE open chain branch
+   bot/amu-gpu-chain-20261027-10 (chain PR #1636), commit + push
+   only. BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head
+   at tick start and re-checked immediately before this push.
+
+Evidence: docs/evidence/gpu/anv-sessrepl-20261027/ + the ADR-0355
+dated note. (JUN-55, JUN-59)

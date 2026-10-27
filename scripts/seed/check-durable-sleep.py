@@ -43,8 +43,12 @@ SELFHOST = "seed/X86_64-LINUX-SELFHOST-MANIFEST"
 FUEL = "100000000"
 NO_FSYNC_RULE = [("(kxrt-allow-nr-at p 82) (kxrt-allow-nr-at p 278)", "(kxrt-allow-nr-at p 278)", 1),
                  ("(kxrt-allow-nr-at p 74) (kxrt-allow-nr-at p 318)", "(kxrt-allow-nr-at p 318)", 1)]
-NO_SLEEP_RULE = [("        i8 (if (kxrt-admitted? 7) (kxrt-allow-nr p i7 115) i7)\n", "        i8 i7\n", 1),
-                 ("        i8 (if (kxrt-admitted? 7) (kxrt-allow-nr p i7 230) i7)\n", "        i8 i7\n", 1)]
+# Deny clock_nanosleep while retaining the current restart_syscall rule.
+# A restart allowance alone must not let a fresh sleep escape the filter.
+NO_SLEEP_RULE = [("        i8 (if (kxrt-admitted? 7) (kxrt-allow-nr p (kxrt-allow-nr p i7 115) 128) i7)\n",
+                  "        i8 (if (kxrt-admitted? 7) (kxrt-allow-nr p i7 128) i7)\n", 1),
+                 ("        i8 (if (kxrt-admitted? 7) (kxrt-allow-nr p (kxrt-allow-nr p i7 230) 219) i7)\n",
+                  "        i8 (if (kxrt-admitted? 7) (kxrt-allow-nr p i7 219) i7)\n", 1)]
 
 HEAD = ('(ns t (:export [main]))\n'
         '(defn- fs [s :string] :string (typed-cap-call :fs/app-data :string :string s))\n'
@@ -163,7 +167,8 @@ def main(compiler, output, target, seccomp_if_available=False):
     req = compile_(producer, "sleep-request", SLEEP_REQ, target)
     for name, arg in [("sleep-over-60000", "sleep 60001"), ("sleep-not-decimal", "sleep 1x"), ("sleep-no-number", "sleep ")]:
         case(name, req, clock_env, args=[arg], want_exit=120, stderr_has=[sigill])
-    case("sleep-wire-not-granted", req, {"KEXE_ALLOW": "37,38"}, args=["sleep 1"], want_exit=120, stderr_has=[sigill])
+    case("sleep-wire-not-granted", req, {"KEXE_ALLOW": "37,38"}, args=["sleep 1"], want_exit=120,
+         stderr_has=[sigill, b"KEXE_CAP {:wire 7 :refused :not-granted}\n"])
 
     host = {"aarch64": "aarch64-linux", "arm64": "aarch64-linux", "x86_64": "x86_64-linux", "AMD64": "x86_64-linux"}[platform.machine()]
     text, unity_pins = unity_text()
@@ -180,7 +185,7 @@ def main(compiler, output, target, seccomp_if_available=False):
                   host=[platform.system(), platform.machine(), platform.release()],
                   imageSeccomp="if-available" if seccomp_if_available else "required", cases=rows,
                   controlCompilers={"no-fsync-rule": {"mutation": "no fsync in the scope's seccomp set, in both runtimes", "pin": pin(no_fsync)},
-                                    "no-sleep-rule": {"mutation": "no clock_nanosleep in the seccomp filter, in both runtimes", "pin": pin(no_sleep)}},
+                                    "no-sleep-rule": {"mutation": "no clock_nanosleep; current restart_syscall retained, in both runtimes", "pin": pin(no_sleep)}},
                   unity=unity_pins, cCompilerOrLoader=False,
                   notCovered=["durability across a power cut: fsync returning is what is checked, not the device",
                               "a sleep interrupted by a signal (EINTR resumes it with the remaining time)"]

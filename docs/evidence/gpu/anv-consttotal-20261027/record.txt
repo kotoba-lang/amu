@@ -1,0 +1,206 @@
+JUN-59 -- session 17 record: THE CONSTANT-TOTAL-WORK CROSSING (NDIV=B
+ladder). INSTRUMENT channel.
+2026-10-27 (UTC; the tick runs 2026-10-28 JST). Chain PR #1636
+(bot/amu-gpu-chain-20261027-10).
+
+1. ROW QUESTION (ONE observable axis: TOTAL NOMINAL WORK held constant
+   while the DISPATCH COUNT varies -- session 16's named residual
+   protocol L4 "whether the threshold is on dispatch count or on total
+   work ... needs a design that crosses them" is reachable this tick
+   and is taken; session 15/16's named residual "cross-day replication"
+   is NOT reachable this tick: the UTC day is still 2026-10-27 at tick
+   time (protocol L4, named not hidden)):
+
+     AT CONSTANT TOTAL NOMINAL WORK ~1.0 (B * n ~ 1,000,000 elements
+     inside the bracket; n = 1,000,003//B per arm; B = 2..8), WHAT IS
+     THE CLASS VECTOR over the crossing ladder -- does capture rise
+     with dispatch count (the dispatch-count signature), stay flat
+     (the total-work signature), or fall as per-dispatch work shrinks
+     (the per-dispatch-work/grid signature)?
+
+   The committed series had crossed the axes only partially (session
+   8's equal-total pairs at B=1 vs B=3/8; the work-down ladder at B=8
+   only). This session holds TOTAL work constant across the WHOLE
+   dispatch-count ladder for the first time.
+
+2. DERIVATION (chain of custody): ZERO derivation edits this session
+   (the strongest custody position in the chain -- named as such). The
+   instrument is session 16's committed NDIV-derived source used
+   BYTE-IDENTICAL (digest a5e539f0..., re-verified local-vs-host). The
+   crossing rungs are NEW (BATCH, NDIV=B) pairs of the source's
+   existing knobs (NDIV in {2,3,4,5,6,7} had never been compiled in
+   this series). The shader corpus is used byte-identical (16-digest
+   corpus). Manifest cases-s17-a.txt = the 24 cell lines a BYTE-COPY of
+   session 16's cases-s16-a.txt cell lines (checked programmatically;
+   byte-equal to sessions 9-16's a-set). expected-corpus.sha256 a
+   byte-copy of session 16's committed file. Knob arithmetic pin
+   (n = 1,000,003//NDIV; totals 0.999996..0.999999 on the rungs)
+   checked programmatically (derivation-census.txt).
+
+3. CHAIN OF CUSTODY (host-verify-s17.txt): corpus 16/16 MATCH vs
+   session 2's committed census (checked host-side via sha256sum -c) +
+   instrument + manifest + census expectation local-vs-host MATCH 3/3
+   -- GO at 2026-10-27T16:58:38Z, BEFORE the builds and ALL 27 runs
+   (TIMELINE in host-verify-s17.txt says so). NAMED, NOT HIDDEN: (a)
+   one pre-freeze compile smoke of a NEW knob pair (16:58:30Z,
+   throwaway dir ~/anv-xt-smoke, gcc -O2 -DBATCH=3 -DNDIV=3, rc=0,
+   stderr 0 bytes, host source digest MATCH, zero runs -- the
+   session-9 D2 lesson applied by design); (b) the first custody
+   attempt failed 16/16 on a driver cwd error (sha256sum -c run from
+   inside shaders/ although the census paths are workdir-relative) --
+   named in host-verify-s17.txt, corrected run is the custody check,
+   nothing retried silently. BUILD REPLICATION PIN (declared in the
+   protocol in advance; prior censuses parsed programmatically,
+   s17_pin_check.py output compared 6 census entries): c2 and c8
+   rebuilt binaries BYTE-IDENTICAL to session 16's same-flag binaries
+   and x8 BYTE-IDENTICAL to session 13's committed d8 binary
+   (anv-wt-d8 7cc6ad26...; == session 12's anv-cc-d8 despite the
+   different -o name) -- 3/3; x2..x7 are NEW knob pairs with NO prior
+   binary, so no byte-identity pin applies to them (named, not hidden).
+
+4. HARDWARE RAN (MEASURED): 27 fresh processes (9 arms x 3 runs), run
+   window 2026-10-27T16:58:50Z..2026-10-27T16:58:58Z (per-run host
+   date -u and rc in run-window.txt), rc=0 27/27, stderr 0 bytes
+   27/27, 450 SAMPLE lines + 24 VERIFY lines each; every run's
+   batch=/work_mul=/ndiv=/n= == its arm's (B,1,NDIV,1,000,003//NDIV);
+   every CELL's spv= is an archived .emitted.spv (byte-identical
+   corpus); forcing reality 486/486; VERIFY mismatch 0 everywhere
+   (per-arm 0x9); S=8 fail-closed 162/162. Host: aiueos-6600hs-1
+   (BMG G31 / ANV), 1 tick = 52.083 ns. Session 13 ran
+   14:53:30Z..14:53:38Z, session 14 15:24:58Z..15:25:32Z, session 15
+   15:55:02Z..15:55:09Z, session 16 16:27:24Z..16:27:40Z -- this
+   session sits ~31 minutes after session 16, ALL on UTC day
+   2026-10-27.
+
+5. FINDINGS (publication-s17.txt, produced ONLY by analysis-s17.py
+   over the committed run logs, recorded run twice byte-identical --
+   diff exit 0):
+
+   (a) C1 ARCHIVED CONTROL REPLICATION fired branch (a) -- c2 FLOOR
+       (31 ticks, run-median band 31..32), c8 = 32,868 vs committed
+       32,915 (-0.14%), inside the frozen +/-5%. The environment pin
+       holds.
+
+   (b) C2 WORK-DOWN ANCHOR REPLICATION fired branch (a) -- x8 (the
+       committed d8 knob pair BATCH=8,NDIV=8) = 5,458 vs committed d8
+       5,431 (+0.50%; 5,465 at session 12: -0.13%), inside the frozen
+       +/-5%; class CAPTURED as committed. The crossing ladder's top
+       rung and the work-down ladder's top rung are the SAME grid
+       point and the two ladders join there -- with a byte-identical
+       rebuilt binary (section 3).
+
+   (c) W1 THE ROW QUESTION fired branch (a) RISE-AT-3 -- the class
+       vector at constant total work ~1.0 is
+       (FLOOR, CAPTURED, CAPTURED, CAPTURED, CAPTURED, CAPTURED,
+       CAPTURED) over (x2..x8): x2 (B=2, n=500,001) FLOOR (32 ticks)
+       and EVERY rung B=3..8 CAPTURED-class at all 18 pipeline-ok
+       cells (x3 1,578 / x4 3,108 / x5 4,012 / x6 4,738 / x7 5,191 /
+       x8 5,458 pooled medians at (sum,128,S=16); per-arm cell minima
+       1,290..3,708, all >= 1000). The capture-class transition is at
+       the SAME discrete B=2 -> B=3 step as the NDIV=1 ladder even
+       when total nominal work is held at ~1.0 (vs B-units at NDIV=1):
+       the class vector carries the DISPATCH-COUNT signature among the
+       three named hypotheses -- the total-work signature (flat) and
+       the per-dispatch-work/grid signature (falling as per-dispatch
+       work shrinks with rising B) are both refuted at class
+       granularity on this ladder. AND "B=2 never captures" extends to
+       n=500,001 (x2 FLOOR) -- the B=2 floor now spans per-dispatch
+       work 1/2x..8x and total work 1.0..16 (with sessions 8/16).
+       ONE session; protocol L2 binds: per-dispatch work and grid size
+       co-vary with B HERE BY CONSTRUCTION (that is what "constant
+       total" means for integer B), so the discrimination is among the
+       three named hypotheses only; NO causal mechanism is claimed or
+       measured; no boundary between rungs is claimed (L5).
+
+   (d) W2 THE CONSTANT-TOTAL DOSE CURVE fired branch (a)
+       NON-DECREASING (pre-registered, descriptive): 32 / 1,578 /
+       3,108 / 4,012 / 4,738 / 5,191 / 5,458 ticks over B=2..8 at
+       total ~1.0 -- descriptive, NO linearity claim. Against the
+       named quote-only comparison (the committed NDIV=1 same-B values
+       at total = B units) the constant-total row sits at 0.166x..
+       0.286x for B=3..8 (1.032x at B=2) -- a named cross-total-work
+       comparison ONLY, no interpolation. The per-dispatch figure is
+       not constant (526 at B=3 rising to 802 at B=5 then 682 at
+       B=8).
+
+   (e) W3 THE CROSS TABLE (descriptive): the measured row (ii) sits
+       between the two committed quote-only rows on the (B,
+       per-dispatch work) grid points; row (i) (NDIV=1) and row (iii)
+       (B=8 work-down) were NOT re-run except at the shared (8,8)
+       point (C2). NO interpolation; NO claim between grid points.
+
+   (f) X1 (descriptive realization, host_ns): c2 679,458 (0.997x
+       session-16's), c8 2,395,127 (0.997x); the crossing rungs
+       385,278..424,381 with per-dispatch host_ns falling
+       197,273 -> 53,004 as B rises; NAMED, NOT HIDDEN: x8's host_ns
+       424,031 is 0.429x session-13's same-knob d8 host_ns 987,632
+       while its GPU bracket replicated to +0.50% -- host_ns is the
+       HOST-side proxy (L3), not a C criterion, cause UNMEASURED.
+
+6. NAMED DEFECTS OF THIS SESSION (named, not hidden):
+   (i) protocol L1's stated crossing total range "0.999999..1.000002"
+       is an arithmetic slip -- the programmatically computed totals
+       (derivation-census.txt) are 0.999996..0.999999. protocol.txt is
+       written once and never rewritten (the session-6/16 precedent:
+       the defect sits in the frozen text and is named, not erased).
+       The design claim (constant to a few parts per million) holds at
+       the computed values; the analysis reads the computed values.
+   (ii) the FIRST recorded run of analysis-s17.py dispatched W1 to
+       branch (c) for the (a)-shape: its (a) test computed
+       all(CAPTURED) over the WHOLE class vector including x2 and so
+       could never fire when x2 is FLOOR. The protocol's branch
+       letters (frozen, written once) are the reference: the measured
+       vector matches letter (a) exactly. The dispatch bug was fixed
+       in analysis-s17.py before commit (comment in the file names it);
+       the measured numbers are UNCHANGED by the fix (sections 1/2/4
+       compute identically either way) and the corrected publication
+       was regenerated, recorded run twice byte-identical (diff exit
+       0).
+   (iii) the first custody attempt's driver cwd error (section 3(b)).
+
+7. THE TICK'S FINDING IN ONE LINE: at CONSTANT total nominal work
+   ~1.0 the capture-class transition still sits at the discrete B=2 ->
+   B=3 step (x2 FLOOR 32; x3..x8 CAPTURED 1,578..5,458 ticks) and the
+   two alternatives -- a total-work threshold (flat) and a
+   per-dispatch-work/grid gradient (falling with B) -- are refuted at
+   class granularity on this ladder, so the dispatch-count axis is the
+   operative one AMONG THE THREE NAMED HYPOTHESES at this total work;
+   WHY is UNMEASURED and no mechanism is claimed.
+
+8. RULE 4: NOTHING MOVES -- no workgroup row, no :measured? flag, no
+   selection answer; accelerator-targets defaults remain provisional
+   design assumptions (:measured? false); this is NOT the
+   basis-replacing baseline-vs-variant contract of
+   accelerator-subgroup-reduce.cljk; NO vendor optimization exists for
+   Intel and none is claimed. UNMEASURED named: any causal mechanism
+   (undercount, capture, onset, transitions, dose-curve shape,
+   session-to-session movement, x8's host_ns drop, d160 spike); WHY
+   capture turns on where it does; anything beyond the three-hypothesis
+   discrimination (per-dispatch work/grid co-vary with B here -- L2);
+   the GPU-side cost inside a B<=2 bracket (L3); anything between
+   ladder rungs (L5); any B outside {2,3,4,5,6,7,8}; any (B,NDIV) pair
+   with NDIV != B other than c2/c8 (L10); any total work outside
+   0.999996..0.999999 at B>=3; any WORK_MUL value; any n outside the
+   nine arm values; the NDIV=1 B-ladder and d32..d256 this session
+   (L7); CROSS-UTC-DAY replication (L4); any cross-session stability
+   of x2..x7 (first measured here); session 2's run-1 dip cause; S=8
+   timing; every W outside {128,256}; shape 2; BT ordering; any
+   baseline-vs-variant sign; isolated single-dispatch timing; non-empty
+   barriers; anything off this host.
+
+9. Gates (real runs this tick): gpu_regime_classify.py --self-test
+   TOTAL 2649/0 (pin); scoped GPU gate GREEN 123 tests / 12162
+   assertions / 0 failures / 0 errors run 1 AND run 2 (scratch runner
+   gpu_scoped_gate.cljk, never committed); FULL run-tests.cljk RUN
+   LIVE THIS TICK: exit 1, RED AT BASE 'Could not find namespace:
+   kotoba.form' at namespace load (ADR-0362, outside this diff -- this
+   diff touches NO .cljk namespace) -- NO green full suite claimed;
+   find this evidence dir -name '*.sh' -> 0.
+
+10. CHAIN: this commit lands on the ONE open chain branch
+    bot/amu-gpu-chain-20261027-10 (chain PR #1636), commit + push
+    only. BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head
+    at tick start and re-checked immediately before this push.
+
+Evidence: docs/evidence/gpu/anv-consttotal-20261027/ + the ADR-0355
+dated note. (JUN-55, JUN-59)

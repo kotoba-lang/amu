@@ -1,0 +1,116 @@
+JUN-59 session 10 -- GRID x FATNESS INTERACTION (the joint knob at B=2), publication
+Produced ONLY by analysis-s10.py over the 15 committed run logs in this
+directory (run-<tag>-r<R>.txt); protocol.txt was frozen before the
+first run. Arms = (binary compile-time BATCH x WORK_MUL, shader set):
+the a-set runs the ARCHIVED measured spv (16-digest corpus), the i8-set
+runs the ITERMUL=8 derived spv (session 9's committed 3-line derivation,
+byte-reused and re-verified this session -- shader-reuse-census.txt; the
+rebuilt spv are byte-identical to session 9's build). The instrument is
+the byte-identical session-8 snapshot (no C edit; all 3 binaries byte-
+identical to session 8's same-flag binaries).
+1 nominal work unit = one dispatch of the archived grid at ITERMUL=1
+cost; an (M,I) arm at B runs B dispatches of an M-times grid (n =
+1,000,003*M) at I-times per-workgroup cost = B*M*I nominal units.
+1 tick = timestampPeriod = 52.083 ns on this device.
+
+1. INTEGRITY (computed over the 15 logs):
+   runs parsed: 15 (5 arms x 3 runs); cell map identical across runs: True
+   headers byte-identical across all runs outside the # n= knob line: True
+   header batch=/work_mul= == run's (B,M), barrier_n=0, n=1,000,003*M; every SAMPLE batch=/work_mul= == (B,M): True
+   every CELL spv= name carries its arm's shader-set suffix (a-set: archived .emitted.spv, no .iter; i8-set: .emitted.iter8.spv): True
+   SAMPLE lines: 450 per run (18 ok cells x 25 rounds) in 15/15 runs: True
+   VERIFY mismatch total over all runs: 0 (bit-exact correctness re-check, inside every run -- the ITERMUL loop must not change the stored value, at any WORK_MUL)
+   forcing reality (pipeline-ok cell-runs where probe_size==forced and probe_nsub==wg/forced): 270/270
+   S=8 cells fail-closed (pipeline=FAIL, forced=8): 90 cell-runs (6 per run x 15 runs = 90 expected)
+
+2. THE MEASURED BRACKETS (pooled median gpu_ticks over 3 runs x 25 rounds per cell):
+   each row: (sum,128,S=16) exact value, per-run median band at that cell,
+   then min..max over the 18 pipeline-ok cells; host_ns at (sum,128,S=16)
+
+   arm    B  M  I  nominal  (sum,128,16)   run-median band    min..max over 18 cells   host_ns
+   c2  2  1  1       2          32           32..32              31..32           680259
+   c8  8  1  1       8       32710        32548..32902        25186..32739       2368598
+   g8  2  8  1      16          32           32..32              31..32          3776655
+   f8  2  1  8      16          31           31..32              31..32           803299
+   gf  2  8  8     128          32           31..32              31..32          4027744
+
+3. PRE-REGISTERED LETTERS (thresholds frozen in protocol.txt section 3:
+   FLOOR <= 100 ticks at all 18 cells; CAPTURED >= 1000 ticks at all 18;
+   anything else INTERMEDIATE/MIXED):
+
+   class c2 (B=2, M=1, I=1, set=a, 2 nominal units): FLOOR
+   class c8 (B=8, M=1, I=1, set=a, 8 nominal units): CAPTURED
+   class g8 (B=2, M=8, I=1, set=a, 16 nominal units): FLOOR
+   class f8 (B=2, M=1, I=8, set=i8, 16 nominal units): FLOOR
+   class gf (B=2, M=8, I=8, set=i8, 128 nominal units): FLOOR
+
+   C1 ARCHIVED CONTROL REPLICATION (numeric agreement with the committed
+   value at the control's OWN B -- the session-7 fix, kept; the a-set
+   runs the ARCHIVED measured spv bytes, so this also pins the untouched
+   instrument + corpus):
+     c2 satisfies FLOOR: True
+     c8 (sum,128,16) pooled median 32710 within +/-5% of committed 32915 (session 4 pooled median): True
+     VERDICT: branch (a) both controls satisfy their criteria --
+     C2 and X1-X2 are evaluated against the row question.
+
+   C2 KNOB CONTROL REPLICATION (the two knobs at their single-knob
+   committed readings, re-run together in this session's environment):
+     g8 satisfies FLOOR (session 8 committed b2m8: FLOOR (31..32 band)): True
+     f8 satisfies FLOOR (session 9 committed f8b2: FLOOR (31..32 band)): True
+     VERDICT: branch (a) both knobs are pinned at their single-knob
+     readings; gf is interpreted against them.
+
+   X1 JOINT DOSE AT B=2 (the row question): the class of gf above
+   (B=2, M=8 grid x I=8 fat workgroups = 128 nominal work units inside
+   one 2-dispatch bracket).
+     VERDICT: branch (a) -- gf is FLOOR while the c8 control (8
+     nominal units, 8 dispatches) is CAPTURED: the capture at B=2 is
+     NOT reachable even by the JOINT grid x fatness dose (128 nominal
+     units, 16x the joint dose either single knob reached at B=2 in
+     sessions 8/9 and 64x the captured control's nominal 8). With
+     session 8 (grid axis alone, cost-realized, unreachable) and
+     session 9 (fatness axis alone, nominal, unreachable), the capture
+     is not a total-work threshold on any knob combination tested to
+     date; dispatch count stays implicated. Observable only; NO
+     causal mechanism claimed or measured.
+
+   X2 REALIZATION (descriptive, computed from section 2's host_ns values,
+   NO new measurement and NO linearity claim): the NOMINAL unit count is
+   a definition, not a cost claim. Realized host-time factors at
+   (sum,128,S=16), this session's own runs:
+     g8: host_ns 3776655 / c2 host_ns 680259 = 5.55x  [grid knob M=8 (nominal 8x per dispatch)]
+     f8: host_ns 803299 / c2 host_ns 680259 = 1.18x  [fatness knob I=8 (nominal 8x per workgroup)]
+     gf: host_ns 4027744 / c2 host_ns 680259 = 5.92x  [JOINT M=8 x I=8 (nominal 64x per dispatch)]
+     joint-vs-single: gf/g8 = 1.07x, gf/f8 = 5.01x
+     (comparison of committed numbers, not a new measurement: session 8
+     measured its M knob at 4.63x host growth for nominal 8x; session 9
+     measured its I knob at 1.14x..1.57x for nominal 3x/8x, marginal and
+     non-monotone.) Whatever the joint realization measures above, X1's
+     reading is NOMINAL and a genuinely cost-calibrated joint dose stays
+     UNMEASURED and named in section 6.
+
+4. DERIVED (arithmetic over section 2, no new measurement):
+   c2: bracket 32 ticks = 1.67 us; host_ns 680259; 2 nominal units; vs committed 31 (sessions 1-9 floor): +3.23%
+   c8: bracket 32710 ticks = 1703.63 us; host_ns 2368598; 8 nominal units; vs committed 32915 (session 4 pooled median): -0.62%
+   g8: bracket 32 ticks = 1.67 us; host_ns 3776655; 16 nominal units (no committed anchor at this (M,I) -- new)
+   f8: bracket 31 ticks = 1.61 us; host_ns 803299; 16 nominal units (no committed anchor at this (M,I) -- new)
+   gf: bracket 32 ticks = 1.67 us; host_ns 4027744; 128 nominal units (no committed anchor at this (M,I) -- new)
+
+5. RULE 4 -- NOTHING MOVES: no workgroup row, no :measured? flag, no selection
+   answer; accelerator-targets defaults remain provisional design assumptions
+   (:measured? false). This is NOT the baseline-vs-variant contract of
+   accelerator-subgroup-reduce.cljk. NO vendor optimization exists for Intel
+   and none is claimed. No causal mechanism is claimed by any letter above.
+
+6. UNMEASURED (named): any causal mechanism for the undercount, the capture,
+   or the onset location; WHY capture turns on where it does; the joint
+   knob's COST realization beyond the host_ns factors reported in X2 (the
+   nominal B*M*I unit count is a definition, not a claim); any genuinely
+   COST-CALIBRATED joint dose at B=2 (this session's gf is nominal-64x --
+   realized cost is whatever X2 reports); any codegen difference between
+   iter1/iter8 spv and the archived spv beyond the wrapper; any (M,I)
+   outside {(1,1),(8,1),(1,8),(8,8)}; M or I in {2..7,9+}; any B outside
+   {2,8}; B in {4,5,6,7} at any (M,I); any N>0; session 2's run-1 dip
+   cause; cross-day replication; S=8 timing; every W outside {128,256};
+   shape 2; BT ordering; any baseline-vs-variant sign; isolated
+   single-dispatch timing; non-empty barriers; anything off this host.

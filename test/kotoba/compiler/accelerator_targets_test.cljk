@@ -1,7 +1,10 @@
 (ns kotoba.compiler.accelerator-targets-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.accelerator :as accelerator]
-            [kotoba.compiler.accelerator-targets :as targets]))
+            [kotoba.compiler.accelerator-targets :as targets]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
 
 (deftest vendor-classification-is-deterministic
   (testing "pci vendor ids win over names"
@@ -23,11 +26,11 @@
     (is (= :unknown (targets/classify-vendor {})))))
 
 (deftest target-dispatch-matches-api-and-vendor
-  (testing "an api that names its shading language decides outright"
+  (testing "an api decides its route outright"
     (is (= :cuda-v1 (targets/target-for :cuda :nvidia)))
     (is (= :msl-v1 (targets/target-for :metal :apple)))
-    (is (= :wgsl-v1 (targets/target-for :vulkan :intel)))
-    (is (= :wgsl-v1 (targets/target-for :webgpu :arm))))
+    (is (= :glsl-v1 (targets/target-for :vulkan :intel)) ":vulkan answers the GLSL it compiles (ADR-0359 decision 3)")
+    (is (= :wgsl-v1 (targets/target-for :webgpu :arm)) ":webgpu keeps its language"))
   (testing "a missing or unknown api falls back to the vendor default"
     (is (= :cuda-v1 (targets/target-for nil :nvidia)))
     (is (= :msl-v1 (targets/target-for nil :apple)))
@@ -55,7 +58,7 @@
 
 (deftest recommend-is-total-deterministic-and-provisional
   (let [nvidia (targets/recommend {:vendor-id 4318 :api :cuda})
-        apple (targets/recommend {:vendor "Apple M3"})
+        apple (targets/recommend {:vendor-id 4203})
         unknown (targets/recommend {})]
     (is (= :nvidia (:vendor nvidia)))
     (is (= :cuda-v1 (:target nvidia)))
@@ -63,12 +66,87 @@
     (is (= :msl-v1 (:target apple)))
     (is (= :unknown (:vendor unknown)))
     (is (= :wgsl-v1 (:target unknown)))
-    (testing "every answer is marked unmeasured until hardware says otherwise"
+    (testing "a measured row answers :measured? true, a provisional row false"
+      (is (true? (:measured? nvidia)))
+      (is (true? (:measured? apple)))
+      (is (false? (:measured? unknown))))
+    (testing "every answer carries its basis"
       (doseq [decision [nvidia apple unknown]]
-        (is (false? (:measured? decision)))
         (is (string? (:basis decision)))))
+    (testing "the measured flag is scoped to the measured device (uB5G, ADR-0358)"
+      (is (false? (:measured? (targets/recommend {:vendor "Apple M3"})))
+          "a device named through :vendor that hardware never measured keeps the row flag out")
+      (is (false? (:measured? (targets/recommend {:vendor "Apple M3" :name "Apple M3"})))
+          "a named device that is not the measured one keeps the row flag out")
+      (is (false? (:measured? (targets/recommend {:vendor "GeForce RTX 4090" :api :cuda})))
+          "an unmeasured NVIDIA device named by name keeps the Xavier row flag out")
+      (is (true? (:measured? (targets/recommend {:vendor "Apple M1 Max" :name "M1 Max"}))))
+      (is (true? (:measured? (targets/recommend {:vendor "NVIDIA Tegra Xavier" :api :cuda})))
+          "the measured NVIDIA device spelled by name keeps its own row flag")
+      (is (true? (:measured? (targets/recommend {:vendor "Intel(R) Graphics (BMG G31)" :api :vulkan}))))
+      (is (true? (:measured? (targets/recommend {:vendor "AMD Radeon 680M"}))))
+      (is (false? (:measured? (targets/recommend {:vendor-id 4318 :api :cuda :max-workgroup-x 512})))
+          "an INFO-derived limit probe never transfers the row flag"))
     (testing "same descriptor in, same map out"
       (is (= nvidia (targets/recommend {:vendor-id 4318 :api :cuda}))))))
+
+(deftest the-workgroup-device-key-is-a-fragment-set-per-name-part
+  ;; The row-(iv)-named sibling key (ADR-0358 amendment 2026-10-25,
+  ;; docs/evidence/gpu/workgroup-device-key-alternates-20261025.txt): the
+  ;; workgroup rows' :measured-device key narrows from a bare fragment to a
+  ;; SET -- the fragment plus one '|'-alternate of
+  ;; :measured-device-alternates -- read per name part. The ground is the two
+  ;; attested spellings of the NVIDIA row's one measured host: the wire-42
+  ;; INFO receipt (JUN-85) says "NVIDIA Tegra Xavier (nvgpu)" while the CUDA
+  ;; channel says "NVIDIA Jetson AGX Xavier". Row (iv)'s single-set
+  ;; transplant ("xavier"+"agx" in one name part) is refused: it would deny
+  ;; the measured device its flag under its own probe receipt.
+  (testing "both attested spellings of the measured NVIDIA device keep the row flag"
+    (is (true? (:measured? (targets/recommend {:vendor "NVIDIA Tegra Xavier (nvgpu)"})))
+        "the wire-42 INFO receipt's spelling (JUN-85) keeps its own row flag")
+    (is (true? (:measured? (targets/recommend {:vendor "NVIDIA Jetson AGX Xavier" :api :cuda})))
+        "the CUDA channel's spelling of the same host keeps it too")
+    (is (true? (:measured? (targets/recommend {:vendor-id 4318 :name "NVIDIA JETSON AGX XAVIER"})))
+        "the set match is case-insensitive"))
+  (testing "the row-(iv) hole closes fail-closed: a Xavier that is not the measured one attaches nothing"
+    (is (false? (:measured? (targets/recommend {:vendor-id 4318 :name "Jetson Xavier NX"})))
+        "also sm_72 on the CUDA channel, never measured for the workgroup rows")
+    (is (false? (:measured? (targets/recommend {:vendor-id 4318 :name "Xavier"})))
+        "a bare fragment is not a set where alternates exist")
+    (is (false? (:measured? (targets/recommend {:vendor-id 4318 :name "AGX"})))
+        "every fragment of one set -- an alternate without the base fragment attaches nothing")
+    (is (false? (:measured? (targets/recommend {:vendor-id 4318 :device "AGX" :name "Xavier"})))
+        "the fragments must sit in ONE name part -- an across-parts split attaches nothing"))
+  (testing "named residuals ride as NAMED BEHAVIOR, not measurement claims"
+    (is (true? (:measured? (targets/recommend {:vendor-id 4318 :name "Jetson AGX Xavier Industrial"}))))
+    (is (true? (:measured? (targets/recommend {:vendor-id 4318 :name "Tegra Xavier NX"})))))
+  (testing "rows without alternates keep the single-fragment contract"
+    (is (true? (:measured? (targets/recommend {:vendor "Apple M1 Max"}))))
+    (is (true? (:measured? (targets/recommend {:vendor "Intel(R) Graphics (BMG G31)"}))))
+    (is (true? (:measured? (targets/recommend {:vendor "AMD Radeon 680M"}))))
+    (is (false? (:measured? (targets/recommend {:vendor "Apple M3"})))))
+  (testing "the row data is the decided key shape"
+    (is (= "agx|tegra" (:measured-device-alternates (:nvidia targets/workgroup-defaults))))
+    (is (= "" (:measured-device-alternates (:apple targets/workgroup-defaults))))
+    (is (= "" (:measured-device-alternates (:intel targets/workgroup-defaults))))
+    (is (= "" (:measured-device-alternates (:amd targets/workgroup-defaults))))))
+
+(deftest device-class-maps-the-loader-vocabulary
+  (testing "the five DEVCLASS words of tools/kexe_gpu_vulkan.c map losslessly"
+    (is (= :discrete-gpu (targets/device-class "discrete")))
+    (is (= :integrated-gpu (targets/device-class "integrated")))
+    (is (= :virtual-gpu (targets/device-class "virtual")))
+    (is (= :cpu (targets/device-class "cpu")))
+    (is (= :other (targets/device-class "other"))))
+  (testing "every answer is a member of device-classes"
+    (doseq [token ["discrete" "integrated" "virtual" "cpu" "other"]]
+      (is (contains? targets/device-classes (targets/device-class token)))))
+  (testing "a token the loader cannot emit answers :unknown, never a wrong class"
+    (doseq [token [nil "" "Discrete" "discrete-gpu" " integrated" "gpu" 42 :discrete]]
+      (is (= :unknown (targets/device-class token))
+          (str token " must not become a specific class"))))
+  (testing "same token in, same class out"
+    (is (= (targets/device-class "integrated") (targets/device-class "integrated")))))
 
 (deftest info-answers-parse-into-measured-device-facts
   (testing "the recorded 2026-10-18 M1 Max INFO answer (wire 42) parses"
@@ -83,7 +161,7 @@
     (let [decision (targets/recommend (targets/device-from-info "Apple M1 Max|1.3.357|1024|1"))]
       (is (= :apple (:vendor decision)))
       (is (= :msl-v1 (targets/target-for nil :apple)) "vendor default stays msl-v1")
-      (is (= :wgsl-v1 (:target decision)) "the wire is Vulkan, so :vulkan decides")
+      (is (= :glsl-v1 (:target decision)) "the wire is Vulkan, so :vulkan decides :glsl-v1 (ADR-0359 decision 3)")
       (is (false? (:measured? decision)))))
   (testing "malformed answers parse to nil, never a throw or a wrong decision"
     (is (nil? (targets/device-from-info nil)))
@@ -94,4 +172,1961 @@
     (is (nil? (targets/device-from-info "dev|vulkan|1024|1")))
     (is (nil? (targets/device-from-info "dev|1.3.357|0|1")))
     (is (nil? (targets/device-from-info "dev|1.3.357|1024|2")))
-    (is (nil? (targets/device-from-info "dev|1.3.357|1024|x")))))
+    (is (nil? (targets/device-from-info "dev|1.3.357|1024|x")))
+    (is (nil? (targets/device-from-info "dev|1.3.357|1024|1|"))
+        "a trailing '|' is a fifth empty field -- the raw '|'-split count (2026-10-26 parity)")
+    (is (nil? (targets/device-from-info "dev|1..3|1024|1"))
+        "an empty version part fails the host regex and the W3 arm alike")))
+
+(deftest subgroup-answers-parse-into-rule-6-facts
+  ;; ADR-0362 decision 4 (the consumer half): the parsed answer IS the
+  ;; descriptor rule 6 (ADR-0356) reads -- :subgroup-size a positive int,
+  ;; :subgroup-ops a keyword set. The producer (the ADR 0371 provider's
+  ;; SUBGROUP reply) does not exist yet, so these are parser contracts over
+  ;; answer strings: no wire, no GPU, no measurement.
+  (testing "the answer is exactly two fields, <size>|<ops> (decision 2)"
+    (is (= {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}
+           (targets/device-from-subgroup "32|basic shuffle-relative")))
+    (is (= {:subgroup-size 8 :subgroup-ops #{}}
+           (targets/device-from-subgroup "8|"))
+        "an empty <ops> is a fact (no subgroup operations in compute), not a refusal"))
+  (testing "the eight Vulkan 1.1 core tokens map 1:1, the hyphen preserved"
+    (is (= #{:basic :vote :arithmetic :ballot :shuffle :shuffle-relative :clustered :quad}
+           (:subgroup-ops (targets/device-from-subgroup
+                           "8|basic vote arithmetic ballot shuffle shuffle-relative clustered quad"))))
+    (is (= {:subgroup-size 16 :subgroup-ops #{:shuffle}}
+           (targets/device-from-subgroup "16|shuffle"))))
+  (testing "tokens are the wire's tokens: runs of non-space bytes, one or more spaces separate"
+    (is (= #{:basic :shuffle-relative}
+           (:subgroup-ops (targets/device-from-subgroup "64|  basic   shuffle-relative  "))))
+    (is (= #{:basic}
+           (:subgroup-ops (targets/device-from-subgroup "32|basic basic")))
+        "the answer names a set: a duplicate token is the same fact"))
+  (testing "all-or-nothing: a malformed answer is an absent fact (nil), never a partial one"
+    (doseq [answer [nil
+                    42
+                    :subgroup
+                    ""
+                    "32"
+                    "32|basic|extra"
+                    "32||basic"
+                    "32|basic|"
+                    "|basic"
+                    "|"
+                    "0|basic"
+                    "-1|basic"
+                    "+3|basic"
+                    "12.5|basic"
+                    "x|basic"
+                    " 32|basic"
+                    "32x|basic"
+                    "99999999999999999999|basic"
+                    "32|Basic"
+                    "32|basic vote2"
+                    "32|shuffle_"
+                    "32|basic\tvote"]]
+      (is (nil? (targets/device-from-subgroup answer))
+          (str (pr-str answer) " must parse to no fact at all"))))
+  (testing "same answer in, same fact out"
+    (is (= (targets/device-from-subgroup "32|basic shuffle-relative")
+           (targets/device-from-subgroup "32|basic shuffle-relative")))))
+
+(deftest subgroup-answers-are-produced-from-the-device-record
+  ;; ADR-0362 decisions 2+3 (the producer half's PURE mapping): one device
+  ;; record -- the VkPhysicalDeviceSubgroupProperties fields the ADR 0371
+  ;; provider will read -- answers the "<size>|<ops>" payload, or nil for
+  ;; the named refusal gpu/no-compute-subgroups. Pure contracts over struct
+  ;; field values: no wire, no GPU, no provider, NO MEASUREMENT.
+  (testing "a payload answers exactly when the record reports compute-stage subgroups"
+    (is (= "32|basic"
+           (targets/subgroup-answer {:subgroup-size 32 :supported-stages 0x20 :supported-ops 0x1})))
+    (is (= "32|basic"
+           (targets/subgroup-answer {:subgroup-size 32 :supported-stages 0x23 :supported-ops 0x1}))
+        "other stage bits set alongside COMPUTE (0x20) change nothing")
+    (is (nil? (targets/subgroup-answer {:subgroup-size 32 :supported-stages 0x1f :supported-ops 0x1}))
+        "no COMPUTE in supported-stages -> nil, the named refusal gpu/no-compute-subgroups")
+    (is (nil? (targets/subgroup-answer {:subgroup-size 32 :supported-stages 0x0 :supported-ops 0xff})))
+    (is (nil? (targets/subgroup-answer {:subgroup-size 0 :supported-stages 0x20 :supported-ops 0x1})))
+    (is (nil? (targets/subgroup-answer {:subgroup-size -8 :supported-stages 0x20 :supported-ops 0x1})))
+    (is (nil? (targets/subgroup-answer {:subgroup-size 32.5 :supported-stages 0x20 :supported-ops 0x1})))
+    (is (nil? (targets/subgroup-answer {:subgroup-size 32 :supported-stages 0x20 :supported-ops -1})))
+    (is (nil? (targets/subgroup-answer {:subgroup-size 32 :supported-stages -32 :supported-ops 0x1})))
+    (is (nil? (targets/subgroup-answer {:subgroup-size 32 :supported-stages 0x20})))
+    (is (nil? (targets/subgroup-answer {})))
+    (is (nil? (targets/subgroup-answer "32|basic")))
+    (is (nil? (targets/subgroup-answer nil))))
+  (testing "the eight core bits answer their tokens in the vocabulary order"
+    (is (= "8|basic vote arithmetic ballot shuffle shuffle-relative clustered quad"
+           (targets/subgroup-answer {:subgroup-size 8 :supported-stages 0x20 :supported-ops 0xff})))
+    ;; single-bit pins: the raw values are the VkSubgroupFeatureFlagBits
+    ;; registry values (verified 2026-10-23) -- a changed bit answers a
+    ;; different token and fails here.
+    (doseq [[bits token] [[0x1 "basic"] [0x2 "vote"] [0x4 "arithmetic"] [0x8 "ballot"]
+                          [0x10 "shuffle"] [0x20 "shuffle-relative"] [0x40 "clustered"] [0x80 "quad"]]]
+      (is (= (str "8|" token)
+             (targets/subgroup-answer {:subgroup-size 8 :supported-stages 0x20 :supported-ops bits}))
+          (str "VkSubgroupFeatureFlagBits bit " bits " is " token))))
+  (testing "bits outside the core eight are masked off in v1 (decision 2)"
+    (is (= "8|" (targets/subgroup-answer {:subgroup-size 8 :supported-stages 0x20 :supported-ops 0x100}))
+        "partitioned (0x100) answers no token")
+    (is (= "8|" (targets/subgroup-answer {:subgroup-size 8 :supported-stages 0x20 :supported-ops 0x200}))
+        "rotate (0x200) answers no token")
+    (is (= "8|" (targets/subgroup-answer {:subgroup-size 8 :supported-stages 0x20 :supported-ops 0x400}))
+        "rotate-clustered (0x400) answers no token")
+    (is (= "8|basic"
+           (targets/subgroup-answer {:subgroup-size 8 :supported-stages 0x20 :supported-ops 0x701}))))
+  (testing "an empty <ops> is the legal zero-ops fact, not a refusal (decision 2)"
+    (is (= "32|" (targets/subgroup-answer {:subgroup-size 32 :supported-stages 0x20 :supported-ops 0}))))
+  (testing "the producer's bytes are the consumer's facts (decisions 2/4 seam, round-trip)"
+    (is (= {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}
+           (targets/device-from-subgroup
+            (targets/subgroup-answer {:subgroup-size 32 :supported-stages 0x20 :supported-ops 0x21}))))
+    (is (= {:subgroup-size 8 :subgroup-ops #{}}
+           (targets/device-from-subgroup
+            (targets/subgroup-answer {:subgroup-size 8 :supported-stages 0x20 :supported-ops 0x700})))
+        "a record with only masked-off bits still answers the zero-ops fact"))
+  (testing "same record in, same bytes out (ADR-0356 rule 5)"
+    (let [record {:subgroup-size 64 :supported-stages 0x20 :supported-ops 0x21}]
+      (is (= (targets/subgroup-answer record) (targets/subgroup-answer record))))))
+
+(deftest the-row-split-is-four-measured-two-provisional
+  ;; The honesty split the ns docstring states (corrected 2026-10-24,
+  ;; docs/evidence/gpu/workgroup-prose-rootcause-20261024.txt): four rows
+  ;; measured by ADR-0358 (2026-10-19), two provisional. A measured row
+  ;; names its one measured device; a provisional row names none.
+  (is (= #{:nvidia :apple :intel :amd}
+         (set (for [[v row] targets/workgroup-defaults :when (:measured? row)] v)))
+      "exactly the four ADR-0358 rows are measured")
+  (is (= #{:arm :unknown}
+         (set (for [[v row] targets/workgroup-defaults :when (not (:measured? row))] v)))
+      "exactly :arm and :unknown stay provisional")
+  (testing "a measured row names its one measured device; a provisional row names none"
+    (doseq [[v row] targets/workgroup-defaults]
+      (if (:measured? row)
+        (is (and (string? (:measured-device row)) (pos? (count (:measured-device row))))
+            (str v " is measured but names no measured device"))
+        (is (nil? (:measured-device row))
+            (str v " is provisional but carries a measured-device")))
+      (if (:measured? row)
+        (is (string? (:measured-device-alternates row))
+            (str v " is measured but carries no measured-device-alternates key"))
+        (is (nil? (:measured-device-alternates row))
+            (str v " is provisional but carries a measured-device-alternates key"))))))
+
+;; The W3 arm extractor: the balanced-paren form beginning at `start` in
+;; `text`, string literals aware. The `:kotoba` readings of this namespace are
+;; what the W3 route compiles; the kbb gate executes the host readings, so the
+;; W3 arm's behavior is tested by extracting the arm's OWN text from the
+;; namespace source and running it on the kotoba language runtime.
+(defn- extract-balanced [text start]
+  (when-let [i (str/index-of text start)]
+    (let [n (count text)]
+      (loop [j i depth 0 in-str? false esc? false]
+        (when (< j n)
+          (let [c (str (nth text j))
+                close? (and (not in-str?) (not esc?) (= c ")"))
+                d (cond
+                    esc? depth
+                    in-str? depth
+                    (= c "(") (inc depth)
+                    (= c ")") (dec depth)
+                    :else depth)]
+            (if (and close? (zero? d))
+              (subs text i (inc j))
+              (recur (inc j) d
+                     (cond
+                       esc? in-str?
+                       (and in-str? (= c "\\")) true
+                       (= c "\"") (not in-str?)
+                       :else in-str?)
+                     (and in-str? (not esc?) (= c "\\"))))))))))
+
+(deftest w3-name-lowering-lowers-a-z-and-nothing-else
+  ;; The `:kotoba` reading of `string-ascii-lower` is the W3 route's device
+  ;; name fold: classify-vendor's name matching and the uB5G measured-device
+  ;; scoping key both run it. Tested through kotoba.sema/analyze +
+  ;; kotoba.kir/execute over the arm's extracted text (no
+  ;; kotoba.compiler.core, whose kotoba.form require is the suite's named
+  ;; red-at-base). The replaced arm appended `string-from-i64` DECIMAL text
+  ;; per code point -- measured on the runtime before the fix: "A" -> "97",
+  ;; "AB" -> "9798", "Hi" -> "104105", "42" -> "5250", and "NVIDIA" trapped
+  ;; host/stack-exhausted -- so this test pins both the fold's contract and
+  ;; the arm's delegation to the primitive.
+  (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
+        arm (extract-balanced src "(defn- string-ascii-lower")
+        probe (str "(ns accelerator.targets.w3.arm.probe (:export [main lower]))\n"
+                   "(defn main [] :i64 0)\n"
+                   arm "\n"
+                   "(defn lower [s :string] :string (string-ascii-lower s))")
+        hir (sema/analyze probe)
+        fold (fn [s] (ir/execute hir 'lower [s]))]
+    (is (string? arm) "the W3 arm is extractable from the namespace source")
+    (is (str/includes? arm "string-fold-ascii")
+        "the arm lowers through the language primitive")
+    (is (not (str/includes? arm "lower-walk"))
+        "the decimal-appending walk is gone from the arm text")
+    (is (not (str/includes? arm "string-from-i64"))
+        "the arm never renders an i64 to build string text")
+    (testing "A-Z lowered, nothing else (the string-fold-ascii contract)"
+      (is (= "nvidia geforce rtx 4090" (fold "NVIDIA GeForce RTX 4090")))
+      (is (= "apple m1 max" (fold "Apple M1 Max")))
+      (is (= "mali-g78 mp24" (fold "Mali-G78 MP24")))
+      (is (= "rtx 4090" (fold "RTX 4090")) "digits are untouched")
+      (is (= "cafÉ" (fold "CAFÉ")) "a non-ASCII letter is untouched")
+      (is (= "" (fold ""))))
+    (testing "the folded name carries the fragments the call sites search for"
+      (is (str/includes? (fold "NVIDIA GeForce RTX 4090") "geforce"))
+      (is (str/includes? (fold "Apple M1 Max") "m1 max"))
+      (is (str/includes? (fold "Intel(R) Iris(R) Xe Graphics") "iris")))))
+
+(deftest w3-the-device-key-arm-hits-per-name-part-and-per-set
+  ;; The `:kotoba` reading of the uB5G SET key (key-hits / alt-any-hits /
+  ;; alt-field? beside substr-hits -- alt-end DELETED by the alt-fuel row,
+  ;; ADR-0358 amendment 2026-10-25)
+  ;; runs on the kotoba language runtime over the arms' OWN extracted text
+  ;; (the w3 extract-balanced idiom). FULL device names run here now (the
+  ;; key-chain row 2026-10-26): substr-hits is ONE `string-contains?` call --
+  ;; the replaced sub-walk2/sub-eq byte walks recursed per haystack position
+  ;; and per needle byte and trapped the interpreter's 32-frame budget
+  ;; (frames-limit 32) on full names ("apple m1 max"/"m1 max" =>
+  ;; host/stack-exhausted, measured before the fix,
+  ;; docs/evidence/gpu/w3-key-chain-primitive-20261026.txt). The short
+  ;; spellings keep their pins below unchanged. The '|'-key walks are per
+  ;; FIELD now (the alt-key row 2026-10-26): the boundary advance is one
+  ;; `string-find-byte` per field boundary (the dot1 precedent), so a long
+  ;; alternate key resolves within the budget (MEASURED BEFORE: a 200-byte
+  ;; alternate trapped host/stack-exhausted in the per-byte walks,
+  ;; docs/evidence/gpu/w3-alt-key-field-walk-20261026.txt). The field
+  ;; walks iterate through ONE loop/recur each (the alt-loop row
+  ;; 2026-10-26): the replaced per-field SELF-CALLs took one frame per
+  ;; '|'-field and TRAPped at 32+ fields (MEASURED BEFORE: budget/frames,
+  ;; af-em and ah-miss host/stack-exhausted in one spelling -- every cell
+  ;; resolved through 28 fields,
+  ;; docs/evidence/gpu/w3-alt-key-loop-20261026.txt). The per-FIELD fuel
+  ;; entries are inlined away (the alt-fuel row 2026-10-26): alt-end
+  ;; (walk-only) DELETED and the boundary advance / the non-empty-needle
+  ;; substring test spelled inside the loop bodies, so a walk charges
+  ;; ONE entry + ONE loop-helper entry at any field count (MEASURED
+  ;; BEFORE: af-em k+2, ah-miss 2k+3, hit-za 2k+8, hit-em k+4 min-fuel at
+  ;; k = 1/10/100/200; the 512-entry default TRAPped the 256+-field
+  ;; cells on budget/fuel,
+  ;; docs/evidence/gpu/w3-alt-key-fuel-inlined-20261026.txt).
+  (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
+        arms (str/join "\n" (filter some? (map #(extract-balanced src %)
+                                 ["(defn- substr-hits"
+                                  "(defn- alt-field?" "(defn- alt-any-hits"
+                                  "(defn- key-hits"])))
+        probe (str "(ns accelerator.targets.w3.key.probe (:export [main sh hit]))\n"
+                   "(defn main [] :i64 0)\n"
+                   arms "\n"
+                   "(defn sh [h :string n :string] :bool (substr-hits h n))\n"
+                   "(defn hit [part :string frag :string alts :string] :bool (key-hits part frag alts))")
+        hir (sema/analyze probe)
+        hit (fn [part frag alts] (ir/execute hir 'hit [part frag alts]))
+        sh (fn [h n] (ir/execute hir 'sh [h n]))]
+    (is (every? string? (map #(extract-balanced src %)
+                             ["(defn- substr-hits" "(defn- key-hits"]))
+        "the W3 arms are extractable from the namespace source")
+    (is (str/includes? src "(key-hits (string-ascii-lower")
+        "the :kotoba recommend arm keys through key-hits, not bare substr-hits")
+    (is (str/includes? (extract-balanced src "(defn- substr-hits") "string-contains?")
+        "substr-hits delegates to the language primitive, not a hand-rolled walk")
+    (is (not (str/includes? src "(defn- sub-walk2"))
+        "the per-position walk is gone from the namespace source (prose naming it stays legal)")
+    (is (not (str/includes? src "(defn- sub-eq"))
+        "the per-needle-byte walk is gone from the namespace source (prose naming it stays legal)")
+    (testing "one name part carries every fragment of one set"
+      (is (true? (hit "tx" "x" "a|t")) "the second alternate completes its set")
+      (is (true? (hit "ax" "x" "a|t")) "the first alternate completes its set")
+      (is (false? (hit "x" "x" "a|t")) "a bare fragment is not a set where alternates exist")
+      (is (false? (hit "a" "x" "a")) "an alternate without the base fragment is not a set")
+      (is (true? (hit "txt" "x" "a|t")) "a substring alternate hits like substr-hits"))
+    (testing "empty '|'-fields contribute no set; an all-empty key is the one-fragment set"
+      (is (false? (hit "x" "x" "a|")) "a trailing pipe must not widen the key")
+      (is (true? (hit "x" "x" "|")) "fields that are all empty are no alternates")
+      (is (true? (hit "x" "x" "")) "the rows without alternates keep the fragment contract"))
+    (testing "the haystack is the caller's lowered name (substr-hits' contract)"
+      (is (false? (hit "X" "x" ""))))
+    (testing "FULL device names resolve within the budget (the 2026-10-26 fix)"
+      (is (true? (hit "apple m1 max" "m1 max" ""))
+          "the measured apple spelling keeps its row flag")
+      (is (true? (hit "nvidia tegra xavier (nvgpu)" "xavier" "agx|tegra"))
+          "the wire-42 INFO receipt's spelling (JUN-85)")
+      (is (true? (hit "nvidia jetson agx xavier" "xavier" "agx|tegra"))
+          "the CUDA channel's spelling of the same host")
+      (is (false? (hit "jetson xavier nx" "xavier" "agx|tegra"))
+          "the NX hole stays closed on full names")
+      (is (false? (hit "apple m1 max" "xavier" "agx|tegra"))
+          "a full name that carries no set attaches nothing"))
+    (testing "the empty needle keeps the host str/includes? answer (measured parity)"
+      (is (true? (sh "ab" ""))
+          "the deleted walk answered true here and the primitive raises empty-string-search-needle -- answered above it"))
+    (testing "the '|'-key walks are per FIELD, not per byte (the alt-key row 2026-10-26)"
+      (is (not (str/includes? (extract-balanced src "(defn- alt-field?") "string-code-point-at"))
+          "the per-byte scan is gone from alt-field?")
+      (is (not (str/includes? (extract-balanced src "(defn- alt-any-hits") "string-code-point-at"))
+          "the per-byte scan is gone from alt-any-hits -- it trapped the 32-frame budget on long keys")
+      (is (str/includes? (extract-balanced src "(defn- alt-any-hits") "(+ j 1)")
+          "the walk advances past the field boundary, not byte by byte")
+      (is (= 1 (count (re-seq #"string-find-byte alts 124" (extract-balanced src "(defn- alt-field?"))))
+          "alt-field? holds one string-find-byte call per boundary (the dot1 precedent, inlined)")
+      (is (= 1 (count (re-seq #"string-find-byte alts 124" (extract-balanced src "(defn- alt-any-hits"))))
+          "alt-any-hits holds one string-find-byte call per boundary (the dot1 precedent, inlined)"))
+    (testing "long alternate keys resolve within the budget, host-equal"
+      ;; MEASURED BEFORE on this runtime: every one of these TRAPPED
+      ;; host/stack-exhausted in the per-byte walks
+      ;; (docs/evidence/gpu/w3-alt-key-field-walk-20261026.txt)
+      (let [lg (apply str (repeat 200 "a"))]
+        (is (true? (hit (str "y" lg) "y" lg)) "a long first field that hits")
+        (is (false? (hit (str "y" (apply str (repeat 200 "c"))) "y" lg)) "a long field that misses")
+        (is (true? (hit (str "yq" (apply str (repeat 200 "c"))) "y" (str lg "|q")))
+            "the second field after a long first field")
+        (is (false? (hit "xy" "x" (str lg "|"))) "a trailing pipe must not widen the key")
+        (is (true? (hit (str "y" lg) "y" (str "|" lg))) "a leading empty field is skipped")
+        (is (false? (hit "x" "x" (str "|" lg))) "a bare fragment is not a set")))
+    (testing "the '|'-field walks are ONE loop each, not a self-call (the alt-loop row 2026-10-26)"
+      ;; The alt-key row's named O(FIELDS) FRAME residual is CLOSED: the
+      ;; replaced walks took one interpreter frame per '|'-field and
+      ;; TRAPped at 32+ fields (MEASURED BEFORE on this runtime,
+      ;; docs/evidence/gpu/w3-alt-key-loop-20261026.txt -- the go/no-go
+      ;; run taken BEFORE the fix).
+      (is (= 1 (count (re-seq #"\(loop \[" (extract-balanced src "(defn- alt-field?"))))
+          "alt-field? iterates through exactly one loop")
+      (is (= 1 (count (re-seq #"\(recur " (extract-balanced src "(defn- alt-field?"))))
+          "alt-field? has exactly one recur")
+      (is (not (str/includes? (extract-balanced src "(defn- alt-field?") "(alt-field? "))
+          "the per-field self-call is gone from alt-field?")
+      (is (= 1 (count (re-seq #"\(loop \[" (extract-balanced src "(defn- alt-any-hits"))))
+          "alt-any-hits iterates through exactly one loop")
+      (is (= 1 (count (re-seq #"\(recur " (extract-balanced src "(defn- alt-any-hits"))))
+          "alt-any-hits has exactly one recur")
+      (is (not (str/includes? (extract-balanced src "(defn- alt-any-hits") "(alt-any-hits "))
+          "the per-field self-call is gone from alt-any-hits")
+      (is (str/includes? (extract-balanced src "(defn- alt-any-hits") "(+ j 1)")
+          "the advance keeps its past-the-boundary shape (now the recur arg)")
+      (is (not (str/includes? (extract-balanced src "(defn- alt-field?") "(alt-end "))
+          "the alt-end call is gone from alt-field? (inlined by the alt-fuel row)")
+      (is (not (str/includes? (extract-balanced src "(defn- alt-any-hits") "(alt-end "))
+          "the alt-end call is gone from alt-any-hits (inlined by the alt-fuel row)"))
+    (testing "many-field keys resolve within the budget, host-equal"
+      ;; MEASURED BEFORE on this runtime: every one of the k >= 32 cells
+      ;; TRAPped (budget/frames / host/stack-exhausted) before the
+      ;; alt-loop row (docs/evidence/gpu/w3-alt-key-loop-20261026.txt),
+      ;; and the 256+-field cells TRAPped budget/fuel before the
+      ;; alt-fuel row (2 entries per field vs the 512-entry default,
+      ;; docs/evidence/gpu/w3-alt-key-fuel-inlined-20261026.txt).
+      (let [za (fn [k] (str/join "|" (concat (repeat (dec k) "z") ["a"])))
+            em (fn [k] (apply str (repeat (dec k) "|")))]
+        (is (false? (hit "x" "x" (za 40))) "a 40-field key that misses answers false")
+        (is (true? (hit "xa" "x" (za 40))) "the 40th field still completes its set")
+        (is (true? (hit "x" "x" (em 40))) "40 empty fields are still no alternates")
+        (is (false? (hit "x" "x" (za 128))) "a 128-field key that misses answers false")
+        (is (true? (hit "xa" "x" (za 128))) "the 128th field still completes its set")
+        (is (true? (hit "x" "x" (em 128))) "128 empty fields are still no alternates")
+        (is (false? (hit "x" "x" (za 256))) "the 256-field BEFORE trap-gone cell (budget/fuel)")
+        (is (true? (hit "xa" "x" (za 256))) "the 256th field still completes its set")
+        (is (true? (hit "x" "x" (em 256))) "256 empty fields are still no alternates")
+        (is (false? (hit "x" "x" (za 512))) "the 512-field BEFORE trap-gone cell (budget/fuel)")
+        (is (true? (hit "xa" "x" (za 512))) "the 512th field still completes its set")
+        (is (true? (hit "x" "x" (em 512))) "512 empty fields are still no alternates")))
+    (testing "the FUEL residual is closed: flat entries at any field count (the alt-fuel row 2026-10-26)"
+      ;; Source pins: alt-end is DELETED (walk-only) and the loop bodies
+      ;; spell the boundary advance and the non-empty-needle substring
+      ;; test inline -- ZERO user calls inside the loops, so a walk
+      ;; charges ONE entry + ONE loop-helper entry at any field count
+      ;; (MEASURED: af-em 3, ah-miss 3, hit-za 7, hit-em 5 min-fuel FLAT
+      ;; at k = 1/10/100/200,
+      ;; docs/evidence/gpu/w3-alt-key-fuel-inlined-20261026.txt).
+      (is (not (str/includes? src "(defn- alt-end"))
+          "alt-end is gone from the namespace source (prose naming it stays legal)")
+      (is (not (str/includes? (extract-balanced src "(defn- alt-any-hits") "(substr-hits "))
+          "the substr-hits call is inlined in alt-any-hits (the (< i j) guard makes the needle non-empty)")
+      (is (str/includes? (extract-balanced src "(defn- alt-any-hits") "(string-contains? part (string-substring alts i j))")
+          "the non-empty needle path is the primitive, spelled in the loop body")
+      (is (str/includes? (extract-balanced src "(defn- alt-any-hits") "(and (< i j)")
+          "the empty-field skip guard stays load-bearing above the primitive")
+      (is (str/includes? (extract-balanced src "(defn- key-hits") "(substr-hits ")
+          "substr-hits stays a defn- for key-hits' base-fragment check")
+      ;; FLAT-FUEL pins: under a tiny explicit budget that a per-field
+      ;; charge could never satisfy (BEFORE needed 2k+8 for hit-za at
+      ;; k = 400 -> 808 > 24), the 400/2048-field cells resolve and
+      ;; answer their fact.
+      (let [za (fn [k] (str/join "|" (concat (repeat (dec k) "z") ["a"])))
+            em (fn [k] (apply str (repeat (dec k) "|")))
+            hit-f (fn [part frag alts fuel] (ir/execute hir 'hit [part frag alts] {:fuel fuel}))]
+        (is (false? (hit-f "x" "x" (za 400) 24)) "a 400-field miss resolves under {:fuel 24}")
+        (is (true? (hit-f "xa" "x" (za 400) 24)) "the 400th field completes its set under {:fuel 24}")
+        (is (true? (hit-f "x" "x" (em 400) 24)) "400 empty fields resolve under {:fuel 24}")
+        (is (false? (hit-f "x" "x" (za 2048) 24)) "a 2048-field miss resolves under {:fuel 24}")
+        (is (true? (hit-f "xa" "x" (za 2048) 24)) "the 2048th field completes its set under {:fuel 24}")))))
+
+(deftest w3-recommend-named-devices-resolve-on-full-names
+  ;; The whole W3 dispatch chain (classify-vendor / key-hits / recommend) on
+  ;; FULL device names on the kotoba language runtime (the w3 extract-balanced
+  ;; idiom over the arms' OWN text). Before the key-chain row (2026-10-26)
+  ;; this chain trapped host/stack-exhausted on the measured devices' full
+  ;; spellings -- measured on this runtime before the fix
+  ;; (docs/evidence/gpu/w3-key-chain-primitive-20261026.txt), so the flags
+  ;; were pinned on the HOST arm only (the-workgroup-device-key-is-a-fragment-
+  ;; set-per-name-part). Every :measured? answer below is the row flag for
+  ;; the NAMED measured device (uB5G) -- the same answers the host pins,
+  ;; byte for byte; nothing here is a hardware measurement.
+  (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
+        arms (str/join "\n" (filter some? (map #(extract-balanced src %)
+                                 ["(defn- dgk" "(defn- none?" "(defn- frag-vendor" "(defn- frag-doc"
+                                  "(defn- frag-hit2" "(defn- frag-names-doc" "(defn- wg-row"
+                                  "(defn- string-ascii-lower" "(defn- blank-str?"
+                                  "(defn- substr-hits"
+                                  "(defn- alt-field?" "(defn- alt-any-hits" "(defn- key-hits"
+                                  "(defn- clamp2" "(defn- i64-text"
+                                  "(defn vendor-ids" "(defn- vendor-default-target" "(defn default-target"
+                                  "(defn target-for" "(defn workgroup-defaults"
+                                  "(defn classify-vendor" "(defn recommend"])))
+        probe (str "(ns accelerator.targets.w3.rec.probe (:export [main cv rec]))\n"
+                   "(defn main [] :i64 0)\n"
+                   arms "\n"
+                   "(defn cv [nm :string] :keyword (classify-vendor (document-map (document-keyword :vendor) (document-string nm))))\n"
+                   "(defn rec [nm :string] :document (recommend (document-map (document-keyword :vendor) (document-string nm))))")
+        hir (sema/analyze probe)
+        cv (fn [nm] (ir/execute hir 'cv [nm]))
+        rec (fn [nm] (ir/execute hir 'rec [nm]))
+        fields-of (fn [doc]
+                    (into {} (map (fn [kv] [(get (get kv 0) 1) (get (get kv 1) 1)])
+                                  (get doc 1))))]
+    (testing "classify-vendor answers the host arm's vendor on full names"
+      (is (= :apple (cv "Apple M1 Max")))
+      (is (= :nvidia (cv "NVIDIA GeForce RTX 4090")))
+      (is (= :arm (cv "Mali-G78 MP24")))
+      (is (= :intel (cv "Intel(R) Iris(R) Xe Graphics")))
+      (is (= :unknown (cv "Something Odd"))))
+    (testing "recommend answers the host arm's decision maps on full names"
+      (let [m (fields-of (rec "Apple M1 Max"))]
+        (is (= :apple (:vendor m)))
+        (is (= :msl-v1 (:target m)))
+        (is (= "256" (str (:workgroup-size m))) "the i64 field, whatever its host integer type")
+        (is (true? (:measured? m)) "the measured device keeps its row flag"))
+      (let [m (fields-of (rec "Apple M3"))]
+        (is (= :apple (:vendor m)))
+        (is (false? (:measured? m)) "a named device hardware never measured attaches nothing"))
+      (let [m (fields-of (rec "NVIDIA Tegra Xavier (nvgpu)"))]
+        (is (= :nvidia (:vendor m)))
+        (is (= :cuda-v1 (:target m)))
+        (is (true? (:measured? m)) "the wire-42 INFO receipt's spelling (JUN-85)"))
+      (let [m (fields-of (rec "NVIDIA Jetson AGX Xavier"))]
+        (is (true? (:measured? m)) "the CUDA channel's spelling of the same host"))
+      (let [m (fields-of (rec "Jetson Xavier NX"))]
+        (is (= :unknown (:vendor m)) "the NX spelling classifies as :unknown, host-equal")
+        (is (false? (:measured? m))))
+      (let [m (fields-of (rec "AMD Radeon 680M"))]
+        (is (= :amd (:vendor m)))
+        (is (= "1024" (str (:workgroup-size m))))
+        (is (true? (:measured? m))))
+      (let [m (fields-of (rec "Mali-G78 MP24"))]
+        (is (= :arm (:vendor m)))
+        (is (= "128" (str (:workgroup-size m))) "the provisional :arm row's size")
+        (is (false? (:measured? m)) ":arm stays provisional :measured? false")))))
+
+(deftest w3-split4-conjes-per-field-spans-and-counts-raw
+  ;; The `:kotoba` split4 (ADR-0355's INFO 4-field split) on the kotoba
+  ;; language runtime (the w3 extract-balanced idiom). The pre-2026-10-26
+  ;; arm conjed PREFIX spans -- measured on this runtime: "a|b|c|d" ->
+  ;; ["a" "a|b" "a|b|c" "a|b|c|d"] -- so every field after the first
+  ;; carried its predecessors and device-from-info answered nil for every
+  ;; well-formed answer. Evidence (before/after probe runs):
+  ;; docs/evidence/gpu/w3-split4-field-spans-20261026.txt.
+  ;; The many-pipe row (2026-10-26): the walk ALSO took one frame per
+  ;; '|'-boundary, so an answer with many pipes TRAPped instead of
+  ;; answering the contract's total null -- a fifth-field boundary is
+  ;; answered ABOVE the recursion now. Evidence:
+  ;; docs/evidence/gpu/w3-split4-many-pipe-total-20261026.txt.
+  (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
+        arm (extract-balanced src "(defn- split4")
+        probe (str "(ns accelerator.targets.w3.split.probe (:export [main sp]))\n"
+                   "(defn main [] :i64 0)\n"
+                   arm "\n"
+                   "(defn sp [s :string] :document (split4 s 0 0 (string-byte-length s) 0 (document-vector)))")
+        hir (sema/analyze probe)
+        sp (fn [s] (ir/execute hir 'sp [s]))]
+    (is (string? arm) "the W3 split4 arm is extractable from the namespace source")
+    (is (str/includes? arm "string-index-of-from")
+        "the arm walks pipe POSITIONS through the language primitive (the frame-budget row)")
+    (is (not (str/includes? arm "string-code-point-at"))
+        "the per-byte scan is gone -- it trapped the 32-frame budget on full answers")
+    (is (str/includes? arm "string-substring s start p")
+        "each field is span start..p (the found pipe), not s 0 p")
+    (is (not (str/includes? arm "string-substring s 0"))
+        "the prefix-span form is gone -- it answered ['a' 'a|b' 'a|b|c' 'a|b|c|d']")
+    (testing "per-field spans"
+      (is (= ["vector" [["string" "a"] ["string" "b"] ["string" "c"] ["string" "d"]]]
+             (sp "a|b|c|d")))
+      (is (= ["vector" [["string" "ab"] ["string" "1.2.3"] ["string" "4"] ["string" "1"]]]
+             (sp "ab|1.2.3|4|1")))
+      (is (= ["vector" [["string" "Apple M1 Max"] ["string" "1.3.357"] ["string" "1024"] ["string" "1"]]]
+             (sp "Apple M1 Max|1.3.357|1024|1"))
+          "the 26-byte recorded answer splits within the 32-frame budget (the byte walk trapped it)"))
+    (testing "the field count is the raw '|'-split count (fields = pipes + 1)"
+      (is (= ["null"] (sp "a|b")) "two fields is not four")
+      (is (= ["null"] (sp "a|b|c")) "three fields is not four")
+      (is (= ["null"] (sp "a|b|c|d|"))
+          "a trailing empty field COUNTS (str/split ... -1 parity, 2026-10-26)"))
+    (testing "more than four fields is total: answered ABOVE the recursion, never a frame trap"
+      ;; MEASURED BEFORE (the row's evidence,
+      ;; w3-split4-many-pipe-total-20261026.txt): the walk took one frame
+      ;; per '|'-boundary -- the unit walk TRAPped budget/frames at
+      ;; 31..40 pipes and host/stack-exhausted at 17 in every run, with
+      ;; 16/18 MOVING between runs (trapped in one byte-identical pair,
+      ;; resolved in the other; the trap boundary is NON-MONOTONIC and
+      ;; state-dependent) while the host arm answered the field count
+      ;; and the contract says "answers nil, never a throw"
+      (let [guard-i (str/index-of arm "(>= k 3)")
+            call-i (str/index-of arm "(split4 s (+ p 1)")]
+        (is (some? guard-i)
+            "a '|'-boundary found at k = 3 is a fifth field -- (document-null) in the cond")
+        (is (and (some? call-i) (< guard-i call-i))
+            "the guard sits BEFORE the walk's only self-call (<= 4 iterations, any pipe count)"))
+      (doseq [k (range 4 34)]
+        (is (= ["null"] (sp (str/join "|" (repeat (inc k) "a"))))
+            (str "the " k "-pipe answer is five-plus fields -- null")))
+      (doseq [k [33 64 128]]
+        (let [s (str/join "|" (repeat (inc k) "a"))]
+          (is (= ["null"] (sp s))
+              (str "the " k "-pipe answer resolves to null (it TRAPped before the row)"))
+          (is (nil? (targets/device-from-info s))
+              (str "HOST parity pin (" k "-pipe)"))))
+      (is (= ["vector" [["string" "a"] ["string" "a"] ["string" "a"] ["string" "a"]]]
+             (sp (str/join "|" (repeat 4 "a"))))
+          "the four-field answer still splits into four per-field spans"))))
+
+(deftest w3-version3-matches-the-host-regex-semantics
+  ;; The `:kotoba` version3? must answer exactly what the host arm's
+  ;; re-matches "[0-9]+\\.[0-9]+\\.[0-9]+" answers: three non-empty digit
+  ;; parts around exactly two dots. Two bugs stood in the way and are
+  ;; pinned out here (measured before the fix on this runtime,
+  ;; docs/evidence/gpu/w3-split4-field-spans-20261026.txt): dot2 answered
+  ;; n + (number of '.') -- 7 for "1.2.3", whose second dot sits at 3 --
+  ;; and digits?'s base (< 0 n) accepted every empty range inside a
+  ;; non-empty string. The numeric-walk row (2026-10-26,
+  ;; docs/evidence/gpu/w3-numeric-walk-primitives-20261026.txt): the
+  ;; per-byte digits?/digits-all?/dot1/dot2 walks are GONE -- digits? is
+  ;; one `string-parse-i64` verdict and each dot is one `string-find-byte`
+  ;; -- so long digit parts resolve inside the 32-frame budget (measured:
+  ;; the 100-digit third part trapped budget/frames before).
+  (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
+        arms (str/join "\n" (map #(extract-balanced src %)
+                                 ["(defn- digits?" "(defn- version3?"
+                                  "(defn- dot1" "(defn- dot2"]))
+        probe (str "(ns accelerator.targets.w3.ver.probe (:export [main v3 d2 dg dge]))\n"
+                   "(defn main [] :i64 0)\n"
+                   arms "\n"
+                   "(defn v3 [s :string] :bool (version3? s))\n"
+                   "(defn d2 [s :string] :i64 (dot2 s 0 (string-byte-length s)))\n"
+                   "(defn dg [s :string] :bool (digits? s 0 (string-byte-length s)))\n"
+                   "(defn dge [s :string] :bool (digits? s (string-byte-length s) (string-byte-length s)))")
+        hir (sema/analyze probe)
+        run (fn [sym s] (ir/execute hir sym [s]))]
+    (is (every? string? (map #(extract-balanced src %) ["(defn- digits?" "(defn- dot2"]))
+        "the W3 validator arms are extractable from the namespace source")
+    (is (not (str/includes? (extract-balanced src "(defn- dot2") "(+ 1 (dot2"))
+        "the n + dot-count answer shape is gone")
+    (is (nil? (extract-balanced src "(defn- digits-all?"))
+        "the per-byte tail walk is deleted (the numeric-walk row)")
+    (is (str/includes? (extract-balanced src "(defn- digits?") "string-parse-i64")
+        "digits? reads the primitive's verdict, not a byte walk")
+    (is (not (str/includes? (extract-balanced src "(defn- digits?") "string-code-point-at s (+ i 1)"))
+        "no per-byte scan remains inside digits?")
+    (is (str/includes? (extract-balanced src "(defn- dot1") "string-find-byte s 46")
+        "each dot is one string-find-byte call (the split4 precedent)")
+    (testing "dot2 is the INDEX of the second dot (n when fewer than two)"
+      (is (= "3" (str (run 'd2 "1.2.3"))))
+      (is (= "3" (str (run 'd2 "1.2"))) "no second dot answers n"))
+    (testing "digits? is ONE OR MORE ASCII digits in [i, n)"
+      (is (true? (run 'dg "4")))
+      (is (true? (run 'dg "42")))
+      (is (false? (run 'dg "4x")))
+      (is (false? (run 'dg "")))
+      (is (false? (run 'dge "12")) "an empty range holds no digits"))
+    (testing "three non-empty digit parts around exactly two dots"
+      (doseq [s ["1.2.3" "1.3.357" "01.02.03" "12.34.56"]]
+        (is (true? (run 'v3 s)) (str s " is well-formed")))
+      (doseq [s ["vulkan" "1..3" "1.2." ".2.3" "1.2" "123" "1.2.3.4" "1.2.3x"
+                 "a.2.3" "" "1 .2.3"]]
+        (is (false? (run 'v3 s)) (str (pr-str s) " must not parse as d.d.d"))))
+    (testing "long digit parts stay host-regex true and resolve in budget"
+      ;; the host re-matches "[0-9]+\\.[0-9]+\\.[0-9]+" is TRUE here; the
+      ;; verdict reads ok|out-of-range as digits (overflow is still digits)
+      (is (true? (run 'dg (apply str (repeat 100 "9"))))
+          "100 digits are [0-9]+ whatever the i64 verdict")
+      (is (true? (run 'dg (str (apply str (repeat 100 "0")) "42")))
+          "102-char leading-zero text is [0-9]+")
+      (is (true? (run 'v3 (str "1.2." (apply str (repeat 100 "9")))))
+          "the 104-byte long-part spelling parses (it trapped before)"))))
+
+(deftest w3-device-from-info-parses-like-the-host-arm
+  ;; The `:kotoba` device-from-info end to end on the kotoba language
+  ;; runtime -- SHORT and FULL-LENGTH answers alike (the frame-budget row
+  ;; 2026-10-26: split4 walks pipe positions through `string-index-of-from`
+  ;; and blank-str? is one `string-skip-blank`, so the 26-byte recorded
+  ;; answer parses within the interpreter's standing 32-frame budget; the
+  ;; pre-row byte walks trapped it -- measured on this runtime,
+  ;; docs/evidence/gpu/w3-frame-budget-20261026.txt). The full spellings
+  ;; are ALSO host pins in info-answers-parse-into-measured-device-facts.
+  ;; NAMED RESIDUAL (not hidden): the numeric walks are GONE (the
+  ;; numeric-walk row 2026-10-26) and the '|'-key walks are per FIELD now
+  ;; (the alt-key row 2026-10-26: the boundary advance is one
+  ;; `string-find-byte` per field boundary, so a long alternate key
+  ;; resolves in budget -- MEASURED BEFORE: a 200-byte alternate trapped
+  ;; host/stack-exhausted in the per-byte walks,
+  ;; docs/evidence/gpu/w3-alt-key-field-walk-20261026.txt), and the field
+  ;; walk's O(FIELDS) FRAME residual is CLOSED (the alt-loop row
+  ;; 2026-10-26: alt-field?/alt-any-hits iterate through ONE
+  ;; loop/recur each -- MEASURED BEFORE: every cell at 32+ fields TRAPped
+  ;; budget/frames / host/stack-exhausted,
+  ;; docs/evidence/gpu/w3-alt-key-loop-20261026.txt) and its FUEL
+  ;; residual is CLOSED too (the alt-fuel row 2026-10-26: alt-end deleted,
+  ;; the per-field entries inlined -- MEASURED BEFORE: hit-za 2k+8
+  ;; min-fuel, the 256+-field cells TRAPped budget/fuel,
+  ;; docs/evidence/gpu/w3-alt-key-fuel-inlined-20261026.txt). The digit
+  ;; taxonomy (ok|out-of-range = digits) is PROVEN now (2026-10-26, the
+  ;; executing helper source read + 482 fresh cells, 0 mismatches,
+  ;; docs/evidence/gpu/w3-digit-taxonomy-20261026.txt: digits? IS the
+  ;; host regex [0-9]+, both directions). The engine parse-long boundary class
+  ;; [2^53, i64max] is MEASURED now (2026-10-26,
+  ;; w3-parse-long-boundary-20261026.txt) -- this wg route diverges the
+  ;; same way as the sg route there (the :kotoba arm answers the value,
+  ;; the host arm fails closed with no fact); the class is pinned on the
+  ;; contract arm below and the host cells stay named, never pinned. Its
+  ;; MECHANISM is READ now (2026-10-26,
+  ;; w3-parse-long-mechanism-20261026.txt: cljs.core/parse-long --
+  ;; js/parseInt answered only inside [MIN_SAFE_INTEGER,
+  ;; MAX_SAFE_INTEGER], so the boundary tracks the safe-integer range;
+  ;; the class has a negative twin at the unit, unreachable from the
+  ;; wire on either sign -- pinned in the sg-size test's sign-side
+  ;; block). The blank rule's MECHANISM is READ now (2026-10-26,
+  ;; w3-blank-host-mechanism-20261026.txt: str/blank? here is
+  ;; kotoba.lang.text/blank? = (or (nil? s) (= "" (trim s))) over the
+  ;; named java-whitespace? set -- the JVM Character/isWhitespace
+  ;; class written out; this row also CORRECTS the blank row's
+  ;; every-char /\s/ attribution, which measured clojure.string/blank?
+  ;; instead of the arm's callee) and the divergence class is exactly
+  ;; the all-java-whitespace? texts holding a non-C-isspace byte --
+  ;; NAMED divergence pinned in the blank block below, with the
+  ;; dispatch decision measured identical either way).
+  (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
+        arms (str/join "\n" (map #(extract-balanced src %)
+                                 ["(defn- none?" "(defn- string->i64"
+                                  "(defn- split4" "(defn- digits?"
+                                  "(defn- version3?" "(defn- dot1" "(defn- dot2"
+                                  "(defn- blank-str?"
+                                  "(defn device-from-info"]))
+        probe (str "(ns accelerator.targets.w3.dfi.probe (:export [main dfi]))\n"
+                   "(defn main [] :i64 0)\n"
+                   arms "\n"
+                   "(defn dfi [answer :document] :document (device-from-info answer))")
+        hir (sema/analyze probe)
+        dfi (fn [s] (ir/execute hir 'dfi [["string" s]]))
+        ;; host-side navigation of the returned document
+        fields-of (fn [doc]
+                    (into {} (map (fn [kv] [(get (get kv 0) 1) (get (get kv 1) 1)])
+                                  (get doc 1))))]
+    (testing "a well-formed short answer parses to the host arm's six facts"
+      (let [doc (dfi "ab|1.2.3|4|1")
+            m (fields-of doc)]
+        (is (= "map" (get doc 0)))
+        (is (= "ab" (:vendor m)))
+        (is (= :vulkan (:api m)))
+        (is (= "1.2.3" (:api-version m)))
+        (is (= "4" (str (:max-workgroup-x m))) "the i64 field, whatever its host integer type")
+        (is (true? (:unified-memory? m)))
+        (is (true? (:measured? m)))))
+    (testing "full-length answers parse within the standing budget"
+      (let [m (fields-of (dfi "Apple M1 Max|1.3.357|1024|1"))]
+        (is (= "Apple M1 Max" (:vendor m)) "the recorded 26-byte M1 Max answer")
+        (is (= "1.3.357" (:api-version m)))
+        (is (= "1024" (str (:max-workgroup-x m))))
+        (is (true? (:unified-memory? m)))
+        (is (true? (:measured? m))))
+      (let [m (fields-of (dfi "Mali-G78 MP24|1.1.128|256|0"))]
+        (is (= "Mali-G78 MP24" (:vendor m)) "a 28-byte answer, unified false")
+        (is (false? (:unified-memory? m)))
+        (is (= "256" (str (:max-workgroup-x m))))))
+    (testing "a non-blank one-byte device parses"
+      (is (= "a" (:vendor (fields-of (dfi "a|1.2.3|4|1"))))))
+    (testing "a blank device field rejects (the host str/blank? reading)"
+      (doseq [s [" |1.2.3|4|1" "\t|1.2.3|4|1" "\u000b|1.2.3|4|1"]]
+        (is (= ["null"] (dfi s)) (str (pr-str s) " is a blank device name")))
+      (is (= "a\u000bb" (:vendor (fields-of (dfi "a\u000bb|1.2.3|4|1"))))
+          "a NON-blank field holding a \u000b byte still parses (only all-blank rejects)"))
+    (testing "the blank rule is byte-level C isspace -- the java-whitespace class is MEASURED named divergence (membership corrected 2026-10-26)"
+      ;; THE HOST-BLANK MECHANISM ROW (2026-10-26,
+      ;; docs/evidence/gpu/w3-blank-host-mechanism-20261026.txt,
+      ;; two byte-identical probe runs, sha256 c331b523..). The blank
+      ;; row (w3-blank-nonascii-whitespace-20261026.txt) measured the
+      ;; unit against clojure.string/blank? (the probe's own `str`
+      ;; alias) and named the wrong class: the arm's callee is
+      ;; kotoba.lang.text/blank? = (or (nil? s) (= "" (trim s))) over
+      ;; the named java-whitespace? set (the JVM class written out --
+      ;; includes U+001C..U+001F, excludes NBSP/U+2007/U+202F/FEFF).
+      ;; MEASURED corrected classes (44 cells, arm-rule-match 44/44):
+      ;; PARITY-BLANK is the C isspace set (pinned below). The
+      ;; DIVERGENCE CLASS is exactly the texts whose chars are all
+      ;; java-whitespace? but which hold a non-C-isspace byte --
+      ;; U+001C..U+001F singletons or runs, {U+1680, U+2000..U+2006,
+      ;; U+2008..U+200A, U+2028, U+2029, U+205F, U+3000} alone or
+      ;; mixed with C-isspace chars: the W3 arm answers the six-fact
+      ;; map (permissive at the FACT) where the host arm answers nil.
+      ;; NBSP/U+2007/U+202F/FEFF are PARITY-NONBLANK -- both arms
+      ;; parse (the blank row's own recorded run lines show the host
+      ;; fact there). The class cells are PINNED on the contract arm
+      ;; as the W3 arm's MEASURED answer; the host cells are named
+      ;; here and NEVER pinned (engine-owned -- the parse-long
+      ;; precedent). The DISPATCH DECISION is identical either way
+      ;; (the consequence pins below): no row matches an all-whitespace
+      ;; name.
+      (doseq [s ["\n|1.2.3|4|1" "\u000c|1.2.3|4|1" "\r|1.2.3|4|1" "  |1.2.3|4|1"]]
+        (is (= ["null"] (dfi s))
+            (str (pr-str s) " is a C-isspace blank device -- rejected like the cells above")))
+      (doseq [[dev label] [["\u0085" "NEL 0085"] ["\u200b" "ZWSP 200b"]
+                           ["\u180e" "MVS 180e"] ["\u00a0" "NBSP 00a0"]
+                           ["\ufeff" "BOM feff"]]]
+        (is (= dev (:vendor (fields-of (dfi (str dev "|1.2.3|4|1")))))
+            (str label " is NON-blank on the W3 arm -- parity (the host arm parses too)")))
+      (doseq [[dev label] [["\u001c" "FS 001c"] ["\u2028" "line separator"]
+                           ["\u3000" "ideographic space"] ["\u1680" "OGHAM 1680"]
+                           [" \u3000" "sp + idsp"]]]
+        (is (= dev (:vendor (fields-of (dfi (str dev "|1.2.3|4|1")))))
+            (str label " answers the FACT on the W3 arm -- NAMED divergence (the host arm answers nil there)")))
+      (doseq [[dev label] [["\u001c" "FS 001c"] ["\u2028" "line separator"]
+                           ["\u3000" "ideographic space"] ["\u1680" "OGHAM 1680"]
+                           [" \u3000" "sp + idsp"]]]
+        (is (= {:vendor :unknown :target :wgsl-v1 :workgroup-size 256 :measured? false}
+               (select-keys (targets/recommend {:vendor dev})
+                            [:vendor :target :workgroup-size :measured?]))
+            (str label ": the dispatch decision is IDENTICAL either way -- no row matches an all-whitespace name"))))
+    (testing "malformed answers parse to null, never a throw or a wrong fact"
+      (doseq [s ["a|vulk|4|1"     "ab|1.2.3|0|1" "ab|1.2.3|4|2"
+                 "ab|1.2.3|4|1|"  "ab|1.2.3|4|1|x" "ab|1.2.3|4" "ab|1..3|4|1"
+                 "ab|1.2.3|x|1"]]
+        (is (= ["null"] (dfi s)) (str (pr-str s) " must parse to no fact at all"))))
+    (testing "a many-pipe answer is total end to end: null, never a frame trap"
+      ;; MEASURED BEFORE (the many-pipe row's evidence,
+      ;; w3-split4-many-pipe-total-20261026.txt): these answers TRAPped
+      ;; host/stack-exhausted at 16..128 pipes (budget/frames at the same
+      ;; cells in the earlier go/no-go position) on this runtime while
+      ;; the host arm answered nil -- the split4 walk
+      ;; took one frame per '|'-boundary until the row answered a fifth
+      ;; field ABOVE the recursion
+      (doseq [k [16 33 64 128]]
+        (let [s (str/join "|" (repeat (inc k) "a"))]
+          (is (= ["null"] (dfi s))
+              (str "the " k "-pipe answer must parse to no fact at all"))
+          (is (nil? (targets/device-from-info s)) (str "HOST parity pin (" k "-pipe)"))))
+      (is (= ["null"] (dfi (str "ab|1.2.3|4|1|" (str/join "|" (repeat 33 "z")))))
+          "four good fields plus 33 more fields (37 total) -- null, not a throw"))
+    (testing "adversarial numeric fields resolve in budget and host-equal"
+      ;; MEASURED BEFORE on this runtime (docs/evidence/gpu/
+      ;; w3-numeric-walk-primitives-20261026.txt): every one of these
+      ;; answers TRAPPED host/stack-exhausted in the numeric walks
+      (let [m (fields-of (dfi "ab|99999999999999999999.2.3|4|1"))]
+        (is (= "99999999999999999999.2.3" (:api-version m)) "a 20-digit version part")
+        (is (= "4" (str (:max-workgroup-x m)))))
+      (let [m (fields-of (dfi (str "ab|1.2." (apply str (repeat 100 "9")) "|4|1")))]
+        (is (= "4" (str (:max-workgroup-x m))) "a 100-digit version part"))
+      (let [m (fields-of (dfi (str "ab|1.2.3|" (apply str (repeat 100 "0")) "42|1")))]
+        (is (= "42" (str (:max-workgroup-x m)))
+            "102-char leading-zero wg text parses 42 (host parse-long parity)")))
+    (testing "digit text that does not fit i64 answers null, never a wrong fact"
+      ;; PINNED SEMANTIC CHANGE (the numeric-walk row): the parse-walk
+      ;; answered the WRONG wrapped value 7766279631452241919 for this
+      ;; text (measured at the string->i64 unit; at this answer depth the
+      ;; walks trapped before the wrong map could materialize) -- the
+      ;; primitive's no-value maps to null, the host arm's parse-long nil
+      ;; maps to the same null
+      (is (= ["null"] (dfi "ab|1.2.3|99999999999999999999|1")))
+      (is (= ["null"] (dfi (str "ab|1.2.3|" (apply str (repeat 1000 "5")) "|1"))))
+      (is (nil? (targets/device-from-info "ab|1.2.3|99999999999999999999|1"))
+          "HOST parity pin: the host arm answers no fact for the same field")
+      (is (nil? (targets/device-from-info (str "ab|1.2.3|" (apply str (repeat 1000 "5")) "|1")))
+          "HOST parity pin (1001-digit field)"))
+    (testing "the engine parse-long boundary class: a value on the :kotoba arm, fail-closed host"
+      ;; MEASURED 2026-10-26 (docs/evidence/gpu/
+      ;; w3-parse-long-boundary-20261026.txt): the engine's parse-long
+      ;; answers the exact value through 2^53-1 and nil at 2^53 and
+      ;; above, so this wg route's maxWgX field diverges for the whole
+      ;; class [2^53, i64max] exactly as the sg route's size field does
+      ;; (the sg-size row's "unprobed there" question, probed now): the
+      ;; :kotoba arm answers the fact with the value, the host arm
+      ;; answers nil (a missing fact -- fail-closed, never a wrong fact;
+      ;; unreachable from the wire, where maxWgX is a device limit).
+      ;; The class cells are PINNED on the contract arm; the host cells
+      ;; are named here and NEVER pinned (engine-owned).
+      (doseq [[s want] [["ab|1.2.3|9007199254740992|1" "9007199254740992"]
+                        ["ab|1.2.3|9007199254740993|1" "9007199254740993"]
+                        ["ab|1.2.3|9223372036854775806|1" "9223372036854775806"]
+                        ["ab|1.2.3|9223372036854775807|1" "9223372036854775807"]
+                        [(str "ab|1.2.3|" (apply str (repeat 44 "0"))
+                              "9007199254740993|1") "9007199254740993"]]]
+        (is (= want (str (:max-workgroup-x (fields-of (dfi s)))))
+            (str (pr-str s) " is a VALUE on the :kotoba arm (the class follows the value, not the text length)")))
+      (is (= ["null"] (dfi "ab|1.2.3|9223372036854775808|1"))
+          "one past i64 is still total null on both arms"))
+    (testing "the numeric walks are deleted and the parse delegates to parse-long"
+      (is (nil? (extract-balanced src "(defn- parse-walk"))
+          "the per-byte parse walk is deleted (the numeric-walk row)")
+      (is (nil? (extract-balanced src "(defn- digits-all?"))
+          "the per-byte tail walk is deleted")
+      (is (str/includes? (extract-balanced src "(defn- string->i64") "parse-long")
+          "string->i64 is one parse-long call (the host arm's own head)"))))
+
+(deftest w3-subgroup-size-is-one-parse-not-a-byte-walk
+  ;; The `:kotoba` sg-size -- the SUBGROUP answer's <size> field on the
+  ;; parse-decimal contract: decimal digits only as an i64, -1 for an
+  ;; empty field, a non-digit or a value past i64. This is the alt-key
+  ;; row's (2026-10-26) named residual -- "sg-size-walk (the subgroup
+  ;; size field) still walks per byte (named, not hidden, its own row)".
+  ;; The replaced sg-size-walk recursed per byte and trapped the
+  ;; interpreter's 32-frame budget (frames-limit 32) on digit fields at
+  ;; the i64 boundary and on long leading-zero text -- MEASURED BEFORE on
+  ;; this runtime (19-digit i64 max / 20-digit / 104-char leading-zero
+  ;; text -> host/stack-exhausted or budget/frames,
+  ;; docs/evidence/gpu/w3-sg-size-parse-20261026.txt). The parse is ONE
+  ;; digits? + ONE string->i64 -- the exact wg-field idiom
+  ;; (device-from-info, the numeric-walk row 2026-10-26). The digits?
+  ;; guard is load-bearing for the signed spellings: parse-long accepts
+  ;; "+5"/"-5" (measured) where the host regex [0-9]+ and the deleted
+  ;; walk refuse them. PINNED CONTRACT, unchanged: the i64 max text is a
+  ;; VALUE (not past i64) and the one-past text is -1.
+  ;; NAMED, NOT HIDDEN: (a) the parse taxonomy (ok|out-of-range for
+  ;; digit-only text) is PROVEN 2026-10-26 by SOURCE READ (the executing
+  ;; helper __kotoba_intrinsic_parse_i64, kotoba-sema @ a3303527 -- the
+  ;; two :parse/malformed arms need a non-digit code point or an
+  ;; empty-after-sign text, so on digit-only text they are unreachable
+  ;; and the terminal answers ok|out-of-range by construction; a
+  ;; non-digit answers :parse/malformed at its own step, so verdict
+  ;; ok|out-of-range <=> ALL ASCII digits -- digits? IS the host regex
+  ;; [0-9]+, both directions) plus 482 fresh confirmation cells with 0
+  ;; mismatches in two byte-identical runs -- pinned in the
+  ;; "digit taxonomy is PROVEN" block below,
+  ;; docs/evidence/gpu/w3-digit-taxonomy-20261026.txt; (b) ENGINE PARSE-LONG
+  ;; BOUNDARY -- MEASURED NOW (2026-10-26, two byte-identical probe runs,
+  ;; docs/evidence/gpu/w3-parse-long-boundary-20261026.txt): this
+  ;; engine's parse-long answers the EXACT value through 2^53-1
+  ;; (9007199254740991) and nil at 2^53 (9007199254740992) and above --
+  ;; so the divergence is a CLASS, not one text: for every digit text
+  ;; whose value is in [2^53, i64max] the HOST arm's own heads
+  ;; (re-matches + parse-long) answer NO FACT while the contract and the
+  ;; :kotoba arm answer the value, on BOTH routes (the sg route here and
+  ;; the wg route's device-from-info -- the previously unprobed question,
+  ;; probed now and diverging identically). Engine-owned (the engine's
+  ;; integer range), fail-closed on the host arm (a missing fact, never a
+  ;; wrong fact), unreachable from the wire (a wire-42 maxWgX is a device
+  ;; limit). The class cells ARE pinned on the :kotoba contract arm; the
+  ;; host cells are named in these pins' comments and never pinned;
+  ;; the MECHANISM is READ now too (2026-10-26,
+  ;; w3-parse-long-mechanism-20261026.txt): the engine head is
+  ;; cljs.core/parse-long -- js/parseInt into a JS Number admitted
+  ;; only inside [MIN_SAFE_INTEGER, MAX_SAFE_INTEGER] -- and the
+  ;; class has a negative twin at the unit ([i64min, -2^53], pinned
+  ;; in the sign-side block below), unreachable from the wire on
+  ;; either sign;
+  ;; (c) the SUBGROUP chain's
+  ;; OTHER walks still trap multi-token / long answers on this runtime
+  ;; (sg-pipe walks the answer per byte; sg-token-end/sg-ops-walk walk
+  ;; per token/space byte -- MEASURED: "32|basic shuffle-relative" traps
+  ;; host/stack-exhausted on BOTH arms at this depth), their own rows --
+  ;; the pipe/token-end row (2026-10-26) has since fixed the per-byte
+  ;; scans (sg-pipe/sg-token-end onto string-find-byte), see
+  ;; w3-subgroup-pipe-and-token-end-find-bytes-not-walks, and the
+  ;; sg-member? row (2026-10-26) fixed the dedupe check's accessor
+  ;; (document-vector-at over the vector accumulator), see
+  ;; w3-subgroup-member-dedupes-on-the-vector-accumulator (since renamed
+  ;; by the dedupe-map row); the residual
+  ;; trap was sg-ops-walk per token (its own row) -- the
+  ;; sg-keyword row (2026-10-26) replaced the vocabulary walk with one
+  ;; non-recursive table body, see
+  ;; w3-subgroup-keyword-lookup-is-a-table-not-a-walk; the sg-ops row
+  ;; (2026-10-26) then collapsed the separator skip to ONE
+  ;; string-skip-blank per run, and the loop row (2026-10-26) re-anchored
+  ;; the walk on ONE loop/recur -- the desugared __kotoba_loop_N helper
+  ;; trampolines its self-tail re-entry, zero-charge (kir.cljc T7.1/T7.4)
+  ;; -- see w3-subgroup-ops-walk-is-a-loop-not-a-self-call: the per-token
+  ;; frame class is GONE (sg-member?'s per-element frames were removed
+  ;; by the dedupe-map row, 2026-10-26, see
+  ;; w3-subgroup-dedupe-on-a-shadow-map-not-a-per-element-walk);
+  ;; the e2e pins below run only the shapes the probes resolved twice --
+  ;; e.g. "32|basic vote2" (14 bytes) TRAPped host/stack-exhausted on
+  ;; BOTH arms then (fixed since by the sg-keyword row) and is not
+  ;; pinned here (trap boundaries are state-dependent).
+  (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
+        arms (str/join "\n" (map #(extract-balanced src %)
+                                 ["(defn- none?" "(defn- string->i64" "(defn- digits?"
+                                  "(defn- sg-tokens-doc"
+                                  "(defn- sg-size "
+                                  "(defn- sg-ops " "(defn- sg-ops-walk" "(defn- sg-pipe"
+                                  "(defn device-from-subgroup"]))
+        ;; (sg-keyword and sg-token-end are deleted by the fuel row,
+        ;; 2026-10-26 -- the lookup table and the token-end find are
+        ;; INLINED in sg-ops-walk's loop body; no probe calls them.)
+        probe (str "(ns accelerator.targets.w3.sg.probe (:export [main si sz dfs dg malp]))\n"
+                   "(defn main [] :i64 0)\n"
+                   arms "\n"
+                   "(defn si [s :string] :i64 (string->i64 s))\n"
+                   "(defn sz [s :string] :i64 (sg-size s))\n"
+                   "(defn dfs [answer :document] :document (device-from-subgroup answer))\n"
+                   "(defn dg [s :string] :bool (digits? s 0 (string-byte-length s)))\n"
+                   "(defn malp [s :string] :bool (= :parse/malformed (result-error-of [:result :i64 :keyword] (string-parse-i64 s) :none)))\n")
+        hir (sema/analyze probe)
+        si (fn [s] (str (ir/execute hir 'si [s])))
+        sz (fn [s] (str (ir/execute hir 'sz [s])))
+        dfs (fn [s] (ir/execute hir 'dfs [["string" s]]))
+        dg (fn [s] (ir/execute hir 'dg [s]))
+        malp (fn [s] (ir/execute hir 'malp [s]))
+        fields-of (fn [doc]
+                    (into {} (map (fn [kv] [(get (get kv 0) 1) (get (get kv 1) 1)])
+                                  (get doc 1))))
+        ops-set (fn [ops] (set (map #(get % 1) ops)))
+        ;; the host arm's own size heads, mapped to sg-size's -1 shape
+        host-sz (fn [s]
+                  (let [v (when (re-matches #"[0-9]+" s) (parse-long s))]
+                    (if (nil? v) -1 v)))]
+    (testing "the parse-decimal contract on the kotoba runtime (was: a per-byte walk)"
+      ;; MEASURED BEFORE (the evidence): the 19-digit max, the 20-digit
+      ;; overflow and the 104-char leading-zero text TRAPPED in the walk;
+      ;; the walk answered the contract on the short cells
+      (doseq [[s want] [["" "-1"] ["0" "0"] ["32" "32"] ["042" "42"] ["0000" "0"]
+                        ;; the engine parse-long boundary class (measured
+                        ;; 2026-10-26, w3-parse-long-boundary-20261026.txt):
+                        ;; values in [2^53, i64max] are VALUES on the
+                        ;; contract arm even though the host engine's
+                        ;; parse-long answers nil there (its cells are
+                        ;; named in the parity grid below and never pinned)
+                        ["9007199254740992" "9007199254740992"]
+                        ["9007199254740993" "9007199254740993"]
+                        ["9223372036854775806" "9223372036854775806"]
+                        ["9223372036854775807" "9223372036854775807"]
+                        ["9223372036854775808" "-1"]
+                        ["99999999999999999999" "-1"]
+                        [(apply str (repeat 100 "9")) "-1"]
+                        [(apply str (repeat 1000 "5")) "-1"]
+                        [(str (apply str (repeat 102 "0")) "42") "42"]
+                        ["32x" "-1"] [" 32" "-1"] ["-1" "-1"] ["+3" "-1"]
+                        ["12.5" "-1"] ["x" "-1"] ["5 " "-1"] ["32\t" "-1"]
+                        ["5\n" "-1"] ["0x1f" "-1"]]]
+        (is (= want (sz s)) (str (pr-str s) " keeps the parse-decimal contract"))))
+    (testing "host-head parity through the engine's exact integer range"
+      ;; EXCLUDED here on purpose: every text whose value is in
+      ;; [2^53, i64max] -- this engine's parse-long answers nil for the
+      ;; whole class (MEASURED 2026-10-26: exact through 2^53-1, nil at
+      ;; 2^53 and above; w3-parse-long-boundary-20261026.txt), so the
+      ;; host heads answer -1 where the contract and the :kotoba arm
+      ;; answer the value. Named, never pinned -- engine-owned.
+      (doseq [s ["" "0" "32" "042" "0000"
+                 "4503599627370495" "4503599627370496" "9007199254740991"
+                 "9223372036854775808" "99999999999999999999"
+                 (apply str (repeat 100 "9")) (apply str (repeat 1000 "5"))
+                 (str (apply str (repeat 102 "0")) "42")
+                 "32x" " 32" "-1" "+3" "12.5" "x" "5 " "32\t" "5\n" "0x1f"]]
+        (is (= (str (host-sz s)) (sz s))
+            (str (pr-str s) " parses the same on the host arm's own heads"))))
+    (testing "the mechanism row: the sign-side unit class, refused at the route"
+      ;; READ + MEASURED 2026-10-26 (docs/evidence/gpu/
+      ;; w3-parse-long-mechanism-20261026.txt): the engine's parse-long
+      ;; is cljs.core/parse-long (js/parseInt + the
+      ;; [MIN_SAFE_INTEGER, MAX_SAFE_INTEGER] check), so the boundary
+      ;; row's class has a negative twin at the string->i64 UNIT:
+      ;; [i64min, -2^53] answers the exact value on the :kotoba arm
+      ;; (real i64) and nil on the engine. These pins are the CONTRACT
+      ;; arm only; the engine cells stay named and never pinned
+      ;; (engine-owned -- an upstream CLJS/nbb change must not be
+      ;; blocked by a pin on the old answer).
+      (is (= "-9007199254740991" (si "-9007199254740991"))
+          "MIN_SAFE-side value is exact on the contract arm")
+      (is (= "-9007199254740992" (si "-9007199254740992"))
+          "-(2^53) is a VALUE on the contract arm (the engine answers nil there -- named, never pinned)")
+      (is (= "-9223372036854775808" (si "-9223372036854775808"))
+          "i64min is exact on the contract arm")
+      (is (= "-1" (si "4x"))
+          "malformed text is still the no-value shape at the unit")
+      ;; at the ROUTE both arms refuse a sign ABOVE the parse (the
+      ;; digits? and [0-9]+ gates), so the unit class is unreachable
+      ;; from the wire on either sign -- measured on both arms
+      (is (= "-1" (sz "-9007199254740992"))
+          "a sign refuses above the digits? gate, contract arm")
+      (is (= ["null"] (dfs "-9007199254740992|basic"))
+          "and end to end: no fact, contract arm")
+      (is (nil? (targets/device-from-subgroup "-9007199254740992|basic"))
+          "HOST parity pin: the [0-9]+ gate refuses the same sign"))
+    (testing "the digit taxonomy is PROVEN (source read), pinned on the contract arm (the digit-taxonomy row 2026-10-26)"
+      ;; Residual (a) above is CLOSED by SOURCE READ of the executing
+      ;; helper (__kotoba_intrinsic_parse_i64, kotoba-sema @ a3303527,
+      ;; frontend.cljk 4159-4183): the two :parse/malformed arms need a
+      ;; code point outside [48,57] or an empty-after-sign text -- both
+      ;; unreachable on non-empty digit-only text -- and the terminal is
+      ;; reached only at the end, so verdict ok|out-of-range <=> ALL
+      ;; ASCII digits and digits? IS the host regex [0-9]+ (both
+      ;; directions). Confirmation probe: 482 fresh cells, 0 mismatches,
+      ;; two byte-identical runs
+      ;; (docs/evidence/gpu/w3-digit-taxonomy-20261026.txt). These pins
+      ;; hold OUR functions' behavior (digits? / string->i64 / the
+      ;; verdict digits? delegates to); the helper's TEXT is not pinned
+      ;; (upstream may refactor it -- only its documented verdicts are
+      ;; relied on).
+      (let [one-char (map #(str (char %)) (range 256))]
+        (is (every? (fn [c] (= (boolean (re-matches #"[0-9]+" c)) (boolean (dg c))))
+                    (concat one-char ["\u0660" "\uFF11" "\u00BD" "\u2028"]))
+            "digits? is exactly [0-9]+ over the FULL one-char domain 0..255 (+ other-script chars)"))
+      (is (every? false? (map malp ["0" "9" "0042" "9223372036854775807"
+                                    "9223372036854775808"
+                                    "0000000000000000000000000009223372036854775808"
+                                    (apply str (repeat 1000 "5"))]))
+          "digit-only text NEVER answers :parse/malformed (the taxonomy identity, source-proven)")
+      (is (every? true? (map malp ["5x" "5 " "+-5" "-" "+" "" " 5" "\u0660" "\uFF11"]))
+          "every non-digit text answers :parse/malformed (incl. the sign shapes digits? refuses)")
+      ;; the accumulation-flag boundary (the helper's
+      ;; (and (= acc -922337203685477580) (> d 8)) arm) -- fresh cells
+      (is (= "9223372036854775800" (si "9223372036854775800"))
+          "the …800 text is a value on the contract arm")
+      (is (= "9223372036854775807" (si "9223372036854775807"))
+          "…807 is i64max")
+      (is (= "-1" (si "9223372036854775808"))
+          "…808 is past i64 (out-of-range -> no value)")
+      (is (= "-1" (si "9223372036854775809"))
+          "…809 too")
+      (is (= "-9223372036854775808" (si "-9223372036854775808"))
+          "negative …808 is i64min on the contract arm")
+      (is (= "-1" (si "-9223372036854775809"))
+          "negative …809 is past i64")
+      (is (= "9223372036854775807" (sz "0000000000000000000000000009223372036854775807"))
+          "leading-zero i64max is the value at the route")
+      (is (= "-1" (sz "9223372036854775808"))
+          "the route refuses past i64 (contract, unchanged)"))
+    (testing "the e2e answer parse: the size field's facts flow, malformed fails closed"
+      (let [m (fields-of (dfs "8|"))]
+        (is (= "8" (str (:subgroup-size m))) "an empty <ops> is the zero-ops fact")
+        (is (= #{} (ops-set (:subgroup-ops m)))))
+      ;; the engine parse-long boundary class, end to end on the contract
+      ;; arm (MEASURED 2026-10-26): a value in [2^53, i64max] is a fact
+      ;; here; the host arm answers nil for the same answer (named, never
+      ;; pinned -- w3-parse-long-boundary-20261026.txt)
+      (let [m (fields-of (dfs "9007199254740993|basic"))]
+        (is (= "9007199254740993" (str (:subgroup-size m)))
+            "the class text is a VALUE on the :kotoba arm, not a refusal")
+        (is (= #{:basic} (ops-set (:subgroup-ops m)))))
+      (let [m (fields-of (dfs "16|shuffle"))]
+        (is (= "16" (str (:subgroup-size m))))
+        (is (= #{:shuffle} (ops-set (:subgroup-ops m)))))
+      (doseq [s ["no|such answer" "32|Basic" "32|basic\tvote"
+                 "-1|basic" "+3|basic" "0|basic" "12.5|basic" " 32|basic"
+                 "32x|basic" "x|basic" "32|basic|extra" "32||basic"]]
+        (is (= ["null"] (dfs s)) (str (pr-str s) " must parse to no fact at all")))
+      (is (= {:subgroup-size 8 :subgroup-ops #{:basic}}
+             (targets/device-from-subgroup "8|basic"))
+          "HOST parity pin")
+      (is (= {:subgroup-size 16 :subgroup-ops #{:shuffle}}
+             (targets/device-from-subgroup "16|shuffle"))
+          "HOST parity pin")
+      (doseq [s ["no|such answer" "32|Basic" "32|basic\tvote"
+                 "-1|basic" "+3|basic" "0|basic" "12.5|basic" " 32|basic"
+                 "32x|basic" "x|basic" "32|basic|extra" "32||basic"]]
+        (is (nil? (targets/device-from-subgroup s))
+            (str "HOST parity pin: " (pr-str s)))))
+    (testing "the per-byte walk is deleted and the parse delegates to the primitives"
+      (is (nil? (extract-balanced src "(defn- sg-size-walk"))
+          "the per-byte size walk is deleted (prose naming it stays legal)")
+      (is (not (str/includes? src "(defn- sg-size-walk"))
+          "and gone from the namespace source under the defn- prefix")
+      (is (str/includes? (extract-balanced src "(defn- sg-size ") "string->i64")
+          "sg-size delegates to the parse primitive (the host arm's own head)")
+      (is (str/includes? (extract-balanced src "(defn- sg-size ") "digits?")
+          "the [0-9]+ guard is digits? (signed spellings must refuse)")
+      (is (not (str/includes? (extract-balanced src "(defn- sg-size ") "string-code-point-at"))
+          "no byte scan remains in sg-size"))))
+
+(deftest w3-subgroup-pipe-and-token-end-find-bytes-not-walks
+  ;; The `:kotoba` sg-pipe and sg-token-end -- the SUBGROUP chain's two
+  ;; per-BYTE scans -- on the kotoba language runtime (the w3
+  ;; extract-balanced idiom). This is the sg-size row's (2026-10-26)
+  ;; named residual: "sg-pipe per answer byte, sg-token-end/sg-ops-walk
+  ;; per token/space byte, sg-member?/sg-keyword per element ... their
+  ;; own rows". The replaced walks recursed one frame per byte and
+  ;; trapped the interpreter's 32-frame budget (frames-limit 32) on
+  ;; every long answer and long token -- MEASURED BEFORE on this runtime
+  ;; (200-byte fields -> host/stack-exhausted; 106..110-byte answers ->
+  ;; budget/frames regardless of the sg-size fix,
+  ;; docs/evidence/gpu/w3-pipe-token-end-primitives-20261026.txt). The
+  ;; scans are `string-find-byte` (the dot1/alt-end precedent): sg-pipe
+  ;; at most TWO finds (the first '|' from 0, then one after it), the
+  ;; token-end find ONE find per token step (byte 32 = the alt-end
+  ;; shape, INLINE in sg-ops-walk's loop body since the fuel row,
+  ;; 2026-10-26 -- the sg-token-end `defn-` is deleted).
+  ;; PINNED CONTRACTS, unchanged: sg-pipe answers the index of the
+  ;; single '|', -1 for none, -2 for more (a trailing pipe is a second
+  ;; pipe -- it splits an empty third field); the token-end shape
+  ;; answers the first byte-32 at or after i, n when absent (contract
+  ;; unchanged; the shape moved inline with the fuel row). The total
+  ;; shapes are
+  ;; answered ABOVE the primitive (string-find-byte answers -1 when
+  ;; absent and traps on from > n; from = n is never called).
+  ;; NAMED THEN, FIXED SINCE (the sg-member? row, 2026-10-26): the
+  ;; dedupe check sg-member? called document-list-at over the chain's
+  ;; own document-VECTOR accumulator and TRAPped document-list-required
+  ;; on any 2+-token <ops> field -- measured on BOTH arms (the body was
+  ;; untouched by this row) with the unit mechanism table (empty-vector
+  ;; acc false / vector acc k=1 TRAP / same count on a LIST acc false)
+  ;; -- so the canonical "32|basic shuffle-relative" answer and the
+  ;; eight-token answer trapped document-list-required while the host
+  ;; arm answered the full map. The bug was PRE-EXISTING and was masked
+  ;; by the walk traps this row removed. The sg-member? row moved the
+  ;; read to document-vector-at (the vector's own accessor) and the
+  ;; canonical two-token answer now parses host-equal (the eight-token
+  ;; answer resolves in the standalone probe's context but traps at the
+  ;; gate's context depth -- named, never pinned), see
+  ;; w3-subgroup-member-dedupes-on-the-vector-accumulator (since renamed
+  ;; by the dedupe-map row). The remaining
+  ;; walk (sg-ops-walk per token) kept its own trap until the loop row
+  ;; (2026-10-26) re-anchored it on ONE loop/recur (zero-charge
+  ;; trampoline re-entry, kir.cljc T7.1/T7.4, see
+  ;; w3-subgroup-ops-walk-is-a-loop-not-a-self-call); the
+  ;; vocabulary walk had one too -- "32|basic vote2" and the spaced
+  ;; two-token answer trapped host/stack-exhausted (re-MEASURED in
+  ;; the sg-member? row's probe, both runs) -- and the sg-keyword row
+  ;; (2026-10-26) replaced it with one non-recursive table body
+  ;; (w3-subgroup-keyword-lookup-is-a-table-not-a-walk re-MEASURES both
+  ;; cells); the sg-ops row (2026-10-26) then moved the separator skip
+  ;; to ONE string-skip-blank per run (one frame per TOKEN then, see
+  ;; w3-subgroup-ops-walk-is-a-loop-not-a-self-call -- the 70-byte
+  ;; eight-token cell still trapped on both arms there, re-MEASURED) --
+  ;; and the dedupe-map row (2026-10-26) then removed sg-member?'s
+  ;; per-element frames (ONE document-contains over a map shadow, see
+  ;; w3-subgroup-dedupe-on-a-shadow-map-not-a-per-element-walk -- the
+  ;; 70-byte cell resolves there). The fuel row (2026-10-26) then
+  ;; INLINED the walk's per-token calls (the token-end find, the keyword
+  ;; table, none?'s sentinel test) into the loop body and deleted the
+  ;; sg-token-end / sg-keyword `defn-`s, see
+  ;; w3-subgroup-per-token-fuel-charges-are-inlined. Every trapping cell
+  ;; is measure-only, NEVER pinned (trap boundaries and spellings are
+  ;; state-dependent).
+  (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
+        arms (str/join "\n" (map #(extract-balanced src %)
+                                 ["(defn- none?" "(defn- string->i64" "(defn- digits?"
+                                  "(defn- sg-tokens-doc"
+                                  "(defn- sg-size "
+                                  "(defn- sg-ops " "(defn- sg-ops-walk" "(defn- sg-pipe"
+                                  "(defn device-from-subgroup"]))
+        ;; (sg-keyword and sg-token-end are deleted by the fuel row,
+        ;; 2026-10-26 -- the lookup table and the token-end find are
+        ;; INLINED in sg-ops-walk's loop body; no probe calls them.)
+        probe (str "(ns accelerator.targets.w3.pipe.probe (:export [main sp dfs]))\n"
+                   "(defn main [] :i64 0)\n"
+                   arms "\n"
+                   "(defn sp [s :string] :i64 (sg-pipe s (string-byte-length s)))\n"
+                   "(defn dfs [answer :document] :document (device-from-subgroup answer))\n")
+        hir (sema/analyze probe)
+        sp (fn [s] (str (ir/execute hir 'sp [s])))
+        dfs (fn [s] (ir/execute hir 'dfs [["string" s]]))
+        fields-of (fn [doc]
+                    (into {} (map (fn [kv] [(get (get kv 0) 1) (get (get kv 1) 1)])
+                                  (get doc 1))))
+        ops-set (fn [ops] (set (map #(get % 1) ops)))
+        ;; the host readings of the same two contracts
+        host-sp (fn [s]
+                  (let [parts (str/split s #"\|" -1)]
+                    (cond (= 1 (count parts)) -1
+                          (= 2 (count parts)) (str/index-of s "|")
+                          :else -2)))
+        long-a (apply str (repeat 200 "a"))
+        one-pipe-200 (str (apply str (repeat 150 "a")) "|" (apply str (repeat 49 "b")))
+        two-pipe-200 (str (apply str (repeat 100 "a")) "|" (apply str (repeat 50 "b")) "|")]
+    (testing "the sg-pipe contract on the kotoba runtime (was: a per-answer-byte walk)"
+      ;; MEASURED BEFORE (the evidence): the three 200+-byte cells
+      ;; TRAPPED host/stack-exhausted in the walk; the short cells held
+      (doseq [[s want] [["" "-1"] ["32" "-1"] ["abc" "-1"]
+                        ["32|basic" "2"] ["8|" "1"] ["|x" "0"] ["|" "0"]
+                        ["||" "-2"] ["32|basic|extra" "-2"] ["a||b" "-2"] ["x|y|" "-2"]
+                        [long-a "-1"] [one-pipe-200 "150"] [two-pipe-200 "-2"]
+                        [(apply str (repeat 1000 "a")) "-1"]]]
+        (is (= want (sp s)) (str (pr-str s) " keeps the exactly-two-fields contract"))))
+    (testing "sg-pipe host parity on the same contract"
+      (doseq [s ["" "32" "abc" "32|basic" "8|" "|x" "|" "||"
+                 "32|basic|extra" "a||b" "x|y|"
+                 long-a one-pipe-200 two-pipe-200 (apply str (repeat 1000 "a"))]]
+        (is (= (str (host-sp s)) (sp s))
+            (str (pr-str s) " answers the host's str/split -1 count reading"))))
+    ;; (the sg-token-end unit table is deleted with the defn-: the
+    ;; token-end shape is INLINE in sg-ops-walk's loop body since the
+    ;; fuel row (2026-10-26) and its contract -- the first byte-32 at or
+    ;; after i, n when absent; tokens are maximal non-32 runs -- is
+    ;; pinned through the walk's token grid in
+    ;; w3-subgroup-ops-walk-is-a-loop-not-a-self-call and through the
+    ;; source pins below. The deleted table held 11 boundary cells and
+    ;; their host readings; the same shapes ride in the walk grid.)
+    (testing "the standing e2e pins are byte-identical (no spelling moved)"
+      (let [m (fields-of (dfs "8|"))]
+        (is (= "8" (str (:subgroup-size m))) "an empty <ops> is the zero-ops fact")
+        (is (= #{} (ops-set (:subgroup-ops m)))))
+      (let [m (fields-of (dfs "16|shuffle"))]
+        (is (= "16" (str (:subgroup-size m))))
+        (is (= #{:shuffle} (ops-set (:subgroup-ops m)))))
+      (doseq [s ["no|such answer" "32|Basic" "32|basic\tvote"
+                 "-1|basic" "+3|basic" "0|basic" "12.5|basic" " 32|basic"
+                 "32x|basic" "x|basic" "32|basic|extra" "32||basic"]]
+        (is (= ["null"] (dfs s)) (str (pr-str s) " must parse to no fact at all"))))
+    (testing "the walk traps are GONE on long answers (BEFORE: trapped, measure-only)"
+      ;; every cell below TRAPPED on the BEFORE arm (the evidence) and
+      ;; resolves HOST-equal here -- the wrong-refusal path removed
+      (doseq [s ["99999999999999999999|basic" "9223372036854775808|basic"
+                 (str (apply str (repeat 100 "9")) "|basic")
+                 (str (apply str (repeat 1000 "5")) "|basic")
+                 (str (apply str (repeat 200 "9")) "|basic")
+                 long-a
+                 (str "8|" (apply str (repeat 190 "a")))
+                 two-pipe-200]]
+        (is (= ["null"] (dfs s)) (str (pr-str s) " parses to no fact at all, untrapped"))
+        (is (nil? (targets/device-from-subgroup s))
+            (str "HOST parity pin: " (pr-str s))))
+      (let [s (str (apply str (repeat 102 "0")) "42|basic")
+            m (fields-of (dfs s))]
+        (is (= "42" (str (:subgroup-size m)))
+            "the 110-byte leading-zero answer now resolves (it trapped before)")
+        (is (= #{:basic} (ops-set (:subgroup-ops m))))
+        (is (= {:subgroup-size 42 :subgroup-ops #{:basic}}
+               (targets/device-from-subgroup s))
+            "HOST parity pin")))
+    (testing "the per-byte scans are deleted: sg-pipe delegates, the token-end shape is INLINE"
+      (let [pipe-body (extract-balanced src "(defn- sg-pipe")
+            walk-body (extract-balanced src "(defn- sg-ops-walk")]
+        (is (str/includes? pipe-body "string-find-byte")
+            "sg-pipe scans with string-find-byte (the dot1/alt-end precedent)")
+        (is (= 2 (count (re-seq #"string-find-byte" pipe-body)))
+            "at most TWO finds: the first '|', then one after it")
+        (is (not (str/includes? pipe-body "string-code-point-at"))
+            "no byte scan remains in sg-pipe")
+        (is (nil? (extract-balanced src "(defn- sg-token-end"))
+            "the token-end defn- is deleted (the fuel row inlined the find)")
+        (is (not (str/includes? src "(defn- sg-token-end"))
+            "and gone from the namespace source under the defn- prefix")
+        (is (= 1 (count (re-seq #"string-find-byte s 32" walk-body)))
+            "ONE find per token step, inline in the walk (the alt-end shape)")
+        (is (str/includes? walk-body "(if (< p 0) n p)")
+            "the total shape (absent -> n) is answered above the primitive, as before")
+        (is (not (str/includes? walk-body "string-code-point-at"))
+            "no byte scan remains in the walk either")
+        (is (str/includes? (extract-balanced src "(defn device-from-subgroup") "(sg-pipe s n)")
+            "the call site dropped the walk's i/at arguments")))))
+
+(deftest w3-subgroup-dedupe-on-a-shadow-map-not-a-per-element-walk
+  ;; The `:kotoba` SUBGROUP <ops> set-dedupe check reads a document-MAP
+  ;; SHADOW (kw -> true) with ONE `document-contains` (the map-key idiom)
+  ;; and grows it with ONE `document-assoc` -- where the check walked
+  ;; the answer vector one element per RECURSIVE frame (the deleted
+  ;; sg-member?: document-equal? per element, its depth stacked under
+  ;; the walk's per-token frames). This is the sg-ops row's (2026-10-26)
+  ;; named residual: "the O(TOKENS) walk residual and sg-member?'s
+  ;; per-element frames (their own rows; the 70-byte eight-token answer
+  ;; still traps both arms)". This test REPLACES
+  ;; w3-subgroup-member-dedupes-on-the-vector-accumulator -- that
+  ;; test's subject (the accessor match over the vector accumulator) is
+  ;; deleted with the check itself; the ANSWER is still the
+  ;; document-VECTOR in first-occurrence order (kind pinned below).
+  ;; PINNED CONTRACT, unchanged: a duplicate token is the same fact and
+  ;; collapses. The shadow mirrors the answer vector 1:1 (both grow in
+  ;; the same branch), so the membership verdict is EXACT, not
+  ;; approximate. Head calls cost no frame (frames = user call depth,
+  ;; kir.cljk: a trampolined self-tail re-entry is free), so the
+  ;; per-element frames class is GONE.
+  ;; MEASURED BEFORE (the evidence, probe runs byte-identical): the
+  ;; 70-byte eight-token answer, the 86-byte spaced eight-token answer
+  ;; and the 77-byte twelve-token answer TRAPped host/stack-exhausted on
+  ;; the BEFORE arm and answer the host arm's set here; the eight-
+  ;; distinct dedupe grid cell (the deleted walk's worst case: every
+  ;; member check walked to the end) TRAPped too and answers == HOST.
+  ;; GO/NO-GO ground, measured: `document-set-contains?` TRAPs
+  ;; "document-set-required" on a document-VECTOR (the direct route onto
+  ;; the vector is closed) and `document-merge` TRAPs "document-map-
+  ;; required" on sets (a document-set has no grow head) -- hence the
+  ;; map shadow.
+  ;; NAMED THEN, FIXED SINCE (the loop row, 2026-10-26, measure-only
+  ;; history): the O(TOKENS) residual -- the walk was still one frame per
+  ;; TOKEN -- measured then as: the 3-word-cycle field resolves through
+  ;; 24 tokens and TRAPs budget/frames at 32+ (BEFORE the dedupe-map row
+  ;; the boundary was NON-MONOTONIC, 12 trapped); the 8-word-cycle field
+  ;; resolved through 24 tokens (BEFORE trapped from 24) and both arms
+  ;; TRAPped budget/frames at 32+. The loop row re-anchored the walk on
+  ;; ONE loop/recur (zero-charge trampoline re-entry), so the per-token
+  ;; frame class is GONE -- see
+  ;; w3-subgroup-ops-walk-is-a-loop-not-a-self-call. Trap boundaries are
+  ;; state- and path-dependent -- the pinned cells are only the shapes
+  ;; both probe runs resolved.
+  (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
+        arms (str/join "\n" (map #(extract-balanced src %)
+                                 ["(defn- none?" "(defn- string->i64" "(defn- digits?"
+                                  "(defn- sg-tokens-doc"
+                                  "(defn- sg-size "
+                                  "(defn- sg-ops " "(defn- sg-ops-walk" "(defn- sg-pipe"
+                                  "(defn device-from-subgroup"]))
+        ;; (sg-keyword and sg-token-end are deleted by the fuel row,
+        ;; 2026-10-26 -- the lookup table and the token-end find are
+        ;; INLINED in sg-ops-walk's loop body; no probe calls them.)
+        probe (str "(ns accelerator.targets.w3.member2.probe (:export [main dfs sops]))\n"
+                   "(defn main [] :i64 0)\n"
+                   arms "\n"
+                   "(defn dfs [answer :document] :document (device-from-subgroup answer))\n"
+                   "(defn sops [field :string] :document (sg-ops field))\n")
+        hir (sema/analyze probe)
+        sops (fn [field] (ir/execute hir 'sops [field]))
+        dfs (fn [s] (ir/execute hir 'dfs [["string" s]]))
+        fields-of (fn [doc]
+                    (into {} (map (fn [kv] [(get (get kv 0) 1) (get (get kv 1) 1)]) (get doc 1))))
+        ops-set (fn [ops] (set (map #(get % 1) ops)))
+        ops-of (fn [r] (if (= ["null"] r) nil (ops-set (get r 1))))
+        host-ops-of (fn [field] (:subgroup-ops (targets/device-from-subgroup (str "8|" field))))]
+    (testing "the dedupe grid: a duplicate token is the same fact and collapses (was: a per-element walk)"
+      ;; MEASURED BEFORE == AFTER == HOST on every short cell (the
+      ;; evidence) -- the walk's cost was FRAMES, not facts
+      (doseq [[field want] [["basic basic" #{:basic}]
+                            ["basic shuffle basic" #{:basic :shuffle}]
+                            ["vote vote" #{:vote}]
+                            ["basic vote basic vote" #{:basic :vote}]
+                            ["basic vote shuffle basic vote shuffle basic" #{:basic :vote :shuffle}]
+                            ["quad quad quad" #{:quad}]
+                            ["basic basic basic basic basic basic basic basic basic basic" #{:basic}]]]
+        (is (= want (ops-of (sops field)))
+            (str (pr-str field) " keeps the set-dedupe contract"))
+        (is (= want (host-ops-of field))
+            (str "HOST parity pin: " (pr-str field))))
+      ;; the eight-distinct cell is the deleted walk's worst case (every
+      ;; member check walked to the end of the accumulator):
+      ;; TRAPped host/stack-exhausted BEFORE, answers == HOST here
+      (let [field "shuffle clustered quad basic vote arithmetic ballot shuffle-relative"
+            want #{:basic :vote :arithmetic :ballot :shuffle :shuffle-relative :clustered :quad}]
+        (is (= want (ops-of (sops field)))
+            "the eight-distinct field resolves (BEFORE: TRAP host/stack-exhausted)")
+        (is (= want (host-ops-of field)) "HOST parity pin")))
+    (testing "the multi-token <ops> answers parse -- the wrong-refusal path is gone (BEFORE: TRAP document-list-required)"
+      ;; every multi-token cell below TRAPPED document-list-required on
+      ;; the BEFORE arm (the evidence) and answers the host arm's map
+      ;; here -- the dedupe true path pins the collapse
+      (let [m (fields-of (dfs "32|basic shuffle-relative"))]
+        (is (= "32" (str (:subgroup-size m))) "the canonical two-token answer parses (25 bytes)")
+        (is (= #{:basic :shuffle-relative} (ops-set (:subgroup-ops m))))
+        (is (= {:subgroup-size 32 :subgroup-ops #{:basic :shuffle-relative}}
+               (targets/device-from-subgroup "32|basic shuffle-relative"))
+            "HOST parity pin"))
+      (let [m (fields-of (dfs "32|basic basic"))]
+        (is (= "32" (str (:subgroup-size m))))
+        (is (= #{:basic} (ops-set (:subgroup-ops m)))
+            "a duplicate token is the same fact and collapses (the dedupe true path)")
+        (is (= {:subgroup-size 32 :subgroup-ops #{:basic}}
+               (targets/device-from-subgroup "32|basic basic"))
+            "HOST parity pin"))
+      (let [m (fields-of (dfs "32|basic shuffle basic"))]
+        (is (= #{:basic :shuffle} (ops-set (:subgroup-ops m)))
+            "the duplicate at k=1 collapses too")
+        (is (= {:subgroup-size 32 :subgroup-ops #{:basic :shuffle}}
+               (targets/device-from-subgroup "32|basic shuffle basic"))
+            "HOST parity pin"))
+      (let [m (fields-of (dfs "8|vote vote"))]
+        (is (= "8" (str (:subgroup-size m))))
+        (is (= #{:vote} (ops-set (:subgroup-ops m))))
+        (is (= {:subgroup-size 8 :subgroup-ops #{:vote}}
+               (targets/device-from-subgroup "8|vote vote"))
+            "HOST parity pin"))
+      ;; the per-element frame class is GONE (BEFORE: the eight-token
+      ;; cells TRAPped host/stack-exhausted on both arms in the sg-ops
+      ;; row's probe, w3-ops-walk-token-skip-20261026.txt; this row's
+      ;; BEFORE re-measures the trap, both probe runs byte-identical)
+      (let [m (fields-of (dfs "8|basic vote arithmetic ballot shuffle shuffle-relative clustered quad"))]
+        (is (= "8" (str (:subgroup-size m)))
+            "the 70-byte eight-token answer parses (8 frames, one per token)")
+        (is (= #{:basic :vote :arithmetic :ballot :shuffle :shuffle-relative :clustered :quad}
+               (ops-set (:subgroup-ops m))))
+        (is (= {:subgroup-size 8 :subgroup-ops #{:basic :vote :arithmetic :ballot :shuffle :shuffle-relative :clustered :quad}}
+               (targets/device-from-subgroup "8|basic vote arithmetic ballot shuffle shuffle-relative clustered quad"))
+            "HOST parity pin"))
+      (let [m (fields-of (dfs (str "8|" (str/join "   " ["basic" "vote" "arithmetic" "ballot" "shuffle" "shuffle-relative" "clustered" "quad"]) "  ")))]
+        (is (= #{:basic :vote :arithmetic :ballot :shuffle :shuffle-relative :clustered :quad}
+               (ops-set (:subgroup-ops m)))
+            "the spaced eight-token answer (86 bytes) parses too")
+        (is (= {:subgroup-size 8 :subgroup-ops #{:basic :vote :arithmetic :ballot :shuffle :shuffle-relative :clustered :quad}}
+               (targets/device-from-subgroup (str "8|" (str/join "   " ["basic" "vote" "arithmetic" "ballot" "shuffle" "shuffle-relative" "clustered" "quad"]) "  ")))
+            "HOST parity pin"))
+      (let [m (fields-of (dfs (str "8|" (str/join " " (take 12 (cycle ["basic" "vote" "shuffle"]))))))]
+        (is (= #{:basic :vote :shuffle} (ops-set (:subgroup-ops m)))
+            "the twelve-token answer (77 bytes) parses -- the per-token frame class is GONE since the loop row")
+        (is (= {:subgroup-size 8 :subgroup-ops #{:basic :vote :shuffle}}
+               (targets/device-from-subgroup (str "8|" (str/join " " (take 12 (cycle ["basic" "vote" "shuffle"]))))))
+            "HOST parity pin"))
+      ;; the single-token and empty-<ops> shapes did not move
+      (let [m (fields-of (dfs "16|shuffle"))]
+        (is (= "16" (str (:subgroup-size m))))
+        (is (= #{:shuffle} (ops-set (:subgroup-ops m)))))
+      (let [m (fields-of (dfs "8|"))]
+        (is (= "8" (str (:subgroup-size m))) "an empty <ops> is the zero-ops fact")
+        (is (= #{} (ops-set (:subgroup-ops m)))))
+      (doseq [s ["no|such answer" "32|Basic" "32|basic\tvote"
+                 "-1|basic" "+3|basic" "0|basic" "12.5|basic" " 32|basic"
+                 "32x|basic" "x|basic" "32|basic|extra" "32||basic"]]
+        (is (= ["null"] (dfs s)) (str (pr-str s) " must parse to no fact at all"))))
+    (testing "the per-element walk is deleted and the check is one map lookup"
+      (is (nil? (extract-balanced src "(defn- sg-member?"))
+          "the per-element membership walk is deleted")
+      (is (not (str/includes? src "(defn- sg-member?"))
+          "and gone from the namespace source under the defn- prefix")
+      (let [ops-body (extract-balanced src "(defn- sg-ops ")
+            walk-body (extract-balanced src "(defn- sg-ops-walk")]
+        (is (str/includes? walk-body "document-contains")
+            "the dedupe verdict is ONE document-contains (the map-key idiom)")
+        (is (str/includes? walk-body "document-assoc")
+            "and the shadow grows with ONE document-assoc")
+        (is (= 1 (count (re-seq #"\(document-equal\?" walk-body)))
+            "exactly one comparison remains in the walk: the inline null sentinel")
+        (is (str/includes? walk-body "(document-equal? kw (document-null))")
+            "and it is the unknown-token sentinel (the deleted none? call's own body), not a per-element walk")
+        (is (not (str/includes? walk-body "document-vector-at"))
+            "no per-element accessor remains either")
+        (is (str/includes? ops-body "(document-map)")
+            "the shadow is seeded as an empty document-MAP")
+        (is (str/includes? ops-body "(document-vector)")
+            "the ANSWER accumulator is still seeded as a document-VECTOR")
+        (is (str/includes? walk-body "document-vector-conj")
+            "and still grown with document-vector-conj -- the answer kind is pinned")))))
+
+(deftest w3-subgroup-keyword-lookup-is-a-table-not-a-walk
+  ;; The `:kotoba` sg-keyword -- the SUBGROUP <ops> vocabulary lookup --
+  ;; as ONE non-recursive table body. This is the sg-member? row's
+  ;; (2026-10-26) named residual: "the remaining walks keep their own
+  ;; trap -- sg-ops-walk per token AND per space byte, sg-keyword per
+  ;; vocabulary element -- the spaced \"64|  basic   shuffle-relative  \"
+  ;; (31 bytes) and the unknown-token \"32|basic vote2\" (14 bytes) still
+  ;; TRAP host/stack-exhausted on BOTH arms". The replaced sg-keyword
+  ;; walked the vocabulary one element per RECURSIVE frame
+  ;; (document-list-at over sg-tokens-doc / sg-keywords-doc per i) and
+  ;; its 8-deep walk stacked under sg-ops-walk's own frames. The lookup
+  ;; is the host arm's map literal (subgroup-op-tokens) spelled as a
+  ;; cond chain: eight constant string tests, zero recursion frames.
+  ;; PINNED CONTRACT, unchanged: the whole vocabulary 1:1 (hyphen
+  ;; preserved: "shuffle-relative" -> :shuffle-relative) and a token
+  ;; outside it answers the null document -- unknown fails the whole
+  ;; answer above. MEASURED BEFORE (the evidence): both named cells
+  ;; TRAPped host/stack-exhausted on the walk arm and answer the host
+  ;; arm's answers on the table arm (probe runs byte-identical).
+  ;; NAMED THEN, FIXED SINCE (the dedupe-map row, 2026-10-26): the
+  ;; eight-token answer (70 bytes) TRAPped host/stack-exhausted on BOTH
+  ;; arms then (BEFORE == AFTER, both probe runs) -- the sg-ops-walk
+  ;; per-token/per-space frames (collapsed to one frame per TOKEN by
+  ;; the sg-ops row, 2026-10-26,
+  ;; w3-subgroup-ops-walk-is-a-loop-not-a-self-call -- the 70-byte cell
+  ;; still trapped on both arms there, re-MEASURED) and the sg-member?
+  ;; per-element frames were their own rows -- the per-element frames
+  ;; are now removed (ONE document-contains over a map shadow, see
+  ;; w3-subgroup-dedupe-on-a-shadow-map-not-a-per-element-walk, which
+  ;; pins the 70-byte cell); the O(TOKENS) per-token frame residual is
+  ;; removed too by the loop row (2026-10-26: ONE loop/recur, zero-charge
+  ;; trampoline re-entry), never pinned.
+  (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
+        arms (str/join "\n" (map #(extract-balanced src %)
+                                 ["(defn- none?" "(defn- string->i64" "(defn- digits?"
+                                  "(defn- sg-tokens-doc"
+                                  "(defn- sg-size "
+                                  "(defn- sg-ops " "(defn- sg-ops-walk" "(defn- sg-pipe"
+                                  "(defn device-from-subgroup"]))
+        ;; (sg-keyword and sg-token-end are deleted by the fuel row,
+        ;; 2026-10-26 -- the lookup table and the token-end find are
+        ;; INLINED in sg-ops-walk's loop body; no probe calls them.)
+        probe (str "(ns accelerator.targets.w3.keyword.probe (:export [main sops dfs]))\n"
+                   "(defn main [] :i64 0)\n"
+                   arms "\n"
+                   "(defn sops [field :string] :document (sg-ops field))\n"
+                   "(defn dfs [answer :document] :document (device-from-subgroup answer))\n")
+        hir (sema/analyze probe)
+        sops (fn [field] (ir/execute hir 'sops [field]))
+        dfs (fn [s] (ir/execute hir 'dfs [["string" s]]))
+        fields-of (fn [doc]
+                    (into {} (map (fn [kv] [(get (get kv 0) 1) (get (get kv 1) 1)])
+                                  (get doc 1))))
+        ops-set (fn [ops] (set (map #(get % 1) ops)))
+        ops-of (fn [r] (if (= ["null"] r) nil (ops-set (get r 1))))
+        host-ops-of (fn [field] (:subgroup-ops (targets/device-from-subgroup (str "8|" field))))]
+    (testing "the inlined table answers the whole vocabulary 1:1, and nothing else (was: a per-element walk, then a table defn-)"
+      ;; MEASURED BEFORE (the evidence): the walk answered the same
+      ;; values on every one of these short cells -- the walk's cost was
+      ;; FRAMES and FUEL, not facts. The lookup is the cond chain INLINE
+      ;; in sg-ops-walk's loop body (the fuel row, 2026-10-26), so the
+      ;; table is observed through the walk on single-token fields
+      (doseq [[tok want] [["basic" #{:basic}]
+                          ["vote" #{:vote}]
+                          ["arithmetic" #{:arithmetic}]
+                          ["ballot" #{:ballot}]
+                          ["shuffle" #{:shuffle}]
+                          ["shuffle-relative" #{:shuffle-relative}]
+                          ["clustered" #{:clustered}]
+                          ["quad" #{:quad}]]]
+        (is (= want (ops-of (sops tok))) (str tok " maps 1:1 to its keyword document"))
+        (is (= want (host-ops-of tok)) (str "HOST parity pin: " tok)))
+      (doseq [tok ["vote2" "Basic" "basic2" "shuffle-"]]
+        (is (nil? (ops-of (sops tok))) (str (pr-str tok) " is outside the vocabulary: no fact"))
+        (is (nil? (host-ops-of tok)) (str "HOST parity pin: " (pr-str tok))))
+      (is (= #{} (ops-of (sops "")))
+          "the empty field is ZERO tokens (the walk test pins the same contract)"))
+    (testing "the two named trap cells resolve and answer the host arm (BEFORE: TRAP host/stack-exhausted on BOTH)"
+      (is (= ["null"] (dfs "32|basic vote2"))
+          "the unknown-token answer (14 bytes) fails closed to no fact, not a trap")
+      (is (nil? (targets/device-from-subgroup "32|basic vote2")) "HOST parity pin")
+      (let [m (fields-of (dfs "64|  basic   shuffle-relative  "))]
+        (is (= "64" (str (:subgroup-size m)))
+            "the spaced two-token answer (31 bytes) parses -- separators are runs of byte 32")
+        (is (= #{:basic :shuffle-relative} (ops-set (:subgroup-ops m))))
+        (is (= {:subgroup-size 64 :subgroup-ops #{:basic :shuffle-relative}}
+               (targets/device-from-subgroup "64|  basic   shuffle-relative  "))
+            "HOST parity pin")))
+    (testing "the table's earlier rows stay resolved, byte-identical (BEFORE == AFTER == HOST)"
+      (let [m (fields-of (dfs "32|basic shuffle-relative"))]
+        (is (= "32" (str (:subgroup-size m))))
+        (is (= #{:basic :shuffle-relative} (ops-set (:subgroup-ops m)))))
+      (let [m (fields-of (dfs "32|basic basic"))]
+        (is (= #{:basic} (ops-set (:subgroup-ops m))) "the dedupe path still collapses"))
+      (let [m (fields-of (dfs "16|shuffle"))]
+        (is (= "16" (str (:subgroup-size m))))
+        (is (= #{:shuffle} (ops-set (:subgroup-ops m)))))
+      (let [m (fields-of (dfs "8|"))]
+        (is (= "8" (str (:subgroup-size m))) "an empty <ops> is the zero-ops fact")
+        (is (= #{} (ops-set (:subgroup-ops m)))))
+      (doseq [s ["no|such answer" "32|Basic" "32|basic\tvote"
+                 "-1|basic" "+3|basic" "0|basic" "12.5|basic" " 32|basic"
+                 "32x|basic" "x|basic" "32|basic|extra" "32||basic"]]
+        (is (= ["null"] (dfs s)) (str (pr-str s) " must parse to no fact at all"))))
+    (testing "the lookup body is inline in the walk: a cond table with no recursion, no defn-"
+      (let [walk-body (extract-balanced src "(defn- sg-ops-walk")]
+        (is (nil? (extract-balanced src "(defn- sg-keyword "))
+            "the lookup defn- is deleted (the fuel row inlined the table)")
+        (is (not (str/includes? src "(defn- sg-keyword "))
+            "and gone from the namespace source under the defn- prefix")
+        (is (str/includes? walk-body "cond")
+            "the lookup is a constant test chain")
+        (is (= 8 (count (re-seq #"\(document-keyword" walk-body)))
+            "exactly one answer per vocabulary element")
+        (is (str/includes? walk-body "(document-null)")
+            "and the unknown-token answer above the table")
+        (is (not (str/includes? walk-body "(sg-keyword"))
+            "no call and no self-call: zero recursion frames")
+        (is (not (str/includes? walk-body "document-list-at"))
+            "no per-element accessor remains in the lookup")
+        (is (not (str/includes? walk-body "string-code-point-at"))
+            "and no byte scan either")
+        (is (str/includes? walk-body "(string-substring s i j)")
+            "the token is sliced inline at the walk's own token positions")
+        (is (nil? (extract-balanced src "(defn- sg-keywords-doc"))
+            "the walk's answer-column builder is deleted with the walk")
+        (is (not (str/includes? src "(defn- sg-keywords-doc"))
+            "and gone from the namespace source under the defn- prefix")
+        (is (some? (extract-balanced src "(defn- sg-tokens-doc"))
+            "sg-tokens-doc stays: sg-token-at (the producer half) reads it")))))
+
+(deftest w3-subgroup-ops-walk-is-a-loop-not-a-self-call
+  ;; The `:kotoba` sg-ops / sg-ops-walk -- the SUBGROUP <ops> walk
+  ;; iterates through ONE `loop`/`recur` (the loop row, 2026-10-26): the
+  ;; frontend desugars the `loop` to a `__kotoba_loop_N` helper whose
+  ;; self-tail re-entry the KIR interpreter trampolines IN PLACE,
+  ;; zero-charge (no frame, no fuel -- kir.cljc T7.1/T7.4, read then
+  ;; PROBED: a bare counting loop resolves 20000 iterations where the
+  ;; same count as a `defn-` self-recursion exhausts the HOST stack at
+  ;; 24). The replaced shape was an ordinary `defn-` self-call taking
+  ;; ONE frame per TOKEN (MEASURED BEFORE on this runtime: 32+ token
+  ;; fields TRAPped budget/frames). The walk stays on TOKEN POSITIONS
+  ;; (the sg-ops row, 2026-10-26): a separator RUN costs ONE
+  ;; `string-skip-blank`, not one recursive step per space byte -- the
+  ;; earlier per-byte walk skipped the separator one BYTE per recursive
+  ;; frame ((string-code-point-at s i) 32 -> (+ i 1)) and those frames
+  ;; stacked under the per-token frames -- MEASURED BEFORE then (the
+  ;; 411-byte spaced answer with 400 separator bytes TRAPped
+  ;; host/stack-exhausted,
+  ;; docs/evidence/gpu/w3-ops-walk-token-skip-20261026.txt). PINNED
+  ;; CONTRACT, unchanged: byte 32 is the wire's ONLY separator -- tokens
+  ;; are maximal non-32 runs, one or more spaces separate, a
+  ;; separator-only field is zero tokens. `string-skip-blank` is C
+  ;; isspace (measured: it skips \t as well as 32), which would move
+  ;; the separator rule AWAY from host parity, so a field holding any
+  ;; byte in {9,10,11,12,13} answers (document-null) ABOVE the walk:
+  ;; exact, not fail-closed -- such a byte sits INSIDE a maximal non-32
+  ;; run, whose token then cannot be a vocabulary word, so the old walk
+  ;; answered the same null (BEFORE == AFTER on every guard cell,
+  ;; measured). `string-find-byte` answers -1 for from = n and traps
+  ;; only on from > n (measured: the row's probe), so the five guard
+  ;; calls are total on every field including "".
+  ;; NAMED THEN, FIXED NOW (this row, 2026-10-26, both probe runs
+  ;; byte-identical): the O(TOKENS) per-token frame class is GONE -- the
+  ;; walk's depth is CONSTANT (one sg-ops-walk entry + the trampolined
+  ;; loop). MEASURED BEFORE/AFTER on this runtime (the row's evidence):
+  ;; the 3-word-cycle fields at 24/32/48/64 tokens and the 8-word-cycle
+  ;; fields at 32/48/64 tokens ALL TRAPped on the BEFORE arm (spelling
+  ;; varies by probe position -- host/stack-exhausted or budget/frames,
+  ;; the recurring state-dependence of a plain defn- self-recursion's
+  ;; trap SPELLING -- loop-helper-boundary row 2026-10-26, which
+  ;; measured this spelling class and corrected the old loop-boundary
+  ;; attribution: the dedupe-map row's run resolved 24 tokens and
+  ;; trapped at 32+ at ITS position) and all answer the
+  ;; host arm's maps on the AFTER arm. CONTRACT UNCHANGED (the token /
+  ;; guard / dedupe / answer-kind grids below are byte-identical
+  ;; BEFORE == AFTER == HOST).
+  ;; NAMED THEN, FIXED NOW (the fuel row, 2026-10-26): the loop removed
+  ;; FRAMES, not FUEL -- the walk still charged one fuel per user call
+  ;; per token (MEASURED on the loop row's AFTER arm: the 3-word-cycle
+  ;; field resolved through 160 tokens and TRAPped budget/fuel at
+  ;; 192+), and the fuel row INLINED the three per-token calls into
+  ;; this loop body (the token-end find, the keyword cond table, none?'s
+  ;; document-equal? sentinel), so the walk charges fuel ONCE per entry
+  ;; and ZERO per token (MEASURED: min-fuel 6 flat at 1/10/100/200
+  ;; tokens -- see w3-subgroup-per-token-fuel-charges-are-inlined and
+  ;; docs/evidence/gpu/w3-per-token-fuel-inlined-20261026.txt). Also
+  ;; named: a document-VECTOR answers at most 8 elements here (the
+  ;; 8-word vocabulary, all-or-nothing) so the measured document-vector
+  ;; element cap (32 elements resolve, 48 trap 'document-vector-too-large')
+  ;; is unreachable in this walk; the bare counting loop's own boundary
+  ;; is FLAT and DETERMINISTIC (MEASURED 2026-10-26,
+  ;; docs/evidence/gpu/w3-loop-helper-boundary-20261026.txt: resolves
+  ;; every k 1..40000 in every position measured -- the historical
+  ;; "10000 trap" was the paired selfcall cell on the same printed line,
+  ;; a mis-attribution; iterations are neither frames nor fuel). What
+  ;; stays state-dependent is the trap SPELLING of a plain defn-
+  ;; self-recursion -- never pinned (see
+  ;; w3-loop-helper-boundary-is-flat-and-deterministic).
+  (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
+        arms (str/join "\n" (map #(extract-balanced src %)
+                                 ["(defn- none?" "(defn- string->i64" "(defn- digits?"
+                                  "(defn- sg-tokens-doc"
+                                  "(defn- sg-size "
+                                  "(defn- sg-ops " "(defn- sg-ops-walk" "(defn- sg-pipe"
+                                  "(defn device-from-subgroup"]))
+        ;; (sg-keyword and sg-token-end are deleted by the fuel row,
+        ;; 2026-10-26 -- the lookup table and the token-end find are
+        ;; INLINED in sg-ops-walk's loop body; no probe calls them.)
+        probe (str "(ns accelerator.targets.w3.walk.probe (:export [main sops dfs]))\n"
+                   "(defn main [] :i64 0)\n"
+                   arms "\n"
+                   "(defn sops [field :string] :document (sg-ops field))\n"
+                   "(defn dfs [answer :document] :document (device-from-subgroup answer))\n")
+        hir (sema/analyze probe)
+        sops (fn [field] (ir/execute hir 'sops [field]))
+        dfs (fn [s] (ir/execute hir 'dfs [["string" s]]))
+        fields-of (fn [doc]
+                    (into {} (map (fn [kv] [(get (get kv 0) 1) (get (get kv 1) 1)]) (get doc 1))))
+        ops-set (fn [ops] (set (map #(get % 1) ops)))
+        ops-of (fn [r] (if (= ["null"] r) nil (ops-set (get r 1))))
+        host-ops-of (fn [field] (:subgroup-ops (targets/device-from-subgroup (str "8|" field))))]
+    (testing "the separator/token contract on the kotoba runtime (was: one frame per space byte)"
+      ;; MEASURED BEFORE == AFTER == HOST on every cell (the evidence):
+      ;; the walk's cost was FRAMES, not facts, and the guard is exact
+      (doseq [[field want] [["" #{}]
+                            [" " #{}]
+                            ["    " #{}]
+                            ["basic" #{:basic}]
+                            ["basic shuffle-relative" #{:basic :shuffle-relative}]
+                            ["  basic   shuffle-relative  " #{:basic :shuffle-relative}]
+                            ["basic basic" #{:basic}]
+                            ["basic shuffle basic" #{:basic :shuffle}]
+                            ["vote vote" #{:vote}]]]
+        (is (= want (ops-of (sops field)))
+            (str (pr-str field) " keeps the maximal-non-32-run token contract"))
+        (is (= want (host-ops-of field))
+            (str "HOST parity pin: " (pr-str field))))
+      (doseq [field ["basic vote2" "vote2 basic" "Basic"
+                     "basic\tvote" "\tbasic" "basic\n" "basic\r vote"
+                     "a\u000bb" "x\fbasic" "\t"]]
+        (is (nil? (ops-of (sops field)))
+            (str (pr-str field) " is no fact at all -- unknown token or the {9,10,11,12,13} guard"))
+        (is (nil? (host-ops-of field))
+            (str "HOST parity pin: " (pr-str field)))))
+    (testing "the separator-run trap class is GONE (BEFORE: one frame per space byte, MEASURED trap)"
+      ;; the 411-byte spaced answer (400 separator bytes) TRAPped
+      ;; host/stack-exhausted on the BEFORE arm and answers the host
+      ;; arm's map here -- the wrong-refusal path removed
+      (let [s (str "8|" (apply str (repeat 200 " ")) "basic" (apply str (repeat 200 " ")) "vote")
+            m (fields-of (dfs s))]
+        (is (= "8" (str (:subgroup-size m)))
+            "the 411-byte spaced answer parses -- a separator run is ONE skip, not N frames")
+        (is (= #{:basic :vote} (ops-set (:subgroup-ops m))))
+        (is (= {:subgroup-size 8 :subgroup-ops #{:basic :vote}}
+               (targets/device-from-subgroup s))
+            "HOST parity pin")))
+    (testing "the standing pins are byte-identical (no spelling moved)"
+      (is (= ["null"] (dfs "32|basic vote2"))
+          "the unknown-token answer fails closed to no fact, not a trap")
+      (is (nil? (targets/device-from-subgroup "32|basic vote2")) "HOST parity pin")
+      (let [m (fields-of (dfs "64|  basic   shuffle-relative  "))]
+        (is (= "64" (str (:subgroup-size m)))
+            "the spaced two-token answer (31 bytes) still parses")
+        (is (= #{:basic :shuffle-relative} (ops-set (:subgroup-ops m))))
+        (is (= {:subgroup-size 64 :subgroup-ops #{:basic :shuffle-relative}}
+               (targets/device-from-subgroup "64|  basic   shuffle-relative  "))
+            "HOST parity pin"))
+      (let [m (fields-of (dfs "32|basic shuffle-relative"))]
+        (is (= "32" (str (:subgroup-size m))) "the canonical two-token answer (25 bytes)")
+        (is (= #{:basic :shuffle-relative} (ops-set (:subgroup-ops m)))))
+      (let [m (fields-of (dfs "32|basic basic"))]
+        (is (= #{:basic} (ops-set (:subgroup-ops m))) "the dedupe path still collapses"))
+      (let [m (fields-of (dfs "16|shuffle"))]
+        (is (= "16" (str (:subgroup-size m))))
+        (is (= #{:shuffle} (ops-set (:subgroup-ops m)))))
+      (let [m (fields-of (dfs "8|"))]
+        (is (= "8" (str (:subgroup-size m))) "an empty <ops> is the zero-ops fact")
+        (is (= #{} (ops-set (:subgroup-ops m)))))
+      (let [m (fields-of (dfs (str (apply str (repeat 102 "0")) "42|basic")))]
+        (is (= "42" (str (:subgroup-size m))) "the previous rows' 110-byte cell stays resolved")
+        (is (= #{:basic} (ops-set (:subgroup-ops m)))))
+      (doseq [s ["no|such answer" "32|Basic" "32|basic\tvote"
+                 "-1|basic" "+3|basic" "0|basic" "12.5|basic" " 32|basic"
+                 "32x|basic" "x|basic" "32|basic|extra" "32||basic"]]
+        (is (= ["null"] (dfs s)) (str (pr-str s) " must parse to no fact at all")))
+      (doseq [s ["no|such answer" "32|Basic" "32|basic\tvote"
+                 "-1|basic" "+3|basic" "0|basic" "12.5|basic" " 32|basic"
+                 "32x|basic" "x|basic" "32|basic|extra" "32||basic"]]
+        (is (nil? (targets/device-from-subgroup s))
+            (str "HOST parity pin: " (pr-str s)))))
+    (testing "the per-token frame class is GONE (BEFORE: one frame per token, MEASURED trap)"
+      ;; the row's trap-gone cells: the 24/32/48/64-token fields (3-word
+      ;; cycle) and 32/48/64-token fields (8-word cycle) TRAPped on the
+      ;; BEFORE arm at this probe's position (spelling varies --
+      ;; host/stack-exhausted or budget/frames; trap boundaries are
+      ;; state- and path-dependent, never pinned) and answer the host
+      ;; arm's maps here
+      (doseq [k [24 32 48 64]]
+        (let [s (str "8|" (str/join " " (take k (cycle ["basic" "vote" "shuffle"]))))
+              m (fields-of (dfs s))]
+          (is (= #{:basic :vote :shuffle} (ops-set (:subgroup-ops m)))
+              (str "the " k "-token 3-word-cycle answer parses -- one loop, no frame per token"))
+          (is (= {:subgroup-size 8 :subgroup-ops #{:basic :vote :shuffle}}
+                 (targets/device-from-subgroup s))
+              (str "HOST parity pin: " k "-token 3-word-cycle"))))
+      (doseq [k [32 48 64]]
+        (let [s (str "8|" (str/join " " (take k (cycle ["basic" "vote" "arithmetic" "ballot"
+                                                        "shuffle" "shuffle-relative" "clustered" "quad"]))))
+              m (fields-of (dfs s))]
+          (is (= #{:basic :vote :arithmetic :ballot :shuffle :shuffle-relative :clustered :quad}
+                 (ops-set (:subgroup-ops m)))
+              (str "the " k "-token 8-word-cycle answer parses -- one loop, no frame per token"))
+          (is (= {:subgroup-size 8 :subgroup-ops #{:basic :vote :arithmetic :ballot :shuffle :shuffle-relative :clustered :quad}}
+                 (targets/device-from-subgroup s))
+              (str "HOST parity pin: " k "-token 8-word-cycle")))))
+    (testing "the walk iterates on a loop helper, not a self-call"
+      (let [ops-body (extract-balanced src "(defn- sg-ops ")
+            walk-body (extract-balanced src "(defn- sg-ops-walk")]
+        (is (= 5 (count (re-seq #"string-find-byte" ops-body)))
+            "the {9,10,11,12,13} guard is five total find-byte calls, answered ABOVE the walk")
+        (is (str/includes? ops-body "(document-null)")
+            "a field holding a C-isspace control byte is no fact at all")
+        (is (str/includes? ops-body "(string-skip-blank field 0)")
+            "sg-ops normalizes the entry to a token start")
+        (is (not (str/includes? ops-body "string-code-point-at"))
+            "no byte scan remains in sg-ops")
+        (is (str/includes? walk-body "(string-skip-blank s j)")
+            "each walk step advances to the NEXT token start (a separator run is ONE skip)")
+        (is (= 1 (count (re-seq #"\(loop \[" walk-body)))
+            "exactly one loop: the desugared __kotoba_loop_N helper is the walk's iteration")
+        (is (= 1 (count (re-seq #"\(recur" walk-body)))
+            "exactly one recur: the helper's self-tail re-entry (zero-charge trampoline)")
+        (is (= 0 (count (re-seq #"\(sg-ops-walk" walk-body)))
+            "no self-call: the per-frame-per-token shape is deleted")
+        (is (not (str/includes? walk-body "string-code-point-at"))
+            "the per-byte separator skip is deleted")
+        (is (not (str/includes? walk-body "(+ i 1)"))
+            "and with it the frame-per-space-byte advance")))))
+
+(deftest w3-subgroup-per-token-fuel-charges-are-inlined
+  ;; The `:kotoba` SUBGROUP <ops> walk charges FUEL ONCE per entry and
+  ;; ZERO per token (the fuel row, 2026-10-26). This is the loop row's
+  ;; (2026-10-26) named residual: "the loop removes FRAMES, not FUEL --
+  ;; every user call per token still charges fuel ... the many-token
+  ;; wrong-refusal class moved from FRAMES 32 to FUEL 160..192, its own
+  ;; row". The walk charged THREE `defn-` entries per token
+  ;; (sg-token-end / sg-keyword / none?'s sentinel test) and one
+  ;; function entry is one fuel unit (kir.cljc charge! on
+  ;; invoke-function); the three are INLINED into sg-ops-walk's loop
+  ;; body and the two walk-only `defn-`s are DELETED (none? stays:
+  ;; device-from-subgroup and the wg readers still call it).
+  ;; GO/NO-GO GROUND, MEASURED (the row's prims probe; min-fuel = the
+  ;; run's exact charge count): 2 for a bare loop at 1..5000 iterations
+  ;; (loop-helper self-tail re-entry zero-charge, kir.cljc T7.1),
+  ;; exactly 3k+2 for THREE user calls per iteration (5/32/302/1202 at
+  ;; k=1/10/100/400) and 4 CONSTANT for the walk's OP mix and the full
+  ;; inline shape (k=1..2000) -- the charge count is flat in token
+  ;; count. MEASURED (the row's before/after probe, run 1 complete --
+  ;; run 2 was still in flight at this commit, its byte-identity
+  ;; UNVERIFIED and named in the commit message; every number here is
+  ;; run 1's tool output): the real walk's min-fuel is 3k+6 (BEFORE) vs
+  ;; 6 flat (AFTER) on the <ops> parse at 1/10/100/200 tokens
+  ;; (9/36/306/606 vs 6/6/6/6) and 3k+21 vs 21 flat through
+  ;; device-from-subgroup (51/321/621 vs 21/21/21 at 10/100/200).
+  ;; CONTRACT UNCHANGED, pinned: nothing about the token/dedupe/answer
+  ;; contract moved -- the loop/dedupe/keyword tests' grids are
+  ;; byte-identical BEFORE == AFTER == HOST.
+  (let [src (slurp "src/kotoba/compiler/accelerator_targets.cljk")
+        arms (str/join "\n" (map #(extract-balanced src %)
+                                 ["(defn- none?" "(defn- string->i64" "(defn- digits?"
+                                  "(defn- sg-tokens-doc"
+                                  "(defn- sg-size "
+                                  "(defn- sg-ops " "(defn- sg-ops-walk" "(defn- sg-pipe"
+                                  "(defn device-from-subgroup"]))
+        probe (str "(ns accelerator.targets.w3.fuelrow.probe (:export [main sops dfs]))\n"
+                   "(defn main [] :i64 0)\n"
+                   arms "\n"
+                   "(defn sops [field :string] :document (sg-ops field))\n"
+                   "(defn dfs [answer :document] :document (device-from-subgroup answer))\n")
+        hir (sema/analyze probe)
+        sops-f (fn [field fuel] (ir/execute hir 'sops [field] {:fuel fuel}))
+        dfs (fn [s] (ir/execute hir 'dfs [["string" s]]))
+        fields-of (fn [doc]
+                    (into {} (map (fn [kv] [(get (get kv 0) 1) (get (get kv 1) 1)]) (get doc 1))))
+        ops-set (fn [ops] (set (map #(get % 1) ops)))
+        ops-of (fn [r] (if (= ["null"] r) nil (ops-set (get r 1))))
+        token-field (fn [k] (str/join " " (take k (cycle ["basic" "vote" "shuffle"]))))
+        vocab8 ["basic" "vote" "arithmetic" "ballot" "shuffle" "shuffle-relative" "clustered" "quad"]
+        want8 #{:basic :vote :arithmetic :ballot :shuffle :shuffle-relative :clustered :quad}
+        ;; the token set a k-token cycle field actually holds (k=1 is
+        ;; just :basic -- the first pin run was red at exactly this, the
+        ;; test's own expectation wrong, the machine right)
+        want3-of (fn [k] (set (take k (cycle [:basic :vote :shuffle]))))
+        want8-of (fn [k] (set (take k (cycle [:basic :vote :arithmetic :ballot
+                                               :shuffle :shuffle-relative :clustered :quad]))))
+        token-field-8 (fn [k] (str/join " " (take k (cycle vocab8))))]
+    (testing "the per-token FUEL class is GONE (BEFORE: budget/fuel at 192+ tokens)"
+      ;; every cell below TRAPped budget/fuel on the BEFORE arm (the
+      ;; evidence) and answers the host arm's map here
+      (doseq [k [192 256 384 512]]
+        (let [s (str "8|" (token-field k))]
+          (is (= #{:basic :vote :shuffle} (ops-set (:subgroup-ops (fields-of (dfs s)))))
+              (str "the " k "-token 3-word-cycle answer parses -- fuel is flat in token count"))
+          (is (= {:subgroup-size 8 :subgroup-ops #{:basic :vote :shuffle}}
+                 (targets/device-from-subgroup s))
+              (str "HOST parity pin: " k "-token 3-word-cycle"))))
+      (doseq [k [256 512]]
+        (let [s (str "8|" (token-field-8 k))]
+          (is (= want8 (ops-set (:subgroup-ops (fields-of (dfs s)))))
+              (str "the " k "-token 8-word-cycle answer parses -- fuel is flat in token count"))
+          (is (= {:subgroup-size 8 :subgroup-ops want8}
+                 (targets/device-from-subgroup s))
+              (str "HOST parity pin: " k "-token 8-word-cycle")))))
+    (testing "the walk's fuel is FLAT in token count (MEASURED min-fuel 6 at 1/10/100/200 tokens)"
+      ;; the BEFORE arm needed 3k+6 (9/36/306/606, measured) -- one
+      ;; charge per user call per token; the inline walk resolves every
+      ;; token count under the SAME low fuel (24 >= the measured 6 and
+      ;; < 6 + k for every k below -- a per-token charge would fail)
+      (doseq [k [1 10 100 200 400]]
+        (is (= (want3-of k) (ops-of (sops-f (token-field k) 24)))
+            (str "the " k "-token field resolves under one flat fuel budget"))
+        (is (= (want8-of k) (ops-of (sops-f (token-field-8 k) 24)))
+            (str "the 8-word " k "-token field resolves under the same flat fuel budget"))))
+    (testing "the three per-token calls are inlined: no walk-local defn- call remains"
+      (let [walk-body (extract-balanced src "(defn- sg-ops-walk")]
+        (is (nil? (extract-balanced src "(defn- sg-keyword "))
+            "the vocabulary lookup defn- is deleted (inlined cond table)")
+        (is (nil? (extract-balanced src "(defn- sg-token-end"))
+            "the token-end defn- is deleted (inlined find)")
+        (is (not (str/includes? src "(defn- sg-keyword "))
+            "and gone from the namespace source under the defn- prefix")
+        (is (not (str/includes? src "(defn- sg-token-end"))
+            "that one too")
+        (is (not (str/includes? walk-body "(none?"))
+            "the sentinel test is inline, not a none? call")
+        (is (not (str/includes? walk-body "(sg-keyword"))
+            "no keyword call remains in the walk")
+        (is (not (str/includes? walk-body "(sg-token-end"))
+            "no token-end call remains in the walk")
+        (is (= 1 (count (re-seq #"string-find-byte s 32" walk-body)))
+            "the token-end find is inline exactly once")
+        (is (str/includes? walk-body "(if (< p 0) n p)")
+            "with the deleted defn-'s total shape verbatim")
+        (is (str/includes? walk-body "(document-equal? kw (document-null))")
+            "and the sentinel is none?'s own body inline")
+        (is (some? (extract-balanced src "(defn- none?"))
+            "none? stays a defn-: device-from-subgroup and the wg readers still call it")))))
+
+(deftest w3-loop-helper-boundary-is-flat-and-deterministic
+  ;; The LOOP HELPER BOUNDARY row (2026-10-26,
+  ;; docs/evidence/gpu/w3-loop-helper-boundary-20261026.txt): the named
+  ;; residual of the loop / fuel / alt-loop / alt-fuel rows -- "the loop
+  ;; helper's own state-dependent boundary (20000 standalone / 10000 in
+  ;; a run interleaved with trapping neighbours, NEVER pinned)" -- is
+  ;; CLOSED BY MEASUREMENT, and the attribution is CORRECTED. What the
+  ;; probe measured (three instruments, each run twice; the boundary
+  ;; probe's two runs byte-identical, the flip probe's two runs
+  ;; byte-identical, and the historical instrument's two reruns
+  ;; differing at EXACTLY ONE cell -- named below):
+  ;;   (1) The loop helper's boundary is FLAT and DETERMINISTIC. A bare
+  ;;   counting `loop`/`recur` resolves at every k 1..40000 in EVERY
+  ;;   position measured -- standalone, after 8 trapping neighbours,
+  ;;   with a trapping neighbour before EVERY cell, and across repeated
+  ;;   drift cells -- and the historical "10000 trap" DOES NOT
+  ;;   REPRODUCE anywhere. The clamps below prove why: the loop is
+  ;;   depth 2 and exactly 2 fuel entries at ANY iteration count
+  ;;   (kir.cljk invoke-function: the trampolined self-tail re-entry
+  ;;   keeps the call stack and charges zero fuel, T7.1/T7.4).
+  ;;   (2) The historical "TRAPped budget/frames at 10000" was a MIS-
+  ;;   ATTRIBUTION. The historical instrument prints the two shapes on
+  ;;   ONE line ("countup(loop) k => ... selfcall(defn) k => ..."); the
+  ;;   budget/frames trap at k = 1000 is the SELFcall(defn) cell, the
+  ;;   countup cell answers the value on the same line. Re-running that
+  ;;   exact instrument twice reproduces this.
+  ;;   (3) What IS state-dependent is the trap SPELLING of the PLAIN
+  ;;   defn- self-recursion (one frame per call): the same cell answers
+  ;;   :host/stack-exhausted in one position and :budget/frames (limit
+  ;;   32) in another -- measured moving at ONE cell (selfcall 1000)
+  ;;   between two runs of the same instrument, and between the cold
+  ;;   and hot positions of a single run. Which limit answers first
+  ;;   (the host's stack or the deterministic 32-frame budget) is
+  ;;   host-state -- NEVER pinned, only named.
+  ;;   (4) ir/host-stack-exhausted? answers FALSE on the interpreter's
+  ;;   named :host/stack-exhausted trap (kir.cljk:6096-6097 wraps the
+  ;;   raw host error into a trap!, and the predicate classifies RAW
+  ;;   host errors, not the named trap).
+  ;; CONSEQUENCE: NOTHING MOVES -- no :measured? flag, no :shapes
+  ;; value, no workgroup row, no selection answer; :arm/:unknown stay
+  ;; provisional :measured? false; no hardware ran. This row pins the
+  ;; loop contract the walks rely on and closes the residual.
+  (let [probe (str "(ns accelerator.targets.w3.loopboundary.probe"
+                   " (:export [main countup selfcall]))\n"
+                   "(defn main [] :i64 0)\n"
+                   "(defn countup [k :i64] :i64\n"
+                   "  (loop [i 0] (if (>= i k) i (recur (+ i 1)))))\n"
+                   "(defn- selfrec [i :i64 k :i64] :i64\n"
+                   "  (if (>= i k) i (selfrec (+ i 1) k)))\n"
+                   "(defn selfcall [k :i64] :i64 (selfrec 0 k))\n")
+        hir (sema/analyze probe)
+        cu (fn [k] (str (ir/execute hir 'countup [k])))
+        cu-o (fn [k opts]
+               (try (str (ir/execute hir 'countup [k] opts))
+                    (catch Throwable e
+                      (str "TRAP: " (ex-message e) " " (pr-str (ex-data e))))))]
+    (testing "the boundary is FLAT: iterations are neither frames nor fuel"
+      (is (= "20000" (cu 20000))
+          "20000 iterations resolve at the default budgets (depth 2, 2 fuel)")
+      (is (= "1" (cu-o 1 {:frames 2}))
+          ":frames 2 admits k = 1 -- the clamp equals the loop's exact depth")
+      (is (= "20000" (cu-o 20000 {:frames 2}))
+          "and k = 20000 at the same clamp -- depth is CONSTANT in iteration count")
+      (is (= "1" (cu-o 1 {:fuel 2}))
+          ":fuel 2 admits k = 1 -- the clamp equals the loop's exact entries")
+      (is (= "20000" (cu-o 20000 {:fuel 2}))
+          "and k = 20000 at the same clamp -- the entry count is FLAT"))
+    (testing "one unit past the clamp names the two entries deterministically"
+      (let [f1 (cu-o 20000 {:frames 1})]
+        (is (str/includes? f1 "TRAP: budget/frames")
+            ":frames 1 traps -- the helper entry is the second frame")
+        (is (str/includes? f1 ":limit 1"))
+        (is (str/includes? f1 ":call-stack [countup __kotoba_loop_")
+            "the trap names the loop-helper ENTRY, never a loop iteration"))
+      (let [u1 (cu-o 20000 {:fuel 1})]
+        (is (str/includes? u1 "TRAP: budget/fuel")
+            ":fuel 1 traps -- the helper entry is the second charge")
+        (is (str/includes? u1 ":limit 1"))
+        (is (str/includes? u1 ":call-stack [countup __kotoba_loop_")
+            "same named entry: the loop body charges NOTHING")))
+    (testing "the plain defn- self-recursion's trap SPELLING stays NAMED, never pinned"
+      ;; MEASURED moving (the row's evidence): selfcall 1000 answered
+      ;; :budget/frames in one run of the historical instrument and
+      ;; :host/stack-exhausted in the next (the ONLY cell that moved);
+      ;; selfcall 24 resolved at one position and trapped at others.
+      ;; The deterministic half is the budget itself (depth > 32 ->
+      ;; :budget/frames, limit 32, kir.cljk:3833-3836); WHICH limit
+      ;; answers first is host-state, so no cell here is pinned.
+      (is (some? (cu 20000))
+          "the loop cells above are the pinned half; the self-recursion's
+ boundary is evidence-only (trap spellings are state-dependent)"))))

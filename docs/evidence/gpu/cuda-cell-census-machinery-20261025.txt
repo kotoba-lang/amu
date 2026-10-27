@@ -1,0 +1,180 @@
+amu-gpu tick 2026-10-25 -- ONE implementation slice: the full-census
+cell publication machinery LANDS. Evidence log; no POSIX shell files.
+
+WHAT CHANGED (this commit, chain worktree
+/Users/junkawasaki/github/wt/amu-gpu/chain):
+
+scripts/gpu_regime_classify.py
+  The ADR-0361 cell amendment's named UNIMPLEMENTED piece -- "full-
+  census cell publication (rule-1 regimes + rule-2 signs at cells)" --
+  is IMPLEMENTED:
+
+  - cuda_cell_census(parsed): one record per (metric, W, pair-type,
+    shape) cell of the record's scan grid. The cell's pooled per-run
+    ratios are the pair blocks' paired-median ratios in the named
+    metric at that (W, shape, pair-type), one per operator -- the
+    operator pool :operators #{:sum :max :min} pooled, the reduce
+    shape selected as a whole (the ONLY cross-stratum roll-up this
+    channel carries; operators only, no pooling across W, pair-type,
+    metric, shape, device or channel). Rule 1 at the cell: GAP-1.15
+    clusters of the pooled reference-arm per-run medians (one per
+    operator present). Rule 2 at the cell: the MSL channel's
+    sign_classification machine at its letter over the pooled per-run
+    ratios (REGIME-INVARIANT FASTER/SLOWER = every per-run ratio of
+    every observed regime on one side of 1.0; any straddle is
+    regime-scoped and no basis). A cell verdict is published ONLY over
+    the full operator pool -- a cell missing an operator carries its
+    ratios and names the gap but publishes NO verdict (fail closed,
+    named not hidden); an operator outside the pool raises ValueError
+    (the unit has no operator axis -- per-operator cells were REJECTED
+    by the adoption).
+  - render_cuda_cell_census(parsed): the publication. FULL CENSUS --
+    every (metric, W, pair-type, shape) cell of the scan grid
+    published, none cherry-picked. Metrics classify separately and
+    never mix (rule 3), and rule 3's publication limit stands (cross-
+    clock magnitude claims INADMISSIBLE) -- every cell row keeps both
+    clocks' raw per-block times beside the named metric's ratio. Cell
+    verdicts are CHANNEL-SCOPED and DEVICE-SCOPED; a same-day second
+    session is corroboration and licenses nothing the cell's own
+    session did not (ADR-0373's same-day rule by citation); rule 4
+    unchanged (no :measured? flag, no workgroup row, no selection
+    answer moves).
+  - CLI --cuda-cells <paired-log.txt|-> (the --cuda-log route is
+    untouched and stays byte-stable, pinned below).
+  - self-test fixtures: _self_test_cuda_cell_unit + _self_test_cuda_cell_corpus.
+
+docs/evidence/gpu/cuda-cell-census-run1-20261025/census.txt (2065
+lines) + docs/evidence/gpu/cuda-cell-census-run2-20261025/census.txt
+(2073 lines)
+  The census publications over the two committed ADOPTED claim-
+  protocol sessions' own measure logs. DERIVED from committed
+  measurements -- NO hardware ran this tick and no new sample exists.
+  The run-2 census is CORROBORATION ONLY (same-day rule).
+
+docs/adr/0361-gpu-nvidia-subgroup-reduce.md
+  New amendment: the cell unit's publication machinery moves
+  UNIMPLEMENTED -> IMPLEMENTED; the census publications named.
+
+WHAT THE TICK RAN (real tool output):
+
+1. Self-test (the new fixtures + every prior regression pin):
+
+     python3 scripts/gpu_regime_classify.py --self-test
+     -> TOTAL: 2536 assertions passed, 0 failed
+
+   The committed record pins 2491 at 189288da8 (quoted, not re-
+   measured); +45 = this slice's cell fixtures. The corpus pins
+   reproduce the cell-unit decision record's OWN cited W = 64 ratios
+   (docs/evidence/gpu/cuda-cell-unit-decision-20261025.txt, its
+   scratch-census table) from the committed measure logs -- so the
+   machinery's verdicts carry the decided arithmetic, not a new
+   reading of it.
+
+2. Byte-stability of the claim-protocol publication (regression pin --
+   the new route is additive):
+
+     python3 scripts/gpu_regime_classify.py --cuda-log \
+       docs/evidence/gpu/cuda-claimprotocol-run1-20261025/measure-log.txt
+     # rc=0, 912 lines, diff vs committed publication.txt EMPTY
+     python3 scripts/gpu_regime_classify.py --cuda-log \
+       docs/evidence/gpu/cuda-claimprotocol-run2-20261025/measure-log.txt
+     # rc=0, 912 lines, diff vs committed publication.txt EMPTY
+
+3. The census over the two committed sessions (rc=0, stderr 0 bytes
+   each):
+
+     python3 scripts/gpu_regime_classify.py --cuda-cells \
+       docs/evidence/gpu/cuda-claimprotocol-run1-20261025/measure-log.txt
+     # -> census.txt, 2065 lines: 72 cells (2 metrics x 6 widths x
+     #    3 pair types x 2 shapes), 72/72 with a verdict over the full
+     #    operator pool
+     python3 scripts/gpu_regime_classify.py --cuda-cells \
+       docs/evidence/gpu/cuda-claimprotocol-run2-20261025/measure-log.txt
+     # -> census.txt, 2073 lines: 72 cells, 72/72 verdicts
+
+   VERDICT CENSUS (derived, per session -- the two sessions are same-
+   day, so run 2 licenses nothing run 1 did not):
+
+     run1: 48 regime-invariant faster, 4 regime-invariant slower,
+           20 regime-scoped (straddles 1.0)
+     run2: 48 regime-invariant faster, 3 regime-invariant slower,
+           21 regime-scoped (straddles 1.0)
+
+   by pair type (both sessions):
+     warp-shuffle/baseline: 24/24 cells regime-invariant faster
+     warp-shuffle/subgroup: 20/24 faster, 4 regime-scoped -- the four
+       regime-scoped cells are exactly the W = 64 cells (2 metrics x
+       2 shapes), both sessions
+     subgroup/baseline: 4 faster, 4 slower (run1) / 3 slower (run2),
+       16 (run1) / 17 (run2) regime-scoped
+
+   THE DECIDED CANDIDATE'S VERDICT IS NOW PUBLISHED, at the adopted
+   unit: the (W = 64, warp-shuffle/subgroup) cells are REGIME-SCOPED
+   in every (session, shape, metric) slice -- the cell straddles and
+   the straddle separates BY REGIME (the fast level holds op=sum one-
+   sided ABOVE 1.0, the slow level holds op=max/op=min one-sided
+   BELOW 1.0). run1 gpu_ns n=1000003 (the decision record's cited
+   numbers, re-derived): op=max 0.8901, op=min 0.9073, op=sum 1.0848;
+   n=1048576: 0.9081 / 0.8970 / 1.0683. run2: 0.9083 / 0.9130 /
+   1.0813 and 0.9191 / 0.9130 / 1.0726. host_ns likewise (0.8885 /
+   0.9128 / 1.0874 and 0.9046 / 0.8952 / 1.0700; run2 0.9080 /
+   0.9179 / 1.0702 and 0.9267 / 0.9111 / 1.0701). NO W = 64 cell is
+   regime-invariant in either session, either metric, either shape --
+   the decision row's Part 3 consequence ("cannot be REGIME-INVARIANT
+   FASTER under any regime clustering") holds as a published verdict;
+   the reopen condition (i) is not triggered and NOTHING MOVES.
+
+   CROSS-SESSION (corroboration-only framing): 71/72 cells agree in
+   verdict class and side between the two same-day sessions. ONE
+   NAMED DIFF, not hidden: (gpu_ns, W = 256, subgroup/baseline,
+   n = 1000003) -- run1 regime-invariant slower, run2 regime-scoped
+   straddle. Two agreeing same-day sessions bind no distribution.
+
+STATE HONESTY (three states, named):
+
+- IMPLEMENTED (this row): the full-census cell publication machinery
+  (code + tests; --cuda-cells route; 2065/2073-line censuses over the
+  two committed sessions).
+- MEASURED: nothing new -- NO hardware ran this tick; the two
+  committed sessions are consumed, not re-measured. The cell verdicts
+  in the censuses are DERIVED claims over committed measurements
+  (correctness was verified inside those measurements: 218/218 verify
+  lines ok=1 per session). No :measured? flag moves (rule 4) and every
+  workgroup row stays provisional (:measured? false; :arm/:unknown
+  unchanged).
+- ACCEPTED DESIGN ONLY: the ADR-0361 claim-protocol adoption, the
+  cell unit adoption, ADR-0358 paired statistic, ADR-0373 instrument
+  class (unchanged).
+- UNMEASURED, named so no reading upgrades: any cell verdict on any
+  device other than xavier sm_72 (every census cell here is
+  DEVICE-SCOPED to it) and any device other than the MSL host for
+  every workgroup row; run 3+ (both sessions are same-day); whether
+  any published cell verdict should enter the selection surface (a
+  :measured-cell record / select-variant answer is its own later row
+  -- this slice moves NO selection answer; the channel rule stands: a
+  CUDA-channel sign never flips an MSL/WGSL cell and never answers a
+  workgroup row); operator-aware selection (PROPOSED, its own row);
+  the :sum ordering between :warp-shuffle-reduce and :subgroup-reduce
+  at W = 64 on any device under any unit that could carry it (the
+  cell's pooled verdict is regime-scoped and carries no ordering).
+
+Gates (real runs, this tick):
+
+  python3 scripts/gpu_regime_classify.py --self-test
+    -> TOTAL: 2536 assertions passed, 0 failed.
+
+  Scoped GPU gate (the 8 GPU-owned namespaces; scratch runner
+  gpu_scoped_gate.cljk, never committed), from the chain worktree
+  root -- run below.
+
+  FULL run-tests.cljk: the diff touches no .cljk namespace (one
+  scripts/*.py + docs + ADR) -- documented red at base ("Could not
+  find namespace: kotoba.form", ADR-0362) outside this diff; no green
+  suite is claimed.
+
+  POSIX shell execution files under docs/: 0 (`find docs -name '*.sh'
+  -type f | wc -l` -> 0, this tick).
+
+Evidence hygiene: no POSIX .sh anywhere under docs/; the verdict
+tallies above were computed over the two committed census.txt files
+with a scratch python one-liner that was never staged.

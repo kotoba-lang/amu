@@ -1,0 +1,137 @@
+JUN-57 / JUN-55 -- the entry landing: cuda-op-entries ENTERS (the
+thirteenth amendment's named next row, "the entry it enables")
+Date: 2026-10-26 (JST) / 2026-10-26 (UTC)
+Chain: bot/amu-gpu-chain, chain PR kotoba-lang/amu#1455
+Scope: ONE implementation slice -- the surface movement the 2026-10-26
+cross-day agreement adjudication enabled. NO hardware ran this tick,
+no GPU, no timing: every number below is a test-run counter or a value
+consumed from the two committed admissible measure-logs already
+adjudicated (sessions A + B). Nothing is re-measured here.
+
+WHAT MOVED (verified by the gate runs below):
+
+1. src/kotoba/compiler/accelerator_variants.cljk -- cuda-op-entries is
+   POPULATED with exactly the three groups the adjudication DECIDED
+   (the materialization rule, rejection (e), at its letter):
+
+     [:sum 64] {:winner :subgroup-reduce,   ; FLIP (differs from the
+                :shapes [1000003 1048576],  ;  design rung-1 answer)
+                :evidence [sessionA sessionB]}
+     [:max 64] {:winner :warp-shuffle-reduce, ; CONFIRM (answer text
+                :shapes [1000003 1048576],   ;  frozen)
+                :evidence [sessionA sessionB]}
+     [:min 64] {:winner :warp-shuffle-reduce, ; CONFIRM
+                :shapes [1000003 1048576],
+                :evidence [sessionA sessionB]}
+
+   with :evidence = the qualifying sessions' runs:
+     docs/evidence/gpu/cuda-registered-sessionA-20261025
+     docs/evidence/gpu/cuda-registered-sessionB-20261026
+   (the record kinds the entry contract names; the adjudication is the
+   derivation, cited in prose, not a record kind).
+   The 15 (op, W) groups at W = 32/128/256/512/1024 x {sum, max, min}
+   materialize NO record (winner = standing pooled answer) and are
+   absent from the table, byte-identical to before.
+
+2. THE REAL ANSWER SURFACE (select-variant, tested class xavier sm_72
+   = both name fragments "xavier" + "agx" in one name part AND the
+   reported 7.2, CUDA route, reduce shape):
+   - (:sum, 64) answers :subgroup-reduce -- the FIRST REAL FLIP on the
+     CUDA route -- with the SINGLE-OP record (:operators #{:sum}) and
+     cuda-op-flip-note ("MEASURED FLIP (per-op entry contract,
+     ADR-0361 seventh amendment)") in :basis, :measured? true.
+   - (:max, 64) and (:min, 64) answer :warp-shuffle-reduce with the
+     SINGLE-OP record, answer text FROZEN (no note appended to
+     :basis), :measured? MOVES TRUE (the projection's named :measured?
+     movement -- before the entry the pooled straddle refused W = 64
+     and these cells held :measured? false with no record).
+   - The 15 non-materialized groups: byte-identical to the pre-entry
+     surface (pooled whole record at W = 32/128/256/512/1024).
+   - The pooled W = 64 refusal STANDS (cuda-cell-entries still has no
+     64 key); a cell where NO layer keys (e.g. a descriptor failing
+     the class key at W = 64) keeps the design answer, :measured?
+     false, no record -- pinned as behavior.
+
+3. Tests (test/kotoba/compiler/accelerator_variants_test.cljk):
+   - the-cuda-op-entry-wiring-answers-its-operator-at-its-width: the
+     EMPTY-By-RULE pin is REPLACED by the real-table pin (exactly the
+     three adjudicated groups, winners/shapes/evidence at value) plus
+     the real-surface pins: the (:sum, 64) FLIP (variant + record +
+     flip-note presence + basis prefix) across both route spellings,
+     the (:max/:min, 64) CONFIRMs (frozen text + single-op record +
+     :measured? true), and the 15 non-materialized groups (pooled
+     whole record). The synthetic (with-redefs) contract blocks are
+     KEPT and their comments re-scoped (they pin contract behavior,
+     not current table state).
+   - the-cuda-cell-entry-wiring-confirms-the-design-answer: the
+     "refused group keeps the design answer" block moved off the
+     tested class at W = 64 (the landed entries fill that cell now);
+     its refusal pin now runs on a descriptor failing the class key,
+     where no layer keys.
+   - the-tested-class-key-is-the-agx-xavier-name-and-72: unchanged
+     behavior (W = 256 cells untouched by the entry); comment-only
+     rewording.
+
+GATES (real runs, this tick):
+- Scoped GPU gate (8 GPU-owned namespaces, scratch runner
+  gpu_scoped_gate.cljk):
+    kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+      /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+  -> run 1 GREEN and run 2 GREEN, identical:
+     Ran 123 tests containing 12162 assertions. 0 failures, 0 errors.
+     scoped: 123 tests, 12162 passed, 0 failed, 0 errors
+     (the previous row's gate: 123 tests / 12154 assertions;
+     delta = +0 tests / +8 assertions -- the replaced first block's
+     arithmetic: old 109 assertions [1 table pin + 36 grid cells x 3]
+     -> new 117 [1 table pin + 10 flip-surface + 16 confirm-surface +
+     90 non-materialized]; everything else comment-only).
+- find docs -name '*.sh' -> 0 (evidence is .txt).
+NAMED NOT HIDDEN (not re-run this tick, no classify code touched):
+gpu_regime_classify.py --self-test (standing pin 2649/0) and the FULL
+run-tests.cljk re-verify (documented RED AT BASE 'Could not find
+namespace: kotoba.form', ADR-0362, outside this diff -- verified live
+in the earlier 2026-10-26 ticks; NO green full suite claimed).
+BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head
+(checked at tick start; re-checked before the push -- see the commit
+message for the push-time re-check).
+NAMED NOT HIDDEN: kbb's "2 dep(s) are not :local/root ..." warning on
+every run (identical everywhere); the untracked deps.edn in this
+worktree (present at tick start, not created or touched by this row,
+not committed).
+
+STATES (three-state discipline, at its letter):
+- IMPLEMENTED: the entry landing itself -- cuda-op-entries populated,
+  the surface movement, the tests above (code + tests exist, gate
+  green twice). The flip arm of the per-op contract now has ONE real
+  carrier.
+- MEASURED: nothing new this tick. The numbers in the landed rows'
+  records are the two committed sessions' measurements (already
+  measured in their own ticks, adjudicated 2026-10-26) consumed here
+  as the entry's basis -- the entry does not re-measure and adds no
+  measurement claim.
+- DECIDED: the three per-op verdicts were DECIDED by the adjudication
+  row; this row does not re-decide, it lands them. Contract point 5
+  scope unchanged: CUDA route only, claims DEVICE-SCOPED and
+  CHANNEL-SCOPED to xavier sm_72, no workgroup row answers or moves.
+- ACCEPTED DESIGN ONLY (unchanged): the operator-aware contract +
+  pre-registration (seventh amendment), the row (ii) route set,
+  ADR-0358, ADR-0373.
+- UNMEASURED, named: run 3+; every per-op verdict on non-xavier
+  hardware; the :sum ordering at W = 64 on any other device or
+  channel; the pooled cell-split difference's cause (session A
+  48/3/21 vs session B 48/1/23 of 72); every workgroup row
+  (:arm/:unknown stay provisional :measured? false -- NO workgroup
+  :measured? flag moves this tick: the moved :measured? flags are the
+  selection surface's per-cell answers, not kotoba.compiler
+  .accelerator-targets' workgroup rows); the exact behavior of the
+  landed rows on a live CUDA selection path (the gate exercises
+  select-variant directly; the CUDA execution route runs only on
+  xavier hardware, not this host).
+
+EVIDENCE CITED BY THE LANDED RECORDS (already committed, unchanged):
+docs/evidence/gpu/cuda-registered-sessionA-20261025/ (measure-log.txt
++ op-census.txt + cells-census.txt + publication.txt + record.txt),
+docs/evidence/gpu/cuda-registered-sessionB-20261026/ (same kinds),
+and the derivation that adjudicated them:
+docs/evidence/gpu/cuda-crossday-adjudication-20261026/ (record.txt +
+op-census-joint.txt).

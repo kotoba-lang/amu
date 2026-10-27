@@ -1,0 +1,201 @@
+JUN-58 / JUN-55 -- the Apple WGSL-route selection question is DECIDED
+(YES) and the selection row lands (2026-10-24, chain worktree,
+kbb --backend sci)
+
+WHAT THIS SLICE IS: one decision slice with its implementation (the
+ADR-0363 idiom, and the exact shape of the same day's NVIDIA slice,
+docs/evidence/gpu/nvidia-wgsl-route-decision-20261024.txt): the last
+named UNDECIDED route question in the variant table is answered for
+Apple, and the selection row that answer names is implemented with
+tests. NO hardware ran in this slice; every number below is a runner's
+count or a committed record's, and nothing here is optimization
+evidence.
+
+THE QUESTION (the named open row, verbatim sources):
+
+- docs/adr/0356-gpu-kernel-variant-selection.md, the 2026-10-23
+  ":wgsl-v1 selection question is DECIDED" amendment: "...and the Apple
+  and NVIDIA rows stay Vulkan-route-only (their ADRs' scope; extending
+  either is a separate per-vendor decision, undecided)."
+- The NVIDIA half closed earlier the same day (ADR-0361's 2026-10-24
+  amendment), leaving in its record and in
+  kotoba.compiler.accelerator-variants' docstring the standing clause
+  "The Apple row's WGSL question stays UNDECIDED -- one vendor per
+  decision."
+- The campaign convention "one vendor per decision" -- so this decision
+  answers Apple only.
+
+THE DECISION (ADR-0360's 2026-10-24 amendment, decided in three parts;
+the full text lives in the ADR):
+
+YES -- the WGSL route (:webgpu / :wgsl-v1, one route two names, the
+ADR-0359 decision-3 idiom) carries Apple's :subgroup-reduce row under
+the SAME rules 3 + 6 gate as the Vulkan and MSL routes.
+
+  Part 1 -- the row extends with no new gate: the WGSL arm of the
+    shared subgroup-size-parametric emission already exists (emission
+    first, selection after), the fold's width is queried at runtime and
+    never baked in (rule 6's S | W gate), and no new fact, key or floor
+    is invented. Apple reaches this route by NAMING it -- ADR-0355's
+    Apple vendor-default target stays :msl-v1 -- exactly as NVIDIA
+    reaches it by naming it.
+  Part 2 -- the measured-device narrowing RIDES ALONG. A descriptor
+    naming the measured device ("m1 max", uB5G idiom) answers :baseline
+    on the WGSL route too: the refutation is of the FOLD on that device
+    (slower than :baseline on the two arms that ran -- GLSL via
+    MoltenVK, MSL natively), and the refuted variant is not selected on
+    the device that refuted it on any route that spells the same fold.
+    The WGSL arm on that device is UNMEASURED; the conservative answer
+    is the measured one. This is a DECISION, not a measurement claim:
+    the narrowing's :measured-cell records stay MSL-scoped (an MSL
+    measurement never flips a WGSL cell), so every WGSL answer -- the
+    narrowed :baseline included -- keeps :measured? false. REOPEN
+    CONDITION: a WGSL-arm measurement of the narrowed device is new
+    evidence and may revisit the narrowing's route scope.
+  Part 3 -- rationale, design fact only, no speed claim: WebGPU-on-Apple
+    is a deployed surface (WebKit ships WebGPU; on macOS the browser's
+    WebGPU runs over Metal), so a dispatch there previously answered
+    :baseline even where the device reports the fold's facts; and the
+    AMD row's runtime-width answer covers Apple's fixed SIMD-group width
+    a fortiori -- 32 is just the reported S.
+
+WHAT MOVED (this slice's whole diff):
+
+- src/kotoba/compiler/accelerator_variants.cljk: the WGSL-route cond
+  row's vendor set grows :apple (#{:intel :arm :amd :nvidia} ->
+  #{:intel :arm :amd :nvidia :apple}) with the decision named in the
+  comment; the ns docstring, the variant-bases :subgroup-reduce text
+  and the select-variant docstring name the decision and its record;
+  the apple-narrowed-device? comment names the narrowing riding along
+  on every Apple route. That is the entire behavior change -- one set
+  membership -- because the rule-6 gate and the measured-device
+  narrowing are already route-agnostic in the code.
+- test/kotoba/compiler/accelerator_variants_test.cljk: the two pins the
+  decision flips (the "target outside the rows' routes" :baseline pin
+  for :apple on [:webgpu :wgsl-v1], and
+  the-apple-row-rides-the-vulkan-and-msl-routes's :baseline pin on
+  [:webgpu :wgsl-v1]) are updated to the decided behavior;
+  each-route-selects-under-either-of-its-names grows :apple in its WGSL
+  vendor set; the-apple-row-rides-the-vulkan-and-msl-routes is RENAMED
+  to the-apple-row-rides-the-vulkan-msl-and-wgsl-routes and grows the
+  WGSL battery (the positive pin on both spellings with :measured? false
+  and the decision record named in :basis, the rule-6 fail-closed
+  battery on the WGSL route, the ewise/malformed shape gate, no
+  simdgroup rung on the WGSL route -- :simd-reduce facts alone answer
+  :baseline -- rule 3 end to end on :wgsl-v1 (lower, seal, verify, no
+  baked fold width), and determinism);
+  the-apple-row-is-narrowed-on-the-measured-device grows the WGSL
+  spellings in both batteries (the measured device answers :baseline on
+  the WGSL route at every W with :measured? false -- the flip is
+  MSL-scoped -- and every other Apple device keeps the designed row
+  there, UNMEASURED).
+- docs/adr/0360-gpu-apple-subgroup-reduce.md: the decision of record
+  (the amendment above).
+- docs/adr/0356-gpu-kernel-variant-selection.md: the ":wgsl-v1
+  selection question is DECIDED" amendment's "undecided" clause carries
+  a dated superseding marker as to Apple (no route question is
+  UNDECIDED for the five designed rows after it), and the rows table's
+  apple row carries the ROUTE PROSE WIDENED 2026-10-24 bracket.
+- docs/evidence/gpu/apple-wgsl-route-decision-20261024.txt: this record.
+
+WHAT THIS DECISION DOES NOT LICENSE (named so nothing is silently
+upgraded):
+
+- NO measurement ran. No :measured? flag, :shapes value, selection
+  answer outside the WGSL/Apple cell, flip cell or workgroup row
+  (ADR-0355/0358) moved. The four measured workgroup rows and the six
+  :simdgroup-reduce flip cells are untouched. The narrowed :baseline
+  answers on the WGSL route are DECISION answers (the narrowing riding
+  along), not measured ones: :measured? is false on every WGSL answer.
+- UNCOMPILED: the WGSL arm -- no WGSL compiler or validator exists on
+  the testing host (docs/evidence/gpu-wgsl-route-rows-20261023/
+  which-wgsl-tools.txt). The emission text remains a test-pinned
+  contract.
+- UNMEASURED: no Apple hardware has run the WGSL arm of this fold and
+  no WebGPU execution path exists in this repository. The design
+  assumption (removing most of the barrier cascade wins) stays
+  UNMEASURED everywhere it was.
+- :simdgroup-reduce stays MSL-only (rule 3: emission admitted on
+  :msl-v1 only). An Apple WGSL descriptor reporting only :simd-reduce
+  facts answers :baseline -- test-pinned in this slice. No simdgroup
+  rung exists on the WGSL route and none is added.
+- No execution path claim: like every variant in the table, the row has
+  no in-repo execution path (ADR 0371's provider is the replacement
+  track).
+
+STATE (the honesty rule's three states):
+
+- IMPLEMENTED: the selection row (one set membership in
+  kotoba.compiler.accelerator-variants) and its tests -- code + test
+  exist and the gates below are green for every namespace touched.
+- ACCEPTED DESIGN ONLY: the decision itself (this record + ADR-0360's
+  2026-10-24 amendment + ADR-0356's two markers).
+- PROPOSED: nothing new. No route question is UNDECIDED for the five
+  designed rows after this decision.
+
+GATE (real runs, this host, this tick, from the chain worktree root;
+the gate form's $(kbb -Spath -M:test) subshell is broken at this
+branch's HEAD (the origin/main host-manifest/deps.edn retirement), so
+the runs substitute the resolved closure inline from
+/Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/
+amu_kbb_test_classpath.txt):
+
+1. The touched test namespace (targeted runner
+   scratch/targeted_variants_gate.cljk, not in the repo):
+     -> Ran 17 tests containing 9561 assertions.
+        0 failures, 0 errors.
+        targeted: 17 tests, 9561 passed, 0 failed, 0 errors
+   Before-count measured live this tick at a clean HEAD worktree (zero
+   modified files, same runner):
+     -> Ran 17 tests containing 8450 assertions. 0 failures, 0 errors.
+   (delta +1111 assertions = the new/extended WGSL batteries; test
+   count unchanged, the rename moved no test.)
+2. The scoped GPU gate (the 8 GPU-owned test namespaces, scratch runner
+   gpu_scoped_gate.cljk, not in the repo):
+   before (measured live this tick by shadowing HEAD's two files into a
+   scratch classpath entry ahead of the worktree copies, same runner):
+     -> Ran 104 tests containing 9837 assertions. 0 failures, 0 errors.
+        scoped: 104 tests, 9837 passed, 0 failed, 0 errors
+   after:
+     -> Ran 104 tests containing 10948 assertions.
+        0 failures, 0 errors.
+        scoped: 104 tests, 10948 passed, 0 failed, 0 errors
+   (delta +1111 assertions, the same batteries; no other test moved.)
+3. Harness self-tests (run "named not assumed"):
+     python3 scripts/gpu_regime_classify.py --self-test
+       -> TOTAL: 2003 assertions passed, 0 failed.
+     python3 scripts/gpu-subgroup-reduce-metal-measure.py --self-test
+       -> driver self-test: 17 assertions passed, 0 failed.
+   (both unchanged -- this slice adds a record .txt and no measurement
+   pairs, so no corpus tally or pin moved.)
+4. Full suite (run-tests.cljk, same substituted classpath): RED AT
+   BASE, outside this diff, at namespace load on `kotoba.form` ("Error:
+   Could not find namespace: kotoba.form"; the W3 port path, ADR 0362,
+   the same red every recent record names), re-verified live this tick.
+   The run stops at that load; no green full suite is claimed.
+
+HONEST LEFT (the real remainder after this row):
+
+- The nine pending :simdgroup-reduce cross-day replication rows
+  (shape-1 W = 32/64/128/1024, shape-2 W = 256/32/64/128/1024) and the
+  shape-2 W = 512 later-day DATA run are 2026-10-25+ rows (the
+  eligibility check, docs/evidence/gpu/crossday-eligibility-stamps-
+  20261024.txt) -- not runnable today.
+- The WGSL arm stays UNCOMPILED on this host (no validator); compiling
+  it on a host that has one is its own future slice (named as a
+  tool-absence fact, not a proposal).
+- The measured-device narrowing's WGSL-arm cell is UNMEASURED (Part 2's
+  reopen condition): a WGSL-arm measurement of the narrowed device is
+  the only thing that revisits the narrowing's route scope.
+- SOUL.md backlog items 3 and 4 stay open: :arm/:unknown workgroup rows
+  need hardware or are provisional by design; the JUN-57/59/60
+  hardware-free slices continue.
+
+PUSH STATE: NOT pushed. Blocker-first rule (owner-approved 2026-10-20)
+in force -- kotoba-lang/amu open PRs with hermes/ heads re-checked at
+commit time this tick: #1553 (hermes/jun31-pe-shim-align) and #1561
+(hermes/jun31-seed-boot-ops-20261024, opened during this tick) are both
+OPEN, so this commit is kept locally on bot/amu-gpu-chain and pushes on
+the first tick after every hermes/ blocker PR clears. Chain PR #1455
+(bot/amu-gpu-chain) stays the one open chain PR; no second chain PR
+opened.

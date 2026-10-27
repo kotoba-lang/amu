@@ -1,0 +1,159 @@
+JUN-55/JUN-57 -- the (subgroup/baseline, W = 256) op=sum PARITY's
+KERNEL-LEVEL CAUSE probe: the ADR-0361 fifteenth amendment's named
+first unmeasured item ("WHY op=sum is at parity at W = 256
+specifically (kernel-level cause -- occupancy/latency balance of the
+subgroup-reduce sum variant -- not probed)") takes its
+OCCUPANCY/LATENCY-BALANCE branch. -- HARDWARE RAN THIS SLICE.
+
+record_written=2026-10-26 (JST); probe run 2026-10-26T07:39:56Z (the
+log's own DATE-UTC). NAMED, NOT HIDDEN: the probe's UTC day
+(2026-10-26) is the SAME UTC day as sessions B and C's and the
+wide-pairs probe's -- under contract point 4 it is NOT a cross-day
+replication, it extends NO record's :evidence and licenses nothing a
+same-day session may not (ADR-0373's same-day rule by citation).
+This is a RESOURCE/OCCUPANCY probe, not a timing session: NOTHING IS
+TIMED ON HARDWARE here; it is inadmissible under the entry criterion
+BY KIND (it produces no paired samples at all) and enters nothing.
+
+host: xavier (Jetson AGX Xavier, L4T R35.4.1, aarch64, sm_72),
+nvcc Cuda compilation tools release 11.4 V11.4.315 (log verbatim),
+sm_count=8 warp_size=32 max_threads_per_sm=2048 max_regs_per_sm=65536
+max_shared_per_block=49152 max_shared_optin=98304 (probe output).
+
+WHAT RAN (one measurement slice; no product code, no test, no
+selection surface moves):
+  - scratch probe gpu-cuda-kernel-usage.cu (driver API, sha256
+    997cda30c9bc4e8d.., scratch only, never staged): one fresh process
+    per emitted kernel, printing the kernel's function attributes
+    (regs, static shared, local, const, max threads) and
+    cuOccupancyMaxActiveBlocksPerMultiprocessor at the EXACT launch
+    configuration the paired-timing instrument uses for that arm
+    (block = the emitted W; dynamic shared 0 for :subgroup-reduce --
+    its partials[W] array is static -- W*4 for :baseline, W/8 for
+    :warp-shuffle-reduce);
+  - all 54 EMITTED CUDA kernels (3 arms x 6 widths x 3 ops) compiled on
+    xavier with nvcc -arch=sm_72 -cubin -Xptxas -v; the ptxas resource
+    lines captured per kernel (the kernel diag files are non-empty BY
+    DESIGN -- they carry the ptxas info, 266 bytes each; the probe's
+    own compile diag is 0 bytes);
+  - remote tree /root/gpu-kernel-cause-20261026 created fresh (rm -rf
+    first) and transferred from the local stage with COPYFILE_DISABLE=1
+    (55 files, 0 AppleDouble sidecars); the local stage is the
+    wide-pairs probe's stage with EXACTLY ONE swap -- the timing
+    instrument (d36e9701..) out, the usage probe (997cda30..) in --
+    the normalized (path, sha256) diff vs that stage is exactly those
+    two entries; the 54 emitted .cu are byte-identical and 54/54
+    sha256-matched by basename against the THREE COMMITTED corpora
+    (docs/evidence/gpu-subgroup-reduce-cuda-20261023/shaders,
+    gpu-warp-shuffle-reduce-cuda-20261024/shaders,
+    gpu-baseline-reduce-cuda-20261025/shaders) BEFORE transfer; the
+    remote received-file block matched the local stage 55/55 AFTER
+    (both ends checked by tool run this tick).
+
+VERIFIED (tool output):
+  1. Run completeness: 54/54 OK-cubin / 0 FAIL, 54/54 OK-usage /
+     54/54 usage-rc=0, 0 REFUSED / FATAL / UNKNOWN lines, driver exit
+     0, driver stderr 0 bytes; probe compile OK-instrument with a
+     0-byte diag.
+  2. Analysis outputs (this directory): kernel-usage-log.txt (the
+     verbatim remote log, 1640 lines), kernel-usage-table.txt (the
+     54-row resource/occupancy table + ptxas subset), abs-arm-times.txt
+     (the DERIVED latency decomposition below).
+
+THE FINDING (the occupancy branch is REFUTED at the measured
+granularity; the parity is a latency-side MARGIN MINIMUM of the
+subgroup arm):
+  (1) OCCUPANCY IS NOT THE CAUSE -- it is IDENTICAL where the ratio
+      moves. Every emitted kernel at W in {64,128,256,512,1024} sits
+      at 100% warp occupancy in BOTH arms and ALL THREE ops
+      (blocks_per_sm x W/32 = 64 of 64 resident warps; at W=256: 8
+      blocks/SM x 8 warps = 64); W=32 is 50% for every arm and op
+      alike (32 blocks x 1 warp, a launch-shape limit). Registers are
+      flat across widths and nearly flat across ops: subgroup 16
+      (sum) / 15 (max,min), baseline 10, warp-shuffle 14 at EVERY
+      width; ptxas reports 0 bytes stack frame, 0 spill stores, 0
+      spill loads for all 54 kernels. The only sum-specific resource
+      anywhere is the subgroup sum kernel's ONE extra register -- which
+      it carries at every width, including W=128/512 where the ratio
+      is solidly below 1.0. Nothing in the census is W=256-specific.
+  (2) THE PARITY IS A LATENCY-SIDE PHENOMENON (DERIVED -- a parse of
+      the COMMITTED wide-pairs measure-log, no new hardware; 200
+      samples per arm per cell, the 400 smoke orphans excluded by
+      reading only the grid section): at W=256 the subgroup sum kernel
+      is STILL FASTER than baseline sum in absolute median gpu_ns
+      (120128 vs 120752 at n=1000003; 125360 vs 126048 at n=1048576)
+      -- the ratio is 0.9948/0.9945, below 1.0, but the margin is only
+      ~0.5%, versus 3.4-3.6% at W=128 (112544 vs 116544; 116688 vs
+      120864) and 6.7-7.3% at W=512 (129936 vs 139712; 135488 vs
+      146128). The W=256 sum cell is a MARGIN MINIMUM of the subgroup
+      arm's advantage: a sub-1% edge sits inside the 20-pair noise --
+      exactly the fifteenth amendment's weighted coin -- while the
+      neighbour widths' 3-7% edges cannot flip.
+  (3) THE MARGIN MINIMUM'S SHAPE IS THE TWO ARMS' PER-BLOCK COST
+      CURVES (DERIVED): amortized gpu_ns per block (grid time /
+      ceil(n/W)) for baseline sum steps 14.85 -> 30.85 -> 71.45
+      (x2.08 then x2.32 over W = 128 -> 256 -> 512) while subgroup sum
+      steps 14.3 -> 30.65 -> 66.35 (x2.14, x2.16 -- near-uniform).
+      Baseline's serial shared-memory tree degrades disproportionately
+      at W=512 (9 __syncthreads steps) and sits at its best relative
+      point at W=256, where the subgroup arm's cross-subgroup fold
+      (3 __syncthreads steps at nsg = 8) buys it almost nothing over
+      the baseline tree's 8 steps.
+  (4) THE OPERATOR STRADDLE LIVES IN THE SUBGROUP ARM ONLY: baseline's
+      absolute medians are op-FLAT (sum/max/min within ~0.4% at every
+      W, both shapes: e.g. W=256 n=1000003 121360/121248/120752)
+      while subgroup's split into sum vs max/min (~12-13% at every
+      W). The quartet's max/min members sit solidly above 1.0 not
+      because max/min kernels are slow in absolute terms but because
+      the subgroup arm's max/min variants pay ~12-13% over its own sum
+      variant at every width.
+
+CONSEQUENCE TODAY: NOTHING MOVES (rule 4) -- no record, no
+:measured? flag, no selection answer, no :shapes value, no workgroup
+row; the landed entries stand byte-for-byte. The named item moves
+PARTIALLY: its occupancy branch is MEASURED and REFUTED; its latency
+branch's margin-minimum shape is DERIVED from committed data. The
+instruction-level why (why the subgroup max/min variants pay 12-13%;
+why baseline's per-block step is x2.32 at W=512 and x2.08 at W=256)
+stays UNMEASURED (a SASS-level instruction census or per-phase
+instrumentation, its own row if wanted).
+
+STATES: MEASURED (the kernel-usage probe on xavier -- the only
+measured thing this row; resource/occupancy of the 54 emitted
+kernels). DERIVED (the absolute per-arm medians and per-block cost
+decomposition -- a parse of the committed wide-pairs measure-log,
+marked). IMPLEMENTED: nothing (evidence + ADR amendment only).
+DECIDED: nothing new. ACCEPTED DESIGN ONLY (unchanged): the
+operator-aware contract + pre-registration, the row (ii) routes, the
+entry contract + wiring, ADR-0358, ADR-0373. UNMEASURED, named: the
+instruction-level why of the subgroup max/min penalty and the
+baseline W=512 per-block step; the sum ratio's TRUE side at W = 256
+(the wide-pairs probe resolved parity within ~+/-1%: medians
+0.9938..0.9964 below 1.0 but bootstrap median 95% ranges reach above
+1.0); a cross-day run 3+ (needs a later UTC day -- still 2026-10-26
+UTC this tick); every per-op verdict on non-xavier hardware; the :sum
+ordering at W = 64 on any other device or channel; the landed rows on
+a live CUDA selection path (only xavier hardware runs it); every
+workgroup row (:arm/:unknown stay provisional :measured? false).
+
+GATES (real runs): scoped GPU gate GREEN 123 tests / 12162 assertions
+/ 0 failures / 0 errors on run 1 AND run 2 (identical to the committed
+pin -- the diff touches NO .cljk namespace, regression pin; glslang
+16.6.0 real-spawn ran in run 1);
+gpu_regime_classify.py --self-test TOTAL 2649 / 0 failed (regression
+pin -- no classify code touched); FULL run-tests.cljk NOT re-run this
+slice (no .cljk touched) -- documented RED AT BASE 'Could not find
+namespace: kotoba.form' (ADR-0362), outside this diff -- NO green
+full suite claimed; find docs -name '*.sh' -> 0 (evidence is .txt).
+
+BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head
+(checked at tick start and re-checked before this push; chain PR
+#1455 OPEN, the ONE chain PR).
+
+NAMED NOT HIDDEN: kbb's "2 dep(s) are not :local/root ..." warning on
+every run (identical everywhere); the untracked deps.edn in this
+worktree (present at tick start, not created or touched by this row,
+not committed); the tar transfer's "Ignoring unknown extended header
+keyword 'LIBARCHIVE.xattr.com.apple.provenance'" notices (benign
+macOS metadata; the tree is measured after extraction: 55 files, 0
+AppleDouble sidecars, 55/55 sha256 matched).

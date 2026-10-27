@@ -1,0 +1,63 @@
+JUN-59 batch-bracket SCALING (session 4) -- COMPLETE (2026-10-27). One
+tick, one measurement slice. All numbers are real tool output.
+
+THE ROW: sessions 2-3's named residual -- "isolated single-dispatch
+timing above any floor" UNMEASURED and the mechanism of the
+session-1-vs-session-2 per-dispatch discrepancy (~116-140x) UNMEASURED.
+This session measures the BRACKET-VS-B CURVE of the batch instrument:
+B in {1,2,4,8,16,32,64} as the ONLY independent variable (one binary
+per B via -DBATCH=k; derived source = the archived session-2 snapshot
+with EXACTLY ONE edit, #ifndef BATCH wrap -- instrument-derivation.diff.txt).
+
+1. CHAIN OF CUSTODY (host-verify-s4.txt, before any run): corpus 16/16
+   MATCH vs session 2's committed compile-toolchain.txt (parsed, not
+   transcribed); derived source + manifest digests MATCH. GO.
+2. HARDWARE RAN (MEASURED): 21 fresh processes (7 B x 3 runs), windows
+   2026-10-27T10:27:11Z..10:27:53Z, rc=0 21/21, stderr 0 bytes 21/21,
+   450 SAMPLE lines each; headers byte-identical within each B and
+   identical across B except batch=<B>; every SAMPLE's batch= field ==
+   its run's B.
+3. FINDING (publication-s4.txt, produced ONLY by analysis-s4.py over
+   the committed logs, run twice byte-identical -- diff exit 0):
+   (a) P1s HOLDS: forcing reality 378/378, mismatch=0 everywhere; S=8
+   fail-closed as before. (b) THE CURVE (pooled median bracket, ticks,
+   (sum,128,S=16)): B1 31 (FLOOR-PINNED) / B2 31 (PIN) / B4 11,674 /
+   B8 32,915 / B16 69,838 / B32 140,398 / B64 277,902; DERIVED
+   per-dispatch 31 / 15.5 / 2,918 / 4,114 / 4,365 / 4,387 / 4,342
+   ticks; same shape at all 18 arms. (c) BRANCH (b) of the pre-registered
+   letter: the small-B bracket undercounts -- the 31-tick floor of
+   session 1 is REPRODUCED here at B<=2 (31 ticks at all 18 arms at
+   B=1) while the SAME runs' host_ns shows 351,956 ns of real work at
+   B=1; capture turns on between B=2 and B=4; the per-dispatch figure
+   converges to a flat band 3,455.69..4,369.81 ticks (B>=16) containing
+   session 2's 3,583..4,333. WHY the small-B bracket undercounts stays
+   UNMEASURED (no causal mechanism claimed). (d) P4s: sign 32faster at
+   every evaluable (B>=4) cell 3/3 except (min,256) B=4 (2/3); B<=2
+   NOT EVALUABLE (36 floor-pinned cells). No stability claim beyond
+   counts. NAMED, NOT HIDDEN: analysis prose first draft hardcoded
+   "NOT 31 ticks"; the data reproduced 31 exactly and the prose was
+   corrected before the recorded publication (publication-s4.txt says
+   so in section 4).
+4. RULE 4 -- NOTHING MOVES: no row, no :measured? flag, no selection
+   answer; accelerator-targets defaults stay provisional design
+   assumptions; this is NOT the baseline-vs-variant contract of
+   accelerator-subgroup-reduce.cljk. NO vendor optimization exists for
+   Intel and none is claimed.
+5. UNMEASURED: why the small-B bracket undercounts; session 2's run-1
+   dip cause; cross-day; S=8; W outside {128,256}; shape 2; any
+   baseline-vs-variant sign; anything off this host.
+6. GATES (real runs this tick): gpu_regime_classify.py --self-test
+   TOTAL 2649/0 (pin; classify-selftest.txt); scoped GPU gate GREEN
+   123 tests / 12162 assertions / 0 failures / 0 errors run 1 AND run 2
+   (scratch runner gpu_scoped_gate.cljk, NOT committed -- removed);
+   FULL run-tests.cljk RUN LIVE THIS TICK (closing session 3's named
+   gap): exit 1, RED AT BASE "Could not find namespace: kotoba.form" at
+   namespace load (ADR-0362, outside this diff) -- NO green full suite
+   claimed (gate-full-run-tests.txt); find this dir -name '*.sh' -> 0.
+Evidence: docs/evidence/gpu/anv-batchscale-20261027/ (protocol.txt,
+cases-s4.txt, gpu-subgroup-reduce-anv-batchscale.c.txt,
+instrument-derivation.diff.txt, host-verify-s4.txt, build-census-s4.txt,
+run-window.txt, run-b{1,2,4,8,16,32,64}-r{1,2,3}.txt + .stderr.txt,
+analysis-s4.py, publication-s4.txt, classify-selftest.txt,
+gate-run1.txt, gate-run2.txt, gate-full-run-tests.txt, record.txt) +
+the ADR-0355 dated note.

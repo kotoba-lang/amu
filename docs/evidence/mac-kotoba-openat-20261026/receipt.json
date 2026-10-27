@@ -1,0 +1,127 @@
+{
+  "schema": "amu.macos-kotoba-openat-control.v1",
+  "status": "PASS_AMU_EMITTED_ROOT_FD_CONTROL",
+  "qualification": "diagnostic; FS2 wire 35 not implemented",
+  "rootImageSha256": "285c54f826d5f7f77db6827bc21c622c2c777cea252a1ba4816d8b01351807e1",
+  "sourceSha256": "2ae6de3fad6c799578a8ceca487d56ac88e9d748a5c70f5f2b8c984d3181d721",
+  "observerSha256": "a4d25151e4eeb659b76ad3c228b0cc9b3964cc504f8d3b451d501102e168fe44",
+  "packagerSha256": "ca30e77b110e4aaff7d2b694a15096db03deb421204840e71f23dd9ed333897b",
+  "packagerRepeatEqual": true,
+  "rebuildAdmission": {
+    "schema": "amu.native-build-admission.v1",
+    "slot": 0,
+    "capacity": 2,
+    "queuedSeconds": 5.2667048294097185e-05,
+    "exit": 0,
+    "runSeconds": 0.8367011669906788,
+    "totalSeconds": 0.8371600419632159
+  },
+  "images": {
+    "strict": {
+      "unsignedSha256": "b6797cd17a1b08d79c5e2099d4e1058e49b613ff554fac2504e78fdc80a8d4b0",
+      "signedSha256": "d8841780e04ae925f50f6b69854d9973f829a9c7f8601a7710685ca1624910ef",
+      "loadLibraries": 0
+    },
+    "no-beneath": {
+      "unsignedSha256": "58a7f52c1c28b06ee745e5aa91d5e03474f5d3f88c5348b7ad5405e195278817",
+      "signedSha256": "ed1404545b9c9340c690b1f7f51c3550058266331f9aa51e863611b7ffe52c65",
+      "loadLibraries": 0
+    },
+    "no-nofollow": {
+      "unsignedSha256": "b30fdeefe30750ab924108e983ff66ec493cea4c8ab1bea3da7742f194233040",
+      "signedSha256": "c803f2f4d7dd0c82a1b8b82fae04fe630cedf956d9dca95ed8e5efa9e06f6c30",
+      "loadLibraries": 0
+    }
+  },
+  "cases": [
+    {
+      "case": "root-file",
+      "path": "ok.txt",
+      "exit": 42,
+      "meaning": "read-K",
+      "stdoutHex": "",
+      "stderrHex": ""
+    },
+    {
+      "case": "nested-file",
+      "path": "sub/ok.txt",
+      "exit": 42,
+      "meaning": "read-K",
+      "stdoutHex": "",
+      "stderrHex": ""
+    },
+    {
+      "case": "file-symlink",
+      "path": "file-link",
+      "exit": 62,
+      "meaning": "ELOOP",
+      "stdoutHex": "",
+      "stderrHex": ""
+    },
+    {
+      "case": "directory-symlink",
+      "path": "dir-link/ok.txt",
+      "exit": 62,
+      "meaning": "ELOOP",
+      "stdoutHex": "",
+      "stderrHex": ""
+    },
+    {
+      "case": "parent-escape",
+      "path": "../outside.txt",
+      "exit": 107,
+      "meaning": "ENOTCAPABLE",
+      "stdoutHex": "",
+      "stderrHex": ""
+    },
+    {
+      "case": "absolute-path",
+      "path": "<granted-root>/ok.txt",
+      "exit": 107,
+      "meaning": "ENOTCAPABLE",
+      "stdoutHex": "",
+      "stderrHex": ""
+    },
+    {
+      "case": "absent-file",
+      "path": "absent.txt",
+      "exit": 2,
+      "meaning": "ENOENT",
+      "stdoutHex": "",
+      "stderrHex": ""
+    },
+    {
+      "case": "without-beneath",
+      "path": "../outside.txt",
+      "exit": 42,
+      "meaning": "read-K",
+      "stdoutHex": "",
+      "stderrHex": ""
+    },
+    {
+      "case": "without-no-follow-any",
+      "path": "file-link",
+      "exit": 42,
+      "meaning": "read-K",
+      "stdoutHex": "",
+      "stderrHex": ""
+    },
+    {
+      "case": "absent-grant",
+      "path": "ok.txt",
+      "exit": 9,
+      "meaning": "EBADF",
+      "stdoutHex": "",
+      "stderrHex": ""
+    },
+    {
+      "case": "regular-file-grant",
+      "path": "ok.txt",
+      "exit": 20,
+      "meaning": "ENOTDIR",
+      "stdoutHex": "",
+      "stderrHex": ""
+    }
+  ],
+  "noLinuxFreeProducerClaim": true
+}

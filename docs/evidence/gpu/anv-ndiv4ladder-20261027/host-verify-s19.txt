@@ -1,0 +1,68 @@
+== host-verify (JUN-59 THE NDIV=4 DISPATCH LADDER, session 19) ==
+== expectation source: session 2's committed compile-toolchain.txt sha256 ==
+== (anv-subgroupsize-batch64-20261027/compile-toolchain.txt; census ==
+== consumed via session 18's committed expected-corpus.sha256, itself a ==
+== byte-copy chain back to that census -- byte-copy identity recorded in ==
+== derivation-census-s19.txt). ZERO derivation edits this ==
+== session: the instrument is session 18's committed NDIV-derived source ==
+== used BYTE-IDENTICAL; the ladder rungs are new (BATCH,NDIV=4) pairs ==
+== of the source's existing knobs. ==
+== corpus sha256sum -c (cwd = workdir root; the census paths are ==
+== workdir-relative -- the session-17 driver cwd error is not repeated) ==
+shaders/probe-w128.glsl: OK
+shaders/probe-w128.spv: OK
+shaders/probe-w256.glsl: OK
+shaders/probe-w256.spv: OK
+shaders/subgroup-reduce-w128-max.emitted.glsl: OK
+shaders/subgroup-reduce-w128-max.emitted.spv: OK
+shaders/subgroup-reduce-w128-min.emitted.glsl: OK
+shaders/subgroup-reduce-w128-min.emitted.spv: OK
+shaders/subgroup-reduce-w128-sum.emitted.glsl: OK
+shaders/subgroup-reduce-w128-sum.emitted.spv: OK
+shaders/subgroup-reduce-w256-max.emitted.glsl: OK
+shaders/subgroup-reduce-w256-max.emitted.spv: OK
+shaders/subgroup-reduce-w256-min.emitted.glsl: OK
+shaders/subgroup-reduce-w256-min.emitted.spv: OK
+shaders/subgroup-reduce-w256-sum.emitted.glsl: OK
+shaders/subgroup-reduce-w256-sum.emitted.spv: OK
+corpus_rc=0
+== corpus digest check (host-side, 16 files incl. the 8 compiled spv): 16/16 ==
+MATCH  gpu-subgroup-reduce-anv-ndiv.c: local=a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556 host=a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556
+MATCH  cases-s19-a.txt: local=b3cb62268341c43b382e3b28a9469336b4b2c0bbb7e477af5bc59f27553eff67 host=b3cb62268341c43b382e3b28a9469336b4b2c0bbb7e477af5bc59f27553eff67
+MATCH  expected-corpus.sha256: local=eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4 host=eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4
+== instrument + manifest + census-expectation local-vs-host: 3/3 MATCH ==
+== instrument byte-identity (session-18 committed file re-sha256 local ==
+== == the uploaded host copy == the session-19 committed copy): ==
+== a5e539f0... MATCH (derivation-census-s19.txt records the byte-copy) ==
+== inverse check: NOT APPLICABLE this session -- ZERO derivation edits ==
+== (there is nothing to strip; byte-identity IS the custody). ==
+TIMELINE (named, not hidden): the chain of custody ran BEFORE any run.
+Host-side steps, all on murakumo-ci-6600hs (aiueos-6600hs-1), workdir
+~/anv-ndiv4ladder-20261027:
+  2026-10-27T17:54:58Z  mkdir + cp -a of session 18's verified corpus
+                        copy (shaders/ -- 100 files: the 16 corpus
+                        files + the same staged set sessions 3-18
+                        used)
+  2026-10-27T17:54:58Z..17:55:10Z
+                        scp of instrument + manifest +
+                        expected-corpus (digests checked below), then
+                        custody: corpus sha256sum -c from the workdir
+                        root 16/16 OK, local-vs-host 3/3 MATCH
+                        (single attempt -- the session-17 driver cwd
+                        error is not repeated)
+  pre-GO compile smoke (NAMED, NOT HIDDEN; the step ran inside the
+                        same custody driver block, program order
+                        before the GO timestamp below -- no separate
+                        timestamp was printed for it, named not
+                        hidden):
+                        throwaway dir ~/anv-n4-smoke, gcc -O2
+                        -DBATCH=3 -DNDIV=4 (NEW knob pair -- NDIV=4
+                        has never been compiled at BATCH!=4 in this
+                        series), rc=0, build stderr 0 bytes, host
+                        source digest a5e539f0... MATCH local, ZERO
+                        runs, ZERO timing -- the session-9 D2 lesson
+                        applied by design
+  2026-10-27T17:55:10Z  GO (custody complete) -- BEFORE the builds
+                        (17:55:49Z..17:55:50Z) and ALL 27 runs
+                        (17:55:50Z..17:55:59Z); run-window.txt and
+                        build-census-s19.txt carry those transcripts

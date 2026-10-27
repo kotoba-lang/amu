@@ -1,0 +1,62 @@
+;; tools/b2/30-malloc.kotoba -- malloc, calloc, realloc and free for the loaded library (ADR 0375, JUN-377).
+;;
+;; Blocks are powers of two from 32 bytes to 256 KiB, each with a 16-byte header {block size, tag}, so the
+;; payload is 16-byte aligned. A freed block goes on the free list of its size class and is reused; the
+;; memory is never returned to the system. Larger requests are their own mapping and free unmaps them.
+;; Chunks of 1 MiB come from anonymous mmap. One thread, so no locks (slice 1; ADR 0375 E3 adds threads).
+;; The state words are ST-HEAP-CUR, ST-HEAP-END and ST-FREE (00-base).
+
+(def MALLOC-CHUNK 1048576)
+(def MALLOC-BIG 262144)      ;; payloads above this (with the header) are mapped on their own
+(def MALLOC-TAG-SMALL 0x42320000)
+(def MALLOC-TAG-BIG 0x42330000)
+(def MALLOC-MAX-CLASS 18)
+
+;; a mapping of n bytes: its address, or 0 when the system refuses
+(defn- malloc-map [n :i64] :i64
+  (let [r (sys6 SYS-MMAP 0 n 3 34 -1 0)] (if (< r 0) 0 r)))
+;; the size class (log2 of the block size) for a payload of n bytes
+(defn- malloc-class [n :i64] :i64
+  (loop [c 5] (if (>= (i64-shift-left 1 c) (+ n 16)) c (recur (inc c)))))
+(defn- malloc-small [c :i64] :i64
+  (let [head (st (+ ST-FREE (* 8 c)))]
+    (if (not= head 0)
+      (let [z (st! (+ ST-FREE (* 8 c)) (l64 (+ head 16)))] (+ head 16))
+      (let [size (i64-shift-left 1 c)
+            cur (if (> (+ (st ST-HEAP-CUR) size) (st ST-HEAP-END)) (malloc-new-chunk) (st ST-HEAP-CUR))]
+        (if (= cur 0) 0
+          (let [z (st! ST-HEAP-CUR (+ cur size)) h (s64 cur size) t (s64 (+ cur 8) (+ MALLOC-TAG-SMALL c))]
+            (+ cur 16)))))))
+;; a fresh chunk becomes the current one; its start, or 0
+(defn- malloc-new-chunk [] :i64
+  (let [m (malloc-map MALLOC-CHUNK)]
+    (if (= m 0) 0
+      (let [z (st! ST-HEAP-CUR m) y (st! ST-HEAP-END (+ m MALLOC-CHUNK))] m))))
+(defn- malloc-big [n :i64] :i64
+  (let [size (align-up (+ n 16) 4096) m (malloc-map size)]
+    (if (= m 0) 0 (let [h (s64 m size) t (s64 (+ m 8) MALLOC-TAG-BIG)] (+ m 16)))))
+(defn- malloc-alloc [n :i64] :i64
+  (cond (< n 0) 0
+        (> n MALLOC-BIG) (malloc-big n)
+        :else (malloc-small (malloc-class n))))
+(defn- malloc-free [p :i64] :i64
+  (if (= p 0) 0
+    (let [h (- p 16) tag (l64 (+ h 8)) size (l64 h)]
+      (cond (= tag MALLOC-TAG-BIG) (let [z (sys2 SYS-MUNMAP h size)] 0)
+            (= (bit-and tag -65536) MALLOC-TAG-SMALL)
+              (let [c (bit-and tag 65535) z (s64 p (st (+ ST-FREE (* 8 c)))) y (st! (+ ST-FREE (* 8 c)) h)] 0)
+            :else (refuse "free" (string-concat "invalid pointer 0x" (hex-str p)))))))
+(defn- malloc-usable [p :i64] :i64 (- (l64 (- p 16)) 16))
+(defn- malloc-realloc [p :i64 n :i64] :i64
+  (cond (= p 0) (malloc-alloc n)
+        (= n 0) (let [z (malloc-free p)] 0)
+        (<= n (malloc-usable p)) p
+        :else (let [q (malloc-alloc n)]
+                (if (= q 0) 0 (let [z (c-copy q p (min2 n (malloc-usable p))) y (malloc-free p)] q)))))
+
+(defn- cx-malloc-GLIBC_2.2.5 [n :i64] :i64 (malloc-alloc n))
+(defn- cx-free-GLIBC_2.2.5 [p :i64] :i64 (malloc-free p))
+(defn- cx-realloc-GLIBC_2.2.5 [p :i64 n :i64] :i64 (malloc-realloc p n))
+(defn- cx-calloc-GLIBC_2.2.5 [n :i64 m :i64] :i64
+  (if (and (> m 0) (> n (quot 4611686018427387904 m))) 0
+    (let [total (* n m) p (malloc-alloc total)] (if (= p 0) 0 (c-zero p total)))))

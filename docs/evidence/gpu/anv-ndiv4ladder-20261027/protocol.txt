@@ -1,0 +1,310 @@
+JUN-59 -- session 19 protocol: THE NDIV=4 DISPATCH LADDER (fixed
+per-dispatch work at 1/4 grid). INSTRUMENT channel. Frozen BEFORE the
+first run (2026-10-27 UTC, this tick). This file is written once and
+never rewritten.
+
+0. ROW QUESTION (ONE observable axis: THE DISPATCH COUNT at fixed
+   per-dispatch work -- session 18's named residual protocol L10 "any
+   (B,NDIV) pair with NDIV != B other than the c2/c8 controls -- the
+   rest of the grid" is reachable this tick and the NDIV=4 column of
+   that grid is taken; sessions 15-18's named residual
+   "CROSS-UTC-DAY replication" is NOT reachable this tick -- the UTC
+   day is still 2026-10-27 at tick time (L4 below, named, not
+   hidden)). The committed picture across sessions 7-18:
+   - at NDIV=1 (per-dispatch work 1.0) the capture turns on at the
+     discrete B=2 -> B=3 step (session 7 first, replicated sessions 8
+     and 16);
+   - at NDIV=B (constant total work ~1.0) the onset is ALSO at the
+     discrete B=2 -> B=3 step (session 17);
+   - at NDIV=8 (per-dispatch work 1/8) the onset is LATER/GRADUAL:
+     y2 FLOOR, y3 INTERMEDIATE/MIXED, y4..y8 CAPTURED (session 18) --
+     the B=3 capture seen at NDIV=1 and NDIV=B needs more per-dispatch
+     work than 1/8;
+   - at B=8 the capture dies as per-dispatch work shrinks (work-down
+     ladder, sessions 12-15).
+   The B=3 class as a function of per-dispatch work is measured only
+   at 1.0 (CAPTURED), 1/3 (CAPTURED) and 1/8 (INTERMEDIATE/MIXED).
+   What has NEVER been measured is the DISPATCH-COUNT ladder at a
+   per-dispatch work strictly between 1/3 and 1/8:
+
+     AT FIXED PER-DISPATCH WORK (NDIV=4: n = 250,000 elements = 1/4
+     of the full 1,000,003 grid, identical in every z arm), WHERE
+     DOES THE CAPTURE TURN ON AS THE DISPATCH COUNT RISES 2 -> 8 --
+     at the discrete B=2 -> B=3 step (so the B=3 capture threshold in
+     per-dispatch work sits at or below 1/4 and session 18's
+     later-onset is specific to 1/8), or later than B=3 (so the B=3
+     threshold in per-dispatch work sits above 1/4, between 1/4 and
+     1/3 -- per-dispatch work interacting with the dispatch count
+     among the named hypotheses)?
+
+   knobs: ZERO derivation edits this session (the strongest custody
+   position in the chain -- named as such). The instrument is session
+   18's committed NDIV-derived source used BYTE-IDENTICAL (digest
+   a5e539f0... re-verified local-vs-host). The ladder rungs are NEW
+   (BATCH, NDIV=4) pairs only -- both knobs already exist in the
+   byte-identical source (NDIV=4 has previously been compiled only at
+   BATCH=4, session 17's anv-xt-x4). The shaders take n from the N
+   uniform, so the shader corpus is used BYTE-IDENTICAL (16-digest
+   corpus). Every run's header and every SAMPLE line print batch= and
+   ndiv= (knob identity).
+
+   NAMED LIMITATIONS (frozen in advance):
+   (L1) the nominal work unit is a DEFINITION (n / 1,000,003 per
+        dispatch), not a cost claim. Per-dispatch work is FIXED at
+        n = 250,000 (1,000,003//4 -- integer floor) = 0.2499993
+        units in every z arm BY CONSTRUCTION; total nominal work
+        B*250,000/1,000,003 is 0.4999985 (z2) .. 1.9999940 (z8)
+        (computed programmatically in derivation-census-s19.txt; the
+        analysis prints the computed values); the two archived
+        controls sit at 2.000 (c2) and 8.000 (c8).
+   (L2) AT FIXED PER-DISPATCH WORK, THE DISPATCH COUNT B AND THE
+        TOTAL NOMINAL WORK CO-VARY BY CONSTRUCTION (total = B/4
+        units) -- the same co-variation shape as session 18's L2 at a
+        different per-dispatch-work level. This design separates the
+        DISPATCH-COUNT axis from the PER-DISPATCH-WORK axis but NOT
+        from the TOTAL-WORK axis. The pre-registered signatures below
+        are observational discriminators among the named hypotheses;
+        none of them is a causal mechanism and none is claimed as
+        one.
+   (L3) host_ns is a HOST-side proxy of bracketed cost (submit+wait);
+        the GPU-side cost inside a B<=2 bracket is unobservable on
+        this instrument (the phenomenon under study) and stays
+        UNMEASURED.
+   (L4) THIS SESSION IS A NEW SESSION (session 19) ON THE SAME UTC
+        DAY 2026-10-27 as sessions 2-18. Cross-UTC-day replication
+        is NOT reachable this tick and stays UNMEASURED (named, not
+        hidden).
+   (L5) no boundary between adjacent ladder rungs is claimed, and no
+        boundary on the per-dispatch-work axis between grid points is
+        claimed: the B=3 class is measured at per-dispatch work 1.0,
+        1/3, 1/4 and 1/8 (four grid points of the (B,NDIV) grid) and
+        nothing between them is interpolated.
+   (L6) one session; any cross-session stability of z2, z3, z5..z8
+        (first measured here) is UNMEASURED; z4 replicates the
+        committed x4 value if C2 holds.
+   (L7) all committed cross-session values in this protocol and in
+        analysis-s19.py are QUOTE-ONLY comparison values (rows (i),
+        (ii), (iii) of W3, the comparison columns of W2); they were
+        measured at DIFFERENT total-work levels and are never this
+        session's measurements.
+   (L8) this session measures the (B, NDIV=4) rungs B=2..8 (z4's
+        knob pair (4,4) was measured by session 17 as x4; the other
+        six are firsts anywhere in the series). It closes the NDIV=4
+        column of session 17's L10 grid and nothing else of L10.
+   (L9) stays UNMEASURED as in prior sessions: every W outside
+        {128,256}; subgroup forcing S in {16,32,default} pipeline-ok
+        plus S=8 fail-closed is the only forcing measured; shape 2;
+        BT ordering; N>0; WORK_MUL>1; barrier_n>0; any baseline-vs-
+        variant sign; isolated single-dispatch timing; anything off
+        this host.
+
+1. DERIVATION (chain of custody): ZERO derivation edits this session.
+   The instrument is session 18's committed NDIV-derived source used
+   BYTE-IDENTICAL (digest a5e539f0... re-verified local-vs-host; the
+   evidence copy is a byte-copy of session 18's committed
+   gpu-subgroup-reduce-anv-ndiv.c.txt). The manifest
+   cases-s19-a.txt's 24 cell lines are a BYTE-COPY of session 18's
+   cases-s18-a.txt cell lines (byte-equal to sessions 9-18's a-set --
+   checked programmatically in derivation-census-s19.txt; only the
+   comment header is new). expected-corpus.sha256 is a byte-copy of
+   session 18's committed file. Custody (host-verify-s19.txt):
+   corpus 16/16 MATCH via host-side sha256sum -c (run from the
+   workdir root -- the session-17 driver cwd error is not repeated)
+   + instrument + manifest + census expectation local-vs-host 3/3
+   MATCH, all BEFORE the builds and ALL runs (TIMELINE says so). One
+   pre-GO compile smoke of a NEW knob pair (NAMED, NOT HIDDEN; the
+   session-9 D2 lesson applied by design): throwaway dir, gcc of
+   (BATCH=3, NDIV=4), rc=0, build stderr 0 bytes, host source digest
+   MATCH, ZERO runs.
+
+2. ARMS (9 arms, 3 runs each = 27 fresh processes -- the arm TABLE
+   below governs the count). Binary = the byte-identical instrument
+   compiled per arm:
+   gcc -O2 -DBATCH=<B> -DNDIV=<D> -o anv-n4-<tag>
+   gpu-subgroup-reduce-anv-ndiv.c -lvulkan. Runs cwd=shaders/
+   (manifest passed as ../cases-s19-a.txt; binaries ../anv-n4-<tag>).
+   tag  BATCH  NDIV   n=1,000,003//NDIV   total nominal (B*n/1,000,003)
+   c2   2      1      1,000,003           2.0000000  (archived control)
+   z2   2      4      250,000             0.4999985
+   z3   3      4      250,000             0.7499978
+   z4   4      4      250,000             0.9999970  (== committed x4)
+   z5   5      4      250,000             1.2499963
+   z6   6      4      250,000             1.4999955
+   z7   7      4      250,000             1.7499948
+   z8   8      4      250,000             1.9999940
+   c8   8      1      1,000,003           8.0000000  (archived control)
+   The independent variable is B over z2..z8 at NDIV=4 (fixed
+   per-dispatch work). c2/c8 are the archived environment controls.
+   All 9 arms run the SAME manifest (the a-set: op {sum,max,min} x
+   W {128,256} x forced S {8,16,32,default} = 24 cells).
+
+   BUILD REPLICATION PIN (declared here in advance; prior censuses
+   parsed programmatically from the committed files, never
+   transcribed): c2 and c8 rebuilt binaries must be BYTE-IDENTICAL to
+   session 18's same-flag binaries (== session 17's == session 16's
+   == session 13's), and z4 must be BYTE-IDENTICAL to session 17's
+   anv-xt-x4 (b62ddb87...). z2, z3, z5..z8 are NEW (BATCH,NDIV=4)
+   pairs with NO prior binary in the series -- no byte-identity pin
+   applies to them (named, not hidden; their custody is the
+   byte-identical source + the compile flags + C1/C2's numeric
+   replication).
+
+3. CLASSIFICATION (frozen thresholds, the session-13..18 definition):
+   per cell, pooled median gpu_ticks over 3 runs x 25 rounds;
+   FLOOR:            <= 100 ticks at ALL 18 pipeline-ok cells
+   CAPTURED:         >= 1000 ticks at ALL 18 pipeline-ok cells
+   INTERMEDIATE/MIXED: anything else.
+   1 tick = timestampPeriod = 52.083 ns (device property, printed in
+   every run header). The named headline cell is (sum,128,S=16).
+
+   Frozen cross-session reference values (QUOTE-ONLY, L7; embedded as
+   named constants in analysis-s19.py):
+   - committed controls: c2 31 (floor band 31..32, sessions 1-18),
+     c8 32,915 (session 4 pooled median)
+   - session-17 same-knob: c2 32, c8 32,868; host_ns 679,458 /
+     2,395,127
+   - session-18 same-knob: c2 32, c8 32,830; host_ns 680,159 /
+     2,385,078
+   - committed x4 (BATCH=4,NDIV=4): 3,108 (session 17 pooled median;
+     run-median band 3,082..3,124); host_ns 391,600
+   - committed NDIV=1 B-ladder: b3 5,520 / b4 11,680 / b5 17,386 /
+     b6 22,730 / b7 28,037 (session 7; b3..b6 replicated session 16)
+   - committed NDIV=B crossing (session 17): x2 32 / x3 1,578 /
+     x4 3,108 / x5 4,012 / x6 4,738 / x7 5,191 / x8 5,458
+   - committed NDIV=8 ladder (session 18): y2 31 / y3 599 / y4 1,497
+     / y5 2,496 / y6 3,476 / y7 4,463 / y8 5,419
+   - committed B=8 work-down ladder: d32 1,050 / d64 403 / d128 167
+     / d256 34 (session 13)
+
+4. PRE-REGISTERED LETTERS (BOTH/ALL branches of each named in
+   advance; the analysis dispatches by the branch conditions below
+   and nothing else):
+
+   C1 ARCHIVED CONTROL REPLICATION (numeric agreement with the
+   committed value at the control's OWN (B,NDIV); the a-set runs the
+   ARCHIVED spv bytes through the byte-identical instrument, so this
+   pins the environment as well):
+     (a) c2 satisfies FLOOR (committed floor band 31..32 at B=2) AND
+         c8 (sum,128,S=16) pooled median within +/-5% of committed
+         32,915 -> the environment pin holds and the W letters are
+         evaluated against the row question.
+     (b) otherwise -> replication discrepancy (bearing on the
+         environment pin); W letters interpretation is FLAGGED; cause
+         UNMEASURED.
+
+   C2 CROSSING ANCHOR REPLICATION (z4 IS the committed x4 knob pair
+   BATCH=4,NDIV=4; its rebuilt binary must be BYTE-IDENTICAL to
+   session 17's anv-xt-x4 -- build-census-s19.txt):
+     (a) z4 (sum,128,S=16) pooled median within +/-5% of committed
+         x4 3,108 AND z4 class CAPTURED (as committed) -> the
+         mid-ladder rung replicates the NDIV=B crossing's same grid
+         point and the NDIV=4 column joins the NDIV=B ladder there.
+     (b) otherwise -> replication discrepancy at the joining grid
+         point; W letters interpretation is FLAGGED; cause UNMEASURED.
+
+   W1 THE ROW QUESTION (the class pattern of the ladder at fixed
+   per-dispatch work 0.25 units -- CLASSES = (class(z2), class(z3),
+   class(z4), class(z5), class(z6), class(z7), class(z8)) in rising
+   B order; dispatch count and total work co-vary BY CONSTRUCTION,
+   L2):
+     (a) ONSET-AT-3: class(z2) = FLOOR and z3..z8 ALL CAPTURED -> the
+         capture-class transition sits at the SAME discrete B=2 ->
+         B=3 step at per-dispatch work 1/4 as at NDIV=1 (sessions
+         7/16) and NDIV=B (session 17), so the B=3 capture threshold
+         in per-dispatch work sits at or below 1/4 and session 18's
+         later-onset reading is specific to its grid point (the four
+         measured B=3 grid points stand; nothing between them is
+         interpolated, L5); "B=2 never captures" extends to
+         n=250,000 at total work 0.5. ONE session; L2 co-variation
+         applies; NO causal mechanism.
+     (b) FLAT: all seven classes equal -> the class is constant along
+         the ladder at fixed per-dispatch work. NAMED IN ADVANCE:
+         with C2 placing z4 at the committed x4 CAPTURED reading and
+         the committed "B=2 never captures" readings (c2 FLOOR;
+         session 8's b2m3/b2m8 FLOOR; session 17's x2 FLOOR; session
+         18's y2 FLOOR), a FLAT all-CAPTURED vector would include z2
+         (B=2) CAPTURED and so contradict the committed picture --
+         the contradiction stands as measured content and is NOT
+         resolved here. ONE session; NO causal mechanism.
+     (c) RISE-GRADIENT / LATER-ONSET: non-decreasing along rising B
+         with at least one strict rise, not shape (a) -> at 1/4
+         per-dispatch work the capture strengthens with dispatch
+         count but does not reach CAPTURED at B=3 (the onset sits
+         later than the discrete 2 -> B=3 step, or is gradual): the
+         B=3 threshold in per-dispatch work would then sit above
+         1/4, between the measured grid points 1/4 and 1/3 (L5: no
+         interpolation), and per-dispatch work interacts with the
+         dispatch count among the named hypotheses at a second
+         grid point after session 18. ONE session; NO causal
+         mechanism.
+     (d) FALL: non-increasing along rising B with at least one strict
+         decrease -> capture weakens as the dispatch count rises at
+         fixed per-dispatch work. ONE session; L5; NO causal
+         mechanism.
+     (e) otherwise (class(z2) CAPTURED while a later rung is not; a
+         non-monotone class vector; anything not covered above) ->
+         quantified per rung from the class table; the measured
+         classes stand as content. ONE session; L5; NO causal
+         mechanism.
+
+   W2 (pre-registered, descriptive) THE NDIV=4 DOSE CURVE: the
+   pooled medians at (sum,128,S=16) over z2..z8 in rising B:
+     (a) non-decreasing in B along the ladder.
+     (b) non-monotone; the named rung(s) where it dips.
+   Descriptive either way; NO linearity claim; no interpolation. The
+   three named comparison columns (committed NDIV=1 same-B, committed
+   session-17 NDIV=B same-B, committed session-18 NDIV=8 same-B --
+   QUOTE-ONLY, L7) sit at DIFFERENT total-work levels (B units,
+   ~1.0, B/8 vs B/4 units here); the ratio columns are named
+   cross-total-work comparisons ONLY.
+
+   W3 (descriptive) THE CROSS TABLE on the B axis at four
+   per-dispatch work levels (NO interpolation, NO claim between grid
+   points; L2 applies to row (iv)):
+     row (i) COMMITTED NDIV=1 (quote-only; totals = B units)
+     row (ii) COMMITTED NDIV=B constant-total, session 17
+             (quote-only; totals ~1.0)
+     row (iii) COMMITTED NDIV=8, session 18 (quote-only; totals
+              B/8 units)
+     row (iv) THIS session, NDIV=4 (the ONLY measured row; totals
+              B/4 units)
+   plus the named equal-total shape comparisons (one quote-only
+   number against one measured number at equal nominal total,
+   different shape; NO mechanism):
+   - total 1.0: z4 (4 dispatches x 250,000) measured vs x2
+     (2 x 500,001, session 17: 32 FLOOR, quote-only) and y8
+     (8 x 125,000, session 18: 5,419 CAPTURED, quote-only)
+   - total 0.5: z2 (2 x 250,000) measured vs y4 (4 x 125,000,
+     session 18: 1,497 CAPTURED, quote-only)
+   - total 2.0: z8 (8 x 250,000) measured vs c2 (2 x 1,000,003,
+     committed control: 31 FLOOR, quote-only)
+
+   X1 (descriptive realization, from the same runs' host_ns; no new
+   measurement): vs session-17/18 same-knob host_ns where they exist
+   (c2/c8), z4 vs session-17's x4 host_ns 391,600; z2, z3, z5..z8
+   have no prior committed host_ns (first measured here). host_ns is
+   NOT a C criterion (L3).
+
+5. INVALIDATION (frozen): the instrument's VERIFY step re-checks
+   every stored value against a CPU reference inside every run.
+   VERIFY mismatch > 0 in any run makes that run DEFECTIVE and its
+   arm INVALID; no letter is evaluable from an INVALID arm. S=8
+   cells must fail-closed (pipeline=FAIL) exactly as in prior
+   sessions.
+
+6. ANALYSIS ROUTE (frozen): analysis-s19.py parses ONLY the 27
+   committed run logs in its own directory (run-<tag>-r<R>.txt) and
+   writes publication-s19.txt. No other input. Deterministic: running
+   it twice yields byte-identical publication-s19.txt (checked by
+   diff after the recorded run). Cross-session reference values are
+   frozen in section 3/4 above and embedded in the script as named
+   constants; they are comparison values only and never this
+   session's measurements.
+
+7. RULE 4 (frozen): NOTHING MOVES. No workgroup row, no :measured?
+   flag, no selection answer; accelerator-targets defaults remain
+   provisional design assumptions (:measured? false) until hardware
+   measurements replace rows one at a time. This session is NOT the
+   basis-replacing baseline-vs-variant contract of
+   accelerator-subgroup-reduce.cljk. NO vendor optimization exists
+   for Intel and none is claimed or designed here.

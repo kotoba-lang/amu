@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "protocolId": "kotoba-amu-embench-proof-v1",
+  "state": "preregistered-before-new-timing",
+  "scope": {
+    "track": "compiler-runtime",
+    "workloadSet": "all-19",
+    "subsetHeadlineAllowed": false,
+    "officialEmbenchClaimAllowed": false,
+    "universalCClaimAllowed": false
+  },
+  "sourcePolicy": {
+    "kotobaRevision": "freeze-at-campaign-creation",
+    "upstreamEmbenchRevision": "09c2ed8c3b7008c95d08b038de4a3f6dc103ed70",
+    "sameAlgorithmOnly": true,
+    "sourceAndArtifactSha256Required": true,
+    "nativeSelfhostRequired": true,
+    "nativeLoaderlessExecutionRequired": true,
+    "historicalCLoaderAllowedForNewCampaign": false,
+    "allSubstitutionsDisclosed": true,
+    "forbidWorkloadNameDispatch": true,
+    "forbidExpectedAnswerSubstitution": true
+  },
+  "runtimePolicy": {
+    "profileRequired": true,
+    "allowedProfiles": ["standard-v1", "large-vectors-v1"],
+    "defaultProfile": "standard-v1",
+    "automaticProfileSelectionAllowed": false,
+    "profileMixingWithinCampaignAllowed": false,
+    "compilerRuntimeAndBuildRecordArtifactsRequired": true,
+    "all19ExecutableBindingsRequired": true,
+    "nativeQualificationStillRequired": true
+  },
+  "arms": [
+    {
+      "id": "kotoba-amu",
+      "build": "selfhost fixed-point compiler and pinned translated ports",
+      "forbiddenRuntimeDependencies": ["JVM", "Node.js", "nbb"],
+      "forbiddenFallbacks": ["C implementation", "precomputed answer"]
+    },
+    {
+      "id": "c-reference",
+      "build": "unmodified pinned upstream C workload with compiler path, version and flags recorded",
+      "requiredFlags": ["-O2"],
+      "optionalComparatorArms": ["-O3", "-O3 -mcpu=native"]
+    }
+  ],
+  "correctness": {
+    "requiredBeforeTiming": true,
+    "kotoba": ["result", "benchmarkFuel", "verifyFuel", "allArenaCounters"],
+    "c": ["upstreamCorrectnessExit", "emptyUnexpectedStderr"],
+    "independentExpectedValues": true,
+    "failedWorkloadInvalidatesAggregate": true
+  },
+  "timing": {
+    "clock": "monotonic-raw-or-documented-platform-equivalent",
+    "minimumTimedIntervalSeconds": 1.0,
+    "warmupCount": 1,
+    "pairedRounds": 10,
+    "order": "five-ABBA-and-five-BAAB-rounds-per-workload-with-order-fixed-before-timing",
+    "adaptiveRetry": false,
+    "retryPolicy": "CPU-qualification-only; retain every attempt; select by protocol, never by speed",
+    "maximumAttemptsPerScheduledSample": 3,
+    "preAttemptRawCpuIdleMinimumPercent": 70,
+    "duringAttemptRawCpuIdleMinimumPercent": 70,
+    "duringAttemptEstimatedBackgroundIdleMinimumPercent": 70,
+    "thermalStateMustBeNominal": true,
+    "frequencyAndPowerPolicyRecorded": true,
+    "concurrentBenchmarkRunsForbidden": true
+  },
+  "statistics": {
+    "primaryPerWorkloadMetric": "paired elapsed-time ratio Kotoba/C normalized per iteration",
+    "aggregate": "geometric mean across all 19 workload ratios",
+    "uncertainty": "paired nonparametric bootstrap 95% confidence interval with deterministic recorded seed",
+    "bootstrapMethod": "fixed-19-stratified-resampling-of-10-paired-round-ratios-within-each-workload",
+    "bootstrapReplicates": 10000,
+    "bootstrapSeed": 104,
+    "reportMedianAndAllSamples": true,
+    "multipleHostResultsKeptSeparate": true,
+    "crossHostAverageForbidden": true
+  },
+  "negativeControls": [
+    "wrong expected result is rejected",
+    "modified workload source hash is rejected",
+    "undeclared C fallback is rejected",
+    "missing JVM Node.js and nbb do not affect qualified Kotoba execution",
+    "busy-host sample is rejected without replacement by a faster sample",
+    "incomplete workload set emits no aggregate",
+    "tampered raw record fails bundle verification"
+  ],
+  "reporting": {
+    "retainAllAttempts": true,
+    "retainFailuresAndSlowdowns": true,
+    "requiredLabels": [
+      "author-run",
+      "independently-rerun",
+      "upstream-reviewed",
+      "officially-published"
+    ],
+    "defaultLabel": "author-run",
+    "promotionMinimum": "two independently-rerun bundles",
+    "externalRunnerCount": 2
+  }
+}

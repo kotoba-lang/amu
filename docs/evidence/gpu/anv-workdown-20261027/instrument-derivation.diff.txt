@@ -1,0 +1,35 @@
+== JUN-59 session 12 derivation diff (C instrument) ==
+== the ONLY derivation edit this session: the NDIV work-down knob on ==
+== the archived session-8 snapshot (digest 5c7cf2d5..., verified ==
+== below). 3 hunks: H1 the knob + N_ELEMENTS division (NDIV default ==
+== 1 reproduces the archived N_ELEMENTS arithmetic exactly); H2 the ==
+== header knob-identity print gains ndiv=; H3 every SAMPLE gains ==
+== ndiv=. Purpose (row question W1): shrink the PER-DISPATCH work at ==
+== fixed dispatch count B=8 and ask whether the captured bracket is ==
+== REMOVABLE by work-down (sessions 8-11 pushed work UP at B=2 and ==
+== never reached the capture; this session pulls work DOWN at B=8). ==
+== The shader corpus is UNTOUCHED (the shaders take n from the N ==
+== uniform, so only the instrument's N_ELEMENTS, PARTS_CAP and the ==
+== CPU reference follow the knob); stored values are re-checked ==
+== bit-exact inside every run by VERIFY (frozen INVALIDATION ==
+== criterion). instrument-derivation.diff.txt NAME KEPT from ==
+== sessions 8-11 for the file role. ==
+
+--- gpu-subgroup-reduce-anv-workmul.c (session 8 committed snapshot)
++++ gpu-subgroup-reduce-anv-ndiv.c (session 12 NDIV-derived)
+@@ H1 (macro block, 1 hunk) @@
+-#define N_ELEMENTS (1000003u * (uint32_t)WORK_MUL)
++#ifndef NDIV
++#define NDIV 1
++#endif
++#define N_ELEMENTS ((1000003u * (uint32_t)WORK_MUL) / (uint32_t)NDIV)
+@@ H2 (header knob-identity print, 1 hunk) @@
+-    printf("# n=%u rounds=%d warmup=%d batch=%d barrier_n=%d work_mul=%d seed=%u metric=gpu_ns (vkCmdWriteTimestamp BATCH-dispatch bracket; per_dispatch_ns=gpu_ns/batch) +host_ns (CLOCK_MONOTONIC submit->completion)\n",
+           N_ELEMENTS, ROUNDS, WARMUP, BATCH, BARRIER_N, WORK_MUL, SEED);
++    printf("# n=%u rounds=%d warmup=%d batch=%d barrier_n=%d work_mul=%d ndiv=%d seed=%u metric=gpu_ns (vkCmdWriteTimestamp BATCH-dispatch bracket; per_dispatch_ns=gpu_ns/batch) +host_ns (CLOCK_MONOTONIC submit->completion)\n",
+           N_ELEMENTS, ROUNDS, WARMUP, BATCH, BARRIER_N, WORK_MUL, NDIV, SEED);
+@@ H3 (SAMPLE knob-identity print, 1 hunk) @@
+-            printf("SAMPLE round=%d idx=%d batch=%d work_mul=%d gpu_ticks=%llu gpu_ns=%.1f per_dispatch_ns=%.2f host_ns=%llu\n",
+                   r, order[k], BATCH, WORK_MUL, (unsigned long long)ticks,
++            printf("SAMPLE round=%d idx=%d batch=%d work_mul=%d ndiv=%d gpu_ticks=%llu gpu_ns=%.1f per_dispatch_ns=%.2f host_ns=%llu\n",
+                   r, order[k], BATCH, WORK_MUL, NDIV, (unsigned long long)ticks,

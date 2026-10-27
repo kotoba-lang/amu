@@ -1,0 +1,271 @@
+JUN-58 / JUN-55 -- CORRECTION: the blanket "every workgroup row is
+:measured? false" claim, corrected at its root and censused in full
+(2026-10-24, chain worktree, kbb --backend sci)
+
+WHAT THIS RECORD IS: the correction slice for the blanket workgroup-row
+claim of kotoba.compiler.accelerator-targets -- "no measurement in it
+yet", "`recommend` marks every answer :measured? false", "the workgroup
+defaults ... remain :measured? false", "stay provisional (:measured?
+false)" asserted about ALL six rows. That claim is FALSE as written:
+ADR-0358 (accepted and implemented 2026-10-19, uB5G scoping amendment
+2026-10-22) measured four of the six rows, IN the very table the claim
+describes. This slice corrects the claim at its origin (the namespace's
+own honesty prose), marks the two ADR texts that still assert it, pins
+the true split with one new test, and censuses every remaining
+occurrence in the tree -- correcting the record files in place with
+dated CORRECTION brackets (the 7f1c7faf correction-section idiom). It
+runs no hardware and moves no :measured? flag: every number below is
+either a runtime dump taken this tick or a citation of committed
+records.
+
+THE MISSTATEMENT AT ITS ROOT (quoted, before this slice -- the ns
+docstring of src/kotoba/compiler/accelerator_targets.cljk, the oldest
+standing source of the claim; the slice records' tail boilerplate copied
+it):
+
+  One decision table, and no measurement in it yet: the workgroup sizes
+  below are PROVISIONAL design defaults chosen as powers of two that are
+  multiples of each vendor's published execution width. `recommend`
+  marks every answer :measured? false; nothing here may be reported as
+  optimization evidence until hardware measurement replaces a row.
+
+It has been false since 2026-10-19, when ADR-0358's measured rows landed
+in that table. `workgroup-default`'s docstring ("The provisional
+workgroup size for a vendor") carried the same drift.
+
+GROUND TRUTH (real run, this host, this tick). Dump runner (scratch
+wg_state_dump.cljk -- "not in the repository" -- the same runner
+docs/evidence/gpu/workgroup-row-state-correction-20261023.txt used),
+invoked exactly:
+
+  kbb --backend sci --classpath "src:test:<resolved closure>" \
+    /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/wg_state_dump.cljk
+
+(the $(kbb -Spath -M:test) subshell is broken at this branch's HEAD --
+the CHANNEL NOTE in
+docs/evidence/gpu/simdgroup-reduce-m1max-shape2-w32-measure-20261024.txt
+names it ("no deps.edn", exit 66) -- so the runs substitute the resolved
+closure inline, the same route-2 resolution every recent record names;
+the closure is the one cached at
+scratch/amu_kbb_test_cp.txt). Output, verbatim:
+
+  == workgroup-defaults (runtime table, host reading) ==
+  :nvidia size=256 width=32 measured?=true measured-device="xavier"
+  :apple size=256 width=32 measured?=true measured-device="m1 max"
+  :intel size=128 width=32 measured?=true measured-device="g31"
+  :arm size=128 width=16 measured?=false measured-device=nil
+  :amd size=1024 width=64 measured?=true measured-device="680m"
+  :unknown size=256 width=32 measured?=false measured-device=nil
+
+  == recommend answers (measured-device scoping) ==
+  vendor-id-only nvidia -> vendor=:nvidia wg=256 measured?=true
+  vendor-id-only apple -> vendor=:apple wg=256 measured?=true
+  named M1 Max -> vendor=:apple wg=256 measured?=true
+  named Xavier -> vendor=:nvidia wg=256 measured?=true
+  named G31 -> vendor=:intel wg=128 measured?=true
+  named 680M -> vendor=:amd wg=1024 measured?=true
+  unnamed amdgpu -> vendor=:amd wg=1024 measured?=true
+  unknown -> vendor=:unknown wg=256 measured?=false
+
+  == counted state ==
+  rows total=6 measured? true=4 measured? false=2
+  measured vendors: [:nvidia :apple :intel :amd]
+  provisional vendors: [:arm :unknown]
+
+THE TRUE STATE (what the corrected prose now says): four MEASURED rows
+(:nvidia, :apple, :intel, :amd -- ADR-0358, one workload shape each,
+one device each, :measured? scoped to the row's :measured-device name
+fragment under uB5G) and two PROVISIONAL rows (:arm -- no Mali hardware;
+:unknown -- the portable fallback). `recommend` answers the row's
+:measured?: true only for a measured row whose fragment names the
+device. A measured row is evidence for its named device on the recorded
+workload shape only; the provisional rows are not optimization evidence
+at all. The measured rows are the ADR-0358 measurements OF THEIR PATH
+(2026-10-19, the then-existing loader route); nothing here re-measures
+them.
+
+WHAT MOVED (the slice's whole scope):
+- src/kotoba/compiler/accelerator_targets.cljk: the ns docstring
+  rewritten to the true split above, with a dated Correction note naming
+  the old text ("no measurement in it yet"; "`recommend` marks every
+  answer :measured? false"); `workgroup-default`'s docstring drops
+  "provisional" as a blanket ("The workgroup size for a vendor ... the
+  row's :size, from a measured row or a provisional one as the row's
+  :measured? flag says"). No code, no behavior, no map, no answer
+  changed -- the runtime dump above is identical before and after.
+- test/kotoba/compiler/accelerator_targets_test.cljk:
+  the-row-split-is-four-measured-two-provisional (new) -- pins the split
+  ({:nvidia :apple :intel :amd} measured / {:arm :unknown} provisional)
+  and that a measured row names exactly one :measured-device while a
+  provisional row names none.
+- docs/adr/0355-gpu-vendor-target-dispatch.md rule 3: SUPERSEDED IN
+  PART marker (ADR-0358 measured four rows; the provisional rule still
+  binds :arm/:unknown).
+- docs/adr/0356-gpu-kernel-variant-selection.md: UPDATE marker on the
+  "remain :measured? false on their own axis" bullet (same content;
+  "untouched by this ADR" stands).
+- 20 record files: one dated CORRECTION bracket at the end of each --
+  see census group B.
+
+THE CENSUS (every occurrence of the blanket claim found this slice).
+Greps, named verbatim so the census is re-runnable (ripgrep over the
+chain worktree): "every workgroup default|workgroup defaults in
+kotoba.compiler.accelerator-targets|no measurement in it yet|marks
+every answer"; "remain :measured? false|still :measured? false";
+"stays provisional|stay provisional|stays PROVISIONAL|remain
+provisional|remain PROVISIONAL|keeps provisional"; every hit then read
+in context.
+
+Group A -- corrected in this slice (4 files):
+  src/kotoba/compiler/accelerator_targets.cljk (ns docstring;
+    workgroup-default docstring)
+  docs/adr/0355-gpu-vendor-target-dispatch.md (rule 3)
+  docs/adr/0356-gpu-kernel-variant-selection.md (the :measured? axis
+    bullet)
+  test/kotoba/compiler/accelerator_targets_test.cljk (the new pin)
+
+Group B -- record files carrying the blanket claim, corrected in place
+this slice with a dated CORRECTION bracket appended to each record (20
+files; numbers and "no row moved" claims in each record stand
+unchanged):
+  docs/evidence/gpu/simdgroup-reduce-flip-w512-20261023.txt (97-99)
+  docs/evidence/gpu/flip-basis-citations-20261023.txt (76-77)
+  docs/evidence/gpu-subgroup-reduce-m1max-shape2-band-20261023/NOTES.md
+    (94-95)
+  docs/evidence/gpu/simdgroup-reduce-flip-w128-20261024.txt (110-112)
+  docs/evidence/gpu/simdgroup-reduce-flip-w32-20261024.txt (96-98)
+  docs/evidence/gpu/simdgroup-reduce-flip-w64-20261024.txt (103-105)
+  docs/evidence/gpu/simdgroup-reduce-flip-w1024-20261024.txt (101-103)
+  docs/evidence/gpu/simdgroup-reduce-flip-shape2-w256-20261024.txt (105)
+  docs/evidence/gpu/simdgroup-reduce-flip-shape2-w64-20261024.txt (140)
+  docs/evidence/gpu/simdgroup-reduce-flip-shape2-w128-20261024.txt (135)
+  docs/evidence/gpu/simdgroup-reduce-flip-shape2-w1024-20261024.txt (123)
+  docs/evidence/gpu/simdgroup-reduce-flip-shape2-w512-refused-20261024.txt
+    (133-135)
+  docs/evidence/gpu/adr0373-diffrecord-reconciliation-20261024.txt
+    (83-84 and 119-124)
+  docs/evidence/gpu/fixture-staging-reconciliation-20261020.txt (69)
+  docs/evidence/gpu/loadsweep-low-20261019/README.md (102-103)
+  docs/evidence/gpu/xsession-rep3-w64t32-20261019/README.md (70-71)
+  docs/evidence/gpu/insession-gap6m-w64t32-20261019/README.md (80-82)
+  docs/evidence/gpu/crosstick-gap-2254A-w64t32-20261020/README.md (78-81)
+  docs/evidence/gpu-workgroup-compute-m1max-20261019/README.md (167-168)
+  docs/evidence/gpu-workgroup-sweep-m1max-20261018/README.md (42-44) --
+    written 2026-10-18, TRUE WHEN WRITTEN (before ADR-0358); its bracket
+    is the "true when written" variant.
+
+Group C -- quoted at write time inside a structured data record, NOT
+edited (JSON is data; the quote is history) (1 file):
+  docs/evidence/gpu-vendor-dispatch-m1max-info-20261018/info-probe.json
+  (28) -- written 2026-10-18, true when written; superseded by ADR-0358
+  the next day. Named here, left byte-identical.
+
+Group D -- read and ACCURATE as written (named so the census shows they
+were checked, not skipped):
+  docs/evidence/gpu/w32-decision-cell-20261023.txt (74-75: "the
+    provisional :arm/:unknown rows are untouched and still :measured?
+    false" -- scoped to the two rows, true)
+  docs/evidence/gpu/argv-gate-class-20261023.txt (its own correction
+    section quotes the old phrasing)
+  docs/evidence/gpu/gate-base-cc2b2362-exactbase-20261020/README.md
+    (56-60, "corrected state:" -- accurate)
+  docs/evidence/gpu/wsweep-load2x-20261019/README.md (103-104:
+    ":arm and :unknown remain provisional")
+  docs/evidence/gpu/crosstick-gap-0530B-w64t32-20261020/README.md
+    (133-135: scoped to ":arm / :unknown workgroup rows")
+  docs/evidence/gpu-subgroup-reduce-exec-postfix-m1max-20261020/README.md
+    (60-61, "Nothing flips :measured? ... the variant basis stays
+    :measured? false") and its replication-record.md (44, aware of the
+    measured rows)
+  docs/evidence/gpu-subgroup-reduce-cuda-20261023/NOTES.md (152-153) and
+    gpu-subgroup-reduce-msl-20261023/NOTES.md (104-105) ("the ADR-0358
+    measured rows keep their provenance; :arm and :unknown stay
+    provisional")
+  docs/evidence/gpu/finest-sum-corpus-pin-20261024.txt (75-77: "keep
+    their existing :measured? states")
+
+Group E -- named, NOT edited (outside the repository):
+  The profile directive SOUL.md's honesty-rule parenthetical ("The
+  workgroup defaults in kotoba.compiler.accelerator-targets are
+  provisional design assumptions (they say :measured? false)") is the
+  same stale claim, copied into this record line's earlier tails.
+  SOUL.md is the owner's directive file and is not edited by this bot.
+  Owner: the true statement is "the :arm/:unknown rows are provisional;
+  the four ADR-0358 rows are measured, each on one named device and one
+  workload shape".
+
+Group F -- adjective drift, named (comments; not the blanket claim;
+left as-is this slice):
+  src/kotoba/compiler/cli.cljk (293) and
+  src/kotoba/compiler/nbb/wasm_cli.cljk (570): "the provisional dispatch
+  default (ADR-0355)" -- measured rows are not provisional. The
+  adjacent "the printed :measured? says which" keeps the sentence from
+  asserting the blanket state.
+
+A CORRECTION TO THE 2026-10-23 CORRECTION:
+docs/evidence/gpu/workgroup-row-state-correction-20261023.txt claims to
+"names every place it was written" and names three (flip-contract-
+widen-20261023.txt, argv-gate-class-20261023.txt, commit 7b053893's
+message). That sweep was INCOMPLETE: the census above finds the claim
+standing in 20 more record files (group B), including records written
+after the correction record (the recurrence -- the last one committed
+2026-10-24 11:03). The 2026-10-23 record's content is otherwise
+correct and is not rewritten here.
+
+WHAT THIS SLICE DOES NOT LICENSE:
+- No :measured? flag moved and no workgroup row (ADR-0355/0358) moved.
+  The four measured rows keep their ADR-0358 provenance (2026-10-19,
+  the then-existing loader path); they are NOT re-derived or re-measured
+  here, and no vendor optimization claim is added by this slice.
+- The :arm and :unknown rows stay :measured? false (provisional).
+- Nothing about the :simdgroup-reduce / :subgroup-reduce VARIANT rows
+  changes: every answer outside the already-flipped cells stays
+  :measured? false exactly as the flip records state.
+
+HONEST LEFT (the real remainder after this row):
+- Group C's JSON quote, Group F's comment drift and Group E's SOUL.md
+  parenthetical stand as named above.
+- SOUL.md backlog items 3 and 4 stay open (per-vendor workgroup sweeps
+  replacing the remaining provisional rows -- :arm needs Mali hardware,
+  :unknown is provisional by design; JUN-57/59/60 hardware-free
+  slices). The JUN-58 measurement-series LEFT (cross-day replication
+  rows, runnable 2026-10-25+, the shape-2 W = 512 REGIME-SCOPED refusal
+  scope, shapes beyond the two measured) is unchanged.
+
+GATE (real runs, this host, kbb --backend sci, from the chain worktree
+root, 2026-10-24, run for THIS record; classpath substitution as in
+GROUND TRUTH above):
+
+1. The touched test namespace (targeted runner
+   scratch/targeted_targets_gate.cljk, not in the repo):
+     -> Ran 9 tests containing 210 assertions.
+        0 failures, 0 errors.
+        targeted: 9 tests, 210 passed, 0 failed, 0 errors
+   (8 tests / 202 assertions before this slice; the new pin contributes
+   1 test / 8 assertions.)
+2. The scoped GPU gate (the 8 GPU-owned test namespaces, scratch runner
+   gpu_scoped_gate.cljk, not in the repo):
+     -> Ran 102 tests containing 9728 assertions.
+        0 failures, 0 errors.
+        scoped: 102 tests, 9728 passed, 0 failed, 0 errors
+   (101/9720 before this slice.)
+3. Harness self-tests (run "named not assumed"; this slice adds a
+   record .txt, not a summary.md, so the corpus tally is untouched):
+     python3 scripts/gpu_regime_classify.py --self-test
+       -> TOTAL: 1562 assertions passed, 0 failed.
+     python3 scripts/gpu-subgroup-reduce-metal-measure.py --self-test
+       -> driver auto-wiring self-test: 12 assertions passed, 0 failed.
+4. Full suite (run-tests.cljk), same classpath substitution: RED AT
+   BASE, outside this diff, at namespace load on `kotoba.form`
+   ("Error: Could not find namespace: kotoba.form"; the W3 port path
+   documented red at base in ADR 0362), re-verified live this tick. No
+   green full suite is claimed.
+
+HONESTY STATE: IMPLEMENTED -- the corrected prose (code docstrings),
+the two ADR markers, the pin test and the record brackets (code + test
+exist; the gate above is green for every namespace touched). ACCEPTED
+DESIGN ONLY -- nothing new. PROPOSED -- nothing new. MEASUREMENTS --
+none taken this slice; the only hardware fact cited is the runtime dump
+(GROUND TRUTH), which is a fact about the table's values at runtime,
+not an optimization measurement. Every :measured? flag in the tree is
+unchanged; the four measured rows stand on ADR-0358's records alone.

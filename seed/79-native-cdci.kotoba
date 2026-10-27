@@ -1,8 +1,8 @@
 ;; Canonical native CDCI factory. The complete adopted compiler builds
 ;; only the two reviewed privileged roles from exact source bytes.
 (defn- xc-role-hash [role :string] :string
-  (cond (string=? role "controller") "92dde5a0c4a84600bb279f798eef48fc716af04e6dabddecffb9f0dcc40c1403"
-        (string=? role "kotoba-native") "5209faad66be244d3eda0ca5d99af25fdf95073e3f24c465592d790c4ad2af62"
+  (cond (string=? role "controller") "b3b39c062cc890ea9db5161c5ff1e5df3545dcfd094cc0ade1f854286dbfd0e5"
+        (string=? role "kotoba-native") "7778adf64e83542a4d9655beea8033761691c071666b106beef2674ad9465d8f"
         :else ""))
 (defn- xc-command [] :i64
   (cond (not= (io-argc) 6) (drv-usage)
@@ -14,4 +14,29 @@
                          (string=? (sh-text role) (xc-role-hash (io-arg 1))))
                   (let [text (string-concat guest (string-concat common role)) m (xs-build (xg-front text) text (string-length guest) 3)]
                     (if (= (vector-at m MM-ERR) 0) (xs-write m (io-arg 5)) (xg-report m (io-arg 2) (io-arg 5))))
+                  (drv-fail0 E-PROJ-UNPINNED)))))
+
+;; Separate closed measurement factory, not a third CDCI role and not a
+;; general privileged guest build mode. Both files must match reviewed bytes;
+;; the runtime core and harmless guest entry are compiler-owned.
+;; bench-build aarch64-linux HOST REGISTRY NEW --runtime-profile large-vectors-v1
+;; x86 measurement payload admission is deliberately not qualified yet.
+(defn- xb-command [] :i64
+  (cond (or (not= (io-argc) 7)
+            (not (string=? (io-arg 1) "aarch64-linux"))
+            (not (string=? (io-arg 5) "--runtime-profile"))
+            (not (string=? (io-arg 6) "large-vectors-v1"))
+            (= (string-length (io-arg 4)) 0)) (drv-usage)
+        (or (= (io-exists (io-arg 2)) 0) (= (io-exists (io-arg 3)) 0)) (drv-fail0 E-READ)
+        (= (io-exists (io-arg 4)) 1) (drv-fail0 E-WRITE)
+        :else (let [host (drv-pj-lock-text (io-read-bytes (io-arg 2)))
+                    registry (drv-pj-lock-text (io-read-bytes (io-arg 3)))]
+                (if (and (string=? (sh-text host) "c47c0d82e4f487211d5d679315e8126ab59fafc7e84aef80d8fc9e8bf1236ec7")
+                         (string=? (sh-text registry) "c2152375e32d162c0ac340a2387818168860ab6f7a74bad4cebaaa765f371b1b"))
+                  (let [guest "(ns native-bench (:export [main]))\n(defn main [] :i64 0)\n"
+                        rt (string-concat (xa-rt-core-profile 1) (string-concat registry host))
+                        text (string-concat guest rt)
+                        m (xa-build (xg-front text) text (string-length guest) 0 (vector-alloc 1) 0 0 0)]
+                    (if (= (vector-at m MM-ERR) 0) (xa-write m (io-arg 4) 1)
+                      (xg-report m (io-arg 2) (io-arg 4))))
                   (drv-fail0 E-PROJ-UNPINNED)))))

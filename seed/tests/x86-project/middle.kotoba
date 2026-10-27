@@ -1,0 +1,11 @@
+(ns x86-project.middle
+  (:require [x86-project.values :as values])
+  (:export [label keyword-value make-record run-callback make-document]))
+
+(defn label [] :string (string-concat (values/label) "/middle"))
+(defn keyword-value [] :keyword (values/keyword-value))
+(defn make-record [] [:ref :x86-project/value] (values/make-record 37))
+(defn run-callback [] :i64
+  (let [increment 2]
+    (values/apply-one (fn [value] (+ value increment)) 40)))
+(defn make-document [] :document (values/make-document))

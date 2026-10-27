@@ -1,0 +1,180 @@
+JUN-58 / JUN-55 -- the fold-arms counters OP-ORDER REPLICATION row at
+the anchor cell: the first op-order row's named UNMEASURED item "a
+second reversed-order session (the block-position reading's
+replication)" is MEASURED -- the SIGN reading REPLICATES exactly (the
+anchor's 18/18-slower verdict class reproduces a second time under
+min,max,sum) while the BLOCK-POSITION reading DOES NOT (the first
+block is NOT one-level this session -- and NO operator is one-level,
+a first at the anchor cell) (2026-10-26 UTC, tick slice)
+
+Row taken: the first op-order row's own named UNMEASURED item,
+verbatim -- "a second reversed-order session (the block-position
+reading's replication)"
+(docs/evidence/gpu/metal-counter-foldarms-oporder-20261026/commit
+message UNMEASURED list and record.txt; the ADR-0360 op-order
+amendment's "ONE reversed-order session exists; its replication is
+UNMEASURED"). This is NOT a cell of the anchor list item (its width
+and shape halves are CLOSED; only "R at those grids" stays open) and
+NOT the cross-day row's day-3 item (that protocol fixes the anchor
+order sum,max,min; this row runs min,max,sum). ONE measurement slice.
+HARDWARE RAN.
+
+WHAT RAN: the first op-order row's protocol REPEATED unchanged -- 6
+fresh processes one ADR-0358 run each (20 interleaved AB/BA pairs per
+operator per run, 2 warmup submits per arm discarded, verified
+untimed read-back), instrument
+scripts/gpu-subgroup-reduce-metal-counters.m compiled fresh (unchanged
+in the tree since the anchor row; last commit touching it is the
+harness row b3717baf3), arms baseline-<op>.metallib vs
+subgroup-<op>.metallib at W=256 built THIS row from the COMMITTED
+emitters via scripts/gpu-subgroup-reduce-metal-measure.cljk --width
+256 into a FRESH build dir (the anchor's, shape2-W=256's and first
+op-order's dirs not reused -- artifacts re-derived and compared, not
+copied), n=1000003 W=256 (the anchor cell exactly), op_order=min,max,sum
+(the reversed order, as the replication demands), the committed
+instrument's argv contract admitting the permutation; protocol +
+predictions P0..P3 (both branches of each named question) written to
+protocol.txt BEFORE the first run.
+
+DAY FACTS (tool output, run-window.txt verbatim): run window
+2026-10-26T23:20:47Z .. 2026-10-26T23:20:48Z -- the SAME UTC day as
+every other counters-channel row (the cross-day row's day-2 runs, the
+W-grid, shape-2 and first op-order rows). No cross-day claim of any
+kind rides this row: the cross-day row's day-3 item at sum,max,min
+stays UNMEASURED.
+
+REALIZATION CONTROL (P0a HOLD, build-shas.txt): the W-INDEPENDENT
+artifacts are sha256-IDENTICAL to the anchor row's 2026-10-25 build
+AND all TWELVE later builds -- probe.metallib 80dbf4fde263.. and the
+counters binary ITSELF 4cb76bdcc974.. -- the instrument CONSTANT
+across FOURTEEN cells; NAMED ARTIFACT FACT (checked, not assumed):
+ALL SIX fold-arm metallibs byte-identical to the anchor row's, the
+shape2-W=256 row's AND the first op-order row's W=256 builds
+(baseline 2e2f3654.. / 1169a1a8.. / 2cd19335.., subgroup a8de6377.. /
+bda54358.. / a2046b53..) -- the fold-arm artifacts are n- AND
+op-order-INVARIANT at W=256 across FOUR builds now; all six shas
+recorded for a later cross-day replication of THIS cell.
+
+VERIFIED (real runs): all 6 processes exit 0, stderr 0 bytes,
+120/120 sample lines resolved each (counter_ns=ERR 0 across all 720
+samples), 6/6 verify ok=1 per run (36 total, 0 ok=0), headers
+verified programmatically in every log (device=Apple M1 Max,
+channel=counters AtStageBoundary, sampling_points dispatch=0 stage=1
+draw=0 tile=0 blit=0, simdgroup_size=32, n=1000003, workgroup=256,
+pairs=20, warmup=2, op_order=min,max,sum -- the anchor's order in NO
+header; header precedes first sample 6/6); the committed route parses
+with ZERO named exclusions.
+
+ANALYSIS: ONLY scripts/gpu_regime_classify.py --counters-log
+run-1..6.txt, run TWICE with outputs BYTE-IDENTICAL (diff exit 0),
+publication saved verbatim (76 lines, sha256 ca8f7004..); NO analysis
+code written this row.
+
+THE FINDING (publication.txt is the publication):
+
+  (1) P1a FIRES -- THE SIGN READING REPLICATES: every operator is
+  REGIME-INVARIANT SLOWER again (max 6/6 1.196..1.219, min 6/6
+  1.216..1.219, sum 6/6 1.196..1.221), every observed regime
+  one-sided, cell roll-up 18/18 slower -- the anchor cell's rule-2
+  verdict class reproduces at the second reversed-order session, so
+  the sign at this cell has now been stable across every measured
+  session (anchor day-1 sum-first, cross-day day-2 sum-first, and TWO
+  reversed-order sessions). P1b did not fire: no side-flip, the
+  reopen-trigger count STAYS at TWO exercising records (the W=32 sum
+  side-flip at n=1000003 and n=2^20), both unadjudicated; this row
+  registers no reopen claim.
+
+  (2) P2b FIRES -- THE BLOCK-POSITION READING DOES NOT REPLICATE. The
+  FIRST block of the session (min, at order min,max,sum) is NOT
+  one-level this session: min sits at TWO levels (59291.5 at run 3
+  alone / 103416.5..103791.5 at runs 1,2,4,5,6), max THREE
+  (32875.0..32917.0 runs 4,5,6 / 44021.0 run 3 /
+  103604.5..103666.5 runs 1,2), sum FOUR (32917.0..33000.0 runs 4,5,6
+  / 42875.0 run 3 / 84396.0 run 2 / 103666.5 run 1) -- NO operator is
+  one-level at this session, the FIRST anchor-cell session with no
+  one-level operator. The readings' counts move in record state only:
+  "the first block is the one-level block" 3/3 -> 3/4 sessions;
+  "sum is the one-level operator" 2/3 -> 2/4 (this session adds no
+  one-level operator either way). NAMED, NOT EXPLAINED: the level
+  VALUES stay session-variable and this session's fast states
+  (~32.9k) sit in the first reversed-order session's class (~32.9k,
+  "the day-2 class"), not the anchor's (~54k); the session also shows
+  a WITHIN-ROW descent at max and sum (runs 1-2 slow, run 3 mid,
+  runs 4-6 fast; sum adds a mid state at run 2) while min BOUNCES
+  (slow runs 1,2 -- fast run 3 -- slow again runs 4,5,6), recorded,
+  not explained. The state-shift cause, threshold and prevalence stay
+  UNMEASURED. Consequence for the reading: after FOUR counted
+  anchor-cell sessions the regime STRUCTURE is session-variable at
+  this cell (every session has shown a different level split), and
+  the one specific fits ("first block one-level", "sum one-level")
+  are each contradicted at least once -- NAMED as the observed class,
+  NOT replaced by a mechanism.
+
+  (3) P3 -- raw bands pooled 1.196..1.221 sit almost exactly over the
+  first reversed-order session's pooled band (1.197..1.220; this
+  row's 1.196 min edge extends 0.001 below it), overlap the anchor's
+  union (1.204..1.221) at 1.204..1.221 and the cross-day row's day-2
+  union (1.197..1.222) at 1.197..1.221 -- same instrument, same
+  cell, raw-band observation only (rule 3, no magnitude invariance
+  claimed across sessions); the anchor's ratio-vs-state pattern
+  (fast-state ratios slightly lower, still slower) reproduces a
+  FOURTH time at this cell (max fast 1.196..1.198 vs slow 1.219; sum
+  fast 1.196..1.201 vs slow 1.221).
+
+CONSEQUENCE: NOTHING MOVES (rule 4) -- no :measured? flag, no
+:shapes value, no selection answer, no workgroup row (this channel
+can never move one), no WGSL cell flip, no MSL command-buffer cell
+flip, no cross-instrument magnitude claim. The sign stays
+CHANNEL-SCOPED at the route's own letter and M1-Max scoped. The named
+item moves in record state only ("a second reversed-order session
+(the block-position reading's replication)" -> MEASURED: sign reading
+REPLICATED 18/18 slower, block-position reading NOT REPLICATED -- no
+one-level operator this session; the structure's session-variability
+is the observed class). UNMEASURED named: op-order dependence at
+every OTHER cell; a THIRD reversed-order session (the structure's
+session-variability now has two disagreeing reversed-order sessions
+-- what a third would show is open); the state-shift
+cause/threshold/prevalence; "R at those grids" and the residual's
+internal decomposition and absolute clock domain; day 3+ cross-day
+replications at sum,max,min (this row is same-UTC-day 2026-10-26);
+the W-shape's cause; the partial tail's quantitative role; anything
+off M1 Max; the WGSL route's kernel time; every workgroup-row
+question (:arm/:unknown stay provisional :measured? false --
+accelerator-targets defaults remain design assumptions, not
+evidence).
+
+CROSS-CHANNEL CONTEXT (rule 3, never merged): the MSL command-buffer
+channel's historical op-order cell/re-session stays its own
+instrument's record; this row adopted none of its magnitudes or
+mechanism.
+
+Gates (real runs): gpu_regime_classify.py --self-test TOTAL 2649
+assertions passed / 0 failed (committed pin 2649/0; no classify code
+touched -- regression pin); scoped GPU gate (8 GPU-owned namespaces,
+scratch runner gpu_scoped_gate.cljk, never committed) GREEN 123
+tests / 12162 assertions / 0 failures / 0 errors on run 1 AND run 2
+(glslang 16.6.0 real-spawn; the diff touches NO .cljk namespace --
+the committed 123/12162 pin holds; logs gate-run1/2.txt); FULL
+run-tests.cljk RUN LIVE THIS TICK: exit 1, RED AT BASE 'Could not
+find namespace: kotoba.form' at namespace load (ADR-0362), outside
+this diff (log full-run-tests.txt) -- NO green full suite claimed;
+find docs -name '*.sh' -> 0 (the no-POSIX-sh evidence rule).
+
+NAMED NOT HIDDEN: the same-UTC-day fact with every prior row (no day
+claim); the one-second run window (wall time is no metric); the
+reopen-trigger count staying at 2; untracked deps.edn (not created by
+this bot) untouched; kbb '2 dep(s) not :local/root' warning
+(identical everywhere); the build/run/gate scripts live in Hermes
+scratch and are never staged (POSIX .sh ban; all logs staged are
+.txt).
+
+BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head at tick
+start and re-checked before this push (heads: bot/amu-gpu-chain-20261026-2
+/ codex/* / claude/* / kami-native-*); chain PR #1612 OPEN and
+MERGEABLE, the ONE chain PR.
+
+Evidence: docs/evidence/gpu/metal-counter-foldarms-oporder-rep2-20261026/
+(protocol.txt, build-shas.txt, run-window.txt, run-1..6.txt,
+publication.txt, classify-selftest.txt, gate-run1.txt, gate-run2.txt,
+full-run-tests.txt, record.txt) + the ADR-0360 replication amendment.
+(JUN-55, JUN-58)

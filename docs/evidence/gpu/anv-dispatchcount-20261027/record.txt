@@ -1,0 +1,218 @@
+JUN-59 -- session 16 record: THE DISPATCH-COUNT LADDER at fixed
+per-dispatch work (B=2..8, NDIV=1). INSTRUMENT channel.
+2026-10-27 (UTC; the tick runs 2026-10-28 JST). Chain PR #1636
+(bot/amu-gpu-chain-20261027-10).
+
+1. ROW QUESTION (ONE observable axis: the DISPATCH COUNT at fixed
+   per-dispatch work -- session 15's named residual "any B outside
+   {2,8}" is reachable this tick and is taken; session 15's named
+   residual "cross-day replication" is NOT reachable this tick: the
+   UTC day is still 2026-10-27 at tick time (protocol L8, named not
+   hidden)):
+
+     AT FIXED PER-DISPATCH WORK (NDIV=1, the same n = 1,000,003 grid
+     in every arm), WHERE DOES THE CAPTURE TURN ON as the dispatch
+     count B rises 2 -> 8 -- is B=3 already CAPTURED-class, do the
+     classes rise GRADUALLY with B, or does capture require B=8?
+
+   The committed series (sessions 8-15) had measured only the two
+   endpoints (B=2 FLOOR at every measured n; B=8 CAPTURED at full
+   work); "dispatch count >= 3" was an inference from endpoints. This
+   session measures EVERY rung between them -- the first measurement
+   of B in {3,4,5,6,7} anywhere in the series.
+
+2. DERIVATION (chain of custody): ZERO derivation edits this session
+   (the strongest custody position in the chain -- named as such). The
+   instrument is session 15's committed NDIV-derived source used
+   BYTE-IDENTICAL (digest a5e539f0..., re-verified local-vs-host); the
+   new arms are NEW -D BATCH values only (BATCH 3,4,5,6,7 at NDIV=1 --
+   BATCH is already a compile-time knob of the byte-identical source).
+   The shader corpus is used byte-identical (16-digest corpus). Manifest
+   cases-s16-a.txt = the 24 cell lines a BYTE-COPY of session 15's
+   cases-s15-a.txt cell lines (checked programmatically; byte-equal to
+   sessions 13-15's and sessions 9-12's a-set). expected-corpus.sha256
+   regenerated programmatically from session 2's committed census
+   (byte-equal to session 15's file). Knob arithmetic pin (n =
+   1,000,003 in all seven arms) checked programmatically.
+
+3. CHAIN OF CUSTODY (host-verify-s16.txt): corpus 16/16 MATCH vs
+   session 2's committed census (parsed programmatically, never
+   transcribed; checked host-side via sha256sum -c) + instrument +
+   manifest + census expectation local-vs-host MATCH 3/3 -- GO at
+   2026-10-27T16:26:58Z, BEFORE the builds and ALL runs (TIMELINE in
+   host-verify-s16.txt says so). NAMED, NOT HIDDEN: one pre-freeze
+   compile smoke of a NEW knob value (2026-10-27T16:26:58Z, throwaway
+   dir ~/anv-dc-smoke, gcc -O2 -DBATCH=3 -DNDIV=1, rc=0, stderr 0
+   bytes, host source digest a5e539f0... MATCH local, ZERO runs, ZERO
+   timing -- the session-9 D2 lesson applied by design). BUILD
+   REPLICATION PIN (declared in the protocol in advance): c2 and c8
+   rebuilt binaries are BYTE-IDENTICAL to session 15's same-flag
+   binaries (build-census-s16.txt, session 15's committed build census
+   parsed programmatically) -- 2/2; b3..b7 are NEW knob values with NO
+   prior binary, so no byte-identity pin applies to them (named, not
+   hidden; their custody is the byte-identical source + the compile
+   flags + C1's numeric control replication).
+
+4. HARDWARE RAN (MEASURED): 21 fresh processes (7 arms x 3 runs), run
+   window 2026-10-27T16:27:24Z..2026-10-27T16:27:40Z (per-run host
+   date -u and rc in run-window.txt), rc=0 21/21, stderr 0 bytes
+   21/21, 450 SAMPLE lines + 24 VERIFY lines each; every run's
+   batch=/work_mul=/ndiv=/n= == its arm's (B,1,1,1,000,003); every
+   CELL's spv= is an archived .emitted.spv (byte-identical corpus);
+   forcing reality 378/378; VERIFY mismatch 0 everywhere (per-arm
+   0x7); S=8 fail-closed 126/126. Host: aiueos-6600hs-1
+   (BMG G31 / ANV), 1 tick = 52.083 ns. Session 13 ran 14:53:30Z..
+   14:53:38Z, session 14 ran 15:24:58Z..15:25:32Z, session 15 ran
+   15:55:02Z..15:55:09Z -- this session sits ~32 minutes after
+   session 15, ALL on UTC day 2026-10-27.
+
+5. FINDINGS (publication-s16.txt, produced ONLY by analysis-s16.py
+   over the committed run logs, recorded run twice byte-identical --
+   diff exit 0):
+
+   (a) C1 ARCHIVED CONTROL REPLICATION fired branch (a) -- c2 FLOOR
+       (32 ticks, run-median band 31..32), c8 = 32,955 vs committed
+       32,915 (+0.12%), inside the frozen +/-5%. The environment pin
+       holds.
+
+   (b) W1 THE ROW QUESTION fired branch (a) CAPTURE-AT-3 -- ALL FIVE
+       new rungs are CAPTURED-class (>= 1000 ticks at all 18
+       pipeline-ok cells: b3 5,555 / b4 11,656 / b5 17,251 / b6
+       22,762 / b7 28,037 pooled medians at (sum,128,S=16); per-arm
+       minima over the 18 cells 4,270..25,295, all >= 1000). Combined
+       with the committed c2 FLOOR endpoint at the SAME per-dispatch
+       work, the capture-class transition at full work sits at the
+       DISCRETE B=2 -> B=3 step: B=2 does not capture, B=3 already
+       does -- there is no non-integer B between them. The "dispatch
+       count >= 3" reading is now MEASURED at every rung, not inferred
+       from endpoints. ONE session; NO causal mechanism is claimed or
+       measured; the remaining ambiguity is named (protocol L4: B and
+       total nominal work co-vary here, so whether the threshold is on
+       dispatch count or on total work is UNMEASURED and needs a
+       crossing design).
+
+   (c) W2 THE B-DOSE CURVE fired branch (a) NON-DECREASING
+       (pre-registered, descriptive): the pooled medians rise
+       monotonically over B=2..8 at NDIV=1 (32 / 5,555 / 11,656 /
+       17,251 / 22,762 / 28,037 / 32,955 ticks) -- descriptive, NO
+       linearity claim. Against the named linear-in-B comparison
+       (B/8 x committed 32,915) the curve sits BELOW it at every new
+       rung and converges at the top (ratios 0.450 / 0.708 / 0.839 /
+       0.922 / 0.973 / 1.001); the per-dispatch figure is not constant
+       (1,852 ticks at B=3 rising to 4,119 at B=8) -- descriptive
+       only.
+
+   (d) W3 THE TWO-AXIS VIEW (descriptive): this session's B-ladder at
+       NDIV=1 vs the COMMITTED B=8 work-down ladder (quote-only, not
+       re-run -- protocol L7); the axes co-vary within each series
+       (L4), so no separation claim. NAMED, NOT HIDDEN: b3's bracket
+       (5,555) sits close to the committed d8 reading (5,465 at
+       session 12 / 5,431 at session 13) despite a 8x different
+       dispatch count and 1/8 per-dispatch work -- a coincidence of
+       the committed grid points, with NO interpolation and NO
+       mechanism claimed.
+
+   (e) X1 (descriptive realization, host_ns): c2 681,672 vs
+       session-15's 681,050 (1.001x); c8 2,401,681 vs session-15's
+       3,073,033 (0.782x); the new rungs' host_ns rise with B
+       (959,710..2,835,069) with b7 a visible outlier (2,835,069 >
+       c8's 2,401,681 despite one fewer dispatch); per-dispatch
+       host_ns 300,210..405,010. host_ns is the HOST-side proxy (L3),
+       is not a C criterion, and no mechanism is claimed.
+
+   THE FINDING OF THIS TICK, in one line: at fixed per-dispatch work
+   (NDIV=1, the same n=1,000,003 grid) the capture turns on at the
+   DISCRETE B=2 -> B=3 step and stays CAPTURED-class at every rung
+   B=3..8 with a monotone dose curve (W1 branch (a), W2 branch (a)) --
+   the "dispatch count >= 3" threshold is now measured at every rung
+   of the ladder instead of inferred from its endpoints; whether the
+   threshold is on dispatch count or on total work is UNMEASURED (L4),
+   and no causal mechanism is claimed.
+
+   RULE 4: NOTHING MOVES -- no workgroup row, no :measured? flag, no
+   selection answer; accelerator-targets defaults remain provisional
+   design assumptions (:measured? false); this is NOT the
+   basis-replacing baseline-vs-variant contract of
+   accelerator-subgroup-reduce.cljk; NO vendor optimization exists for
+   Intel and none is claimed.
+
+   UNMEASURED named: any causal mechanism (for the undercount, the
+   capture, the onset, any B-axis transition, the dose curve's shape,
+   the session-to-session movement, or the d160 spike); WHY capture
+   turns on where it does; the separation of dispatch count from total
+   work (L4); whether the onset is on B, on total work, or on
+   bracketed submission shape; the GPU-side cost inside a B<=2 bracket
+   (L3); anything between adjacent ladder rungs (L5); any B outside
+   {2,3,4,5,6,7,8}; any NDIV>1 this session (L10); any WORK_MUL>1; any
+   n outside 1,000,003 this session (L2); the work-down ladder this
+   session (L7); CROSS-UTC-DAY replication (L8 -- all four sessions
+   share the UTC day); any cross-session stability of the b3..b7
+   readings (first measured here); session 2's run-1 dip cause; S=8
+   timing; every W outside {128,256}; shape 2; BT ordering; any
+   baseline-vs-variant sign; isolated single-dispatch timing;
+   non-empty barriers; anything off this host.
+
+   STATES: emitter arm/dispatch/selection rows IMPLEMENTED (code +
+   tests, unchanged -- this diff touches NO .cljk namespace); the
+   byte-identical instrument reuse + analysis-s16.py validated by
+   complete runs; MEASURED only what publication-s16.txt sections 1-4
+   say.
+
+6. Gates (real runs this tick): gpu_regime_classify.py --self-test
+   TOTAL 2649/0 (pin); scoped GPU gate GREEN 123 tests / 12162
+   assertions / 0 failures / 0 errors run 1 AND run 2 (scratch runner
+   gpu_scoped_gate.cljk, never committed); FULL run-tests.cljk RUN
+   LIVE THIS TICK: exit 1, RED AT BASE 'Could not find namespace:
+   kotoba.form' at namespace load (ADR-0362, outside this diff) -- NO
+   green full suite claimed; find this evidence dir -name '*.sh' -> 0.
+
+7. CHAIN: this commit lands on the ONE open chain branch
+   bot/amu-gpu-chain-20261027-10 (chain PR #1636), commit + push
+   only. BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head
+   at tick start and re-checked immediately before this push.
+
+Evidence: docs/evidence/gpu/anv-dispatchcount-20261027/ + the ADR-0355
+dated note. (JUN-55, JUN-59)
+
+8. CORRECTION (NAMED, NOT HIDDEN -- supersedes the framing claims of the
+   first recorded run of this session's record, commit fa6f16ed2):
+   that run claimed "the first measurement of B in {3,4,5,6,7} anywhere
+   in the series" and "the 'dispatch count >= 3' reading had been an
+   inference from the two endpoints only". BOTH ARE WRONG against the
+   chain's own committed history: session 7 (anv-bonset-20261027,
+   publication-s7.txt) already measured B in {1,2,3,4,5,6,8} at full
+   work (committed b3n0 5,520 / b4n0 11,680 / b5n0 17,386 / b6n0
+   22,730, b1n0/b2n0 FLOOR 31) and already narrowed the capture onset
+   to the DISCRETE B=2 -> B=3 step; session 4 measured B in
+   {1,2,4,8,16,32,64}. The protocol's section 0/7 framing carries the
+   same defect (protocol.txt is written once and never rewritten --
+   the session-6 precedent: the defect is in the protocol design at
+   freeze time and is named here, not erased). REPLACEMENT CLAIMS (the
+   measured numbers are unchanged; publication-s16.txt regenerated by
+   the corrected analysis-s16.py, twice byte-identical):
+   - The only rung of the integer ladder B=1..8 never measured before
+     this session is B=7 (session 7's own named residual "B=7").
+     b7 = 28,037 ticks at (sum,128,S=16), CAPTURED-class at all 18
+     cells, sitting between b6 and c8 on the monotone ladder.
+   - This session's b3..b6 readings INDEPENDENTLY REPLICATE session
+     7's committed values same-day: b3 5,555 vs 5,520 (+0.63%), b4
+     11,656 vs 11,680 (-0.21%), b5 17,251 vs 17,386 (-0.78%), b6
+     22,762 vs 22,730 (+0.14%) -- all inside the frozen +/-5%; c8
+     32,955 vs session 7's 32,951 (+0.01%) and committed 32,915
+     (+0.12%). The full-work region's readings replicate across
+     sessions 4/7/13-16 at these rungs (descriptive; committed values
+     compared only).
+   - The corrected finding of this tick, in one line: B=7 measured
+     (28,037 ticks, CAPTURED-class) completes the integer ladder
+     B=1..8 at full per-dispatch work, and this session's five shared
+     rungs replicate session 7's committed readings at all five
+     (+0.63%..-0.78%, inside the frozen +/-5%) -- the discrete
+     B=2 -> B=3 onset step is a REPLICATED reading (session 7 first),
+     not a new finding of this session; whether the threshold is on
+     dispatch count or on total work stays UNMEASURED (protocol L4),
+     and no causal mechanism is claimed.
+   W1 branch (a) as frozen still fires on this session's runs (all five
+   b3..b7 CAPTURED-class); its letter text is corrected accordingly in
+   publication-s16.txt. Gates re-run after the correction
+   (analysis determinism diff exit 0; the diff touches evidence prose
+   and the analysis script only -- NO .cljk namespace).

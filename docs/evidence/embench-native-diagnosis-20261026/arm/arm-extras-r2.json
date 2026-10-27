@@ -1,0 +1,18 @@
+{
+  "schema": "amu.native-gate-plan.v1",
+  "phases": {
+    "arm-extra": [
+      {"name":"user-elf","argv":["python3","scripts/seed/check-aiueos-user-elf-native.py","--compiler","@TEMP@/boot/F1.elf","--output","@TEMP@/extras/user-elf"]},
+      {"name":"io-read","argv":["python3","scripts/seed/check-io-read.py","--compiler","@TEMP@/boot/F1.elf","--output","@TEMP@/extras/io-read"]},
+      {"name":"durable-sleep","argv":["python3","scripts/seed/check-durable-sleep.py","--compiler","@TEMP@/boot/F1.elf","--output","@TEMP@/extras/durable-sleep"]},
+      {"name":"private-store","argv":["python3","scripts/seed/check-private-store.py","--compiler","@TEMP@/boot/F1.elf","--output","@TEMP@/extras/private-store"]},
+      {"name":"sleep-resume","argv":["python3","scripts/seed/check-sleep-resume.py","--compiler","@TEMP@/boot/F1.elf","--output","@TEMP@/extras/sleep-resume/receipt.json"]},
+      {"name":"spawn","argv":["python3","scripts/seed/check-spawn-runtime.py","--compiler","@TEMP@/boot/F1.elf","--output","@TEMP@/extras/spawn"]},
+      {"name":"fs2","argv":["python3","scripts/seed/check-native-fs2.py","--compiler","/Users/junkawasaki/github/workspaces/codex/kotoba144-native-diagnosis/arm-one-r2/F2.elf","--output","@TEMP@/extras/fs2"]},
+      {"name":"static-profile","argv":["python3","scripts/seed/check-static-profile-native.py","--build","@TEMP@/boot","--output","@TEMP@/extras/static-profile"]},
+      {"name":"live-call","argv":["python3","scripts/seed/check-aiueos-value-call-native.py","--build","@TEMP@/boot","--output","@TEMP@/extras/live-call"]},
+      {"name":"user-context","argv":["python3","scripts/seed/check-aiueos-user-native.py","--build","@TEMP@/boot","--output","@TEMP@/extras/user-context"]},
+      {"name":"desktop-regions","argv":["python3","scripts/seed/check-aiueos-desktop-regions-native.py","--build","@TEMP@/boot","--output","@TEMP@/extras/desktop-regions"]}
+    ]
+  }
+}

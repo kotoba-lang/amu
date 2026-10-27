@@ -1,0 +1,122 @@
+amu-gpu tick 2026-10-26 (UTC day 2026-10-26, eighth measurement row of
+the day): JUN-55/JUN-57 -- the twenty-sixth amendment's named
+unfinished slice ("the in-binary additivity validation (instrument v4,
+designed) NOT RUN (started, not finished)") takes its instrument branch
+and the validation RUNS and FAILS: serial dependent latencies DO NOT
+add across a (MUFU,FADD) pair, so the same-subtraction separation
+L(MUFU.RCP) = pair - L(FADD) is REFUTED as a latency reading and
+RETRACTED. ONE measurement slice; HARDWARE RAN: instrument v4
+(7 arms) on xavier sm_72 at 2026-10-26T14:49:33Z. NAMED NOT HIDDEN: a
+PROBE, not a registered timing session (no paired samples, no AB/BA),
+inadmissible under the entry criterion BY KIND; SAME-UTC-DAY with every
+earlier probe -- NOT a cross-day replication, extends NO record's
+:evidence and enters nothing; it measures INSTRUCTION chains, not
+kernels.
+
+INSTRUMENT v4 (run-log.txt + microbench-sass.txt, remote tree
+/root/gpu-mufu-pairlat-20261026 created fresh, transferred
+COPYFILE_DISABLE=1, received-file block matched local shas 3/3
+(3903028b.. .cu / 8c40d49b.. verifier / 33438c53.. driver);
+microbench.sass 7da06097.. committed verbatim as microbench-sass.txt):
+the landing instrument drafted at the end of the previous tick -- ALL
+quantities of the separation in ONE binary: pure-RSQ chains (16/8),
+(rsq,fadd) pair chains (8/4 pairs), (rcp,fadd) pair chains (8/4
+pairs), one 16-FADD validation arm; 7 arms x 3 launches x 128
+threads, 256 iterations/launch, clock64() over the loop only, x and c
+SYMBOLIC (2.0f / 1.0f from global memory). VERIFIED (real runs):
+OK-build / OK-cubin / OK-sass 361 lines; build diags 190 bytes (two
+benign "variable cf was declared but never referenced" warnings for
+the RSQ-only LATK instances, quoted in run-log.txt); diag-nvdisasm 0
+bytes; driver exit 0; stderr 0 bytes; 21 RESULT lines, ALL THREE
+LAUNCHES IDENTICAL medians. SASS VERDICTS (all MATCH, verifier output
+verbatim in run-log.txt): lat_n16_rsq {MUFU.RSQ:16 + overhead},
+lat_n8_rsq {MUFU.RSQ:8 + overhead}, lat_n16_rsqfadd {MUFU.RSQ:8,
+FADD.FTZ:8 + overhead}, lat_n8_rsqfadd {MUFU.RSQ:4, FADD.FTZ:4 +
+overhead}, lat_n16_rcpfadd {MUFU.RCP:8, FADD.FTZ:8 + overhead},
+lat_n8_rcpfadd {MUFU.RCP:4, FADD.FTZ:4 + overhead}, lat_n16_fadd
+{FADD.FTZ:16 + overhead}.
+
+THE FINDING (pairlat-table.txt):
+(1) THE IN-BINARY ADDITIVITY VALIDATION FAILS -- the v4 identity
+    pair(rsq,fadd) - L(FADD) == L(MUFU.RSQ) direct returns 16.5322
+    vs 14.9966, residual +1.5356 cyc (+10.24%), and the failure is
+    robust across every landed fadd reference (+1.5351..+1.5637).
+    Serial dependent latencies do NOT add across a (MUFU,FADD) pair:
+    the pair slope is 21.0000 while the parts measured alone sum to
+    19.4644 (14.9966 + 4.4678).
+(2) SEPARATION RETRACTED -- the twenty-sixth amendment's DERIVED
+    L(MUFU.RCP) = 16.5342 (pair(rcp,fadd) minus same-binary fadd)
+    rests on the exact assumption (1) refutes. It is REFUTED as a
+    latency separation and RETRACTED; bare MUFU.RCP dependent-chain
+    latency is UNMEASURED again (refuted derivation on record, named).
+(3) NEW MEASURED FACT -- THE PAIR FORM CANNOT SEPARATE RCP FROM RSQ:
+    (rsq,fadd) and (rcp,fadd) arms carry IDENTICAL sample
+    distributions at both chain lengths (n16 44410..44411; n8
+    22906..22907 -- verbatim in pairlat-table.txt) despite DISTINCT
+    verified spellings (MUFU.RSQ:8 vs MUFU.RCP:8) and DISTINCT
+    anchors (1.7548777f vs 1.6180340f, both no-fold witnesses). Both
+    pair slopes are EXACTLY 21.0000. Consistent with (not proof of)
+    L(MUFU.RCP) = L(MUFU.RSQ).
+(4) MUFU.RSQ REPRODUCED IN-BINARY: intercept-free slope 14.9966 over
+    16/8 chain lengths vs v2's 14.9991 (CONSUMED at its commit) =
+    -0.0025 cyc (-0.017%) -- the pure-RSQ slope is stable across
+    binaries and instrument forms.
+(5) DERIVED (marked): the in-pair fadd-leg cost = pair - L(MUFU.RSQ)
+    direct = 6.0034 cyc vs standalone 4.4678 (+34.37%); the identity
+    cannot say WHICH leg re-prices (the MUFU leg in-pair, the fadd
+    leg in-pair, or the cross-pipe transitions) -- only that plain
+    additivity fails. Named, not guessed.
+(6) FORM VALIDATION: v4 same-binary fadd 4.4678 cyc/op (slope-
+    amortized; v4 carries NO n8 fadd arm -- named limitation) vs
+    v3 4.4658 / v2 4.4683 / v2-reference 4.4397 (CONSUMED at their
+    commits) = +0.04%..+0.63%; fadd anchor EXACT (4097.0f, bits
+    1166018560, 3/3).
+
+CONSEQUENCE: NOTHING MOVES (rule 4) -- no record, no :measured? flag,
+no selection answer, no :shapes value, no workgroup row; the landed
+entries stand byte-for-byte. The named item moves PARTIALLY (the v4
+validation RUN and its identity REFUTED; L(MUFU.RCP) separation
+retracted to UNMEASURED; the pair-form equality is new evidence).
+
+STATES. MEASURED: the v4 run on xavier -- the pure-RSQ slope
+(14.9966), both pair slopes (21.0000 each), the same-binary fadd
+reading (4.4678), the pair-form distribution equality, all realized
+bodies and anchors. DERIVED (marked): the identity residual +1.5356,
+the in-pair fadd-leg cost 6.0034. RETRACTED (marked): the 16.5342
+L(MUFU.RCP) separation. IMPLEMENTED: nothing (evidence + the ADR-0361
+twenty-seventh amendment). DECIDED: nothing new. ACCEPTED DESIGN ONLY
+(unchanged): the operator-aware contract + pre-registration, the row
+(ii) routes, the entry contract + wiring, ADR-0358, ADR-0373.
+UNMEASURED, named: bare MUFU.RCP dependent-chain latency (separation
+now refuted), which leg of the pair re-prices (+1.5356 locus), a
+direct (rcp,n8-control) or other carrier that separates RCP from RSQ,
+the floor's internal composition, the pure 2-input IADD3 and
+IMAD.IADD separations, the 21 surplus ops' costs, the residual
+W-shape's dynamic carrier, noise exceedance, sum TRUE side W=256,
+cross-day run 3+ (still 2026-10-26 UTC), non-xavier verdicts, :sum
+W=64 elsewhere, live CUDA selection path, workgroup rows (:arm/:unknown
+provisional :measured? false).
+
+Gates (honest): this diff touches NO .cljk namespace (evidence + the
+ADR-0361 amendment only); scoped GPU gate GREEN on run 1 AND run 2
+(123 tests / 12162 assertions / 0 failures / 0 errors, glslang 16.6.0
+real-spawn, regression pin -- matches the committed pin exactly);
+find docs -name '*.sh' -> 0 (evidence is .txt only; the remote driver
+mufu_pairlat_run.sh 33438c53.. stays in Hermes scratch, never staged).
+FULL run-tests.cljk NOT run (no .cljk touched) -- documented RED AT
+BASE 'Could not find namespace: kotoba.form' (ADR-0362), outside this
+diff -- NO green full suite claimed. BLOCKER-FIRST: 0 open
+kotoba-lang/amu PRs with a hermes/ head (checked at tick start AND
+re-checked immediately before this push -- 0 both times); chain PR
+#1612 OPEN, the ONE chain PR (branch
+bot/amu-gpu-chain-20261026-2). NAMED NOT HIDDEN: the untracked
+deps.edn in this worktree (present at tick start, not created or
+touched by this row, not committed); the tar transfer's LIBARCHIVE
+xattr notices (benign macOS metadata -- remote received-file block
+matched local shas 3/3); all scratch instruments (gpu-mufu-pairlat-
+microbench.cu 3903028b.., mufu_pairlat_verify.py 8c40d49b..,
+mufu_pairlat_run.sh 33438c53..) kept in Hermes scratch, never staged;
+the v2/v3 references are CONSUMED at their own commits, not
+re-measured. Evidence: docs/evidence/gpu/cuda-mufu-pairlat-20261026/
+(record.txt + run-log.txt + microbench-sass.txt + pairlat-table.txt)
++ the ADR-0361 twenty-seventh amendment.

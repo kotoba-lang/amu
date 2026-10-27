@@ -1,0 +1,108 @@
+PROTOCOL -- JUN-59 batch-bracket SCALING (session 4), 2026-10-27.
+Frozen at 2026-10-27T10:24Z, BEFORE the first instrument run, and not
+rewritten after. Rule 4 binds in full: nothing here moves a row.
+
+THE ROW QUESTION (the named residual of session 2, record.txt section 7,
+and session 3, record.txt section 6): "isolated single-dispatch timing
+above any floor" is UNMEASURED, and the mechanism of the
+session-1-vs-session-2 per-dispatch discrepancy (session 1's
+single-dispatch bracket pinned at 31 ticks = 1,614.6 ns at EVERY cell
+vs session 2's batched bracket 3,583..4,333 ticks/dispatch at BATCH=64
+-- ~116-140x) is UNMEASURED. This session measures the BRACKET-VS-B
+CURVE of the batch instrument itself: the same bytes, the same 24
+cells, the same host and channel, with the compile-time BATCH value as
+the ONLY independent variable, B in {1,2,4,8,16,32,64}.
+
+INSTRUMENT: gpu-subgroup-reduce-anv-batchscale.c.txt (committed in this
+dir) is the archived session-2 source
+(anv-instrument-source-snapshots-20261027/
+gpu-subgroup-reduce-anv-subgroupsize-batch.c.txt, sha256 34d56fa1...)
+with EXACTLY ONE edit: `#define BATCH 64` wrapped in
+`#ifndef BATCH ... #endif` so a compile-time -DBATCH=k overrides it
+(the derivation diff is committed as instrument-derivation.diff.txt;
+derived source sha256 1b287b4dd7be5ac5a5f3c08a162d5339b9c2cfe39970ef4e7b3030a9b29a1178).
+Nothing else in the instrument changes: same N_ELEMENTS=1000003, same
+WARMUP=3, ROUNDS=25, SEED=20261027, same bracket (TOP_OF_PIPE
+timestamp before the batch of BATCH identical idempotent vkCmdDispatch
+calls, BOTTOM_OF_PIPE timestamp after; per_dispatch_ns = gpu_ticks *
+timestampPeriod / BATCH), same fail-closed forcing. Each B is its own
+binary (gcc -O2 -DBATCH=k), digest-censused before any run; every
+run's header and every SAMPLE line prints batch=<B>, so a log cannot
+misname its B.
+
+CORPUS: the shaders/ tree is a byte-copy of session 2's committed
+corpus, re-verified programmatically against session 2's committed
+compile-toolchain.txt census (the expectation source is that committed
+file itself, parsed, never transcribed) before any run. Any mismatch
+stops the session.
+
+RUNS: 21 fresh processes = 7 B values x 3 runs each, B-major order
+(b1 r1..3, b2 r1..3, ..., b64 r1..3); run with cwd=shaders (the
+manifest's bare .spv names resolve against cwd -- session 2's named
+run-pathfail lesson); stdout to run-b{B}-r{N}.txt, stderr to
+run-b{B}-r{N}.stderr.txt; UTC windows recorded in run-window.txt.
+INSTRUMENT-EXIT must be 0 and stderr 0 bytes for a run to count; a
+failed run is preserved byte-for-byte and does not count as
+measurement.
+
+PRE-REGISTERED LETTERS (both branches of every verdict named before
+the first run):
+
+P1s (forcing + correctness, every B):
+  forcing reality: every pipeline-ok cell-run verifies probe_size ==
+  the forced S (32 at default) and probe_nsub == W/S. The S=8 cells are
+  refused PRE-EMPTIVELY (8 < minSubgroupSize=16) and carry no samples
+  -- the same named fail-closed CELL state as sessions 1-3.
+  correctness: mismatch == 0 on every VERIFY line of every run.
+  Verdict: HOLDS iff both hold across all 21 runs; else FAILS, named
+  per run and cell.
+
+P3s (the scaling curve -- THE ROW QUESTION):
+  per (op, W, S) arm and per B: pooled median bracket gpu_ticks over
+  the 3 runs x 25 rounds, plus the DERIVED per-dispatch figure
+  bracket/B (ticks and ns). FLOOR condition (session 2's pre-registered
+  248-tick threshold, reused): an arm at a B whose pooled median
+  bracket < 248 ticks is FLOOR-PINDED at that B (its S sign at that B
+  is NOT EVALUABLE, P4s). The mechanism question has two pre-registered
+  branches, and only the curve is MEASURED -- any interpretation is
+  DERIVED and labeled so:
+  (a) if bracket(B) at B=1 already sits near the session-2 per-dispatch
+      figure (i.e. per_dispatch at B=1 comparable to per_dispatch at
+      B=64, within a small factor), then THIS instrument's bracket
+      captures dispatch work even at B=1, and session 1's 31-tick
+      bracket is a difference of the SESSION-1 instrument (that
+      mechanism stays UNMEASURED, narrowed to the instrument);
+  (b) if bracket(B) pins at the floor for small B and lifts only above
+      some B0, THIS instrument's captured work turns on with B, and the
+      curve names where (measured).
+  Either branch is reported as observed; no causal claim beyond it.
+
+P4s (the sign across B):
+  SIGN(r, B, op, W) = 32faster iff med(S=32) < med(S=16) at that B in
+  that run, else 16faster-or-tie (sessions 2-3's named definition).
+  Reported per B per run; pooled verdicts per B named as counts over
+  the 3 runs (32faster in k/3) with NO stability claim beyond the
+  counts (3 runs per B is not a replication); NOT EVALUABLE at any
+  floor-pinned (B, op, W). The S=default arm is reported as data at
+  every B but is not part of the sign question.
+
+ANALYSIS ROUTE: analysis-s4.py over the 21 committed run logs only; it
+prints the publication to stdout and is run twice, the two outputs
+byte-identical (diff exit 0). No other data source. Cross-session
+numbers quoted in the record (session 1's 31-tick floor, session 2's
+3,583..4,333 ticks/dispatch) are DERIVED arithmetic over the already
+committed sessions' logs and are labeled so.
+
+STATES / UNMEASURED (frozen here, echoed by the publication):
+  MEASURED: only what the 21 logs of this session show.
+  UNMEASURED (named): cross-day replication; the cause of session 2's
+  run-1 dip; S=8 timing (not realizable); every W outside {128,256};
+  shape 2; any baseline-vs-variant sign (this is NOT the
+  basis-replacing baseline-vs-variant contract of
+  accelerator-subgroup-reduce.cljk); anything off this host; any
+  causal mechanism behind the curve (P3s labels interpretation
+  DERIVED).
+  RULE 4: no workgroup row, no :measured? flag, no :size/:shapes, no
+  selection answer moves on this evidence. The accelerator-targets
+  defaults stay provisional design assumptions. NO vendor optimization
+  exists for Intel and none is claimed.
