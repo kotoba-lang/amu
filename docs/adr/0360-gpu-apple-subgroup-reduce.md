@@ -3941,7 +3941,7 @@ the width order the width half itself used. This row consumes the
 shape-2 half's FIRST cell, (n = 2^20 = 1048576, W = 256), ONE CELL AT
 A TIME at the route's own unit: 6 fresh ADR-0358 processes, run
 window 2026-10-27T02:37:20Z..02:37:21Z (run-window.txt, verbatim) --
-the SAME UTC day as every other counters row; NO day claim; day 4+
+the same UTC day as the 2026-10-27 op-order-at-other-cells series (the compared shape-2 baseline ran on 2026-10-26 UTC); NO day claim; day 4+
 needs 2026-10-28 UTC and stays UNMEASURED. P0a HOLDS: ALL EIGHT
 artifacts sha256-identical to ALL SEVEN prior W = 256 builds of the
 campaign (the anchor's, both cross-day rows', the first op-order's,
@@ -3979,11 +3979,14 @@ UNMOVED -- "the first block is the one-level block" 4/6 counted
 anchor-cell sessions, "sum is the one-level operator" 2/6). ALSO
 NAMED: this session's split (min 1 / max 3 / sum 3) matches the
 anchor cell's first and third reversed-order sessions' splits
-exactly; the level VALUES sit in the same state bands as the baseline
-session (~34.1k / ~44.1..44.5k / ~107.1..107.6k vs ~34.0k / ~44.2k /
-~107.2..107.4k) -- the state-shift class PRESENTS again in BOTH this
-cell's sessions at matching value bands, unlike the n = 1000003
-other cells' all-one-level reversed-order sessions; the state-shift
+exactly at level-count resolution. The level VALUES overlap the
+baseline's ~34k and ~107k bands, but the baseline max middle level
+55896.0 has NO counterpart in this session (max middle level
+44500.5); the baseline min middle level is 44187.5. The state-shift
+class PRESENTS in both sessions without complete band reproduction.
+The n = 1000003 reversed-order sessions at W=32/64/128/512 are
+all-one-level; W=1024 is multi-level (max TWO / min ONE / sum FOUR).
+The state-shift
 cause/threshold/prevalence stay UNMEASURED. (3) P3: per-operator raw
 ratio bands (max 1.204..1.227, min 1.218..1.227, sum 1.209..1.227,
 pooled 1.204..1.227) against the shape-2 W = 256 row's (max
@@ -4029,8 +4032,7 @@ SESSION'S FIRST BLOCK (sum -> min)
 This row consumes the shape-2 half's SECOND cell, (n = 2^20 =
 1048576, W = 32), ONE CELL AT A TIME at the route's own unit: 6 fresh
 ADR-0358 processes, run window 2026-10-27T03:08:37Z..03:08:38Z
-(run-window.txt, verbatim) -- the SAME UTC day as every other
-counters row; NO day claim; day 4+ needs 2026-10-28 UTC and stays
+(run-window.txt, verbatim) -- the same UTC day as the 2026-10-27 op-order-at-other-cells series (the compared shape-2 baseline ran on 2026-10-26 UTC); NO day claim; day 4+ needs 2026-10-28 UTC and stays
 UNMEASURED. P0a HOLDS: ALL EIGHT artifacts sha256-identical to ALL
 THREE prior W = 32 builds of the campaign (the W-grid row's and the
 shape-2 W = 32 row's 2026-10-26 builds, the first op-order W = 32
@@ -4125,7 +4127,7 @@ sum-one-level streak at W = 64 BREAKS
 This row consumes the shape-2 half's THIRD cell, (n = 2^20 = 1048576,
 W = 64), ONE CELL AT A TIME at the route's own unit: 6 fresh ADR-0358
 processes, run window 2026-10-27T03:35:01Z..03:35:03Z (run-window.txt,
-verbatim) -- the SAME UTC day as every other counters row; NO day
+verbatim) -- the same UTC day as the 2026-10-27 op-order-at-other-cells series (the compared shape-2 baseline ran on 2026-10-26 UTC); NO day
 claim; day 4+ needs 2026-10-28 UTC and stays UNMEASURED. P0a HOLDS:
 ALL EIGHT artifacts sha256-identical to ALL THREE prior W = 64 builds
 of the campaign (the W-grid row's and the shape-2 W = 64 row's
@@ -4222,7 +4224,7 @@ This row consumes the shape-2 half's FOURTH cell, (n = 2^20 =
 1048576, W = 128), ONE CELL AT A TIME at the route's own unit: 6
 fresh ADR-0358 processes, run window
 2026-10-27T03:51:57Z..03:51:59Z (run-window.txt, verbatim) -- the
-SAME UTC day as every other counters row; NO day claim; day 4+ needs
+same UTC day as the 2026-10-27 op-order-at-other-cells series (the compared shape-2 baseline ran on 2026-10-26 UTC); NO day claim; day 4+ needs
 2026-10-28 UTC and stays UNMEASURED. P0a HOLDS: ALL EIGHT artifacts
 sha256-identical to ALL THREE prior W = 128 builds of the campaign
 (the W-grid row's and the shape-2 W = 128 row's 2026-10-26 builds, the
@@ -4327,7 +4329,7 @@ This row consumes the shape-2 half's FIFTH cell, (n = 2^20 =
 1048576, W = 512), ONE CELL AT A TIME at the route's own unit: 6
 fresh ADR-0358 processes, run window
 2026-10-27T04:18:41Z..04:18:42Z (run-window.txt, verbatim) -- the
-SAME UTC day as every other counters row; NO day claim; day 4+ needs
+same UTC day as the 2026-10-27 op-order-at-other-cells series (the compared shape-2 baseline ran on 2026-10-26 UTC); NO day claim; day 4+ needs
 2026-10-28 UTC and stays UNMEASURED. P0a HOLDS: ALL EIGHT artifacts
 sha256-identical to ALL THREE prior W = 512 builds of the campaign
 (the W-grid row's and the shape-2 W = 512 row's 2026-10-26 builds, the
