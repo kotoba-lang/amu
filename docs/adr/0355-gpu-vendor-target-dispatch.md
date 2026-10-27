@@ -855,3 +855,29 @@ Intel.
 Evidence: `docs/evidence/gpu/anv-ndiv2ladder-20261027/` (record.txt is
 the finding; publication-s20.txt is produced only by analysis-s20.py
 over the committed run logs).
+
+## 2026-10-27 -- session 21 (JUN-59): the B=3 per-dispatch-work threshold bisect
+
+The session-20 residual "the B=3 per-dispatch threshold BETWEEN grid
+points" is taken at the bracket's EXACT floor midpoint: n = 291,667 =
+(1,000,003\*7)//24 (the (WORK_MUL,NDIV) = (7,24) knob pair of the
+byte-identical NDIV-derived instrument; ZERO derivation edits). With
+both bracket ends replicating IN-SESSION at byte-identical rebuilt
+binaries (lo == committed z3 knob 1,162 vs 1,140 INTERMEDIATE/MIXED;
+hi == committed x3 knob 1,567 vs 1,578 CAPTURED), mid is CAPTURED
+(1,330; 18-cell min 1,151), so THE B=3 CLASS FLIP SITS IN (250,000,
+291,667] n-units = (0.2499993, 0.2916657] work-units -- the (1/4, 1/3]
+bracket is HALVED. "B=2 never captures" extends to n=291,667 (b2m
+FLOOR 31). C3 measures the first WORK_MUL!=1 + NDIV!=1 compilation
+anywhere in the series ((2,2) at n == c2's grid): FLOOR, class-
+identical to (1,1) at the same n. The B=3 class-vs-per-dispatch-work
+row now stands at six monotone grid points (class granularity only).
+NAMED, NOT HIDDEN: X1's host-side proxy excursion at lo (966,683 =
+3.167x session 19's same-knob z3) while its GPU bracket replicated
+in-band -- host_ns is not a C criterion (L3), cause UNMEASURED.
+Rule 4 binds: no row moves, no `:measured?` flag moves, and no vendor
+optimization exists for Intel.
+
+Evidence: `docs/evidence/gpu/anv-b3bisect-20261027/` (record.txt is
+the finding; publication-s21.txt is produced only by analysis-s21.py
+over the committed run logs).
