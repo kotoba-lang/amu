@@ -511,7 +511,7 @@
         (xg-pad (+ data 328)) (xg-out isr-base 8)
         (xg-out (if pci 0x31494350 0) 8)
         (xg-out (if (= (xg-get M 4) 2) (+ context (if pci 65536 20480)) 0) 8)
-        (xg-pad (+ data 464)) (xg-out (cond (uv-used? M) UV-MAGIC (lv-used? M) LV-MAGIC :else 0) 8)
+        (xg-pad (+ data 464)) (xg-out (cond (uv-used? M) (uv-magic) (lv-used? M) LV-MAGIC :else 0) 8)
         (lv-data data)
         (cond-> (uv-used? M) (xg-pad (+ data UV-HANDLER))
                   (uv-used? M) (xg-out (vector-at M 210) 8))
@@ -584,8 +584,10 @@
     (-> M (iv-reserve 2)
         (xg-load t 0x958b48) (xg-load (inc t) 0x8d8b48)
         (iv-hex "4883f940") (xg-rel 0x850f 2 2 fail)
-        (iv-hex "48b8") (xg-bytes (if (string=? (io-arg 3) "x86_64-aiueos-user-v4")
-                                   0x321100 0x221100) 8)
+        (iv-hex "48b8") (xg-bytes (if (string=? (io-arg 3) "x86_64-aiueos-user-v5")
+                                   0x421100
+                                   (if (string=? (io-arg 3) "x86_64-aiueos-user-v4")
+                                     0x321100 0x221100)) 8)
         (iv-hex "4839c2") (xg-rel 0x850f 2 2 fail)
         (iv-hex "8b0283f801") (xg-rel 0x820f 2 2 fail)
         (iv-hex "83f833") (xg-rel 0x870f 2 2 fail)
@@ -598,9 +600,11 @@
         (iv-hex "41c78184000000") (xg-bytes 1538 4)
         (iv-hex "45899188000000")
         (iv-hex "488d7204498db98c0000004489d1f3a4")
-        (iv-hex (if (string=? (io-arg 3) "x86_64-aiueos-user-v4")
-                  "498db980000000b830003200ffd04c8b4df8"
-                  "498db980000000b830002200ffd04c8b4df8"))
+        (iv-hex (if (string=? (io-arg 3) "x86_64-aiueos-user-v5")
+                  "498db980000000b830004200ffd04c8b4df8"
+                  (if (string=? (io-arg 3) "x86_64-aiueos-user-v4")
+                    "498db980000000b830003200ffd04c8b4df8"
+                    "498db980000000b830002200ffd04c8b4df8")))
         (xg-rel 0xe9 1 2 done)
         (xg-label fail) (iv-hex "31c0")
         (xg-label done) (xg-save t))))
@@ -692,7 +696,7 @@
   (let [src (io-arg 1) out (io-arg 5)
         v5 (string=? (io-arg 3) "x86_64-aiueos-user-v5")
         v4 (string=? (io-arg 3) "x86_64-aiueos-user-v4")
-        v3 (or v4 (string=? (io-arg 3) "x86_64-aiueos-user-v3"))
+        v3 (or v5 v4 (string=? (io-arg 3) "x86_64-aiueos-user-v3"))
         v2 (or v5 v3 (string=? (io-arg 3) "x86_64-aiueos-user-v2"))]
     (cond (or (not= (io-argc) 6) (not (string=? (io-arg 4) "--output"))
               (= (string-length out) 0) (= (io-exists out) 1))

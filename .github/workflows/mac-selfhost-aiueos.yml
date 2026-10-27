@@ -8,6 +8,7 @@ on:
       - 'scripts/seed/check-aiueos-user-elf-native.py'
       - 'scripts/seed/check-aiueos-user-macos-native.py'
       - 'scripts/seed/check-aiueos-user-v3-macos-native.py'
+      - 'scripts/seed/check-aiueos-user-v5-layout-macos-native.py'
       - 'scripts/seed/check-aiueos-kernel-v3-layout-macos-native.py'
       - 'scripts/seed/check-macos-exec-smoke*.py'
       - 'scripts/seed/check-macos-cross-linux-candidates.py'
@@ -55,11 +56,11 @@ jobs:
           python3 scripts/seed/check-aiueos-user-v5-layout-macos-native.py \
             --mac-build "$RUNNER_TEMP/mac-root" \
             --output "$RUNNER_TEMP/mac-user-v5"
-      - name: Check candidate kernel-v3 layout and guest slot refusal
+      - name: Check kernel-v3 guest artifact and slot-v4 admission
         run: |
           python3 scripts/seed/check-aiueos-kernel-v3-layout-macos-native.py \
             --mac-build "$RUNNER_TEMP/mac-root" \
-            --user-v5-slot "$RUNNER_TEMP/mac-user-v5/user-v5.slot" \
+            --user-v5-slot "$RUNNER_TEMP/mac-user-v5/user-v5-call.slot" \
             --output "$RUNNER_TEMP/mac-kernel-v3"
       - name: Verify the selected 18-module core adoption on Mac
         run: |

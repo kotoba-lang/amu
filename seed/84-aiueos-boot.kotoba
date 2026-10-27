@@ -169,15 +169,22 @@
     (= (eb-le K (+ rw 336) 8) 0x31494350)))
 (defn- eb-dual-layout? [K :vector-i64 slot-version :i64] :bool
   (let [ph (eb-le K 32 8)
-        boundary (if (= slot-version 3) 2097152 1048576)]
-    (and (or (= slot-version 2) (= slot-version 3))
+        boundary (case slot-version 4 3145728 3 2097152 1048576)
+        text-cap (if (= slot-version 2) 1048576 2097152)
+        rw-file (eb-le K (+ ph 64) 8)
+        rx-size (eb-le K (+ ph 32) 8)
+        handler (eb-le K (+ rw-file UV-HANDLER) 8)]
+    (and (or (= slot-version 2) (= slot-version 3) (= slot-version 4))
          (= (eb-le K 24 8) 0x101000)
          (= (eb-le K (+ ph 8) 8) 4096)
          (= (eb-le K (+ ph 24) 8) 0x101000)
-         (<= (eb-le K (+ ph 32) 8) (- boundary 4096))
+         (<= rx-size (- text-cap 4096))
          (= (eb-le K (+ ph 64) 8) boundary)
          (= (eb-le K (+ ph 80) 8) (+ 0x100000 boundary))
-         (= (eb-le K (+ ph 96) 8) 2359296))))
+         (= (eb-le K (+ ph 96) 8) 2359296)
+         (or (not= slot-version 4)
+             (and (= (eb-le K (+ rw-file 464) 4) UV-V5-MAGIC)
+                  (>= handler 0x101000) (< handler (+ 0x101000 rx-size)))))))
 (defn- eb-package [kernel :string payload :string extra :string out :string pci :bool] :i64
   (let [K (io-read-bytes kernel)
         P (if (= (string-length payload) 0) (vector-alloc 0) (io-read-bytes payload))
@@ -236,8 +243,9 @@
        (= (eb-le P 128 8) 8192) (= (eb-le P 136 8) (if v3 0x321000 0x221000))
        (= (eb-le P 144 8) (if v3 0x321000 0x221000))
        (= (eb-le P 152 8) 88) (= (eb-le P 160 8) 320)))
-;; Slot v4 is an artifact candidate only. eb-dual-layout? intentionally
-;; admits slot v2/v3 until a versioned guest loader enforces this larger map.
+;; Slot v4 is admitted only with a kernel-v3 ELF carrying the v5 user-map
+;; marker and an RX-resident user syscall handler. Guest source must still
+;; verify the pinned complete ELF and its own request policy before execution.
 (defn- eu-v4-elf? [P :vector-i64] :bool
   (and (= (vector-count P) 8280)
        (= (eb-le P 0 8) 0x00010102464c457f)

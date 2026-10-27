@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Check the proposed user-v5 ELF and slot-v4 layout with signed Mac Amu.
 
-This checks artifact shape and old target isolation. The guest still rejects
-slot-v4, and this is not a typed kit call or AIUEOS release qualification.
+This checks artifact shape, the bounded diagnostic syscall lowering and old
+target isolation. It does not execute the guest or qualify a typed kit call.
 """
 
 import argparse
@@ -21,6 +21,7 @@ DECLARED_LLM = ("(ns aiueos-user-v5-llm (:export [main]) "
                 "(:capabilities #{:llm/generate}))\n"
                 "(defn main [request :i64 request-bytes :i64] :i64 "
                 "(llm/generate request))\n")
+CALL_ELF_SHA256 = "e19f3be978e23b66c7551905f1d829258622e8358e1b28528bc48adb6869e852"
 
 
 def load(name, path):
@@ -95,6 +96,18 @@ def main(args):
             or struct.unpack_from("<QQQ", slot) != (0x0031444c50554941, 4, len(elf))
             or slot[64:64 + len(elf)] != elf or any(slot[64 + len(elf):])):
         raise ValueError("slot-v4 content or zero padding changed")
+    call_source = HERE.parents[1] / "seed/tests/aiueos-user-v3-local-model.kotoba"
+    (output / "user-v5-call.kotoba").write_bytes(call_source.read_bytes())
+    native.native_run(compiler, output, "compile", "user-v5-call.kotoba", "--target",
+                      "x86_64-aiueos-user-v5", "--output", "user-v5-call.elf")
+    call_elf = (output / "user-v5-call.elf").read_bytes()
+    if (hashlib.sha256(call_elf).hexdigest() != CALL_ELF_SHA256
+            or struct.unpack_from("<Q", call_elf, 96)[0] != 478
+            or call_elf.count(bytes.fromhex("48b80011420000000000")) != 1
+            or call_elf.count(bytes.fromhex("b830004200ffd0")) != 1):
+        raise ValueError("user-v5 diagnostic syscall lowering changed")
+    native.native_run(compiler, output, "package-aiueos-user-payload",
+                      "user-v5-call.elf", "--output", "user-v5-call.slot", "--version", "v4")
 
     negative = []
     for name, offset, value in (("entry", 24, 0x220000),
@@ -153,6 +166,8 @@ def main(args):
               "compiler": original, "source": native.pin(output / "user-v5.kotoba"),
               "elf": native.pin(output / "user-v5.elf"),
               "slot": native.pin(output / "user-v5.slot"),
+              "diagnosticCallElf": native.pin(output / "user-v5-call.elf"),
+              "diagnosticCallSlot": native.pin(output / "user-v5-call.slot"),
               "legacy": legacy, "negativeControls": negative,
               "observer": native.pin(Path(__file__)), "guestAdmission": False,
               "typedKitCall": False, "agentLoop": False, "releaseQualified": False,

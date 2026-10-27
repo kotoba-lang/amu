@@ -1,7 +1,8 @@
-;; Version3 user mappings. This owns page tables and CPU entry state; the
+;; Versioned user mappings. This owns page tables and CPU entry state; the
 ;; typed Kotoba entry still owns request normalization and dispatch.
 (def UV-FIRST 88)
 (def UV-MAGIC 0x334c5652)
+(def UV-V5-MAGIC 0x354c5652)
 (def UV-DATA-SIZE 0x240000)
 (def UV-USER 0x20000)
 (def UV-PML4 0x30000)
@@ -11,9 +12,28 @@
 (def UV-IDT 0x236000)
 (def UV-IDTR 0x236400)
 (def UV-FPU 0x237000)
+;; Four v5 domains each own code + 64 RW pages + guard + stack. A bounded
+;; 256-GiB identity PD fits before the desktop state in the existing image.
+(def UV-V5-STRIDE 0x43000)
+(def UV-V5-PML4 0x130000)
+(def UV-V5-PDPT 0x131000)
+(def UV-V5-PD 0x132000)
+(def UV-V5-SMALL 0x232000)
+(def UV-V5-IDT 0x236000)
+(def UV-V5-IDTR 0x236400)
+(def UV-V5-FPU 0x237000)
 (def UV-ACTIVE 32832)
 (def UV-HANDLER 30400)
 (def UV-FAULT 33024)
+(defn- uv-v5? [] :bool (kp-v3?))
+(defn- uv-magic [] :i64 (if (uv-v5?) UV-V5-MAGIC UV-MAGIC))
+(defn- uv-pml4 [] :i64 (if (uv-v5?) UV-V5-PML4 UV-PML4))
+(defn- uv-pdpt [] :i64 (if (uv-v5?) UV-V5-PDPT UV-PDPT))
+(defn- uv-pd [] :i64 (if (uv-v5?) UV-V5-PD UV-PD))
+(defn- uv-small [] :i64 (if (uv-v5?) UV-V5-SMALL UV-SMALL))
+(defn- uv-idt-offset [] :i64 (if (uv-v5?) UV-V5-IDT UV-IDT))
+(defn- uv-idtr [] :i64 (if (uv-v5?) UV-V5-IDTR UV-IDTR))
+(defn- uv-fpu [] :i64 (if (uv-v5?) UV-V5-FPU UV-FPU))
 (defn- uv-used? [M :vector-i64] :bool
   (and (= (xg-get M 4) 2)
     (loop [i 1]
@@ -28,23 +48,25 @@
 ;; Only the request constructor accepts the earlier v2 supervisor layout.
 (defn- uv-page-address [M :vector-i64 role :i64] :vector-i64
   (let [v3 (vector-at M MM-LABEL-N) done (inc v3)]
-    (-> M (iv-reserve 2) (iv-hex "4981b9") (xg-bytes 464 4) (xg-bytes UV-MAGIC 4)
+    (-> M (iv-reserve 2) (iv-hex "4981b9") (xg-bytes 464 4) (xg-bytes (uv-magic) 4)
         (xg-rel 0x840f 2 2 v3)
         (iv-hex "89c848c1e00c4c01c84805") (xg-bytes LV-REQUEST-PAGES 4)
         (xg-rel 0xe9 1 2 done)
-        (xg-label v3) (iv-hex "89c848c1e00e4c01c84805") (xg-bytes (+ UV-USER (* role 4096)) 4)
+        (xg-label v3)
+        (iv-hex (if (uv-v5?) "89c84869c0003004004c01c84805" "89c848c1e00e4c01c84805"))
+        (xg-bytes (+ UV-USER (* (if (and (uv-v5?) (= role 3)) 66 role) 4096)) 4)
         (xg-label done))))
 (defn- uv-or-arena [M :vector-i64 k :i64] :vector-i64
   (if (= k 11) (uv-page-address M 1)
     (-> M (iv-hex "89c848c1e00c4c01c84805") (xg-bytes LV-ARENAS 4))))
 (defn- uv-require [M :vector-i64 fail :i64] :vector-i64
-  (-> M (lv-guard fail) (iv-hex "4981b9") (xg-bytes 464 4) (xg-bytes UV-MAGIC 4)
+  (-> M (lv-guard fail) (iv-hex "4981b9") (xg-bytes 464 4) (xg-bytes (uv-magic) 4)
       (xg-rel 0x850f 2 2 fail)
       (iv-hex "9c415a41f7c200020000") (xg-rel 0x850f 2 2 fail)))
 ;; R8D is the selected slot. Every other domain loses user permissions.
 ;; All four small-page tables are contiguous, so physical page index selects
 ;; the exact PTE in the low8MiB refinement without caller addresses.
-(defn- uv-select [M :vector-i64] :vector-i64
+(defn- uv-select-v3 [M :vector-i64] :vector-i64
   (let [slot (vector-at M MM-LABEL-N) page (inc slot) guard (+ slot 2)
         store (+ slot 3) supervisor (+ slot 4) mapped (+ slot 5)]
     (-> M (iv-reserve 6) (iv-hex "4531d2") (xg-label slot) (iv-hex "4531db")
@@ -59,30 +81,55 @@
         (xg-label supervisor) (iv-hex "4809c2") (xg-rel 0xe9 1 2 store)
         (xg-label guard) (iv-hex "31d2")
         (xg-label store) (iv-hex "48c1e80c")
-        (uv-context UV-SMALL 7) (iv-hex "488914c7")
+        (uv-context (uv-small) 7) (iv-hex "488914c7")
         (iv-hex "41ffc34183fb04") (xg-rel 0x820f 2 2 page)
         (iv-hex "41ffc24183fa04") (xg-rel 0x820f 2 2 slot))))
+(defn- uv-select-v5 [M :vector-i64] :vector-i64
+  (let [slot (vector-at M MM-LABEL-N) page (inc slot) guard (+ slot 2)
+        store (+ slot 3) supervisor (+ slot 4) mapped (+ slot 5)]
+    (-> M (iv-reserve 6) (iv-hex "4531d2") (xg-label slot) (iv-hex "4531db")
+        (xg-label page)
+        ;; 67 pages per domain: RX code, 64 RW, absent guard, RW stack.
+        (iv-hex "4489d04869c0") (xg-bytes UV-V5-STRIDE 4)
+        (iv-hex "4489d948c1e10c4801c84c01c84805") (xg-bytes UV-USER 4)
+        (iv-hex "4183fb41") (xg-rel 0x840f 2 2 guard)
+        (iv-hex "48ba") (xg-bytes -9223372036854775805 8)
+        (iv-hex "4539c2") (xg-rel 0x850f 2 2 supervisor)
+        (iv-hex "4183fb00") (xg-rel 0x850f 2 2 mapped)
+        (iv-hex "ba05000000") (xg-rel 0xe9 1 2 supervisor)
+        (xg-label mapped) (iv-hex "4883ca04")
+        (xg-label supervisor) (iv-hex "4809c2") (xg-rel 0xe9 1 2 store)
+        (xg-label guard) (iv-hex "31d2")
+        (xg-label store) (iv-hex "48c1e80c")
+        (uv-context (uv-small) 7) (iv-hex "488914c7")
+        (iv-hex "41ffc34183fb43") (xg-rel 0x820f 2 2 page)
+        (iv-hex "41ffc24183fa04") (xg-rel 0x820f 2 2 slot))))
+(defn- uv-select [M :vector-i64] :vector-i64
+  (if (uv-v5?) (uv-select-v5 M) (uv-select-v3 M)))
 (defn- uv-refresh [M :vector-i64 t :i64] :vector-i64
   (let [done (vector-at M MM-LABEL-N)]
     (-> M (iv-reserve 1) (iv-hex "4983b9") (xg-bytes UV-ACTIVE 4) (xg-byte 1)
         (xg-rel 0x850f 2 2 done) (iv-hex "4189c8") (uv-select)
-        (uv-context UV-PML4 0) (iv-hex "0f22d8")
+        (uv-context (uv-pml4) 0) (iv-hex "0f22d8")
         (xg-label done) (xg-load t 0x858b48))))
-;; Own a complete low512GiB four-level identity map. Huge leaves are
+;; v3 owns low512GiB; v5 bounds identity mapping to low256GiB. Huge leaves are
 ;; supervisor RW/NX; low8MiB has 4KiB leaves for W^X and user isolation.
 (defn- uv-tables [M :vector-i64] :vector-i64
   (let [pdpt (vector-at M MM-LABEL-N) pd (inc pdpt) small (+ pdpt 2)
         ordinary (+ pdpt 3) write (+ pdpt 4) refine (+ pdpt 5)]
     (-> M (iv-reserve 6)
-        (uv-context UV-PML4 7) (uv-context UV-PDPT 0) (iv-hex "4883c807488907")
-        (uv-context UV-PDPT 7) (uv-context UV-PD 0) (iv-hex "31c9")
-        (xg-label pdpt) (iv-hex "4889c24883ca07488914cf480500100000ffc181f900020000")
+        (uv-context (uv-pml4) 7) (uv-context (uv-pdpt) 0) (iv-hex "4883c807488907")
+        (uv-context (uv-pdpt) 7) (uv-context (uv-pd) 0) (iv-hex "31c9")
+        (xg-label pdpt)
+        (iv-hex (if (uv-v5?) "4889c24883ca07488914cf480500100000ffc181f900010000"
+                    "4889c24883ca07488914cf480500100000ffc181f900020000"))
         (xg-rel 0x820f 2 2 pdpt)
-        (uv-context UV-PD 7) (iv-hex "31c048ba") (xg-bytes -9223372036854775677 8)
+        (uv-context (uv-pd) 7) (iv-hex "31c048ba") (xg-bytes -9223372036854775677 8)
         (iv-hex "31c9") (xg-label pd)
-        (iv-hex "4889c64809d6488934cf480500002000ffc181f900000400")
+        (iv-hex (if (uv-v5?) "4889c64809d6488934cf480500002000ffc181f900000200"
+                    "4889c64809d6488934cf480500002000ffc181f900000400"))
         (xg-rel 0x820f 2 2 pd)
-        (uv-context UV-SMALL 7) (iv-hex "31c048ba") (xg-bytes -9223372036854775805 8)
+        (uv-context (uv-small) 7) (iv-hex "31c048ba") (xg-bytes -9223372036854775805 8)
         (iv-hex "31c9") (xg-label small)
         (iv-hex "4889c64809d6483d00101000") (xg-rel 0x820f 2 2 ordinary)
         (iv-hex "4c39c8") (xg-rel 0x830f 2 2 ordinary)
@@ -91,17 +138,17 @@
         (iv-hex "31f6")
         (xg-label write) (iv-hex "488934cf480500100000ffc181f900080000")
         (xg-rel 0x820f 2 2 small)
-        (uv-context UV-PD 7) (uv-context UV-SMALL 0) (iv-hex "31c9")
+        (uv-context (uv-pd) 7) (uv-context (uv-small) 0) (iv-hex "31c9")
         (xg-label refine) (iv-hex "4889c24883ca07488914cf480500100000ffc183f904")
         (xg-rel 0x820f 2 2 refine))))
 (defn- uv-idt [M :vector-i64] :vector-i64
   (let [again (vector-at M MM-LABEL-N)]
     (-> M (iv-reserve 1) (iv-hex "498b91") (xg-bytes IV-CONTEXT-ENTRY 4)
-        (uv-context UV-IDT 7) (iv-hex "31c9") (xg-label again)
+        (uv-context (uv-idt-offset) 7) (iv-hex "31c9") (xg-label again)
         (iv-hex "66891766c74702080066c74704008e4889d048c1e810668947064889d048c1e820894708c7470c000000004883c7104881c280000000ffc183f940")
         (xg-rel 0x820f 2 2 again)
-        (uv-context UV-IDTR 7) (iv-hex "66c707ff03")
-        (uv-context UV-IDT 0) (iv-hex "488947020f011f"))))
+        (uv-context (uv-idtr) 7) (iv-hex "66c707ff03")
+        (uv-context (uv-idt-offset) 0) (iv-hex "488947020f011f"))))
 (defn- uv-close-sysenter [M :vector-i64] :vector-i64
   (let [done (vector-at M MM-LABEL-N)]
     (-> M (iv-reserve 1) (iv-hex "53b80100000031c90fa2f7c2000800005b")
@@ -135,9 +182,9 @@
         (iv-hex "b9840000c0b80077070031d20f30")
         ;; Close inherited SYSENTER entry rails before enabling user code.
         (uv-close-sysenter)
-        (uv-context UV-FPU 7) (iv-hex "66c7077f03c74718801f0000")
+        (uv-context (uv-fpu) 7) (iv-hex "66c7077f03c74718801f0000")
         (iv-hex "0f20e0480d000600000f22e0")
-        (uv-context UV-PML4 0) (iv-hex "0f22d80f20c04883e0f3480d220001000f22c0")
+        (uv-context (uv-pml4) 0) (iv-hex "0f22d80f20c04883e0f3480d220001000f22c0")
         (iv-hex "49c781") (xg-bytes UV-ACTIVE 4) (xg-bytes 1 4)
         (iv-hex "b801000000") (xg-rel 0xe9 1 2 done)
         (xg-label zero) (iv-hex "31c0") (xg-label done) (xg-save t))))
@@ -147,8 +194,10 @@
         (iv-hex "4983b9") (xg-bytes UV-ACTIVE 4) (xg-byte 1) (xg-rel 0x850f 2 2 zero)
         (xg-load t 0x858b48) (iv-hex "493981") (xg-bytes LV-DOMAIN 4) (xg-rel 0x850f 2 2 zero)
         (lv-domain-slot false) (iv-hex "83f904") (xg-rel 0x830f 2 2 zero)
-        (uv-context UV-FPU 7) (iv-hex "480fae0f")
-        (uv-page-address 0) (iv-hex "4889c24805f03f00004883e0f06a1b506a026a2352")
+        (uv-context (uv-fpu) 7) (iv-hex "480fae0f")
+        (uv-page-address 0)
+        (iv-hex (if (uv-v5?) "4889c24805f02f04004883e0f06a1b506a026a2352"
+                    "4889c24805f03f00004883e0f06a1b506a026a2352"))
         (iv-hex "31c031db31c931d231f631ff4531c04531c94531d24531db4531e44531ed4531f64531ff31ed48cf")
         (xg-label zero) (iv-hex "31c0") (xg-label done) (xg-save t))))
 (defn- uv-intrinsic [M :vector-i64 k :i64 t :i64] :vector-i64

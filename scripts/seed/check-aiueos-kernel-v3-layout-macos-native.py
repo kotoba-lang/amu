@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""Check candidate kernel-v3 ELF/EFI layout using the signed Mac selfhost image.
+"""Check kernel-v3 layout, guest mapping and slot-v4 package admission on Mac.
 
-The v3 single-kernel package is a layout candidate. Slot-v4 remains refused
-until the guest maps its 256 KiB user region and implements the typed ABI.
+The signed native artifact gate does not execute a guest or qualify a typed ABI.
 """
 
 import argparse
@@ -114,14 +113,59 @@ def main(args):
                             expected=1)
     if b'E7111' not in result.stderr or (out / 'mixed-v3-v5.efi').exists():
         raise ValueError('guest-incompatible slot-v4 admitted')
-    receipt = {'schema': 'amu.mac-aiueos-kernel-v3-layout-candidate.v1',
-               'status': 'PASS_MAC_NATIVE_KERNEL_V3_LAYOUT_CANDIDATE',
+    fixture = importlib.util.spec_from_file_location(
+        'value_fixture', HERE / 'check_aiueos_value_fixture.py')
+    value = importlib.util.module_from_spec(fixture)
+    fixture.loader.exec_module(value)
+    guest_source = value.user_source().encode()
+    (out / 'fixture/guest.kotoba').write_bytes(guest_source)
+    guest_lock = (f'KSL1\nentry /fixture/guest.kotoba\nroot /fixture\n'
+                  f'file {sha(guest_source)} /fixture/guest.kotoba\n').encode()
+    (out / 'guest.ksl').write_bytes(guest_lock)
+    mac.native_run(compiler, out, 'compile', '/fixture/guest.kotoba', '--target',
+                   'x86_64-aiueos-kernel-v3', '--artifact', 'image', '--output',
+                   'guest-v3.elf', '--fuel', '1000000', '--source-path', '/fixture',
+                   '--source-lock', 'guest.ksl', '--source-lock-sha256', sha(guest_lock))
+    guest = out / 'guest-v3.elf'
+    guest_raw = guest.read_bytes()
+    guest_layout = image_layout(guest_raw, 0x400000)
+    guest_rw = guest_layout['rw']
+    marker = struct.unpack_from('<Q', guest_raw, guest_rw[2] + 464)[0]
+    handler = struct.unpack_from('<Q', guest_raw, guest_rw[2] + 30400)[0]
+    if (guest_rw[5] != 0x240000 or marker != 0x354c5652
+            or not guest_layout['rx'][3] <= handler <
+            guest_layout['rx'][3] + guest_layout['rx'][5]):
+        raise ValueError('guest-v3 mapping or syscall handler missing')
+    mac.native_run(compiler, out, 'package-aiueos-boot', guest.name,
+                   '--output', 'guest-v3-v5.efi', '--font', 'font.bin',
+                   '--user-slot', 'user-v5.slot', '--pci-resources', 'v1')
+    efi = (out / 'guest-v3-v5.efi').read_bytes()
+    if efi.count(guest_raw) != 1 or efi.count(slot) != 1:
+        raise ValueError('guest-v3 EFI lacks pinned kernel or slot')
+    for name, offset in (('marker', 464), ('handler', 30400)):
+        changed = bytearray(guest_raw)
+        struct.pack_into('<Q', changed, guest_rw[2] + offset, 0)
+        (out / (name + '.elf')).write_bytes(changed)
+        result = mac.native_run(compiler, out, 'package-aiueos-boot', name + '.elf',
+                                '--output', name + '.efi', '--font', 'font.bin',
+                                '--user-slot', 'user-v5.slot', '--pci-resources', 'v1',
+                                expected=1)
+        if b'E7111' not in result.stderr or (out / (name + '.efi')).exists():
+            raise ValueError('changed guest-v3 ' + name + ' admitted')
+    receipt = {'schema': 'amu.mac-aiueos-kernel-v3-layout-candidate.v2',
+               'status': 'PASS_MAC_NATIVE_KERNEL_V3_GUEST_ARTIFACT',
                'compiler': mac.pin(compiler), 'oldCompiler': mac.pin(old),
                'source': {'bytes': len(SOURCE), 'sha256': sha(SOURCE)},
                'sourceLock': mac.pin(out / 'fixture.ksl'), 'legacy': legacy,
                'kernelV3': mac.pin(v3), 'efiV3': mac.pin(out / 'kernel-v3.efi'),
                'layout': layout, 'oldCompilerV3Refused': True,
-               'dualSlotV4Refused': True, 'guestV5Admission': False,
+               'dualSlotV4RefusedForScalar': True,
+               'guestV5Admission': True, 'guestExecution': False,
+               'guestSource': {'bytes': len(guest_source), 'sha256': sha(guest_source)},
+               'guestSourceLock': mac.pin(out / 'guest.ksl'),
+               'guestKernel': mac.pin(guest), 'guestEfi': mac.pin(out / 'guest-v3-v5.efi'),
+               'guestLayout': guest_layout, 'guestMarker': marker, 'guestHandler': handler,
+               'changedMarkerRefused': True, 'changedHandlerRefused': True,
                'releaseQualified': False, 'linuxJVMNodeCompiler': False,
                'calls': calls}
     (out / 'mac-aiueos-kernel-v3-layout.json').write_text(json.dumps(receipt, indent=2) + '\n')
