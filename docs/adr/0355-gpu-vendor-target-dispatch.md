@@ -1139,3 +1139,52 @@ optimization exists for Intel.
 Evidence: `docs/evidence/gpu/anv-b3blockvar-20261027/` (record.txt is
 the finding; publication-s29.txt is produced only by analysis-s29.py
 over the committed run logs).
+
+## 2026-10-27 -- session 30 (JUN-59): the anchor-class settling bar
+(design slice -- nothing measured)
+
+Session 29's named next row is taken as a DESIGN decision, and it is
+taken BEFORE the readings it judges exist: the bar is frozen
+pre-registration at 2026-10-27T23:40:56Z, on the same UTC day as
+sessions 2-29, while the first cross-UTC-day tick becomes reachable at
+2026-10-28T00:00Z on this profile's 15-minute cron cadence (ticks after
+the UTC day roll run natively on day 2026-10-28 -- no tick ever needs
+to wait across the roll). A bar written after the readings it judges is
+post-hoc; this one names its floor first. THE BAR (accepted design
+only): a READING is one 3-run block at the frozen estimator unit at the
+anchor (BATCH=3, WORK_MUL=1024, NDIV=4033, n=253,906), byte-identical
+build pin, C1 (a), VERIFY 0, custody GO; COUNTED is the FIRST
+qualifying reading of each UTC day (the L4 axis must be spanned; later
+same-day sessions are named descriptive content and do not advance the
+bar; FLAGGED sessions -- C1 (b), VERIFY mismatch, broken pin, missing
+GO -- consume no day slot); four COUNTED readings from four distinct
+UTC days, one class at the frozen section-4 threshold, every median
+within +/-5% of each frozen reference 1,129 / 1,132 / 1,131 and
+mutually within 5%, SETTLE the anchor's class; a class split is
+UNSETTLED with NO SILENT EXTENSION (an extension is a new pre-registered
+bar, never a re-roll), and any FLOOR or out-of-band median is the
+pre-named CONTRADICTION. The bar settles ONLY the anchor's class at the
+frozen threshold: it never narrows the flip bracket (252,604,
+253,906], never interpolates, never judges the (2048,8066) twin, and
+moves no Rule 4 row. Its floor is named from measured content
+(quote-only here): session 29's four-block within-session stability
+(4/4 INTERMEDIATE/MIXED at in-band medians 1,130/1,144/1,143/1,151)
+and the min-statistic wander (per-run minima 971..1,001, only r3
+at/above the frozen 1,000 boundary -- the class boundary sits inside
+the measured noise floor of the minimum statistic). The number FOUR is
+a design choice matching the four-block floor, not a measured
+constant; whether four days is enough is UNMEASURED (the bar can
+return UNSETTLED, in which case the representation-side probe -- the
+twin, the open half of the sessions 24/26 C3 (b) splits -- is the
+named priority). The decision procedure is committed as the
+deterministic evaluator `settle-bar-eval.py` with a frozen fixture set
+(38 assertions, 0 failed, run twice byte-identical) -- evidence-scoped
+tooling, not compiler code. Rule 4 binds: nothing measured this tick
+(every number above is quote-only, re-derived in the committed
+census), no row moves, no `:measured?` flag moves, and no vendor
+optimization exists for Intel.
+
+Evidence: `docs/evidence/gpu/anv-b3settlebar-20261027/` (settle-bar.txt
+is the frozen pre-registration; record.txt is the finding;
+derivation-census-s30.txt re-derives every cited measured number from
+sessions 26-29's committed run logs).
