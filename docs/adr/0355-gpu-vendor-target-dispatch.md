@@ -714,3 +714,53 @@ letters; measured numbers unchanged). Rule 4 binds: no row moves, no
 Evidence: `docs/evidence/gpu/anv-consttotal-20261027/` (record.txt is
 the finding; publication-s17.txt is produced only by analysis-s17.py
 over the committed run logs).
+
+## Dated note (2026-10-27, JUN-59 measurement: THE NDIV=8 DISPATCH
+## LADDER at fixed per-dispatch work, session 18)
+
+Session 18 (INSTRUMENT channel) takes session 17's named residual
+(L10: "any (B,NDIV) pair with NDIV != B other than the c2/c8
+controls"): the NDIV=8 COLUMN of the (B,NDIV) grid is measured for
+the first time (rungs y2..y7 = (B,NDIV=8) pairs never compiled
+before; y8 == the committed d8 knob pair) -- the DISPATCH-COUNT
+ladder at FIXED per-dispatch work n = 125,000 (1/8 of the full grid,
+identical in every y arm), with the archived c2/c8 controls pinning
+the environment. ZERO derivation edits -- the instrument is session
+17's committed NDIV-derived source byte-identical (digest
+a5e539f0...). Custody GO 17:24:45Z before any build/run (corpus
+16/16 + 3/3 local-vs-host MATCH); the rebuilt y8 is BYTE-IDENTICAL
+to session 17's anv-xt-x8 == session 13's committed d8 binary and
+c2/c8 to session 17's (3/3 build pins). 27 fresh processes
+17:25:31Z..17:25:39Z, VERIFY mismatch 0, forcing 486/486. MEASURED
+at the INSTRUMENT channel: C1 replicates (c2 FLOOR 32, band 31..32;
+c8 32,830 = -0.26% of committed 32,915) and C2 replicates (y8 =
+d8's knob pair: 5,419 vs committed d8 5,431 = -0.22%, CAPTURED as
+committed -- the two ladders join at that grid point). W1 fires
+branch (c) RISE-GRADIENT / LATER-ONSET: the class vector at fixed
+per-dispatch work 0.125 units is (FLOOR, INTERMEDIATE/MIXED,
+CAPTURED, CAPTURED, CAPTURED, CAPTURED) over y2..y7 (y2 31 FLOOR; y3
+599 INTERMEDIATE/MIXED, 18-cell range 515..606; y4..y7 1,497 /
+2,496 / 3,476 / 4,463 CAPTURED-class at all 18 cells; y8 5,419 the
+C2 anchor) -- THE CAPTURE-CLASS TRANSITION DOES NOT SIT AT THE
+DISCRETE B=2 -> B=3 STEP AT 1/8 PER-DISPATCH WORK: B=3 is
+INTERMEDIATE here where NDIV=1 (5,520) and NDIV=B (1,578) are both
+CAPTURED-class at B=3, and full CAPTURED arrives at B=4. The
+session-17 "dispatch-count signature" does NOT extend unmodified to
+this column of the grid: the onset's position on the B ladder
+depends on per-dispatch work -- per-dispatch work INTERACTS with the
+dispatch count among the named hypotheses (L2 binds: dispatch count
+and total work co-vary BY CONSTRUCTION at fixed per-dispatch work;
+observable only, NO causal mechanism is claimed or measured). "B=2
+never captures" extends to n=125,000 at total work 0.25 (y2 FLOOR
+31). W2 (descriptive) the NDIV=8 dose curve is non-decreasing (31 ->
+5,419 over B=2..8); W3's named equal-total shape comparison splits
+at equal nominal total 0.25: y2 (2 x 125,000) 31 FLOOR measured vs
+d32 (8 x 31,250) 1,050 INTERMEDIATE committed (quote-only). NAMED,
+NOT HIDDEN: protocol.txt section 2's "10 arms ... = 30 fresh
+processes" is an arithmetic slip in the frozen text (the arm table's
+9 rows govern: 27 runs -- record.txt section 6). Rule 4 binds: no
+row moves, no `:measured?` flag moves, and no vendor optimization
+exists for Intel.
+Evidence: `docs/evidence/gpu/anv-ndiv8ladder-20261027/` (record.txt is
+the finding; publication-s18.txt is produced only by analysis-s18.py
+over the committed run logs).

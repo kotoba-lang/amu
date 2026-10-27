@@ -1,0 +1,58 @@
+== JUN-59 session 18 build census (THE NDIV=8 DISPATCH LADDER) ==
+Build window (host timeline): builds ran after the verify GO
+(2026-10-27T17:24:45Z) and before the first run (run-window.txt:
+17:25:31Z).
+== host ==
+aiueos-6600hs (aiueos-6600hs-1, tailscale 100.98.24.37), user murakumo-ci
+(groups include render). Workdir ~/anv-ndiv8ladder-20261027, runs
+cwd=shaders/ (manifest passed as ../cases-s18-a.txt; binaries
+../anv-n8-<tag>).
+== toolchains (from session 2's committed compile-toolchain.txt record of
+== the same host/toolchain; not re-printed this session) ==
+gcc: gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+(glslangValidator NOT used this session -- ZERO derivation; the corpus
+spv are the archived byte-verified artifacts and the instrument is
+session 17's committed source byte-identical.)
+== binary compiles: gcc -O2 -DBATCH=<B> -DNDIV=<D> -o anv-n8-<tag>
+== gpu-subgroup-reduce-anv-ndiv.c -lvulkan  (9 arms, one binary each) ==
+build c2 (BATCH=2 NDIV=1) rc=0 @2026-10-27T17:25:09Z
+build y2 (BATCH=2 NDIV=8) rc=0 @2026-10-27T17:25:09Z
+build y3 (BATCH=3 NDIV=8) rc=0 @2026-10-27T17:25:09Z
+build y4 (BATCH=4 NDIV=8) rc=0 @2026-10-27T17:25:09Z
+build y5 (BATCH=5 NDIV=8) rc=0 @2026-10-27T17:25:10Z
+build y6 (BATCH=6 NDIV=8) rc=0 @2026-10-27T17:25:10Z
+build y7 (BATCH=7 NDIV=8) rc=0 @2026-10-27T17:25:10Z
+build y8 (BATCH=8 NDIV=8) rc=0 @2026-10-27T17:25:10Z
+build c8 (BATCH=8 NDIV=1) rc=0 @2026-10-27T17:25:10Z
+e5ed903e5b9dfd64168e2d8ddea9d8efb573273e7594afcaca71f3f70bb9c489  anv-n8-c2
+5903c92ff62d1f9b53a94afa7fb88cb91560a53dd416a238ef2ca72c61c26e87  anv-n8-y2
+262c26c14007fa8cfae15aa2005db451ef60cc34f133724ed2cc0d7194171f0b  anv-n8-y3
+cce3fc12589e74636bb02661e14dbef45745dd96ed169d46630487f69763bafb  anv-n8-y4
+74f1be317d84660330cc29fea901ba353b02369e4365cc0bd5e3644315097846  anv-n8-y5
+d7cd95b9a44a079dfd6c0e9403ba3141ed8b57ff99869d49293a584acaf06b12  anv-n8-y6
+076a96c4c556f9f6475f7ba8ffb6564a23de82bbcb48bb8621fd56dba0da3cce  anv-n8-y7
+7cc6ad2643d617f25d6d56734d86418dafff7a258f15834bffc354a983beffb1  anv-n8-y8
+480925e58d28e7d318456703c6959548e9b9c33e375c3e0fefe688e844d37807  anv-n8-c8
+== source digest re-check at build time (host): ==
+a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556  gpu-subgroup-reduce-anv-ndiv.c
+== build stderr: 0 bytes all 9 (build-<tag>.err, host wc -c) ==
+== BUILD REPLICATION PIN (declared in protocol section 2; prior-session ==
+== censuses parsed programmatically from the committed files, never     ==
+== transcribed) ==
+BYTE-IDENTICAL: anv-n8-c2 e5ed903e5b9dfd64... == session-17 anv-xt-c2 e5ed903e5b9dfd64... (== session-16 anv-fb-c2 == session-13 anv-wt-c2) -> True
+BYTE-IDENTICAL: anv-n8-c8 480925e58d28e7d3... == session-17 anv-xt-c8 480925e58d28e7d3... (== session-16 anv-fb-c8 == session-13 anv-wt-c8) -> True
+BYTE-IDENTICAL: anv-n8-y8 7cc6ad2643d617f2... == session-17 anv-xt-x8 7cc6ad2643d617f2... (== session-13 anv-wt-d8 7cc6ad26... == session-12 anv-cc-d8) -> True
+NEW KNOB PAIR: anv-n8-y2 5903c92f... (BATCH=2,NDIV=8 -- BATCH!=8 at NDIV=8 has never been compiled in this series; NO byte-identity pin applies -- named, not hidden)
+NEW KNOB PAIR: anv-n8-y3 262c26c1... (BATCH=3,NDIV=8 -- BATCH!=8 at NDIV=8 has never been compiled in this series; NO byte-identity pin applies -- named, not hidden)
+NEW KNOB PAIR: anv-n8-y4 cce3fc12... (BATCH=4,NDIV=8 -- BATCH!=8 at NDIV=8 has never been compiled in this series; NO byte-identity pin applies -- named, not hidden)
+NEW KNOB PAIR: anv-n8-y5 74f1be31... (BATCH=5,NDIV=8 -- BATCH!=8 at NDIV=8 has never been compiled in this series; NO byte-identity pin applies -- named, not hidden)
+NEW KNOB PAIR: anv-n8-y6 d7cd95b9... (BATCH=6,NDIV=8 -- BATCH!=8 at NDIV=8 has never been compiled in this series; NO byte-identity pin applies -- named, not hidden)
+NEW KNOB PAIR: anv-n8-y7 076a96c4... (BATCH=7,NDIV=8 -- BATCH!=8 at NDIV=8 has never been compiled in this series; NO byte-identity pin applies -- named, not hidden)
+== 3/3 pins hold (c2/c8 byte-identical to session 17's same-flag ==
+== binaries; y8 byte-identical to session 17's anv-xt-x8 == session 13's ==
+== committed d8 binary); y2..y7 are NEW (BATCH,NDIV) pairs and carry no ==
+== pin by design (their custody is the byte-identical source + the ==
+== compile flags + C1/C2's numeric replication). ==
+== (the 3 pin targets were ALSO re-hashed directly on the host from ==
+== session 17's workdir ~/anv-consttotal-20261027/anv-xt-{c2,c8,x8} ==
+== and matched the committed census values: 3/3.) ==
