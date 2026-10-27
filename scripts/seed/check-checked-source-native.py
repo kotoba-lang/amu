@@ -17,7 +17,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 BRIDGE = "seed/05-checked-source.kotoba"
 EXTRA = ["seed/04-definition-cid.kotoba", "seed/05-definition-graph.kotoba",
-         "seed/05-checked-definition.kotoba", "seed/06-definition-groups.kotoba", BRIDGE]
+         "seed/05-checked-definition.kotoba", "seed/06-definition-groups.kotoba", BRIDGE,
+         "seed/05-source-loops.kotoba"]
 ENTRY = '''
 (defn- seed-main [] :i64
  (cond (and (= (io-argc) 2) (= (io-arg 0) "kir")) (dsb-source (io-fs2-text 65 (io-arg 1) "") true)
@@ -39,6 +40,36 @@ def function(name, body, params="x", types=":i64", result=":i64"):
 
 def module(functions):
     return "{:format :kotoba.kir/v4 :entry nil :exports [] :effects #{} :functions [" + " ".join(functions) + "]}\n"
+
+
+
+def execution_cases():
+    return {
+        "loop": ("(defn work [x :i64] :i64 (loop [i x] (if (= i 0) 7 (recur (dec i)))))", "(work 4)", 7),
+        "captures": ("(defn work [z :i64 a :i64] :i64 (loop [i z] (if (= i 0) (+ z a) (recur (dec i)))))", "(work 4 9)", 13),
+        "shadow": ("(defn work [x :i64] :i64 (loop [i 0] (if (< i 1) (let [x i] (recur (inc x))) x)))", "(work 9)", 9),
+        "nested": ("(defn work [x :i64] :i64 (loop [i x] (if (= i 0) (loop [j 2] (if (= j 0) 11 (recur (dec j)))) (recur (dec i)))))", "(work 3)", 11),
+        "string-capture": ("(defn work [s :string x :i64] :i64 (loop [i x] (if (= i 0) (string-length s) (recur (dec i)))))", '(work "hello" 3)', 5),
+        "string-result": ("(defn work [s :string x :i64] :string (loop [i x] (if (= i 0) s (recur (dec i)))))", '(string-length (work "hello" 3))', 5),
+    }
+
+
+def loop_boundary(captures):
+    ps = [f"p{i}" for i in range(captures)]
+    variables = [f"i{i}" for i in range(20)]
+    call_args = "(- i0 1) " + " ".join(variables[1:])
+    tail = " ".join(ps) + " p2"
+    source_body = f"(if (= i0 0) (do {tail}) (recur {call_args}))"
+    bindings = " ".join(v + (" 1" if i == 0 else " 0") for i, v in enumerate(variables))
+    outer = " ".join(p + " " + str(i) for i, p in enumerate(ps))
+    source = f"(defn work [] :i64 (let [{outer}] (loop [{bindings}] {source_body})))"
+    # Reference capture order is lexical, not numeric (p10 precedes p2).
+    ordered = sorted(ps)
+    helper_params = variables + ordered
+    helper_body = f"(if (= i0 0) (do {tail}) (__kotoba_loop_1 {call_args} " + " ".join(ordered) + "))"
+    reference = [function("work", f"(let [{outer}] (__kotoba_loop_1 1 " + "0 " * 19 + " ".join(ordered) + "))", "", ""),
+                 function("__kotoba_loop_1", helper_body, " ".join(helper_params), " ".join([":i64"] * len(helper_params)))]
+    return source, reference
 
 
 def main(compiler, out):
@@ -166,6 +197,47 @@ def main(compiler, out):
         "(defn f [x [:list :i64]] [:list :i64] x)",
         [function("unused", "s", "s", "[:option :string]", "[:option :string]"),
          function("f", "x", "x", "[:list :i64]", "[:list :i64]")])
+    helper = "__kotoba_loop_1"
+    self_body = f"(if (= i 0) 1 ({helper} (- i 1)))"
+    cases["loop-simple"] = (
+        "(defn main [x :i64] :i64 (loop [i x] (if (= i 0) 1 (recur (dec i)))))",
+        [function("main", f"({helper} x)"), function(helper, self_body, "i")])
+    cases["loop-init-only"] = (
+        "(defn main [x :i64] :i64 (loop [i (+ x 1)] (if (= i 0) 1 (recur (dec i)))))",
+        [function("main", f"({helper} (+ x 1))"), function(helper, self_body, "i")])
+    cases["loop-capture-order"] = (
+        "(defn main [z :i64 a :i64] :i64 (loop [i z] (if (= i 0) (+ z a) (recur (dec i)))))",
+        [function("main", f"({helper} z a z)", "z a", ":i64 :i64"),
+         function(helper, f"(if (= i 0) (+ z a) ({helper} (- i 1) a z))", "i a z", ":i64 :i64 :i64")])
+    cases["loop-string-capture"] = (
+        "(defn main [s :string x :i64] :i64 (loop [i x] (if (= i 0) (string-length s) (recur (dec i)))))",
+        [function("main", f"({helper} x s)", "s x", ":string :i64"),
+         function(helper, f"(if (= i 0) (string-length s) ({helper} (- i 1) s))", "i s", ":i64 :string")])
+    cases["loop-capture-shadow"] = (
+        "(defn main [x :i64] :i64 (loop [i 0] (if (< i 1) (let [x i] (recur (inc x))) x)))",
+        [function("main", f"({helper} 0 x)"),
+         function(helper, f"(if (< i 1) (let [x i] ({helper} (+ x 1) outer)) outer)", "i outer", ":i64 :i64")])
+    cases["loop-local-scopes"] = (
+        "(defn main [x :i64] :i64 (loop [i x] (let [a (let [b i] b) c (let [b 1] b)] (if (= a 0) c (recur (dec a))))))",
+        [function("main", f"({helper} x)"),
+         function(helper, f"(let [a (let [b i] b) c (let [b 1] b)] (if (= a 0) c ({helper} (- a 1))))", "i")])
+    cases["loop-nested"] = (
+        "(defn main [x :i64] :i64 (loop [i x] (if (= i 0) (loop [j 2] (if (= j 0) 1 (recur (dec j)))) (recur (dec i)))))",
+        [function("main", "(__kotoba_loop_2 x)"), function(helper, "(if (= j 0) 1 (__kotoba_loop_1 (- j 1)))", "j"),
+         function("__kotoba_loop_2", "(if (= i 0) (__kotoba_loop_1 2) (__kotoba_loop_2 (- i 1)))", "i")])
+    cases["loop-owner"] = (
+        "(defn first [] :i64 42) (defn main [x :i64] :i64 (loop [i x] (if (= i 0) 1 (recur (dec i)))))",
+        [function("first", "42", "", ""), function("main", f"({helper} x)"), function(helper, self_body, "i")])
+    cases["unused-loop"] = (
+        "(defn main [] :i64 42) (defn unused [] :i64 (loop [x 0] x))",
+        [function("main", "42", "", ""), function("unused", f"({helper} 0)", "", ""), function(helper, "x")])
+    cases["loop-literal-name"] = (
+        "(def __kotoba_loop_1 9) (defn main [x :i64] :i64 (loop [i x] (if (= i 0) __kotoba_loop_1 (recur (dec i)))))",
+        [function("main", f"({helper} x)"), function(helper, f"(if (= i 0) 9 ({helper} (- i 1)))", "i")])
+    cases["loop-boolean-name"] = (
+        "(def __kotoba_loop_1 true) (defn main [x :i64] :i64 (loop [i x] (if __kotoba_loop_1 i (recur (dec i)))))",
+        [function("main", f"({helper} x)"), function(helper, f"(if true i ({helper} (- i 1)))", "i")])
+    cases["loop-arity63"] = loop_boundary(43)
     observed, inputs = {}, {}
     for name, (source, functions) in cases.items():
         src, ref = out / (name + ".input"), out / (name + ".kir")
@@ -183,6 +255,7 @@ def main(compiler, out):
     assert observed["constant-reference"]["f"] == observed["leaf"]["f"] != observed["constant-edit"]["f"]
     assert observed["recur"] == observed["self"] and observed["sugar"] == observed["inferred"] == observed["leaf"]
     assert observed["cond-recur"] == observed["self"]
+    assert observed["loop-simple"][helper] == observed["loop-init-only"][helper] == observed["self"]["f"]
     for name in composite_types:
         assert observed[name]["f"][0] == run("independent-type-" + name, [type_oracle, name])[0].strip()
     assert observed["type-table-reordered"]["f"] == observed["list-i64"]["f"]
@@ -190,13 +263,13 @@ def main(compiler, out):
     negatives = {
         "ill-typed": "(defn main [] :i64 true)",
         "unknown": "(defn main [] :i64 (unknown 1))",
-        "loop": "(defn main [] :i64 (loop [x 0] (if (= x 3) x (recur (inc x)))))",
+        "loop-closure": "(defn main [] :i64 (loop [x 0] (let [f (fn [y] (+ y x))] (f 1))))",
         "closure": "(defn main [] :i64 (let [f (fn [x] (+ x 1))] (f 2)))",
         "option-refinement": "(defn main [x :option-i64] :option-i64 x)",
         "tuple-refinement": "(defn main [x [:vector [:i64 :i64]]] [:vector [:i64 :i64]] x)",
         "nested-refinement": "(defn main [x [:list :option-i64]] [:list :option-i64] x)",
         "function-type": "(defn main [f [:fn [[:i64] :i64]]] [:fn [[:i64] :i64]] f)",
-        "unused-unsupported": "(defn main [] :i64 42) (defn unused [] :i64 (loop [x 0] x))",
+        "unused-unsupported": "(defn main [] :i64 42) (defn unused [] :i64 (let [f (fn [x] (+ x 1))] (f 2)))",
         "computed-def": "(def value (+ 1 2)) (defn main [] :i64 value)",
         "constant-alias": "(def a 1) (def b a) (defn main [] :i64 b)",
         "claimed-checked": "{:checked true :functions []}",
@@ -207,6 +280,11 @@ def main(compiler, out):
         # The existing KIR reader reserves this sugar spelling. Do not bypass
         # its fresh check to admit a Seed-only shadowed function name.
         "cond-shadowed": "(defn cond [x :i64 y :i64] :i64 (+ x y)) (defn main [] :i64 (cond 1 2))",
+        "loop-name-collision": "(defn __kotoba_loop_1 [x :i64] :i64 x) (defn main [] :i64 (loop [i 0] i))",
+        "loop-arity65": loop_boundary(45)[0],
+        # Existing kr-drop uses an i64 parameter mask; preserve its observed
+        # refusal until the adopted reader's arity64 boundary is repaired.
+        "loop-arity64-kir-gap": loop_boundary(44)[0],
     }
     for name, source in negatives.items():
         src = out / (name + ".input")
@@ -230,6 +308,7 @@ def main(compiler, out):
         ("composite-right", '(dsb-type M C b (inc depth))', '":i64"', "map-keyword-string", False),
         ("cond-test", '(dsb-expr M S C p depth)', '"true"', "cond-many", False),
         ("string-equality", 'HD-STRING-EQ "string=?"', 'HD-STRING-EQ "="', "string-equality", False),
+        ("loop-recur-capture", '(dsl-capture-text M C (vector-at C 4) false)', '""', "loop-capture-order", True),
     ]
     bridge = (ROOT / BRIDGE).read_text()
     assert text.count(bridge) == 1
@@ -255,7 +334,108 @@ def main(compiler, out):
     report["mutations"].append(dict(name="refinement-erasure", built=True, executed=True, image=pin(image),
                                      detectedBy="three native atomic-refusal violations"))
     save()
+    loop_path = "seed/05-source-loops.kotoba"
+    loop_source = (ROOT / loop_path).read_text()
+    assert text.count(loop_source) == 1
+    for name, old, new, probe, refuses in [
+        ("loop-capture-order", '(> (string-compare', '(< (string-compare', "loop-capture-order", False),
+        ("loop-capture-loss", '(dsl-capture M S C B record n)', '0', "loop-string-capture", True),
+        ("loop-owner", '(vector-assoc! (+ record 1) owner)', '(vector-assoc! (+ record 1) 1)', "loop-owner", True),
+    ]:
+        assert loop_source.count(old) == 1, (name, loop_source.count(old))
+        image = build("mutant-" + name, text.replace(loop_source, loop_source.replace(old, new)))
+        stdout, stderr = run("detect-" + name, [image, inputs[probe]], 1 if refuses else 0)
+        if refuses:
+            assert not stdout and stderr.startswith("DSB:")
+        else:
+            assert rows(stdout) != observed[probe]
+        report["mutations"].append(dict(name=name, built=True, executed=True, image=pin(image),
+                                         detectedBy="fresh native KIR refusal" if refuses else "native canonical identity mismatch"))
+        save()
+    # Execute source via the public static compiler and generated KIR via a
+    # native qualification driver using that same adopted reader/backend.
+    # Direct public compile-kir -> static is not implemented. No hosted
+    # translator or serialized-AST substitute fills that gap. Only entry /
+    # export metadata is selected; function bodies are transported unchanged.
     full_paths = [p for p in (ROOT / "seed/FULL-MANIFEST").read_text().splitlines() if p and not p.startswith("#")]
+    execution_path = "seed/tests/native-source-loop-execution.kotoba"
+    full_parts = []
+    for p in full_paths:
+        data = (ROOT / p).read_text()
+        if p == "seed/78-full-entry.kotoba":
+            assert data.count('(defn- seed-main [] :i64') == 1
+            data = data.replace('(defn- seed-main [] :i64', '(defn- dsx-original-main [] :i64')
+        full_parts.append(data)
+    execution_compiler = build("kir-execution-compiler", "\n".join(full_parts) + "\n" + (ROOT / execution_path).read_text())
+    report.update(executionCompiler=pin(execution_compiler), publicKirStaticQualified=False,
+                  executionCompilerModules={p:pin(ROOT / p) for p in [*full_paths, execution_path]})
+    executions = execution_cases()
+    executed = []
+    for name, (body, call, expected) in executions.items():
+        source = '(ns execution (:export [main]))\n' + body + f'\n(defn main [] :i64 {call})\n'
+        src = out / ("execute-" + name + ".input")
+        src.write_text(source)
+        kir = run("emit-execution-" + name, [producer, "kir", src])[0]
+        assert kir.count(':entry nil :exports []') == 1
+        selected = kir.replace(':entry nil :exports []', ':entry main :exports [main]')
+        (out / ("execute-" + name + ".kir")).write_text(selected)
+        receipts = {}
+        resources = {}
+        for lane, text_input in [("source", source), ("kir", selected)]:
+            if lane == "source":
+                image = build("execute-" + name + "-" + lane, text_input)
+                checked_image = out / ("execute-" + name + "-source-driver.elf")
+                _, trace = run("build-execute-" + name + "-source-driver",
+                               [execution_compiler, "source", src, checked_image, target])
+                assert pin(checked_image) == pin(image)
+            else:
+                image = out / ("execute-" + name + "-kir.elf")
+                _, trace = run("build-execute-" + name + "-kir", [execution_compiler, "kir", out / ("execute-" + name + ".kir"), image, target])
+                image.chmod(0o755)
+                assert struct.unpack_from('<H', image.read_bytes(), 18)[0] == (183 if machine == "aarch64" else 62)
+            receipts[lane] = [line for line in trace.splitlines() if line.startswith("DSX-RTL ")]
+            resources[lane] = [line.replace(" " + lane + " ", " ", 1) for line in trace.splitlines()
+                               if line.startswith(("DSX-FN ", "DSX-FUEL "))]
+            stdout, stderr = run("execute-" + name + "-" + lane, [image], expected)
+            assert not stdout and not stderr
+            executed.append(dict(name=name, lane=lane, image=pin(image), expectedI64=expected))
+        assert receipts['source'] == receipts['kir']
+        report.setdefault('executionResourceObservations', []).append(dict(
+            name=name, sourceDriverMatchesPinnedCompiler=True, runtimeLiteralReceiptsMatch=True,
+            runtimeLiterals=len(receipts['source']), resourceContractsEqual=resources['source'] == resources['kir'],
+            sourceResourceProofQualified=False))
+    report.update(nativeSourceKirExecutions=executed)
+    save()
+    driver_negatives = {
+        "ill-typed": module([function("main", "true", "", "")]),
+        "extra-form": module([function("main", "42", "", "")]) + "(defn extra [] :i64 0)\n",
+        "runtime-intrinsic": module([function("main", "(kxrt-ctx)", "", "")]),
+        "claimed-checked": module([function("main", "42", "", "")]).rstrip()[:-1] + " :checked true}\n",
+    }
+    for name, data in driver_negatives.items():
+        src = out / ("execution-refuse-" + name + ".kir")
+        src.write_text(data)
+        image = out / ("execution-refuse-" + name + ".elf")
+        stdout, stderr = run("execution-refuse-" + name, [execution_compiler, "kir", src, image, target], 1)
+        assert not stdout and stderr and not image.exists()
+    probe = out / "execution-literal-probe.kir"
+    probe.write_text(module([function("main", "42", "", "")]))
+    no_image = out / "execution-literal-probe-not-an-image"
+    stdout, stderr = run("execution-literal-probe", [execution_compiler, "probe", probe, no_image, target])
+    expected_hash = hashlib.sha256(b"runtime-literal-probe").hexdigest()
+    literal_rows = [line.split() for line in stderr.splitlines() if line.startswith("DSX-RTL ")]
+    assert not stdout and not no_image.exists() and len(literal_rows) == 1
+    assert literal_rows[0][2:] == ["21", expected_hash]
+    driver_source = (ROOT / execution_path).read_text()
+    old = '(dsx-restore-literals lowered saved runtime old-end)'
+    assert driver_source.count(old) == 1
+    mutant = build("mutant-execution-literal-origin", "\n".join(full_parts) + "\n" + driver_source.replace(old, 'lowered'))
+    stdout, stderr = run("detect-execution-literal-origin", [mutant, "probe", probe, no_image, target], 1)
+    assert not stdout and stderr and not no_image.exists()
+    report.update(executionDriverRefusals=len(driver_negatives), executionLiteralProbe=True,
+                  executionMutations=[dict(name="literal-origin", image=pin(mutant), built=True, executed=True,
+                                           detectedBy="native runtime literal origin refusal")])
+    save()
     whole = out / "whole-compiler.input"
     whole.write_bytes(b"".join((ROOT / p).read_bytes() + b"\n" for p in full_paths))
     assert pin(whole) == product["sourceUnity"]
@@ -265,7 +445,7 @@ def main(compiler, out):
                   independentPayloadOracles=5, atomicRefusals=len(negatives), wholeInput=pin(whole),
                   wholeCompilerRefusal=stderr.strip())
     report.update(independentTypePayloadOracles=len(composite_types))
-    assert all(pin(ROOT / p) == v for p, v in {**report["modules"], **report["oracleModules"], **report["typeOracleModules"]}.items())
+    assert all(pin(ROOT / p) == v for p, v in {**report["modules"], **report["oracleModules"], **report["typeOracleModules"], **report["executionCompilerModules"]}.items())
     save()
     print(report["status"], len(cases), flush=True)
 

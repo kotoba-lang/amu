@@ -5,7 +5,7 @@
 ;; is serialized by the checked head code, never by a stale source token.
 ;;
 ;; The bridge preserves scalar/word and closed parametric interfaces and the
-;; expression heads below. Loops, closures, state, schemas, type refinements and
+;; expression heads below. Loops use 05-source-loops; closures, state, schemas, type refinements and
 ;; capabilities still refuse atomically. They must be bridged before the whole
 ;; compiler can use this entry. The source fuel/arena proof is a separate build
 ;; context; KIR identity alone does not qualify source-route object reuse.
@@ -13,7 +13,8 @@
 ;; values cross this bridge; generated thunk names never acquire DefCIDs.
 ;; Computed expressions/aliases require canonical constant folding and refuse.
 
-;; C: error, offending node/type, hygienic-name salt, current FN.
+;; C: error, offending node/type, hygienic-name salt, current FN; loop metadata
+;; follows (05-source-loops). No fresh source resource proof is implied.
 (defn- dsb-bad [C :vector-i64 code :i64 node :i64] :string
   (let [a (vector-assoc! C 1 (if (= (vector-at C 0) 0) node (vector-at C 1)))
         b (vector-assoc! C 0 (if (= (vector-at C 0) 0) code (vector-at C 0)))] ""))
@@ -126,7 +127,7 @@
 (defn- dsb-call [M :vector-i64 S :string C :vector-i64 n :i64 depth :i64] :string
   (let [h (nm-first M n) hd (nm-nf M n NF-RES) r (nm-nf M h NF-RES)
         fi (rem r RES-SCALE)
-        op (if (= hd HD-RECUR) (dsb-name M S (vector-at C 3))
+        op (if (= hd HD-RECUR) (if (> (vector-at C 4) 0) (dsl-name (vector-at C 4)) (dsb-name M S (vector-at C 3)))
              (if (= (quot r RES-SCALE) RES-FN)
              (if (and (> fi 0) (< fi (vector-at M MM-FN-N))) (dsb-name M S fi) (dsb-bad C 3 n))
              (dsb-op hd)))]
@@ -140,9 +141,12 @@
           (string-concat "(let [" (string-concat (dsb-bindings M S C (nm-first M v) depth)
             (string-concat "] " (string-concat (dsb-expr M S C body depth) ")"))))))
       (= hd HD-COND) (dsb-cond M S C (nm-next M h) depth)
+      (= hd HD-LOOP) (dsl-call M S C n depth)
       (= (string-length op) 0) (dsb-bad C 3 n)
       :else (string-concat "(" (string-concat op
-        (string-concat (dsb-seq M S C (nm-next M h) depth) ")"))))))
+        (string-concat (dsb-seq M S C (nm-next M h) depth)
+          (string-concat (if (and (= hd HD-RECUR) (> (vector-at C 4) 0))
+                          (dsl-capture-text M C (vector-at C 4) false) "") ")")))))))
 (defn- dsb-expr [M :vector-i64 S :string C :vector-i64 n :i64 depth :i64] :string
   (let [kind (nm-kind M n) r (nm-nf M n NF-RES) tag (quot r RES-SCALE)]
     (cond (or (= n 0) (> depth 64) (not= (vector-at C 0) 0)) (dsb-bad C 3 n)
@@ -166,7 +170,7 @@
           (recur (nm-next M t) (string-concat out (string-concat " " value)) (inc count)))))))
 (defn- dsb-function [M :vector-i64 S :string C :vector-i64 f :i64] :string
   (let [node (nm-ff M f FF-NODE) params (nm-nth M node 2)
-        set-f (vector-assoc! C 3 f)
+        set-f (vector-assoc! C 3 f) no-loop (vector-assoc! C 4 0)
         names (dsb-params M C params false) types (dsb-params M C params true)
         result (dsb-type M C (nm-ff M f FF-RTYPE) 0)
         body (dsb-expr M S C (nm-nth M node 4) 0)]
@@ -175,7 +179,7 @@
         (string-concat types (string-concat "] :result " (string-concat result
           (string-concat " :effects #{} :body " (string-concat body "}"))))))))))))
 (defn- dsb-kir [M :vector-i64 S :string C :vector-i64] :string
-  (let [salt (vector-assoc! C 2 (dsb-salt M S))
+  (let [salt (vector-assoc! C 2 (dsb-salt M S)) plan (dsl-plan M S C)
         values (loop [f 1 out "" count 0]
           (if (or (= f (vector-at M MM-FN-N)) (not= (vector-at C 0) 0)) out
             (let [kind (nm-ff M f FF-KIND) sym (nm-ff M f FF-SYM)]
@@ -187,13 +191,14 @@
                     (not= (nm-sf M sym SF-FN) f)
                     (lw-tmpl? M f) (lw-spec? M f)) (dsb-bad C 3 f)
                 :else (let [value (dsb-function M S C f)]
-                        (recur (inc f) (string-concat out (string-concat " " value)) (inc count)))))))]
+                        (recur (inc f) (string-concat out (string-concat " " value)) (inc count)))))))
+        helpers (dsl-helpers M S C)]
     (if (not= (vector-at C 0) 0) ""
       (string-concat "{:format :kotoba.kir/v4 :entry nil :exports [] :effects #{} :functions ["
-        (string-concat values "]}\n")))))
+        (string-concat values (string-concat helpers "]}\n"))))))
 (defn- dsb-source [source :string emit-kir :bool] :i64
   (let [S (string-concat source (ck-r6b-lib source)) M (dsb-front-h S (ck-hint-new))
-        C (vector-alloc 4)]
+        C (dsl-new M)]
     (cond (not= (vector-at M MM-ERR) 0)
             (let [out (io-err (string-concat "DSB:SOURCE:" (string-concat (mem-u2dec (vector-at M MM-ERR)) "\n")))] 1)
           (not= (vector-at M MM-CAPS) 0) (let [out (io-err "DSB:EFFECT\n")] 1)
