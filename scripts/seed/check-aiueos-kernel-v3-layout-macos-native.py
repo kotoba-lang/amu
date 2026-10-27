@@ -81,10 +81,11 @@ def main(args):
     compiler = args.mac_build / f"F{rows[-1]['number']}-signed.macho"
     if mac.verify_macho(compiler) != rows[-1]['signed']:
         raise ValueError('Mac fixed point changed')
-    old = ROOT / descriptor['compiler']['path']
-    if mac.verify_macho(old) != {key: descriptor['compiler'][key]
+    reference = descriptor['kernelV2ReferenceCompiler']
+    old = ROOT / reference['path']
+    if mac.verify_macho(old) != {key: reference[key]
                                  for key in ('bytes', 'sha256')}:
-        raise ValueError('old compiler pin changed')
+        raise ValueError('kernel-v2 reference compiler pin changed')
     out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=False)
     (out / 'fixture').mkdir()

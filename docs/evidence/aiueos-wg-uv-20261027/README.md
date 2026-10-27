@@ -23,9 +23,23 @@ Mac native evidence, produced with the complete 48-module source:
 - Checked-in ARM root: `d7331314fd028c5ef3325c078797e2739fa329581065f69a521d663962120473`.
 - Checked-in x86 compiler: `6f6d6931975cee3c930bd806c25aee455012f97c7b9a3fac4e97500cba414265`.
 
+The current Mac root now also pins the previous signed compiler as a separate
+kernel-v2 reference (`495c1aca…`). The kernel-v3 gate uses it for v1/v2 byte
+parity and v3 refusal. It must not use the newly promoted root as its own
+negative control.
+
+The first exact-head Mac CI on this repair (run 40474271127) caught that
+negative-control regression: the gate had read its old compiler from the
+promoted root path, so its expected v3 refusal instead returned success. With
+the separate signed reference, the canonical Mac user-target, user-v5 and
+kernel-v3 gates pass locally. The latter verifies old/new v1/v2 byte parity,
+old v3 refusal, v3 guest EFI packaging and slot-v4 refusal controls.
+
 Local gate receipts are under
-`workspaces/codex/jun444-wg-uv-20261027/canonical-mac-gate/`,
-`workspaces/codex/jun444-wg-uv-20261027/canonical-cross-gate/` and
+`workspaces/codex/jun444-wg-uv-20261027/canonical-mac-gate-v2/`,
+`workspaces/codex/jun444-wg-uv-20261027/canonical-user-v5/`,
+`workspaces/codex/jun444-wg-uv-20261027/canonical-kernel-v3-v2/`,
+`workspaces/codex/jun444-wg-uv-20261027/canonical-cross-gate-v2/` and
 `workspaces/codex/jun444-wg-uv-20261027/desktop-regions-mac/`.
 The Linux candidates have not been independently executed or qualified on
 their native ISAs at this revision. This is not an AIUEOS guest, Itonami turn,
