@@ -571,3 +571,46 @@ no vendor optimization exists for Intel. Evidence:
 `docs/evidence/gpu/anv-floorbisect-20261027/` (record.txt is the
 finding; publication-s14.txt is produced only by analysis-s14.py over
 the committed run logs).
+
+## Dated note (2026-10-27, JUN-59 measurement: THE SESSION-REPLICATION
+## TRIPLE at the boundary anchors, session 15)
+
+Session 15 (INSTRUMENT channel) is the THIRD same-day replication
+point of the boundary-anchor series (session 13 14:53Z, session 14
+15:24Z, session 15 15:55Z -- all UTC 2026-10-27; session 14's named
+residual "cross-day replication" is NOT reachable this tick and stays
+UNMEASURED -- protocol L8). ZERO derivation edits -- the instrument is
+session 14's committed NDIV-derived source byte-identical (digest
+a5e539f0...), the same seven (BATCH,NDIV) arms, the same manifest
+bytes; the build replication pin is 7/7 (every rebuilt binary
+byte-identical to session 14's same-flag binary), so the realization
+is byte-stable across sessions 13-15. 21 fresh processes (7 arms x 3
+runs; custody GO 15:54:29Z before any build/run; VERIFY mismatch 0;
+forcing reality 378/378). MEASURED at the INSTRUMENT channel: C1
+replicates (c2 FLOOR 32; c8 32,950 = +0.11% of committed 32,915); C2
+lands EXACTLY ON SESSION 13'S COMMITTED READINGS at both anchors --
+d256 FLOOR (34 ticks, +0.00%) and d128 167 (+0.00%) -- so W1 fires
+branch (a) S13-LIKE: session 14's divergence (d128 192, d256
+INTERMEDIATE 55) is the OUTLIER at 2 of 3 same-day sessions, and the
+session-sensitivity finding is confirmed but ASYMMETRIC (now centered:
+2 of 3 sessions agree at both anchors). W2: the d160 spike SHAPE
+reproduces at 2/2 sessions that ran it (177 > d128 167 and > d192 56
+here; 285 > 192 and > 84 in s14) but its magnitude is session-variable
+(285 -> 177, -37.89%). W3 (descriptive): this session's lower ladder
+is monotone with FLOOR from d192 down (d192 56 / d224 35 / d256 34),
+which at these rungs alone would place the FLOOR-class boundary inside
+(5,208..6,250] -- NO boundary narrowing is claimed, because the class
+picture of the band differs in ALL THREE sessions (s13: boundary
+inside (3,906..7,812]; s14: no FLOOR rung at all; s15: FLOOR from
+d192 down): the boundary's class reading is confirmed
+session-sensitive, and any FLOOR-boundary claim at B=8 remains
+session-unsupported. X1 (descriptive): the bottom rungs' host_ns
+returned to session 13's values (d128 80,330 vs 80,501; d256 82,374
+vs 82,303) after session 14's +13%/+48% excursion (0.68x..0.88x of
+s14), c8's rose to 1.26x -- the movement sits in the run
+environment/host state, cause UNMEASURED. Observable only; NO causal
+mechanism is claimed or measured. Rule 4 binds: no row moves, no
+`:measured?` flag moves, and no vendor optimization exists for Intel.
+Evidence: `docs/evidence/gpu/anv-sessrepl-20261027/` (record.txt is
+the finding; publication-s15.txt is produced only by analysis-s15.py
+over the committed run logs).

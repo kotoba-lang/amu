@@ -1,0 +1,145 @@
+JUN-59 session 15 -- THE SESSION-REPLICATION TRIPLE (third same-day session
+at the boundary anchors), publication
+Produced ONLY by analysis-s15.py over the 21 committed run logs in this
+directory (run-<tag>-r<R>.txt); protocol.txt was frozen before the
+first run. Arms = binary compile-time (BATCH, NDIV); all arms run the
+same a-set manifest (the ARCHIVED measured spv, 16-digest corpus --
+ZERO derivation this session: the instrument is session 14's committed
+NDIV-derived source byte-identical, digest a5e539f0... -- derivation-census.txt).
+The independent variable is the SESSION: this is the third same-day
+replication point (session 13 14:53Z, session 14 15:24Z, session 15
+15:55Z -- all UTC 2026-10-27; protocol L8: cross-UTC-day stays UNMEASURED).
+1 nominal work unit = one dispatch of the archived grid (n = 1,000,003);
+an arm at B with NDIV=D runs B dispatches of a 1/D grid (integer floor
+n -- protocol L2) = B * n / 1,000,003 total nominal units (a DEFINITION,
+not a cost claim -- protocol L1). 1 tick = timestampPeriod = 52.083 ns.
+
+1. INTEGRITY (computed over the 21 logs):
+   runs parsed: 21 (7 arms x 3 runs); cell map identical across runs: True
+   headers byte-identical across all runs outside the # n= knob line: True
+   header batch=/work_mul=/ndiv= == run's (B,1,NDIV), barrier_n=0, n=floor(1,000,003/NDIV); every SAMPLE batch=/work_mul=/ndiv= == (B,1,NDIV): True
+   every CELL spv= name is an archived .emitted.spv (no .iter -- the corpus is byte-identical this session): True
+   SAMPLE lines: 450 per run (18 ok cells x 25 rounds) in 21/21 runs: True
+   VERIFY mismatch total over all runs: 0 (per-arm: c2=0, c8=0, d128=0, d160=0, d192=0, d224=0, d256=0) -- bit-exact correctness re-check inside every run; frozen INVALIDATION criterion (protocol section 5): >0 in any run makes that run DEFECTIVE and the arm INVALID
+   forcing reality (pipeline-ok cell-runs where probe_size==forced and probe_nsub==wg/forced): 378/378
+   S=8 cells fail-closed (pipeline=FAIL, forced=8): 126 cell-runs (6 per run x 21 runs = 126 expected)
+
+2. THE MEASURED BRACKETS (pooled median gpu_ticks over 3 runs x 25 rounds per cell):
+   each row: (sum,128,S=16) exact value, per-run median band at that cell,
+   then min..max over the 18 pipeline-ok cells; host_ns at (sum,128,S=16)
+
+   arm    B  NDIV     n        nominal-tot  (sum,128,16)   run-median band    min..max over 18 cells   host_ns
+   c2  2  1      1000003     2.00000          32           31..32              31..32           681050
+   c8  8  1      1000003     8.00000       32950        32942..33062        25257..32950       3073033
+   d128  8  128       7812     0.06250         167          165..168             34..167           80330
+   d160  8  160       6250     0.05000         177          176..179             34..183           82454
+   d192  8  192       5208     0.04166          56           56..56              34..71            75180
+   d224  8  224       4464     0.03571          35           35..35              34..72            78887
+   d256  8  256       3906     0.03125          34           34..35              34..70            82374
+
+3. PRE-REGISTERED LETTERS (thresholds frozen in protocol.txt section 3:
+   FLOOR <= 100 ticks at all 18 cells; CAPTURED >= 1000 ticks at all 18;
+   anything else INTERMEDIATE/MIXED):
+
+   class c2 (B=2, NDIV=1, n=1000003, 2.00000 nominal units): FLOOR
+   class c8 (B=8, NDIV=1, n=1000003, 8.00000 nominal units): CAPTURED
+   class d128 (B=8, NDIV=128, n=7812, 0.06250 nominal units): INTERMEDIATE/MIXED
+   class d160 (B=8, NDIV=160, n=6250, 0.05000 nominal units): INTERMEDIATE/MIXED
+   class d192 (B=8, NDIV=192, n=5208, 0.04166 nominal units): FLOOR
+   class d224 (B=8, NDIV=224, n=4464, 0.03571 nominal units): FLOOR
+   class d256 (B=8, NDIV=256, n=3906, 0.03125 nominal units): FLOOR
+
+   C1 ARCHIVED CONTROL REPLICATION (numeric agreement with the committed
+   value at the control's OWN (B,NDIV) -- the a-set runs the ARCHIVED
+   spv bytes through the byte-identical session-14 instrument, so this
+   pins the environment as well):
+     c2 satisfies FLOOR (committed floor band 31..32 at B=2): True
+     c8 (sum,128,16) pooled median 32950 within +/-5% of committed 32915 (session 4 pooled median): True
+     VERDICT: branch (a) both controls satisfy their criteria --
+     the W letters are evaluated against the row question.
+
+   C2 CROSS-SESSION ANCHOR PLACEMENT (the two anchors whose readings moved
+   between sessions 13 and 14, judged against BOTH prior sessions' committed
+   values at their OWN (B,NDIV); branches frozen in protocol section 4):
+     d256 class FLOOR (session 13's committed class FLOOR): TRUE -- branch (a)
+     d128 pooled median 167 within +/-5% of session-13 committed 167 (158.65..175.35): TRUE -- branch (a)
+     d256 branch (a); d128 branch (a).
+
+   W1 THE ROW QUESTION (the session-stability of the boundary anchors,
+   combining the C2 outcomes):
+     VERDICT: branch (a) S13-LIKE -- both anchors land with session 13
+     (d256 FLOOR; d128 inside the 167 band). The third point joins
+     session 13's reading; the session-14 divergence is not reproduced
+     at this time point. Three same-day sessions bind no distribution;
+     the boundary is NOT narrowed by this session; NO causal mechanism
+     is claimed or measured.
+
+   W2 THE d160 SPIKE REPLICATION (the session-14 anomaly d160 > both
+   neighbours on the descending-n ladder d128 > d160 > d192):
+     this session: d128 167, d160 177, d192 56 (pooled medians);
+     session-14 committed d160 = 285 (+/-5% band 270.8..299.2)
+     VERDICT: branch (a) SPIKE REPRODUCES -- d160 sits ABOVE both
+     neighbours in this session's runs. The non-monotone dose curve is
+     seen at a third same-day session; no mechanism claimed.
+
+   W3 THREE-SESSION SPREAD (descriptive; comparison of committed numbers
+   only -- the session-13/14 columns are committed values, never this
+   session's measurements; d160/d192/d224 have NO session-13 committed
+   value -- first measured in session 14 -- named, not hidden):
+
+   arm    s15 (sum,128,16)  s15 class            s14 committed  s14 class            s13 committed  s13 class
+   c2          32       FLOOR                     n/a       --                        n/a       --
+   c8       32950       CAPTURED                  n/a       --                        n/a       --
+   d128         167       INTERMEDIATE/MIXED        192       INTERMEDIATE/MIXED        167       INTERMEDIATE/MIXED
+   d160         177       INTERMEDIATE/MIXED        285       INTERMEDIATE/MIXED        n/a       --
+   d192          56       FLOOR                      84       INTERMEDIATE/MIXED        n/a       --
+   d224          35       FLOOR                      56       INTERMEDIATE/MIXED        n/a       --
+   d256          34       FLOOR                      55       INTERMEDIATE/MIXED         34       FLOOR
+
+   (c2/c8 s13/s14 columns: session 13 read c2 FLOOR 31..32 / c8 32,906;
+   session 14 read c2 FLOOR 31 / c8 32,957 -- controls, section C1.)
+   NO linearity claim, no interpolation; three same-day sessions bind no
+   distribution and say nothing about a third UTC day (protocol L8).
+
+   X1 REALIZATION (descriptive, from the same runs' host_ns, no new
+   measurement; vs session 14's same-knob committed host_ns -- protocol
+   section 3; host_ns is not a C criterion and is the HOST-side proxy
+   -- protocol L3):
+     c2: host_ns 681050 vs session-14 677584 (1.005x); per-dispatch host_ns 340525
+     c8: host_ns 3073033 vs session-14 2434831 (1.262x); per-dispatch host_ns 384129
+     d128: host_ns 80330 vs session-14 91050 (0.882x); per-dispatch host_ns 10041
+     d160: host_ns 82454 vs session-14 114033 (0.723x); per-dispatch host_ns 10307
+     d192: host_ns 75180 vs session-14 107701 (0.698x); per-dispatch host_ns 9398
+     d224: host_ns 78887 vs session-14 109484 (0.721x); per-dispatch host_ns 9861
+     d256: host_ns 82374 vs session-14 121587 (0.677x); per-dispatch host_ns 10297
+
+4. DERIVED (arithmetic over section 2, no new measurement):
+   c2: bracket 32 ticks = 1.67 us; host_ns 681050; 2.00000 nominal units (n=1000003); vs committed 31 (sessions 1-14 floor band 31..32): +3.23%
+   c8: bracket 32950 ticks = 1716.13 us; host_ns 3073033; 8.00000 nominal units (n=1000003); vs committed 32915 (session 4 pooled median): +0.11%
+   d128: bracket 167 ticks = 8.70 us; host_ns 80330; 0.06250 nominal units (n=7812); vs session-14 192: -13.02%; vs session-13 167: +0.00%
+   d160: bracket 177 ticks = 9.22 us; host_ns 82454; 0.05000 nominal units (n=6250); vs session-14 285: -37.89%
+   d192: bracket 56 ticks = 2.92 us; host_ns 75180; 0.04166 nominal units (n=5208); vs session-14 84: -33.33%
+   d224: bracket 35 ticks = 1.82 us; host_ns 78887; 0.03571 nominal units (n=4464); vs session-14 56: -37.50%
+   d256: bracket 34 ticks = 1.77 us; host_ns 82374; 0.03125 nominal units (n=3906); vs session-14 55: -38.18%; vs session-13 34: +0.00%
+
+5. RULE 4 -- NOTHING MOVES: no workgroup row, no :measured? flag, no selection
+   answer; accelerator-targets defaults remain provisional design assumptions
+   (:measured? false). This is NOT the baseline-vs-variant contract of
+   accelerator-subgroup-reduce.cljk. NO vendor optimization exists for Intel
+   and none is claimed. No causal mechanism is claimed by any letter above.
+
+6. UNMEASURED (named): any causal mechanism (for the undercount, the
+   capture, the onset, any work-down transition, the descent's shape, the
+   d256 class flip, the d128 movement, the d160 spike, the boundary's
+   existence as a boundary, or the session-to-session movement itself);
+   WHY capture turns on where it does; whether the boundary is on n,
+   workgroup count or grid shape (protocol L4 -- n and workgroup count
+   co-vary on this instrument); the GPU-side cost inside a B<=2 bracket
+   (protocol L3); anything between adjacent ladder rungs (L5); any NDIV
+   outside {1,128,160,192,224,256}; any B outside {2,8}; any WORK_MUL > 1;
+   any n outside the seven L2 values; d8/d32/d64 this session (L7);
+   CROSS-UTC-DAY replication (L8 -- all three sessions share the UTC day);
+   any fourth session; session 2's run-1 dip cause; S=8 timing; every W
+   outside {128,256}; shape 2; BT ordering; any baseline-vs-variant sign;
+   isolated single-dispatch timing; non-empty barriers; anything off this
+   host.

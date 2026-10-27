@@ -1,0 +1,229 @@
+JUN-59 -- session 15 protocol: THE SESSION-REPLICATION TRIPLE (third
+same-day session at the boundary anchors). INSTRUMENT channel. Frozen
+BEFORE the first run (2026-10-27T15:5xZ, this tick). This file is
+written once and never rewritten.
+
+0. ROW QUESTION (ONE observable axis: SESSION IDENTITY at fixed
+   everything -- session 14's named residual list contains "cross-day
+   replication", which is NOT reachable this tick (all sessions still
+   share the UTC day 2026-10-27; named, not hidden), so the reachable
+   replication axis is taken: session 14's headline finding is the
+   SESSION-SENSITIVITY ITSELF, established at TWO same-day sessions ~31
+   minutes apart (session 13 14:53Z, session 14 15:24Z, byte-identical
+   setup). This session is the THIRD point of that series:
+
+     AT BYTE-IDENTICAL SETUP (same instrument source bytes, same
+     manifest bytes, same corpus, same rebuilt-byte-identical
+     binaries), DO THE SESSION-14 ANOMALIES REPRODUCE AT A THIRD
+     SAME-DAY SESSION -- specifically (i) does d256 read
+     INTERMEDIATE/MIXED again (session 14) or FLOOR (session 13)?
+     (ii) does d128's bracket land in session 14's +/-5% band around
+     192, session 13's +/-5% band around 167, or outside both?
+     (iii) does the d160 spike (bracket ABOVE both neighbours on the
+     descending-n ladder) reproduce?
+
+   knobs: ZERO derivation edits this session (the strongest custody
+   position in the chain -- named as such). The instrument is session
+   14's committed NDIV-derived source used BYTE-IDENTICAL (digest
+   a5e539f0... re-verified local-vs-host). The shaders take n from the
+   N uniform, so the shader corpus is used BYTE-IDENTICAL (16-digest
+   corpus). Every run's header and every SAMPLE line print ndiv=
+   (knob identity).
+
+   NAMED LIMITATIONS (frozen in advance):
+   (L1) the nominal work unit is a DEFINITION (n / 1,000,003 per
+        dispatch), not a cost claim; total nominal work = B * n /
+        1,000,003.
+   (L2) NDIV divides by integer floor: exact n values at WORK_MUL=1
+        are 1,000,003 / 7,812 / 6,250 / 5,208 / 4,464 / 3,906 for
+        NDIV 1/128/160/192/224/256 (1,000,003 is not divisible by any
+        of them); total nominal work is never exactly the decimal
+        value.
+   (L3) host_ns is a HOST-side proxy of bracketed cost (submit+wait);
+        the GPU-side cost inside a B<=2 bracket is unobservable on this
+        instrument (the phenomenon under study) and stays UNMEASURED.
+   (L4) n and workgroup count co-vary (ceil(n/W) workgroups); the
+        boundary's location on n vs workgroup count vs grid shape
+        cannot be separated on this instrument; carried forward.
+   (L5) the ladder points are one ladder; anything between adjacent
+        rungs (and any ladder point outside {1,128,160,192,224,256})
+        stays UNMEASURED.
+   (L6) all grids are real grids (d256 dispatches 31 (W=128) / 16
+        (W=256) workgroups) -- the near-empty-grid ambiguity does not
+        apply.
+   (L7) d8/d32/d64 are NOT re-run this session (they bound nothing at
+        the anchors); their committed session-13 readings stand and are
+        quoted only as committed values.
+   (L8) THIS SESSION AND SESSIONS 13-14 SHARE THE UTC DAY 2026-10-27:
+        this is a THIRD SAME-DAY session (~30-90 minutes after session
+        14, ~60+ minutes after session 13), and CROSS-UTC-DAY
+        replication stays UNMEASURED (the UTC day has not rolled over
+        at tick time). Three same-day sessions bind no distribution and
+        say nothing about a third day.
+
+1. DERIVATION (chain of custody): ZERO derivation edits this session
+   (named as such):
+
+   instrument = session 14's committed NDIV-derived source
+     docs/evidence/gpu/anv-floorbisect-20261027/gpu-subgroup-reduce-anv-ndiv.c.txt
+     (digest a5e539f0..., re-verified) used BYTE-IDENTICAL -> committed
+     again in this directory under the same name. Byte-copy identity
+     recorded in derivation-census.txt (produced programmatically).
+   NAMED, NOT HIDDEN: one pre-freeze compile smoke is run (throwaway
+   dir ~/anv-sr-smoke, gcc -O2 -DBATCH=8 -DNDIV=160, host digest must
+   MATCH local, ZERO runs, ZERO timing) before the custody GO -- the
+   session-9 D2 lesson applied by design even though the source is
+   byte-identical to session 14's built-and-run source and NO new knob
+   value is introduced this session.
+   corpus = the 16 measured/probe files, cp -a'd forward (cp -a of
+   session 14's verified copy) and re-verified 16/16 against session
+   2's committed census BEFORE any run (sha256sum -c
+   expected-corpus.sha256, regenerated programmatically from
+   anv-subgroupsize-batch64-20261027/compile-toolchain.txt, byte-equal
+   to session 14's file).
+   manifests = cases-s15-a.txt: the 24 cell lines a BYTE-COPY of
+   session 14's cases-s14-a.txt cell lines (checked programmatically;
+   the same bytes as session 13's and sessions 9-12's a-set). ALL 7
+   arms run this one manifest (the archived measured spv).
+
+2. ARMS (7 arms, 3 runs each = 21 fresh processes). Binary = the
+   compile-time (BATCH, NDIV) pair; ALL SEVEN pairs were built and run
+   in sessions 13-14, so this session's builds are a BUILD-REPLICATION
+   POINT: every binary is expected BYTE-IDENTICAL to session 14's
+   same-flag binary (parsing session 14's committed
+   build-census-s14.txt, never transcribed) -- 7/7 pins.
+
+   tag    B  NDIV     n         per-dispatch nominal   total nominal
+   c2     2  1        1,000,003 1.000                  2.000
+   c8     8  1        1,000,003 1.000                  8.000
+   d128   8  128        7,812   0.007812               0.0625
+   d160   8  160        6,250   0.006250               0.0500
+   d192   8  192        5,208   0.005208               0.0417
+   d224   8  224        4,464   0.004464               0.0357
+   d256   8  256        3,906   0.003906               0.03125
+
+   c2/c8 are the ARCHIVED CONTROL anchors. d128/d256 are the boundary
+   anchors under replication (the rungs whose readings moved between
+   sessions 13 and 14). d160/d192/d224 complete the fine ladder so the
+   dose curve and the d160 spike get a third read.
+
+3. CLASSIFICATION (frozen thresholds, derived from committed values
+   only): a bracket is FLOOR if the pooled median gpu_ticks over 3 runs
+   x 25 rounds is <= 100 ticks at ALL 18 pipeline-ok cells; CAPTURED if
+   >= 1000 at ALL 18; otherwise INTERMEDIATE/MIXED. (Same thresholds as
+   sessions 7-14; committed floor band 31..34 ticks across sessions,
+   committed captured anchor 32,915 ticks at c8.) 1 tick =
+   timestampPeriod = 52.083 ns on this device.
+
+   COMMITTED CROSS-SESSION REFERENCES (frozen here; consumed only as
+   comparison values, never as this session's measurements):
+   session 13 (2026-10-27T14:53Z, publication-s13.txt): d128 (sum,128,
+   S=16) pooled median 167, class INTERMEDIATE/MIXED; d256 34, class
+   FLOOR; host_ns d128 80,501, d256 82,303.
+   session 14 (2026-10-27T15:24Z, publication-s14.txt): d128 192
+   (class INTERMEDIATE/MIXED), d160 285, d192 84, d224 56, d256 55
+   (all INTERMEDIATE/MIXED); host_ns c2 677,584 / c8 2,434,831 / d128
+   91,050 / d160 114,033 / d192 107,701 / d224 109,484 / d256 121,587.
+   committed c8 anchor: 32,915 (session 4 pooled median); committed
+   c2 floor band 31..32 (sessions 1-14).
+
+4. PRE-REGISTERED LETTERS (BOTH/ALL branches of each named in advance):
+
+   C1 ARCHIVED CONTROL REPLICATION (numeric agreement at the control's
+      OWN (B,NDIV)):
+      branch (a): c2 satisfies FLOOR AND c8 (sum,128,S=16) pooled
+      median within +/-5% of the committed 32,915 -> C1 passes and the
+      W letters are evaluated against the row question.
+      branch (b): either criterion fails -> replication discrepancy
+      (bearing on the environment pin), W letters interpretation
+      FLAGGED; cause UNMEASURED.
+
+   C2 CROSS-SESSION ANCHOR PLACEMENT (the two anchors whose readings
+      moved between sessions 13 and 14; each anchor judged against BOTH
+      prior sessions' committed values at its OWN (B,NDIV)):
+      d256 branch (a): class FLOOR (session 13's committed class).
+      d256 branch (b): class INTERMEDIATE/MIXED AND pooled median
+        within +/-5% of session 14's committed 55.
+      d256 branch (c): class INTERMEDIATE/MIXED AND outside +/-5% of 55
+        (a third distinct bracket).
+      d256 branch (d): class CAPTURED (a class neither session saw).
+      d128 branch (a): pooled median within +/-5% of session 13's
+        committed 167 (the two +/-5% bands around 167 and 192 are
+        disjoint -- 158.65..175.35 vs 182.40..201.60).
+      d128 branch (b): within +/-5% of session 14's committed 192.
+      d128 branch (c): outside both bands.
+
+   W1 THE ROW QUESTION (the session-stability of the boundary anchors,
+      combining the C2 outcomes):
+      branch (a) S13-LIKE: d256 branch (a) AND d128 branch (a).
+      branch (b) S14-LIKE: d256 branch (b) AND d128 branch (b).
+      branch (c) MIXED: one anchor s13-like and the other s14-like.
+      branch (d) THIRD DISTINCT: any anchor outcome outside
+      {s13-like, s14-like} (e.g. d256 (c) or (d), or d128 (c)) --
+      quantified per anchor from the C2 table.
+      EVERY branch names: the finding is the three-session spread at
+      the anchors; with n=3 same-day sessions no distribution is bound,
+      the boundary is NOT narrowed by this session in any branch, and
+      NO causal mechanism is claimed or measured. Branch (a) or (b)
+      names only that the third point sits with that session; branch
+      (c)/(d) extends the session-sensitivity finding.
+
+   W2 THE d160 SPIKE REPLICATION (pre-registered; the session-14
+      anomaly d160 > both neighbours on the descending-n ladder):
+      branch (a) SPIKE REPRODUCES: d160 pooled median > d128's AND
+      > d192's pooled medians in this session's runs.
+      branch (b) NO SPIKE: d128 >= d160 >= d192 (monotone descent).
+      branch (c) otherwise (e.g. d160 below one neighbour but not
+      monotone overall). Descriptive comparison of d160's bracket to
+      session 14's committed 285 (+/-5% band 270.75..299.25) is
+      reported; no mechanism claimed either way.
+
+   W3 THREE-SESSION SPREAD (descriptive): per-arm table of this
+      session's pooled median and class against the session-13 and
+      session-14 committed values where they exist (d160/d192/d224
+      have NO session-13 committed value -- first measured in session
+      14 -- named, not hidden); the linear-work comparison and any
+      dose-curve reading stay descriptive; NO linearity claim, no
+      interpolation, and three sessions bind no distribution.
+
+   X1 REALIZATION (descriptive, from the same runs' host_ns, no new
+      measurement): per-arm host_ns vs session 14's same-knob committed
+      host_ns (the movement sessions 13->14 named is re-examined at a
+      third point); host_ns is not a C criterion; no linearity claim;
+      host_ns is the HOST-side proxy (L3).
+
+5. INVALIDATION (frozen): the instrument's VERIFY step re-checks every
+   cell's stored values bit-exact against a CPU reference INSIDE every
+   run. VERIFY mismatch > 0 in any run -> that run is DEFECTIVE for the
+   affected arm (the knob arithmetic is wrong at that (B,NDIV)), the
+   arm is INVALID, and no letter against it is evaluable. EXPECTED:
+   mismatch 0 everywhere.
+
+6. ANALYSIS ROUTE (frozen): analysis-s15.py parses ONLY the 21
+   committed run logs in this directory (run-<tag>-r<R>.txt) and
+   writes publication-s15.txt; deterministic (running it twice yields
+   byte-identical output -- diff-checked). Integrity gates inside the
+   analysis: header byte-identity across runs outside the # n= knob
+   line; header batch=/work_mul=/ndiv= == the arm's (B,1,NDIV) and
+   n == floor(1,000,003/NDIV); every SAMPLE's batch=/work_mul=/ndiv=
+   fields == the arm; every CELL's spv= name is an archived
+   .emitted.spv (no .iter suffix -- the corpus is byte-identical);
+   450 SAMPLE lines per run (18 ok cells x 25 rounds); forcing reality
+   (probe_size==forced, probe_nsub==wg/forced); S=8 fail-closed
+   (pipeline=FAIL, forced=8) counted (6 per run x 21 = 126 expected).
+
+7. UNMEASURED named in advance: any causal mechanism (for the
+   undercount, the capture, the onset, any work-down transition, the
+   descent's shape, the d256 class flip, the d128 movement, the d160
+   spike, the boundary's existence as a boundary, or the
+   session-to-session movement itself); WHY capture turns on where it
+   does; whether the boundary is on n, workgroup count or grid shape
+   (L4); the GPU-side cost inside a B<=2 bracket (L3); anything between
+   adjacent ladder rungs (L5); any NDIV outside
+   {1,128,160,192,224,256}; any B outside {2,8}; any WORK_MUL > 1; any
+   n outside the seven L2 values; d8/d32/d64 this session (L7);
+   CROSS-UTC-DAY replication (L8 -- all three sessions share the UTC
+   day); any fourth session; session 2's run-1 dip cause; S=8 timing;
+   every W outside {128,256}; shape 2; BT ordering; any
+   baseline-vs-variant sign; isolated single-dispatch timing; non-empty
+   barriers; anything off this host.
