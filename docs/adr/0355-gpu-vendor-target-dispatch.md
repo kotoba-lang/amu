@@ -997,3 +997,38 @@ flag moves, and no vendor optimization exists for Intel.
 Evidence: `docs/evidence/gpu/anv-b3bisect5-20261027/` (record.txt is
 the finding; publication-s25.txt is produced only by analysis-s25.py
 over the committed run logs).
+
+## 2026-10-27 -- session 26 (JUN-59): the B=3 threshold bisect, sixth cut
+
+The session-25 residual "the flip location inside (252,604, 255,208]"
+is taken at n = 253,906 = (252,604+255,208)//2 -- the exact floor
+midpoint (bracket midpoint 253,906.0, an integer) IS reachable at the
+knob (18 (1,000,003\*WORK_MUL)//NDIV == 253,906 pairs in the sessions
+21-25 search box; smallest (1024,4033); exactly 1 of the 18 has its
+same-ratio double in-box -- and it is the smallest -- so the eq3 arm
+uses the in-box double (2048,8066)). With both bracket ends
+replicating IN-SESSION at byte-identical rebuilt binaries (lo ==
+session 25's (97,384) knob 1,141 vs 1,153 INTERMEDIATE/MIXED -- the
+pair's first cross-session replication; hi == session 25's
+(1213,4753) knob 1,156 vs 1,166 CAPTURED), mid is CAPTURED (1,129;
+18-cell range 1,001..1,435), so THE B=3 CLASS FLIP SITS IN (252,604,
+253,906] n-units = (0.2526032, 0.2539052] work-units -- the
+session-25 bracket is cut to its LOWER half. NAMED, NOT HIDDEN: the
+pre-registered C3 pair-representation check fired branch (b) AGAIN --
+the same-ratio twin (2048,8066) is INTERMEDIATE/MIXED (1,145) while
+mid (1024,4033) is CAPTURED (1,129) at identical n and B, the 18-cell
+minima splitting AT the frozen 1000-tick threshold (1,001 vs 985) at
+overlapping medians -- the second same-grid class split in three
+sessions (session 24's split, session 25's agreement), so the
+threshold-artifact-vs-representation question stays unresolved and
+W1's narrowing rides on the min-1,001 side of the split. The
+session-25 systematic host_ns excursion reverted (lo 0.621x its
+same-knob value, hi 0.666x) while every GPU bracket replicated
+in-band. "B=2 never captures" extends to n=253,906 (b2m FLOOR 32).
+The B=3 class-vs-per-dispatch-work row now stands at eleven grid
+points (class granularity only). Rule 4 binds: no row moves, no
+`:measured?` flag moves, and no vendor optimization exists for Intel.
+
+Evidence: `docs/evidence/gpu/anv-b3bisect6-20261027/` (record.txt is
+the finding; publication-s26.txt is produced only by analysis-s26.py
+over the committed run logs).
