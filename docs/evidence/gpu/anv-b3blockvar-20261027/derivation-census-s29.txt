@@ -1,0 +1,46 @@
+== JUN-59 session 29 derivation census (THE WITHIN-SESSION BLOCK-
+== VARIABILITY READ OF THE (1024,4033) ANCHOR) -- every value below computed in ==
+== this script (scratch generator, never committed). ==
+
+knob arithmetic: n = (1,000,003*WORK_MUL)//NDIV (integer floor)
+  c2 B=2 WM=1 NDIV=1 n=1000003 per-dispatch 1.0000000 total 2.0000000
+  hi B=3 WM=1024 NDIV=4033 n=253906 per-dispatch 0.2539052 total 0.7617157
+  c8 B=8 WM=1 NDIV=1 n=1000003 per-dispatch 1.0000000 total 8.0000000
+  hi grid n=253,906: gcd(253906, 1,000,003) = 1 -- the knob pair (1024,4033) is a floor approximation of the grid
+
+manifest: cases-s29-a.txt
+  cell lines byte-copy of cases-s28-a.txt cell lines: True (24 lines; line-by-line byte equality)
+  cases-s28-a.txt sha256: 36ab0cb38554be8b925018c9fe9bac0bd448f4a04c9170e4d9f2639cdd67ad40
+  cases-s29-a.txt sha256: 274f97943d89660d5842e685f7ba17446fc6ea7caeb2b997130b8a25712d814c
+instrument: session 28's committed NDIV-derived source byte-identical (byte-copy)
+  gpu-subgroup-reduce-anv-ndiv.c sha256 (== session 28's committed .c.txt): a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556 (byte-copy identity True)
+expected-corpus.sha256 byte-copy of session 28's: local sha256 eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4 (s28 file sha256 eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4 -- byte-copy identity True)
+
+BUILD REPLICATION PINS (declared in protocol.txt section 2 in advance; prior censuses
+parsed programmatically here). ALL THREE arms have a prior binary (named as such):
+  anv-bb-c2 expected e5ed903e5b9dfd64168e2d8ddea9d8efb573273e7594afcaca71f3f70bb9c489 (== sessions 13-28's c2; parsed from build-census-s28.txt)
+  anv-bb-c8 expected 480925e58d28e7d318456703c6959548e9b9c33e375c3e0fefe688e844d37807 (== sessions 13-28's c8; parsed from build-census-s28.txt)
+  anv-bb-hi expected a6c31b6c5c5663084fa4193f0d5c0098f65882b814a92fa9e85cef940cf63b9c (== session 28's anv-bb-hi a6c31b6c5c5663084fa4193f0d5c0098f65882b814a92fa9e85cef940cf63b9c == session 27's anv-bb-hi a6c31b6c5c5663084fa4193f0d5c0098f65882b814a92fa9e85cef940cf63b9c == session 26's anv-bb-mid a6c31b6c5c5663084fa4193f0d5c0098f65882b814a92fa9e85cef940cf63b9c; equal True; the (1024,4033) pair's THIRD cross-session rebuild)
+
+frozen cross-session reference values (QUOTE-ONLY L7; recomputed here
+from prior sessions' committed run logs -- never this session's measurements):
+  session-26 mid ((3,1024,4033), this session's hi knob): (sum,128,S=16) pooled median 1129, 18-cell min 1001, host_ns 309848
+  session-26 eq3 ((3,2048,8066)): (sum,128,S=16) pooled median 1145, 18-cell min 985, host_ns 310509
+  session-27 hi ((3,1024,4033)): (sum,128,S=16) pooled median 1132, 18-cell min 976, host_ns 310008
+  session-28 hi ((3,1024,4033)): (sum,128,S=16) pooled median 1131, 18-cell min 991, host_ns 309647
+  session-26 controls c2: (sum,128,S=16) pooled median 32, 18-cell min 31, host_ns 680499
+  session-26 controls c8: (sum,128,S=16) pooled median 32714, 18-cell min 25145, host_ns 2380500
+  session-27 controls c2: (sum,128,S=16) pooled median 31, 18-cell min 31, host_ns 672684
+  session-27 controls c8: (sum,128,S=16) pooled median 32871, 18-cell min 25223, host_ns 2397482
+  session-28 controls c2: (sum,128,S=16) pooled median 32, 18-cell min 31, host_ns 678546
+  session-28 controls c8: (sum,128,S=16) pooled median 32899, 18-cell min 25270, host_ns 3053605
+  the (1024,4033) pair's three prior readings recomputed above reproduce the
+  published integers 1,129 / 1,132 / 1,131 and minima 1,001 / 976 / 991 (the
+  frozen constants in analysis-s29.py are the PUBLISHED integers, L7 quote-only).
+  NAMED, NOT HIDDEN: the class flips at the frozen 1000-tick boundary at a 0.27%
+  median span; the expected class of any within-session block is NOT pre-judged.
+  prior C3 pair-representation outcomes (quote-only): s24 (b) SPLIT, s25 (a) AGREE,
+    s26 (b) SPLIT, s27 (a) AGREE, s28 (a) AGREE -- two splitting grids and three
+    agreeing grids; threshold-artifact-vs-representation UNRESOLVED and NOT
+    advanced this session (L8; this session probes only its within-session /
+    min-statistic side).

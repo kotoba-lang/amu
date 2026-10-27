@@ -1098,3 +1098,44 @@ Intel.
 Evidence: `docs/evidence/gpu/anv-b3anchorrec-20261027/` (record.txt is
 the finding; publication-s28.txt is produced only by analysis-s28.py
 over the committed run logs).
+
+## 2026-10-27 -- session 29 (JUN-59): the within-session block-variability
+read of the (1024,4033) anchor
+
+Session 28's residuals "whether the flips ... are threshold artifacts or
+representation effects" and "the anchor-class question is settled at a
+pre-registered bar, which three same-day readings do NOT settle" are
+taken on their WITHIN-SESSION component (cross-UTC-day replication is
+not reachable this tick -- the runs end 23:12:13Z on UTC day
+2026-10-27): the (1024,4033) knob pair at n=253,906, B=3 is measured
+FOUR times within ONE session as four 3-run blocks (the same estimator
+unit every cross-session reading used) of one byte-identical rebuilt
+binary (the pair's third cross-session rebuild, a6c31b6c...), with the
+archived controls c2/c8 bracketing the hi window and ZERO derivation
+edits / ZERO new knob pairs. THE CLASS IS STABLE WITHIN THE SESSION:
+all four blocks classify INTERMEDIATE/MIXED at in-band medians (1,130 /
+1,144 / 1,143 / 1,151; 18-cell minima 993 / 979 / 985 / 993 -- all
+below the frozen 1,000 boundary), so the pre-registered C2 letter fired
+(a) and W1 is (a): the cross-session class flip (1,129 CAPTURED /
+1,132 MIXED / 1,131 MIXED at byte-identical binaries) is NOT
+within-session block-level noise at the frozen 3-run unit, the
+anchor-class settling bar (a cross-session bar) is NOT met by
+same-UTC-day data, and NO bracket narrowing is claimed -- the flip
+location stays inside (252,604, 253,906]. NAMED, NOT HIDDEN: the 12
+per-run minima (descriptive; the per-run unit is 25 rounds per cell,
+not the frozen unit) span 971..1,001 with ONE per-run minimum at the
+boundary (r3, 1,001) -- the minimum statistic wanders at run
+granularity inside a session whose every block reads the same class;
+what that implies for the cross-session flips is UNMEASURED and the
+threshold-artifact-vs-representation question's REPRESENTATION side is
+not probed (the twin (2048,8066) did not run; scoreboard carried, not
+advanced). Four blocks give four readings; no flip rate and no causal
+mechanism is claimed. Controls replicate (C1 (a): c2 FLOOR 31, c8
+32,903 vs committed 32,915); the session-28 c8 host_ns excursion
+reverted (0.785x, back in the sessions 26/27 band; cause UNMEASURED).
+Rule 4 binds: no row moves, no `:measured?` flag moves, and no vendor
+optimization exists for Intel.
+
+Evidence: `docs/evidence/gpu/anv-b3blockvar-20261027/` (record.txt is
+the finding; publication-s29.txt is produced only by analysis-s29.py
+over the committed run logs).
