@@ -71,7 +71,7 @@ class NativeGateShardTests(unittest.TestCase):
     def test_join_accepts_all_seventeen_original_process_records(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary);self.proofs(root)
-            result=S.verify(ROOT/'seed/native-gate-plan.json',root)
+            result=S.verify(ROOT/'seed/native-gate-plan.json',root,'success')
             self.assertEqual(result['executedGates'],17)
             self.assertFalse(result['qualificationReplacement'])
 
@@ -81,7 +81,7 @@ class NativeGateShardTests(unittest.TestCase):
             path=root/'core/pg-x86/schedule.json'
             data=json.loads(path.read_text());data['gates'].pop();path.write_text(json.dumps(data))
             with self.assertRaisesRegex(ValueError,'missing'):
-                S.verify(ROOT/'seed/native-gate-plan.json',root)
+                S.verify(ROOT/'seed/native-gate-plan.json',root,'success')
 
     def test_join_refuses_failed_gate_or_changed_argv(self):
         for field,value in [('exit',7),('argv',['native','--skip-refusals'])]:
@@ -90,7 +90,7 @@ class NativeGateShardTests(unittest.TestCase):
                 path=root/'extensions/pg-x86/schedule.json'
                 data=json.loads(path.read_text());data['gates'][0][field]=value;path.write_text(json.dumps(data))
                 with self.assertRaisesRegex(ValueError,'refused'):
-                    S.verify(ROOT/'seed/native-gate-plan.json',root)
+                    S.verify(ROOT/'seed/native-gate-plan.json',root,'success')
 
     def test_join_refuses_source_manifest_drift(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -98,6 +98,13 @@ class NativeGateShardTests(unittest.TestCase):
             manifest=root/'changed-source.json'
             manifest.write_text(json.dumps(self.plan)+'\n')
             with self.assertRaisesRegex(ValueError,'changed'):
-                S.verify(manifest,root)
+                S.verify(manifest,root,'success')
+
+    def test_post_gate_runtime_or_browser_failure_cannot_pass_aggregate(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);self.proofs(root)
+            for result in ['failure','cancelled','skipped',None]:
+                with self.subTest(result=result),self.assertRaisesRegex(ValueError,'job did not succeed'):
+                    S.verify(ROOT/'seed/native-gate-plan.json',root,result)
 
 if __name__=='__main__':unittest.main()

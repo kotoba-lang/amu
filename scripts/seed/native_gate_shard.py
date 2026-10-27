@@ -44,7 +44,11 @@ def main(manifest, shard, output):
                     qualificationReplacement=False)
     output.with_suffix('.coverage.json').write_text(json.dumps(coverage,indent=2)+'\n')
 
-def verify(manifest, root):
+def verify(manifest, root, workflow_result):
+    # Native schedules alone do not cover the runtime/browser checks before
+    # and after them. A failed shard job must fail the legacy aggregate check.
+    if workflow_result!='success':
+        raise ValueError('native qualification shard job did not succeed')
     raw=manifest.read_bytes()
     original=json.loads(raw)
     seen=[]
@@ -82,10 +86,13 @@ if __name__=='__main__':
     p.add_argument('--shard',choices=SHARDS)
     p.add_argument('--output',type=Path)
     p.add_argument('--verify-root',type=Path)
+    p.add_argument('--workflow-result')
     args=p.parse_args()
     if args.verify_root:
-        if args.shard or not args.output:p.error('verification requires only --verify-root and --output')
-        args.output.write_text(json.dumps(verify(args.manifest,args.verify_root),indent=2)+'\n')
+        if args.shard or not args.output or not args.workflow_result:
+            p.error('verification requires --verify-root, --workflow-result and --output')
+        args.output.write_text(json.dumps(verify(args.manifest,args.verify_root,args.workflow_result),indent=2)+'\n')
     else:
-        if not args.shard or not args.output:p.error('staging requires --shard and --output')
+        if not args.shard or not args.output or args.workflow_result:
+            p.error('staging requires only --shard and --output')
         main(args.manifest,args.shard,args.output)
