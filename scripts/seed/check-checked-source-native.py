@@ -89,6 +89,9 @@ def main(compiler, out):
                     "seed/tests/native-checked-definition-oracle.kotoba"]
     oracle = build("independent-oracle", "\n".join((ROOT / p).read_text() for p in oracle_paths))
     report.update(producer=pin(producer), oracle=pin(oracle), oracleModules={p: pin(ROOT / p) for p in oracle_paths})
+    type_oracle_paths = oracle_paths[:-1] + ["seed/tests/native-source-type-oracle.kotoba"]
+    type_oracle = build("independent-type-oracle", "\n".join((ROOT / p).read_text() for p in type_oracle_paths))
+    report.update(typeOracle=pin(type_oracle), typeOracleModules={p: pin(ROOT / p) for p in type_oracle_paths})
 
     def rows(stdout):
         lines = stdout.splitlines()
@@ -133,6 +136,21 @@ def main(compiler, out):
         cases["type-" + ty[1:]] = (f"(defn f [x {ty}] {ty} x)", [function("f", "x", "x", ty, ty)])
     cases["escaped-string"] = ('(defn main [] :string "a\\n\\u0000\\\"\\\\z")',
                                [function("main", '"a\\n\\u0000\\\"\\\\z"', "", "", ":string")])
+    composite_types = {
+        "list-i64": "[:list :i64]", "list-string": "[:list :string]",
+        "option-bool": "[:option :bool]", "result-string-bytes": "[:result :string :bytes]",
+        "map-keyword-string": "[:map :keyword :string]", "set-keyword": "[:set :keyword]",
+        "nested": "[:list [:result [:option :string] [:map :keyword [:list :bytes]]]]",
+    }
+    for name, ty in composite_types.items():
+        cases[name] = (f"(defn f [x {ty}] {ty} x)", [function("f", "x", "x", ty, ty)])
+    # Populate the native CT table in a different order. Portable identity
+    # cannot contain checker allocation indices or even the names of helpers.
+    cases["type-table-reordered"] = (
+        "(defn unused [s [:option :string]] [:option :string] s) "
+        "(defn f [x [:list :i64]] [:list :i64] x)",
+        [function("unused", "s", "s", "[:option :string]", "[:option :string]"),
+         function("f", "x", "x", "[:list :i64]", "[:list :i64]")])
     observed, inputs = {}, {}
     for name, (source, functions) in cases.items():
         src, ref = out / (name + ".input"), out / (name + ".kir")
@@ -149,12 +167,19 @@ def main(compiler, out):
         assert observed[name][fn][0] == expected
     assert observed["constant-reference"]["f"] == observed["leaf"]["f"] != observed["constant-edit"]["f"]
     assert observed["recur"] == observed["self"] and observed["sugar"] == observed["inferred"] == observed["leaf"]
+    for name in composite_types:
+        assert observed[name]["f"][0] == run("independent-type-" + name, [type_oracle, name])[0].strip()
+    assert observed["type-table-reordered"]["f"] == observed["list-i64"]["f"]
+    assert observed["list-i64"]["f"] != observed["list-string"]["f"]
     negatives = {
         "ill-typed": "(defn main [] :i64 true)",
         "unknown": "(defn main [] :i64 (unknown 1))",
         "loop": "(defn main [] :i64 (loop [x 0] (if (= x 3) x (recur (inc x)))))",
         "closure": "(defn main [] :i64 (let [f (fn [x] (+ x 1))] (f 2)))",
-        "composite-refinement": "(defn main [x [:list :i64]] [:list :i64] x)",
+        "option-refinement": "(defn main [x :option-i64] :option-i64 x)",
+        "tuple-refinement": "(defn main [x [:vector [:i64 :i64]]] [:vector [:i64 :i64]] x)",
+        "nested-refinement": "(defn main [x [:list :option-i64]] [:list :option-i64] x)",
+        "function-type": "(defn main [f [:fn [[:i64] :i64]]] [:fn [[:i64] :i64]] f)",
         "unused-unsupported": "(defn main [] :i64 42) (defn unused [] :i64 (loop [x 0] x))",
         "computed-def": "(def value (+ 1 2)) (defn main [] :i64 value)",
         "constant-alias": "(def a 1) (def b a) (defn main [] :i64 b)",
@@ -163,9 +188,10 @@ def main(compiler, out):
     for name, source in negatives.items():
         src = out / (name + ".input")
         src.write_text(ns + source + "\n")
+        inputs[name] = src
         stdout, stderr = run("refuse-" + name, [producer, src], 1)
         assert not stdout and stderr.startswith("DSB:")
-        if name in ("computed-def", "constant-alias"):
+        if name in ("computed-def", "constant-alias", "option-refinement", "tuple-refinement", "nested-refinement", "function-type"):
             assert stderr.startswith("DSB:BRIDGE:")
     mutations = [
         ("operator", 'HD-ADD "+"', 'HD-ADD "-"', "leaf", False),
@@ -176,6 +202,9 @@ def main(compiler, out):
         ("constant-origin", '(ck-r6f-cdef-fn? M f)', 'false', "constant-false", False),
         ("constant-inline", '(and (= (quot r RES-SCALE) RES-FN) (ck-r6f-cdef-fn? M fi))',
          'false', "constant-false", True),
+        ("composite-constructor", 'TC-LIST ":list"', 'TC-LIST ":option"', "list-string", False),
+        ("composite-child", '(dsb-type M C a (inc depth))', '":i64"', "list-string", False),
+        ("composite-right", '(dsb-type M C b (inc depth))', '":i64"', "map-keyword-string", False),
     ]
     bridge = (ROOT / BRIDGE).read_text()
     assert text.count(bridge) == 1
@@ -190,6 +219,17 @@ def main(compiler, out):
         report["mutations"].append(dict(name=name, built=True, executed=True, image=pin(image),
                                          detectedBy="fresh native KIR refusal" if refuses else "independent native identity mismatch"))
         save()
+    # A mutant that drops CT-B would falsely turn fixed tuples / option-i64
+    # into admitted unrefined types, including under nested constructors.
+    old = '(and unary (not= b 0))'
+    assert bridge.count(old) == 1
+    image = build("mutant-refinement-erasure", text.replace(bridge, bridge.replace(old, 'false')))
+    for probe in ("option-refinement", "tuple-refinement", "nested-refinement"):
+        stdout, stderr = run("detect-refinement-erasure-" + probe, [image, inputs[probe]])
+        assert rows(stdout) and not stderr
+    report["mutations"].append(dict(name="refinement-erasure", built=True, executed=True, image=pin(image),
+                                     detectedBy="three native atomic-refusal violations"))
+    save()
     full_paths = [p for p in (ROOT / "seed/FULL-MANIFEST").read_text().splitlines() if p and not p.startswith("#")]
     whole = out / "whole-compiler.input"
     whole.write_bytes(b"".join((ROOT / p).read_bytes() + b"\n" for p in full_paths))
@@ -199,7 +239,8 @@ def main(compiler, out):
     report.update(status="PASS_NATIVE_CHECKED_SOURCE_BRIDGE", matchedSourceKirCases=len(cases),
                   independentPayloadOracles=5, atomicRefusals=len(negatives), wholeInput=pin(whole),
                   wholeCompilerRefusal=stderr.strip())
-    assert all(pin(ROOT / p) == v for p, v in {**report["modules"], **report["oracleModules"]}.items())
+    report.update(independentTypePayloadOracles=len(composite_types))
+    assert all(pin(ROOT / p) == v for p, v in {**report["modules"], **report["oracleModules"], **report["typeOracleModules"]}.items())
     save()
     print(report["status"], len(cases), flush=True)
 
