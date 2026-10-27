@@ -16,8 +16,9 @@ row.
 """
 import statistics
 import sys
+from pathlib import Path
 
-CHAIN = "/Users/junkawasaki/github/wt/amu-gpu/chain"
+CHAIN = str(Path(__file__).resolve().parents[4])
 EV = CHAIN + "/docs/evidence/gpu/anv-subgroupsize-batch64-rep-20261027"
 S2 = CHAIN + "/docs/evidence/gpu/anv-subgroupsize-batch64-20261027"
 RUNS = [EV + "/run-rep-%d.txt" % i for i in range(1, 7)]
