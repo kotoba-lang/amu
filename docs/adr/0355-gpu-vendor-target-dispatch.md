@@ -2077,3 +2077,55 @@ is the derived read over the 234 committed run logs of the three
 windows; derivation-census-s46.txt is the independent second
 parser (126 rows / 0 mismatched); bar-eval-s46.txt is the frozen
 evaluator's unchanged verdict; record.txt is the finding).
+
+## 2026-10-28 -- session 47 (JUN-59): the per-cell within-block robust-scale (IQR) repartition probe (analysis; all six probes PER-CELL-IQR-NOISE-CONSISTENT)
+
+Session 46's first-named candidate row -- "a PER-CELL ROBUST-SCALE
+probe (IQR/MAD of the block's 75 -- the range's named blind spot)"
+-- taken on one observable axis: per (window, arm), does any ok
+cell's within-block robust scale (D = x_(57) - x_(19) of the
+block's 75 samples -- the frozen Tukey exclusive hinges; the
+s35/s36-frozen block unit unchanged) wander across the 12 blocks
+beyond the within-window run-repartition null? Max-T over the 18
+cells (the max taken inside each trial), 20,000 trials per probe,
+frozen probe order, exact integer arithmetic; letters
+pre-registered at freeze stamp 2026-10-28T08:20:41Z before any
+statistic was computed.
+
+THE FINDING (DERIVED from the 234 committed run logs measured in
+sessions 36/38/39; ANALYSIS slice, no hardware): T1 = (a)
+PER-CELL-IQR-NOISE-CONSISTENT at the s39 window -- hi M_obs 197
+(max cell (min,128,S=16)), count 15,784/20,001, p 0.789211; tw
+M_obs 190 (max cell (max,128,S=16)), count 19,754, p 0.987701 --
+and the pre-registered replications agree: s36 (a) (hi 213,
+p 0.657217; tw 231, p 0.573471), s38 (a) (hi 219, p 0.191390;
+tw 210, p 0.783511). All SIX probes read (a) -- the second
+consecutive probe family with no (b) anywhere: at these
+windows/powers no cell's within-block robust-scale wander exceeds
+run-exchangeable sampling noise, family-wise over the 18 cells.
+NAMED, NOT HIDDEN: (a) is not proof of noise (a
+within-window-uniform driver is invisible by construction); D is
+ONE robust scale -- the IQR at the frozen exclusive hinges --
+while MAD, other quantile pairs and spread changes keeping
+x_(19)/x_(57) fixed are invisible (named candidate rows); a
+robust-scale LEVEL shift uniform across blocks cancels in W_c
+(descriptive D1 only); six probes / three windows are UNCORRECTED
+and LOW POWER (three windows in one day, one host); this letter
+and sessions 40-46's are DIFFERENT statistics over the SAME runs
+(NOT independent evidence); threshold-artifact-vs-representation
+STAYS UNRESOLVED. Integrity (DERIVED): 3/3 windows clean, C1 (a)
+at the s39 window (c2 FLOOR; c8 32,829 vs 32,915, 0.26%), 6/6
+block-min vectors reproduce EXACTLY, anchor row EXACT at all
+three windows. Rule 4 binds: nothing moves; accelerator-targets
+defaults remain provisional (`:measured? false`); no vendor
+optimization exists for Intel. The bar: NO reading -> NO ledger
+line (byte-identical to HEAD), VERDICT UNCHANGED PENDING 1/4 with
+s31 counted (frozen evaluator twice byte-identical; fixture pin
+38/0; next executable day slot 2026-10-29).
+
+Evidence: `docs/evidence/gpu/anv-b3percelliqr-20261028/`
+(protocol.txt is the frozen pre-registration; publication-s47.txt
+is the derived read over the 234 committed run logs of the three
+windows; derivation-census-s47.txt is the independent second
+parser (171 rows / 0 mismatched); bar-eval-s47.txt is the frozen
+evaluator's unchanged verdict; record.txt is the finding).
