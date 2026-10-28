@@ -3542,3 +3542,87 @@ Evidence: `docs/evidence/gpu/anv-b3hingeside-20261028/`
 (protocol.txt is the frozen pre-registration -- written once,
 never rewritten; record.txt is this tick's record; the gate
 captures are byte-identical to the s62 pins).
+
+## 2026-10-28 (session 64, JUN-59) -- the s38 hi
+(sum,256,S=32) wander replication PRE-REGISTRATION FREEZE
+(DESIGN slice; STARTED, NOT FINISHED)
+
+Session 64 took the s57-frozen W5 carry-forward's queue SECOND
+named candidate row to its design half: the s38 hi
+(sum,256,S=32) per-cell wander replication at the W5 window's
+hi arm is now PRE-REGISTERED in
+`docs/evidence/gpu/anv-b3w5hiwander-20261029/protocol.txt`
+(freeze stamp 2026-10-28T19:49:29Z), frozen BEFORE any
+fifth-window run exists -- no committed file contains any W5
+quantity. This is the row named in the s57 carry-forward as
+"the only route from one uncorrected (b) to a letter that
+survives multiplicity": the campaign's one uncorrected (b) is
+the s45 per-cell wander max-T probe letter EXCEEDS NULL at
+(s38, hi) (family-wise p 0.047398; the max cell
+(sum,256,S=32), marginal p 0.035348 -- uncorrected across the
+six s45 probes and three windows, cell identity
+data-dependent). The frozen route: ONE named cell
+((sum,256,S=32), the s45 max cell fixed by PUBLISHED content
+alone), ONE named (window, arm) ((W5, hi)), ONE named
+upper-tail test at 0.05 on NEW data -- T14, the named cell's
+within-window block-level wander W_obs (range of the 12 block
+pooled medians, exact 38th order statistics of the pooled 75;
+INTEGER) against the within-window run-repartition null of W5's
+36 hi runs (20,000 trials, ONE random.Random(2026102814) --
+distinct from T7's 20261029 -- one shuffle per trial).
+Letters: (a) WANDER-EXCESS-REPLICATED (p <= 0.05) / (b)
+NOT-REPLICATED (named sub-cases) / (c) NOT EVALUABLE; ONE
+letter source, no multiplicity correction needed or applied.
+NAMED, NOT HIDDEN: the s45-letter-construction max-T probe at
+(W5, hi) runs alongside as D2 DESCRIPTIVE ONLY and NEVER
+carries a letter under this freeze (running it as a letter
+source would reintroduce the within-probe cell family the
+pre-registration exists to remove). The row's ANALYSIS half is
+day-slot-gated and was NOT run this tick: it needs W5's hi runs,
+and W5 is the window whose 78 fresh processes run in the first
+measurement session at or after 2026-10-29T00:00:00Z -- this
+tick ran ~4h10m before that slot opens (NAMED, not skipped
+silently; the queue's first row -- the W5 measurement + T7 read
+-- is gated the same way and its freeze was done at s57; the
+s63 probe EXHAUSTED the four-rank vocabulary and RETIRED the
+rank-pair program, so this row's design half was the one row
+available before the slot, and freezing BEFORE any W5 quantity
+exists is strictly stronger than freezing later). NAMED, NOT
+HIDDEN: STILL LOW POWER (n=12 blocks, ONE window, ONE host,
+ONE cell; the wander is a tail-to-tail RANGE statistic, not a
+scale estimate; a (b) is NOT evidence of no per-cell
+structure); (a) names NO mechanism and NOT
+physical-vs-estimator-structure; threshold-artifact-vs-
+representation STAYS UNRESOLVED. Gates (real runs this tick):
+classify self-test 2649/0 (byte-identical to the s63 pin);
+scoped GPU gate GREEN 123/12162/0/0 twice (byte-identical to
+the s63 pin and each other); full run-tests.cljk exit 1 RED AT
+BASE kotoba.form (ADR-0362, outside this diff -- touches NO
+.cljk namespace), captures byte-identical to the s63 pins -- NO
+green full suite claimed; settle-bar evaluator 38/0 + ledger
+eval twice byte-identical -> VERDICT PENDING 1/4 unchanged (no
+runs, no ledger line, no day slot; next executable slot
+2026-10-29); no derivation census (a freeze-only tick computes
+no statistics -- named, not omitted); find docs/evidence/gpu
+-name '*.sh' -> 0. Rule 4 binds: nothing moves;
+accelerator-targets defaults remain provisional
+(`:measured? false`); no vendor optimization exists for Intel.
+
+Named rows for later sessions: (first, STARTED) the
+fifth-window measurement + T7 read in the 2026-10-29 UTC slot
+(NEW hardware; the slot opens 2026-10-29T00:00:00Z, ~4h10m
+after this tick -- NAMED, not skipped silently); (second, now
+STARTED at this freeze) the s38 hi (sum,256,S=32) wander
+replication ANALYSIS half (needs W5's hi runs); then the
+quantile-pair level axes at W5 and the second-pair profile axis
+at W5 (each its own freeze; need W5 data); any further named
+profile pair -- which requires a NEW named rank-pair vocabulary
+or selection rule (none exists yet -- naming one is future
+design work).
+
+Evidence: `docs/evidence/gpu/anv-b3w5hiwander-20261029/`
+(protocol.txt is the frozen pre-registration -- written once,
+never rewritten; freeze-record-s64.txt is this tick's record --
+the analysis session owns record.txt there; the gate captures
+are byte-identical to the s63 pins). The analysis half of the
+row is UNMEASURED until the W5 runs exist.

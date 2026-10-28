@@ -1,0 +1,273 @@
+JUN-59 -- session 64 protocol (PRE-REGISTRATION FREEZE ONLY):
+THE S38-HI (sum,256,S=32) PER-CELL WANDER REPLICATION PROBE AT
+THE W5 WINDOW'S HI ARM (queue row 2 of the s57-frozen W5
+carry-forward -- the route from the campaign's ONE uncorrected
+(b), the s45 s38-hi probe letter EXCEEDS NULL whose max cell was
+(sum,256,S=32), to a letter that survives multiplicity: at the
+NEW fifth window W5 -- the campaign's first window on a UTC day
+other than 2026-10-28 -- does the NAMED cell (sum,256,S=32)'s
+per-cell within-window block-level wander EXCEED the
+within-window run-repartition null at the hi arm, replicating
+the s38-hi (b) on pre-registered NEW data?). DESIGN slice this
+tick: the pre-registration of the row; the ANALYSIS half is
+day-slot-gated (needs W5's hi runs) and runs in the first
+session that has the committed W5 logs (STARTED, NOT FINISHED --
+named, not skipped silently). Frozen BEFORE any fifth-window run
+exists and before ANY statistic of this probe was computed
+(freeze stamp 2026-10-28T19:49:29Z, this tick; the W5 run logs
+do not exist yet -- no committed file contains any W5 quantity).
+This file is written once and never rewritten. The session that
+runs this row's ANALYSIS half writes its own record.txt in this
+directory (this tick's record is freeze-record-s64.txt; named in
+advance to avoid a second writer colliding on record.txt).
+
+0. ROW QUESTION (ONE row): the s57-frozen carry-forward's SECOND
+   named candidate row (anv-b3w5xdayrep-20261029/protocol.txt
+   section 7: "the s38 hi (sum,256,S=32) wander replication on
+   W5's hi runs (the queue's second row -- the only route from
+   one uncorrected (b) to a letter that survives multiplicity)"),
+   taken on ONE observable axis: ONE NAMED cell's per-cell
+   within-window block-level wander at ONE NAMED (window, arm)
+   against the within-window run-repartition null.
+
+   NAMED CELL (frozen): (sum,256,S=32) -- cell 10 of the 18-cell
+   ok map, identity key (sum,256,S=32) -- the s45 s38-hi max-T
+   cell (publication-s45.txt: the cell achieving M_obs 84 at the
+   s38 hi probe; marginal p 0.035348). NAMED (window, arm)
+   (frozen): W5 hi -- the hi arm's 36 runs of the W5 window (W5
+   DEFINED as in the anv-b3w5xdayrep-20261029/protocol.txt
+   section 0, UNCHANGED: the window whose 78 fresh processes run
+   in the first measurement session that starts at or after
+   2026-10-29T00:00:00Z; its window tag is that session's tag,
+   written s<NN> in publications). ONE named cell, ONE named
+   (window, arm), ONE named upper-tail test.
+
+   THE CONSTRUCTION (frozen; the s45 per-cell construction
+   UNCHANGED): block = 3 consecutive runs of the hi arm within
+   W5 (the s35/s36-frozen block unit; W5's hi runs 1..36 in the
+   frozen run order -> 12 blocks of 3); per-cell pooled median of
+   a block V_b = the pooled median gpu_ticks of the block's 75
+   samples for the named cell (25 samples per run x 3 runs) =
+   the exact 38th order statistic (an INTEGER); the named cell's
+   within-window wander W_obs = max_b V_b - min_b V_b over W5
+   hi's 12 blocks (an exact INTEGER -- both endpoints are
+   integers).
+
+   THE NULL (frozen): WITHIN-WINDOW RUN-EXCHANGEABILITY (session
+   45's null, named cell only): the 36 hi runs of W5 are
+   exchangeable across blocks; under the null ALL within-run and
+   fresh-process run-to-run variation is sampling noise at the
+   fresh-process granularity. Resampling (frozen): per trial,
+   shuffle the 36 run ids (ONE random.Random(2026102814), the
+   ONLY RNG in this probe; one rng.shuffle per trial IS frozen),
+   split into 12 blocks of 3 in draw order; compute each
+   pseudo-block's named-cell pooled median V*_b (the exact 38th
+   order statistic of the 75); W* = max_b V*_b - min_b V*_b;
+   p = (1 + count(W* >= W_obs)) / (1 + 20,000), ONE-SIDED upper
+   ("exceeds"). TRIALS = 20,000 (NOT the s35-frozen 100,000 --
+   cost, same named deviation as sessions 40-63; p resolution
+   1/20,001 ~= 5e-5).
+
+   EXACTNESS (frozen; the s45 exactness paragraph, UNCHANGED):
+   the per-cell pooled median of 75 integer samples is the exact
+   38th order statistic (an integer); W_obs, W* and every
+   comparison are INTEGER differences and maxima -- the analysis
+   and the census work in plain INTEGER tick units so every
+   W* >= W_obs comparison is exact integer arithmetic. The D1/D2
+   statistics below are computed from the SAME per-trial
+   repartition (the SAME shuffle serves all three; NO additional
+   RNG calls exist in this probe -- the RNG call order is one
+   shuffle per trial and is frozen).
+
+   T14 LETTERS (pre-registered NOW, before any W5 run exists and
+   before any statistic of this probe was computed):
+     (a) WANDER-EXCESS-REPLICATED: p <= 0.05 -- the named cell's
+         block-level wander at (W5, hi) exceeds the within-window
+         run-repartition null: the s38-hi (b) direction replicates
+         on NEW cross-day data in the ONE pre-registered
+         named-cell test;
+     (b) NOT-REPLICATED otherwise (sub-cases named in the
+         publication: W_AT-OR-BELOW-NULL-MEDIAN if W_obs <= the
+         null median of the 20,000 W* values;
+         ABOVE-NULL-MEDIAN-NOT-SIGNIFICANT otherwise);
+     (c) NOT EVALUABLE on any invalidation of section 3.
+   T14 (the row answer) = the named-cell letter. ONE pre-
+   registered test, ONE letter source: NO IUT, NO multiplicity
+   correction is applied or needed (there is exactly one test).
+
+   NAMED, NOT HIDDEN (frozen): the multiplicity claim is NARROW
+   and named precisely: ONE named cell, ONE named (window, arm),
+   ONE named upper-tail test at 0.05 on NEW data (the W5 runs do
+   not exist at freeze time) -- this IS the route named in the
+   s57 carry-forward from one uncorrected (b) to a letter that
+   survives multiplicity. The s45 (b) letter came from the max-T
+   family-wise probe at (s38, hi), whose cell identity
+   (sum,256,S=32) was DATA-DEPENDENT and whose probe was
+   UNCORRECTED across the six s45 probes and three windows (the
+   18 per-cell MARGINAL p values per probe were descriptive
+   only); freezing the cell and (window, arm) BEFORE W5 exists
+   removes the cell family and the probe family by pre-
+   registration, and the named cell was fixed by PUBLISHED s45
+   content alone. THE DESIGN CHOICE (named): the letter source
+   is the ONE named-cell test alone; the s45-letter-construction
+   max-T probe at (W5, hi) (M over the 18 cells) runs alongside
+   as D2 DESCRIPTIVE ONLY and NEVER carries a letter under this
+   freeze (running it as a letter source would reintroduce the
+   within-probe cell family this pre-registration exists to
+   remove). The prior exposure is QUOTE-ONLY (section 1). (a)
+   would NOT name a mechanism (thermal/scheduling/memory/driver
+   state all UNMEASURED) and NOT say whether the named cell's
+   wander is physical or estimator structure. THE NOVELTY OF
+   THIS ROW (named): the s45 (b) is the campaign's ONLY (b) of
+   the per-cell wander program and is uncorrected; W5 is the
+   campaign's first window on another UTC day (the s57
+   section-0 novelty, UNCHANGED); this row is the campaign's
+   first pre-registered SINGLE-CELL wander replication and the
+   first letter of the wander program that survives multiplicity
+   by pre-registration. STILL LOW POWER: n=12 blocks, ONE
+   window, ONE host, ONE cell; the per-cell wander is a RANGE
+   (max-min) of 12 block values of pooled medians of 75 samples
+   -- a tail-to-tail statistic, NOT a scale estimate (the s45
+   NAMED-NOT-HIDDEN construction caveat, UNCHANGED); a (b) is
+   NOT evidence of no per-cell structure; 20,000 trials; L2
+   observational ONLY; NO causal mechanism; direction UNMEASURED;
+   threshold-artifact-vs-representation STAYS UNRESOLVED under
+   any letter.
+
+1. INPUTS (frozen): the NEW W5 run logs of
+   docs/evidence/gpu/anv-b3w5xdayrep-20261029/ (78 runs: c2 3 +
+   hi 36 + tw 36 + c8 3; ONLY the 36 hi logs enter the
+   statistic) plus the 312 committed run logs of the four fixed
+   prior evidence directories -- anv-b3commonmode-20261028 (the
+   s36 window), anv-b3joint3-20261028 (s38), anv-b3joint4-20261028
+   (s39), anv-b3levelrep-20261028 (s51) -- 390 logs total (the
+   four prior windows enter only the section-3 integrity
+   machinery). Every s36/s38/s39/s51 input quantity was MEASURED
+   on aiueos-6600hs Intel BMG G31 ANV in sessions 36/38/39/51;
+   the W5 quantities are MEASURED on the same host in the W5
+   measurement session. QUOTE-ONLY PRIOR EXPOSURE (named; the
+   freeze guards letter-shopping, not prior exposure): (i) the
+   published s45 per-cell wander rows of the named cell at the
+   three s45 windows (s38 hi W 84 -- block pooled medians
+   1082..1166, marginal count 706 / p 0.035348; s36 hi W 43 --
+   1108..1151, marginal count 15293 / p 0.764662; s39 hi W 38 --
+   1105..1143, marginal count 19910 / p 0.995500) and the
+   published s45 max-T rows (s38 hi M_obs 84 at (sum,256,S=32),
+   family-wise count 947 / p 0.047398 -- the (b) EXCEEDS NULL
+   probe letter; s39 hi/tw, s36 hi/tw, s38 tw all (a)
+   PER-CELL-NOISE-CONSISTENT); (ii) everything the
+   anv-b3w5xdayrep-20261029/protocol.txt section 1 quotes
+   (quote-only). NO committed file contains ANY W5 quantity; the
+   named cell and (window, arm) were frozen from (i)/(ii) alone.
+
+2. THE RESAMPLING (frozen; section 0's construction UNCHANGED):
+   ONE random.Random(2026102814) (the session-64 freeze seed,
+   continuing the s54-s63 20261028NN sequence; DISTINCT from the
+   s57 T7 probes' random.Random(20261029) so the two rows'
+   streams never couple); 20,000 trials; per trial ONE
+   rng.shuffle of a fresh list(range(36)) -- the ONLY RNG calls
+   in the probe; the primary W*, the D1 per-cell marginals and
+   the D2 max-T are all computed from the SAME per-trial
+   repartition; p as section 0; integer exactness as section 0.
+
+3. INVALIDATION / EVALUABILITY (the
+   anv-b3w5xdayrep-20261029/protocol.txt section-3 five-window
+   machinery, UNCHANGED, restated): per-window integrity over
+   the committed logs -- VERIFY mismatch total 0; 450 SAMPLE +
+   24 VERIFY per run; every SAMPLE's knob fields == its arm
+   table (c2 2/1/1, hi 3/1024/4033, tw 3/2048/8066, c8 8/1/1);
+   S=8 fail-closed cells (6 per run) pipeline FAIL + void 1;
+   cell map identical across all 390 logs (the named cell
+   (sum,256,S=32) present as cell 10); the eight block-min
+   vectors of the four PRIOR windows reproduce the
+   publication-s51.txt section 3 published vectors EXACTLY
+   (8/8); C1 re-derived at the W5 window: c2 FLOOR (all 18
+   pooled medians <= 100), c8 (sum,128,S=16) pooled median
+   within +/-5% of the committed 32,915; the anchor
+   reproduction rows: hi block A's (sum,128,S=16) pooled median
+   and 18-cell min..max reproduce the quote-only/published
+   anchor priors EXACTLY at the four PRIOR windows (s36 1,142 /
+   991..1,438; s38 1,132 / 992..1,443; s39 1,146 / 986..1,432;
+   s51 1,137 / 988..1,430). Any violation => letter (c). (The
+   W5 window's own anchor row is the
+   anv-b3w5xdayrep-20261029 row's D4 -- NEW measurement, never
+   compared to a prior EXACTLY; this row computes no anchor.)
+
+4. SECONDARY NAMED DESCRIPTIVE CONTENT (named in advance; none
+   of it is the row question; NO letter under this freeze):
+   (D1) the 18-cell per-cell wander scoreboard at (W5, hi): per
+        ok cell its identity key (op, wg, S), W_c in ticks, and
+        the cell's MARGINAL resample count and p (count of
+        trials with W*_c >= W_obs_c over the same 20,000 trials
+        -- the s45 D1 construction, UNCORRECTED across the 18
+        cells, descriptive only);
+   (D2) the max-T probe at (W5, hi): M_obs = max_c W_c, which
+        cell(s) achieve M_obs (ties named), and the family-wise
+        p = (1 + count(M* >= M_obs)) / (1 + 20,000) computed
+        from the same frozen loop (M* = max_c W*_c per trial) --
+        the s45 letter construction run at (W5, hi),
+        DESCRIPTIVE ONLY under this freeze (section 0: it NEVER
+        carries a letter);
+   (D3) the named cell's W at (W5, hi) beside its quote-only s45
+        prior W values (s38 hi 84 / s36 hi 43 / s39 hi 38) and
+        block pooled medians, and the named cell's marginal p at
+        (W5, hi) beside the quote-only s45 marginal p values
+        (0.035348 / 0.764662 / 0.995500) -- descriptive only.
+
+5. THE BAR (frozen): NO hardware runs at the ANALYSIS session
+   (the analysis parses COMMITTED logs) -> NO reading -> NO
+   settle-bar-ledger line, NO day-slot consumption
+   (settle-bar-ledger.txt byte-identical to HEAD at the analysis
+   tick). The W5 runs' own bar line belongs to the
+   anv-b3w5xdayrep-20261029 row (its protocol section 5 -- hi
+   block A of the W5 window, the frozen L12 single candidate,
+   day = the W5 run's UTC day); this row NEVER writes a ledger
+   line. The frozen evaluator
+   (anv-b3settlebar-20261027/settle-bar-eval.py) is the only
+   source of the bar letter (B2): --self-test fixture pin 38/0,
+   ledger eval twice byte-identical. NEVER hand-write a verdict.
+
+6. ROUTE (frozen; the session-45 analysis route UNCHANGED except
+   the inputs, workdir and script names): the session taking
+   this row's ANALYSIS half runs at the chain worktree;
+   analysis-s<NN>.py (<NN> = the running session's number; numpy
+   2.5.4 -- np.median exact at the 38th order statistic for the
+   pooled 75; integer max/min reductions; the resampling in
+   vectorized TRIAL BATCHES with the frozen RNG call order)
+   parses the 390 committed run logs (section 1) and writes
+   publication-s<NN>.txt in THIS directory (run twice, diff exit
+   0); derivation-census-s<NN>.txt is the independent second
+   parser (split-based parsing without regex, NO numpy: the
+   observed block pooled medians via pure-Python sorted()
+   explicit order statistics -- sorted(pooled75)[37]; the wander
+   via explicit max/min over the 12 block values; the
+   resampling's pooled medians via the same explicit order
+   statistics; the within-window repartition resampling and the
+   RNG call order re-implemented as a pure-Python shuffle loop
+   under the frozen contract random.Random(2026102814)) run
+   twice byte-identical; gates: gpu_regime_classify.py
+   --self-test, the scoped GPU gate twice (scratch runner
+   scoped-gpu-gate.cljk, created, run, deleted, never
+   committed), FULL run-tests.cljk run live, the settle-bar
+   evaluator --self-test and the ledger eval twice byte-
+   identical; find docs/evidence/gpu -name '*.sh' -> 0 (no POSIX
+   shell execution files, ever). ZERO derivation edits; ZERO new
+   knob pairs (the session-9 D2 pre-GO compile smoke does not
+   apply); the instrument and corpus are the committed bytes of
+   sessions 28-39 (byte-copy checked in the W5 tick's
+   host-verify).
+
+7. RULE 4 (frozen): NOTHING MOVES. accelerator-targets defaults
+   remain provisional (:measured? false); no vendor optimization
+   exists for Intel; no workgroup default is replaced. WHAT
+   REMAINS (named, queued for later sessions, each with its OWN
+   pre-registration when taken -- none of it is frozen here):
+   the fifth-window measurement + T7 read (queue row 1 --
+   STARTED; the 2026-10-29 UTC slot); this row's ANALYSIS half
+   (STARTED at this freeze; needs W5's hi runs); the quantile-
+   pair level axes at W5 and the second-pair profile axis at W5
+   (the s57 carry-forward analysis rows; need W5 data); any
+   further named profile pair -- which requires a NEW named
+   rank-pair vocabulary or selection rule (the s63-retired
+   program's only route back; none exists yet -- naming one is
+   future design work).
