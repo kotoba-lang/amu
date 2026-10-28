@@ -8,10 +8,10 @@ run without network authority.
 
 **Starter engineering preview, not a public trial release.** The compiler
 descriptor still records empty native generations and false qualification
-flags. [Main CI run 40735782572](https://github.com/kotoba-lang/amu/actions/runs/40735782572)
-passed its native jobs for upstream revision `0459bdc8d167025375bb0ca0837447356940a2d2`;
-the observed x86 compiler and source-unity hashes match this candidate. At
-PR revision `e967ae44c1117a4a19b6a82579f0b826db7603b1`, the
+flags. [Main CI run 40759416436](https://github.com/kotoba-lang/amu/actions/runs/40759416436)
+passed for upstream revision `3e7780f7c346a7fba8dbb3e29d787ae02b264acf`;
+qualification of this starter revision remains open. At the older
+PR revision `e967ae44c1117a4a19b6a82579f0b826db7603b1`, with a different compiler, the
 [Linux native workflow](https://github.com/kotoba-lang/amu/actions/runs/40753510291)
 and [Mac and Linux cross workflow](https://github.com/kotoba-lang/amu/actions/runs/40753510318)
 completed successfully. These results apply to that revision; check the PR
@@ -128,7 +128,7 @@ reported source revision, image and observer hashes, host profile, actual
 native results and the descriptor's qualification state. The descriptor's
 reported source revision is historical metadata. Reconstructing its 48 source
 modules yields SHA-256 `18e98b761f744f27d567a9cd0a50a6fcd9e27a27ca800d9653d17f5701f0dabf`,
-which differs from the pinned source unity `c6d60c8a...`. Reconstructing the
+which differs from the pinned source unity `2127d9d9...`. Reconstructing the
 modules at the candidate's upstream revision yields the pinned unity; this
 match alone does not establish the binary's source-to-image provenance.
 It records **zero external users**; an author-run smoke is not a user cohort.

@@ -41,8 +41,8 @@ p = Path('seed/bootstrap/aarch64-linux-static-root.elf')
 d = json.loads(Path('seed/bootstrap/aarch64-linux-static-root.json').read_text())
 b = p.read_bytes()
 digest = hashlib.sha256(b).hexdigest()
-if (len(b) != 3617280 or
-    digest != 'b82d3ed3d4c28674359f0fb12df7bfc44dfe426b87aec13a7efb31a2a99818b2' or
+if (len(b) != 3621376 or
+    digest != '8b56e3f0c4c1471003671279590c1e82d660c44dcd43221718529063e3da7d46' or
     d['image'] != {'bytes': len(b), 'sha256': digest}):
     raise SystemExit('ARM compiler or descriptor digest mismatch')
 print('ARM compiler bytes verified')
