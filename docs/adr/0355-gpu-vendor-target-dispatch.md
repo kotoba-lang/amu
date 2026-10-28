@@ -1906,3 +1906,58 @@ is the derived read over the 234 committed run logs of the three
 windows; derivation-census-s43.txt is the independent second parser
 (49 rows / 0 mismatched); bar-eval-s43.txt is the frozen
 evaluator's unchanged verdict; record.txt is the finding).
+
+## 2026-10-28 -- session 44 (JUN-59): the per-cell body-shift repartition probe (analysis; PER-CELL-CONSISTENT)
+
+Session 43's first-named candidate row ("a PER-CELL body-shift
+probe of the same three windows -- per-cell window-level shifts
+cancel in this probe's median-over-18-cells construction") taken
+on ONE observable axis: per arm, does ANY of the 18 ok cells show
+a cross-window per-cell LEVEL spread S_c = max_w L_{w,c} -
+min_w L_{w,c} (per-cell level L_{w,c} = median of the 12 block
+per-cell pooled medians of window w; block/per-cell pooled median
+units s35/s36-frozen, UNCHANGED) exceeding the cross-window
+run-repartition null? The primary per-arm statistic is the MAX-T
+M = max_c S_c with the max taken inside each resampling trial
+(family-wise over the 18 cells). ANALYSIS slice -- NO new
+hardware; inputs are the 234 committed run logs of sessions
+36/38/39. Pre-registered (protocol freeze stamp
+2026-10-28T06:35:39Z, BEFORE any statistic was computed): per arm
+(a) PER-CELL-CONSISTENT / (b) EXCEEDS NULL (named which cell(s))
+/ (c) NOT EVALUABLE; resampling 20,000 trials,
+random.Random(20261028) consumed in the frozen probe order hi
+then tw, p = (1 + count(M* >= M_obs)) / (1 + 20,000), one-sided.
+THE FINDING (DERIVED): T1 = (a) PER-CELL-CONSISTENT on both arms
+-- hi M_obs 23.0 ticks (max cell (sum,256,S=32)), count 3,205 /
+20,001, p 0.160292; tw M_obs 18.5 (same cell), count 10,573 /
+20,001, p 0.528674 (both p > 0.05). Session 43's named gap is
+closed on this axis: no per-cell LEVEL shift beyond
+run-exchangeable sampling noise is visible at these windows/
+powers. NAMED, NOT HIDDEN: (a) is not proof of noise (a uniform
+driver is invisible by construction; per-cell SPREAD/quantile
+shifts are invisible to this LEVEL construction -- a per-cell
+wander probe and a per-cell spread probe are named candidate
+rows); the 36 UNCORRECTED marginal p values carry no letter --
+two hi cells sit below 0.05 ((min,256,S=16) p 0.013949,
+(sum,256,S=32) p 0.042248) and NOTHING is claimed from them; the
+frozen 1,000-tick class boundary sits INSIDE the per-cell level
+range (986..1,443) and threshold-artifact-vs-representation
+STAYS UNRESOLVED; three windows in ONE day on ONE host is LOW
+POWER; this letter and sessions 40-43's letters are DIFFERENT
+nulls over the SAME runs (NOT independent evidence). Integrity
+(DERIVED): 3/3 windows clean, C1 (a) at the s39 window (c2 FLOOR;
+c8 32,829 vs 32,915, 0.26%), 6/6 block-min vectors reproduce
+EXACTLY, anchor row EXACT at all three windows. Rule 4 binds:
+nothing moves; accelerator-targets defaults remain provisional
+(`:measured? false`); no row moves and no vendor optimization
+exists for Intel. The bar: NO reading -> NO ledger line
+(byte-identical to HEAD), VERDICT UNCHANGED PENDING 1/4 with s31
+counted (frozen evaluator twice byte-identical; fixture pin 38/0;
+next executable day slot 2026-10-29).
+
+Evidence: `docs/evidence/gpu/anv-b3percellshift-20261028/`
+(protocol.txt is the frozen pre-registration; publication-s44.txt
+is the derived read over the 234 committed run logs of the three
+windows; derivation-census-s44.txt is the independent second parser
+(45 rows / 0 mismatched); bar-eval-s44.txt is the frozen
+evaluator's unchanged verdict; record.txt is the finding).
