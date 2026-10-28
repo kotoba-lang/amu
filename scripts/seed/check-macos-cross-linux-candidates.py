@@ -21,6 +21,10 @@ DESCRIPTOR = ROOT / "seed/bootstrap/aarch64-macos/root.json"
 FULL = ROOT / "seed/FULL-MANIFEST"
 SELFHOST = ROOT / "seed/X86_64-LINUX-SELFHOST-MANIFEST"
 RUNNER = ROOT / "seed/x86_64-kx64-runner.kotoba"
+PRODUCT = ROOT / "native-product.json"
+ARM_ROOT = ROOT / "seed/bootstrap/aarch64-linux-static-root.json"
+ARM_IMAGE = ROOT / "seed/bootstrap/aarch64-linux-static-root.elf"
+X86_IMAGE = ROOT / "bin/amu"
 
 
 def module():
@@ -67,6 +71,22 @@ def static_elf(path, machine):
     return pin(path)
 
 
+def check_product_bindings(full, arm, x86):
+    """Refuse stale checked-in images before the costly native ISA gates."""
+    product = json.loads(PRODUCT.read_text())
+    root = json.loads(ARM_ROOT.read_text())
+    if (full["unity"] != product["sourceUnity"] or
+            full["unity"] != root["sourceUnity"] or
+            full["modules"] != product["sourceModuleCount"] or
+            product["sourceManifest"] != "seed/FULL-MANIFEST" or
+            root["sourceManifest"] != "seed/FULL-MANIFEST"):
+        raise ValueError("Mac candidate source differs from root/product descriptors")
+    if arm != root["image"] or arm != product["rootImage"] or arm != pin(ARM_IMAGE):
+        raise ValueError("Mac ARM fixed point differs from checked-in root image")
+    if x86 != product["image"] or x86 != pin(X86_IMAGE):
+        raise ValueError("Mac x86 fixed point differs from checked-in public image")
+
+
 def main(mac_build, output):
     if platform.system() != "Darwin" or platform.machine() not in ("arm64", "aarch64"):
         raise ValueError("Apple Silicon native host required")
@@ -110,6 +130,7 @@ def main(mac_build, output):
                     "--target", "x86_64-linux", "--output", "F-x86_64.elf",
                     "--format", "static")
     x86 = static_elf(output / "F-x86_64.elf", 62)
+    check_product_bindings(full, arm, x86)
     gate.native_run(producer, output, "compile", "selfhost-unity.kotoba",
                     "--target", "x86_64-linux", "--output", "S-x86_64.elf",
                     "--format", "static")

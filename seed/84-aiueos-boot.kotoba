@@ -22,7 +22,9 @@
 (defn- eb-admit? [V :vector-i64] :bool
   (let [n (vector-count V) ph (eb-le V 32 8) entry (eb-le V 24 8)
         rw (eb-le V (+ ph 80) 8)]
-    (and (>= n 176) (<= n (if (= rw 0x300000) 6291456 4194304))
+    (and (>= n 176) (<= n (cond (= rw 0x400000) 7340032
+                                  (= rw 0x300000) 6291456
+                                  :else 4194304))
          (= (eb-le V 0 8) 0x00010102464c457f)
          (= (eb-le V 8 8) 0) (= (eb-le V 16 2) 2) (= (eb-le V 18 2) 62)
          (= (eb-le V 20 4) 1) (= (eb-le V 48 4) 0)
@@ -167,15 +169,22 @@
     (= (eb-le K (+ rw 336) 8) 0x31494350)))
 (defn- eb-dual-layout? [K :vector-i64 slot-version :i64] :bool
   (let [ph (eb-le K 32 8)
-        boundary (if (= slot-version 3) 2097152 1048576)]
-    (and (or (= slot-version 2) (= slot-version 3))
+        boundary (case slot-version 4 3145728 3 2097152 1048576)
+        text-cap (if (= slot-version 2) 1048576 2097152)
+        rw-file (eb-le K (+ ph 64) 8)
+        rx-size (eb-le K (+ ph 32) 8)
+        handler (eb-le K (+ rw-file UV-HANDLER) 8)]
+    (and (or (= slot-version 2) (= slot-version 3) (= slot-version 4))
          (= (eb-le K 24 8) 0x101000)
          (= (eb-le K (+ ph 8) 8) 4096)
          (= (eb-le K (+ ph 24) 8) 0x101000)
-         (<= (eb-le K (+ ph 32) 8) (- boundary 4096))
+         (<= rx-size (- text-cap 4096))
          (= (eb-le K (+ ph 64) 8) boundary)
          (= (eb-le K (+ ph 80) 8) (+ 0x100000 boundary))
-         (= (eb-le K (+ ph 96) 8) 2359296))))
+         (= (eb-le K (+ ph 96) 8) 2359296)
+         (or (not= slot-version 4)
+             (and (= (eb-le K (+ rw-file 464) 4) UV-V5-MAGIC)
+                  (>= handler 0x101000) (< handler (+ 0x101000 rx-size)))))))
 (defn- eb-package [kernel :string payload :string extra :string out :string pci :bool] :i64
   (let [K (io-read-bytes kernel)
         P (if (= (string-length payload) 0) (vector-alloc 0) (io-read-bytes payload))
@@ -234,11 +243,30 @@
        (= (eb-le P 128 8) 8192) (= (eb-le P 136 8) (if v3 0x321000 0x221000))
        (= (eb-le P 144 8) (if v3 0x321000 0x221000))
        (= (eb-le P 152 8) 88) (= (eb-le P 160 8) 320)))
+;; Slot v4 is admitted only with a kernel-v3 ELF carrying the v5 user-map
+;; marker and an RX-resident user syscall handler. Guest source must still
+;; verify the pinned complete ELF and its own request policy before execution.
+(defn- eu-v4-elf? [P :vector-i64] :bool
+  (and (= (vector-count P) 8280)
+       (= (eb-le P 0 8) 0x00010102464c457f)
+       (= (eb-le P 16 2) 2) (= (eb-le P 18 2) 62)
+       (= (eb-le P 24 8) 0x420000) (= (eb-le P 32 8) 64)
+       (= (eb-le P 54 2) 56) (= (eb-le P 56 2) 2)
+       (= (eb-le P 64 4) 1) (= (eb-le P 68 4) 5)
+       (= (eb-le P 72 8) 4096) (= (eb-le P 80 8) 0x420000)
+       (= (eb-le P 88 8) 0x420000)
+       (> (eb-le P 96 8) 80) (<= (eb-le P 96 8) 4096)
+       (= (eb-le P 96 8) (eb-le P 104 8))
+       (= (eb-le P 120 4) 1) (= (eb-le P 124 4) 6)
+       (= (eb-le P 128 8) 8192) (= (eb-le P 136 8) 0x421000)
+       (= (eb-le P 144 8) 0x421000)
+       (= (eb-le P 152 8) 88) (= (eb-le P 160 8) 262144)))
 (defn- eu-package [source :string out :string version :i64] :i64
   (let [P (io-read-bytes source) n (vector-count P)]
     (if (or (= n 0) (> n 524224))
       (let [w (io-err "seed-aiueos-boot: E7112 user payload exceeds fixed slot\n")] 1)
-      (if (and (>= version 2) (not (eu-v2-elf? P (= version 3))))
+      (if (and (>= version 2)
+               (not (if (= version 4) (eu-v4-elf? P) (eu-v2-elf? P (= version 3)))))
         (let [w (io-err "seed-aiueos-boot: E7111 versioned user ELF shape refused\n")] 1)
       (let [M (-> (mem-new) (xg-out 0x0031444c50554941 8) (xg-out version 8)
                   (xg-out n 8) (xg-pad 64) (eb-copy P 0 n) (xg-pad 524288))
@@ -247,17 +275,21 @@
           (drv-fail M source)
           (let [written (out-write-v M out (+ MM-OUT-BASE 1) size)]
             (if (and (= written size) (= (io-exists out) 1))
-              (let [z (io-out (cond (= version 3) "{:ok true, :format :aiueos-user-payload-v3, :bytes 524288}\n"
+              (let [z (io-out (cond (= version 4) "{:ok true, :format :aiueos-user-payload-v4, :bytes 524288}\n"
+                                    (= version 3) "{:ok true, :format :aiueos-user-payload-v3, :bytes 524288}\n"
                                     (= version 2) "{:ok true, :format :aiueos-user-payload-v2, :bytes 524288}\n"
                                     :else "{:ok true, :format :aiueos-user-payload-v1, :bytes 524288}\n"))] 0)
               (drv-fail0 E-WRITE)))))))))
 (defn- eu-command [] :i64
   (let [n (io-argc) source (io-arg 1) out (io-arg 3)
         version (if (and (= n 6) (string=? (io-arg 4) "--version"))
-                  (cond (string=? (io-arg 5) "v2") 2 (string=? (io-arg 5) "v3") 3 :else 0) 1)]
+                  (cond (string=? (io-arg 5) "v2") 2
+                        (string=? (io-arg 5) "v3") 3
+                        (string=? (io-arg 5) "v4") 4
+                        :else 0) 1)]
     (cond (or (not (or (= n 4) (and (= n 6) (> version 1))))
               (not (string=? (io-arg 2) "--output"))
               (= (string-length out) 0) (= (io-exists out) 1))
-          (let [w (io-err "seed-aiueos-boot: E7110 expected package-aiueos-user-payload SOURCE --output NEW_SLOT [--version v2|v3]\n")] 2)
+          (let [w (io-err "seed-aiueos-boot: E7110 expected package-aiueos-user-payload SOURCE --output NEW_SLOT [--version v2|v3|v4]\n")] 2)
           (= (io-exists source) 0) (drv-fail0 E-READ)
           :else (eu-package source out version))))

@@ -20,8 +20,11 @@
           ;; RIP belongs to the selected code page; RSP belongs to its stack.
           (iv-hex "498b81") (xg-bytes 32776 4) (iv-hex "4839d0") (xg-rel 0x820f 2 2 halt)
           (iv-hex "488db2001000004839f0") (xg-rel 0x830f 2 2 halt)
-          (iv-hex "498b81") (xg-bytes 32768 4) (iv-hex "488db2003000004839f0") (xg-rel 0x820f 2 2 halt)
-          (iv-hex "488db2004000004839f0") (xg-rel 0x830f 2 2 halt)
+          (iv-hex "498b81") (xg-bytes 32768 4)
+          (iv-hex (if (uv-v5?) "488db2002004004839f0" "488db2003000004839f0"))
+          (xg-rel 0x820f 2 2 halt)
+          (iv-hex (if (uv-v5?) "488db2003004004839f0" "488db2004000004839f0"))
+          (xg-rel 0x830f 2 2 halt)
           (iv-hex "48a90f000000") (xg-rel 0x850f 2 2 halt)
           (iv-hex "4983b9") (xg-bytes 32800 4) (xg-byte 5) (xg-rel 0x850f 2 2 zero)
           ;; The complete104-byte envelope must be inside its request page.
@@ -66,7 +69,7 @@
                 (iv-hex "488b442410") (iv-mem 137 0 9 (+ UV-FAULT 16))
                 (iv-hex "488b442408") (iv-mem 137 0 9 (+ UV-FAULT 24))
                 (iv-hex "488b442420") (iv-mem 137 0 9 (+ UV-FAULT 32))
-                (iv-hex "49c781") (xg-bytes (+ UV-FAULT 40) 4) (xg-bytes UV-MAGIC 4)
+                (iv-hex "49c781") (xg-bytes (+ UV-FAULT 40) 4) (xg-bytes (uv-magic) 4)
                 (iv-hex "49c781") (xg-bytes (+ UV-FAULT 48) 4) (xg-bytes vector 4)
                 (iv-hex "66bae900b050ee"))
         gap (- (* (inc vector) IV-STRIDE) 4 (+ (xg-pos code) 2))
