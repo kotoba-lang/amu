@@ -140,6 +140,32 @@ Its private staging and before/after source hashes are not an atomic
 compiler-enforced lock at ELF compilation. An omitted compile target refuses
 `E2`; always name the target explicitly.
 
+## Adapt the sum for your own range
+
+For a first calculation of your own, copy `sum.kotoba` into the same scoped
+`STARTER_OUTPUT` directory. Change the upper bound `(> i 10)` to a positive
+integer relevant to your task. For example, `(> i 20)` sums 1 through 20;
+the expected result is `210`. Keep the original example unchanged:
+
+```sh
+cp examples/foundation-starter/sum.kotoba "$STARTER_OUTPUT/sum-custom.kotoba"
+# Edit sum-custom.kotoba and change (> i 10) to (> i 20).
+KEXE_ALLOW=35,37,38,39 KEXE_CAP_RESOURCES_35="$STARTER_OUTPUT" \
+  KEXE_STACK_BYTES=8388608 ./bin/amu check "$STARTER_OUTPUT/sum-custom.kotoba"
+KEXE_ALLOW=35,37,38,39 KEXE_CAP_RESOURCES_35="$STARTER_OUTPUT" \
+  KEXE_STACK_BYTES=8388608 ./bin/amu compile "$STARTER_OUTPUT/sum-custom.kotoba" \
+  --target x86_64-linux --output "$STARTER_OUTPUT/sum-custom.elf" --format static
+chmod 700 "$STARTER_OUTPUT/sum-custom.elf"
+KEXE_ALLOW=- KEXE_FUEL=1000000 KEXE_STRUCTURED_REPORT=1 \
+  "$STARTER_OUTPUT/sum-custom.elf"
+```
+
+Compare the result to the independently calculated value before changing the
+range again. This example uses signed 64-bit integers and a finite fuel budget;
+large bounds can overflow or exhaust fuel. Choose a new output filename when
+recompiling. The compiler can access only the scoped directory and this guest
+receives no capabilities.
+
 ## 日本語の進め方
 
 1. 対応ホストは native Linux x86_64 です。これは公開資格が未完了の技術候補です。
@@ -149,7 +175,8 @@ compiler-enforced lock at ELF compilation. An omitted compile target refuses
 4. `sum.kotoba` の55と、同じ成果物の fuel 1 による停止を比較します。
 5. `hash.kotoba` で権限なしの拒否を確認し、ローカルSHA-256のwire 3だけを許可して
    結果64を確認します。ネットワーク・ファイル・推論の権限は追加しません。
-6. 自分の小さな整数計算に置き換え、期待値・実際の結果・対象host/revisionを残します。
+6. 上の `sum` の例で上限を20に変えると結果は210です。自分の小さな整数計算に
+   置き換え、期待値・実際の結果・対象host/revisionを残します。
 
 技術基盤は Kotoba Foundation の言語・Amu compiler・AIUEOS OS です。
 Awai Network / Itonami dapps はその基盤を使う応用・分散経済圏です。
