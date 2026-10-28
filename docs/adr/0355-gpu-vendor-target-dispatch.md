@@ -2384,3 +2384,60 @@ windows; derivation-census-s51.txt is the independent second
 parser (205 rows / 0 mismatched); bar-eval-s51.txt is the frozen
 evaluator's verdict; gate-rerun-s51b.txt is the landing re-run
 record; record.txt is the finding).
+
+## 2026-10-28 -- session 52 (JUN-59): the named-cell DEVIATION-CENTER level probe (analysis; T2 (b) NOT-SHIFTED-CONSISTENT -- the center level does NOT move with the scale level)
+
+ANALYSIS session -- NO new hardware, NO new runs, NO builds: the
+four windows s36/s38/s39/s51 are prior sessions' committed logs
+only. The row question is session 51's first-named candidate ("a
+deviation-center or other-quantile-pair LEVEL probe over the same
+windows") taken on the DEVIATION-CENTER axis (the un-taken other-
+quantile-pair half stays a named candidate row): D = x_(38) of
+each block's pooled 75, the center about which the s48-frozen MAD
+deviation is taken; three TWO-SIDED contrasts (s36 vs s38, s36 vs
+s39, s36 vs s51) -- no prior letter fixes a center direction --
+joint T2 = the pre-registered IUT (all three (a) AND one common
+sign; no multiplicity correction), frozen at 2026-10-28T13:38:22Z
+before any statistic of the probe was computed.
+
+THE FINDING (DERIVED): T2 = (b) NOT-SHIFTED-CONSISTENT -- the
+named cell's deviation-center level is STABLE across the same four
+windows where its robust-scale level shifted: 2*L (half-tick) s36
+2,833 -> s38 2,845 (C_obs -6.0; count 9,768/20,001; p 0.488426),
+-> s39 2,826 (C_obs +3.5; count 13,472/20,001; p 0.673616), ->
+s51 2,825 (C_obs +4.0; count 12,176/20,001; p 0.608820); all
+three (b) NOT-DIFFERENT [NONZERO-NOT-SIGNIFICANT], sign split
+across pairs. NAMED, NOT HIDDEN: (b) is CONSISTENT WITH a scale-
+only change (estimator/dispersion structure) and against a whole-
+distribution multiplicative shift, but does NOT decide physical-vs-
+estimator-structure (a center shift below the noise floor cannot
+be excluded -- LOW POWER, n=2 windows per contrast, ONE host, ONE
+UTC day); the axis and contrast set were chosen AFTER the scale
+results on these windows were known (FOURTH axis on the same
+window data; the family stays separate and retro-corrects
+nothing); 20,000 trials (named cost deviation); threshold-
+artifact-vs-representation STAYS UNRESOLVED. Integrity: 4/4
+windows clean (VERIFY mismatch 0), C1 (a) at all four windows
+(c2 FLOOR; c8 0.01%/0.53%/0.26%/0.08% delta), vectors/anchors all
+four reproduce EXACTLY. The bar: NO ledger line, NO day-slot
+consumption (no runs); frozen evaluator 38/0, ledger eval twice
+byte-identical -> VERDICT PENDING 1/4 (next executable day slot
+2026-10-29). Rule 4 binds: nothing moves; accelerator-targets
+defaults remain provisional (`:measured? false`); no vendor
+optimization exists for Intel.
+
+Gates (real runs this tick): classify self-test 2649/0
+(byte-identical to the s51 pin); scoped GPU gate GREEN
+123/12162/0/0 twice, both byte-identical to the s51 pins; full
+run-tests.cljk exit 1 RED AT BASE kotoba.form (ADR-0362, outside
+this diff -- touches NO .cljk namespace), stderr byte-identical
+to the s51 pin -- NO green full suite claimed; derivation census
+117 rows / 0 mismatched, run twice byte-identical; find
+docs/evidence/gpu -name '*.sh' -> 0.
+
+Evidence: `docs/evidence/gpu/anv-b3centerlevel-20261028/`
+(protocol.txt is the frozen pre-registration; publication-s52.txt
+is the derived read over the 234 committed run logs of the four
+windows; derivation-census-s52.txt is the independent second
+parser (117 rows / 0 mismatched); bar-eval-s52.txt is the frozen
+evaluator's verdict; record.txt is the finding).
