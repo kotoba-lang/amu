@@ -2814,7 +2814,115 @@ stay named candidate rows).
 
 Evidence: `docs/evidence/gpu/anv-b3w5xdayrep-20261029/`
 (protocol.txt is the frozen pre-registration -- written once,
-never rewritten; freeze-record-s57.txt is this tick's record --
-the W5 measurement session owns record.txt there; the gate
+never rewritten; freeze-record-s57.txt is this tick's record -- the
+W5 measurement session owns record.txt there; the gate
 captures are byte-identical to the s56 pins). The measurement
 half of the row is UNMEASURED until the 2026-10-29 UTC slot.
+
+## 2026-10-28 -- session 58 (JUN-59): the third named rank-pair set compression-profile read (analysis; T8 (a) THIRDPAIR-PROFILE-OUTER-WEIGHTED-CONSISTENT -- the outer-weighted profile RE-EMERGES at the third halving-ladder rank pairs)
+
+Session 57's queue third named candidate row ("any further named
+profile pair (other outer/inner rank pairs stay named candidate
+rows)") taken on the THIRD NAMED RANK-PAIR SET of the SAME four
+windows s36/s38/s39/s51 of the named-cell robust-scale level
+campaign (ANALYSIS only): does the outer-weighted compression
+profile of s55's T5 (a) re-emerge when the outer and inner
+quantile-pair ranks are moved one more step along the
+pre-registered HALVING LADDER -- OUTER3 = (x_(3), x_(73)) halfway
+between s56's (5,71) and the full range (1,75); INNER3 =
+(x_(35), x_(41)), where the exact halving between s56's (33,43)
+and the center (38,38) lands on the HALF-INTEGER k=2.5 and is
+rounded half-away-from-zero to k=3 -- a named rule choice,
+frozen BEFORE any third-pair statistic existed (protocol freeze
+stamp 2026-10-28T16:36:43Z), the alternative rounding (k=2 ->
+(36,40)) staying a named candidate row? PRIMARY STATISTIC: the
+difference-in-differences 2*P3_obs = 2*C_out3 - 2*C_in3 (D_out3
+= x_(73) - x_(3), D_in3 = x_(41) - x_(35) per block of the SAME
+pooled 75; 2*L = 6th+7th order statistics of the 12 block D
+values); THREE contrasts (s36 vs s38, s36 vs s39, s36 vs s51),
+ONE-SIDED each in the pre-registered direction P3 > 0
+(outer-weighted compression at the third pair set -- direction
+fixed by s55's published T5 (a) reading and the ladder framing,
+QUOTE-ONLY; s56's T6 (b) is KNOWN and did NOT change the
+direction), joint T8 = the pre-registered INTERSECTION-UNION
+rule (all three (a); NO multiplicity correction); 20,000 trials,
+seed 2026102808, frozen probe order, both axes on the same
+pseudo-blocks. NAMED, NOT HIDDEN: this probe DOES test a FRESH
+pre-registered prediction -- the third-pair levels were never
+published or computed anywhere.
+
+THE FINDING (DERIVED; publication-s58.txt, analysis-s58.py run
+twice byte-identical): T8 = (a) THIRDPAIR-PROFILE-OUTER-
+WEIGHTED-CONSISTENT -- all three contrasts (a): s36-vs-s38
+2*P3_obs 181 (P3 +90.5; OUT3 2*L 902 -> 721 (2*C_out3 181), IN3
+36 -> 36 (2*C_in3 0); count 57 / 20,001; p 0.002900) (a)
+THIRDPAIR-OUTER-WEIGHTED-DIFFERENT, s36-vs-s39 2*P3_obs 92 (P3
++46.0; OUT3 902 -> 811 (91), IN3 36 -> 37 (-1); count 770 /
+20,001; p 0.038548) (a), and s36-vs-s51 2*P3_obs 119 (P3 +59.5;
+OUT3 902 -> 776 (126), IN3 36 -> 29 (7); count 409 / 20,001; p
+0.020499) (a). ALL THREE contrasts clear the frozen 0.05
+threshold in the pre-registered direction.
+
+NAMED, NOT HIDDEN: (a) at T8 FOLLOWING s56's T6 (b) is
+CONSISTENT WITH the s56 (b) having been a POWER LOSS at the
+near-center inner2 pair rather than rank-pair specificity -- at
+the third ladder step the outer3 level carries the whole signal
+(902 -> 721/811/776) while the inner3 level is flat near its
+noise floor (2*L 36/36/37/29; the inner3 pair spans only 6
+ranks), so P3 ~= C_out3 at this step (2*C_in3 is 0/-1/+7); (a)
+is equally CONSISTENT WITH the outer-weighted reading being an
+outer-spread phenomenon at every ladder step whose outer pair
+carries enough span to measure; NEITHER reading names a
+mechanism (thermal/scheduling/memory/driver state all UNMEASURED)
+and NOT whether any movement is physical or estimator structure;
+(a) does NOT overturn s56's T6 (b) (different rank pairs, a
+SEPARATE named family) and does NOT settle the rank-pair
+question by itself (ladder steps 2 and 3 disagree; the k=2
+inner3 rounding variant and the ladder's fourth pair set stay
+named candidate rows); this is a NINTH axis on the SAME window
+data and the campaign's SECOND fresh pre-registered prediction
+(the third-pair levels had no priors); LOW POWER, n=2 windows
+per contrast, ONE host, ONE UTC day; threshold-artifact-vs-
+representation and physical-vs-estimator-structure STAY
+UNRESOLVED. Integrity (DERIVED): 4/4 windows clean (78 runs
+parsed each, VERIFY mismatch total 0); C1 (a) at ALL FOUR
+windows (c2 FLOOR; c8 0.01%/0.53%/0.26%/0.08% delta vs committed
+32,915); all four windows' block-min vectors and anchor rows
+reproduce their published/quote-only priors EXACTLY. BAR: NO
+ledger line and NO day-slot consumption (no runs this session;
+the 2026-10-28 slot is s31's); frozen evaluator --self-test 38/0,
+ledger eval twice byte-identical -> VERDICT PENDING 1/4
+unchanged; next executable day slot 2026-10-29. RULE 4
+unchanged: NOTHING MOVES -- accelerator-targets defaults remain
+provisional (:measured? false); NO vendor optimization exists
+for Intel. Gates (real runs; every capture byte-identical to its
+pinned s56 artifact): gpu_regime_classify.py --self-test 2649/0;
+scoped GPU gate GREEN 123/12162/0/0 run 1 AND run 2 (scratch
+runner scratch/scoped-gpu-gate.cljk -- eight GPU-owned
+namespaces, created/run/deleted, never committed); FULL
+run-tests.cljk LIVE: exit 1, RED AT BASE kotoba.form (ADR-0362,
+outside this diff -- touches NO .cljk namespace) -- NO green full
+suite claimed; derivation-census-s58.txt: independent second
+parser (split-based, no re module, no numpy; pure-Python sorted()
+order statistics from ONE shared sort per pooled 75 --
+sorted(pooled75)[72] - sorted(pooled75)[2] and
+sorted(pooled75)[40] - sorted(pooled75)[34]; independent
+pure-Python shuffle loop under the frozen RNG contract
+random.Random(2026102808) consumed in the frozen probe order,
+BOTH axes on the SAME pseudo-blocks) re-deriving every published
+integer, count, p value and letter -- 159 rows / 0 mismatched,
+run twice byte-identical; find docs/evidence/gpu -name '*.sh' ->
+0.
+
+Named candidate rows for later sessions (unchanged order):
+(first, STARTED) the fifth-window measurement + T7 read in the
+2026-10-29 UTC slot (NEW hardware); then the s38 hi
+(sum,256,S=32) wander replication (NEW hardware -- W5's hi
+runs); then any further named profile pair (the halving ladder's
+fourth pair set, or the k=2 inner3 rounding variant, stay named
+candidate rows).
+
+Evidence: `docs/evidence/gpu/anv-b3pair3profile-20261028/`
+(protocol.txt is the frozen pre-registration -- written once,
+never rewritten; record.txt is this tick's record; the gate
+captures are byte-identical to the s56 pins).
