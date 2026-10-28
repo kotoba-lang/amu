@@ -97,25 +97,47 @@ the translator's own text. In the browser's WebGPU on this Mac:
 The 314 GB/s is the cached figure for a 64 MiB matrix; it is not a model
 decode rate and is not comparable to `llama-bench`.
 
+## Slice 2: the kdot family (2026-10-28)
+
+The translator now covers `OpSelect`, `OpBitcast`, the `OpConvert*` family,
+`OpCompositeConstruct`, `OpDot`, `OpBitFieldSExtract`, the packed 4x8 integer
+dot product (`dot4I8Packed`, with `requires packed_4x8_integer_dot_product;`),
+GLSL.std.450 instructions that have a WGSL builtin, Function-variable arrays
+and vector elements. `spw-unsupported` reports the opcodes a module uses that
+are still refused, and `spw-ok?` says whether the text holds an `//ERROR`.
+
+Seven kernels translate with no refusal and pass wgpu's validator (the
+evidence README has the table); the validator found three real defects that
+the first pass missed, now fixed: a generated name `f32` for id 32 (every
+generated name now has an underscore, `f_32`), a signed shift amount (WGSL
+needs a `u32`), and packed-dot operands typed `i32` (cast to `u32`).
+`kdot-f32-r1`, the decode kernel, matches an f64 sum on synthetic Q8_0 data to
+5.2e-6 at 64 x 1024 and 1.5e-4 at 4096 x 4096, where it reads weights at
+41 GB/s. Evidence: [`docs/evidence/spirv-to-wgsl-20261028/`](../evidence/spirv-to-wgsl-20261028/README.md).
+
 ## What this does not show
 
-* Only `dot_rows` is translated. The kdot family, the nex ops, Float16,
-  subgroup arithmetic, vectors beyond `vec3` extraction, `OpSelect`, atomics
-  and `break` / `continue` branches are refused by `//ERROR`, not handled.
-* There is no repeatable gate yet: the numeric check ran by hand in a browser
-  tab. The bridge to `scripts/seed/check-wasm32-browser.py` (headless Chrome,
-  no Node) is the next step.
-* No selfhost decode, batched prefill or serving loop runs through WGSL, and
-  no vLLM or llama.cpp comparison was taken.
-* The browser here is a test oracle, as `spirv-val` is for SPIR-V. It is not
-  the product route.
+* Seven kernels of 89 are translated; the deltanet, embed, nex-op, h2 and
+  subgroup kernels are not, and Float16 and subgroup output are not written.
+  `break` / `continue` branches are refused.
+* The checks ran by hand with Deno's WebGPU and one browser tab. There is no
+  product-route gate yet (headless Chrome, no Node).
+* Numerics were checked for `dot-rows` and `kdot-f32-r1` (Q8_0 arm) only; the
+  other types and kernels pass validation, not parity.
+* The 41 GB/s is one microbenchmark. No selfhost decode, batched prefill or
+  serving loop runs through WGSL, and no vLLM or llama.cpp comparison was
+  taken.
+* The browser and Deno here are test oracles, as `spirv-val` is for SPIR-V.
+  They are not the product route.
 * The Mac runtime is a diagnostic profile (its own arena sizes, no file
   write); JUN-417 owns qualifying it.
 
 ## Next steps
 
-1. A headless-Chrome gate that feeds the generated text to `createShaderModule`
-   and the f64 twin, replacing the by-hand check.
-2. Widen the subset kernel by kernel: the kdot family first, each with a
-   feature report (`shader-f16`, `subgroups`) the host can check.
-3. The language-neutral IR (option 2) once two or more back ends need it.
+1. The headless-Chrome gate: feed the generated text to `createShaderModule`
+   and the f64 twins, replacing the by-hand checks.
+2. The remaining kernels, each with a feature report (`enable f16;`,
+   `enable subgroups;`), then parity for every tensor type of `kdot-f32-r1`.
+3. Kernel bandwidth (AWAI-6): the dequantising kdot reads at 41 GB/s where the
+   f32 stream reads 300+, in WGSL as in SPIR-V.
+4. The language-neutral IR (option 2) once two or more back ends need it.

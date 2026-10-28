@@ -1,4 +1,4 @@
-(ns spirv-to-wgsl (:export [spw-translate]))
+(ns spirv-to-wgsl (:export [spw-translate spw-unsupported spw-ok?]))
 
 ;; SPIR-V to WGSL (ADR 0379): the verified KIR v2 modules, as WGSL text.
 ;; Input is a module vector as spirv_encode.kotoba builds it (M[0] words,
@@ -24,7 +24,8 @@
 (defn- cat4 [a :string b :string c :string d :string] :string (string-concat a (cat3 b c d)))
 (defn- cat5 [a :string b :string c :string d :string e :string] :string (string-concat a (cat4 b c d e)))
 
-(defn- idn [p :string id :i64] :string (string-concat p (string-from-i64 id)))
+;; `f` + 32 would be the type f32, so a generated name always has an underscore: f_32
+(defn- idn [p :string id :i64] :string (string-concat (string-concat p "_") (string-from-i64 id)))
 
 ;; X: eight slots per id. 0 opcode, 1 word offset of the defining instruction,
 ;; 2 binding + 1, 3 builtin + 1, 4 NonWritable member 0 (structs).
@@ -84,11 +85,17 @@
           (= op 22) (if (= (xw M X t 2) 16) "f16" "f32")
           :else "?")))
 
+;; an array element: a scalar or a vector
+(defn- elem-ty [M :vector-i64 X :vector-i64 t :i64] :string
+  (if (= (x-op X t) 23)
+    (cat4 "vec" (string-from-i64 (xw M X t 3)) "<" (cat3 (scalar-ty M X (xw M X t 2)) ">" ""))
+    (scalar-ty M X t)))
+
 (defn- ty [M :vector-i64 X :vector-i64 t :i64] :string
   (let [op (x-op X t)]
     (cond (= op 23) (cat4 "vec" (string-from-i64 (xw M X t 3)) "<" (cat3 (scalar-ty M X (xw M X t 2)) ">" ""))
-          (= op 28) (cat5 "array<" (scalar-ty M X (xw M X t 2)) ", " (string-from-i64 (xw M X (xw M X t 3) 3)) ">")
-          (= op 29) (cat3 "array<" (scalar-ty M X (xw M X t 2)) ">")
+          (= op 28) (cat5 "array<" (elem-ty M X (xw M X t 2)) ", " (string-from-i64 (xw M X (xw M X t 3) 3)) ">")
+          (= op 29) (cat3 "array<" (elem-ty M X (xw M X t 2)) ">")
           (= op 30) (idn "S" t)
           :else (scalar-ty M X t))))
 
@@ -133,6 +140,7 @@
               (cat4 (idn "b" (x-bind X base)) "[" (ex M X (xw M X id 5)) "]")
               (cat3 (idn "b" (x-bind X base)) ".m" (string-from-i64 (const-int M X (xw M X id 4))))))
           (= c 4) (cat4 (idn "s" base) "[" (ex M X (xw M X id 4)) "]")
+          (= c 7) (cat4 (idn "f" base) "[" (ex M X (xw M X id 4)) "]")
           :else "?bad-chain"))
       :else "?bad-place")))
 
@@ -142,7 +150,7 @@
 (defn- spw-binop [op :i64] :string
   (cond (= op 128) "+" (= op 129) "+" (= op 130) "-" (= op 131) "-"
         (= op 132) "*" (= op 133) "*" (= op 134) "/" (= op 136) "/"
-        (= op 137) "%" (= op 194) ">>" (= op 196) "<<" (= op 199) "&"
+        (= op 137) "%" (= op 194) ">>" (= op 195) ">>" (= op 196) "<<" (= op 199) "&"
         (= op 197) "|" (= op 198) "^"
         (= op 170) "==" (= op 171) "!=" (= op 172) ">" (= op 174) ">="
         (= op 176) "<" (= op 178) "<=" (= op 180) "==" (= op 183) "!="
@@ -153,13 +161,37 @@
 (defn- comp-name [i :i64] :string
   (cond (= i 0) "x" (= i 1) "y" (= i 2) "z" :else "w"))
 
+;; GLSL.std.450 instructions the kernels use, as WGSL builtins ("" when not mapped)
+(defn- glsl-fn [inst :i64] :string
+  (cond (= inst 1) "round" (= inst 4) "abs" (= inst 13) "sin" (= inst 14) "cos"
+        (= inst 26) "pow" (= inst 27) "exp" (= inst 28) "log" (= inst 32) "inverseSqrt"
+        (= inst 38) "min" (= inst 40) "max" (= inst 62) "unpack2x16float"
+        :else ""))
+
+;; operands k+j .. the end of the instruction, as "a, b, c"
+(defn- args-from [M :vector-i64 X :vector-i64 k :i64 j :i64] :string
+  (let [wc (u64-shift-right (spv-word M k) 16)]
+    (loop [i j out ""]
+      (if (>= i wc) out
+        (recur (inc i) (cat3 out (if (string=? out "") "" ", ") (ex M X (spv-word M (+ k i)))))))))
+
+(defn- let-as [rid :i64 e :string] :string (cat5 "  let " (idn "v" rid) " = " e ";\n"))
+
+;; the right operand of a binary operator; a shift amount must be a u32 in WGSL
+(defn- rhs [M :vector-i64 X :vector-i64 k :i64 op :i64] :string
+  (let [id (spv-word M (+ k 4)) e (ex M X id) t (xw M X id 1)]
+    (if (and (or (= op 194) (or (= op 195) (= op 196)))
+             (and (= (x-op X t) 21) (= (xw M X t 3) 1)))
+      (cat3 "u32(" e ")")
+      e)))
+
 ;; the statement for one non-control instruction at k, "" for none, "//ERROR ..." when refused
 (defn- stmt [M :vector-i64 X :vector-i64 k :i64 op :i64] :string
   (let [rid (spv-word M (+ k 2))]
     (cond
       (= op 59)
       (if (= (var-class M X rid) 7)
-        (cat5 "  var " (idn "f" rid) ": " (scalar-ty M X (xw M X (xw M X rid 1) 3)) ";\n")
+        (cat5 "  var " (idn "f" rid) ": " (ty M X (xw M X (xw M X rid 1) 3)) ";\n")
         "")
       (= op 61) (cat5 "  let " (idn "v" rid) " = " (place M X (spv-word M (+ k 3))) ";\n")
       (= op 62) (cat5 "  " (place M X (spv-word M (+ k 1))) " = " (ex M X (spv-word M (+ k 2))) ";\n")
@@ -170,6 +202,27 @@
       (= op 224)
       (let [sem (const-int M X (spv-word M (+ k 3)))]
         (if (> (bit-and sem 64) 0) "  storageBarrier();\n  workgroupBarrier();\n" "  workgroupBarrier();\n"))
+      (= op 169)
+      (let-as rid (cat5 "select(" (ex M X (spv-word M (+ k 5))) ", " (ex M X (spv-word M (+ k 4))) (cat3 ", " (ex M X (spv-word M (+ k 3))) ")")))
+      (= op 124)
+      (let-as rid (cat5 "bitcast<" (ty M X (spv-word M (+ k 1))) ">(" (ex M X (spv-word M (+ k 3))) ")"))
+      (or (or (= op 109) (= op 110)) (or (= op 111) (= op 112)))
+      (let-as rid (cat5 (ty M X (spv-word M (+ k 1))) "(" (ex M X (spv-word M (+ k 3))) ")" ""))
+      (= op 80)
+      (let-as rid (cat5 (ty M X (spv-word M (+ k 1))) "(" (args-from M X k 3) ")" ""))
+      (= op 4450)
+      (let-as rid (cat5 "dot4I8Packed(u32(" (ex M X (spv-word M (+ k 3))) "), u32(" (ex M X (spv-word M (+ k 4))) "))"))
+      (= op 4451)
+      (let-as rid (cat5 "dot4U8Packed(u32(" (ex M X (spv-word M (+ k 3))) "), u32(" (ex M X (spv-word M (+ k 4))) "))"))
+      (= op 148)
+      (let-as rid (cat5 "dot(" (ex M X (spv-word M (+ k 3))) ", " (ex M X (spv-word M (+ k 4))) ")"))
+      (= op 202)
+      (let-as rid (cat5 "extractBits(" (ex M X (spv-word M (+ k 3))) ", u32(" (ex M X (spv-word M (+ k 4)))
+                        (cat3 "), u32(" (ex M X (spv-word M (+ k 5))) "))")))
+      (= op 12)
+      (let [f (glsl-fn (spv-word M (+ k 4)))]
+        (if (string=? f "") (cat3 "//ERROR unsupported GLSL.std.450 instruction " (string-from-i64 (spv-word M (+ k 4))) "\n")
+          (let-as rid (cat5 f "(" (args-from M X k 5) ")" ""))))
       (= op 253) "  return;\n"
       (= op 249) ""
       (= op 56) ""
@@ -177,7 +230,7 @@
       (= op 55) ""
       (not (string=? (spw-binop op) ""))
       (cat5 "  let " (idn "v" rid) " = "
-            (cat5 "(" (ex M X (spv-word M (+ k 3))) " " (spw-binop op) (cat3 " " (ex M X (spv-word M (+ k 4))) ")"))
+            (cat5 "(" (ex M X (spv-word M (+ k 3))) " " (spw-binop op) (cat3 " " (rhs M X k op) ")"))
             ";\n")
       :else (cat3 "//ERROR unsupported opcode " (string-from-i64 op) "\n"))))
 
@@ -294,6 +347,27 @@
                 (cat5 (string-from-i64 (spv-word M (+ k 3))) ", " (string-from-i64 (spv-word M (+ k 4))) ", " (string-from-i64 (spv-word M (+ k 5))))
                 :else (recur (+ k wc))))))))
 
+;; true when some instruction of the module has opcode op
+(defn- has-op? [M :vector-i64 op :i64] :bool
+  (let [n (spv-count M)]
+    (loop [k 5]
+      (if (>= k n) false
+        (let [h (spv-word M k) wc (u64-shift-right h 16)]
+          (cond (= wc 0) false
+                (= (bit-and h 65535) op) true
+                :else (recur (+ k wc))))))))
+
+;; the module-level directives the features it uses need: the packed 4x8
+;; integer dot product is a WGSL language feature, f16 a device feature
+(defn- directives [M :vector-i64 X :vector-i64] :string
+  (let [bound (spv-word M 3)
+        f16 (loop [id 1]
+              (cond (>= id bound) false
+                    (and (= (x-op X id) 22) (= (xw M X id 2) 16)) true
+                    :else (recur (inc id))))]
+    (cat3 (if (or (has-op? M 4450) (has-op? M 4451)) "requires packed_4x8_integer_dot_product;\n" "")
+          (if f16 "enable f16;\n" "") "")))
+
 (defn spw-translate [M :vector-i64] :string
   (let [bound (spv-word M 3)
         X (spw-scan M (vector-alloc (* bound 8)))
@@ -302,6 +376,44 @@
       (let [body (spw-body M X fk)
             decls (spw-decls M X)
             params (spw-params M X)
-            text (cat5 decls "@compute @workgroup_size(" (local-size M) ")\n"
+            text (cat5 (string-concat (directives M X) decls) "@compute @workgroup_size(" (local-size M) ")\n"
                        (cat5 "fn main(" params ") {\n" body "}\n"))]
         text))))
+
+;; ---------------------------------------------------------------------
+;; The feature report: the opcodes of a module that spw-translate refuses,
+;; each once, as " <opcode>" in order of first appearance ("" when none).
+
+(defn- spw-known? [op :i64] :bool
+  (or (or (or (and (>= op 19) (<= op 39)) (and (>= op 41) (<= op 43)))
+          (or (and (>= op 54) (<= op 56)) (and (>= op 59) (<= op 62))))
+      (or (or (= op 65) (= op 81)) (or (= op 224) (and (>= op 246) (<= op 253))))
+      (or (or (= op 12) (= op 80)) (or (= op 124) (= op 148)))
+      (or (or (= op 169) (= op 202)) (and (>= op 109) (<= op 112)))
+      (or (= op 4450) (= op 4451))
+      (or (or (= op 3) (= op 4)) (or (= op 5) (= op 6)))
+      (or (or (= op 10) (= op 11)) (or (= op 14) (= op 15)))
+      (or (or (= op 16) (= op 17)) (or (= op 71) (= op 72)))
+      (not (string=? (spw-binop op) ""))))
+
+(defn spw-unsupported [M :vector-i64] :string
+  (let [n (spv-count M) seen (vector-alloc 8192)]
+    (loop [k 5 out ""]
+      (if (>= k n) out
+        (let [h (spv-word M k) wc (u64-shift-right h 16) op (bit-and h 65535)]
+          (cond (= wc 0) (string-concat out " zero-wc")
+                (or (spw-known? op) (>= op 8192)) (recur (+ k wc) out)
+                (= (vector-at seen op) 1) (recur (+ k wc) out)
+                :else (let [s (vector-assoc! seen op 1)]
+                        (recur (+ k wc) (cat3 out " " (string-from-i64 op))))))))))
+
+;; true when the text spw-translate returned holds no //ERROR line
+(defn spw-ok? [w :string] :bool
+  (let [n (string-length w)]
+    (loop [i 0]
+      (cond (> (+ i 7) n) true
+            (and (and (= (string-code-point-at w i) 47) (= (string-code-point-at w (+ i 1)) 47))
+                 (and (and (= (string-code-point-at w (+ i 2)) 69) (= (string-code-point-at w (+ i 3)) 82))
+                      (and (= (string-code-point-at w (+ i 4)) 82) (= (string-code-point-at w (+ i 5)) 79))))
+            false
+            :else (recur (inc i))))))

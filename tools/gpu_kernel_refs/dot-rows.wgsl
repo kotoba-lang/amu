@@ -1,75 +1,75 @@
-struct S7 { m0: u32, m1: u32, };
-@group(0) @binding(0) var<storage, read> b0: S7;
-@group(0) @binding(1) var<storage, read> b1: array<f32>;
-@group(0) @binding(2) var<storage, read> b2: array<f32>;
-@group(0) @binding(3) var<storage, read_write> b3: array<f32>;
-var<workgroup> s23: array<f32, 256>;
+struct S_7 { m0: u32, m1: u32, };
+@group(0) @binding(0) var<storage, read> b_0: S_7;
+@group(0) @binding(1) var<storage, read> b_1: array<f32>;
+@group(0) @binding(2) var<storage, read> b_2: array<f32>;
+@group(0) @binding(3) var<storage, read_write> b_3: array<f32>;
+var<workgroup> s_23: array<f32, 256>;
 @compute @workgroup_size(256, 1, 1)
-fn main(@builtin(workgroup_id) i33: vec3<u32>, @builtin(local_invocation_id) i36: vec3<u32>) {
-  var f25: u32;
-  var f26: u32;
-  var f28: f32;
-  let v34 = i33;
-  let v35 = v34.x;
-  let v37 = i36;
-  let v38 = v37.x;
-  let v41 = b0.m0;
-  let v43 = (v35 >= v41);
-  if (v43) {
+fn main(@builtin(workgroup_id) i_33: vec3<u32>, @builtin(local_invocation_id) i_36: vec3<u32>) {
+  var f_25: u32;
+  var f_26: u32;
+  var f_28: f32;
+  let v_34 = i_33;
+  let v_35 = v_34.x;
+  let v_37 = i_36;
+  let v_38 = v_37.x;
+  let v_41 = b_0.m0;
+  let v_43 = (v_35 >= v_41);
+  if (v_43) {
   return;
   } else {
   }
-  let v49 = b0.m1;
-  f28 = bitcast<f32>(0u);
-  f25 = v38;
+  let v_49 = b_0.m1;
+  f_28 = bitcast<f32>(0u);
+  f_25 = v_38;
   loop {
-  let v54 = f25;
-  let v55 = (v54 < v49);
-  if (!(v55)) { break; }
-  let v57 = f25;
-  let v58 = (v35 * v49);
-  let v59 = (v58 + v57);
-  let v62 = b1[v59];
-  let v64 = b2[v57];
-  let v65 = (v62 * v64);
-  let v66 = f28;
-  let v67 = (v66 + v65);
-  f28 = v67;
+  let v_54 = f_25;
+  let v_55 = (v_54 < v_49);
+  if (!(v_55)) { break; }
+  let v_57 = f_25;
+  let v_58 = (v_35 * v_49);
+  let v_59 = (v_58 + v_57);
+  let v_62 = b_1[v_59];
+  let v_64 = b_2[v_57];
+  let v_65 = (v_62 * v_64);
+  let v_66 = f_28;
+  let v_67 = (v_66 + v_65);
+  f_28 = v_67;
   continuing {
-  let v68 = f25;
-  let v69 = (v68 + 256u);
-  f25 = v69;
+  let v_68 = f_25;
+  let v_69 = (v_68 + 256u);
+  f_25 = v_69;
   }
   }
-  let v72 = f28;
-  s23[v38] = v72;
+  let v_72 = f_28;
+  s_23[v_38] = v_72;
   workgroupBarrier();
-  f26 = 128u;
+  f_26 = 128u;
   loop {
-  let v80 = f26;
-  let v81 = (v80 > 0u);
-  if (!(v81)) { break; }
-  let v83 = f26;
-  let v84 = (v38 < v83);
-  if (v84) {
-  let v89 = s23[v38];
-  let v90 = (v38 + v83);
-  let v92 = s23[v90];
-  let v94 = (v89 + v92);
-  s23[v38] = v94;
+  let v_80 = f_26;
+  let v_81 = (v_80 > 0u);
+  if (!(v_81)) { break; }
+  let v_83 = f_26;
+  let v_84 = (v_38 < v_83);
+  if (v_84) {
+  let v_89 = s_23[v_38];
+  let v_90 = (v_38 + v_83);
+  let v_92 = s_23[v_90];
+  let v_94 = (v_89 + v_92);
+  s_23[v_38] = v_94;
   } else {
   }
   workgroupBarrier();
   continuing {
-  let v95 = f26;
-  let v96 = (v95 >> 1u);
-  f26 = v96;
+  let v_95 = f_26;
+  let v_96 = (v_95 >> 1u);
+  f_26 = v_96;
   }
   }
-  let v97 = (v38 == 0u);
-  if (v97) {
-  let v103 = s23[0u];
-  b3[v35] = v103;
+  let v_97 = (v_38 == 0u);
+  if (v_97) {
+  let v_103 = s_23[0u];
+  b_3[v_35] = v_103;
   } else {
   }
   return;
