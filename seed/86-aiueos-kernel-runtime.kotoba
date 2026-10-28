@@ -18,7 +18,10 @@
 (def KM-USER-SLOT 101)
 (def KM-RDRAND 102)
 (def KM-RDSEED 103)
-(def KM-INTR-N 104)
+(def KM-OUT16 104)
+(def KM-IN16 105)
+(def KM-EFFECTS 106)
+(def KM-INTR-N 107)
 (def KM-SEALED-SCRATCH 272)
 (def KM-SEALED-PAGES 280)
 
@@ -61,9 +64,11 @@
       66 "kernel-framebuffer-stride" 67 "kernel-framebuffer-format"
       68 "kernel-browser-surface" 69 "kernel-browser-context" 70 "kernel-native-font"
       71 "kernel-boot-payload" 72 "kernel-user-slot"
-      73 "kernel-rdrand" 74 "kernel-rdseed" "")))
+      73 "kernel-rdrand" 74 "kernel-rdseed"
+      75 "kernel-out-u16" 76 "kernel-in-u16" 77 "kernel-desktop-effects" "")))
 (defn- km-arity [k :i64] :i64
-  (cond (< k KM-MEM-N) (if (= (bit-and (km-raw k) 1) 0) 3 4)
+  (cond (= k KM-OUT16) 2 (= k KM-IN16) 1 (= k KM-EFFECTS) 0
+        (< k KM-MEM-N) (if (= (bit-and (km-raw k) 1) 0) 3 4)
         (< k (+ KM-MEM-N 2)) 2
         (< k KM-CPU-FIRST) 1
         (= k KM-BOOT-INFO) 0
@@ -104,7 +109,8 @@
 (def KM-BOOT-BYTES 16544)
 (defn- km-owned-region [M :vector-i64 f :i64 i :i64 t :i64] :i64
   (if (not= (xg-get M 4) 2) -1
-    (cond (= (km-intr M f) KM-BOOT-INFO) (+ 4294967296 KM-BOOT-BYTES)
+    (cond (= (km-intr M f) KM-EFFECTS) (+ 4294967296 16384)
+          (= (km-intr M f) KM-BOOT-INFO) (+ 4294967296 KM-BOOT-BYTES)
           (= (km-intr M f) KM-OWNED-PAGE) (+ 4294967296 4096)
           (= (km-intr M f) KM-OWNED-WINDOW)
             (let [n (xk-src M i (inc t) 0)] (if (= n 0) -1 n))
@@ -231,7 +237,19 @@
   (-> M (xg-bytes 0xab9 5) (xg-bytes opcode 4) (xg-bytes 0x0672 2)
         (xg-bytes 0xc9ff 2) (xg-bytes 0xf675 2) (xg-bytes 0xc031 2) (xg-save t)))
 (defn- km-intrinsic [M :vector-i64 k :i64 t :i64] :vector-i64
-  (cond (< k KM-MEM-N) (km-window M k t)
+  (cond (= k KM-OUT16)
+          (-> M (xg-load t 0x958b48) (xg-load (inc t) 0x858b48)
+              (xg-bytes 0xef66 2) (xg-save t))
+        (= k KM-IN16)
+          (-> M (xg-load t 0x958b48) (xg-bytes 0xc031 2)
+              (xg-bytes 0xed66 2) (xg-save t))
+        (= k KM-EFFECTS)
+          ;; The existing guarded context getter proves the private desktop
+          ;; host. Its adjacent, previously unused final 16KiB is disjoint
+          ;; from Browser/IME, key state, crypto scratch and all user pages.
+          (-> M (wg-intrinsic 6 t) (xg-load t 0x858b48)
+              (iv-hex "480500200000") (xg-save t))
+        (< k KM-MEM-N) (km-window M k t)
         (= k KM-BOOT-PAYLOAD) (wg-boot-payload M t)
         (= k KM-USER-SLOT) (wg-user-slot M t)
         (= k KM-RDRAND) (km-entropy M 0xf0c70f48 t)
