@@ -1,0 +1,59 @@
+JUN-59 W5 analysis PRE-BUILD (session 69) -- s51-COMPAT VALIDATION
+(analysis-prego.py --compat-s51: the generic primary/D3/D1/D2/C1/
+vector/anchor machinery run at the FOUR prior windows in session-51
+configuration -- random.Random(20261028), frozen probe order primary MAD /
+primary IQR / D MAD-hi / D MAD-tw / D IQR-hi / D IQR-tw, 20000 trials
+per probe, one rng.shuffle of a fresh list per trial -- vs the want
+values PARSED from the committed publication-s51.txt.)
+No W5 quantity is computed anywhere in this mode; the W5-dependent
+parts (T7 at the (s36, W5) pair, five-window D3, D1/D2/D4 at W5)
+are UNVALIDATED until the W5 logs exist (named, not hidden).
+
+row 01: sec1 s36 integrity: want [runs 78 vmis 0 counts True knobs True s8 True cmap True] got [runs 78 vmis 0 counts True knobs True s8 True cmap True] -> ok
+row 02: sec1 s38 integrity: want [runs 78 vmis 0 counts True knobs True s8 True cmap True] got [runs 78 vmis 0 counts True knobs True s8 True cmap True] -> ok
+row 03: sec1 s39 integrity: want [runs 78 vmis 0 counts True knobs True s8 True cmap True] got [runs 78 vmis 0 counts True knobs True s8 True cmap True] -> ok
+row 04: sec1 s51 integrity: want [runs 78 vmis 0 counts True knobs True s8 True cmap True] got [runs 78 vmis 0 counts True knobs True s8 True cmap True] -> ok
+row 05: sec2 c2 class: want [FLOOR] got [FLOOR] -> ok
+row 06: sec2 c8 pooled median: want [32890] got [32890] -> ok
+row 07: sec3 s36 X (hi): want [991 989 981 998 993 985 984 997 994 994 980 982] got [991 989 981 998 993 985 984 997 994 994 980 982] -> ok
+row 08: sec3 s36 Y (tw): want [988 985 994 993 994 995 992 984 987 984 993 981] got [988 985 994 993 994 995 992 984 987 984 993 981] -> ok
+row 09: sec3 s38 X (hi): want [992 988 984 1007 985 984 986 983 992 991 982 997] got [992 988 984 1007 985 984 986 983 992 991 982 997] -> ok
+row 10: sec3 s38 Y (tw): want [988 987 980 980 991 994 991 994 988 991 1001 992] got [988 987 980 980 991 994 991 994 988 991 1001 992] -> ok
+row 11: sec3 s39 X (hi): want [986 991 984 985 989 989 986 990 995 986 987 981] got [986 991 984 985 989 989 986 990 995 986 987 981] -> ok
+row 12: sec3 s39 Y (tw): want [988 989 987 990 990 988 991 983 985 988 983 986] got [988 989 987 990 990 988 991 983 985 988 983 986] -> ok
+row 13: sec3 s51 X (hi): want [988 986 1000 986 989 983 995 983 994 991 984 985] got [988 986 1000 986 989 983 995 983 994 991 984 985] -> ok
+row 14: sec3 s51 Y (tw): want [980 975 991 979 986 986 992 991 988 993 995 996] got [980 975 991 979 986 986 992 991 988 993 995 996] -> ok
+row 15: sec3 prior vector reproduction: want [True] got [True] -> ok
+row 16: sec3b s36 anchor: want [1142 991..1438] got [1142 991..1438] -> ok
+row 17: sec3b s38 anchor: want [1132 992..1443] got [1132 992..1443] -> ok
+row 18: sec3b s39 anchor: want [1146 986..1432] got [1146 986..1432] -> ok
+row 19: sec3b s51 anchor (fresh): want [1137 988..1430 INTERMEDIATE/MIXED] got [1137 988..1430 INTERMEDIATE/MIXED] -> ok
+row 20: sec4 T1 MAD: want [143 118 C 12.5 count 99 p 0.005000] got [143 118 C 12.5 count 99 p 0.005000] -> ok
+row 21: sec4 T1 IQR: want [303 240 C 31.5 count 9 p 0.000500] got [303 240 C 31.5 count 9 p 0.000500] -> ok
+row 22: sec4 T1 joint: want [(a) REPLICATED-ON-BOTH-LEVEL-AXES] got [(a) REPLICATED-ON-BOTH-LEVEL-AXES] -> ok
+row 23: sec6 D2 (sum,128,S=16): want [MAD 59/58 C 0.5 IQR 151/130 C 10.5] got [MAD 59/58 C 0.5 IQR 151/130 C 10.5] -> ok
+row 24: sec6 D2 (sum,128,S=32): want [MAD 121/114 C 3.5 IQR 264/253 C 5.5] got [MAD 121/114 C 3.5 IQR 264/253 C 5.5] -> ok
+row 25: sec6 D2 (sum,128,S=default): want [MAD 113/117 C -2.0 IQR 235/240 C -2.5] got [MAD 113/117 C -2.0 IQR 235/240 C -2.5] -> ok
+row 26: sec6 D2 (max,128,S=16): want [MAD 55/60 C -2.5 IQR 146/147 C -0.5] got [MAD 55/60 C -2.5 IQR 146/147 C -0.5] -> ok
+row 27: sec6 D2 (max,128,S=32): want [MAD 110/121 C -5.5 IQR 232/255 C -11.5] got [MAD 110/121 C -5.5 IQR 232/255 C -11.5] -> ok
+row 28: sec6 D2 (max,128,S=default): want [MAD 143/118 C 12.5 IQR 303/240 C 31.5] got [MAD 143/118 C 12.5 IQR 303/240 C 31.5] -> ok
+row 29: sec6 D2 (min,128,S=16): want [MAD 60/60 C 0.0 IQR 145/158 C -6.5] got [MAD 60/60 C 0.0 IQR 145/158 C -6.5] -> ok
+row 30: sec6 D2 (min,128,S=32): want [MAD 124/120 C 2.0 IQR 272/259 C 6.5] got [MAD 124/120 C 2.0 IQR 272/259 C 6.5] -> ok
+row 31: sec6 D2 (min,128,S=default): want [MAD 113/123 C -5.0 IQR 248/248 C 0.0] got [MAD 113/123 C -5.0 IQR 248/248 C 0.0] -> ok
+row 32: sec6 D2 (sum,256,S=16): want [MAD 74/74 C 0.0 IQR 304/308 C -2.0] got [MAD 74/74 C 0.0 IQR 304/308 C -2.0] -> ok
+row 33: sec6 D2 (sum,256,S=32): want [MAD 135/128 C 3.5 IQR 276/264 C 6.0] got [MAD 135/128 C 3.5 IQR 276/264 C 6.0] -> ok
+row 34: sec6 D2 (sum,256,S=default): want [MAD 124/130 C -3.0 IQR 257/261 C -2.0] got [MAD 124/130 C -3.0 IQR 257/261 C -2.0] -> ok
+row 35: sec6 D2 (max,256,S=16): want [MAD 70/65 C 2.5 IQR 307/261 C 23.0] got [MAD 70/65 C 2.5 IQR 307/261 C 23.0] -> ok
+row 36: sec6 D2 (max,256,S=32): want [MAD 130/128 C 1.0 IQR 265/264 C 0.5] got [MAD 130/128 C 1.0 IQR 265/264 C 0.5] -> ok
+row 37: sec6 D2 (max,256,S=default): want [MAD 121/133 C -6.0 IQR 263/267 C -2.0] got [MAD 121/133 C -6.0 IQR 263/267 C -2.0] -> ok
+row 38: sec6 D2 (min,256,S=16): want [MAD 73/70 C 1.5 IQR 263/297 C -17.0] got [MAD 73/70 C 1.5 IQR 263/297 C -17.0] -> ok
+row 39: sec6 D2 (min,256,S=32): want [MAD 133/138 C -2.5 IQR 274/282 C -4.0] got [MAD 133/138 C -2.5 IQR 274/282 C -4.0] -> ok
+row 40: sec6 D2 (min,256,S=default): want [MAD 140/132 C 4.0 IQR 298/277 C 10.5] got [MAD 140/132 C 4.0 IQR 298/277 C 10.5] -> ok
+row 41: sec6 D3 MAD-hi: want [M_obs 13.0 cells (min,256,S=16) count 2844 p 0.142243] got [M_obs 13.0 cells (min,256,S=16) count 2844 p 0.142243] -> ok
+row 42: sec6 D3 MAD-tw: want [M_obs 16.0 cells (max,128,S=default) count 367 p 0.018399] got [M_obs 16.0 cells (max,128,S=default) count 367 p 0.018399] -> ok
+row 43: sec6 D3 IQR-hi: want [M_obs 35.5 cells (min,256,S=16) count 3657 p 0.182891] got [M_obs 35.5 cells (min,256,S=16) count 3657 p 0.182891] -> ok
+row 44: sec6 D3 IQR-tw: want [M_obs 34.0 cells (max,128,S=default) count 12283 p 0.614169] got [M_obs 34.0 cells (max,128,S=default) count 12283 p 0.614169] -> ok
+
+TOTAL: 44 rows, 0 failed
+DETERMINISM: this generator run twice yields byte-identical output
+(double-run status named in the s69 record; RNG seeded, no set iteration).

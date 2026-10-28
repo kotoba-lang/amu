@@ -3845,3 +3845,27 @@ measurement session (first at/after 2026-10-29T00:00:00Z, its pre-GO
 custody steps named at s67) then T7 and the three frozen analysis
 halves. Evidence:
 `docs/evidence/gpu/anv-b3w5deferredgates-20261028/record.txt`.
+
+## Dated note (2026-10-28, JUN-59 session 69: the W5 analysis pre-build)
+
+The W5 measurement row's implementation preparation half -- the
+five-window analysis machinery of the W5 session's `analysis-s<NN>.py`
+built and validated BEFORE any W5 run exists (NO runs, NO compiles, NO
+GO stamp, NO host writes, no day slot, no ledger line; the measurement
+half stays day-slot-gated to 2026-10-29T00:00:00Z, ~2h after this
+tick). VERIFIED: the s51-compat run of
+`docs/evidence/gpu/anv-b3w5prego-20261028/analysis-prego.py` (real run
+2m45s, exit 0) reproduces the committed publication-s51.txt values
+EXACTLY -- 44 rows, 0 failed (want values parsed from the publication,
+not transcribed): the ENTIRE published RNG stream (T1 counts 99/9; D3
+counts 2844/367/3657/12283) plus D1, the full D2 table, C1, vectors,
+anchors -- the resampling and estimator code paths are validated
+end-to-end against published frozen numbers. NAMED, NOT HIDDEN: the
+W5-dependent parts (T7 at (s36, W5), five-window D3, D1/D2/D4 at W5,
+w5-mode publication text) are UNVALIDATED until the W5 logs exist; the
+determinism double-run and the standing gates were NOT run this tick
+(runtime budget) and are carry-forward before any push-equivalent
+claim; the bar state is UNVERIFIED this tick (last verified s68:
+VERDICT PENDING 1/4). Rule 4 binds: no row moves;
+accelerator-targets defaults stay as ADR-0358 set them. Evidence:
+`docs/evidence/gpu/anv-b3w5prego-20261028/`.
