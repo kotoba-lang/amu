@@ -11,8 +11,15 @@
 (def WG-READY 30464)
 (def WG-FONT 30472)
 (def WG-MAGIC 0x31504f47)
+;; The Browser surface and context are two adjacent windows of the same size inside the kernel's RW segment; the RW
+;; memsz is the end of the context plus a fixed slack. One definition each, so the compiler's region extent
+;; (seed/86) and the packager's RW check (seed/84) cannot drift from the placement. Values unchanged: 0x238000,
+;; 0x23a000 and 0x240000.
+(def WG-WINDOW-BYTES 8192)
 (def WG-SURFACE 0x238000)
-(def WG-CONTEXT 0x23a000)
+(def WG-CONTEXT (+ WG-SURFACE WG-WINDOW-BYTES))
+(def WG-RW-SLACK 0x4000)
+(def WG-RW-MEMSZ (+ WG-CONTEXT (+ WG-WINDOW-BYTES WG-RW-SLACK)))
 (def WG-FONT-BYTES 524288)
 (defn- wg-used? [M :vector-i64] :bool
   (and (= (xg-get M 4) 2)
