@@ -28,6 +28,15 @@ def require(condition, message):
         raise RuntimeError(message)
 
 
+def host_profile(value):
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", value):
+        raise argparse.ArgumentTypeError(
+            "use 1–64 lowercase ASCII letters, digits or hyphens; "
+            "start with a letter or digit (e.g. linux-x86-64-ubuntu-24-04)"
+        )
+    return value
+
+
 def main(output, profile):
     require(platform.system() == "Linux" and platform.machine() == "x86_64",
             "starter host must be native Linux x86_64; no emulation or fallback")
@@ -177,6 +186,7 @@ def main(output, profile):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True, help="new output directory")
-    parser.add_argument("--host-profile", required=True, help="non-identifying host/OS profile label")
+    parser.add_argument("--host-profile", type=host_profile, required=True,
+                        help="non-identifying host/OS label (lowercase letters, digits, hyphens)")
     args = parser.parse_args()
     main(args.output, args.host_profile)
