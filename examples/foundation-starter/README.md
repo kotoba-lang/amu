@@ -2,7 +2,9 @@
 
 Read Kotoba, check and compile it with Amu, change the result, and inspect
 two concrete execution boundaries. No Awai membership, account, model,
-payment, network call or Itonami application is required.
+payment or Itonami application is required. Acquiring the candidate and
+any omitted files requires network access; the example guests themselves
+run without network authority.
 
 **Starter engineering preview, not a public trial release.** The compiler
 descriptor still records empty native generations and false qualification
@@ -182,7 +184,8 @@ receives no capabilities.
 ## 日本語の進め方
 
 1. 対応候補は native Linux x86_64 です。上の「Check the host first」で OS、CPU、
-   Git、Python 3 を確認します。一致しても host の公開資格を証明したことにはなりません。
+   Git、Python 3 を確認します。候補と不足ファイルの取得にはネットワークが必要です。
+   一致しても host の公開資格を証明したことにはなりません。
 2. 「Obtain and verify the candidate」で、レビューした PR の40文字 commit を指定して
    取得し、compiler とサンプルの hash を照合します。不一致の場合は止めてください。
 3. 「Run the native observation packet」で新しい出力ディレクトリを指定して17ケースを
