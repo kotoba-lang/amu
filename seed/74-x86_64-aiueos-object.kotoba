@@ -440,7 +440,7 @@
                      (not (and (>= r 0) (not= ln 0) (xk-same-extent? M i ln r)))))
               ;; the exported function's parameters are rooted because the kernel hands them in: a guest call of the export would
               ;; hand them in again with a base of its own making, so nothing in the object may call the export
-              (and (= op OP-CALL) (= (xg-f M a FF-EXPORT) 1)))
+              (and (= op OP-CALL) (> (xg-f M a FF-EXPORT) 0) (not= (xg-f M a FF-EXPORT) FF-EXTERN-MARK)))
         (xg-err M 7106 i)
         (xk-check M (inc i))))))
 
