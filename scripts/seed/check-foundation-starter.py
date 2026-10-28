@@ -93,8 +93,14 @@ def main(output, profile):
         locked = ["--source-lock", lock, "--source-lock-sha256", pin(lock)["sha256"]]
         call(name + "-check", [compiler, "check", source, *locked], 0, compile_env)
         image = output / (name + ".elf")
+        source_pin = pin(source)
+        # The public static route has fixed argument order. Adding source-lock
+        # flags selects xpj-command, whose format is kx64-v1, not static ELF.
+        # Observe that unsupported combination explicitly below; do not claim
+        # the byte staging here is an atomic compiler-enforced source lock.
         call(name + "-compile", [compiler, "compile", source, "--target", "x86_64-linux",
-                               "--format", "static", "--output", image, *locked], 0, compile_env)
+                               "--output", image, "--format", "static"], 0, compile_env)
+        require(pin(source) == source_pin, f"{name}: staged source changed during compile")
         image.chmod(0o700)
         generated[name] = {"source": pin(source), "lock": pin(lock), "image": pin(image)}
         return source, lock, image
@@ -127,6 +133,12 @@ def main(output, profile):
     call("lock-digest-denied", [compiler, "check", source, "--source-lock", lock,
                                "--source-lock-sha256", "0" * 64], 1, compile_env,
          stderr_has=(b"E6015",))
+    locked_output = output / "locked-static-refused.elf"
+    call("locked-static-denied", [compiler, "compile", source, "--target", "x86_64-linux",
+                                 "--output", locked_output, "--format", "static",
+                                 "--source-lock", lock, "--source-lock-sha256", pin(lock)["sha256"]],
+         2, compile_env, stderr_has=(b"E1",))
+    require(not locked_output.exists(), "unsupported locked static compile left an artifact")
     refused_output = output / "default-target-refused.elf"
     call("default-target-denied", [compiler, "compile", source, "--output", refused_output],
          1, compile_env, stderr_has=(b"E2",))
@@ -153,6 +165,9 @@ def main(output, profile):
         "fixtures": fixtures, "generated": generated, "calls": calls,
         "observer": pin(Path(__file__)),
         "guestPATH": "/nonexistent", "legacyRuntimeFallback": False,
+        "compilerEnforcedSourceLockAtCheck": True,
+        "compilerEnforcedSourceLockAtStaticELFCompile": False,
+        "unsupportedLockedStaticCombinationRefused": True,
         "scope": "Public CLI fixture smoke only; not self-rebuild/controller qualification,"
                  " independent third-party reproduction, OS/network acceptance or a benchmark."}
     (output / "starter-observation.json").write_text(json.dumps(observation, indent=2) + "\n")

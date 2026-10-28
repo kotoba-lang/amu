@@ -78,17 +78,22 @@ KEXE_ALLOW=35,37,38,39 KEXE_CAP_RESOURCES_35="$STARTER_OUTPUT" \
   KEXE_STACK_BYTES=8388608 ./bin/amu check "$STARTER_OUTPUT/hello.kotoba"
 KEXE_ALLOW=35,37,38,39 KEXE_CAP_RESOURCES_35="$STARTER_OUTPUT" \
   KEXE_STACK_BYTES=8388608 ./bin/amu compile "$STARTER_OUTPUT/hello.kotoba" \
-  --target x86_64-linux --format static --output "$STARTER_OUTPUT/hello.elf"
+  --target x86_64-linux --output "$STARTER_OUTPUT/hello.elf" --format static
 chmod 700 "$STARTER_OUTPUT/hello.elf"
 KEXE_ALLOW=- KEXE_FUEL=1000000 KEXE_STRUCTURED_REPORT=1 \
   "$STARTER_OUTPUT/hello.elf"
 ```
 
 Edit the copied source to `(+ 40 3)`, compile to a **new** output filename,
-and run again. Expect `:result 43`. The observation packet above additionally
-binds each input to a KSL1 source lock and exercises a wrong-lock-digest
-refusal (`E6015`). An omitted compile target refuses `E2`; always name the
-target explicitly.
+and run again. Expect `:result 43`. The static compiler requires the shown
+argument order. The observation packet checks each input against a KSL1 lock
+and exercises a wrong-lock-digest refusal (`E6015`). Static ELF compilation
+does **not** accept that lock: adding it selects the separate locked-project
+route, whose supported format is `kx64-v1`. The observer requires that
+unsupported static/lock combination to refuse `E1` without an output file.
+Its private staging and before/after source hashes are not an atomic
+compiler-enforced lock at ELF compilation. An omitted compile target refuses
+`E2`; always name the target explicitly.
 
 ## 日本語の進め方
 
