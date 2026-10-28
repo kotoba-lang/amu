@@ -63,10 +63,36 @@ what a layout can reach on this host; parity 1e-5 to 5e-5):
 | `q8-block-per-thread.js` (one thread per 34-byte block, word loads) | 21 to 32 |
 | `q8-coalesced-words.js` (lanes read consecutive words, workgroup 64 / 128 / 256) | 40 to 43 |
 
-Reading: four layouts land at 30 to 43 GB/s, while the f32 `dot-rows` stream
-reads 300 GB/s here and moves four times the bytes per row. The layout of the
-weight loads therefore does not decide it. A hypothesis, not yet profiled: the
-kernels are bound by load instructions (the coalesced experiment issues six
-loads per four weights, five of them `x` and scale re-reads), so the next
-experiment is to share `x` across rows in one workgroup or keep it in
-workgroup memory, and to read `x` as `vec4`.
+**Correction (same day, later).** The reading that "the layout does not decide
+it" was wrong: it came from a harness artefact. In this Deno/wgpu harness
+(100 dispatches in one compute pass) a dispatch of **one** workgroup already
+costs 0.15 to 0.20 ms, so at 4096 rows (0.3 to 0.4 ms) a third to a half of
+every number above is that floor, not memory traffic. The floor is the
+harness's, not a Metal or Kotoba-native figure; an earlier receipt infers
+about 31 us per dispatch in a native command buffer.
+
+Same kernels at 32768 x 4096 (143 MB of Q8_0), where the floor is small, one
+run each, so a trend and not a distribution:
+
+| layout | ms | GB/s of Q8_0 payload |
+|---|---|---|
+| generated `kdot-f32-r1` | 2.111 | 68 |
+| `experiments/q8-coalesced-words.js` | 1.458 | 98 |
+| `experiments/q8-repacked-vec4.js` (scales in their own f32 array, int8 quants as aligned `vec4<u32>`, one thread per block, `x` as `vec4`) | 0.870 | 164 |
+
+The repacked layout's size sweep shows it too (rows at 4096 columns: 1024 ->
+22, 4096 -> 57, 16384 -> 128, 32768 -> 164 GB/s), with a marginal rate of about
+227 GB/s between the last two. Parity is 1e-5 to 1e-4 against the f64 sum for
+every row of these tables. The repack is a load-time transform of the GGUF
+tensor (34-byte blocks into 4-byte scales and 32-byte aligned quants, so 36 B
+a block); it is not in `tools/gpu_kernels_v2.kotoba` and no KIR v2 kernel
+reads it yet.
+
+What this changes for AWAI-6: two separate levers. (1) The dispatch floor,
+which dominates the small matrices of a 0.5B model (hidden 896, FFN 4864: the
+same repacked kernel gives 22 GB/s at 4864 x 896 and 72 GB/s at 4864 x 4864),
+so fusing dispatches matters more than any single kernel. (2) A load-time
+repack for the large matrices, worth about 2.4x on this host in the sweep
+above. Neither is a decode rate; the end-to-end test is the 24-layer decode
+guest of the 2026-10-19 receipt, which cannot run on main until the GPU route
+(ADR 0375 B) exists.
