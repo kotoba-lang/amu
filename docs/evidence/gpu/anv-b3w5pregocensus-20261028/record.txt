@@ -1,0 +1,136 @@
+JUN-59 session 71 THE PREGO DERIVATION-CENSUS SECOND-PARSER TWIN
+(the s69/s70-named ungated row -- the last row available before the
+W5 day-slot opens; NO runs, NO compiles, NO GO stamp, NO host
+writes, NO day-slot consumption, NO ledger line). The W5 measurement
+row's measurement half REMAINS day-slot-gated (STARTED, NOT
+FINISHED): W5 is DEFINED as the window whose 78 fresh processes run
+in the first measurement session at or after 2026-10-29T00:00:00Z;
+this tick started 2026-10-28T22:46Z, ~1h14m before that slot opens
+(NAMED, not skipped silently).
+
+1. WHAT WAS BUILT (implementation, this tick):
+   docs/evidence/gpu/anv-b3w5pregocensus-20261028/derivation-census-
+   s71.py -- the INDEPENDENT second-parser twin for the s69 pre-
+   build's s51-compat validation (the 44 rows of anv-b3w5prego-
+   20261028/compat-s51-validation.txt). Independence contract (the
+   s63 census contract, unchanged): NO re module (split()-based
+   k=v log tokenising, find/split publication/report parsing), NO
+   numpy (pure-Python sorted() order statistics from ONE shared
+   sort per pooled 75: MAD = sorted(|x - sorted(pooled75)[37]|)
+   [37]; IQR = sorted(pooled75)[56] - sorted(pooled75)[18]; 2*L =
+   sorted(ds)[5] + sorted(ds)[6]), and an independent pure-Python
+   shuffle loop re-implementing the frozen RNG call contract
+   exactly (ONE random.Random(20261028) consumed in the frozen
+   probe order primary MAD / primary IQR / D MAD-hi / D MAD-tw /
+   D IQR-hi / D IQR-tw, 20,000 trials per probe, one fresh-list
+   rng.shuffle per trial). Each row is THREE-WAY: published
+   (publication-s51.txt parsed find/split) vs prego (the report's
+   got column) vs census (recomputed from the committed run logs
+   of the four prior windows only -- NO W5 quantity is computed
+   anywhere in the script).
+
+2. VERIFIED THIS TICK (real tool output):
+   (a) The CENSUS_SMOKE PLUMBING RUN (CENSUS_SMOKE=1, TRIALS=20,
+       scratch/census-s71-smoke.txt -- scratch-only, NEVER the
+       committed census): 44 rows, 6 mismatched -- and the six
+       mismatches are EXACTLY the six RNG count/p rows (rows 20,
+       21, 41-44), as expected at TRIALS=20; every deterministic
+       row matches THREE-WAY (38/38: integrity x4, C1 x2, block-
+       min vectors x8 + reproduction, anchors x4, T1 2*L pairs +
+       joint letter, the full D2 18-cell table), and even in the
+       six smoke-mismatched rows the non-RNG parts match
+       published EXACTLY (2*L pairs 143/118 and 303/240, C_obs
+       12.5/31.5; D3 M_obs 13.0/16.0/35.5/34.0 and the max-cell
+       identities). SECTION B (2 rows, 2/2 matched): the
+       published D1 content re-derived against the published
+       text -- 143/111/113/118 repro True inpair False and
+       303/241/235/240 repro True inpair True. SECTION C hygiene
+       4/4: evidence .sh count 0, ledger reading-line count 8,
+       no s71 ledger line, the prego report's TOTAL line.
+   (b) STANDING GATES (real runs, this tick), every capture
+       byte-identical to its pinned s70 artifact (chain/scratch/):
+       gpu_regime_classify.py --self-test exit 0, "TOTAL: 2649
+       assertions passed, 0 failed" (gate-s71-classify.txt);
+       settle-bar evaluator --self-test exit 0 (bar-s71-
+       selftest.txt, 3590 bytes); ledger eval twice, exit 0,
+       run1 == run2 == the s70 pin (740 bytes) -> VERDICT:
+       PENDING 1/4 unchanged (counted day=2026-10-28
+       session=s31 only); scoped GPU gate GREEN 123/12162/0/0
+       run 1 AND run 2 (scratch runner scratch/scoped-gpu-
+       gate.cljk -- the pinned shape, created/run/deleted, never
+       committed), both captures 919 bytes, .err 0 bytes, byte-
+       identical to each other AND to the s70 pin;
+       find docs/evidence/gpu -name '*.sh' -> 0 files.
+
+3. NAMED, NOT HIDDEN -- NOT DONE this tick (runtime budget;
+   carry-forward, the next tick must run these before any
+   push-equivalent claim, the s67/s69 deferral pattern):
+   (a) The census DOUBLE-RUN at the frozen 20,000-trial contract
+       is IN FLIGHT at tick close and its outputs do NOT exist
+       yet (the two background runs were still executing at
+       2026-10-28T22:58Z after ~11.5 min wall -- the pure-Python
+       resampling over the 144-run repartition is slower than
+       the prego's numpy batches). Until run1 == run2 byte-
+       identity AND the 6 RNG rows' counts/p (99/9/2844/367/
+       3657/12283) are checked at full trials, the census's
+       RNG-stream reproduction is UNVERIFIED -- the smoke run
+       validates the plumbing and every deterministic row ONLY.
+       run1 writes derivation-census-s71.txt in this directory
+       (uncommitted until verified); run2 writes scratch/
+       census-s71-run2.txt.
+   (b) FULL run-tests.cljk was NOT run this tick (budget). Its
+       last verified reading (s70) was: exit 1, RED AT BASE
+       kotoba.form (ADR-0362, outside this diff -- this tick
+       touches NO .cljk namespace), captures byte-identical to
+       the s68 pins -- NO green full suite claimed. Re-run
+       before the next push-equivalent claim.
+   (c) NAMED FINDING of the census build (verified by the smoke
+       run's section B against the published text): the prego
+       report's 44 rows contain NO D1 row -- its D1 regex is
+       single-line while publication-s51.txt's D1 text wraps
+       across two lines, so that loop matched 0 rows (the s69
+       record's "D1 vectors" phrase is therefore NOT backed by
+       report rows). The prego's dormant D1 helper also computes
+       the pair-interval flag over {s38, s39, s51} INCLUDING
+       L_s51 among the endpoints, which contradicts the
+       published semantics ("the closed interval spanned by
+       {L_s38, L_s39}"); it never surfaced because the rows never
+       matched. The census implements the PUBLISHED semantics
+       (endpoints exclude L_s51) and reproduces the published
+       flags (False/True). Both facts are recorded in the
+       census output's SECTION B text.
+
+4. BAR / SLOT: nothing this tick could produce a bar-qualifying
+   reading (no instrument runs; the 2026-10-28 slot is s31's and
+   the W5 window cannot open before 2026-10-29T00:00:00Z) -- NO
+   ledger line and NO day slot either way. VERDICT PENDING 1/4
+   unchanged (verified this tick, section 2b).
+
+5. RULE 4 unchanged: NOTHING MOVES -- accelerator-targets
+   defaults remain provisional (:measured? false for :arm/
+   :unknown; the measured rows keep ADR-0358's flags); NO
+   vendor optimization exists for Intel. No derivation census
+   RESULT is claimed this tick (section 3a).
+
+6. QUEUE (unchanged): next executable row is queue row 1's
+   MEASUREMENT half -- the W5 session in the first measurement
+   session at or after 2026-10-29T00:00:00Z (78 fresh processes,
+   frozen run order, custody GO stamp before builds and runs --
+   INCLUDING the still-unstaged host workdir
+   ~/anv-b3w5xdayrep-20261029 as that session's own pre-GO
+   custody step (s67 record section 2), host-side 3/3
+   local-vs-host comparison and corpus sha256sum -c 16/16 as
+   its pre-GO checks, bar line on hi block A of the W5 window),
+   then its T7 read, then the three frozen analysis halves (s64
+   T14 hi-wander, s65 T15 quantile-pair level axes, s66 T16
+   second-pair profile axis). BEFORE any push-equivalent claim
+   of the W5 session: finish the s71 carry-forward (3a: census
+   double-run verification; 3b: FULL run-tests.cljk).
+
+Evidence: docs/evidence/gpu/anv-b3w5pregocensus-20261028/
+(derivation-census-s71.py, this record; derivation-census-s71.txt
+appears when the in-flight run1 completes and is UNCOMMITTED
+until the double-run is verified) + the s71 gate captures in
+scratch/ (untracked, per the established convention). Chain:
+bot/amu-gpu-chain-20261028-3 (chain PR #1643, commit + push
+only). (JUN-55, JUN-59; Linear tracking JUN-499)
