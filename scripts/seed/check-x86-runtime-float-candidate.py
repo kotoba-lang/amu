@@ -79,6 +79,9 @@ def main():
         if result.returncode or not found or int(found[1]) != expected:
             raise SystemExit(name + ' execution mismatch')
         cases.append({'name': name, 'source': pin(source), 'image': pin(image), 'payload': pin(payload), 'expected': expected})
+    mx = run('mxcsr-observer', ['python3', ROOT / 'scripts/seed/observe-x86-mxcsr.py', '--runner', runner, '--payload', out / 'full-float.bin', '--output', out / 'mxcsr'], {'PATH': '/usr/bin:/bin'})
+    if mx.returncode:
+        raise SystemExit('caller MXCSR diagnostic failed')
     src = out / 'f32-range-trap.kotoba'
     shutil.copyfile(ROOT / 'diagnostics/kotoba161-runtime-float/f32-range-trap.kotoba', src)
     image = out / 'f32-range-trap.kx64'
