@@ -50,6 +50,37 @@ mechanism with one more family.
   extern that takes a pointer must say so in its declaration parameters
   (`ptr`/`len` suffix names, as the windows do).
 
+### D1 call sequence (decided 2026-10-29; reading seed/74 for JUN-556)
+
+An extern call has two hazards the stub mechanism does not have: the context
+register r9 is caller-saved in System V, and the stack alignment at a call site
+inside an export depends on the frame size. Decision: a fixed 21-byte wrapper
+around every extern call, with the arguments already in rdi, rsi, rdx, rcx, r8:
+
+    mov  r11, rsp          ; 4C 89 DC? (encoding checked by the gate, not here)
+    and  rsp, -16
+    sub  rsp, 16
+    mov  [rsp], r11        ; the unaligned rsp
+    mov  [rsp+8], r9       ; the context register
+    call <symbol>          ; E8 rel32, R_X86_64_PLT32 -4
+    mov  r9, [rsp+8]
+    mov  rsp, [rsp]        ; rax (the result) is untouched
+
+No callee-saved register is claimed, so the register allocation of the route is
+unchanged; the wrapper is the same bytes at every call site, which keeps the
+verifier's rule "exactly this sequence before each PLT32 call" checkable. r9 is
+then intact after every call, which is also the answer to the E-side r9
+conflict for calls: only the seventh and later argument words still need a
+decision (E1/E2/E3), because they go on the stack above this block.
+
+Rejected: restoring r9 with a second `lea r9,[rip+ctx]` and PC32 after each call
+(one more relocation per call site, and the symbol table grows with the call
+count); aligning every frame to 16 (it changes the bytes of every pinned object).
+
+The encodings above are written for review, not copied from a verified table:
+the first gate must assemble them independently and compare, before any seed
+change.
+
 ### D2 -- `.rodata`
 
 `def` takes literals only (native.micro-infer packs a 729-entry matrix into
